@@ -13,6 +13,13 @@ import * as db from "../db";
 import { getDb } from "../db/connection";
 import { productPanelDefs, productPanelBoards, measurementResults, productInspections } from "../../drizzle/schema";
 
+/**
+ * Ca ở đây đo PHÉP GẤP PANEL, không đo phạm vi dữ liệu. Vai `admin` ⇒ không bộ lọc tenant
+ * nào được áp ⇒ hành vi y hệt trước bản vá phạm vi 2026-08-17. Trục phạm vi có lưới RIÊNG:
+ * `defectSpatialHeatmap.scope.test.ts` (bao gồm cả nhánh hạ-về-bbox của chế độ panelBoard).
+ */
+const ADMIN_SCOPE = { userId: 1, userRole: "admin" } as const;
+
 const ts = Date.now();
 let machineId: number;
 let productModelId: number; // WITH panel def
@@ -128,6 +135,7 @@ describe("computeSpatialHeatmap mode=panelBoard", () => {
       gridWidth: 10,
       gridHeight: 10,
       mode: "panelBoard",
+      scope: ADMIN_SCOPE,
     });
 
     expect(r.mode).toBe("panelBoard");
@@ -165,6 +173,7 @@ describe("computeSpatialHeatmap mode=panelBoard", () => {
       gridWidth: 10,
       gridHeight: 10,
       mode: "panelBoard",
+      scope: ADMIN_SCOPE,
     });
     expect(r.mode).toBe("bbox"); // ran the ordinary spatial mode
     expect(r.panelAware).toBe(false);
@@ -182,6 +191,7 @@ describe("computeSpatialHeatmap mode=panelBoard", () => {
       gridWidth: 10,
       gridHeight: 10,
       mode: "panelBoard",
+      scope: ADMIN_SCOPE,
     });
     expect(r.panelAware).toBe(false);
     expect(r.panelFallbackReason).toBe("no_product_filter");

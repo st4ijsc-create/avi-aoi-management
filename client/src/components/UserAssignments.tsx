@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { useTranslation } from 'react-i18next';
 import { trpc } from "@/lib/trpc";
+import { toastTrpcError } from "@/lib/trpcErrors";
 import { toast } from "sonner";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -49,7 +50,7 @@ export default function UserAssignments() {
       setSelectedCode("");
       refetch();
     },
-    onError: (err) => toast.error(err.message),
+    onError: (err) => toastTrpcError(err),
   });
 
   const assignFactoryMutation = trpc.userAssignment.assignFactory.useMutation({
@@ -59,7 +60,7 @@ export default function UserAssignments() {
       setSelectedCode("");
       refetch();
     },
-    onError: (err) => toast.error(err.message),
+    onError: (err) => toastTrpcError(err),
   });
 
   const removeCorporateMutation = trpc.userAssignment.removeCorporateAssignment.useMutation({
@@ -67,7 +68,7 @@ export default function UserAssignments() {
       toast.success(t('assignments.corporateRemoved'));
       refetch();
     },
-    onError: (err) => toast.error(err.message),
+    onError: (err) => toastTrpcError(err),
   });
 
   const removeFactoryMutation = trpc.userAssignment.removeFactoryAssignment.useMutation({
@@ -75,7 +76,7 @@ export default function UserAssignments() {
       toast.success(t('assignments.factoryRemoved'));
       refetch();
     },
-    onError: (err) => toast.error(err.message),
+    onError: (err) => toastTrpcError(err),
   });
 
   const reassignCorporateMutation = trpc.userAssignment.reassignCorporate.useMutation({
@@ -85,7 +86,7 @@ export default function UserAssignments() {
       setEditNewCode("");
       refetch();
     },
-    onError: (err) => toast.error(err.message),
+    onError: (err) => toastTrpcError(err),
   });
 
   const reassignFactoryMutation = trpc.userAssignment.reassignFactory.useMutation({
@@ -95,7 +96,7 @@ export default function UserAssignments() {
       setEditNewCode("");
       refetch();
     },
-    onError: (err) => toast.error(err.message),
+    onError: (err) => toastTrpcError(err),
   });
 
   const handleAssign = () => {

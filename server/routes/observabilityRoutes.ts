@@ -20,37 +20,12 @@
 import type express from "express";
 import type { Request } from "express";
 
-const PRIVILEGED_ROLES = new Set(["admin", "super_admin", "supervisor"]);
-
-interface Authed {
-  ok: boolean;
-  status: 200 | 401 | 403;
-  role?: string;
-  userId?: number;
-  message?: string;
-}
-
-/** Resolve a signed-in session and require a privileged role. Fail-safe: any error denies. */
-async function requirePrivileged(req: Request): Promise<Authed> {
-  try {
-    const { sdk } = await import("../_core/sdk");
-    const user = await sdk.authenticateRequest(req as never);
-    if (!user) return { ok: false, status: 401, message: "Authentication required." };
-    const role = (user as { role?: string }).role ?? "";
-    if (!PRIVILEGED_ROLES.has(role)) {
-      return { ok: false, status: 403, role, message: "Privileged role (admin/supervisor) required." };
-    }
-    return { ok: true, status: 200, role, userId: (user as { id?: number }).id };
-  } catch {
-    return { ok: false, status: 401, message: "Authentication required (invalid session)." };
-  }
-}
-
-/** True when the request originates from loopback (Prometheus co-located with the app). */
-function isLoopback(req: Request): boolean {
-  const ip = (req.ip || req.socket?.remoteAddress || "").replace(/^::ffff:/, "");
-  return ip === "127.0.0.1" || ip === "::1" || ip === "localhost";
-}
+/**
+ * ★★★★ Review TOÀN NHÁNH Pha 9 · **I-6** — hai vị từ này **đã rút về một chủ**
+ * (`server/routes/_congLoopback.ts`) vì bề mặt thứ hai cần đúng cặp ấy:
+ * `POST /api/ai/local-kb/feedback`. Giữ hai bản sao ⇒ bản yếu hơn quyết định lưới nào đỏ.
+ */
+import { laLoopback as isLoopback, doiVaiDacQuyen as requirePrivileged } from "./_congLoopback";
 
 export function registerObservabilityRoutes(app: express.Express): void {
   // ── GET /api/observability/health — aggregated platform health ──────────────
@@ -159,9 +134,17 @@ export function registerObservabilityRoutes(app: express.Express): void {
     }
     try {
       const { renderSloPrometheus } = await import("../services/observability/sloAlerting");
+      /**
+       * ★★★ Review TOÀN NHÁNH Pha 8 · **C-2 §3 — CẮT ĐƯỜNG IM LẶNG.**
+       * Hai bộ đếm sổ phiên (`soPhien_ghiSoLoi_total` · `soPhien_chanDaThuHoi_total`) trước lượt vá
+       * **chỉ đọc được TỪ LƯỚI** — tức chúng chứng minh "không im lặng" trong test, còn trong sản
+       * xuất thì vẫn im lặng. Ghép vào đây vì bề mặt này **đã có** phép xác thực (loopback **hoặc**
+       * phiên admin/supervisor) ⇒ không mở thêm cửa nào, và Prometheus cạnh app đọc được ngay.
+       */
+      const { renderSoPhienPrometheus } = await import("../_core/demSoPhien");
       res.setHeader("Content-Type", "text/plain; version=0.0.4; charset=utf-8");
       res.setHeader("Cache-Control", "no-store");
-      return res.send(renderSloPrometheus());
+      return res.send(`${renderSloPrometheus()}\n${renderSoPhienPrometheus()}`);
     } catch (err: any) {
       console.error("[Observability] /metrics error:", err?.message || err);
       return res.status(500).type("text/plain").send("# metrics error\n");

@@ -2,6 +2,13 @@
 
 Thư mục này chứa các ví dụ về cấu trúc meta.json cho AOI Package upload.
 
+> ⚠ **Hướng sắp tới (đã quyết định, CHƯA triển khai — BG-85):** `meta.json` sẽ được
+> hợp nhất thành CÙNG hình dạng với payload kết quả v2.0 (`machineDataContractV2` +
+> thêm mảng `images[]`) — xem `docs/UNIFIED_API_STRUCTURE.md` và
+> `docs/superpowers/specs/2026-09-01-aoi-chuan-goi-anh.md`. Cấu trúc `measurements`/
+> `points` dưới đây vẫn là hợp đồng ĐANG CHẠY hôm nay; bên tích hợp máy nên đọc
+> spec trên trước khi đầu tư nhiều vào engine sinh `meta.json`.
+
 ## Files
 
 ### 1. meta.json.example
@@ -17,14 +24,22 @@ Cấu trúc mới - **KHUYẾN NGHỊ** (Unified với submitInspection API)
 **Use case:** Client mới, hoặc client cũ muốn upgrade để có thêm features.
 
 ### 2. meta-legacy.json.example
-Cấu trúc cũ - Vẫn hoạt động (Backward compatible)
+Cấu trúc cũ — CHỈ tên trường cũ tương thích ngược, KHÔNG phải toàn bộ cấu trúc
+
+⚠️ **Chỉ tên trường BÊN TRONG là tương thích ngược** (`factory`/`line` thay
+`factoryCode`/`lineCode`; `code`/`value` thay `pointId`/`measuredValue` trong từng
+điểm đo). Mảng đo lường vẫn PHẢI đặt ở khoá `measurements` — server **bắt buộc**
+trường này trên mọi gói (kể cả rỗng `[]`). Một gói chỉ gửi `points[]` mà KHÔNG có
+`measurements` sẽ bị server **từ chối** (`invalid_type`) và không bao giờ commit
+được, dù retry bao nhiêu lần — đây KHÔNG phải "vẫn hoạt động".
 
 **Features:**
-- Factory và Line (không có companyCode, workshopCode, stageCode)
-- Points array với code, value (không có pointId, measuredValue, remark)
+- Factory và Line (không có companyCode, workshopCode, stageCode) — field cũ, vẫn hoạt động
+- Measurements array dùng tên trường cũ `code`, `value` (không có pointId, measuredValue, remark)
 - Thiếu production context
 
-**Use case:** Client cũ chưa upgrade, hệ thống vẫn chấp nhận và tự động normalize.
+**Use case:** Client cũ dùng tên trường cũ bên trong measurements, muốn giữ nguyên
+naming quen thuộc nhưng vẫn phải gửi mảng ở khoá `measurements` (không phải `points`).
 
 ## Usage
 
@@ -117,6 +132,13 @@ Response:
 
 ## Migration Guide
 
+⚠️ **Lưu ý về "trạng thái xuất phát" của diff dưới đây:** khoá `points` (bên trái,
+dấu `-`) chỉ minh hoạ TÊN TRƯỜNG cũ để so sánh — một payload thật với khoá
+`points` mà KHÔNG có `measurements` **bị server từ chối ngay hôm nay** (không
+phải "cấu trúc cũ đang chạy rồi từ từ nâng cấp"). Nếu client của bạn còn gửi
+`points[]` không kèm `measurements`, đó là gói **đang thất bại**, không phải gói
+"còn hoạt động ở mức cũ" — ưu tiên đổi khoá `measurements` trước các trường khác.
+
 ### Từ legacy → new structure
 
 ```diff
@@ -157,7 +179,10 @@ Response:
 ### Required Fields
 - `serialNumber` - Số serial sản phẩm
 - `productModel` - Model sản phẩm
-- `measurements` (hoặc `points` cho legacy) - Array các điểm đo
+- `measurements` - Array các điểm đo — **BẮT BUỘC trên MỌI gói** (có thể là mảng
+  rỗng `[]`, nhưng không được vắng mặt). `points` là bí danh CŨ của các TÊN
+  TRƯỜNG bên trong mỗi điểm đo, KHÔNG thay thế được khoá `measurements` ở cấp
+  cao nhất — xem cảnh báo ở mục `meta-legacy.json.example` phía trên.
 
 ### Recommended Fields (NEW)
 - `companyCode` - Mã công ty/tập đoàn

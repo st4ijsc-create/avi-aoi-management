@@ -4,8 +4,10 @@ import { requirePermission } from "../_core/accessControl";
 // until the deployment's SKU is configured — no-brick). Shadows `protectedProcedure`.
 const protectedProcedure = moduleProcedure("MOD_PRODUCTION");
 import { adminProcedure } from "./_shared";
+import { phamViCua } from "./_phamViNguoiXem";
 import { z } from "zod";
 import { TRPCError } from "@trpc/server";
+import { appError } from "../_core/appError";
 import * as db from "../db";
 
 export const productionOrderRouter = router({
@@ -19,20 +21,20 @@ export const productionOrderRouter = router({
       search: z.string().max(200).optional(),
       limit: z.number().int().min(1).max(1000).optional(),
     }).optional())
-    .query(async ({ input }) => {
-      return db.getProductionOrders(input);
+    .query(async ({ input, ctx }) => {
+      return db.getProductionOrders(input, phamViCua(ctx));
     }),
 
   getById: protectedProcedure
     .input(z.object({ id: z.number() }))
-    .query(async ({ input }) => {
-      return db.getProductionOrderById(input.id);
+    .query(async ({ input, ctx }) => {
+      return db.getProductionOrderById(input.id, phamViCua(ctx));
     }),
 
   getByCode: protectedProcedure
     .input(z.object({ orderCode: z.string() }))
-    .query(async ({ input }) => {
-      return db.getProductionOrderByCode(input.orderCode);
+    .query(async ({ input, ctx }) => {
+      return db.getProductionOrderByCode(input.orderCode, phamViCua(ctx));
     }),
 
   create: writeProcedure.use(requirePermission("production_orders", "canCreate"))
@@ -90,10 +92,12 @@ export const productionOrderRouter = router({
           const { assertLineSetupOkForRun } = await import("../services/feederVerifyService");
           const gate = await assertLineSetupOkForRun(lineId, productModelId);
           if (gate.blocked) {
-            throw new TRPCError({
-              code: "PRECONDITION_FAILED",
-              message: `Cannot start production run: ${gate.reason}`,
-            });
+            throw appError(
+              "PRECONDITION_FAILED",
+              "OPERATION_FAILED",
+              { operation: "startProductionRun" },
+              `Cannot start production run: ${gate.reason}`,
+            );
           }
         }
       }
@@ -118,8 +122,8 @@ export const productionOrderRouter = router({
       endDate: z.date(),
       excludeOrderId: z.number().optional(),
     }))
-    .query(async ({ input }) => {
-      const orders = await db.getProductionOrders({ lineId: input.lineId });
+    .query(async ({ input, ctx }) => {
+      const orders = await db.getProductionOrders({ lineId: input.lineId }, phamViCua(ctx));
       
       const overlappingOrders = orders.filter(order => {
         // Skip the order being rescheduled
@@ -167,7 +171,7 @@ export const productionOrderRouter = router({
     .mutation(async ({ input, ctx }) => {
       const order = await db.getProductionOrderById(input.id);
       if (!order) {
-        throw new TRPCError({ code: 'NOT_FOUND', message: 'Production order not found' });
+        throw appError('NOT_FOUND', 'ENTITY_NOT_FOUND', { entity: 'productionOrder' }, 'Production order not found');
       }
 
       const targetLineId = input.lineId || order.lineId;
@@ -176,7 +180,7 @@ export const productionOrderRouter = router({
       const lines = await db.getProductionLines();
       const targetLine = lines.find(l => l.id === targetLineId);
       if (!targetLine) {
-        throw new TRPCError({ code: 'NOT_FOUND', message: 'Production line not found' });
+        throw appError('NOT_FOUND', 'ENTITY_NOT_FOUND', { entity: 'line' }, 'Production line not found');
       }
 
       // Check for overlap unless force override is set
@@ -195,10 +199,17 @@ export const productionOrderRouter = router({
         });
         
         if (overlappingOrders.length > 0) {
-          throw new TRPCError({
-            code: 'CONFLICT',
-            message: `Lịch trùng với ${overlappingOrders.length} lệnh sản xuất khác: ${overlappingOrders.map(o => o.orderCode).join(', ')}. Sử dụng forceOverride=true để bỏ qua.`,
-          });
+          throw appError(
+            'CONFLICT',
+            'OPERATION_FAILED',
+            // Task 5 (doc 71) — `reason` khôi phục chỉ dẫn forceOverride=true đã mất khi
+            // di trú (câu chuẩn OPERATION_FAILED chỉ có {{operation}}). Danh sách MÃ lệnh
+            // trùng (orderCode) là chuỗi độ-dài-bất-định, KHÔNG đi qua từ điển reason —
+            // giữ nguyên trong fallbackMessage (log/API /v1) theo đúng khuyến cáo brief,
+            // chỉ số LƯỢNG lệnh trùng (conflictCount) được khôi phục qua i18n.
+            { operation: 'rescheduleProductionOrder', reason: 'scheduleConflict', conflictCount: overlappingOrders.length },
+            `Lịch trùng với ${overlappingOrders.length} lệnh sản xuất khác: ${overlappingOrders.map(o => o.orderCode).join(', ')}. Sử dụng forceOverride=true để bỏ qua.`,
+          );
         }
 
         // Capacity validation - check max concurrent orders
@@ -216,10 +227,22 @@ export const productionOrderRouter = router({
         });
 
         if (concurrentOrders.length >= maxConcurrent) {
-          throw new TRPCError({
-            code: 'PRECONDITION_FAILED',
-            message: `Dây chuyền ${targetLine.name} chỉ hỗ trợ tối đa ${maxConcurrent} lệnh cùng lúc. Hiện đã có ${concurrentOrders.length} lệnh trong khoảng thời gian này. Sử dụng forceOverride=true để bỏ qua.`,
-          });
+          throw appError(
+            'PRECONDITION_FAILED',
+            'OPERATION_FAILED',
+            // Task 5 (doc 71) — reason KHÁC 'scheduleConflict' ở trên dù CÙNG appCode +
+            // CÙNG operation: đây là bài học "76 nhóm ≥2 nguyên nhân render 1 câu" mà
+            // brief đo được — nếu không tách reason, người dùng đọc y hệt câu dù nguyên
+            // nhân (trùng lịch vs vượt năng lực chuyền) khác hẳn nhau.
+            {
+              operation: 'rescheduleProductionOrder',
+              reason: 'lineCapacityExceeded',
+              lineName: targetLine.name,
+              maxConcurrent,
+              currentCount: concurrentOrders.length,
+            },
+            `Dây chuyền ${targetLine.name} chỉ hỗ trợ tối đa ${maxConcurrent} lệnh cùng lúc. Hiện đã có ${concurrentOrders.length} lệnh trong khoảng thời gian này. Sử dụng forceOverride=true để bỏ qua.`,
+          );
         }
 
         // Capacity validation - check production capacity
@@ -228,10 +251,21 @@ export const productionOrderRouter = router({
           const maxCapacity = targetLine.capacityPerHour * durationHours;
           
           if (order.targetQuantity > maxCapacity) {
-            throw new TRPCError({
-              code: 'PRECONDITION_FAILED',
-              message: `Số lượng ${order.targetQuantity} vượt quá năng lực dây chuyền (${Math.floor(maxCapacity)} sản phẩm trong ${durationHours.toFixed(1)} giờ với ${targetLine.capacityPerHour} sp/giờ). Sử dụng forceOverride=true để bỏ qua.`,
-            });
+            throw appError(
+              'PRECONDITION_FAILED',
+              'OPERATION_FAILED',
+              // reason THỨ BA, phân biệt với 2 cái trên (xem ghi chú ở nhánh trên) —
+              // nguyên nhân "vượt năng lực sản xuất" (không phải trùng lịch, không phải
+              // vượt số lệnh đồng thời).
+              {
+                operation: 'rescheduleProductionOrder',
+                reason: 'productionCapacityExceeded',
+                quantity: order.targetQuantity,
+                maxCapacity: Math.floor(maxCapacity),
+                hours: durationHours.toFixed(1),
+              },
+              `Số lượng ${order.targetQuantity} vượt quá năng lực dây chuyền (${Math.floor(maxCapacity)} sản phẩm trong ${durationHours.toFixed(1)} giờ với ${targetLine.capacityPerHour} sp/giờ). Sử dụng forceOverride=true để bỏ qua.`,
+            );
           }
         }
       }
@@ -245,7 +279,7 @@ export const productionOrderRouter = router({
       if (input.lineId && input.lineId !== order.lineId) {
         const newLine = lines.find(l => l.id === input.lineId);
         if (!newLine) {
-          throw new TRPCError({ code: 'NOT_FOUND', message: 'Production line not found' });
+          throw appError('NOT_FOUND', 'ENTITY_NOT_FOUND', { entity: 'line' }, 'Production line not found');
         }
         updateData.lineId = input.lineId;
         updateData.workshopId = newLine.workshopId;
@@ -277,14 +311,14 @@ export const productionOrderRouter = router({
   // Order Templates
   listTemplates: protectedProcedure
     .input(z.object({ factoryId: z.number().optional() }).optional())
-    .query(async ({ input }) => {
-      return db.listOrderTemplates(input?.factoryId);
+    .query(async ({ input, ctx }) => {
+      return db.listOrderTemplates(input?.factoryId, phamViCua(ctx));
     }),
 
   getTemplate: protectedProcedure
     .input(z.object({ id: z.number() }))
-    .query(async ({ input }) => {
-      return db.getOrderTemplate(input.id);
+    .query(async ({ input, ctx }) => {
+      return db.getOrderTemplate(input.id, phamViCua(ctx));
     }),
 
   createTemplate: writeProcedure.use(requirePermission("production_orders", "canCreate"))
@@ -344,7 +378,7 @@ export const productionOrderRouter = router({
     }))
     .mutation(async ({ input }) => {
       const template = await db.getOrderTemplate(input.templateId);
-      if (!template) throw new Error('Template not found');
+      if (!template) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "orderTemplate" }, "Template not found");
 
       const orderData = {
         orderCode: input.orderCode,
@@ -368,14 +402,14 @@ export const productionOrderRouter = router({
   // WIP Tracking
   getWIPStatus: protectedProcedure
     .input(z.object({ factoryId: z.number().optional() }).optional())
-    .query(async ({ input }) => {
-      return db.getWIPStatus(input?.factoryId);
+    .query(async ({ input, ctx }) => {
+      return db.getWIPStatus(input?.factoryId, phamViCua(ctx));
     }),
 
   getWIPByLine: protectedProcedure
     .input(z.object({ lineId: z.number() }))
-    .query(async ({ input }) => {
-      return db.getWIPByLine(input.lineId);
+    .query(async ({ input, ctx }) => {
+      return db.getWIPByLine(input.lineId, phamViCua(ctx));
     }),
 
   // Scheduling Optimization
@@ -592,9 +626,9 @@ export const productionOrderRouter = router({
       factoryId: z.number().optional(),
       lineId: z.number().optional(),
     }).optional())
-    .query(async ({ input }) => {
+    .query(async ({ input, ctx }) => {
       const { compareApsKpi } = await import("../services/apsService");
-      return compareApsKpi({ factoryId: input?.factoryId, lineId: input?.lineId });
+      return compareApsKpi({ factoryId: input?.factoryId, lineId: input?.lineId, phamVi: phamViCua(ctx) });
     }),
 
   applyScheduleRun: adminProcedure
@@ -616,14 +650,14 @@ export const productionOrderRouter = router({
       lineId: z.number().optional(),
       limit: z.number().int().min(1).max(500).optional(),
     }).optional())
-    .query(async ({ input }) => {
-      return db.listScheduleRuns(input);
+    .query(async ({ input, ctx }) => {
+      return db.listScheduleRuns(input, phamViCua(ctx));
     }),
 
   getScheduleRun: protectedProcedure
     .input(z.object({ id: z.number() }))
-    .query(async ({ input }) => {
-      return db.getScheduleRunById(input.id);
+    .query(async ({ input, ctx }) => {
+      return db.getScheduleRunById(input.id, phamViCua(ctx));
     }),
 
   // Read-only what-if: simulate a disruption on one line.
@@ -729,14 +763,14 @@ async function buildMaintenanceBlackouts(
 export const lineStageRouter = router({
   list: protectedProcedure
     .input(z.object({ lineId: z.number().optional() }).optional())
-    .query(async ({ input }) => {
-      return db.getLineStages(input?.lineId);
+    .query(async ({ input, ctx }) => {
+      return db.getLineStages(input?.lineId, phamViCua(ctx));
     }),
 
   getById: protectedProcedure
     .input(z.object({ id: z.number() }))
-    .query(async ({ input }) => {
-      return db.getLineStageById(input.id);
+    .query(async ({ input, ctx }) => {
+      return db.getLineStageById(input.id, phamViCua(ctx));
     }),
 
   create: writeProcedure.use(requirePermission("settings_factory", "canCreate"))
@@ -798,8 +832,8 @@ export const lineProductAssignmentRouter = router({
       productionOrderId: z.number().optional(),
       isActive: z.boolean().optional(),
     }).optional())
-    .query(async ({ input }) => {
-      return db.getLineProductAssignments(input);
+    .query(async ({ input, ctx }) => {
+      return db.getLineProductAssignments(input, phamViCua(ctx));
     }),
 
   create: writeProcedure.use(requirePermission("production_line_assignments", "canCreate"))

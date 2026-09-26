@@ -4,12 +4,14 @@
  */
 
 import { useState, useRef, useEffect } from "react";
+import { useTranslation } from "react-i18next";
 import { trpc } from "@/lib/trpc";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
 import { ScrollArea } from "@/components/ui/scroll-area";
+import { mapTrpcError } from "@/lib/trpcErrors";
 import {
   Send,
   Loader2,
@@ -27,19 +29,19 @@ import Markdown from "react-markdown";
 
 // Gợi ý câu hỏi nhanh theo chủ đề
 const QUICK_QUESTIONS = [
-  { label: "📋 Xem báo cáo lỗi", question: "Làm thế nào để xem báo cáo lỗi AOI?" },
-  { label: "⚙️ Cài đặt máy", question: "Cách cấu hình thông số máy kiểm tra?" },
-  { label: "📦 Thêm sản phẩm", question: "Cách thêm sản phẩm hoặc chương trình kiểm tra mới?" },
-  { label: "🔍 Kết quả kiểm tra", question: "Làm sao xem kết quả kiểm tra của lô hàng?" },
-  { label: "📊 Xuất dữ liệu", question: "Cách xuất dữ liệu kiểm tra ra file?" },
-  { label: "🔔 Cài báo động", question: "Làm sao cài đặt cảnh báo khi tỷ lệ lỗi cao?" },
+  { label: "aiKb.quick.xemBaoCaoLoi.label", question: "aiKb.quick.xemBaoCaoLoi.question" },
+  { label: "aiKb.quick.caiDatMay.label", question: "aiKb.quick.caiDatMay.question" },
+  { label: "aiKb.quick.themSanPham.label", question: "aiKb.quick.themSanPham.question" },
+  { label: "aiKb.quick.ketQuaKiemTra.label", question: "aiKb.quick.ketQuaKiemTra.question" },
+  { label: "aiKb.quick.xuatDuLieu.label", question: "aiKb.quick.xuatDuLieu.question" },
+  { label: "aiKb.quick.caiBaoDong.label", question: "aiKb.quick.caiBaoDong.question" },
 ];
 
 function getConfidenceLabel(score: number) {
-  if (score >= 0.8) return { label: "Rất phù hợp", color: "text-green-600", icon: "✅" };
-  if (score >= 0.6) return { label: "Khá phù hợp", color: "text-blue-600", icon: "👍" };
-  if (score >= 0.4) return { label: "Có thể hữu ích", color: "text-amber-600", icon: "💡" };
-  return { label: "Tham khảo thêm", color: "text-gray-500", icon: "📖" };
+  if (score >= 0.8) return { label: "aiKb.confidence.ratPhuHop", color: "text-green-600", icon: "✅" };
+  if (score >= 0.6) return { label: "aiKb.confidence.khaPhuHop", color: "text-blue-600", icon: "👍" };
+  if (score >= 0.4) return { label: "aiKb.confidence.coTheHuuIch", color: "text-amber-600", icon: "💡" };
+  return { label: "aiKb.confidence.thamKhaoThem", color: "text-gray-500", icon: "📖" };
 }
 
 interface ChatMessage {
@@ -51,6 +53,7 @@ interface ChatMessage {
 }
 
 export function AILocalKnowledgeBase() {
+  const { t } = useTranslation();
   const [question, setQuestion] = useState("");
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [showSources, setShowSources] = useState<string | null>(null);
@@ -71,7 +74,7 @@ export function AILocalKnowledgeBase() {
     const query = (q ?? question).trim();
     if (!query) return;
     if (!isReady) {
-      toast.error("Hệ thống chưa sẵn sàng. Vui lòng thử lại sau.");
+      toast.error(t("aILocalKnowledgeBase.heThongChuaSanSang", "Hệ thống chưa sẵn sàng. Vui lòng thử lại sau."));
       return;
     }
 
@@ -90,16 +93,16 @@ export function AILocalKnowledgeBase() {
           {
             id: (Date.now() + 1).toString(),
             type: "assistant",
-            content: data.answer || "Tôi không tìm thấy thông tin phù hợp. Vui lòng thử diễn đạt câu hỏi theo cách khác.",
+            content: data.answer || t("aILocalKnowledgeBase.toiKhongTimThayThong", "Tôi không tìm thấy thông tin phù hợp. Vui lòng thử diễn đạt câu hỏi theo cách khác."),
             timestamp: new Date(),
             result: data,
           },
         ]);
       } else {
-        toast.error(result.error || "Không lấy được câu trả lời.");
+        toast.error(result.error || t("aILocalKnowledgeBase.khongLayDuocCauTra", "Không lấy được câu trả lời."));
       }
     } catch (error: any) {
-      toast.error(error.message || "Có lỗi xảy ra, vui lòng thử lại.");
+      toast.error(mapTrpcError(error));
     }
   };
 
@@ -107,12 +110,12 @@ export function AILocalKnowledgeBase() {
     try {
       const result = await reloadMutation.mutateAsync();
       if (result.success) {
-        toast.success("Cập nhật dữ liệu thành công!");
+        toast.success(t("aILocalKnowledgeBase.capNhatDuLieuThanh", "Cập nhật dữ liệu thành công!"));
       } else {
-        toast.error(result.error || "Cập nhật thất bại.");
+        toast.error(result.error || t("aILocalKnowledgeBase.capNhatThatBai", "Cập nhật thất bại."));
       }
     } catch (error: any) {
-      toast.error(error.message || "Có lỗi xảy ra.");
+      toast.error(mapTrpcError(error));
     }
   };
 
@@ -155,7 +158,7 @@ export function AILocalKnowledgeBase() {
               <div className="h-14 w-14 rounded-2xl bg-primary/10 flex items-center justify-center">
                 <Sparkles className="h-7 w-7 text-primary" />
               </div>
-              <p className="font-semibold text-base">Xin chào! Tôi có thể giúp gì cho bạn?</p>
+              <p className="font-semibold text-base">{t("aiLocalKb.xinChaoToiCoThe", "Xin chào! Tôi có thể giúp gì cho bạn?")}</p>
               <p className="text-sm text-muted-foreground max-w-sm">
                 Hỏi tôi về cách sử dụng hệ thống, xem báo cáo, cài đặt máy móc, hay bất kỳ thắc mắc nào về nhà máy.
               </p>
@@ -172,10 +175,10 @@ export function AILocalKnowledgeBase() {
                     variant="outline"
                     size="sm"
                     className="text-xs h-8 rounded-full"
-                    onClick={() => handleAsk(q.question)}
+                    onClick={() => handleAsk(t(q.question))}
                     disabled={!isReady}
                   >
-                    {q.label}
+                    {t(q.label)}
                   </Button>
                 ))}
               </div>
@@ -217,7 +220,7 @@ export function AILocalKnowledgeBase() {
                             const conf = getConfidenceLabel(msg.result.confidence ?? 0);
                             return (
                               <span className={cn("text-xs flex items-center gap-1", conf.color)}>
-                                {conf.icon} {conf.label}
+                                {conf.icon} {t(conf.label)}
                               </span>
                             );
                           })()}
@@ -233,13 +236,13 @@ export function AILocalKnowledgeBase() {
                             </Button>
                           )}
                           {msg.result.cached && (
-                            <Badge variant="secondary" className="text-xs h-5">Đã lưu cache</Badge>
+                            <Badge variant="secondary" className="text-xs h-5">{t("aiLocalKb.daLuuCache", "Đã lưu cache")}</Badge>
                           )}
                         </div>
                       )}
                       {showSources === msg.id && msg.result?.citations?.length > 0 && (
                         <div className="space-y-1.5 pt-2 border-t border-border/30">
-                          <p className="text-xs text-muted-foreground font-medium">Tài liệu tham khảo:</p>
+                          <p className="text-xs text-muted-foreground font-medium">{t("aiLocalKb.taiLieuThamKhao", "Tài liệu tham khảo:")}</p>
                           {msg.result.citations.slice(0, 3).map((cite: any, i: number) => (
                             <div key={i} className="flex items-start gap-2 text-xs text-muted-foreground bg-background/60 rounded-lg p-2">
                               <span className="shrink-0 font-semibold text-primary">{i + 1}.</span>
@@ -284,10 +287,10 @@ export function AILocalKnowledgeBase() {
                 variant="outline"
                 size="sm"
                 className="text-xs h-7 rounded-full shrink-0"
-                onClick={() => handleAsk(q.question)}
+                onClick={() => handleAsk(t(q.question))}
                 disabled={!isReady}
               >
-                {q.label}
+                {t(q.label)}
               </Button>
             ))}
           </div>
@@ -301,8 +304,8 @@ export function AILocalKnowledgeBase() {
             <Textarea
               placeholder={
                 isReady
-                  ? "Nhập câu hỏi của bạn... (Enter để gửi)"
-                  : "Hệ thống đang khởi động, vui lòng chờ..."
+                  ? t("aILocalKnowledgeBase.nhapCauHoiCuaBan", "Nhập câu hỏi của bạn... (Enter để gửi)")
+                  : t("aILocalKnowledgeBase.heThongDangKhoiDong", "Hệ thống đang khởi động, vui lòng chờ...")
               }
               value={question}
               onChange={(e) => setQuestion(e.target.value)}
@@ -333,7 +336,7 @@ export function AILocalKnowledgeBase() {
         <div className="flex items-center gap-3 p-3 rounded-xl bg-amber-50 border border-amber-200 text-sm">
           <AlertCircle className="size-4 text-amber-600 shrink-0" />
           <p className="text-amber-800">
-            Dữ liệu chưa được tải. Nhấn <strong>Làm mới</strong> ở trên để khởi động lại.
+            Dữ liệu chưa được tải. Nhấn <strong>{t("aiLocalKb.lamMoi", "Làm mới")}</strong> ở trên để khởi động lại.
           </p>
         </div>
       )}

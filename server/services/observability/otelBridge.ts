@@ -99,6 +99,8 @@ export async function withSpan<T>(name: string, ctx: SpanCtx | undefined, fn: ()
       return out;
     } catch (err: any) {
       span.recordException?.(err);
+      // data-raw-ok: thuộc tính SPAN OpenTelemetry. Đích đến là hệ thu thập trace
+      // (Jaeger/Tempo), không phải màn hình. Dịch là làm bẩn dữ liệu quan trắc.
       span.setStatus({ code: STATUS_ERROR, message: err?.message });
       throw err;
     } finally {

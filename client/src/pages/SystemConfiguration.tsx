@@ -8,6 +8,7 @@ import { Switch } from "@/components/ui/switch";
 import { Label } from "@/components/ui/label";
 import { Skeleton } from "@/components/ui/skeleton";
 import { toast } from "sonner";
+import { mapTrpcError } from "@/lib/trpcErrors";
 import { trpc } from "@/lib/trpc";
 import { Settings, RefreshCw, AlertTriangle, CheckCircle2, Power } from "lucide-react";
 
@@ -24,7 +25,7 @@ export function SystemConfigContent() {
       refetch();
     },
     onError: (error) => {
-      toast.error(`${t('admin.configUpdateError')}: ${error.message}`);
+      toast.error(t('admin.configUpdateError'), { description: mapTrpcError(error) });
     },
   });
 

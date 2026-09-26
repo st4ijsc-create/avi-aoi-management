@@ -1,0 +1,2137 @@
+/**
+ * Bảng trò chuyện AI Local.
+ *
+ * ĐỢT A: chỉ đọc. ĐỢT B: mở đường DUYỆT & GHI cho chế độ SERVER — máy chủ đề xuất sửa tệp, người
+ * dùng bấm Duyệt, MÁY CHỦ ghi byte vào hộp cát của nó. ĐỢT C: mở đường ghi CỤC BỘ cho chế độ LOCAL
+ * — đề xuất đến từ VĂN BẢN model (`loi/deXuatCucBo.ts`), người dùng bấm "Ghi vào workspace", và
+ * EXTENSION ghi byte vào máy lập trình viên qua `ui/apBanVa.ts`.
+ *
+ * ⚠⚠⚠ KHÔNG ĐƯỜNG CHÉO (spec §7). Tệp này giữ HAI đường tách bạch, và mỗi đường có hàng rào ở CẢ
+ * lúc hiện thẻ LẪN lúc bấm nút:
+ *   · chế độ SERVER ⇒ `deXuatHienTai` (`DeXuatGhi` từ SSE) ⇒ `goiDuyet`/`goiHuy` ⇒ máy chủ ghi.
+ *     **KHÔNG BAO GIỜ** đi qua `apBanVa` — bảng này không chạm đĩa ở đường SERVER.
+ *   · chế độ LOCAL  ⇒ `deXuatCucBoHienTai` (`DeXuatCucBo` từ văn bản) ⇒ `apBanVa` ⇒ extension ghi.
+ *     **KHÔNG BAO GIỜ** gọi cửa duyệt của máy chủ — không có hàng HITL nào trên đó để duyệt.
+ * Hai bất biến đó có census đếm (`loi/census.unit.test.ts`: đúng MỘT điểm ghi đĩa cục bộ, đúng MỘT
+ * nơi gọi cửa duyệt SERVER).
+ */
+import * as vscode from "vscode";
+import { randomBytes, randomUUID } from "node:crypto";
+import { existsSync } from "node:fs";
+import { dungHtmlBang } from "./htmlBang";
+import { dungNguCanh } from "../loi/nguCanh";
+import { dungYeuCauStream, type CheDoDuAn, type LuotChat } from "../loi/yeuCau";
+import { moDongSse } from "../mang/dongSse";
+import { KHOA_COOKIE, KHOA_TEN_TAI_KHOAN } from "../loi/dangNhap";
+import { gopDanhSachDuAn, type MucDuAn } from "../loi/duAn";
+import { goiTruyVanTrpc } from "../mang/trpc";
+import { laLoi401 } from "../loi/loiHttp";
+// ★★★ ĐỢT G / TASK G4 / B3 — vị từ THUẦN phân loại "lỗi mạng, KHÔNG NỐI ĐƯỢC MÁY CHỦ" (đọc tín hiệu
+// `.cause.code` của undici, KHÔNG so hình dạng chuỗi `e.message` — xem docblock nguồn cho lý do và
+// phép đo thật). CHỈ khi vị từ này đúng mới được gợi ý đổi `aviAiLocal.serverUrl` — 401/403/500 là
+// đáp ứng THẬT từ máy chủ (NHÁNH KIA của B3) và không được ăn theo gợi ý này.
+import { laLoiKhongNoiDuocMayChu, moTaLoiKhongNoiDuocMayChu } from "../loi/loiKetNoiMayChu";
+import { trangThaiBanDau, apDungSuKienChat, ketLuanLuotChat } from "../loi/suKienChat";
+import { docDeXuatGhi, laTaoTepMoi, type DeXuatGhi } from "../loi/deXuatGhi";
+import { tomTatDiff } from "../loi/tomTatDiff";
+import { coDuocHienTheDuyet, suyCheDo } from "../loi/kiemTraCheDo";
+import { goiDuyet, goiHuy, daBiTuChoiGhi, maTuChoiGhi } from "../mang/duyetGhi";
+import type { KhoDeXuat } from "./diffDeXuat";
+import { docDeXuatCucBo, type DeXuatCucBo } from "../loi/deXuatCucBo";
+import { ghepBanVa } from "../loi/ghepBanVa";
+import { bamNoiDung } from "../loi/bamTep";
+import { duocPhepGhi, duongTuongDoiTrongWorkspace, giaiDuongDeXuat } from "../loi/chanGhi";
+import { giaiDuongThat } from "../loi/duongThat";
+import { nhanNguonTheDuyet, nhanNutGhi } from "../loi/nhanTheDuyet";
+import { apBanVa } from "./apBanVa";
+// ★★★ ĐỢT D / TASK 3 — vòng lặp tác nhân: model tự đọc mã (ba tool CHỈ ĐỌC của Task 2) TRƯỚC khi
+// đề xuất sửa. `buocKeTiep` (THUẦN, có lưới riêng) là nơi quyết định DUY NHẤT dừng/tiếp; tệp này
+// chỉ THỰC THI quyết định đó (gọi model, chạy tool, hiện tiến độ) — xem docblock `vongTacNhan.ts`.
+import { docYeuCauDoc, type YeuCauDoc } from "../loi/yeuCauDoc";
+import { chayToolCucBo, danhSachTepGoiY } from "../mang/toolCucBo";
+import { buocKeTiep } from "../loi/vongTacNhan";
+// ★★★ ĐỢT H / TASK H2 — vòng tác nhân gọi thêm MCP server ngoài. `docYeuCauMcpNgoai` dùng CHUNG
+// `tachKhoiAviTool` với `docYeuCauDoc` (không chép regex hàng rào — xem `loi/yeuCauMcp.ts`).
+// `goiToolMcpNgoai` LUÔN trả một chuỗi ĐÃ ĐI QUA `dinhDangKetQuaMcpNgoai` (che bí mật + vô hiệu hoá
+// avi-tool giả mạo + cắt theo trần, B3+B4) — TUYỆT ĐỐI không có nhánh nào ở đây được phép ghép
+// nguyên văn kết quả MCP vào `cauHoiVong` mà bỏ qua hàm đó.
+import { docYeuCauMcpNgoai, type YeuCauMcp } from "../loi/yeuCauMcp";
+import { goiToolMcpNgoai, dsToolMcpDangCoSan, phuThuocThat } from "../mang/mcpDieuPhoi";
+import { TRAN_VONG_MAC_DINH } from "../../../shared/aiCodingLoop";
+// ★★★ PDCA vòng 2 — thay JSON thô bằng câu tiếng Việt khi vòng lặp dừng vì het_tran giữa lúc còn
+// khối `avi-tool` dở dang (T09, `pdca1-report.md`). Xem docblock `khoiDoDang.ts`.
+import { vanBanHetTranConDoDang } from "../loi/khoiDoDang";
+// ★★★ PDCA vòng 2 (round 2, `pdca3-report.md`) — MỞ RỘNG bản vá trên: không chỉ khối DỞ DANG ở
+// vòng CUỐI, mà khối ĐÃ THỰC THI ở BẤT KỲ vòng nào trước đó cũng phải bị lọc khỏi văn bản người
+// dùng THẤY (webview tích luỹ token của MỌI vòng, không riêng vòng cuối). Xem docblock
+// `xoaRacGiaoThuc.ts`.
+import { vanBanKhongRacGiaoThuc } from "../loi/xoaRacGiaoThuc";
+// ★★★ PDCA vòng 4 (round 4, `pdca5-report.md`) — vòng tool VẬN HÀNH của máy chủ (hoàn toàn ĐỘC LẬP
+// với giao thức `avi-tool` ở trên) chạy NHẦM trên câu hỏi đã được dạy giao thức (đo LIVE: bất kỳ đoạn
+// dạy nào, kể cả một câu 403 ký tự không kèm ví dụ, cũng đủ), rồi DÁN một dòng trích dẫn tool THẬT
+// (`get_ng_compare`, `read_file`…) vào cuối câu trả lời — 9/11 tác vụ vòng 3 dính, kể cả các tác vụ
+// đang ĐẠT. Không vá được gốc rễ (nằm ở máy chủ, xem docblock); lọc HẬU QUẢ hiển thị là an toàn vì
+// hai mẫu văn bản này CHỈ do `server/services/ai/dataCitation.ts` phát ra. Xem `xoaTrichDanToolLa.ts`.
+import { vanBanKhongTrichDanToolLa } from "../loi/xoaTrichDanToolLa";
+// ★★★ ĐỢT D / TASK 5 — @-mention: gõ "@" trong ô nhập, chọn một tệp, tệp đó được đọc qua ĐÚNG
+// đường tool `doc_tep` (Task 2/3) — không dựng một đường đọc riêng. `locDanhSachMention` (THUẦN)
+// lọc danh sách theo chữ đang gõ; xem docblock của nó cho vì sao KHÔNG chạm ký tự `@`.
+import { locDanhSachMention } from "../loi/locMention";
+// ★★★ ĐỢT F / TASK 2 — lưu hội thoại BỀN qua `context.workspaceState`. `khoHoiThoai.ts` (THUẦN,
+// không biết `vscode`) chỉ biết lưu/đọc; tệp này bơm một `KhoLuuTruTho` bọc quanh `workspaceState`
+// (xem `khoHoiThoaiTho()`) và là nơi DUY NHẤT quyết định LÚC NÀO lưu/khôi phục — không nhân bản
+// logic chat vào tệp kia.
+import {
+  luuHoiThoai,
+  docHoiThoaiGanNhat,
+  docDanhSachHoiThoai,
+  dungHoiThoai,
+  hoiThoaiSapBiCat,
+  TRAN_SO_HOI_THOAI,
+  TRAN_TONG_KY_TU,
+  type KhoLuuTruTho,
+  type HoiThoai,
+} from "../loi/khoHoiThoai";
+// ★★★ ĐỢT G / TASK G3 — ba mức quyền (chế độ tự trị). Vị từ THUẦN sống ở `loi/mucQuyen.ts`; tệp
+// này CHỈ đọc/ghi `workspaceState` (RANH GIỚI DUY NHẤT nơi `vscode` chạm vào lớp lưu trữ, cùng
+// khuôn `khoHoiThoaiTho()`) và gọi lại ĐÚNG hai hàm `duocPhepGhiTheoMucQuyen`/`boQuaBuocHoi` mà
+// `ui/apBanVa.ts` (HÀNG RÀO THẬT, BƯỚC 0) cũng gọi — không một bản quyết định thứ hai nào ở đây.
+import {
+  MUC_QUYEN_MAC_DINH,
+  KHOA_MUC_QUYEN,
+  chuanHoaMucQuyen,
+  laMucQuyenHopLe,
+  duocPhepGhiTheoMucQuyen,
+  boQuaBuocHoi,
+  type MucQuyen,
+} from "../loi/mucQuyen";
+// ★★★ ĐỢT H / TASK H3 — bộ nhớ dài hạn. `khoBoNho.ts` (THUẦN) chỉ biết lưu/đọc/xoá; tệp này CHỈ đọc
+// mục nhớ để đính vào câu hỏi (B4: đi thẳng vào `question` GỬI ĐI qua `dungYeuCauStream`, KHÔNG BAO
+// GIỜ đọc lại bằng `docYeuCauDoc`/`docDeXuatCucBo`) và xử lý đề xuất nhớ AI phát ra (`docDeXuatNho`,
+// CHỈ quét `traLoiCuoi` — văn bản model TỰ SINH, cùng nguyên tắc H2 đã dựng cho `docYeuCauDoc`).
+import { docDanhSachBoNho, themMucBoNho } from "../loi/khoBoNho";
+import { docDeXuatNho } from "../loi/deXuatNho";
+import { dungKhoWorkspaceState } from "./khoWorkspaceState";
+// ★★★ ĐỢT M — chạy lệnh trên máy lập trình viên. `docYeuCauLenh` CHỈ quét `traLoiCuoi` (văn bản
+// model TỰ SINH — cùng ranh giới `docYeuCauDoc`/`docYeuCauMcpNgoai`); `xetDuyetLenh` (THUẦN, M1) là
+// CỬA DUY NHẤT quyết định một chuỗi lệnh có khớp allowlist không; `chayLenhCucBo` (M2) là LỚP I/O
+// spawn thật, tái dùng khuôn `mang/mcpClient.ts`; `dinhDangKetQuaLenh` (M3) che bí mật + vô hiệu hoá
+// khối avi-tool giả trong output TRƯỚC khi nối vào ngữ cảnh.
+import { docYeuCauLenh } from "../loi/docYeuCauLenh";
+import { xetDuyetLenh, TRAN_MS_THEO_LENH, type LenhDaDuyet } from "../loi/lenhChoPhep";
+import { chayLenhCucBo } from "../mang/chayLenhCucBo";
+import { dinhDangKetQuaLenh } from "../loi/dinhDangKetQuaLenh";
+
+/** Đề xuất ghi CỤC BỘ đang chờ duyệt + mọi thứ đã ĐO tại thời điểm dựng thẻ (không đo lại lúc bấm,
+ *  trừ băm đĩa — băm PHẢI đo lại trong `apBanVa` vì đó chính là phép chống xung đột). */
+interface DeXuatCucBoDangCho {
+  actionId: string;
+  deXuat: DeXuatCucBo;
+  duongTuyetDoi: string;
+  duongTuongDoi: string;
+  /** Băm nội dung ĐĨA lúc dựng thẻ — đúng bản người dùng nhìn thấy ở phía trái diff. */
+  bamGoc: string;
+  /** Nội dung sau khi ghép, dùng cho phía phải của diff và để người dùng xem trước. */
+  moi: string;
+  thuMucWorkspace: string;
+  them: number;
+  bot: number;
+}
+
+/** ★★★ ĐỢT M — yêu cầu chạy lệnh đang chờ duyệt. CÙNG VAI TRÒ `DeXuatCucBoDangCho` (thẻ duyệt riêng,
+ *  không dùng chung state với đề xuất GHI TỆP — hai thứ độc lập, `quenLenhCucBo` chỉ xoá trường này). */
+interface LenhCucBoDangCho {
+  actionId: string;
+  lenh: LenhDaDuyet;
+  /** Thư mục workspace SẼ LÀ `cwd` của tiến trình con — chốt lúc dựng thẻ, dùng lại nguyên vẹn lúc
+   *  chạy thật (không đọc lại `workspaceFolders` lúc bấm — nếu workspace đổi giữa chừng, tốt hơn là
+   *  chạy đúng cái đã hiện trên thẻ hơn là một thư mục người dùng chưa từng thấy tên). */
+  cwd: string;
+}
+
+/**
+ * Nonce cho CSP của webview. Dùng CSPRNG chứ không `Math.random()`: nonce là thứ CSP dựa vào để
+ * quyết định script nào được phép chạy — đoán được nonce là làm yếu chính hàng rào đó.
+ */
+function chuoiNgauNhien(): string {
+  return randomBytes(24).toString("base64url");
+}
+
+/** Nhãn NGƯỜI ĐỌC ĐƯỢC cho một yêu cầu đọc — dùng để báo tiến độ "đang làm gì" (Task 3). */
+function nhanYeuCauDoc(y: YeuCauDoc): string {
+  if (y.loai === "doc_tep") return `đọc tệp "${y.path}"`;
+  if (y.loai === "liet_ke") return `liệt kê thư mục "${y.path}"`;
+  return y.path ? `tìm "${y.mau}" trong "${y.path}"` : `tìm "${y.mau}"`;
+}
+
+/** ★★★ ĐỢT H / TASK H2 — cùng vai trò với `nhanYeuCauDoc`, cho một yêu cầu gọi tool MCP ngoài. */
+function nhanYeuCauMcpNgoai(y: YeuCauMcp): string {
+  return `gọi tool "${y.tool}" trên MCP server "${y.server}"`;
+}
+
+
+/**
+ * Câu báo khi vòng lặp tác nhân DỪNG vì một lý do KHÔNG PHẢI "xong việc bình thường". `khong_con_tool`
+ * (model trả lời suông, hết yêu cầu đọc) KHÔNG có câu — đó là đường hạnh phúc, báo thêm là làm ồn
+ * cho một việc đúng như mong đợi.
+ *
+ * ★★★ TASK 4 — hàm này giờ được gọi từ HAI nơi cho `lyDo === "nguoi_dung_dung"`: (1) huỷ GIỮA HAI
+ * vòng — `biHuy` được `buocKeTiep` đọc SAU khi một lượt SSE đã đóng bình thường (chỉ ở LOCAL); (2)
+ * huỷ GIỮA MỘT vòng đang bay — `AbortError` bắt ở `catch` ngoài của `hoi()` (có thể ở CẢ LOCAL lẫn
+ * SERVER, xem đó). Cả hai đường đều phải NÓI RÕ dừng ở vòng mấy — bản cũ chỉ nói "Đã dừng vòng đọc
+ * tự động theo yêu cầu." không kèm số vòng, đủ cho ca (1) (chỉ có một cách hiểu) nhưng KHÔNG đủ cho
+ * ca (2) (người dùng không biết model đã kịp đọc xong bao nhiêu lượt trước khi bị cắt).
+ */
+function nhanLyDoDungVong(lyDo: "het_tran" | "nguoi_dung_dung" | "loi", vong: number): string {
+  if (lyDo === "het_tran") {
+    return (
+      `Vòng đọc tự động dừng ở lượt ${vong}/${TRAN_VONG_MAC_DINH} vì đã chạm trần — model có thể ` +
+      "vẫn còn muốn đọc thêm. Hỏi lại nếu cần tiếp tục."
+    );
+  }
+  if (lyDo === "nguoi_dung_dung") return `Đã dừng theo yêu cầu — ở vòng ${vong}.`;
+  return `Vòng đọc tự động dừng ở lượt ${vong}/${TRAN_VONG_MAC_DINH} vì máy chủ báo lỗi giữa chừng.`;
+}
+
+/**
+ * ★★★ TASK 4 — lý do huỷ khi CHÍNH người dùng bấm nút Dừng, gắn vào `AbortController.abort(reason)`.
+ * Khác với huỷ NGẦM ở đầu `hoi()` (một câu hỏi MỚI đè lên câu cũ, `this.huy?.abort()` KHÔNG kèm lý
+ * do) — `catch` của `hoi()` đọc `reason` này để quyết định có báo "đã dừng" cho người dùng hay
+ * không: huỷ ngầm vì câu hỏi mới không phải một lượt DỪNG, báo ở đó là bong bóng lạc giữa một câu
+ * hỏi hoàn toàn khác (đúng lớp lỗi Đợt A đã trả giá — xem docblock ở `catch` bên dưới).
+ * Trùng chữ CÓ CHỦ Ý với `lyDo: "nguoi_dung_dung"` của `BuocVong` (`vongTacNhan.ts`) — một từ vựng
+ * DUY NHẤT cho "người dùng chủ động dừng", dùng ở cả quyết định vòng lặp lẫn quyết định thực thi.
+ */
+const LY_DO_NGUOI_DUNG_DUNG = "nguoi_dung_dung";
+
+/**
+ * ★★★ THANH BÊN — bề mặt webview TỐI THIỂU `BangChat` cần từ vật chứa của nó. `vscode.WebviewPanel`
+ * (bảng nổi, đường lệnh `aviAiLocal.moBangChat`/Ctrl+Alt+K CŨ) và `vscode.WebviewView` (khung trong
+ * thanh hoạt động, đường MỚI) đều khớp CẤU TRÚC này (TypeScript so cấu trúc, không so tên kiểu) —
+ * nên toàn bộ logic bên dưới (400+ dòng: hỏi/đáp, thẻ duyệt, @-mention, Cmd+K...) dùng CHUNG một
+ * lớp cho cả hai bề mặt. TUYỆT ĐỐI KHÔNG chép lớp này thành một bản thứ hai cho `WebviewView` — dự
+ * án đã trả giá nhiều lần cho hai bản sao của một sự thật (xem MEMORY, đợt PDCA vòng 1).
+ *
+ * Hai bề mặt CHỈ khác nhau ở cách "làm nó hiện lên" (`WebviewPanel.reveal()` vs `WebviewView.show()`)
+ * — đó là lý do có `lamHienRo` riêng trong constructor thay vì gọi thẳng một phương thức chung.
+ */
+interface VatChuaChat {
+  readonly webview: vscode.Webview;
+  readonly onDidDispose: vscode.Event<void>;
+}
+
+/** ★★★ TASK 3 — một mục QuickPick của "Lịch sử", mang theo NGUYÊN VẸN `HoiThoai` nó đại diện (đọc
+ *  lại lúc CHỌN thay vì đọc theo chỉ số/mã trong một danh sách có thể đã đổi giữa lúc mở QuickPick
+ *  và lúc bấm chọn — VSCode không đảm bảo thứ tự chọn tới NGAY sau khi liệt kê xong). */
+interface MucLichSu extends vscode.QuickPickItem {
+  hoiThoai: HoiThoai;
+}
+
+export class BangChat {
+  private static hienTai: BangChat | undefined;
+  // ★★★ TASK 3 — instance ĐANG SỐNG của khung THANH BÊN (khác `hienTai`, singleton của bảng NỔI
+  // CŨ). Hai nút "Chat mới"/"Lịch sử" ở `view/title` (`extension.ts`) cần một cách để tìm ĐÚNG
+  // instance đang hiển thị trong thanh hoạt động — đây là nơi DUY NHẤT giữ tham chiếu đó.
+  private static thanhBenHienTai: BangChat | undefined;
+  private lichSu: LuotChat[] = [];
+  // ★★★ ĐỢT F / TASK 2 — mã ĐỊNH DANH của hội thoại đang mở trong `workspaceState`. `undefined`
+  // nghĩa là "chưa từng lưu lượt nào của hội thoại NÀY" — `luuHoiThoaiHienTai()` tự sinh một mã
+  // MỚI ở lần lưu ĐẦU TIÊN, còn `khoiPhucHoiThoaiGanNhat()` gán LẠI mã của bản ghi đã đọc được, để
+  // các lượt lưu SAU đó UPSERT tiếp vào ĐÚNG hội thoại vừa khôi phục thay vì đẻ ra một bản ghi mới
+  // — nếu không, mỗi lần mở lại VSCode sẽ sinh thêm một hội thoại "mới" dù người dùng chỉ tiếp tục
+  // đúng một cuộc trò chuyện, nhanh chóng chiếm hết trần B3 bằng các mảnh vỡ của CÙNG một hội thoại.
+  private maHoiThoaiHienTai: string | undefined;
+  private huy: AbortController | undefined;
+  private dsDuAn: MucDuAn[] = [];
+  private duAnChon: string | undefined;
+  // CHẾ ĐỘ của lượt hỏi đang chạy — chốt lại khi `hoi()` bắt đầu để `nhan` (callback SSE của CÙNG
+  // lượt đó) biết mình đang ở LOCAL hay SERVER lúc quyết định có hiện thẻ duyệt hay không. Đọc lại
+  // `this.duAnChon`/`this.dsDuAn` lúc SSE tới có thể đã lệch nếu người dùng đổi ô chọn giữa chừng.
+  private cheDoHoiHienTai: CheDoDuAn | undefined;
+  // Thư mục workspace của lượt hỏi LOCAL đang chạy — chốt cùng lúc với `cheDoHoiHienTai` và vì cùng
+  // một lý do: đề xuất đọc được lúc lượt hỏi KẾT THÚC phải neo vào thư mục lúc nó BẮT ĐẦU, chứ
+  // không phải ô chọn hiện tại (người dùng có thể đã đổi giữa chừng).
+  private thuMucHoiHienTai: string | undefined;
+  // Đề xuất ghi đang chờ duyệt (nếu có) + nhãn nguồn của nó, dùng chung cho ba tin nhắn webview
+  // gửi lại: "xem_diff" / "duyet" / "huy". Giữ TỐI ĐA một đề xuất tại một thời điểm — và tối đa
+  // MỘT TRONG HAI loại: hai trường dưới đây KHÔNG BAO GIỜ cùng khác `undefined` (mỗi lượt hỏi chỉ
+  // ở một chế độ, và `quenDeXuat` xoá cả hai).
+  private deXuatHienTai: DeXuatGhi | undefined;
+  private deXuatCucBoHienTai: DeXuatCucBoDangCho | undefined;
+  private nhanNguonHienTai: string | undefined;
+  // ★★★ ĐỢT M — yêu cầu CHẠY LỆNH đang chờ duyệt. Thẻ RIÊNG (webview `loai:"the_duyet_lenh"`),
+  // KHÔNG dùng chung `the_duyet`/`deXuatCucBoHienTai`: chạy lệnh và ghi tệp là hai loại hành động
+  // khác hẳn nhau (một cái đọc/kiểm tra, một cái đổi byte trên đĩa) và người dùng cần phân biệt
+  // NGAY trên mặt chữ đang nhìn — trộn chung một thẻ dễ khiến người bấm tưởng nhầm loại hành động.
+  private lenhCucBoHienTai: LenhCucBoDangCho | undefined;
+  // ★★★ CMD+K (Task 7) — cờ + hàng đợi cho `guiCauHoiTuLenh`. `daSanSang` bật NGAY khi webview báo
+  // "san_sang" (tức đã đăng ký `addEventListener("message", …)" — xem cảnh báo đua ở constructor
+  // dưới đây), KHÔNG đợi `napDuAn()` xong: đó là hai việc khác nhau (webview nhận được postMessage
+  // vs. danh sách dự án đã nạp). Một câu hỏi bắn tới TRƯỚC khi báo "san_sang" (bảng vừa được tạo,
+  // Cmd+K bấm ngay sau khi mở) sẽ rơi mất nếu gửi thẳng — xếp hàng ở đây rồi bắn lại lúc "san_sang".
+  private daSanSang = false;
+  private cauHoiChoGui: string | undefined;
+  // ★★★ TASK 5 — bộ nhớ đệm danh sách tệp gợi ý @-mention CỦA DỰ ÁN ĐANG CHỌN. `undefined` nghĩa là
+  // "chưa nạp" (nạp LƯỜI ở lượt gõ "@" ĐẦU TIÊN, không quét cả workspace ngay lúc mở bảng — quét là
+  // một lượt `findFiles` đệ quy, không đáng trả giá cho một tính năng có thể không ai dùng tới).
+  // Đổi dự án PHẢI xoá bộ nhớ đệm này (xem nhánh `doi_du_an` trong constructor) — danh sách tệp của
+  // dự án CŨ mà hiện ra dropdown của dự án MỚI là gợi ý sai workspace.
+  private dsTepMention: string[] | undefined;
+  // ★★★ ĐỢT G / TASK G3 / B4 — mức quyền HIỆN TẠI của workspace. Khởi ở mặc định AN TOÀN
+  // (`MUC_QUYEN_MAC_DINH`, "hoi_truoc_khi_ghi") NGAY từ khi field được khai — trước cả khi
+  // `napMucQuyen()` (gọi lúc "san_sang") có cơ hội đọc `workspaceState` — cùng lý lẽ "rơi về an
+  // toàn khi chưa biết" đã áp cho `daDangNhap` ở Task 1.
+  private mucQuyenHienTai: MucQuyen = MUC_QUYEN_MAC_DINH;
+
+  private constructor(
+    private readonly panel: VatChuaChat,
+    private readonly context: vscode.ExtensionContext,
+    // Nay ĐÃ được đọc (xemDiff/duyet/huyDeXuat bên dưới) ⇒ `private` biên dịch sạch qua
+    // `noUnusedLocals` (Task 3 phải để public vì lúc đó chưa ai đọc field này).
+    private readonly khoDeXuat: KhoDeXuat,
+    // ★★★ THANH BÊN — `undefined` cho các bề mặt không có khái niệm "làm hiện lên" theo cách khác
+    // với việc VSCode tự quản (không dùng ở nhánh nào hiện tại, nhưng giữ optional để không ép MỌI
+    // nơi gọi constructor phải truyền một hàm rỗng).
+    private readonly lamHienRo?: () => void,
+  ) {
+    this.panel.webview.html = dungHtmlBang({ nonce: chuoiNgauNhien() });
+    this.panel.onDidDispose(() => {
+      this.huy?.abort();
+      // ★★★ THANH BÊN — CHỈ xoá singleton của ĐƯỜNG CŨ (bảng NỔI) nếu CHÍNH instance này là
+      // `hienTai`. Trước khi có bề mặt thứ hai (`WebviewView`), điều kiện này luôn đúng (chỉ một
+      // instance từng tồn tại) nên hành vi CŨ không đổi. Từ khi thêm `choView` (khung thanh bên,
+      // KHÔNG đụng `hienTai`), một instance thanh-bên bị đóng (người dùng ẩn view) mà xoá vô điều
+      // kiện `hienTai` sẽ xoá NHẦM tham chiếu tới một bảng NỔI đang mở — `moHoacHien` lần sau tưởng
+      // chưa có bảng nào, tạo bảng THỨ HAI thay vì hiện lại bảng cũ.
+      if (BangChat.hienTai === this) BangChat.hienTai = undefined;
+      // ★★★ TASK 3 — CÙNG hàng rào: chỉ xoá `thanhBenHienTai` nếu CHÍNH instance này đang giữ chỗ
+      // đó. VSCode có thể resolve LẠI view (đóng/mở view, restart extension host) và tạo một
+      // instance MỚI trước khi instance CŨ kịp dispose — vô điều kiện xoá ở đây sẽ xoá NHẦM tham
+      // chiếu của instance mới, khiến hai nút "Chat mới"/"Lịch sử" mất tác dụng ngay sau khi mở lại.
+      if (BangChat.thanhBenHienTai === this) BangChat.thanhBenHienTai = undefined;
+    });
+    // KHÔNG nạp danh sách dự án ở đây. `postMessage` có thể chạy TRƯỚC khi script trong webview
+    // kịp đăng ký `addEventListener("message", …)` ⇒ danh sách rơi mất mà không có lỗi nào — ô
+    // chọn trống một cách im lặng. Đợi webview tự báo "san_sang" (xem htmlBang.ts) rồi mới nạp.
+    this.panel.webview.onDidReceiveMessage(
+      (m: {
+        loai: string;
+        cauHoi?: string;
+        duAnId?: string;
+        truy?: string;
+        tepMention?: unknown;
+        // ★★★ H3(b) — webview đặt cờ này TRUE khi câu hỏi vừa gửi đến từ `dat_cau_hoi_tu_lenh`
+        // (Cmd+K), xem `htmlBang.ts`. Đây là cách DUY NHẤT `hoi()` biết một lượt hỏi có mang giao
+        // thức Cmd+K hay không — nội dung `cauHoi` tới đây trông giống hệt một câu gõ tay.
+        tuLenh?: unknown;
+        // ★★★ ĐỢT G / TASK G3 / B4 — giá trị THÔ từ ô chọn mức quyền. `unknown` cố ý: webview chỉ
+        // có 3 lựa chọn tĩnh trong `<select>`, nhưng KHÔNG được tin nguyên văn — `datMucQuyen` tự
+        // kiểm bằng `laMucQuyenHopLe` trước khi dùng.
+        mucQuyen?: unknown;
+      }) => {
+      if (m.loai === "san_sang") {
+        this.daSanSang = true;
+        void this.napDuAn();
+        this.guiCauHoiDangCho();
+        // ★★★ ĐỢT F / TASK 1 — phản ánh trạng thái đăng nhập THẬT ngay khi webview vừa mở: cookie
+        // có thể đã tồn tại từ một phiên VSCode TRƯỚC (SecretStorage sống qua nhiều lần mở lại),
+        // nên "san_sang" không được mặc định giữ nguyên markup "chưa đăng nhập" tĩnh của HTML ban
+        // đầu (xem docblock `daDangNhap` ở `htmlBang.ts`).
+        void this.guiTrangThaiDangNhap();
+        // ★★★ ĐỢT F / TASK 2 / B5 — khôi phục hội thoại GẦN NHẤT ngay khi khung vừa mở, để một
+        // VSCode vừa đóng/mở lại không làm mất cuộc trò chuyện đang dở.
+        this.khoiPhucHoiThoaiGanNhat();
+        // ★★★ ĐỢT G / TASK G3 / B4 — nạp mức quyền đã lưu (nếu có) rồi báo cho webview NGAY, để ô
+        // chọn vẽ đúng mức thật thay vì mãi hiện mặc định tĩnh của markup.
+        this.napMucQuyen();
+        void this.panel.webview.postMessage({ loai: "muc_quyen", mucQuyen: this.mucQuyenHienTai });
+        return;
+      }
+      // ★★★ ĐỔI DỰ ÁN ⇒ VỨT ĐỀ XUẤT ĐANG CHỜ. Thẻ duyệt mang nhãn nguồn của dự án nó SINH RA; để
+      // nó sống qua một lần đổi ô chọn là chìa nút "Duyệt & ghi trên SERVER" cho một người đang
+      // nhìn tên dự án KHÁC — đúng loại tai nạn không cứu được mà spec §7 nói tới. Đề xuất cũ vẫn
+      // còn trên máy chủ tới hết TTL và có thể hỏi lại; cái ta bỏ chỉ là CÚ BẤM.
+      if (m.duAnId && m.duAnId !== this.duAnChon) {
+        this.duAnChon = m.duAnId;
+        this.quenDeXuat("Đã đổi dự án — đề xuất ghi đang chờ đã được bỏ. Hãy hỏi lại nếu vẫn cần.");
+        this.quenLenhCucBo("Đã đổi dự án — yêu cầu chạy lệnh đang chờ đã được bỏ. Hãy hỏi lại nếu vẫn cần.");
+        // ★★★ TASK 5 — danh sách gợi ý @-mention thuộc về DỰ ÁN CŨ; đổi dự án mà giữ nguyên bộ nhớ
+        // đệm sẽ gợi ý tệp của workspace KHÁC. Nạp lại LƯỜI ở lượt gõ "@" kế tiếp (`guiGoiYMention`).
+        this.dsTepMention = undefined;
+      } else if (m.duAnId) {
+        this.duAnChon = m.duAnId;
+      }
+      if (m.loai === "doi_du_an") return; // chỉ để đồng bộ ô chọn, không kèm hành động nào khác
+      if (m.loai === "hoi" && m.cauHoi) {
+        const tepMention = Array.isArray(m.tepMention)
+          ? m.tepMention.filter((x): x is string => typeof x === "string")
+          : [];
+        void this.hoi(m.cauHoi, tepMention, m.tuLenh === true);
+        return;
+      }
+      if (m.loai === "xin_goi_y_mention") { void this.guiGoiYMention(typeof m.truy === "string" ? m.truy : ""); return; }
+      // ★★★ ĐỢT G / TASK G2 / B1 — nút "đính kèm tệp". KHÔNG một hàng rào thứ hai: xem
+      // `moBoChonDinhKem` (dùng lại đúng `danhSachTepGoiY` mà `guiGoiYMention` ở trên dùng).
+      if (m.loai === "xin_dinh_kem") { void this.moBoChonDinhKem(); return; }
+      if (m.loai === "xem_diff") { void this.xemDiff(); return; }
+      if (m.loai === "duyet") { void this.duyetDeXuat(); return; }
+      if (m.loai === "huy") { void this.huyDeXuat(); return; }
+      // ★★★ ĐỢT M — thẻ duyệt CHẠY LỆNH riêng, không dùng chung "duyet"/"huy" của đề xuất GHI TỆP.
+      if (m.loai === "duyet_lenh") { void this.duyetLenhCucBo(); return; }
+      if (m.loai === "huy_lenh") { this.quenLenhCucBo("Đã huỷ — không có lệnh nào được chạy."); return; }
+      // ★★★ TASK 4 — nút Dừng. Tên loại tin CỐ Ý khác "huy" (huỷ ĐỀ XUẤT GHI, một khái niệm hoàn
+      // toàn khác) — hai nút không được lẫn vào nhau.
+      if (m.loai === "dung_hoi") { this.dungVongHienTai(); return; }
+      // ★★★ ĐỢT F / TASK 1 — nút "Đăng nhập"/"Đăng xuất" trong khung. Webview chỉ báo Ý ĐỊNH; đường
+      // đăng nhập THẬT vẫn ĐÚNG MỘT nơi (`aviAiLocal.dangNhap`, `extension.ts`) — không viết luồng
+      // thứ hai ở đây, không tự hỏi tài khoản/mật khẩu trong lớp này.
+      if (m.loai === "dangNhap") { void this.thucHienDangNhap(); return; }
+      if (m.loai === "dangXuat") { void this.thucHienDangXuat(); return; }
+      // ★★★ ĐỢT G / TASK G3 / B4 — người dùng đổi mức quyền ở ô chọn.
+      if (m.loai === "dat_muc_quyen") { void this.datMucQuyen(m.mucQuyen); return; }
+      // ★★★ ĐỢT G / TASK G4 / B3 — nút "Mở Settings" trên bong bóng lỗi KHÔNG-NỐI-ĐƯỢC-MÁY-CHỦ
+      // (xem `hoi()`/`duyetDeXuat()`/`huyDeXuat()` bên dưới, và `moTaLoiKhongNoiDuocMayChu`). Webview
+      // chỉ báo Ý ĐỊNH — mở đúng lệnh có sẵn của VSCode, lọc thẳng tới ô `aviAiLocal.serverUrl`,
+      // cùng lệnh mà `aviAiLocal.doiMayChu` (`extension.ts`) dùng, KHÔNG một đường mở-settings riêng.
+      if (m.loai === "mo_settings_may_chu") {
+        void vscode.commands.executeCommand("workbench.action.openSettings", "aviAiLocal.serverUrl");
+        return;
+      }
+    });
+  }
+
+  /**
+   * Vứt đề xuất đang chờ (nếu có): quên nội dung diff ảo, xoá field, ẩn thẻ. Gom vào MỘT chỗ vì ba
+   * nơi gọi (đổi dự án · lượt hỏi mới · sau khi Duyệt/Huỷ xong) từng làm ba việc lệch nhau — và
+   * chỗ quên ẩn thẻ để lại một cú bấm SỐNG cho một đề xuất đã chết.
+   */
+  private quenDeXuat(thongBao?: string): void {
+    const actionId = this.deXuatHienTai?.actionId ?? this.deXuatCucBoHienTai?.actionId;
+    // ⚠ XOÁ TRẠNG THÁI **VÔ ĐIỀU KIỆN**, TRƯỚC nhánh thoát sớm. Bản cũ `return` ngay khi không có
+    // `actionId` và vì thế bỏ lại `nhanNguonHienTai` của lượt TRƯỚC. Nhãn ấy không phải trang trí:
+    // `xemDiff()` lấy chính nó làm điều kiện đi tiếp, và nó mang chữ "LOCAL ·"/"SERVER ·" — tức
+    // mang CHẾ ĐỘ. Để một mảnh trạng thái chế độ sống sót qua một lượt "quên" là để lại đúng loại
+    // mảnh vụn mà cả tệp này đi vá (thẻ/nhãn của lượt cũ dùng cho lượt mới). Giá của việc xoá là 0.
+    this.deXuatHienTai = undefined;
+    this.deXuatCucBoHienTai = undefined;
+    this.nhanNguonHienTai = undefined;
+    // Không có đề xuất nào ⇒ không có thẻ để ẩn và không có gì để báo (thoát SAU khi đã xoá sạch).
+    if (!actionId) return;
+    this.khoDeXuat.quen(actionId);
+    void this.panel.webview.postMessage({ loai: "an_the_duyet" });
+    if (thongBao) void this.panel.webview.postMessage({ loai: "thong_bao", thongDiep: thongBao });
+  }
+
+  /** ★★★ ĐỢT M — cùng vai trò `quenDeXuat`, cho thẻ duyệt CHẠY LỆNH riêng. Không đụng
+   *  `deXuatCucBoHienTai`/`nhanNguonHienTai` — hai loại thẻ độc lập, xem docblock `lenhCucBoHienTai`. */
+  private quenLenhCucBo(thongBao?: string): void {
+    const coThe = this.lenhCucBoHienTai !== undefined;
+    this.lenhCucBoHienTai = undefined;
+    if (!coThe) return;
+    void this.panel.webview.postMessage({ loai: "an_the_duyet_lenh" });
+    if (thongBao) void this.panel.webview.postMessage({ loai: "thong_bao", thongDiep: thongBao });
+  }
+
+  /** Thư mục LOCAL đang chọn ở ô dự án (`local:<fsPath>`), rơi về thư mục workspace đầu tiên. */
+  private thuMucLocalDangChon(): string | undefined {
+    if (this.duAnChon?.startsWith("local:")) return this.duAnChon.slice("local:".length);
+    return vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
+  }
+
+  /**
+   * ★★★ TASK 3 — gốc cho BA TOOL ĐỌC (`chayToolCucBo`). Thư mục ĐANG CHỌN đứng ĐẦU: `chayToolCucBo`
+   * coi phần tử đầu của mảng là gốc ƯU TIÊN khi một đường model khai khớp nhiều gốc (workspace đa
+   * thư mục) — cùng quy ước với `giaiDuongDeXuat` ở đường GHI (`xuLyDeXuatCucBo` bên dưới). Các thư
+   * mục workspace CÒN LẠI theo sau làm gốc dự phòng, không phải bị bỏ qua.
+   */
+  private dsGocDoc(): string[] {
+    const goc = this.thuMucHoiHienTai;
+    const tatCa = (vscode.workspace.workspaceFolders ?? []).map((f) => f.uri.fsPath);
+    return goc ? [goc, ...tatCa.filter((p) => p !== goc)] : tatCa;
+  }
+
+  /**
+   * ★★★ TASK 5 — gốc cho danh sách gợi ý @-mention. CÙNG HÌNH DẠNG với `dsGocDoc()` (gốc ĐANG CHỌN
+   * đứng đầu, các gốc workspace còn lại theo sau) nhưng KHÔNG THỂ dùng `dsGocDoc()` trực tiếp: gõ
+   * "@" xảy ra TRONG LÚC GÕ, TRƯỚC khi có lượt hỏi nào chạy, nên `this.thuMucHoiHienTai` (chỉ được
+   * chốt bên trong `hoi()`) còn `undefined`. Dùng `thuMucLocalDangChon()` — đọc thẳng `duAnChon`,
+   * có giá trị BẤT KỲ LÚC NÀO, không cần một lượt hỏi đang chạy.
+   *
+   * ⚠⚠ PHẢI GIẢI ĐƯỜNG THẬT Ở ĐÂY — khác `dsGocDoc()` (nơi giữ nguyên đường CHƯA giải, vì
+   * `chayToolCucBo` tự giải lại bên trong `chayThat`/`gocDaGiai` cho MỌI lời gọi ba tool đọc).
+   * `danhSachTepGoiY` (dùng trực tiếp `locUngVien`, không đi qua `chayThat`) mang đúng tên tham số
+   * `gocThat` như các hàm nội bộ khác của `mang/toolCucBo.ts` — tức nó GIẢ ĐỊNH gốc ĐÃ giải, giống
+   * hệt quy ước nội bộ của tệp đó. Gốc CHƯA giải ở đây không mở lỗ rò (một đích RA NGOÀI vẫn bị
+   * `namTrongThuMuc` từ chối vì so lệch hệ quy chiếu), nhưng làm MỌI tệp trong một workspace là
+   * junction/symlink bị loại NHẦM khỏi gợi ý — mất chức năng ÂM THẦM, đúng lớp lỗi mà
+   * `duongTuongDoiTrongWorkspace`/`gocDaGiai` được dựng ra để tránh.
+   */
+  private dsGocMention(): string[] {
+    const goc = this.thuMucLocalDangChon();
+    const tatCa = (vscode.workspace.workspaceFolders ?? []).map((f) => f.uri.fsPath);
+    const raw = goc ? [goc, ...tatCa.filter((p) => p !== goc)] : tatCa;
+    const ra: string[] = [];
+    for (const p of raw) {
+      const r = giaiDuongThat(p);
+      if (r.ok) ra.push(r.duong);
+    }
+    return ra;
+  }
+
+  /**
+   * ★★★ TASK 5 (+ĐỢT G / TASK G2 / B1) — nạp (LƯỜI, chỉ MỘT lần cho tới khi đổi dự án — xem nhánh
+   * `doi_du_an` ở constructor, nơi xoá `this.dsTepMention`) danh sách tệp GỢI Ý đã qua hàng rào gửi
+   * (`danhSachTepGoiY`, tái dùng `locUngVien` ⇒ `duocPhepRoiMay`/`duocPhepDoc`).
+   *
+   * ★★★ RÚT RA thành một hàm RIÊNG (trước đây logic nạp-lười này chỉ sống trong `guiGoiYMention`) để
+   * `moBoChonDinhKem` (B1, bên dưới) dùng CHUNG đúng một bộ nhớ đệm — hai tính năng "@-mention" và
+   * "nút đính kèm" đều hỏi CÙNG một câu "tệp nào được phép rời máy", nên chúng phải đi qua ĐÚNG MỘT
+   * lần nạp, không phải hai lượt `findFiles` riêng cho hai đường dữ liệu đáng lẽ là MỘT.
+   */
+  private async napDsTepMentionNeuChua(): Promise<string[]> {
+    this.dsTepMention ??= await danhSachTepGoiY(this.dsGocMention());
+    return this.dsTepMention;
+  }
+
+  /**
+   * ★★★ TASK 5 — trả lời webview cho một lượt gõ "@..." — lọc danh sách đã nạp THEO CHỮ đang gõ
+   * bằng vị từ THUẦN `locDanhSachMention`. Extension quyết định NỘI DUNG dropdown — webview chỉ hiển
+   * thị, đúng nguyên tắc đã áp cho thẻ duyệt.
+   */
+  private async guiGoiYMention(truy: string): Promise<void> {
+    const ds = await this.napDsTepMentionNeuChua();
+    void this.panel.webview.postMessage({
+      loai: "goi_y_mention",
+      ds: locDanhSachMention(ds, truy),
+    });
+  }
+
+  /**
+   * ★★★ ĐỢT G / TASK G2 / B1 — nút "đính kèm tệp": mở BỘ CHỌN TỆP TRONG WORKSPACE.
+   *
+   * ★★★ MỘT ĐƯỜNG DỮ LIỆU RỜI MÁY DUY NHẤT, KHÔNG CỬA SAU — danh sách đưa cho `showQuickPick` đến
+   * từ ĐÚNG `napDsTepMentionNeuChua()` ở trên: CÙNG hàng rào (`duocPhepRoiMay`/`duocPhepDoc`, qua
+   * `danhSachTepGoiY` ⇒ `locUngVien`) mà dropdown "@" (Task 5) dùng. Một tệp KHÔNG được phép rời máy
+   * (`.env`, khoá riêng, `.git/**`, …) không bao giờ xuất hiện trong danh sách này — bị chặn Ở NGUỒN,
+   * TRƯỚC khi người dùng kịp thấy nó để chọn, không phải bị từ chối SAU khi đã bấm. Việc ĐỌC nội
+   * dung tệp được chọn cũng đi qua ĐÚNG một đường: mảng `duong` được `postMessage` về webview để
+   * webview thêm vào `tepDinhKemHienTai`, rồi gộp CHUNG với `mentionsHienTai` thành một `tepMention`
+   * duy nhất ở `gui()` (`htmlBang.ts`) — `hoi()` (bên dưới) đọc CẢ HAI nguồn bằng cùng một vòng lặp
+   * `chayToolCucBo({loai:"doc_tep"...})`, đúng đường mà Task 5 đã dựng. KHÔNG một hàm đọc thứ hai.
+   *
+   * ★ Dùng lại `locDanhSachMention` (THUẦN, Task 5) với truy vấn RỖNG để lấy TOÀN BỘ danh sách đã
+   *   nạp — cùng vị từ sắp/lọc mà dropdown "@" dùng, không phải một bộ sắp xếp thứ hai cho cùng một
+   *   danh sách.
+   */
+  private async moBoChonDinhKem(): Promise<void> {
+    const ds = await this.napDsTepMentionNeuChua();
+    if (ds.length === 0) {
+      void vscode.window.showInformationMessage(
+        "AI Local: không có tệp nào trong workspace được phép đính kèm (workspace rỗng, hoặc mọi tệp đều nhạy cảm/bị loại).",
+      );
+      return;
+    }
+    const goiY = locDanhSachMention(ds, "", ds.length);
+    const chon = await vscode.window.showQuickPick(goiY, {
+      placeHolder: "Chọn tệp trong workspace để đính kèm — nội dung tệp sẽ được GỬI kèm câu hỏi",
+    });
+    if (!chon) return; // Esc / bấm ra ngoài — không đính kèm gì, im lặng
+    void this.panel.webview.postMessage({ loai: "them_dinh_kem", duong: chon });
+  }
+
+  /**
+   * CHẾ ĐỘ suy từ ô chọn dự án ĐANG hiển thị. Một chỗ duy nhất — `hoi()`, `apDungCucBo()` và
+   * `duyetDeXuat()` đều hỏi cùng câu này, nên hàng rào lúc HIỆN thẻ và hàng rào lúc BẤM không thể
+   * lệch nhau.
+   *
+   * ⚠⚠⚠ TRẢ `undefined` KHI KHÔNG XÁC ĐỊNH ĐƯỢC — quyết định THUẦN nằm ở `loi/kiemTraCheDo.suyCheDo`
+   * (có lưới riêng). Bản cũ rơi về `{loai:"local", nhan:"workspace"}` khi danh sách dự án rỗng hoặc
+   * chưa nạp xong, tức đoán đúng cái nhánh có hậu quả nặng nhất: LOCAL là chế độ **extension tự
+   * cưỡng chế** và là chế độ mở cửa ghi vào đĩa máy dev. Mọi nơi gọi dưới đây PHẢI xử lý `undefined`
+   * bằng cách TỪ CHỐI, không bằng một giá trị mặc định.
+   */
+  private cheDoHienTai(): CheDoDuAn | undefined {
+    return suyCheDo(this.dsDuAn, this.duAnChon);
+  }
+
+  static moHoacHien(context: vscode.ExtensionContext, khoDeXuat: KhoDeXuat): BangChat {
+    if (BangChat.hienTai) {
+      BangChat.hienTai.lamHienRo?.();
+      return BangChat.hienTai;
+    }
+    const panel = vscode.window.createWebviewPanel(
+      "aviAiLocalChat",
+      "AI Local",
+      vscode.ViewColumn.Beside,
+      { enableScripts: true, retainContextWhenHidden: true },
+    );
+    BangChat.hienTai = new BangChat(panel, context, khoDeXuat, () => panel.reveal());
+    return BangChat.hienTai;
+  }
+
+  /**
+   * ★★★ THANH BÊN — lối vào MỚI: khung chat sống trong `WebviewView` của thanh hoạt động (như
+   * Copilot/Claude Code), thay vì chỉ một `WebviewPanel` nổi phải mở bằng lệnh/Ctrl+Alt+K. Dùng LẠI
+   * TOÀN BỘ lớp `BangChat` phía trên (constructor nhận `VatChuaChat`, `WebviewView` khớp cấu trúc) —
+   * KHÔNG một bản logic thứ hai nào ở đây, chỉ một lời gọi constructor với bề mặt khác.
+   *
+   * ⚠ CỐ Ý KHÔNG đụng `BangChat.hienTai` — field đó là singleton của ĐƯỜNG CŨ (bảng NỔI). Khung
+   *   thanh bên là một PHIÊN CHAT ĐỘC LẬP: mở cả hai (thanh bên + lệnh cũ) cùng lúc cho ra hai bảng
+   *   chat riêng biệt, không bảng nào ghi đè/đóng bảng kia — đúng yêu cầu "đường cũ vẫn chạy y hệt".
+   * `resolveWebviewView` (`bangChatView.ts`) gọi hàm này MỖI LẦN VSCode cần một instance mới cho
+   * view (thường chỉ một lần mỗi phiên VSCode nhờ `retainContextWhenHidden`, xem nơi đăng ký).
+   */
+  static choView(webviewView: vscode.WebviewView, context: vscode.ExtensionContext, khoDeXuat: KhoDeXuat): BangChat {
+    const bc = new BangChat(webviewView, context, khoDeXuat, () => webviewView.show?.(true));
+    // ★★★ TASK 3 — ghi lại instance MỚI NHẤT của thanh bên NGAY sau khi dựng xong, để hai lệnh
+    // "Chat mới"/"Lịch sử" (`extension.ts`) luôn tìm đúng instance đang hiển thị.
+    BangChat.thanhBenHienTai = bc;
+    return bc;
+  }
+
+  /** ★★★ TASK 3 — instance ĐANG MỞ của khung thanh bên, dùng bởi hai lệnh nút "Chat mới"/"Lịch sử"
+   *  ở `view/title` (`extension.ts`). `undefined` chỉ khi VSCode CHƯA từng resolve view đó. */
+  static thanhBenDangMo(): BangChat | undefined {
+    return BangChat.thanhBenHienTai;
+  }
+
+  /**
+   * Bắn câu hỏi CMD+K đang xếp hàng (nếu có) — CHỈ được gọi sau khi webview đã báo "san_sang", tức
+   * ĐÃ đăng ký xong `addEventListener("message", …)`. Gọi sớm hơn thì `postMessage` có thể tới
+   * TRƯỚC khi script kịp lắng nghe và rơi mất trong im lặng — đúng lỗi đua mà `napDuAn` ở trên đã
+   * né bằng cùng một cách (đợi "san_sang").
+   */
+  private guiCauHoiDangCho(): void {
+    const c = this.cauHoiChoGui;
+    if (!c) return;
+    this.cauHoiChoGui = undefined;
+    void this.panel.webview.postMessage({ loai: "dat_cau_hoi_tu_lenh", cauHoi: c });
+  }
+
+  /**
+   * ★★★ CMD+K (Task 7) — LỐI VÀO DUY NHẤT được `extension.ts` gọi khi người dùng bấm `ctrl+alt+k`.
+   *
+   * ⚠⚠⚠ KHÔNG ĐƯỜNG GHI MỚI Ở ĐÂY. Hàm này KHÔNG gọi `hoi()` trực tiếp — nó `postMessage` cho
+   * WEBVIEW tự đổ câu hỏi vào ô nhập rồi tự bấm nút "Gửi" (hàm `gui()` trong `htmlBang.ts`), và
+   * chính `gui()` mới `postMessage({loai:"hoi"})` NGƯỢC lại cho `onDidReceiveMessage` ở constructor
+   * — CÙNG một handler xử lý một cú gõ tay bình thường. Lý do bắt buộc phải vòng qua webview thay
+   * vì gọi thẳng `this.hoi(cauHoi)`: `gui()` phía webview là nơi DUY NHẤT tạo bong bóng "Bạn: …" VÀ
+   * gán `khoiTraLoi` (khối DOM nhận token stream) — gọi thẳng `hoi()` từ đây thì `khoiTraLoi` vẫn
+   * `null`, token stream tới nơi nhưng KHÔNG CÓ CHỖ ĐỂ GHI, và câu trả lời rơi mất trên giao diện
+   * một cách im lặng dù mọi thứ phía sau (SSE, `docDeXuatCucBo`, thẻ duyệt, `apBanVa`) vẫn chạy
+   * đúng. Từ `gui()` trở đi, đường đi giống hệt một câu người dùng tự gõ — không có nhánh tắt nào.
+   */
+  public guiCauHoiTuLenh(cauHoi: string): void {
+    if (this.daSanSang) {
+      void this.panel.webview.postMessage({ loai: "dat_cau_hoi_tu_lenh", cauHoi });
+      return;
+    }
+    // Bảng vừa mới tạo, webview chưa kịp báo "san_sang" — xếp hàng, `guiCauHoiDangCho` sẽ bắn khi
+    // tín hiệu đó tới (xem nhánh `san_sang` trong constructor).
+    this.cauHoiChoGui = cauHoi;
+  }
+
+  private thuThapNguCanh(): string {
+    const cfg = vscode.workspace.getConfiguration("aviAiLocal");
+    const nganSach = cfg.get<number>("nganSachNguCanh", 24000);
+    const ed = vscode.window.activeTextEditor;
+    if (!ed) return dungNguCanh({ nganSach });
+
+    // ★★★ F3 — CÙNG cách neo với Cmd+K và với đường ghi. `asRelativePath` thêm TÊN THƯ MỤC làm tiền
+    // tố khi workspace có ≥2 thư mục; model đọc ngữ cảnh rồi chép lại chính đường ấy vào `path` của
+    // đề xuất, nên một tiền tố ở ĐÂY cũng đi thẳng vào đường ghi. Rơi về `asRelativePath` khi tệp
+    // nằm ngoài mọi workspace: ngữ cảnh chỉ để ĐỌC, và một đề xuất ghi vào đó sẽ bị luật 2 chặn.
+    const viTri = duongTuongDoiTrongWorkspace(
+      ed.document.uri.fsPath,
+      (vscode.workspace.workspaceFolders ?? []).map((f) => f.uri.fsPath),
+    );
+    const duong = viTri?.duongTuongDoi ?? vscode.workspace.asRelativePath(ed.document.uri);
+    const chon = ed.selection.isEmpty
+      ? undefined
+      : {
+          duong,
+          dongDau: ed.selection.start.line + 1,
+          dongCuoi: ed.selection.end.line + 1,
+          noiDung: ed.document.getText(ed.selection),
+        };
+    return dungNguCanh({
+      nganSach,
+      doanChon: chon,
+      tepDangMo: { duong, noiDung: ed.document.getText() },
+    });
+  }
+
+  private async napDuAn(): Promise<void> {
+    const cfg = vscode.workspace.getConfiguration("aviAiLocal");
+    const serverUrl = cfg.get<string>("serverUrl", "http://localhost:3000");
+    const cookie = await this.context.secrets.get(KHOA_COOKIE);
+    const local = (vscode.workspace.workspaceFolders ?? []).map((f) => f.uri.fsPath);
+    let server: Array<{ id: string; name: string }> = [];
+    if (cookie) {
+      try {
+        const du = (await goiTruyVanTrpc(serverUrl, cookie, "repoWorkspace.listProjects")) as
+          | { projects?: Array<{ id: string; name: string }> }
+          | null;
+        server = du?.projects ?? [];
+      } catch {
+        server = []; // không nối được server thì vẫn dùng được chế độ LOCAL
+      }
+    }
+    this.dsDuAn = gopDanhSachDuAn(local, server);
+    this.duAnChon = this.duAnChon ?? this.dsDuAn[0]?.id;
+    void this.panel.webview.postMessage({ loai: "duAn", ds: this.dsDuAn });
+  }
+
+  /**
+   * ★★★ ĐỢT G / TASK G1 / B1 — kiểm cookie CÒN HIỆU LỰC THẬT bằng một lượt gọi `auth.me`, không
+   * chỉ đoán qua sự CÓ MẶT của nó trong SecretStorage. `auth.me` (`server/routers.ts`) là
+   * `publicProcedure` — nó KHÔNG BAO GIỜ ném 401: một phiên hết hạn/bị thu hồi trả THẲNG
+   * `200 {json:null}` (đúng docblock `_core/publicUser.ts`), một phiên còn sống trả hồ sơ người
+   * dùng đã lọc. Đây là câu trả lời RÀNH MẠCH trong THÂN đáp ứng — không như
+   * `repoWorkspace.listProjects` (còn vướng cổng giấy phép/RBAC module qua `moduleProcedure`, có
+   * thể 403 dù phiên còn sống thật) — nên không cần phân biệt theo MÃ TRẠNG THÁI HTTP ở đây, chỉ
+   * cần đọc THÂN đáp ứng.
+   *
+   * ⚠⚠⚠ Lỗi MẠNG (máy chủ không nối được, DNS, sự cố 500…) là chuyện KHÁC hẳn "cookie sai" — đây là
+   * "KHÔNG BIẾT", không phải "biết là sai". Coi lỗi mạng là "còn hiệu lực" (rơi về AN TOÀN theo
+   * hướng KHÔNG đăng xuất oan một phiên có thể vẫn tốt) — LOCAL vẫn dùng được không cần máy chủ
+   * (xem `napDuAn`), nên buộc đăng nhập lại chỉ vì máy chủ tắt tạm thời là một cái giá vô lý mà
+   * kế hoạch không đòi trả. Chỉ khi máy chủ RÀNH MẠCH nói "không có ai" (`auth.me` ⇒ `null`) mới
+   * kết luận cookie hết hạn.
+   */
+  private async cookieConHieuLuc(cookie: string): Promise<boolean> {
+    const cfg = vscode.workspace.getConfiguration("aviAiLocal");
+    const serverUrl = cfg.get<string>("serverUrl", "http://localhost:3000");
+    try {
+      const nguoiDung = await goiTruyVanTrpc(serverUrl, cookie, "auth.me");
+      return nguoiDung != null;
+    } catch {
+      return true; // không nối được máy chủ — KHÔNG đủ bằng chứng để kết luận cookie sai
+    }
+  }
+
+  /**
+   * ★★★ ĐỢT F / TASK 1 — trạng thái đăng nhập THẬT, đọc từ đúng HAI nơi mà `extension.ts` ghi CÙNG
+   * LÚC lúc đăng nhập/đăng xuất: cookie phiên (`KHOA_COOKIE`, SecretStorage — quyết định CÓ/KHÔNG
+   * đăng nhập, đúng nguồn sự thật mà `napDuAn`/`hoi` đã dùng) và tên tài khoản (`KHOA_TEN_TAI_KHOAN`,
+   * `globalState` — KHÔNG phải bí mật, chỉ để HIỂN THỊ). MỘT hàm DUY NHẤT tính trạng thái này, gọi
+   * ở CẢ lúc "san_sang" LẪN sau khi lệnh đăng nhập/đăng xuất chạy xong — để hai đường đó không thể
+   * khai lệch nhau (một chỗ nói "đã đăng nhập", chỗ kia vẫn hiện nút "Đăng nhập").
+   *
+   * ★★★ ĐỢT G / TASK G1 / B1 — CÓ cookie không còn đủ để khai "đã đăng nhập". Bản Đợt F chỉ kiểm sự
+   * CÓ MẶT (`if (!cookie) return false; else return true`) — một cookie đã HẾT HẠN trên máy chủ (bị
+   * người dùng đăng xuất từ máy khác, hết TTL phiên, bị admin thu hồi…) vẫn còn nằm nguyên trong
+   * SecretStorage của VSCode và sẽ bị khai NHẦM là "đã đăng nhập". Đây đúng lớp lỗi chữ ký của dự án
+   * này — "khai một kết cục mà không đọc kết cục" — áp dụng cho chính TRẠNG THÁI ĐĂNG NHẬP thay vì
+   * một lượt ghi. `cookieConHieuLuc` ở trên đọc KẾT CỤC thật từ máy chủ trước khi khai.
+   */
+  private async trangThaiDangNhap(): Promise<{ daDangNhap: boolean; tenTaiKhoan: string }> {
+    const cookie = await this.context.secrets.get(KHOA_COOKIE);
+    if (!cookie) return { daDangNhap: false, tenTaiKhoan: "" };
+    if (!(await this.cookieConHieuLuc(cookie))) {
+      // ★★★ NHÁNH KIA của B1 — máy chủ RÀNH MẠCH nói phiên này không còn: xoá cookie chết NGAY,
+      // đúng luật đã áp cho 401 giữa lượt hỏi (xem `catch` của `hoi()` bên dưới, spec §5.1), để
+      // không đâu trong khung còn khai "đã đăng nhập" cho một phiên đã hết hạn — và để lượt hỏi kế
+      // tiếp không lặp lại đúng một vòng kiểm tra vô nghĩa với cùng cookie chết. Xoá CẢ tên tài
+      // khoản đã lưu — `dangNhap.ts` khai rõ hai giá trị này "luôn đổi CÙNG LÚC" (đăng nhập ghi cả
+      // hai, đăng xuất xoá cả hai); một cookie chết bị dọn mà tên cũ còn sót lại là đúng mảnh vụn
+      // trạng thái mà kỷ luật đó muốn tránh, dù tên tài khoản không phải bí mật.
+      await this.context.secrets.delete(KHOA_COOKIE);
+      await this.context.globalState.update(KHOA_TEN_TAI_KHOAN, undefined);
+      return { daDangNhap: false, tenTaiKhoan: "" };
+    }
+    return { daDangNhap: true, tenTaiKhoan: this.context.globalState.get<string>(KHOA_TEN_TAI_KHOAN, "") };
+  }
+
+  /**
+   * Đọc trạng thái thật (trên) rồi báo cho webview — dùng chung cho "san_sang" và sau đăng nhập/xuất.
+   *
+   * ★★★ ĐỢT G / TASK G4 / B1 — kèm `serverUrl` HIỆN TẠI để webview đặt vào TOOLTIP của icon tài
+   * khoản (xem `htmlBang.ts`, nhánh `trang_thai_dang_nhap`). Đây là lựa chọn ĐÃ CÂN NHẮC thay vì một
+   * dòng riêng ở đầu khung: G1 (2026-09-03) vừa dọn đúng vùng đầu khung này từ BA phần tử xuống MỘT
+   * icon vì người dùng phàn nàn "mất thẩm mỹ" — thêm một dòng cố định là quay lại đúng lỗi vừa sửa.
+   * Tooltip không chiếm chỗ, luôn có mặt (không phải một hành động phải nhớ tìm), và đã đúng chỗ
+   * người dùng nhìn khi họ đang thắc mắc "mình đang nói chuyện với máy nào" (họ hover vào ĐÚNG icon
+   * đang nói về tài khoản của họ trên máy chủ đó). Đọc TƯƠI (`cfg.get`) mỗi lần gọi hàm này — không
+   * cache — nên tooltip luôn khớp giá trị Settings hiện tại, kể cả vừa đổi qua `aviAiLocal.doiMayChu`
+   * mà chưa đóng/mở lại view (B4: đổi Settings không cần Reload Window).
+   */
+  private async guiTrangThaiDangNhap(): Promise<void> {
+    const tt = await this.trangThaiDangNhap();
+    const serverUrl = vscode.workspace.getConfiguration("aviAiLocal").get<string>("serverUrl", "http://localhost:3000");
+    void this.panel.webview.postMessage({ loai: "trang_thai_dang_nhap", ...tt, serverUrl });
+  }
+
+  /**
+   * ★★★ ĐỢT F / TASK 2 / B2 — bọc `context.workspaceState` (API của VSCode, hoàn toàn KHÁC `fs`:
+   * không mở đường ghi đĩa mới, census `CAM_TU` không canh nó) thành đúng hình dạng `KhoLuuTruTho`
+   * tối giản mà `loi/khoHoiThoai.ts` (THUẦN) đòi hỏi. Đây là RANH GIỚI DUY NHẤT nơi `vscode` chạm
+   * vào lớp lưu trữ — bản thân `khoHoiThoai.ts` không bao giờ thấy `context`.
+   *
+   * ★★★ ĐỢT H / TASK H3 — bản bọc THẬT nay sống ở `ui/khoWorkspaceState.ts` (dùng chung với lệnh
+   * "Nhớ điều này" ở `extension.ts` và khung xem/xoá bộ nhớ ở `boNhoQuanLy.ts`, cả hai không có một
+   * instance `BangChat` để gọi phương thức private này). Giữ NGUYÊN tên phương thức + chữ ký ở đây
+   * (mọi nơi gọi trong tệp này không đổi) — chỉ THÂN hàm đổi thành một lời gọi uỷ quyền.
+   */
+  private khoHoiThoaiTho(): KhoLuuTruTho {
+    return dungKhoWorkspaceState(this.context);
+  }
+
+  /**
+   * ★★★ ĐỢT G / TASK G3 / B4 — nạp mức quyền đã lưu (nếu có) khi khung vừa mở.
+   *
+   * ⚠ Dùng LẠI `khoHoiThoaiTho()` — cái tên là LỊCH SỬ (Task 2 dựng nó cho hội thoại trước), nhưng
+   * bản bọc `workspaceState` bên trong nó KHÔNG gắn riêng với bất kỳ khoá nào (`doc<T>(khoa)`,
+   * `ghi(khoa, giaTri)` nhận khoá làm THAM SỐ) — một khoá THỨ HAI (`KHOA_MUC_QUYEN`) dùng lại được
+   * NGUYÊN VẸN, không cần dựng một bản bọc `workspaceState` thứ hai cho cùng một `context`.
+   *
+   * `chuanHoaMucQuyen` (THUẦN, có lưới riêng ở `loi/mucQuyen.unit.test.ts`) tự hấp thụ MỌI hình
+   * dạng lạ (kho rỗng/hỏng) và rơi về `MUC_QUYEN_MAC_DINH` — KHÔNG BAO GIỜ rơi về `tu_ghi`, đúng
+   * nguyên tắc an toàn-là-mặc-định (B4).
+   */
+  private napMucQuyen(): void {
+    this.mucQuyenHienTai = chuanHoaMucQuyen(this.khoHoiThoaiTho().doc<unknown>(KHOA_MUC_QUYEN));
+  }
+
+  /**
+   * ★★★ ĐỢT G / TASK G3 / B4 — người dùng đổi mức quyền ở ô chọn.
+   *
+   * ⚠ Validate LẠI ở đây (`laMucQuyenHopLe`), KHÔNG tin nguyên văn một chuỗi từ webview: dù webview
+   *   chỉ có ba lựa chọn tĩnh trong `<select>`, một webview lỗi/một tin bị giả mạo mang một chuỗi
+   *   lạ không được phép trở thành mức quyền THẬT — hình dạng lạ bị BỎ QUA HOÀN TOÀN (không tự đoán
+   *   thành mức gần đúng nào), giữ nguyên mức đang áp dụng.
+   */
+  private async datMucQuyen(gt: unknown): Promise<void> {
+    if (!laMucQuyenHopLe(gt)) return;
+    this.mucQuyenHienTai = gt;
+    await this.khoHoiThoaiTho().ghi(KHOA_MUC_QUYEN, gt);
+    // Xác nhận lại cho webview ĐÚNG giá trị vừa ÁP DỤNG (không phải giá trị vừa gửi lên) — nếu về
+    // sau `napMucQuyen`/`chuanHoaMucQuyen` đổi luật, hai phía không lệch nhau.
+    void this.panel.webview.postMessage({ loai: "muc_quyen", mucQuyen: this.mucQuyenHienTai });
+  }
+
+  /**
+   * ★★★ ĐỢT F / TASK 2 / B5 — khôi phục hội thoại GẦN NHẤT khi khung vừa mở.
+   *
+   * ★ NHÁNH KIA (kho rỗng / hỏng / sai kiểu): `docHoiThoaiGanNhat` (THUẦN, có lưới riêng) tự hấp
+   *   thụ MỌI hình dạng lạ và trả `undefined` — KHÔNG BAO GIỜ ném lỗi ra tới đây, nên nhánh dưới
+   *   chỉ cần kiểm `undefined`, không cần `try/catch` riêng: khung mở BÌNH THƯỜNG (trắng, như trước
+   *   khi có Task 2) trong CẢ hai trường hợp "chưa từng lưu gì" lẫn "dữ liệu cũ đọc không nổi".
+   * ⚠ Chỉ khôi phục khi `this.lichSu` còn RỖNG — phòng trường hợp "san_sang" chạy lần thứ hai (dù
+   *   chưa quan sát thấy trong VSCode thật, không có gì đảm bảo tuyệt đối là KHÔNG xảy ra) đè một
+   *   cuộc trò chuyện ĐANG DIỄN RA bằng dữ liệu cũ trên đĩa.
+   */
+  private khoiPhucHoiThoaiGanNhat(): void {
+    if (this.lichSu.length > 0) return;
+    const ganNhat = docHoiThoaiGanNhat(this.khoHoiThoaiTho());
+    if (!ganNhat) return;
+    this.lichSu = [...ganNhat.luot];
+    this.maHoiThoaiHienTai = ganNhat.ma;
+    if (ganNhat.luot.length > 0) {
+      void this.panel.webview.postMessage({
+        loai: "khoi_phuc_hoi_thoai",
+        luot: ganNhat.luot.map((l) => ({ vaiTro: l.role, noiDung: l.content })),
+        // ★★★ ĐỢT G / TASK G2 / B3 — kèm THỐNG KÊ của ĐÚNG hội thoại vừa khôi phục, ngay trong tin
+        // vẽ lại — xem `thongKeHoiThoaiHienTai()`.
+        ...this.thongKeHoiThoaiHienTai(),
+      });
+    }
+  }
+
+  /**
+   * ★★★ ĐỢT G / TASK G2 / B3 — THANH TRẠNG THÁI NGỮ CẢNH: hai con số ĐO ĐƯỢC THẬT về `this.lichSu`
+   * — SỐ LƯỢT (mỗi câu hỏi + câu trả lời = một lượt, luôn ghép ĐÔI — xem cuối `hoi()`) và TỔNG KÝ
+   * TỰ (cộng dồn `content` mọi lượt). ★★★ KHÔNG PHẢI SỐ TOKEN — dự án này đã trả giá vì model bịa
+   * con số phạm vi công việc ("đã quét 600 tệp"); ta không lặp lại lỗi đó ở phía UI của mình. Đây
+   * ĐÚNG là phần `this.lichSu` sẽ được gửi NGUYÊN VẸN làm `history` cho câu hỏi KẾ TIẾP (xem
+   * `dungYeuCauStream`), nên "tổng ký tự" ở đây không phải một ước lượng — nó là kích thước THẬT
+   * của thứ sắp rời máy ở lượt hỏi sau.
+   */
+  private thongKeHoiThoaiHienTai(): { soLuot: number; soKyTu: number } {
+    return {
+      soLuot: Math.floor(this.lichSu.length / 2),
+      soKyTu: this.lichSu.reduce((tong, l) => tong + l.content.length, 0),
+    };
+  }
+
+  /**
+   * ★★★ ĐỢT F / TASK 2 — lưu hội thoại đang mở SAU MỖI lượt hỏi/đáp xong (gọi từ cuối `hoi()`,
+   * ngay sau khi `this.lichSu` vừa được nối thêm lượt mới). Sinh mã định danh MỚI ở lần lưu ĐẦU
+   * TIÊN của khung này (`maHoiThoaiHienTai` còn `undefined`); mọi lần lưu SAU đó UPSERT vào ĐÚNG
+   * bản ghi cũ — xem docblock của field `maHoiThoaiHienTai`.
+   *
+   * Không tự làm gì thêm ở đây: che bí mật, sinh tiêu đề, và cắt trần dung lượng đều nằm TRỌN vẹn
+   * trong `luuHoiThoai` (`loi/khoHoiThoai.ts`) — tệp này chỉ quyết định LÚC NÀO lưu.
+   *
+   * ★★★ ĐỢT G / TASK G2 / B4 — CẢNH BÁO TRƯỚC KHI CẮT, không phải sau khi đã mất: `hoiThoaiSapBiCat`
+   * (THUẦN, `loi/khoHoiThoai.ts`) chạy trên ĐÚNG dữ liệu mà `luuHoiThoai` bên dưới sắp dùng THẬT, dự
+   * đoán những hội thoại CŨ NÀO sẽ bị trần B3 cắt NẾU lưu ngay bây giờ. Rỗng ⇒ im lặng (dưới ngưỡng,
+   * không việc gì phải làm ồn cho một lượt lưu bình thường). Có phần tử ⇒ báo TRƯỚC khi gọi
+   * `luuHoiThoai` thật — người dùng biết CHÍNH XÁC bao nhiêu hội thoại cũ sắp rời "Lịch sử", không
+   * phải tự phát hiện sau khi mở "Lịch sử" ra thấy ngắn hơn hôm qua.
+   */
+  private async luuHoiThoaiHienTai(): Promise<void> {
+    this.maHoiThoaiHienTai ??= randomUUID();
+    if (this.lichSu.length > 0) {
+      const hoiThoaiSapLuu = dungHoiThoai(this.maHoiThoaiHienTai, this.lichSu);
+      const hienCo = docDanhSachHoiThoai(this.khoHoiThoaiTho());
+      const seBiCat = hoiThoaiSapBiCat(hienCo, hoiThoaiSapLuu);
+      if (seBiCat.length > 0) {
+        void this.panel.webview.postMessage({
+          loai: "thong_bao",
+          thongDiep:
+            `Kho "Lịch sử" đã CHẠM TRẦN lưu trữ (tối đa ${TRAN_SO_HOI_THOAI} hội thoại / ` +
+            `${TRAN_TONG_KY_TU.toLocaleString("vi")} ký tự) — ${seBiCat.length} hội thoại CŨ NHẤT ` +
+            `sẽ bị xoá khỏi "Lịch sử" khi lưu lượt này.`,
+        });
+      }
+    }
+    await luuHoiThoai(this.khoHoiThoaiTho(), this.maHoiThoaiHienTai, this.lichSu);
+  }
+
+  /**
+   * ★★★ ĐỢT F / TASK 1 / B2+B3 — nút "Đăng nhập" trong khung. Gọi ĐÚNG lệnh `aviAiLocal.dangNhap`
+   * đã đăng ký ở `extension.ts` (KHÔNG viết luồng đăng nhập thứ hai) — lệnh đó tự hỏi tài
+   * khoản/mật khẩu qua `showInputBox({password:true})` (mật khẩu KHÔNG BAO GIỜ đi qua webview) và
+   * tự báo lỗi qua `showErrorMessage` nếu sai/huỷ/mất mạng.
+   *
+   * ⚠⚠⚠ `await` LỆNH XONG, KHÔNG PHẢI "đã gọi lệnh" — `extension.ts` đăng ký lệnh này trả về CHÍNH
+   * promise của luồng đăng nhập (không `void` nó) đúng vì lý do này: nếu chỉ bắn lệnh rồi đọc lại
+   * trạng thái NGAY, ta sẽ đọc trạng thái CŨ (người dùng còn chưa kịp gõ xong tài khoản/mật khẩu) —
+   * đúng lớp lỗi "khai kết cục mà không đọc kết cục" mà dự án này đã trả giá nhiều lần.
+   */
+  private async thucHienDangNhap(): Promise<void> {
+    await vscode.commands.executeCommand("aviAiLocal.dangNhap");
+    await this.guiTrangThaiDangNhap();
+  }
+
+  /** ★★★ B5 — NHÁNH KIA của đăng nhập: nút "Đăng xuất" đưa khung quay lại trạng thái có nút "Đăng nhập". */
+  private async thucHienDangXuat(): Promise<void> {
+    await vscode.commands.executeCommand("aviAiLocal.dangXuat");
+    await this.guiTrangThaiDangNhap();
+  }
+
+  /**
+   * ★★★ ĐỢT F / TASK 3 / B3 — "Chat mới": lưu hội thoại đang có (nếu có ít nhất một lượt) vào kho
+   * bền (Task 2), rồi mở một phiên TRẮNG trong CÙNG một khung.
+   *
+   * ★ NHÁNH KIA — hội thoại RỖNG (chưa hỏi câu nào, ví dụ bấm "Chat mới" hai lần liên tiếp): KHÔNG
+   *   lưu một mục rỗng vào lịch sử. Không viết lại hàng rào đó ở đây — `luuHoiThoaiHienTai()` gọi
+   *   thẳng `luuHoiThoai` (`loi/khoHoiThoai.ts`), và hàm đó ĐÃ tự chặn `luotTho.length === 0` (xem
+   *   docblock ở đó); gọi `luuHoiThoaiHienTai()` vô điều kiện ở đây là an toàn — một mục rỗng không
+   *   giúp ích gì và chỉ chiếm một suất trong trần B3 của `apDungTranDungLuong`.
+   *
+   * ★ CÂU HỎI ĐANG CHẠY DỞ — huỷ SẠCH bằng `this.huy?.abort()` **KHÔNG KÈM LÝ DO**, tức đúng cơ chế
+   *   "huỷ NGẦM" đã có sẵn ở ĐẦU `hoi()` khi một câu hỏi MỚI đè lên câu hỏi cũ (`this.huy?.abort();`
+   *   không tham số) — CỐ Ý KHÁC `LY_DO_NGUOI_DUNG_DUNG` (dành riêng cho nút "Dừng", nơi `catch` của
+   *   `hoi()` CHỦ Ý báo lại "Đã dừng — ở vòng N." cho người dùng đang nhìn ĐÚNG cuộc hội thoại đó).
+   *   Ở đây người dùng đã RỜI khỏi hội thoại cũ để mở một phiên MỚI — một bong bóng "Đã dừng" lạc
+   *   vào giữa khung TRẮNG vừa mở còn tệ hơn im lặng (đúng lớp lỗi Đợt A đã trả giá, xem docblock
+   *   nhánh `catch` của `hoi()`). Huỷ không kèm lý do khiến nhánh `catch` rơi về nhánh SILENT có sẵn
+   *   (không `postMessage` gì) — và quan trọng hơn: nhánh đó KHÔNG BAO GIỜ đụng `this.lichSu`/lưu
+   *   bền (chỉ nhánh hoàn tất BÌNH THƯỜNG trong `try` của `hoi()` mới làm việc đó, SAU khi vòng lặp
+   *   `break` một cách bình thường) — nên dù luồng SSE cũ vẫn còn "bay" khi hàm này return, nó không
+   *   có cách nào ghi vào `this.lichSu` đã bị reset bên dưới. Chọn "dừng" thay vì "chặn cho tới khi
+   *   xong": người dùng bấm "Chat mới" muốn NGAY một phiên trắng, không phải đợi xong một câu trả
+   *   lời họ không còn quan tâm đọc.
+   */
+  public async chatMoi(): Promise<void> {
+    this.huy?.abort();
+    try {
+      await this.luuHoiThoaiHienTai();
+    } catch (e) {
+      // Lỗi LƯU không được chặn việc mở phiên mới — cùng nguyên tắc "lỗi lưu không làm rớt câu trả
+      // lời" đã áp ở cuối `hoi()`.
+      console.error("AI Local: lưu hội thoại bền thất bại (Chat mới)", e);
+    }
+    this.lichSu = [];
+    this.maHoiThoaiHienTai = undefined;
+    this.quenDeXuat();
+    this.quenLenhCucBo();
+    // ★★★ ĐỢT G / TASK G2 / B3 — khung TRẮNG THẬT ⇒ thống kê cũng phải về ĐÚNG 0/0, không phải giữ
+    // số của phiên vừa rời (`thongKeHoiThoaiHienTai()` đọc `this.lichSu`, VỪA được xoá ở trên).
+    void this.panel.webview.postMessage({ loai: "chat_moi", ...this.thongKeHoiThoaiHienTai() });
+  }
+
+  /**
+   * ★★★ ĐỢT F / TASK 3 / B4 — "Lịch sử": liệt kê hội thoại đã lưu (tiêu đề + thời điểm), chọn một
+   * mục ⇒ nạp lại ĐÚNG hội thoại đó vào khung.
+   *
+   * ★ NHÁNH KIA — kho RỖNG: `showInformationMessage` tử tế, TUYỆT ĐỐI KHÔNG mở `showQuickPick` với
+   *   một danh sách trắng — một QuickPick trắng không nói được VÌ SAO trắng ("chưa hỏi gì lần nào"
+   *   và "dữ liệu cũ hỏng, bị `docDanhSachHoiThoai` lọc sạch" trông giống hệt nhau trước một danh
+   *   sách rỗng), trong khi một câu chữ rõ ràng thì không mập mờ.
+   *
+   * ★★★ KẾT CỤC (không chỉ "đã gọi showQuickPick"): gán LẠI `this.lichSu` VÀ `this.maHoiThoaiHienTai`
+   *   từ ĐÚNG bản ghi vừa chọn — không phải theo chỉ số trong danh sách (`MucLichSu.hoiThoai` mang
+   *   nguyên `HoiThoai` đã chọn, đọc trực tiếp từ đó) — rồi `postMessage({loai:"khoi_phuc_hoi_thoai"})`.
+   *   Tin này CHÍNH là tin B5 (Task 2) đã dùng lúc khung vừa mở — KHÔNG dựng một đường vẽ lại thứ
+   *   hai; `htmlBang.ts` giờ XOÁ khung TRƯỚC khi vẽ (xem đó) nên tái dùng ở đây thay THẾ nội dung cũ
+   *   thay vì nối thêm. Gán lại `maHoiThoaiHienTai` để một lượt hỏi TIẾP THEO UPSERT vào ĐÚNG bản
+   *   ghi vừa mở lại, không đẻ thêm một bản ghi thứ ba cho cùng một cuộc trò chuyện.
+   *
+   * ★ CÂU HỎI ĐANG CHẠY DỞ — huỷ SẠCH, CÙNG LÝ LẼ với `chatMoi()` (xem docblock ở đó): không huỷ
+   *   TRƯỚC khi đổi `this.maHoiThoaiHienTai` thì một luồng SSE mồ côi của phiên VỪA RỜI có thể hoàn
+   *   tất SAU khi trường đó đã trỏ sang mã của hội thoại VỪA CHỌN — `luuHoiThoaiHienTai()` của nó sẽ
+   *   UPSERT (tức GHI ĐÈ) đúng bản ghi người dùng vừa mở lại bằng nội dung của một câu hỏi hoàn toàn
+   *   không liên quan. Huỷ TRƯỚC khi gán lại loại trừ khả năng đó bằng CẤU TRÚC, không phải may rủi
+   *   về thời điểm.
+   */
+  public async moLichSu(): Promise<void> {
+    const ds = docDanhSachHoiThoai(this.khoHoiThoaiTho());
+    if (ds.length === 0) {
+      void vscode.window.showInformationMessage("AI Local: chưa có hội thoại nào được lưu.");
+      return;
+    }
+    const muc = await vscode.window.showQuickPick<MucLichSu>(
+      [...ds]
+        .sort((a, b) => b.thoiDiem - a.thoiDiem)
+        .map((h) => ({ label: h.tieuDe, description: new Date(h.thoiDiem).toLocaleString(), hoiThoai: h })),
+      { placeHolder: "Chọn một hội thoại để nạp lại vào khung" },
+    );
+    if (!muc) return; // Esc / bấm ra ngoài — huỷ lặng lẽ, giữ nguyên phiên đang mở
+
+    this.huy?.abort();
+    this.lichSu = [...muc.hoiThoai.luot];
+    this.maHoiThoaiHienTai = muc.hoiThoai.ma;
+    this.quenDeXuat();
+    this.quenLenhCucBo();
+    void this.panel.webview.postMessage({
+      loai: "khoi_phuc_hoi_thoai",
+      luot: muc.hoiThoai.luot.map((l) => ({ vaiTro: l.role, noiDung: l.content })),
+      // ★★★ ĐỢT G / TASK G2 / B3 — thống kê của ĐÚNG hội thoại vừa chọn (`this.lichSu` vừa gán lại
+      // ở trên), không phải của hội thoại vừa RỜI.
+      ...this.thongKeHoiThoaiHienTai(),
+    });
+  }
+
+  /**
+   * ★★★ TASK 4 — NÚT DỪNG phải cắt CẢ HAI: luồng SSE đang bay VÀ vòng lặp tác nhân (Task 3).
+   *
+   * MỘT lời gọi `abort()` đã làm cả hai, không cần một cờ RIÊNG cho vòng lặp: `moDongSse` nhận
+   * chính `AbortSignal` này làm `tinHieu` (cắt SSE — fetch/đọc luồng ném `AbortError`), VÀ vòng lặp
+   * đọc `biHuy: dieuKhien.signal.aborted` ở cuối MỖI vòng (`hoi()`, xem lời gọi `buocKeTiep`) — hai
+   * chỗ đọc CÙNG một `signal.aborted`, không phải hai cờ có thể trôi khỏi nhau.
+   *
+   * `this.huy` LUÔN là bộ điều khiển của lượt hỏi ĐANG CHẠY (một câu hỏi mới thay `this.huy` bằng
+   * bộ điều khiển KHÁC và tự huỷ bộ cũ — xem đầu `hoi()`), nên `abort()` ở đây luôn nhắm ĐÚNG lượt
+   * người dùng đang nhìn thấy trên giao diện, không bao giờ nhắm nhầm một lượt đã chết từ trước.
+   *
+   * `reason = LY_DO_NGUOI_DUNG_DUNG` — PHẢI kèm lý do (khác `abort()` trần dùng cho huỷ NGẦM ở đầu
+   * `hoi()`): `catch` của `hoi()` đọc `dieuKhien.signal.reason` để phân biệt "người dùng bấm Dừng"
+   * (phải báo "đã dừng") với "câu hỏi mới đè lên câu cũ" (im lặng, đúng hành vi đã có từ Đợt A).
+   */
+  private dungVongHienTai(): void {
+    this.huy?.abort(LY_DO_NGUOI_DUNG_DUNG);
+  }
+
+  /**
+   * `tepMention` — ĐỢT D / TASK 5: đường dẫn (tương đối, SẠCH — không kèm `@`) người dùng đã chọn
+   * qua dropdown @-mention trong CHÍNH lượt hỏi này. Nội dung của chúng đi qua ĐÚNG tool `doc_tep`
+   * (Task 2/3) trước khi vào ngữ cảnh — xem đoạn xử lý ngay dưới `nguCanhVong` bên dưới.
+   *
+   * `laCmdK` — ★★★ H3(b) (review toàn nhánh 2026-08-30): `true` khi lượt hỏi này bắt nguồn từ
+   * Cmd+K (webview đặt cờ `tuLenh` khi đáp lại `dat_cau_hoi_tu_lenh`, xem `htmlBang.ts` +
+   * `onDidReceiveMessage` ở constructor). Thread THẲNG xuống MỌI lượt gọi `dungYeuCauStream` bên
+   * dưới (kể cả các vòng đọc ≥2 của CHÍNH lượt hỏi này) để giao thức dạy-đọc không bao giờ chèn vào
+   * một câu hỏi mang giao thức Cmd+K — hai giao thức cạnh tranh trong cùng một `question` khiến
+   * model chọn đọc trước và nuốt mất chỉ dẫn `de_xuat_sua_doan`, Cmd+K im lặng không đẻ thẻ duyệt.
+   */
+  private async hoi(cauHoi: string, tepMention: string[] = [], laCmdK = false): Promise<void> {
+    // ★★★ LƯỢT HỎI MỚI ⇒ ĐỀ XUẤT CŨ HẾT HIỆU LỰC TRÊN GIAO DIỆN. Trước đây thẻ duyệt của lượt
+    // trước ở lại NGUYÊN trên bảng trong khi câu trả lời mới đang stream — người dùng đọc câu mới
+    // rồi bấm cái nút của câu CŨ. `xuLyDeXuat` có quên đề xuất cũ, nhưng chỉ khi một đề xuất MỚI
+    // tới; lượt hỏi không đẻ đề xuất nào thì thẻ cũ sống mãi.
+    this.quenDeXuat();
+    this.quenLenhCucBo();
+    const cookie = await this.context.secrets.get(KHOA_COOKIE);
+    if (!cookie) {
+      void this.panel.webview.postMessage({
+        loai: "loi",
+        thongDiep: "Chưa đăng nhập — chạy lệnh 'AI Local: Đăng nhập'.",
+      });
+      return;
+    }
+    const cfg = vscode.workspace.getConfiguration("aviAiLocal");
+    const cheDo = this.cheDoHienTai();
+    if (!cheDo) {
+      // FAIL-CLOSED: không biết lượt này ghi ở đâu thì KHÔNG hỏi. Bỏ qua đây là để một lượt trả lời
+      // đẻ ra thẻ duyệt mang chế độ ĐOÁN — và thẻ ấy là thứ chìa cho người dùng một cú bấm ghi đĩa.
+      void this.panel.webview.postMessage({
+        loai: "loi",
+        thongDiep:
+          "Chưa xác định được dự án đang chọn (danh sách dự án rỗng hoặc chưa nạp xong) — KHÔNG hỏi, " +
+          "vì chế độ quyết định byte sẽ rơi ở SERVER hay trên máy bạn. Hãy chọn lại dự án rồi hỏi lại.",
+      });
+      return;
+    }
+    // Chốt CHẾ ĐỘ của lượt này NGAY BÂY GIỜ — `nhan` bên dưới (chạy trong cùng lượt) đọc lại field
+    // này, không đọc `this.duAnChon` trực tiếp, để không lệch nếu người dùng đổi ô chọn giữa chừng.
+    this.cheDoHoiHienTai = cheDo;
+    this.thuMucHoiHienTai = cheDo.loai === "local" ? this.thuMucLocalDangChon() : undefined;
+
+    this.huy?.abort();
+    // ★★★ TASK 3 — bộ điều khiển huỷ CỦA RIÊNG lượt hỏi này, giữ trong một biến CỤC BỘ chứ không
+    // đọc lại `this.huy` bên trong vòng lặp bên dưới: một lượt hỏi MỚI khởi động giữa chừng (người
+    // dùng gõ câu khác) thay `this.huy` bằng một `AbortController` KHÁC — đọc `this.huy.signal`
+    // lúc đó sẽ đọc NHẦM sang bộ điều khiển mới (`aborted` luôn `false`) thay vì bộ điều khiển của
+    // CHÍNH lượt vòng lặp đang chạy, và người dùng bấm-huỷ-mà-vòng-vẫn-chạy đúng lỗi Task 3 phải vá.
+    const dieuKhien = new AbortController();
+    this.huy = dieuKhien;
+
+    // ★★★ TASK 3 — VÒNG LẶP TÁC NHÂN: model trả lời → có yêu cầu đọc (`doc_tep`/`liet_ke`/`grep`,
+    // Task 1/2) ⇒ chạy `chayToolCucBo` → nối kết quả thành lượt hỏi KẾ TIẾP ("KẾT QUẢ TOOL") → hỏi
+    // lại, tới khi hết yêu cầu đọc hoặc chạm trần `TRAN_VONG_MAC_DINH`. `buocKeTiep`
+    // (`loi/vongTacNhan.ts`, THUẦN, có lưới riêng) là nơi quyết định DUY NHẤT dừng/tiếp — KHÔNG rải
+    // thêm điều kiện dừng ở đây, đúng ranh giới "quyết định THUẦN vs thực thi" mà tệp đó dựng ra.
+    // CHỈ chạy ở chế độ LOCAL: SERVER đã có vòng tool CỦA NÓ chạy trên hộp cát máy chủ (xem
+    // docblock `dungYeuCauStream`) — vòng NÀY sẽ hỏi ĐÈ lên đó nếu bật nhầm chế độ.
+    let lichSuVong: LuotChat[] = [...this.lichSu];
+    let cauHoiVong = cauHoi;
+    let nguCanhVong: string | undefined = this.thuThapNguCanh();
+    /**
+     * ★★★ TASK 5 — nội dung tệp @-mention. Đọc qua ĐÚNG `chayToolCucBo({loai:"doc_tep"})` — cùng
+     * hàm, cùng hàng rào (`duocPhepDoc`/`duocPhepRoiMay`), cùng phép che (`cheBiMat` trong
+     * `dinhDangDocTep`) mà ba tool đọc của Task 2/3 dùng. KHÔNG dựng một đường đọc RIÊNG cho
+     * @-mention — đây là một đường dữ liệu RỜI MÁY (nội dung tệp đi kèm câu hỏi gửi lên máy chủ),
+     * và một đường đọc thứ hai là đúng "cửa sau" mà Task 5 bị cấm mở.
+     * ⚠ Chạy TRƯỚC vòng lặp, chỉ MỘT LẦN, bất kể chế độ LOCAL/SERVER: đây là ngữ cảnh của CÂU HỎI
+     *   GỐC, không phải một yêu cầu đọc phát sinh giữa vòng lặp tác nhân.
+     */
+    if (tepMention.length > 0) {
+      const dsGocMention = this.dsGocDoc();
+      const doanMention: string[] = [];
+      for (const duong of tepMention) {
+        const kq = await chayToolCucBo({ loai: "doc_tep", path: duong }, dsGocMention);
+        doanMention.push(kq.ok ? kq.ketQua : `--- @${duong}: KHÔNG đọc được — ${kq.lyDo} ---`);
+      }
+      nguCanhVong = `${nguCanhVong ?? ""}\n${doanMention.join("\n\n")}`;
+    }
+    let traLoiCuoi = "";
+    // ★★★ PDCA vòng 2 (round 2, `pdca3-report.md`) — nối NGUYÊN VĂN `traLoiCuoi` của MỌI vòng, KHÔNG
+    // dấu phân cách — đúng những gì webview ĐÃ hiển thị SỐNG qua các `postMessage({loai:"token"})`
+    // ở trên (khớp `khoiTraLoi.textContent += m.chu` của `htmlBang.ts`). Dùng để lọc rác giao thức
+    // khỏi TOÀN BỘ văn bản đã stream khi lượt hỏi kết thúc, không chỉ vòng CUỐI — xem
+    // `loi/xoaRacGiaoThuc.ts` cho lý do (5/6 tác vụ ĐẠT của PDCA vòng 1 lộ khối ĐÃ THỰC THI của
+    // những vòng KHÔNG PHẢI vòng cuối, vì webview không hề xoá gì giữa các vòng).
+    let vanBanTichLuy = "";
+    let canhBaoCuoi: string | null = null;
+    let degradedCuoi = false;
+    let vong = 0;
+    // ★★★ PDCA vòng 2 — thay JSON thô bằng câu tiếng Việt khi vòng lặp dừng vì HẾT TRẦN đúng lúc
+    // câu trả lời cuối còn khối `avi-tool` dở dang (xem `loi/khoiDoDang.ts`). CHỈ nhánh `het_tran`
+    // set biến này; `khong_con_tool`/`nguoi_dung_dung`/`loi` KHÔNG đụng tới ⇒ hành vi hai nhánh đó
+    // giữ NGUYÊN. `null` nghĩa là "không thay gì" — fallback cũ (`degradedCuoi ? traLoiCuoi : null`)
+    // ở dưới vẫn áp dụng, kể cả cho ca het_tran KHÔNG có khối dở dang.
+    let vanBanCuoiThayThe: string | null = null;
+    /**
+     * ★★★ QA "kết cục thứ NĂM" (2026-09-06) — LỚP THỨ BA của cùng lỗ hổng, còn NẶNG HƠN hai lớp
+     * `thong_bao` đã vá ở trên: đây là RÒ RỈ DỮ LIỆU, không chỉ rò rỉ HIỂN THỊ.
+     *
+     * `break` ở nhánh `buoc.loai === "dung"` thoát khỏi `for(;;)` bằng đường BÌNH THƯỜNG (không
+     * `throw`), nên toàn bộ ĐOẠN SAU vòng lặp (đẩy `this.lichSu.push(...)`, gửi `hoan_tat`, gọi
+     * `luuHoiThoaiHienTai()`, `xuLyDeXuatCucBo`/`xuLyDeXuatNho`) LUÔN chạy, KỂ CẢ khi lượt này vừa bị
+     * huỷ NGẦM vì người dùng đã rời sang một phiên KHÁC (`chatMoi()`/`moLichSu()`). Đo được: `chatMoi()`
+     * đã reset `this.lichSu = []` cho phiên MỚI TRẮNG, nhưng đoạn epilogue của lượt CŨ vẫn `push()`
+     * câu hỏi/trả lời của phiên A vào ĐÚNG mảng `this.lichSu` đó (đọc lại `this`, không phải một bản
+     * chụp riêng) — phiên B "trắng" tự nhiên có 1 lượt "ma" ngay khi vừa mở, rồi bị LƯU BỀN vào
+     * `workspaceState` như một hội thoại MỚI mang nội dung của A. Nặng hơn nữa: nếu đây là đường
+     * `moLichSu()` (không phải `chatMoi()`), `this.maHoiThoaiHienTai` lúc epilogue chạy đã trỏ sang
+     * BẢN GHI người dùng vừa MỞ LẠI — `luuHoiThoaiHienTai()` UPSERT sẽ GHI ĐÈ đúng hội thoại đó bằng
+     * nội dung của một câu hỏi hoàn toàn không liên quan (đúng nguy cơ mà docblock `moLichSu()` đã tự
+     * cảnh báo, nhưng cảnh báo đó chỉ tính đường huỷ TRƯỚC khi `moDongSse` được gọi, không tính khe
+     * hở NÀY — giữa hai vòng của MỘT lượt `hoi()` đã đang chạy).
+     *
+     * Vá bằng CỜ đặt tại nơi phát hiện huỷ ngầm (nhánh `buoc.loai === "dung"`), đọc lại NGAY SAU khi
+     * thoát vòng lặp — RETURN SỚM trước MỌI hiệu ứng phụ của epilogue, tái dùng đúng "nhánh SILENT"
+     * mà `catch` bên dưới đã có cho ca huỷ-giữa-lúc-đọc-SSE, áp dụng cho ca huỷ-giữa-hai-vòng này.
+     */
+    let boQuaEpilogueViHuyNgam = false;
+
+    try {
+      for (;;) {
+        vong++;
+        // Tiến độ cho NGƯỜI DÙNG: chỉ vòng ≥ 2 mới báo — vòng 1 là câu hỏi bình thường, token đã tự
+        // stream ra rồi, báo thêm ở đó là làm ồn cho đường hạnh phúc phổ biến nhất (không cần đọc gì).
+        //
+        // ★★★ QA "kết cục thứ NĂM" (2026-09-06) — HÀNG RÀO `aborted` BẮT BUỘC ở đây. `chatMoi()`/
+        // `moLichSu()` huỷ NGẦM (`this.huy?.abort()` không kèm lý do) rồi `return` NGAY — nhưng
+        // vòng lặp SSE của `hoi()` CŨ (closure `dieuKhien` này) không hề biết điều đó, nó vẫn đang
+        // "bay" và có thể tới ĐÚNG lúc này giữa hai vòng đọc tool. Không có hàng rào, `postMessage`
+        // dưới đây phóng thẳng vào webview ĐÃ chuyển sang phiên MỚI (webview không phân biệt được
+        // tin đến từ luồng nào — nó chỉ có MỘT `choAiHienTai` cho phiên đang hiện) ⇒ chỉ báo của
+        // phiên MỚI bị ghi đè bằng tiến độ của một câu hỏi đã bị người dùng bỏ. Đọc TÍN HIỆU
+        // (`dieuKhien.signal.aborted`), không đọc "đang ở nhánh try hay catch" — cùng nguyên tắc
+        // TASK 6/D.1 đã dùng cho nhánh lỗi bên dưới: nguồn sự thật là AbortSignal, không phải hình
+        // dạng luồng thực thi.
+        if (cheDo.loai === "local" && vong > 1 && !dieuKhien.signal.aborted) {
+          void this.panel.webview.postMessage({
+            loai: "thong_bao",
+            thongDiep: `— vòng ${vong}/${TRAN_VONG_MAC_DINH}: đang hỏi lại model với kết quả tool —`,
+          });
+        }
+        const than = dungYeuCauStream({
+          cauHoi: cauHoiVong,
+          nguCanh: nguCanhVong ?? "",
+          lichSu: lichSuVong,
+          ngonNgu: cfg.get<string>("uiLanguage", "vi"),
+          vaiTro: "engineer",
+          cheDo,
+          laCmdK,
+          // ★★★ ĐỢT H / TASK H2 — tool MCP ngoài ĐÃ KẾT NỐI (rỗng nếu chưa từng dùng lệnh "AI Local:
+          // Quản lý MCP server ngoài" — xem docblock `dsToolMcpDangCoSan`). Rỗng ⇒ `question` không
+          // đổi (đã kiểm ở `yeuCau.unit.test.ts`).
+          dsToolMcp: dsToolMcpDangCoSan(),
+          // ★★★ ĐỢT H / TASK H3 — mục nhớ dài hạn ĐÃ LƯU. Đây là DUY NHẤT chỗ nội dung mục nhớ chạm
+          // vào lượt hỏi — nó đi vào `question` GỬI ĐI (dữ liệu, giống ngữ cảnh/kết quả tool), KHÔNG
+          // BAO GIỜ được đọc lại bằng `docYeuCauDoc`/`docDeXuatCucBo` (hai hàm đó chỉ quét
+          // `traLoiCuoi` bên dưới, không quét biến này) — đúng nguyên tắc chống tiêm lệnh mà H2 đã
+          // dựng cho kết quả tool, dùng LẠI nguyên vẹn ở đây (B4).
+          dsBoNho: docDanhSachBoNho(this.khoHoiThoaiTho()),
+          // ★★★ ĐỢT M — dạy `chay_lenh` CHỈ khi mức quyền hiện tại KHÔNG PHẢI "chỉ đọc". `chi_doc`
+          // vẫn là hàng rào THẬT ở nơi THỰC THI (`chayYeuCauLenh` bên dưới) — cờ này CHỈ tránh mời
+          // model xin một khả năng chắc chắn bị chặn (xem docblock `dayLenhDoc.ts`).
+          choPhepChayLenh: duocPhepGhiTheoMucQuyen(this.mucQuyenHienTai).ok,
+        });
+        let tt = trangThaiBanDau();
+        const { hong } = await moDongSse({
+          serverUrl: cfg.get<string>("serverUrl", "http://localhost:3000"),
+          cookie,
+          than,
+          tinHieu: dieuKhien.signal,
+          nhan: (sk) => {
+            // Vòng trạng thái THUẦN (suKienChat.ts) gom token + đóng lượt khi có `done` + phát hiện
+            // cắt ngang. Việc GỬI TỚI WEBVIEW theo từng khung vẫn ở đây vì đó là I/O.
+            tt = apDungSuKienChat(tt, sk);
+            // Tên trường ĐÃ ĐO trên mã máy chủ: `send({ type:"token", token: evt.token })`
+            // (server/routes/aiLocalKnowledgeApi.ts:595) — KHÔNG phải `text`.
+            if (sk.type === "token" && typeof sk.token === "string") {
+              void this.panel.webview.postMessage({ loai: "token", chu: sk.token });
+            } else if (sk.type === "error") {
+              // Máy chủ gửi chi tiết ở `error` (aiLocalKnowledgeApi.ts:628), KHÔNG phải `message`.
+              // Nhận cả hai để phòng đường khác, nhưng `error` phải đứng TRƯỚC.
+              const chiTiet =
+                typeof sk.error === "string" ? sk.error : typeof sk.message === "string" ? sk.message : null;
+              void this.panel.webview.postMessage({
+                loai: "loi",
+                thongDiep: chiTiet ?? "Máy chủ báo lỗi.",
+              });
+            } else {
+              // Payload LỒNG dưới `pendingAction` (deXuatGhi.ts) — `docDeXuatGhi` tự trả `null` cho
+              // mọi khung không phải đề xuất ghi apply_diff, nên gọi vô điều kiện ở đây là an toàn.
+              const d = docDeXuatGhi(sk);
+              if (d) this.xuLyDeXuat(d);
+            }
+          },
+        });
+        const ket = ketLuanLuotChat(tt, hong);
+        traLoiCuoi = ket.traLoi;
+        /**
+         * ★★★ PDCA vòng 2 (round 2) — nối, KHÔNG THAY. Chạy cho CẢ hai chế độ (vô hại với SERVER —
+         * vòng đó chỉ chạy đúng MỘT lần, và SERVER không dùng giao thức `avi-tool` dạng văn bản nên
+         * thường không có gì để lọc).
+         *
+         * ★★★ ĐÃ SỬA (đo LIVE trên server thật bắt được — T10, `pdca3-report.md`): webview thật nối
+         * `textContent += m.chu` KHÔNG dấu phân cách, và văn bản MỘT vòng không phải lúc nào cũng
+         * kết thúc bằng `\n` (vd hậu tố `"_Nguồn số liệu: ... hàng_"` không xuống dòng). Nếu vòng KẾ
+         * TIẾP bắt đầu NGAY bằng một hàng rào `\`\`\`avi-tool`, hàng rào đó rơi GIỮA DÒNG trong văn
+         * bản NỐI THẲNG — quy ước "chỉ hàng rào ĐẦU DÒNG mới thật" (`khoiAviTool.ts`, có chủ đích,
+         * tránh dương tính giả) khiến `xoaKhoiAviTool` BỎ QUA đúng khối đó, để lộ JSON thô (đo được
+         * ở T10: hai lượt `doc_tep keys/id_rsa` liền nhau, lượt 2 KHÔNG bị xoá). `vanBanTichLuy` chỉ
+         * dùng làm ĐẦU VÀO cho `vanBanKhongRacGiaoThuc` (không dùng cho gì khác cần khớp byte-đúng
+         * với luồng SỐNG) nên được phép chèn thêm đúng MỘT `\n` ở ranh giới vòng khi vòng TRƯỚC chưa
+         * kết thúc bằng dòng trống — bảo đảm hàng rào mở đầu của vòng SAU luôn được nhận diện ĐÚNG.
+         */
+        vanBanTichLuy += (vanBanTichLuy.length > 0 && !/\r?\n$/.test(vanBanTichLuy) ? "\n" : "") + traLoiCuoi;
+        canhBaoCuoi = ket.canhBao;
+        degradedCuoi = tt.degraded;
+
+        // SERVER: một vòng duy nhất, giữ NGUYÊN hành vi trước Task 3 — không đọc `traLoiCuoi` tìm
+        // yêu cầu đọc, không gọi `buocKeTiep`.
+        if (cheDo.loai !== "local") break;
+
+        const yeuCau = docYeuCauDoc(traLoiCuoi);
+        // ★★★ ĐỢT H / TASK H2 — CÙNG NGUỒN: `traLoiCuoi` là văn bản MODEL VỪA TỰ SINH RA ở lượt SSE
+        // này, chưa qua bất kỳ định dạng/che nào. Đây là ĐIỂM DUY NHẤT trong cả vòng lặp nơi văn bản
+        // được quét tìm yêu cầu MỚI (đọc lẫn gọi MCP) — kết quả tool (cục bộ lẫn MCP, xem `doanKetQua`
+        // dưới) không bao giờ đi qua `docYeuCauDoc`/`docYeuCauMcpNgoai` một lần nữa; nó chỉ trở thành
+        // INPUT của `cauHoiVong` cho lượt hỏi KẾ TIẾP. Đây chính là hàng rào KIẾN TRÚC chống tiêm lệnh
+        // (B3) mà `loi/mcpAnToan.ts` nói tới — không phải một cờ bật/tắt có thể quên.
+        const yeuCauMcp = docYeuCauMcpNgoai(traLoiCuoi);
+        const buoc = buocKeTiep({
+          vong,
+          tran: TRAN_VONG_MAC_DINH,
+          coYeuCauDoc: yeuCau.length > 0 || yeuCauMcp.length > 0,
+          biHuy: dieuKhien.signal.aborted,
+          coLoi: tt.daBaoLoi,
+        });
+        if (buoc.loai === "dung") {
+          /**
+           * ★★★ QA "kết cục thứ NĂM" (2026-09-06) — LỚP THỨ HAI của cùng lỗ hổng, Ở ĐIỂM KHÁC với
+           * `bangChat.ts:1090`. `buocKeTiep` (THUẦN, `vongTacNhan.ts`) đọc `biHuy` từ CHÍNH
+           * `dieuKhien.signal.aborted` và gộp CẢ HAI nguồn huỷ (nút Dừng THẬT lẫn huỷ NGẦM vì đổi
+           * phiên) vào chung một nhãn hiển thị `"nguoi_dung_dung"` — đúng như docblock
+           * `LY_DO_NGUOI_DUNG_DUNG` ở trên đã cảnh báo (từ vựng TRÙNG CHỮ có chủ đích), nhưng chỗ
+           * NÀY lại dùng nó để GỬI THẲNG một `thong_bao` "Đã dừng theo yêu cầu" mà KHÔNG kiểm lại
+           * `dieuKhien.signal.reason` như nhánh `catch` bên dưới đã làm — nếu `chatMoi()`/`moLichSu()`
+           * huỷ NGẦM đúng lúc vòng lặp vừa kết thúc MỘT VÒNG (giữa hai lần `await moDongSse`, không
+           * phải giữa lúc ĐANG đọc thân SSE — khe hở KHÁC với khe hở đã vá ở dòng ~1090), tin này vẫn
+           * bay ra và có thể ghi đè khung PHIÊN MỚI bằng một câu "đã dừng" của phiên đã bị bỏ, dù
+           * người dùng chưa từng bấm nút Dừng. Hàng rào ĐÚNG: chỉ báo "đã dừng" khi ĐÂY THẬT SỰ là
+           * `dungVongHienTai()` của lượt này (`reason === LY_DO_NGUOI_DUNG_DUNG`) — huỷ ngầm thì im
+           * lặng, cùng nguyên tắc `catch` đã áp dụng, không phải một hàng rào MỚI phát minh riêng.
+           */
+          const laHuyNgamViDoiPhien =
+            buoc.lyDo === "nguoi_dung_dung" && dieuKhien.signal.reason !== LY_DO_NGUOI_DUNG_DUNG;
+          if (buoc.lyDo !== "khong_con_tool" && !laHuyNgamViDoiPhien) {
+            void this.panel.webview.postMessage({
+              loai: "thong_bao",
+              thongDiep: nhanLyDoDungVong(buoc.lyDo, vong),
+            });
+          }
+          // ★★★ QA "kết cục thứ NĂM" — CỜ EPILOGUE (xem docblock khai báo `boQuaEpilogueViHuyNgam`
+          // ở đầu `hoi()`): huỷ ngầm vì đổi phiên thì epilogue (lưu lịch sử/gửi hoan_tat) phải bị
+          // BỎ QUA HOÀN TOÀN, không chỉ bỏ tin `thong_bao` hiển thị.
+          boQuaEpilogueViHuyNgam = laHuyNgamViDoiPhien;
+          // ★★★ CHỈ nhánh het_tran — nguoi_dung_dung/loi/khong_con_tool KHÔNG được đổi hành vi
+          // (xem docblock biến `vanBanCuoiThayThe` ở trên). Trả `null` khi không có khối dở dang.
+          if (buoc.lyDo === "het_tran") {
+            vanBanCuoiThayThe = vanBanHetTranConDoDang(traLoiCuoi, vong, TRAN_VONG_MAC_DINH);
+          }
+          break;
+        }
+
+        // buoc.loai === "chay_tool" — chạy TỪNG yêu cầu đọc (Task 2), nối kết quả thành lượt hỏi
+        // KẾ TIẾP. Lượt VỪA XONG (câu hỏi + trả lời) vào lịch sử của VÒNG này để model lượt sau còn
+        // nhớ nó vừa xin đọc gì — lịch sử này KHÔNG đụng `this.lichSu` (bộ nhớ NGOÀI của bảng chat),
+        // xem ghi chú ở cuối hàm.
+        lichSuVong = [...lichSuVong, { role: "user", content: cauHoiVong }, { role: "assistant", content: traLoiCuoi }];
+        const dsGoc = this.dsGocDoc();
+        const doanKetQua: string[] = [];
+        for (const y of yeuCau) {
+          void this.panel.webview.postMessage({
+            loai: "thong_bao",
+            thongDiep: `vòng ${vong}/${TRAN_VONG_MAC_DINH} — đang ${nhanYeuCauDoc(y)}`,
+          });
+          const kq = await chayToolCucBo(y, dsGoc);
+          doanKetQua.push(kq.ok ? kq.ketQua : `LỖI: ${kq.lyDo}`);
+        }
+        // ★★★ ĐỢT H / TASK H2 — gọi từng yêu cầu MCP ngoài. `goiToolMcpNgoai` LUÔN trả một chuỗi đã
+        // đi qua `dinhDangKetQuaMcpNgoai` (che bí mật + vô hiệu hoá avi-tool giả mạo + cắt trần, B3+B4)
+        // — không có nhánh "lỗi ⇒ nối nguyên văn" nào tách riêng như `chayToolCucBo` ở trên, vì hàm
+        // đó tự định dạng CẢ hai nhánh ok/lỗi giống nhau (khác `KetQuaToolCucBo` cục bộ).
+        for (const y of yeuCauMcp) {
+          void this.panel.webview.postMessage({
+            loai: "thong_bao",
+            thongDiep: `vòng ${vong}/${TRAN_VONG_MAC_DINH} — đang ${nhanYeuCauMcpNgoai(y)}`,
+          });
+          doanKetQua.push(await goiToolMcpNgoai(phuThuocThat(this.context), y));
+        }
+        /**
+         * ★★★ H3(a) (review toàn nhánh 2026-08-30) — GIỮ câu hỏi GỐC, đừng THAY hẳn bằng kết quả
+         * tool. Bản cũ gán `cauHoiVong = "KẾT QUẢ TOOL: ..."` — câu hỏi gốc (`cauHoi`, tham số của
+         * `hoi()`, còn nguyên trong closure) biến mất khỏi `question` của vòng kế tiếp. Hai hậu quả
+         * đo được:
+         *  · đường hỏi thường: máy chủ truy hồi RAG theo `question` — vòng quyết định (vòng cuối)
+         *    truy hồi trên NỘI DUNG TOOL thay vì trên câu người dùng hỏi, tức ngữ cảnh KB sai đề;
+         *  · Cmd+K: câu hỏi gốc mang CẢ chỉ dẫn `de_xuat_sua_doan` LẪN `dongDau`/`dongCuoi` cố định
+         *    — mất nó ở vòng ≥2 là mất luôn hình dạng đề xuất, thẻ duyệt không bao giờ hiện.
+         * Vá: NỐI kết quả tool với câu hỏi gốc, không THAY — một dòng vá cả hai kịch bản.
+         */
+        cauHoiVong =
+          `KẾT QUẢ TOOL:\n${doanKetQua.join("\n\n")}\n\n` +
+          `--- CÂU HỎI GỐC (hãy trả lời ĐÚNG câu này, theo đúng hình dạng đã yêu cầu ở trên) ---\n${cauHoi}`;
+        // Ngữ cảnh soạn thảo (tệp đang mở/đoạn đang chọn) CHỈ đính kèm lượt hỏi GỐC — lặp lại nó ở
+        // mỗi vòng vừa tốn ngân sách ngữ cảnh vừa không mang tin gì mới cho những lượt sau.
+        nguCanhVong = undefined;
+      }
+
+      // ★★★ QA "kết cục thứ NĂM" — RETURN SỚM, TRƯỚC MỌI hiệu ứng phụ bên dưới (xem docblock khai
+      // báo `boQuaEpilogueViHuyNgam` ở đầu hàm). Không gửi `hoan_tat`, không đụng `this.lichSu`,
+      // không gọi `luuHoiThoaiHienTai()`/`xuLyDeXuatCucBo`/`xuLyDeXuatNho` — im lặng HOÀN TOÀN, cùng
+      // hành vi với nhánh SILENT của `catch` bên dưới (huỷ ngầm ở lượt hỏi MỚI đè lên lượt cũ), chỉ
+      // khác ĐIỂM huỷ rơi vào (giữa hai vòng của vòng lặp tác nhân, không phải giữa lúc đọc SSE).
+      if (boQuaEpilogueViHuyNgam) return;
+
+      // `degraded` ⇒ webview đang hiện chữ ĐÃ STREAM mà server vừa bảo là rác (vòng công cụ suy
+      // biến) — phải THAY bằng `answer` thật, không chỉ lặng lẽ lưu đúng mà hiện sai. Một lượt DUY
+      // NHẤT `hoan_tat` cho TOÀN BỘ vòng lặp (không phải một lượt cho mỗi vòng con) — người dùng chỉ
+      // hỏi MỘT câu, hoàn tất phải khớp với đúng MỘT câu trả lời cuối cùng.
+      // ★★★ PDCA vòng 2 — `vanBanCuoiThayThe` (het_tran + khối dở dang) ĐỨNG TRƯỚC `degradedCuoi`:
+      // cả hai đều là "đừng để lộ chữ đã stream thô", override của het_tran ưu tiên hơn vì nó biết
+      // CHÍNH XÁC vì sao câu trả lời dở (degraded chỉ biết "server bảo suy biến", không biết lý do).
+      //
+      // ★★★ PDCA vòng 2 (round 2, `pdca3-report.md`) — MỞ RỘNG: `vanBanDaLocSach` đứng ngay SAU
+      // `vanBanCuoiThayThe`, TRƯỚC fallback `degradedCuoi`. Áp `vanBanKhongRacGiaoThuc` lên đúng văn
+      // bản NỀN mà webview lẽ ra sẽ hiển thị nếu KHÔNG có ghi đè nào (degraded ⇒ `traLoiCuoi` của
+      // vòng CUỐI, như fallback cũ; bình thường ⇒ toàn bộ `vanBanTichLuy` đã stream qua MỌI vòng) —
+      // trả `null` khi nền đó vốn đã sạch (không có khối `avi-tool` nào), nên khi không có gì để
+      // xoá, biểu thức dưới đây rơi ĐÚNG về fallback cũ, không đổi hành vi (đúng khuôn "vá xong phải
+      // kiểm NHÁNH KIA").
+      const vanBanNen = degradedCuoi ? traLoiCuoi : vanBanTichLuy;
+      const vanBanDaLocSach = vanBanKhongRacGiaoThuc(vanBanNen);
+      // ★★★ PDCA vòng 4 — CHUỖI TIẾP theo SAU `vanBanDaLocSach`, áp lên chính kết quả đó (đúng thứ
+      // webview lẽ ra sẽ hiển thị nếu không có ghi đè `het_tran`). `null` khi không có trích dẫn nào
+      // ⇒ rơi ĐÚNG về fallback cũ (khuôn "vá xong phải kiểm NHÁNH KIA", giống `vanBanDaLocSach` ở trên).
+      const vanBanKhongTrichDan = vanBanKhongTrichDanToolLa(vanBanDaLocSach ?? vanBanNen);
+      // Lịch sử NGOÀI (`this.lichSu`, dùng cho MỌI câu hỏi sau này) chỉ giữ câu hỏi GỐC + câu trả
+      // lời CUỐI — các lượt "KẾT QUẢ TOOL" ở giữa là chi tiết THI CÔNG của một câu hỏi, không phải
+      // một lượt hỏi mới của người dùng; nhét chúng vào đây sẽ phình lịch sử mọi câu hỏi SAU này
+      // bằng nguyên văn kết quả `liet_ke`/`grep` của một câu hỏi đã xong từ lâu.
+      // ★★★ ĐỢT G / TASK G2 / B3 — nối TRƯỚC khi gửi `hoan_tat`, không phải SAU: tin `hoan_tat`
+      // giờ mang kèm `thongKeHoiThoaiHienTai()`, phải đọc `this.lichSu` SAU KHI lượt vừa xong đã vào
+      // đó — gửi trước rồi mới nối sẽ khai một con số THIẾU đúng lượt người dùng vừa nhận.
+      this.lichSu.push({ role: "user", content: cauHoi }, { role: "assistant", content: traLoiCuoi });
+      void this.panel.webview.postMessage({
+        loai: "hoan_tat",
+        vanBanCuoi: vanBanCuoiThayThe ?? vanBanKhongTrichDan ?? vanBanDaLocSach ?? (degradedCuoi ? traLoiCuoi : null),
+        canhBao: canhBaoCuoi,
+        ...this.thongKeHoiThoaiHienTai(),
+      });
+      // ★★★ ĐỢT F / TASK 2 — lưu BỀN ngay sau khi lịch sử NGOÀI vừa nối lượt mới, cho CẢ LOCAL lẫn
+      // SERVER (đóng VSCode giữa một cuộc trò chuyện SERVER cũng không nên mất nó). Lỗi ghi
+      // (`workspaceState` hỏng, hết dung lượng đĩa…) KHÔNG được làm rớt câu trả lời người dùng vừa
+      // nhận — bắt riêng, chỉ NÓI RA, không ném lại cho `catch` ngoài biến một lỗi lưu thành một lỗi
+      // "hỏi thất bại".
+      void this.luuHoiThoaiHienTai().catch((e: unknown) => {
+        console.error("AI Local: lưu hội thoại bền thất bại", e);
+      });
+      // ★★★ ĐỢT C — đường ghi CỤC BỘ, dựa trên câu trả lời CUỐI của vòng lặp (sau khi đã đọc xong
+      // mọi yêu cầu ĐỌC của model, nếu có). Đề xuất GHI KHÔNG được xử lý bên trong vòng lặp Task 3
+      // ở trên — chỉ ở đây, ĐÚNG MỘT LẦN, y hệt đường Đợt C trước Task 3 (chỉ khác nguồn `traLoiCuoi`
+      // là câu trả lời của LƯỢT CUỐI thay vì lượt duy nhất).
+      if (cheDo.loai === "local") void this.xuLyDeXuatCucBo(traLoiCuoi);
+      // ★★★ ĐỢT H / TASK H3 / B5 — nhánh "AI đề xuất, người dùng duyệt". CÙNG nguồn `traLoiCuoi`
+      // (câu trả lời CUỐI, văn bản model TỰ SINH — KHÔNG BAO GIỜ kết quả tool/mục nhớ, xem docblock
+      // `docYeuCauDoc` ở trên), CÙNG điều kiện LOCAL với đường ghi tệp — bộ nhớ là một tính năng phía
+      // client (workspaceState), không có ý nghĩa gì cho chế độ SERVER.
+      if (cheDo.loai === "local") void this.xuLyDeXuatNho(traLoiCuoi);
+      // ★★★ ĐỢT M — cùng nguồn `traLoiCuoi`, cùng điều kiện LOCAL (chạy lệnh trên máy NGƯỜI DÙNG,
+      // không có ý nghĩa gì cho chế độ SERVER — nơi model đã có `run_command` RIÊNG trên hộp cát
+      // của chính máy chủ, xem `task-I3-I4-report.md`). Đồng bộ (không `void`) vì hàm THUẦN đồng bộ,
+      // không có await nào bên trong (chỉ `postMessage`, vốn đã tự "void" ở bên trong hàm đó).
+      if (cheDo.loai === "local") this.xuLyYeuCauLenh(traLoiCuoi);
+    } catch (e) {
+      // Huỷ lượt cũ là hành vi BÌNH THƯỜNG (người dùng hỏi câu mới) — không phải lỗi, không được
+      // khai thành lỗi. Chỉ lỗi THẬT mới hiện lên.
+      /**
+       * ★★★ TASK 6/D.1 — NGUỒN SỰ THẬT LÀ `dieuKhien.signal.aborted`, KHÔNG PHẢI HÌNH DẠNG CỦA `e`.
+       *
+       * Bản cũ nhận diện huỷ bằng `(e as Error).name === "AbortError"`. Đo LIVE (Task 6): huỷ GIỮA
+       * LÚC ĐANG ĐỌC THÂN SSE (chứ không phải trước khi có response — đó là kịch bản Task 4 đã đo)
+       * khiến `fetch` gốc của Node (undici) reject bằng CHÍNH `signal.reason` — khi
+       * `dungVongHienTai()` gọi `abort(LY_DO_NGUOI_DUNG_DUNG)`, `reason` đó là một CHUỖI TRẦN, không
+       * phải `Error`/`AbortError`. `(e as Error).name` trên một chuỗi luôn là `undefined` ⇒ lượt huỷ
+       * CÓ CHỦ Ý của người dùng rơi xuống nhánh lỗi chung với `(e as Error).message === undefined`
+       * ⇒ bong bóng "Lỗi" HIỆN RỖNG. Tái hiện 4/4 lần ở Task 6 (`t6-chan-doan-dung.json`).
+       *
+       * Vá bằng cách đọc TÍN HIỆU chứ không đọc HÌNH DẠNG của vật bị ném: `dieuKhien` là
+       * `AbortController` CỦA RIÊNG lượt `hoi()` này (biến cục bộ closure, không phải `this.huy` —
+       * cùng lý do Task 3 đã nêu), nên `dieuKhien.signal.aborted === true` CHỈ CÓ THỂ do MỘT trong
+       * hai lời gọi `abort()` nhắm đúng lượt này: (1) `dungVongHienTai()` của CHÍNH lượt này, hoặc
+       * (2) huỷ NGẦM ở đầu MỘT lượt `hoi()` MỚI đè lên lượt này. Bất kể `e` là `Error`, chuỗi, hay
+       * bất kỳ thứ gì khác — nếu tín hiệu đã báo huỷ thì đây LÀ một lượt huỷ, không phải lỗi thật.
+       */
+      if (dieuKhien.signal.aborted) {
+        /**
+         * PHẢI phân biệt HAI nguồn gốc bằng `reason`, KHÔNG bằng việc "có phải huỷ hay không" — Đợt
+         * A đã trả giá đúng chỗ này (huỷ lượt hiện thành bong bóng "Lỗi" tiếng Anh thô); vá sai
+         * hướng ở đây là hiện "đã dừng" cho MỌI lượt huỷ, kể cả lượt bị huỷ NGẦM vì người dùng gõ
+         * câu hỏi khác — một bong bóng "đã dừng" lạc giữa một câu hỏi hoàn toàn mới còn tệ hơn im lặng.
+         *   · `reason === LY_DO_NGUOI_DUNG_DUNG` ⇒ CHÍNH `dungVongHienTai` của LƯỢT NÀY vừa gọi.
+         *     Báo "đã dừng — ở vòng N" (không phải "lỗi"), rồi gửi `hoan_tat` để webview coi lượt
+         *     này ĐÃ XONG (ẩn nút Dừng — xem `htmlBang.ts`; không tín hiệu nào khác làm việc đó).
+         *   · Ngược lại (huỷ NGẦM, `reason` mặc định của `abort()` không tham số) ⇒ giữ NGUYÊN hành
+         *     vi cũ: im lặng, không báo gì — lượt hỏi MỚI đã tự lo trạng thái của chính nó.
+         */
+        if (dieuKhien.signal.reason === LY_DO_NGUOI_DUNG_DUNG) {
+          void this.panel.webview.postMessage({
+            loai: "thong_bao",
+            thongDiep: nhanLyDoDungVong("nguoi_dung_dung", vong),
+          });
+          // ★★★ PDCA vòng 2 (round 2) — huỷ GIỮA LÚC đang đọc thân SSE của một vòng ≥2 (lượt fetch
+          // hiện tại không kịp hoàn tất, `vanBanTichLuy`/`traLoiCuoi` KHÔNG được cập nhật cho vòng
+          // này) VẪN có thể để lại khối `avi-tool` ĐÃ THỰC THI của (các) vòng TRƯỚC đó trong
+          // `vanBanTichLuy` — cùng lỗ hổng đã vá ở nhánh kết thúc bình thường phía trên, KHÔNG được
+          // bỏ sót nhánh huỷ-giữa-chừng này. `null` khi chưa có gì để xoá (ca phổ biến nhất — huỷ
+          // ngay ở vòng 1) giữ NGUYÊN hành vi cũ.
+          void this.panel.webview.postMessage({
+            loai: "hoan_tat",
+            vanBanCuoi: vanBanKhongRacGiaoThuc(vanBanTichLuy),
+            canhBao: null,
+            // ★★★ ĐỢT G / TASK G2 / B3 — lượt bị DỪNG GIỮA CHỪNG không hề vào `this.lichSu` (đúng,
+            // nó chưa xong) — thống kê ở đây vẫn ĐÚNG vì đọc thẳng `this.lichSu` hiện có, không phải
+            // một con số đoán riêng cho nhánh này.
+            ...this.thongKeHoiThoaiHienTai(),
+          });
+        }
+        return;
+      }
+      if (laLoi401(e)) {
+        // Spec §5.1: "401 giữa chừng ⇒ xoá cookie, mời đăng nhập lại" — cookie chết mà để lại thì
+        // mọi lượt sau lại 401 y hệt, không ai biết vì sao. CHỈ 401 mới xoá — 403/500 không xoá.
+        await this.context.secrets.delete(KHOA_COOKIE);
+        void this.panel.webview.postMessage({
+          loai: "loi",
+          thongDiep: "Phiên đăng nhập hết hạn — đã xoá phiên cũ. Chạy lệnh 'AI Local: Đăng nhập' để vào lại.",
+        });
+        // ★★★ ĐỢT F / TASK 1 — cookie vừa bị xoá Ở TRÊN nhưng vùng tài khoản trong khung (nút "Đăng
+        // xuất"/tên tài khoản) vẫn đứng yên nếu không ai báo lại: người dùng thấy khung trông như
+        // còn đăng nhập trong khi mọi câu hỏi tiếp theo đều 401 y hệt. Đồng bộ NGAY, không đợi
+        // người dùng tự đóng/mở lại view — đúng "nhánh kia" của B3 cho một phiên chết GIỮA CHỪNG,
+        // không chỉ lúc chủ động bấm "Đăng xuất".
+        void this.guiTrangThaiDangNhap();
+        return;
+      }
+      /**
+       * ★★★ ĐỢT G / TASK G4 / B3 — LỖI PHẢI CHỈ ĐƯỜNG SỬA khi đây THẬT SỰ là "không nối được máy
+       * chủ" (mạng hỏng/sai địa chỉ/timeout — `laLoiKhongNoiDuocMayChu`, THUẦN, có lưới riêng).
+       *
+       * ⚠⚠⚠ NHÁNH KIA — vị từ đã tự loại trừ mọi đáp ứng HTTP THẬT (401 bắt Ở TRÊN bằng `laLoi401`;
+       * 403/500/… rơi qua nhánh chung NGAY DƯỚI ĐÂY, giữ NGUYÊN hành vi cũ — hiện nguyên văn câu của
+       * máy chủ, KHÔNG kèm gợi ý đổi địa chỉ) — gợi ý sai chỗ còn tệ hơn không gợi ý (yêu cầu B3).
+       * `moSettings: true` báo webview vẽ thêm nút "Mở Settings" trên CHÍNH bong bóng lỗi này (xem
+       * `htmlBang.ts#themLuot`) — bấm nút gửi `mo_settings_may_chu` xử lý Ở TRÊN, không một đường
+       * ghi/mở-cấu-hình thứ hai nào khác.
+       */
+      if (laLoiKhongNoiDuocMayChu(e)) {
+        void this.panel.webview.postMessage({
+          loai: "loi",
+          thongDiep: moTaLoiKhongNoiDuocMayChu(cfg.get<string>("serverUrl", "http://localhost:3000")),
+          moSettings: true,
+        });
+        return;
+      }
+      // ★ CÙNG LÝ LẼ với nhánh huỷ ở trên: lỗi THẬT cũng không đảm bảo là `Error` (một chuỗi trần
+      // ném ra sẽ làm `.message` là `undefined`, tái tạo đúng "bong bóng lỗi RỖNG" cho một lượt
+      // KHÔNG PHẢI do huỷ) — dùng `e instanceof Error` để đọc `.message`, ngược lại hiện chính giá
+      // trị bị ném (ép chuỗi) thay vì `undefined`.
+      void this.panel.webview.postMessage({
+        loai: "loi",
+        thongDiep: e instanceof Error ? e.message : String(e),
+      });
+    }
+  }
+
+  /**
+   * Nhận một đề xuất ghi vừa đọc được từ khung SSE. Bước 4 (Task 4/5): hàng rào cuối — chỉ hiện
+   * thẻ duyệt khi lượt hỏi đang chạy THẬT SỰ ở chế độ SERVER. Việc này không nên xảy ra (LOCAL gửi
+   * `codingMode:false`) nhưng nếu máy chủ vẫn gửi, im lặng bỏ qua còn nguy hiểm hơn báo cảnh báo.
+   */
+  private xuLyDeXuat(d: DeXuatGhi): void {
+    const cheDo = this.cheDoHoiHienTai;
+    if (!coDuocHienTheDuyet(cheDo?.loai ?? "local")) {
+      void this.panel.webview.postMessage({
+        loai: "thong_bao",
+        thongDiep:
+          "Cảnh báo: máy chủ gửi một đề xuất ghi trong khi lượt hỏi đang ở chế độ LOCAL — đã bỏ qua, KHÔNG hiện thẻ duyệt.",
+      });
+      return;
+    }
+    // Đề xuất TRƯỚC (nếu có) chưa từng được Duyệt/Huỷ đang bị GHI ĐÈ ở đây — không `quen()` nó thì
+    // nội dung diff ẢO của nó mồ côi trong `KhoDeXuat` tới khi TTL máy chủ hết (Finding 2, không
+    // phải lỗ an toàn vì không có gì tự duyệt, nhưng là rò bộ nhớ không cần thiết).
+    this.quenDeXuat();
+    this.deXuatHienTai = d;
+    // Nhãn nguồn = nhãn dự án SERVER đang chọn — `nhanNguonTheDuyet` đảm bảo ĐÚNG MỘT tiền tố
+    // "SERVER · " kể cả khi nhãn tới đây đã/chưa có sẵn. Dùng chung cho cả thẻ duyệt lẫn tiêu đề
+    // diff (Task 3) để hai nơi luôn khớp nhau.
+    this.nhanNguonHienTai = nhanNguonTheDuyet({ loai: "server", nhan: cheDo!.nhan });
+    // ⚠ `tomTatDiff` là phép đếm ĐA TẬP HỢP, không phải thuật toán diff: một lượt **SẮP XẾP LẠI**
+    // dòng (cùng tập dòng, khác thứ tự) cho them=0/bot=0 — và thẻ khi ấy khai "+0 / −0", tức nói
+    // KHÔNG CÓ THAY ĐỔI cho một thay đổi CÓ THẬT sắp được ghi vào tệp. `doiDong` là ô mà chính hàm
+    // đó trả về để phân biệt hai ca, trước đây bị vứt đi. Không đoán thêm gì: nói rõ có thay đổi
+    // nhưng phép đếm dòng không thấy, và mời mở diff — nơi VSCode vẽ diff THẬT.
+    const { them, bot, doiDong } = tomTatDiff(d.original, d.modified);
+    const tomTat = laTaoTepMoi(d)
+      ? "Tạo tệp mới"
+      : doiDong
+        ? `+${them} / −${bot}`
+        : "Có thay đổi (sắp xếp lại dòng) — mở diff để xem";
+    void this.panel.webview.postMessage({
+      loai: "the_duyet",
+      nhanNguon: this.nhanNguonHienTai,
+      // ★★★ CHỮ TRÊN NÚT LÀ HÀNG RÀO: nó nói byte sẽ rơi Ở ĐÂU. Webview KHÔNG có chữ mặc định nào
+      // cho nút này (xem `htmlBang.ts`) — thiếu `nhanNut` thì thẻ không hiện, thay vì hiện với chữ
+      // của lượt TRƯỚC (có thể là chữ của chế độ KIA).
+      nhanNut: nhanNutGhi("server"),
+      duong: d.path,
+      tomTat,
+      han: d.hetHan,
+    });
+  }
+
+  /**
+   * ★★★ ĐỢT C — ĐỀ XUẤT GHI CỤC BỘ (chế độ LOCAL). Đọc khối ```avi-tool``` từ văn bản model rồi
+   * dựng thẻ duyệt + diff native. **Không ghi gì ở đây** — mọi byte chỉ rơi trong `apBanVa`.
+   *
+   * Thứ tự kiểm ở đây cố ý NGHIÊNG VỀ TỪ CHỐI SỚM: giải đường thật → vị từ chặn → đọc đĩa → ghép.
+   * Đặc biệt, vị từ chặn chạy **TRƯỚC** khi đọc nội dung: nếu không, một đề xuất trỏ vào `.env` sẽ
+   * khiến nội dung tệp bí mật hiện nguyên văn trong tab diff trước khi có ai kịp từ chối nó.
+   * ⚠ Đây KHÔNG phải nơi cưỡng chế — `apBanVa` kiểm lại toàn bộ lúc bấm (giữa lúc hiện thẻ và lúc
+   *   bấm, mọi thứ đều có thể đổi). Đây chỉ là "đừng vẽ ra một cái nút không bao giờ bấm được".
+   */
+  private async xuLyDeXuatCucBo(vanBan: string): Promise<void> {
+    const ds = docDeXuatCucBo(vanBan);
+    if (ds.length === 0) return;
+    this.quenDeXuat();
+    if (ds.length > 1) {
+      void this.panel.webview.postMessage({
+        loai: "thong_bao",
+        thongDiep: `Model đề xuất ${ds.length} thay đổi nhưng bảng này chỉ duyệt MỘT lần một tệp — chỉ hiện đề xuất đầu tiên, hãy hỏi lại cho các tệp còn lại.`,
+      });
+    }
+    const d = ds[0];
+
+    /**
+     * ★★★ ĐỢT G / TASK G3 / B2 — LỚP UI, KHÔNG PHẢI HÀNG RÀO THẬT. Hàng rào thật là BƯỚC 0 của
+     * `ui/apBanVa.ts`, gọi ĐÚNG hàm THUẦN `duocPhepGhiTheoMucQuyen` này (không một bản quyết định
+     * thứ hai). Ở mức "Chỉ đọc", MỌI đề xuất ghi sẽ CHẮC CHẮN bị `apBanVa` từ chối — báo thẳng ở
+     * đây để khỏi làm việc thừa (giải đường, đọc đĩa, băm, dựng thẻ) cho một lượt đã biết trước kết
+     * cục, và để người dùng không thấy một thẻ duyệt có nút "Ghi vào workspace" mà bấm vào chắc
+     * chắn thất bại — dù có ẩn nút hay không, `apBanVa` vẫn là nơi QUYẾT ĐỊNH cuối cùng.
+     */
+    const quyenGhi = duocPhepGhiTheoMucQuyen(this.mucQuyenHienTai);
+    if (!quyenGhi.ok) {
+      void this.panel.webview.postMessage({
+        loai: "thong_bao",
+        thongDiep: `Model đề xuất sửa "${d.path}" nhưng bị chặn: ${quyenGhi.lyDo}`,
+      });
+      return;
+    }
+
+    const goc = this.thuMucHoiHienTai;
+    if (!goc) {
+      void this.panel.webview.postMessage({
+        loai: "thong_bao",
+        thongDiep: "Model đề xuất sửa tệp nhưng KHÔNG có thư mục workspace nào đang mở — đã bỏ qua.",
+      });
+      return;
+    }
+    const dsWs = (vscode.workspace.workspaceFolders ?? []).map((f) => f.uri.fsPath);
+    // ★★★ F3 — `resolve(goc, d.path)` NEO CỨNG vào gốc đang chọn, trong khi đường model nhìn thấy
+    // được tính trên thư mục CHỨA tệp (workspace nhiều thư mục ⇒ hai gốc khác nhau). `giaiDuongDeXuat`
+    // thử mọi gốc và TỪ CHỐI khi có ≥2 tệp cùng khớp — xem docblock của nó về ca `app/x.ts` vs
+    // `lib/x.ts`, nơi neo sai không đẻ ra lỗi mà đẻ ra một lượt ghi vào TỆP KHÁC trông hợp lý.
+    const giai = giaiDuongDeXuat(d.path, goc, dsWs, existsSync);
+    if (!giai.ok) {
+      void this.panel.webview.postMessage({ loai: "thong_bao", thongDiep: `Bỏ qua đề xuất sửa "${d.path}": ${giai.lyDo}` });
+      return;
+    }
+    const duongTuyetDoi = giai.duong;
+    const that = giaiDuongThat(duongTuyetDoi);
+    if (!that.ok) {
+      void this.panel.webview.postMessage({ loai: "thong_bao", thongDiep: `Bỏ qua đề xuất sửa "${d.path}": ${that.lyDo}` });
+      return;
+    }
+    // ★★★ GỐC cũng phải GIẢI ĐƯỜNG THẬT — cùng hệ quy chiếu với `that.duong`. Đây không chỉ là để
+    // so ranh giới (đã có `wsThat` lo), mà còn để tính ĐƯỜNG TƯƠNG ĐỐI khai lên sổ kiểm toán: trộn
+    // một gốc CHƯA giải với một đích ĐÃ giải cho ra `..\..\…` khi chính gốc là junction, và trên
+    // Windows khác ổ đĩa thì cho ra NGUYÊN đường tuyệt đối máy dev. Xem `duongTuongDoiTrongWorkspace`.
+    const gocThat = giaiDuongThat(goc);
+    if (!gocThat.ok) {
+      void this.panel.webview.postMessage({
+        loai: "thong_bao",
+        thongDiep: `Bỏ qua đề xuất sửa "${d.path}": không giải được thư mục đang chọn "${goc}" (${gocThat.lyDo}).`,
+      });
+      return;
+    }
+    const wsThat: string[] = [];
+    for (const ws of dsWs) {
+      const r = giaiDuongThat(ws);
+      if (!r.ok) {
+        void this.panel.webview.postMessage({
+          loai: "thong_bao",
+          thongDiep: `Bỏ qua đề xuất sửa "${d.path}": không giải được thư mục workspace "${ws}" (${r.lyDo}).`,
+        });
+        return;
+      }
+      wsThat.push(r.duong);
+    }
+    const phep = duocPhepGhi(that.duong, wsThat);
+    if (!phep.ok) {
+      void this.panel.webview.postMessage({ loai: "thong_bao", thongDiep: `Bỏ qua đề xuất sửa "${d.path}": ${phep.lyDo}` });
+      return;
+    }
+
+    let noiDungGoc: string;
+    try {
+      // ĐỌC TỪ ĐĨA, không từ bộ đệm editor — cùng lý lẽ với `apBanVa` bước 3: băm phải nói về BYTE.
+      noiDungGoc = Buffer.from(await vscode.workspace.fs.readFile(vscode.Uri.file(that.duong))).toString("utf8");
+    } catch (e) {
+      void this.panel.webview.postMessage({
+        loai: "thong_bao",
+        thongDiep: `Bỏ qua đề xuất sửa "${d.path}": không đọc được tệp từ đĩa (${(e as Error).message}). Đợt này chỉ sửa tệp ĐÃ CÓ, không tạo tệp mới.`,
+      });
+      return;
+    }
+    const ghep = ghepBanVa(noiDungGoc, d);
+    if (!ghep.ok) {
+      void this.panel.webview.postMessage({ loai: "thong_bao", thongDiep: `Bỏ qua đề xuất sửa "${d.path}": ${ghep.lyDo}` });
+      return;
+    }
+
+    // ★★★ I-1 — CẶP {gốc, đường tương đối} PHẢI NÓI VỀ CÙNG MỘT GỐC, và gốc ấy phải THẬT SỰ CHỨA
+    // tệp. Thử gốc của ô chọn TRƯỚC (đó là thứ người dùng đang nhìn), rồi tới các thư mục workspace
+    // khác. `undefined` ⇒ không gốc nào chứa nó: KHÔNG bịa ra một chuỗi trông-như-đường-dẫn để khai
+    // lên sổ. (Về lý thuyết `duocPhepGhi` ở trên đã loại ca này; giữ nhánh vì "về lý thuyết" không
+    // phải một hàng rào, và giá của nó là bốn dòng.)
+    const viTri = duongTuongDoiTrongWorkspace(that.duong, [gocThat.duong, ...wsThat]);
+    if (!viTri) {
+      void this.panel.webview.postMessage({
+        loai: "thong_bao",
+        thongDiep: `Bỏ qua đề xuất sửa "${d.path}": không quy được về đường tương đối trong thư mục workspace nào.`,
+      });
+      return;
+    }
+    const duongTuongDoi = viTri.duongTuongDoi;
+    const { them, bot, doiDong } = tomTatDiff(noiDungGoc, ghep.moi);
+    this.deXuatCucBoHienTai = {
+      actionId: randomUUID(),
+      deXuat: d,
+      duongTuyetDoi: that.duong,
+      duongTuongDoi,
+      bamGoc: bamNoiDung(noiDungGoc),
+      moi: ghep.moi,
+      // Gốc mà `duongTuongDoi` được tính TRÊN — không phải `goc` chưa giải. Hai ô này đi cùng nhau
+      // lên sổ kiểm toán (`nhanWorkspace` + `path`), lệch nhau là sổ tự mâu thuẫn.
+      thuMucWorkspace: viTri.goc,
+      them,
+      bot,
+    };
+    this.nhanNguonHienTai = nhanNguonTheDuyet({ loai: "local", nhan: goc });
+
+    /**
+     * ★★★ ĐỢT G / TASK G3 / B3 — mức "Tự ghi": BỎ BƯỚC HỎI (không dựng thẻ, không đợi cú bấm),
+     * nhưng đi qua ĐÚNG `apDungCucBo()` — hàm ĐÓ gọi `apBanVa` với TOÀN BỘ hàng rào giữ nguyên
+     * (`duocPhepGhi`/`camGhiRieng`/`duongThat`/fail-closed EOL lẫn lộn/kiểm toán TRƯỚC-SAU, xem
+     * `loi/mucQuyen.ts#boQuaBuocHoi`). "Tự trị" ở đây CHỈ có nghĩa "khỏi phải bấm" — KHÔNG có nghĩa
+     * "khỏi kiểm tra": `apDungCucBo()` còn tự kiểm LẠI chế độ (`cheDoHienTai()`) và cookie đăng
+     * nhập, đúng NHƯ MỘT cú bấm thật, vì đây CHÍNH LÀ đường gọi mà một cú bấm thật đi qua.
+     */
+    if (boQuaBuocHoi(this.mucQuyenHienTai)) {
+      await this.apDungCucBo();
+      return;
+    }
+
+    void this.panel.webview.postMessage({
+      loai: "the_duyet",
+      nhanNguon: this.nhanNguonHienTai,
+      nhanNut: nhanNutGhi("local"),
+      duong: duongTuongDoi,
+      tomTat: doiDong ? `+${them} / −${bot}` : "Có thay đổi (sắp xếp lại dòng) — mở diff để xem",
+      // Đề xuất CỤC BỘ không có TTL của máy chủ (chưa có hàng nào trên máy chủ cho tới lúc bấm
+      // ghi). Gửi chuỗi rỗng và để webview nói đúng điều đó, thay vì bịa ra một cái hạn.
+      han: "",
+    });
+  }
+
+  /**
+   * ★★★ ĐỢT M — YÊU CẦU CHẠY LỆNH do model phát ra. `vanBan` PHẢI là `traLoiCuoi` (văn bản model
+   * TỰ SINH ở lượt SSE này) — KHÔNG BAO GIỜ kết quả tool/ngữ cảnh/mục nhớ, cùng ranh giới
+   * `docYeuCauDoc`/`docYeuCauMcpNgoai` đã dựng ở vòng lặp Task 3 (chống tiêm lệnh KIẾN TRÚC, xem
+   * docblock `loi/docYeuCauLenh.ts`).
+   *
+   * ★★★ M3 HÀNG RÀO 1 (cửa duyệt) + HÀNG RÀO 2 (chi_doc chặn) + HÀNG RÀO 3 (chỉ lệnh allowlist) —
+   * CẢ BA được xét Ở ĐÂY, TRƯỚC KHI dựng thẻ, và **XÉT LẠI LẦN NỮA** ở `duyetLenhCucBo` lúc bấm
+   * (cùng khuôn `xuLyDeXuatCucBo`/`apBanVa`: hàng rào thật nằm ở ĐIỂM THỰC THI, không phải điểm vẽ
+   * thẻ — một webview vẽ sai hoặc một lời gọi tới từ đường khác sau này đều phải bị chặn LẠI ở đó).
+   *
+   * ⚠ Chỉ xử lý yêu cầu ĐẦU TIÊN nếu model phát nhiều khối `chay_lenh` trong cùng lượt — cùng khuôn
+   *   `xuLyDeXuatCucBo` (một lượt chỉ duyệt được MỘT thứ).
+   */
+  private xuLyYeuCauLenh(vanBan: string): void {
+    const ds = docYeuCauLenh(vanBan);
+    if (ds.length === 0) return;
+    this.quenLenhCucBo();
+    if (ds.length > 1) {
+      void this.panel.webview.postMessage({
+        loai: "thong_bao",
+        thongDiep: `Model đề xuất ${ds.length} lệnh nhưng bảng này chỉ duyệt MỘT lần một lệnh — chỉ hiện lệnh đầu tiên, hãy hỏi lại cho các lệnh còn lại.`,
+      });
+    }
+    const d = ds[0]!;
+
+    // ★★★ HÀNG RÀO 2 — `chi_doc` CHẶN Ở ĐÂY (báo sớm, cùng lý lẽ `xuLyDeXuatCucBo`: tránh dựng thẻ
+    // cho một lượt CHẮC CHẮN bị `duyetLenhCucBo` từ chối). Dùng LẠI ĐÚNG `duocPhepGhiTheoMucQuyen` —
+    // `chay_lenh` được coi là hành động "write-shape" (đổi trạng thái máy người dùng, dù phần lớn
+    // sáu lệnh chỉ đọc/kiểm tra) theo đúng phân loại `run_command` ở thiết kế gốc (`kind:"write"`,
+    // xem `task-I3-I4-report.md` §B1.3) — không phải một mức quyền THỨ TƯ.
+    const quyenChay = duocPhepGhiTheoMucQuyen(this.mucQuyenHienTai);
+    if (!quyenChay.ok) {
+      void this.panel.webview.postMessage({
+        loai: "thong_bao",
+        thongDiep: `Model đề xuất chạy lệnh "${d.command}" nhưng bị chặn: ${quyenChay.lyDo}`,
+      });
+      return;
+    }
+
+    // ★★★ HÀNG RÀO 3 — CHỈ LỆNH TRONG ALLOWLIST (M1, THUẦN). Từ chối ⇒ báo lý do, KHÔNG dựng thẻ.
+    const xet = xetDuyetLenh(d.command);
+    if (!xet.ok) {
+      void this.panel.webview.postMessage({
+        loai: "thong_bao",
+        thongDiep: `Model đề xuất chạy lệnh nhưng bị TỪ CHỐI: ${xet.lyDo}`,
+      });
+      return;
+    }
+
+    const cwd = this.thuMucHoiHienTai ?? vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
+    if (!cwd) {
+      void this.panel.webview.postMessage({
+        loai: "thong_bao",
+        thongDiep: `Model đề xuất chạy lệnh "${xet.lenh.hienThi}" nhưng KHÔNG có thư mục workspace nào đang mở — đã bỏ qua.`,
+      });
+      return;
+    }
+
+    // ★★★ HÀNG RÀO 1 — CỬA DUYỆT: mặc định HỎI TRƯỚC KHI CHẠY, hiện NGUYÊN VĂN lệnh sắp chạy
+    // (`xet.lenh.hienThi`, không phải `d.command` thô — hai chuỗi PHẢI khớp cho SÁU lệnh hợp lệ,
+    // nhưng hiện đúng cái SẼ THỰC SỰ chạy là kỷ luật đúng, không suy diễn từ đầu vào chưa xét duyệt).
+    // ★ KHÔNG có nhánh "tự động chạy" nào ở đây dù mức quyền là "tu_ghi" — xem docblock module: sáu
+    // hàng rào KHÔNG THƯƠNG LƯỢNG, và "hỏi trước khi chạy" là hàng rào ĐẦU TIÊN, không bị
+    // `boQuaBuocHoi` (mức "Tự ghi") bỏ qua như đường ghi tệp. Lý do khác GHI TỆP: `apBanVa` còn năm
+    // hàng rào KHÁC đứng sau bước hỏi (băm/EOL/kiểm toán…) nên bỏ bước hỏi ở đó vẫn còn nhiều lớp
+    // chặn lại; `chay_lenh` chỉ còn ĐÚNG MỘT hàng rào (allowlist) đứng sau bước hỏi — bỏ luôn bước
+    // hỏi ở đây là để lại một lượt lệnh CHẠY THẲNG ra máy người dùng chỉ dựa trên một allowlist tĩnh,
+    // rủi ro cao hơn hẳn so với ghi một tệp (có thể Ctrl+Z). "Tự trị" cho `chay_lenh` KHÔNG được đặt
+    // ở đợt này — cần một quyết định riêng của chủ dự án nếu muốn, không suy luận ngầm từ `tu_ghi`.
+    this.lenhCucBoHienTai = { actionId: randomUUID(), lenh: xet.lenh, cwd };
+    void this.panel.webview.postMessage({
+      loai: "the_duyet_lenh",
+      lenh: xet.lenh.hienThi,
+      thuMuc: cwd,
+    });
+  }
+
+  /**
+   * ★★★ ĐỢT H / TASK H3 / B5 — ĐỀ XUẤT NHỚ do AI phát ra: hỏi RÀNH MẠCH, chỉ ghi khi người dùng
+   * bấm DUYỆT. `vanBan` PHẢI là `traLoiCuoi` (văn bản model TỰ SINH ở lượt SSE này) — KHÔNG BAO GIỜ
+   * ngữ cảnh/mục nhớ/kết quả tool, cùng ranh giới `docYeuCauDoc` đã dựng ở vòng lặp Task 3.
+   *
+   * ★ NHÁNH KIA — người dùng bấm "Bỏ qua", đóng hộp thoại (Esc), hay bấm ra ngoài (VSCode trả
+   *   `undefined`): KHÔNG gọi `themMucBoNho` — hàm ghi không hề được gọi, đúng "từ chối ⇒ không ghi
+   *   gì cả" của B5. Chỉ nhánh CHỌN ĐÚNG NÚT "Nhớ" mới chạm tới lối ghi.
+   * ⚠ Chỉ xử lý đề xuất ĐẦU TIÊN nếu có nhiều khối trong cùng lượt — cùng khuôn `xuLyDeXuatCucBo`
+   *   (một lượt chỉ duyệt được MỘT thứ), tránh dựng chồng nhiều hộp thoại cho cùng một câu trả lời.
+   */
+  private async xuLyDeXuatNho(vanBan: string): Promise<void> {
+    const ds = docDeXuatNho(vanBan);
+    if (ds.length === 0) return;
+    const d = ds[0]!;
+
+    const chon = await vscode.window.showInformationMessage(
+      `AI Local đề xuất NHỚ (cho những lần hỏi sau): "${d.noiDung}"`,
+      "Nhớ",
+      "Bỏ qua",
+    );
+    if (chon !== "Nhớ") return; // Esc / "Bỏ qua" / bấm ra ngoài — KHÔNG ghi gì cả (nhánh kia của B5)
+
+    await themMucBoNho(this.khoHoiThoaiTho(), randomUUID(), d.noiDung, "ai_de_xuat_duyet");
+    void vscode.window.showInformationMessage("AI Local: đã nhớ.");
+  }
+
+  private async xemDiff(): Promise<void> {
+    if (!this.nhanNguonHienTai) return;
+    const cb = this.deXuatCucBoHienTai;
+    if (cb) {
+      // Chế độ LOCAL: TRÁI là TỆP THẬT trên đĩa (spec §6.2/§7).
+      await this.khoDeXuat.moDiffCucBo(
+        { actionId: cb.actionId, path: cb.duongTuongDoi, duongTuyetDoi: cb.duongTuyetDoi, modified: cb.moi },
+        this.nhanNguonHienTai,
+      );
+      return;
+    }
+    if (!this.deXuatHienTai) return;
+    await this.khoDeXuat.moDiff(this.deXuatHienTai, this.nhanNguonHienTai);
+  }
+
+  /**
+   * ★★★ ĐỢT C — BẤM "Ghi vào workspace" (chế độ LOCAL). Đây là lối đi DUY NHẤT tới `apBanVa`.
+   *
+   * ⚠ Hàng rào chế độ ở LÚC BẤM (không chỉ lúc hiện thẻ) — cùng lý lẽ với `duyetDeXuat`: cái gây
+   *   hậu quả là CÚ BẤM. Ở đây hậu quả nặng hơn hẳn: byte rơi trên máy của chính người dùng.
+   * ⚠ Luôn `quenDeXuat()` sau một lượt bấm, khác với đường SERVER (nơi lỗi mạng để lại ca "KHÔNG
+   *   RÕ KẾT CỤC" đáng thử lại). Lý lẽ: bấm lại KHÔNG chữa được gì — lượt sau sẽ gặp băm đã đổi (nếu
+   *   byte đã rơi) và bị từ chối đúng như thiết kế; giữ một cái nút sống chỉ mời người dùng ghi đè
+   *   lần hai.
+   *
+   * ⚠⚠⚠ SỬA MỘT CÂU SAI TỪNG NẰM ĐÚNG CHỖ NÀY (2026-08-29). Ghi chú cũ khẳng định *"`apBanVa` hoặc
+   *   ĐÃ ghi (`ok:true`) hoặc CHƯA ghi gì (`ok:false`)"*. **Sai** — và sai theo hướng nguy hiểm. Có
+   *   một ca thứ BA: lượt áp chỉnh sửa thành công nhưng `save()` hỏng, khi ấy nội dung của AI nằm
+   *   trong BỘ ĐỆM editor ở dạng chưa lưu. `apBanVa` nay tự hoàn nguyên và ĐO LẠI; nếu hoàn nguyên
+   *   cũng hỏng thì nó trả `ok:false` với một `thongDiep` nói rõ **CHƯA RÕ** và bỏ ngỏ sổ kiểm toán
+   *   ở `dang_ap_client`. Vì thế `ok` KHÔNG đủ để kể lại câu chuyện: chỗ này chỉ được **hiện nguyên
+   *   văn `thongDiep`**, tuyệt đối không rút gọn nó thành "đã ghi"/"không ghi".
+   */
+  private async apDungCucBo(): Promise<void> {
+    const cb = this.deXuatCucBoHienTai;
+    if (!cb) return;
+    // `undefined` (không xác định được chế độ) đi CÙNG nhánh từ chối với "không phải LOCAL": ở một
+    // cửa ghi đĩa, "không biết" phải được xử như "không được", không như "chắc là LOCAL".
+    const cheDoLucBam = this.cheDoHienTai();
+    if (cheDoLucBam?.loai !== "local") {
+      this.quenDeXuat(
+        cheDoLucBam
+          ? "Dự án đang chọn KHÔNG phải chế độ LOCAL — đã bỏ đề xuất ghi thay vì ghi vào máy bạn. Chọn lại dự án LOCAL rồi hỏi lại."
+          : "KHÔNG xác định được dự án đang chọn — đã bỏ đề xuất ghi thay vì đoán chế độ rồi ghi vào máy bạn. Chọn lại dự án rồi hỏi lại.",
+      );
+      return;
+    }
+    const cookie = await this.context.secrets.get(KHOA_COOKIE);
+    if (!cookie) {
+      // KHÔNG quên đề xuất: đăng nhập xong bấm lại là được (băm đĩa chưa đổi thì vẫn hợp lệ).
+      void this.panel.webview.postMessage({
+        loai: "thong_bao",
+        thongDiep:
+          "Chưa đăng nhập — sổ kiểm toán nằm trên máy chủ nên KHÔNG ghi khi chưa đăng nhập. Chạy lệnh 'AI Local: Đăng nhập' rồi bấm lại.",
+      });
+      return;
+    }
+    const cfg = vscode.workspace.getConfiguration("aviAiLocal");
+    let thongDiep: string;
+    try {
+      const kq = await apBanVa({
+        deXuat: cb.deXuat,
+        duongTuyetDoi: cb.duongTuyetDoi,
+        duongTuongDoi: cb.duongTuongDoi,
+        bamGoc: cb.bamGoc,
+        thuMucWorkspace: (vscode.workspace.workspaceFolders ?? []).map((f) => f.uri.fsPath),
+        nhanWorkspace: cb.thuMucWorkspace,
+        serverUrl: cfg.get<string>("serverUrl", "http://localhost:3000"),
+        cookie,
+        // ★★★ ĐỢT G / TASK G3 / B2 — HÀNG RÀO THẬT nằm ở BƯỚC 0 của `apBanVa` (gọi
+        // `duocPhepGhiTheoMucQuyen`), không phải ở đây. Truyền mức HIỆN TẠI xuống để nó tự kiểm —
+        // đây là điểm ghi DUY NHẤT nên nó không được tin bất kỳ ai đã kiểm hộ trước.
+        mucQuyen: this.mucQuyenHienTai,
+      });
+      thongDiep = kq.thongDiep;
+    } catch (e) {
+      // `apBanVa` đã bọc mọi bước có thể ném; tới đây là lỗi ngoài dự tính. Không đoán kết cục.
+      thongDiep = `Lỗi ngoài dự tính khi ghi "${cb.duongTuongDoi}": ${(e as Error).message}. Hãy KIỂM TRA LẠI tệp trước khi hỏi tiếp.`;
+    }
+    this.quenDeXuat();
+    void this.panel.webview.postMessage({ loai: "thong_bao", thongDiep });
+  }
+
+  /**
+   * ★★★ ĐỢT M — BẤM "Chạy lệnh" trên thẻ duyệt CHẠY LỆNH. Đây là lối đi DUY NHẤT tới
+   * `mang/chayLenhCucBo.ts` (LỚP I/O spawn thật) — cùng kỷ luật `apDungCucBo`: HÀNG RÀO THẬT nằm ở
+   * ĐIỂM BẤM, được xét LẠI TỪ ĐẦU, không tin bất kỳ điều gì đã xét lúc dựng thẻ (mức quyền có thể đã
+   * đổi giữa lúc hiện thẻ và lúc bấm — cùng lý lẽ `duyetDeXuat`/`apDungCucBo` áp cho chế độ dự án).
+   *
+   * ★★★ SÁU HÀNG RÀO — BA CÁI ĐÃ XÉT Ở `xuLyYeuCauLenh` ĐƯỢC XÉT LẠI, BA CÁI CÒN LẠI Ở ĐÂY:
+   *   1. Cửa duyệt        — CHÍNH sự tồn tại của bước này.
+   *   2. `chi_doc` chặn   — xét LẠI (`duocPhepGhiTheoMucQuyen`), không tin cờ lúc dựng thẻ.
+   *   3. Allowlist        — xét LẠI (`xetDuyetLenh` trên CHÍNH `hienThi` đã lưu, không phải một
+   *      chuỗi mới) — phòng thủ chiều sâu, dù về lý thuyết `lenh` đã là `LenhDaDuyet` (argv cố định).
+   *   4. `cheBiMat`       — áp trong `dinhDangKetQuaLenh`, TRƯỚC khi đưa kết quả vào lịch sử/hiển thị.
+   *   5. Kết quả là DỮ LIỆU — `dinhDangKetQuaLenh` vô hiệu hoá khối avi-tool giả; HÀNG RÀO KIẾN TRÚC
+   *      thật (kết quả không bao giờ đi qua `docYeuCauLenh` lần nữa) nằm ở việc hàm này KHÔNG gọi
+   *      lại `xuLyYeuCauLenh`/`docYeuCauLenh` trên `thongDiep` vừa dựng — nó chỉ `postMessage`.
+   *   6. Hai trần         — thời gian (`TRAN_MS_THEO_LENH`, truyền vào `chayLenhCucBo`) + kích thước
+   *      (`TRAN_BYTE_CHAY_LENH`, sống trong `chayLenhCucBo`, kiểm streaming).
+   */
+  private async duyetLenhCucBo(): Promise<void> {
+    const lc = this.lenhCucBoHienTai;
+    if (!lc) return;
+
+    // ★★★ HÀNG RÀO 2, XÉT LẠI — `chi_doc` phải chặn Ở ĐIỂM THỰC THI, không chỉ ở điểm vẽ thẻ.
+    const quyenChay = duocPhepGhiTheoMucQuyen(this.mucQuyenHienTai);
+    if (!quyenChay.ok) {
+      this.quenLenhCucBo(`KHÔNG CHẠY — ${quyenChay.lyDo}`);
+      return;
+    }
+
+    // ★★★ HÀNG RÀO 3, XÉT LẠI — allowlist trên CHÍNH nhãn hiển thị đã lưu, không tin `lc.lenh.argv`
+    // đã đúng mãi mãi (phòng thủ chiều sâu nếu một đường code sau này gán `lenhCucBoHienTai` mà
+    // không đi qua `xuLyYeuCauLenh`).
+    const xetLai = xetDuyetLenh(lc.lenh.hienThi);
+    if (!xetLai.ok) {
+      this.quenLenhCucBo(`KHÔNG CHẠY — lệnh không còn khớp allowlist lúc duyệt: ${xetLai.lyDo}`);
+      return;
+    }
+
+    void this.panel.webview.postMessage({
+      loai: "thong_bao",
+      thongDiep: `Đang chạy "${xetLai.lenh.hienThi}"…`,
+    });
+
+    const kq = await chayLenhCucBo({
+      lenh: xetLai.lenh,
+      cwd: lc.cwd,
+      tranMs: TRAN_MS_THEO_LENH[xetLai.lenh.ten],
+    });
+
+    // ★★★ HÀNG RÀO 4+5 — che bí mật + vô hiệu hoá khối avi-tool giả TRƯỚC khi hiển thị. Đây là
+    // dữ liệu đi vào bong bóng chat (hiển thị cho người dùng) — cùng mức cẩn trọng với dữ liệu đi
+    // vào ngữ cảnh model, vì người dùng cũng là một "người đọc" mà bí mật không cần rời máy tới.
+    const thongDiep = dinhDangKetQuaLenh({
+      lenhHienThi: xetLai.lenh.hienThi,
+      output: kq.output,
+      exitCode: kq.exitCode,
+      timedOut: kq.timedOut,
+      daCatSomODongChay: kq.daCatSom,
+    });
+
+    this.quenLenhCucBo();
+    void this.panel.webview.postMessage({ loai: "thong_bao", thongDiep });
+  }
+
+  private async duyetDeXuat(): Promise<void> {
+    // Đường LOCAL rẽ ở đây và KHÔNG BAO GIỜ chạm phần còn lại của hàm này (`confirmAction` bên
+    // dưới là cửa duyệt của chế độ SERVER — spec §7: không đường chéo).
+    if (this.deXuatCucBoHienTai) {
+      await this.apDungCucBo();
+      return;
+    }
+    const d = this.deXuatHienTai;
+    if (!d) return;
+    /**
+     * ★★★ HÀNG RÀO CHẾ ĐỘ Ở LÚC BẤM, KHÔNG CHỈ Ở LÚC HIỆN. `xuLyDeXuat` kiểm `coDuocHienTheDuyet`
+     * khi VẼ thẻ; hàm này trước đây kiểm lại KHÔNG GÌ CẢ. Một cổng chỉ canh lúc hiển thị là một
+     * cổng canh sai thời điểm: cái gây hậu quả là CÚ BẤM, và giữa lúc vẽ với lúc bấm có thể có một
+     * lần đổi ô chọn dự án. Nay ô chọn đổi thì thẻ bị vứt (xem `quenDeXuat`), nên nhánh này gần như
+     * không tới được — giữ nó vì "gần như" không phải một hàng rào, và giá của nó là bốn dòng.
+     */
+    const cheDoLucBam = this.cheDoHienTai();
+    if (!cheDoLucBam || !coDuocHienTheDuyet(cheDoLucBam.loai)) {
+      this.quenDeXuat(
+        cheDoLucBam
+          ? "Dự án đang chọn KHÔNG phải chế độ SERVER — đã bỏ đề xuất ghi thay vì duyệt nó. Chọn lại dự án SERVER rồi hỏi lại."
+          : "KHÔNG xác định được dự án đang chọn — đã bỏ đề xuất ghi thay vì đoán chế độ. Chọn lại dự án rồi bấm lại.",
+      );
+      return;
+    }
+    const cookie = await this.context.secrets.get(KHOA_COOKIE);
+    if (!cookie) {
+      // KHÔNG quên đề xuất ở đây: token còn hạn (TTL 5 phút), người dùng có thể đăng nhập rồi bấm
+      // Duyệt lại mà không phải hỏi lại câu cũ.
+      void this.panel.webview.postMessage({
+        loai: "thong_bao",
+        thongDiep: "Chưa đăng nhập — chạy lệnh 'AI Local: Đăng nhập' rồi bấm Duyệt lại.",
+      });
+      return;
+    }
+    const cfg = vscode.workspace.getConfiguration("aviAiLocal");
+    const serverUrl = cfg.get<string>("serverUrl", "http://localhost:3000");
+    let thongDiep: string;
+    /** Giữ đề xuất lại để người dùng thử lại — chỉ bật ở ca KHÔNG BIẾT KẾT CỤC (xem `catch`). */
+    let giuDeXuat = false;
+    // ★★★ ĐỢT G / TASK G4 / B3 — chỉ đúng khi `catch` bên dưới xác định lỗi này LÀ không-nối-được-
+    // máy-chủ (xem `laLoiKhongNoiDuocMayChu`); webview vẽ thêm nút "Mở Settings" khi cờ này true.
+    let moSettings = false;
+    try {
+      // Điểm DUY NHẤT trong extension gọi confirmAction — xem ../mang/duyetGhi.ts.
+      const kq = await goiDuyet(serverUrl, cookie, d.actionId, d.token);
+      if (!kq.ok) {
+        // (1) Máy chủ TỪ CHỐI lượt duyệt qua HTTP 200 (hết hạn TTL, token lệch, trạng thái sai...)
+        // — `goiDuyet` không ném cho các ca đó. Hiện NGUYÊN VĂN lý do của máy chủ, không bịa.
+        thongDiep = kq.message ?? "Máy chủ từ chối lượt duyệt.";
+      } else if (daBiTuChoiGhi(kq.result)) {
+        // (2) ★★★ `ok:true` CHỈ nói "vòng đời HITL đã chạy xong" — KHÔNG nói "byte đã được ghi".
+        // Băm neo lệch (BASE_MISMATCH) hay tệp bẩn (FILE_DIRTY) khiến `execute()` TỪ CHỐI ghi ĐÚNG
+        // NHƯ THIẾT KẾ, nhưng `confirmAction` vẫn trả `status:"executed"` — sự thật nằm ở `note`
+        // của `ToolResult` (`kq.result`), đọc bằng ĐÚNG vị từ dùng chung
+        // `shared/aiCodingLoop.daBiTuChoiGhi` (đã cắn CLI 2026-08-23 và WEB trước khi tới đây —
+        // extension là nơi gọi THỨ TƯ, KHÔNG viết lại phép kiểm `note`).
+        const ma = maTuChoiGhi(kq.result);
+        thongDiep = `CHƯA GHI [${ma}] — tệp đã đổi kể từ lúc đề xuất. Hãy yêu cầu lại.`;
+      } else if (kq.status === "executed" && kq.message) {
+        // Máy chủ LUÔN trả `status:"executed"` cho một lượt confirm `ok:true` thành công (kể cả
+        // lần đầu, `aiCopilotActions.ts:940`) — dùng NGUYÊN VĂN message của máy chủ ("Đã thực thi."
+        // / "Đã thực thi trước đó.") thay vì tự bịa câu khác, vì hai câu đó phân biệt lần-đầu với
+        // lặp-lại mà một câu tự soạn không phân biệt được.
+        thongDiep = kq.message;
+      } else {
+        // (3) `ok:true`, KHÔNG bị từ chối ghi, và máy chủ không kèm message riêng — mới được nói
+        // đã ghi.
+        thongDiep = `Đã duyệt — máy chủ đã ghi "${d.path}".`;
+      }
+    } catch (e) {
+      /**
+       * ★★★ HỎNG ĐƯỜNG TRUYỀN **KHÔNG PHẢI** "THẤT BẠI" — NÓ LÀ **KHÔNG BIẾT**.
+       *
+       * `fetch` ném khi không dựng nổi/không đọc hết được đáp ứng: mất mạng, máy chủ chết, **hoặc
+       * quá hạn chờ SAU KHI máy chủ đã nhận, đã chạy `execute()` và đã ghi byte xuống đĩa**. Ba ca
+       * đó không phân biệt được từ phía này. Khai "Duyệt thất bại" là chọn MỘT trong ba rồi trình
+       * bày nó như sự thật — đúng cái tật mà cả Đợt B đi vá: KHAI KẾT CỤC MÀ KHÔNG ĐỌC KẾT CỤC.
+       *
+       * ⚠⚠ Và nặng hơn lời khai sai: bản cũ `quen()` đề xuất ngay sau đó, xoá `deXuatHienTai` và ẩn
+       *   thẻ — **phá mất đường duy nhất để BIẾT**. `confirmAction` là idempotent theo thiết kế (một
+       *   hàng đã có kết cục chung cục trả kết quả ĐÃ LƯU, KHÔNG chạy `execute()` lần hai), nên bấm
+       *   Duyệt lại vừa an toàn vừa là cách hỏi máy chủ "rốt cuộc lượt kia ra sao?". Giữ đề xuất.
+       */
+      giuDeXuat = true;
+      thongDiep =
+        `KHÔNG RÕ KẾT CỤC — không nhận được trả lời của máy chủ (${(e as Error).message}). ` +
+        `Lượt ghi CÓ THỂ đã xong trên máy chủ, cũng có thể chưa: từ đây không phân biệt được. ` +
+        `Bấm "Duyệt & ghi trên SERVER" lần nữa là AN TOÀN — máy chủ xử lý idempotent, nếu lượt trước đã ` +
+        `xong nó trả lại kết quả đã lưu chứ KHÔNG ghi lần hai. Thẻ duyệt được giữ nguyên để bạn thử lại.`;
+      // ★★★ B3 — CHỈ khi vị từ THUẦN xác nhận đây là lỗi mạng (chưa hề có đáp ứng HTTP nào) mới nói
+      // thêm địa chỉ đang thử + gợi ý Settings. Một 403/500 giữa chừng KHÔNG ném theo hình dạng này
+      // (đã có đáp ứng — rơi vào nhánh `!kq.ok` phía trên, không vào `catch`), nên nhánh kia của B3
+      // không hề bị chạm ở đây; đây chỉ thêm chi tiết cho ĐÚNG một nguyên nhân đã xác định.
+      if (laLoiKhongNoiDuocMayChu(e)) {
+        moSettings = true;
+        thongDiep += ` Đang thử nối tới "${serverUrl}" — nếu địa chỉ máy chủ vừa đổi, bấm nút bên dưới để mở Settings (không cần khởi động lại VSCode).`;
+      }
+    }
+    if (!giuDeXuat) this.quenDeXuat();
+    void this.panel.webview.postMessage({ loai: "thong_bao", thongDiep, moSettings });
+  }
+
+  private async huyDeXuat(): Promise<void> {
+    // Đề xuất CỤC BỘ chỉ sống trong bộ nhớ extension — chưa có hàng nào trên máy chủ để huỷ (hàng
+    // kiểm toán chỉ sinh ra ở bước 6 của `apBanVa`, tức khi người dùng bấm GHI). Vứt tại chỗ.
+    if (this.deXuatCucBoHienTai) {
+      this.quenDeXuat(`Đã bỏ đề xuất sửa "${this.deXuatCucBoHienTai.duongTuongDoi}" — không có gì được ghi.`);
+      return;
+    }
+    const d = this.deXuatHienTai;
+    if (!d) return;
+    const cookie = await this.context.secrets.get(KHOA_COOKIE);
+    if (!cookie) {
+      void this.panel.webview.postMessage({
+        loai: "thong_bao",
+        thongDiep: "Chưa đăng nhập — chạy lệnh 'AI Local: Đăng nhập' rồi bấm Huỷ lại.",
+      });
+      return;
+    }
+    const cfg = vscode.workspace.getConfiguration("aviAiLocal");
+    const serverUrl = cfg.get<string>("serverUrl", "http://localhost:3000");
+    let thongDiep: string;
+    /** Giữ đề xuất lại để người dùng thử lại — chỉ bật ở ca KHÔNG BIẾT KẾT CỤC (xem `catch`). */
+    let giuDeXuat = false;
+    // ★★★ ĐỢT G / TASK G4 / B3 — cùng lý do với `duyetDeXuat` ở trên.
+    let moSettings = false;
+    try {
+      const kq = await goiHuy(serverUrl, cookie, d.actionId);
+      // `cancelAction` cũng TỪ CHỐI qua HTTP 200 (đã thực thi trước đó, trạng thái sai...) —
+      // `aiCopilotActions.ts:944-969` cùng hình dạng {ok,status,message} như confirmAction.
+      thongDiep = kq.ok
+        ? `Đã huỷ đề xuất sửa "${d.path}" — không có gì được ghi.`
+        : (kq.message ?? "Máy chủ từ chối lượt huỷ.");
+    } catch (e) {
+      /**
+       * ★ Cùng lý lẽ với `duyetDeXuat`: `fetch` ném ⇒ KHÔNG BIẾT lượt huỷ có tới máy chủ hay không.
+       * Ở đây hậu quả nhẹ hơn (huỷ không ghi byte nào) nhưng lời khai vẫn phải đúng: nếu huỷ CHƯA
+       * tới nơi thì đề xuất vẫn SỐNG trên máy chủ tới hết TTL, và người dùng cần biết điều đó cùng
+       * cách xử lý. Giữ thẻ để bấm Huỷ lại được — vứt thẻ ở đây là bỏ mặc một đề xuất còn hiệu lực.
+       */
+      giuDeXuat = true;
+      thongDiep =
+        `KHÔNG RÕ KẾT CỤC — không nhận được trả lời của máy chủ (${(e as Error).message}). ` +
+        `Lượt huỷ có thể đã tới nơi, cũng có thể chưa; nếu chưa thì đề xuất vẫn còn hiệu lực trên máy chủ ` +
+        `cho tới khi hết hạn. Bấm "Huỷ" lần nữa là an toàn. Thẻ duyệt được giữ nguyên để bạn thử lại.`;
+      // ★★★ B3 — cùng lý do với `duyetDeXuat` ở trên: chỉ thêm khi vị từ THUẦN xác nhận đây là lỗi
+      // mạng, không phải mọi lỗi `catch`.
+      if (laLoiKhongNoiDuocMayChu(e)) {
+        moSettings = true;
+        thongDiep += ` Đang thử nối tới "${serverUrl}" — nếu địa chỉ máy chủ vừa đổi, bấm nút bên dưới để mở Settings (không cần khởi động lại VSCode).`;
+      }
+    }
+    if (!giuDeXuat) this.quenDeXuat();
+    void this.panel.webview.postMessage({ loai: "thong_bao", thongDiep, moSettings });
+  }
+}

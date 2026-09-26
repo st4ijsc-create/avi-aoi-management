@@ -18,6 +18,7 @@ import {
 } from "@/components/ui/dialog";
 import { trpc } from "@/lib/trpc";
 import { toast } from "sonner";
+import { toastTrpcError } from "@/lib/trpcErrors";
 import { Shield, ShieldCheck, ShieldAlert, RefreshCw, FileCheck2, ArrowRightLeft, StickyNote } from "lucide-react";
 import { formatDistanceToNow } from "date-fns";
 import ShiftHandoverDialog from "@/components/ShiftHandoverDialog";
@@ -59,7 +60,7 @@ export default function ProductionSessionSignOff() {
       setSignTarget(null);
       setPassword("");
     },
-    onError: (e) => toast.error(e.message),
+    onError: (e) => toastTrpcError(e),
   });
 
   const handleConfirmSign = () => {

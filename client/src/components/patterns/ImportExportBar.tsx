@@ -12,6 +12,7 @@
  * `@shared/masterDataIO` (không lệch). `xlsx` đọc được cả .csv lẫn .xlsx.
  */
 import * as React from "react";
+import { useTranslation } from "react-i18next";
 import * as XLSX from "xlsx";
 import { toast } from "sonner";
 import {
@@ -145,6 +146,7 @@ export function ImportExportBar<T extends Record<string, any> = Record<string, a
   disabled = false,
   className,
 }: ImportExportBarProps<T>): React.JSX.Element {
+  const { t } = useTranslation();
   const base = fileBaseName ?? slug(entityLabel);
   const tmplColumns = templateColumns ?? columns;
 
@@ -174,11 +176,11 @@ export function ImportExportBar<T extends Record<string, any> = Record<string, a
       }
       const rows = (data ?? []).map((r) => toHeaderRecord(r, columns));
       if (rows.length === 0) {
-        toast.warning("Không có dữ liệu để xuất");
+        toast.warning(t("importExportBar.khongCoDuLieuDe", "Không có dữ liệu để xuất"));
         return;
       }
       exportViaXlsx(rows, columns, format, base);
-      toast.success(`Đã xuất ${rows.length} ${entityLabel} (${format.toUpperCase()})`);
+      toast.success(t("importExportBar.daXuat", { count: rows.length, entity: entityLabel, format: format.toUpperCase() }));
     },
     [onExport, data, columns, base, entityLabel],
   );
@@ -187,7 +189,7 @@ export function ImportExportBar<T extends Record<string, any> = Record<string, a
     (format: MasterDataFormat) => {
       const example = buildExampleRecord(tmplColumns);
       exportViaXlsx([example], tmplColumns, format, `${base}_mau`);
-      toast.success("Đã tải file mẫu");
+      toast.success(t("importExportBar.daTaiFileMau", "Đã tải file mẫu"));
     },
     [tmplColumns, base],
   );
@@ -219,7 +221,7 @@ export function ImportExportBar<T extends Record<string, any> = Record<string, a
         });
         setDetails(validateRecordsDetailed(records, columns));
       } catch (err) {
-        toast.error(`Không đọc được file: ${(err as Error).message}`);
+        toast.error(t("importExportBar.khongDocDuocFile", { msg: (err as Error).message }));
         setDetails(null);
       } finally {
         setParsing(false);
@@ -235,12 +237,12 @@ export function ImportExportBar<T extends Record<string, any> = Record<string, a
       const res = await onImport(validRows);
       setResult(res);
       if (res.failed === 0) {
-        toast.success(`Đã nhập ${res.inserted} ${entityLabel}`);
+        toast.success(t("importExportBar.daNhap", { count: res.inserted, entity: entityLabel }));
       } else {
-        toast.warning(`Nhập: ${res.inserted} thành công, ${res.failed} lỗi`);
+        toast.warning(t("importExportBar.nhapPartial", { ok: res.inserted, failed: res.failed }));
       }
     } catch (err) {
-      toast.error(`Nhập lỗi: ${(err as Error).message}`);
+      toast.error(t("importExportBar.nhapErr", { msg: (err as Error).message }));
     } finally {
       setImporting(false);
     }
@@ -250,7 +252,7 @@ export function ImportExportBar<T extends Record<string, any> = Record<string, a
   const previewColumns: DataTableColumn<MasterDataRowDetail>[] = React.useMemo(() => {
     const rowCol: DataTableColumn<MasterDataRowDetail> = {
       id: "__row",
-      header: "Dòng",
+      header: t("importExportBar.dong", "Dòng"),
       align: "right",
       width: "60px",
       cell: (d) => (
@@ -261,7 +263,9 @@ export function ImportExportBar<T extends Record<string, any> = Record<string, a
     };
     const specCols: DataTableColumn<MasterDataRowDetail>[] = columns.map((col) => ({
       id: col.field,
-      header: col.header,
+      // Nhãn HIỂN THỊ theo ngôn ngữ; phép KHỚP cột và hàng tiêu đề template vẫn
+      // dùng `col.header` nguyên văn — xem docblock `MasterDataColumn.header`.
+      header: col.headerKey ? t(col.headerKey) : col.header,
       cell: (d) => {
         const hasErr = d.errors.some((e) => e.field === col.field);
         const v = d.values[col.field];
@@ -271,7 +275,7 @@ export function ImportExportBar<T extends Record<string, any> = Record<string, a
     }));
     const statusCol: DataTableColumn<MasterDataRowDetail> = {
       id: "__status",
-      header: "Trạng thái",
+      header: t("importExportBar.trangThai", "Trạng thái"),
       cell: (d) =>
         d.errors.length === 0 ? (
           <span className="inline-flex items-center gap-1 text-emerald-600 dark:text-emerald-400">
@@ -280,6 +284,7 @@ export function ImportExportBar<T extends Record<string, any> = Record<string, a
         ) : (
           <span className="inline-flex items-start gap-1 text-destructive">
             <AlertTriangle className="mt-0.5 size-4 shrink-0" />
+            // i18n-raw-ok: chẩn đoán từng DÒNG của file nhập, từ một lời gọi THÀNH CÔNG — dịch đi là mất chỗ cần sửa.
             <span>{d.errors.map((e) => e.message).join("; ")}</span>
           </span>
         ),
@@ -378,7 +383,8 @@ export function ImportExportBar<T extends Record<string, any> = Record<string, a
                 <div className="max-h-40 overflow-auto rounded-md border border-destructive/40 bg-destructive/5 p-2 text-xs text-destructive">
                   {result.errors.slice(0, 50).map((e, i) => (
                     <div key={i}>
-                      {e.row != null ? `Dòng ${e.row}: ` : ""}
+                      {e.row != null ? t("importExportBar.dongSo", { row: e.row }) : ""}
+                      {/* i18n-raw-ok: chẩn đoán theo TỪNG DÒNG của file nhập, từ lời gọi thành công. */}
                       {e.message}
                     </div>
                   ))}

@@ -2,6 +2,7 @@ import { useState } from "react";
 import { useTranslation } from "react-i18next";
 import { trpc } from "@/lib/trpc";
 import { toast } from "sonner";
+import { mapTrpcError } from "@/lib/trpcErrors";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -48,7 +49,9 @@ export function ReportTemplates() {
       resetForm();
     },
     onError: (error) => {
-      toast.error(t('common.errorMessage', { message: error.message }));
+      // Sprint 5 doc 71 F11 — khoá `common.errorMessage` đã thêm placeholder {{message}}
+      // (task-8b/8c ghi nợ, F11 dọn), tham số message giờ hiện đúng cho người dùng.
+      toast.error(t('common.errorMessage', { message: mapTrpcError(error) }));
     },
   });
 

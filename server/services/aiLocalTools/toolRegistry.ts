@@ -61,14 +61,31 @@ export type ToolResultType =
   | "routing_steps"
   // ── doc 56 Đ6 — device-standardization persona tools (process + drift + SPC + fleet) ──
   | "device_health"
-  | "fleet_process_summary";
+  | "fleet_process_summary"
+  // ── Pha 4 Task 4 (VRAM) — ảnh chụp trạng thái bộ điều phối VRAM cho AI Agent ──
+  | "vram_state";
 
 export interface ToolResult<T = unknown> {
   type: ToolResultType;
   title: string;
   data: T;
-  /** Compact text representation (for LLM context injection). */
+  /**
+   * Compact text representation shown to the HUMAN (and, when `textModel` is absent, also injected
+   * into the LLM prompt — the historical behaviour, unchanged for every tool that does not set
+   * `textModel`).
+   */
   textSummary: string;
+  /**
+   * ★★★ G2 (audit 2026-09-21 · P2) — chữ dành RIÊNG cho model. Vắng ⇒ dùng `textSummary`.
+   *
+   * Vì sao cần kênh thứ hai: `textSummary` của một lượt TỪ CHỐI được viết để **trấn an người**
+   * ("Đây là một cái TRẦN, không phải một sự cố"). Nạp đúng chuỗi ấy cho **model** thì nó đọc
+   * thành "không có lỗi gì" rồi trả lời tiếp từ trí nhớ — đo được: hỏi `server/routers.ts` khi
+   * hết ngân sách, model khai "router Express, đọc data/machines.json, dùng fs"; tệp thật là 786
+   * dòng tRPC, `express`=0. Người cần được trấn an, model cần một MỆNH LỆNH.
+   * Xem `server/services/ai/vanBanChoModel.ts`.
+   */
+  textModel?: string;
   /** Optional human-readable note for empty / error cases. */
   note?: string;
 }
@@ -100,6 +117,28 @@ export interface ToolExecContext {
    * confirmed + owned). Additive/optional — read tools and propose() ignore it.
    */
   actionId?: string;
+  /**
+   * ★★★ doc 79 · TRỤC 2 — GỐC hộp cát của DỰ ÁN đang chọn, đã phân giải **SERVER-SIDE** từ một
+   * `projectId` trong danh sách TRẮNG (`repoProjects.gocTheoId`). Đường TUYỆT ĐỐI, KHÔNG BAO GIỜ đến
+   * từ client (client chỉ gửi id). VẮNG ⇒ hộp cát dùng `gocHopCat()` (dự án mặc định — đường cũ).
+   * Dùng bởi: read tool repo (qua `argsWithAuthCtx` → `__projectRoot`) và write tool repo (đọc thẳng
+   * `ctx.projectRoot` trong preview/execute). KHÔNG mở quyền mới — RBAC không đổi.
+   */
+  projectRoot?: string;
+  /**
+   * ══════════════════════════════════════════════════════════════════════════════════════════════
+   * ★★★ 2026-08-23 — **CỜ HUỶ CỦA LƯỢT**, gắn bởi tuyến khi client rời kết nối.
+   * ══════════════════════════════════════════════════════════════════════════════════════════════
+   * Đi cùng lượt, KHÔNG phải quyền: nó không mở/đóng một cửa nào, chỉ nói *"người gọi đã bỏ đi"*.
+   * Người tiêu thụ hiện tại là đường sinh chữ (`aiCodingAgent.streamCodingModel` → `ggufStream(…,
+   * modelId, signal)`), nơi thiếu nó nghĩa là mỗi lượt Dừng giữ một khe llama-server tới khi
+   * idle-timeout **120.000 ms** nổ.
+   *
+   * ⚠ Tuỳ chọn và **thuần bổ sung**: mọi lời gọi cũ bỏ trống ⇒ hành vi không đổi một byte. Tool
+   *   KHÔNG bắt buộc phải đọc nó; một tool bỏ qua signal chỉ có nghĩa là nó chạy hết như cũ.
+   * ⚠ KHÔNG BAO GIỜ đến từ thân request — nó là một đối tượng do tuyến TỰ tạo (`AbortController`).
+   */
+  signal?: AbortSignal;
 }
 
 /** Result of a tool's execute() — reuses ToolResult shape for rendering. */
@@ -120,6 +159,16 @@ export interface ClientActionDirective {
   values?: Record<string, unknown>;
   /** Localized human-readable confirmation message. */
   message: string;
+  /**
+   * doc69 G2-7 — true when this directive was ATTACHED by the assistant to ground
+   * a how-to answer (server/services/aiOperationalGrounding.ts), as opposed to an
+   * explicit user command ("mở trang X" → the navigate/prefill_form tools above).
+   * Undefined/false for every existing explicit-command directive (byte-identical
+   * behavior preserved). The FE must NOT auto-navigate when this is true — render
+   * a tappable "Mở màn X" button instead, since the user didn't ask to leave the
+   * answer they're reading.
+   */
+  suggested?: boolean;
 }
 
 /**
@@ -196,6 +245,177 @@ export function assertExecutable(tool: Tool<any, any>): void {
   if (missing.length) {
     throw new Error(`Write tool "${tool.name}" is missing: ${missing.join(", ")}`);
   }
+}
+
+/**
+ * ★★★ Pha 4 Task 4 (review vòng 1, C-1) — **TIÊM `__authCtx` VÀO ARGS CỦA READ TOOL.**
+ *
+ * ══════════════════════════════════════════════════════════════════════════════════════════════
+ * ⚠⚠⚠ ĐÂY LÀ NỢ CÓ SẴN CỦA REPO, VÀ NÓ LÀM CHẾT **CẢ HỌ** READ TOOL CÓ RBAC
+ * ══════════════════════════════════════════════════════════════════════════════════════════════
+ * `readToolsP2.ts` / `readToolsP2bc.ts` / `readToolsP2d.ts` / `analyticsTools.ts` đều khai
+ * `__authCtx: authCtxSchema.optional()` trong schema và **TỪ CHỐI fail-safe khi nó vắng** — nhưng
+ * người gọi `tool.handler(...)` **không bao giờ** đưa `execCtx` vào `args`.
+ * ⇒ Mọi tool ấy **LUÔN** trả `PERMISSION_DENIED` trên đường Agent. Chúng có test, có đăng ký, có
+ * schema — và **không ai đọc được dữ liệu của chúng**: đúng định nghĩa "đồng hồ không kim", chỉ ở
+ * tầng khác. Người review Task 4 tìm ra bằng cách chạy probe từ **đầu đường**, không phải bằng suy
+ * luận; bộ ca cũ (gọi thẳng `handler()` kèm `__authCtx` tiêm tay) **mù đúng chỗ này**.
+ *
+ * ⚠ VÌ SAO SỬA Ở ĐÂY, KHÔNG VÁ TỪNG TOOL: một tool tự đọc danh tính từ đâu đó khác là **đường thứ
+ * hai** cho một sự thật đã có chủ (`ToolExecContext.user` — người dùng phiên THẬT, không tin từ
+ * client). Vá 20 tool là 20 bản sao.
+ *
+ * ⚠⚠ CHỈ TIÊM KHI SCHEMA CỦA TOOL **CÓ KHAI** `__authCtx` (các schema đều `.strict()`): một tool
+ * không khai mà bị nhét thêm khoá lạ sẽ **vỡ** ở bất kỳ lượt `safeParse` nào về sau. Phép tiêm này
+ * do đó **cộng thêm, không đổi gì** với tool cũ không dùng RBAC.
+ *
+ * ══════════════════════════════════════════════════════════════════════════════════════════════
+ * 🔴 N-1 (re-review Task 4) — **`__authCtx` ĐẾN TỪ ARGS BỊ XOÁ, LUÔN LUÔN, TRƯỚC MỌI NHÁNH.**
+ * ══════════════════════════════════════════════════════════════════════════════════════════════
+ * Bản trước mở bằng `if (!execCtx) return args` — **trả lại NGUYÊN VĂN** một `__authCtx` do đầu vào
+ * bịa. Người review đo được thật: `checkPermission` nhận `[999, "superadmin", …]` và **tool CHẠY**.
+ * Đường vào là **người sản xuất args không tin được**: `classifyToolIntentLLM()` (và
+ * `aiAgentPlanner`) cho `tool.parameters.safeParse(args)`, và vì `__authCtx` là ô **ĐÃ KHAI** trong
+ * schema nên `safeParse` **GIỮ NGUYÊN** nó.
+ *
+ * ⇒ Thứ tự **KHÔNG ĐẢO ĐƯỢC**: (1) **XOÁ** `__authCtx` khỏi args — nó **KHÔNG BAO GIỜ** là nguồn
+ * danh tính, dù có `execCtx` hay không; (2) chỉ khi CÓ `execCtx` **và** schema có khai thì mới gán
+ * lại từ `ToolExecContext.user` (người dùng phiên THẬT, máy chủ tự đọc).
+ * ⚠ Một `return args` nào chen vào **trước** bước (1) là mở lại đúng lỗ này.
+ *
+ * ══════════════════════════════════════════════════════════════════════════════════════════════
+ * 🔴 TASK 5 (review) — **VÌ SAO HÀM NÀY NẰM Ở `toolRegistry.ts`, KHÔNG PHẢI `index.ts`.**
+ * ══════════════════════════════════════════════════════════════════════════════════════════════
+ * Bản trước để nó **private trong `index.ts`**, nên nó chỉ che được **MỘT** đường thoát
+ * (`tryExecuteTool`). Repo có **HAI** người gọi `Tool.handler` trong mã sản xuất; người thứ hai —
+ * `aiAgentOrchestrator` (Agent TỰ TRỊ) — gọi thẳng `tool.handler(step.args)` và do đó **FAIL-OPEN**:
+ * bỏ qua hàm này là **bỏ luôn bước XOÁ**, nên một `__authCtx` bịa (mục tiêu người dùng → prompt của
+ * `aiAgentPlanner` → `safeParse` GIỮ ô đã khai → `step.args`) đi thẳng vào `checkPermission`, nơi
+ * `role === "admin"` được `accessControl.ts` cho qua **không đọc DB** ⇒ god-mode trên cả 29 read tool.
+ * ⚠⚠ Đây là *"lưới theo FILE, không theo ĐƯỜNG THOÁT"* — lần thứ **MƯỜI MỘT** trong chuỗi pha.
+ * ⇒ Hàm sống cạnh **kiểu `Tool`** mà nó bảo vệ, ở module LÁ (không import gì ngoài `zod`), để **mọi**
+ * người gọi `Tool.handler` đều với tới được mà không tạo vòng nhập.
+ * ⚠ Lưới canh: `aiAgentOrchestrator.authCtx.test.ts` (đi từ đầu đường tự trị) +
+ * `authCtxInjection.test.ts` (đường `tryExecuteTool` + **bản kiểm đếm MỌI điểm gọi `.handler(`**).
+ */
+/**
+ * ★★★ 🔴 C-1 (review Task 4) — **"CÓ TÊN `lang`" KHÔNG CÓ NGHĨA LÀ "LÀ NGÔN NGỮ HIỂN THỊ".**
+ *
+ * Bản vá vòng trước tiêm `execCtx.lang` vào **mọi** ô tên `lang`. Đo lúc chạy: **30/77** tool có ô
+ * ấy — nhưng **hai** trong số đó (`retrieve_programming_kb`, `lookup_error_code`,
+ * `readToolsProgramming.ts:455/:504`) khai `z.string().min(1).max(16)` và dùng nó làm **BỘ LỌC
+ * NGÔN NGỮ CỦA KHO TÀI LIỆU** (`aiProgrammingKnowledgeService.chunkMatchesFilters`). Người review
+ * đo trên kho thật (91.678 chunk: en 91.392 · vi 237 · zh 49): một câu hỏi **tiếng Việt** về mã
+ * lỗi servo bị ép `lang="vi"` ⇒ RAG chỉ quét **237/91.678 chunk (0,26%)** và trả **sai tài liệu**,
+ * im lặng. `programmingTools.test.ts` **28/28 vẫn xanh**.
+ *
+ * ⇒ Đây là lớp lỗi **"neo theo TÊN, không theo NGHĨA"**. Và **chính KIỂU đã nói ra sự khác biệt
+ * trước khi có phép đo nào**: `z.string().max(16)` **không phải** `z.enum(["vi","en","zh"])` — hai
+ * ô trùng tên mà khác kiểu là **hai khái niệm khác nhau**.
+ *
+ * ⇒ Vị từ dưới đây phát biểu **cái ô ấy PHẢI LÀ**: *một enum nhận **đúng** tập ba ngôn ngữ hiển
+ * thị*. Không liệt kê tool nào được/không được tiêm, không dò tên tool, không thử "ô này có từ
+ * chối `ja` không" (một `z.string().length(2)` cũng từ chối `ja`, và vẫn không phải ngôn ngữ hiển
+ * thị). Ô nào **không** chứng minh được mình là enum ba giá trị thì **không được đụng tới** —
+ * hỏng theo chiều **AN TOÀN**.
+ *
+ * ⚠ Bóc vỏ qua `_def.innerType` để đi xuyên `.optional()`/`.default()`/`.nullable()` (zod v4 để
+ * `_def.type = "optional"`, v3 để `_def.typeName = "ZodOptional"` — đọc `innerType` đúng ở cả hai).
+ * `.options` là bề mặt công khai của `ZodEnum` ở cả hai đời (nên `z.nativeEnum({vi,en,zh})` — cùng
+ * **khái niệm**, khác cách viết — cũng được nhận đúng).
+ *
+ * ══════════════════════════════════════════════════════════════════════════════════════════════
+ * ⚠⚠ QUY ƯỚC CÓ TÊN — **"Ô NGÔN NGỮ HIỂN THỊ PHẢI VIẾT BẰNG `z.enum` (hoặc `z.nativeEnum`)."**
+ * ══════════════════════════════════════════════════════════════════════════════════════════════
+ * N-2 (re-review): vị từ này có **hai âm tính giả** đã biết — `z.union([z.literal("vi"), …])` và
+ * `z.preprocess(…, z.enum([…]))` đều trả **`false`** dù về nghĩa là cùng một ô. Hậu quả rơi theo
+ * chiều **AN TOÀN** (tool ấy **không được tiêm** ⇒ rơi về `vi`, không phải lọc nhầm kho như C-1),
+ * và **hôm nay 0 tool nào viết như vậy**.
+ * ⇒ Không nới vị từ để đuổi theo mọi cách viết tương đương — **đó là liệt kê, và luôn có cách viết
+ * thứ N+1**. Thay vào đó quy ước trên được **cưỡng chế bằng hành vi**: `vramPhrases.exhaustive
+ * .test.ts` §E có ca *"KHÔNG có ÂM TÍNH GIẢ trong registry"* — nó thử **hành vi `safeParse`** của
+ * từng ô `lang` đã đăng ký, và **đỏ** nếu một ô **xử sự đúng như** enum ba ngôn ngữ mà vị từ lại
+ * nói `false`. Viết bằng `z.union` thì ca ấy đỏ và chỉ thẳng về quy ước này.
+ */
+const NGON_NGU_HIEN_THI = ["en", "vi", "zh"] as const;
+
+export function laOEnumNgonNguHienThi(o: unknown): boolean {
+  let n: unknown = o;
+  // Trần 8 lớp: đủ cho mọi chồng vỏ thực tế, và chặn vòng lặp vô hạn nếu schema tự tham chiếu.
+  for (let i = 0; i < 8 && n !== null && n !== undefined; i++) {
+    const opts = (n as { options?: unknown }).options;
+    if (Array.isArray(opts)) {
+      const co = [...new Set(opts.map((v) => String(v)))].sort();
+      return co.length === NGON_NGU_HIEN_THI.length && co.every((v, k) => v === NGON_NGU_HIEN_THI[k]);
+    }
+    n = (n as { _def?: { innerType?: unknown } })._def?.innerType;
+  }
+  return false;
+}
+
+export function argsWithAuthCtx(tool: Tool<any, any>, args: unknown, execCtx?: ToolExecContext): unknown {
+  /**
+   * 🔴 N-4 (re-review Task 4) — **DÒNG NÀY TỪNG LÀ `return args`, VÀ ĐÓ LÀ MỘT LỖ DANH TÍNH.**
+   *
+   * Trong JS một **MẢNG** là `typeof "object"` nhưng bị `Array.isArray()` loại ⇒ nhánh cũ trả nó
+   * **NGUYÊN VĂN**, kèm mọi thuộc tính gắn trên nó. Người review đo được: một mảng mang
+   * `__authCtx` ⇒ `checkPermission(999, "superadmin", …)` và **tool CHẠY**.
+   * ⚠⚠ Và chính docstring trên đã viết *"một `return args` chen vào TRƯỚC bước (1) là mở lại đúng
+   * lỗ này"* — rồi **dòng đầu hàm đúng là như thế**. Một lời cảnh báo không tự thi hành.
+   *
+   * ⇒ `return {}`: đầu vào **không phải một túi tham số hợp lệ** thì **không mang được gì qua đây**.
+   * Chiều CHẶT — mọi schema của tool đều là `z.object().strict()`, nên args hợp lệ **không bao giờ**
+   * là mảng/chuỗi/`null`; đánh rơi một đầu vào méo an toàn hơn hẳn chở theo một danh tính bịa.
+   */
+  if (args === null || typeof args !== "object" || Array.isArray(args)) return {};
+  // (1) XOÁ TRƯỚC — vô điều kiện. Đầu vào KHÔNG BAO GIỜ được là nguồn của danh tính HAY của gốc dự án.
+  // ⚠ doc 79 TRỤC 2: `__projectRoot` là biên AN NINH y như `__authCtx` — nó là một ĐƯỜNG DẪN mà nếu
+  //   client đặt được thì hộp cát đa-gốc vô nghĩa. Nên nó bị XOÁ ở đây rồi CHỈ được gán lại từ
+  //   `execCtx.projectRoot` (server tự phân giải từ id trong danh sách trắng).
+  const { __authCtx: _tuDauVao, __projectRoot: _gocTuDauVao, ...sach } = args as Record<string, unknown>;
+  if (!execCtx) return sach;
+  const shape = (tool.parameters as unknown as { shape?: Record<string, unknown> })?.shape;
+  if (!shape) return sach;
+  let ra: Record<string, unknown> = sach;
+  /**
+   * ★★★ Pha 5 Task 4 (N10) — **NGÔN NGỮ PHIÊN CŨNG PHẢI ĐI QUA ĐÂY, NẾU KHÔNG BẢN DỊCH LÀ MÃ CHẾT.**
+   *
+   * `ToolExecContext.lang` được `aiChatRouter.ts:243-247` tính từ **chữ viết của chính câu hỏi**
+   * (`zh` nếu có Hán tự · `vi` nếu có dấu · ngược lại lấy `input.language`), và **write tool** đọc
+   * nó qua `ctx.lang`. Nhưng **read tool** chỉ nhận `decision.args` — mà **không bộ phân loại ý định
+   * nào đặt `lang`** (`git grep "lang" server/services/aiLocalTools/intentClassifier.ts` ⇒ rỗng).
+   * ⇒ Trước dòng này, **29 read tool khai `lang: z.enum(["vi","en","zh"]).optional()` đều rơi về
+   * `vi` VĨNH VIỄN** trên đường Agent: một người dùng hỏi bằng tiếng Trung nhận lại câu tiếng Việt,
+   * và mọi bản dịch của các tool ấy là **mã chết**.
+   *
+   * ⚠ Cùng lớp lỗi với `__authCtx` (một sự thật của **phiên** không tới được tool), nên vá ở **cùng
+   * một chỗ** — vá từng tool là 29 bản sao (xem lý lẽ "VÌ SAO SỬA Ở ĐÂY" phía trên).
+   * ⚠ Khác `__authCtx` ở **một** điểm có chủ đích: ngôn ngữ **không phải một biên an ninh**, nên
+   * một `lang` HỢP LỆ do người sản xuất args nêu ra (model có thể suy ra "trả lời tôi bằng tiếng
+   * Anh") được **GIỮ**; `execCtx.lang` chỉ điền vào chỗ TRỐNG hoặc chỗ **không hợp lệ**. Với
+   * `__authCtx` thì ngược lại — nó bị **XOÁ vô điều kiện** rồi gán lại, vì nó **là** biên an ninh.
+   *
+   * ⚠⚠ 🔴 C-1: điều kiện là `laOEnumNgonNguHienThi(shape.lang)` — **KHÔNG** phải `hasOwn(shape,
+   * "lang")`. Xem khối lý lẽ ở vị từ ấy: một ô trùng tên có thể là **bộ lọc kho tài liệu**.
+   */
+  if (Object.hasOwn(shape, "lang") && laOEnumNgonNguHienThi(shape.lang)) {
+    if (ra.lang !== "vi" && ra.lang !== "en" && ra.lang !== "zh") ra = { ...ra, lang: execCtx.lang };
+  }
+  /**
+   * ★★★ doc 79 · TRỤC 2 — GỐC DỰ ÁN, gán lại từ phiên THẬT (giống `__authCtx`, cùng kỷ luật server-
+   * authoritative). CHỈ khi schema tool CÓ KHAI `__projectRoot` (mọi schema `.strict()` ⇒ nhét khoá
+   * lạ sẽ vỡ mọi `safeParse` sau này) và execCtx CÓ gốc. Vắng ⇒ handler tự rơi về `gocHopCat()`.
+   */
+  if (
+    Object.hasOwn(shape, "__projectRoot") &&
+    typeof execCtx.projectRoot === "string" &&
+    execCtx.projectRoot !== ""
+  ) {
+    ra = { ...ra, __projectRoot: execCtx.projectRoot };
+  }
+  if (!Object.hasOwn(shape, "__authCtx")) return ra;
+  // (2) GÁN LẠI từ phiên THẬT — nguồn duy nhất.
+  return { ...ra, __authCtx: { userId: execCtx.user.id, role: execCtx.user.role } };
 }
 
 const _registry = new Map<string, Tool<any, any>>();

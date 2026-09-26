@@ -20,6 +20,8 @@
  * ════════════════════════════════════════════════════════════════════════════
  */
 import { and, desc, eq } from "drizzle-orm";
+import { appError } from "../../_core/appError";
+import { DbUnavailableError } from "../../_core/dbErrors";
 import { getDb } from "../../db/connection";
 import {
   createRecipe,
@@ -53,7 +55,7 @@ export type RecipeAction = "create" | "release" | "archive" | "rollback" | "load
 
 async function db() {
   const d = await getDb();
-  if (!d) throw new Error("Database not available");
+  if (!d) throw new DbUnavailableError();
   return d;
 }
 
@@ -169,7 +171,21 @@ export async function releaseVersion(
   // back cleanly (never leaves the code with two released or zero released versions).
   return d.transaction(async (tx) => {
     const [target] = await tx.select().from(machineRecipes).where(eq(machineRecipes.id, recipeId)).limit(1);
-    if (!target) throw new Error(`Recipe #${recipeId} not found`);
+    if (!target) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "recipe" }, `Recipe #${recipeId} not found`);
+
+    // FLOW-01/INT-02 (doc 80 Task 3) — same guarantee as /recipes' deployRecipe
+    // (server/db/machineRecipe.ts:277-279): refuse to release a version that has not
+    // been signed off by a second approver (approvedBy is null). Before this check,
+    // equipmentIntegration could promote a never-reviewed recipe straight to `active`
+    // while /recipes enforced SoD on the SAME table.
+    if (target.approvedBy == null) {
+      throw appError(
+        "PRECONDITION_FAILED",
+        "OPERATION_FAILED",
+        { operation: "releaseRecipeVersion" },
+        `Recipe #${recipeId} (${target.code} v${target.version}) has not been approved — a second approver must sign off before it can be released.`,
+      );
+    }
 
     // Row-lock ALL versions sharing this code → serialize concurrent promoters.
     await tx.select().from(machineRecipes).where(eq(machineRecipes.code, target.code)).for("update");
@@ -209,7 +225,7 @@ export async function archiveVersion(
 ): Promise<{ recipe: MachineRecipe; event: RecipeLoadLog }> {
   requireFlag();
   const target = await getRecipeById(recipeId);
-  if (!target) throw new Error(`Recipe #${recipeId} not found`);
+  if (!target) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "recipe" }, `Recipe #${recipeId} not found`);
   await dbArchiveRecipe(recipeId);
   const recipe = { ...target, status: "archived" as const };
   const event = await recordEvent("archive", recipe, { performedBy, ...tenant });
@@ -234,7 +250,18 @@ export async function rollbackToVersion(
   // rollback. Serialized + crash-safe.
   return d.transaction(async (tx) => {
     const [target] = await tx.select().from(machineRecipes).where(eq(machineRecipes.id, toRecipeId)).limit(1);
-    if (!target) throw new Error(`Recipe #${toRecipeId} not found`);
+    if (!target) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "recipe" }, `Recipe #${toRecipeId} not found`);
+
+    // FLOW-01/INT-02 (doc 80 Task 3) — rollback also PROMOTES `target` to active, so it
+    // needs the SAME approvedBy gate as release (see releaseVersion above).
+    if (target.approvedBy == null) {
+      throw appError(
+        "PRECONDITION_FAILED",
+        "OPERATION_FAILED",
+        { operation: "rollbackRecipeVersion" },
+        `Recipe #${toRecipeId} (${target.code} v${target.version}) has not been approved — a second approver must sign off before it can be rolled back to.`,
+      );
+    }
 
     // Row-lock ALL versions sharing this code → serialize concurrent promoters.
     await tx.select().from(machineRecipes).where(eq(machineRecipes.code, target.code)).for("update");
@@ -281,7 +308,7 @@ export async function recordLoad(
 ): Promise<{ recipe: MachineRecipe; event: RecipeLoadLog; deploymentId: number | null }> {
   requireFlag();
   const target = await getRecipeById(input.recipeId);
-  if (!target) throw new Error(`Recipe #${input.recipeId} not found`);
+  if (!target) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "recipe" }, `Recipe #${input.recipeId} not found`);
 
   let deploymentId: number | null = null;
   if (input.deploy) {

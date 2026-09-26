@@ -9,13 +9,26 @@ import { Loader2 } from "lucide-react";
 import ErrorBoundary from "./components/ErrorBoundary";
 import { ThemeProvider } from "./contexts/ThemeContext";
 import { SiteProvider } from "./contexts/SiteContext";
+// doc 64 IA-10 — trục phạm vi ISA-95 bền (Xưởng›Chuyền›Máy) sống qua điều hướng.
+import { AssetScopeProvider } from "./contexts/AssetScopeContext";
 import { AiCopilotProvider } from "./contexts/AiCopilotContext";
 import { EngineeringProvider } from "./contexts/EngineeringContext";
 import { ProgrammingCopilotProvider } from "./contexts/ProgrammingCopilotContext";
-import { ProgrammingCopilotDock } from "./components/programming/ProgrammingCopilotDock";
-import { AILocalChatBubble } from "./components/AILocalChatBubble";
+// doc64 S5-OPT: 2 component global-mount này kéo ~1.9MB lib vào bundle chính
+// (Dock→Panel→CodeEditor→@codemirror ~1MB; ChatBubble→react-markdown+AIToolResultCard→recharts).
+// Lazy để chúng tải SAU first-paint — hành vi giữ nguyên, chỉ xuất hiện muộn vài trăm ms.
+const ProgrammingCopilotDock = React.lazy(() =>
+  import("./components/programming/ProgrammingCopilotDock").then((m) => ({ default: m.ProgrammingCopilotDock })),
+);
+const AILocalChatBubble = React.lazy(() =>
+  import("./components/AILocalChatBubble").then((m) => ({ default: m.AILocalChatBubble })),
+);
 import { ConnectionBanner } from "./components/ConnectionBanner";
 import { RouteGuard } from "./components/RouteGuard";
+// ★★★ Đợt 21 lô Y (§13b 14.2.3) — 14 đường vào Twin cũ, mỗi đường ≤1 chặng.
+import { traDichCu } from "./components/twin3d/bo-cuc/dinhTuyenTwinCu";
+// ★★★ Pha 7 / I-4 — cổng buộc đổi mật khẩu (bọc CHÍNH `<Router/>`, xem điểm dùng ở cuối file).
+import { CongDoiMatKhau } from "./components/CongDoiMatKhau";
 import DashboardLayout from "./components/DashboardLayout";
 import { isPersistentShellEnabled, isChromelessShellRoute } from "./lib/appLauncherFlag";
 import { useKioskMode } from "./hooks/useKioskMode";
@@ -28,56 +41,65 @@ const History = React.lazy(() => import("./pages/History"));
 const DataSettings = React.lazy(() => import("./pages/DataSettings"));
 const ApiDocs = React.lazy(() => import("./pages/ApiDocs"));
 const ProductModels = React.lazy(() => import("./pages/ProductModels"));
-import InspectionDetail from "./pages/InspectionDetail";
-import Layout from "./pages/Layout";
-import Settings from "./pages/Settings";
-import CorporateLayout from "./pages/CorporateLayout";
-import Reports from "./pages/Reports";
-import Alerts from "./pages/Alerts";
-import Users from "./pages/Users";
-import ProductMachineMapping from "./pages/ProductMachineMapping";
-import ProductionOrders from "./pages/ProductionOrders";
+const InspectionDetail = React.lazy(() => import("./pages/InspectionDetail")); // doc64 S5-OPT: eager→lazy
+const Layout = React.lazy(() => import("./pages/Layout")); // doc64 S5-OPT: eager→lazy
+const Settings = React.lazy(() => import("./pages/Settings")); // doc64 S5-OPT: eager→lazy
+const CorporateLayout = React.lazy(() => import("./pages/CorporateLayout")); // doc64 S5-OPT: eager→lazy
+const Reports = React.lazy(() => import("./pages/Reports")); // doc64 S5-OPT: eager→lazy
+const Alerts = React.lazy(() => import("./pages/Alerts")); // doc64 S5-OPT: eager→lazy
+const Users = React.lazy(() => import("./pages/Users")); // doc64 S5-OPT: eager→lazy
+const ProductMachineMapping = React.lazy(() => import("./pages/ProductMachineMapping")); // doc64 S5-OPT: eager→lazy
+const ProductionOrders = React.lazy(() => import("./pages/ProductionOrders")); // doc64 S5-OPT: eager→lazy
 import Login from "./pages/Login";
-import Profile from "./pages/Profile";
-import ChangePassword from "./pages/ChangePassword";
-import AuditLogs from "./pages/AuditLogs";
-import SessionManagement from "./pages/SessionManagement";
-import ProductionSessionSignOff from "./pages/ProductionSessionSignOff";
-import { ProductComparison } from "./pages/ProductComparison";
+const Profile = React.lazy(() => import("./pages/Profile")); // doc64 S5-OPT: eager→lazy
+const ChangePassword = React.lazy(() => import("./pages/ChangePassword")); // doc64 S5-OPT: eager→lazy
+const AuditLogs = React.lazy(() => import("./pages/AuditLogs")); // doc64 S5-OPT: eager→lazy
+const SessionManagement = React.lazy(() => import("./pages/SessionManagement")); // doc64 S5-OPT: eager→lazy
+const ProductionSessionSignOff = React.lazy(() => import("./pages/ProductionSessionSignOff")); // doc64 S5-OPT: eager→lazy
+const ProductComparison = React.lazy(() => import("./pages/ProductComparison").then((m) => ({ default: m.ProductComparison }))); // doc64 S5-OPT: eager→lazy
 import Setup from "./pages/Setup";
 // doc 39 Wave 4 — the 9 MQTT/UNS pages are consolidated into one lazy Connectivity
 // hub (their bodies are imported as *Content there). Legacy routes redirect in.
 const ConnectivityHub = React.lazy(() => import("./pages/ConnectivityHub"));
-import SystemConfiguration from "./pages/SystemConfiguration";
-import ImportExport from "./pages/ImportExport";
-import UserAssignments from "./pages/UserAssignments";
-import ScheduledReports from "./pages/ScheduledReports";
-import ProcessManagement from "./pages/ProcessManagement";
-import WorkstationManagement from "./pages/WorkstationManagement";
-import CategoryAnalytics from "./pages/CategoryAnalytics";
-import UserGuide from "./pages/UserGuide";
-import AboutSystem from "./pages/AboutSystem";
-import BackupRestore from "./pages/BackupRestore";
-import OEEDashboard from "./pages/OEEDashboard";
-import OEETargetSettings from "./pages/OEETargetSettings";
-import MESControlTower from "./pages/MESControlTower";
-import WipLineBalance from "./pages/WipLineBalance";
-import TraceabilityLineage from "./pages/TraceabilityLineage";
-import RealtimeReportView from "./pages/RealtimeReportView";
-import CarbonDashboard from "./pages/CarbonDashboard";
-import DrillDownDashboard from "./pages/DrillDownDashboard";
-import DefectHeatmapPage from "./pages/DefectHeatmapPage";
-import DefectPredictionPage from "./pages/DefectPredictionPage";
-import RootCauseAnalysisPage from "./pages/RootCauseAnalysisPage";
+const SystemConfiguration = React.lazy(() => import("./pages/SystemConfiguration")); // doc64 S5-OPT: eager→lazy
+const ImportExport = React.lazy(() => import("./pages/ImportExport")); // doc64 S5-OPT: eager→lazy
+const UserAssignments = React.lazy(() => import("./pages/UserAssignments")); // doc64 S5-OPT: eager→lazy
+const ScheduledReports = React.lazy(() => import("./pages/ScheduledReports")); // doc64 S5-OPT: eager→lazy
+const ProcessManagement = React.lazy(() => import("./pages/ProcessManagement")); // doc64 S5-OPT: eager→lazy
+const WorkstationManagement = React.lazy(() => import("./pages/WorkstationManagement")); // doc64 S5-OPT: eager→lazy
+const CategoryAnalytics = React.lazy(() => import("./pages/CategoryAnalytics")); // doc64 S5-OPT: eager→lazy
+const UserGuide = React.lazy(() => import("./pages/UserGuide")); // doc64 S5-OPT: eager→lazy
+const AboutSystem = React.lazy(() => import("./pages/AboutSystem")); // doc64 S5-OPT: eager→lazy
+const BackupRestore = React.lazy(() => import("./pages/BackupRestore")); // doc64 S5-OPT: eager→lazy
+const OEEDashboard = React.lazy(() => import("./pages/OEEDashboard")); // doc64 S5-OPT: eager→lazy
+const OEETargetSettings = React.lazy(() => import("./pages/OEETargetSettings")); // doc64 S5-OPT: eager→lazy
+const MESControlTower = React.lazy(() => import("./pages/MESControlTower")); // doc64 S5-OPT: eager→lazy
+const WipLineBalance = React.lazy(() => import("./pages/WipLineBalance")); // doc64 S5-OPT: eager→lazy
+const TraceabilityLineage = React.lazy(() => import("./pages/TraceabilityLineage")); // doc64 S5-OPT: eager→lazy
+const RealtimeReportView = React.lazy(() => import("./pages/RealtimeReportView")); // doc64 S5-OPT: eager→lazy
+const CarbonDashboard = React.lazy(() => import("./pages/CarbonDashboard")); // doc64 S5-OPT: eager→lazy
+const DrillDownDashboard = React.lazy(() => import("./pages/DrillDownDashboard")); // doc64 S5-OPT: eager→lazy
+const DefectHeatmapPage = React.lazy(() => import("./pages/DefectHeatmapPage")); // doc64 S5-OPT: eager→lazy
+const DefectPredictionPage = React.lazy(() => import("./pages/DefectPredictionPage")); // doc64 S5-OPT: eager→lazy
+const RootCauseAnalysisPage = React.lazy(() => import("./pages/RootCauseAnalysisPage")); // doc64 S5-OPT: eager→lazy
 const CausalGraphEditorPage = React.lazy(() => import("./pages/CausalGraphEditorPage")); // Causal knowledge-graph admin editor (validated atomic write)
-import HistoryExportScheduling from "./pages/HistoryExportScheduling";
-import CorporateDashboard from "./pages/CorporateDashboard";
+const HistoryExportScheduling = React.lazy(() => import("./pages/HistoryExportScheduling")); // doc64 S5-OPT: eager→lazy
+const CorporateDashboard = React.lazy(() => import("./pages/CorporateDashboard")); // doc64 S5-OPT: eager→lazy
 const AIPerformanceDashboard = React.lazy(() => import("./pages/AIPerformanceDashboard"));
+// doc 69 Wave E1 (T7) — split out of AIPerformanceDashboard (evaluation before/after
+// + A/B canary tabs) and AIDataProcessingPage (dataset-split tab) respectively.
+const AIExperimentsPage = React.lazy(() => import("./pages/AIExperimentsPage"));
+const AIDatasetsPage = React.lazy(() => import("./pages/AIDatasetsPage"));
+const KbStudioPage = React.lazy(() => import("./pages/KbStudioPage")); // doc69 GĐ5/Wave E3 (E3-2): Training Studio — corpus registry + job-tracked ingest (Source/Jobs/Corpus/Eval/Model Builder)
 const BatchInferencePage = React.lazy(() => import("./pages/BatchInferencePage"));
 const ModelMonitoringPage = React.lazy(() => import("./pages/ModelMonitoringPage"));
 const ModelVersionsPage = React.lazy(() => import("./pages/ModelVersionsPage"));
-const AIHub = React.lazy(() => import("./pages/AIHub"));
+// doc 69 T6 — AIHub retired: merged into AIHome (/ai-home). Source file kept on
+// disk unreferenced (not deleted, per task brief) — /ai-hub now redirects below.
+const AIHome = React.lazy(() => import("./pages/AIHome"));
 const AIChatPage = React.lazy(() => import("./pages/AIChatPage"));
+// doc 78 PHA D — Không gian lập trình AI (cây tệp · trình xem+diff · hội thoại tác nhân). RBAC ai_repo_read.
+const AICodingWorkspace = React.lazy(() => import("./pages/AICodingWorkspace"));
 const AIQualityGatePage = React.lazy(() => import("./pages/AIQualityGatePage"));
 const AIActiveLearningPage = React.lazy(() => import("./pages/AIActiveLearningPage"));
 const AIImageSearchPage = React.lazy(() => import("./pages/AIImageSearchPage"));
@@ -93,8 +115,11 @@ const AIInspectionAnalyticsPage = React.lazy(() => import("./pages/AIInspectionA
 const AdvancedVisionLabPage = React.lazy(() => import("./pages/AdvancedVisionLabPage"));
 const AIGgufModelsPage = React.lazy(() => import("./pages/AIGgufModelsPage"));
 const AIBrainDashboard = React.lazy(() => import("./pages/AIBrainDashboard"));
+const AIAgentCommandCenter = React.lazy(() => import("./pages/AIAgentCommandCenter")); // doc69 GĐ4/E2-3: Agent Command Center (roster + savings + task feed + HITL drill-in)
+const AISpecialistStudio = React.lazy(() => import("./pages/AISpecialistStudio")); // Wave 1 T4: dispatch card + result card for the 4 specialist agents (trpc.aiSpecialistAgent.*)
 const ManagementInsight = React.lazy(() => import("./pages/ManagementInsight")); // B4.5: manager-facing insight (NL Q&A + exec summary + AI alerts)
-const AILocalKnowledgeBasePage = React.lazy(() => import("./pages/AILocalKnowledgeBasePage"));
+// doc 69 T6 — /ai-local-kb was a mislabeled chatbot (not a real knowledge base);
+// route now redirects to /ai-chat. Source file kept on disk unreferenced.
 const TechnicianCopilot = React.lazy(() => import("./pages/TechnicianCopilot")); // LUỒNG ③: RCA Copilot — one-tap fix approval
 const OperatorHome = React.lazy(() => import("./pages/OperatorHome")); // Role landing: simplified big-button floor operator shell
 const QualityHome = React.lazy(() => import("./pages/QualityHome")); // Role landing: quality_inspector inspection workspace (P1 doc 07 §④)
@@ -114,7 +139,9 @@ const BomManagement = React.lazy(() => import("./pages/BomManagement")); // G2.4
 const MasterDataManagement = React.lazy(() => import("./pages/MasterDataManagement")); // Doc 07 §③: MES/MOM master data (supplier/material/customer/skill/tool)
 const DataManagementHub = React.lazy(() => import("./pages/DataManagementHub")); // doc 59 Cụm D: hub "nhà Data" thống nhất (rail category ⇄ launcher)
 const ProductWorkspaceHub = React.lazy(() => import("./pages/ProductWorkspaceHub")); // doc 59 Cụm E
-const AIStudioHub = React.lazy(() => import("./pages/AIStudioHub")); // doc 59 Cụm H
+// doc 69 T6 — AIStudioHub retired: merged into AIHome (/ai-home). Source file
+// kept on disk unreferenced (not deleted, per task brief) — /ai-studio now
+// redirects below.
 const MaintenanceWorkspaceHub = React.lazy(() => import("./pages/MaintenanceWorkspaceHub")); // doc 59 Cụm I
 const ReportingStudio = React.lazy(() => import("./pages/ReportingStudio")); // doc 59 Cụm G
 const SettingsHub = React.lazy(() => import("./pages/SettingsHub")); // doc 59 cụm phụ — Settings hub
@@ -139,9 +166,30 @@ const SupervisorHome = React.lazy(() => import("./pages/SupervisorHome")); // Do
 const ViewerHome = React.lazy(() => import("./pages/ViewerHome")); // Doc 10 U3: viewer/user read-only landing
 const AdminHome = React.lazy(() => import("./pages/AdminHome")); // Doc 10 U5: admin governance briefing landing
 const RequestRole = React.lazy(() => import("./pages/RequestRole")); // Doc 10 U12: request a higher role
-// doc 39 Wave 4 — the 6 twin/3D surfaces are consolidated into one lazy Digital Twin
-// hub (their bodies are imported as *Content there). Legacy routes redirect in.
-const TwinHub = React.lazy(() => import("./pages/TwinHub"));
+// ════════════════════════════════════════════════════════════════════════════
+// ★★★ ĐỢT 26 — TWIN LÀ **HAI TRANG LIÊN KẾT** (§13c.2 QĐ-18, thay QĐ-16)
+// ════════════════════════════════════════════════════════════════════════════
+// Đợt 21 gộp `/twin-studio` vào `/twin`. QĐ-18 (chủ sở hữu, 2026-09-09) ĐẢO
+// NGƯỢC đúng phần gộp ấy — hai màn có hai MỤC ĐÍCH, không phải hai vùng:
+//   • `/twin`         → TRÌNH DIỄN / XEM / REALTIME, **chỉ đọc**
+//   • `/twin-studio`  → THIẾT KẾ / LAYOUT / XÂY DỰNG, **chỉ người có quyền**
+// Hai trang **liên kết** với nhau: `/twin` mang một nút sang `/twin-studio`,
+// và nút ấy chỉ hiện với ai sửa được (luật ẩn-không-disable §12b.3).
+//
+// ⚠ `/digital-twin` VẪN là redirect theo `?tab=` (bảng `dinhTuyenTwinCu.ts`) —
+//   Đợt 21 mua được 14 redirect ≤1 chặng, và đợt này KHÔNG đụng vào phần đó.
+// ⚠ Bảy màn con của hub VẪN CÒN TRÊN ĐĨA (§11b cấm xoá màn) — `RfTestCellSim`
+//   dưới đây là một trong số đó, và nó lấy lại **tuyến thật** `/rf-test-cell`
+//   vì §13b 3g xếp nó NGOÀI Twin (đo được: 0 lời gọi tRPC trong 792 dòng).
+const TwinVanHanh = React.lazy(() => import("./pages/TwinVanHanh"));
+const TwinStudio = React.lazy(() => import("./pages/TwinStudio"));
+// ★★★ Đợt 30 (QĐ-19/QĐ-21) — màn LINE 3D RIÊNG, canvas RIÊNG. Xem khối chú
+//   thích ở `<Route path="/twin/line/:id">` bên dưới.
+const TwinLine = React.lazy(() => import("./pages/TwinLine"));
+// ★★★ Đợt 31 (QĐ-19/QĐ-21) — màn MÁY 3D RIÊNG, canvas RIÊNG. Xem khối chú
+//   thích ở `<Route path="/twin/may/:id">` bên dưới.
+const TwinMay = React.lazy(() => import("./pages/TwinMay"));
+const RfTestCellSim = React.lazy(() => import("./pages/RfTestCellSim"));
 const CommandCenter = React.lazy(() => import("./pages/CommandCenter")); // U2 (doc 21 §6 G-3): Ecosystem Command Center — single pane (hierarchy tree + factory twin + KPI strip + unified live alarm rail)
 const ControlTower = React.lazy(() => import("./pages/ControlTower")); // doc 46 FE-W3.1 (D4): persona-configurable Executive Control Tower — consolidates 6 command screens (compose + cross-link)
 const ComparisonStudio = React.lazy(() => import("./pages/ComparisonStudio")); // doc 46 FE-W3.3: unified multi-dim comparison (line/shift/product/period + benchmark)
@@ -180,30 +228,30 @@ const InboxPage = React.lazy(() => import("./pages/InboxPage")); // P3-W2: full-
 const ApprovalsInbox = React.lazy(() => import("./pages/ApprovalsInbox")); // doc 39 W6: unified HITL pending-approvals inbox (threshold + AI action; self-gates actions)
 const TodayPage = React.lazy(() => import("./pages/TodayPage")); // P3-W2: full-screen Today Briefing route (read-open)
 const AndonBoard = React.lazy(() => import("./pages/AndonBoard")); // W5-C (doc 27 F7): dedicated Andon/TV wall board (huge type, auto-cycle, socket-first + poll fallback)
-import AOIPackages from "./pages/AOIPackages";
-import CorrelationAnalysis from "./pages/CorrelationAnalysis";
-import RoleBuilder from "./pages/RoleBuilder";
-import PdfReports from "./pages/PdfReports";
-import DataComparison from "./pages/DataComparison";
-import ReportBuilder from "./pages/ReportBuilder";
-import PowerPointExport from "./pages/PowerPointExport";
-import QualityGateTemplates from "./pages/QualityGateTemplates";
-import ProductionScheduling from "./pages/ProductionScheduling";
-import MachineRegistration from "./pages/MachineRegistration";
-import MachineOnboardingWizard from "./pages/MachineOnboardingWizard";
+const AOIPackages = React.lazy(() => import("./pages/AOIPackages")); // doc64 S5-OPT: eager→lazy
+const CorrelationAnalysis = React.lazy(() => import("./pages/CorrelationAnalysis")); // doc64 S5-OPT: eager→lazy
+const RoleBuilder = React.lazy(() => import("./pages/RoleBuilder")); // doc64 S5-OPT: eager→lazy
+const PdfReports = React.lazy(() => import("./pages/PdfReports")); // doc64 S5-OPT: eager→lazy
+const DataComparison = React.lazy(() => import("./pages/DataComparison")); // doc64 S5-OPT: eager→lazy
+const ReportBuilder = React.lazy(() => import("./pages/ReportBuilder")); // doc64 S5-OPT: eager→lazy
+const PowerPointExport = React.lazy(() => import("./pages/PowerPointExport")); // doc64 S5-OPT: eager→lazy
+const QualityGateTemplates = React.lazy(() => import("./pages/QualityGateTemplates")); // doc64 S5-OPT: eager→lazy
+const ProductionScheduling = React.lazy(() => import("./pages/ProductionScheduling")); // doc64 S5-OPT: eager→lazy
+const MachineRegistration = React.lazy(() => import("./pages/MachineRegistration")); // doc64 S5-OPT: eager→lazy
+const MachineOnboardingWizard = React.lazy(() => import("./pages/MachineOnboardingWizard")); // doc64 S5-OPT: eager→lazy
 const AoiOnboardingWizard = React.lazy(() => import("./pages/AoiOnboardingWizard")); // W2-D (doc 27 §3 C4): guided AOI/AVI connection wizard — vendor adapter + dry-run + credential + commissioning sign-off (soft gate)
 const ProductOnboardingWizard = React.lazy(() => import("./pages/ProductOnboardingWizard")); // WD-1 (doc 31 Đợt D · UX1): product-side onboarding wizard — resumable guided setup (fiducials/points/limits/golden/panel/release/mapping)
 const ProductChangeoverWizard = React.lazy(() => import("./pages/ProductChangeoverWizard")); // doc 40 Wave 4 — operator changeover: quét sản phẩm mới → kiểm tra readiness/mapping/feeder → xác nhận đổi
 const FeederVerify = React.lazy(() => import("./pages/FeederVerify")); // doc 35 W4-C: SMT feeder-setup scan verification (slot↔BOM/program, anti-mispick)
-import CorporateManagement from "./pages/CorporateManagement";
-import LicenseManagement from "./pages/LicenseManagement";
-import MonitoringSettings from "./pages/MonitoringSettings";
+const CorporateManagement = React.lazy(() => import("./pages/CorporateManagement")); // doc64 S5-OPT: eager→lazy
+const LicenseManagement = React.lazy(() => import("./pages/LicenseManagement")); // doc64 S5-OPT: eager→lazy
+const MonitoringSettings = React.lazy(() => import("./pages/MonitoringSettings")); // doc64 S5-OPT: eager→lazy
 // doc 40 DEV-03 — AdminMonitoring (giám sát slow-query) trước đây orphan (không route).
-import AdminMonitoring from "./pages/AdminMonitoring";
-import AnalyticsSettings from "./pages/AnalyticsSettings";
-import AdminSettings from "./pages/AdminSettings";
-import DashboardCenter from "./pages/DashboardCenter";
-import ProductionDashboard from "./pages/ProductionDashboard";
+const AdminMonitoring = React.lazy(() => import("./pages/AdminMonitoring")); // doc64 S5-OPT: eager→lazy
+const AnalyticsSettings = React.lazy(() => import("./pages/AnalyticsSettings")); // doc64 S5-OPT: eager→lazy
+const AdminSettings = React.lazy(() => import("./pages/AdminSettings")); // doc64 S5-OPT: eager→lazy
+const DashboardCenter = React.lazy(() => import("./pages/DashboardCenter")); // doc64 S5-OPT: eager→lazy
+const ProductionDashboard = React.lazy(() => import("./pages/ProductionDashboard")); // doc64 S5-OPT: eager→lazy
 const StationAnalysis = React.lazy(() => import("./pages/StationAnalysis")); // Wave 1: code-split (2.7k LOC)
 const ComponentShowcase = React.lazy(() => import("./pages/ComponentShowcase")); // Wave 1: dev showcase of DS + foundation primitives
 
@@ -287,9 +335,148 @@ function Router() {
       <Route path="/mes-control-tower"><RouteGuard navHref="/mes-control-tower"><MESControlTower /></RouteGuard></Route>
       <Route path="/wip-dashboard"><RouteGuard navHref="/wip-dashboard"><WipLineBalance /></RouteGuard></Route>
       <Route path="/traceability"><RouteGuard navHref="/traceability"><TraceabilityLineage /></RouteGuard></Route>
-      {/* doc 39 Wave 4 — Digital Twin hub consolidates the 6 twin/3D surfaces into one
-          tabbed page; the legacy routes deep-link into their tab. */}
-      <Route path="/digital-twin"><RouteGuard navHref="/digital-twin"><AIPageWrapper><TwinHub /></AIPageWrapper></RouteGuard></Route>
+      {/*
+        ════════════════════════════════════════════════════════════════════
+        ★★★ ĐỢT 21 LÔ Y (§13b 14.2 + §13c.1 QD-16) — `/digital-twin` → `/twin`
+        ════════════════════════════════════════════════════════════════════
+        `/digital-twin` là **vỏ Tabs 140 dòng** (`TwinHub.tsx`); nó không mang
+        nghiệp vụ nào ngoài chính cái vỏ. `/twin` thì đã gộp 13 nguồn dữ liệu,
+        đã có trục URL 6 khoá, đã có honest-null và đã nghiệm thu. Nên gộp về
+        `/twin` chứ không chép 2.746 dòng đã nghiệm thu sang một vỏ chưa.
+
+        ★★★ ĐỢT 61 (QĐ-31) — CÂU CŨ Ở ĐÂY ĐÃ HẾT HẠN, ghi lại thay vì để nguyên:
+          câu cũ ghi "`TwinHub` và cả bảy màn con VẪN CÒN TRÊN ĐĨA (§11b cấm xoá
+          màn)". Khảo sát Đợt 60 đo lại: `TwinHub` **0 route, 0 tệp sản phẩm
+          import** ⇒ nó là MÃ CHẾT, không phải "màn cũ chạy song song". Đợt 61 đã
+          **XOÁ** `TwinHub` + 5 màn con chỉ nó gọi (`DigitalTwinDashboard`,
+          `CellTwinPlayer`, `FactoryLiveMap3D`+`FactoryFloor3D`, `FactoryFloorEditor`).
+          `RfTestCellSim` và `Layout` sống nhờ route riêng.
+
+        ★★★ ĐỢT 62 — `DigitalTwinCenter` (938 dòng) + `ArticulatedRobot` (196) **ĐÃ XOÁ**.
+          Câu Đợt 61 ("còn trên đĩa, giữ `twin.replay`/`twin.status` chưa di trú") hết hạn
+          sau khi ĐO từng tính năng thay vì suy từ tên thủ tục:
+            · USD export ......... ĐÃ có ở `TwinVanHanh.tsx:2213` + `SystemHealth.tsx:592`
+            · cảnh 3D + KPI ...... `/twin` và `/command-center` đã có, giàu hơn
+            · băng "trực tiếp" ... `/twin` có 5 trạng thái + huy hiệu NGUỒN SỐ (mạnh hơn
+                                   banner 3 trạng thái của trang cũ)
+            · replay máy ......... `twin.replay` đọc `packml_state`/`position_*`: ĐO trên DB
+                                   dev = **20 hàng mỗi loại, tất cả trong 2 phút ngày
+                                   2026-09-06, 0 hàng trong 24 h** ⇒ trang trả RỖNG. `/twin`
+                                   có `DongThoiGian` 24 h (xấp xỉ CÓ KHAI).
+            · cánh tay robot FK .. dữ liệu THẬT (1,46 triệu hàng `robot_telemetry`), nhưng
+                                   `/robot/:id` đã đọc đúng dữ liệu ấy bằng thanh 2D — một
+                                   lựa chọn CÓ CHỦ Ý (`RobotCockpit.tsx:15`).
+          **KHÔNG thủ tục server nào bị xoá** — `twin.replay`/`twin.status`/`twin.usdExport`
+          còn nguyên trong `twinRouter`; sổ nợ + đường hồi sinh ở spec §14r, lưới ghim ở
+          `client/src/components/twin3d/noTwinDot62.unit.test.ts`.
+
+        ★★★ `<Redirect>` DƯỚI ĐÂY KHÔNG ĐƯỢC XOÁ THEO. Cái bị bỏ là **mã của vỏ**,
+          không phải **lối vào bằng URL**: bookmark/link cũ vẫn phải tới đúng đích.
+          Không đích nào của bảng `dinhTuyenTwinCu` là một trong các trang vừa xoá
+          (13 đích = `/twin` ×7, `/twin-studio` ×4, `/rf-test-cell` ×1, đo lại Đợt 61).
+
+        ★ Redirect **theo `?tab=`**: bảy tab đi bảy đích khác nhau, nên một
+          `<Redirect to="/twin">` phẳng sẽ nuốt `?tab=rf` (mô phỏng RF, §13b xếp
+          NGOÀI Twin) và `?tab=floor` (vùng sửa). Bảng tra ở
+          `dinhTuyenTwinCu.ts`, và test ở đó cưỡng chế **≤1 chặng** cho cả 14
+          dòng — luật ấy không thể kiểm bằng mắt trên tệp này.
+      */}
+      <Route path="/digital-twin">
+        {() => {
+          const tab = new URLSearchParams(window.location.search).get("tab");
+          return <Redirect to={traDichCu(tab ? `/digital-twin?tab=${tab}` : "/digital-twin") ?? "/twin"} />;
+        }}
+      </Route>
+      {/* Twin 3D Đợt 0 (spec 2026-09-06 §6.4) — `navHref` chứ KHÔNG `requirePermission`:
+          guard TRA quyền từ chính navGroups, nên mục nav và cổng route KHÔNG THỂ lệch
+          nhau. Đó là cách repo chặn lớp lỗi "một lối vào rồi TỪ CHỐI" của Khối D. */}
+      <Route path="/twin"><RouteGuard navHref="/twin"><TwinVanHanh /></RouteGuard></Route>
+      {/*
+        ════════════════════════════════════════════════════════════════════
+        ★★★ ĐỢT 30 — QĐ-19 + QĐ-21: MÀN **LINE 3D RIÊNG**, CANVAS RIÊNG
+        ════════════════════════════════════════════════════════════════════
+        Chủ sở hữu chốt 2026-09-09: *"1 màn canvas là dành cho factory thôi,
+        còn Line/Machine là 2 màn hình khác"*. URL **phân cấp** (QĐ-21).
+
+        ★★★ `/twin` KHÔNG NUỐT `/twin/line/2` — ĐO ĐƯỢC, KHÔNG SUY.
+          `bo-cuc/duongDanBaMan.unit.test.ts` (9 ca) đo bằng `regexparam` —
+          CHÍNH bộ khớp mà wouter 3.7.1 `import` bên trong
+          (`node_modules/wouter/esm/index.js:1`, và `regexparam` là dependency
+          khai trong `wouter/package.json`). Nếu điều đó SAI thì triệu chứng là
+          **màn nhà máy hiện ra**, không phải một lỗi (lớp G67: URL bị nuốt im
+          lặng, ghi được, đọc ra thứ khác, không lỗi nào nổ).
+
+        ⚠⚠⚠ **G67 — `navHref="/twin"`, KHÔNG PHẢI `"/twin/line/:id"`.**
+          `hasAccessToItem` (`navigation.tsx:2546`) duyệt `navGroups` tìm ô có
+          `href` **khớp CHÍNH XÁC**, và **`return false`** khi không thấy. Khai
+          `navHref="/twin/line/:id"` — một href KHÔNG có trong `navGroups` — sẽ
+          **từ chối MỌI người dùng, kể cả người đủ quyền**, và triệu chứng là
+          thẻ "Không có quyền truy cập" chứ không phải một lỗi. Đây đúng là
+          "thêm tên vào danh sách ĐÓNG mà quên thêm đủ chỗ".
+          ⇒ Màn Line **thừa cổng của `/twin`**: `analytics_oee` HOẶC
+            `machine_status` (QĐ-18 — nó là màn **XEM**, 0 mutation, không phải
+            cổng studio `settings_factory`/`machine_control`).
+
+        ⛔ **KHÔNG TRÙNG với `/line-view/:lineId`** (`:444` bên dưới):
+          `LineView.tsx` **418 dòng, 0 tham chiếu 3D** là màn **2D điều khiển
+          tuyến** (có lệnh, server đòi 2FA). Màn này là **3D chỉ XEM**. Tên gần
+          nhau ⇒ ghi rõ ở cả hai đầu kẻo người sau xoá nhầm (§11b).
+      */}
+      <Route path="/twin/line/:id"><RouteGuard navHref="/twin"><TwinLine /></RouteGuard></Route>
+      {/*
+        ★★★ ĐỢT 31 — QĐ-19 + QĐ-21: MÀN **MÁY 3D RIÊNG**, CANVAS RIÊNG.
+        Cùng tiền đề và cùng cổng với `/twin/line/:id` ngay trên:
+          · `/twin` KHÔNG nuốt `/twin/may/5` — `bo-cuc/duongDanBaMan.unit.test.ts`
+            đo bằng `regexparam` (bộ khớp thật của wouter 3.7.1).
+          · ⚠⚠⚠ G67: `navHref="/twin"`, KHÔNG `"/twin/may/:id"` — href vắng khỏi
+            `navGroups` ⇒ `hasAccessToItem` từ chối MỌI người, im lặng.
+          · QĐ-18: màn XEM ở cổng route (`analytics_oee` HOẶC `machine_status`);
+            mặt GHI là `NganXuLy` tự gate từng nút bên trong.
+        ⛔ KHÔNG TRÙNG với `/machine/:id` (bên dưới): đó là cockpit 2D TOÀN TRANG
+          (redirect sang `/device-monitor?machine=` khi workspace shell bật).
+          Màn này là 3D định vị + cockpit NHÚNG (`MachineCockpitBody embedded`)
+          + `NganXuLy` — nó DÙNG cockpit, không thay thế. Ghi ở cả hai đầu (§11b).
+      */}
+      <Route path="/twin/may/:id"><RouteGuard navHref="/twin"><TwinMay /></RouteGuard></Route>
+      {/*
+        ════════════════════════════════════════════════════════════════════
+        ★★★ QĐ-18 (§13c.2) — TÁCH LẠI HAI TRANG. **ĐẢO NGƯỢC QĐ-16.**
+        ════════════════════════════════════════════════════════════════════
+        Chủ sở hữu chốt 2026-09-09, và lý do MẠNH HƠN lý do gộp của QĐ-16:
+
+          *"Twin-studio là nơi THIẾT KẾ và layout cũng như xây dựng 3D Twin
+           cho nhà máy/ProductionLine, CHỈ NHỮNG NGƯỜI CÓ QUYỀN mới làm được.
+           Còn Twin là nơi TRÌNH DIỄN, XEM, QUẢN LÝ REALTIME nhà máy, KHÔNG
+           CHỈNH SỬA ĐƯỢC… 2 trang liên kết với nhau nhưng MỤC ĐÍCH HOÀN TOÀN
+           KHÁC NHAU."*
+
+        QĐ-16 gộp vì cho rằng đây là hai VÙNG của một việc. QĐ-18 nói đây là
+        hai MỤC ĐÍCH khác nhau — người chỉ xem KHÔNG BAO GIỜ cần công cụ sửa.
+        Hai vùng của một việc thì gộp đúng; hai mục đích thì tách đúng.
+
+        ────────────────────────────────────────────────────────────────────
+        ★★★ VÌ SAO TÁCH KHÔNG TÁI DIỄN TAI NẠN "CHẶN-1" — SỐ ĐO, KHÔNG PHỎNG ĐOÁN
+        ────────────────────────────────────────────────────────────────────
+        Nỗi lo của QĐ-16 là `operator1` **mất lối vào**. Đo lại trên bảng
+        `permissions` (2026-09-09, 8 tài khoản `isActive`):
+
+            operator1     xem /twin ✅ (machine_status) · sửa studio ❌
+            engineer1     ✅ / ✅        maint1        ✅ / ✅
+            supervisor1   ✅ / ✅        e2e_tai_loE   ✅ / ✅
+
+        ⇒ `operator1` **KHÔNG mất gì khi tách**: họ vốn đã không có
+          `settings_factory` lẫn `machine_control`, nên vùng sửa với họ vốn
+          đã không tồn tại (QĐ-16 tự hạ cấp họ về `xem`). Tách chỉ chuyển chỗ
+          của MỘT thứ họ chưa từng thấy. Đây là khác biệt then chốt so với
+          CHẶN-1 của Đợt 3 — ở đó 2/4 vai **thật sự** mất màn đang dùng được.
+
+        ⚠ `RouteGuard navHref="/twin-studio"` TRA quyền từ chính ô nav
+          `navigation.tsx` (`["settings_factory","machine_control"]`), nên nav
+          và cổng route KHÔNG THỂ lệch — lớp lỗi "một lối vào rồi TỪ CHỐI".
+          Và vì nav ẩn ô với ai thiếu quyền (luật ẩn-không-disable §12b.3),
+          `operator1` **không thấy** mục này, chứ không phải thấy rồi bị chặn.
+      */}
+      <Route path="/twin-studio"><RouteGuard navHref="/twin-studio"><TwinStudio /></RouteGuard></Route>
       <Route path="/history"><RouteGuard navHref="/history"><History /></RouteGuard></Route>
       <Route path="/inspection/:id"><RouteGuard requirePermission="history_view"><InspectionDetail /></RouteGuard></Route>
       <Route path="/aoi-packages"><RouteGuard navHref="/aoi-packages"><AOIPackages /></RouteGuard></Route>
@@ -334,6 +521,10 @@ function Router() {
       {/* doc 40 Wave 4d §13.1 — Factory Command View: chỉ huy toàn nhà máy 2D/3D (xem = giám sát). */}
       <Route path="/factory-command"><RouteGuard requirePermission="machine_status"><AIPageWrapper><FactoryCommandView /></AIPageWrapper></RouteGuard></Route>
       {/* doc 44 W3-B4 §G5.10 — Line View (LDS-L5 Ch.4.2): xem = machine_status; lệnh tuyến tự gate machine_control/edit + server actuationProcedure (2FA). */}
+      {/* ⛔ ĐỢT 30 (§11b) — **KHÔNG TRÙNG** với `/twin/line/:id` ở trên. Đây là màn
+          **2D CÓ LỆNH** (`LineView.tsx`, 418 dòng, 0 tham chiếu `Canvas`/`three`/
+          `KhungCanh`); kia là màn **3D CHỈ XEM** (0 mutation). Tên gần nhau là lý do
+          để ghi dòng này, KHÔNG phải lý do để xoá một trong hai vì tưởng trùng lặp. */}
       <Route path="/line-view/:lineId?"><RouteGuard requirePermission="machine_status"><AIPageWrapper><LineView /></AIPageWrapper></RouteGuard></Route>
       {/* doc 44 W6-1 §G5.14 — e-SOP (LDS-L5 §6.2): viewer vận hành (machine_status read-open) + quản trị (settings_products); server gate role/2FA. */}
       <Route path="/sop/:sopId?"><RouteGuard requirePermission="machine_status"><SopViewer /></RouteGuard></Route>
@@ -346,7 +537,8 @@ function Router() {
       <Route path="/machine-status"><Redirect to="/device-monitor" /></Route>
       <Route path="/machine-health"><Redirect to="/device-monitor?tab=health" /></Route>
       <Route path="/oee-dashboard"><RouteGuard navHref="/oee-dashboard"><OEEDashboard /></RouteGuard></Route>
-      <Route path="/factory-live-map"><Redirect to="/digital-twin?tab=map" /></Route>
+      {/* ★ ĐỢT 21 — RÚT 2 CHẶNG THÀNH 1 (§13b 14.2.3). Trước: → /digital-twin?tab=map → … */}
+      <Route path="/factory-live-map"><Redirect to="/twin" /></Route>
       <Route path="/field-devices"><Redirect to="/device-monitor?tab=field" /></Route>
       {/* doc 39 Wave 4 — Connectivity hub consolidates the 9 MQTT/UNS surfaces into one
           tabbed page; legacy routes deep-link into their tab (deep-links preserved). */}
@@ -386,10 +578,13 @@ function Router() {
       <Route path="/robot-control"><RouteGuard requirePermission="machine_control"><AIPageWrapper><RobotControl /></AIPageWrapper></RouteGuard></Route>
       {/* ENG-F1 (doc 40): gated command console — actuation qua HITL dispatcher (mode/commissioning/interlock gate giữ nguyên). */}
       <Route path="/command-console"><RouteGuard requirePermission="machine_control"><AIPageWrapper><CommandConsole /></AIPageWrapper></RouteGuard></Route>
-      <Route path="/fleet-orchestration"><RouteGuard requirePermission="machine_control"><AIPageWrapper><FleetOrchestration /></AIPageWrapper></RouteGuard></Route>
+      {/* doc 80 Task 8 (RBAC-01, XC-02) — nav khai machine_status (đọc); trang có
+          chế độ chỉ-xem đã thiết kế sẵn, nút ghi vẫn gate machine_control tại
+          trang/server. navHref tự tra ĐÚNG quyền của mục nav — không thể lệch. */}
+      <Route path="/fleet-orchestration"><RouteGuard navHref="/fleet-orchestration"><AIPageWrapper><FleetOrchestration /></AIPageWrapper></RouteGuard></Route>
       <Route path="/control-plane"><RouteGuard requirePermission="machine_control"><AIPageWrapper><ControlPlane /></AIPageWrapper></RouteGuard></Route>
       <Route path="/safety-workforce"><RouteGuard requirePermission="machine_status"><AIPageWrapper><SafetyWorkforce /></AIPageWrapper></RouteGuard></Route>
-      <Route path="/robot-model-health"><RouteGuard requirePermission="machine_status"><AIPageWrapper><RobotModelHealth /></AIPageWrapper></RouteGuard></Route>
+      <Route path="/robot-model-health"><RouteGuard requirePermission="machine_status" requireModule="MOD_AI"><AIPageWrapper><RobotModelHealth /></AIPageWrapper></RouteGuard></Route>
       <Route path="/equipment-standards"><RouteGuard requirePermission="machine_status"><AIPageWrapper><EquipmentStandards /></AIPageWrapper></RouteGuard></Route>
       <Route path="/equipment-integration"><RouteGuard requirePermission="machine_status"><AIPageWrapper><EquipmentIntegration /></AIPageWrapper></RouteGuard></Route>
       <Route path="/engineering-home"><RouteGuard navHref="/engineering-home"><EngineeringHub /></RouteGuard></Route>
@@ -397,13 +592,19 @@ function Router() {
       <Route path="/recipes"><RouteGuard navHref="/recipes"><RecipeManagement /></RouteGuard></Route>
       <Route path="/interlock-rules"><RouteGuard navHref="/interlock-rules"><InterlockRuleManagement /></RouteGuard></Route>
       <Route path="/orchestration-studio"><RouteGuard navHref="/orchestration-studio"><AIPageWrapper><OrchestrationStudio /></AIPageWrapper></RouteGuard></Route>
-      <Route path="/ir-editor"><RouteGuard requirePermission="machine_control"><AIPageWrapper><IrEditor /></AIPageWrapper></RouteGuard></Route>
-      <Route path="/pou-studio"><RouteGuard requirePermission="machine_control"><AIPageWrapper><PouStudio /></AIPageWrapper></RouteGuard></Route>
+      {/* doc 80 Task 8 (RBAC-01, XC-02) — nav khai machine_status (đọc); trang có
+          chế độ chỉ-xem đã thiết kế sẵn, nút ghi vẫn gate machine_control tại
+          trang/server. navHref tự tra ĐÚNG quyền của mục nav — không thể lệch. */}
+      <Route path="/ir-editor"><RouteGuard navHref="/ir-editor"><AIPageWrapper><IrEditor /></AIPageWrapper></RouteGuard></Route>
+      <Route path="/pou-studio"><RouteGuard navHref="/pou-studio"><AIPageWrapper><PouStudio /></AIPageWrapper></RouteGuard></Route>
       <Route path="/programming-copilot"><RouteGuard requirePermission="machine_status"><AIPageWrapper><ProgrammingCopilot /></AIPageWrapper></RouteGuard></Route>
-      <Route path="/factory-floor-editor"><Redirect to="/digital-twin?tab=floor" /></Route>
-      <Route path="/rf-test-cell"><Redirect to="/digital-twin?tab=rf" /></Route>
-      <Route path="/cell-twin"><Redirect to="/digital-twin?tab=cell" /></Route>
-      <Route path="/digital-twin-center"><Redirect to="/digital-twin?tab=center" /></Route>
+      <Route path="/factory-floor-editor"><Redirect to="/twin-studio" /></Route>
+      {/* ★ §13b 3g — RF là mô phỏng THUẦN (đo được 0 lời gọi tRPC trong 792 dòng):
+          nó không trả lời "nhà máy đang thế nào". Trả lại TUYẾN THẬT, ngoài Twin. */}
+      <Route path="/rf-test-cell"><RouteGuard requirePermission="machine_status"><AIPageWrapper><RfTestCellSim /></AIPageWrapper></RouteGuard></Route>
+      {/* ★ §13b 3f — phát lại workflow ĐÃ GỘP vào /twin (`orchestration.simulate`). */}
+      <Route path="/cell-twin"><Redirect to="/twin" /></Route>
+      <Route path="/digital-twin-center"><Redirect to="/twin" /></Route>
       <Route path="/command-center"><RouteGuard requirePermission="machine_status"><AIPageWrapper><CommandCenter /></AIPageWrapper></RouteGuard></Route>
       {/* U3 (doc 21 §6 G-4/G-5): per-asset cockpits — reached by drill (no top-nav entry). */}
       {/* doc 59 P3 — workspace default-ON: /machine/:id folds into the Machine Workspace
@@ -462,31 +663,57 @@ function Router() {
       <Route path="/analytics-setting"><Redirect to="/reports" /></Route>
 
       {/* ── AI ───────────────────────────────────────────────────────────── */}
-      {/* Workspace (read-open to all roles): chat / hub / management-insight. */}
-      <Route path="/ai-chat"><AIPageWrapper><AIChatPage /></AIPageWrapper></Route>
-      <Route path="/ai-hub"><AIPageWrapper><AIHub /></AIPageWrapper></Route>
-      <Route path="/management-insight"><AIPageWrapper><ManagementInsight /></AIPageWrapper></Route>
-      <Route path="/ai-local-kb"><AIPageWrapper><AILocalKnowledgeBasePage /></AIPageWrapper></Route>
+      {/* doc 69 T6 — single AI taxonomy: AI Home merges the old AIHub (/ai-hub)
+          + AIStudioHub (/ai-studio) tile walls into one landing; both old URLs
+          keep working via redirect. Workspace (read-open to all roles): chat /
+          AI Home / management-insight / inbox. */}
+      {/* ★★★ doc 80 — `requireModule="MOD_AI"` trên MỌI tuyến thuộc SKU AI. Nó KHÔNG thay RBAC
+          (`navHref`/`requirePermission`/`requireRole` giữ nguyên từng ký tự) — nó THÊM chiều
+          GIẤY PHÉP, và chỉ chặn khi SKU **đã khai** mà không gồm MOD_AI (xem RouteGuard §1a-bis).
+          Ba tuyến "read-open" dưới đây trước nay KHÔNG có RouteGuard nào; chúng được bọc mới
+          CHỈ để mang cổng module — không thêm một điều kiện vai/quyền nào. */}
+      <Route path="/ai-chat"><RouteGuard requireModule="MOD_AI"><AIPageWrapper><AIChatPage /></AIPageWrapper></RouteGuard></Route>
+      {/* doc 78 PHA D — Không gian lập trình AI: ghim RBAC ai_repo_read (engineer/admin), KHÔNG mở cho mọi tài khoản. */}
+      <Route path="/ai-coding-workspace"><RouteGuard requirePermission="ai_repo_read" requireModule="MOD_AI"><AIPageWrapper><AICodingWorkspace /></AIPageWrapper></RouteGuard></Route>
+      <Route path="/ai-home"><RouteGuard requireModule="MOD_AI"><AIPageWrapper><AIHome /></AIPageWrapper></RouteGuard></Route>
+      <Route path="/ai-hub"><Redirect to="/ai-home" /></Route>
+      <Route path="/management-insight"><RouteGuard requireModule="MOD_AI"><AIPageWrapper><ManagementInsight /></AIPageWrapper></RouteGuard></Route>
+      {/* /ai-local-kb was a mislabeled chatbot (not a real knowledge base) — the
+          real RAG knowledge base is a later task (doc 69 Wave E3). */}
+      <Route path="/ai-local-kb"><Redirect to="/ai-chat" /></Route>
       {/* AI Control Plane / Ops / Vision — admin-gated. */}
-      <Route path="/ai-brain"><RouteGuard navHref="/ai-brain"><AIPageWrapper><AIBrainDashboard /></AIPageWrapper></RouteGuard></Route>
-      <Route path="/ai-monitoring"><RouteGuard navHref="/ai-monitoring"><AIPageWrapper><ModelMonitoringPage /></AIPageWrapper></RouteGuard></Route>
-      <Route path="/ai-performance"><RouteGuard navHref="/ai-performance"><AIPageWrapper><AIPerformanceDashboard /></AIPageWrapper></RouteGuard></Route>
-      <Route path="/ai-models"><RouteGuard navHref="/ai-models"><AIPageWrapper><AIModelManagementPage /></AIPageWrapper></RouteGuard></Route>
-      <Route path="/model-versions"><RouteGuard navHref="/model-versions"><AIPageWrapper><ModelVersionsPage /></AIPageWrapper></RouteGuard></Route>
-      <Route path="/ai-settings"><RouteGuard navHref="/ai-settings"><AIPageWrapper><AISettingsPage /></AIPageWrapper></RouteGuard></Route>
-      <Route path="/ai-active-learning"><RouteGuard navHref="/ai-active-learning"><AIPageWrapper><AIActiveLearningPage /></AIPageWrapper></RouteGuard></Route>
-      <Route path="/ai-batch-jobs"><RouteGuard navHref="/ai-batch-jobs"><AIPageWrapper><BatchInferencePage /></AIPageWrapper></RouteGuard></Route>
-      <Route path="/ai-data-processing"><RouteGuard navHref="/ai-data-processing"><AIPageWrapper><AIDataProcessingPage /></AIPageWrapper></RouteGuard></Route>
-      <Route path="/ai-time-series"><RouteGuard navHref="/ai-time-series"><AIPageWrapper><AITimeSeriesPage /></AIPageWrapper></RouteGuard></Route>
-      <Route path="/ai-reports"><RouteGuard navHref="/ai-reports"><AIPageWrapper><AIReportsPage /></AIPageWrapper></RouteGuard></Route>
-      <Route path="/ai-quality-gate"><RouteGuard navHref="/ai-quality-gate"><AIPageWrapper><AIQualityGatePage /></AIPageWrapper></RouteGuard></Route>
-      <Route path="/ai-image-search"><RouteGuard navHref="/ai-image-search"><AIPageWrapper><AIImageSearchPage /></AIPageWrapper></RouteGuard></Route>
-      <Route path="/ai-advanced-vision-lab"><RouteGuard navHref="/ai-advanced-vision-lab"><AIPageWrapper><AdvancedVisionLabPage /></AIPageWrapper></RouteGuard></Route>
-      <Route path="/anomaly-banks"><RouteGuard navHref="/anomaly-banks"><AnomalyBankPage /></RouteGuard></Route>
-      <Route path="/mask-annotation"><RouteGuard navHref="/mask-annotation"><AIPageWrapper><MaskAnnotationPage /></AIPageWrapper></RouteGuard></Route>
-      <Route path="/causal-graph"><RouteGuard navHref="/causal-graph"><AIPageWrapper><CausalGraphEditorPage /></AIPageWrapper></RouteGuard></Route>
-      <Route path="/ai-inspection-analytics"><RouteGuard requirePermission="analytics_ai_performance"><AIPageWrapper><AIInspectionAnalyticsPage /></AIPageWrapper></RouteGuard></Route>
-      <Route path="/ai-gguf-models"><RouteGuard requireRole={["admin"]}><AIPageWrapper><AIGgufModelsPage /></AIPageWrapper></RouteGuard></Route>
+      <Route path="/ai-brain"><RouteGuard navHref="/ai-brain" requireModule="MOD_AI"><AIPageWrapper><AIBrainDashboard /></AIPageWrapper></RouteGuard></Route>
+      <Route path="/ai-command-center"><RouteGuard navHref="/ai-command-center" requireModule="MOD_AI"><AIPageWrapper><AIAgentCommandCenter /></AIPageWrapper></RouteGuard></Route>
+      <Route path="/ai-specialist-studio"><RouteGuard navHref="/ai-specialist-studio" requireModule="MOD_AI"><AIPageWrapper><AISpecialistStudio /></AIPageWrapper></RouteGuard></Route>
+      <Route path="/ai-monitoring"><RouteGuard navHref="/ai-monitoring" requireModule="MOD_AI"><AIPageWrapper><ModelMonitoringPage /></AIPageWrapper></RouteGuard></Route>
+      <Route path="/ai-performance"><RouteGuard navHref="/ai-performance" requireModule="MOD_AI"><AIPageWrapper><AIPerformanceDashboard /></AIPageWrapper></RouteGuard></Route>
+      {/* doc 69 Wave E1 (T7) — split from AIPerformanceDashboard (evaluation before/after
+          + A/B canary); same RBAC guard as /ai-performance. */}
+      <Route path="/ai-experiments"><RouteGuard navHref="/ai-experiments" requireModule="MOD_AI"><AIPageWrapper><AIExperimentsPage /></AIPageWrapper></RouteGuard></Route>
+      <Route path="/ai-models"><RouteGuard navHref="/ai-models" requireModule="MOD_AI"><AIPageWrapper><AIModelManagementPage /></AIPageWrapper></RouteGuard></Route>
+      <Route path="/model-versions"><RouteGuard navHref="/model-versions" requireModule="MOD_AI"><AIPageWrapper><ModelVersionsPage /></AIPageWrapper></RouteGuard></Route>
+      <Route path="/ai-settings"><RouteGuard navHref="/ai-settings" requireModule="MOD_AI"><AIPageWrapper><AISettingsPage /></AIPageWrapper></RouteGuard></Route>
+      <Route path="/ai-active-learning"><RouteGuard navHref="/ai-active-learning" requireModule="MOD_AI"><AIPageWrapper><AIActiveLearningPage /></AIPageWrapper></RouteGuard></Route>
+      <Route path="/ai-batch-jobs"><RouteGuard navHref="/ai-batch-jobs" requireModule="MOD_AI"><AIPageWrapper><BatchInferencePage /></AIPageWrapper></RouteGuard></Route>
+      <Route path="/ai-data-processing"><RouteGuard navHref="/ai-data-processing" requireModule="MOD_AI"><AIPageWrapper><AIDataProcessingPage /></AIPageWrapper></RouteGuard></Route>
+      {/* doc 69 Wave E1 (T7) — split from AIDataProcessingPage (dataset-split tab, a
+          durable Knowledge & Training asset); same RBAC guard as /ai-data-processing. */}
+      <Route path="/ai-datasets"><RouteGuard navHref="/ai-datasets" requireModule="MOD_AI"><AIPageWrapper><AIDatasetsPage /></AIPageWrapper></RouteGuard></Route>
+      {/* doc69 GĐ5/Wave E3 (E3-2) — Training Studio: the nav comment at /ai-datasets's
+          registration (doc 69 Wave E1/T7) said Training Studio was "a later E3 task — NOT
+          added here"; this is that task. Same admin-gated RouteGuard shape as /ai-datasets
+          (kbStudioRouter.ts itself allows admin+engineer — see navigation.tsx's comment). */}
+      <Route path="/ai-training-studio"><RouteGuard navHref="/ai-training-studio" requireModule="MOD_AI"><AIPageWrapper><KbStudioPage /></AIPageWrapper></RouteGuard></Route>
+      <Route path="/ai-time-series"><RouteGuard navHref="/ai-time-series" requireModule="MOD_AI"><AIPageWrapper><AITimeSeriesPage /></AIPageWrapper></RouteGuard></Route>
+      <Route path="/ai-reports"><RouteGuard navHref="/ai-reports" requireModule="MOD_AI"><AIPageWrapper><AIReportsPage /></AIPageWrapper></RouteGuard></Route>
+      <Route path="/ai-quality-gate"><RouteGuard navHref="/ai-quality-gate" requireModule="MOD_AI"><AIPageWrapper><AIQualityGatePage /></AIPageWrapper></RouteGuard></Route>
+      <Route path="/ai-image-search"><RouteGuard navHref="/ai-image-search" requireModule="MOD_AI"><AIPageWrapper><AIImageSearchPage /></AIPageWrapper></RouteGuard></Route>
+      <Route path="/ai-advanced-vision-lab"><RouteGuard navHref="/ai-advanced-vision-lab" requireModule="MOD_AI"><AIPageWrapper><AdvancedVisionLabPage /></AIPageWrapper></RouteGuard></Route>
+      <Route path="/anomaly-banks"><RouteGuard navHref="/anomaly-banks" requireModule="MOD_AI"><AnomalyBankPage /></RouteGuard></Route>
+      <Route path="/mask-annotation"><RouteGuard navHref="/mask-annotation" requireModule="MOD_AI"><AIPageWrapper><MaskAnnotationPage /></AIPageWrapper></RouteGuard></Route>
+      <Route path="/causal-graph"><RouteGuard navHref="/causal-graph" requireModule="MOD_AI"><AIPageWrapper><CausalGraphEditorPage /></AIPageWrapper></RouteGuard></Route>
+      <Route path="/ai-inspection-analytics"><RouteGuard requirePermission="analytics_ai_performance" requireModule="MOD_AI"><AIPageWrapper><AIInspectionAnalyticsPage /></AIPageWrapper></RouteGuard></Route>
+      <Route path="/ai-gguf-models"><RouteGuard requireRole={["admin"]} requireModule="MOD_AI"><AIPageWrapper><AIGgufModelsPage /></AIPageWrapper></RouteGuard></Route>
       {/* X3: /ai-ab-testing was a deprecated stub → redirect to the B6 canary tab. */}
       <Route path="/ai-ab-testing"><Redirect to="/ai-performance" /></Route>
 
@@ -514,7 +741,8 @@ function Router() {
       <Route path="/data-management"><RouteGuard navHref="/data-management"><DataManagementHub /></RouteGuard></Route>
       {/* doc 59 Cụm E/H/I — hub-launcher hợp nhất (additive, giữ mọi route con). */}
       <Route path="/product-workspace"><RouteGuard navHref="/product-workspace"><ProductWorkspaceHub /></RouteGuard></Route>
-      <Route path="/ai-studio"><RouteGuard requireRole={["admin"]}><AIPageWrapper><AIStudioHub /></AIPageWrapper></RouteGuard></Route>
+      {/* doc 69 T6 — AIStudioHub retired: merged into AI Home. Old URL keeps working. */}
+      <Route path="/ai-studio"><Redirect to="/ai-home" /></Route>
       <Route path="/maintenance-hub"><RouteGuard navHref="/maintenance-hub"><MaintenanceWorkspaceHub /></RouteGuard></Route>
       {/* doc 59 cụm phụ — Settings + Engineering-Studio hub-launcher (additive). */}
       <Route path="/settings-hub"><RouteGuard navHref="/settings-hub"><SettingsHub /></RouteGuard></Route>
@@ -528,7 +756,12 @@ function Router() {
       <Route path="/metric-catalog"><RouteGuard navHref="/metric-catalog"><MetricCatalog /></RouteGuard></Route>
       <Route path="/products"><RouteGuard navHref="/products"><ProductModels /></RouteGuard></Route>
       <Route path="/product-mapping"><RouteGuard navHref="/product-mapping"><ProductMachineMapping /></RouteGuard></Route>
-      <Route path="/layout"><RouteGuard navHref="/layout"><Layout /></RouteGuard></Route>
+      {/* Task 1 Khối D — /layout (không :id) trước đây là tab "layout" của TwinHub.
+          ★ Đợt 61: `TwinHub` đã xoá; `/layout` vẫn `<Redirect>` thẳng tới `/twin-studio`
+          (đích này có từ QĐ-18, KHÔNG trỏ vào trang vừa xoá).
+          /layout/:id GIỮ RIÊNG: mang route param mà tab không có, và gate
+          requirePermission="settings_factory" khác navHref của route trên. */}
+      <Route path="/layout"><Redirect to="/twin-studio" /></Route>
       <Route path="/layout/:id"><RouteGuard requirePermission="settings_factory"><Layout /></RouteGuard></Route>
       <Route path="/workstation-management"><RouteGuard navHref="/workstation-management"><WorkstationManagement /></RouteGuard></Route>
       <Route path="/process-management"><RouteGuard navHref="/process-management"><ProcessManagement /></RouteGuard></Route>
@@ -536,7 +769,8 @@ function Router() {
       <Route path="/settings"><RouteGuard requirePermission="settings_view"><Settings /></RouteGuard></Route>
       {/* U7 (doc 21 §6 / §3 G-11) consolidation: the standalone Custom Dashboard is
           already embedded as the default tab of the Dashboard Center hub — redirect
-          the loose route in (reversible; CustomDashboard.tsx retained + embedded). */}
+          the loose route in (doc 67 W7: pages/CustomDashboard.tsx deleted — the
+          embedded copy lives on as components/CustomDashboardContent.tsx). */}
       <Route path="/custom-dashboard"><Redirect to="/dashboard-center?tab=custom-dashboard" /></Route>
 
       {/* ── ME (self) — read-open to every authenticated role ─────────────── */}
@@ -571,8 +805,36 @@ function Router() {
   );
 }
 
+// doc64 S5-OPT-2 — kiosk direct-load: RouteGuard chỉ render con SAU khi auth.me về, nên
+// chunk trang bị NỐI TIẾP sau auth (POC: /andon 2.252ms, hụt 252ms). Warm chunk của màn
+// operator NGAY sau khe paint đầu → fetch+parse chạy SONG SONG với auth RTT (main thread
+// đang rảnh chờ mạng). Vite dedupe import() → React.lazy resolve tức thì khi guard mở.
+const OPERATOR_ROUTE_WARMERS: Record<string, () => Promise<unknown>> = {
+  "/andon": () => import("./pages/AndonBoard"),
+  "/dashboard": () => import("./pages/Dashboard"),
+  "/line-view": () => import("./pages/LineView"),
+  "/device-monitor": () => import("./pages/DeviceHub"),
+  "/oee-dashboard": () => import("./pages/OEEDashboard"),
+  "/wip-dashboard": () => import("./pages/WipLineBalance"),
+  // doc 67 W6 — hai màn command trực-ca cũng direct-load qua RouteGuard nối tiếp auth.
+  "/control-tower": () => import("./pages/ControlTower"),
+  "/command-center": () => import("./pages/CommandCenter"),
+};
+
+function useOperatorRouteWarmer() {
+  useEffect(() => {
+    const path = window.location.pathname.replace(/\/+$/, "") || "/";
+    const base = "/" + (path.split("/")[1] ?? "");
+    const warm = OPERATOR_ROUTE_WARMERS[base];
+    if (!warm) return;
+    // double-rAF: nhường frame đầu paint xong rồi mới parse chunk.
+    requestAnimationFrame(() => requestAnimationFrame(() => { void warm(); }));
+  }, []);
+}
+
 function App() {
   useKioskMode();
+  useOperatorRouteWarmer();
   return (
     <ErrorBoundary>
       <ThemeProvider defaultTheme="dark" switchable>
@@ -580,6 +842,8 @@ function App() {
             it from the header SiteSwitcher (admin-gated sites.list) and persists the
             active site to localStorage. Non-admins degrade to a static "All sites". */}
         <SiteProvider>
+          {/* doc 64 IA-10 — AssetScopeProvider: trục phạm vi tài sản, localStorage-persisted. */}
+          <AssetScopeProvider>
           <TooltipProvider>
             {/* U1 (doc 26): EngineeringProvider — store lastSelected {project/thiết bị/
                 workflow} làm fallback cho deep-link golden-thread giữa các trang Kỹ thuật. */}
@@ -597,20 +861,35 @@ function App() {
                   and only the page content area shows the fallback during lazy loads. */}
               <AppShell>
                 <Suspense fallback={<div className="flex items-center justify-center h-screen"><Loader2 className="h-8 w-8 animate-spin text-muted-foreground" /></div>}>
-                  <Router />
+                  {/* ★★★★ Pha 7 / I-4 — CỔNG BUỘC ĐỔI MẬT KHẨU. Nó bọc CHÍNH `<Router/>`: khi khoá,
+                      TOÀN BỘ bảng route không được render, nên không có "route lách được" — kể cả
+                      các route KHÔNG có <RouteGuard> (`/`, `/login`, `/setup`, `/api-docs`,
+                      `/component-showcase`) và kể cả `<Route>` thứ 201 thêm vào ngày mai.
+                      ⚠ Đừng hạ nó xuống trong cây (vào RouteGuard hay từng Route): làm thế là biến
+                        một lượng từ ∀ thành một DANH SÁCH, đúng lớp lỗi "phần tử thứ N+1". Lưới
+                        cấu trúc canh đúng vị trí này: client/src/lib/congDoiMatKhau.unit.test.ts §3. */}
+                  <CongDoiMatKhau>
+                    <Router />
+                  </CongDoiMatKhau>
                 </Suspense>
               </AppShell>
               {/* C3a — global copilot bubble: mounted ONCE here (inside the tRPC
                   provider from main.tsx) so it appears on every route, including
-                  lazy AI pages. The bubble hides itself when not logged in. */}
-              <AILocalChatBubble />
+                  lazy AI pages. The bubble hides itself when not logged in.
+                  doc64 S5-OPT: lazy + fallback null — tải sau first-paint, không chặn LCP. */}
+              <Suspense fallback={null}>
+                <AILocalChatBubble />
+              </Suspense>
               {/* doc 41 — Programming Copilot DOCK: mounted ONCE, renders only when a
                   programming surface (Engineering/IR/POU) has published a binding. */}
-              <ProgrammingCopilotDock />
+              <Suspense fallback={null}>
+                <ProgrammingCopilotDock />
+              </Suspense>
             </AiCopilotProvider>
             </ProgrammingCopilotProvider>
             </EngineeringProvider>
           </TooltipProvider>
+          </AssetScopeProvider>
         </SiteProvider>
       </ThemeProvider>
     </ErrorBoundary>

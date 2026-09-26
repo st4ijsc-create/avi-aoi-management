@@ -12,14 +12,20 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 
 // ── in-memory recipe catalog (machine_recipes) ────────────────────────────────
-interface Rec { id: number; code: string; name: string; version: number; status: string; checksum: string; machineId: number | null }
+interface Rec { id: number; code: string; name: string; version: number; status: string; checksum: string; machineId: number | null; approvedBy: number | null }
 let recipes: Rec[] = [];
 let recipeSeq = 1;
+
+/** Test-only helper mirroring db/machineRecipe.ts's approveRecipe (second-approver sign-off). */
+function approve(id: number, approvedBy = 99): void {
+  const r = recipes.find((x) => x.id === id);
+  if (r) r.approvedBy = approvedBy;
+}
 
 vi.mock("../../db/machineRecipe", () => ({
   createRecipe: vi.fn(async (input: any) => {
     const version = recipes.filter((r) => r.code === input.code).reduce((m, r) => Math.max(m, r.version), 0) + 1;
-    const row: Rec = { id: recipeSeq++, code: input.code, name: input.name, version, status: input.status ?? "draft", checksum: "sum" + version, machineId: input.machineId ?? null };
+    const row: Rec = { id: recipeSeq++, code: input.code, name: input.name, version, status: input.status ?? "draft", checksum: "sum" + version, machineId: input.machineId ?? null, approvedBy: null };
     recipes.push(row);
     return row;
   }),
@@ -136,6 +142,7 @@ describe("recipeVersioningService — create/release/rollback + genealogy", () =
   it("release → active + 'release' event, archiving the prior released version", async () => {
     const v1 = (await svc.createVersion({ code: "R1", name: "v1", payload: {} })).recipe;
     const v2 = (await svc.createVersion({ code: "R1", name: "v2", payload: {} })).recipe;
+    approve(v1.id); approve(v2.id);
     await svc.releaseVersion(v1.id, 42);
     const { recipe, event } = await svc.releaseVersion(v2.id, 42);
     expect(recipe.status).toBe("active");
@@ -149,6 +156,7 @@ describe("recipeVersioningService — create/release/rollback + genealogy", () =
   it("rollback → re-releases the prior version + 'rollback' event", async () => {
     const v1 = (await svc.createVersion({ code: "R1", name: "v1", payload: {} })).recipe;
     const v2 = (await svc.createVersion({ code: "R1", name: "v2", payload: {} })).recipe;
+    approve(v1.id); approve(v2.id);
     await svc.releaseVersion(v1.id, 1);
     await svc.releaseVersion(v2.id, 1);
     const { recipe, event } = await svc.rollbackToVersion(v1.id, 1);
@@ -161,6 +169,7 @@ describe("recipeVersioningService — create/release/rollback + genealogy", () =
 
   it("rollback throws when the target is already released", async () => {
     const v1 = (await svc.createVersion({ code: "R1", name: "v1", payload: {} })).recipe;
+    approve(v1.id);
     await svc.releaseVersion(v1.id, 1);
     await expect(svc.rollbackToVersion(v1.id, 1)).rejects.toThrow(/already the released/i);
   });
@@ -193,6 +202,7 @@ describe("recipeVersioningService — create/release/rollback + genealogy", () =
 describe("recipeVersioningService — atomic release/rollback (W2-6)", () => {
   it("releaseVersion runs inside exactly one transaction", async () => {
     const v1 = (await svc.createVersion({ code: "R1", name: "v1", payload: {} })).recipe;
+    approve(v1.id);
     txCount = 0;
     await svc.releaseVersion(v1.id, 1);
     expect(txCount).toBe(1);
@@ -201,6 +211,7 @@ describe("recipeVersioningService — atomic release/rollback (W2-6)", () => {
   it("two concurrent releases of the same code end with EXACTLY ONE released version", async () => {
     const v1 = (await svc.createVersion({ code: "R1", name: "v1", payload: {} })).recipe;
     const v2 = (await svc.createVersion({ code: "R1", name: "v2", payload: {} })).recipe;
+    approve(v1.id); approve(v2.id);
     // Fire both releases "at once" — the serialized transaction (models the row lock)
     // orders them, so they can NEVER both create a released (active) version.
     await Promise.all([svc.releaseVersion(v1.id, 1), svc.releaseVersion(v2.id, 1)]);
@@ -211,6 +222,7 @@ describe("recipeVersioningService — atomic release/rollback (W2-6)", () => {
   it("rollbackToVersion archives the current AND promotes the target atomically (one tx)", async () => {
     const v1 = (await svc.createVersion({ code: "R1", name: "v1", payload: {} })).recipe;
     const v2 = (await svc.createVersion({ code: "R1", name: "v2", payload: {} })).recipe;
+    approve(v1.id); approve(v2.id);
     await svc.releaseVersion(v1.id, 1);
     await svc.releaseVersion(v2.id, 1);
     txCount = 0;
@@ -222,6 +234,36 @@ describe("recipeVersioningService — atomic release/rollback (W2-6)", () => {
     expect(released).toHaveLength(1);
     expect(released[0].id).toBe(v1.id);
     expect(recipes.find((r) => r.id === v2.id)!.status).toBe("archived");
+  });
+});
+
+// ════════════════════════════════════════════════════════════════════════════
+// FLOW-01/INT-02 (doc 80 Task 3) — release/rollback must refuse an UNAPPROVED version,
+// same as /recipes' deployRecipe (server/db/machineRecipe.ts).
+// ════════════════════════════════════════════════════════════════════════════
+describe("recipeVersioningService — approvedBy gate (FLOW-01/INT-02)", () => {
+  it("release of an UNAPPROVED version ⇒ PRECONDITION_FAILED, status unchanged", async () => {
+    const v1 = (await svc.createVersion({ code: "R1", name: "v1", payload: {} })).recipe;
+    expect(v1.approvedBy).toBeNull();
+    await expect(svc.releaseVersion(v1.id, 1)).rejects.toMatchObject({ code: "PRECONDITION_FAILED" });
+    expect(recipes.find((r) => r.id === v1.id)!.status).toBe("draft");
+  });
+
+  it("release of an APPROVED version succeeds", async () => {
+    const v1 = (await svc.createVersion({ code: "R1", name: "v1", payload: {} })).recipe;
+    approve(v1.id, 7);
+    const { recipe } = await svc.releaseVersion(v1.id, 1);
+    expect(recipe.status).toBe("active");
+  });
+
+  it("rollback to an UNAPPROVED version ⇒ PRECONDITION_FAILED, current stays active", async () => {
+    const v1 = (await svc.createVersion({ code: "R1", name: "v1", payload: {} })).recipe;
+    approve(v1.id);
+    await svc.releaseVersion(v1.id, 1);
+    const v2 = (await svc.createVersion({ code: "R1", name: "v2", payload: {} })).recipe; // never approved
+    await expect(svc.rollbackToVersion(v2.id, 1)).rejects.toMatchObject({ code: "PRECONDITION_FAILED" });
+    expect(recipes.find((r) => r.id === v1.id)!.status).toBe("active");
+    expect(recipes.find((r) => r.id === v2.id)!.status).toBe("draft");
   });
 });
 

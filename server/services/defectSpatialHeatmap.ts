@@ -31,13 +31,29 @@
  * layout for datasets with no bbox at all, explicitly labeled
  * `coordinateSpace: "logical_point_index"` / `realCoordinates: false` —
  * these are LOGICAL positions, not spatial ones.
+ *
+ * ── PHẠM VI DỮ LIỆU (2026-08-17) ────────────────────────────────────────────
+ * ⚠ Mọi truy vấn ĐỌC BẢN GHI KIỂM ở đây PHẢI chạy qua `scopedConditions(...)`.
+ * Trước ngày này module chỉ lọc ngày + `result='NG'` + machineId/productModelId
+ * — KHÔNG lọc `corporateCode`/`factoryCode` — nên một tài khoản 0 gán nhà máy
+ * (thấy RỖNG ở `/history`) lại nhận được tổng hợp NG của TOÀN BỘ hệ thống ở
+ * heatmap. Cơ chế lọc KHÔNG mới: nó là `_core/accessControl` →
+ * `getAccessFilterConditions`, đúng cái `/history` đã dùng
+ * (`server/db/inspection.ts` `getProductInspectionsCursor`). Ở đây không có
+ * cơ chế thứ hai, chỉ có thêm nơi gọi.
+ *   • vai toàn quyền (`admin`) → `undefined` = KHÔNG lọc (thấy toàn bộ, y như trước);
+ *   • có gán → `corporateCode IN (…) OR factoryCode IN (…)`;
+ *   • KHÔNG gán gì → điều kiện FALSE ⇒ rỗng, và kết quả tự khai
+ *     `scopeEmptyReason:"no_factory_assignment"` để giao diện KHÔNG được phép
+ *     hiển thị "không có lỗi nào" cho một phạm vi rỗng.
  */
-import { sql, eq, and, gte, lte, isNotNull, or, isNull, type SQL } from "drizzle-orm";
+import { sql, eq, and, gte, lte, isNotNull, or, isNull, inArray, type SQL } from "drizzle-orm";
 import {
   measurementResults,
   productInspections,
   productModels,
   defectCatalog,
+  defectHeatmapData,
 } from "../../drizzle/schema";
 import type { getDb } from "../db/connection";
 
@@ -105,6 +121,21 @@ export interface SpatialHeatmapResult {
   perBoard?: Array<{ boardIndex: number; defectCount: number; skipped: boolean }>;
   /** Defects whose panel position fell on NO board (rails/tooling) — never guessed. */
   unassigned?: number;
+  // ── Phạm vi dữ liệu của NGƯỜI GỌI (2026-08-17) ──────────────────────────
+  /**
+   * false CHỈ khi người gọi là vai toàn quyền (`admin`) — không một bộ lọc
+   * tenant nào được áp, con số ở trên là toàn hệ thống. true = đã áp.
+   */
+  scopeApplied: boolean;
+  /**
+   * Đặt khi người gọi KHÔNG phải admin và KHÔNG có gán nhà máy/tập đoàn nào.
+   * Mọi số 0 ở trên khi ấy nghĩa là **"bạn không được thấy gì"**, KHÔNG phải
+   * **"không có lỗi nào"**. Giao diện KHÔNG được hiển thị trạng thái rỗng
+   * thông thường khi ô này khác null.
+   */
+  scopeEmptyReason: "no_factory_assignment" | null;
+  /** Câu giải thích tiếng Việt đi kèm `scopeEmptyReason` (null khi phạm vi bình thường). */
+  scopeMessage: string | null;
 }
 
 /** Severity weights used when `weightBySeverity` is on (IPC-ish ordering). */
@@ -245,6 +276,122 @@ export interface SpatialHeatmapQuery {
    */
   mode?: "bbox" | "pointDef" | "panelBoard";
   weightBySeverity?: boolean;
+  /**
+   * BẮT BUỘC — phạm vi dữ liệu của người gọi. Không có mặc định, và cố ý:
+   * một ô tuỳ chọn sẽ biến "quên truyền" thành "xem toàn hệ thống" IM LẶNG,
+   * đúng lớp lỗi mà bản vá này đóng. Thiếu ô này ⇒ KHÔNG biên dịch được.
+   */
+  scope: HeatmapCallerScope;
+}
+
+/** Danh tính người gọi, lấy từ phiên THẬT (`ctx.user`) — không bao giờ từ input client. */
+export interface HeatmapCallerScope {
+  userId: number;
+  userRole: string;
+}
+
+export interface ResolvedHeatmapScope {
+  /** Điều kiện SQL thu hẹp về tenant của người gọi. `undefined` = vai toàn quyền. */
+  filter: SQL | undefined;
+  /** Người gọi không phải admin và KHÔNG có gán nhà máy/tập đoàn nào. */
+  noAssignment: boolean;
+}
+
+/** Câu "rỗng" TRUNG THỰC: nói đúng lý do, không giả vờ hệ thống không có số liệu. */
+export const NO_ASSIGNMENT_MESSAGE =
+  "Tài khoản của bạn chưa được gán nhà máy nào, nên KHÔNG có bản ghi kiểm nào nằm trong " +
+  "phạm vi bạn được xem. Đây là phạm vi rỗng — không phải kết luận rằng dây chuyền không có " +
+  "lỗi. Liên hệ quản trị viên để được gán nhà máy.";
+
+/**
+ * ⚠⚠⚠ ĐO ĐƯỢC 2026-08-17 — `getAccessFilterConditions` KHÔNG chặn tài khoản 0 gán.
+ *
+ * Docblock của chính nó viết: *"Non-admin with NO assignments: returns a condition that
+ * matches nothing (1=0)"*, và mã viết `return or()!` kèm chú thích *"empty or() produces
+ * FALSE"*. **Câu đó SAI.** `drizzle-orm/sql/expressions/conditions.js` dòng 42-48:
+ *
+ *     const conditions = unfilteredConditions.filter(c => c !== void 0);
+ *     if (conditions.length === 0) return void 0;      // ← undefined, KHÔNG phải FALSE
+ *
+ * Dấu `!` (non-null assertion) dập tắt đúng cái cảnh báo lẽ ra đã chỉ ra chỗ này. Và mọi nơi
+ * gọi đều viết `if (accessFilter) conditions.push(accessFilter)` ⇒ `undefined` = **KHÔNG có
+ * bộ lọc** = **thấy TẤT CẢ**, tức ngược hẳn ý định. Ca đầu tiên của
+ * `defectSpatialHeatmap.scope.test.ts` bắt được điều này ngay lượt chạy đầu (người dùng 0 gán
+ * nhận đủ 5/3/8 hàng của CẢ HAI nhà máy).
+ *
+ * ⇒ Module này KHÔNG được dựa vào nhánh rỗng ấy. `getAccessFilterConditions` vẫn là chủ của
+ * phép lọc khi người dùng CÓ gán (không có cơ chế thứ hai); riêng nhánh "0 gán" được đóng ở
+ * đây bằng một vị từ FALSE tường minh, đúng như hợp đồng mà hàm kia tự khai.
+ * ⚠ Lỗ ở `_core/accessControl.ts` vẫn CÒN MỞ cho `/history`, `db/statistics.ts`,
+ * `db/andonBoard.ts` — nằm ngoài phạm vi task này, đã báo cáo riêng cho chủ dự án.
+ *
+ * `import()` động theo đúng khuôn `server/db/inspection.ts` (`getProductInspectionsCursor`):
+ * `_core/accessControl` kéo theo `_core/trpc`, nên nạp tĩnh từ một service sẽ tạo vòng import
+ * router → service → trpc.
+ */
+const DENY_ALL_ROWS: SQL = sql`1 = 0`;
+
+export async function resolveCallerScope(scope: HeatmapCallerScope): Promise<ResolvedHeatmapScope> {
+  const { getAccessFilterConditions, getUserAssignmentCodes } = await import("../_core/accessControl");
+  const { corporateCodes, factoryCodes, isAdmin } = await getUserAssignmentCodes(scope.userId, scope.userRole);
+  const noAssignment = !isAdmin && corporateCodes.length === 0 && factoryCodes.length === 0;
+  if (noAssignment) return { filter: DENY_ALL_ROWS, noAssignment: true };
+  return { filter: await getAccessFilterConditions(scope.userId, scope.userRole), noAssignment: false };
+}
+
+/**
+ * ★★★ Phạm vi cho HEATMAP **ĐÃ LƯU** (`defect_heatmap_data`, migration 0324).
+ *
+ * VÌ SAO KHÔNG DÙNG LẠI THẲNG `getAccessFilterConditions`: hàm ấy dựng điều kiện trên các cột
+ * của **`product_inspections`** (nó `inArray(productInspections.factoryCode, …)`), nên đem
+ * nguyên vào một truy vấn chỉ đọc `defect_heatmap_data` sẽ sinh một tham chiếu bảng KHÔNG có
+ * trong FROM — hoặc lỗi cú pháp, hoặc (tệ hơn) một phép nối ngầm. Cái được dùng lại — và là
+ * thứ DUY NHẤT quyết định người dùng được thấy gì — vẫn là `getUserAssignmentCodes`. Ở đây
+ * không có nguồn quyền thứ hai, chỉ có cùng một danh sách mã áp lên một bảng khác.
+ *
+ * FAIL-CLOSED VỚI HÀNG `NULL`: `IN (…)` trên NULL cho UNKNOWN ⇒ hàng bị LOẠI, đúng chiều cần.
+ * Đó là hành vi SQL, không phải lời hứa của docblock này — `defectHeatmapSavedScope.test.ts`
+ * đo trực tiếp: người gán A không đọc/không xoá được hàng NULL, admin thì được.
+ *
+ * ⚠ KHÔNG dùng `or(...)!`. `or()` với danh sách RỖNG trả `undefined` (không phải FALSE) và dấu
+ * `!` dập tắt đúng cảnh báo lẽ ra đã chỉ ra chỗ đó — chính lớp lỗi đang mở ở
+ * `_core/accessControl.ts`. Nhánh rỗng ở đây được chặn TƯỜNG MINH bằng `DENY_ALL_ROWS`, và kể
+ * cả khi `or()` bất ngờ trả `undefined` thì đường thoát cũng là TỪ CHỐI, không phải mở cửa.
+ */
+export async function resolveSavedHeatmapScope(scope: HeatmapCallerScope): Promise<ResolvedHeatmapScope> {
+  const { getUserAssignmentCodes } = await import("../_core/accessControl");
+  const { corporateCodes, factoryCodes, isAdmin } = await getUserAssignmentCodes(scope.userId, scope.userRole);
+  if (isAdmin) return { filter: undefined, noAssignment: false };
+
+  const conds: SQL[] = [];
+  if (corporateCodes.length > 0) conds.push(inArray(defectHeatmapData.corporateCode, corporateCodes));
+  if (factoryCodes.length > 0) conds.push(inArray(defectHeatmapData.factoryCode, factoryCodes));
+  if (conds.length === 0) return { filter: DENY_ALL_ROWS, noAssignment: true };
+
+  const combined = conds.length === 1 ? conds[0] : or(...conds);
+  if (!combined) return { filter: DENY_ALL_ROWS, noAssignment: true };
+  return { filter: combined, noAssignment: false };
+}
+
+/**
+ * ⚠ MỌI truy vấn đọc bản ghi kiểm trong file này phải đi qua đây. Gỡ lời gọi này khỏi MỘT
+ * truy vấn là mở lại lỗ cho đúng truy vấn đó — `defectSpatialHeatmap.scope.test.ts` đo từng
+ * cái một nên đột biến kiểu đó không sống được.
+ */
+export function scopedConditions(conditions: SQL[], scope: ResolvedHeatmapScope): SQL[] {
+  return scope.filter ? [...conditions, scope.filter] : conditions;
+}
+
+/** Ba ô phạm vi gắn vào mọi kết quả trả ra (một nguồn, không chép tay ở bốn chỗ). */
+export function scopeLabels(scope: ResolvedHeatmapScope): Pick<
+  SpatialHeatmapResult,
+  "scopeApplied" | "scopeEmptyReason" | "scopeMessage"
+> {
+  return {
+    scopeApplied: scope.filter !== undefined,
+    scopeEmptyReason: scope.noAssignment ? "no_factory_assignment" : null,
+    scopeMessage: scope.noAssignment ? NO_ASSIGNMENT_MESSAGE : null,
+  };
 }
 
 function baseConditions(q: SpatialHeatmapQuery): SQL[] {
@@ -262,12 +409,70 @@ function baseConditions(q: SpatialHeatmapQuery): SQL[] {
 /** Hard cap to bound memory on very large windows (same cap the legacy code used). */
 const MAX_ROWS = 500_000;
 
+/** Mã phạm vi sẽ được GHI vào một heatmap lưu lại — hoặc `null` khi không mã nào ĐÚNG. */
+export interface ContributingScopeCodes {
+  corporateCode: string | null;
+  factoryCode: string | null;
+  /** Số cặp (tập đoàn, nhà máy) khác nhau đã đóng góp — ĐẾM TRẦN ở 2 ("một" hay "nhiều hơn"). */
+  distinctCombinations: number;
+}
+
+/**
+ * ★★★ "Heatmap này thuộc nhà máy nào?" — đo, KHÔNG đoán.
+ *
+ * Một heatmap là con số GỘP trên một TẬP hàng kiểm. Câu hỏi chỉ có câu trả lời đúng khi tập ấy
+ * nằm gọn trong MỘT nhà máy. Nên phép suy ra là: chạy lại đúng bộ điều kiện đã sinh ra con số
+ * (kể cả bộ lọc phạm vi của người gọi) và hỏi CSDL xem có bao nhiêu cặp mã khác nhau.
+ *
+ *   • đúng 1 cặp  → ghi cặp đó (kể cả khi một trong hai ô vốn NULL trên `product_inspections`);
+ *   • 0 hoặc ≥2   → ghi NULL/NULL = **"không rõ nguồn gốc"**.
+ *
+ * ⚠ Vì sao KHÔNG suy từ `machineId` của input: `machineId` là tuỳ chọn (bản toàn cục không có),
+ * và ngay cả khi có thì đường máy→trạm→dây chuyền→xưởng→nhà máy trả về mã CẤU HÌNH, còn quyền
+ * người dùng so trên mã đóng dấu TRÊN CHÍNH BẢN GHI KIỂM (`product_inspections.factoryCode`).
+ * Hai thứ có thể lệch nhau khi máy được chuyển vị trí; lấy cái thứ nhất là suy ra một lời khai
+ * mà dữ liệu không đỡ.
+ *
+ * ⚠ Vì sao 0 hàng ⇒ NULL chứ không lấy nhà máy CỦA NGƯỜI GỌI: một người có 3 nhà máy vẫn không
+ * cho ta một mã đúng, và một heatmap rỗng "gán" cho nhà máy A sẽ là hàng đầu tiên nói dối khi
+ * người khác đọc lại. Cái giá phải trả — người gán A sinh một heatmap RỖNG rồi không đọc lại
+ * được nó — là giá của fail-closed, và nó không giấu đi một con số nào (heatmap ấy rỗng).
+ */
+export async function resolveContributingScope(
+  db: Db,
+  q: SpatialHeatmapQuery,
+): Promise<ContributingScopeCodes> {
+  const scope = await resolveCallerScope(q.scope);
+  const rows = await db
+    .selectDistinct({
+      corporateCode: productInspections.corporateCode,
+      factoryCode: productInspections.factoryCode,
+    })
+    .from(measurementResults)
+    .innerJoin(productInspections, eq(measurementResults.inspectionId, productInspections.id))
+    .where(and(...scopedConditions(baseConditions(q), scope)))
+    .limit(2);
+
+  if (rows.length !== 1) {
+    return { corporateCode: null, factoryCode: null, distinctCombinations: rows.length };
+  }
+  return {
+    corporateCode: rows[0].corporateCode ?? null,
+    factoryCode: rows[0].factoryCode ?? null,
+    distinctCombinations: 1,
+  };
+}
+
 /**
  * Shared fetch for the spatial modes: NG rows WITH a real bbox, the count of
  * NG rows WITHOUT one (never silently dropped), and the product's native image
  * dims (candidate coordinate space, single-product scope only).
  */
-async function fetchBboxRows(db: Db, q: SpatialHeatmapQuery): Promise<{
+async function fetchBboxRows(
+  db: Db,
+  q: SpatialHeatmapQuery,
+  scope: ResolvedHeatmapScope,
+): Promise<{
   typedRows: SpatialDefectRow[];
   excludedNoBbox: number;
   product: { imageWidth: number | null; imageHeight: number | null } | null;
@@ -289,7 +494,8 @@ async function fetchBboxRows(db: Db, q: SpatialHeatmapQuery): Promise<{
     .innerJoin(productInspections, eq(measurementResults.inspectionId, productInspections.id))
     .leftJoin(defectCatalog, eq(measurementResults.defectCatalogId, defectCatalog.id))
     .where(and(
-      ...conditions,
+      // ① truy vấn hàng NG CÓ bbox — phạm vi người gọi.
+      ...scopedConditions(conditions, scope),
       isNotNull(measurementResults.defectBboxX),
       isNotNull(measurementResults.defectBboxY),
     ))
@@ -301,7 +507,8 @@ async function fetchBboxRows(db: Db, q: SpatialHeatmapQuery): Promise<{
     .from(measurementResults)
     .innerJoin(productInspections, eq(measurementResults.inspectionId, productInspections.id))
     .where(and(
-      ...conditions,
+      // ② COUNT hàng NG KHÔNG bbox — phạm vi người gọi (đường đếm cũng rò được).
+      ...scopedConditions(conditions, scope),
       or(isNull(measurementResults.defectBboxX), isNull(measurementResults.defectBboxY)),
     ));
   const excludedNoBbox = Number(excluded?.count) || 0;
@@ -346,7 +553,8 @@ export async function computeSpatialHeatmap(
     return computePanelBoardHeatmap(db, q);
   }
 
-  const { typedRows, excludedNoBbox, product } = await fetchBboxRows(db, q);
+  const scope = await resolveCallerScope(q.scope);
+  const { typedRows, excludedNoBbox, product } = await fetchBboxRows(db, q, scope);
 
   const extent = resolveBoardExtent(typedRows, product);
   const bucketed = bucketSpatialDefects(typedRows, {
@@ -372,6 +580,7 @@ export async function computeSpatialHeatmap(
       included + excludedNoBbox > 0
         ? Math.round((excludedNoBbox / (included + excludedNoBbox)) * 10000) / 100
         : 0,
+    ...scopeLabels(scope),
   };
 }
 
@@ -387,6 +596,7 @@ export async function computePointDefFallbackHeatmap(
   q: SpatialHeatmapQuery,
 ): Promise<SpatialHeatmapResult> {
   const conditions = baseConditions(q);
+  const scope = await resolveCallerScope(q.scope);
 
   const rows = await db
     .select({
@@ -397,7 +607,8 @@ export async function computePointDefFallbackHeatmap(
     .from(measurementResults)
     .innerJoin(productInspections, eq(measurementResults.inspectionId, productInspections.id))
     .leftJoin(defectCatalog, eq(measurementResults.defectCatalogId, defectCatalog.id))
-    .where(and(...conditions))
+    // ③ GROUP BY pointDefId (chế độ logic) — phạm vi người gọi.
+    .where(and(...scopedConditions(conditions, scope)))
     .groupBy(measurementResults.pointDefId, defectCatalog.code)
     .limit(MAX_ROWS);
 
@@ -457,6 +668,7 @@ export async function computePointDefFallbackHeatmap(
     boardHeight: q.gridHeight,
     excludedNoBbox: 0,
     excludedNoBboxPct: 0,
+    ...scopeLabels(scope),
   };
 }
 
@@ -508,7 +720,8 @@ export async function computePanelBoardHeatmap(
   const boardDims = resolveBoardDims(panelDef);
   if (!boardDims) return fallback("no_board_dims", panelDef.id);
 
-  const { typedRows, excludedNoBbox, product } = await fetchBboxRows(db, q);
+  const scope = await resolveCallerScope(q.scope);
+  const { typedRows, excludedNoBbox, product } = await fetchBboxRows(db, q, scope);
 
   // Panel-image pixel extent (same honesty rules as bbox mode), then px → mm.
   const extent = resolveBoardExtent(typedRows, product);
@@ -576,5 +789,6 @@ export async function computePanelBoardHeatmap(
       .sort((a, b) => a[0] - b[0])
       .map(([boardIndex, v]) => ({ boardIndex, defectCount: v.defectCount, skipped: v.skipped })),
     unassigned,
+    ...scopeLabels(scope),
   };
 }

@@ -23,6 +23,8 @@ import { useLocation } from "wouter";
 import DashboardLayout from "@/components/DashboardLayout";
 import { PageHeader, PageContainer } from "@/components/patterns";
 import BarcodeScanner from "@/components/BarcodeScanner";
+// doc 63 DEP-08 — hàng đợi đổi model duyệt 2 người (request operator → approve có 2FA).
+import ChangeoverQueue from "@/components/changeover/ChangeoverQueue";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -43,6 +45,7 @@ import {
 import { trpc } from "@/lib/trpc";
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
+import { mapTrpcError } from "@/lib/trpcErrors";
 import {
   ScanLine,
   ArrowRight,
@@ -191,7 +194,7 @@ export default function ProductChangeoverWizard() {
     },
     onError: (err) => {
       toast.error(t("changeoverWizard.step3.scanError", "Không ghi được lần quét"), {
-        description: err.message,
+        description: mapTrpcError(err),
       });
     },
   });
@@ -206,7 +209,7 @@ export default function ProductChangeoverWizard() {
     },
     onError: (err) => {
       toast.error(t("changeoverWizard.step4.requestError", "Không gửi được yêu cầu"), {
-        description: err.message,
+        description: mapTrpcError(err),
       });
     },
   });
@@ -747,6 +750,11 @@ export default function ProductChangeoverWizard() {
               <ArrowRight className="ml-2 h-5 w-5" />
             </Button>
           )}
+        </div>
+
+        {/* doc 63 DEP-08 — yêu cầu & phê duyệt đổi model cho máy đang chọn */}
+        <div className="mt-4">
+          <ChangeoverQueue machineId={machineId} />
         </div>
       </PageContainer>
 

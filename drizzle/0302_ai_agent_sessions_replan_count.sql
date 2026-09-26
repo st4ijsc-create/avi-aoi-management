@@ -1,0 +1,32 @@
+-- ============================================================================
+-- Migration 0302: ai_agent_sessions — observe→replan budget counter (doc69
+-- Giai đoạn 4 / Wave 3, task D1 — real agent loop).
+--
+-- Counts how many times `aiAgentOrchestrator.advance()` has invoked
+-- `aiAgentPlanner.replanFromObservations()` for a given session, so the
+-- AGENT_MAX_REPLANS budget (env, default 2) survives a process restart (it is
+-- read fresh from this column at the top of every advance() call, not kept
+-- only in memory).
+--
+-- ADDITIVE + IDEMPOTENT. Run by owner `aoi` (DDL convention — do not run as a
+-- non-owner role). NOT RUN as part of this task.
+--
+-- Fail-safe when absent (same guard pattern as migration 0300/0301 — see
+-- server/db/aiAnomaly.ts isMissingColumnError / server/services/
+-- aiDatasetBuilder.ts pinDatasetContentHash):
+--   - INSERT (startSession) never references this column, so session creation
+--     is unaffected either way.
+--   - SELECT (aiAgentOrchestrator loadOwned/getSession) tries the full typed
+--     select first; on a 42703 (undefined_column) it retries with an explicit
+--     legacy column list (everything except replanCount) and defaults
+--     replanCount to 0 in the returned row — existing session loading is never
+--     at risk of breaking before this migration runs.
+--   - UPDATE (aiAgentOrchestrator persist) tries the full patch first; on a
+--     42703 it retries the same patch WITHOUT replanCount (logged) — cursor/
+--     status/stepResults/etc. still persist normally.
+--
+-- ROLLBACK: ALTER TABLE "ai_agent_sessions" DROP COLUMN IF EXISTS "replanCount";
+-- ============================================================================
+
+ALTER TABLE "ai_agent_sessions"
+  ADD COLUMN IF NOT EXISTS "replanCount" integer DEFAULT 0;

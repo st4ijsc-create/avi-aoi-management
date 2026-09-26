@@ -1,4 +1,5 @@
 import { eq, and } from "drizzle-orm";
+import { DbUnavailableError } from "../_core/dbErrors";
 import { getDb } from "./connection";
 import {
   factoryLayouts, InsertFactoryLayout,
@@ -15,7 +16,7 @@ import {
 
 export async function createFactoryLayout(data: InsertFactoryLayout) {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  if (!db) throw new DbUnavailableError();
   const [result] = await db.insert(factoryLayouts).values(data).returning({ id: factoryLayouts.id });
   return result.id;
 }
@@ -53,7 +54,7 @@ export async function getFactoryLayoutById(id: number) {
 
 export async function updateFactoryLayout(id: number, data: Partial<InsertFactoryLayout>) {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  if (!db) throw new DbUnavailableError();
   await db.update(factoryLayouts).set(data).where(eq(factoryLayouts.id, id));
 }
 
@@ -61,14 +62,14 @@ export async function updateFactoryLayout(id: number, data: Partial<InsertFactor
 // layout biến khỏi UI mà không để lại machine_positions mồ côi như hard-delete).
 export async function deleteFactoryLayout(id: number) {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  if (!db) throw new DbUnavailableError();
   await db.update(factoryLayouts).set({ isActive: false }).where(eq(factoryLayouts.id, id));
 }
 
 // ============ MACHINE POSITION FUNCTIONS ============
 export async function createMachinePosition(data: InsertMachinePosition) {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  if (!db) throw new DbUnavailableError();
   const [result] = await db.insert(machinePositions).values(data).returning({ id: machinePositions.id });
   return result.id;
 }
@@ -109,20 +110,20 @@ export async function getMachinePositionsByLayout(layoutId: number) {
 
 export async function updateMachinePosition(id: number, data: Partial<InsertMachinePosition>) {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  if (!db) throw new DbUnavailableError();
   await db.update(machinePositions).set(data).where(eq(machinePositions.id, id));
 }
 
 export async function deleteMachinePosition(id: number) {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  if (!db) throw new DbUnavailableError();
   await db.delete(machinePositions).where(eq(machinePositions.id, id));
 }
 
 // ============ WORKSHOP POSITION FUNCTIONS ============
 export async function createWorkshopPosition(data: InsertWorkshopPosition) {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  if (!db) throw new DbUnavailableError();
   const [result] = await db.insert(workshopPositions).values(data).returning({ id: workshopPositions.id });
   return result.id;
 }
@@ -136,7 +137,7 @@ export async function getWorkshopPositionsByLayout(layoutId: number) {
 // ============ FACTORY POSITION FUNCTIONS ============
 export async function createFactoryPosition(data: InsertFactoryPosition) {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  if (!db) throw new DbUnavailableError();
   const [result] = await db.insert(factoryPositions).values(data).returning({ id: factoryPositions.id });
   return result.id;
 }

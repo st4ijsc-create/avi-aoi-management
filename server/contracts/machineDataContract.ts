@@ -9,6 +9,8 @@
  * dùng `validateMachinePayload` để kiểm tra trước khi gửi.
  */
 import { z } from "zod";
+import { createHash } from "node:crypto";
+import { machineDataContractV2, type MachineDataContractV2 } from "./machineDataContractV2";
 
 // ── v1: phản ánh hợp đồng submitInspection hiện hành (tập ổn định) ──────────
 const measurementV1 = z.object({
@@ -115,14 +117,43 @@ export const machineDataContractV11 = z.object({
 });
 
 // ── Registry phiên bản ──────────────────────────────────────────────────────
+// v2.0 (Pha 1A Task 4) — payload cây 4 cấp surface→position→capture→component
+// (`machineDataContractV2.ts`), thay hình dạng PHẲNG `measurements: []` của
+// v1.0/v1.1. v1.0/v1.1 GIỮ LẠI trong map để TRA CỨU/SO SÁNH — registry còn
+// nhận diện được các phiên bản cũ theo tên. ★ TRẠNG THÁI THẬT hôm nay:
+// `validateMachinePayload("1.1", <payload hợp lệ>)` vẫn trả `{ok:true}` —
+// v1.1 VẪN ĐƯỢC NHẬN qua hàm này, KHÔNG bị chặn. Việc "từ chối v1.x" là thông
+// điệp đã viết sẵn (`loiMayChuaNangCap` bên dưới) NHƯNG CHƯA CÓ NƠI GỌI trong
+// mã sản xuất (0 call site) — Pha 1A chỉ định nghĩa hợp đồng, chưa nối vào
+// đường quyết định nào. Pha 1B (nối đường ingest) sẽ là nơi việc từ chối THẬT
+// SỰ xảy ra.
 export const MACHINE_CONTRACT_VERSIONS = {
   "1.0": machineDataContractV1,
   "1.1": machineDataContractV11,
+  "2.0": machineDataContractV2,
 } as const;
 
 export type MachineContractVersion = keyof typeof MACHINE_CONTRACT_VERSIONS;
 
-export const LATEST_MACHINE_CONTRACT_VERSION: MachineContractVersion = "1.1";
+export const LATEST_MACHINE_CONTRACT_VERSION: MachineContractVersion = "2.0";
+
+/**
+ * Thông điệp từ chối máy gửi payload phiên bản CŨ — NÊU RÕ phiên bản đang gửi
+ * và phiên bản cần, thay vì để zod ném một đống lỗi trường mà kỹ sư hiện
+ * trường không đọc nổi.
+ *
+ * ★ CHƯA CÓ NƠI GỌI trong mã sản xuất (0 call site) — hàm này mới chỉ là
+ * thông điệp được VIẾT SẴN. Giữ v1.0/v1.1 trong `MACHINE_CONTRACT_VERSIONS`
+ * là để registry còn TRA CỨU/SO SÁNH được, không phải bằng chứng chúng đã bị
+ * từ chối ở đâu đó. Pha 1B sẽ nối hàm này vào đường ingest thật để việc từ
+ * chối v1.x THẬT SỰ xảy ra, không chỉ được mô tả.
+ */
+export function loiMayChuaNangCap(schemaVersion: string): Error {
+  return new Error(
+    `Máy đang gửi hợp đồng phiên bản "${schemaVersion}". Server chỉ nhận từ "2.0" trở lên ` +
+    `(payload cây 4 cấp surface→position→capture→component). Nâng phần mềm máy trước khi gửi.`,
+  );
+}
 
 export function listMachineContractVersions(): MachineContractVersion[] {
   return Object.keys(MACHINE_CONTRACT_VERSIONS) as MachineContractVersion[];
@@ -158,6 +189,85 @@ export function machineContractJsonSchema(version: string): unknown | null {
   const schema = getMachineContract(version);
   if (!schema) return null;
   return z.toJSONSchema(schema, { target: "draft-7" });
+}
+
+/**
+ * Nhận diện phiên bản THEO HÌNH DẠNG payload, KHÔNG theo trường `schemaVersion` khai báo —
+ * trường đó là optional (log-only), máy CÓ THỂ không gửi. Hình dạng ổn định hơn: v2.0 LUÔN
+ * mang mảng `surfaces` (bắt buộc theo `machineDataContractV2`); v1.0/v1.1 LUÔN mang mảng
+ * `measurements` (bắt buộc theo hợp đồng máy phẳng).
+ *
+ * ★★★ MỘT BẢN DUY NHẤT, DÙNG CHUNG — chuyển từ `machineApiRouters.ts` sang đây (Pha 1B Task 7
+ * phần 2, quyết định chủ dự án 2026-08-28). Trước đó vị từ này SỐNG PRIVATE trong ingest thật
+ * (`submitInspectionRouterInputSchema`) và KHÔNG có bản nào khác — `machineContractRouter.
+ * validate()`/`jsonSchema()` mặc định thẳng về `LATEST_MACHINE_CONTRACT_VERSION` bất kể hình
+ * dạng payload, khiến `validate({payload})` không khai `version` "nói dối" firmware trên một
+ * payload v1.x hợp lệ (báo ĐỎ dù ingest thật NHẬN — GOTCHA đo được, xem `machineContractRouter.
+ * test.ts`). Đặt vị từ ở ĐÂY (module hợp đồng dùng chung) rồi cho CẢ HAI phía (ingest thật VÀ
+ * validate tự kiểm) cùng gọi — tránh đẻ bản thứ hai trôi khỏi bản gốc (chính là lớp lỗi BG-19).
+ */
+export function laHinhDangCayV2(raw: unknown): boolean {
+  return (
+    typeof raw === "object" &&
+    raw !== null &&
+    Array.isArray((raw as { surfaces?: unknown }).surfaces)
+  );
+}
+
+/**
+ * Pha 1C Task 2 (BG-23 ⛔, §QĐ-1C-B trong
+ * `docs/superpowers/plans/2026-08-29-aoi-pha1c-va-lo-du-lieu.md`) — khoá khử trùng
+ * CHO ĐƯỜNG v2.0, KHÔNG phụ thuộc `serialNumber`.
+ *
+ * Gốc rễ đóng ở đây: `uq_inspections_machine_serial_time` (migration 0272) là chỉ mục
+ * RIÊNG PHẦN — `WHERE ("serialNumber")::text <> ''::text`. Một serial RỖNG (hợp lệ theo
+ * hợp đồng: xem chú thích tại chỗ khai `serialNumber` trong `machineDataContractV2.ts`
+ * — "rỗng nếu máy chưa gửi", máy thật gửi bo chưa quét serial là chuyện bình thường)
+ * THOÁT HOÀN TOÀN khoá đó. Trước bản vá này `submitInspectionTreeV2` cũng KHÔNG đặt
+ * `idempotencyKey` — cơ chế khử trùng THỨ HAI (bảng `inspection_idempotency_keys`,
+ * xem `server/db/inspection.ts`) vắng mặt luôn. Đo được (transaction+rollback, vai
+ * `avi_app`): serial rỗng, ba lượt gửi giống hệt nhau → BA hàng (đúng ra phải MỘT).
+ *
+ * QĐ-1C-B đã loại hai đường sửa hiển nhiên khác: siết `.min(1)` vào hợp đồng (chặn bo
+ * thật — máy chưa quét serial là hình dạng dữ liệu THẬT) và dựa vào lưới regex (đã
+ * chứng minh xanh giả). Chốt: đường v2.0 LUÔN đặt `idempotencyKey`, dựng từ trường máy
+ * CHẮC CHẮN CÓ theo hợp đồng — `identity` (7 trường `.min(1)` BẮT BUỘC,
+ * `machineDataContractV2.ts`) + `productId` (`.min(1)` BẮT BUỘC) + `startedAt`
+ * (optional theo schema, nhưng máy thật luôn gửi — `dashboard-sample.json`). Không
+ * dùng `serialNumber`: tính chất cần chỉ là "CÙNG payload → CÙNG khoá" — nếu `startedAt`
+ * vắng mặt Ở CẢ HAI lượt của một retry (cùng thiếu), khoá vẫn khớp nhau.
+ *
+ * Băm sha256 (TẤT ĐỊNH — không `Math.random()`/`Date.now()`) để (a) luôn nằm gọn trong
+ * ràng buộc `.min(8).max(200)` của cột `idempotencyKey` (`product_inspections`) bất kể
+ * độ dài các trường máy gửi, (b) không rò nguyên văn `productId`/tên trạm vào một cột
+ * audit đọc rộng rãi. Serial CÓ giá trị: cơ chế 0272 (natural-key) vẫn khớp như cũ song
+ * song — hai cơ chế chồng lên nhau, vô hại.
+ *
+ * ── Doc 2026-08-29 (WAL cho cây v2.0, §QĐ-WAL-A) — CHUYỂN sang đây ──────────────────
+ * Trước bản vá này hàm sống ở `server/routers/machineApiRouters.ts` (chỗ DUY NHẤT gọi
+ * nó). `inspectionStoreForward.ts` (điều phối khoá GỬI cho WAL, xem
+ * `dungKhoaGuiTheoHinhDang` ở đó) cũng cần gọi hàm này — nhưng router ĐÃ import từ
+ * `inspectionStoreForward.ts` ở cấp module, nên import ngược lại (service → router) sẽ
+ * tạo VÒNG import giữa hai file. Chuyển hàm (hành vi giữ NGUYÊN VĂN, 0 thay đổi logic)
+ * sang module hợp đồng LÁ này — nơi cả router lẫn service đều import được một chiều —
+ * đóng vòng đó mà không cần import động (`await import(...)`) hay chép lại công thức.
+ * `machineApiRouters.ts` re-export lại tên này để giữ nguyên bề mặt công khai (test DB
+ * `server/db/ingestV2KhuTrung.db.test.ts` import từ đó).
+ */
+export function dungKhoaKhuTrungV2(payload: MachineDataContractV2): string {
+  const { identity } = payload;
+  const phanDinh = [
+    identity.station,
+    identity.machine,
+    identity.line,
+    identity.plant,
+    identity.country,
+    identity.solutionName,
+    identity.appVersion,
+    payload.productId,
+    payload.startedAt ?? "",
+  ].join(String.fromCharCode(1)); // dấu phân cách KHÔNG thể xuất hiện trong chuỗi máy gửi — tránh đụng độ ranh giới trường
+  return `v2i-${createHash("sha256").update(phanDinh, "utf8").digest("hex")}`;
 }
 
 // ════════════════════════════════════════════════════════════════════════════

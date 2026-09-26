@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { useTranslation } from 'react-i18next';
 import { trpc } from "@/lib/trpc";
+import { mapTrpcError } from "@/lib/trpcErrors";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -130,7 +131,7 @@ export function ProductCategoryManagement() {
       refetch();
     },
     onError: (error) => {
-      toast.error(error.message || t('products.categoryCreateError'));
+      toast.error(mapTrpcError(error));
     },
   });
 
@@ -142,7 +143,7 @@ export function ProductCategoryManagement() {
       refetch();
     },
     onError: (error) => {
-      toast.error(error.message || t('products.categoryUpdateError'));
+      toast.error(mapTrpcError(error));
     },
   });
 
@@ -152,7 +153,7 @@ export function ProductCategoryManagement() {
       refetch();
     },
     onError: (error) => {
-      toast.error(error.message || t('products.categoryDeleteError'));
+      toast.error(mapTrpcError(error));
     },
   });
 
@@ -374,7 +375,7 @@ export function ProductCategoryManagement() {
       setImportPreview(null);
       refetch();
     } catch (error: any) {
-      toast.error(error.message || t('products.importError'));
+      toast.error(mapTrpcError(error));
     } finally {
       setIsImporting(false);
     }
@@ -576,7 +577,7 @@ export function ProductCategoryManagement() {
                   id="name"
                   value={formData.name}
                   onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-                  placeholder="VD: Linh kiện điện tử"
+                  placeholder={t("prodCategory.vdLinhKienDienTu", "VD: Linh kiện điện tử")}
                 />
               </div>
             </div>
@@ -587,7 +588,7 @@ export function ProductCategoryManagement() {
                 id="description"
                 value={formData.description}
                 onChange={(e) => setFormData({ ...formData, description: e.target.value })}
-                placeholder="Mô tả chi tiết về danh mục..."
+                placeholder={t("prodCategory.moTaChiTietVe", "Mô tả chi tiết về danh mục...")}
                 rows={3}
               />
             </div>
@@ -721,7 +722,7 @@ export function ProductCategoryManagement() {
                   setImportJsonText(e.target.value);
                   setImportPreview(null);
                 }}
-                placeholder='[{"code": "ELEC", "name": "Linh kiện điện tử", ...}]'
+                placeholder={t("productCategoryManagement.codeElecNameLinhKien", '[{"code": "ELEC", "name": "Linh kiện điện tử", ...}]')}
                 rows={6}
                 className="font-mono text-sm"
               />

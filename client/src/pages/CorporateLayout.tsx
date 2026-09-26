@@ -2,6 +2,7 @@ import { useAuth } from "@/_core/hooks/useAuth";
 import { useTranslation } from 'react-i18next';
 import DashboardLayout from "@/components/DashboardLayout";
 import { PageHeader, PageContainer } from "@/components/patterns";
+import { ScopeEmptyNotice } from "@/components/ScopeEmptyNotice";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -733,6 +734,12 @@ export default function CorporateLayout() {
     <DashboardLayout title={t('corporate.corporateLayout')} navItems={navItems} currentPath="/corporate-layout">
       <PageContainer fluid>
         {/* Header */}
+      {/*
+        ⚠ 2026-08-17 — hai ô "0%" / "0" dưới đây lấy từ `dashboard.getStats`, vốn mang nhãn phạm vi.
+        Trước bản vá, tài khoản CHƯA ĐƯỢC GÁN NHÀ MÁY đọc những con số này như một phép đo về
+        nhà máy. Chúng không phải phép đo — chúng là hệ quả của một phạm vi rỗng.
+      */}
+        <ScopeEmptyNotice reason={(dashboardStats as { scopeEmptyReason?: string | null } | undefined)?.scopeEmptyReason} />
         <PageHeader
           icon={<Building2 className="h-6 w-6" />}
           title={t('corporate.corporateVisualization')}

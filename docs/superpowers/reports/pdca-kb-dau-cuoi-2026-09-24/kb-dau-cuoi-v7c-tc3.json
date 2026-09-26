@@ -1,0 +1,35 @@
+{
+  "corpus": "scripts/ai-eval/st4i-giu-lai-lac-de.jsonl",
+  "label": "v7c-tc3",
+  "tom": {
+    "trong": {
+      "n": 1,
+      "dung": 1,
+      "tuChoi": 0,
+      "sai": 0
+    },
+    "ngoai": {
+      "n": 0,
+      "tuChoi": 0,
+      "traLoi": 0
+    },
+    "loi": 0
+  },
+  "ra": [
+    {
+      "id": "HT10",
+      "ngoai": false,
+      "kq": "dung",
+      "ms": 27407,
+      "nguon": [
+        "knowledge/domain/howto-license-bypass-dev.md",
+        "knowledge/domain/howto-license-bypass-dev.md",
+        "knowledge/features/admin/license-mgmt.md",
+        "knowledge/domain/howto-backup-restore.md",
+        "knowledge/domain/howto-backup-restore.md"
+      ],
+      "traLoi": "(1) Tóm tắt: Không được phép đưa tệp `.env` và `license.lic` lên Git khi sao lưu hoặc quản lý cấu hình. Đây là quy tắc bảo mật bắt buộc để bảo vệ thông tin nhạy cảm và khóa bản quyền.\n\n(2) Các bước thực hiện và vị trí trong hệ thống:\n1. **Kiểm tra `.gitignore`**: Đảm bảo các tệp nhạy cảm đã được loại trừ khỏi việc theo dõi phiên bản. Theo tài liệu, `license.lic` đã có trong `.gitignore` [1]. Bạn cần xác minh rằng `.env` cũng nằm trong danh sách này để tránh commit vô tình.\n2. **Sao lưu cấu hình an toàn**: Khi thực hiện sao lưu, hãy sao chép thủ công các tệp `.env` và `license.lic` qua kênh bảo mật (ví dụ: USB mã hóa hoặc hệ thống quản lý bí mật), không sử dụng các công cụ sao lưu tự động đẩy lên Git [4].\n3. **Xác minh môi trường Dev**: Trong môi trường phát triển, biến\n\nMàn hình liên quan: `/admin/license`\nBiến cấu hình: `NODE_ENV=development`, `LICENSE_BYPASS=true`, `LICENSE_BYPASS_FEATURES=all`\n\nVí dụ:\n```ini\nNODE_ENV=development\nLICENSE_BYPASS=true            # bỏ qua kiểm tra license\nLICENSE_BYPASS_FEATURES=all    # bật toàn bộ feature flag\n```",
+      "loi": null
+    }
+  ]
+}

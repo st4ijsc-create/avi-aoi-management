@@ -9,7 +9,19 @@
  */
 
 import { z } from "zod";
-import { router, protectedProcedure } from "../_core/trpc";
+import {
+  router,
+  protectedProcedure as thuTucVanHanh,
+  moduleProcedure,
+  moduleGate,
+  roleProcedure,
+  require2FA,
+} from "../_core/trpc";
+// ★ Cổng giấy phép MOD_AI — chỉ THÊM chiều giấy phép, RBAC/vai/2FA giữ nguyên từng ký tự.
+//   Không-brick + fail-safe ở `_core/moduleGate.ts`; lượng từ canh ở `congGiayPhepAiCensus.test.ts`.
+// ⚠ BA thủ tục CÔNG TẮC NGẮT (`getKillSwitchStatus`/`tripKillSwitch`/`untripKillSwitch`) CỐ Ý
+//   ĐỨNG NGOÀI cổng — xem khối lý lẽ tại chỗ khai chúng.
+const protectedProcedure = moduleProcedure("MOD_AI");
 import {
   startSession,
   approvePlan,
@@ -17,12 +29,35 @@ import {
   cancelSession,
   getSession,
   canUseAgentic,
+  listSessionsForOps,
   type AgentUser,
 } from "../services/aiAgentOrchestrator";
 import { startPlaybook, listPlaybooks } from "../services/aiPlaybookEngine";
 import type { ToolLang } from "../services/aiLocalTools";
+// D4 (doc69 Giai đoạn 4/Wave 3) — the D2 autonomy kill-switch, made OPERABLE.
+import { tripKillSwitch, untripKillSwitch, isKillSwitchTripped } from "../services/ai/autonomyPolicy";
+import { AUDIT_ACTIONS, ENTITY_TYPES, createAuditContext, logCrudOperation } from "../services/auditTrailService";
 
 const langSchema = z.enum(["vi", "en", "zh"]).default("vi");
+
+/** D4 — ops-scoped (cross-user) agent session visibility: admin/engineer only,
+ *  mirrors aiModelRouter's modelCardProcedure convention (roleProcedure combo). */
+const opsAgentProcedure = roleProcedure("admin", "engineer").use(moduleGate("MOD_AI"));
+
+/** D4 — kill-switch trip/untrip: admin + 2FA, the SAME guard D3 chained for
+ *  model-card writes (`roleProcedure(...).use(require2FA)`). */
+const killSwitchProcedure = roleProcedure("admin").use(require2FA);
+
+const AGENT_SESSION_STATUSES = [
+  "planning",
+  "awaiting_approval",
+  "running",
+  "awaiting_confirm",
+  "paused",
+  "done",
+  "aborted",
+  "failed",
+] as const;
 
 function toAgentUser(user: { id: number; role: string; name?: string | null }): AgentUser {
   return { id: user.id, role: String(user.role), name: user.name ?? null };
@@ -53,7 +88,10 @@ export const aiAgentRouter = router({
 
   /** User approves the plan → run to the first stopping point (read/done/awaiting_confirm). */
   approvePlan: protectedProcedure
-    .input(z.object({ sessionId: z.string().min(1) }))
+    // FIX (E2-4 review, Minor) — bound to a UUID-shaped length (sessionId is a
+    // randomUUID(), 36 chars); prevents an unbounded attacker-chosen string
+    // from being echoed back on the ai:agents broadcast payload's sessionId.
+    .input(z.object({ sessionId: z.string().min(1).max(128) }))
     .mutation(async ({ input, ctx }) => {
       const user = toAgentUser(ctx.user as any);
       return approvePlan(input.sessionId, { user, req: reqMeta(ctx) });
@@ -61,7 +99,11 @@ export const aiAgentRouter = router({
 
   /** Confirm the pending write at the current step (calls core confirmAction), then resume. */
   confirmStep: protectedProcedure
-    .input(z.object({ sessionId: z.string().min(1), actionId: z.string().min(1), token: z.string().min(1) }))
+    // FIX (E2-4 review, Minor) — sessionId/actionId/token are all randomUUID()
+    // (36 chars) in practice; bound to 128 (matches the repo's `.min(1).max(128)`
+    // convention for id-shaped strings, e.g. goldenSampleRouter/edgeRuntimeRouter)
+    // so an unbounded string can't be echoed into the ai:agents broadcast.
+    .input(z.object({ sessionId: z.string().min(1).max(128), actionId: z.string().min(1).max(128), token: z.string().min(1).max(128) }))
     .mutation(async ({ input, ctx }) => {
       const user = toAgentUser(ctx.user as any);
       return confirmStep(input.sessionId, input.actionId, input.token, { user, req: reqMeta(ctx) });
@@ -69,7 +111,8 @@ export const aiAgentRouter = router({
 
   /** Abort the session + cancel any pending proposed actions. */
   cancelSession: protectedProcedure
-    .input(z.object({ sessionId: z.string().min(1) }))
+    // FIX (E2-4 review, Minor) — see confirmStep above.
+    .input(z.object({ sessionId: z.string().min(1).max(128) }))
     .mutation(async ({ input, ctx }) => {
       const user = toAgentUser(ctx.user as any);
       return cancelSession(input.sessionId, { user, req: reqMeta(ctx) });
@@ -107,7 +150,8 @@ export const aiAgentRouter = router({
 
   /** Fetch session state (owner only). */
   getSession: protectedProcedure
-    .input(z.object({ sessionId: z.string().min(1) }))
+    // FIX (E2-4 review, Minor) — see confirmStep above.
+    .input(z.object({ sessionId: z.string().min(1).max(128) }))
     .query(async ({ input, ctx }) => {
       const user = toAgentUser(ctx.user as any);
       const row = await getSession(input.sessionId, user);
@@ -124,4 +168,75 @@ export const aiAgentRouter = router({
         expiresAt: row.expiresAt.toISOString(),
       };
     }),
+
+  // ─── Agent Ops (doc69 Giai đoạn 4/Wave 3, D4) — minimal ops-scoped session
+  // visibility. admin/engineer only; E2-1 will extend this into a richer
+  // read-model. Steer control (cancel) reuses the EXISTING owner-scoped
+  // cancelSession above unchanged — the FE only offers it on the viewer's OWN
+  // rows (cancelSession would honestly reject a cross-user attempt anyway).
+  listAgentSessionsForOps: opsAgentProcedure
+    .input(
+      z
+        .object({
+          limit: z.number().int().min(1).max(100).optional(),
+          status: z.enum(AGENT_SESSION_STATUSES).optional(),
+        })
+        .optional(),
+    )
+    .query(async ({ input }) => {
+      const sessions = await listSessionsForOps({ limit: input?.limit, status: input?.status });
+      return { sessions };
+    }),
+
+  // ─── Autonomy kill-switch (doc69 Giai đoạn 4/Wave 3, D4 — D2 rollout prereq) ──
+  //
+  // ⚠⚠⚠ BA thủ tục dưới đây CỐ Ý **ĐỨNG NGOÀI** cổng giấy phép MOD_AI (`thuTucVanHanh` /
+  //     `killSwitchProcedure` KHÔNG chain `moduleGate`). Đây là **CÔNG TẮC DỪNG KHẨN** của quyền
+  //     tự trị AI. Giấy phép có thể HẾT HẠN trong lúc phiên agent đang chạy — và đúng lúc ấy
+  //     `moduleGate` sẽ trả FORBIDDEN cho chính cái nút dùng để DỪNG chúng lại. Khoá một phanh
+  //     tay sau một hợp đồng thương mại là ngược chiều an toàn. Không đổi dòng này mà không có
+  //     một lý lẽ AN TOÀN, không phải một lý lẽ phủ sóng.
+  //
+  // Read: any authenticated user (situational awareness — no 2FA needed to VIEW).
+  getKillSwitchStatus: thuTucVanHanh.query(async () => {
+    const tripped = await isKillSwitchTripped();
+    return { tripped };
+  }),
+
+  /** Operator EMERGENCY STOP for bounded autonomy — admin + 2FA (mirrors D3's
+   *  modelCardProcedure chaining). Durable (ai_system_config), read FRESH by
+   *  evaluateAutonomy on every proposal — takes effect immediately for every
+   *  process, no restart required. Audited. */
+  tripKillSwitch: killSwitchProcedure
+    .input(z.object({ reason: z.string().min(3).max(500) }))
+    .mutation(async ({ input, ctx }) => {
+      await tripKillSwitch(input.reason, ctx.user.id);
+      await logCrudOperation(createAuditContext({ user: ctx.user as any, req: reqMeta(ctx) }), {
+        action: AUDIT_ACTIONS.AI_AUTONOMY_KILL_SWITCH,
+        entityType: ENTITY_TYPES.AI_AUTONOMY,
+        entityName: "autonomy_kill_switch",
+        details: {
+          operation: "AI_AUTONOMY_KILL_SWITCH_TRIPPED",
+          metadata: { reason: input.reason },
+        },
+        status: "success",
+      });
+      return { ok: true, tripped: true };
+    }),
+
+  /** Reset the kill-switch — admin + 2FA. Audited. */
+  untripKillSwitch: killSwitchProcedure.mutation(async ({ ctx }) => {
+    await untripKillSwitch(ctx.user.id);
+    await logCrudOperation(createAuditContext({ user: ctx.user as any, req: reqMeta(ctx) }), {
+      action: AUDIT_ACTIONS.AI_AUTONOMY_KILL_SWITCH,
+      entityType: ENTITY_TYPES.AI_AUTONOMY,
+      entityName: "autonomy_kill_switch",
+      details: {
+        operation: "AI_AUTONOMY_KILL_SWITCH_UNTRIPPED",
+        metadata: {},
+      },
+      status: "success",
+    });
+    return { ok: true, tripped: false };
+  }),
 });

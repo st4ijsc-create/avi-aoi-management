@@ -21,7 +21,7 @@
  * hard-breaks ingest.
  * ════════════════════════════════════════════════════════════════════════════
  */
-import { TRPCError } from "@trpc/server";
+import { appError } from "../_core/appError";
 import { and, desc, eq } from "drizzle-orm";
 import { getDb } from "../db/connection";
 import { productInspections } from "../../drizzle/schema";
@@ -104,14 +104,20 @@ export async function assertFaiPassed(
 ): Promise<FaiGateStatus> {
   const status = await getFaiStatus(productModelId, machineId);
   if (status.enforced && !status.passed) {
-    throw new TRPCError({
-      code: "FORBIDDEN",
-      message:
-        `First-Article Inspection (FAI) chưa PASS cho sản phẩm #${productModelId}` +
+    // reason "faiNotPassed" mang {{productModelId}} — khôi phục chỉ dẫn hành
+    // động CỤ THỂ (sản phẩm nào cần FAI) thay vì câu chung chung, đúng tinh
+    // thần Task 5 (F4). machineId (tuỳ chọn, không có trong mọi lần gọi) CỐ Ý
+    // không đưa vào reason template (placeholder bắt buộc phải LUÔN có mặt) —
+    // vẫn còn nguyên trong fallbackMessage.
+    throw appError(
+      "FORBIDDEN",
+      "OPERATION_FAILED",
+      { operation: "acceptFaiProduction", reason: "faiNotPassed", productModelId },
+      `First-Article Inspection (FAI) chưa PASS cho sản phẩm #${productModelId}` +
         (machineId != null ? ` trên máy #${machineId}` : "") +
         ` — thực hiện & đạt FAI trước khi phát hành/chấp nhận sản xuất. ` +
         `Production acceptance is blocked until a passing FAI (inspectionType='FAI', result OK) exists.`,
-    });
+    );
   }
   return status;
 }

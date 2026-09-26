@@ -13,7 +13,7 @@
  * `checkInstrumentReady` returns a structured report without throwing.
  */
 
-import { TRPCError } from "@trpc/server";
+import { appError } from "../_core/appError";
 import { and, desc, eq, gt, inArray, isNull } from "drizzle-orm";
 import { getDb } from "../db/connection";
 import {
@@ -107,10 +107,23 @@ export async function checkInstrumentReady(instrumentId: number): Promise<Instru
 export async function assertInstrumentReady(instrumentId: number): Promise<InstrumentReadinessReport> {
   const report = await checkInstrumentReady(instrumentId);
   if (!report.ready) {
-    throw new TRPCError({
-      code: "FORBIDDEN",
-      message: `Instrument ${instrumentId} is not fit-for-use: ${report.reasons.join("; ")}`,
-    });
+    // Task 10 (F3, doc71) — `report.reasons` là danh sách TÍCH LUỸ (0-5 câu:
+    // "Database unavailable" / "Instrument is deleted" / "is inactive" / "No
+    // valid calibration..." / "No valid MSA...", có thể GHÉP nhiều câu cùng
+    // lúc bằng "; "). Cơ chế reason CHỈ hỗ trợ MỘT khoá tĩnh cho mỗi lời gọi
+    // (xem OPERATION_FAILED_WITH_REASON), không có chỗ cho danh sách động
+    // nhiều-nguyên-nhân — không ép vào 1 reason sẽ SAI (chỉ còn đúng 1/N
+    // nguyên nhân thật). Giữ operation:"useInstrument" (đủ nói ĐANG làm gì)
+    // + fallbackMessage mang trọn danh sách reasons (mất khi client đã dịch —
+    // disclosure trong task-10-report.md, cùng lớp "cơ học nhưng không đổi
+    // hành vi xấu" như dataRouters.ts ở Task 9, khác ở chỗ TRPCError này CÓ
+    // đi qua errorFormatter thật — chỉ riêng phần reason chi tiết bị rút gọn).
+    throw appError(
+      "FORBIDDEN",
+      "OPERATION_FAILED",
+      { operation: "useInstrument" },
+      `Instrument ${instrumentId} is not fit-for-use: ${report.reasons.join("; ")}`,
+    );
   }
   return report;
 }

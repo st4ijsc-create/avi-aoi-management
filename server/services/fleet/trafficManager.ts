@@ -624,21 +624,25 @@ async function loadRobotObstacles(
 ): Promise<DynamicObstacle[]> {
   const db = await getDb();
   if (!db) return [];
-  const { robots, robotTelemetry } = await import("../../../drizzle/schema");
-  const { desc } = await import("drizzle-orm");
+  const { robots } = await import("../../../drizzle/schema");
+  const { traTelemetryMoiNhatTheoRobot } = await import("../../db/telemetryMoiNhat"); // Đợt 50 mục E
 
   const robotRows = await db.select().from(robots).where(eq(robots.isEnabled, true));
   if (robotRows.length === 0) return [];
   const ids = robotRows.map((r) => r.id).filter((id) => id !== excludeDeviceId);
   if (ids.length === 0) return [];
 
-  const telRows = await db
-    .select()
-    .from(robotTelemetry)
-    .where(inArray(robotTelemetry.robotId, ids))
-    .orderBy(desc(robotTelemetry.timestamp));
-  const latestByRobot = new Map<number, (typeof telRows)[number]>();
-  for (const tel of telRows) if (!latestByRobot.has(tel.robotId)) latestByRobot.set(tel.robotId, tel);
+  /*
+   * ★★★ ĐỢT 50 MỤC E — BẢN SAO THỨ BA của lớp lỗi "kéo cả bảng để giữ 1 hàng/robot"
+   * (hai bản kia: `routers/fleetRouter.ts` robotPositions, `fleet/taskAllocator.ts`
+   * loadCandidatesFromDb). `select … where robotId IN (…) order by timestamp desc`
+   * KHÔNG `LIMIT` = 4,2 – 16,0 giây trên DB dev; hàm này chạy TRONG đường lập
+   * đường đi của robot, nên nó biến mỗi lần lập đường thành một lần nghẽn pool.
+   * Vá bằng đúng một chỗ dùng chung — xem `server/db/telemetryMoiNhat.ts`.
+   * Hợp đồng giữ nguyên: robot chưa có telemetry vẫn vắng khỏi map ⇒ không thành
+   * vật cản (chứ không phải vật cản ở toạ độ 0,0).
+   */
+  const latestByRobot = await traTelemetryMoiNhatTheoRobot(db, ids);
 
   const obstacles: DynamicObstacle[] = [];
   for (const [robotId, tel] of latestByRobot) {

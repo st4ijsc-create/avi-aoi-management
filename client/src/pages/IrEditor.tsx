@@ -28,6 +28,7 @@ import type { AppRouter } from "../../../server/routers";
 import { Link, useLocation, useSearch } from "wouter";
 import { useEngineering } from "@/contexts/EngineeringContext";
 import { parseDeepLink, withParams } from "@/lib/engineeringDeepLink";
+import { isFeatureDisabledError } from "@/lib/featureFlagError";
 import { trpc } from "@/lib/trpc";
 import { usePermissions } from "@/_core/hooks/usePermissions";
 import DashboardLayout from "@/components/DashboardLayout";
@@ -55,12 +56,14 @@ import {
   Boxes, ArrowLeft, Pencil, Undo2, Redo2,
 } from "lucide-react";
 import { toast } from "sonner";
+import { deriveIrLintState } from "@/components/programming/irLintState";
+import { mapTrpcError, toastTrpcError } from "@/lib/trpcErrors";
 import {
   // Shared IR model + pure helpers (ONE source of truth for tree AND graph views).
   BLOCK_ICON, BLOCK_LABEL, PALETTE_GROUPS, COMPARE_OPS, TARGET_DEVICE_TYPES,
   EXPR_BINOPS, EXPR_OP_LABEL, isExpr,
   newBlock, findBlock, updateBlock, deleteBlock, moveBlock, addChild, cloneBlocks,
-  reorderRelativeToSibling, childSlots, getChildren, summarize,
+  applyNextEdge, childSlots, getChildren, summarize,
   // Tier-1c: reusable function-block (POU) model + helpers.
   FB_PARAM_KINDS, FB_PARAM_TYPES,
   newFunctionBlock, newFbParam, addFunctionBlock, updateFunctionBlock, deleteFunctionBlock, defaultArgsFor,
@@ -431,7 +434,7 @@ function Inspector({ block, functionBlocks, onPatch, t }: { block: IrBlock; func
           </div>
           <div className="grid grid-cols-3 gap-2">
             <NumField label={t("ir.field.speed", "Speed")} unit="mm/s" value={block.speed_mms} onChange={(v) => onPatch({ speed_mms: v } as Partial<IrBlock>)} />
-            <NumField label={t("ir.field.accel", "Accel")} value={block.acceleration} onChange={(v) => onPatch({ acceleration: v } as Partial<IrBlock>)} />
+            <NumField label={t("ir.field.accel", "Accel")} unit="mm/s²" value={block.acceleration} onChange={(v) => onPatch({ acceleration: v } as Partial<IrBlock>)} />
             <NumField label={t("ir.field.blend", "Blend")} unit="mm" value={block.blend_radius} onChange={(v) => onPatch({ blend_radius: v } as Partial<IrBlock>)} />
           </div>
         </>
@@ -976,7 +979,18 @@ export default function IrEditor() {
   }, [lint]);
   const errorCount = (lint?.diagnostics ?? []).filter((d) => d.severity === "error").length;
   const warnCount = (lint?.diagnostics ?? []).filter((d) => d.severity === "warn").length;
-  const lintOk = lint?.ok ?? true;
+  // Doc 80 IR-02: THREE states (ok · errors · unreadable). A failed/pending lint query is
+  // "unreadable" — never a silent "Lint OK" — and it locks Save / Build until lint answers.
+  const lintView = deriveIrLintState(
+    { data: lint, error: lintQ.error, isFetching: lintQ.isFetching },
+    lintFlowInput === flow,
+  );
+  const lintOk = lintView.status === "ok";
+  const lintLockReason = lintView.status !== "unreadable"
+    ? null
+    : lintView.reason === "error"
+      ? t("ir.lintUnreadableError", "Lint result could not be read ({{msg}}) — Save and Build are locked until the linter answers.", { msg: lintView.errorMessage ?? "" })
+      : t("ir.lintPendingLock", "Waiting for the lint result — Save and Build unlock when it arrives.");
 
   // doc 41 — publish the IR editor to the Programming Copilot DOCK as an ADVISORY assistant.
   // A block/graph flow has no text buffer to inject into, so no onApply: the copilot explains
@@ -997,11 +1011,11 @@ export default function IrEditor() {
 
   // ── Mutations (gated: DPC_IR_V2_ENABLED + machine_control) ─────────────────
   const onMutationError = (e: { data?: { code?: string } | null; message: string }) => {
-    if (e.data?.code === "CONFLICT" && /disabled/i.test(e.message)) {
+    if (isFeatureDisabledError(e)) {
       toast.info(t("ir.flagOffToast", "IR programming is disabled (preview). Set DPC_IR_V2_ENABLED=true to save/build."));
       void utils.ir.status.invalidate();
     } else {
-      toast.error(e.message);
+      toastTrpcError(e);
     }
   };
 
@@ -1032,7 +1046,7 @@ export default function IrEditor() {
       await utils.programming.listProjects.invalidate();
       toast.success(t("ir.projectCreated", "Project created — selected as the save target."));
     },
-    onError: (e) => toast.error(e.message),
+    onError: (e) => toastTrpcError(e),
   });
   const doCreateProject = () => {
     const code = newProjCode.trim();
@@ -1088,10 +1102,10 @@ export default function IrEditor() {
   const handleMove = useCallback((id: string, dir: -1 | 1) => {
     mutateActiveBlocks((blocks) => moveBlock(blocks, id, dir));
   }, [mutateActiveBlocks]);
-  // Graph canvas: reconnecting a `next` edge between two SIBLINGS reorders them (no-op
-  // across lists). Routes through the same immutable AST helper as the tree's up/down.
+  // Graph canvas: a `next` edge drawn source → target between two SIBLINGS puts target right
+  // after source (doc 80 IR-05: A→C on [A,B,C] ⇒ [A,C,B]; no-op across lists).
   const handleReorderToSibling = useCallback((sourceId: string, targetId: string) => {
-    mutateActiveBlocks((blocks) => reorderRelativeToSibling(blocks, sourceId, targetId));
+    mutateActiveBlocks((blocks) => applyNextEdge(blocks, sourceId, targetId));
   }, [mutateActiveBlocks]);
   // W4-19: LƯU toạ độ kéo-thả node vào field UI phụ block.ui (không phá transpile/lint).
   const handleMoveNode = useCallback((id: string, pos: { x: number; y: number }) => {
@@ -1150,7 +1164,7 @@ export default function IrEditor() {
         toast.error(t("ir.loadFail", "Artifact could not be parsed as an IR flow."));
       }
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : String(err));
+      toast.error(mapTrpcError(err));
     }
   };
 
@@ -1168,11 +1182,11 @@ export default function IrEditor() {
   // 'global' tự BỎ QUA khi con trỏ ở input/textarea (trừ Ctrl+S vốn cần chặn toàn cục),
   // nên KHÔNG nuốt phím của trình soạn code và KHÔNG đụng Ctrl/Cmd+Z·Y (undo/redo) hiện có.
   const saveFlowShortcut = () => {
-    if (!canControl || !flagEnabled || saveM.isPending || flow.blocks.length === 0) return;
+    if (!canControl || !flagEnabled || saveM.isPending || flow.blocks.length === 0 || !lintView.canSaveOrBuild) return;
     doSave();
   };
   const requestBuildLatestShortcut = () => {
-    if (!canControl || !flagEnabled || buildM.isPending) return;
+    if (!canControl || !flagEnabled || buildM.isPending || !lintView.canSaveOrBuild) return;
     // Danh sách sắp theo id giảm dần → phần tử đầu là flow lưu gần nhất.
     const latest = flowsQ.data?.[0];
     if (!latest) {
@@ -1273,8 +1287,18 @@ export default function IrEditor() {
             <div className="flex flex-wrap items-center gap-3">
               {/* Live lint indicator */}
               <div className="flex items-center gap-2">
-                {lintQ.isFetching ? (
+                {lintView.reason === "loading" ? (
                   <Badge variant="outline" className="gap-1"><Loader2 className="h-3 w-3 animate-spin" /> {t("ir.linting", "Linting…")}</Badge>
+                ) : lintView.reason === "error" ? (
+                  <StatusBadge
+                    status="warning"
+                    label={
+                      <span className="inline-flex items-center gap-1" title={lintLockReason ?? undefined}>
+                        <AlertTriangle className="h-3 w-3" />
+                        {t("ir.lintUnreadable", "Lint unreadable")}
+                      </span>
+                    }
+                  />
                 ) : (
                   <StatusBadge
                     status={lintOk ? "ok" : "error"}
@@ -1329,14 +1353,19 @@ export default function IrEditor() {
                   <FolderPlus className="mr-1.5 h-4 w-4" />{t("ir.newProject", "New ir-flow project")}
                 </Button>
                 <Button variant="outline" onClick={doSave}
-                  disabled={!canControl || !flagEnabled || saveM.isPending || flow.blocks.length === 0}
-                  title={!flagEnabled ? t("ir.flagOffTip", "Enable DPC_IR_V2_ENABLED to save") : t("ir.saveShortcut", "Lưu flow (Ctrl/Cmd+S) · Build flow mới nhất (Ctrl/Cmd+Enter)")}>
+                  disabled={!canControl || !flagEnabled || saveM.isPending || flow.blocks.length === 0 || !lintView.canSaveOrBuild}
+                  title={!flagEnabled ? t("ir.flagOffTip", "Enable DPC_IR_V2_ENABLED to save") : lintLockReason ?? t("ir.saveShortcut", "Lưu flow (Ctrl/Cmd+S) · Build flow mới nhất (Ctrl/Cmd+Enter)")}>
                   {saveM.isPending ? <Loader2 className="mr-1.5 h-4 w-4 animate-spin" /> : <Save className="mr-1.5 h-4 w-4" />}
                   {t("ir.save", "Save flow")}
                 </Button>
               </div>
             </div>
 
+            {lintView.reason === "error" && (
+              <p role="alert" className="flex items-center gap-1.5 text-xs text-warning">
+                <AlertTriangle className="h-3.5 w-3.5 shrink-0" />{lintLockReason}
+              </p>
+            )}
             <p className="text-[11px] text-muted-foreground">
               {t("ir.deployReminder", "Save appends a validated ir-flow artifact; Request build (below, per saved flow) transpiles it. Deploy to a real device is a separate gated step (existing programming service, HITL 2-eyes) — not exposed here.")}
             </p>
@@ -1523,7 +1552,7 @@ export default function IrEditor() {
           <MetricCard icon={<ListTree className="h-4 w-4" />} label={t("ir.kpi.blocks", "Top-level blocks")} value={flow.blocks.length} />
           <MetricCard icon={<XCircle className="h-4 w-4" />} label={t("ir.kpi.errors", "Lint errors")} value={errorCount} tone={errorCount > 0 ? "danger" : "default"} />
           <MetricCard icon={<AlertTriangle className="h-4 w-4" />} label={t("ir.kpi.warns", "Lint warnings")} value={warnCount} tone={warnCount > 0 ? "warning" : "default"} />
-          <MetricCard icon={<CheckCircle2 className="h-4 w-4" />} label={t("ir.kpi.status", "Lint status")} value={lintOk ? t("ir.kpi.pass", "Pass") : t("ir.kpi.blockedShort", "Blocked")} tone={lintOk ? "good" : "danger"} />
+          <MetricCard icon={<CheckCircle2 className="h-4 w-4" />} label={t("ir.kpi.status", "Lint status")} value={lintView.status === "ok" ? t("ir.kpi.pass", "Pass") : lintView.status === "errors" ? t("ir.kpi.blockedShort", "Blocked") : t("ir.kpi.unreadable", "Unreadable")} tone={lintView.status === "ok" ? "good" : lintView.status === "errors" ? "danger" : "warning"} />
         </div>
 
         <SectionCard
@@ -1580,8 +1609,8 @@ export default function IrEditor() {
                     </Button>
                     <Button
                       size="sm" variant="ghost" className="h-7"
-                      disabled={!canControl || !flagEnabled || buildM.isPending}
-                      title={!flagEnabled ? t("ir.flagOffTip", "Enable DPC_IR_V2_ENABLED to build") : t("ir.buildTip", "Transpile this saved flow (deploy stays a separate gated step)")}
+                      disabled={!canControl || !flagEnabled || buildM.isPending || !lintView.canSaveOrBuild}
+                      title={!flagEnabled ? t("ir.flagOffTip", "Enable DPC_IR_V2_ENABLED to build") : lintLockReason ?? t("ir.buildTip", "Transpile this saved flow (deploy stays a separate gated step)")}
                       onClick={() => buildM.mutate({ artifactId: r.id })}
                     >
                       <Hammer className="mr-1 h-3.5 w-3.5" />{t("ir.build", "Request build")}

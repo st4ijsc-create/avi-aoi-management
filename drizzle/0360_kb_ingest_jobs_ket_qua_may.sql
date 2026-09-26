@@ -1,0 +1,15 @@
+-- ════════════════════════════════════════════════════════════════════════════
+-- 0360 — R4 (kế hoạch AI Local 2026-09-22 §4): **KIỂM MÁY SAU NẠP** cho mỗi job Training Studio
+--        (`kb_ingest_jobs."ketQuaMay"` jsonb)
+-- ════════════════════════════════════════════════════════════════════════════
+--
+-- VÌ SAO: lời dặn "PDF quét ảnh ra 0 đoạn" nằm trong HƯỚNG DẪN (chữ người đọc), còn bộ parse đã
+--   biết sẵn sự thật (`meta.scannedNoOcr`, `ocrUsed`, `truncated`, `pageCount`) — rồi VỨT đi: job chỉ
+--   lưu `chunksAdded` + chuỗi lỗi thô. Cột này giữ kết quả kiểm MÁY (số trang · ký tự · đoạn · mã
+--   cảnh báo) để tab Tác vụ hiện huy hiệu có lý do, không bắt người dùng tự đoán.
+--
+-- ⚠ NULLABLE, không default: hàng cũ và job ghi trước bản này ⇒ NULL = "không có kết quả kiểm" (≠ "ổn").
+-- ⚠ DDL bằng owner `aoi`: `node scripts/apply-migration-0360.mjs`. Khai TAY vào drizzle/schema/kbStudio.ts.
+-- ROLLBACK: ALTER TABLE "kb_ingest_jobs" DROP COLUMN "ketQuaMay";
+--
+ALTER TABLE "kb_ingest_jobs" ADD COLUMN IF NOT EXISTS "ketQuaMay" jsonb;

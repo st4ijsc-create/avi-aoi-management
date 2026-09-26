@@ -15,6 +15,7 @@ import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { StatChip, StatChipRow } from "@/components/patterns";
 import { Boxes, ChevronDown, ChevronRight, Info, Layers, PackageCheck } from "lucide-react";
 import { aggregateLot, type ChainRow, type SerialSummary, type Verdict } from "./genealogyAggregate";
+import { mapTrpcError } from "@/lib/trpcErrors";
 
 const VERDICT_VARIANT: Record<Verdict, "default" | "secondary" | "destructive" | "outline"> = {
   ship: "default",
@@ -172,7 +173,7 @@ export default function CartonGenealogyView({
         <p className="text-muted-foreground">{t("common.loading", "Loading...")}</p>
       )}
       {lotCode && query.isError && (
-        <p className="text-destructive">{query.error?.message ?? t("trace.queryError", "Query failed")}</p>
+        <p className="text-destructive">{mapTrpcError(query.error)}</p>
       )}
       {lotCode && query.data && agg.totalSerials === 0 && (
         <p className="text-muted-foreground">{t("trace.notFound", "No data found for")} {lotCode}</p>

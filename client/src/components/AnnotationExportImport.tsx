@@ -13,6 +13,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from '@/components/ui/dialog';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { toast } from 'sonner';
+import { mapTrpcError } from '@/lib/trpcErrors';
 import {
   Download,
   Upload,
@@ -90,7 +91,7 @@ export function AnnotationExportImport() {
       setIsExporting(false);
     },
     onError: (error) => {
-      toast.error(`${t('annotation.exportFailed')}: ${error.message}`);
+      toast.error(t('annotation.exportFailed'), { description: mapTrpcError(error) });
       setIsExporting(false);
     },
   });
@@ -106,7 +107,7 @@ export function AnnotationExportImport() {
       }
     },
     onError: (error) => {
-      toast.error(`${t('annotation.importFailed')}: ${error.message}`);
+      toast.error(t('annotation.importFailed'), { description: mapTrpcError(error) });
       setIsImporting(false);
     },
   });

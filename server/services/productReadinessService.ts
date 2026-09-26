@@ -14,7 +14,7 @@
 // queries (7) regardless of how many products are requested — NO N+1. The single-
 // product helper just calls the batch with [id].
 import { getDb } from "../db/connection";
-import { and, eq, inArray, isNull, or, sql } from "drizzle-orm";
+import { and, eq, inArray, isNotNull, isNull, or, sql } from "drizzle-orm";
 import {
   productModels,
   measurementPointDefs,
@@ -24,6 +24,11 @@ import {
 } from "../../drizzle/schema/product";
 import { productPanelDefs } from "../../drizzle/schema/productPanel";
 import { goldenSampleReferences } from "../../drizzle/schema/goldenSample";
+// QĐ-7 (spec Khối C, Task 12): hạng mục `limits` phải THẤY hàng cây
+// (`captureRowId IS NOT NULL`) — không chỉ điểm phẳng DIMENSION. Dùng LẠI đúng
+// hàm phân loại `coGioiHan` của `cayDayRouter` (Task 9) — "hai con số trên hai
+// màn phải khớp bằng cấu tạo", không viết lại luật 18-cột lần hai ở đây.
+import { tinhGioiHan, chieuGioiHan } from "../db/cayDay";
 
 export type ReadinessItemStatus = "ok" | "partial" | "missing" | "na";
 
@@ -65,6 +70,9 @@ export interface ProductReadiness {
     numericPoints: number;
     numericWithLimits: number;
     withComponent: number;
+    /** QĐ-7 — hàng cây (`captureRowId IS NOT NULL`), xem `ReadinessAggregate.treeRows`. */
+    treeRows: number;
+    treeRowsWithLimit: number;
     fiducials: number;
     goldens: number;
     releases: number;
@@ -85,6 +93,15 @@ export interface ReadinessAggregate {
   numericPoints: number;
   numericWithLimits: number;
   withComponent: number;
+  /**
+   * QĐ-7 — hàng CÂY DẠY (`captureRowId IS NOT NULL`): tổng số component point-def
+   * và bao nhiêu trong số đó `coGioiHan` (Task 9 `tinhGioiHan`, ≥1/18 cột spec
+   * khác NULL, trừ `unit`). Cây dạy mặc định `measurementType='VISUAL'`
+   * (`LOAI_DO_MAC_DINH_CAY_DAY`) nên KHÔNG rơi vào `numericPoints` ở trên — phải
+   * đếm riêng, cộng vào hạng mục `limits` (xem `scoreReadiness`).
+   */
+  treeRows: number;
+  treeRowsWithLimit: number;
   fiducials: number;
   goldens: number;
   releases: number;
@@ -142,10 +159,18 @@ export function scoreReadiness(agg: ReadinessAggregate): ProductReadiness {
     counts: { pointCount: agg.pointCount },
   });
 
-  // 3) Spec limits on the DIMENSIONAL points (VISUAL points are judged by golden-
-  //    diff / criteria, not LSL/USL — excluding them keeps the score honest).
-  const numeric = agg.numericPoints;
-  const withLimits = agg.numericWithLimits;
+  // 3) Spec limits — on the flat DIMENSIONAL points (VISUAL points are judged by
+  //    golden-diff / criteria, not LSL/USL) PLUS the TREE rows (QĐ-7: component
+  //    point-defs under a taught machine template, `captureRowId IS NOT NULL`).
+  //    Tree rows default `measurementType='VISUAL'` (cây dạy là máy QUANG HỌC —
+  //    `LOAI_DO_MAC_DINH_CAY_DAY`) so they never land in `numericPoints`; without
+  //    counting them here a product taught ONLY via the cây dạy tab (0 flat
+  //    points) degenerates to `numeric===0` ⇒ "na"/100% even with 0/N component
+  //    actually taught. "Có giới hạn" here is the SAME classification as
+  //    `cayDayRouter` (Task 9's `tinhGioiHan`) — counted per-row in
+  //    `aggregateReadinessData`, folded into `agg.treeRows`/`treeRowsWithLimit`.
+  const numeric = agg.numericPoints + agg.treeRows;
+  const withLimits = agg.numericWithLimits + agg.treeRowsWithLimit;
   const limitsFraction = numeric > 0 ? withLimits / numeric : agg.pointCount > 0 ? 1 : 0;
   const limitsMissing = Math.max(0, numeric - withLimits);
   items.push({
@@ -254,6 +279,8 @@ export function scoreReadiness(agg: ReadinessAggregate): ProductReadiness {
       numericPoints: agg.numericPoints,
       numericWithLimits: agg.numericWithLimits,
       withComponent: agg.withComponent,
+      treeRows: agg.treeRows,
+      treeRowsWithLimit: agg.treeRowsWithLimit,
       fiducials: agg.fiducials,
       goldens: agg.goldens,
       releases: agg.releases,
@@ -377,6 +404,24 @@ export async function aggregateReadinessData(ids: number[]): Promise<ReadinessAg
     ))
     .groupBy(productPanelDefs.productModelId);
 
+  // (8) Hàng CÂY DẠY (QĐ-7) — component point-defs của một machine template đã
+  // dạy (`captureRowId IS NOT NULL`). Kéo cả 18 cột `POINT_LIMIT_SPEC` về (dùng
+  // LẠI `chieuGioiHan()` của `cayDay.ts`, không chép tay lần hai) rồi phân loại
+  // `coGioiHan` ở tầng ứng dụng bằng `tinhGioiHan()` — ĐÚNG hàm mà
+  // `cayDayRouter.listComponents`/`thongKeGioiHan` (Task 9) dùng, để số readiness
+  // và số cây dạy không thể lệch nhau. Một cây thật vài chục-trăm hàng/sản phẩm —
+  // kéo cột về JS rẻ hơn rủi ro hai luật phân loại trôi khỏi nhau (cùng lý lẽ
+  // `traThongKeGioiHan`).
+  const treeAgg = await db
+    .select({ productModelId: measurementPointDefs.productModelId, ...chieuGioiHan() })
+    .from(measurementPointDefs)
+    .where(and(
+      inArray(measurementPointDefs.productModelId, productIds),
+      isNotNull(measurementPointDefs.captureRowId),
+      eq(measurementPointDefs.isActive, true),
+      isNull(measurementPointDefs.deletedAt),
+    ));
+
   // ---- Fold into per-product maps ----
   const pointMap = new Map<number, { pointCount: number; numericPoints: number; numericWithLimits: number; withComponent: number }>();
   for (const r of pointAgg) {
@@ -397,6 +442,15 @@ export async function aggregateReadinessData(ids: number[]): Promise<ReadinessAg
   const mappingMap = numMap(mappingAgg as any);
   const panelMap = numMap(panelAgg as any);
 
+  const treeMap = new Map<number, { treeRows: number; treeRowsWithLimit: number }>();
+  for (const r of treeAgg) {
+    const pid = Number(r.productModelId);
+    const cur = treeMap.get(pid) ?? { treeRows: 0, treeRowsWithLimit: 0 };
+    cur.treeRows += 1;
+    if (tinhGioiHan(r as unknown as Record<string, unknown>).coGioiHan) cur.treeRowsWithLimit += 1;
+    treeMap.set(pid, cur);
+  }
+
   // Golden: bucket each approved golden to a product (by id, else by code).
   const codeToId = new Map<string, number>();
   for (const p of products) codeToId.set(p.code, p.id);
@@ -413,6 +467,7 @@ export async function aggregateReadinessData(ids: number[]): Promise<ReadinessAg
 
   return products.map((p) => {
     const pts = pointMap.get(p.id) ?? { pointCount: 0, numericPoints: 0, numericWithLimits: 0, withComponent: 0 };
+    const tree = treeMap.get(p.id) ?? { treeRows: 0, treeRowsWithLimit: 0 };
     return {
       productModelId: p.id,
       productCode: p.code,
@@ -423,6 +478,8 @@ export async function aggregateReadinessData(ids: number[]): Promise<ReadinessAg
       numericPoints: pts.numericPoints,
       numericWithLimits: pts.numericWithLimits,
       withComponent: pts.withComponent,
+      treeRows: tree.treeRows,
+      treeRowsWithLimit: tree.treeRowsWithLimit,
       fiducials: fidMap.get(p.id) ?? 0,
       goldens: goldenMap.get(p.id) ?? 0,
       releases: releaseMap.get(p.id) ?? 0,

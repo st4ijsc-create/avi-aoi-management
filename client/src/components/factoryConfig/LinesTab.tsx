@@ -78,7 +78,7 @@ export function LinesTab({
                   </div>
                   <div className="flex items-center gap-2">
                   <ExcelImportExport
-                    entityType="dây chuyền"
+                    entityType={t("linesTab.dayChuyen", "dây chuyền")}
                     templateData={[{ workshopCode: "W001", code: "L001", name: "Line 1", description: "", capacityPerHour: 100, maxConcurrentOrders: 1, isActive: true }]}
                     templateFilename="lines_template.xlsx"
                     onImport={async (data, replaceIfExists) => importLinesMutation.mutateAsync({ data, replaceIfExists })}

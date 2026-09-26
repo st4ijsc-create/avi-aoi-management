@@ -21,6 +21,13 @@
  * those modelIds a human-readable provenance + intended-use record.
  *
  * Offline-first, additive, fail-safe. No flags — describing models is always safe.
+ *
+ * ── Distinct from `ai_model_cards` (doc69 D3, drizzle/schema/ai.ts) ──────────────
+ * D3 added a SEPARATE, dedicated `ai_model_cards` table (migration 0303) for a
+ * HUMAN-AUTHORED, APPROVED governance record that GATES defect-classifier version
+ * activation (server/services/aiModelCardGate.ts) — unlike this module's cards, which
+ * are auto-generated documentation with no approval and never block anything. This
+ * module is unchanged by D3 and does not read/write ai_model_cards, or vice versa.
  */
 
 import { getAiModels, getAiModelById, updateAiModel } from "../db/ai";

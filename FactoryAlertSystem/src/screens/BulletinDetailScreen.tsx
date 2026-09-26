@@ -33,7 +33,7 @@ import {
   ImageLoadingState,
   InspectionImagesResponse,
 } from '../types';
-import { imageService } from '../services';
+import { imageService, nguonAnh } from '../services';
 import { useTheme, Theme } from '../context/ThemeContext';
 import { getYieldColor } from '../utils/helpers';
 import { StateView } from '../components';
@@ -256,7 +256,7 @@ const BulletinDetailScreen: React.FC = () => {
                 activeOpacity={0.8}
               >
                 <Image
-                  source={{ uri: img.imageUrl }}
+                  source={nguonAnh(img.imageUrl)}
                   style={styles.fpLoadedImage}
                   resizeMode="cover"
                 />
@@ -322,7 +322,7 @@ const BulletinDetailScreen: React.FC = () => {
                     activeOpacity={0.8}
                   >
                     <Image
-                      source={{ uri: `${settings.app.apiBaseUrl}${fp.referenceImageUrl}` }}
+                      source={nguonAnh(`${settings.app.apiBaseUrl}${fp.referenceImageUrl}`)}
                       style={styles.comparisonImage}
                       resizeMode="cover"
                     />
@@ -350,7 +350,7 @@ const BulletinDetailScreen: React.FC = () => {
                     activeOpacity={0.8}
                   >
                     <Image
-                      source={{ uri: `${settings.app.apiBaseUrl}${fp.imageUrl}` }}
+                      source={nguonAnh(`${settings.app.apiBaseUrl}${fp.imageUrl}`)}
                       style={styles.comparisonImage}
                       resizeMode="cover"
                     />
@@ -565,7 +565,7 @@ const BulletinDetailScreen: React.FC = () => {
           </TouchableOpacity>
           {fullscreenImage && (
             <Image
-              source={{ uri: fullscreenImage }}
+              source={nguonAnh(fullscreenImage)}
               style={styles.fullscreenImage}
               resizeMode="contain"
             />

@@ -1,0 +1,45 @@
+[
+ {"id":"ts1","lang":"ts","name":"tinhTyLeLoi",
+  "prompt":"Viết hàm TypeScript export function tinhTyLeLoi(tong: number, loi: number): number — trả về tỷ lệ lỗi phần trăm làm tròn 2 chữ số thập phân. Nếu tong <= 0 trả về 0. Chỉ trả về MỘT khối mã, không giải thích.",
+  "test":"import {test} from 'node:test'; import a from 'node:assert';\nimport {tinhTyLeLoi as f} from './sol.mjs';\ntest('t',()=>{a.strictEqual(f(100,5),5);a.strictEqual(f(0,5),0);a.strictEqual(f(-3,5),0);a.strictEqual(f(200,13),6.5);a.strictEqual(f(3,1),33.33);a.strictEqual(f(7,7),100);});"},
+
+ {"id":"ts2","lang":"ts","name":"parseViTriLoi",
+  "prompt":"Viết hàm TypeScript export function parseViTriLoi(s: string): {hang:number, cot:number} | null — phân tích chuỗi dạng 'R12C34' (chữ R rồi số hàng, chữ C rồi số cột, đều là chữ HOA). Trả null nếu không khớp đúng khuôn: chữ thường, thừa ký tự ở đầu hoặc cuối, thiếu số, số âm — đều là không khớp. Chỉ trả về MỘT khối mã, không giải thích.",
+  "test":"import {test} from 'node:test'; import a from 'node:assert';\nimport {parseViTriLoi as f} from './sol.mjs';\ntest('t',()=>{a.deepStrictEqual(f('R12C34'),{hang:12,cot:34});a.deepStrictEqual(f('R0C0'),{hang:0,cot:0});a.strictEqual(f('r12c34'),null);a.strictEqual(f('R12C'),null);a.strictEqual(f('R12C34x'),null);a.strictEqual(f('xR1C2'),null);a.strictEqual(f(''),null);a.strictEqual(f('R-1C2'),null);});"},
+
+ {"id":"ts3","lang":"ts","name":"topNLoi",
+  "prompt":"Viết hàm TypeScript export function topNLoi(items: {ma:string}[], n: number): {ma:string, soLan:number}[] — đếm số lần xuất hiện mỗi ma, trả về n mã nhiều nhất, sắp giảm dần theo soLan; KHI BẰNG NHAU thì sắp tăng dần theo ma (thứ tự chữ cái). n<=0 trả mảng rỗng. Chỉ trả về MỘT khối mã, không giải thích.",
+  "test":"import {test} from 'node:test'; import a from 'node:assert';\nimport {topNLoi as f} from './sol.mjs';\nconst d=[{ma:'B'},{ma:'A'},{ma:'B'},{ma:'C'},{ma:'A'},{ma:'D'}];\ntest('t',()=>{a.deepStrictEqual(f(d,2),[{ma:'A',soLan:2},{ma:'B',soLan:2}]);a.deepStrictEqual(f(d,3),[{ma:'A',soLan:2},{ma:'B',soLan:2},{ma:'C',soLan:1}]);a.deepStrictEqual(f(d,0),[]);a.deepStrictEqual(f([],5),[]);a.strictEqual(f(d,99).length,4);});"},
+
+ {"id":"ts4","lang":"ts","name":"gomTheoCa",
+  "prompt":"Viết hàm TypeScript export function gomTheoCa(moc: string[], gioBatDauCa: number): Record<string, string[]> — moc là mảng chuỗi ISO datetime UTC. Mỗi ca dài 8 giờ; CA1 bắt đầu lúc gioBatDauCa (giờ UTC 0-23), CA2 sau đó 8 giờ, CA3 sau 16 giờ, và ca CÓ THỂ VẮT QUA NỬA ĐÊM. Trả về object có đúng 3 khoá CA1, CA2, CA3; mỗi giá trị là mảng các mốc thuộc ca đó, GIỮ NGUYÊN thứ tự đầu vào. Chỉ trả về MỘT khối mã, không giải thích.",
+  "test":"import {test} from 'node:test'; import a from 'node:assert';\nimport {gomTheoCa as f} from './sol.mjs';\nconst m=['2026-01-01T06:30:00Z','2026-01-01T14:30:00Z','2026-01-01T22:30:00Z','2026-01-02T05:59:00Z','2026-01-01T22:00:00Z'];\ntest('t',()=>{const r=f(m,6);a.deepStrictEqual(r.CA1,['2026-01-01T06:30:00Z']);a.deepStrictEqual(r.CA2,['2026-01-01T14:30:00Z']);a.deepStrictEqual(r.CA3,['2026-01-01T22:30:00Z','2026-01-02T05:59:00Z','2026-01-01T22:00:00Z']);});"},
+
+ {"id":"ts5","lang":"ts","name":"thuLaiCoBackoff",
+  "prompt":"Viết hàm TypeScript export async function thuLaiCoBackoff<T>(fn: () => Promise<T>, soLan: number, treMs: number): Promise<T> — gọi fn; nếu fn ném lỗi thì thử lại TỐI ĐA soLan lần nữa, thời gian chờ nhân đôi mỗi lần (treMs, treMs*2, treMs*4...). NHƯNG nếu lỗi có thuộc tính retryable === false thì NÉM LẠI NGAY, không thử lại lần nào. Hết lượt thì ném lỗi cuối cùng. Chỉ trả về MỘT khối mã, không giải thích.",
+  "test":"import {test} from 'node:test'; import a from 'node:assert';\nimport {thuLaiCoBackoff as f} from './sol.mjs';\ntest('thanh cong sau 2 lan',async()=>{let n=0;const r=await f(async()=>{n++;if(n<3)throw new Error('x');return 'ok';},5,1);a.strictEqual(r,'ok');a.strictEqual(n,3);});\ntest('khong thu lai khi retryable false',async()=>{let n=0;await a.rejects(()=>f(async()=>{n++;const e=new Error('no');e.retryable=false;throw e;},5,1));a.strictEqual(n,1);});\ntest('het luot thi nem',async()=>{let n=0;await a.rejects(()=>f(async()=>{n++;throw new Error('x');},2,1));a.strictEqual(n,3);});"},
+
+ {"id":"py1","lang":"py","name":"ty_le_loi",
+  "prompt":"Viết hàm Python def ty_le_loi(tong: int, loi: int) -> float — trả về tỷ lệ lỗi phần trăm làm tròn 2 chữ số. tong <= 0 trả 0.0. Chỉ trả về MỘT khối mã, không giải thích.",
+  "test":"from sol import ty_le_loi as f\nassert f(100,5)==5.0\nassert f(0,5)==0.0\nassert f(-1,5)==0.0\nassert f(200,13)==6.5\nassert f(3,1)==33.33\nprint('OK')"},
+
+ {"id":"py2","lang":"py","name":"parse_vi_tri",
+  "prompt":"Viết hàm Python def parse_vi_tri(s: str): — phân tích chuỗi dạng 'R12C34' trả về tuple (12, 34). Trả None nếu không khớp đúng khuôn: chữ thường, thừa ký tự, thiếu số đều là không khớp. Chỉ trả về MỘT khối mã, không giải thích.",
+  "test":"from sol import parse_vi_tri as f\nassert f('R12C34')==(12,34)\nassert f('R0C0')==(0,0)\nassert f('r12c34') is None\nassert f('R12C') is None\nassert f('R12C34x') is None\nassert f('') is None\nprint('OK')"},
+
+ {"id":"py3","lang":"py","name":"top_n_loi",
+  "prompt":"Viết hàm Python def top_n_loi(ma_list: list, n: int) -> list — đếm số lần mỗi mã, trả n mã nhiều nhất dạng list các tuple (ma, so_lan), sắp giảm dần theo so_lan; KHI BẰNG NHAU sắp tăng dần theo ma. n<=0 trả []. Chỉ trả về MỘT khối mã, không giải thích.",
+  "test":"from sol import top_n_loi as f\nd=['B','A','B','C','A','D']\nassert f(d,2)==[('A',2),('B',2)]\nassert f(d,3)==[('A',2),('B',2),('C',1)]\nassert f(d,0)==[]\nassert f([],5)==[]\nassert len(f(d,99))==4\nprint('OK')"},
+
+ {"id":"cs1","lang":"cs","name":"TinhTyLeLoi",
+  "prompt":"Viết một lớp C# public static class Loi với phương thức public static double TinhTyLeLoi(int tong, int loi) — trả tỷ lệ lỗi phần trăm làm tròn 2 chữ số. tong <= 0 trả 0. Đặt trong namespace Sol. Chỉ trả về MỘT khối mã C#, không giải thích, KHÔNG viết hàm Main.",
+  "test":"using Sol; public static class T { public static int Main(){ if(Loi.TinhTyLeLoi(100,5)!=5) return 1; if(Loi.TinhTyLeLoi(0,5)!=0) return 2; if(Loi.TinhTyLeLoi(-1,5)!=0) return 3; if(Loi.TinhTyLeLoi(200,13)!=6.5) return 4; if(Loi.TinhTyLeLoi(3,1)!=33.33) return 5; System.Console.WriteLine(\"OK\"); return 0; } }"},
+
+ {"id":"cs2","lang":"cs","name":"ChuanHoaMaMay",
+  "prompt":"Viết một lớp C# public static class May với phương thức public static string ChuanHoaMaMay(string ma) — cắt khoảng trắng hai đầu, đổi thành CHỮ HOA, thay mọi dấu cách hoặc gạch dưới bên trong thành dấu gạch ngang, gộp nhiều gạch ngang liên tiếp thành một, bỏ gạch ngang ở đầu và cuối. null hoặc rỗng trả chuỗi rỗng. Đặt trong namespace Sol. Chỉ trả về MỘT khối mã C#, không giải thích, KHÔNG viết hàm Main.",
+  "test":"using Sol; public static class T { public static int Main(){ if(May.ChuanHoaMaMay(\"  aoi 01 \")!=\"AOI-01\") return 1; if(May.ChuanHoaMaMay(\"aoi__01\")!=\"AOI-01\") return 2; if(May.ChuanHoaMaMay(\"-aoi--01-\")!=\"AOI-01\") return 3; if(May.ChuanHoaMaMay(null)!=\"\") return 4; if(May.ChuanHoaMaMay(\"\")!=\"\") return 5; System.Console.WriteLine(\"OK\"); return 0; } }"},
+
+ {"id":"cs3","lang":"cs","name":"TopNLoi",
+  "prompt":"Viết một lớp C# public static class ThongKe với phương thức public static System.Collections.Generic.List<(string Ma,int SoLan)> TopNLoi(System.Collections.Generic.IEnumerable<string> maList, int n) — đếm số lần mỗi mã, trả n mã nhiều nhất sắp giảm dần theo SoLan, KHI BẰNG NHAU sắp tăng dần theo Ma. n<=0 trả danh sách rỗng. Đặt trong namespace Sol. Chỉ trả về MỘT khối mã C#, không giải thích, KHÔNG viết hàm Main.",
+  "test":"using Sol; using System.Linq; public static class T { public static int Main(){ var d=new[]{\"B\",\"A\",\"B\",\"C\",\"A\",\"D\"}; var r=ThongKe.TopNLoi(d,2); if(r.Count!=2) return 1; if(r[0].Ma!=\"A\"||r[0].SoLan!=2) return 2; if(r[1].Ma!=\"B\"||r[1].SoLan!=2) return 3; if(ThongKe.TopNLoi(d,0).Count!=0) return 4; if(ThongKe.TopNLoi(d,99).Count!=4) return 5; System.Console.WriteLine(\"OK\"); return 0; } }"}
+]

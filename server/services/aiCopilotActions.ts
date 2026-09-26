@@ -7,24 +7,44 @@
  *              RBAC gated, returns a pendingAction the UI renders as a confirm
  *              card. Token = row id (uuid) bound to userId, TTL 5'.
  *   confirm  → verify status/expiry/userId/token → RBAC re-check → idempotency
- *              (already executed ⇒ return cached result) → execute() with args
- *              read from the DB row (never the client) → mark executed + audit.
+ *              (already executed/bi_tu_choi_ghi/ap_mot_phan ⇒ return cached result) → execute()
+ *              with args read from the DB row (never the client) → mark status
+ *              THEO KẾT QUẢ THẬT (`trangThaiSauThucThi`, Đợt B · Task 6: byte thật
+ *              vào đĩa ⇒ executed; execute() TỪ CHỐI GHI ⇒ bi_tu_choi_ghi; lô ghi
+ *              hỏng GIỮA CHỪNG, tệp 1..k−1 đã trên đĩa ⇒ ap_mot_phan) + audit.
  *   cancel   → mark cancelled (only the owner, only while proposed).
  *
  * Safety invariants (Mục 8):
  *   - confirm is mandatory; propose never auto-executes.
  *   - execute() args come from ai_pending_actions.argsJson, not the request.
+ *     ★ ĐỢT 3 (2026-08-23): với `apply_diff`, request ĐƯỢC PHÉP mang thêm `selectedHunkIds`
+ *     (CHỈ SỐ khối, không bao giờ là byte nội dung); server tự dựng lại kế hoạch khối từ argsJson
+ *     trong CSDL, xác thực, rồi CẬP NHẬT `argsJson.modified` = bản chiếu trong CÙNG câu UPDATE
+ *     giành quyền — bất biến trên vẫn đúng theo chữ: cái execute() nhận là cái vừa persist.
  *   - idempotencyKey unique → at most one execution.
  *   - RBAC checked TWICE (propose + execute), role taken from session.
  *   - audit logged at every milestone via audit_logs (append-only).
  */
 
 import { randomUUID } from "node:crypto";
-import { and, eq, lt } from "drizzle-orm";
+import { and, eq, gt, lt } from "drizzle-orm";
 import { getDb } from "../db/connection";
 import { aiPendingActions } from "../../drizzle/schema";
 import { checkPermission } from "../_core/accessControl";
 import { getTool, isWriteTool, assertExecutable, type ActionPreview, type Tool, type ToolExecContext, type ToolLang } from "./aiLocalTools/toolRegistry";
+// ★★★ ĐỢT 3 (2026-08-23) — DUYỆT THEO KHỐI THẬT: server import THẲNG bộ vị từ khối của client
+// (`keHoachKhoiDuyet` + `chieuTheoChiSoKhoi`) — tiền lệ đã có (`aiCodingCli/cli.ts` import
+// `computeHunkPlan` từ đúng file này). KHÔNG chép hàm sang server: hai bản sao của một thuật toán
+// chiếu là đúng lớp lỗi "hai bản sao một vị từ" repo này đếm nhiều lần — bản lỏng hơn bao giờ
+// cũng là bản đang chạy.
+import { chieuTheoChiSoKhoi, keHoachKhoiDuyet } from "../../client/src/lib/diffHunks";
+// `bam` (sha256) + `trich` (trích-đã-che) của chính apply_diff — để lời khai audit sau một lượt
+// chọn tập-con mang đúng băm/trích của BYTE THẬT, bằng đúng thước mà tool dùng.
+import { bam as bamNoiDung, trich } from "./aiLocalTools/writeHandlers/applyDiff";
+// ★★★ Rà soát cuối Đợt B (2026-08-29) — danh sách mã "đã có byte vào đĩa" ĐẾN TỪ chính tool sinh ra
+// mã đó, không phải một bảng chép tay ở đây. Cùng khuôn với `bam`/`trich` ngay trên: nơi tiêu thụ
+// nhập từ nơi sản xuất, để hai bên không thể trôi khỏi nhau.
+import { laMaGhiMotPhan } from "./aiLocalTools/writeHandlers/applyDiffBatch";
 import {
   AUDIT_ACTIONS,
   ENTITY_TYPES,
@@ -33,6 +53,34 @@ import {
   logUpdate,
   type AuditContext,
 } from "./auditTrailService";
+// doc 69 Giai đoạn 4/Wave 3 D2 — bounded-autonomy policy (master flag OFF default;
+// see server/services/ai/autonomyPolicy.ts for the full predicate + kill-switch).
+import {
+  evaluateAutonomy,
+  isAutonomyEnabled,
+  recordAutonomousExecution,
+  AUTONOMY_REASONS,
+  type AutonomyDecision,
+} from "./ai/autonomyPolicy";
+// E2-4 (doc69 Giai đoạn 4/Wave E2) — realtime refresh nudge for the Agent Command
+// Center. ADDITIVE: fire-and-forget/non-throwing, minimal non-sensitive payload
+// only (no args/preview/result on the wire) — see aiAgentRealtime.ts.
+import { publishAiAgentEvent } from "./aiAgentRealtime";
+// ★★★ Đợt B · Task 6 (2026-08-29, spec §6.6) — vị từ CHUNG, THUẦN, MỘT bản duy nhất (0 import),
+// đã có 3 nơi gọi (CLI · web · vòng tự-trị-ghi). Dùng lại NGUYÊN VĂN — KHÔNG viết bản thứ hai.
+// Xem docblock đầy đủ ở shared/aiCodingLoop.ts:325-360 cho lý lẽ vì sao vị từ này đứng một mình.
+import { daBiTuChoiGhi, maTuChoiGhi } from "@shared/aiCodingLoop";
+
+/** E2-4 — defensive call site: a realtime-nudge failure must never break the
+ *  choke point that triggered it. Belt-and-suspenders (publishAiAgentEvent
+ *  itself already never throws — see aiAgentRealtime.ts). */
+function nudge(event: Parameters<typeof publishAiAgentEvent>[0]): void {
+  try {
+    publishAiAgentEvent(event);
+  } catch (err) {
+    console.error("[aiCopilotActions] realtime nudge failed:", (err as Error)?.message ?? err);
+  }
+}
 
 // TTL for a proposed action before it expires (5 minutes — Mục 2).
 const PENDING_TTL_MS = 5 * 60 * 1000;
@@ -105,11 +153,35 @@ export interface ProposeResult {
   denied?: boolean;
   reason?: string;
   message?: string;
+  /**
+   * D2 — present ONLY when the bounded-autonomy tier attempted (and here, succeeded
+   * at) auto-confirming this proposal without a human. Absent for every legacy
+   * caller/response (master flag OFF ⇒ this field never appears). `true` ⇔
+   * `executionResult.status === "executed"`.
+   */
+  autoConfirmed?: boolean;
+  /** D2 — the confirmAction() result from the autonomous confirm attempt, when one ran. */
+  executionResult?: ConfirmResult;
 }
 
 export interface ConfirmResult {
   ok: boolean;
-  status: "executed" | "denied" | "expired" | "not_found" | "invalid";
+  /**
+   * ★★★ Đợt B · Task 6 — `"bi_tu_choi_ghi"` MỚI (drizzle/0341, giá trị enum
+   * `aipendingactionstatus`): `execute()` ĐÃ CHẠY nhưng TỪ CHỐI GHI (BASE_MISMATCH/FILE_DIRTY/…,
+   * `daBiTuChoiGhi(result) === true`) — 0 byte vào đĩa. KHÁC `"denied"` (bị chặn TRƯỚC execute(),
+   * bởi RBAC/hợp đồng khuyến nghị) — hai lớp lỗi khác nhau, không được trộn.
+   * ⚠ `ok:true` với status này vẫn có thể xảy ra (xem nhánh cache-return): `ok` nói *"vòng đời HITL
+   *   chạy hết chặng"*, KHÔNG nói *"byte đã vào đĩa"* — luôn đọc `result`/`daBiTuChoiGhi(result)`
+   *   để biết sự thật, đúng hợp đồng mà CLI/web/extension đã dựa vào từ trước bản vá này.
+   *
+   * ★★★ Rà soát cuối Đợt B — `"ap_mot_phan"` MỚI (drizzle/0342): lượt ghi LÔ hỏng GIỮA CHỪNG
+   * (`apply_diff_batch` → `BATCH_PARTIAL`) ⇒ **một số tệp ĐÃ trên đĩa**, phần còn lại thì chưa.
+   * Đây KHÔNG phải `"bi_tu_choi_ghi"` (nhãn đó nghĩa là 0 byte) và cũng không phải `"executed"`.
+   * ⚠ Mọi nơi tiêu thụ `status` phải có nhánh cho CẢ HAI giá trị mới — rơi vào `default`/fall-through
+   *   nghĩa là thẻ duyệt không bao giờ tới trạng thái chung cục và nút Xác nhận ở lại sống.
+   */
+  status: "executed" | "bi_tu_choi_ghi" | "ap_mot_phan" | "denied" | "expired" | "not_found" | "invalid";
   result?: unknown;
   message?: string;
   /**
@@ -236,9 +308,17 @@ export async function proposeAction(
   // migration). The contract is server-owned so confirm-time enforcement reads it
   // from the row, never from the client. No contract ⇒ previewJson is unchanged
   // (byte-for-byte the legacy blob).
-  const previewForStore: Record<string, unknown> = contract
-    ? { ...(preview as unknown as Record<string, unknown>), contract }
-    : (preview as unknown as Record<string, unknown>);
+  //
+  // ★★★ doc 79 · TRỤC 2 — cùng khuôn "server-owned trong previewJson": lưu GỐC DỰ ÁN
+  // (`ctx.projectRoot`) đã phân giải từ id (danh sách trắng) để `confirmAction` chạy `execute()`
+  // trên ĐÚNG gốc mà `propose`/`preview` đã kiểm — request confirm (một lượt HTTP khác) KHÔNG mang
+  // projectId. Chỉ ghi khi có gốc; write tool không-repo (set_spec…) không set ⇒ previewJson KHÔNG
+  // đổi một byte. Đây là ĐƯỜNG DẪN server (đã hiện trong warnings của run_command), không phải bí mật.
+  let previewForStore: Record<string, unknown> = preview as unknown as Record<string, unknown>;
+  if (contract) previewForStore = { ...previewForStore, contract };
+  if (typeof ctx.projectRoot === "string" && ctx.projectRoot !== "") {
+    previewForStore = { ...previewForStore, __projectRoot: ctx.projectRoot };
+  }
 
   await db.insert(aiPendingActions).values({
     id: actionId,
@@ -254,7 +334,19 @@ export async function proposeAction(
     expiresAt,
   });
 
-  // Audit: proposed.
+  // E2-4 — nudge AFTER the row is persisted. Fire-and-forget, minimal payload
+  // (event + timestamp only — no tool/args/preview on the wire). No sessionId:
+  // proposeAction is used both standalone and by the agent orchestrator's write
+  // steps, which have already/will separately nudge their OWN session lifecycle.
+  nudge("action_proposed");
+
+  // ── FIX 3 (D2 review) — Audit: the PROPOSED row is written FIRST, before the D2
+  // bounded-autonomy attempt below, so the audit trail's causal order is always
+  // PROPOSED → CONFIRMED → EXECUTED even for an auto-confirmed action — confirmAction(),
+  // called below when autonomy allows it, writes its own CONFIRMED/EXECUTED/DENIED rows,
+  // which must never precede this one. The autonomy DECISION itself (allowed/reason/
+  // executed) is audited SEPARATELY as a lightweight follow-up entry AFTER the decision
+  // is made (see below) — it must never block on, or be entangled with, this row.
   await logCrudOperation(buildAuditCtx(ctx.user, ctx.req), {
     action: AUDIT_ACTIONS.AI_ACTION_PROPOSED,
     entityType: ENTITY_TYPES.AI_ACTION,
@@ -272,6 +364,73 @@ export async function proposeAction(
     },
     status: "success",
   });
+
+  // ── D2 (doc69 Giai đoạn 4/Wave 3) — bounded-autonomy: may this proposal skip ONLY
+  // the human wait? Master flag OFF (default) ⇒ evaluateAutonomy short-circuits
+  // immediately (no DB/contract work at all) and everything below is BYTE-IDENTICAL
+  // to the pre-D2 flow. When allowed, the confirmation is driven through the SAME
+  // confirmAction() used by a human click — RBAC re-check, guardrail enforcement,
+  // idempotency and args-from-DB all still run; autonomy supplies only the token
+  // (== the row id it just created) instead of a human doing so.
+  //
+  // FIX 2 (D2 review) — belt-and-suspenders: evaluateAutonomy() itself fails closed and
+  // never throws (see autonomyPolicy.ts), but this WHOLE attempt is additionally wrapped
+  // here so that if confirmAction() (or anything else in this block) throws unexpectedly,
+  // the exception can never escape proposeAction() — a successful propose must never turn
+  // into a 500 just because the autonomy attempt blew up. The `proposed` row above already
+  // exists either way; on any error here the action is simply left `proposed`, exactly as
+  // if autonomy had declined normally.
+  let autonomyDecision: AutonomyDecision = { allowed: false, reason: AUTONOMY_REASONS.AUTONOMY_CHECK_ERROR };
+  let autoConfirmResult: ConfirmResult | undefined;
+  try {
+    autonomyDecision = await evaluateAutonomy(
+      { type: tool.name, idempotencyKey, contract: contract ?? null, args },
+      { user: ctx.user, tool: tool.name, actionId, lang: ctx.lang, req: ctx.req },
+    );
+    if (autonomyDecision.allowed) {
+      autoConfirmResult = await confirmAction(actionId, actionId, ctx.user, ctx.lang, ctx.req, {}, {
+        reason: autonomyDecision.reason,
+      });
+      if (autoConfirmResult.status === "executed") {
+        recordAutonomousExecution(ctx.user.id);
+      }
+    }
+  } catch {
+    autonomyDecision = { allowed: false, reason: AUTONOMY_REASONS.AUTONOMY_CHECK_ERROR };
+    autoConfirmResult = undefined;
+  }
+
+  // Audit: the autonomy DECISION as a separate, lightweight follow-up entry — only
+  // recorded when the master flag is ON, so an auditor can see WHY an eligible-looking
+  // action did/did not auto-run, without adding noise to the overwhelming majority of
+  // deployments where autonomy is globally off. Deliberately AFTER the PROPOSED row (and
+  // after any CONFIRMED/EXECUTED/DENIED rows confirmAction() wrote above) — never
+  // renumbers or blocks the PROPOSED row's causal position — and best-effort (a logging
+  // failure here must not turn a successful propose into an error).
+  if (isAutonomyEnabled()) {
+    try {
+      await logCrudOperation(buildAuditCtx(ctx.user, ctx.req), {
+        action: AUDIT_ACTIONS.AI_AUTONOMY_DECISION,
+        entityType: ENTITY_TYPES.AI_ACTION,
+        entityName: tool.name,
+        details: {
+          operation: "AI_AUTONOMY_DECISION",
+          metadata: {
+            actionId,
+            tool: tool.name,
+            autonomy: {
+              allowed: autonomyDecision.allowed,
+              reason: autonomyDecision.reason,
+              executed: autoConfirmResult?.status === "executed",
+            },
+          },
+        },
+        status: "success",
+      });
+    } catch {
+      /* best-effort — never let a follow-up audit failure break propose's success return */
+    }
+  }
 
   return {
     ok: true,
@@ -292,7 +451,271 @@ export async function proposeAction(
       ...(contract?.expected ? { expected: contract.expected } : {}),
       ...(contract?.explain ? { explain: contract.explain } : {}),
     },
+    // D2 — surfaced ONLY when an autonomous confirm attempt actually ran.
+    ...(autoConfirmResult
+      ? { autoConfirmed: autoConfirmResult.status === "executed", executionResult: autoConfirmResult }
+      : {}),
   };
+}
+
+// ══════════════════════════════════════════════════════════════════════════════════════════════
+// HỘP THƯ ĐỀ XUẤT — đọc những gì ĐANG CHỜ chính một người duyệt
+// ══════════════════════════════════════════════════════════════════════════════════════════════
+/**
+ * ★★★ doc 83 · 2026-08-23 — **LỖ DÙNG-ĐƯỢC LỚN NHẤT CỦA LƯỢT TRƯỚC: MCP TẠO ĐƯỢC ĐỀ XUẤT MÀ KHÔNG
+ * CÓ CHỖ NÀO DUYỆT.** Hàng `ai_pending_actions` có thật, `confirmAction` duyệt được, nhưng không
+ * mặt tiếp xúc nào ĐỌC được chúng ⇒ một đề xuất do MCP tạo chỉ có một kết cục: **tự hết hạn**.
+ *
+ * ⚠⚠ **VÌ SAO HAI HÀM NÀY NẰM Ở ĐÂY chứ không ở `aiCodingCli/cauNoiCli.ts`** (nơi đã gọi chúng):
+ *   bảng `ai_pending_actions` có **một chủ**, và chủ của nó là file này (`propose` ghi vào,
+ *   `confirm` đọc ra). Bản đầu của tôi đặt hai hàm ấy trong `cauNoiCli.ts` và **census bắt được**:
+ *   file ấy có bất biến *"nó không biết làm gì cả — không hàng rào, không truy cập dữ liệu"*, và
+ *   một câu SQL trong đó là bước đầu tiên của lớp lỗi *"hai nơi cùng biết về một bảng"*.
+ *   ⇒ Census không chỉ đếm sai một con số; nó chỉ đúng chỗ đoạn mã nên nằm.
+ *
+ * ⚠⚠⚠ BA RÀNG BUỘC NẰM TRONG **MỆNH ĐỀ `where`**, KHÔNG PHẢI TRONG MỘT LƯỢT LỌC SAU KHI LẤY VỀ:
+ *  1. **CHỦ SỞ HỮU** — `summary`+`preview` của một đề xuất chứa **đường dẫn tệp và nguyên văn
+ *     diff**; liệt kê của người khác là rò nội dung mã nguồn, không phải "chỉ là một danh sách".
+ *  2. **CÒN HẠN** — TTL là hàng rào, và nó phải nhìn thấy được; một hàng hết hạn hiện ra chỉ để
+ *     người ta gõ id rồi nhận một lời từ chối khó hiểu.
+ *  3. **ĐANG CHỜ** — hàng `executed` giữ `resultJson` cho idempotency; hiện nó là mời duyệt lại
+ *     một thứ đã xong.
+ *
+ * ⚠ Cả hai hàm **CHỈ `select`**. Đường ghi duy nhất vẫn là `confirmAction`.
+ */
+export interface PendingActionSummary {
+  actionId: string;
+  tool: string;
+  summary: string;
+  createdAt: Date;
+  expiresAt: Date;
+  /** Gốc dự án đã neo lúc `propose` (doc 79 trục 2). `null` với write tool không-repo. */
+  projectRoot: string | null;
+}
+
+export async function listPendingActionsForUser(userId: number): Promise<PendingActionSummary[]> {
+  const db = await getDb();
+  /**
+   * ⚠⚠ CSDL VẮNG ⇒ **NÉM**, không trả `[]`. Bản đầu của tôi trả mảng rỗng — và CLI in nó ra thành
+   *   *"(không có đề xuất nào đang chờ bạn duyệt)"*, tức **một câu SAI về trạng thái thế giới** cho
+   *   một người đang có đề xuất chờ thật. Đúng lớp *"cổng chạy đúng mà báo cáo sai"* đã phải vá hai
+   *   lần trong chính doc này (`ConfirmResult.ok` và nhãn `CMD_TIMEOUT`). Hai thứ khác nhau về hậu
+   *   quả thì không được mang cùng một hình dạng trả về.
+   */
+  if (!db) throw new Error("DB_UNAVAILABLE — không đọc được hộp thư đề xuất (đây KHÔNG phải 'hộp thư rỗng').");
+  const rows = await db
+    .select({
+      id: aiPendingActions.id,
+      tool: aiPendingActions.tool,
+      summary: aiPendingActions.summary,
+      createdAt: aiPendingActions.createdAt,
+      expiresAt: aiPendingActions.expiresAt,
+      previewJson: aiPendingActions.previewJson,
+    })
+    .from(aiPendingActions)
+    .where(
+      and(
+        eq(aiPendingActions.userId, userId),
+        eq(aiPendingActions.status, "proposed"),
+        gt(aiPendingActions.expiresAt, new Date()),
+      ),
+    );
+  return rows
+    .map((r) => ({
+      actionId: r.id,
+      tool: r.tool,
+      summary: r.summary,
+      createdAt: r.createdAt,
+      expiresAt: r.expiresAt,
+      projectRoot: readProjectRoot(r.previewJson),
+    }))
+    .sort((a, b) => a.createdAt.getTime() - b.createdAt.getTime());
+}
+
+/**
+ * Dựng lại một `PendingActionDTO` đủ để **VẼ LẠI ĐÚNG THẺ DUYỆT** (diff, cảnh báo, băm neo) rồi
+ * hỏi người. `null` khi không hàng nào khớp CẢ BA ràng buộc trên.
+ *
+ * ⚠ `token: id` đúng quy ước hiện hành (`token === actionId`, ràng vào `userId`) — không có bí mật
+ *   thứ hai để rò ở đây.
+ */
+export async function getPendingActionForUser(
+  userId: number,
+  actionId: unknown,
+): Promise<PendingActionDTO | null> {
+  if (typeof actionId !== "string" || actionId === "" || actionId.length > 64) return null;
+  const db = await getDb();
+  if (!db) throw new Error("DB_UNAVAILABLE — không đọc được đề xuất.");
+  const [r] = await db
+    .select()
+    .from(aiPendingActions)
+    .where(
+      and(
+        eq(aiPendingActions.id, actionId),
+        eq(aiPendingActions.userId, userId),
+        eq(aiPendingActions.status, "proposed"),
+        gt(aiPendingActions.expiresAt, new Date()),
+      ),
+    )
+    .limit(1);
+  if (!r) return null;
+  return {
+    actionId: r.id,
+    token: r.id,
+    tool: r.tool,
+    args: r.argsJson,
+    summary: r.summary,
+    preview: (r.previewJson ?? { entityType: "", entityName: "", changes: [], warnings: [] }) as unknown as ActionPreview,
+    requiredPermission: r.requiredPermissionJson ?? null,
+    expiresAt: r.expiresAt.toISOString(),
+  };
+}
+
+// ══════════════════════════════════════════════════════════════════════════════════════════════
+// ★★★ ĐỢT 3 (2026-08-23) — DUYỆT THEO KHỐI **THẬT** cho `apply_diff`
+// ══════════════════════════════════════════════════════════════════════════════════════════════
+/** Mã từ chối lựa-chọn-khối — nổi lên `ConfirmResult.reason`, có mặt trong audit deny. */
+export const HUNK_REJECT_REASONS = {
+  /** id lạ / trùng / ngoài khoảng / gửi cho tool không hỗ trợ — client hỏng hoặc độc hại. */
+  HUNK_IDS_INVALID: "HUNK_IDS_INVALID",
+  /** 0 khối được chọn — "ghi y nguyên tệp" vẫn đổi mtime, đánh thức watcher, đẻ audit "đã ghi". */
+  NO_HUNKS_SELECTED: "NO_HUNKS_SELECTED",
+} as const;
+export type HunkRejectReason = (typeof HUNK_REJECT_REASONS)[keyof typeof HUNK_REJECT_REASONS];
+
+interface LuaChonKhoiXanh {
+  ok: true;
+  /** argsJson MỚI: `modified` = bản chiếu + dấu server-owned `__hunksApplied` cho audit/kết quả. */
+  args: Record<string, unknown>;
+  /** Chỉ số các khối ĐƯỢC ghi (0-based, đã sắp tăng dần). */
+  chiSo: number[];
+  tong: number;
+  /** Byte THẬT sẽ vào đĩa (bản chiếu) + băm của chính nó — để vá lời khai preview/audit. */
+  vanBan: string;
+  bamSau: string;
+}
+type KetQuaLuaChonKhoi = LuaChonKhoiXanh | { ok: false; reason: HunkRejectReason; chiTiet: string };
+
+/**
+ * ★★★ XÁC THỰC + CHIẾU lựa chọn khối của MỘT lượt confirm — mọi dữ liệu lấy từ HÀNG CSDL, request
+ * chỉ đóng góp **các con số**. Đây là chỗ giữ nguyên tắc gốc của HITL (*"execute() args come from
+ * ai_pending_actions.argsJson, not the request"*) theo CHỮ lẫn NGHĨA:
+ *   • kế hoạch khối được dựng lại bằng `keHoachKhoiDuyet(argsJson.original, argsJson.modified)` —
+ *     đúng hàm client dùng để vẽ thẻ duyệt, nên chỉ số hai đầu dây trỏ cùng một khối;
+ *   • tập chỉ số bị `chieuTheoChiSoKhoi` xác thực (lạ/trùng/ngoài khoảng/rỗng ⇒ TỪ CHỐI CÓ MÃ,
+ *     không âm thầm lọc — một client gửi id lạ phải bị nói thẳng, không được "sửa hộ");
+ *   • chỉ tool `apply_diff` (một tệp) hỗ trợ — `apply_diff_batch` giữ áp-tất-cả (chọn-khối-theo-
+ *     từng-tệp cần mỗi tệp một plan + UI phân trang, để dành; gửi lựa chọn cho nó ⇒ TỪ CHỐI).
+ * ⚠ THUẦN, không I/O — chạy TRƯỚC phép giành quyền để bản chiếu vào được CÙNG câu UPDATE.
+ */
+function apLuaChonKhoi(
+  toolName: string,
+  argsJson: Record<string, unknown>,
+  selectedHunkIds: readonly unknown[],
+): KetQuaLuaChonKhoi {
+  if (toolName !== "apply_diff") {
+    return {
+      ok: false,
+      reason: HUNK_REJECT_REASONS.HUNK_IDS_INVALID,
+      chiTiet: `tool "${toolName}" không hỗ trợ chọn khối (chỉ apply_diff một-tệp)`,
+    };
+  }
+  const original = argsJson.original;
+  const modified = argsJson.modified;
+  if (typeof original !== "string" || typeof modified !== "string") {
+    return { ok: false, reason: HUNK_REJECT_REASONS.HUNK_IDS_INVALID, chiTiet: "argsJson thiếu original/modified" };
+  }
+  const keHoach = keHoachKhoiDuyet(original, modified);
+  const chieu = chieuTheoChiSoKhoi(keHoach, selectedHunkIds);
+  if (!chieu.ok) return { ok: false, reason: HUNK_REJECT_REASONS[chieu.ma], chiTiet: chieu.chiTiet };
+  return {
+    ok: true,
+    args: { ...argsJson, modified: chieu.text, __hunksApplied: { selected: chieu.chiSo, total: chieu.tong } },
+    chiSo: chieu.chiSo,
+    tong: chieu.tong,
+    vanBan: chieu.text,
+    bamSau: bamNoiDung(chieu.text),
+  };
+}
+
+/** Câu từ chối lựa-chọn-khối theo ngôn ngữ phiên (cùng khuôn `contractRejectMessage`). */
+function hunkRejectMessage(lang: ToolLang, reason: HunkRejectReason, chiTiet: string): string {
+  if (reason === HUNK_REJECT_REASONS.NO_HUNKS_SELECTED) {
+    return lang === "en"
+      ? "No hunks selected — select at least one hunk, or cancel the proposal. Nothing was written."
+      : lang === "zh"
+        ? "未选择任何块——请至少选择一个块，或取消该提议。未写入任何内容。"
+        : "Chưa chọn khối nào — hãy chọn ít nhất một khối, hoặc Hủy đề xuất. KHÔNG có byte nào được ghi.";
+  }
+  return lang === "en"
+    ? `Invalid hunk selection (${chiTiet}) — nothing was written. Re-open the review card and try again.`
+    : lang === "zh"
+      ? `块选择无效（${chiTiet}）——未写入任何内容。请重新打开审核卡后重试。`
+      : `Lựa chọn khối không hợp lệ (${chiTiet}) — KHÔNG có byte nào được ghi. Mở lại thẻ duyệt rồi thử lại.`;
+}
+
+/**
+ * ★★★ Đợt B · Task 6 (2026-08-29, spec §6.6) — QUYẾT ĐỊNH TRẠNG THÁI THẬT sau `tool.execute()`.
+ *
+ * Trước bản vá này, `confirmAction` đặt `status='executed'` VÔ ĐIỀU KIỆN ngay sau `execute()` trả
+ * về — kể cả khi `apply_diff` (hay bất kỳ write tool nào khác mang `note` trên `ToolResult`) TỪ
+ * CHỐI GHI đúng như thiết kế (BASE_MISMATCH/FILE_DIRTY/…). 0 byte vào đĩa nhưng cột `status` trong
+ * CSDL vẫn khai "đã thực thi" — đúng lớp lỗi mà `shared/aiCodingLoop.daBiTuChoiGhi()` được rút ra
+ * để CLI/web tự đoán lại, vì không tin được cột này.
+ *
+ * Hàm THUẦN, tách riêng để lưới được không cần dựng cả `confirmAction` (DB thật + repo thật) —
+ * nhưng đây KHÔNG phải một vị từ mồ côi: nó dùng lại NGUYÊN `daBiTuChoiGhi` (không viết bản thứ
+ * hai) và được `confirmAction` gọi THẬT ngay dưới, tại đúng điểm ghi `status` vào CSDL lẫn điểm trả
+ * `ConfirmResult` cho người gọi.
+ *
+ * ══════════════════════════════════════════════════════════════════════════════════════════════
+ * ★★★ RÀ SOÁT CUỐI ĐỢT B (2026-08-29) — **BẢN VÁ TRÊN ĐÂY TỰ ĐẺ RA MỘT LỜI KHAI SAI THỨ HAI.**
+ * ══════════════════════════════════════════════════════════════════════════════════════════════
+ * Bản đầu coi **mọi** `note` không rỗng là "0 byte vào đĩa". Đúng cho `apply_diff` (một tệp: hoặc
+ * ghi, hoặc không). **SAI cho `apply_diff_batch`**: `BATCH_PARTIAL` nghĩa là pha GHI hỏng giữa
+ * chừng và tệp `1..k−1` **ĐÃ NẰM TRÊN ĐĨA** (`applyDiffBatch.ts` — docblock gọi đó là "mã quan
+ * trọng nhất của file này: nó tồn tại để trạng thái nửa vời KHÔNG BAO GIỜ im lặng").
+ * Dán `'bi_tu_choi_ghi'` lên ca đó là khai sai theo đúng hợp đồng CHỮ của chính nhãn ấy
+ * (`drizzle/0341` + `enums.ts`: "0 byte vào đĩa"), ở đúng ca nguy hiểm nhất — người đọc tin cây làm
+ * việc còn nguyên rồi đề xuất lại CẢ LÔ trên một cây nửa vời. Tầng giao diện đã phải tự tách ca này
+ * từ 2026-08-24 (`AICodingWorkspace.tsx`: *"TUYỆT ĐỐI không dùng câu 'tệp trên đĩa KHÔNG đổi'"*).
+ *
+ * ⇒ **MỘT VỊ TỪ TRẢ LỜI MỘT CÂU HỎI.** `daBiTuChoiGhi()` trả lời *"lượt ghi có trọn vẹn không?"*
+ *   (giữ NGUYÊN, vẫn là bản duy nhất — không viết bản thứ hai); `laMaGhiMotPhan()` trả lời tiếp
+ *   *"trong số không-trọn-vẹn, cái nào ĐÃ để lại byte?"*. Danh sách mã của câu hỏi thứ hai lấy từ
+ *   CHÍNH `applyDiffBatch.ts` (`MA_GHI_MOT_PHAN`), nơi mã được sinh ra — không bịa một bảng thứ hai
+ *   ở đây để rồi nó trôi khỏi nguồn.
+ */
+export type TrangThaiSauThucThi = "executed" | "bi_tu_choi_ghi" | "ap_mot_phan";
+
+export function trangThaiSauThucThi(ketQua: unknown): TrangThaiSauThucThi {
+  if (!daBiTuChoiGhi(ketQua)) return "executed";
+  return laMaGhiMotPhan(maTuChoiGhi(ketQua)) ? "ap_mot_phan" : "bi_tu_choi_ghi";
+}
+
+/** Câu khai "đã xử lý trước đó" cho nhánh cache-return — đúng bản chất từng trạng thái chung cục. */
+function cauDaXuLyTruocDo(trangThai: TrangThaiSauThucThi): string {
+  if (trangThai === "executed") return "Đã thực thi trước đó.";
+  if (trangThai === "ap_mot_phan") {
+    return "Đã xử lý trước đó — lô áp MỘT PHẦN: một số tệp ĐÃ được ghi, phần còn lại thì chưa.";
+  }
+  return "Đã bị từ chối ghi trước đó — không byte nào vào đĩa.";
+}
+
+/**
+ * Câu khai của lượt confirm VỪA CHẠY XONG. Tách THUẦN (khỏi thân `confirmAction`) để lưới hỏi
+ * được câu *"lời khai có khớp trạng thái không?"* mà không phải dựng DB + repo git thật.
+ *
+ * ⚠ Câu của `ap_mot_phan` **không được** chứa "không byte nào vào đĩa" — xem docblock
+ *   `trangThaiSauThucThi` ở trên. Chi tiết tệp nào ĐÃ/CHƯA ghi nằm trong `result.textSummary` của
+ *   chính tool (nó liệt kê đích danh), nên ở đây chỉ dẫn người đọc sang đó thay vì chép lại.
+ */
+export function cauKetCucThucThi(trangThai: TrangThaiSauThucThi): string {
+  if (trangThai === "executed") return "Đã thực thi.";
+  if (trangThai === "ap_mot_phan") {
+    return "Lô áp MỘT PHẦN — một số tệp ĐÃ được ghi xuống đĩa, phần còn lại thì chưa. Xem chi tiết từng tệp trong kết quả rồi quyết định hoàn nguyên hay đề xuất lại phần còn thiếu.";
+  }
+  return "Bị từ chối ghi — không byte nào vào đĩa.";
 }
 
 /**
@@ -307,6 +730,25 @@ export async function confirmAction(
   lang: ToolLang,
   req?: ToolExecContext["req"],
   deps: ConfirmContractDeps = {},
+  /**
+   * D2 — set ONLY by the bounded-autonomy wiring in proposeAction() when it drives
+   * this SAME confirm path programmatically instead of a human clicking confirm.
+   * Purely additive: every existing caller omits it and the RETURNED ConfirmResult
+   * shape is completely unchanged (see aiCopilotActions.contract.test.ts's exact
+   * `Object.keys(res)` assertion) — it only tags the audit metadata below so an
+   * auditor can tell an autonomous execution apart from a human one.
+   */
+  autonomy?: { reason: string },
+  /**
+   * ★★★ ĐỢT 3 (2026-08-23) — CHỈ SỐ các khối `apply_diff` người duyệt CHỌN GHI (0-based theo
+   * `keHoachKhoiDuyet`). `undefined` (mọi caller cũ: CLI · MCP · autonomy · client không gửi) ⇒
+   * áp TẤT CẢ — hành vi cũ, không đổi một byte. Có mặt ⇒ server TỰ dựng lại kế hoạch khối từ
+   * `argsJson` trong CSDL, xác thực tập chỉ số (lạ/trùng/rỗng/ngoài khoảng ⇒ từ chối CÓ MÃ, hàng
+   * để nguyên `proposed` — thử lại được trong TTL), rồi thay `argsJson.modified` bằng bản chiếu
+   * TRONG CÙNG câu UPDATE giành quyền — "args từ DB" vẫn đúng theo chữ, TOCTOU (`sha256Before` so
+   * với đĩa trong `execute`) giữ nguyên, và confirm-lại idempotent vẫn trả kết quả cache như cũ.
+   */
+  selectedHunkIds?: readonly number[],
 ): Promise<ConfirmResult> {
   const db = await getDb();
   if (!db) return { ok: false, status: "invalid", message: "DB_UNAVAILABLE" };
@@ -320,9 +762,14 @@ export async function confirmAction(
     return { ok: false, status: "invalid", message: "Token hoặc người dùng không khớp." };
   }
 
-  // Idempotency: already executed → return cached result.
-  if (row.status === "executed") {
-    return { ok: true, status: "executed", result: row.resultJson ?? null, message: "Đã thực thi trước đó." };
+  // Idempotency: đã có KẾT CỤC CHUNG CUỘC (dù ghi được hay bị TỪ CHỐI ghi) → trả kết quả ĐÃ LƯU,
+  // không chạy execute() lần hai. ★ Đợt B · Task 6: 'bi_tu_choi_ghi' đứng CÙNG nhánh với 'executed'
+  // — trước bản vá này một hàng bị từ chối ghi vẫn (sai) mang nhãn 'executed' nên vẫn rơi đúng
+  // nhánh cache-return này; hành vi retry giữ NGUYÊN, chỉ nhãn trả về đổi cho đúng sự thật.
+  // ★ Rà soát cuối: 'ap_mot_phan' đứng CÙNG nhánh, và ở đây điều đó QUAN TRỌNG HƠN — chạy lại
+  //   `execute()` trên một lô đã ghi một phần là ghi đè lên đúng những byte vừa rơi.
+  if (row.status === "executed" || row.status === "bi_tu_choi_ghi" || row.status === "ap_mot_phan") {
+    return { ok: true, status: row.status, result: row.resultJson ?? null, message: cauDaXuLyTruocDo(row.status) };
   }
   if (row.status !== "proposed" && row.status !== "confirmed") {
     return { ok: false, status: row.status === "expired" ? "expired" : "invalid", message: `Trạng thái không hợp lệ: ${row.status}.` };
@@ -341,13 +788,85 @@ export async function confirmAction(
   assertExecutable(tool);
   const perm = row.requiredPermissionJson ?? tool.requiredPermission!;
 
-  // Mark confirmed + audit.
-  await db.update(aiPendingActions).set({ status: "confirmed" }).where(eq(aiPendingActions.id, actionId));
+  /**
+   * ★★★ ĐỢT 3 — LỰA CHỌN KHỐI: xác thực + chiếu **TRƯỚC** phép giành quyền (thuần, không I/O), để
+   * nhánh xanh đưa được bản chiếu vào CÙNG câu UPDATE có điều kiện bên dưới. Nhánh đỏ trả về mà
+   * KHÔNG chạm hàng: trạng thái giữ nguyên (`proposed`), TTL vẫn chạy — người duyệt sửa lựa chọn
+   * rồi confirm lại được; và đĩa không đổi một byte vì `execute` chưa hề tới lượt.
+   */
+  let luaChonKhoi: LuaChonKhoiXanh | null = null;
+  if (selectedHunkIds !== undefined) {
+    const chon = apLuaChonKhoi(row.tool, row.argsJson as Record<string, unknown>, selectedHunkIds);
+    if (!chon.ok) {
+      await auditConfirmFailure(user, req, row.tool, actionId, chon.reason);
+      return { ok: false, status: "invalid", reason: chon.reason, message: hunkRejectMessage(lang, chon.reason, chon.chiTiet) };
+    }
+    luaChonKhoi = chon;
+  }
+
+  /**
+   * ══════════════════════════════════════════════════════════════════════════════════════════════
+   * ★★★ 2026-08-23 — **GIÀNH QUYỀN, CHỨ KHÔNG PHẢI GHI NHÃN.** Đóng cửa sổ đua đọc-rồi-ghi.
+   * ══════════════════════════════════════════════════════════════════════════════════════════════
+   * Bản cũ là `UPDATE … SET status='confirmed' WHERE id=?` — **không điều kiện**. Giữa lượt `SELECT`
+   * ở đầu hàm và lượt `UPDATE` này có một khoảng thời gian thật (hai vòng mạng tới CSDL, cộng một
+   * lượt `checkPermission` **có I/O** ngay dưới). Hai lượt confirm cùng `actionId` gửi cùng lúc
+   * (người bấm hai lần · một tab thứ hai · client thử lại vì mạng chậm) thì **CẢ HAI** đều đọc thấy
+   * `status='proposed'`, **CẢ HAI** đều ghi nhãn thành công, và **CẢ HAI** đều chạy `execute()`.
+   * Với `run_command` đó là lệnh chạy hai lần; với `apply_diff` lượt thứ hai thường bị `BASE_MISMATCH`
+   * chặn — nhưng "thường bị một hàng rào KHÁC chặn" không phải là một hàng rào.
+   *
+   * ⚠⚠ **ĐIỀU KIỆN LÀ `status` ĐÃ QUAN SÁT ĐƯỢC Ở LƯỢT ĐỌC, KHÔNG PHẢI HẰNG `'proposed'`.**
+   *   Ghim cứng `'proposed'` sẽ **phá** đường thử lại mà `enforceAdviceContract` cố ý dựng: khi
+   *   POLICY_DENIED/TWIN_UNTRUSTED xảy ra, hàng được để nguyên ở `confirmed` để người dùng thử lại
+   *   CÙNG action trong khi TTL còn (xem khối TOKEN SEMANTICS bên dưới). Một lượt thử lại như thế
+   *   đọc thấy `confirmed`, nên phép giành phải so với `confirmed`.
+   *   ⇒ Ở PostgreSQL, lượt `UPDATE` thứ hai **chặn** tới khi lượt thứ nhất commit rồi **đánh giá
+   *     LẠI** mệnh đề `WHERE` trên hàng đã đổi ⇒ `proposed → confirmed` chỉ thắng được MỘT lần.
+   *
+   * ⚠ **LỖ CÒN LẠI, NÓI THẲNG (đã đo trên mã, chưa vá ở lượt này):** hai lượt thử-lại ĐỒNG THỜI của
+   *   một hàng đang ở `confirmed` (chỉ tới được khi `ADVICE_CONTRACT_ENABLED` bật **và** vừa có một
+   *   lượt từ chối tạm thời) vẫn cùng khớp `status='confirmed'` ⇒ vẫn lọt cả hai. Đóng nốt nó đòi
+   *   một cột "người giành" hoặc một trạng thái trung gian, tức một migration — ngoài phạm vi lượt
+   *   này. Cửa sổ đua của đường THƯỜNG (`proposed`) — đường mà mọi lượt duyệt của người dùng đi
+   *   qua — thì đã đóng.
+   */
+  // ★ ĐỢT 3 — bản chiếu (nếu có) đi CÙNG câu UPDATE giành quyền: thắng phép giành ⇔ argsJson đã là
+  //   bản chiếu; thua ⇒ không ai ghi gì. Không tồn tại trạng thái "giành được nhưng args còn cũ".
+  const daGianh = await db
+    .update(aiPendingActions)
+    .set({ status: "confirmed", ...(luaChonKhoi ? { argsJson: luaChonKhoi.args } : {}) })
+    .where(and(eq(aiPendingActions.id, actionId), eq(aiPendingActions.status, row.status)))
+    .returning({ id: aiPendingActions.id });
+  if (daGianh.length === 0) {
+    // 0 hàng ⇒ ai đó đã CẦM action này trước ta. Đọc lại để nói đúng kết cục, không đoán.
+    const [sau] = await db.select().from(aiPendingActions).where(eq(aiPendingActions.id, actionId)).limit(1);
+    if (sau?.status === "executed" || sau?.status === "bi_tu_choi_ghi" || sau?.status === "ap_mot_phan") {
+      // Nhánh idempotent y hệt nhánh đầu hàm: trả kết quả ĐÃ LƯU, không chạy lại `execute()`.
+      return { ok: true, status: sau.status, result: sau.resultJson ?? null, message: cauDaXuLyTruocDo(sau.status) };
+    }
+    await auditConfirmFailure(user, req, row.tool, actionId, "CONCURRENT_CONFIRM");
+    return {
+      ok: false,
+      status: sau?.status === "expired" ? "expired" : "invalid",
+      message: `Một lượt duyệt khác đang xử lý action này (trạng thái: ${sau?.status ?? "không rõ"}).`,
+    };
+  }
   await logCrudOperation(buildAuditCtx(user, req), {
     action: AUDIT_ACTIONS.AI_ACTION_CONFIRMED,
     entityType: ENTITY_TYPES.AI_ACTION,
     entityName: row.tool,
-    details: { operation: "AI_ACTION_CONFIRMED", metadata: { actionId, tool: row.tool, requiredPermission: perm } },
+    details: {
+      operation: "AI_ACTION_CONFIRMED",
+      metadata: {
+        actionId,
+        tool: row.tool,
+        requiredPermission: perm,
+        // ĐỢT 3 — người duyệt chọn TẬP CON ⇒ audit CONFIRMED nói rõ ngay từ lúc giành quyền.
+        ...(luaChonKhoi ? { hunksApplied: { selected: luaChonKhoi.chiSo, total: luaChonKhoi.tong } } : {}),
+        ...autonomyAuditMeta(autonomy),
+      },
+    },
     status: "success",
   });
 
@@ -361,7 +880,14 @@ export async function confirmAction(
       entityName: row.tool,
       details: {
         operation: "AI_ACTION_DENIED",
-        metadata: { actionId, tool: row.tool, requiredPermission: perm, denyReason: "MISSING_PERMISSION", stage: "execute" },
+        metadata: {
+          actionId,
+          tool: row.tool,
+          requiredPermission: perm,
+          denyReason: "MISSING_PERMISSION",
+          stage: "execute",
+          ...autonomyAuditMeta(autonomy),
+        },
       },
       status: "failure",
     });
@@ -404,6 +930,7 @@ export async function confirmAction(
               denyReason: enforcement.reason,
               stage: "contract",
               tokenBurned: enforcement.burnToken ?? false,
+              ...autonomyAuditMeta(autonomy),
             },
           },
           status: "failure",
@@ -416,14 +943,54 @@ export async function confirmAction(
   // Execute with args FROM THE DB ROW (never the client). Thread the confirmed
   // action id so write-tools (e.g. machine control) can pass it to the
   // commandDispatcher for defense-in-depth re-verification.
-  const execCtx: ToolExecContext = { user, lang, req, actionId };
-  const previewBefore = (row.previewJson as unknown as ActionPreview | null) ?? null;
-  const result = await tool.execute!(row.argsJson as Record<string, unknown>, execCtx);
+  // ★★★ doc 79 · TRỤC 2 — dựng lại `projectRoot` từ hàng (server-owned trong previewJson) để
+  // `execute()` chạy trên ĐÚNG gốc dự án mà propose đã kiểm. Vắng ⇒ gốc mặc định (write tool tự
+  // rơi về `gocHopCat()`), tương thích ngược cho mọi write tool không-repo.
+  const projectRoot = readProjectRoot(row.previewJson as Record<string, unknown> | null);
+  const execCtx: ToolExecContext = { user, lang, req, actionId, ...(projectRoot ? { projectRoot } : {}) };
+  /**
+   * ★ ĐỢT 3 — lời khai preview phải NÓI THẬT sau một lượt chọn tập-con: `sha256After` trong
+   * previewJson là băm của bản áp-TẤT-CẢ (đúng tại lúc propose), nhưng byte thật sắp vào đĩa là
+   * BẢN CHIẾU — nên hai ô `sha256After`/`content` trong `changes` được vá bằng băm/trích của chính
+   * bản chiếu TRƯỚC khi chúng chảy vào audit EXECUTED + logUpdate. Dùng đúng `bam`/`trich` của
+   * apply_diff, không dựng thước thứ hai.
+   */
+  let previewBefore = (row.previewJson as unknown as ActionPreview | null) ?? null;
+  if (luaChonKhoi && previewBefore) {
+    const lc = luaChonKhoi;
+    previewBefore = {
+      ...previewBefore,
+      changes: (previewBefore.changes ?? []).map((c) =>
+        c.field === "sha256After"
+          ? { ...c, newValue: lc.bamSau }
+          : c.field === "content"
+            ? { ...c, newValue: trich(lc.vanBan) }
+            : c,
+      ),
+    };
+  }
+  /**
+   * ⚠ Args cho `execute` = ĐÚNG đối tượng vừa được persist vào `argsJson` bởi câu UPDATE giành
+   * quyền ở trên (hoặc `row.argsJson` nguyên vẹn khi không có lựa chọn) — "args from DB" đúng theo
+   * cả chữ lẫn nghĩa; không SELECT lại để khỏi mở thêm một vòng mạng trong đúng đoạn vừa đóng đua.
+   */
+  const argsThucThi = (luaChonKhoi ? luaChonKhoi.args : row.argsJson) as Record<string, unknown>;
+  const result = await tool.execute!(argsThucThi, execCtx);
+  // ★★★ Đợt B · Task 6 — CỘT `status` NÓI THẬT TỪ ĐÂY: `trangThaiSauThucThi` đọc đúng `note` mà
+  // `execute()` vừa trả (quy ước máy-đọc-được chung của cả nhóm tool: có `note` ⇒ TỪ CHỐI GHI).
+  // `resultJson` bên dưới vẫn là `result` NGUYÊN VẸN (mang `note`) — CLI/web/extension tiếp tục tự
+  // kiểm `daBiTuChoiGhi(result)` như trước, hợp đồng không đổi; chỉ nhãn `status` hết nói dối.
+  const trangThaiThat = trangThaiSauThucThi(result);
 
   await db
     .update(aiPendingActions)
-    .set({ status: "executed", executedAt: new Date(), resultJson: result as unknown as Record<string, unknown> })
+    .set({ status: trangThaiThat, executedAt: new Date(), resultJson: result as unknown as Record<string, unknown> })
     .where(eq(aiPendingActions.id, actionId));
+
+  // E2-4 — nudge AFTER the row is persisted (executed HOẶC bi_tu_choi_ghi — cả hai đều là một lượt
+  // confirm đã xử lý xong, đáng để UI làm tươi). Fire-and-forget, minimal payload (event +
+  // timestamp only — no result/args on the wire).
+  nudge("action_confirmed");
 
   // Audit: executed (lifecycle) + target-entity update (before/after) when the
   // preview captured a concrete entity + changes.
@@ -434,7 +1001,30 @@ export async function confirmAction(
     details: {
       operation: "AI_ACTION_EXECUTED",
       changes: previewBefore?.changes,
-      metadata: { actionId, tool: row.tool, requiredPermission: perm, args: sanitizeArgs(row.argsJson as Record<string, unknown>) },
+      metadata: {
+        actionId,
+        tool: row.tool,
+        requiredPermission: perm,
+        // ĐỢT 3 — args ĐÃ THỰC THI (bản chiếu khi có lựa chọn), không phải args lúc propose:
+        // audit của một lượt EXECUTED phải khai đúng cái vừa chạy.
+        args: sanitizeArgs(argsThucThi),
+        ...(luaChonKhoi ? { hunksApplied: { selected: luaChonKhoi.chiSo, total: luaChonKhoi.tong } } : {}),
+        // D2 — the brief-mandated explicit marker: "the execution audit for an
+        // auto-confirmed action must be clearly marked (autoConfirmed:true + the
+        // policy decision/reason + the confirming principal recorded as the
+        // autonomy tier, not a human user)".
+        ...(autonomy ? { autoConfirmed: true } : {}),
+        ...autonomyAuditMeta(autonomy),
+        // ★★★ Đợt B · Task 6 — ADDITIVE, chỉ có mặt khi bị từ chối: đây vẫn là audit "lượt confirm
+        // đã xử lý xong" (AI_ACTION_EXECUTED không đổi tên — vòng đời HITL THẬT SỰ chạy hết chặng),
+        // nhưng auditor không còn phải suy ra "ghi được hay không" từ `resultJson.note` nữa.
+        // ★★★ Rà soát cuối Đợt B — HAI CỜ RIÊNG, KHÔNG GỘP. `writeRejected:true` là một lời khai
+        //   "0 byte vào đĩa"; đặt nó cho một lô áp MỘT PHẦN là nói dối chính sổ kiểm toán — nơi
+        //   người ta tra khi cần biết cây làm việc có bị đụng hay không. `writePartial` nói đúng
+        //   thứ đã xảy ra, và `resultJson.data.daGhi` liệt kê đích danh tệp nào đã trên đĩa.
+        ...(trangThaiThat === "bi_tu_choi_ghi" ? { writeRejected: true, rejectCode: maTuChoiGhi(result) } : {}),
+        ...(trangThaiThat === "ap_mot_phan" ? { writePartial: true, rejectCode: maTuChoiGhi(result) } : {}),
+      },
     },
     status: "success",
   });
@@ -457,7 +1047,15 @@ export async function confirmAction(
     );
   }
 
-  return { ok: true, status: "executed", result, message: "Đã thực thi." };
+  // ★★★ Đợt B · Task 6 — `ok:true` KHÔNG đổi (vòng đời HITL chạy hết chặng dù ghi được hay bị từ
+  // chối; hợp đồng CLI/web/extension dựa vào `daBiTuChoiGhi(result)`, không dựa vào `ok`, giữ
+  // nguyên). Chỉ `status`/`message` đổi để nói ĐÚNG cái vừa xảy ra.
+  return {
+    ok: true,
+    status: trangThaiThat,
+    result,
+    message: cauKetCucThucThi(trangThaiThat),
+  };
 }
 
 /** Cancel a proposed action (owner only, only while proposed/confirmed). */
@@ -524,6 +1122,18 @@ async function auditConfirmFailure(
   });
 }
 
+/**
+ * D2 — audit metadata marker threaded onto every audit row confirmAction() writes
+ * during an autonomous confirm attempt (CONFIRMED/DENIED/EXECUTED alike), so an
+ * auditor can tell "this confirm was driven by the autonomy tier, not a human
+ * click" from the audit trail alone. `autonomyReason` is the evaluateAutonomy()
+ * decision reason (always "OK" here — a non-OK reason never reaches confirmAction).
+ * Absent (⇒ {}) for every legacy human-confirm call.
+ */
+function autonomyAuditMeta(autonomy: { reason: string } | undefined): Record<string, unknown> {
+  return autonomy ? { autonomyAttempt: true, autonomyReason: autonomy.reason, confirmedBy: "autonomy" } : {};
+}
+
 /** Redact obviously-sensitive arg keys before they hit the audit log. */
 function sanitizeArgs(args: Record<string, unknown>): Record<string, unknown> {
   const out: Record<string, unknown> = {};
@@ -543,6 +1153,16 @@ function readContract(previewJson: Record<string, unknown> | null | undefined): 
   if (!previewJson || typeof previewJson !== "object") return null;
   const c = (previewJson as Record<string, unknown>).contract;
   return c && typeof c === "object" ? (c as AdviceContract) : null;
+}
+
+/**
+ * ★★★ doc 79 · TRỤC 2 — đọc GỐC DỰ ÁN (server-owned) đã lưu trong previewJson lúc propose. `null`
+ * cho hàng cũ / write tool không-repo (⇒ `execute` rơi về `gocHopCat()`, tương thích ngược).
+ */
+function readProjectRoot(previewJson: Record<string, unknown> | null | undefined): string | null {
+  if (!previewJson || typeof previewJson !== "object") return null;
+  const r = (previewJson as Record<string, unknown>).__projectRoot;
+  return typeof r === "string" && r !== "" ? r : null;
 }
 
 /**
@@ -660,6 +1280,44 @@ async function enforceAdviceContract(
   return { ok: true };
 }
 
+// ════════════════════════════════════════════════════════════════════════════
+// D2 (doc69 Giai đoạn 4/Wave 3) — bounded-autonomy contract pre-check.
+// ════════════════════════════════════════════════════════════════════════════
+
+/**
+ * Bounded-autonomy pre-check, called from server/services/ai/autonomyPolicy.ts
+ * evaluateAutonomy() BEFORE it ever decides to drive confirmAction() programmatically.
+ * Reuses `enforceAdviceContract` (the EXACT SAME guardrail/policy_permit/twin_validation
+ * checks the human-confirm path runs) — it is NOT reimplemented here — but is STRICTER
+ * in two ways that only matter for the human-wait-skipping path:
+ *
+ *   - No contract at all ⇒ ineligible (NO_ADVICE_CONTRACT). Autonomy must never guess at
+ *     a safety envelope that was never attached to the proposal.
+ *   - `requires: ["human_approval"]` ⇒ PERMANENTLY ineligible (HUMAN_APPROVAL_REQUIRED),
+ *     regardless of guardrail/policy/twin outcome. Unlike the confirm path (where this
+ *     requirement is satisfied by the human who is, in that flow, actually clicking
+ *     confirm), autonomy has no human to satisfy it with — pretending otherwise would
+ *     defeat the entire point of the requirement.
+ *
+ * Unconditional: unlike the confirm path's enforcement (gated by isAdviceContractEnabled()
+ * so a human-confirm keeps legacy byte-for-byte behavior when the flag is off), the
+ * autonomy pre-check ALWAYS runs when reached — autonomy has its own, independent safety
+ * bar that does not depend on the global advice-contract toggle.
+ */
+export async function evaluateContractForAutonomy(
+  contract: AdviceContract | null,
+  ctx: { user: CopilotUser; tool: string; actionId: string; args: Record<string, unknown>; lang: ToolLang },
+  deps: ConfirmContractDeps = {},
+): Promise<{ ok: boolean; reason?: string }> {
+  if (!contract) return { ok: false, reason: "NO_ADVICE_CONTRACT" };
+  const requires = Array.isArray(contract.requires) ? contract.requires : [];
+  if (requires.includes("human_approval")) {
+    return { ok: false, reason: "HUMAN_APPROVAL_REQUIRED" };
+  }
+  const result = await enforceAdviceContract(contract, ctx, deps);
+  return result.ok ? { ok: true } : { ok: false, reason: result.reason };
+}
+
 /** Localized message for a contract reject (vi default, en/zh variants). */
 function contractRejectMessage(lang: ToolLang, reason: string, detail: string | null): string {
   const s = detail ? ` (${detail})` : "";
@@ -691,4 +1349,229 @@ function contractRejectMessage(lang: ToolLang, reason: string, detail: string | 
     default:
       return lang === "en" ? `Blocked by advice contract${s}.` : `Bị chặn bởi hợp đồng khuyến nghị${s}.`;
   }
+}
+
+// ══════════════════════════════════════════════════════════════════════════════════════════════
+// ★★★ ĐỢT C · TASK 5 (2026-08-29, spec §6.5) — KIỂM TOÁN LƯỢT ÁP Ở CLIENT (chế độ LOCAL)
+// ══════════════════════════════════════════════════════════════════════════════════════════════
+// Ở chế độ SERVER (Đợt B), `confirmAction` ở TRÊN vừa là người GHI BYTE (`tool.execute()`) vừa là
+// người GHI SỔ (`status`) — cùng một tiến trình đọc được kết quả của chính nó. Ở chế độ LOCAL, hai
+// việc đó tách ra HAI MÁY: byte rơi trên đĩa máy lập trình viên do EXTENSION VS Code ghi (qua
+// `vscode.workspace.fs`), NGOÀI TẦM VỚI của máy chủ này; sổ kiểm toán vẫn ở đây. Máy chủ vì thế
+// KHÔNG BAO GIỜ tự quan sát được byte có rơi hay không — nó chỉ biết những gì EXTENSION TỰ KHAI
+// qua đúng hai lượt gọi dưới đây:
+//
+//   `batDauApDungOClient` — GHI TRƯỚC khi byte rơi: tạo hàng `status='dang_ap_client'`. Đây là lời
+//   khai "tôi SẮP ghi", không phải "tôi ĐÃ ghi" — bản thân hàng này không chứng minh gì về đĩa dev.
+//
+//   `chotApDungOClient` — CHỐT SAU khi byte đã rơi (hoặc đã thất bại): extension tự báo `thanhCong`
+//   rồi hàng chuyển `da_ap_client`/`ap_client_that_bai`. Vẫn là TỰ KHAI — máy chủ không có đường
+//   nào đọc lại đĩa máy dev để xác minh `sha256SauThat` khớp byte thật.
+//
+// Nếu extension SẬP giữa hai lượt gọi (crash · mất mạng · người dùng tắt máy) — hàng đứng NGUYÊN ở
+// `dang_ap_client` MÃI MÃI: không tiến trình nền nào tự dọn nó (`expireStaleActions` ở trên CHỈ đọc
+// `status='proposed'`, KHÔNG đụng `dang_ap_client` — CÓ CHỦ Ý). Đó KHÔNG phải một lỗ cần vá: một
+// hàng kẹt ở `dang_ap_client` là câu TRUNG THỰC DUY NHẤT máy chủ nói được ở đây — "tôi biết có một
+// lượt ghi được BẮT ĐẦU, tôi KHÔNG biết nó có xong hay không". Tự ý đặt nó thành `da_ap_client` là
+// nói dối THEO HƯỚNG LẠC QUAN (khai byte đã rơi mà không biết); đặt nó thành `ap_client_that_bai`
+// là nói dối THEO HƯỚNG BI QUAN (khai thất bại mà không biết) — CẢ HAI đều là máy chủ khai điều nó
+// không biết, đúng lớp lỗi đã trả giá bốn lần ở Đợt B (xem
+// `docs/superpowers/plans/2026-08-29-vscode-extension-dot-b-ket-qua.md`). Đây là lý do
+// `chotApDungOClient` KHÔNG có một "trạng thái mặc định" nào cho việc suy đoán — nó chỉ CHUYỂN
+// TRẠNG THÁI theo đúng cái `thanhCong` mà lệnh gọi mang tới, và không tự suy diễn gì thêm.
+//
+// ⚠⚠ KHÔNG LƯU TOÀN VĂN NỘI DUNG TỆP (spec §6.5: "mã đã ở máy dev, máy chủ không cần bản sao — và
+//   một bản sao là một chỗ rò nữa"). `argsJson` của `batDauApDungOClient` CHỈ mang path + hai băm +
+//   tóm tắt + số dòng thêm/bớt — không một trường nào chứa nội dung trước/sau. `nhanWorkspace` (chỉ
+//   là một nhãn hiển thị, không phải nội dung) đi vào cột `summary` riêng, KHÔNG vào `argsJson`, để
+//   `argsJson` giữ đúng hợp đồng "chỉ năm trường" mà không phải nhớ trừ một ngoại lệ. Lưới
+//   `aiCopilotActions.apOClient.test.ts` khoá bất biến này bằng khẳng định tường minh (không chỉ
+//   "đúng danh sách khoá" mà còn "không có khoá nội dung nào lọt vào").
+const TOOL_AP_O_CLIENT = "ap_o_client";
+
+/** Input của `batDauApDungOClient` — TỰ KHAI của extension, KHÔNG phải quan sát của máy chủ. */
+export interface BatDauApDungOClientInput {
+  /** Đường dẫn TƯƠNG ĐỐI trong workspace (không phải đường tuyệt đối máy dev). */
+  path: string;
+  /** Nhãn workspace hiển thị cho người (vd. tên thư mục gốc) — mô tả, KHÔNG dùng để cưỡng chế. */
+  nhanWorkspace: string;
+  /** Băm nội dung TRƯỚC khi ghi, theo lời khai của extension (không phải máy chủ đo). */
+  sha256Truoc: string;
+  /** Băm nội dung SAU khi ghi mà extension DỰ KIẾN (băm THẬT xác nhận ở `chotApDungOClient`). */
+  sha256Sau: string;
+  tomTat: string;
+  soDongThem: number;
+  soDongBot: number;
+}
+
+export interface BatDauApDungOClientResult {
+  actionId: string;
+  /** == actionId — cùng quy ước `token === actionId` đã dùng cho propose/confirm ở trên. */
+  token: string;
+}
+
+/**
+ * GHI TRƯỚC khi byte rơi (spec §6.5). Không có `Tool` thật đứng sau lượt này (chế độ LOCAL không đi
+ * qua `toolRegistry` — đường ghi là extension, không phải server), nên không có `requiredPermission`
+ * để RBAC-gate như `proposeAction`; `protectedProcedure` + `moduleGate("MOD_AI")` ở tầng router
+ * (`aiCopilotRouter.ts`) đã là hàng rào truy cập. Hàm này CHỈ ghi sổ — không có nhánh nào ở đây ghi
+ * byte xuống bất kỳ đĩa nào.
+ */
+export async function batDauApDungOClient(
+  input: BatDauApDungOClientInput,
+  user: CopilotUser,
+  req?: ToolExecContext["req"],
+): Promise<BatDauApDungOClientResult> {
+  const db = await getDb();
+  if (!db) throw new Error("DB_UNAVAILABLE — không mở được sổ kiểm toán cho lượt áp ở client.");
+
+  const actionId = randomUUID();
+  const idempotencyKey = randomUUID();
+  const expiresAt = new Date(Date.now() + PENDING_TTL_MS);
+
+  // ⚠⚠ CHỈ năm trường này — path + hai băm + tóm tắt + số dòng. KHÔNG một trường nội dung nào.
+  const argsJson: Record<string, unknown> = {
+    path: input.path,
+    sha256Truoc: input.sha256Truoc,
+    sha256Sau: input.sha256Sau,
+    tomTat: input.tomTat,
+    soDongThem: input.soDongThem,
+    soDongBot: input.soDongBot,
+  };
+
+  await db.insert(aiPendingActions).values({
+    id: actionId,
+    tool: TOOL_AP_O_CLIENT,
+    argsJson,
+    userId: user.id,
+    userRole: user.role,
+    requiredPermissionJson: null,
+    summary: `[${input.nhanWorkspace}] ${input.tomTat} — ${input.path}`,
+    previewJson: null,
+    status: "dang_ap_client",
+    idempotencyKey,
+    expiresAt,
+  });
+
+  await logCrudOperation(buildAuditCtx(user, req), {
+    action: AUDIT_ACTIONS.AI_CLIENT_APPLY_STARTED,
+    entityType: ENTITY_TYPES.AI_ACTION,
+    entityName: TOOL_AP_O_CLIENT,
+    details: {
+      operation: "AI_CLIENT_APPLY_STARTED",
+      metadata: {
+        actionId,
+        path: input.path,
+        nhanWorkspace: input.nhanWorkspace,
+        sha256Truoc: input.sha256Truoc,
+        sha256Sau: input.sha256Sau,
+        soDongThem: input.soDongThem,
+        soDongBot: input.soDongBot,
+      },
+    },
+    status: "success",
+  });
+
+  return { actionId, token: actionId };
+}
+
+export interface ChotApDungOClientInput {
+  actionId: string;
+  token: string;
+  /** `true` ⇔ extension khai byte ĐÃ vào đĩa; `false` ⇔ extension khai lượt ghi THẤT BẠI. */
+  thanhCong: boolean;
+  /** Băm ĐĨA THẬT sau khi ghi, theo lời khai của extension — có thể khác `sha256Sau` đã khai lúc
+   *  bắt đầu (vd. người dùng sửa thêm trong lúc chờ). Máy chủ KHÔNG xác minh được giá trị này. */
+  sha256SauThat?: string;
+  /** Lý do thất bại (khi `thanhCong:false`). */
+  loi?: string;
+}
+
+export interface ChotApDungOClientResult {
+  ok: boolean;
+  status: "da_ap_client" | "ap_client_that_bai" | "invalid";
+  message?: string;
+}
+
+/**
+ * CHỐT SAU khi byte đã rơi hoặc đã thất bại (spec §6.5). Idempotent: chốt LẦN HAI trên một hàng ĐÃ
+ * có kết cục chung cuộc trả NGUYÊN kết quả CŨ — không chạm hàng, không ném, và (quan trọng) KHÔNG
+ * để lượt gọi thứ hai LẬT ngược kết cục đã chốt dù nó mang `thanhCong` khác lượt đầu (một client
+ * lỗi/độc hại gọi `chotApDungOClient` hai lần với hai câu trả lời trái ngược không được phép thắng
+ * lần thứ hai). Giành quyền bằng CAS (`UPDATE … WHERE status='dang_ap_client'`) — cùng khuôn
+ * `confirmAction` ở trên — để hai lượt chốt đồng thời không cùng thắng.
+ */
+export async function chotApDungOClient(
+  input: ChotApDungOClientInput,
+  user: CopilotUser,
+  req?: ToolExecContext["req"],
+): Promise<ChotApDungOClientResult> {
+  const db = await getDb();
+  if (!db) return { ok: false, status: "invalid", message: "DB_UNAVAILABLE" };
+
+  const [row] = await db.select().from(aiPendingActions).where(eq(aiPendingActions.id, input.actionId)).limit(1);
+  if (!row) return { ok: false, status: "invalid", message: "Action không tồn tại." };
+
+  // Token bound to userId — cùng khuôn `confirmAction`.
+  if (input.token !== row.id || row.userId !== user.id) {
+    return { ok: false, status: "invalid", message: "Token hoặc người dùng không khớp." };
+  }
+
+  // Idempotent: ĐÃ có kết cục chung cuộc ⇒ trả NGUYÊN kết quả cũ, không chạm hàng lần hai — bất kể
+  // `input.thanhCong` lần này nói gì (xem docblock hàm).
+  if (row.status === "da_ap_client" || row.status === "ap_client_that_bai") {
+    return {
+      ok: true,
+      status: row.status,
+      message: row.status === "da_ap_client" ? "Đã áp trước đó." : "Đã ghi nhận thất bại trước đó.",
+    };
+  }
+
+  if (row.status !== "dang_ap_client") {
+    return { ok: false, status: "invalid", message: `Trạng thái không hợp lệ: ${row.status}.` };
+  }
+
+  const trangThaiMoi: "da_ap_client" | "ap_client_that_bai" = input.thanhCong ? "da_ap_client" : "ap_client_that_bai";
+  const resultJson: Record<string, unknown> = {
+    sha256SauThat: input.sha256SauThat ?? null,
+    loi: input.loi ?? null,
+  };
+
+  const daGianh = await db
+    .update(aiPendingActions)
+    .set({ status: trangThaiMoi, executedAt: new Date(), resultJson })
+    .where(and(eq(aiPendingActions.id, input.actionId), eq(aiPendingActions.status, "dang_ap_client")))
+    .returning({ id: aiPendingActions.id });
+
+  if (daGianh.length === 0) {
+    // Thua phép giành (một lượt chốt khác vừa thắng) — đọc lại, trả kết quả ĐÃ LƯU, không đoán.
+    const [sau] = await db.select().from(aiPendingActions).where(eq(aiPendingActions.id, input.actionId)).limit(1);
+    if (sau?.status === "da_ap_client" || sau?.status === "ap_client_that_bai") {
+      return { ok: true, status: sau.status, message: "Đã xử lý trước đó." };
+    }
+    return { ok: false, status: "invalid", message: `Trạng thái không hợp lệ: ${sau?.status ?? "không rõ"}.` };
+  }
+
+  await logCrudOperation(buildAuditCtx(user, req), {
+    action: input.thanhCong ? AUDIT_ACTIONS.AI_CLIENT_APPLIED : AUDIT_ACTIONS.AI_CLIENT_APPLY_FAILED,
+    entityType: ENTITY_TYPES.AI_ACTION,
+    entityName: row.tool,
+    details: {
+      operation: input.thanhCong ? "AI_CLIENT_APPLIED" : "AI_CLIENT_APPLY_FAILED",
+      metadata: {
+        actionId: input.actionId,
+        sha256SauThat: input.sha256SauThat ?? null,
+        ...(input.loi ? { loi: input.loi } : {}),
+      },
+    },
+    status: input.thanhCong ? "success" : "failure",
+  });
+
+  return {
+    ok: true,
+    status: trangThaiMoi,
+    message: input.thanhCong
+      ? "Đã áp vào workspace."
+      : "Áp thất bại — theo lời khai của extension, byte không (hoặc chỉ một phần) vào đĩa.",
+  };
 }

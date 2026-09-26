@@ -37,7 +37,13 @@ import {
 } from "../../drizzle/schema/ecn";
 
 export class EcnError extends Error {
-  constructor(message: string, readonly code: "NOT_FOUND" | "BAD_STATE" | "SOD" | "DB" = "BAD_STATE") {
+  constructor(
+    message: string,
+    // doc 80 Đợt 0 Task 8 (ECN-03) — "CONFLICT": the CAS UPDATE in transitionEcn
+    // matched 0 rows (status changed out from under the caller between read and
+    // write). Mapped to TRPCError "CONFLICT" in ecnRouter's toTrpc.
+    readonly code: "NOT_FOUND" | "BAD_STATE" | "SOD" | "CONFLICT" | "DB" = "BAD_STATE",
+  ) {
     super(message);
     this.name = "EcnError";
   }
@@ -209,11 +215,24 @@ export interface TransitionEcnInput {
   comment?: string | null;
   /** Optional effectivity date set/updated at approve time. */
   effectivityDate?: Date | string | null;
+  /**
+   * doc 80 Đợt 0 Task 8 (ECN-03) — the status the CALLER currently sees for this
+   * ECN (fetched moments before the user clicked the action button). Used as the
+   * "from" state for BOTH the legal-transition check and the UPDATE's WHERE
+   * clause below, so a transition only applies if the row is STILL in that
+   * state. Omitted (legacy/system callers) → falls back to the status just read
+   * by this function — same effect as before this task, no weaker.
+   */
+  expectedStatus?: EcnStatus;
 }
 
 /**
  * Advance an ECN. Enforces the legal-transition table and SoD (requester ≠
- * approver at the approve step). Throws EcnError on any violation.
+ * reviewer ≠ approver — doc 80 ECN-05) and a compare-and-swap on `status` (doc
+ * 80 ECN-03: the UPDATE only applies `WHERE id=$1 AND status=$expected`; a
+ * concurrent transition that already moved the row away from `$expected` makes
+ * this UPDATE match 0 rows ⇒ EcnError("CONFLICT") instead of silently
+ * clobbering the other transition's result). Throws EcnError on any violation.
  */
 export async function transitionEcn(input: TransitionEcnInput): Promise<EngineeringChange> {
   const d = await db();
@@ -223,8 +242,12 @@ export async function transitionEcn(input: TransitionEcnInput): Promise<Engineer
   const targetStatus = ACTION_TARGET[input.action];
   if (!targetStatus) throw new EcnError(`Unknown action ${input.action}`, "BAD_STATE");
 
-  if (!LEGAL_TRANSITIONS[current.status].includes(targetStatus)) {
-    throw new EcnError(`Illegal ECN transition ${current.status} -> ${targetStatus}`, "BAD_STATE");
+  // ECN-03 — the state this transition is FROM. Prefer what the caller says it
+  // sees; fall back to the freshly-read row for callers that don't send it yet.
+  const fromStatus: EcnStatus = input.expectedStatus ?? current.status;
+
+  if (!LEGAL_TRANSITIONS[fromStatus].includes(targetStatus)) {
+    throw new EcnError(`Illegal ECN transition ${fromStatus} -> ${targetStatus}`, "BAD_STATE");
   }
 
   const now = new Date();
@@ -236,14 +259,24 @@ export async function transitionEcn(input: TransitionEcnInput): Promise<Engineer
       set.submittedAt = now;
       break;
     case "review":
+      // ECN-05 — SoD mở rộng sang bước xem xét: người yêu cầu không được tự xem
+      // xét ECN của mình (trước bản vá chỉ chặn ở approve). A null/sentinel
+      // requester (<= 0, e.g. system-generated) is treated as non-self.
+      if (current.requestedBy != null && current.requestedBy > 0 && current.requestedBy === input.actorId) {
+        throw new EcnError("Segregation of duties: cannot review your own engineering change", "SOD");
+      }
       set.reviewedBy = input.actorId;
       set.reviewedAt = now;
       break;
     case "approve": {
-      // SoD — the requester cannot approve their own change. A null/sentinel
-      // requester (<= 0, e.g. system-generated) is treated as non-self.
+      // SoD — the requester cannot approve their own change.
       if (current.requestedBy != null && current.requestedBy > 0 && current.requestedBy === input.actorId) {
         throw new EcnError("Segregation of duties: cannot approve your own engineering change", "SOD");
+      }
+      // ECN-05 — người đã xem xét (reviewedBy) không được đồng thời là người
+      // duyệt: buộc HAI người khác vai ở hai bước xem xét/duyệt.
+      if (current.reviewedBy != null && current.reviewedBy > 0 && current.reviewedBy === input.actorId) {
+        throw new EcnError("Segregation of duties: the reviewer cannot also approve the same engineering change", "SOD");
       }
       set.approvedBy = input.actorId;
       set.approvedAt = now;
@@ -266,10 +299,21 @@ export async function transitionEcn(input: TransitionEcnInput): Promise<Engineer
       break;
   }
 
+  // ECN-03 — conditional UPDATE (compare-and-swap on `status`). Postgres
+  // serializes concurrent UPDATEs on the SAME row: whichever commits first
+  // changes `status` away from `fromStatus`, so the second UPDATE's WHERE
+  // clause matches 0 rows instead of double-applying the transition.
   const [updated] = await d
     .update(engineeringChanges)
     .set(set as any)
-    .where(eq(engineeringChanges.id, input.id))
+    .where(and(eq(engineeringChanges.id, input.id), eq(engineeringChanges.status, fromStatus)))
     .returning();
+
+  if (!updated) {
+    throw new EcnError(
+      `ECN ${input.id} is no longer in status "${fromStatus}" — it was changed by someone else; reload and retry`,
+      "CONFLICT",
+    );
+  }
   return updated;
 }

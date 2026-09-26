@@ -9,6 +9,7 @@ import {
 } from "@/components/ui/select";
 import { Rocket, Loader2, CheckCircle2 } from "lucide-react";
 import { toast } from "sonner";
+import { mapTrpcError } from "@/lib/trpcErrors";
 import type { StepProps } from "./types";
 
 export default function Step4DeployModel({ state, update, onNext, onBack }: StepProps) {
@@ -31,7 +32,7 @@ export default function Step4DeployModel({ state, update, onNext, onBack }: Step
         toast.warning(t("onboarding.step4.deployPartial"), { description: data.package?.error });
       }
     },
-    onError: (err) => toast.error(t("onboarding.step4.deployError"), { description: err.message }),
+    onError: (err) => toast.error(t("onboarding.step4.deployError"), { description: mapTrpcError(err) }),
   });
 
   const handleDeploy = () => {

@@ -38,6 +38,7 @@ import {
 } from "@/components/ui/alert-dialog";
 import { Network, Plus, RadioTower, Trash2, Pencil, MapPin, ShieldAlert, ShieldCheck, ServerCog } from "lucide-react";
 import { toast } from "sonner";
+import { toastTrpcError } from "@/lib/trpcErrors";
 
 type SiteRow = {
   id: number;
@@ -123,11 +124,11 @@ export default function SitesRegistry() {
 
   const createM = trpc.sites.create.useMutation({
     onSuccess: () => { setFormOpen(false); resetForm(); invalidate(); toast.success(t("sites.toastCreated", "Đã thêm site")); },
-    onError: (e) => toast.error(e.message),
+    onError: (e) => toastTrpcError(e),
   });
   const updateM = trpc.sites.update.useMutation({
     onSuccess: () => { setFormOpen(false); resetForm(); invalidate(); toast.success(t("sites.toastUpdated", "Đã cập nhật site")); },
-    onError: (e) => toast.error(e.message),
+    onError: (e) => toastTrpcError(e),
   });
   const probeM = trpc.sites.probe.useMutation({
     onSuccess: (r) => {
@@ -135,20 +136,20 @@ export default function SitesRegistry() {
       if (r.probe?.ok) toast.success(t("sites.probeOk", "Probe thành công — site đang hoạt động"));
       else toast.error(t("sites.probeFail", "Probe thất bại: ") + (r.probe?.error ?? ""));
     },
-    onError: (e) => toast.error(e.message),
+    onError: (e) => toastTrpcError(e),
   });
   const enrollM = trpc.sites.selfEnrollLocal.useMutation({
     onSuccess: (r) => {
       invalidate();
       toast.success(r.created ? t("sites.enrolled", "Đã đăng ký deployment này (local)") : t("sites.enrollRefreshed", "Đã làm mới site local"));
     },
-    onError: (e) => toast.error(e.message),
+    onError: (e) => toastTrpcError(e),
   });
 
   const [deleteId, setDeleteId] = useState<number | null>(null);
   const deleteM = trpc.sites.delete.useMutation({
     onSuccess: () => { setDeleteId(null); invalidate(); toast.success(t("sites.toastDeleted", "Đã xóa site")); },
-    onError: (e) => toast.error(e.message),
+    onError: (e) => toastTrpcError(e),
   });
 
   const submitForm = () => {

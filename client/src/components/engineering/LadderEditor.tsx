@@ -8,6 +8,7 @@
  * later; this avoids the blocked monaco/blockly dependency while delivering visual editing.
  */
 import { useMemo } from "react";
+import { useTranslation } from "react-i18next";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Plus, Trash2, ArrowRight } from "lucide-react";
@@ -32,6 +33,7 @@ function serialize(rungs: Rung[]): string {
 const PALETTE = ["AND", "OR", "NOT", "XOR", "( )"];
 
 export function LadderEditor({ value, onChange }: { value: string; onChange: (next: string) => void }) {
+  const { t } = useTranslation();
   const rungs = useMemo(() => parse(value), [value]);
 
   const update = (next: Rung[]) => onChange(serialize(next));
@@ -45,7 +47,7 @@ export function LadderEditor({ value, onChange }: { value: string; onChange: (ne
   return (
     <div className="space-y-2 rounded-md border bg-muted/20 p-3">
       <div className="text-xs text-muted-foreground">
-        Mỗi dòng = 1 rung: <code>OUT := biểu thức bool</code>. Mô phỏng chạy 1 scan thật (AND/OR/NOT/XOR).
+        Mỗi dòng = 1 rung: <code>{t("ladderEditor.outBieuThucBool", "OUT := biểu thức bool")}</code>. Mô phỏng chạy 1 scan thật (AND/OR/NOT/XOR).
       </div>
       {rungs.map((r, i) => (
         <div key={i} className="flex flex-col gap-1 rounded border bg-background p-2">

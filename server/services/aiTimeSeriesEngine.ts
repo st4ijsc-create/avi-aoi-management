@@ -48,6 +48,14 @@ export interface AnalysisOptions {
   sampleSize?: number;
   /** Forecast horizon (number of future points). Default 12 */
   horizon?: number;
+  /**
+   * doc69 A4 (audit U5) — seed for the Isolation Forest's deterministic PRNG
+   * (feature/split selection + bootstrap sampling). Same seed + same data ⇒
+   * IDENTICAL anomaly scores across runs/processes. Only consumed by
+   * `algorithm: "isolation_forest"`; ignored by every other algorithm (none of
+   * them use randomness). Default: DEFAULT_ISOLATION_FOREST_SEED.
+   */
+  seed?: number;
 }
 
 export interface ForecastPoint {
@@ -265,6 +273,40 @@ export function holtWinters(
   return { smoothed, anomalies, forecast };
 }
 
+// ─── Seeded PRNG (deterministic Isolation Forest) ─────────────────────────
+//
+// doc69 A4 (audit U5) — the Isolation Forest below used to call unseeded
+// `Math.random()` for its random feature pick / split value / bootstrap
+// sampling, so the SAME input data produced DIFFERENT anomaly scores on every
+// run — irreproducible, and un-debuggable ("why did this flag as an anomaly
+// yesterday but not today, nothing changed?"). Math.random/Date.now are also
+// banned outright in some contexts in this repo; this is a plain, dependency-
+// free 32-bit LCG (linear congruential generator, Numerical-Recipes constants)
+// — NOT cryptographically secure, and not meant to be: it only needs to be a
+// deterministic, reasonably-well-distributed stream for tree construction.
+
+/** Numerical Recipes LCG constants (mod 2^32). */
+const LCG_MULTIPLIER = 1664525;
+const LCG_INCREMENT = 1013904223;
+
+/** Fixed default seed so `isolationForest`/`analyzeTimeSeries` are reproducible out of the box. */
+export const DEFAULT_ISOLATION_FOREST_SEED = 0x5eed1234;
+
+/**
+ * Build a seeded pseudo-random generator returning floats in [0, 1).
+ * Same seed ⇒ same output sequence, every call, every process.
+ */
+export function createSeededRng(seed: number): () => number {
+  // >>> 0 coerces to an unsigned 32-bit int; a seed of 0 degenerates the LCG
+  // (state stays 0 only if increment were also 0, which it isn't — but guard
+  // anyway for seed=0 readability/robustness against future constant changes).
+  let state = (seed >>> 0) || 0x2545f491;
+  return () => {
+    state = (Math.imul(state, LCG_MULTIPLIER) + LCG_INCREMENT) >>> 0;
+    return state / 4294967296; // 2^32 → [0, 1)
+  };
+}
+
 // ─── Isolation Forest ──────────────────────────────────────────────────────
 
 interface IsolationTreeNode {
@@ -277,19 +319,22 @@ interface IsolationTreeNode {
 
 /**
  * Build a single isolation tree from multivariate data.
+ * `rng` is a seeded generator (see createSeededRng) threaded through every
+ * recursive call so the WHOLE tree — not just the root split — is deterministic.
  */
 function buildIsolationTree(
   data: MultivariatePoint[],
   features: string[],
   maxDepth: number,
+  rng: () => number,
   currentDepth = 0,
 ): IsolationTreeNode {
   if (data.length <= 1 || currentDepth >= maxDepth) {
     return { size: data.length };
   }
 
-  // Random feature
-  const feature = features[Math.floor(Math.random() * features.length)];
+  // Random feature (seeded — doc69 A4)
+  const feature = features[Math.floor(rng() * features.length)];
   const featureValues = data.map(d => d.values[feature]).filter(v => v !== undefined);
   if (featureValues.length === 0) return { size: data.length };
 
@@ -298,7 +343,7 @@ function buildIsolationTree(
 
   if (minVal === maxVal) return { size: data.length };
 
-  const splitValue = minVal + Math.random() * (maxVal - minVal);
+  const splitValue = minVal + rng() * (maxVal - minVal);
 
   const left = data.filter(d => (d.values[feature] ?? 0) < splitValue);
   const right = data.filter(d => (d.values[feature] ?? 0) >= splitValue);
@@ -306,8 +351,8 @@ function buildIsolationTree(
   return {
     splitFeature: feature,
     splitValue,
-    left: buildIsolationTree(left, features, maxDepth, currentDepth + 1),
-    right: buildIsolationTree(right, features, maxDepth, currentDepth + 1),
+    left: buildIsolationTree(left, features, maxDepth, rng, currentDepth + 1),
+    right: buildIsolationTree(right, features, maxDepth, rng, currentDepth + 1),
   };
 }
 
@@ -339,12 +384,19 @@ function averagePathLength(n: number): number {
 /**
  * Isolation Forest anomaly detection for multivariate time series.
  * Score range: close to 1 = anomaly, close to 0.5 = normal, close to 0 = very normal.
+ *
+ * doc69 A4 (audit U5) — `seed` drives a deterministic LCG (createSeededRng) for
+ * every random choice (bootstrap sampling + tree construction) instead of the
+ * previously-unseeded Math.random. Same `data` + same `seed` ⇒ byte-identical
+ * `AnomalyResult[]` scores across runs. Defaults to a fixed seed so callers that
+ * don't care about reproducibility still get it for free.
  */
 export function isolationForest(
   data: MultivariatePoint[],
   numTrees = 100,
   sampleSize = 256,
   threshold = 0.65,
+  seed: number = DEFAULT_ISOLATION_FOREST_SEED,
 ): AnomalyResult[] {
   if (data.length === 0) return [];
 
@@ -353,16 +405,17 @@ export function isolationForest(
 
   const effectiveSample = Math.min(sampleSize, data.length);
   const maxDepth = Math.ceil(Math.log2(effectiveSample));
+  const rng = createSeededRng(seed);
 
   // Build forest
   const trees: IsolationTreeNode[] = [];
   for (let t = 0; t < numTrees; t++) {
-    // Random subsample
+    // Random subsample (seeded)
     const sample: MultivariatePoint[] = [];
     for (let i = 0; i < effectiveSample; i++) {
-      sample.push(data[Math.floor(Math.random() * data.length)]);
+      sample.push(data[Math.floor(rng() * data.length)]);
     }
-    trees.push(buildIsolationTree(sample, features, maxDepth));
+    trees.push(buildIsolationTree(sample, features, maxDepth, rng));
   }
 
   // Score each point
@@ -579,6 +632,7 @@ export function analyzeTimeSeries(
         options.numTrees,
         options.sampleSize,
         threshold > 1 ? 0.65 : threshold,
+        options.seed,
       );
       // EWMA forecast as complement
       forecast = ewmaForecast(data, alpha, horizon);
@@ -645,13 +699,14 @@ export function analyzeTimeSeries(
  */
 export function analyzeMultivariate(
   data: MultivariatePoint[],
-  options?: { numTrees?: number; sampleSize?: number; threshold?: number },
+  options?: { numTrees?: number; sampleSize?: number; threshold?: number; seed?: number },
 ): AnomalyResult[] {
   return isolationForest(
     data,
     options?.numTrees ?? 100,
     options?.sampleSize ?? 256,
     options?.threshold ?? 0.65,
+    options?.seed,
   );
 }
 

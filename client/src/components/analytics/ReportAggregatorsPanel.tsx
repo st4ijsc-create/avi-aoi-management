@@ -23,6 +23,7 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { mapTrpcError } from "@/lib/trpcErrors";
 import {
   chartColor,
   chartTooltipStyle,
@@ -222,7 +223,7 @@ export default function ReportAggregatorsPanel() {
                 : undefined
             }
             loading={paretoQ.isLoading}
-            error={paretoQ.error?.message ?? null}
+            error={paretoQ.error ? mapTrpcError(paretoQ.error) : null}
             empty={paretoData.length === 0}
             emptyMsg={t("reportAgg.emptyPareto", "Không có lỗi NG trong khoảng thời gian này.")}
           >
@@ -257,7 +258,7 @@ export default function ReportAggregatorsPanel() {
             icon={<BarChart3 className="h-4 w-4 text-success" />}
             title={t("reportAgg.yieldByProduct", "Hiệu suất theo sản phẩm")}
             loading={yieldProductQ.isLoading}
-            error={yieldProductQ.error?.message ?? null}
+            error={yieldProductQ.error ? mapTrpcError(yieldProductQ.error) : null}
             empty={yieldProductData.length === 0}
             emptyMsg={t("reportAgg.emptyYield", "Không có dữ liệu kiểm tra trong khoảng thời gian này.")}
           >
@@ -278,7 +279,7 @@ export default function ReportAggregatorsPanel() {
           icon={<TrendingUp className="h-4 w-4 text-info" />}
           title={t("reportAgg.yieldTrend", "Xu hướng hiệu suất theo tuần (ISO)")}
           loading={yieldTrendQ.isLoading}
-          error={yieldTrendQ.error?.message ?? null}
+          error={yieldTrendQ.error ? mapTrpcError(yieldTrendQ.error) : null}
           empty={yieldTrendData.length === 0}
           emptyMsg={t("reportAgg.emptyTrend", "Không có dữ liệu tuần nào trong khoảng thời gian này.")}
         >
@@ -304,7 +305,7 @@ export default function ReportAggregatorsPanel() {
             <div className="space-y-2">{[0, 1, 2].map((i) => <Skeleton key={i} className="h-10 w-full" />)}</div>
           ) : artifactsQ.error ? (
             <div className="text-xs text-destructive flex items-center gap-1.5">
-              <AlertTriangle className="h-3.5 w-3.5" /> {artifactsQ.error.message}
+              <AlertTriangle className="h-3.5 w-3.5" /> {mapTrpcError(artifactsQ.error)}
             </div>
           ) : artifacts.length === 0 ? (
             <div className="text-sm text-muted-foreground py-3 text-center">

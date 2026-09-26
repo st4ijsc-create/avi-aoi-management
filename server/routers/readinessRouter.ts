@@ -24,8 +24,12 @@
 import { TRPCError } from "@trpc/server";
 import { and, eq, inArray } from "drizzle-orm";
 import { router, protectedProcedure } from "../_core/trpc";
+import { appError } from "../_core/appError";
 import { checkPermission } from "../_core/accessControl";
 import { getMtconnectStats } from "../services/mtconnect/mtconnectPoller";
+// Nhóm C 2026-08-14 — MỘT nguồn sự thật cho chính sách cờ xác thực yếu (xem khối
+// MACHINE_SHARED_KEY_ALLOWED bên dưới). Hàm thuần, chỉ đọc chuỗi truyền vào.
+import { parseWeakAuthPolicy } from "../services/machineAuthService";
 import { checkControlGatewayConsistency } from "../services/controlGatewayConsistency";
 import { getDb } from "../db/connection";
 import { users } from "../../drizzle/schema";
@@ -335,17 +339,51 @@ export function collectFlagMatrix(env: NodeJS.ProcessEnv = process.env): Readine
     "dormant vì SERVICE_MTLS_ENABLED tắt.",
   );
   {
-    // Legacy shared plaintext key: MẶC ĐỊNH cho phép (true) → là một bypass/thế trận yếu.
-    const allowed = env.MACHINE_SHARED_KEY_ALLOWED !== "false";
+    // ⚠ Nhóm C 2026-08-14 — TRƯỚC ĐÂY chỗ này đọc cờ bằng `env.X !== "false"`, một bản sao
+    // THÔ của `parseWeakAuthPolicy`. Runbook doc 52 và báo cáo xoay khoá đều bảo đặt `=deny`;
+    // với phép so chuỗi cũ thì `"deny" !== "false"` ⇒ bảng này báo "bypass, vẫn chấp nhận key
+    // cũ" TRONG KHI đường cưỡng chế đã đóng thật. Người vận hành làm đúng runbook rồi nhìn
+    // bảng sẽ tưởng mình làm hỏng. Nay gọi thẳng bộ đọc của chính service cưỡng chế — một
+    // nguồn sự thật, không còn hai bản.
+    const sharedKey = parseWeakAuthPolicy(
+      "MACHINE_SHARED_KEY_ALLOWED",
+      env.MACHINE_SHARED_KEY_ALLOWED,
+      "allow",
+    );
     add({
       key: "MACHINE_SHARED_KEY_ALLOWED",
       label: "Legacy shared machine key",
       group: "security",
-      enabled: allowed,
-      state: allowed ? "bypass" : "armed",
-      reason: allowed
-        ? "bypass (mặc định) — chấp nhận shared plaintext key cũ. Đặt =false khi mọi máy đã rotate."
-        : "armed — chỉ chấp nhận per-machine hashed key (đã rotate xong).",
+      enabled: sharedKey !== "deny",
+      state: sharedKey === "deny" ? "armed" : sharedKey === "read-only" ? "warn" : "bypass",
+      reason:
+        sharedKey === "deny"
+          ? "armed — chỉ chấp nhận per-machine hashed key (đã rotate xong)."
+          : sharedKey === "read-only"
+            ? "read-only — key cũ chỉ còn ĐỌC được, mọi đường GHI đã bị từ chối."
+            : "bypass (mặc định) — chấp nhận shared plaintext key cũ. Đặt =deny khi mọi máy đã rotate.",
+    });
+  }
+  {
+    // Cờ thứ hai của runbook doc 52. Trước đây VẮNG MẶT hoàn toàn khỏi bảng, nên sau khi flip
+    // không có cách nào xác nhận nó từ giao diện — chỉ còn cách đọc .env bằng mắt.
+    const codeOnly = parseWeakAuthPolicy(
+      "MACHINE_CODE_ONLY_ALLOWED",
+      env.MACHINE_CODE_ONLY_ALLOWED,
+      "allow",
+    );
+    add({
+      key: "MACHINE_CODE_ONLY_ALLOWED",
+      label: "Machine code-only auth",
+      group: "security",
+      enabled: codeOnly !== "deny",
+      state: codeOnly === "deny" ? "armed" : codeOnly === "read-only" ? "warn" : "bypass",
+      reason:
+        codeOnly === "deny"
+          ? "armed — không còn chấp nhận xác thực chỉ bằng mã máy."
+          : codeOnly === "read-only"
+            ? "read-only — mã máy trần chỉ còn ĐỌC được, mọi đường GHI đã bị từ chối."
+            : "bypass (mặc định) — chấp nhận xác thực chỉ bằng mã máy. Đặt =deny khi mọi máy đã rotate.",
     });
   }
   {
@@ -436,7 +474,7 @@ export function collectFlagMatrix(env: NodeJS.ProcessEnv = process.env): Readine
 const readinessProcedure = protectedProcedure.use(async ({ ctx, next }) => {
   const user = ctx.user;
   if (!user) {
-    throw new TRPCError({ code: "UNAUTHORIZED", message: "Login required" });
+    throw appError("UNAUTHORIZED", "AUTH_REQUIRED", undefined, "Login required");
   }
   if (user.role === "admin") return next();
   const [sys, ctl] = await Promise.all([
@@ -444,10 +482,15 @@ const readinessProcedure = protectedProcedure.use(async ({ ctx, next }) => {
     checkPermission(user.id, user.role, "machine_control", "canView"),
   ]);
   if (!sys && !ctl) {
-    throw new TRPCError({
-      code: "FORBIDDEN",
-      message: "Cần quyền xem admin_system hoặc machine_control để truy cập Trust & Enforcement Center.",
-    });
+    throw appError(
+      "FORBIDDEN",
+      "PERMISSION_DENIED",
+      // Task 5 (doc 71) — reason khôi phục TÊN QUYỀN cần có: câu chuẩn PERMISSION_DENIED
+      // chỉ nội suy {{action}} ("xem Trust & Enforcement Center"), không nói CẦN quyền
+      // gì để được cấp — người dùng đọc xong vẫn không biết đi xin quyền nào.
+      { action: "viewTrustEnforcementCenter", reason: "needsAdminSystemOrMachineControl" },
+      "Cần quyền xem admin_system hoặc machine_control để truy cập Trust & Enforcement Center.",
+    );
   }
   return next();
 });

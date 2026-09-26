@@ -21,6 +21,7 @@
  * ════════════════════════════════════════════════════════════════════════════
  */
 import { and, desc, eq, lt, inArray } from "drizzle-orm";
+import { DbUnavailableError } from "../../_core/dbErrors";
 import { getDb } from "../../db/connection";
 import {
   edgeNodes,
@@ -89,7 +90,7 @@ export interface SyncRunPayload {
 
 async function db() {
   const d = await getDb();
-  if (!d) throw new Error("Database not connected");
+  if (!d) throw new DbUnavailableError();
   return d;
 }
 
@@ -157,6 +158,9 @@ export async function registerNode(input: RegisterNodeInput): Promise<EdgeResult
       .returning();
     return { ok: true, enabled: true, data: row };
   } catch (err) {
+    // data-raw-ok: `registerNode` được NODE BIÊN headless gọi qua `/api/v1/edge/sync` bằng
+    // khoá API có phạm vi — khách hàng là MÁY, không phải người. Tiếng Anh là quy ước
+    // máy-máy, y như tuyến REST (xem docblock `edgeRuntimeRouter`).
     return { ok: false, enabled: true, message: err instanceof Error ? err.message : String(err) };
   }
 }
@@ -217,6 +221,7 @@ export async function heartbeat(input: HeartbeatInput): Promise<EdgeResult<EdgeN
       .returning();
     return { ok: true, enabled: true, data: row };
   } catch (err) {
+    // data-raw-ok: nhịp tim từ node biên — khách là MÁY, xem ghi chú ở `registerNode`.
     return { ok: false, enabled: true, message: err instanceof Error ? err.message : String(err) };
   }
 }
@@ -301,6 +306,9 @@ export async function deleteNode(id: number): Promise<EdgeResult<{ id: number }>
     await d.delete(edgeNodes).where(eq(edgeNodes.id, id));
     return { ok: true, enabled: true, data: { id } };
   } catch (err) {
+    // data-raw-ok: XOÁ node là thao tác QUẢN TRỊ, và người bấm nó là kỹ sư đang gỡ một node
+    // hỏng khỏi cụm. Chuỗi gốc nói được vì sao xoá không xong (node còn run đang chạy, lỗi
+    // khoá ngoại…) — thứ câu generic không nói được.
     return { ok: false, enabled: true, message: err instanceof Error ? err.message : String(err) };
   }
 }
@@ -337,6 +345,7 @@ export async function assignRun(runId: number, edgeNodeId: number): Promise<Edge
       .where(eq(orchestrationRuns.id, runId));
     return { ok: true, enabled: true, data: { runId, edgeNodeId } };
   } catch (err) {
+    // data-raw-ok: giao một RUN cho node biên — luồng máy-máy, xem `registerNode`.
     return { ok: false, enabled: true, message: err instanceof Error ? err.message : String(err) };
   }
 }
@@ -438,6 +447,7 @@ export async function syncRunResult(payload: SyncRunPayload): Promise<EdgeResult
 
     return { ok: true, enabled: true, data: { runId: payload.runId, stepsApplied } };
   } catch (err) {
+    // data-raw-ok: node biên ĐẨY kết quả về trung tâm — luồng máy-máy, xem `registerNode`.
     return { ok: false, enabled: true, message: err instanceof Error ? err.message : String(err) };
   }
 }

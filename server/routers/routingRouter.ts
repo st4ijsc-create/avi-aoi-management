@@ -14,6 +14,7 @@
  */
 import { z } from "zod";
 import { TRPCError } from "@trpc/server";
+import { appError } from "../_core/appError";
 import { moduleProcedure, router } from "../_core/trpc";
 // Doc 38 Đợt Q — license-gate this router behind MOD_PRODUCTION (moduleGate = pass-through
 // until the deployment's SKU is configured — no-brick). Shadows `protectedProcedure`.
@@ -43,9 +44,9 @@ function toTrpc(err: unknown): never {
       err.code === "NOT_FOUND" ? "NOT_FOUND" :
       err.code === "CONFLICT" ? "CONFLICT" :
       err.code === "DB" ? "INTERNAL_SERVER_ERROR" : "BAD_REQUEST";
-    throw new TRPCError({ code, message: err.message });
+    throw appError(code, "OPERATION_FAILED", { operation: "manageRouting" }, err.message);
   }
-  throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: (err as any)?.message ?? "Routing error" });
+  throw appError("INTERNAL_SERVER_ERROR", "OPERATION_FAILED", { operation: "manageRouting" }, (err as any)?.message ?? "Routing error");
 }
 
 const stepInput = z.object({
@@ -73,7 +74,7 @@ export const routingRouter = router({
     .input(z.object({ id: z.number().int().positive() }))
     .query(async ({ input }) => {
       const row = await getRoutingById(input.id);
-      if (!row) throw new TRPCError({ code: "NOT_FOUND", message: `Routing ${input.id} not found` });
+      if (!row) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "routing" }, `Routing ${input.id} not found`);
       return row;
     }),
 
@@ -254,14 +255,14 @@ export const routingRouter = router({
       for (const g of groups.values()) {
         try {
           const product = await getProductModelByCode(g.productCode);
-          if (!product) throw new Error(`Không tìm thấy sản phẩm "${g.productCode}"`);
+          if (!product) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "productModel" }, `Không tìm thấy sản phẩm "${g.productCode}"`);
           const seen = new Set<number>();
           const steps = g.rows
             .slice()
             .sort((a, b) => a.stepSeq - b.stepSeq)
             .map((r) => {
               if (seen.has(r.stepSeq)) {
-                throw new Error(`Trùng bước ${r.stepSeq} trong routing ${g.routingCode}`);
+                throw appError("BAD_REQUEST", "OPERATION_FAILED", { operation: "manageRouting" }, `Trùng bước ${r.stepSeq} trong routing ${g.routingCode}`);
               }
               seen.add(r.stepSeq);
               return {

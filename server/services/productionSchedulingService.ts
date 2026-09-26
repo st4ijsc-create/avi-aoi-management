@@ -4,6 +4,12 @@
  * WIP tracking, conflict detection
  */
 
+// doc69 W1 "modelfix" — shared env→GGUF-basename resolver, so the AI explanation below pins a real
+// text model instead of letting the engine reuse whatever happened to load first (the RAG embedder).
+import { resolveLogicalModel } from "./ai/modelResolver";
+// ★ G5-E — bộ cắt chuỗi suy luận (module LÁ, import TĨNH ⇒ hàng rào vô điều kiện theo cấu tạo).
+import { stripThinking } from "./ai/thinkingStrip";
+
 export interface SchedulableOrder {
   id: number;
   orderCode: string;
@@ -632,9 +638,10 @@ async function explainScheduleWithAIUnbounded(
       prompt: `Schedule result: ${JSON.stringify(summary)}`,
       maxTokens: 300,
       temperature: 0.5,
-    });
+    }, resolveLogicalModel("chat"));
 
-    return response.text?.trim() || null;
+    // ★ G5-E — diễn giải lịch hiện thẳng trên trang kế hoạch. Cắt chuỗi suy luận trước khi trả.
+    return stripThinking(response.text ?? "").answer.trim() || null;
   } catch {
     return null;
   }

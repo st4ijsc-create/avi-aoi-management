@@ -1,0 +1,41 @@
+-- ══════════════════════════════════════════════════════════════════════════════════════════════
+-- ⚠⚠⚠ CHẠY MIGRATION NÀY **TRƯỚC** KHI TRIỂN KHAI MÃ MÁY CHỦ CỦA ĐỢT B. KHÔNG ĐƯỢC ĐẢO THỨ TỰ.
+-- ══════════════════════════════════════════════════════════════════════════════════════════════
+-- Đây là CỔNG RA của lần phát hành, không phải một ghi chú. Nếu mã máy chủ mới chạy trên CSDL
+-- CHƯA áp migration này, chế độ hỏng là như sau — đã truy được từng bước, không phải lo xa:
+--   1. `confirmAction` giành quyền hàng (`proposed`/`confirmed` → `confirmed`) rồi CHẠY `execute()`
+--      — tới đây **byte có thể ĐÃ vào đĩa**;
+--   2. câu `UPDATE … SET status='ap_mot_phan'` (hoặc `'bi_tu_choi_ghi'` của 0341) NÉM vì giá trị
+--      enum chưa tồn tại ⇒ HTTP 500 ⇒ hàng KẸT ở `confirmed`;
+--   3. người dùng bấm Duyệt lại: hàng đang ở `confirmed` **qua được** phép giành quyền (CAS nhận cả
+--      `proposed` lẫn `confirmed`) ⇒ `execute()` chạy **LẦN THỨ HAI** ⇒ **một lượt ghi thứ hai**.
+-- Tức là: thiếu migration không làm hệ "hỏng an toàn", nó làm hệ GHI HAI LẦN. Không có cách nào vá
+-- điều đó bằng mã ứng dụng — cửa duy nhất là áp migration TRƯỚC.
+--
+-- ⚠ Quyền: `ALTER TYPE` đòi OWNER của kiểu. `DATABASE_URL` của dev dùng `avi_app` (không phải owner)
+--   ⇒ trả 42501 "must be owner of type". Dùng credential owner `aoi` (mặc định có sẵn trong
+--   `docker-compose.yml` của chính dự án này) để chạy.
+--
+-- ══════════════════════════════════════════════════════════════════════════════════════════════
+-- VÌ SAO PHẢI CÓ GIÁ TRỊ THỨ BA — VÀ VÌ SAO NÓ **KHÔNG PHẢI** `bi_tu_choi_ghi`
+-- ══════════════════════════════════════════════════════════════════════════════════════════════
+-- 0341 thêm `bi_tu_choi_ghi` với hợp đồng CHỮ rõ ràng: execute() ĐÃ chạy nhưng **0 byte vào đĩa**.
+-- Đúng cho `apply_diff` (một tệp: hoặc ghi, hoặc không ghi). SAI cho `apply_diff_batch`:
+-- `applyDiffBatch.ts` ghi theo HAI PHA, và khi pha GHI hỏng giữa chừng (hệ tệp: đĩa đầy, EACCES,
+-- tệp bị khoá) nó trả `note:"BATCH_PARTIAL"` với tệp `1..k−1` **ĐÃ NẰM TRÊN ĐĨA** — chính docblock
+-- ở đó gọi đây là "mã quan trọng nhất của file này: nó tồn tại để trạng thái nửa vời KHÔNG BAO GIỜ
+-- im lặng".
+--
+-- `daBiTuChoiGhi()` chỉ thấy "có `note`" nên xếp lượt đó chung với từ-chối-thật ⇒ hàng CSDL mang
+-- nhãn có nghĩa "0 byte" trong khi đĩa ĐÃ đổi. Người đọc bản ghi đó (auditor, hay chính người dùng
+-- ở lượt sau) sẽ tưởng cây làm việc còn nguyên và **đề xuất lại CẢ LÔ** trên một cây nửa vời.
+--
+-- Cột phải nói được BA sự thật — ĐÃ GHI · KHÔNG GHI · **GHI MỘT PHẦN** — và hai giá trị không phát
+-- biểu nổi ba trạng thái. Tầng giao diện đã phải tự tách ca này từ 2026-08-24
+-- (`AICodingWorkspace.tsx`: "TUYỆT ĐỐI không dùng câu 'tệp trên đĩa KHÔNG đổi' — nó SAI"); giá trị
+-- này đưa đúng phân biệt ấy xuống nơi dữ liệu được LƯU, để mọi nơi đọc sau đó không phải tự đoán.
+--
+-- ⚠⚠ `ALTER TYPE … ADD VALUE` KHÔNG chạy được trong transaction khối (một số cấu hình Postgres/
+-- driver bọc mỗi file migration trong BEGIN…COMMIT) ⇒ migration này ĐỨNG RIÊNG, không gộp bất kỳ
+-- DDL nào khác vào cùng file/transaction. Cùng khuôn với 0341.
+ALTER TYPE "aipendingactionstatus" ADD VALUE IF NOT EXISTS 'ap_mot_phan';

@@ -14,6 +14,7 @@
  */
 import { z } from "zod";
 import { TRPCError } from "@trpc/server";
+import { appError } from "../_core/appError";
 import { protectedProcedure, router } from "../_core/trpc";
 import * as db from "../db";
 import {
@@ -44,7 +45,7 @@ export const inspectionVariantRouter = router({
     .query(async ({ input }) => {
       const insp = await (db as any).getProductInspectionById?.(input.inspectionId);
       if (!insp) {
-        throw new TRPCError({ code: "NOT_FOUND", message: "Inspection not found" });
+        throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "inspection" }, "Inspection not found");
       }
       return {
         inspectionId: insp.id,
@@ -62,22 +63,24 @@ export const inspectionVariantRouter = router({
     .mutation(async ({ input }) => {
       const insp = await (db as any).getProductInspectionById?.(input.inspectionId);
       if (!insp) {
-        throw new TRPCError({ code: "NOT_FOUND", message: "Inspection not found" });
+        throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "inspection" }, "Inspection not found");
       }
       const v = validatePayload(input.inspectionType, input.payload);
       if (!v.ok) {
-        throw new TRPCError({
-          code: "BAD_REQUEST",
-          message: `Invalid ${input.inspectionType} payload: ` +
+        throw appError(
+          "BAD_REQUEST",
+          "INVALID_VALUE",
+          { field: "inspectionPayload" },
+          `Invalid ${input.inspectionType} payload: ` +
             (v.errors ?? []).map((e) => `${e.path || "(root)"}: ${e.message}`).join("; "),
-        });
+        );
       }
       // Update via raw connection — keeps this router decoupled from a
       // dedicated db helper. If/when an updateProductInspection() helper
       // exists, swap to it.
       const conn = await (db as any).getDb?.();
       if (!conn) {
-        throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Database not available" });
+        throw appError("INTERNAL_SERVER_ERROR", "DB_UNAVAILABLE", undefined, "Database not available");
       }
       // Use sql tag via drizzle through the schema export to stay typed.
       const { productInspections } = await import("../../drizzle/schema");

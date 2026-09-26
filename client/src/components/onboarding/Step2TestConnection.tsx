@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Wifi, WifiOff, Loader2, CheckCircle2 } from "lucide-react";
 import { toast } from "sonner";
+import { mapTrpcError } from "@/lib/trpcErrors";
 import type { StepProps } from "./types";
 
 export default function Step2TestConnection({ state, update, onNext, onBack }: StepProps) {
@@ -18,7 +19,7 @@ export default function Step2TestConnection({ state, update, onNext, onBack }: S
     },
     onError: (err) => {
       update({ connectionTested: true, connectionOk: false });
-      toast.error(t("onboarding.step2.failed"), { description: err.message });
+      toast.error(t("onboarding.step2.failed"), { description: mapTrpcError(err) });
     },
   });
 

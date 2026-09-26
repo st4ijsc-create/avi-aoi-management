@@ -53,6 +53,7 @@ import { Sparkline } from "@/components/patterns/Sparkline";
 import { usePermissions } from "@/_core/hooks/usePermissions";
 import { withParams } from "@/lib/engineeringDeepLink";
 import { toast } from "sonner";
+import { toastTrpcError } from "@/lib/trpcErrors";
 import {
   Bot, Activity, Sliders, ListChecks, Boxes, ScrollText, ShieldAlert, AlertTriangle,
   Wrench, ArrowLeft, RefreshCw, Wifi, WifiOff, ExternalLink, Info, Radio, Battery,
@@ -252,13 +253,70 @@ function JointBars({
 // 3D — glTF via drei <Gltf>, else a primitive (mirrors DigitalTwinCenter fallback).
 // ════════════════════════════════════════════════════════════════════════════
 
+/**
+ * ★★★ THĂM DÒ WEBGL — **VÀ TRẢ LẠI NGỮ CẢNH ĐÃ MƯỢN.**
+ *
+ * ════════════════════════════════════════════════════════════════════════════
+ * NÓ TRẢ LỜI ĐÚNG MỘT CÂU
+ * ════════════════════════════════════════════════════════════════════════════
+ * `true` = trình duyệt dựng được ngữ cảnh WebGL. `Model3DPane` dùng thẳng nó làm `webglOk`; `false` ⇒ ngăn 3D thay bằng câu "3D is not available in this browser.".
+ *
+ * ⚠ Hàm này KHÔNG được đổi câu trả lời ấy. Mọi nhánh giữ nguyên kết cục của
+ *   bản cũ (thăm dò nội tuyến trong `useEffect`):
+ *     · `getContext` ném        ⇒ `false`   (bản cũ: nhánh `catch`)
+ *     · `getContext` trả `null` ⇒ `false`
+ *     · có ngữ cảnh              ⇒ `true`
+ *
+ * ════════════════════════════════════════════════════════════════════════════
+ * ★★★ VÌ SAO GIẢI PHÓNG — VÀ VÌ SAO **KHÔNG** PHẢI VÌ MÀN ĐANG ĐEN
+ * ════════════════════════════════════════════════════════════════════════════
+ * Phép thăm dò lấy một ngữ cảnh WebGL **THẬT** trên một canvas RỜI (không bao
+ * giờ gắn vào tài liệu). Trình duyệt giới hạn số ngữ cảnh WebGL sống đồng thời
+ * và khi cạn thì **trục xuất cái CŨ NHẤT trước**.
+ *
+ * ★ Đo được trên bản đang chạy (điều hướng SPA 5 vòng × 4 màn 3D, kiểm kê bằng
+ *   `WeakRef`): **15 ngữ cảnh tạo ra · số SỐNG không bao giờ quá 2 · còn 0 sau
+ *   GC**. Tức ở quy mô ấy KHÔNG tích luỹ và KHÔNG có canvas đen.
+ *
+ * ⇒ Đây là **NỢ VỆ SINH**, không phải lỗi đang xảy ra. Thứ nó loại bỏ là một
+ *   KHẢ NĂNG: dưới tải nặng hơn, ngữ cảnh bị trục xuất có thể là ngữ cảnh của
+ *   **cảnh đang vẽ** (vì nó cũ hơn ngữ cảnh thăm dò vừa mượn). Trả lại ngay
+ *   thứ mình chỉ mượn để hỏi một câu hỏi là cách rẻ nhất để bỏ khả năng ấy.
+ *
+ * ════════════════════════════════════════════════════════════════════════════
+ * TRẢ LẠI **SAU** KHI ĐÃ ĐỌC XONG, VÀ TRONG `try` RIÊNG
+ * ════════════════════════════════════════════════════════════════════════════
+ * · Kết quả đã CHỐT ở `gl` trước khi giải phóng ⇒ không lối nào đổi câu trả lời.
+ * · `getExtension("WEBGL_lose_context")` có thể trả `null` (không có extension)
+ *   ⇒ optional chaining, và một lỗi ở bước dọn KHÔNG được kéo theo phép thăm dò
+ *   (nếu dùng chung `try` với bản cũ, một lỗi ở đây sẽ nuốt luôn `setState`).
+ * · `getContext` trả `null` ⇒ không có gì để trả lại; đó CHÍNH LÀ nhánh
+ *   "webglOk = hỏng" nên tuyệt đối không ném lỗi ở đó.
+ *
+ * Lưới: `webglThamDoGiaiPhong.dom.test.tsx`.
+ */
+export function thamDoWebGL(): boolean {
+  let gl: unknown = null;
+  try {
+    const c = document.createElement("canvas");
+    gl = c.getContext("webgl") || c.getContext("experimental-webgl");
+  } catch {
+    return false;
+  }
+  /* ── Trả lại ngữ cảnh vừa mượn. Kết quả đã chốt ở `gl`; nhánh này chỉ dọn. ── */
+  try {
+    (gl as WebGLRenderingContext | null)?.getExtension("WEBGL_lose_context")?.loseContext();
+  } catch {
+    /* Không có extension, hoặc gọi hỏng ⇒ bỏ qua: dọn dẹp không được làm
+       hỏng phép thăm dò (bẫy 3). */
+  }
+  return !!gl;
+}
+
 function Model3DPane({ model3d, t }: { model3d: RobotDetail["model3d"]; t: (k: string, f: string) => string }) {
   const [webglOk, setWebglOk] = useState(true);
   useEffect(() => {
-    try {
-      const el = document.createElement("canvas");
-      setWebglOk(!!(el.getContext("webgl") || el.getContext("experimental-webgl")));
-    } catch { setWebglOk(false); }
+    setWebglOk(thamDoWebGL());
   }, []);
   const uri = model3d.available ? model3d.value?.modelUri ?? null : null;
   if (!webglOk) {
@@ -297,11 +355,42 @@ function Model3DPane({ model3d, t }: { model3d: RobotDetail["model3d"]; t: (k: s
 // PAGE
 // ════════════════════════════════════════════════════════════════════════════
 
-export default function RobotCockpit() {
+/**
+ * Robot cockpit BODY — no `DashboardLayout`, `robotId` is a PARAMETER.
+ *
+ * ════════════════════════════════════════════════════════════════════════════
+ * ★★★ WHY THIS SPLIT EXISTS (Đợt 10 lô G, 2026-09-07)
+ * ════════════════════════════════════════════════════════════════════════════
+ * Owner requirement: *"xem chi tiết của máy/Line không sử dụng redirect chuyển
+ * trang … cần dialog hoặc modal … để ng dùng không cần rời màn hình 3D digital
+ * Twin"*. The Twin operations screen (`/twin`) must show this cockpit IN PLACE.
+ *
+ * Before this split the page read its own route (`useRoute("/robot/:id")`), so
+ * mounting it anywhere else yielded `robotId = NaN` → "Invalid robot id". That
+ * is a SILENT failure: no error, just the wrong content.
+ *
+ * The split follows the precedent already proven in this repo —
+ * `MachineCockpit.tsx:720` `MachineCockpitBody({machineId, embedded})`, embedded
+ * by `MachineWorkspace.tsx:78`.
+ *
+ * ⚠ BEHAVIOUR OF `/robot/:id` IS UNCHANGED. The route (`App.tsx:454`) points at
+ *   the `default` export below, which passes the same id read the same way and
+ *   wraps the same `DashboardLayout`. Nothing was added, removed, or reordered
+ *   inside the body — only the two `<DashboardLayout>` frames moved out.
+ *
+ * @param embedded reserved for density tweaks; kept for signature parity with
+ *   `MachineCockpitBody` so both embed sites read the same.
+ */
+export function RobotCockpitBody({
+  robotId,
+  embedded = false,
+}: {
+  robotId: number;
+  embedded?: boolean;
+}) {
+  void embedded;
   const { t } = useTranslation();
   const [, setLocation] = useLocation();
-  const [, params] = useRoute("/robot/:id");
-  const robotId = Number(params?.id);
   const validId = Number.isFinite(robotId) && robotId > 0;
 
   const [now, setNow] = useState(() => Date.now());
@@ -363,14 +452,14 @@ export default function RobotCockpit() {
       toast.success(t("cockpit.teachSaved", "Đã lưu teach buffer vào project robot-tm (bản {{v}})", { v: (a as { version?: number })?.version ?? "?" }));
       void utils.assetCockpit.robotDetail.invalidate({ robotId });
     },
-    onError: (e) => toast.error(e.message),
+    onError: (e) => toastTrpcError(e),
   });
   const createProjectM = trpc.programming.createProject.useMutation({
     onSuccess: (proj) => {
       createArtifactM.mutate({ projectId: (proj as { id: number }).id, language: "tmscript", content: teachBuffer });
       void utils.assetCockpit.robotDetail.invalidate({ robotId });
     },
-    onError: (e) => toast.error(e.message),
+    onError: (e) => toastTrpcError(e),
   });
   const savingTeach = createArtifactM.isPending || createProjectM.isPending;
   const saveTeachToProject = () => {
@@ -439,16 +528,13 @@ export default function RobotCockpit() {
 
   if (!validId) {
     return (
-      <DashboardLayout>
-        <div className="p-4">
-          <EmptyState title={t("cockpit.badRobotId", "Invalid robot id")} description={t("cockpit.badRobotIdHint", "This URL does not reference a robot.")} />
-        </div>
-      </DashboardLayout>
+      <div className="p-4">
+        <EmptyState title={t("cockpit.badRobotId", "Invalid robot id")} description={t("cockpit.badRobotIdHint", "This URL does not reference a robot.")} />
+      </div>
     );
   }
 
   return (
-    <DashboardLayout>
       <div className="space-y-4 p-1">
         <PageHeader
           icon={<Bot className="h-6 w-6" />}
@@ -781,7 +867,9 @@ export default function RobotCockpit() {
 
             {/* ── 3D ── */}
             <TabsContent value="model3d">
-              <SectionCard icon={<Boxes className="h-4 w-4" />} title={t("cockpit.tab3d", "3D model")} description={d.model3d.source}>
+              {/* ★ Đợt 36 (twin3d Pareto #8): `d.model3d.source` = 'twin/modelRegistry.resolveModel({equipmentId:"robot:{id}"})'
+                  là dấu vết nguồn cho lập trình viên — không render (cùng bản vá với MachineCockpit). */}
+              <SectionCard icon={<Boxes className="h-4 w-4" />} title={t("cockpit.tab3d", "3D model")}>
                 <Model3DPane model3d={d.model3d} t={t} />
               </SectionCard>
             </TabsContent>
@@ -844,6 +932,20 @@ export default function RobotCockpit() {
           </Tabs>
         )}
       </div>
+  );
+}
+
+/**
+ * Standalone route wrapper — reads `/robot/:id` and frames the body in the app
+ * shell. This is what `App.tsx:454` mounts, so `/robot/:id` behaves exactly as
+ * it did before the body was split out.
+ */
+export default function RobotCockpit() {
+  const [, params] = useRoute("/robot/:id");
+  const robotId = Number(params?.id);
+  return (
+    <DashboardLayout>
+      <RobotCockpitBody robotId={robotId} />
     </DashboardLayout>
   );
 }
@@ -853,7 +955,7 @@ export default function RobotCockpit() {
  * nên KHÔNG mất khi đổi tab; cha cũng đồng bộ localStorage. "Lưu vào project robot-tm"
  * gọi programming.createArtifact (qua cha) để đưa buffer vào pipeline build/deploy có gate.
  */
-function TeachJogBuffer({
+export function TeachJogBuffer({
   value, onChange, onSave, canSave, saving,
 }: {
   value: string;
@@ -869,14 +971,36 @@ function TeachJogBuffer({
       <div>
         <div className="mb-1 flex items-center justify-between gap-2">
           <span className="text-xs text-muted-foreground">{t("cockpit.tmscript", "tmscript buffer (preview)")}</span>
-          <span
-            title={!canSave ? t("cockpit.teachSavePerm", "Cần quyền tạo chương trình (machine_control/canCreate)") : undefined}
-          >
-            <Button size="sm" variant="outline" className="h-7" disabled={!canSave || saving} onClick={onSave}>
+          {/*
+            ★★★ ĐỢT 15 LÔ R (P-3) — **HIỆN-RỒI-CHẶN ⇒ ẨN.**
+
+            Luật của dự án (`nganXuLyLogic.ts:102-111`): **thiếu QUYỀN ⇒ ẨN; bị
+            chặn TẠM THỜI ⇒ disable + giải thích.** Hai trục tách hẳn nhau
+            (`duocPhep` ≠ `lyDoChan`, `nganXuLyLogic.ts:93-99`).
+
+            Bản trước render nút rồi `disabled={!canSave || saving}` kèm `title`
+            "Cần quyền tạo chương trình" — tức **gộp hai trục vào một biểu thức**
+            và xử trục QUYỀN bằng cách của trục TRẠNG THÁI. Đây là **vi phạm duy
+            nhất** của luật còn lại, và nó **với tới được từ `/twin`** qua ngăn
+            nhúng (§12b.1.3). Một nút hiện ra rồi từ chối vừa mời người dùng bấm
+            vào chỗ không đi được, vừa xác nhận cho người không có quyền rằng
+            chức năng ấy có thật.
+
+            ⇒ `canSave` (QUYỀN `machine_control/canCreate`) quyết định **CÓ
+              RENDER HAY KHÔNG**; `saving` (TRẠNG THÁI tạm thời) vẫn `disabled` +
+              spinner — đúng vế thứ hai của luật, và KHÔNG đổi hành vi cho người
+              đã có quyền.
+
+            ⚠ Chỉ đổi đúng chỗ này. `RobotCockpit` là màn KHÔNG ĐƯỢC XOÁ và có
+              người dùng ngoài Twin; phần xem/preview buffer bên dưới giữ nguyên
+              cho mọi vai.
+          */}
+          {canSave && (
+            <Button size="sm" variant="outline" className="h-7" disabled={saving} onClick={onSave}>
               {saving ? <Loader2 className="mr-1 h-3.5 w-3.5 animate-spin" /> : <Save className="mr-1 h-3.5 w-3.5" />}
               {t("cockpit.teachSave", "Lưu vào project robot-tm")}
             </Button>
-          </span>
+          )}
         </div>
         <pre className="max-h-56 overflow-auto rounded-md border bg-muted/40 p-3 text-xs font-mono">{value}</pre>
         <p className="mt-1 text-[11px] text-muted-foreground">

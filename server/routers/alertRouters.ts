@@ -3,6 +3,7 @@ import { requirePermission } from "../_core/accessControl";
 import { adminProcedure } from "./_shared";
 import { z } from "zod";
 import { TRPCError } from "@trpc/server";
+import { appError } from "../_core/appError";
 import * as db from "../db";
 import { getDb } from "../db/connection";
 import { and, eq, gte, sql } from "drizzle-orm";
@@ -11,6 +12,7 @@ import type { AlertSetting } from "../../drizzle/schema";
 import { notifyOwner } from "../_core/notification";
 import { sendAlertEmail } from "../services/emailService";
 import { sendWebhookEvent } from "./webhookRouter";
+import { finalYield } from "../utils/kpi";
 
 // ============================================================================
 // LEGACY ALERT-SETTINGS EVALUATOR (bug #1 fix)
@@ -44,6 +46,17 @@ function startOfToday(): Date {
 }
 
 /**
+ * Yield dùng cho ngưỡng cảnh báo. NTF = PASS (decision #4).
+ *
+ * `total === 0` trả 100 — GIỮ NGUYÊN hành vi cũ: không có bo nào nghĩa là máy đang
+ * dừng, không phải máy đang hỏng. Đổi nó thành 0 sẽ bắn cảnh báo mỗi lúc nghỉ ca.
+ * Phép so ngưỡng KHÔNG nằm ở đây — nó dùng `compare()` với toán tử cấu hình được.
+ */
+export function tinhYieldCanhBao(stat: { total: number; ok: number; ntf: number }): number {
+  return stat.total > 0 ? finalYield({ ok: stat.ok, ntf: stat.ntf, total: stat.total }) : 100;
+}
+
+/**
  * Compute the current value for an alert setting and whether its threshold is
  * breached. Pure read — no notifications, no history. Reused by the scheduler
  * and the manual test endpoint so both agree on what "breached" means.
@@ -66,12 +79,14 @@ export async function evaluateAlertSetting(alert: AlertSetting): Promise<AlertBr
         .select({
           total: sql<number>`COALESCE(SUM(${dailyStatistics.totalCount}), 0)`,
           ok: sql<number>`COALESCE(SUM(${dailyStatistics.okCount}), 0)`,
+          ntf: sql<number>`COALESCE(SUM(${dailyStatistics.ntfCount}), 0)`,
         })
         .from(dailyStatistics)
         .where(and(...scope));
       const total = Number(row?.total ?? 0);
       const ok = Number(row?.ok ?? 0);
-      const yieldRate = total > 0 ? (ok / total) * 100 : 100;
+      const ntf = Number(row?.ntf ?? 0);
+      const yieldRate = tinhYieldCanhBao({ total, ok, ntf });
       const breached = total > 0 && compare(yieldRate, threshold, alert.comparisonOperator);
       return {
         breached,
@@ -249,11 +264,11 @@ export const alertRouter = router({
     .query(async ({ input, ctx }) => {
       const alert = await db.getAlertSettingById(input.id);
       if (!alert) {
-        throw new TRPCError({ code: 'NOT_FOUND', message: 'Alert setting not found' });
+        throw appError('NOT_FOUND', 'ENTITY_NOT_FOUND', { entity: 'alertSetting' }, 'Alert setting not found');
       }
       // Only owner or admin can view
       if (alert.userId !== ctx.user.id && ctx.user.role !== 'admin') {
-        throw new TRPCError({ code: 'FORBIDDEN', message: 'Not authorized' });
+        throw appError('FORBIDDEN', 'PERMISSION_DENIED', { action: 'viewAlertSetting' }, 'Not authorized');
       }
       return alert;
     }),
@@ -299,10 +314,10 @@ export const alertRouter = router({
     .mutation(async ({ input, ctx }) => {
       const alert = await db.getAlertSettingById(input.id);
       if (!alert) {
-        throw new TRPCError({ code: 'NOT_FOUND', message: 'Alert setting not found' });
+        throw appError('NOT_FOUND', 'ENTITY_NOT_FOUND', { entity: 'alertSetting' }, 'Alert setting not found');
       }
       if (alert.userId !== ctx.user.id && ctx.user.role !== 'admin') {
-        throw new TRPCError({ code: 'FORBIDDEN', message: 'Not authorized' });
+        throw appError('FORBIDDEN', 'PERMISSION_DENIED', { action: 'updateAlertSetting' }, 'Not authorized');
       }
       const { id, threshold, ...updateData } = input;
       await db.updateAlertSetting(id, {
@@ -318,10 +333,10 @@ export const alertRouter = router({
     .mutation(async ({ input, ctx }) => {
       const alert = await db.getAlertSettingById(input.id);
       if (!alert) {
-        throw new TRPCError({ code: 'NOT_FOUND', message: 'Alert setting not found' });
+        throw appError('NOT_FOUND', 'ENTITY_NOT_FOUND', { entity: 'alertSetting' }, 'Alert setting not found');
       }
       if (alert.userId !== ctx.user.id && ctx.user.role !== 'admin') {
-        throw new TRPCError({ code: 'FORBIDDEN', message: 'Not authorized' });
+        throw appError('FORBIDDEN', 'PERMISSION_DENIED', { action: 'deleteAlertSetting' }, 'Not authorized');
       }
       await db.deleteAlertSetting(input.id);
       return { success: true };
@@ -331,9 +346,12 @@ export const alertRouter = router({
     .input(z.object({
       alertSettingId: z.number().optional(),
       limit: z.number().min(1).max(100).optional(),
+      // doc 67 W3: lọc "chưa acknowledge" ở SERVER — không thì limit ăn vào các
+      // bản đã-ack mới nhất và breach mở cũ rớt khỏi console (mất cảnh báo).
+      onlyOpen: z.boolean().optional(),
     }))
     .query(async ({ input }) => {
-      return db.getAlertHistory(input.alertSettingId, input.limit);
+      return db.getAlertHistory(input.alertSettingId, input.limit, input.onlyOpen);
     }),
 
   // Cursor-based pagination for alert history
@@ -358,14 +376,14 @@ export const alertRouter = router({
       // owner and reject anyone who is neither the owner nor an admin.
       const historyRow = await db.getAlertHistoryById(input.id);
       if (!historyRow) {
-        throw new TRPCError({ code: 'NOT_FOUND', message: 'Alert not found' });
+        throw appError('NOT_FOUND', 'ENTITY_NOT_FOUND', { entity: 'alert' }, 'Alert not found');
       }
       const alert = await db.getAlertSettingById(historyRow.alertSettingId);
       if (!alert) {
-        throw new TRPCError({ code: 'NOT_FOUND', message: 'Alert setting not found' });
+        throw appError('NOT_FOUND', 'ENTITY_NOT_FOUND', { entity: 'alertSetting' }, 'Alert setting not found');
       }
       if (alert.userId !== ctx.user.id && ctx.user.role !== 'admin') {
-        throw new TRPCError({ code: 'FORBIDDEN', message: 'Not authorized' });
+        throw appError('FORBIDDEN', 'PERMISSION_DENIED', { action: 'acknowledgeAlert' }, 'Not authorized');
       }
       await db.acknowledgeAlert(input.id, ctx.user.id);
       return { success: true };
@@ -377,10 +395,10 @@ export const alertRouter = router({
     .mutation(async ({ input, ctx }) => {
       const alert = await db.getAlertSettingById(input.id);
       if (!alert) {
-        throw new TRPCError({ code: 'NOT_FOUND', message: 'Alert setting not found' });
+        throw appError('NOT_FOUND', 'ENTITY_NOT_FOUND', { entity: 'alertSetting' }, 'Alert setting not found');
       }
       if (alert.userId !== ctx.user.id && ctx.user.role !== 'admin') {
-        throw new TRPCError({ code: 'FORBIDDEN', message: 'Not authorized' });
+        throw appError('FORBIDDEN', 'PERMISSION_DENIED', { action: 'testAlertSetting' }, 'Not authorized');
       }
 
       // Reuse the shared evaluator so the test reflects the SAME breach logic
@@ -490,7 +508,7 @@ export const yieldThresholdRouter = router({
       
       // Get current threshold for history
       const current = await db.getYieldAlertThresholdById(id);
-      if (!current) throw new Error('Threshold not found');
+      if (!current) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "yieldAlertThreshold" }, "Threshold not found");
 
       // Create history record if thresholds changed
       if (data.warningThreshold !== undefined || data.criticalThreshold !== undefined || data.targetValue !== undefined) {

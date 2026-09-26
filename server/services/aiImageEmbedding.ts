@@ -1,5 +1,11 @@
 import * as ort from "onnxruntime-node";
+import { appError } from "../_core/appError";
+import { DbUnavailableError } from "../_core/dbErrors";
 import sharp from "sharp";
+// ★★★ Pha 2B Task 5 — vị từ "lỗi này có phải LỜI TỪ CHỐI không". Import TĨNH của một module
+// LÁ (không import gì, không I/O): nó phải dùng được NGAY TRONG `catch` của một lượt
+// `await import()` vừa hỏng. Xem `vramRefusalSignal.ts` để biết vì sao so TÊN, không `instanceof`.
+import { isVramRefusal } from "./vram/vramRefusalSignal";
 import path from "path";
 import fs from "fs";
 import { getDb } from "../db/connection";
@@ -426,6 +432,35 @@ async function searchByMetadataFallback(
 
 const embeddingSessionCache = new Map<string, ort.InferenceSession>();
 
+/**
+ * Pha 1 điều phối VRAM (Task 5 review vòng 1, I-2) — HỘ TIÊU THỤ THỨ BẢY.
+ *
+ * `getEmbeddingSession()` bên dưới tạo `ort.InferenceSession` với EP **`cuda`** khi
+ * `ENABLE_CUDA=true`, và cache trong `embeddingSessionCache` RIÊNG (không dùng chung
+ * `LruSessionCache` của aiInferenceEngine) ⇒ vô hình với mọi phép cộng VRAM đã làm. Nó được
+ * gọi từ ≥9 module đang SỐNG: phát hiện bất thường · tìm ảnh tương tự · học chủ động ·
+ * featureStore · embeddingHead.
+ *
+ * Hôm nay 0 MiB CHỈ VÌ `ENABLE_CUDA` không có trong `.env` — đúng lớp mù đã sinh ra hộ thứ sáu
+ * (reranker, 0 MiB chỉ vì `RAG_RERANKER_GPU=false`). Đổi một cờ là có ngay một hộ tiêu thụ mà
+ * không công cụ nào thấy.
+ *
+ * ⚠ `embeddingSessionCache` KHÔNG có giới hạn kích thước và KHÔNG có LRU — chỉ
+ * `evictEmbeddingSessionCache()` mới gỡ. Giấy phép theo đúng vòng đời đó.
+ */
+const embeddingSessionVramTickets = new Map<string, import("./vram/vramWiring").VramTicket>();
+
+function releaseEmbeddingSessionVramTicket(key: string): void {
+  try {
+    const t = embeddingSessionVramTickets.get(key);
+    if (!t) return;
+    embeddingSessionVramTickets.delete(key);
+    t.release();
+  } catch {
+    /* telemetry KHÔNG được làm hỏng vòng đời cache */
+  }
+}
+
 async function getEmbeddingSession(model: AiModel): Promise<ort.InferenceSession> {
   const cacheKey = `emb:${model.id}:${model.currentVersion}`;
   const cached = embeddingSessionCache.get(cacheKey);
@@ -465,19 +500,75 @@ async function getEmbeddingSession(model: AiModel): Promise<ort.InferenceSession
   if (process.env.ENABLE_CUDA === "true") providers.push("cuda");
   providers.push("cpu");
 
+  // Pha 1 Task 5 (I-2) — CHỈ KHAI BÁO. Mức `production`: embedding ảnh phục vụ phát hiện bất
+  // thường trên đường kiểm tra AOI (spec §5.2). Telemetry hỏng ⇒ giấy phép rỗng, lượt tạo
+  // session chạy y nguyên như trước.
+  let vramTicket: import("./vram/vramWiring").VramTicket = {
+    commitMeasured: async () => {},
+    release: () => {},
+    noteRefCount: () => {},
+  };
+  try {
+    const { beginVramAllocation } = await import("./vram/vramWiring");
+    vramTicket = await beginVramAllocation({
+      owner: `onnx-img:${model.code}`,
+      kind: "onnx-session",
+      priority: "production",
+      filePath: modelPath,
+      // I-1 — cùng ca với `aiInferenceEngine`: `evictEmbeddingSessionCache()` chỉ gỡ tham chiếu
+      // JS, `ort.InferenceSession.release()` không được gọi ở đâu trong repo ⇒ KHÔNG chứng minh
+      // được thiết bị đã nhả. Đánh dấu tường minh thay vì im lặng. Xem bảng bốn điểm nhả ở
+      // `vram/vramWiring.ts`.
+      releaseProof: "unverified",
+    });
+  } catch (err) {
+    // ★★★ Pha 2B Task 5 — TỪ CHỐI ≠ TELEMETRY HỎNG: nuốt ở đây là TẮT cưỡng chế tại điểm gọi này.
+    if (isVramRefusal(err)) throw err;
+    /* telemetry KHÔNG được làm hỏng đường tạo session */
+  }
+
   const session = await ort.InferenceSession.create(modelPath, {
     executionProviders: providers,
     graphOptimizationLevel: "all",
+    // ⚠ `.catch()` để dòng `create(...)` đứng nguyên văn — xem ghi chú cùng loại ở
+    // aiInferenceEngine.getSession(). Chỉ trả chỗ rồi ném lại NGUYÊN lỗi cũ.
+  }).catch((err: unknown) => {
+    vramTicket.release();
+    throw err;
   });
+
+  await vramTicket.commitMeasured();
+  // Không có khoá in-flight ⇒ trả giấy phép cũ trước khi ghi đè (cùng khuôn ba hộ ONNX kia).
+  releaseEmbeddingSessionVramTicket(cacheKey);
+  embeddingSessionVramTickets.set(cacheKey, vramTicket);
 
   embeddingSessionCache.set(cacheKey, session);
   return session;
 }
 
+/**
+ * ⚠ I-1 (review TOÀN NHÁNH) — hai điều người sau phải biết trước khi tin hàm này:
+ *
+ *   1. **Hàm này KHÔNG CÓ NGƯỜI GỌI trong mã sản xuất** (grep toàn repo: chỉ định nghĩa ở đây và
+ *      một lời gọi trong test). `embeddingSessionCache` không có LRU, không có trần kích thước.
+ *      ⇒ trên thực tế giấy phép của hộ thứ bảy KHÔNG BAO GIỜ được trả trong một tiến trình sống.
+ *      Điều đó nghe như rò rỉ, nhưng nó TRUNG THỰC: session cũng không bao giờ được nhả khỏi
+ *      thiết bị, nên sổ và thiết bị vẫn khớp nhau. Cái sai nằm ở tầng dưới (session rò), không
+ *      phải ở sổ.
+ *   2. Khi có người gọi, lượt nhả này là lượt nhả **KHÔNG CÓ BẰNG CHỨNG** — xoá khỏi Map chỉ gỡ
+ *      tham chiếu JS, `ort.InferenceSession.release()` không tồn tại trong repo. Vì vậy giấy
+ *      phép được xin kèm `releaseProof: "unverified"` (xem `getEmbeddingSession()`), và sự kiện
+ *      `release` ghi lại đúng như thế.
+ *
+ * Kỷ luật đầy đủ + bảng bốn điểm nhả: đầu `server/services/vram/vramWiring.ts`.
+ */
 export function evictEmbeddingSessionCache(modelId: number) {
   for (const [key] of embeddingSessionCache) {
     if (key.startsWith(`emb:${modelId}:`)) {
       embeddingSessionCache.delete(key);
+      // Pha 1 Task 5 (I-2) — session rời cache thì sổ cũng phải nhả, nếu không giấy phép treo
+      // vĩnh viễn và reconciler báo lệch ÂM giả.
+      releaseEmbeddingSessionVramTicket(key);
     }
   }
 }
@@ -565,7 +656,7 @@ export async function extractEmbedding(
 ): Promise<EmbeddingResult> {
   const startTime = Date.now();
   const model = await getAiModelById(modelId);
-  if (!model) throw new Error(`Embedding model ${modelId} not found`);
+  if (!model) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "embeddingModel" }, `Embedding model ${modelId} not found`);
   if (model.status !== "ACTIVE") throw new Error(`Model ${model.code} is not active`);
 
   const session = await getEmbeddingSession(model);
@@ -629,7 +720,7 @@ async function ensurePgvector() {
 
   const db = await getDb();
   if (!db) {
-    throw new Error("Database not available");
+    throw new DbUnavailableError();
   }
 
   try {
@@ -663,7 +754,7 @@ export async function storeEmbedding(params: {
   metadata?: Record<string, unknown>;
 }): Promise<number> {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  if (!db) throw new DbUnavailableError();
 
   const embeddingStr = formatVectorLiteral(params.embedding);
   const metaStr = params.metadata != null ? JSON.stringify(params.metadata) : null;
@@ -927,7 +1018,7 @@ export async function findSimilarByIdWithMode(
     .where(eq(aiImageEmbeddings.id, imageEmbeddingId))
     .limit(1);
 
-  if (!source[0]) throw new Error(`Embedding ${imageEmbeddingId} not found`);
+  if (!source[0]) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "imageEmbedding" }, `Embedding ${imageEmbeddingId} not found`);
 
   return findSimilarByVectorWithMode(
     parseVectorLiteral(source[0].embedding),

@@ -22,6 +22,7 @@ import {
 import { Separator } from "@/components/ui/separator";
 import { PageHeader } from "@/components/patterns";
 import { trpc } from "@/lib/trpc";
+import { toastTrpcError } from "@/lib/trpcErrors";
 import {
   FileText, Download, Loader2, CheckCircle, Search,
   Plus, Settings, Eye, BarChart3,
@@ -57,7 +58,7 @@ export function PdfReportsContent() {
       downloadPdf(data.data, data.filename);
       toast.success(t('reports.pdfCreatedSuccess'));
     },
-    onError: (err) => toast.error(err.message),
+    onError: (err) => toastTrpcError(err),
   });
 
   const qualityMutation = trpc.pdfReport.generateQualityPDF.useMutation({
@@ -65,7 +66,7 @@ export function PdfReportsContent() {
       downloadPdf(data.data, data.filename);
       toast.success(t('reports.pdfCreatedSuccess'));
     },
-    onError: (err) => toast.error(err.message),
+    onError: (err) => toastTrpcError(err),
   });
 
   function downloadPdf(base64: string, filename: string) {
@@ -346,7 +347,7 @@ function TemplateManager() {
       setShowCreateDialog(false);
       setNewTemplate({ name: "", type: "CUSTOM" });
     },
-    onError: (err) => toast.error(err.message),
+    onError: (err) => toastTrpcError(err),
   });
 
   const deleteMutation = trpc.pdfReport.deleteTemplate.useMutation({
@@ -354,7 +355,7 @@ function TemplateManager() {
       toast.success(t('reports.templateDeleted'));
       refetch();
     },
-    onError: (err) => toast.error(err.message),
+    onError: (err) => toastTrpcError(err),
   });
 
   return (

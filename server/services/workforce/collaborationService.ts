@@ -22,6 +22,7 @@
  * ════════════════════════════════════════════════════════════════════════════
  */
 import { eq } from "drizzle-orm";
+import { DbUnavailableError } from "../../_core/dbErrors";
 import { getDb } from "../../db/connection";
 import { collaborationSessions, type CollaborationSession } from "../../../drizzle/schema";
 import { workforceEnabled } from "./workforceService";
@@ -46,7 +47,7 @@ export function canAdvance(phase: CollabPhase, handshakeState: HandshakeState): 
 
 async function db() {
   const d = await getDb();
-  if (!d) throw new Error("Database not connected");
+  if (!d) throw new DbUnavailableError();
   return d;
 }
 

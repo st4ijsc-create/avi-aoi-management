@@ -1,0 +1,35 @@
+{
+  "corpus": "scripts/ai-eval/st4i-giu-lai-lac-de.jsonl",
+  "label": "v7b-thu",
+  "tom": {
+    "trong": {
+      "n": 1,
+      "dung": 1,
+      "tuChoi": 0,
+      "sai": 0
+    },
+    "ngoai": {
+      "n": 0,
+      "tuChoi": 0,
+      "traLoi": 0
+    },
+    "loi": 0
+  },
+  "ra": [
+    {
+      "id": "HT01",
+      "ngoai": false,
+      "kq": "dung",
+      "ms": 32573,
+      "nguon": [
+        "knowledge/domain/aoi-reports.md",
+        "knowledge/features/analytics/reports.md",
+        "knowledge/domain/howto-export-pdf-report.md",
+        "knowledge/domain/howto-export-pdf-report.md",
+        "knowledge/features/analytics/scheduled-reports.md"
+      ],
+      "traLoi": "(1) Tóm tắt\nKhi xuất báo cáo thủ công, người dùng có thể chọn ba định dạng chính là PDF, Excel và CSV, tùy thuộc vào mục đích trình bày, phân tích sâu hoặc tích hợp hệ thống.\n\n(2) Các bước thực hiện\n1. **Vào khu vực Export**: Tại giao diện chính, điều hướng đến menu `Analytics → Reports` (URL: `/reports`) [2], sau đó chọn mục `Reports → Export` [1].\n2. **Cấu hình tham số**: Chọn loại báo cáo mong muốn và khoảng thời gian dữ liệu cần trích xuất [1].\n3. **Chọn định dạng**: Trong bước chọn format, hệ thống cung cấp các lựa chọn sau [1]:\n    - **PDF**: Phù hợp cho mục đích trình bày, báo cáo tổng hợp.\n    - **Excel**: Phù hợp cho việc phân tích dữ liệu chi tiết.\n    - **CSV**: Phù hợp để import vào các hệ thống khác.\n4. **Hoàn tất**: Chọn thư mục lưu trữ và nhấn nút `\n\nAPI liên quan: `/api/reports/export`",
+      "loi": null
+    }
+  ]
+}

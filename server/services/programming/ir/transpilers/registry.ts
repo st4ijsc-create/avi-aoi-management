@@ -15,6 +15,7 @@ import type { Flow, TargetDeviceType } from "../irModel";
 import { lintFlow, type LintDiagnostic, type LimitProfile } from "../irSafetyLinter";
 import { transpileToUrscript, type TranspileResult } from "./irToUrscript";
 import { transpileToRos2 } from "./irToRos2";
+import { IrUnsafeTokenError } from "../irSafeTokens";
 
 export type TranspileTarget = "urscript" | "ros2";
 
@@ -74,6 +75,20 @@ export function transpileFlow(
       diagnostics: [{ blockId: "?", severity: "error", rule: "no-transpiler", message: `No transpiler for target "${resolvedTarget}".` }],
     };
   }
-  const { code, irCommentMap } = transpiler(flow);
+  // Doc 80 IR-01 defence layer 2: an emitter that meets a non-whitelisted string THROWS. The
+  // linter rejects the same values first, so this is only reachable if the two ever drift —
+  // fail closed as a normal blocked build (no code), never as a 500.
+  let out: TranspileResult;
+  try {
+    out = transpiler(flow);
+  } catch (e) {
+    if (!(e instanceof IrUnsafeTokenError)) throw e;
+    return {
+      ok: false,
+      target: resolvedTarget,
+      diagnostics: [...lint.diagnostics, { blockId: "?", severity: "error", rule: e.rule, message: e.message }],
+    };
+  }
+  const { code, irCommentMap } = out;
   return { ok: true, code, irCommentMap, target: resolvedTarget, diagnostics: lint.diagnostics };
 }

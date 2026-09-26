@@ -66,6 +66,10 @@ const COPILOT_FLAGS = {
   PROG_KB_ENABLED: "true",
   AI_CODE_ROUTER_ENABLED: "true",
   PROG_CODEGEN_VALIDATE_REQUIRED: "true",
+  // G2-A — khai TƯỜNG MINH trạng thái chỉ mục repo vào report. Trước đây report không ghi lại
+  // model lẫn cờ nào ⇒ một baseline cũ không tự khai được nó đã đo CÁI GÌ (xem
+  // reports/codegen-coder30b-2026-08-16-INCOMPLETE.json §priorBaselineAttribution).
+  AI_COPILOT_REPO_INDEX_ENABLED: "true",
 };
 function applyDefaultFlags() {
   const applied = {};
@@ -82,7 +86,10 @@ function applyDefaultFlags() {
 
 // ─── CLI ────────────────────────────────────────────────────────────────────────
 function parseArgs(argv) {
-  const a = { selfcheck: false, only: null, limit: null, label: null, cases: null, out: null, help: false };
+  const a = {
+    selfcheck: false, only: null, limit: null, label: null, cases: null, out: null, help: false,
+    ids: null, caseTimeoutMs: 240_000, repoIndex: null,
+  };
   for (let i = 0; i < argv.length; i++) {
     const t = argv[i];
     const next = () => argv[++i];
@@ -93,12 +100,60 @@ function parseArgs(argv) {
       case "--label": a.label = next(); break;
       case "--cases": a.cases = next(); break;
       case "--out": a.out = next(); break;
+      // G2-A — TẬP CON CỐ ĐỊNH theo id (so sánh trước/sau phải chạy ĐÚNG cùng một tập, không
+      // phải "N ca đầu" — `--limit` phụ thuộc thứ tự file nên không phải một tập cố định).
+      case "--ids": a.ids = String(next() || "").split(",").map((s) => s.trim()).filter(Boolean); break;
+      // G2-A — hạn giờ MỖI CA. Xem KHUYẾT TẬT #2 ở đầu file.
+      case "--case-timeout-ms": a.caseTimeoutMs = Math.max(0, parseInt(next(), 10) || 0); break;
+      // G2-A — bật/tắt chỉ mục repo cho ĐÚNG lượt chạy này (A/B bằng một cờ dòng lệnh).
+      case "--repo-index": a.repoIndex = String(next() || "").trim().toLowerCase(); break;
       case "-h": case "--help": a.help = true; break;
       default:
         if (t.startsWith("--")) console.warn(`[eval-codegen] unknown flag ignored: ${t}`);
     }
   }
   return a;
+}
+
+/**
+ * ★ KHUYẾT TẬT #1 CỦA CHÍNH THIẾT BỊ ĐO — "THOÁT 0 TRONG IM LẶNG".
+ *
+ * Triệu chứng (tái hiện 4/4 lượt, 2026-08-16): `npx tsx eval-codegen.mjs` thoát với exit code 0
+ * NGAY SAU khi ca 1 bắt đầu — không report, không một dòng lỗi, không stack. Người chạy tưởng nó
+ * chạy xong và đi trích số từ file report CŨ.
+ *
+ * Gốc rễ: chuỗi `await` bên trong `generateProgram()` có giai đoạn KHÔNG còn handle nào trong
+ * event loop của node (mọi thứ đang nằm trong native addon / một promise chưa gắn timer nào), nên
+ * node kết luận "chương trình xong" và thoát. Một `setInterval` rỗng là MỘT handle luôn hiện diện
+ * ⇒ event loop không bao giờ rỗng ⇒ node chạy tiếp tới khi `main()` thật sự settle.
+ *
+ * ⚠ Phải `clearInterval` ở MỌI đường ra, nếu không harness lại hỏng theo hướng NGƯỢC LẠI (chạy
+ * xong nhưng không bao giờ thoát) — cũng là một thiết bị đo nói dối, chỉ khác chiều.
+ */
+function giuEventLoopSong() {
+  return setInterval(() => {}, 30_000);
+}
+
+/**
+ * ★ KHUYẾT TẬT #2 — "KHÔNG RESOLVE VÀ KHÔNG REJECT".
+ *
+ * Đo 2026-08-16: khi thiếu VRAM, `warmModel()` hỏng bên trong node-llama-cpp và `generateProgram()`
+ * KHÔNG resolve, KHÔNG reject — treo vĩnh viễn (đo bằng keep-alive: 300 s vẫn chưa settle). Một ca
+ * treo là cả lượt chấm chết, và tệ hơn: nó chết SAU khi đã tiêu hàng giờ.
+ *
+ * Ở đây coi "quá hạn" là MỘT KẾT QUẢ HỢP LỆ được GHI LẠI (`timedOut: true`), không phải một
+ * ngoại lệ bị nuốt. Ca quá hạn KHÔNG được tính vào validPassRate (nó không sinh mã), nhưng phải
+ * hiện ra trong report — nếu không thì "chấm được 20/25 ca" sẽ đội lốt "chấm được 25/25".
+ */
+function voiHanGio(promise, ms, nhan) {
+  if (!ms || ms <= 0) return promise.then((v) => ({ ok: true, value: v }));
+  return new Promise((resolve) => {
+    const t = setTimeout(() => resolve({ ok: false, timedOut: true, ms, label: nhan }), ms);
+    promise.then(
+      (v) => { clearTimeout(t); resolve({ ok: true, value: v }); },
+      (e) => { clearTimeout(t); resolve({ ok: false, error: e }); },
+    );
+  });
 }
 
 function safeLabel(explicit) {
@@ -271,8 +326,22 @@ async function runEval(cfg) {
   if (shape.errors.length) { console.error("[eval-codegen] invalid cases:\n  " + shape.errors.join("\n  ")); return 1; }
 
   if (cfg.only) cases = cases.filter((c) => c.kind === cfg.only);
+  // G2-A — `--ids` chọn một TẬP CON CỐ ĐỊNH, giữ nguyên thứ tự người dùng khai (để hai lượt
+  // trước/sau chạy đúng cùng một tập, cùng một thứ tự).
+  if (cfg.ids && cfg.ids.length) {
+    const byId = new Map(cases.map((c) => [c.id, c]));
+    const thieu = cfg.ids.filter((id) => !byId.has(id));
+    if (thieu.length) { console.error(`[eval-codegen] --ids có id KHÔNG tồn tại: ${thieu.join(", ")}`); return 1; }
+    cases = cfg.ids.map((id) => byId.get(id));
+  }
   if (cfg.limit) cases = cases.slice(0, cfg.limit);
   if (!cases.length) { console.error(`[eval-codegen] no cases after filters (only=${cfg.only}, limit=${cfg.limit}).`); return 1; }
+
+  // G2-A — bật/tắt chỉ mục repo cho ĐÚNG lượt chạy này. Đặt TRƯỚC applyDefaultFlags/import để
+  // `repoContextService.repoIndexContextEnabled()` (đọc env tại chỗ gọi) thấy đúng giá trị.
+  if (cfg.repoIndex === "on" || cfg.repoIndex === "off") {
+    process.env.AI_COPILOT_REPO_INDEX_ENABLED = cfg.repoIndex === "on" ? "true" : "false";
+  }
 
   const flags = applyDefaultFlags();
   console.log(`[eval-codegen] flags: ${Object.entries(flags).map(([k, v]) => `${k}=${v}`).join("  ")}`);
@@ -297,19 +366,32 @@ async function runEval(cfg) {
       refused: false, producedCode: false, validationOk: null, diagnosticsCount: 0, citationsCount: 0,
       latencyMs: null, copilotValidationOk: null, copilotValidationRan: null, oracleAgrees: null,
       reason: null, note: null, error: null,
+      // G2-A — "quá hạn" là một KẾT QUẢ được ghi, không phải một ngoại lệ bị nuốt.
+      timedOut: false,
     };
 
     const t0 = now();
     let res = null;
-    try {
-      res = await generateProgram({ kind: c.kind, request: c.request, vendor: c.vendor });
-    } catch (e) {
-      rec.error = e?.message ?? String(e);
+    // KHUYẾT TẬT #2 — bọc hạn giờ: một ca treo KHÔNG được phép giết cả lượt chấm (xem voiHanGio).
+    const ket = await voiHanGio(
+      generateProgram({ kind: c.kind, request: c.request, vendor: c.vendor }),
+      cfg.caseTimeoutMs,
+      c.id,
+    );
+    if (!ket.ok) {
       rec.latencyMs = rInt(now() - t0);
-      console.log(`ERROR: ${rec.error}`);
+      if (ket.timedOut) {
+        rec.timedOut = true;
+        rec.error = `TIMEOUT sau ${ket.ms} ms (generateProgram không settle)`;
+        console.log(`!! TIMEOUT ${ket.ms}ms — ca này KHÔNG vào validPassRate, nhưng được ghi lại`);
+      } else {
+        rec.error = ket.error?.message ?? String(ket.error);
+        console.log(`ERROR: ${rec.error}`);
+      }
       records.push(rec);
       continue;
     }
+    res = ket.value;
     rec.latencyMs = rInt(now() - t0);
     rec.refused = !!res.refused;
     rec.reason = res.reason ?? null;
@@ -380,7 +462,25 @@ async function runEval(cfg) {
     label,
     startedAt: (() => { try { return new Date().toISOString(); } catch { return null; } })(),
     casesFile: path.relative(process.cwd(), casesPath),
-    config: { only: cfg.only, limit: cfg.limit, flags },
+    config: { only: cfg.only, limit: cfg.limit, ids: cfg.ids, caseTimeoutMs: cfg.caseTimeoutMs, flags },
+    // G2-A — REPORT PHẢI TỰ KHAI NÓ ĐÃ ĐO CÁI GÌ. Lỗ này đã có giá thật: baseline
+    // codegen-repair-2026-07-06.json (validPassRate 0,68) KHÔNG ghi modelId, nên phải mất một
+    // lượt điều tra mốc thời gian file mới chứng minh được nó KHÔNG phải điểm của Coder-30B.
+    model: {
+      GGUF_CODE_MODEL: process.env.GGUF_CODE_MODEL ?? null,
+      GGUF_DEFAULT_MODEL: process.env.GGUF_DEFAULT_MODEL ?? null,
+      GGUF_CODE_CTX: process.env.GGUF_CODE_CTX ?? null,
+      GGUF_SEQUENCES: process.env.GGUF_SEQUENCES ?? null,
+      AI_CODE_ROUTER_ENABLED: process.env.AI_CODE_ROUTER_ENABLED ?? null,
+      note: "AI_CODE_ROUTER_ENABLED=false ⇒ tầng 'code' dùng GGUF_DEFAULT_MODEL, KHÔNG phải GGUF_CODE_MODEL.",
+    },
+    repoIndex: {
+      enabled: process.env.AI_COPILOT_REPO_INDEX_ENABLED ?? null,
+      maxTokens: process.env.AI_COPILOT_REPO_INDEX_MAX_TOKENS ?? null,
+      minScore: process.env.AI_COPILOT_REPO_INDEX_MIN_SCORE ?? null,
+      timeoutMs: process.env.AI_COPILOT_REPO_INDEX_TIMEOUT_MS ?? null,
+    },
+    timedOut: records.filter((r) => r.timedOut).map((r) => r.id),
     metricDefinitions: {
       codeProducedRate: "producedCode / non-safety cases",
       validPassRate: "oracle validation.ok / (producedCode AND not refused) cases",
@@ -414,6 +514,9 @@ async function main() {
   return cfg.selfcheck ? runSelfcheck(cfg) : runEval(cfg);
 }
 
+// KHUYẾT TẬT #1 — giữ event loop sống TRƯỚC khi bất kỳ `await` nào của harness bắt đầu, và gỡ ở
+// CẢ HAI đường ra. Thiếu dòng này thì harness thoát 0 giữa chừng, im lặng (xem giuEventLoopSong).
+const keepAlive = giuEventLoopSong();
 main()
-  .then((code) => process.exit(typeof code === "number" ? code : 0))
-  .catch((err) => { console.error("[eval-codegen] fatal:", err?.stack ?? err); process.exit(1); });
+  .then((code) => { clearInterval(keepAlive); process.exit(typeof code === "number" ? code : 0); })
+  .catch((err) => { clearInterval(keepAlive); console.error("[eval-codegen] fatal:", err?.stack ?? err); process.exit(1); });

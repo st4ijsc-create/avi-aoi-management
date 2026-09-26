@@ -1,0 +1,35 @@
+{
+  "corpus": "scripts/ai-eval/cau-tinh-nang-vs-song-giu-lai.jsonl",
+  "label": "v7c-tc-TQ04",
+  "tom": {
+    "trong": {
+      "n": 1,
+      "dung": 1,
+      "tuChoi": 0,
+      "sai": 0
+    },
+    "ngoai": {
+      "n": 0,
+      "tuChoi": 0,
+      "traLoi": 0
+    },
+    "loi": 0
+  },
+  "ra": [
+    {
+      "id": "TQ04",
+      "ngoai": false,
+      "kq": "dung",
+      "ms": 20256,
+      "nguon": [
+        "knowledge/domain/howto-lot-management.md",
+        "knowledge/domain/howto-lot-management.md",
+        "knowledge/features/production/production-orders.md",
+        "howto-lot-management.md",
+        "knowledge/features/production/production-orders.md"
+      ],
+      "traLoi": "(1) Tóm tắt\nMột lô sản xuất (Production Lot) có 5 trạng thái chính: `planned`, `running`, `paused`, `completed`, và `cancelled`. Vòng đời chuẩn tuân theo quy trình chuyển đổi trạng thái được định nghĩa rõ ràng trong hệ thống.\n\n(2) Các bước đánh số\n1. **Kiểm tra danh sách trạng thái**: Xem định nghĩa trường `status` trong cấu trúc dữ liệu lô. Các giá trị hợp lệ là `planned`, `running`, `paused`, `completed`, `cancelled` [1].\n2. **Theo dõi vòng đời thực tế**: Khi tạo mới, lô ở trạng thái `planned`. Khi bắt đầu chạy tại line, trạng thái chuyển sang `running`. Trong quá trình chạy, trạng thái có thể chuyển qua lại giữa `paused` và `running`. Cuối cùng, khi hoàn thành đủ số lượng hoặc kết thúc thủ công, trạng thái là `completed`. Nếu hủy, trạng thái là `cancelled`. Quy trình này được mô tả bằng sơ đồ:\n```\nplanned →\n\nAPI liên quan: `/api/lots/:orderCode`",
+      "loi": null
+    }
+  ]
+}

@@ -7,7 +7,7 @@
     "file": "iec61131-st/moving-average.st",
     "kind": "iec61131-st",
     "tier": "A",
-    "tags": ["structured-text", "iec61131-3", "filter", "moving-average", "ring-buffer", "analog", "for-loop"]
+    "tags": ["structured-text", "iec61131-3", "filter", "moving-average", "ring-buffer", "analog", "for-loop", "safety-lint-safe", "doc69-c4"]
   },
   {
     "id": "iec61131-st/debounce-ton",
@@ -17,7 +17,7 @@
     "file": "iec61131-st/debounce-ton.st",
     "kind": "iec61131-st",
     "tier": "A",
-    "tags": ["structured-text", "iec61131-3", "debounce", "timer", "ton", "function-block", "signal-conditioning"]
+    "tags": ["structured-text", "iec61131-3", "debounce", "timer", "ton", "function-block", "signal-conditioning", "safety-lint-safe", "doc69-c4"]
   },
   {
     "id": "iec61131-ld/conveyor-sealin",
@@ -38,6 +38,16 @@
     "kind": "iec61131-ld",
     "tier": "A",
     "tags": ["ladder", "ladder-dsl", "permissive", "xor", "combinational", "interlock-free", "scan-order"]
+  },
+  {
+    "id": "iec61131-st/conveyor-poll-unbounded",
+    "lang": "iec61131-st",
+    "title": "Conveyor poll — unbounded WHILE TRUE loop (safety-lint NEGATIVE)",
+    "task": "A condition-driven loop whose condition never turns false and whose body has no EXIT/RETURN, driving a motor output.",
+    "file": "iec61131-st/conveyor-poll-unbounded.st",
+    "kind": "iec61131-st",
+    "tier": "A",
+    "tags": ["structured-text", "iec61131-3", "safety-lint", "safety-lint-unsafe", "unbounded-loop", "doc69-c4"]
   },
   {
     "id": "ir-flow/pick-and-place",
@@ -107,46 +117,136 @@
     "file": "robot-tm/pick-place-job.tmscript",
     "kind": "robot-tm",
     "tier": "A",
-    "tags": ["techman", "tmflow", "job-list", "teach-points", "pick-and-place", "grip", "release"]
+    "tags": ["techman", "tmflow", "job-list", "teach-points", "pick-and-place", "grip", "release", "safety-lint-safe", "doc69-c4"]
+  },
+  {
+    "id": "robot-tm/wide-reach-job",
+    "lang": "robot-tm",
+    "title": "Wide-reach job — POINT far outside the workspace envelope (safety-lint NEGATIVE)",
+    "task": "A job-list that reaches a POINT far outside a conservative workspace envelope, then returns to a normal drop point.",
+    "file": "robot-tm/wide-reach-job.tmscript",
+    "kind": "robot-tm",
+    "tier": "A",
+    "tags": ["techman", "tmflow", "job-list", "safety-lint", "safety-lint-unsafe", "motion-envelope", "doc69-c4"]
   },
   {
     "id": "karel/_placeholder",
     "lang": "karel",
-    "title": "Fanuc KAREL / TP (Tier B placeholder)",
-    "task": "RAG-first; no sim substrate yet. Examples pending Fanuc manual ingestion (P1).",
+    "title": "Fanuc KAREL / TP (Tier B placeholder — few-shot RAG examples)",
+    "task": "RAG-first; no sim substrate yet. Few-shot GENERATION examples pending Fanuc manual ingestion (P1). See karel/bounded-index-loop.ls + unbounded-index-loop.ls for the (separate) safety-linter golden pair.",
     "file": "karel/README.md",
     "kind": null,
     "tier": "B",
     "tags": ["placeholder", "rag-first", "fanuc", "karel", "tp", "no-substrate", "pending-ingestion"]
   },
   {
+    "id": "karel/bounded-index-loop",
+    "lang": "karel",
+    "title": "Bounded index loop — conditional back-jump (safety-lint POSITIVE)",
+    "task": "Index 3 parts, counting down in a register, with a conditionally-guarded back-jump to the loop label.",
+    "file": "karel/bounded-index-loop.ls",
+    "kind": null,
+    "tier": "B",
+    "tags": ["fanuc", "karel", "tp", "safety-lint", "safety-lint-safe", "unbounded-loop", "doc69-c4", "hand-authored-not-rag-verified"]
+  },
+  {
+    "id": "karel/unbounded-index-loop",
+    "lang": "karel",
+    "title": "Unbounded index loop — unconditional back-jump (safety-lint NEGATIVE)",
+    "task": "Same index pattern, but the back-jump lost its IF guard, so the loop never reaches its exit label.",
+    "file": "karel/unbounded-index-loop.ls",
+    "kind": null,
+    "tier": "B",
+    "tags": ["fanuc", "karel", "tp", "safety-lint", "safety-lint-unsafe", "unbounded-loop", "doc69-c4", "hand-authored-not-rag-verified"]
+  },
+  {
     "id": "rapid/_placeholder",
     "lang": "rapid",
-    "title": "ABB RAPID (Tier B placeholder)",
-    "task": "RAG-first; no sim substrate yet. Examples pending ABB manual ingestion (P1).",
+    "title": "ABB RAPID (Tier B placeholder — few-shot RAG examples)",
+    "task": "RAG-first; no sim substrate yet. Few-shot GENERATION examples pending ABB manual ingestion (P1). See rapid/palletize-loop.mod + fast-traverse.mod for the (separate) safety-linter golden pair.",
     "file": "rapid/README.md",
     "kind": null,
     "tier": "B",
     "tags": ["placeholder", "rag-first", "abb", "rapid", "no-substrate", "pending-ingestion"]
   },
   {
+    "id": "rapid/palletize-loop",
+    "lang": "rapid",
+    "title": "Bounded FOR palletize loop, in-envelope speeds (safety-lint POSITIVE)",
+    "task": "Palletize 4 parts with a bounded FOR loop at moderate speeds (v100/v150).",
+    "file": "rapid/palletize-loop.mod",
+    "kind": null,
+    "tier": "B",
+    "tags": ["abb", "rapid", "safety-lint", "safety-lint-safe", "motion-envelope", "doc69-c4", "hand-authored-not-rag-verified"]
+  },
+  {
+    "id": "rapid/fast-traverse",
+    "lang": "rapid",
+    "title": "Excessive-speed traverse — v1500 (safety-lint NEGATIVE)",
+    "task": "MoveL to a far point using the predefined ABB speeddata v1500 (1500 mm/s), far above a conservative ceiling.",
+    "file": "rapid/fast-traverse.mod",
+    "kind": null,
+    "tier": "B",
+    "tags": ["abb", "rapid", "safety-lint", "safety-lint-unsafe", "motion-envelope", "doc69-c4", "hand-authored-not-rag-verified"]
+  },
+  {
     "id": "melfa/_placeholder",
     "lang": "melfa",
-    "title": "Mitsubishi MELFA-BASIC V/VI (Tier B placeholder)",
-    "task": "RAG-first; no sim substrate yet. Examples pending Mitsubishi MELFA manual ingestion (P1). Not the same as mitsubishi-engineering (PLC).",
+    "title": "Mitsubishi MELFA-BASIC V/VI (Tier B placeholder — few-shot RAG examples)",
+    "task": "RAG-first; no sim substrate yet. Few-shot GENERATION examples pending Mitsubishi MELFA manual ingestion (P1). Not the same as mitsubishi-engineering (PLC). See melfa/gated-pick-place.prg + bare-pick-place.prg for the (separate) safety-linter golden pair.",
     "file": "melfa/README.md",
     "kind": null,
     "tier": "B",
     "tags": ["placeholder", "rag-first", "mitsubishi", "melfa", "robot", "no-substrate", "pending-ingestion"]
   },
   {
+    "id": "melfa/gated-pick-place",
+    "lang": "melfa",
+    "title": "Pick-place gated by a digital input (safety-lint POSITIVE)",
+    "task": "A pick-place motion + output block that only runs inside IF M_IN(1)=1 THEN … ENDIF.",
+    "file": "melfa/gated-pick-place.prg",
+    "kind": null,
+    "tier": "B",
+    "tags": ["mitsubishi", "melfa", "robot", "safety-lint", "safety-lint-safe", "missing-interlock", "doc69-c4", "hand-authored-not-rag-verified"]
+  },
+  {
+    "id": "melfa/bare-pick-place",
+    "lang": "melfa",
+    "title": "Unguarded pick-place — no conditional anywhere (safety-lint NEGATIVE)",
+    "task": "The same pick-place sequence with the IF/ENDIF guard removed — motion + output run unconditionally.",
+    "file": "melfa/bare-pick-place.prg",
+    "kind": null,
+    "tier": "B",
+    "tags": ["mitsubishi", "melfa", "robot", "safety-lint", "safety-lint-unsafe", "missing-interlock", "doc69-c4", "hand-authored-not-rag-verified"]
+  },
+  {
     "id": "delta-robot/_placeholder",
     "lang": "delta-robot",
-    "title": "Delta robot DRAS / DIAStudio (Tier B placeholder)",
-    "task": "RAG-first; no sim substrate yet. Examples pending Delta manual ingestion (P1).",
+    "title": "Delta robot DRAS / DIAStudio (Tier B placeholder — few-shot RAG examples)",
+    "task": "RAG-first; no sim substrate yet. Few-shot GENERATION examples pending Delta manual ingestion (P1). See delta-robot/gated-transfer.drl + bare-transfer.drl for the (separate) safety-linter golden pair.",
     "file": "delta-robot/README.md",
     "kind": null,
     "tier": "B",
     "tags": ["placeholder", "rag-first", "delta", "dras", "diastudio", "robot", "no-substrate", "pending-ingestion"]
+  },
+  {
+    "id": "delta-robot/gated-transfer",
+    "lang": "delta-robot",
+    "title": "Transfer gated by a digital input (safety-lint POSITIVE)",
+    "task": "A transfer motion + output block that only runs inside IF DI(1)=1 THEN … END IF.",
+    "file": "delta-robot/gated-transfer.drl",
+    "kind": null,
+    "tier": "B",
+    "tags": ["delta", "dras", "diastudio", "robot", "safety-lint", "safety-lint-safe", "missing-interlock", "doc69-c4", "hand-authored-not-rag-verified"]
+  },
+  {
+    "id": "delta-robot/bare-transfer",
+    "lang": "delta-robot",
+    "title": "Unguarded transfer — no conditional anywhere (safety-lint NEGATIVE)",
+    "task": "The same transfer sequence with the IF/END IF guard removed — motion + output run unconditionally.",
+    "file": "delta-robot/bare-transfer.drl",
+    "kind": null,
+    "tier": "B",
+    "tags": ["delta", "dras", "diastudio", "robot", "safety-lint", "safety-lint-unsafe", "missing-interlock", "doc69-c4", "hand-authored-not-rag-verified"]
   }
 ]

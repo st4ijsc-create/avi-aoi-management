@@ -1,4 +1,5 @@
 import * as db from "../db/aiAdvanced";
+import { appError } from "../_core/appError";
 import { getAiModelById } from "../db/ai";
 import { storagePut, storageGet } from "../storage";
 import * as crypto from "crypto";
@@ -24,7 +25,7 @@ export async function createEdgeDeployment(options: {
   createdBy?: number;
 }) {
   const model = await getAiModelById(options.modelId);
-  if (!model) throw new Error(`Model ${options.modelId} not found`);
+  if (!model) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "aiModel" }, `Model ${options.modelId} not found`);
 
   return db.createEdgeDeployment({
     modelId: options.modelId,
@@ -48,7 +49,7 @@ export async function createEdgeDeployment(options: {
  */
 export async function packageModelForEdge(deploymentId: number) {
   const deployment = await db.getEdgeDeployment(deploymentId);
-  if (!deployment) throw new Error(`Deployment ${deploymentId} not found`);
+  if (!deployment) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "edgeDeployment" }, `Deployment ${deploymentId} not found`);
 
   await db.updateEdgeDeployment(deploymentId, { status: "PACKAGING" });
 
@@ -216,7 +217,7 @@ export async function syncEdgeResults(
   }>,
 ) {
   const deployment = await db.getEdgeDeployment(deploymentId);
-  if (!deployment) throw new Error(`Deployment ${deploymentId} not found`);
+  if (!deployment) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "edgeDeployment" }, `Deployment ${deploymentId} not found`);
 
   const syncedRecords = [];
 

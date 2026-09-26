@@ -1,5 +1,8 @@
 import { getDb } from "./connection";
-import { eq, and, desc, asc, gte, lte, sql, inArray, isNotNull, isNull, SQL } from "drizzle-orm";
+import { DbUnavailableError } from "../_core/dbErrors";
+import { eq, and, desc, asc, gte, lte, sql, or, inArray, isNotNull, isNull, SQL } from "drizzle-orm";
+import type { AnyPgColumn } from "drizzle-orm/pg-core";
+import { idsTrongPhamVi, type PhamViNguoiXem } from "./hierarchy";
 import {
   spcConfigurations,
   InsertSpcConfiguration,
@@ -19,6 +22,62 @@ import {
   workstations,
 } from "../../drizzle/schema";
 
+/**
+ * ★★★ 2026-08-18 (trả nợ nhóm A) — **TRỤC PHẠM VI CỦA HỌ BẢNG SPC, ĐO TRƯỚC KHI VÁ.**
+ *
+ * Khảo sát trên `aoi_management` ngày 2026-08-18 (hàng · có `workstationId` · có `machineId`):
+ *
+ *   measurement_point_defs  110 ·   0 ·  25      workstations             0 hàng
+ *   spc_configurations        0            spc_rule_violations       0
+ *   quality_gates             0            quality_gate_events       0
+ *   cpk_history               0            correlation_analyses      0
+ *
+ * ⇒ **Trục THẬT ở đây là `machineId`.** `workstations` chưa có hàng nào và `workstationId` chưa
+ * từng được ghi, nên một bản vá chỉ dựa vào công trạm sẽ là một cổng **không bao giờ phát biểu**
+ * — đúng lớp lỗi "lượng từ tự thoả" đã ghi ở PHA 7. Cổng dưới đây hỏi CẢ HAI, nhưng máy là cột
+ * đang mang dữ liệu.
+ *
+ * ⚠ Bảy bảng SPC hiện RỖNG. Điều đó KHÔNG làm bản vá vô nghĩa (đường đọc số đo thật —
+ * `measurement_results` ⋈ `product_inspections` — có 110 điểm đo và đầy dữ liệu), nhưng nó có
+ * nghĩa là **ca âm-đối-xứng không dựng được trên bảy bảng ấy bằng dữ liệu có sẵn**; phần được
+ * nghiệm thu bằng CSDL thật là đường đọc số đo.
+ *
+ * `giuMacDinh`: hàng KHÔNG gắn máy lẫn công trạm là **cấu hình MẶC ĐỊNH của hệ thống** (ngưỡng,
+ * kiểu biểu đồ) — nó không mang số đo của ai nên được giữ (`spc_configurations`, `quality_gates`).
+ * Với bảng mang SỐ ĐO (`spc_rule_violations`, `cpk_history`, `correlation_analyses`,
+ * `quality_gate_events`) thì KHÔNG: hàng không phân giải được là hàng mồ côi ⇒ loại.
+ */
+async function congSpc(
+  cot: { machineId?: AnyPgColumn; workstationId?: AnyPgColumn; giuMacDinh?: boolean },
+  scope?: PhamViNguoiXem,
+): Promise<SQL | undefined> {
+  const [idsMay, idsTram] = await Promise.all([
+    idsTrongPhamVi("machine", scope),
+    idsTrongPhamVi("workstation", scope),
+  ]);
+  if (idsMay === null || idsTram === null) return undefined;
+  const nhanh: SQL[] = [];
+  if (cot.machineId !== undefined) nhanh.push(inArray(cot.machineId, idsMay.length ? idsMay : [-1]));
+  if (cot.workstationId !== undefined) nhanh.push(inArray(cot.workstationId, idsTram.length ? idsTram : [-1]));
+  if (cot.giuMacDinh === true) {
+    const rong = [cot.machineId, cot.workstationId].filter((c): c is AnyPgColumn => c !== undefined).map((c) => isNull(c));
+    if (rong.length > 0) nhanh.push(rong.length === 1 ? rong[0] : (and(...rong) as SQL));
+  }
+  if (nhanh.length === 0) return sql`1 = 0`;
+  return nhanh.length === 1 ? nhanh[0] : or(...nhanh);
+}
+
+/**
+ * Cổng cho đường đọc **SỐ ĐO THẬT** (`measurement_results` ⋈ `product_inspections`). Trục là
+ * `product_inspections."machineId"` — cột NOT NULL, đầy dữ liệu, và là cùng trục mà
+ * `machineIdsTrongPhamVi` phân giải.
+ */
+async function congSoDo(scope?: PhamViNguoiXem): Promise<SQL | undefined> {
+  const idsMay = await idsTrongPhamVi("machine", scope);
+  if (idsMay === null) return undefined;
+  return inArray(productInspections.machineId, idsMay.length ? idsMay : [-1]);
+}
+
 // ============ SPC CONFIGURATION CRUD ============
 
 export async function listSpcConfigurations(filters: {
@@ -26,11 +85,15 @@ export async function listSpcConfigurations(filters: {
   productModelId?: number;
   measurementPointDefId?: number;
   isActive?: boolean;
-} = {}) {
+} = {}, scope?: PhamViNguoiXem) {
   const db = await getDb();
   if (!db) return [];
 
   const conditions: SQL[] = [];
+  {
+    const cong = await congSpc({ machineId: spcConfigurations.machineId, workstationId: spcConfigurations.workstationId, giuMacDinh: true }, scope);
+    if (cong) conditions.push(cong);
+  }
   if (filters.workstationId) conditions.push(eq(spcConfigurations.workstationId, filters.workstationId));
   if (filters.productModelId) conditions.push(eq(spcConfigurations.productModelId, filters.productModelId));
   if (filters.measurementPointDefId) conditions.push(eq(spcConfigurations.measurementPointDefId, filters.measurementPointDefId));
@@ -43,12 +106,13 @@ export async function listSpcConfigurations(filters: {
     .orderBy(desc(spcConfigurations.createdAt));
 }
 
-export async function getSpcConfiguration(id: number) {
+export async function getSpcConfiguration(id: number, scope?: PhamViNguoiXem) {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  if (!db) throw new DbUnavailableError();
 
+  const cong = await congSpc({ machineId: spcConfigurations.machineId, workstationId: spcConfigurations.workstationId, giuMacDinh: true }, scope);
   const result = await db.select().from(spcConfigurations)
-    .where(eq(spcConfigurations.id, id))
+    .where(and(eq(spcConfigurations.id, id), ...(cong ? [cong] : [])))
     .limit(1);
 
   return result[0] || null;
@@ -56,7 +120,7 @@ export async function getSpcConfiguration(id: number) {
 
 export async function createSpcConfiguration(data: InsertSpcConfiguration) {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  if (!db) throw new DbUnavailableError();
 
   const result = await db.insert(spcConfigurations).values(data).returning();
   return result[0];
@@ -64,7 +128,7 @@ export async function createSpcConfiguration(data: InsertSpcConfiguration) {
 
 export async function updateSpcConfiguration(id: number, data: Partial<InsertSpcConfiguration>) {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  if (!db) throw new DbUnavailableError();
 
   const result = await db.update(spcConfigurations)
     .set({ ...data, updatedAt: new Date() })
@@ -76,7 +140,7 @@ export async function updateSpcConfiguration(id: number, data: Partial<InsertSpc
 
 export async function deleteSpcConfiguration(id: number) {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  if (!db) throw new DbUnavailableError();
 
   await db.delete(spcConfigurations).where(eq(spcConfigurations.id, id));
 }
@@ -89,7 +153,7 @@ export async function getMeasurementValuesForSPC(filters: {
   endDate?: Date;
   machineId?: number;
   limit?: number;
-}) {
+}, scope?: PhamViNguoiXem) {
   const db = await getDb();
   if (!db) return [];
 
@@ -97,6 +161,12 @@ export async function getMeasurementValuesForSPC(filters: {
     eq(measurementResults.pointDefId, filters.measurementPointDefId),
     isNotNull(measurementResults.measuredValue),
   ];
+  {
+    // ⚠ Cổng AND vào SAU `filters.machineId` (lời TỰ KHAI của người gọi) ⇒ một `machineId` gõ tay
+    // của nhà máy khác cho giao RỖNG, không mở được cửa.
+    const cong = await congSoDo(scope);
+    if (cong) conditions.push(cong);
+  }
   if (filters.startDate) conditions.push(gte(productInspections.inspectionTime, filters.startDate));
   if (filters.endDate) conditions.push(lte(productInspections.inspectionTime, filters.endDate));
   if (filters.machineId) conditions.push(eq(productInspections.machineId, filters.machineId));
@@ -183,7 +253,7 @@ export async function getWorkstationMeasurementComparison(filters: {
   productModelId: number;
   startDate?: Date;
   endDate?: Date;
-}) {
+}, scope?: PhamViNguoiXem) {
   const db = await getDb();
   if (!db) return [];
 
@@ -191,6 +261,10 @@ export async function getWorkstationMeasurementComparison(filters: {
     eq(measurementPointDefs.productModelId, filters.productModelId),
     isNotNull(measurementResults.measuredValue),
   ];
+  {
+    const cong = await congSoDo(scope);
+    if (cong) conditions.push(cong);
+  }
   if (filters.startDate) conditions.push(gte(productInspections.inspectionTime, filters.startDate));
   if (filters.endDate) conditions.push(lte(productInspections.inspectionTime, filters.endDate));
 
@@ -217,7 +291,7 @@ export async function getMeasurementPairsForCorrelation(filters: {
   startDate?: Date;
   endDate?: Date;
   machineId?: number;
-}) {
+}, scope?: PhamViNguoiXem) {
   const db = await getDb();
   if (!db) return [];
 
@@ -225,6 +299,10 @@ export async function getMeasurementPairsForCorrelation(filters: {
     inArray(measurementResults.pointDefId, filters.pointIds),
     isNotNull(measurementResults.measuredValue),
   ];
+  {
+    const cong = await congSoDo(scope);
+    if (cong) conditions.push(cong);
+  }
   if (filters.startDate) conditions.push(gte(productInspections.inspectionTime, filters.startDate));
   if (filters.endDate) conditions.push(lte(productInspections.inspectionTime, filters.endDate));
   if (filters.machineId) conditions.push(eq(productInspections.machineId, filters.machineId));
@@ -242,7 +320,7 @@ export async function getMeasurementPairsForCorrelation(filters: {
 
 export async function saveCorrelationAnalysis(data: InsertCorrelationAnalysis) {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  if (!db) throw new DbUnavailableError();
 
   const result = await db.insert(correlationAnalyses).values(data).returning();
   return result[0];
@@ -252,11 +330,16 @@ export async function listCorrelationAnalyses(filters: {
   productModelId?: number;
   workstationId?: number;
   limit?: number;
-} = {}) {
+} = {}, scope?: PhamViNguoiXem) {
   const db = await getDb();
   if (!db) return [];
 
   const conditions: SQL[] = [];
+  {
+    // Bảng mang SỐ ĐO (ma trận tương quan dựng từ giá trị đo thật) ⇒ KHÔNG có `giuMacDinh`.
+    const cong = await congSpc({ machineId: correlationAnalyses.machineId, workstationId: correlationAnalyses.workstationId }, scope);
+    if (cong) conditions.push(cong);
+  }
   if (filters.productModelId) conditions.push(eq(correlationAnalyses.productModelId, filters.productModelId));
   if (filters.workstationId) conditions.push(eq(correlationAnalyses.workstationId, filters.workstationId));
 
@@ -277,7 +360,7 @@ export async function listCorrelationAnalyses(filters: {
 
 export async function createSpcRuleViolation(data: InsertSpcRuleViolation) {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  if (!db) throw new DbUnavailableError();
 
   const result = await db.insert(spcRuleViolations).values(data).returning();
   return result[0];
@@ -293,11 +376,15 @@ export async function listSpcRuleViolations(filters: {
   startDate?: Date;
   endDate?: Date;
   limit?: number;
-} = {}) {
+} = {}, scope?: PhamViNguoiXem) {
   const db = await getDb();
   if (!db) return [];
 
   const conditions: SQL[] = [];
+  {
+    const cong = await congSpc({ machineId: spcRuleViolations.machineId, workstationId: spcRuleViolations.workstationId }, scope);
+    if (cong) conditions.push(cong);
+  }
   if (filters.workstationId) conditions.push(eq(spcRuleViolations.workstationId, filters.workstationId));
   if (filters.productModelId) conditions.push(eq(spcRuleViolations.productModelId, filters.productModelId));
   if (filters.machineId) conditions.push(eq(spcRuleViolations.machineId, filters.machineId));
@@ -322,7 +409,7 @@ export async function listSpcRuleViolations(filters: {
 
 export async function acknowledgeSpcViolation(id: number, userId: number) {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  if (!db) throw new DbUnavailableError();
 
   const result = await db.update(spcRuleViolations)
     .set({
@@ -337,7 +424,7 @@ export async function acknowledgeSpcViolation(id: number, userId: number) {
 
 export async function resolveSpcViolation(id: number, userId: number, notes?: string) {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  if (!db) throw new DbUnavailableError();
 
   const result = await db.update(spcRuleViolations)
     .set({
@@ -355,11 +442,15 @@ export async function resolveSpcViolation(id: number, userId: number, notes?: st
 export async function getActiveViolationCount(filters: {
   workstationId?: number;
   productModelId?: number;
-} = {}) {
+} = {}, scope?: PhamViNguoiXem) {
   const db = await getDb();
   if (!db) return 0;
 
   const conditions: SQL[] = [eq(spcRuleViolations.isActive, true)];
+  {
+    const cong = await congSpc({ machineId: spcRuleViolations.machineId, workstationId: spcRuleViolations.workstationId }, scope);
+    if (cong) conditions.push(cong);
+  }
   if (filters.workstationId) conditions.push(eq(spcRuleViolations.workstationId, filters.workstationId));
   if (filters.productModelId) conditions.push(eq(spcRuleViolations.productModelId, filters.productModelId));
 
@@ -410,7 +501,7 @@ export async function listPointDefsWithSpecLimits(): Promise<Array<{
 
 export async function saveCpkHistory(data: InsertCpkHistory) {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  if (!db) throw new DbUnavailableError();
 
   const result = await db.insert(cpkHistory).values(data).returning();
   return result[0];
@@ -421,13 +512,17 @@ export async function getCpkTrend(filters: {
   startDate?: Date;
   endDate?: Date;
   limit?: number;
-}) {
+}, scope?: PhamViNguoiXem) {
   const db = await getDb();
   if (!db) return [];
 
   const conditions: SQL[] = [
     eq(cpkHistory.measurementPointDefId, filters.measurementPointDefId),
   ];
+  {
+    const cong = await congSpc({ machineId: cpkHistory.machineId, workstationId: cpkHistory.workstationId }, scope);
+    if (cong) conditions.push(cong);
+  }
   if (filters.startDate) conditions.push(gte(cpkHistory.periodEnd, filters.startDate));
   if (filters.endDate) conditions.push(lte(cpkHistory.periodEnd, filters.endDate));
 
@@ -446,7 +541,7 @@ export async function getCpkSummaryByWorkstation(filters: {
   productModelId?: number;
   startDate?: Date;
   endDate?: Date;
-} = {}) {
+} = {}, scope?: PhamViNguoiXem) {
   const db = await getDb();
   if (!db) return [];
 
@@ -460,6 +555,10 @@ export async function getCpkSummaryByWorkstation(filters: {
     .as("latest_cpk");
 
   const conditions: SQL[] = [];
+  {
+    const cong = await congSpc({ machineId: cpkHistory.machineId, workstationId: cpkHistory.workstationId }, scope);
+    if (cong) conditions.push(cong);
+  }
   if (filters.productModelId) conditions.push(eq(measurementPointDefs.productModelId, filters.productModelId));
   if (filters.startDate) conditions.push(gte(cpkHistory.periodEnd, filters.startDate));
   if (filters.endDate) conditions.push(lte(cpkHistory.periodEnd, filters.endDate));
@@ -501,11 +600,17 @@ export async function listQualityGates(filters: {
   workstationId?: number;
   productModelId?: number;
   isActive?: boolean;
-} = {}) {
+} = {}, scope?: PhamViNguoiXem) {
   const db = await getDb();
   if (!db) return [];
 
   const conditions: SQL[] = [];
+  {
+    // `quality_gates` là CẤU HÌNH (ngưỡng + hành động), không mang số đo ⇒ hàng mặc định
+    // (không gắn máy/công trạm) được giữ, cùng luật với `oee_targets` và mẫu lệnh sản xuất.
+    const cong = await congCongChatLuong(qualityGates.lineId, scope);
+    if (cong) conditions.push(cong);
+  }
   if (filters.lineId) conditions.push(eq(qualityGates.lineId, filters.lineId));
   if (filters.workstationId) conditions.push(eq(qualityGates.workstationId, filters.workstationId));
   if (filters.productModelId) conditions.push(eq(qualityGates.productModelId, filters.productModelId));
@@ -518,20 +623,40 @@ export async function listQualityGates(filters: {
     .orderBy(desc(qualityGates.createdAt));
 }
 
-export async function getQualityGate(id: number) {
+export async function getQualityGate(id: number, scope?: PhamViNguoiXem) {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  if (!db) throw new DbUnavailableError();
 
+  const cong = await congCongChatLuong(qualityGates.lineId, scope);
   const result = await db.select().from(qualityGates)
-    .where(eq(qualityGates.id, id))
+    .where(and(eq(qualityGates.id, id), ...(cong ? [cong] : [])))
     .limit(1);
 
   return result[0] || null;
 }
 
+/**
+ * Cổng riêng của `quality_gates`: nó có thêm cột `lineId` so với họ SPC còn lại, nên trục là
+ * MÁY ∪ CÔNG TRẠM ∪ TUYẾN, và hàng không gắn gì cả là ngưỡng MẶC ĐỊNH ⇒ giữ.
+ */
+async function congCongChatLuong(lineCol: AnyPgColumn, scope?: PhamViNguoiXem): Promise<SQL | undefined> {
+  const [idsMay, idsTram, idsTuyen] = await Promise.all([
+    idsTrongPhamVi("machine", scope),
+    idsTrongPhamVi("workstation", scope),
+    idsTrongPhamVi("line", scope),
+  ]);
+  if (idsMay === null || idsTram === null || idsTuyen === null) return undefined;
+  return or(
+    inArray(qualityGates.machineId, idsMay.length ? idsMay : [-1]),
+    inArray(qualityGates.workstationId, idsTram.length ? idsTram : [-1]),
+    inArray(lineCol, idsTuyen.length ? idsTuyen : [-1]),
+    and(isNull(qualityGates.machineId), isNull(qualityGates.workstationId), isNull(lineCol)),
+  );
+}
+
 export async function createQualityGate(data: InsertQualityGate) {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  if (!db) throw new DbUnavailableError();
 
   const result = await db.insert(qualityGates).values(data).returning();
   return result[0];
@@ -539,7 +664,7 @@ export async function createQualityGate(data: InsertQualityGate) {
 
 export async function updateQualityGate(id: number, data: Partial<InsertQualityGate>) {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  if (!db) throw new DbUnavailableError();
 
   const result = await db.update(qualityGates)
     .set({ ...data, updatedAt: new Date() })
@@ -551,7 +676,7 @@ export async function updateQualityGate(id: number, data: Partial<InsertQualityG
 
 export async function deleteQualityGate(id: number) {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  if (!db) throw new DbUnavailableError();
 
   await db.delete(qualityGates).where(eq(qualityGates.id, id));
 }
@@ -572,7 +697,7 @@ export async function getActiveQualityGatesForLine(lineId: number) {
 
 export async function createQualityGateEvent(data: InsertQualityGateEvent) {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  if (!db) throw new DbUnavailableError();
 
   const result = await db.insert(qualityGateEvents).values(data).returning();
   return result[0];
@@ -585,11 +710,15 @@ export async function listQualityGateEvents(filters: {
   startDate?: Date;
   endDate?: Date;
   limit?: number;
-} = {}) {
+} = {}, scope?: PhamViNguoiXem) {
   const db = await getDb();
   if (!db) return [];
 
   const conditions: SQL[] = [];
+  {
+    const cong = await congSuKienCong(scope);
+    if (cong) conditions.push(cong);
+  }
   if (filters.qualityGateId) conditions.push(eq(qualityGateEvents.qualityGateId, filters.qualityGateId));
   if (filters.status) conditions.push(eq(qualityGateEvents.status, filters.status as any));
   if (filters.machineId) conditions.push(eq(qualityGateEvents.machineId, filters.machineId));
@@ -611,7 +740,7 @@ export async function listQualityGateEvents(filters: {
 
 export async function acknowledgeQualityGateEvent(id: number, userId: number, notes?: string) {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  if (!db) throw new DbUnavailableError();
 
   const result = await db.update(qualityGateEvents)
     .set({
@@ -626,7 +755,7 @@ export async function acknowledgeQualityGateEvent(id: number, userId: number, no
 
 export async function resolveQualityGateEvent(id: number, userId: number, notes?: string) {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  if (!db) throw new DbUnavailableError();
 
   const result = await db.update(qualityGateEvents)
     .set({
@@ -641,11 +770,35 @@ export async function resolveQualityGateEvent(id: number, userId: number, notes?
   return result[0] || null;
 }
 
-export async function getActiveGateEvents() {
+export async function getActiveGateEvents(scope?: PhamViNguoiXem) {
   const db = await getDb();
   if (!db) return [];
 
+  const cong = await congSuKienCong(scope);
   return db.select().from(qualityGateEvents)
-    .where(eq(qualityGateEvents.status, "active" as any))
+    .where(and(eq(qualityGateEvents.status, "active" as any), ...(cong ? [cong] : [])))
     .orderBy(desc(qualityGateEvents.triggeredAt));
+}
+
+/**
+ * Cổng cho `quality_gate_events` — bảng mang SỐ ĐO (giá trị kích hoạt, số hàng bị ảnh hưởng).
+ * Nó chỉ có `machineId` (nullable) + `qualityGateId` (NOT NULL), nên hàng không gắn máy được
+ * phán quyết qua CỔNG mẹ. KHÔNG có lối "mặc định": một sự kiện luôn xảy ra ở đâu đó thật.
+ */
+async function congSuKienCong(scope?: PhamViNguoiXem): Promise<SQL | undefined> {
+  const idsMay = await idsTrongPhamVi("machine", scope);
+  if (idsMay === null) return undefined;
+  const db = await getDb();
+  if (!db) return sql`1 = 0`;
+  const congMe = await congCongChatLuong(qualityGates.lineId, scope);
+  return or(
+    inArray(qualityGateEvents.machineId, idsMay.length ? idsMay : [-1]),
+    and(
+      isNull(qualityGateEvents.machineId),
+      inArray(
+        qualityGateEvents.qualityGateId,
+        db.select({ id: qualityGates.id }).from(qualityGates).where(congMe),
+      ),
+    ),
+  );
 }

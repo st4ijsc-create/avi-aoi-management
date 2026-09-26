@@ -1,0 +1,24 @@
+{"id":"GQ01","lop":"quy-tac","cauHoi":"Ngưỡng cảnh báo OEE thấp được đặt bao nhiêu phần trăm?"}
+{"id":"GQ02","lop":"quy-tac","cauHoi":"Lỗi solder bridge được phân loại mức nghiêm trọng nào?"}
+{"id":"GQ03","lop":"quy-tac","cauHoi":"Tỷ lệ rework mục tiêu của line là bao nhiêu?"}
+{"id":"GQ04","lop":"quy-tac","cauHoi":"Biểu đồ Pareto sắp xếp các lỗi theo tiêu chí gì?"}
+{"id":"GQ05","lop":"quy-tac","cauHoi":"Khi nào thì một lô được chuyển sang trạng thái hoàn thành?"}
+{"id":"GQ06","lop":"quy-tac","cauHoi":"Công thức tính tỷ lệ NG là gì?"}
+{"id":"GQ07","lop":"quy-tac","cauHoi":"Máy AOI cần hiệu chỉnh ánh sáng bao lâu một lần?"}
+{"id":"GQ08","lop":"quy-tac","cauHoi":"Có cần đeo vòng tĩnh điện khi cầm bảng mạch không?"}
+{"id":"GQ09","lop":"quy-tac","cauHoi":"Downtime dưới bao nhiêu phút thì không tính vào báo cáo?"}
+{"id":"GQ10","lop":"quy-tac","cauHoi":"SPC dùng những quy tắc nào để phát hiện bất thường?"}
+{"id":"GQ11","lop":"quy-tac","cauHoi":"Người vận hành có được tự sửa ngưỡng NG không?"}
+{"id":"GQ12","lop":"quy-tac","cauHoi":"Mỗi ca làm việc kéo dài bao nhiêu giờ theo cấu hình mặc định?"}
+{"id":"GS01","lop":"song","cauHoi":"OEE tuần này bao nhiêu?"}
+{"id":"GS02","lop":"song","cauHoi":"line 4 đang chạy lô nào?"}
+{"id":"GS03","lop":"song","cauHoi":"tỷ lệ rework tháng này thế nào?"}
+{"id":"GS04","lop":"song","cauHoi":"Pareto lỗi của sản phẩm PCB-A12"}
+{"id":"GS05","lop":"song","cauHoi":"máy AOI-05 còn chạy không?"}
+{"id":"GS06","lop":"song","cauHoi":"NG rate hiện giờ của line 1"}
+{"id":"GS07","lop":"song","cauHoi":"có lô nào vượt ngưỡng NG hôm nay không?"}
+{"id":"GS08","lop":"song","cauHoi":"downtime tuần trước tổng cộng bao nhiêu?"}
+{"id":"GS09","lop":"song","cauHoi":"Cpk điểm đo nào đang dưới 1,33?"}
+{"id":"GS10","lop":"song","cauHoi":"ca sáng nay có bao nhiêu bảng NG?"}
+{"id":"GS11","lop":"song","cauHoi":"lỗi gần nhất của máy AOI-02 là gì?"}
+{"id":"GS12","lop":"song","cauHoi":"SPC của yield mấy ngày qua có vi phạm quy tắc nào không?"}

@@ -1,0 +1,202 @@
+{
+ "APV01": {
+  "hang": 1,
+  "top": [
+   "operational-approved/production-orders.md",
+   "production/production-orders.md",
+   "operational-approved/production-orders.md",
+   "production/production-orders.md",
+   "operational-approved/products.md"
+  ]
+ },
+ "APV02": {
+  "hang": 1,
+  "top": [
+   "operational-approved/andon.md",
+   "operational-approved/andon.md",
+   "operational/andon.md",
+   "operational/ops-console.md",
+   "operational-approved/alerts.md"
+  ]
+ },
+ "APV03": {
+  "hang": 1,
+  "top": [
+   "operational-approved/alerts.md",
+   "operational-approved/alerts.md",
+   "alerts/alerts-list.md",
+   "operational/ops-console.md",
+   "workflows/ng-burst-response.playbook.yaml"
+  ]
+ },
+ "APV04": {
+  "hang": 1,
+  "top": [
+   "operational-approved/users.md",
+   "admin/user-management.md",
+   "monitoring/machine-registration.md",
+   "operational-approved/users.md",
+   "operational-approved/machine-registration.md"
+  ]
+ },
+ "APV05": {
+  "hang": 1,
+  "top": [
+   "operational-approved/defect-catalog.md",
+   "operational/defect-catalog.md",
+   "operational-approved/defect-catalog.md",
+   "operational-approved/machine-registration.md",
+   "operational-approved/maintenance-hub.md"
+  ]
+ },
+ "APV06": {
+  "hang": 1,
+  "top": [
+   "operational-approved/api-keys.md",
+   "monitoring/machine-registration.md",
+   "operational/api-keys.md",
+   "monitoring/machine-registration.md",
+   "inspection/history.md"
+  ]
+ },
+ "APV07": {
+  "hang": 1,
+  "top": [
+   "operational-approved/oee-dashboard.md",
+   "alerts/oee-targets.md",
+   "alerts/oee-targets.md",
+   "monitoring/oee-dashboard.md",
+   "monitoring/oee-dashboard.md"
+  ]
+ },
+ "APV08": {
+  "hang": 1,
+  "top": [
+   "operational-approved/traceability.md",
+   "operational-approved/defect-catalog.md",
+   "operational-approved/defect-catalog.md",
+   "operational-approved/device-adapters.md",
+   "domain/aoi-defect-types.md"
+  ]
+ },
+ "APV09": {
+  "hang": null,
+  "top": [
+   "monitoring/machine-registration.md",
+   "monitoring/machine-registration.md",
+   "ai/ai-local-knowledge-base.md",
+   "domain/aoi-troubleshooting.md",
+   "aoi-workflow.md"
+  ]
+ },
+ "APV10": {
+  "hang": null,
+  "top": [
+   "workflows/install-new-machine.playbook.yaml",
+   "products/process-management.md",
+   "operational/product-onboarding.md",
+   "domain/aoi-workflow.md",
+   "products/product-machine-mapping.md"
+  ]
+ },
+ "APV11": {
+  "hang": 4,
+  "top": [
+   "operational/programming-copilot.md",
+   "operational/engineering.md",
+   "ECOSYSTEM/34_QUICKSTART_PROGRAMMING_COPILOT.md",
+   "operational-approved/programming-copilot.md",
+   "domain/aoi-troubleshooting.md"
+  ]
+ },
+ "APV12": {
+  "hang": 1,
+  "top": [
+   "operational-approved/device-adapters.md",
+   "operational/device-adapters.md",
+   "operational-approved/alerts.md",
+   "inspection/history.md",
+   "operational-approved/alerts.md"
+  ]
+ },
+ "APV13": {
+  "hang": null,
+  "top": [
+   "operational/master-data-audit.md",
+   "operational-approved/alerts.md",
+   "operational-approved/alerts.md",
+   "alerts/alerts-list.md",
+   "alerts/predictive-alerts.md"
+  ]
+ },
+ "APV14": {
+  "hang": 2,
+  "top": [
+   "operational/master-data.md",
+   "operational-approved/master-data.md",
+   "operational/data-management.md",
+   "operational/data-quality.md",
+   "operational/master-data-audit.md"
+  ]
+ },
+ "APV15": {
+  "hang": 2,
+  "top": [
+   "operational/edge-nodes.md",
+   "operational-approved/edge-nodes.md",
+   "docs/EDGE_GATEWAY.md",
+   "operational-approved/andon.md",
+   "operational-approved/andon.md"
+  ]
+ },
+ "APV16": {
+  "hang": null,
+  "top": [
+   "monitoring/machine-health.md",
+   "analytics/scheduled-reports.md",
+   "operational-approved/work-orders.md",
+   "operational-approved/programming-copilot.md",
+   "operational-approved/machine-registration.md"
+  ]
+ },
+ "APV17": {
+  "hang": 1,
+  "top": [
+   "operational-approved/work-orders.md",
+   "operational/work-orders.md",
+   "operational-approved/programming-copilot.md",
+   "products/process-management.md",
+   "operational-approved/andon.md"
+  ]
+ },
+ "APV18": {
+  "hang": 2,
+  "top": [
+   "operational/anomaly-banks.md",
+   "operational-approved/anomaly-banks.md",
+   "operational/golden-samples.md",
+   "operational/quality-gate-templates.md",
+   "workflows/change-recipe-line-start.playbook.yaml"
+  ]
+ },
+ "APV19": {
+  "hang": 1,
+  "top": [
+   "operational-approved/carbon-dashboard.md",
+   "operational/carbon-dashboard.md",
+   "production/production-dashboard.md",
+   "production/production-dashboard.md",
+   "workflows/spc-critical-review.playbook.yaml"
+  ]
+ },
+ "APV20": {
+  "hang": 5,
+  "top": [
+   "operational/ai-inspection-analytics.md",
+   "inspection/inspection-detail.md",
+   "ai/ai-inspection-analytics.md",
+   "ai/ai-time-series.md",
+   "operational-approved/ai-inspection-analytics.md"
+  ]
+ }
+}

@@ -8,44 +8,72 @@
 import { useTranslation } from "react-i18next";
 import DashboardLayout from "@/components/DashboardLayout";
 import { HubLauncher, type HubCategory } from "@/components/workspace";
+import { getAcceptedPermissionsForHref } from "@/lib/navigation";
 import {
   Package, Sparkles, Link as LinkIcon, Cpu, Tags, Users, History, ShieldCheck, BookOpen,
   Database, LayoutTemplate, Building2, Workflow,
 } from "lucide-react";
 
+/*
+ * ════════════════════════════════════════════════════════════════════════════
+ * ★★★ ĐỢT 62 mục A — Ô "Sơ đồ bố trí": HREF VÀ CỔNG QUYỀN LÀ **MỘT BIẾN**
+ * ════════════════════════════════════════════════════════════════════════════
+ * Lô 5 Mục 2 đã chữa lớp lỗi "một lối vào rồi TỪ CHỐI" một lần (bỏ chuỗi quyền
+ * chép tay, hỏi `navGroups`), nhưng nó hỏi về **`/digital-twin`** — một route
+ * NAY CHỈ CÒN LÀ REDIRECT. Đích thật của ô này từ Đợt 61 là `/twin-studio`
+ * (`App.tsx`: `/layout` → `<Redirect to="/twin-studio" />`), và `/twin-studio`
+ * gate bằng `settings_factory` **HOẶC** `machine_control` — không phải
+ * `analytics_oee`. Hai cổng rời nhau ⇒ hỏng HAI CHIỀU, đo trên cổng 3062:
+ *
+ *   · vai chỉ có `analytics_oee`          → THẤY ô, bấm vào **bị TỪ CHỐI**
+ *   · `engineer1` (seed THẬT, settings_factory) → VÀO ĐƯỢC, mà **không thấy ô**
+ *
+ * ⇒ Bản vá không phải "đổi chuỗi quyền cho đúng" (lần sau lại lệch), mà là làm
+ *   cho hai thứ ấy **không thể lệch**: href của ô và href dùng để tra quyền là
+ *   CÙNG MỘT HẰNG. Và tra bằng `getAcceptedPermissionsForHref` — `/twin-studio`
+ *   khai `requiredPermissionAny`, nên hàm một-quyền cũ trả `undefined`, tức
+ *   "route không gán quyền": SAI một cách CÂM.
+ *
+ * ⚠ KHÔNG có fallback chuỗi cứng. Nếu mục nav của `/twin-studio` biến mất, tập
+ *   trả về là `[]` và `HubLauncher` **ẩn ô** (fail-closed) thay vì rơi về một
+ *   quyền đoán mò — đúng thứ đã đẻ ra chính lỗi này.
+ */
+const LAYOUT_TILE_HREF = "/twin-studio";
+const LAYOUT_TILE_PERMISSION_ANY = getAcceptedPermissionsForHref(LAYOUT_TILE_HREF);
+
 const CATEGORIES: readonly HubCategory[] = [
   {
     key: "productProgram",
-    label: "Sản phẩm & Chương trình",
+    label: "dataHub.productprogram",
     icon: <Package className="h-4 w-4" />,
     tools: [
-      { icon: Package, label: "Model sản phẩm", blurb: "Model · biến thể · điểm đo · spec-limit", href: "/products", requiredPermission: "settings_products" },
-      { icon: Sparkles, label: "Wizard tạo sản phẩm", blurb: "Thiết lập sản phẩm đầu-cuối có hướng dẫn", href: "/product-onboarding", requiredPermission: "settings_products" },
-      { icon: LinkIcon, label: "Gán sản phẩm ↔ máy", blurb: "Ánh xạ model sản phẩm với máy/trạm", href: "/product-mapping", requiredPermission: "settings_product_mapping" },
-      { icon: Cpu, label: "Thư viện linh kiện", blurb: "Package/footprint linh kiện", href: "/component-library", requiredPermission: "masterdata" },
+      { icon: Package, label: "dataHub.products", blurb: "dataHub.productsBlurb", href: "/products", requiredPermission: "settings_products" },
+      { icon: Sparkles, label: "dataHub.productOnboarding", blurb: "dataHub.productOnboardingBlurb", href: "/product-onboarding", requiredPermission: "settings_products" },
+      { icon: LinkIcon, label: "dataHub.productMapping", blurb: "dataHub.productMappingBlurb", href: "/product-mapping", requiredPermission: "settings_product_mapping" },
+      { icon: Cpu, label: "dataHub.componentLibrary", blurb: "dataHub.componentLibraryBlurb", href: "/component-library", requiredPermission: "masterdata" },
     ],
   },
   {
     key: "masterData",
-    label: "Dữ liệu chủ",
+    label: "dataHub.masterdata",
     icon: <Tags className="h-4 w-4" />,
     tools: [
-      { icon: Tags, label: "Quản lý dữ liệu chủ", blurb: "NCC · vật tư · KH · tay nghề · UoM · lịch…", href: "/master-data", requiredPermission: "masterdata" },
-      { icon: Users, label: "Thẻ vận hành viên", blurb: "badgeCode → người dùng", href: "/operator-badges", requiredPermission: "masterdata" },
-      { icon: BookOpen, label: "Danh mục chỉ số", blurb: "Semantic layer: định nghĩa KPI có phiên bản + lineage", href: "/metric-catalog", requiredPermission: "machine_status" },
-      { icon: History, label: "Nhật ký thay đổi", blurb: "Ai đổi gì, khi nào (chỉ đọc)", href: "/master-data-audit", requiredPermission: "masterdata" },
-      { icon: ShieldCheck, label: "Chất lượng dữ liệu", blurb: "Thiếu trường / tham chiếu mồ côi", href: "/data-quality", requiredPermission: "masterdata" },
+      { icon: Tags, label: "dataHub.masterData", blurb: "dataHub.masterDataBlurb", href: "/master-data", requiredPermission: "masterdata" },
+      { icon: Users, label: "dataHub.operatorBadges", blurb: "dataHub.operatorBadgesBlurb", href: "/operator-badges", requiredPermission: "masterdata" },
+      { icon: BookOpen, label: "dataHub.metricCatalog", blurb: "dataHub.metricCatalogBlurb", href: "/metric-catalog", requiredPermission: "machine_status" },
+      { icon: History, label: "dataHub.masterDataAudit", blurb: "dataHub.masterDataAuditBlurb", href: "/master-data-audit", requiredPermission: "masterdata" },
+      { icon: ShieldCheck, label: "dataHub.dataQuality", blurb: "dataHub.dataQualityBlurb", href: "/data-quality", requiredPermission: "masterdata" },
     ],
   },
   {
     key: "factoryConfig",
-    label: "Cấu hình nhà máy & Quản trị",
+    label: "dataHub.factoryconfig",
     icon: <Building2 className="h-4 w-4" />,
     tools: [
-      { icon: Database, label: "Cấu hình nhà máy", blurb: "Nhà máy · xưởng · line · trạm · máy · ca · công đoạn", href: "/datasettings", requiredPermission: "settings_factory" },
-      { icon: LayoutTemplate, label: "Trạm làm việc", blurb: "Quản lý trạm làm việc", href: "/workstation-management", requiredPermission: "settings_factory" },
-      { icon: Workflow, label: "Quy trình", blurb: "Quản lý quy trình sản xuất", href: "/process-management", requiredPermission: "settings_factory" },
-      { icon: LayoutTemplate, label: "Sơ đồ bố trí", blurb: "Bố trí mặt bằng nhà máy", href: "/layout", requiredPermission: "settings_factory" },
+      { icon: Database, label: "dataHub.datasettings", blurb: "dataHub.datasettingsBlurb", href: "/datasettings", requiredPermission: "settings_factory" },
+      { icon: LayoutTemplate, label: "dataHub.workstationManagement", blurb: "dataHub.workstationManagementBlurb", href: "/workstation-management", requiredPermission: "settings_factory" },
+      { icon: Workflow, label: "dataHub.processManagement", blurb: "dataHub.processManagementBlurb", href: "/process-management", requiredPermission: "settings_factory" },
+      { icon: LayoutTemplate, label: "dataHub.layout", blurb: "dataHub.layoutBlurb", href: LAYOUT_TILE_HREF, requiredPermissionAny: LAYOUT_TILE_PERMISSION_ANY },
     ],
   },
 ];

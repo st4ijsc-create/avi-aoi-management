@@ -1,7 +1,11 @@
 import type express from "express";
+import { locTacVuNguoiChon } from "../services/ai/chonTacVuModel";
+import { locCheDoNghi } from "../services/ai/loaiLuot";
 import fs from "node:fs";
 import path from "node:path";
-import { sdk } from "../_core/sdk";
+import { thuXacThucRest, thanTuChoiRest } from "./_xacThucRest";
+// ★★★★ Review TOÀN NHÁNH Pha 9 · I-6 — chủ DUY NHẤT của cặp cổng "loopback HOẶC vai đặc quyền".
+import { laLoopback, doiVaiDacQuyen as requirePrivileged } from "./_congLoopback";
 import {
   answerQuestion,
   getKbHealth,
@@ -55,10 +59,53 @@ function parseUserRole(raw: unknown): UserRole {
 
 const VALID_UI_LANGUAGES: ReadonlySet<KbLanguage> = new Set(["vi", "en", "zh"]);
 
+/**
+ * ★★★ Đợt I / I-2 (`docs/superpowers/specs/2026-09-06-ai-local-thiet-ke-lai-toan-dien.md` §4.1,
+ * audit N1 `.superpowers/sdd/2026-09-06-audit-ai-local/audit-2-backend.md`) — `context.route`
+ * trước bản vá này chỉ được lọc theo HÌNH DẠNG (chuỗi ≤200 ký tự, `str()` dưới), không theo GIÁ TRỊ
+ * — khác `uiLanguage`/`codingMode`/`projectId` ngay cạnh, đều có whitelist giá trị.
+ *
+ * ★ KHÔNG PHẢI enum đóng như `VALID_UI_LANGUAGES` — đã ĐO (grep toàn `server/`+`client/`+
+ *   `vscode-extension/`) hai lớp giá trị THẬT hoàn toàn khác nhau cùng đi qua một trường:
+ *   (1) đúng MỘT literal đặc biệt `"vscode"` (`vscode-extension/src/loi/yeuCau.ts:87`) — literal
+ *       DUY NHẤT làm đổi hành vi định tuyến (5 điểm rẽ nhánh trong `aiLocalKnowledgeService.ts`:
+ *       `pickNumPredict:685`, `retrieveKnowledge:2689,2708`, `answerQuestion:3181`,
+ *       `streamAnswer:6343,6536` — TẤT CẢ đều so sánh chính xác `=== "vscode"`, không so bất kỳ
+ *       giá trị cụ thể nào khác).
+ *   (2) đường dẫn trang WEB HIỆN TẠI (`useLocation()` của wouter) — TỰ DO theo thiết kế: gửi từ
+ *       `AILocalChatBubble.tsx:544` (`route: location`, mount MỘT LẦN ở gốc `App.tsx`, tức đi kèm
+ *       ~221 route ứng dụng đếm được trong `client/src/App.tsx`, cả route tĩnh lẫn tham số động
+ *       như `/machines/:id`) và các literal cố định (`AIChatPage.tsx:324` → `/ai-chat`,
+ *       `AICodingWorkspace.tsx:1377` → `/ai-coding-workspace`). Dùng CHỈ để gợi ý nhẹ
+ *       (`routeToFeatureHints`, ~dòng 2209 — tra `ROUTE_FEATURE_HINTS`, KHÔNG khớp ⇒ `[]`, không
+ *       phải lỗi) và để tính `resolveCitationRoute`. Khoá value này thành một enum nhỏ (chỉ liệt
+ *       kê 8 path có trong `ROUTE_FEATURE_HINTS` hôm nay, hoặc chỉ 2-3 literal đã biết) sẽ ÂM THẦM
+ *       hỏng gợi ý cho ~213 route CÒN LẠI — đúng điều brief B1 cảnh báo ("bỏ sót route hợp lệ = làm
+ *       hỏng một đường đang chạy"). ⇒ Không đưa danh sách 221 route vào đây; giữ nguyên khả năng
+ *       nhận BẤT KỲ chuỗi hình-dạng-đường-dẫn nào cho vế web (`ROUTE_FEATURE_HINTS`/
+ *       `resolveCitationRoute` phía service đã tự an toàn với giá trị không khớp).
+ *
+ * Vá: whitelist GIÁ TRỊ cho đúng NGHĨA đang cần bảo vệ — literal `"vscode"` (kích hoạt nhánh đặc
+ * biệt) — VÀ giữ nguyên hình dạng "đường dẫn web" (bắt đầu bằng `/`, đúng những gì mọi client web
+ * thật đã luôn gửi — `useLocation()` không bao giờ trả chuỗi không bắt đầu bằng `/`). Bất kỳ chuỗi
+ * KHÔNG khớp CẢ HAI dạng này (rác kiểu `"admin"`, `"' OR 1=1"`, chuỗi 200 ký tự ngẫu nhiên — không
+ * phải literal đặc biệt, cũng không phải đường dẫn) ⇒ `undefined`, KHÔNG ném lỗi. Lý do không ném
+ * lỗi: `route` là trường TUỲ CHỌN (đường WEB không gửi route từ trước tới nay vẫn hợp lệ — xem lưới
+ * `aiLocalKnowledge.numPredictVscode.test.ts` §B "route VẮNG ⇒ … y hệt trước bản vá") — biến nó
+ * thành cửa chặn cứng (ném lỗi) sẽ phạt nhầm một trường vốn được thiết kế để vắng mặt an toàn; rơi
+ * về `undefined` tái dùng ĐÚNG con đường "route vắng" đã có, đã có lưới, đã có nghĩa well-defined
+ * ("hành vi mặc định/web") — không phải một trạng thái mới.
+ */
+export function isValidRoute(v: string): boolean {
+  return v === "vscode" || v.startsWith("/");
+}
+
 // C3a — parse the optional page context from the request body. Whitelists known
 // fields, coerces types, drops unknown keys. Returns undefined when absent or
 // empty so the service falls back to legacy behavior (backward-compatible).
-function parseContext(raw: unknown): KbQueryContext | undefined {
+// ★ I-2 — exported (chỉ thêm `export`, KHÔNG đổi thân hàm) để lưới
+// `aiLocalKnowledgeApi.parseContextRoute.test.ts` gọi trực tiếp, không phải dựng toàn bộ Express app.
+export function parseContext(raw: unknown): KbQueryContext | undefined {
   if (!raw || typeof raw !== "object") return undefined;
   const r = raw as Record<string, unknown>;
   const ctx: KbQueryContext = {};
@@ -67,7 +114,10 @@ function parseContext(raw: unknown): KbQueryContext | undefined {
   const num = (v: unknown): number | undefined =>
     typeof v === "number" && Number.isFinite(v) ? v : undefined;
 
-  if (str(r.route)) ctx.route = str(r.route);
+  // I-2 — GIÁ TRỊ, không chỉ hình dạng: rác (không phải "vscode", không phải đường dẫn "/…") rơi
+  // về undefined (vắng route ⇒ hành vi web mặc định), không ném lỗi. Xem docblock `isValidRoute`.
+  const routeStr = str(r.route);
+  if (routeStr && isValidRoute(routeStr)) ctx.route = routeStr;
   if (typeof r.uiLanguage === "string" && VALID_UI_LANGUAGES.has(r.uiLanguage as KbLanguage)) {
     ctx.uiLanguage = r.uiLanguage as KbLanguage;
   }
@@ -76,6 +126,61 @@ function parseContext(raw: unknown): KbQueryContext | undefined {
   if (str(r.selectedProductCode)) ctx.selectedProductCode = str(r.selectedProductCode);
   if (num(r.selectedProductModelId) != null) ctx.selectedProductModelId = num(r.selectedProductModelId);
   if (str(r.selectedLot)) ctx.selectedLot = str(r.selectedLot);
+  // ★★★ doc 79 · TRỤC 1 (A) — cờ phiên lập trình. CHỈ chấp nhận literal `true` (một client vận hành
+  // không bao giờ vô tình bật nó); mọi giá trị khác ⇒ vắng ⇒ đường vận hành mặc định.
+  if (r.codingMode === true) ctx.codingMode = true;
+  /**
+   * ★★★ G4 (audit 2026-09-21 · P4) — TẦNG MODEL NGƯỜI DÙNG CHỌN cho lượt này.
+   * Trường client-khai ⇒ lọc qua danh sách TRẮNG ngay tại cửa (`locTacVuNguoiChon`): một chuỗi lạ
+   * KHÔNG được phép đi tiếp thành một `task` mà `aiModelRouter` chưa biết. Vắng/lạ ⇒ `"auto"` ⇒
+   * mặc định của hệ ⇒ hành vi CŨ y nguyên.
+   */
+  {
+    const t = locTacVuNguoiChon(r.modelTask);
+    if (t !== "auto") ctx.modelTask = t;
+  }
+  /**
+   * ★ F3 (2026-09-22) — CHẾ ĐỘ NGHĨ người dùng chọn cho lượt (`can-bang` | `nhanh` | `sau`). Cùng lập
+   * trường với `modelTask`: trường client-khai ⇒ danh sách TRẮNG ngay tại cửa (`locCheDoNghi`); vắng/lạ
+   * ⇒ không đặt ⇒ quy tắc lớp lượt (`ai/loaiLuot`) ⇒ hành vi cũ y nguyên. Không nới quyền gì.
+   */
+  {
+    const c = locCheDoNghi(r.cheDoNghi);
+    if (c) ctx.cheDoNghi = c;
+  }
+  // ★★★ doc 79 · TRỤC 2 — id DỰ ÁN. Chỉ nhận chuỗi HÌNH DẠNG id (`[A-Za-z0-9_-]`, 1..64). Một client
+  // gửi ĐƯỜNG DẪN (`../../etc`, `C:\…`, `/a/b`) trượt regex ⇒ bị BỎ ở đây (lớp 1); và kể cả lọt thì
+  // `gocTheoId` không tìm thấy id ⇒ TỪ CHỐI (lớp 2). Server KHÔNG BAO GIỜ nhận đường dẫn từ client.
+  if (typeof r.projectId === "string" && /^[A-Za-z0-9_-]{1,64}$/.test(r.projectId)) {
+    ctx.projectId = r.projectId;
+  }
+  // ★★★ doc 79 · VÒNG TỰ ĐỘNG — tệp đang sửa, GHIM bởi bộ điều khiển vòng ở client.
+  // ⚠ Ở đây chỉ chặn hình dạng THÔ (chuỗi, có nội dung, ≤ 1024, không NUL/xuống dòng). Hàng rào
+  //   THẬT là hộp cát: đường này đi thẳng vào `read_file` → `phanQuyetDuongDan` (chặn đường tuyệt
+  //   đối, `..`, `C:`, thư mục loại trừ, tệp bí mật) dưới gốc dự án đã phân giải. KHÔNG lặp lại
+  //   phép phán quyết ở đây — hai bản sao của một vị từ an toàn là cách chúng lệch nhau.
+  if (
+    typeof r.codingEditPath === "string" &&
+    r.codingEditPath.trim() !== "" &&
+    r.codingEditPath.length <= 1024 &&
+    !/[\0\r\n]/.test(r.codingEditPath)
+  ) {
+    ctx.codingEditPath = r.codingEditPath.trim();
+  }
+  /**
+   * ★★★ 2026-08-23 — ĐẦU RA MÁY (test/biên dịch) của vòng tự động. Xem `KbQueryContext.dauRaKhongTinCay`.
+   *
+   * ⚠ Ở đây **KHÔNG** làm sạch gì — cố ý. Việc quét tiêm · trung hoà dấu rào · che bí mật · cắt là
+   *   của `bocDauRaMayChoLichSu()` trong service, và nó chạy trên MỌI đường vào (kể cả lượt gọi nội
+   *   bộ không đi qua tuyến này). Làm sạch hai chỗ = hai vị từ sẽ trôi khỏi nhau; và làm sạch ở
+   *   ĐÂY THÔI = một đường vào khác sẽ bỏ qua nó.
+   * ⚠ Trần thô 64 KB chỉ để chặn một thân request khổng lồ (`TRAN_DAU_RA` của hộp cát lệnh là 32 KB
+   *   nên đây rộng gấp đôi — không bao giờ cắt nhầm đầu ra thật). Trần THẬT đi vào prompt là
+   *   `TRAN_KY_TU_DAU_RA_MAY`, suy ra từ trần một lượt lịch sử.
+   */
+  if (typeof r.dauRaKhongTinCay === "string" && r.dauRaKhongTinCay.trim() !== "") {
+    ctx.dauRaKhongTinCay = r.dauRaKhongTinCay.slice(0, 64 * 1024);
+  }
 
   return Object.keys(ctx).length > 0 ? ctx : undefined;
 }
@@ -286,11 +391,12 @@ export function registerAiLocalKnowledgeRoutes(app: express.Express) {
 
   app.post("/api/ai/local-kb/reload", async (req, res) => {
     try {
-      const user = await sdk.authenticateRequest(req);
-      if (!user) {
-        res.status(401).json({ success: false, error: "Unauthorized" });
+      const xacThuc = await thuXacThucRest(req);
+      if (!xacThuc.ok) {
+        res.status(xacThuc.ma).json({ success: false, ...thanTuChoiRest(xacThuc) });
         return;
       }
+      const user = xacThuc.user;
 
       const health = await reloadKbArtifacts();
       res.json({ success: true, health });
@@ -304,11 +410,12 @@ export function registerAiLocalKnowledgeRoutes(app: express.Express) {
 
   app.post("/api/ai/local-kb/retrieve", async (req, res) => {
     try {
-      const user = await sdk.authenticateRequest(req);
-      if (!user) {
-        res.status(401).json({ success: false, error: "Unauthorized" });
+      const xacThuc = await thuXacThucRest(req);
+      if (!xacThuc.ok) {
+        res.status(xacThuc.ma).json({ success: false, ...thanTuChoiRest(xacThuc) });
         return;
       }
+      const user = xacThuc.user;
 
       const question = typeof req.body?.question === "string" ? req.body.question.trim() : "";
       const topK = Number(req.body?.topK ?? 5);
@@ -317,7 +424,11 @@ export function registerAiLocalKnowledgeRoutes(app: express.Express) {
         return;
       }
 
-      const data = await retrieveKnowledge(question, topK);
+      // Final-fix round, Task 6 (SECURITY) — this endpoint used to call retrieveKnowledge()
+      // with NO context at all, discarding the just-authenticated `user.role` entirely. That's
+      // exactly the gap the Studio-corpus role gate (canAccessStudioCorpus, inside
+      // retrieveKnowledge) closes: `callerRole` here is the REAL DB role, never client-supplied.
+      const data = await retrieveKnowledge(question, topK, { callerRole: String((user as any).role) });
       res.json({ success: true, data });
     } catch (error: any) {
       res.status(500).json({
@@ -329,11 +440,12 @@ export function registerAiLocalKnowledgeRoutes(app: express.Express) {
 
   app.post("/api/ai/local-kb/ask", async (req, res) => {
     try {
-      const user = await sdk.authenticateRequest(req);
-      if (!user) {
-        res.status(401).json({ success: false, error: "Unauthorized" });
+      const xacThuc = await thuXacThucRest(req);
+      if (!xacThuc.ok) {
+        res.status(xacThuc.ma).json({ success: false, ...thanTuChoiRest(xacThuc) });
         return;
       }
+      const user = xacThuc.user;
 
       const question = typeof req.body?.question === "string" ? req.body.question.trim() : "";
       const topK = Number(req.body?.topK ?? 5);
@@ -366,15 +478,39 @@ export function registerAiLocalKnowledgeRoutes(app: express.Express) {
     }
   });
 
-  // SSE streaming endpoint. Emits `meta`, optional `tool`, one or more
-  // `token` events, then `done`. Falls back to chunked emission of the
-  // final answer when an LLM is not available locally.
+  /**
+   * SSE streaming endpoint.
+   *
+   * ══════════════════════════════════════════════════════════════════════════════════════════════
+   * ★★★ 2026-08-23 — **DANH SÁCH SỰ KIỆN, ĐẾM TRÊN MÃ CHỨ KHÔNG CHÉP TỪ TRÍ NHỚ**
+   * ══════════════════════════════════════════════════════════════════════════════════════════════
+   * Bản chú thích cũ khai *"Emits `meta`, optional `tool`, one or more `token` events, then `done`"*
+   * — **thiếu 4 sự kiện tuyến này ĐANG PHÁT**: `vision`, `pending_action`, `client_action`, `error`.
+   * Danh sách ĐÚNG, đọc từ chính thân hàm dưới đây:
+   *
+   *   `vision` (trước vòng lặp, khi có ảnh đính kèm) · `meta` · `tool` · `tool_loop` ·
+   *   `pending_action` · `client_action` · `token`* · `done` · `error` (nhánh `catch`).
+   *
+   * Rơi về phát theo mảnh của câu trả lời cuối khi không có LLM cục bộ.
+   *
+   * ⚠⚠ **VÌ SAO GIỮ DANH SÁCH TRẮNG TƯỜNG MINH, KHÔNG THÊM `default:` CHUYỂN TIẾP.**
+   * Một `default: send(evt as any)` sẽ đẩy **nguyên vẹn mọi ô** của bất kỳ `StreamEvent` nào mọc
+   * thêm trong tương lai xuống trình duyệt. `StreamEvent` là kiểu NỘI BỘ của service và đã từng chở
+   * những ô không dành cho client (`toolResult.data` thô, `pendingAction.args`…). Một danh sách
+   * trắng SAI thì im lặng và sửa được trong một dòng; một `default:` SAI thì rò dữ liệu và **không
+   * ai thấy nó rò**. Đây đúng bài học *"lưới theo FILE, không theo ĐƯỜNG THOÁT"* đọc ngược lại:
+   * cổng ra phải liệt kê được, không phải suy ra được.
+   * ⇒ Giá phải trả cho lựa chọn ấy là: **thêm một `case` mỗi khi service phát một loại mới**, và
+   *   `aiLocalKbStreamEvents.census.test.ts` là thứ bắt ta trả đúng giá đó (nó đếm loại sự kiện
+   *   service phát và đối chiếu với danh sách `case` ở đây).
+   */
   app.post("/api/ai/local-kb/stream", async (req, res) => {
-    const user = await sdk.authenticateRequest(req).catch(() => null);
-    if (!user) {
-      res.status(401).json({ success: false, error: "Unauthorized" });
+    const xacThuc = await thuXacThucRest(req);
+    if (!xacThuc.ok) {
+      res.status(xacThuc.ma).json({ success: false, ...thanTuChoiRest(xacThuc) });
       return;
     }
+    const user = xacThuc.user;
 
     const question = typeof req.body?.question === "string" ? req.body.question.trim() : "";
     const topK = Number(req.body?.topK ?? 5);
@@ -386,7 +522,11 @@ export function registerAiLocalKnowledgeRoutes(app: express.Express) {
     const history = parseHistory(req.body?.history);
     const userRole = parseUserRole(req.body?.userRole);
     const context = parseContext(req.body?.context);
+    // ★★★ 2026-08-23 — cờ huỷ của LƯỢT, dựng TRƯỚC `buildExecCtx` để nó đi cùng ngữ cảnh xuống tận
+    //   `ggufStream`. Lý lẽ đầy đủ ở khối ⚠ tại chỗ đăng ký `req.on("close")` ngay dưới.
+    const boHuy = new AbortController();
     const execCtx = buildExecCtx(user as any, req, question, context);
+    execCtx.signal = boHuy.signal;
 
     res.status(200);
     res.setHeader("Content-Type", "text/event-stream; charset=utf-8");
@@ -401,9 +541,26 @@ export function registerAiLocalKnowledgeRoutes(app: express.Express) {
       res.write(`data: ${JSON.stringify(payload)}\n\n`);
     };
 
+    /**
+     * ══════════════════════════════════════════════════════════════════════════════════════════
+     * ★★★ 2026-08-23 — **HUỶ PHẢI ĐI XUỐNG MODEL, KHÔNG DỪNG Ở BIẾN `closed`.**
+     * ══════════════════════════════════════════════════════════════════════════════════════════
+     * `closed = true` chỉ làm vòng `for await` dưới đây `return` **ở mảnh token KẾ TIẾP** — tức nó
+     * chờ model nói thêm một chữ nữa mới biết mình nên im. Với một lượt suy luận 30B đang bí, mảnh
+     * kế tiếp có thể không bao giờ tới, và khe llama-server bị giữ tới idle-timeout **120.000 ms**.
+     *
+     * `AbortController` + `req.on("close") → abort()` là ĐÚNG mẫu mà mọi tuyến stream khác của repo
+     * đã dùng từ lâu (`aiStreamingApi` /stream/generate và /stream/chat · `openaiGateway`). Tuyến
+     * này là **ngoại lệ DUY NHẤT** cho tới bản vá này. Signal đi xuống qua `ToolExecContext.signal`
+     * → `streamCodingModel` → `ggufStream(options, modelId, signal)` (đối số THỨ BA).
+     *
+     * ⚠ Giữ NGUYÊN `closed`: nó canh một việc KHÁC — *"còn được phép `res.write` không"*. Gỡ nó ra
+     *   là mời `ERR_STREAM_WRITE_AFTER_END` quay lại. Hai cờ, hai câu hỏi, không thay nhau được.
+     */
     let closed = false;
     req.on("close", () => {
       closed = true;
+      boHuy.abort();
     });
 
     try {
@@ -441,6 +598,8 @@ export function registerAiLocalKnowledgeRoutes(app: express.Express) {
       // FE-W0.3 (doc 46 §2.3) — degenerate-loop signal forwarded to the client.
       let degraded = false;
       let degradedReason: string | undefined;
+      // R2 phần B — `answer` đã được sửa tất định sau stream (bổ sung using C#): client THAY văn bản.
+      let answerRevised = false;
 
       for await (const evt of streamAnswer(effectiveQuestion, topK, history, userRole, context, execCtx)) {
         if (closed) return;
@@ -461,6 +620,32 @@ export function registerAiLocalKnowledgeRoutes(app: express.Express) {
               toolResult: evt.toolResult,
             });
             break;
+          /**
+           * ★★★ 2026-08-23 — **THANH TIẾN ĐỘ "VÒNG ĐỌC MÃ" CHẾT ĐÚNG Ở ĐÂY, VÀ CHỈ Ở ĐÂY.**
+           *
+           * Bốn chặng còn lại của đường này ĐỀU LÀNH — đã kiểm từng chặng trên mã:
+           *   • service PHÁT (`aiLocalKnowledgeService`: 2 điểm `yield {type:"tool_loop"…}`);
+           *   • hook ĐỌC (`useKbChatStream`: `payload.type === "tool_loop"`);
+           *   • trang ĐĂNG KÝ (`AICodingWorkspace`: `onToolLoop`);
+           *   • trang VẼ (ô "vòng n: gọi `tool`…").
+           * Đứt đúng một mắt: `switch` này có 6 `case` và **không có `tool_loop`** ⇒ sự kiện bị
+           * NUỐT ở tầng HTTP. Triệu chứng với người dùng: vòng lặp tool đa bước (trần 180 s) chạy
+           * trong im lặng tuyệt đối — đúng thứ nó được dựng ra để tránh.
+           *
+           * ⚠ Chuyển tiếp ĐÚNG các ô của hợp đồng, không hơn. `stop` chỉ có ở `phase:"dung"`; nó
+           *   được BỎ HẲN khi vắng thay vì gửi `null` — hook khai `stop?: string`, và một `null`
+           *   lọt xuống sẽ vẽ ra chữ "null" ở đúng chỗ đáng lẽ nói lý do dừng.
+           */
+          case "tool_loop":
+            send({
+              type: "tool_loop",
+              round: evt.round,
+              phase: evt.phase,
+              toolName: evt.toolName,
+              elapsedMs: evt.elapsedMs,
+              ...(evt.stop ? { stop: evt.stop } : {}),
+            });
+            break;
           case "pending_action":
             send({
               type: "pending_action",
@@ -478,6 +663,29 @@ export function registerAiLocalKnowledgeRoutes(app: express.Express) {
           case "token":
             send({ type: "token", token: evt.token });
             break;
+          /**
+           * ★ F1/F2 (2026-09-22) — hai kiểu sự kiện MỚI của đường lập trình. Bài học đắt: `switch` này là DANH SÁCH
+           * TRẮNG — service phát `usage`/`reasoning` đúng (lưới xanh ở tầng service) mà dây HTTP vẫn câm, chỉ thăm dò
+           * sống mới thấy (probe 19:14: 2.805 token nghĩ trong sổ đo, 0 sự kiện `reasoning` tới client). Lưới
+           * `aiLocalKnowledgeApi.sseCensus.test.ts` nay canh: mọi kiểu trong `StreamEvent` phải có `case` ở đây.
+           */
+          case "reasoning":
+            send({ type: "reasoning", token: evt.token });
+            break;
+          case "usage":
+            send({
+              type: "usage",
+              luot: evt.luot,
+              modelId: evt.modelId,
+              tokensIn: evt.tokensIn,
+              tokensOut: evt.tokensOut,
+              ...(evt.tokensReasoning !== undefined ? { tokensReasoning: evt.tokensReasoning } : {}),
+              thinking: evt.thinking,
+              samplingProfile: evt.samplingProfile,
+              latencyMs: evt.latencyMs,
+              ...(evt.ctxMax !== undefined ? { ctxMax: evt.ctxMax } : {}),
+            });
+            break;
           case "done":
             followUpSuggestions = evt.followUpSuggestions;
             finalAnswer = evt.answer;
@@ -487,6 +695,7 @@ export function registerAiLocalKnowledgeRoutes(app: express.Express) {
             // FE-W0.3 (doc 46 §2.3) — carry the degenerate-loop flag through.
             degraded = evt.degraded ?? false;
             degradedReason = evt.degradedReason;
+            answerRevised = evt.answerRevised === true;
             break;
         }
       }
@@ -501,12 +710,15 @@ export function registerAiLocalKnowledgeRoutes(app: express.Express) {
           structured,
           // FE-W0.3 (doc 46 §2.3) — tell the client to replace streamed garbage with `answer`.
           ...(degraded ? { degraded: true, degradedReason } : {}),
+          ...(answerRevised ? { answerRevised: true } : {}),
         });
       }
     } catch (error: any) {
       if (!closed) {
         send({
           type: "error",
+          // data-raw-ok: khung lỗi của luồng SSE hỏi-đáp tri thức — client stream (trình duyệt
+          // hoặc script) đọc `type:"error"` làm mã, chuỗi kèm theo là chi tiết cho kỹ sư.
           error: error?.message ?? "Stream failed",
           language: /[\u4e00-\u9fff]/.test(question)
             ? "zh"
@@ -520,12 +732,44 @@ export function registerAiLocalKnowledgeRoutes(app: express.Express) {
     }
   });
 
-  // Stage 13.D — user feedback (👍 / 👎) on a single answer.
-  // Path matches what aiLocalKbRouter.feedback POSTs to via fetchKbApi
-  // (server-to-server localhost call — no cookie forwarded, so this route
-  // intentionally stays auth-free; the tRPC layer enforces session auth).
-  // Persisted to knowledge/feedback.jsonl for later curation.
+  /**
+   * Stage 13.D — user feedback (👍 / 👎) on a single answer.
+   * Path matches what `aiLocalKbRouter.feedback` POSTs to via `fetchKbApi`
+   * (server-to-server localhost call — no cookie forwarded).
+   * Persisted to `knowledge/feedback.jsonl` for later curation.
+   *
+   * ══════════════════════════════════════════════════════════════════════════════════════════════
+   * ★★★★ Review TOÀN NHÁNH Pha 9 · **I-6 — "TRONG LOCALHOST" PHẢI LÀ MỘT CƠ CHẾ, KHÔNG PHẢI MỘT CÂU.**
+   * ══════════════════════════════════════════════════════════════════════════════════════════════
+   * Bình luận cũ ở đúng dòng này khai *"lượt gọi máy-sang-máy trong localhost … tầng tRPC đã cưỡng
+   * chế phiên"* và kết luận tuyến *"cố ý auth-free"*. **Không có cơ chế nào cưỡng chế mệnh đề "trong
+   * localhost"** — nó là một **mô tả về người gọi có thiện chí**, không phải một điều kiện được kiểm.
+   *
+   * **Đo sống trước bản vá** (máy chủ đang chạy, KHÔNG cookie):
+   *
+   *     curl -X POST -d '{}' http://127.0.0.1:3000/api/ai/local-kb/feedback
+   *     {"success":false,"error":"messageId and question are required"}   HTTP=400
+   *
+   * **400, không phải 401** ⇒ thân handler chạy **trước** mọi phép xác thực. Mỗi lượt gọi hợp lệ
+   * **append một dòng** tới ~10 KB vào một tệp **trong repo** ⇒ bất kỳ ai với tới cổng 3000 đều ghi
+   * được không giới hạn (đầy đĩa) và bơm nội dung tuỳ ý vào đúng kho *"để tái nạp vào KB curation"*.
+   *
+   * ⇒ Cơ chế nay **giống hệt** `/api/observability/metrics` (`observabilityRoutes.ts`): **loopback
+   *   HOẶC phiên đặc quyền**. Lượt gọi tự-thân (`KB_API_BASE` mặc định `http://localhost:3000`)
+   *   thoả nhánh thứ nhất ⇒ **không khoá ai ra ngoài**.
+   * ⚠ CAVEAT ĐƯỢC KHAI: nếu một triển khai đặt `KB_API_BASE` sang một địa chỉ **không loopback**
+   *   thì lượt tự-thân rơi sang nhánh thứ hai và **không có cookie** ⇒ 401. Đó là một cấu hình
+   *   không tồn tại trong `.env` hôm nay, và nó phải được đổi **cùng lúc** với một đường mang danh
+   *   tính — không được sửa bằng cách gỡ phép kiểm này.
+   */
   app.post("/api/ai/local-kb/feedback", async (req, res) => {
+    if (!laLoopback(req)) {
+      const auth = await requirePrivileged(req);
+      if (!auth.ok) {
+        res.status(auth.status).json({ success: false, error: auth.message });
+        return;
+      }
+    }
     try {
       const body = (req.body ?? {}) as Record<string, unknown>;
       const messageId = typeof body.messageId === "string" ? body.messageId.trim() : "";

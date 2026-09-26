@@ -12,6 +12,7 @@
  */
 import { z } from "zod";
 import { TRPCError } from "@trpc/server";
+import { appError } from "../_core/appError";
 import { protectedProcedure, router } from "../_core/trpc";
 import * as db from "../db";
 import {
@@ -38,7 +39,7 @@ export const mpVariantSubformRouter = router({
     .query(async ({ input }) => {
       const mp = await (db as any).getMeasurementPointDefById?.(input.pointDefId);
       if (!mp) {
-        throw new TRPCError({ code: "NOT_FOUND", message: "Measurement point not found" });
+        throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "measurementPoint" }, "Measurement point not found");
       }
       return {
         pointDefId: mp.id,
@@ -56,7 +57,7 @@ export const mpVariantSubformRouter = router({
     .mutation(async ({ input }) => {
       const mp = await (db as any).getMeasurementPointDefById?.(input.pointDefId);
       if (!mp) {
-        throw new TRPCError({ code: "NOT_FOUND", message: "Measurement point not found" });
+        throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "measurementPoint" }, "Measurement point not found");
       }
       // Resolve the active typeCode: explicit input wins, else preserve existing.
       const code = input.measurementTypeCode === undefined
@@ -64,15 +65,17 @@ export const mpVariantSubformRouter = router({
         : input.measurementTypeCode;
       const v = validateExtraFields(code, input.payload);
       if (!v.ok) {
-        throw new TRPCError({
-          code: "BAD_REQUEST",
-          message: `Invalid extraFields for ${code ?? "(no typeCode)"}: ` +
+        throw appError(
+          "BAD_REQUEST",
+          "INVALID_VALUE",
+          { field: "extraFields" },
+          `Invalid extraFields for ${code ?? "(no typeCode)"}: ` +
             v.errors.map((e) => `${e.path || "(root)"}: ${e.message}`).join("; "),
-        });
+        );
       }
       const conn = await (db as any).getDb?.();
       if (!conn) {
-        throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Database not available" });
+        throw appError("INTERNAL_SERVER_ERROR", "DB_UNAVAILABLE", undefined, "Database not available");
       }
       const { measurementPointDefs } = await import("../../drizzle/schema");
       const { eq } = await import("drizzle-orm");

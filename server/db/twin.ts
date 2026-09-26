@@ -6,7 +6,7 @@
 // getLatestLineBalance from ./lineBalance for the heatmap path.
 import { getDb } from "./connection";
 import { and, asc, eq, gte, isNull, sql } from "drizzle-orm";
-import { wipTracking } from "../../drizzle/schema";
+import { wipTracking, stations, productionLines, workshops } from "../../drizzle/schema";
 
 export interface WipByStationRow {
   currentStationId: number;
@@ -43,6 +43,38 @@ export async function getWipByStation(opts?: { lineId?: number }): Promise<WipBy
     }));
 }
 
+/**
+ * ★★★ ĐỢT 6 VÁ CHẶN-1 — BẢN ĐỒ TRẠM → NHÀ MÁY, để `twin:update` lọc được tenant.
+ *
+ * ⚠ VÌ SAO CẦN: `twin:update` phát `io.to("global")` và gói tin của nó KHÔNG
+ * MANG `factoryId` nào — nó chỉ có `stationId`. Nên một bộ lọc per-socket
+ * KHÔNG CÓ GÌ ĐỂ SO: không biết trạm 29 thuộc nhà máy nào thì không thể trả
+ * lời "người này có được xem trạm 29 không".
+ *
+ * ⇒ Phải quy được trạm về nhà máy TRƯỚC. Đường phân cấp có thật trong lược đồ:
+ *   `stations.lineId` → `production_lines.workshopId` → `workshops.factoryId`.
+ *
+ * CHỈ ĐỌC. Trả `Map<stationId, factoryId>`; trạm không quy được (line/workshop
+ * mồ côi) KHÔNG có mặt trong map — và người gọi phải coi "vắng mặt" là KHÔNG
+ * AI ĐƯỢC XEM, chứ không phải "ai cũng xem được".
+ */
+export async function traBanDoTramNhaMay(): Promise<Map<number, number>> {
+  const db = await getDb();
+  const map = new Map<number, number>();
+  if (!db) return map;
+  const rows = await db
+    .select({ stationId: stations.id, factoryId: workshops.factoryId })
+    .from(stations)
+    .innerJoin(productionLines, eq(stations.lineId, productionLines.id))
+    .innerJoin(workshops, eq(productionLines.workshopId, workshops.id));
+  for (const r of rows) {
+    const sid = Number(r.stationId);
+    const fid = Number(r.factoryId);
+    if (Number.isInteger(sid) && Number.isInteger(fid)) map.set(sid, fid);
+  }
+  return map;
+}
+
 export interface WipCountBucket {
   bucketStart: string; // ISO
   wipCount: number;
@@ -62,15 +94,24 @@ export async function getWipCountSeries(
   if (!db) return [];
   const bucket = Math.max(1, Math.floor(bucketMin));
   const intervalSql = sql.raw(`'${bucket} minutes'`);
+  // date_bin origin MUST be a constant inlined identically in SELECT/GROUP BY/ORDER BY.
+  // A bind param (the old `${since}` origin) is emitted as a DIFFERENT placeholder per clause
+  // ($1 in SELECT vs $4 in GROUP BY), so Postgres sees two distinct expressions and rejects the
+  // query: `column "wip_tracking.enteredAt" must appear in the GROUP BY clause` (SQLSTATE 42803).
+  // A fixed epoch origin keeps the bucket expression byte-identical everywhere; the query window
+  // is still bounded by `enteredAt >= since` below, and bucket phase is irrelevant to a forecast
+  // that only needs an ordered, evenly-spaced series.
+  const originSql = sql.raw(`timestamp '1970-01-01 00:00:00'`);
+  const bucketExpr = sql`date_bin(${intervalSql}, ${wipTracking.enteredAt}, ${originSql})`;
   const rows = await db
     .select({
-      bucketStart: sql<string>`date_bin(${intervalSql}, ${wipTracking.enteredAt}, ${since})`,
+      bucketStart: sql<string>`${bucketExpr}`,
       wipCount: sql<number>`count(*)::int`,
     })
     .from(wipTracking)
     .where(and(eq(wipTracking.lineId, lineId), gte(wipTracking.enteredAt, since)))
-    .groupBy(sql`date_bin(${intervalSql}, ${wipTracking.enteredAt}, ${since})`)
-    .orderBy(asc(sql`date_bin(${intervalSql}, ${wipTracking.enteredAt}, ${since})`));
+    .groupBy(bucketExpr)
+    .orderBy(asc(bucketExpr));
   return rows.map((r) => ({
     bucketStart: r.bucketStart ? new Date(r.bucketStart).toISOString() : "",
     wipCount: Number(r.wipCount ?? 0),

@@ -1,0 +1,385 @@
+{
+  "schemaVersion": 1,
+  "kind": "longctx",
+  "label": "longctx-deep30b-seq1-2026-08-16",
+  "startedAt": "2026-08-16T09:08:57.211Z",
+  "note": "contextSize trong node-llama-cpp là PER-SEQUENCE: tổng ô KV = contextSize × sequences (LlamaContext.js:106).",
+  "hardware": {
+    "platform": "win32 10.0.26200",
+    "nodeVersion": "v24.18.0",
+    "cpu": "12th Gen Intel(R) Core(TM) i9-12900K",
+    "cpuCores": 24,
+    "totalMemGb": 63.8,
+    "gpuName": "NVIDIA GeForce RTX 5090",
+    "vramTotalMib": 32607,
+    "vramUsedBaselineMib": 2970
+  },
+  "model": {
+    "path": "D:\\SOURCES\\16.AI\\Qwen3-30B-A3B-Instruct-2507-UD-Q4_K_XL.gguf",
+    "file": "Qwen3-30B-A3B-Instruct-2507-UD-Q4_K_XL.gguf",
+    "sizeGb": 16.5,
+    "loadTimeMs": 11562.9,
+    "trainContextSize": 262144
+  },
+  "vram": {
+    "baselineMib": 2970,
+    "afterCudaBackendMib": 3406,
+    "afterModelLoadMib": 20113,
+    "afterDisposeMib": 3488
+  },
+  "config": {
+    "levels": [
+      2048,
+      4096,
+      8192,
+      16384,
+      31000
+    ],
+    "sequences": [
+      1
+    ],
+    "iters": 2,
+    "warmup": 1,
+    "maxTokens": 96,
+    "gpu": true,
+    "prodDefaultCtx": 4096,
+    "prodMaxCtx": 32768
+  },
+  "levels": [
+    {
+      "promptTargetTokens": 2048,
+      "sequences": 1,
+      "requestedContextSize": 2656,
+      "totalKvCells": 2656,
+      "vramBeforeCtxMib": 20113,
+      "contextCreateMs": 494.2,
+      "actualContextSize": 2816,
+      "vramAfterCtxMib": 20679,
+      "kvCacheDeltaMib": 566,
+      "promptTokens": 2072,
+      "ttftMs": {
+        "n": 2,
+        "mean": 231.1,
+        "median": 231.1,
+        "min": 228.6,
+        "max": 233.6
+      },
+      "prefillTokPerSec": {
+        "n": 2,
+        "mean": 8965.1,
+        "median": 8965.1,
+        "min": 8868.1,
+        "max": 9062.2
+      },
+      "decodeTokPerSec": {
+        "n": 2,
+        "mean": 225.3,
+        "median": 225.3,
+        "min": 222.3,
+        "max": 228.3
+      },
+      "totalMs": {
+        "n": 2,
+        "mean": 657.4,
+        "median": 657.4,
+        "min": 649.2,
+        "max": 665.5
+      },
+      "genTokens": {
+        "n": 2,
+        "mean": 96,
+        "median": 96,
+        "min": 96,
+        "max": 96
+      },
+      "vramPeakMib": 20825,
+      "rawIters": [
+        {
+          "ttftMs": 228.6,
+          "totalMs": 649.2,
+          "decodeMs": 420.6,
+          "genTokens": 96,
+          "prefillTokPerSec": 9062.2,
+          "decodeTokPerSec": 228.3
+        },
+        {
+          "ttftMs": 233.6,
+          "totalMs": 665.5,
+          "decodeMs": 431.9,
+          "genTokens": 96,
+          "prefillTokPerSec": 8868.1,
+          "decodeTokPerSec": 222.3
+        }
+      ],
+      "ok": true
+    },
+    {
+      "promptTargetTokens": 4096,
+      "sequences": 1,
+      "requestedContextSize": 4704,
+      "totalKvCells": 4704,
+      "vramBeforeCtxMib": 20178,
+      "contextCreateMs": 486,
+      "actualContextSize": 4864,
+      "vramAfterCtxMib": 20936,
+      "kvCacheDeltaMib": 758,
+      "promptTokens": 4124,
+      "ttftMs": {
+        "n": 2,
+        "mean": 433.4,
+        "median": 433.4,
+        "min": 433.4,
+        "max": 433.5
+      },
+      "prefillTokPerSec": {
+        "n": 2,
+        "mean": 9514.8,
+        "median": 9514.8,
+        "min": 9514.3,
+        "max": 9515.2
+      },
+      "decodeTokPerSec": {
+        "n": 2,
+        "mean": 219.1,
+        "median": 219.1,
+        "min": 208.5,
+        "max": 229.7
+      },
+      "totalMs": {
+        "n": 2,
+        "mean": 872.6,
+        "median": 872.6,
+        "min": 851.4,
+        "max": 893.8
+      },
+      "genTokens": {
+        "n": 2,
+        "mean": 96,
+        "median": 96,
+        "min": 96,
+        "max": 96
+      },
+      "vramPeakMib": 21022,
+      "rawIters": [
+        {
+          "ttftMs": 433.4,
+          "totalMs": 893.8,
+          "decodeMs": 460.4,
+          "genTokens": 96,
+          "prefillTokPerSec": 9515.2,
+          "decodeTokPerSec": 208.5
+        },
+        {
+          "ttftMs": 433.5,
+          "totalMs": 851.4,
+          "decodeMs": 418,
+          "genTokens": 96,
+          "prefillTokPerSec": 9514.3,
+          "decodeTokPerSec": 229.7
+        }
+      ],
+      "ok": true
+    },
+    {
+      "promptTargetTokens": 8192,
+      "sequences": 1,
+      "requestedContextSize": 8800,
+      "totalKvCells": 8800,
+      "vramBeforeCtxMib": 20184,
+      "contextCreateMs": 263.1,
+      "actualContextSize": 8960,
+      "vramAfterCtxMib": 21326,
+      "kvCacheDeltaMib": 1142,
+      "promptTokens": 8209,
+      "ttftMs": {
+        "n": 2,
+        "mean": 874.9,
+        "median": 874.9,
+        "min": 867.8,
+        "max": 882
+      },
+      "prefillTokPerSec": {
+        "n": 2,
+        "mean": 9383.4,
+        "median": 9383.4,
+        "min": 9307.7,
+        "max": 9459
+      },
+      "decodeTokPerSec": {
+        "n": 2,
+        "mean": 228.3,
+        "median": 228.3,
+        "min": 227.7,
+        "max": 228.9
+      },
+      "totalMs": {
+        "n": 2,
+        "mean": 1295.5,
+        "median": 1295.5,
+        "min": 1289.5,
+        "max": 1301.4
+      },
+      "genTokens": {
+        "n": 2,
+        "mean": 96,
+        "median": 96,
+        "min": 96,
+        "max": 96
+      },
+      "vramPeakMib": 21406,
+      "rawIters": [
+        {
+          "ttftMs": 882,
+          "totalMs": 1301.4,
+          "decodeMs": 419.5,
+          "genTokens": 96,
+          "prefillTokPerSec": 9307.7,
+          "decodeTokPerSec": 228.9
+        },
+        {
+          "ttftMs": 867.8,
+          "totalMs": 1289.5,
+          "decodeMs": 421.7,
+          "genTokens": 96,
+          "prefillTokPerSec": 9459,
+          "decodeTokPerSec": 227.7
+        }
+      ],
+      "ok": true
+    },
+    {
+      "promptTargetTokens": 16384,
+      "sequences": 1,
+      "requestedContextSize": 16992,
+      "totalKvCells": 16992,
+      "vramBeforeCtxMib": 20176,
+      "contextCreateMs": 284.2,
+      "actualContextSize": 17152,
+      "vramAfterCtxMib": 22086,
+      "kvCacheDeltaMib": 1910,
+      "promptTokens": 16398,
+      "ttftMs": {
+        "n": 2,
+        "mean": 2046.7,
+        "median": 2046.7,
+        "min": 2020.6,
+        "max": 2072.8
+      },
+      "prefillTokPerSec": {
+        "n": 2,
+        "mean": 8013.2,
+        "median": 8013.2,
+        "min": 7911,
+        "max": 8115.5
+      },
+      "decodeTokPerSec": {
+        "n": 2,
+        "mean": 165.2,
+        "median": 165.2,
+        "min": 134.4,
+        "max": 195.9
+      },
+      "totalMs": {
+        "n": 2,
+        "mean": 2648.8,
+        "median": 2648.8,
+        "min": 2510.6,
+        "max": 2787
+      },
+      "genTokens": {
+        "n": 2,
+        "mean": 96,
+        "median": 96,
+        "min": 96,
+        "max": 96
+      },
+      "vramPeakMib": 22181,
+      "rawIters": [
+        {
+          "ttftMs": 2020.6,
+          "totalMs": 2510.6,
+          "decodeMs": 490,
+          "genTokens": 96,
+          "prefillTokPerSec": 8115.5,
+          "decodeTokPerSec": 195.9
+        },
+        {
+          "ttftMs": 2072.8,
+          "totalMs": 2787,
+          "decodeMs": 714.2,
+          "genTokens": 96,
+          "prefillTokPerSec": 7911,
+          "decodeTokPerSec": 134.4
+        }
+      ],
+      "ok": true
+    },
+    {
+      "promptTargetTokens": 31000,
+      "sequences": 1,
+      "requestedContextSize": 31608,
+      "totalKvCells": 31608,
+      "vramBeforeCtxMib": 20190,
+      "contextCreateMs": 527.3,
+      "actualContextSize": 31744,
+      "vramAfterCtxMib": 23467,
+      "kvCacheDeltaMib": 3277,
+      "promptTokens": 31028,
+      "ttftMs": {
+        "n": 2,
+        "mean": 4542,
+        "median": 4542,
+        "min": 4533.7,
+        "max": 4550.4
+      },
+      "prefillTokPerSec": {
+        "n": 2,
+        "mean": 6831.3,
+        "median": 6831.3,
+        "min": 6818.7,
+        "max": 6843.9
+      },
+      "decodeTokPerSec": {
+        "n": 2,
+        "mean": 161.2,
+        "median": 161.2,
+        "min": 153.5,
+        "max": 168.9
+      },
+      "totalMs": {
+        "n": 2,
+        "mean": 5139,
+        "median": 5139,
+        "min": 5118.8,
+        "max": 5159.1
+      },
+      "genTokens": {
+        "n": 2,
+        "mean": 96,
+        "median": 96,
+        "min": 96,
+        "max": 96
+      },
+      "vramPeakMib": 23546,
+      "rawIters": [
+        {
+          "ttftMs": 4533.7,
+          "totalMs": 5159.1,
+          "decodeMs": 625.4,
+          "genTokens": 96,
+          "prefillTokPerSec": 6843.9,
+          "decodeTokPerSec": 153.5
+        },
+        {
+          "ttftMs": 4550.4,
+          "totalMs": 5118.8,
+          "decodeMs": 568.4,
+          "genTokens": 96,
+          "prefillTokPerSec": 6818.7,
+          "decodeTokPerSec": 168.9
+        }
+      ],
+      "ok": true
+    }
+  ]
+}

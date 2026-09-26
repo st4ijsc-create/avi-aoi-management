@@ -35,17 +35,31 @@ async function ensureUser(username, role, name) {
   // then works for every seeded persona.
   const speakeasy = (await import('speakeasy')).default;
   const newSecret = speakeasy.generateSecret({ length: 20 }).base32;
+  // ★ Pha 7 Task 9 (9c) — `passwordHash` + hạt giống TOTP nay ở **`user_secrets`**; `users` chỉ
+  //   còn giữ cờ `two_factor_enabled` (công khai). Trước migration 0315, ghi vào cột cũ trên
+  //   `users` vẫn CHẠY nhưng mã không bao giờ đọc nó ⇒ seed "thành công" mà không ai đăng nhập
+  //   được ("làm hỏng rồi báo cáo thành công"). 0315 đã BỎ hai cột ấy (2026-08-09) ⇒ nay ghi nhầm
+  //   chỗ ném 42703.
   const [existing] = await sql`SELECT id FROM users WHERE username=${username}`;
   let id;
   if (existing) {
     id = existing.id;
-    await sql`UPDATE users SET role=${role}, "isActive"=true, two_factor_enabled=true,
-      two_factor_secret = COALESCE(two_factor_secret, ${newSecret}) WHERE id=${id}`;
+    await sql`UPDATE users SET role=${role}, "isActive"=true, two_factor_enabled=true WHERE id=${id}`;
+    await sql`INSERT INTO user_secrets ("userId", "twoFactorSecret", "updatedAt")
+              VALUES (${id}, ${newSecret}, now())
+              ON CONFLICT ("userId") DO UPDATE
+                SET "twoFactorSecret" = COALESCE(user_secrets."twoFactorSecret", ${newSecret}),
+                    "updatedAt" = now()`;
   } else {
     const hash = await bcrypt.default.hash('Test@1234', 10);
-    const [row] = await sql`INSERT INTO users ("openId", username, "passwordHash", name, role, "isActive", two_factor_enabled, two_factor_secret, "loginMethod")
-      VALUES (${'seed-' + username}, ${username}, ${hash}, ${name}, ${role}, true, true, ${newSecret}, 'password') RETURNING id`;
+    const [row] = await sql`INSERT INTO users ("openId", username, name, role, "isActive", two_factor_enabled, "loginMethod", "passwordChangedAt")
+      VALUES (${'seed-' + username}, ${username}, ${name}, ${role}, true, true, 'password', now()) RETURNING id`;
     id = row.id;
+    await sql`INSERT INTO user_secrets ("userId", "passwordHash", "twoFactorSecret", "updatedAt")
+              VALUES (${id}, ${hash}, ${newSecret}, now())
+              ON CONFLICT ("userId") DO UPDATE
+                SET "passwordHash" = EXCLUDED."passwordHash",
+                    "twoFactorSecret" = EXCLUDED."twoFactorSecret", "updatedAt" = now()`;
   }
   // permissions từ template thật
   const perms = extractRolePerms(role);

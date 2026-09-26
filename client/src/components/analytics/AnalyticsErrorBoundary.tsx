@@ -8,6 +8,7 @@ import { useTranslation } from 'react-i18next';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { AlertCircle, RotateCcw } from 'lucide-react';
+import { mapTrpcError } from "@/lib/trpcErrors";
 
 interface AnalyticsErrorBoundaryProps {
   children: ReactNode;
@@ -72,7 +73,7 @@ function ErrorFallback({ error, title, onRetry }: ErrorFallbackProps) {
               {title || t('common.error', 'Error')}
             </h3>
             <p className="text-sm text-red-600">
-              {error?.message || t('common.unexpectedError', 'An unexpected error occurred')}
+              {error ? mapTrpcError(error) : t('common.unexpectedError', 'An unexpected error occurred')}
             </p>
             {onRetry && (
               <Button

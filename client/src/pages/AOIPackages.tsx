@@ -19,6 +19,9 @@ import { trpc } from "@/lib/trpc";
 import { toast } from "sonner";
 import { Link } from "wouter";
 import { format } from "date-fns";
+import { useCanWrite } from "@/components/PermissionGate";
+import { PACKAGE_STATUS_BADGE_VARIANTS, PACKAGE_STATUS_FILTER_OPTIONS } from "./aoiPackagesStatusPresentation";
+import { locIngestLienQuan, laLoiTuChoiQuyen } from "./ingestIntegrityScanPresentation";
 import {
   Package,
   Search,
@@ -47,6 +50,9 @@ import {
   Timer,
   User,
   Globe,
+  Skull,
+  ShieldCheck,
+  ShieldAlert,
 } from "lucide-react";
 
 // ============================================================
@@ -54,14 +60,10 @@ import {
 // ============================================================
 function StatusBadge({ status }: { status: string }) {
   const { t } = useTranslation();
-  const variants: Record<string, { labelKey: string; className: string }> = {
-    pending: { labelKey: "packages.pending", className: "bg-warning/15 text-warning border-warning/30" },
-    uploading: { labelKey: "packages.uploading", className: "bg-info/15 text-info border-info/30" },
-    uploaded: { labelKey: "packages.uploaded", className: "bg-info/15 text-info border-info/30" },
-    committed: { labelKey: "packages.committed", className: "bg-success/15 text-success border-success/30" },
-    failed: { labelKey: "common.error", className: "bg-destructive/15 text-destructive border-destructive/30" },
-  };
-  const v = variants[status] || { labelKey: "", className: "bg-muted text-muted-foreground" };
+  // Lô 4 Mục 2 (BG-74) — bảng biến thể RÚT RA `aoiPackagesStatusPresentation.ts`
+  // (logic thuần, test được không cần hạ tầng render-test) — bao gồm 'dead',
+  // trước bản vá rơi vào fallback xám nhạt bên dưới, thấp hơn cả `failed`.
+  const v = PACKAGE_STATUS_BADGE_VARIANTS[status] || { labelKey: "", className: "bg-muted text-muted-foreground" };
   return <Badge className={v.className}>{v.labelKey ? t(v.labelKey) : status}</Badge>;
 }
 
@@ -96,6 +98,10 @@ export default function AOIPackages() {
   const [selectedPackageId, setSelectedPackageId] = useState<string | null>(null);
   const [viewImageDialog, setViewImageDialog] = useState<{ packageId: string; pointCode: string; fileName: string } | null>(null);
   const [detailTab, setDetailTab] = useState<string>("info");
+  // Lô 4 Mục 3 (BG-36) — tab dead-letter + integrityScan.
+  const [deadLetterPage, setDeadLetterPage] = useState(0);
+  const [deadLetterPageSize] = useState(20);
+  const [selectedDeadLetterKey, setSelectedDeadLetterKey] = useState<string | null>(null);
 
   // Queries
   const packagesQuery = trpc.aoiPackage.listPackages.useQuery({
@@ -111,6 +117,50 @@ export default function AOIPackages() {
 
   const statsQuery = trpc.aoiPackage.getUploadStats.useQuery({});
   const queueQuery = trpc.aoiPackage.getQueueStatus.useQuery({});
+
+  // Lô 4 Mục 3 (BG-36) — dead-letter WAL (phạm vi ĐỌC-only) + integrityScan gần nhất.
+  const deadLettersQuery = trpc.aoiPackage.listDeadLetters.useQuery(
+    { offset: deadLetterPage * deadLetterPageSize, limit: deadLetterPageSize },
+    { enabled: activeTab === "deadLetter" }
+  );
+  const deadLetterDetailQuery = trpc.aoiPackage.getDeadLetterDetail.useQuery(
+    { key: selectedDeadLetterKey! },
+    { enabled: !!selectedDeadLetterKey }
+  );
+  const integrityScanQuery = trpc.integrity.summary.useQuery(undefined, {
+    enabled: activeTab === "deadLetter",
+  });
+  const ingestIntegrityRelationships = useMemo(
+    () => locIngestLienQuan(integrityScanQuery.data?.relationships ?? []),
+    [integrityScanQuery.data],
+  );
+  // BG-131 (Lô 9 Mục 3, 2026-09-05) — integrityRouter NAY dùng CÙNG mô hình quyền
+  // (protectedProcedure + requirePermission("admin_system", canView/canEdit)) với
+  // listDeadLetters/getDeadLetterDetail — hợp nhất hai nửa tab về MỘT nhóm quyền,
+  // đóng lệch mà review Lô 4 phát hiện (khi đó integrity.summary còn là adminProcedure,
+  // đòi role==='admin' ĐÚNG CHỮ, tách biệt khỏi requirePermission("admin_system","canView")
+  // của dead-letter). Nhánh forbidden dưới đây VẪN GIỮ (đúng brief: "giữ nhánh forbidden cho
+  // user KHÔNG có admin_system — vẫn cần trung thực") — chỉ khác NGƯỜI bị chặn: trước đây MỌI
+  // non-admin bị forbidden; nay CHỈ user thiếu `admin_system.canView` mới bị forbidden (một
+  // scoped-admin có canView nay xem được, đúng ý "hợp nhất" — không còn "một lối vào rồi từ
+  // chối" giữa hai panel cùng tab).
+  const integrityScanForbidden = laLoiTuChoiQuyen(integrityScanQuery.error);
+  // summary/đọc = canView, NHƯNG runNow/ghi = canEdit (MỘT BẬC CHẶT HƠN, xem docblock
+  // `integrityRouter.ts`) — một user chỉ có canView (không canEdit) sẽ KHÔNG forbidden ở
+  // summary (panel hiện được) nhưng SẼ forbidden nếu bấm "Quét ngay". Không gate nút đó riêng
+  // theo canEdit sẽ tái tạo ĐÚNG lớp lỗi "một lối vào rồi từ chối" (nay ở TRONG một panel thay
+  // vì giữa hai panel) — ẩn nút khi thiếu canEdit, giống hệt cách Lô 4 đã ẩn nút theo
+  // integrityScanForbidden trước đây.
+  const canRunIntegrityScan = useCanWrite("admin_system").canEdit;
+  const runIntegrityScanMutation = trpc.integrity.runNow.useMutation({
+    onSuccess: () => {
+      toast.success(t('packages.integrityScanRunSuccess'));
+      integrityScanQuery.refetch();
+    },
+    onError: (err) => {
+      toast.error(err.message || t('packages.integrityScanRunError'));
+    },
+  });
 
   const packageDetailQuery = trpc.aoiPackage.getPackage.useQuery(
     { packageId: selectedPackageId! },
@@ -226,6 +276,14 @@ export default function AOIPackages() {
             <TabsTrigger value="stats" className="gap-2">
               <BarChart3 className="h-4 w-4" /> {t('packages.statisticsTab')}
             </TabsTrigger>
+            <TabsTrigger value="deadLetter" className="gap-2">
+              <Skull className="h-4 w-4" /> {t('packages.deadLetterTab')}
+              {(deadLettersQuery.data?.total ?? 0) > 0 && (
+                <Badge className="ml-1 bg-destructive text-destructive-foreground border-destructive px-1.5 py-0 text-[10px]">
+                  {deadLettersQuery.data?.total}
+                </Badge>
+              )}
+            </TabsTrigger>
           </TabsList>
 
           {/* Tab: Packages List */}
@@ -262,10 +320,11 @@ export default function AOIPackages() {
                       <SelectTrigger><SelectValue /></SelectTrigger>
                       <SelectContent>
                         <SelectItem value="all">{t('common.all')}</SelectItem>
-                        <SelectItem value="committed">{t('packages.committed')}</SelectItem>
-                        <SelectItem value="uploaded">{t('packages.uploaded')}</SelectItem>
-                        <SelectItem value="pending">{t('packages.pending')}</SelectItem>
-                        <SelectItem value="failed">{t('common.error')}</SelectItem>
+                        {/* Lô 4 Mục 2 (BG-74) — danh sách RÚT RA `aoiPackagesStatusPresentation.ts`,
+                            nối `listPackages` (Mục 1, enum input đã mở rộng đủ 6 giá trị kể cả 'dead'). */}
+                        {PACKAGE_STATUS_FILTER_OPTIONS.map((opt) => (
+                          <SelectItem key={opt.value} value={opt.value}>{t(opt.labelKey)}</SelectItem>
+                        ))}
                       </SelectContent>
                     </Select>
                   </div>
@@ -550,6 +609,189 @@ export default function AOIPackages() {
                               {m.total > 0
                                 ? `${((m.committed / m.total) * 100).toFixed(1)}%`
                                 : "—"}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+          </TabsContent>
+
+          {/* Tab: Dead-letter (BG-36) + integrityScan (BG-36) — Lô 4 Mục 3 */}
+          <TabsContent value="deadLetter" className="space-y-4">
+            <Card>
+              <CardHeader>
+                <CardTitle className="text-lg flex items-center gap-2">
+                  <Skull className="h-5 w-5 text-destructive" />
+                  {t('packages.deadLetterTitle')}
+                </CardTitle>
+                <CardDescription>{t('packages.deadLetterDesc')}</CardDescription>
+              </CardHeader>
+              <CardContent>
+                {deadLettersQuery.isLoading ? (
+                  <p className="text-center text-muted-foreground py-8">{t('common.loading')}</p>
+                ) : !deadLettersQuery.data || deadLettersQuery.data.total === 0 ? (
+                  <div className="text-center py-12 text-muted-foreground">
+                    <ShieldCheck className="h-12 w-12 mx-auto mb-3 opacity-30 text-success" />
+                    <p>{t('packages.deadLetterEmpty')}</p>
+                  </div>
+                ) : (
+                  <>
+                    <div className="mb-3 text-sm text-muted-foreground">
+                      {t('packages.deadLetterSummary', {
+                        total: deadLettersQuery.data.total,
+                        totalSize: formatBytes(deadLettersQuery.data.totalBytes),
+                      })}
+                    </div>
+                    <div className="overflow-x-auto">
+                      <table className="w-full text-sm">
+                        <thead>
+                          <tr className="border-b bg-muted/50">
+                            <th className="text-left p-3 font-medium">{t('packages.time')}</th>
+                            <th className="text-left p-3 font-medium">{t('packages.machineCode')}</th>
+                            <th className="text-left p-3 font-medium">Serial Number</th>
+                            <th className="text-left p-3 font-medium">{t('packages.deadLetterReason')}</th>
+                            <th className="text-center p-3 font-medium">{t('packages.deadLetterAttempts')}</th>
+                            <th className="text-center p-3 font-medium">{t('common.actions')}</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {deadLettersQuery.data.entries.map((e) => (
+                            <tr key={e.key} className="border-b hover:bg-muted/30">
+                              <td className="p-3 text-xs text-muted-foreground">
+                                {e.deadAt ? format(new Date(e.deadAt), "dd/MM/yyyy HH:mm:ss") : "—"}
+                              </td>
+                              <td className="p-3">
+                                <Badge variant="outline" className="font-mono text-xs">
+                                  <Cpu className="h-3 w-3 mr-1" />
+                                  {e.machineCode || "—"}
+                                </Badge>
+                              </td>
+                              <td className="p-3 font-medium">{e.serialNumber || "—"}</td>
+                              <td className="p-3 text-xs max-w-80 truncate" title={e.error}>{e.error}</td>
+                              <td className="p-3 text-center">{e.attempts}</td>
+                              <td className="p-3 text-center">
+                                <Button variant="ghost" size="sm" onClick={() => setSelectedDeadLetterKey(e.key)} title={t('packages.viewDetail')}>
+                                  <Eye className="h-4 w-4" />
+                                </Button>
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                    <div className="flex items-center justify-between p-3 border-t">
+                      <span className="text-sm text-muted-foreground">
+                        {t('packages.pagination', {
+                          page: deadLetterPage + 1,
+                          totalPages: Math.max(1, Math.ceil(deadLettersQuery.data.total / deadLetterPageSize)),
+                          total: deadLettersQuery.data.total,
+                        })}
+                      </span>
+                      <div className="flex gap-1">
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          aria-label={t('common.previous', 'Previous')}
+                          disabled={deadLetterPage <= 0}
+                          onClick={() => setDeadLetterPage((p) => Math.max(0, p - 1))}
+                        >
+                          <ChevronLeft aria-hidden="true" className="h-4 w-4" />
+                        </Button>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          aria-label={t('common.next', 'Next')}
+                          disabled={(deadLetterPage + 1) * deadLetterPageSize >= deadLettersQuery.data.total}
+                          onClick={() => setDeadLetterPage((p) => p + 1)}
+                        >
+                          <ChevronRight aria-hidden="true" className="h-4 w-4" />
+                        </Button>
+                      </div>
+                    </div>
+                  </>
+                )}
+              </CardContent>
+            </Card>
+
+            {/* Panel: integrityScan (BG-36) — quan hệ liên quan ingest, đọc từ integrity.summary có sẵn */}
+            <Card>
+              <CardHeader>
+                <CardTitle className="text-lg flex items-center gap-2">
+                  <ShieldAlert className="h-5 w-5" />
+                  {t('packages.integrityScanTitle')}
+                </CardTitle>
+                <CardDescription>{t('packages.integrityScanDesc')}</CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-3">
+                {/* Fix review Lô 4 (Important), điều chỉnh BG-131 Lô 9 Mục 3 — nút "Quét ngay"
+                    ẩn khi thiếu QUYỀN GHI (`canRunIntegrityScan`, admin_system.canEdit), KHÔNG
+                    còn dùng chung điều kiện với panel đọc (`integrityScanForbidden`, canView).
+                    Từ khi integrityRouter tách canView (đọc)/canEdit (ghi) — Lô 9 Mục 3 — một
+                    user chỉ có canView xem được panel (không forbidden) nhưng KHÔNG có canEdit;
+                    nếu vẫn gate nút theo `!integrityScanForbidden` như cũ, nút sẽ HIỆN cho họ
+                    rồi bấm ra FORBIDDEN — đúng lớp lỗi "một lối vào rồi từ chối" (Lô 4 đã tránh
+                    được nó GIỮA hai panel, đừng để nó tái diễn TRONG một panel). */}
+                {!integrityScanForbidden && canRunIntegrityScan && (
+                  <div className="flex justify-end">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      disabled={runIntegrityScanMutation.isPending}
+                      onClick={() => runIntegrityScanMutation.mutate()}
+                    >
+                      <RefreshCcw className={`h-4 w-4 mr-2 ${runIntegrityScanMutation.isPending ? "animate-spin" : ""}`} />
+                      {t('packages.integrityScanRunNow')}
+                    </Button>
+                  </div>
+                )}
+                {integrityScanQuery.isLoading ? (
+                  <p className="text-center text-muted-foreground py-8">{t('common.loading')}</p>
+                ) : integrityScanForbidden ? (
+                  <div className="text-center py-8 text-muted-foreground">
+                    <ShieldAlert className="h-10 w-10 mx-auto mb-2 opacity-30 text-warning" />
+                    <p>{t('packages.integrityScanForbidden')}</p>
+                  </div>
+                ) : integrityScanQuery.isError ? (
+                  <div className="text-center py-8 text-muted-foreground">
+                    <AlertCircle className="h-10 w-10 mx-auto mb-2 opacity-30 text-destructive" />
+                    <p>{t('packages.integrityScanRunError')}</p>
+                  </div>
+                ) : ingestIntegrityRelationships.length === 0 ? (
+                  <div className="text-center py-8 text-muted-foreground">
+                    <Info className="h-10 w-10 mx-auto mb-2 opacity-30" />
+                    <p>{t('packages.integrityScanEmpty')}</p>
+                  </div>
+                ) : (
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-sm">
+                      <thead>
+                        <tr className="border-b bg-muted/50">
+                          <th className="text-left p-3 font-medium">{t('packages.integrityScanRelationship')}</th>
+                          <th className="text-right p-3 font-medium">{t('packages.integrityScanViolations')}</th>
+                          <th className="text-left p-3 font-medium">{t('packages.integrityScanLastRun')}</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {ingestIntegrityRelationships.map((rel) => (
+                          <tr key={rel.key} className="border-b">
+                            <td className="p-3">
+                              <code className="text-xs bg-muted px-1 py-0.5 rounded">{rel.key}</code>
+                            </td>
+                            <td className="p-3 text-right">
+                              {rel.lastScan == null ? (
+                                <span className="text-muted-foreground text-xs">{t('packages.integrityScanNeverRun')}</span>
+                              ) : rel.lastScan.violationCount > 0 ? (
+                                <span className="text-destructive font-medium">{rel.lastScan.violationCount}</span>
+                              ) : (
+                                <span className="text-success font-medium">0</span>
+                              )}
+                            </td>
+                            <td className="p-3 text-xs text-muted-foreground">
+                              {rel.lastScan?.scannedAt ? format(new Date(rel.lastScan.scannedAt), "dd/MM/yyyy HH:mm:ss") : "—"}
                             </td>
                           </tr>
                         ))}
@@ -975,6 +1217,60 @@ export default function AOIPackages() {
                 {t('packages.openOriginalImage')}
               </Button>
             </div>
+          </DialogContent>
+        </Dialog>
+
+        {/* Dead-letter Detail Dialog (BG-36) — payload đã CẮT GỌN AN TOÀN ở server, xem
+            server/services/inspection/deadLetterReader.ts */}
+        <Dialog open={!!selectedDeadLetterKey} onOpenChange={(open) => !open && setSelectedDeadLetterKey(null)}>
+          <DialogContent className="max-w-2xl max-h-[80vh] overflow-hidden flex flex-col">
+            <DialogHeader>
+              <DialogTitle className="flex items-center gap-2">
+                <Skull className="h-5 w-5 text-destructive" />
+                {t('packages.deadLetterDetailTitle')}
+              </DialogTitle>
+              <DialogDescription>
+                {selectedDeadLetterKey && <code className="text-xs">{selectedDeadLetterKey}</code>}
+              </DialogDescription>
+            </DialogHeader>
+            {deadLetterDetailQuery.isLoading ? (
+              <div className="text-center py-8 text-muted-foreground">{t('common.loading')}</div>
+            ) : !deadLetterDetailQuery.data ? (
+              <div className="text-center py-8 text-muted-foreground">{t('packages.deadLetterNotFound')}</div>
+            ) : (
+              <ScrollArea className="flex-1 pr-4">
+                <div className="space-y-4">
+                  <div className="grid grid-cols-2 gap-4 text-sm">
+                    <div>
+                      <span className="text-muted-foreground block text-xs">{t('packages.machineCode')}</span>
+                      <span className="font-medium">{deadLetterDetailQuery.data.machineCode || "—"}</span>
+                    </div>
+                    <div>
+                      <span className="text-muted-foreground block text-xs">Serial Number</span>
+                      <span className="font-medium">{deadLetterDetailQuery.data.serialNumber || "—"}</span>
+                    </div>
+                    <div>
+                      <span className="text-muted-foreground block text-xs">{t('packages.time')}</span>
+                      <span>{deadLetterDetailQuery.data.deadAt ? format(new Date(deadLetterDetailQuery.data.deadAt), "dd/MM/yyyy HH:mm:ss") : "—"}</span>
+                    </div>
+                    <div>
+                      <span className="text-muted-foreground block text-xs">{t('packages.deadLetterAttempts')}</span>
+                      <span>{deadLetterDetailQuery.data.attempts}</span>
+                    </div>
+                  </div>
+                  <div className="rounded-lg border border-destructive/30 bg-destructive/10 p-4">
+                    <h4 className="text-sm font-semibold text-destructive">{t('packages.deadLetterReason')}</h4>
+                    <p className="text-sm text-destructive/90 mt-1 whitespace-pre-wrap break-all">{deadLetterDetailQuery.data.error}</p>
+                  </div>
+                  <div>
+                    <h4 className="text-sm font-semibold mb-2">{t('packages.deadLetterPayloadHint')}</h4>
+                    <pre className="text-xs bg-muted rounded p-3 overflow-x-auto whitespace-pre-wrap break-all max-h-60">
+                      {JSON.stringify(deadLetterDetailQuery.data.payload, null, 2)}
+                    </pre>
+                  </div>
+                </div>
+              </ScrollArea>
+            )}
           </DialogContent>
         </Dialog>
       </div>

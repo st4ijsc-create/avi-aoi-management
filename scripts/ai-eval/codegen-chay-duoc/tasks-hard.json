@@ -1,0 +1,86 @@
+[
+ {
+  "id": "H-ts1",
+  "lang": "ts",
+  "name": "LRU-TTL",
+  "prompt": "Viết TypeScript: export class BoNhoLRU<K,V> với constructor(sucChua: number, ttlMs: number) và các phương thức dat(k,v), lay(k): V|undefined, co(): number. Quy tắc: (1) mục quá hạn ttlMs kể từ lần ĐẶT gần nhất bị coi như không tồn tại và phải bị loại khi bị chạm tới; (2) lay() thành công làm mục đó thành mới-dùng-nhất NHƯNG KHÔNG làm mới hạn dùng; (3) khi vượt sucChua thì loại mục ÍT-DÙNG-NHẤT; (4) dat() lại một khoá đã có thì cập nhật giá trị VÀ làm mới hạn dùng VÀ thành mới-dùng-nhất; (5) co() chỉ đếm mục CHƯA quá hạn. Dùng Date.now(). Chỉ trả về MỘT khối mã.",
+  "test": "import {test} from 'node:test'; import a from 'node:assert';\nimport {BoNhoLRU as C} from './sol.ts';\nconst sleep=(ms)=>new Promise(r=>setTimeout(r,ms));\ntest('loai it dung nhat',()=>{const c=new C(2,10000);c.dat('a',1);c.dat('b',2);c.lay('a');c.dat('c',3);a.strictEqual(c.lay('b'),undefined);a.strictEqual(c.lay('a'),1);a.strictEqual(c.lay('c'),3);});\ntest('lay KHONG lam moi han',async()=>{const c=new C(5,120);c.dat('a',1);await sleep(70);a.strictEqual(c.lay('a'),1);await sleep(70);a.strictEqual(c.lay('a'),undefined);});\ntest('dat lai LAM MOI han',async()=>{const c=new C(5,120);c.dat('a',1);await sleep(70);c.dat('a',9);await sleep(70);a.strictEqual(c.lay('a'),9);});\ntest('co chi dem chua qua han',async()=>{const c=new C(5,60);c.dat('a',1);c.dat('b',2);a.strictEqual(c.co(),2);await sleep(90);a.strictEqual(c.co(),0);});"
+ },
+ {
+  "id": "H-ts2",
+  "lang": "ts",
+  "name": "gopKhoang",
+  "prompt": "Viết TypeScript: export function gopKhoang(ks: {dau:number, cuoi:number, dongCuoi:boolean}[]): {dau:number, cuoi:number, dongCuoi:boolean}[] — gộp các khoảng CHỒNG hoặc CHẠM nhau. dongCuoi=true nghĩa là cuoi nằm TRONG khoảng, false nghĩa là cuoi KHÔNG nằm trong. Hai khoảng [1,5) và [5,8] PHẢI gộp thành [1,8]. Hai khoảng [1,5) và (5... không tồn tại — mọi khoảng đều đóng ở đầu. [1,5) và [6,8] KHÔNG gộp. Kết quả sắp tăng theo dau. Chỉ trả về MỘT khối mã.",
+  "test": "import {test} from 'node:test'; import a from 'node:assert';\nimport {gopKhoang as f} from './sol.ts';\ntest('cham nhau thi gop',()=>{a.deepStrictEqual(f([{dau:1,cuoi:5,dongCuoi:false},{dau:5,cuoi:8,dongCuoi:true}]),[{dau:1,cuoi:8,dongCuoi:true}]);});\ntest('roi nhau thi khong gop',()=>{a.deepStrictEqual(f([{dau:1,cuoi:5,dongCuoi:false},{dau:6,cuoi:8,dongCuoi:true}]),[{dau:1,cuoi:5,dongCuoi:false},{dau:6,cuoi:8,dongCuoi:true}]);});\ntest('long nhau',()=>{a.deepStrictEqual(f([{dau:1,cuoi:10,dongCuoi:true},{dau:3,cuoi:4,dongCuoi:true}]),[{dau:1,cuoi:10,dongCuoi:true}]);});\ntest('khong sap san',()=>{a.deepStrictEqual(f([{dau:9,cuoi:12,dongCuoi:true},{dau:1,cuoi:3,dongCuoi:false},{dau:2,cuoi:9,dongCuoi:false}]),[{dau:1,cuoi:12,dongCuoi:true}]);});\ntest('mang rong',()=>{a.deepStrictEqual(f([]),[]);});\ntest('bien mo khong nuot',()=>{a.deepStrictEqual(f([{dau:1,cuoi:5,dongCuoi:false},{dau:5,cuoi:5,dongCuoi:false}]),[{dau:1,cuoi:5,dongCuoi:false}]);});"
+ },
+ {
+  "id": "H-ts3",
+  "lang": "ts",
+  "name": "sapXepTopo",
+  "prompt": "Viết TypeScript: export function sapXepTopo(canh: [string,string][]): {thuTu: string[]} | {chuTrinh: string[]} — canh là cặp [truoc, sau]. Nếu KHÔNG có chu trình, trả {thuTu} là thứ tự topo; khi nhiều thứ tự hợp lệ thì chọn thứ tự mà ở mỗi bước lấy nút sẵn-sàng NHỎ NHẤT theo thứ tự chữ cái. Nếu CÓ chu trình, trả {chuTrinh} là danh sách các nút NẰM TRONG chu trình, sắp tăng theo chữ cái. Mọi nút xuất hiện trong canh đều phải có mặt ở thuTu. Chỉ trả về MỘT khối mã.",
+  "test": "import {test} from 'node:test'; import a from 'node:assert';\nimport {sapXepTopo as f} from './sol.ts';\ntest('thu tu nho nhat truoc',()=>{a.deepStrictEqual(f([['a','c'],['b','c'],['c','d']]),{thuTu:['a','b','c','d']});});\ntest('song song chon chu cai nho',()=>{a.deepStrictEqual(f([['z','y'],['a','b']]),{thuTu:['a','b','z','y']});});\ntest('phat hien chu trinh',()=>{const r=f([['a','b'],['b','c'],['c','a'],['c','d']]);a.ok('chuTrinh' in r);a.deepStrictEqual(r.chuTrinh,['a','b','c']);});\ntest('rong',()=>{a.deepStrictEqual(f([]),{thuTu:[]});});"
+ },
+ {
+  "id": "H-py1",
+  "lang": "py",
+  "name": "gioi_han_truot",
+  "prompt": "Viết Python: class GioiHanTruot với __init__(self, so_luot: int, cua_so_ms: int) và phương thức cho_phep(self, moc_ms: int) -> bool — bộ giới hạn tần suất CỬA SỔ TRƯỢT chính xác. cho_phep trả True nếu trong khoảng (moc_ms - cua_so_ms, moc_ms] đã có ÍT HƠN so_luot lượt được chấp nhận, và khi trả True thì ghi nhận lượt này. Biên: một lượt ở đúng moc_ms - cua_so_ms là ĐÃ RA KHỎI cửa sổ. Lượt bị từ chối KHÔNG được ghi nhận. Chỉ trả về MỘT khối mã.",
+  "test": "from sol import GioiHanTruot as G\ng=G(2,1000)\nassert g.cho_phep(0)==True\nassert g.cho_phep(500)==True\nassert g.cho_phep(999)==False\nassert g.cho_phep(1000)==True\nassert g.cho_phep(1400)==False\nassert g.cho_phep(1500)==True\ng2=G(1,100)\nassert g2.cho_phep(0)==True\nassert g2.cho_phep(100)==True\nassert g2.cho_phep(150)==False\nprint('OK')"
+ },
+ {
+  "id": "H-py2",
+  "lang": "py",
+  "name": "so_sanh_semver",
+  "prompt": "Viết Python: def so_sanh_semver(a: str, b: str) -> int — trả -1, 0 hoặc 1 theo quy tắc SemVer 2.0.0. Bao gồm: so sánh major.minor.patch theo SỐ; phiên bản CÓ prerelease nhỏ hơn phiên bản KHÔNG có; so prerelease theo từng định danh cách nhau bởi dấu chấm, định danh toàn số so theo SỐ và nhỏ hơn định danh có chữ, định danh có chữ so theo ASCII; danh sách định danh NGẮN hơn nhỏ hơn nếu mọi phần trước bằng nhau; phần build metadata sau dấu + bị BỎ QUA hoàn toàn. Chỉ trả về MỘT khối mã.",
+  "test": "from sol import so_sanh_semver as f\nassert f('1.0.0','1.0.1')==-1\nassert f('1.2.0','1.10.0')==-1\nassert f('1.0.0-alpha','1.0.0')==-1\nassert f('1.0.0-alpha','1.0.0-alpha.1')==-1\nassert f('1.0.0-alpha.1','1.0.0-alpha.beta')==-1\nassert f('1.0.0-beta','1.0.0-beta.2')==-1\nassert f('1.0.0-beta.2','1.0.0-beta.11')==-1\nassert f('1.0.0-rc.1','1.0.0')==-1\nassert f('1.0.0+build1','1.0.0+build2')==0\nassert f('1.0.0-alpha+x','1.0.0-alpha+y')==0\nassert f('2.0.0','1.9.9')==1\nprint('OK')"
+ },
+ {
+  "id": "H-py3",
+  "lang": "py",
+  "name": "doc_csv",
+  "prompt": "Viết Python: def doc_csv(s: str) -> list — phân tích CSV theo RFC4180 và trả danh sách các dòng, mỗi dòng là list chuỗi. Quy tắc: dấu phẩy ngăn ô; ô bọc trong dấu nháy kép có thể chứa dấu phẩy, xuống dòng, và hai dấu nháy kép liền nhau nghĩa là một dấu nháy kép; xuống dòng ngăn dòng; dòng cuối có thể không có ký tự xuống dòng; chuỗi rỗng trả []. KHÔNG dùng thư viện csv. Chỉ trả về MỘT khối mã.",
+  "test": "from sol import doc_csv as f\nassert f('a,b\\nc,d')==[['a','b'],['c','d']]\nassert f('a,\"b,c\",d')==[['a','b,c','d']]\nassert f('a,\"b\\nc\",d')==[['a','b\\nc','d']]\nassert f('a,\"b\"\"c\",d')==[['a','b\"c','d']]\nassert f('')==[]\nassert f('a,,b')==[['a','','b']]\nassert f('\"\"')==[['']]\nassert f('a,b\\n')==[['a','b']]\nprint('OK')"
+ },
+ {
+  "id": "H-cs1",
+  "lang": "cs",
+  "name": "VongDem",
+  "prompt": "Viết C# trong namespace Sol: public class VongDem<T> với constructor VongDem(int sucChua), và các phương thức public bool Them(T x) (trả false nếu đầy), public bool Lay(out T x) (trả false nếu rỗng), public int Co { get; }, public bool Day { get; }. Đây là hàng đợi VÒNG FIFO sức chứa cố định, KHÔNG cấp phát lại, KHÔNG ghi đè khi đầy. sucChua <= 0 thì ném ArgumentOutOfRangeException. Chỉ trả về MỘT khối mã C#, KHÔNG viết Main.",
+  "test": "using Sol; using System; public static class T { public static int Main(){ var q=new VongDem<int>(3); if(!q.Them(1)||!q.Them(2)||!q.Them(3)) return 1; if(q.Them(4)) return 2; if(q.Co!=3||!q.Day) return 3; int v; if(!q.Lay(out v)||v!=1) return 4; if(!q.Them(4)) return 5; if(!q.Lay(out v)||v!=2) return 6; if(!q.Lay(out v)||v!=3) return 7; if(!q.Lay(out v)||v!=4) return 8; if(q.Lay(out v)) return 9; if(q.Co!=0) return 10; try { new VongDem<int>(0); return 11; } catch(ArgumentOutOfRangeException) {} System.Console.WriteLine(\"OK\"); return 0; } }"
+ },
+ {
+  "id": "H-cs2",
+  "lang": "cs",
+  "name": "TinhBieuThuc",
+  "prompt": "Viết C# trong namespace Sol: public static class BieuThuc với public static double Tinh(string s) — tính biểu thức số học từ chuỗi. Hỗ trợ + - * / dấu ngoặc đơn, số thực, dấu trừ MỘT NGÔI (vd -3 và -(2+1)), bỏ qua khoảng trắng. Ưu tiên toán tử chuẩn, kết hợp trái. Chia cho 0 ném DivideByZeroException. Chuỗi sai cú pháp ném FormatException. Chỉ trả về MỘT khối mã C#, KHÔNG viết Main.",
+  "test": "using Sol; using System; public static class T { public static int Main(){ if(BieuThuc.Tinh(\"1+2*3\")!=7) return 1; if(BieuThuc.Tinh(\"(1+2)*3\")!=9) return 2; if(BieuThuc.Tinh(\"-3+5\")!=2) return 3; if(BieuThuc.Tinh(\"-(2+1)*2\")!=-6) return 4; if(BieuThuc.Tinh(\" 10 / 4 \")!=2.5) return 5; if(BieuThuc.Tinh(\"2-3-4\")!=-5) return 6; try { BieuThuc.Tinh(\"1/0\"); return 7; } catch(DivideByZeroException) {} try { BieuThuc.Tinh(\"1+*2\"); return 8; } catch(FormatException) {} System.Console.WriteLine(\"OK\"); return 0; } }"
+ },
+ {
+  "id": "H-cs3",
+  "lang": "cs",
+  "name": "GomTheoCaUTC",
+  "prompt": "Viết C# trong namespace Sol: public static class Ca với public static System.Collections.Generic.Dictionary<string, System.Collections.Generic.List<System.DateTime>> Gom(System.Collections.Generic.IEnumerable<System.DateTime> moc, int gioBatDau) — mọi DateTime là UTC. Ca dài 8 giờ, CA1 bắt đầu lúc gioBatDau giờ UTC, CA2 sau 8 giờ, CA3 sau 16 giờ, ca CÓ THỂ VẮT QUA NỬA ĐÊM. Trả Dictionary có ĐÚNG 3 khoá CA1, CA2, CA3 (kể cả khi rỗng), giữ nguyên thứ tự đầu vào trong mỗi list. gioBatDau ngoài 0..23 ném ArgumentOutOfRangeException. Chỉ trả về MỘT khối mã C#, KHÔNG viết Main.",
+  "test": "using Sol; using System; using System.Linq; using System.Collections.Generic; public static class T { public static int Main(){ var m=new List<DateTime>{ new DateTime(2026,1,1,6,30,0,DateTimeKind.Utc), new DateTime(2026,1,1,14,30,0,DateTimeKind.Utc), new DateTime(2026,1,1,22,30,0,DateTimeKind.Utc), new DateTime(2026,1,2,5,59,0,DateTimeKind.Utc) }; var r=Ca.Gom(m,6); if(r.Count!=3) return 1; if(r[\"CA1\"].Count!=1) return 2; if(r[\"CA2\"].Count!=1) return 3; if(r[\"CA3\"].Count!=2) return 4; if(r[\"CA3\"][0]!=m[2]||r[\"CA3\"][1]!=m[3]) return 5; var e=Ca.Gom(new List<DateTime>(),0); if(e.Count!=3||e[\"CA2\"].Count!=0) return 6; try { Ca.Gom(m,24); return 7; } catch(ArgumentOutOfRangeException) {} System.Console.WriteLine(\"OK\"); return 0; } }"
+ },
+ {
+  "id": "H-cpp1",
+  "lang": "cpp",
+  "name": "BoDemTruot",
+  "prompt": "Viết C++20: class BoDemTruot với constructor(long long cuaSoMs) và hai phương thức ghi(long long tMs), dem(long long tMs). Quy tắc: (1) ghi(t) ghi nhận MỘT sự kiện tại mốc t; (2) dem(t) trả về SỐ sự kiện có mốc nằm trong nửa khoảng (t - cuaSoMs, t] — tức mốc bằng đúng t-cuaSoMs thì KHÔNG tính, mốc bằng đúng t thì CÓ tính; (3) sự kiện đã rơi ra ngoài cửa sổ phải bị LOẠI khỏi bộ nhớ, không được tích luỹ vô hạn; (4) các mốc truyền vào KHÔNG giảm dần. Chỉ dùng thư viện chuẩn. Chỉ trả về MỘT khối mã, KHÔNG viết hàm main.",
+  "test": "\n// ── BÀI KIỂM (nối thẳng sau lời giải) ────────────────────────────────\n#include <iostream>\nstatic int _hong = 0;\nstatic void ok(bool dk, const char* ten) {\n  if (!dk) { std::cout << \"SAI: \" << ten << \"\\n\"; _hong++; }\n}\nint main() {\n  BoDemTruot b(100);\n  b.ghi(0); b.ghi(50); b.ghi(100);\n  ok(b.dem(100) == 2, \"BIEN DUOI MO: (100-100,100] = (0,100] KHONG chua moc 0\");\n  ok(b.dem(150) == 1, \"BIEN DUOI MO: (50,150] KHONG chua moc 50\");\n  b.ghi(250);\n  ok(b.dem(250) == 1, \"chi con 250\");\n  ok(b.dem(1000) == 0, \"cua so rong\");\n  BoDemTruot c(10);\n  for (long long i = 0; i < 1000; i++) c.ghi(i);\n  ok(c.dem(999) == 10, \"cua so 10ms tren 1000 su kien\");\n  std::cout << (_hong == 0 ? \"PASS\" : \"FAIL\") << \"\\n\";\n  return _hong == 0 ? 0 : 1;\n}\n"
+ },
+ {
+  "id": "H-cpp2",
+  "lang": "cpp",
+  "name": "SapXepTopo",
+  "prompt": "Viết C++20: hàm std::vector<std::string> sapXepTopo(const std::vector<std::pair<std::string,std::string>>& canh) nhận danh sách cạnh có hướng (a,b) nghĩa là a PHẢI đứng trước b. Trả về một thứ tự topo hợp lệ chứa ĐỦ mọi đỉnh xuất hiện trong danh sách cạnh. Nếu đồ thị CÓ CHU TRÌNH thì trả về vector RỖNG. Chỉ dùng thư viện chuẩn. Chỉ trả về MỘT khối mã, KHÔNG viết hàm main.",
+  "test": "\n// ── BÀI KIỂM ─────────────────────────────────────────────────────────\n#include <iostream>\n#include <map>\n#include <vector>\n#include <string>\n#include <utility>\nstatic int _hong = 0;\nstatic void ok(bool dk, const char* ten) {\n  if (!dk) { std::cout << \"SAI: \" << ten << \"\\n\"; _hong++; }\n}\nstatic bool hopLe(const std::vector<std::string>& r,\n                  const std::vector<std::pair<std::string,std::string>>& e) {\n  std::map<std::string,int> vt;\n  for (size_t i = 0; i < r.size(); i++) vt[r[i]] = (int)i;\n  for (const auto& c : e) {\n    if (!vt.count(c.first) || !vt.count(c.second)) return false;\n    if (vt[c.first] >= vt[c.second]) return false;\n  }\n  return true;\n}\nint main() {\n  std::vector<std::pair<std::string,std::string>> e1 = {{\"a\",\"b\"},{\"b\",\"c\"},{\"a\",\"c\"}};\n  auto r1 = sapXepTopo(e1);\n  ok(r1.size() == 3, \"du 3 dinh\");\n  ok(hopLe(r1, e1), \"thu tu topo hop le\");\n  std::vector<std::pair<std::string,std::string>> e2 = {{\"a\",\"b\"},{\"b\",\"c\"},{\"c\",\"a\"}};\n  ok(sapXepTopo(e2).empty(), \"CHU TRINH => rong\");\n  std::vector<std::pair<std::string,std::string>> e3 = {{\"x\",\"y\"},{\"p\",\"q\"}};\n  auto r3 = sapXepTopo(e3);\n  ok(r3.size() == 4, \"hai thanh phan roi nhau, du 4 dinh\");\n  ok(hopLe(r3, e3), \"hai thanh phan van hop le\");\n  // ★ CA PHAN BIET: chu trinh LAN voi mot thanh phan sap duoc. Kahn se xuat ra x,y roi dung.\n  //   Ban THIEU kiem \"ra.size() == dinh.size()\" tra [x,y] (SAI); ban DUNG tra rong.\n  //   Thieu ca nay thi doi chung khong phan biet duoc — da do: fake-bad LOT 1/3.\n  std::vector<std::pair<std::string,std::string>> e5 = {{\"x\",\"y\"},{\"a\",\"b\"},{\"b\",\"c\"},{\"c\",\"a\"}};\n  ok(sapXepTopo(e5).empty(), \"CHU TRINH lan voi thanh phan sap duoc => VAN phai rong\");\n  std::vector<std::pair<std::string,std::string>> e4 = {{\"a\",\"a\"}};\n  ok(sapXepTopo(e4).empty(), \"tu-vong cung la CHU TRINH\");\n  std::cout << (_hong == 0 ? \"PASS\" : \"FAIL\") << \"\\n\";\n  return _hong == 0 ? 0 : 1;\n}\n"
+ },
+ {
+  "id": "H-cpp3",
+  "lang": "cpp",
+  "name": "TinhBieuThuc",
+  "prompt": "Viết C++20: hàm long long tinhBieuThuc(const std::string& s) tính giá trị một biểu thức số nguyên. Hỗ trợ: số nguyên không âm nhiều chữ số, bốn phép + - * /, dấu ngoặc tròn, dấu trừ MỘT NGÔI (ví dụ -3, 2*-3, -(2+3)), và khoảng trắng tuỳ ý. Ưu tiên: * và / cao hơn + và -; cùng mức thì tính từ TRÁI sang PHẢI. Phép chia là chia nguyên CẮT VỀ 0 (giống C++). Đầu vào luôn hợp lệ. Chỉ dùng thư viện chuẩn. Chỉ trả về MỘT khối mã, KHÔNG viết hàm main.",
+  "test": "\n// ── BÀI KIỂM ─────────────────────────────────────────────────────────\n#include <iostream>\n#include <string>\nstatic int _hong = 0;\nstatic void ok(bool dk, const char* ten) {\n  if (!dk) { std::cout << \"SAI: \" << ten << \"\\n\"; _hong++; }\n}\nint main() {\n  ok(tinhBieuThuc(\"1+2*3\") == 7, \"uu tien nhan\");\n  ok(tinhBieuThuc(\"(1+2)*3\") == 9, \"ngoac\");\n  ok(tinhBieuThuc(\"100/3\") == 33, \"chia nguyen\");\n  ok(tinhBieuThuc(\"-7/2\") == -3, \"CAT VE 0, khong phai lam tron xuong -4\");\n  ok(tinhBieuThuc(\"2*-3\") == -6, \"tru MOT NGOI sau toan tu\");\n  ok(tinhBieuThuc(\"-(2+3)\") == -5, \"tru mot ngoi truoc ngoac\");\n  ok(tinhBieuThuc(\"10-2-3\") == 5, \"cung muc: TRAI sang PHAI\");\n  ok(tinhBieuThuc(\"100/10/5\") == 2, \"chia lien tiep TRAI sang PHAI\");\n  ok(tinhBieuThuc(\"  12  *  ( 3 - 1 )  \") == 24, \"khoang trang tuy y\");\n  ok(tinhBieuThuc(\"1+2*3-4/2\") == 5, \"tong hop\");\n  std::cout << (_hong == 0 ? \"PASS\" : \"FAIL\") << \"\\n\";\n  return _hong == 0 ? 0 : 1;\n}\n"
+ }
+]

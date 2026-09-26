@@ -9,8 +9,11 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { trpc } from "@/lib/trpc";
-import { User, Mail, Phone, Building, Briefcase, Shield, Calendar, Clock, ShieldCheck, ShieldOff, QrCode, Copy, CheckCircle2, AlertTriangle, KeyRound, Download, Monitor } from "lucide-react";
+import { mapTrpcError } from "@/lib/trpcErrors";
+import { User, Mail, Phone, Building, Briefcase, Shield, Calendar, Clock, ShieldCheck, ShieldOff, QrCode, Copy, CheckCircle2, AlertTriangle, KeyRound, Monitor } from "lucide-react";
 import SessionManagement from "@/components/SessionManagement";
+// ★★★ Pha 7 / vá NHÀ TÙ I-4 — chủ DUY NHẤT của "tài khoản xác thực nội bộ".
+import { laXacThucNoiBo } from "@shared/xacThucNoiBo";
 import { useState, useEffect } from "react";
 import { useTranslation } from 'react-i18next';
 import { toast } from "sonner";
@@ -34,27 +37,25 @@ export default function Profile() {
   const [disablePassword, setDisablePassword] = useState("");
   const [setupData, setSetupData] = useState<{ secret: string; qrCode: string } | null>(null);
   const [secretCopied, setSecretCopied] = useState(false);
-  
-  // Backup Codes States
-  const [showBackupCodes, setShowBackupCodes] = useState(false);
+  /**
+   * ★★★ Pha 9 nhóm A · **A4 — NỬA CLIENT CỦA BẢN VÁ, VÀ NÓ LÀ NỬA BẮT BUỘC.**
+   * Máy chủ nay cấp 10 mã dự phòng khi bật 2FA qua màn này (trước bản vá: **0 mã** ⇒ mất điện
+   * thoại là mất tài khoản). Nhưng **cấp mã rồi không hiện còn tệ hơn không cấp**: người dùng
+   * tưởng mình có lưới an toàn, còn lưới ấy là 10 chuỗi không ai từng đọc. Đó chính là lý do
+   * `hoTuyenSongSong.test.ts` từng **miễn trừ** cặp này thay vì đòi vá một nửa.
+   */
   const [backupCodes, setBackupCodes] = useState<string[]>([]);
+  const [showBackupCodes, setShowBackupCodes] = useState(false);
+  const [backupCodesCopied, setBackupCodesCopied] = useState(false);
+  
+  // ★★★ Pha 7 Task 8a — trang này KHÔNG còn đẻ mã dự phòng.
+  // `user.generateBackupCodes` ghi PLAINTEXT (mã đẻ ra không xác minh được) và không đòi TOTP;
+  // đường đẻ mã duy nhất nay ở màn Bảo mật / 2FA (`TwoFactorSetup`), đòi mã TOTP.
+  // Ở đây chỉ còn **hiển thị số mã còn lại**.
 
   // Queries
   const { data: twoFAStatus, refetch: refetch2FAStatus } = trpc.user.get2FAStatus.useQuery();
-  const { data: backupCodesStatus, refetch: refetchBackupCodes } = trpc.user.getBackupCodesStatus.useQuery();
-  
-  // Backup Codes Mutation
-  const generateBackupCodesMutation = trpc.user.generateBackupCodes.useMutation({
-    onSuccess: (data) => {
-      setBackupCodes(data.codes);
-      setShowBackupCodes(true);
-      refetchBackupCodes();
-      toast.success(t('profile.backupCodesGenerated'));
-    },
-    onError: (error: any) => {
-      toast.error(error.message || t('errors.generic'));
-    },
-  });
+  const { data: backupCodesStatus } = trpc.user.getBackupCodesStatus.useQuery();
 
   // Mutations
   const updateMutation = trpc.user.updateProfile.useMutation({
@@ -64,7 +65,7 @@ export default function Profile() {
       window.location.reload();
     },
     onError: (error: any) => {
-      toast.error(error.message || t('errors.generic'));
+      toast.error(mapTrpcError(error));
     },
   });
 
@@ -73,20 +74,25 @@ export default function Profile() {
       setSetupData(data);
     },
     onError: (error: any) => {
-      toast.error(error.message || t('auth.twoFASetupError'));
+      toast.error(mapTrpcError(error));
     },
   });
 
   const verify2FAMutation = trpc.user.verify2FA.useMutation({
-    onSuccess: () => {
+    onSuccess: (data) => {
       toast.success(t('auth.twoFAVerifySuccess'));
       setShow2FASetup(false);
       setSetupData(null);
       setOtpToken("");
+      // ★ Pha 9 A4 — hiện bộ mã dự phòng ĐÚNG MỘT LẦN. Máy chủ không bao giờ trả lại chúng nữa
+      //   (chỉ giữ bản băm), nên hộp thoại này là cơ hội DUY NHẤT người dùng đọc được.
+      setBackupCodes(data.backupCodes ?? []);
+      setBackupCodesCopied(false);
+      if ((data.backupCodes ?? []).length > 0) setShowBackupCodes(true);
       refetch2FAStatus();
     },
     onError: (error: any) => {
-      toast.error(error.message || t('auth.invalidOTP'));
+      toast.error(mapTrpcError(error));
     },
   });
 
@@ -99,7 +105,7 @@ export default function Profile() {
       refetch2FAStatus();
     },
     onError: (error: any) => {
-      toast.error(error.message || t('errors.generic'));
+      toast.error(mapTrpcError(error));
     },
   });
 
@@ -126,6 +132,12 @@ export default function Profile() {
       return;
     }
     disable2FAMutation.mutate({ token: otpToken, password: disablePassword || "oauth" });
+  };
+
+  const copyBackupCodes = () => {
+    navigator.clipboard.writeText(backupCodes.join("\n"));
+    setBackupCodesCopied(true);
+    toast.success(t('common.copied'));
   };
 
   const copySecret = () => {
@@ -404,15 +416,6 @@ export default function Profile() {
                 </Badge>
               </div>
 
-              <Button 
-                onClick={() => generateBackupCodesMutation.mutate()}
-                className="w-full"
-                disabled={generateBackupCodesMutation.isPending}
-              >
-                <KeyRound className="h-4 w-4 mr-2" />
-                {generateBackupCodesMutation.isPending ? t('common.generating') : t('profile.generateNewBackupCodes')}
-              </Button>
-
               <Alert>
                 <AlertTriangle className="h-4 w-4" />
                 <AlertDescription>
@@ -519,6 +522,70 @@ export default function Profile() {
         </DialogContent>
       </Dialog>
 
+      {/*
+        ★★★ Pha 9 A4 — HỘP THOẠI MÃ DỰ PHÒNG. Cố ý **không** đóng được bằng nút X / bấm ra ngoài
+        khi chưa xác nhận: đây là lần hiển thị DUY NHẤT, đóng nhầm là mất bộ mã vĩnh viễn.
+
+        ★★★★ Review TOÀN NHÁNH Pha 9 · **I-4 — LỜI KHAI TRÊN ĐÂY TỪNG ĐÚNG MỘT PHẦN BA.**
+        Bản A4 chỉ viết `onInteractOutside` ⇒ **chỉ** chặn lượt bấm ra ngoài. Hai lối kia vẫn mở:
+          · `dialog.tsx:95` — `showCloseButton = true` là **MẶC ĐỊNH**, và ở đây không truyền
+            `showCloseButton={false}` ⇒ nút **X** (`DialogPrimitive.Close`) **CÓ** render;
+          · `dialog.tsx:100-118` — `handleEscapeKeyDown` chỉ `preventDefault()` khi **IME đang gõ**;
+            ngoài ra nó gọi tiếp `onEscapeKeyDown?.()` rồi để Radix đóng, và ở đây không truyền gì.
+        Hậu quả đúng cái A4 tự khai là **tệ hơn không cấp mã**: máy chủ đã **xoá bộ mã cũ và cấp 10
+        mã mới** (`db.quayVongMaDuPhong`); người dùng bấm X theo phản xạ ⇒ **10 chuỗi không ai từng
+        đọc**, máy chủ chỉ giữ bản băm. Tệ hơn nữa, màn này hiển thị *"số mã còn lại = 10"*, tức nó
+        **khẳng định với họ rằng họ có một lưới an toàn**. Đường cấp lại nằm ở màn hình KHÁC
+        (`TwoFactorSetup.tsx` — nợ N-1 "hai họ 2FA song song").
+        ⇒ Chặn **cả ba** lối; lối ra duy nhất là nút "Xong", và nút ấy đòi đã sao chép.
+        Lưới canh: `client/src/lib/hopThoaiHienMotLan.unit.test.ts`.
+      */}
+      <Dialog open={showBackupCodes} onOpenChange={(open) => { if (!open) setShowBackupCodes(false); }}>
+        <DialogContent
+          className="max-w-md"
+          showCloseButton={false}
+          onInteractOutside={(e) => e.preventDefault()}
+          onEscapeKeyDown={(e) => e.preventDefault()}
+        >
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <KeyRound className="h-5 w-5" />
+              {t('auth.backupCodes')}
+            </DialogTitle>
+            <DialogDescription>
+              {t('auth.backupCodesDescription')}
+            </DialogDescription>
+          </DialogHeader>
+
+          <Alert variant="destructive">
+            <AlertTriangle className="h-4 w-4" />
+            <AlertDescription>{t('auth.backupCodesViewOnce')}</AlertDescription>
+          </Alert>
+
+          <div className="grid grid-cols-2 gap-2 rounded-lg bg-muted/50 p-4">
+            {backupCodes.map((code) => (
+              <code key={code} className="font-mono text-sm tracking-wider text-center py-1">
+                {code}
+              </code>
+            ))}
+          </div>
+
+          <DialogFooter>
+            <Button variant="outline" onClick={copyBackupCodes}>
+              {backupCodesCopied ? (
+                <CheckCircle2 className="h-4 w-4 mr-2 text-success" />
+              ) : (
+                <Copy className="h-4 w-4 mr-2" />
+              )}
+              {backupCodesCopied ? t('common.copied') : t('common.copy')}
+            </Button>
+            <Button onClick={() => setShowBackupCodes(false)} disabled={!backupCodesCopied}>
+              {t('common.done')}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
       {/* 2FA Disable Dialog */}
       <Dialog open={show2FADisable} onOpenChange={(open) => {
         setShow2FADisable(open);
@@ -546,7 +613,9 @@ export default function Profile() {
               </AlertDescription>
             </Alert>
 
-            {(user as any)?.loginMethod === "local" && (
+            {/* ⚠ Phải khớp `user.disable2FA` phía máy chủ: nó kiểm mật khẩu cho ĐÚNG tập này. Lệch
+                một bên ⇒ máy chủ đòi mật khẩu mà biểu mẫu không có ô để gõ. Cùng một chủ. */}
+            {laXacThucNoiBo((user as any)?.loginMethod) && (
               <div className="space-y-2">
                 <Label>{t('auth.currentPassword')}:</Label>
                 <Input
@@ -585,71 +654,8 @@ export default function Profile() {
         </DialogContent>
       </Dialog>
 
-      {/* Backup Codes Dialog */}
-      <Dialog open={showBackupCodes} onOpenChange={setShowBackupCodes}>
-        <DialogContent className="max-w-md">
-          <DialogHeader>
-            <DialogTitle className="flex items-center gap-2">
-              <KeyRound className="h-5 w-5" />
-              {t('profile.yourBackupCodes')}
-            </DialogTitle>
-            <DialogDescription>
-              {t('profile.backupCodesSaveMessage')}
-            </DialogDescription>
-          </DialogHeader>
-
-          <div className="space-y-4">
-            <div className="grid grid-cols-2 gap-2 p-4 bg-muted rounded-lg font-mono text-sm">
-              {backupCodes.map((code, index) => (
-                <div key={index} className="p-2 bg-background rounded text-center">
-                  {code}
-                </div>
-              ))}
-            </div>
-
-            <Alert>
-              <AlertTriangle className="h-4 w-4" />
-              <AlertDescription>
-                <strong>{t('profile.important')}:</strong> {t('profile.backupCodesOnlyOnce')}
-              </AlertDescription>
-            </Alert>
-          </div>
-
-          <DialogFooter className="flex gap-2">
-            <Button
-              variant="outline"
-              onClick={() => {
-                const text = backupCodes.join('\n');
-                navigator.clipboard.writeText(text);
-                toast.success(t('profile.backupCodesCopied'));
-              }}
-            >
-              <Copy className="h-4 w-4 mr-2" />
-              {t('common.copy')}
-            </Button>
-            <Button
-              variant="outline"
-              onClick={() => {
-                const text = `${t('profile.backupCodesFileTitle', 'SYNAPSE backup codes')}\n\n${backupCodes.join('\n')}\n\n${t('profile.backupCodesFileGeneratedAt', 'Generated at')}: ${new Date().toLocaleString('vi-VN')}`;
-                const blob = new Blob([text], { type: 'text/plain' });
-                const url = URL.createObjectURL(blob);
-                const a = document.createElement('a');
-                a.href = url;
-                a.download = 'backup-codes.txt';
-                a.click();
-                URL.revokeObjectURL(url);
-                toast.success(t('profile.backupCodesDownloaded'));
-              }}
-            >
-              <Download className="h-4 w-4 mr-2" />
-              {t('common.download')}
-            </Button>
-            <Button onClick={() => setShowBackupCodes(false)}>
-              {t('profile.saved')}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      {/* ★★★ Pha 7 Task 8a — hộp thoại "mã dự phòng của bạn" đã bị xoá cùng đường đẻ mã plaintext.
+          Mã dự phòng chỉ hiện MỘT LẦN ở màn 2FA (`TwoFactorSetup`), ngay sau khi bật / tạo lại. */}
     </DashboardLayout>
   );
 }

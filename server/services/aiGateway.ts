@@ -5,43 +5,122 @@
  * batch). It promotes the pure Model Router (aiModelRouter.route) into a real gateway:
  *
  *   1. ROUTE   — pick tier + model via the existing pure `route()` decision engine.
- *   2. LIMIT   — enforce a per-user, per-tier token-bucket rate limit (in-process).
- *   3. A/B     — optional split flag: deterministically tag a fraction of traffic as
+ *   2. LIMIT   — enforce a per-user, per-tier token-bucket rate limit. doc69 G2-4: backed by
+ *                a durable Redis atomic counter when configured (survives restart, correct
+ *                across nodes), transparently falling back to the original in-process `Map`
+ *                when Redis is off/unavailable — see `durableRateLimitEnabled()`.
+ *   3. QUOTA   — doc69 G2-4, OPT-IN (`AI_QUOTA_ENFORCE`, default OFF): per-user rolling-24h
+ *                token budget (`ai_gateway_quota` table), read against `ai_gateway_metrics`.
+ *   4. LICENSE — doc69 G2-4, OPT-IN (`AI_GATEWAY_LICENSE_GATE_ENABLED`, default OFF): binds AI
+ *                availability to the EXISTING `MOD_AI` module/edition license gate.
+ *   5. A/B     — optional split flag: deterministically tag a fraction of traffic as
  *                variant "B" so call-sites / analytics can compare two routing arms.
- *   4. METER   — record tokens-in / tokens-out / latency / model / tier / outcome to a
+ *   6. METER   — record tokens-in / tokens-out / latency / model / tier / outcome to a
  *                durable table (ai_gateway_metrics), batched + async off the hot path.
  *
  * Backwards compatible by design. The decision (RouteDecision) returned by
  * `planInference()` is byte-identical to what `route()` returned before, so existing
  * call-sites can adopt the gateway incrementally:
- *   • cheapest adoption: replace `route(req)` with `planInference(req)` (adds limit + A/B
- *     + a metrics handle) and call `plan.record({...})` after the inference completes.
+ *   • cheapest adoption: replace `route(req)` with `await planInference(req)` (adds limit +
+ *     A/B + a metrics handle) and call `plan.record({...})` after the inference completes.
+ *     doc69 G2-4 — `planInference` is now ASYNC (it may need to await the durable rate-limit /
+ *     quota / license checks above); every call-site awaits it.
  *   • full adoption: wrap the engine call in `routeInference(req, exec)` and the gateway
  *     times it, records metrics, and surfaces rate-limit errors for you.
  *
- * NOTHING here loads a model or blocks; metrics are buffered and flushed by a timer.
+ * NOTHING here loads a model synchronously or blocks the process; metrics are buffered and
+ * flushed by a timer. The QUOTA/LICENSE checks above are OFF by default (opt-in), so a
+ * deployment that never turns them on pays zero extra latency/DB round-trips for them.
  */
 
 import { route, getRouterStats as getInMemoryRouterStats } from "./aiModelRouter";
 import type { RouteInput, RouteDecision, TaskKind } from "./aiModelRouter";
+// doc69 G2-2 — AI safety layer (injection scan + secret/PII redaction). Wired INSIDE
+// planInference so every existing caller of the gateway (aiProviderRouter's ~10 services,
+// _core/llm.ts transitively, aiChatAssistant's direct planInference calls) gets it for
+// free once they read `plan.safeText` instead of their own raw prompt — see the doc
+// comment on GatewayPlan.safeText below for the exact contract.
+import { applySafety, applyOutputSafety, type SafetyFlagsSummary } from "./ai/aiSafety";
+// doc69 G2-5a — privacy-safe LLM-call audit trail (HIGH-RISK tasks only: rca/report/vision).
+// Statically imported (like aiSafety above) because `recordLlmAudit()` itself is pure/
+// synchronous — it only hashes + buffers; the actual DB write is deferred to its own
+// `flushLlmAudit()`'s dynamic imports (mirrors aiGatewayQuota.ts's fail-safe DB-access
+// pattern). See server/services/ai/aiLlmAudit.ts for the full design rationale.
+import { recordLlmAudit } from "./ai/aiLlmAudit";
+import { getCorrelationId } from "./observability/correlation";
 
 export type { RouteInput, RouteDecision, TaskKind } from "./aiModelRouter";
+export type { SafetyFlagsSummary } from "./ai/aiSafety";
 
 // ─── Public request / result types ─────────────────────────────
 
 export interface GatewayRequest extends RouteInput {
   /** Who triggered it (for per-user rate-limit + metrics). Omit for system/cron callers. */
   userId?: number;
+  /**
+   * doc69 G2-4 — caller's role, consulted ONLY for the opt-in per-role quota fallback
+   * (`AI_QUOTA_ENFORCE`, see aiGatewayQuota.ts). Optional; omitting it just means a caller
+   * without a per-user quota row falls through to the deployment default / env default
+   * instead of a per-role one.
+   */
+  role?: string;
+  /**
+   * G3-B — nhãn MỊN HƠN cho **riêng vệt nhật ký** `ai_llm_audit.task` (varchar(32)); mặc định
+   * là chính `task`. `ai_gateway_metrics.task` VẪN ghi `task` (một `TaskKind` hợp lệ), nên
+   * không có cột nào đổi kiểu.
+   *
+   * ⚠ VÌ SAO KHÔNG THÊM `TaskKind` MỚI. Đường lập kế hoạch agent gọi model bằng **JSON ràng
+   * buộc bằng ngữ pháp** — đúng ngữ nghĩa định tuyến mà `extract` đã có (`jsonMode`, tầng
+   * nông). Đẻ một `TaskKind` mới sẽ kéo theo một nhánh định tuyến/ngưỡng CHƯA AI ĐO
+   * (`ROUTER_MODEL_PROFILES` nói rõ: ngưỡng phải rút từ phép đo, không được bịa). Nhãn này
+   * tách đúng thứ cần tách — *câu hỏi "vì sao AI đề xuất X" tra theo `task='agent_plan'`* —
+   * mà không đụng vào quyết định định tuyến.
+   */
+  auditTask?: string;
 }
 
-export type Outcome = "ok" | "error" | "rate_limited";
+// Review fix (doc69 G2-4 W1-3) — "license_denied" is a DISTINCT value from "blocked" (the
+// safety hard-block outcome) so dashboards/metrics can tell "AI safety refused this prompt"
+// apart from "this deployment's edition doesn't include MOD_AI" — both used to record
+// "blocked", making them indistinguishable in `ai_gateway_metrics`. 14 chars, fits the
+// `outcome varchar(16)` column with room to spare.
+export type Outcome = "ok" | "error" | "rate_limited" | "blocked" | "quota_exceeded" | "license_denied";
 
 /** Token accounting + outcome a caller reports back after running the inference. */
 export interface InferenceOutcome {
+  /**
+   * ★ B7 (2026-09-22) — ba số đo tách "nghĩ" khỏi "trả" (cột `ai_gateway_metrics`, migration 0358).
+   * Vắng / `null` = KHÔNG ĐO ĐƯỢC (đường in-process, không-stream) — ghi `NULL`, không ghi 0.
+   * `tokensOut` của server GỘP cả suy luận; `reasoningTokens` là phần nằm trong `<think>`.
+   */
+  reasoningTokens?: number | null;
+  /** `false` = đã gửi `enable_thinking=false`; `true` = có suy luận đo được; `null` = không biết. */
+  thinking?: boolean | null;
+  /** Tên hồ sơ sampling đã dùng (`hien-tai` | `chinh-hang`, xem `ai/hoSoSampling.ts`). */
+  samplingProfile?: string | null;
   tokensIn?: number;
   tokensOut?: number;
   latencyMs?: number;
   outcome?: Outcome;
+  /**
+   * doc69 G2-5a — the ALREADY-OUTPUT-REDACTED response text (i.e. the return value of
+   * `GatewayPlan.sanitizeOutput(rawResponse)`), OPTIONAL. Only consulted for AUDITED tasks
+   * (see `TASK_AUDIT_POLICY`) to compute the LLM audit trail's `responseSha256`. Every other
+   * caller can omit it with zero behavior change (byte-identical to before this task) — it is
+   * never persisted raw, only hashed.
+   */
+  responseText?: string;
+  /**
+   * G3-B — mẩu tóm tắt NGẮN, đã che bí mật, ghi vào `ai_llm_audit.redactedSnippet`.
+   *
+   * Băm sha256 chứng minh được *"đúng prompt này ra đúng câu trả lời này"* nhưng KHÔNG trả lời
+   * được *"vì sao AI đề xuất X"* — người điều tra không có preimage để đối chiếu. Cột
+   * `redactedSnippet` đã có sẵn từ migration 0299 (khai đúng là "một mẩu trích đã che, dành cho
+   * lượt bật sau"); đây là lượt bật đó, giới hạn cho các quyết định SINH RA HÀNH ĐỘNG
+   * (lập kế hoạch agent / replan). `aiLlmAudit.recordLlmAudit` còn che + cắt một lần NỮA trước
+   * khi ghi, nên một người gọi quên che cũng không rò được.
+   */
+  auditSnippet?: string;
 }
 
 /**
@@ -54,6 +133,23 @@ export interface GatewayPlan {
   abVariant: "A" | "B" | null;
   /** Record token/latency/outcome for this request (idempotent — only the first call counts). */
   record: (o: InferenceOutcome) => void;
+  /**
+   * doc69 G2-2 — sanitized version of the request's `text` (secrets/PII redacted with a stable
+   * placeholder; identical to the input when AI_SAFETY_ENABLED is off or nothing matched).
+   * Callers that build their model prompt FROM `req.text` should use THIS instead of the raw
+   * text so redaction actually reaches the model — computing `plan.decision` alone does not
+   * sanitize anything, since routing/decision-making never touched the prompt.
+   */
+  safeText: string;
+  /** doc69 G2-2 — compact input-safety summary (injection risk + redaction counts), no raw text. */
+  safetyFlags: SafetyFlagsSummary;
+  /**
+   * doc69 G2-2 — run OUTPUT safety (leak-check + secret redaction) on the model's response
+   * text. Call this right before returning/emitting the response. Fail-safe: returns `text`
+   * unchanged if the safety layer throws or is disabled. Also bumps the light in-memory
+   * safety stats (see `getSafetyStats()`).
+   */
+  sanitizeOutput: (text: string) => string;
 }
 
 export class RateLimitError extends Error {
@@ -62,9 +158,63 @@ export class RateLimitError extends Error {
     message: string,
     readonly retryAfterMs: number,
     readonly tier: number,
+    /** doc69 G2-2 — the redacted prompt, so FAIL-OPEN callers that swallow this error (e.g.
+     * aiProviderRouter's planGateway) can still use the sanitized text for the engine call
+     * instead of falling back to the raw, unredacted request text. */
+    readonly safeText?: string,
+    readonly safetyFlags?: SafetyFlagsSummary,
   ) {
     super(message);
     this.name = "RateLimitError";
+  }
+}
+
+/** doc69 G2-2 — thrown ONLY when AI_SAFETY_BLOCK_HIGH_RISK is explicitly enabled AND the
+ * injection scan resolves to risk:'high'. Default posture is flag-only (this never throws
+ * unless an operator opts in), see `safetyBlockHighRiskEnabled()`. */
+export class SafetyBlockedError extends Error {
+  readonly code = "AI_SAFETY_BLOCKED" as const;
+  constructor(
+    message: string,
+    readonly matched: string[],
+  ) {
+    super(message);
+    this.name = "SafetyBlockedError";
+  }
+}
+
+/**
+ * doc69 G2-4 — thrown ONLY when `AI_QUOTA_ENFORCE` is explicitly enabled AND the caller's
+ * rolling-24h token usage has exceeded their configured (or default) daily budget. Default
+ * posture is OFF (see `quotaEnforceEnabled()` below) — this never throws unless an operator
+ * opts in; real budgets are a product decision, not something this task turns on for anyone.
+ * Shape mirrors {@link RateLimitError} so callers can extend the same "catch + degrade
+ * gracefully" handling to it if/when they choose to.
+ */
+export class QuotaExceededError extends Error {
+  readonly code = "AI_QUOTA_EXCEEDED" as const;
+  constructor(
+    message: string,
+    readonly usedTokens: number,
+    readonly budgetTokens: number,
+  ) {
+    super(message);
+    this.name = "QuotaExceededError";
+  }
+}
+
+/**
+ * doc69 G2-4 — thrown ONLY when `AI_GATEWAY_LICENSE_GATE_ENABLED` is explicitly enabled AND
+ * the deployment's license/edition does not include `MOD_AI` (see
+ * `aiGatewayLicenseGateEnabled()` below and `server/_core/moduleGate.ts`). Default posture is
+ * OFF; wiring reuses the EXACT SAME entitlement resolution `moduleGate()` already enforces for
+ * `aiCopilotRouter` — no new licensing model is invented here.
+ */
+export class LicenseGateError extends Error {
+  readonly code = "AI_MODULE_NOT_LICENSED" as const;
+  constructor(message: string) {
+    super(message);
+    this.name = "LicenseGateError";
   }
 }
 
@@ -86,6 +236,13 @@ function envFlag(name: string): boolean {
   const v = (process.env[name] || "").trim().toLowerCase();
   return v === "1" || v === "true" || v === "yes" || v === "on";
 }
+/** Like envFlag, but the FEATURE DEFAULTS ON (unset/empty → true). Used for safe/non-breaking
+ * protections (e.g. redaction) that should be on unless an operator explicitly opts out. */
+function envFlagDefaultOn(name: string): boolean {
+  const raw = (process.env[name] ?? "").trim().toLowerCase();
+  if (raw === "") return true;
+  return raw !== "0" && raw !== "false" && raw !== "no" && raw !== "off";
+}
 
 /**
  * Per-user, per-minute request budget for EXPENSIVE tiers (deep / vision / HITL = tier ≥ 2).
@@ -94,6 +251,174 @@ function envFlag(name: string): boolean {
 const LIMIT_WINDOW_MS = 60_000;
 const LIMIT_CHEAP_PER_MIN = envInt("AI_GATEWAY_LIMIT_CHEAP_PER_MIN", 120); // tier 0/1
 const LIMIT_DEEP_PER_MIN = envInt("AI_GATEWAY_LIMIT_DEEP_PER_MIN", 30); // tier ≥ 2
+
+/**
+ * doc69 G2-2 — AI Safety layer switches.
+ *   AI_SAFETY_ENABLED (default ON): runs injection scan + secret/PII redaction on the input,
+ *     and makes `applyOutputSafety`/`GatewayPlan.sanitizeOutput` available for the output side.
+ *     Redaction is safe/non-breaking by construction (masks substrings, never changes meaning),
+ *     so defaulting this ON costs nothing when the request has no secrets/PII in it. Set to
+ *     "false"/"0"/"off" to fully disable (e.g. to isolate a false-positive report).
+ *   AI_SAFETY_BLOCK_HIGH_RISK (default OFF): when a request's injection scan resolves to
+ *     risk:'high', THROW SafetyBlockedError instead of just flagging it. Default OFF because
+ *     the pattern list is a heuristic and a false positive here would reject a legitimate call
+ *     outright — flag-only is the safe default; an operator opts into hard-blocking.
+ */
+function safetyEnabled(): boolean {
+  return envFlagDefaultOn("AI_SAFETY_ENABLED");
+}
+function safetyBlockHighRiskEnabled(): boolean {
+  return envFlag("AI_SAFETY_BLOCK_HIGH_RISK");
+}
+
+/**
+ * doc69 G2-4 — durable Redis-backed rate limit switch. Default ON: when Redis is actually
+ * configured (`REDIS_URL` set — see `redisService.isConfigured()`), the gateway's per-user/
+ * tier rate limit is backed by an atomic Redis `INCR`+`EXPIRE` counter (survives a process
+ * restart, correct across multiple app instances/nodes). When Redis is NOT configured, this
+ * flag is explicitly turned off, or a Redis call fails, the gateway transparently falls back
+ * to the original in-process `windows` Map — same fail-open contract as before this task; this
+ * task adds DURABILITY of the counting, it does not change WHEN a request gets limited.
+ */
+function durableRateLimitEnabled(): boolean {
+  return envFlagDefaultOn("AI_RATE_LIMIT_REDIS_ENABLED");
+}
+
+/**
+ * doc69 G2-4 — per-user daily token QUOTA enforcement switch. Default OFF: ships dark so no
+ * deployment is newly blocked until an operator opts in (real budgets are a product decision,
+ * per the task brief). When on, `planInference` consults `aiGatewayQuota.checkQuota()` after
+ * the rate-limit check and throws {@link QuotaExceededError} for a user who has exhausted
+ * their rolling-24h token budget. Fail-safe: any error resolving the quota (DB down, table
+ * not yet migrated, …) is treated as "allow" — infra issues must never block inference.
+ */
+function quotaEnforceEnabled(): boolean {
+  return envFlag("AI_QUOTA_ENFORCE");
+}
+
+/**
+ * doc69 G2-4 — bind AI-feature availability to the EXISTING per-module license/edition gate
+ * (`server/_core/moduleGate.ts`, module code `MOD_AI`) inside the gateway choke point itself,
+ * not just the one router (`aiCopilotRouter`) that already shadows `moduleProcedure("MOD_AI")`.
+ * Default OFF (opt-in) — most callers of `planInference` (chat/RAG/vision/batch — see
+ * aiChatAssistant.ts, aiLocalKnowledgeService.ts, aiProviderRouter.ts) have NEVER been
+ * module-gated before; defaulting this ON could newly block AI for a deployment whose license
+ * predates `MOD_AI` being explicit in its `allowed_modules` — exactly the "do NOT newly
+ * disable AI for anyone" case the task brief calls out. An operator explicitly opts in here;
+ * enforcement is still additionally governed by the SAME `LICENSE_MODULE_GATE_ENABLED`/
+ * no-brick machinery `moduleGate.ts` already enforces (this flag only decides whether the
+ * GATEWAY itself also asks the question, on top of the flag `moduleGate` already requires).
+ */
+function aiGatewayLicenseGateEnabled(): boolean {
+  return envFlag("AI_GATEWAY_LICENSE_GATE_ENABLED");
+}
+
+/**
+ * doc69 G2-5a / G3-B — privacy-safe LLM-call audit trail switch (`server/services/ai/aiLlmAudit.ts`).
+ * Default ON: only sha256 HASHES of the already-redacted prompt/response are stored (never raw
+ * text; plus an optional already-redacted `auditSnippet` for action-generating decisions) — safe
+ * to default on. WHICH tasks are audited is the `TASK_AUDIT_POLICY` predicate below (everything
+ * except the two declared high-frequency exemptions). Set to "false"/"0"/"off" to fully disable.
+ */
+function llmAuditEnabled(): boolean {
+  return envFlagDefaultOn("AI_LLM_AUDIT_ENABLED");
+}
+
+/**
+ * ★★★ G3-B — ĐẢO CHIỀU KHAI BÁO: **cái KHÔNG ghi phải được khai tên**, không phải cái ghi.
+ *
+ * Bản cũ là `HIGH_RISK_TASKS = new Set(["rca","report","vision"])` — một DANH SÁCH CHO PHÉP.
+ * Hình dạng ấy sai theo cấu tạo ở đúng một chỗ: **thêm một đường sinh chữ mới thì mặc định của
+ * nó là IM LẶNG.** Repo này đã dính đúng lớp lỗi "N+1 bản sao / N+1 mục phải nhớ khai" **17
+ * lần**, và lần này nó đã đẻ ra hậu quả đo được: `chat`, `intent`, và **cả đường lập kế hoạch
+ * agent** (thứ SINH RA HÀNH ĐỘNG GHI) không có lấy một bản ghi nào — điều tra "vì sao AI đề
+ * xuất hạ ngưỡng NG" mở bảng `ai_llm_audit` ra thì RỖNG.
+ *
+ * Nay: một BẢNG TOÀN PHẦN trên `TaskKind` (`satisfies Record<TaskKind, …>`), và vị từ
+ * `shouldAuditTask` mặc định **GHI** cho bất cứ thứ gì chưa khai. Hai cổng, hai lớp:
+ *   • **Biên dịch**: thêm một `TaskKind` mà quên khai ở đây ⇒ `tsc` ĐỎ ngay (bảng không còn
+ *     toàn phần). Đây là cổng thật sự — nó bắt lỗi TRƯỚC khi có ai chạy test.
+ *   • **Chạy**: một nhãn tác vụ lọt tới đây mà không có trong bảng (vd đi vòng qua ép kiểu,
+ *     hoặc một `TaskKind` mới ở nhánh khác chưa merge) ⇒ vẫn GHI. Im lặng không bao giờ là
+ *     mặc định.
+ *
+ * MIỄN TRỪ PHẢI CÓ LÝ DO ĐO ĐƯỢC, không phải "cảm giác là nhiều":
+ *   • `embed` — một lượt dựng lại RAG là **91.678 chunk** (số đo có thật trong repo này). Ghi
+ *     nhật ký cho từng chunk là 91.678 hàng cho MỘT lượt cron, và không hàng nào trả lời được
+ *     câu hỏi nào: nhúng không sinh ra chữ, không sinh ra quyết định.
+ *   • `fim` — tự động hoàn thành nội dòng, bắn theo TỪNG PHÍM. Cùng lập luận, cùng bằng chứng
+ *     (xem `aiProgrammingCopilot.completeInline`).
+ * Mọi thứ còn lại — kể cả `chat` và `intent`, vốn bị loại ở bản cũ vì "lưu lượng cao" — nay
+ * ĐƯỢC GHI: chúng sinh ra chữ mà con người đọc và hành động theo, và hàng ghi chỉ gồm băm +
+ * số đếm (không có văn bản thô), rẻ hơn nhiều bậc so với chính lượt suy luận vừa chạy.
+ */
+export type TaskAuditPolicy = "audit" | "exempt";
+
+export const TASK_AUDIT_POLICY = {
+  chat: "audit",
+  intent: "audit",
+  extract: "audit",
+  rca: "audit",
+  report: "audit",
+  vision: "audit",
+  code: "audit",
+  embed: "exempt",
+  fim: "exempt",
+} as const satisfies Record<TaskKind, TaskAuditPolicy>;
+
+/**
+ * Vị từ nhật ký. Nhận `string` chứ không chỉ `TaskKind` — CỐ Ý: một nhãn lạ (chưa khai, hoặc
+ * đến từ nhánh chưa merge) phải rơi vào nhánh GHI, và ép kiểu tham số thành `TaskKind` sẽ
+ * biến chính ca canh điều đó thành ca không biên dịch được.
+ */
+export function shouldAuditTask(task: string): boolean {
+  return (TASK_AUDIT_POLICY as Record<string, TaskAuditPolicy | undefined>)[task] !== "exempt";
+}
+
+/** Nhãn ghi vào `ai_llm_audit.task` (varchar(32)) — `auditTask` nếu có, không thì chính `task`. */
+function auditTaskLabel(req: GatewayRequest): string {
+  const fine = (req.auditTask ?? "").trim();
+  return (fine || req.task).slice(0, 32);
+}
+
+/** doc69 G2-5a — fail-safe wrapper around the correlation-id backbone (observability/correlation.ts). */
+function safeGetCorrelationId(): string | null {
+  try {
+    return getCorrelationId() ?? null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * doc69 G2-5a / G3-B — audit ONE completed (or blocked) call whose task is NOT exempt (see
+ * `TASK_AUDIT_POLICY`). No-op when `AI_LLM_AUDIT_ENABLED` is off. `recordLlmAudit` itself is
+ * synchronous/fail-safe (hash + buffer only — see aiLlmAudit.ts), so calling it here can never
+ * add I/O latency or throw into `planInference`'s hot path.
+ */
+function auditIfRisky(
+  req: GatewayRequest,
+  decision: RouteDecision,
+  safetyFlags: SafetyFlagsSummary,
+  promptText: string,
+  outcome: Outcome,
+  extra?: { responseText?: string; latencyMs?: number; auditSnippet?: string },
+): void {
+  if (!llmAuditEnabled() || !shouldAuditTask(req.task)) return;
+  recordLlmAudit({
+    userId: req.userId ?? null,
+    task: auditTaskLabel(req),
+    tier: decision.tier,
+    model: decision.modelId ?? "default",
+    outcome,
+    promptText,
+    responseText: extra?.responseText ?? null,
+    latencyMs: extra?.latencyMs,
+    safetyFlags,
+    correlationId: safeGetCorrelationId(),
+    redactedSnippet: extra?.auditSnippet ?? null,
+  });
+}
 
 /** A/B split: fraction of traffic [0,1] tagged variant "B". 0 = A/B off (default). */
 function abSplit(): number {
@@ -118,10 +443,13 @@ function bucketFor(tier: number): { name: "cheap" | "deep"; max: number } {
 }
 
 /**
- * Returns null when allowed; otherwise the ms until the window resets (rate-limited).
- * Increments the counter on allow.
+ * In-memory fixed-window check (the ORIGINAL implementation, unchanged). Returns null when
+ * allowed; otherwise the ms until the window resets (rate-limited). Increments the counter
+ * on allow. This is now the FALLBACK path used by `checkRateLimit` below when the durable
+ * Redis-backed counter is disabled/unavailable — kept as its own function so behaviour on a
+ * single node with no Redis is byte-identical to before this task.
  */
-function checkRateLimit(userId: number | undefined, tier: number): number | null {
+function checkRateLimitMemory(userId: number | undefined, tier: number): number | null {
   try {
     const { name, max } = bucketFor(tier);
     const key = `${userId ?? "anon"}:${name}`;
@@ -136,6 +464,68 @@ function checkRateLimit(userId: number | undefined, tier: number): number | null
     return null;
   } catch {
     return null; // fail-open: never let the limiter break inference
+  }
+}
+
+/**
+ * doc69 G2-4 — DURABLE rate-limit check: tries the Redis-backed atomic counter first (so the
+ * count survives a restart and is correct across multiple app instances/nodes), falling back
+ * to the in-process `checkRateLimitMemory` when Redis is disabled/not configured/errors. This
+ * is a straight DURABILITY upgrade of `checkRateLimitMemory` — it does not change the max
+ * budgets, the window length, or the fail-open contract (any infra error → fall back to
+ * memory → and THAT is fail-open too, exactly as before this task).
+ *
+ * Returns null when allowed; otherwise the ms until the window resets (rate-limited).
+ */
+async function checkRateLimit(userId: number | undefined, tier: number): Promise<number | null> {
+  const { name, max } = bucketFor(tier);
+  if (durableRateLimitEnabled()) {
+    try {
+      const { redisService } = await import("./redisService");
+      if (redisService.isConfigured()) {
+        const key = `ai:ratelimit:${userId ?? "anon"}:${name}`;
+        const windowSeconds = Math.ceil(LIMIT_WINDOW_MS / 1000);
+        const result = await redisService.incrWithExpire(key, windowSeconds);
+        if (result != null) {
+          return result.count > max ? Math.max(1, result.ttlMs) : null;
+        }
+        // result === null → Redis not connected right now / errored → fall through to memory.
+      }
+    } catch {
+      // fall through to memory — infra errors must never break inference
+    }
+  }
+  return checkRateLimitMemory(userId, tier);
+}
+
+/**
+ * Generic per-user fixed-window limiter — REUSES the exact same in-process `windows`
+ * store and window length as `checkRateLimitMemory` above, but keyed by a caller-supplied
+ * bucket name + max instead of an inference tier. Lets non-inference call-sites (e.g.
+ * the AI analytics/report routers, doc 69 W0-3) throttle per-`userId` without
+ * borrowing budget from actual LLM inference tiers, while still sharing the same
+ * mechanism (and its GC) rather than standing up a parallel limiter. Fail-open, same
+ * as checkRateLimitMemory: returns null (allowed) on any internal error.
+ *
+ * doc69 G2-4 — intentionally NOT upgraded to the durable Redis-backed path: this limiter is
+ * a general per-userId+bucket utility used outside actual LLM inference (see
+ * `aiAnalyticsScope.ts`), out of scope for "the gateway's token-bucket" this task durability-
+ * hardens. It stays in-process/restart-resettable exactly as before.
+ */
+export function checkNamedRateLimit(userId: number | undefined, bucket: string, maxPerMinute: number): number | null {
+  try {
+    const key = `${userId ?? "anon"}:${bucket}`;
+    const now = Date.now();
+    let w = windows.get(key);
+    if (!w || w.resetAt <= now) {
+      w = { count: 0, resetAt: now + LIMIT_WINDOW_MS };
+      windows.set(key, w);
+    }
+    if (w.count >= maxPerMinute) return Math.max(1, w.resetAt - now);
+    w.count++;
+    return null;
+  } catch {
+    return null; // fail-open: never let the limiter break the request
   }
 }
 
@@ -176,6 +566,10 @@ interface MetricRow {
   fastModelConfigured: boolean;
   userId: number | null;
   createdAt: Date;
+  /** ★ B7 — xem `InferenceOutcome`. `null` = không đo được. */
+  reasoningTokens: number | null;
+  thinking: boolean | null;
+  samplingProfile: string | null;
 }
 
 const buffer: MetricRow[] = [];
@@ -200,6 +594,25 @@ function ensureFlushTimer(): void {
   if (typeof flushTimer.unref === "function") flushTimer.unref();
 }
 
+/**
+ * G3-B — bản sao ĐÚNG của `aiLlmAudit.stopLlmAuditFlushTimer`, cho bộ đếm giờ xả metrics của
+ * chính file này. Sản xuất KHÔNG BAO GIỜ gọi (bộ đếm sống hết đời tiến trình, và `.unref()` đã
+ * bảo đảm nó không giữ tiến trình lại).
+ *
+ * ⚠ VÌ SAO CẦN: `setInterval` là trạng thái CỦA CẢ TIẾN TRÌNH, `vi.resetModules()` thì KHÔNG
+ * chạm tới nó. Một ca test gài bộ đếm này rồi `resetModules()` sẽ để lại một interval trỏ vào
+ * closure CŨ (buffer cũ, `getDb` mock cũ); ~5 s sau nó bắn vào giữa một ca KHÁC và gọi chính
+ * `db.insert` mà ca ấy đang đếm — lưới đỏ/xanh theo ĐỒNG HỒ chứ không theo mã. `aiLlmAudit.ts`
+ * đã phải học bài này một lần (xem chú thích ở `stopLlmAuditFlushTimer`); ở đây thiếu đúng cái
+ * móc đó, nên bài học chỉ được học một nửa. Idempotent, an toàn khi chưa từng gài.
+ */
+export function stopGatewayFlushTimer(): void {
+  if (flushTimer) {
+    clearInterval(flushTimer);
+    flushTimer = null;
+  }
+}
+
 /** Drain the buffer to the DB. Fail-safe: on error the rows are dropped (telemetry only). */
 export async function flush(): Promise<void> {
   if (buffer.length === 0) return;
@@ -222,6 +635,10 @@ export async function flush(): Promise<void> {
         fastModelConfigured: r.fastModelConfigured,
         userId: r.userId,
         createdAt: r.createdAt,
+        // ★ B7 — ba cột nullable (migration 0358).
+        reasoningTokens: r.reasoningTokens,
+        thinking: r.thinking,
+        samplingProfile: r.samplingProfile,
       })),
     );
   } catch (err) {
@@ -266,22 +683,186 @@ function bumpHotCache(r: MetricRow): void {
   hot.fastModelConfigured = r.fastModelConfigured;
 }
 
+// ─── AI Safety — compact flag stats (doc69 G2-2) ───────────────
+// In-memory only, restart-resettable — mirrors the existing `hot` cache's role: a cheap,
+// dashboard-ready aggregate of COUNTS/FLAGS ONLY, never the raw prompt/response text. A full
+// durable prompt/response audit trail is explicitly deferred to doc69 G2-5; this is the
+// lightweight "just the flags/counts" record the G2-2 brief asks for.
+
+interface HotSafetyStats {
+  inputScanned: number;
+  inputInjectionNone: number;
+  inputInjectionLow: number;
+  inputInjectionHigh: number;
+  inputBlocked: number;
+  inputRedactedRequests: number;
+  inputRedactedTotal: number;
+  outputScanned: number;
+  outputLeakFlagged: number;
+  outputRedactedTotal: number;
+}
+const hotSafety: HotSafetyStats = {
+  inputScanned: 0,
+  inputInjectionNone: 0,
+  inputInjectionLow: 0,
+  inputInjectionHigh: 0,
+  inputBlocked: 0,
+  inputRedactedRequests: 0,
+  inputRedactedTotal: 0,
+  outputScanned: 0,
+  outputLeakFlagged: 0,
+  outputRedactedTotal: 0,
+};
+
+function bumpInputSafetyStats(flags: SafetyFlagsSummary, blocked: boolean): void {
+  hotSafety.inputScanned++;
+  if (flags.risk === "high") hotSafety.inputInjectionHigh++;
+  else if (flags.risk === "low") hotSafety.inputInjectionLow++;
+  else hotSafety.inputInjectionNone++;
+  if (blocked) hotSafety.inputBlocked++;
+  if (flags.redactedCount > 0) {
+    hotSafety.inputRedactedRequests++;
+    hotSafety.inputRedactedTotal += flags.redactedCount;
+  }
+}
+
+function bumpOutputSafetyStats(flags: SafetyFlagsSummary): void {
+  hotSafety.outputScanned++;
+  if (flags.matched.length > 0) hotSafety.outputLeakFlagged++;
+  hotSafety.outputRedactedTotal += flags.redactedCount;
+}
+
+/** Compact, restart-resettable safety counters (no raw text) — for a dashboard/monitor. */
+export function getSafetyStats(): HotSafetyStats {
+  return { ...hotSafety };
+}
+
+const NEUTRAL_INPUT_FLAGS: SafetyFlagsSummary = {
+  scope: "input",
+  risk: "none",
+  matched: [],
+  redactedCount: 0,
+  redactionTypes: [],
+};
+const NEUTRAL_OUTPUT_FLAGS: SafetyFlagsSummary = {
+  scope: "output",
+  risk: "none",
+  matched: [],
+  redactedCount: 0,
+  redactionTypes: [],
+};
+
+/**
+ * Fail-safe wrapper around `applySafety` (INPUT side): disabled → pass-through untouched;
+ * throws → log + pass-through untouched (NEVER breaks the caller because safety errored).
+ * Always bumps the compact in-memory stats when enabled, regardless of outcome.
+ */
+function safeApplyInput(text: string | undefined): { text: string; flags: SafetyFlagsSummary } {
+  const original = text ?? "";
+  if (!safetyEnabled()) return { text: original, flags: NEUTRAL_INPUT_FLAGS };
+  try {
+    const result = applySafety(original);
+    bumpInputSafetyStats(result.flags, false);
+    return result;
+  } catch (err) {
+    console.warn("[aiGateway] aiSafety.applySafety threw — proceeding UNREDACTED (fail-safe):", (err as Error)?.message);
+    return { text: original, flags: NEUTRAL_INPUT_FLAGS };
+  }
+}
+
+/**
+ * Fail-safe wrapper around `applyOutputSafety` (OUTPUT side). Same fail-safe/disabled
+ * contract as `safeApplyInput`.
+ */
+function safeApplyOutput(text: string): { text: string; flags: SafetyFlagsSummary } {
+  if (!safetyEnabled()) return { text, flags: NEUTRAL_OUTPUT_FLAGS };
+  try {
+    const result = applyOutputSafety(text);
+    bumpOutputSafetyStats(result.flags);
+    return result;
+  } catch (err) {
+    console.warn("[aiGateway] aiSafety.applyOutputSafety threw — proceeding UNREDACTED (fail-safe):", (err as Error)?.message);
+    return { text, flags: NEUTRAL_OUTPUT_FLAGS };
+  }
+}
+
 // ─── Core API ──────────────────────────────────────────────────
+
+/** doc69 G2-4 — fail-safe wrapper around moduleGate.isModuleLicensed; see aiGatewayLicenseGateEnabled(). */
+async function checkAiModuleLicensed(): Promise<boolean> {
+  try {
+    const { isModuleLicensed } = await import("../_core/moduleGate");
+    return await isModuleLicensed("MOD_AI");
+  } catch (err) {
+    console.warn("[aiGateway] license gate check failed — allowing (fail-safe):", (err as Error)?.message);
+    return true;
+  }
+}
+
+/** doc69 G2-4 — fail-safe wrapper around aiGatewayQuota.checkQuota; see quotaEnforceEnabled(). */
+async function checkAiQuota(
+  userId: number | undefined,
+  role: string | undefined,
+): Promise<{ allowed: boolean; usedTokens: number; budgetTokens: number } | null> {
+  try {
+    const { checkQuota } = await import("./aiGatewayQuota");
+    return await checkQuota(userId, role);
+  } catch (err) {
+    console.warn("[aiGateway] quota check failed — allowing (fail-safe):", (err as Error)?.message);
+    return null;
+  }
+}
 
 /**
  * Plan an inference: route it, enforce the rate limit, assign an A/B variant, and hand
  * back a `record()` callback to meter the outcome. Throws {@link RateLimitError} when the
- * caller's per-tier budget is exhausted (caller maps it to a 429 / friendly message).
+ * caller's per-tier budget is exhausted (caller maps it to a 429 / friendly message);
+ * doc69 G2-4 also adds {@link LicenseGateError} (opt-in edition/license gate) and
+ * {@link QuotaExceededError} (opt-in per-user daily token budget) — both OFF by default.
  *
  * This is the recommended low-friction adoption: callers that already use `route()` swap
- * to `planInference()`, use `plan.decision` exactly as before, and call `plan.record()`
- * once the engine returns.
+ * to `await planInference()`, use `plan.decision` exactly as before, and call `plan.record()`
+ * once the engine returns. doc69 G2-4 — this function is ASYNC (it may await the durable
+ * rate-limit / quota / license checks above); every call-site must `await` it.
  */
-export function planInference(req: GatewayRequest): GatewayPlan {
+export async function planInference(req: GatewayRequest): Promise<GatewayPlan> {
   const decision = route(req); // pure decision (also feeds the legacy in-memory router counter)
   const abVariant = assignVariant(req.userId);
 
-  const retry = checkRateLimit(req.userId, decision.tier);
+  // doc69 G2-2 — AI Safety: ALWAYS computed (fail-safe, see safeApplyInput) before the
+  // rate-limit check below, so `safeText`/`safetyFlags` are available even on the
+  // RateLimitError throw path (attached to the error) for fail-open callers like
+  // aiProviderRouter's planGateway that swallow RateLimitError and still call the engine.
+  const safety = safeApplyInput(req.text);
+
+  // Hard-block is OPT-IN (AI_SAFETY_BLOCK_HIGH_RISK, default OFF) — see safetyBlockHighRiskEnabled().
+  if (safety.flags.risk === "high" && safetyBlockHighRiskEnabled()) {
+    bumpInputSafetyStats(safety.flags, true); // count as blocked in addition to the scan already counted above
+    enqueue(toRow(req, decision, abVariant, { outcome: "blocked" }));
+    // doc69 G2-5a — audit the blocked ATTEMPT for audited tasks (promptSha256 only; the
+    // call never reached a model, so there is no response to hash).
+    auditIfRisky(req, decision, safety.flags, safety.text, "blocked");
+    throw new SafetyBlockedError(
+      `AI safety: request blocked (injection risk 'high', matched: ${safety.flags.matched.join(", ")}).`,
+      safety.flags.matched,
+    );
+  }
+
+  // doc69 G2-4 — edition/license gate: OPT-IN (default OFF — see aiGatewayLicenseGateEnabled()),
+  // wires AI availability to the EXISTING MOD_AI module gate (server/_core/moduleGate.ts). Ahead
+  // of the rate-limit check so a not-licensed request never consumes rate-limit budget.
+  if (aiGatewayLicenseGateEnabled()) {
+    const licensed = await checkAiModuleLicensed();
+    if (!licensed) {
+      // Review fix (W1-3) — distinct outcome from the safety hard-block's "blocked".
+      enqueue(toRow(req, decision, abVariant, { outcome: "license_denied" }));
+      throw new LicenseGateError(
+        "AI feature not licensed for this deployment/edition (module MOD_AI). Upgrade your license/edition to enable AI.",
+      );
+    }
+  }
+
+  const retry = await checkRateLimit(req.userId, decision.tier);
   if (retry != null) {
     // Record the rejection (so dashboards show throttling) before throwing.
     enqueue(toRow(req, decision, abVariant, { outcome: "rate_limited" }));
@@ -289,7 +870,23 @@ export function planInference(req: GatewayRequest): GatewayPlan {
       `AI rate limit exceeded for tier ${decision.tier}. Retry in ~${Math.ceil(retry / 1000)}s.`,
       retry,
       decision.tier,
+      safety.text,
+      safety.flags,
     );
+  }
+
+  // doc69 G2-4 — per-user daily token quota: OPT-IN (default OFF — see quotaEnforceEnabled()).
+  // Ships dark: when off, no extra DB round-trip happens at all (checkAiQuota is never called).
+  if (quotaEnforceEnabled()) {
+    const quota = await checkAiQuota(req.userId, req.role);
+    if (quota && !quota.allowed) {
+      enqueue(toRow(req, decision, abVariant, { outcome: "quota_exceeded" }));
+      throw new QuotaExceededError(
+        `Daily AI token quota exceeded (${quota.usedTokens}/${quota.budgetTokens} tokens in the last 24h).`,
+        quota.usedTokens,
+        quota.budgetTokens,
+      );
+    }
   }
 
   let recorded = false;
@@ -297,25 +894,67 @@ export function planInference(req: GatewayRequest): GatewayPlan {
     if (recorded) return;
     recorded = true;
     enqueue(toRow(req, decision, abVariant, o));
+    // doc69 G2-5a / G3-B — audit the completed call (success OR error) for every non-exempt
+    // task. `o.responseText`, when supplied, is expected to already be output-redacted (see
+    // the field's doc comment on InferenceOutcome).
+    auditIfRisky(req, decision, safety.flags, safety.text, o.outcome ?? "ok", {
+      responseText: o.responseText,
+      latencyMs: o.latencyMs,
+      auditSnippet: o.auditSnippet,
+    });
   };
 
-  return { decision, abVariant, record };
+  const sanitizeOutput = (text: string): string => safeApplyOutput(text).text;
+
+  return { decision, abVariant, record, safeText: safety.text, safetyFlags: safety.flags, sanitizeOutput };
 }
 
 /**
  * Full-adoption wrapper: route + rate-limit + A/B, then run `exec(decision)` while the
  * gateway times it and records token/latency/outcome automatically. `exec` receives the
  * routing decision and must return the inference result + its token counts.
+ *
+ * doc69 G2-2 — `exec` also receives `safeText`: the SANITIZED (secrets/PII-redacted)
+ * version of `req.text`. Use it in place of the raw request text when building the actual
+ * model prompt so the AI Safety layer's redaction reaches the model (may throw
+ * {@link SafetyBlockedError} instead of {@link RateLimitError} when AI_SAFETY_BLOCK_HIGH_RISK
+ * is explicitly enabled and the request scores injection risk 'high' — default OFF).
+ *
+ * doc69 G2-5a review fix (Wave 1 W1-4a) — OPTIONAL third arg `opts.getResponseText`: an
+ * extractor that turns the generic `T` result into a string for the LLM audit trail's
+ * `responseSha256` (consulted ONLY for AUDITED tasks — see `TASK_AUDIT_POLICY` — the same
+ * way `o.responseText` already worked for direct `planInference().record()` callers). The
+ * extracted string is passed through `plan.sanitizeOutput()` — the SAME output-redaction
+ * every other gateway response goes through — before being handed to `record()`, so it is
+ * NEVER hashed/stored raw. Omitting `opts`/`getResponseText` is BYTE-IDENTICAL to before
+ * this option existed: `responseText` stays `undefined` and `responseSha256` stays `null`
+ * for that call's audit row (if any) — existing callers (aiIssueClassifier.ts,
+ * intentClassifier.ts, aiWatcher.ts, aiOrchestrationAdvisor.ts) are unaffected. Fail-safe:
+ * if the extractor throws, the error is caught + logged — it can NEVER break the real
+ * inference result returned to the caller, it only leaves `responseSha256` null for that call.
  */
 export async function routeInference<T>(
   req: GatewayRequest,
-  exec: (decision: RouteDecision, abVariant: "A" | "B" | null) => Promise<{ result: T; tokensIn?: number; tokensOut?: number }>,
+  exec: (decision: RouteDecision, abVariant: "A" | "B" | null, safeText: string) => Promise<{ result: T; tokensIn?: number; tokensOut?: number }>,
+  opts?: { getResponseText?: (result: T) => string | null | undefined },
 ): Promise<{ result: T; decision: RouteDecision; abVariant: "A" | "B" | null }> {
-  const plan = planInference(req); // may throw RateLimitError
+  const plan = await planInference(req); // may throw RateLimitError | SafetyBlockedError | QuotaExceededError | LicenseGateError
   const start = Date.now();
   try {
-    const { result, tokensIn, tokensOut } = await exec(plan.decision, plan.abVariant);
-    plan.record({ tokensIn, tokensOut, latencyMs: Date.now() - start, outcome: "ok" });
+    const { result, tokensIn, tokensOut } = await exec(plan.decision, plan.abVariant, plan.safeText);
+    let responseText: string | undefined;
+    if (opts?.getResponseText) {
+      try {
+        const raw = opts.getResponseText(result);
+        if (raw != null) responseText = plan.sanitizeOutput(raw);
+      } catch (err) {
+        console.warn(
+          "[aiGateway] routeInference getResponseText extractor failed (responseSha256 stays null, real result unaffected):",
+          (err as Error)?.message,
+        );
+      }
+    }
+    plan.record({ tokensIn, tokensOut, latencyMs: Date.now() - start, outcome: "ok", responseText });
     return { result, decision: plan.decision, abVariant: plan.abVariant };
   } catch (err) {
     plan.record({ latencyMs: Date.now() - start, outcome: "error" });
@@ -341,6 +980,13 @@ function toRow(
     fastModelConfigured: getInMemoryRouterStats().fastModelConfigured,
     userId: req.userId ?? null,
     createdAt: new Date(),
+    // ★ B7 — giữ NULL khi vắng; số âm/không hữu hạn là rác ⇒ cũng NULL (không bịa 0).
+    reasoningTokens:
+      typeof o.reasoningTokens === "number" && Number.isFinite(o.reasoningTokens) && o.reasoningTokens >= 0
+        ? Math.trunc(o.reasoningTokens)
+        : null,
+    thinking: typeof o.thinking === "boolean" ? o.thinking : null,
+    samplingProfile: typeof o.samplingProfile === "string" && o.samplingProfile ? o.samplingProfile.slice(0, 24) : null,
   };
 }
 

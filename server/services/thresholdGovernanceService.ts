@@ -34,7 +34,7 @@
  * ════════════════════════════════════════════════════════════════════════════
  */
 
-import { TRPCError } from "@trpc/server";
+import { appError } from "../_core/appError";
 import { and, eq } from "drizzle-orm";
 import { getDb } from "../db/connection";
 import {
@@ -70,10 +70,14 @@ export interface ThresholdGateResult {
  */
 export function assertApprovalSoD(requestedBy: number | null | undefined, approverId: number): void {
   if (requestedBy != null && requestedBy > 0 && requestedBy === approverId) {
-    throw new TRPCError({
-      code: "FORBIDDEN",
-      message: "Segregation of duties: cannot approve your own threshold request",
-    });
+    // Task 10 (F3, doc71) — cùng khuôn SoD đã dùng ở equipmentStandardsRouter.ts/
+    // machineRecipeRouter.ts (FORBIDDEN + PERMISSION_DENIED{action:"selfApprove*"}).
+    throw appError(
+      "FORBIDDEN",
+      "PERMISSION_DENIED",
+      { action: "selfApproveThreshold" },
+      "Segregation of duties: cannot approve your own threshold request",
+    );
   }
 }
 
@@ -84,7 +88,7 @@ export function assertApprovalSoD(requestedBy: number | null | undefined, approv
  */
 export async function resolveThresholdEditGate(pointDefId: number): Promise<ThresholdGateResult> {
   const db = await getDb();
-  if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "DB unavailable" });
+  if (!db) throw appError("INTERNAL_SERVER_ERROR", "DB_UNAVAILABLE", undefined, "DB unavailable");
 
   const [point] = await db
     .select()
@@ -92,7 +96,12 @@ export async function resolveThresholdEditGate(pointDefId: number): Promise<Thre
     .where(eq(measurementPointDefs.id, pointDefId))
     .limit(1);
   if (!point) {
-    throw new TRPCError({ code: "NOT_FOUND", message: `measurement_point_def ${pointDefId} not found` });
+    throw appError(
+      "NOT_FOUND",
+      "ENTITY_NOT_FOUND",
+      { entity: "measurementPoint" },
+      `measurement_point_def ${pointDefId} not found`,
+    );
   }
 
   const productModelId = (point as { productModelId: number }).productModelId;
@@ -142,7 +151,7 @@ export async function resolveThresholdEditGate(pointDefId: number): Promise<Thre
  */
 export async function resolveProductThresholdGate(productModelId: number): Promise<ThresholdGateResult> {
   const db = await getDb();
-  if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "DB unavailable" });
+  if (!db) throw appError("INTERNAL_SERVER_ERROR", "DB_UNAVAILABLE", undefined, "DB unavailable");
 
   const [product] = await db
     .select()
@@ -192,13 +201,21 @@ export async function assertThresholdEditAllowed(pointDefId: number): Promise<Th
     const because = res.hasReleasedProgram
       ? `has a released inspection program`
       : `is '${res.lifecycleStatus}'`;
-    throw new TRPCError({
-      code: "FORBIDDEN",
-      message:
-        `Product ${because} — threshold changes require approval; ` +
+    // Task 10 (F3, doc71) — 2 nguyên nhân TÁCH BIỆT (có chương trình đã phát
+    // hành / lifecycle sản phẩm) giữ 2 reason khác nhau thay vì gộp một câu
+    // chung chung — đúng tinh thần Task 5 (F4) "đừng nuốt chỉ dẫn nguyên nhân".
+    // reason "productLifecycleRequiresApproval" mang thêm {{lifecycleStatus}}
+    // (giá trị enum ngắn, không qua từ điển — đọc được nguyên văn).
+    throw appError(
+      "FORBIDDEN",
+      "OPERATION_FAILED",
+      res.hasReleasedProgram
+        ? { operation: "editThresholdDirectly", reason: "releasedProgramRequiresApproval" }
+        : { operation: "editThresholdDirectly", reason: "productLifecycleRequiresApproval", lifecycleStatus: res.lifecycleStatus },
+      `Product ${because} — threshold changes require approval; ` +
         `submit via the approval queue (Threshold Approvals). ` +
         `Sản phẩm đang hoạt động — thay đổi ngưỡng phải qua hàng đợi duyệt.`,
-    });
+    );
   }
   return res;
 }

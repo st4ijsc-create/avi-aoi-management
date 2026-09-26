@@ -67,6 +67,8 @@ import {
   CircleSlash, Activity, Camera, Play, Square, Loader2,
 } from "lucide-react";
 import { toast } from "sonner";
+import { mapTrpcError, toastTrpcError } from "@/lib/trpcErrors";
+import { isFeatureDisabledError } from "@/lib/featureFlagError";
 
 // ── Typesafe shapes inferred from the equipmentIntegrationRouter output ───────
 type RouterOutputs = inferRouterOutputs<AppRouter>;
@@ -98,6 +100,11 @@ export default function EquipmentIntegration() {
   const { hasPermission } = usePermissions();
   const canView = hasPermission("machine_monitoring", "canView");
   const canControl = hasPermission("machine_control", "canCreate");
+  // doc 80 Task 3 (FLOW-01/INT-02) — release/rollback now require the SAME server gate as
+  // /recipes: machine_control/canEdit (+ actuationProcedure role-floor + 2FA), not the bare
+  // canCreate used for create/archive/record-load. A canCreate-only user must NOT see an
+  // enabled Release/Rollback button that the server will now reject.
+  const canRelease = hasPermission("machine_control", "canEdit");
 
   const [tab, setTab] = useState("status");
 
@@ -166,11 +173,11 @@ export default function EquipmentIntegration() {
 
   // Surface the FLAG-OFF CONFLICT gracefully (info, not a scary red error).
   const onMutationError = (e: { data?: { code?: string } | null; message: string }) => {
-    if (e.data?.code === "CONFLICT" && /disabled/i.test(e.message)) {
+    if (isFeatureDisabledError(e)) {
       toast.info(t("eqIntegration.flagOffToast", "Equipment integration is disabled (preview). Set EQ_INTEG_ENABLED=true to act."));
       void utils.equipmentIntegration.status.invalidate();
     } else {
-      toast.error(e.message);
+      toast.error(mapTrpcError(e));
     }
   };
 
@@ -412,15 +419,19 @@ export default function EquipmentIntegration() {
                           {canControl ? (
                             <div className="flex justify-end gap-1">
                               {v.designStatus === "draft" && (
-                                <Button size="sm" variant="ghost" className="h-7" disabled={releaseM.isPending}
-                                  title={t("eqIntegration.releaseTip", "Release this version (archives the current released one)")}
+                                <Button size="sm" variant="ghost" className="h-7" disabled={releaseM.isPending || !canRelease}
+                                  title={canRelease
+                                    ? t("eqIntegration.releaseTip", "Release this version (archives the current released one)")
+                                    : t("eqIntegration.needsEditPermission", "Needs edit permission (machine_control/canEdit) to release/rollback.")}
                                   onClick={() => releaseM.mutate({ recipeId: v.id })}>
                                   <Rocket className="mr-1 h-3.5 w-3.5 text-emerald-500" />{t("eqIntegration.release", "Release")}
                                 </Button>
                               )}
                               {v.designStatus === "archived" && (
-                                <Button size="sm" variant="ghost" className="h-7" disabled={rollbackM.isPending}
-                                  title={t("eqIntegration.rollbackTip", "Roll the released contract back to this version")}
+                                <Button size="sm" variant="ghost" className="h-7" disabled={rollbackM.isPending || !canRelease}
+                                  title={canRelease
+                                    ? t("eqIntegration.rollbackTip", "Roll the released contract back to this version")
+                                    : t("eqIntegration.needsEditPermission", "Needs edit permission (machine_control/canEdit) to release/rollback.")}
                                   onClick={() => setRollbackFor(v)}>
                                   <Undo2 className="mr-1 h-3.5 w-3.5" />{t("eqIntegration.rollback", "Rollback")}
                                 </Button>
@@ -865,14 +876,14 @@ function AcquisitionWorkersPanel() {
     },
     // PRECONDITION_FAILED carries the server's honest refusal reason (flag off,
     // duplicate id, disabled config, source open failure) — show it verbatim.
-    onError: (e) => toast.error(e.message),
+    onError: (e) => toastTrpcError(e),
   });
   const stopM = trpc.visionAdapter.stopAcquisitionWorker.useMutation({
     onSuccess: () => {
       toast.success(t("eqIntegration.acq.stopped", "Acquisition worker stopped"));
       refresh();
     },
-    onError: (e) => toast.error(e.message),
+    onError: (e) => toastTrpcError(e),
   });
 
   if (!canViewAcq) {

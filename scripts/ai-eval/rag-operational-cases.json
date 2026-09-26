@@ -1,0 +1,365 @@
+{
+  "_doc": [
+    "GOLDEN SET RAG VẬN HÀNH — thay cho bộ đã BÃO HOÀ.",
+    "",
+    "★ VÌ SAO CÓ FILE NÀY. `knowledge/rag-eval-results.json` báo recall@5 = 151/151 = 1,000 suốt 7",
+    "  lần chạy. Con số ấy KHÔNG nói kho tri thức tốt — nó nói LUẬT HIT quá lỏng:",
+    "  `scripts/ai-kb/eval-rag.mjs:195-201` coi là TRÚNG khi `sourcePath` CHỨA bất kỳ chuỗi con nào",
+    "  như 'order'/'production', HOẶC khi text chunk chứa một từ khoá. Với 7.306 chunk (golden set cũ",
+    "  dựng trên 2.170), gần như mọi truy vấn đều 'trúng' một file nào đó có chữ 'production' trong",
+    "  đường dẫn. Một thước đo luôn xanh không phân biệt được hệ tốt với hệ hỏng.",
+    "",
+    "★ LUẬT HIT Ở ĐÂY LÀ CHẶT: một chunk chỉ TRÚNG khi `sourcePath` **BẰNG ĐÚNG** một mục trong",
+    "  `expectPaths`, hoặc **bắt đầu bằng** một mục trong `expectPrefixes` (mục này PHẢI kết thúc",
+    "  bằng '/'). CẤM khớp chuỗi con. Không có đường nào cho một tài liệu ngẫu nhiên 'trúng' vì",
+    "  đường dẫn của nó tình cờ chứa một từ.",
+    "",
+    "★ `distractors` (≥3 mỗi ca): tài liệu GẦN GIỐNG nhưng SAI. Chúng không tính vào recall; chúng",
+    "  trả lời một câu hỏi khác: 'có tài liệu sai nào chen LÊN TRÊN tài liệu đúng không?'. Đây là",
+    "  thứ recall@5 không bao giờ nhìn thấy, và là thứ reranker được dựng ra để sửa.",
+    "",
+    "⚠ Harness kiểm tra MỌI đường dẫn dưới đây có THẬT trong `knowledge/chunks.jsonl` trước khi đo.",
+    "  Một golden set trỏ vào hư không sẽ cho recall 0 và bị đọc nhầm thành 'retrieval hỏng'."
+  ],
+  "cases": [
+    {
+      "id": "OP01", "domain": "van-hanh-may",
+      "question": "Máy AOI đang chạy thì dừng đột ngột, tôi phải làm gì?",
+      "expectPaths": ["knowledge/domain/aoi-troubleshooting.md"],
+      "distractors": ["knowledge/features/admin/backup-restore.md", "knowledge/features/ai/ai-settings.md", "knowledge/operational/api-keys.md"]
+    },
+    {
+      "id": "OP02", "domain": "san-xuat",
+      "question": "Cách tạo một lô sản xuất mới trên hệ thống?",
+      "expectPaths": ["knowledge/domain/howto-lot-management.md", "knowledge/operational/production-orders.md", "knowledge/features/production/production-orders.md"],
+      "distractors": ["knowledge/features/production/production-scheduling.md", "knowledge/features/products/product-management.md", "knowledge/operational/wip-dashboard.md"]
+    },
+    {
+      "id": "OP03", "domain": "chat-luong",
+      "question": "Muốn sửa ngưỡng NG rate thì vào đâu?",
+      "expectPaths": ["knowledge/features/monitoring/ng-rate-threshold.md", "knowledge/domain/aoi-thresholds.md"],
+      "distractors": ["knowledge/features/alerts/oee-targets.md", "knowledge/features/analytics/quality-gates.md", "knowledge/operational/threshold-approvals.md"]
+    },
+    {
+      "id": "OP04", "domain": "bao-cao",
+      "question": "Báo cáo OEE xem ở màn hình nào?",
+      "expectPaths": ["knowledge/operational/oee-dashboard.md", "knowledge/features/monitoring/oee-dashboard.md"],
+      "distractors": ["knowledge/features/alerts/oee-targets.md", "knowledge/operational/oee-target-settings.md", "knowledge/features/dashboard/dashboard-view.md"]
+    },
+    {
+      "id": "OP05", "domain": "chat-luong",
+      "question": "Quy trình xử lý sản phẩm NG tại line như thế nào?",
+      "expectPaths": ["knowledge/domain/howto-ng-handling-sop.md"],
+      "distractors": ["knowledge/domain/aoi-defect-types.md", "knowledge/features/monitoring/ng-rate-threshold.md", "knowledge/operational/nonconformance.md", "knowledge/operational/repair-station.md"]
+    },
+    {
+      "id": "OP06", "domain": "tai-khoan",
+      "question": "Làm sao để đổi mật khẩu tài khoản của tôi?",
+      "expectPaths": ["knowledge/domain/howto-change-password.md", "knowledge/operational/change-password.md"],
+      "distractors": ["knowledge/features/admin/user-management.md", "knowledge/features/admin/session-mgmt.md", "knowledge/domain/howto-sso-oauth.md"]
+    },
+    {
+      "id": "OP07", "domain": "bao-cao",
+      "question": "Xuất báo cáo ra file PDF làm thế nào?",
+      "expectPaths": ["knowledge/domain/howto-export-pdf-report.md", "knowledge/operational/pdf-reports.md"],
+      "distractors": ["knowledge/features/analytics/report-builder.md", "knowledge/features/analytics/scheduled-reports.md", "knowledge/operational/powerpoint-export.md"]
+    },
+    {
+      "id": "OP08", "domain": "phan-tich",
+      "question": "Phân tích Pareto lỗi xem ở màn nào?",
+      "expectPaths": ["knowledge/features/analytics/pareto-analysis.md", "knowledge/domain/howto-pareto-defects.md"],
+      "distractors": ["knowledge/features/analytics/defect-heatmap.md", "knowledge/features/analytics/station-analysis.md", "knowledge/domain/aoi-defect-types.md"]
+    },
+    {
+      "id": "OP09", "domain": "chat-luong",
+      "question": "Đường UCL LCL và chỉ số Cpk được tính như thế nào?",
+      "expectPaths": ["knowledge/domain/howto-spc-control.md", "knowledge/features/analytics/spc-analysis.md"],
+      "distractors": ["knowledge/features/analytics/spc-rules.md", "knowledge/features/analytics/quality-gates.md", "knowledge/domain/aoi-thresholds.md"]
+    },
+    {
+      "id": "OP10", "domain": "cai-dat",
+      "question": "Cấu hình ca làm việc ở đâu?",
+      "expectPaths": ["knowledge/features/settings/shift-config.md", "knowledge/domain/howto-shift-change.md"],
+      "distractors": ["knowledge/features/production/production-scheduling.md", "knowledge/operational/settings-hub.md", "knowledge/operational/operator-badges.md"]
+    },
+    {
+      "id": "OP11", "domain": "quan-tri",
+      "question": "Sao lưu và phục hồi dữ liệu của hệ thống làm thế nào?",
+      "expectPaths": ["knowledge/domain/howto-backup-restore.md", "knowledge/features/admin/backup-restore.md", "knowledge/operational/backup-restore.md"],
+      "distractors": ["knowledge/features/admin/import-export.md", "knowledge/operational/data-management.md", "knowledge/operational/system-config.md"]
+    },
+    {
+      "id": "OP12", "domain": "quan-tri",
+      "question": "Thêm người dùng mới và gán vai trò cho họ như thế nào?",
+      "expectPaths": ["knowledge/features/admin/user-management.md", "knowledge/features/admin/role-management.md", "knowledge/operational/users.md"],
+      "distractors": ["knowledge/features/admin/permission-mgmt.md", "knowledge/features/admin/session-mgmt.md", "knowledge/operational/request-role.md"]
+    },
+    {
+      "id": "OP13", "domain": "quan-tri",
+      "question": "Cấu hình đăng nhập SSO OAuth cho hệ thống?",
+      "expectPaths": ["knowledge/domain/howto-sso-oauth.md"],
+      "distractors": ["knowledge/features/admin/session-mgmt.md", "knowledge/features/admin/user-management.md", "knowledge/domain/howto-change-password.md"]
+    },
+    {
+      "id": "OP14", "domain": "thiet-bi",
+      "question": "Đăng ký một máy AOI mới vào hệ thống cần làm gì?",
+      "expectPaths": ["knowledge/features/monitoring/machine-registration.md", "knowledge/operational/machine-registration.md"],
+      "distractors": ["knowledge/features/monitoring/machine-sync.md", "knowledge/features/monitoring/workstation-mgmt.md", "knowledge/operational/device-onboarding.md"]
+    },
+    {
+      "id": "OP15", "domain": "kiem-tra",
+      "question": "Xem lịch sử kiểm tra của một sản phẩm ở đâu?",
+      "expectPaths": ["knowledge/features/inspection/history.md", "knowledge/operational/history.md"],
+      "distractors": ["knowledge/features/inspection/inspection-detail.md", "knowledge/features/inspection/history-export-scheduling.md", "knowledge/operational/traceability.md"]
+    },
+    {
+      "id": "OP16", "domain": "san-pham",
+      "question": "Tạo điểm đo cho một model sản phẩm mới như thế nào?",
+      "expectPaths": ["knowledge/features/products/measurement-point-setup.md", "knowledge/domain/howto-measurement-point-shapes.md"],
+      "distractors": ["knowledge/features/products/product-management.md", "knowledge/features/products/product-machine-mapping.md", "knowledge/operational/measurement-point-health.md"]
+    },
+    {
+      "id": "OP17", "domain": "san-pham",
+      "question": "Đưa một board PCB mới vào vận hành cần những bước gì?",
+      "expectPaths": ["knowledge/domain/commission-a-new-pcb.md"],
+      "distractors": ["knowledge/features/products/product-management.md", "knowledge/features/products/measurement-point-setup.md", "knowledge/operational/product-onboarding.md"]
+    },
+    {
+      "id": "OP18", "domain": "ai",
+      "question": "Triển khai mô hình AI xuống máy Edge làm thế nào?",
+      "expectPaths": ["knowledge/domain/howto-edge-model-deploy.md"],
+      "distractors": ["knowledge/features/ai/ai-model-management.md", "knowledge/features/ai/batch-inference.md", "knowledge/operational/edge-nodes.md"]
+    },
+    {
+      "id": "OP19", "domain": "phan-tich",
+      "question": "Bản đồ nhiệt vị trí lỗi xem ở đâu?",
+      "expectPaths": ["knowledge/features/analytics/defect-heatmap.md", "knowledge/operational/defect-heatmap.md"],
+      "distractors": ["knowledge/features/analytics/pareto-analysis.md", "knowledge/features/analytics/station-analysis.md", "knowledge/operational/drill-down.md"]
+    },
+    {
+      "id": "OP20", "domain": "phan-tich",
+      "question": "Phân tích nguyên nhân gốc RCA thực hiện thế nào?",
+      "expectPaths": ["knowledge/features/analytics/root-cause-analysis.md", "knowledge/operational/root-cause-analysis.md"],
+      "distractors": ["knowledge/features/analytics/correlation-analysis.md", "knowledge/features/analytics/defect-prediction.md", "knowledge/operational/causal-graph.md"]
+    },
+    {
+      "id": "OP21", "domain": "canh-bao",
+      "question": "Cảnh báo dự báo predictive alert hoạt động ra sao?",
+      "expectPaths": ["knowledge/features/alerts/predictive-alerts.md"],
+      "distractors": ["knowledge/features/alerts/alerts-list.md", "knowledge/features/alerts/mqtt-alert-rules.md", "knowledge/features/analytics/defect-prediction.md"]
+    },
+    {
+      "id": "OP22", "domain": "canh-bao",
+      "question": "Đặt mục tiêu OEE cho máy ở đâu?",
+      "expectPaths": ["knowledge/features/alerts/oee-targets.md", "knowledge/operational/oee-target-settings.md"],
+      "distractors": ["knowledge/features/monitoring/oee-dashboard.md", "knowledge/operational/oee-dashboard.md", "knowledge/features/monitoring/ng-rate-threshold.md"]
+    },
+    {
+      "id": "OP23", "domain": "canh-bao",
+      "question": "Xem danh sách cảnh báo đang mở ở màn nào?",
+      "expectPaths": ["knowledge/features/alerts/alerts-list.md", "knowledge/operational/alerts.md"],
+      "distractors": ["knowledge/features/alerts/predictive-alerts.md", "knowledge/operational/alarm-kpi.md", "knowledge/operational/andon.md"]
+    },
+    {
+      "id": "OP24", "domain": "ket-noi",
+      "question": "Cấu hình luật cảnh báo MQTT như thế nào?",
+      "expectPaths": ["knowledge/features/alerts/mqtt-alert-rules.md"],
+      "distractors": ["knowledge/features/monitoring/mqtt-topics.md", "knowledge/features/monitoring/mqtt-profiles.md", "knowledge/features/alerts/alerts-list.md"]
+    },
+    {
+      "id": "OP25", "domain": "chat-luong",
+      "question": "Các loại lỗi AOI gồm những gì?",
+      "expectPaths": ["knowledge/domain/aoi-defect-types.md", "knowledge/operational/defect-catalog.md"],
+      "distractors": ["knowledge/domain/aoi-troubleshooting.md", "knowledge/features/analytics/pareto-analysis.md", "knowledge/domain/howto-ng-handling-sop.md"]
+    },
+    {
+      "id": "OP26", "domain": "van-hanh-may",
+      "question": "Quy trình vận hành chuẩn SOP của máy AOI là gì?",
+      "expectPaths": ["knowledge/domain/aoi-workflow.md"],
+      "distractors": ["knowledge/domain/aoi-troubleshooting.md", "knowledge/domain/howto-ng-handling-sop.md", "knowledge/operational/sop-management.md"]
+    },
+    {
+      "id": "OP27", "domain": "bao-cao",
+      "question": "Hệ thống AOI có những loại báo cáo nào?",
+      "expectPaths": ["knowledge/domain/aoi-reports.md", "knowledge/features/analytics/reports.md"],
+      "distractors": ["knowledge/features/analytics/report-builder.md", "knowledge/domain/howto-export-pdf-report.md", "knowledge/operational/reporting-studio.md"]
+    },
+    {
+      "id": "OP28", "domain": "san-xuat",
+      "question": "Lập lịch sản xuất ở màn nào?",
+      "expectPaths": ["knowledge/features/production/production-scheduling.md", "knowledge/operational/production-scheduling.md"],
+      "distractors": ["knowledge/features/production/production-orders.md", "knowledge/features/production/production-dashboard.md", "knowledge/features/settings/shift-config.md"]
+    },
+    {
+      "id": "OP29", "domain": "san-pham",
+      "question": "Gán một sản phẩm cho máy kiểm tra làm thế nào?",
+      "expectPaths": ["knowledge/features/products/product-machine-mapping.md", "knowledge/operational/product-mapping.md"],
+      "distractors": ["knowledge/features/products/product-management.md", "knowledge/features/monitoring/machine-registration.md", "knowledge/operational/recipes.md"]
+    },
+    {
+      "id": "OP30", "domain": "san-pham",
+      "question": "Quản lý quy trình công đoạn (routing) của sản phẩm ở đâu?",
+      "expectPaths": ["knowledge/features/products/process-management.md", "knowledge/operational/routing-master.md", "knowledge/operational/process-management.md"],
+      "distractors": ["knowledge/features/production/production-scheduling.md", "knowledge/features/products/product-management.md", "knowledge/operational/bom-management.md"]
+    },
+    {
+      "id": "OP31", "domain": "quan-tri",
+      "question": "Xem nhật ký ai đã sửa gì trong hệ thống ở đâu?",
+      "expectPaths": ["knowledge/features/admin/audit-logs.md", "knowledge/operational/audit-logs.md"],
+      "distractors": ["knowledge/features/admin/session-mgmt.md", "knowledge/operational/engineering-changes.md", "knowledge/features/admin/user-management.md"]
+    },
+    {
+      "id": "OP32", "domain": "quan-tri",
+      "question": "Tạo và thu hồi API key ở màn nào?",
+      "expectPaths": ["knowledge/operational/api-keys.md", "knowledge/features/admin/api-docs.md"],
+      "distractors": ["knowledge/features/admin/session-mgmt.md", "knowledge/features/admin/permission-mgmt.md", "knowledge/operational/connectivity.md"]
+    },
+    {
+      "id": "OP33", "domain": "quan-tri",
+      "question": "Nhập và xuất dữ liệu hàng loạt làm thế nào?",
+      "expectPaths": ["knowledge/features/admin/import-export.md", "knowledge/operational/import-export.md"],
+      "distractors": ["knowledge/features/admin/backup-restore.md", "knowledge/features/inspection/history-export-scheduling.md", "knowledge/operational/data-management.md"]
+    },
+    {
+      "id": "OP34", "domain": "quan-tri",
+      "question": "Quản lý license bản quyền của hệ thống ở đâu?",
+      "expectPaths": ["knowledge/features/admin/license-mgmt.md", "knowledge/operational/license.md"],
+      "distractors": ["knowledge/domain/howto-license-bypass-dev.md", "knowledge/operational/modules.md", "knowledge/operational/system-config.md"]
+    },
+    {
+      "id": "OP35", "domain": "van-hanh-may",
+      "question": "Bảng Andon trên TV hiển thị những gì?",
+      "expectPaths": ["knowledge/operational/andon.md"],
+      "distractors": ["knowledge/features/dashboard/dashboard-view.md", "knowledge/operational/war-room.md", "knowledge/operational/control-tower.md"]
+    },
+    {
+      "id": "OP36", "domain": "ai",
+      "question": "Trung tâm AI có những chức năng gì?",
+      "expectPaths": ["knowledge/features/ai/ai-hub.md", "knowledge/operational/ai-home.md"],
+      "distractors": ["knowledge/features/ai/ai-settings.md", "knowledge/operational/ai-brain.md", "knowledge/operational/ai-command-center.md"]
+    },
+    {
+      "id": "OP37", "domain": "ai",
+      "question": "Quản lý và cập nhật phiên bản model AI ở đâu?",
+      "expectPaths": ["knowledge/features/ai/ai-model-management.md", "knowledge/operational/ai-models.md", "knowledge/operational/model-versions.md"],
+      "distractors": ["knowledge/features/ai/batch-inference.md", "knowledge/features/ai/ai-performance.md", "knowledge/operational/ai-gguf-models.md"]
+    },
+    {
+      "id": "OP38", "domain": "ai",
+      "question": "Quality Gate của AI dùng để làm gì?",
+      "expectPaths": ["knowledge/features/ai/ai-quality-gate.md", "knowledge/operational/ai-quality-gate.md"],
+      "distractors": ["knowledge/features/analytics/quality-gates.md", "knowledge/operational/quality-gate-templates.md", "knowledge/features/ai/ai-performance.md"]
+    },
+    {
+      "id": "OP39", "domain": "ai",
+      "question": "Tìm kiếm ảnh tương tự bằng AI ở màn nào?",
+      "expectPaths": ["knowledge/features/ai/ai-image-search.md", "knowledge/operational/ai-image-search.md"],
+      "distractors": ["knowledge/features/ai/advanced-vision-lab.md", "knowledge/features/inspection/aoi-packages.md", "knowledge/operational/mask-annotation.md"]
+    },
+    {
+      "id": "OP40", "domain": "ai",
+      "question": "Xem hiệu năng độ chính xác của mô hình AI ở đâu?",
+      "expectPaths": ["knowledge/features/ai/ai-performance.md", "knowledge/operational/ai-performance.md"],
+      "distractors": ["knowledge/features/ai/ai-model-management.md", "knowledge/features/ai/ai-inspection-analytics.md", "knowledge/operational/ai-monitoring.md"]
+    },
+    {
+      "id": "OP41", "domain": "thiet-bi",
+      "question": "Theo dõi sức khoẻ thiết bị machine health ở màn nào?",
+      "expectPaths": ["knowledge/features/monitoring/machine-health.md"],
+      "distractors": ["knowledge/features/monitoring/machine-status-monitor.md", "knowledge/operational/device-monitor.md", "knowledge/operational/system-health.md"]
+    },
+    {
+      "id": "OP42", "domain": "phan-tich",
+      "question": "Phân tích tương quan giữa thông số quy trình và lỗi ở đâu?",
+      "expectPaths": ["knowledge/features/analytics/correlation-analysis.md", "knowledge/operational/correlation-analysis.md"],
+      "distractors": ["knowledge/features/analytics/root-cause-analysis.md", "knowledge/features/analytics/data-comparison.md", "knowledge/operational/causal-graph.md"]
+    },
+    {
+      "id": "OP43", "domain": "ket-noi",
+      "question": "Cấu hình MQTT topic và profile kết nối thế nào?",
+      "expectPaths": ["knowledge/features/monitoring/mqtt-topics.md", "knowledge/features/monitoring/mqtt-profiles.md"],
+      "distractors": ["knowledge/features/monitoring/mqtt-dashboard.md", "knowledge/features/alerts/mqtt-alert-rules.md", "knowledge/features/monitoring/mqtt-replay.md"]
+    },
+    {
+      "id": "OP44", "domain": "san-xuat",
+      "question": "Xem bảng điều khiển sản xuất theo ca ở màn nào?",
+      "expectPaths": ["knowledge/features/production/production-dashboard.md", "knowledge/operational/production-dashboard.md"],
+      "distractors": ["knowledge/features/dashboard/dashboard-view.md", "knowledge/features/production/production-orders.md", "knowledge/operational/wip-dashboard.md"]
+    },
+    {
+      "id": "OP45", "domain": "bao-cao",
+      "question": "Đặt lịch gửi báo cáo định kỳ tự động ở đâu?",
+      "expectPaths": ["knowledge/features/analytics/scheduled-reports.md", "knowledge/operational/scheduled-reports.md"],
+      "distractors": ["knowledge/features/analytics/report-builder.md", "knowledge/features/inspection/history-export-scheduling.md", "knowledge/domain/howto-export-pdf-report.md"]
+    },
+    {
+      "id": "OP46", "domain": "quan-tri",
+      "question": "Quản lý phiên đăng nhập và buộc đăng xuất người dùng?",
+      "expectPaths": ["knowledge/features/admin/session-mgmt.md", "knowledge/operational/sessions.md"],
+      "distractors": ["knowledge/features/admin/user-management.md", "knowledge/domain/howto-change-password.md", "knowledge/features/admin/permission-mgmt.md"]
+    },
+    {
+      "id": "OP47", "domain": "quan-tri",
+      "question": "Bypass license khi chạy môi trường phát triển làm sao?",
+      "expectPaths": ["knowledge/domain/howto-license-bypass-dev.md"],
+      "distractors": ["knowledge/features/admin/license-mgmt.md", "knowledge/operational/license.md", "knowledge/operational/system-config.md"]
+    },
+    {
+      "id": "OP48", "domain": "chat-luong",
+      "question": "Truy xuất nguồn gốc một sản phẩm theo serial xem ở đâu?",
+      "expectPaths": ["knowledge/operational/traceability.md"],
+      "distractors": ["knowledge/features/inspection/history.md", "knowledge/operational/wip-dashboard.md", "knowledge/operational/master-data.md"]
+    },
+
+    {
+      "_nhom": "★ SÁU CA KHÓ — hỏi theo TRIỆU CHỨNG / TÌNH HUỐNG, không nhắc tên màn hình.",
+      "_lyle": [
+        "Bốn tám ca trên phần lớn hỏi 'X ở màn nào', mà mỗi màn có đúng một thẻ vận hành TRÙNG TÊN",
+        "⇒ truy vấn gần như là tiêu đề tài liệu, và hitRate@5 đo được BÃO HOÀ ở 1,000 ngay cả với",
+        "luật hit chặt (đo 2026-08-16). Sáu ca dưới đây hỏi theo cách người vận hành hỏi THẬT —",
+        "mô tả triệu chứng, không gọi tên màn. Mỗi ca đã ĐỐI CHIẾU với nội dung tài liệu (grep) chứ",
+        "không suy từ tên file."
+      ],
+      "id": "OP49", "domain": "van-hanh-may", "hard": true,
+      "question": "Camera của máy AOI không phản hồi thì xử lý thế nào?",
+      "expectPaths": ["knowledge/domain/aoi-troubleshooting.md"],
+      "distractors": ["knowledge/features/monitoring/machine-status-monitor.md", "knowledge/features/monitoring/machine-registration.md", "knowledge/operational/device-monitor.md"],
+      "note": "Đã đối chiếu: aoi-troubleshooting.md có bảng mã E001–E020 'Camera không phản hồi → restart camera service, kiểm tra cáp'."
+    },
+    {
+      "id": "OP50", "domain": "cai-dat", "hard": true,
+      "question": "Cuối ca tôi cần bàn giao những gì cho ca sau?",
+      "expectPaths": ["knowledge/domain/howto-shift-change.md"],
+      "distractors": ["knowledge/features/settings/shift-config.md", "knowledge/operational/operator.md", "knowledge/operational/production-signoff.md"],
+      "note": "Đã đối chiếu: howto-shift-change.md mô tả ghi chú bàn giao + nút 'Hoàn tất bàn giao' + bản ghi ShiftHandover."
+    },
+    {
+      "id": "OP51", "domain": "chat-luong", "hard": true,
+      "question": "Hàng lỗi nên cho sửa lại hay loại bỏ, ai là người quyết định?",
+      "expectPaths": ["knowledge/domain/howto-ng-handling-sop.md"],
+      "distractors": ["knowledge/domain/aoi-defect-types.md", "knowledge/operational/repair-station.md", "knowledge/operational/nonconformance.md"],
+      "note": "Đã đối chiếu: SOP ghi 'QA inline quyết định Rework (sửa lại) hoặc Scrap (loại bỏ)'."
+    },
+    {
+      "id": "OP52", "domain": "san-xuat", "hard": true,
+      "question": "Khi nào một lô sản xuất chuyển sang trạng thái hoàn thành?",
+      "expectPaths": ["knowledge/domain/howto-lot-management.md"],
+      "distractors": ["knowledge/features/production/production-orders.md", "knowledge/features/production/production-scheduling.md", "knowledge/operational/wip-dashboard.md"],
+      "note": "Đã đối chiếu: 'Khi đủ plannedQty (hoặc bấm Kết thúc lô) → completed, endedAt = now()'."
+    },
+    {
+      "id": "OP53", "domain": "phan-tich", "hard": true,
+      "question": "Làm sao xác định 20% loại lỗi gây ra 80% số NG để ưu tiên khắc phục?",
+      "expectPaths": ["knowledge/domain/howto-pareto-defects.md", "knowledge/features/analytics/pareto-analysis.md"],
+      "distractors": ["knowledge/features/analytics/root-cause-analysis.md", "knowledge/features/analytics/defect-heatmap.md", "knowledge/domain/aoi-defect-types.md"],
+      "note": "Đã đối chiếu: howto-pareto-defects.md nói rõ 'Vital Few (≈20% loại lỗi) gây 80% NG', vạch đỏ 80%."
+    },
+    {
+      "id": "OP54", "domain": "san-pham", "hard": true,
+      "question": "Board mạch mới lần đầu chạy trên chuyền cần chuẩn bị những gì trước?",
+      "expectPaths": ["knowledge/domain/commission-a-new-pcb.md"],
+      "distractors": ["knowledge/features/products/product-management.md", "knowledge/operational/product-changeover.md", "knowledge/features/production/production-orders.md"],
+      "note": "Đã đối chiếu: commission-a-new-pcb.md nói về điểm đo / recipe / mẫu chuẩn (11 lần khớp)."
+    }
+  ]
+}

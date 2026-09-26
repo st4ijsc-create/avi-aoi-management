@@ -4,6 +4,7 @@
  */
 
 import { z } from "zod";
+import { appError } from "../_core/appError";
 import { router, protectedProcedure, qualityProcedure } from "../_core/trpc";
 import { getDb } from "../db/connection";
 import { sql, eq, desc } from "drizzle-orm";
@@ -25,7 +26,7 @@ export const qualityGateTemplateRouter = router({
     .input(z.object({ id: z.string() }))
     .query(({ input }) => {
       const template = getBuiltinTemplate(input.id);
-      if (!template) throw new Error("Template not found");
+      if (!template) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "qualityGateTemplate" }, "Template not found");
       return template;
     }),
 
@@ -76,7 +77,7 @@ export const qualityGateTemplateRouter = router({
         }).returning();
         return result;
       } catch (err: any) {
-        if (err.code === '42P01') throw new Error('Quality gate templates table not found. Please run migration 0067.');
+        if (err.code === '42P01') throw appError("PRECONDITION_FAILED", "FEATURE_NOT_CONFIGURED", { feature: "qualityGateTemplateRegistry" }, "Quality gate templates table not found. Please run migration 0067.");
         throw err;
       }
     }),
@@ -121,7 +122,7 @@ export const qualityGateTemplateRouter = router({
           .returning();
         return result;
       } catch (err: any) {
-        if (err.code === '42P01') throw new Error('Quality gate templates table not found. Please run migration 0067.');
+        if (err.code === '42P01') throw appError("PRECONDITION_FAILED", "FEATURE_NOT_CONFIGURED", { feature: "qualityGateTemplateRegistry" }, "Quality gate templates table not found. Please run migration 0067.");
         throw err;
       }
     }),
@@ -137,7 +138,7 @@ export const qualityGateTemplateRouter = router({
         await db!.delete(qualityGateTemplates).where(eq(qualityGateTemplates.id, input.id));
         return { success: true };
       } catch (err: any) {
-        if (err.code === '42P01') throw new Error('Quality gate templates table not found. Please run migration 0067.');
+        if (err.code === '42P01') throw appError("PRECONDITION_FAILED", "FEATURE_NOT_CONFIGURED", { feature: "qualityGateTemplateRegistry" }, "Quality gate templates table not found. Please run migration 0067.");
         throw err;
       }
     }),
@@ -165,17 +166,17 @@ export const qualityGateTemplateRouter = router({
         try {
           result = await db!.execute(sql`SELECT * FROM quality_gate_templates WHERE id = ${customId}`);
         } catch (err: any) {
-          if (err.code === '42P01') throw new Error('Quality gate templates table not found. Please run migration 0067.');
+          if (err.code === '42P01') throw appError("PRECONDITION_FAILED", "FEATURE_NOT_CONFIGURED", { feature: "qualityGateTemplateRegistry" }, "Quality gate templates table not found. Please run migration 0067.");
           throw err;
         }
-        if (!((result as any).rows ?? result)[0]) throw new Error("Custom template not found");
+        if (!((result as any).rows ?? result)[0]) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "qualityGateTemplate" }, "Custom template not found");
         const custom = ((result as any).rows ?? result)[0] as any;
         templateRules = typeof custom.rules === "string" ? JSON.parse(custom.rules) : custom.rules;
         templateName = custom.name;
         notifyRoles = typeof custom.notifyRoles === "string" ? JSON.parse(custom.notifyRoles) : (custom.notifyRoles || []);
       } else {
         const builtin = getBuiltinTemplate(input.templateId);
-        if (!builtin) throw new Error("Built-in template not found");
+        if (!builtin) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "qualityGateTemplate" }, "Built-in template not found");
         templateRules = builtin.rules;
         templateName = builtin.name;
         notifyRoles = builtin.notifyRoles;

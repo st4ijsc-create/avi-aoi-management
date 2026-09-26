@@ -12,7 +12,7 @@
  *
  * node-llama-cpp + fs are fully mocked so no native binary / model file is required.
  */
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 
 // ── Spies shared across the mock factory ───────────────────────────────────
 const createEmbeddingContextSpy = vi.fn();
@@ -103,6 +103,14 @@ beforeEach(() => {
   process.env.GGUF_MAX_LOADED_MODELS = "2";
   process.env.GGUF_EMBED_DIM = "1024";
   delete process.env.GGUF_MAX_VRAM_MB;
+  /**
+   * ★ Pha 2B Task 3 — biên chờ giữa hai lượt thử là 5.000 ms THẬT (§5.5 bước 2). File này canh
+   * HÀNH VI của đường lùi, không canh biên chờ; để nguyên 5.000 thì ca dưới hết giờ ở 5.000 ms và
+   * — nguy hiểm hơn — công việc còn dang dở của nó rò sang ca kế tiếp, làm hỏng bộ đếm lời gọi
+   * (đo được: ca "rethrows a non-OOM error" thấy 2 lời gọi thay vì 1, KHÔNG phải vì mã sai).
+   * Biên chờ mặc định được chứng minh ở ĐÚNG MỘT chỗ: `vram/threeOutcomes.test.ts` §2.
+   */
+  process.env.VRAM_LOAD_RETRY_DELAY_MS = "0";
 });
 
 // Import AFTER mocks. Re-import fresh each test to reset module-level loadedModels Map.
@@ -137,6 +145,51 @@ describe("generateEmbedding", () => {
     await eng.generateEmbedding("b", "embed-model");
     await eng.generateEmbeddings(["c", "d"], "embed-model");
     expect(createEmbeddingContextSpy).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("generateEmbedding/generateEmbeddings — GGUF_EMBED_MODEL suffix normalization (doc69 W1-4 regression)", () => {
+  // FIX regression: generateEmbedding/generateEmbeddings used to read the module-level
+  // `GGUF_EMBED_MODEL` RAW (no ".gguf" strip) when called with no explicit modelId — exactly how
+  // kbVectorStore.ingestKbChunks/searchKb call them. A live `.env` value that ALREADY carries the
+  // ".gguf" suffix (e.g. `GGUF_EMBED_MODEL=Qwen3-Embedding-0.6B-f16.gguf`, as configured in this
+  // repo's `.env`) fell straight through to getOrLoadModel(), which appends ".gguf" itself →
+  // "...f16.gguf.gguf" → `GGUF model file not found`. Now resolved via modelResolver's
+  // embedModelBasename() (toBasename/ensureGgufSuffix), so a value with OR without the suffix
+  // always resolves to the SAME correct single-".gguf" basename.
+  const savedEmbedModel = process.env.GGUF_EMBED_MODEL;
+  afterEach(() => {
+    if (savedEmbedModel === undefined) delete process.env.GGUF_EMBED_MODEL;
+    else process.env.GGUF_EMBED_MODEL = savedEmbedModel;
+  });
+
+  it("GGUF_EMBED_MODEL WITH .gguf suffix (live .env shape) resolves to the correct basename, never '.gguf.gguf'", async () => {
+    process.env.GGUF_EMBED_MODEL = "Qwen3-Embedding-0.6B-f16.gguf";
+    const eng = await freshEngine();
+    // No explicit modelId — exercises the exact live call shape (kbVectorStore's
+    // ingestKbChunks/searchKb call generateEmbedding/generateEmbeddings this way).
+    const res = await eng.generateEmbedding("hello world");
+    expect(res.modelId).toBe("Qwen3-Embedding-0.6B-f16");
+    const calledPaths = fakeLlama.loadModel.mock.calls.map((c: any[]) => String(c[0]?.modelPath ?? ""));
+    expect(calledPaths.some((p) => /\.gguf\.gguf$/i.test(p))).toBe(false);
+  });
+
+  it("GGUF_EMBED_MODEL WITHOUT .gguf suffix resolves to the SAME basename (idempotent either way)", async () => {
+    process.env.GGUF_EMBED_MODEL = "Qwen3-Embedding-0.6B-f16";
+    const eng = await freshEngine();
+    const res = await eng.generateEmbedding("hello world");
+    expect(res.modelId).toBe("Qwen3-Embedding-0.6B-f16");
+    const calledPaths = fakeLlama.loadModel.mock.calls.map((c: any[]) => String(c[0]?.modelPath ?? ""));
+    expect(calledPaths.some((p) => /\.gguf\.gguf$/i.test(p))).toBe(false);
+  });
+
+  it("generateEmbeddings (batch) exhibits the same fix — no explicit modelId, suffix already present", async () => {
+    process.env.GGUF_EMBED_MODEL = "Qwen3-Embedding-0.6B-f16.gguf";
+    const eng = await freshEngine();
+    const res = await eng.generateEmbeddings(["a", "b"]);
+    expect(res.modelId).toBe("Qwen3-Embedding-0.6B-f16");
+    const calledPaths = fakeLlama.loadModel.mock.calls.map((c: any[]) => String(c[0]?.modelPath ?? ""));
+    expect(calledPaths.some((p) => /\.gguf\.gguf$/i.test(p))).toBe(false);
   });
 });
 
@@ -197,32 +250,82 @@ describe("LRU eviction", () => {
     const inFlight = eng.generateEmbedding("busy", "m1");
     // Wait until the embedding call is actually in progress (refCount already incremented).
     await enteredP;
-    // Now load m2 — capacity is 1, but m1 is in use → must NOT be evicted (temporary overflow).
-    await eng.loadGgufModel({ modelPath: "m2.gguf" });
+    /**
+     * ★★★ Pha 2B Task 7 (§8) — **ĐÂY CHÍNH LÀ CÁI CHẾT CỦA LƯỢT TRÀN IM LẶNG** (ràng buộc 9).
+     *
+     * Khe = 1, m1 ĐANG DÙNG (`refCount > 0`) ⇒ không dọn được khe nào.
+     *   • TRƯỚC: `ensureCapacity()` ghi một dòng cảnh báo rồi **NẠP TIẾP** — đúng câu
+     *     `At capacity (N/N) but all models are in use; allowing t… o…` mà ràng buộc 9 đòi xoá sạch
+     *     (cụm đó KHÔNG được viết nguyên văn ở đây: `git grep` không phân biệt mã với chú thích).
+     *   • TỪ ĐÂY: **TỪ CHỐI TRUNG THỰC** — `VramRefusedError`, kèm lý do `gguf-slot-cap`.
+     * ⚠ Và hai bảo đảm cũ **không đổi một chụt nào**: m1 KHÔNG bị đuổi, và lượt suy luận đang
+     * bay trên nó vẫn chạy xong.
+     */
+    await expect(eng.loadGgufModel({ modelPath: "m2.gguf" })).rejects.toMatchObject({
+      name: "VramRefusedError",
+    });
     expect(eng.getLoadedGgufModelNames()).toContain("m1");
+    expect(eng.getLoadedGgufModelNames()).not.toContain("m2");
     release();
     await inFlight;
   });
+
+  /**
+   * ★★ ĐỐI CHỨNG của ca trên: khe cũng kín, nhưng model đang giữ khe là **NHÀN RỖI** ⇒
+   * `preempt()` dọn được ⇒ lượt nạp ĐI TIẾP. Thiếu ca này thì "từ chối khi hết khe" không
+   * phân biệt được với "từ chối luôn luôn" — tức một lưới nói đúng vì lý do sai.
+   */
+  it("★★ khe kín nhưng model NHÀN RỖI ⇒ preempt() dọn được ⇒ lượt nạp VẪN ĐI TIẾP", async () => {
+    process.env.GGUF_MAX_LOADED_MODELS = "1";
+    const eng = await freshEngine();
+    await eng.loadGgufModel({ modelPath: "m1.gguf" });
+    expect(eng.getLoadedGgufModelNames()).toEqual(["m1"]);
+    await eng.loadGgufModel({ modelPath: "m2.gguf" });
+    const names = eng.getLoadedGgufModelNames();
+    expect(names).toEqual(["m2"]);
+  });
 });
 
-describe("VRAM OOM fallback", () => {
-  it("retries with gpuLayers:'auto' when a full GPU offload runs out of VRAM", async () => {
+/**
+ * ★★★ Pha 2B Task 3 — BA KẾT CỤC (§5.5) NHÌN TỪ `loadGgufModel()`.
+ *
+ * ⚠ Bản trước của khối này khoá **CHÍNH SÁCH CŨ** (2 lượt: "max" rồi "auto") và — quan trọng hơn —
+ * dựng lỗi bằng chuỗi `ggml_backend_cuda_buffer_type_alloc_buffer: … cudaMalloc failed: out of
+ * memory`, tức **dòng llama.cpp in ra STDERR**, KHÔNG PHẢI `err.message` mà JS nhận được. Vì thế nó
+ * xanh suốt trong khi đường lùi THẬT chưa bao giờ chạy trên máy thật (Ư0: 0/24 lượt).
+ * Chuỗi THẬT là ba chữ `Failed to load model` (`LlamaModel.js:593`) — canh ở
+ * `vram/threeOutcomes.test.ts` §1 bằng cách đọc thẳng `node_modules`.
+ */
+describe("VRAM OOM fallback — ba kết cục §5.5", () => {
+  it("★★★ chuỗi lỗi THẬT ('Failed to load model') kích hoạt đủ 4 lượt: max · max · max · auto", async () => {
     const eng = await freshEngine();
-    // First load attempt OOMs on the full ("max") offload; the retry succeeds.
     fakeLlama.loadModel
-      .mockRejectedValueOnce(
-        new Error("ggml_backend_cuda_buffer_type_alloc_buffer: cudaMalloc failed: out of memory"),
-      )
+      .mockRejectedValueOnce(new Error("Failed to load model"))
+      .mockRejectedValueOnce(new Error("Failed to load model"))
+      .mockRejectedValueOnce(new Error("Failed to load model"))
       .mockImplementationOnce(async (opts: any) => makeFakeModel(opts.modelPath));
 
     await eng.loadGgufModel({ modelPath: "big.gguf" });
 
-    // Model still loaded despite the initial OOM.
     expect(eng.getLoadedGgufModelNames()).toContain("big");
-    // Two attempts: first "max" (default), retry "auto".
+    // Lượt đầu + 2 lượt THỬ LẠI (trần không tất định) + 1 lượt HẠ SỐ LỚP.
+    expect(fakeLlama.loadModel).toHaveBeenCalledTimes(4);
+    expect(fakeLlama.loadModel.mock.calls.map((c: any[]) => c[0].gpuLayers)).toEqual([
+      "max", "max", "max", "auto",
+    ]);
+  });
+
+  it("chuỗi CŨ (cudaMalloc/out of memory) vẫn kích hoạt đường lùi — bản vá NỚI, không THAY", async () => {
+    const eng = await freshEngine();
+    fakeLlama.loadModel
+      .mockRejectedValueOnce(new Error("cudaMalloc failed: out of memory"))
+      .mockImplementationOnce(async (opts: any) => makeFakeModel(opts.modelPath));
+
+    await eng.loadGgufModel({ modelPath: "big.gguf" });
+    expect(eng.getLoadedGgufModelNames()).toContain("big");
+    // Thắng ngay ở lượt THỬ LẠI đầu tiên ⇒ vẫn "max", chưa cần hạ số lớp.
     expect(fakeLlama.loadModel).toHaveBeenCalledTimes(2);
-    expect(fakeLlama.loadModel.mock.calls[0][0].gpuLayers).toBe("max");
-    expect(fakeLlama.loadModel.mock.calls[1][0].gpuLayers).toBe("auto");
+    expect(fakeLlama.loadModel.mock.calls.map((c: any[]) => c[0].gpuLayers)).toEqual(["max", "max"]);
   });
 
   it("rethrows a non-OOM load error without retrying", async () => {
@@ -230,6 +333,13 @@ describe("VRAM OOM fallback", () => {
     fakeLlama.loadModel.mockRejectedValueOnce(new Error("corrupt gguf header"));
     await expect(eng.loadGgufModel({ modelPath: "bad.gguf" })).rejects.toThrow("corrupt gguf header");
     expect(fakeLlama.loadModel).toHaveBeenCalledTimes(1); // no retry
+  });
+
+  it("★★ gpuLayers: -1 (đường vào THẬT của aiGgufRouter) KHÔNG BAO GIỜ tới node-llama-cpp", async () => {
+    const eng = await freshEngine();
+    await eng.loadGgufModel({ modelPath: "neg.gguf", gpuLayers: -1 });
+    // -1 ⇒ Math.max(0, Math.min(totalLayers, -1)) === 0 ⇒ nạp 0 lớp, chạy CPU, không báo gì.
+    expect(fakeLlama.loadModel.mock.calls[0][0].gpuLayers).toBe("auto");
   });
 });
 

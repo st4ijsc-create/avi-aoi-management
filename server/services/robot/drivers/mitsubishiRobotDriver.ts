@@ -97,6 +97,7 @@ import type {
   OnRobotState, RobotJobSpec, RobotJobResult, RobotHealth, RobotPose,
 } from "../robotDriver";
 import { TcpLineClient } from "./tcpLineClient";
+import { DeviceUnreachableError } from "../../../_core/deviceErrors";
 
 /**
  * MELFA controller-communication TCP port. Configurable via endpoint/options.
@@ -257,7 +258,7 @@ export class MitsubishiDriver implements RobotDriver {
 
   /** Send one command, await the reply, and throw if it is a MELFA error. */
   private async command(cmd: string): Promise<MelfaReply> {
-    if (!this.client) throw new Error("MitsubishiDriver: not connected");
+    if (!this.client) throw new DeviceUnreachableError("mitsubishiRobot");
     const reply = parseMelfaResponse(await this.client.send(frameMelfaCommand(cmd, this.robotNo, this.slotNo), this.timeoutMs));
     if (!reply.ok) throw new Error(`MELFA ${cmd.split(/[ (]/)[0]} failed: error ${reply.errorNo ?? "?"}`);
     return reply;
@@ -317,7 +318,7 @@ export class MitsubishiDriver implements RobotDriver {
   }
 
   async getState(): Promise<RobotState> {
-    if (!this.connected || !this.client) throw new Error("MitsubishiDriver: not connected");
+    if (!this.connected || !this.client) throw new DeviceUnreachableError("mitsubishiRobot");
     try {
       const state = decodeMelfaState((await this.command("STATE")).payload);
 
@@ -346,7 +347,7 @@ export class MitsubishiDriver implements RobotDriver {
   }
 
   async subscribeState(onState: OnRobotState, intervalMs = 5000): Promise<RobotStateHandle> {
-    if (!this.connected) throw new Error("MitsubishiDriver: not connected");
+    if (!this.connected) throw new DeviceUnreachableError("mitsubishiRobot");
     const tick = async () => {
       try {
         const s = await this.getState();

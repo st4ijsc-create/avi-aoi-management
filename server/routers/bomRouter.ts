@@ -16,6 +16,7 @@
  * authenticated operator) — parallel to processResult.
  */
 import { z } from "zod";
+import { appError } from "../_core/appError";
 import { router, moduleProcedure } from "../_core/trpc";
 // Doc 38 Đợt Q — license-gate this router behind MOD_PRODUCTION (moduleGate = pass-through
 // until the deployment's SKU is configured — no-brick). Shadows `protectedProcedure`.
@@ -23,19 +24,30 @@ const protectedProcedure = moduleProcedure("MOD_PRODUCTION");
 import { requirePermission } from "../_core/accessControl";
 import * as db from "../db";
 import { getDb } from "../db/connection";
+import { chayTheoPhamViTenantHienTai } from "../db/tenantContext";
 import { materials } from "../../drizzle/schema";
 import { eq } from "drizzle-orm";
 import { recordComponentInstallation } from "../services/componentInstallationService";
 
 const MODULE = "mes_bom";
 
-/** Best-effort resolve a componentCode → materials.id (nullable — never throws). */
+/**
+ * Best-effort resolve a componentCode → materials.id (nullable — never throws).
+ *
+ * `materials` BẬT RLS (mig 0122) với vị từ theo `factoryCode`/`corporateCode`.
+ * Bọc trong `chayTheoPhamViTenantHienTai` ⇒ khi `TENANT_RLS_ENABLED=true` và
+ * người gọi có phạm vi, phép phân giải mã linh kiện chỉ chạm được vật tư THUỘC
+ * nhà máy của họ — cưỡng chế ở TẦNG CSDL, không phải bằng `where` tự viết.
+ * Cờ tắt / tác vụ nền / phạm vi rỗng ⇒ pass-through y như trước.
+ */
 async function lookupMaterialId(code: string): Promise<number | null> {
   try {
     const d = await getDb();
     if (!d) return null;
-    const [row] = await d.select({ id: materials.id }).from(materials).where(eq(materials.code, code)).limit(1);
-    return row?.id ?? null;
+    return await chayTheoPhamViTenantHienTai(d, async (h) => {
+      const [row] = await h.select({ id: materials.id }).from(materials).where(eq(materials.code, code)).limit(1);
+      return row?.id ?? null;
+    });
   } catch {
     return null;
   }
@@ -361,7 +373,7 @@ export const bomRouter = router({
         let lineCache: any[];
         try {
           const product = await db.getProductModelByCode(g.productCode);
-          if (!product) throw new Error(`Không tìm thấy sản phẩm "${g.productCode}"`);
+          if (!product) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "productModel" }, `Không tìm thấy sản phẩm "${g.productCode}"`);
           const defs = await db.listBomDefinitionsByProduct(product.id, false);
           const existingDef = defs.find((d) => d.code === g.bomCode);
           if (existingDef) {

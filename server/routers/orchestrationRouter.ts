@@ -18,7 +18,8 @@
 import { z } from "zod";
 import { desc, eq, inArray } from "drizzle-orm";
 import { TRPCError } from "@trpc/server";
-import { router, moduleProcedure, moduleGate, actuationProcedure as actuationBase, deployProcedure as deployBase } from "../_core/trpc";
+import { appError } from "../_core/appError";
+import { router, moduleProcedure, moduleGate, writeProcedure as writeBase, actuationProcedure as actuationBase, deployProcedure as deployBase } from "../_core/trpc";
 import { requirePermission } from "../_core/accessControl";
 import { getDb } from "../db/connection";
 // Doc 37 P0-3 — gate the Orchestration Studio surface behind MOD_ENGINEERING
@@ -29,9 +30,21 @@ const protectedProcedure = moduleProcedure("MOD_ENGINEERING");
 // (device-actuation) path, PLUS the same MOD_ENGINEERING license gate. Per-action
 // requirePermission("machine_control", …) still composes on top.
 const actuationProcedure = actuationBase.use(moduleGate("MOD_ENGINEERING"));
-// doc 40 CTL-07 — deploy path thêm lớp step-up 2FA (requireFreshTotp) SAU cờ ACTUATION_STEPUP_2FA
-// (mặc định OFF → pass-through). Vẫn giữ role-floor + require2FA + MOD_ENGINEERING như actuation.
+// doc 40 CTL-07 — deploy path thêm lớp step-up 2FA SAU cờ ACTUATION_STEPUP_2FA (mặc định OFF →
+// pass-through). Vẫn giữ role-floor + require2FA + MOD_ENGINEERING như actuation.
+// ★★★ Pha 6 Task 1b — `deployProcedure` (gốc, `_core/trpc.ts`) nay chain `requirePerCallFreshTotp`:
+// khi cờ BẬT, `totpCode` là **BẮT BUỘC MỖI LƯỢT GỌI**, không còn cache phiên 10 phút.
+// ★★★ I-4 (review Task 1b) — `.optional()` ĐÃ ĐƯỢC GỠ khỏi zod bên dưới. Lý do cũ (*"bắt buộc sẽ
+// gãy mọi lượt gọi khi cờ TẮT"*) **không đứng vững khi kiểm**: `useStepUpOtp.guard` KHÔNG đọc cờ
+// client nên UI gửi mã ở **cả hai** trạng thái cờ, và **0** người gọi tRPC nội bộ. Cái `.optional()`
+// ấy **không phải mỹ quan** — nó là **CƠ CHẾ** khiến `tsc` **ban phước** cho đột biến R2 (gỡ
+// `stepUp.guard` + `totpCode` khỏi một điểm gọi client ⇒ 108 file/1837 ca XANH, tsc SẠCH).
+// Bắt buộc ở zod ⇒ lượt gỡ ấy nay là một **lỗi biên dịch**. ⚠ CHỈ THU HẸP: middleware vẫn đọc raw
+// input TRƯỚC zod và fail-closed, nên zod không phải cổng an ninh — nó là cổng **hợp đồng**.
+// Lưới: `server/routers/deployStepUpFreshness.test.ts` · `client/src/lib/vramPanelStepUp.unit.test.ts`.
 const deployProcedure = deployBase.use(moduleGate("MOD_ENGINEERING"));
+// doc 80 ORC-06 — write floor (not a read-only role) + the same MOD_ENGINEERING license gate.
+const writeProcedure = writeBase.use(moduleGate("MOD_ENGINEERING"));
 import { orchestrationWorkflows, orchestrationWorkflowVersions, orchestrationRuns, orchestrationRunSteps, machines } from "../../drizzle/schema";
 import {
   deployWorkflow,
@@ -57,7 +70,7 @@ function toFoeUser(user: { id: number; role: string; name?: string | null }): Fo
 
 async function db() {
   const d = await getDb();
-  if (!d) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Database not connected" });
+  if (!d) throw appError("INTERNAL_SERVER_ERROR", "DB_UNAVAILABLE", undefined, "Database not connected");
   return d;
 }
 
@@ -91,7 +104,7 @@ export const orchestrationRouter = router({
         .from(orchestrationWorkflows)
         .where(eq(orchestrationWorkflows.id, input.id))
         .limit(1);
-      if (!row) throw new TRPCError({ code: "NOT_FOUND", message: `Workflow ${input.id} not found` });
+      if (!row) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "workflow" }, `Workflow ${input.id} not found`);
       return row;
     }),
 
@@ -109,7 +122,7 @@ export const orchestrationRouter = router({
         definition: z.record(z.string(), z.unknown()),
         simToken: z.string().max(256).optional(),
         overrideReason: z.string().max(1000).optional(),
-        totpCode: z.string().max(16).optional(),
+        totpCode: z.string().max(16),
       }),
     )
     .mutation(async ({ input, ctx }) => {
@@ -149,19 +162,29 @@ export const orchestrationRouter = router({
         .from(orchestrationWorkflowVersions)
         .where(eq(orchestrationWorkflowVersions.id, input.id))
         .limit(1);
-      if (!row) throw new TRPCError({ code: "NOT_FOUND", message: `Version ${input.id} not found` });
+      if (!row) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "workflowVersion" }, `Version ${input.id} not found`);
       return row;
     }),
 
   /**
    * W3-11 — ROLL BACK a workflow to an earlier version by re-deploying that version's
    * definition as a NEW version (append-only). Flag-gated; machine_control/canCreate.
+   * doc 80 ORC-05 — a rollback IS a deploy: `deployProcedure` (fresh per-call OTP `totpCode`)
+   * and a mandatory human `reason` (≥3 chars, audited; it is also the sim-gate override reason —
+   * the engine no longer auto-fills one).
    */
-  rollbackWorkflow: actuationProcedure
+  rollbackWorkflow: deployProcedure
     .use(requirePermission("machine_control", "canCreate"))
-    .input(z.object({ workflowId: z.number().int().positive(), version: z.number().int().positive() }))
+    .input(
+      z.object({
+        workflowId: z.number().int().positive(),
+        version: z.number().int().positive(),
+        reason: z.string().trim().min(3).max(1000),
+        totpCode: z.string().max(16),
+      }),
+    )
     .mutation(async ({ input, ctx }) => {
-      return rollbackWorkflow(input.workflowId, input.version, toFoeUser(ctx.user));
+      return rollbackWorkflow(input.workflowId, input.version, toFoeUser(ctx.user), input.reason);
     }),
 
   /** List runs (optionally filtered by workflowId), newest first. */
@@ -191,7 +214,7 @@ export const orchestrationRouter = router({
     .input(z.object({ runId: z.number().int().positive() }))
     .query(async ({ input }) => {
       const view = await getRun(input.runId);
-      if (!view) throw new TRPCError({ code: "NOT_FOUND", message: `Run ${input.runId} not found` });
+      if (!view) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "workflowRun" }, `Run ${input.runId} not found`);
       return view;
     }),
 
@@ -266,10 +289,10 @@ export const orchestrationRouter = router({
           .from(orchestrationWorkflows)
           .where(eq(orchestrationWorkflows.ref, input.workflowRef))
           .limit(1);
-        if (!wf) throw new TRPCError({ code: "NOT_FOUND", message: `Workflow "${input.workflowRef}" not found` });
+        if (!wf) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "workflow" }, `Workflow "${input.workflowRef}" not found`);
         def = wf.definitionJson as WorkflowDefinition;
       } else {
-        throw new TRPCError({ code: "BAD_REQUEST", message: "Provide either `workflow` or `workflowRef`." });
+        throw appError("BAD_REQUEST", "FIELD_REQUIRED", { field: "workflowOrWorkflowRef" }, "Provide either `workflow` or `workflowRef`.");
       }
 
       // Load referenced machine rows (machineType + capabilities) for capability resolution.
@@ -347,15 +370,17 @@ export const orchestrationRouter = router({
         .from(orchestrationWorkflows)
         .where(input.id != null ? eq(orchestrationWorkflows.id, input.id) : eq(orchestrationWorkflows.ref, input.ref!))
         .limit(1);
-      if (!wf) throw new TRPCError({ code: "NOT_FOUND", message: "Workflow not found" });
+      if (!wf) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "workflow" }, "Workflow not found");
 
       const runs = await d.select().from(orchestrationRuns).where(eq(orchestrationRuns.workflowId, wf.id));
       const active = runs.filter((r) => !["completed", "failed", "aborted"].includes(r.status));
       if (active.length > 0) {
-        throw new TRPCError({
-          code: "CONFLICT",
-          message: `Workflow "${wf.ref}" has ${active.length} active run(s). Abort or finish them before deleting.`,
-        });
+        throw appError(
+          "CONFLICT",
+          "OPERATION_FAILED",
+          { operation: "deleteWorkflow" },
+          `Workflow "${wf.ref}" has ${active.length} active run(s). Abort or finish them before deleting.`,
+        );
       }
 
       // Cascade-clean terminal run history (steps → runs) then delete the workflow.
@@ -371,9 +396,11 @@ export const orchestrationRouter = router({
   /**
    * DUPLICATE a workflow (by id OR ref) under a NEW unique ref. Copies the definition
    * (re-stamping its `ref`), resets version to 1, and creates a fresh row with NO runs.
-   * RBAC: machine_control / canCreate.
+   * RBAC: write floor + machine_control / canCreate.
+   * doc 80 ORC-06 — the copy is created `draft` (NOT runnable): startRun refuses it until it
+   * passes deployWorkflow (validation + sim-gate + version snapshot), which sets it `active`.
    */
-  duplicateWorkflow: protectedProcedure
+  duplicateWorkflow: writeProcedure
     .use(requirePermission("machine_control", "canCreate"))
     .input(
       z
@@ -392,7 +419,7 @@ export const orchestrationRouter = router({
         .from(orchestrationWorkflows)
         .where(input.id != null ? eq(orchestrationWorkflows.id, input.id) : eq(orchestrationWorkflows.ref, input.ref!))
         .limit(1);
-      if (!src) throw new TRPCError({ code: "NOT_FOUND", message: "Source workflow not found" });
+      if (!src) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "workflow" }, "Source workflow not found");
 
       const newRef = input.newRef.trim();
       const [clash] = await d
@@ -400,7 +427,7 @@ export const orchestrationRouter = router({
         .from(orchestrationWorkflows)
         .where(eq(orchestrationWorkflows.ref, newRef))
         .limit(1);
-      if (clash) throw new TRPCError({ code: "CONFLICT", message: `A workflow with ref "${newRef}" already exists.` });
+      if (clash) throw appError("CONFLICT", "ENTITY_DUPLICATE", { entity: "workflow" }, `A workflow with ref "${newRef}" already exists.`);
 
       // Re-stamp the definition's own ref so the stored JSON stays consistent.
       const def = {
@@ -416,10 +443,10 @@ export const orchestrationRouter = router({
           version: 1,
           description: src.description,
           definitionJson: def,
-          status: "active",
+          status: "draft",
           createdBy: ctx.user?.id ?? null,
         })
         .returning();
-      return { ok: true, id: row.id, ref: row.ref };
+      return { ok: true, id: row.id, ref: row.ref, status: row.status };
     }),
 });

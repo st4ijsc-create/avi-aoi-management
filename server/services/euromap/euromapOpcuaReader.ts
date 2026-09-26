@@ -187,3 +187,43 @@ export function parseNodeMap(raw: string | undefined): EuromapNodeMap | null {
   }
   return null;
 }
+
+// ── INT-01 (doc 80 Task 3) — SSRF allowlist helpers ─────────────────────────────────────
+// PURE, no I/O: `equipmentIntegrationRouter.testEuromapOpcuaConnection` (adminProcedure)
+// uses these to refuse to open an OPC-UA connection to a host that is not on the allowlist
+// (a registered `device_adapters` row or EUROMAP_OPCUA_ALLOWLIST). The read-only
+// `euromapOpcuaSnapshot` query no longer accepts a client endpoint at all — it always uses
+// the server-saved EUROMAP_OPCUA_ENDPOINT, so it needs no allowlist check.
+
+/**
+ * Extract the host (no port, no path/query) from an endpoint string. Accepts a full URL
+ * with any scheme (`opc.tcp://host:4840`, `http://host/path`) or a bare `host[:port]`.
+ * Returns null when nothing host-like can be parsed. PURE.
+ */
+export function extractEndpointHost(endpoint: string): string | null {
+  const trimmed = endpoint.trim();
+  if (!trimmed) return null;
+  try {
+    const hostname = new URL(trimmed).hostname;
+    return hostname ? hostname.toLowerCase() : null;
+  } catch {
+    // Not a parseable URL (e.g. "10.0.0.5:502" with no scheme) — take the leading
+    // host-looking segment, up to the first ':' (port), '/', '?' or '#'.
+    const m = trimmed.match(/^([^:/?#]+)/);
+    return m && m[1] ? m[1].toLowerCase() : null;
+  }
+}
+
+/**
+ * True when `endpoint`'s host exactly matches (case-insensitive) one of `allowedHosts`.
+ * No wildcard, no subdomain magic, no DNS resolution — a plain allowlist membership test
+ * over hostnames the caller already vetted (registered adapters / env allowlist). PURE.
+ */
+export function isEndpointHostAllowlisted(endpoint: string, allowedHosts: Iterable<string>): boolean {
+  const host = extractEndpointHost(endpoint);
+  if (!host) return false;
+  for (const raw of allowedHosts) {
+    if (raw.trim().toLowerCase() === host) return true;
+  }
+  return false;
+}

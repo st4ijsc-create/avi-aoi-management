@@ -3,6 +3,7 @@ import { useTranslation } from "react-i18next";
 import DashboardLayout from "@/components/DashboardLayout";
 import { PageHeader } from "@/components/patterns";
 import { trpc } from "@/lib/trpc";
+import { toastTrpcError } from "@/lib/trpcErrors";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -58,7 +59,7 @@ export default function AIActiveLearningPage() {
       setRejectReason("");
       refetchQueue();
     },
-    onError: (err) => toast.error(err.message),
+    onError: (err) => toastTrpcError(err),
   });
 
   const skipItem = trpc.aiActiveLearning.skipItem.useMutation({
@@ -73,7 +74,7 @@ export default function AIActiveLearningPage() {
       toast.success(t("al.autoLabeled", "Auto label hoàn tất: {{count}} mẫu", { count: data?.autoLabeled ?? 0 }));
       refetchQueue();
     },
-    onError: (err) => toast.error(err.message),
+    onError: (err) => toastTrpcError(err),
   });
 
   const { data: uncertaintyData } = trpc.aiActiveLearning.uncertaintySampling.useQuery({});
@@ -89,7 +90,7 @@ export default function AIActiveLearningPage() {
       );
       refetchQueue();
     },
-    onError: (err) => toast.error(err.message),
+    onError: (err) => toastTrpcError(err),
   });
 
   const scanCommittee = trpc.aiEval.scanCommittee.useMutation({
@@ -102,7 +103,7 @@ export default function AIActiveLearningPage() {
       );
       refetchQueue();
     },
-    onError: (err) => toast.error(err.message),
+    onError: (err) => toastTrpcError(err),
   });
 
   const { data: retrainData, refetch: refetchRetrain } = trpc.aiActiveLearning.checkRetrain.useQuery(

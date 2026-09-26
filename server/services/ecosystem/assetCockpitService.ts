@@ -44,6 +44,11 @@
  */
 import { and, desc, eq, inArray } from "drizzle-orm";
 import { getDb } from "../../db/connection";
+// ★★★ Đợt 40 (QA Đợt 39 #2, G113) — PHẠM VI NGƯỜI XEM. Đo trước vá: `operator1` (0 gán) gọi
+//   `assetCockpit.machineDetail(257)` ⇒ 200 + identity máy của nhà máy 18. Docblock cũ ở router khai "tenant
+//   scope is honored by the identity join — the FE scopes on it": FE lọc KHÔNG phải hàng rào; dữ liệu đã rời server.
+//   Cùng khuôn `db/hierarchy` (`idsTrongPhamVi`/`trongPhamVi`), không dựng bộ luật thứ hai (G12).
+import { idsTrongPhamVi, trongPhamVi, type PhamViDoc, type PhamViNguoiXem } from "../../db/hierarchy";
 import {
   machines as machinesTable,
   stations,
@@ -60,6 +65,7 @@ import {
   programProjects,
   programDeployments,
   genealogyChain,
+  masterAlarms,
 } from "../../../drizzle/schema";
 import {
   getLatestMachineStatus,
@@ -73,6 +79,10 @@ import {
 } from "../equipment/capabilityModel";
 import { resolveForMachineType } from "../standards/deviceTypeRegistry";
 import { getMachineOEELive } from "../oeeService";
+// ★ Đợt 34 (Pareto #1) — MỘT hợp đồng kết nối dùng chung với `factoryCommandService` (đọc docblock
+//   `trangThaiMayTuoi.ts`): nhịp tim quyết định; mốc nhịp tim chọn bằng ĐÚNG hai hàm của kho twin.
+import { dangKetNoi, mapMachineStatus, type CommandMachineStatus } from "../trangThaiMayTuoi";
+import { chonNguonMocTuoi, quyTuoiMay } from "../../db/twinCanh";
 import { computeFailureRisk, computeReliabilityStats } from "../predictiveMaintenanceService";
 import { resolveModel } from "../twin/modelRegistry";
 import {
@@ -125,6 +135,62 @@ export interface NormalizedAssetAlarm {
   source: "andon" | "safety";
   /** Best-effort raw ref (andon reason / safety eventType) for traceability. */
   raw?: string | null;
+  // doc 63 DEP-06 (AUD-02) — ISA-18.2 governance fields joined from master_alarms by
+  // alarmKey (rationalized metadata). Null when the code has no master row yet — the
+  // FE renders an honest "chưa rationalize" placeholder, never invents content.
+  cause?: string | null;
+  consequence?: string | null;
+  /** Minutes the operator has to respond before the consequence occurs. */
+  timeToRespondMin?: number | null;
+  /** Derived EEMUA-191 priority (low|medium|high|critical) from the master row. */
+  masterPriority?: string | null;
+}
+
+/**
+ * doc 63 DEP-06 — batch-attach master_alarms governance metadata (cause / consequence /
+ * timeToRespond / derived priority) onto a normalized alarm list, matched by
+ * standardCode → alarmKey. ONE query for the distinct codes (no N+1); a generic row
+ * (assetType IS NULL) is used unless a scoped row matched first. Fail-safe: any error
+ * returns the input untouched (feed keeps working without governance enrichment).
+ */
+async function attachGovernance(alarms: NormalizedAssetAlarm[]): Promise<NormalizedAssetAlarm[]> {
+  if (alarms.length === 0) return alarms;
+  try {
+    const db = await getDb();
+    if (!db) return alarms;
+    const codes = [...new Set(alarms.map((a) => a.standardCode))];
+    const rows = await db
+      .select({
+        alarmKey: masterAlarms.alarmKey,
+        assetType: masterAlarms.assetType,
+        cause: masterAlarms.cause,
+        consequence: masterAlarms.consequence,
+        timeToRespond: masterAlarms.timeToRespond,
+        priority: masterAlarms.priority,
+      })
+      .from(masterAlarms)
+      .where(inArray(masterAlarms.alarmKey, codes));
+    if (rows.length === 0) return alarms;
+    // Prefer the generic (assetType null) row per key; any scoped row is a fallback.
+    const byKey = new Map<string, (typeof rows)[number]>();
+    for (const r of rows) {
+      const cur = byKey.get(r.alarmKey);
+      if (!cur || (cur.assetType !== null && r.assetType === null)) byKey.set(r.alarmKey, r);
+    }
+    return alarms.map((a) => {
+      const m = byKey.get(a.standardCode);
+      if (!m) return a;
+      return {
+        ...a,
+        cause: m.cause ?? null,
+        consequence: m.consequence ?? null,
+        timeToRespondMin: m.timeToRespond ?? null,
+        masterPriority: m.priority ?? null,
+      };
+    });
+  } catch {
+    return alarms; // enrichment is best-effort — never break the feed
+  }
 }
 
 /** Map an andon `state` → an ISA-18.2 severity band (mirrors alarmNormalizer intent). */
@@ -164,9 +230,16 @@ function andonReasonToStandardCode(reason: string | null | undefined): string {
  * through the alarm taxonomy → { standardCode, severity, description, recommendedAction,
  * ts, source }. Read-only, fail-safe (empty on no-DB / missing tables).
  */
-export async function machineAlarms(machineId: number, limit = 50): Promise<NormalizedAssetAlarm[]> {
+export async function machineAlarms(
+  machineId: number,
+  limit = 50,
+  /** ★ Đợt 40 — phạm vi người xem; máy ngoài phạm vi ⇒ `[]`, cùng hình dạng với máy không có cảnh báo/không tồn tại. */
+  scope?: PhamViNguoiXem,
+): Promise<NormalizedAssetAlarm[]> {
   const db = await getDb();
   if (!db) return [];
+  // ★ Đợt 40 — `trongPhamVi` trả `true` khi phạm vi là `null` (toàn quyền) ⇒ lối đi cũ không thêm cổng nào.
+  if (!(await trongPhamVi("machine", machineId, scope))) return [];
   const cap = Math.max(1, Math.min(limit, 200));
   const out: NormalizedAssetAlarm[] = [];
 
@@ -201,7 +274,8 @@ export async function machineAlarms(machineId: number, limit = 50): Promise<Norm
     /* andon table absent → skip */
   }
 
-  return out.sort((a, b) => b.ts - a.ts).slice(0, cap);
+  // doc 63 DEP-06 — enrich with rationalized governance (cause/consequence/TTR/priority).
+  return attachGovernance(out.sort((a, b) => b.ts - a.ts).slice(0, cap));
 }
 
 /**
@@ -251,7 +325,8 @@ export async function robotAlarms(robotId: number, vendor: string, limit = 50): 
   } catch {
     /* safety table absent → skip */
   }
-  return out.sort((a, b) => b.ts - a.ts).slice(0, cap);
+  // doc 63 DEP-06 — same governance enrichment as machineAlarms.
+  return attachGovernance(out.sort((a, b) => b.ts - a.ts).slice(0, cap));
 }
 
 // ════════════════════════════════════════════════════════════════════════════
@@ -302,12 +377,20 @@ export interface MachineIdentity {
 }
 
 export interface MachineLiveState {
+  /** Giá trị THÔ của log `machine_status_logs` mới nhất (`online`/`offline`) — trung thực về log, KHÔNG phải kết luận. */
   status: string | null;
   lastStatusChange: number | null;
   heartbeatStatus: string | null;
   lastHeartbeat: number | null;
   operationStatus: string | null;
   connected: boolean;
+  /**
+   * ★★★ Đợt 40 (QA Đợt 39 Pareto #3) — TRẠNG THÁI ĐÃ ÁNH XẠ, CÙNG TỪ ĐIỂN với `factoryCommand.overview`
+   * (`mapMachineStatus`: nhịp tim quyết định; không nhịp tim tươi ⇒ `offline`). Đo trước vá
+   * (`.qa-dot39/bon-nguon/hb-M14.json`): `status: "online"` thô đứng cạnh `connected: false` — UI phải tự suy.
+   * Trường THÊM, `status` cũ giữ nguyên (không bỏ trường API).
+   */
+  statusMapped: CommandMachineStatus;
 }
 
 export interface ResolvedCapabilitySection {
@@ -324,7 +407,15 @@ export interface MachineDetail {
   resolvedCapability: Section<ResolvedCapabilitySection>;
   liveState: Section<MachineLiveState>;
   health: Section<{
+    /**
+     * ★ PH-39 — `null` khi `riskMethod !== "measured"`. Mục `health` vẫn có thể
+     * `available: true` (MTBF/MTTR bên cạnh là số đo thật) trong khi RIÊNG ô
+     * nguy cơ chưa đo được — nên "chưa đủ dữ liệu" phải là một trạng thái của
+     * chính ô ấy, không mượn được cờ `available` của cả mục.
+     */
     failureRisk: number | null;
+    /** Xuất xứ của `failureRisk` — xem `FailureRiskResult.riskMethod`. */
+    riskMethod: "measured" | "insufficient_data" | "unavailable";
     maintenanceUrgency: string | null;
     predictedTimeframeHours: number | null;
     recommendedMaintenanceDate: number | null;
@@ -380,13 +471,33 @@ async function loadMachineIdentity(machineId: number): Promise<MachineIdentity |
 }
 
 /**
+ * ★★★ Đợt 40 — "nhà máy của thực thể này có nằm trong phạm vi người xem không".
+ *
+ * `null` (toàn quyền / không danh tính) ⇒ `true` — KHÔNG thêm cổng (chiều dương chống vá quá tay).
+ * Thực thể có phả hệ đứt (`factoryId` NULL) ⇒ `false` cho người bị thu hẹp: không có đường nào ra nhà
+ * máy thì không có căn cứ để cho xem — fail-closed, cùng luật `idsTrongPhamVi`.
+ */
+async function nhaMayTrongPhamVi(factoryId: number | null, scope?: PhamViDoc): Promise<boolean> {
+  const ids = await idsTrongPhamVi("factory", scope);
+  if (ids === null) return true;
+  return factoryId != null && ids.includes(factoryId);
+}
+
+/**
  * Assemble the full machine cockpit payload. Returns null when the machine does not
  * exist (the router turns that into NOT_FOUND). Every OTHER section degrades to an
  * honest null on absence/error — the page never breaks on one missing source.
+ *
+ * ★ Đợt 40 — `scope`: máy NGOÀI phạm vi người xem ⇒ `null`, CÙNG hình dạng với máy không tồn tại. Một mã
+ *   riêng ("bạn không được xem máy 257") xác nhận máy 257 có thật (G82). Bỏ trống `scope` = không lọc (lối
+ *   đi không mang danh tính: REST v1, AI RCA) — router tRPC PHẢI truyền `phamViCua(ctx)`.
+ * ★ Đợt 42 — REST v1 KHÔNG còn là "lối đi không mang danh tính": khoá API mang phạm vi riêng
+ *   (`PhamViMaTenant`, trục ② của cùng bộ phân giải) và `moduleReads.ts` PHẢI truyền nó vào đây.
  */
-export async function machineDetail(machineId: number): Promise<MachineDetail | null> {
+export async function machineDetail(machineId: number, scope?: PhamViDoc): Promise<MachineDetail | null> {
   const identity = await loadMachineIdentity(machineId);
   if (!identity) return null;
+  if (!(await nhaMayTrongPhamVi(identity.factoryId, scope))) return null;
 
   // resolvedCapability — capabilityModel ⊕ registry (pure, always available).
   let resolvedCapability: MachineDetail["resolvedCapability"];
@@ -433,17 +544,65 @@ export async function machineDetail(machineId: number): Promise<MachineDetail | 
         getLatestMachineStatus(machineId),
         getLatestMachineHeartbeat(machineId),
       ]);
-      const hbTs = hb?.timestamp ? new Date(hb.timestamp).getTime() : null;
-      const connected =
-        (status?.status ?? "offline") === "online" ||
-        (hbTs != null && Date.now() - hbTs < 5 * 60 * 1000);
+      /*
+       * ★★★ Đợt 34 (Pareto #1) — `connected` KHÔNG còn nhận log `online` làm bằng chứng.
+       *   Đo 2026-09-10: 43/43 máy có log `online` (một lần khởi động lại 2026-09-06), heartbeat 54 ngày;
+       *   nhánh cũ `status==="online" ||` cho `connected=true` bất kể tuổi ⇒ header cockpit "ONLINE ·
+       *   Connected" đứng cạnh chip twin "Unknown · 54 days" trên CÙNG màn `/twin/may/14` (QA Đợt 32 a4).
+       *   Nay: `dangKetNoi` = nhịp tim tươi (mốc = `max(machines.lastHeartbeat, machine_heartbeats)` —
+       *   CÙNG `chonNguonMocTuoi` của kho twin) và log `offline` không ghi sau nhịp tim ấy. Cửa `< 5′`
+       *   viết cứng trước đây nay là hằng `NGUONG_TRANG_THAI_TUOI_MS` — một số, một chỗ.
+       * ★ `lastHeartbeat` trả ra cũng là mốc ĐÃ CHỌN ấy (không chỉ bảng `machine_heartbeats`), để ô
+       *   "Last heartbeat" của cockpit và "Updated … ago" của twin đọc cùng một số.
+       */
+      let hbMay: Date | string | null = null;
+      /*
+       * ★★★ ĐỢT 53 (QA lần 8, SAI #2) — ĐỌC LUÔN `operationStatus` TRONG CHÍNH TRUY VẤN NÀY.
+       *
+       * Bản cũ trả `operationStatus: null` CỨNG với lời khai *"`operationStatus` không có ở lớp này"* —
+       * lời khai ấy SAI: truy vấn ngay dưới đây đã mở đúng hàng `machines` cho đúng `machineId` để lấy
+       * `lastHeartbeat`. Thêm một CỘT vào cùng `select` tốn **0 truy vấn**, 0 round-trip.
+       *
+       * Cái giá của lời khai ấy, đo được (`.qa-dot53/hd-truoc-co-hb/tong.json`, máy 14 + nhịp tim tạm):
+       * `liveState.value.operationStatus = null` ⇒ `factoryCommandService:576` (`?? undefined`) mất dữ
+       * kiện ⇒ `machineDetail` nói **"running"** trong khi `overview` nói **"idle"** cho CÙNG máy, CÙNG
+       * giây; và `statusMapped` ngay tại đây cũng nói "running" cho MỌI máy đang kết nối.
+       */
+      let opStatus: string | null = null;
+      try {
+        const db = await getDb();
+        if (db) {
+          const r = await db
+            .select({ lastHeartbeat: machinesTable.lastHeartbeat, operationStatus: machinesTable.operationStatus })
+            .from(machinesTable)
+            .where(eq(machinesTable.id, machineId))
+            .limit(1);
+          hbMay = (r[0]?.lastHeartbeat as Date | string | null | undefined) ?? null;
+          opStatus = (r[0]?.operationStatus as string | null | undefined) ?? null;
+        }
+      } catch {
+        hbMay = null;
+        opStatus = null;
+      }
+      const now = Date.now();
+      const { capNhatLuc: hbTs } = quyTuoiMay(
+        chonNguonMocTuoi({ hbBang: hb?.timestamp, hbMay, statusLogTs: status?.timestamp }),
+        now,
+      );
+      const bangChung = { logStatus: status?.status, logTs: status?.timestamp, nhipTimTs: hbTs };
+      const connected = dangKetNoi(bangChung, now);
       return {
         status: status?.status ?? null,
         lastStatusChange: status?.timestamp ? new Date(status.timestamp).getTime() : null,
         heartbeatStatus: hb?.status ?? null,
         lastHeartbeat: hbTs,
-        operationStatus: null,
+        operationStatus: opStatus,
         connected,
+        // ★ Đợt 40 — CÙNG bằng chứng, CÙNG hàm với fleet (`getCommandMachineDetail`/`overview`).
+        // ★★★ Đợt 53 — và nay CÙNG DỮ KIỆN: `opStatus` đọc từ `machines."operationStatus"`, đúng cột mà
+        //   `overview` (`factoryCommandService:369`) dùng. Trước đây chỗ này truyền `null` cứng ⇒ mọi máy
+        //   đang kết nối ra "running" bất kể cột nói gì (QA lần 8 chỉ đúng dòng này).
+        statusMapped: mapMachineStatus(bangChung, opStatus, now),
       };
     },
   );
@@ -458,9 +617,23 @@ export async function machineDetail(machineId: number): Promise<MachineDetail | 
       ]);
       // No sources → treat as unavailable (honest null) rather than fabricated zeros.
       if (risk.dataPoints === 0 && rel.unplannedEvents === 0 && rel.uptimeMinutes === 0) return null;
+      /**
+       * ★★★ PH-39 — cổng này ĐÃ CÓ và ĐÃ ĐÚNG luật ("honest null … rather than
+       * fabricated zeros") nhưng đo SAI dữ kiện: `dataPoints === 0` bắt được máy
+       * KHÔNG CÓ GÌ, không bắt được máy có ĐÚNG MỘT điểm — hình dạng thật của cơ
+       * sở dữ liệu QA, nơi `dataPoints = 1` lọt cổng rồi màn in "Failure risk 0 %".
+       * Dữ kiện đúng là `riskMethod`: nó nói thẳng đã có đặc trưng nào chạy chưa.
+       *
+       * Vì sao KHÔNG trả `null` cho cả mục: MTBF/MTTR cạnh bên vẫn là số đo thật
+       * của cùng máy ấy — null hoá cả mục sẽ giấu mất hai số ĐÚNG để che một số SAI.
+       */
+      const doDuoc = risk.riskMethod === "measured";
       return {
-        failureRisk: risk.failureRisk,
-        maintenanceUrgency: risk.maintenanceUrgency,
+        failureRisk: doDuoc ? risk.failureRisk : null,
+        riskMethod: risk.riskMethod,
+        // "LOW" cũng là một lời khai ("việc này không gấp") — chưa đo được thì
+        // không được khai, cùng luật với con số.
+        maintenanceUrgency: doDuoc ? risk.maintenanceUrgency : null,
         predictedTimeframeHours: risk.predictedTimeframeHours,
         recommendedMaintenanceDate: risk.recommendedMaintenanceDate
           ? risk.recommendedMaintenanceDate.getTime()
@@ -637,12 +810,30 @@ function robotKindToKinematicFamily(kind: string): "universal-robots" | "ros2" |
  * Assemble the full robot cockpit payload. Returns null when the robot does not exist.
  * Every section degrades to an honest null on absence/error.
  */
-export async function robotDetail(robotId: number): Promise<RobotDetail | null> {
+export async function robotDetail(
+  robotId: number,
+  /** ★ Đợt 40 — phạm vi người xem; robot ngoài phạm vi ⇒ `null`, cùng hình dạng với robot không tồn tại (G82). Đợt 42: nhận cả phạm vi khoá API (trục ②). */
+  scope?: PhamViDoc,
+): Promise<RobotDetail | null> {
   const db = await getDb();
   if (!db) return null;
   const rows = await db.select().from(robots).where(eq(robots.id, robotId)).limit(1);
   const robot = rows[0];
   if (!robot) return null;
+  /*
+   * ★ Đợt 40 — `robots` KHÔNG có cột tenant (`commandCenterScope.robotFactoryGate`): nối bằng `lineId` HOẶC
+   *   `stationId` lên chuỗi phân cấp. Cả hai NULL ⇒ không có đường ra nhà máy ⇒ LOẠI cho người bị thu hẹp
+   *   (fail-closed, cùng luật `scopedRobotIds`). `null` = toàn quyền ⇒ không hỏi thêm câu nào.
+   */
+  const lineIdsPv = await idsTrongPhamVi("line", scope);
+  if (lineIdsPv !== null) {
+    // Cùng `scope` ⇒ cùng nhánh thu hẹp; `?? []` chỉ để thoả kiểu — `null` ở đây là bất khả (cùng phép phân giải).
+    const stationIdsPv = (await idsTrongPhamVi("station", scope)) ?? [];
+    const trong =
+      (robot.lineId != null && lineIdsPv.includes(robot.lineId)) ||
+      (robot.stationId != null && stationIdsPv.includes(robot.stationId));
+    if (!trong) return null;
+  }
 
   const identity: RobotIdentity = {
     id: robot.id,

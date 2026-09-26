@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { appError } from "../_core/appError";
 import { protectedProcedure, router } from "../_core/trpc";
 import { adminProcedure } from "./_shared";
 import { requirePermission } from "../_core/accessControl";
@@ -6,6 +7,10 @@ import * as db from "../db";
 import * as cachedStats from "../functions/cachedStatistics";
 import { MACHINE_TYPES } from "../constants/machineTypes";
 import { resolveThresholdEditGate } from "../services/thresholdGovernanceService";
+// Task 8 Khối C (QĐ-5) — `touchesLimits` SUY từ POINT_LIMIT_SPEC, hàm dùng
+// chung với productRouters.ts/measurementPointImport.ts (một gate thứ BA phát
+// hiện chép tay ở đây khi vá Task 8 — xem docblock trong file gốc).
+import { touchesApprovalLimitFields } from "../utils/measurementPointLimitGate";
 
 // doc 54 P0.3 — bulk-import RBAC unify: import* were adminProcedure (single-admin
 // bottleneck at rollout). Gate them on the SAME per-entity permission as the single-row
@@ -37,7 +42,7 @@ export const importRouter = router({
               await db.updateFactory(existing.id, item);
               results.success++;
             } else {
-              throw new Error('Factory code already exists');
+              throw appError("CONFLICT", "ENTITY_DUPLICATE", { entity: "factory" }, "Factory code already exists");
             }
           } else {
             await db.createFactory(item);
@@ -70,7 +75,7 @@ export const importRouter = router({
         try {
           const factory = await db.getFactoryByCode(item.factoryCode);
           if (!factory) {
-            throw new Error(`Factory ${item.factoryCode} not found`);
+            throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "factory" }, `Factory ${item.factoryCode} not found`);
           }
           
           const existing = await db.getWorkshopByCode(item.code);
@@ -84,7 +89,7 @@ export const importRouter = router({
               });
               results.success++;
             } else {
-              throw new Error('Workshop code already exists');
+              throw appError("CONFLICT", "ENTITY_DUPLICATE", { entity: "workshop" }, "Workshop code already exists");
             }
           } else {
             await db.createWorkshop({
@@ -125,7 +130,7 @@ export const importRouter = router({
         try {
           const station = await db.getStationByCode(item.stationCode);
           if (!station) {
-            throw new Error(`Station ${item.stationCode} not found`);
+            throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "station" }, `Station ${item.stationCode} not found`);
           }
           
           const existing = await db.getMachineByCode(item.code);
@@ -141,7 +146,7 @@ export const importRouter = router({
               });
               results.success++;
             } else {
-              throw new Error('Machine code already exists');
+              throw appError("CONFLICT", "ENTITY_DUPLICATE", { entity: "machine" }, "Machine code already exists");
             }
           } else {
             const crypto = await import('crypto');
@@ -196,7 +201,7 @@ export const importRouter = router({
               });
               results.success++;
             } else {
-              throw new Error('Product code already exists');
+              throw appError("CONFLICT", "ENTITY_DUPLICATE", { entity: "productModel" }, "Product code already exists");
             }
           } else {
             await db.createProductModel({
@@ -252,7 +257,7 @@ export const importRouter = router({
         try {
           const productModel = await db.getProductModelByCode(item.productModelCode);
           if (!productModel) {
-            throw new Error(`Product model ${item.productModelCode} not found`);
+            throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "productModel" }, `Product model ${item.productModelCode} not found`);
           }
 
           const existing = await db.getMeasurementPointDefByCode(productModel.id, item.code);
@@ -263,10 +268,11 @@ export const importRouter = router({
               // #4). Bulk import normally happens at setup on `development` products;
               // on a live/released product the limit overwrite is BLOCKED (skipped
               // with a clear message) so approved limits aren't silently replaced.
-              const touchesLimits =
-                item.upperLimit !== undefined ||
-                item.lowerLimit !== undefined ||
-                item.nominalValue !== undefined;
+              // Task 8 Khối C — SUY từ APPROVAL_LIMIT_FIELDS, MỘT hàm dùng chung với
+              // productRouters.ts/measurementPointImport.ts (trước bản vá chỉ chép tay
+              // 3/22 field — `unit` LÀ một field giới hạn nhưng KHÔNG được canh, một
+              // sheet chỉ đổi `unit` trên sản phẩm live ghi thẳng, lách hàng đợi duyệt).
+              const touchesLimits = touchesApprovalLimitFields(item as Record<string, unknown>);
               const gate = touchesLimits ? await resolveThresholdEditGate(existing.id) : null;
               if (gate && gate.decision === "requires_approval" && gate.enforced) {
                 results.skipped++;
@@ -328,7 +334,7 @@ export const importRouter = router({
               }
               results.success++;
             } else {
-              throw new Error('Measurement point code already exists');
+              throw appError("CONFLICT", "ENTITY_DUPLICATE", { entity: "measurementPoint" }, "Measurement point code already exists");
             }
           } else {
             // Doc 54 §11 P0.1 — plant real coordinates when the import row supplies
@@ -395,7 +401,7 @@ export const importRouter = router({
         try {
           const workshop = await db.getWorkshopByCode(item.workshopCode);
           if (!workshop) {
-            throw new Error(`Workshop ${item.workshopCode} not found`);
+            throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "workshop" }, `Workshop ${item.workshopCode} not found`);
           }
           
           const existing = await db.getProductionLineByCode(item.code);
@@ -411,7 +417,7 @@ export const importRouter = router({
               });
               results.success++;
             } else {
-              throw new Error('Line code already exists');
+              throw appError("CONFLICT", "ENTITY_DUPLICATE", { entity: "line" }, "Line code already exists");
             }
           } else {
             await db.createProductionLine({
@@ -453,7 +459,7 @@ export const importRouter = router({
         try {
           const line = await db.getProductionLineByCode(item.lineCode);
           if (!line) {
-            throw new Error(`Line ${item.lineCode} not found`);
+            throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "line" }, `Line ${item.lineCode} not found`);
           }
           
           const existing = await db.getStationByCode(item.code);
@@ -468,7 +474,7 @@ export const importRouter = router({
               });
               results.success++;
             } else {
-              throw new Error('Station code already exists');
+              throw appError("CONFLICT", "ENTITY_DUPLICATE", { entity: "station" }, "Station code already exists");
             }
           } else {
             await db.createStation({
@@ -516,17 +522,17 @@ export const importRouter = router({
           
           if (item.factoryCode) {
             const factory = await db.getFactoryByCode(item.factoryCode);
-            if (!factory) throw new Error(`Factory ${item.factoryCode} not found`);
+            if (!factory) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "factory" }, `Factory ${item.factoryCode} not found`);
             factoryId = factory.id;
           }
           if (item.workshopCode) {
             const workshop = await db.getWorkshopByCode(item.workshopCode);
-            if (!workshop) throw new Error(`Workshop ${item.workshopCode} not found`);
+            if (!workshop) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "workshop" }, `Workshop ${item.workshopCode} not found`);
             workshopId = workshop.id;
           }
           if (item.lineCode) {
             const line = await db.getProductionLineByCode(item.lineCode);
-            if (!line) throw new Error(`Line ${item.lineCode} not found`);
+            if (!line) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "line" }, `Line ${item.lineCode} not found`);
             lineId = line.id;
           }
           
@@ -545,7 +551,7 @@ export const importRouter = router({
               });
               results.success++;
             } else {
-              throw new Error('Workstation code already exists');
+              throw appError("CONFLICT", "ENTITY_DUPLICATE", { entity: "workstation" }, "Workstation code already exists");
             }
           } else {
             await db.createWorkstation({
@@ -673,11 +679,21 @@ export const exportRouter = router({
       startDate: z.date(),
       endDate: z.date(),
     }))
-    .mutation(async ({ input }) => {
+    .mutation(async ({ input, ctx }) => {
       const XLSX = await import('xlsx');
-      
-      const corporateStats = await db.getYieldRateByCorporate(input);
-      const factoryStats = await db.getYieldRateByFactory(input);
+
+      // ★★★ 2026-08-17 — điểm gọi này TRUYỀN THẲNG `input` xuống, nên hai hàm dưới không bao
+      // giờ thấy `userId` và khối lọc phạm vi của chúng (statistics.ts :2395, :2450) KHÔNG BAO
+      // GIỜ chạy ⇒ file .xlsx mang số liệu TOÀN CỤC. Thủ tục có `adminProcedure` +
+      // `requirePermission('reports_export','canExport')` nên nhẹ hơn ba router PDF/PPTX, nhưng
+      // "adminProcedure" ở đây là CỔNG VAI, không phải vai `admin`: một tài khoản không phải
+      // admin được cấp quyền xuất vẫn đi qua và vẫn đọc được mọi tenant.
+      // Cast `as 'admin' | 'user'` theo đúng khuôn 4 điểm gọi anh em ở :730-:750 cùng file
+      // (chữ ký hai hàm khai hẹp hơn `users.role` thật; giá trị lúc chạy đi nguyên vẹn và mọi
+      // vai không phải 'admin' đều rơi vào nhánh lọc — đó là hành vi đúng).
+      const actor = { userId: ctx.user.id, userRole: ctx.user.role as 'admin' | 'user' };
+      const corporateStats = await db.getYieldRateByCorporate({ ...input, ...actor });
+      const factoryStats = await db.getYieldRateByFactory({ ...input, ...actor });
 
       const wb = XLSX.utils.book_new();
       

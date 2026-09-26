@@ -11,6 +11,7 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 
 import { trpc } from "@/lib/trpc";
 import { toast } from "sonner";
+import { toastTrpcError } from "@/lib/trpcErrors";
 
 import { 
   Plus,
@@ -154,7 +155,7 @@ export default function Settings() {
       });
       refetchAlerts();
     },
-    onError: (err) => toast.error(err.message),
+    onError: (err) => toastTrpcError(err),
   });
 
   const updateAlertMutation = trpc.alert.update.useMutation({
@@ -164,7 +165,7 @@ export default function Settings() {
       setEditingAlert(null);
       refetchAlerts();
     },
-    onError: (err) => toast.error(err.message),
+    onError: (err) => toastTrpcError(err),
   });
 
   const deleteAlertMutation = trpc.alert.delete.useMutation({
@@ -172,7 +173,7 @@ export default function Settings() {
       toast.success(t("settings.deleteAlertSuccess"));
       refetchAlerts();
     },
-    onError: (err) => toast.error(err.message),
+    onError: (err) => toastTrpcError(err),
   });
 
   if (permsLoading) {

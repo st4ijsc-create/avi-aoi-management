@@ -22,9 +22,11 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Switch } from "@/components/ui/switch";
 import { Separator } from "@/components/ui/separator";
+import { ScopeEmptyNotice, SCOPE_EMPTY_NO_FACTORY_ASSIGNMENT } from "@/components/ScopeEmptyNotice";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Textarea } from "@/components/ui/textarea";
 import { trpc } from "@/lib/trpc";
+import { toastTrpcError } from "@/lib/trpcErrors";
 import {
   LayoutTemplate, Plus, Save, Trash2, Copy, Eye, Edit,
   BarChart3, LineChart, PieChart, Table2, Type, Image,
@@ -104,7 +106,7 @@ export function ReportBuilderContent() {
       setEditingReport(null);
       setActiveTab("list");
     },
-    onError: (err) => toast.error(err.message),
+    onError: (err) => toastTrpcError(err),
   });
 
   const updateMutation = trpc.reportBuilder.update.useMutation({
@@ -114,7 +116,7 @@ export function ReportBuilderContent() {
       setEditingReport(null);
       setActiveTab("list");
     },
-    onError: (err) => toast.error(err.message),
+    onError: (err) => toastTrpcError(err),
   });
 
   const deleteMutation = trpc.reportBuilder.delete.useMutation({
@@ -122,7 +124,7 @@ export function ReportBuilderContent() {
       toast.success(t('reports.reportDeleted'));
       refetch();
     },
-    onError: (err) => toast.error(err.message),
+    onError: (err) => toastTrpcError(err),
   });
 
   const duplicateMutation = trpc.reportBuilder.duplicate.useMutation({
@@ -130,7 +132,7 @@ export function ReportBuilderContent() {
       toast.success(t('reports.reportDuplicated'));
       refetch();
     },
-    onError: (err) => toast.error(err.message),
+    onError: (err) => toastTrpcError(err),
   });
 
   // ── On-demand production export (doc 32 R4 items 15/16) ─────────────────────
@@ -174,7 +176,7 @@ export function ReportBuilderContent() {
         window.open(res.downloadUrl, '_blank');
       }
     },
-    onError: (err) => toast.error(err.message),
+    onError: (err) => toastTrpcError(err),
   });
 
   const handleExport = () =>
@@ -788,6 +790,26 @@ function WidgetPreview({ widget, days }: { widget: ReportWidget; days: number })
     return <Separator className="my-4" />;
   }
 
+  /**
+   * ⚠ 2026-08-17 — SỐ 0 PHẢI TRUNG THỰC. Máy chủ nay kèm `scopeEmptyReason` vào MỌI widget
+   * (`reportBuilderRouter.getWidgetData`). Không đọc nó thì tài khoản chưa được gán nhà máy
+   * nhìn thấy một ô "0" câm và đọc ra "dây chuyền ngừng chạy" — rồi đi tìm lỗi ở đúng chỗ
+   * không có lỗi. Đặt TRƯỚC mọi nhánh vẽ số để không nhánh nào lọt qua.
+   */
+  const scopeEmptyReason = (data as { scopeEmptyReason?: string | null } | undefined)?.scopeEmptyReason;
+  if (scopeEmptyReason === SCOPE_EMPTY_NO_FACTORY_ASSIGNMENT) {
+    return (
+      <Card>
+        <CardHeader className="pb-2">
+          <CardTitle className="text-sm">{widget.title}</CardTitle>
+        </CardHeader>
+        <CardContent className="p-4 pt-0">
+          <ScopeEmptyNotice reason={scopeEmptyReason} />
+        </CardContent>
+      </Card>
+    );
+  }
+
   if (widget.type === "text_block") {
     return (
       <Card>
@@ -799,12 +821,16 @@ function WidgetPreview({ widget, days }: { widget: ReportWidget; days: number })
   }
 
   if (widget.type === "kpi_card") {
+    const kpiValue = (data as { value?: number | null } | undefined)?.value;
     return (
       <Card>
         <CardContent className="p-4">
           <div className="text-sm text-muted-foreground">{widget.title}</div>
           <div className="text-3xl font-bold mt-1">
-            {data?.value != null ? data.value.toLocaleString() : "—"}
+            {/* `getWidgetData` trả một UNION theo `widgetType` (ô `value` chỉ có ở nhánh
+                `kpi_card`), nên phải thu hẹp tường minh — cùng khuôn `(data as …)` mà hai dòng
+                `change` ngay dưới đã dùng từ trước. */}
+            {kpiValue != null ? kpiValue.toLocaleString() : "—"}
           </div>
           {(data as any)?.change != null && (
             <Badge variant="outline" className={`mt-1 text-xs ${(data as any).change >= 0 ? "text-success" : "text-destructive"}`}>

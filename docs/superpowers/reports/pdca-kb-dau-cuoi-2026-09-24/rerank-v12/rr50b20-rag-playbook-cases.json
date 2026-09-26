@@ -1,0 +1,82 @@
+{
+ "PB01": {
+  "hang": 1,
+  "top": [
+   "knowledge/workflows/ng-burst-response.playbook.yaml",
+   "knowledge/workflows/ng-handling.playbook.yaml",
+   "knowledge/domain/aoi-workflow.md",
+   "knowledge/domain/howto-ng-handling-sop.md",
+   "knowledge/domain/aoi-defect-types.md"
+  ]
+ },
+ "PB02": {
+  "hang": 1,
+  "top": [
+   "knowledge/workflows/ng-handling.playbook.yaml",
+   "knowledge/workflows/ng-handling.playbook.yaml",
+   "knowledge/domain/howto-ng-handling-sop.md",
+   "knowledge/domain/howto-ng-handling-sop.md",
+   "knowledge/domain/aoi-defect-types.md"
+  ]
+ },
+ "PB03": {
+  "hang": 1,
+  "top": [
+   "knowledge/workflows/spc-critical-review.playbook.yaml",
+   "knowledge/workflows/spc-critical-review.playbook.yaml",
+   "knowledge/features/analytics/spc-rules.md",
+   "knowledge/features/analytics/spc-analysis.md",
+   "knowledge/features/analytics/spc-rules.md"
+  ]
+ },
+ "PB04": {
+  "hang": 1,
+  "top": [
+   "knowledge/workflows/install-new-machine.playbook.yaml",
+   "knowledge/workflows/install-new-machine.playbook.yaml",
+   "knowledge/features/monitoring/machine-registration.md",
+   "knowledge/features/monitoring/machine-registration.md",
+   "knowledge/operational-approved/machine-registration.md"
+  ]
+ },
+ "PB05": {
+  "hang": 1,
+  "top": [
+   "knowledge/workflows/change-recipe-line-start.playbook.yaml",
+   "knowledge/workflows/change-recipe-line-start.playbook.yaml",
+   "knowledge/operational/recipes.md",
+   "knowledge/domain/howto-shift-change.md",
+   "knowledge/domain/howto-shift-change.md"
+  ]
+ },
+ "PB06": {
+  "hang": 1,
+  "top": [
+   "knowledge/workflows/create-measurement-point.playbook.yaml",
+   "knowledge/workflows/create-measurement-point.playbook.yaml",
+   "knowledge/features/products/measurement-point-setup.md",
+   "knowledge/features/products/measurement-point-setup.md",
+   "knowledge/domain/commission-a-new-pcb.md"
+  ]
+ },
+ "PB07": {
+  "hang": 1,
+  "top": [
+   "knowledge/workflows/ng-burst-response.playbook.yaml",
+   "knowledge/domain/howto-ng-handling-sop.md",
+   "knowledge/workflows/ng-burst-response.playbook.yaml",
+   "knowledge/domain/aoi-troubleshooting.md",
+   "knowledge/workflows/ng-handling.playbook.yaml"
+  ]
+ },
+ "PB08": {
+  "hang": 1,
+  "top": [
+   "knowledge/workflows/ng-handling.playbook.yaml",
+   "knowledge/workflows/ng-burst-response.playbook.yaml",
+   "knowledge/domain/aoi-workflow.md",
+   "knowledge/features/analytics/root-cause-analysis.md",
+   "knowledge/operational/root-cause-analysis.md"
+  ]
+ }
+}

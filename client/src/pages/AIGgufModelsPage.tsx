@@ -12,6 +12,7 @@ import { useTranslation } from "react-i18next";
 import DashboardLayout from "@/components/DashboardLayout";
 import { PageHeader, PageContainer } from "@/components/patterns";
 import { trpc } from "@/lib/trpc";
+import { toastTrpcError } from "@/lib/trpcErrors";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -54,11 +55,11 @@ export default function AIGgufModelsPage() {
 
   const loadModel = trpc.aiGguf.loadModel.useMutation({
     onSuccess: () => { toast.success(t("gguf.loadSuccess", "Đã load model thành công")); status.refetch(); models.refetch(); },
-    onError: (e) => toast.error(e.message),
+    onError: (e) => toastTrpcError(e),
   });
   const unloadModel = trpc.aiGguf.unloadModel.useMutation({
     onSuccess: () => { toast.success(t("gguf.unloadSuccess", "Đã unload model")); status.refetch(); },
-    onError: (e) => toast.error(e.message),
+    onError: (e) => toastTrpcError(e),
   });
 
   return (
@@ -237,7 +238,7 @@ function TextGenerationPlayground() {
 
   const generate = trpc.aiGguf.generate.useMutation({
     onSuccess: (data) => setResult(data.text),
-    onError: (e) => toast.error(e.message),
+    onError: (e) => toastTrpcError(e),
   });
 
   return (
@@ -329,7 +330,7 @@ function ChatInterface() {
     onSuccess: (data) => {
       setMessages(prev => [...prev, { role: "assistant", content: data.text }]);
     },
-    onError: (e) => toast.error(e.message),
+    onError: (e) => toastTrpcError(e),
   });
 
   useEffect(() => {

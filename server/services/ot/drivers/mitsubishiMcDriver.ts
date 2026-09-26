@@ -77,6 +77,7 @@ import type {
 import { NotImplementedDriver } from "./notImplementedDriver";
 import { parseMcAddress, coerceMcValue } from "./mcAddress";
 import { inverseScale } from "./otScale";
+import { DeviceUnreachableError } from "../../../_core/deviceErrors";
 
 /** Ép raw (đã inverse scale) sang kiểu mcprotocol chấp nhận theo dataType. */
 function coerceMcWrite(raw: unknown, dataType: string): number | boolean | string {
@@ -222,7 +223,7 @@ export class MitsubishiMcDriver extends NotImplementedDriver {
 
   override async readTags(tags: OtTagAddress[]): Promise<OtSample[]> {
     if (!this.connected || !this.conn) {
-      throw new Error("MitsubishiMcDriver: not connected");
+      throw new DeviceUnreachableError("mitsubishi-mc");
     }
     if (tags.length === 0) return [];
 
@@ -273,7 +274,7 @@ export class MitsubishiMcDriver extends NotImplementedDriver {
     onSample: OnOtSample,
     intervalMs = 5000,
   ): Promise<OtSubscriptionHandle> {
-    if (!this.connected) throw new Error("MitsubishiMcDriver: not connected");
+    if (!this.connected) throw new DeviceUnreachableError("mitsubishi-mc");
 
     const tick = async () => {
       try {
@@ -314,7 +315,7 @@ export class MitsubishiMcDriver extends NotImplementedDriver {
    */
   override async writeTags(writes: OtWrite[]): Promise<OtCommandResult[]> {
     if (!this.connected || !this.conn) {
-      throw new Error("MitsubishiMcDriver: not connected");
+      throw new DeviceUnreachableError("mitsubishi-mc");
     }
     if (writes.length === 0) return [];
 

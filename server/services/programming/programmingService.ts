@@ -13,10 +13,15 @@
  *     Otherwise the deploy is recorded 'simulated' and the adapter's hardware path is
  *     never invoked. Every attempt writes an append-only program_deployments row.
  *   • Idempotency: a terminal deployment for an idempotencyKey is returned as-is.
+ *     doc 80 WS-06 — a 'pending' reservation row (INSERT … ON CONFLICT DO NOTHING) is taken
+ *     BEFORE the adapter is invoked, so concurrent callers with the same key never reach the
+ *     device twice; a loser gets the existing row (possibly still 'pending').
  * ════════════════════════════════════════════════════════════════════════════
  */
 import { createHash, randomUUID } from "node:crypto";
-import { desc, eq, and } from "drizzle-orm";
+import { appError } from "../../_core/appError";
+import { DbUnavailableError } from "../../_core/dbErrors";
+import { desc, eq, and, sql } from "drizzle-orm";
 import { getDb } from "../../db/connection";
 import {
   programProjects,
@@ -77,7 +82,7 @@ const DEPLOY_APPROVAL_TTL_MS = 7 * 24 * 60 * 60 * 1000;
 
 async function db() {
   const d = await getDb();
-  if (!d) throw new Error("Database not connected");
+  if (!d) throw new DbUnavailableError();
   return d;
 }
 
@@ -156,7 +161,7 @@ export async function verifyAfterDownload(
 export async function validateArtifact(artifactId: number) {
   const d = await db();
   const [art] = await d.select().from(programArtifacts).where(eq(programArtifacts.id, artifactId)).limit(1);
-  if (!art) throw new Error(`Artifact ${artifactId} not found`);
+  if (!art) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "programmingArtifact" }, `Artifact ${artifactId} not found`);
 
   const adapter = programmingRegistry.getAdapter(art.kind as ProgrammingKind);
   const src: ProgramSource = { kind: art.kind as ProgrammingKind, language: art.language, content: art.content ?? "" };
@@ -190,7 +195,7 @@ export async function reviewArtifact(
 ) {
   const d = await db();
   const [art] = await d.select().from(programArtifacts).where(eq(programArtifacts.id, artifactId)).limit(1);
-  if (!art) throw new Error(`Artifact ${artifactId} not found`);
+  if (!art) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "programmingArtifact" }, `Artifact ${artifactId} not found`);
 
   // SoD — a version may NOT be self-approved: the reviewer must differ from the author.
   // (createdBy may be null on legacy rows; only enforce when we know the author.)
@@ -217,7 +222,7 @@ export async function reviewArtifact(
 export async function buildArtifact(artifactId: number, user: DpcUser) {
   const d = await db();
   const [art] = await d.select().from(programArtifacts).where(eq(programArtifacts.id, artifactId)).limit(1);
-  if (!art) throw new Error(`Artifact ${artifactId} not found`);
+  if (!art) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "programmingArtifact" }, `Artifact ${artifactId} not found`);
 
   if (dpcVersionReviewEnabled() && art.reviewStatus !== "approved") {
     throw new Error(
@@ -254,7 +259,7 @@ export async function buildArtifact(artifactId: number, user: DpcUser) {
 export async function simulateBuild(buildId: number, scenario: ProgSimScenario, user: DpcUser) {
   const d = await db();
   const [b] = await d.select().from(programBuilds).where(eq(programBuilds.id, buildId)).limit(1);
-  if (!b) throw new Error(`Build ${buildId} not found`);
+  if (!b) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "programBuild" }, `Build ${buildId} not found`);
 
   const adapter = programmingRegistry.getAdapter(b.adapterKind as ProgrammingKind);
   if (!adapter.simulate) {
@@ -266,7 +271,7 @@ export async function simulateBuild(buildId: number, scenario: ProgSimScenario, 
   // carries its meta — deterministic, no schema change, and stays in lock-step with the
   // built artifact.
   const [art] = await d.select().from(programArtifacts).where(eq(programArtifacts.id, b.artifactId)).limit(1);
-  if (!art) throw new Error(`Artifact ${b.artifactId} not found`);
+  if (!art) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "programmingArtifact" }, `Artifact ${b.artifactId} not found`);
   const fresh = await adapter.compile({ kind: art.kind as ProgrammingKind, language: art.language, content: art.content ?? "" });
 
   const t0 = Date.now();
@@ -310,9 +315,9 @@ interface DeployComputed {
 async function loadDeployCtx(buildId: number) {
   const d = await db();
   const [b] = await d.select().from(programBuilds).where(eq(programBuilds.id, buildId)).limit(1);
-  if (!b) throw new Error(`Build ${buildId} not found`);
+  if (!b) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "programBuild" }, `Build ${buildId} not found`);
   const [art] = await d.select().from(programArtifacts).where(eq(programArtifacts.id, b.artifactId)).limit(1);
-  if (!art) throw new Error(`Artifact ${b.artifactId} not found`);
+  if (!art) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "programmingArtifact" }, `Artifact ${b.artifactId} not found`);
   const [proj] = await d.select().from(programProjects).where(eq(programProjects.id, art.projectId)).limit(1);
   return { b, art, proj: proj ?? null, projectDeviceId: proj?.deviceId ?? null };
 }
@@ -476,34 +481,149 @@ async function computeDeploy(
 export async function deployBuild(req: DeployRequest, user: DpcUser) {
   const d = await db();
 
-  // Idempotency — return a prior terminal deployment for this key as-is.
-  const [prior] = await d
-    .select()
-    .from(programDeployments)
-    .where(eq(programDeployments.idempotencyKey, req.idempotencyKey))
-    .limit(1);
+  // Idempotency — return a prior deployment for this key as-is (fast path, no reservation).
+  const prior = await findDeploymentByKey(req.idempotencyKey);
   if (prior) return prior;
 
   const { b, art, projectDeviceId } = await loadDeployCtx(req.buildId);
-  const computed = await computeDeploy(req, b, art, projectDeviceId);
 
-  const [row] = await d
+  // doc 80 WS-06 / FLOW-04 — GIỮ CHỖ TRƯỚC KHI CHẠM THIẾT BỊ. Trước đây: SELECT → adapter →
+  // INSERT ⇒ N lượt song song cùng khoá đều lọt SELECT, đều gọi adapter (ghi thiết bị N lần),
+  // rồi N-1 lượt vỡ unique `uq_prog_deploy_idem` (500). Nay: INSERT một dòng trạng thái trung
+  // gian 'pending' (giá trị enum SẴN CÓ, không migration) ON CONFLICT DO NOTHING RETURNING —
+  // unique index là trọng tài: đúng MỘT lượt nhận được dòng ⇒ chỉ lượt đó gọi adapter rồi
+  // UPDATE kết quả; lượt thua trả dòng hiện có (có thể còn 'pending' nếu lượt thắng chưa xong).
+  const [reserved] = await d
     .insert(programDeployments)
     .values({
       buildId: req.buildId,
       projectId: art.projectId,
       deviceId: req.deviceId ?? projectDeviceId,
       stage: req.stage,
+      status: "pending",
+      simulated: true,
+      requestedBy: user.id,
+      idempotencyKey: req.idempotencyKey,
+      detailJson: { reservedAt: new Date().toISOString() },
+    })
+    .onConflictDoNothing({ target: programDeployments.idempotencyKey })
+    .returning();
+  if (!reserved) {
+    const existing = await findDeploymentByKey(req.idempotencyKey);
+    if (existing) return existing;
+    throw appError(
+      "CONFLICT",
+      "OPERATION_FAILED",
+      { operation: "deployBuild", reason: "idempotencyKeyUnreadable" },
+      `Idempotency key "${req.idempotencyKey}" is in use but its deployment could not be read back.`,
+    );
+  }
+
+  let computed: DeployComputed;
+  try {
+    computed = await computeDeploy(req, b, art, projectDeviceId);
+  } catch (e) {
+    // Không để dòng giữ chỗ kẹt 'pending' mãi: ghi 'failed' + lỗi thật rồi để lỗi nổi lên như
+    // trước. Final review fix #3a — TRUNG THỰC về thiết bị: nếu đây là lượt ghi THẬT (cùng điều
+    // kiện computeDeploy: DPC_DEPLOY_ENABLED + có người ký) thì adapter có thể đã ghi một phần
+    // ⇒ simulated=false + outcome 'unknown' (KHÔNG khẳng định "chưa chạm thiết bị").
+    const realAttempt = realDeployAttempted(req.hitl.confirmedBy);
+    const [failedRow] = await d
+      .update(programDeployments)
+      .set({
+        status: "failed",
+        error: (e as Error)?.message ?? String(e),
+        simulated: !realAttempt,
+        detailJson: { ...((reserved.detailJson ?? {}) as Record<string, unknown>), ...failureOutcome(realAttempt) },
+      })
+      .where(eq(programDeployments.id, reserved.id))
+      .returning();
+    publishDeployed(failedRow);
+    throw e;
+  }
+
+  const [row] = await d
+    .update(programDeployments)
+    .set({
       status: computed.status,
       simulated: computed.simulated,
       signedOffBy: computed.signedOffBy,
-      requestedBy: user.id,
-      idempotencyKey: req.idempotencyKey,
       detailJson: computed.detailJson,
       error: computed.error,
     })
+    .where(eq(programDeployments.id, reserved.id))
     .returning();
   publishDeployed(row);
+  return row;
+}
+
+/**
+ * Final review fix #3a — cùng điều kiện "ghi thiết bị THẬT" của computeDeploy
+ * (`dpcDeployEnabled() && hitl.confirmedBy != null`). Dùng khi computeDeploy NÉM: không biết
+ * adapter đã ghi tới đâu, nên chỉ được nói "đã mô phỏng" khi chắc chắn KHÔNG có lượt ghi thật.
+ */
+function realDeployAttempted(confirmedBy: number | null | undefined): boolean {
+  return dpcDeployEnabled() && confirmedBy != null;
+}
+
+/** detailJson bổ sung cho một lượt deploy NÉM giữa chừng. */
+function failureOutcome(realAttempt: boolean): Record<string, unknown> {
+  return realAttempt
+    ? { outcome: "unknown", outcomeNote: "deploy threw after a real device write may have started — device state unknown" }
+    : { outcome: "not_written", outcomeNote: "deploy threw before any device write (simulated path)" };
+}
+
+/** Final review fix #3b — tuổi tối thiểu (ms) của một dòng 'pending' trước khi quét đóng nó. */
+export const INTERRUPTED_DEPLOY_MIN_AGE_MS = 15 * 60_000;
+
+/**
+ * Final review fix #3b — QUÉT LÚC KHỞI ĐỘNG (song song rehydrateInterruptedRuns của FOE).
+ * `pending` là trạng thái TRONG-TIẾN-TRÌNH: deployBuild giữ chỗ → adapter → UPDATE kết quả;
+ * approveDeployment nhận hàng → adapter → UPDATE. Tiến trình chết giữa chừng ⇒ dòng kẹt
+ * 'pending' mãi (replay cùng khoá trả 'pending', rollback từ chối đích 'pending', Hộp duyệt
+ * không thấy). Đóng mọi dòng 'pending' CŨ HƠN ngưỡng thành 'failed' + "interrupted, outcome
+ * unknown" (thiết bị có thể đã bị ghi) để người thấy và xử lý. Ngưỡng tính từ mốc MỚI NHẤT
+ * (approvingAt ▸ reservedAt ▸ createdAt) — một lượt duyệt vừa nhận hàng cũ không bị quét nhầm;
+ * ngưỡng rộng để không đụng lượt deploy còn sống ở instance khác. So sánh làm TRONG SQL (tránh
+ * lệch múi giờ timestamp naive khi đọc qua postgres.js). UPDATE có điều kiện status='pending'.
+ * Fail-safe: không bao giờ ném (không được chặn khởi động).
+ */
+export async function failInterruptedDeployments(
+  minAgeMs: number = INTERRUPTED_DEPLOY_MIN_AGE_MS,
+): Promise<{ failedIds: number[] }> {
+  try {
+    const d = await getDb();
+    if (!d) return { failedIds: [] };
+    const secs = Math.max(0, Math.floor(minAgeMs / 1000));
+    const lastTouched = sql`COALESCE(
+      (${programDeployments.detailJson} ->> 'approvingAt')::timestamptz,
+      (${programDeployments.detailJson} ->> 'reservedAt')::timestamptz,
+      ${programDeployments.createdAt}::timestamptz)`;
+    const rows = await d
+      .update(programDeployments)
+      .set({
+        status: "failed",
+        error: "Deploy interrupted, outcome unknown (server restart mid-deploy) — the device may have been written; verify it before retrying.",
+        detailJson: sql`COALESCE(${programDeployments.detailJson}, '{}'::jsonb) || jsonb_build_object(
+          'outcome', 'unknown', 'interrupted', true, 'interruptedSweptAt', ${new Date().toISOString()}::text)`,
+      })
+      .where(and(eq(programDeployments.status, "pending"), sql`${lastTouched} < now() - make_interval(secs => ${secs})`))
+      .returning();
+    for (const r of rows) publishDeployed(r);
+    return { failedIds: rows.map((r) => r.id) };
+  } catch (err) {
+    console.error("[DPC] failInterruptedDeployments failed:", err instanceof Error ? err.message : String(err));
+    return { failedIds: [] };
+  }
+}
+
+async function findDeploymentByKey(idempotencyKey: string) {
+  const d = await db();
+  const [row] = await d
+    .select()
+    .from(programDeployments)
+    .where(eq(programDeployments.idempotencyKey, idempotencyKey))
+    .limit(1);
   return row;
 }
 
@@ -531,15 +651,25 @@ export async function requestDeployApproval(req: DeployApprovalRequest, requeste
   const d = await db();
 
   // Idempotency — trả lại hàng deployment đã có cho key này (đang chờ / đã kết thúc).
-  const [prior] = await d
-    .select()
-    .from(programDeployments)
-    .where(eq(programDeployments.idempotencyKey, req.idempotencyKey))
-    .limit(1);
+  const prior = await findDeploymentByKey(req.idempotencyKey);
   if (prior) return prior;
 
   const { b, art, proj, projectDeviceId } = await loadDeployCtx(req.buildId);
   const deviceId = req.deviceId ?? projectDeviceId;
+
+  // doc 80 FLOW-04 — hai lượt song song cùng khoá từng cùng lọt SELECT rồi lượt sau vỡ unique
+  // (500) sau khi ĐÃ tạo một ai_pending_actions mồ côi. Nay unique index là trọng tài
+  // (ON CONFLICT DO NOTHING); lượt thua trả dòng của lượt thắng.
+  const loserReturnsExisting = async () => {
+    const existing = await findDeploymentByKey(req.idempotencyKey);
+    if (existing) return existing;
+    throw appError(
+      "CONFLICT",
+      "OPERATION_FAILED",
+      { operation: "requestDeployApproval", reason: "idempotencyKeyUnreadable" },
+      `Idempotency key "${req.idempotencyKey}" is in use but its deployment could not be read back.`,
+    );
+  };
 
   // Build không ok → không xếp hàng chờ duyệt (từ chối trung thực, append-only audit).
   if (!b.ok) {
@@ -556,7 +686,9 @@ export async function requestDeployApproval(req: DeployApprovalRequest, requeste
         idempotencyKey: req.idempotencyKey,
         error: "Build is not ok — refusing to queue for approval.",
       })
+      .onConflictDoNothing({ target: programDeployments.idempotencyKey })
       .returning();
+    if (!row) return loserReturnsExisting();
     publishDeployed(row);
     return row;
   }
@@ -565,43 +697,51 @@ export async function requestDeployApproval(req: DeployApprovalRequest, requeste
   const actionId = randomUUID();
   const pendingIdem = `progdeploy-${req.idempotencyKey}-${randomUUID().slice(0, 8)}`;
   const expiresAt = new Date(Date.now() + DEPLOY_APPROVAL_TTL_MS);
-  await d.insert(aiPendingActions).values({
-    id: actionId,
-    tool: "program_deploy",
-    argsJson: {
-      buildId: req.buildId,
-      stage: "production",
-      deviceId: deviceId ?? null,
-      artifactId: art.id,
-      projectId: art.projectId,
-    },
-    userId: requester.id, // tạm; approveDeployment sẽ đặt lại = người ký (approver)
-    userRole: requester.role,
-    requiredPermissionJson: { module: "machine_control", action: "canCreate" },
-    summary: `Deploy production build #${req.buildId} (project ${proj?.code ?? art.projectId})`,
-    status: "proposed",
-    idempotencyKey: pendingIdem,
-    expiresAt,
-  });
 
-  const [row] = await d
-    .insert(programDeployments)
-    .values({
-      buildId: req.buildId,
-      projectId: art.projectId,
-      deviceId,
-      stage: "production",
-      status: "awaiting_approval",
-      simulated: true, // chưa chạm thiết bị cho tới khi được duyệt
-      requestedBy: requester.id,
-      idempotencyKey: req.idempotencyKey,
-      detailJson: {
-        pendingActionId: actionId,
-        approvalReason: req.reason ?? null,
-        requestedAt: new Date().toISOString(),
+  // Một transaction: dòng chờ duyệt (trọng tài theo khoá) + pending record chỉ cùng xuất hiện
+  // — không bao giờ có dòng chờ duyệt thiếu pending record hay pending record mồ côi.
+  const row = await d.transaction(async (tx) => {
+    const [dep] = await tx
+      .insert(programDeployments)
+      .values({
+        buildId: req.buildId,
+        projectId: art.projectId,
+        deviceId,
+        stage: "production",
+        status: "awaiting_approval",
+        simulated: true, // chưa chạm thiết bị cho tới khi được duyệt
+        requestedBy: requester.id,
+        idempotencyKey: req.idempotencyKey,
+        detailJson: {
+          pendingActionId: actionId,
+          approvalReason: req.reason ?? null,
+          requestedAt: new Date().toISOString(),
+        },
+      })
+      .onConflictDoNothing({ target: programDeployments.idempotencyKey })
+      .returning();
+    if (!dep) return null;
+    await tx.insert(aiPendingActions).values({
+      id: actionId,
+      tool: "program_deploy",
+      argsJson: {
+        buildId: req.buildId,
+        stage: "production",
+        deviceId: deviceId ?? null,
+        artifactId: art.id,
+        projectId: art.projectId,
       },
-    })
-    .returning();
+      userId: requester.id, // tạm; approveDeployment sẽ đặt lại = người ký (approver)
+      userRole: requester.role,
+      requiredPermissionJson: { module: "machine_control", action: "canCreate" },
+      summary: `Deploy production build #${req.buildId} (project ${proj?.code ?? art.projectId})`,
+      status: "proposed",
+      idempotencyKey: pendingIdem,
+      expiresAt,
+    });
+    return dep;
+  });
+  if (!row) return loserReturnsExisting();
   publishDeployed(row);
   return row;
 }
@@ -614,6 +754,16 @@ export async function requestDeployApproval(req: DeployApprovalRequest, requeste
  * không còn NOT_CONFIRMED. Cập nhật TẠI CHỖ hàng 'awaiting_approval' sang trạng thái kết
  * quả (rời khỏi inbox). SoD: approver ≠ requester.
  */
+/** doc 80 WS-06 — hàng không (còn) ở 'awaiting_approval' ⇒ CONFLICT có mã (trước đây: Error trần ⇒ 500). */
+function notAwaitingApproval(deploymentId: number, status: string, operation: string) {
+  return appError(
+    "CONFLICT",
+    "OPERATION_FAILED",
+    { operation, reason: "deploymentNotAwaitingApproval" },
+    `Deployment ${deploymentId} không ở trạng thái chờ duyệt (status=${status}).`,
+  );
+}
+
 export async function approveDeployment(
   deploymentId: number,
   approver: DpcUser,
@@ -621,63 +771,125 @@ export async function approveDeployment(
 ) {
   const d = await db();
   const [dep] = await d.select().from(programDeployments).where(eq(programDeployments.id, deploymentId)).limit(1);
-  if (!dep) throw new Error(`Deployment ${deploymentId} not found`);
-  if (dep.status !== "awaiting_approval") {
-    throw new Error(`Deployment ${deploymentId} không ở trạng thái chờ duyệt (status=${dep.status}).`);
-  }
+  if (!dep) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "programDeployment" }, `Deployment ${deploymentId} not found`);
+  if (dep.status !== "awaiting_approval") throw notAwaitingApproval(deploymentId, dep.status, "approveDeployment");
   // SoD (defense-in-depth; computeDeploy tái kiểm) — người duyệt phải KHÁC người yêu cầu.
   if (dep.requestedBy != null && dep.requestedBy === approver.id) {
-    throw new Error(
+    throw appError(
+      "FORBIDDEN",
+      "PERMISSION_DENIED",
+      { action: "selfApproveProgramDeploy" },
       "Segregation of duties — người ký duyệt deploy phải KHÁC người yêu cầu (không được tự duyệt).",
     );
   }
 
   const detail = (dep.detailJson ?? {}) as Record<string, unknown>;
   const actionId = typeof detail.pendingActionId === "string" ? detail.pendingActionId : null;
-  if (!actionId) throw new Error("Bản ghi chờ duyệt thiếu pendingActionId — không thể duyệt.");
+  if (!actionId) {
+    throw appError(
+      "PRECONDITION_FAILED",
+      "OPERATION_FAILED",
+      { operation: "approveDeployment", reason: "deployApprovalRecordMissing" },
+      "Bản ghi chờ duyệt thiếu pendingActionId — không thể duyệt.",
+    );
+  }
 
   const [pending] = await d.select().from(aiPendingActions).where(eq(aiPendingActions.id, actionId)).limit(1);
-  if (!pending) throw new Error("Không tìm thấy bản ghi phê duyệt (ai_pending_actions).");
+  if (!pending) {
+    throw appError(
+      "PRECONDITION_FAILED",
+      "OPERATION_FAILED",
+      { operation: "approveDeployment", reason: "deployApprovalRecordMissing" },
+      "Không tìm thấy bản ghi phê duyệt (ai_pending_actions).",
+    );
+  }
   if (pending.status !== "proposed" && pending.status !== "confirmed") {
-    throw new Error(`Bản ghi phê duyệt không hợp lệ (status=${pending.status}).`);
+    throw appError(
+      "CONFLICT",
+      "OPERATION_FAILED",
+      { operation: "approveDeployment", reason: "deployApprovalRecordInvalid" },
+      `Bản ghi phê duyệt không hợp lệ (status=${pending.status}).`,
+    );
   }
   if (pending.expiresAt.getTime() <= Date.now()) {
-    await d.update(aiPendingActions).set({ status: "expired" }).where(eq(aiPendingActions.id, actionId));
+    // Có điều kiện: chỉ đóng hàng nếu NÓ VẪN đang chờ duyệt (không đè lượt khác đã nhận).
     const [row] = await d
       .update(programDeployments)
       .set({ status: "rejected", error: "Yêu cầu deploy đã hết hạn chờ duyệt." })
-      .where(eq(programDeployments.id, deploymentId))
+      .where(and(eq(programDeployments.id, deploymentId), eq(programDeployments.status, "awaiting_approval")))
       .returning();
+    if (!row) throw notAwaitingApproval(deploymentId, "changed concurrently", "approveDeployment");
+    await d.update(aiPendingActions).set({ status: "expired" }).where(eq(aiPendingActions.id, actionId));
     publishDeployed(row);
     return row;
   }
 
-  // Lật pending → 'confirmed' và GẮN vào approver (userId = approver.id). Đây là điều kiện
-  // để dispatcher HITL vượt qua (status confirmed/executed AND userId === confirmedBy).
-  await d
-    .update(aiPendingActions)
-    .set({ status: "confirmed", userId: approver.id, userRole: approver.role })
-    .where(eq(aiPendingActions.id, actionId));
+  // doc 80 WS-06 / FLOW-04 — NHẬN hàng chờ duyệt NGUYÊN TỬ trước khi thực thi. Trước đây hai
+  // approve song song đều đọc 'awaiting_approval' rồi cùng deploy (ghi thiết bị 2 lần). Nay
+  // UPDATE … WHERE status='awaiting_approval' RETURNING: Postgres khoá hàng, lượt thứ hai đánh
+  // giá lại WHERE sau khi lượt đầu commit ⇒ 0 hàng ⇒ CONFLICT. Trạng thái trung gian 'pending'
+  // (enum SẴN CÓ) giữ hàng ra khỏi Hộp duyệt trong lúc deploy chạy.
+  const [claimed] = await d
+    .update(programDeployments)
+    .set({
+      status: "pending",
+      detailJson: { ...detail, approvingBy: approver.id, approvingAt: new Date().toISOString() },
+    })
+    .where(and(eq(programDeployments.id, deploymentId), eq(programDeployments.status, "awaiting_approval")))
+    .returning();
+  if (!claimed) throw notAwaitingApproval(deploymentId, "claimed by a concurrent approval", "approveDeployment");
 
-  const { b, art, projectDeviceId } = await loadDeployCtx(dep.buildId);
-  const reason = (typeof detail.approvalReason === "string" ? detail.approvalReason : undefined) ?? approval.reason;
-  const computed = await computeDeploy(
-    {
-      buildId: dep.buildId,
-      stage: "production",
-      idempotencyKey: dep.idempotencyKey ?? `progdeploy-${deploymentId}`,
-      deviceId: dep.deviceId ?? undefined,
-      hitl: {
-        actionId,
-        requestedBy: dep.requestedBy ?? approver.id,
-        confirmedBy: approver.id,
-        reason,
+  let computed: DeployComputed;
+  try {
+    // Lật pending → 'confirmed' và GẮN vào approver (userId = approver.id). Đây là điều kiện
+    // để dispatcher HITL vượt qua (status confirmed/executed AND userId === confirmedBy).
+    await d
+      .update(aiPendingActions)
+      .set({ status: "confirmed", userId: approver.id, userRole: approver.role })
+      .where(eq(aiPendingActions.id, actionId));
+
+    const { b, art, projectDeviceId } = await loadDeployCtx(dep.buildId);
+    const reason = (typeof detail.approvalReason === "string" ? detail.approvalReason : undefined) ?? approval.reason;
+    computed = await computeDeploy(
+      {
+        buildId: dep.buildId,
+        stage: "production",
+        idempotencyKey: dep.idempotencyKey ?? `progdeploy-${deploymentId}`,
+        deviceId: dep.deviceId ?? undefined,
+        hitl: {
+          actionId,
+          requestedBy: dep.requestedBy ?? approver.id,
+          confirmedBy: approver.id,
+          reason,
+        },
       },
-    },
-    b,
-    art,
-    projectDeviceId,
-  );
+      b,
+      art,
+      projectDeviceId,
+    );
+  } catch (e) {
+    // Không để hàng kẹt 'pending': ghi 'failed' + lỗi thật, rồi để lỗi nổi lên.
+    // Final review fix #3a — approver luôn là người ký (confirmedBy = approver.id) ⇒ lượt ghi thật
+    // khi DPC_DEPLOY_ENABLED: thiết bị có thể đã bị ghi ⇒ simulated=false + outcome 'unknown'.
+    const realAttempt = realDeployAttempted(approver.id);
+    const [failedRow] = await d
+      .update(programDeployments)
+      .set({
+        status: "failed",
+        error: (e as Error)?.message ?? String(e),
+        simulated: !realAttempt,
+        detailJson: {
+          ...detail,
+          approvedBy: approver.id,
+          approvedAt: new Date().toISOString(),
+          ...failureOutcome(realAttempt),
+        },
+      })
+      .where(eq(programDeployments.id, deploymentId))
+      .returning();
+    publishDeployed(failedRow);
+    throw e;
+  }
 
   // Lượt DUYỆT đã được xử lý xong → pending = 'executed' (giá trị enum hợp lệ:
   // proposed/confirmed/executed/denied/expired/cancelled). Kết quả deploy THẬT
@@ -721,18 +933,13 @@ export async function rejectDeployment(
 ) {
   const d = await db();
   const [dep] = await d.select().from(programDeployments).where(eq(programDeployments.id, deploymentId)).limit(1);
-  if (!dep) throw new Error(`Deployment ${deploymentId} not found`);
-  if (dep.status !== "awaiting_approval") {
-    throw new Error(`Deployment ${deploymentId} không ở trạng thái chờ duyệt (status=${dep.status}).`);
-  }
+  if (!dep) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "programDeployment" }, `Deployment ${deploymentId} not found`);
+  if (dep.status !== "awaiting_approval") throw notAwaitingApproval(deploymentId, dep.status, "rejectDeployment");
   const detail = (dep.detailJson ?? {}) as Record<string, unknown>;
   const actionId = typeof detail.pendingActionId === "string" ? detail.pendingActionId : null;
-  if (actionId) {
-    await d
-      .update(aiPendingActions)
-      .set({ status: "cancelled" })
-      .where(and(eq(aiPendingActions.id, actionId), eq(aiPendingActions.status, "proposed")));
-  }
+  // doc 80 WS-06 — có điều kiện: một lượt approve song song đã NHẬN hàng ('pending', đang
+  // deploy) thì lượt từ chối không được đè trạng thái (sổ sẽ nói "rejected" trong khi thiết bị
+  // đang được ghi). 0 hàng ⇒ CONFLICT.
   const [row] = await d
     .update(programDeployments)
     .set({
@@ -740,8 +947,15 @@ export async function rejectDeployment(
       error: `Yêu cầu deploy bị từ chối: ${reason}`,
       detailJson: { ...detail, rejectedBy: actor.id, rejectedAt: new Date().toISOString(), rejectReason: reason },
     })
-    .where(eq(programDeployments.id, deploymentId))
+    .where(and(eq(programDeployments.id, deploymentId), eq(programDeployments.status, "awaiting_approval")))
     .returning();
+  if (!row) throw notAwaitingApproval(deploymentId, "changed concurrently", "rejectDeployment");
+  if (actionId) {
+    await d
+      .update(aiPendingActions)
+      .set({ status: "cancelled" })
+      .where(and(eq(aiPendingActions.id, actionId), eq(aiPendingActions.status, "proposed")));
+  }
   publishDeployed(row);
   return row;
 }
@@ -799,7 +1013,17 @@ export async function rollbackDeployment(
 ) {
   const d = await db();
   const [target] = await d.select().from(programDeployments).where(eq(programDeployments.id, deploymentId)).limit(1);
-  if (!target) throw new Error(`Deployment ${deploymentId} not found`);
+  if (!target) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "programDeployment" }, `Deployment ${deploymentId} not found`);
+  // doc 80 WS-03 — đích chưa từng chạm thiết bị (bị từ chối / đang chờ duyệt / đang chạy)
+  // thì không có gì để "lùi": từ chối có mã, không tạo lượt deploy nào.
+  if (ROLLBACK_REFUSED_TARGET.has(target.status)) {
+    throw appError(
+      "PRECONDITION_FAILED",
+      "OPERATION_FAILED",
+      { operation: "rollbackDeployment", reason: "rollbackTargetNotDeployed" },
+      `Deployment ${deploymentId} ở trạng thái "${target.status}" — không thể khôi phục (chỉ khôi phục một lần deploy đã thực hiện).`,
+    );
+  }
 
   // Find the most recent successful deployment BEFORE the target, to revert to.
   // QA W5 (high): phải lọc theo ĐÚNG deviceId của target — trong fleet mọi máy chung
@@ -813,7 +1037,14 @@ export async function rollbackDeployment(
     .where(and(...conds))
     .orderBy(desc(programDeployments.id));
   const previous = history.find((h) => h.id < target.id && (h.status === "deployed" || h.status === "verified" || h.status === "simulated"));
-  if (!previous) throw new Error("No prior deployment to roll back to.");
+  if (!previous) {
+    throw appError(
+      "PRECONDITION_FAILED",
+      "OPERATION_FAILED",
+      { operation: "rollbackDeployment", reason: "noPriorDeploymentToRollBack" },
+      "No prior deployment to roll back to.",
+    );
+  }
 
   const dep = await deployBuild(
     // Ép deviceId = target.deviceId (nếu có) để LÙI ĐÚNG máy, không dùng previous.deviceId.
@@ -821,8 +1052,42 @@ export async function rollbackDeployment(
     user,
   );
 
-  // Stamp the rollback link + mark the target as rolled_back (audit only).
-  await d.update(programDeployments).set({ rolledBackFromId: target.id }).where(eq(programDeployments.id, dep.id));
-  await d.update(programDeployments).set({ status: "rolled_back" }).where(eq(programDeployments.id, target.id));
-  return { ...dep, rolledBackFromId: target.id };
+  // doc 80 WS-03 — ROLLBACK TRUNG THỰC. Trước đây đích bị đánh 'rolled_back' VÔ ĐIỀU KIỆN
+  // (kể cả khi lượt lùi failed/rejected/simulated) ⇒ sổ WORM nói "đã khôi phục" trong khi
+  // máy vẫn chạy bản lỗi. Nay chỉ đánh khi lượt lùi THỰC SỰ ghi được thiết bị (deployed /
+  // verified), hoặc khi CẢ đích lẫn lượt lùi đều 'simulated' (ghi nhận nhất quán trong chế độ
+  // mô phỏng — không có thiết bị nào bị nói dối). Ngoài ra đích giữ nguyên, client nhận
+  // status thật của lượt lùi.
+  const markTarget = rollbackMarksTarget(target.status, dep.status);
+
+  // Hai lệnh cập nhật trong MỘT transaction: liên kết rollback + trạng thái đích cùng thành
+  // hoặc cùng không. Đánh đích có điều kiện theo trạng thái đã đọc (không đè một thay đổi
+  // song song).
+  const linked = await d.transaction(async (tx) => {
+    const [link] = await tx
+      .update(programDeployments)
+      .set({ rolledBackFromId: target.id })
+      .where(eq(programDeployments.id, dep.id))
+      .returning();
+    if (markTarget) {
+      await tx
+        .update(programDeployments)
+        .set({ status: "rolled_back" })
+        .where(and(eq(programDeployments.id, target.id), eq(programDeployments.status, target.status)));
+    }
+    return link ?? dep;
+  });
+  return { ...linked, rolledBackFromId: target.id, targetRolledBack: markTarget };
+}
+
+/** Đích ở các trạng thái này chưa từng (hoặc chưa xong) chạm thiết bị ⇒ không có gì để lùi. */
+const ROLLBACK_REFUSED_TARGET = new Set<string>(["rejected", "awaiting_approval", "pending"]);
+
+/**
+ * doc 80 WS-03 — đích chỉ thành 'rolled_back' khi lượt lùi ghi thật được thiết bị, hoặc khi cả
+ * hai đều là bản ghi mô phỏng. Pure/testable.
+ */
+export function rollbackMarksTarget(targetStatus: string, rollbackStatus: string): boolean {
+  if (rollbackStatus === "deployed" || rollbackStatus === "verified") return true;
+  return rollbackStatus === "simulated" && targetStatus === "simulated";
 }

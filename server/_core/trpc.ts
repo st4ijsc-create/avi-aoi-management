@@ -1,39 +1,193 @@
 import { NOT_ADMIN_ERR_MSG, UNAUTHED_ERR_MSG } from '@shared/const';
-import { initTRPC, TRPCError } from "@trpc/server";
+import { initTRPC } from "@trpc/server";
+import type { TRPCDefaultErrorShape, TRPCErrorFormatter } from "@trpc/server";
 import superjson from "superjson";
-import speakeasy from "speakeasy";
 import type { TrpcContext } from "./context";
+// ★★★ Pha 6 Task 6 — CHỦ DUY NHẤT của phép xác minh TOTP (verify + tiêu mã). File này **không
+// còn** nhập `speakeasy`: `totpReplayScan.test.ts` cưỡng chế ∀ trên toàn `server/**`.
+import { verifyTotpOnce, dauLuotGoiMoi } from "./totpOnce";
 // Doc 37 P0-3 — server-side per-module license gate (flag-gated pass-through).
 import { moduleGate } from "./moduleGate";
+import { appError, readAppErrorMeta } from "./appError";
+// ★★★ Pha 7 / I-4 — chủ DUY NHẤT của vị từ cổng buộc-đổi-mật-khẩu + tập miễn trừ CỐ Ý.
+import { biChanBoiCongDoiMatKhau, duocMienTruBuocDoiMatKhau } from "@shared/buocDoiMatKhau";
+
+/**
+ * Đợt sửa cuối (Phần 4, khuyến nghị mạnh của review cuối) — CÔNG TẮC QUAY LUI.
+ *
+ * Trước đây `appCode`/`appParams` được gắn VÔ ĐIỀU KIỆN vào mọi phản hồi lỗi. Nếu
+ * sau khi lên production phát hiện một câu dịch sai lan rộng (vd một khoá từ điển
+ * gây hiểu nhầm nghiêm trọng hơn câu tiếng Anh gốc), cách duy nhất để lùi lại là
+ * revert 43 commit + build lại toàn bộ FE — quá chậm cho một sự cố đang diễn ra.
+ *
+ * Mặc định BẬT (`!== "false"`, không phải `=== "true"`) — thiếu biến môi trường vẫn
+ * giữ hành vi hiện tại (không đổi gì cho ai chưa biết tới cờ này). Đặt
+ * `APP_ERROR_CODES_ENABLED=false` để client tự động rơi về ĐÚNG hành vi trước
+ * sprint mã-lỗi (message thô làm câu hiện, không có appCode/appParams trong
+ * shape.data) — KHÔNG cần đụng bundle FE, vì `trpcErrors.ts`/`errorCodes.ts` phía
+ * client đã tự rơi về `fallback` khi `getAppError()` trả null (xem
+ * client/src/lib/trpcErrors.ts `getAppError`).
+ */
+function appErrorCodesEnabled(): boolean {
+  return process.env.APP_ERROR_CODES_ENABLED !== "false";
+}
+
+/** Xuất riêng để test (appError.test.ts) dựng lại ĐÚNG router thật thay vì chép tay
+ *  errorFormatter — bài học §6(2): chặng nối tay bỏ sót làm chết im lặng trường mới. */
+export const errorFormatter: TRPCErrorFormatter<
+  TrpcContext,
+  TRPCDefaultErrorShape & {
+    data: TRPCDefaultErrorShape["data"] & {
+      conflict?: unknown;
+      appCode?: string;
+      appParams?: Record<string, string | number>;
+    };
+  }
+> = ({ shape, error }) => {
+  // Doc 31 UX3 — additive forward of an optimistic-lock CONFLICT payload. Only
+  // present when a mutation threw TRPCError({ cause: { mpConflict } }); every
+  // other error is unaffected. Lets the client show current values + a
+  // reload/overwrite choice without a second round-trip.
+  const mpConflict = (error.cause as { mpConflict?: unknown } | undefined)?.mpConflict;
+  // Sprint 5 §4.2 — mã lỗi máy-đọc-được. Chỉ có mặt khi lỗi được dựng bằng
+  // appError(); mọi lỗi khác giữ nguyên hình dạng phản hồi như trước.
+  const appMeta = appErrorCodesEnabled() ? readAppErrorMeta(error) : null;
+  return {
+    ...shape,
+    data: {
+      ...shape.data,
+      // Strip stack traces in production to avoid leaking internals
+      stack: process.env.NODE_ENV === 'production' ? undefined : shape.data.stack,
+      ...(mpConflict ? { conflict: mpConflict } : {}),
+      ...(appMeta ? { appCode: appMeta.appCode, ...(appMeta.appParams ? { appParams: appMeta.appParams } : {}) } : {}),
+    },
+  };
+};
 
 const t = initTRPC.context<TrpcContext>().create({
   transformer: superjson,
-  errorFormatter({ shape, error }) {
-    // Doc 31 UX3 — additive forward of an optimistic-lock CONFLICT payload. Only
-    // present when a mutation threw TRPCError({ cause: { mpConflict } }); every
-    // other error is unaffected. Lets the client show current values + a
-    // reload/overwrite choice without a second round-trip.
-    const mpConflict = (error.cause as { mpConflict?: unknown } | undefined)?.mpConflict;
-    return {
-      ...shape,
-      data: {
-        ...shape.data,
-        // Strip stack traces in production to avoid leaking internals
-        stack: process.env.NODE_ENV === 'production' ? undefined : shape.data.stack,
-        ...(mpConflict ? { conflict: mpConflict } : {}),
-      },
-    };
-  },
+  errorFormatter,
 });
 
 export const router = t.router;
-export const publicProcedure = t.procedure;
+
+/* ══════════════════════════════════════════════════════════════════════════════════════════════
+ * ★★★★ Pha 7 / review TOÀN NHÁNH **I-4** — **CỔNG BUỘC ĐỔI MẬT KHẨU, PHÍA MÁY CHỦ.**
+ * ══════════════════════════════════════════════════════════════════════════════════════════════
+ * Task 8 xoay bí mật thật trên 8/8 tài khoản và đặt cờ *"phải đổi mật khẩu"*; review đo được cờ ấy
+ * có **0 người đọc client** và **0 phép cưỡng chế máy chủ**. Khối này là nửa máy chủ của bản vá.
+ *
+ * ⚠⚠⚠ **LƯỢNG TỪ, VÀ NÓ LÀ ∀ — KHÔNG PHẢI ∃.** Phát biểu đúng:
+ *
+ *   ***∀ thủ tục tRPC, TRỪ tập tối thiểu cần để một người bị chặn còn đổi được mật khẩu và thoát
+ *   ra: một người đang bị buộc đổi mật khẩu (và không được miễn trừ) KHÔNG gọi được.***
+ *
+ * Câu *"∃ vài thủ tục nhạy cảm bị chặn"* là câu **SAI** ở đây, và nó sai theo một cách đã tái diễn
+ * **MƯỜI BẢY** lần trong chuỗi pha này: cái gì **LIỆT KÊ** thì luôn có phần tử thứ **N+1**. Hệ có
+ * **2.212** thủ tục; một danh sách "thủ tục nhạy cảm" viết tay hôm nay sẽ thiếu thủ tục thứ 2.213
+ * sinh ra ở một file **chưa tồn tại**, và nó sẽ thiếu **im lặng**.
+ *
+ * ⇒ Phép chặn nằm ở **GỐC** — `thuTucGoc` dưới đây — chỗ mà **mọi** builder thủ tục của repo
+ *   (`publicProcedure` · `protectedProcedure` · `adminProcedure` · `roleProcedure()` và mọi thứ
+ *   dẫn xuất: `writeProcedure` · `actuationProcedure` · `deployProcedure` · `moduleProcedure()`)
+ *   **buộc** đi qua. Một thủ tục MỚI **tự động** được chặn; không ai phải nhớ khai gì.
+ *   Lưới của lượng từ ấy: `server/_core/buocDoiMatKhau.test.ts` §1 — nó **phân giải chuỗi
+ *   middleware của cả 2.212 thủ tục** trên `appRouter` và đòi **phần bù RỖNG**.
+ *
+ * ⚠ `t` là **module-local** (không export) ⇒ không ai dựng được một thủ tục vòng qua gốc này mà
+ *   không sửa chính file này. Đó là điều kiện để câu ∀ trên **đúng theo cấu tạo**, chứ không đúng
+ *   nhờ một lượt review nhớ dặn.
+ * ══════════════════════════════════════════════════════════════════════════════════════════════ */
+
+/**
+ * ★★★ **TẬP CHO QUA — TỐI THIỂU, VÀ MỖI PHẦN TỬ CÓ MỘT LÝ DO BẮT BUỘC.**
+ *
+ * Bất biến sống-còn của cổng này: ***KHÔNG ĐƯỢC KHOÁ AI RA NGOÀI.*** Người bị chặn phải luôn tới
+ * được màn đổi mật khẩu, đổi xong thì cờ **tự** hạ (`updateUserPassword` ghi `passwordChangedAt`
+ * ⇒ `suyRaPhaiDoiMatKhau` tắt — không ai phải nhớ xoá cờ). Bốn đường dưới đây là **toàn bộ** thứ
+ * cần cho vòng đời ấy:
+ *
+ *   · `auth.login`          — **đăng nhập**. Lượt đăng nhập diễn ra khi `ctx.user` còn `null` nên
+ *                             theo cấu tạo đã không bị chặn; giữ nó ở đây để câu *"đăng nhập luôn
+ *                             tới được"* là một **quyết định được nói ra**, không phải một hệ quả
+ *                             tình cờ của thứ tự middleware (lăng kính *"an toàn là HỆ QUẢ của
+ *                             một thứ khác đang hỏng"* — đã bảy lần).
+ *   · `auth.me`             — **đọc danh tính mình**. Chặn nó là chặn chính ô `mustChangePassword`
+ *                             mà client dùng để biết phải đi đâu ⇒ trắng trang, không lối ra.
+ *   · `auth.logout`         — **đăng xuất**. Lối thoát cuối cùng phải luôn mở.
+ *   · `user.changePassword` — **đổi mật khẩu**. Chặn nó là biến cổng thành nhà tù.
+ *
+ * ⚠⚠ Đây là một danh sách **VIẾT TAY**, tức đúng thứ mà cả khối docstring trên vừa chê. Nó được
+ *    chấp nhận **chỉ vì** nó là tập *cho qua* (thêm nhầm một phần tử là **mở** một lỗ — nhìn thấy
+ *    được trong diff; **quên** một phần tử chỉ làm hỏng theo chiều **ĐÓNG**), và **chỉ khi** nó
+ *    được canh bằng một **lưới HAI CHIỀU**, đúng khuôn `publicUser.ts` dùng cho các cột `users`:
+ *      · chiều A — ∀ đường ở đây **TỒN TẠI** trên `appRouter` (một lượt đổi tên thủ tục làm cổng
+ *        ĐỎ, thay vì lặng lẽ biến phần tử ấy thành mục ma và nhốt người dùng lại);
+ *      · chiều B — ∀ thủ tục **NGOÀI** tập này ⇒ **BỊ CHẶN** thật (không phải "được cho là chặn").
+ *    Cả hai ở `server/_core/buocDoiMatKhau.test.ts` §2/§3.
+ */
+export const THU_TUC_CHO_QUA: readonly string[] = [
+  "auth.login",
+  "auth.me",
+  "auth.logout",
+  "user.changePassword",
+];
+
+const CHO_QUA = new Set<string>(THU_TUC_CHO_QUA);
+
+/**
+ * ★★★★ Middleware của cổng. Đặt ở **GỐC** (`thuTucGoc`), nên nó là middleware **đầu tiên** của
+ * mọi thủ tục — chạy trước cả `requireUser`, trước zod, trước mọi lượt đọc dữ liệu.
+ *
+ * ⚠ **KHÔNG `try/catch` quanh lượt đọc DB.** Nếu `db.phaiDoiMatKhau` ném thì lượt gọi **hỏng** —
+ *   đó là hành vi ĐÚNG (fail-closed). Bọc nó lại và `return next()` là để một `catch` mặc áo của
+ *   phép đo: cổng sẽ khai *"không ai bị buộc đổi"* mỗi lần DB nấc, **không một dòng log nào**.
+ * ⚠ Chi phí, ghi đúng: **1 `SELECT` hai cột trên `users` theo khoá chính, cho mỗi lượt gọi tRPC
+ *   của một người dùng KHÔNG được miễn trừ**. Ba đường thoát sớm ở trên nó (không có người dùng ·
+ *   thủ tục cho qua · vai được miễn trừ) đều **không** chạm DB, nên đường nạp máy (public,
+ *   `ctx.user === null`) và mọi lượt gọi của `admin` trả **0** đồng chi phí. Không cache: một bộ
+ *   nhớ đệm theo `userId` sẽ giữ người vừa đổi mật khẩu trong nhà tù thêm một TTL, còn một bộ nhớ
+ *   đệm theo `ctx` sẽ hỏng đúng ở lưới đối chứng dương (đổi mật khẩu **trong cùng** một ngữ cảnh).
+ */
+export const chanKhiPhaiDoiMatKhau = t.middleware(async (opts) => {
+  const { ctx, next, path } = opts;
+  // Chưa đăng nhập ⇒ không có gì để cưỡng chế (đường nạp máy `publicProcedure` đi lối này).
+  if (!ctx.user) return next();
+  if (CHO_QUA.has(path)) return next();
+  // 🔴 Lỗ CỐ Ý — quyết định chủ dự án 2026-08-09. Chủ của tập miễn trừ: `shared/buocDoiMatKhau.ts`.
+  if (duocMienTruBuocDoiMatKhau(ctx.user.role)) return next();
+
+  // ⚠⚠ Đọc DB **MỚI**. `ctx.user.passwordInvalidBefore` đã bị `redactServerOnlyUserFields` làm
+  //    rỗng (Pha 7 Task 7) ⇒ suy từ đó cho `false` LUÔN LUÔN, tức cổng này thành trang trí.
+  const { phaiDoiMatKhau } = await import("../db");
+  if (!biChanBoiCongDoiMatKhau(ctx.user.role, await phaiDoiMatKhau(ctx.user.id))) return next();
+
+  throw appError(
+    "FORBIDDEN",
+    "MUST_CHANGE_PASSWORD",
+    undefined,
+    "Bạn phải đổi mật khẩu trước khi tiếp tục sử dụng hệ thống.",
+  );
+});
+
+/**
+ * ★★★★ **GỐC của MỌI thủ tục trong repo.** Xem khối lượng từ ∀ ở trên trước khi sửa dòng này.
+ * ⚠ Mọi builder bên dưới **phải** bắt nguồn từ đây, không từ `t.procedure`. Lưới §1 của
+ *   `buocDoiMatKhau.test.ts` đo lại điều đó trên cả 2.212 thủ tục, nên một builder mới quên gốc
+ *   này là **ĐỎ**, không phải một lỗ im lặng.
+ */
+const thuTucGoc = t.procedure.use(chanKhiPhaiDoiMatKhau);
+
+export const publicProcedure = thuTucGoc;
 
 const requireUser = t.middleware(async opts => {
   const { ctx, next } = opts;
 
   if (!ctx.user) {
-    throw new TRPCError({ code: "UNAUTHORIZED", message: UNAUTHED_ERR_MSG });
+    // Task 10 (F3, doc71) — AUTH_REQUIRED: chưa đăng nhập (ctx.user null), đúng
+    // ngữ cảnh mã này được định nghĩa cho (khác PERMISSION_DENIED — có quyền
+    // hay không CHỈ xét được sau khi biết là ai).
+    throw appError("UNAUTHORIZED", "AUTH_REQUIRED", undefined, UNAUTHED_ERR_MSG);
   }
 
   return next({
@@ -112,21 +266,35 @@ const auditMutationMiddleware = t.middleware(async (opts) => {
  * server/db/tenantContext.withTenantScope(db, ctx.tenantScope, fn) to activate
  * the RLS policies. Default off → zero cost and no behaviour change.
  */
-const tenantRlsEnabled = process.env.TENANT_RLS_ENABLED === "true";
-
+/**
+ * ⚠ ĐỌC TẠI THỜI ĐIỂM GỌI, không phải lúc nạp module.
+ *
+ * Bản cũ là `const tenantRlsEnabled = process.env.TENANT_RLS_ENABLED === "true"`
+ * ở cấp module. `server/db/tenantContext.ts` thì lại có `isTenantRlsEnabled()`
+ * đọc lúc gọi, kèm docblock nói rõ "để test/vận hành lật cờ mà không cần khởi
+ * động lại". Hai nửa của CÙNG một cơ chế đọc cờ ở HAI thời điểm khác nhau: một
+ * bài test `vi.stubEnv` lật cờ rồi gọi router sẽ thấy tầng dữ liệu cưỡng chế
+ * trong khi middleware vẫn nghĩ cờ đang tắt (hoặc ngược lại) — lưới xanh mà cơ
+ * chế lệch pha. Nay cả hai dùng CHUNG một hàm.
+ */
 const tenantScopeMiddleware = t.middleware(async (opts) => {
   const { ctx, next } = opts;
-  if (!tenantRlsEnabled || !ctx.user) return next();
+  const { isTenantRlsEnabled, chayVoiDanhTinhTenant } = await import("../db/tenantContext");
+  if (!isTenantRlsEnabled() || !ctx.user) return next();
   try {
     const { getTenantScope } = await import("./accessControl");
     const scope = await getTenantScope(ctx.user.id, String(ctx.user.role));
-    return next({ ctx: { ...ctx, tenantScope: scope } });
+    // NỬA THỨ HAI của điểm nối: đặt phạm vi vào AsyncLocalStorage cho toàn bộ
+    // nhánh async của request. Tầng dữ liệu đọc lại bằng
+    // `chayTheoPhamViTenantHienTai(db, fn)` mà KHÔNG cần `ctx` luồn qua chữ ký.
+    // `ctx.tenantScope` vẫn được giữ nguyên cho nơi gọi cũ.
+    return await chayVoiDanhTinhTenant(scope, () => next({ ctx: { ...ctx, tenantScope: scope } }));
   } catch {
     return next(); // never block a request on scope derivation
   }
 });
 
-export const protectedProcedure = t.procedure
+export const protectedProcedure = thuTucGoc
   .use(requireUser)
   .use(auditMutationMiddleware)
   .use(tenantScopeMiddleware);
@@ -153,19 +321,64 @@ export function moduleProcedure(moduleCode: string) {
 // `adminProcedure.use(moduleGate('MOD_FEDERATION'))`.
 export { moduleGate };
 
-export const adminProcedure = t.procedure.use(
+/**
+ * ★★★ CHẾ ĐỘ 2FA THEO TRIỂN KHAI (quyết định chủ dự án 2026-08-24) — MỘT công tắc, MỘT chủ.
+ *
+ * Hai kiểu triển khai có hai bài toán ngược nhau: cấp qua INTERNET thì 2FA bắt buộc là đúng;
+ * nội bộ nhà máy không internet thì "100 kỹ sư, đăng nhập/đăng xuất nhiều lần một ngày, mỗi lần
+ * móc máy xác thực" là chi phí thật mà không mua thêm được bao nhiêu (nguyên văn chủ dự án ở
+ * docblock `PRIVILEGED_ROLES` bên dưới — cạnh viện dẫn IEC mà nó nới ra).
+ *
+ * `AUTH_2FA_BAT_BUOC=0` ⇒ chế độ NỘI BỘ. Ba tầng ép 2FA nới ra, TỪNG TẦNG một chính sách riêng:
+ *   (1) `adminProcedure`  — thôi đòi BẬT 2FA; kiểm VAI giữ NGUYÊN TỪNG CHỮ.
+ *   (2) `require2FA`      — thôi đòi BẬT cho vai đặc quyền; nhánh chưa-đăng-nhập giữ NGUYÊN.
+ *   (3) step-up OTP       — người ĐÃ bật 2FA vẫn bị hỏi OTP như cũ (đã có thiết bị thì bước xác
+ *       nhận trước lệnh chạm máy vật lý là rẻ và đáng); người CHƯA bật được cho qua nhưng lượt
+ *       bỏ-qua GHI SỔ AUDIT (`details.stepUp = "bo_qua_che_do_noi_bo"`) để còn truy được.
+ * MỌI giá trị khác `"0"` — kể cả VẮNG biến — ⇒ bắt buộc như cũ: mặc định trong MÃ phải an toàn
+ * cho triển khai cấp-qua-internet, vì đổi mặc định là đổi tư thế an ninh của mọi bản cài chưa
+ * khai biến này.
+ *
+ * ⚠ KHÔNG nới kèm: kiểm VAI ở mọi tầng · TOTP lúc ĐĂNG NHẬP của tài khoản đã bật (opt-in theo
+ *   người dùng, chủ dự án kiểm soát ai bật) · CLI từ chối tài khoản có 2FA (`danhTinhCli.ts`) ·
+ *   `protectedProcedure`/phiên/RBAC bit. Cờ này chỉ chạm đúng ba khối trên.
+ * ⚠ Đọc TẠI THỜI ĐIỂM GỌI, không phải lúc nạp module — cùng bài học `TENANT_RLS_ENABLED` ở trên:
+ *   lưới đặt env trong ca phải lật được cờ mà không cần nạp lại module.
+ * Lưới + đột biến A/B hai chiều từng tầng: `server/_core/cheDo2faTheoTrienKhai.test.ts`.
+ */
+export function batBuoc2FA(): boolean {
+  return process.env.AUTH_2FA_BAT_BUOC !== "0";
+}
+
+export const adminProcedure = thuTucGoc.use(
   t.middleware(async opts => {
     const { ctx, next } = opts;
 
     if (!ctx.user || ctx.user.role !== 'admin') {
-      throw new TRPCError({ code: "FORBIDDEN", message: NOT_ADMIN_ERR_MSG });
+      // Task 10 (F3, doc71) — điều kiện gộp CẢ "chưa đăng nhập" LẪN "đã đăng
+      // nhập nhưng không phải admin" thành MỘT thông báo (tiền lệ ĐÃ CÓ, y hệt
+      // hierarchyRouters.ts machineRegistrationGate: `ctx.user?.role !== "admin"`
+      // → PERMISSION_DENIED{action:"adminAccess"}) — giữ NGUYÊN hành vi gộp
+      // này (không tách thành AUTH_REQUIRED riêng cho nhánh !ctx.user), đúng
+      // quy tắc "giữ nguyên trừ khi có lý do rõ": tách sẽ đổi hành vi ngoài
+      // phạm vi di trú cơ chế ném lỗi của task này.
+      throw appError("FORBIDDEN", "PERMISSION_DENIED", { action: "adminAccess" }, NOT_ADMIN_ERR_MSG);
     }
 
-    if (!ctx.user.twoFactorEnabled) {
-      throw new TRPCError({
-        code: "FORBIDDEN",
-        message: "Tài khoản admin phải bật xác thực 2 bước (2FA). Vào Cài đặt > Bảo mật để thiết lập.",
-      });
+    // Chế độ 2FA theo triển khai (xem `batBuoc2FA`): ở chế độ NỘI BỘ (cờ `0`) khối đòi-bật-2FA
+    // này được bỏ qua — kiểm VAI ở NGAY TRÊN giữ nguyên từng chữ (nới 2FA không bao giờ kèm nới
+    // vai). Hệ quả phụ đo được: admin chưa bật 2FA hết bị `license.systemState` ném
+    // TWO_FACTOR_NOT_SET_UP ra console ở mọi trang.
+    if (batBuoc2FA() && !ctx.user.twoFactorEnabled) {
+      throw appError(
+        "FORBIDDEN",
+        "TWO_FACTOR_NOT_SET_UP",
+        // reason "setUpInSecuritySettings" — TÀI KHOẢN NÀY (đã đăng nhập, đã
+        // biết là admin) cần ĐI THIẾT LẬP 2FA, đúng lớp 4/6 call site Task 4
+        // (F6) đã chốt dùng reason này (không phải nhánh "đang tắt 2FA").
+        { reason: "setUpInSecuritySettings" },
+        "Tài khoản admin phải bật xác thực 2 bước (2FA). Vào Cài đặt > Bảo mật để thiết lập.",
+      );
     }
 
     return next({
@@ -182,18 +395,36 @@ type UserRole = 'admin' | 'supervisor' | 'quality_inspector' | 'operator' | 'mai
 
 // Privileged roles that MUST have 2FA enabled (IEC 62443-2-1 CL2 requirement).
 // engineer holds machine_control (OT command authority) → 2FA required (doc 34 P3b decision).
+//
+// ⚠ CHẾ ĐỘ NỘI BỘ (2026-08-24, quyết định chủ dự án) — viện dẫn CL2 ở trên KHÔNG bị xoá: nó vẫn
+// là khuyến nghị đúng khi hệ sinh thái cấp QUA INTERNET (`AUTH_2FA_BAT_BUOC` vắng/`1` ⇒ ép như
+// cũ). Riêng triển khai KHÔNG-internet trong nhà máy, chủ dự án chốt nới đòi-bật-2FA, nguyên văn:
+//   "Việc yêu cầu 2FA là không cần thiết, nếu sau này có 100 kỹ sư mà mỗi lần đăng nhập phải dùng
+//    2FA trong môi trường công nghiệp là cực kỳ bất tiện, 2FA chỉ sử dụng khi mà hệ sinh thái cấp
+//    từ máy chủ của tôi qua mạng internet, nếu chỉ sử dụng trong nội bộ thì rất mất thười gian vì
+//    người dùng đăng nhập và đăng xuất nhiều lần trong ngày, hãy linh động để xử lý theo từng case
+//    thay vì quá bảo mật cũng không tốt."
+// Cách nới (từng tầng, không gộp) + cái KHÔNG được nới: xem docblock `batBuoc2FA()` ở trên.
 const PRIVILEGED_ROLES: UserRole[] = ['admin', 'supervisor', 'quality_inspector', 'engineer'];
 
-const require2FA = t.middleware(async opts => {
+// Exported so routers whose privileged-role set doesn't match one of the
+// pre-built supervisorProcedure/qualityProcedure/actuationProcedure combos can
+// still chain the SAME 2FA guard (e.g. `roleProcedure("admin","engineer").use(require2FA)`)
+// instead of re-implementing the twoFactorEnabled check inline.
+export const require2FA = t.middleware(async opts => {
   const { ctx, next } = opts;
   if (!ctx.user) {
-    throw new TRPCError({ code: "UNAUTHORIZED", message: UNAUTHED_ERR_MSG });
+    throw appError("UNAUTHORIZED", "AUTH_REQUIRED", undefined, UNAUTHED_ERR_MSG);
   }
-  if (PRIVILEGED_ROLES.includes(ctx.user.role as UserRole) && !ctx.user.twoFactorEnabled) {
-    throw new TRPCError({
-      code: "FORBIDDEN",
-      message: "Tài khoản đặc quyền phải bật xác thực 2 bước (2FA). Vào Cài đặt > Bảo mật để thiết lập.",
-    });
+  // Chế độ nội bộ (cờ `0`, xem `batBuoc2FA`): bỏ qua đòi-BẬT — nhánh `!ctx.user` UNAUTHORIZED ở
+  // trên giữ NGUYÊN, và sàn vai (`roleProcedure`) đứng TRƯỚC middleware này không hề bị chạm.
+  if (batBuoc2FA() && PRIVILEGED_ROLES.includes(ctx.user.role as UserRole) && !ctx.user.twoFactorEnabled) {
+    throw appError(
+      "FORBIDDEN",
+      "TWO_FACTOR_NOT_SET_UP",
+      { reason: "setUpInSecuritySettings" },
+      "Tài khoản đặc quyền phải bật xác thực 2 bước (2FA). Vào Cài đặt > Bảo mật để thiết lập.",
+    );
   }
   return next({ ctx: { ...ctx, user: ctx.user } });
 });
@@ -208,6 +439,42 @@ const require2FA = t.middleware(async opts => {
 // secret 2FA của user; xác minh thành công được cache 10 phút theo sessionToken để không
 // phải nhập lại OTP cho từng lệnh trong phiên làm việc. Fail-closed: cache-miss + thiếu/
 // sai OTP ⇒ FORBIDDEN. KHÔNG nới lỏng bất kỳ gate nào — chỉ THÊM một lớp.
+//
+// ══════════════════════════════════════════════════════════════════════════════════════
+// ★★★ Pha 6 Task 1 (M-4) — HAI BIẾN THỂ, VÀ SỰ KHÁC NHAU LÀ MỘT QUYẾT ĐỊNH AN NINH.
+// ══════════════════════════════════════════════════════════════════════════════════════
+// Nghiệm thu sống Pha 5 đo được: `engineer1` gọi `vram.preempt` **KHÔNG có `totpCode`**
+// vẫn **QUA**, vì cache trên là cache **theo PHIÊN**, **dùng chung cho MỌI thủ tục đứng
+// sau middleware này** — vừa step-up cho `programming.deployBuild` thì `vram.preempt`
+// chạy 10 phút không hỏi OTP lần nào. Trong khi `VramBrokerPanel` bọc `stepUp.guard(...)`
+// và hỏi OTP **mỗi lần bấm** ⇒ **UI che, máy chủ không đóng** (chiều NGƯỢC của lớp lỗi
+// "mặt đọc hứa nhiều hơn mặt lệnh": ai đọc mã UI sẽ TƯỞNG đã đóng, và không triệu chứng
+// nào xuất hiện).
+//
+//   • `requireFreshTotp`      — DÙNG cache phiên (hành vi doc 40 CTL-07 nguyên bản).
+//   • `requirePerCallFreshTotp` — KHÔNG đọc và KHÔNG ghi cache. Mỗi lượt gọi phải mang
+//                               `totpCode` của **CHÍNH lượt ấy**.
+//
+// ★★★ Pha 6 Task 1b (2026-08-06, quyết định chủ dự án) — `deployProcedure` chain **CẢ HAI**:
+//   `actuationProcedure.use(requireFreshTotp).use(requirePerCallFreshTotp)`. Vì thế **cả 7**
+//   thủ tục đứng trên nó (5 deploy + 2 lệnh phá huỷ VRAM) nay đòi OTP **mỗi lượt**. Bản đầu
+//   của Task 1 hoãn 5 thủ tục kia bằng một luận cứ **SAI SỰ THẬT** (*"deployToFleet chạy 200
+//   máy ⇒ siết toàn cục sẽ gãy giữa chừng"*): vòng lặp fleet nằm TRONG MÁY CHỦ, trong MỘT
+//   request tRPC (`fleetRollout.ts` → `programmingService` — lời gọi hàm, không qua
+//   middleware); client gọi **đúng một lần** và 5/5 điểm gọi đã bọc `stepUp.guard` + đã gửi
+//   `totpCode`. ⇒ Rào cản KHÔNG TỒN TẠI, và mối lo #1 của Task 1 (một lượt VRAM có OTP hâm
+//   nóng cache dùng chung cho `deployBuild`) nay đóng.
+//
+// ⚠ PHÁT BIỂU ĐÚNG LƯỢNG TỪ — và nó là **∀**, không phải **∃**:
+//     ***∀ lượt gọi một thủ tục đứng sau `requirePerCallFreshTotp`: raw input PHẢI mang
+//     một `totpCode` verify được TẠI THỜI ĐIỂM ẤY. KHÔNG lượt nào qua được bằng trạng
+//     thái mà một lượt KHÁC để lại.***
+// ⚠ Đây **KHÔNG** phải chống phát lại (replay). `speakeasy` verify với `window: 1` ⇒
+//   **cùng một mã** dùng lại được trong ~90 s. Cái được đóng là *"qua cửa mà KHÔNG gửi mã
+//   nào"* — đúng lỗ đã đo trên hệ sống. Chống phát lại là một cơ chế KHÁC (sổ mã đã dùng),
+//   hệ này chưa có, và nó không thuộc phạm vi bản vá này.
+// ⚠ `requirePerCallFreshTotp` CHỈ THU HẸP: nó chain **thêm** sau `deployProcedure`, không
+//   thay thế và không hạ một tầng nào. Thủ tục nào không chain nó thì hành vi **y hệt** cũ.
 // ════════════════════════════════════════════════════════════════════════════
 
 /** doc 40 CTL-07 — cờ bật step-up 2FA cho actuation/deploy (mặc định OFF). */
@@ -219,41 +486,98 @@ const STEPUP_TTL_MS = 10 * 60_000; // 10 phút
 /** sessionKey → thời điểm hết hạn (epoch ms) của lần step-up gần nhất. */
 const stepUpVerifiedUntil = new Map<string, number>();
 
-/** Verify một OTP TƯƠI trên secret 2FA của user (speakeasy — cùng cơ chế đăng ký 2FA). Fail-closed. */
-async function verifyFreshTotp(userId: number, code: string): Promise<boolean> {
+/**
+ * Verify một OTP TƯƠI trên secret 2FA của user, **và tiêu mã** (Pha 6 Task 6). Fail-closed.
+ *
+ * ⚠ Lượt verify đi qua `verifyTotpOnce` — chủ DUY NHẤT của `speakeasy.totp.verify` trong
+ * `server/**`. `luot` là dấu của **lượt gọi tRPC hiện tại**: chuỗi `deployProcedure` gọi hàm này
+ * **2–3 lần cho MỘT lượt bấm nút** (khối I-4 bên dưới), nên không có `luot` thì sổ mã đã tiêu sẽ
+ * **tự chặn mình** ngay ở lượt verify thứ hai và giết 100 % lệnh VRAM/deploy.
+ */
+async function verifyFreshTotp(
+  userId: number,
+  code: string,
+  luot: string,
+): Promise<{ hopLe: boolean; phatLai: boolean }> {
   try {
-    const [{ getDb }, { users }, { eq }] = await Promise.all([
-      import("../db/connection"),
-      import("../../drizzle/schema"),
-      import("drizzle-orm"),
-    ]);
-    const db = await getDb();
-    if (!db) return false;
-    const [u] = await db
-      .select({ secret: users.twoFactorSecret, enabled: users.twoFactorEnabled })
-      .from(users)
-      .where(eq(users.id, userId))
-      .limit(1);
-    if (!u || !u.enabled || !u.secret) return false;
-    return speakeasy.totp.verify({ secret: u.secret, encoding: "base32", token: code, window: 1 });
+    // ★★★ Pha 7 Task 9 (9c) — hạt giống TOTP nay ở `user_secrets`, cờ 2FA vẫn ở `users`. Thay vì
+    // dựng ở đây một câu `JOIN` **thứ hai** cho cùng cặp ô, gọi lại **NGƯỜI ĐỌC DUY NHẤT**
+    // (`db.get2FAStatus`) — bản sao thứ hai của một vị từ là chỗ luật trôi đi (lớp lỗi đã đẻ ba
+    // Critical trong chuỗi pha này).
+    const { get2FAStatus } = await import("../db");
+    const u = await get2FAStatus(userId);
+    if (!u || !u.twoFactorEnabled || !u.twoFactorSecret) return { hopLe: false, phatLai: false };
+    return await verifyTotpOnce({ userId, secret: u.twoFactorSecret, token: code, luot });
   } catch {
-    return false; // fail-closed — lỗi tra cứu/verify ⇒ coi như KHÔNG hợp lệ
+    return { hopLe: false, phatLai: false }; // fail-closed — lỗi tra cứu/verify ⇒ coi như KHÔNG hợp lệ
   }
 }
 
 /**
- * Middleware step-up 2FA. Export để router áp dần cho các mutation actuation/deploy. Khi cờ OFF
- * hoặc không phải mutation → pass-through. `totpCode` đọc từ raw input (không phá schema) — hỗ trợ
- * cả bao bì superjson (`{ json: { totpCode } }`).
+ * Lõi step-up 2FA — **MỘT bản cài, hai chính sách cache**. Viết bản thứ hai là đẻ ra hai vị từ
+ * trùng nhau dưới một bất biến, và lớp lỗi ấy đã tốn nhiều pha; ở đây khác biệt duy nhất được
+ * nêu **thành một tham số có tên**, nên đọc một chỗ là biết cả hai.
+ *
+ * @param dungCachePhien `true` ⇒ một lượt step-up thành công mở cửa cho **mọi** thủ tục khác cùng
+ *   phiên trong 10 phút (hành vi doc 40 CTL-07). `false` ⇒ **không đọc, không ghi** cache: mỗi lượt
+ *   gọi phải mang `totpCode` của chính nó.
  */
-export const requireFreshTotp = t.middleware(async (opts) => {
-  const { ctx, next, type } = opts;
+function stepUpTotpMiddleware(dungCachePhien: boolean) {
+  return t.middleware(async (opts) => {
+  const { ctx, next, type, path } = opts;
   if (!actuationStepUp2faEnabled() || type !== "mutation") return next();
-  if (!ctx.user) throw new TRPCError({ code: "UNAUTHORIZED", message: UNAUTHED_ERR_MSG });
+  if (!ctx.user) throw appError("UNAUTHORIZED", "AUTH_REQUIRED", undefined, UNAUTHED_ERR_MSG);
+
+  /**
+   * ★★★ CHẾ ĐỘ NỘI BỘ (`batBuoc2FA()` = false, quyết định chủ dự án 2026-08-24) — "linh động
+   * theo case" đúng nghĩa cho step-up:
+   *   · người ĐÃ bật 2FA ⇒ RƠI XUỐNG đường OTP y như cũ (kể cả cache phiên) — đã có thiết bị
+   *     thì bước xác nhận trước một lệnh chạm máy vật lý là rẻ và đáng;
+   *   · người CHƯA bật ⇒ cho qua, KHÔNG chặn — nhưng lượt bỏ-qua GHI SỔ AUDIT **trước khi**
+   *     lệnh chạy, để sự kiện "lệnh chạm máy/deploy không có OTP" còn truy được về sau
+   *     (`details.stepUp = "bo_qua_che_do_noi_bo"`, cùng khuôn `logCrudOperation` của
+   *     `auditMutationMiddleware`).
+   * ⚠ Nguồn sự thật của "đã bật" là `ctx.user.twoFactorEnabled` — ĐÚNG nguồn mà
+   *   `adminProcedure`/`require2FA` dùng; `enable2FA`/`disable2FA` gọi `invalidateAuthUser`
+   *   (server/db/auth.ts) nên cờ trên phiên không sống lâu hơn lượt đổi. KHÔNG đọc lại DB ở
+   *   đây: hai nguồn cho một vị từ là chỗ luật trôi đi (bài học `get2FAStatus`).
+   * ⚠ `deployProcedure` chạy middleware này HAI lần cho một lượt bấm nút (vram: BA — khối I-4
+   *   bên dưới); dấu `__boQua2faDaGhiSo` truyền xuôi trong CÙNG lượt gọi giữ cho sổ chỉ nhận
+   *   MỘT hàng. Cùng cơ chế với `__luotXacMinhTotp`: ctx chỉ chảy xuôi trong chính lượt gọi ấy.
+   * ⚠ KHÔNG đúc dấu `__luotXacMinhTotp` ở nhánh này — không mã nào được verify (xem cảnh báo
+   *   ở cuối hàm). `await` lượt ghi sổ nhưng `logCrudOperation` nuốt lỗi nội bộ (trả `{id:-1}`)
+   *   ⇒ sổ hỏng không chặn lệnh — cùng tư thế "audit không bao giờ giết request" đã có.
+   * ⚠ Khi cờ vắng/`1`: khối này chết hẳn — người chưa bật 2FA không tới được đây qua các sàn
+   *   thật (require2FA đứng trước đã chặn), và tới thẳng cũng fail-closed ở `verifyFreshTotp`.
+   */
+  if (!batBuoc2FA() && !ctx.user.twoFactorEnabled) {
+    if ((ctx as { __boQua2faDaGhiSo?: boolean }).__boQua2faDaGhiSo) return next();
+    const { logCrudOperation } = await import("../services/auditTrailService");
+    await logCrudOperation(
+      {
+        userId: ctx.user.id,
+        userName: ctx.user.username ?? ctx.user.name ?? null,
+        ipAddress: ctx.req?.ip ?? null,
+        userAgent: (ctx.req?.headers?.["user-agent"] as string | undefined) ?? null,
+        source: "trpc",
+      },
+      {
+        action: path,
+        entityType: "trpc_mutation",
+        details: {
+          operation: "mutation",
+          stepUp: "bo_qua_che_do_noi_bo",
+          metadata: { path, lyDo: "AUTH_2FA_BAT_BUOC=0 và người dùng CHƯA bật 2FA — không có OTP để hỏi" },
+        },
+        status: "success",
+      },
+    );
+    return next({ ctx: { ...ctx, __boQua2faDaGhiSo: true } });
+  }
 
   const sessionKey = ctx.sessionToken || `user:${ctx.user.id}`;
   const now = Date.now();
-  const until = stepUpVerifiedUntil.get(sessionKey);
+  const until = dungCachePhien ? stepUpVerifiedUntil.get(sessionKey) : undefined;
   if (until && until > now) return next(); // đã step-up gần đây → khỏi nhập lại
 
   // Lấy OTP tươi từ raw input (middleware chạy trước khi zod parse).
@@ -267,37 +591,129 @@ export const requireFreshTotp = t.middleware(async (opts) => {
   }
 
   if (!totpCode || !/^\d{6}$/.test(totpCode)) {
-    throw new TRPCError({
-      code: "FORBIDDEN",
-      message: "Yêu cầu mã xác thực 2 bước (OTP 6 số) cho lệnh điều khiển/triển khai.",
-    });
+    // Task 10 (F3, doc71) — điều kiện gộp "thiếu totpCode" LẪN "sai định dạng
+    // (không đúng 6 số)". INVALID_VALUE{field:"twoFactorCode"} theo đúng tiền
+    // lệ aoiOnboardingRouter.ts (review cuối, ca I-A #14): trường ".trim() ??
+    // ''" gộp rỗng+quá-ngắn dùng INVALID_VALUE thay vì FIELD_REQUIRED, vì
+    // FIELD_REQUIRED nói "thiếu" còn ở đây có thể ĐÃ CÓ giá trị (chỉ sai định
+    // dạng) — cùng field key "twoFactorCode" đã dùng ở twoFactorRouter.ts:255.
+    throw appError(
+      "FORBIDDEN",
+      "INVALID_VALUE",
+      { field: "twoFactorCode" },
+      "Yêu cầu mã xác thực 2 bước (OTP 6 số) cho lệnh điều khiển/triển khai.",
+    );
   }
 
-  const ok = await verifyFreshTotp(ctx.user.id, totpCode);
-  if (!ok) throw new TRPCError({ code: "FORBIDDEN", message: "Mã xác thực 2 bước không hợp lệ." });
+  /**
+   * ★★★ Pha 6 Task 6 — **DẤU CỦA LƯỢT GỌI.** Middleware đầu tiên trong chuỗi thật sự verify sẽ
+   * đúc dấu; các middleware sau **nhận lại đúng dấu ấy qua `ctx`** nên sổ mã đã tiêu biết chúng là
+   * cùng MỘT lượt gọi. Ngữ cảnh tRPC chỉ chảy **xuôi trong chính lượt gọi ấy** — hai lượt gọi đi
+   * chung một request HTTP gộp lô vẫn có hai chuỗi middleware riêng, mỗi chuỗi bắt đầu từ ngữ
+   * cảnh gốc ⇒ dấu **không** rò sang lượt khác.
+   */
+  const luot = (ctx as { __luotXacMinhTotp?: string }).__luotXacMinhTotp ?? dauLuotGoiMoi();
 
-  stepUpVerifiedUntil.set(sessionKey, now + STEPUP_TTL_MS);
-  // Dọn bộ nhớ (bounded): xoá các mục đã hết hạn khi map phình to.
-  if (stepUpVerifiedUntil.size > 5000) {
-    for (const [k, v] of stepUpVerifiedUntil) if (v <= now) stepUpVerifiedUntil.delete(k);
+  const kq = await verifyFreshTotp(ctx.user.id, totpCode, luot);
+  if (!kq.hopLe) {
+    throw appError(
+      "FORBIDDEN",
+      "INVALID_VALUE",
+      { field: "twoFactorCode" },
+      kq.phatLai
+        ? "Mã xác thực 2 bước này đã được dùng rồi. Hãy chờ mã mới trên ứng dụng xác thực."
+        : "Mã xác thực 2 bước không hợp lệ.",
+    );
   }
-  return next();
-});
+
+  if (dungCachePhien) {
+    stepUpVerifiedUntil.set(sessionKey, now + STEPUP_TTL_MS);
+    // Dọn bộ nhớ (bounded): xoá các mục đã hết hạn khi map phình to.
+    if (stepUpVerifiedUntil.size > 5000) {
+      for (const [k, v] of stepUpVerifiedUntil) if (v <= now) stepUpVerifiedUntil.delete(k);
+    }
+  }
+  // ★★★ Task 6 — truyền dấu lượt gọi XUỐNG DƯỚI. Chỉ ở nhánh này: đường thoát sớm (cờ OFF · không
+  // phải mutation · cache-hit) **không** verify mã nào nên **không** được đúc dấu — nếu không, một
+  // cache-hit sẽ phát cho middleware sau một tấm vé "mã này đã được lượt ta xác minh" mà chẳng có
+  // mã nào từng được xác minh.
+  return next({ ctx: { ...ctx, __luotXacMinhTotp: luot } });
+  });
+}
+
+/**
+ * Middleware step-up 2FA **có cache phiên 10 phút**. Export để router áp dần cho các mutation
+ * actuation/deploy. Khi cờ OFF hoặc không phải mutation → pass-through. `totpCode` đọc từ raw input
+ * (không phá schema) — hỗ trợ cả bao bì superjson (`{ json: { totpCode } }`).
+ * ⚠ Cache là **theo PHIÊN**, không theo thủ tục: một lượt step-up ở bất kỳ thủ tục nào đứng sau
+ * middleware này đều mở cửa cho **mọi** thủ tục còn lại trong 10 phút.
+ * ⚠⚠ Pha 6 Task 1b — **một mình nó KHÔNG đủ để canh một đường deploy.** `deployProcedure` chain
+ * thêm `requirePerCallFreshTotp` **ngay sau** nó, nên một cache-hit chỉ cho qua middleware này,
+ * không cho qua cổng. Dùng riêng cái này cho một sàn thủ tục mới ⇒ sàn ấy **hở đúng lỗ M-4**.
+ */
+export const requireFreshTotp = stepUpTotpMiddleware(true);
+
+/**
+ * ★★★ Pha 6 Task 1 (M-4) — step-up 2FA **KHÔNG cache**: mỗi lượt gọi phải mang `totpCode` của
+ * **CHÍNH lượt ấy**. Chain **THÊM** vào `deployProcedure` (Task 1b) — không thay thế, không hạ
+ * tầng nào.
+ *
+ * Vì sao không cache **theo thủ tục** (đường đã cân nhắc và **không chọn**): cache theo thủ tục vẫn
+ * để lượt gọi **thứ hai** của cùng thủ tục đi qua bằng OTP của lượt **thứ nhất** trong 10 phút —
+ * vẫn là *"OTP của một lượt khác"*, tức vẫn không đạt cổng ra.
+ *
+ * ══════════════════════════════════════════════════════════════════════════════════════════════
+ * ⚠⚠ I-4 (review TOÀN NHÁNH Pha 6) — **BẢNG CHI PHÍ CŨ SAI Ở CẢ HAI CON SỐ.** Bản trước viết
+ * *"khi cache nguội thì OTP được verify **hai lần** … và nó **chỉ xảy ra trên đường cache-miss**"*.
+ * Đếm lại trên chuỗi THẬT của `vram.preempt`/`releaseStale`:
+ *   `requireFreshTotp` → `requirePerCallFreshTotp` (GỐC, Task 1b) → `requirePermission` →
+ *   `requirePerCallFreshTotp` (**lần hai**, `vramRouter.ts`, Task 1 — cố ý giữ).
+ * `stepUpTotpMiddleware(false)` **không có** đường thoát sớm (`until` luôn `undefined`), và mỗi
+ * `verifyFreshTotp` là **1 `SELECT` trên `users` + 1 `speakeasy.totp.verify`**. ⇒
+ *   • **cache-miss = 3 lượt verify** (KHÔNG phải 2);
+ *   • **cache-hit  = 2 lượt verify** (KHÔNG phải 0) — tức lượt verify thừa xảy ra ở **MỌI lượt
+ *     gọi**, đúng **ngược** với câu *"chỉ trên đường cache-miss"*.
+ * Cùng một mã, cùng cửa sổ ⇒ mọi lượt cùng kết quả; **không phải lỗi an ninh** (thừa theo chiều
+ * CHẶT), và `getRawInput()` an toàn khi gọi 3 lần (tRPC 11.18.0 bọc `memo()`). Nhưng ai đọc con số
+ * cũ để quyết *"có nên chain per-call ở một sàn thứ ba không"* sẽ tính thiếu ~50 %, và một lượt
+ * điều tra hiệu năng thấy 3 `SELECT users` cho **một** lượt bấm nút sẽ không tìm ra lời giải thích
+ * đúng trong mã. Với hai thủ tục hiếm + đặc quyền thì cái giá ấy vẫn chấp nhận được — nhưng nó
+ * phải được **ghi đúng**.
+ * ══════════════════════════════════════════════════════════════════════════════════════════════
+ * ⚠ `vramRouter` chain nó **một lần nữa** sau `requirePermission` (Task 1). Dư thừa về hành vi,
+ * **cố ý** giữ: lưới cấu trúc của `vramStepUpFreshness.test.ts` phân giải chuỗi **trong phạm vi
+ * `vramRouter.ts`**, nên gỡ chỗ ấy đi là gỡ mất phép canh riêng của hai lệnh phá huỷ.
+ * ⚠⚠ Lượng từ ∀ của C-2 (`quetLenhPhaHuyVram`, `server/routers/deployProcedureScan.ts`) nay chấp
+ * nhận **cả hai** đường siết (tại chỗ **hoặc** qua GỐC), nên lượt `.use()` ở `vramRouter` **không
+ * còn** là điều kiện tồn tại của phép canh — nếu chủ dự án muốn thu lại 1 lượt verify/lượt gọi thì
+ * gỡ nó đi là an toàn về mặt lưới. Đó là một quyết định về chi phí, không phải về an ninh.
+ */
+export const requirePerCallFreshTotp = stepUpTotpMiddleware(false);
 
 export function roleProcedure(...allowedRoles: UserRole[]) {
-  return t.procedure.use(
+  return thuTucGoc.use(
     t.middleware(async opts => {
       const { ctx, next } = opts;
 
       if (!ctx.user) {
-        throw new TRPCError({ code: "UNAUTHORIZED", message: UNAUTHED_ERR_MSG });
+        throw appError("UNAUTHORIZED", "AUTH_REQUIRED", undefined, UNAUTHED_ERR_MSG);
       }
 
       if (!allowedRoles.includes(ctx.user.role as UserRole)) {
-        throw new TRPCError({
-          code: "FORBIDDEN",
-          message: `Required role: ${allowedRoles.join(' or ')}`,
-        });
+        // Task 10 (F3, doc71) — `roleProcedure` là factory DÙNG CHUNG (bomRouter,
+        // componentLibraryRouter, ...), mỗi call site truyền một tập role khác
+        // nhau — không có TÊN hành động cụ thể để gán action. action:
+        // "insufficientRole" là khoá CHUNG (giống mọi PERMISSION_DENIED khác đã
+        // migrate trong sprint này, danh sách role cụ thể CHỈ còn ở
+        // fallbackMessage — mất khi đã dịch, đúng tiền lệ đã chấp nhận cho toàn
+        // bộ 687 call site requirePermission() ở accessControl.ts, xem
+        // task-10-report.md).
+        throw appError(
+          "FORBIDDEN",
+          "PERMISSION_DENIED",
+          { action: "insufficientRole" },
+          `Required role: ${allowedRoles.join(' or ')}`,
+        );
       }
 
       return next({ ctx: { ...ctx, user: ctx.user } });
@@ -327,13 +743,15 @@ const WRITE_DENIED_ROLES: UserRole[] = ['viewer', 'user'];
 const requireWrite = t.middleware(async opts => {
   const { ctx, next } = opts;
   if (!ctx.user) {
-    throw new TRPCError({ code: "UNAUTHORIZED", message: UNAUTHED_ERR_MSG });
+    throw appError("UNAUTHORIZED", "AUTH_REQUIRED", undefined, UNAUTHED_ERR_MSG);
   }
   if (WRITE_DENIED_ROLES.includes(ctx.user.role as UserRole)) {
-    throw new TRPCError({
-      code: "FORBIDDEN",
-      message: "Tài khoản chỉ-đọc (viewer/user) không có quyền thay đổi dữ liệu.",
-    });
+    throw appError(
+      "FORBIDDEN",
+      "PERMISSION_DENIED",
+      { action: "modifyData" },
+      "Tài khoản chỉ-đọc (viewer/user) không có quyền thay đổi dữ liệu.",
+    );
   }
   return next({ ctx: { ...ctx, user: ctx.user } });
 });
@@ -361,8 +779,51 @@ export const actuationProcedure = roleProcedure(...ACTUATION_ROLES).use(require2
 
 /**
  * `deployProcedure` — deploy of a program / workflow / recipe / fleet-task shares the
- * same role-floor + 2FA as actuation, PLUS doc 40 CTL-07 step-up 2FA (requireFreshTotp,
- * gated by ACTUATION_STEPUP_2FA — default OFF → identical to actuationProcedure). Call-sites
- * that adopt it may accept an optional `totpCode` in their input for the fresh-OTP challenge.
+ * same role-floor + 2FA as actuation, PLUS doc 40 CTL-07 step-up 2FA (gated by
+ * ACTUATION_STEPUP_2FA — default OFF → identical to actuationProcedure). Call-sites that
+ * adopt it MUST accept a `totpCode` in their input for the fresh-OTP challenge.
+ *
+ * ══════════════════════════════════════════════════════════════════════════════════════
+ * ★★★ Pha 6 Task 1b — PHÉP SIẾT PER-CALL NẰM Ở **GỐC NÀY**, KHÔNG Ở BẢY CHỖ CHAIN TAY.
+ * ══════════════════════════════════════════════════════════════════════════════════════
+ * Task 1 chain `requirePerCallFreshTotp` cho **hai** lệnh phá huỷ VRAM và hoãn **năm** thủ
+ * tục deploy còn lại. Chủ dự án đã chốt **siết nốt** (2026-08-06), nên bất biến đúng nay là
+ *
+ *   ***∀ thủ tục có chuỗi bắt nguồn từ `deployProcedure`: MỌI lượt gọi phải mang một
+ *   `totpCode` verify được TẠI THỜI ĐIỂM ẤY.***
+ *
+ * Câu ấy là một **∀**, nên phép siết phải nằm ở **một** chỗ mà mọi thủ tục **buộc** đi qua —
+ * chính khai báo này. Chain tay ở bảy điểm gọi sẽ biến nó thành một **DANH SÁCH**, và lớp lỗi
+ * *"danh sách nào cũng có phần tử thứ N+1"* đã tái diễn 13 lần trong dự án. Ở đây, một thủ tục
+ * deploy **thứ tám** sinh ra ở một file **chưa tồn tại** cũng được che **theo cấu tạo**.
+ * Lưới: `server/routers/deployStepUpFreshness.test.ts` (phép thử M3 + 5 ca hành vi + 5 đối
+ * chứng dương). Xem `task-1b-report.md`.
+ *
+ * ⚠ **CHỈ THU HẸP**: `requireFreshTotp` giữ nguyên **phía trước** — không gỡ, không hạ tầng
+ *   nào. Nó vẫn đọc/ghi cache phiên, nhưng một cache-hit chỉ cho qua **middleware thứ nhất**;
+ *   middleware thứ hai vẫn đòi OTP của chính lượt ấy. Giữ nó có hai tác dụng đo được:
+ *   (a) các ca đỏ của lưới vẫn **dựng được** cảnh *"OTP của một lượt khác"* — bỏ nó đi thì
+ *       cache biến mất và ca đỏ ấy thành **chân lý rỗng**, không còn chứng minh gì;
+ *   (b) hỏng-theo-chiều-an-toàn: gỡ nhầm một trong hai vẫn còn cái kia.
+ *   Giá phải trả — ★★ **BẢNG I-4 CỦA CHÍNH KHỐI NÀY CŨNG SAI: +1 Ở CẢ HAI CON SỐ.** Bản trước
+ *   viết *"**2** lượt verify ở MỌI lượt gọi (`requireFreshTotp` cache-hit + per-call ở gốc), và
+ *   **3** khi cache nguội … ⇒ **3 / 4**"*. Số đúng, **đếm trên chuỗi thật của mã này**, và có một
+ *   dấu vết KIỂM CHỨNG ĐƯỢC ở sổ: một lượt `vram.preempt` **nguội** phải để lại đúng
+ *   **1 ins + 2 upd trên MỘT hàng `totp_consumed`, cùng MỘT `luot`** (mỗi lượt verify = 1 lượt ghi
+ *   sổ; xem `_core/totpOnce.ts` §`tieuMaTrongSo`):
+ *     • `deployProcedure` (không chain thêm) — **1 lượt verify khi cache ẤM · 2 khi NGUỘI**;
+ *     • `vram.preempt`/`releaseStale` (chain per-call **một lần nữa** ở `vramRouter.ts`) —
+ *       **2 ấm · 3 nguội**.
+ *   ⚠ **Gốc của cái sai +1:** bảng cũ cộng một **cache-hit** của `requireFreshTotp` như thể nó là
+ *   một lượt verify. Không phải: ở cache-hit `stepUpTotpMiddleware(true)` `return next()` ngay
+ *   (`:475`) — **TRƯỚC** cả lượt đọc raw input lẫn `verifyFreshTotp` — nên một cache-hit tốn **0**
+ *   lượt verify. Con số ở đây vì thế **tự mâu thuẫn** với khối I-4 ở `:559-576` (chỗ ấy ghi đúng
+ *   `cache-miss = 3 · cache-hit = 2` cho chuỗi `vram.preempt`), và **không lưới nào canh** cặp số
+ *   này — nó chỉ là văn bản, nên nó trôi được.
+ *   Mỗi lượt verify = 1 `SELECT users LEFT JOIN user_secrets` (`db.get2FAStatus`) + 1
+ *   `speakeasy.totp.verify` + 1 `INSERT … ON CONFLICT DO UPDATE` trên `totp_consumed`. Lệnh deploy
+ *   là hiếm + đặc quyền ⇒ chấp nhận được; nhưng **đừng trích lại** câu nguyên bản (*"hai lần, và
+ *   chỉ trên đường cache-miss"* — sai cả hai con số lẫn điều kiện) **lẫn** bảng I-4 cũ (+1 ở cả
+ *   hai). Ai đọc để quyết *"có nên chain per-call ở một sàn thứ ba không"* phải dùng cặp số trên.
  */
-export const deployProcedure = actuationProcedure.use(requireFreshTotp);
+export const deployProcedure = actuationProcedure.use(requireFreshTotp).use(requirePerCallFreshTotp);

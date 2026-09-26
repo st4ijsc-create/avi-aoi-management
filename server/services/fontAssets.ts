@@ -76,7 +76,15 @@ function fontDirCandidates(): string[] {
   const c: string[] = [];
   if (process.env.FONT_ASSETS_DIR) c.push(process.env.FONT_ASSETS_DIR);
   c.push(resolve(HERE, "..", "assets", "fonts")); // server/services -> server/assets/fonts
+  // dist -> dist/assets/fonts, written by `scripts/copy-font-assets.mjs` during
+  // `npm run build`. This is the candidate that makes a ship-only-`dist` deploy
+  // (Dockerfile runtime stage, dist-secure/) work: HERE is `dist/` under the
+  // esbuild ESM bundle, which keeps `import.meta.url`. Before it existed the only
+  // hit was the process.cwd() fallback below — i.e. the server was reading fonts
+  // out of the SOURCE TREE, which no such deploy ships. (nhóm C, việc 1)
+  c.push(resolve(HERE, "assets", "fonts"));
   c.push(resolve(HERE, "..", "..", "server", "assets", "fonts")); // dist -> repo/server/assets/fonts
+  // Fail-safe, deliberately kept: rescues a process started from the repo root.
   c.push(join(process.cwd(), "server", "assets", "fonts"));
   c.push(join(process.cwd(), "assets", "fonts"));
   return c;

@@ -61,6 +61,7 @@ import {
 import { useState, useMemo, useEffect } from "react";
 import { useLocation } from "wouter";
 import { toast } from "sonner";
+import { toastTrpcError } from "@/lib/trpcErrors";
 
 interface FactoryFormData {
   code: string;
@@ -137,7 +138,7 @@ export default function CorporateManagement() {
       toast.success(t('corporate.settingsSaved', 'Corporate settings saved'));
       setCorporateInfoDirty(false);
     },
-    onError: (err) => toast.error(err.message),
+    onError: (err) => toastTrpcError(err),
   });
 
   // Load corporate settings into form when data arrives
@@ -189,7 +190,7 @@ export default function CorporateManagement() {
       setShowFactoryDialog(false);
       resetFactoryForm();
     },
-    onError: (err) => toast.error(err.message),
+    onError: (err) => toastTrpcError(err),
   });
 
   const updateFactoryMutation = trpc.factory.update.useMutation({
@@ -199,7 +200,7 @@ export default function CorporateManagement() {
       setShowFactoryDialog(false);
       resetFactoryForm();
     },
-    onError: (err) => toast.error(err.message),
+    onError: (err) => toastTrpcError(err),
   });
 
   const deleteFactoryMutation = trpc.factory.delete.useMutation({
@@ -207,7 +208,7 @@ export default function CorporateManagement() {
       toast.success(t('corporate.factoryDeleted', 'Factory deleted'));
       refetchFactories();
     },
-    onError: (err) => toast.error(err.message),
+    onError: (err) => toastTrpcError(err),
   });
 
   const createWorkshopMutation = trpc.workshop.create.useMutation({
@@ -217,7 +218,7 @@ export default function CorporateManagement() {
       setShowWorkshopDialog(false);
       resetWorkshopForm();
     },
-    onError: (err) => toast.error(err.message),
+    onError: (err) => toastTrpcError(err),
   });
 
   const updateWorkshopMutation = trpc.workshop.update.useMutation({
@@ -227,7 +228,7 @@ export default function CorporateManagement() {
       setShowWorkshopDialog(false);
       resetWorkshopForm();
     },
-    onError: (err) => toast.error(err.message),
+    onError: (err) => toastTrpcError(err),
   });
 
   const deleteWorkshopMutation = trpc.workshop.delete.useMutation({
@@ -235,7 +236,7 @@ export default function CorporateManagement() {
       toast.success(t('corporate.workshopDeleted', 'Workshop deleted'));
       refetchWorkshops();
     },
-    onError: (err) => toast.error(err.message),
+    onError: (err) => toastTrpcError(err),
   });
 
   const resetFactoryForm = () => {

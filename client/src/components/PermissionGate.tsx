@@ -108,6 +108,8 @@ export function PermissionGate({
   ...slotProps
 }: PermissionGateProps & Record<string, unknown>) {
   const { hasPermission } = usePermissions();
+  // ⚠ Hook phải đứng TRƯỚC mọi return sớm — nhánh "disable" ở dưới dùng `t()`.
+  const { t } = useTranslation();
   const hasSlotProps = Object.keys(slotProps).length > 0;
 
   if (hasPermission(module, action)) {
@@ -124,7 +126,7 @@ export function PermissionGate({
       ...(hasSlotProps ? mergeSlotProps(el.props ?? {}, slotProps) : {}),
       disabled: true,
       "aria-disabled": true,
-      title: el.props?.title ?? "Bạn không có quyền thực hiện",
+      title: el.props?.title ?? t("permissionGate.khongCoQuyenThucHien", "Bạn không có quyền thực hiện"),
       className: [el.props?.className, "pointer-events-none opacity-50"].filter(Boolean).join(" "),
     });
   }

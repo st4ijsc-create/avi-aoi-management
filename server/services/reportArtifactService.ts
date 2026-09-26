@@ -22,6 +22,7 @@
  * finished buffer and archives it.
  */
 import { createHash } from "node:crypto";
+import { DbUnavailableError } from "../_core/dbErrors";
 import { and, desc, eq, gt, lt, sql, type SQL } from "drizzle-orm";
 import { getDb, getJobsDb } from "../db/connection";
 import { reportArtifacts, type ReportArtifact } from "../../drizzle/schema/reportArtifact";
@@ -147,7 +148,7 @@ export interface PersistArtifactResult {
  */
 export async function persistArtifact(input: PersistArtifactInput): Promise<PersistArtifactResult> {
   const db = await getDb();
-  if (!db) throw new Error("Database not available — cannot persist report artifact");
+  if (!db) throw new DbUnavailableError("Database not available — cannot persist report artifact");
 
   const buffer = Buffer.isBuffer(input.buffer) ? input.buffer : Buffer.from(input.buffer);
   const fileHash = sha256Hex(buffer);
@@ -231,7 +232,7 @@ export async function persistArtifact(input: PersistArtifactInput): Promise<Pers
 /** Access-checked fetch. Throws ArtifactError('not_found' | 'forbidden'). Does NOT enforce expiry. */
 export async function getArtifact(id: number, viewer: ArtifactViewer | null): Promise<ReportArtifact> {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  if (!db) throw new DbUnavailableError();
   const rows = await db.select().from(reportArtifacts).where(eq(reportArtifacts.id, id)).limit(1);
   const artifact = rows[0];
   if (!artifact) throw new ArtifactError("not_found", `Report artifact ${id} not found`);
@@ -343,7 +344,7 @@ export async function listArtifacts(
 export async function deleteArtifact(id: number, viewer: ArtifactViewer | null): Promise<boolean> {
   const artifact = await getArtifact(id, viewer); // throws not_found / forbidden
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  if (!db) throw new DbUnavailableError();
 
   await deleteStorageObjectSafe(artifact.storageKey);
   await db.delete(reportArtifacts).where(eq(reportArtifacts.id, id));

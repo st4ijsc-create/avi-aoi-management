@@ -1,0 +1,204 @@
+{
+  "corpus": "scripts/ai-eval/thuat-ngu-viet-anh-giu-lai.jsonl",
+  "label": "v13-thuatngu",
+  "tom": {
+    "trong": {
+      "n": 12,
+      "dung": 8,
+      "tuChoi": 4,
+      "tuChoiMem": 0,
+      "hoiLai": 0,
+      "sai": 0
+    },
+    "ngoai": {
+      "n": 0,
+      "tuChoi": 0,
+      "tuChoiMem": 0,
+      "hoiLai": 0,
+      "traLoi": 0
+    },
+    "loi": 0
+  },
+  "ra": [
+    {
+      "id": "LN01",
+      "ngoai": false,
+      "kq": "dung",
+      "ms": 44166,
+      "nguon": [
+        "knowledge/domain/aoi-troubleshooting.md",
+        "knowledge/domain/aoi-troubleshooting.md",
+        "aoi-troubleshooting.md",
+        "knowledge/features/inspection/aoi-packages.md",
+        "knowledge/features/inspection/aoi-packages.md"
+      ],
+      "traLoi": "(1) Ảnh chụp bị nhòe (blur) trên máy AOI được xử lý bằng cách vệ sinh bộ thu ảnh và kiểm tra độ tập trung.  \n(2) Bước 1: *Vệ sinh lens* – thực hiện tại tab **Images** trong chi tiết package, khi mở ảnh thấy lỗi blur → tiến hành lau sạch đầu kính (lens). Kết quả: hình ảnh rõ hơn sau khi vệ sinh. Bước 2: *Kiểm tra focus* – vào phần metadata của ảnh hoặc thông qua log để xác minh giá trị focus; nếu không ổn định thì điều chỉnh bằng nút **Focus Adjustment** trong giao diện camera settings (ở tab **Settings → Camera**). Kết quả: hình ảnh có độ sắc nét cải thiện.  \n(3) Lưu ý: Nếu lỗi vẫn tồn tại sau vệ sinh, cần kiểm tra xem có sự cố về ánh sáng hoặc điều kiện môi trường không; tránh xử lý sai khi lens sạch nhưng focus bị lệch do thiết lập phần mềm. Lỗi thường",
+      "loi": null
+    },
+    {
+      "id": "LN02",
+      "ngoai": false,
+      "kq": "dung",
+      "ms": 2751,
+      "nguon": [
+        "knowledge/features/alerts/alerts-list.md",
+        "knowledge/operational-approved/alerts.md",
+        "knowledge/domain/aoi-troubleshooting.md",
+        "knowledge/domain/aoi-troubleshooting.md",
+        "knowledge/operational-approved/alerts.md"
+      ],
+      "traLoi": "(1) Máy báo quá nhiều lỗi báo nhầm cần điều chỉnh ngưỡng cảnh báo để giảm độ nhạy, tránh phát sinh \"noise\".  \n(2) Bước 1: Truy cập màn hình [MQTT Alert Rules](mqtt-alert-rules.md), tìm rule đang tạo cảnh báo dư thừa → kiểm tra threshold hiện tại. Nếu giá trị quá nhỏ hoặc chặt (ví dụ: dưới ±0.5%), điều chỉnh lên để giảm số lần phát sinh lỗi. Kết quả là lượng alert giảm đáng kể, đặc biệt với các trường hợp \"noise\". Bước 2: Sau khi thay đổi, thực hiện kiểm tra lại bằng lệnh `GET /api/external/alerts?severity=warning&from=-1h` để xác minh sự thay đổi. Nếu vẫn có lỗi báo nhầm, tiến hành bước 3: xuất báo cáo false alarm từ phần mềm → phân loại các loại lỗi phổ biến (ví dụ: bóng đổ, marking bị nhận nhầm) và kiểm tra ảnh mẫu [theo hướng dẫn AOI Troubleshooting](aoi-troubleshooting.md). Kết quả là xác định nguyên nhân cụ thể để điều chỉnh từng component type một.  \n(3) Lỗi thường gặp: ngưỡng đặt quá chặt (threshold too tight), gây báo nhầm do dao động nhỏ; cần kiểm tra lại tại [MQTT Alert Rules](mqtt-alert-rules.md); nếu không có quyền, chỉ người có vai trò",
+      "loi": null
+    },
+    {
+      "id": "LN03",
+      "ngoai": false,
+      "kq": "dung",
+      "ms": 2613,
+      "nguon": [
+        "knowledge/domain/aoi-defect-types.md",
+        "knowledge/features/analytics/defect-heatmap.md",
+        "knowledge/domain/aoi-defect-types.md",
+        "knowledge/domain/PRODUCTS_MEASUREMENT_POINTS_PHASE4_AUDIT.md",
+        "knowledge/features/analytics/defect-heatmap.md"
+      ],
+      "traLoi": "(1) Hạt thiếc rải rác trên bảng mạch thuộc loại lỗi **Major**, có nguy cơ gây ngắn mạch.  \n(2) *Bước 1:* Truy cập trang Analytics → Defect Heatmap để xem bản đồ nhiệt [2]. Hover vùng đỏ chứa hạt thiếc (ví dụ: góc dưới phải) → tooltip hiển thị số lượng và loại lỗi như `Solder Ball` (mã SBL). *Ở đâu trong UI?* Trên tab \"Heatmap\", khu vực có gradient màu đỏ. *Kết quả:* Hiển thị thông tin chi tiết về tần suất và thời gian xảy ra lỗi.  \n*Bước 2:* Click vào vùng đó để drill-down danh sách các lần kiểm tra gần nhất → xác định số lượng `SBL` trong từng inspection (dữ liệu từ bảng `inspections`). *Ở đâu?* Trong tab \"Drill-down list\". *Kết quả:* Xác nhận tần suất lỗi và thời gian phát sinh.  \n\n(3) Lưu ý: Nếu không thấy dữ liệu, kiểm tra xem sản phẩm có bật `defectMeasurementPoints` trong Product Setup hay không [2]. Lỗi thường gặp khi ảnh outline chưa tải → fallback placeholder màu xám; cần kiểm tra URL hình ảnh trong product setup.  \n\n(4) Liên quan đến hai chủ đề:  \n- **AOI Defect Types** (loại lỗi",
+      "loi": null
+    },
+    {
+      "id": "LN04",
+      "ngoai": false,
+      "kq": "dung",
+      "ms": 2672,
+      "nguon": [
+        "knowledge/domain/aoi-defect-types.md",
+        "knowledge/domain/aoi-defect-types.md",
+        "aoi-defect-types.md",
+        "knowledge/features/analytics/defect-heatmap.md",
+        "knowledge/domain/aoi-troubleshooting.md"
+      ],
+      "traLoi": "(1) Chân linh kiện bị nổi lên không chạm pad có mã lỗi là OPN và LL (Lifted Lead).  \n(2) Bước 1: Trong giao diện AOI, tìm tab \"Defect Types\" → chọn loại lỗi \"Open Circuit / Lifted Lead\". Tại đây sẽ hiển thị các mã lỗi liên quan như `OPN`, `LL`. Kết quả là hệ thống xác định chính xác loại lỗi này. Bước 2: Xem hình ảnh chi tiết của chân linh kiện tại station, kiểm tra chiều cao hàn <75% chiều cao chân → khớp với tiêu chí \"chân nổi\" [1].  \n(3) Lưu ý: Lỗi này được phân loại mức độ Critical nên cần xử lý ngay. Thường gặp khi thiếc không đủ hoặc pad bị oxy hóa; nếu không phát hiện sớm có thể gây lỗi điện mạch nghiêm trọng.  \n(4) Liên quan đến hai chủ đề: (i) \"Wrong Component\" – vì sai vị trí linh kiện cũng dẫn đến chân nổi, cần kiểm tra marking code và package [2]; (ii) \"Pad Damage\" – khi pad bị bong tróc có thể gây hiện tượng tương tự, nên phải phân biệt bằng hình ảnh và mức độ hư hại.  \n\n```bash\n# Ví dụ lệnh trong UI để xem lỗi OPN/LL\nGET /api/v1/defect",
+      "loi": null
+    },
+    {
+      "id": "LN05",
+      "ngoai": false,
+      "kq": "dung",
+      "ms": 2092,
+      "nguon": [
+        "knowledge/features/monitoring/machine-registration.md",
+        "knowledge/operational-approved/ai-inspection-analytics.md",
+        "knowledge/features/monitoring/machine-registration.md",
+        "knowledge/operational-approved/machine-registration.md",
+        "knowledge/features/inspection/inspection-detail.md"
+      ],
+      "traLoi": "Tôi không có thông tin chính xác về câu hỏi này trong tài liệu hiện tại. Câu hỏi \"Máy không nhận ra có bảng đi vào thì kiểm tra gì?\" liên quan đến hành vi cảm biến hoặc logic kiểm soát dòng sản xuất, nhưng tài liệu chỉ cung cấp nội dung về đăng ký máy (machine registration), phân tích AI và lịch sử kiểm tra – không đề cập đến việc phát hiện \"bảng đi vào\" hay cơ chế nhận diện vật lý trong quá trình vận chuyển.  \n\nCác thông tin có liên quan nhất là:  \n- Máy gửi dữ liệu kiểm tra qua API `POST /api/machine/submit-inspection` hoặc `POST /api/machine/upload-image`, nhưng không nói gì về việc phát hiện bảng đi vào [1].  \n- Việc phê duyệt máy cần thiết lập Station và quyền truy cập, nhưng không liên quan đến cảm biến hay logic dòng sản xuất.  \n\nDo đó, **không có dữ liệu nào trong tài liệu hỗ trợ xử lý hoặc kiểm tra khi máy \"không nhận ra có\n\nBạn muốn xem trạng thái **máy nào** hoặc **toàn bộ máy đang offline**? Hãy nêu rõ tên máy/line, hoặc nói \"máy đang offline\" để tôi liệt kê.",
+      "loi": null
+    },
+    {
+      "id": "LN06",
+      "ngoai": false,
+      "kq": "tu-choi",
+      "ms": 928,
+      "nguon": [
+        "knowledge/features/inspection/history.md",
+        "knowledge/operational-approved/alerts.md",
+        "knowledge/operational-approved/ai-inspection-analytics.md",
+        "knowledge/features/inspection/history.md",
+        "knowledge/operational-approved/alerts.md"
+      ],
+      "traLoi": "Tôi không có thông tin chính xác về câu hỏi này trong tài liệu hiện tại.\n\n**Gợi ý:**\n- Thử hỏi cụ thể hơn (tên tính năng, màn hình, mã lỗi, mã máy/lô)\n- Nếu hỏi về dữ liệu thời gian thực (sản lượng, máy, lỗi), hãy nêu rõ ngày/khoảng thời gian\n- Hoặc liên hệ kỹ thuật viên để được hỗ trợ",
+      "loi": null
+    },
+    {
+      "id": "LN07",
+      "ngoai": false,
+      "kq": "dung",
+      "ms": 2797,
+      "nguon": [
+        "knowledge/domain/aoi-troubleshooting.md",
+        "knowledge/operational-approved/defect-catalog.md",
+        "knowledge/operational-approved/anomaly-banks.md",
+        "knowledge/domain/aoi-troubleshooting.md",
+        "knowledge/operational-approved/machine-registration.md"
+      ],
+      "traLoi": "(1) Lỗi đầu đọc mã vạch (Barcode reader error) được mã hóa là E044, xử lý bằng cách kiểm tra kết nối USB và thay thế thiết bị nếu cần.  \n(2) Bước 1: Truy cập màn hình lỗi trong UI tại **Chất lượng › Danh mục lỗi**, tìm kiếm theo mã `E044` để xác nhận triệu chứng; kết quả là hiển thị mô tả \"Barcode reader error\". Bước 2: Kiểm tra vật lý đầu đọc – nếu dây USB bị gãy hoặc không kết nối, tháo và cắm lại tại cổng USB trên máy. Nếu vẫn lỗi, thực hiện **thay thế thiết bị** mới theo quy trình bảo trì nhà máy; kết quả là trạng thái lỗi chuyển sang \"Không có lỗi\" sau khi kiểm tra hoàn tất.  \n(3) Lưu ý: Lỗi này thường xảy ra do đầu đọc cũ hoặc dây cáp hỏng. Nếu không thấy mã E044 trong danh mục, cần xác minh lại tại `/defect-catalog` để tránh nhầm lẫn với các lỗi khác như E061 (fiducial not found).  \n(4) Liên quan đến hai chủ đề: **E044** thuộc nhóm lỗi giao tiếp phần mềm (Communication / Software), tương tự như **E055 – Configuration file corrupt**, đều yêu cầu kiểm tra cấu hình vật",
+      "loi": null
+    },
+    {
+      "id": "LN08",
+      "ngoai": false,
+      "kq": "tu-choi",
+      "ms": 941,
+      "nguon": [
+        "knowledge/operational/datasettings.md",
+        "knowledge/features/settings/shift-config.md",
+        "knowledge/operational-approved/device-adapters.md",
+        "knowledge/operational-approved/machine-registration.md",
+        "knowledge/features/products/measurement-point-setup.md"
+      ],
+      "traLoi": "Tôi không có thông tin chính xác về câu hỏi này trong tài liệu hiện tại.\n\n**Gợi ý:**\n- Thử hỏi cụ thể hơn (tên tính năng, màn hình, mã lỗi, mã máy/lô)\n- Nếu hỏi về dữ liệu thời gian thực (sản lượng, máy, lỗi), hãy nêu rõ ngày/khoảng thời gian\n- Hoặc liên hệ kỹ thuật viên để được hỗ trợ\n\nAPI liên quan: `/api/machines/:id/refresh-config`, `/api/public/products/:productCode/measurement-points`\nMàn hình liên quan: `/settings/shifts`, `/products/PCB-A7-V2`, `/machines/5`\nBiến cấu hình: `SYSTEM_TZ=Asia/Ho_Chi_Minh`\n\nBạn muốn xem trạng thái **máy nào** hoặc **toàn bộ máy đang offline**? Hãy nêu rõ tên máy/line, hoặc nói \"máy đang offline\" để tôi liệt kê.",
+      "loi": null
+    },
+    {
+      "id": "LN09",
+      "ngoai": false,
+      "kq": "dung",
+      "ms": 2188,
+      "nguon": [
+        "knowledge/domain/aoi-thresholds.md",
+        "knowledge/domain/aoi-thresholds.md",
+        "knowledge/domain/aoi-defect-types.md",
+        "knowledge/domain/aoi-defect-types.md",
+        "knowledge/features/inspection/inspection-submit.md"
+      ],
+      "traLoi": "(1) Tổng số mục được liệt kê: 1  \n\n(2) Danh sách đầy đủ:  \n- Góc thấm ướt nhỏ hơn **45°** thì được coi là thiếu thiếc (insufficient solder).  \n\n(3) Trích nguyên văn code/giá trị từ ngữ cảnh khi có:  \n\"Kiểm tra: Góc wetting < 45°, chiều cao hàn < 75% chiều cao chân.\" [câu hỏi liên quan đến lỗi \"Insufficient Solder\", tài liệu [3] và [4]]  \n\n(4) Nguồn gốc (file/đường dẫn):  \n[3] AOI Defect Types (Các Loại Lỗi AOI) (đoạn con 6), phần: **5. Insufficient Solder**; cũng được nhắc lại trong tài liệu [4].",
+      "loi": null
+    },
+    {
+      "id": "LN10",
+      "ngoai": false,
+      "kq": "tu-choi",
+      "ms": 1182,
+      "nguon": [
+        "knowledge/features/ai/ai-time-series.md",
+        "knowledge/features/ai/ai-inspection-analytics.md",
+        "knowledge/features/inspection/history.md",
+        "knowledge/features/analytics/reports.md",
+        "knowledge/features/inspection/inspection-submit.md"
+      ],
+      "traLoi": "Tôi không có thông tin chính xác về câu hỏi này trong tài liệu hiện tại.\n\n**Gợi ý:**\n- Thử hỏi cụ thể hơn (tên tính năng, màn hình, mã lỗi, mã máy/lô)\n- Nếu hỏi về dữ liệu thời gian thực (sản lượng, máy, lỗi), hãy nêu rõ ngày/khoảng thời gian\n- Hoặc liên hệ kỹ thuật viên để được hỗ trợ\n\nAPI liên quan: `/api/machine/submit-inspection`\n\nBạn muốn xem trạng thái **máy nào** hoặc **toàn bộ máy đang offline**? Hãy nêu rõ tên máy/line, hoặc nói \"máy đang offline\" để tôi liệt kê.",
+      "loi": null
+    },
+    {
+      "id": "LN11",
+      "ngoai": false,
+      "kq": "dung",
+      "ms": 1737,
+      "nguon": [
+        "knowledge/domain/howto-spc-control.md",
+        "knowledge/features/inspection/history.md",
+        "knowledge/features/production/production-dashboard.md",
+        "knowledge/workflows/create-measurement-point.playbook.yaml",
+        "knowledge/features/monitoring/ng-rate-threshold.md"
+      ],
+      "traLoi": "(1) Tổng số mục được liệt kê: 1  \n\n(2) Danh sách đầy đủ:  \n- Nút \"Tính từ N mẫu gần nhất\" (mặc định N=30)\n\n(3) Trích nguyên văn code/giá trị từ ngữ cảnh khi có:  \n> Kỹ sư phải nhập, hoặc bấm **\"Tính từ N mẫu gần nhất\"** (mặc định N=30).\n\n(4) Nguồn gốc (file/đường dẫn): [1] SPC — Đường UCL / LCL / Cpk (đoạn con 4) | knowledge/domain/howto-spc-control.md",
+      "loi": null
+    },
+    {
+      "id": "LN12",
+      "ngoai": false,
+      "kq": "tu-choi",
+      "ms": 940,
+      "nguon": [
+        "knowledge/features/production/production-dashboard.md",
+        "knowledge/features/inspection/inspection-submit.md",
+        "knowledge/features/inspection/inspection-submit.md",
+        "knowledge/features/dashboard/dashboard-drilldown.md",
+        "knowledge/features/analytics/correlation-analysis.md"
+      ],
+      "traLoi": "Tôi không có thông tin chính xác về câu hỏi này trong tài liệu hiện tại.\n\n**Gợi ý:**\n- Thử hỏi cụ thể hơn (tên tính năng, màn hình, mã lỗi, mã máy/lô)\n- Nếu hỏi về dữ liệu thời gian thực (sản lượng, máy, lỗi), hãy nêu rõ ngày/khoảng thời gian\n- Hoặc liên hệ kỹ thuật viên để được hỗ trợ\n\nAPI liên quan: `/api/machine/submit-inspection`\nMàn hình liên quan: `/dashboard/drilldown`, `/analytics/correlation`",
+      "loi": null
+    }
+  ]
+}

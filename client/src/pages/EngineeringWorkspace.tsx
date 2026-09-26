@@ -18,6 +18,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import type { TFunction } from "i18next";
 import { useTranslation } from "react-i18next";
 import { trpc } from "@/lib/trpc";
+import { toastTrpcError } from "@/lib/trpcErrors";
 import { computeIsDirty } from "@/lib/engineeringBuffer";
 import { usePermissions } from "@/_core/hooks/usePermissions";
 import { useAuth } from "@/_core/hooks/useAuth";
@@ -31,6 +32,10 @@ import { buildBreadcrumbs } from "@/lib/breadcrumbs";
 import { CodeEditor } from "@/components/engineering/CodeEditor";
 import { LadderEditor } from "@/components/engineering/LadderEditor";
 import { TeachJogPanel } from "@/components/engineering/TeachJogPanel";
+// Doc 69 · Wave 2 / C — page-cited vendor-manual lookup (doc 37 B1), now reaching the actual
+// code-authoring surface (previously only on AndonBoard/DeviceAdapterManagement — no screen
+// where an engineer TYPES a program had it).
+import ManualHelp from "@/components/ManualHelp";
 // Doc 34 · P3 — embed the in-app Programming Copilot (LLM codegen, validated by the substrate).
 import { COPILOT_KINDS, type CopilotKind } from "@/components/programming/ProgrammingCopilotPanel";
 import { useCopilotBinding, useProgrammingCopilot } from "@/contexts/ProgrammingCopilotContext";
@@ -66,6 +71,7 @@ import { useEngineeringStream } from "@/hooks/useEngineeringStream";
 import { useKeyboardShortcuts } from "@/hooks/useKeyboardShortcuts";
 import { useActuationReadiness } from "@/hooks/useActuationReadiness";
 import { useStepUpOtp } from "@/components/security/StepUpOtpDialog";
+import { deployOutcome, newDeployAttemptKey } from "./engineeringDeployOutcome";
 
 /** All target classes (mirrors server programmingKindEnum / PROGRAMMING_KINDS). */
 const KINDS = [
@@ -254,7 +260,8 @@ export default function EngineeringWorkspace() {
   // ── W3-11: version diff (chọn 2 phiên bản) + rollback deployment ──
   const [diffBaseId, setDiffBaseId] = useState<number | null>(null);
   const [diffCompareId, setDiffCompareId] = useState<number | null>(null);
-  const [rollbackTarget, setRollbackTarget] = useState<{ id: number; stage: string } | null>(null);
+  // doc 80 WS-04 — `attemptKey` sinh MỚI mỗi lần MỞ hộp xác nhận (ổn định trong lượt đó).
+  const [rollbackTarget, setRollbackTarget] = useState<{ id: number; stage: string; attemptKey: string } | null>(null);
   const diffBase = useMemo(() => artifactsQ.data?.find((a) => a.id === diffBaseId) ?? null, [artifactsQ.data, diffBaseId]);
   const diffCompare = useMemo(() => artifactsQ.data?.find((a) => a.id === diffCompareId) ?? null, [artifactsQ.data, diffCompareId]);
 
@@ -308,6 +315,10 @@ export default function EngineeringWorkspace() {
   );
   const [buildId, setBuildId] = useState<number | null>(null);
   const [simResult, setSimResult] = useState<{ ok: boolean; warnings: string[]; timeline: any[] } | null>(null);
+  // doc 80 WS-05 — đổi phiên bản đang chọn HOẶC lưu phiên bản mới (createArtifact đặt
+  // artifactId mới) ⇒ bỏ build/mô phỏng/chẩn đoán của phiên bản cũ, để Deploy/Fleet không đẩy
+  // build của một phiên bản KHÁC phiên bản đang hiển thị.
+  useEffect(() => { setBuildId(null); setSimResult(null); setDiagnostics(null); }, [artifactId]);
 
   const deploymentsQ = trpc.programming.listDeployments.useQuery(
     { projectId: projectId! },
@@ -330,7 +341,7 @@ export default function EngineeringWorkspace() {
       utils.programming.listProjects.invalidate();
       setProjectId(row.id);
     },
-    onError: (e) => toast.error(e.message),
+    onError: (e) => toastTrpcError(e),
   });
   // U2 (doc 26) — gắn / đổi thiết bị nguồn cho project đang mở (set project.deviceId).
   const updateProject = trpc.programming.updateProject.useMutation({
@@ -339,7 +350,7 @@ export default function EngineeringWorkspace() {
       utils.programming.listProjects.invalidate();
       setAttachOpen(false);
     },
-    onError: (e) => toast.error(e.message),
+    onError: (e) => toastTrpcError(e),
   });
   const createArtifact = trpc.programming.createArtifact.useMutation({
     onSuccess: (row) => {
@@ -347,7 +358,7 @@ export default function EngineeringWorkspace() {
       utils.programming.listArtifacts.invalidate();
       setArtifactId(row.id);
     },
-    onError: (e) => toast.error(e.message),
+    onError: (e) => toastTrpcError(e),
   });
   const validateM = trpc.programming.validateArtifact.useMutation({
     onSuccess: (r) => {
@@ -355,7 +366,7 @@ export default function EngineeringWorkspace() {
       utils.programming.listArtifacts.invalidate();
       r.ok ? toast.success(t("engineering.validOk", "Hợp lệ")) : toast.warning(t("engineering.validErr", "Có lỗi"));
     },
-    onError: (e) => toast.error(e.message),
+    onError: (e) => toastTrpcError(e),
   });
   const buildM = trpc.programming.buildArtifact.useMutation({
     onSuccess: (b) => {
@@ -363,58 +374,56 @@ export default function EngineeringWorkspace() {
       setBuildId(b.id);
       b.ok ? toast.success(t("engineering.buildOk", "Build OK")) : toast.error(t("engineering.buildFail", "Build lỗi"));
     },
-    onError: (e) => toast.error(e.message),
+    onError: (e) => toastTrpcError(e),
   });
   const simulateM = trpc.programming.simulateBuild.useMutation({
     onSuccess: (r) => {
       setSimResult({ ok: r.ok, warnings: r.warnings as string[], timeline: r.timeline as any[] });
       toast.success(t("engineering.simDone", "Đã mô phỏng"));
     },
-    onError: (e) => toast.error(e.message),
+    onError: (e) => toastTrpcError(e),
   });
   // doc 54 P3.2 — step-up 2FA (fresh OTP) for deploy actuation when ACTUATION_STEPUP_2FA is on.
   const stepUp = useStepUpOtp();
+  // doc 40 (Minh ui-fix) + doc 80 WS-04 — báo toast THEO trạng thái THẬT (status) của hàng
+  // server trả về, không chỉ theo cờ `simulated` / không luôn "thành công".
+  const showDeployOutcome = (
+    row: { status: string; error?: string | null; targetRolledBack?: boolean },
+    kind: "deploy" | "request" | "rollback",
+  ) => {
+    const o = deployOutcome(row, kind);
+    const msg = t(o.key, o.fallback);
+    const text = o.detail ? `${msg}: ${o.detail}` : msg;
+    if (o.level === "error") toast.error(text);
+    else if (o.level === "warning") toast.warning(text);
+    else if (o.level === "info") toast.info(text);
+    else toast.success(text);
+  };
   const deployM = trpc.programming.deployBuild.useMutation({
     onSuccess: (d) => {
       utils.programming.listDeployments.invalidate();
-      // doc 40 (Minh ui-fix) — báo toast THEO trạng thái THẬT (status), không chỉ theo cờ
-      // `simulated`. Trước đây rejected/failed vẫn hiện "Đã deploy" → che giấu việc bị từ chối.
-      switch (d.status) {
-        case "rejected":
-        case "failed":
-          toast.error(d.error || t("engineering.deployRejected", "Deploy bị từ chối"));
-          break;
-        case "verified":
-          toast.success(t("engineering.deployVerified", "Đã deploy & xác minh (read-back khớp)"));
-          break;
-        case "deployed":
-          toast.warning(t("engineering.deployedUnverified", "Đã deploy nhưng CHƯA xác minh read-back (thiết bị vắng / không hỗ trợ đọc lại)"));
-          break;
-        case "simulated":
-        default:
-          toast.success(t("engineering.deploySimulated", "Đã ghi nhận (SIMULATED — flag OFF / chưa sign-off)"));
-          break;
-      }
+      showDeployOutcome(d, "deploy");
     },
-    onError: (e) => toast.error(e.message),
+    onError: (e) => toastTrpcError(e),
   });
   // doc 40 ENG-F2 — gửi YÊU CẦU deploy production (request→approve). Không tự deploy: tạo
   // hàng chờ duyệt để người thứ hai ký ở Approval Inbox (đóng lỗ four-eyes hình thức).
   const requestDeployApprovalM = trpc.programming.requestDeployApproval.useMutation({
-    onSuccess: () => {
+    onSuccess: (d) => {
       utils.programming.listDeployments.invalidate();
-      toast.success(t("engineering.deployRequested", "Đã gửi yêu cầu deploy — chờ người thứ hai duyệt ở Hộp duyệt"));
+      showDeployOutcome(d, "request");
     },
-    onError: (e) => toast.error(e.message),
+    onError: (e) => toastTrpcError(e),
   });
   // W3-11 — rollback: ghi một deployment MỚI về build của lần deploy thành công trước.
   const rollbackM = trpc.programming.rollbackDeployment.useMutation({
-    onSuccess: () => {
+    onSuccess: (d) => {
       utils.programming.listDeployments.invalidate();
       setRollbackTarget(null);
-      toast.success(t("engineering.rollbackDone", "Đã khôi phục về phiên bản trước"));
+      // doc 80 WS-03/04 — chỉ báo "đã khôi phục" khi server thật sự đánh đích rolled_back.
+      showDeployOutcome(d, "rollback");
     },
-    onError: (e) => { setRollbackTarget(null); toast.error(e.message); },
+    onError: (e) => { setRollbackTarget(null); toastTrpcError(e); },
   });
   // doc 40 W5 §11 — triển khai đội máy (canary): tuần tự qua đúng deployBuild từng máy.
   const deployToFleetM = trpc.programming.deployToFleet.useMutation({
@@ -429,7 +438,7 @@ export default function EngineeringWorkspace() {
         toast.success(t("engineering.fleetCanaryOk", "Canary đã chạy xong"));
       }
     },
-    onError: (e) => toast.error(e.message),
+    onError: (e) => toastTrpcError(e),
   });
   const fleetResult = deployToFleetM.data ?? null;
 
@@ -440,14 +449,14 @@ export default function EngineeringWorkspace() {
       utils.programming.listSymbols.invalidate();
       setSymOpen(false);
     },
-    onError: (e) => toast.error(e.message),
+    onError: (e) => toastTrpcError(e),
   });
   const deleteSymbol = trpc.programming.deleteSymbol.useMutation({
     onSuccess: () => {
       toast.success(t("engineering.symbolDeleted", "Đã xóa biến"));
       utils.programming.listSymbols.invalidate();
     },
-    onError: (e) => toast.error(e.message),
+    onError: (e) => toastTrpcError(e),
   });
 
   // ── Online Monitor (watch) — start/stop server watch session + subscribe live room ──
@@ -470,11 +479,11 @@ export default function EngineeringWorkspace() {
         toast.warning(msg);
       }
     },
-    onError: (e) => toast.error(e.message),
+    onError: (e) => toastTrpcError(e),
   });
   const stopWatchM = trpc.programming.stopWatch.useMutation({
     onSuccess: () => setWatching(false),
-    onError: (e) => toast.error(e.message),
+    onError: (e) => toastTrpcError(e),
   });
   // Subscribe socket room `engineering:{deviceId}` khi đang watch (chỉ đọc giá trị live).
   const { values: liveValues, lastUpdate, connected: streamConnected } = useEngineeringStream(
@@ -592,6 +601,11 @@ export default function EngineeringWorkspace() {
         setCode((prev) => (prev.trim() ? `${prev}\n\n${gen}` : gen));
         toast.success(t("progCopilot.inserted", "Inserted generated code into the editor"));
       },
+      // G2-D — byte-exact buffer REPLACE, used by the per-hunk apply surface. Deliberately
+      // NOT `onApply` (which appends): a hunk's line coordinates only mean something if the
+      // buffer becomes exactly the projected text. No toast here — accepting/undoing hunks is
+      // a rapid toggle and a toast per click would be noise.
+      onApplyText: (next: string) => setCode(next),
     }),
     [copilotInitialKind, code, diagnostics],
   );
@@ -991,6 +1005,19 @@ export default function EngineeringWorkspace() {
                           </button>
                         </div>
                       )}
+                      {/* Doc 69 · Wave 2 / C — manual lookup right where the code is written.
+                          ManualHelp has no dedicated "kind" filter prop (query/vendor/lang only,
+                          see client/src/components/ManualHelp.tsx) — the selected kind + language
+                          are folded into the free-text query (same pattern as
+                          DeviceAdapterManagement.tsx's protocol-scoped lookup); no vendor is
+                          known for a device-programming project here, so `vendor` is left unset
+                          (widens the search rather than silently filtering to nothing). */}
+                      <ManualHelp
+                        query={`${project?.kind ?? ""} ${language} programming syntax reference`.trim()}
+                        buttonLabel={t("engineering.manualHelp", "Sổ tay")}
+                        size="sm"
+                        variant="ghost"
+                      />
                       <span className="ml-auto text-xs text-muted-foreground">{code.split("\n").length} {t("engineering.lines", "dòng")}</span>
                     </div>
                     {visualKind && editorMode === "visual" ? (
@@ -1000,7 +1027,15 @@ export default function EngineeringWorkspace() {
                         <TeachJogPanel value={code} onChange={setCode} />
                       )
                     ) : (
-                      <CodeEditor value={code} onChange={setCode} language={language} aria-label="program-source" />
+                      <CodeEditor
+                        value={code}
+                        onChange={setCode}
+                        language={language}
+                        aria-label="program-source"
+                        // doc69 · Wave 4 / C1 — the primary authoring surface gets inline (ghost-text)
+                        // completion; opt-in per CodeEditor.tsx, other consumers are unchanged.
+                        inlineCopilot
+                      />
                     )}
 
                     <div className="mt-3 flex flex-wrap gap-2">
@@ -1205,8 +1240,9 @@ export default function EngineeringWorkspace() {
                           onClick={() =>
                             buildId && requestDeployApprovalM.mutate({
                               buildId,
-                              // Khóa idempotency ổn định theo build → double-click không tạo 2 yêu cầu.
-                              idempotencyKey: `depreq-${buildId}-production`,
+                              // doc 80 WS-04 — khoá MỚI mỗi lượt bấm (nút khoá khi isPending ⇒ không
+                              // double-submit); bấm lại sau khi bị từ chối ⇒ yêu cầu mới.
+                              idempotencyKey: newDeployAttemptKey("depreq", buildId, "production"),
                               reason: deployReason.trim(),
                             })
                           }
@@ -1218,20 +1254,24 @@ export default function EngineeringWorkspace() {
                           size="sm"
                           disabled={!canCreate || !buildId || deployM.isPending || !prodDeployReady}
                           title={createReason}
-                          onClick={() =>
-                            buildId && stepUp.guard((totpCode) => deployM.mutate({
+                          onClick={() => {
+                            if (!buildId) return;
+                            // doc 80 WS-04 — nonce/lượt xác nhận (mẫu fleet): ổn định trong lượt
+                            // này (thử lại OTP dùng lại cùng khoá), khác giữa các lượt ⇒ bấm lại
+                            // sau khi bị từ chối sẽ DEPLOY LẠI thay vì nhận lại dòng rejected cũ.
+                            const attemptKey = newDeployAttemptKey("dep", buildId, deployStage);
+                            stepUp.guard((totpCode) => deployM.mutate({
                               buildId,
                               stage: deployStage,
-                              // Khóa idempotency ổn định theo (build, stage) → double-click không tạo 2 deploy.
-                              idempotencyKey: `dep-${buildId}-${deployStage}`,
+                              idempotencyKey: attemptKey,
                               actionId: rid("act"),
                               confirmedBy: isProd
                                 ? (approverId ? Number(approverId) : undefined)
                                 : (signOff && user?.id ? user.id : undefined),
                               reason: isProd ? deployReason.trim() : undefined,
                               totpCode,
-                            }))
-                          }
+                            }));
+                          }}
                         >
                           <Rocket className="mr-1 h-4 w-4" /> {t("engineering.deployBtn", "Deploy build")}
                         </Button>
@@ -1281,7 +1321,7 @@ export default function EngineeringWorkspace() {
                                 <Button
                                   size="sm" variant="outline"
                                   disabled={rollbackM.isPending}
-                                  onClick={() => setRollbackTarget({ id: d.id, stage: d.stage })}
+                                  onClick={() => setRollbackTarget({ id: d.id, stage: d.stage, attemptKey: newDeployAttemptKey("rollback-dep", d.id) })}
                                 >
                                   <RotateCcw className="mr-1 h-3.5 w-3.5" /> {t("engineering.rollback", "Khôi phục")}
                                 </Button>
@@ -1877,11 +1917,13 @@ export default function EngineeringWorkspace() {
             <AlertDialogAction
               onClick={() => {
                 if (rollbackTarget == null) return;
-                // idempotencyKey/actionId ỔN ĐỊNH theo deploymentId → click lại không tạo bản trùng.
+                // doc 80 WS-04 — khoá sinh lúc MỞ hộp: ổn định trong lượt này (click lại / thử
+                // lại OTP không tạo bản trùng), mới ở lần mở sau (thử lại sau khi thất bại).
+                const { id, attemptKey } = rollbackTarget;
                 stepUp.guard((totpCode) => rollbackM.mutate({
-                  deploymentId: rollbackTarget.id,
-                  idempotencyKey: `rollback-dep-${rollbackTarget.id}`,
-                  actionId: `rollback-dep-${rollbackTarget.id}`,
+                  deploymentId: id,
+                  idempotencyKey: attemptKey,
+                  actionId: attemptKey,
                   totpCode,
                 }));
               }}

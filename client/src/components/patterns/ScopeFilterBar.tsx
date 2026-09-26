@@ -65,6 +65,9 @@ import {
   type EntitySelectProps,
 } from "@/components/patterns/EntityPicker";
 import { useUrlFilters, type FilterDef, type FilterValues } from "@/components/FilterBar";
+// doc 64 IA-10 S0.2 — trục phạm vi bền (shell). URL THẮNG; trục lấp chỗ trống
+// (điều hướng không mất scope); setScope write-through cả hai.
+import { useAssetScope } from "@/contexts/AssetScopeContext";
 
 // ---------------------------------------------------------------------------
 // Public types
@@ -271,15 +274,36 @@ export function useScope(show?: ScopeControl[]): {
   const key = showKey(controls);
   const defs = React.useMemo(() => buildDefs(controls), [key]); // eslint-disable-line react-hooks/exhaustive-deps
   const url = useUrlFilters(defs);
+  // doc 64 IA-10 S0.2 — trục ISA-95 bền ở shell: URL param THẮNG (link chia sẻ
+  // được); khi URL không có, trục lấp factoryId/lineId/machineId để scope SỐNG
+  // qua điều hướng. Không provider → axis rỗng → hành vi y hệt cũ.
+  const assetAxis = useAssetScope();
 
-  const scope = React.useMemo(
-    () => toScope(url.values, controls),
-    [url.values, key], // eslint-disable-line react-hooks/exhaustive-deps
-  );
+  const scope = React.useMemo(() => {
+    const merged = toScope(url.values, controls);
+    if (controls.includes("factory") && merged.factoryId === undefined && assetAxis.axis.factoryId !== undefined) {
+      merged.factoryId = assetAxis.axis.factoryId;
+    }
+    if (controls.includes("line") && merged.lineId === undefined && assetAxis.axis.lineId !== undefined) {
+      merged.lineId = assetAxis.axis.lineId;
+    }
+    if (controls.includes("machine") && merged.machineId === undefined && assetAxis.axis.machineId !== undefined) {
+      merged.machineId = assetAxis.axis.machineId;
+    }
+    return merged;
+  }, [url.values, key, assetAxis.axis]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const setScope = React.useCallback(
-    (patch: Partial<ScopeValues>) => url.setValues(toFilterPatch(patch)),
-    [url],
+    (patch: Partial<ScopeValues>) => {
+      url.setValues(toFilterPatch(patch));
+      // Write-through trục cho 3 cấp tài sản (đổi trang vẫn giữ lựa chọn).
+      const axisPatch: { factoryId?: number; lineId?: number; machineId?: number } = {};
+      if ("factoryId" in patch) axisPatch.factoryId = patch.factoryId ?? undefined;
+      if ("lineId" in patch) axisPatch.lineId = patch.lineId ?? undefined;
+      if ("machineId" in patch) axisPatch.machineId = patch.machineId ?? undefined;
+      if (Object.keys(axisPatch).length > 0) assetAxis.setAxis(axisPatch);
+    },
+    [url, assetAxis],
   );
 
   return { scope, setScope, clear: url.clear };

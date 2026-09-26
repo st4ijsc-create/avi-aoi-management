@@ -12,6 +12,7 @@ import DashboardLayout from "@/components/DashboardLayout";
 import { TodayBriefing } from "@/components/TodayBriefing";
 import { PageHeader, PageContainer, MetricCard } from "@/components/patterns";
 import { RoleTileGrid } from "@/components/RoleTileGrid";
+import { ScopeEmptyNotice } from "@/components/ScopeEmptyNotice";
 import { trpc } from "@/lib/trpc";
 import { Badge } from "@/components/ui/badge";
 import {
@@ -32,7 +33,7 @@ export default function ViewerHome() {
     { refetchOnWindowFocus: false, retry: false, staleTime: 60_000 },
   );
   const stats = statsQuery.data as
-    | { total?: number; ok?: number; ng?: number; ntf?: number; yieldRate?: number }
+    | { total?: number; ok?: number; ng?: number; ntf?: number; yieldRate?: number; scopeEmptyReason?: string | null }
     | undefined;
   const loadingStats = statsQuery.isLoading;
 
@@ -60,6 +61,8 @@ export default function ViewerHome() {
         {/* Read-only "today at a glance" strip (existing dashboard.getStats query) */}
         <section className="space-y-3">
           <h2 className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">{t("viewer.glanceTitle", "Hôm nay")}</h2>
+          {/* Số 0 của người CHƯA ĐƯỢC GÁN NHÀ MÁY phải nói ra lý do, không được im lặng. */}
+          <ScopeEmptyNotice reason={stats?.scopeEmptyReason} />
           <div className="grid grid-cols-2 gap-3 sm:gap-4 lg:grid-cols-4">
             <MetricCard
               icon={<TrendingUp className="h-5 w-5" />}

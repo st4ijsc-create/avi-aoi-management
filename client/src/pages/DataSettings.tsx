@@ -41,7 +41,7 @@ import {
   ShieldCheck,
   Ticket
 } from "lucide-react";
-import { navItems } from "@/lib/navigation";
+import { navItems, getAcceptedPermissionsForHref } from "@/lib/navigation";
 // doc 47 IA Đợt 2 — "Tổng quan": cây mô hình nhà máy + bảng kiểm tra cấu hình.
 import { FactoryTree } from "@/components/factoryConfig/FactoryTree";
 import { ConfigHealthPanel } from "@/components/factoryConfig/ConfigHealthPanel";
@@ -785,8 +785,30 @@ export default function DataSettings() {
 
   // doc 47 IA Đợt 1 — the hub LINKS OUT to config pages that have their own single home
   // (instead of re-embedding their managers, which caused menu/route duplication).
+  //
+  // ★★★ ĐỢT 62 mục A — liên kết nhanh "Bố cục nhà máy": HREF VÀ CỔNG QUYỀN LÀ MỘT BIẾN.
+  //
+  // Lô 5 Mục 2 đã bỏ chuỗi quyền chép tay, nhưng hỏi quyền của "/digital-twin" — route
+  // NAY CHỈ CÒN LÀ REDIRECT. Đích thật từ Đợt 61 là "/twin-studio", gate bằng
+  // settings_factory HOẶC machine_control. Hậu quả ĐO ĐƯỢC trên cổng 3062 (vai seed
+  // THẬT, không phải mock): `engineer1` có settings_factory ⇒ VÀO ĐƯỢC /twin-studio,
+  // nhưng KHÔNG có analytics_oee ⇒ **liên kết này bị ẩn khỏi chính người được phép**.
+  // Đó là lớp lỗi "một lối vào rồi TỪ CHỐI" chạy chiều NGƯỢC, và nó câm hơn chiều xuôi.
+  //
+  // ⚠ Không fallback chuỗi cứng: tập rỗng (mục nav biến mất) ⇒ ẨN liên kết (fail-closed),
+  //   không rơi về một quyền đoán mò — chính cái fallback ấy đã đẻ ra lỗi này.
+  // ⚠ Trang này tự gate settings_factory, tức MỌI người thấy được trang đều nằm trong
+  //   tập chấp nhận của /twin-studio ⇒ sau bản vá liên kết hiện cho tất cả họ. Đó là
+  //   kết quả ĐÚNG, không phải nới cổng: cổng nay = cổng của đích.
+  const LAYOUT_QUICKLINK_HREF = "/twin-studio";
+  const layoutQuyenChapNhan = getAcceptedPermissionsForHref(LAYOUT_QUICKLINK_HREF);
+  const canOpenLayoutQuickLink =
+    isAdmin ||
+    (layoutQuyenChapNhan.length > 0 && layoutQuyenChapNhan.some((m) => hasPermission(m, "canView")));
   const quickLinks = [
-    { href: "/layout", title: t("dataSettings.quickLinks.layout"), description: t("dataSettings.quickLinks.layoutDesc"), icon: <Factory className="h-5 w-5" /> },
+    ...(canOpenLayoutQuickLink
+      ? [{ href: LAYOUT_QUICKLINK_HREF, title: t("dataSettings.quickLinks.layout"), description: t("dataSettings.quickLinks.layoutDesc"), icon: <Factory className="h-5 w-5" /> }]
+      : []),
     { href: "/workstation-management", title: t("dataSettings.quickLinks.workstation"), description: t("dataSettings.quickLinks.workstationDesc"), icon: <Warehouse className="h-5 w-5" /> },
     { href: "/process-management", title: t("dataSettings.quickLinks.process"), description: t("dataSettings.quickLinks.processDesc"), icon: <Workflow className="h-5 w-5" /> },
     { href: "/products", title: t("dataSettings.quickLinks.products"), description: t("dataSettings.quickLinks.productsDesc"), icon: <Package className="h-5 w-5" /> },
@@ -996,7 +1018,7 @@ export default function DataSettings() {
                 >
                   <div className="flex items-center gap-2">
                     <Database className="h-4 w-4 text-green-500" />
-                    <span>Công cụ</span>
+                    <span>{t("dataSettings.congCu", "Công cụ")}</span>
                   </div>
                   {collapsedCategories['tools'] ? <ChevronRight className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
                 </button>
@@ -1809,7 +1831,7 @@ export default function DataSettings() {
                 <label className="text-sm font-medium">{t("settings.apiKey")}</label>
                 <div className="flex gap-2">
                   {/* doc 54 P0-1 — stored key is never read back; show masked + rotate-to-reveal. */}
-                  <Input value={"•••••••• (ẩn — bấm tạo lại để lộ 1 lần)"} disabled className="bg-muted font-mono text-xs" />
+                  <Input value={t("dataSettings.khoaAnBamTaoLai", "•••••••• (ẩn — bấm tạo lại để lộ 1 lần)")} disabled className="bg-muted font-mono text-xs" />
                   <Button
                     variant="outline"
                     size="icon"

@@ -5,7 +5,6 @@
  * SAFETY invariant that this router does NOT import commandDispatcher.
  */
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { FakeDb, makeEq, makeAnd, makeGte, makeDesc, resetSeq } from "./__otFakeDb";
 import { commandLog } from "../../drizzle/schema";
@@ -30,6 +29,8 @@ vi.mock("../_core/accessControl", () => ({
 }));
 
 import { commandLogRouter } from "./commandLogRouter";
+
+import { docMaNguon } from "@shared/testing/docMaNguon";
 
 const ctx = { user: { id: 3, role: "supervisor", name: "Sup" } } as any;
 const caller = commandLogRouter.createCaller(ctx);
@@ -83,7 +84,7 @@ describe("RBAC canView gate", () => {
 
 describe("SAFETY invariant", () => {
   it("router source does NOT import commandDispatcher / writeTags", () => {
-    const src = readFileSync(join(__dirname, "commandLogRouter.ts"), "utf8");
+    const src = docMaNguon(join(__dirname, "commandLogRouter.ts"));
     const importLines = src.split("\n").filter((l) => /^\s*import\b/.test(l)).join("\n");
     expect(importLines).not.toMatch(/commandDispatcher/);
     expect(importLines).not.toMatch(/writeTags/);

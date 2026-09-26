@@ -14,7 +14,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
 import { cn } from "@/lib/utils";
-import { ChevronRight, ExternalLink } from "lucide-react";
+import { ChevronRight, ExternalLink, PanelRightOpen } from "lucide-react";
 
 /** Normalised KPI row shared by every drill tier. */
 export interface DrillRow {
@@ -28,6 +28,13 @@ export interface DrillRow {
   ng: number;
   ntf: number;
   yieldRate: number;
+  /**
+   * W1: bucket "chưa gán" (thiếu mapping master data). Hàng render mờ (muted),
+   * mang badge "Thiếu mapping" + tooltip giải thích, và xếp cuối danh sách.
+   */
+  isUnassigned?: boolean;
+  /** Tooltip giải thích vì sao chưa gán + nơi khắc phục (Quản lý dữ liệu). */
+  unassignedNote?: string;
 }
 
 export interface DrillNodeLeafAction {
@@ -38,17 +45,37 @@ export interface DrillNodeLeafAction {
 
 export interface DrillNodeProps {
   data: DrillRow;
-  /** Max total across the current level → progress-bar scale. */
+  /** Max total across the current level → OK progress-bar scale. */
   maxValue: number;
+  /**
+   * W4: max NG across the current level → NG progress-bar scale. NG scaled
+   * against Output max was visually invisible (ISA-101: deviation must be the
+   * most salient thing). Falls back to maxValue when absent.
+   */
+  maxNg?: number;
   /** Continue drilling into this node's children. Undefined for a leaf tier. */
   onDrill?: () => void;
+  /**
+   * doc 68 §3.6 (việc 2): tầng máy (lá) — click hàng KHÔNG rời trang nữa mà mở
+   * ContextDrawer preview (KPI + sparkline NG + top điểm-đo lỗi) để so sánh máy
+   * liên tiếp trên nền danh sách. "Mở buồng lái" là CTA bước-2 TRONG drawer.
+   * Ưu tiên thấp hơn onDrill (tầng còn drill được vẫn drill), cao hơn leafAction.
+   */
+  onPreview?: () => void;
   /** Explicit leaf-out action (Open Line View / Open Cockpit). */
   leafAction?: DrillNodeLeafAction;
   /** Small tier icon shown before the name. */
   icon?: React.ReactNode;
+  /**
+   * doc 67 W8 (việc 3): highlight node theo deep-link (?focus=<machineCode> từ
+   * Andon/alarm) hoặc 'Yield thấp nhất' — ring nổi bật (page tự tắt sau 5s) và
+   * node tự cuộn vào giữa màn hình khi bật.
+   */
+  highlighted?: boolean;
 }
 
-function yieldTone(v: number): "default" | "secondary" | "destructive" {
+/** Shared yield badge tone (W4: also drives the dashboard's quick-stat badges). */
+export function yieldTone(v: number): "default" | "secondary" | "destructive" {
   if (v >= 95) return "default";
   if (v >= 90) return "secondary";
   return "destructive";
@@ -57,19 +84,35 @@ function yieldTone(v: number): "default" | "secondary" | "destructive" {
 export function DrillNode({
   data,
   maxValue,
+  maxNg,
   onDrill,
+  onPreview,
   leafAction,
   icon,
+  highlighted,
 }: DrillNodeProps): React.JSX.Element {
-  // Whole-row click: prefer continuing the drill; otherwise (leaf) open the cockpit.
-  const primary = onDrill ?? leafAction?.onClick;
+  // Whole-row click: prefer continuing the drill; else open the preview drawer
+  // (leaf/machine tier); else fall back to the explicit leaf-out action.
+  const primary = onDrill ?? onPreview ?? leafAction?.onClick;
   const interactive = typeof primary === "function";
+
+  // W8 (việc 3): khi được highlight (deep-link Andon/alarm) tự cuộn node vào
+  // giữa viewport — ring mà nằm dưới fold thì highlight vô nghĩa.
+  const rootRef = React.useRef<HTMLDivElement>(null);
+  React.useEffect(() => {
+    if (highlighted) rootRef.current?.scrollIntoView({ block: "center", behavior: "smooth" });
+  }, [highlighted]);
 
   return (
     <div
+      ref={rootRef}
       className={cn(
         "rounded-lg border p-4 transition-colors",
         interactive && "cursor-pointer hover:bg-muted/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+        // W1: hàng "chưa gán" render mờ (dữ liệu thật nhưng thiếu mapping master data).
+        data.isUnassigned && "border-dashed bg-muted/30",
+        // W8: ring highlight theo deep-link/điểm-xấu-nhất (page tắt sau 5s).
+        highlighted && "ring-2 ring-primary ring-offset-2 ring-offset-background",
       )}
       role={interactive ? "button" : undefined}
       tabIndex={interactive ? 0 : undefined}
@@ -88,16 +131,31 @@ export function DrillNode({
       <div className="mb-2 flex items-center justify-between gap-2">
         <div className="flex min-w-0 items-center gap-2">
           {icon != null && <span className="shrink-0 text-muted-foreground">{icon}</span>}
-          <span className="truncate font-medium">{data.name}</span>
-          {data.code && (
+          <span className={cn("truncate font-medium", data.isUnassigned && "text-muted-foreground")}>
+            {data.name}
+          </span>
+          {/* W1: hàng "chưa gán" — ẩn badge code sentinel ('Unknown'/'UNASSIGNED'),
+              thay bằng badge cảnh báo + tooltip hướng dẫn khắc phục. */}
+          {data.code && !data.isUnassigned && (
             <Badge variant="outline" className="shrink-0 text-xs">
               {data.code}
+            </Badge>
+          )}
+          {data.isUnassigned && (
+            <Badge
+              variant="outline"
+              className="shrink-0 border-dashed text-xs font-normal text-muted-foreground"
+              title={data.unassignedNote}
+            >
+              Thiếu mapping
             </Badge>
           )}
         </div>
         <div className="flex shrink-0 items-center gap-2">
           <Badge variant={yieldTone(data.yieldRate)}>{data.yieldRate.toFixed(1)}%</Badge>
           {onDrill && <ChevronRight className="h-4 w-4 text-muted-foreground" />}
+          {/* doc 68 §3.6: tầng máy — icon "mở panel phải" báo hiệu click = preview drawer. */}
+          {!onDrill && onPreview && <PanelRightOpen className="h-4 w-4 text-muted-foreground" />}
         </div>
       </div>
 
@@ -109,7 +167,8 @@ export function DrillNode({
         </div>
         <div className="flex items-center gap-2">
           <span className="w-12 text-xs text-muted-foreground">NG</span>
-          <Progress value={(data.ng / maxValue) * 100} className="h-2 flex-1 [&>div]:bg-destructive" />
+          {/* W4: NG scales against the tier's max NG (not max Output) so defects stay visible. */}
+          <Progress value={(data.ng / Math.max(maxNg ?? maxValue, 1)) * 100} className="h-2 flex-1 [&>div]:bg-destructive" />
           <span className="w-16 text-right text-xs font-medium">{data.ng.toLocaleString()}</span>
         </div>
       </div>
@@ -119,7 +178,7 @@ export function DrillNode({
           <Button
             variant="secondary"
             size="sm"
-            className="gap-1.5"
+            className="min-h-11 gap-1.5"
             aria-label={leafAction.ariaLabel}
             onClick={(e) => {
               e.stopPropagation();

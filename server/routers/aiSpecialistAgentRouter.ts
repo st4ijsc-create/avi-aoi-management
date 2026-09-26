@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { TRPCError } from "@trpc/server";
-import { router, protectedProcedure } from "../_core/trpc";
+import { appError } from "../_core/appError";
+import { router, roleProcedure, moduleGate } from "../_core/trpc";
 import {
   listSpecialistAgents,
   runSpecialistAgent,
@@ -8,16 +9,29 @@ import {
   buildWorkflowAgentOrder,
   listModuleAuditPresets,
   getModuleAuditPreset,
+  SPECIALIST_BRIDGE_TOOLS,
+  ensureSpecialistBridgeToolsRegistered,
 } from "../services/aiSpecialistAgentService";
 import {
   appendAiSpecialistSessionStep,
   completeAiSpecialistSession,
   createAiSpecialistSession,
-  getAiSpecialistSessionById,
   getAiSpecialistSessionDetail,
   listAiSpecialistSessions,
   getModuleImprovementStats,
+  upsertSpecialistFeedback,
+  getSpecialistQualityScoreboard,
 } from "../db/aiSpecialist";
+import { getTool, isWriteTool } from "../services/aiLocalTools/toolRegistry";
+import { proposeAction } from "../services/aiCopilotActions";
+import { gatherRepoContext, type RepoContextResult } from "../services/ai/repoContextService";
+
+/**
+ * Wave 1 — siết RBAC: trước đây MỌI procedure chỉ yêu cầu đăng nhập (không lọc
+ * role), nghĩa là bất kỳ user nào (kể cả operator) cũng chạy được model. Khuôn
+ * này khớp aiAgentCenterRouter.ts:22 (roleProcedure + moduleGate("MOD_AI")).
+ */
+const specialistProcedure = roleProcedure("admin", "engineer").use(moduleGate("MOD_AI"));
 
 const runInputSchema = z.object({
   agentId: z.enum(["data-analyst", "backend-engineer", "frontend-engineer", "qa-optimizer"]),
@@ -31,6 +45,7 @@ const runInputSchema = z.object({
   constraints: z.array(z.string().min(1).max(300)).max(60).optional(),
   acceptanceCriteria: z.array(z.string().min(1).max(300)).max(60).optional(),
   files: z.array(z.string().min(1).max(400)).max(80).optional(),
+  includeRepoContext: z.boolean().optional(),
   language: z.enum(["vi", "en"]).optional(),
   modelId: z.string().max(255).optional(),
   saveHistory: z.boolean().optional(),
@@ -45,179 +60,300 @@ const workflowInputSchema = runInputSchema
     includeQa: z.boolean().optional(),
   });
 
+/**
+ * Wave 1 fix round 2 (I-4/I-5) — bản TÓM TẮT GỌN của ngữ cảnh repo, là thứ DUY
+ * NHẤT được lưu vào `ai_specialist_session_steps.inputPayload`.
+ *
+ * Vì sao không lưu nguyên khối: `repoContext` chứa tới 256KB mã nguồn + mảnh
+ * RAG. Lưu nguyên khối là nhồi từng ấy byte vào DB mỗi lần chạy VÀ đẩy ngược cả
+ * khối đó về trình duyệt ở MỖI lượt poll `getSessionDetail` (2s/lượt). Model
+ * vẫn nhận đủ ngữ cảnh — nó nằm trong prompt, chỉ là không lưu lại.
+ *
+ * Vì sao vẫn phải lưu bản tóm tắt: `submitFeedback` cần biết phiên đó CÓ THẬT SỰ
+ * đọc được file nào không để tự suy ra `repoContextUsed` — client không được
+ * quyền tự khai (xem `deriveFeedbackFacts`).
+ */
+export interface RepoContextSummary {
+  filesRead: number;
+  skipped: number;
+  truncated: number;
+  totalBytes: number;
+}
+
+export function summarizeRepoContext(ctx?: RepoContextResult): RepoContextSummary {
+  return {
+    filesRead: ctx?.files?.length ?? 0,
+    skipped: ctx?.skipped?.length ?? 0,
+    truncated: ctx?.files?.filter((f) => f.truncated).length ?? 0,
+    totalBytes: ctx?.totalBytes ?? 0,
+  };
+}
+
+/**
+ * Wave 1 fix round 2 (I-1/I-2/I-4) — MÁY CHỦ là nguồn sự thật cho phiếu chấm.
+ *
+ * Trước bản này client tự khai `agentId`/`moduleName`/`repoContextUsed` lúc bấm
+ * chấm điểm, và cả ba đều sai được:
+ *  - `repoContextUsed` lấy từ TRẠNG THÁI CÔNG TẮC HIỆN TẠI, không phải lúc giao
+ *    việc (công tắc chỉ khoá ~1 giây khi dispatch, còn model chạy vài phút) —
+ *    gạt công tắc trong lúc chờ là phiếu ghi sai;
+ *  - client khai `true` cả khi đọc được 0 file (bỏ trống ô "File liên quan", gõ
+ *    sai đường dẫn, file `.py`, file trong `node_modules/`…). Khi đó
+ *    `buildRepoContextBlock` trả `""` — prompt GIỐNG HỆT lúc tắt mắt — nhưng
+ *    bảng điểm vẫn ghi "có mắt", phá thẳng cột so sánh có-mắt/không-mắt.
+ *
+ * Quy tắc: `repoContextUsed = (tổng filesRead của các bước) > 0`. Một lượt chạy
+ * KHÔNG đọc được file nào thì KHÔNG có mắt, bất kể công tắc nói gì.
+ *
+ * Hàm THUẦN để test được không cần DB.
+ */
+export function deriveFeedbackFacts(session: {
+  moduleName?: string | null;
+  requestedAgents?: unknown;
+  steps?: Array<{ agentId?: string | null; inputPayload?: unknown }>;
+}): { agentId: string; moduleName: string | null; repoContextUsed: boolean } {
+  const steps = session.steps ?? [];
+  const firstStepAgent = steps.find((s) => typeof s.agentId === "string" && s.agentId)?.agentId;
+  const requested = Array.isArray(session.requestedAgents) ? session.requestedAgents : [];
+  const requestedFirst = typeof requested[0] === "string" ? (requested[0] as string) : undefined;
+
+  let filesRead = 0;
+  for (const s of steps) {
+    const summary = (s.inputPayload as { repoContextSummary?: { filesRead?: unknown } } | null | undefined)
+      ?.repoContextSummary;
+    const n = Number(summary?.filesRead ?? 0);
+    if (Number.isFinite(n) && n > 0) filesRead += n;
+  }
+
+  return {
+    agentId: firstStepAgent ?? requestedFirst ?? "unknown",
+    moduleName: session.moduleName ?? null,
+    repoContextUsed: filesRead > 0,
+  };
+}
+
+/**
+ * Wave 1 — chạy 1 phiên specialist ở tiến trình NỀN.
+ * KHÔNG BAO GIỜ ném: mọi lỗi được ghi vào phiên dưới dạng status "failed", vì
+ * hàm này chạy fire-and-forget (không ai await) — một promise reject không bắt
+ * sẽ làm sập tiến trình Node.
+ *
+ * Wave 1 FF-B — `gatherContext` mô tả YÊU CẦU nạp ngữ cảnh (`null` = tắt mắt),
+ * KHÔNG còn là kết quả đã nạp sẵn. `gatherRepoContext` (nạp model embedding cho
+ * RAG) chạy Ở ĐÂY, sau khi sessionId đã được trả về trình duyệt — trước bản
+ * này, `aiSpecialistAgentRouter.run` `await gatherRepoContext(...)` TRƯỚC khi
+ * trả sessionId, khiến POST treo ~100 giây và nút "Giao việc" đứng im vì FE
+ * không nhận được sessionId để chuyển sang trạng thái "đang chạy".
+ */
+export async function runSpecialistSessionInBackground(args: {
+  sessionId: number;
+  userId: number;
+  runInput: Parameters<typeof runSpecialistAgent>[0];
+  // Final-fix round, Task 6 (SECURITY) — `callerRole` threads the REAL RBAC role (already
+  // guaranteed admin/engineer here — this whole router sits behind `specialistProcedure`) into
+  // gatherRepoContext → retrieveKnowledge's Studio-corpus gate. Without it, the gate's
+  // fail-closed default would silently starve this ALREADY-entitled surface of Studio citations.
+  gatherContext: { files?: string[]; objective: string; callerRole?: string } | null;
+}): Promise<void> {
+  const { sessionId, userId, runInput, gatherContext } = args;
+  // I-5 — dù `runInput` theo hợp đồng mới không còn được kỳ vọng chứa
+  // `repoContext` (nguồn giờ là `gatherContext`), vẫn tước phòng hờ trước khi
+  // lưu DB — không để lọt khối ngữ cảnh vào inputPayload.
+  const { repoContext: _ignoredRepoContext, ...slimInput } = runInput as typeof runInput & {
+    repoContext?: unknown;
+  };
+  try {
+    const repoContext = gatherContext ? await gatherRepoContext(gatherContext) : undefined;
+    const result = await runSpecialistAgent({ ...runInput, repoContext });
+    await appendAiSpecialistSessionStep({
+      sessionId,
+      stepOrder: 1,
+      agentId: result.agent.id,
+      status: "completed",
+      inputPayload: { ...slimInput, repoContextSummary: summarizeRepoContext(repoContext) },
+      outputPayload: result.output,
+      modelId: result.modelId,
+      tokensPrompt: result.metrics.tokensPrompt,
+      tokensGenerated: result.metrics.tokensGenerated,
+      totalTimeMs: result.metrics.totalTimeMs,
+      tokensPerSecond: result.metrics.tokensPerSecond.toFixed(2),
+    });
+    await completeAiSpecialistSession(sessionId, userId, {
+      status: "completed",
+      summary: result.output.summary,
+      aggregateOutput: { mode: "single", result: result.output, modelId: result.modelId },
+    });
+  } catch (error: any) {
+    await completeAiSpecialistSession(sessionId, userId, {
+      status: "failed",
+      summary: error?.message ?? "Specialist run failed",
+      // data-raw-ok: đi vào BẢN GHI PHIÊN (`completeAiSpecialistSession`) làm bằng chứng
+      // truy nguyên, không trả về cho ai. Chuỗi GỐC mới đúng ở nhật ký kỹ thuật.
+      aggregateOutput: { error: error?.message ?? "Unknown error" },
+    }).catch(() => { /* phiên đã hỏng — không làm sập tiến trình nền */ });
+  }
+}
+
+/**
+ * Wave 1 — cùng khuôn "không bao giờ ném" như `runSpecialistSessionInBackground`,
+ * nhưng cho chuỗi nhiều agent (`runWorkflowChain` / `runModuleAudit`). Giữ nguyên
+ * per-step persistence mà 2 luồng đó đã có trước đây — chỉ dời ra khỏi request path.
+ *
+ * Wave 1 FF-B — cùng đổi chỗ như `runSpecialistSessionInBackground`: `gatherContext`
+ * là YÊU CẦU nạp (`null` = tắt mắt), nạp thật diễn ra BÊN TRONG khối try, sau khi
+ * sessionId đã được trả về. `runModuleAudit` không có công tắc includeRepoContext
+ * trong input — nó LUÔN truyền một `gatherContext` khác null (giữ nguyên ý nghĩa
+ * "luôn bật mắt" trước đây, chỉ dời thời điểm NẠP).
+ */
+export async function runSpecialistWorkflowSessionInBackground(args: {
+  sessionId: number;
+  userId: number;
+  workflowInput: Parameters<typeof runSpecialistWorkflowChain>[0];
+  // Final-fix round, Task 6 (SECURITY) — see runSpecialistSessionInBackground's identical note.
+  gatherContext: { files?: string[]; objective: string; callerRole?: string } | null;
+  mode: "workflow" | "module-audit";
+  presetMeta?: { id: string; label: string };
+}): Promise<void> {
+  const { sessionId, userId, workflowInput, gatherContext, mode, presetMeta } = args;
+  try {
+    const repoContext = gatherContext ? await gatherRepoContext(gatherContext) : undefined;
+    // I-4 — nhánh này vốn đã lưu gọn; nay thêm bản tóm tắt ngữ cảnh để
+    // `deriveFeedbackFacts` suy được `repoContextUsed` cho CẢ phiên workflow/audit
+    // (trước đây client hardcode `true` cho mọi phiên audit, kể cả khi đọc 0 file).
+    const repoContextSummary = summarizeRepoContext(repoContext);
+    const workflow = await runSpecialistWorkflowChain({ ...workflowInput, repoContext });
+
+    for (const step of workflow.steps) {
+      await appendAiSpecialistSessionStep({
+        sessionId,
+        stepOrder: step.stepOrder,
+        agentId: step.agentId,
+        status: "completed",
+        inputPayload:
+          mode === "module-audit"
+            ? { objective: workflowInput.objective, moduleName: workflowInput.moduleName, repoContextSummary }
+            : {
+                objective: step.result.output.summary,
+                moduleName: workflowInput.moduleName,
+                files: workflowInput.files,
+                repoContextSummary,
+              },
+        outputPayload: step.result.output,
+        modelId: step.result.modelId,
+        tokensPrompt: step.result.metrics.tokensPrompt,
+        tokensGenerated: step.result.metrics.tokensGenerated,
+        totalTimeMs: step.result.metrics.totalTimeMs,
+        tokensPerSecond: step.result.metrics.tokensPerSecond.toFixed(2),
+      });
+    }
+
+    await completeAiSpecialistSession(sessionId, userId, {
+      status: "completed",
+      summary: workflow.finalSummary,
+      aggregateOutput:
+        mode === "module-audit"
+          ? {
+              mode: "module-audit",
+              presetId: presetMeta?.id,
+              presetLabel: presetMeta?.label,
+              orderedAgents: workflow.orderedAgents,
+              finalSummary: workflow.finalSummary,
+            }
+          : {
+              mode: "workflow",
+              orderedAgents: workflow.orderedAgents,
+              finalSummary: workflow.finalSummary,
+            },
+    });
+  } catch (error: any) {
+    await completeAiSpecialistSession(sessionId, userId, {
+      status: "failed",
+      summary: error?.message ?? "Workflow failed",
+      // data-raw-ok: như trên — bản ghi phiên, không phải phản hồi.
+      aggregateOutput: { error: error?.message ?? "Unknown error", mode },
+    }).catch(() => { /* phiên đã hỏng — không làm sập tiến trình nền */ });
+  }
+}
+
 export const aiSpecialistAgentRouter = router({
-  listAgents: protectedProcedure.query(async () => {
+  listAgents: specialistProcedure.query(async () => {
     return {
       agents: listSpecialistAgents(),
       usageHint: "Call aiSpecialistAgent.run with objective + module context to get actionable recommendations.",
     };
   }),
 
-  run: protectedProcedure
+  run: specialistProcedure
     .input(runInputSchema)
     .mutation(async ({ ctx, input }) => {
-      const saveHistory = input.saveHistory !== false;
-      const { saveHistory: _saveHistory, sessionId, ...runInput } = input;
-      let activeSessionId = sessionId;
+      const { saveHistory: _s, sessionId: _sid, includeRepoContext, ...runInput } = input;
 
-      if (saveHistory && activeSessionId) {
-        const existing = await getAiSpecialistSessionById(activeSessionId, ctx.user.id);
-        if (!existing) {
-          throw new TRPCError({ code: "FORBIDDEN", message: "Session does not belong to current user" });
-        }
-      }
+      const created = await createAiSpecialistSession({
+        userId: ctx.user.id,
+        sessionType: "single",
+        moduleName: runInput.moduleName,
+        objective: runInput.objective,
+        requestedAgents: [runInput.agentId],
+        language: runInput.language ?? "vi",
+        status: "running",
+      });
 
-      if (saveHistory && !activeSessionId) {
-        const created = await createAiSpecialistSession({
-          userId: ctx.user.id,
-          sessionType: "single",
-          moduleName: runInput.moduleName,
-          objective: runInput.objective,
-          requestedAgents: [runInput.agentId],
-          language: runInput.language ?? "vi",
-          status: "running",
-        });
-        activeSessionId = created.id;
-      }
+      // Wave 1 FF-B — KHÔNG await gatherRepoContext ở request path (nó nạp
+      // model embedding cho RAG, đo được ~100 giây thật) — chỉ truyền YÊU CẦU
+      // nạp xuống tiến trình nền, việc nạp thật diễn ra SAU KHI sessionId đã
+      // được trả về. `null` = tắt mắt (includeRepoContext === false).
+      const gatherContext =
+        includeRepoContext === false
+          ? null
+          : { files: runInput.files, objective: runInput.objective, callerRole: String(ctx.user.role) };
 
-      try {
-        const result = await runSpecialistAgent(runInput);
+      // Fire-and-forget: KHÔNG await — trả sessionId ngay để FE poll.
+      void runSpecialistSessionInBackground({
+        sessionId: created.id,
+        userId: ctx.user.id,
+        runInput,
+        gatherContext,
+      });
 
-        if (saveHistory && activeSessionId) {
-          await appendAiSpecialistSessionStep({
-            sessionId: activeSessionId,
-            stepOrder: 1,
-            agentId: result.agent.id,
-            status: "completed",
-            inputPayload: runInput,
-            outputPayload: result.output,
-            modelId: result.modelId,
-            tokensPrompt: result.metrics.tokensPrompt,
-            tokensGenerated: result.metrics.tokensGenerated,
-            totalTimeMs: result.metrics.totalTimeMs,
-            tokensPerSecond: result.metrics.tokensPerSecond.toFixed(2),
-          });
-
-          await completeAiSpecialistSession(activeSessionId, ctx.user.id, {
-            status: "completed",
-            summary: result.output.summary,
-            aggregateOutput: {
-              mode: "single",
-              result: result.output,
-              modelId: result.modelId,
-            },
-          });
-        }
-
-        return {
-          ...result,
-          sessionId: activeSessionId,
-        };
-      } catch (error: any) {
-        if (saveHistory && activeSessionId) {
-          await completeAiSpecialistSession(activeSessionId, ctx.user.id, {
-            status: "failed",
-            summary: error?.message ?? "Workflow failed",
-            aggregateOutput: {
-              error: error?.message ?? "Unknown error",
-            },
-          });
-        }
-
-        throw new TRPCError({
-          code: "INTERNAL_SERVER_ERROR",
-          message: `Specialist agent failed: ${error?.message ?? "Unknown error"}`,
-        });
-      }
+      return { sessionId: created.id, started: true as const };
     }),
 
-  runWorkflowChain: protectedProcedure
+  runWorkflowChain: specialistProcedure
     .input(workflowInputSchema)
     .mutation(async ({ ctx, input }) => {
-      const saveHistory = input.saveHistory !== false;
-      const { saveHistory: _saveHistory, sessionId, ...workflowInput } = input;
+      const { saveHistory: _s, sessionId: _sid, includeRepoContext, ...workflowInput } = input;
       const orderedAgents = buildWorkflowAgentOrder(workflowInput);
-      let activeSessionId = sessionId;
 
-      if (saveHistory && activeSessionId) {
-        const existing = await getAiSpecialistSessionById(activeSessionId, ctx.user.id);
-        if (!existing) {
-          throw new TRPCError({ code: "FORBIDDEN", message: "Session does not belong to current user" });
-        }
-      }
+      const created = await createAiSpecialistSession({
+        userId: ctx.user.id,
+        sessionType: "workflow",
+        moduleName: workflowInput.moduleName,
+        objective: workflowInput.objective,
+        requestedAgents: orderedAgents,
+        language: workflowInput.language ?? "vi",
+        status: "running",
+      });
 
-      if (saveHistory && !activeSessionId) {
-        const created = await createAiSpecialistSession({
-          userId: ctx.user.id,
-          sessionType: "workflow",
-          moduleName: workflowInput.moduleName,
-          objective: workflowInput.objective,
-          requestedAgents: orderedAgents,
-          language: workflowInput.language ?? "vi",
-          status: "running",
-        });
-        activeSessionId = created.id;
-      }
+      // Wave 1 FF-B — KHÔNG await gatherRepoContext ở request path — xem chú
+      // thích tương tự ở `run` phía trên.
+      const gatherContext =
+        includeRepoContext === false
+          ? null
+          : { files: workflowInput.files, objective: workflowInput.objective, callerRole: String(ctx.user.role) };
 
-      try {
-        const workflow = await runSpecialistWorkflowChain(workflowInput);
+      // Fire-and-forget: KHÔNG await — trả sessionId ngay để FE poll.
+      void runSpecialistWorkflowSessionInBackground({
+        sessionId: created.id,
+        userId: ctx.user.id,
+        workflowInput,
+        gatherContext,
+        mode: "workflow",
+      });
 
-        if (saveHistory && activeSessionId) {
-          for (const step of workflow.steps) {
-            await appendAiSpecialistSessionStep({
-              sessionId: activeSessionId,
-              stepOrder: step.stepOrder,
-              agentId: step.agentId,
-              status: "completed",
-              inputPayload: {
-                objective: step.result.output.summary,
-                moduleName: workflowInput.moduleName,
-                files: workflowInput.files,
-              },
-              outputPayload: step.result.output,
-              modelId: step.result.modelId,
-              tokensPrompt: step.result.metrics.tokensPrompt,
-              tokensGenerated: step.result.metrics.tokensGenerated,
-              totalTimeMs: step.result.metrics.totalTimeMs,
-              tokensPerSecond: step.result.metrics.tokensPerSecond.toFixed(2),
-            });
-          }
-
-          await completeAiSpecialistSession(activeSessionId, ctx.user.id, {
-            status: "completed",
-            summary: workflow.finalSummary,
-            aggregateOutput: {
-              mode: "workflow",
-              orderedAgents: workflow.orderedAgents,
-              finalSummary: workflow.finalSummary,
-            },
-          });
-        }
-
-        return {
-          ...workflow,
-          sessionId: activeSessionId,
-        };
-      } catch (error: any) {
-        if (saveHistory && activeSessionId) {
-          await completeAiSpecialistSession(activeSessionId, ctx.user.id, {
-            status: "failed",
-            summary: error?.message ?? "Workflow failed",
-            aggregateOutput: {
-              error: error?.message ?? "Unknown error",
-              orderedAgents,
-            },
-          });
-        }
-
-        throw new TRPCError({
-          code: "INTERNAL_SERVER_ERROR",
-          message: `Workflow chain failed: ${error?.message ?? "Unknown error"}`,
-        });
-      }
+      return { sessionId: created.id, started: true as const };
     }),
 
-  listSessions: protectedProcedure
+  listSessions: specialistProcedure
     .input(z.object({
       limit: z.number().min(1).max(100).default(20),
       offset: z.number().min(0).default(0),
@@ -232,25 +368,25 @@ export const aiSpecialistAgentRouter = router({
       };
     }),
 
-  getSessionDetail: protectedProcedure
+  getSessionDetail: specialistProcedure
     .input(z.object({ sessionId: z.number().int().positive() }))
     .query(async ({ ctx, input }) => {
       const session = await getAiSpecialistSessionDetail(input.sessionId, ctx.user.id);
       if (!session) {
-        throw new TRPCError({ code: "NOT_FOUND", message: "Session not found" });
+        throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "agentSession" }, "Session not found");
       }
       return session;
     }),
 
   // ─── Module Audit Presets ───────────────────────────────────────────────────
 
-  listModuleAuditPresets: protectedProcedure.query(async () => {
+  listModuleAuditPresets: specialistProcedure.query(async () => {
     return {
       presets: listModuleAuditPresets(),
     };
   }),
 
-  runModuleAudit: protectedProcedure
+  runModuleAudit: specialistProcedure
     .input(
       z.object({
         presetId: z.string().min(1).max(100),
@@ -263,39 +399,37 @@ export const aiSpecialistAgentRouter = router({
     .mutation(async ({ ctx, input }) => {
       const preset = getModuleAuditPreset(input.presetId);
       if (!preset) {
-        throw new TRPCError({
-          code: "NOT_FOUND",
-          message: `Module audit preset '${input.presetId}' not found`,
-        });
+        throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "moduleAuditPreset" }, `Module audit preset '${input.presetId}' not found`);
       }
 
-      const saveHistory = input.saveHistory !== false;
       const objective = input.overrideObjective ?? preset.objective;
       const language = input.language ?? "vi";
-      let activeSessionId: number | undefined;
 
-      if (saveHistory) {
-        const orderedAgents = buildWorkflowAgentOrder({
-          objective,
-          includeBackend: preset.includeBackend,
-          includeFrontend: preset.includeFrontend,
-          includeQa: preset.includeQa,
-        });
+      const orderedAgents = buildWorkflowAgentOrder({
+        objective,
+        includeBackend: preset.includeBackend,
+        includeFrontend: preset.includeFrontend,
+        includeQa: preset.includeQa,
+      });
 
-        const created = await createAiSpecialistSession({
-          userId: ctx.user.id,
-          sessionType: "module-audit",
-          moduleName: preset.moduleName,
-          objective,
-          requestedAgents: orderedAgents,
-          language,
-          status: "running",
-        });
-        activeSessionId = created.id;
-      }
+      const created = await createAiSpecialistSession({
+        userId: ctx.user.id,
+        sessionType: "module-audit",
+        moduleName: preset.moduleName,
+        objective,
+        requestedAgents: orderedAgents,
+        language,
+        status: "running",
+      });
 
-      try {
-        const workflow = await runSpecialistWorkflowChain({
+      // Wave 1 FF-B — `runModuleAudit` không có công tắc includeRepoContext
+      // (nạp ngữ cảnh vô điều kiện — preset tự chọn files cố định), giữ
+      // NGUYÊN ý nghĩa "luôn bật mắt" đó; chỉ dời thời điểm NẠP THẬT vào tiến
+      // trình nền (KHÔNG await ở đây nữa) — xem chú thích ở `run` phía trên.
+      void runSpecialistWorkflowSessionInBackground({
+        sessionId: created.id,
+        userId: ctx.user.id,
+        workflowInput: {
           objective,
           moduleName: preset.moduleName,
           files: preset.files,
@@ -306,68 +440,130 @@ export const aiSpecialistAgentRouter = router({
           includeQa: preset.includeQa,
           language,
           modelId: input.modelId,
-        });
+        },
+        gatherContext: { files: preset.files, objective, callerRole: String(ctx.user.role) },
+        mode: "module-audit",
+        presetMeta: { id: preset.id, label: preset.label },
+      });
 
-        if (saveHistory && activeSessionId) {
-          for (const step of workflow.steps) {
-            await appendAiSpecialistSessionStep({
-              sessionId: activeSessionId,
-              stepOrder: step.stepOrder,
-              agentId: step.agentId,
-              status: "completed",
-              inputPayload: { objective, moduleName: preset.moduleName },
-              outputPayload: step.result.output,
-              modelId: step.result.modelId,
-              tokensPrompt: step.result.metrics.tokensPrompt,
-              tokensGenerated: step.result.metrics.tokensGenerated,
-              totalTimeMs: step.result.metrics.totalTimeMs,
-              tokensPerSecond: step.result.metrics.tokensPerSecond.toFixed(2),
-            });
-          }
+      return { sessionId: created.id, started: true as const };
+    }),
 
-          await completeAiSpecialistSession(activeSessionId, ctx.user.id, {
-            status: "completed",
-            summary: workflow.finalSummary,
-            aggregateOutput: {
-              mode: "module-audit",
-              presetId: preset.id,
-              presetLabel: preset.label,
-              orderedAgents: workflow.orderedAgents,
-              finalSummary: workflow.finalSummary,
-            },
-          });
-        }
-
+  // ─── Specialist → Action HITL Bridge (doc69 Giai đoạn 4/Wave 3, D4) ─────────
+  //
+  // Turns ONE concrete actionPlan[] recommendation into a PROPOSED (HITL) action.
+  // `recommendation` is the exact advisory text this proposal is FOR (kept only for
+  // traceability/audit — it is NOT parsed to derive the tool/args, see the doc
+  // comment on SPECIALIST_BRIDGE_TOOLS in aiSpecialistAgentService.ts for why). The
+  // caller supplies the concrete {tool,args} mapping; this endpoint restricts `tool`
+  // to the small explicit allow-list and RE-VALIDATES `args` against that tool's OWN
+  // zod schema (mirrors aiCopilotRouter.proposeSuggestedAction) before ever calling
+  // proposeAction — never fabricated, never auto-executed. proposeAction still runs
+  // its own RBAC gate + (if D2 autonomy is ever enabled) the SAME denylist/guardrail
+  // checks every other proposal goes through — this bridge adds NO bypass.
+  proposeRecommendationAsAction: specialistProcedure
+    .input(
+      z.object({
+        recommendation: z.string().min(1).max(2000),
+        tool: z.enum(SPECIALIST_BRIDGE_TOOLS),
+        args: z.record(z.string(), z.unknown()),
+        lang: z.enum(["vi", "en", "zh"]).default("vi"),
+      }),
+    )
+    .mutation(async ({ ctx, input }) => {
+      await ensureSpecialistBridgeToolsRegistered();
+      const tool = getTool(input.tool);
+      if (!tool || !isWriteTool(tool)) {
         return {
-          preset,
-          ...workflow,
-          sessionId: activeSessionId,
+          ok: false as const,
+          advisory: true as const,
+          reason: "TOOL_UNAVAILABLE",
+          message: "Công cụ không khả dụng — khuyến nghị vẫn ở dạng văn bản tư vấn.",
         };
-      } catch (error: any) {
-        if (saveHistory && activeSessionId) {
-          await completeAiSpecialistSession(activeSessionId, ctx.user.id, {
-            status: "failed",
-            summary: error?.message ?? "Module audit failed",
-            aggregateOutput: { error: error?.message, presetId: preset.id },
-          });
-        }
-
-        throw new TRPCError({
-          code: "INTERNAL_SERVER_ERROR",
-          message: `Module audit failed: ${error?.message ?? "Unknown error"}`,
-        });
       }
+
+      const parsed = (tool.parameters as z.ZodType<any>).safeParse(input.args);
+      if (!parsed.success) {
+        return {
+          ok: false as const,
+          advisory: true as const,
+          reason: "ARGS_OUT_OF_BOUNDS",
+          message: "Tham số không hợp lệ — khuyến nghị vẫn ở dạng văn bản tư vấn.",
+        };
+      }
+
+      const user = { id: ctx.user.id, role: String(ctx.user.role), name: ctx.user.name ?? null };
+      const res = await proposeAction(tool, parsed.data as Record<string, unknown>, { user, lang: input.lang });
+      if (!res.ok || !res.pendingAction) {
+        return {
+          ok: false as const,
+          advisory: false as const,
+          reason: res.reason ?? "PROPOSE_FAILED",
+          message: res.message,
+        };
+      }
+      return {
+        ok: true as const,
+        advisory: false as const,
+        pendingAction: res.pendingAction,
+        sourceRecommendation: input.recommendation,
+      };
     }),
 
   // ─── Improvement Score ──────────────────────────────────────────────────────
 
-  getModuleImprovementScore: protectedProcedure
+  getModuleImprovementScore: specialistProcedure
     .input(z.object({ moduleName: z.string().max(255).optional() }).optional())
     .query(async ({ ctx, input }) => {
       const stats = await getModuleImprovementStats(ctx.user.id, input?.moduleName);
       if (!stats) {
-        throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Database unavailable" });
+        throw appError("INTERNAL_SERVER_ERROR", "DB_UNAVAILABLE", undefined, "Database unavailable");
       }
       return stats;
+    }),
+
+  // ─── Wave 1 Task 3 — Quality Feedback (human rating half of the quality gate) ─
+
+  // `agentId`, `moduleName` và `repoContextUsed` CỐ Ý không có trong input: máy
+  // chủ nắm sự thật về phiên, client thì không (xem `deriveFeedbackFacts`). Bỏ
+  // hẳn khỏi hợp đồng thay vì "nhận rồi phớt lờ" để không ai hiểu nhầm là mình
+  // điều khiển được chúng.
+  submitFeedback: specialistProcedure
+    .input(z.object({
+      sessionId: z.number().int().positive(),
+      rating: z.enum(["useful", "partial", "useless"]),
+      usefulSections: z.array(z.enum([
+        "diagnosis", "actionPlan", "patchHints", "testPlan", "optimizationIdeas", "risks",
+      ])).max(6).optional(),
+      reason: z.string().max(500).optional(),
+    }))
+    .mutation(async ({ ctx, input }) => {
+      // getAiSpecialistSessionDetail lọc theo userId y hệt getAiSpecialistSessionById
+      // (cùng chốt sở hữu), nhưng trả kèm `steps` — nơi chứa `repoContextSummary`.
+      const session = await getAiSpecialistSessionDetail(input.sessionId, ctx.user.id);
+      if (!session) {
+        // Review cuối, ca I-A #11: getAiSpecialistSessionDetail() lọc bằng
+        // `and(eq(id, sessionId), eq(userId, userId))` — trả null CẢ khi phiên không tồn
+        // tại LẪN khi nó thuộc người dùng khác; không có cách nào phân biệt hai trường
+        // hợp từ kết quả null. SCOPE_MISMATCH khẳng định phiên CÓ TỒN TẠI (chỉ sai chủ) —
+        // nói quá. getSessionDetail (:373) gọi CÙNG helper này và đã dùng đúng
+        // ENTITY_NOT_FOUND — đổi appCode cho khớp, xoá mâu thuẫn giữa hai call-site trên
+        // cùng một helper. GIỮ NGUYÊN mã tRPC "FORBIDDEN" + fallbackMessage gốc (test cũ
+        // aiSpecialistAgentRouter.test.ts khẳng định `.code === "FORBIDDEN"` — đây là mã
+        // TRUYỀN TẢI (transport), tách biệt với appCode quyết định CÂU chữ hiện cho
+        // người dùng; đổi appCode không cần đổi transport code).
+        throw appError("FORBIDDEN", "ENTITY_NOT_FOUND", { entity: "agentSession" }, "Session does not belong to current user");
+      }
+      return upsertSpecialistFeedback({
+        ...input,
+        userId: ctx.user.id,
+        ...deriveFeedbackFacts(session),
+      });
+    }),
+
+  getQualityScoreboard: specialistProcedure
+    .input(z.object({ mineOnly: z.boolean().optional() }).optional())
+    .query(async ({ ctx, input }) => {
+      return getSpecialistQualityScoreboard(input?.mineOnly ? ctx.user.id : undefined);
     }),
 });

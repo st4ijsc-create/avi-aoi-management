@@ -17,6 +17,7 @@
  */
 import { z } from "zod";
 import { TRPCError } from "@trpc/server";
+import { appError } from "../_core/appError";
 import { router, protectedProcedure } from "../_core/trpc";
 import { requirePermission } from "../_core/accessControl";
 import {
@@ -68,7 +69,7 @@ export const unsMappingRouter = router({
     .input(z.object({ id: z.number().int().positive() }))
     .query(async ({ input }) => {
       const row = await getMapping(input.id);
-      if (!row) throw new TRPCError({ code: "NOT_FOUND", message: "Mapping không tồn tại." });
+      if (!row) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "unsMapping" }, "Mapping không tồn tại.");
       return row;
     }),
 
@@ -80,10 +81,7 @@ export const unsMappingRouter = router({
         return await createMapping({ ...input, createdBy: ctx.user.id });
       } catch (err) {
         if (isUniqueViolation(err)) {
-          throw new TRPCError({
-            code: "CONFLICT",
-            message: `Tag "${input.tag}" đã có mapping trong adapter này.`,
-          });
+          throw appError("CONFLICT", "ENTITY_DUPLICATE", { entity: "unsMapping" }, `Tag "${input.tag}" đã có mapping trong adapter này.`);
         }
         throw err;
       }
@@ -96,12 +94,12 @@ export const unsMappingRouter = router({
       const { id, ...patch } = input;
       try {
         const row = await updateMapping(id, patch);
-        if (!row) throw new TRPCError({ code: "NOT_FOUND", message: "Mapping không tồn tại." });
+        if (!row) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "unsMapping" }, "Mapping không tồn tại.");
         return row;
       } catch (err) {
         if (err instanceof TRPCError) throw err;
         if (isUniqueViolation(err)) {
-          throw new TRPCError({ code: "CONFLICT", message: "Tag đã có mapping trong adapter này." });
+          throw appError("CONFLICT", "ENTITY_DUPLICATE", { entity: "unsMapping" }, "Tag đã có mapping trong adapter này.");
         }
         throw err;
       }
@@ -112,7 +110,7 @@ export const unsMappingRouter = router({
     .input(z.object({ id: z.number().int().positive() }))
     .mutation(async ({ input }) => {
       const ok = await deleteMapping(input.id);
-      if (!ok) throw new TRPCError({ code: "NOT_FOUND", message: "Mapping không tồn tại." });
+      if (!ok) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "unsMapping" }, "Mapping không tồn tại.");
       return { success: true };
     }),
 

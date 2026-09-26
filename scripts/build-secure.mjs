@@ -169,8 +169,12 @@ if (fs.existsSync(sdkWrapper)) {
   fs.copyFileSync(sdkWrapper, path.join(DIST_SECURE, 'license-sdk.js'));
 }
 
-// Copy client assets
-const clientDirs = ['client', 'public'];
+// Copy client assets + the server-side PDF fonts.
+// 'assets' holds dist/assets/fonts (scripts/copy-font-assets.mjs). dist-secure/ is
+// deployed on its own ("Copy dist-secure/ to server", step 1 below), so without
+// this the Vietnamese PDF engine throws at runtime — fontAssets.ts fails LOUD by
+// design and there is no source tree next to it to fall back on. (nhóm C, việc 1)
+const clientDirs = ['client', 'public', 'assets'];
 for (const dir of clientDirs) {
   const src = path.join(DIST, dir);
   if (fs.existsSync(src)) {

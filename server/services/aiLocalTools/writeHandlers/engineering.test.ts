@@ -86,10 +86,23 @@ function makeFakeDb() {
     }),
     update: (table: any) => ({
       set: (patch: Row) => ({
-        where: async (pred: (r: Row) => boolean) => {
-          let c = 0;
-          for (const r of tableFor(table)) if (pred(r)) { Object.assign(r, patch); c++; }
-          return { rowCount: c };
+        // ★★★ 2026-08-23 — `where()` nay vừa AWAIT được vừa có `.returning()`: `confirmAction`
+        // giành quyền bằng `UPDATE … WHERE status=<đã quan sát>` rồi ĐẾM hàng trả về. `run()` được
+        // nhớ lại (memo) nên một lượt gọi không bao giờ áp `patch` hai lần.
+        where: (pred: (r: Row) => boolean) => {
+          let memo: Row[] | null = null;
+          const run = (): Row[] => {
+            if (memo) return memo;
+            const hit: Row[] = [];
+            for (const r of tableFor(table)) if (pred(r)) { Object.assign(r, patch); hit.push(r); }
+            memo = hit;
+            return hit;
+          };
+          return {
+            then: (ok: (v: unknown) => unknown, ng?: (e: unknown) => unknown) =>
+              Promise.resolve({ rowCount: run().length }).then(ok, ng),
+            returning: async (_c?: unknown) => run().map((r) => ({ id: r.id })),
+          };
         },
       }),
     }),

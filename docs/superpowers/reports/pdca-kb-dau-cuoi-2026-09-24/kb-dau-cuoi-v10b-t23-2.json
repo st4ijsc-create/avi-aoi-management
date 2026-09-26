@@ -1,0 +1,54 @@
+{
+  "corpus": "st4i-may-aoi",
+  "label": "v10b-t23-2",
+  "tom": {
+    "trong": {
+      "n": 2,
+      "dung": 2,
+      "tuChoi": 0,
+      "tuChoiMem": 0,
+      "hoiLai": 0,
+      "sai": 0
+    },
+    "ngoai": {
+      "n": 0,
+      "tuChoi": 0,
+      "tuChoiMem": 0,
+      "hoiLai": 0,
+      "traLoi": 0
+    },
+    "loi": 0
+  },
+  "ra": [
+    {
+      "id": "T23",
+      "ngoai": false,
+      "kq": "dung",
+      "ms": 2027,
+      "nguon": [
+        "knowledge/domain/aoi-troubleshooting.md",
+        "knowledge/domain/howto-ng-handling-sop.md",
+        "howto-ng-handling-sop.md",
+        "knowledge/features/products/measurement-point-setup.md",
+        "knowledge/features/products/measurement-point-setup.md"
+      ],
+      "traLoi": "(1) Tổng số mục được liệt kê: **2**\n\n(2) Danh sách đầy đủ:\n\n- Khi false-call rate > 10 % cần kiểm tra lại điểm đo / ngưỡng AI. Đây là mức SỚM; mức KPI là > 30 % — khi đó điều tra false alarm đầy đủ theo `aoi-troubleshooting.md` (mục False Alarm Investigation).  \n- False-call rate = số lần báo giả / số lần máy báo NG.\n\n(3) Trích nguyên văn code/giá trị từ ngữ cảnh:\n\n> nếu false-call rate > 10 % cần kiểm tra lại điểm đo / ngưỡng AI. Đây là mức SỚM; mức KPI là > 30 % — khi đó điều tra false alarm đầy đủ theo `aoi-troubleshooting.md` (mục False Alarm Investigation).  \n> False-call rate = số lần báo giả / số lần máy báo NG.\n\n(4) Nguồn gốc: [1]",
+      "loi": null
+    },
+    {
+      "id": "T54",
+      "ngoai": false,
+      "kq": "dung",
+      "ms": 1589,
+      "nguon": [
+        "knowledge/domain/aoi-troubleshooting.md",
+        "knowledge/features/alerts/predictive-alerts.md",
+        "knowledge/features/alerts/alerts-list.md",
+        "knowledge/features/alerts/predictive-alerts.md",
+        "knowledge/features/monitoring/ng-rate-threshold.md"
+      ],
+      "traLoi": "(1) Tổng số mục được liệt kê: 1  \n\n(2) Danh sách đầy đủ:  \n- Khi thẩm định chương trình kiểm tra MỚI, yêu cầu false alarm < 5 % trên 30 bảng (`aoi-workflow.md`).  \n\n(3) Trích nguyên văn code/giá trị từ ngữ cảnh:  \n> khi THẨM ĐỊNH chương trình kiểm tra MỚI, yêu cầu false alarm < 5 % trên 30 bảng (`aoi-workflow.md`).\n\n(4) Nguồn gốc (file/đường dẫn): [1] AOI Troubleshooting Guide (Hướng Dẫn Xử Lý Sự Cố) (đoạn con 9) | knowledge/domain/aoi-troubleshooting.md",
+      "loi": null
+    }
+  ]
+}

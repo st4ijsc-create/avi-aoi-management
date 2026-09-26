@@ -1,9 +1,13 @@
 import { useEffect, useMemo, useState } from "react";
+// doc 64 IA-10 S2 — truc pham vi ISA-95.
+import { useScope } from "@/components/patterns/ScopeFilterBar";
+import { useScopeWired } from "@/contexts/AssetScopeContext";
 import { useTranslation } from "react-i18next";
 import { useSearch, useLocation } from "wouter";
 import { toast } from "sonner";
 import DashboardLayout from "@/components/DashboardLayout";
 import { PageHeader } from "@/components/patterns";
+import { DateField } from "@/components/patterns/DateField";
 import { trpc } from "@/lib/trpc";
 import { getSharedSocket, releaseSharedSocket } from "@/lib/socketManager";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -45,6 +49,9 @@ import { FalseCallEscapePanel } from "@/components/FalseCallEscapePanel";
 // ranking from the HARVESTED corrections ledger (complementary to the panel
 // above, which reads inspection-row NTF flips only).
 import { FalseCallTrendCard } from "@/components/FalseCallTrendCard";
+// Doc 69 §B1.3 (T8/E1) — contextual AI embed: anomaly/PdM/insight for the
+// cockpit's current machine scope + "Explain this SPC excursion" deep-link.
+import QualityAIInsightCard from "@/components/QualityAIInsightCard";
 
 function getDefaultDateRange() {
   const end = new Date();
@@ -125,22 +132,22 @@ function ScopeSelector({
               </SelectContent>
             </Select>
           </div>
+          {/* doc65 PRO-100: DateField dd/MM/yyyy cố định (native input hiển thị theo OS
+              locale → từng ra MM/DD/YYYY giữa UI Việt). Contract ISO giữ nguyên. */}
           <div className="space-y-1">
             <Label>{t("common.startDate")}</Label>
-            <Input
-              type="date"
+            <DateField
               aria-label={t("common.startDate")}
               value={scope.startDate}
-              onChange={(e) => onChange({ ...scope, startDate: e.target.value })}
+              onChange={(startDate) => onChange({ ...scope, startDate })}
             />
           </div>
           <div className="space-y-1">
             <Label>{t("common.endDate")}</Label>
-            <Input
-              type="date"
+            <DateField
               aria-label={t("common.endDate")}
               value={scope.endDate}
-              onChange={(e) => onChange({ ...scope, endDate: e.target.value })}
+              onChange={(endDate) => onChange({ ...scope, endDate })}
             />
           </div>
         </div>
@@ -233,6 +240,15 @@ export default function QualityCockpit() {
   })();
   const [scope, setScope] = useState<CockpitScope>(() => getDefaultDateRange());
   const [activeTab, setActiveTab] = useState(initialTab);
+  // doc 64 IA-10 S2 — trục phạm vi: Máy từ header seed vào cockpit-scope (user đổi
+  // tại trang vẫn thắng sau đó); tab SPC/Pareto tự đọc trục trong chính component.
+  const { scope: assetScope } = useScope(["machine"]);
+  useScopeWired();
+  useEffect(() => {
+    if (assetScope.machineId !== undefined) {
+      setScope((s) => ({ ...s, machineId: assetScope.machineId }));
+    }
+  }, [assetScope.machineId]);
   const [, setLocation] = useLocation();
 
   // doc 36 W2 — write the active tab back to the URL so cockpit views are deep-linkable
@@ -263,6 +279,9 @@ export default function QualityCockpit() {
         />
 
         <ScopeSelector scope={scope} onChange={setScope} />
+
+        {/* Doc 69 §B1.3 (T8/E1) — AI signal for the current scope + SPC-excursion explain */}
+        <QualityAIInsightCard machineId={scope.machineId} />
 
         {/* Doc 27 A9 — false-call ↔ escape paired KPI (AOI tuning trade-off),
             driven by the shared cockpit scope. */}

@@ -21,6 +21,7 @@
  */
 import { z } from "zod";
 import { TRPCError } from "@trpc/server";
+import { appError } from "../_core/appError";
 import { and, eq, desc } from "drizzle-orm";
 import { router, protectedProcedure } from "../_core/trpc";
 import { requirePermission } from "../_core/accessControl";
@@ -32,7 +33,7 @@ import type { OtProtocol } from "../services/ot/otDriver";
 
 async function getDb() {
   const db = await getDbRaw();
-  if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Database not connected" });
+  if (!db) throw appError("INTERNAL_SERVER_ERROR", "DB_UNAVAILABLE", undefined, "Database not connected");
   return db;
 }
 
@@ -117,7 +118,7 @@ export const deviceAdapterRouter = router({
     .query(async ({ input }) => {
       const db = await getDb();
       const [adapter] = await db.select().from(deviceAdapters).where(eq(deviceAdapters.id, input.id)).limit(1);
-      if (!adapter) throw new TRPCError({ code: "NOT_FOUND", message: "Adapter không tồn tại." });
+      if (!adapter) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "adapter" }, "Adapter không tồn tại.");
       const tags = await db
         .select()
         .from(deviceTags)
@@ -149,7 +150,7 @@ export const deviceAdapterRouter = router({
         return row;
       } catch (err) {
         if (isUniqueViolation(err)) {
-          throw new TRPCError({ code: "CONFLICT", message: `Mã adapter "${input.code}" đã tồn tại.` });
+          throw appError("CONFLICT", "ENTITY_DUPLICATE", { entity: "adapter" }, `Mã adapter "${input.code}" đã tồn tại.`);
         }
         throw err;
       }
@@ -164,12 +165,12 @@ export const deviceAdapterRouter = router({
       const patch: Record<string, unknown> = { ...rest, updatedAt: new Date() };
       try {
         const [row] = await db.update(deviceAdapters).set(patch).where(eq(deviceAdapters.id, id)).returning();
-        if (!row) throw new TRPCError({ code: "NOT_FOUND", message: "Adapter không tồn tại." });
+        if (!row) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "adapter" }, "Adapter không tồn tại.");
         return row;
       } catch (err) {
         if (err instanceof TRPCError) throw err;
         if (isUniqueViolation(err)) {
-          throw new TRPCError({ code: "CONFLICT", message: `Mã adapter đã tồn tại.` });
+          throw appError("CONFLICT", "ENTITY_DUPLICATE", { entity: "adapter" }, `Mã adapter đã tồn tại.`);
         }
         throw err;
       }
@@ -181,10 +182,18 @@ export const deviceAdapterRouter = router({
     .mutation(async ({ input }) => {
       const db = await getDb();
       const [existing] = await db.select().from(deviceAdapters).where(eq(deviceAdapters.id, input.id)).limit(1);
-      if (!existing) throw new TRPCError({ code: "NOT_FOUND", message: "Adapter không tồn tại." });
+      if (!existing) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "adapter" }, "Adapter không tồn tại.");
       // SAFETY: refuse to delete an adapter that is still enabled (it may be polling).
       if (existing.isEnabled) {
-        throw new TRPCError({ code: "PRECONDITION_FAILED", message: "Adapter đang bật — hãy tắt (isEnabled=false) trước khi xoá." });
+        // Task 5 (doc 71) — reason khôi phục chỉ dẫn "tắt trước khi xoá" đã mất khi câu
+        // chuẩn OPERATION_FAILED chỉ nội suy {{operation}} ("deleteAdapter", không nói
+        // vì sao bị chặn).
+        throw appError(
+          "PRECONDITION_FAILED",
+          "OPERATION_FAILED",
+          { operation: "deleteAdapter", reason: "adapterStillEnabled" },
+          "Adapter đang bật — hãy tắt (isEnabled=false) trước khi xoá.",
+        );
       }
       // Cascade delete tags + adapter atomically.
       await db.transaction(async (tx) => {
@@ -216,7 +225,7 @@ export const deviceAdapterRouter = router({
       if ("id" in input) {
         const db = await getDb();
         const [adapter] = await db.select().from(deviceAdapters).where(eq(deviceAdapters.id, input.id)).limit(1);
-        if (!adapter) throw new TRPCError({ code: "NOT_FOUND", message: "Adapter không tồn tại." });
+        if (!adapter) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "adapter" }, "Adapter không tồn tại.");
         protocol = adapter.protocol as OtProtocol;
         endpoint = adapter.endpoint;
         options = (adapter.connectionOptions as Record<string, unknown> | null) ?? undefined;
@@ -228,10 +237,30 @@ export const deviceAdapterRouter = router({
 
       const startedAt = Date.now();
       let driver;
+      // ── F14 (2026-08-22) — LỖI ĐI RA BẰNG CỬA "THÀNH CÔNG" ──────────────────────
+      // Thủ tục này KHÔNG ném khi dò thất bại: nó trả 200 OK kèm `{ ok: false, error }`.
+      // Hệ quả trước bản này: `onError` phía client không chạy, `appCode` không tồn tại,
+      // nên `mapTrpcError` không bao giờ thấy chuỗi ấy. Người vận hành đọc nguyên văn
+      // *"ModbusDriver: not connected"* trong khi CÙNG Ô ĐÓ, đường `onError` lại hiện câu
+      // đã dịch — hai câu khác ngôn ngữ cho cùng một sự việc, tuỳ nó hỏng kiểu nào.
+      //
+      // Trả CẢ HAI, không đánh đổi: `errorCode` cho người vận hành (client dịch qua
+      // `translateAppError`), `error` giữ NGUYÊN VĂN cho kỹ sư — chuỗi
+      // "ECONNREFUSED 10.0.0.5:502" là thứ duy nhất nói được hỏng ở đâu.
       try {
         driver = createDriver(protocol);
       } catch (err) {
-        return { ok: false, latencyMs: 0, error: err instanceof Error ? err.message : String(err) };
+        // Không dựng được driver ⇒ bản dựng này không có giao thức đó. Cách gỡ NGƯỢC với
+        // "không tới được": phải đổi cấu hình/nâng cấp, không phải đi kiểm dây.
+        return {
+          ok: false,
+          latencyMs: 0,
+          errorCode: "DEVICE_PROTOCOL_UNSUPPORTED" as const,
+          errorParams: { entity: protocol },
+          // data-raw-ok: chi tiết KỸ THUẬT cho kỹ sư, ĐI KÈM errorCode để client dịch
+          // câu cho người vận hành. Dịch dòng này là đổi thông tin hữu ích lấy câu chung chung.
+          error: err instanceof Error ? err.message : String(err),
+        };
       }
 
       try {
@@ -242,7 +271,15 @@ export const deviceAdapterRouter = router({
         );
         return { ok: true, latencyMs: Date.now() - startedAt };
       } catch (err) {
-        return { ok: false, latencyMs: Date.now() - startedAt, error: err instanceof Error ? err.message : String(err) };
+        return {
+          ok: false,
+          latencyMs: Date.now() - startedAt,
+          errorCode: "DEVICE_UNREACHABLE" as const,
+          errorParams: { entity: protocol },
+          // data-raw-ok: chi tiết KỸ THUẬT cho kỹ sư, ĐI KÈM errorCode để client dịch
+          // câu cho người vận hành. Dịch dòng này là đổi thông tin hữu ích lấy câu chung chung.
+          error: err instanceof Error ? err.message : String(err),
+        };
       } finally {
         try {
           await withTimeout(driver.disconnect(), DEFAULT_TEST_TIMEOUT_MS, `${protocol} disconnect`);
@@ -292,7 +329,7 @@ export const deviceAdapterRouter = router({
           return row;
         } catch (err) {
           if (isUniqueViolation(err)) {
-            throw new TRPCError({ code: "CONFLICT", message: `Tag "${input.tagKey}" đã tồn tại trong adapter này.` });
+            throw appError("CONFLICT", "ENTITY_DUPLICATE", { entity: "deviceTag" }, `Tag "${input.tagKey}" đã tồn tại trong adapter này.`);
           }
           throw err;
         }
@@ -309,12 +346,12 @@ export const deviceAdapterRouter = router({
         if (offset !== undefined) patch.offset = offset != null ? String(offset) : null;
         try {
           const [row] = await db.update(deviceTags).set(patch).where(eq(deviceTags.id, id)).returning();
-          if (!row) throw new TRPCError({ code: "NOT_FOUND", message: "Tag không tồn tại." });
+          if (!row) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "deviceTag" }, "Tag không tồn tại.");
           return row;
         } catch (err) {
           if (err instanceof TRPCError) throw err;
           if (isUniqueViolation(err)) {
-            throw new TRPCError({ code: "CONFLICT", message: `Tag key đã tồn tại trong adapter này.` });
+            throw appError("CONFLICT", "ENTITY_DUPLICATE", { entity: "deviceTag" }, `Tag key đã tồn tại trong adapter này.`);
           }
           throw err;
         }
@@ -326,7 +363,7 @@ export const deviceAdapterRouter = router({
       .mutation(async ({ input }) => {
         const db = await getDb();
         const [row] = await db.delete(deviceTags).where(eq(deviceTags.id, input.id)).returning();
-        if (!row) throw new TRPCError({ code: "NOT_FOUND", message: "Tag không tồn tại." });
+        if (!row) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "deviceTag" }, "Tag không tồn tại.");
         return { success: true };
       }),
   }),

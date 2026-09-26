@@ -14,6 +14,9 @@
 import { getDb } from "../db/connection";
 import { eq, and, sql, gte, isNull, or, desc } from "drizzle-orm";
 import * as schema from "../../drizzle/schema";
+// doc69 W1 "modelfix" — shared env→GGUF-basename resolver; the NG-rate RCA enrichment must PIN a
+// text model (un-pinned calls used to land on the 0.6B RAG embedder → repetition garbage).
+import { resolveLogicalModel } from "./ai/modelResolver";
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -685,7 +688,7 @@ Analyze this NG rate spike and respond in JSON format:
       maxTokens: 512,
       temperature: 0.3,
       jsonMode: true,
-    });
+    }, resolveLogicalModel("chat"));
 
     // Parse JSON response
     const jsonMatch = result.text.match(/\{[\s\S]*\}/);

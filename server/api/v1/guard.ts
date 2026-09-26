@@ -92,24 +92,36 @@ function sendLicenseBlocked(res: Response, state: string): void {
 }
 
 /**
- * Best-effort audit of a mutating /api/v1 request. Runs on response `finish`, so
+ * Best-effort audit of a mutating /api/v1 request. Runs when the response settles, so
  * `req.apiPrincipal` (set by requireScope inside the router) and the final status
  * are available. Never throws.
  *
  * LIMITATION: for requests the guard itself 403s (license lockdown) the router
  * never ran, so `req.apiPrincipal` is undefined — we then audit method/path/ip/
  * status only.
+ *
+ * ⚠⚠ `ipSnapshot` ĐƯỢC TRUYỀN VÀO, KHÔNG ĐỌC TẠI ĐÂY (sửa 2026-08-18, cùng lớp lỗi với
+ * `/api/export`). Hook này chạy khi phản hồi ĐÃ đóng; nếu socket bị huỷ (yêu cầu đứt giữa
+ * chừng) thì `req.socket.remoteAddress` là `undefined` — Node chỉ nhớ `_peername` khi nó đã
+ * ĐƯỢC ĐỌC lúc handle còn sống. Đọc muộn ⇒ mọi hàng audit của yêu cầu HỎNG mất IP, đúng
+ * những hàng cần IP nhất. Ảnh chụp được lấy ở `v1Guard()` khi socket còn mở.
  */
-async function recordV1Audit(req: Request, res: Response): Promise<void> {
+/** Địa chỉ gọi, chụp lúc socket còn sống. KHÔNG BAO GIỜ ném. */
+function snapshotIp(req: Request): string | null {
+  try {
+    const fwd = req.headers["x-forwarded-for"];
+    const raw =
+      (Array.isArray(fwd) ? fwd[0] : fwd) || req.headers["x-real-ip"] || req.socket?.remoteAddress || req.ip || null;
+    return typeof raw === "string" && raw.length > 0 ? raw : null;
+  } catch {
+    return null;
+  }
+}
+
+async function recordV1Audit(req: Request, res: Response, ipSnapshot: string | null): Promise<void> {
   try {
     const principal = req.apiPrincipal;
-    const fwd = req.headers["x-forwarded-for"];
-    const ipRaw =
-      (Array.isArray(fwd) ? fwd[0] : fwd) ||
-      req.headers["x-real-ip"] ||
-      req.socket?.remoteAddress ||
-      req.ip ||
-      null;
+    const ipRaw = ipSnapshot;
     const fullPath = (req.baseUrl || "") + req.path;
     const ok = res.statusCode < 400;
     const { createAuditLog } = await import("../../db");
@@ -152,10 +164,22 @@ export function v1Guard() {
 
     // (b) AUDIT — hook the response so the principal (set by requireScope inside
     // the router) and the final status are captured. Mutating requests only.
+    //
+    // ⚠⚠ HAI SỰ KIỆN, KHÔNG PHẢI MỘT (sửa 2026-08-18). `finish` chỉ bắn khi phản hồi
+    // được kết thúc ĐÀNG HOÀNG. Một yêu cầu ghi bị đứt giữa chừng (client bỏ đi, hoặc
+    // `res.destroy()` ở đường lỗi) **không bao giờ** bắn `finish` ⇒ đúng những yêu cầu
+    // hỏng lại là những yêu cầu KHÔNG để lại hàng audit nào. `close` luôn bắn; cờ `ghiRoi`
+    // giữ cho lượt bình thường (finish rồi close) chỉ ghi MỘT hàng.
     if (isMutating) {
-      res.on("finish", () => {
-        void recordV1Audit(req, res);
-      });
+      const ipSnapshot = snapshotIp(req); // chụp khi socket CÒN SỐNG
+      let ghiRoi = false;
+      const ghiMotLan = (): void => {
+        if (ghiRoi) return;
+        ghiRoi = true;
+        void recordV1Audit(req, res, ipSnapshot);
+      };
+      res.on("finish", ghiMotLan);
+      res.on("close", ghiMotLan);
     }
 
     // (a) LICENSE — never-stop-production enforcement.

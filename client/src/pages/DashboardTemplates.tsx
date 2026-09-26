@@ -3,6 +3,7 @@ import { useTranslation } from "react-i18next";
 import { useLocation } from "wouter";
 import DashboardLayout from "@/components/DashboardLayout";
 import { trpc } from "@/lib/trpc";
+import { toastTrpcError } from "@/lib/trpcErrors";
 import {
   templateToCustomDashboardWidgets,
   type TemplateLayoutItem,
@@ -34,9 +35,7 @@ import {
 const SYSTEM_TEMPLATES = [
   {
     id: "production-overview",
-    name: "Production Overview",
-    description: "Tổng quan sản xuất với biểu đồ sản lượng, yield rate, và trạng thái máy",
-    descriptionKey: "dashboard.tplProductionOverviewDesc",
+    name: "Production Overview",    descriptionKey: "dashboard.tplProductionOverviewDesc",
     templateType: "system" as const,
     icon: BarChart3,
     widgets: ["production-stats", "yield-chart", "machine-status", "hourly-trend"],
@@ -50,9 +49,7 @@ const SYSTEM_TEMPLATES = [
   },
   {
     id: "quality-control",
-    name: "Quality Control",
-    description: "Giám sát chất lượng với NG analysis, SPC charts, và defect tracking",
-    descriptionKey: "dashboard.tplQualityControlDesc",
+    name: "Quality Control",    descriptionKey: "dashboard.tplQualityControlDesc",
     templateType: "system" as const,
     icon: PieChart,
     widgets: ["ng-analysis", "spc-chart", "defect-pareto", "quality-trend"],
@@ -66,9 +63,7 @@ const SYSTEM_TEMPLATES = [
   },
   {
     id: "machine-health",
-    name: "Machine Health",
-    description: "Theo dõi sức khỏe máy với uptime, alerts, và maintenance schedule",
-    descriptionKey: "dashboard.tplMachineHealthDesc",
+    name: "Machine Health",    descriptionKey: "dashboard.tplMachineHealthDesc",
     templateType: "system" as const,
     icon: Activity,
     widgets: ["machine-uptime", "alert-summary", "maintenance-calendar", "oee-gauge"],
@@ -82,9 +77,7 @@ const SYSTEM_TEMPLATES = [
   },
   {
     id: "executive-summary",
-    name: "Executive Summary",
-    description: "Báo cáo tổng hợp cho quản lý với KPIs, trends, và comparisons",
-    descriptionKey: "dashboard.tplExecutiveSummaryDesc",
+    name: "Executive Summary",    descriptionKey: "dashboard.tplExecutiveSummaryDesc",
     templateType: "system" as const,
     icon: Gauge,
     widgets: ["kpi-cards", "factory-comparison", "monthly-trend", "top-issues"],
@@ -98,9 +91,7 @@ const SYSTEM_TEMPLATES = [
   },
   {
     id: "realtime-monitoring",
-    name: "Realtime Monitoring",
-    description: "Giám sát thời gian thực với live data, alerts, và status updates",
-    descriptionKey: "dashboard.tplRealtimeMonitoringDesc",
+    name: "Realtime Monitoring",    descriptionKey: "dashboard.tplRealtimeMonitoringDesc",
     templateType: "system" as const,
     icon: TrendingUp,
     widgets: ["live-production", "active-alerts", "machine-map", "recent-inspections"],
@@ -114,9 +105,7 @@ const SYSTEM_TEMPLATES = [
   },
   {
     id: "alert-management",
-    name: "Alert Management",
-    description: "Quản lý cảnh báo với alert history, rules, và notifications",
-    descriptionKey: "dashboard.tplAlertManagementDesc",
+    name: "Alert Management",    descriptionKey: "dashboard.tplAlertManagementDesc",
     templateType: "system" as const,
     icon: AlertTriangle,
     widgets: ["alert-timeline", "alert-rules", "notification-stats", "escalation-matrix"],
@@ -161,7 +150,7 @@ export default function DashboardTemplates() {
       setApplyingId(null);
     },
     onError: (error) => {
-      toast.error(error.message);
+      toastTrpcError(error);
       setApplyingId(null);
     },
   });
@@ -195,7 +184,7 @@ export default function DashboardTemplates() {
       refetch();
     },
     onError: (error) => {
-      toast.error(error.message);
+      toastTrpcError(error);
     },
   });
 
@@ -205,7 +194,7 @@ export default function DashboardTemplates() {
       refetch();
     },
     onError: (error) => {
-      toast.error(error.message);
+      toastTrpcError(error);
     },
   });
 
@@ -229,7 +218,8 @@ export default function DashboardTemplates() {
     applyTemplate({
       key: `system-${template.id}`,
       name: template.name,
-      description: template.description,
+      // Lưu MÔ TẢ ĐÃ DỊCH: bảng người dùng tạo ra phải mang ngôn ngữ họ đang dùng.
+      description: t(template.descriptionKey),
       widgets: template.widgets,
       layout: template.layout,
     });
@@ -462,14 +452,14 @@ function RoleDefaultsSection() {
       utils.dashboardWidget.listRoleDefaults.invalidate();
       toast.success(t('dashboard.roleDefaultSaved', 'Đã lưu mặc định vai trò'));
     },
-    onError: (e) => toast.error(e.message),
+    onError: (e) => toastTrpcError(e),
   });
   const clearMutation = trpc.dashboardWidget.clearRoleDefault.useMutation({
     onSuccess: () => {
       utils.dashboardWidget.listRoleDefaults.invalidate();
       toast.success(t('dashboard.roleDefaultCleared', 'Đã xóa mặc định vai trò'));
     },
-    onError: (e) => toast.error(e.message),
+    onError: (e) => toastTrpcError(e),
   });
 
   const bindings = defaultsQuery.data || [];

@@ -9,7 +9,18 @@
  */
 import { z } from "zod";
 import { TRPCError } from "@trpc/server";
-import { router, protectedProcedure, adminProcedure } from "../_core/trpc";
+import {
+  router,
+  protectedProcedure as thuTucVanHanh,
+  moduleProcedure,
+  moduleGate,
+  adminProcedure as adminProcedureBase,
+} from "../_core/trpc";
+// ★ Cổng giấy phép MOD_AI — chỉ THÊM chiều giấy phép, RBAC/vai/2FA giữ nguyên từng ký tự.
+//   Không-brick + fail-safe ở `_core/moduleGate.ts`; lượng từ canh ở `congGiayPhepAiCensus.test.ts`.
+const protectedProcedure = moduleProcedure("MOD_AI");
+const adminProcedure = adminProcedureBase.use(moduleGate("MOD_AI"));
+import { appError } from "../_core/appError";
 import {
   scoreImage,
   buildMemoryBank,
@@ -32,13 +43,21 @@ function decodeBase64Image(b64: string): Buffer {
   try {
     buf = Buffer.from(cleaned, "base64");
   } catch {
-    throw new TRPCError({ code: "BAD_REQUEST", message: "Invalid base64 image" });
+    // Task 5 (doc 71) — xem ghi chú cùng pattern ở aiAdvancedVisionRouter.ts:
+    // reason tách 3 nguyên nhân trước đây render 1 câu; nhánh vượt dung lượng tái
+    // dùng KB_FILE_TOO_LARGE{limitMb}, KHÔNG nhồi vào INVALID_VALUE.
+    throw appError("BAD_REQUEST", "INVALID_VALUE", { field: "image", reason: "invalidBase64Image" }, "Invalid base64 image");
   }
   if (buf.length === 0) {
-    throw new TRPCError({ code: "BAD_REQUEST", message: "Empty image payload" });
+    throw appError("BAD_REQUEST", "INVALID_VALUE", { field: "image", reason: "emptyImagePayload" }, "Empty image payload");
   }
   if (buf.length > MAX_IMAGE_BYTES) {
-    throw new TRPCError({ code: "PAYLOAD_TOO_LARGE", message: `Image exceeds ${MAX_IMAGE_BYTES} bytes` });
+    throw appError(
+      "PAYLOAD_TOO_LARGE",
+      "KB_FILE_TOO_LARGE",
+      { limitMb: Math.round((MAX_IMAGE_BYTES / (1024 * 1024)) * 10) / 10 },
+      `Image exceeds ${MAX_IMAGE_BYTES} bytes`,
+    );
   }
   return buf;
 }
@@ -83,7 +102,7 @@ function toNum(v: unknown): number | null {
  *   - latest*  ← dòng rn=1 (mới nhất)
  *   - recent.* ← đếm trên toàn cửa sổ (anomalyCount = số dòng (anomaly->>'isAnomaly')='true')
  */
-async function readMachineStatuses(
+export async function readMachineStatuses(
   machineIds: number[],
   productModelId: number | null,
 ): Promise<Record<number, MachineAnomalyStatus>> {
@@ -214,7 +233,12 @@ export const aiAnomalyRouter = router({
     }),
 
   // ── latestForMachine (protected) — trạng thái anomaly realtime / 1 máy ────────
-  latestForMachine: protectedProcedure
+  // ⚠⚠ CỐ Ý **KHÔNG** khoá sau MOD_AI. Dữ liệu là AI thật, nhưng nơi hiển thị KHÔNG phải màn AI:
+  //    `components/MachineAISummary.tsx` được gắn ở `/production-dashboard` (MOD_PRODUCTION),
+  //    `/quality-cockpit`, `/repair-station`, `MachineWorkspace`. Khoá ở đây ⇒ khách mua
+  //    MOD_PRODUCTION/MOD_QUALITY nhưng không mua AI nhận FORBIDDEN trên màn của HỌ. Muốn khoá thì
+  //    phải ẩn `MachineAISummary` theo module ở client TRƯỚC — xem báo cáo mục (b).
+  latestForMachine: thuTucVanHanh
     .input(z.object({
       machineId: z.number().int().positive(),
       productModelId: z.number().int().positive().nullish(),

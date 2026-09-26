@@ -42,10 +42,10 @@ export function useAuth(options?: UseAuthOptions) {
   }, [logoutMutation, utils]);
 
   const state = useMemo(() => {
-    localStorage.setItem(
-      "manus-runtime-user-info",
-      JSON.stringify(meQuery.data)
-    );
+    // ★★★ Pha 7 Task 8b — ĐÃ XOÁ lượt ghi `localStorage["manus-runtime-user-info"]`.
+    // Nó ghi **nguyên** đối tượng `auth.me` xuống đĩa người dùng mỗi lượt render, và đếm được
+    // **0 người đọc** trong toàn `client/src`. Dữ liệu đã ghi ở lượt trước được dọn lúc khởi động
+    // (`client/src/lib/donKhoaNguoiDung.ts`) — dọn theo **HÌNH DẠNG**, không theo tên khoá.
     return {
       user: meQuery.data ?? null,
       loading: meQuery.isLoading || logoutMutation.isPending,

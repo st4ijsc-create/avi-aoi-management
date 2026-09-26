@@ -36,6 +36,7 @@ import {
   Send,
 } from "lucide-react";
 import { toast } from "sonner";
+import { toastTrpcError } from "@/lib/trpcErrors";
 
 type RobotRow = {
   id: number;
@@ -150,7 +151,7 @@ export default function RobotControl() {
       toast.success(t("robot.toastEnabled", "Đã cập nhật trạng thái bật/tắt robot"));
       void utils.robot.list.invalidate();
     },
-    onError: (e) => toast.error(e.message),
+    onError: (e) => toastTrpcError(e),
   });
 
   const testM = trpc.robot.testConnection.useMutation({
@@ -158,7 +159,7 @@ export default function RobotControl() {
       if (r?.ok) toast.success(t("robot.testOk", "Kết nối OK (chỉ đọc trạng thái, không có chuyển động)"));
       else toast.error(r?.error ?? t("robot.testFail", "Kết nối thất bại"));
     },
-    onError: (e) => toast.error(e.message),
+    onError: (e) => toastTrpcError(e),
   });
 
   return (

@@ -9,14 +9,33 @@ import {
   nextCycleIndex,
   tileStatus,
   agoLabel,
+  isNewAndonRaise,
+  andonTileReason,
   ANDON_DEFAULT_WARN_PCT,
   ANDON_DEFAULT_CRIT_PCT,
 } from "./andonBoard";
 
 describe("parseAndonBoardParams", () => {
   it("parses the full URL contract", () => {
-    const p = parseAndonBoardParams("?cycle=30&lines=12,14&factory=2&theme=dark&warn=97&crit=92");
-    expect(p).toEqual({ cycleSec: 30, lineIds: [12, 14], factoryId: 2, theme: "dark", warnPct: 97, critPct: 92 });
+    const p = parseAndonBoardParams("?cycle=30&lines=12,14&factory=2&theme=dark&warn=97&crit=92&sound=0&kiosk=1");
+    expect(p).toEqual({ cycleSec: 30, lineIds: [12, 14], factoryId: 2, theme: "dark", warnPct: 97, critPct: 92, sound: false, kiosk: true });
+  });
+
+  it("doc68 §3.5: kiosk defaults OFF; only 1/true enables it", () => {
+    expect(parseAndonBoardParams("").kiosk).toBe(false);
+    expect(parseAndonBoardParams("?kiosk=1").kiosk).toBe(true);
+    expect(parseAndonBoardParams("?kiosk=true").kiosk).toBe(true);
+    expect(parseAndonBoardParams("?kiosk=0").kiosk).toBe(false);
+    expect(parseAndonBoardParams("?kiosk=yes").kiosk).toBe(false);
+  });
+
+  it("W8: sound defaults ON; only explicit 0/false/off mutes", () => {
+    expect(parseAndonBoardParams("").sound).toBe(true);
+    expect(parseAndonBoardParams("?sound=1").sound).toBe(true);
+    expect(parseAndonBoardParams("?sound=garbage").sound).toBe(true); // unknown value → keep ringing
+    expect(parseAndonBoardParams("?sound=0").sound).toBe(false);
+    expect(parseAndonBoardParams("?sound=false").sound).toBe(false);
+    expect(parseAndonBoardParams("?sound=off").sound).toBe(false);
   });
 
   it("falls back safely on garbage", () => {
@@ -39,7 +58,47 @@ describe("parseAndonBoardParams", () => {
     expect(parseAndonBoardParams("")).toEqual({
       cycleSec: 0, lineIds: [], factoryId: null, theme: null,
       warnPct: ANDON_DEFAULT_WARN_PCT, critPct: ANDON_DEFAULT_CRIT_PCT,
+      sound: true, kiosk: false,
     });
+  });
+});
+
+describe("andonTileReason (doc68 §3.5 — red tile says WHY)", () => {
+  it("uses the andon title, trimmed to two words + upper-cased", () => {
+    expect(andonTileReason({ title: "Kẹt băng tải", state: "red" })).toBe("KẸT BĂNG");
+    expect(andonTileReason({ title: "Dừng khẩn cấp", state: "red" })).toBe("DỪNG KHẨN");
+  });
+  it("falls back to reason when title is empty", () => {
+    expect(andonTileReason({ title: "", reason: "Thiếu vật tư", state: "red" })).toBe("THIẾU VẬT");
+    expect(andonTileReason({ title: null, reason: "  Lỗi  cấp  liệu ", state: "call" })).toBe("LỖI CẤP");
+  });
+  it("falls back to a state word when no text at all", () => {
+    expect(andonTileReason({ state: "call" })).toBe("GỌI HỖ TRỢ");
+    expect(andonTileReason({ state: "red" })).toBe("DỪNG");
+    expect(andonTileReason({})).toBe("DỪNG");
+  });
+});
+
+describe("isNewAndonRaise (W8 chime/flash/spotlight trigger)", () => {
+  it("rings on a new red/call/yellow raise", () => {
+    expect(isNewAndonRaise({ event: "raised", status: "raised", state: "red" })).toBe(true);
+    expect(isNewAndonRaise({ event: "raised", status: "raised", state: "call" })).toBe(true);
+    expect(isNewAndonRaise({ event: "raised", status: "raised", state: "yellow" })).toBe(true);
+  });
+  it("stays silent on ack/resolve/escalate echoes", () => {
+    expect(isNewAndonRaise({ event: "acknowledged", status: "acknowledged", state: "red" })).toBe(false);
+    expect(isNewAndonRaise({ event: "resolved", status: "resolved", state: "red" })).toBe(false);
+    expect(isNewAndonRaise({ event: "escalated", status: "raised", state: "red" })).toBe(false);
+  });
+  it("legacy payload without `event` falls back to status", () => {
+    expect(isNewAndonRaise({ status: "raised", state: "red" })).toBe(true);
+    expect(isNewAndonRaise({ status: "acknowledged", state: "red" })).toBe(false);
+  });
+  it("green raise = return-to-normal → no bell; garbage → no bell", () => {
+    expect(isNewAndonRaise({ event: "raised", status: "raised", state: "green" })).toBe(false);
+    expect(isNewAndonRaise({ event: "raised", status: "raised" })).toBe(false);
+    expect(isNewAndonRaise(null)).toBe(false);
+    expect(isNewAndonRaise(undefined)).toBe(false);
   });
 });
 
@@ -79,11 +138,14 @@ describe("tileStatus priority", () => {
 });
 
 describe("agoLabel", () => {
-  it("formats s/m/h compactly and never goes negative", () => {
+  it("formats s/m/h/d compactly and never goes negative", () => {
     const now = 1_000_000_000;
     expect(agoLabel(now - 30_000, now)).toBe("30s");
     expect(agoLabel(now - 5 * 60_000, now)).toBe("5m");
     expect(agoLabel(now - 3 * 3_600_000, now)).toBe("3h");
+    expect(agoLabel(now - 23 * 3_600_000, now)).toBe("23h");
+    expect(agoLabel(now - 26 * 3_600_000, now)).toBe("1d");
+    expect(agoLabel(now - 2 * 24 * 3_600_000, now)).toBe("2d");
     expect(agoLabel(now + 60_000, now)).toBe("0s");
   });
 });

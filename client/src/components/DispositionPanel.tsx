@@ -20,6 +20,7 @@ import { useTranslation } from "react-i18next";
 import { format } from "date-fns";
 import { toast } from "sonner";
 import { trpc } from "@/lib/trpc";
+import { toastTrpcError } from "@/lib/trpcErrors";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -140,7 +141,7 @@ export function DispositionPanel({ inspectionId, machineId, overallResult, readO
       setWorkOrderId("none");
       refresh();
     },
-    onError: (e) => toast.error(t("common.error", "Lỗi") + ": " + e.message),
+    onError: (e) => toastTrpcError(e),
   });
 
   const updateM = trpc.defectDisposition.updateStatus.useMutation({
@@ -148,7 +149,7 @@ export function DispositionPanel({ inspectionId, machineId, overallResult, readO
       toast.success(t("disposition.statusUpdated", "Đã cập nhật trạng thái"));
       refresh();
     },
-    onError: (e) => toast.error(t("common.error", "Lỗi") + ": " + e.message),
+    onError: (e) => toastTrpcError(e),
   });
 
   const rows = listQ.data ?? [];

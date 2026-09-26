@@ -6,6 +6,9 @@
 import { getDb } from '../db';
 import { sql, eq, isNull, and } from 'drizzle-orm';
 import { downtimeEvents, machines } from '../../drizzle/schema';
+// doc69 W1 "modelfix" — shared env→GGUF-basename resolver; the downtime RCA below must PIN a text
+// model (un-pinned calls used to land on the 0.6B RAG embedder → repetition garbage).
+import { resolveLogicalModel } from './ai/modelResolver';
 
 // Track last activity timestamp per machine
 const lastActivityMap = new Map<number, Date>();
@@ -305,7 +308,7 @@ Analyze the likely root cause and suggest recovery actions.`,
       maxTokens: 512,
       temperature: 0.3,
       jsonMode: true,
-    });
+    }, resolveLogicalModel('chat'));
 
     const parsed = JSON.parse(response.text);
     if (parsed.likelyCause) return parsed;

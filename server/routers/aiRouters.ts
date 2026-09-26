@@ -2,8 +2,10 @@ import { protectedProcedure, router } from "../_core/trpc";
 import { requirePermission } from "../_core/accessControl";
 import { z } from "zod";
 import { TRPCError } from "@trpc/server";
+import { appError } from "../_core/appError";
 import { getDb } from "../db";
-import { sql } from "drizzle-orm";
+import { sql, eq } from "drizzle-orm";
+import { predictiveAlerts, rootCauseAnalysis } from "../../drizzle/schema";
 import { pearsonCorrelation, correlationPValue } from "../utils/statistics";
 import { generateRCAInsights } from "../services/aiInsightsService";
 
@@ -21,7 +23,7 @@ export const rootCauseRouter = router({
     }))
     .mutation(async ({ ctx, input }) => {
       const db = await getDb();
-      if (!db) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: 'Database not available' });
+      if (!db) throw appError("INTERNAL_SERVER_ERROR", "DB_UNAVAILABLE", undefined, "Database not available");
       
       const startTime = Date.now();
       
@@ -57,9 +59,15 @@ export const rootCauseRouter = router({
         LIMIT 500000
       `;
       
+      // W0-1 fix (doc 69): the postgres-js driver used by this project's
+      // drizzle connection returns query rows DIRECTLY (no `.rows` wrapper —
+      // see the established `result.rows || result` pattern already used in
+      // server/db/statistics.ts / server/db/inspection.ts / server/utils/kpi.ts).
+      // `result.rows || []` always evaluated to `[]` here, so this aggregation
+      // silently saw zero inspections regardless of the identifier-quoting fix.
       const result = await db.execute(query) as any;
-      const rows = result.rows || [];
-      
+      const rows = result.rows || result || [];
+
       // Calculate statistics
       const totalInspections = new Set(rows.map((r: any) => r.id)).size;
       const ngCount = rows.filter((r: any) => r.result === 'NG').length;
@@ -151,13 +159,21 @@ export const rootCauseRouter = router({
       let productModelCode: string | null = null;
       if (input.machineId) {
         const machineResult = await db.execute(sql`SELECT code FROM machines WHERE id = ${input.machineId}`) as any;
-        machineCode = machineResult.rows?.[0]?.code ?? null;
+        machineCode = (machineResult.rows ?? machineResult)?.[0]?.code ?? null;
       }
       if (input.productModelId) {
         const productResult = await db.execute(sql`SELECT code FROM product_models WHERE id = ${input.productModelId}`) as any;
-        productModelCode = productResult.rows?.[0]?.code ?? null;
+        productModelCode = (productResult.rows ?? productResult)?.[0]?.code ?? null;
       }
 
+      // LEGACY (doc69 A2): topFactors above is a relabeled Pareto count (measurement-point
+      // NG frequency), and generateRCAInsights below is the SHALLOW LLM-over-aggregate-counts
+      // path — no SPC/anomaly/vision/causal-graph/quantitative-correlation evidence. The
+      // evidence-rich engine is aiRcaCopilot.runRca, exposed as aiRcaCopilotRouter.diagnose
+      // when AI_RCA_COPILOT_ENABLED is on. This endpoint is a distinct manual "Analyze" action
+      // (RCA history UI) and is intentionally NOT flag-branched here — converging it onto the
+      // copilot is a separate follow-up. Kept as-is (do not delete): still the only
+      // DEFECT/YIELD/QUALITY/MACHINE_ANALYSIS entry point when the copilot flag is off.
       // Generate AI insights via LLM (falls back to rule-based if OPENAI_API_KEY not set)
       const aiInsights = await generateRCAInsights(topFactors, {
         totalInspections,
@@ -167,16 +183,45 @@ export const rootCauseRouter = router({
         machineCode,
         productModelCode,
       });
-      
-      // Save analysis result
-      const insertResult = await db.execute(
-        sql`INSERT INTO root_cause_analysis 
-          (analysisType, machineId, machineCode, productModelId, productModelCode, factoryId, startDate, endDate, dataPointsAnalyzed, correlationMatrix, topFactors, aiInsights, paretoData, status, requestedBy, requestedByName, processingTime)
-          VALUES (${input.analysisType}, ${input.machineId || null}, ${machineCode}, ${input.productModelId || null}, ${productModelCode}, ${input.factoryId || null}, ${input.startDate}, ${input.endDate}, ${rows.length}, ${JSON.stringify(correlationMatrix)}, ${JSON.stringify(topFactors)}, ${JSON.stringify(aiInsights)}, ${JSON.stringify(paretoData)}, 'COMPLETED', ${ctx.user.id}, ${ctx.user.name || 'Unknown'}, ${Date.now() - startTime}) RETURNING id`
-      ) as any;
-      
+
+      // doc69 Wave2 A3 — close the loop: map any recommendation that maps to a KNOWN
+      // registered write-tool + valid args + an existing machine into a 1-tap
+      // proposable action. RBAC-gated to the CALLING user (recomputed live, never
+      // persisted) — a non-permitted user gets NO entries (advisory text only).
+      // Additive: never throws, never changes aiInsights itself.
+      const { suggestActionsForRecommendations } = await import("../services/ai/rcaActionSuggester");
+      const suggestedActions = await suggestActionsForRecommendations(aiInsights, {
+        machineId: input.machineId ?? null,
+        user: { id: ctx.user.id, role: String(ctx.user.role), name: ctx.user.name ?? null },
+        lang: "vi",
+      });
+
+      // Save analysis result — W0-1 fix (doc 69): was a raw INSERT with unquoted
+      // camelCase column names (Postgres folds to lowercase → column does not
+      // exist), so this write silently failed to persist. The drizzle builder
+      // quotes identifiers correctly and matches the physical schema.
+      const [insertResult] = await db.insert(rootCauseAnalysis).values({
+        analysisType: input.analysisType,
+        machineId: input.machineId ?? null,
+        machineCode,
+        productModelId: input.productModelId ?? null,
+        productModelCode,
+        factoryId: input.factoryId ?? null,
+        startDate: input.startDate,
+        endDate: input.endDate,
+        dataPointsAnalyzed: rows.length,
+        correlationMatrix,
+        topFactors,
+        aiInsights,
+        paretoData,
+        status: "COMPLETED",
+        requestedBy: ctx.user.id,
+        requestedByName: ctx.user.name || "Unknown",
+        processingTime: Date.now() - startTime,
+      }).returning({ id: rootCauseAnalysis.id });
+
       return {
-        id: insertResult.rows?.[0]?.id,
+        id: insertResult?.id,
         analysisType: input.analysisType,
         dataPointsAnalyzed: rows.length,
         topFactors,
@@ -184,6 +229,8 @@ export const rootCauseRouter = router({
         aiInsights,
         paretoData,
         processingTime: Date.now() - startTime,
+        // doc69 Wave2 A3 — additive; [] when nothing maps (advisory text only).
+        suggestedActions,
       };
     }),
 
@@ -196,19 +243,21 @@ export const rootCauseRouter = router({
     }).optional())
     .query(async ({ input }) => {
       const db = await getDb();
-      if (!db) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: 'Database not available' });
+      if (!db) throw appError("INTERNAL_SERVER_ERROR", "DB_UNAVAILABLE", undefined, "Database not available");
       
       let query = sql`SELECT * FROM root_cause_analysis WHERE 1=1`;
       if (input?.analysisType) {
-        query = sql`${query} AND analysisType = ${input.analysisType}`;
+        query = sql`${query} AND "analysisType" = ${input.analysisType}`;
       }
       if (input?.machineId) {
-        query = sql`${query} AND machineId = ${input.machineId}`;
+        query = sql`${query} AND "machineId" = ${input.machineId}`;
       }
       query = sql`${query} ORDER BY "createdAt" DESC LIMIT ${input?.limit || 20}`;
       
       const result = await db.execute(query) as any;
-      return (result.rows || []).map((row: any) => ({
+      // W0-1 fix (doc 69): see the comment on rootCauseRouter.analyze above —
+      // db.execute() rows come back directly, not under `.rows`.
+      return ((result.rows || result || []) as any[]).map((row: any) => ({
         id: row.id,
         analysisType: row.analysisType,
         machineId: row.machineId,
@@ -232,19 +281,33 @@ export const rootCauseRouter = router({
   // Get single analysis
   get: protectedProcedure
     .input(z.object({ id: z.number() }))
-    .query(async ({ input }) => {
+    .query(async ({ input, ctx }) => {
       const db = await getDb();
-      if (!db) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: 'Database not available' });
+      if (!db) throw appError("INTERNAL_SERVER_ERROR", "DB_UNAVAILABLE", undefined, "Database not available");
       
       const result = await db.execute(
         sql`SELECT * FROM root_cause_analysis WHERE id = ${input.id}`
       ) as any;
-      
-      if (!result.rows?.length) {
-        throw new TRPCError({ code: 'NOT_FOUND', message: 'Analysis not found' });
+      // W0-1 fix (doc 69): db.execute() rows come back directly, not under
+      // `.rows` — `result.rows?.length` was always undefined → always NOT_FOUND.
+      const resultRows = (result.rows ?? result ?? []) as any[];
+
+      if (!resultRows.length) {
+        throw appError('NOT_FOUND', 'ENTITY_NOT_FOUND', { entity: 'rcaAnalysis' }, 'Analysis not found');
       }
-      
-      const row = result.rows[0];
+
+      const row = resultRows[0];
+      const aiInsightsParsed = typeof row.aiInsights === 'string' ? JSON.parse(row.aiInsights) : row.aiInsights;
+
+      // doc69 Wave2 A3 — recomputed LIVE for the CURRENT viewer (never persisted,
+      // never stale RBAC): [] when nothing maps or the viewer isn't permitted.
+      const { suggestActionsForRecommendations } = await import("../services/ai/rcaActionSuggester");
+      const suggestedActions = await suggestActionsForRecommendations(aiInsightsParsed ?? { recommendations: [] }, {
+        machineId: row.machineId ?? null,
+        user: { id: ctx.user.id, role: String(ctx.user.role), name: ctx.user.name ?? null },
+        lang: "vi",
+      });
+
       return {
         id: row.id,
         analysisType: row.analysisType,
@@ -258,13 +321,14 @@ export const rootCauseRouter = router({
         dataPointsAnalyzed: row.dataPointsAnalyzed,
         correlationMatrix: typeof row.correlationMatrix === 'string' ? JSON.parse(row.correlationMatrix) : row.correlationMatrix,
         topFactors: typeof row.topFactors === 'string' ? JSON.parse(row.topFactors) : row.topFactors,
-        aiInsights: typeof row.aiInsights === 'string' ? JSON.parse(row.aiInsights) : row.aiInsights,
+        aiInsights: aiInsightsParsed,
         paretoData: typeof row.paretoData === 'string' ? JSON.parse(row.paretoData) : row.paretoData,
         status: row.status,
         requestedBy: row.requestedBy,
         requestedByName: row.requestedByName,
         processingTime: row.processingTime,
         createdAt: row.createdAt,
+        suggestedActions,
       };
     }),
 
@@ -284,16 +348,20 @@ export const rootCauseRouter = router({
     }))
     .mutation(async ({ ctx, input }) => {
       const db = await getDb();
-      if (!db) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: 'Database not available' });
+      if (!db) throw appError("INTERNAL_SERVER_ERROR", "DB_UNAVAILABLE", undefined, "Database not available");
 
       const existingResult = await db.execute(
-        sql`SELECT id, aiInsights FROM root_cause_analysis WHERE id = ${input.id}`
+        sql`SELECT id, "aiInsights" FROM root_cause_analysis WHERE id = ${input.id}`
       ) as any;
-      if (!existingResult.rows?.length) {
-        throw new TRPCError({ code: 'NOT_FOUND', message: 'Analysis not found' });
+      // W0-1 fix (doc 69): db.execute() rows come back directly, not under
+      // `.rows` — `existingResult.rows?.length` was always undefined, so this
+      // pre-read ALWAYS threw NOT_FOUND and the write below never ran.
+      const existingRows = (existingResult.rows ?? existingResult ?? []) as any[];
+      if (!existingRows.length) {
+        throw appError('NOT_FOUND', 'ENTITY_NOT_FOUND', { entity: 'rcaAnalysis' }, 'Analysis not found');
       }
 
-      const existingRow = existingResult.rows[0];
+      const existingRow = existingRows[0];
       const aiInsights = typeof existingRow.aiInsights === 'string'
         ? JSON.parse(existingRow.aiInsights)
         : (existingRow.aiInsights ?? {});
@@ -309,14 +377,17 @@ export const rootCauseRouter = router({
       review.reviewedAt = new Date().toISOString();
       const nextInsights = { ...(aiInsights ?? {}), review };
 
+      // W0-1 fix (doc 69): was a raw UPDATE with unquoted `aiInsights` (Postgres
+      // folds to `aiinsights` → column does not exist), silently discarding the
+      // review triage data. The drizzle builder quotes identifiers correctly.
       if (input.status !== undefined) {
-        await db.execute(
-          sql`UPDATE root_cause_analysis SET status = ${input.status}, aiInsights = ${JSON.stringify(nextInsights)} WHERE id = ${input.id}`
-        );
+        await db.update(rootCauseAnalysis)
+          .set({ status: input.status, aiInsights: nextInsights })
+          .where(eq(rootCauseAnalysis.id, input.id));
       } else {
-        await db.execute(
-          sql`UPDATE root_cause_analysis SET aiInsights = ${JSON.stringify(nextInsights)} WHERE id = ${input.id}`
-        );
+        await db.update(rootCauseAnalysis)
+          .set({ aiInsights: nextInsights })
+          .where(eq(rootCauseAnalysis.id, input.id));
       }
 
       return { success: true, id: input.id, review };
@@ -328,13 +399,14 @@ export const rootCauseRouter = router({
     .input(z.object({ id: z.number() }))
     .mutation(async ({ input }) => {
       const db = await getDb();
-      if (!db) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: 'Database not available' });
+      if (!db) throw appError("INTERNAL_SERVER_ERROR", "DB_UNAVAILABLE", undefined, "Database not available");
 
       const existingResult = await db.execute(
         sql`SELECT id FROM root_cause_analysis WHERE id = ${input.id}`
       ) as any;
-      if (!existingResult.rows?.length) {
-        throw new TRPCError({ code: 'NOT_FOUND', message: 'Analysis not found' });
+      // W0-1 fix (doc 69): db.execute() rows come back directly, not under `.rows`.
+      if (!((existingResult.rows ?? existingResult ?? []) as any[]).length) {
+        throw appError('NOT_FOUND', 'ENTITY_NOT_FOUND', { entity: 'rcaAnalysis' }, 'Analysis not found');
       }
 
       await db.execute(sql`DELETE FROM root_cause_analysis WHERE id = ${input.id}`);
@@ -355,7 +427,7 @@ export const predictiveAlertRouter = router({
     }).optional())
     .query(async ({ input }) => {
       const db = await getDb();
-      if (!db) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: 'Database not available' });
+      if (!db) throw appError("INTERNAL_SERVER_ERROR", "DB_UNAVAILABLE", undefined, "Database not available");
       
       const { predictiveAlerts } = await import('../../drizzle/schema');
       const { desc, eq, and } = await import('drizzle-orm');
@@ -366,10 +438,29 @@ export const predictiveAlertRouter = router({
       if (input?.alertType) conditions.push(eq(predictiveAlerts.alertType, input.alertType));
       if (input?.machineId) conditions.push(eq(predictiveAlerts.machineId, input.machineId));
       
+      // ── C3 (backlog §3) — SẮP THEO TRỤC ĐÚNG VỚI CÂU HỎI ĐANG ĐƯỢC HỎI ─────────
+      // Danh sách "cảnh báo VỪA ĐÓNG" (OpsConsole gọi với `status: "EXPIRED"`) trước đây
+      // vẫn sắp theo `createdAt` rồi mới `.limit(50)`. Hệ quả: một cảnh báo sống 30 ngày
+      // và vừa bị sweeper đóng SÁNG NAY bị 50 dòng mới-tạo-hơn đẩy khỏi kết quả — nó
+      // **không bao giờ xuất hiện** trong mục mang đúng tên "vừa đóng".
+      //
+      // ⚠ Và cảnh báo sống lâu CHÍNH LÀ loại sweeper hay đóng nhất (nó đóng thứ đã THÔI
+      //   tái diễn) — nên lỗi này ăn đúng vào nhóm mà mục ấy sinh ra để phục vụ.
+      //
+      // Client KHÔNG tự sửa được: nó đã biết trục đúng (`updatedAt` = lúc sweeper đóng
+      // dòng — xem OpsConsole.tsx `closedRows`) nhưng phép CẮT xảy ra ở đây, trước khi
+      // dữ liệu rời máy chủ. Sắp sai + cắt = mất dòng, không phải "sắp sai một chút".
+      //
+      // Trạng thái ĐANG MỞ vẫn sắp theo `createdAt` (câu hỏi ở đó là "cái gì mới xảy ra").
+      const DA_DONG = new Set(["RESOLVED", "DISMISSED", "EXPIRED"]);
+      const trucSap = input?.status && DA_DONG.has(input.status)
+        ? predictiveAlerts.updatedAt
+        : predictiveAlerts.createdAt;
+
       const result = await db.select()
         .from(predictiveAlerts)
         .where(conditions.length > 0 ? and(...conditions) : undefined)
-        .orderBy(desc(predictiveAlerts.createdAt))
+        .orderBy(desc(trucSap))
         .limit(input?.limit || 50);
       
       return (result || []).map((row: any) => ({
@@ -392,7 +483,27 @@ export const predictiveAlertRouter = router({
         status: row.status,
         acknowledgedBy: row.acknowledgedBy,
         acknowledgedAt: row.acknowledgedAt,
+        // Wave 3 Task 7 fix — trước đây liệt kê tay thiếu 2 trường này nên
+        // client nhận `undefined` VĨNH VIỄN dù migration 0308 đã chạy và DB
+        // đã có occurrenceCount>1 thật. Không parseFloat/ép kiểu gì thêm —
+        // occurrenceCount là integer NOT NULL default 1 nên luôn là number;
+        // lastOccurredAt có thể null (chưa tái diễn lần nào).
+        occurrenceCount: row.occurrenceCount,
+        lastOccurredAt: row.lastOccurredAt,
         createdAt: row.createdAt,
+        // Task 6 (Wave 4) — same class of bug as occurrenceCount/lastOccurredAt
+        // above (Wave 3 Task 7): the `.map()` here re-lists columns by hand, so
+        // anything not spelled out is `undefined` on the client FOREVER even
+        // though the DB row has it. alertExpirySweeper.ts writes a human reason
+        // into resolutionNotes when it auto-closes a no-longer-recurring alert
+        // (status → EXPIRED) — without this field the reason is unreadable from
+        // any client that calls `list` (the single-row `get` query below already
+        // had it). resolutionNotes can be null (row closed some other way, or
+        // still open) — client must treat null/empty as "no reason", never print
+        // "undefined". updatedAt lets the UI order/label "recently closed" rows
+        // by when they actually closed (EXPIRED rows have no resolvedAt set).
+        resolutionNotes: row.resolutionNotes,
+        updatedAt: row.updatedAt,
       }));
     }),
 
@@ -401,17 +512,20 @@ export const predictiveAlertRouter = router({
     .input(z.object({ id: z.number() }))
     .query(async ({ input }) => {
       const db = await getDb();
-      if (!db) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: 'Database not available' });
+      if (!db) throw appError("INTERNAL_SERVER_ERROR", "DB_UNAVAILABLE", undefined, "Database not available");
       
       const result = await db.execute(
         sql`SELECT * FROM predictive_alerts WHERE id = ${input.id}`
       ) as any;
-      
-      if (!result.rows?.length) {
-        throw new TRPCError({ code: 'NOT_FOUND', message: 'Alert not found' });
+      // W0-1 fix (doc 69): db.execute() rows come back directly, not under
+      // `.rows` — `result.rows?.length` was always undefined → always NOT_FOUND.
+      const resultRows = (result.rows ?? result ?? []) as any[];
+
+      if (!resultRows.length) {
+        throw appError('NOT_FOUND', 'ENTITY_NOT_FOUND', { entity: 'alert' }, 'Alert not found');
       }
-      
-      const row = result.rows[0];
+
+      const row = resultRows[0];
       return {
         id: row.id,
         alertType: row.alertType,
@@ -444,12 +558,16 @@ export const predictiveAlertRouter = router({
     .input(z.object({ id: z.number() }))
     .mutation(async ({ ctx, input }) => {
       const db = await getDb();
-      if (!db) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: 'Database not available' });
-      
-      await db.execute(
-        sql`UPDATE predictive_alerts SET status = 'ACKNOWLEDGED', acknowledgedBy = ${ctx.user.id}, acknowledgedAt = NOW() WHERE id = ${input.id}`
-      );
-      
+      if (!db) throw appError("INTERNAL_SERVER_ERROR", "DB_UNAVAILABLE", undefined, "Database not available");
+
+      // W0-1 fix (doc 69): was a raw UPDATE with unquoted `acknowledgedBy`/
+      // `acknowledgedAt` (Postgres folds to lowercase → column does not exist),
+      // silently discarding the acknowledgement. The drizzle builder quotes
+      // identifiers correctly and the write now actually persists.
+      await db.update(predictiveAlerts)
+        .set({ status: 'ACKNOWLEDGED', acknowledgedBy: ctx.user.id, acknowledgedAt: new Date() })
+        .where(eq(predictiveAlerts.id, input.id));
+
       return { success: true };
     }),
 
@@ -461,12 +579,19 @@ export const predictiveAlertRouter = router({
     }))
     .mutation(async ({ ctx, input }) => {
       const db = await getDb();
-      if (!db) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: 'Database not available' });
-      
-      await db.execute(
-        sql`UPDATE predictive_alerts SET status = 'RESOLVED', resolvedBy = ${ctx.user.id}, resolvedAt = NOW(), resolutionNotes = ${input.resolutionNotes || null} WHERE id = ${input.id}`
-      );
-      
+      if (!db) throw appError("INTERNAL_SERVER_ERROR", "DB_UNAVAILABLE", undefined, "Database not available");
+
+      // W0-1 fix (doc 69): was a raw UPDATE with unquoted `resolvedBy`/
+      // `resolvedAt`/`resolutionNotes` — same silent no-persist bug as above.
+      await db.update(predictiveAlerts)
+        .set({
+          status: 'RESOLVED',
+          resolvedBy: ctx.user.id,
+          resolvedAt: new Date(),
+          resolutionNotes: input.resolutionNotes || null,
+        })
+        .where(eq(predictiveAlerts.id, input.id));
+
       return { success: true };
     }),
 
@@ -475,7 +600,7 @@ export const predictiveAlertRouter = router({
     .input(z.object({ id: z.number() }))
     .mutation(async ({ ctx, input }) => {
       const db = await getDb();
-      if (!db) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: 'Database not available' });
+      if (!db) throw appError("INTERNAL_SERVER_ERROR", "DB_UNAVAILABLE", undefined, "Database not available");
       
       await db.execute(
         sql`UPDATE predictive_alerts SET status = 'DISMISSED' WHERE id = ${input.id}`
@@ -493,24 +618,34 @@ export const predictiveAlertRouter = router({
     }).optional())
     .mutation(async ({ ctx, input }) => {
       const db = await getDb();
-      if (!db) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: 'Database not available' });
+      if (!db) throw appError("INTERNAL_SERVER_ERROR", "DB_UNAVAILABLE", undefined, "Database not available");
       
+      const now = new Date();
       const daysAgo = new Date();
       daysAgo.setDate(daysAgo.getDate() - (input?.daysToAnalyze || 30));
-      
-      // Get inspection data
+
+      // Get inspection data — W0-1 fix (doc 69): this SELECT had two distinct
+      // bugs: (1) unquoted camelCase identifiers (i.machineId/productModelId,
+      // Postgres folds to lowercase → column does not exist) and a reference to
+      // a non-existent `i.result` (real column is `i."overallResult"`, see
+      // drizzle/schema/inspection.ts); (2) `machines` has NO `factoryId` column
+      // at all — factory is only reachable via the station → line → workshop →
+      // factory chain (same chain rootCauseRouter.analyze already uses above).
       let query = sql`
-        SELECT 
+        SELECT
           CAST(i."createdAt" AS DATE) as date,
           m.id as machine_id, m.code as machine_code,
           pm.id as product_model_id, pm.code as product_model_code,
           f.id as factory_id,
           COUNT(*) as total,
-          SUM(CASE WHEN i.result = 'NG' THEN 1 ELSE 0 END) as ng_count
+          SUM(CASE WHEN i."overallResult" = 'NG' THEN 1 ELSE 0 END) as ng_count
         FROM product_inspections i
-        LEFT JOIN machines m ON i.machineId = m.id
-        LEFT JOIN product_models pm ON i.productModelId = pm.id
-        LEFT JOIN factories f ON m.factoryId = f.id
+        LEFT JOIN machines m ON i."machineId" = m.id
+        LEFT JOIN product_models pm ON i."productModelId" = pm.id
+        LEFT JOIN stations st ON m."stationId" = st.id
+        LEFT JOIN production_lines pl ON st."lineId" = pl.id
+        LEFT JOIN workshops w ON pl."workshopId" = w.id
+        LEFT JOIN factories f ON w."factoryId" = f.id
         WHERE i."createdAt" >= ${daysAgo.toISOString()}
       `;
       
@@ -524,8 +659,11 @@ export const predictiveAlertRouter = router({
       query = sql`${query} GROUP BY CAST(i."createdAt" AS DATE), m.id, m.code, pm.id, pm.code, f.id ORDER BY date ASC`;
       
       const result = await db.execute(query) as any;
-      const rows = result.rows || [];
-      
+      // W0-1 fix (doc 69): db.execute() rows come back directly, not under
+      // `.rows` — `result.rows || []` always evaluated to `[]`, so this endpoint
+      // ALWAYS returned "not enough data" / created zero alerts.
+      const rows = result.rows || result || [];
+
       if (rows.length < 7) {
         return { success: true, alertsCreated: 0, message: 'Not enough data for prediction' };
       }
@@ -539,60 +677,80 @@ export const predictiveAlertRouter = router({
       }
       
       let alertsCreated = 0;
-      
+
+      // doc69 Wave 2 / A2 — REAL forecast signal (replaces the fake heuristic):
+      // the previous inline 7-point OLS + hardcoded "predictedRate > 10%" gate +
+      // hardcoded recommendation strings, mislabeled `modelUsed: 'Linear
+      // Regression'`, are GONE. Per eligible machine, the actual predicted
+      // defect-rate/severity/confidence/recommendations now come from the
+      // yield-forecast engine (Holt-Winters/EWMA/Linear per data-length, real
+      // confidence tied to forecast error) + the real defect Pareto (+ optional
+      // quantitative upstream correlation when RCA_QUANTITATIVE_ENABLED).
+      const { forecastYield, getDefectTrend, getDefectPareto } = await import("../services/aiInspectionAnalytics");
+      const { deriveDefectSpikeSignal } = await import("../services/aiPredictiveAlertService");
+      const { correlateStationDefect } = await import("../services/ai/defectCorrelationService");
+
       for (const [machineCode, data] of Object.entries(machineData)) {
+        // Cheap pre-filter only (matches the old minimum-data bar) — the
+        // AUTHORITATIVE eligibility/decision comes from deriveDefectSpikeSignal
+        // below, fed by the real (factory-day-bucketed) trend/forecast.
         if (data.length < 7) continue;
-        
-        // Calculate trend using simple linear regression
-        const defectRates = data.map((d: any) => d.total > 0 ? (d.ng_count / d.total) * 100 : 0);
-        const n = defectRates.length;
-        const sumX = (n * (n - 1)) / 2;
-        const sumY = defectRates.reduce((a: number, b: number) => a + b, 0);
-        const sumXY = defectRates.reduce((sum: number, y: number, i: number) => sum + i * y, 0);
-        const sumX2 = (n * (n - 1) * (2 * n - 1)) / 6;
-        
-        const slope = (n * sumXY - sumX * sumY) / (n * sumX2 - sumX * sumX);
-        const avgRate = sumY / n;
-        const predictedRate = avgRate + slope * 7; // Predict 7 days ahead
-        
-        // Check if prediction exceeds threshold
-        const threshold = 10; // 10% defect rate threshold
-        
-        if (predictedRate > threshold && slope > 0.5) {
-          const lastRow = data[data.length - 1];
-          
-          // Create alert
-          await db.execute(
-            sql`INSERT INTO predictive_alerts 
-              (alertType, severity, title, description, predictedValue, currentValue, threshold, confidenceScore, predictedTimeframe, machineId, machineCode, productModelId, productModelCode, factoryId, aiAnalysis, status)
-              VALUES (
-                'DEFECT_SPIKE',
-                ${predictedRate > 20 ? 'CRITICAL' : predictedRate > 15 ? 'HIGH' : 'MEDIUM'},
-                ${`Predicted defect spike for ${machineCode}`},
-                ${`Analysis shows defect rate trending upward. Current rate: ${avgRate.toFixed(1)}%, Predicted: ${predictedRate.toFixed(1)}%`},
-                ${predictedRate},
-                ${avgRate},
-                ${threshold},
-                ${Math.min(85, 60 + n)},
-                'next 7 days',
-                ${lastRow.machine_id},
-                ${machineCode},
-                ${lastRow.product_model_id},
-                ${lastRow.product_model_code},
-                ${lastRow.factory_id},
-                ${JSON.stringify({
-                  factors: [{ name: 'Trend', contribution: 80, description: `Slope: ${slope.toFixed(2)}%/day` }],
-                  recommendations: ['Review machine calibration', 'Check material quality', 'Inspect tooling wear'],
-                  dataPoints: n,
-                  modelUsed: 'Linear Regression',
-                })},
-                'ACTIVE'
-              )`
-          );
+
+        const lastRow = data[data.length - 1];
+        const machineId: number | null = lastRow.machine_id ?? null;
+        if (machineId == null) continue; // can't scope the real forecast engine without a machine — honest skip
+
+        try {
+          const period = { startDate: daysAgo, endDate: now, machineId };
+          const [trend, forecast, pareto] = await Promise.all([
+            getDefectTrend(period),
+            forecastYield(period, 7),
+            getDefectPareto(period),
+          ]);
+
+          // Optional additive evidence — flag-gated + fail-safe inside the
+          // service itself (RCA_QUANTITATIVE_ENABLED, default OFF → ok:false).
+          const correlation = await correlateStationDefect({ machineId });
+          const correlationFactors = correlation.ok ? correlation.factors : [];
+
+          const signal = deriveDefectSpikeSignal({ trend, forecast, pareto, correlationFactors });
+          if (!signal) continue; // insufficient data / not a real rising trend — no fabricated alert
+
+          // Wave 4 §5 — đi qua CÙNG MỘT CỬA với đường tự động (routeAlert): gộp
+          // một-cảnh-báo-mở theo (machineId, alertType), đặt hạn dùng (expiresAt),
+          // ghi nhật ký lần-tái-diễn (predictive_alert_occurrences). INSERT thẳng
+          // (trước đây) bỏ qua cả ba — bấm nút vài lần dựng lại đúng đống cảnh báo
+          // trùng lặp/không-hết-hạn mà Wave 3 vừa dọn, và bỏ sót lần-tái-diễn khỏi KPI.
+          //
+          // SmartAlertEvent.factoryId / .productModelId là `number | undefined`
+          // (KHÔNG `| null`) — dùng `?? undefined` để giữ đúng kiểu, không ép `as any`.
+          const { routeAlert } = await import("../services/aiSmartAlertRouter");
+          await routeAlert({
+            type: signal.alertType,
+            machineId,
+            factoryId: lastRow.factory_id ?? undefined,
+            productModelId: lastRow.product_model_id ?? undefined,
+            severity: signal.severity,
+            message: `Analysis shows defect rate trending upward. Current rate: ${signal.currentValue.toFixed(1)}%, Predicted: ${signal.predictedValue.toFixed(1)}%`,
+            data: {
+              confidence: signal.confidenceScore,
+              predictedTimeframe: signal.predictedTimeframe,
+              currentValue: signal.currentValue,
+              threshold: signal.alertThreshold,
+              factors: signal.factors,
+              recommendations: signal.recommendations,
+              // routeAlert đọc event.data.dataPoints để lấp aiAnalysisPayload.dataPoints —
+              // thiếu trường này thì cột luôn ghi 0 dù forecast thật có đủ điểm dữ liệu.
+              dataPoints: signal.dataPoints,
+            },
+          });
           alertsCreated++;
+        } catch (err) {
+          // Fail-safe per machine — one machine's forecast failure never aborts the batch.
+          console.error(`[predictiveAlertRouter.generatePredictions] forecast failed for machine ${machineCode}:`, err);
         }
       }
-      
+
       return { success: true, alertsCreated };
     }),
 
@@ -600,7 +758,7 @@ export const predictiveAlertRouter = router({
   stats: protectedProcedure
     .query(async () => {
       const db = await getDb();
-      if (!db) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: 'Database not available' });
+      if (!db) throw appError("INTERNAL_SERVER_ERROR", "DB_UNAVAILABLE", undefined, "Database not available");
       
       const result = await db.execute(sql`
         SELECT 
@@ -619,7 +777,10 @@ export const predictiveAlertRouter = router({
         critical: 0,
       };
       
-      for (const row of result.rows || []) {
+      // W0-1 fix (doc 69): db.execute() rows come back directly, not under
+      // `.rows` — `result.rows || []` always evaluated to `[]`, so stats() had
+      // always reported all-zero counts regardless of actual data.
+      for (const row of (result.rows || result || []) as any[]) {
         const count = parseInt(row.count);
         stats.total += count;
         stats.byStatus[row.status] = (stats.byStatus[row.status] || 0) + count;

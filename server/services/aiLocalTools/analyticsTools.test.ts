@@ -51,6 +51,17 @@ vi.mock("../../db/lineBalance", () => ({
   resolveLineIdByCode: (...a: unknown[]) => resolveLineIdByCode(...a),
 }));
 
+// ── PHẠM VI DỮ LIỆU (2026-08-17) — bộ phân giải phạm vi cho bề mặt AI ────────────────
+// Luật THẬT của nó ("admin = toàn cục; còn lại = mã nhà máy được gán") đã có lưới riêng ở
+// `server/routers/aiAnalyticsScope.test.ts`. Ở đây nó bị chặn để đo đúng MỘT thứ: tool
+// heatmap có ÁP phạm vi vào truy vấn hay không, và câu "rỗng" của nó nói gì.
+const resolveFactoryScope = vi.fn();
+const firstFactoryCodeInScope = vi.fn();
+vi.mock("../../_core/aiAnalyticsScope", () => ({
+  resolveFactoryScope: (...a: unknown[]) => resolveFactoryScope(...a),
+  firstFactoryCodeInScope: (...a: unknown[]) => firstFactoryCodeInScope(...a),
+}));
+
 // Schema tables → opaque sentinels (Drizzle calls go through the fake db below).
 vi.mock("../../../drizzle/schema", () => ({
   machines: { code: { __c: "code" }, id: { __c: "id" } },
@@ -112,6 +123,9 @@ beforeEach(() => {
   vi.clearAllMocks();
   getDbMock.mockResolvedValue(fakeDb());
   checkPermissionMock.mockResolvedValue(true); // allow by default; deny tests override
+  // Mặc định: người gọi TOÀN CỤC ⇒ không thu hẹp ⇒ các ca có sẵn giữ nguyên nghĩa.
+  resolveFactoryScope.mockResolvedValue({ isGlobal: true, factoryCodes: [], corporateCodes: [] });
+  firstFactoryCodeInScope.mockResolvedValue(null);
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -261,6 +275,97 @@ describe("analytics_defect_heatmap_summary", () => {
     getTopNGMeasurementPointsEnhanced.mockResolvedValue([]);
     const r = await analyticsDefectHeatmapSummary.handler!({ days: 7, topN: 5, __authCtx: AUTH } as any);
     expect(r.note).toBe("NOT_FOUND");
+  });
+
+  // ══════════════════════════════════════════════════════════════════════════════════
+  // ★★★ PHẠM VI DỮ LIỆU (2026-08-17) — `rbacGate` kiểm QUYỀN, mục này kiểm PHẠM VI.
+  //
+  // Hai thứ khác nhau: "được xem loại dữ liệu này không?" (quyền) và "được xem dữ liệu
+  // của NHỮNG nhà máy nào?" (phạm vi). Trước hôm nay tool chỉ có cái thứ nhất, nên một
+  // tài khoản có bit `analytics_defect_heatmap` nhưng 0 gán nhà máy vẫn nhận được tổng
+  // hợp NG toàn hệ thống — đúng lỗ mà trang heatmap đang mở, chỉ qua cửa trợ lý.
+  // ══════════════════════════════════════════════════════════════════════════════════
+  describe("★★★ phạm vi dữ liệu", () => {
+    const NG_ROWS = [{ pointCode: "P1", pointName: "Pad1", ngCount: 30, ngRate: "12.50" }];
+    /** `factoryCode` thực sự tới `getTopNGMeasurementPointsEnhanced`. */
+    const factoryArg = () =>
+      (getTopNGMeasurementPointsEnhanced.mock.calls[0][0] as { factoryCode?: string }).factoryCode;
+
+    it("CHIỀU DƯƠNG: vai TOÀN QUYỀN không bị thu hẹp — truy vấn chạy KHÔNG kèm factoryCode", async () => {
+      resolveFactoryScope.mockResolvedValue({ isGlobal: true, factoryCodes: [], corporateCodes: [] });
+      getTopNGMeasurementPointsEnhanced.mockResolvedValue(NG_ROWS);
+
+      const r = await analyticsDefectHeatmapSummary.handler!({ days: 7, topN: 5, __authCtx: AUTH } as any);
+
+      expect(getTopNGMeasurementPointsEnhanced).toHaveBeenCalledOnce();
+      expect(factoryArg()).toBeUndefined(); // không lọc = thấy toàn bộ, y như trước
+      expect(firstFactoryCodeInScope).not.toHaveBeenCalled();
+      expect(r.data!.totalNG).toBe(30);
+      expect(r.data!.factoryScope).toBeNull();
+    });
+
+    it("CHIỀU ÂM+DƯƠNG: người gán nhà máy A ⇒ truy vấn bị ghim vào ĐÚNG A, và vẫn có dữ liệu", async () => {
+      resolveFactoryScope.mockResolvedValue({ isGlobal: false, factoryCodes: ["FAC_A"], corporateCodes: [] });
+      firstFactoryCodeInScope.mockResolvedValue("FAC_A");
+      getTopNGMeasurementPointsEnhanced.mockResolvedValue(NG_ROWS);
+
+      const r = await analyticsDefectHeatmapSummary.handler!({ days: 7, topN: 5, __authCtx: AUTH } as any);
+
+      expect(factoryArg()).toBe("FAC_A"); // ← phép cưỡng chế: nhà máy khác không vào được truy vấn
+      expect(r.data!.totalNG).toBe(30); // ← không vá quá tay: dữ liệu của CHÍNH HỌ vẫn về đủ
+      expect(r.data!.factoryScope).toBe("FAC_A");
+      expect(r.textSummary).toContain("FAC_A"); // con số phải tự khai nó thuộc nhà máy nào
+    });
+
+    it("CHIỀU ÂM: người 0 gán nhà máy ⇒ KHÔNG chạm một hàng dữ liệu nào", async () => {
+      resolveFactoryScope.mockResolvedValue({ isGlobal: false, factoryCodes: [], corporateCodes: [] });
+      firstFactoryCodeInScope.mockResolvedValue(null);
+      getTopNGMeasurementPointsEnhanced.mockResolvedValue(NG_ROWS);
+
+      const r = await analyticsDefectHeatmapSummary.handler!({ days: 7, topN: 5, __authCtx: AUTH } as any);
+
+      expect(getTopNGMeasurementPointsEnhanced).not.toHaveBeenCalled();
+      expect(r.note).toBe("SCOPE_EMPTY");
+      expect(r.data!.totalNG).toBe(0);
+      expect(r.data!.hotspots).toEqual([]);
+    });
+
+    it("★ câu 'rỗng' nói ĐÚNG lý do — 'chưa gán nhà máy', KHÔNG phải 'không có lỗi'", async () => {
+      resolveFactoryScope.mockResolvedValue({ isGlobal: false, factoryCodes: [], corporateCodes: [] });
+      firstFactoryCodeInScope.mockResolvedValue(null);
+
+      const r = await analyticsDefectHeatmapSummary.handler!({ days: 7, topN: 5, __authCtx: AUTH } as any);
+
+      expect(r.textSummary).toMatch(/gán nhà máy/i);
+      // Đột biến: trả về đúng nhánh NOT_FOUND ("Không có lỗi NG để dựng heatmap…") thay
+      // cho câu phạm-vi-rỗng ⇒ ca ĐỎ ở CẢ HAI khẳng định dưới. Giả vờ không có dữ liệu
+      // dạy người dùng rằng hệ thống hỏng trong khi sự thật là phạm vi của họ rỗng.
+      expect(r.textSummary).not.toMatch(/^Không có lỗi NG/i);
+      expect(r.note).not.toBe("NOT_FOUND");
+      // …và nó phải tự phủ định cách đọc sai ấy một cách tường minh.
+      expect(r.textSummary).toMatch(/KHÔNG phải kết luận/);
+    });
+
+    it("★ ba ngôn ngữ đều có câu phạm-vi-rỗng thật (không rơi về tiếng Việt hay chuỗi rỗng)", async () => {
+      resolveFactoryScope.mockResolvedValue({ isGlobal: false, factoryCodes: [], corporateCodes: [] });
+      firstFactoryCodeInScope.mockResolvedValue(null);
+
+      const en = await analyticsDefectHeatmapSummary.handler!({ days: 7, topN: 5, lang: "en", __authCtx: AUTH } as any);
+      const zh = await analyticsDefectHeatmapSummary.handler!({ days: 7, topN: 5, lang: "zh", __authCtx: AUTH } as any);
+
+      expect(en.textSummary).toMatch(/not assigned to any factory/i);
+      expect(zh.textSummary).toMatch(/尚未分配任何工厂/);
+    });
+
+    it("phạm vi được phân giải SAU cổng quyền: bị từ chối ⇒ không hỏi phạm vi, không chạm dữ liệu", async () => {
+      checkPermissionMock.mockResolvedValue(false);
+
+      const r = await analyticsDefectHeatmapSummary.handler!({ days: 7, topN: 5, __authCtx: AUTH } as any);
+
+      expect(r.note).toBe("PERMISSION_DENIED");
+      expect(resolveFactoryScope).not.toHaveBeenCalled();
+      expect(getTopNGMeasurementPointsEnhanced).not.toHaveBeenCalled();
+    });
   });
 });
 

@@ -1,0 +1,202 @@
+{
+ "APV01": {
+  "hang": 1,
+  "top": [
+   "knowledge/operational-approved/production-orders.md",
+   "knowledge/features/production/production-orders.md",
+   "knowledge/operational-approved/production-orders.md",
+   "knowledge/features/production/production-orders.md",
+   "knowledge/operational/production-orders.md"
+  ]
+ },
+ "APV02": {
+  "hang": 1,
+  "top": [
+   "knowledge/operational-approved/andon.md",
+   "knowledge/operational-approved/andon.md",
+   "knowledge/operational/andon.md",
+   "knowledge/operational/ops-console.md",
+   "knowledge/features/alerts/alerts-list.md"
+  ]
+ },
+ "APV03": {
+  "hang": 1,
+  "top": [
+   "knowledge/operational-approved/alerts.md",
+   "knowledge/features/alerts/alerts-list.md",
+   "knowledge/operational-approved/alerts.md",
+   "knowledge/features/alerts/alerts-list.md",
+   "knowledge/operational/ops-console.md"
+  ]
+ },
+ "APV04": {
+  "hang": 1,
+  "top": [
+   "knowledge/operational-approved/users.md",
+   "knowledge/features/admin/user-management.md",
+   "knowledge/features/monitoring/machine-registration.md",
+   "knowledge/operational-approved/users.md",
+   "knowledge/operational-approved/machine-registration.md"
+  ]
+ },
+ "APV05": {
+  "hang": 1,
+  "top": [
+   "knowledge/operational-approved/defect-catalog.md",
+   "knowledge/operational/defect-catalog.md",
+   "knowledge/operational-approved/defect-catalog.md",
+   "knowledge/operational-approved/machine-registration.md",
+   "knowledge/operational-approved/maintenance-hub.md"
+  ]
+ },
+ "APV06": {
+  "hang": 1,
+  "top": [
+   "knowledge/operational-approved/api-keys.md",
+   "knowledge/features/monitoring/machine-registration.md",
+   "knowledge/operational/api-keys.md",
+   "knowledge/features/monitoring/machine-registration.md",
+   "knowledge/features/inspection/history.md"
+  ]
+ },
+ "APV07": {
+  "hang": 1,
+  "top": [
+   "knowledge/operational-approved/oee-dashboard.md",
+   "knowledge/features/alerts/oee-targets.md",
+   "knowledge/features/alerts/oee-targets.md",
+   "knowledge/features/monitoring/oee-dashboard.md",
+   "knowledge/features/monitoring/oee-dashboard.md"
+  ]
+ },
+ "APV08": {
+  "hang": 1,
+  "top": [
+   "knowledge/operational-approved/traceability.md",
+   "knowledge/operational-approved/defect-catalog.md",
+   "knowledge/operational-approved/defect-catalog.md",
+   "knowledge/operational-approved/device-adapters.md",
+   "knowledge/domain/aoi-defect-types.md"
+  ]
+ },
+ "APV09": {
+  "hang": null,
+  "top": [
+   "knowledge/features/monitoring/machine-registration.md",
+   "knowledge/features/monitoring/machine-registration.md",
+   "knowledge/features/ai/ai-local-knowledge-base.md",
+   "knowledge/workflows/install-new-machine.playbook.yaml",
+   "docs/ECOSYSTEM/56_DEVICE_CONNECTIVITY_STANDARDIZATION_AUDIT_BLUEPRINT_AND_PLAN_2026-07-17.md"
+  ]
+ },
+ "APV10": {
+  "hang": null,
+  "top": [
+   "knowledge/workflows/install-new-machine.playbook.yaml",
+   "knowledge/features/products/product-machine-mapping.md",
+   "knowledge/operational/product-onboarding.md",
+   "knowledge/features/products/process-management.md",
+   "knowledge/features/products/product-management.md"
+  ]
+ },
+ "APV11": {
+  "hang": 4,
+  "top": [
+   "knowledge/operational/programming-copilot.md",
+   "knowledge/operational/engineering.md",
+   "docs/ECOSYSTEM/34_QUICKSTART_PROGRAMMING_COPILOT.md",
+   "knowledge/operational-approved/programming-copilot.md",
+   "knowledge/workflows/change-recipe-line-start.playbook.yaml"
+  ]
+ },
+ "APV12": {
+  "hang": 1,
+  "top": [
+   "knowledge/operational-approved/device-adapters.md",
+   "knowledge/operational/device-adapters.md",
+   "knowledge/operational-approved/alerts.md",
+   "knowledge/features/inspection/history.md",
+   "knowledge/operational-approved/alerts.md"
+  ]
+ },
+ "APV13": {
+  "hang": 5,
+  "top": [
+   "knowledge/operational/master-data-audit.md",
+   "knowledge/operational-approved/alerts.md",
+   "knowledge/features/admin/audit-logs.md",
+   "knowledge/features/admin/audit-logs.md",
+   "knowledge/operational-approved/audit-logs.md"
+  ]
+ },
+ "APV14": {
+  "hang": 2,
+  "top": [
+   "knowledge/operational/master-data.md",
+   "knowledge/operational-approved/master-data.md",
+   "knowledge/operational/data-management.md",
+   "knowledge/operational/data-quality.md",
+   "knowledge/operational/master-data-audit.md"
+  ]
+ },
+ "APV15": {
+  "hang": 2,
+  "top": [
+   "knowledge/operational/edge-nodes.md",
+   "knowledge/operational-approved/edge-nodes.md",
+   "docs/EDGE_GATEWAY.md",
+   "knowledge/operational-approved/andon.md",
+   "knowledge/operational-approved/andon.md"
+  ]
+ },
+ "APV16": {
+  "hang": null,
+  "top": [
+   "knowledge/features/monitoring/machine-health.md",
+   "knowledge/features/analytics/scheduled-reports.md",
+   "knowledge/operational-approved/work-orders.md",
+   "knowledge/operational/work-orders.md",
+   "knowledge/features/monitoring/machine-health.md"
+  ]
+ },
+ "APV17": {
+  "hang": 1,
+  "top": [
+   "knowledge/operational-approved/work-orders.md",
+   "knowledge/operational/work-orders.md",
+   "knowledge/operational-approved/programming-copilot.md",
+   "knowledge/features/products/process-management.md",
+   "knowledge/operational-approved/andon.md"
+  ]
+ },
+ "APV18": {
+  "hang": 2,
+  "top": [
+   "knowledge/operational/anomaly-banks.md",
+   "knowledge/operational-approved/anomaly-banks.md",
+   "knowledge/operational/golden-samples.md",
+   "knowledge/operational/quality-gate-templates.md",
+   "knowledge/workflows/change-recipe-line-start.playbook.yaml"
+  ]
+ },
+ "APV19": {
+  "hang": 1,
+  "top": [
+   "knowledge/operational-approved/carbon-dashboard.md",
+   "knowledge/operational/carbon-dashboard.md",
+   "knowledge/features/production/production-dashboard.md",
+   "knowledge/features/production/production-dashboard.md",
+   "knowledge/workflows/spc-critical-review.playbook.yaml"
+  ]
+ },
+ "APV20": {
+  "hang": null,
+  "top": [
+   "knowledge/operational/ai-inspection-analytics.md",
+   "knowledge/features/inspection/inspection-detail.md",
+   "knowledge/features/ai/ai-inspection-analytics.md",
+   "knowledge/features/ai/ai-time-series.md",
+   "knowledge/features/ai/ai-inspection-analytics.md"
+  ]
+ }
+}

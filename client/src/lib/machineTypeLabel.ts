@@ -7,5 +7,9 @@
 import type { TFunction } from "i18next";
 
 export function machineTypeLabel(t: TFunction, type: string): string {
-  return t(`settings.machineType_${type}`, { defaultValue: type });
+  // doc65 V5: fallback KHÔNG được lộ enum thô (IOT_SENSOR) — degrade tử tế:
+  // bỏ gạch dưới + Title-case khi thiếu key dịch.
+  const cleaned = type.replace(/_/g, " ").toLowerCase();
+  const pretty = cleaned.charAt(0).toUpperCase() + cleaned.slice(1);
+  return t(`settings.machineType_${type}`, { defaultValue: pretty });
 }

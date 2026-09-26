@@ -93,6 +93,13 @@ export async function buildScheduledReportEmail(
     primaryColor?: string | null;
     footerText?: string | null;
     reportFormat?: "HTML" | "PDF" | "EXCEL" | null;
+    /**
+     * ★★★ 2026-08-17 — NGƯỜI TẠO LỊCH = trục phạm vi của lượt chạy (không có phiên người dùng
+     * ở đây). Xem khối "PHẠM VI CỦA BÁO CÁO HẸN GIỜ" ở `scheduledReportService.ts`. Trước đó
+     * ba nhánh dưới đây ghi cứng `createdBy: 0` ⇒ mọi báo cáo hẹn giờ tổng hợp TOÀN CỤC bất kể
+     * ai tạo. Thiếu ô này ⇒ fail-closed (lượt chạy bị từ chối, ghi log FAILED kèm lý do).
+     */
+    createdBy?: number | null;
   },
   options?: { window?: { startDate: Date; endDate: Date }; subjectPrefix?: string },
 ): Promise<BuiltReportEmail> {
@@ -116,8 +123,10 @@ export async function buildScheduledReportEmail(
     case "DAILY_SUMMARY":
     case "WEEKLY_SUMMARY":
     case "MONTHLY_SUMMARY": {
-      const { scheduledReportService } = await import("./scheduledReportService");
-      const { content, html } = await scheduledReportService.previewReport({ frequency });
+      const { scheduledReportService, resolveScheduleScope } = await import("./scheduledReportService");
+      // Phân giải NGƯỜI TẠO LỊCH cho lượt chạy này (fail-closed nếu không xác định được).
+      const { actor } = await resolveScheduleScope(report);
+      const { content, html } = await scheduledReportService.previewReport({ frequency, actor });
       return { subject: `${prefix}${report.name} - ${content.title} - ${dateStr}`, html };
     }
 
@@ -130,7 +139,11 @@ export async function buildScheduledReportEmail(
         frequency,
         recipients: [] as string[],
         isEnabled: true,
-        createdBy: 0,
+        // ★ NỢ ĐÃ TRẢ (2026-08-17, nhóm A). `generateOEEReportContent` nay tự phân giải phạm vi
+        // từ ô `createdBy` này và nhúng cổng tenant vào CẢ `oee_metrics` LẪN `downtime_events`
+        // (hai bảng không có cột tenant) bằng ĐÚNG truy vấn phụ trên `product_inspections` mà
+        // `fetchOeeReportRows` dùng. Thiếu ô này ⇒ fail-closed, không rơi về toàn cục.
+        createdBy: report.createdBy ?? 0,
         createdAt: new Date(),
       };
       const oee = await scheduledReportService.generateOEEReportContent(svcReport);
@@ -147,7 +160,9 @@ export async function buildScheduledReportEmail(
         frequency,
         recipients: [] as string[],
         isEnabled: true,
-        createdBy: 0,
+        // ★ NỢ ĐÃ TRẢ (2026-08-17, nhóm A) — cùng cổng như nhánh OEE, nhưng áp ở phía JS vì
+        // `getAllMachinesOEELive` dựng danh sách máy trong bộ nhớ (không có WHERE để nhét vào).
+        createdBy: report.createdBy ?? 0,
         createdAt: new Date(),
       };
       const health = await scheduledReportService.generateMachineHealthReportContent(svcReport);
@@ -158,7 +173,12 @@ export async function buildScheduledReportEmail(
     case "NG_VISUAL":
     case "CUSTOM":
     default: {
-      const reportData = await generateNGVisualReport({ startDate, endDate, factoryId, workshopId, lineId });
+      // ★ NỢ ĐÃ TRẢ (2026-08-17, nhóm A). Đây là nhánh MẶC ĐỊNH của đường hẹn giờ — tức lỗ rò
+      // toàn cục cũ nằm trên đường đi qua nhiều lượt gửi nhất. Phạm vi = của NGƯỜI TẠO LỊCH,
+      // phân giải LẠI ở mỗi lượt chạy (fail-closed nếu không xác định được).
+      const { resolveScheduleScope } = await import("./scheduledReportService");
+      const { actor } = await resolveScheduleScope(report);
+      const reportData = await generateNGVisualReport({ startDate, endDate, factoryId, workshopId, lineId, actor });
       const html = generateNGVisualEmailHTML(reportData, customization);
       const built: BuiltReportEmail = {
         subject: `${prefix}${report.name} - ${dateStr}`,

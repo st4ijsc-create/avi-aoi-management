@@ -186,6 +186,12 @@ export interface UnmappedRateFilter {
   productModelId?: number;
   fromTs?: Date;
   toTs?: Date;
+  /**
+   * ★ 2026-08-18 — tập máy TRONG PHẠM VI người xem (từ `ctx.user`, KHÔNG bao giờ từ `input`).
+   * Bỏ trống = lối đi không mang danh tính ⇒ không lọc. Khác hẳn `machineId` phía trên: cái kia
+   * là bộ lọc GIAO DIỆN do người gọi tự khai, cái này là CỔNG. Cả hai được AND.
+   */
+  machineIds?: number[];
 }
 
 /**

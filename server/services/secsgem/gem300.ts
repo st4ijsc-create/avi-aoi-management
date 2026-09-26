@@ -47,6 +47,7 @@
 import { I, encodeItem, decodeItem, type Secs2Item } from "./secs2Codec";
 import { type Secs2Message, encodeBody, decodeBody } from "./s1Messages";
 import type { MachineRecipe } from "../../../drizzle/schema";
+import { FeatureDisabledError } from "../../_core/deviceErrors";
 // Type-only imports: erased at runtime, so this module pulls in NO DB / dispatcher
 // value code. `DispatchInput` is the exact shape the gated OT dispatcher consumes.
 import type { DispatchInput } from "../ot/commandDispatcher";
@@ -930,7 +931,7 @@ export interface HitlDispatchContext {
  */
 export function buildHitlDispatchInput(proposal: HostCommandProposal, ctx: HitlDispatchContext): DispatchInput {
   if (!isGem300Enabled()) {
-    throw new Error("GEM300 is disabled (set GEM300_ENABLED=true). No host-command dispatch input can be built.");
+    throw new FeatureDisabledError("gem300", "GEM300 is disabled (set GEM300_ENABLED=true). No host-command dispatch input can be built.");
   }
   if (!proposal.canonicalCommand) {
     throw new Error(`Cannot dispatch an unmapped host command "${proposal.rcmd}"`);

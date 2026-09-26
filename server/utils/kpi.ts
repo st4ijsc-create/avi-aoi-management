@@ -80,8 +80,15 @@
 import { sql, type SQL } from "drizzle-orm";
 import { productInspections } from "../../drizzle/schema";
 import { getFactoryTimezone, wallClockToUtc } from "./factoryTime";
+import { FINAL_YIELD_PASS_RESULTS, finalYield, fpyFromFirstInspections } from "@shared/kpiYield";
 
 export { getFactoryTimezone };
+// Task 15: the pure TS formulas now live in shared/kpiYield.ts (ONE source
+// of truth reachable from client/src, which cannot import server-only
+// modules). Re-exported here so every existing `from "./kpi"` import (and
+// the SQL fragment builders below, which reference FINAL_YIELD_PASS_RESULTS'
+// meaning but not the binding itself) keeps working unchanged.
+export { FINAL_YIELD_PASS_RESULTS, finalYield, fpyFromFirstInspections };
 
 // ═══════════════════════════════════════════════════════════════════════
 // Date-window resolution (doc 27 W5-A — factory-TZ windows for endpoints)
@@ -218,10 +225,9 @@ export function factoryDowSql(col: SqlExpr): SQL {
 
 // ═══════════════════════════════════════════════════════════════════════
 // SQL fragment builders — canonical yield / FPY
+// (FINAL_YIELD_PASS_RESULTS is pure TS — imported/re-exported from
+// @shared/kpiYield above, not redefined here.)
 // ═══════════════════════════════════════════════════════════════════════
-
-/** Result values counted as PASS in FINAL yield (decision #4: OK + NTF). */
-export const FINAL_YIELD_PASS_RESULTS = ["OK", "NTF"] as const;
 
 /** `resultCol IN ('OK', 'NTF')` — the canonical final-yield pass condition. */
 export function finalYieldPassCondSql(resultCol: SqlExpr): SQL {
@@ -305,28 +311,8 @@ export function roundPct(value: number, digits = 2): number {
   return Math.round(value * f) / f;
 }
 
-/**
- * CANONICAL final yield %, decision #4: NTF counts as PASS.
- * finalYield({ok: 90, ntf: 5, total: 100}) === 95.
- * Unrounded — callers round for display (roundPct).
- */
-export function finalYield(counts: { ok: number; ntf: number; total: number }): number {
-  const { ok, ntf, total } = counts;
-  if (!(total > 0)) return 0;
-  return ((ok + ntf) / total) * 100;
-}
-
-/**
- * CANONICAL true First Pass Yield % from first-inspection counts.
- * `firstPass` = first inspections with overallResult = 'OK' (NTF is NOT a
- * first pass); `firstTotal` = distinct serials (first inspections).
- * Unrounded.
- */
-export function fpyFromFirstInspections(counts: { firstPass: number; firstTotal: number }): number {
-  const { firstPass, firstTotal } = counts;
-  if (!(firstTotal > 0)) return 0;
-  return (firstPass / firstTotal) * 100;
-}
+// finalYield / fpyFromFirstInspections moved to @shared/kpiYield (Task 15)
+// and re-exported near the top of this file — not redefined here.
 
 /**
  * CANONICAL DPMO. `opportunities` = measurement points evaluated (NOT

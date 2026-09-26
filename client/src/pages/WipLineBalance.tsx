@@ -1,4 +1,7 @@
 import { useMemo, useState } from "react";
+// doc 64 IA-10 S1 — truc pham vi ISA-95.
+import { useScope } from "@/components/patterns/ScopeFilterBar";
+import { useScopeWired } from "@/contexts/AssetScopeContext";
 import { useTranslation } from "react-i18next";
 import { trpc } from "@/lib/trpc";
 import DashboardLayout from "@/components/DashboardLayout";
@@ -64,7 +67,11 @@ function reasonLabel(t: (k: string, d: string) => string, code: string): string 
 export default function WipLineBalance() {
   const { t } = useTranslation();
   const [lineInput, setLineInput] = useState("");
-  const lineId = lineInput.trim() ? Number(lineInput.trim()) : undefined;
+  // doc 64 IA-10 S1 — trục phạm vi: ô nhập tay THẮNG (ý định tại-trang); trục lấp
+  // khi ô trống → chọn Chuyền ở header là WIP tự lọc theo chuyền đó.
+  const { scope: assetScope } = useScope(["line"]);
+  useScopeWired();
+  const lineId = lineInput.trim() ? Number(lineInput.trim()) : assetScope.lineId;
   const validLine = lineId !== undefined && Number.isFinite(lineId) && lineId > 0;
 
   const summary = trpc.wip.summary.useQuery(
@@ -84,8 +91,13 @@ export default function WipLineBalance() {
     { refetchInterval: 20_000 },
   );
 
+  // doc65 V5: enum WIP thô (in_process/hold…) không được lộ ra legend — map nhãn Việt.
+  const WIP_STATUS_LABEL: Record<string, string> = {
+    in_process: t("wipLineBalance.dangXuLy", "Đang xử lý"), hold: t("wipLineBalance.tamGiu", "Tạm giữ"), queued: t("wipLineBalance.choXuLy", "Chờ xử lý"),
+    completed: t("wipLineBalance.hoanTat", "Hoàn tất"), scrapped: t("wipLineBalance.huy", "Hủy"), blocked: t("wipLineBalance.biChan", "Bị chặn"), starved: t("wipLineBalance.doiViec", "Đói việc"),
+  };
   const pieData = useMemo(
-    () => (summary.data?.byStatus ?? []).map((s) => ({ name: s.status, value: s.count })),
+    () => (summary.data?.byStatus ?? []).map((s) => ({ name: WIP_STATUS_LABEL[s.status] ?? s.status, value: s.count })),
     [summary.data],
   );
   const dwellData = useMemo(
@@ -152,40 +164,47 @@ export default function WipLineBalance() {
             </CardHeader>
             <CardContent><div className="text-3xl font-bold">{summary.data?.total ?? 0}</div></CardContent>
           </Card>
-          <Card>
-            <CardHeader className="pb-2">
-              <CardTitle className="text-sm font-medium text-muted-foreground flex items-center gap-2">
-                <AlertTriangle className="h-4 w-4 text-warning" /> {t("wipDashboard.blocked", "Blocked")}
-              </CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="text-3xl font-bold text-destructive">
-                {(summary.data?.byStatus ?? []).find((s) => s.status === "blocked")?.count ?? 0}
-              </div>
-            </CardContent>
-          </Card>
-          <Card>
-            <CardHeader className="pb-2">
-              <CardTitle className="text-sm font-medium text-muted-foreground flex items-center gap-2">
-                <Clock className="h-4 w-4 text-warning" /> {t("wipDashboard.starved", "Starved")}
-              </CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="text-3xl font-bold text-warning">
-                {(summary.data?.byStatus ?? []).find((s) => s.status === "starved")?.count ?? 0}
-              </div>
-            </CardContent>
-          </Card>
-          <Card>
-            <CardHeader className="pb-2">
-              <CardTitle className="text-sm font-medium text-muted-foreground flex items-center gap-2">
-                <Gauge className="h-4 w-4" /> {t("wipDashboard.bottlenecks", "Nút thắt")}
-              </CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="text-3xl font-bold">{dispatch.data?.bottleneckStationIds.length ?? 0}</div>
-            </CardContent>
-          </Card>
+          {/* doc65 V1 (ISA-101): màu THEO GIÁ TRỊ — 0 = bình thường (trung tính);
+              chỉ tô màu cảnh báo khi thật sự có blocked/starved/bottleneck. */}
+          {(() => {
+            const blockedN = (summary.data?.byStatus ?? []).find((s) => s.status === "blocked")?.count ?? 0;
+            const starvedN = (summary.data?.byStatus ?? []).find((s) => s.status === "starved")?.count ?? 0;
+            const bottleneckN = dispatch.data?.bottleneckStationIds.length ?? 0;
+            return (
+              <>
+                <Card>
+                  <CardHeader className="pb-2">
+                    <CardTitle className="text-sm font-medium text-muted-foreground flex items-center gap-2">
+                      <AlertTriangle className={`h-4 w-4 ${blockedN > 0 ? "text-destructive" : "text-muted-foreground"}`} /> {t("wipDashboard.blocked", "Bị chặn")}
+                    </CardTitle>
+                  </CardHeader>
+                  <CardContent>
+                    <div className={`text-3xl font-bold ${blockedN > 0 ? "text-destructive" : "text-foreground"}`}>{blockedN}</div>
+                  </CardContent>
+                </Card>
+                <Card>
+                  <CardHeader className="pb-2">
+                    <CardTitle className="text-sm font-medium text-muted-foreground flex items-center gap-2">
+                      <Clock className={`h-4 w-4 ${starvedN > 0 ? "text-warning" : "text-muted-foreground"}`} /> {t("wipDashboard.starved", "Đói việc")}
+                    </CardTitle>
+                  </CardHeader>
+                  <CardContent>
+                    <div className={`text-3xl font-bold ${starvedN > 0 ? "text-warning" : "text-foreground"}`}>{starvedN}</div>
+                  </CardContent>
+                </Card>
+                <Card>
+                  <CardHeader className="pb-2">
+                    <CardTitle className="text-sm font-medium text-muted-foreground flex items-center gap-2">
+                      <Gauge className={`h-4 w-4 ${bottleneckN > 0 ? "text-warning" : "text-muted-foreground"}`} /> {t("wipDashboard.bottlenecks", "Nút thắt")}
+                    </CardTitle>
+                  </CardHeader>
+                  <CardContent>
+                    <div className={`text-3xl font-bold ${bottleneckN > 0 ? "text-warning" : "text-foreground"}`}>{bottleneckN}</div>
+                  </CardContent>
+                </Card>
+              </>
+            );
+          })()}
         </div>
 
         {/* Charts */}

@@ -28,6 +28,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { toast } from "sonner";
+import { toastTrpcError } from "@/lib/trpcErrors";
 import {
   ClipboardCheck,
   Brain,
@@ -66,6 +67,7 @@ interface NgRow {
 }
 
 function NgItem({ row, onClick, onAck, ackDisabled }: { row: NgRow; onClick: () => void; onAck?: () => void; ackDisabled?: boolean }) {
+  const { t } = useTranslation();
   const when = row?.inspectedAt ? new Date(row.inspectedAt) : null;
   const whenStr = when && !isNaN(when.getTime()) ? when.toLocaleString() : "";
   return (
@@ -90,8 +92,8 @@ function NgItem({ row, onClick, onAck, ackDisabled }: { row: NgRow; onClick: () 
           className="h-7 w-7 shrink-0"
           disabled={ackDisabled}
           onClick={onAck}
-          title="Đã xem / Acknowledge"
-          aria-label="Đã xem / Acknowledge"
+          title={t("qualityHome.daXemAcknowledge", "Đã xem / Acknowledge")}
+          aria-label={t("qualityHome.daXemAcknowledge2", "Đã xem / Acknowledge")}
         >
           <CheckCheck className="size-4 text-success" />
         </Button>
@@ -128,7 +130,7 @@ export default function QualityHome() {
       toast.success(t("quality.ackDone", "Đã đánh dấu đã xem"));
       ngQuery.refetch();
     },
-    onError: (e: { message: string }) => toast.error(e.message),
+    onError: (e: { message: string }) => toastTrpcError(e),
   });
 
   const tools: ToolTileDef[] = [
@@ -247,7 +249,14 @@ export default function QualityHome() {
           ) : ngQuery.isError ? (
             <p className="text-sm text-muted-foreground">{t("quality.recentNgError")}</p>
           ) : ngRows.length === 0 ? (
-            <p className="text-sm text-muted-foreground">{t("quality.recentNgEmpty")}</p>
+            <p className="text-sm text-muted-foreground">
+              {/* ⚠ 2026-08-17 — "chưa có NG gần đây" là một KẾT LUẬN về chất lượng. Tài khoản
+                  chưa gán nhà máy nhận 0 dòng vì phạm vi rỗng; `inspection.search` đã khai lý
+                  do ở `scopeEmptyReason`, trước bản vá thì màn này vứt đi. */}
+              {ngQuery.data?.scopeEmptyReason === "no_factory_assignment"
+                ? t("common.scopeEmpty.badge")
+                : t("quality.recentNgEmpty")}
+            </p>
           ) : (
             <div className="space-y-1.5">
               {ngRows.map((row, i) => (

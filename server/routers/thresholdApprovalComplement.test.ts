@@ -27,6 +27,12 @@ vi.mock("../db", () => ({
   getDb: vi.fn(async () => fake),
   updateMeasurementPointDef: vi.fn(async () => {}),
   createAuditLog: vi.fn(async () => ({ id: 1 })),
+  // ★ Cùng lỗ đã vá ở thresholdApprovalRouter.test.ts (commit 99034e1f) — cổng
+  // `chanKhiPhaiDoiMatKhau` (server/_core/trpc.ts) đứng ở GỐC mọi thủ tục và đọc
+  // `phaiDoiMatKhau` từ `../db`; mock ở đây chưa từng liệt kê export này (trôi theo
+  // thời gian, không liên quan BG-126) nên MỌI ca trong file này đỏ CÙNG lỗi. `false`
+  // = không ai bị buộc đổi mật khẩu, giữ hành vi các ca hiện có nguyên vẹn.
+  phaiDoiMatKhau: vi.fn(async () => false),
 }));
 
 import { thresholdApprovalRouter } from "./thresholdApprovalRouter";
@@ -74,6 +80,58 @@ describe("request — validation + provenance", () => {
     // Persisted exactly once.
     const key = (thresholdApprovals as any)[Symbol.for("drizzle:Name")];
     expect(fake.store.get(key)).toHaveLength(1);
+  });
+
+  // ── Lô 7 Mục 2 (BG-111) — hợp đồng duyệt đủ bộ: `deXuat` thay LSL/USL bắt buộc ──
+  describe("Lô 7 Mục 2 (BG-111) — deXuat đủ bộ APPROVAL_LIMIT_FIELDS", () => {
+    it("★★★ deXuat CHỈ heightMax (không đụng LSL/USL) ⇒ ghi được, suggestion.deXuat mang đúng field, KHÔNG bắt buộc proposedLsl/Usl", async () => {
+      fake.seed(measurementPointDefs, [{ id: 5, code: "MP-5", lowerLimit: "0", upperLimit: "100", heightMax: "5" }]);
+      const row = await userCaller(20).request({
+        pointDefId: 5,
+        deXuat: { heightMax: "9.5" },
+        comment: "tang heightMax",
+      });
+      expect(row.status).toBe("requested");
+      expect((row.suggestion as any).deXuat).toEqual({ heightMax: "9.5" });
+      // Legacy columns KHÔNG bị ép phải có giá trị — deXuat không chạm lowerLimit/upperLimit.
+      expect(row.proposedLsl).toBeNull();
+      expect(row.proposedUsl).toBeNull();
+    });
+
+    it("★★★ deXuat với field=null (đề xuất XOÁ) ⇒ ghi nguyên null vào suggestion.deXuat, KHÔNG bị coi là 'không đổi'", async () => {
+      fake.seed(measurementPointDefs, [{ id: 5, code: "MP-5", heightMax: "5" }]);
+      const row = await userCaller(20).request({
+        pointDefId: 5,
+        deXuat: { heightMax: null },
+      });
+      expect((row.suggestion as any).deXuat).toEqual({ heightMax: null });
+    });
+
+    it("tương thích ngược — client CŨ gửi proposedLsl/proposedUsl (không có deXuat) ⇒ vẫn ghi được, MAP vào suggestion.deXuat.lowerLimit/upperLimit", async () => {
+      fake.seed(measurementPointDefs, [{ id: 5, code: "MP-5", lowerLimit: "0", upperLimit: "100" }]);
+      const row = await userCaller(20).request({ pointDefId: 5, proposedLsl: 1, proposedUsl: 9 });
+      expect(row.proposedLsl).toBe("1");
+      expect(row.proposedUsl).toBe("9");
+      expect((row.suggestion as any).deXuat).toEqual({ lowerLimit: "1", upperLimit: "9" });
+    });
+
+    it("không gửi gì cả (không deXuat, không proposedLsl/Usl) ⇒ BAD_REQUEST — một yêu cầu duyệt PHẢI đề xuất ít nhất một field", async () => {
+      fake.seed(measurementPointDefs, [{ id: 5, code: "MP-5" }]);
+      await expect(userCaller(20).request({ pointDefId: 5 } as any)).rejects.toMatchObject({ code: "BAD_REQUEST" });
+    });
+
+    it("deXuat.lowerLimit/upperLimit tường minh THẮNG proposedLsl/Usl khi cả hai cùng gửi (deXuat là hợp đồng chính)", async () => {
+      fake.seed(measurementPointDefs, [{ id: 5, code: "MP-5" }]);
+      const row = await userCaller(20).request({
+        pointDefId: 5,
+        proposedLsl: 1,
+        proposedUsl: 9,
+        deXuat: { lowerLimit: "2", upperLimit: "8" },
+      });
+      expect(row.proposedLsl).toBe("2");
+      expect(row.proposedUsl).toBe("8");
+      expect((row.suggestion as any).deXuat).toEqual({ lowerLimit: "2", upperLimit: "8" });
+    });
   });
 });
 

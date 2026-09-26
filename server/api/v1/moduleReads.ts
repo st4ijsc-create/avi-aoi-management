@@ -29,6 +29,9 @@ import { API_SCOPES } from "./scopes";
 import { sendOk, wrap, ApiHttpError } from "./envelope";
 import type { DeviceTypeNode } from "../../services/standards/deviceTypeRegistry";
 import type { AlarmMapping } from "../../services/standards/alarmTaxonomy";
+import type { TenantCodeScope } from "../../_core/tenantCodeScope";
+import type { PhamViMaTenant } from "../../db/hierarchy";
+import type { ApiKeyTenantScope } from "./apiKeyScope";
 
 /** Parse a positive-integer path/query param or throw a 400. */
 function posInt(raw: unknown, label: string): number {
@@ -48,6 +51,31 @@ function limitParam(raw: unknown, def: number, max: number): number {
   const n = Number(raw);
   if (!Number.isFinite(n)) return def;
   return Math.min(Math.max(1, Math.trunc(n)), max);
+}
+
+/**
+ * ★★★ ĐỢT 42 (QA Đợt 41 D-4 lỗ #2, G116) — PHẠM VI CỦA KHOÁ API cho các bộ tổng hợp cockpit.
+ *
+ * Đo trước vá (`.qa-dot41/api-vai/http-v1.json`): khoá tạm `dataScopeMode=factory, factoryCode=SIM-FAC,
+ * [equipment:read]` gọi `/machines/257/detail` (máy của nhà máy 18) ⇒ **200** + `identity.code T12-SHOT-…`.
+ * Hai handler dưới gọi `machineDetail(machineId)` / `robotDetail(robotId)` **bỏ trống `scope`** dù
+ * `req.apiPrincipal.tenantScope` đã có sẵn (mig 0325) và `/ecosystem/kpi` ngay trên đã dùng nó.
+ *
+ *   • khoá TOÀN CỤC tường minh (`mode: "global"`, cả master key) ⇒ `undefined` ⇒ KHÔNG lọc (giữ nguyên);
+ *   • khoá MỘT NHÀ MÁY ⇒ `{ tenantScope }` = trục ② của `resolveTenantFactoryScope` — cùng bộ phân giải
+ *     mà `assetCockpitRouter` (trục ①, `phamViCua(ctx)`) đi qua, KHÔNG dựng bộ luật thứ hai (G12);
+ *   • khoá CHƯA KHAI ⇒ `{ tenantScope: {} }` ⇒ `factoryIds: []` ⇒ mọi máy/robot 404 — fail-closed, cùng
+ *     chiều `tenantCodeScopeOf` đã ghi (*"quên gọi `requireDeclaredTenantScope` vẫn ra 0 hàng"*).
+ *
+ * ⚠ `import()` ĐỘNG cùng lý do đã ghi ở `/ecosystem/kpi` (các lưới `server/api/v1/**` mock `drizzle-orm`).
+ * ⚠ Nhận **`req.apiPrincipal?.tenantScope`** chứ không nhận cả `req`: bộ suy tuyến (`phamViDocScan` §D-C,
+ *   `phamViTuyenCensus`) chỉ thấy danh tính RỜI TAY khi gốc `req.apiPrincipal…` đứng TRONG đối số của lời
+ *   gọi đọc — cùng hình `/ecosystem/kpi`. Bản đầu nhận `req` trần: vá đúng mà lưới đếm vẫn xếp nhóm A (mù).
+ */
+async function phamViCuaKhoa(tenantScope: ApiKeyTenantScope | null | undefined): Promise<PhamViMaTenant | undefined> {
+  const { tenantCodeScopeOf } = await import("./apiKeyScope");
+  const codes = tenantCodeScopeOf(tenantScope);
+  return codes ? { tenantScope: codes } : undefined;
 }
 
 /**
@@ -360,7 +388,23 @@ export function registerModuleReadRoutes(r: Router): void {
       const factoryId = optPosInt(req.query.factoryId, "factoryId");
       const corporateCode = typeof req.query.corporateCode === "string" ? req.query.corporateCode : undefined;
       const scope = factoryId != null || corporateCode ? { factoryId, corporateCode } : undefined;
-      const tree = await buildHierarchy(scope);
+
+      // ★★★ 2026-09-15 (QA lần 11, PH-23) — CÙNG lỗ, CÙNG bản vá như `commandCenter.hierarchy`
+      // ở tRPC, chỉ khác TRỤC: ở đây người gọi là một KHOÁ API, không phải một người dùng, nên
+      // phạm vi thật đến từ `req.apiPrincipal.tenantScope` (máy chủ tự tra từ `api_keys`) chứ
+      // không từ `?factoryId=`/`?corporateCode=` — hai thứ ấy là lời TỰ KHAI và chỉ lọc TRÌNH
+      // BÀY. Khuôn chép NGUYÊN của `/ecosystem/kpi` ngay bên dưới (đã vá 2026-08-18); khoá TOÀN
+      // CỤC tường minh ⇒ `undefined` = không lọc, khoá CHƯA KHAI ⇒ `[]` = cây RỖNG (fail-closed).
+      const { tenantCodeScopeOf } = await import("./apiKeyScope");
+      const tenantCodes = tenantCodeScopeOf(req.apiPrincipal?.tenantScope);
+      let tenant: { factoryIds: number[] | null } | undefined;
+      if (tenantCodes) {
+        const { resolveTenantCodeFactoryIds } = await import("../../db/reportAggregators");
+        const { factoryIds } = await resolveTenantCodeFactoryIds(tenantCodes);
+        tenant = { factoryIds };
+      }
+
+      const tree = await buildHierarchy(scope, tenant);
       sendOk(res, { ...tree, status: commandCenterStatus() });
     }),
   );
@@ -378,21 +422,48 @@ export function registerModuleReadRoutes(r: Router): void {
       // An external API principal is not a DB user — buildKpiSummary only reads the
       // AI-inbox count with this identity (id 0 → honest empty), never writes.
       const principal = req.apiPrincipal?.name ?? "api-key";
-      const summary = await buildKpiSummary({ id: 0, role: "api", name: principal }, scope);
+
+      // ★★★ 2026-08-18 — PHẠM VI THẬT CỦA KHOÁ, thay cho principal tổng hợp `{id:0, role:"api"}`.
+      //
+      // ⚠ Trước bản vá này, `{id: 0, role: "api"}` là danh tính DUY NHẤT đi xuống, và
+      //   `buildKpiSummary` không nhận `tenant` nào ⇒ **mọi ô của dải KPI đọc số của TOÀN BỘ nhà
+      //   máy**, kể cả khi khoá chỉ được cấp một nhà máy (mig 0325). `{id: 0}` chưa bao giờ là
+      //   một phạm vi — nó chỉ khiến ô `aiInsights` trả rỗng một cách trung thực, và điều đó đã
+      //   che mất năm ô còn lại.
+      //
+      // ⚠ `scope` (factoryId/corporateCode từ QUERY) là lời TỰ KHAI của người gọi và chỉ là bộ
+      //   lọc TRÌNH BÀY. Trục phạm vi thật đến từ `req.apiPrincipal.tenantScope` — máy chủ tự
+      //   tra từ `api_keys`. Hai thứ này không được lẫn: một `?corporateCode=` không được phép
+      //   NỚI phạm vi của khoá ra.
+      const { tenantCodeScopeOf } = await import("./apiKeyScope");
+      const tenantCodes = tenantCodeScopeOf(req.apiPrincipal?.tenantScope);
+      let tenant:
+        | { factoryIds: number[] | null; tenantScope?: TenantCodeScope | null }
+        | undefined;
+      if (tenantCodes) {
+        const { resolveTenantCodeFactoryIds } = await import("../../db/reportAggregators");
+        const { factoryIds } = await resolveTenantCodeFactoryIds(tenantCodes);
+        // `[]` ⇒ mọi cổng sinh `1 = 0` TƯỜNG MINH. KHÔNG có đường nào biến rỗng thành "không lọc".
+        tenant = { factoryIds, tenantScope: tenantCodes };
+      }
+
+      const summary = await buildKpiSummary({ id: 0, role: "api", name: principal }, scope, tenant);
       sendOk(res, { ...summary, status: commandCenterStatus() });
     }),
   );
 
   // ── COCKPIT (U3) — full per-machine / per-robot detail. Reuses machineDetail /
   //    robotDetail (the SAME aggregators assetCockpitRouter calls). gatedActions in
-  //    the payload are METADATA ONLY (which commands MAY be proposed) — no exec here. ──
+  //    the payload are METADATA ONLY (which commands MAY be proposed) — no exec here.
+  //    ★ Đợt 42 — phạm vi của KHOÁ đi xuống bộ tổng hợp (`phamViCuaKhoa`): máy/robot ngoài nhà máy
+  //    của khoá ⇒ `null` ⇒ 404, CÙNG hình dạng với không tồn tại (G82). ──
   r.get(
     "/machines/:id/detail",
     requireScope(API_SCOPES.EQUIPMENT_READ),
     wrap(async (req, res) => {
       const machineId = posInt(req.params.id, "machine id");
       const { machineDetail } = await import("../../services/ecosystem/assetCockpitService");
-      const detail = await machineDetail(machineId);
+      const detail = await machineDetail(machineId, await phamViCuaKhoa(req.apiPrincipal?.tenantScope));
       if (!detail) throw new ApiHttpError(404, "not_found", `Machine ${machineId} not found.`);
       sendOk(res, detail);
     }),
@@ -404,7 +475,7 @@ export function registerModuleReadRoutes(r: Router): void {
     wrap(async (req, res) => {
       const robotId = posInt(req.params.id, "robot id");
       const { robotDetail } = await import("../../services/ecosystem/assetCockpitService");
-      const detail = await robotDetail(robotId);
+      const detail = await robotDetail(robotId, await phamViCuaKhoa(req.apiPrincipal?.tenantScope));
       if (!detail) throw new ApiHttpError(404, "not_found", `Robot ${robotId} not found.`);
       sendOk(res, detail);
     }),

@@ -40,6 +40,14 @@ export interface CopilotBinding {
   diagnostics?: CopilotDiagnostic[];
   /** Present ONLY for text editors: insert generated code back into the host buffer. */
   onApply?: (code: string) => void;
+  /**
+   * G2-D — REPLACE the host buffer with an exact string (byte-for-byte). Separate from
+   * `onApply` on purpose: hosts are free to give `onApply` their own semantics (Engineering
+   * Workspace APPENDS), whereas per-hunk apply needs "the buffer is now EXACTLY this" or the
+   * hunk coordinates stop meaning anything. A host that omits it keeps today's behaviour and
+   * simply gets no per-hunk surface.
+   */
+  onApplyText?: (text: string) => void;
   /** Short host name shown in the header (e.g. "IR Editor"). */
   surfaceLabel?: string;
 }

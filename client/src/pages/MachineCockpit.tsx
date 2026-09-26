@@ -39,21 +39,29 @@ import { useTranslation } from "react-i18next";
 import { useLocation, useRoute } from "wouter";
 import { Canvas } from "@react-three/fiber";
 import { OrbitControls, PerspectiveCamera, Environment, Grid, Stage, Gltf } from "@react-three/drei";
+// ★ Đợt 38 (twin3d RB-4/G99): `<Canvas>` của tab 3D đăng ký vào CÙNG bộ đếm `window.__soCanvas` với kit twin.
+import { useDemCanvasSong } from "@/components/twin3d/loi/KhungCanh";
 import type { inferRouterOutputs } from "@trpc/server";
 import type { AppRouter } from "../../../server/routers";
 import { trpc } from "@/lib/trpc";
 import { getSharedSocket, releaseSharedSocket } from "@/lib/socketManager";
 import { usePermissions } from "@/_core/hooks/usePermissions";
 import { toast } from "sonner";
+import { toastTrpcError } from "@/lib/trpcErrors";
 import DashboardLayout from "@/components/DashboardLayout";
 import { ProcessAnalyticsPanel } from "./ProcessAnalytics";
+// ★ PH-39 — ô "Nguy cơ hỏng" có BA trạng thái; quyết định nằm ở module thuần.
+import { nhanNguyCoHong, type NguonNguyCo } from "./nguyCoHongHienThi";
 import { MetricCard, PageHeader, StatusBadge, SectionCard, EmptyState } from "@/components/patterns";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { ScrollArea } from "@/components/ui/scroll-area";
+import { CuonNgangCoMep } from "@/components/patterns/CuonNgangCoMep";
 import { Progress } from "@/components/ui/progress";
 import { cn } from "@/lib/utils";
+import { PackmlStateBadge } from "@/components/patterns/isaStateBadges";
+import { isIsa101V2 } from "@/lib/hmiFlags";
 import {
   Cpu, Activity, HeartPulse, Gauge, AlertTriangle, FileStack, Boxes, GitBranch,
   Wrench, ShieldAlert, ArrowLeft, RefreshCw, Wifi, WifiOff, ExternalLink, Info,
@@ -169,6 +177,73 @@ function RadialGauge({
   );
 }
 
+/* ═══════════════════════════════════════════════════════════════════════════ */
+/* ★★★ PH-39 — Ô "NGUY CƠ HỎNG" CÓ BA TRẠNG THÁI, KHÔNG GỘP VỀ `0 %`          */
+/* ═══════════════════════════════════════════════════════════════════════════ */
+/**
+ * QA tập đoàn 2026-09-15 (`.qa-tapdoan/anh/DE-D1-kythuat.png`): ô này in
+ * **"Failure risk 0 %"** ngay cạnh chip twin **"Health 40 % · critical"**. Số 0
+ * ấy là MẶC ĐỊNH của `computeFailureRisk` khi không đặc trưng nào đủ dữ liệu —
+ * không phải phép đo. Xem `nguyCoHongHienThi.ts` và
+ * `FailureRiskResult.riskMethod`.
+ *
+ * Ký hiệu giữ đúng khuôn sẵn có của sản phẩm (NT-3.5 `trungThucDuLieu.hienSo`):
+ * chưa biết thì in `—`, không in `0`. Dòng chú thích bên dưới `—` mới là thứ
+ * tách hai cái chưa-biết ra khỏi nhau, vì chúng dẫn tới hai hành động khác nhau:
+ *   · "Chưa đủ dữ liệu để tính"  → chờ máy chạy / gắn cảm biến
+ *   · "Không đọc được nguồn"     → đi hỏi vì sao (quyền, dịch vụ tắt, lỗi đọc)
+ */
+function nhanPhuNguyCo(
+  kind: "so" | "chuaDuDuLieu" | "chuaDocDuoc",
+  t: ReturnType<typeof useTranslation>["t"],
+): { chu: string; goiY: string } | null {
+  if (kind === "chuaDuDuLieu") {
+    return {
+      chu: t("cockpit.riskInsufficient", "Not enough data yet"),
+      goiY: t("cockpit.riskInsufficientHint", "Not enough health / sensor points to compute a risk."),
+    };
+  }
+  if (kind === "chuaDocDuoc") {
+    return { chu: t("cockpit.riskNoSource", "Source unavailable"), goiY: t("cockpit.riskNoSource", "Source unavailable") };
+  }
+  return null;
+}
+
+/** Ô KPI "Nguy cơ hỏng" ở dải trên cùng tab Tổng quan. */
+function OKpiNguyCoHong({ nguon }: { nguon: NguonNguyCo }) {
+  const { t } = useTranslation();
+  const nhan = nhanNguyCoHong(nguon);
+  const phu = nhanPhuNguyCo(nhan.kind, t);
+  return (
+    <div data-testid="cockpit-kpi-nguy-co" data-trang-thai={nhan.kind}>
+      <MetricCard
+        icon={<HeartPulse className="h-4 w-4" />}
+        label={t("cockpit.kpiRisk", "Failure risk")}
+        value={nhan.kind === "so" ? fmtPct(nhan.phanTram) : "—"}
+        tone={nhan.kind === "so" && nhan.phanTram > 60 ? "error" : "default"}
+        delta={phu ? <span title={phu.goiY}>{phu.chu}</span> : undefined}
+      />
+    </div>
+  );
+}
+
+/** Vòng tròn "Nguy cơ hỏng" ở tab Sức khoẻ / PdM. */
+function OVongNguyCoHong({ nguon }: { nguon: NguonNguyCo & { maintenanceUrgency?: string | null } }) {
+  const { t } = useTranslation();
+  const nhan = nhanNguyCoHong(nguon);
+  const phu = nhanPhuNguyCo(nhan.kind, t);
+  return (
+    <div data-testid="cockpit-vong-nguy-co" data-trang-thai={nhan.kind}>
+      <RadialGauge
+        value={nhan.kind === "so" ? nhan.phanTram : null}
+        label={t("cockpit.failureRisk", "Failure risk")}
+        color={nhan.kind === "so" && nhan.phanTram > 60 ? "#ef4444" : "#f59e0b"}
+        sub={phu ? phu.chu : (nguon.maintenanceUrgency ?? undefined)}
+      />
+    </div>
+  );
+}
+
 // ── Key/value row helper (used by Overview + several tabs) ──
 function KV({ k, v, mono }: { k: React.ReactNode; v: React.ReactNode; mono?: boolean }) {
   return (
@@ -220,8 +295,109 @@ function CapabilitiesValidationBadge({ machineId }: { machineId: number }) {
 // 3D — glTF via drei <Gltf>, else a primitive block (same fallback as the twin).
 // ════════════════════════════════════════════════════════════════════════════
 
+/**
+ * ★ Đợt 38 (twin3d Pareto #4, QA Đợt 37): khối `<Canvas>` tách riêng và ĐĂNG KÝ vào bộ đếm RB-4 (`useDemCanvasSong`),
+ *   để `window.__soCanvas` đếm được canvas này (trước: DOM 2 canvas mà `__soCanvas` = 1 — phép đo mù, G99).
+ *   `Model3DPane` chỉ dựng nó khi KHÔNG nhúng: ở `/twin/may/:id` cảnh twin phía trên đã là 3D của chính máy này,
+ *   một `<Canvas>` thứ hai là hai WebGL context trên một trang (RB-4).
+ */
+function Model3DCanvas({ uri }: { uri: string | null }) {
+  useDemCanvasSong();
+  return (
+    <div className="h-[440px] w-full overflow-hidden rounded-lg border bg-[#0a0a0f]">
+      <Canvas shadows dpr={[1, 2]}>
+        <PerspectiveCamera makeDefault position={[3.2, 2.4, 3.2]} fov={50} />
+        <OrbitControls enablePan enableZoom enableRotate minDistance={1.5} maxDistance={20} />
+        <ambientLight intensity={0.5} />
+        <directionalLight position={[6, 8, 4]} intensity={1.1} castShadow />
+        <Environment preset="warehouse" />
+        <Grid args={[24, 24]} cellSize={0.5} cellThickness={0.5} cellColor="#1e293b" sectionSize={2} sectionColor="#334155" fadeDistance={26} infiniteGrid position={[0, -0.01, 0]} />
+        <Suspense
+          fallback={
+            <mesh>
+              <boxGeometry args={[1.5, 1, 1.5]} />
+              <meshStandardMaterial color="#06b6d4" wireframe />
+            </mesh>
+          }
+        >
+          {uri ? (
+            <Stage intensity={0.4} environment={null} adjustCamera={false}>
+              <Gltf src={uri} />
+            </Stage>
+          ) : (
+            <mesh castShadow position={[0, 0.5, 0]}>
+              <boxGeometry args={[1.5, 1, 1.5]} />
+              <meshStandardMaterial color="#3b82f6" metalness={0.4} roughness={0.5} />
+            </mesh>
+          )}
+        </Suspense>
+      </Canvas>
+    </div>
+  );
+}
+
+/**
+ * ★★★ THĂM DÒ WEBGL — **VÀ TRẢ LẠI NGỮ CẢNH ĐÃ MƯỢN.**
+ *
+ * ════════════════════════════════════════════════════════════════════════════
+ * NÓ TRẢ LỜI ĐÚNG MỘT CÂU
+ * ════════════════════════════════════════════════════════════════════════════
+ * `true` = trình duyệt dựng được ngữ cảnh WebGL. `Model3DPane` dùng thẳng nó làm `webglOk`; `false` ⇒ ngăn 3D thay bằng câu "3D is not available in this browser.".
+ *
+ * ⚠ Hàm này KHÔNG được đổi câu trả lời ấy. Mọi nhánh giữ nguyên kết cục của
+ *   bản cũ (thăm dò nội tuyến trong `useEffect`):
+ *     · `getContext` ném        ⇒ `false`   (bản cũ: nhánh `catch`)
+ *     · `getContext` trả `null` ⇒ `false`
+ *     · có ngữ cảnh              ⇒ `true`
+ *
+ * ════════════════════════════════════════════════════════════════════════════
+ * ★★★ VÌ SAO GIẢI PHÓNG — VÀ VÌ SAO **KHÔNG** PHẢI VÌ MÀN ĐANG ĐEN
+ * ════════════════════════════════════════════════════════════════════════════
+ * Phép thăm dò lấy một ngữ cảnh WebGL **THẬT** trên một canvas RỜI (không bao
+ * giờ gắn vào tài liệu). Trình duyệt giới hạn số ngữ cảnh WebGL sống đồng thời
+ * và khi cạn thì **trục xuất cái CŨ NHẤT trước**.
+ *
+ * ★ Đo được trên bản đang chạy (điều hướng SPA 5 vòng × 4 màn 3D, kiểm kê bằng
+ *   `WeakRef`): **15 ngữ cảnh tạo ra · số SỐNG không bao giờ quá 2 · còn 0 sau
+ *   GC**. Tức ở quy mô ấy KHÔNG tích luỹ và KHÔNG có canvas đen.
+ *
+ * ⇒ Đây là **NỢ VỆ SINH**, không phải lỗi đang xảy ra. Thứ nó loại bỏ là một
+ *   KHẢ NĂNG: dưới tải nặng hơn, ngữ cảnh bị trục xuất có thể là ngữ cảnh của
+ *   **cảnh đang vẽ** (vì nó cũ hơn ngữ cảnh thăm dò vừa mượn). Trả lại ngay
+ *   thứ mình chỉ mượn để hỏi một câu hỏi là cách rẻ nhất để bỏ khả năng ấy.
+ *
+ * ════════════════════════════════════════════════════════════════════════════
+ * TRẢ LẠI **SAU** KHI ĐÃ ĐỌC XONG, VÀ TRONG `try` RIÊNG
+ * ════════════════════════════════════════════════════════════════════════════
+ * · Kết quả đã CHỐT ở `gl` trước khi giải phóng ⇒ không lối nào đổi câu trả lời.
+ * · `getExtension("WEBGL_lose_context")` có thể trả `null` (không có extension)
+ *   ⇒ optional chaining, và một lỗi ở bước dọn KHÔNG được kéo theo phép thăm dò
+ *   (nếu dùng chung `try` với bản cũ, một lỗi ở đây sẽ nuốt luôn `setState`).
+ * · `getContext` trả `null` ⇒ không có gì để trả lại; đó CHÍNH LÀ nhánh
+ *   "webglOk = hỏng" nên tuyệt đối không ném lỗi ở đó.
+ *
+ * Lưới: `webglThamDoGiaiPhong.dom.test.tsx`.
+ */
+export function thamDoWebGL(): boolean {
+  let gl: unknown = null;
+  try {
+    const c = document.createElement("canvas");
+    gl = c.getContext("webgl") || c.getContext("experimental-webgl");
+  } catch {
+    return false;
+  }
+  /* ── Trả lại ngữ cảnh vừa mượn. Kết quả đã chốt ở `gl`; nhánh này chỉ dọn. ── */
+  try {
+    (gl as WebGLRenderingContext | null)?.getExtension("WEBGL_lose_context")?.loseContext();
+  } catch {
+    /* Không có extension, hoặc gọi hỏng ⇒ bỏ qua: dọn dẹp không được làm
+       hỏng phép thăm dò (bẫy 3). */
+  }
+  return !!gl;
+}
+
 function Model3DPane({
-  model3d, name, t, canRegister, uploading, onUploadFile,
+  model3d, name, t, canRegister, uploading, onUploadFile, embedded = false,
 }: {
   model3d: MachineDetail["model3d"];
   name: string;
@@ -229,14 +405,13 @@ function Model3DPane({
   canRegister?: boolean;
   uploading?: boolean;
   onUploadFile?: (file: File) => void;
+  /** Đang nhúng dưới một cảnh 3D khác (`/twin/may/:id`) ⇒ KHÔNG dựng `<Canvas>` thứ hai (RB-4). */
+  embedded?: boolean;
 }) {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [webglOk, setWebglOk] = useState(true);
   useEffect(() => {
-    try {
-      const el = document.createElement("canvas");
-      setWebglOk(!!(el.getContext("webgl") || el.getContext("experimental-webgl")));
-    } catch { setWebglOk(false); }
+    setWebglOk(thamDoWebGL());
   }, []);
 
   const uri = model3d.available ? model3d.value?.modelUri ?? null : null;
@@ -274,35 +449,16 @@ function Model3DPane({
           </span>
         </div>
       )}
-      <div className="h-[440px] w-full overflow-hidden rounded-lg border bg-[#0a0a0f]">
-        <Canvas shadows dpr={[1, 2]}>
-          <PerspectiveCamera makeDefault position={[3.2, 2.4, 3.2]} fov={50} />
-          <OrbitControls enablePan enableZoom enableRotate minDistance={1.5} maxDistance={20} />
-          <ambientLight intensity={0.5} />
-          <directionalLight position={[6, 8, 4]} intensity={1.1} castShadow />
-          <Environment preset="warehouse" />
-          <Grid args={[24, 24]} cellSize={0.5} cellThickness={0.5} cellColor="#1e293b" sectionSize={2} sectionColor="#334155" fadeDistance={26} infiniteGrid position={[0, -0.01, 0]} />
-          <Suspense
-            fallback={
-              <mesh>
-                <boxGeometry args={[1.5, 1, 1.5]} />
-                <meshStandardMaterial color="#06b6d4" wireframe />
-              </mesh>
-            }
-          >
-            {uri ? (
-              <Stage intensity={0.4} environment={null} adjustCamera={false}>
-                <Gltf src={uri} />
-              </Stage>
-            ) : (
-              <mesh castShadow position={[0, 0.5, 0]}>
-                <boxGeometry args={[1.5, 1, 1.5]} />
-                <meshStandardMaterial color="#3b82f6" metalness={0.4} roughness={0.5} />
-              </mesh>
-            )}
-          </Suspense>
-        </Canvas>
-      </div>
+      {embedded ? (
+        <div
+          className="rounded-md border border-dashed px-3 py-2 text-xs text-muted-foreground"
+          data-testid="model3d-da-nhung"
+        >
+          {t("cockpit.model3dEmbedded", "The 3D twin scene above already shows this machine — a second 3D view is not rendered here (one WebGL context per page).")}
+        </div>
+      ) : (
+        <Model3DCanvas uri={uri} />
+      )}
       {model3d.available && model3d.value && (
         <div className="mt-2 flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
           <Badge variant="secondary">{model3d.value.modelKind}</Badge>
@@ -739,7 +895,7 @@ export function MachineCockpitBody({ machineId, embedded = false }: { machineId:
       toast.success(t("cockpit.model3dUploaded", "3D model uploaded & registered."));
       detailQ.refetch();
     },
-    onError: (e) => toast.error(e.message),
+    onError: (e) => toastTrpcError(e),
   });
   const handleModelFile = (file: File) => {
     const reader = new FileReader();
@@ -822,16 +978,43 @@ export function MachineCockpitBody({ machineId, embedded = false }: { machineId:
         />
 
         {detailQ.isError ? (
-          <EmptyState
-            title={t("cockpit.notFound", "Machine not found")}
-            description={t("cockpit.notFoundHint", "No machine exists for this id, or it is not visible to you.")}
-          />
+          /*
+           * ★★★ ĐỢT 40 (QA Đợt 39 Pareto #1) — ĐỌC MÃ LỖI, đừng dịch mọi lỗi thành "not found". Đo trước vá
+           *   (`.qa-dot39/qd18/D-*.json`, vai CHỈ `analytics_oee`): `machineDetail` trả 403 `FORBIDDEN`
+           *   (`requirePermission("machine_status")`), cockpit in "Machine not found — not visible to you" —
+           *   máy CÓ thật và người dùng CÓ được gán; thứ họ thiếu là một quyền có tên. Câu sai gửi người
+           *   dùng đi tìm nhầm việc (kiểm id) thay vì đúng việc (xin quyền `machine_status`).
+           *   `NOT_FOUND` (không tồn tại HOẶC ngoài phạm vi tenant — cùng mã, G82) giữ câu cũ.
+           */
+          (detailQ.error?.data as { code?: string } | undefined)?.code === "FORBIDDEN" ? (
+            <div data-testid="cockpit-loi" data-ly-do="thieuQuyen">
+              <EmptyState
+                title={t("cockpit.forbidden", "No permission to view this machine")}
+                description={t("cockpit.forbiddenHint", "Viewing a machine cockpit requires the Machine status permission. Ask an administrator to grant it.")}
+              />
+            </div>
+          ) : (
+            <div data-testid="cockpit-loi" data-ly-do="khongThay">
+              <EmptyState
+                title={t("cockpit.notFound", "Machine not found")}
+                description={t("cockpit.notFoundHint", "No machine exists for this id, or it is not visible to you.")}
+              />
+            </div>
+          )
         ) : detailQ.isLoading || !d ? (
           <div className="py-16 text-center text-sm text-muted-foreground">{t("cockpit.loading", "Loading cockpit…")}</div>
         ) : (
           <Tabs defaultValue="overview" className="w-full">
-            <ScrollArea className="w-full">
-              <TabsList className="mb-2 inline-flex w-max">
+            {/* ★ Đợt 45 (mục 6/11) — 12 tab rộng ~1100 px: ở 680–1000 px khung, tab cuối bị cắt ("Cảnh b…")
+                mà `ScrollArea` không lộ thanh cuộn ⇒ mép mờ + ‹ › nổi, trạng thái ở `data-*` (đo được). */}
+            <CuonNgangCoMep
+              className="mb-2"
+              testid="thanh-tab-cockpit"
+              nutTestid="nut-cuon-tab"
+              nhanTrai={t("cockpit.cuonTabTrai", "Cuộn thanh tab sang trái")}
+              nhanPhai={t("cockpit.cuonTabPhai", "Cuộn thanh tab sang phải")}
+            >
+              <TabsList className="inline-flex w-max">
                 <TabsTrigger value="overview"><Activity className="mr-1 h-4 w-4" />{t("cockpit.tabOverview", "Overview")}</TabsTrigger>
                 <TabsTrigger value="health"><HeartPulse className="mr-1 h-4 w-4" />{t("cockpit.tabHealth", "Health / PdM")}</TabsTrigger>
                 <TabsTrigger value="telemetry"><Waves className="mr-1 h-4 w-4" />{t("cockpit.tabTelemetry", "Telemetry")}</TabsTrigger>
@@ -845,23 +1028,29 @@ export function MachineCockpitBody({ machineId, embedded = false }: { machineId:
                 <TabsTrigger value="maintenance"><History className="mr-1 h-4 w-4" />{t("cockpit.tabMaintenance", "Maintenance")}</TabsTrigger>
                 <TabsTrigger value="actions"><Wrench className="mr-1 h-4 w-4" />{t("cockpit.tabActions", "Actions")}</TabsTrigger>
               </TabsList>
-            </ScrollArea>
+            </CuonNgangCoMep>
 
             {/* ── OVERVIEW ── */}
-            <TabsContent value="overview" className="space-y-4">
+            {/* ★ Đợt 45 (mục 6/12) — `@container`: dải KPI theo BỀ RỘNG KHUNG cockpit, không theo viewport.
+                Nhúng ở /twin/may @1280 khung chỉ 680 px: 4 cột ⇒ ô chữ 81 px, "Mất kết nối" gãy 3 dòng;
+                2 cột dưới 48 rem (768 px) ⇒ 1 dòng. Toàn trang (/machine/:id ≥ 1000 px) vẫn 4 cột như cũ. */}
+            <TabsContent value="overview" className="@container space-y-4">
               {/* KPI strip */}
-              <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+              <div className="grid grid-cols-2 gap-3 @3xl:grid-cols-4">
                 <MetricCard
                   icon={<Gauge className="h-4 w-4" />}
                   label={t("cockpit.kpiOee", "OEE")}
                   value={d.oee.available ? fmtPct(d.oee.value?.oee ?? null) : "—"}
                   tone={d.oee.value?.oee != null && d.oee.value.oee < 60 ? "warning" : "default"}
                 />
-                <MetricCard
-                  icon={<HeartPulse className="h-4 w-4" />}
-                  label={t("cockpit.kpiRisk", "Failure risk")}
-                  value={d.health.available ? fmtPct(d.health.value?.failureRisk ?? null) : "—"}
-                  tone={d.health.value?.failureRisk != null && d.health.value.failureRisk > 60 ? "error" : "default"}
+                {/* ★★★ PH-39 — KHÔNG in thẳng `failureRisk`: số 0 ở đây có thể là
+                    "đã đo, bằng 0" HOẶC "chưa tính được gì". Xem `OKpiNguyCoHong`. */}
+                <OKpiNguyCoHong
+                  nguon={{
+                    available: d.health.available,
+                    failureRisk: d.health.value?.failureRisk ?? null,
+                    riskMethod: d.health.value?.riskMethod ?? null,
+                  }}
                 />
                 <MetricCard
                   icon={<AlertTriangle className="h-4 w-4" />}
@@ -929,9 +1118,15 @@ export function MachineCockpitBody({ machineId, embedded = false }: { machineId:
                   <SectionValue available={d.liveState.available}>
                     {d.liveState.value && (
                       <div className="space-y-1">
-                        <KV k={t("cockpit.status", "Status")} v={<StatusBadge status={d.liveState.value.status ?? "unknown"} className="px-1.5 py-0 text-[11px]" />} />
-                        <KV k={t("cockpit.packml", "PackML / op")} v={d.liveState.value.operationStatus ?? "—"} />
-                        <KV k={t("cockpit.lastChange", "Last change")} v={tsToLocale(d.liveState.value.lastStatusChange)} />
+                        {/* ★ Đợt 38 (twin3d Pareto #3, QA Đợt 37): `status` là SỰ KIỆN của `machine_status_logs` (`online`
+                            3 ngày tuổi) — in thô ra "Status: online" (tone success) ngay dưới "Connection: offline" (đỏ)
+                            là hai câu trên một thẻ cho một máy im lặng 54 ngày (G105/G111). Suy từ `connected` (đã gate
+                            nhịp tim — cùng `dangKetNoi` với fleet); sự kiện thô đi cùng "Last change", nơi nó có nghĩa.
+                            Hợp đồng API giữ nguyên (`status` vẫn trả). */}
+                        <KV k={t("cockpit.status", "Status")} v={<span data-testid="cockpit-live-status" data-connected={String(d.liveState.value.connected)} data-status-mapped={d.liveState.value.statusMapped ?? ""}><StatusBadge status={d.liveState.value.connected ? "online" : "offline"} className="px-1.5 py-0 text-[11px]" /></span>} />
+                        {/* doc 63 (AUD-09) — flag-gated: colour-coded PackML badge vs raw text (byte-identical when off) */}
+                        <KV k={t("cockpit.packml", "PackML / op")} v={isIsa101V2() && d.liveState.value.operationStatus ? <PackmlStateBadge state={d.liveState.value.operationStatus} className="px-1.5 py-0 text-[11px]" /> : (d.liveState.value.operationStatus ?? "—")} />
+                        <KV k={t("cockpit.lastChange", "Last change")} v={d.liveState.value.status ? `${d.liveState.value.status} · ${tsToLocale(d.liveState.value.lastStatusChange)}` : tsToLocale(d.liveState.value.lastStatusChange)} />
                         <KV k={t("cockpit.heartbeat", "Heartbeat")} v={d.liveState.value.heartbeatStatus ?? "—"} />
                         <KV k={t("cockpit.lastHeartbeat", "Last heartbeat")} v={relTime(d.liveState.value.lastHeartbeat, now)} />
                         <KV k={t("cockpit.connection", "Connection")} v={<StatusBadge status={d.liveState.value.connected ? "connected" : "offline"} className="px-1.5 py-0 text-[11px]" />} />
@@ -944,17 +1139,22 @@ export function MachineCockpitBody({ machineId, embedded = false }: { machineId:
 
             {/* ── HEALTH / PdM ── */}
             <TabsContent value="health">
-              <SectionCard icon={<HeartPulse className="h-4 w-4" />} title={t("cockpit.tabHealth", "Health / PdM")} description={d.health.source}>
+              {/* ★ Đợt 36: `d.health.source` ("predictiveMaintenanceService.computeFailureRisk + …") cùng lớp
+                  chuỗi-kỹ-thuật với tab 3D — không render. */}
+              <SectionCard icon={<HeartPulse className="h-4 w-4" />} title={t("cockpit.tabHealth", "Health / PdM")}>
                 {!d.health.available || !d.health.value ? (
                   <EmptyState title={t("cockpit.noHealth", "No health data")} description={t("cockpit.noHealthHint", "No PdM risk / reliability data for this machine yet.")} />
                 ) : (
                   <div className="space-y-6">
                     <div className="flex flex-wrap items-center justify-around gap-6">
-                      <RadialGauge
-                        value={d.health.value.failureRisk}
-                        label={t("cockpit.failureRisk", "Failure risk")}
-                        color={d.health.value.failureRisk != null && d.health.value.failureRisk > 60 ? "#ef4444" : "#f59e0b"}
-                        sub={d.health.value.maintenanceUrgency ?? undefined}
+                      {/* ★★★ PH-39 — cùng lý do với ô KPI ở tab Tổng quan. */}
+                      <OVongNguyCoHong
+                        nguon={{
+                          available: d.health.available,
+                          failureRisk: d.health.value.failureRisk,
+                          riskMethod: d.health.value.riskMethod,
+                          maintenanceUrgency: d.health.value.maintenanceUrgency,
+                        }}
                       />
                       <div className="grid grid-cols-2 gap-x-8 gap-y-3">
                         <MetricCard icon={<Wrench className="h-4 w-4" />} label={t("cockpit.mtbf", "MTBF")} value={fmtHours(d.health.value.mtbfHours)} />
@@ -990,7 +1190,8 @@ export function MachineCockpitBody({ machineId, embedded = false }: { machineId:
 
             {/* ── OEE ── */}
             <TabsContent value="oee">
-              <SectionCard icon={<Gauge className="h-4 w-4" />} title={t("cockpit.tabOee", "OEE")} description={d.oee.source}>
+              {/* ★ Đợt 36: `d.oee.source` ("oeeService.getMachineOEELive") — không render, xem tab 3D. */}
+              <SectionCard icon={<Gauge className="h-4 w-4" />} title={t("cockpit.tabOee", "OEE")}>
                 {!d.oee.available || !d.oee.value ? (
                   <EmptyState title={t("cockpit.noOee", "No OEE data")} description={t("cockpit.noOeeHint", "No uptime / production data for this machine yet.")} />
                 ) : (
@@ -1022,6 +1223,25 @@ export function MachineCockpitBody({ machineId, embedded = false }: { machineId:
                           </div>
                           {a.description && <div className="mt-1 text-sm">{a.description}</div>}
                           {a.recommendedAction && <div className="mt-0.5 text-xs text-muted-foreground">→ {a.recommendedAction}</div>}
+                          {/* doc 63 (AUD-02 / DEP-06) — flag-gated ISA-18.2 4-field block: CAUSE /
+                              CONSEQUENCE / TIME-TO-RESPOND joined from master_alarms (field #4 "time"
+                              = the ts already shown above). Honest: absent governance → placeholder. */}
+                          {isIsa101V2() && (
+                            <div className="mt-1 grid grid-cols-1 gap-x-4 gap-y-0.5 text-xs sm:grid-cols-3">
+                              <div>
+                                <span className="text-muted-foreground">{t("cockpit.alarmCause", "Nguyên nhân")}: </span>
+                                {a.cause ?? <span className="italic text-muted-foreground">{t("cockpit.alarmNotRationalized", "chưa rationalize")}</span>}
+                              </div>
+                              <div>
+                                <span className="text-muted-foreground">{t("cockpit.alarmConsequence", "Hậu quả")}: </span>
+                                {a.consequence ?? "—"}
+                              </div>
+                              <div>
+                                <span className="text-muted-foreground">{t("cockpit.alarmTtr", "Phản ứng trong")}: </span>
+                                {a.timeToRespondMin != null ? `${a.timeToRespondMin} ${t("cockpit.minutes", "phút")}` : "—"}
+                              </div>
+                            </div>
+                          )}
                         </div>
                       ))}
                     </div>
@@ -1127,7 +1347,11 @@ export function MachineCockpitBody({ machineId, embedded = false }: { machineId:
 
             {/* ── 3D ── */}
             <TabsContent value="model3d">
-              <SectionCard icon={<Boxes className="h-4 w-4" />} title={t("cockpit.tab3d", "3D model")} description={d.model3d.source}>
+              {/* ★ Đợt 36 (twin3d Pareto #8): `d.*.source` là DẤU VẾT NGUỒN cho lập trình viên
+                  ("twin/modelRegistry.resolveModel({machineId})", docblock assetCockpitService.ts:20)
+                  — QA Đợt 32 a2 thấy nó in nguyên văn dưới tiêu đề thẻ ở `/twin/may/14` tab 3D.
+                  Không render cho người dùng; hợp đồng API giữ nguyên (consumer khác vẫn đọc được). */}
+              <SectionCard icon={<Boxes className="h-4 w-4" />} title={t("cockpit.tab3d", "3D model")}>
                 <Model3DPane
                   model3d={d.model3d}
                   name={d.identity.name}
@@ -1135,6 +1359,7 @@ export function MachineCockpitBody({ machineId, embedded = false }: { machineId:
                   canRegister={canRegisterModel}
                   uploading={uploadModelMut.isPending}
                   onUploadFile={handleModelFile}
+                  embedded={embedded}
                 />
               </SectionCard>
             </TabsContent>

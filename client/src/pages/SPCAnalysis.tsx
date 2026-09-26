@@ -1,8 +1,12 @@
 import { useState, useMemo } from "react";
+// doc 64 IA-10 S2 — truc pham vi ISA-95.
+import { useScope } from "@/components/patterns/ScopeFilterBar";
+import { useScopeWired } from "@/contexts/AssetScopeContext";
 import { useTranslation } from 'react-i18next';
 import DashboardLayout from "@/components/DashboardLayout";
 import { trpc } from "@/lib/trpc";
 import { toast } from "sonner";
+import { toastTrpcError } from "@/lib/trpcErrors";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -78,8 +82,12 @@ export function SPCAnalysisContent() {
   const { data: products } = trpc.productModel.list.useQuery(undefined as any);
   const { data: measurementPoints } = trpc.measurementPoint.list.useQuery();
 
+  // doc 64 IA-10 S2 — trục phạm vi: dropdown máy tại-trang THẮNG, trục lấp khi "all".
+  const { scope: assetScope } = useScope(["machine"]);
+  useScopeWired();
+
   const mpId = selectedMP ? Number(selectedMP) : undefined;
-  const machineId = selectedMachine !== "all" ? Number(selectedMachine) : undefined;
+  const machineId = selectedMachine !== "all" ? Number(selectedMachine) : assetScope.machineId;
   const productModelId = selectedProduct !== "all" ? Number(selectedProduct) : undefined;
 
   // USL/LSL/Target overrides (user-entered). null = use DB spec (or none).
@@ -175,7 +183,7 @@ export function SPCAnalysisContent() {
   // Lưu spec vào điểm đo (DB) → lần sau tự prefill cho mọi người.
   const saveSpecMutation = trpc.spcAnalysis.saveSpecLimits.useMutation({
     onSuccess: () => { toast.success(t('spc.specSaved')); refetch(); },
-    onError: (e) => toast.error(e.message),
+    onError: (e) => toastTrpcError(e),
   });
   const saveSpec = () => {
     if (!mpId) return;

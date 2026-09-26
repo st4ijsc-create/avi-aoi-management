@@ -33,10 +33,12 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Textarea } from "@/components/ui/textarea";
+import { CodeEditor } from "@/components/engineering/CodeEditor";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { mapTrpcError } from "@/lib/trpcErrors";
 import {
   Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle,
 } from "@/components/ui/dialog";
@@ -183,7 +185,9 @@ export default function PouStudio() {
 
   const transpile = transpileQ.data as TranspileOut | undefined;
   const lint = lintQ.data as LintOut | undefined;
-  const shapeError = (transpileQ.error?.message ?? lintQ.error?.message) || null;
+  const shapeError =
+    (transpileQ.error ? mapTrpcError(transpileQ.error) : null) ??
+    (lintQ.error ? mapTrpcError(lintQ.error) : null);
 
   const errorCount = (lint?.diagnostics ?? []).filter((d) => d.severity === "error").length;
   const warnCount = (lint?.diagnostics ?? []).filter((d) => d.severity === "warn").length;
@@ -235,6 +239,7 @@ export default function PouStudio() {
     try {
       const res = await utils.programming.plcopenImport.fetch({ xml: xmlText });
       if (!res.ok) {
+        // i18n-raw-ok: chẩn đoán PLCopen từ lời gọi THÀNH CÔNG, không phải lỗi tRPC.
         toast.error(t("pou.importFail", "Import failed: {{msg}}", { msg: res.errors.map((e) => e.message).join("; ") }));
         return;
       }
@@ -436,11 +441,18 @@ export default function PouStudio() {
                 </div>
               )
             ) : (
-              <Textarea
-                className="min-h-[560px] font-mono text-xs"
-                spellCheck={false}
+              <CodeEditor
                 value={jsonText}
-                onChange={(e) => setJsonText(e.target.value)}
+                onChange={setJsonText}
+                language="json"
+                height="560px"
+                aria-label="pou-json"
+                // doc69 · Wave 2 / C — this is the hand-authoring surface for the POU model
+                // (the JSON escape hatch alongside the graphical Canvas view); previously a
+                // plain <Textarea> with no editor affordances at all. Swapping to the shared
+                // CodeEditor picks up line numbers + bracket matching for free and, opt-in,
+                // ghost-text completion — same as the other code-authoring surfaces.
+                inlineCopilot
               />
             )}
             {/* Live lint indicator */}

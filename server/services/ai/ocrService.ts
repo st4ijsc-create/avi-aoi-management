@@ -30,7 +30,13 @@
  */
 import fs from "fs";
 import path from "path";
+// ★★★ Pha 2B Task 5 — vị từ "lỗi này có phải LỜI TỪ CHỐI không". Import TĨNH của một module
+// LÁ (không import gì, không I/O): nó phải dùng được NGAY TRONG `catch` của một lượt
+// `await import()` vừa hỏng. Xem `vramRefusalSignal.ts` để biết vì sao so TÊN, không `instanceof`.
+import { isVramRefusal } from "../vram/vramRefusalSignal";
+import { sessionCacheMax } from "../vram/vramCaps";
 import type sharpNs from "sharp";
+import { cheDoNhanDang } from "./ocrVietOcr"; // module LÁ (chỉ fs/path) — dùng được trong hàm đồng bộ
 
 // ─── Flags ────────────────────────────────────────────────────────────────────
 
@@ -256,6 +262,106 @@ export function ctcGreedyDecode(
   return { text, score: scoreN > 0 ? Number((scoreSum / scoreN).toFixed(4)) : 0 };
 }
 
+// ─── PURE: DB (DBNet) hậu xử lý — bản đồ xác suất → hộp dòng chữ ──────────────
+
+/** Một hộp chữ trên hệ toạ độ của bản đồ xác suất (trục thẳng — tài liệu quét gần như không nghiêng). */
+export interface HopChu {
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+  /** Trung bình xác suất trong hình chữ nhật bao (cách tính "fast" của PaddleOCR) — 0..1. */
+  score: number;
+}
+
+/**
+ * ★ R4 (2026-09-23) — hậu xử lý DBNet, THUẦN: ngưỡng hoá `prob` (H×W, hàng trước) ở `nguong`, gom thành phần
+ * liên thông 8 hướng, lấy hình chữ nhật bao, bỏ hộp có cạnh < `canhMin` hoặc điểm < `nguongHop`, rồi NỞ hộp
+ * (unclip) một khoảng d = diện tích·`noRong`/chu vi — đúng công thức PaddleOCR, vì DBNet học vùng CO LẠI của
+ * dòng chữ; không nở thì rec cắt mất nét trên/dưới. Mặc định = mặc định PaddleOCR (0.3 / 0.6 / 1.5).
+ */
+export function dbTimHop(
+  prob: Float32Array | number[],
+  W: number,
+  H: number,
+  opts: { nguong?: number; nguongHop?: number; noRong?: number; canhMin?: number } = {},
+): HopChu[] {
+  const nguong = opts.nguong ?? 0.3;
+  const nguongHop = opts.nguongHop ?? 0.6;
+  const noRong = opts.noRong ?? 1.5;
+  const canhMin = opts.canhMin ?? 3;
+  if (W <= 0 || H <= 0 || prob.length < W * H) return [];
+  const daXet = new Uint8Array(W * H);
+  const stack = new Int32Array(W * H);
+  const hops: HopChu[] = [];
+  for (let start = 0; start < W * H; start++) {
+    if (daXet[start] || Number(prob[start]) <= nguong) continue;
+    let top = 0;
+    stack[top++] = start;
+    daXet[start] = 1;
+    let x0 = W, y0 = H, x1 = -1, y1 = -1;
+    while (top > 0) {
+      const p = stack[--top];
+      const px = p % W;
+      const py = (p - px) / W;
+      if (px < x0) x0 = px;
+      if (px > x1) x1 = px;
+      if (py < y0) y0 = py;
+      if (py > y1) y1 = py;
+      for (let dy = -1; dy <= 1; dy++) {
+        const ny = py + dy;
+        if (ny < 0 || ny >= H) continue;
+        for (let dx = -1; dx <= 1; dx++) {
+          const nx = px + dx;
+          if ((dx === 0 && dy === 0) || nx < 0 || nx >= W) continue;
+          const q = ny * W + nx;
+          if (!daXet[q] && Number(prob[q]) > nguong) {
+            daXet[q] = 1;
+            stack[top++] = q;
+          }
+        }
+      }
+    }
+    const w = x1 - x0 + 1;
+    const h = y1 - y0 + 1;
+    if (Math.min(w, h) < canhMin) continue;
+    let tong = 0;
+    for (let y = y0; y <= y1; y++) for (let x = x0; x <= x1; x++) tong += Number(prob[y * W + x]);
+    const score = tong / (w * h);
+    if (score < nguongHop) continue;
+    const d = (w * h * noRong) / (2 * (w + h));
+    const nx0 = Math.max(0, Math.floor(x0 - d));
+    const ny0 = Math.max(0, Math.floor(y0 - d));
+    const nx1 = Math.min(W - 1, Math.ceil(x1 + d));
+    const ny1 = Math.min(H - 1, Math.ceil(y1 + d));
+    hops.push({ x: nx0, y: ny0, w: nx1 - nx0 + 1, h: ny1 - ny0 + 1, score: Number(score.toFixed(4)) });
+  }
+  return hops;
+}
+
+/**
+ * Xếp hộp theo THỨ TỰ ĐỌC: gom thành HÀNG (hai hộp cùng hàng khi tâm dọc của hộp sau nằm trong nửa chiều cao
+ * của hàng), hàng từ trên xuống, trong hàng từ trái sang. Thuần.
+ */
+export function xepThuTuDoc<T extends { x: number; y: number; w: number; h: number }>(hops: T[]): T[][] {
+  const theoY = [...hops].sort((a, b) => a.y + a.h / 2 - (b.y + b.h / 2) || a.x - b.x);
+  const hang: T[][] = [];
+  for (const hop of theoY) {
+    const tam = hop.y + hop.h / 2;
+    const cuoi = hang[hang.length - 1];
+    if (cuoi) {
+      const tamHang = cuoi.reduce((s, b) => s + b.y + b.h / 2, 0) / cuoi.length;
+      const caoHang = cuoi.reduce((s, b) => s + b.h, 0) / cuoi.length;
+      if (Math.abs(tam - tamHang) <= Math.min(caoHang, hop.h) / 2) {
+        cuoi.push(hop);
+        continue;
+      }
+    }
+    hang.push([hop]);
+  }
+  return hang.map((r) => r.sort((a, b) => a.x - b.x));
+}
+
 // ─── Dictionary loader (CTC charset) ──────────────────────────────────────────
 
 /**
@@ -283,6 +389,26 @@ export function loadCharset(dictPath: string, blankIndex = 0): string[] {
   return charset;
 }
 
+/**
+ * ★ R4 (2026-09-23) — bộ chữ CTC có ĐỦ dấu tiếng Việt không. Đo sống: model latin PP-OCRv5 (bộ chữ 500 ký tự,
+ * không có ư/ơ/ạ/ế/ộ…) đọc "Bảo trì … thiếc" thành "bo trì … thiéc" — ký tự ngoài bộ chữ bị RƠI hoặc thay
+ * bằng họ hàng gần, mà điểm rec vẫn 0.97 ⇒ ĐIỂM TIN CẬY KHÔNG BÁO ĐƯỢC LỖI NÀY; chỉ bộ chữ báo được.
+ * `null` = không có model để hỏi. Never throws.
+ */
+export function boChuThieuDauViet(): boolean | null {
+  try {
+    if (!ocrModelsAvailable()) return null;
+    // ★ OCR trang đọc dòng bằng VietOCR (đủ 178 chữ) ở chế độ vietocr/tu-dong ⇒ bộ chữ paddle không còn quyết định
+    //   việc mất dấu của tài liệu nạp. Cảnh báo `ocr-mat-dau` chỉ còn đúng khi paddle là bộ đọc dòng.
+    if (cheDoNhanDang() !== "paddle") return false;
+    const { dictPath, blankIndex } = ocrModelPaths();
+    const bo = new Set(getCharset(dictPath, blankIndex));
+    return !["ư", "ơ", "ă", "ạ", "ả", "ế", "ộ", "ữ", "ỳ"].every((c) => bo.has(c));
+  } catch {
+    return null;
+  }
+}
+
 // ─── ONNX inference (lazy — never imported unless models exist & flag on) ─────
 
 let _cachedCharset: { path: string; charset: string[] } | null = null;
@@ -293,11 +419,67 @@ function getCharset(dictPath: string, blankIndex: number): string[] {
   return charset;
 }
 
+/**
+ * ★★★ Pha 2B Task 7 (§8) — **KHO NÀY ĐÃ VÀO DƯỚI BROKER.**
+ *
+ * Trước task này nó là một `Map` **KHÔNG GIỚI HẠN**, và docstring cũ ngay tại đây khẳng định
+ * *"session sống tới hết vòng đời tiến trình — đó là ĐÚNG, không phải rò"*. Câu đó đúng về **vòng
+ * đời** và sai về **hậu quả**: mỗi `modelPath` OCR mới thêm một giấy phép **vĩnh viễn** vào sổ, nên
+ * `headroom` của toàn hệ **chỉ có giảm**, không bao giờ hồi — một cái rò theo nghĩa SỔ, dù không
+ * phải rò theo nghĩa bộ nhớ. Nay nó dùng **cùng trần `AI_SESSION_CACHE_MAX`** với kho phiên của
+ * `aiInferenceEngine` (một người đọc duy nhất: `vram/vramCaps.ts`), đuổi LRU, và **trả giấy phép**
+ * khi đuổi.
+ *
+ * ⚠⚠ LƯỢT ĐUỔI NÀY **KHÔNG CHỨNG MINH ĐƯỢC THIẾT BỊ ĐÃ NHẢ** — cùng ca với
+ * `aiInferenceEngine.LruSessionCache`: gỡ tham chiếu JS không gọi `ort.InferenceSession.release()`,
+ * và gọi `release()` dưới chân một `session.run` đang bay là ABORT ở tầng native. Vì vậy hộ này
+ * **KHÔNG khai `reclaimer`** ⇒ `preempt()` không bao giờ chạm tới nó và câu từ chối không bao giờ
+ * cộng nó vào "tổng nhường được". Việc task này làm là **chặn nó phình vô hạn**, không phải biến
+ * nó thành thu-hồi-được. (Giấy phép vẫn khai `releaseProof` mặc định như trước — xem
+ * `getOnnxSession()`.)
+ */
 const recSessionCache = new Map<string, unknown>();
+
+/** Pha 1 Task 5 (điều phối VRAM) — giấy phép theo modelPath, vòng đời khớp `recSessionCache`. */
+const recSessionVramTickets = new Map<string, import("../vram/vramWiring").VramTicket>();
+
+/** Trả giấy phép của một phiên rời kho. KHÔNG BAO GIỜ ném. */
+function traGiayPhepPhien(key: string): void {
+  try {
+    const t = recSessionVramTickets.get(key);
+    if (!t) return;
+    recSessionVramTickets.delete(key);
+    t.release();
+  } catch {
+    /* telemetry KHÔNG được làm hỏng vòng đời cache */
+  }
+}
+
+/**
+ * Đuổi LRU cho tới khi kho vừa trần. `Map` của JS giữ **thứ tự chèn**, nên phần tử đầu tiên là cũ
+ * nhất — cùng kỹ thuật `LruSessionCache` của `aiInferenceEngine` dùng.
+ * ⚠ `guard`: một vòng `while` trên một trần đọc được từ `.env` là một vòng lặp vô tận chờ một
+ * cấu hình hỏng; trần đã được kẹp ở `vramCaps` nhưng lưới này rẻ hơn một lời tin.
+ */
+function donKhoPhienOcr(): void {
+  const tran = Math.max(1, sessionCacheMax());
+  let guard = 0;
+  while (recSessionCache.size > tran && guard++ <= recSessionCache.size) {
+    const cuNhat = recSessionCache.keys().next().value;
+    if (cuNhat === undefined) break;
+    recSessionCache.delete(cuNhat);
+    traGiayPhepPhien(cuNhat);
+  }
+}
 
 async function getOnnxSession(modelPath: string): Promise<unknown> {
   const cached = recSessionCache.get(modelPath);
-  if (cached) return cached;
+  if (cached) {
+    // ★ Task 7 — chạm vào = đẩy xuống cuối (mới dùng nhất), để trần LRU đuổi ĐÚNG kẻ cũ nhất.
+    recSessionCache.delete(modelPath);
+    recSessionCache.set(modelPath, cached);
+    return cached;
+  }
   const ort = await import("onnxruntime-node");
   // Reuse the same EP resolution style as aiInferenceEngine (DirectML/CPU).
   const providers: string[] = [];
@@ -310,11 +492,45 @@ async function getOnnxSession(modelPath: string): Promise<unknown> {
     providers.push("dml");
   }
   if (!providers.includes("cpu")) providers.push("cpu");
+  // Pha 1 Task 5 — CHỈ KHAI BÁO. Mức `production`: OCR đọc tem/nhãn/serial trên đường kiểm
+  // tra AOI (spec §5.2). Telemetry hỏng ⇒ giấy phép rỗng, lượt tạo session vẫn chạy y nguyên.
+  let vramTicket: import("../vram/vramWiring").VramTicket = {
+    commitMeasured: async () => {},
+    release: () => {},
+    noteRefCount: () => {},
+  };
+  try {
+    const { beginVramAllocation } = await import("../vram/vramWiring");
+    vramTicket = await beginVramAllocation({
+      owner: `onnx-ocr:${modelPath}`,
+      kind: "onnx-session",
+      priority: "production",
+      filePath: modelPath,
+    });
+  } catch (err) {
+    // ★★★ Pha 2B Task 5 — TỪ CHỐI ≠ TELEMETRY HỎNG: nuốt ở đây là TẮT cưỡng chế tại điểm gọi này.
+    if (isVramRefusal(err)) throw err;
+    /* telemetry KHÔNG được làm hỏng đường tạo session */
+  }
   const session = await ort.InferenceSession.create(modelPath, {
     executionProviders: providers,
     graphOptimizationLevel: "all",
+    // ⚠ `.catch()` để dòng `create(...)` đứng nguyên văn — xem ghi chú cùng loại ở
+    // aiInferenceEngine.getSession(). Chỉ trả chỗ rồi ném lại NGUYÊN lỗi cũ.
+  }).catch((err: unknown) => {
+    vramTicket.release();
+    throw err;
   });
+  await vramTicket.commitMeasured();
+  // Cùng lý do đã ghi ở aiInferenceEngine.getSession(): không có khoá in-flight ⇒ trả giấy
+  // phép cũ trước khi ghi đè, không để nó treo trong sổ.
+  traGiayPhepPhien(modelPath);
+  recSessionVramTickets.set(modelPath, vramTicket);
+  // Ghi lại cuối map = "vừa dùng" (thứ tự chèn của `Map` chính là thứ tự LRU).
+  recSessionCache.delete(modelPath);
   recSessionCache.set(modelPath, session);
+  // ★ Task 7 — vào dưới trần `AI_SESSION_CACHE_MAX`. Trước đây kho này phình VÔ HẠN.
+  donKhoPhienOcr();
   return session;
 }
 
@@ -348,7 +564,23 @@ async function preprocessRec(
 }
 
 /** Run a single-line recognition on the whole (already-ROI) image. Never throws → degrade. */
-async function recognizeSingleLine(image: Buffer, models: OcrModelPaths): Promise<OcrLine | null> {
+async function recognizeSingleLine(image: Buffer, models: OcrModelPaths, choPhepViet = false): Promise<OcrLine | null> {
+  // ★ Tiếng Việt (2026-09-23): chọn bộ đọc dòng theo `cheDoNhanDang()` — paddle | vietocr | tu-dong (mặc định khi đủ
+  //   tệp VietOCR: chạy cả hai, lấy VietOCR chỉ khi dòng mang chữ Việt). Lý do và số đo: `ocrVietOcr.ts`.
+  //   DET (tìm dòng) KHÔNG đổi — chỉ bộ đọc từng dòng.
+  const { cheDoNhanDang, nhanDangDongViet, chonDong } = await import("./ocrVietOcr");
+  // ⚠ CHỈ OCR TRANG (nạp tài liệu, ngoại tuyến) được dùng VietOCR: `runOcr` một dòng là đường đọc NHÃN trên dây chuyền,
+  //   nơi +~5 s/dòng là không chấp nhận được và nhãn là mã/số Latin (paddle 0,992 > vietocr 0,958).
+  const cheDo = choPhepViet ? cheDoNhanDang() : "paddle";
+  if (cheDo === "vietocr") return nhanDangDongViet(image);
+  if (cheDo === "tu-dong") {
+    const [paddle, viet] = [await nhanDangDongPaddle(image, models), await nhanDangDongViet(image)];
+    return chonDong(paddle, viet);
+  }
+  return nhanDangDongPaddle(image, models);
+}
+
+async function nhanDangDongPaddle(image: Buffer, models: OcrModelPaths): Promise<OcrLine | null> {
   try {
     const ort = await import("onnxruntime-node");
     const session = (await getOnnxSession(models.recPath)) as {
@@ -375,7 +607,26 @@ async function recognizeSingleLine(image: Buffer, models: OcrModelPaths): Promis
     const charset = getCharset(models.dictPath, models.blankIndex);
     const decoded = ctcGreedyDecode(o.data, o.dims, charset, { blankIndex: models.blankIndex, layout: "TC" });
     return { text: decoded.text, score: decoded.score };
-  } catch {
+  } catch (err) {
+    /**
+     * ★★ M-6 (review vòng 1) — MỘT LỜI TỪ CHỐI MỨC `production` KHÔNG ĐƯỢC SUY BIẾN **IM LẶNG**.
+     *
+     * `getOnnxSession()` ngay trên nay ném `VramRefusedError` (cổng sổ, Pha 2B Task 5), và `catch`
+     * này nuốt nó **một tầng bên trên** cái `catch` đã được dạy ⇒ OCR trả rỗng, người trực thấy
+     * "đọc không ra chữ" và đi soi ảnh/ánh sáng/mã vạch, trong khi nguyên nhân thật là **hết VRAM**.
+     * Chiều AN TOÀN (không cấp phát byte nào), nhưng mất hẳn tín hiệu — đúng lớp *"suy biến im
+     * lặng"* mà §5.5 tồn tại để diệt.
+     *
+     * ⚠ VẪN GIỮ HỢP ĐỒNG *"Never throws → degrade"* (khai ngay ở docstring, và OCR là đường
+     * `production`: một cú ném ở đây làm hỏng cả lượt kiểm thay vì chỉ mất một dòng chữ). Việc phải
+     * làm là **CÓ TIẾNG**, không phải đổi luồng.
+     */
+    if (isVramRefusal(err)) {
+      console.warn(
+        `[ocrService] cổng SỔ TỪ CHỐI giấy phép VRAM cho session OCR (mức production) ⇒ lượt đọc ` +
+          `này trả RỖNG. Đây KHÔNG phải ảnh xấu hay charset sai: ${(err as Error)?.message ?? String(err)}`,
+      );
+    }
     return null; // fail-safe: caller degrades honestly
   }
 }
@@ -472,6 +723,142 @@ export async function runOcr(
   };
 }
 
+// ─── Trang tài liệu: DET (DBNet) → cắt từng dòng → REC ─────────────────────────
+
+/** Cạnh dài tối đa của ảnh đưa vào DET (bội 32). Trang A4 200 dpi ≈ 1654×2339 ⇒ thu về 1152×1632. */
+function detCanhMax(): number {
+  const n = Number(process.env.OCR_DET_MAX_SIDE ?? 1632);
+  return Number.isFinite(n) && n >= 64 ? Math.floor(n) : 1632;
+}
+
+/** PaddleOCR `drop_score`: dòng rec dưới ngưỡng này bị bỏ (thường là nhiễu DET — viền, khung, vết bẩn). */
+function recDiemMin(): number {
+  const n = Number(process.env.OCR_REC_MIN_SCORE ?? 0.5);
+  return Number.isFinite(n) && n >= 0 && n <= 1 ? n : 0.5;
+}
+
+/**
+ * Chạy DET trên cả ảnh ⇒ hộp dòng chữ trên toạ độ ẢNH GỐC. `null` = DET hỏng (khác "0 hộp" = trang trắng).
+ * Tiền xử lý đúng PaddleOCR: thu cạnh dài về ≤ `detCanhMax()`, làm tròn mỗi cạnh về bội 32, chuẩn hoá
+ * mean/std ImageNet theo thứ tự kênh BGR (Paddle đọc ảnh bằng cv2).
+ */
+async function timHopChu(
+  image: Buffer,
+  models: OcrModelPaths,
+): Promise<{ hops: HopChu[]; srcW: number; srcH: number } | null> {
+  if (!models.detPath) return null;
+  try {
+    const sharp = (await import("sharp")).default as typeof sharpNs;
+    const ort = await import("onnxruntime-node");
+    const meta = await sharp(image).metadata();
+    const srcW = meta.width ?? 0;
+    const srcH = meta.height ?? 0;
+    if (srcW < 8 || srcH < 8) return { hops: [], srcW, srcH };
+    const tiLe = Math.min(1, detCanhMax() / Math.max(srcW, srcH));
+    const W = Math.max(32, Math.round((srcW * tiLe) / 32) * 32);
+    const H = Math.max(32, Math.round((srcH * tiLe) / 32) * 32);
+    const raw = await sharp(image).resize(W, H, { fit: "fill" }).removeAlpha().toColourspace("srgb").raw().toBuffer();
+    const mean = [0.485, 0.456, 0.406];
+    const std = [0.229, 0.224, 0.225];
+    const plane = W * H;
+    const tensor = new Float32Array(3 * plane);
+    for (let i = 0; i < plane; i++) {
+      for (let c = 0; c < 3; c++) {
+        const v = raw[i * 3 + (2 - c)] / 255; // kênh c của tensor = B,G,R
+        tensor[c * plane + i] = (v - mean[c]) / std[c];
+      }
+    }
+    const session = (await getOnnxSession(models.detPath)) as {
+      inputNames: string[];
+      outputNames: string[];
+      run: (feeds: Record<string, unknown>) => Promise<Record<string, { data: Float32Array; dims: number[] }>>;
+    };
+    const feeds = { [session.inputNames[0]]: new (ort as any).Tensor("float32", tensor, [1, 3, H, W]) };
+    let out: Record<string, { data: Float32Array; dims: number[] }>;
+    try {
+      const { gpuSessionSemaphore } = await import("../aiInferenceEngine");
+      out = await gpuSessionSemaphore.run(() => session.run(feeds));
+    } catch {
+      out = await session.run(feeds);
+    }
+    const o = out[session.outputNames[0]];
+    if (!o) return null;
+    const oH = o.dims[o.dims.length - 2];
+    const oW = o.dims[o.dims.length - 1];
+    const sx = srcW / oW;
+    const sy = srcH / oH;
+    const hops = dbTimHop(o.data, oW, oH).map((b) => {
+      const x = Math.max(0, Math.floor(b.x * sx));
+      const y = Math.max(0, Math.floor(b.y * sy));
+      return {
+        x,
+        y,
+        w: Math.min(srcW - x, Math.ceil(b.w * sx)),
+        h: Math.min(srcH - y, Math.ceil(b.h * sy)),
+        score: b.score,
+      };
+    });
+    return { hops: hops.filter((b) => b.w >= 4 && b.h >= 4), srcW, srcH };
+  } catch (err) {
+    if (isVramRefusal(err)) {
+      console.warn(
+        `[ocrService] cổng SỔ TỪ CHỐI giấy phép VRAM cho session DET (mức production) ⇒ trang này trả RỖNG: ` +
+          `${(err as Error)?.message ?? String(err)}`,
+      );
+    }
+    return null;
+  }
+}
+
+/**
+ * ★ R4 (2026-09-23) — OCR MỘT TRANG TÀI LIỆU (nhiều dòng). `runOcr` chỉ nhận dạng MỘT dòng trên cả ảnh (đúng
+ * cho tem/serial đã cắt ROI); đưa nguyên trang A4 vào đó thì rec ép cả trang về cao 48 px ⇒ trả "" — đo sống
+ * 2026-09-23: OCR PDF quét "chạy" mà 0 chữ. Ở đây: DET tìm từng dòng → cắt → REC từng dòng → ghép theo thứ tự
+ * đọc (hàng cách nhau `\n`, hộp cùng hàng cách nhau dấu cách). Dòng rec < `OCR_REC_MIN_SCORE` bị bỏ.
+ * Không có model DET ⇒ lùi về `runOcr` (một dòng) — trung thực, vì với ảnh đã là một dòng thì đó là đúng.
+ * Never throws.
+ */
+export async function runOcrTrang(
+  image: Buffer,
+  opts: { language?: "en" | "vi" | "auto" } = {},
+): Promise<OcrResult> {
+  const models = ocrModelsAvailable() ? ocrModelPaths() : null;
+  if (!models || !models.detPath) return runOcr(image, opts);
+  const det = await timHopChu(image, models);
+  if (!det) {
+    return { ok: false, engine: "none", text: "", lines: [], confidence: 0, degraded: true, reason: "OCR_DET_FAILED" };
+  }
+  const sharp = (await import("sharp")).default as typeof sharpNs;
+  const diemMin = recDiemMin();
+  const hang: OcrLine[][] = [];
+  for (const r of xepThuTuDoc(det.hops)) {
+    const dong: OcrLine[] = [];
+    for (const b of r) {
+      let cat: Buffer;
+      try {
+        cat = await sharp(image).extract({ left: b.x, top: b.y, width: b.w, height: b.h }).png().toBuffer();
+      } catch {
+        continue;
+      }
+      const line = await recognizeSingleLine(cat, models, true);
+      if (line && line.text.trim() && line.score >= diemMin) {
+        dong.push({ text: line.text.trim(), score: line.score, box: { x: b.x, y: b.y, w: b.w, h: b.h } });
+      }
+    }
+    if (dong.length) hang.push(dong);
+  }
+  const lines = hang.flat();
+  const confidence = lines.length ? Number((lines.reduce((s, l) => s + l.score, 0) / lines.length).toFixed(4)) : 0;
+  return {
+    ok: true,
+    engine: "onnx",
+    text: hang.map((d) => d.map((l) => l.text).join(" ")).join("\n"),
+    lines,
+    confidence,
+    degraded: false,
+  };
+}
+
 /**
  * Kiểm tem/nhãn/barcode: đọc mã bằng OCR rồi so khớp với mã mong đợi.
  * pass/fail + similarity + confidence THẬT (rec-score). Degrade trung thực khi
@@ -511,5 +898,14 @@ export async function checkLabel(
 /** Test seam — clear the cached ONNX sessions / charset. */
 export function _resetOcrCachesForTests(): void {
   recSessionCache.clear();
+  // Pha 1 Task 5 — dọn cả sổ, nếu không test sau thấy giấy phép của test trước.
+  for (const t of recSessionVramTickets.values()) {
+    try {
+      t.release();
+    } catch {
+      /* best-effort */
+    }
+  }
+  recSessionVramTickets.clear();
   _cachedCharset = null;
 }

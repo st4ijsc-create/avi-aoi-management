@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { router, protectedProcedure } from "../_core/trpc";
 import { TRPCError } from "@trpc/server";
+import { appError } from "../_core/appError";
 import * as db from "../db";
 import { withDbErrors } from "../_core/dbErrors";
 import { requirePermission } from "../_core/accessControl";
@@ -30,7 +31,7 @@ export const processRouter = router({
     .query(async ({ input }) => {
       const process = await db.getProcessById(input.id);
       if (!process) {
-        throw new TRPCError({ code: 'NOT_FOUND', message: 'Process not found' });
+        throw appError('NOT_FOUND', 'ENTITY_NOT_FOUND', { entity: 'process' }, 'Process not found');
       }
       return process;
     }),
@@ -51,7 +52,7 @@ export const processRouter = router({
       // Check if code already exists
       const existing = await db.getProcessByCode(input.code);
       if (existing) {
-        throw new TRPCError({ code: 'CONFLICT', message: `Mã quy trình '${input.code}' đã tồn tại` });
+        throw appError('CONFLICT', 'ENTITY_DUPLICATE', { entity: 'process' }, `Mã quy trình '${input.code}' đã tồn tại`);
       }
 
       const result = await withDbErrors(() => db.createProcess({
@@ -81,14 +82,14 @@ export const processRouter = router({
       // Check if process exists
       const existing = await db.getProcessById(id);
       if (!existing) {
-        throw new TRPCError({ code: 'NOT_FOUND', message: 'Process not found' });
+        throw appError('NOT_FOUND', 'ENTITY_NOT_FOUND', { entity: 'process' }, 'Process not found');
       }
       
       // Check if new code conflicts with another process
       if (rest.code && rest.code !== existing.code) {
         const codeExists = await db.getProcessByCode(rest.code);
         if (codeExists) {
-          throw new TRPCError({ code: 'CONFLICT', message: `Mã quy trình '${rest.code}' đã tồn tại` });
+          throw appError('CONFLICT', 'ENTITY_DUPLICATE', { entity: 'process' }, `Mã quy trình '${rest.code}' đã tồn tại`);
         }
       }
 
@@ -105,7 +106,7 @@ export const processRouter = router({
     .mutation(async ({ input }) => {
       const existing = await db.getProcessById(input.id);
       if (!existing) {
-        throw new TRPCError({ code: 'NOT_FOUND', message: 'Process not found' });
+        throw appError('NOT_FOUND', 'ENTITY_NOT_FOUND', { entity: 'process' }, 'Process not found');
       }
       
       await db.deleteProcess(input.id);

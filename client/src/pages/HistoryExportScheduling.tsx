@@ -13,6 +13,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Textarea } from '@/components/ui/textarea';
+import { mapTrpcError } from '@/lib/trpcErrors';
 import { trpc } from '@/lib/trpc';
 import { toast } from 'sonner';
 import {
@@ -158,25 +159,25 @@ export function HistoryExportContent() {
   // Mutations
   const updateMutation = trpc.scheduledReport.update.useMutation({
     onSuccess: () => { utils.scheduledReport.list.invalidate(); },
-    onError: (error: any) => { toast.error(t('common.error') + ': ' + error.message); },
+    onError: (error: any) => { toast.error(t('common.error') + ': ' + mapTrpcError(error)); },
   });
   const deleteMutation = trpc.scheduledReport.delete.useMutation({
     onSuccess: () => {
       toast.success(t('reports.scheduleDeleted'));
       utils.scheduledReport.list.invalidate();
     },
-    onError: (error: any) => { toast.error(t('common.error') + ': ' + error.message); },
+    onError: (error: any) => { toast.error(t('common.error') + ': ' + mapTrpcError(error)); },
   });
   const createMutation = trpc.scheduledReport.create.useMutation({
     onSuccess: () => {
       toast.success(t('reports.scheduleCreated'));
       utils.scheduledReport.list.invalidate();
     },
-    onError: (error: any) => { toast.error(t('common.error') + ': ' + error.message); },
+    onError: (error: any) => { toast.error(t('common.error') + ': ' + mapTrpcError(error)); },
   });
   const sendTestMutation = trpc.scheduledReport.sendTest.useMutation({
     onSuccess: () => { toast.success(t('reports.testEmailSent')); },
-    onError: (error: any) => { toast.error(t('reports.emailSendError') + ': ' + error.message); },
+    onError: (error: any) => { toast.error(t('reports.emailSendError') + ': ' + mapTrpcError(error)); },
   });
 
   const [showCreateDialog, setShowCreateDialog] = useState(false);
@@ -429,7 +430,7 @@ export function HistoryExportContent() {
               <Card className="p-12 text-center">
                 <AlertTriangle className="h-12 w-12 mx-auto text-destructive mb-4" />
                 <h3 className="text-lg font-medium mb-2">{t('reports.loadError')}</h3>
-                <p className="text-muted-foreground mb-4">{schedulesQuery.error?.message}</p>
+                <p className="text-muted-foreground mb-4">{mapTrpcError(schedulesQuery.error)}</p>
                 <Button onClick={() => schedulesQuery.refetch()} variant="outline">
                   <RefreshCw className="h-4 w-4 mr-2" />
                   {t('reports.retry')}

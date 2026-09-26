@@ -6,6 +6,30 @@
 
 ---
 
+> ## 🔴 ĐỌC TRƯỚC — TRẠNG THÁI THẬT (đưa lên đầu 2026-08-13, nhóm C việc 2)
+>
+> **Kế hoạch của tài liệu này ĐÃ THỰC THI XONG — Đợt 0 → Đợt 5.** Trạng thái ấy vốn nằm ở
+> **§9, dòng ~304/505**, tức sau ba trăm dòng mô tả bug ở **thì hiện tại**. Ai đọc §1 và §3
+> ("**Phát hiện P0 (chặn sản xuất)**") rồi dừng lại sẽ kết luận module đang hỏng — và đó
+> đúng là cách "2 P0 chặn sản xuất" của doc 42 nằm trong backlog suốt tám tuần.
+>
+> **Đo lại độc lập trên mã ngày 2026-08-13 — cả hai P0 ĐÃ VÁ:**
+>
+> | P0 | Đo được hôm nay |
+> |---|---|
+> | **P0-1** nút "Thêm" `/products` no-op (`PermissionGate` nuốt props Radix `asChild`) | `client/src/components/PermissionGate.tsx:71` `function mergeSlotProps(childProps, slotProps)`, dùng ở `:116` và `:124` — hợp nhất handler `on[A-Z]`/`className`/`style` thay vì trả Fragment trần |
+> | **P0-2** UPDATE hỏng 10 tab (`EntityDialog` null vs zod) | Client `MasterDataManagement.tsx` `submit()` chỉ gom key khai trong `fields[]`, `null`/`""` → `undefined`, ép `Number` cho `type==="number"`, khoá ô `code` khi edit. Server `masterDataRouter.ts`: **51 lần `.nullish()`** trên các *update schema* (create schema vẫn `.optional()`) |
+>
+> **Điểm số §2, findings §3–§5, và §6/§7 (tính năng thiếu / cải tiến FE) là ẢNH CHỤP 2026-07-11.**
+> Đọc như *lịch sử*, không phải *hiện trạng*. Bản ghi thực thi đầy đủ theo từng đợt: **§9, khối
+> "TRẠNG THÁI THỰC THI"** ngay dưới tiêu đề §9.
+>
+> **Còn thật (chính doc 42 §9 tự ghi, chưa đo lại lượt này):** SHIFT calendar cần migration schema ·
+> nạp locale cho key inline Đợt 4A-4C · gỡ user tạm `audit_agent` (id 167) + 2 hàng `AUDIT_LAYOUT_QA` ·
+> bật 2FA cho tài khoản privileged.
+
+---
+
 ## 1. Tóm tắt điều hành
 
 Đây là audit sản phẩm lần đầu chạy **live end-to-end** trên module Quản lý dữ liệu: 14 agent (13 surface + 1 benchmark) mở browser thật, đăng nhập admin, test đủ 4 thao tác CRUD trên từng màn hình, chụp ~230 screenshot và đối chiếu code khi tìm root-cause. Kết quả tổng: **208 findings** — trong đó **125 bug** (2 P0 · 40 P1 · 49 P2 · 34 P3) và **83 vấn đề UX** (15 P1 · 36 P2 · 32 P3), kèm 96 đề xuất tính năng thiếu và 91 cải tiến frontend. Điểm UX trung bình 13 màn hình chỉ đạt **4.8/10** (cao nhất operator-badges 6.5, thấp nhất 4.0 cho cụm master-data core và products); benchmark chấm module **5.5/10** so với chuẩn Odoo/SAP MDG — độ phủ thực thể tốt (~7/10) nhưng độ sâu quản trị dữ liệu kém (~4/10).

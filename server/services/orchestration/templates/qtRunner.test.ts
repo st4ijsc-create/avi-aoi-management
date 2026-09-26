@@ -65,16 +65,31 @@ vi.mock("drizzle-orm", async (orig) => {
     ...actual,
     eq: (col: any, val: unknown) => ({ __op: "eq", col, val }),
     desc: (col: any) => ({ __op: "desc", col }),
+    // doc 80 ORC-01/02 — engine dùng UPDATE có điều kiện (and/ne/inArray/notInArray) + returning().
+    and: (...conds: any[]) => ({ __op: "and", conds }),
+    ne: (col: any, val: unknown) => ({ __op: "ne", col, val }),
+    inArray: (col: any, vals: unknown[]) => ({ __op: "in", col, vals }),
+    notInArray: (col: any, vals: unknown[]) => ({ __op: "notIn", col, vals }),
   };
 });
 
 function colName(col: any): string {
   return col?.name ?? col?.config?.name ?? String(col);
 }
+function matchCond(r: Row, cond: any): boolean {
+  if (!cond) return true;
+  switch (cond.__op) {
+    case "eq": return r[colName(cond.col)] === cond.val;
+    case "ne": return r[colName(cond.col)] !== cond.val;
+    case "in": return cond.vals.includes(r[colName(cond.col)]);
+    case "notIn": return !cond.vals.includes(r[colName(cond.col)]);
+    case "and": return cond.conds.every((c: any) => matchCond(r, c));
+    default: return true;
+  }
+}
 function applyWhere(list: Row[], cond: any): Row[] {
   if (!cond) return list;
-  if (cond.__op === "eq") return list.filter((r) => r[colName(cond.col)] === cond.val);
-  return list;
+  return list.filter((r) => matchCond(r, cond));
 }
 
 function makeSelect(tableName: string) {
@@ -150,7 +165,11 @@ const fakeDb = {
       where(cond: any) {
         const matched = applyWhere(rows(tableName), cond);
         for (const r of matched) Object.assign(r, patch);
-        return Promise.resolve();
+        const result = matched.map((r) => ({ ...r }));
+        return {
+          returning: () => Promise.resolve(result),
+          then: (res: any, rej: any) => Promise.resolve(result).then(res, rej),
+        };
       },
     };
     return upd;
@@ -314,6 +333,91 @@ describe("QT-1 end-to-end trên engine thật (in-memory)", () => {
     expect(again.status).toBe("waiting_external");
     expect(again.pausedStepId).toBe("qt1-monitor");
     expect(svc.allocateOrder.mock.calls.length).toBe(callsBefore); // không chạy lại handler đã xong
+  });
+
+  // ── Final review fix #6 — resumeRun nay NÉM CONFLICT (ORC-02 CAS) / FORBIDDEN (ORC-03). ──
+  /**
+   * Chen một "người duyệt khác" đúng lúc: lượt CLAIM kế tiếp (UPDATE … WHERE status IN
+   * ('awaiting_confirm','held')) thấy hàng đã bị lượt khác nhận ('running') ⇒ 0 hàng ⇒ CONFLICT.
+   */
+  function hijackNextClaim(claimStatus: string) {
+    const origUpdate = fakeDb.update;
+    let fired = false;
+    fakeDb.update = (t: any) => {
+      const upd = origUpdate(t);
+      const origSet = upd.set;
+      let patch: Row = {};
+      upd.set = (p: Row) => {
+        patch = p;
+        origSet(p);
+        return upd;
+      };
+      const origWhere = upd.where;
+      upd.where = (cond: any) => {
+        const isClaim = cond?.__op === "and" && cond.conds.some((c: any) => c.__op === "in");
+        if (!fired && isClaim && patch.status === claimStatus) {
+          fired = true;
+          for (const r of rows(tbl(t))) if (matchCond(r, cond.conds[0])) r.status = "running";
+        }
+        return origWhere(cond);
+      };
+      return upd;
+    };
+    return { fired: () => fired, restore: () => { fakeDb.update = origUpdate; } };
+  }
+
+  it("fix #6: pump thua CAS khi duyệt gate auto (người khác đã nhận) ⇒ KHÔNG ném, coi như đã resume", async () => {
+    await register();
+    const h = hijackNextClaim("running");
+    try {
+      const res = await startQtRun(QT1_REF, { orderId: ORDER_ID, lineId: LINE_ID });
+      expect(h.fired()).toBe(true);
+      expect(res.started).toBe(true);
+      // lượt khác đang drive run ⇒ pump dừng trung thực, không chen
+      expect(res.status).toBe("running");
+      expect(res.ok).toBe(false);
+    } finally {
+      h.restore();
+    }
+  });
+
+  it("fix #6: resolveQtGate(approved) thua CAS ⇒ KHÔNG ném, pump đọc lại trạng thái thật", async () => {
+    await register();
+    const res = await startQtRun(QT1_REF, { orderId: ORDER_ID, lineId: LINE_ID });
+    expect(res.status).toBe("waiting_external");
+    const h = hijackNextClaim("running");
+    try {
+      const r = await resolveQtGate(res.runId, { approved: true, note: "t" });
+      expect(h.fired()).toBe(true);
+      expect(r.status).toBe("running");
+    } finally {
+      h.restore();
+    }
+  });
+
+  it("fix #6: resolveQtGate(rejected) thua CAS ⇒ KHÔNG ném, báo trạng thái thật (không nói 'aborted')", async () => {
+    await register();
+    const res = await startQtRun(QT1_REF, { orderId: ORDER_ID, lineId: LINE_ID });
+    expect(res.status).toBe("waiting_external");
+    const h = hijackNextClaim("aborted");
+    try {
+      const r = await resolveQtGate(res.runId, { approved: false, note: "huy" });
+      expect(h.fired()).toBe(true);
+      expect(r.ok).toBe(false);
+      expect(r.status).toBe("running");
+    } finally {
+      h.restore();
+    }
+  });
+
+  it("fix #6: FORBIDDEN (vai ngoài approverRoles của gate) VẪN nổi lên — không bị nuốt", async () => {
+    await register();
+    const res = await startQtRun(QT1_REF, { orderId: ORDER_ID, lineId: LINE_ID });
+    expect(res.status).toBe("waiting_external");
+    const err = await resolveQtGate(res.runId, { approved: true }, { id: 77, role: "operator", name: "op" }).catch((e) => e);
+    expect((err as { code?: string })?.code).toBe("FORBIDDEN");
+    const view = await getRun(res.runId);
+    expect(view?.run.status).toBe("awaiting_confirm");
   });
 
   it("FOE_ENABLED off → startQtRun honest disabled", async () => {

@@ -1,8 +1,15 @@
-import { COOKIE_NAME, ONE_YEAR_MS } from "@shared/const";
+import { randomBytes } from "node:crypto";
+import { COOKIE_NAME } from "@shared/const";
+// ★★★★ Pha 9 — CHỦ DUY NHẤT của "một phiên sống bao lâu" (mặc định 30 ngày, SESSION_TTL_DAYS).
+import { hanPhienMs } from "./hanPhien";
 import type { Request, Response } from "express";
 import * as db from "../db";
 import type { User } from "../../drizzle/schema";
 import { getSessionCookieOptions } from "./cookies";
+// ★★★ Review TOÀN NHÁNH Pha 8 C-2 §3 — chủ DUY NHẤT của hai bộ đếm sổ phiên (có bề mặt Prometheus).
+import { nhichLoiGhiSoPhien } from "./demSoPhien";
+// ★★★ Pha 7 Task 7 — chủ DUY NHẤT của "cột nào của `users` được rời máy chủ".
+import { redactServerOnlyUserFields } from "./publicUser";
 import { sdk } from "./sdk";
 
 /**
@@ -52,6 +59,89 @@ function auditCtxFromRequest(req: Request): AuditCtx {
   };
 }
 
+/**
+ * F9 (Sprint 5, doc71 task 11) — cost factor bcrypt "rounds" MUST match every
+ * real password hash in this app, hoặc thủ thuật hash-giả bên dưới chỉ THU
+ * HẸP side-channel thời gian thay vì đóng hẳn. Đo bằng grep — MỌI lời gọi
+ * `bcrypt.hash(..., N)` trong repo đều dùng N=10: server/db/auth.ts:228,
+ * server/routers/userRouters.ts:59/128/206,
+ * server/routers/twoFactorRouter.ts:20, server/services/mqttService.ts:337.
+ * Không hardcode một chuỗi bcrypt có sẵn — sinh ra tại runtime bằng đúng cost
+ * factor thật này (xem getDummyPasswordHash).
+ */
+const PASSWORD_HASH_COST_FACTOR = 10;
+
+/**
+ * Định dạng một bcrypt hash HỢP LỆ: `$2a$`/`$2b$`/`$2y$` + 2 chữ số cost +
+ * `$` + 53 ký tự radix64 (22 salt + 31 hash) — tổng 60 ký tự. Dùng để phân
+ * biệt hash thật với các chuỗi KHÔNG PHẢI bcrypt nhưng vẫn được lưu (truthy)
+ * trong cột `passwordHash`, ví dụ sentinel `"LOCKED-no-valid-hash"` mà
+ * `scripts/audit/audit-account.mjs off` ghi để khoá tài khoản audit (2 dòng
+ * thật trong DB dev tại thời điểm review — xem task-11-report.md vòng sửa 2).
+ */
+const BCRYPT_HASH_FORMAT = /^\$2[aby]\$\d{2}\$[./A-Za-z0-9]{53}$/;
+
+function isBcryptHash(hash: unknown): hash is string {
+  return typeof hash === "string" && BCRYPT_HASH_FORMAT.test(hash);
+}
+
+/**
+ * Hash giả dùng làm đối số cho bcrypt.compare() khi user không tồn tại,
+ * không có passwordHash, HOẶC passwordHash lưu trong DB không đúng định
+ * dạng bcrypt (vd. sentinel "LOCKED-no-valid-hash" ở trên) — để
+ * bcrypt.compare vẫn tốn đúng khoảng thời gian CPU như so với một hash
+ * thật, đóng side-channel thời gian (F9). bcryptjs KIỂM ĐỊNH DẠNG hash
+ * TRƯỚC khi chạy các vòng Blowfish thật — đưa thẳng một chuỗi dị dạng vào
+ * bcrypt.compare() trả về `false` gần như tức thì (đo được ~0.1-0.7ms so
+ * với ~50ms của một hash hợp lệ cost=10 — xem task-11-report.md), nên
+ * KHÔNG được coi "passwordHash có giá trị (truthy)" là đủ điều kiện dùng
+ * làm hash thật; phải qua `isBcryptHash()` trước.
+ *
+ * Tính MỘT LẦN — sinh sẵn NGAY KHI NẠP MODULE (không đợi request đầu tiên,
+ * tránh request đầu tiên của mỗi lần khởi động lại process tốn gấp đôi thời
+ * gian: sinh hash + compare, thay vì chỉ compare) — nhớ lại (memo hoá theo
+ * module, sống suốt vòng đời process) rồi dùng lại cho mọi lần gọi sau.
+ * Plaintext nguồn không quan trọng (không bao giờ so khớp với gì thật), chỉ
+ * cost factor mới quan trọng.
+ */
+const dummyPasswordHashPromise: Promise<string> = (async () => {
+  const bcryptModule = await import("bcryptjs");
+  return bcryptModule.hash(randomBytes(32).toString("hex"), PASSWORD_HASH_COST_FACTOR);
+})();
+// Gắn một handler rỗng để Node không in "Unhandled Promise Rejection" nếu
+// bcryptjs lỗi ngay lúc nạp module mà chưa có request nào await tới —  lỗi
+// thật (cực khó xảy ra vì bcryptjs đã là dependency runtime dùng khắp nơi)
+// vẫn nổi lên bình thường ở lần đầu ai đó thật sự await promise này.
+dummyPasswordHashPromise.catch(() => {});
+
+function getDummyPasswordHash(): Promise<string> {
+  return dummyPasswordHashPromise;
+}
+
+/**
+ * So khớp mật khẩu với hash lưu trong DB theo kiểu CHỐNG side-channel thời
+ * gian (F9): nếu `storedHash` không phải chuỗi bcrypt ĐÚNG ĐỊNH DẠNG (falsy,
+ * hoặc dị dạng như sentinel khoá tài khoản ở trên), dùng hash giả cùng cost
+ * factor thay thế — để bcrypt.compare LUÔN chạy đủ số vòng, bất kể nhánh
+ * nào sẽ chạy tiếp theo sau khi biết kết quả.
+ *
+ * DÙNG CHUNG cho mọi route xác thực bằng mật khẩu cục bộ trong repo
+ * (`verifyCredentials` bên dưới, và `/api/external/auth/login` ở
+ * server/_core/index.ts) — CHỈ phần "so khớp mật khẩu" này được dùng
+ * chung; audit log / thông điệp lỗi / hình dạng response / mã trạng thái
+ * HTTP vẫn do TỪNG route tự quyết định (hai route đó khác nhau về phạm vi
+ * session — cookie+user_sessions row vs Bearer token 30 ngày — và về việc
+ * có gate 2FA hay không, nên KHÔNG hợp nhất toàn bộ luồng).
+ */
+export async function comparePasswordConstantTime(
+  bcryptModule: typeof import("bcryptjs"),
+  password: string,
+  storedHash: string | null | undefined,
+): Promise<boolean> {
+  const hashToCompare = isBcryptHash(storedHash) ? storedHash : await getDummyPasswordHash();
+  return bcryptModule.compare(password, hashToCompare);
+}
+
 async function recordAudit(
   status: "success" | "failure",
   user: Pick<User, "id" | "name"> | null,
@@ -93,6 +183,28 @@ export async function verifyCredentials(
   const bcrypt = await import("bcryptjs");
 
   const user = await db.getUserByUsername(username);
+
+  // F9 (side-channel đăng nhập, tiền tồn tại) — LUÔN chạy bcrypt.compare
+  // TRƯỚC khi kiểm isActive/lockedUntil/tồn tại/hỗ trợ mật khẩu, dùng hash
+  // giả (cost factor khớp hash thật, và khi passwordHash lưu trong DB không
+  // đúng định dạng bcrypt — xem comparePasswordConstantTime) khi user không
+  // tồn tại hoặc không có passwordHash HỢP LỆ. Trước đây nhánh "user không
+  // tồn tại" bỏ qua bcrypt HOÀN TOÀN nên trả lời nhanh hơn hẳn các nhánh
+  // khác ⇒ chỉ cần đo thời gian phản hồi là dò được username có thật. Kết
+  // quả `passwordMatches` được dùng THẬT cho nhánh user tồn tại + có hash
+  // hợp lệ; bị bỏ qua có chủ đích ở các nhánh throw sớm bên dưới (không đổi
+  // logic chặn — chỉ để bcrypt luôn tốn đúng thời gian, bất kể nhánh nào sẽ
+  // chạy sau đó). Thứ tự các nhánh throw bên dưới GIỮ NGUYÊN như trước khi
+  // sửa (không tồn tại → vô hiệu hoá → đang khoá → không hỗ trợ mật khẩu →
+  // sai mật khẩu) — chỉ có lời gọi bcrypt.compare là được đưa lên đầu.
+  // ★★★ Pha 7 Task 9 (9c) — hash mật khẩu nay ở `user_secrets`, KHÔNG còn trên hàng `users`.
+  // ⚠⚠ Lượt đọc này chạy **VÔ ĐIỀU KIỆN**, kể cả khi `user` là `undefined` (hàm nhận `null` và
+  //    vẫn chạy một câu truy vấn hình dạng y hệt). Gọi nó **có điều kiện** sẽ làm nhánh "username
+  //    không tồn tại" trả lời nhanh hơn đúng một lượt truy vấn ⇒ dựng lại chính side-channel F9
+  //    mà đoạn dưới đây được viết ra để đóng.
+  const biMat = await db.layBiMatNguoiDung(user?.id ?? null);
+  const passwordMatches = await comparePasswordConstantTime(bcrypt, password, biMat.passwordHash);
+
   if (!user) {
     await recordAudit("failure", null, username, audit, { reason: "unknown_user" });
     throw new LoginError("INVALID_CREDENTIALS", "Tên đăng nhập hoặc mật khẩu không đúng");
@@ -103,7 +215,8 @@ export async function verifyCredentials(
     throw new LoginError("ACCOUNT_DISABLED", "Tài khoản đã bị vô hiệu hóa");
   }
 
-  // Brute-force lockout check (must run BEFORE password compare).
+  // Brute-force lockout check — vẫn chạy TRƯỚC khi dùng kết quả bcrypt: tài
+  // khoản đang bị khoá bị từ chối dù mật khẩu vừa nhập ĐÚNG.
   if (user.lockedUntil && user.lockedUntil > new Date()) {
     const remaining = Math.ceil((user.lockedUntil.getTime() - Date.now()) / 60_000);
     await recordAudit("failure", user, username, audit, { reason: "account_locked" });
@@ -114,7 +227,7 @@ export async function verifyCredentials(
     );
   }
 
-  if (!user.passwordHash) {
+  if (!biMat.passwordHash) {
     await recordAudit("failure", user, username, audit, { reason: "password_unsupported" });
     throw new LoginError(
       "PASSWORD_UNSUPPORTED",
@@ -122,8 +235,7 @@ export async function verifyCredentials(
     );
   }
 
-  const isValid = await bcrypt.compare(password, user.passwordHash);
-  if (!isValid) {
+  if (!passwordMatches) {
     const newAttempts = (user.loginAttempts ?? 0) + 1;
     const lockedUntil =
       newAttempts >= MAX_LOGIN_ATTEMPTS
@@ -150,7 +262,137 @@ export async function verifyCredentials(
     await db.updateUserLoginAttempts(user.id, 0, null);
   }
 
-  return user;
+  // ★★★ Pha 7 Task 7 — bí mật **KHÔNG ĐI XA HƠN CHỖ CẦN NÓ.** `user.passwordHash` đã được dùng
+  // xong ngay phía trên (`comparePasswordConstantTime`); từ đây trở đi mọi người gọi chỉ cần
+  // `id`/`openId`/`name`/`email`/`role` (đã đo: `db.get2FAStatus` nhận `user.id` · lượt cấp vé 2FA
+  // nhận `user.id` · `establishSession` · `res.json({user:{id,name,email,role}})`).
+  // ⚠ Chú thích này CỐ Ý không viết tên hàm cấp vé kèm dấu `(`: `sessionGrantScan.test.ts` §"∀
+  //   đường `login` cấp vé" đếm chuỗi ấy bằng `src.includes(…)` trên **toàn văn file**, nên một
+  //   lượt nhắc trong chú thích cũng bị tính là một NGƯỜI CẤP VÉ thứ tư (đã đo: ô ấy ĐỎ).
+  return redactServerOnlyUserFields(user);
+}
+
+/**
+ * ★★★ Pha 8 — **LỖI GHI SỔ PHIÊN KHÔNG CÒN VÔ HÌNH.**
+ *
+ * ══════════════════════════════════════════════════════════════════════════════════════════════
+ * ⚠⚠⚠ TRƯỚC BẢN VÁ: `.catch(() => {})` — MỘT LƯỢT ĐĂNG NHẬP CÓ THỂ KHÔNG CÓ HÀNG PHIÊN NÀO
+ * ══════════════════════════════════════════════════════════════════════════════════════════════
+ * Hàng `user_sessions` là thứ làm cho một phiên **thấy được** (`session.list`) và **thu hồi được**
+ * (`session.revoke`). Khi lượt INSERT hỏng mà lỗi bị nuốt, lượt đăng nhập ấy vẫn **cấp cookie hợp
+ * lệ** nhưng **không có hàng nào đại diện** ⇒ nó không hiện trong danh sách thiết bị, và *"đăng
+ * xuất mọi thiết bị"* **không chạm tới nó**. Task 2 vừa biến `user_sessions` thành đường thu hồi
+ * CHÍNH, nên đây là lỗ an ninh, không phải chuyện sổ sách.
+ *
+ * ══════════════════════════════════════════════════════════════════════════════════════════════
+ * ⚠⚠⚠ VÌ SAO **GHI LOG + ĐẾM**, KHÔNG PHẢI **NÉM** — LỰA CHỌN GIỮ NGUYÊN, LÝ LẼ MẠNH HƠN
+ * ══════════════════════════════════════════════════════════════════════════════════════════════
+ * Ném thẳng biến một lỗi DB thoáng qua thành **lượt đăng nhập thất bại** — một cổng fail-closed
+ * chặn luôn cả đường thoát, đúng lớp lỗi đã deploy ra **nhà tù 4/4 tài khoản** ở Pha 7.
+ *
+ * ⚠⚠ **HAI NGUYÊN NHÂN ĐÃ BIẾT CỦA LƯỢT HỎNG NAY ĐỀU ĐÃ ĐÓNG** — và điều đó làm lựa chọn này
+ *    **mạnh hơn**, không phải yếu đi:
+ *   · **trần cột** — `sessionToken` từng là `varchar(255)` với đúng **22 ký tự** dư trên 276 hàng
+ *     thật; dấu tiếng Việt là 2 byte UTF-8 mà base64 đếm BYTE, nên một cái tên 12 ký tự đã đủ vỡ.
+ *     Mig `0317` đổi cột sang **`text`** ⇒ lớp lỗi `22001` **hết hẳn**, không còn trần để đoán.
+ *   · **va chạm UNIQUE** — hai lượt đăng nhập trong cùng một giây từng sinh **cùng một JWT** ⇒
+ *     `23505` ở lượt thứ hai. `sdk.signSession` nay gắn `jti` ngẫu nhiên 72 bit ⇒ va chạm còn lại
+ *     là biến cố xác suất ~0.
+ * ⇒ Nên **bất cứ lỗi nào còn lọt tới `catch` này đều là dấu hiệu của một thứ KHÁC HẲN** — mất kết
+ *   nối, quyền bị thu, bảng đổi hình dạng. Đó đúng là loại tín hiệu **không được nuốt**, và cũng
+ *   đúng là loại tín hiệu **không nên biến thành lượt đăng nhập hỏng** trước khi có người nhìn nó.
+ * ⇒ Giữ **không im lặng mà cũng không chặn cửa**: đếm (`demLoiGhiSoPhien()`) + `console.error` có
+ *   ngữ cảnh.
+ *
+ * ⚠⚠⚠ **PHÉP ĐO ĐÃ BÁC BỎ MỘT CÂU Ở NGAY TRÊN.** Review TOÀN NHÁNH Pha 8 · C-2: còn một nguyên
+ *    nhân **THỨ BA**, và nó **do bên ngoài điều khiển** — `deviceName` là `varchar(255)` nạp thẳng
+ *    từ header `User-Agent`. Một UA 3.770 ký tự ⇒ `22001` ⇒ lượt đăng nhập vẫn 200 nhưng **KHÔNG có
+ *    hàng sổ** ⇒ phiên ấy **không thu hồi được bằng bất kỳ cơ chế sản phẩm nào**. Câu *"hai nguyên
+ *    nhân đã biết đều đã đóng"* ở trên là ĐÚNG-mà-KHÔNG-ĐỦ: nó nói về hai cột, còn lượt `INSERT` có
+ *    **bảy** cột chuỗi. ⇒ Bản vá: `createUserSession` cắt **mọi** cột `varchar` theo trần **suy ra
+ *    từ schema** (`server/db/catTheoTranCot.ts`), không theo một danh sách viết tay.
+ * ⚠⚠ Và bộ đếm ấy trước lượt vá **chỉ đọc được TỪ LƯỚI** — tức "không im lặng" **trong test**, còn
+ *    sản xuất thì vẫn im lặng. Nay nó có bề mặt Prometheus (`soPhien_ghiSoLoi_total` ở
+ *    `GET /api/observability/metrics`), chủ bộ đếm là `server/_core/demSoPhien.ts`.
+ */
+export { demLoiGhiSoPhien, datLaiDemLoiGhiSoPhien } from "./demSoPhien";
+
+/**
+ * Ghi hàng `user_sessions` cho một lượt cấp phiên. **Không ném** (xem khối lý lẽ trên), nhưng
+ * **không bao giờ im lặng**: hỏng thì bộ đếm nhích và một dòng `error` có ngữ cảnh được ghi.
+ */
+export async function ghiSoPhien(data: {
+  userId: number;
+  sessionToken: string;
+  ipAddress?: string;
+  deviceName?: string;
+  expiresAt: Date;
+}): Promise<number | null> {
+  try {
+    return await db.createUserSession(data);
+  } catch (err) {
+    nhichLoiGhiSoPhien();
+    console.error(
+      "[Auth] GHI SỔ PHIÊN HỎNG — lượt đăng nhập này KHÔNG có hàng `user_sessions` của riêng nó, " +
+        "nên nó VÔ HÌNH với `session.list` và NGOÀI TẦM `session.revoke`.",
+      {
+        userId: data.userId,
+        doDaiToken: data.sessionToken.length, // ⚠ độ dài, KHÔNG phải token — token là khoá phiên.
+        loi: err instanceof Error ? err.message : String(err),
+      },
+    );
+    return null;
+  }
+}
+
+/**
+ * ★★★★ 2026-08-11 SIẾT FAIL-OPEN — **GHI SỔ CHO MỘT VÉ CHỈ BIẾT `openId`.**
+ *
+ * ══════════════════════════════════════════════════════════════════════════════════════════════
+ * ⚠⚠⚠ VÌ SAO HÀM NÀY TỒN TẠI
+ * ══════════════════════════════════════════════════════════════════════════════════════════════
+ * `chanNeuPhienDaThuHoi` nay **từ chối** mọi vé không có hàng `user_sessions`. Ba đường cấp phiên
+ * bằng danh tính NGOÀI — hai callback OAuth và ACS của SAML — chỉ cầm trong tay một `openId` (chúng
+ * vừa `upsertUser` xong), **không** cầm `userId`. Không có hàm này thì mỗi đường tự tra `users` một
+ * kiểu, và ba bản sao dưới cùng một bất biến là **lớp lỗi đã đẻ ba Critical** trong chuỗi pha này.
+ *
+ * ⚠ **KHÔNG NÉM** — cùng lý lẽ với `ghiSoPhien`: một lượt ghi hỏng phải **kêu** (bộ đếm
+ *   `soPhien_ghiSoLoi_total` + `console.error`), chứ không được biến thành một lượt đăng nhập vỡ.
+ *   Hệ quả sau lượt siết được nói thẳng: ghi hỏng ⇒ vé ấy **chết ở yêu cầu đầu tiên** và người dùng
+ *   phải đăng nhập lại. Đó là fail-closed **có tiếng động**, không phải một nhà tù im lặng — và nó
+ *   **không vĩnh viễn**: lượt đăng nhập kế tiếp ghi được sổ là dùng được ngay.
+ * ⚠ `openId` không tra ra hàng `users` ⇒ **không ghi gì** và bộ đếm nhích. Đây là cảnh "vừa
+ *   `upsertUser` xong mà không đọc lại được", tức DB đang có chuyện — đúng loại tín hiệu phải kêu.
+ */
+export async function ghiSoPhienChoOpenId(
+  openId: string,
+  sessionToken: string,
+  req: Request,
+  hanMs: number,
+): Promise<number | null> {
+  let userId: number | undefined;
+  try {
+    userId = (await db.getUserByOpenId(openId))?.id;
+  } catch (err) {
+    console.error("[Auth] GHI SỔ PHIÊN: không tra được `users` theo openId", { openId, loi: String(err) });
+  }
+  if (!userId) {
+    nhichLoiGhiSoPhien();
+    console.error(
+      "[Auth] GHI SỔ PHIÊN HỎNG — không tìm được hàng `users` cho openId vừa cấp phiên; " +
+        "vé này KHÔNG có hàng `user_sessions` nên nó sẽ bị TỪ CHỐI ở yêu cầu đầu tiên.",
+      { openId },
+    );
+    return null;
+  }
+  const audit = auditCtxFromRequest(req);
+  return ghiSoPhien({
+    userId,
+    sessionToken,
+    ipAddress: audit.ipAddress ?? undefined,
+    deviceName: audit.userAgent ?? undefined,
+    expiresAt: new Date(Date.now() + hanMs),
+  });
 }
 
 /**
@@ -168,28 +410,27 @@ export async function establishSession(
 
   await db.upsertUser({ openId: user.openId, lastSignedIn: new Date() });
 
+  // ★★★★ Pha 9 — hạn phiên về MỘT CHỦ (`_core/hanPhien.ts`): 365 → 30 ngày mặc định, và
+  //   `SESSION_TTL_DAYS` thôi là mã chết. Lượt truyền `expiresInMs` tường minh ở đây chính là
+  //   thứ đã vô hiệu hoá biến môi trường ấy — nên nó được GỠ, không phải đổi giá trị.
+  const hanMs = hanPhienMs();
   const sessionToken = await sdk.createSessionToken(user.openId, {
     name: user.name || "",
-    expiresInMs: ONE_YEAR_MS,
   });
 
   // Persist a server-side session record so it shows up in the session list
   // and can be individually revoked. Keyed by the JWT == ctx.sessionToken.
-  await db
-    .createUserSession({
-      userId: user.id,
-      sessionToken,
-      ipAddress: audit.ipAddress ?? undefined,
-      // Minimal device hint; richer UA parsing can be layered in later.
-      deviceName: audit.userAgent ?? undefined,
-      expiresAt: new Date(Date.now() + ONE_YEAR_MS),
-    })
-    .catch(() => {
-      /* never block login on session bookkeeping */
-    });
+  await ghiSoPhien({
+    userId: user.id,
+    sessionToken,
+    ipAddress: audit.ipAddress ?? undefined,
+    // Minimal device hint; richer UA parsing can be layered in later.
+    deviceName: audit.userAgent ?? undefined,
+    expiresAt: new Date(Date.now() + hanMs),
+  });
 
   const cookieOptions = getSessionCookieOptions(req);
-  res.cookie(COOKIE_NAME, sessionToken, { ...cookieOptions, maxAge: ONE_YEAR_MS });
+  res.cookie(COOKIE_NAME, sessionToken, { ...cookieOptions, maxAge: hanMs });
 
   // doc 44 G5.18 — anomalous-login detection (additive; ANOMALOUS_LOGIN_ENABLED,
   // default OFF → immediate no-op, zero added cost / bit-compat). Run BEFORE the

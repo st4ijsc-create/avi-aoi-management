@@ -12,6 +12,7 @@
  */
 import { z } from "zod";
 import { TRPCError } from "@trpc/server";
+import { appError } from "../_core/appError";
 import { eq } from "drizzle-orm";
 import { router, protectedProcedure } from "../_core/trpc";
 import { requirePermission } from "../_core/accessControl";
@@ -28,14 +29,14 @@ import { PACKML_STATES, PACKML_COMMANDS, allowedCommands, type PackmlState } fro
 
 async function getDb() {
   const db = await getDbRaw();
-  if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Database not connected" });
+  if (!db) throw appError("INTERNAL_SERVER_ERROR", "DB_UNAVAILABLE", undefined, "Database not connected");
   return db;
 }
 
 async function loadMachine(machineId: number) {
   const db = await getDb();
   const [m] = await db.select().from(machines).where(eq(machines.id, machineId)).limit(1);
-  if (!m) throw new TRPCError({ code: "NOT_FOUND", message: `Machine ${machineId} not found` });
+  if (!m) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "machine" }, `Machine ${machineId} not found`);
   return m;
 }
 

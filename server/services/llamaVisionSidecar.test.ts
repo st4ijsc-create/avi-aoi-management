@@ -97,6 +97,11 @@ beforeEach(() => {
   process.env.LLAMA_VISION_HOST = "127.0.0.1";
   process.env.LLAMA_VISION_PORT = "8099";
   process.env.LLAMA_VISION_READY_TIMEOUT_MS = "5000";
+  // ★ C-2 (review TOÀN NHÁNH) — `stopSidecar()` nay CHỜ tiến trình chết thật (mặc định 8.000 ms).
+  // Tiến trình con giả ở file này không bao giờ phát `"exit"`, nên lượt dọn cuối mỗi ca sẽ chờ
+  // hết hạn; rút hạn xuống để ca không đụng trần thời gian của vitest. Ngữ nghĩa "chờ thật" được
+  // canh ở `vram/wiring.outofprocess.test.ts` (C-2a/C-2b), không phải ở đây.
+  process.env.LLAMA_VISION_STOP_WAIT_MS = "10";
   process.env.GGUF_MODELS_DIR = "/models";
   delete process.env.LLAMA_SERVER_BIN;
   delete process.env.GGUF_VISION_MODEL;

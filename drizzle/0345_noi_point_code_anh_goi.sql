@@ -1,0 +1,32 @@
+-- 0345 — I-6 (review lượt 8): nới `package_images."pointCode"` varchar(50) → varchar(64)
+--
+-- VÌ SAO
+-- ------
+-- BG-85 hợp nhất `meta.json` của cửa ZIP về `machineDataContractV2 + images[]`.
+-- Khoá nhận diện "một điểm kiểm tra có ảnh" trong hợp đồng CÂY là `captureId`,
+-- và hợp đồng khai `captureId: z.string().trim().min(1).max(64)` — khớp ĐÚNG
+-- sức chứa cột `inspection_captures."captureExtId" varchar(64)`.
+--
+-- `package_images."pointCode"` còn ở varchar(50) — con số của hợp đồng PHẲNG cũ
+-- (mã điểm đo `MP001`…). Ghi `captureId` vào cột 50 ký tự là mở ĐÚNG lớp lỗi C-1
+-- của lượt review này: một giá trị HỢP ĐỒNG CHẤP NHẬN mà cột KHÔNG chứa nổi ⇒
+-- Postgres 22001 giữa transaction commit ⇒ TỪ CHỐI CẢ GÓI hợp lệ (hoặc tệ hơn,
+-- cắt cụt âm thầm nếu ai đó "chữa" bằng `.slice(0,50)`). Nới cột là cách duy
+-- nhất không phải chọn giữa hai điều sai.
+--
+-- ĐO ĐƯỢC TRƯỚC KHI ĐỔI (vai `avi_app`, chỉ đọc):
+--   · aoi_management      : package_images 0 hàng   · pointCode varchar(50)
+--   · aoi_management_test : package_images 1036 hàng · pointCode varchar(50)
+--   · captureId dài nhất trong `images[]` THẬT của gói đã commit: 23 ký tự;
+--     `inspection_captures."captureExtId"` dài nhất: 36 ký tự.
+--   ⇒ dữ liệu HÔM NAY vừa cột cũ; cái không vừa là HÌNH DẠNG HỢP ĐỒNG CHO PHÉP
+--     (51–64 ký tự) — đúng bài học L-4: đo trên hình dạng cho phép, không trên
+--     hình dạng đang có trong DB.
+--
+-- AN TOÀN: nới độ dài `varchar` KHÔNG viết lại bảng và KHÔNG kiểm lại dữ liệu
+-- (PostgreSQL ≥ 9.2) — thao tác lấy khoá ACCESS EXCLUSIVE trong chớp mắt, không
+-- mất dữ liệu, không đảo ngược ý nghĩa hàng cũ. Không đụng quyền: `package_images`
+-- KHÔNG phải bảng WORM (`avi_app` có SELECT/INSERT/UPDATE/DELETE — đo bằng
+-- information_schema.role_table_grants).
+
+ALTER TABLE "package_images" ALTER COLUMN "pointCode" TYPE varchar(64);

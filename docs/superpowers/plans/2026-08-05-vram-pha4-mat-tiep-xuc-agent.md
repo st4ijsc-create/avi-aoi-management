@@ -1,0 +1,241 @@
+# Pha 4 — Mặt tiếp xúc backend cho AI Agent: lắp KIM vào những chiếc đồng hồ đã dựng
+
+> **Cho người thực thi bằng agent:** BẮT BUỘC DÙNG SUB-SKILL `superpowers:subagent-driven-development`. Các bước dùng cú pháp checkbox (`- [ ]`).
+
+**Mục tiêu:** Cho AI Agent **truy vấn được trạng thái VRAM** và **ra lệnh được**, có phân quyền. Đây là pha cuối của spec, và là bước biến cơ chế của bảy pha trước thành thứ Agent **dùng được** — đúng yêu cầu gốc của chủ dự án: *"AI Agent cần nắm rõ cả hệ sinh thái và có thể quản lý, bảo hành hệ sinh thái, thay vì chỉ giới hạn trong một kịch bản cụ thể."*
+
+**Kiến trúc:** Router tRPC đọc **sổ chung** (`vram_leases`) + **nhật ký** (`vram_events`) + **kết quả tick gần nhất**. Lệnh đi qua broker/preempt **đã có**, không dựng đường thứ hai.
+
+⚠ **Pha 4 KHÔNG đổi hành vi cấp phát.** Nó **phơi ra** và **ra lệnh**, không tự quyết. Mọi lệnh phải đi qua đúng cơ chế Pha 2B/3 đã dựng.
+
+**Tech Stack:** TypeScript · Node 24 · Vitest · tRPC · Drizzle/Postgres · i18next
+
+---
+
+## ★★★ ĐIỀU LÀM PHA NÀY KHÁC MỌI PHA TRƯỚC
+
+Bảy pha vừa rồi để lại một danh sách dài những **"đồng hồ không kim"** — số đã chảy tới cửa quyết định, cửa chưa mở. **Pha 4 là nơi chúng có người đọc**, hoặc bị xoá.
+
+| Ô | Ai dựng | Người tiêu thụ hôm nay |
+|---|---|---|
+| `getKbSyncSchedulerStatus().defer` | 2B Task 6 | ~~**không ai**~~ → ⚠ **ĐÍNH CHÍNH (review Task 1, M-4): hàng này SAI TỪ PHA 3.** `aiLocalKnowledgeService.readVramDefer()` đã đọc **đúng ô này** + `docTrangThaiHoanVram()` từ **Pha 3 Task 5 (D)** và nối vào `getKbHealth().vramDefer`. Task 4 **phải sửa bảng trước khi chấm**, nếu không nó sẽ tick một hàng đã có người đọc. |
+| `trusted` / `degradedReasons` | 3 Task 2 | chỉ trong module |
+| `baselineUnverifiedReasons` | 3 Task 3 | chỉ trong module |
+| `vramBeginFailureState()` | 2B Task 3 | chỉ trong module |
+| `foreignLedgerBytes` / `foreignLeases` | 3 Task 2/5 | câu từ chối (một phần) |
+| `VRAM_SIDECAR_TTL_MS` | — | **không ai** |
+
+⚠ **Quy tắc của pha:** mỗi ô ở trên phải **có người đọc** sau Pha 4, **hoặc** bị **xoá kèm lý do**. Không được để nguyên. Giữ một ô không ai đọc là giữ một lời hứa không ai giữ.
+
+> 🔴 **ĐÍNH CHÍNH (2026-08-05, review Task 1) — bảng trên SAI một hàng, và luật của Task 4 BỊ VÒNG TRÒN.**
+>
+> 1. **Hàng 1 sai từ Pha 3**: `getKbSyncSchedulerStatus()` **đã có** người tiêu thụ — `aiLocalKnowledgeService.ts:1486-1492`.
+> 2. ⚠⚠ **Luật *"nối vào router HOẶC xoá"* không đóng được gì**, vì *"nối vào router"* **chính là việc Task 1 vừa làm** ⇒ một ô không ai đọc chỉ **dời ra sau một endpoint không ai gọi**. Nguyên văn lời tự khai của Task 1: *"nếu dừng ở đây thì chỉ là dời đồng hồ không kim ra sau một endpoint."*
+> 3. **Và AI Agent của repo này KHÔNG tiêu thụ qua tRPC** — nó đi qua `aiLocalTools/toolRegistry.ts`. Task 1 dựng cửa cho **người**, không phải cho **Agent**.
+> 4. Đã có một **đồng hồ VRAM CÓ người đọc nói SỐ KHÁC**: `AIBrainDashboard.tsx:145` ← `trpc.aiGguf.health` — số **thô**, **không qua broker**. Hai nguồn số cho cùng một thứ là lớp lỗi "hai bản sao vị từ".
+>
+> **⇒ CỔNG RA CỦA TASK 4 ĐỔI THÀNH:** `git grep` phải cho **≥1 điểm gọi thật NGOÀI** `server/routers/**` **và ngoài** `server/services/vram/**`. Người đọc thật tối thiểu: **một `Tool` đăng ký trong `toolRegistry`** (để Agent dùng được) **và** panel `AIBrainDashboard` chuyển sang nguồn qua broker (để hai đồng hồ thôi nói hai số).
+
+---
+
+## Global Constraints
+
+1. ⚠⚠ **`reserve()` PHẢI GIỮ ĐỒNG BỘ.** Lá chắn cấu trúc từ Pha 1. Router **không được** làm nó `await` thêm gì.
+2. **KHÔNG dựng đường thứ hai.** Lệnh của Agent đi qua **đúng** `broker.preempt()` / `reserve()` / cơ chế hoãn đã có. Hai đường là hai bản sao vị từ.
+3. 🔴 **PHÂN QUYỀN LÀ BẮT BUỘC.** Lệnh **giết được tiến trình** và **thu hồi được VRAM của người khác**. Theo đúng khuôn RBAC + `role-floor` sẵn có trong repo — **đừng phát minh khuôn mới**. Lệnh phá huỷ phải ở mức quyền **cao nhất** dùng cho actuation.
+4. **Đơn vị nội bộ luôn là BYTE**; MiB chỉ ở câu chữ. **Đ4 — không trộn hai thước.**
+5. **Không giá trị không hữu hạn nào** ra API hay vào ống dẫn sự kiện (cột `bigint` ⇒ mất **cả lô**; `jsonb` ⇒ `null` im lặng; **cột CHUỖI phải cắt**).
+6. 🔴 **LƯỚI ĐI THEO ĐƯỜNG THOÁT, KHÔNG THEO FILE** — tái diễn **MƯỜI** lần. Ca phải đi qua **đường thật**, đọc **đúng object mã sản xuất gửi đi**; **fixture khác nhau ĐÚNG Ở CHIỀU đang kiểm**.
+7. **`?? <mặc_định>` là một DÂY — dây phải có LƯỚI.**
+8. **Hai bản sao vị từ trùng nhau dưới một bất biến ⇒ ĐỔI KIỂU**, đừng thêm ca.
+9. **"Đặt cờ trước lời gọi có thể ném, gỡ ngoài `finally`"** ⇒ chốt kẹt vĩnh viễn.
+10. **Vị từ dùng chung: liệt kê MỌI nơi tiêu thụ, kiểm TỪNG nơi, ghi bảng.**
+11. **Câu chữ KHÔNG được hứa nhiều hơn dữ liệu** — lớp lỗi này đã bắt **chín lần**. Agent đọc API này để **quyết định**; một trường nói quá sẽ thành một hành động sai.
+12. ⚠ **`tsc` chính KHÔNG canh file test** — dùng `npm run check:tests` (cổng mới, danh sách cách ly 174 file). **File test MỚI được canh mặc định** ⇒ đừng thêm vào danh sách cách ly.
+13. ⚠⚠ **"ĐÃ SỬA" chỉ đúng khi `git show <commit>:<file>` xác nhận.**
+
+---
+
+### Task 1: Router ĐỌC — phơi trạng thái, không hứa quá
+
+**Files:** `server/routers/vramRouter.ts` (mới) · test kề bên · nối vào router gốc.
+
+**Phải phơi:** sổ chung (cục bộ + anh em, **phân biệt được**) · `headroom` kèm **`basis`** và **`blind`** · `trusted` + `degradedReasons` · `baselineVerified` + `baselineUnverifiedReasons` · `attributable`/`ledgerTotal` · tuổi tick · trạng thái hoãn của **cả 6 hộ `background`** · `vramBeginFailureState()`.
+
+⚠ **Mỗi trường phải nói đúng độ chắc chắn của nó.** Ví dụ bắt buộc:
+- `unledgeredBytes` là **ƯỚC LƯỢNG**, và `unknownCount > 0` làm nó **mất tin cậy** — API phải nói ra, không để Agent tưởng đó là số đo.
+- Danh sách "đang giữ" chỉ phủ **hộ đã nối** (14–15 điểm trên ~160 dòng liệt kê, và bản liệt kê **tự khai là CẬN DƯỚI**) ⇒ phải có trường nói rõ **phần không quy trách nhiệm được**.
+- `attributable = null` là **CHẶN TRÊN**, không phải "không biết" trung tính.
+
+- [ ] **Bước 1: Đọc mã trước** — khuôn router trong `server/routers/`, khuôn RBAC, và các ô ở bảng "đồng hồ không kim".
+- [ ] **Bước 2: Test thất bại trước** — ca khẳng định **mỗi** trường độ-chắc-chắn có mặt và đúng giá trị ở **cả hai** chiều.
+- [ ] **Bước 3–5:** đỏ → cài đặt → xanh + `--sequence.shuffle.tests`.
+- [ ] **Bước 6: Đột biến** — bỏ trường "không quy trách nhiệm được" ⇒ ca đỏ · cho `unledgeredBytes` ra ngoài **không kèm** cảnh báo `unknownCount` ⇒ ca đỏ · cho một giá trị không hữu hạn lọt ra API ⇒ ca đỏ.
+- [ ] **Bước 7: Commit.**
+
+---
+
+### Task 2: Router RA LỆNH — có phân quyền, đi qua cơ chế đã có
+
+**Lệnh tối thiểu:** `preempt(owner)` (thu hồi một hộ **thu hồi được**) · `releaseStale(leaseId)` (dọn hàng ma đã chứng minh) · `retryDeferred(owner)` (đẩy một hộ `background` đang hoãn thử lại ngay).
+
+⚠⚠ **`preempt` GIẾT ĐƯỢC TIẾN TRÌNH.** Pha 3 vừa vá một Critical đúng ở đường này: **giết nhầm rồi báo cáo thành công**, vì đường phá huỷ **không hỏi `ctime`** dù bằng chứng nằm sẵn trong cấu trúc.
+⇒ Lệnh của Agent **phải đi qua đúng đường đã vá**, và **phải trả về bằng chứng**: `reclaimed` / `failed` / `freedBytes`, kèm lý do khi `failed`. **Không được** khai thành công khi byte chưa nhả.
+
+- [ ] **Bước 1: Đọc mã trước** — `broker.preempt()`, `coThiHanhThuHoi()`, khuôn RBAC + `role-floor` cho actuation.
+- [ ] **Bước 2: Test thất bại trước** — quyền thấp ⇒ **từ chối**; hộ **không thu hồi được** ⇒ từ chối **có lý do**, không "im lặng thành công"; hộ **đang bận** ⇒ không bị đụng.
+- [ ] **Bước 3–5:** đỏ → cài đặt → xanh.
+- [ ] **Bước 6: Đột biến** — bỏ kiểm quyền ⇒ ca đỏ · khai thành công khi `freedBytes = 0` ⇒ ca đỏ · gọi thẳng `process.kill` thay vì qua đường đã vá ⇒ ca đỏ.
+- [ ] **Bước 7: Commit.**
+
+---
+
+### Task 3: Câu chữ cho người vận hành + Agent (i18n)
+
+Nối vào hệ mã lỗi Sprint 5 (`client/src/lib/errorCodes.ts`), **ba ngôn ngữ**, theo đúng khuôn có sẵn.
+
+⚠ **Bẫy đã trả giá ở Pha 2B:** `sanitizeFreeParams` từng là **một lượt quét**, nên payload tự huỷ **tái tạo cú pháp sau khi làm sạch**; một biến thể làm `i18n.t()` **không trả về** (treo worker **>8 phút**). Bề mặt thật: **id model trong DB · `.env` · tên tệp `.gguf`** — và nay **thêm** tên hộ đến từ **tiến trình khác**.
+⇒ Mọi giá trị đi vào câu chữ phải qua **cùng** hàm làm sạch đã có (**bất động**: `S(S(x)) === S(x)`), **đừng viết hàm thứ hai**.
+
+- [ ] **Bước 1–5:** đọc khuôn → test đỏ → cài đặt → xanh → `i18n:check` 0 lệch.
+- [ ] **Bước 6: Đột biến** — cho một tên hộ chứa cú pháp i18next đi thẳng vào câu ⇒ ca đỏ.
+- [ ] **Bước 7: Commit.**
+
+---
+
+### Task 4: Trả nốt "đồng hồ không kim" — mỗi ô CÓ NGƯỜI ĐỌC hoặc BỊ XOÁ
+
+Đi qua **từng** ô ở bảng đầu kế hoạch. Với mỗi ô: **nối vào router** (Task 1/2) **hoặc xoá kèm lý do**. **Không để nguyên.**
+
+⚠ `VRAM_SIDECAR_TTL_MS` **chưa ai tiêu thụ** — hoặc nối, hoặc xoá.
+⚠ `getKbSyncSchedulerStatus().defer` — **cả 6 hộ `background`**, không chỉ `kb:sync`. Nhớ: 3/6 hộ **không hoãn** (suy giảm tại chỗ) — API phải phân biệt **"đang hoãn"** với **"không có cơ chế hoãn"**, đừng gộp.
+
+⚠⚠ **BÀN GIAO BẮT BUỘC từ Task 3 (review vòng 2, §5 mục 2 — cổng (ii)).** Tám hàm dịch
+`translateVramPreemptCommand`/`translateVramReleaseStaleCommand`/`translateVramRetryDeferredCommand`/
+`translateVramScope`/`translateVramHostedHere`/`translateVramHolderListIsLowerBound`/
+`translateVramEstimateUsable`/`translateVramNonFiniteFields` (`client/src/lib/errorCodes.ts`) **CHƯA
+có consumer sản phẩm nào** — cổng (i) ("không câu chữ viết tay") đã cài ở Task 3
+(`client/src/lib/errorCodes.vramCommands.unit.test.ts`), nhưng cổng (ii) ("mỗi hàm có ≥ 1 call-site
+sản phẩm") bị hoãn có chủ đích vì nó đỏ NGAY hôm nay theo cấu trúc — **Task 4 PHẢI cài cổng đó khi
+nối UI/router tiêu thụ các hàm này**, kèm NGUYÊN VĂN assert:
+
+```
+grep -E "translateVram(Preempt|ReleaseStale|RetryDeferred)Command|translateVram(Scope|HostedHere|HolderListIsLowerBound|EstimateUsable|NonFiniteFields)" \
+  -r client/src --include="*.ts" --include="*.tsx" | grep -v "\.test\.ts" | grep -v "client/src/lib/errorCodes.ts"
+⇒ mỗi 1 trong 8 tên hàm trên phải xuất hiện ≥ 1 lần trong kết quả (call-site THẬT, không phải định nghĩa).
+```
+
+Nếu Task 4 đóng mà không cài cổng này, đó là lỗi của **vòng review Task 3 này** (đã ghi trước ở đây),
+không phải lỗi Task 4.
+
+⚠⚠ **BÀN GIAO BẮT BUỘC từ Task 3 (review vòng 2, mục 3 — M-5 nửa sau).** `detail`
+(`VramPreemptCommandResult.detail`, `server/services/vram/vramCommands.ts`) bị cắt 400 ký tự **ở
+NGUỒN** (`vramPreempt.ts`), và câu ghép ở Task 3 không nói nó đã bị cắt. **Hình dạng đúng để sửa:**
+`VramPreemptCommandResult` phơi thêm **`detailTruncated: boolean`** (đo Ở ĐÚNG chỗ cắt, nguồn duy
+nhất của sự thật "đã cắt hay chưa"); Task 3/4 chỉ nối thêm một mẩu chữ khi cờ đó bật. **KHÔNG được tự
+đoán bằng cách đo `detail.length === 400` ở phía client** — đó là bản sao thứ hai của MỘT vị từ, đúng
+lớp lỗi đã đẻ ba Critical liên tiếp trong chuỗi pha này (một bất biến, hai người viết, hai câu trả
+lời trôi khỏi nhau).
+
+- [ ] **Bước 1: Bảng kiểm** — liệt kê từng ô, trạng thái sau task, và lý do nếu xoá. Vào báo cáo.
+- [ ] **Bước 2–6:** test đỏ → cài đặt → xanh → đột biến (xoá một người đọc ⇒ ca đỏ).
+- [ ] **Bước 6b (bàn giao Task 3 review vòng 2):** cài cổng (ii) đúng nguyên văn assert ở trên KHI
+      nối consumer đầu tiên cho `translateVram*`; thêm `detailTruncated: boolean` vào
+      `VramPreemptCommandResult` đúng hình dạng ở trên (không tự đo độ dài ở client).
+- [ ] **Bước 7: Commit.**
+
+---
+
+### Task 5: Nghiệm thu SỐNG — Agent thật truy vấn và ra lệnh
+
+⚠ **Không thể thay bằng test.** Bảy pha vừa rồi, **nghiệm thu sống bắt được ba thứ mà không suy luận nào thấy** — trong đó một khuyết tật chỉ lộ ra khi chạy thật (*"một nhịp vứt đi bằng chứng của chính nó"*).
+
+- [ ] **Bước 1:** dựng trạng thái thật — sidecar `llama-server` thật giữ ~7,8 GB.
+- [ ] **Bước 2:** Agent **truy vấn** ⇒ thấy đúng hộ, đúng số byte, đúng cờ độ-chắc-chắn. Ghi số thô.
+- [ ] **Bước 3:** Agent **ra lệnh thu hồi** ⇒ `nvidia-smi` xác nhận byte **thật sự nhả**; API trả `freedBytes` khớp.
+- [ ] **Bước 4:** ra lệnh với **quyền thấp** ⇒ **bị từ chối**, và **không byte nào đổi**.
+- [ ] **Bước 5:** ra lệnh lên một hộ **không thu hồi được** ⇒ **thất bại trung thực**, không "im lặng thành công".
+- [ ] **Bước 6: Commit + báo cáo.**
+
+---
+
+#### ★★★ BÀN GIAO CỨNG TỪ TASK 4 (re-review) — HAI MỤC, KHÔNG GỘP VÀO CÁC BƯỚC TRÊN
+
+##### (T5-A) ⚠⚠ **BÁN KÍNH NỔ CỦA BẢN VÁ C-1 — ĐÂY LÀ THAY ĐỔI AN NINH, KHÔNG PHẢI VRAM.**
+
+Task 4 vá `tryExecuteTool()` để `__authCtx` (danh tính phiên THẬT) đi vào args của read tool — **nợ
+có sẵn của repo**: trước đó `execCtx` không bao giờ vào args nên **mọi** read tool có RBAC **LUÔN**
+trả `PERMISSION_DENIED`. Số ĐO của người review: **30 tool khai `__authCtx`, 29 tool HỒI SINH**
+(đếm tĩnh của Task 4 khớp về bản chất: `analyticsTools` 7 · `readToolsP2` 4 · `readToolsP2bc` 6 ·
+`readToolsP2d` 4 · `readToolsProgramming` 6 khai trực tiếp + 2 dùng chung `kindCodeParams` = **8/8**
+· `vramTools` 1).
+
+⚠⚠ **"215/215 xanh" KHÔNG chứng minh gì**: mọi ca đó **tiêm `__authCtx` bằng tay**, nên chúng đã
+xanh **suốt thời gian tool chết**. Đường thoát thật chưa từng chạy.
+
+🔴 **ĐÁNG LO NHẤT, ĐÍCH DANH — `readToolsProgramming`: cả 8 tool đều ở `machine_monitoring/canView`
+(sàn THẤP NHẤT):** `retrieve_programming_kb` · `lookup_error_code` · `syntax_check_program` ·
+`compile_program` · `simulate_program` · `generate_program` · **`calc`** · **`read_project_file`**.
+Chặn đường dẫn (`read_project_file`) và hộp cát (`calc`) **CHƯA TỪNG CHẠY** trên đường Agent.
+
+**Điều kiện nghiệm thu — NGUYÊN VĂN, không diễn giải lại:**
+- [ ] **Mỗi LỚP RỦI RO một lượt SỐNG** (không phải mỗi tool): (a) đọc dữ liệu nghiệp vụ
+      (`readToolsP2*`), (b) phân tích/tổng hợp (`analyticsTools`), (c) lập trình thiết bị
+      (`readToolsProgramming`), (d) hạ tầng VRAM (`vramTools`).
+- [ ] **Mỗi lớp phải có MỘT lượt với role BỊ TỪ CHỐI** — và lượt đó phải trả `PERMISSION_DENIED`
+      **kèm 0 byte dữ liệu**. Một lớp chỉ chạy lượt "được phép" là **chưa nghiệm thu**.
+- [ ] ⚠⚠ **(N-7) Lượt ĐƯỢC PHÉP phải trả DỮ LIỆU THẬT, KHÁC RỖNG** — và báo cáo phải ghi **một
+      giá trị cụ thể đọc được** từ nó (một con số, một tên, một dòng). **Nếu lượt được phép và lượt
+      bị từ chối CÙNG RỖNG thì không phân biệt được hai trạng thái**, và cả hai đều "xanh" — **đúng
+      lớp lỗi C-1**, nơi tool đã CHẾT suốt trong khi 215/215 vẫn xanh. Một lớp không nêu được giá
+      trị cụ thể ở lượt được phép ⇒ **lớp đó CHƯA nghiệm thu**, ghi thẳng là chưa đạt.
+- [ ] **`read_project_file` phải có lượt THỬ VƯỢT RÀO riêng**: đường dẫn ra ngoài workspace
+      (`../`, đường dẫn tuyệt đối, symlink) ⇒ phải bị chặn, và ghi lại NGUYÊN VĂN câu từ chối.
+- [ ] **`calc` phải có lượt THỬ VƯỢT RÀO riêng**: biểu thức chạm `process`/`require`/`global`/vòng
+      lặp vô hạn ⇒ phải bị chặn, và ghi lại NGUYÊN VĂN.
+- [ ] Ghi vào báo cáo Task 5 **một bảng**: lớp · tool đại diện · role được phép · role bị từ chối ·
+      kết quả thật.
+
+##### (T5-B) ⚠ **CỔNG AST CỦA TASK 4 CHƯA PHỦ "NHÁNH CHẾT" — TASK 5 PHẢI PHỦ.**
+
+Task 4 đổi cổng (ii) / cổng mount / cổng `canRetry` sang hỏi trên **AST** (đóng được lớp "lời gọi bị
+biến thành CHÚ THÍCH" mà người review đã lách). **Lớp CÒN MỞ, người review đo được:** một lời gọi
+nằm trong **nhánh chết** — `{false ? <X/> : null}` — vẫn làm mọi cổng **XANH 153/153**. Cùng lớp:
+một hàm không ai gọi, một file không ai import.
+
+**Điều kiện nghiệm thu — NGUYÊN VĂN:**
+- [ ] Nghiệm thu sống phải **RENDER THẬT** màn `AIBrainDashboard` và **chụp màn hình** panel VRAM,
+      chứng minh nó **THẬT SỰ hiện ra** — không chỉ "có mặt trong mã".
+- [ ] Trên màn đó phải **đọc được bằng mắt** đủ **tám** câu do `translateVram*` sinh ra
+      (scope · hostedHere · holderListIsLowerBound · estimateUsable · nonFiniteFields · và ba câu
+      kết cục lệnh sau khi bấm) — **đây mới là bằng chứng "lời gọi CÓ CHẠY"**; cổng AST chỉ chứng
+      minh "chương trình CÓ lời gọi".
+- [ ] Nếu một câu **không hiện ra** dù cổng AST xanh ⇒ đó là một **nhánh chết**, và phải ghi vào
+      báo cáo là **cổng ra CHƯA ĐẠT**, không được im lặng bỏ qua.
+- [ ] ⚠ **(N-8) MỆNH ĐỀ THOÁT CÓ ĐIỀU KIỆN — ba câu KẾT CỤC LỆNH.** Ba trong tám câu
+      (`translateVramPreemptCommand` · `translateVramReleaseStaleCommand` ·
+      `translateVramRetryDeferredCommand`) chỉ hiện **SAU KHI BẤM MỘT LỆNH**, và ở tiến trình `api`
+      có thể **không dựng được cảnh** (vd `retryDeferred` luôn `host-not-running-in-this-process` vì
+      cron sống ở `worker`; `releaseStale` cần một hàng MA đã chứng minh chủ đã chết).
+      ⇒ Được phép **không** dựng được cảnh, **NHƯNG** báo cáo phải ghi **VÌ SAO** cho **TỪNG câu**
+      (nêu đích danh cơ chế chặn), và ghi **cách duy nhất** để dựng được nó (vd: chạy ở tiến trình
+      `worker`). **Im lặng bỏ qua một câu = cổng ra CHƯA ĐẠT.** Một câu bị từ chối vẫn là một câu
+      **HIỆN RA** — lượt `refused` có câu chữ riêng, nên "lệnh bị từ chối" **KHÔNG** phải lý do thoát.
+
+⚠ Không nối ống stdio vào tiến trình con. Dọn theo **đúng PID** (`nvidia-smi --query-compute-apps=pid`), **không quét mù theo tên**. `getLlama()` **không nạp được** trong `tsx` trần — dùng sidecar thật.
+
+---
+
+## Điều kiện ra của Pha 4
+
+| # | Điều kiện | Cách kiểm |
+|---|---|---|
+| 1 | Agent **truy vấn** được toàn bộ trạng thái, **mỗi trường nói đúng độ chắc chắn** | test Task 1 + nghiệm thu sống |
+| 2 | Agent **ra lệnh** được, **có phân quyền**, lệnh đi qua **cơ chế đã có** | test Task 2 + nghiệm thu sống |
+| 3 | **Mọi ô "đồng hồ không kim"** có người đọc **hoặc** bị xoá kèm lý do | bảng kiểm Task 4 |
+| 4 | Câu chữ ba ngôn ngữ, **không đường tiêm nào**, `i18n:check` 0 lệch | test Task 3 |
+| 5 | Lệnh phá huỷ **không bao giờ khai thành công khi byte chưa nhả** | test Task 2 + nghiệm thu sống bước 5 |
+| 6 | `npx vitest run server/services/vram/` xanh kể cả shuffle · `npm run check` **và** `npm run check:tests` exit 0 · `i18n:check` 0 lệch | trước push |
+
+⚠ **`reserve()` vẫn phải ĐỒNG BỘ** sau pha này — kiểm bằng mã, không bằng chữ ký.
+⚠ Nếu một điều kiện **không đạt**, ghi thẳng là **không đạt**. Tiền lệ: Pha 1 công bố cổng ra **chưa đạt**, và đó là kết quả **đúng**.

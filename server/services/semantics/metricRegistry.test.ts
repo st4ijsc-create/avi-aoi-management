@@ -31,6 +31,10 @@ vi.mock("../../db/connection", () => ({
 
 import { getMachineOEELive, getLineOEE, resolveIdealCycleTimeSec } from "../oeeService";
 import { getMachineStats } from "../../db/statistics";
+// `getLineOEE` nay trả MẢNG CÓ NHÃN (`ScopedRows`) — giả lập phải dựng đúng hình dạng ấy, không
+// phải một mảng trần. Đây chính là điều `tsconfig.tests.json` tồn tại để bắt: một giả lập lệch
+// hình dạng so với hàm thật là lưới xanh vì lý do sai.
+import { withScopeLabels, UNSCOPED_LABELS } from "../../_core/accessControlLabels";
 import {
   listMetrics,
   getDefinition,
@@ -228,7 +232,7 @@ describe("computeMetric OEE (equipment) — delegates to oeeService.getMachineOE
 
 describe("computeMetric OEE/Throughput (line) — delegates to oeeService.getLineOEE", () => {
   it("computes line OEE over an explicit historical window", async () => {
-    mockLineOee.mockResolvedValue([lineOee() as any]);
+    mockLineOee.mockResolvedValue(withScopeLabels([lineOee() as any], UNSCOPED_LABELS));
     const to = new Date("2026-07-01T00:00:00Z");
     const from = new Date("2026-06-30T00:00:00Z");
     const res = await computeMetric("OEE", { scope: "line", scopeId: 3, from, to });
@@ -239,7 +243,7 @@ describe("computeMetric OEE/Throughput (line) — delegates to oeeService.getLin
   });
 
   it("line Throughput keeps its natural COUNT unit (not a fraction)", async () => {
-    mockLineOee.mockResolvedValue([lineOee() as any]);
+    mockLineOee.mockResolvedValue(withScopeLabels([lineOee() as any], UNSCOPED_LABELS));
     const { from, to } = trailingWindow();
     const res = await computeMetric("Throughput", { scope: "line", scopeId: 3, from, to });
     expect(res.value).toBe(1234);
@@ -247,7 +251,7 @@ describe("computeMetric OEE/Throughput (line) — delegates to oeeService.getLin
   });
 
   it("unknown line / no data → honest null", async () => {
-    mockLineOee.mockResolvedValue([]);
+    mockLineOee.mockResolvedValue(withScopeLabels([], UNSCOPED_LABELS));
     const { from, to } = trailingWindow();
     const res = await computeMetric("OEE", { scope: "line", scopeId: 999, from, to });
     expect(res.value).toBeNull();

@@ -1,0 +1,54 @@
+{
+  "corpus": "st4i-may-aoi",
+  "label": "v10tat-t23-1",
+  "tom": {
+    "trong": {
+      "n": 2,
+      "dung": 0,
+      "tuChoi": 1,
+      "tuChoiMem": 0,
+      "hoiLai": 0,
+      "sai": 1
+    },
+    "ngoai": {
+      "n": 0,
+      "tuChoi": 0,
+      "tuChoiMem": 0,
+      "hoiLai": 0,
+      "traLoi": 0
+    },
+    "loi": 0
+  },
+  "ra": [
+    {
+      "id": "T23",
+      "ngoai": false,
+      "kq": "sai",
+      "ms": 2502,
+      "nguon": [
+        "knowledge/domain/howto-ng-handling-sop.md",
+        "howto-ng-handling-sop.md",
+        "knowledge/domain/aoi-troubleshooting.md",
+        "knowledge/features/products/measurement-point-setup.md",
+        "knowledge/features/products/measurement-point-setup.md"
+      ],
+      "traLoi": "Tỷ lệ báo lỗi giả (false call) vượt **30%** thì phải xem lại điểm đo.  \n\nĐiều này được nêu rõ trong phần \"False Alarm Investigation\" của Hướng Dẫn Xử Lý Sự Cố AOI [3]:  \n> Khi false alarm rate > 30%, thực hiện các bước: xuất báo cáo, phân loại lỗi bị false alarm nhiều nhất, xem ảnh để tìm pattern chung và xác định nguyên nhân phổ biến như bóng đổ (shadow), marking bị nhầm, biến thể màu sắc pad hoặc ngưỡng chương trình quá chặt.  \n\nNguyên văn từ tài liệu [3]:  \n> **Khi false alarm rate > 30%:**  \n> 1. Xuất báo cáo false alarm từ phần mềm  \n> 2. Phân loại: loại lỗi nào bị false alarm nhiều nhất  \n> 3. Xem ảnh của false alarm → tìm pattern chung  \n> 4. Nguyên nhân phổ biến: bóng đổ (shadow) từ linh kiện cao, marking trên PCB bị nhận nhầm, biến thể màu sắc pad (oxidation), chương trình threshold quá chặt  \n> 5. Điều chỉnh từng component type một, verify sau mỗi thay đổi  \n\nNguồn gốc: [3] AOI Troubleshooting Guide | knowledge/domain/aoi-troubleshooting.md",
+      "loi": null
+    },
+    {
+      "id": "T54",
+      "ngoai": false,
+      "kq": "tu-choi",
+      "ms": 731,
+      "nguon": [
+        "knowledge/domain/aoi-troubleshooting.md",
+        "knowledge/features/alerts/predictive-alerts.md",
+        "knowledge/features/alerts/alerts-list.md",
+        "knowledge/features/alerts/predictive-alerts.md",
+        "knowledge/features/monitoring/ng-rate-threshold.md"
+      ],
+      "traLoi": "Tôi không có thông tin chính xác về câu hỏi này trong tài liệu hiện tại.\n\n**Gợi ý:**\n- Thử hỏi cụ thể hơn (tên tính năng, màn hình, mã lỗi, mã máy/lô)\n- Nếu hỏi về dữ liệu thời gian thực (sản lượng, máy, lỗi), hãy nêu rõ ngày/khoảng thời gian\n- Hoặc liên hệ kỹ thuật viên để được hỗ trợ",
+      "loi": null
+    }
+  ]
+}

@@ -13,6 +13,7 @@ import {
 } from "@/components/ui/select";
 import { Copy, KeyRound, Loader2, CheckCircle2 } from "lucide-react";
 import { toast } from "sonner";
+import { mapTrpcError } from "@/lib/trpcErrors";
 import type { StepProps } from "./types";
 
 export default function Step3AssignStation({ state, update, onNext, onBack }: StepProps) {
@@ -29,7 +30,7 @@ export default function Step3AssignStation({ state, update, onNext, onBack }: St
       update({ machineId: data.id, apiKey: data.apiKey, approved: true });
       toast.success(t("onboarding.step3.granted"));
     },
-    onError: (err) => toast.error(t("onboarding.step3.createError"), { description: err.message }),
+    onError: (err) => toast.error(t("onboarding.step3.createError"), { description: mapTrpcError(err) }),
   });
 
   const handleCreate = async () => {

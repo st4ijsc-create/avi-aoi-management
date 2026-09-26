@@ -31,6 +31,7 @@ import {
 import { trpc } from "@/lib/trpc";
 import { usePermissions } from "@/_core/hooks/usePermissions";
 import { toast } from "sonner";
+import { toastTrpcError } from "@/lib/trpcErrors";
 import { ArrowRightLeft, ShieldAlert } from "lucide-react";
 
 interface SessionLike {
@@ -92,7 +93,7 @@ export function ShiftHandoverDialog({ open, onOpenChange, fromSession, onDone }:
       onDone?.();
       onOpenChange(false);
     },
-    onError: (e) => toast.error(e.message),
+    onError: (e) => toastTrpcError(e),
   });
 
   const submit = () => {

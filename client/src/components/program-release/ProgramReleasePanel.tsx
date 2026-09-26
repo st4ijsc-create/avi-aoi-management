@@ -16,6 +16,7 @@ import { useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { toast } from "sonner";
 import { trpc } from "@/lib/trpc";
+import { toastTrpcError } from "@/lib/trpcErrors";
 import { useAuth } from "@/_core/hooks/useAuth";
 import { useCanWrite } from "@/components/PermissionGate";
 import { Button } from "@/components/ui/button";
@@ -62,7 +63,7 @@ export function ProgramReleasePanel({ productModelId }: { productModelId: number
   const releases = listQuery.data ?? [];
 
   const invalidate = () => utils.inspectionProgram.list.invalidate({ productModelId });
-  const onError = (err: { message: string }) => toast.error(err.message);
+  const onError = (err: unknown) => toastTrpcError(err);
 
   const createDraft = trpc.inspectionProgram.createDraft.useMutation({
     onSuccess: (r) => { toast.success(t("programRelease.draftCreated", { version: r.version })); invalidate(); },

@@ -12,7 +12,7 @@
  */
 
 import { getDb } from "../db/connection";
-import { sql, eq, and, gte, lte, desc, asc, count, avg, SQL } from "drizzle-orm";
+import { sql, eq, and, gte, lte, desc, asc, count, avg, inArray, SQL } from "drizzle-orm";
 import {
   productInspections,
   measurementResults,
@@ -22,12 +22,23 @@ import {
   stations,
   productionLines,
   workshops,
+  factories,
   defectCatalog,
   spcRuleViolations,
+  robots,
+  robotTelemetry,
+  robotBehaviorAnomalies,
 } from "../../drizzle/schema";
 import { cacheService } from "./cacheService";
 import { emitSpcViolationAlert } from "../_core/socket";
 import { calculateCapabilityIndices } from "../utils/spc";
+// doc69 W1 "modelfix" — shared env→GGUF-basename resolver; the narration/SPC-interpretation calls
+// below must PIN a text model (un-pinned calls used to land on the 0.6B RAG embedder).
+import { resolveLogicalModel } from "./ai/modelResolver";
+// ★ G5-E — bộ cắt chuỗi suy luận. Module LÁ (0 import, 0 I/O) nên import TĨNH được ở đây dù engine
+// vẫn nạp động: hàng rào là vô điều kiện theo CẤU TẠO, không treo vào một `await import()` trong
+// try (import hỏng ⇒ catch chạy tiếp KHÔNG có bộ cắt = fail-open).
+import { stripThinking } from "./ai/thinkingStrip";
 // Canonical KPI math + factory-timezone bucketing (doc 27 decision #4, gaps A2/A4).
 import {
   finalYieldPassCondSql,
@@ -44,6 +55,10 @@ export interface AnalyticsPeriod {
   factoryCode?: string;
   lineCode?: string;
   productModel?: string;
+  // doc 69 Wave 2 / A1 — machineType as a first-class analytics dimension (AOI/AVI/
+  // SPI/AXI/ICT/.../ROBOT — machines.machineType). OPTIONAL + additive: omitting it
+  // leaves every existing call site byte-identical to before this task.
+  machineType?: string;
 }
 
 interface ConditionOptions {
@@ -51,6 +66,7 @@ interface ConditionOptions {
   factoryCode?: boolean;
   lineCode?: boolean;
   productModel?: boolean;
+  machineType?: boolean;
 }
 
 export function buildAnalyticsConditions(
@@ -75,6 +91,20 @@ export function buildAnalyticsConditions(
   const normalizedProductModel = params.productModel?.trim();
   if (options.productModel && normalizedProductModel) {
     conditions.push(eq(productInspections.productModel, normalizedProductModel));
+  }
+
+  // doc 69 Wave 2 / A1 — machineType filter. `product_inspections` has no
+  // machineType column of its own (it lives on `machines`), and most call sites
+  // below do NOT join `machines` into their outer query — so this narrows via a
+  // machineId subquery instead of requiring every existing query to add a join.
+  // Cast the enum to text before comparing (mirrors server/api/v1/assets.ts's
+  // existing `${machines.machineType}::text = ${cls}` pattern) so an unknown/typo'd
+  // value simply matches zero machines instead of throwing an enum-cast error.
+  const normalizedMachineType = params.machineType?.trim();
+  if (options.machineType && normalizedMachineType) {
+    conditions.push(
+      sql`${productInspections.machineId} IN (SELECT ${machines.id} FROM ${machines} WHERE ${machines.machineType}::text = ${normalizedMachineType})`,
+    );
   }
 
   return conditions;
@@ -114,6 +144,21 @@ export interface YieldForecast {
   lowerBound: number;
   upperBound: number;
   confidence: number;
+}
+
+/**
+ * doc69 Wave 2 / A2 — which forecastYield() strategy applies for a given trend
+ * length. Exported (single source of truth, shared with forecastYield's own
+ * branching below) so callers that need to LABEL the forecast — e.g. the
+ * predictive-alert signal derivation — can report the ACTUAL method used
+ * instead of a hardcoded/mislabeled name.
+ */
+export type YieldForecastMethod = "holt-winters" | "ewma" | "linear-trend";
+
+export function yieldForecastMethodFor(dataPointsLength: number): YieldForecastMethod {
+  if (dataPointsLength >= 14) return "holt-winters";
+  if (dataPointsLength >= 7) return "ewma";
+  return "linear-trend";
 }
 
 export interface CorrelationResult {
@@ -390,6 +435,64 @@ export interface ShiftAnalysis {
   topDefects: Array<{ type: string; count: number }>;
 }
 
+// doc 69 Wave 2 / A1 — per-machineType breakdown (AOI vs AVI vs SPI ...).
+export interface MachineTypeBreakdown {
+  machineType: string;
+  totalInspections: number;
+  passCount: number;
+  failCount: number;
+  yieldRate: number;
+  defectRate: number;
+  activeMachines: number;
+}
+
+// doc 69 Wave 2 / A1 — robot/OT KPIs routed into the comprehensive report. Sourced
+// from the SAME tables aiRobotAnomalyRouter reads (robots/robot_telemetry/
+// robot_behavior_anomalies) — this does not duplicate that router's mutation logic,
+// only adds a read-oriented summary for the analytics report.
+export interface RobotHealthSnapshot {
+  robotId: number;
+  robotCode: string;
+  robotName: string;
+  vendor: string;
+  kind: string;
+  status: string;
+  isEnabled: boolean;
+  lastSeenAt: string | null;
+  latestTelemetry: {
+    mode: string | null;
+    busy: boolean | null;
+    estop: boolean | null;
+    speedPct: number | null;
+    batteryLevel: number | null;
+    lastHeartbeat: string | null;
+  } | null;
+}
+
+export interface RobotAnomalySummary {
+  id: number;
+  robotId: number;
+  kind: string;
+  severity: string;
+  score: number;
+  status: string;
+  detectedAt: string;
+}
+
+export interface RobotsSection {
+  totalRobots: number;
+  activeRobots: number; // robots.isEnabled = true
+  onlineRobots: number; // robots.status !== 'offline'
+  robots: RobotHealthSnapshot[];
+  recentAnomalies: RobotAnomalySummary[];
+  /**
+   * Severity counts over `recentAnomalies` ONLY (the capped top-50 most recent,
+   * not a true aggregate over all in-scope anomalies) — a factory with >50
+   * recent anomalies will under-count older/lower-ranked severities here.
+   */
+  anomalyCountBySeverity: Record<string, number>;
+}
+
 export interface ComprehensiveReport {
   period: { start: string; end: string };
   overview: {
@@ -415,6 +518,10 @@ export interface ComprehensiveReport {
     hour: number;
     defectRate: number;
   }>;
+  /** doc 69 Wave 2 / A1 — additive. Per-machineType yield/defect/count breakdown. */
+  byMachineType: MachineTypeBreakdown[];
+  /** doc 69 Wave 2 / A1 — additive. Robot/OT KPIs; empty-safe when no robot data. */
+  robots: RobotsSection;
 }
 
 // ─── Core Analytics Functions ──────────────────────────────────
@@ -434,6 +541,7 @@ export async function getDefectTrend(params: AnalyticsPeriod): Promise<DefectTre
     factoryCode: true,
     lineCode: true,
     productModel: true,
+    machineType: true,
   });
 
   // Day bucket in the FACTORY timezone (gap A2). Note: the previous
@@ -479,6 +587,7 @@ export async function getDefectPareto(params: AnalyticsPeriod): Promise<DefectPa
       factoryCode: true,
       lineCode: true,
       productModel: true,
+      machineType: true,
     }),
     // 'FAIL' is not a valid overallresultenum value (would throw); NG only.
     sql`${measurementResults.result} = 'NG'`,
@@ -709,6 +818,7 @@ export async function getMachinePerformance(params: AnalyticsPeriod): Promise<Ma
     factoryCode: true,
     lineCode: true,
     productModel: true,
+    machineType: true,
   });
 
   // Canonical pass = OK + NTF (decision #4); also fixes the previously
@@ -794,12 +904,14 @@ export async function forecastYield(
 
   const data = trend.map(t => t.yieldRate);
   const lastDate = new Date(trend[trend.length - 1].date);
-  const forecasts: YieldForecast[] = [];
 
-  if (data.length >= 14) {
+  // doc69 A2: branch via the shared classifier (yieldForecastMethodFor) instead of
+  // inlined literals, so external callers can label the ACTUAL method identically.
+  const method = yieldForecastMethodFor(data.length);
+  if (method === "holt-winters") {
     // HIGH confidence: Holt-Winters with seasonal pattern
     return forecastWithHoltWinters(data, lastDate, horizonDays, 0.9);
-  } else if (data.length >= 7) {
+  } else if (method === "ewma") {
     // MEDIUM confidence: EWMA (Exponential Weighted Moving Average)
     return forecastWithEWMA(data, lastDate, horizonDays, 0.6);
   } else {
@@ -1043,8 +1155,9 @@ export async function getCorrelationAnalysis(params: AnalyticsPeriod): Promise<C
     `factory:${params.factoryCode ?? "all"}`,
     `line:${params.lineCode ?? "all"}`,
     `product:${params.productModel?.trim() || "all"}`,
+    `machineType:${params.machineType?.trim() || "all"}`,
   ].join(":");
-  
+
   // Check cache first
   const cached = cacheService.get<CorrelationResult[]>(cacheKey);
   if (cached) {
@@ -1060,6 +1173,7 @@ export async function getCorrelationAnalysis(params: AnalyticsPeriod): Promise<C
     factoryCode: true,
     lineCode: true,
     productModel: true,
+    machineType: true,
   });
 
   // OPTIMIZATION: Get daily data per machine (aggregated).
@@ -1360,6 +1474,7 @@ export async function getShiftAnalysis(params: AnalyticsPeriod): Promise<ShiftAn
     factoryCode: true,
     lineCode: true,
     productModel: true,
+    machineType: true,
   });
 
   // Group by shift (morning 6-14, afternoon 14-22, night 22-6),
@@ -1409,6 +1524,7 @@ export async function getDefectHeatmap(params: AnalyticsPeriod): Promise<Array<{
     factoryCode: true,
     lineCode: true,
     productModel: true,
+    machineType: true,
   });
 
   // Hour-of-day in the FACTORY timezone (gap A2); 'FAIL' enum literal removed.
@@ -1434,6 +1550,199 @@ export async function getDefectHeatmap(params: AnalyticsPeriod): Promise<Array<{
 }
 
 /**
+ * doc 69 Wave 2 / A1 — per-machineType yield/defect/count breakdown, so the
+ * comprehensive report can say "AOI vs AVI vs SPI" instead of aggregating every
+ * machine type together. Respects the SAME filters as every other analytics
+ * function (including `params.machineType` itself — narrowing to one type just
+ * yields a single-row breakdown, which is the expected/consistent behavior).
+ */
+export async function getByMachineTypeBreakdown(params: AnalyticsPeriod): Promise<MachineTypeBreakdown[]> {
+  const db = await getDb();
+  if (!db) {
+    console.error("[getByMachineTypeBreakdown] Database connection unavailable (DB_UNAVAILABLE)");
+    return [];
+  }
+
+  const conditions = buildAnalyticsConditions(params, {
+    machineId: true,
+    factoryCode: true,
+    lineCode: true,
+    productModel: true,
+    machineType: true,
+  });
+
+  const rows = await db.select({
+    machineType: machines.machineType,
+    total: count().as("total"),
+    pass: sql<number>`COUNT(*) FILTER (WHERE ${finalYieldPassCondSql(productInspections.overallResult)})`.as("pass"),
+    fail: sql<number>`COUNT(*) FILTER (WHERE ${productInspections.overallResult} = 'NG')`.as("fail"),
+    activeMachines: sql<number>`COUNT(DISTINCT ${productInspections.machineId})`.as("activeMachines"),
+  })
+    .from(productInspections)
+    .innerJoin(machines, eq(productInspections.machineId, machines.id))
+    .where(and(...conditions))
+    .groupBy(machines.machineType)
+    .orderBy(desc(count()));
+
+  return rows.map(r => {
+    const total = Number(r.total);
+    const pass = Number(r.pass);
+    const fail = Number(r.fail);
+    return {
+      machineType: String(r.machineType),
+      totalInspections: total,
+      passCount: pass,
+      failCount: fail,
+      yieldRate: total > 0 ? (pass / total) * 100 : 0,
+      defectRate: total > 0 ? (fail / total) * 100 : 0,
+      activeMachines: Number(r.activeMachines),
+    };
+  });
+}
+
+/**
+ * doc 69 Wave 2 / A1 — robot/OT KPIs for the comprehensive report. Reads the SAME
+ * tables aiRobotAnomalyRouter.listAnomalies reads (robots / robot_telemetry /
+ * robot_behavior_anomalies) rather than duplicating a separate reader.
+ *
+ * Tenant/factory scope: robots have no `factoryCode` column, so this mirrors
+ * `aiAnalyticsScope.getMachineFactoryCode`'s join chain (stations → lines →
+ * workshops → factories) over `robots.stationId` to resolve which robots belong
+ * to a scoped caller's factory. A robot is ALSO in-scope when its `lineId`
+ * resolves to the caller's factory (lines → workshops → factories) — a robot
+ * assigned directly to a line (no stationId) must not be invisible to its own
+ * factory's scoped users. The two resolutions are unioned; either one matching
+ * is enough. `factoryCode` undefined (global/admin — already enforced at the
+ * router boundary by `enforceAnalyticsFactoryScope`) → no restriction. A robot
+ * with neither stationId nor lineId (or where neither resolves to the scoped
+ * factory) is simply excluded for a SCOPED caller — fail-closed, never a
+ * cross-factory leak. Always fail-safe: DB errors / no robot data → the empty
+ * section, never an exception that would break the rest of the report.
+ */
+export async function getRobotsSection(params: { factoryCode?: string } = {}): Promise<RobotsSection> {
+  const empty: RobotsSection = {
+    totalRobots: 0,
+    activeRobots: 0,
+    onlineRobots: 0,
+    robots: [],
+    recentAnomalies: [],
+    anomalyCountBySeverity: {},
+  };
+
+  const db = await getDb();
+  if (!db) {
+    console.error("[getRobotsSection] Database connection unavailable (DB_UNAVAILABLE)");
+    return empty;
+  }
+
+  try {
+    let robotRows: (typeof robots.$inferSelect)[];
+    if (params.factoryCode) {
+      // Resolve scope BOTH ways — a robot is in-scope if either its station's
+      // factory OR its line's factory matches the caller's factory. Union of
+      // ids, still fail-closed (only ADDS robots whose resolved factory is in
+      // scope; never widens beyond that).
+      const viaStation = await db
+        .select({ id: robots.id })
+        .from(robots)
+        .innerJoin(stations, eq(robots.stationId, stations.id))
+        .innerJoin(productionLines, eq(stations.lineId, productionLines.id))
+        .innerJoin(workshops, eq(productionLines.workshopId, workshops.id))
+        .innerJoin(factories, eq(workshops.factoryId, factories.id))
+        .where(eq(factories.code, params.factoryCode));
+      const viaLine = await db
+        .select({ id: robots.id })
+        .from(robots)
+        .innerJoin(productionLines, eq(robots.lineId, productionLines.id))
+        .innerJoin(workshops, eq(productionLines.workshopId, workshops.id))
+        .innerJoin(factories, eq(workshops.factoryId, factories.id))
+        .where(eq(factories.code, params.factoryCode));
+      const ids = Array.from(new Set([...viaStation.map(r => r.id), ...viaLine.map(r => r.id)]));
+      if (ids.length === 0) return empty; // scoped caller with zero robots in their factory
+      robotRows = await db.select().from(robots).where(inArray(robots.id, ids)).orderBy(desc(robots.updatedAt));
+    } else {
+      // Global/admin caller (factoryCode already resolved — possibly undefined —
+      // by enforceAnalyticsFactoryScope before this function is ever reached).
+      robotRows = await db.select().from(robots).orderBy(desc(robots.updatedAt));
+    }
+
+    if (robotRows.length === 0) return empty;
+    const robotIds = robotRows.map(r => r.id);
+
+    // Latest telemetry per robot — robots are low-cardinality, so a bounded
+    // per-robot lookback (rather than a heavier DISTINCT ON) keeps this simple
+    // and consistent with the rest of this file's query style.
+    const latestByRobot = new Map<number, typeof robotTelemetry.$inferSelect>();
+    const telemetryRows = await db
+      .select()
+      .from(robotTelemetry)
+      .where(inArray(robotTelemetry.robotId, robotIds))
+      .orderBy(desc(robotTelemetry.timestamp))
+      .limit(robotIds.length * 20);
+    for (const row of telemetryRows) {
+      if (!latestByRobot.has(row.robotId)) latestByRobot.set(row.robotId, row);
+    }
+
+    const anomalyRows = await db
+      .select()
+      .from(robotBehaviorAnomalies)
+      .where(inArray(robotBehaviorAnomalies.robotId, robotIds))
+      .orderBy(desc(robotBehaviorAnomalies.detectedAt))
+      .limit(50);
+
+    // NOTE: computed over `anomalyRows` (capped at 50, most recent first) — see
+    // the `anomalyCountBySeverity` doc comment on RobotsSection above.
+    const anomalyCountBySeverity: Record<string, number> = {};
+    for (const a of anomalyRows) {
+      anomalyCountBySeverity[a.severity] = (anomalyCountBySeverity[a.severity] ?? 0) + 1;
+    }
+
+    return {
+      totalRobots: robotRows.length,
+      activeRobots: robotRows.filter(r => r.isEnabled).length,
+      onlineRobots: robotRows.filter(r => r.status !== "offline").length,
+      robots: robotRows.map(r => {
+        const t = latestByRobot.get(r.id);
+        return {
+          robotId: r.id,
+          robotCode: r.code,
+          robotName: r.name,
+          vendor: r.vendor,
+          kind: r.kind,
+          status: r.status,
+          isEnabled: r.isEnabled,
+          lastSeenAt: r.lastSeenAt ? r.lastSeenAt.toISOString() : null,
+          latestTelemetry: t
+            ? {
+                mode: t.mode ?? null,
+                busy: t.busy ?? null,
+                estop: t.estop ?? null,
+                speedPct: t.speedPct ?? null,
+                batteryLevel: t.batteryLevel != null ? Number(t.batteryLevel) : null,
+                lastHeartbeat: t.lastHeartbeat ? t.lastHeartbeat.toISOString() : null,
+              }
+            : null,
+        };
+      }),
+      recentAnomalies: anomalyRows.map(a => ({
+        id: a.id,
+        robotId: a.robotId,
+        kind: a.kind,
+        severity: a.severity,
+        score: Number(a.score),
+        status: a.status,
+        detectedAt: a.detectedAt.toISOString(),
+      })),
+      anomalyCountBySeverity,
+    };
+  } catch (err) {
+    // Fail-safe — a robot-data problem must never break the rest of the report.
+    console.error("[getRobotsSection] Failed to build robots section:", (err as Error)?.message ?? err);
+    return empty;
+  }
+}
+
+/**
  * Generate comprehensive report data for visual dashboards
  */
 export async function generateComprehensiveReport(params: AnalyticsPeriod): Promise<ComprehensiveReport> {
@@ -1454,6 +1763,8 @@ export async function generateComprehensiveReport(params: AnalyticsPeriod): Prom
     controlChart,
     shiftAnalysis,
     heatmapData,
+    byMachineType,
+    robotsSection,
   ] = await Promise.all([
     getDefectTrend(params),
     getDefectPareto(params),
@@ -1464,6 +1775,9 @@ export async function generateComprehensiveReport(params: AnalyticsPeriod): Prom
     getControlChart(params, "yield"),
     getShiftAnalysis(params),
     getDefectHeatmap(params),
+    // doc 69 Wave 2 / A1 — additive sections (do not change any existing field's shape).
+    getByMachineTypeBreakdown(params),
+    getRobotsSection({ factoryCode: params.factoryCode }),
   ]);
 
   // Calculate overview
@@ -1498,6 +1812,8 @@ export async function generateComprehensiveReport(params: AnalyticsPeriod): Prom
     controlChart,
     shiftAnalysis,
     heatmapData,
+    byMachineType,
+    robots: robotsSection,
   };
 }
 
@@ -1552,8 +1868,12 @@ async function narrateAnalysis(type: string, data: unknown): Promise<string | nu
       prompt: `Summarize this ${type} analysis data and highlight key findings:\n${dataStr}`,
       maxTokens: 256,
       temperature: 0.5,
-    });
-    return result.text.trim() || null;
+    }, resolveLogicalModel("chat"));
+    // ★ G5-E — `resolveLogicalModel("chat")` trả về model MẶC ĐỊNH khi GGUF_CHAT_MODEL không được
+    // đặt ⇒ đổi roster sang một model họ Qwen3.x là chỗ này phát `<think>` ra bảng phân tích.
+    // Cắt thẻ TRƯỚC mọi phép biến đổi khác (ở đây chỉ còn `.trim()`, vốn cũng là hành vi cũ ⇒
+    // bản vá là no-op với đầu ra không có thẻ).
+    return stripThinking(result.text).answer.trim() || null;
   } catch {
     return null;
   }
@@ -1642,9 +1962,10 @@ Violations:
 ${violationSummary || "Points beyond 3σ limits detected"}`,
       maxTokens: 400,
       temperature: 0.3,
-    });
+    }, resolveLogicalModel("chat"));
 
-    return { data, interpretation: response.text?.trim() || null };
+    // ★ G5-E — cắt chuỗi suy luận trước khi diễn giải SPC hiện ra bảng (xem `narrateAnalysis`).
+    return { data, interpretation: stripThinking(response.text ?? "").answer.trim() || null };
   } catch {
     return { data, interpretation: null };
   }
@@ -1667,7 +1988,11 @@ export async function generateComprehensiveReportWithNarration(params: Analytics
  *
  * Call this after getControlChart() whenever you want to store + broadcast
  * detected violations. Idempotent: duplicate violations on the same day are
- * skipped by checking detectedAt date.
+ * skipped by checking detectedAt date — same machineId + ruleType +
+ * measurementPointDefId, still active, detected today (see the dedup SELECT
+ * below). This guards a proactive periodic sweep (W0-D) from spamming
+ * duplicate rows/socket alerts every time it re-detects the same
+ * still-unresolved violation.
  */
 export async function triggerSpcAlerts(opts: {
   violations: SpcViolation[];
@@ -1687,6 +2012,46 @@ export async function triggerSpcAlerts(opts: {
     const severity = v.severity === "critical" ? "critical"
       : v.severity === "info" ? "info"
       : "warning";
+
+    // W0-D — same-day dedup check. Dedup key: machineId + ruleType +
+    // measurementPointDefId (all nullable-safe via `IS NOT DISTINCT FROM`, so
+    // e.g. two machine-less violations of the same rule still correctly
+    // dedup against each other instead of a naive `=` silently never
+    // matching NULLs), isActive = true, detectedAt::date = CURRENT_DATE.
+    // workstationId/productModelId/severity are deliberately excluded — they
+    // describe the violation, they don't identify it.
+    //
+    // Fail-OPEN by design: if this SELECT itself throws (missing table before
+    // a migration runs, transient connection error, etc.), we do NOT treat
+    // that as "no duplicate" silently nor as "suppress the alert" — we fall
+    // through to the pre-existing behavior (insert + broadcast). A dedup
+    // check failure must never cost a genuinely new SPC alert. A generic
+    // catch is used on purpose (not an `isMissingTable`-only special case)
+    // so ANY dedup-check failure — not just a missing table — fails open.
+    let isDuplicateToday = false;
+    if (db) {
+      try {
+        const dedupResult = (await db.execute(sql`
+          SELECT 1 FROM spc_rule_violations
+          WHERE "machineId" IS NOT DISTINCT FROM ${machineId ?? null}
+            AND "ruleType" = ${v.ruleId}
+            AND "measurementPointDefId" IS NOT DISTINCT FROM ${measurementPointDefId ?? null}
+            AND "isActive" = true
+            AND "detectedAt"::date = CURRENT_DATE
+          LIMIT 1
+        `)) as any;
+        const dedupRows = dedupResult.rows || dedupResult || [];
+        isDuplicateToday = dedupRows.length > 0;
+      } catch (err) {
+        console.error(`[SPC] Dedup check failed for ${v.ruleId} — failing open (insert+broadcast):`, err);
+        isDuplicateToday = false;
+      }
+    }
+
+    if (isDuplicateToday) {
+      // Same-day duplicate: skip BOTH the insert and the broadcast.
+      continue;
+    }
 
     if (db) {
       try {

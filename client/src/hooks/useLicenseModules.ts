@@ -223,11 +223,37 @@ export function useLicenseModules() {
     }));
   }, [allowedSet]);
 
+  // ── doc 80 — MỘT CHỦ cho vị từ "module này bị chặn theo GIẤY PHÉP" ──────────────────────────
+  //
+  // ⚠⚠⚠ Vì sao KHÔNG dùng thẳng `!isModuleAllowed(code)`: `allowedModules` rơi về
+  //     `CORE_MODULE_CODES` ở **BA** tình huống rất khác nhau — (a) SKU có khai và thật sự không
+  //     gồm module ấy; (b) máy chủ trả `isLicensed:false` (chưa từng khai SKU, hoặc guard đang
+  //     `no_license`/`locked`); (c) client chưa có khoá license nên truy vấn còn chưa chạy.
+  //     Chỉ (a) là "khách chưa mua". Chặn ở (b)/(c) là **BRICK** một hệ chưa được khai báo gì —
+  //     đúng thứ mà `server/_core/moduleGate.ts` cố ý fail-OPEN để tránh. Máy chủ và client phải
+  //     nói CÙNG MỘT CÂU, nếu không menu ẩn một chỗ mà API vẫn mở (hoặc ngược lại).
+  //
+  // `isLicensed` của máy chủ CHÍNH LÀ tín hiệu "SKU đã khai": `licenseRouter.getAllowedModules`
+  // đặt nó bằng `aggregatedModules.length > 0`, tức đã gom được ít nhất một danh sách module từ
+  // một hàng license (hoặc từ cache đĩa) — cùng vị từ mà `resolveEntitlement()` gọi là `configured`.
+  const isLicensedValue = data?.isLicensed ?? cachedModules?.isLicensed ?? false;
+  const isLoadingValue = isAuthenticated && !!effectiveKey && isLoading && !cachedModules;
+
+  /**
+   * `true` ⇔ SKU **đã khai** VÀ **không** gồm `moduleCode` ⇒ đây là khách chưa mua module này.
+   * Mọi trạng thái khác (đang tải · chưa khai SKU · guard chặn · không có khoá) trả `false`.
+   */
+  const isModuleBlocked = (moduleCode: string): boolean => {
+    if (isLoadingValue) return false;
+    if (!isLicensedValue) return false;
+    return !isModuleAllowed(moduleCode);
+  };
+
   return {
     /** Danh sách module codes được phép */
     allowedModules,
-    /** Có license active không */
-    isLicensed: data?.isLicensed ?? cachedModules?.isLicensed ?? false,
+    /** Có license active không (⇔ SKU đã được khai tường minh) */
+    isLicensed: isLicensedValue,
     /** Trạng thái license */
     licenseStatus: data?.licenseStatus ?? cachedModules?.licenseStatus ?? null,
     /** Loại license */
@@ -241,11 +267,13 @@ export function useLicenseModules() {
     /** Chưa có license key nào được lưu */
     noLicenseKey: !effectiveKey,
     /** Đang tải thông tin license */
-    isLoading: isAuthenticated && !!effectiveKey && isLoading && !cachedModules,
+    isLoading: isLoadingValue,
     /** Server query failed (using cached data) */
     isUsingCache: isError && !!cachedModules,
     /** Kiểm tra module code có được phép */
     isModuleAllowed,
+    /** doc 80 — module bị chặn theo GIẤY PHÉP (đã trừ mọi tình huống không-brick). */
+    isModuleBlocked,
     /** Kiểm tra route có được phép */
     isRouteAllowed,
     /** Kiểm tra nav group có được phép */

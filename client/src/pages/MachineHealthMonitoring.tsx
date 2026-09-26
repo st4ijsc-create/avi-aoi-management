@@ -13,6 +13,12 @@ import {
   chartAxisProps,
   chartTooltipStyle,
 } from "@/components/patterns";
+// ⚠ 2026-08-18 — câu rỗng TRUNG THỰC. Màn này ăn toàn mảng trần (`getAllOEE`,
+// `getAllMachineHealth`, `machine.list`) nên nhãn phạm vi phải tới bằng
+// `mqttClient.getScopeLabels`. MỘT nguồn câu chữ (`common.scopeEmpty.*`), không chép chuỗi.
+import { ScopeEmptyNotice, ScopeAwareEmpty, scopeEmptyReasonOf } from "@/components/ScopeEmptyNotice";
+// ★ PH-39 — `failureRisk` KHÔNG tự nói được "0 vì đã đo" hay "0 vì chưa đo được".
+import { nhanNguyCoHong } from "./nguyCoHongHienThi";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -200,6 +206,13 @@ export function MachineHealthMonitoringContent() {
   // Queries
   const { data: machines } = trpc.machine.list.useQuery();
   const { data: allOEE, refetch: refetchOEE, isLoading: oeeLoading } = trpc.mqttClient.getAllOEE.useQuery();
+  // ★ LÝ DO phạm vi rỗng. Cả ba truy vấn danh sách của màn này trả MẢNG TRẦN, và nhãn của
+  // `withScopeLabels` không-liệt-kê-được nên chết ở biên superjson — không có truy vấn nào trên
+  // màn mang nhãn để mượn. Vì thế hỏi riêng (xem docblock `mqttClient.getScopeLabels`).
+  // ⚠ Chỉ đổi câu khi máy chủ khai ĐÚNG mã `no_factory_assignment`. Một đội máy CÓ gán mà chưa
+  // máy nào báo OEE trong cửa sổ vẫn nhận `null` ⇒ giữ nguyên câu "chưa có dữ liệu" cũ.
+  const { data: healthScope } = trpc.mqttClient.getScopeLabels.useQuery();
+  const scopeEmptyReason = scopeEmptyReasonOf(healthScope);
   // REAL per-machine health scores (same source the Details tab reads). Used to
   // drive the fleet overview so it agrees with the detail view. Machines without
   // a calculated score come back as null → rendered as an honest "—".
@@ -296,13 +309,21 @@ export function MachineHealthMonitoringContent() {
     const healthById = new Map<number, number | null>(
       (allMachineHealth ?? []).map((h) => [h.machineId, h.healthScore]),
     );
-    // Fallback health index derived from real PdM risk (100 - failureRisk), only for
-    // machines that actually have data points (dataPoints > 0) — never fabricated.
+    /**
+     * Fallback health index derived from real PdM risk (100 - failureRisk) — never fabricated.
+     *
+     * ★★★ PH-39 — cổng cũ là `r.dataPoints > 0`, và nó ĐO SAI DỮ KIỆN: một máy có
+     * ĐÚNG MỘT điểm sức khoẻ (hình dạng thật của CSDL đang đo) có `dataPoints = 1`
+     * nhưng KHÔNG đặc trưng nào chạy được ⇒ `failureRisk` rơi về mặc định `0` ⇒
+     * chỉ số sức khoẻ suy ra là **100 %**. Tức cổng "không bịa" lại đang bịa ra
+     * một máy KHOẺ HOÀN HẢO cho máy mà hệ chưa biết gì. Dữ kiện đúng là
+     * `riskMethod` (xem `nguyCoHongHienThi.ts`).
+     */
     const riskHealthById = new Map<number, number | null>(
-      (rulForecast ?? []).map((r) => [
-        r.machineId,
-        r.dataPoints > 0 ? clampPct(100 - r.failureRisk) : null,
-      ]),
+      (rulForecast ?? []).map((r) => {
+        const nhan = nhanNguyCoHong({ available: true, failureRisk: r.failureRisk, riskMethod: r.riskMethod });
+        return [r.machineId, nhan.kind === "so" ? clampPct(100 - nhan.phanTram) : null];
+      }),
     );
     return allOEE.map(oee => ({
       name: oee.machineCode,
@@ -392,6 +413,11 @@ export function MachineHealthMonitoringContent() {
           }
         />
 
+        {/* ★ Dải phạm-vi-rỗng — tự trả `null` khi phạm vi bình thường, nên gọi vô điều kiện.
+            ⚠ Một mình dải này KHÔNG đủ: các thẻ số bên dưới vẫn hiện "0" và mắt đọc khối gần
+            nhất, nên khối tổng quan còn được bọc `ScopeAwareEmpty` riêng. */}
+        <ScopeEmptyNotice reason={scopeEmptyReason} />
+
         {/* Machine Selection */}
         <Card>
           <CardContent className="pt-6">
@@ -456,6 +482,21 @@ export function MachineHealthMonitoringContent() {
                   <CardContent className="pt-6"><div className="h-72 bg-muted rounded" /></CardContent>
                 </Card>
               </div>
+            ) : machineComparisonData.length === 0 ? (
+              /* ★ 2026-08-18 — TRƯỚC bản vá này, 0 máy KHÔNG hiện câu nào cả: bốn thẻ "0", một
+                 biểu đồ trống và một bảng không dòng. Đó là lời khai *"đội máy khoẻ 0/0"* —
+                 tệ hơn một câu sai, vì nó trông như một phép đo đã chạy xong.
+                 `EmptyState` tự chọn giữa HAI câu theo `scopeEmptyReason`, và câu phạm-vi-rỗng
+                 THẮNG cả `title`/`description` truyền vào (xem docblock của nó):
+                   · `no_factory_assignment` ⇒ "chưa được gán nhà máy" (lỗi ở BẢNG PHÂN QUYỀN);
+                   · `null` ⇒ "chưa có dữ liệu trong cửa sổ 24 giờ" (lỗi ở DÂY CHUYỀN).
+                 Hai lý do "0 máy" ấy cùng tồn tại trên CSDL dev, nên phải phân biệt được. */
+              <EmptyState
+                scopeEmptyReason={scopeEmptyReason}
+                variant="no-analytics"
+                title={t('machines.noFleetHealth')}
+                description={t('machines.noFleetHealthDesc')}
+              />
             ) : (
             <>
             {/* Summary Cards */}
@@ -590,10 +631,32 @@ export function MachineHealthMonitoringContent() {
                   </CardHeader>
                   <CardContent>
                     <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-                      <div className="p-3 rounded-lg bg-muted/50 text-center">
-                        <p className="text-xs text-muted-foreground">{t('machines.failureRisk')}</p>
-                        <p className="text-2xl font-bold text-destructive">{pctLabel(pmRisk?.failureRisk)}</p>
-                      </div>
+                      {/* ★★★ PH-39 — ô này từng in "0 %" cho MỌI máy của CSDL đang đo,
+                          vì `computeFailureRisk` rơi về mặc định khi chưa đủ dữ liệu.
+                          `—` + câu lý do, theo đúng khuôn NT-3.5 (`trungThucDuLieu.hienSo`). */}
+                      {(() => {
+                        const nhanRr = nhanNguyCoHong({
+                          available: pmRisk != null,
+                          failureRisk: pmRisk?.failureRisk ?? null,
+                          riskMethod: pmRisk?.riskMethod ?? null,
+                        });
+                        return (
+                          <div className="p-3 rounded-lg bg-muted/50 text-center" data-testid="pdm-o-nguy-co" data-trang-thai={nhanRr.kind}>
+                            <p className="text-xs text-muted-foreground">{t('machines.failureRisk')}</p>
+                            <p className={nhanRr.kind === 'so' ? 'text-2xl font-bold text-destructive' : 'text-2xl font-bold text-muted-foreground'}>
+                              {nhanRr.kind === 'so' ? pctLabel(nhanRr.phanTram) : '—'}
+                            </p>
+                            {nhanRr.kind === 'chuaDuDuLieu' && (
+                              <p className="text-xs text-muted-foreground" title={t('cockpit.riskInsufficientHint')}>
+                                {t('cockpit.riskInsufficient')}
+                              </p>
+                            )}
+                            {nhanRr.kind === 'chuaDocDuoc' && (
+                              <p className="text-xs text-muted-foreground">{t('cockpit.riskNoSource')}</p>
+                            )}
+                          </div>
+                        );
+                      })()}
                       <div className="p-3 rounded-lg bg-muted/50 text-center">
                         <p className="text-xs text-muted-foreground">{t('machines.confidence')}</p>
                         <p className="text-2xl font-bold">{pctLabel(pmRisk?.confidenceScore)}</p>
@@ -758,12 +821,16 @@ export function MachineHealthMonitoringContent() {
                 </Card>
               </>
             ) : (
-              <Card>
-                <CardContent className="py-12 text-center">
-                  <Heart className="h-12 w-12 mx-auto text-muted-foreground mb-4" />
-                  <p className="text-muted-foreground">{t('machines.selectMachineForHealthMonitoring')}</p>
-                </CardContent>
-              </Card>
+              /* ⚠ "Chọn một máy" là NGÕ CỤT khi phạm vi rỗng — ô chọn máy phía trên không có mục
+                 nào. Phạm vi bình thường mà chưa chọn thì câu cũ vẫn đúng. */
+              <ScopeAwareEmpty reason={scopeEmptyReason} variant="block">
+                <Card>
+                  <CardContent className="py-12 text-center">
+                    <Heart className="h-12 w-12 mx-auto text-muted-foreground mb-4" />
+                    <p className="text-muted-foreground">{t('machines.selectMachineForHealthMonitoring')}</p>
+                  </CardContent>
+                </Card>
+              </ScopeAwareEmpty>
             )}
           </TabsContent>
 
@@ -855,10 +922,17 @@ export function MachineHealthMonitoringContent() {
                       </div>
                     ))}
                   {scoredMachines.filter(m => m.healthScore < 80).length === 0 && (
-                    <div className="text-center py-8">
-                      <CheckCircle2 className="h-12 w-12 mx-auto text-success mb-4" />
-                      <p className="text-muted-foreground">{t('machines.allMachinesGood')}</p>
-                    </div>
+                    /* ★★ "Tất cả máy đều tốt" trên một phạm vi RỖNG là lời khai SAI VỀ THẾ GIỚI ở
+                       đúng chỗ nguy hiểm nhất: một lời TRẤN AN cũng là một kết luận, và người đọc
+                       nó sẽ THÔI đi kiểm tra. Cùng lớp lỗi đã vá ở `controlTower/panels.tsx`
+                       ("All clear" cho tài khoản 0 gán). Phạm vi bình thường mà đội máy thật sự
+                       khoẻ thì câu này vẫn ĐÚNG — giữ nguyên. */
+                    <ScopeAwareEmpty reason={scopeEmptyReason} variant="block">
+                      <div className="text-center py-8">
+                        <CheckCircle2 className="h-12 w-12 mx-auto text-success mb-4" />
+                        <p className="text-muted-foreground">{t('machines.allMachinesGood')}</p>
+                      </div>
+                    </ScopeAwareEmpty>
                   )}
                 </div>
               </CardContent>

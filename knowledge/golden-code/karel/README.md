@@ -18,3 +18,12 @@ snippets. Until then, do **not** treat generated KAREL as validate-passed.
 
 **Safety rule (unchanged):** no E-stop / interlock / SIL / DCS safety-zone logic is ever
 authored here — that stays in the certified Fanuc safety configuration.
+
+## Safety-linter fixtures (doc 69 Wave-4 / C4) — separate from the above
+
+`bounded-index-loop.ls` (safe) and `unbounded-index-loop.ls` (unsafe) were added for the
+platform's structural **safety-linter** (`server/services/programming/safetyLinter.ts`)
+golden-driven test corpus. They are **hand-authored, small, structurally-plausible** TP
+listings — **not** vendor-manual-verified RAG examples, and this remains Tier B (no
+`programmingAdapter`, no `validate()` substrate) for authoring-generation purposes. Do not
+promote them to few-shot generation material without the manual-verified P1 ingestion above.

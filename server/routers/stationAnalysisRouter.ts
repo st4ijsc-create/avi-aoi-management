@@ -1,4 +1,6 @@
 import { protectedProcedure, router } from "../_core/trpc";
+import { phamViCua } from "./_phamViNguoiXem";
+import { trongPhamVi } from "../db/hierarchy";
 import { z } from "zod";
 import { getDb } from "../db/connection";
 import { eq, and, desc, gte, lte, sql, inArray, SQL, asc, isNotNull } from "drizzle-orm";
@@ -24,13 +26,51 @@ import {
   computeHistogramBins,
   SPC_RULE_NAMES,
 } from "../utils/spc";
+import {
+  finalYield,
+  factoryDateTruncSql,
+  factoryHourOfDaySql,
+  factoryDowSql,
+  factoryDayTextSql,
+} from "../utils/kpi";
 
-/** Fake-UTC: shift a Date so its UTC components equal local time.
- *  Drizzle calls .toISOString() which emits UTC — this trick makes
- *  the UTC string match the local timestamp stored in PostgreSQL
- *  `timestamp without time zone` columns.  */
-function toFakeUtc(d: Date): Date {
-  return new Date(d.getTime() - d.getTimezoneOffset() * 60000);
+// BG-96 (2026-09-03, spec Khối C QĐ-1): sau cutover, `productInspections.inspectionTime`
+// lưu UTC THẬT (không còn "fake UTC"), và mọi `startDate`/`endDate` trong router này khai
+// `z.date()` — qua transformer `superjson` (server/_core/trpc.ts), giá trị tới tay handler
+// đã là một `Date` = một instant thật, KHÔNG phải chuỗi cần "đọc". Vì vậy so thẳng
+// `input.startDate`/`input.endDate` với cột (không còn hàm `toFakeUtc` dịch qua TZ tiến
+// trình server — đó chính là phép dịch SAI duy nhất, không phải giá trị đầu vào).
+// Ngữ nghĩa "nửa đêm" của cửa sổ = nửa đêm theo đồng hồ CLIENT dựng Date (trùng giờ nhà máy
+// khi operator ở VN) — KHÔNG đi qua `FACTORY_TZ`; đây là giới hạn đã biết, không phải bug
+// Task 2 (xem task-2-report.md mục "Concerns").
+// BG-96 Important-2 (review 2026-09-03): việc so cửa sổ ở TRÊN chỉ là MỘT nửa câu chuyện —
+// mọi bucket ngày/giờ VÀ phân ca Morning/Afternoon/Night/DOW bên dưới đi qua
+// `piLocalDay`/`piLocalHourOfDay`/`factoryDowSql`/`factoryDayTextSql` (server/utils/kpi.ts,
+// cùng pattern `piLocalDay`/`piLocalHourOfDay` đã dùng ở server/routes/externalInspectionApi.ts)
+// — KHÔNG còn `date_trunc`/`extract` trần trên cột UTC thô.
+
+// Mirror của `piLocalDay`/`piLocalHourOfDay` ở externalInspectionApi.ts — ở đây cột là
+// PgColumn (đủ SQLWrapper cho `SqlExpr`), không cần bọc `sql\`pi."inspectionTime"\`` qua alias.
+const piLocalDay = () => factoryDateTruncSql('day', productInspections.inspectionTime);
+const piLocalHourOfDay = () => factoryHourOfDaySql(productInspections.inspectionTime);
+
+/**
+ * Chuỗi yield theo bucket (giờ/ngày) — đầu vào của biểu đồ kiểm soát SPC.
+ * NTF = PASS (nguồn sự thật duy nhất: server/utils/kpi.ts finalYield).
+ * Làm tròn 2 chữ số thập phân — GIỮ NGUYÊN độ chính xác của công thức cũ
+ * `Math.round((ok / total) * 10000) / 100` (round-to-2-decimals của %),
+ * vì finalYield() đã trả về đơn vị PHẦN TRĂM (0-100), không phải phân số
+ * (0-1): `Math.round(finalYield(...) * 100) / 100` là công thức tương
+ * đương đúng — nhân thêm 10000 sẽ lệch 100 lần.
+ */
+export function tinhYieldTheoBucket(
+  rows: Array<{ bucket: string; total: number; ok: number; ntf: number }>,
+): Array<{ bucket: string; total: number; yieldRate: number }> {
+  return rows.map((r) => ({
+    bucket: r.bucket,
+    total: r.total,
+    yieldRate: Math.round(finalYield({ ok: r.ok, ntf: r.ntf, total: r.total }) * 100) / 100,
+  }));
 }
 
 export const stationAnalysisRouter = router({
@@ -41,11 +81,11 @@ export const stationAnalysisRouter = router({
     .input(z.object({
       stationId: z.number(),
     }))
-    .query(async ({ input }) => {
+    .query(async ({ input, ctx }) => {
       const database = await getDb();
       if (!database) return [];
 
-      const machineIds = await getStationMachineIds(database, input.stationId);
+      const machineIds = await getStationMachineIds(database, input.stationId, phamViCua(ctx));
       if (machineIds.length === 0) return [];
 
       const models = await database.select({
@@ -72,9 +112,13 @@ export const stationAnalysisRouter = router({
       endDate: z.date().optional(),
       productModelId: z.number().optional(),
     }))
-    .query(async ({ input }) => {
+    .query(async ({ input, ctx }) => {
       const database = await getDb();
       if (!database) return null;
+      // ⚠ Ô đầu trang (tên trạm · tuyến · xưởng · NHÀ MÁY) được đọc TRƯỚC điểm nghẽn, nên nó cần
+      // cổng RIÊNG: nếu không, một `stationId` tự khai vẫn trả về tên nhà máy của tenant khác kèm
+      // một dải KPI toàn số 0 — rò đúng thứ nhạy cảm nhất của màn này.
+      if (!(await trongPhamVi("station", input.stationId, phamViCua(ctx)))) return null;
 
       // Get station with hierarchy
       const stationRows = await database.select({
@@ -93,7 +137,7 @@ export const stationAnalysisRouter = router({
       if (stationRows.length === 0) return null;
       const row = stationRows[0];
 
-      const machineIds = await getStationMachineIds(database, input.stationId);
+      const machineIds = await getStationMachineIds(database, input.stationId, phamViCua(ctx));
       if (machineIds.length === 0) {
         return {
           ...row,
@@ -110,8 +154,8 @@ export const stationAnalysisRouter = router({
       }
 
       const conditions: SQL[] = [inArray(productInspections.machineId, machineIds)];
-      if (input.startDate) conditions.push(gte(productInspections.inspectionTime, toFakeUtc(input.startDate)));
-      if (input.endDate) conditions.push(lte(productInspections.inspectionTime, toFakeUtc(input.endDate)));
+      if (input.startDate) conditions.push(gte(productInspections.inspectionTime, input.startDate));
+      if (input.endDate) conditions.push(lte(productInspections.inspectionTime, input.endDate));
       if (input.productModelId) conditions.push(eq(productInspections.productModelId, input.productModelId));
 
       // Build previous period query if date range provided
@@ -122,8 +166,8 @@ export const stationAnalysisRouter = router({
         const prevStart = new Date(prevEnd.getTime() - duration);
         const prevCond: SQL[] = [
           inArray(productInspections.machineId, machineIds),
-          gte(productInspections.inspectionTime, toFakeUtc(prevStart)),
-          lte(productInspections.inspectionTime, toFakeUtc(prevEnd)),
+          gte(productInspections.inspectionTime, prevStart),
+          lte(productInspections.inspectionTime, prevEnd),
           ...(input.productModelId ? [eq(productInspections.productModelId, input.productModelId)] : []),
         ];
         prevQueryPromise = database.select({
@@ -151,7 +195,7 @@ export const stationAnalysisRouter = router({
       };
 
       const fpy = t > 0 ? Math.round((ok / t) * 10000) / 100 : 0;
-      const fy = t > 0 ? Math.round(((ok + ntf) / t) * 10000) / 100 : 0;
+      const fy = Math.round(finalYield({ ok, ntf, total: t }) * 100) / 100;
       const retest = t > 0 ? Math.round((ntf / t) * 10000) / 100 : 0;
 
       // Previous period yield change
@@ -187,38 +231,50 @@ export const stationAnalysisRouter = router({
       endDate: z.date().optional(),
       productModelId: z.number().optional(),
     }))
-    .query(async ({ input }) => {
+    .query(async ({ input, ctx }) => {
       const database = await getDb();
       if (!database) return [];
 
-      const machineIds = await getStationMachineIds(database, input.stationId);
+      const machineIds = await getStationMachineIds(database, input.stationId, phamViCua(ctx));
       if (machineIds.length === 0) return [];
 
       const conditions: SQL[] = [inArray(productInspections.machineId, machineIds)];
-      if (input.startDate) conditions.push(gte(productInspections.inspectionTime, toFakeUtc(input.startDate)));
-      if (input.endDate) conditions.push(lte(productInspections.inspectionTime, toFakeUtc(input.endDate)));
+      if (input.startDate) conditions.push(gte(productInspections.inspectionTime, input.startDate));
+      if (input.endDate) conditions.push(lte(productInspections.inspectionTime, input.endDate));
       if (input.productModelId) conditions.push(eq(productInspections.productModelId, input.productModelId));
 
       const rows = await database.select({
-        hour: sql<number>`extract(hour from ${productInspections.inspectionTime})`.as('hour'),
+        hour: piLocalHourOfDay().as('hour'),
         total: sql<number>`count(*)`,
         ok: sql<number>`sum(case when ${productInspections.overallResult} = 'OK' then 1 else 0 end)`,
         ng: sql<number>`sum(case when ${productInspections.overallResult} = 'NG' then 1 else 0 end)`,
+        ntf: sql<number>`sum(case when ${productInspections.overallResult} = 'NTF' then 1 else 0 end)`,
       })
         .from(productInspections)
         .where(and(...conditions))
         .groupBy(sql`hour`)
         .orderBy(sql`hour`);
 
-      return rows.map(r => {
+      const yieldByBucket = tinhYieldTheoBucket(
+        rows.map(r => ({
+          bucket: String(r.hour),
+          total: Number(r.total) || 0,
+          ok: Number(r.ok) || 0,
+          ntf: Number(r.ntf) || 0,
+        })),
+      );
+
+      return rows.map((r, i) => {
         const total = Number(r.total) || 0;
         const ok = Number(r.ok) || 0;
+        const ntf = Number(r.ntf) || 0;
         return {
           hour: Number(r.hour),
           total,
           ok,
           ng: Number(r.ng) || 0,
-          yield: total > 0 ? Math.round((ok / total) * 10000) / 100 : 0,
+          ntf,
+          yield: yieldByBucket[i].yieldRate,
         };
       });
     }),
@@ -233,19 +289,19 @@ export const stationAnalysisRouter = router({
       endDate: z.date().optional(),
       productModelId: z.number().optional(),
     }))
-    .query(async ({ input }) => {
+    .query(async ({ input, ctx }) => {
       const database = await getDb();
       if (!database) return [];
 
-      const machineIds = await getStationMachineIds(database, input.stationId);
+      const machineIds = await getStationMachineIds(database, input.stationId, phamViCua(ctx));
       if (machineIds.length === 0) return [];
 
       const conditions: SQL[] = [
         eq(measurementResults.result, 'NG'),
         inArray(productInspections.machineId, machineIds),
       ];
-      if (input.startDate) conditions.push(gte(productInspections.inspectionTime, toFakeUtc(input.startDate)));
-      if (input.endDate) conditions.push(lte(productInspections.inspectionTime, toFakeUtc(input.endDate)));
+      if (input.startDate) conditions.push(gte(productInspections.inspectionTime, input.startDate));
+      if (input.endDate) conditions.push(lte(productInspections.inspectionTime, input.endDate));
       if (input.productModelId) conditions.push(eq(productInspections.productModelId, input.productModelId));
 
       const byType = await database.select({
@@ -302,11 +358,11 @@ export const stationAnalysisRouter = router({
       stationId: z.number(),
       productModelId: z.number().optional(),
     }))
-    .query(async ({ input }) => {
+    .query(async ({ input, ctx }) => {
       const database = await getDb();
       if (!database) return [];
 
-      const machineIds = await getStationMachineIds(database, input.stationId);
+      const machineIds = await getStationMachineIds(database, input.stationId, phamViCua(ctx));
       if (machineIds.length === 0) return [];
 
       const conditions: SQL[] = [
@@ -349,7 +405,7 @@ export const stationAnalysisRouter = router({
       uslOverride: z.number().nullable().optional(),
       lslOverride: z.number().nullable().optional(),
     }))
-    .query(async ({ input }) => {
+    .query(async ({ input, ctx }) => {
       const database = await getDb();
       const emptyResult = {
         subgroups: [] as any[], controlLimits: null, xBarPoints: [] as any[], rPoints: [] as any[],
@@ -360,7 +416,7 @@ export const stationAnalysisRouter = router({
       };
       if (!database) return emptyResult;
 
-      const machineIds = await getStationMachineIds(database, input.stationId);
+      const machineIds = await getStationMachineIds(database, input.stationId, phamViCua(ctx));
       if (machineIds.length === 0) return emptyResult;
 
       // Get measurement point definition for spec limits
@@ -393,8 +449,8 @@ export const stationAnalysisRouter = router({
         eq(measurementResults.pointDefId, input.measurementPointDefId),
         isNotNull(measurementResults.measuredValue),
       ];
-      if (input.startDate) conditions.push(gte(productInspections.inspectionTime, toFakeUtc(input.startDate)));
-      if (input.endDate) conditions.push(lte(productInspections.inspectionTime, toFakeUtc(input.endDate)));
+      if (input.startDate) conditions.push(gte(productInspections.inspectionTime, input.startDate));
+      if (input.endDate) conditions.push(lte(productInspections.inspectionTime, input.endDate));
       if (input.productModelId) conditions.push(eq(productInspections.productModelId, input.productModelId));
 
       const rawData = await database.select({
@@ -543,38 +599,50 @@ export const stationAnalysisRouter = router({
       endDate: z.date().optional(),
       productModelId: z.number().optional(),
     }))
-    .query(async ({ input }) => {
+    .query(async ({ input, ctx }) => {
       const database = await getDb();
       if (!database) return { points: [], mean: 0, ucl: 100, lcl: 0, stddev: 0, cpk: 0, ppk: 0 };
 
-      const machineIds = await getStationMachineIds(database, input.stationId);
+      const machineIds = await getStationMachineIds(database, input.stationId, phamViCua(ctx));
       if (machineIds.length === 0) return { points: [], mean: 0, ucl: 100, lcl: 0, stddev: 0, cpk: 0, ppk: 0 };
 
       const conditions: SQL[] = [inArray(productInspections.machineId, machineIds)];
-      if (input.startDate) conditions.push(gte(productInspections.inspectionTime, toFakeUtc(input.startDate)));
-      if (input.endDate) conditions.push(lte(productInspections.inspectionTime, toFakeUtc(input.endDate)));
+      if (input.startDate) conditions.push(gte(productInspections.inspectionTime, input.startDate));
+      if (input.endDate) conditions.push(lte(productInspections.inspectionTime, input.endDate));
       if (input.productModelId) conditions.push(eq(productInspections.productModelId, input.productModelId));
 
       const dailyRows = await database.select({
-        day: sql`date_trunc('day', ${productInspections.inspectionTime})`.as('day'),
+        day: piLocalDay().as('day'),
         total: sql<number>`count(*)`,
         ok: sql<number>`sum(case when ${productInspections.overallResult} = 'OK' then 1 else 0 end)`,
         ng: sql<number>`sum(case when ${productInspections.overallResult} = 'NG' then 1 else 0 end)`,
+        ntf: sql<number>`sum(case when ${productInspections.overallResult} = 'NTF' then 1 else 0 end)`,
       })
         .from(productInspections)
         .where(and(...conditions))
         .groupBy(sql`day`)
         .orderBy(sql`day`);
 
-      const points = dailyRows.map(d => {
+      const yieldByBucket = tinhYieldTheoBucket(
+        dailyRows.map(d => ({
+          bucket: String(d.day),
+          total: Number(d.total) || 0,
+          ok: Number(d.ok) || 0,
+          ntf: Number(d.ntf) || 0,
+        })),
+      );
+
+      const points = dailyRows.map((d, i) => {
         const total = Number(d.total) || 0;
         const ok = Number(d.ok) || 0;
+        const ntf = Number(d.ntf) || 0;
         return {
           day: String(d.day),
           total,
           ok,
           ng: Number(d.ng) || 0,
-          yield: total > 0 ? Math.round((ok / total) * 10000) / 100 : 0,
+          ntf,
+          yield: yieldByBucket[i].yieldRate,
         };
       });
 
@@ -661,19 +729,19 @@ export const stationAnalysisRouter = router({
       productModelId: z.number().optional(),
       limit: z.number().min(1).max(200).default(50),
     }))
-    .query(async ({ input }) => {
+    .query(async ({ input, ctx }) => {
       const database = await getDb();
       if (!database) return [];
 
-      const machineIds = await getStationMachineIds(database, input.stationId);
+      const machineIds = await getStationMachineIds(database, input.stationId, phamViCua(ctx));
       if (machineIds.length === 0) return [];
 
       const conditions: SQL[] = [
         inArray(productInspections.machineId, machineIds),
         eq(productInspections.overallResult, 'NG'),
       ];
-      if (input.startDate) conditions.push(gte(productInspections.inspectionTime, toFakeUtc(input.startDate)));
-      if (input.endDate) conditions.push(lte(productInspections.inspectionTime, toFakeUtc(input.endDate)));
+      if (input.startDate) conditions.push(gte(productInspections.inspectionTime, input.startDate));
+      if (input.endDate) conditions.push(lte(productInspections.inspectionTime, input.endDate));
       if (input.productModelId) conditions.push(eq(productInspections.productModelId, input.productModelId));
 
       const inspections = await database.select({
@@ -737,16 +805,16 @@ export const stationAnalysisRouter = router({
       endDate: z.date().optional(),
       productModelId: z.number().optional(),
     }))
-    .query(async ({ input }) => {
+    .query(async ({ input, ctx }) => {
       const database = await getDb();
       if (!database) return { alerts: [], patterns: [], recommendations: [] };
 
-      const machineIds = await getStationMachineIds(database, input.stationId);
+      const machineIds = await getStationMachineIds(database, input.stationId, phamViCua(ctx));
       if (machineIds.length === 0) return { alerts: [], patterns: [], recommendations: [] };
 
       const conditions: SQL[] = [inArray(productInspections.machineId, machineIds)];
-      if (input.startDate) conditions.push(gte(productInspections.inspectionTime, toFakeUtc(input.startDate)));
-      if (input.endDate) conditions.push(lte(productInspections.inspectionTime, toFakeUtc(input.endDate)));
+      if (input.startDate) conditions.push(gte(productInspections.inspectionTime, input.startDate));
+      if (input.endDate) conditions.push(lte(productInspections.inspectionTime, input.endDate));
       if (input.productModelId) conditions.push(eq(productInspections.productModelId, input.productModelId));
 
       // Get overall stats
@@ -766,9 +834,10 @@ export const stationAnalysisRouter = router({
 
       // Daily yield for trend analysis
       const dailyRows = await database.select({
-        day: sql`date_trunc('day', ${productInspections.inspectionTime})`.as('day'),
+        day: piLocalDay().as('day'),
         total: sql<number>`count(*)`,
         ok: sql<number>`sum(case when ${productInspections.overallResult} = 'OK' then 1 else 0 end)`,
+        ntf: sql<number>`sum(case when ${productInspections.overallResult} = 'NTF' then 1 else 0 end)`,
       })
         .from(productInspections)
         .where(and(...conditions))
@@ -778,12 +847,13 @@ export const stationAnalysisRouter = router({
       const dailyYields = dailyRows.map(d => {
         const t = Number(d.total) || 0;
         const o = Number(d.ok) || 0;
-        return { day: String(d.day), yield: t > 0 ? (o / t) * 100 : 0 };
+        const n = Number(d.ntf) || 0;
+        return { day: String(d.day), yield: finalYield({ ok: o, ntf: n, total: t }) };
       });
 
       // Hourly pattern for shift analysis
       const hourlyRows = await database.select({
-        hour: sql<number>`extract(hour from ${productInspections.inspectionTime})`.as('hour'),
+        hour: piLocalHourOfDay().as('hour'),
         total: sql<number>`count(*)`,
         ng: sql<number>`sum(case when ${productInspections.overallResult} = 'NG' then 1 else 0 end)`,
       })
@@ -797,8 +867,8 @@ export const stationAnalysisRouter = router({
         eq(measurementResults.result, 'NG'),
         inArray(productInspections.machineId, machineIds),
       ];
-      if (input.startDate) ngConditions.push(gte(productInspections.inspectionTime, toFakeUtc(input.startDate)));
-      if (input.endDate) ngConditions.push(lte(productInspections.inspectionTime, toFakeUtc(input.endDate)));
+      if (input.startDate) ngConditions.push(gte(productInspections.inspectionTime, input.startDate));
+      if (input.endDate) ngConditions.push(lte(productInspections.inspectionTime, input.endDate));
       if (input.productModelId) ngConditions.push(eq(productInspections.productModelId, input.productModelId));
 
       const topDefects = await database.select({
@@ -989,22 +1059,23 @@ export const stationAnalysisRouter = router({
       productModelId: z.number().optional(),
       bins: z.number().min(5).max(50).default(20),
     }))
-    .query(async ({ input }) => {
+    .query(async ({ input, ctx }) => {
       const database = await getDb();
       if (!database) return { bins: [], stats: { mean: 0, median: 0, mode: 0, stddev: 0, skewness: 0, kurtosis: 0, n: 0, min: 0, max: 0 } };
 
-      const machineIds = await getStationMachineIds(database, input.stationId);
+      const machineIds = await getStationMachineIds(database, input.stationId, phamViCua(ctx));
       if (machineIds.length === 0) return { bins: [], stats: { mean: 0, median: 0, mode: 0, stddev: 0, skewness: 0, kurtosis: 0, n: 0, min: 0, max: 0 } };
 
       const conditions: SQL[] = [inArray(productInspections.machineId, machineIds)];
-      if (input.startDate) conditions.push(gte(productInspections.inspectionTime, toFakeUtc(input.startDate)));
-      if (input.endDate) conditions.push(lte(productInspections.inspectionTime, toFakeUtc(input.endDate)));
+      if (input.startDate) conditions.push(gte(productInspections.inspectionTime, input.startDate));
+      if (input.endDate) conditions.push(lte(productInspections.inspectionTime, input.endDate));
       if (input.productModelId) conditions.push(eq(productInspections.productModelId, input.productModelId));
 
       const dailyRows = await database.select({
-        day: sql`date_trunc('day', ${productInspections.inspectionTime})`.as('day'),
+        day: piLocalDay().as('day'),
         total: sql<number>`count(*)`,
         ok: sql<number>`sum(case when ${productInspections.overallResult} = 'OK' then 1 else 0 end)`,
+        ntf: sql<number>`sum(case when ${productInspections.overallResult} = 'NTF' then 1 else 0 end)`,
       })
         .from(productInspections)
         .where(and(...conditions))
@@ -1014,7 +1085,8 @@ export const stationAnalysisRouter = router({
       const yields = dailyRows.map(d => {
         const total = Number(d.total) || 0;
         const ok = Number(d.ok) || 0;
-        return total > 0 ? (ok / total) * 100 : 0;
+        const ntf = Number(d.ntf) || 0;
+        return finalYield({ ok, ntf, total });
       }).filter(y => y > 0);
 
       if (yields.length === 0) return { bins: [], stats: { mean: 0, median: 0, mode: 0, stddev: 0, skewness: 0, kurtosis: 0, n: 0, min: 0, max: 0 } };
@@ -1091,21 +1163,21 @@ export const stationAnalysisRouter = router({
       endDate: z.date().optional(),
       productModelId: z.number().optional(),
     }))
-    .query(async ({ input }) => {
+    .query(async ({ input, ctx }) => {
       const database = await getDb();
       if (!database) return { points: [], correlation: 0, rSquared: 0, trendLine: { slope: 0, intercept: 0 } };
 
-      const machineIds = await getStationMachineIds(database, input.stationId);
+      const machineIds = await getStationMachineIds(database, input.stationId, phamViCua(ctx));
       if (machineIds.length === 0) return { points: [], correlation: 0, rSquared: 0, trendLine: { slope: 0, intercept: 0 } };
 
       const conditions: SQL[] = [inArray(productInspections.machineId, machineIds)];
-      if (input.startDate) conditions.push(gte(productInspections.inspectionTime, toFakeUtc(input.startDate)));
-      if (input.endDate) conditions.push(lte(productInspections.inspectionTime, toFakeUtc(input.endDate)));
+      if (input.startDate) conditions.push(gte(productInspections.inspectionTime, input.startDate));
+      if (input.endDate) conditions.push(lte(productInspections.inspectionTime, input.endDate));
       if (input.productModelId) conditions.push(eq(productInspections.productModelId, input.productModelId));
 
       // Hourly data: total output (X) vs NG rate (Y)
       const hourlyRows = await database.select({
-        bucket: sql`date_trunc('hour', ${productInspections.inspectionTime})`.as('bucket'),
+        bucket: factoryDateTruncSql('hour', productInspections.inspectionTime).as('bucket'),
         total: sql<number>`count(*)`,
         ok: sql<number>`sum(case when ${productInspections.overallResult} = 'OK' then 1 else 0 end)`,
         ng: sql<number>`sum(case when ${productInspections.overallResult} = 'NG' then 1 else 0 end)`,
@@ -1160,24 +1232,24 @@ export const stationAnalysisRouter = router({
       endDate: z.date().optional(),
       productModelId: z.number().optional(),
     }))
-    .query(async ({ input }) => {
+    .query(async ({ input, ctx }) => {
       const database = await getDb();
       if (!database) return { matrix: [], defectTypes: [], periods: [], totals: { byDefect: {}, byPeriod: {}, grand: 0 } };
 
-      const machineIds = await getStationMachineIds(database, input.stationId);
+      const machineIds = await getStationMachineIds(database, input.stationId, phamViCua(ctx));
       if (machineIds.length === 0) return { matrix: [], defectTypes: [], periods: [], totals: { byDefect: {}, byPeriod: {}, grand: 0 } };
 
       const conditions: SQL[] = [
         eq(measurementResults.result, 'NG'),
         inArray(productInspections.machineId, machineIds),
       ];
-      if (input.startDate) conditions.push(gte(productInspections.inspectionTime, toFakeUtc(input.startDate)));
-      if (input.endDate) conditions.push(lte(productInspections.inspectionTime, toFakeUtc(input.endDate)));
+      if (input.startDate) conditions.push(gte(productInspections.inspectionTime, input.startDate));
+      if (input.endDate) conditions.push(lte(productInspections.inspectionTime, input.endDate));
       if (input.productModelId) conditions.push(eq(productInspections.productModelId, input.productModelId));
 
       const rows = await database.select({
         pointDefId: measurementResults.pointDefId,
-        day: sql<string>`to_char(date_trunc('day', ${productInspections.inspectionTime}), 'YYYY-MM-DD')`.as('day'),
+        day: sql<string>`${factoryDayTextSql(productInspections.inspectionTime)}`.as('day'),
         ngCount: sql<number>`count(*)`.as('ng_count'),
       })
         .from(measurementResults)
@@ -1229,19 +1301,19 @@ export const stationAnalysisRouter = router({
       endDate: z.date().optional(),
       productModelId: z.number().optional(),
     }))
-    .query(async ({ input }) => {
+    .query(async ({ input, ctx }) => {
       const database = await getDb();
       if (!database) return { categories: [], topDefect: null };
 
-      const machineIds = await getStationMachineIds(database, input.stationId);
+      const machineIds = await getStationMachineIds(database, input.stationId, phamViCua(ctx));
       if (machineIds.length === 0) return { categories: [], topDefect: null };
 
       const conditions: SQL[] = [
         eq(measurementResults.result, 'NG'),
         inArray(productInspections.machineId, machineIds),
       ];
-      if (input.startDate) conditions.push(gte(productInspections.inspectionTime, toFakeUtc(input.startDate)));
-      if (input.endDate) conditions.push(lte(productInspections.inspectionTime, toFakeUtc(input.endDate)));
+      if (input.startDate) conditions.push(gte(productInspections.inspectionTime, input.startDate));
+      if (input.endDate) conditions.push(lte(productInspections.inspectionTime, input.endDate));
       if (input.productModelId) conditions.push(eq(productInspections.productModelId, input.productModelId));
 
       // Get top defect
@@ -1269,16 +1341,16 @@ export const stationAnalysisRouter = router({
       // Get shift data for Man category
       const shiftRows = await database.select({
         shift: sql<string>`case
-          when extract(hour from ${productInspections.inspectionTime}) >= 6 and extract(hour from ${productInspections.inspectionTime}) < 14 then 'Morning'
-          when extract(hour from ${productInspections.inspectionTime}) >= 14 and extract(hour from ${productInspections.inspectionTime}) < 22 then 'Afternoon'
+          when ${piLocalHourOfDay()} >= 6 and ${piLocalHourOfDay()} < 14 then 'Morning'
+          when ${piLocalHourOfDay()} >= 14 and ${piLocalHourOfDay()} < 22 then 'Afternoon'
           else 'Night' end`.as('shift'),
         total: sql<number>`count(*)`,
         ng: sql<number>`sum(case when ${productInspections.overallResult} = 'NG' then 1 else 0 end)`,
       })
         .from(productInspections)
         .where(and(inArray(productInspections.machineId, machineIds),
-          ...(input.startDate ? [gte(productInspections.inspectionTime, toFakeUtc(input.startDate))] : []),
-          ...(input.endDate ? [lte(productInspections.inspectionTime, toFakeUtc(input.endDate))] : []),
+          ...(input.startDate ? [gte(productInspections.inspectionTime, input.startDate)] : []),
+          ...(input.endDate ? [lte(productInspections.inspectionTime, input.endDate)] : []),
           ...(input.productModelId ? [eq(productInspections.productModelId, input.productModelId)] : [])))
         .groupBy(sql`shift`);
 
@@ -1292,8 +1364,8 @@ export const stationAnalysisRouter = router({
         .from(productInspections)
         .innerJoin(machines, eq(productInspections.machineId, machines.id))
         .where(and(inArray(productInspections.machineId, machineIds),
-          ...(input.startDate ? [gte(productInspections.inspectionTime, toFakeUtc(input.startDate))] : []),
-          ...(input.endDate ? [lte(productInspections.inspectionTime, toFakeUtc(input.endDate))] : []),
+          ...(input.startDate ? [gte(productInspections.inspectionTime, input.startDate)] : []),
+          ...(input.endDate ? [lte(productInspections.inspectionTime, input.endDate)] : []),
           ...(input.productModelId ? [eq(productInspections.productModelId, input.productModelId)] : [])))
         .groupBy(machines.code, machines.name);
 
@@ -1370,16 +1442,16 @@ export const stationAnalysisRouter = router({
       endDate: z.date().optional(),
       productModelId: z.number().optional(),
     }))
-    .query(async ({ input }) => {
+    .query(async ({ input, ctx }) => {
       const database = await getDb();
       if (!database) return { byMachine: [], byShift: [], byDay: [] };
 
-      const machineIds = await getStationMachineIds(database, input.stationId);
+      const machineIds = await getStationMachineIds(database, input.stationId, phamViCua(ctx));
       if (machineIds.length === 0) return { byMachine: [], byShift: [], byDay: [] };
 
       const baseCond: SQL[] = [inArray(productInspections.machineId, machineIds)];
-      if (input.startDate) baseCond.push(gte(productInspections.inspectionTime, toFakeUtc(input.startDate)));
-      if (input.endDate) baseCond.push(lte(productInspections.inspectionTime, toFakeUtc(input.endDate)));
+      if (input.startDate) baseCond.push(gte(productInspections.inspectionTime, input.startDate));
+      if (input.endDate) baseCond.push(lte(productInspections.inspectionTime, input.endDate));
       if (input.productModelId) baseCond.push(eq(productInspections.productModelId, input.productModelId));
 
       // By Machine
@@ -1400,8 +1472,8 @@ export const stationAnalysisRouter = router({
       // By Shift (Morning 6-14, Afternoon 14-22, Night 22-6)
       const byShift = await database.select({
         shift: sql<string>`case
-          when extract(hour from ${productInspections.inspectionTime}) >= 6 and extract(hour from ${productInspections.inspectionTime}) < 14 then 'Morning'
-          when extract(hour from ${productInspections.inspectionTime}) >= 14 and extract(hour from ${productInspections.inspectionTime}) < 22 then 'Afternoon'
+          when ${piLocalHourOfDay()} >= 6 and ${piLocalHourOfDay()} < 14 then 'Morning'
+          when ${piLocalHourOfDay()} >= 14 and ${piLocalHourOfDay()} < 22 then 'Afternoon'
           else 'Night' end`.as('shift'),
         total: sql<number>`count(*)`,
         ok: sql<number>`sum(case when ${productInspections.overallResult} = 'OK' then 1 else 0 end)`,
@@ -1415,10 +1487,11 @@ export const stationAnalysisRouter = router({
 
       // By Day of Week
       const byDay = await database.select({
-        dayOfWeek: sql<number>`extract(dow from ${productInspections.inspectionTime})`.as('dow'),
+        dayOfWeek: factoryDowSql(productInspections.inspectionTime).as('dow'),
         total: sql<number>`count(*)`,
         ok: sql<number>`sum(case when ${productInspections.overallResult} = 'OK' then 1 else 0 end)`,
         ng: sql<number>`sum(case when ${productInspections.overallResult} = 'NG' then 1 else 0 end)`,
+        ntf: sql<number>`sum(case when ${productInspections.overallResult} = 'NTF' then 1 else 0 end)`,
       })
         .from(productInspections)
         .where(and(...baseCond))
@@ -1435,7 +1508,7 @@ export const stationAnalysisRouter = router({
           ok: Number(m.ok),
           ng: Number(m.ng),
           ntf: Number(m.ntf),
-          yield: Number(m.total) > 0 ? Math.round((Number(m.ok) / Number(m.total)) * 10000) / 100 : 0,
+          yield: Math.round(finalYield({ ok: Number(m.ok), ntf: Number(m.ntf), total: Number(m.total) }) * 100) / 100,
         })),
         byShift: byShift.map(s => ({
           shift: s.shift,
@@ -1443,14 +1516,15 @@ export const stationAnalysisRouter = router({
           ok: Number(s.ok),
           ng: Number(s.ng),
           ntf: Number(s.ntf),
-          yield: Number(s.total) > 0 ? Math.round((Number(s.ok) / Number(s.total)) * 10000) / 100 : 0,
+          yield: Math.round(finalYield({ ok: Number(s.ok), ntf: Number(s.ntf), total: Number(s.total) }) * 100) / 100,
         })),
         byDay: byDay.map(d => ({
           day: dayNames[Number(d.dayOfWeek)] || `Day ${d.dayOfWeek}`,
           total: Number(d.total),
           ok: Number(d.ok),
           ng: Number(d.ng),
-          yield: Number(d.total) > 0 ? Math.round((Number(d.ok) / Number(d.total)) * 10000) / 100 : 0,
+          ntf: Number(d.ntf),
+          yield: Math.round(finalYield({ ok: Number(d.ok), ntf: Number(d.ntf), total: Number(d.total) }) * 100) / 100,
         })),
       };
     }),
@@ -1466,24 +1540,25 @@ export const stationAnalysisRouter = router({
       endDate: z.date().optional(),
       productModelId: z.number().optional(),
     }))
-    .query(async ({ input }) => {
+    .query(async ({ input, ctx }) => {
       const database = await getDb();
       if (!database) return { anomalies: [], forecast: [], clusters: [], insights: [], processCapability: null };
 
-      const machineIds = await getStationMachineIds(database, input.stationId);
+      const machineIds = await getStationMachineIds(database, input.stationId, phamViCua(ctx));
       if (machineIds.length === 0) return { anomalies: [], forecast: [], clusters: [], insights: [], processCapability: null };
 
       const conditions: SQL[] = [inArray(productInspections.machineId, machineIds)];
-      if (input.startDate) conditions.push(gte(productInspections.inspectionTime, toFakeUtc(input.startDate)));
-      if (input.endDate) conditions.push(lte(productInspections.inspectionTime, toFakeUtc(input.endDate)));
+      if (input.startDate) conditions.push(gte(productInspections.inspectionTime, input.startDate));
+      if (input.endDate) conditions.push(lte(productInspections.inspectionTime, input.endDate));
       if (input.productModelId) conditions.push(eq(productInspections.productModelId, input.productModelId));
 
       // Fetch daily yields
       const dailyRows = await database.select({
-        day: sql`date_trunc('day', ${productInspections.inspectionTime})`.as('day'),
+        day: piLocalDay().as('day'),
         total: sql<number>`count(*)`,
         ok: sql<number>`sum(case when ${productInspections.overallResult} = 'OK' then 1 else 0 end)`,
         ng: sql<number>`sum(case when ${productInspections.overallResult} = 'NG' then 1 else 0 end)`,
+        ntf: sql<number>`sum(case when ${productInspections.overallResult} = 'NTF' then 1 else 0 end)`,
       })
         .from(productInspections)
         .where(and(...conditions))
@@ -1495,7 +1570,8 @@ export const stationAnalysisRouter = router({
         total: Number(d.total) || 0,
         ok: Number(d.ok) || 0,
         ng: Number(d.ng) || 0,
-        yield: Number(d.total) > 0 ? (Number(d.ok) / Number(d.total)) * 100 : 0,
+        ntf: Number(d.ntf) || 0,
+        yield: finalYield({ ok: Number(d.ok) || 0, ntf: Number(d.ntf) || 0, total: Number(d.total) || 0 }),
       }));
 
       const yields = dailyData.map(d => d.yield);
@@ -1675,17 +1751,17 @@ export const stationAnalysisRouter = router({
       endDate: z.date().optional(),
       productModelId: z.number().optional(),
     }))
-    .query(async ({ input }) => {
+    .query(async ({ input, ctx }) => {
       const database = await getDb();
       if (!database) return null;
 
-      const machineIds = await getStationMachineIds(database, input.stationId);
+      const machineIds = await getStationMachineIds(database, input.stationId, phamViCua(ctx));
       if (machineIds.length === 0) return { points: [], productImage: null, boardInfo: null };
 
       // Date filters for inspections
       const dateConds: SQL[] = [inArray(productInspections.machineId, machineIds)];
-      if (input.startDate) dateConds.push(gte(productInspections.inspectionTime, toFakeUtc(input.startDate)));
-      if (input.endDate) dateConds.push(lte(productInspections.inspectionTime, toFakeUtc(input.endDate)));
+      if (input.startDate) dateConds.push(gte(productInspections.inspectionTime, input.startDate));
+      if (input.endDate) dateConds.push(lte(productInspections.inspectionTime, input.endDate));
       if (input.productModelId) dateConds.push(eq(productInspections.productModelId, input.productModelId));
 
       // Get the product model for this station (most used product)
@@ -1905,10 +1981,24 @@ function normalCdf(x: number): number {
   const y = 1.0 - (((((a5 * t + a4) * t) + a3) * t + a2) * t + a1) * t * Math.exp(-x * x);
   return 0.5 * (1.0 + sign * y);
 }
+/**
+ * ★★★ 2026-08-18 (trả nợ nhóm A) — **ĐIỂM NGHẼN DUY NHẤT của cả 16 thủ tục trong file này.**
+ *
+ * Mọi thủ tục ở đây đọc `product_inspections` qua `inArray(machineId, machineIds)` và **đều** có
+ * nhánh `if (machineIds.length === 0) return <rỗng>` sẵn. Nên cổng phạm vi chỉ cần đặt ĐÚNG MỘT
+ * chỗ: `stationId` ngoài phạm vi ⇒ tập máy rỗng ⇒ cả 16 bề mặt trả rỗng theo đúng hình dạng
+ * chúng đã tự khai. Vá 16 chỗ bằng tay là 16 cơ hội chép sai.
+ *
+ * ⚠ `stationId` đến từ `input` — lời TỰ KHAI của người gọi. Trước bản vá, gõ tay một `stationId`
+ * của nhà máy khác là đọc được **toàn bộ bản ghi kiểm** của trạm ấy: lịch sử hỏng, SPC theo điểm
+ * đo, biểu đồ phân tán, ma trận khuyết tật, phân tích AI.
+ */
 async function getStationMachineIds(
   database: NonNullable<Awaited<ReturnType<typeof getDb>>>,
   stationId: number,
+  scope?: Parameters<typeof trongPhamVi>[2],
 ): Promise<number[]> {
+  if (!(await trongPhamVi("station", stationId, scope))) return [];
   const rows = await database.select({ id: machines.id })
     .from(machines)
     .where(and(eq(machines.stationId, stationId), eq(machines.isActive, true)));

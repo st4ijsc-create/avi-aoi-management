@@ -1,9 +1,17 @@
-import { COOKIE_NAME, ONE_YEAR_MS } from "@shared/const";
+import { COOKIE_NAME } from "@shared/const";
+// ★★★★ Pha 9 — CHỦ DUY NHẤT của "một phiên sống bao lâu" (mặc định 30 ngày, SESSION_TTL_DAYS).
+import { hanPhienMs } from "./hanPhien";
 import type { Express, Request, Response } from "express";
 import crypto from "node:crypto";
 import * as db from "../db";
-import { establishSession, LoginError, verifyCredentials } from "./authService";
+import {
+  establishSession,
+  ghiSoPhienChoOpenId,
+  LoginError,
+  verifyCredentials,
+} from "./authService";
 import { getSessionCookieOptions } from "./cookies";
+import { capVe2FA, ghiNhanOtpSai, kiemVe2FA, tieuVe2FA } from "./pendingTwoFactor";
 import {
   getConfiguredProvider,
   listEnabledSsoMethods,
@@ -302,13 +310,20 @@ export function registerOAuthRoutes(app: Express) {
         lastSignedIn: new Date(),
       });
 
+      // ★ Pha 9 — hạn phiên về MỘT CHỦ (`_core/hanPhien.ts`), mặc định 30 ngày.
+      const hanMs = hanPhienMs();
       const sessionToken = await sdk.createSessionToken(openId, {
         name: displayName ?? "",
-        expiresInMs: ONE_YEAR_MS,
       });
 
+      // ★★★★ 2026-08-11 SIẾT FAIL-OPEN — **ĐÚC VÉ THÌ PHẢI GHI SỔ.** Không ghi ⇒ vé này chết ngay
+      // ở lượt yêu cầu đầu tiên (`chanNeuPhienDaThuHoi` nay từ chối vé không có hàng) ⇒ đăng nhập
+      // OAuth thành một **nhà tù im lặng**: redirect 302 về "/" rồi 403 mọi thứ. Lượng từ canh điểm
+      // đúc thứ SÁU: `server/routers/sessionGrantScan.test.ts` §4.
+      await ghiSoPhienChoOpenId(openId, sessionToken, req, hanMs);
+
       const cookieOptions = getSessionCookieOptions(req);
-      res.cookie(COOKIE_NAME, sessionToken, { ...cookieOptions, maxAge: ONE_YEAR_MS });
+      res.cookie(COOKIE_NAME, sessionToken, { ...cookieOptions, maxAge: hanMs });
       res.redirect(302, redirectPath || "/");
     } catch (error) {
       console.error(`[OAuth] ${providerParam} callback failed`, error);
@@ -351,6 +366,10 @@ export function registerOAuthRoutes(app: Express) {
       // Check if 2FA is enabled — defer session until the 2FA step.
       const twoFAStatus = await db.get2FAStatus(user.id);
       if (twoFAStatus?.twoFactorEnabled) {
+        // ★★★ Pha 7 Task 6 — bước mật khẩu VỪA QUA: cấp vé một-lần, hạn ngắn, đi bằng cookie
+        // HttpOnly. `verify-2fa` ĐÒI vé này. Hình dạng response GIỮ NGUYÊN 100 % (vé không nằm
+        // trong body) ⇒ mọi client hiện có không phải sửa gì.
+        capVe2FA(user.id, req, res);
         res.json({
           requires2FA: true,
           userId: user.id,
@@ -382,43 +401,75 @@ export function registerOAuthRoutes(app: Express) {
       const { userId, token } = req.body;
       
       if (!userId || !token) {
-        res.status(400).json({ error: "User ID và mã xác thực là bắt buộc" });
+        res.status(400).json({ code: "TWOFA_MISSING_FIELDS", error: "User ID và mã xác thực là bắt buộc" });
         return;
       }
-      
+
+      // ★★★ Pha 7 Task 6 — **CỔNG BƯỚC MẬT KHẨU.** Đứng TRƯỚC mọi lượt đọc DB và TRƯỚC lượt
+      // xác minh OTP, vì ba lý do đều đo được:
+      //   1. không có vé thì không có gì để cấp ⇒ đọc DB là lãng phí;
+      //   2. `getUserById` trả 404 còn `get2FAStatus` trả 400 ⇒ hai mã trạng thái ấy là một
+      //      **máy dò tài khoản** cho người chưa qua mật khẩu; sau cổng này chúng không với tới;
+      //   3. không để một kẻ chưa qua mật khẩu **đốt** mã OTP trong sổ `totp_consumed`.
+      // ⚠ Vé KHÔNG tiêu ở đây — chỉ tiêu khi OTP đúng (xem docstring `pendingTwoFactor.ts`).
+      const ve = kiemVe2FA(req, Number(userId));
+      if (!ve.hopLe) {
+        await db.createAuditLog({
+          userId: Number(userId) || null,
+          userName: null,
+          action: 'login_2fa',
+          entityType: 'auth',
+          status: 'failure',
+          details: { reason: `no_password_step:${ve.lyDo}` },
+          ipAddress: req.ip ?? req.socket.remoteAddress,
+          userAgent: req.headers['user-agent'],
+        }).catch(() => {});
+        res.status(401).json({ code: "TWOFA_SESSION_INVALID", error: "Phiên đăng nhập không hợp lệ. Vui lòng đăng nhập lại." });
+        return;
+      }
+
       // Get user
       const user = await db.getUserById(userId);
       if (!user) {
-        res.status(404).json({ error: "Không tìm thấy người dùng" });
+        res.status(404).json({ code: "TWOFA_USER_NOT_FOUND", error: "Không tìm thấy người dùng" });
         return;
       }
       
       // Get 2FA status
       const twoFAStatus = await db.get2FAStatus(userId);
       if (!twoFAStatus?.twoFactorEnabled || !twoFAStatus.twoFactorSecret) {
-        res.status(400).json({ error: "2FA chưa được bật cho tài khoản này" });
+        res.status(400).json({ code: "TWOFA_NOT_ENABLED", error: "2FA chưa được bật cho tài khoản này" });
         return;
       }
       
-      // Verify OTP token using speakeasy
-      const speakeasy = await import('speakeasy');
-      const verified = speakeasy.default.totp.verify({
+      // Verify OTP token — và TIÊU MÃ (★★★ Pha 6 Task 6, chống phát lại).
+      // ⚠ Đây là cửa vào **REST**, không qua tRPC: một mã trộm được tiêu lại ở đây đổi thẳng ra
+      //   MỘT PHIÊN ĐĂNG NHẬP (`establishSession` bên dưới). Nó phải đứng trên cùng cuốn sổ với
+      //   đường step-up, nếu không thì bịt một cửa và để mở cửa kia.
+      const { verifyTotpOnce } = await import('./totpOnce');
+      const verified = (await verifyTotpOnce({
+        userId: user.id,
         secret: twoFAStatus.twoFactorSecret,
-        encoding: 'base32',
         token: token,
-        window: 1, // Allow 1 step before/after for clock drift
-      });
+      })).hopLe;
       
       if (!verified) {
         // Try backup code if TOTP fails
         const isBackupCode = await db.verifyBackupCode(userId, token);
         if (!isBackupCode) {
+          // ★ Pha 7 Task 6 — một lượt OTP sai TRỪ ngân sách của vé; hết ngân sách thì vé chết và
+          //   người dùng quay lại bước mật khẩu. Không có dòng này, MỘT vé = vô hạn lượt đoán.
+          ghiNhanOtpSai(req);
           await db.createAuditLog({ userId: user.id, userName: user.name, action: 'login_2fa', entityType: 'auth', status: 'failure', ipAddress: req.ip ?? req.socket.remoteAddress, userAgent: req.headers['user-agent'] }).catch(() => {});
-          res.status(401).json({ error: "Mã xác thực không hợp lệ" });
+          res.status(401).json({ code: "TWOFA_INVALID_TOKEN", error: "Mã xác thực không hợp lệ" });
           return;
         }
       }
-      
+
+      // ★ Pha 7 Task 6 — OTP đúng ⇒ TIÊU vé (một-lần) rồi mới cấp phiên. Lượt thứ hai với CÙNG vé
+      //   ấy rơi vào `ve-la` ⇒ 401.
+      tieuVe2FA(req, res);
+
       // 2FA passed → create session (cookie + user_sessions row) and audit the
       // successful login via the shared service.
       await establishSession(user, req, res, { method: "2fa" });
@@ -434,7 +485,7 @@ export function registerOAuthRoutes(app: Express) {
       });
     } catch (error) {
       console.error("[Auth] 2FA verification failed", error);
-      res.status(500).json({ error: "Xác thực 2FA thất bại" });
+      res.status(500).json({ code: "TWOFA_FAILED", error: "Xác thực 2FA thất bại" });
     }
   });
 
@@ -464,13 +515,17 @@ export function registerOAuthRoutes(app: Express) {
         lastSignedIn: new Date(),
       });
 
+      // ★ Pha 9 — hạn phiên về MỘT CHỦ (`_core/hanPhien.ts`), mặc định 30 ngày.
+      const hanMs = hanPhienMs();
       const sessionToken = await sdk.createSessionToken(userInfo.openId, {
         name: userInfo.name || "",
-        expiresInMs: ONE_YEAR_MS,
       });
 
+      // ★★★★ 2026-08-11 SIẾT FAIL-OPEN — xem khối lý lẽ ở callback nhà cung cấp phía trên.
+      await ghiSoPhienChoOpenId(userInfo.openId, sessionToken, req, hanMs);
+
       const cookieOptions = getSessionCookieOptions(req);
-      res.cookie(COOKIE_NAME, sessionToken, { ...cookieOptions, maxAge: ONE_YEAR_MS });
+      res.cookie(COOKIE_NAME, sessionToken, { ...cookieOptions, maxAge: hanMs });
 
       res.redirect(302, "/");
     } catch (error) {

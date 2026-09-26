@@ -2,6 +2,9 @@ import { useState } from "react";
 import { useTranslation } from 'react-i18next';
 import DashboardLayout from "@/components/DashboardLayout";
 import { ViewOnlyBadge } from "@/components/PermissionGate";
+import { ContextDrawer } from "@/components/workspace";
+import { CausalGraphEditorPageContent } from "./CausalGraphEditorPage";
+import AIGuidedActionCards from "@/components/AIGuidedActionCards";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -24,6 +27,7 @@ import {
 import { usePermissions } from "@/_core/hooks/usePermissions";
 import { PageHeader, chartColor, chartTooltipStyle, chartTooltipLabelStyle, chartGridProps, chartAxisTick } from "@/components/patterns";
 import { toast } from "sonner";
+import { toastTrpcError } from "@/lib/trpcErrors";
 import { trpc } from "@/lib/trpc";
 import { format, subDays } from "date-fns";
 import { vi } from "date-fns/locale";
@@ -44,7 +48,8 @@ import {
   Target,
   Zap,
   Pencil,
-  Trash2
+  Trash2,
+  Network
 } from "lucide-react";
 import { 
   BarChart, 
@@ -70,6 +75,10 @@ export function RootCauseAnalysisPageContent() {
   const { hasPermission } = usePermissions();
   const canEdit = hasPermission("analytics_root_cause", "canEdit");
   const canDelete = hasPermission("analytics_root_cause", "canDelete");
+  // doc 69 §B1.3 (T8/E1) — Causal-Graph embed: same permission the standalone
+  // /causal-graph route + CausalGraphEditorPageContent itself already gate on.
+  const canViewCausal = hasPermission("analytics_root_cause", "canView");
+  const [causalOpen, setCausalOpen] = useState(false);
   const [analysisType, setAnalysisType] = useState<AnalysisType>("DEFECT_ANALYSIS");
   const [machineId, setMachineId] = useState<number | undefined>();
   const [productModelId, setProductModelId] = useState<number | undefined>();
@@ -118,7 +127,7 @@ export function RootCauseAnalysisPageContent() {
       invalidate();
       toast.success(t("reports.analysisUpdated", "Đã cập nhật phân tích"));
     },
-    onError: (e) => toast.error(e.message),
+    onError: (e) => toastTrpcError(e),
   });
 
   const deleteMutation = trpc.rootCause.delete.useMutation({
@@ -128,7 +137,7 @@ export function RootCauseAnalysisPageContent() {
       invalidate();
       toast.success(t("reports.analysisDeleted", "Đã xoá phân tích"));
     },
-    onError: (e) => toast.error(e.message),
+    onError: (e) => toastTrpcError(e),
   });
 
   const openEdit = () => {
@@ -182,6 +191,14 @@ export function RootCauseAnalysisPageContent() {
           title={t('reports.rootCauseAnalysis')}
           description={t('reports.rootCauseAnalysisDesc')}
           badge={<ViewOnlyBadge module="analytics_root_cause" />}
+          actions={
+            canViewCausal ? (
+              <Button variant="outline" size="sm" className="gap-1.5" onClick={() => setCausalOpen(true)}>
+                <Network className="h-4 w-4" />
+                {t('reports.causalGraphButton', 'Đồ thị nhân quả')}
+              </Button>
+            ) : undefined
+          }
         />
 
         {/* Analysis Configuration */}
@@ -506,6 +523,19 @@ export function RootCauseAnalysisPageContent() {
                         </div>
                       </div>
 
+                      {/* doc69 Wave2 A3 — close the loop: 1-tap propose buttons for any
+                          recommendation above that maps to a KNOWN write-tool (RBAC-gated
+                          server-side; [] when nothing maps or the viewer isn't permitted —
+                          the list above stays advisory text only in that case). */}
+                      {Array.isArray((analysisDetail as any)?.suggestedActions) &&
+                        (analysisDetail as any).suggestedActions.length > 0 && (
+                          <AIGuidedActionCards
+                            onSend={() => {}}
+                            hideStaticActions
+                            suggestedActions={(analysisDetail as any).suggestedActions}
+                          />
+                        )}
+
                       {/* Preventive Measures */}
                       <div>
                         <h4 className="font-medium flex items-center gap-2 mb-3">
@@ -595,6 +625,21 @@ export function RootCauseAnalysisPageContent() {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      {/* doc 69 §B1.3 (T8/E1) — Causal-Graph embed: same component behind the
+          standalone /causal-graph route, reused (not duplicated). Wider than
+          the default ContextDrawer width to fit the node-graph canvas. */}
+      {canViewCausal && (
+        <ContextDrawer
+          open={causalOpen}
+          onOpenChange={setCausalOpen}
+          title={t('reports.causalGraphButton', 'Đồ thị nhân quả')}
+          description={t('reports.causalGraphDrawerDesc', 'Đồ thị máy ↔ lỗi ↔ nguyên nhân ↔ hành động dùng cho phân tích nguyên nhân gốc')}
+          className="flex w-[95vw] flex-col gap-0 p-0 sm:w-[85vw] sm:max-w-[1100px]"
+        >
+          <CausalGraphEditorPageContent />
+        </ContextDrawer>
+      )}
     </>
   );
 }

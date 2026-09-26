@@ -18,6 +18,7 @@
  */
 import { z } from "zod";
 import { TRPCError } from "@trpc/server";
+import { appError } from "../_core/appError";
 import { router, protectedProcedure } from "../_core/trpc";
 import { requirePermission } from "../_core/accessControl";
 import { getVisionAdapter, listVisionAdapters } from "../services/vision";
@@ -100,10 +101,12 @@ export const visionAdapterRouter = router({
       try {
         adapter = getVisionAdapter(input.vendorKey);
       } catch (err) {
-        throw new TRPCError({
-          code: "NOT_FOUND",
-          message: err instanceof Error ? err.message : `Unknown vendor "${input.vendorKey}"`,
-        });
+        throw appError(
+          "NOT_FOUND",
+          "ENTITY_NOT_FOUND",
+          { entity: "visionAdapter" },
+          err instanceof Error ? err.message : `Unknown vendor "${input.vendorKey}"`,
+        );
       }
 
       // ── Normalize (bad payload → BAD_REQUEST, never crash) ──
@@ -111,20 +114,23 @@ export const visionAdapterRouter = router({
       try {
         canonical = adapter.normalize(input.payload, { machineCode: input.machineCode });
       } catch (err) {
-        throw new TRPCError({
-          code: "BAD_REQUEST",
-          message: `Payload validation failed for vendor "${input.vendorKey}": ${
+        throw appError(
+          "BAD_REQUEST",
+          "INVALID_VALUE",
+          { field: "payload" },
+          `Payload validation failed for vendor "${input.vendorKey}": ${
             err instanceof Error ? err.message : String(err)
           }`,
-        });
+        );
       }
 
       if (!canonical.machineCode && !canonical.apiKey) {
-        throw new TRPCError({
-          code: "BAD_REQUEST",
-          message:
-            "Could not resolve machine identity — provide machineCode (argument or payload) or apiKey.",
-        });
+        throw appError(
+          "BAD_REQUEST",
+          "FIELD_REQUIRED",
+          { field: "machineCodeOrApiKey" },
+          "Could not resolve machine identity — provide machineCode (argument or payload) or apiKey.",
+        );
       }
 
       // ── V13 (doc 27 Đợt 7.6): native SPI enrichment via the height-map seam ──
@@ -192,7 +198,7 @@ export const visionAdapterRouter = router({
     .mutation(async ({ input }) => {
       const res = await startAcquisitionWorker(input);
       if (!res.ok) {
-        throw new TRPCError({ code: "PRECONDITION_FAILED", message: res.reason });
+        throw appError("PRECONDITION_FAILED", "OPERATION_FAILED", { operation: "startAcquisitionWorker" }, res.reason);
       }
       return res;
     }),

@@ -15,7 +15,11 @@
  */
 import { z } from "zod";
 import { TRPCError } from "@trpc/server";
-import { router, protectedProcedure } from "../_core/trpc";
+import { appError } from "../_core/appError";
+import { router, moduleProcedure } from "../_core/trpc";
+// ★ Cổng giấy phép MOD_AI — chỉ THÊM chiều giấy phép, RBAC/vai/2FA giữ nguyên từng ký tự.
+//   Không-brick + fail-safe ở `_core/moduleGate.ts`; lượng từ canh ở `congGiayPhepAiCensus.test.ts`.
+const protectedProcedure = moduleProcedure("MOD_AI");
 import { requirePermission } from "../_core/accessControl";
 import { getDb } from "../db/connection";
 import { and, desc, eq } from "drizzle-orm";
@@ -66,13 +70,13 @@ export const aiRobotAnomalyRouter = router({
     .input(z.object({ id: z.number().int().positive() }))
     .mutation(async ({ input, ctx }) => {
       const db = await getDb();
-      if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "DB unavailable" });
+      if (!db) throw appError("INTERNAL_SERVER_ERROR", "DB_UNAVAILABLE", undefined, "DB unavailable");
       const [row] = await db
         .update(robotBehaviorAnomalies)
         .set({ status: "acknowledged", acknowledgedBy: ctx.user.id, acknowledgedAt: new Date() })
         .where(eq(robotBehaviorAnomalies.id, input.id))
         .returning();
-      if (!row) throw new TRPCError({ code: "NOT_FOUND", message: "Anomaly not found" });
+      if (!row) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "anomaly" }, "Anomaly not found");
       return row;
     }),
 
@@ -82,7 +86,7 @@ export const aiRobotAnomalyRouter = router({
     .input(z.object({ robotId: z.number().int().positive() }))
     .mutation(async ({ input }) => {
       if (!isRobotAnomalyEnabled()) {
-        throw new TRPCError({ code: "CONFLICT", message: "Robot anomaly detection disabled (set AI_ROBOT_ANOMALY_ENABLED=true)" });
+        throw appError("CONFLICT", "FEATURE_DISABLED", { feature: "robotAnomalyDetection" }, "Robot anomaly detection disabled (set AI_ROBOT_ANOMALY_ENABLED=true)");
       }
       const anomalies = await detectAndRaiseForRobot(input.robotId);
       return { count: anomalies.length, anomalies };
@@ -114,22 +118,32 @@ export const aiRobotAnomalyRouter = router({
     .input(z.object({ modelId: z.number().int().positive() }))
     .mutation(async ({ input }) => {
       if (!isModelAutoRollbackEnabled()) {
-        throw new TRPCError({ code: "CONFLICT", message: "Model auto-rollback disabled (set AI_MODEL_AUTOROLLBACK_ENABLED=true)" });
+        throw appError("CONFLICT", "FEATURE_DISABLED", { feature: "modelAutoRollback" }, "Model auto-rollback disabled (set AI_MODEL_AUTOROLLBACK_ENABLED=true)");
       }
       return runRollbackForModel(input.modelId);
     }),
 
-  /** Manually roll a model back to a chosen version (allowed regardless of the flag). */
+  /**
+   * Manually roll a model back to a chosen version (allowed regardless of the flag).
+   * doc69 W0-2 follow-up: the target is an ARBITRARY human choice (not constrained by
+   * pickRollbackTarget), so manualRollback() now enforces the SAME eval quality gate
+   * as manual activation. A target whose evalReport.gate.pass !== true is rejected
+   * unless `force: true` (+ this `reason`, doubling as the audited override reason).
+   */
   manualRollback: protectedProcedure
     .use(requirePermission("machine_control", "canEdit"))
     .input(z.object({
       modelId: z.number().int().positive(),
       toVersionId: z.number().int().positive(),
       reason: z.string().max(500).optional(),
+      force: z.boolean().optional(),
     }))
     .mutation(async ({ input, ctx }) => {
-      const outcome = await manualRollback(input.modelId, input.toVersionId, ctx.user.id, input.reason ?? "Manual rollback");
-      if (!outcome.rolledBack) throw new TRPCError({ code: "BAD_REQUEST", message: outcome.reason });
+      const outcome = await manualRollback(
+        input.modelId, input.toVersionId, ctx.user.id, input.reason ?? "Manual rollback",
+        { force: input.force === true },
+      );
+      if (!outcome.rolledBack) throw appError("BAD_REQUEST", "OPERATION_FAILED", { operation: "rollbackAiModel" }, outcome.reason);
       return outcome;
     }),
 });

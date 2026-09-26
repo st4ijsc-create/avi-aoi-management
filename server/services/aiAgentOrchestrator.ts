@@ -23,13 +23,30 @@ import { eq, and, lt } from "drizzle-orm";
 import { getDb } from "../db/connection";
 import { aiAgentSessions } from "../../drizzle/schema";
 import type {
+  AgentBranchCondition,
   AgentPlan,
   AgentStepResult,
   AiAgentSession,
 } from "../../drizzle/schema";
-import { getTool, isWriteTool, isClientTool, type ToolExecContext, type ToolLang } from "./aiLocalTools/toolRegistry";
+import { getTool, isWriteTool, isClientTool, argsWithAuthCtx, type ToolExecContext, type ToolLang } from "./aiLocalTools/toolRegistry";
 import { proposeAction, confirmAction, cancelAction, type CopilotUser } from "./aiCopilotActions";
-import { planGoal, AGENT_MAX_STEPS } from "./aiAgentPlanner";
+import { planGoal, replanFromObservations, AGENT_MAX_STEPS, AGENT_MAX_REPLANS, type ReplanExecutedEntry, type ReplanResult } from "./aiAgentPlanner";
+// E2-4 (doc69 Giai đoạn 4/Wave E2) — realtime refresh nudge for the Agent Command
+// Center. ADDITIVE: publishAiAgentEvent() is fire-and-forget/non-throwing (see
+// aiAgentRealtime.ts) and carries only a minimal, non-sensitive payload — never
+// plan content/tool args. Called AFTER each choke point's own state change persists.
+import { publishAiAgentEvent, type AiAgentEventKind } from "./aiAgentRealtime";
+
+/** E2-4 — defensive call site: a realtime-nudge failure must never break the
+ *  choke point that triggered it. Belt-and-suspenders (publishAiAgentEvent
+ *  itself already never throws — see aiAgentRealtime.ts). */
+function nudge(event: AiAgentEventKind, sessionId?: string): void {
+  try {
+    publishAiAgentEvent(event, sessionId);
+  } catch (err) {
+    console.error("[aiAgentOrchestrator] realtime nudge failed:", (err as Error)?.message ?? err);
+  }
+}
 
 // ─── Tunables (read at call time so tests/config toggles take effect) ──────
 function agenticEnabled(): boolean {
@@ -41,12 +58,32 @@ function maxSteps(): number {
 function maxWritesPerSession(): number {
   return Math.max(1, Number(process.env.AGENT_MAX_WRITES_PER_SESSION ?? 3) || 3);
 }
+/**
+ * Observe→replan budget (Wave 3 / D1). `0` legitimately disables replanning —
+ * unlike maxSteps/maxWritesPerSession this must NOT fall back to the default
+ * on `0`, so it does not use the `Number(...) || default` idiom.
+ */
+function maxReplans(): number {
+  const raw = Number(process.env.AGENT_MAX_REPLANS ?? AGENT_MAX_REPLANS);
+  return Math.max(0, Number.isFinite(raw) ? raw : AGENT_MAX_REPLANS);
+}
+/** Safe, clamped parse of a possibly-missing/null counter column (`replanCount` may be absent pre-migration 0302). */
+function toCount(n: unknown): number {
+  const v = Number(n ?? 0);
+  return Number.isFinite(v) ? Math.max(0, v) : 0;
+}
 
 /** Roles permitted to run agentic multi-step automation.
  *  B1 go-live 2026-06-27: added the engineering roles supervisor + maintenance
  *  (technician) per user decision — they run multi-step sessions; every write step
  *  still goes through HITL propose→confirm gated by per-tool RBAC. (manager/it_admin
- *  are legacy labels not in roleEnum; kept harmless.) */
+ *  are legacy labels not in roleEnum; kept harmless.)
+ *
+ *  ⚠ 2026-08-17 — chủ dự án XÁC NHẬN LẠI: `engineer` ĐƯỢC chạy agent. Từ 2026-06-27 mã đã
+ *  cho phép, nhưng `aiAgentOrchestrator.test.ts` vẫn khẳng định ngược lại và ĐỎ suốt năm pha
+ *  dưới nhãn "nợ có trước". Quyết định chốt danh sách này là NGUỒN SỰ THẬT; ca test đã được
+ *  sửa cho khớp (KHÔNG phải ngược lại). Thêm/bớt một vai ở đây ⇒ hai ca ở
+ *  `describe("agentic gate (server role)")` ĐỎ ngay. */
 const AGENTIC_ROLES = new Set(["manager", "it_admin", "admin", "supervisor", "maintenance", "engineer"]);
 
 /** Session TTL (mirrors the pending-action 5' but generous for a multi-step flow). */
@@ -127,7 +164,9 @@ export async function startSession(
     expiresAt,
   });
 
-  const planResult = await planGoal(goal, { lang });
+  // G3-B — chủ phiên đi kèm lượt lập kế hoạch: hạn mức/quota/nhật ký của cổng AI gắn vào ĐÚNG
+  // người (trước đây mọi lượt của mọi người dồn chung một khoá "anon").
+  const planResult = await planGoal(goal, { lang, userId: ctx.user.id, role: ctx.user.role });
   // Enforce the step cap defensively (planner already cuts).
   const plan: AgentPlan = { ...planResult.plan, steps: planResult.plan.steps.slice(0, maxSteps()) };
 
@@ -135,6 +174,10 @@ export async function startSession(
     .update(aiAgentSessions)
     .set({ planJson: plan, status: "awaiting_approval", updatedAt: new Date() })
     .where(eq(aiAgentSessions.id, sessionId));
+
+  // E2-4 — nudge AFTER the row is persisted. Fire-and-forget, minimal payload
+  // (event + sessionId + timestamp only — no goal/plan on the wire).
+  nudge("session_started", sessionId);
 
   return {
     ok: true,
@@ -146,7 +189,13 @@ export async function startSession(
   };
 }
 
-/** User approves the plan → running → advance to the first stopping point. */
+/**
+ * User approves the plan → running → advance to the first stopping point.
+ * E2-4: no separate emit here — approvePlan always either bails out early
+ * (no state change, e.g. session not found) or delegates to advance() below,
+ * whose own wrapper already publishes the "advanced" nudge once its persist
+ * completes.
+ */
 export async function approvePlan(
   sessionId: string,
   ctx: { user: AgentUser; req?: ToolExecContext["req"] },
@@ -160,14 +209,107 @@ export async function approvePlan(
   return advance(sessionId, ctx);
 }
 
+// ─── branch evaluation (deterministic, no LLM at eval time) ────────────────
+
+function getByPath(payload: unknown, path: string): unknown {
+  if (!path) return payload;
+  return path.split(".").reduce<unknown>((acc, key) => {
+    if (acc == null || typeof acc !== "object") return undefined;
+    return (acc as Record<string, unknown>)[key];
+  }, payload);
+}
+
+/** Resolve the observation value a branch condition reads: the payload of the
+ *  most recent DONE `read` step (optionally restricted to a specific tool). */
+function resolveObservationValue(when: AgentBranchCondition["when"], stepResults: AgentStepResult[]): unknown {
+  const reads = stepResults.filter((r) => r.kind === "read" && r.status === "done");
+  const source = when.observationTool
+    ? [...reads].reverse().find((r) => r.tool === when.observationTool)
+    : reads[reads.length - 1];
+  if (!source) return undefined;
+  return getByPath(source.payload, when.path);
+}
+
+/** Pure, deterministic evaluation — no RNG, no LLM. Throws on an unrecognized
+ *  op; the caller catches it and fails safe to fall-through. */
+function evaluateBranchCondition(when: AgentBranchCondition["when"], stepResults: AgentStepResult[]): boolean {
+  const actual = resolveObservationValue(when, stepResults);
+  switch (when.op) {
+    case "exists":
+      return actual !== undefined && actual !== null;
+    case "eq":
+      return actual === when.value;
+    case "neq":
+      return actual !== when.value;
+    case "gt":
+      return typeof actual === "number" && typeof when.value === "number" && actual > when.value;
+    case "lt":
+      return typeof actual === "number" && typeof when.value === "number" && actual < when.value;
+    case "contains":
+      if (typeof actual === "string") return actual.includes(String(when.value));
+      if (Array.isArray(actual)) return actual.includes(when.value as never);
+      return false;
+    default:
+      throw new Error(`UNKNOWN_BRANCH_OP:${String((when as { op?: unknown })?.op)}`);
+  }
+}
+
+/**
+ * Resolve a branch step's target cursor. Fail-safe: a missing condition, an
+ * evaluation error (unknown op, etc.), or an out-of-bounds/backward target all
+ * resolve to `undefined` — fall-through, IDENTICAL to today's no-condition
+ * skip behavior. The forward-only guard lives HERE (target must be strictly
+ * greater than the branch step's own index and within the plan length) so a
+ * malformed or hostile planner output can never move the cursor backward —
+ * this is what makes the loop provably non-infinite even with a branch.
+ *
+ * Both fail-safe paths (a malformed/unevaluable condition, and a rejected
+ * out-of-bounds/backward target) are logged via console.warn — same style as
+ * persist()'s 42703 fallback below — so a mis-emitting planner is diagnosable
+ * in production instead of silently swallowed. Logging is observability only;
+ * the fall-through control flow is unchanged either way.
+ */
+function resolveBranchTarget(
+  condition: AgentBranchCondition | undefined,
+  cursor: number,
+  planLength: number,
+  stepResults: AgentStepResult[],
+  sessionId?: string,
+): number | undefined {
+  if (!condition || !condition.when) return undefined;
+  let truthy: boolean;
+  try {
+    truthy = evaluateBranchCondition(condition.when, stepResults);
+  } catch (e) {
+    // malformed/unevaluable condition → fail-safe fall-through (logged)
+    console.warn(
+      `[aiAgentOrchestrator] branch condition failed to evaluate (session ${sessionId ?? "?"}, cursor ${cursor}) — falling through:`,
+      { when: condition.when, error: (e as Error)?.message ?? e },
+    );
+    return undefined;
+  }
+  const target = truthy ? condition.thenGoto : condition.elseGoto;
+  if (target === undefined) return undefined;
+  if (!Number.isInteger(target) || target <= cursor || target > planLength) {
+    // out-of-bounds/backward target → fail-safe fall-through (logged)
+    console.warn(
+      `[aiAgentOrchestrator] branch target rejected (session ${sessionId ?? "?"}, cursor ${cursor}, planLength ${planLength}) — falling through:`,
+      { target, truthy },
+    );
+    return undefined; // forward-only guard
+  }
+  return target;
+}
+
 /**
  * Advance the plan from the current cursor. Runs read/client/guidance steps
  * in-place; STOPS at a write step (after proposing) with status awaiting_confirm.
  * Never auto-confirms, never executes.
  */
-export async function advance(
+async function advanceImpl(
   sessionId: string,
   ctx: { user: AgentUser; req?: ToolExecContext["req"] },
+  markChanged?: () => void,
 ): Promise<AdvanceResult> {
   const { db, row } = await loadOwned(sessionId, ctx.user);
   if (!db || !row) return { ok: false, status: "failed", cursor: 0, message: "Session không tồn tại." };
@@ -176,12 +318,27 @@ export async function advance(
     return { ok: false, status: row.status, cursor: row.cursor, message: `Không thể tiến ở trạng thái ${row.status}.` };
   }
 
-  const plan = (row.planJson ?? { steps: [] }) as AgentPlan;
+  // FIX (E2-4 review, Important) — from this point on, EVERY remaining return
+  // in this function is preceded by persist()/db.update() (verified: the write/
+  // read/navigate/prefill/branch/guidance branches all persist before an early
+  // return, and the natural end-of-plan fallthrough persists status "done" too).
+  // The only two genuine NO-OPs (no DB write at all) are the two guards above —
+  // session not found/not owned by ctx.user, or not currently `running`. Mark
+  // the change here so the exported wrapper's nudge fires ONLY on a real state
+  // change, never on those two guards (E2-4 review, Important finding).
+  markChanged?.();
+
+  // `plan` is mutable: an observe→replan cycle may replace the not-yet-executed
+  // tail (see the `read` branch below). It only ever splices from `cursor`
+  // onward — the already-executed prefix `plan.steps.slice(0, cursor)` is
+  // never touched, guaranteeing forward-only / no re-execution.
+  let plan = (row.planJson ?? { steps: [] }) as AgentPlan;
   const lang = (row.lang as ToolLang) ?? "vi";
   const exec = execCtxOf(ctx.user, lang, ctx.req);
 
   let cursor = row.cursor;
   let writeCount = row.writeCount;
+  let replanCount = toCount(row.replanCount);
   const stepResults: AgentStepResult[] = [...(row.stepResults ?? [])];
   const linkedActionIds: string[] = [...(row.linkedActionIds ?? [])];
   let lastStep: AgentStepResult | undefined;
@@ -191,11 +348,20 @@ export async function advance(
     const step = plan.steps[cursor];
 
     if (step.kind === "branch") {
-      // Minimal deterministic branch: advance past it (conditions resolved by the
-      // planner upstream). Recorded as skipped so the trail is complete.
-      lastStep = { index: cursor, kind: step.kind, tool: null, status: "skipped", message: "branch" };
+      // Deterministic condition eval against observations gathered so far (see
+      // resolveBranchTarget). No condition, malformed condition, or an
+      // out-of-bounds/backward target → fall-through, IDENTICAL to the prior
+      // unconditional-skip behavior (backward compatible with old branches).
+      const target = resolveBranchTarget(step.condition, cursor, plan.steps.length, stepResults, sessionId);
+      if (target === undefined) {
+        lastStep = { index: cursor, kind: step.kind, tool: null, status: "skipped", message: "branch" };
+        stepResults.push(lastStep);
+        cursor += 1;
+        continue;
+      }
+      lastStep = { index: cursor, kind: step.kind, tool: null, status: "done", message: `branch→${target}` };
       stepResults.push(lastStep);
-      cursor += 1;
+      cursor = target; // forward-only, already proven by resolveBranchTarget
       continue;
     }
 
@@ -216,7 +382,7 @@ export async function advance(
     if (!tool) {
       lastStep = { index: cursor, kind: step.kind, tool: step.tool ?? null, status: "failed", message: "TOOL_NOT_REGISTERED" };
       stepResults.push(lastStep);
-      await persist(db, sessionId, { cursor, writeCount, stepResults, linkedActionIds, status: "paused" });
+      await persist(db, sessionId, { cursor, writeCount, stepResults, linkedActionIds, status: "paused", replanCount, planJson: plan });
       return { ok: false, status: "paused", step: lastStep, cursor, message: "Tool không khả dụng." };
     }
 
@@ -225,14 +391,14 @@ export async function advance(
       if (!isClientTool(tool) || typeof tool.buildClientAction !== "function") {
         lastStep = { index: cursor, kind: step.kind, tool: step.tool ?? null, status: "failed", message: "NOT_A_CLIENT_TOOL" };
         stepResults.push(lastStep);
-        await persist(db, sessionId, { cursor, writeCount, stepResults, linkedActionIds, status: "paused" });
+        await persist(db, sessionId, { cursor, writeCount, stepResults, linkedActionIds, status: "paused", replanCount, planJson: plan });
         return { ok: false, status: "paused", step: lastStep, cursor };
       }
       const directive = tool.buildClientAction(step.args ?? {}, exec);
       if (!directive) {
         lastStep = { index: cursor, kind: step.kind, tool: step.tool ?? null, status: "failed", message: "ROUTE_NOT_ALLOWED" };
         stepResults.push(lastStep);
-        await persist(db, sessionId, { cursor, writeCount, stepResults, linkedActionIds, status: "paused" });
+        await persist(db, sessionId, { cursor, writeCount, stepResults, linkedActionIds, status: "paused", replanCount, planJson: plan });
         return { ok: false, status: "paused", step: lastStep, cursor };
       }
       lastStep = { index: cursor, kind: step.kind, tool: step.tool ?? null, status: "done", payload: directive };
@@ -246,20 +412,130 @@ export async function advance(
       if (isWriteTool(tool) || isClientTool(tool) || typeof tool.handler !== "function") {
         lastStep = { index: cursor, kind: step.kind, tool: step.tool ?? null, status: "failed", message: "NOT_A_READ_TOOL" };
         stepResults.push(lastStep);
-        await persist(db, sessionId, { cursor, writeCount, stepResults, linkedActionIds, status: "paused" });
+        await persist(db, sessionId, { cursor, writeCount, stepResults, linkedActionIds, status: "paused", replanCount, planJson: plan });
         return { ok: false, status: "paused", step: lastStep, cursor };
       }
       try {
-        const result = await tool.handler(step.args ?? {});
+        /**
+         * ★★★ Task 5 (review, CRITICAL) — **`argsWithAuthCtx` LÀ BẮT BUỘC Ở ĐÂY, VÀ NÓ FAIL-OPEN
+         * NẾU THIẾU.**
+         *
+         * Dòng này từng là `tool.handler(step.args ?? {})`. Nghe như *"quên gán danh tính ⇒ tool
+         * bị từ chối"* — **SAI CHIỀU**: `argsWithAuthCtx` **XOÁ `__authCtx` do đầu vào bịa TRƯỚC**
+         * rồi mới gán từ phiên. Bỏ nó = bỏ luôn bước XOÁ.
+         *
+         * Chuỗi khai thác có thật: `aiAgentPlanner.buildPlannerPrompt()` ghép **nguyên văn mục tiêu
+         * người dùng** vào prompt → model sinh `args` → `safeParse` **GIỮ** `__authCtx` (ô ĐÃ KHAI
+         * trong mọi schema read tool) → tới đây → `checkPermission(999, "admin", …)` →
+         * `accessControl.ts` `if (isAdmin && !scopedAdminEnabled()) return true` **không đọc DB**
+         * ⇒ **god-mode trên cả 29 read tool có RBAC**.
+         *
+         * ⚠ `exec` là danh tính phiên THẬT (`execCtxOf(ctx.user, …)`) — cùng thứ nhánh
+         * `navigate/prefill` và `write` đã dùng. Không có nguồn danh tính thứ hai ở tầng này.
+         * ⚠ Lưới: `aiAgentOrchestrator.authCtx.test.ts` đi từ ĐẦU đường tự trị với `__authCtx` BỊA.
+         */
+        const result = await tool.handler(argsWithAuthCtx(tool, step.args ?? {}, exec));
         lastStep = { index: cursor, kind: step.kind, tool: step.tool ?? null, status: "done", payload: result };
         stepResults.push(lastStep);
         cursor += 1;
+
+        // ── observe→replan (Wave 3 / D1), bounded by the per-session budget. ──
+        // Only a successful read yields an "observation" worth replanning on.
+        // Bound #1 (replan budget): never attempt more than maxReplans() times
+        // per session — the counter lives on the session row (survives a
+        // restart) and is clamped via toCount()/Math.max(0, …).
+        if (replanCount < maxReplans()) {
+          // Build executed-steps context by INDEX, not position: a `branch`
+          // jump can skip several plan indices between its own position and
+          // its target, so `stepResults` may be sparser than `cursor` (steps
+          // that were jumped over never got recorded). Steps with no
+          // recorded result (never actually run) are excluded — nothing to
+          // observe for them.
+          const resultByIndex = new Map(stepResults.map((r) => [r.index, r] as const));
+          const executed: ReplanExecutedEntry[] = plan.steps
+            .slice(0, cursor)
+            .map((s, i) => ({ step: s, result: resultByIndex.get(i) }))
+            .filter((e): e is ReplanExecutedEntry => e.result !== undefined);
+          const remaining = plan.steps.slice(cursor); // only steps AT/AFTER cursor are ever touched
+          replanCount += 1; // the ATTEMPT consumes budget, whether or not it changes anything
+
+          let outcome: ReplanResult;
+          try {
+            outcome = await replanFromObservations({
+              goal: row.goal,
+              executed,
+              remaining,
+              lang,
+              // G3-B — xem ghi chú ở startSession: hạn mức/quota/nhật ký gắn vào chủ phiên.
+              userId: row.userId,
+              role: row.userRole,
+            });
+          } catch {
+            // Never let a replan failure crash the session — keep the existing tail.
+            outcome = { changed: false, steps: remaining, available: true };
+          }
+
+          // G3-B — một quan sát mang MỆNH LỆNH ⇒ bộ lập kế hoạch từ chối điều chỉnh (xem
+          // aiAgentPlanner.buildReplanPrompt). Ghi lại vào vệt stepResults để người vận hành
+          // thấy VÌ SAO kế hoạch không đổi — im lặng ở đây là cách một cuộc tấn công bị đẩy
+          // xuống thành "hình như AI hôm nay hơi ngu". Sentinel index < 0, cùng lối với
+          // "REPLANNED" bên dưới (mọi consumer đã phải lọc index < 0).
+          if (outcome.refused) {
+            stepResults.push({
+              index: -1 - cursor,
+              kind: "guidance",
+              tool: null,
+              status: "skipped",
+              message: "REPLAN_REFUSED",
+              payload: {
+                note: outcome.message ?? "Quan sát chứa mệnh lệnh — giữ nguyên kế hoạch đã duyệt.",
+                reason: outcome.refused,
+                matched: outcome.injectionMatched ?? [],
+                atCursor: cursor,
+                replanCount,
+              },
+            });
+          }
+
+          if (outcome.changed) {
+            // Bound #2 (step cap): the replanned tail can never grow the plan
+            // past maxSteps() — clamp regardless of what the planner proposed.
+            const stepBudget = Math.max(0, maxSteps() - cursor);
+            const newTail = outcome.steps.slice(0, stepBudget);
+            const before = remaining.length;
+            // Splice ONLY the tail from `cursor` onward — the executed prefix
+            // is never touched (monotonic forward progress). Bound #3 (write
+            // cap) is enforced later, naturally, when/if execution reaches a
+            // write step in the new tail (the existing MAX_WRITES_EXCEEDED
+            // check below still binds — replanning cannot bypass it).
+            plan = { ...plan, steps: [...plan.steps.slice(0, cursor), ...newTail] };
+            // Audit note (reuses the stepResults trail — the session's existing
+            // audit/message mechanism, visible via getSession/AdvanceResult).
+            // index is a NEGATIVE sentinel (never a real plan-step position, so
+            // it can never collide with the result the new tail's first step
+            // will later record at index `cursor` once it actually executes).
+            stepResults.push({
+              index: -1 - cursor,
+              kind: "guidance",
+              tool: null,
+              status: "done",
+              message: "REPLANNED",
+              payload: {
+                note: "Kế hoạch được điều chỉnh dựa trên kết quả quan sát.",
+                atCursor: cursor,
+                replanCount,
+                stepsBefore: before,
+                stepsAfter: newTail.length,
+              },
+            });
+          }
+        }
         continue;
       } catch (err) {
         const msg = err instanceof Error ? err.message : String(err);
         lastStep = { index: cursor, kind: step.kind, tool: step.tool ?? null, status: "failed", message: msg };
         stepResults.push(lastStep);
-        await persist(db, sessionId, { cursor, writeCount, stepResults, linkedActionIds, status: "paused" });
+        await persist(db, sessionId, { cursor, writeCount, stepResults, linkedActionIds, status: "paused", replanCount, planJson: plan });
         return { ok: false, status: "paused", step: lastStep, cursor };
       }
     }
@@ -269,14 +545,14 @@ export async function advance(
       if (!isWriteTool(tool)) {
         lastStep = { index: cursor, kind: step.kind, tool: step.tool ?? null, status: "failed", message: "NOT_A_WRITE_TOOL" };
         stepResults.push(lastStep);
-        await persist(db, sessionId, { cursor, writeCount, stepResults, linkedActionIds, status: "paused" });
+        await persist(db, sessionId, { cursor, writeCount, stepResults, linkedActionIds, status: "paused", replanCount, planJson: plan });
         return { ok: false, status: "paused", step: lastStep, cursor };
       }
       // Cap writes per session.
       if (writeCount >= maxWritesPerSession()) {
         lastStep = { index: cursor, kind: step.kind, tool: step.tool ?? null, status: "failed", message: "MAX_WRITES_EXCEEDED" };
         stepResults.push(lastStep);
-        await persist(db, sessionId, { cursor, writeCount, stepResults, linkedActionIds, status: "paused" });
+        await persist(db, sessionId, { cursor, writeCount, stepResults, linkedActionIds, status: "paused", replanCount, planJson: plan });
         return { ok: false, status: "paused", step: lastStep, cursor, message: "Đã đạt giới hạn số thao tác ghi cho phiên này." };
       }
 
@@ -287,7 +563,7 @@ export async function advance(
         const msg = err instanceof Error ? err.message : String(err);
         lastStep = { index: cursor, kind: step.kind, tool: step.tool ?? null, status: "failed", message: msg };
         stepResults.push(lastStep);
-        await persist(db, sessionId, { cursor, writeCount, stepResults, linkedActionIds, status: "paused" });
+        await persist(db, sessionId, { cursor, writeCount, stepResults, linkedActionIds, status: "paused", replanCount, planJson: plan });
         return { ok: false, status: "paused", step: lastStep, cursor };
       }
 
@@ -301,7 +577,7 @@ export async function advance(
           message: proposal.message ?? proposal.reason ?? "PROPOSE_FAILED",
         };
         stepResults.push(lastStep);
-        await persist(db, sessionId, { cursor, writeCount, stepResults, linkedActionIds, status: "paused" });
+        await persist(db, sessionId, { cursor, writeCount, stepResults, linkedActionIds, status: "paused", replanCount, planJson: plan });
         return { ok: false, status: "paused", step: lastStep, cursor, message: proposal.message };
       }
 
@@ -319,7 +595,7 @@ export async function advance(
         payload: proposal.pendingAction,
       };
       stepResults.push(lastStep);
-      await persist(db, sessionId, { cursor, writeCount, stepResults, linkedActionIds, status: "awaiting_confirm" });
+      await persist(db, sessionId, { cursor, writeCount, stepResults, linkedActionIds, status: "awaiting_confirm", replanCount, planJson: plan });
       return { ok: true, status: "awaiting_confirm", step: lastStep, pendingActionId: actionId, cursor };
     }
 
@@ -328,8 +604,34 @@ export async function advance(
   }
 
   // Cursor reached the end → done.
-  await persist(db, sessionId, { cursor, writeCount, stepResults, linkedActionIds, status: "done" });
+  await persist(db, sessionId, { cursor, writeCount, stepResults, linkedActionIds, status: "done", replanCount, planJson: plan });
   return { ok: true, status: "done", step: lastStep, cursor };
+}
+
+/**
+ * E2-4 — thin wrapper: run advanceImpl(), then publish a minimal "advanced"
+ * refresh nudge (fire-and-forget, non-throwing — see aiAgentRealtime.ts) AFTER
+ * it resolves.
+ *
+ * FIX (E2-4 review, Important) — the nudge now fires ONLY when advanceImpl
+ * actually persisted a state change (tracked via the `markChanged` callback it
+ * invokes right after its two no-op guards). Because `advance`/`confirmStep`
+ * are protectedProcedure (any authenticated user), an unconditional nudge here
+ * let a low-privilege user loop garbage/foreign sessionIds and force a
+ * broadcast to every Command Center viewer at the debounce cadence, with zero
+ * state ever changing. `loadOwned` returning null (not found / wrong owner) or
+ * the session not being `running` are both true no-ops now — no nudge.
+ */
+export async function advance(
+  sessionId: string,
+  ctx: { user: AgentUser; req?: ToolExecContext["req"] },
+): Promise<AdvanceResult> {
+  let changed = false;
+  const result = await advanceImpl(sessionId, ctx, () => {
+    changed = true;
+  });
+  if (changed) nudge("advanced", sessionId);
+  return result;
 }
 
 /**
@@ -338,11 +640,12 @@ export async function advance(
  * execute the tool itself. Only after the core reports `executed` does the
  * cursor advance and the plan resume.
  */
-export async function confirmStep(
+async function confirmStepImpl(
   sessionId: string,
   actionId: string,
   token: string,
   ctx: { user: AgentUser; req?: ToolExecContext["req"] },
+  markChanged?: () => void,
 ): Promise<AdvanceResult> {
   const { db, row } = await loadOwned(sessionId, ctx.user);
   if (!db || !row) return { ok: false, status: "failed", cursor: 0, message: "Session không tồn tại." };
@@ -356,6 +659,14 @@ export async function confirmStep(
   if (!current || current.status !== "awaiting_confirm" || current.actionId !== actionId) {
     return { ok: false, status: row.status, cursor: row.cursor, message: "actionId không khớp thao tác đang chờ." };
   }
+
+  // FIX (E2-4 review, Important) — same reasoning as advanceImpl above: both
+  // remaining branches below (confirm failed/denied/expired → persist "paused";
+  // confirm executed → persist "running" + delegate to advance()) persist before
+  // returning. The three guards above (session not found/not owned, wrong
+  // session status, mismatched actionId — e.g. a stale/foreign actionId) are the
+  // only genuine no-ops; mark the change only past them.
+  markChanged?.();
 
   const lang = (row.lang as ToolLang) ?? "vi";
 
@@ -373,6 +684,8 @@ export async function confirmStep(
       stepResults,
       linkedActionIds: row.linkedActionIds ?? [],
       status: "paused",
+      replanCount: toCount(row.replanCount),
+      planJson: (row.planJson ?? { steps: [] }) as AgentPlan, // confirmStep never replans — pass through unchanged
     });
     return { ok: false, status: "paused", step: current, cursor: row.cursor, message: confirm.message };
   }
@@ -387,20 +700,58 @@ export async function confirmStep(
     stepResults,
     linkedActionIds: row.linkedActionIds ?? [],
     status: "running",
+    replanCount: toCount(row.replanCount),
+    planJson: (row.planJson ?? { steps: [] }) as AgentPlan, // confirmStep never replans — pass through unchanged
   });
   return advance(sessionId, ctx);
 }
 
+/**
+ * E2-4 — thin wrapper: run confirmStepImpl(), then publish a minimal "confirmed"
+ * refresh nudge. Note the success path inside confirmStepImpl delegates to the
+ * (already-wrapped) advance(), which publishes its own "advanced" nudge too —
+ * two coalesced nudges for one user click is harmless (the FE debounces).
+ *
+ * FIX (E2-4 review, Important) — the nudge now fires ONLY when confirmStepImpl
+ * actually persisted a state change (`markChanged`, set right after its three
+ * no-op guards). `confirmStep` is protectedProcedure (any authenticated user);
+ * without this gate, looping a not-found/foreign sessionId or a stale/mismatched
+ * actionId forced a broadcast to every Command Center viewer for zero state
+ * change. A genuine confirm still nudges "confirmed" here, plus "advanced" from
+ * the delegated advance() — that pre-existing harmless double-nudge is kept.
+ */
+export async function confirmStep(
+  sessionId: string,
+  actionId: string,
+  token: string,
+  ctx: { user: AgentUser; req?: ToolExecContext["req"] },
+): Promise<AdvanceResult> {
+  let changed = false;
+  const result = await confirmStepImpl(sessionId, actionId, token, ctx, () => {
+    changed = true;
+  });
+  if (changed) nudge("confirmed", sessionId);
+  return result;
+}
+
 /** Abort a session and cancel any still-pending proposed action(s). Owner only. */
-export async function cancelSession(
+async function cancelSessionImpl(
   sessionId: string,
   ctx: { user: AgentUser; req?: ToolExecContext["req"] },
+  markChanged?: () => void,
 ): Promise<{ ok: boolean; status: AiAgentSession["status"]; message?: string }> {
   const { db, row } = await loadOwned(sessionId, ctx.user);
   if (!db || !row) return { ok: false, status: "failed", message: "Session không tồn tại." };
   if (row.status === "done" || row.status === "aborted" || row.status === "failed") {
     return { ok: false, status: row.status, message: `Đã kết thúc (${row.status}).` };
   }
+
+  // FIX (E2-4 review, Important) — from here on the function unconditionally
+  // persists status "aborted" below (the linked-action cancel loop is
+  // best-effort/swallows errors and never short-circuits the final db.update).
+  // The two guards above (session not found/not owned, already terminal) are
+  // the only genuine no-ops; mark the change only past them.
+  markChanged?.();
 
   // Cancel any proposed (not-yet-executed) linked actions. Best-effort.
   for (const actionId of row.linkedActionIds ?? []) {
@@ -415,11 +766,34 @@ export async function cancelSession(
   return { ok: true, status: "aborted", message: "Đã huỷ phiên." };
 }
 
+/**
+ * E2-4 — thin wrapper: run cancelSessionImpl(), then publish a minimal
+ * "cancelled" refresh nudge (fire-and-forget, non-throwing).
+ *
+ * FIX (E2-4 review, Important) — the nudge now fires ONLY when cancelSessionImpl
+ * actually persisted a state change (`markChanged`, set right after its two
+ * no-op guards). `cancelSession` is protectedProcedure (any authenticated
+ * user); without this gate, looping a not-found/foreign/already-terminal
+ * sessionId forced a broadcast to every Command Center viewer for zero state
+ * change.
+ */
+export async function cancelSession(
+  sessionId: string,
+  ctx: { user: AgentUser; req?: ToolExecContext["req"] },
+): Promise<{ ok: boolean; status: AiAgentSession["status"]; message?: string }> {
+  let changed = false;
+  const result = await cancelSessionImpl(sessionId, ctx, () => {
+    changed = true;
+  });
+  if (changed) nudge("cancelled", sessionId);
+  return result;
+}
+
 /** Fetch a session (owner only) for the UI to render its state. */
 export async function getSession(sessionId: string, user: AgentUser): Promise<AiAgentSession | null> {
   const db = await getDb();
   if (!db) return null;
-  const [row] = await db.select().from(aiAgentSessions).where(eq(aiAgentSessions.id, sessionId)).limit(1);
+  const row = await selectSessionRow(db, sessionId);
   if (!row || row.userId !== user.id) return null;
   return row;
 }
@@ -435,9 +809,149 @@ export async function expireStaleSessions(): Promise<number> {
   return (res as any)?.rowCount ?? 0;
 }
 
+/** Minimal, forward-compatible row shape for the ops-scoped session list (Wave 3/D4). */
+export interface OpsSessionSummary {
+  id: string;
+  userId: number;
+  /** Best-available display name (users.name, else users.username, else null — e.g. deleted user). */
+  username: string | null;
+  userRole: string;
+  goal: string;
+  status: AiAgentSession["status"];
+  /** Current cursor (steps completed so far). */
+  stepIndex: number;
+  /** plan.steps.length, or 0 when the plan isn't loaded yet (still planning). */
+  stepTotal: number;
+  writeCount: number;
+  updatedAt: Date;
+  expiresAt: Date;
+}
+
+/**
+ * Wave 3 / D4 — ops-scoped (cross-user) RECENT-session read for the Agent Ops UI.
+ * Unlike getSession/cancelSession (owner-only), this deliberately has NO userId
+ * filter — RBAC (admin/engineer) is enforced by the router (roleProcedure), the
+ * same placement convention every other admin/engineer-gated list in this codebase
+ * uses (e.g. aiModelRouter's model-card CRUD). Deliberately MINIMAL: id, user,
+ * goal, status, step progress, updatedAt/expiresAt — E2-1 (doc69 Giai đoạn 4) will
+ * extend this into a richer read-model; this shape is additive-safe for that (new
+ * optional fields can be appended without breaking existing callers). Fail-safe:
+ * never throws — a DB/read error degrades to an empty list.
+ */
+export async function listSessionsForOps(opts?: {
+  limit?: number;
+  status?: AiAgentSession["status"];
+}): Promise<OpsSessionSummary[]> {
+  const db = await getDb();
+  if (!db) return [];
+  const limit = Math.min(Math.max(1, opts?.limit ?? 30), 100);
+  try {
+    // Dynamic imports (mirrors autonomyPolicy.ts's own pattern for an infrequently-
+    // touched table) — keeps this file's static import surface unchanged for every
+    // other caller/test that doesn't exercise this ops-list path.
+    const [{ desc }, { users }] = await Promise.all([
+      import("drizzle-orm"),
+      import("../../drizzle/schema"),
+    ]);
+    const conditions = opts?.status ? [eq(aiAgentSessions.status, opts.status)] : [];
+    const rows = await db
+      .select({
+        id: aiAgentSessions.id,
+        userId: aiAgentSessions.userId,
+        userRole: aiAgentSessions.userRole,
+        goal: aiAgentSessions.goal,
+        planJson: aiAgentSessions.planJson,
+        cursor: aiAgentSessions.cursor,
+        status: aiAgentSessions.status,
+        writeCount: aiAgentSessions.writeCount,
+        updatedAt: aiAgentSessions.updatedAt,
+        expiresAt: aiAgentSessions.expiresAt,
+        userName: users.name,
+        username: users.username,
+      })
+      .from(aiAgentSessions)
+      .leftJoin(users, eq(users.id, aiAgentSessions.userId))
+      .where(conditions.length > 0 ? and(...conditions) : undefined)
+      .orderBy(desc(aiAgentSessions.updatedAt))
+      .limit(limit);
+
+    return rows.map((r: any) => {
+      const steps = (r.planJson as AgentPlan | null)?.steps;
+      return {
+        id: r.id,
+        userId: r.userId,
+        username: r.userName ?? r.username ?? null,
+        userRole: r.userRole,
+        goal: r.goal,
+        status: r.status,
+        stepIndex: r.cursor,
+        stepTotal: Array.isArray(steps) ? steps.length : 0,
+        writeCount: r.writeCount,
+        updatedAt: r.updatedAt,
+        expiresAt: r.expiresAt,
+      };
+    });
+  } catch (e) {
+    console.error("[aiAgentOrchestrator] listSessionsForOps failed:", (e as Error)?.message ?? e);
+    return [];
+  }
+}
+
 // ─── helpers ────────────────────────────────────────────────────────────────
 
 type DbHandle = NonNullable<Awaited<ReturnType<typeof getDb>>>;
+
+function isMissingColumnError(e: unknown): boolean {
+  return (e as { code?: string } | null | undefined)?.code === "42703";
+}
+
+/**
+ * All `ai_agent_sessions` columns EXCEPT `replanCount` — the fallback select
+ * used when the full typed select 42703s because migration 0302 (additive,
+ * NOT applied by this task) hasn't run yet on this DB. Same guard pattern as
+ * `LEGACY_PROFILE_COLUMNS`/`getProfile` in `server/db/aiAnomaly.ts` (D2).
+ */
+const SESSION_COLUMNS_LEGACY = {
+  id: aiAgentSessions.id,
+  userId: aiAgentSessions.userId,
+  userRole: aiAgentSessions.userRole,
+  goal: aiAgentSessions.goal,
+  planJson: aiAgentSessions.planJson,
+  cursor: aiAgentSessions.cursor,
+  status: aiAgentSessions.status,
+  stepResults: aiAgentSessions.stepResults,
+  linkedActionIds: aiAgentSessions.linkedActionIds,
+  writeCount: aiAgentSessions.writeCount,
+  playbookId: aiAgentSessions.playbookId,
+  lang: aiAgentSessions.lang,
+  expiresAt: aiAgentSessions.expiresAt,
+  createdAt: aiAgentSessions.createdAt,
+  updatedAt: aiAgentSessions.updatedAt,
+};
+
+/**
+ * Select one session row by id. Tries the full typed select first (includes
+ * `replanCount`); on a 42703 (undefined_column — migration 0302 pending) it
+ * retries with the explicit legacy column list and defaults `replanCount` to
+ * 0 on the returned row. Any OTHER error is rethrown. This is the single
+ * choke point both `loadOwned` and `getSession` use, so session loading is
+ * NEVER at risk of breaking before the migration runs.
+ */
+async function selectSessionRow(db: DbHandle, sessionId: string): Promise<AiAgentSession | null> {
+  try {
+    const [row] = await db.select().from(aiAgentSessions).where(eq(aiAgentSessions.id, sessionId)).limit(1);
+    return (row as AiAgentSession | undefined) ?? null;
+  } catch (e) {
+    if (!isMissingColumnError(e)) throw e;
+    const [row] = await db
+      .select(SESSION_COLUMNS_LEGACY)
+      .from(aiAgentSessions)
+      .where(eq(aiAgentSessions.id, sessionId))
+      .limit(1);
+    if (!row) return null;
+    return { ...(row as object), replanCount: 0 } as AiAgentSession;
+  }
+}
 
 async function loadOwned(
   sessionId: string,
@@ -445,7 +959,7 @@ async function loadOwned(
 ): Promise<{ db: DbHandle | null; row: AiAgentSession | null }> {
   const db = await getDb();
   if (!db) return { db: null, row: null };
-  const [row] = await db.select().from(aiAgentSessions).where(eq(aiAgentSessions.id, sessionId)).limit(1);
+  const row = await selectSessionRow(db, sessionId);
   if (!row || row.userId !== user.id) return { db, row: null };
   return { db, row };
 }
@@ -459,17 +973,42 @@ async function persist(
     stepResults: AgentStepResult[];
     linkedActionIds: string[];
     status: AiAgentSession["status"];
+    /** Observe→replan budget counter (Wave 3 / D1). Always passed through
+     *  unchanged when this advance() call didn't replan. */
+    replanCount: number;
+    /**
+     * The plan AS OF this persist call. Wave 3 / D1: a replan mutates the
+     * in-memory `plan` local in `advance()` — if this weren't persisted, the
+     * replanned tail would be silently lost the moment the loop stops (e.g.
+     * at a write step, parked for HITL confirm) and a LATER call (confirmStep
+     * → advance()) re-loads `planJson` fresh from the DB. Callers that didn't
+     * replan simply pass their unchanged plan through.
+     */
+    planJson: AgentPlan;
   },
 ): Promise<void> {
-  await db
-    .update(aiAgentSessions)
-    .set({
-      cursor: patch.cursor,
-      writeCount: patch.writeCount,
-      stepResults: patch.stepResults,
-      linkedActionIds: patch.linkedActionIds,
-      status: patch.status,
-      updatedAt: new Date(),
-    })
-    .where(eq(aiAgentSessions.id, sessionId));
+  const setObj = {
+    cursor: patch.cursor,
+    writeCount: patch.writeCount,
+    stepResults: patch.stepResults,
+    linkedActionIds: patch.linkedActionIds,
+    status: patch.status,
+    replanCount: patch.replanCount,
+    planJson: patch.planJson,
+    updatedAt: new Date(),
+  };
+  try {
+    await db.update(aiAgentSessions).set(setObj).where(eq(aiAgentSessions.id, sessionId));
+  } catch (e) {
+    if (!isMissingColumnError(e)) throw e;
+    // Migration 0302 pending — retry the SAME patch without replanCount so
+    // cursor/status/stepResults/etc. still persist normally (best-effort;
+    // the counter itself is simply not durable until the column exists).
+    console.warn(
+      `[aiAgentOrchestrator] replanCount column unavailable (migration 0302 pending?) — session ${sessionId} persisted without it:`,
+      (e as Error)?.message ?? e,
+    );
+    const { replanCount: _drop, ...rest } = setObj;
+    await db.update(aiAgentSessions).set(rest).where(eq(aiAgentSessions.id, sessionId));
+  }
 }

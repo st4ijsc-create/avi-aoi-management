@@ -64,65 +64,67 @@ const MASTER_DATA_TABS = [
 
 // ── doc 42 Đợt 4A #3 — nhãn tiếng Việt cho enum NCC (form + bảng + phê duyệt) ──
 const SUPPLIER_TYPE_LABELS: Record<string, string> = {
-  component: "Linh kiện", raw_material: "Nguyên liệu", service: "Dịch vụ",
-  equipment: "Thiết bị", subcontractor: "Nhà thầu phụ", other: "Khác",
+  component: "masterDataEnum.supplier_type.component", raw_material: "masterDataEnum.supplier_type.raw_material", service: "masterDataEnum.supplier_type.service",
+  equipment: "masterDataEnum.supplier_type.equipment", subcontractor: "masterDataEnum.supplier_type.subcontractor", other: "masterDataEnum.supplier_type.other",
 };
 const APPROVAL_LABELS: Record<string, string> = {
-  pending: "Chờ duyệt", approved: "Đã duyệt", conditional: "Có điều kiện",
-  rejected: "Từ chối", suspended: "Tạm ngưng",
+  pending: "masterDataEnum.approval.pending", approved: "masterDataEnum.approval.approved", conditional: "masterDataEnum.approval.conditional",
+  rejected: "masterDataEnum.approval.rejected", suspended: "masterDataEnum.approval.suspended",
 };
 const APPROVAL_TONE: Record<string, "success" | "warning" | "error" | "default"> = {
   pending: "warning", approved: "success", conditional: "warning",
   rejected: "error", suspended: "error",
 };
-const SUPPLIER_TYPE_OPTIONS = Object.entries(SUPPLIER_TYPE_LABELS).map(([value, label]) => ({ value, label }));
-const APPROVAL_OPTIONS = Object.entries(APPROVAL_LABELS).map(([value, label]) => ({ value, label }));
+// Nhãn phải dịch LÚC RENDER, không lúc dựng hằng số module — hằng số chạy một lần
+// trước khi i18n sẵn sàng và không đổi khi người dùng chuyển ngôn ngữ.
+const SUPPLIER_TYPE_OPTIONS = Object.entries(SUPPLIER_TYPE_LABELS).map(([value, labelKey]) => ({ value, labelKey }));
+const APPROVAL_OPTIONS = Object.entries(APPROVAL_LABELS).map(([value, labelKey]) => ({ value, labelKey }));
 
 // ── doc 42 Đợt 4A #1 — đặc tả cột import/export (header tiếng Việt + ví dụ) ────
 const SUPPLIER_IO_COLUMNS: MasterDataColumn[] = [
-  { field: "code", header: "Mã nhà cung cấp", required: true, example: "AUDIT4_SUP01" },
-  { field: "name", header: "Tên nhà cung cấp", required: true, example: "Công ty ABC" },
-  { field: "type", header: "Loại", example: "component" },
-  { field: "contactName", header: "Người liên hệ", example: "Nguyễn Văn A" },
+  { field: "code", header: "Mã nhà cung cấp", headerKey: "masterDataCol.code", required: true, example: "AUDIT4_SUP01" },
+  { field: "name", header: "Tên nhà cung cấp", headerKey: "masterDataCol.name", required: true, example: "Công ty ABC" },
+  { field: "type", header: "Loại", headerKey: "masterDataCol.type", example: "component" },
+  { field: "contactName", header: "Người liên hệ", headerKey: "masterDataCol.contactName", example: "Nguyễn Văn A" },
   { field: "contactEmail", header: "Email", example: "a@abc.com" },
-  { field: "contactPhone", header: "Điện thoại", example: "0900000000" },
-  { field: "address", header: "Địa chỉ", example: "Hà Nội, Việt Nam" },
-  { field: "country", header: "Quốc gia", example: "VN" },
-  { field: "rating", header: "Đánh giá", type: "number", example: 4.5 },
-  { field: "approvalStatus", header: "Phê duyệt", example: "pending" },
-  { field: "isActive", header: "Kích hoạt", type: "boolean", example: true },
-  { field: "notes", header: "Ghi chú", example: "" },
+  { field: "contactPhone", header: "Điện thoại", headerKey: "masterDataCol.contactPhone", example: "0900000000" },
+  { field: "address", header: "Địa chỉ", headerKey: "masterDataCol.address", example: "Hà Nội, Việt Nam" },
+  { field: "country", header: "Quốc gia", headerKey: "masterDataCol.country", example: "VN" },
+  { field: "rating", header: "Đánh giá", headerKey: "masterDataCol.rating", type: "number", example: 4.5 },
+  { field: "approvalStatus", header: "Phê duyệt", headerKey: "masterDataCol.approvalStatus", example: "pending" },
+  { field: "isActive", header: "Kích hoạt", headerKey: "masterDataCol.isActive", type: "boolean", example: true },
+  { field: "notes", header: "Ghi chú", headerKey: "masterDataCol.notes", example: "" },
 ];
 const MATERIAL_IO_COLUMNS: MasterDataColumn[] = [
-  { field: "code", header: "Mã vật tư", required: true, example: "AUDIT4_MAT01" },
-  { field: "name", header: "Tên vật tư", required: true, example: "Tụ 100nF 0402" },
-  { field: "materialClass", header: "Nhóm vật tư", example: "CAP" },
-  { field: "mpn", header: "Mã NSX (MPN)", example: "CL05B104KO5NNNC" },
-  { field: "manufacturer", header: "Nhà sản xuất", example: "Samsung" },
-  { field: "packageType", header: "Kiểu đóng gói", example: "0402" },
+  { field: "code", header: "Mã vật tư", headerKey: "masterDataCol.code2", required: true, example: "AUDIT4_MAT01" },
+  { field: "name", header: "Tên vật tư", headerKey: "masterDataCol.name2", required: true, example: "Tụ 100nF 0402" },
+  { field: "materialClass", header: "Nhóm vật tư", headerKey: "masterDataCol.materialClass", example: "CAP" },
+  { field: "mpn", header: "Mã NSX (MPN)", headerKey: "masterDataCol.mpn", example: "CL05B104KO5NNNC" },
+  { field: "manufacturer", header: "Nhà sản xuất", headerKey: "masterDataCol.manufacturer", example: "Samsung" },
+  { field: "packageType", header: "Kiểu đóng gói", headerKey: "masterDataCol.packageType", example: "0402" },
   { field: "msl", header: "MSL", example: "1" },
-  { field: "unit", header: "Đơn vị", example: "pcs" },
+  { field: "unit", header: "Đơn vị", headerKey: "masterDataCol.unit", example: "pcs" },
   { field: "rohs", header: "RoHS", type: "boolean", example: true },
-  { field: "isActive", header: "Kích hoạt", type: "boolean", example: true },
-  { field: "notes", header: "Ghi chú", example: "" },
+  { field: "isActive", header: "Kích hoạt", headerKey: "masterDataCol.isActive2", type: "boolean", example: true },
+  { field: "notes", header: "Ghi chú", headerKey: "masterDataCol.notes2", example: "" },
 ];
 const MATERIAL_CLASS_IO_COLUMNS: MasterDataColumn[] = [
-  { field: "code", header: "Mã nhóm", required: true, example: "CAP" },
-  { field: "name", header: "Tên nhóm", required: true, example: "Tụ điện" },
-  { field: "parentCode", header: "Nhóm cha", example: "" },
-  { field: "description", header: "Mô tả", example: "" },
-  { field: "isActive", header: "Kích hoạt", type: "boolean", example: true },
+  { field: "code", header: "Mã nhóm", headerKey: "masterDataCol.code3", required: true, example: "CAP" },
+  { field: "name", header: "Tên nhóm", headerKey: "masterDataCol.name3", required: true, example: "Tụ điện" },
+  { field: "parentCode", header: "Nhóm cha", headerKey: "masterDataCol.parentCode", example: "" },
+  { field: "description", header: "Mô tả", headerKey: "masterDataCol.description", example: "" },
+  { field: "isActive", header: "Kích hoạt", headerKey: "masterDataCol.isActive3", type: "boolean", example: true },
 ];
 const CUSTOMER_IO_COLUMNS: MasterDataColumn[] = [
-  { field: "code", header: "Mã khách hàng", required: true, example: "AUDIT4_CUST01" },
-  { field: "name", header: "Tên khách hàng", required: true, example: "Khách hàng XYZ" },
-  { field: "contactName", header: "Người liên hệ", example: "Trần Thị B" },
+  { field: "code", header: "Mã khách hàng", headerKey: "masterDataCol.code4", required: true, example: "AUDIT4_CUST01" },
+  { field: "name", header: "Tên khách hàng", headerKey: "masterDataCol.name4", required: true, example: "Khách hàng XYZ" },
+  { field: "contactName", header: "Người liên hệ", headerKey: "masterDataCol.contactName2", example: "Trần Thị B" },
   { field: "contactEmail", header: "Email", example: "b@xyz.com" },
-  { field: "contactPhone", header: "Điện thoại", example: "0911111111" },
-  { field: "address", header: "Địa chỉ", example: "TP. Hồ Chí Minh" },
-  { field: "country", header: "Quốc gia", example: "VN" },
-  { field: "isActive", header: "Kích hoạt", type: "boolean", example: true },
-  { field: "notes", header: "Ghi chú", example: "" },
+  { field: "contactPhone", header: "Điện thoại", headerKey: "masterDataCol.contactPhone2", example: "0911111111" },
+  { field: "address", header: "Địa chỉ", headerKey: "masterDataCol.address2", example: "TP. Hồ Chí Minh" },
+  { field: "country", header: "Quốc gia", headerKey: "masterDataCol.country2", example: "VN" },
+  { field: "isActive", header: "Kích hoạt", headerKey: "masterDataCol.isActive4", type: "boolean", example: true },
+  { field: "notes", header: "Ghi chú", headerKey: "masterDataCol.notes3", example: "" },
 ];
 
 /** Chuyển kết quả server {inserted,updated,failed,errors} → tổng kết cho ImportExportBar. */
@@ -575,14 +577,14 @@ function SuppliersPanel() {
   const fields: Field[] = [
     { key: "code", label: t("masterData.code"), required: true },
     { key: "name", label: t("masterData.name"), required: true },
-    { key: "type", label: t("masterData.type"), type: "select", options: SUPPLIER_TYPE_OPTIONS },
+    { key: "type", label: t("masterData.type"), type: "select", options: SUPPLIER_TYPE_OPTIONS.map((o) => ({ value: o.value, label: t(o.labelKey) })) },
     { key: "contactName", label: t("masterData.contact") },
     { key: "contactEmail", label: t("masterData.email"), type: "email" },
     { key: "contactPhone", label: t("masterData.phone", { defaultValue: "Điện thoại" }) },
     { key: "address", label: t("masterData.address", { defaultValue: "Địa chỉ" }) },
     { key: "country", label: t("masterData.country") },
     { key: "rating", label: t("masterData.rating"), type: "number" },
-    { key: "approvalStatus", label: t("masterData.approval"), type: "select", options: APPROVAL_OPTIONS },
+    { key: "approvalStatus", label: t("masterData.approval"), type: "select", options: APPROVAL_OPTIONS.map((o) => ({ value: o.value, label: t(o.labelKey) })) },
     { key: "corporateCode", label: t("masterData.corporateCode", { defaultValue: "Mã tập đoàn" }) },
     { key: "factoryCode", label: t("masterData.factoryCode") },
     { key: "isActive", label: t("masterData.active"), type: "bool" },
@@ -598,18 +600,18 @@ function SuppliersPanel() {
   const columns: DataTableColumn<any>[] = [
     { id: "code", header: t("masterData.code"), cell: (r) => <span className="font-mono">{r.code}</span>, sortValue: (r) => r.code, filterValue: (r) => r.code ?? "" },
     { id: "name", header: t("masterData.name"), cell: (r) => r.name, sortValue: (r) => r.name, filterValue: (r) => r.name ?? "" },
-    { id: "type", header: t("masterData.type"), cell: (r) => SUPPLIER_TYPE_LABELS[r.type] ?? r.type ?? "-", sortValue: (r) => r.type, filterValue: (r) => (SUPPLIER_TYPE_LABELS[r.type] ?? r.type ?? "") },
+    { id: "type", header: t("masterData.type"), cell: (r) => (SUPPLIER_TYPE_LABELS[r.type] ? t(SUPPLIER_TYPE_LABELS[r.type]) : r.type ?? "-"), sortValue: (r) => r.type, filterValue: (r) => (SUPPLIER_TYPE_LABELS[r.type] ? t(SUPPLIER_TYPE_LABELS[r.type]) : r.type ?? "") },
     {
       id: "approval", header: t("masterData.approval"), sortValue: (r) => r.approvalStatus,
       cell: (r) => canEdit ? (
         <Select value={r.approvalStatus ?? "pending"} onValueChange={(val) => setApproval(r, val)}>
           <SelectTrigger className="h-8 w-[140px]"><SelectValue /></SelectTrigger>
           <SelectContent>
-            {APPROVAL_OPTIONS.map((o) => <SelectItem key={o.value} value={o.value}>{o.label}</SelectItem>)}
+            {APPROVAL_OPTIONS.map((o) => <SelectItem key={o.value} value={o.value}>{t(o.labelKey)}</SelectItem>)}
           </SelectContent>
         </Select>
       ) : (
-        <StatusBadge status={String(r.approvalStatus ?? "")} tone={APPROVAL_TONE[r.approvalStatus] ?? "default"} label={APPROVAL_LABELS[r.approvalStatus] ?? r.approvalStatus} />
+        <StatusBadge status={String(r.approvalStatus ?? "")} tone={APPROVAL_TONE[r.approvalStatus] ?? "default"} label={APPROVAL_LABELS[r.approvalStatus] ? t(APPROVAL_LABELS[r.approvalStatus]) : r.approvalStatus} />
       ),
     },
     { id: "active", header: t("masterData.active"), cell: (r) => <ActiveBadge active={r.isActive} />, sortValue: (r) => (r.isActive ? 1 : 0) },

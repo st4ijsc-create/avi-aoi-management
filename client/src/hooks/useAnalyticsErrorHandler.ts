@@ -5,6 +5,7 @@
 
 import { useCallback } from 'react';
 import { TRPCClientErrorLike } from '@trpc/client';
+import { mapTrpcError } from "@/lib/trpcErrors";
 
 export interface ErrorInfo {
   message: string;
@@ -23,9 +24,10 @@ export function useAnalyticsErrorHandler() {
     }
 
     // tRPC error
+    // i18n-raw-ok: điều kiện ĐIỀU KHIỂN luồng (có message hay không), không hiện ra.
     if (error.message) {
       return {
-        message: error.message,
+        message: mapTrpcError(error),
         code: error.code || 'INTERNAL_ERROR',
         details: error.data?.zodError ? JSON.stringify(error.data.zodError) : undefined,
         retryable: error.code === 'TIMEOUT' || error.code === 'TOO_MANY_REQUESTS',

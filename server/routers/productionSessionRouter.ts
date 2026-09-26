@@ -1,11 +1,13 @@
 import { z } from "zod";
 import { TRPCError } from "@trpc/server";
+import { appError } from "../_core/appError";
 import { createHmac, createHash } from "crypto";
 import { and, desc, eq, gte, lte, sql } from "drizzle-orm";
 import { router, protectedProcedure } from "../_core/trpc";
 import { requirePermission } from "../_core/accessControl";
 import { getDb } from "../db";
 import { productionSessions, dailyStatistics } from "../../drizzle/schema/production";
+import { finalYield } from "../utils/kpi";
 
 const SIGNOFF_ALGORITHM = "HMAC-SHA256";
 
@@ -13,10 +15,10 @@ const SIGNOFF_ALGORITHM = "HMAC-SHA256";
 // điều phối (admin/supervisor/quality_inspector) thao tác mọi phiên của line.
 const SESSION_SUPERVISOR_ROLES = new Set(["admin", "supervisor", "quality_inspector"]);
 function assertSessionActor(session: { operatorId: number | null }, user: { id: number; role?: string } | undefined | null) {
-  if (!user) throw new TRPCError({ code: "UNAUTHORIZED", message: "Chưa đăng nhập" });
+  if (!user) throw appError("UNAUTHORIZED", "AUTH_REQUIRED", undefined, "Chưa đăng nhập");
   if (SESSION_SUPERVISOR_ROLES.has(String(user.role))) return;
   if (session.operatorId != null && session.operatorId === user.id) return;
-  throw new TRPCError({ code: "FORBIDDEN", message: "Bạn chỉ được thao tác phiên sản xuất của chính mình" });
+  throw appError("FORBIDDEN", "PERMISSION_DENIED", { action: "manageOwnProductionSession" }, "Bạn chỉ được thao tác phiên sản xuất của chính mình");
 }
 
 function buildSignoffPayload(input: {
@@ -31,10 +33,14 @@ function buildSignoffPayload(input: {
 function signPayload(payload: string) {
   const secret = process.env.SIGNOFF_SECRET;
   if (!secret || secret.length < 16) {
-    throw new TRPCError({
-      code: "INTERNAL_SERVER_ERROR",
-      message: "SIGNOFF_SECRET chưa được cấu hình (tối thiểu 16 ký tự) để ký bản ghi 21 CFR Part 11",
-    });
+    // Lỗi cấu hình khởi động (biến môi trường thiếu) — người dùng không tự gây ra được,
+    // nhưng vẫn phải là appError() (không TRPCError trần) theo nguyên tắc #3 của Task 8.
+    throw appError(
+      "INTERNAL_SERVER_ERROR",
+      "OPERATION_FAILED",
+      { operation: "signProductionSession" },
+      "SIGNOFF_SECRET chưa được cấu hình (tối thiểu 16 ký tự) để ký bản ghi 21 CFR Part 11",
+    );
   }
   const hash = createHash("sha256").update(payload).digest("hex");
   const signature = createHmac("sha256", secret).update(payload).digest("hex");
@@ -52,6 +58,7 @@ async function computeKpiSnapshot(
       totalCount: sql<number>`COALESCE(SUM(${dailyStatistics.totalCount}), 0)`,
       okCount: sql<number>`COALESCE(SUM(${dailyStatistics.okCount}), 0)`,
       ngCount: sql<number>`COALESCE(SUM(${dailyStatistics.ngCount}), 0)`,
+      ntfCount: sql<number>`COALESCE(SUM(${dailyStatistics.ntfCount}), 0)`,
       avgCycle: sql<number>`AVG(${dailyStatistics.avgCycleTime})`,
     })
     .from(dailyStatistics)
@@ -63,11 +70,12 @@ async function computeKpiSnapshot(
         lte(dailyStatistics.date, end),
       ),
     );
-  const row = rows[0] ?? { totalCount: 0, okCount: 0, ngCount: 0, avgCycle: null };
+  const row = rows[0] ?? { totalCount: 0, okCount: 0, ngCount: 0, ntfCount: 0, avgCycle: null };
   const total = Number(row.totalCount) || 0;
   const ok = Number(row.okCount) || 0;
   const ng = Number(row.ngCount) || 0;
-  const yieldRate = total > 0 ? (ok / total) * 100 : 0;
+  const ntf = Number(row.ntfCount) || 0;
+  const yieldRate = finalYield({ ok, ntf, total });
   const avgCycleMs = row.avgCycle != null ? Number(row.avgCycle) * 1000 : null;
   return {
     totalCount: total,
@@ -94,7 +102,7 @@ export const productionSessionRouter = router({
     )
     .query(async ({ input }) => {
       const db = await getDb();
-      if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Database not available" });
+      if (!db) throw appError("INTERNAL_SERVER_ERROR", "DB_UNAVAILABLE", undefined, "Database not available");
       const filters = [] as any[];
       if (input?.factoryId) filters.push(eq(productionSessions.factoryId, input.factoryId));
       if (input?.workshopId) filters.push(eq(productionSessions.workshopId, input.workshopId));
@@ -116,9 +124,9 @@ export const productionSessionRouter = router({
     .input(z.object({ id: z.number() }))
     .query(async ({ input }) => {
       const db = await getDb();
-      if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Database not available" });
+      if (!db) throw appError("INTERNAL_SERVER_ERROR", "DB_UNAVAILABLE", undefined, "Database not available");
       const [row] = await db.select().from(productionSessions).where(eq(productionSessions.id, input.id));
-      if (!row) throw new TRPCError({ code: "NOT_FOUND", message: "Không tìm thấy phiên sản xuất" });
+      if (!row) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "productionSession" }, "Không tìm thấy phiên sản xuất");
       return row;
     }),
 
@@ -139,7 +147,7 @@ export const productionSessionRouter = router({
     }))
     .mutation(async ({ ctx, input }) => {
       const db = await getDb();
-      if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Database not available" });
+      if (!db) throw appError("INTERNAL_SERVER_ERROR", "DB_UNAVAILABLE", undefined, "Database not available");
 
       const sessionCode = `PS-${Date.now()}-${Math.random().toString(36).slice(2, 8).toUpperCase()}`;
       const [created] = await db.insert(productionSessions).values({
@@ -167,9 +175,9 @@ export const productionSessionRouter = router({
     .input(z.object({ id: z.number(), reason: z.string().optional() }))
     .mutation(async ({ input, ctx }) => {
       const db = await getDb();
-      if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Database not available" });
+      if (!db) throw appError("INTERNAL_SERVER_ERROR", "DB_UNAVAILABLE", undefined, "Database not available");
       const [existing] = await db.select().from(productionSessions).where(eq(productionSessions.id, input.id));
-      if (!existing) throw new TRPCError({ code: "NOT_FOUND", message: "Không tìm thấy phiên sản xuất" });
+      if (!existing) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "productionSession" }, "Không tìm thấy phiên sản xuất");
       assertSessionActor(existing, ctx.user);
       const [updated] = await db
         .update(productionSessions)
@@ -184,9 +192,9 @@ export const productionSessionRouter = router({
     .input(z.object({ id: z.number() }))
     .mutation(async ({ input, ctx }) => {
       const db = await getDb();
-      if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Database not available" });
+      if (!db) throw appError("INTERNAL_SERVER_ERROR", "DB_UNAVAILABLE", undefined, "Database not available");
       const [existing] = await db.select().from(productionSessions).where(eq(productionSessions.id, input.id));
-      if (!existing) throw new TRPCError({ code: "NOT_FOUND", message: "Không tìm thấy phiên sản xuất" });
+      if (!existing) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "productionSession" }, "Không tìm thấy phiên sản xuất");
       assertSessionActor(existing, ctx.user);
       const [updated] = await db
         .update(productionSessions)
@@ -201,12 +209,12 @@ export const productionSessionRouter = router({
     .input(z.object({ id: z.number(), operatorNotes: z.string().optional() }))
     .mutation(async ({ input, ctx }) => {
       const db = await getDb();
-      if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Database not available" });
+      if (!db) throw appError("INTERNAL_SERVER_ERROR", "DB_UNAVAILABLE", undefined, "Database not available");
       const [session] = await db.select().from(productionSessions).where(eq(productionSessions.id, input.id));
-      if (!session) throw new TRPCError({ code: "NOT_FOUND", message: "Không tìm thấy phiên sản xuất" });
+      if (!session) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "productionSession" }, "Không tìm thấy phiên sản xuất");
       assertSessionActor(session, ctx.user);
       if (session.status === "closed" || (session.status as any) === "signed_off") {
-        throw new TRPCError({ code: "BAD_REQUEST", message: "Phiên đã đóng hoặc đã ký" });
+        throw appError("BAD_REQUEST", "OPERATION_FAILED", { operation: "closeProductionSession" }, "Phiên đã đóng hoặc đã ký");
       }
       const closedAt = new Date();
       const kpi = await computeKpiSnapshot(db, {
@@ -240,7 +248,7 @@ export const productionSessionRouter = router({
     }))
     .mutation(async ({ input }) => {
       const db = await getDb();
-      if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Database not available" });
+      if (!db) throw appError("INTERNAL_SERVER_ERROR", "DB_UNAVAILABLE", undefined, "Database not available");
       const [updated] = await db
         .update(productionSessions)
         .set({
@@ -250,7 +258,7 @@ export const productionSessionRouter = router({
         })
         .where(eq(productionSessions.id, input.fromSessionId))
         .returning();
-      if (!updated) throw new TRPCError({ code: "NOT_FOUND", message: "Không tìm thấy phiên nguồn" });
+      if (!updated) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "productionSession" }, "Không tìm thấy phiên nguồn");
       return { success: true, session: updated };
     }),
 
@@ -258,22 +266,22 @@ export const productionSessionRouter = router({
     .input(z.object({ id: z.number(), supervisorPasswordConfirmed: z.boolean() }))
     .mutation(async ({ ctx, input }) => {
       const db = await getDb();
-      if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Database not available" });
+      if (!db) throw appError("INTERNAL_SERVER_ERROR", "DB_UNAVAILABLE", undefined, "Database not available");
 
       if (ctx.user?.role !== "admin" && ctx.user?.role !== "supervisor") {
-        throw new TRPCError({ code: "FORBIDDEN", message: "Chỉ supervisor hoặc admin được ký duyệt phiên" });
+        throw appError("FORBIDDEN", "PERMISSION_DENIED", { action: "signOffProductionSession" }, "Chỉ supervisor hoặc admin được ký duyệt phiên");
       }
       if (!input.supervisorPasswordConfirmed) {
-        throw new TRPCError({ code: "BAD_REQUEST", message: "Cần xác nhận lại mật khẩu trước khi ký (21 CFR Part 11 §11.200)" });
+        throw appError("BAD_REQUEST", "FIELD_REQUIRED", { field: "supervisorPasswordConfirmed" }, "Cần xác nhận lại mật khẩu trước khi ký (21 CFR Part 11 §11.200)");
       }
 
       const [session] = await db.select().from(productionSessions).where(eq(productionSessions.id, input.id));
-      if (!session) throw new TRPCError({ code: "NOT_FOUND", message: "Không tìm thấy phiên sản xuất" });
+      if (!session) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "productionSession" }, "Không tìm thấy phiên sản xuất");
       if (session.status !== "closed") {
-        throw new TRPCError({ code: "BAD_REQUEST", message: "Phiên phải ở trạng thái 'closed' trước khi ký duyệt" });
+        throw appError("BAD_REQUEST", "OPERATION_FAILED", { operation: "signOffProductionSession" }, "Phiên phải ở trạng thái 'closed' trước khi ký duyệt");
       }
       if (session.supervisorSignoff) {
-        throw new TRPCError({ code: "BAD_REQUEST", message: "Phiên đã được ký duyệt trước đó" });
+        throw appError("BAD_REQUEST", "OPERATION_FAILED", { operation: "signOffProductionSession" }, "Phiên đã được ký duyệt trước đó");
       }
 
       const signedAt = new Date();
@@ -312,9 +320,9 @@ export const productionSessionRouter = router({
     .input(z.object({ id: z.number() }))
     .query(async ({ input }) => {
       const db = await getDb();
-      if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Database not available" });
+      if (!db) throw appError("INTERNAL_SERVER_ERROR", "DB_UNAVAILABLE", undefined, "Database not available");
       const [session] = await db.select().from(productionSessions).where(eq(productionSessions.id, input.id));
-      if (!session) throw new TRPCError({ code: "NOT_FOUND", message: "Không tìm thấy phiên sản xuất" });
+      if (!session) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "productionSession" }, "Không tìm thấy phiên sản xuất");
       if (!session.supervisorSignoff || !session.signoffPayload || !session.signoffSignature) {
         return { signed: false as const, valid: false as const, reason: "Phiên chưa được ký duyệt" };
       }

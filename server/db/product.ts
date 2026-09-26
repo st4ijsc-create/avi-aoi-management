@@ -1,6 +1,8 @@
 import { getDb } from "./connection";
-import { rethrowDbError } from "../_core/dbErrors";
-import { eq, and, desc, asc, like, or, sql, isNull, isNotNull, gt, gte, inArray, SQL } from "drizzle-orm";
+import { appError } from "../_core/appError";
+import { rethrowDbError, DbUnavailableError } from "../_core/dbErrors";
+import { eq, and, desc, asc, like, or, sql, isNull, isNotNull, gt, gte, inArray, SQL, type AnyColumn } from "drizzle-orm";
+import type { PhamViNguoiXem } from "./hierarchy";
 import {
   productModels, InsertProductModel,
   measurementPointDefs, InsertMeasurementPointDef, MeasurementPointDef,
@@ -37,11 +39,20 @@ import {
 } from "../../drizzle/schema";
 import { measurementResults, productInspections } from "../../drizzle/schema/inspection";
 import { GENESIS_HASH } from "../utils/genealogyChain";
+// Task 8 Khối C (QĐ-5) — MỘT nguồn 18+4 cột giới hạn, xem docblock
+// `shared/pointLimitSpec.ts`. `updateMeasurementPointLimitsBatch` whitelist
+// theo mảng này, không chép tay danh sách cột.
+import { APPROVAL_LIMIT_FIELDS } from "@shared/pointLimitSpec";
+// BG-113 (review Khối C lượt 9, I-2) — phòng thủ KÉP với gate cùng tên ở router
+// (productRouters.ts `setLimitsBatch`): hàm này là lớp GHI THẬT (FOR UPDATE
+// trong transaction) nên không tin một mình lớp gọi, đúng kỷ luật đã áp cho
+// APPROVAL_LIMIT_FIELDS whitelist ở dưới.
+import { assertCapGioiHanHopLe, gopCapGioiHanDonGian } from "../utils/measurementPointLimitGate";
 
 // ============ PRODUCT MODEL FUNCTIONS ============
 export async function createProductModel(data: InsertProductModel) {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  if (!db) throw new DbUnavailableError();
   const [result] = await db.insert(productModels).values(data).returning({ id: productModels.id });
   return result.id;
 }
@@ -58,7 +69,7 @@ export async function createProductModel(data: InsertProductModel) {
  */
 export async function ensureSystemProductModel(data: InsertProductModel): Promise<number> {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  if (!db) throw new DbUnavailableError();
   const [result] = await db
     .insert(productModels)
     .values(data)
@@ -78,15 +89,33 @@ export async function getProductModels(options?: {
   limit?: number;
   offset?: number;
   isActive?: boolean;
+  /**
+   * ★★★ 2026-08-18 — vị từ PHẠM VI **THÊM**, ghép vào cùng `AND` với các bộ lọc khác.
+   *
+   * Bỏ trống = **KHÔNG lọc** ⇒ ~30 nơi gọi cũ giữ nguyên TỪNG BYTE (cùng khuôn `scope?` tuỳ chọn
+   * đã dùng ở `db.getFactories` / `db.getMachines`). Nơi duy nhất truyền vào hiện nay là
+   * `publicProductApiRouter.listProducts`, với
+   * `publicProductScope.congSanPhamTrongNhaMay(productModels.id, factoryId)`.
+   *
+   * ⚠ Vì sao lọc ở ĐÂY chứ không lọc sau khi lấy: `limit`/`offset` được áp trong CHÍNH truy vấn
+   * này. Lọc sau sẽ trả về ít hơn `limit` hàng cho một trang "đầy" và làm `total` khai sai — đúng
+   * lớp lỗi "một con số đúng-về-thứ-khác".
+   */
+  congPhamVi?: SQL;
 }) {
   const db = await getDb();
   if (!db) return [];
-  
+
   // Build WHERE conditions
   const conditions: any[] = [];
 
   // P0: Always exclude soft-deleted rows
   conditions.push(isNull(productModels.deletedAt));
+
+  // ★ Phạm vi nhà máy (tuỳ chọn) — xem docblock của `congPhamVi` ở trên.
+  if (options?.congPhamVi) {
+    conditions.push(options.congPhamVi);
+  }
 
   // Only filter by isActive if explicitly specified
   if (options?.isActive !== undefined) {
@@ -158,18 +187,80 @@ export async function getProductModelById(id: number) {
   return result.length > 0 ? result[0] : undefined;
 }
 
-export async function getProductModelByCode(code: string) {
+export async function getProductModelByCode(code: string, scope?: PhamViNguoiXem) {
   const db = await getDb();
   if (!db) return undefined;
+  const cong = await congSanPhamTheoPhamVi(productModels.id, scope);
   const result = await db.select().from(productModels)
-    .where(and(eq(productModels.code, code), isNull(productModels.deletedAt)))
+    .where(and(eq(productModels.code, code), isNull(productModels.deletedAt), ...(cong ? [cong] : [])))
     .limit(1);
   return result.length > 0 ? result[0] : undefined;
 }
 
+// ════════════════════════════════════════════════════════════════════════════════════════════
+// ★★★ 2026-08-18 (trả nợ nhóm A) — **PHẠM VI CỦA DỮ LIỆU SẢN PHẨM.**
+//
+// `product_models` KHÔNG có cột nhà máy nào (đã kiểm cả `drizzle/schema/product.ts` lẫn
+// `information_schema`). Sản phẩm là dữ liệu chủ DÙNG CHUNG; nó chỉ chạm tới một nhà máy qua ba
+// bảng LIÊN KẾT mang `machineId` (`product_machine_mappings` · `measurement_point_defs` ·
+// `product_inspections`).
+//
+// ⚠⚠ **KHÔNG dựng lại luật ấy ở đây.** Vị từ hợp-ba-đường đã tồn tại và đã được khảo sát trên
+// CSDL thật: `routers/publicProductScope.congSanPhamTrongNhaMay` (docblock của nó ghi phép đo cho
+// thấy CẢ BA đường đều load-bearing — bỏ đường nào cũng làm biến mất một sản phẩm đang dùng).
+// Ở đây chỉ **LƯỢNG HOÁ** vị từ ấy lên tập nhà máy của người xem. Một bản sao thứ hai của luật
+// sản-phẩm↔nhà-máy là cách hai bên lệch nhau, và **bản lỏng hơn** sẽ quyết định ai thấy gì.
+//
+// ⚠ `import()` ĐỘNG bắt buộc: `publicProductScope` nằm dưới `server/routers/**` và nhập `../db`;
+// một lời nhập TĨNH từ `server/db/product.ts` sẽ tạo vòng db → routers → db.
+// ════════════════════════════════════════════════════════════════════════════════════════════
+
+/**
+ * Mệnh đề "cột id-sản-phẩm này thuộc một nhà máy trong phạm vi người xem".
+ * `undefined` = vai toàn quyền / lối đi không mang danh tính ⇒ nơi gọi không thêm gì.
+ */
+export async function congSanPhamTheoPhamVi(
+  cotSanPhamId: SQL | AnyColumn,
+  scope?: PhamViNguoiXem,
+): Promise<SQL | undefined> {
+  const { idsTrongPhamVi } = await import("./hierarchy");
+  const ids = await idsTrongPhamVi("factory", scope);
+  if (ids === null) return undefined;
+  if (ids.length === 0) return sql`1 = 0`;
+  const { congSanPhamTrongNhaMay } = await import("../routers/publicProductScope");
+  const nhanh = ids.map((f) => congSanPhamTrongNhaMay(cotSanPhamId, f));
+  return nhanh.length === 1 ? nhanh[0] : or(...nhanh);
+}
+
+/** Một sản phẩm CỤ THỂ có nằm trong phạm vi không (dùng LẠI đúng vị từ của đường danh sách). */
+export async function sanPhamTrongPhamVi(productModelId: number, scope?: PhamViNguoiXem): Promise<boolean> {
+  const cong = await congSanPhamTheoPhamVi(productModels.id, scope);
+  if (cong === undefined) return true;
+  const db = await getDb();
+  if (!db) return false; // CSDL vắng ⇒ fail-CLOSED
+  const rows = await db.select({ id: productModels.id }).from(productModels)
+    .where(and(eq(productModels.id, productModelId), cong)).limit(1);
+  return rows.length > 0;
+}
+
+/**
+ * Mệnh đề cho các bảng khoá theo ĐIỂM ĐO (`mp_lighting_profiles` · `measurement_samples` ·
+ * `mp_spc_alerts`): điểm đo phải thuộc một sản phẩm trong phạm vi.
+ */
+export async function congDiemDoTheoPhamVi(
+  cotPointDefId: SQL | AnyColumn,
+  scope?: PhamViNguoiXem,
+): Promise<SQL | undefined> {
+  const cong = await congSanPhamTheoPhamVi(measurementPointDefs.productModelId, scope);
+  if (cong === undefined) return undefined;
+  return sql`${cotPointDefId} IN (
+    SELECT ${measurementPointDefs.id} FROM ${measurementPointDefs} WHERE ${cong}
+  )`;
+}
+
 export async function updateProductModel(id: number, data: Partial<InsertProductModel>) {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  if (!db) throw new DbUnavailableError();
   await db.update(productModels).set(data).where(eq(productModels.id, id));
 }
 
@@ -218,7 +309,7 @@ export async function bumpPointsConfigVersion(
   executor?: PointsBumpExecutor,
 ): Promise<PointsConfigBump | null> {
   const exec = executor ?? (await getDb());
-  if (!exec) throw new Error("Database not available");
+  if (!exec) throw new DbUnavailableError();
 
   const [row] = await exec
     .update(productModels)
@@ -311,7 +402,7 @@ export async function bumpVariantPointsConfigVersion(
   executor?: PointsBumpExecutor,
 ): Promise<VariantPointsConfigBump | null> {
   const exec = executor ?? (await getDb());
-  if (!exec) throw new Error("Database not available");
+  if (!exec) throw new DbUnavailableError();
 
   const [row] = await exec
     .update(productVariants)
@@ -332,7 +423,7 @@ export async function bumpVariantPointsConfigVersion(
 
 export async function deleteProductModel(id: number) {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  if (!db) throw new DbUnavailableError();
   // P0 soft-delete: mark product and all child measurement points as deleted.
   // No cascade hard-delete — history is preserved for audit, foreign data, and undelete.
   const now = new Date();
@@ -403,14 +494,14 @@ export async function cloneProductModel(opts: {
   copyMappings?: boolean;
 }): Promise<{ newProductId: number; summary: CloneProductModelSummary }> {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  if (!db) throw new DbUnavailableError();
 
   return db.transaction(async (tx) => {
     // 1) Source product (live only).
     const [source] = await tx.select().from(productModels)
       .where(and(eq(productModels.id, opts.sourceId), isNull(productModels.deletedAt)))
       .limit(1);
-    if (!source) throw new Error(`Source product ${opts.sourceId} not found`);
+    if (!source) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "sourceProduct" }, `Source product ${opts.sourceId} not found`);
 
     // 2) New product row — copy every column, override identity + lifecycle + provenance.
     const productRest = omitCols(source, ["id", "createdAt", "updatedAt", "deletedAt"]);
@@ -616,7 +707,7 @@ export async function createMeasurementPointDef(
   outcome?: CreateMeasurementPointOutcome,
 ) {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  if (!db) throw new DbUnavailableError();
 
   const inserted = await db
     .insert(measurementPointDefs)
@@ -662,13 +753,15 @@ export async function createMeasurementPointDef(
   return existing.id;
 }
 
-export async function listAllMeasurementPointDefs() {
+export async function listAllMeasurementPointDefs(scope?: PhamViNguoiXem) {
   const db = await getDb();
   if (!db) return [];
+  const cong = await congSanPhamTheoPhamVi(measurementPointDefs.productModelId, scope);
   return db.select().from(measurementPointDefs)
     .where(and(
       eq(measurementPointDefs.isActive, true),
       isNull(measurementPointDefs.deletedAt),
+      ...(cong ? [cong] : []),
     ))
     .orderBy(measurementPointDefs.orderIndex);
 }
@@ -681,21 +774,26 @@ export async function getAllMeasurementPoints() {
     .orderBy(measurementPointDefs.orderIndex);
 }
 
-export async function getMeasurementPointDefsByProductModel(productModelId: number) {
+export async function getMeasurementPointDefsByProductModel(productModelId: number, scope?: PhamViNguoiXem) {
   const db = await getDb();
   if (!db) return [];
+  const cong = await congSanPhamTheoPhamVi(measurementPointDefs.productModelId, scope);
   return db.select().from(measurementPointDefs)
     .where(and(
       eq(measurementPointDefs.productModelId, productModelId),
       eq(measurementPointDefs.isActive, true),
       isNull(measurementPointDefs.deletedAt),
+      ...(cong ? [cong] : []),
     ))
     .orderBy(measurementPointDefs.orderIndex);
 }
 
-export async function getMeasurementPointDefsByMachine(machineId: number) {
+export async function getMeasurementPointDefsByMachine(machineId: number, scope?: PhamViNguoiXem) {
   const db = await getDb();
   if (!db) return [];
+  // ⚠ `machineId` là lời TỰ KHAI ⇒ chặn thẳng ở trục MÁY (rẻ hơn và chặt hơn trục sản phẩm).
+  const { trongPhamVi } = await import("./hierarchy");
+  if (!(await trongPhamVi("machine", machineId, scope))) return [];
   return db.select().from(measurementPointDefs)
     .where(and(
       eq(measurementPointDefs.machineId, machineId),
@@ -717,13 +815,33 @@ export async function getMeasurementPointDefsByWorkstation(workstationId: number
     .orderBy(measurementPointDefs.orderIndex);
 }
 
-export async function getMeasurementPointDefById(id: number) {
+export async function getMeasurementPointDefById(id: number, scope?: PhamViNguoiXem) {
   const db = await getDb();
   if (!db) return undefined;
+  const cong = await congSanPhamTheoPhamVi(measurementPointDefs.productModelId, scope);
   const result = await db.select().from(measurementPointDefs)
-    .where(and(eq(measurementPointDefs.id, id), isNull(measurementPointDefs.deletedAt)))
+    .where(and(eq(measurementPointDefs.id, id), isNull(measurementPointDefs.deletedAt), ...(cong ? [cong] : [])))
     .limit(1);
   return result.length > 0 ? result[0] : undefined;
+}
+
+/**
+ * Task 8 Khối C — tra NHIỀU điểm đo theo id, lọc tenant theo **phiên** (`scope`),
+ * không theo input. Dùng để router `setLimitsBatch` kiểm "mọi id có tồn tại +
+ * cùng `productModelId`" TRƯỚC khi gọi cửa duyệt ngưỡng — hàng nào ngoài phạm
+ * vi tenant hoặc đã xoá mềm đơn giản KHÔNG xuất hiện trong kết quả (không lộ
+ * "tồn tại nhưng bạn không thấy").
+ */
+export async function getMeasurementPointDefsByIds(ids: number[], scope?: PhamViNguoiXem) {
+  const db = await getDb();
+  if (!db || ids.length === 0) return [];
+  const cong = await congSanPhamTheoPhamVi(measurementPointDefs.productModelId, scope);
+  return db.select().from(measurementPointDefs)
+    .where(and(
+      inArray(measurementPointDefs.id, ids),
+      isNull(measurementPointDefs.deletedAt),
+      ...(cong ? [cong] : []),
+    ));
 }
 
 /**
@@ -805,20 +923,20 @@ export async function listMeasurementTypeCatalog(filters?: { category?: string; 
 
 export async function createMeasurementTypeCatalog(data: InsertMeasurementTypeCatalog) {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  if (!db) throw new DbUnavailableError();
   const [row] = await db.insert(measurementTypeCatalog).values(data).returning({ id: measurementTypeCatalog.id });
   return row.id;
 }
 
 export async function updateMeasurementTypeCatalog(id: number, data: Partial<InsertMeasurementTypeCatalog>) {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  if (!db) throw new DbUnavailableError();
   await db.update(measurementTypeCatalog).set({ ...data, updatedAt: new Date() }).where(eq(measurementTypeCatalog.id, id));
 }
 
 export async function softDeleteMeasurementTypeCatalog(id: number) {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  if (!db) throw new DbUnavailableError();
   await db.update(measurementTypeCatalog)
     .set({ deletedAt: new Date(), isActive: false, updatedAt: new Date() })
     .where(eq(measurementTypeCatalog.id, id));
@@ -887,20 +1005,20 @@ export async function listDefectCatalog(filters?: { category?: string; severity?
 
 export async function createDefectCatalog(data: InsertDefectCatalog) {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  if (!db) throw new DbUnavailableError();
   const [row] = await db.insert(defectCatalog).values(data).returning({ id: defectCatalog.id });
   return row.id;
 }
 
 export async function updateDefectCatalog(id: number, data: Partial<InsertDefectCatalog>) {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  if (!db) throw new DbUnavailableError();
   await db.update(defectCatalog).set({ ...data, updatedAt: new Date() }).where(eq(defectCatalog.id, id));
 }
 
 export async function softDeleteDefectCatalog(id: number) {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  if (!db) throw new DbUnavailableError();
   await db.update(defectCatalog)
     .set({ deletedAt: new Date(), isActive: false, updatedAt: new Date() })
     .where(eq(defectCatalog.id, id));
@@ -964,10 +1082,17 @@ export async function recordUnmatchedDefectCodes(
 export async function listUnmatchedDefectCodes(filters?: {
   onlyUnresolved?: boolean;
   limit?: number;
-}) {
+}, scope?: PhamViNguoiXem) {
   const db = await getDb();
   if (!db) return [];
   const conds: SQL[] = [];
+  {
+    // `unmatched_defect_codes` là MÃ LỖI thô do máy gửi lên, kèm `machineCode`/`machineId` (xem
+    // lược đồ) — nó phơi từ vựng lỗi nội bộ của tenant. Chiếu qua trục MÁY.
+    const { idsTrongPhamVi } = await import("./hierarchy");
+    const idsMay = await idsTrongPhamVi("machine", scope);
+    if (idsMay !== null) conds.push(inArray(unmatchedDefectCodes.machineId, idsMay.length ? idsMay : [-1]));
+  }
   if (filters?.onlyUnresolved) {
     conds.push(isNull(unmatchedDefectCodes.resolvedCatalogId));
   }
@@ -1004,10 +1129,16 @@ export async function getDefectTendencyByComponent(opts?: {
   fromTs?: Date;
   toTs?: Date;
   limit?: number;
-}) {
+}, scope?: PhamViNguoiXem) {
   const db = await getDb();
   if (!db) return [];
   const conds: SQL[] = [sql`${measurementResults.defectCatalogId} IS NOT NULL`];
+  {
+    // Truy vấn này JOIN `product_inspections` ⇒ trục MÁY là trục thật (đầy dữ liệu, NOT NULL).
+    const { idsTrongPhamVi } = await import("./hierarchy");
+    const idsMay = await idsTrongPhamVi("machine", scope);
+    if (idsMay !== null) conds.push(inArray(productInspections.machineId, idsMay.length ? idsMay : [-1]));
+  }
   if (opts?.productModelId) {
     conds.push(eq(measurementPointDefs.productModelId, opts.productModelId));
   }
@@ -1056,6 +1187,12 @@ export async function computeUnmappedPointRate(opts: {
   productModelId?: number;
   fromTs?: Date;
   toTs?: Date;
+  /**
+   * ★ 2026-08-18 — tập máy TRONG PHẠM VI người xem (`null`/bỏ trống = không lọc). Khác hẳn
+   * `machineId` phía trên: cái kia là bộ lọc GIAO DIỆN do người gọi tự khai, cái này là CỔNG.
+   * Cả hai được AND, nên lời tự khai chỉ thu hẹp thêm.
+   */
+  machineIds?: number[];
 }): Promise<{
   total: number;
   unmatched: number;
@@ -1067,6 +1204,9 @@ export async function computeUnmappedPointRate(opts: {
     return { total: 0, unmatched: 0, rate: 0, byMachine: [] };
   }
   const conds: SQL[] = [];
+  if (opts.machineIds !== undefined) {
+    conds.push(inArray(productInspections.machineId, opts.machineIds.length ? opts.machineIds : [-1]));
+  }
   if (opts.machineId) conds.push(eq(productInspections.machineId, opts.machineId));
   if (opts.fromTs) conds.push(sql`${productInspections.inspectionTime} >= ${opts.fromTs}`);
   if (opts.toTs) conds.push(sql`${productInspections.inspectionTime} <= ${opts.toTs}`);
@@ -1121,9 +1261,13 @@ export async function computeUnmappedPointRate(opts: {
  * best-effort remap suggestion (a real product model that has an active point
  * def with the SAME code). Ordered by result volume (most-impactful first).
  */
-export async function listUnmappedPointDefsWithStats(unmappedModelId: number) {
+export async function listUnmappedPointDefsWithStats(unmappedModelId: number, scope?: PhamViNguoiXem) {
   const db = await getDb();
   if (!db) return [];
+  // ⚠ Điểm đo `__UNMAPPED__` mang `machineId` của máy đã gửi mã lạ ⇒ chiếu qua trục MÁY. Điểm
+  // KHÔNG gắn máy không phân giải được ⇒ loại cho người bị thu hẹp (fail-closed).
+  const { idsTrongPhamVi } = await import("./hierarchy");
+  const idsMay = await idsTrongPhamVi("machine", scope);
   const defs = await db
     .select({
       id: measurementPointDefs.id,
@@ -1136,6 +1280,7 @@ export async function listUnmappedPointDefsWithStats(unmappedModelId: number) {
     .where(and(
       eq(measurementPointDefs.productModelId, unmappedModelId),
       isNull(measurementPointDefs.deletedAt),
+      ...(idsMay === null ? [] : [inArray(measurementPointDefs.machineId, idsMay.length ? idsMay : [-1])]),
     ))
     .orderBy(asc(measurementPointDefs.code));
   if (defs.length === 0) return [];
@@ -1147,7 +1292,7 @@ export async function listUnmappedPointDefsWithStats(unmappedModelId: number) {
       resultCount: sql<number>`COUNT(*)::int`.as("resultCount"),
     })
     .from(measurementResults)
-    .where(sql`${measurementResults.pointDefId} = ANY(${ids})`)
+    .where(inArray(measurementResults.pointDefId, ids))
     .groupBy(measurementResults.pointDefId);
   const countMap = new Map<number, number>();
   for (const r of countRows) countMap.set(r.pointDefId, Number(r.resultCount));
@@ -1165,7 +1310,7 @@ export async function listUnmappedPointDefsWithStats(unmappedModelId: number) {
         .from(measurementPointDefs)
         .innerJoin(productModels, eq(productModels.id, measurementPointDefs.productModelId))
         .where(and(
-          sql`${measurementPointDefs.code} = ANY(${codes})`,
+          inArray(measurementPointDefs.code, codes),
           sql`${measurementPointDefs.productModelId} <> ${unmappedModelId}`,
           isNull(measurementPointDefs.deletedAt),
           eq(measurementPointDefs.isActive, true),
@@ -1209,7 +1354,7 @@ export async function remapMeasurementPoints(opts: {
   targetMachineId?: number | null;
 }): Promise<{ moved: number; merged: number; resultsReassigned: number; skipped: number }> {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  if (!db) throw new DbUnavailableError();
   const { pointDefIds, targetProductModelId, unmappedModelId } = opts;
   if (!pointDefIds.length) return { moved: 0, merged: 0, resultsReassigned: 0, skipped: 0 };
 
@@ -1301,20 +1446,20 @@ export async function getMeasurementInstrumentById(id: number) {
 
 export async function createMeasurementInstrument(data: InsertMeasurementInstrument) {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  if (!db) throw new DbUnavailableError();
   const [row] = await db.insert(measurementInstruments).values(data).returning({ id: measurementInstruments.id });
   return row.id;
 }
 
 export async function updateMeasurementInstrument(id: number, data: Partial<InsertMeasurementInstrument>) {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  if (!db) throw new DbUnavailableError();
   await db.update(measurementInstruments).set({ ...data, updatedAt: new Date() }).where(eq(measurementInstruments.id, id));
 }
 
 export async function softDeleteMeasurementInstrument(id: number) {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  if (!db) throw new DbUnavailableError();
   await db.update(measurementInstruments)
     .set({ deletedAt: new Date(), isActive: false, updatedAt: new Date() })
     .where(eq(measurementInstruments.id, id));
@@ -1346,20 +1491,20 @@ export async function getSamplingPlanById(id: number) {
 
 export async function createSamplingPlan(data: InsertSamplingPlan) {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  if (!db) throw new DbUnavailableError();
   const [row] = await db.insert(samplingPlans).values(data).returning({ id: samplingPlans.id });
   return row.id;
 }
 
 export async function updateSamplingPlan(id: number, data: Partial<InsertSamplingPlan>) {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  if (!db) throw new DbUnavailableError();
   await db.update(samplingPlans).set({ ...data, updatedAt: new Date() }).where(eq(samplingPlans.id, id));
 }
 
 export async function softDeleteSamplingPlan(id: number) {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  if (!db) throw new DbUnavailableError();
   await db.update(samplingPlans)
     .set({ deletedAt: new Date(), isActive: false, updatedAt: new Date() })
     .where(eq(samplingPlans.id, id));
@@ -1391,20 +1536,20 @@ export async function getProductViewById(id: number) {
 
 export async function createProductView(data: InsertProductView) {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  if (!db) throw new DbUnavailableError();
   const [row] = await db.insert(productViews).values(data).returning({ id: productViews.id });
   return row.id;
 }
 
 export async function updateProductView(id: number, data: Partial<InsertProductView>) {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  if (!db) throw new DbUnavailableError();
   await db.update(productViews).set({ ...data, updatedAt: new Date() }).where(eq(productViews.id, id));
 }
 
 export async function softDeleteProductView(id: number) {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  if (!db) throw new DbUnavailableError();
   await db.update(productViews)
     .set({ deletedAt: new Date(), isActive: false, updatedAt: new Date() })
     .where(eq(productViews.id, id));
@@ -1436,20 +1581,20 @@ export async function getMsaStudyById(id: number) {
 
 export async function createMsaStudy(data: InsertMsaStudy) {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  if (!db) throw new DbUnavailableError();
   const [row] = await db.insert(msaStudies).values(data).returning({ id: msaStudies.id });
   return row.id;
 }
 
 export async function updateMsaStudy(id: number, data: Partial<InsertMsaStudy>) {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  if (!db) throw new DbUnavailableError();
   await db.update(msaStudies).set({ ...data, updatedAt: new Date() }).where(eq(msaStudies.id, id));
 }
 
 export async function softDeleteMsaStudy(id: number) {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  if (!db) throw new DbUnavailableError();
   await db.update(msaStudies)
     .set({ deletedAt: new Date(), isActive: false, updatedAt: new Date() })
     .where(eq(msaStudies.id, id));
@@ -1457,7 +1602,7 @@ export async function softDeleteMsaStudy(id: number) {
 
 export async function addMsaObservation(data: InsertMsaObservation) {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  if (!db) throw new DbUnavailableError();
   const [row] = await db.insert(msaObservations).values(data).returning({ id: msaObservations.id });
   return row.id;
 }
@@ -1482,10 +1627,10 @@ export async function generateMsaObservationMatrix(studyId: number, options?: {
   noisePct?: number;
 }) {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  if (!db) throw new DbUnavailableError();
 
   const study = await getMsaStudyById(studyId);
-  if (!study) throw new Error("MSA study not found");
+  if (!study) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "msaStudy" }, "MSA study not found");
 
   const operatorCount = Number(study.operatorCount ?? 3);
   const partCount = Number(study.partCount ?? 10);
@@ -1583,7 +1728,7 @@ export async function getMsaCsvMappingPresetByScope(productModelId: number, sour
 
 export async function upsertMsaCsvMappingPreset(data: InsertMsaCsvMappingPreset) {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  if (!db) throw new DbUnavailableError();
 
   const existing = await getMsaCsvMappingPresetByScope(data.productModelId!, data.sourceMachine!, data.presetName!);
   if (existing) {
@@ -1607,7 +1752,7 @@ export async function upsertMsaCsvMappingPreset(data: InsertMsaCsvMappingPreset)
 
 export async function softDeleteMsaCsvMappingPreset(id: number, updatedBy?: number) {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  if (!db) throw new DbUnavailableError();
   await db.update(msaCsvMappingPresets)
     .set({
       isActive: false,
@@ -1799,7 +1944,7 @@ export async function updateMeasurementPointDef(
   }
 ) {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  if (!db) throw new DbUnavailableError();
 
   // Doc 51 P2 batch-2 — is the 0282 provenance column present? Probed once (cached)
   // OUTSIDE the tx so a missing column never aborts the transaction; only when true
@@ -1873,6 +2018,163 @@ export async function updateMeasurementPointDef(
   });
 }
 
+/** Một hàng trong batch: id + BẤT KỲ tập con nào của `APPROVAL_LIMIT_FIELDS`. */
+export type LimitsBatchItem = { id: number } & Partial<Record<(typeof APPROVAL_LIMIT_FIELDS)[number], unknown>>;
+
+export interface LimitsBatchResult {
+  updated: number;
+  productModelId: number;
+  /** product_models.code — publishPointsConfigChanged broadcasts theo mã này. */
+  code: string;
+  /** Version SAU khi bump — mọi hàng trong batch cùng chia sẻ MỘT version mới. */
+  pointsConfigVersion: number;
+}
+
+/**
+ * Task 8 Khối C (QĐ-5) — ghi giới hạn cho NHIỀU điểm đo trong MỘT transaction,
+ * MỘT lần bump `pointsConfigVersion` (không phải một lần bump mỗi điểm — 3 điểm
+ * cùng sản phẩm ⇒ version +1, không phải +3).
+ *
+ * ⚠ BG-97 (snapshot-gate): mirror NGUYÊN VĂN {@link updateMeasurementPointDef}
+ * (FOR UPDATE + snapshot AI vào `measurement_point_versions` TRƯỚC khi UPDATE,
+ * cùng cột kể cả stamp `productPointsConfigVersion` 0282) — KHÔNG được UPDATE
+ * thẳng bỏ qua bước ghi lịch sử, nếu không bo đã chấm TRƯỚC lần sửa này sẽ bị
+ * spec-gate tái dựng và chấm lại theo limit MỚI (xem review BG-97 trong ledger).
+ *
+ * Mỗi hàng khoá `FOR UPDATE` riêng (không khoá cả bảng) — hai batch chạm những
+ * điểm KHÁC nhau vẫn chạy song song; hai batch chạm CÙNG điểm serialize đúng như
+ * hai editor đơn lẻ tranh nhau (mirror `updateMeasurementPointDef`).
+ *
+ * UPDATE chỉ ghi các khoá thuộc `APPROVAL_LIMIT_FIELDS` (đọc từ
+ * `shared/pointLimitSpec.ts`, không nhận field lạ dù caller có gửi kèm) — phòng
+ * thủ kép với zod input phía router.
+ *
+ * Ném lỗi (không nuốt) khi: một id không tồn tại/đã xoá mềm (NOT_FOUND — hàng đã
+ * bị xoá giữa lúc router kiểm tra và lúc transaction này chạy), các id KHÁC
+ * `productModelId` (router đã kiểm trước nhưng đo lại ở đây cho chắc — không tin
+ * một mình lớp gọi), hoặc sản phẩm đã bị xoá mềm lúc bump (bump trả `null`).
+ */
+export async function updateMeasurementPointLimitsBatch(
+  items: LimitsBatchItem[],
+  options?: { changedBy?: number | null; changeReason?: string | null },
+): Promise<LimitsBatchResult> {
+  const db = await getDb();
+  if (!db) throw new DbUnavailableError();
+  if (items.length === 0) {
+    throw appError("BAD_REQUEST", "INVALID_VALUE", { field: "items" }, "items rỗng");
+  }
+
+  const stampConfigVersion = await measurementPointVersionsHasConfigVersionColumn(db);
+
+  return db.transaction(async (tx) => {
+    let productModelId: number | null = null;
+    let updated = 0;
+
+    for (const item of items) {
+      const { id, ...rawFields } = item;
+
+      const [previous] = await tx.select().from(measurementPointDefs)
+        .where(and(eq(measurementPointDefs.id, id), isNull(measurementPointDefs.deletedAt)))
+        .for("update")
+        .limit(1);
+      if (!previous) {
+        throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "measurementPoint" }, `Measurement point ${id} not found`);
+      }
+      if (productModelId === null) {
+        productModelId = previous.productModelId;
+      } else if (productModelId !== previous.productModelId) {
+        throw appError(
+          "BAD_REQUEST",
+          "SCOPE_MISMATCH",
+          { entity: "measurementPoint", parent: "productModel" },
+          `Measurement point ${id} does not belong to the same product model as the rest of the batch`,
+        );
+      }
+
+      // ★★★ BG-113 (review Khối C lượt 9, I-2) — PHÒNG THỦ KÉP với gate cùng
+      // tên ở router (`productRouters.ts setLimitsBatch`): `previous` ở đây là
+      // hàng đọc TRONG TRANSACTION (FOR UPDATE), sát thời điểm ghi hơn lượt đọc
+      // ở router — đúng kỷ luật "hàm này không tin một mình lớp gọi" đã áp cho
+      // whitelist `APPROVAL_LIMIT_FIELDS` ngay bên dưới.
+      // ★★★ NEW-1 (review lượt 9, vòng 2) — CẢ NĂM cặp min/max, không chỉ hai
+      // (xem docblock `MIN_MAX_PAIRS`, `shared/pointLimitSpec.ts`).
+      assertCapGioiHanHopLe(
+        gopCapGioiHanDonGian(
+          {
+            lowerLimit: previous.lowerLimit, upperLimit: previous.upperLimit,
+            heightMin: previous.heightMin, heightMax: previous.heightMax,
+            areaMin: previous.areaMin, areaMax: previous.areaMax,
+            volumeMin: previous.volumeMin, volumeMax: previous.volumeMax,
+            thicknessMin: previous.thicknessMin, thicknessMax: previous.thicknessMax,
+          },
+          {
+            lowerLimit: rawFields.lowerLimit, upperLimit: rawFields.upperLimit,
+            heightMin: rawFields.heightMin, heightMax: rawFields.heightMax,
+            areaMin: rawFields.areaMin, areaMax: rawFields.areaMax,
+            volumeMin: rawFields.volumeMin, volumeMax: rawFields.volumeMax,
+            thicknessMin: rawFields.thicknessMin, thicknessMax: rawFields.thicknessMax,
+          },
+        ),
+      );
+
+      // Snapshot PRE-edit state — mirror updateMeasurementPointDef 1:1 (cùng cột,
+      // cùng thứ tự: đọc max(version) → stamp productPointsConfigVersion → insert).
+      const [{ maxVersion }] = await tx
+        .select({ maxVersion: sql<number>`COALESCE(MAX(${measurementPointVersions.version}), 0)` })
+        .from(measurementPointVersions)
+        .where(eq(measurementPointVersions.pointDefId, id));
+      const nextVersion = Number(maxVersion ?? 0) + 1;
+
+      let productPointsConfigVersion: number | null = null;
+      if (stampConfigVersion) {
+        try {
+          const [pm] = await tx
+            .select({ v: productModels.pointsConfigVersion })
+            .from(productModels)
+            .where(eq(productModels.id, previous.productModelId))
+            .limit(1);
+          productPointsConfigVersion = pm?.v != null ? Number(pm.v) : null;
+        } catch {
+          productPointsConfigVersion = null; // best-effort — never fail the edit
+        }
+      }
+
+      const versionRow: Record<string, unknown> = {
+        pointDefId: id,
+        version: nextVersion,
+        snapshotJson: previous as unknown as Record<string, any>,
+        changedBy: options?.changedBy ?? null,
+        changeReason: options?.changeReason ?? null,
+      };
+      if (stampConfigVersion) {
+        versionRow.productPointsConfigVersion = productPointsConfigVersion;
+      }
+      await tx.insert(measurementPointVersions).values(versionRow as typeof measurementPointVersions.$inferInsert);
+
+      // Phòng thủ kép: chỉ đưa vào SET các khoá thuộc APPROVAL_LIMIT_FIELDS —
+      // dù zod input phía router đã whitelist, hàm này không tin một mình lớp gọi.
+      const limitFields: Record<string, unknown> = {};
+      for (const f of APPROVAL_LIMIT_FIELDS) {
+        const v = (rawFields as Record<string, unknown>)[f];
+        if (v !== undefined) limitFields[f] = v;
+      }
+      await tx.update(measurementPointDefs)
+        .set({ ...limitFields, updatedAt: new Date() })
+        .where(eq(measurementPointDefs.id, id));
+      updated++;
+    }
+
+    // productModelId không thể null ở đây — items.length > 0 đã bảo đảm vòng lặp
+    // chạy ít nhất một lần và gán trước khi tới đây.
+    const bump = await bumpPointsConfigVersion(productModelId as number, tx as unknown as PointsBumpExecutor);
+    if (!bump) {
+      throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "productModel" }, `Product model ${productModelId} not found (deleted?)`);
+    }
+
+    return { updated, productModelId: productModelId as number, code: bump.code, pointsConfigVersion: bump.version };
+  });
+}
+
 /**
  * P0 soft-delete via deletedAt (also flips isActive=false to keep legacy
  * active-only consumers consistent with the soft-delete model).
@@ -1890,7 +2192,7 @@ export async function updateMeasurementPointDef(
  */
 export async function deleteMeasurementPointDef(id: number): Promise<PointsConfigBump | null> {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  if (!db) throw new DbUnavailableError();
 
   return db.transaction(async (tx) => {
     const [point] = await tx
@@ -1991,7 +2293,7 @@ export async function revertPointsConfigToVersion(
   options?: { changedBy?: number | null; changeReason?: string | null },
 ): Promise<RevertPointsSummary | null> {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  if (!db) throw new DbUnavailableError();
   if (!Number.isInteger(targetVersion) || targetVersion < 1) {
     throw new RevertVersionError(`targetVersion must be a positive integer (got ${targetVersion}).`);
   }
@@ -2147,7 +2449,7 @@ export async function bulkCreateMeasurementPoints(points: InsertMeasurementPoint
 // ============ FIDUCIAL MARK FUNCTIONS (P1) ============
 export async function createFiducialMark(data: InsertFiducialMark) {
   const db = await getDb();
-  if (!db) throw new Error("DB unavailable");
+  if (!db) throw new DbUnavailableError();
   const result = await db.insert(fiducialMarks).values(data).returning({ id: fiducialMarks.id });
   return result[0]?.id;
 }
@@ -2191,7 +2493,7 @@ export async function deleteFiducialMark(id: number) {
 }
 
 // ============ PRODUCT-MACHINE MAPPING FUNCTIONS ============
-export async function getProductMachineMappings(machineId?: number, productModelId?: number) {
+export async function getProductMachineMappings(machineId?: number, productModelId?: number, scope?: PhamViNguoiXem) {
   const db = await getDb();
   if (!db) return [];
   
@@ -2199,6 +2501,12 @@ export async function getProductMachineMappings(machineId?: number, productModel
   // lẫn productModelId đều set thì filter machineId bị mất → trả mapping của sản phẩm
   // trên MỌI máy (wizard đổi-sản-phẩm báo "sẵn sàng" sai). Gom điều kiện + and().
   const conds = [];
+  {
+    // Bảng gán mang `machineId` NOT NULL ⇒ trục MÁY là trục thật, không cần đi vòng qua sản phẩm.
+    const { idsTrongPhamVi } = await import("./hierarchy");
+    const idsMay = await idsTrongPhamVi("machine", scope);
+    if (idsMay !== null) conds.push(inArray(productMachineMappings.machineId, idsMay.length ? idsMay : [-1]));
+  }
   if (machineId) conds.push(eq(productMachineMappings.machineId, machineId));
   if (productModelId) conds.push(eq(productMachineMappings.productModelId, productModelId));
 
@@ -2211,7 +2519,7 @@ export async function getProductMachineMappings(machineId?: number, productModel
 
 export async function createProductMachineMapping(data: InsertProductMachineMapping) {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  if (!db) throw new DbUnavailableError();
   try {
     const [result] = await db.insert(productMachineMappings).values(data).returning({ id: productMachineMappings.id });
     return { id: result.id };
@@ -2227,13 +2535,13 @@ export async function createProductMachineMapping(data: InsertProductMachineMapp
 
 export async function updateProductMachineMapping(id: number, data: Partial<InsertProductMachineMapping>) {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  if (!db) throw new DbUnavailableError();
   await db.update(productMachineMappings).set(data).where(eq(productMachineMappings.id, id));
 }
 
 export async function deleteProductMachineMapping(id: number) {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  if (!db) throw new DbUnavailableError();
   await db.delete(productMachineMappings).where(eq(productMachineMappings.id, id));
 }
 
@@ -2266,9 +2574,11 @@ export async function deleteOrphanProductMachineMappings(): Promise<number> {
   return orphanIds.length;
 }
 
-export async function getMappingsByMachine(machineId: number) {
+export async function getMappingsByMachine(machineId: number, scope?: PhamViNguoiXem) {
   const db = await getDb();
   if (!db) return [];
+  const { trongPhamVi } = await import("./hierarchy");
+  if (!(await trongPhamVi("machine", machineId, scope))) return [];
   
   return db.select({
     mapping: productMachineMappings,
@@ -2280,9 +2590,13 @@ export async function getMappingsByMachine(machineId: number) {
   .orderBy(desc(productMachineMappings.priority));
 }
 
-export async function getMappingsByProduct(productModelId: number) {
+export async function getMappingsByProduct(productModelId: number, scope?: PhamViNguoiXem) {
   const db = await getDb();
   if (!db) return [];
+  // ⚠ Kết quả trả về MÁY (mã · tên · loại) — nên cổng đặt trên `machineId`, không trên sản phẩm:
+  // một sản phẩm dùng chung hai nhà máy vẫn phải giấu máy của nhà máy kia.
+  const { idsTrongPhamVi } = await import("./hierarchy");
+  const idsMay = await idsTrongPhamVi("machine", scope);
   
   return db.select({
     mapping: productMachineMappings,
@@ -2290,7 +2604,10 @@ export async function getMappingsByProduct(productModelId: number) {
   })
   .from(productMachineMappings)
   .innerJoin(machines, eq(productMachineMappings.machineId, machines.id))
-  .where(eq(productMachineMappings.productModelId, productModelId))
+  .where(and(
+    eq(productMachineMappings.productModelId, productModelId),
+    ...(idsMay === null ? [] : [inArray(productMachineMappings.machineId, idsMay.length ? idsMay : [-1])]),
+  ))
   .orderBy(desc(productMachineMappings.priority));
 }
 
@@ -2341,7 +2658,7 @@ export async function getProductCategoryByCode(code: string) {
 
 export async function createProductCategory(data: InsertProductCategory) {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  if (!db) throw new DbUnavailableError();
   
   const [result] = await db.insert(productCategories).values(data).returning({ id: productCategories.id });
   return { id: result.id };
@@ -2349,14 +2666,14 @@ export async function createProductCategory(data: InsertProductCategory) {
 
 export async function updateProductCategory(id: number, data: Partial<InsertProductCategory>) {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  if (!db) throw new DbUnavailableError();
   
   await db.update(productCategories).set(data).where(eq(productCategories.id, id));
 }
 
 export async function deleteProductCategory(id: number) {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  if (!db) throw new DbUnavailableError();
   
   // Check if category has children
   const children = await db.select().from(productCategories).where(eq(productCategories.parentId, id)).limit(1);
@@ -2421,7 +2738,7 @@ export async function updateProductCategoryCount(categoryId: number) {
 
 export async function reorderProductCategories(categoryIds: number[]) {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  if (!db) throw new DbUnavailableError();
   
   for (let i = 0; i < categoryIds.length; i++) {
     await db.update(productCategories)
@@ -2434,7 +2751,7 @@ export async function reorderProductCategories(categoryIds: number[]) {
 
 export async function createProductSyncLog(data: InsertSyncLog) {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  if (!db) throw new DbUnavailableError();
   const [result] = await db.insert(syncLogs).values(data).returning();
   return result;
 }
@@ -2685,7 +3002,7 @@ export async function getLatestValidCalibration(instrumentId: number) {
 
 export async function createInstrumentCalibration(data: InsertInstrumentCalibration) {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  if (!db) throw new DbUnavailableError();
   const [row] = await db.insert(instrumentCalibrations).values(data)
     .returning({ id: instrumentCalibrations.id });
   return row.id;
@@ -2693,7 +3010,7 @@ export async function createInstrumentCalibration(data: InsertInstrumentCalibrat
 
 export async function softDeleteInstrumentCalibration(id: number) {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  if (!db) throw new DbUnavailableError();
   await db.update(instrumentCalibrations)
     .set({ deletedAt: new Date() })
     .where(eq(instrumentCalibrations.id, id));
@@ -2729,7 +3046,7 @@ export async function getLatestValidMsaRecord(instrumentId: number) {
 
 export async function createInstrumentMsaRecord(data: InsertInstrumentMsaRecord) {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  if (!db) throw new DbUnavailableError();
   const [row] = await db.insert(instrumentMsaRecords).values(data)
     .returning({ id: instrumentMsaRecords.id });
   return row.id;
@@ -2737,7 +3054,7 @@ export async function createInstrumentMsaRecord(data: InsertInstrumentMsaRecord)
 
 export async function softDeleteInstrumentMsaRecord(id: number) {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  if (!db) throw new DbUnavailableError();
   await db.update(instrumentMsaRecords)
     .set({ deletedAt: new Date() })
     .where(eq(instrumentMsaRecords.id, id));
@@ -2775,13 +3092,15 @@ export async function getInstrumentHealth(instrumentId: number): Promise<{
 // ============================================================
 // P4.A G17 — MP Lighting Profile helpers
 // ============================================================
-export async function listMpLightingProfiles(pointDefId: number) {
+export async function listMpLightingProfiles(pointDefId: number, scope?: PhamViNguoiXem) {
   const db = await getDb();
   if (!db) return [];
+  const cong = await congDiemDoTheoPhamVi(mpLightingProfiles.pointDefId, scope);
   return db.select().from(mpLightingProfiles)
     .where(and(
       eq(mpLightingProfiles.pointDefId, pointDefId),
       isNull(mpLightingProfiles.deletedAt),
+      ...(cong ? [cong] : []),
     ))
     .orderBy(asc(mpLightingProfiles.shotIndex));
 }
@@ -2813,7 +3132,7 @@ export async function listMpLightingProfilesByPointDefIds(
 
 export async function createMpLightingProfile(data: InsertMpLightingProfile) {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  if (!db) throw new DbUnavailableError();
   const [row] = await db.insert(mpLightingProfiles).values(data)
     .returning({ id: mpLightingProfiles.id });
   return row.id;
@@ -2821,7 +3140,7 @@ export async function createMpLightingProfile(data: InsertMpLightingProfile) {
 
 export async function updateMpLightingProfile(id: number, data: Partial<InsertMpLightingProfile>) {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  if (!db) throw new DbUnavailableError();
   await db.update(mpLightingProfiles)
     .set({ ...data, updatedAt: new Date() })
     .where(eq(mpLightingProfiles.id, id));
@@ -2829,7 +3148,7 @@ export async function updateMpLightingProfile(id: number, data: Partial<InsertMp
 
 export async function softDeleteMpLightingProfile(id: number) {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  if (!db) throw new DbUnavailableError();
   await db.update(mpLightingProfiles)
     .set({ deletedAt: new Date(), isActive: false, updatedAt: new Date() })
     .where(eq(mpLightingProfiles.id, id));
@@ -2851,7 +3170,7 @@ export async function ensureMeasurementSamplesPartition(date: Date) {
 export async function insertMeasurementSamples(rows: InsertMeasurementSample[]) {
   if (rows.length === 0) return 0;
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  if (!db) throw new DbUnavailableError();
   // Make sure all relevant partitions exist
   const months = new Set<string>();
   for (const r of rows) {
@@ -2874,10 +3193,14 @@ export async function listMeasurementSamples(opts: {
   windowSize?: number;
   fromTs?: Date;
   toTs?: Date;
-}) {
+}, scope?: PhamViNguoiXem) {
   const db = await getDb();
   if (!db) return [];
   const conds: SQL[] = [eq(measurementSamples.pointDefId, opts.pointDefId)];
+  {
+    const cong = await congDiemDoTheoPhamVi(measurementSamples.pointDefId, scope);
+    if (cong) conds.push(cong);
+  }
   if (opts.fromTs) conds.push(gte(measurementSamples.sampledAt, opts.fromTs));
   if (opts.toTs) conds.push(sql`${measurementSamples.sampledAt} <= ${opts.toTs}`);
   const limit = opts.windowSize ?? 200;
@@ -2895,7 +3218,7 @@ export async function listMeasurementSamples(opts: {
 // ============================================================
 export async function createSpcAlert(data: InsertMpSpcAlert) {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  if (!db) throw new DbUnavailableError();
   const [row] = await db.insert(mpSpcAlerts).values(data)
     .returning({ id: mpSpcAlerts.id });
   return row.id;
@@ -2905,10 +3228,14 @@ export async function listSpcAlerts(opts: {
   pointDefId?: number;
   unackedOnly?: boolean;
   limit?: number;
-}) {
+}, scope?: PhamViNguoiXem) {
   const db = await getDb();
   if (!db) return [];
   const conds: SQL[] = [];
+  {
+    const cong = await congDiemDoTheoPhamVi(mpSpcAlerts.pointDefId, scope);
+    if (cong) conds.push(cong);
+  }
   if (opts.pointDefId) conds.push(eq(mpSpcAlerts.pointDefId, opts.pointDefId));
   if (opts.unackedOnly) conds.push(isNull(mpSpcAlerts.ackAt));
   return db.select().from(mpSpcAlerts)
@@ -2919,7 +3246,7 @@ export async function listSpcAlerts(opts: {
 
 export async function ackSpcAlert(id: number, ackBy: number, ackNote?: string) {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  if (!db) throw new DbUnavailableError();
   await db.update(mpSpcAlerts)
     .set({ ackAt: new Date(), ackBy, ackNote: ackNote ?? null })
     .where(eq(mpSpcAlerts.id, id));
@@ -2941,7 +3268,7 @@ export async function getRollingSpc(pointDefId: number, windowSize = 30) {
 
 export async function upsertRollingSpc(data: InsertMpSpcRolling) {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  if (!db) throw new DbUnavailableError();
   const existing = await getRollingSpc(data.pointDefId, data.windowSize ?? 30);
   if (existing) {
     await db.update(mpSpcRolling)
@@ -2979,9 +3306,10 @@ export async function getMpDefectStatsForProduct(opts: {
   toTs?: Date;
   machineId?: number;
   productViewId?: number;
-}): Promise<MpDefectStat[]> {
+}, scope?: PhamViNguoiXem): Promise<MpDefectStat[]> {
   const db = await getDb();
   if (!db) return [];
+  if (!(await sanPhamTrongPhamVi(opts.productModelId, scope))) return [];
 
   const conds: SQL[] = [
     eq(measurementPointDefs.productModelId, opts.productModelId),
@@ -3004,7 +3332,7 @@ export async function getMpDefectStatsForProduct(opts: {
   const pointIds = points.map((p) => p.id);
 
   const resultConds: SQL[] = [
-    sql`${measurementResults.pointDefId} = ANY(${pointIds})`,
+    inArray(measurementResults.pointDefId, pointIds),
   ];
   if (opts.fromTs) {
     resultConds.push(sql`${productInspections.inspectionTime} >= ${opts.fromTs}`);
@@ -3081,7 +3409,7 @@ export async function getMpDefectStatsForProduct(opts: {
 // ============================================================
 export async function createCadImportJob(data: InsertCadImportJob) {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  if (!db) throw new DbUnavailableError();
   const [row] = await db.insert(cadImportJobs).values(data)
     .returning({ id: cadImportJobs.id });
   return row.id;
@@ -3089,7 +3417,7 @@ export async function createCadImportJob(data: InsertCadImportJob) {
 
 export async function updateCadImportJob(id: number, data: Partial<InsertCadImportJob>) {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  if (!db) throw new DbUnavailableError();
   await db.update(cadImportJobs)
     .set({ ...data, updatedAt: new Date() })
     .where(eq(cadImportJobs.id, id));
@@ -3115,7 +3443,7 @@ export async function listCadImportJobsByProduct(productModelId: number) {
 export async function bulkInsertCadImportCandidates(rows: InsertCadImportCandidate[]) {
   if (rows.length === 0) return 0;
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  if (!db) throw new DbUnavailableError();
   const inserted = await db.insert(cadImportCandidates).values(rows)
     .returning({ id: cadImportCandidates.id });
   return inserted.length;
@@ -3131,13 +3459,13 @@ export async function listCadImportCandidates(jobId: number) {
 
 export async function setCadCandidateSelection(jobId: number, candidateIds: number[], selected: boolean) {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  if (!db) throw new DbUnavailableError();
   if (candidateIds.length === 0) return;
   await db.update(cadImportCandidates)
     .set({ selected })
     .where(and(
       eq(cadImportCandidates.jobId, jobId),
-      sql`${cadImportCandidates.id} = ANY(${candidateIds})`,
+      inArray(cadImportCandidates.id, candidateIds),
     ));
 }
 
@@ -3147,7 +3475,7 @@ export async function setCadCandidateSelection(jobId: number, candidateIds: numb
  */
 export async function applyCadImportJob(jobId: number, appliedBy: number) {
   const job = await getCadImportJobById(jobId);
-  if (!job) throw new Error("CAD import job not found");
+  if (!job) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "cadImportJob" }, "CAD import job not found");
   if (job.status === "applied") return job.appliedPointCount ?? 0;
   const cands = await listCadImportCandidates(jobId);
   const selected = cands.filter((c) => c.selected);
@@ -3156,7 +3484,7 @@ export async function applyCadImportJob(jobId: number, appliedBy: number) {
     return 0;
   }
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  if (!db) throw new DbUnavailableError();
 
   // Find next free orderIndex for this product
   const [{ maxIdx }] = await db
@@ -3271,7 +3599,7 @@ export async function listSamplesForLot(lotCode: string, limit = 5000) {
 // ════════════════════════════════════════════════════════════════════════════
 export async function upsertStationTrace(row: InsertStationTrace): Promise<number | null> {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  if (!db) throw new DbUnavailableError();
   // CASE #8 — a blank/whitespace serial has no identity to scope on. Skip it
   // rather than merge every unlabelled board into a single serial='' aggregate.
   const serial = typeof row.serialNumber === "string" ? row.serialNumber.trim() : "";
@@ -3371,7 +3699,7 @@ export async function getLastGenealogyHash(): Promise<string | null> {
 
 export async function insertGenealogyChainRow(row: InsertGenealogyChain) {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  if (!db) throw new DbUnavailableError();
   const [inserted] = await db
     .insert(genealogyChain)
     .values(row)
@@ -3406,7 +3734,7 @@ export async function appendGenealogyChainRow(
   build: (prevHash: string) => InsertGenealogyChain,
 ): Promise<{ id: number; prevHash: string; currHash: string }> {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  if (!db) throw new DbUnavailableError();
   return db.transaction(async (tx) => {
     await tx.execute(sql`SELECT pg_advisory_xact_lock(${GENEALOGY_CHAIN_LOCK})`);
     const [tail] = await tx
@@ -3464,7 +3792,7 @@ export async function listGenealogyChainByLot(lotCode: string, limit = 5000) {
 
 export async function createVariant(data: InsertProductVariant): Promise<number> {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  if (!db) throw new DbUnavailableError();
   const [row] = await db.insert(productVariants).values(data).returning({ id: productVariants.id });
   return row.id;
 }
@@ -3521,7 +3849,7 @@ export async function getVariantByCode(productModelId: number, code: string): Pr
 
 export async function updateVariant(id: number, data: Partial<InsertProductVariant>): Promise<void> {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  if (!db) throw new DbUnavailableError();
   await db.update(productVariants).set({ ...data, updatedAt: new Date() }).where(eq(productVariants.id, id));
 }
 
@@ -3531,7 +3859,7 @@ export async function updateVariant(id: number, data: Partial<InsertProductVaria
  */
 export async function softDeleteVariant(id: number): Promise<void> {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  if (!db) throw new DbUnavailableError();
   await db.update(productVariants)
     .set({ deletedAt: new Date(), lifecycleStatus: "archived", updatedAt: new Date() })
     .where(and(eq(productVariants.id, id), eq(productVariants.isBase, false)));
@@ -3545,7 +3873,7 @@ export async function softDeleteVariant(id: number): Promise<void> {
  */
 export async function ensureBaseVariant(productModelId: number, pointsConfigVersion?: number): Promise<number> {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  if (!db) throw new DbUnavailableError();
   const existing = await getBaseVariant(productModelId);
   if (existing) return existing.id;
   const inserted = await db.insert(productVariants).values({
@@ -3573,7 +3901,7 @@ export async function ensureBaseVariant(productModelId: number, pointsConfigVers
  */
 export async function setVariantPointOverride(data: InsertVariantPointOverride): Promise<number> {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  if (!db) throw new DbUnavailableError();
   const [row] = await db.insert(variantPointOverrides)
     .values({ ...data, updatedAt: new Date() })
     .onConflictDoUpdate({
@@ -3594,7 +3922,7 @@ export async function getVariantOverrides(variantId: number): Promise<VariantPoi
 
 export async function removeVariantOverride(variantId: number, basePointDefId: number): Promise<void> {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  if (!db) throw new DbUnavailableError();
   await db.delete(variantPointOverrides)
     .where(and(
       eq(variantPointOverrides.variantId, variantId),
@@ -3620,6 +3948,129 @@ const VARIANT_PATCH_PROTECTED_KEYS = new Set<string>([
   "createdAt", "updatedAt", "deletedAt", "deletedAtVersion", "lastModifiedAt",
 ]);
 
+/** Doc 55 Item 3 — MỘT bản merge patch variant (lọc khoá bảo vệ). Trước 2026-09-03
+ * đường ingest v1 shallow-merge THÔ (machineApiRouters.ts) còn mergeEffectivePoints
+ * lọc — hai bản đã trôi khỏi nhau; nay cùng gọi hàm này. */
+export function apDungVariantPatch<T extends object>(base: T, patchJson: unknown): T {
+  const safe: Record<string, unknown> = {};
+  if (patchJson && typeof patchJson === "object") {
+    for (const [k, v] of Object.entries(patchJson as Record<string, unknown>)) {
+      if (!VARIANT_PATCH_PROTECTED_KEYS.has(k)) safe[k] = v;
+    }
+  }
+  return { ...base, ...safe };
+}
+
+/**
+ * ★★★ BG-113/I-3 (review Khối C lượt 9) — snapshot TRƯỚC MỘT LƯỢT OVERRIDE biến
+ * thể, ghi vào CHÍNH bảng `measurement_point_versions` mà snapshot-gate BG-97
+ * đọc cho base point-def (`pointDefId = basePointDefId`). Trước bản vá này,
+ * `productVariantRouter.setOverride` đổi giới hạn (qua `patchJson`) mà KHÔNG để
+ * lại hàng lịch sử nào — snapshot-gate không thể tái dựng lượt override TRƯỚC
+ * một lần sửa, một bo cũ luôn bị chấm theo override MỚI (hạ oan, cùng lớp lỗi
+ * C-1 nhưng ở nguồn giới hạn THỨ HAI).
+ *
+ * ⚠ PHẠM VI THẬT — TRAIL, CHƯA phải tích hợp snapshot-gate ĐẦY ĐỦ theo variant:
+ * `resolveGateLimitsForBoard`/`giaiGioiHanTaiLucDo` tái dựng theo `pointDefId`
+ * CHUNG (không phân biệt `variantId` — history của base point và history của
+ * MỌI override trên nó SỐNG CHUNG một chuỗi `version` tăng dần). Một hàng do
+ * hàm này ghi VẪN được cơ chế đó ĐỌC (đúng bảng, đúng `pointDefId`), nhưng nó
+ * không tự biết "áp dụng lại override này CHỈ cho đúng variant đó" — dùng
+ * `snapshotJson` để CHỨNG MINH giới hạn LÚC ĐÓ nếu có người cần tra tay, KHÔNG
+ * khai đây là snapshot-gate hoàn chỉnh cho variant.
+ *
+ * ★★★ NEW-3 (review lượt 9, vòng 2) — ĐÃ VÁ chiều SAI mà mô tả "TRAIL" ở trên
+ * từng bỏ sót: bản gốc (`fa2769a3`) không hề đánh dấu hàng nó ghi là "của biến
+ * thể", nên MỘT bo BASE (mọi bo v2 hôm nay LUÔN base) có thể bị `resolveLimitsAtInstant`
+ * tái dựng NHẦM bằng giới hạn của một biến thể nó chưa từng thuộc về, khi cờ BẬT
+ * — sai cả hai chiều (đo được, xem `product.test-plumbing`/báo cáo NEW-3). Nay
+ * MỖI hàng hàm này ghi LUÔN mang tiền tố `[VARIANT:<id>]` (`tienToVersionBienThe`)
+ * — `napLichSuGioiHanTheoDiem` (v2, `cayDay.ts`) VÀ `loadPointLimitSnapshots`
+ * (v1.x, `machineApiRouters.ts`) đều LỌC BỎ hàng mang tiền tố này khi tái dựng
+ * cho một bo BASE (đúng thực tế hôm nay: v2 không có, v1.x cũng chưa phân giải
+ * `variantCode` khi gọi hai hàm này). Chuỗi base vì vậy SẠCH TRỞ LẠI — đúng
+ * trạng thái TRƯỚC `fa2769a3`.
+ */
+// ════════════════════════════════════════════════════════════════════════════
+// ★★★ NEW-3 (review Khối C lượt 9, vòng 2) — TÁCH CHUỖI VERSION base/biến thể.
+//
+// `recordVariantOverrideVersion` ghi giới hạn HIỆU LỰC CỦA BIẾN THỂ vào CHÍNH
+// chuỗi `measurement_point_versions` của điểm BASE (`pointDefId = basePointDefId`
+// — bảng này KHÔNG có cột `variantId` để tách theo cột, xem đo đạc dưới). Trước
+// bản vá này (`fa2769a3`), chuỗi base 100% SẠCH (0 hàng biến thể); SAU bản vá đó,
+// một hàng biến thể có thể NẰM XEN giữa các hàng base thật — `resolveLimitsAtInstant`
+// (`pointResultEvaluator.ts`, dùng CHUNG bởi v1.x `loadPointLimitSnapshots` VÀ v2
+// `napLichSuGioiHanTheoDiem`) không phân biệt được, nên khi cờ `SPEC_GATE_SNAPSHOT_ENABLED`
+// BẬT, một bo BASE (mọi bo v2 hôm nay LUÔN base — hợp đồng v2.0 không mang
+// `variantCode`) có thể bị tái dựng bằng giới hạn của một BIẾN THỂ nó chưa từng
+// thuộc về — sai CẢ HAI CHIỀU (override nới ⇒ bo xấu lọt; override siết ⇒ bo tốt
+// hạ oan).
+//
+// ── ĐO ĐƯỢC TRƯỚC KHI CHỌN CÁCH VÁ (2026-09-04, `aoi_management`) ────────────
+// `information_schema.columns` của `measurement_point_versions`: đúng 8 cột hiện
+// có (`id/pointDefId/version/snapshotJson/changedBy/changeReason/changedAt/
+// productPointsConfigVersion`), KHÔNG có `variantId`. `timescaledb_information.
+// hypertables` KHÔNG liệt kê bảng này ⇒ KHÔNG phải hypertable (thêm cột nullable
+// sẽ AN TOÀN nếu cần), nhưng brief ưu tiên "không migration nếu tránh được" —
+// đúng nguyên tắc cầu chì 0338 (hạn chế migration mới trong vòng sửa nhanh).
+//
+// ⇒ ĐÁNH DẤU BẰNG `changeReason` — tiền tố CẤU TRÚC `[VARIANT:<id>]` luôn ở ĐẦU
+// chuỗi (không phải một suffix tự do, dễ trôi) — hai hàm dưới đây là NGUỒN DUY
+// NHẤT cho tiền tố này (ghi ở `recordVariantOverrideVersion`, đọc/lọc ở
+// `napLichSuGioiHanTheoDiem`/`loadPointLimitSnapshots`), tránh chép tay chuỗi
+// định dạng ở nhiều nơi (đúng lớp lỗi BG-42 "bản logic thứ hai").
+// ════════════════════════════════════════════════════════════════════════════
+
+/** Tiền tố CẤU TRÚC đánh dấu một hàng `measurement_point_versions` là snapshot
+ * HIỆU LỰC CỦA BIẾN THỂ (không phải của base). LUÔN ở đầu `changeReason`. */
+export function tienToVersionBienThe(variantId: number): string {
+  return `[VARIANT:${variantId}]`;
+}
+/** Khớp CHÍNH XÁC tiền tố `tienToVersionBienThe` tạo ra, ở ĐẦU chuỗi. */
+export const RE_TIEN_TO_VERSION_BIEN_THE = /^\[VARIANT:\d+\]/;
+
+export async function recordVariantOverrideVersion(
+  basePointDefId: number,
+  variantId: number,
+  hieuLucTruocOverride: Record<string, unknown>,
+  options?: { changedBy?: number | null; changeReason?: string | null },
+): Promise<void> {
+  const db = await getDb();
+  if (!db) throw new DbUnavailableError();
+  const stampConfigVersion = await measurementPointVersionsHasConfigVersionColumn(db);
+  const [{ maxVersion }] = await db
+    .select({ maxVersion: sql<number>`COALESCE(MAX(${measurementPointVersions.version}), 0)` })
+    .from(measurementPointVersions)
+    .where(eq(measurementPointVersions.pointDefId, basePointDefId));
+  const nextVersion = Number(maxVersion ?? 0) + 1;
+  const versionRow: Record<string, unknown> = {
+    pointDefId: basePointDefId,
+    version: nextVersion,
+    snapshotJson: hieuLucTruocOverride,
+    changedBy: options?.changedBy ?? null,
+    // NEW-3 — tiền tố `[VARIANT:<id>]` LUÔN ở đầu, bất kể `options.changeReason`
+    // caller truyền gì — không tin caller tự nhớ gắn nhãn (đúng kỷ luật "MỘT
+    // nguồn sự thật" mà `apDungVariantPatch`/`APPROVAL_LIMIT_FIELDS` đã theo).
+    changeReason: `${tienToVersionBienThe(variantId)} ${options?.changeReason ?? "productVariant.setOverride"}`,
+  };
+  // `productPointsConfigVersion` (0282) khai "phiên bản SẢN PHẨM lúc snapshot" —
+  // KHÔNG có ý nghĩa rõ ràng ở đây (override thuộc VARIANT, không phải bump toàn
+  // sản phẩm) ⇒ để null có chủ ý: reconstruction rơi về nhánh INSTANT (P1), an
+  // toàn, KHÔNG khoá nhầm VERSION-EXACT (0282) vào một con số không đúng nghĩa.
+  //
+  // ★★★ BG-128 (Khối C, "nợ còn mở", 2026-09-05) — BẤT BIẾN, KHÔNG PHẢI TÁC
+  // DỤNG PHỤ: cái NULL này là lý do DUY NHẤT `revertPointsConfigToVersion`
+  // (VERSION-EXACT revert, phía dưới trong file này — `stamped = versions.filter
+  // (v.productPointsConfigVersion != null)`) KHÔNG BAO GIỜ coi một hàng biến thể
+  // là một mốc snapshot BASE hợp lệ. Ai "cải tiến" bằng cách đóng dấu version
+  // THẬT cho hàng này (nghĩ "ghi cho đủ") sẽ MỞ LẠI đúng lỗ đó — revert có thể
+  // phục hồi điểm base bằng giá trị CHỈ từng tồn tại trên một biến thể. Lưới
+  // `server/db/lienKetBoTrongBienThe.db.test.ts` đo cả cột NULL lẫn hành vi
+  // revert thật (đột biến ở cuối file đó chứng minh lưới ĐỎ khi bất biến bị phá).
+  if (stampConfigVersion) versionRow.productPointsConfigVersion = null;
+  await db.insert(measurementPointVersions).values(versionRow as typeof measurementPointVersions.$inferInsert);
+}
+
 /**
  * PURE merge (no DB) — the effective point set a variant inspects:
  *   {base points} − {base points a variant EXCLUDES}
@@ -3640,14 +4091,7 @@ export function mergeEffectivePoints(input: EffectivePointsInput): MeasurementPo
     if (!ov) { out.push(bp); continue; }
     if (ov.action === "exclude") continue; // variant drops this base point
     if (ov.action === "override") {
-      const patch = (ov.patchJson && typeof ov.patchJson === "object")
-        ? (ov.patchJson as Record<string, unknown>)
-        : {};
-      const safePatch: Record<string, unknown> = {};
-      for (const [k, v] of Object.entries(patch)) {
-        if (!VARIANT_PATCH_PROTECTED_KEYS.has(k)) safePatch[k] = v;
-      }
-      out.push({ ...bp, ...safePatch } as MeasurementPointDef);
+      out.push(apDungVariantPatch(bp, ov.patchJson));
       continue;
     }
     out.push(bp); // unknown action — conservative: keep the base point unmodified

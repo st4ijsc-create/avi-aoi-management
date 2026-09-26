@@ -21,6 +21,14 @@ import {
   deriveLegacyAnchor,
   type MeasurementGeometry,
 } from "../lib/measurementGeometry";
+// Task 8 Khối C (QĐ-5, Task 7 review F2) — `touchesLimits` SUY từ
+// APPROVAL_LIMIT_FIELDS, MỘT hàm dùng chung với `productRouters.ts` (trước bản
+// vá: bản chép tay ở ĐÂY thiếu 9/18 cột của POINT_LIMIT_SPEC + `unit` gán vô
+// điều kiện bên dưới → bulk-import trên sản phẩm live lách hàng đợi duyệt).
+import { touchesApprovalLimitFields, loiCapGioiHanSauMerge, type CapGioiHan } from "./measurementPointLimitGate";
+// NEW-1 (review Khối C lượt 9, vòng 2) — SUY cặp min/max từ spec thay vì liệt kê
+// tay lowerLimit/upperLimit/heightMin/heightMax ở dưới (xem docblock `MIN_MAX_PAIRS`).
+import { MIN_MAX_PAIRS } from "@shared/pointLimitSpec";
 
 export const LEGACY_MEASUREMENT_TYPES = [
   "DIMENSION",
@@ -137,6 +145,14 @@ export interface BuildInsertResult {
   row: InsertMeasurementPointDef;
   /** True when limit-bearing fields were stripped because the product is live (gate). */
   limitsStripped: boolean;
+  /**
+   * BG-113 (review Khối C lượt 9, I-2) — set khi `lowerLimit > upperLimit` và/hoặc
+   * `heightMin > heightMax` bị GATE strip (chỉ cặp vi phạm, không phải cả hàng —
+   * mirror hành vi `limitsStripped` cho SẢN PHẨM LIVE, nhưng ở đây là vì DỮ LIỆU
+   * SAI, không phải vì lifecycle). `undefined` khi khoảng hợp lệ (hoặc đã bị
+   * `limitsStripped` xoá trước rồi — không có gì để kiểm).
+   */
+  rangeError?: string;
 }
 
 /**
@@ -190,20 +206,14 @@ export function buildInsertFromImportPoint(
   // A live product must not receive imported limits directly (decision #4 /
   // B.6): strip every limit-bearing field so approved limits are only set via
   // the approval queue. Geometry, name, componentCode, 3D window etc. still import.
-  const touchesLimits =
-    point.lowerLimit !== undefined ||
-    point.upperLimit !== undefined ||
-    point.nominalValue !== undefined ||
-    point.toleranceMode !== undefined ||
-    point.tolPlus !== undefined ||
-    point.tolMinus !== undefined ||
-    point.heightMin !== undefined ||
-    point.heightMax !== undefined ||
-    point.volumeMin !== undefined ||
-    point.volumeMax !== undefined ||
-    point.areaMin !== undefined ||
-    point.areaMax !== undefined ||
-    point.coplanarityMax !== undefined;
+  // Task 8 Khối C — suy từ APPROVAL_LIMIT_FIELDS (shared/pointLimitSpec.ts),
+  // MỘT hàm dùng chung với productRouters.ts (xem import ở đầu file). Trước bản
+  // vá danh sách chép tay ở đây thiếu `unit`/`warpageMax`/`voidPctMax`/
+  // `offsetXMax`/`offsetYMax`/`tiltMax`/`thicknessMin`/`thicknessMax` (8 field
+  // không tồn tại trong `DeepImportPoint` nên vô hại HÔM NAY) và `unit` (field
+  // CÓ tồn tại, gán vô điều kiện bên dưới — lỗ thật: một sheet chỉ đổi `unit`
+  // trên sản phẩm live ghi thẳng, lách hàng đợi duyệt).
+  const touchesLimits = touchesApprovalLimitFields(point as Record<string, unknown>);
   const strip = gateLive && touchesLimits;
 
   const row: InsertMeasurementPointDef = {
@@ -213,7 +223,10 @@ export function buildInsertFromImportPoint(
     description: point.description,
     measurementType: legacyType,
     measurementTypeCode: point.measurementTypeCode,
-    unit: point.unit,
+    // `unit` là một trong APPROVAL_LIMIT_FIELDS (đơn vị của giới hạn 1D) — phải
+    // qua cùng gate như lowerLimit/upperLimit, KHÔNG gán vô điều kiện (lỗ Task 7
+    // review F2: trước bản vá field này ghi thẳng kể cả trên sản phẩm live).
+    unit: strip ? undefined : point.unit,
     positionX,
     positionY,
     radius,
@@ -247,5 +260,44 @@ export function buildInsertFromImportPoint(
     coplanarityMax: strip ? undefined : dec(point.coplanarityMax),
   };
 
-  return { row, limitsStripped: strip };
+  // ★★★ BG-113 (review Khối C lượt 9, I-2) — điểm ghi thứ 4: bulk-import KHÔNG
+  // kiểm `lowerLimit ≤ upperLimit`/`heightMin ≤ heightMax` trước bản vá, nên một
+  // sheet xuất ngược cột (USL trước LSL) ghi thẳng khoảng RỖNG ⇒ 100% trị đo của
+  // điểm đó TRƯỢT (`pointResultEvaluator.ts`). Kiểm trên `row` SAU strip: nếu
+  // `gateLive` đã xoá cặp field đó (`strip=true`), giá trị là `undefined` ⇒
+  // `loiCapGioiHanSauMerge` tự bỏ qua so sánh — không kiểm hai lần. KHÔNG merge
+  // với "hiện có": `buildInsertFromImportPoint` luôn tạo hàng MỚI
+  // (`bulkCreateMeasurementPoints` là INSERT thuần, 0 upsert) nên không có giá
+  // trị hiện có nào để merge — khác các call site kia.
+  //
+  // ★★★ NEW-1 (review lượt 9, vòng 2) — lặp qua `MIN_MAX_PAIRS` (5 cặp) thay vì
+  // hard-code hai cặp: `row` mang areaMin/areaMax/volumeMin/volumeMax (xây ở
+  // trên) — trước bản vá này hai cặp đó đi qua trắng. `thicknessMin`/`thicknessMax`
+  // KHÔNG tồn tại trong `DeepImportPoint` (đo được, không phải bỏ sót của bản vá
+  // này) nên luôn `undefined` ở đây — vòng lặp tự bỏ qua, vô hại; sẽ TỰ được kiểm
+  // ngày `DeepImportPoint` có thêm hai field đó, không cần sửa lại file này.
+  const rowLikeCapGioiHan = row as unknown as CapGioiHan;
+  const loiKhoang = loiCapGioiHanSauMerge(
+    Object.fromEntries(MIN_MAX_PAIRS.flatMap((p) => [[p.min, rowLikeCapGioiHan[p.min]], [p.max, rowLikeCapGioiHan[p.max]]])) as CapGioiHan,
+  );
+  let rangeError: string | undefined;
+  if (loiKhoang.length > 0) {
+    rangeError = `${point.code}: ${loiKhoang.join("; ")}`;
+    // Xoá CHỈ (các) cặp vi phạm — không xoá toàn hàng (name/geometry/componentCode…
+    // vẫn nhập được; kỹ sư sửa lại đúng cặp giới hạn qua UI/hàng đợi duyệt).
+    for (const { min, max } of MIN_MAX_PAIRS) {
+      const vMin = rowLikeCapGioiHan[min];
+      const vMax = rowLikeCapGioiHan[max];
+      if (vMin !== undefined && vMax !== undefined) {
+        const lo = Number(vMin);
+        const hi = Number(vMax);
+        if (Number.isFinite(lo) && Number.isFinite(hi) && lo > hi) {
+          rowLikeCapGioiHan[min] = undefined;
+          rowLikeCapGioiHan[max] = undefined;
+        }
+      }
+    }
+  }
+
+  return { row, limitsStripped: strip, rangeError };
 }

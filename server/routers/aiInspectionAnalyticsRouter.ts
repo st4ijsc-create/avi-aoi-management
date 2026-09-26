@@ -5,6 +5,8 @@
 import { z } from "zod";
 import { TRPCError } from "@trpc/server";
 import { router, protectedProcedure } from "../_core/trpc";
+import { appError } from "../_core/appError";
+import type { TrpcContext } from "../_core/context";
 import {
   getDefectTrend,
   getDefectPareto,
@@ -18,6 +20,10 @@ import {
   generateComprehensiveReport,
 } from "../services/aiInspectionAnalytics";
 import { getCachedOrFetch } from "../services/cacheService";
+// doc 69 W0-3 — factory-scope + per-user rate limit (security gap: NO ownership check
+// existed against the calling user, and only the global/IP rate limiter guarded these
+// expensive aggregations). See server/_core/aiAnalyticsScope.ts for the full rationale.
+import { enforceAnalyticsFactoryScope, enforceAiAnalyticsRateLimit } from "../_core/aiAnalyticsScope";
 
 // 5-minute TTL for analytics responses (ms)
 const ANALYTICS_TTL_MS = 5 * 60 * 1000;
@@ -25,7 +31,7 @@ const ANALYTICS_TTL_MS = 5 * 60 * 1000;
 // Build cache key from period input + endpoint name + extras
 function analyticsCacheKey(
   endpoint: string,
-  input: { startDate: Date; endDate: Date; machineId?: number; factoryCode?: string; lineCode?: string; productModel?: string },
+  input: { startDate: Date; endDate: Date; machineId?: number; factoryCode?: string; lineCode?: string; productModel?: string; machineType?: string },
   extras?: Record<string, unknown>,
 ): string {
   const base = [
@@ -36,6 +42,10 @@ function analyticsCacheKey(
     input.factoryCode ?? "all",
     input.lineCode ?? "all",
     input.productModel ?? "all",
+    // doc 69 Wave 2 / A1 — machineType must be part of the cache key, otherwise a
+    // filtered and an unfiltered request for the same period/machine/factory/line
+    // would collide on the SAME cache entry and one would serve the other's data.
+    input.machineType ?? "all",
   ].join(":");
   if (extras) {
     const extra = Object.entries(extras)
@@ -76,6 +86,9 @@ const periodInput = z.object({
   factoryCode: z.string().optional(),
   lineCode: z.string().optional(),
   productModel: z.string().optional(),
+  // doc 69 Wave 2 / A1 — machineType as a first-class filter dimension (AOI/AVI/
+  // SPI/...). Optional + additive: omitted → identical behavior to before this task.
+  machineType: z.string().optional(),
 })
   .refine(
     (data) => {
@@ -93,7 +106,7 @@ const periodInput = z.object({
 const analyticsRolloutProcedure = protectedProcedure.use(async ({ ctx, next }) => {
   const user = ctx.user;
   if (!user) {
-    throw new TRPCError({ code: "UNAUTHORIZED", message: "Login required" });
+    throw appError("UNAUTHORIZED", "AUTH_REQUIRED", undefined, "Login required");
   }
 
   const rolloutPercent = getRolloutPercent();
@@ -101,11 +114,44 @@ const analyticsRolloutProcedure = protectedProcedure.use(async ({ ctx, next }) =
     return next();
   }
 
-  throw new TRPCError({
-    code: "FORBIDDEN",
-    message: `AI Analytics is in canary rollout (${rolloutPercent}%).`,
-  });
+  // Canary rollout theo TỪNG NGƯỜI DÙNG (không phải cờ tắt/bật toàn hệ thống) — dùng
+  // PERMISSION_DENIED thay vì FEATURE_DISABLED để không nói sai "tính năng chưa bật
+  // trên hệ thống này" trong khi những người dùng khác trong % rollout đang dùng bình
+  // thường (đúng bài học Task 7 I-2 về 2FA cấp tài khoản vs cấp hệ thống).
+  throw appError(
+    "FORBIDDEN",
+    "PERMISSION_DENIED",
+    { action: "useAiAnalyticsCanary" },
+    `AI Analytics is in canary rollout (${rolloutPercent}%).`,
+  );
 });
+
+/**
+ * doc 69 W0-3 — apply the per-user rate limit + factory-scope enforcement to an
+ * analytics filter, BEFORE it reaches the (user-unaware) analytics service. Called as
+ * the first line of every analytics procedure below rather than as a shared `.use()`
+ * middleware, because `.input()` is attached per-endpoint (some endpoints `.extend()`
+ * `periodInput` with extra fields) — running the check inside the resolver guarantees
+ * it always sees the fully-PARSED input regardless of where `.input()` sits in that
+ * endpoint's chain. Returns the input with `factoryCode` narrowed/validated; throws
+ * FORBIDDEN (scope) or TOO_MANY_REQUESTS (rate limit) otherwise.
+ */
+async function applyAnalyticsScope<T extends { factoryCode?: string; machineId?: number; lineCode?: string }>(
+  ctx: { user: TrpcContext["user"] },
+  input: T,
+): Promise<T> {
+  if (!ctx.user) {
+    throw appError("UNAUTHORIZED", "AUTH_REQUIRED", undefined, "Login required");
+  }
+  enforceAiAnalyticsRateLimit(ctx.user.id);
+  const { factoryCode } = await enforceAnalyticsFactoryScope({
+    user: ctx.user,
+    factoryCode: input.factoryCode,
+    machineId: input.machineId,
+    lineCode: input.lineCode,
+  });
+  return { ...input, factoryCode };
+}
 
 export const aiInspectionAnalyticsRouter = router({
   rolloutStatus: protectedProcedure.query(({ ctx }) => {
@@ -126,25 +172,28 @@ export const aiInspectionAnalyticsRouter = router({
   defectTrend: analyticsRolloutProcedure
     .input(periodInput)
     .query(async ({ input, ctx }) => {
-      const days = (input.endDate.getTime() - input.startDate.getTime()) / (1000 * 60 * 60 * 24);
+      const scoped = await applyAnalyticsScope(ctx, input);
+      const days = (scoped.endDate.getTime() - scoped.startDate.getTime()) / (1000 * 60 * 60 * 24);
       if (days > 90) {
         console.warn(`[aiAnalyticsRouter] MAX_RANGE_EXCEEDED: User ${ctx.user?.id} requested ${days.toFixed(1)} days (max 90)`);
       }
-      return getCachedOrFetch(analyticsCacheKey("defectTrend", input), () => getDefectTrend(input), ANALYTICS_TTL_MS);
+      return getCachedOrFetch(analyticsCacheKey("defectTrend", scoped), () => getDefectTrend(scoped), ANALYTICS_TTL_MS);
     }),
 
   // ─── Pareto Analysis ────────────────────────────────
   defectPareto: analyticsRolloutProcedure
     .input(periodInput)
-    .query(async ({ input }) => {
-      return getCachedOrFetch(analyticsCacheKey("defectPareto", input), () => getDefectPareto(input), ANALYTICS_TTL_MS);
+    .query(async ({ input, ctx }) => {
+      const scoped = await applyAnalyticsScope(ctx, input);
+      return getCachedOrFetch(analyticsCacheKey("defectPareto", scoped), () => getDefectPareto(scoped), ANALYTICS_TTL_MS);
     }),
 
   // ─── Machine Performance Comparison ─────────────────
   machinePerformance: analyticsRolloutProcedure
     .input(periodInput)
-    .query(async ({ input }) => {
-      return getCachedOrFetch(analyticsCacheKey("machinePerformance", input), () => getMachinePerformance(input), ANALYTICS_TTL_MS);
+    .query(async ({ input, ctx }) => {
+      const scoped = await applyAnalyticsScope(ctx, input);
+      return getCachedOrFetch(analyticsCacheKey("machinePerformance", scoped), () => getMachinePerformance(scoped), ANALYTICS_TTL_MS);
     }),
 
   // ─── Yield Forecast ─────────────────────────────────
@@ -152,8 +201,9 @@ export const aiInspectionAnalyticsRouter = router({
     .input(periodInput.extend({
       horizonDays: z.number().min(1).max(30).optional(),
     }))
-    .query(async ({ input }) => {
-      const { horizonDays, ...params } = input;
+    .query(async ({ input, ctx }) => {
+      const { horizonDays, ...rest } = input;
+      const params = await applyAnalyticsScope(ctx, rest);
       return getCachedOrFetch(
         analyticsCacheKey("yieldForecast", params, { horizonDays }),
         () => forecastYield(params, horizonDays),
@@ -164,16 +214,18 @@ export const aiInspectionAnalyticsRouter = router({
   // ─── Correlation Analysis ───────────────────────────
   correlations: analyticsRolloutProcedure
     .input(periodInput)
-    .query(async ({ input }) => {
+    .query(async ({ input, ctx }) => {
+      const scoped = await applyAnalyticsScope(ctx, input);
       // getCorrelationAnalysis already has internal cache; outer cache is no-op-cheap
-      return getCachedOrFetch(analyticsCacheKey("correlations", input), () => getCorrelationAnalysis(input), ANALYTICS_TTL_MS);
+      return getCachedOrFetch(analyticsCacheKey("correlations", scoped), () => getCorrelationAnalysis(scoped), ANALYTICS_TTL_MS);
     }),
 
   // ─── Risk Assessment ────────────────────────────────
   riskAssessment: analyticsRolloutProcedure
     .input(periodInput)
-    .query(async ({ input }) => {
-      return getCachedOrFetch(analyticsCacheKey("riskAssessment", input), () => assessRisks(input), ANALYTICS_TTL_MS);
+    .query(async ({ input, ctx }) => {
+      const scoped = await applyAnalyticsScope(ctx, input);
+      return getCachedOrFetch(analyticsCacheKey("riskAssessment", scoped), () => assessRisks(scoped), ANALYTICS_TTL_MS);
     }),
 
   // ─── Control Chart (SPC) ────────────────────────────
@@ -185,8 +237,9 @@ export const aiInspectionAnalyticsRouter = router({
       // Omitted → no spec → cpk=null + cpkNote (we never fabricate spec limits).
       measurementPointDefId: z.number().optional(),
     }))
-    .query(async ({ input }) => {
-      const { metric, measurementPointDefId, ...params } = input;
+    .query(async ({ input, ctx }) => {
+      const { metric, measurementPointDefId, ...rest } = input;
+      const params = await applyAnalyticsScope(ctx, rest);
 
       // Resolve real specification limits from the measurement-point definition.
       // (Same source as spcAdvancedRouter.capability — keeps Cpk consistent across modules.)
@@ -224,21 +277,24 @@ export const aiInspectionAnalyticsRouter = router({
   // ─── Shift Analysis ─────────────────────────────────
   shiftAnalysis: analyticsRolloutProcedure
     .input(periodInput)
-    .query(async ({ input }) => {
-      return getCachedOrFetch(analyticsCacheKey("shiftAnalysis", input), () => getShiftAnalysis(input), ANALYTICS_TTL_MS);
+    .query(async ({ input, ctx }) => {
+      const scoped = await applyAnalyticsScope(ctx, input);
+      return getCachedOrFetch(analyticsCacheKey("shiftAnalysis", scoped), () => getShiftAnalysis(scoped), ANALYTICS_TTL_MS);
     }),
 
   // ─── Defect Heatmap ─────────────────────────────────
   defectHeatmap: analyticsRolloutProcedure
     .input(periodInput)
-    .query(async ({ input }) => {
-      return getCachedOrFetch(analyticsCacheKey("defectHeatmap", input), () => getDefectHeatmap(input), ANALYTICS_TTL_MS);
+    .query(async ({ input, ctx }) => {
+      const scoped = await applyAnalyticsScope(ctx, input);
+      return getCachedOrFetch(analyticsCacheKey("defectHeatmap", scoped), () => getDefectHeatmap(scoped), ANALYTICS_TTL_MS);
     }),
 
   // ─── Comprehensive Report ───────────────────────────
   comprehensiveReport: analyticsRolloutProcedure
     .input(periodInput)
-    .query(async ({ input }) => {
-      return getCachedOrFetch(analyticsCacheKey("comprehensiveReport", input), () => generateComprehensiveReport(input), ANALYTICS_TTL_MS);
+    .query(async ({ input, ctx }) => {
+      const scoped = await applyAnalyticsScope(ctx, input);
+      return getCachedOrFetch(analyticsCacheKey("comprehensiveReport", scoped), () => generateComprehensiveReport(scoped), ANALYTICS_TTL_MS);
     }),
 });

@@ -110,7 +110,18 @@ export async function processDetection(det: ProximityDetection): Promise<NearMis
     return { enabled: true, triggered: false, marginMm, message: "above margin / low confidence — no-op" };
   }
 
-  // 1) record the advisory near_miss safety event.
+  // SAF-01 (doc 80 Đợt 0) — a `source:"test"` detection is the "thử/test" button on the
+  // Safety Monitor UI (SafetyWorkforce.tsx ProximityDialog always sends source:"test").
+  // It must be provably harmless: log-only provenance, NEVER a real Andon. Before this
+  // fix, "test" fell into the `: "operator"` fallback below (mislabelling a synthetic
+  // test as a human-recorded event) AND still raised a real yellow Andon (nearMissAdvisor.ts
+  // audit evidence :121,:131-146) — indistinguishable on the Andon board from an actual
+  // near-miss, which is exactly the "cried wolf" failure mode a safety advisory must avoid.
+  const isTestTrigger = det.source === "test";
+
+  // 1) record the advisory near_miss safety event. detectedBy is honest provenance:
+  //    vision → "vision", the test button → "test" (own value, NOT "operator" — a
+  //    human did not observe this), anything else (manual) → "operator".
   const rec = await record({
     eventType: "near_miss",
     robotId: det.robotId ?? null,
@@ -118,34 +129,39 @@ export async function processDetection(det: ProximityDetection): Promise<NearMis
     lineId: det.lineId ?? null,
     stationId: det.stationId ?? null,
     humanPosition: { distanceMm: det.distance, confidence: det.confidence, source: det.source },
-    detectedBy: det.source === "vision" ? "vision" : "operator",
+    detectedBy: det.source === "vision" ? "vision" : isTestTrigger ? "test" : "operator",
     handledBy: "advisory",
     outcome: "logged_only",
     isNearMiss: true,
-    notes: `ADVISORY near-miss: distance ${det.distance}mm < margin ${marginMm}mm (source ${det.source}, conf ${det.confidence})`,
+    notes: isTestTrigger
+      ? `TEST proximity trigger (advisory sandbox) — NOT a real near-miss, NO Andon raised: distance ${det.distance}mm < margin ${marginMm}mm (conf ${det.confidence})`
+      : `ADVISORY near-miss: distance ${det.distance}mm < margin ${marginMm}mm (source ${det.source}, conf ${det.confidence})`,
     scope: det.scope ?? null,
     corporateCode: det.corporateCode ?? null,
     factoryId: det.factoryId ?? null,
   });
 
-  // 2) raise a YELLOW (advisory) Andon.
+  // 2) raise a YELLOW (advisory) Andon — SKIPPED for a test trigger (SAF-01: the test
+  //    button must never move the Andon board; it is a sandbox for the ingest pipeline).
   let andonId: number | undefined;
-  try {
-    const andon = await raiseAndon(
-      {
-        state: "yellow",
-        reason: "safety",
-        title: "ADVISORY near-miss (human proximity)",
-        message: `Advisory CV near-miss: ${det.distance}mm < ${marginMm}mm margin. NOT a safety-rated stop — verify on the floor.`,
-        lineId: det.lineId ?? null,
-        stationId: det.stationId ?? null,
-        machineId: det.deviceId ?? null,
-        raisedBySystem: true,
-      },
-    );
-    andonId = andon.id;
-  } catch (err) {
-    console.error("[NearMiss] raiseAndon failed:", (err as Error)?.message ?? err);
+  if (!isTestTrigger) {
+    try {
+      const andon = await raiseAndon(
+        {
+          state: "yellow",
+          reason: "safety",
+          title: "ADVISORY near-miss (human proximity)",
+          message: `Advisory CV near-miss: ${det.distance}mm < ${marginMm}mm margin. NOT a safety-rated stop — verify on the floor.`,
+          lineId: det.lineId ?? null,
+          stationId: det.stationId ?? null,
+          machineId: det.deviceId ?? null,
+          raisedBySystem: true,
+        },
+      );
+      andonId = andon.id;
+    } catch (err) {
+      console.error("[NearMiss] raiseAndon failed:", (err as Error)?.message ?? err);
+    }
   }
 
   // 3) PROPOSE a speed reduction (never dispatch here).
@@ -158,5 +174,6 @@ export async function processDetection(det: ProximityDetection): Promise<NearMis
     safetyEventId: rec.event?.id,
     andonId,
     proposal,
+    message: isTestTrigger ? "TEST trigger — advisory sandbox only, no Andon raised" : undefined,
   };
 }

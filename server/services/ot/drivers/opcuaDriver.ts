@@ -26,6 +26,7 @@ import type {
 import { NotImplementedDriver } from "./notImplementedDriver";
 import { parseOpcuaAddress, normalizeOpcuaValue } from "./opcuaAddress";
 import { inverseScale } from "./otScale";
+import { DeviceUnreachableError } from "../../../_core/deviceErrors";
 
 /**
  * doc 22 P3 — flag for the REAL OPC-UA monitored-item PUSH path. Default OFF: when off,
@@ -199,7 +200,7 @@ export class OpcuaDriver extends NotImplementedDriver {
 
   override async readTags(tags: OtTagAddress[]): Promise<OtSample[]> {
     if (!this.connected || !this.session) {
-      throw new Error("OpcuaDriver: not connected");
+      throw new DeviceUnreachableError("opcua");
     }
     if (tags.length === 0) return [];
 
@@ -243,7 +244,7 @@ export class OpcuaDriver extends NotImplementedDriver {
     onSample: OnOtSample,
     intervalMs = 5000,
   ): Promise<OtSubscriptionHandle> {
-    if (!this.connected) throw new Error("OpcuaDriver: not connected");
+    if (!this.connected) throw new DeviceUnreachableError("opcua");
 
     // doc 22 P3 — real OPC-UA PUSH via ClientMonitoredItem, gated by
     // OT_OPCUA_MONITORED_ITEMS (default OFF → unchanged poll behaviour). When the flag
@@ -399,7 +400,7 @@ export class OpcuaDriver extends NotImplementedDriver {
    */
   override async writeTags(writes: OtWrite[]): Promise<OtCommandResult[]> {
     if (!this.connected || !this.session) {
-      throw new Error("OpcuaDriver: not connected");
+      throw new DeviceUnreachableError("opcua");
     }
     if (writes.length === 0) return [];
 
@@ -492,7 +493,7 @@ export class OpcuaDriver extends NotImplementedDriver {
    */
   async browseNodes(rootNodeId = "ns=0;i=85"): Promise<Array<{ nodeId: string; browseName: string; nodeClass?: string }>> {
     if (!this.connected || !this.session) {
-      throw new Error("OpcuaDriver: not connected");
+      throw new DeviceUnreachableError("opcua");
     }
     const res = await this.session.browse(rootNodeId);
     const refs: any[] = Array.isArray(res?.references) ? res.references : [];

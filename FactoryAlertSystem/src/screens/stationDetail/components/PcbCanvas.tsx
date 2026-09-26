@@ -15,6 +15,7 @@ import { STATION_T } from '../translations';
 import type { ImageLayout, AlertBubbleInfo } from '../types';
 import { heatColor, heatRadius } from '../utils/format';
 import { getS } from '../styles';
+import { nguonAnh } from '../../../services/imageService';
 
 // ============================================
 // PCB CANVAS WITH HEATMAP
@@ -395,7 +396,7 @@ const PcbCanvas: React.FC<{
       >
       {/* Background */}
       {imageUri && !imageError ? (
-        <Image source={{ uri: imageUri }} style={pcbS.image} resizeMode={canvasImageMode === 'fill' ? 'stretch' : canvasImageMode === 'cover' ? 'cover' : 'contain'} resizeMethod="resize" progressiveRenderingEnabled={true} onError={onImageError} />
+        <Image source={nguonAnh(imageUri)} style={pcbS.image} resizeMode={canvasImageMode === 'fill' ? 'stretch' : canvasImageMode === 'cover' ? 'cover' : 'contain'} resizeMethod="resize" progressiveRenderingEnabled={true} onError={onImageError} />
       ) : imageUri && imageError ? (
         <TouchableOpacity style={pcbS.errWrap} onPress={onImageRetry}>
           <Icon name="image-broken-variant" size={36} color={C.textMuted} />

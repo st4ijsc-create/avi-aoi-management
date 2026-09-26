@@ -7,7 +7,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const stub = vi.hoisted(() => {
-  const db = {
+  const db: Record<string, unknown> = {
     update: () => ({ set: () => ({ where: async () => undefined }) }),
     insert: () => ({
       values: () => ({
@@ -18,6 +18,12 @@ const stub = vi.hoisted(() => {
     delete: () => ({ where: async () => undefined }),
     select: () => ({ from: () => ({ where: () => ({ limit: async () => [] }) }) }),
   };
+  // ★ Pha 7 Task 9 (9c) — `updateUserPassword` / `disable2FA` / `createLocalUser` nay ghi **hai
+  //   bảng trong MỘT giao dịch** (`users` + `user_secrets`). Một tài khoản có hàng `users` mà
+  //   thiếu hàng bí mật là tài khoản **không đăng nhập được**, sinh ra **im lặng** — nên giao dịch
+  //   là ràng buộc, không phải khẩu vị. Stub cho `tx` = chính `db`, đủ để chứng minh móc dọn cache
+  //   vẫn được gọi (thứ file này canh).
+  db.transaction = async (fn: (tx: unknown) => Promise<unknown>) => fn(db);
   return { getDb: vi.fn(async () => db), getJobsDb: vi.fn(async () => db) };
 });
 
@@ -44,7 +50,6 @@ const USER = {
   id: 5,
   openId: "open-5",
   username: "u5",
-  passwordHash: null,
   name: "Hook Test",
   email: null,
   phone: null,
@@ -53,10 +58,13 @@ const USER = {
   loginMethod: "local",
   role: "supervisor",
   isActive: true,
-  twoFactorSecret: null,
   twoFactorEnabled: true,
   loginAttempts: 0,
   lockedUntil: null,
+  // ★ Pha 7 Task 9 — `passwordHash`/`twoFactorSecret` đã rời `users` sang `user_secrets` (9c);
+  //   hai mốc dưới đây là (9b), phân loại `"server-only"`.
+  passwordChangedAt: null,
+  passwordInvalidBefore: null,
   createdAt: new Date(),
   updatedAt: new Date(),
   lastSignedIn: new Date(),

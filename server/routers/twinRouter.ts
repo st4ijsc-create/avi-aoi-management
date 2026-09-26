@@ -26,7 +26,11 @@ import fs from "node:fs";
 import path from "node:path";
 import { router, protectedProcedure } from "../_core/trpc";
 import { requirePermission } from "../_core/accessControl";
+import { appError } from "../_core/appError";
 import { validateUpload } from "../_core/uploadValidation";
+// ★ Đợt 42 — hàng rào tenant cho `usdExport` (QA Đợt 41 D-4 lỗ #1): cùng khuôn Đợt 40, không dựng bộ luật thứ hai (G12).
+import { phamViCua } from "./_phamViNguoiXem";
+import { trongPhamVi } from "../db/hierarchy";
 import {
   twinLiveEnabled,
   registerModel,
@@ -49,14 +53,14 @@ import { SAMPLE_URDF_3DOF_ARM, SAMPLE_URDF_2DOF_PLANAR } from "../services/twin/
 /** Guard mutating actions behind the flag (matches fleetRouter.requireFlag). */
 function requireFlag() {
   if (!twinLiveEnabled()) {
-    throw new TRPCError({ code: "CONFLICT", message: "Digital twin live disabled (set TWIN_LIVE_ENABLED=true)" });
+    throw appError("CONFLICT", "FEATURE_DISABLED", { feature: "twinLive" }, "Digital twin live disabled (set TWIN_LIVE_ENABLED=true)");
   }
 }
 
 /** Guard T2a model-pipeline mutations behind MODEL_PIPELINE_ENABLED. */
 function requireModelPipelineFlag() {
   if (!modelPipelineEnabled()) {
-    throw new TRPCError({ code: "CONFLICT", message: "Model pipeline disabled (set MODEL_PIPELINE_ENABLED=true)" });
+    throw appError("CONFLICT", "FEATURE_DISABLED", { feature: "modelPipeline" }, "Model pipeline disabled (set MODEL_PIPELINE_ENABLED=true)");
   }
 }
 
@@ -139,23 +143,27 @@ export const twinRouter = router({
       )
       .mutation(async ({ input, ctx }) => {
         if (process.env.STORAGE_MODE !== "local") {
-          throw new TRPCError({
-            code: "CONFLICT",
-            message: "Local storage is off — set STORAGE_MODE=local to upload & serve 3D models.",
-          });
+          throw appError(
+            "CONFLICT",
+            "FEATURE_DISABLED",
+            { feature: "twinLocalStorage" },
+            "Local storage is off — set STORAGE_MODE=local to upload & serve 3D models.",
+          );
         }
         let buf: Buffer;
         try {
           buf = Buffer.from(input.contentBase64, "base64");
         } catch {
-          throw new TRPCError({ code: "BAD_REQUEST", message: "Invalid base64 content." });
+          throw appError("BAD_REQUEST", "INVALID_VALUE", { field: "twinContent" }, "Invalid base64 content.");
         }
         const v = validateUpload(buf, "model3d");
         if (!v.ok) {
-          throw new TRPCError({
-            code: v.status === 413 ? "PAYLOAD_TOO_LARGE" : "BAD_REQUEST",
-            message: v.error ?? "Invalid 3D model file.",
-          });
+          throw appError(
+            v.status === 413 ? "PAYLOAD_TOO_LARGE" : "BAD_REQUEST",
+            "INVALID_VALUE",
+            { field: "twinContent" },
+            v.error ?? "Invalid 3D model file.",
+          );
         }
         const ext = v.detectedMime === "model/gltf-binary" ? ".glb" : ".gltf";
         const uploadsRoot = process.env.LOCAL_STORAGE_DIR
@@ -235,7 +243,7 @@ export const twinRouter = router({
               ? SAMPLE_URDF_2DOF_PLANAR
               : undefined);
         if (!urdfSource) {
-          throw new TRPCError({ code: "BAD_REQUEST", message: "Provide urdfSource or a sample key." });
+          throw appError("BAD_REQUEST", "FIELD_REQUIRED", { field: "urdfSource" }, "Provide urdfSource or a sample key.");
         }
         return convertUrdfModel({
           urdfSource,
@@ -321,7 +329,19 @@ export const twinRouter = router({
         includePhysics: z.boolean().optional(),
       }),
     )
-    .query(async ({ input }) => {
+    .query(async ({ input, ctx }) => {
+      /*
+       * ★★★ ĐỢT 42 (QA Đợt 41 D-4 lỗ #1, G116) — `factoryId` là lời TỰ KHAI của client.
+       *   Đo trước vá (`.qa-dot41/api-vai/B.json`): `operator1` (id 48, **0 gán**) `usdExport(1)` ⇒ 200 /
+       *   41.850 B mã SIM, `usdExport(18)` ⇒ 200 / 1.970 B mã `T12-SHOT-…` — USDA của CẢ HAI nhà máy rời
+       *   server, vì cổng duy nhất là RBAC `machine_monitoring` (alias → `machine_status`, 5/5 vai
+       *   non-admin đều có). `buildFactoryUsda(factoryId)` → `sceneGraph.ts` không nhận phạm vi.
+       *   Nhà máy ngoài phạm vi ⇒ `NOT_FOUND`, CÙNG hình dạng với nhà máy không tồn tại (G82 — một mã
+       *   riêng xác nhận nhà máy ấy có thật). Admin / phạm vi `null` ⇒ không thêm mệnh đề nào.
+       */
+      if (!(await trongPhamVi("factory", input.factoryId, phamViCua(ctx)))) {
+        throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "factory" }, `Factory ${input.factoryId} not found`);
+      }
       const usda = await buildFactoryUsda(input.factoryId, {
         upAxis: input.upAxis,
         metersPerUnit: input.metersPerUnit,
@@ -350,7 +370,7 @@ export const twinRouter = router({
     )
     .query(async ({ input }) => {
       if (input.to.getTime() <= input.from.getTime()) {
-        throw new TRPCError({ code: "BAD_REQUEST", message: "`to` must be after `from`" });
+        throw appError("BAD_REQUEST", "INVALID_VALUE", { field: "to" }, "`to` must be after `from`");
       }
       return runReplay({ factoryId: input.factoryId, from: input.from, to: input.to, stepSec: input.step });
     }),

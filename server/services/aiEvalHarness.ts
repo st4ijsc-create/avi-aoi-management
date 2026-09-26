@@ -19,13 +19,34 @@ import path from "path";
 import fs from "fs";
 import { getModelVersionById, updateModelVersion } from "../db/ai";
 import { predictWithLocalClassifier } from "./aiLocalTraining";
-import { datasetDir, readJsonl, type DatasetSample } from "./aiDatasetBuilder";
+import { datasetDir, readJsonl, computeDatasetManifestHash, type DatasetSample } from "./aiDatasetBuilder";
 import {
   buildConfusionMatrix,
   computeMetrics,
   normalizeLabel,
   type ClassificationMetrics,
 } from "./aiMetrics";
+
+// ── F3/D1 (doc69 G11) — segmentation/detection evaluators + gate. Re-exported
+// here so callers keep a single import surface, but the classification gate
+// below (`evaluateQualityGate`) is UNCHANGED — this is a sibling, not a
+// replacement. See aiSegDetectEval.ts for the pure IoU/Dice/mAP math. ──
+export {
+  iouBox,
+  iouMask,
+  diceMask,
+  computeAveragePrecision,
+  evaluateSegmentation,
+  evaluateDetection,
+  evaluateSegDetectionGate,
+  type EvalBox,
+  type MaskLike,
+  type SegPair,
+  type SegEvalReport,
+  type DetEvalReport,
+  type SegDetectMetric,
+  type SegDetectGateResult,
+} from "./aiSegDetectEval";
 
 export type SplitName = "train" | "val" | "test";
 
@@ -150,6 +171,12 @@ export interface CompareReport {
   gate: QualityGateResult;
   split: SplitName;
   generatedAt: string;
+  // ── F3/D3 (doc69 G10, additive) — sha256 lineage hash of the MATERIALIZED
+  // dataset (train+val+test manifests on disk) this comparison ran against.
+  // Recomputed from the manifest files (not read from a DB column) so this
+  // works whether or not `training_datasets.contentHash` (migration 0301,
+  // NOT YET APPLIED) exists — ties the model version to the exact data. ──
+  datasetContentHash: string;
 }
 
 /**
@@ -201,6 +228,7 @@ export async function compareBeforeAfter(opts: {
     gate,
     split,
     generatedAt: new Date().toISOString(),
+    datasetContentHash: computeDatasetManifestHash(opts.datasetId),
   };
 
   if (opts.candidateVersionId != null) {

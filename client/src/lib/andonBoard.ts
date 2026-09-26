@@ -12,6 +12,8 @@
  *   ?factory=1      numeric factory ID — server-side filter
  *   ?theme=dark     force dark/light (default: whatever the app theme is)
  *   ?warn=95&crit=90  yield thresholds (%) for tile colours
+ *   ?sound=0        W8 (doc 67): tắt chuông WebAudio khi có Andon MỚI raise
+ *                   (mặc định BẬT; "0"/"false"/"off" đều tắt)
  */
 
 export interface AndonBoardParams {
@@ -21,6 +23,12 @@ export interface AndonBoardParams {
   theme: "dark" | "light" | null;
   warnPct: number;
   critPct: number;
+  sound: boolean; // W8: chime on new andon raise (default true, ?sound=0 off)
+  // doc 68 §3.5: wall-TV persona (?kiosk=1|true — same flag useKioskMode reads).
+  // The board hides interactive chrome (lookup/ack/gear/freshness) and defaults
+  // the auto-cycle ON so no line is ever clipped below the fold with nobody to
+  // scroll. Operator/mobile (no ?kiosk) keep the interactive chrome + static view.
+  kiosk: boolean;
 }
 
 export const ANDON_DEFAULT_WARN_PCT = 95;
@@ -52,7 +60,57 @@ export function parseAndonBoardParams(search: string): AndonBoardParams {
   const critPct = Number.isFinite(critRaw) && critRaw > 0 && critRaw <= 100 ? critRaw : ANDON_DEFAULT_CRIT_PCT;
   if (warnPct < critPct) warnPct = critPct; // never let the bands invert
 
-  return { cycleSec, lineIds, factoryId, theme, warnPct, critPct };
+  // W8 (doc 67): default ON — a shopfloor TV must ring unless explicitly muted.
+  const soundRaw = params.get("sound");
+  const sound = !(soundRaw === "0" || soundRaw === "false" || soundRaw === "off");
+
+  // doc 68 §3.5: same flag useKioskMode reads ("1"/"true").
+  const kioskRaw = params.get("kiosk");
+  const kiosk = kioskRaw === "1" || kioskRaw === "true";
+
+  return { cycleSec, lineIds, factoryId, theme, warnPct, critPct, sound, kiosk };
+}
+
+/**
+ * doc 68 §3.5 (P1): a red/call andon tile must say WHY it is red — readable from
+ * 5–10 m — not a yield number or "—". Prefer the andon title/reason (already a
+ * human phrase like "Kẹt băng tải"), trimmed to the first two words and
+ * upper-cased so it fits a small tile; fall back to a state word when the event
+ * carries no text. `red` = a stop, `call` = an assistance call.
+ */
+export function andonTileReason(input: {
+  title?: string | null;
+  reason?: string | null;
+  state?: "call" | "red" | "yellow" | string | null;
+}): string {
+  const raw = (input.title ?? "").trim() || (input.reason ?? "").trim();
+  if (raw) return raw.split(/\s+/).slice(0, 2).join(" ").toUpperCase();
+  if (input.state === "call") return "GỌI HỖ TRỢ";
+  return "DỪNG";
+}
+
+/**
+ * W8 (doc 67): is this `andon:event` payload a NEW raise (vs an ack/resolve/
+ * escalate echo)? Server shape (server/_core/socket.ts AndonRealtimeEvent):
+ * `event` = lifecycle phase of THIS emit; older emitters may omit it, in which
+ * case `status === "raised"` is the raise signal (matches the server's own
+ * `event ?? "raised"` logging fallback). A green raise is a return-to-normal
+ * signal — never ring the bell for it.
+ */
+export function isNewAndonRaise(
+  ev:
+    | {
+        event?: string | null;
+        status?: string | null;
+        state?: string | null;
+      }
+    | null
+    | undefined,
+): boolean {
+  if (!ev) return false;
+  const phase = ev.event ?? (ev.status === "raised" ? "raised" : null);
+  if (phase !== "raised") return false;
+  return ev.state === "red" || ev.state === "call" || ev.state === "yellow";
 }
 
 /**
@@ -88,11 +146,13 @@ export function tileStatus(input: {
   return "good";
 }
 
-/** Compact "3m" / "2h" age label for ticker items. */
+/** Compact "3m" / "2h" / "2d" age label for ticker items. */
 export function agoLabel(fromMs: number, nowMs: number): string {
   const s = Math.max(0, Math.floor((nowMs - fromMs) / 1000));
   if (s < 60) return `${s}s`;
   const m = Math.floor(s / 60);
   if (m < 60) return `${m}m`;
-  return `${Math.floor(m / 60)}h`;
+  const h = Math.floor(m / 60);
+  if (h < 24) return `${h}h`;
+  return `${Math.floor(h / 24)}d`;
 }

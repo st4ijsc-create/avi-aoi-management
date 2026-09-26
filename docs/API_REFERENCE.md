@@ -705,6 +705,13 @@ Tạo URL upload cho inspection package mới.
 ### 11.2 Upload ZIP File (HTTP POST)
 Upload file ZIP đến URL từ presign.
 
+> ⚠ **Hướng sắp tới (đã quyết định, CHƯA triển khai — BG-85):** `meta.json` sẽ được
+> hợp nhất thành CÙNG hình dạng với payload kết quả v2.0 (`machineDataContractV2` +
+> thêm mảng `images[]`, khoá nối `captureId`) — xem `docs/UNIFIED_API_STRUCTURE.md`
+> và `docs/superpowers/specs/2026-09-01-aoi-chuan-goi-anh.md`. Cấu trúc
+> `measurements[]`/`points[]` dưới đây vẫn là hợp đồng ĐANG CHẠY hôm nay; bên tích
+> hợp máy nên đọc spec trên trước khi đầu tư nhiều vào engine sinh `meta.json`.
+
 **Method:** POST  
 **URL:** `{uploadUrl}` từ presign response  
 **Content-Type:** `multipart/form-data`  
@@ -720,92 +727,83 @@ package.zip
     └── image_003.jpg
 ```
 
-**meta.json Structure (UNIFIED - đồng bộ với submitInspection):**
+**Chuẩn nén gói (BG-88, 2026-09-02, nguồn:
+[`docs/superpowers/specs/2026-09-01-aoi-chuan-goi-anh.md`](../docs/superpowers/specs/2026-09-01-aoi-chuan-goi-anh.md) §5):**
+
+| Mục | Chuẩn | Ghi chú |
+|---|---|---|
+| Định dạng | **ZIP**, thuật toán **DEFLATE** | thư viện `JSZip` phía server đọc được; hầu hết thư viện ZIP client (kể cả `System.IO.Compression` của .NET) đều tương thích |
+| Mức nén | **6** (mặc định) | áp dụng cho `meta.json` — ảnh đã nén sẵn nên nén thêm gần như không giảm byte mà tốn CPU máy. .NET không có tham số "mức 0-9" công khai; `CompressionLevel.Optimal` (mặc định của `ZipArchive`) là lựa chọn ĐÚNG, không cần chỉnh thêm |
+| Ảnh (`images/*`) | **KHÔNG nén lại** — dùng **STORE** | ảnh đã là JPEG/PNG (đã nén ở tầng ảnh); nén lại bằng DEFLATE tốn CPU máy, giảm dưới 2% byte. Ở .NET: `archive.CreateEntry(name, CompressionLevel.NoCompression)` |
+| Trần kích thước gói | **200 MB** (cứng, phía server) | `sizeBytes` vượt trần bị **từ chối NGAY Ở `presign`**, trước khi máy kịp tải byte nào lên. Nguồn: giới hạn body `express.raw` (chống DoS bộ nhớ) — xem `tranByteGoiZip()` trong mã server |
+| Đường dẫn ảnh | **`images/<fileName>` là đường dẫn DUY NHẤT** | server **không còn** dò tìm ảnh ở gốc gói (fallback tên trần đã bị **bỏ** — trước đây `zip.file(imagePath) \|\| zip.file(fileName)`, nay chỉ còn một đường). Đặt sai chỗ ⇒ `commit` báo lỗi 404 nêu rõ đường mong đợi |
+
+⚠ **Hai điều bên tích hợp máy PHẢI biết:** (1) gói trên 200MB sẽ bị từ chối ngay lúc xin phép tải lên (`presign`), không phải sau khi tốn thời gian tải cả gói lên rồi mới báo lỗi; (2) mọi ảnh PHẢI nằm trong thư mục `images/` — không còn cách nào khác để server tìm thấy ảnh.
+
+**meta.json Structure (BG-85, 2026-09-02 — MỘT hợp đồng, hai đường vận chuyển):**
+
+`meta.json` KHÔNG còn là một hợp đồng riêng — nó là **chính** payload kết quả v2.0
+(`machineDataContractV2`: cây `surfaces[].positions[].captures[].components[]`) mà
+`submitInspection` (đường trực tiếp) nhận, cộng thêm **đúng một** trường `images[]`
+(tham chiếu ảnh — `captureId` là khoá join sang `captures[]` trong CHÍNH cây đó).
+
 ```json
 {
-  "machineCode": "AOI-LINE1-01",
-  "inspectionId": "INS-20240115-001",
-  
+  "identity": {
+    "station": "AIC-LINE1-01", "machine": "AOI-LINE1-01", "line": "LINE-3",
+    "plant": "FACTORY-HN", "country": "VN", "solutionName": "PCB-V2-SOLUTION", "appVersion": "1.0.0"
+  },
+  "productId": "b3f1c2a0-1111-4a2b-9c3d-000000000001",
   "serialNumber": "SN-20240115-001",
   "productModel": "PCB-V2-Standard",
-  "batchNumber": "BATCH-2024-001",
-  
-  "inspectionTime": "2024-01-15T10:30:00Z",
-  "startedAt": "2024-01-15T10:30:00Z",
-  "finishedAt": "2024-01-15T10:32:30Z",
-  "cycleTime": 150.5,
-  
-  "companyCode": "COMPANY-A",
-  "factoryCode": "FACTORY-HN",
-  "workshopCode": "WORKSHOP-SMT",
-  "lineCode": "LINE-3",
-  "stageCode": "STAGE-AOI",
-  
-  "productionOrderCode": "PO-2024-0115-001",
-  "operatorId": "OP-0023",
-  
   "overallResult": "NG",
-  
-  "measurements": [
+  "ntf": false,
+  "startedAt": "2024-01-15T10:30:00.000",
+  "completedAt": "2024-01-15T10:32:30.400",
+
+  "summary": {
+    "surfaces":   { "total": 1, "pass": 0, "ng": 1, "ntf": 0 },
+    "positions":  { "total": 1, "pass": 0, "ng": 1, "ntf": 0 },
+    "captures":   { "total": 2, "pass": 1, "ng": 1, "ntf": 0 },
+    "components": { "total": 2, "pass": 1, "ng": 1, "ntf": 0 }
+  },
+
+  "surfaces": [
     {
-      "pointId": "POINT-001",
-      "pointCode": "R1-IC1-PIN1",
-      "name": "IC1 Pin 1 Resistance",
-      "fileName": "image_001.jpg",
-      "result": "OK",
-      "measuredValue": 1023.5,
-      "unit": "Ω",
-      "remark": "In spec"
-    },
-    {
-      "pointId": "POINT-002",
-      "pointCode": "R2-IC2-PIN5",
-      "name": "IC2 Pin 5 Resistance",
-      "fileName": "image_002.jpg",
-      "result": "NG",
-      "measuredValue": 0,
-      "unit": "Ω",
-      "remark": "Short circuit - Replace IC2"
+      "name": "TOP", "result": "NG", "ntf": false,
+      "positions": [
+        {
+          "positionId": "P01", "result": "NG", "ntf": false,
+          "captures": [
+            {
+              "captureId": "cap-R1-IC1-PIN1", "captureName": "IC1 Pin 1 Resistance", "result": "OK", "ntf": false,
+              "components": [{ "componentId": "comp-R1-IC1-PIN1", "result": "OK", "ntf": false, "value": "1023.5" }]
+            },
+            {
+              "captureId": "cap-R2-IC2-PIN5", "captureName": "IC2 Pin 5 Resistance", "result": "NG", "ntf": false,
+              "components": [{ "componentId": "comp-R2-IC2-PIN5", "result": "NG", "ntf": false, "value": "0", "errorDesc": "Short circuit - Replace IC2" }]
+            }
+          ]
+        }
+      ]
     }
   ],
-  
-  "summary": {
-    "totalPoints": 2,
-    "ok": 1,
-    "ng": 1,
-    "ntf": 0
-  }
+
+  "images": [
+    { "captureId": "cap-R1-IC1-PIN1", "fileName": "image_001.jpg" },
+    { "captureId": "cap-R2-IC2-PIN5", "fileName": "image_002.jpg" }
+  ]
 }
 ```
 
-**Legacy meta.json (vẫn hỗ trợ - backward compatible):**
-```json
-{
-  "inspectionId": "INS-20240115-001",
-  "serialNumber": "SN-20240115-001",
-  "productModel": "PCB-V2-Standard",
-  "factory": "FACTORY-HN",
-  "line": "LINE-3",
-  "machineCode": "AOI-LINE1-01",
-  "startedAt": "2024-01-15T10:30:00Z",
-  "finishedAt": "2024-01-15T10:32:30Z",
-  "points": [
-    {
-      "code": "R1",
-      "name": "Resistance 1",
-      "fileName": "image_001.jpg",
-      "result": "OK",
-      "value": 1023.5,
-      "unit": "Ω"
-    }
-  ],
-  "summary": {
-    "totalPoints": 1,
-    "ok": 1,
-    "ng": 0
-  }
-}
-```
+⚠️ **Hợp đồng PHẲNG cũ (`measurements[]`/`points[]`, không có `surfaces`) KHÔNG còn
+được server chấp nhận.** `identity`/`productId`/`ntf`/`summary`/`surfaces` đều **bắt
+buộc** — thiếu bất kỳ trường nào ở trên bị từ chối (`invalid_type`). Gói **không** bị
+khoá vĩnh viễn (`'dead'`) vì lệch hình dạng — nó ở lại `'failed'` chờ retry, nhưng sẽ
+**không bao giờ tự commit được** cho tới khi Agent gửi đúng hình dạng CÂY ở trên. Mọi
+`images[].captureId` **phải khớp đúng** một `captureId` có thật trong `surfaces[]` —
+không khớp thì **cả gói** bị từ chối, không âm thầm bỏ ảnh; mọi `images[].fileName`
+phải có tệp thật trong thư mục `images/` của ZIP.
 
 ### 11.3 aoiPackage.commit
 Xác nhận package đã upload hoàn tất và parse dữ liệu.

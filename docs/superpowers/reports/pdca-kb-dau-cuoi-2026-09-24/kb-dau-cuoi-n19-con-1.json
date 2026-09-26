@@ -1,0 +1,35 @@
+{
+  "corpus": "st4i-may-aoi",
+  "label": "n19-con-1",
+  "tom": {
+    "trong": {
+      "n": 0,
+      "dung": 0,
+      "tuChoi": 0,
+      "sai": 0
+    },
+    "ngoai": {
+      "n": 1,
+      "tuChoi": 0,
+      "traLoi": 1
+    },
+    "loi": 0
+  },
+  "ra": [
+    {
+      "id": "N19",
+      "ngoai": true,
+      "kq": "tra-loi",
+      "ms": 2091,
+      "nguon": [
+        "knowledge/workflows/ng-burst-response.playbook.yaml",
+        "knowledge/operational-approved/machine-registration.md",
+        "knowledge/domain/aoi-troubleshooting.md",
+        "knowledge/operational-approved/alerts.md",
+        "knowledge/domain/aoi-troubleshooting.md"
+      ],
+      "traLoi": "(1) Khi máy gắp đặt linh kiện báo lỗi \"nozzle hút không lên\", cần kiểm tra hệ thống hút và các cảnh báo liên quan theo quy trình xử lý sự cố AOI.  \n(2) Bước 1: Mở màn hình `/alerts` để xem danh sách cảnh báo hiện tại, tìm mã lỗi tương ứng (ví dụ E083 hoặc E099). Nếu có cảnh báo về áp suất không ổn định (`E082`) hay nhiệt độ cao (`E083`), kiểm tra hệ thống khí nén và làm mát. Bước 2: Xác nhận trạng thái bằng lệnh `getEnabled`, để biết loại cảnh báo đang bật, tránh nhầm lẫn do ngưỡng quá nhạy [4]. Nếu lỗi liên quan đến cơ chế hút (nozzle), cần xem xét mã E081 nếu có hành động khẩn cấp. Bước 3: Thực hiện xác nhận bằng lệnh `acknowledge` chỉ khi đã xử lý và điều kiện khắc phục được kiểm tra, để tránh cảnh báo phát lại [4].  \n(3) Lỗi thường gặp: Cảnh báo vẫn xuất hiện dù đã nhấn \"xác nhận\" vì chưa loại bỏ nguyên nhân gốc (ví dụ áp suất thấp). Nguyên nhân có thể là van điều áp hỏng hoặc ống hút bị tắc. Cần kiểm tra bằng tay và dùng lệnh `getByType` để",
+      "loi": null
+    }
+  ]
+}

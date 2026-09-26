@@ -32,6 +32,7 @@
  */
 import { z } from "zod";
 import { TRPCError } from "@trpc/server";
+import { appError } from "../_core/appError";
 import { and, desc, eq } from "drizzle-orm";
 import { router, protectedProcedure } from "../_core/trpc";
 import { requirePermission } from "../_core/accessControl";
@@ -40,7 +41,7 @@ import { productModels, productOnboardingDrafts } from "../../drizzle/schema";
 
 async function db() {
   const d = await getDb();
-  if (!d) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Database not connected" });
+  if (!d) throw appError("INTERNAL_SERVER_ERROR", "DB_UNAVAILABLE", undefined, "Database not connected");
   return d;
 }
 
@@ -49,7 +50,7 @@ async function requireProduct(productModelId: number) {
   const d = await db();
   const [p] = await d.select().from(productModels).where(eq(productModels.id, productModelId)).limit(1);
   if (!p) {
-    throw new TRPCError({ code: "NOT_FOUND", message: `Sản phẩm #${productModelId} không tồn tại.` });
+    throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "productModel" }, `Sản phẩm #${productModelId} không tồn tại.`);
   }
   return p;
 }

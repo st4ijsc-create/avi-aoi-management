@@ -1,0 +1,97 @@
+{
+  "version": 1,
+  "description": "Việc 5 (2026-09-04) · B2 — đo AI Local trên đúng miền demo IoT (RS232 + TCP/UDP + Modbus + framing/checksum + web module + PLC + robot), qua ĐÚNG đường extension (POST /api/ai/local-kb/stream, context.route=\"vscode\"). Dùng lại eval-vscode-route.mjs (--cases-path) — KHÔNG viết bộ đo thứ hai. Khác vscode-route-cases.json (Việc 3, hỏi 'tài liệu nằm ở đâu'): các case ở đây hỏi 'viết code giúp mình' — chấm KẾT CỤC mã (dùng được ngay / sửa nhỏ / sai-bịa) đọc tay từ answer nguyên văn trong report JSON, không phải chỉ từ verdict tự động của script (verdict tự động chỉ chấm ĐÚNG HÃNG của citation, không chấm chất lượng mã).",
+  "loginHint": "engineer1 / User@123 — giống vscode-route-cases.json.",
+  "cases": [
+    {
+      "id": "V5-01-csharp-rs232-open",
+      "domain": "csharp+serial",
+      "vendor": null,
+      "kind": "gap-probe",
+      "questionTemplate": "Viết giúp mình đoạn code C# mở cổng RS232 bằng System.IO.Ports.SerialPort, cấu hình baud rate 9600, parity None, 1 stop bit, đọc dữ liệu trả về liên tục (DataReceived) và in ra console. [ts={ts}]",
+      "expectVendorInCitation": null,
+      "note": "Không có manual C#/.NET nào trong knowledge/programming (đã xác nhận ở task-v3-report.md B2) ⇒ gap-probe, chấm tay chất lượng mã từ answer thô."
+    },
+    {
+      "id": "V5-02-csharp-tcp-iot",
+      "domain": "csharp+tcp",
+      "vendor": null,
+      "kind": "gap-probe",
+      "questionTemplate": "Viết giúp mình code C# dùng TcpClient kết nối tới một thiết bị IoT ở địa chỉ IP và port cho trước, đọc gói tin (byte[]) gửi về liên tục qua NetworkStream và in ra console dạng hex. [ts={ts}]",
+      "expectVendorInCitation": null,
+      "note": "Miền web/IoT thuần C# — không có tài liệu hãng liên quan, gap-probe."
+    },
+    {
+      "id": "V5-03-csharp-udp-iot",
+      "domain": "csharp+udp",
+      "vendor": null,
+      "kind": "gap-probe",
+      "questionTemplate": "Viết giúp mình code C# dùng UdpClient lắng nghe một cổng UDP cố định, nhận gói tin broadcast từ thiết bị IoT gửi lên và in ra dữ liệu nhận được kèm địa chỉ IP nguồn. [ts={ts}]",
+      "expectVendorInCitation": null,
+      "note": "Cùng lý do V5-02, gap-probe."
+    },
+    {
+      "id": "V5-04-modbus-rtu-delta",
+      "domain": "csharp+modbus-rtu",
+      "vendor": "delta",
+      "kind": "grounded",
+      "questionTemplate": "Viết giúp mình code C# đọc thanh ghi Modbus RTU qua RS232 từ servo Delta ASD-MS, gồm cả cách build frame request (slave id, function code 03, CRC-16) và parse response. [ts={ts}]",
+      "expectVendorInCitation": "delta",
+      "note": "Có manual thật (ASD-MS_UM, xem VSC-01 trong vscode-route-cases.json) ⇒ kỳ vọng citation đúng hãng score≥0.5; chấm tay thêm chất lượng mã sinh ra."
+    },
+    {
+      "id": "V5-05-modbus-tcp-mitsubishi",
+      "domain": "csharp+modbus-tcp",
+      "vendor": "mitsubishi",
+      "kind": "grounded",
+      "questionTemplate": "Viết giúp mình code C# đọc thanh ghi Modbus TCP từ PLC Mitsubishi qua Ethernet, gồm cấu trúc gói MBAP header (transaction id, protocol id, length, unit id) và function code 03. [ts={ts}]",
+      "expectVendorInCitation": "mitsubishi",
+      "note": "Có manual MELSEC Communication Protocol Reference Manual (xem VSC-02) ⇒ kỳ vọng citation đúng hãng."
+    },
+    {
+      "id": "V5-06-framing-checksum",
+      "domain": "csharp+serial+framing",
+      "vendor": null,
+      "kind": "gap-probe",
+      "questionTemplate": "Dữ liệu serial nhận về có dạng khung STX...ETX kèm checksum CRC-16 kiểu Modbus ở cuối khung. Viết giúp mình hàm C# để tách khung (framing) từ luồng byte liên tục và kiểm tra checksum trước khi xử lý payload. [ts={ts}]",
+      "expectVendorInCitation": null,
+      "note": "Khái niệm chung (không riêng hãng nào), gap-probe."
+    },
+    {
+      "id": "V5-07-web-module-dashboard",
+      "domain": "web-iot",
+      "vendor": null,
+      "kind": "gap-probe",
+      "questionTemplate": "Viết giúp mình một module web nhỏ bằng Node.js/Express + WebSocket để hiển thị dữ liệu thiết bị IoT nhận được qua serial/TCP lên một trang dashboard theo thời gian thực. [ts={ts}]",
+      "expectVendorInCitation": null,
+      "note": "Cùng miền VSC-10 (đã xác nhận 0 tài liệu web/IoT trong task-v3-report.md), gap-probe."
+    },
+    {
+      "id": "V5-08-plc-omron-iot-bridge",
+      "domain": "plc",
+      "vendor": "omron",
+      "kind": "grounded",
+      "questionTemplate": "Viết đoạn Structured Text trên PLC Omron NJ để đọc dữ liệu qua cổng serial rồi gửi ra ngoài bằng EtherNet/IP tới một ứng dụng giám sát IoT. [ts={ts}]",
+      "expectVendorInCitation": "omron",
+      "note": "Có manual W502 Instructions Reference Manual (xem VSC-03) ⇒ kỳ vọng citation đúng hãng."
+    },
+    {
+      "id": "V5-09-robot-ur-socket",
+      "domain": "robot",
+      "vendor": "universal-robots",
+      "kind": "grounded",
+      "questionTemplate": "Viết đoạn URScript để robot Universal Robots mở một socket TCP client và gửi dữ liệu trạng thái (vị trí, tín hiệu) ra một thiết bị IoT giám sát bên ngoài. [ts={ts}]",
+      "expectVendorInCitation": "universal-robots",
+      "note": "Có manual URScript Programming Language (xem VSC-05) ⇒ kỳ vọng citation đúng hãng."
+    },
+    {
+      "id": "V5-10-robot-fanuc-karel-serial",
+      "domain": "robot+serial",
+      "vendor": "fanuc",
+      "kind": "grounded",
+      "questionTemplate": "Robot Fanuc có hỗ trợ đọc/ghi dữ liệu qua cổng RS-232-C bằng chương trình KAREL không? Viết ví dụ chương trình KAREL mở và đọc dữ liệu từ cổng serial. [ts={ts}]",
+      "expectVendorInCitation": "fanuc",
+      "note": "Có manual FANUC Robotics KAREL Reference Manual (xem VSC-06) ⇒ kỳ vọng citation đúng hãng."
+    }
+  ]
+}

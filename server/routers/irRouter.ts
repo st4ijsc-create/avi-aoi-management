@@ -30,6 +30,7 @@
 import { z } from "zod";
 import { desc, eq } from "drizzle-orm";
 import { TRPCError } from "@trpc/server";
+import { appError } from "../_core/appError";
 import { router, moduleProcedure, moduleGate, writeProcedure as writeBase } from "../_core/trpc";
 // Doc 38 Đợt Q — license-gate this router behind MOD_ENGINEERING (moduleGate = pass-through
 // until the deployment's SKU is configured — no-brick). Shadows `protectedProcedure`.
@@ -68,7 +69,7 @@ export function dpcIrV2Enabled(): boolean {
 
 function requireFlag() {
   if (!dpcIrV2Enabled()) {
-    throw new TRPCError({ code: "CONFLICT", message: "IR programming disabled (set DPC_IR_V2_ENABLED=true)" });
+    throw appError("CONFLICT", "FEATURE_DISABLED", { feature: "irProgramming" }, "IR programming disabled (set DPC_IR_V2_ENABLED=true)");
   }
 }
 
@@ -78,7 +79,7 @@ function toDpcUser(user: { id: number; role: string; name?: string | null }): Dp
 
 async function db() {
   const d = await getDb();
-  if (!d) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Database not connected" });
+  if (!d) throw appError("INTERNAL_SERVER_ERROR", "DB_UNAVAILABLE", undefined, "Database not connected");
   return d;
 }
 
@@ -88,10 +89,12 @@ const TARGET = z.enum(TRANSPILE_TARGETS as [TranspileTarget, ...TranspileTarget[
 function parseOrThrow(content: string | null): Flow {
   const parsed = parseFlowJson(content ?? "");
   if (!parsed.ok) {
-    throw new TRPCError({
-      code: "BAD_REQUEST",
-      message: `Invalid IR flow: ${parsed.errors.map((e) => `${e.path || "<root>"}: ${e.message}`).join("; ")}`,
-    });
+    throw appError(
+      "BAD_REQUEST",
+      "INVALID_VALUE",
+      { field: "irFlow" },
+      `Invalid IR flow: ${parsed.errors.map((e) => `${e.path || "<root>"}: ${e.message}`).join("; ")}`,
+    );
   }
   return parsed.flow;
 }
@@ -102,8 +105,8 @@ async function loadArtifactFlow(
   artifactId: number,
 ): Promise<{ flow: Flow; branch: string; version: number; projectId: number }> {
   const [row] = await d.select().from(programArtifacts).where(eq(programArtifacts.id, artifactId)).limit(1);
-  if (!row) throw new TRPCError({ code: "NOT_FOUND", message: `Artifact ${artifactId} not found` });
-  if (row.kind !== "ir-flow") throw new TRPCError({ code: "BAD_REQUEST", message: `Artifact ${artifactId} is not an ir-flow.` });
+  if (!row) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "programmingArtifact" }, `Artifact ${artifactId} not found`);
+  if (row.kind !== "ir-flow") throw appError("BAD_REQUEST", "INVALID_VALUE", { field: "artifactKind" }, `Artifact ${artifactId} is not an ir-flow.`);
   return { flow: parseOrThrow(row.content), branch: row.branch, version: row.version, projectId: row.projectId };
 }
 
@@ -146,8 +149,8 @@ export const irRouter = router({
     .query(async ({ input }) => {
       const d = await db();
       const [row] = await d.select().from(programArtifacts).where(eq(programArtifacts.id, input.artifactId)).limit(1);
-      if (!row) throw new TRPCError({ code: "NOT_FOUND", message: `Artifact ${input.artifactId} not found` });
-      if (row.kind !== "ir-flow") throw new TRPCError({ code: "BAD_REQUEST", message: `Artifact ${input.artifactId} is not an ir-flow.` });
+      if (!row) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "programmingArtifact" }, `Artifact ${input.artifactId} not found`);
+      if (row.kind !== "ir-flow") throw appError("BAD_REQUEST", "INVALID_VALUE", { field: "artifactKind" }, `Artifact ${input.artifactId} is not an ir-flow.`);
       const parsed = parseFlowJson(row.content ?? "");
       return { artifact: row, flow: parsed.ok ? parsed.flow : null, summary: parsed.ok ? summariseFlow(parsed.flow) : null };
     }),
@@ -249,9 +252,9 @@ export const irRouter = router({
       requireFlag();
       const d = await db();
       const [proj] = await d.select().from(programProjects).where(eq(programProjects.id, input.projectId)).limit(1);
-      if (!proj) throw new TRPCError({ code: "NOT_FOUND", message: `Project ${input.projectId} not found` });
+      if (!proj) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "programmingProject" }, `Project ${input.projectId} not found`);
       if (proj.kind !== "ir-flow") {
-        throw new TRPCError({ code: "BAD_REQUEST", message: `Project ${input.projectId} is kind "${proj.kind}", not "ir-flow".` });
+        throw appError("BAD_REQUEST", "INVALID_VALUE", { field: "projectKind" }, `Project ${input.projectId} is kind "${proj.kind}", not "ir-flow".`);
       }
 
       const content = JSON.stringify(input.flow);
@@ -288,19 +291,23 @@ export const irRouter = router({
           } catch (err) {
             if (isUniqueViolation(err) && attempt < MAX_ATTEMPTS) continue; // recompute max + retry
             if (isUniqueViolation(err)) {
-              throw new TRPCError({
-                code: "CONFLICT",
-                message: `Không thể cấp phiên bản mới cho nhánh "${input.branch}" do có lưu đồng thời — vui lòng thử lại.`,
-              });
+              throw appError(
+                "CONFLICT",
+                "OPERATION_FAILED",
+                { operation: "createProgramArtifactVersion" },
+                `Không thể cấp phiên bản mới cho nhánh "${input.branch}" do có lưu đồng thời — vui lòng thử lại.`,
+              );
             }
             throw err;
           }
         }
         // Unreachable: the loop always returns or throws.
-        throw new TRPCError({
-          code: "CONFLICT",
-          message: `Không thể cấp phiên bản mới cho nhánh "${input.branch}" — vui lòng thử lại.`,
-        });
+        throw appError(
+          "CONFLICT",
+          "OPERATION_FAILED",
+          { operation: "createProgramArtifactVersion" },
+          `Không thể cấp phiên bản mới cho nhánh "${input.branch}" — vui lòng thử lại.`,
+        );
       };
       const { row, version: nextVersion } = await insertVersioned();
 
@@ -341,8 +348,8 @@ export const irRouter = router({
       requireFlag();
       const d = await db();
       const [art] = await d.select().from(programArtifacts).where(eq(programArtifacts.id, input.artifactId)).limit(1);
-      if (!art) throw new TRPCError({ code: "NOT_FOUND", message: `Artifact ${input.artifactId} not found` });
-      if (art.kind !== "ir-flow") throw new TRPCError({ code: "BAD_REQUEST", message: `Artifact ${input.artifactId} is not an ir-flow.` });
+      if (!art) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "programmingArtifact" }, `Artifact ${input.artifactId} not found`);
+      if (art.kind !== "ir-flow") throw appError("BAD_REQUEST", "INVALID_VALUE", { field: "artifactKind" }, `Artifact ${input.artifactId} is not an ir-flow.`);
       // Shape-check early so we return a clean 400 rather than a failed build for garbage.
       parseOrThrow(art.content);
       const build = await buildArtifact(input.artifactId, toDpcUser(ctx.user));

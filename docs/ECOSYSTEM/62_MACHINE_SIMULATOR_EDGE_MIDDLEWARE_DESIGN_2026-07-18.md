@@ -291,7 +291,7 @@ public interface ITransport {
 - **Kiosk/fullscreen** + **Attract mode** (tự chạy preset "Ca bình thường" khi rảnh N giây).
 - **Song ngữ vi/en** (ResourceDictionary; mặc định vi).
 - **Đóng gói**: `dotnet publish -r win-x64 -c Release --self-contained -p:PublishSingleFile=true`
-  → 1 EXE cắm-chạy, không cần cài .NET. Splash + icon thương hiệu ST4I.
+  (TFM `net10.0-windows`) → 1 EXE cắm-chạy, không cần cài .NET. Splash + icon thương hiệu ST4I.
 
 ---
 
@@ -312,7 +312,8 @@ mỗi phase chỉ thêm 1 lớp `IDeviceDriver` + preset mapping, không sửa p
 
 ## 12. Tech stack & bố cục project
 
-- **.NET 8** WPF (win-x64). C# nullable enable.
+- **.NET 10** WPF — TFM `net10.0-windows` (SDK 10.0.300 + WindowsDesktop 10.0.8 đã cài trên máy;
+  .NET 10 LTS, mới hơn .NET 8, publish self-contained y hệt). win-x64. C# nullable enable.
 - NuGet: `CommunityToolkit.Mvvm`, `LiveChartsCore.SkiaSharpView.WPF`, `MQTTnet` (+ `MQTTnet.Server`).
   Tất cả managed/self-contained-friendly. `St4iDeviceClient.cs` **link** (0 NuGet trên .NET 8).
 - Không đụng `server/`, `client/`, `drizzle/`.

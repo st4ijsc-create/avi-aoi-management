@@ -1,0 +1,829 @@
+/**
+ * ★★★ Pha 2B Task 7 (§8) — **VỀ MỘT MỐI.**
+ *
+ * Bộ ca này canh đúng một câu: *"hệ chỉ còn MỘT người quản lý VRAM"* — yêu cầu gốc của chủ dự án.
+ * Bốn nhóm, mỗi nhóm một dòng của bảng §8:
+ *
+ *   A. `enforceVramGuard()` **XOÁ** — trần nay là của broker, và `reserve()` biết kích thước TRƯỚC.
+ *   B. `ensureCapacity()` **HẤP THỤ** thành chính sách ĐẾM của broker (Đ4: thước RIÊNG).
+ *   C. `evictLRU()` **HẤP THỤ** thành `preempt()` — mở rộng cho sidecar, và **chỉ** cho hộ thi hành được.
+ *   D. **vị từ dùng chung** `coThiHanhThuHoi()` — MỌI nơi tiêu thụ đọc CÙNG một câu trả lời.
+ *
+ * ⚠ Ràng buộc 7 — fixture **17.000 MiB** (khối 30B đo được 17.511.354.368 B ≈ 16.700 MiB): mọi con
+ * số dưới đây đủ lớn để một lỗi làm tròn/đơn vị không trốn được.
+ */
+import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
+import { __tickFieldsForTests } from "./vramTickCell";
+
+const suKien = vi.hoisted(() => [] as Array<Record<string, unknown>>);
+vi.mock("./vramEventLog", () => ({
+  logVramEvent: (e: Record<string, unknown>) => { suKien.push(e); },
+  flushVramEvents: async () => 0,
+  __setVramLogTimerEnabled: () => {},
+  __hasVramLogTimer: () => false,
+}));
+
+/** Người thi hành GIẢ — ta canh AI bị gọi và THEO THỨ TỰ NÀO, không canh llama.cpp. */
+const daDonModel = vi.hoisted(() => [] as string[]);
+/**
+ * `nhaSo` = người thi hành có THẬT SỰ nhả giấy phép không. Hai giá trị là hai THẾ GIỚI khác nhau
+ * và cả hai đều có ca: `false` là ca *"sổ khai trống mà card vẫn giữ"* (⇒ `freedBytes` phải bằng 0).
+ */
+const donModelKetQua = vi.hoisted(() => ({ value: true as boolean | "THROW", nhaSo: false }));
+const nhaSoTheoOwner = vi.hoisted(() => new Map<string, () => void>());
+// ⚠ C-1 (review TOÀN NHÁNH) — `importOriginal` CHỨ KHÔNG thay cả module: ta CHỈ thay
+// `unloadGgufModel` (người thi hành), còn `ggufModelVramRequest()` phải là bản THẬT — nó chính là
+// thứ ca "đường thoát" của nhóm C-bis đọc. Bản trước thay TRỌN module nên hàm thuần đó vô hình,
+// và đột biến "gỡ `reclaimer`" đi lọt 0 ĐỎ/539.
+vi.mock("../aiGgufEngine", async (goc) => {
+  const that = await goc<typeof import("../aiGgufEngine")>();
+  return {
+    ...that,
+    unloadGgufModel: async (modelId: string) => {
+      daDonModel.push(modelId);
+      if (donModelKetQua.value === "THROW") throw new Error("unloadGgufModel hỏng (ca thử nghiệm)");
+      if (donModelKetQua.nhaSo) nhaSoTheoOwner.get(`gguf:${modelId}`)?.();
+      return donModelKetQua.value;
+    },
+  };
+});
+vi.mock("./vramProcessProbe", () => ({
+  readProcessVram: async () => null,
+  __resetProcessProbeCacheForTests: () => {},
+}));
+vi.mock("./vramProbe", () => ({
+  readDeviceVram: async () => null,
+  readDeviceVramUncached: async () => null,
+  probeOnce: async () => null,
+  __resetVramProbeCacheForTests: () => {},
+}));
+/**
+ * ⚠ C-2 — `ketQua` là câu trả lời của `stopSidecar()`: **`true` ⇔ đã quan sát được tiến trình
+ * CHẾT**. Bản trước trả `undefined` và người thi hành `return true` vô điều kiện đè lên, nên
+ * nhánh "giết mà chưa chết" **chưa từng chạy trong test**. Ngữ nghĩa THẬT (không giả) nằm ở
+ * `wiring.outofprocess.test.ts`; ở đây ta chỉ canh việc câu trả lời ĐƯỢC CHUYỂN LÊN nguyên vẹn.
+ */
+const daTatSidecar = vi.hoisted(() => ({ n: 0, ketQua: true }));
+vi.mock("../llamaVisionSidecar", async (goc) => {
+  // ⚠ `importOriginal`: ta CHỈ thay `stopSidecar` (người thi hành), còn `visionSidecarVramRequest()`
+  // phải là bản THẬT — nó chính là thứ ca "đường thoát" bên dưới đọc.
+  const that = await goc<typeof import("../llamaVisionSidecar")>();
+  return { ...that, stopSidecar: async () => { daTatSidecar.n += 1; return daTatSidecar.ketQua; } };
+});
+
+import {
+  reserve, release, snapshot, noteDeviceTotalBytes, setLeaseRefCount, deviceTotalBytes,
+  deviceUsableBytes, ledgerHolders, preemptCandidates, preemptPlan, nguoiThiHanhThuHoi,
+  __resetBrokerForTests, type VramDecisionContext,
+} from "./vramBroker";
+import { preempt } from "./vramPreempt";
+import { __freshSharedLedgerFactForTests } from "./vramSharedLedger";
+import {
+  ggufMaxLoadedModels, ggufMaxVramBytes, ggufVramGuardPct, safetyReserveBytes, sessionCacheMax,
+  usableCeilingBytes, __resetVramCapsForTests,
+} from "./vramCaps";
+import { formatVramRefusal } from "./vramRefusal";
+import type { VramLeaseKind, VramPriority, VramReclaimerId, VramReserveRequest } from "./types";
+
+import { docMaNguon } from "@shared/testing/docMaNguon";
+
+const MIB = 1024 * 1024;
+const NOW = 1_800_000_000_000;
+/** Ràng buộc 7 — khối 30B, con số của thiết bị thật. */
+const KHOI_30B = 17_000 * MIB;
+const TRAN_THIET_BI = 32_607 * MIB;
+
+const BIEN_CAP = [
+  "GGUF_VRAM_GUARD_PCT", "GGUF_MAX_VRAM_MB", "GGUF_MAX_LOADED_MODELS", "AI_SESSION_CACHE_MAX",
+  // ★ M-3 (review TOÀN NHÁNH) — người đọc thứ NĂM của `vramCaps`, dời từ `const` mức module.
+  "VRAM_SAFETY_RESERVE_MB",
+] as const;
+
+function xin(
+  owner: string,
+  bytes: number,
+  over: Partial<VramReserveRequest> = {},
+): VramReserveRequest {
+  return {
+    owner,
+    kind: "gguf-model" as VramLeaseKind,
+    estimatedBytes: bytes,
+    priority: "interactive" as VramPriority,
+    ...over,
+  };
+}
+
+/** Ô tick SẠCH — bộ ca này canh §8, không canh chính sách suy giảm. */
+function ctx(over: Partial<VramDecisionContext> = {}): VramDecisionContext {
+  return {
+    tick: { ...__tickFieldsForTests(0, true), atMs: NOW, consecutiveFailures: 0 },
+    unledgered: { bytes: 0, unknownCount: 0 },
+    sharedLedger: __freshSharedLedgerFactForTests(),
+    nowMs: NOW,
+    ...over,
+  };
+}
+
+beforeEach(() => {
+  for (const b of BIEN_CAP) delete process.env[b];
+  suKien.length = 0;
+  daDonModel.length = 0;
+  daTatSidecar.n = 0;
+  daTatSidecar.ketQua = true;
+  donModelKetQua.value = true;
+  donModelKetQua.nhaSo = false;
+  nhaSoTheoOwner.clear();
+  process.env.VRAM_MEASURE_WAIT_MS = "0";
+  __resetBrokerForTests();
+  __resetVramCapsForTests();
+  noteDeviceTotalBytes(TRAN_THIET_BI);
+});
+afterEach(() => {
+  for (const b of BIEN_CAP) delete process.env[b];
+  delete process.env.VRAM_MEASURE_WAIT_MS;
+  __resetVramCapsForTests();
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+describe("A. `enforceVramGuard()` XOÁ — trần nay là của BROKER, và nó biết kích thước TRƯỚC", () => {
+  it("★★★ MẶC ĐỊNH: GGUF_VRAM_GUARD_PCT KHÔNG cắt gì (100) — sai lệch có chủ đích, được KHOÁ", () => {
+    // Nếu ai đổi mặc định về 90, ca này ĐỎ và buộc họ đọc lý do ở `vramCaps.ts`:
+    // `90` nghĩa CŨ (ngưỡng phản ứng, hậu quả = một lượt đuổi) ≠ `90` nghĩa MỚI (trần cứng, hậu
+    // quả = TỪ CHỐI). Giữ 90 làm mặc định là lặng lẽ cắt 3.261 MiB khỏi MỌI máy.
+    expect(ggufVramGuardPct()).toBe(100);
+    expect(deviceUsableBytes()).toBe(deviceTotalBytes());
+  });
+
+  it("★★★ đặt GGUF_VRAM_GUARD_PCT=90 ⇒ trần HIỆU LỰC = 90% — và lượt xin bị cân TRƯỚC khi nạp", () => {
+    process.env.GGUF_VRAM_GUARD_PCT = "90";
+    __resetVramCapsForTests();
+    expect(deviceUsableBytes()).toBe(Math.floor((TRAN_THIET_BI * 90) / 100));
+
+    // Đây là toàn bộ khác biệt với guard cũ: guard cũ đọc mức dùng HIỆN TẠI (0) ⇒ CHO QUA, rồi
+    // khối 29.000 MiB mới lên card. Broker so CHÍNH kích thước đang xin với trần 90%.
+    const r = reserve(xin("gguf:30B", 29_000 * MIB), ctx());
+    expect(r.lease).toBeNull();
+    expect(r.wouldRefuse).toBe(true);
+    // và cùng lượt xin đó VỪA khi trần không bị cắt ⇒ ca này nói về TRẦN, không nói về "luôn từ chối".
+    delete process.env.GGUF_VRAM_GUARD_PCT;
+    __resetBrokerForTests();
+    noteDeviceTotalBytes(TRAN_THIET_BI);
+    expect(reserve(xin("gguf:30B", 29_000 * MIB), ctx()).lease).not.toBeNull();
+  });
+
+  /**
+   * ★★★ I-1 (review TOÀN NHÁNH) — MỘT LỰA CHỌN TƯỜNG MINH MÀ HẬU QUẢ IM LẶNG THÌ KHÔNG PHẢI TƯỜNG MINH.
+   *
+   * `.env` của repo ĐÃ đặt `GGUF_VRAM_GUARD_PCT=90` từ thời nghĩa CŨ (ngưỡng phản ứng), và ba task
+   * sau đó tính mọi con số nghiệm thu như thể không có nó — **−3.261 MiB không ai nhận ra suốt cả
+   * pha**, trong khi nghĩa MỚI là một trần CỨNG có hậu quả TỪ CHỐI. Đã gỡ khỏi `.env`; đây là lưới
+   * cho lần sau: ai đặt lại thì hệ phải KÊU.
+   */
+  it("★★★ I-1: đặt guard < 100 ⇒ KÊU đúng MỘT lần; mặc định 100 ⇒ IM", () => {
+    const keu = vi.spyOn(console, "warn").mockImplementation(() => {});
+    try {
+      // mặc định (không đặt biến) ⇒ không có gì để cảnh báo
+      __resetVramCapsForTests();
+      expect(ggufVramGuardPct()).toBe(100);
+      ggufVramGuardPct();
+      expect(keu.mock.calls.filter((c) => String(c[0]).includes("GGUF_VRAM_GUARD_PCT"))).toEqual([]);
+
+      process.env.GGUF_VRAM_GUARD_PCT = "90";
+      __resetVramCapsForTests();
+      // đọc NHIỀU lần: bộ nhớ đệm của `doc()` là thứ giữ lời cảnh báo ở đúng MỘT lần/tiến trình
+      ggufVramGuardPct();
+      deviceUsableBytes();
+      usableCeilingBytes(TRAN_THIET_BI);
+      const canhBao = keu.mock.calls.filter((c) => String(c[0]).includes("GGUF_VRAM_GUARD_PCT"));
+      expect(canhBao.length).toBe(1);
+      // và câu đó phải nói đúng HẬU QUẢ (từ chối), không phải chỉ nhắc tên biến
+      expect(String(canhBao[0]![0])).toMatch(/TỪ\s+CHỐI/);
+    } finally {
+      keu.mockRestore();
+    }
+  });
+
+  /**
+   * ★★★ M-1 (review TOÀN NHÁNH) — TRẦN DỰ PHÒNG LÀ HẰNG SỐ CỦA **MỘT MÁY**, VÀ PHA 2 QUYẾT ĐỊNH
+   * TRÊN NÓ. Nguồn "số đo thật" chỉ tới SAU nhịp đo đầu tiên; trước đó, trên một card 12 GB, dư địa
+   * bị phóng đại 20 GB **trong im lặng**. Không hạ trần được (bịa một con số khác của cùng máy) —
+   * nên nó phải KÊU.
+   */
+  it("★★★ M-1: chưa có số đo + không đặt VRAM_DEVICE_TOTAL_MB ⇒ KÊU đúng MỘT lần; có số đo ⇒ IM", () => {
+    const keu = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const loc = () => keu.mock.calls.filter((c) => String(c[0]).includes("HẰNG SỐ DỰ PHÒNG"));
+    try {
+      __resetBrokerForTests();                 // xoá luôn số đo + cờ đã-kêu
+      expect(deviceTotalBytes()).toBe(TRAN_THIET_BI);   // hằng số dự phòng = 32.607 MiB
+      deviceTotalBytes();
+      deviceUsableBytes();
+      expect(loc().length).toBe(1);
+      // câu phải NÊU hành động sửa được, không chỉ than
+      expect(String(loc()[0]![0])).toContain("VRAM_DEVICE_TOTAL_MB");
+
+      // có số đo THẬT ⇒ thôi kêu (và trần đi theo số đo, không theo hằng số)
+      keu.mockClear();
+      __resetBrokerForTests();
+      noteDeviceTotalBytes(12_282 * MIB);
+      expect(deviceTotalBytes()).toBe(12_282 * MIB);
+      expect(loc()).toEqual([]);
+    } finally {
+      keu.mockRestore();
+      __resetBrokerForTests();
+      noteDeviceTotalBytes(TRAN_THIET_BI);
+    }
+  });
+
+  /**
+   * ★★★ M-3 (review TOÀN NHÁNH) — Ô ĐỆM AN TOÀN PHẢI ĐỌC LƯỜI, KHÔNG PHẢI `const` MỨC MODULE.
+   *
+   * ⚠ VÒNG SỬA 1: bản vá đầu chuyển ô này sang `vramCaps` **mà không có lưới** — đột biến
+   * *"ghim cứng `1024 * MIB`, thôi đọc `.env`"* **SỐNG SÓT 556/556**. Tức việc dời chỗ chỉ là dọn
+   * dẹp cho tới khi có ca đọc ĐÚNG ĐƯỜNG: `.env` đổi ⇒ dư địa đổi ⇒ một lượt xin sát mép **lật
+   * kết quả**. Đó mới là thứ ô này làm.
+   */
+  it("★★★ M-3: VRAM_SAFETY_RESERVE_MB đọc LƯỜI, và nó LÁI được kết quả một lượt xin sát mép", () => {
+    expect(safetyReserveBytes()).toBe(1024 * MIB);         // mặc định
+    const duDia = (r: ReturnType<typeof reserve>) => r.decision.headroomBytes;
+
+    // dư địa thô = trần − đệm (sổ rỗng, tick sạch)
+    expect(duDia(reserve(xin("gguf:a", 1 * MIB), ctx()))).toBe(TRAN_THIET_BI - 1024 * MIB);
+
+    process.env.VRAM_SAFETY_RESERVE_MB = "5000";
+    __resetBrokerForTests();
+    noteDeviceTotalBytes(TRAN_THIET_BI);
+    expect(safetyReserveBytes()).toBe(5_000 * MIB);
+    expect(duDia(reserve(xin("gguf:b", 1 * MIB), ctx()))).toBe(TRAN_THIET_BI - 5_000 * MIB);
+
+    // … và một lượt xin NẰM GIỮA hai con số đó LẬT kết quả — đây là hậu quả thật của ô này.
+    const satMep = TRAN_THIET_BI - 3_000 * MIB;
+    __resetBrokerForTests();
+    noteDeviceTotalBytes(TRAN_THIET_BI);
+    expect(reserve(xin("gguf:c", satMep), ctx()).lease, "đệm 5.000 ⇒ phải TỪ CHỐI").toBeNull();
+    delete process.env.VRAM_SAFETY_RESERVE_MB;
+    __resetBrokerForTests();
+    noteDeviceTotalBytes(TRAN_THIET_BI);
+    expect(reserve(xin("gguf:c", satMep), ctx()).lease, "đệm 1.024 ⇒ phải CẤP").not.toBeNull();
+
+    // `0` HỢP LỆ (tắt hẳn đệm); rác ⇒ mặc định, KHÔNG phải NaN đi vào phép trừ (bản `const` cũ).
+    process.env.VRAM_SAFETY_RESERVE_MB = "0";
+    __resetVramCapsForTests();
+    expect(safetyReserveBytes()).toBe(0);
+    process.env.VRAM_SAFETY_RESERVE_MB = "rác";
+    __resetVramCapsForTests();
+    expect(safetyReserveBytes()).toBe(1024 * MIB);
+  });
+
+  it("GGUF_MAX_VRAM_MB là trần BYTE; `0` = tắt (ngữ nghĩa cũ giữ nguyên)", () => {
+    expect(ggufMaxVramBytes()).toBe(0);
+    expect(usableCeilingBytes(TRAN_THIET_BI)).toBe(TRAN_THIET_BI);
+    process.env.GGUF_MAX_VRAM_MB = "20000";
+    __resetVramCapsForTests();
+    expect(usableCeilingBytes(TRAN_THIET_BI)).toBe(20_000 * MIB);
+  });
+
+  it("★★ hai trần cùng đặt ⇒ CHẶT HƠN thắng (mọi trần chỉ làm con số NHỎ ĐI, không bao giờ nới)", () => {
+    process.env.GGUF_VRAM_GUARD_PCT = "90";     // 29.346 MiB
+    process.env.GGUF_MAX_VRAM_MB = "20000";     // 20.000 MiB
+    __resetVramCapsForTests();
+    expect(usableCeilingBytes(TRAN_THIET_BI)).toBe(20_000 * MIB);
+    process.env.GGUF_MAX_VRAM_MB = "31000";     // 31.000 MiB > 90%
+    __resetVramCapsForTests();
+    expect(usableCeilingBytes(TRAN_THIET_BI)).toBe(Math.floor((TRAN_THIET_BI * 90) / 100));
+  });
+
+  it("trần KHÔNG hữu hạn ⇒ trả NGUYÊN (không nhân, không `min`) — fail-closed nằm ở computeHeadroom", () => {
+    for (const xau of [Number.NaN, Number.POSITIVE_INFINITY, -1, 0]) {
+      expect(usableCeilingBytes(xau)).toBe(xau);
+    }
+  });
+
+  /**
+   * ★★★ ĐIỀU KIỆN RA #7 — cụm chữ của lượt tràn im lặng phải BIẾN MẤT khỏi mã sản xuất.
+   *
+   * ⚠ Cụm đó **không được viết nguyên văn ở bất kỳ đâu trong file này**, kể cả trong một chú thích:
+   * `git grep` không phân biệt mã với chú thích, nên một lần nhắc tên là ca này tự làm mình đỏ —
+   * đúng cái bẫy "tên hàm còn trong docstring" mà Task 6 đã dẫm phải. Vì vậy cụm được GHÉP từ hai
+   * mảnh lúc chạy.
+   */
+  it("★★★ cụm chữ của lượt tràn im lặng KHÔNG CÒN Ở MÃ SẢN XUẤT (điều kiện ra #7, kiểm bằng MÁY)", async () => {
+    const CUM = ["temporary", "overflow"].join(" ");
+    const { readdirSync, statSync } = await import("node:fs");
+    const { join, dirname } = await import("node:path");
+    const { fileURLToPath } = await import("node:url");
+    const goc = join(dirname(fileURLToPath(import.meta.url)), "..", "..", "..");
+    const thuMuc = ["server", "client", "shared", "drizzle", "scripts", "tools"];
+    const dinh: string[] = [];
+    const duyet = (d: string) => {
+      for (const e of readdirSync(d, { withFileTypes: true })) {
+        if (e.name === "node_modules" || e.name.startsWith(".")) continue;
+        const p = join(d, e.name);
+        if (e.isDirectory()) { duyet(p); continue; }
+        if (!/\.(ts|tsx|js|mjs|cjs|cs)$/.test(e.name)) continue;
+        if (statSync(p).size > 4_000_000) continue;
+        if (docMaNguon(p).includes(CUM)) dinh.push(p);
+      }
+    };
+    for (const t of thuMuc) {
+      try { duyet(join(goc, t)); } catch { /* thư mục không có ở cấu hình này */ }
+    }
+    expect(dinh, `Còn cụm "${CUM}" ở:\n  ${dinh.join("\n  ")}`).toEqual([]);
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+describe("B. `ensureCapacity()` HẤP THỤ — chính sách ĐẾM của broker (Đ4: thước RIÊNG)", () => {
+  it("mặc định 2, đọc từ MỘT chỗ (`vramCaps`)", () => {
+    expect(ggufMaxLoadedModels()).toBe(2);
+    process.env.GGUF_MAX_LOADED_MODELS = "4";
+    __resetVramCapsForTests();
+    expect(ggufMaxLoadedModels()).toBe(4);
+  });
+
+  it("★★★ Đ4 — hết KHE ⇒ TỪ CHỐI **kể cả khi byte thừa thãi**, và dư địa BYTE KHÔNG bị bóp méo", () => {
+    process.env.GGUF_MAX_LOADED_MODELS = "2";
+    __resetVramCapsForTests();
+    // hai model tí hon: byte gần như không tốn gì
+    reserve(xin("gguf:a", 1 * MIB), ctx());
+    reserve(xin("gguf:b", 1 * MIB), ctx());
+    const r = reserve(xin("gguf:c", 1 * MIB), ctx());
+    expect(r.lease).toBeNull();
+    expect(r.decision.slotsNeeded).toBe(1);
+    // ⚠ Đ4: lý do ĐẾM KHÔNG được biến thành một khoản phụ phí BYTE.
+    expect(r.decision.effectiveHeadroomBytes).toBe(r.decision.headroomBytes);
+    expect(r.decision.effectiveHeadroomBytes).toBeGreaterThan(KHOI_30B);
+
+    /**
+     * ★★★ I-3 (review TOÀN NHÁNH) — TRẦN ĐẾM **KHÔNG** LÀ MỘT LÝ DO SUY GIẢM.
+     *
+     * Bản trước nối `"gguf-slot-cap"` vào `decision.reasons` SAU khi `enf.trusted` đã tính ⇒ cùng
+     * một lượt cho `trusted: true` (nhật ký) và `degraded` (client, suy từ `degradedReasons`).
+     * Bất biến đúng, và ca này khoá nó: **`trusted ⇔ reasons rỗng`**.
+     */
+    expect(r.decision.reasons).not.toContain("gguf-slot-cap" as never);
+    expect(r.decision.trusted).toBe(r.decision.reasons.length === 0);
+    expect(r.decision.trusted).toBe(true);
+    // … và sự thật của lời từ chối mang trần ĐẾM ở TRƯỜNG RIÊNG + MÃ LỖI RIÊNG.
+    expect(r.refusal!.slotsNeeded).toBe(1);
+    expect(r.refusal!.appCode).toBe("VRAM_SLOT_CAP");
+    expect(r.refusal!.degradedReasons).toEqual([]);
+  });
+
+  /**
+   * ★★★ I-3 — THIẾU CẢ HAI ⇒ mã vẫn là `VRAM_REFUSED` (byte là rào cao hơn), nhưng câu **nêu cả
+   * hai**: nói "chỉ hết khe" trong khi byte cũng thiếu là đẩy người trực nhả một model rồi vẫn bị
+   * chặn.
+   */
+  it("★★ I-3: thiếu CẢ byte LẪN khe ⇒ VRAM_REFUSED, và câu nêu CẢ HAI", () => {
+    process.env.GGUF_MAX_LOADED_MODELS = "1";
+    __resetVramCapsForTests();
+    reserve(xin("gguf:a", 30_000 * MIB), ctx());
+    const r = reserve(xin("gguf:b", 30_000 * MIB), ctx());
+    expect(r.lease).toBeNull();
+    expect(r.decision.slotsNeeded).toBe(1);
+    expect(r.refusal!.appCode).toBe("VRAM_REFUSED");
+    const cau = formatVramRefusal(r.refusal!);
+    expect(cau).toContain("Không đủ VRAM");
+    expect(cau).toContain("hết KHE");
+  });
+
+  it("★★ trần KHE chỉ áp cho `gguf-model` — hộ khác KHÔNG dính", () => {
+    process.env.GGUF_MAX_LOADED_MODELS = "1";
+    __resetVramCapsForTests();
+    reserve(xin("gguf:a", 1 * MIB), ctx());
+    expect(reserve(xin("gguf:b", 1 * MIB), ctx()).lease).toBeNull();
+    for (const kind of ["gguf-context", "gguf-embed-context", "onnx-session", "external-process", "gguf-backend"] as const) {
+      const r = reserve(xin(`x:${kind}`, 1 * MIB, { kind }), ctx());
+      expect(r.lease, `kind ${kind} KHÔNG được dính trần ĐẾM của gguf-model`).not.toBeNull();
+      expect(r.decision.slotsNeeded).toBe(0);
+    }
+  });
+
+  it("★★ dân số RỘNG HƠN `loadedModels` cũ: model của aiReranker CŨNG chiếm khe (bản cũ đếm thiếu)", () => {
+    process.env.GGUF_MAX_LOADED_MODELS = "2";
+    __resetVramCapsForTests();
+    reserve(xin("gguf:qwen30b", KHOI_30B), ctx());
+    reserve(xin("gguf-reranker:bge", 600 * MIB), ctx());   // aiReranker — NGOÀI `loadedModels`
+    expect(reserve(xin("gguf:coder", 1 * MIB), ctx()).decision.slotsNeeded).toBe(1);
+  });
+
+  it("nhả một khe ⇒ lượt xin kế tiếp ĐI TIẾP (trần là trần, không phải một cánh cửa một chiều)", () => {
+    process.env.GGUF_MAX_LOADED_MODELS = "1";
+    __resetVramCapsForTests();
+    const a = reserve(xin("gguf:a", 1 * MIB), ctx());
+    expect(reserve(xin("gguf:b", 1 * MIB), ctx()).lease).toBeNull();
+    release(a.lease!);
+    expect(reserve(xin("gguf:b", 1 * MIB), ctx()).lease).not.toBeNull();
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+describe("C. `evictLRU()` HẤP THỤ thành `preempt()`", () => {
+  /** Mở một giấy phép rồi khai NHÀN RỖI. */
+  function moNhanRoi(owner: string, bytes: number, over: Partial<VramReserveRequest> = {}) {
+    process.env.GGUF_MAX_LOADED_MODELS = "64";
+    __resetVramCapsForTests();
+    const r = reserve(xin(owner, bytes, over), ctx());
+    expect(r.lease, `không mở được giấy phép cho ${owner}`).not.toBeNull();
+    setLeaseRefCount(r.lease!.id, 0);
+    nhaSoTheoOwner.set(owner, () => release(r.lease!));
+    return r.lease!;
+  }
+
+  it("★★★ CHỈ chạm hộ CÓ NGƯỜI THI HÀNH — hộ chỉ có QUYỀN nhường thì KHÔNG bị đụng tới", async () => {
+    moNhanRoi("gguf:idle", KHOI_30B, { reclaimer: "gguf-idle-model" });
+    // mức THẤP HƠN ⇒ CÓ QUYỀN nhường; nhưng KHÔNG khai người thi hành ⇒ không ai dọn được
+    moNhanRoi("sidecar:local-trainer", 4_000 * MIB, { kind: "external-process", priority: "background" });
+    moNhanRoi("onnx-ocr:rec", 700 * MIB, { kind: "onnx-session", priority: "background" });
+
+    const kh = preemptPlan("interactive", Number.POSITIVE_INFINITY);
+    expect(kh.map((s) => s.owner)).toEqual(["gguf:idle"]);
+
+    const kq = await preempt("interactive", Number.POSITIVE_INFINITY);
+    expect(kq.reclaimed).toEqual(["gguf:idle"]);
+    expect(daDonModel).toEqual(["idle"]);   // `gguf:` bị cắt ⇒ modelId
+    expect(daTatSidecar.n).toBe(0);
+  });
+
+  it("★★★ `production` KHÔNG BAO GIỜ bị thu hồi, kể cả khi nhàn rỗi VÀ có người thi hành", async () => {
+    moNhanRoi("gguf:prod", KHOI_30B, { priority: "production", reclaimer: "gguf-idle-model" });
+    expect(preemptPlan("production", Number.POSITIVE_INFINITY)).toEqual([]);
+    const kq = await preempt("production", Number.POSITIVE_INFINITY);
+    expect(kq.planned).toBe(0);
+    expect(daDonModel).toEqual([]);
+  });
+
+  /**
+   * ★★★ ĐÍNH CHÍNH MỘT MỆNH ĐỀ CỦA BÀN GIAO TASK 6 (§7.3) — đo bằng máy, ở cả hai chiều.
+   *
+   * Task 6 viết: *"`background` là mức THẤP NHẤT và `preemptable` = 'mức thấp hơn mức đang xin'
+   * ⇒ RỖNG THEO ĐỊNH NGHĨA, VĨNH VIỄN với `kb:sync`"*. Vế ĐẦU đúng và ca 1 dưới đây khoá nó.
+   * Vế SAU nói QUÁ, vì `coTheNhuong()` có **HAI** đường chứ không một:
+   *
+   *     production ⇒ KHÔNG BAO GIỜ  ·  còn lại: `refCount === 0` **HOẶC** rank thấp hơn
+   *
+   * ⇒ Câu đúng: `preempt()` **KHÔNG** giành được chỗ cho `kb:sync` từ một hộ **ĐANG BẬN**; nó CHỈ
+   * giành được từ hộ **NHÀN RỖI**. Và hộ nhàn rỗi chính là ca *"một hộ khác TỰ NHẢ"* mà Task 6 gọi
+   * là đường DUY NHẤT — khác biệt là hệ nay **chủ động dọn** thay vì ngồi đợi hết 8 lượt hoãn.
+   * ⚠ KHÔNG đảo ngược bàn giao: cơ chế hoãn của Task 6 **vẫn cần**, vì ca 1 (mọi hộ đang bận) là
+   * ca thường gặp lúc 03:00 nếu dây chuyền còn chạy.
+   */
+  it("★★★ (Task 6 §7.3) `kb:sync` KHÔNG lấy được chỗ của hộ ĐANG BẬN — rỗng theo RANK là vĩnh viễn", async () => {
+    const a = moNhanRoi("gguf:busy", KHOI_30B, { reclaimer: "gguf-idle-model" });
+    const b = moNhanRoi("sidecar:vision", 7_825 * MIB, {
+      kind: "external-process", priority: "interactive", reclaimer: "vision-sidecar",
+    });
+    setLeaseRefCount(a.id, 1);
+    setLeaseRefCount(b.id, 1);
+    expect(preemptPlan("background", Number.POSITIVE_INFINITY)).toEqual([]);
+    const kq = await preempt("background", Number.POSITIVE_INFINITY);
+    expect(kq).toMatchObject({ planned: 0, freedBytes: 0, reclaimed: [], failed: [] });
+    expect(daDonModel).toEqual([]);
+    expect(daTatSidecar.n).toBe(0);
+  });
+
+  it("★★ (đính chính) `kb:sync` LẤY ĐƯỢC chỗ của hộ NHÀN RỖI — §5.2 quy tắc 2, không phải rank", async () => {
+    moNhanRoi("gguf:idle", KHOI_30B, { reclaimer: "gguf-idle-model" });
+    expect(preemptPlan("background", Number.POSITIVE_INFINITY).map((s) => s.owner)).toEqual(["gguf:idle"]);
+    expect((await preempt("background", Number.POSITIVE_INFINITY)).reclaimed).toEqual(["gguf:idle"]);
+  });
+
+  it("★★★ `production` vẫn KHÔNG BAO GIỜ nhường, kể cả cho một lượt `production` khác", () => {
+    moNhanRoi("prod:aoi", KHOI_30B, { priority: "production", reclaimer: "gguf-idle-model" });
+    expect(preemptPlan("background", Number.POSITIVE_INFINITY)).toEqual([]);
+    expect(preemptPlan("production", Number.POSITIVE_INFINITY)).toEqual([]);
+  });
+
+  it("★★★ MỞ RỘNG: sidecar thị giác NHÀN RỖI thu hồi được — nhưng ĐANG BAY thì KHÔNG", async () => {
+    const l = moNhanRoi("sidecar:vision", 7_825 * MIB, {
+      kind: "external-process", priority: "interactive", reclaimer: "vision-sidecar",
+    });
+    expect(nguoiThiHanhThuHoi({ ...l, refCount: 0 } as never)).toBe<VramReclaimerId>("vision-sidecar");
+
+    // ĐANG BAY (một request thị giác) ⇒ KHÔNG ai được giết nó
+    setLeaseRefCount(l.id, 1);
+    expect(preemptPlan("production", Number.POSITIVE_INFINITY)).toEqual([]);
+    expect((await preempt("production", Number.POSITIVE_INFINITY)).planned).toBe(0);
+    expect(daTatSidecar.n).toBe(0);
+
+    // NHÀN RỖI ⇒ thu hồi được (chính là việc hẹn giờ nhàn rỗi của module đó vẫn làm)
+    setLeaseRefCount(l.id, 0);
+    const kq = await preempt("production", Number.POSITIVE_INFINITY);
+    expect(kq.reclaimed).toEqual(["sidecar:vision"]);
+    expect(daTatSidecar.n).toBe(1);
+  });
+
+  /**
+   * ★★★ C-2 (review TOÀN NHÁNH) — CÂU TRẢ LỜI CỦA NGƯỜI THI HÀNH PHẢI ĐI LÊN NGUYÊN VẸN.
+   *
+   * Bản trước: `"vision-sidecar"` gọi `stopSidecar()` rồi `return true` **vô điều kiện** ⇒ một
+   * tiến trình mới nhận `SIGTERM` (chưa chết, sổ chưa nhả) vẫn được khai `reclaimed`, và
+   * `vramWiring` xin lại NGAY trên một sổ chưa đổi ⇒ TỪ CHỐI LẦN HAI **sau khi đã giết 7,8 GB**.
+   */
+  it("★★★ C-2: người thi hành khai CHƯA CHẾT ⇒ vào `failed`, KHÔNG vào `reclaimed`", async () => {
+    const l = moNhanRoi("sidecar:vision", 7_825 * MIB, {
+      kind: "external-process", priority: "interactive", reclaimer: "vision-sidecar",
+    });
+    setLeaseRefCount(l.id, 0);
+    daTatSidecar.ketQua = false;           // SIGTERM đã gửi, tiến trình CHƯA chết
+    const kq = await preempt("production", Number.POSITIVE_INFINITY);
+    expect(daTatSidecar.n).toBe(1);        // đã CỐ dọn …
+    expect(kq.reclaimed).toEqual([]);      // … nhưng KHÔNG được khai là xong
+    expect(kq.failed).toEqual(["sidecar:vision"]);
+    expect(kq.freedBytes).toBe(0);
+    // và sổ vẫn giữ đúng khối byte đó — đây là lý do người gọi KHÔNG được xin lại.
+    expect(snapshot().totalReservedBytes).toBe(7_825 * MIB);
+  });
+
+  it("★★ THỨ TỰ §5.2: mức THẤP trước, rồi NHÀN RỖI, rồi CŨ — y như `preemptCandidates()`", () => {
+    moNhanRoi("bg:cu", 1_000 * MIB, { priority: "background", reclaimer: "gguf-idle-model" });
+    moNhanRoi("it:idle", 2_000 * MIB, { reclaimer: "gguf-idle-model" });
+    const kh = preemptPlan("production", Number.POSITIVE_INFINITY);
+    expect(kh.map((s) => s.owner)).toEqual(["bg:cu", "it:idle"]);
+  });
+
+  it("★★ DỪNG KHI ĐỦ (không dọn sạch cả hệ) — theo BYTE và theo KHE, hai điều kiện RIÊNG", () => {
+    moNhanRoi("bg:a", 5_000 * MIB, { priority: "background", reclaimer: "gguf-idle-model" });
+    moNhanRoi("bg:b", 5_000 * MIB, { priority: "background", reclaimer: "gguf-idle-model" });
+    moNhanRoi("bg:c", 5_000 * MIB, { priority: "background", reclaimer: "gguf-idle-model" });
+    // cần 6.000 MiB ⇒ đúng HAI hộ, không phải ba
+    expect(preemptPlan("interactive", 6_000 * MIB).map((s) => s.owner)).toEqual(["bg:a", "bg:b"]);
+    // cần 0 byte nhưng THIẾU 1 KHE ⇒ vẫn phải nêu MỘT hộ (Đ4: hai thước, hai điều kiện dừng)
+    expect(preemptPlan("interactive", 0, 1).map((s) => s.owner)).toEqual(["bg:a"]);
+    expect(preemptPlan("interactive", 0, 0)).toEqual([]);
+  });
+
+  /**
+   * ★★★ I-2 (review TOÀN NHÁNH) — **KHÔNG DỌN THỪA Ở NHÁNH CHỈ-THIẾU-KHE.**
+   *
+   * Ca `:372` bên trên **MÙ** với lỗi này vì cả ba hộ trong nó đều là `gguf-model`. Hình dạng thật
+   * của sản xuất khác hẳn: `sidecar:vision` (7,8 GB, `external-process`) nhàn rỗi và CŨ HƠN ⇒ xếp
+   * TRƯỚC theo `xepThuTuNhuong` bước 3. Với `deficitBytes = 0` (byte còn thừa, chỉ hết KHE), vòng
+   * lặp cũ đẩy nó vào kế hoạch dù nó **không góp một khe nào** ⇒ giết 7,8 GB để giành một khe GGUF.
+   */
+  it("★★★ I-2: chỉ thiếu KHE ⇒ hộ KHÔNG góp khe (sidecar 7,8 GB) KHÔNG bị kéo vào kế hoạch", () => {
+    // CŨ HƠN + nhàn rỗi + `external-process` ⇒ đứng ĐẦU danh sách nhường, nhưng góp 0 KHE.
+    moNhanRoi("sidecar:vision", 7_825 * MIB, {
+      kind: "external-process", priority: "interactive", reclaimer: "vision-sidecar",
+    });
+    moNhanRoi("gguf:idle", KHOI_30B, { reclaimer: "gguf-idle-model" });
+
+    // thiếu ĐÚNG một KHE, không thiếu byte ⇒ chỉ hộ gguf-model mới giải quyết được
+    expect(preemptPlan("interactive", 0, 1).map((s) => s.owner)).toEqual(["gguf:idle"]);
+    // … và câu từ chối cũng không được HỨA rằng giết sidecar sẽ giúp
+    expect(preemptCandidates("interactive", 0, 1).map((h) => h.owner)).toEqual(["gguf:idle"]);
+
+    // ⚠ Chiều ngược lại KHÔNG đổi: khi thật sự thiếu BYTE thì MỌI hộ đều góp, sidecar vào trước.
+    expect(preemptPlan("interactive", 20_000 * MIB, 1).map((s) => s.owner)).toEqual([
+      "sidecar:vision", "gguf:idle",
+    ]);
+    // và khi không biết thiếu bao nhiêu (không hữu hạn) thì vẫn liệt kê TOÀN BỘ
+    expect(preemptPlan("interactive", Number.POSITIVE_INFINITY, 0).map((s) => s.owner)).toEqual([
+      "sidecar:vision", "gguf:idle",
+    ]);
+  });
+
+  it("★★★ `freedBytes` đo bằng SỔ, KHÔNG cộng theo lời khai của kế hoạch", async () => {
+    const l = moNhanRoi("gguf:idle", KHOI_30B, { reclaimer: "gguf-idle-model" });
+    // Người thi hành GIẢ trả `true` nhưng KHÔNG nhả sổ (đúng ca "sổ khai trống, card vẫn giữ").
+    donModelKetQua.value = true;
+    const kq = await preempt("interactive", Number.POSITIVE_INFINITY);
+    expect(kq.reclaimed).toEqual(["gguf:idle"]);
+    expect(kq.freedBytes).toBe(0);          // ← sổ chưa nhả ⇒ KHÔNG được khai đã giành lại 17.000 MiB
+    // và khi sổ THẬT SỰ nhả thì con số mới hiện ra
+    release(l);
+    expect(snapshot().totalReservedBytes).toBe(0);
+  });
+
+  it("★★★ người thi hành NÉM ⇒ KHÔNG ném ra ngoài, vào `failed`, và ĐỂ LẠI SỰ KIỆN", async () => {
+    moNhanRoi("gguf:idle", KHOI_30B, { reclaimer: "gguf-idle-model" });
+    donModelKetQua.value = "THROW";
+    const kq = await preempt("interactive", Number.POSITIVE_INFINITY);
+    expect(kq.failed).toEqual(["gguf:idle"]);
+    expect(kq.reclaimed).toEqual([]);
+    const loi = suKien.filter((e) => e.event === "preempt" && (e.detail as never as Record<string, unknown>)?.reason === "reclaimer-threw");
+    expect(loi.length).toBe(1);
+  });
+
+  it("★★ KHÔNG một giá trị KHÔNG HỮU HẠN nào rời khỏi `preempt()` vào ống dẫn sự kiện", async () => {
+    moNhanRoi("gguf:idle", KHOI_30B, { reclaimer: "gguf-idle-model" });
+    await preempt("interactive", Number.POSITIVE_INFINITY, 0);
+    expect(suKien.length).toBeGreaterThan(0);
+    const quet = (v: unknown, duong: string): string[] => {
+      if (typeof v === "number") return Number.isFinite(v) ? [] : [duong];
+      if (Array.isArray(v)) return v.flatMap((x, i) => quet(x, `${duong}[${i}]`));
+      if (v && typeof v === "object") {
+        return Object.entries(v as Record<string, unknown>).flatMap(([k, x]) => quet(x, `${duong}.${k}`));
+      }
+      return [];
+    };
+    expect(suKien.flatMap((e, i) => quet(e, `sk[${i}]`))).toEqual([]);
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+describe("C-bis. LƯỚI THEO ĐƯỜNG THOÁT — `beginVramAllocation()` là nơi lượt thu hồi THẬT SỰ chạy", () => {
+  /**
+   * ★★★ Bài học Task 5 (*"lưới phải đi theo ĐƯỜNG THOÁT, không theo FILE"*): ca ở nhóm C gọi
+   * `preempt()` TRỰC TIẾP, nên nó chứng minh **cơ chế**, KHÔNG chứng minh rằng cơ chế đó **được
+   * nối vào đường sản xuất**. Đường sản xuất là `beginVramAllocation()` — nơi `ensureCapacity()`
+   * cũ từng đứng ngay trước. Gỡ lượt thu hồi khỏi đó mà không có ca này thì lưới duy nhất còn lại
+   * nằm ở FILE KHÁC (`aiGgufEngine.test.ts`) — đúng hình dạng "vết thừa kế" mà Task 6 (B) đã bị bắt.
+   */
+  it("★★★ hết KHE + hộ NHÀN RỖI ⇒ `beginVramAllocation()` tự dọn rồi CẤP (không ném)", async () => {
+    process.env.GGUF_MAX_LOADED_MODELS = "1";
+    __resetVramCapsForTests();
+    const r = reserve(xin("gguf:cu", 1 * MIB, { reclaimer: "gguf-idle-model" }), ctx());
+    setLeaseRefCount(r.lease!.id, 0);
+    nhaSoTheoOwner.set("gguf:cu", () => release(r.lease!));
+    donModelKetQua.nhaSo = true;
+
+    const wiring = await import("./vramWiring");
+    const ve = await wiring.beginVramAllocation({
+      owner: "gguf:moi", kind: "gguf-model", priority: "interactive",
+      fileBytes: 1 * MIB, reclaimer: "gguf-idle-model",
+    });
+    expect(ve).toBeTruthy();
+    expect(daDonModel).toEqual(["cu"]);          // đã dọn ĐÚNG hộ nhàn rỗi
+    ve.release();
+  });
+
+  it("★★★ hết KHE + hộ ĐANG DÙNG ⇒ không dọn được ai ⇒ NÉM (KHÔNG còn 'cảnh báo rồi vẫn nạp')", async () => {
+    process.env.GGUF_MAX_LOADED_MODELS = "1";
+    __resetVramCapsForTests();
+    reserve(xin("gguf:ban", 1 * MIB, { reclaimer: "gguf-idle-model" }), ctx());  // refCount = 1
+    const { isVramRefusal } = await import("./vramRefusalSignal");
+    const wiring = await import("./vramWiring");
+    await expect(
+      wiring.beginVramAllocation({
+        owner: "gguf:moi", kind: "gguf-model", priority: "interactive",
+        fileBytes: 1 * MIB, reclaimer: "gguf-idle-model",
+      }),
+    ).rejects.toSatisfy((e: unknown) => isVramRefusal(e));
+    expect(daDonModel).toEqual([]);
+    expect(snapshot().totalReservedBytes).toBe(1 * MIB);   // lượt bị từ chối KHÔNG ghi byte nào
+  });
+
+  /**
+   * ★★★ ĐỘT BIẾN ĐÃ SỐNG SÓT MỘT LẦN, và đây là lưới vá nó: gỡ `reclaimer: "vision-sidecar"` khỏi
+   * điểm gọi SẢN XUẤT cho **538/538 XANH**, vì mọi ca khác tự dựng hộ sidecar bằng tay. Hộ 7,8 GB
+   * khi đó biến khỏi `preempt()` và khỏi "tổng nhường được" — IM LẶNG.
+   */
+  it("★★★ điểm gọi SẢN XUẤT của sidecar thị giác THẬT SỰ khai người thi hành", async () => {
+    const { visionSidecarVramRequest } = await import("../llamaVisionSidecar");
+    const yc = visionSidecarVramRequest();
+    expect(yc.owner).toBe("sidecar:vision");
+    expect(yc.kind).toBe("external-process");
+    expect(yc.reclaimer).toBe<VramReclaimerId>("vision-sidecar");
+    // và bằng chứng nhả PHẢI là lớp mạnh nhất — nếu ai hạ nó xuống "unverified" thì lời hứa
+    // "thu hồi được" mất chỗ dựa.
+    expect(yc.releaseProof).toBe("process-exit");
+  });
+
+  /**
+   * ★★★ C-1 (review TOÀN NHÁNH) — ĐỘT BIẾN THỨ HAI ĐÃ SỐNG SÓT, CÙNG LỚP, HỘ QUAN TRỌNG HƠN.
+   *
+   * Gỡ `reclaimer: "gguf-idle-model"` khỏi điểm gọi SẢN XUẤT của `loadGgufModel()` cho **0 ĐỎ/539**
+   * và `tsc` sạch, vì mọi ca chạm vị từ đều tự khai `reclaimer` BẰNG TAY (nhóm C và D bên dưới đều
+   * dựng hộ qua `xin(..., { reclaimer })`). `gguf-idle-model` là người thi hành DUY NHẤT chạy hằng
+   * ngày ⇒ mất nó là `preemptPlan()` rỗng vĩnh viễn và mọi lượt hết khe/hết byte thành TỪ CHỐI CỨNG.
+   *
+   * ⚠ Ca này đọc ĐÚNG object mà mã sản xuất gửi đi (`ggufModelVramRequest()`), KHÔNG tự khai lại —
+   * đó là toàn bộ khác biệt giữa "lưới theo FILE" và "lưới theo ĐƯỜNG THOÁT".
+   */
+  it("★★★ điểm gọi SẢN XUẤT của model GGUF THẬT SỰ khai người thi hành (cả hai đường)", async () => {
+    const { ggufModelVramRequest } = await import("../aiGgufEngine");
+    const yc = ggufModelVramRequest("qwen3-30b", "D:/models/qwen3-30b.gguf");
+    expect(yc.owner).toBe("gguf:qwen3-30b");
+    expect(yc.kind).toBe("gguf-model");
+    expect(yc.priority).toBe("interactive");
+    expect(yc.filePath).toBe("D:/models/qwen3-30b.gguf");
+    expect(yc.reclaimer).toBe<VramReclaimerId>("gguf-idle-model");
+
+    // … và lời khai đó PHẢI đi qua được vị từ dùng chung: một hộ dựng TỪ CHÍNH object này, khi nhàn
+    // rỗi, phải nằm trong kế hoạch thu hồi. Kiểm cả hai nấc để một `reclaimer` đúng-tên-sai-nghĩa
+    // (vd đổi thành một id chưa có người thi hành) cũng đỏ.
+    process.env.GGUF_MAX_LOADED_MODELS = "64";
+    __resetVramCapsForTests();
+    const r = reserve({ ...yc, estimatedBytes: KHOI_30B }, ctx());
+    setLeaseRefCount(r.lease!.id, 0);
+    expect(nguoiThiHanhThuHoi(r.lease!)).toBe<VramReclaimerId>("gguf-idle-model");
+    expect(preemptPlan("interactive", Number.POSITIVE_INFINITY).map((s) => s.owner)).toEqual([
+      "gguf:qwen3-30b",
+    ]);
+
+    // ⚠ ĐƯỜNG DỰ PHÒNG (`vramLoadOutcome` không nạp được) dùng CÙNG hàm này — khoá lại bằng MÁY để
+    // hai đường không trôi khỏi nhau (bản trước viết object hai lần, mỗi lần một chỗ).
+    const { join, dirname } = await import("node:path");
+    const { fileURLToPath } = await import("node:url");
+    const goc = join(dirname(fileURLToPath(import.meta.url)), "..", "..", "..");
+    const src = docMaNguon(join(goc, "server/services/aiGgufEngine.ts"));
+    const soLuotDung = src.match(/ggufModelVramRequest\(modelId, resolvedPath\)/g) ?? [];
+    expect(soLuotDung.length, "cả ĐƯỜNG CHÍNH lẫn ĐƯỜNG DỰ PHÒNG phải dùng hàm thuần").toBe(2);
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+describe("D. VỊ TỪ DÙNG CHUNG `coThiHanhThuHoi()` — mọi nơi tiêu thụ đọc CÙNG một câu trả lời", () => {
+  function dungSo() {
+    process.env.GGUF_MAX_LOADED_MODELS = "64";
+    __resetVramCapsForTests();
+    const ho: Array<[string, VramReserveRequest]> = [
+      ["gguf:idle", xin("gguf:idle", 6_000 * MIB, { reclaimer: "gguf-idle-model" })],
+      ["gguf:busy", xin("gguf:busy", 6_000 * MIB, { reclaimer: "gguf-idle-model" })],
+      ["gguf-reranker:bge", xin("gguf-reranker:bge", 600 * MIB)],
+      ["sidecar:vision", xin("sidecar:vision", 7_825 * MIB, {
+        kind: "external-process", priority: "background", reclaimer: "vision-sidecar",
+      })],
+      ["sidecar:local-trainer", xin("sidecar:local-trainer", 2_000 * MIB, {
+        kind: "external-process", priority: "background",
+      })],
+    ];
+    const ids: Record<string, string> = {};
+    for (const [ten, req] of ho) {
+      const r = reserve(req, ctx());
+      ids[ten] = r.lease!.id;
+      if (ten !== "gguf:busy") setLeaseRefCount(r.lease!.id, 0);
+    }
+    return ids;
+  }
+
+  it("★★★ nơi tiêu thụ 1 (`ledgerHolders`) và nơi tiêu thụ 2 (`preemptPlan`) KHỚP NHAU tuyệt đối", () => {
+    dungSo();
+    const soNoiRong = new Set(
+      ledgerHolders().filter((h) => h.reclaimable).map((h) => h.owner),
+    );
+    const keHoach = new Set(preemptPlan("production", Number.POSITIVE_INFINITY).map((s) => s.owner));
+    // Mọi hộ trong kế hoạch PHẢI được sổ khai là thu hồi được …
+    for (const o of keHoach) expect(soNoiRong.has(o), `${o} nằm trong kế hoạch mà sổ khai KHÔNG thu hồi được`).toBe(true);
+    // … và ngược lại, mọi hộ sổ khai thu hồi được mà `production` có quyền lấy PHẢI vào kế hoạch.
+    const coQuyen = new Set(preemptCandidates("production", Number.POSITIVE_INFINITY).map((h) => h.owner));
+    for (const o of soNoiRong) {
+      if (coQuyen.has(o)) expect(keHoach.has(o), `${o} sổ khai thu hồi được mà KHÔNG vào kế hoạch`).toBe(true);
+    }
+    expect([...keHoach].sort()).toEqual(["gguf:idle", "sidecar:vision"]);
+  });
+
+  it("★★★ nơi tiêu thụ 3 (câu từ chối) — `preemptableBytes` cộng ĐÚNG tập hộ thu hồi được", () => {
+    dungSo();
+    const r = reserve(xin("gguf:new", 30_000 * MIB, { priority: "production" }), ctx());
+    expect(r.lease).toBeNull();
+    const f = r.refusal!;
+    const thuHoiDuoc = f.preemptable.filter((h) => h.reclaimable);
+    expect(thuHoiDuoc.map((h) => h.owner).sort()).toEqual(["gguf:idle", "sidecar:vision"]);
+    expect(f.preemptableBytes).toBe(thuHoiDuoc.reduce((s, h) => s + h.bytes, 0));
+    // và hộ CÓ QUYỀN nhưng KHÔNG ai dọn được vẫn được GỌI TÊN, chỉ là không vào tổng
+    expect(f.preemptable.map((h) => h.owner)).toContain("sidecar:local-trainer");
+  });
+
+  it("★★★ HAI ĐIỀU KIỆN, cả hai đều CẦN: khai người thi hành **và** NHÀN RỖI", () => {
+    const ids = dungSo();
+    const tim = (o: string) => ledgerHolders().find((h) => h.owner === o)!;
+    expect(tim("gguf:idle").reclaimable).toBe(true);
+    expect(tim("gguf:busy").reclaimable).toBe(false);          // có người dọn nhưng ĐANG DÙNG
+    expect(tim("gguf-reranker:bge").reclaimable).toBe(false);  // nhàn rỗi nhưng KHÔNG ai dọn
+    // đảo trạng thái ⇒ câu trả lời đảo theo, ở CẢ hai nơi tiêu thụ
+    setLeaseRefCount(ids["gguf:busy"]!, 0);
+    expect(tim("gguf:busy").reclaimable).toBe(true);
+    expect(preemptPlan("production", Number.POSITIVE_INFINITY).map((s) => s.owner)).toContain("gguf:busy");
+  });
+
+  it("★★ vị từ trả TÊN NGƯỜI THI HÀNH (không phải boolean) ⇒ bản sao viết tay không lái được lượt thi hành", () => {
+    dungSo();
+    for (const s of preemptPlan("production", Number.POSITIVE_INFINITY)) {
+      // `reclaimer` là `VramReclaimerId` — chỉ `nguoiThiHanhThuHoi()` đẻ ra được giá trị này.
+      expect(["gguf-idle-model", "vision-sidecar"]).toContain(s.reclaimer);
+    }
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+describe("E. `AI_SESSION_CACHE_MAX` — MỘT người đọc cho CẢ HAI kho phiên ONNX", () => {
+  it("mặc định 5, và `ai/ocrService` + `aiInferenceEngine` đọc CÙNG một hàm", async () => {
+    expect(sessionCacheMax()).toBe(5);
+    process.env.AI_SESSION_CACHE_MAX = "3";
+    __resetVramCapsForTests();
+    expect(sessionCacheMax()).toBe(3);
+
+    const { join, dirname } = await import("node:path");
+    const { fileURLToPath } = await import("node:url");
+    const goc = join(dirname(fileURLToPath(import.meta.url)), "..", "..", "..");
+    for (const f of ["server/services/aiInferenceEngine.ts", "server/services/ai/ocrService.ts"]) {
+      const src = docMaNguon(join(goc, f));
+      expect(src, `${f} phải NHẬP trần từ vramCaps`).toMatch(/from "\.\.?\/(\.\.\/)?vram\/vramCaps"/);
+      // ⚠ Ca này canh SỰ HIỆN DIỆN của một người đọc duy nhất; hành vi "kho có trần" được canh
+      // bằng ca hành vi ở `ai/ocrService` (xem `donKhoPhienOcr`) và `aiInferenceEngine`.
+      expect(src).not.toMatch(/process\.env\.AI_SESSION_CACHE_MAX/);
+    }
+  });
+
+  it("★★ `recSessionCache` của ocrService KHÔNG còn là `Map` không giới hạn", async () => {
+    const { join, dirname } = await import("node:path");
+    const { fileURLToPath } = await import("node:url");
+    const goc = join(dirname(fileURLToPath(import.meta.url)), "..", "..", "..");
+    const src = docMaNguon(join(goc, "server/services/ai/ocrService.ts"));
+    // có một lượt dọn, và nó chạy trên đường ghi cache
+    expect(src).toMatch(/function donKhoPhienOcr\(\)/);
+    expect(src).toMatch(/recSessionCache\.set\(modelPath, session\);\s*\n[\s\S]{0,200}?donKhoPhienOcr\(\);/);
+  });
+});

@@ -24,6 +24,7 @@ import {
   RefreshCw
 } from "lucide-react";
 import { toast } from "sonner";
+import { toastTrpcError } from "@/lib/trpcErrors";
 import { formatDistanceToNow } from "date-fns";
 import { vi } from "date-fns/locale";
 
@@ -63,7 +64,7 @@ export function SessionManagement() {
       refetch();
     },
     onError: (error) => {
-      toast.error(error.message);
+      toastTrpcError(error);
     },
   });
 
@@ -74,7 +75,7 @@ export function SessionManagement() {
       refetch();
     },
     onError: (error) => {
-      toast.error(error.message);
+      toastTrpcError(error);
     },
   });
 

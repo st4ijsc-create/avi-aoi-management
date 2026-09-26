@@ -1,5 +1,6 @@
 import { useState, useRef, useCallback } from 'react';
 import { toast } from 'sonner';
+import { mapTrpcError } from "@/lib/trpcErrors";
 
 interface UndoDeleteOptions<T> {
   /** Thời gian chờ trước khi xóa thực sự (ms) */
@@ -79,7 +80,7 @@ export function useUndoDelete<T>(options: UndoDeleteOptions<T>) {
         toast.success(`Đã xóa ${itemType} "${itemName}"`);
       } catch (error) {
         toast.dismiss(toastId);
-        toast.error(`Lỗi khi xóa ${itemType}: ${error instanceof Error ? error.message : 'Unknown error'}`);
+        toast.error(`Lỗi khi xóa ${itemType}: ${mapTrpcError(error)}`);
       } finally {
         setPendingDeletes(prev => {
           const next = new Map(prev);
@@ -186,7 +187,7 @@ export function useSimpleUndoDelete<T>(
         await onDelete(item);
         toast.success(`Đã xóa ${itemType} "${itemName}"`);
       } catch (error) {
-        toast.error(`Lỗi khi xóa: ${error instanceof Error ? error.message : 'Unknown error'}`);
+        toast.error(`Lỗi khi xóa: ${mapTrpcError(error)}`);
       }
     }
   }, [onDelete, delay, itemType, getItemName]);

@@ -1,0 +1,15 @@
+' Hand-authored STRUCTURALLY-UNSAFE example for the linter golden corpus (doc 69 C4;
+' advisory-linter demo, not vendor-manual-verified -- Delta robot is still Tier B, see
+' ../README.md). Certification disclaimer + review process: see bare-transfer.meta.md.
+'
+' NEGATIVE example: the same transfer sequence as gated-transfer.drl, but with no
+' conditional anywhere in the file -- MOVJ/MOVL/DO run unconditionally every cycle.
+' Structurally ungated (motion + output with no upstream conditional) even though nothing
+' here names any hazard-domain vocabulary at all.
+SPEED 40
+MOVJ P1
+MOVL P2
+DO(1) = ON
+DELAY 300
+DO(1) = OFF
+MOVJ P0

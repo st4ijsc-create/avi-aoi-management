@@ -137,7 +137,10 @@ describe("per-machine scoped keys (api_keys + machineId, migration 0178)", () =>
 });
 
 describe("legacy shared plaintext key (backward compat, MACHINE_SHARED_KEY_ALLOWED)", () => {
-  it("is accepted by default (method=shared-key) — existing machines keep working", async () => {
+  it("is accepted khi ĐƯỢC KHAI BÁO (method=shared-key)", async () => {
+    // Trước 2026-08-22 ca này dựa vào mặc định ngầm `allow`. Nay đường yếu phải được
+    // bật RA MẶT — và test nói rõ mình đang thử cái gì thì tốt hơn là mượn mặc định.
+    process.env.MACHINE_SHARED_KEY_ALLOWED = "true";
     expect(sharedMachineKeyAllowed()).toBe(true);
     const auth = await authenticateMachine({ apiKey: SHARED_KEY, scope: "ingest:write" });
     expect(auth.method).toBe("shared-key");
@@ -163,10 +166,14 @@ describe("legacy shared plaintext key (backward compat, MACHINE_SHARED_KEY_ALLOW
 // ════════════════════════════════════════════════════════════════════════════
 
 describe("doc 51 P0 — weak-auth policy flags (tri-state)", () => {
-  it("defaults to `allow` for BOTH weak paths — an un-rotated fleet keeps running", () => {
-    expect(sharedMachineKeyPolicy()).toBe("allow");
-    expect(machineCodeOnlyPolicy()).toBe("allow");
-    expect(sharedMachineKeyAllowed()).toBe(true); // back-compat shim
+  it("★★★ defaults to `deny` for BOTH weak paths — fail-closed khi chưa ai khai gì", () => {
+    // 2026-08-22 (mig 0334): mặc định đổi `allow` → `deny`. Mặc định cũ mang tên
+    // "tương thích", nhưng trong xác thực nó nghĩa là: cài mới, không đọc tài liệu, thì
+    // cửa yếu MỞ SẴN — mà người không đọc tài liệu chính là người cần bảo vệ nhất.
+    // Tiền đề đã ĐO: 50 khoá mk_ riêng phủ đủ 42/42 máy, 0 máy thiếu khoá riêng.
+    expect(sharedMachineKeyPolicy()).toBe("deny");
+    expect(machineCodeOnlyPolicy()).toBe("deny");
+    expect(sharedMachineKeyAllowed()).toBe(false); // back-compat shim
   });
 
   it("parses the LEGACY boolean vocabulary with its ORIGINAL meaning (no weakening)", () => {
@@ -187,7 +194,10 @@ describe("doc 51 P0 — weak-auth policy flags (tri-state)", () => {
 
   it("falls back to the default on a garbage value (a typo must not kill a line)", () => {
     process.env.MACHINE_SHARED_KEY_ALLOWED = "fasle"; // typo
-    expect(sharedMachineKeyPolicy()).toBe("allow"); // == unset, never more permissive
+    // Ý ĐỊNH của ca này không đổi: gõ sai phải hành xử NHƯ CHƯA ĐẶT, và không bao giờ
+    // NỚI hơn mặc định. Nay mặc định là `deny`, nên tính chất đó còn mạnh hơn trước:
+    // một ký tự thừa không thể vô tình mở cửa yếu.
+    expect(sharedMachineKeyPolicy()).toBe("deny"); // == unset, never more permissive
   });
 });
 
@@ -233,7 +243,8 @@ describe("doc 51 P0 — shared plaintext key: deny / read-only gating", () => {
 });
 
 describe("doc 51 P0 — machineCode-only (no secret): deny / read-only gating", () => {
-  it("policy=allow (default) → still accepted, so nothing breaks on upgrade", async () => {
+  it("policy=allow (khai báo tường minh) → vẫn chấp nhận", async () => {
+    process.env.MACHINE_CODE_ONLY_ALLOWED = "true";
     const auth = await authenticateMachine({ machineCode: MACHINE_CODE, scope: "ingest:write" });
     expect(auth.method).toBe("machine-code");
     expect(auth.machine.id).toBe(machineId);
@@ -263,13 +274,24 @@ describe("doc 51 P0 — machineCode-only (no secret): deny / read-only gating", 
   });
 
   it("the two flags are INDEPENDENT — denying machineCode does not deny the shared key", async () => {
+    // Tính ĐỘC LẬP là thứ ca này canh — nên phải đặt CẢ HAI cờ tường minh, không thì nó
+    // đang đo mặc định chứ không đo tính độc lập.
     process.env.MACHINE_CODE_ONLY_ALLOWED = "false";
+    process.env.MACHINE_SHARED_KEY_ALLOWED = "true";
     const ok = await authenticateMachine({ apiKey: SHARED_KEY, scope: "ingest:write" });
     expect(ok.method).toBe("shared-key");
   });
 });
 
 describe("doc 51 P0 — warn-then-deny telemetry (the flip prerequisite)", () => {
+  // Khối này đo TELEMETRY của một lượt yếu ĐƯỢC PHÉP — nó không nói gì về chính sách.
+  // Từ 2026-08-22 mặc định là `deny`, nên phải bật đường yếu ra mặt ở đây; nếu không,
+  // mọi ca dưới sẽ đo một lượt BỊ TỪ CHỐI và "xanh vì lý do sai".
+  beforeEach(() => {
+    process.env.MACHINE_SHARED_KEY_ALLOWED = "true";
+    process.env.MACHINE_CODE_ONLY_ALLOWED = "true";
+  });
+
   it("records machineId + method + endpoint on an ALLOWED weak use", async () => {
     await authenticateMachine({ apiKey: SHARED_KEY, scope: "ingest:write", endpoint: "submitInspection" });
     const rows = getWeakAuthUsage();

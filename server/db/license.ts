@@ -2,6 +2,7 @@
  * Database queries for License Management
  */
 import { getDb } from "./connection";
+import { DbUnavailableError } from "../_core/dbErrors";
 import { eq, and, desc, sql, inArray } from "drizzle-orm";
 import {
   licenses,
@@ -22,7 +23,7 @@ import {
 
 export async function createLicense(data: InsertLicense) {
   const db = await getDb();
-  if (!db) throw new Error("Database not connected");
+  if (!db) throw new DbUnavailableError();
 
   const [result] = await db.insert(licenses).values(data).returning();
   return result;
@@ -30,7 +31,7 @@ export async function createLicense(data: InsertLicense) {
 
 export async function getLicenseByKey(licenseKey: string) {
   const db = await getDb();
-  if (!db) throw new Error("Database not connected");
+  if (!db) throw new DbUnavailableError();
 
   const [result] = await db.select().from(licenses).where(eq(licenses.licenseKey, licenseKey)).limit(1);
   return result ?? null;
@@ -38,7 +39,7 @@ export async function getLicenseByKey(licenseKey: string) {
 
 export async function getLicenseById(id: number) {
   const db = await getDb();
-  if (!db) throw new Error("Database not connected");
+  if (!db) throw new DbUnavailableError();
 
   const [result] = await db.select().from(licenses).where(eq(licenses.id, id)).limit(1);
   return result ?? null;
@@ -51,7 +52,7 @@ export async function getAllLicenses(params?: {
   offset?: number;
 }) {
   const db = await getDb();
-  if (!db) throw new Error("Database not connected");
+  if (!db) throw new DbUnavailableError();
 
   const conditions: any[] = [];
   if (params?.status) conditions.push(eq(licenses.status, params.status as any));
@@ -77,7 +78,7 @@ export async function getAllLicenses(params?: {
 
 export async function updateLicense(id: number, data: Partial<InsertLicense>) {
   const db = await getDb();
-  if (!db) throw new Error("Database not connected");
+  if (!db) throw new DbUnavailableError();
 
   const [result] = await db.update(licenses)
     .set({ ...data, updatedAt: new Date() })
@@ -88,7 +89,7 @@ export async function updateLicense(id: number, data: Partial<InsertLicense>) {
 
 export async function updateLicenseByKey(licenseKey: string, data: Partial<InsertLicense>) {
   const db = await getDb();
-  if (!db) throw new Error("Database not connected");
+  if (!db) throw new DbUnavailableError();
 
   const [result] = await db.update(licenses)
     .set({ ...data, updatedAt: new Date() })
@@ -99,7 +100,7 @@ export async function updateLicenseByKey(licenseKey: string, data: Partial<Inser
 
 export async function deleteLicense(id: number) {
   const db = await getDb();
-  if (!db) throw new Error("Database not connected");
+  if (!db) throw new DbUnavailableError();
 
   await db.delete(licenses).where(eq(licenses.id, id));
 }
@@ -110,7 +111,7 @@ export async function deleteLicense(id: number) {
 
 export async function createLicenseActivation(data: InsertLicenseActivation) {
   const db = await getDb();
-  if (!db) throw new Error("Database not connected");
+  if (!db) throw new DbUnavailableError();
 
   const [result] = await db.insert(licenseActivations).values(data).returning();
   return result;
@@ -118,7 +119,7 @@ export async function createLicenseActivation(data: InsertLicenseActivation) {
 
 export async function getActivationsByLicenseKey(licenseKey: string) {
   const db = await getDb();
-  if (!db) throw new Error("Database not connected");
+  if (!db) throw new DbUnavailableError();
 
   return db.select().from(licenseActivations)
     .where(eq(licenseActivations.licenseKey, licenseKey))
@@ -127,7 +128,7 @@ export async function getActivationsByLicenseKey(licenseKey: string) {
 
 export async function getActivationByFingerprint(licenseKey: string, fingerprint: string) {
   const db = await getDb();
-  if (!db) throw new Error("Database not connected");
+  if (!db) throw new DbUnavailableError();
 
   const [result] = await db.select().from(licenseActivations)
     .where(and(
@@ -141,7 +142,7 @@ export async function getActivationByFingerprint(licenseKey: string, fingerprint
 
 export async function getActiveActivationCount(licenseKey: string) {
   const db = await getDb();
-  if (!db) throw new Error("Database not connected");
+  if (!db) throw new DbUnavailableError();
 
   const [result] = await db.select({ count: sql<number>`count(*)` })
     .from(licenseActivations)
@@ -155,7 +156,7 @@ export async function getActiveActivationCount(licenseKey: string) {
 
 export async function updateActivationLastSeen(id: number) {
   const db = await getDb();
-  if (!db) throw new Error("Database not connected");
+  if (!db) throw new DbUnavailableError();
 
   await db.update(licenseActivations)
     .set({ lastSeenAt: new Date() })
@@ -164,7 +165,7 @@ export async function updateActivationLastSeen(id: number) {
 
 export async function deactivateActivation(id: number) {
   const db = await getDb();
-  if (!db) throw new Error("Database not connected");
+  if (!db) throw new DbUnavailableError();
 
   await db.update(licenseActivations)
     .set({ isActive: false, deactivatedAt: new Date() })
@@ -173,7 +174,7 @@ export async function deactivateActivation(id: number) {
 
 export async function deactivateAllActivations(licenseKey: string) {
   const db = await getDb();
-  if (!db) throw new Error("Database not connected");
+  if (!db) throw new DbUnavailableError();
 
   await db.update(licenseActivations)
     .set({ isActive: false, deactivatedAt: new Date() })
@@ -186,7 +187,7 @@ export async function deactivateAllActivations(licenseKey: string) {
 
 export async function createSyncLog(data: InsertLicenseSyncLog) {
   const db = await getDb();
-  if (!db) throw new Error("Database not connected");
+  if (!db) throw new DbUnavailableError();
 
   const [result] = await db.insert(licenseSyncLogs).values(data).returning();
   return result;
@@ -194,7 +195,7 @@ export async function createSyncLog(data: InsertLicenseSyncLog) {
 
 export async function getSyncLogs(licenseKey: string, limit = 50) {
   const db = await getDb();
-  if (!db) throw new Error("Database not connected");
+  if (!db) throw new DbUnavailableError();
 
   return db.select().from(licenseSyncLogs)
     .where(eq(licenseSyncLogs.licenseKey, licenseKey))
@@ -208,7 +209,7 @@ export async function getSyncLogs(licenseKey: string, limit = 50) {
 
 export async function revokeLicense(data: InsertLicenseRevocation) {
   const db = await getDb();
-  if (!db) throw new Error("Database not connected");
+  if (!db) throw new DbUnavailableError();
 
   // Upsert revocation
   const [result] = await db.insert(licenseRevocations)
@@ -236,7 +237,7 @@ export async function revokeLicense(data: InsertLicenseRevocation) {
 
 export async function unrevokeLicense(licenseKey: string) {
   const db = await getDb();
-  if (!db) throw new Error("Database not connected");
+  if (!db) throw new DbUnavailableError();
 
   await db.delete(licenseRevocations).where(eq(licenseRevocations.licenseKey, licenseKey));
   await db.update(licenses)
@@ -246,7 +247,7 @@ export async function unrevokeLicense(licenseKey: string) {
 
 export async function getRevokedKeys() {
   const db = await getDb();
-  if (!db) throw new Error("Database not connected");
+  if (!db) throw new DbUnavailableError();
 
   const rows = await db.select({ licenseKey: licenseRevocations.licenseKey })
     .from(licenseRevocations);
@@ -255,7 +256,7 @@ export async function getRevokedKeys() {
 
 export async function isLicenseRevoked(licenseKey: string) {
   const db = await getDb();
-  if (!db) throw new Error("Database not connected");
+  if (!db) throw new DbUnavailableError();
 
   const [result] = await db.select().from(licenseRevocations)
     .where(eq(licenseRevocations.licenseKey, licenseKey))
@@ -269,7 +270,7 @@ export async function isLicenseRevoked(licenseKey: string) {
 
 export async function createLicenseModule(data: InsertLicenseModule) {
   const db = await getDb();
-  if (!db) throw new Error("Database not connected");
+  if (!db) throw new DbUnavailableError();
 
   const [result] = await db.insert(licenseModules).values(data).returning();
   return result;
@@ -277,14 +278,14 @@ export async function createLicenseModule(data: InsertLicenseModule) {
 
 export async function getAllLicenseModules() {
   const db = await getDb();
-  if (!db) throw new Error("Database not connected");
+  if (!db) throw new DbUnavailableError();
 
   return db.select().from(licenseModules).orderBy(licenseModules.moduleCode);
 }
 
 export async function updateLicenseModule(id: number, data: Partial<InsertLicenseModule>) {
   const db = await getDb();
-  if (!db) throw new Error("Database not connected");
+  if (!db) throw new DbUnavailableError();
 
   const [result] = await db.update(licenseModules)
     .set(data)
@@ -295,7 +296,7 @@ export async function updateLicenseModule(id: number, data: Partial<InsertLicens
 
 export async function deleteLicenseModule(id: number) {
   const db = await getDb();
-  if (!db) throw new Error("Database not connected");
+  if (!db) throw new DbUnavailableError();
 
   await db.delete(licenseModules).where(eq(licenseModules.id, id));
 }
@@ -306,7 +307,7 @@ export async function deleteLicenseModule(id: number) {
 
 export async function getLicenseStats() {
   const db = await getDb();
-  if (!db) throw new Error("Database not connected");
+  if (!db) throw new DbUnavailableError();
 
   const [total] = await db.select({ count: sql<number>`count(*)` }).from(licenses);
   const [active] = await db.select({ count: sql<number>`count(*)` }).from(licenses).where(eq(licenses.status, 'active'));

@@ -1,0 +1,16 @@
+{
+  "name": "react-pg-demo",
+  "version": "0.1.0",
+  "type": "module",
+  "private": true,
+  "description": "Dự án THỬ react + Express + PostgreSQL để kiểm chứng AI local code được web.",
+  "scripts": {
+    "test": "node --test test/*.test.mjs",
+    "setup-db": "node setup-db.mjs",
+    "start": "node src/server.mjs"
+  },
+  "dependencies": {
+    "express": "^4.21.2",
+    "pg": "^8.13.1"
+  }
+}

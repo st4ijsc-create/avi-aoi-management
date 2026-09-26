@@ -4,8 +4,11 @@ import { useAuth } from "@/_core/hooks/useAuth";
 import DashboardLayout from "@/components/DashboardLayout";
 import { PageHeader, chartGridProps, chartAxisProps, chartTooltipStyle, chartTooltipLabelStyle } from "@/components/patterns";
 import { EmptyState } from "@/components/EmptyState";
+import { ScopeEmptyNotice } from "@/components/ScopeEmptyNotice";
+import { scopeEmptyReasonOf } from "@/lib/scopeEmpty";
 import { Skeleton } from "@/components/ui/skeleton";
 import { trpc } from "@/lib/trpc";
+import { finalYield } from "@shared/kpiYield";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -124,6 +127,13 @@ export function ReportsContent() {
     endDate: reportWindow.endDate,
     limit: 10,
   });
+  /**
+   * ★ 2026-08-17 — Lý do rỗng của CẢ TRANG báo cáo, gom một lần.
+   * "getTopBottomMachines" là truy vấn duy nhất trên màn này mang nhãn phạm vi; các bảng/biểu
+   * đồ khác ("corporateFactoryStats.*", "getDailyStats") lấy lý do từ đây (nhóm b).
+   */
+  const scopeEmptyReason = scopeEmptyReasonOf(topBottomMachines);
+
   // Per-factory yield rollup (final yield, decision #4) for the factory tab.
   const { data: factoryYield } = trpc.corporateFactoryStats.yieldRateByFactory.useQuery({
     startDate: reportWindow.startDate,
@@ -158,7 +168,7 @@ export function ReportsContent() {
     const ok = stats.reduce((sum: number, d: DailyStat) => sum + d.okCount, 0);
     const ng = stats.reduce((sum: number, d: DailyStat) => sum + d.ngCount, 0);
     const ntf = stats.reduce((sum: number, d: DailyStat) => sum + d.ntfCount, 0);
-    const yieldRate = total > 0 ? ((ok + ntf) / total) * 100 : 0;
+    const yieldRate = total > 0 ? finalYield({ ok, ntf, total }) : 0;
 
     // Calculate trend (compare last 7 days vs previous 7 days)
     const recentDays = stats.slice(0, 7);
@@ -167,14 +177,14 @@ export function ReportsContent() {
     const recentYield = recentDays.length > 0 
       ? recentDays.reduce((sum: number, d: DailyStat) => {
           const dayTotal = d.totalProducts;
-          return sum + (dayTotal > 0 ? ((d.okCount + d.ntfCount) / dayTotal) * 100 : 0);
+          return sum + (dayTotal > 0 ? finalYield({ ok: d.okCount, ntf: d.ntfCount, total: dayTotal }) : 0);
         }, 0) / recentDays.length
       : 0;
     
     const previousYield = previousDays.length > 0
       ? previousDays.reduce((sum: number, d: DailyStat) => {
           const dayTotal = d.totalProducts;
-          return sum + (dayTotal > 0 ? ((d.okCount + d.ntfCount) / dayTotal) * 100 : 0);
+          return sum + (dayTotal > 0 ? finalYield({ ok: d.okCount, ntf: d.ntfCount, total: dayTotal }) : 0);
         }, 0) / previousDays.length
       : 0;
 
@@ -200,7 +210,7 @@ export function ReportsContent() {
       .reverse()
       .map((d: DailyStat) => {
         const total = d.totalProducts;
-        const yieldRate = total > 0 ? ((d.okCount + d.ntfCount) / total) * 100 : 0;
+        const yieldRate = total > 0 ? finalYield({ ok: d.okCount, ntf: d.ntfCount, total }) : 0;
         return {
           date: new Date(d.date).toLocaleDateString("vi-VN", { day: "2-digit", month: "2-digit" }),
           fullDate: d.date,
@@ -478,6 +488,12 @@ export function ReportsContent() {
         title={t('reports.title')}
         description={t('reports.subtitle', 'Quality yield, defect trends and cost-of-poor-quality analytics')}
       />
+      {/*
+        ⚠ 2026-08-17 — LÝ DO CỦA MỘT BÁO CÁO TOÀN SỐ 0. Với tài khoản CHƯA ĐƯỢC GÁN NHÀ MÁY, so
+        sánh máy / xu hướng / pareto đều trống một cách hợp lệ; không nói ra thì người đọc hiểu
+        thành "nhà máy không sản xuất gì". `getTopBottomMachines` mang `scopeEmptyReason`.
+      */}
+      <ScopeEmptyNotice reason={scopeEmptyReason} className="mt-4" />
       {/* Filters */}
       <div className="flex flex-wrap items-center gap-4 mb-6 mt-4">
         <div className="flex items-center gap-2">
@@ -725,7 +741,7 @@ export function ReportsContent() {
             </CardHeader>
             <CardContent>
               {machineComparisonData.length === 0 ? (
-                <EmptyState variant="no-analytics" compact title={t('reports.machineStatsEmpty', 'Per-machine statistics are not available yet.')} />
+                <EmptyState scopeEmptyReason={scopeEmptyReason} variant="no-analytics" compact title={t('reports.machineStatsEmpty', 'Per-machine statistics are not available yet.')} />
               ) : (
               <Table>
                 <TableHeader>
@@ -996,7 +1012,7 @@ export function ReportsContent() {
             </CardHeader>
             <CardContent>
               {machineComparisonData.length === 0 ? (
-                <EmptyState variant="no-analytics" title={t('reports.machineStatsEmpty', 'Per-machine statistics are not available yet.')} />
+                <EmptyState scopeEmptyReason={scopeEmptyReason} variant="no-analytics" title={t('reports.machineStatsEmpty', 'Per-machine statistics are not available yet.')} />
               ) : (
               <div className="h-[400px]">
                 <ResponsiveContainer width="100%" height="100%">
@@ -1031,7 +1047,7 @@ export function ReportsContent() {
             </CardHeader>
             <CardContent>
               {machineComparisonData.length === 0 ? (
-                <EmptyState variant="no-analytics" compact title={t('reports.machineStatsEmpty', 'Per-machine statistics are not available yet.')} />
+                <EmptyState scopeEmptyReason={scopeEmptyReason} variant="no-analytics" compact title={t('reports.machineStatsEmpty', 'Per-machine statistics are not available yet.')} />
               ) : (
               <Table>
                 <TableHeader>
@@ -1082,7 +1098,7 @@ export function ReportsContent() {
             </CardHeader>
             <CardContent>
               {factoryComparisonData.length === 0 ? (
-                <EmptyState variant="no-analytics" title={t('reports.factoryStatsEmpty', 'Per-factory statistics are not available yet.')} />
+                <EmptyState scopeEmptyReason={scopeEmptyReason} variant="no-analytics" title={t('reports.factoryStatsEmpty', 'Per-factory statistics are not available yet.')} />
               ) : (
               <div className="h-[300px]">
                 <ResponsiveContainer width="100%" height="100%">
@@ -1249,8 +1265,8 @@ export function ReportsContent() {
                           contentStyle={chartTooltipStyle}
                           labelStyle={chartTooltipLabelStyle}
                           formatter={(value: any, name: string) => {
-                            if (name === 'copqNG') return [`${Number(value).toLocaleString()} đ`, 'COPQ (NG)'];
-                            if (name === 'copqNTF') return [`${Number(value).toLocaleString()} đ`, 'COPQ (NTF)'];
+                            if (name === 'copqNG') return [t("reports.tienDong", { value: Number(value).toLocaleString() }), "COPQ (NG)"];
+                            if (name === 'copqNTF') return [t("reports.tienDong", { value: Number(value).toLocaleString() }), "COPQ (NTF)"];
                             if (name === 'defectRate') return [`${Number(value).toFixed(2)}%`, t('reports.ngRateShort', 'Tỷ lệ NG')];
                             return [value, name];
                           }}
@@ -1299,6 +1315,7 @@ export function ReportsContent() {
                 );
               })() : (
                 <EmptyState
+                  scopeEmptyReason={scopeEmptyReason}
                   variant="no-data"
                   title={t('reports.copqEmpty', 'Không có dữ liệu COPQ cho khoảng thời gian đã chọn')}
                 />

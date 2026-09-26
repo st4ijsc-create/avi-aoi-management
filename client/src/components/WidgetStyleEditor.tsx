@@ -25,7 +25,7 @@ import { toast } from 'sonner';
 // Preset color themes
 export const WIDGET_COLOR_THEMES = {
   default: {
-    name: 'Mặc định',
+    name: 'widgetTheme.macDinh',
     background: 'hsl(var(--card))',
     border: 'hsl(var(--border))',
     headerBg: 'transparent',
@@ -33,7 +33,7 @@ export const WIDGET_COLOR_THEMES = {
     accentColor: 'hsl(var(--primary))',
   },
   ocean: {
-    name: 'Đại dương',
+    name: 'widgetTheme.daiDuong',
     background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
     border: '#667eea',
     headerBg: 'rgba(255,255,255,0.1)',
@@ -41,7 +41,7 @@ export const WIDGET_COLOR_THEMES = {
     accentColor: '#a5b4fc',
   },
   sunset: {
-    name: 'Hoàng hôn',
+    name: 'widgetTheme.hoangHon',
     background: 'linear-gradient(135deg, #f093fb 0%, #f5576c 100%)',
     border: '#f5576c',
     headerBg: 'rgba(255,255,255,0.1)',
@@ -49,7 +49,7 @@ export const WIDGET_COLOR_THEMES = {
     accentColor: '#fda4af',
   },
   forest: {
-    name: 'Rừng xanh',
+    name: 'widgetTheme.rungXanh',
     background: 'linear-gradient(135deg, #11998e 0%, #38ef7d 100%)',
     border: '#11998e',
     headerBg: 'rgba(255,255,255,0.1)',
@@ -57,7 +57,7 @@ export const WIDGET_COLOR_THEMES = {
     accentColor: '#86efac',
   },
   midnight: {
-    name: 'Nửa đêm',
+    name: 'widgetTheme.nuaDem',
     background: 'linear-gradient(135deg, #232526 0%, #414345 100%)',
     border: '#414345',
     headerBg: 'rgba(255,255,255,0.05)',
@@ -65,7 +65,7 @@ export const WIDGET_COLOR_THEMES = {
     accentColor: '#9ca3af',
   },
   coral: {
-    name: 'San hô',
+    name: 'widgetTheme.sanHo',
     background: 'linear-gradient(135deg, #ff9a9e 0%, #fecfef 100%)',
     border: '#ff9a9e',
     headerBg: 'rgba(0,0,0,0.05)',
@@ -73,7 +73,7 @@ export const WIDGET_COLOR_THEMES = {
     accentColor: '#fb7185',
   },
   aurora: {
-    name: 'Cực quang',
+    name: 'widgetTheme.cucQuang',
     background: 'linear-gradient(135deg, #a8edea 0%, #fed6e3 100%)',
     border: '#a8edea',
     headerBg: 'rgba(0,0,0,0.05)',
@@ -81,7 +81,7 @@ export const WIDGET_COLOR_THEMES = {
     accentColor: '#5eead4',
   },
   steel: {
-    name: 'Thép',
+    name: 'widgetTheme.thep',
     background: 'linear-gradient(135deg, #bdc3c7 0%, #2c3e50 100%)',
     border: '#2c3e50',
     headerBg: 'rgba(255,255,255,0.1)',
@@ -259,7 +259,7 @@ export function WidgetStyleEditor({
                           className="text-xs font-medium"
                           style={{ color: theme.headerText }}
                         >
-                          {theme.name}
+                          {t(theme.name)}
                         </span>
                         {style.theme === key && (
                           <Check className="absolute top-1 right-1 h-4 w-4 text-primary" />

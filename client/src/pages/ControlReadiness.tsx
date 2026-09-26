@@ -18,6 +18,7 @@ import type { AppRouter } from "../../../server/routers";
 import { trpc } from "@/lib/trpc";
 import DashboardLayout from "@/components/DashboardLayout";
 import { ViewOnlyBadge } from "@/components/PermissionGate";
+import { mapTrpcError } from "@/lib/trpcErrors";
 import {
   PageHeader,
   PageContainer,
@@ -52,20 +53,20 @@ type ReadinessGroup = ReadinessItem["group"];
 // ── state → đèn (tone + nhãn) ─────────────────────────────────────────────────
 
 const STATE_MAP: Record<ReadinessState, StatusMapEntry> = {
-  armed: { tone: "success", label: "Đang thật" },
+  armed: { tone: "success", label: "ctrlReady.stateArmed" },
   dormant: { tone: "default", label: "Dormant" },
   bypass: { tone: "warning", label: "Bypass" },
-  warn: { tone: "error", label: "Cảnh báo" },
+  warn: { tone: "error", label: "ctrlReady.stateWarn" },
 };
 
 // ── nhóm hiển thị (thứ tự + nhãn + icon) ──────────────────────────────────────
 
 const GROUPS: { key: ReadinessGroup; label: string; icon: ReactNode }[] = [
-  { key: "connectivity", label: "Kết nối", icon: <Plug className="h-4 w-4" /> },
-  { key: "control", label: "Điều khiển", icon: <SlidersHorizontal className="h-4 w-4" /> },
-  { key: "verification", label: "Xác minh", icon: <BadgeCheck className="h-4 w-4" /> },
-  { key: "safety", label: "An toàn", icon: <Siren className="h-4 w-4" /> },
-  { key: "security", label: "Bảo mật", icon: <Lock className="h-4 w-4" /> },
+  { key: "connectivity", label: "ctrlReady.ketNoi", icon: <Plug className="h-4 w-4" /> },
+  { key: "control", label: "ctrlReady.dieuKhien", icon: <SlidersHorizontal className="h-4 w-4" /> },
+  { key: "verification", label: "ctrlReady.xacMinh", icon: <BadgeCheck className="h-4 w-4" /> },
+  { key: "safety", label: "ctrlReady.anToan", icon: <Siren className="h-4 w-4" /> },
+  { key: "security", label: "ctrlReady.baoMat", icon: <Lock className="h-4 w-4" /> },
   { key: "observability", label: "Observability", icon: <Activity className="h-4 w-4" /> },
 ];
 
@@ -160,7 +161,7 @@ export default function ControlReadiness() {
           <Alert variant="destructive">
             <AlertTriangle className="h-4 w-4" />
             <AlertDescription>
-              {query.error?.message ??
+              {(query.error ? mapTrpcError(query.error) : null) ??
                 t("controlReadiness.loadError", "Không tải được ma trận readiness.")}
             </AlertDescription>
           </Alert>
@@ -186,7 +187,7 @@ export default function ControlReadiness() {
             <SectionCard
               key={g.key}
               icon={g.icon}
-              title={g.label}
+              title={t(g.label)}
               description={
                 query.isLoading
                   ? t("common.loading", "Đang tải…")

@@ -1,0 +1,896 @@
+{
+  "schemaVersion": 1,
+  "label": "roster-A",
+  "startedAt": "2026-07-31T22:16:07.475Z",
+  "hardware": {
+    "platform": "win32 10.0.26200",
+    "nodeVersion": "v24.18.0",
+    "cpu": "12th Gen Intel(R) Core(TM) i9-12900K",
+    "cpuCores": 24,
+    "totalMemGb": 63.8,
+    "gpuName": "NVIDIA GeForce RTX 5090",
+    "vramTotalMib": 32607,
+    "vramUsedBaselineMib": 1122
+  },
+  "engine": {
+    "nodeLlamaCppVersion": "3.19.0",
+    "gpuMode": "auto (CUDA/Vulkan)"
+  },
+  "config": {
+    "warmup": 1,
+    "iters": 3,
+    "maxTokens": 256,
+    "prefillTargetTokens": [
+      128,
+      1024
+    ],
+    "ctxOverride": null,
+    "gpu": true,
+    "modelsDir": "D:\\SOURCES\\16.AI"
+  },
+  "models": [
+    {
+      "logical": "deep",
+      "type": "text",
+      "fim": false,
+      "file": "Qwen3-Coder-30B-A3B-Instruct-UD-Q4_K_XL.gguf",
+      "modelId": "Qwen3-Coder-30B-A3B-Instruct-UD-Q4_K_XL",
+      "env": "GGUF_DEFAULT_MODEL",
+      "present": true,
+      "sizeBytes": 17665334432,
+      "sizeGb": 16.5,
+      "loadTimeMs": 8852.5,
+      "engineVram": {
+        "totalMib": 32606.6,
+        "usedMib": 18288.6,
+        "freeMib": 14318
+      },
+      "contextSize": 1792,
+      "results": [
+        {
+          "prefillTargetTokens": 128,
+          "promptTokens": 153,
+          "contextSize": 1792,
+          "prefillTokPerSec": {
+            "n": 3,
+            "mean": 3669.7,
+            "median": 3683,
+            "min": 3501.1,
+            "max": 3825
+          },
+          "decodeTokPerSec": {
+            "n": 3,
+            "mean": 230.2,
+            "median": 227.2,
+            "min": 210.4,
+            "max": 252.9
+          },
+          "ttftMs": {
+            "n": 3,
+            "mean": 41.7,
+            "median": 41.5,
+            "min": 40,
+            "max": 43.7
+          },
+          "totalMs": {
+            "n": 3,
+            "mean": 1160.4,
+            "median": 1170.3,
+            "min": 1054,
+            "max": 1257
+          },
+          "genTokens": {
+            "n": 3,
+            "mean": 256,
+            "median": 256,
+            "min": 256,
+            "max": 256
+          },
+          "rawIters": [
+            {
+              "ttftMs": 43.7,
+              "totalMs": 1170.3,
+              "decodeMs": 1126.6,
+              "genTokens": 256,
+              "prefillTokPerSec": 3501.1,
+              "decodeTokPerSec": 227.2
+            },
+            {
+              "ttftMs": 40,
+              "totalMs": 1257,
+              "decodeMs": 1217,
+              "genTokens": 256,
+              "prefillTokPerSec": 3825,
+              "decodeTokPerSec": 210.4
+            },
+            {
+              "ttftMs": 41.5,
+              "totalMs": 1054,
+              "decodeMs": 1012.4,
+              "genTokens": 256,
+              "prefillTokPerSec": 3683,
+              "decodeTokPerSec": 252.9
+            }
+          ]
+        },
+        {
+          "prefillTargetTokens": 1024,
+          "promptTokens": 1046,
+          "contextSize": 1792,
+          "prefillTokPerSec": {
+            "n": 3,
+            "mean": 8279.5,
+            "median": 8300.4,
+            "min": 8211.1,
+            "max": 8327
+          },
+          "decodeTokPerSec": {
+            "n": 3,
+            "mean": 240.4,
+            "median": 242.9,
+            "min": 233.9,
+            "max": 244.5
+          },
+          "ttftMs": {
+            "n": 3,
+            "mean": 126.3,
+            "median": 126,
+            "min": 125.6,
+            "max": 127.4
+          },
+          "totalMs": {
+            "n": 3,
+            "mean": 1191.5,
+            "median": 1179.3,
+            "min": 1174.6,
+            "max": 1220.5
+          },
+          "genTokens": {
+            "n": 3,
+            "mean": 256,
+            "median": 256,
+            "min": 256,
+            "max": 256
+          },
+          "rawIters": [
+            {
+              "ttftMs": 125.6,
+              "totalMs": 1179.3,
+              "decodeMs": 1053.7,
+              "genTokens": 256,
+              "prefillTokPerSec": 8327,
+              "decodeTokPerSec": 242.9
+            },
+            {
+              "ttftMs": 127.4,
+              "totalMs": 1174.6,
+              "decodeMs": 1047.2,
+              "genTokens": 256,
+              "prefillTokPerSec": 8211.1,
+              "decodeTokPerSec": 244.5
+            },
+            {
+              "ttftMs": 126,
+              "totalMs": 1220.5,
+              "decodeMs": 1094.5,
+              "genTokens": 256,
+              "prefillTokPerSec": 8300.4,
+              "decodeTokPerSec": 233.9
+            }
+          ]
+        }
+      ],
+      "vram": {
+        "baselineUsedMib": 1122,
+        "peakUsedMib": 18851,
+        "modelDeltaMib": 17729,
+        "samples": [
+          {
+            "tag": "before-load",
+            "usedMib": 1552
+          },
+          {
+            "tag": "after-load",
+            "usedMib": 18220
+          },
+          {
+            "tag": "after-ctx",
+            "usedMib": 18690
+          },
+          {
+            "tag": "gen-128-0",
+            "usedMib": 18822
+          },
+          {
+            "tag": "gen-128-1",
+            "usedMib": 18851
+          },
+          {
+            "tag": "gen-128-2",
+            "usedMib": 18851
+          },
+          {
+            "tag": "gen-1024-0",
+            "usedMib": 18805
+          },
+          {
+            "tag": "gen-1024-1",
+            "usedMib": 18796
+          },
+          {
+            "tag": "gen-1024-2",
+            "usedMib": 18796
+          }
+        ]
+      }
+    },
+    {
+      "logical": "fast",
+      "type": "text",
+      "fim": false,
+      "file": "Qwen3-4B-Instruct-2507-UD-Q4_K_XL.gguf",
+      "modelId": "Qwen3-4B-Instruct-2507-UD-Q4_K_XL",
+      "env": "GGUF_FAST_MODEL",
+      "present": true,
+      "sizeBytes": 2546340960,
+      "sizeGb": 2.4,
+      "loadTimeMs": 2029,
+      "engineVram": {
+        "totalMib": 32606.6,
+        "usedMib": 4102.6,
+        "freeMib": 28504
+      },
+      "contextSize": 1792,
+      "results": [
+        {
+          "prefillTargetTokens": 128,
+          "promptTokens": 153,
+          "contextSize": 1792,
+          "prefillTokPerSec": {
+            "n": 3,
+            "mean": 7928.4,
+            "median": 8053.1,
+            "min": 7677.6,
+            "max": 8054.4
+          },
+          "decodeTokPerSec": {
+            "n": 3,
+            "mean": 274.3,
+            "median": 272,
+            "min": 265.2,
+            "max": 285.7
+          },
+          "ttftMs": {
+            "n": 3,
+            "mean": 19.3,
+            "median": 19,
+            "min": 19,
+            "max": 19.9
+          },
+          "totalMs": {
+            "n": 3,
+            "mean": 953.4,
+            "median": 961,
+            "min": 915,
+            "max": 984.3
+          },
+          "genTokens": {
+            "n": 3,
+            "mean": 256,
+            "median": 256,
+            "min": 256,
+            "max": 256
+          },
+          "rawIters": [
+            {
+              "ttftMs": 19,
+              "totalMs": 915,
+              "decodeMs": 896,
+              "genTokens": 256,
+              "prefillTokPerSec": 8054.4,
+              "decodeTokPerSec": 285.7
+            },
+            {
+              "ttftMs": 19.9,
+              "totalMs": 961,
+              "decodeMs": 941.1,
+              "genTokens": 256,
+              "prefillTokPerSec": 7677.6,
+              "decodeTokPerSec": 272
+            },
+            {
+              "ttftMs": 19,
+              "totalMs": 984.3,
+              "decodeMs": 965.3,
+              "genTokens": 256,
+              "prefillTokPerSec": 8053.1,
+              "decodeTokPerSec": 265.2
+            }
+          ]
+        },
+        {
+          "prefillTargetTokens": 1024,
+          "promptTokens": 1046,
+          "contextSize": 1792,
+          "prefillTokPerSec": {
+            "n": 3,
+            "mean": 14592.6,
+            "median": 14918.5,
+            "min": 13864.8,
+            "max": 14994.6
+          },
+          "decodeTokPerSec": {
+            "n": 3,
+            "mean": 266.4,
+            "median": 267.2,
+            "min": 253,
+            "max": 278.9
+          },
+          "ttftMs": {
+            "n": 3,
+            "mean": 71.8,
+            "median": 70.1,
+            "min": 69.8,
+            "max": 75.4
+          },
+          "totalMs": {
+            "n": 3,
+            "mean": 1034.4,
+            "median": 1028.2,
+            "min": 987.6,
+            "max": 1087.5
+          },
+          "genTokens": {
+            "n": 3,
+            "mean": 256,
+            "median": 256,
+            "min": 256,
+            "max": 256
+          },
+          "rawIters": [
+            {
+              "ttftMs": 70.1,
+              "totalMs": 1028.2,
+              "decodeMs": 958,
+              "genTokens": 256,
+              "prefillTokPerSec": 14918.5,
+              "decodeTokPerSec": 267.2
+            },
+            {
+              "ttftMs": 69.8,
+              "totalMs": 987.6,
+              "decodeMs": 917.8,
+              "genTokens": 256,
+              "prefillTokPerSec": 14994.6,
+              "decodeTokPerSec": 278.9
+            },
+            {
+              "ttftMs": 75.4,
+              "totalMs": 1087.5,
+              "decodeMs": 1012.1,
+              "genTokens": 256,
+              "prefillTokPerSec": 13864.8,
+              "decodeTokPerSec": 253
+            }
+          ]
+        }
+      ],
+      "vram": {
+        "baselineUsedMib": 1122,
+        "peakUsedMib": 4586,
+        "modelDeltaMib": 3464,
+        "samples": [
+          {
+            "tag": "before-load",
+            "usedMib": 1577
+          },
+          {
+            "tag": "after-load",
+            "usedMib": 4001
+          },
+          {
+            "tag": "after-ctx",
+            "usedMib": 4555
+          },
+          {
+            "tag": "gen-128-0",
+            "usedMib": 4567
+          },
+          {
+            "tag": "gen-128-1",
+            "usedMib": 4574
+          },
+          {
+            "tag": "gen-128-2",
+            "usedMib": 4576
+          },
+          {
+            "tag": "gen-1024-0",
+            "usedMib": 4582
+          },
+          {
+            "tag": "gen-1024-1",
+            "usedMib": 4582
+          },
+          {
+            "tag": "gen-1024-2",
+            "usedMib": 4586
+          }
+        ]
+      }
+    },
+    {
+      "logical": "code",
+      "type": "text",
+      "fim": false,
+      "file": "Qwen3-Coder-30B-A3B-Instruct-UD-Q4_K_XL.gguf",
+      "modelId": "Qwen3-Coder-30B-A3B-Instruct-UD-Q4_K_XL",
+      "env": "GGUF_CODE_MODEL",
+      "present": true,
+      "sizeBytes": 17665334432,
+      "sizeGb": 16.5,
+      "loadTimeMs": 8828.2,
+      "engineVram": {
+        "totalMib": 32606.6,
+        "usedMib": 18356.6,
+        "freeMib": 14250
+      },
+      "contextSize": 1792,
+      "results": [
+        {
+          "prefillTargetTokens": 128,
+          "promptTokens": 153,
+          "contextSize": 1792,
+          "prefillTokPerSec": {
+            "n": 3,
+            "mean": 3967.5,
+            "median": 3990.2,
+            "min": 3844.1,
+            "max": 4068.1
+          },
+          "decodeTokPerSec": {
+            "n": 3,
+            "mean": 266.3,
+            "median": 268.3,
+            "min": 257.2,
+            "max": 273.5
+          },
+          "ttftMs": {
+            "n": 3,
+            "mean": 38.6,
+            "median": 38.3,
+            "min": 37.6,
+            "max": 39.8
+          },
+          "totalMs": {
+            "n": 3,
+            "mean": 1000.4,
+            "median": 991.8,
+            "min": 974.3,
+            "max": 1035.2
+          },
+          "genTokens": {
+            "n": 3,
+            "mean": 256,
+            "median": 256,
+            "min": 256,
+            "max": 256
+          },
+          "rawIters": [
+            {
+              "ttftMs": 39.8,
+              "totalMs": 1035.2,
+              "decodeMs": 995.4,
+              "genTokens": 256,
+              "prefillTokPerSec": 3844.1,
+              "decodeTokPerSec": 257.2
+            },
+            {
+              "ttftMs": 38.3,
+              "totalMs": 974.3,
+              "decodeMs": 936,
+              "genTokens": 256,
+              "prefillTokPerSec": 3990.2,
+              "decodeTokPerSec": 273.5
+            },
+            {
+              "ttftMs": 37.6,
+              "totalMs": 991.8,
+              "decodeMs": 954.1,
+              "genTokens": 256,
+              "prefillTokPerSec": 4068.1,
+              "decodeTokPerSec": 268.3
+            }
+          ]
+        },
+        {
+          "prefillTargetTokens": 1024,
+          "promptTokens": 1046,
+          "contextSize": 1792,
+          "prefillTokPerSec": {
+            "n": 3,
+            "mean": 8481.4,
+            "median": 8507.1,
+            "min": 8346.5,
+            "max": 8590.6
+          },
+          "decodeTokPerSec": {
+            "n": 3,
+            "mean": 245,
+            "median": 254.4,
+            "min": 219.5,
+            "max": 261.1
+          },
+          "ttftMs": {
+            "n": 3,
+            "mean": 123.3,
+            "median": 123,
+            "min": 121.8,
+            "max": 125.3
+          },
+          "totalMs": {
+            "n": 3,
+            "mean": 1174.3,
+            "median": 1131.6,
+            "min": 1102.1,
+            "max": 1289.3
+          },
+          "genTokens": {
+            "n": 3,
+            "mean": 256,
+            "median": 256,
+            "min": 256,
+            "max": 256
+          },
+          "rawIters": [
+            {
+              "ttftMs": 125.3,
+              "totalMs": 1131.6,
+              "decodeMs": 1006.2,
+              "genTokens": 256,
+              "prefillTokPerSec": 8346.5,
+              "decodeTokPerSec": 254.4
+            },
+            {
+              "ttftMs": 121.8,
+              "totalMs": 1102.1,
+              "decodeMs": 980.3,
+              "genTokens": 256,
+              "prefillTokPerSec": 8590.6,
+              "decodeTokPerSec": 261.1
+            },
+            {
+              "ttftMs": 123,
+              "totalMs": 1289.3,
+              "decodeMs": 1166.4,
+              "genTokens": 256,
+              "prefillTokPerSec": 8507.1,
+              "decodeTokPerSec": 219.5
+            }
+          ]
+        }
+      ],
+      "vram": {
+        "baselineUsedMib": 1122,
+        "peakUsedMib": 18820,
+        "modelDeltaMib": 17698,
+        "samples": [
+          {
+            "tag": "before-load",
+            "usedMib": 1591
+          },
+          {
+            "tag": "after-load",
+            "usedMib": 18256
+          },
+          {
+            "tag": "after-ctx",
+            "usedMib": 18726
+          },
+          {
+            "tag": "gen-128-0",
+            "usedMib": 18815
+          },
+          {
+            "tag": "gen-128-1",
+            "usedMib": 18815
+          },
+          {
+            "tag": "gen-128-2",
+            "usedMib": 18815
+          },
+          {
+            "tag": "gen-1024-0",
+            "usedMib": 18814
+          },
+          {
+            "tag": "gen-1024-1",
+            "usedMib": 18814
+          },
+          {
+            "tag": "gen-1024-2",
+            "usedMib": 18820
+          }
+        ]
+      }
+    },
+    {
+      "logical": "fim",
+      "type": "text",
+      "fim": true,
+      "file": "Qwen2.5-Coder-1.5B-Instruct-Q4_K_M.gguf",
+      "modelId": "Qwen2.5-Coder-1.5B-Instruct-Q4_K_M",
+      "env": "GGUF_FIM_MODEL",
+      "present": true,
+      "sizeBytes": 986048800,
+      "sizeGb": 0.9,
+      "loadTimeMs": 1104,
+      "engineVram": {
+        "totalMib": 32606.6,
+        "usedMib": 2616.6,
+        "freeMib": 29990
+      },
+      "contextSize": 1792,
+      "results": [
+        {
+          "prefillTargetTokens": 128,
+          "promptTokens": 153,
+          "contextSize": 1792,
+          "prefillTokPerSec": {
+            "n": 3,
+            "mean": 11468.9,
+            "median": 11268.2,
+            "min": 11183.7,
+            "max": 11954.8
+          },
+          "decodeTokPerSec": {
+            "n": 3,
+            "mean": 452.8,
+            "median": 458.1,
+            "min": 437,
+            "max": 463.4
+          },
+          "ttftMs": {
+            "n": 3,
+            "mean": 13.4,
+            "median": 13.6,
+            "min": 12.8,
+            "max": 13.7
+          },
+          "totalMs": {
+            "n": 3,
+            "mean": 579.1,
+            "median": 571.6,
+            "min": 566.1,
+            "max": 599.5
+          },
+          "genTokens": {
+            "n": 3,
+            "mean": 256,
+            "median": 256,
+            "min": 256,
+            "max": 256
+          },
+          "rawIters": [
+            {
+              "ttftMs": 13.6,
+              "totalMs": 599.5,
+              "decodeMs": 585.9,
+              "genTokens": 256,
+              "prefillTokPerSec": 11268.2,
+              "decodeTokPerSec": 437
+            },
+            {
+              "ttftMs": 13.7,
+              "totalMs": 566.1,
+              "decodeMs": 552.4,
+              "genTokens": 256,
+              "prefillTokPerSec": 11183.7,
+              "decodeTokPerSec": 463.4
+            },
+            {
+              "ttftMs": 12.8,
+              "totalMs": 571.6,
+              "decodeMs": 558.8,
+              "genTokens": 256,
+              "prefillTokPerSec": 11954.8,
+              "decodeTokPerSec": 458.1
+            }
+          ]
+        },
+        {
+          "prefillTargetTokens": 1024,
+          "promptTokens": 1046,
+          "contextSize": 1792,
+          "prefillTokPerSec": {
+            "n": 3,
+            "mean": 22006.3,
+            "median": 21815.5,
+            "min": 21250.5,
+            "max": 22952.9
+          },
+          "decodeTokPerSec": {
+            "n": 3,
+            "mean": 455.2,
+            "median": 459.7,
+            "min": 429.9,
+            "max": 476
+          },
+          "ttftMs": {
+            "n": 3,
+            "mean": 47.6,
+            "median": 47.9,
+            "min": 45.6,
+            "max": 49.2
+          },
+          "totalMs": {
+            "n": 3,
+            "mean": 611,
+            "median": 606.1,
+            "min": 583.4,
+            "max": 643.5
+          },
+          "genTokens": {
+            "n": 3,
+            "mean": 256,
+            "median": 256,
+            "min": 256,
+            "max": 256
+          },
+          "rawIters": [
+            {
+              "ttftMs": 49.2,
+              "totalMs": 606.1,
+              "decodeMs": 556.8,
+              "genTokens": 256,
+              "prefillTokPerSec": 21250.5,
+              "decodeTokPerSec": 459.7
+            },
+            {
+              "ttftMs": 45.6,
+              "totalMs": 583.4,
+              "decodeMs": 537.8,
+              "genTokens": 256,
+              "prefillTokPerSec": 22952.9,
+              "decodeTokPerSec": 476
+            },
+            {
+              "ttftMs": 47.9,
+              "totalMs": 643.5,
+              "decodeMs": 595.5,
+              "genTokens": 256,
+              "prefillTokPerSec": 21815.5,
+              "decodeTokPerSec": 429.9
+            }
+          ]
+        }
+      ],
+      "vram": {
+        "baselineUsedMib": 1122,
+        "peakUsedMib": 2896,
+        "modelDeltaMib": 1774,
+        "samples": [
+          {
+            "tag": "before-load",
+            "usedMib": 1595
+          },
+          {
+            "tag": "after-load",
+            "usedMib": 2531
+          },
+          {
+            "tag": "after-ctx",
+            "usedMib": 2877
+          },
+          {
+            "tag": "gen-128-0",
+            "usedMib": 2892
+          },
+          {
+            "tag": "gen-128-1",
+            "usedMib": 2890
+          },
+          {
+            "tag": "gen-128-2",
+            "usedMib": 2890
+          },
+          {
+            "tag": "gen-1024-0",
+            "usedMib": 2896
+          },
+          {
+            "tag": "gen-1024-1",
+            "usedMib": 2890
+          },
+          {
+            "tag": "gen-1024-2",
+            "usedMib": 2890
+          }
+        ]
+      }
+    },
+    {
+      "logical": "embed",
+      "type": "embed",
+      "fim": false,
+      "file": "Qwen3-Embedding-0.6B-f16.gguf",
+      "modelId": "Qwen3-Embedding-0.6B-f16",
+      "env": "GGUF_EMBED_MODEL",
+      "present": true,
+      "sizeBytes": 1197629632,
+      "sizeGb": 1.1,
+      "loadTimeMs": 1296.2,
+      "engineVram": {
+        "totalMib": 32606.6,
+        "usedMib": 2818.6,
+        "freeMib": 29788
+      },
+      "results": [
+        {
+          "inputTokens": 33,
+          "dimensions": 1024,
+          "embedMs": {
+            "n": 3,
+            "mean": 27.9,
+            "median": 8.1,
+            "min": 7.6,
+            "max": 68
+          },
+          "inputTokPerSec": {
+            "n": 3,
+            "mean": 2966.3,
+            "median": 4097.2,
+            "min": 485.5,
+            "max": 4316.3
+          },
+          "rawIters": [
+            {
+              "ms": 68,
+              "dims": 1024
+            },
+            {
+              "ms": 7.6,
+              "dims": 1024
+            },
+            {
+              "ms": 8.1,
+              "dims": 1024
+            }
+          ]
+        }
+      ],
+      "vram": {
+        "baselineUsedMib": 1122,
+        "peakUsedMib": 6750,
+        "modelDeltaMib": 5628,
+        "samples": [
+          {
+            "tag": "before-load",
+            "usedMib": 1588
+          },
+          {
+            "tag": "after-load",
+            "usedMib": 2726
+          },
+          {
+            "tag": "after-embed-ctx",
+            "usedMib": 6642
+          },
+          {
+            "tag": "embed-0",
+            "usedMib": 6750
+          },
+          {
+            "tag": "embed-1",
+            "usedMib": 6750
+          },
+          {
+            "tag": "embed-2",
+            "usedMib": 6750
+          }
+        ]
+      }
+    }
+  ],
+  "skipped": []
+}

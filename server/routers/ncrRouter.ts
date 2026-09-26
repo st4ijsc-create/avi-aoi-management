@@ -11,6 +11,7 @@
  */
 import { z } from "zod";
 import { TRPCError } from "@trpc/server";
+import { appError } from "../_core/appError";
 import { moduleProcedure, qualityProcedure, router } from "../_core/trpc";
 // Doc 38 Đợt Q — license-gate this router behind MOD_QUALITY (moduleGate = pass-through
 // until the deployment's SKU is configured — no-brick). Shadows `protectedProcedure`.
@@ -30,9 +31,9 @@ function toTrpc(err: unknown): never {
       err.code === "NOT_FOUND" ? "NOT_FOUND" :
       err.code === "SOD" ? "FORBIDDEN" :
       err.code === "DB" ? "INTERNAL_SERVER_ERROR" : "BAD_REQUEST";
-    throw new TRPCError({ code, message: err.message });
+    throw appError(code, "OPERATION_FAILED", { operation: "manageNcr" }, err.message);
   }
-  throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: (err as any)?.message ?? "NCR error" });
+  throw appError("INTERNAL_SERVER_ERROR", "OPERATION_FAILED", { operation: "manageNcr" }, (err as any)?.message ?? "NCR error");
 }
 
 export const ncrRouter = router({
@@ -72,7 +73,7 @@ export const ncrRouter = router({
     .input(z.object({ id: z.number().int().positive() }))
     .query(async ({ input }) => {
       const row = await getNcrById(input.id);
-      if (!row) throw new TRPCError({ code: "NOT_FOUND", message: `NCR ${input.id} not found` });
+      if (!row) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "ncr" }, `NCR ${input.id} not found`);
       return row;
     }),
 

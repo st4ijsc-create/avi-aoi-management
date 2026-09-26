@@ -47,7 +47,10 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { Switch } from "@/components/ui/switch";
 import { Progress } from "@/components/ui/progress";
 import { DatasetSelect } from "@/components/ai/ModelSelect";
+import { ClassifierHealthBanner } from "@/components/ai/ClassifierHealthBanner";
+import { ModelCardManageButton } from "@/components/ai/ModelCardManageButton";
 import { toast } from "sonner";
+import { toastTrpcError } from "@/lib/trpcErrors";
 import {
   Plus,
   Edit2,
@@ -514,7 +517,7 @@ function UploadDialog({
       onSuccess();
     },
     onError: (err) => {
-      toast.error(err.message);
+      toastTrpcError(err);
       setUploading(false);
     },
   });
@@ -630,7 +633,7 @@ function CreateVersionDialog({
       onSuccess();
     },
     onError: (err) => {
-      toast.error(err.message);
+      toastTrpcError(err);
       setUploading(false);
     },
   });
@@ -762,7 +765,7 @@ function TrainingPipelineDialog({
       onOpenChange(false);
       onSuccess();
     },
-    onError: (err) => toast.error(err.message),
+    onError: (err) => toastTrpcError(err),
   });
 
   const classLabels = labelsCsv.split(",").map((s) => s.trim()).filter(Boolean);
@@ -926,7 +929,7 @@ function ModelDetailPanel({
       refetchVersions();
       onRefresh();
     },
-    onError: (err) => toast.error(err.message),
+    onError: (err) => toastTrpcError(err),
   });
 
   const [showUpload, setShowUpload] = useState(false);
@@ -1031,7 +1034,7 @@ function ModelDetailPanel({
       </div>
 
       {/* Actions */}
-      <div className="flex gap-2">
+      <div className="flex flex-wrap gap-2">
         <Button size="sm" variant="outline" onClick={() => setShowUpload(true)}>
           <FileUp className="h-4 w-4 mr-1" />
           {t("aiModels.uploadFile", "Upload File")}
@@ -1045,6 +1048,9 @@ function ModelDetailPanel({
           {t("aiEval.trainModel", "Train Model")}
         </Button>
       </div>
+
+      {/* D3 (doc69 Giai đoạn 4/Wave 3) — model-card governance affordance */}
+      <ModelCardManageButton modelId={modelId} onChanged={() => refetchVersions()} />
 
       {/* Training Jobs (WS-1) */}
       <div>
@@ -1239,7 +1245,7 @@ export default function AIModelManagementPage() {
       setShowCreateDialog(false);
       refetch();
     },
-    onError: (err) => toast.error(err.message),
+    onError: (err) => toastTrpcError(err),
   });
 
   const updateMutation = trpc.aiModel.update.useMutation({
@@ -1248,7 +1254,7 @@ export default function AIModelManagementPage() {
       setEditingModel(null);
       refetch();
     },
-    onError: (err) => toast.error(err.message),
+    onError: (err) => toastTrpcError(err),
   });
 
   const deleteMutation = trpc.aiModel.delete.useMutation({
@@ -1258,7 +1264,7 @@ export default function AIModelManagementPage() {
       if (selectedModelId === deletingModel?.id) setSelectedModelId(null);
       refetch();
     },
-    onError: (err) => toast.error(err.message),
+    onError: (err) => toastTrpcError(err),
   });
 
   // ─ Form handlers
@@ -1333,6 +1339,9 @@ export default function AIModelManagementPage() {
             </Button>
           }
         />
+
+        {/* doc 69 Wave 6 (F1) — "no active classifier" health banner (additive) */}
+        <ClassifierHealthBanner withAction />
 
         {/* Stats */}
         <div className="grid grid-cols-2 md:grid-cols-4 gap-3">

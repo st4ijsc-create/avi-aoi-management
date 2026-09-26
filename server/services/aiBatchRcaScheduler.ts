@@ -12,9 +12,14 @@
 import * as cron from "node-cron";
 import { sql } from "drizzle-orm";
 import { getDb } from "../db";
+import { rootCauseAnalysis } from "../../drizzle/schema";
 import { generateRCAInsights } from "./aiInsightsService";
 // B2.4 — auto-ingest hook (flag-gated RAG_AUTO_INGEST_ENABLED, default OFF).
 import { ingestKnowledgeRecordAsync } from "./aiLocalKnowledgeService";
+// doc69 Wave 2 / A2 — converge batch RCA onto the evidence-rich copilot
+// (Pareto+SPC+anomaly+VLM+audit+GraphRAG+quantitative-correlation) when
+// AI_RCA_COPILOT_ENABLED is on. Flag OFF (default) keeps the shallow fallback below.
+import { isRcaCopilotEnabled, runRca, persistRca, type RcaResult } from "./aiRcaCopilot";
 
 const DEFAULT_CRON = process.env.AI_BATCH_RCA_CRON || "0 2 * * *"; // 02:00 daily
 const TIMEZONE = process.env.AI_BATCH_RCA_TZ || "Asia/Ho_Chi_Minh";
@@ -54,7 +59,12 @@ async function fetchActiveMachines(db: any, since: Date, until: Date): Promise<M
     ORDER BY COUNT(*) DESC
     LIMIT ${MAX_MACHINES_PER_RUN}
   `)) as any;
-  return result.rows || [];
+  // W0-1 fix (doc 69): the postgres-js driver used by this project's drizzle
+  // connection returns query rows DIRECTLY (no `.rows` wrapper — see the
+  // established `result.rows || result` pattern in server/db/statistics.ts /
+  // server/db/inspection.ts). `result.rows || []` always evaluated to `[]`,
+  // so the scheduler always saw "0 active machines" and never ran.
+  return result.rows || result || [];
 }
 
 async function fetchInspectionRows(db: any, machineId: number, since: Date, until: Date): Promise<InspectionRow[]> {
@@ -71,7 +81,8 @@ async function fetchInspectionRows(db: any, machineId: number, since: Date, unti
       AND i."createdAt" BETWEEN ${sinceIso}::timestamptz AND ${untilIso}::timestamptz
     LIMIT 100000
   `)) as any;
-  return result.rows || [];
+  // W0-1 fix (doc 69): same `.rows` accessor bug as fetchActiveMachines above.
+  return result.rows || result || [];
 }
 
 function buildTopFactors(rows: InspectionRow[]) {
@@ -132,6 +143,41 @@ export async function runBatchRCAOnce(): Promise<{ machinesProcessed: number; su
 
   for (const m of machines) {
     try {
+      if (isRcaCopilotEnabled()) {
+        // ── doc69 Wave 2 / A2 — converged path: evidence-rich RCA via aiRcaCopilot
+        // (Pareto+SPC+anomaly+VLM+audit+GraphRAG+quantitative-correlation), not just
+        // aggregate Pareto counts. Fail-safe: runRca/persistRca never throw; a null
+        // rcaId (persist failure) is counted as a per-machine failure without
+        // aborting the batch (caught below too, defense in depth). ──
+        const result: RcaResult = await runRca({ machineId: m.id, lang: "vi" });
+        const rcaId = await persistRca({ result, requestedBy: SYSTEM_USER_ID, requestedByName: "SYSTEM_BATCH" });
+        if (rcaId == null) {
+          failed++;
+          continue;
+        }
+        succeeded++;
+
+        // B2.4 — same fire-and-forget KB ingest as the legacy path, sourced from
+        // the copilot's real hypotheses instead of relabeled Pareto counts.
+        const top = result.hypotheses[0];
+        ingestKnowledgeRecordAsync({
+          sourceId: `rca:${m.code}:${until.toISOString().slice(0, 10)}`,
+          title: `RCA — ${m.code} (${until.toISOString().slice(0, 10)})`,
+          sourceType: "incident",
+          text: top
+            ? `Machine ${m.code} RCA (evidence-rich). Top cause: ${top.cause} (${Math.round(top.confidence * 100)}%).\n` +
+              `Evidence: ${top.evidence.join("; ")}\n` +
+              `Recommended fix: ${top.recommendedFix.rationale}`
+            : `Machine ${m.code} RCA (evidence-rich). ${result.note ?? "Needs human investigation — insufficient evidence."}`,
+          keywords: ["rca", "defect", m.code.toLowerCase()],
+        });
+        continue;
+      }
+
+      // LEGACY (doc69 A2): superseded by aiRcaCopilot when AI_RCA_COPILOT_ENABLED is
+      // on (branch above). Kept as the FALLBACK for default (flag-off) behavior —
+      // shallow Pareto-relabeling only (topFactors = NG frequency by measurement
+      // point), no SPC/anomaly/vision/causal-graph/quantitative-correlation evidence.
       const rows = await fetchInspectionRows(db, m.id, since, until);
       const totalInspections = new Set(rows.map(r => r.id)).size;
       const ngCount = rows.filter(r => r.result === "NG").length;
@@ -146,15 +192,26 @@ export async function runBatchRCAOnce(): Promise<{ machinesProcessed: number; su
         productModelCode: null,
       });
 
-      await db.execute(sql`
-        INSERT INTO root_cause_analysis
-          (analysisType, machineId, machineCode, startDate, endDate, dataPointsAnalyzed,
-           topFactors, aiInsights, paretoData, status, requestedBy, requestedByName, processingTime, "createdAt")
-        VALUES
-          ('DEFECT_ANALYSIS', ${m.id}, ${m.code}, ${since.toISOString()}::timestamptz, ${until.toISOString()}::timestamptz, ${rows.length},
-           ${JSON.stringify(topFactors)}, ${JSON.stringify(aiInsights)}, ${JSON.stringify(paretoData)},
-           'COMPLETED', ${SYSTEM_USER_ID}, 'SYSTEM_BATCH', ${0}, NOW())
-      `);
+      // W0-1 fix (doc 69): was a raw INSERT with unquoted camelCase column names
+      // (Postgres folds them to lowercase → "column analysistype does not exist"),
+      // silently swallowed by the per-machine try/catch below → nothing persisted.
+      // The drizzle builder quotes identifiers correctly and matches the physical
+      // schema (drizzle/schema/ai.ts — quoted-camelCase columns).
+      await db.insert(rootCauseAnalysis).values({
+        analysisType: "DEFECT_ANALYSIS",
+        machineId: m.id,
+        machineCode: m.code,
+        startDate: since,
+        endDate: until,
+        dataPointsAnalyzed: rows.length,
+        topFactors,
+        aiInsights,
+        paretoData,
+        status: "COMPLETED",
+        requestedBy: SYSTEM_USER_ID,
+        requestedByName: "SYSTEM_BATCH",
+        processingTime: 0,
+      });
       succeeded++;
 
       // B2.4 — fire-and-forget: feed this RCA back into the KB so future

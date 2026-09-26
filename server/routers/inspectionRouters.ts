@@ -1,8 +1,10 @@
 ﻿import { protectedProcedure, qualityProcedure, router } from "../_core/trpc";
 import { z } from "zod";
 import { TRPCError } from "@trpc/server";
+import { appError } from "../_core/appError";
 import * as db from "../db";
 import { invokeLLM } from "../_core/llm";
+import { finalYield } from "../utils/kpi";
 
 // ============ INSPECTION ROUTER ============
 export const inspectionRouter = router({
@@ -43,9 +45,36 @@ export const inspectionRouter = router({
       // W7-B (doc 27 V3): "ntfScore" pre-sorts the verify queue by suspected
       // false-call likelihood (DESC NULLS LAST). Default: newest first.
       sortBy: z.enum(["time", "ntfScore"]).optional(),
+      // doc 64 IA-10 S3 (DEP-S3) — trục phạm vi gửi ID; server resolve id→CODE rồi
+      // tái dùng đường lọc theo code sẵn có. CODE tường minh (gõ tay) luôn THẮNG id.
+      factoryId: z.number().int().positive().optional(),
+      lineId: z.number().int().positive().optional(),
+      machineId: z.number().int().positive().optional(),
     }))
     .query(async ({ input, ctx }) => {
-      return db.searchInspections({ ...input, userId: ctx.user.id, userRole: ctx.user.role });
+      const { factoryId, lineId, machineId, ...codeInput } = input;
+      // Resolve id→code (chỉ khi code tương ứng chưa được truyền — code thắng id).
+      if (factoryId !== undefined || lineId !== undefined || machineId !== undefined) {
+        const { getDb } = await import("../db/connection");
+        const { machines, productionLines, factories } = await import("../../drizzle/schema");
+        const { eq } = await import("drizzle-orm");
+        const dbc = await getDb();
+        if (dbc) {
+          if (machineId !== undefined && !codeInput.machineCode) {
+            const [m] = await dbc.select({ code: machines.code }).from(machines).where(eq(machines.id, machineId)).limit(1);
+            if (m?.code) codeInput.machineCode = m.code;
+          }
+          if (lineId !== undefined && !codeInput.lineCode) {
+            const [l] = await dbc.select({ code: productionLines.code }).from(productionLines).where(eq(productionLines.id, lineId)).limit(1);
+            if (l?.code) codeInput.lineCode = l.code;
+          }
+          if (factoryId !== undefined && !codeInput.factoryCode) {
+            const [f] = await dbc.select({ code: factories.code }).from(factories).where(eq(factories.id, factoryId)).limit(1);
+            if (f?.code) codeInput.factoryCode = f.code;
+          }
+        }
+      }
+      return db.searchInspections({ ...codeInput, userId: ctx.user.id, userRole: ctx.user.role });
     }),
 
   getById: protectedProcedure
@@ -53,7 +82,7 @@ export const inspectionRouter = router({
     .query(async ({ input }) => {
       const inspection = await db.getProductInspectionById(input.id);
       if (!inspection) {
-        throw new TRPCError({ code: 'NOT_FOUND', message: 'Inspection not found' });
+        throw appError('NOT_FOUND', 'ENTITY_NOT_FOUND', { entity: 'inspection' }, 'Inspection not found');
       }
       
       const measurements = await db.getMeasurementResultsByInspection(input.id);
@@ -70,10 +99,10 @@ export const inspectionRouter = router({
     .mutation(async ({ input, ctx }) => {
       const inspection = await db.getProductInspectionById(input.id);
       if (!inspection) {
-        throw new TRPCError({ code: 'NOT_FOUND', message: 'Inspection not found' });
+        throw appError('NOT_FOUND', 'ENTITY_NOT_FOUND', { entity: 'inspection' }, 'Inspection not found');
       }
       if (inspection.originalResult !== 'NG') {
-        throw new TRPCError({ code: 'BAD_REQUEST', message: 'Only NG results can be marked as NTF' });
+        throw appError('BAD_REQUEST', 'OPERATION_FAILED', { operation: 'markInspectionNtf' }, 'Only NG results can be marked as NTF');
       }
 
       await db.updateProductInspectionNTF(input.id, ctx.user.id, input.reason);
@@ -188,7 +217,7 @@ export const inspectionRouter = router({
         const total = s.okCount + s.ngCount + s.ntfCount;
         return {
           date: s.date,
-          yieldRate: total > 0 ? ((s.okCount + s.ntfCount) / total * 100) : 0,
+          yieldRate: finalYield({ ok: s.okCount, ntf: s.ntfCount, total }),
           total,
           okCount: s.okCount,
           ngCount: s.ngCount,
@@ -404,7 +433,7 @@ export const measurementResultRouter = router({
     .query(async ({ input }) => {
       const result = await db.getMeasurementResultById(input.id);
       if (!result) {
-        throw new TRPCError({ code: 'NOT_FOUND', message: 'Measurement result not found' });
+        throw appError('NOT_FOUND', 'ENTITY_NOT_FOUND', { entity: 'measurementResult' }, 'Measurement result not found');
       }
       
       // Get point definition for reference image
@@ -434,8 +463,14 @@ export const measurementResultRouter = router({
     .input(z.object({ id: z.number() }))
     .mutation(async ({ input }) => {
       const result = await db.getMeasurementResultById(input.id);
-      if (!result || !result.imageUrl) {
-        throw new TRPCError({ code: 'BAD_REQUEST', message: 'No image available for analysis' });
+      // Review cuối — ghi sổ trước: `!result || !result.imageUrl` gộp hai tình huống
+      // khác nhau (kết quả đo không tồn tại vs. kết quả CÓ nhưng không có ảnh) vào MỘT
+      // câu chỉ nói về ảnh. Tách để entity đúng với điều kiện thật đã xảy ra.
+      if (!result) {
+        throw appError('BAD_REQUEST', 'ENTITY_NOT_FOUND', { entity: 'measurementResult' }, 'Measurement result not found');
+      }
+      if (!result.imageUrl) {
+        throw appError('BAD_REQUEST', 'ENTITY_NOT_FOUND', { entity: 'image' }, 'No image available for analysis');
       }
 
       // Get point definition for context
@@ -614,7 +649,7 @@ Respond in JSON format:
       const dbInstance = await db.getDb();
       
       if (!dbInstance) {
-        throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: 'Database not available' });
+        throw appError("INTERNAL_SERVER_ERROR", "DB_UNAVAILABLE", undefined, "Database not available");
       }
 
       const timestamp = new Date().toISOString();
@@ -646,7 +681,7 @@ Respond in JSON format:
       const dbInstance = await db.getDb();
       
       if (!dbInstance) {
-        throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: 'Database not available' });
+        throw appError("INTERNAL_SERVER_ERROR", "DB_UNAVAILABLE", undefined, "Database not available");
       }
 
       // For each inspection, add the tag
@@ -676,7 +711,7 @@ Respond in JSON format:
       const dbInstance = await db.getDb();
       
       if (!dbInstance) {
-        throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: 'Database not available' });
+        throw appError("INTERNAL_SERVER_ERROR", "DB_UNAVAILABLE", undefined, "Database not available");
       }
 
       await dbInstance.update(productInspections).set({
@@ -700,34 +735,84 @@ Respond in JSON format:
       const dbInstance = await db.getDb();
       
       if (!dbInstance) {
-        throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: 'Database not available' });
+        throw appError("INTERNAL_SERVER_ERROR", "DB_UNAVAILABLE", undefined, "Database not available");
       }
 
       // Get the measurement result
       const result = await db.getMeasurementResultById(input.id);
       if (!result) {
-        throw new TRPCError({ code: 'NOT_FOUND', message: 'Measurement result not found' });
+        throw appError('NOT_FOUND', 'ENTITY_NOT_FOUND', { entity: 'measurementResult' }, 'Measurement result not found');
       }
       // W7-B (doc 27 V2): capture the pre-update verdict for the harvest below.
       const originalResult = result.result;
 
       // Update the measurement result
+      // ★★★ Pha 1F Task 5 (BG-82 ⛔, review lượt 7 C-1) — NGƯỜI vừa xác lập
+      // phán quyết cho dòng này một cách TƯỜNG MINH, nên nó không còn là
+      // "máy không khai" nữa: ghi ntf/ntfSource='human' khi giá trị mới là
+      // NTF, và xoá (null) khi không phải — đối xứng với cách ingest ghi
+      // 'machine' (aoiPackageRouter.ts, hàm buildRecord). KHÔNG ghi lại tín
+      // hiệu này ở đây thì một dòng người vừa sửa thành NTF sẽ bị CHÍNH lỗ
+      // BG-82 loại khỏi header ở một lượt correctResult SAU, trên một điểm
+      // KHÁC của cùng bo — tái phát đúng lỗ vừa vá.
       await dbInstance.update(measurementResults).set({
         result: input.result,
+        ntf: input.result === "NTF",
+        ntfSource: input.result === "NTF" ? "human" : null,
         remark: input.reason ? `[Corrected by ${ctx.user.name}] ${input.reason}` : result.remark,
       }).where(eq(measurementResults.id, input.id));
 
-      // Recalculate overall inspection result
+      // Recalculate overall inspection result — đọc lại TOÀN BỘ dòng đo (dòng
+      // vừa UPDATE ở trên đã phản ánh giá trị MỚI vì SELECT chạy SAU UPDATE).
+      // Một lượt duyệt DUY NHẤT tính đồng thời hasNG/hasNTF/nguồn NTF — tránh
+      // hai công thức "dòng này có phải NTF thật không" lệch nhau.
       const allResults = await db.getMeasurementResultsByInspection(result.inspectionId);
-      const hasNG = allResults.some(r => r.id === input.id ? input.result === "NG" : r.result === "NG");
-      const hasNTF = allResults.some(r => r.id === input.id ? input.result === "NTF" : r.result === "NTF");
+      let hasNG = false;
+      let ntfCoMay = false;
+      let ntfCoNguoi = false;
+      for (const r of allResults) {
+        const laDongDangSua = r.id === input.id;
+        const ketQuaHienTai = laDongDangSua ? input.result : r.result;
+        if (ketQuaHienTai === "NG") hasNG = true;
+        if (ketQuaHienTai !== "NTF") continue;
+        // BG-82 ⛔ — TRƯỚC bản vá, dòng này tự động tính là NTF THẬT chỉ vì cột
+        // `result` đọc ra "NTF". Nhưng `measurement_results.result` là NOT
+        // NULL nên một lá máy KHÔNG hề khai phán quyết (manifest ảnh thuần,
+        // xem `metaJsonSchema` — `result` `.optional()` ở CẢ HAI nhánh) cũng
+        // bị ép ghi "NTF" tại `aoiPackageRouter.ts` (buildRecord). Hệ quả đo
+        // được (review lượt 7): sửa MỘT điểm KHÁC thành OK ⇒ các lá "bị ép
+        // NTF" còn lại (chưa ai đụng tới) vẫn đọc `result==="NTF"` ⇒ header bị
+        // lật OK→NTF — một thao tác chất lượng BÌNH THƯỜNG làm hồ sơ XẤU ĐI,
+        // ghi vào bảng WORM (`product_inspections`). SAU bản vá: chỉ tính là
+        // NTF khi có NGUỒN thật (`ntfSource !== null` — 'machine' từ ingest
+        // hoặc 'human' từ chính lượt sửa này/một lượt correctResult trước đó).
+        const nguon = laDongDangSua ? "human" : r.ntfSource;
+        if (nguon === null || nguon === undefined) continue; // NTF BỊ ÉP — không tính
+        if (nguon === "machine" || nguon === "both") ntfCoMay = true;
+        if (nguon === "human" || nguon === "both") ntfCoNguoi = true;
+      }
+      const hasNTF = ntfCoMay || ntfCoNguoi;
 
       let overallResult: "OK" | "NG" | "NTF" = "OK";
       if (hasNG) overallResult = "NG";
       else if (hasNTF) overallResult = "NTF";
 
+      // BG-82 — mở rộng bất biến BG-41 (db/inspection.ts:805) sang
+      // correctResult: header NTF PHẢI có nguồn (machine/human/both), KHÔNG
+      // BAO GIỜ để NULL (mệnh đề 4). Tính lại TỪ ĐẦU theo trạng thái CÁC DÒNG
+      // hiện tại — không cộng dồn CASE như `updateProductInspectionNTF` (hàm
+      // đó CHỈ đi một chiều luôn-hoá-NTF; `correctResult` có thể đổi header
+      // sang bất kỳ verdict nào, kể cả rời khỏi NTF, nên phải XOÁ nguồn cũ khi
+      // không còn NTF thay vì để nó đứng lại lỗi thời).
+      const ntfSource: "machine" | "human" | "both" | null =
+        overallResult !== "NTF" ? null
+        : ntfCoMay && ntfCoNguoi ? "both"
+        : ntfCoMay ? "machine"
+        : "human";
+
       await dbInstance.update(productInspections).set({
         overallResult,
+        ntfSource,
       }).where(eq(productInspections.id, result.inspectionId));
 
       // W7-B (doc 27 V2) — harvest the correction as a structured label
@@ -778,17 +863,17 @@ Respond in JSON format:
       const dbInstance = await db.getDb();
 
       if (!dbInstance) {
-        throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: 'Database not available' });
+        throw appError("INTERNAL_SERVER_ERROR", "DB_UNAVAILABLE", undefined, "Database not available");
       }
 
       const result = await db.getMeasurementResultById(input.id);
       if (!result) {
-        throw new TRPCError({ code: 'NOT_FOUND', message: 'Measurement result not found' });
+        throw appError('NOT_FOUND', 'ENTITY_NOT_FOUND', { entity: 'measurementResult' }, 'Measurement result not found');
       }
 
       // Only NG (or NTF) results should carry a defect classification.
       if (input.defectCatalogId !== null && result.result === "OK") {
-        throw new TRPCError({ code: 'BAD_REQUEST', message: 'Only NG results can be classified with a defect code' });
+        throw appError('BAD_REQUEST', 'OPERATION_FAILED', { operation: 'classifyDefect' }, 'Only NG results can be classified with a defect code');
       }
 
       // Resolve & validate the catalog entry; pull severity to denormalise.
@@ -797,7 +882,7 @@ Respond in JSON format:
       if (input.defectCatalogId !== null) {
         const entry = await db.getDefectCatalogById(input.defectCatalogId);
         if (!entry) {
-          throw new TRPCError({ code: 'NOT_FOUND', message: 'Defect catalog code not found' });
+          throw appError('NOT_FOUND', 'ENTITY_NOT_FOUND', { entity: 'defectCatalogCode' }, 'Defect catalog code not found');
         }
         defectSeverity = entry.severity ?? null;
         defectCode = entry.code;
@@ -829,15 +914,17 @@ Respond in JSON format:
       startDate: z.date(),
       endDate: z.date(),
     }))
-    .query(async ({ input }) => {
+    .query(async ({ input, ctx }) => {
       const productModel = await db.getProductModelById(input.productModelId);
       if (!productModel) {
-        throw new TRPCError({ code: 'NOT_FOUND', message: 'Product model not found' });
+        throw appError('NOT_FOUND', 'ENTITY_NOT_FOUND', { entity: 'productModel' }, 'Product model not found');
       }
       const stats = await db.getMeasurementPointStatsByProduct({
         productModelId: input.productModelId,
         startDate: input.startDate,
         endDate: input.endDate,
+        userId: ctx.user.id,
+        userRole: ctx.user.role,
       });
       return {
         productModel: { id: productModel.id, code: productModel.code, name: productModel.name },

@@ -28,11 +28,23 @@ vi.mock("./aiModelRouter", () => ({ route: (...a: unknown[]) => route(...a) }));
 
 import { gatherKpis, generateExecutiveSummary, runExecutiveReportNow } from "./aiExecutiveReport";
 
-/** A db stub whose select-chain returns totals, and insert returns an id. */
+/**
+ * A db stub whose select-chain returns totals, and insert returns an id.
+ *
+ * Vòng sửa 1 — `where()` now returns a thenable that ALSO exposes `.limit()`:
+ * `collectInspectionTotals` does `await db.select().from().where()` directly (resolves
+ * via `.then`), while `persistExecutiveSummary`'s dedupe check chains `.where().limit(1)`
+ * (resolves to `[]` = no pre-existing duplicate row in these tests). Same object serves
+ * both call shapes.
+ */
 function makeDbStub(totals = { total: 1000, ok: 950, ng: 50 }) {
+  const whereResult: any = {
+    then: (resolve: any, reject?: any) => Promise.resolve([totals]).then(resolve, reject),
+    limit: () => Promise.resolve([]),
+  };
   const selectBuilder: any = {
     from: () => selectBuilder,
-    where: () => Promise.resolve([totals]),
+    where: () => whereResult,
   };
   return {
     select: () => selectBuilder,

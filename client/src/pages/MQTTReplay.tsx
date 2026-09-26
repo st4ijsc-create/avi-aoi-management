@@ -31,6 +31,7 @@ import {
   AlertCircle
 } from "lucide-react";
 import { toast } from "sonner";
+import { mapTrpcError } from "@/lib/trpcErrors";
 import { io, Socket } from "socket.io-client";
 import { useTranslation } from 'react-i18next';
 
@@ -88,7 +89,9 @@ export function MQTTReplayContent() {
       refetchDiscovered();
     },
     onError: (err) => {
-      toast.error(t('mqtt.replayPage.registerError', 'Failed to register machine'), { description: err.message });
+      // Sprint 5 doc 71 F11 — khoá `mqtt.replayPage.registerError` đã thêm ở vi/zh (task-8d
+      // ghi nợ: trước đây chỉ có ở en.json, người dùng vi/zh luôn thấy tiêu đề tiếng Anh).
+      toast.error(t('mqtt.replayPage.registerError', 'Failed to register machine'), { description: mapTrpcError(err) });
     },
   });
 

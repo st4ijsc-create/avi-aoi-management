@@ -28,6 +28,34 @@
 import { startRun, resumeRun, getRun, foeEnabled, type FoeUser } from "../foe/foeEngine";
 import { getQtBusinessSteps, findQtBusinessStep, type QtStepContext } from "./qtStepHandlers";
 
+/**
+ * Final review fix #6 — resumeRun (doc 80 ORC-02/03) may THROW: CONFLICT when another approver /
+ * resume claimed the paused run first, FORBIDDEN when this actor is not allowed at the gate.
+ * CONFLICT means the gate was already decided elsewhere ⇒ NOT an error for the pump: return null
+ * and let the caller re-read the run's real state. Everything else (FORBIDDEN included) surfaces.
+ */
+async function resumeUnlessClaimed(
+  runId: number,
+  decision: { approved: boolean; note?: string },
+  user: FoeUser,
+): Promise<Awaited<ReturnType<typeof resumeRun>> | null> {
+  try {
+    return await resumeRun(runId, decision, user);
+  } catch (err) {
+    if ((err as { code?: unknown } | null)?.code === "CONFLICT") {
+      console.log(`[QtRunner] run ${runId}: gate đã được lượt khác quyết định (CONFLICT) — đọc lại trạng thái`);
+      return null;
+    }
+    throw err;
+  }
+}
+
+/** Trạng thái THẬT hiện tại của run (sau khi thua CAS) — không đoán. */
+async function currentStatus(runId: number): Promise<string> {
+  const view = await getRun(runId);
+  return view ? String(view.run.status) : "not_found";
+}
+
 /** Actor hệ thống của pump (không phải người thật — audit ghi rõ). */
 export const QT_SYSTEM_USER: FoeUser = { id: 0, role: "system", name: "qt-orchestrator" };
 
@@ -135,8 +163,9 @@ export async function pumpQtRun(runId: number, user: FoeUser = QT_SYSTEM_USER): 
 
     if (result.ok) {
       note(notes, `${stepId}: ${result.skipped ? "SKIP" : "OK"}${result.note ? ` — ${result.note}` : ""}`);
-      const resumed = await resumeRun(runId, { approved: true, note: result.note ?? (result.skipped ? "honest skip" : "ok") }, user);
-      if (!resumed.enabled) return { ok: false, runId, status: "disabled", notes, message: "FOE tắt giữa chừng" };
+      const resumed = await resumeUnlessClaimed(runId, { approved: true, note: result.note ?? (result.skipped ? "honest skip" : "ok") }, user);
+      // null = CONFLICT: gate đã được lượt khác duyệt/từ chối ⇒ vòng sau đọc lại trạng thái thật.
+      if (resumed && !resumed.enabled) return { ok: false, runId, status: "disabled", notes, message: "FOE tắt giữa chừng" };
       continue; // engine đã drive tới gate kế / terminal — vòng sau đọc lại.
     }
 
@@ -150,7 +179,11 @@ export async function pumpQtRun(runId: number, user: FoeUser = QT_SYSTEM_USER): 
     ]
       .join(" · ")
       .slice(0, 1900);
-    await resumeRun(runId, { approved: false, note: rejectNote }, user);
+    const rejected = await resumeUnlessClaimed(runId, { approved: false, note: rejectNote }, user);
+    if (!rejected) {
+      const status = await currentStatus(runId);
+      return { ok: false, runId, status, pausedStepId: stepId, notes, message: "gate đã được lượt khác quyết định (CONFLICT)" };
+    }
     return { ok: false, runId, status: "aborted", pausedStepId: stepId, notes };
   }
   return { ok: false, runId, status: "pump_limit", notes, message: `vượt trần ${MAX_PUMP_ITERATIONS} lượt pump` };
@@ -212,12 +245,17 @@ export async function resolveQtGate(
     ]
       .join(" · ")
       .slice(0, 1900);
-    await resumeRun(runId, { approved: false, note: rejectNote }, user);
+    const rejected = await resumeUnlessClaimed(runId, { approved: false, note: rejectNote }, user);
+    if (!rejected) {
+      const current = await currentStatus(runId);
+      return { ok: false, runId, status: current, pausedStepId: stepId, notes, message: "gate đã được lượt khác quyết định (CONFLICT)" };
+    }
     return { ok: false, runId, status: "aborted", pausedStepId: stepId, notes };
   }
 
-  const resumed = await resumeRun(runId, { approved: true, note: decision.note ?? "external signal resolved" }, user);
-  if (!resumed.ok && resumed.status !== "awaiting_confirm") {
+  const resumed = await resumeUnlessClaimed(runId, { approved: true, note: decision.note ?? "external signal resolved" }, user);
+  // null = CONFLICT: lượt khác đã nhận gate ⇒ pump đọc lại trạng thái thật (không ném).
+  if (resumed && !resumed.ok && resumed.status !== "awaiting_confirm") {
     return { ok: false, runId, status: String(resumed.status ?? "failed"), notes, message: resumed.message };
   }
   return pumpQtRun(runId, user);

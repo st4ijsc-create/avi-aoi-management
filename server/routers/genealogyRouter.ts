@@ -8,6 +8,7 @@
  */
 import { z } from "zod";
 import { moduleProcedure, router } from "../_core/trpc";
+import { appError } from "../_core/appError";
 // Doc 38 Đợt Q — license-gate this router behind MOD_PRODUCTION (moduleGate = pass-through
 // until the deployment's SKU is configured — no-brick). Shadows `protectedProcedure`.
 const protectedProcedure = moduleProcedure("MOD_PRODUCTION");
@@ -138,6 +139,21 @@ export const genealogyRouter = router({
       });
     }),
 
+  /**
+   * doc 63 DEP-05 (AUD-04 / IPC-1782a) — FULL cross-station history for one serial via
+   * tRPC. Reuses the REST /v1/genealogy/:unitId assembler (assembleRecord): chain events
+   * ∪ product_inspections ∪ process_results ∪ component installations, ordered into one
+   * station timeline + materials. Honest: unknown serial → { found: false, record: null }
+   * (never a fabricated history).
+   */
+  getFullHistory: protectedProcedure
+    .input(z.object({ serialNumber: z.string().min(1).max(128) }))
+    .query(async ({ input }) => {
+      const { assembleRecord } = await import("../api/v1/genealogyApi");
+      const record = await assembleRecord(input.serialNumber);
+      return { found: record !== null, record };
+    }),
+
   /** Get the full chain for a lot. */
   getByLot: protectedProcedure
     .input(z.object({
@@ -168,12 +184,12 @@ export const genealogyRouter = router({
       let rows: any[] = [];
       if (input.scope === "serial") {
         if (!input.serialNumber) {
-          throw new TRPCError({ code: "BAD_REQUEST", message: "serialNumber required for scope=serial" });
+          throw appError("BAD_REQUEST", "FIELD_REQUIRED", { field: "serialNumber" }, "serialNumber required for scope=serial");
         }
         rows = await db.listGenealogyChainBySerial(input.serialNumber, input.limit ?? 5000);
       } else if (input.scope === "lot") {
         if (!input.lotCode) {
-          throw new TRPCError({ code: "BAD_REQUEST", message: "lotCode required for scope=lot" });
+          throw appError("BAD_REQUEST", "FIELD_REQUIRED", { field: "lotCode" }, "lotCode required for scope=lot");
         }
         rows = await db.listGenealogyChainByLot(input.lotCode, input.limit ?? 20000);
       } else {

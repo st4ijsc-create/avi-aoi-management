@@ -34,6 +34,7 @@ import { PageHeader, PageContainer, EmptyState } from "@/components/patterns";
 import { DataTable } from "@/components/DataTable";
 import { AlertTriangle, BadgeCheck, IdCard, Loader2, Plus, QrCode, UserCheck, XCircle } from "lucide-react";
 import { toast } from "sonner";
+import { toastTrpcError } from "@/lib/trpcErrors";
 import { format } from "date-fns";
 
 type BadgeRow = {
@@ -88,7 +89,7 @@ export default function OperatorBadges() {
     utils.operatorBadge.list.invalidate();
     utils.operatorBadge.unassignedCount.invalidate();
   };
-  const onError = (err: { message: string }) => toast.error(err.message);
+  const onError = (err: { message: string }) => toastTrpcError(err);
 
   const issueMutation = trpc.operatorBadge.issue.useMutation({
     onSuccess: () => { toast.success(t("operatorBadge.issued")); setIssueOpen(false); invalidate(); },

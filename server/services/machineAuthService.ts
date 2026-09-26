@@ -70,8 +70,9 @@
  * ════════════════════════════════════════════════════════════════════════════
  */
 import { createHash, randomBytes } from "node:crypto";
+import { DbUnavailableError } from "../_core/dbErrors";
 import { and, desc, eq, isNotNull, isNull, lte } from "drizzle-orm";
-import { TRPCError } from "@trpc/server";
+import { appError } from "../_core/appError";
 import * as db from "../db";
 import { apiKeys, aiInsights } from "../../drizzle/schema";
 import { logger } from "../logger";
@@ -100,7 +101,14 @@ export type WeakAuthPolicy = "allow" | "read-only" | "deny";
  * permissive than leaving the flag unset, and the loud log + the rotation report
  * are how a typo gets caught. Verify with telemetry — never assume a flip landed.
  */
-function parseWeakAuthPolicy(name: string, raw: string | undefined, fallback: WeakAuthPolicy): WeakAuthPolicy {
+/**
+ * ⚠ EXPORT có chủ ý (nhóm C, 2026-08-14). `readinessRouter.collectFlagMatrix()` từng tự
+ * viết lại một bản sao THÔ của phép đọc này (`env.X !== "false"`), nên khi chủ dự án làm
+ * ĐÚNG runbook doc 52 — đặt `MACHINE_SHARED_KEY_ALLOWED=deny` — đường cưỡng chế đóng thật
+ * còn bảng Trust & Enforcement lại báo "bypass, vẫn chấp nhận key cũ". Bảng nói ngược sự thật.
+ * Ai cần biết chính sách của một cờ xác thực yếu thì gọi hàm này, ĐỪNG so chuỗi lấy.
+ */
+export function parseWeakAuthPolicy(name: string, raw: string | undefined, fallback: WeakAuthPolicy): WeakAuthPolicy {
   const v = (raw ?? "").trim().toLowerCase();
   if (v === "") return fallback;
   if (v === "false" || v === "0" || v === "off" || v === "no" || v === "deny") return "deny";
@@ -122,19 +130,41 @@ function warnBadPolicyValueOnce(name: string, value: string, fallback: WeakAuthP
 }
 
 /**
- * Legacy shared plaintext `machines.apiKey` policy. Default `allow` (compat).
- * `MACHINE_SHARED_KEY_ALLOWED=false` keeps its original meaning: deny everywhere.
+ * Legacy shared plaintext `machines.apiKey` policy.
+ *
+ * ══════════════════════════════════════════════════════════════════════════════════
+ * MẶC ĐỊNH ĐỔI `allow` → `deny` (2026-08-22, mig 0334)
+ * ══════════════════════════════════════════════════════════════════════════════════
+ * Mặc định cũ là `allow` "cho tương thích". Nhưng một mặc định tương thích trong xác
+ * thực nghĩa là: **cài mới, không đọc tài liệu, thì cửa yếu MỞ SẴN** — và người không
+ * đọc tài liệu chính là người cần được bảo vệ nhất.
+ *
+ * Tiền đề đã ĐO, không giả định (xem mig 0334): 50 khoá `mk_` riêng từng máy còn hiệu
+ * lực phủ đủ **42/42** máy, **0 máy đang dùng thiếu khoá riêng**. Không còn ai phụ thuộc
+ * đường yếu này, nên giữ nó mở không mua được gì mà vẫn trả đủ giá.
+ *
+ * Ai thật sự cần đường cũ vẫn bật lại được bằng `MACHINE_SHARED_KEY_ALLOWED=true` —
+ * nhưng nay đó là một QUYẾT ĐỊNH phải gõ ra, không còn là thứ thừa hưởng trong im lặng.
  */
 export function sharedMachineKeyPolicy(): WeakAuthPolicy {
-  return parseWeakAuthPolicy("MACHINE_SHARED_KEY_ALLOWED", process.env.MACHINE_SHARED_KEY_ALLOWED, "allow");
+  return parseWeakAuthPolicy("MACHINE_SHARED_KEY_ALLOWED", process.env.MACHINE_SHARED_KEY_ALLOWED, "deny");
 }
 
 /**
- * machineCode-only (NO secret) policy. Default `allow` (compat — doc 51 §5.6:
- * this is still the primary DOCUMENTED method, so production flips it, not dev).
+ * machineCode-only (KHÔNG có bí mật nào) policy.
+ *
+ * ⚠ ĐÂY LÀ ĐƯỜNG YẾU NHẤT TRONG CẢ HỆ: biết mã máy là xác thực được. Mã máy in trên
+ * nhãn dán ngoài vỏ máy, xuất hiện trong báo cáo, trong URL, trong ảnh chụp màn hình.
+ * Nó là ĐỊNH DANH, chưa bao giờ là bí mật.
+ *
+ * Mặc định cũ `allow` kèm ghi chú *"đây vẫn là phương thức CHÍNH được tài liệu hoá, nên
+ * production mới lật, dev thì không"*. Lập luận đó có một lỗ: **"production" không phải
+ * một trạng thái mà hệ thống tự biết** — nó là một lời hứa của con người, và không có
+ * lời hứa nào được kiểm ở đây. Hệ quả thực tế là mọi bản cài đều chạy mở cho tới khi có
+ * ai đó nhớ ra. Nay: đóng sẵn, muốn mở phải gõ `MACHINE_CODE_ONLY_ALLOWED=true`.
  */
 export function machineCodeOnlyPolicy(): WeakAuthPolicy {
-  return parseWeakAuthPolicy("MACHINE_CODE_ONLY_ALLOWED", process.env.MACHINE_CODE_ONLY_ALLOWED, "allow");
+  return parseWeakAuthPolicy("MACHINE_CODE_ONLY_ALLOWED", process.env.MACHINE_CODE_ONLY_ALLOWED, "deny");
 }
 
 /**
@@ -274,12 +304,18 @@ export const MACHINE_KEY_DEFAULT_SCOPES: ApiScope[] = [
 // ── errors ────────────────────────────────────────────────────────────────────
 
 /** The DB is positively unreachable — callers with a WAL should buffer, not 401. */
-export class DbUnavailableError extends Error {
-  constructor(message = "Database unavailable") {
-    super(message);
-    this.name = "DbUnavailableError";
-  }
-}
+// ⚠ MỘT lớp DUY NHẤT cho cả hệ. Trước đây file này khai một lớp RIÊNG cùng tên —
+// hai lớp trùng tên là bẫy:  sai nhánh tuỳ đường import, mà đường ingest WAL
+// lại nhận diện bằng  nên lỗi sẽ im lặng đúng ở chỗ nguy nhất (mất bản ghi kiểm).
+// Nhà chung:  — nơi lớp này MANG THEO .
+// ⚠ MỘT lớp DUY NHẤT cho cả hệ. Trước đây file này khai một lớp RIÊNG cùng tên — hai
+// lớp trùng tên là bẫy: `instanceof` rẽ sai nhánh tuỳ đường import, mà đường ingest WAL
+// lại nhận diện bằng `name` nên sai sót sẽ IM LẶNG đúng ở chỗ nguy nhất (đệm-hay-mất
+// bản ghi kiểm khi DB sập). Nhà chung là `_core/dbErrors`, nơi lớp này mang theo
+// `appCode: "DB_UNAVAILABLE"` để client dịch được.
+// `import` + `export` chứ không chỉ `export … from`: file này còn `new DbUnavailableError()`
+// tại chỗ, mà `export … from` KHÔNG đưa tên vào phạm vi cục bộ.
+export { DbUnavailableError };
 
 // ── auth ──────────────────────────────────────────────────────────────────────
 
@@ -351,6 +387,11 @@ const WEAK_AUTH_LOG_MIN_MS = 10 * 60 * 1000;
 let incSecurityEventFn: ((type: string, mode: string) => void) | null = null;
 let metricsBridgeRequested = false;
 
+/** Lượt weak-auth xảy ra TRƯỚC khi cầu nối metric nạp xong — xả ngay khi nạp được. */
+const metricChoNap: Array<{ method: string; outcome: string }> = [];
+/** Trần hàng đợi: cầu nối không bao giờ nạp được cũng không được phình bộ nhớ. */
+const METRIC_CHO_TRAN = 256;
+
 function emitWeakAuthMetric(method: string, outcome: string): void {
   if (incSecurityEventFn) {
     try {
@@ -363,17 +404,39 @@ function emitWeakAuthMetric(method: string, outcome: string): void {
     }
     return;
   }
+  // ⚠ ĐỆM lượt đang chờ cầu nối nạp xong, KHÔNG vứt nó đi.
+  //
+  // Bản trước ghi *"the first weak hit may miss the metric; the in-memory registry is
+  // exact regardless, so nothing is lost"*. Đo live 2026-08-21: **2 lượt bị từ chối,
+  // counter chỉ lên 1**. "Nothing is lost" đúng với sổ `Map`, nhưng SAI với thứ người
+  // ta thật sự dùng để quyết: checklist GO-LIVE (doc 52 §6.1) ký bằng
+  // `machine_weak_auth_denied` — một METRIC, không phải cái Map. Và cái Map thì xoá
+  // sạch mỗi lần restart, nên đúng lúc cần đối chiếu nhất thì nó không còn.
+  //
+  // Hệ quả thật: mỗi lần restart nuốt MỘT lượt weak-auth. Ai đang chờ counter về 0 để
+  // flip cờ sẽ thấy 0 sớm hơn sự thật — đúng kiểu số liệu nói dối theo hướng NGUY HIỂM.
+  // Hàng đợi có TRẦN để một cầu nối không bao giờ nạp được cũng không phình bộ nhớ.
+  if (metricChoNap.length < METRIC_CHO_TRAN) metricChoNap.push({ method, outcome });
   if (metricsBridgeRequested) return;
   metricsBridgeRequested = true;
   // Dynamic: keeps _core/metrics (and its prom-client / SLO chain) off the auth
-  // module graph. Fire-and-forget — the first weak hit may miss the metric; the
-  // in-memory registry is exact regardless, so nothing is lost.
+  // module graph.
   void import("../_core/metrics")
     .then((m) => {
       incSecurityEventFn = m.incSecurityEvent;
+      const cho = metricChoNap.splice(0, metricChoNap.length);
+      for (const e of cho) {
+        try {
+          incSecurityEventFn(`machine_weak_auth_${e.outcome}`, e.method);
+        } catch {
+          /* metrics must never break auth */
+        }
+      }
     })
     .catch(() => {
-      /* metrics unavailable → registry + log remain authoritative */
+      // Cầu nối hỏng vĩnh viễn (thiếu prom-client…) → xả hàng đợi để không giữ rác;
+      // sổ `Map` + log vẫn là nguồn có thẩm quyền.
+      metricChoNap.length = 0;
     });
 }
 
@@ -515,20 +578,22 @@ export async function authenticateMachine(opts: {
     if (row) {
       if (row.machineId == null) {
         // A general /api/v1 key is not a machine credential on this router.
-        throw new TRPCError({ code: "UNAUTHORIZED", message: "Invalid API key" });
+        throw appError("UNAUTHORIZED", "MACHINE_CREDENTIAL_INVALID", { reason: "notMachineKey" }, "Invalid API key");
       }
       if (!row.isActive || row.revokedAt) {
-        throw new TRPCError({ code: "UNAUTHORIZED", message: "API key revoked" });
+        throw appError("UNAUTHORIZED", "MACHINE_CREDENTIAL_INVALID", { reason: "machineKeyRevoked" }, "API key revoked");
       }
       if (row.expiresAt && new Date(row.expiresAt).getTime() < Date.now()) {
-        throw new TRPCError({ code: "UNAUTHORIZED", message: "API key expired" });
+        throw appError("UNAUTHORIZED", "MACHINE_CREDENTIAL_INVALID", { reason: "machineKeyExpired" }, "API key expired");
       }
       const scopes = Array.isArray(row.scopes) ? (row.scopes as string[]) : [];
       if (opts.scope && !scopeSatisfied(scopes, opts.scope)) {
-        throw new TRPCError({
-          code: "FORBIDDEN",
-          message: `This machine key lacks the required scope "${opts.scope}"`,
-        });
+        throw appError(
+          "FORBIDDEN",
+          "PERMISSION_DENIED",
+          { action: "machineScope" },
+          `This machine key lacks the required scope "${opts.scope}"`,
+        );
       }
       let machine: MachineRow | undefined;
       try {
@@ -537,7 +602,12 @@ export async function authenticateMachine(opts: {
         throw new DbUnavailableError();
       }
       if (!machine || machine.isActive === false) {
-        throw new TRPCError({ code: "UNAUTHORIZED", message: "Invalid API key" });
+        throw appError(
+          "UNAUTHORIZED",
+          "MACHINE_CREDENTIAL_INVALID",
+          { reason: "machineInactiveOrMissing" },
+          "Invalid API key",
+        );
       }
       touchLastUsed(row.id);
       return { machine, method: "machine-key", keyId: row.id, scopes };
@@ -579,19 +649,21 @@ export async function authenticateMachine(opts: {
       // key" to whoever already holds that key — accepted: they cannot use it for
       // anything, and a vendor tech reading "Invalid API key" would otherwise hunt
       // a key that is not the problem. Doc 52 §5 documents the trade-off.
-      throw new TRPCError({
-        code: "UNAUTHORIZED",
-        message: mkOnlyRefuse
+      throw appError(
+        "UNAUTHORIZED",
+        "MACHINE_CREDENTIAL_INVALID",
+        { reason: mkOnlyRefuse ? "mkOnlyRequired" : "weakAuthDisabled" },
+        mkOnlyRefuse
           ? `This ${deviceClassOf(sharedMachine.machineType)} machine (${sharedMachine.code}) must authenticate with its ` +
             `per-device key (mk_...) — shared apiKey is not accepted for automation/iot devices on this server.`
           : `Shared machine apiKey authentication is disabled for "${opts.scope ?? "this operation"}" on this server. ` +
             `Configure machine ${sharedMachine.code} with its per-machine key (mk_...) sent as ` +
             `"Authorization: Bearer <key>" or "X-API-Key: <key>".`,
-      });
+      );
     }
 
     if (await dbPositivelyDown()) throw new DbUnavailableError();
-    throw new TRPCError({ code: "UNAUTHORIZED", message: "Invalid API key" });
+    throw appError("UNAUTHORIZED", "MACHINE_CREDENTIAL_INVALID", undefined, "Invalid API key");
   }
 
   // 3) machineCode-only identification — WEAK path, NO secret whatsoever (doc 51 R1).
@@ -618,24 +690,28 @@ export async function authenticateMachine(opts: {
         outcome: decision,
       });
       if (decision === "allowed") return { machine, method: "machine-code" };
-      throw new TRPCError({
-        code: "UNAUTHORIZED",
-        message: mkOnlyRefuse
+      throw appError(
+        "UNAUTHORIZED",
+        "MACHINE_CREDENTIAL_INVALID",
+        { reason: mkOnlyRefuse ? "mkOnlyRequired" : "weakAuthDisabled" },
+        mkOnlyRefuse
           ? `This ${deviceClassOf(machine.machineType)} machine (${machine.code}) must authenticate with its ` +
             `per-device key (mk_...) — machineCode-only is not accepted for automation/iot devices on this server.`
           : `machineCode-only authentication is disabled for "${opts.scope ?? "this operation"}" on this server. ` +
             `Configure machine ${machine.code} with its per-machine key (mk_...) sent as ` +
             `"Authorization: Bearer <key>" or "X-API-Key: <key>".`,
-      });
+      );
     }
     if (await dbPositivelyDown()) throw new DbUnavailableError();
-    throw new TRPCError({ code: "UNAUTHORIZED", message: "Invalid machine code" });
+    throw appError("UNAUTHORIZED", "MACHINE_CREDENTIAL_INVALID", undefined, "Invalid machine code");
   }
 
-  throw new TRPCError({
-    code: "UNAUTHORIZED",
-    message: "Either apiKey or machineCode must be provided",
-  });
+  throw appError(
+    "UNAUTHORIZED",
+    "FIELD_REQUIRED",
+    { field: "apiKeyOrMachineCode" },
+    "Either apiKey or machineCode must be provided",
+  );
 }
 
 // ── ingest rate limit (in-memory fixed window; Redis move = Đợt 4 / B6) ──────
@@ -669,10 +745,15 @@ export function enforceMachineIngestRateLimit(auth: {
   }
   win.count += 1;
   if (win.count > limit) {
-    throw new TRPCError({
-      code: "TOO_MANY_REQUESTS",
-      message: `Ingest rate limit exceeded for machine ${auth.machine.code} (${limit}/min)`,
-    });
+    // RATE_LIMITED params:{} theo đúng quyết định Task 8 — chi tiết hạn mức
+    // (đơn vị/giờ hay /phút khác nhau tuỳ nơi gọi) giữ NGUYÊN ở fallbackMessage,
+    // không đưa vào template vì không có 1 đơn vị chung cho mọi nơi gọi RATE_LIMITED.
+    throw appError(
+      "TOO_MANY_REQUESTS",
+      "RATE_LIMITED",
+      undefined,
+      `Ingest rate limit exceeded for machine ${auth.machine.code} (${limit}/min)`,
+    );
   }
 }
 
@@ -689,7 +770,7 @@ export function isValidScopeGrant(s: string): boolean {
 
 async function requireDb() {
   const d = await db.getDb();
-  if (!d) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Database not connected" });
+  if (!d) throw appError("INTERNAL_SERVER_ERROR", "DB_UNAVAILABLE", undefined, "Database not connected");
   return d;
 }
 
@@ -727,11 +808,16 @@ export async function issueMachineKey(opts: {
   const d = await requireDb();
   const machine = await db.getMachineById(opts.machineId);
   if (!machine) {
-    throw new TRPCError({ code: "NOT_FOUND", message: `Machine ${opts.machineId} not found` });
+    throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "machine" }, `Machine ${opts.machineId} not found`);
   }
   const scopes = opts.scopes && opts.scopes.length > 0 ? opts.scopes : [...MACHINE_KEY_DEFAULT_SCOPES];
   if (!scopes.every(isValidScopeGrant)) {
-    throw new TRPCError({ code: "BAD_REQUEST", message: "One or more scopes are not in the published scope vocabulary" });
+    throw appError(
+      "BAD_REQUEST",
+      "INVALID_VALUE",
+      { field: "scopes" },
+      "One or more scopes are not in the published scope vocabulary",
+    );
   }
   // Doc 51 P3 / CASE #10 — apply the DEFAULT TTL only when the caller did not
   // decide expiry itself. `undefined` = "no opinion" → default TTL (0/unset ⇒
@@ -810,7 +896,7 @@ export async function revokeMachineKey(keyId: number): Promise<PublicMachineKeyR
     .set({ isActive: false, revokedAt: new Date(), updatedAt: new Date() })
     .where(eq(apiKeys.id, keyId))
     .returning();
-  if (!row) throw new TRPCError({ code: "NOT_FOUND", message: `API key ${keyId} not found` });
+  if (!row) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "apiKey" }, `API key ${keyId} not found`);
   return publicMachineKeyRow(row);
 }
 
@@ -824,9 +910,14 @@ export async function rotateMachineKey(
 ): Promise<PublicMachineKeyRow & { plaintextKey: string }> {
   const d = await requireDb();
   const [existing] = await d.select().from(apiKeys).where(eq(apiKeys.id, keyId)).limit(1);
-  if (!existing) throw new TRPCError({ code: "NOT_FOUND", message: `API key ${keyId} not found` });
+  if (!existing) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "apiKey" }, `API key ${keyId} not found`);
   if (existing.machineId == null) {
-    throw new TRPCError({ code: "BAD_REQUEST", message: `API key ${keyId} is not a machine key` });
+    throw appError(
+      "BAD_REQUEST",
+      "MACHINE_CREDENTIAL_INVALID",
+      { reason: "notMachineKey" },
+      `API key ${keyId} is not a machine key`,
+    );
   }
   await revokeMachineKey(keyId);
   return issueMachineKey({

@@ -4,11 +4,12 @@
  */
 
 import { getDb } from "./db";
+import { DbUnavailableError } from "./_core/dbErrors";
 
 // Helper to get db with null check
 async function requireDb() {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  if (!db) throw new DbUnavailableError();
   return db;
 }
 import {

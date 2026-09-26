@@ -6,7 +6,6 @@
  * router does NOT import commandDispatcher (static source scan).
  */
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { FakeDb, makeEq, makeAnd, makeDesc, resetSeq } from "./__otFakeDb";
 import { recipeDeployments } from "../../drizzle/schema";
@@ -94,6 +93,8 @@ vi.mock("../_core/accessControl", () => ({
 }));
 
 import { machineRecipeRouter } from "./machineRecipeRouter";
+
+import { docMaNguon } from "@shared/testing/docMaNguon";
 
 // Doc 38 Đợt Q — recipes.approve/deploy/rollback are now actuationProcedure
 // (role-floor admin/supervisor/engineer + 2FA). The privileged supervisor fixture
@@ -241,7 +242,7 @@ describe("genealogy trail (W5-22b)", () => {
 
 describe("SAFETY invariant", () => {
   it("router source does NOT import commandDispatcher / writeTags", () => {
-    const src = readFileSync(join(__dirname, "machineRecipeRouter.ts"), "utf8");
+    const src = docMaNguon(join(__dirname, "machineRecipeRouter.ts"));
     const importLines = src.split("\n").filter((l) => /^\s*import\b/.test(l)).join("\n");
     expect(importLines).not.toMatch(/commandDispatcher/);
     expect(importLines).not.toMatch(/writeTags/);

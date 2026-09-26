@@ -1,5 +1,8 @@
 import { trpc } from "@/lib/trpc";
-import { UNAUTHED_ERR_MSG } from '@shared/const';
+import { isUnauthorizedError } from "@/lib/authRedirect";
+import { mapTrpcError } from "@/lib/trpcErrors";
+import { queryErrorToastKey, shouldToastQueryError } from "@/lib/queryErrorToast";
+import { toast } from "sonner";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { httpBatchLink, TRPCClientError } from "@trpc/client";
 import { createRoot } from "react-dom/client";
@@ -7,8 +10,10 @@ import superjson from "superjson";
 import App from "./App";
 import { getLoginUrl } from "./const";
 import { initRum } from "./lib/rum";
+import { donKhoNguoiDungLucKhoiDong } from "./lib/donKhoaNguoiDung";
+import "./fonts.css"; // Đợt 43 (G117): Geist / Geist Mono tự phục vụ — TRƯỚC index.css để @font-face có mặt khi --font-sans được dùng
 import "./index.css";
-import "./i18n"; // Initialize i18n
+import { i18nReady } from "./i18n"; // Initialize i18n (vi fetch song song — doc64 S5-OPT V4)
 
 // Wave 1 (foundation): sane query defaults for the whole app. Previously the
 // client was constructed bare — staleTime 0 + refetchOnWindowFocus on = every
@@ -27,13 +32,16 @@ const queryClient = new QueryClient({
   },
 });
 
+/**
+ * F11 (nhóm C 2026-08-14) — vị từ nhận diện nằm ở `lib/authRedirect.ts` (thuần, test được).
+ * Tóm tắt lý do đổi: trước đây khớp ĐÚNG CHUỖI `UNAUTHED_ERR_MSG`, nên sáu tuyến khác cũng
+ * ném `UNAUTHORIZED` + `AUTH_REQUIRED` nhưng message khác thì không điều hướng — và handler
+ * bên dưới chỉ `console.error` nên cũng không hiện gì. Người dùng kẹt ở màn hình rỗng câm.
+ */
 const redirectToLoginIfUnauthorized = (error: unknown) => {
   if (!(error instanceof TRPCClientError)) return;
   if (typeof window === "undefined") return;
-
-  const isUnauthorized = error.message === UNAUTHED_ERR_MSG;
-
-  if (!isUnauthorized) return;
+  if (!isUnauthorizedError(error)) return;
 
   window.location.href = getLoginUrl();
 };
@@ -43,6 +51,26 @@ queryClient.getQueryCache().subscribe(event => {
     const error = event.query.state.error;
     redirectToLoginIfUnauthorized(error);
     console.error("[API Query Error]", error);
+
+    /**
+     * F11 (nhóm C 2026-08-14) — lỗi query phải nói được cho người dùng.
+     *
+     * React Query v5 BỎ HẲN `onError` khỏi `useQuery`, nên cả 1310 lời gọi query trong
+     * `client/src` không có chỗ nào xử lý lỗi riêng — đây là nơi DUY NHẤT, và trước đây
+     * nó chỉ `console.error`. Lượt kiểm mắt đo được: `DB_UNAVAILABLE` không hiện gì cả,
+     * người dùng chỉ thấy màn hình rỗng im lặng.
+     *
+     * Ba cửa lọc, theo đúng thứ tự:
+     *  1. đang điều hướng về login ⇒ im (người dùng sắp rời trang);
+     *  2. query ĐÃ có dữ liệu cũ ⇒ im — đây là refetch nền hỏng, màn hình vẫn có nội
+     *     dung, quấy người đang làm việc bằng toast là sai;
+     *  3. gộp theo MÃ lỗi trong một cửa sổ ⇒ DB sập cho ra MỘT câu, không phải bốn mươi.
+     */
+    if (!isUnauthorizedError(error) && event.query.state.data === undefined) {
+      if (shouldToastQueryError(queryErrorToastKey(error), Date.now())) {
+        toast.error(mapTrpcError(error));
+      }
+    }
   }
 });
 
@@ -51,6 +79,23 @@ queryClient.getMutationCache().subscribe(event => {
     const error = event.mutation.state.error;
     redirectToLoginIfUnauthorized(error);
     console.error("[API Mutation Error]", error);
+
+    /**
+     * F11 (nhóm C 2026-08-14) — LƯỚI CUỐI cho mutation không tự xử lý lỗi.
+     *
+     * Đo được: 248/910 lời gọi `useMutation` KHÔNG khai `onError`. Với chúng, người dùng
+     * bấm nút, việc hỏng, và **không có gì xảy ra trên màn hình** — trước đây chỉ có một
+     * dòng `console.error` mà không ai mở DevTools để đọc. Im lặng không bao giờ là hành
+     * vi đúng cho một thao tác do chính người dùng khởi động.
+     *
+     * ⚠ Chỉ bắn khi mutation KHÔNG có `onError` riêng. 662 chỗ đã tự hiện thông báo
+     *   (phần lớn qua `mapTrpcError`) — bắn thêm ở đó là toast ĐÔI, một hồi quy.
+     * ⚠ Không bắn khi đang điều hướng về trang đăng nhập: người dùng sắp rời trang,
+     *   một toast nháy rồi biến mất chỉ gây nhiễu.
+     */
+    if (!event.mutation.options.onError && !isUnauthorizedError(error)) {
+      toast.error(mapTrpcError(error));
+    }
   }
 });
 
@@ -91,17 +136,26 @@ const trpcClient = trpc.createClient({
   ],
 });
 
-createRoot(document.getElementById("root")!).render(
-  <trpc.Provider client={trpcClient} queryClient={queryClient}>
-    <QueryClientProvider client={queryClient}>
-      <App />
-    </QueryClientProvider>
-  </trpc.Provider>
-);
+// ★★★ Pha 7 Task 8b — DỌN dữ liệu người dùng ĐÃ nằm sẵn trên đĩa trình duyệt.
+// Gỡ lượt ghi chỉ chặn lượt ghi TIẾP THEO; bản ghi cũ (nguyên đối tượng `auth.me`) vẫn ở trong
+// `localStorage` của mọi người đã từng đăng nhập. Chạy TRƯỚC render, đồng bộ, không bao giờ ném.
+donKhoNguoiDungLucKhoiDong();
 
-// Doc 44 G5.9 — client RUM (web-vitals qua PerformanceObserver, không dep mới).
-// Gọi SAU render, fire-and-forget — không bao giờ chặn hay làm hỏng app.
-initRum();
+// doc64 S5-OPT V4: chờ vi.json (fetch song song, bắt đầu từ lúc module ./i18n eval)
+// rồi mới render — không bao giờ flash key thô. loadVi tự nuốt lỗi nên .then luôn chạy.
+void i18nReady.then(() => {
+  createRoot(document.getElementById("root")!).render(
+    <trpc.Provider client={trpcClient} queryClient={queryClient}>
+      <QueryClientProvider client={queryClient}>
+        <App />
+      </QueryClientProvider>
+    </trpc.Provider>
+  );
+
+  // Doc 44 G5.9 — client RUM (web-vitals qua PerformanceObserver, không dep mới).
+  // Gọi SAU render, fire-and-forget — không bao giờ chặn hay làm hỏng app.
+  initRum();
+});
 
 // Phase 5 WS5.1 — PWA service worker. Đăng ký CHỈ khi VITE_ENABLE_SW='true'
 // (production PWA). Mặc định TẮT + tự UNREGISTER mọi SW cũ + xoá cache của nó:

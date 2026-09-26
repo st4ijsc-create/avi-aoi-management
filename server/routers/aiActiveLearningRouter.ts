@@ -1,5 +1,10 @@
 import { z } from "zod";
-import { router, protectedProcedure, adminProcedure } from "../_core/trpc";
+import { appError } from "../_core/appError";
+import { router, moduleProcedure, moduleGate, adminProcedure as adminProcedureBase } from "../_core/trpc";
+// ★ Cổng giấy phép MOD_AI — chỉ THÊM chiều giấy phép, RBAC/vai/2FA giữ nguyên từng ký tự.
+//   Không-brick + fail-safe ở `_core/moduleGate.ts`; lượng từ canh ở `congGiayPhepAiCensus.test.ts`.
+const protectedProcedure = moduleProcedure("MOD_AI");
+const adminProcedure = adminProcedureBase.use(moduleGate("MOD_AI"));
 import path from "path";
 import fs from "fs";
 import {
@@ -25,7 +30,7 @@ function resolveImagePath(imageKey: string): string {
 async function loadImage(imageKey: string): Promise<Buffer> {
   const fullPath = resolveImagePath(imageKey);
   if (!fs.existsSync(fullPath)) {
-    throw new Error(`Image not found: ${imageKey}`);
+    throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "image" }, `Image not found: ${imageKey}`);
   }
   return fs.promises.readFile(fullPath);
 }

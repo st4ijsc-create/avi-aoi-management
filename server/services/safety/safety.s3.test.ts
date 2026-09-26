@@ -232,6 +232,23 @@ describe("simTrackPublisher.runSimTick (service) — drives the advisory loop", 
     expect(ev.notes).toMatch(/source sim/);
     expect(ev.humanPosition?.source).toBe("sim");
   });
+
+  // Fix round 1 (doc 80 Đợt 0 Task 6, SAF-01) — `buildSimDetection` always sends
+  // `source:'test'` (the exact same provenance the Safety Monitor UI's test button
+  // sends), so every sim tick's S1 near-miss check must be just as harmless: honest
+  // `detectedBy:'test'` and NO real Andon, even at a distance deep inside the margin
+  // where the S1 path used to (before the SAF-01 fix) call raiseAndon unconditionally.
+  it("★★★ a sim tick NEVER raises an Andon, even well inside the near-miss margin (SAF-01 applies to the sim publisher too)", async () => {
+    process.env.SAFETY_AUDIT_ENABLED = "true";
+    const r = await runSimTick(0); // tick 0 → distance 200mm, deep under the 500mm default margin
+    expect(r.near.enabled).toBe(true);
+    expect(r.near.triggered).toBe(true);
+    const nearMissEvent = store.safety_events.find((e) => e.eventType === "near_miss");
+    expect(nearMissEvent).toBeTruthy();
+    expect(nearMissEvent!.detectedBy).toBe("test"); // NOT "operator" — honest synthetic provenance
+    expect(raiseAndon).not.toHaveBeenCalled(); // the whole point of this fix
+    expect(r.near.andonId).toBeUndefined();
+  });
 });
 
 describe("start/stopSimTrackPublisher — no-op-safe when flag OFF", () => {

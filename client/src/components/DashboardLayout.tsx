@@ -12,7 +12,6 @@ import {
   SidebarContent,
   SidebarFooter,
   SidebarHeader,
-  SidebarInset,
   SidebarProvider,
   SidebarTrigger,
   useSidebar,
@@ -33,11 +32,19 @@ import { LanguageSwitcher } from "./LanguageSwitcher";
 import { ThemeToggle } from "./ThemeToggle";
 import { SiteSwitcher } from "./SiteSwitcher";
 import { SiteHealthDot } from "./SiteHealthDot";
+// doc 63 (AUD-01/G8) — shell-level freshness surface, flag-gated (HMI_ISA101_V2).
+import { FreshnessStrip } from "./FreshnessStrip";
+// doc 63 (FLW-01/G1) — shell alert chip: ack+resolve andon từ mọi trang, ≤3 chạm.
+import { ShellAlertChip } from "./ShellAlertChip";
+// doc 64 IA-10 — trục phạm vi ISA-95 + chip bất biến trung thực.
+import { AssetScopeBar, ScopeStatusChip } from "./AssetScopeBar";
+import { useAssetScope } from "@/contexts/AssetScopeContext";
+import { isIsa101V2 } from "@/lib/hmiFlags";
 import { CSSProperties, Fragment, ReactNode, createContext, useContext, useEffect, useMemo, useState } from "react";
 import { useLocation, useSearch, Link } from "wouter";
 import { DashboardLayoutSkeleton } from './DashboardLayoutSkeleton';
 import { Button } from "./ui/button";
-import { NavGroup, NavItem, getFilteredNavGroups, filterNavGroupsByMode, hasAdvancedContent, isBetaRoute } from "@/lib/navigation";
+import { NavGroup, NavItem, getFilteredNavGroups, getSearchNavGroups, filterNavGroupsByMode, hasAdvancedContent, isBetaRoute } from "@/lib/navigation";
 import { buildBreadcrumbs } from "@/lib/breadcrumbs";
 import {
   Breadcrumb,
@@ -234,6 +241,13 @@ function DashboardLayoutContent({
   const [launcherOpen, setLauncherOpen] = useState(false);
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
+      // ★ 2026-08-31 · PDCA vòng 1 (T11) — NHƯỜNG bề mặt đã nhận phím: một trang "editor surface"
+      // (vd /ai-coding-workspace: Ctrl+K = sửa-đoạn-chọn kiểu Cursor) preventDefault ở pha capture;
+      // toggle palette đè lên nó là hai handler tranh một phím — đo thật: dialog mở, focus nuốt
+      // selection (86→0) trước khi handler trang kịp đọc. Lớp CHÍNH của bản vá là capture+
+      // stopPropagation ở trang (sự kiện thường không tới được đây); dòng này là lớp ĐỘC LẬP thứ
+      // hai cho mọi thứ tự listener khác — hai lớp phải cùng chặn, không che nhau.
+      if (e.defaultPrevented) return;
       if (!(e.metaKey || e.ctrlKey)) return;
       if (e.key.toLowerCase() === "k") {
         e.preventDefault();
@@ -277,6 +291,10 @@ function DashboardLayoutContent({
 
   // doc 22 P4 — Simple vs Advanced menu mode (persisted; default per role).
   const { mode: navMode, toggleMode } = useNavMode(user?.role);
+  // doc 64 IA-10 S3 — trục có selection? (cho hàng chip standalone khi breadcrumb ẩn).
+  const { axis: assetAxis } = useAssetScope();
+  const hasAssetAxis =
+    assetAxis.factoryId !== undefined || assetAxis.lineId !== undefined || assetAxis.machineId !== undefined;
 
   // Filter groups based on user role + granular permissions + license modules.
   // `accessibleGroups` = everything this user COULD see; `visibleGroups` then also
@@ -297,7 +315,17 @@ function DashboardLayoutContent({
   // their owning module's app, reorganising across the old groups). Search (⌘K) still spans
   // ALL accessible apps. When the flag is OFF, everything behaves exactly as before.
   const sidebarGroups = launcherOn ? scopeGroupsToApp(visibleGroups, activeApp.appId) : visibleGroups;
-  const searchGroups = launcherOn ? accessibleGroups : visibleGroups;
+  // doc 63 (AUD-05 / IA-09) — ⌘K searches the UNCOLLAPSED accessible set (incl. the 28
+  // rows folded into hubs), so a page hidden from the rail is still findable by name.
+  // Same license/nav-group filtering as the sidebar, minus the hub-collapse step.
+  const searchAccessibleGroups = getSearchNavGroups(user?.role, hasPermission as any, hasAnyCategoryPermission as any)
+    .filter(group => isNavGroupAllowed(group.id))
+    .map(group => ({
+      ...group,
+      items: group.items.filter(item => isLicenseRouteAllowed(item.href)),
+    }))
+    .filter(group => group.items.length > 0);
+  const searchGroups = searchAccessibleGroups;
 
   // doc 40 Lan — RBAC cho App Launcher: một app "truy cập được" khi là core, HOẶC còn ≥1
   // item hiển thị sau khi lọc role/permission/license (accessibleGroups). Tile không truy
@@ -344,7 +372,7 @@ function DashboardLayoutContent({
             {isMobile ? (
               // Mobile sheet header: full logo + title.
               <div className="flex items-center gap-3 px-2 w-full">
-                <Link href="/" className="flex items-center gap-2 min-w-0">
+                <Link href="/" className="flex min-h-10 items-center gap-2 min-w-0">
                   <div className="h-8 w-8 rounded-lg bg-primary/20 flex items-center justify-center shrink-0">
                     <Cpu className="h-4 w-4 text-primary" />
                   </div>
@@ -358,7 +386,7 @@ function DashboardLayoutContent({
               // When collapsed to the icon rail, only the logo shows (title + in-rail toggle
               // hidden — the header SidebarTrigger re-expands the rail).
               <div className="flex items-center gap-2 px-2 w-full group-data-[collapsible=icon]:px-0 group-data-[collapsible=icon]:justify-center">
-                <Link href="/" className="flex items-center gap-2 min-w-0">
+                <Link href="/" className="flex min-h-10 items-center gap-2 min-w-0">
                   <div className="h-8 w-8 rounded-lg bg-primary/20 flex items-center justify-center shrink-0">
                     <Cpu className="h-4 w-4 text-primary" />
                   </div>
@@ -368,7 +396,7 @@ function DashboardLayoutContent({
                 </Link>
                 <button
                   onClick={toggleSidebar}
-                  className="ml-auto h-9 w-9 flex items-center justify-center hover:bg-sidebar-accent rounded-lg transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-ring shrink-0 group-data-[collapsible=icon]:hidden"
+                  className="ml-auto h-10 w-10 flex items-center justify-center hover:bg-sidebar-accent rounded-lg transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-ring shrink-0 group-data-[collapsible=icon]:hidden"
                   aria-label="Toggle navigation"
                 >
                   <PanelLeft className="h-4 w-4 text-sidebar-foreground" />
@@ -387,22 +415,28 @@ function DashboardLayoutContent({
               </div>
             )}
             {/* doc 60 B — Favorites + Recent pinned above the nav (1-click to frequent pages). */}
-            <SidebarQuickAccess onNavigate={handleNavigate} />
-            {isMobile ? (
-              // Mobile (R1): tap-drill nav inside the Sheet drawer (hover unavailable).
-              <MobileDrillNav
-                groups={sidebarGroups}
-                currentPath={navActivePath}
-                onNavigate={handleNavigate}
-              />
-            ) : (
-              // Desktop (R1): 3-level cascading Miller-column nav on a fixed icon rail.
-              <CascadingNav
-                groups={sidebarGroups}
-                currentPath={navActivePath}
-                onNavigate={handleNavigate}
-              />
-            )}
+            {/* doc 67 W4 [P1] — landmark <nav> có aria-label: Quick-access + nav chính là 2
+                vùng điều hướng riêng, SR phân biệt được (cả 2 component gốc chỉ render div). */}
+            <nav aria-label={t("nav.quickLinksLabel", "Liên kết nhanh")}>
+              <SidebarQuickAccess onNavigate={handleNavigate} />
+            </nav>
+            <nav aria-label={t("nav.primaryNavLabel", "Điều hướng chính")}>
+              {isMobile ? (
+                // Mobile (R1): tap-drill nav inside the Sheet drawer (hover unavailable).
+                <MobileDrillNav
+                  groups={sidebarGroups}
+                  currentPath={navActivePath}
+                  onNavigate={handleNavigate}
+                />
+              ) : (
+                // Desktop (R1): 3-level cascading Miller-column nav on a fixed icon rail.
+                <CascadingNav
+                  groups={sidebarGroups}
+                  currentPath={navActivePath}
+                  onNavigate={handleNavigate}
+                />
+              )}
+            </nav>
           </SidebarContent>
 
           <SidebarFooter className="p-3 border-t border-sidebar-border">
@@ -418,7 +452,7 @@ function DashboardLayoutContent({
                     ? t("nav.showAdvanced", "Show advanced menu")
                     : t("nav.showSimple", "Simple menu")
                 }
-                className="mb-2 flex items-center gap-3 rounded-lg px-2 py-2 hover:bg-sidebar-accent transition-colors w-full text-left group-data-[collapsible=icon]:justify-center focus:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                className="mb-2 flex min-h-10 items-center gap-3 rounded-lg px-2 py-2 hover:bg-sidebar-accent transition-colors w-full text-left group-data-[collapsible=icon]:justify-center focus:outline-none focus-visible:ring-2 focus-visible:ring-ring"
               >
                 {navMode === "simple" ? (
                   <Layers className="h-4 w-4 shrink-0 text-muted-foreground" />
@@ -507,15 +541,23 @@ function DashboardLayoutContent({
         {/* R1: resize handle removed — the desktop nav is now a fixed-width icon rail. */}
       </div>
 
-      <SidebarInset className="bg-background">
+      {/* doc 67 W4 [P1] — landmark: shadcn SidebarInset render <main>, tạo landmark <main>
+          THỨ HAI bọc cả topbar lẫn main#main-content (main lồng main — sai WAI-ARIA). Thay
+          bằng <div> cùng class (variant mặc định nên các rule peer-data-[variant=inset]
+          không áp) để main#main-content bên dưới là <main> DUY NHẤT của shell.
+          min-w-0 [P0]: cột nội dung là flex-item của SidebarProvider — phải co được, không
+          để topbar chật đẩy scrollWidth vượt viewport 1280 (đo thực tế 1423/1341). */}
+      <div data-slot="sidebar-inset" className="relative flex w-full min-w-0 flex-1 flex-col bg-background">
         {/* F2 (doc 23 §5) — restructured context bar:
             [trigger] · Site/Scope switcher · WIDE global ⌘K search (center, widest) ·
             alerts (AI inbox + notifications) · site-health dot · theme/lang. Kiosk
             mode hides the whole bar via [data-app-chrome="header"]. */}
-        <div data-app-chrome="header" className="flex border-b border-border h-14 items-center gap-2 sm:gap-3 bg-card/95 px-2 sm:px-3 backdrop-blur supports-backdrop-filter:backdrop-blur sticky top-0 z-40">
+        {/* doc 67 W4 [P1] — <header> landmark thay div (vùng chrome đầu trang); giữ nguyên
+            data-app-chrome="header" nên CSS kiosk-mode không đổi. min-w-0 để hàng co thật. */}
+        <header data-app-chrome="header" className="flex border-b border-border h-14 min-w-0 items-center gap-2 sm:gap-3 bg-card/95 px-2 sm:px-3 backdrop-blur supports-backdrop-filter:backdrop-blur sticky top-0 z-40">
           {/* Left — sidebar toggle + site/scope switcher. The toggle opens the mobile
               sheet / re-opens the collapsed desktop rail. */}
-          <SidebarTrigger className="h-9 w-9 rounded-lg shrink-0" />
+          <SidebarTrigger className="h-10 w-10 rounded-lg shrink-0" />
           {/* doc 40 — App Launcher trigger (top-shell): waffle opens a two-column DROPDOWN
               (app list + that app's pages) so a cross-app jump is 2 clicks with no landing
               detour. Mobile falls back to the full-screen overlay. "All apps ⊞" inside the
@@ -540,7 +582,7 @@ function DashboardLayoutContent({
             type="button"
             onClick={() => setPaletteOpen(true)}
             aria-label={t("nav.searchPlaceholder")}
-            className="flex h-9 min-w-0 flex-1 items-center gap-2 rounded-lg border border-border bg-muted/40 px-3 text-muted-foreground transition-colors hover:bg-muted focus:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            className="flex h-10 min-w-10 flex-1 items-center gap-2 overflow-hidden rounded-lg border border-border bg-muted/40 px-3 text-muted-foreground transition-colors hover:bg-muted focus:outline-none focus-visible:ring-2 focus-visible:ring-ring"
           >
             <Search className="h-4 w-4 shrink-0" />
             <span className="min-w-0 flex-1 truncate text-left text-sm">{t("nav.searchPlaceholder")}</span>
@@ -550,19 +592,32 @@ function DashboardLayoutContent({
           </button>
 
           {/* Right — alerts · site-health dot · theme/lang. */}
-          <div className="flex items-center gap-1 sm:gap-2 shrink-0">
+          {/* doc 67 W4 [P0] — bỏ shrink-0, thêm min-w-0: cụm phải co được khi 1280px chật;
+              phần co dồn vào AssetScopeBar (min-w-0, selector tự truncate), các nút icon
+              giữ kích thước cố định của chúng. */}
+          <div className="flex min-w-0 items-center gap-1 sm:gap-2">
+            {/* doc 64 IA-10 S0.3 — trục phạm vi ISA-95 (Xưởng›Chuyền›Máy), bền qua điều hướng. */}
+            {isIsa101V2() && <AssetScopeBar className="hidden min-w-0 xl:flex" />}
             <AIActionInboxLauncher />
             <NotificationCenter />
+            {/* doc 63 (FLW-01/G1) — shell alert chip: đếm andon mở, chạm→drawer Ack/Resolve.
+                Ẩn khi 0 (ISA-101 im lặng). */}
+            {isIsa101V2() && <ShellAlertChip />}
+            {/* doc 63 (AUD-01/G8) — flag-gated shell FreshnessStrip: socket-truth connection
+                state, never claims live when the socket is down. Byte-identical when off. */}
+            {isIsa101V2() && <FreshnessStrip className="hidden shrink-0 sm:inline-flex" />}
             <SiteHealthDot />
             <ThemeToggle />
             <LanguageSwitcher />
           </div>
-        </div>
+        </header>
         {showBreadcrumbs && (
           // F2 — slim global breadcrumb row rendered ONCE from the shell (covers all
           // pages without editing each PageHeader). Query strings are stripped.
-          <div className="border-b border-border bg-card/60 px-3 py-1.5 sm:px-4">
-            <Breadcrumb>
+          // doc 67 W4 [P0] — min-w-0 cả hàng lẫn <Breadcrumb>: trail dài wrap/co trong
+          // viewport 1280 thay vì banh ngang (BreadcrumbList sẵn flex-wrap).
+          <div className="flex min-w-0 items-center justify-between gap-2 border-b border-border bg-card/60 px-3 py-1.5 sm:px-4">
+            <Breadcrumb className="min-w-0">
               <BreadcrumbList>
                 {breadcrumbs.map((crumb, i) => {
                   const isLast = i === breadcrumbs.length - 1;
@@ -583,18 +638,30 @@ function DashboardLayoutContent({
                 })}
               </BreadcrumbList>
             </Breadcrumb>
+            {/* doc 64 IA-10 S0.4 — bất biến trung thực: trang chưa wire scope hiện rõ
+                "chưa lọc theo phạm vi" khi trục có selection (không ngầm-toàn-cục). */}
+            {isIsa101V2() && <ScopeStatusChip className="shrink-0" />}
+          </div>
+        )}
+        {/* doc 64 IA-10 S3 — route mồ côi/ẩn-breadcrumb (vd /alarm-kpi) vẫn phải có chip
+            (bất biến không được phụ thuộc chỗ đứng breadcrumb). Hàng mảnh, chỉ hiện khi
+            trục có selection. */}
+        {!showBreadcrumbs && isIsa101V2() && hasAssetAxis && (
+          <div className="flex justify-end border-b border-border bg-card/60 px-3 py-1 sm:px-4">
+            <ScopeStatusChip className="shrink-0" />
           </div>
         )}
         <PermissionExpiryBanner />
         <LicenseEnforcementBanner />
         {/* E: pad the bottom on mobile so content clears the fixed Bottom Navigation bar. */}
-        <main id="main-content" tabIndex={-1} className={cn("flex-1 p-3 sm:p-4 md:p-6 overflow-auto focus:outline-none", isMobile && "pb-20")}>
+        {/* doc65 V3: pb-24 desktop — chừa chỗ cho FAB chat góc phải-dưới, không đè nội dung cuối trang */}
+        <main id="main-content" tabIndex={-1} className={cn("flex-1 p-3 sm:p-4 md:p-6 pb-24 overflow-auto focus:outline-none", isMobile && "pb-20")}>
           {/* doc 22 P4 — one-line "Beta / needs setup" banner on framework/flag-gated
               routes so first-time users don't expect live data. Driven by the nav flag. */}
           {isBetaRoute(currentPath || location) && <BetaBanner />}
           {children}
         </main>
-      </SidebarInset>
+      </div>
       {/* E — Material 3 Bottom Navigation (phones only). "Menu" opens the full drawer. */}
       {isMobile && (
         <BottomNav

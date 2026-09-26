@@ -19,6 +19,7 @@
  */
 import { useEffect, useMemo, useRef, useState } from "react";
 import { trpc } from "@/lib/trpc";
+import { mapTrpcError, toastTrpcError } from "@/lib/trpcErrors";
 import { usePollingInterval } from "@/hooks/usePollingInterval";
 import { useTranslation } from "react-i18next";
 import { usePermissions } from "@/_core/hooks/usePermissions";
@@ -48,6 +49,13 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { ShieldAlert, Plus, Pencil, Trash2, CheckCircle2, Play, Pause, FlaskConical, Info } from "lucide-react";
 import { toast } from "sonner";
+import {
+  serializeCommandValueForEdit,
+  inferCommandValueType,
+  resolveCommandValueForSubmit,
+  CommandValueParseError,
+  type CommandValueType,
+} from "@/lib/interlockCommandValue";
 
 const SCOPES = ["line", "station", "machine"] as const;
 const SOURCE_TYPES = ["spc_violation", "ng_rate", "process_result", "telemetry_tag", "cpk"] as const;
@@ -79,6 +87,9 @@ interface RuleForm {
   targetAdapterId: string;
   commandTag: string;
   commandValue: string;
+  // Fix round 2 (doc 80 Task 2 review) — explicit "Kiểu giá trị" selector so a
+  // typed edit is unambiguous (no more auto-detecting "1" as text vs number).
+  commandValueType: CommandValueType;
   cooldownSeconds: string;
 }
 
@@ -86,7 +97,8 @@ const emptyRule: RuleForm = {
   name: "", description: "", scope: "machine", lineId: "", stationId: "", machineId: "",
   sourceType: "ng_rate", sourceKey: "", comparisonOperator: "gt", threshold: "",
   windowSize: "", consecutiveCount: "", windowSeconds: "", action: "alert",
-  targetMachineId: "", targetAdapterId: "", commandTag: "", commandValue: "", cooldownSeconds: "300",
+  targetMachineId: "", targetAdapterId: "", commandTag: "", commandValue: "", commandValueType: "text",
+  cooldownSeconds: "300",
 };
 
 function numOrNull(s: string): number | null {
@@ -134,34 +146,40 @@ export default function InterlockRuleManagement() {
   // ── Rule dialog ──
   const [ruleOpen, setRuleOpen] = useState(false);
   const [form, setForm] = useState<RuleForm>(emptyRule);
+  // Fix round 2 (doc 80 Task 2 review) — "preserve-if-untouched": the commandValue
+  // this dialog opened with, captured VERBATIM (exact type). If the operator never
+  // edits the text field, submitRule() sends this back byte-for-byte instead of
+  // re-parsing — a rename can never alter the command payload. See
+  // client/src/lib/interlockCommandValue.ts (resolveCommandValueForSubmit).
+  const [initialCommandValue, setInitialCommandValue] = useState<{ raw: unknown; text: string }>({ raw: null, text: "" });
 
   const createRule = trpc.interlock.create.useMutation({
     onSuccess: () => { toast.success(t("interlockRules.toastCreated")); setRuleOpen(false); invalidateRules(); },
-    onError: (e) => toast.error(e.message),
+    onError: (e) => toastTrpcError(e),
   });
   const updateRule = trpc.interlock.update.useMutation({
     onSuccess: () => { toast.success(t("interlockRules.toastUpdated")); setRuleOpen(false); invalidateRules(); },
-    onError: (e) => toast.error(e.message),
+    onError: (e) => toastTrpcError(e),
   });
   const deleteRule = trpc.interlock.delete.useMutation({
     onSuccess: () => { toast.success(t("interlockRules.toastDeleted")); invalidateRules(); },
-    onError: (e) => toast.error(e.message),
+    onError: (e) => toastTrpcError(e),
   });
   const approveRule = trpc.interlock.approve.useMutation({
     onSuccess: () => { toast.success(t("interlockRules.toastApproved")); invalidateRules(); },
-    onError: (e) => toast.error(e.message),
+    onError: (e) => toastTrpcError(e),
   });
   const enableRule = trpc.interlock.enable.useMutation({
     onSuccess: () => { toast.success(t("interlockRules.toastEnabled")); invalidateRules(); },
-    onError: (e) => toast.error(e.message),
+    onError: (e) => toastTrpcError(e),
   });
   const disableRule = trpc.interlock.disable.useMutation({
     onSuccess: () => { toast.success(t("interlockRules.toastDisabled")); invalidateRules(); },
-    onError: (e) => toast.error(e.message),
+    onError: (e) => toastTrpcError(e),
   });
   const resolveEvent = trpc.interlock.resolveEvent.useMutation({
     onSuccess: () => { toast.success(t("interlockRules.toastResolved")); invalidateEvents(); },
-    onError: (e) => toast.error(e.message),
+    onError: (e) => toastTrpcError(e),
   });
 
   // ── Test (dry-run) dialog ──
@@ -183,8 +201,14 @@ export default function InterlockRuleManagement() {
     { enabled: testEnabled && testRuleId != null },
   );
 
-  const openCreate = () => { setForm(emptyRule); setRuleOpen(true); };
+  const openCreate = () => {
+    setForm(emptyRule);
+    setInitialCommandValue({ raw: null, text: "" });
+    setRuleOpen(true);
+  };
   const openEdit = (r: any) => {
+    const initialCommandText = serializeCommandValueForEdit(r.commandValue);
+    setInitialCommandValue({ raw: r.commandValue ?? null, text: initialCommandText });
     setForm({
       id: r.id,
       name: r.name ?? "",
@@ -204,14 +228,40 @@ export default function InterlockRuleManagement() {
       targetMachineId: r.targetMachineId != null ? String(r.targetMachineId) : "",
       targetAdapterId: r.targetAdapterId != null ? String(r.targetAdapterId) : "",
       commandTag: r.commandTag ?? "",
-      commandValue: r.commandValue != null ? String(r.commandValue) : "",
+      // Fix round 1/2 (doc 80 Task 2 review) — see client/src/lib/interlockCommandValue.ts.
+      commandValue: initialCommandText,
+      commandValueType: inferCommandValueType(r.commandValue),
       cooldownSeconds: r.cooldownSeconds != null ? String(r.cooldownSeconds) : "300",
     });
     setRuleOpen(true);
   };
 
   const submitRule = () => {
-    // Router input does NOT accept commandValue — recorded server-side only (F5b).
+    // Fix round 2 (doc 80 Task 2 review) — resolve commandValue BEFORE building
+    // `base`: preserve-if-untouched (exact original, any type) when the field
+    // wasn't edited; otherwise parse STRICTLY per the chosen "Kiểu giá trị".
+    // Reject (toast + abort — do NOT submit) rather than silently coerce/drop.
+    let commandValue: unknown;
+    try {
+      commandValue = resolveCommandValueForSubmit({
+        actionIsAlert: form.action === "alert",
+        currentText: form.commandValue,
+        initialText: initialCommandValue.text,
+        initialRaw: initialCommandValue.raw,
+        selectedType: form.commandValueType,
+      });
+    } catch (err) {
+      const key = err instanceof CommandValueParseError
+        ? ({
+            invalid_number: "interlockRules.commandValueInvalidNumber",
+            invalid_boolean: "interlockRules.commandValueInvalidBoolean",
+            invalid_json: "interlockRules.commandValueInvalidJson",
+          } as const)[err.code]
+        : "interlockRules.commandValueInvalidJson";
+      toast.error(t(key));
+      return;
+    }
+
     const base = {
       name: form.name.trim(),
       description: form.description.trim() || undefined,
@@ -230,6 +280,7 @@ export default function InterlockRuleManagement() {
       targetMachineId: form.action !== "alert" ? numOrNull(form.targetMachineId) : null,
       targetAdapterId: form.action !== "alert" ? numOrNull(form.targetAdapterId) : null,
       commandTag: form.action !== "alert" ? (form.commandTag.trim() || null) : null,
+      commandValue,
       cooldownSeconds: numOrNull(form.cooldownSeconds) ?? 300,
     };
     if (form.id != null) updateRule.mutate({ id: form.id, ...base });
@@ -403,8 +454,12 @@ export default function InterlockRuleManagement() {
                                 </Tooltip>
                               )
                             )}
-                            {/* doc 44 G5.4 — tắt một rule an toàn đang chạy = gỡ lớp bảo vệ
-                                tự động → ConfirmWithReason (2 bước + lý do bắt buộc). */}
+                            {/* doc 44 G5.4 / ILK-03 (doc 80) — tắt một rule an toàn đang chạy =
+                                gỡ lớp bảo vệ tự động → ConfirmWithReason (2 bước + lý do bắt
+                                buộc); riskLevel "high" (không phải "low" — ILK-03) vì tắt một
+                                interlock ĐANG BẬT có cùng mức rủi ro với xoá rule. reason được
+                                gửi thẳng vào mutation — backend ghi audit kèm reason (bắt buộc
+                                ≥3 ký tự) thay vì chỉ log console. */}
                             {r.enabled && (
                               <ConfirmWithReason
                                 trigger={
@@ -416,22 +471,19 @@ export default function InterlockRuleManagement() {
                                 title={t("interlockRules.disableConfirmTitle", 'Tắt rule "{{name}}"?', { name: r.name })}
                                 description={t("interlockRules.disableConfirmDescription", "Rule sẽ ngừng giám sát điều kiện và ngừng kích hoạt hành động đã cấu hình.")}
                                 impact={t("interlockRules.disableImpact", "Lớp bảo vệ tự động này TẮT cho tới khi được bật lại — vượt ngưỡng sẽ không chặn/dừng/cảnh báo.")}
-                                riskLevel="low"
+                                riskLevel="high"
                                 disabled={!canEdit || disableRule.isPending}
                                 onConfirm={async (reason) => {
-                                  // TODO(doc 44 G5.4): interlock.disable chưa nhận `reason` trong
-                                  // input — khi backend thêm field, truyền reason vào mutation
-                                  // (audit server-side) thay vì chỉ log client-side như dưới.
-                                  console.info("[interlock.disable] reason:", { id: r.id, reason });
-                                  await disableRule.mutateAsync({ id: r.id });
+                                  await disableRule.mutateAsync({ id: r.id, reason });
                                 }}
                               />
                             )}
                             <Button size="sm" variant="outline" disabled={!canEdit} title={editReason} onClick={() => openEdit(r)}>
                               <Pencil className="h-4 w-4" />
                             </Button>
-                            {/* doc 44 G5.4 — hard-delete rule an toàn: rủi ro cao → 2 bước
-                                + lý do + gõ chuỗi xác nhận (thay AlertDialog 1 bước cũ). */}
+                            {/* doc 44 G5.4 / ILK-03 (doc 80) — hard-delete rule an toàn: rủi ro
+                                cao → 2 bước + lý do + gõ chuỗi xác nhận. reason gửi thẳng vào
+                                mutation — backend ghi audit kèm reason trước khi xoá. */}
                             <ConfirmWithReason
                               trigger={
                                 <Button size="sm" variant="destructive" disabled={!canDelete || deleteRule.isPending}
@@ -445,11 +497,7 @@ export default function InterlockRuleManagement() {
                               riskLevel="high"
                               disabled={!canDelete || deleteRule.isPending}
                               onConfirm={async (reason) => {
-                                // TODO(doc 44 G5.4): interlock.delete chưa nhận `reason` trong
-                                // input — khi backend thêm field, truyền reason vào mutation
-                                // (audit server-side) thay vì chỉ log client-side như dưới.
-                                console.info("[interlock.delete] reason:", { id: r.id, reason });
-                                await deleteRule.mutateAsync({ id: r.id });
+                                await deleteRule.mutateAsync({ id: r.id, reason });
                               }}
                             />
                           </TableCell>
@@ -514,12 +562,26 @@ export default function InterlockRuleManagement() {
                       <TableCell>{ev.action ? <Badge variant={actionVariant(ev.action)}>{ev.action}</Badge> : "—"}</TableCell>
                       <TableCell><Badge variant="outline">{ev.status}</Badge></TableCell>
                       <TableCell className="text-right">
+                        {/* ILK-03 (doc 80) — resolveEvent giờ đòi reason (≥3 ký tự, ghi vào
+                            sổ audit + lưu làm ghi chú sự kiện) → ConfirmWithReason thay vì
+                            gọi mutate() thẳng không lý do. */}
                         {ev.status !== "resolved" && (
-                          <Button size="sm" variant="outline" disabled={!canEdit || resolveEvent.isPending}
-                            title={editReason}
-                            onClick={() => resolveEvent.mutate({ id: ev.id })}>
-                            {t("interlockRules.resolve")}
-                          </Button>
+                          <ConfirmWithReason
+                            trigger={
+                              <Button size="sm" variant="outline" disabled={!canEdit || resolveEvent.isPending}
+                                title={editReason}>
+                                {t("interlockRules.resolve")}
+                              </Button>
+                            }
+                            title={t("interlockRules.resolveConfirmTitle", "Đánh dấu đã xử lý sự kiện này?")}
+                            description={t("interlockRules.resolveConfirmDescription", "Sự kiện sẽ chuyển sang trạng thái Đã xử lý và không còn hiện ở tab \"Chưa xử lý\".")}
+                            impact={t("interlockRules.resolveImpact", "Lý do sẽ được lưu làm ghi chú của sự kiện và ghi vào sổ audit.")}
+                            riskLevel="low"
+                            disabled={!canEdit || resolveEvent.isPending}
+                            onConfirm={async (reason) => {
+                              await resolveEvent.mutateAsync({ id: ev.id, reason });
+                            }}
+                          />
                         )}
                       </TableCell>
                     </TableRow>
@@ -633,11 +695,27 @@ export default function InterlockRuleManagement() {
                     <Input value={form.commandTag} onChange={(e) => setForm({ ...form, commandTag: e.target.value })} />
                   </div>
                   <div>
-                    <Label>{t("interlockRules.commandValue")}</Label>
-                    <Input value={form.commandValue} onChange={(e) => setForm({ ...form, commandValue: e.target.value })} />
+                    {/* Fix round 2 (doc 80 Task 2 review) — explicit type selector, chỉ
+                        được dùng khi ô commandValue THỰC SỰ bị sửa (preserve-if-untouched
+                        gửi lại giá trị gốc y nguyên khi text không đổi, bất kể ô này). */}
+                    <Label>{t("interlockRules.commandValueType")}</Label>
+                    <Select value={form.commandValueType} onValueChange={(v) => setForm({ ...form, commandValueType: v as CommandValueType })}>
+                      <SelectTrigger><SelectValue /></SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="text">{t("interlockRules.commandValueTypeText")}</SelectItem>
+                        <SelectItem value="number">{t("interlockRules.commandValueTypeNumber")}</SelectItem>
+                        <SelectItem value="boolean">{t("interlockRules.commandValueTypeBoolean")}</SelectItem>
+                        <SelectItem value="json">{t("interlockRules.commandValueTypeJson")}</SelectItem>
+                      </SelectContent>
+                    </Select>
                   </div>
                 </div>
+                <div>
+                  <Label>{t("interlockRules.commandValue")}</Label>
+                  <Input value={form.commandValue} onChange={(e) => setForm({ ...form, commandValue: e.target.value })} />
+                </div>
                 <p className="text-xs text-muted-foreground">{t("interlockRules.commandValueNote")}</p>
+                <p className="text-xs text-muted-foreground">{t("interlockRules.commandValueUnchangedHint")}</p>
               </div>
             )}
           </div>
@@ -671,7 +749,7 @@ export default function InterlockRuleManagement() {
             </Button>
 
             {testEnabled && testQuery.isLoading && <p className="text-sm text-muted-foreground">{t("interlockRules.testRunning")}</p>}
-            {testEnabled && testQuery.error && <p className="text-sm text-destructive">{testQuery.error.message}</p>}
+            {testEnabled && testQuery.error && <p className="text-sm text-destructive">{mapTrpcError(testQuery.error)}</p>}
             {testEnabled && testQuery.data && (
               <div className="rounded-md border p-3 text-sm space-y-1">
                 <div className="flex items-center gap-2">

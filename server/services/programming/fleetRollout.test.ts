@@ -73,7 +73,9 @@ function makeDeps(statusByDevice: Record<number, string>, calls: number[], rollb
     }),
     rollbackFn: vi.fn(async (deploymentId) => {
       rollbacks.push(deploymentId);
-      return depRow(nextId++, 0, "simulated", { rolledBackFromId: deploymentId });
+      // Hợp đồng thật (doc 80 WS-03): rollbackDeployment trả `targetRolledBack` — stub này là
+      // một lượt lùi THÀNH CÔNG (đích đã được đánh rolled_back).
+      return { ...depRow(nextId++, 0, "deployed", { rolledBackFromId: deploymentId }), targetRolledBack: true };
     }),
   };
 }
@@ -125,6 +127,39 @@ describe("deployToFleet — canary FAIL dừng + rollback", () => {
 
     expect(res.summary.failed).toBe(1);
     expect(res.summary.rolledBack).toBe(1);
+  });
+
+  it("doc 80 WS-03 — lượt lùi FAILED (targetRolledBack:false) ⇒ KHÔNG báo đã khôi phục, lỗi thật lên kết quả", async () => {
+    const calls: number[] = [];
+    const deps = makeDeps({ 1: "deployed", 2: "failed" }, calls);
+    deps.rollbackFn = vi.fn(async (deploymentId) => ({
+      ...depRow(900, 1, "failed", { rolledBackFromId: deploymentId, error: "download NAK" }),
+      targetRolledBack: false,
+    }));
+
+    const res = await deployToFleet(baseInput(), USER, deps);
+
+    const m1 = res.results.find((r) => r.deviceId === 1)!;
+    expect(deps.rollbackFn).toHaveBeenCalledTimes(1);
+    expect(m1.rolledBack).toBe(false);
+    expect(m1.rollbackError).toBe("download NAK");
+    expect(res.summary.rolledBack).toBe(0);
+  });
+
+  it("doc 80 WS-03 — lượt lùi chỉ SIMULATED (targetRolledBack:false, không error) ⇒ rolledBack=false, lý do = status", async () => {
+    const calls: number[] = [];
+    const deps = makeDeps({ 1: "deployed", 2: "failed" }, calls);
+    deps.rollbackFn = vi.fn(async (deploymentId) => ({
+      ...depRow(901, 1, "simulated", { rolledBackFromId: deploymentId }),
+      targetRolledBack: false,
+    }));
+
+    const res = await deployToFleet(baseInput(), USER, deps);
+
+    const m1 = res.results.find((r) => r.deviceId === 1)!;
+    expect(m1.rolledBack).toBe(false);
+    expect(m1.rollbackError).toBe("simulated");
+    expect(res.summary.rolledBack).toBe(0);
   });
 
   it("canary 'rejected' (build not ok) → DỪNG, KHÔNG rollback (không ghi HW)", async () => {

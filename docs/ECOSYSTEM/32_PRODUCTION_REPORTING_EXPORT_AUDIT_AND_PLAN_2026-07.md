@@ -145,7 +145,11 @@ Report Definition          Data Layer            Render Layer           Archive 
 
 ---
 
-## 4. Kế hoạch thực hiện (theo wave) — chờ duyệt
+## 4. Kế hoạch thực hiện (theo wave) — ✅ **ĐÃ DUYỆT (§5) & ĐÃ THỰC THI 6/6 WAVE (§8)**
+
+> ⚠️ Nhãn *"chờ duyệt"* cũ ở tiêu đề này đã gỡ: nó mâu thuẫn với **§5 "Quyết định — ĐÃ CHỐT
+> 2026-07-05"** và **§8 "TỔNG KẾT THỰC THI"** ngay bên dưới, và là lý do mục này bị chép vào
+> backlog. Nội dung giữ nguyên làm bản ghi phạm vi từng wave. *(nhóm C việc 2, 2026-08-13)*
 
 > Nguyên tắc thực thi (như các đợt trước): agent chuyên môn theo từng wave, **không tự git**, gate `tsc`/test giữa các wave; server có DB/broker nên ưu tiên unit + targeted test.
 
@@ -207,7 +211,7 @@ Bài toán đúng như audit chẩn đoán — **consolidation + wiring + lấp 
 |---|------|-------|
 | 1 | **Verify visual PDF/HTML trên browser thật** (§6.5): rasterize recharts, dấu tiếng Việt, logo, phân trang — mở thử 1 PDF/HTML mỗi trang ProductionDashboard/StationAnalysis; tune delay chụp 1.9s nếu kiosk yếu | R4 §6.5 |
 | 2 | Bật `OEE_SNAPSHOT_ENABLED=true` ở production để OEE report có dữ liệu liên tục; cân nhắc single-worker | R5/R1 |
-| 3 | Deploy: ship `server/assets/fonts` (esbuild external không copy) hoặc set `FONT_ASSETS_DIR`; CORS cho ảnh NG/bo mạch cross-origin (html2canvas) | R2/R4 |
+| 3 | ✅ **XONG 2026-08-13 (nhóm C việc 1)** — build nay chép `server/assets/fonts` → `dist/assets/fonts` (`scripts/copy-font-assets.mjs`, nối vào `"build"` + `build-secure.mjs`), `fontAssets.ts` thêm ứng viên bundle-relative; **không cần đặt `FONT_ASSETS_DIR`**. Đo trước khi vá: `find dist -iname "*BeVietnam*"` → **0 file**, và `Dockerfile:43-46` không chép `server/` ⇒ ảnh Docker đang ship một bản **xuất PDF tiếng Việt CHẾT** (fail-loud). Lưới: `server/services/fontAssetsDist.test.ts` (5 ca, có đối chứng âm). <br>⏳ **Còn lại:** CORS cho ảnh NG/bo mạch cross-origin (html2canvas). | R2/R4 |
 | 4 | Đặt company logo/name/màu qua Admin Settings → EmailTemplate/Branding để PDF/XLSX có letterhead thật | R5 |
 | 5 | (Kế thừa) doc 27 §13 + doc 31 §10 human items (backup keystore, commit toàn tree, cutover Timescale, ...) | doc 27/31 |
 

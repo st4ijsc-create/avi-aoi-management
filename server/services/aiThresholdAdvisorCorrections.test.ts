@@ -9,12 +9,17 @@ import { eq, inArray } from "drizzle-orm";
 import { appRouter } from "../routers";
 import * as db from "../db";
 import {
-  productInspections,
   measurementResults,
   measurementPointDefs,
   measurementCorrections,
 } from "../../drizzle/schema";
 import { recommendForMeasurementPoint } from "./aiThresholdAdvisor";
+
+// ⚠ 2026-09-24: ca này seed qua `machineApi.submitInspection` bằng khoá CHUNG (plaintext) — `.env` nay đặt
+// MACHINE_SHARED_KEY_ALLOWED=false (mặc định an toàn "deny") ⇒ beforeAll ném "Shared machine apiKey authentication is
+// disabled" và cả tệp đỏ (0 ca chạy). Ca đo bộ tư vấn ngưỡng, không đo xác thực — nới ĐÚNG khuôn
+// `server/inspection.corporate.test.ts`; đường mạnh (`mk_`) có lưới riêng `server/routers/machineApiBatchIngest.test.ts`.
+process.env.MACHINE_SHARED_KEY_ALLOWED = "true";
 
 const STAMP = Date.now();
 const API_KEY = `OP6-${STAMP}`;
@@ -82,7 +87,8 @@ afterAll(async () => {
     if (correctionIds.length) await d.delete(measurementCorrections).where(inArray(measurementCorrections.id, correctionIds));
     if (inspectionIds.length) {
       await d.delete(measurementResults).where(inArray(measurementResults.inspectionId, inspectionIds));
-      await d.delete(productInspections).where(inArray(productInspections.id, inspectionIds));
+      // ⚠ KHÔNG xoá `product_inspections` — bảng WORM (doc48 R1), `avi_app` nhận 42501 ⇒ afterAll đỏ cả tệp. Hàng ở
+      //   lại mang tiền tố serial theo STAMP mỗi lượt, không lượt nào khác đếm tới.
     }
     await d.delete(measurementPointDefs).where(eq(measurementPointDefs.id, pointDefId));
   }

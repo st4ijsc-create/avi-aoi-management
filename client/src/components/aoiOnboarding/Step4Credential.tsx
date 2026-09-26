@@ -13,6 +13,7 @@ import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { Copy, KeyRound, Loader2, QrCode, ShieldAlert } from "lucide-react";
 import { toast } from "sonner";
+import { mapTrpcError } from "@/lib/trpcErrors";
 import type { StepProps } from "./types";
 
 export default function Step4Credential({ state, update, onNext, onBack, persistDraft }: StepProps) {
@@ -35,7 +36,7 @@ export default function Step4Credential({ state, update, onNext, onBack, persist
       toast.success(t("aoiOnboarding.step4.issued"));
       persistDraft();
     },
-    onError: (err) => toast.error(t("aoiOnboarding.step4.issueError"), { description: err.message }),
+    onError: (err) => toast.error(t("aoiOnboarding.step4.issueError"), { description: mapTrpcError(err) }),
   });
 
   const copyKey = () => {

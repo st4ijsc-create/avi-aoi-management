@@ -18,6 +18,7 @@ import {
   Layout, PieChart, LineChart, Table2,
 } from "lucide-react";
 import { toast } from "sonner";
+import { toastTrpcError } from "@/lib/trpcErrors";
 import { useState } from "react";
 
 export function PowerPointExportContent() {
@@ -46,17 +47,17 @@ export function PowerPointExportContent() {
 
   const qualityMutation = trpc.powerpoint.exportQualityReport.useMutation({
     onSuccess: (data) => downloadPptx(data, "quality-report.pptx"),
-    onError: (err) => toast.error(err.message),
+    onError: (err) => toastTrpcError(err),
   });
 
   const comparisonMutation = trpc.powerpoint.exportComparison.useMutation({
     onSuccess: (data) => downloadPptx(data, "comparison-report.pptx"),
-    onError: (err) => toast.error(err.message),
+    onError: (err) => toastTrpcError(err),
   });
 
   const customMutation = trpc.powerpoint.exportCustom.useMutation({
     onSuccess: (data) => downloadPptx(data, "custom-report.pptx"),
-    onError: (err) => toast.error(err.message),
+    onError: (err) => toastTrpcError(err),
   });
 
   const downloadPptx = (data: any, defaultFilename: string) => {

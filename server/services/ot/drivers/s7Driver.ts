@@ -36,6 +36,7 @@ import type {
 import { NotImplementedDriver } from "./notImplementedDriver";
 import { parseS7Address, coerceS7Value } from "./s7Address";
 import { inverseScale } from "./otScale";
+import { DeviceUnreachableError } from "../../../_core/deviceErrors";
 
 /** Ép raw (đã inverse scale) sang kiểu NodeS7 chấp nhận theo dataType. */
 function coerceS7Write(raw: unknown, dataType: string): number | boolean | string {
@@ -190,7 +191,7 @@ export class S7Driver extends NotImplementedDriver {
 
   override async readTags(tags: OtTagAddress[]): Promise<OtSample[]> {
     if (!this.connected || !this.conn) {
-      throw new Error("S7Driver: not connected");
+      throw new DeviceUnreachableError("s7");
     }
     if (tags.length === 0) return [];
 
@@ -243,7 +244,7 @@ export class S7Driver extends NotImplementedDriver {
     onSample: OnOtSample,
     intervalMs = 5000,
   ): Promise<OtSubscriptionHandle> {
-    if (!this.connected) throw new Error("S7Driver: not connected");
+    if (!this.connected) throw new DeviceUnreachableError("s7");
 
     const tick = async () => {
       try {
@@ -285,7 +286,7 @@ export class S7Driver extends NotImplementedDriver {
    */
   override async writeTags(writes: OtWrite[]): Promise<OtCommandResult[]> {
     if (!this.connected || !this.conn) {
-      throw new Error("S7Driver: not connected");
+      throw new DeviceUnreachableError("s7");
     }
     if (writes.length === 0) return [];
 

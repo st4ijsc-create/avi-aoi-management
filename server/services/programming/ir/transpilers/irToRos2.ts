@@ -31,7 +31,10 @@
 import type { Flow, IrBlock, CompareOperator, NumericOrExpr, FunctionBlockDef } from "../irModel";
 import { assignIds, walkBlocks } from "../irModel";
 import { irComment, type TranspileResult } from "./irToUrscript";
-import { isExpr, renderSlot, sanitizeVar } from "../irExpr";
+import { isExpr, renderSlot } from "../irExpr";
+// Doc 80 IR-01: every author string that lands in the node goes through a whitelist emitter
+// (THROWS outside it — layer 2 behind the linter) and string literals are Python-escaped.
+import { commentText, emitFlowId, emitIdent, emitIoRef, emitLabel, emitUnit, pyStr } from "../irSafeTokens";
 
 const PY_OPS: Record<CompareOperator, string> = {
   eq: "==",
@@ -49,8 +52,12 @@ function fmt(n: number): string {
 function litPy(v: number | boolean | string): string {
   if (typeof v === "boolean") return v ? "True" : "False";
   if (typeof v === "number") return fmt(v);
-  return `"${v}"`;
+  return pyStr(emitLabel(v, "string literal"));
 }
+
+/** A whitelisted IO ref / label as a Python string literal (whitelist THEN escape). */
+const ioStr = (s: string, field: string) => pyStr(emitIoRef(s, field));
+const labelStr = (s: string, field: string) => pyStr(emitLabel(s, field));
 
 /** Render a value slot (literal or expression) to a Python token. */
 function slotPy(v: NumericOrExpr): string {
@@ -67,6 +74,14 @@ function velLinear(speedMms: number): string {
 }
 function velJoint(speedPct: number): string {
   return fmt(Math.min(1, Math.max(0.01, speedPct / 100)));
+}
+/**
+ * Doc 80 IR-03 — IR acceleration (mm/s²) → a MoveIt acceleration-scaling factor in (0, 1],
+ * with the same documented convention as velLinear: nominal 1000 mm/s² (1 m/s²) = 100%.
+ * Clamped to [0.01, 1]. (It used to be ignored entirely on ROS2.)
+ */
+function accLinear(accelMms2: number): string {
+  return fmt(Math.min(1, Math.max(0.01, accelMms2 / 1000)));
 }
 
 /** The BOUND helper method definitions (keyed) the node may emit, in canonical order. */
@@ -233,6 +248,7 @@ export function transpileToRos2(flowIn: Flow): TranspileResult {
         // MoveGroupCommander.set_pose_target accepts a 6-list [x, y, z, roll, pitch, yaw].
         const p = block.target_pose;
         lines.push(`${indent}self.move_group.set_max_velocity_scaling_factor(${velLinear(block.speed_mms)})`);
+        lines.push(`${indent}self.move_group.set_max_acceleration_scaling_factor(${accLinear(block.acceleration)})`);
         lines.push(
           `${indent}self.move_group.set_pose_target([${fmt(p.x / 1000)}, ${fmt(p.y / 1000)}, ${fmt(p.z / 1000)}, ${fmt(p.rx)}, ${fmt(p.ry)}, ${fmt(p.rz)}])`,
         );
@@ -248,21 +264,21 @@ export function transpileToRos2(flowIn: Flow): TranspileResult {
       }
       case "grip": {
         lines.push(
-          `${indent}self._gripper(True, "${block.tool_id}", force_limit_n=${fmt(block.force_limit_n)}, timeout_ms=${block.timeout_ms})`,
+          `${indent}self._gripper(True, ${labelStr(block.tool_id, "grip tool_id")}, force_limit_n=${fmt(block.force_limit_n)}, timeout_ms=${block.timeout_ms})`,
         );
         break;
       }
       case "release": {
-        lines.push(`${indent}self._gripper(False, ${block.tool_id ? `"${block.tool_id}"` : `""`})`);
+        lines.push(`${indent}self._gripper(False, ${block.tool_id ? labelStr(block.tool_id, "release tool_id") : `""`})`);
         break;
       }
       case "set_output": {
-        lines.push(`${indent}self.set_io("${block.signal}", ${slotPy(block.value)})`);
+        lines.push(`${indent}self.set_io(${ioStr(block.signal, "set_output signal")}, ${slotPy(block.value)})`);
         break;
       }
       case "wait": {
         if (block.signal_ref !== undefined) {
-          lines.push(`${indent}self.wait_signal("${block.signal_ref}")`);
+          lines.push(`${indent}self.wait_signal(${ioStr(block.signal_ref, "wait signal_ref")})`);
         }
         if (block.ms !== undefined) {
           if (isExpr(block.ms)) {
@@ -274,11 +290,11 @@ export function transpileToRos2(flowIn: Flow): TranspileResult {
         break;
       }
       case "set_variable": {
-        lines.push(`${indent}${sanitizeVar(block.name)} = ${slotPy(block.expr)}`);
+        lines.push(`${indent}${emitIdent(block.name, "set_variable name")} = ${slotPy(block.expr)}`);
         break;
       }
       case "counter": {
-        const v = sanitizeVar(block.name);
+        const v = emitIdent(block.name, "counter name");
         if (block.op === "reset") {
           lines.push(`${indent}${v} = ${fmt(block.amount ?? 0)}`);
         } else {
@@ -291,8 +307,8 @@ export function transpileToRos2(flowIn: Flow): TranspileResult {
         break;
       }
       case "set_analog": {
-        const unit = block.unit ? `  # unit=${block.unit}` : "";
-        lines.push(`${indent}self.set_analog("${block.channel}", ${slotPy(block.value)})${unit}`);
+        const unit = block.unit ? `  # unit=${commentText(emitUnit(block.unit, "set_analog unit"))}` : "";
+        lines.push(`${indent}self.set_analog(${ioStr(block.channel, "set_analog channel")}, ${slotPy(block.value)})${unit}`);
         break;
       }
       case "call_block": {
@@ -300,22 +316,23 @@ export function transpileToRos2(flowIn: Flow): TranspileResult {
         // NAME; the generated method is positional → order the args by the param list.
         const def = fbByName.get(block.fb_name);
         const argByName = new Map(block.args.map((a) => [a.name, a.value] as const));
+        for (const a of block.args) emitIdent(a.name, "call_block arg name");
         const ordered = def
           ? def.params.map((p) => slotPy(argByName.get(p.name) ?? 0))
           : block.args.map((a) => slotPy(a.value));
-        lines.push(`${indent}self.${sanitizeName(block.fb_name)}(${ordered.join(", ")})`);
+        lines.push(`${indent}self.${emitIdent(block.fb_name, "call_block fb_name")}(${ordered.join(", ")})`);
         break;
       }
       case "pid_control": {
         // BOUND discrete-PID helper on the node (setpoint + gains + output clamp), writing
         // the bounded result to the analog output channel via the std_msgs publisher.
         lines.push(
-          `${indent}self.pid_control(output_channel="${block.output_channel}", input_channel="${block.input_channel}", setpoint=${slotPy(block.setpoint)}, kp=${fmt(block.kp)}, ki=${fmt(block.ki)}, kd=${fmt(block.kd)}, output_min=${fmt(block.output_min)}, output_max=${fmt(block.output_max)})`,
+          `${indent}self.pid_control(output_channel=${ioStr(block.output_channel, "pid_control output_channel")}, input_channel=${ioStr(block.input_channel, "pid_control input_channel")}, setpoint=${slotPy(block.setpoint)}, kp=${fmt(block.kp)}, ki=${fmt(block.ki)}, kd=${fmt(block.kd)}, output_min=${fmt(block.output_min)}, output_max=${fmt(block.output_max)})`,
         );
         break;
       }
       case "if_condition": {
-        lines.push(`${indent}if self.read_io("${block.signal_ref}") ${PY_OPS[block.operator]} ${litPy(block.value)}:`);
+        lines.push(`${indent}if self.read_io(${ioStr(block.signal_ref, "if_condition signal_ref")}) ${PY_OPS[block.operator]} ${litPy(block.value)}:`);
         if (block.true_branch.length === 0) lines.push(`${indent}${IND}pass`);
         for (const child of block.true_branch) emit(child, indent + IND);
         lines.push(`${indent}else:`);
@@ -330,7 +347,7 @@ export function transpileToRos2(flowIn: Flow): TranspileResult {
           for (const child of block.body) emit(child, indent + IND);
         } else if (block.while !== undefined) {
           const w = block.while;
-          lines.push(`${indent}while self.read_io("${w.signal_ref}") ${PY_OPS[w.operator]} ${litPy(w.value)}:`);
+          lines.push(`${indent}while self.read_io(${ioStr(w.signal_ref, "loop while signal_ref")}) ${PY_OPS[w.operator]} ${litPy(w.value)}:`);
           if (block.body.length === 0) lines.push(`${indent}${IND}pass`);
           for (const child of block.body) emit(child, indent + IND);
         }
@@ -342,7 +359,7 @@ export function transpileToRos2(flowIn: Flow): TranspileResult {
   };
 
   // ── Header (honest provenance + scope) ──────────────────────────────────────────
-  lines.push(`# ROS2 MoveIt program generated from IR flow "${flow.flow_id}" v${flow.version}`);
+  lines.push(`# ROS2 MoveIt program generated from IR flow "${commentText(emitFlowId(flow.flow_id))}" v${flow.version}`);
   lines.push(`# BOUND to MoveIt: motion (if any) emits real set_pose_target / set_joint_value_target`);
   lines.push(`#   -> plan() -> execute() on a MoveGroupCommander; I/O via std_msgs publishers;`);
   lines.push(`#   if/loop -> Python control flow. Each group carries its "# [IR ...]" marker.`);
@@ -387,9 +404,10 @@ export function transpileToRos2(flowIn: Flow): TranspileResult {
 
   // Tier-1c: reusable function-block DEFINITIONS → one node METHOD each, emitted before run().
   for (const fb of flow.function_blocks ?? []) {
-    lines.push(`${IND}# [IR function_block #${fb.id ?? "?"}] ${fb.name}`);
-    const params = fb.params.map((p) => sanitizeVar(p.name)).join(", ");
-    lines.push(`${IND}def ${sanitizeName(fb.name)}(self${params ? `, ${params}` : ""}):`);
+    const fbName = emitIdent(fb.name, "function_block name");
+    lines.push(`${IND}# [IR function_block #${fb.id === undefined ? "?" : emitLabel(fb.id, "function_block id")}] ${fbName}`);
+    const params = fb.params.map((p) => emitIdent(p.name, "function_block param")).join(", ");
+    lines.push(`${IND}def ${fbName}(self${params ? `, ${params}` : ""}):`);
     if (fb.body.length === 0) lines.push(`${IND}${IND}pass`);
     for (const b of fb.body) emit(b, IND + IND);
     lines.push(``);

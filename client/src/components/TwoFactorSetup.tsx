@@ -25,6 +25,7 @@ import {
   EyeOff
 } from "lucide-react";
 import { toast } from "sonner";
+import { toastTrpcError } from "@/lib/trpcErrors";
 import { cn } from "@/lib/utils";
 
 export function TwoFactorSetup() {
@@ -35,6 +36,9 @@ export function TwoFactorSetup() {
   const [showRegenerateDialog, setShowRegenerateDialog] = useState(false);
   const [verificationCode, setVerificationCode] = useState("");
   const [disableCode, setDisableCode] = useState("");
+  // ★ Pha 8 — `twoFactor.disable` nay đòi MẬT KHẨU + một yếu tố 2FA, cho khớp tuyến song song
+  //   `user.disable2FA`. Mã vẫn nhận **TOTP hoặc mã dự phòng** (không siết thành 6 số).
+  const [disablePassword, setDisablePassword] = useState("");
   const [regenerateCode, setRegenerateCode] = useState("");
   const [backupCodes, setBackupCodes] = useState<string[]>([]);
   const [showSecret, setShowSecret] = useState(false);
@@ -48,7 +52,7 @@ export function TwoFactorSetup() {
       toast.success(t('auth.qrCodeGenerated'));
     },
     onError: (error) => {
-      toast.error(error.message);
+      toastTrpcError(error);
     },
   });
 
@@ -62,7 +66,7 @@ export function TwoFactorSetup() {
       toast.success(t('auth.twoFactorEnabled'));
     },
     onError: (error) => {
-      toast.error(error.message);
+      toastTrpcError(error);
     },
   });
 
@@ -70,11 +74,12 @@ export function TwoFactorSetup() {
     onSuccess: () => {
       setShowDisableDialog(false);
       setDisableCode("");
+      setDisablePassword("");
       refetchStatus();
       toast.success(t('auth.twoFactorDisabled'));
     },
     onError: (error) => {
-      toast.error(error.message);
+      toastTrpcError(error);
     },
   });
 
@@ -88,7 +93,7 @@ export function TwoFactorSetup() {
       toast.success(t('auth.backupCodesRegenerated'));
     },
     onError: (error) => {
-      toast.error(error.message);
+      toastTrpcError(error);
     },
   });
 
@@ -111,7 +116,11 @@ export function TwoFactorSetup() {
       toast.error(t('auth.enterAuthOrBackupCode'));
       return;
     }
-    disableMutation.mutate({ code: disableCode });
+    if (!disablePassword) {
+      toast.error(t('auth.enterPassword'));
+      return;
+    }
+    disableMutation.mutate({ code: disableCode, password: disablePassword });
   };
 
   const handleRegenerate = () => {
@@ -339,6 +348,18 @@ ${backupCodes.map((code, i) => `${i + 1}. ${code}`).join("\n")}
             />
           </div>
 
+          {/* ★ Pha 8 — mật khẩu, cho khớp tuyến song song `user.disable2FA`. */}
+          <div className="space-y-2">
+            <Label>{t('auth.currentPassword')}</Label>
+            <Input
+              type="password"
+              value={disablePassword}
+              onChange={(e) => setDisablePassword(e.target.value)}
+              placeholder={t('auth.enterPassword')}
+              autoComplete="current-password"
+            />
+          </div>
+
           <DialogFooter>
             <Button variant="outline" onClick={() => setShowDisableDialog(false)}>
               {t('common.cancel')}
@@ -346,7 +367,7 @@ ${backupCodes.map((code, i) => `${i + 1}. ${code}`).join("\n")}
             <Button
               variant="destructive"
               onClick={handleDisable}
-              disabled={!disableCode || disableMutation.isPending}
+              disabled={!disableCode || !disablePassword || disableMutation.isPending}
             >
               {disableMutation.isPending ? (
                 <Loader2 className="h-4 w-4 mr-2 animate-spin" />

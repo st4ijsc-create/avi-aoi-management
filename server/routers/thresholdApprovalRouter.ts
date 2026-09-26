@@ -32,6 +32,7 @@
 
 import { z } from "zod";
 import { TRPCError } from "@trpc/server";
+import { appError } from "../_core/appError";
 import { eq, and, desc, inArray } from "drizzle-orm";
 import { protectedProcedure, qualityProcedure, router } from "../_core/trpc";
 import { getDb } from "../db/connection";
@@ -43,6 +44,16 @@ import {
   productModels,
 } from "../../drizzle/schema/product";
 import { assertApprovalSoD } from "../services/thresholdGovernanceService";
+// BG-126 (Khối C, "nợ còn mở") — chặn `comment` NGƯỜI DÙNG giả tiền tố cấu
+// trúc [VARIANT:n] trước khi nó chảy vào changeReason của updateMeasurementPointDef
+// (đường `revert` dưới đây). Xem docblock `server/utils/changeReasonGuard.ts`.
+import { assertChangeReasonKhongGiaTienToBienThe } from "../utils/changeReasonGuard";
+// Lô 7 Mục 2 (BG-111) — `deXuat` (hợp đồng `request` MỞ RỘNG) dùng ĐÚNG danh
+// sách 20 field kiểu-chuỗi mà BG-123 (measurementPoint.update/setLimitsBatch)
+// đã suy từ `APPROVAL_LIMIT_FIELDS` (shared/pointLimitSpec.ts) — KHÔNG chép
+// tay danh sách lần thứ ba. `criteria` (jsonb array)/`toleranceMode` (enum)
+// loại trừ vì lý do y hệt BG-123 đã ghi ở measurementPointLimitGate.ts.
+import { NULLABLE_LIMIT_STRING_FIELDS, xayZodShapeGioiHanNullable } from "../utils/measurementPointLimitGate";
 
 const STATUS_PENDING = "requested";
 const STATUS_APPROVED = "approved";
@@ -55,14 +66,53 @@ type ThresholdApprovalRow = typeof thresholdApprovals.$inferSelect;
 
 async function getById(id: number) {
   const db = await getDb();
-  if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "DB unavailable" });
+  if (!db) throw appError("INTERNAL_SERVER_ERROR", "DB_UNAVAILABLE", undefined, "DB unavailable");
   const [row] = await db
     .select()
     .from(thresholdApprovals)
     .where(eq(thresholdApprovals.id, id))
     .limit(1);
-  if (!row) throw new TRPCError({ code: "NOT_FOUND", message: `threshold_approval ${id} not found` });
+  if (!row) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "thresholdApproval" }, `threshold_approval ${id} not found`);
   return row;
+}
+
+/**
+ * Lô 7 Mục 2 (BG-111) — đọc lại "ĐỦ BỘ field đề xuất" từ một hàng
+ * `threshold_approvals`, TƯƠNG THÍCH cả hàng MỚI (`suggestion.deXuat`, ghi bởi
+ * `request` mở rộng ở trên) lẫn 176+30 hàng CŨ đang tồn kho (`status='requested'`,
+ * đo được ở dev/test TRƯỚC bản vá này — `suggestion` của chúng là blob metadata
+ * AI, KHÔNG có khoá `deXuat`) — hàng CŨ rơi về nhánh fallback: đúng 3 field
+ * legacy (`lowerLimit`/`upperLimit`/`nominalValue`) từ `proposedLsl`/`proposedUsl`/
+ * `proposedNominal`, giữ NGUYÊN VĂN hành vi TRƯỚC Lô 7 cho tập hàng này.
+ *
+ * Hàng MỚI (`deXuat` là object hợp lệ): CHỈ những field CÓ MẶT trong `deXuat`
+ * được đưa vào kết quả (khoá vắng mặt = "hàng này không đề xuất field đó",
+ * KHÔNG được coi là "đặt về null" — khác với khoá CÓ MẶT nhưng giá trị `null`,
+ * đó MỚI là ý "xoá", đúng ngữ nghĩa BG-123/`updateMeasurementPointDef`).
+ * `proposedNominal` (cột riêng, không thuộc `NULLABLE_LIMIT_STRING_FIELDS`) vẫn
+ * áp dụng thêm nếu có, kể cả cho hàng MỚI — `nominalValue` không nằm trong
+ * `deXuat` hôm nay (client hiện tại không sửa nominal qua đường request này).
+ */
+function deXuatDayDuTuHang(row: ThresholdApprovalRow): Partial<Record<string, string | null>> {
+  const suggestion = (row.suggestion ?? {}) as Record<string, unknown>;
+  const deXuat = suggestion.deXuat;
+  const laDeXuatHopLe = deXuat != null && typeof deXuat === "object" && !Array.isArray(deXuat);
+
+  const ket: Partial<Record<string, string | null>> = {};
+  if (laDeXuatHopLe) {
+    for (const f of NULLABLE_LIMIT_STRING_FIELDS) {
+      const v = (deXuat as Record<string, unknown>)[f];
+      if (v === undefined) continue; // field này hàng KHÔNG đề xuất — bỏ qua, không đụng.
+      ket[f] = v === null ? null : String(v);
+    }
+  } else {
+    // Fallback hàng CŨ (176 dev + 30 test đo được TRƯỚC Lô 7, xem lo-7-report.md) —
+    // NGUYÊN VĂN 2 field legacy, giữ hành vi TRƯỚC bản vá này.
+    if (row.proposedLsl != null) ket.lowerLimit = String(row.proposedLsl);
+    if (row.proposedUsl != null) ket.upperLimit = String(row.proposedUsl);
+  }
+  if (row.proposedNominal != null) ket.nominalValue = String(row.proposedNominal);
+  return ket;
 }
 
 /**
@@ -92,17 +142,13 @@ async function decideApproval(
     .returning();
 
   if (apply) {
-    // W2-A / doc 35 D4 — route the limit write through updateMeasurementPointDef
-    // (NOT a raw update) so the change is snapshotted into
-    // measurement_point_versions (versioned + revertable), mirroring the
-    // sanctioned `revert` path below.
+    // Lô 7 Mục 2 (BG-111) — ÁP TOÀN BỘ deXuat (không chỉ 3 cột tay LSL/USL/
+    // nominal như TRƯỚC bản vá này) qua ĐÚNG đường ghi giới hạn chuẩn
+    // (updateMeasurementPointDef — CÓ version + bump, mirror `revert` bên
+    // dưới) — chuỗi snapshot BG-97 không đứt dù duyệt field NGOÀI LSL/USL.
     await updateMeasurementPointDef(
       row.pointDefId,
-      {
-        lowerLimit: row.proposedLsl as any,
-        upperLimit: row.proposedUsl as any,
-        ...(row.proposedNominal != null ? { nominalValue: row.proposedNominal as any } : {}),
-      },
+      deXuatDayDuTuHang(row) as any,
       { changedBy: decidedBy, changeReason: `threshold_approval:${row.id}` },
     );
 
@@ -133,21 +179,61 @@ async function decideApproval(
 }
 
 export const thresholdApprovalRouter = router({
+  // Lô 7 Mục 2 (BG-111) — hợp đồng `request` MỞ RỘNG: `deXuat` thay LSL/USL
+  // BẮT BUỘC bằng ĐỦ BỘ `APPROVAL_LIMIT_FIELDS` (trừ criteria/toleranceMode —
+  // xem import ở đầu file). `undefined` (khoá vắng mặt) = không đề xuất field
+  // đó; `null` = đề xuất XOÁ (khớp ngữ nghĩa BG-123); chuỗi = giá trị mới.
+  //
+  // Tương thích ngược: `proposedLsl`/`proposedUsl` (number, TRƯỚC bản vá này
+  // BẮT BUỘC) nay `.optional()` — client CŨ gọi y nguyên vẫn ghi được (map vào
+  // `deXuat.lowerLimit`/`upperLimit` bên dưới, xem docblock `mutation`).
   request: protectedProcedure
     .input(z.object({
       pointDefId: z.number().int().positive(),
-      proposedLsl: z.number(),
-      proposedUsl: z.number(),
+      proposedLsl: z.number().optional(),
+      proposedUsl: z.number().optional(),
       proposedNominal: z.number().optional(),
+      deXuat: z.object(xayZodShapeGioiHanNullable()).partial().optional(),
       suggestion: z.record(z.string(), z.any()).optional(),
       comment: z.string().max(1000).optional(),
     }))
     .mutation(async ({ ctx, input }) => {
-      if (!(input.proposedLsl < input.proposedUsl)) {
-        throw new TRPCError({ code: "BAD_REQUEST", message: "proposedLsl must be < proposedUsl" });
+      // BG-126 — chặn Ở INPUT, TRƯỚC bất kỳ đọc/ghi DB nào (cùng khuôn `revert`).
+      assertChangeReasonKhongGiaTienToBienThe(input.comment, "comment");
+
+      const coLsl = input.proposedLsl != null;
+      const coUsl = input.proposedUsl != null;
+      if (coLsl !== coUsl) {
+        // Một cận có mặt, cận kia vắng — hợp đồng LSL/USL cũ luôn đòi CẢ HAI
+        // (đúng hành vi TRƯỚC bản vá này, giữ nguyên qua Lô 7).
+        throw appError("BAD_REQUEST", "INVALID_VALUE", { field: "proposedLsl" }, "proposedLsl and proposedUsl must be provided together");
       }
+      if (coLsl && coUsl && !(input.proposedLsl! < input.proposedUsl!)) {
+        throw appError("BAD_REQUEST", "INVALID_VALUE", { field: "proposedLsl" }, "proposedLsl must be < proposedUsl");
+      }
+
+      // Lô 7 Mục 2 — `deXuat` là hợp đồng CHÍNH: field tường minh trong đó
+      // THẮNG map từ proposedLsl/Usl (một client vừa gửi cả hai kiểu — hiếm,
+      // nhưng "cái mới ghi đè cái map từ cái cũ" là quy tắc rõ ràng nhất).
+      // legacy proposedLsl/Usl chỉ ĐIỀN VÀO chỗ deXuat.lowerLimit/upperLimit
+      // còn TRỐNG (đo hộ gọi hiện có, BG-111 Mục 2 §1).
+      const deXuat: Partial<Record<(typeof NULLABLE_LIMIT_STRING_FIELDS)[number], string | null>> = {
+        ...(input.deXuat ?? {}),
+      };
+      if (coLsl && deXuat.lowerLimit === undefined) deXuat.lowerLimit = String(input.proposedLsl);
+      if (coUsl && deXuat.upperLimit === undefined) deXuat.upperLimit = String(input.proposedUsl);
+
+      if (Object.keys(deXuat).length === 0) {
+        throw appError(
+          "BAD_REQUEST",
+          "INVALID_VALUE",
+          { field: "deXuat" },
+          "A threshold approval request must propose at least one field (deXuat or proposedLsl/proposedUsl)",
+        );
+      }
+
       const db = await getDb();
-      if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "DB unavailable" });
+      if (!db) throw appError("INTERNAL_SERVER_ERROR", "DB_UNAVAILABLE", undefined, "DB unavailable");
 
       const [mp] = await db
         .select({
@@ -160,18 +246,23 @@ export const thresholdApprovalRouter = router({
         .where(eq(measurementPointDefs.id, input.pointDefId))
         .limit(1);
       if (!mp) {
-        throw new TRPCError({ code: "NOT_FOUND", message: `measurement_point_def ${input.pointDefId} not found` });
+        throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "measurementPoint" }, `measurement_point_def ${input.pointDefId} not found`);
       }
 
+      // Cột legacy `proposedLsl`/`proposedUsl` (0348 — nay NULLABLE) vẫn được
+      // đổ khi `deXuat` mang field đó — màn duyệt CŨ (chỉ đọc hai cột này,
+      // xem Mục 4) tiếp tục hiển thị đúng cho một yêu cầu có chạm LSL/USL.
+      // Yêu cầu CHỈ chạm field khác (vd heightMax-only) để hai cột này NULL —
+      // đúng ý nghĩa "không đề xuất LSL/USL", KHÔNG bịa số 0.
       const [row] = await db.insert(thresholdApprovals).values({
         pointDefId: input.pointDefId,
         requestedBy: ctx.user.id,
-        suggestion: (input.suggestion ?? {}) as any,
+        suggestion: { ...(input.suggestion ?? {}), deXuat } as any,
         currentLsl: mp.lsl as any,
         currentUsl: mp.usl as any,
         currentNominal: mp.nominalValue as any,
-        proposedLsl: String(input.proposedLsl) as any,
-        proposedUsl: String(input.proposedUsl) as any,
+        proposedLsl: deXuat.lowerLimit !== undefined ? (deXuat.lowerLimit as any) : null,
+        proposedUsl: deXuat.upperLimit !== undefined ? (deXuat.upperLimit as any) : null,
         proposedNominal: input.proposedNominal != null ? (String(input.proposedNominal) as any) : undefined,
         comment: input.comment,
         status: STATUS_PENDING,
@@ -189,10 +280,10 @@ export const thresholdApprovalRouter = router({
     }))
     .mutation(async ({ ctx, input }) => {
       const db = await getDb();
-      if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "DB unavailable" });
+      if (!db) throw appError("INTERNAL_SERVER_ERROR", "DB_UNAVAILABLE", undefined, "DB unavailable");
       const row = await getById(input.id);
       if (row.status !== STATUS_PENDING) {
-        throw new TRPCError({ code: "BAD_REQUEST", message: `Cannot approve from status ${row.status}` });
+        throw appError("BAD_REQUEST", "OPERATION_FAILED", { operation: "approveThreshold" }, `Cannot approve from status ${row.status}`);
       }
       // OP1 Segregation of Duties — requester ≠ approver. `requestedBy` ≤ 0
       // (AI auto-tune sentinel) or null counts as system/non-self.
@@ -212,9 +303,10 @@ export const thresholdApprovalRouter = router({
     }))
     .mutation(async ({ ctx, input }) => {
       const db = await getDb();
-      if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "DB unavailable" });
+      if (!db) throw appError("INTERNAL_SERVER_ERROR", "DB_UNAVAILABLE", undefined, "DB unavailable");
 
-      const results: Array<{ id: number; status: "approved" | "skipped" | "failed"; reason?: string }> = [];
+      // F14 — như trên: kết quả từng dòng của một lô, trả về bằng cửa THÀNH CÔNG.
+      const results: Array<{ id: number; status: "approved" | "skipped" | "failed"; reason?: string; errorCode?: "OPERATION_FAILED"; errorParams?: Record<string, string | number> }> = [];
       // De-dupe while preserving order.
       const ids = [...new Set(input.ids)];
       for (const id of ids) {
@@ -233,7 +325,14 @@ export const thresholdApprovalRouter = router({
           await decideApproval(db, row, ctx.user.id, input.comment, input.apply);
           results.push({ id, status: "approved" });
         } catch (err: any) {
-          results.push({ id, status: "failed", reason: err?.message ?? "error" });
+          results.push({
+            id,
+            status: "failed",
+            // data-raw-ok: chi tiết KỸ THUẬT cho DÒNG này trong lô.
+            reason: err?.message ?? "error",
+            errorCode: "OPERATION_FAILED",
+            errorParams: { operation: "approveThreshold" },
+          });
         }
       }
       const summary = {
@@ -251,10 +350,10 @@ export const thresholdApprovalRouter = router({
     }))
     .mutation(async ({ ctx, input }) => {
       const db = await getDb();
-      if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "DB unavailable" });
+      if (!db) throw appError("INTERNAL_SERVER_ERROR", "DB_UNAVAILABLE", undefined, "DB unavailable");
       const row = await getById(input.id);
       if (row.status !== STATUS_PENDING) {
-        throw new TRPCError({ code: "BAD_REQUEST", message: `Cannot reject from status ${row.status}` });
+        throw appError("BAD_REQUEST", "OPERATION_FAILED", { operation: "rejectThreshold" }, `Cannot reject from status ${row.status}`);
       }
       const [updated] = await db.update(thresholdApprovals)
         .set({
@@ -278,13 +377,13 @@ export const thresholdApprovalRouter = router({
     }))
     .mutation(async ({ ctx, input }) => {
       const db = await getDb();
-      if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "DB unavailable" });
+      if (!db) throw appError("INTERNAL_SERVER_ERROR", "DB_UNAVAILABLE", undefined, "DB unavailable");
       const row = await getById(input.id);
       if (row.status !== STATUS_PENDING) {
-        throw new TRPCError({ code: "BAD_REQUEST", message: `Cannot withdraw from status ${row.status}` });
+        throw appError("BAD_REQUEST", "OPERATION_FAILED", { operation: "withdrawThreshold" }, `Cannot withdraw from status ${row.status}`);
       }
       if (row.requestedBy !== ctx.user.id) {
-        throw new TRPCError({ code: "FORBIDDEN", message: "Only the requester can withdraw" });
+        throw appError("FORBIDDEN", "PERMISSION_DENIED", { action: "withdrawThreshold" }, "Only the requester can withdraw");
       }
       const [updated] = await db.update(thresholdApprovals)
         .set({
@@ -299,6 +398,14 @@ export const thresholdApprovalRouter = router({
       return updated;
     }),
 
+  /** Wave 2 đường A — số đề xuất ĐANG CHỜ theo từng điểm đo, để gắn badge ngay trên /products. */
+  countPendingByProduct: protectedProcedure
+    .input(z.object({ productModelId: z.number().int().positive() }))
+    .query(async ({ input }) => {
+      const { countPendingByPoint } = await import("../services/thresholdApprovalCount");
+      return countPendingByPoint(input.productModelId);
+    }),
+
   // OP8 — list now resolves point + product metadata so the reviewer sees
   // pointCode / pointName / productCode / productName instead of just MP-{id}.
   list: protectedProcedure
@@ -310,7 +417,7 @@ export const thresholdApprovalRouter = router({
     }).optional())
     .query(async ({ input }) => {
       const db = await getDb();
-      if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "DB unavailable" });
+      if (!db) throw appError("INTERNAL_SERVER_ERROR", "DB_UNAVAILABLE", undefined, "DB unavailable");
       const conds = [] as any[];
       if (input?.pointDefId) conds.push(eq(thresholdApprovals.pointDefId, input.pointDefId));
       if (input?.status) conds.push(eq(thresholdApprovals.status, input.status));
@@ -382,8 +489,10 @@ export const thresholdApprovalRouter = router({
       message: "approvalId or pointDefId is required",
     }))
     .mutation(async ({ ctx, input }) => {
+      // BG-126 — chặn Ở INPUT, TRƯỚC bất kỳ đọc/ghi DB nào.
+      assertChangeReasonKhongGiaTienToBienThe(input.comment, "comment");
       const db = await getDb();
-      if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "DB unavailable" });
+      if (!db) throw appError("INTERNAL_SERVER_ERROR", "DB_UNAVAILABLE", undefined, "DB unavailable");
 
       let pointDefId = input.pointDefId ?? null;
       const approvalId = input.approvalId ?? null;
@@ -392,7 +501,7 @@ export const thresholdApprovalRouter = router({
         pointDefId = appr.pointDefId;
       }
       if (pointDefId == null) {
-        throw new TRPCError({ code: "BAD_REQUEST", message: "Could not resolve a point to revert" });
+        throw appError("BAD_REQUEST", "OPERATION_FAILED", { operation: "revertThresholdToSnapshot" }, "Could not resolve a point to revert");
       }
 
       // Latest prior snapshot = the state BEFORE the most recent edit (that is
@@ -404,10 +513,7 @@ export const thresholdApprovalRouter = router({
         .orderBy(desc(measurementPointVersions.version))
         .limit(1);
       if (!snap) {
-        throw new TRPCError({
-          code: "NOT_FOUND",
-          message: `No prior version snapshot to revert to for point ${pointDefId}`,
-        });
+        throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "measurementPointVersion" }, `No prior version snapshot to revert to for point ${pointDefId}`);
       }
       const prev = ((snap as any).snapshotJson ?? {}) as Record<string, any>;
 
@@ -417,7 +523,7 @@ export const thresholdApprovalRouter = router({
         .where(eq(measurementPointDefs.id, pointDefId))
         .limit(1);
       if (!cur) {
-        throw new TRPCError({ code: "NOT_FOUND", message: `measurement_point_def ${pointDefId} not found` });
+        throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "measurementPoint" }, `measurement_point_def ${pointDefId} not found`);
       }
 
       const restored = {

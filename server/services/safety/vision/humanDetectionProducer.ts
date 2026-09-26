@@ -48,6 +48,7 @@
  * ════════════════════════════════════════════════════════════════════════════
  */
 import { and, eq } from "drizzle-orm";
+import { DbUnavailableError } from "../../../_core/dbErrors";
 import { getDb } from "../../../db/connection";
 import { cameraCalibrations, type CameraCalibration } from "../../../../drizzle/schema";
 import {
@@ -68,7 +69,7 @@ export function safetyVisionEnabled(): boolean {
 
 async function db() {
   const d = await getDb();
-  if (!d) throw new Error("Database not connected");
+  if (!d) throw new DbUnavailableError();
   return d;
 }
 

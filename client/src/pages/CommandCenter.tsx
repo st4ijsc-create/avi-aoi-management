@@ -14,10 +14,11 @@
  *                        status dot rolled UP, deviceType chip, alarm/task/offline
  *                        badges. Select a node → filters the center + alarm rail; a
  *                        machine/robot leaf → "Open cockpit" → /machine|/robot/:id (U3).
- *   CENTER · OVERVIEW — the selected factory's live twin. We embed a compact 3D scene
- *                        (own twin.sceneGraph query, reusing the twin's three.js
- *                        approach) with a STATUS-GRID fallback when the scene is empty
- *                        or WebGL is unavailable — pragmatic, never breaks the page.
+ *   CENTER · OVERVIEW — the selected factory's live STATUS GRID (line→station→device),
+ *                        enriched with PackML state from its own twin.sceneGraph query.
+ *                        ★ Đợt 61 (QĐ-31): cảnh 3D compact (Canvas drei đời cũ) ĐÃ BỎ —
+ *                        nó trùng /twin (kit twin3d) và đốt thêm 1 WebGL context.
+ *                        Trang + 4 thủ tục commandCenter.* + 10 lối vào giữ nguyên.
  *   RIGHT · ALARM RAIL — seeded from commandCenter.recentAlerts, then LIVE-appended
  *                        from useEcosystemEvents() (dedupe by id, cap ~100). Click an
  *                        alert → navigate to the scoped machine/robot cockpit.
@@ -30,26 +31,31 @@
  * i18n via t("cmd.*","English default") fallbacks (nav keys added to locale files).
  * ════════════════════════════════════════════════════════════════════════════
  */
-import { Suspense, useEffect, useMemo, useRef, useState, useCallback } from "react";
+import { useEffect, useMemo, useRef, useState, useCallback, type KeyboardEvent as ReactKeyboardEvent } from "react";
 import { useTranslation } from "react-i18next";
 import { useLocation } from "wouter";
-import { Canvas, useFrame, type ThreeEvent } from "@react-three/fiber";
-import { OrbitControls, PerspectiveCamera, Environment, Grid, Text } from "@react-three/drei";
-import * as THREE from "three";
 import type { inferRouterOutputs } from "@trpc/server";
 import type { AppRouter } from "../../../server/routers";
 import { trpc } from "@/lib/trpc";
 import DashboardLayout from "@/components/DashboardLayout";
-import { MetricCard, PageHeader, StatusBadge, SectionCard } from "@/components/patterns";
+import { RelatedViews } from "@/components/RelatedViews";
+import { MetricCard, PageHeader, StatusBadge, SectionCard, severityDotClass, toneHex } from "@/components/patterns";
+import { EmptyState } from "@/components/EmptyState";
+import { isScopeEmpty } from "@/lib/scopeEmpty";
+import { relTimeShort } from "@/lib/format";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { cn } from "@/lib/utils";
 import { useEcosystemEvents, type EcosystemEvent, type EcosystemSeverity } from "@/hooks/useEcosystemEvents";
+import PollFreshness from "@/components/PollFreshness";
+import { ErrorBoundary } from "@/components/ErrorBoundary";
+import { ContextDrawer } from "@/components/workspace/ContextDrawer";
 import {
   Gauge, Boxes, AlertTriangle, Bot, Network, Sparkles, Zap, Activity, Factory,
-  ChevronRight, ChevronDown, Cpu, Radio, RefreshCw, Wifi, WifiOff, ExternalLink,
-  ListChecks, WifiOff as OfflineIcon, MapPin, Info, Layers, ServerCog,
+  ChevronRight, ChevronDown, Cpu, Radio, RefreshCw, ExternalLink,
+  ListChecks, WifiOff as OfflineIcon, MapPin, Info, Layers, ServerCog, Clock,
 } from "lucide-react";
 
 // ── Typesafe shapes inferred from the commandCenter router output ──────────────
@@ -67,36 +73,113 @@ type NodeKind = HierarchyNode["kind"];
 // A unified alarm row: the live EcosystemEvent envelope, which the SeedAlert mirrors.
 type AlarmRow = EcosystemEvent;
 
+// doc67 W8 — ngưỡng "tồn đọng" của rail cảnh báo: quá 24h chưa xử lý.
+const DAY_MS = 86_400_000;
+
+// doc 68 §3.1 [P1] — chiều cao thân CHUNG cho 3 pane (cây | twin | dải cảnh báo)
+// để canh đáy đều nhau (thay 3 height lệch cũ 520/420/532). Một hằng → sửa 1 chỗ.
+const PANE_BODY_H = "h-[544px]";
+
+// doc 68 §3.1 [P1] — hình chuẩn hoá thiết bị mở ContextDrawer chi tiết. Gộp 2 nguồn:
+// khối twin/chip 2D (có state PackML + activeTaskId) và lá cây (chỉ có status roll-up).
+// Trường thiếu → drawer hiển thị "—" trung thực, không bịa số.
+interface DrawerDevice {
+  refId: number;
+  kind: "machine" | "robot";
+  name: string;
+  code: string;
+  /** Trạng thái PackML từ twin (khi mở từ khối twin / chip 2D). */
+  state?: string | null;
+  /** Lệnh đang chạy (robot) từ twin. */
+  activeTaskId?: number | null;
+  /** Trạng thái roll-up của node cây (khi mở từ lá cây). */
+  status?: NodeStatus;
+}
+
 // ════════════════════════════════════════════════════════════════════════════
 // SMALL HELPERS
 // ════════════════════════════════════════════════════════════════════════════
 
-/** Semantic token colour for a rolled-up node status dot. */
-const STATUS_DOT: Record<NodeStatus, string> = {
-  ok: "bg-success",
-  warn: "bg-warning",
-  down: "bg-destructive",
-  idle: "bg-muted-foreground/50",
-  unknown: "bg-muted-foreground/30",
+// ── doc 67 W7 GĐ2 (việc 1) — màu trạng thái lấy từ nguồn DS chung
+// (patterns/isaStateBadges): toneHex() cho chấm trạng thái 2D (stateHex + legend
+// 3D đã bỏ ở Đợt 61 cùng Canvas)
+// (đọc CSS var theo theme, cache, fallback tĩnh khớp đúng bảng STATUS_HEX cũ),
+// severityDotClass() cho chấm 2D. Bảng STATUS_DOT/STATUS_HEX local đã xoá.
+// LƯU Ý ĐÃ DUYỆT: bảng cũ tự mâu thuẫn — STATUS_HEX.idle = amber (#f59e0b) trong
+// khi STATUS_DOT.idle = muted-xám; bản shared thống nhất idle → muted-xám, nên
+// node idle trên canvas 3D ĐỔI MÀU (amber → xám) là CHỦ ĐÍCH, không phải regression.
+
+/** Chấm 2D theo NodeStatus. severityDotClass (GĐ1) nhận từ vựng severity nên
+ * chưa hiểu "down" của NodeStatus → ánh xạ về "critical" trước khi gọi
+ * (ok→success · warn→warning · down→danger · idle/unknown→muted). */
+const statusDotClass = (s: NodeStatus): string =>
+  severityDotClass(s === "down" ? "critical" : s);
+
+// ── W4 (doc 67) — nhãn tiếng Việt trực tiếp (UI tiếng Việt, key i18n cmd.* chưa
+// có trong JSON locale nên các chuỗi thô EN bị lộ; nhãn mới đi thẳng tiếng Việt). ──
+
+/** Trạng thái node cây/lưới (title + sr). */
+const STATUS_KEY: Record<NodeStatus, string> = {
+  ok: "cmdCenter.status.ok",
+  warn: "cmdCenter.status.warn",
+  down: "cmdCenter.status.down",
+  idle: "cmdCenter.status.idle",
+  unknown: "cmdCenter.status.unknown",
 };
 
-/** three.js hex colour for a status (mirrors the twin's palette). */
-const STATUS_HEX: Record<NodeStatus, string> = {
-  ok: "#10b981",
-  warn: "#f59e0b",
-  down: "#ef4444",
-  idle: "#f59e0b",
-  unknown: "#94a3b8",
+/** Mức độ cảnh báo trên rail. */
+const SEVERITY_KEY: Record<EcosystemSeverity, string> = {
+  critical: "cmdCenter.severity.critical",
+  high: "cmdCenter.severity.high",
+  medium: "cmdCenter.severity.medium",
+  low: "cmdCenter.severity.low",
+  info: "cmdCenter.severity.info",
 };
+
+/** Loại sự kiện (kind) trên rail. */
+const KIND_KEY: Record<string, string> = {
+  inspection: "cmdCenter.kind.inspection",
+  andon: "cmdCenter.kind.andon",
+  safety: "cmdCenter.kind.safety",
+  spc: "SPC",
+  quality_gate: "cmdCenter.kind.quality_gate",
+  escalation: "cmdCenter.kind.escalation",
+  maintenance: "cmdCenter.kind.maintenance",
+  downtime: "cmdCenter.kind.downtime",
+  oee: "OEE",
+  task: "cmdCenter.kind.task",
+  workorder: "cmdCenter.kind.workorder",
+  anomaly: "cmdCenter.kind.anomaly",
+  program: "cmdCenter.kind.program",
+  twin: "cmdCenter.kind.twin",
+  ng: "NG",
+  yield: "cmdCenter.kind.yield",
+  event: "cmdCenter.kind.event",
+};
+
+/** Nhóm trạng thái twin → nhãn tiếng Việt (đồng bộ với statusHexFromTwinState). */
+function twinStateCategoryKey(state: string | null | undefined): string {
+  switch ((state ?? "").toLowerCase()) {
+    case "running": case "execute": case "active": return "cmdCenter.twin.dangChay";
+    case "idle": return "cmdCenter.twin.cho";
+    case "stopped": case "held": case "suspended": return "cmdCenter.twin.tamDung";
+    case "aborted": case "error": case "fault": case "estop": return "cmdCenter.twin.loiEStop";
+    case "offline": return "cmdCenter.twin.ngoaiTuyen";
+    default: return "cmdCenter.twin.khongRo";
+  }
+}
 
 function statusHexFromTwinState(state: string | null | undefined): string {
   switch ((state ?? "").toLowerCase()) {
-    case "running": case "execute": case "active": return STATUS_HEX.ok;
-    case "idle": return STATUS_HEX.idle;
+    case "running": case "execute": case "active": return toneHex("success");
+    // idle → muted-xám (trước là amber — đổi CHỦ ĐÍCH, xem ghi chú GĐ2 phía trên).
+    case "idle": return toneHex("muted");
+    // Cam "tạm dừng/giữ" + xám-lam "ngoại tuyến": hạng mục riêng của twin, DS chưa
+    // có tone tương đương → giữ hex như bản cũ (không thuộc bảng STATUS_HEX đã xoá).
     case "stopped": case "held": case "suspended": return "#f97316";
-    case "aborted": case "error": case "fault": case "estop": return STATUS_HEX.down;
+    case "aborted": case "error": case "fault": case "estop": return toneHex("danger");
     case "offline": return "#64748b";
-    default: return STATUS_HEX.unknown;
+    default: return toneHex("muted");
   }
 }
 
@@ -105,16 +188,6 @@ function severityTone(sev: EcosystemSeverity): "error" | "warning" | "info" {
   if (sev === "critical" || sev === "high") return "error";
   if (sev === "medium") return "warning";
   return "info";
-}
-
-function relTime(ts: number, now: number): string {
-  const s = Math.max(0, Math.round((now - ts) / 1000));
-  if (s < 60) return `${s}s`;
-  const m = Math.floor(s / 60);
-  if (m < 60) return `${m}m`;
-  const h = Math.floor(m / 60);
-  if (h < 24) return `${h}h`;
-  return `${Math.floor(h / 24)}d`;
 }
 
 /** Walk a node's descendants, returning every id in its subtree (for scope filtering). */
@@ -137,6 +210,48 @@ function collectScope(node: HierarchyNode): {
   };
   walk(node);
   return { factoryIds, machineIds, robotIds, lineIds };
+}
+
+/**
+ * doc67 W8 [P2] — TREE SEARCH: lọc cây theo text (tên/mã, đã lowercase) +
+ * toggle "chỉ node có cảnh báo" (dựa roll-up counts.activeAlarms — server đã
+ * cộng dồn con lên cha nên nhánh sạch bị cắt cả cụm, nhánh chứa cảnh báo giữ
+ * nguyên đường xuống lá). Node khớp text giữ NGUYÊN nhánh con (vẫn lọc theo
+ * alarmOnly) để duyệt tiếp được; nhánh không chứa kết quả bị cắt.
+ */
+function filterHierarchy(nodes: HierarchyNode[], q: string, alarmOnly: boolean): HierarchyNode[] {
+  const out: HierarchyNode[] = [];
+  for (const n of nodes) {
+    if (alarmOnly && n.counts.activeAlarms === 0) continue; // roll-up: nhánh sạch → cắt
+    const selfMatch =
+      q === "" || n.name.toLowerCase().includes(q) || n.code.toLowerCase().includes(q);
+    const kids = n.children ? filterHierarchy(n.children, q, alarmOnly) : [];
+    if (selfMatch) {
+      // Node khớp: giữ toàn bộ con (chỉ áp alarmOnly, bỏ điều kiện text) để
+      // chọn "Factory A" vẫn mở xem được line/máy bên trong.
+      out.push({
+        ...n,
+        children: q === "" ? kids : n.children ? filterHierarchy(n.children, "", alarmOnly) : [],
+      });
+    } else if (kids.length > 0) {
+      out.push({ ...n, children: kids });
+    }
+  }
+  return out;
+}
+
+/** doc67 W8 — highlight đoạn khớp trong tên node (giữ text thuần khi không khớp). */
+function HighlightedName({ text, query }: { text: string; query: string }) {
+  if (!query) return <>{text}</>;
+  const idx = text.toLowerCase().indexOf(query);
+  if (idx < 0) return <>{text}</>;
+  return (
+    <>
+      {text.slice(0, idx)}
+      <mark className="rounded-sm bg-warning/40 px-0 text-inherit">{text.slice(idx, idx + query.length)}</mark>
+      {text.slice(idx + query.length)}
+    </>
+  );
 }
 
 /** Find a node anywhere in the tree by id. */
@@ -178,7 +293,7 @@ function kindIcon(kind: NodeKind) {
 }
 
 function TreeNode({
-  node, depth, expanded, onToggle, selectedId, onSelect, onOpenCockpit, t,
+  node, depth, expanded, onToggle, selectedId, onSelect, onOpenDevice, t, highlight = "",
 }: {
   node: HierarchyNode;
   depth: number;
@@ -186,44 +301,87 @@ function TreeNode({
   onToggle: (id: string) => void;
   selectedId: string | null;
   onSelect: (id: string) => void;
-  onOpenCockpit: (node: HierarchyNode) => void;
-  t: (k: string, f: string) => string;
+  /** doc 68 §3.1 [P1] — lá cây (máy/robot) → mở ContextDrawer chi tiết thiết bị. */
+  onOpenDevice: (node: HierarchyNode) => void;
+  t: ReturnType<typeof useTranslation>["t"];
+  /** doc67 W8 — chuỗi tìm kiếm (lowercase) để highlight đoạn khớp trong tên. */
+  highlight?: string;
 }) {
   const hasChildren = (node.children?.length ?? 0) > 0;
   const isOpen = expanded.has(node.id);
   const isLeaf = node.kind === "machine" || node.kind === "robot";
   const selected = selectedId === node.id;
 
+  // W4 (doc 67) — pattern chạm cho node có con: chạm cả HÀNG luôn chọn node; nếu
+  // node đang ĐÓNG thì đồng thời MỞ (1 chạm = chọn + mở, kiểu VS Code); khi node
+  // đã được chọn và đang mở, chạm lần 2 lên hàng sẽ THU GỌN. Nút mũi tên vẫn
+  // toggle riêng (stopPropagation) cho thao tác chuột quen kiểu cũ.
+  const handleRowActivate = () => {
+    if (hasChildren && (!isOpen || selected)) onToggle(node.id);
+    onSelect(node.id);
+    // doc 68 §3.1 [P1] — lá máy/robot: chọn (scope dải cảnh báo) + mở drawer chi tiết.
+    if (isLeaf) onOpenDevice(node);
+  };
+
+  // W4 (doc 67) — bàn phím theo WAI-ARIA tree (subset gọn, roving tabindex qua
+  // node đang chọn): Enter/Space = chọn; ArrowRight = mở; ArrowLeft = đóng.
+  // stopPropagation để phím không nổi bọt lên treeitem cha (DOM lồng nhau).
+  const handleKeyDown = (e: ReactKeyboardEvent<HTMLDivElement>) => {
+    if (e.target !== e.currentTarget) return; // phím phát từ nút con → bỏ qua
+    if (e.key === "Enter" || e.key === " ") {
+      e.preventDefault(); e.stopPropagation();
+      onSelect(node.id);
+      if (isLeaf) onOpenDevice(node); // doc 68 §3.1 — bàn phím cũng mở drawer cho lá.
+    } else if (e.key === "ArrowRight" && hasChildren && !isOpen) {
+      e.preventDefault(); e.stopPropagation();
+      onToggle(node.id);
+    } else if (e.key === "ArrowLeft" && hasChildren && isOpen) {
+      e.preventDefault(); e.stopPropagation();
+      onToggle(node.id);
+    }
+  };
+
   return (
     <div>
+      {/* W4 (doc 67): min-h-11 (44px) đạt chuẩn chạm; role="treeitem" + tabIndex
+          roving (node đang chọn = 0; fallback các site gốc khi chưa chọn gì). */}
       <div
+        role="treeitem"
+        aria-selected={selected}
+        aria-expanded={hasChildren ? isOpen : undefined}
+        aria-level={depth + 1}
+        tabIndex={selected ? 0 : selectedId == null && depth === 0 ? 0 : -1}
         className={cn(
-          "group flex items-center gap-1.5 rounded-md px-1.5 py-1 text-sm cursor-pointer hover:bg-muted/60",
+          "group flex min-h-11 items-center gap-1.5 rounded-md px-1.5 py-1 text-sm cursor-pointer hover:bg-muted/60",
+          "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
           selected && "bg-primary/10 ring-1 ring-primary/30",
         )}
         style={{ paddingLeft: `${depth * 12 + 6}px` }}
-        onClick={() => onSelect(node.id)}
+        onClick={handleRowActivate}
+        onKeyDown={handleKeyDown}
       >
-        {/* expander */}
+        {/* expander — W4 (doc 67): hit-area 40×40 (h-10 w-10, margin âm giữ hàng
+            gọn), icon giữ nhỏ; tabIndex=-1 vì hàng treeitem đã nhận bàn phím. */}
         {hasChildren ? (
           <button
             type="button"
-            className="shrink-0 text-muted-foreground hover:text-foreground"
+            tabIndex={-1}
+            className="-my-1 -ml-1.5 flex h-10 w-10 shrink-0 items-center justify-center rounded text-muted-foreground hover:text-foreground"
             onClick={(e) => { e.stopPropagation(); onToggle(node.id); }}
-            aria-label={isOpen ? "Collapse" : "Expand"}
+            aria-label={isOpen ? t("commandCenter.thuGon", "Thu gọn") : t("commandCenter.moRong", "Mở rộng")}
           >
             {isOpen ? <ChevronDown className="h-3.5 w-3.5" /> : <ChevronRight className="h-3.5 w-3.5" />}
           </button>
         ) : (
-          <span className="w-3.5 shrink-0" />
+          <span className="-ml-1.5 w-10 shrink-0" />
         )}
 
         {/* status dot */}
-        <span className={cn("h-2 w-2 shrink-0 rounded-full", STATUS_DOT[node.status])} title={node.status} />
+        <span className={cn("h-2 w-2 shrink-0 rounded-full", statusDotClass(node.status))} title={t(STATUS_KEY[node.status])} />
 
         {/* kind icon + name */}
         <span className="shrink-0 text-muted-foreground">{kindIcon(node.kind)}</span>
-        <span className="truncate font-medium">{node.name}</span>
+        <span className="truncate font-medium"><HighlightedName text={node.name} query={highlight} /></span>
 
         {/* deviceType chip (leaves only) */}
         {isLeaf && node.deviceType && (
@@ -249,22 +407,25 @@ function TreeNode({
               <OfflineIcon className="h-2.5 w-2.5" />{node.counts.offline}
             </span>
           )}
-          {/* Open cockpit — leaf nodes only (U3 route) */}
+          {/* doc 68 §3.1 [P1+P3]: nút mở CHI TIẾT (ContextDrawer phải) thay nút
+              "mở cockpit" điều-hướng-ngay cũ — cockpit nay là CTA bước-2 trong drawer.
+              Hit-area 40×40 (W4), hiện thường trực (cảm ứng không hover). */}
           {isLeaf && typeof node.refId === "number" && (
             <button
               type="button"
-              className="opacity-0 group-hover:opacity-100 text-muted-foreground hover:text-primary"
-              title={t("cmd.openCockpit", "Open cockpit")}
-              onClick={(e) => { e.stopPropagation(); onOpenCockpit(node); }}
+              className="-my-1 flex h-10 w-10 shrink-0 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              title={t("commandCenter.xemChiTietThietBi", "Xem chi tiết thiết bị")}
+              aria-label={t("commandCenter.xemChiTietNode", { name: node.name })}
+              onClick={(e) => { e.stopPropagation(); onSelect(node.id); onOpenDevice(node); }}
             >
-              <ExternalLink className="h-3.5 w-3.5" />
+              <Info className="h-4 w-4" />
             </button>
           )}
         </span>
       </div>
 
       {hasChildren && isOpen && (
-        <div>
+        <div role="group">
           {node.children!.map((child) => (
             <TreeNode
               key={child.id}
@@ -274,8 +435,9 @@ function TreeNode({
               onToggle={onToggle}
               selectedId={selectedId}
               onSelect={onSelect}
-              onOpenCockpit={onOpenCockpit}
+              onOpenDevice={onOpenDevice}
               t={t}
+              highlight={highlight}
             />
           ))}
         </div>
@@ -285,123 +447,47 @@ function TreeNode({
 }
 
 // ════════════════════════════════════════════════════════════════════════════
-// CENTER PANE — compact live 3D twin for the selected factory (own sceneGraph
-// query), with a status-grid fallback when the scene is empty or WebGL is off.
+// CENTER PANE — lưới trạng thái trực tiếp của nhà máy đang chọn.
+//
+// ★★★ ĐỢT 61 (QĐ-31) — CẢNH 3D CỦA MÀN NÀY ĐÃ BỊ BỎ (177 dòng: FLOOR_W/FLOOR_D,
+//   gridPositions, TwinBlock, CompactTwinScene) cùng `<Canvas>` drei đời cũ, bộ
+//   chuyển 2D/3D, khoá localStorage `commandCenter:viewMode`, thăm dò WebGL và
+//   hàm `Legend`. Lý do: cảnh ấy TRÙNG `/twin` (đã chạy kit `twin3d/loi`, 1 draw
+//   call, dispose triệt để) trong khi bản ở đây là `@react-three/fiber` + drei
+//   dựng tay ⇒ mỗi lượt mở `/command-center` đốt thêm MỘT WebGL context cho một
+//   cảnh người dùng đã có chỗ xem tốt hơn. Trang, 4 thủ tục `commandCenter.*` và
+//   10 lối vào GIỮ NGUYÊN.
+//
+// ⚠ `twin.sceneGraph` **KHÔNG** bị bỏ theo — đo được nó phục vụ 4 thứ của đường
+//   2D, không riêng cảnh 3D: (1) số thiết bị trên tiêu đề pane, (2) chấm tươi
+//   `PollFreshness`, (3) trạng thái đang tải của pane, (4) làm giàu PackML
+//   (`state`, `activeTaskId`) cho chip 2D khi mở ContextDrawer. Bỏ nó là bỏ 4
+//   tính năng đang sống của lưới 2D, không phải dọn bản sao của cảnh 3D.
 // ════════════════════════════════════════════════════════════════════════════
 
-const FLOOR_W = 34;
-const FLOOR_D = 24;
-
-function toScenePos(pos: { x: number; y: number; z?: number } | null, idx: number, n: number): [number, number, number] {
-  if (pos && Number.isFinite(pos.x) && Number.isFinite(pos.y)) {
-    const norm = pos.x >= 0 && pos.x <= 1 && pos.y >= 0 && pos.y <= 1;
-    if (norm) return [(pos.x - 0.5) * FLOOR_W, 0.5, (pos.y - 0.5) * FLOOR_D];
-    return [pos.x, typeof pos.z === "number" ? pos.z + 0.5 : 0.5, pos.y];
-  }
-  const cols = Math.max(1, Math.ceil(Math.sqrt(n || 1)));
-  const c = idx % cols, r = Math.floor(idx / cols);
-  return [-FLOOR_W / 2 + 1.5 + c * 3, 0.5, FLOOR_D / 2 + 2 + r * 3];
-}
-
-function TwinBlock({
-  node, position, selected, onSelect,
+/** Status-grid fallback: line→station→device cells coloured by hierarchy status.
+ *  doc 68 §3.1 [P1]: chip thiết bị = <button> → mở ContextDrawer chi tiết (onDeviceOpen). */
+function StatusGridFallback({
+  factory, t, onDeviceOpen,
 }: {
-  node: TwinDevice;
-  position: [number, number, number];
-  selected: boolean;
-  onSelect: () => void;
+  factory: HierarchyNode | null;
+  t: ReturnType<typeof useTranslation>["t"];
+  onDeviceOpen?: (dev: HierarchyNode) => void;
 }) {
-  const ref = useRef<THREE.Group>(null);
-  const [hovered, setHovered] = useState(false);
-  const isRobot = node.kind === "robot";
-  const color = node.color || statusHexFromTwinState(node.state);
-  useFrame(() => {
-    if (!ref.current) return;
-    const s = selected || hovered ? 1.12 : 1;
-    ref.current.scale.lerp(new THREE.Vector3(s, s, s), 0.18);
-  });
-  const stop = (e: ThreeEvent<PointerEvent | MouseEvent>) => e.stopPropagation();
-  return (
-    <group
-      ref={ref}
-      position={position}
-      onClick={(e) => { stop(e); onSelect(); }}
-      onPointerOver={(e) => { stop(e); setHovered(true); }}
-      onPointerOut={() => setHovered(false)}
-    >
-      <mesh castShadow>
-        {isRobot ? <cylinderGeometry args={[0.4, 0.5, 1, 16]} /> : <boxGeometry args={[1.4, 0.9, 1.4]} />}
-        <meshStandardMaterial color={color} emissive={color} emissiveIntensity={0.22} metalness={0.4} roughness={0.5} />
-      </mesh>
-      <mesh position={[0, 0.9, 0]}>
-        <sphereGeometry args={[0.12]} />
-        <meshStandardMaterial color={color} emissive={color} emissiveIntensity={0.9} />
-      </mesh>
-      {selected && (
-        <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, -0.48, 0]}>
-          <ringGeometry args={[1, 1.25, 32]} />
-          <meshBasicMaterial color="#06b6d4" side={THREE.DoubleSide} />
-        </mesh>
-      )}
-      {(hovered || selected) && (
-        <Text position={[0, -0.7, 0.8]} fontSize={0.24} color="#fff" anchorX="center" anchorY="top" outlineWidth={0.01} outlineColor="#000">
-          {node.code}
-        </Text>
-      )}
-    </group>
-  );
-}
-
-function CompactTwinScene({
-  devices, selectedId, onSelect,
-}: {
-  devices: TwinDevice[];
-  selectedId: string | null;
-  onSelect: (id: string) => void;
-}) {
-  const camDist = Math.max(18, FLOOR_W * 0.9);
-  return (
-    <>
-      <PerspectiveCamera makeDefault position={[0, camDist * 0.8, camDist]} fov={50} />
-      <OrbitControls enablePan enableZoom enableRotate minDistance={8} maxDistance={140} maxPolarAngle={Math.PI / 2.1} target={[0, 0, 0]} />
-      <ambientLight intensity={0.55} />
-      <directionalLight position={[16, 22, 10]} intensity={1.05} castShadow />
-      <pointLight position={[-10, 9, -10]} intensity={0.35} color="#06b6d4" />
-      <Environment preset="night" />
-      <Grid args={[FLOOR_W + 10, FLOOR_D + 12]} cellSize={1} cellThickness={0.5} cellColor="#1e293b" sectionSize={5} sectionThickness={1} sectionColor="#334155" fadeDistance={60} fadeStrength={1} infiniteGrid />
-      <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, -0.5, 0]} receiveShadow>
-        <planeGeometry args={[FLOOR_W + 12, FLOOR_D + 14]} />
-        <meshStandardMaterial color="#0f172a" transparent opacity={0.85} />
-      </mesh>
-      {devices.map((d, i) => (
-        <TwinBlock
-          key={d.id}
-          node={d}
-          position={toScenePos(d.position, i, devices.length)}
-          selected={selectedId === d.id}
-          onSelect={() => onSelect(d.id)}
-        />
-      ))}
-    </>
-  );
-}
-
-/** Status-grid fallback: line→station→device cells coloured by hierarchy status. */
-function StatusGridFallback({ factory, t }: { factory: HierarchyNode | null; t: (k: string, f: string) => string }) {
   if (!factory || !factory.children?.length) {
     return (
-      <div className="flex h-[420px] items-center justify-center text-sm text-muted-foreground">
+      <div className={cn("flex items-center justify-center text-sm text-muted-foreground", PANE_BODY_H)}>
         {t("cmd.noFactoryLayout", "No line/station layout for this factory yet.")}
       </div>
     );
   }
   return (
-    <ScrollArea className="h-[420px] pr-2">
+    <ScrollArea className={cn("pr-2", PANE_BODY_H)}>
       <div className="space-y-3">
         {factory.children.map((line) => (
           <div key={line.id} className="rounded-md border p-2">
             <div className="mb-1.5 flex items-center gap-2 text-sm font-medium">
-              <span className={cn("h-2 w-2 rounded-full", STATUS_DOT[line.status])} />
+              <span className={cn("h-2 w-2 rounded-full", statusDotClass(line.status))} />
               <Layers className="h-3.5 w-3.5 text-muted-foreground" />
               {line.name}
             </div>
@@ -409,25 +495,40 @@ function StatusGridFallback({ factory, t }: { factory: HierarchyNode | null; t: 
               {(line.children ?? []).map((station) => (
                 <div key={station.id} className="flex flex-wrap items-center gap-1.5">
                   <span className="flex items-center gap-1 text-xs text-muted-foreground">
-                    <span className={cn("h-1.5 w-1.5 rounded-full", STATUS_DOT[station.status])} />
+                    <span className={cn("h-1.5 w-1.5 rounded-full", statusDotClass(station.status))} />
                     {station.name}
                   </span>
-                  {(station.children ?? []).map((dev) => (
-                    <span
-                      key={dev.id}
-                      className={cn(
-                        "flex items-center gap-1 rounded px-1.5 py-0.5 text-[11px] font-medium",
-                        dev.status === "ok" && "bg-success/15 text-success",
-                        dev.status === "warn" && "bg-warning/15 text-warning",
-                        dev.status === "down" && "bg-destructive/15 text-destructive",
-                        (dev.status === "idle" || dev.status === "unknown") && "bg-muted text-muted-foreground",
-                      )}
-                      title={`${dev.name} · ${dev.status}`}
-                    >
-                      {dev.kind === "robot" ? <Bot className="h-3 w-3" /> : <Cpu className="h-3 w-3" />}
-                      {dev.code}
-                    </span>
-                  ))}
+                  {(station.children ?? []).map((dev) => {
+                    const isDev = (dev.kind === "machine" || dev.kind === "robot") && typeof dev.refId === "number";
+                    const chipCls = cn(
+                      "flex items-center gap-1 rounded px-1.5 py-0.5 text-[11px] font-medium",
+                      dev.status === "ok" && "bg-success/15 text-success",
+                      dev.status === "warn" && "bg-warning/15 text-warning",
+                      dev.status === "down" && "bg-destructive/15 text-destructive",
+                      (dev.status === "idle" || dev.status === "unknown") && "bg-muted text-muted-foreground",
+                    );
+                    const chipInner = (
+                      <>
+                        {dev.kind === "robot" ? <Bot className="h-3 w-3" /> : <Cpu className="h-3 w-3" />}
+                        {dev.code}
+                      </>
+                    );
+                    return isDev && onDeviceOpen ? (
+                      <button
+                        key={dev.id}
+                        type="button"
+                        className={cn(chipCls, "cursor-pointer transition-colors hover:brightness-110 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring")}
+                        title={`${dev.name} · ${t(STATUS_KEY[dev.status])} — ${t("cmdCenter.moChiTiet", "mở chi tiết")}`}
+                        onClick={() => onDeviceOpen(dev)}
+                      >
+                        {chipInner}
+                      </button>
+                    ) : (
+                      <span key={dev.id} className={chipCls} title={`${dev.name} · ${t(STATUS_KEY[dev.status])}`}>
+                        {chipInner}
+                      </span>
+                    );
+                  })}
                 </div>
               ))}
             </div>
@@ -439,100 +540,92 @@ function StatusGridFallback({ factory, t }: { factory: HierarchyNode | null; t: 
 }
 
 function CenterOverview({
-  factoryNode, factoryId, t,
+  factoryNode, factoryId, t, onDeviceOpen,
 }: {
   factoryNode: HierarchyNode | null;
   factoryId: number | null;
-  t: (k: string, f: string) => string;
+  t: ReturnType<typeof useTranslation>["t"];
+  /** doc 68 §3.1 [P1] — mở ContextDrawer chi tiết thiết bị (khối twin / chip 2D). */
+  onDeviceOpen?: (d: DrawerDevice) => void;
 }) {
-  const [selectedDeviceId, setSelectedDeviceId] = useState<string | null>(null);
-  const [webglOk, setWebglOk] = useState(true);
+  // ★ Đợt 61: `selectedDeviceId`/`webglOk`/`viewMode` đã bỏ cùng cảnh 3D. Khoá
+  //   localStorage `commandCenter:viewMode` KHÔNG còn được đọc/ghi — người dùng
+  //   nào còn giá trị cũ trong trình duyệt cũng không đổi gì (không ai tra nữa).
 
+  // W6 (doc 67, việc 4): 10s → 30s — sceneGraph trả mảng mới mỗi lần fetch nên
+  // mỗi chu kỳ là 1 lần re-render toàn scene; 30s đủ tươi cho sơ đồ tổng quan.
   const sceneQ = trpc.twin.sceneGraph.useQuery(
     { factoryId: factoryId ?? 0 },
-    { enabled: factoryId != null, refetchInterval: 10_000, staleTime: 5_000 },
+    { enabled: factoryId != null, refetchInterval: 30_000, staleTime: 5_000 },
   );
   const devices = useMemo<TwinDevice[]>(() => sceneQ.data?.devices ?? [], [sceneQ.data]);
-  const selectedDevice = devices.find((d) => d.id === selectedDeviceId) ?? null;
 
-  // Detect WebGL availability once — if absent, skip the Canvas (status grid instead).
-  useEffect(() => {
-    try {
-      const c = document.createElement("canvas");
-      const gl = c.getContext("webgl") || c.getContext("experimental-webgl");
-      setWebglOk(!!gl);
-    } catch { setWebglOk(false); }
-  }, []);
+  // doc 68 §3.1 [P1] — chuẩn hoá → DrawerDevice rồi báo lên trang mở ContextDrawer.
+  // ★ Đợt 61: `openTwinDevice` (lối bấm TỪ KHỐI 3D) đã bỏ cùng cảnh. Chip 2D
+  //   (HierarchyNode) vẫn được làm giàu bằng cách tra TwinDevice cùng refId
+  //   trong scene — đó là lý do `sceneQ` ở trên PHẢI ở lại.
+  const openGridDevice = useCallback((dev: HierarchyNode) => {
+    if (typeof dev.refId !== "number" || (dev.kind !== "machine" && dev.kind !== "robot")) return;
+    const twin = devices.find((d) => d.refId === dev.refId && d.kind === dev.kind) ?? null;
+    onDeviceOpen?.({
+      refId: dev.refId, kind: dev.kind, name: dev.name, code: dev.code,
+      state: twin?.state ?? null, activeTaskId: twin?.activeTaskId ?? null, status: dev.status,
+    });
+  }, [devices, onDeviceOpen]);
 
-  const canRender3D = webglOk && devices.length > 0;
+  // ★ Đợt 61: thăm dò WebGL (`getContext("webgl")`), `canRender3D`, `stateSummary`
+  //   và `sceneAriaLabel` đã bỏ — cả bốn chỉ tồn tại để phục vụ `<Canvas>`.
 
   return (
     <SectionCard
       icon={<Factory className="h-4 w-4" />}
       title={
         factoryNode
-          ? `${factoryNode.name} — ${devices.length} ${t("cmd.devices", "devices")}`
+          ? t("commandCenter.nhaMayThietBi", { name: factoryNode.name, count: devices.length })
           : t("cmd.selectFactory", "Select a factory")
       }
       action={
         <div className="flex items-center gap-2">
+          {/* ★ Đợt 61: bộ chuyển 2D/3D đã bỏ — chỉ còn MỘT đường hiển thị (lưới
+              trạng thái trực tiếp), nên một nút chọn giữa một lựa chọn là nhiễu. */}
+          {/* AUD-01 (doc 65 W2) + W6 (việc 4): tuổi dữ liệu scene — poll 30s, amber khi >2× chu kỳ.
+              doc 68 §3.1 [P2]: BỎ nút "Làm mới" trùng (đã có 1 ở header trang) — chỉ giữ
+              1 chấm freshness/pane; scene tự poll 30s + nút header trang làm mới toàn cục. */}
           {factoryId != null && (
-            <Button size="sm" variant="outline" onClick={() => sceneQ.refetch()}>
-              <RefreshCw className={cn("mr-1 h-4 w-4", sceneQ.isFetching && "animate-spin")} />
-              {t("cmd.refresh", "Refresh")}
-            </Button>
+            <PollFreshness
+              updatedAt={sceneQ.dataUpdatedAt || undefined}
+              isFetching={sceneQ.isFetching}
+              staleAfterMs={60_000}
+            />
           )}
         </div>
       }
     >
       {factoryId == null ? (
-        <div className="flex h-[420px] items-center justify-center text-sm text-muted-foreground">
+        <div className={cn("flex items-center justify-center text-sm text-muted-foreground", PANE_BODY_H)}>
           {t("cmd.pickFactoryHint", "Select a site or factory in the tree to view its live floor.")}
         </div>
       ) : sceneQ.isLoading ? (
-        <div className="flex h-[420px] items-center justify-center text-sm text-muted-foreground">
+        <div className={cn("flex items-center justify-center text-sm text-muted-foreground", PANE_BODY_H)}>
           {t("cmd.loadingScene", "Loading factory scene…")}
         </div>
-      ) : canRender3D ? (
-        <>
-          <div className="h-[420px] w-full overflow-hidden rounded-lg border bg-[#0a0a0f]">
-            <Canvas shadows onPointerMissed={() => setSelectedDeviceId(null)}>
-              <Suspense fallback={null}>
-                <CompactTwinScene devices={devices} selectedId={selectedDeviceId} onSelect={setSelectedDeviceId} />
-              </Suspense>
-            </Canvas>
-          </div>
-          <div className="mt-2 flex flex-wrap items-center gap-3 text-[11px] text-muted-foreground">
-            <Legend hex={STATUS_HEX.ok} label={t("cmd.lgRunning", "Running")} />
-            <Legend hex={STATUS_HEX.idle} label={t("cmd.lgIdle", "Idle")} />
-            <Legend hex="#f97316" label={t("cmd.lgHeld", "Held/Stopped")} />
-            <Legend hex={STATUS_HEX.down} label={t("cmd.lgDown", "Fault/E-stop")} />
-            <Legend hex="#64748b" label={t("cmd.lgOffline", "Offline")} />
-            {selectedDevice && (
-              <span className="ml-auto text-foreground">
-                {selectedDevice.name} · {selectedDevice.state}
-                {selectedDevice.activeTaskId != null ? ` · task #${selectedDevice.activeTaskId}` : ""}
-              </span>
-            )}
-          </div>
-        </>
+      ) : devices.length > 0 ? (
+        /* ★ Đợt 61: đường DUY NHẤT — lưới trạng thái trực tiếp (line→station→device).
+           Trước đây đây là nhánh "2D chủ động" và đã là MẶC ĐỊNH trên panel-PC
+           (bề rộng ≤1366px), nên nó là đường ĐÃ ĐƯỢC DÙNG THẬT, không phải nhánh dự
+           phòng chưa ai chạy. `<Canvas>` KHÔNG còn được mount ở màn này ⇒ __soCanvas = 0. */
+        <StatusGridFallback factory={factoryNode} t={t} onDeviceOpen={openGridDevice} />
       ) : (
         <>
           <div className="mb-2 flex items-center gap-2 rounded-md border border-info/30 bg-info/10 px-2 py-1 text-[11px] text-info">
             <Info className="h-3.5 w-3.5 shrink-0" />
-            {webglOk
-              ? t("cmd.gridEmptyScene", "No devices placed in this factory's scene — showing the live status grid.")
-              : t("cmd.gridNoWebgl", "3D not available in this browser — showing the live status grid.")}
+            {t("cmd.gridEmptyScene", "No devices placed in this factory's scene — showing the live status grid.")}
           </div>
-          <StatusGridFallback factory={factoryNode} t={t} />
+          <StatusGridFallback factory={factoryNode} t={t} onDeviceOpen={openGridDevice} />
         </>
       )}
     </SectionCard>
   );
-}
-
-function Legend({ hex, label }: { hex: string; label: string }) {
-  return <span className="flex items-center gap-1"><span className="inline-block h-3 w-3 rounded-sm" style={{ background: hex }} /> {label}</span>;
 }
 
 // ════════════════════════════════════════════════════════════════════════════
@@ -567,6 +660,55 @@ export default function CommandCenter() {
   // ── selection + expansion ──
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
+
+  // doc 68 §3.1 [P1] — ContextDrawer chi tiết thiết bị: state ở TRANG để cả khối
+  // twin, chip 2D và lá cây đều mở CÙNG 1 drawer (fly-out phải), giữ dải cảnh báo
+  // cột 3 nguyên vẹn phía sau (đây là BỔ SUNG, không thay dải cảnh báo).
+  const [drawerDevice, setDrawerDevice] = useState<DrawerDevice | null>(null);
+  const openDeviceDrawer = useCallback((d: DrawerDevice) => setDrawerDevice(d), []);
+  // Adapter lá cây (HierarchyNode) → DrawerDevice (chỉ mở cho lá máy/robot có refId số).
+  const openTreeDevice = useCallback((node: HierarchyNode) => {
+    if (typeof node.refId !== "number" || (node.kind !== "machine" && node.kind !== "robot")) return;
+    setDrawerDevice({ refId: node.refId, kind: node.kind, name: node.name, code: node.code, status: node.status });
+  }, []);
+
+  // ── doc67 W8 [P2] — TREE SEARCH: ô tìm kiếm (debounce 200ms) + toggle
+  // "chỉ node có cảnh báo". Cây hiển thị = bản lọc; expand của người dùng GIỮ
+  // NGUYÊN (auto-expand chỉ cộng thêm khi bộ lọc đang bật, không ghi đè state). ──
+  const [treeSearch, setTreeSearch] = useState("");
+  const [treeSearchDebounced, setTreeSearchDebounced] = useState("");
+  const [alarmOnlyFilter, setAlarmOnlyFilter] = useState(false);
+  useEffect(() => {
+    const id = setTimeout(() => setTreeSearchDebounced(treeSearch.trim().toLowerCase()), 200);
+    return () => clearTimeout(id);
+  }, [treeSearch]);
+  const treeFilterActive = treeSearchDebounced !== "" || alarmOnlyFilter;
+  const visibleSites = useMemo<HierarchyNode[]>(
+    () => (treeFilterActive ? filterHierarchy(sites, treeSearchDebounced, alarmOnlyFilter) : sites),
+    [sites, treeFilterActive, treeSearchDebounced, alarmOnlyFilter],
+  );
+  // Tự expand nhánh CHỨA kết quả (ancestor của match); KHÔNG tự mở toàn bộ cây
+  // con dưới một node đã khớp text (tránh bung ồ ạt khi khớp tên factory).
+  const autoExpanded = useMemo<Set<string> | null>(() => {
+    if (!treeFilterActive) return null;
+    const ids = new Set<string>();
+    const q = treeSearchDebounced;
+    const walk = (n: HierarchyNode, underMatch: boolean) => {
+      if (!n.children?.length) return;
+      if (!underMatch) ids.add(n.id);
+      const selfMatch = q !== "" && (n.name.toLowerCase().includes(q) || n.code.toLowerCase().includes(q));
+      n.children.forEach((c) => walk(c, underMatch || selfMatch));
+    };
+    visibleSites.forEach((s) => walk(s, false));
+    return ids;
+  }, [treeFilterActive, treeSearchDebounced, visibleSites]);
+  const effectiveExpanded = useMemo<Set<string>>(
+    () => (autoExpanded ? new Set([...expanded, ...autoExpanded]) : expanded),
+    [expanded, autoExpanded],
+  );
+
+  // ── doc67 W8 [P2] — RAIL FILTER: chip mức độ (Tất cả / Nghiêm trọng / Cao). ──
+  const [railSeverity, setRailSeverity] = useState<"all" | "critical" | "high">("all");
 
   // Auto-expand the first site + its first factory once loaded (once).
   const didInit = useRef(false);
@@ -659,11 +801,45 @@ export default function CommandCenter() {
     });
   }, [alarms, scopeFilter, selectedNode]);
 
-  const openCockpit = useCallback((node: HierarchyNode) => {
-    if (typeof node.refId !== "number") return;
-    // U3 routes (delivered next phase) — wire now; they resolve once U3 lands.
-    if (node.kind === "robot") setLocation(`/robot/${node.refId}`);
-    else if (node.kind === "machine") setLocation(`/machine/${node.refId}`);
+  // doc67 W8 [P2] — RAIL FILTER: áp chip mức độ lên danh sách đã scope, rồi tách
+  // nhóm "Hôm nay" (≤24h) vs "Tồn đọng" (>24h, dựa ageMs = now − a.ts; `now`
+  // tick 15s sẵn có). Cảnh báo tồn đọng mang badge "tồn đọng Nd" tone warning.
+  const railAlarms = useMemo<AlarmRow[]>(
+    () => (railSeverity === "all" ? scopedAlarms : scopedAlarms.filter((a) => a.severity === railSeverity)),
+    [scopedAlarms, railSeverity],
+  );
+  const todayRailAlarms = useMemo<AlarmRow[]>(() => railAlarms.filter((a) => now - a.ts <= DAY_MS), [railAlarms, now]);
+  const backlogRailAlarms = useMemo<AlarmRow[]>(() => railAlarms.filter((a) => now - a.ts > DAY_MS), [railAlarms, now]);
+
+  // doc 68 §3.1 [P1] — cảnh báo/lịch sử của RIÊNG thiết bị đang mở drawer, lọc từ
+  // danh sách hợp nhất `alarms` theo scope.machineId/robotId (khớp kind + refId).
+  const drawerDeviceAlarms = useMemo<AlarmRow[]>(() => {
+    if (!drawerDevice) return [];
+    return alarms.filter((a) => {
+      const sc = a.scope ?? {};
+      return drawerDevice.kind === "machine"
+        ? sc.machineId === drawerDevice.refId
+        : sc.robotId === drawerDevice.refId;
+    });
+  }, [alarms, drawerDevice]);
+  // "Đang mở" = mức nghiêm trọng/cao (cần chú ý); phần còn lại rơi vào lịch sử.
+  const drawerOpenAlarms = useMemo<AlarmRow[]>(
+    () => drawerDeviceAlarms.filter((a) => a.severity === "critical" || a.severity === "high"),
+    [drawerDeviceAlarms],
+  );
+  // Nhãn trạng thái drawer: ưu tiên state PackML (twin); fallback status roll-up (cây).
+  const drawerStateLabel = drawerDevice
+    ? drawerDevice.state
+      ? t(twinStateCategoryKey(drawerDevice.state))
+      : drawerDevice.status
+        ? t(STATUS_KEY[drawerDevice.status])
+        : t("cmdCenter.status.unknown")
+    : "";
+
+  // Cockpit = CTA bước-2 trong drawer (thay điều-hướng-ngay cũ ở nút cây). U3 routes.
+  const openCockpitDevice = useCallback((d: DrawerDevice) => {
+    if (d.kind === "robot") setLocation(`/robot/${d.refId}`);
+    else setLocation(`/machine/${d.refId}`);
   }, [setLocation]);
 
   const openAlarm = useCallback((a: AlarmRow) => {
@@ -673,6 +849,53 @@ export default function CommandCenter() {
     else if (a.kind === "andon") setLocation("/ops-console");
     else if (a.kind === "safety") setLocation("/safety-workforce");
   }, [setLocation]);
+
+  // doc67 W8 — thẻ cảnh báo rail (tách từ inline map cũ để dùng cho cả 2 nhóm
+  // Hôm nay / Tồn đọng); backlog=true thêm badge "tồn đọng Nd" tone warning.
+  const renderAlarmRow = (a: AlarmRow, backlog: boolean) => {
+    const clickable = a.scope?.machineId != null || a.scope?.robotId != null || a.kind === "andon" || a.kind === "safety";
+    const backlogDays = Math.max(1, Math.floor((now - a.ts) / DAY_MS));
+    // W4 (doc 67): nhãn severity/kind tiếng Việt (SEVERITY_KEY/KIND_KEY).
+    // doc 68 §3.1 [P1]: thẻ COMPACT 2 dòng — dòng 1 mức độ/loại/tồn-đọng/thời gian,
+    // dòng 2 tiêu đề (truncate) + tham chiếu máy/robot inline (bỏ dòng nguồn riêng;
+    // "loại" đã ở badge dòng 1) để dải cảnh báo gọn hơn.
+    const inner = (
+      <>
+        <div className="flex items-center gap-1.5">
+          <StatusBadge status={a.severity} label={t(SEVERITY_KEY[a.severity])} tone={severityTone(a.severity)} className="px-1 py-0 text-[10px]" />
+          <Badge variant="outline" className="px-1 py-0 text-[10px] text-muted-foreground">{KIND_KEY[a.kind] ? t(KIND_KEY[a.kind]) : a.kind}</Badge>
+          {backlog && (
+            <Badge className="border-warning/40 bg-warning/15 px-1 py-0 text-[10px] font-medium text-warning" variant="outline">
+              tồn đọng {backlogDays}d
+            </Badge>
+          )}
+          <span className="ml-auto text-[10px] text-muted-foreground">{relTimeShort(a.ts, now)}</span>
+        </div>
+        <div className="mt-1 flex items-center gap-1">
+          <span className="min-w-0 flex-1 truncate font-medium leading-snug" title={a.title}>{a.title}</span>
+          {a.scope?.machineId != null && <span className="shrink-0 text-[10px] text-muted-foreground">Máy #{a.scope.machineId}</span>}
+          {a.scope?.robotId != null && <span className="shrink-0 text-[10px] text-muted-foreground">Robot #{a.scope.robotId}</span>}
+          {clickable && <ExternalLink className="h-3 w-3 shrink-0 text-muted-foreground" aria-hidden="true" />}
+        </div>
+      </>
+    );
+    // W4 (doc 67): thẻ điều hướng được là <button> full-width thật
+    // (bàn phím Tab/Enter + focus-visible ring); thẻ chỉ-đọc giữ <div>.
+    return clickable ? (
+      <button
+        key={a.id}
+        type="button"
+        className="block w-full rounded-md border px-2 py-1.5 text-left text-xs cursor-pointer hover:bg-muted/60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+        onClick={() => openAlarm(a)}
+      >
+        {inner}
+      </button>
+    ) : (
+      <div key={a.id} className="rounded-md border px-2 py-1.5 text-xs">
+        {inner}
+      </div>
+    );
+  };
 
   // ── KPI display helpers (honest "—" on available:false) ──
   const fmtNum = (v: number | null | undefined) => (v == null ? "—" : String(v));
@@ -697,17 +920,30 @@ export default function CommandCenter() {
         {/* ── Header + live/poll badge ── */}
         <PageHeader
           icon={<Gauge className="h-6 w-6" />}
-          title={t("cmd.title", "Ecosystem Command Center")}
+          // doc 67 W5 (việc 2) — 1 key/trang: h1 = breadcrumb = menu = nav.commandCenter.
+          title={t("nav.commandCenter", "Layout & Digital Twin")}
           description={t("cmd.subtitle", "One live pane: hierarchy, factory twin, KPIs and the unified alarm rail across the whole estate.")}
           actions={
             <div className="flex items-center gap-2">
+              {/* AUD-01 (doc 65 W2): badge PHẠM VI SỰ KIỆN — không được đọc như trạng thái
+                  kết nối toàn cục (header shell đã có đèn socket "Trực tiếp" riêng).
+                  Khi cờ ECOSYSTEM_EVENTS tắt → mode="polling": nói rõ chỉ luồng sự kiện
+                  là định kỳ, KHÔNG dùng icon WifiOff (gây hiểu lầm mất kết nối). */}
               {isLive ? (
-                <Badge className="gap-1 bg-emerald-500 text-white">
-                  <Wifi className="h-3.5 w-3.5" /> {t("cmd.live", "LIVE")}
+                /* GĐ2 (việc 3): emerald/amber hardcode → token success/warning
+                   (tự lật light/dark, đồng bộ DS). */
+                <Badge
+                  className="gap-1 bg-success text-success-foreground"
+                  title={t("commandCenter.luongSuKienHeSinh", "Luồng sự kiện hệ sinh thái đang phát trực tiếp qua socket")}
+                >
+                  <Radio className="h-3.5 w-3.5" /> Sự kiện: trực tiếp
                 </Badge>
               ) : (
-                <Badge className="gap-1 bg-amber-500 text-white">
-                  <WifiOff className="h-3.5 w-3.5" /> {t("cmd.polling", "POLLING")}
+                <Badge
+                  className="gap-1 bg-warning text-warning-foreground"
+                  title={t("commandCenter.ketNoiMayChuVan", "Kết nối máy chủ vẫn trực tiếp — luồng sự kiện realtime chưa bật (cờ ECOSYSTEM_EVENTS)")}
+                >
+                  <RefreshCw className="h-3.5 w-3.5" /> Sự kiện hệ sinh thái: định kỳ 15s
                 </Badge>
               )}
               <Button size="sm" variant="outline" onClick={() => { hierarchyQ.refetch(); kpiQ.refetch(); alertsQ.refetch(); }}>
@@ -718,59 +954,111 @@ export default function CommandCenter() {
           }
         />
 
+        {/* doc 67 W5 (việc 6) — trang đã rút khỏi menu: rail 2-chiều từ map tập trung
+            là đường quay về Tổng quan nhà máy + các màn anh em. */}
+        <RelatedViews pageId="command-center" />
+
         {/* ── TOP KPI STRIP ── */}
-        <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-7">
-          <MetricCard
-            icon={<Activity className="h-4 w-4" />}
-            label={t("cmd.kpiOee", "OEE (mean)")}
-            value={oeeVal}
-            tone={kpi?.oee.value?.oee != null && kpi.oee.value.oee < 60 ? "warning" : "default"}
+        {/* AUD-01 (doc 65 W2): tuổi dữ liệu KPI — poll 15s, cảnh báo khi stale >2× chu kỳ. */}
+        <div className="flex items-center justify-between gap-2">
+          <span className="text-xs font-medium text-muted-foreground">
+            Chỉ số toàn hệ sinh thái
+          </span>
+          <PollFreshness
+            updatedAt={kpiQ.dataUpdatedAt || undefined}
+            isFetching={kpiQ.isFetching}
+            staleAfterMs={30_000}
           />
-          <MetricCard
-            icon={<Boxes className="h-4 w-4" />}
-            label={t("cmd.kpiWip", "WIP units")}
-            value={wipVal}
-            delta={kpi?.wip.value?.bottleneck ? t("cmd.bottleneck", "Bottleneck: {{b}}", { b: kpi.wip.value.bottleneck }) : undefined}
-          />
-          <MetricCard
-            icon={<AlertTriangle className="h-4 w-4" />}
-            label={t("cmd.kpiAlarms", "Alarms crit / high")}
-            value={alarmsCrit == null ? "—" : `${alarmsCrit} / ${alarmsHigh}`}
-            tone={alarmsCrit ? "error" : "default"}
-          />
-          <MetricCard
-            icon={<Bot className="h-4 w-4" />}
-            label={t("cmd.kpiFleet", "Fleet tasks / robots")}
-            value={fleetTasks == null ? "—" : `${fleetTasks} / ${fleetRobots}`}
-          />
-          <MetricCard
-            icon={<Network className="h-4 w-4" />}
-            label={t("cmd.kpiSites", "Sites reporting")}
-            value={sitesReporting == null ? "—" : `${sitesReporting} / ${sitesTotal}`}
-            delta={sitesStale + sitesDown > 0 ? t("cmd.sitesStaleDown", "{{s}} stale · {{d}} down", { s: sitesStale, d: sitesDown }) : undefined}
-            tone={sitesDown > 0 ? "error" : sitesStale > 0 ? "warning" : "default"}
-          />
-          <MetricCard
-            icon={<Sparkles className="h-4 w-4" />}
-            label={t("cmd.kpiAi", "AI insights")}
-            value={aiVal}
-          />
-          <MetricCard
-            icon={<Zap className="h-4 w-4" />}
-            label={t("cmd.kpiEnergy", "Energy kWh")}
-            value={energyVal}
-            delta={!kpi?.energy.available ? t("cmd.noEstateEnergy", "No estate rollup yet") : undefined}
-          />
+        </div>
+        {/* W4 (doc 67) + doc 68 §3.1 [P2] — responsive 1280: xl=4 cột (hết cắt cụt
+            nhãn ở panel-PC), 2xl=7 cột; MetricCard size="compact" (ribbon mỏng).
+            2 chỉ số CHƯA-tổng-hợp-toàn-hệ (OEE + Năng lượng) gộp 1 ô muted CUỐI
+            strip thay vì 2 ô "—" rời đầu/cuối. Nhãn rút gọn + title tooltip đầy đủ. */}
+        <div className="grid grid-cols-2 gap-3 md:grid-cols-4 xl:grid-cols-4 2xl:grid-cols-7">
+          <div title={t("commandCenter.soDonViWipDang", "Số đơn vị WIP đang trên chuyền")}>
+            <MetricCard
+              icon={<Boxes className="h-4 w-4" />}
+              label="WIP"
+              value={wipVal}
+              size="compact"
+              delta={kpi?.wip.value?.bottleneck ? t("commandCenter.nutCoChai", { name: kpi.wip.value.bottleneck }) : undefined}
+            />
+          </div>
+          <div title={t("commandCenter.canhBaoNghiemTrongCao", "Cảnh báo nghiêm trọng / cao đang hoạt động")}>
+            <MetricCard
+              icon={<AlertTriangle className="h-4 w-4" />}
+              label={t("commandCenter.canhBao", "Cảnh báo")}
+              value={alarmsCrit == null ? "—" : `${alarmsCrit} / ${alarmsHigh}`}
+              size="compact"
+              tone={alarmsCrit ? "error" : "default"}
+            />
+          </div>
+          <div title={t("commandCenter.nhiemVuDoiRobotCho", "Nhiệm vụ đội robot (chờ + đang chạy) / robot trực tuyến")}>
+            <MetricCard
+              icon={<Bot className="h-4 w-4" />}
+              label={t("commandCenter.nhiemVu", "Nhiệm vụ")}
+              value={fleetTasks == null ? "—" : `${fleetTasks} / ${fleetRobots}`}
+              size="compact"
+            />
+          </div>
+          <div title={t("commandCenter.soSiteDangBaoCao", "Số site đang báo cáo / tổng số site")}>
+            <MetricCard
+              icon={<Network className="h-4 w-4" />}
+              label="Site"
+              value={sitesReporting == null ? "—" : `${sitesReporting} / ${sitesTotal}`}
+              size="compact"
+              delta={sitesStale + sitesDown > 0 ? t("commandCenter.siteTreMat", { stale: sitesStale, down: sitesDown }) : undefined}
+              tone={sitesDown > 0 ? "error" : sitesStale > 0 ? "warning" : "default"}
+            />
+          </div>
+          <div title={t("commandCenter.soGoiYAiDang", "Số gợi ý AI đang hoạt động")}>
+            <MetricCard
+              icon={<Sparkles className="h-4 w-4" />}
+              label={t("commandCenter.goiYAi", "Gợi ý AI")}
+              value={aiVal}
+              size="compact"
+            />
+          </div>
+          {/* doc 68 §3.1 [P2] — ô GỘP muted: OEE trung bình + Năng lượng (cả hai
+              chưa có tổng hợp toàn hệ → "—"); trung thực độ phủ dữ liệu, không bịa. */}
+          <div
+            className="sm:col-span-2"
+            title={t("commandCenter.oeeTrungBinhToanHe", "OEE trung bình toàn hệ (%) · Năng lượng toàn nhà máy (kWh) — chưa có tổng hợp toàn hệ sinh thái")}
+          >
+            <MetricCard
+              icon={<Zap className="h-4 w-4" />}
+              label={t("commandCenter.oeeNangLuongToanHe", "OEE · Năng lượng (toàn hệ)")}
+              value={`${oeeVal} · ${energyVal}`}
+              size="compact"
+              delta={
+                kpi?.oee.sourceLabel && kpi?.oee.available
+                  ? t("commandCenter.oeeSnapshot", { source: kpi.oee.sourceLabel })
+                  : t("commandCenter.chuaTongHopToanHe", "Chưa tổng hợp toàn hệ")
+              }
+              tone={kpi?.oee.value?.oee != null && kpi.oee.value.oee < 60 ? "warning" : "default"}
+            />
+          </div>
         </div>
 
         {/* ── 3-PANE: tree · overview · rail ── */}
-        <div className="grid grid-cols-1 gap-4 xl:grid-cols-12">
+        {/* doc 68 §3.1 [P1]: tỷ lệ ~2.5/7/2.5 (thay 3/6/3) — cả 2 cột bên hẹp lại,
+            twin GIỮA nới rộng, VẪN GIỮ 3 CỘT. min-w-0 từng cột để nội dung truncate. */}
+        <div className="grid grid-cols-1 gap-4 xl:grid-cols-[2.5fr_7fr_2.5fr]">
           {/* LEFT — hierarchy tree */}
-          <div className="xl:col-span-3">
+          <div className="min-w-0">
             <SectionCard
               icon={<ServerCog className="h-4 w-4" />}
-              title={t("cmd.hierarchy", "Ecosystem hierarchy")}
-              description={t("cmd.hierarchyHint", "Site → factory → line → station → machine / robot")}
+              // doc 68 §3.1 [P1]: header 1 dòng "Cây phân cấp" (thay "Cây phân cấp hệ
+              // sinh thái" wrap 3 dòng); mô tả đường phân cấp đưa vào tooltip title.
+              title={<span title={t("commandCenter.cayPhanCapTooltip", "Site → nhà máy → chuyền → trạm → máy / robot")}>{t("commandCenter.cayPhanCap", "Cây phân cấp")}</span>}
+              action={
+                /* AUD-01 (doc 65 W2): tuổi dữ liệu cây — poll 10s, amber khi >2× chu kỳ. */
+                <PollFreshness
+                  updatedAt={hierarchyQ.dataUpdatedAt || undefined}
+                  isFetching={hierarchyQ.isFetching}
+                  staleAfterMs={20_000}
+                />
+              }
               contentClassName="p-2"
             >
               {hierarchyQ.isLoading ? (
@@ -778,32 +1066,71 @@ export default function CommandCenter() {
               ) : sites.length === 0 ? (
                 <div className="py-8 text-center text-sm text-muted-foreground">{t("cmd.noSites", "No sites reporting yet.")}</div>
               ) : (
-                <ScrollArea className="h-[560px] pr-1">
-                  {sites.map((site) => (
-                    <TreeNode
-                      key={site.id}
-                      node={site}
-                      depth={0}
-                      expanded={expanded}
-                      onToggle={toggle}
-                      selectedId={selectedId}
-                      onSelect={setSelectedId}
-                      onOpenCockpit={openCockpit}
-                      t={t}
+                <>
+                  {/* doc67 W8 [P2] — TREE SEARCH: ô lọc (debounce 200ms) + toggle
+                      "chỉ node có cảnh báo"; tự expand nhánh chứa kết quả +
+                      highlight đoạn khớp. Giữ nguyên role="tree" ARIA W4. */}
+                  <div className="mb-2 space-y-1.5 px-1">
+                    <Input
+                      value={treeSearch}
+                      onChange={(e) => setTreeSearch(e.target.value)}
+                      placeholder={t("commandCenter.timTheoTenMaNode", "Tìm theo tên / mã node…")}
+                      aria-label={t("commandCenter.timKiemNodeTrongCay", "Tìm kiếm node trong cây phân cấp")}
+                      className="h-8 text-sm"
                     />
-                  ))}
-                </ScrollArea>
+                    <button
+                      type="button"
+                      aria-pressed={alarmOnlyFilter}
+                      onClick={() => setAlarmOnlyFilter((v) => !v)}
+                      className={cn(
+                        "flex items-center gap-1 rounded-full border px-2 py-0.5 text-[11px] font-medium transition-colors",
+                        "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+                        alarmOnlyFilter
+                          ? "border-destructive/40 bg-destructive/10 text-destructive"
+                          : "border-border text-muted-foreground hover:bg-muted/60",
+                      )}
+                    >
+                      <AlertTriangle className="h-3 w-3" aria-hidden="true" />
+                      Chỉ node có cảnh báo
+                    </button>
+                  </div>
+                  {visibleSites.length === 0 ? (
+                    <div className="py-8 text-center text-sm text-muted-foreground">
+                      Không có node khớp bộ lọc.
+                    </div>
+                  ) : (
+                    <ScrollArea className={cn("pr-1", PANE_BODY_H)}>
+                      {/* W4 (doc 67): role="tree" cho cây WAI-ARIA (treeitem/group bên trong). */}
+                      <div role="tree" aria-label={t("commandCenter.cayPhanCapHeSinh", "Cây phân cấp hệ sinh thái")}>
+                      {visibleSites.map((site) => (
+                        <TreeNode
+                          key={site.id}
+                          node={site}
+                          depth={0}
+                          expanded={effectiveExpanded}
+                          onToggle={toggle}
+                          selectedId={selectedId}
+                          onSelect={setSelectedId}
+                          onOpenDevice={openTreeDevice}
+                          t={t}
+                          highlight={treeSearchDebounced}
+                        />
+                      ))}
+                      </div>
+                    </ScrollArea>
+                  )}
+                </>
               )}
             </SectionCard>
           </div>
 
           {/* CENTER — factory twin / status grid */}
-          <div className="xl:col-span-6">
-            <CenterOverview factoryNode={centerFactoryNode} factoryId={centerFactoryId} t={t} />
+          <div className="min-w-0">
+            <CenterOverview factoryNode={centerFactoryNode} factoryId={centerFactoryId} t={t} onDeviceOpen={openDeviceDrawer} />
           </div>
 
           {/* RIGHT — unified alarm rail */}
-          <div className="xl:col-span-3">
+          <div className="min-w-0">
             <SectionCard
               icon={<Radio className="h-4 w-4" />}
               title={t("cmd.alarmRail", "Alarm rail")}
@@ -812,49 +1139,176 @@ export default function CommandCenter() {
                   ? t("cmd.railScoped", "Scoped to {{name}}", { name: selectedNode.name })
                   : (isLive ? t("cmd.railLive", "Live · unified alert stream") : t("cmd.railPoll", "Polling · seed + 15s refresh"))
               }
+              action={
+                /* AUD-01 (doc 65 W2): tuổi dữ liệu rail khi ở chế độ poll 15s. Khi live,
+                   rail được socket đẩy trực tiếp và alertsQ ngừng poll → badge poll-age
+                   sẽ báo amber sai, nên chỉ hiện ở chế độ định kỳ. */
+                isLive ? undefined : (
+                  <PollFreshness
+                    updatedAt={alertsQ.dataUpdatedAt || undefined}
+                    isFetching={alertsQ.isFetching}
+                    staleAfterMs={30_000}
+                  />
+                )
+              }
               contentClassName="p-2"
             >
+              {/* doc67 W8 [P2] — hàng chip lọc mức độ (luôn hiện để bỏ lọc được
+                  cả khi danh sách lọc ra rỗng). */}
+              <div className="mb-1.5 flex flex-wrap items-center gap-1 px-1" role="group" aria-label={t("commandCenter.locMucDoCanhBao", "Lọc mức độ cảnh báo")}>
+                {([["all", "cmdCenter.filterAll"], ["critical", "cmdCenter.severity.critical"], ["high", "cmdCenter.severity.high"]] as const).map(([v, label]) => (
+                  <button
+                    key={v}
+                    type="button"
+                    aria-pressed={railSeverity === v}
+                    onClick={() => setRailSeverity(v)}
+                    className={cn(
+                      "rounded-full border px-2 py-0.5 text-[11px] font-medium transition-colors",
+                      "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+                      railSeverity === v
+                        ? "border-primary/40 bg-primary/10 text-primary"
+                        : "border-border text-muted-foreground hover:bg-muted/60",
+                    )}
+                  >
+                    {label}
+                  </button>
+                ))}
+              </div>
               {scopedAlarms.length === 0 ? (
+                alarms.length === 0 ? (
+                  /* GĐ2 (việc 4): rỗng = TIN TỐT → EmptyState allClear DS (icon
+                     check success) thay div tự chế; nhánh "ngoài phạm vi chọn"
+                     là trạng thái lọc, giữ dòng trung tính.
+                     ★★★ 2026-08-18 (nhóm B #5): "rỗng = TIN TỐT" chỉ ĐÚNG khi phạm vi
+                     người xem KHÔNG rỗng. `recentAlerts` nay lọc theo nhà máy được gán,
+                     nên một tài khoản 0-gán nhận 0 dòng — và câu "Không có cảnh báo đang
+                     hoạt động" kèm icon check XANH nói với người vận hành rằng xưởng đang
+                     yên ổn. Đó là lời khai SAI VỀ THẾ GIỚI ở đúng chỗ nguy hiểm nhất. */
+                  isScopeEmpty(alertsQ.data?.scopeEmptyReason) ? (
+                    <EmptyState
+                      compact
+                      title={t("common.scopeEmpty.title")}
+                      description={alertsQ.data?.scopeMessage ?? t("common.scopeEmpty.hint")}
+                    />
+                  ) : (
+                    <EmptyState allClear compact title={t("commandCenter.khongCoCanhBaoDang", "Không có cảnh báo đang hoạt động")} />
+                  )
+                ) : (
+                  <div className="py-8 text-center text-sm text-muted-foreground">
+                    {t("cmd.noScopedAlarms", "No alarms in the selected scope.")}
+                  </div>
+                )
+              ) : railAlarms.length === 0 ? (
                 <div className="py-8 text-center text-sm text-muted-foreground">
-                  {alarms.length === 0
-                    ? t("cmd.noAlarms", "No active alarms. All clear.")
-                    : t("cmd.noScopedAlarms", "No alarms in the selected scope.")}
+                  Không có cảnh báo ở mức đã lọc.
                 </div>
               ) : (
-                <ScrollArea className="h-[560px] pr-1">
+                <ScrollArea className={cn("pr-1", PANE_BODY_H)}>
                   <div className="space-y-1.5">
-                    {scopedAlarms.map((a) => {
-                      const clickable = a.scope?.machineId != null || a.scope?.robotId != null || a.kind === "andon" || a.kind === "safety";
-                      return (
-                        <div
-                          key={a.id}
-                          className={cn(
-                            "rounded-md border px-2 py-1.5 text-xs",
-                            clickable && "cursor-pointer hover:bg-muted/60",
-                          )}
-                          onClick={() => clickable && openAlarm(a)}
-                        >
-                          <div className="flex items-center gap-1.5">
-                            <StatusBadge status={a.severity} tone={severityTone(a.severity)} className="px-1 py-0 text-[10px] capitalize" />
-                            <Badge variant="outline" className="px-1 py-0 text-[10px] text-muted-foreground">{a.kind}</Badge>
-                            <span className="ml-auto text-[10px] text-muted-foreground">{relTime(a.ts, now)}</span>
-                          </div>
-                          <div className="mt-1 font-medium leading-snug">{a.title}</div>
-                          <div className="mt-0.5 flex items-center gap-1 text-[10px] text-muted-foreground">
-                            <span>{a.source}</span>
-                            {a.scope?.machineId != null && <span>· machine #{a.scope.machineId}</span>}
-                            {a.scope?.robotId != null && <span>· robot #{a.scope.robotId}</span>}
-                            {clickable && <ExternalLink className="ml-auto h-3 w-3" />}
-                          </div>
-                        </div>
-                      );
-                    })}
+                    {/* doc67 W8 [P2] — separator nhóm "Hôm nay" vs "Tồn đọng" (>24h). */}
+                    {todayRailAlarms.length > 0 && (
+                      <div className="px-1 pt-0.5 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
+                        Hôm nay ({todayRailAlarms.length})
+                      </div>
+                    )}
+                    {todayRailAlarms.map((a) => renderAlarmRow(a, false))}
+                    {backlogRailAlarms.length > 0 && (
+                      <div className="border-t px-1 pt-1.5 text-[10px] font-semibold uppercase tracking-wide text-warning">
+                        Tồn đọng &gt;24h ({backlogRailAlarms.length})
+                      </div>
+                    )}
+                    {backlogRailAlarms.map((a) => renderAlarmRow(a, true))}
                   </div>
                 </ScrollArea>
               )}
             </SectionCard>
           </div>
         </div>
+
+        {/* doc 68 §3.1 [P1] — ContextDrawer chi tiết thiết bị (fly-out phải, primitive
+            workspace/ContextDrawer). Mở từ khối twin / chip 2D / lá cây; dải cảnh báo
+            cột 3 GIỮ NGUYÊN phía sau (đây là BỔ SUNG, không thay dải). */}
+        <ContextDrawer
+          open={drawerDevice != null}
+          onOpenChange={(o) => { if (!o) setDrawerDevice(null); }}
+          title={drawerDevice?.name ?? ""}
+          description={
+            drawerDevice
+              ? t("commandCenter.thietBiMa", { kind: drawerDevice.kind === "robot" ? t("commandCenter.robot", "Robot") : t("commandCenter.may", "Máy"), code: drawerDevice.code })
+              : undefined
+          }
+        >
+          {drawerDevice && (
+            <div className="space-y-4">
+              {/* Trạng thái + CTA cockpit (bước-2) */}
+              <div className="flex items-center justify-between gap-2">
+                <StatusBadge
+                  status={drawerDevice.state ?? drawerDevice.status ?? "unknown"}
+                  label={drawerStateLabel}
+                />
+                <Button size="sm" onClick={() => openCockpitDevice(drawerDevice)}>
+                  Mở cockpit đầy đủ
+                  <ExternalLink className="ml-1 h-4 w-4" />
+                </Button>
+              </div>
+
+              {/* KPI máy: trạng thái / OEE / nhiệm vụ (compact). OEE per-máy chưa
+                  có trong scene-graph → "—" trung thực (không bịa số). */}
+              <div className="grid grid-cols-3 gap-2">
+                <MetricCard
+                  size="compact"
+                  icon={<Activity className="h-4 w-4" />}
+                  label={t("commandCenter.trangThai", "Trạng thái")}
+                  value={drawerStateLabel}
+                />
+                <MetricCard
+                  size="compact"
+                  icon={<Gauge className="h-4 w-4" />}
+                  label={t("commandCenter.oeeMay", "OEE máy")}
+                  value="—"
+                />
+                <MetricCard
+                  size="compact"
+                  icon={<ListChecks className="h-4 w-4" />}
+                  label={t("commandCenter.nhiemVu2", "Nhiệm vụ")}
+                  value={drawerDevice.activeTaskId != null ? `#${drawerDevice.activeTaskId}` : "—"}
+                />
+              </div>
+
+              {/* Cảnh báo đang mở của RIÊNG máy (lọc từ danh sách hợp nhất theo scope). */}
+              <div>
+                <div className="mb-1.5 flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                  <AlertTriangle className="h-3.5 w-3.5" />
+                  Cảnh báo đang mở ({drawerOpenAlarms.length})
+                </div>
+                {drawerOpenAlarms.length === 0 ? (
+                  <EmptyState allClear compact title={t("commandCenter.khongCoCanhBaoNghiem", "Không có cảnh báo nghiêm trọng/cao")} />
+                ) : (
+                  <div className="space-y-1.5">
+                    {drawerOpenAlarms.map((a) => renderAlarmRow(a, now - a.ts > DAY_MS))}
+                  </div>
+                )}
+              </div>
+
+              {/* Lịch sử gần đây của máy (tối đa 8 sự kiện mới nhất trong luồng cảnh báo). */}
+              <div>
+                <div className="mb-1.5 flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                  <Clock className="h-3.5 w-3.5" />
+                  Lịch sử gần đây ({Math.min(drawerDeviceAlarms.length, 8)})
+                </div>
+                {drawerDeviceAlarms.length === 0 ? (
+                  <div className="py-4 text-center text-xs text-muted-foreground">
+                    Chưa có sự kiện nào cho thiết bị này trong luồng cảnh báo hiện tại.
+                  </div>
+                ) : (
+                  <div className="space-y-1.5">
+                    {drawerDeviceAlarms.slice(0, 8).map((a) => renderAlarmRow(a, now - a.ts > DAY_MS))}
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+        </ContextDrawer>
       </div>
     </DashboardLayout>
   );

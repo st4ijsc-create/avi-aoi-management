@@ -22,7 +22,10 @@
  */
 
 import { useState, useRef, useCallback } from "react";
+import { chotLuot, ghiChu, ghiNghi, taoDongHo } from "./dongHoHaiPha";
 import type { ToolResultPayload } from "@/components/AIToolResultCard";
+import { thongDiepLoiRest } from "@/lib/restAuthError";
+import { mapTrpcError } from "@/lib/trpcErrors";
 
 // ─── P3/D8 (doc 34) — shared image-attach helpers (reused by the chat bubble) ──
 // Kept here (AIChatPage already imports this hook) so BOTH chat surfaces share one
@@ -97,6 +100,19 @@ export interface KbVisionNote {
 export interface KbCitation {
   title: string;
   sourcePath: string;
+  // doc69 B3 (Wave 5) — deep-link target, resolved server-side ONLY for a KNOWN
+  // operational card whose route passes the ALLOWED_CLIENT_ROUTES whitelist (see
+  // server/services/aiOperationalGrounding.ts's resolveCitationRoute). null/absent
+  // means the citation has no safe navigable target — render it as plain,
+  // non-clickable text (never navigate to an arbitrary string).
+  route?: string | null;
+  // Present when the server can supply them (chunk id / source kind) — optional so
+  // older payload shapes stay valid.
+  id?: string;
+  sourceType?: string;
+  // Wave 2 đường B — "system" (KB corpus tệp, mặc định/vắng mặt) hay "studio" (tài
+  // liệu người dùng tự nạp vào Training Studio, server/services/kbVectorStore.ts).
+  origin?: "system" | "studio";
 }
 
 export interface KbStructured {
@@ -122,6 +138,10 @@ export interface KbPendingAction {
   actionId: string;
   token: string;
   tool: string;
+  // doc 78 PHA D — args THẬT của lượt đề xuất (server gửi nguyên PendingActionDTO qua SSE). Với
+  // `apply_diff` là `{ path, original, modified }` — đủ để client dựng HunkDiffView (diff đầy đủ).
+  // Chỉ để HIỂN THỊ; mọi lượt ghi vẫn qua confirmAction (server đọc args từ hàng ai_pending_actions).
+  args?: Record<string, unknown>;
   summary: string;
   preview: {
     entityType: string;
@@ -139,6 +159,14 @@ export interface KbClientAction {
   route: string;
   values?: Record<string, unknown>;
   message: string;
+  /**
+   * doc69 G2-7 — true when the backend ATTACHED this directive to ground a
+   * how-to answer (server/services/aiOperationalGrounding.ts), as opposed to an
+   * explicit user command ("mở trang X"). The caller must NOT auto-navigate when
+   * this is true — render a tappable "Mở màn X" button instead, since the user
+   * didn't ask to leave the answer they're reading.
+   */
+  suggested?: boolean;
 }
 
 /** Final aggregated result returned by startKbStream when the stream completes. */
@@ -158,12 +186,42 @@ export interface KbStreamResult {
   pendingAction: KbPendingAction | null;
   // P3/D8 (doc 34) — set when an image was attached (VL reading or degrade note).
   vision: KbVisionNote | null;
+  // doc69 G2-7 — navigate/prefill_form directive fired during this turn (mirrors
+  // toolResult/pendingAction: also delivered live via onClientAction, but
+  // aggregated here too so callers that only read the final result — not the
+  // live callback — can still render the "ask→do" button after the turn ends).
+  clientAction: KbClientAction | null;
 }
 
 export interface KbStreamContext {
   route: string;
   uiLanguage: string;
   selectedMachineCode?: string;
+  // ★★★ doc 79 · TRỤC 1 (A) — true khi phiên chat là phiên LẬP TRÌNH (/ai-coding-workspace). Server
+  // (streamAnswer) định tuyến tới tác nhân lập trình + 5 tool lập trình, KHÔNG tới trợ lý vận hành.
+  codingMode?: boolean;
+  // ★★★ doc 79 · TRỤC 2 — id DỰ ÁN đang chọn. Là một ID, KHÔNG phải đường dẫn — server tra danh sách
+  // TRẮNG để ra gốc. Chỉ có nghĩa khi codingMode=true.
+  projectId?: string;
+  // ★★★ doc 79 · VÒNG TỰ ĐỘNG — đường dẫn tệp ĐANG SỬA, do bộ điều khiển vòng ghim (là tệp người
+  // vừa duyệt ghi). Chỉ gửi ở LƯỢT SỬA KẾ TIẾP của vòng. Server đọc LẠI tệp từ đĩa trong lượt ấy —
+  // client KHÔNG BAO GIỜ gửi nội dung tệp (đó là điểm neo của băm chống TOCTOU).
+  codingEditPath?: string;
+  /**
+   * ★★★ 2026-08-23 — ĐẦU RA MÁY (`dotnet test`, `npm run check`…) của lượt vòng tự động vừa chạy.
+   *
+   * ⚠⚠ Nó đi **RIÊNG**, KHÔNG được nối vào `question`. Trước bản vá này bộ điều khiển vòng nhét
+   *   nguyên văn đầu ra vào câu hỏi ⇒ nó rơi vào khối `=== YÊU CẦU ===`, ô **thẩm quyền cao nhất**
+   *   của prompt, chỉ bị CẮT chứ không hề được che/bọc. Một dòng *"BỎ QUA CHỈ DẪN TRƯỚC…"* nằm
+   *   trong tên một ca kiểm thử khi ấy lái được tác nhân. Server bọc nó
+   *   (`sanitizeUntrustedBlock` + `wrapUntrustedBlock`) rồi đặt vào khối LỊCH SỬ — thẩm quyền thấp
+   *   nhất — đúng như CLI đã làm. Xem `KbQueryContext.dauRaKhongTinCay`.
+   */
+  dauRaKhongTinCay?: string;
+  /** ★ G4 — tầng model người dùng chọn cho lượt (`auto` | `code`); server lọc danh sách TRẮNG (`locTacVuNguoiChon`). */
+  modelTask?: string;
+  /** ★ F3 — chế độ nghĩ cho lượt (`can-bang` | `nhanh`); server lọc danh sách TRẮNG (`locCheDoNghi`). */
+  cheDoNghi?: string;
 }
 
 export interface KbStreamRequest {
@@ -188,12 +246,87 @@ export interface KbStreamCallbacks {
   onClientAction?: (action: KbClientAction) => void;
   /** P3/D8 (doc 34) — fired once with the vision step (VL reading or degrade note). */
   onVision?: (vision: KbVisionNote) => void;
+  /**
+   * ★★★ doc 81 · VIỆC 2 — mỗi nhịp của vòng lặp tool (bắt đầu vòng · vòng xong · vòng dừng).
+   * Thuần HIỂN THỊ: một consumer ném ở đây KHÔNG được làm hỏng lượt stream (xem `bao()` trong
+   * `toolLoop.ts` — cùng lập trường: đây là kênh hiển thị, không phải kênh quyết định).
+   */
+  onToolLoop?: (p: KbToolLoopProgress) => void;
+  /**
+   * ★ F2 (2026-09-22) — số đo MỘT lượt gọi model trên đường lập trình (sự kiện SSE `usage`, phát ngay
+   * sau lượt đóng luồng, trước `done`). Thuần HIỂN THỊ (thanh trạng thái): consumer ném ở đây không
+   * được làm hỏng lượt stream. `tokensReasoning` vắng = server không đếm được — **không biết ≠ 0**.
+   */
+  onUsage?: (u: KbUsageLuot) => void;
+  /**
+   * ★ F1 (2026-09-22) — suy luận SỐNG của model (sự kiện SSE `reasoning`), gọi với văn bản TÍCH LUỸ của lượt hiện tại.
+   * Thuần hiển thị (bảng "model đang nghĩ"); KHÔNG nối vào câu trả lời, KHÔNG lưu phiên.
+   */
+  onReasoning?: (text: string) => void;
+  /** ★ F6 — gọi đúng một lần khi có `done`: `degraded` = server đã TỪ CHỐI/THOÁI HOÁ và thay câu trả lời. */
+  onDone?: (info: { degraded: boolean }) => void;
+}
+
+/** ★ F2 — gương của `DungLuotModel` (server) + `luot` (lớp lượt). Chỉ các ô client cần. */
+export interface KbUsageLuot {
+  luot: string;
+  modelId: string;
+  tokensIn: number;
+  /** GỘP cả suy luận (số của llama-server). */
+  tokensOut: number;
+  /** Token trong `<think>`; vắng = không đếm được. */
+  tokensReasoning?: number;
+  /** `false` = đã tắt nghĩ; `true` = có suy luận đo được; `null` = không biết. */
+  thinking: boolean | null;
+  samplingProfile: string;
+  latencyMs: number;
+  /** Trần ngữ cảnh (token) lượt này được cấp; vắng = không biết. */
+  ctxMax?: number;
+  /** ★ F2 — thời gian pha NGHĨ / SINH của lượt, đo TẠI TRÌNH DUYỆT (`dongHoHaiPha.ts`); vắng = không đo được. */
+  msNghi?: number;
+  msSinh?: number;
+}
+
+/**
+ * Bóc sự kiện `usage` thô thành `KbUsageLuot`, hoặc `null` khi thiếu số cốt lõi (không dựng một ô
+ * "0 token" từ một gói hỏng). Thuần, có lưới riêng.
+ */
+export function bocUsage(p: Record<string, unknown>): KbUsageLuot | null {
+  const so = (v: unknown): number | undefined => (typeof v === "number" && Number.isFinite(v) && v >= 0 ? v : undefined);
+  const tokensIn = so(p.tokensIn);
+  const tokensOut = so(p.tokensOut);
+  const latencyMs = so(p.latencyMs);
+  if (tokensIn === undefined || tokensOut === undefined || latencyMs === undefined) return null;
+  const tokensReasoning = so(p.tokensReasoning);
+  const ctxMax = so(p.ctxMax);
+  return {
+    luot: typeof p.luot === "string" ? p.luot : "?",
+    modelId: typeof p.modelId === "string" && p.modelId ? p.modelId : "default",
+    tokensIn,
+    tokensOut,
+    ...(tokensReasoning !== undefined ? { tokensReasoning } : {}),
+    thinking: typeof p.thinking === "boolean" ? p.thinking : null,
+    samplingProfile: typeof p.samplingProfile === "string" ? p.samplingProfile : "?",
+    latencyMs,
+    ...(ctxMax !== undefined && ctxMax > 0 ? { ctxMax } : {}),
+  };
+}
+
+/** ★★★ doc 81 · VIỆC 2 — một nhịp tiến độ của vòng lặp tool (hình dạng khớp `ToolLoopProgress`). */
+export interface KbToolLoopProgress {
+  round: number;
+  phase: "dang_goi" | "xong" | "dung";
+  toolName: string | null;
+  elapsedMs: number;
+  stop?: string;
 }
 
 // ─── Hook ─────────────────────────────────────────────────────────────────────
 
 export function useKbChatStream() {
   const [streamingText, setStreamingText] = useState("");
+  /** ★ F1 — suy luận tích luỹ của lượt đang stream (rỗng khi model không nghĩ / đường không phát). */
+  const [streamingReasoning, setStreamingReasoning] = useState("");
   const [isStreaming, setIsStreaming] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const abortRef = useRef<AbortController | null>(null);
@@ -209,6 +342,7 @@ export function useKbChatStream() {
     ): Promise<KbStreamResult | null> => {
       setIsStreaming(true);
       setStreamingText("");
+      setStreamingReasoning("");
       setError(null);
       abortedRef.current = false;
 
@@ -224,6 +358,23 @@ export function useKbChatStream() {
       if (req.context.selectedMachineCode) {
         context.selectedMachineCode = req.context.selectedMachineCode;
       }
+      // ★★★ doc 79 · TRỤC 1 (A) — chỉ gửi khi TRUE (giữ payload vận hành không đổi một byte).
+      if (req.context.codingMode) {
+        context.codingMode = true;
+      }
+      // ★★★ doc 79 · TRỤC 2 — gửi id DỰ ÁN (KHÔNG phải đường dẫn) để server tra danh sách trắng.
+      if (req.context.projectId) {
+        context.projectId = req.context.projectId;
+      }
+      // ★★★ doc 79 · VÒNG TỰ ĐỘNG — chỉ gửi khi vòng đang ghim một tệp (payload các lượt khác
+      // KHÔNG đổi một byte).
+      if (req.context.codingEditPath) {
+        context.codingEditPath = req.context.codingEditPath;
+      }
+      // ★★★ 2026-08-23 — đầu ra máy đi RIÊNG khỏi `question`. Xem `KbStreamContext.dauRaKhongTinCay`.
+      if (req.context.dauRaKhongTinCay) {
+        context.dauRaKhongTinCay = req.context.dauRaKhongTinCay;
+      }
 
       let confidence = 0;
       let intent = "general";
@@ -237,7 +388,12 @@ export function useKbChatStream() {
       let cached: boolean | undefined;
       let pendingAction: KbPendingAction | null = null;
       let vision: KbVisionNote | null = null;
+      let clientAction: KbClientAction | null = null;
       let accumulated = "";
+      // ★ F1 — suy luận tích luỹ của lượt (tách hẳn khỏi `accumulated` = câu trả lời).
+      let suyLuanTichLuy = "";
+      // ★ F2 — đồng hồ hai pha (nghĩ / sinh) của lượt model hiện tại, đóng ở mỗi sự kiện `usage`. Xem `dongHoHaiPha.ts`.
+      const dongHo = taoDongHo();
 
       try {
         const res = await fetch("/api/ai/local-kb/stream", {
@@ -258,7 +414,8 @@ export function useKbChatStream() {
 
         if (!res.ok || !res.body) {
           const errBody = await res.json().catch(() => ({}));
-          throw new Error(errBody.error || `Stream failed (${res.status})`);
+          // ★ M-4 — mã máy-đọc-được (`code`) → câu BẢN ĐỊA; không hiển thị chuỗi tiếng Anh cứng.
+          throw new Error(thongDiepLoiRest(errBody, `Stream failed (${res.status})`));
         }
 
         const reader = res.body.getReader();
@@ -290,6 +447,16 @@ export function useKbChatStream() {
                 pendingAction?: KbPendingAction;
                 clientAction?: KbClientAction;
                 error?: string;
+                // ★ F2 — các ô của sự kiện `usage` (xem `KbUsageLuot`); bóc bằng `bocUsage()`.
+                luot?: string;
+                modelId?: string;
+                tokensIn?: number;
+                tokensOut?: number;
+                tokensReasoning?: number;
+                thinking?: boolean | null;
+                samplingProfile?: string;
+                latencyMs?: number;
+                ctxMax?: number;
                 structured?: KbStructured;
                 followUpSuggestions?: string[];
                 provider?: string;
@@ -297,9 +464,33 @@ export function useKbChatStream() {
                 ok?: boolean;
                 visionText?: string | null;
                 reason?: string | null;
+                // ★★★ doc 81 · VIỆC 2 — tiến độ vòng lặp tool. Server phát sự kiện này TỪ TRƯỚC
+                // (`aiLocalKnowledgeService` :3228, đường vận hành) nhưng client CHƯA BAO GIỜ đọc
+                // nó — grep `tool_loop` trong `client/` = 0. Nay chế độ lập trình cần nó để người
+                // dùng THẤY đang ở vòng mấy trên một trần 180 s.
+                round?: number;
+                phase?: "dang_goi" | "xong" | "dung";
+                elapsedMs?: number;
+                stop?: string;
               };
 
-              if (payload.type === "vision") {
+              if (payload.type === "tool_loop" && typeof payload.round === "number") {
+                // ⚠ NUỐT CÓ CHỦ Ý: một consumer hiển thị hỏng KHÔNG được giết lượt stream đang
+                // chạy. Không nuốt ở đây thì lỗi rơi vào `catch (parseErr)` bên dưới và — vì nó
+                // KHÔNG chứa chữ "JSON" — sẽ được NÉM LẠI, tức một cái nhãn "vòng 2/3" vẽ hỏng
+                // sẽ huỷ nguyên câu trả lời. Cùng lập trường với `bao()` ở `toolLoop.ts`.
+                try {
+                  callbacks?.onToolLoop?.({
+                    round: payload.round,
+                    phase: payload.phase ?? "dang_goi",
+                    toolName: payload.toolName ?? null,
+                    elapsedMs: payload.elapsedMs ?? 0,
+                    stop: payload.stop,
+                  });
+                } catch {
+                  /* kênh hiển thị, không phải kênh quyết định */
+                }
+              } else if (payload.type === "vision") {
                 // P3/D8 (doc 34) — the VL reading step (or its degrade note).
                 vision = {
                   ok: !!payload.ok,
@@ -321,8 +512,23 @@ export function useKbChatStream() {
                 callbacks?.onPendingAction?.(pendingAction);
               } else if (payload.type === "client_action" && payload.clientAction) {
                 // FE-only directive: navigate / prefill_form. No DB mutation.
+                clientAction = payload.clientAction;
                 callbacks?.onClientAction?.(payload.clientAction);
+              } else if (payload.type === "reasoning" && typeof payload.token === "string" && payload.token) {
+                // ★ F1 — suy luận sống: tích luỹ riêng, KHÔNG chạm `accumulated` (câu trả lời).
+                suyLuanTichLuy += payload.token;
+                ghiNghi(dongHo, Date.now());
+                const snapshotNghi = suyLuanTichLuy;
+                setStreamingReasoning(snapshotNghi);
+                callbacks?.onReasoning?.(snapshotNghi);
+              } else if (payload.type === "usage") {
+                // ★ F2 — số đo lượt model; gói hỏng ⇒ bỏ qua, không dựng ô 0.
+                const u = bocUsage(payload as Record<string, unknown>);
+                // Đóng đồng hồ CẢ KHI gói hỏng: mảnh của lượt hỏng không được lẫn vào lượt kế.
+                const haiPha = chotLuot(dongHo);
+                if (u) callbacks?.onUsage?.({ ...u, ...haiPha });
               } else if (payload.type === "token" && payload.token) {
+                ghiChu(dongHo, Date.now());
                 accumulated += payload.token;
                 const snapshot = accumulated;
                 setStreamingText(snapshot);
@@ -333,11 +539,14 @@ export function useKbChatStream() {
                 provider = payload.provider;
                 cached = payload.cached;
                 const doneAnswer = (payload as any).answer;
+                callbacks?.onDone?.({ degraded: (payload as any).degraded === true }); // ★ F6
                 // FE-W0.3 (doc 46 §2.3) — the backend flagged the streamed LLM
                 // output as a degenerate loop ("cell cell cell…") and sent a clean
                 // fallback in `answer`. REPLACE the accumulated garbage tokens so the
                 // user (and the saved message) never see the loop.
-                if ((payload as any).degraded === true && typeof doneAnswer === "string") {
+                // R2 phần B — `answerRevised`: server đã SỬA TẤT ĐỊNH văn bản sau khi stream (bổ sung `using`
+                // C# còn thiếu) — thay như `degraded`, nhưng KHÔNG báo từ chối (onDone ở trên giữ nguyên).
+                if (((payload as any).degraded === true || (payload as any).answerRevised === true) && typeof doneAnswer === "string") {
                   accumulated = doneAnswer;
                   setStreamingText(accumulated);
                   callbacks?.onText?.(accumulated);
@@ -374,12 +583,13 @@ export function useKbChatStream() {
           cached,
           pendingAction,
           vision,
+          clientAction,
         };
       } catch (err: any) {
         if (err?.name === "AbortError") {
           abortedRef.current = true;
         } else {
-          setError(err?.message ?? "Stream error");
+          setError(mapTrpcError(err));
         }
         setIsStreaming(false);
         return null;
@@ -394,5 +604,5 @@ export function useKbChatStream() {
     setIsStreaming(false);
   }, []);
 
-  return { streamingText, isStreaming, error, abortedRef, startKbStream, stopKbStream };
+  return { streamingText, streamingReasoning, isStreaming, error, abortedRef, startKbStream, stopKbStream };
 }

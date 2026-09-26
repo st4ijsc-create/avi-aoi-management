@@ -13,7 +13,10 @@
  */
 import { z } from "zod";
 import { TRPCError } from "@trpc/server";
+import { appError } from "../_core/appError";
 import { router, protectedProcedure } from "../_core/trpc";
+// ★★★ 2026-08-17 — xem `_core/reportExportScope.ts`.
+import { resolveExportScope, assertExportableScope } from "../_core/reportExportScope";
 import {
   ArtifactError,
   ARTIFACT_FORMATS,
@@ -32,8 +35,17 @@ function viewerOf(ctx: { user: { id: number; role: string } }): ArtifactViewer {
 
 function mapArtifactError(err: unknown): never {
   if (err instanceof ArtifactError) {
-    const code = err.reason === "forbidden" ? "FORBIDDEN" : "NOT_FOUND";
-    throw new TRPCError({ code, message: err.message });
+    if (err.reason === "forbidden") {
+      throw appError("FORBIDDEN", "PERMISSION_DENIED", { action: "accessReportArtifact" }, err.message);
+    }
+    // Review cuối, ca I-A #9: 'expired' bị gộp chung vào ENTITY_NOT_FOUND trước đây —
+    // tệp CÒN ĐÓ, chỉ quá hạn lưu trữ (retention window), không phải "không tìm thấy".
+    // Tách nhánh để nói đúng; tRPC code GIỮ NGUYÊN NOT_FOUND (đã có comment ở đầu file
+    // giải thích lý do: tRPC không có mã HTTP 410, REST route riêng mới trả 410 thật).
+    if (err.reason === "expired") {
+      throw appError("NOT_FOUND", "ENTITY_EXPIRED", { entity: "reportArtifact" }, err.message);
+    }
+    throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "reportArtifact" }, err.message);
   }
   throw err;
 }
@@ -129,6 +141,17 @@ export const reportArtifactRouter = router({
       }),
     )
     .mutation(async ({ ctx, input }) => {
+      // ★★★ 2026-08-17 (lượt hai) — NỢ ĐÃ TRẢ. `actor` bên dưới là trục phạm vi đi XUYÊN SUỐT
+      // `externalReportService` → `db/reportAggregators` (cả bốn bộ tổng hợp + bản trend theo
+      // ngày) → `getShiftReport` → truy vấn phụ cho `oee_metrics`. Trước đó `ctx.user.id` chỉ
+      // chạm tới ô `createdBy` (dấu vết ai tạo), nên mọi tài khoản đã đăng nhập dựng được
+      // artefact số liệu TOÀN CỤC rồi tải về.
+      //
+      // Cổng dưới GIỮ NGUYÊN và không thừa: nó chặn ca 0 gán nhà máy TRƯỚC khi sinh file, thay
+      // vì giao một tài liệu toàn số 0 mà người đọc sẽ hiểu thành "dây chuyền ngừng chạy"
+      // (lý lẽ đầy đủ ở docblock `assertExportableScope`).
+      assertExportableScope(await resolveExportScope(ctx.user));
+
       const { generateExternalReport, ExternalReportError } = await import(
         "../services/externalReportService"
       );
@@ -142,14 +165,14 @@ export const reportArtifactRouter = router({
           locale: input.locale,
           filters: input.filters as never,
           createdBy: ctx.user.id,
+          // ⚠ `createdBy` là DẤU VẾT; `actor` là TRỤC PHẠM VI. Hai ô khác nhau có chủ đích —
+          // gộp làm một là cách lỗ cũ ra đời (id có mặt, nhưng không đi vào truy vấn nào).
+          actor: { id: ctx.user.id, role: ctx.user.role },
           source: "on_demand",
         });
       } catch (err) {
         if (err instanceof ExternalReportError) {
-          throw new TRPCError({
-            code: err.status === 400 ? "BAD_REQUEST" : "INTERNAL_SERVER_ERROR",
-            message: err.message,
-          });
+          throw appError(err.status === 400 ? "BAD_REQUEST" : "INTERNAL_SERVER_ERROR", "OPERATION_FAILED", { operation: "generateExternalReport" }, err.message);
         }
         throw err;
       }
@@ -179,10 +202,12 @@ export const reportArtifactRouter = router({
           emailedTo = input.emailTo.length;
         } catch (err) {
           // The report itself is generated + persisted; surface a soft email error.
-          throw new TRPCError({
-            code: "INTERNAL_SERVER_ERROR",
-            message: `Report generated (id ${result.reportId}) but email delivery failed: ${(err as any)?.message || err}`,
-          });
+          throw appError(
+            "INTERNAL_SERVER_ERROR",
+            "OPERATION_FAILED",
+            { operation: "emailReport" },
+            `Report generated (id ${result.reportId}) but email delivery failed: ${(err as any)?.message || err}`,
+          );
         }
       }
 

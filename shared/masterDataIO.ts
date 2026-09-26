@@ -22,8 +22,26 @@ export type MasterDataFormat = "csv" | "xlsx";
 export interface MasterDataColumn {
   /** Khoá field trong object trả về (vd "code"). */
   field: string;
-  /** Nhãn cột hiển thị = header file CSV/XLSX (vd "Mã vật liệu"). */
+  /**
+   * ⚠ HAI VAI TRONG MỘT TRƯỜNG — và đây là chỗ dễ phá nhất của cả module.
+   *
+   * `header` vừa là (a) nhãn cột hiển thị, vừa là (b) **KHOÁ KHỚP** tên cột trong
+   * file Excel/CSV người dùng tải lên (`mapAndValidate` dò bằng
+   * `normalizeKey(col.header)`), vừa là (c) hàng tiêu đề của file template xuất ra.
+   *
+   * ⇒ **KHÔNG được dịch trường này.** Dịch nó là: template xuất ra mang tên cột lạ,
+   *   và MỌI file người dùng đang có hết nhập được. Đợt F13 đã suýt làm đúng thế.
+   *
+   * Muốn nhãn đổi theo ngôn ngữ thì dùng `headerKey` bên dưới — vai (a) tách khỏi
+   * (b)+(c), hợp đồng dữ liệu giữ nguyên.
+   */
   header: string;
+  /**
+   * Khoá i18n cho NHÃN HIỂN THỊ của cột. Chỉ ảnh hưởng chỗ hiện ra cho người đọc
+   * (bảng xem trước khi nhập); phép KHỚP cột và hàng tiêu đề template vẫn dùng
+   * `header`. Thiếu `headerKey` ⇒ lùi về `header`, đúng hành vi cũ.
+   */
+  headerKey?: string;
   /** Bắt buộc có giá trị. Thiếu → error. */
   required?: boolean;
   /** Kiểu ép/validate. Mặc định "string". */

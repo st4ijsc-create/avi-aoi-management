@@ -5,10 +5,15 @@
  * registry. Dispatches by `type` to a small dedicated card.
  */
 
-import { Activity, AlertTriangle, CheckCircle2, Database, Gauge, TrendingDown, TrendingUp, XCircle } from "lucide-react";
+import { useRef } from "react";
+import { Activity, AlertTriangle, CheckCircle2, Database, Gauge, HardDrive, TrendingDown, TrendingUp, XCircle } from "lucide-react";
+import { useTranslation } from "react-i18next";
 import { Line, LineChart, ResponsiveContainer } from "recharts";
 import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
+// ★★★ 2026-08-23 · LÔ 3 — chip bằng chứng "byte thật từ đĩa" cho thẻ đọc tệp (xem khối docblock
+// tại chỗ render); hai vị từ THUẦN sống ở `@/lib/soKhoiMa` để lưới + trang dùng chung một bản.
+import { dinhDangLucNhan, laKetQuaDocTuDia } from "@/lib/soKhoiMa";
 
 export type ToolResultPayload =
   | {
@@ -248,9 +253,33 @@ const KNOWN_CARD_TYPES = new Set<string>([
 
 interface Props {
   toolResult: ToolResultPayload;
+  /**
+   * ★ LÔ 3 — mốc-NHẬN sự kiện tool (đã định dạng bằng `dinhDangLucNhan`), do trang đóng dấu lúc
+   * nhận SSE. Truyền vào để chip bằng chứng ở đây và chip đối chiếu của khối mã (`KhoiMaCoNhan`)
+   * nói CÙNG một mốc. Vắng ⇒ thẻ tự đóng dấu ở lần render đầu (vẫn là mốc-nhận, xem dưới).
+   */
+  lucNhan?: string;
 }
 
-export function AIToolResultCard({ toolResult }: Props) {
+export function AIToolResultCard({ toolResult, lucNhan }: Props) {
+  const { t } = useTranslation();
+  /**
+   * ★★★ 2026-08-23 · LÔ 3 — CHIP BẰNG CHỨNG "Byte thật từ đĩa · {{luc}}" cho thẻ đọc tệp.
+   *
+   * Vì sao: ca đo buổi đóng vai — văn xuôi model chứa khối mã CÓ guard trong khi thẻ đọc ngay dưới
+   * cho thấy tệp thật CHƯA có; người xem lại cần một dấu hiệu phân ĐẲNG CẤP nguồn: thẻ này là byte
+   * ĐỌC TỪ ĐĨA, văn xuôi là lời MODEL. Chip chỉ gắn khi `data` mang đúng hình dạng một lượt đọc
+   * thật (`laKetQuaDocTuDia` — bản đọc một tệp có `content`, hoặc thẻ tổng `{files:[…]}` của đường
+   * sinh-mã); các lượt TỪ CHỐI của hộp cát mang `data` rỗng nên tự trượt vị từ ấy.
+   *
+   * ⚠ `luc` là MỐC-NHẬN (client), KHÔNG phải mốc-đọc (server): payload thẻ đọc không mang
+   *   timestamp và lô này cấm đổi server để cõng thêm. Không có `lucNhan` từ trang ⇒ đóng dấu Ở
+   *   LẦN RENDER ĐẦU qua ref (cùng nhịp với lượt nhận sự kiện) — ghi ref trong render là khởi tạo
+   *   lười idempotent, không phải side-effect lặp.
+   */
+  const lucTuDongRef = useRef<string | null>(null);
+  if (lucTuDongRef.current === null) lucTuDongRef.current = dinhDangLucNhan(new Date());
+  const lucBangChung = lucNhan ?? lucTuDongRef.current;
   return (
     <div className="rounded-xl border border-primary/20 bg-background/80 p-2.5 space-y-2 text-xs">
       <div className="flex items-center gap-1.5">
@@ -259,10 +288,17 @@ export function AIToolResultCard({ toolResult }: Props) {
         <Badge variant="outline" className="ml-auto h-4 px-1.5 text-[10px]">Real-time</Badge>
       </div>
 
+      {laKetQuaDocTuDia(toolResult.data as unknown) && (
+        <div data-chip-bang-chung className="flex items-center gap-1 text-[10px] text-muted-foreground">
+          <HardDrive className="size-3 shrink-0" />
+          <span>{t("repoWs.khoi.bangChung", "Byte thật từ đĩa · {{luc}}", { luc: lucBangChung })}</span>
+        </div>
+      )}
+
       {toolResult.note === "DB_UNAVAILABLE" && (
         <div className="flex items-center gap-1.5 text-amber-600">
           <AlertTriangle className="size-3" />
-          <span>Không có kết nối CSDL.</span>
+          <span>{t("aiToolResult.khongCoKetNoiCsdl", "Không có kết nối CSDL.")}</span>
         </div>
       )}
 
@@ -329,7 +365,12 @@ export function AIToolResultCard({ toolResult }: Props) {
         (extractGenericRows(toolResult.data as unknown) ? (
           <GenericRowsBody rows={extractGenericRows(toolResult.data as unknown)!} textSummary={toolResult.textSummary} />
         ) : (
-          <div className="whitespace-pre-line text-foreground/90">{toolResult.textSummary}</div>
+          // ★★★ 2026-08-23 · `break-words` — `whitespace-pre-line` GIỮ xuống dòng nhưng **không**
+          //   cho phép ngắt trong một "từ" dài. `textSummary` ở đường mã nguồn chở đường dẫn tệp và
+          //   băm sha256 — chuỗi không dấu cách. Nghiệm thu live đo được thẻ này rộng 542 px trong
+          //   khung 400 px (`scrollWidth 588…754` vs `clientWidth 400`) ⇒ mất 188…354 px, không có
+          //   thanh cuộn ngang nào để tới. `min-w-0` để nó co được khi là con của flex/grid.
+          <div className="min-w-0 break-words whitespace-pre-line text-foreground/90">{toolResult.textSummary}</div>
         ))}
     </div>
   );
@@ -337,11 +378,12 @@ export function AIToolResultCard({ toolResult }: Props) {
 
 // ---- today_stats ----
 function TodayStatsBody({ data }: { data: Extract<ToolResultPayload, { type: "today_stats" }>["data"] }) {
+  const { t } = useTranslation();
   const ngColor = data.ngRate >= 5 ? "text-red-600" : data.ngRate >= 2 ? "text-amber-600" : "text-emerald-600";
   return (
     <div className="space-y-2">
       <div className="grid grid-cols-4 gap-1.5">
-        <Stat label="Tổng" value={data.total} icon={<Gauge className="size-3" />} />
+        <Stat label={t("aiToolResult.tong", "Tổng")} value={data.total} icon={<Gauge className="size-3" />} />
         <Stat label="OK" value={data.ok} color="text-emerald-600" icon={<CheckCircle2 className="size-3" />} />
         <Stat label="NG" value={data.ng} color="text-red-600" icon={<XCircle className="size-3" />} />
         <Stat label="NTF" value={data.ntf} color="text-amber-600" icon={<AlertTriangle className="size-3" />} />
@@ -352,7 +394,7 @@ function TodayStatsBody({ data }: { data: Extract<ToolResultPayload, { type: "to
       </div>
       {data.byMachine.length > 0 && (
         <div className="space-y-0.5">
-          <div className="text-muted-foreground text-[11px]">Top máy NG:</div>
+          <div className="text-muted-foreground text-[11px]">{t("aiToolResult.topMayNg", "Top máy NG:")}</div>
           {data.byMachine.slice(0, 3).map((m) => (
             <div key={m.machineId} className="flex items-center justify-between text-[11px]">
               <span className="truncate">{m.machineName}</span>
@@ -402,8 +444,9 @@ function LotStatusBody({ data }: { data: NonNullable<Extract<ToolResultPayload, 
 
 // ---- machine_status ----
 function MachineStatusBody({ data }: { data: Extract<ToolResultPayload, { type: "machine_status" }>["data"] }) {
+  const { t } = useTranslation();
   if (data.length === 0) {
-    return <div className="text-muted-foreground italic text-[11px]">Không có máy.</div>;
+    return <div className="text-muted-foreground italic text-[11px]">{t("aiToolResult.khongCoMay", "Không có máy.")}</div>;
   }
   return (
     <div className="space-y-1 max-h-48 overflow-y-auto">
@@ -465,8 +508,9 @@ function DefectTrendBody({ data }: { data: Extract<ToolResultPayload, { type: "d
 
 // ---- top_defects ----
 function TopDefectsBody({ data }: { data: Extract<ToolResultPayload, { type: "top_defects" }>["data"] }) {
+  const { t } = useTranslation();
   if (data.length === 0) {
-    return <div className="text-muted-foreground italic text-[11px]">Không có điểm đo nào lỗi.</div>;
+    return <div className="text-muted-foreground italic text-[11px]">{t("aiToolResult.khongCoDiemDoNao", "Không có điểm đo nào lỗi.")}</div>;
   }
   return (
     <div className="space-y-1">
@@ -489,6 +533,7 @@ function TopDefectsBody({ data }: { data: Extract<ToolResultPayload, { type: "to
 
 // ---- F6: process_result ----
 function ProcessResultBody({ data }: { data: Extract<ToolResultPayload, { type: "process_result" }>["data"] }) {
+  const { t } = useTranslation();
   const s = data.summary;
   const failColor = s.failRate >= 5 ? "text-red-600" : s.failRate >= 2 ? "text-amber-600" : "text-emerald-600";
   return (
@@ -505,7 +550,7 @@ function ProcessResultBody({ data }: { data: Extract<ToolResultPayload, { type: 
       </div>
       {data.rows.length > 0 && (
         <div className="space-y-0.5">
-          <div className="text-muted-foreground text-[11px]">Bản ghi gần nhất:</div>
+          <div className="text-muted-foreground text-[11px]">{t("aiToolResult.banGhiGanNhat", "Bản ghi gần nhất:")}</div>
           {data.rows.slice(0, 5).map((r, i) => (
             <div key={`${r.serialNumber}-${i}`} className="flex items-center gap-1.5 text-[11px]">
               <span className="font-mono truncate flex-1">{r.serialNumber}</span>
@@ -531,6 +576,7 @@ function resultColor(result: string): string {
 
 // ---- F6: process_metric_trend (sparkline) ----
 function MetricTrendBody({ data }: { data: Extract<ToolResultPayload, { type: "process_metric_trend" }>["data"] }) {
+  const { t } = useTranslation();
   const trendIcon =
     data.trend === "increasing" ? (
       <TrendingUp className="size-3 text-red-600" />
@@ -539,7 +585,7 @@ function MetricTrendBody({ data }: { data: Extract<ToolResultPayload, { type: "p
     ) : (
       <Activity className="size-3 text-muted-foreground" />
     );
-  const trendVi = data.trend === "increasing" ? "Tăng" : data.trend === "decreasing" ? "Giảm" : "Ổn định";
+  const trendVi = data.trend === "increasing" ? t("aIToolResultCard.tang", "Tăng") : data.trend === "decreasing" ? t("aIToolResultCard.giam", "Giảm") : t("aIToolResultCard.onDinh", "Ổn định");
   const chartData = data.series.map((p) => ({ ts: p.ts, value: p.value }));
   return (
     <div className="space-y-2">
@@ -561,8 +607,8 @@ function MetricTrendBody({ data }: { data: Extract<ToolResultPayload, { type: "p
       )}
       <div className="grid grid-cols-3 gap-1.5">
         <Stat label="TB" value={data.mean} />
-        <Stat label="Bất thường" value={data.anomalyCount} color={data.anomalyCount > 0 ? "text-amber-600" : undefined} />
-        <Stat label="Dự báo" value={data.forecastNext ?? 0} color="text-primary" />
+        <Stat label={t("aiToolResult.batThuong", "Bất thường")} value={data.anomalyCount} color={data.anomalyCount > 0 ? "text-amber-600" : undefined} />
+        <Stat label={t("aiToolResult.duBao", "Dự báo")} value={data.forecastNext ?? 0} color="text-primary" />
       </div>
       <div className="flex items-center gap-1.5 text-[11px]">
         {trendIcon}
@@ -577,6 +623,7 @@ function MetricTrendBody({ data }: { data: Extract<ToolResultPayload, { type: "p
 
 // ---- F6: line_balance ----
 function LineBalanceBody({ data }: { data: NonNullable<Extract<ToolResultPayload, { type: "line_balance" }>["data"]> }) {
+  const { t } = useTranslation();
   const taktBreach =
     data.taktTimeMs != null && data.maxCycleTimeMs != null && data.maxCycleTimeMs > data.taktTimeMs;
   const ms = (v: number | null) => (v == null ? "?" : `${v}ms`);
@@ -587,8 +634,8 @@ function LineBalanceBody({ data }: { data: NonNullable<Extract<ToolResultPayload
         <LBCell label="Takt" value={ms(data.taktTimeMs)} />
         <LBCell label="Cycle TB" value={ms(data.avgCycleTimeMs)} />
         <LBCell label="Cycle max" value={ms(data.maxCycleTimeMs)} highlight={taktBreach} />
-        <LBCell label="Hệ số CB" value={pctV(data.balanceRatePct)} />
-        <LBCell label="Sử dụng" value={pctV(data.utilizationPct)} />
+        <LBCell label={t("aiToolResult.heSoCb", "Hệ số CB")} value={pctV(data.balanceRatePct)} />
+        <LBCell label={t("aiToolResult.suDung", "Sử dụng")} value={pctV(data.utilizationPct)} />
         <LBCell label="WIP" value={String(data.wipCount)} />
       </div>
       {taktBreach && (
@@ -601,13 +648,13 @@ function LineBalanceBody({ data }: { data: NonNullable<Extract<ToolResultPayload
         <div className="space-y-0.5 text-[11px]">
           {data.topBlocked && data.topBlocked.avgBlockedMs > 0 && (
             <div className="flex justify-between">
-              <span className="text-muted-foreground">Trạm bị chặn nhất</span>
+              <span className="text-muted-foreground">{t("aiToolResult.tramBiChanNhat", "Trạm bị chặn nhất")}</span>
               <span className="text-red-600">#{data.topBlocked.stationId} ({data.topBlocked.avgBlockedMs}ms)</span>
             </div>
           )}
           {data.topStarved && data.topStarved.avgStarvedMs > 0 && (
             <div className="flex justify-between">
-              <span className="text-muted-foreground">Trạm thiếu liệu nhất</span>
+              <span className="text-muted-foreground">{t("aiToolResult.tramThieuLieuNhat", "Trạm thiếu liệu nhất")}</span>
               <span className="text-amber-600">#{data.topStarved.stationId} ({data.topStarved.avgStarvedMs}ms)</span>
             </div>
           )}
@@ -661,6 +708,7 @@ function PalletizerStatusBody({
 }: {
   data: NonNullable<Extract<ToolResultPayload, { type: "palletizer_status" }>["data"]>;
 }) {
+  const { t } = useTranslation();
   return (
     <div className="space-y-2">
       <div className="flex items-center gap-1.5 text-[11px]">
@@ -669,12 +717,12 @@ function PalletizerStatusBody({
           {data.operationStatus ?? "?"}
         </Badge>
         <span className="text-muted-foreground ml-auto">
-          {data.lastHeartbeat ? data.lastHeartbeat.slice(0, 16) : "không có heartbeat"}
+          {data.lastHeartbeat ? data.lastHeartbeat.slice(0, 16) : t("aIToolResultCard.khongCoHeartbeat", "không có heartbeat")}
         </span>
       </div>
       {data.latestResult && (
         <div className="flex items-center gap-1.5 text-[11px]">
-          <span className="text-muted-foreground">Kết quả gần nhất:</span>
+          <span className="text-muted-foreground">{t("aiToolResult.ketQuaGanNhat", "Kết quả gần nhất:")}</span>
           <Badge variant="outline" className={cn("h-4 px-1 text-[9px]", resultColor(data.latestResult.result))}>
             {data.latestResult.result}
           </Badge>
@@ -695,7 +743,7 @@ function PalletizerStatusBody({
           ))}
         </div>
       ) : (
-        <div className="text-muted-foreground italic text-[11px]">Chưa có telemetry.</div>
+        <div className="text-muted-foreground italic text-[11px]">{t("aiToolResult.chuaCoTelemetry", "Chưa có telemetry.")}</div>
       )}
     </div>
   );
@@ -703,14 +751,15 @@ function PalletizerStatusBody({
 
 // ---- F6: ot_telemetry ----
 function OtTelemetryBody({ data }: { data: Extract<ToolResultPayload, { type: "ot_telemetry" }>["data"] }) {
+  const { t } = useTranslation();
   if (data.rows.length === 0) {
-    return <div className="text-muted-foreground italic text-[11px]">Không có telemetry.</div>;
+    return <div className="text-muted-foreground italic text-[11px]">{t("aiToolResult.khongCoTelemetry", "Không có telemetry.")}</div>;
   }
   return (
     <div className="space-y-0.5 max-h-48 overflow-y-auto">
       <div className="grid grid-cols-[1fr_auto_auto] gap-2 text-[10px] text-muted-foreground border-b border-border/50 pb-0.5">
         <span>Tag</span>
-        <span className="text-right">Giá trị</span>
+        <span className="text-right">{t("aiToolResult.giaTri", "Giá trị")}</span>
         <span className="text-right">Quality</span>
       </div>
       {data.rows.map((r, i) => (
@@ -766,17 +815,18 @@ function InsightTextBody({ textSummary }: { textSummary: string }) {
 // ---- generic fallback: titled label/value list (Phase P2 read tools etc.) ----
 function GenericRowsBody({ rows, textSummary }: { rows: GenericRow[]; textSummary: string }) {
   return (
-    <div className="space-y-1 max-h-56 overflow-y-auto">
+    // `min-w-0` ở cả hộp lẫn từng dòng: xem lý lẽ `break-words` ở nhánh textSummary phía trên.
+    <div className="min-w-0 space-y-1 max-h-56 overflow-y-auto">
       {rows.slice(0, 20).map((r, i) => (
-        <div key={i} className="flex items-start justify-between gap-2 text-[11px]">
+        <div key={i} className="flex min-w-0 items-start justify-between gap-2 text-[11px]">
           <span className="font-mono text-muted-foreground truncate shrink-0 max-w-[45%]">{r.label}</span>
-          <span className="text-right text-foreground/90 break-words">{r.value}</span>
+          <span className="min-w-0 text-right text-foreground/90 break-words">{r.value}</span>
         </div>
       ))}
       {rows.length > 20 && (
         <div className="text-[10px] text-muted-foreground italic">… +{rows.length - 20} dòng nữa</div>
       )}
-      {rows.length === 0 && <div className="whitespace-pre-line text-foreground/90">{textSummary}</div>}
+      {rows.length === 0 && <div className="min-w-0 break-words whitespace-pre-line text-foreground/90">{textSummary}</div>}
     </div>
   );
 }

@@ -68,6 +68,14 @@ describe("backgroundJobs bootstrap (real module, flags off)", () => {
     EDGE_RUNTIME_ENABLED: "false",
     AI_MODEL_AUTOROLLBACK_ENABLED: "false",
     AI_MODEL_PERF_SNAPSHOTS_ENABLED: "false",
+    // doc69 W1 modelfix — MUST stay off here. initDeepModelWarmup() defaults ON and arms a 3s
+    // timer that reaches warmModel() → a REAL GGUF_DEFAULT_MODEL load (~16.7 GB). isGgufAvailable()
+    // is only `import("node-llama-cpp")`, so it is true on any box with the package installed and
+    // the models dir present. Vitest reuses worker processes, so that load would land in whichever
+    // test file happens to be running 3 seconds later — stalling or OOM-ing the whole suite with
+    // cross-file timeouts that look like flakiness. This is the ONLY test that boots the real
+    // scheduler set (verified by grep for startBackgroundSchedulers/importActual across *.test.ts).
+    GGUF_WARM_DEEP_MODEL_ON_BOOT: "false",
   };
   const backup: Record<string, string | undefined> = {};
 

@@ -197,4 +197,35 @@ describe("nearMissAdvisor.processDetection (advisory)", () => {
     // it still only logged + raised an Andon — NO dispatcher import/call exists here.
     expect(store.safety_events).toHaveLength(1);
   });
+
+  // ══════════════════════════════════════════════════════════════════════════
+  // SAF-01 (doc 80 Đợt 0) — the Safety Monitor "test proximity" button (source:"test",
+  // always sent by ProximityDialog.submit in client/src/pages/SafetyWorkforce.tsx) must
+  // be provably harmless: records with honest detectedBy:'test' provenance, and NEVER
+  // raises a real Andon (audit evidence: nearMissAdvisor.ts:121,131-146 — before this fix,
+  // "test" fell into the `: "operator"` fallback AND still raised a yellow Andon,
+  // indistinguishable on the Andon board from a real near-miss).
+  // ══════════════════════════════════════════════════════════════════════════
+  it("★★★ SAF-01 — source:'test' records near_miss with detectedBy:'test' but raises NO Andon", async () => {
+    process.env.SAFETY_AUDIT_ENABLED = "true";
+    process.env.NEAR_MISS_MARGIN_MM = "500";
+    const r = await processDetection({ distance: 150, confidence: 0.9, source: "test", robotId: 7 });
+    expect(r.triggered).toBe(true);
+    expect(store.safety_events[0].detectedBy).toBe("test"); // NOT "operator" — no human observed this
+    expect(store.safety_events[0].eventType).toBe("near_miss");
+    expect(raiseAndon).not.toHaveBeenCalled(); // the whole point of SAF-01
+    expect(r.andonId).toBeUndefined();
+  });
+
+  it("SAF-01 — source:'manual' (a real human report, NOT the test button) still raises a real Andon", async () => {
+    // Guards against an over-broad fix that silences EVERY non-vision source — only
+    // the dedicated 'test' provenance is advisory-sandboxed; a human-reported 'manual'
+    // detection is exactly as real as a 'vision' one and must still alert.
+    process.env.SAFETY_AUDIT_ENABLED = "true";
+    process.env.NEAR_MISS_MARGIN_MM = "500";
+    const r = await processDetection({ distance: 150, confidence: 0.9, source: "manual" });
+    expect(r.triggered).toBe(true);
+    expect(store.safety_events[0].detectedBy).toBe("operator");
+    expect(raiseAndon).toHaveBeenCalledTimes(1);
+  });
 });

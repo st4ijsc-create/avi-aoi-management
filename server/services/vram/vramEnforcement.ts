@@ -1,0 +1,507 @@
+/**
+ * ★★★ Pha 2B Task 5 — CHÍNH SÁCH SUY GIẢM: biến những thứ hệ **BIẾT** thành những thứ hệ **LÀM**.
+ *
+ * Task 2 dựng `computeHeadroom()` và để lại `blind` · `trusted` · `degradedReasons` · `baselineVerified`
+ * với một câu bàn giao thẳng: *"chính sách 'mù thì chặt hơn' là của Task 5"*. File này là chính sách
+ * đó, và nó chỉ có MỘT hình dạng đầu ra:
+ *
+ *     effective = headroomBytes − biênTuổiTick − biênTuổiSổChung − byteĐãChạyNgoàiSổ − phụPhíMẤTTINCẬY
+ *
+ * ⚠ Pha 3 Task 2 thêm **số hạng thứ hai** (`biênTuổiSổChung`) — cùng hàm `bienTheoTuoi()`, cùng
+ * trần, khác NGUỒN TUỔI: ô tick già theo đầu dò, bản sao đọc sổ chung già theo DB. Một cái hỏng
+ * không kéo cái kia, nên chúng là hai ô riêng.
+ *
+ * ══════════════════════════════════════════════════════════════════════════════════════════════
+ * ⚠⚠⚠ VÌ SAO MỌI SỐ HẠNG ĐỀU **TRỪ**, KHÔNG SỐ HẠNG NÀO CỘNG — VÀ ĐÓ LÀ TOÀN BỘ BẤT BIẾN
+ * ══════════════════════════════════════════════════════════════════════════════════════════════
+ * Vì `headroom = trần − max(L, A) − đệm` và `max(L, A) ≥ L`, **`attributableBytes = null` là CHẶN
+ * TRÊN của mọi headroom**. Nên mọi phản ứng kiểu *"không chắc thì rơi về chỉ-sổ"* là một phép **LÀM
+ * LỎNG**, không phải suy biến an toàn (ràng buộc toàn cục 10, đính chính 2026-08-04).
+ *
+ * ⇒ Bất biến của file này, và là thứ có ca test khoá cho MỌI tập con lý do:
+ *
+ *     applyEnforcement(x).effectiveHeadroomBytes  ≤  x.headroom.headroomBytes,
+ *     và THÊM một lý do bất kỳ thì con số đó chỉ có thể NHỎ ĐI.
+ *
+ * Không có nhánh nào trong file này trả về một số LỚN HƠN `headroomBytes`. Nếu một bản sửa tương lai
+ * cần "nới" ở đâu đó, nó phải nới bằng cách sửa `computeHeadroom()` (nơi có phép `max`), không phải
+ * bằng cách cộng vào đây — cộng vào đây là mở đúng cái cửa mà cả pha này tồn tại để đóng.
+ *
+ * ══════════════════════════════════════════════════════════════════════════════════════════════
+ * ⚠⚠ TICK CŨ LÀ **PHẠM TRÙ THỨ BA**, KHÔNG PHẢI MỘT ĐƯỜNG `blind`
+ * ══════════════════════════════════════════════════════════════════════════════════════════════
+ * Một tick cũ khai **số có thể sai kèm dấu ĐÁNG TIN** (`blind: false`, `trusted` có thể `true`).
+ * Chính sách hết hạn ĐÚNG là **GIỮ số và CỘNG một biên theo tuổi** rồi hạ `trusted` — **TUYỆT ĐỐI
+ * không** đi qua `attributableBytes = null`, vì đó là tự nâng dư địa lên chặn TRÊN, tức phản ứng với
+ * *"số của tôi có thể đã cũ"* bằng *"vậy coi như thiết bị trống"*.
+ *
+ * ⚠ VÀ BIÊN PHẢI CÓ TRẦN. Tốc độ cấp phát lớn nhất đo được (§5.6c chỉ đúng vật liệu này) là
+ * **17.511.354.368 B / 11.000 ms ≈ 1,52 MiB/ms** — nhân với một tuổi 60 s đã ra **95 GB**, tức lớn
+ * hơn cả tấm card ba lần. Một biên không trần biến "một nhịp đối chiếu chết" thành "từ chối 100%
+ * lượt xin", và **một hệ từ chối mọi thứ thì không phải hệ cưỡng chế** — nó là một hệ đã dừng.
+ * ⇒ Biên bị kẹp ở **một đơn vị mất-tin-cậy**, và phần vượt quá KHÔNG bị bịa thành số: nó hiện ra
+ * bằng lý do `"stale-tick"` (+ `"tick-failing"` khi nhịp đang hỏng liên tiếp), tức bằng **tầm nhìn**.
+ *
+ * ⚠⚠ M-2 (re-review) — GỌI ĐÚNG TÊN THỨ NÀY: **TRÊN THỰC TẾ NÓ LÀ MỘT KHOẢN THUẾ PHẲNG 1.024 MiB**,
+ * không phải "một biên tỉ lệ tuổi". Ghép hai con số của chính file này: trần (1 đơn vị = 1.073.741.824
+ * B) chia cho tốc độ (1.592.005 B/ms) ⇒ biên **chạm trần sau ≈ 675 ms**, trong khi **nhịp xuất bản ô
+ * tick là 60 s** ⇒ **≥ 98,8 % thời gian biên đứng NGUYÊN Ở TRẦN**. Phần "tỉ lệ tuổi" chỉ sống trong
+ * ~1 % thời gian, ngay sau mỗi nhịp.
+ * ⇒ Hệ quả phải biết khi đọc số: dư địa hiệu lực **ỔN ĐỊNH** của một tiến trình có tick (`worker`,
+ * sổ rỗng) là **≈ 30.559 MiB**, KHÔNG phải 31.581 MiB — con số 31.581 trong nghiệm thu sống là ca
+ * TỐT NHẤT (tick vừa chạy 1,4 ms trước), không phải ca thường gặp. Ai muốn biên thật sự tỉ lệ theo
+ * tuổi phải nâng TRẦN (đắt: khoá thêm VRAM), không phải sửa phép nhân.
+ *
+ * ⚠⚠ I-1 (review TOÀN NHÁNH) — **CON SỐ 30.559 CÓ HAI ĐIỀU KIỆN, VÀ CẢ HAI ĐỀU TỪNG BỊ BỎ QUÊN**:
+ *   (a) `GGUF_VRAM_GUARD_PCT` **không đặt** (trần = 32.607 MiB). `.env` của repo này từng đặt `=90`
+ *       từ thời nghĩa CŨ ⇒ trần thật **29.346 MiB** (−3.261) và con số ổn định tụt xuống
+ *       **27.298 MiB** — không ai nhận ra suốt cả pha. Đã GỠ khỏi `.env`; `vramCaps.doc()` nay KÊU
+ *       một dòng ở lượt đọc trần đầu tiên nếu ai đặt lại.
+ *   (b) nền **đã xác minh** (`baselineVerified`). Chưa xác minh ⇒ thêm một đơn vị nữa ⇒
+ *       **29.535 MiB** (và **26.274 MiB** nếu cộng cả guard 90).
+ * Bốn con số, một phép trừ: `trần − 1.024 (đệm) − 1.024 (biên tuổi) − [1.024 nếu nền chưa xác minh]`.
+ *
+ * ══════════════════════════════════════════════════════════════════════════════════════════════
+ * ⚠⚠ ĐƠN VỊ MẤT-TIN-CẬY LÀ MỘT **BIÊN**, KHÔNG PHẢI MỘT **ƯỚC LƯỢNG** CỦA PHẦN KHÔNG THẤY
+ * ══════════════════════════════════════════════════════════════════════════════════════════════
+ * Phần không thấy được đo trong chính dự án này là: sidecar thị giác **7,8 GB** · ONNX/DirectML
+ * **+339 MiB** · cron 03:00 **+1.251 MiB** · nền thiết bị **996–2.112 MiB**. Cộng hết lại rồi trừ đi
+ * là **đóng băng cả hệ**: chỉ riêng sidecar đã chiếm một phần tư card. Nên con số ở đây CỐ Ý lấy
+ * **cận DƯỚI** của dải đo được (996 MiB → làm tròn lên bội số 1.024) và tự khai đúng vai của nó:
+ *
+ *   > **một biên đủ để loại những lượt xin SÁT MÉP khi hệ không nhìn rõ — KHÔNG phải một lời hứa
+ *   > rằng phần không thấy đã được tính vào.**
+ *
+ * Ai đọc con số này như một bảo đảm sẽ lặp lại đúng lỗi *"tuyên bố mạnh hơn mã"* đã bị bắt bảy lần
+ * trong chuỗi này. Phần "không bảo đảm" nằm trong báo cáo Task 5, mục cùng tên.
+ *
+ * ⚠ Đọc `.env` ở MỖI lượt gọi (không đóng băng lúc nạp module) — cùng khuôn với
+ * `vramLoadOutcome.vramLoadRetries()`: người vận hành phải chỉnh được mà không build lại.
+ *
+ * File này **thuần · đồng bộ · không import gì ngoài KIỂU** (`reserve()` phải giữ đồng bộ, ràng
+ * buộc 1) và **KHÔNG BAO GIỜ NÉM** (một cú ném trên đường `reserve()` bị `vramWiring` nuốt và làm
+ * mất luôn giấy phép — C-1 của Task 2).
+ */
+import type { HeadroomResult } from "./vramHeadroom";
+import type { VramDegradationReason, VramUnledgeredFact } from "./vramRefusal";
+// ⚠ CHỈ KIỂU: `import type` bị xoá sạch lúc biên dịch, nên file này vẫn "không import gì ngoài
+// KIỂU" và vẫn đồng bộ tuyệt đối (ràng buộc 1).
+import { tranTheoThietBi, apTranThietBi, type SoThietBi } from "./vramTranThietBi";
+import type { SharedLedgerFact } from "./vramSharedLedger";
+
+const MIB = 1024 * 1024;
+
+/**
+ * ĐƠN VỊ MẤT-TIN-CẬY (BYTE). Mặc định **1.024 MiB** = cận DƯỚI đo được của nền thiết bị ngoài sổ
+ * (996 MiB, làm tròn lên bội số 1.024). Xem khối docstring đầu file trước khi nâng nó lên "cho an
+ * toàn": mỗi đơn vị là VRAM bị khoá khỏi mọi lượt nạp.
+ *
+ * ⚠⚠ I-4 (review TOÀN NHÁNH) — **CÂU CŨ Ở ĐÂY SAI**: nó khai tiến trình `api` không bao giờ có
+ * nhịp (dẫn `no-tick`) nên *"hệ luôn trả ba đơn vị"*. Task 2 (I-1) đã nhấc `startVramReconciler()` lên TRƯỚC nhánh
+ * rẽ `ROLE` (`server/_core/index.ts`) và `__runReconcileTick()` xuất bản ô tick **bất kể `ring`**
+ * ⇒ **`api` CÓ tick**. Hình dạng thường trực của `api` là `unverified-baseline` (vì thấy vai trò
+ * anh em — xem `vramReconciler.captureVramBaseline`), tức **MỘT** đơn vị, không phải ba.
+ */
+export const DISTRUST_UNIT_DEFAULT_BYTES = 1024 * MIB;
+
+export function distrustUnitBytes(): number {
+  const raw = Number(process.env.VRAM_DISTRUST_UNIT_MB);
+  // ⚠ `0` HỢP LỆ và có nghĩa: người vận hành TẮT hẳn phụ phí mất-tin-cậy (hệ vẫn giữ `max(L,A)` và
+  // đệm an toàn). Chỉ số vô nghĩa/âm mới về mặc định.
+  return Number.isFinite(raw) && raw >= 0 ? raw * MIB : DISTRUST_UNIT_DEFAULT_BYTES;
+}
+
+/**
+ * Tick già hơn mốc này ⇒ lý do `"stale-tick"`.
+ *
+ * ⚠ **120.000 ms KHÔNG PHẢI ngưỡng của cái CHUÔNG** (ràng buộc 8 cấm thừa kế `512 MiB` và cấm dùng
+ * `alarm` boolean cho cưỡng chế). Nó là **HAI CHU KỲ XUẤT BẢN** của chính ô tick
+ * (`startVramReconciler` chạy `__runReconcileTick()` mỗi 60 s): một nhịp lỡ là bình thường, hai
+ * nhịp lỡ nghĩa là nguồn số đã hỏng. Cưỡng chế ở đây vẫn quyết định trên **SỐ** (`attributable` +
+ * biên byte), không trên một cờ báo động.
+ */
+export const TICK_STALE_AFTER_MS = 120_000;
+
+/**
+ * ★★★ Pha 3 Task 2 — bản sao đọc sổ chung già hơn mốc này ⇒ `"shared-ledger-stale"`.
+ *
+ * ⚠ CÙNG MỘT LÝ LẼ với `TICK_STALE_AFTER_MS`, và CÙNG một con số vì **cùng một nhịp nuôi cả hai**:
+ * `vramReconciler.__runReconcileTick()` chạy mỗi 60 s và làm mới CẢ ô tick LẪN bản sao đọc. Hai
+ * chu kỳ lỡ ⇒ nguồn số đã hỏng, không còn là "một nhịp trễ".
+ *
+ * ⚠⚠ VÀ ĐÂY LÀ CON SỐ PHẢI ĐỌC TO: **60 s là ĐỘ TRỄ CƯỠNG CHẾ THẬT XUYÊN TIẾN TRÌNH.** Trong cửa
+ * sổ đó, một giấy phép vừa mở ở `worker` là **vô hình** với `api`, và ngược lại. Đây không phải
+ * khuyết tật ngẫu nhiên mà là **cái giá của việc giữ `reserve()` đồng bộ** (ràng buộc 1): đường
+ * quyết định không được `await` DB, nên nó chỉ có thể đọc một bản sao. Ai muốn cửa sổ hẹp hơn phải
+ * rút nhịp đồng bộ xuống (đắt: một lượt đi DB mỗi nhịp × số tiến trình), KHÔNG phải bằng cách cho
+ * `reserve()` đi hỏi DB.
+ */
+export const SHARED_LEDGER_STALE_AFTER_MS = 120_000;
+
+/**
+ * ★★★ Pha 4 Task 1 (M-6) — **NHỊP LÀM MỚI, ĐẶT Ở MỘT MODULE LÁ.**
+ *
+ * ⚠⚠ VÌ SAO Ở ĐÂY CHỨ KHÔNG Ở `vramReconciler`: bản đầu của Task 1 export nó từ `vramReconciler`,
+ * và mặt đọc của Agent nhập module đó ⇒ `server/routers.ts` kéo `vramReconciler` (+ `vramBroker`,
+ * + `child_process` qua `vramProbe`) lên **đồ thị nạp SỚM của mọi tiến trình**. Trước đó
+ * `vramReconciler` **chỉ** tới được qua `await import()`. `vramHeadroom.ts` đã ghi rõ repo này
+ * **từng trả giá** vì *"một TAI NẠN THỨ TỰ IMPORT"* ở đúng module đó, và `vramTickCell.ts` tồn tại
+ * **chỉ để** giữ `vramReconciler` khỏi những đồ thị nhập nhạy cảm. File này không import gì ngoài
+ * kiểu ⇒ đặt hằng số ở đây là chỗ rẻ nhất.
+ *
+ * ⚠ MỘT nguồn duy nhất: `vramReconciler.startVramReconciler()` và mặt đọc của Agent đọc **cùng**
+ * hàm này. Chép lại `Number(process.env.VRAM_RECONCILE_INTERVAL_MS ?? 60_000)` ở nơi khác là dựng
+ * bản sao thứ hai của cùng một cấu hình (ràng buộc 12).
+ *
+ * ⚠⚠ VÀ CON SỐ NÀY LÀ **ĐỘ TRỄ CƯỠNG CHẾ THẬT XUYÊN TIẾN TRÌNH** — xem khối ngay trên. Mặt đọc
+ * **phải khai nó**, nếu không một Agent thấy `foreignBytes: 0` sẽ tưởng card trống trong đúng cửa
+ * sổ nguy hiểm nhất.
+ */
+const RECONCILE_INTERVAL_MS = Number(process.env.VRAM_RECONCILE_INTERVAL_MS ?? 60_000);
+
+/** Xem `RECONCILE_INTERVAL_MS`. */
+export function reconcileIntervalMs(): number {
+  return RECONCILE_INTERVAL_MS;
+}
+
+/**
+ * Tốc độ cấp phát lớn nhất QUAN SÁT ĐƯỢC, dùng cho biên theo tuổi (§5.6c). Đo được: khối 30B
+ * **17.511.354.368 B** nạp xong trong **11 s** (dải quan sát 11–43 s ⇒ lấy đầu NHANH nhất).
+ */
+export const OBSERVED_MAX_ALLOC_BYTES_PER_MS = Math.ceil(17_511_354_368 / 11_000);
+
+/** Số đơn vị mất-tin-cậy cho mỗi lý do. Xem docstring đầu file để biết vì sao KHÔNG lớn hơn. */
+const DISTRUST_UNITS: Record<VramDegradationReason, number> = {
+  // `-Infinity` đã từ chối mọi lượt xin (fail-closed CÓ TÊN của Task 2) — cộng thêm phụ phí không
+  // làm nó chặt hơn được nữa, chỉ làm con số khó đọc.
+  "invalid-input": 0,
+  /**
+   * CẤU TRÚC, KHÔNG TỰ LÀNH ⇒ nặng gấp đôi mù TẠM THỜI.
+   * ⚠ I-4 — lý do gốc (*"`api` mù vĩnh viễn"*) KHÔNG CÒN ĐÚNG (xem `DISTRUST_UNIT_DEFAULT_BYTES`).
+   * Trọng số `2` GIỮ NGUYÊN vì nó vẫn đúng cho dân số CÒN LẠI của `"no-tick"`: cửa sổ trước nhịp
+   * ĐẦU TIÊN, và ca `startVramReconciler()` không bật được. Nhưng đừng viện dẫn mức này như một lá
+   * chắn THƯỜNG TRỰC của `api` — nó gần như bất khả đạt trong sản xuất.
+   */
+  "no-tick": 2,
+  "probe-blind": 1,
+  "unverified-baseline": 1,
+  "stale-tick": 1,
+  "tick-failing": 1,
+  "unledgered-unasked": 1,
+  // nhân với số lượt, KẸP ở 4 — xem `unknownUnits()`.
+  "unledgered-unknown": 1,
+  /**
+   * ★★★ Pha 3 Task 2 — SỔ CHUNG. Trọng số theo đúng khuôn đã dùng cho ô tick:
+   *   • `shared-ledger-unasked` = **2** — CẤU TRÚC, KHÔNG TỰ LÀNH (chưa có lượt đồng bộ nào chạy
+   *     trong tiến trình này ⇒ nó sẽ không tự chạy), cùng hạng `"no-tick"`.
+   *   • `shared-ledger-stale` = **1** — có số, số cũ; phần "cũ bao nhiêu" đã đi vào biên theo tuổi.
+   *   • `shared-ledger-unsynced` = **1** — ta vô hình với anh em.
+   *
+   * ⚠⚠ VÀ ĐÂY LÀ GIỚI HẠN PHẢI KHAI, KHÔNG ĐƯỢC ĐỌC NHƯ MỘT BẢO ĐẢM: một tiến trình anh em có thể
+   * đang giữ **7,8 GB** (sidecar thị giác) hay **17 GB** (khối 30B), trong khi phụ phí ở đây tối đa
+   * là 2 đơn vị = **2.048 MiB**. Con số này là **một BIÊN đủ để loại những lượt xin SÁT MÉP khi hệ
+   * không nhìn rõ**, KHÔNG phải một lời hứa rằng phần không thấy đã được tính vào — đúng câu mà
+   * `DISTRUST_UNIT_DEFAULT_BYTES` đã phải nói một lần rồi. Trừ đủ 17 GB cho một khả năng là
+   * **đóng băng cả hệ**; lời giải thật cho cửa sổ đó là **rút ngắn độ trễ đồng bộ**, không phải
+   * nâng phụ phí.
+   */
+  "shared-ledger-unasked": 2,
+  "shared-ledger-stale": 1,
+  "shared-ledger-unsynced": 1,
+  /**
+   * ★ G7 (2026-09-21, khai bổ sung 2026-09-23 — `tsc` bắt: hàng rào `Record<…>` ở dưới làm đúng việc của nó).
+   * `device-free-cap` được đẩy SAU khi phụ phí đã tính (`reasons.push` ở cuối `effectiveHeadroom…`), và bản thân trần
+   * thiết bị đã là phép MIN theo byte thật ⇒ phụ phí thêm = 0: nó là một lý do để GIẢI THÍCH con số nhỏ đi, không phải
+   * một mức mất-tin-cậy phải trừ thêm lần hai.
+   */
+  "device-free-cap": 0,
+  /**
+   * ★★★ I-3 (review TOÀN NHÁNH) — **HÀNG `"gguf-slot-cap": 0` ĐÃ BỊ XOÁ Ở ĐÂY, CÓ CHỦ Ý.**
+   *
+   * Task 7 đặt nó vào bảng này với `0` đơn vị để "không trộn hai thước" (Đ4) — đúng về phép tính,
+   * nhưng nó vẫn phải nằm trong `VramDegradationReason`, tức vẫn phải đi qua `degradedReasons`, tức
+   * vẫn được in ra dưới nhãn *"con số này kém tin hơn bình thường"* cho một con số **hoàn toàn
+   * đúng**, và vẫn làm `trusted === true` cùng lúc `reasons.length > 0`.
+   * ⇒ Trần ĐẾM nay là `VramRefusalFacts.slotsNeeded` + mã lỗi `VRAM_SLOT_CAP` (`vramRefusal.ts`),
+   * KHÔNG phải một lý do suy giảm. Bảng này quay lại đúng một vai: **phụ phí BYTE cho những lý do
+   * làm con số kém tin**. `Record<VramDegradationReason, number>` là hàng rào — ai đưa nó trở lại
+   * từ vựng đó sẽ bị `tsc` bắt khai một phụ phí byte cho một thước ĐẾM.
+   */
+};
+
+/**
+ * ⚠ KẸP Ở 4 ĐƠN VỊ, và đây là một giới hạn ĐƯỢC KHAI chứ không phải một chỗ quên: mỗi lượt cấp phát
+ * chạy ngoài sổ mà không ước được byte là một khối VRAM có thật, kích thước không biết. Nhân tuyến
+ * tính không trần thì đủ 32 lượt hỏng là hệ từ chối cả những lượt xin 0 byte — tức **dừng dây
+ * chuyền vì cuốn sổ hỏng**, trong khi thiết bị có thể đang trống. Trần này đổi "từ chối tất cả" lấy
+ * "chặt hơn + NÓI RA": lý do `"unledgered-unknown"` luôn có mặt trong câu từ chối, và
+ * `vramRefusal.caveat` nâng nó lên mức nghiêm trọng cao nhất (*"đừng dùng con số này để tính"*).
+ */
+const UNKNOWN_UNITS_CAP = 4;
+
+/**
+ * ★★★ Review vòng 1 (A) — TRẦN CHO **Ô BYTE**, và vì sao thiếu nó là một đường TỪ CHỐI SAI.
+ *
+ * `vramWiring.vramBeginFailureState().unledgeredBytes` là một **bộ tích luỹ CHỈ TĂNG**: nó cộng
+ * dồn ước lượng của mọi lượt `beginVramAllocation()` hỏng, **không bao giờ trả lại** — kể cả khi
+ * khối byte đó đã được nhả từ lâu (sidecar hết nhàn rỗi, model unload). Trừ thẳng con số ấy khỏi
+ * dư địa ⇒ **hai lượt hỏng của khối 30B (2 × 17.000 MiB) là dư địa ÂM trên một tấm card TRỐNG**,
+ * tức từ chối 100% cho tới khi khởi động lại tiến trình.
+ *
+ * ⚠ Trớ trêu mà review chỉ ra: ống `unknownCount` đã được kẹp ở 4 đơn vị **với đúng lý do này**,
+ * trong khi ống BYTE — nặng gấp 4 lần — không có trần nào. Nay hai ống cùng một trần.
+ *
+ * ⚠ VÌ SAO KHÔNG CÓ "ĐƯỜNG TRẢ LẠI" (và đó là một giới hạn ĐƯỢC KHAI, không phải chỗ quên): muốn
+ * trả lại thì phải biết khối byte đó **đã được nhả chưa** — mà chính vì không biết nó là gì và ở
+ * đâu nên nó mới nằm NGOÀI SỔ. Thứ duy nhất thấy được nó là `attributable` (số đo THIẾT BỊ), và
+ * đó chính là nhánh không tính phí bên dưới.
+ */
+const UNLEDGERED_BYTES_UNITS_CAP = 4;
+
+export interface EnforcementInput {
+  /** Kết quả `computeHeadroom()` — nguồn của `headroomBytes` và bốn lý do đầu tiên. */
+  readonly headroom: HeadroomResult;
+  /**
+   * `nowMs − tick.atMs` (BYTE-KHÔNG-LIÊN-QUAN: đây là mili giây). `null` ⇔ **KHÔNG CÓ TICK NÀO** —
+   * ca đó đã có lý do `"no-tick"` riêng, không cộng thêm biên tuổi cho một con số không tồn tại.
+   * ⚠ Số không hữu hạn / âm ⇒ coi như **tuổi không biết** ⇒ lấy TRẦN biên (chiều CHẶT).
+   */
+  readonly tickAgeMs: number | null;
+  /** `VramTickRecord.consecutiveFailures`. `≥ 1` ⇒ ô tick sẽ KHÔNG tự lành ⇒ lý do riêng. */
+  readonly tickConsecutiveFailures: number;
+  /** `vramWiring.vramBeginFailureState()`. ⚠ `null` = **CHƯA HỎI**, KHÔNG phải "không có lượt nào". */
+  readonly unledgered: VramUnledgeredFact;
+  /**
+   * ★★★ Pha 3 Task 2 — `vramSharedLedger.sharedLedgerFact(nowMs)`.
+   * ⚠ `null` = **CHƯA LÀM MỚI LẦN NÀO**, KHÔNG phải "không có tiến trình nào khác giữ gì". Cùng
+   * kỷ luật với `unledgered: null`, và cùng lý do: một mặc định lặng lẽ ở đây biến câu *"tôi không
+   * biết anh em đang giữ gì"* thành *"tôi đã kiểm và anh em không giữ gì"* — trên một tài nguyên
+   * mà một tiến trình anh em có thể đang giữ 17 GB.
+   */
+  readonly sharedLedger: SharedLedgerFact;
+  /**
+   * ★★★ G7 (audit 2026-09-21 · P8) — SỐ ĐỌC THÔ CỦA THIẾT BỊ ở nhịp gần nhất.
+   * `null` (hoặc ô nào đó `null`) ⇒ **KHÔNG áp trần**, giữ nguyên hành vi cũ từng byte.
+   * Xem `vramTranThietBi.ts` cho lý lẽ đầy đủ + số đo.
+   */
+  readonly deviceFact?: SoThietBi | null;
+  /** Đệm an toàn (byte) để trừ khỏi dư địa VẬT LÝ. Vắng ⇒ 0. */
+  readonly safetyReserveBytes?: number;
+}
+
+export interface EnforcementDecision {
+  /** Con số mà cưỡng chế thật sự so với lượt xin. **Luôn ≤ `headroom.headroomBytes`.** */
+  readonly effectiveHeadroomBytes: number;
+  /** ★ G7 — trần vật lý của thiết bị (đã trừ đệm). `null` = không đo được ⇒ không cap. */
+  readonly deviceCapBytes: number | null;
+  /** ★ G7 — số byte bị trần thiết bị CẮT ĐI (≥ 0). > 0 ⇔ con số cũ là lời hứa card không giữ nổi. */
+  readonly deviceCapTrimmedBytes: number;
+  /** Biên theo tuổi tick (BYTE) — đã kẹp trần. */
+  readonly staleMarginBytes: number;
+  /**
+   * ★ Pha 3 Task 2 — biên theo tuổi của **BẢN SAO ĐỌC SỔ CHUNG** (BYTE), đã kẹp cùng một trần.
+   * ⚠ Ô RIÊNG, không gộp vào `staleMarginBytes`: hai bản sao **già độc lập với nhau** (ô tick do
+   * đầu dò nuôi, bản sao đọc do DB nuôi — một cái hỏng không kéo cái kia), và gộp lại thì không ai
+   * đọc được đường nào đang cũ. Cùng kỷ luật "hai câu hỏi khác nhau thì hai ô khác nhau".
+   */
+  readonly sharedLedgerMarginBytes: number;
+  /** Byte đã chạy NGOÀI SỔ, trừ như thứ **ĐÃ TIÊU** (bàn giao Task 3). */
+  readonly unledgeredChargeBytes: number;
+  /** Tổng phụ phí mất-tin-cậy (BYTE) = Σ đơn vị × `distrustUnitBytes()`. */
+  readonly distrustChargeBytes: number;
+  /** Mọi lý do, thứ tự CỐ ĐỊNH (so sánh trực tiếp được), gồm cả bốn lý do của `computeHeadroom`. */
+  readonly reasons: readonly VramDegradationReason[];
+  readonly trusted: boolean;
+}
+
+/** Số dùng được cho phép cộng trừ byte. Cùng vị từ với `vramHeadroom.usable()`. */
+function huuHan(v: number): boolean {
+  return Number.isFinite(v);
+}
+
+/**
+ * Biên theo tuổi. **Không bao giờ trả `null`** — cả file này không có một đường nào biến một con số
+ * đã có thành "không có số".
+ */
+function bienTheoTuoi(tickAgeMs: number | null, capBytes: number): number {
+  if (tickAgeMs === null) return 0;
+  // Tuổi không đọc được ⇒ CHẶT: lấy trần biên, không lấy 0.
+  if (!huuHan(tickAgeMs) || tickAgeMs < 0) return capBytes;
+  return Math.min(tickAgeMs * OBSERVED_MAX_ALLOC_BYTES_PER_MS, capBytes);
+}
+
+function unknownUnits(unknownCount: number): number {
+  if (!huuHan(unknownCount)) return UNKNOWN_UNITS_CAP;   // không đếm được ⇒ chặt nhất
+  if (unknownCount <= 0) return 0;
+  return Math.min(Math.ceil(unknownCount), UNKNOWN_UNITS_CAP);
+}
+
+/**
+ * Áp chính sách suy giảm lên một kết quả `computeHeadroom()`. Thuần, đồng bộ, KHÔNG BAO GIỜ NÉM.
+ */
+export function applyEnforcement(input: EnforcementInput): EnforcementDecision {
+  const unit = distrustUnitBytes();
+  const reasons: VramDegradationReason[] = [...input.headroom.degradedReasons];
+
+  // ── biên theo tuổi ────────────────────────────────────────────────────────────────────────
+  const staleMarginBytes = bienTheoTuoi(input.tickAgeMs, unit);
+  const tuoiKhongDoc = input.tickAgeMs !== null && (!huuHan(input.tickAgeMs) || input.tickAgeMs < 0);
+  if (input.tickAgeMs !== null && (tuoiKhongDoc || input.tickAgeMs > TICK_STALE_AFTER_MS)) {
+    reasons.push("stale-tick");
+  }
+  // Nhịp đang hỏng LIÊN TIẾP: tuổi và "sẽ không tự lành" là HAI câu khác nhau (M-5, Task 2) — một
+  // tick chưa tới hạn và một tick đã hỏng 5 lần có TUỔI GIỐNG NHAU.
+  if (!huuHan(input.tickConsecutiveFailures) || input.tickConsecutiveFailures >= 1) {
+    reasons.push("tick-failing");
+  }
+
+  /**
+   * ── SỔ CHUNG (Pha 3 Task 2) ───────────────────────────────────────────────────────────────
+   * ⚠⚠ ĐÂY LÀ CHỖ **ĐỘ TRỄ CƯỠNG CHẾ XUYÊN TIẾN TRÌNH ĐƯỢC KHAI RA**, thay vì bị giấu. Bản sao
+   * đọc được làm mới theo nhịp reconciler (60 s), nên một giấy phép 17 GB vừa mở ở tiến trình anh
+   * em **có thể mất tới một chu kỳ** mới hiện ra ở đây. Cách trả giá là biên byte + lý do, không
+   * phải một lời hứa rằng số luôn tươi.
+   *
+   * ⚠ **KHÔNG có nhánh nào biến `foreignBytes` thành `null`/`0`.** Con số của một bản sao cũ vẫn
+   * là con số tốt nhất ta có; bỏ nó đi là tự nâng dư địa lên chặn TRÊN (ràng buộc toàn cục 8) —
+   * đúng chiều mà cả pha này tồn tại để đóng. `foreignBytes` đi vào `ledgerTotalBytes` ở
+   * `vramBroker.reserve()`, TRƯỚC `computeHeadroom()`; ở đây chỉ còn phần BIÊN và LÝ DO.
+   *
+   * ══════════════════════════════════════════════════════════════════════════════════════════
+   * ⚠⚠⚠ I-4 — GỌI ĐÚNG TÊN: `sharedLedgerMarginBytes` LÀ **MỘT KHOẢN THUẾ PHẲNG 1.024 MiB**,
+   * KHÔNG PHẢI "MỘT BIÊN THEO TUỔI"
+   * ══════════════════════════════════════════════════════════════════════════════════════════
+   * Ghép hai con số của chính file này: trần biên = `unit` = **1.073.741.824 B**, tốc độ =
+   * `OBSERVED_MAX_ALLOC_BYTES_PER_MS` = **1.591.942 B/ms** ⇒ biên **chạm trần sau ≈ 674 ms**,
+   * trong khi nhịp làm mới bản sao đọc là **60.000 ms**. ⇒ **≥ 98,9 % thời gian nó đứng NGUYÊN Ở
+   * TRẦN.** Phần "tỉ lệ tuổi" chỉ sống trong ~1 % thời gian ngay sau mỗi lượt đồng bộ.
+   *
+   * **Đo được ở nghiệm thu SỐNG, không phải suy đoán** (review Task 2, mục D): `ageMs = 1 ⇒ margin
+   * = 1.591.942` (đúng hệ số); và ở ô tick — cùng công thức, cùng trần —
+   * `headroom − effective = 1.073.741.824` **đúng bằng trần** với `reasons = []` và tick chỉ già
+   * ~1 s.
+   *
+   * ⇒ **HỆ QUẢ PHẢI BIẾT KHI ĐỌC SỐ:** một tiến trình khoẻ mạnh, sổ rỗng, tick tươi, sổ chung tươi
+   * vẫn mất **hai** khoản trừ cố định — `staleMarginBytes` 1.024 MiB **+** `sharedLedgerMarginBytes`
+   * 1.024 MiB = **2.048 MiB ≈ 2 GiB thường trực** trên card 32,6 GiB, **trước** mọi phụ phí
+   * mất-tin-cậy. §8.4 của báo cáo Task 2 chỉ khai trần 2.048 MiB **của phụ phí** và **không nhắc**
+   * hai khoản biên này — nay khai ở đây.
+   *
+   * ⚠⚠ **CỐ Ý KHÔNG ĐỔI CON SỐ**, và lý do là một ràng buộc chứ không phải sự lười: mọi cách "cân
+   * lại" (hạ trần biên · lấy `max` thay vì cộng hai biên · hạ `rate`) đều là **NỚI LỎNG** dư địa,
+   * và ràng buộc toàn cục 8 nói thẳng rằng suy giảm phải làm hệ **CHẶT HƠN**. Còn nâng `rate` cho
+   * "đúng tốc độ cấp phát XUYÊN TIẾN TRÌNH" thì cần một phép đo **chưa ai làm** — bịa một hằng số
+   * mới của cùng một máy là đúng lỗi I-3 của Pha 1. ⇒ Lượt vá này làm đúng thứ tiền lệ M-2 (ô tick)
+   * đã làm: **giữ số, gọi đúng tên, khai con số ra**. Ca `I-4` khoá điểm bão hoà để nó không trôi.
+   */
+  const soChung = input.sharedLedger;
+  let sharedLedgerMarginBytes = 0;
+  if (soChung === null) {
+    reasons.push("shared-ledger-unasked");
+  } else {
+    sharedLedgerMarginBytes = bienTheoTuoi(soChung.ageMs, unit);
+    const tuoiKhongDocSoChung = !huuHan(soChung.ageMs) || soChung.ageMs < 0;
+    if (tuoiKhongDocSoChung || soChung.ageMs > SHARED_LEDGER_STALE_AFTER_MS) {
+      reasons.push("shared-ledger-stale");
+    }
+    // "Đang hỏng liên tiếp" và "đã cũ" là HAI câu khác nhau — cùng lý do M-5 của ô tick: một lượt
+    // đồng bộ chưa tới hạn và một lượt đã hỏng 5 lần có TUỔI GIỐNG NHAU cho tới khi quá hạn.
+    if (!huuHan(soChung.consecutiveFailures) || soChung.consecutiveFailures >= 1) {
+      if (!reasons.includes("shared-ledger-stale")) reasons.push("shared-ledger-stale");
+    }
+    if (!huuHan(soChung.unsyncedWrites) || soChung.unsyncedWrites > 0) {
+      reasons.push("shared-ledger-unsynced");
+    }
+  }
+
+  // ── ống NGOÀI SỔ ──────────────────────────────────────────────────────────────────────────
+  let unledgeredChargeBytes = 0;
+  let donViUnknown = 0;
+  if (input.unledgered === null) {
+    reasons.push("unledgered-unasked");
+  } else {
+    const bytes = input.unledgered.bytes;
+    if (huuHan(bytes) && bytes >= 0) {
+      /**
+       * ⚠⚠ TRỪ **CHỈ KHI MÙ**, và có TRẦN — review vòng 1 (A). Hai lỗi độc lập trong một dòng cũ:
+       *
+       *   1. **ĐẾM HAI LẦN.** Khi có `attributable` (`blind === false`), con số đó là
+       *      `deviceUsed − baseline` — tức phép đo THIẾT BỊ, và nó **đã bao gồm** đúng khối byte
+       *      đã chạy ngoài sổ (khối ấy có thật trên card, chỉ là không ai ghi sổ). Trừ thêm lần
+       *      nữa là phạt hai lần cùng một khối byte, và ở tiến trình `worker` — nơi LUÔN có tick —
+       *      đó là đường thường trực.
+       *   2. **KHÔNG TRẦN.** Xem `UNLEDGERED_BYTES_UNITS_CAP`.
+       *
+       * ⇒ Chỉ nhánh MÙ mới trả phí: ở đó `used = ledgerTotal` và khối byte kia **vô hình**, nên
+       * đây là chỗ DUY NHẤT con số này thêm thông tin. Vẫn là ƯỚC LƯỢNG (`fileBytes` của khối 30B
+       * CAO HƠN số đo 170,8 MiB, reranker thì THẤP HƠN 2,1 lần ⇒ không có hệ số chung), nên nó
+       * chỉ được dùng để **TRỪ**, không bao giờ làm tín dụng/trần.
+       */
+      unledgeredChargeBytes = input.headroom.blind ? Math.min(bytes, UNLEDGERED_BYTES_UNITS_CAP * unit) : 0;
+    } else if (bytes !== 0) {
+      // Có ô byte nhưng số không dùng được ⇒ ngang một lượt "không ước được byte".
+      donViUnknown = UNKNOWN_UNITS_CAP;
+      reasons.push("unledgered-unknown");
+    }
+    const dv = unknownUnits(input.unledgered.unknownCount);
+    if (dv > 0) {
+      // ⚠ ĐỌC `unledgeredBytes` MÀ BỎ `unknownCount` LÀ CHIỀU NGUY HIỂM ĐÃ ĐƯỢC GỌI TÊN: mọi hộ
+      // ONNX/sidecar/`gguf-context` đóng góp **0 byte** vào ô byte và **chỉ** hiện ở ô đếm này.
+      donViUnknown = Math.max(donViUnknown, dv);
+      if (!reasons.includes("unledgered-unknown")) reasons.push("unledgered-unknown");
+    }
+  }
+
+  // ── phụ phí mất-tin-cậy ───────────────────────────────────────────────────────────────────
+  let donVi = 0;
+  for (const r of reasons) donVi += r === "unledgered-unknown" ? donViUnknown : DISTRUST_UNITS[r];
+  const distrustChargeBytes = donVi * unit;
+
+  /**
+   * ⚠ MỘT PHÉP TRỪ, BA SỐ HẠNG, KHÔNG SỐ HẠNG NÀO ĐƯỢC ĐỔI DẤU. `-Infinity − hữu hạn = -Infinity`
+   * (fail-closed giữ nguyên); không nhánh nào cho ra `NaN` vì cả ba số hạng đã được lọc hữu hạn.
+   */
+  const truocTran =
+    input.headroom.headroomBytes -
+    staleMarginBytes -
+    sharedLedgerMarginBytes -
+    unledgeredChargeBytes -
+    distrustChargeBytes;
+
+  /**
+   * ── ★★★ G7 — TRẦN SỰ-THẬT-THIẾT-BỊ (số hạng CUỐI, và là một phép MIN) ────────────────────
+   *
+   * Bốn số hạng trên đều trả lời *"số của ta kém tin tới mức nào"*. Không số hạng nào trả lời
+   * *"card CÒN TRỐNG THẬT bao nhiêu"* — và đó chính là con số đã sai 16–19 GiB khi đo sống:
+   * broker khai 22,03 GiB dư địa trên một card còn 3,15 GiB, rồi sổ `vram_events` ghi
+   * `reserve 16.846 MB → driver_refused → release → retry` lặp 79 lần trong một phiên.
+   *
+   * Gốc rễ: `attributable = deviceUsed − baselineUsed` chỉ đếm phần QUY ĐƯỢC CHO TA; một
+   * `llama-server` khởi SAU lúc chụp nền giữ 23,5 GB thì không nằm trong nền lẫn trong sổ ⇒ công
+   * thức không trừ nó. Với `baseline.verified = false` (đúng trạng thái đo được) sai số là HỆ THỐNG.
+   *
+   * ⚠ Đây là phép **MIN**, nên nó chỉ có thể làm con số NHỎ ĐI — **không phá** bất biến ở đầu file
+   *   (`effective ≤ headroomBytes`, thêm lý do chỉ làm nhỏ đi). `vramTranThietBi.test.ts` khoá
+   *   chính bất biến ấy trên mọi cặp đầu vào.
+   * ⚠ Không có số thiết bị ⇒ KHÔNG cap. Đó KHÔNG phải fail-open: mọi lý do suy giảm cũ
+   *   (`no-tick`/`probe-blind`/`unverified-baseline`) vẫn áp nguyên như trước.
+   */
+  const tranTB = tranTheoThietBi(input.deviceFact ?? null, input.safetyReserveBytes ?? 0);
+  const cap = apTranThietBi(truocTran, tranTB);
+  if (cap.daCap) reasons.push("device-free-cap");
+  const effectiveHeadroomBytes = cap.bytes;
+
+  return {
+    effectiveHeadroomBytes,
+    deviceCapBytes: tranTB,
+    deviceCapTrimmedBytes: cap.catBotBytes,
+    staleMarginBytes,
+    sharedLedgerMarginBytes,
+    unledgeredChargeBytes,
+    distrustChargeBytes,
+    // Đông cứng: `readonly` chỉ là kiểu, không chặn `push` lúc chạy — và danh sách này đi thẳng vào
+    // câu từ chối mà người trực đọc.
+    reasons: Object.freeze(reasons),
+    trusted: reasons.length === 0,
+  };
+}

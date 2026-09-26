@@ -18,6 +18,7 @@ import {
   containsCjk,
   VN_FONT_FAMILY,
 } from "./fontAssets";
+import { finalYield } from "../utils/kpi";
 
 /** {regular,bold} CJK family names once registered, or null when not installed. */
 type CjkFonts = { regular: string; bold: string } | null;
@@ -123,6 +124,16 @@ export interface QualityReportData {
     factoryName?: string;
     workshopName?: string;
     lineName?: string;
+    /**
+     * ★ 2026-08-17 — câu TỰ KHAI PHẠM VI, in ngay dưới tiêu đề khi số liệu đã bị thu hẹp theo
+     * nhà máy được gán cho người xuất (`_core/reportExportScope.ts`). `undefined` cho admin,
+     * vì báo cáo của họ ĐÚNG là toàn hệ thống.
+     *
+     * ⚠ Không chỉ số 0 mới nói dối: một PDF 22.995 dòng của người gán MỘT nhà máy trông y hệt
+     * báo cáo toàn công ty 22.996 dòng. File rời khỏi hệ thống rồi được chuyển tiếp và in ra —
+     * lúc ấy không còn ngữ cảnh nào để đính chính, nên trang giấy phải tự nói.
+     */
+    scopeNote?: string;
   };
 }
 
@@ -439,7 +450,7 @@ export async function generateInspectionReportPDF(
       .fillColor("#10b981").text(`OK: ${okCount}/${total}`, 55, y + 25)
       .fillColor("#ef4444").text(`NG: ${ngCount}/${total}`, 155, y + 25)
       .fillColor("#f59e0b").text(`NTF: ${ntfCount}/${total}`, 255, y + 25)
-      .fillColor("#333").text(`Yield: ${total > 0 ? ((okCount / total) * 100).toFixed(1) : 0}%`, 355, y + 25);
+      .fillColor("#333").text(`Yield: ${finalYield({ ok: okCount, ntf: ntfCount, total }).toFixed(1)}%`, 355, y + 25);
 
     // ─── Notes ───────────────────────────────────────────
     if (data.inspection.notes) {
@@ -519,6 +530,8 @@ export async function generateQualityReportPDF(
       if (data.filters.factoryName) parts.push(`Nhà máy: ${data.filters.factoryName}`);
       if (data.filters.workshopName) parts.push(`Xưởng: ${data.filters.workshopName}`);
       if (data.filters.lineName) parts.push(`Line: ${data.filters.lineName}`);
+      // Câu tự khai phạm vi đi CUỐI, để nó là thứ đọc được ngay cạnh các bộ lọc đã áp.
+      if (data.filters.scopeNote) parts.push(data.filters.scopeNote);
       if (parts.length > 0) {
         doc.fontSize(9).fillColor("rgba(255,255,255,0.7)").text(parts.join(" • "), headTextX, 65);
       }

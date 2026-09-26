@@ -27,6 +27,7 @@
 import { z } from "zod";
 import { and, desc, eq, gte, isNull } from "drizzle-orm";
 import { TRPCError } from "@trpc/server";
+import { appError } from "../_core/appError";
 import { router, protectedProcedure } from "../_core/trpc";
 import { requirePermission } from "../_core/accessControl";
 import { getDb } from "../db/connection";
@@ -80,14 +81,14 @@ import { recordAuditEvent } from "../services/audit/controlAuditService";
 
 async function db() {
   const d = await getDb();
-  if (!d) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Database not connected" });
+  if (!d) throw appError("INTERNAL_SERVER_ERROR", "DB_UNAVAILABLE", undefined, "Database not connected");
   return d;
 }
 
 /** Guard mutating actions behind the flag (matches fleetRouter/safetyRouter discipline). */
 function requireFlag() {
   if (!eqGovernEnabled()) {
-    throw new TRPCError({ code: "CONFLICT", message: "Equipment governance disabled (set EQ_GOVERN_ENABLED=true)" });
+    throw appError("CONFLICT", "FEATURE_DISABLED", { feature: "equipmentGovernance" }, "Equipment governance disabled (set EQ_GOVERN_ENABLED=true)");
   }
 }
 
@@ -163,7 +164,7 @@ export const equipmentStandardsRouter = router({
     .query(async ({ input }) => {
       const nodes = await loadNodeSet();
       const resolved = resolveType(input.typeKey, nodes);
-      if (!resolved) throw new TRPCError({ code: "NOT_FOUND", message: `Device type '${input.typeKey}' not found` });
+      if (!resolved) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "deviceType" }, `Device type '${input.typeKey}' not found`);
       return resolved;
     }),
 
@@ -270,6 +271,8 @@ export const equipmentStandardsRouter = router({
       setpoint: z.string().max(96).optional(),
       deadband: z.string().max(96).optional(),
       rationalization: z.string().optional(),
+      // doc 63 DEP-06 — ISA-18.2 field #4 "probable cause" (authored at rationalization).
+      cause: z.string().max(4000).optional(),
       shelvedUntil: z.string().datetime().optional(),
       isSuppressed: z.boolean().optional(),
       scope: z.string().max(64).optional(),
@@ -294,6 +297,7 @@ export const equipmentStandardsRouter = router({
         setpoint: input.setpoint,
         deadband: input.deadband,
         rationalization: input.rationalization,
+        cause: input.cause,
         shelvedUntil: input.shelvedUntil ? new Date(input.shelvedUntil) : null,
         isSuppressed: input.isSuppressed ?? false,
         scope: input.scope, corporateCode: input.corporateCode, factoryId: input.factoryId,
@@ -323,7 +327,7 @@ export const equipmentStandardsRouter = router({
       requireFlag();
       const d = await db();
       const [before] = await d.select().from(masterAlarms).where(eq(masterAlarms.id, input.id)).limit(1);
-      if (!before) throw new TRPCError({ code: "NOT_FOUND", message: `Master alarm ${input.id} not found` });
+      if (!before) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "masterAlarm" }, `Master alarm ${input.id} not found`);
       const [row] = await d.update(masterAlarms)
         .set({ shelvedUntil: input.shelvedUntil ? new Date(input.shelvedUntil) : null, updatedAt: new Date() })
         .where(eq(masterAlarms.id, input.id)).returning();
@@ -339,7 +343,7 @@ export const equipmentStandardsRouter = router({
       requireFlag();
       const d = await db();
       const [before] = await d.select().from(masterAlarms).where(eq(masterAlarms.id, input.id)).limit(1);
-      if (!before) throw new TRPCError({ code: "NOT_FOUND", message: `Master alarm ${input.id} not found` });
+      if (!before) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "masterAlarm" }, `Master alarm ${input.id} not found`);
       await d.delete(masterAlarms).where(eq(masterAlarms.id, input.id));
       await recordAuditEvent(d, { entityType: "master_alarm", entityId: input.id, action: "delete", actorId: ctx.user.id, before, after: null });
       return { id: input.id, deleted: true };
@@ -480,14 +484,14 @@ export const equipmentStandardsRouter = router({
       requireFlag();
       const d = await db();
       const [cr] = await d.select().from(deviceTypeChangeRequests).where(eq(deviceTypeChangeRequests.id, input.crId)).limit(1);
-      if (!cr) throw new TRPCError({ code: "NOT_FOUND", message: `Change request ${input.crId} not found` });
+      if (!cr) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "deviceTypeChangeRequest" }, `Change request ${input.crId} not found`);
       // Doc 54 Wave B — Separation of Duties: the reviewer (reviewedBy=ctx.user) MUST
       // differ from the requester (requestedBy). A requester cannot self-review/approve.
       if (cr.requestedBy != null && cr.requestedBy === ctx.user.id) {
-        throw new TRPCError({ code: "FORBIDDEN", message: "Tách biệt trách nhiệm (SoD): người tạo change-request không được tự review/duyệt." });
+        throw appError("FORBIDDEN", "PERMISSION_DENIED", { action: "selfReviewChangeRequest" }, "Tách biệt trách nhiệm (SoD): người tạo change-request không được tự review/duyệt.");
       }
       const ns = nextStatus(cr.status as CrStatus, input.to);
-      if (!ns) throw new TRPCError({ code: "CONFLICT", message: `Illegal CR transition ${cr.status} → ${input.to}` });
+      if (!ns) throw appError("CONFLICT", "OPERATION_FAILED", { operation: "reviewEquipmentChangeRequest" }, `Illegal CR transition ${cr.status} → ${input.to}`);
       // Conformance được tính ở SERVER khi duyệt — bỏ hoàn toàn self-attest từ client.
       let conformanceStatus = cr.conformanceStatus;
       if (ns === "approved") {
@@ -522,14 +526,14 @@ export const equipmentStandardsRouter = router({
       const result = await d.transaction(async (tx) => {
         const [cr] = await tx.select().from(deviceTypeChangeRequests)
           .where(eq(deviceTypeChangeRequests.id, input.crId)).for("update").limit(1);
-        if (!cr) throw new TRPCError({ code: "NOT_FOUND", message: `Change request ${input.crId} not found` });
+        if (!cr) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "deviceTypeChangeRequest" }, `Change request ${input.crId} not found`);
         // Doc 54 Wave B — Separation of Duties: the publisher (ctx.user) MUST differ
         // from the requester (requestedBy). A requester cannot self-publish their CR.
         if (cr.requestedBy != null && cr.requestedBy === ctx.user.id) {
-          throw new TRPCError({ code: "FORBIDDEN", message: "Tách biệt trách nhiệm (SoD): người tạo change-request không được tự publish." });
+          throw appError("FORBIDDEN", "PERMISSION_DENIED", { action: "selfPublishEquipmentStandard" }, "Tách biệt trách nhiệm (SoD): người tạo change-request không được tự publish.");
         }
         if (cr.status !== "approved") {
-          throw new TRPCError({ code: "CONFLICT", message: `CR must be 'approved' to publish (is '${cr.status}')` });
+          throw appError("CONFLICT", "OPERATION_FAILED", { operation: "publishEquipmentStandard" }, `CR must be 'approved' to publish (is '${cr.status}')`);
         }
         const proposed = (cr.proposedSchema ?? {}) as Record<string, unknown>;
         // Conformance được TÍNH LẠI ở server ngay trước publish (không tin cờ đã lưu).
@@ -553,7 +557,7 @@ export const equipmentStandardsRouter = router({
           publishedAttrs, proposedAttrs,
         });
         if (!decision.ok) {
-          throw new TRPCError({ code: "CONFLICT", message: `Publish rejected: ${decision.rejection}` });
+          throw appError("CONFLICT", "OPERATION_FAILED", { operation: "publishEquipmentStandard" }, `Publish rejected: ${decision.rejection}`);
         }
         // archive prior published rows of this type
         if (existing.length) {
@@ -577,7 +581,7 @@ export const equipmentStandardsRouter = router({
           backwardIncompatible: decision.breaking ? "true" : "false", publishedAt: new Date(), updatedAt: new Date(),
         }).where(and(eq(deviceTypeChangeRequests.id, input.crId), eq(deviceTypeChangeRequests.status, "approved"))).returning();
         if (updated.length === 0) {
-          throw new TRPCError({ code: "CONFLICT", message: "CR was concurrently modified — publish aborted" });
+          throw appError("CONFLICT", "OPERATION_FAILED", { operation: "publishEquipmentStandard" }, "CR was concurrently modified — publish aborted");
         }
         return { cr, deviceType: row, decision };
       });

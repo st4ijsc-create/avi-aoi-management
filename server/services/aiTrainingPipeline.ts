@@ -17,6 +17,7 @@
  */
 
 import * as db from "../db/aiAdvanced";
+import { appError } from "../_core/appError";
 import { getAiModelById, createModelVersion, updateModelVersion, getModelVersions, updateAiModel } from "../db/ai";
 import { getDb } from "../db/connection";
 import { modelVersions } from "../../drizzle/schema";
@@ -58,7 +59,7 @@ interface CreateTrainingJobOptions {
  */
 export async function createTrainingJob(options: CreateTrainingJobOptions) {
   const model = await getAiModelById(options.modelId);
-  if (!model) throw new Error(`Model ${options.modelId} not found`);
+  if (!model) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "aiModel" }, `Model ${options.modelId} not found`);
 
   const job = await db.createTrainingJob({
     name: options.name,
@@ -134,7 +135,7 @@ export async function runTrainingPipeline(jobId: number, options: PipelineOption
     await db.updateTrainingJob(jobId, { status: "PREPARING_DATA", startedAt: new Date(), progress: 5 });
 
     const job = await db.getTrainingJob(jobId);
-    if (!job) throw new Error("Training job not found");
+    if (!job) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "trainingJob" }, "Training job not found");
 
     const dsCfg = (job.datasetConfig as any) ?? {};
     const classLabels: string[] = options.classLabels ?? dsCfg.classLabels ?? [];
@@ -389,7 +390,7 @@ export async function createDataset(options: {
  */
 export async function cancelTrainingJob(jobId: number) {
   const job = await db.getTrainingJob(jobId);
-  if (!job) throw new Error(`Training job ${jobId} not found`);
+  if (!job) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "trainingJob" }, `Training job ${jobId} not found`);
   if (job.status === "COMPLETED" || job.status === "FAILED" || job.status === "CANCELLED") {
     throw new Error(`Cannot cancel job in status ${job.status}`);
   }
@@ -437,4 +438,96 @@ export async function checkAutoRetrainTrigger(modelId: number): Promise<{
   }
 
   return { shouldRetrain: false, feedbackCount: reviewed, labeledCount };
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// B5.2 (Wave 6 / doc 69 F2) — drift → retrain HITL proposal.
+//
+// aiSelfLearningScheduler calls this when a HIGH/CRITICAL drift signal
+// (aiDriftMonitor.checkConfidenceDrift / checkConceptDriftKS) coincides with a
+// satisfied checkAutoRetrainTrigger, to close the drift→retrain loop WITHOUT
+// ever training or activating anything automatically.
+//
+// createTrainingJob() (above) is NOT reused here on purpose: on every existing
+// path "create" IS "start" — it fire-and-forgets runTrainingPipeline right
+// after the DB insert. proposeRetrainJob() instead calls the raw db layer
+// (db.createTrainingJob) directly and NEVER calls runTrainingPipeline, so the
+// row lands in the pipeline's natural "not started" state (QUEUED) — nothing
+// trains, nothing activates. The proposal's provenance (drift severity/source,
+// trigger reason) is embedded in trainingConfig so it reads as a proposal, not
+// a stuck job, and it is IMMEDIATELY visible in the EXISTING Training Jobs list
+// (AIModelManagementPage → trpc.aiLocalTraining.listJobs, already polled) for
+// an operator to review and explicitly start via the existing "Start Training"
+// flow — no new UI, no new execute path.
+//
+// Review remediation — de-dup: proposeRetrainJob() also checks for an existing
+// QUEUED row already carrying this proposal marker for the same model before
+// inserting, so a model that keeps satisfying drift+trigger across scans gets
+// exactly ONE open proposal, not a new [PROPOSED] row every scan.
+// ═══════════════════════════════════════════════════════════════════════════════
+
+export interface ProposeRetrainJobOptions {
+  modelId: number;
+  /** Human-readable reason from checkAutoRetrainTrigger. */
+  reason: string;
+  driftSeverity: string;
+  driftSource: "confidence-psi" | "concept-drift-ks";
+  targetVersion?: string;
+  feedbackCount?: number;
+  labeledCount?: number;
+}
+
+/**
+ * De-dup marker (matches trainingConfig.proposalKind below). Exported so callers
+ * (and tests) can recognize a drift-retrain proposal row without re-typing the
+ * string literal.
+ */
+export const DRIFT_RETRAIN_PROPOSAL_KIND = "drift_retrain";
+
+export async function proposeRetrainJob(options: ProposeRetrainJobOptions) {
+  const model = await getAiModelById(options.modelId);
+  if (!model) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "aiModel" }, `Model ${options.modelId} not found`);
+
+  // Review remediation (F2) — de-dup: skip creating a new proposal when an
+  // un-actioned one already exists for this model (mirrors
+  // aiThresholdTuneScheduler's throttle pattern — never spam the same open
+  // proposal every scan). "Un-actioned" = a training_jobs row still sitting in
+  // QUEUED (the pipeline's natural not-started state; proposeRetrainJob never
+  // advances it) whose trainingConfig marks it as a drift-retrain proposal. Once
+  // an operator starts training from it (which creates a DIFFERENT, non-QUEUED
+  // job — see the module doc above) or the row is cancelled/deleted, it no
+  // longer shows up here and a fresh proposal can be created. Returns null
+  // (no insert) instead of throwing — the caller (aiSelfLearningScheduler) treats
+  // that as "zero new proposals this scan", not a failure.
+  const openJobs = await db.getTrainingJobs({ modelId: options.modelId, status: "QUEUED" });
+  const alreadyProposed = openJobs.some(
+    (j: any) => (j.trainingConfig as Record<string, unknown> | null | undefined)?.proposalKind === DRIFT_RETRAIN_PROPOSAL_KIND,
+  );
+  if (alreadyProposed) return null;
+
+  const targetVersion =
+    options.targetVersion ??
+    (model.currentVersion ? `${model.currentVersion}-proposed-retrain` : `proposed-retrain-${Date.now()}`);
+
+  return db.createTrainingJob({
+    name: `[PROPOSED] Retrain — model ${options.modelId} (drift ${options.driftSeverity}, needs approval)`,
+    modelId: options.modelId,
+    targetVersion,
+    // Explicit — the pipeline's natural "not started" state. Nothing polls a
+    // QUEUED row to auto-start it; only runTrainingPipeline (never called here)
+    // advances a job past QUEUED.
+    status: "QUEUED",
+    datasetConfig: {},
+    trainingConfig: {
+      proposedBy: "aiSelfLearningScheduler",
+      proposalKind: DRIFT_RETRAIN_PROPOSAL_KIND,
+      requiresHumanApproval: true,
+      driftSeverity: options.driftSeverity,
+      driftSource: options.driftSource,
+      reason: options.reason,
+      feedbackCount: options.feedbackCount,
+      labeledCount: options.labeledCount,
+      proposedAt: new Date().toISOString(),
+    },
+  } as any);
 }

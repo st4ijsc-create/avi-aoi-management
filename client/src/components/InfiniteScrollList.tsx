@@ -3,6 +3,7 @@ import { useTranslation } from 'react-i18next';
 import { Loader2, RefreshCw, AlertCircle } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
+import { mapTrpcError } from "@/lib/trpcErrors";
 
 interface InfiniteScrollListProps<T> {
   data: T[];
@@ -67,7 +68,7 @@ export function InfiniteScrollList<T>({
       <Card className={className}>
         <CardContent className="flex flex-col items-center justify-center py-12">
           <AlertCircle className="h-8 w-8 text-destructive" />
-          <p className="mt-2 text-sm text-destructive">{error.message}</p>
+          <p className="mt-2 text-sm text-destructive">{mapTrpcError(error)}</p>
           <Button
             variant="outline"
             size="sm"
@@ -164,7 +165,7 @@ export function InfiniteScrollList<T>({
       {error && data.length > 0 && (
         <div className="flex items-center justify-center gap-2 py-4 text-destructive">
           <AlertCircle className="h-4 w-4" />
-          <span className="text-sm">{error.message}</span>
+          <span className="text-sm">{mapTrpcError(error)}</span>
           <Button
             variant="outline"
             size="sm"

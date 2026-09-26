@@ -1,5 +1,5 @@
 /**
- * WS-G3 — Unit tests for invokeLLM (local GGUF routing) + processChat ordering.
+ * WS-G3 — Unit tests for invokeLLM (local GGUF routing).
  *
  * aiProviderRouter is fully mocked so no real model/binary is required.
  * Asserts:
@@ -7,8 +7,12 @@
  *  - json_schema → generateInsightJson, content JSON.parse-able
  *  - vision (image_url) → describeImage called with a Buffer
  *  - invokeLLM does NOT throw when no forge/OPENAI key is set (regression)
- *  - processChat prefers GGUF even when OPENAI_API_KEY is set (fake)
- *  - offline reply is non-empty in both en + vi
+ *
+ * doc69 B2 (Wave 5) — the deprecated `processChat` backend (aiChatAssistant.ts)
+ * was deleted; this file never actually exercised it (no import/call), so no
+ * test bodies changed — only this header's stale processChat/offline-reply
+ * bullets, which described assertions that live in the deleted
+ * aiChatAssistant.ws-g3.test.ts, not here.
  */
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
@@ -56,7 +60,19 @@ describe("invokeLLM — local GGUF routing", () => {
 
     expect(res.choices[0].message.content).toBe("Hello from local model");
     expect(res.choices[0].finish_reason).toBe("stop");
-    expect(res.choices[0].message.tool_calls).toEqual([]);
+    /**
+     * ★★★ G2-B — DÒNG NÀY TỪNG LÀ `expect(...tool_calls).toEqual([])`, VÀ ĐÓ LÀ MỘT CA TEST
+     * ĐÓNG DẤU HỢP LỆ CHO MỘT LỜI NÓI DỐI.
+     *
+     * `wrapAsInvokeResult` gán `tool_calls: []` như HẰNG SỐ. Ca cũ khẳng định đúng cái hằng số
+     * ấy ⇒ nó xanh dưới MỌI đột biến của đường tool-calling (kể cả khi đường ấy không tồn tại,
+     * mà đúng là nó không tồn tại). Một mảng rỗng nói *"model đã cân nhắc và không gọi tool"*
+     * trong khi sự thật là *"chẳng ai từng hỏi model cả"*.
+     *
+     * Bất biến MỚI, có sức phân biệt: lượt KHÔNG có `tools` thì ô ấy **không tồn tại**. Muốn
+     * thấy `tool_calls`, phải có tool-call thật (xem `openaiGateway.nativeTools.test.ts` §2).
+     */
+    expect(res.choices[0].message).not.toHaveProperty("tool_calls");
     expect(res.usage?.total_tokens).toBe(12);
   });
 

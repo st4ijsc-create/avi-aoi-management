@@ -1,4 +1,5 @@
 import { Server as HttpServer } from "http";
+import { DbUnavailableError } from "./dbErrors";
 import { Server, Socket } from "socket.io";
 import { nanoid } from "nanoid";
 import * as db from "../db";
@@ -25,6 +26,17 @@ import {
   verifyMachineSocketAuth,
   recordSocketMachineAuthMismatch,
 } from "./socketMachineAuth";
+// ── ĐỢT 6 VÁ CHẶN-1 — phép quyết định phân quyền twin, MỘT nơi duy nhất.
+// Test import ĐÚNG các hàm này (không chép lại biểu thức sang tệp test — G20).
+import { coDanhTinhNguoiDung, nguoiXemDuocNhan } from "./twinPhamViQuyen";
+// ── doc 80 PLT-01 (Task 7 Đợt 0) — phân quyền vào phòng socket, MỘT nơi duy nhất.
+import {
+  laSocketNguoiDung,
+  duocVaoPhongEngineering,
+  duocQuanLyDangKyMay,
+  duocTuChoiDangKyMay,
+  moTaSocket,
+} from "./socketPhongQuyen";
 
 let io: Server | null = null;
 
@@ -57,6 +69,86 @@ const connectedMachines: Map<number, { socketId: string; ipAddress: string; last
 // Map machineId -> machineCode for quick lookup
 const onlineMachineCodesMap: Map<number, string> = new Map();
 const presence = getMachinePresenceStore();
+
+// ════════════════════════════════════════════════════════════════════════════
+// ★★★ NHỊP TIM QUA SOCKET PHẢI BỀN HOÁ XUỐNG `machines.lastHeartbeat`
+// ════════════════════════════════════════════════════════════════════════════
+// Trước bản vá này, `machine:heartbeat` chỉ chạm HAI nơi SỐNG THEO TIẾN TRÌNH:
+// `connectedMachines` (Map trong RAM) và `machinePresenceStore` (TTL, Redis/bộ
+// nhớ). Cột `machines.lastHeartbeat` KHÔNG BAO GIỜ được ghi trên đường socket —
+// trong khi CẢ HAI nơi quyết định "máy còn sống hay `khong_ro`" đều đọc đúng cột
+// ấy: `server/services/trangThaiMayTuoi.ts` (`NGUONG_TRANG_THAI_TUOI_MS`, 5 phút)
+// và `client/src/components/twin3d/mauTrangThai.ts` (`NGUONG_CU_MS`, cùng 5 phút).
+// ⇒ một máy THẬT nối bằng socket.io và đập nhịp đều đặn vẫn hoá khối xám gạch
+// chéo sau 5 phút. Đường REST/tRPC không dính lỗi này (23 chỗ đã gọi
+// `db.updateMachineHeartbeat` sau `authenticateMachine`).
+//
+// ── VÌ SAO 45 000 ms, KHÔNG PHẢI MỘT SỐ TRÒN CHO ĐẸP ────────────────────────
+// Hai ràng buộc ngược chiều nhau, cả hai đều là SỐ:
+//
+//  (a) TƯƠI. Tuổi xấu nhất của `machines.lastHeartbeat` trên một máy KHOẺ là
+//      W + H, với W = cửa sổ tiết lưu và H = chu kỳ nhịp của máy (nhịp đầu tiên
+//      SAU khi cửa sổ mở mới ghi). Chu kỳ tham chiếu của repo là 30 000 ms
+//      (`EDGE_HEARTBEAT_INTERVAL_MS`, `EDGE_GATEWAY_HEARTBEAT_INTERVAL_MS`).
+//      Đặt trần "tuổi xấu nhất ≤ 1/4 ngưỡng tươi" ⇒ W ≤ 300 000/4 − 30 000 = 45 000.
+//      Với W = 45 000: tuổi xấu nhất 75 000 ms = 25 % ngưỡng, còn dư 225 000 ms —
+//      máy khoẻ vẫn có thể MẤT THÊM 7 nhịp 30 s liên tiếp mà chưa rơi `khong_ro`.
+//
+//  (b) TẢI. Tiết lưu chặn TRẦN ghi ở 1 lượt/máy/W, KHÔNG phụ thuộc máy đập nhanh
+//      cỡ nào: 1 700 máy ⇒ ≤ 1 700/45 ≈ 37,8 UPDATE/s. Một tác nhân đập 1 s/nhịp
+//      (có thật ở vài dòng máy) sẽ là 1 700 UPDATE/s nếu không tiết lưu — tiết lưu
+//      cắt đúng 45 lần. Ở chu kỳ 30 s chuẩn, nó gộp 2 nhịp thành 1 lượt ghi
+//      (ghi thực tế mỗi 60 s).
+//
+// Vì sao KHÔNG nhỏ hơn: W ≤ 30 000 = H ⇒ tiết lưu KHÔNG BAO GIỜ nổ với máy chuẩn
+// (0 tác dụng), mà trần ghi lại tăng gấp rưỡi trở lên.
+// Vì sao KHÔNG lớn hơn: W = 60 000/150 000 đẩy tuổi xấu nhất lên 30 %/60 % ngưỡng
+// mà chỉ đổi lại 1,33×/3,3× ít ghi hơn — mua rất ít bằng phần lề an toàn.
+//
+// Mẫu lấy từ `server/services/mqttService.ts` (R-2a, `MQTT_HEARTBEAT_THROTTLE_MS`
+// ~dòng 1578): cùng hình dạng "Map machineId→mốc ghi cuối + so cửa sổ". KHÁC một
+// điểm có chủ ý: MQTT mặc định 0 (TẮT) để giữ NGUYÊN VĂN hành vi cũ ghi-mỗi-ping;
+// ở đây KHÔNG có hành vi cũ nào để giữ (đường này chưa từng ghi), nên mặc định là
+// BẬT. `SOCKET_HEARTBEAT_THROTTLE_MS=0` vẫn là lối tắt tiết lưu cho người vận hành,
+// cùng nghĩa với con số 0 bên MQTT.
+export const NGUONG_TIET_LUU_NHIP_TIM_SOCKET_MS = 45_000;
+
+/** machineId → `Date.now()` của lượt GHI DB gần nhất (không phải của nhịp gần nhất). */
+const lanGhiNhipTimCuoi: Map<number, number> = new Map();
+
+function nguongTietLuuNhipTimMs(): number {
+  const raw = process.env.SOCKET_HEARTBEAT_THROTTLE_MS;
+  if (raw === undefined || raw.trim() === "") return NGUONG_TIET_LUU_NHIP_TIM_SOCKET_MS;
+  const n = Number.parseInt(raw, 10);
+  return Number.isFinite(n) && n >= 0 ? n : NGUONG_TIET_LUU_NHIP_TIM_SOCKET_MS;
+}
+
+/**
+ * Bền hoá nhịp tim xuống `machines.lastHeartbeat` — TIẾT LƯU, KHÔNG CHẶN, KHÔNG NÉM.
+ *
+ * ⚠ Dùng LẠI `db.updateMachineHeartbeat` (`server/db/hierarchy.ts:813`) — đúng một bản cài đặt
+ *   của luật này trong repo; KHÔNG viết câu UPDATE thứ hai (hai bản rồi sẽ lệch nhau).
+ * ⚠ Mốc được ghi TRƯỚC khi lượt ghi hoàn tất, và lượt HỎNG KHÔNG xoá mốc: nếu xoá, một sự cố DB
+ *   sẽ biến mọi nhịp thành một lượt thử lại ⇒ đúng cơn bão ghi mà tiết lưu sinh ra để chặn.
+ */
+function ghiNhipTimXuongDb(machineId: number): void {
+  const nguong = nguongTietLuuNhipTimMs();
+  const bayGio = Date.now();
+  if (nguong > 0) {
+    const lanCuoi = lanGhiNhipTimCuoi.get(machineId) ?? 0;
+    if (bayGio - lanCuoi < nguong) return; // trong cửa sổ → gộp, bỏ lượt ghi
+  }
+  lanGhiNhipTimCuoi.set(machineId, bayGio);
+  try {
+    void Promise.resolve(db.updateMachineHeartbeat(machineId)).catch((err: any) =>
+      console.error("[Socket.io] updateMachineHeartbeat failed:", err?.message ?? err),
+    );
+  } catch (err: any) {
+    // Không thể xảy ra với một `async function`, nhưng handler nhịp tim là đường NÓNG:
+    // nó không được chết vì bất kỳ hình dạng lỗi nào của tầng dưới.
+    console.error("[Socket.io] updateMachineHeartbeat threw:", err?.message ?? err);
+  }
+}
 
 export interface InspectionAlert {
   type: "NG_ALERT" | "YIELD_WARNING" | "NEW_INSPECTION";
@@ -143,6 +235,17 @@ export function initializeSocket(server: HttpServer): Server {
 
     // Join room for specific factory/workshop/machine updates
     socket.on("subscribe", (data: { factoryId?: number; workshopId?: number; machineId?: number; lineId?: number }) => {
+      // ★★★ doc 80 PLT-01 — mọi phòng dưới đây là phòng HƯỚNG NGƯỜI DÙNG (kể cả `global`).
+      // Socket `machine` qua handshake KHÔNG cần cookie (xác thực từng sự kiện bằng apiKey) ⇒ không
+      // có danh tính người dùng ⇒ KHÔNG được vào phòng nào qua handler này. Luồng máy hợp lệ vào
+      // `machine:${id}` qua confirm_mapping / sync_started (không đi qua đây). Browser: không đổi.
+      if (!laSocketNguoiDung(socket.data)) {
+        const khoa = data && typeof data === "object" ? Object.keys(data).join(",") : "";
+        console.warn(
+          `[Socket.io] ${socket.id} TU CHOI subscribe {${khoa}} - ${moTaSocket(socket.data)} khong phai socket nguoi dung`,
+        );
+        return;
+      }
       if (data.factoryId) {
         socket.join(`factory:${data.factoryId}`);
         console.log(`[Socket.io] ${socket.id} joined factory:${data.factoryId}`);
@@ -160,11 +263,65 @@ export function initializeSocket(server: HttpServer): Server {
         socket.join(`line:${data.lineId}`);
         console.log(`[Socket.io] ${socket.id} joined line:${data.lineId}`);
       }
-      // T1-c — Digital Twin live stream room (per factory). A 3D twin viewer joins
-      // `twin:{factoryId}` to receive throttled device state/position deltas.
+      /*
+       * T1-c — Digital Twin live stream room (per factory). A 3D twin viewer joins
+       * `twin:{factoryId}` to receive throttled device state/position deltas.
+       *
+       * ★★★ ĐỢT 6 VÁ CHẶN-1 (a) — KIỂM QUYỀN TRƯỚC KHI CHO JOIN.
+       *
+       * ⚠ ĐO ĐƯỢC 2026-09-07 (socket.io-client thật, tài khoản thật): trước bản
+       * vá này handler cho **BẤT KỲ AI** join `twin:{id}` với id là lời TỰ KHAI
+       * của client. `operator1` — tài khoản KHÔNG được gán nhà máy nào — chỉ cần
+       * gửi `{twinFactoryId: 1}` là nhận 11 gói `twin:update` mang nguyên văn
+       * `stationId:29 wipCount:86` cùng 35 trạm khác của SIM-FAC.
+       *
+       * ★★★ VÀ ĐÂY LÀ LỜI KHAI SAI ĐÃ BỊ ĐO BÁC BỎ: bản trước ghi rằng với
+       * `twin:device` "gateway đã lọc trước khi phát". KHÔNG. `twinStream.flush()`
+       * nhóm delta theo nhà máy CỦA MÁY — đó là ĐỊNH TUYẾN gói tới đúng phòng,
+       * KHÔNG phải kiểm quyền NGƯỜI NHẬN. Ai đã ở trong phòng thì nhận tất.
+       *
+       * ⇒ Phòng `twin:{id}` từ đây là phòng CÓ KIỂM SOÁT: chỉ người có nhà máy
+       *   đó trong phạm vi mới vào được. Mọi kênh dùng phòng này hưởng lợi.
+       *
+       * ★ Join là bất đồng bộ (phải hỏi DB) — không chặn các nhánh join khác.
+       * ★ G12 — dùng ĐÚNG `resolveTenantFactoryScope`, không tự suy lại.
+       */
       if ((data as any).twinFactoryId) {
-        socket.join(`twin:${(data as any).twinFactoryId}`);
-        console.log(`[Socket.io] ${socket.id} joined twin:${(data as any).twinFactoryId}`);
+        const twinFactoryId = Number((data as any).twinFactoryId);
+        if (Number.isInteger(twinFactoryId) && twinFactoryId > 0) {
+          void (async () => {
+            try {
+              const nguoiJoin = (socket.data as any)?.user;
+              if (!coDanhTinhNguoiDung(nguoiJoin)) {
+                console.warn(
+                  `[Socket.io] ${socket.id} TU CHOI join twin:${twinFactoryId} - khong co danh tinh nguoi dung`,
+                );
+                return;
+              }
+              const { resolveTenantFactoryScope } = await import("../db/reportAggregators");
+              const pv = await resolveTenantFactoryScope({ userId: nguoiJoin.id, userRole: nguoiJoin.role });
+              if (!nguoiXemDuocNhan(nguoiJoin, pv.factoryIds, twinFactoryId)) {
+                console.warn(
+                  `[Socket.io] ${socket.id} TU CHOI join twin:${twinFactoryId} - user=${nguoiJoin.id} ngoai pham vi`,
+                );
+                return;
+              }
+              socket.join(`twin:${twinFactoryId}`);
+              console.log(`[Socket.io] ${socket.id} joined twin:${twinFactoryId}`);
+              /*
+               * ★★★ ĐỢT 38 (Pareto #6 QA Đợt 37) — PHÁT NGAY GÓI ĐẦU cho CHÍNH socket vừa join.
+               *   Broadcaster chỉ phát theo interval 10 s ⇒ chỉ báo `/twin` đứng ở "Đang chờ…" 8.944 / 9.781 ms
+               *   (`.qa-dot38/truoc/p6-*`). Cùng MỘT lối phát `phatTwinTrangThaiChoSocket` (cổng
+               *   `nguoiXemDuocNhan`, G20) — không phải đường thứ hai. Nhịp 10 s KHÔNG đổi.
+               */
+              void phatTwinTrangThaiNgay(socket, twinFactoryId);
+            } catch (err) {
+              // ⚠ Lỗi phân giải phạm vi ⇒ KHÔNG join. "Không biết" phải rơi về
+              // phía CHẶN; một catch cho qua là cửa hậu mở bằng cách làm DB lỗi.
+              console.error(`[Socket.io] loi kiem quyen twin:${twinFactoryId}:`, (err as Error)?.message ?? err);
+            }
+          })();
+        }
       }
       // X1-c (doc 16 §5) — Device live stream room (per device). A device-monitor
       // viewer joins `device:{deviceId}` to receive TIERED-sampled UDM state/position
@@ -204,6 +361,17 @@ export function initializeSocket(server: HttpServer): Server {
         socket.join("telemetry:all");
         console.log(`[Socket.io] ${socket.id} joined telemetry:all`);
       }
+      // E2-4 (doc69 Giai đoạn 4/Wave E2) — OPT-IN AI Agent Command Center refresh
+      // room. A single flat room (like telemetry:all/sites:global — not scoped
+      // per-factory/machine): the Command Center joins it to receive the minimal,
+      // non-sensitive `ai:agents` nudge (aiAgentRealtime.ts's bridge, gated by
+      // AI_AGENTS_LIVE_ENABLED) that tells it to refetch getReadModel sooner than
+      // its 5s poll. Room membership is NOT RBAC-scoped — safe only because the
+      // event itself carries no session/plan/args data (see aiAgentRealtime.ts).
+      if ((data as any).aiAgents) {
+        socket.join("ai:agents");
+        console.log(`[Socket.io] ${socket.id} joined ai:agents`);
+      }
       // Everyone joins the global room for all alerts
       socket.join("global");
     });
@@ -222,16 +390,42 @@ export function initializeSocket(server: HttpServer): Server {
       if ((data as any).sitesGlobal) socket.leave("sites:global");
       // MON-F6 — leave the opt-in telemetry firehose room.
       if ((data as any).telemetryAll) socket.leave("telemetry:all");
+      // E2-4 — leave the AI Agent Command Center refresh room.
+      if ((data as any).aiAgents) socket.leave("ai:agents");
     });
 
     // Doc 09 / D6 — Engineering Online-Monitor room. A workspace client joins
     // `engineering:{machineId}` to receive high-rate symbol-watch samples (separate from
     // the DB-persisted telemetry stream). Gated by DPC_STREAMING_ENABLED on the producer.
+    //
+    // ★★★ doc 80 PLT-01 — phòng này mang GIÁ TRỊ PLC LIVE. Chỉ socket người dùng có quyền
+    // `machine_monitoring/canView` (cùng quyền `programming.startWatch` đòi) mới được vào; socket
+    // `machine` vô danh và user không quyền ⇒ từ chối + log. Kiểm quyền là bất đồng bộ (hỏi DB):
+    // `luotEngineering` là vé theo machineId — một `unsubscribe` (hoặc `subscribe` mới) đến TRƯỚC
+    // khi kiểm xong làm vé cũ hết hạn, để lượt kiểm chậm không join lại phòng người dùng đã rời.
+    const luotEngineering = new Map<string, number>();
     socket.on("engineering:subscribe", (data: { machineId: number }) => {
-      if (data?.machineId) socket.join(`engineering:${data.machineId}`);
+      if (!data?.machineId) return;
+      const phong = `engineering:${data.machineId}`;
+      const ve = (luotEngineering.get(phong) ?? 0) + 1;
+      luotEngineering.set(phong, ve);
+      void (async () => {
+        const duoc = await duocVaoPhongEngineering(socket.data);
+        if (!duoc) {
+          console.warn(
+            `[Socket.io] ${socket.id} TU CHOI join ${phong} - ${moTaSocket(socket.data)} khong co quyen machine_monitoring/canView`,
+          );
+          return;
+        }
+        if (luotEngineering.get(phong) !== ve || socket.disconnected) return;
+        socket.join(phong);
+      })();
     });
     socket.on("engineering:unsubscribe", (data: { machineId: number }) => {
-      if (data?.machineId) socket.leave(`engineering:${data.machineId}`);
+      if (!data?.machineId) return;
+      const phong = `engineering:${data.machineId}`;
+      luotEngineering.set(phong, (luotEngineering.get(phong) ?? 0) + 1);
+      socket.leave(phong);
     });
 
     socket.on("disconnect", () => {
@@ -244,6 +438,10 @@ export function initializeSocket(server: HttpServer): Server {
           const machineCode = info.machineCode;
           connectedMachines.delete(machineId);
           onlineMachineCodesMap.delete(machineId);
+          // R-2a (mẫu mqttService:1528) — giải phóng sổ tiết lưu: máy nối LẠI phải được ghi ngay
+          // ở nhịp đầu, không phải chờ hết cửa sổ cũ (nếu chờ, tuổi xấu nhất thành 2W + H).
+          // Không mở ra cơn bão mới: mỗi lượt nối lại vốn đã ghi một hàng `machine_status_logs`.
+          lanGhiNhipTimCuoi.delete(machineId);
           // Shared-store mirror: drop presence, but only if THIS socket still
           // owns it (a machine that migrated to another instance keeps its newer
           // entry — see setOffline's socketId guard). Fire-and-forget.
@@ -315,6 +513,11 @@ export function initializeSocket(server: HttpServer): Server {
       if (machineInfo && machineInfo.socketId === socket.id) {
         machineInfo.lastHeartbeat = new Date();
         connectedMachines.set(data.machineId, machineInfo);
+        // ★ BỀN HOÁ: cột `machines.lastHeartbeat` là thứ DUY NHẤT mọi màn twin đọc để biết máy
+        // còn tươi hay `khong_ro`. Có tiết lưu, không chặn, không ném — xem `ghiNhipTimXuongDb`.
+        // Nằm SAU hàng rào danh tính `machineInfo.socketId === socket.id` ở trên (dòng ngay trên
+        // cùng khối `if`): một socket lạ mạo danh machineId KHÔNG ghi được gì.
+        ghiNhipTimXuongDb(data.machineId);
         // Shared-store mirror: refresh TTL so a live machine never self-expires.
         void presence.refresh({
           machineId: data.machineId,
@@ -421,6 +624,14 @@ export function initializeSocket(server: HttpServer): Server {
 
     // Admin joins admin room for machine management
     socket.on("admin:join", async () => {
+      // ★ doc 80 PLT-01 (Task 11 — phát hiện khi làm Task 7) — phòng `admin` nhận yêu cầu đăng ký
+      // máy + trạng thái kết nối: mirror ĐÚNG quyền tRPC `machine.listPending`
+      // (`machineRegistrationGate("canView")`, hierarchyRouters.ts) — trước bản vá MỌI socket
+      // trình duyệt đã đăng nhập (kể cả operator) vào được, không chỉ admin/người có quyền.
+      if (!(await duocQuanLyDangKyMay(socket.data, "canView"))) {
+        console.warn(`[Socket.io] ${socket.id} TU CHOI join admin - ${moTaSocket(socket.data)} khong du quyen quan tri dang ky may`);
+        return;
+      }
       socket.join("admin");
       console.log(`[Socket.io] Admin ${socket.id} joined admin room`);
 
@@ -460,6 +671,11 @@ export function initializeSocket(server: HttpServer): Server {
     // Dashboard requests online machines list — UNION across all instances via
     // the shared presence store (doc 51 §5.3 P2). Falls back to the local Map.
     socket.on("admin:get_online_machines", async () => {
+      // ★ doc 80 PLT-01 (Task 11) — cùng quyền `admin:join` (mirror `machine.listPending`).
+      if (!(await duocQuanLyDangKyMay(socket.data, "canView"))) {
+        console.warn(`[Socket.io] ${socket.id} TU CHOI admin:get_online_machines - ${moTaSocket(socket.data)} khong du quyen quan tri dang ky may`);
+        return;
+      }
       let onlineMachineCodes: string[];
       try {
         onlineMachineCodes = await presence.listOnlineCodes();
@@ -473,6 +689,23 @@ export function initializeSocket(server: HttpServer): Server {
 
     // Admin approves registration
     socket.on("admin:approve_registration", async (data: { socketId: string; machineId: number; apiKey?: string }) => {
+      // ★★★ doc 80 PLT-01 — trước bản vá Task 7, socket `machine` vô danh gửi `machine:register`
+      // rồi TỰ duyệt chính nó với machineId bất kỳ ⇒ nhận apiKey của máy đó (hoặc ghi đè apiKey
+      // trong DB). Task 7 chặn máy; Task 11 (phát hiện khi làm Task 7) siết tiếp: MỌI socket
+      // trình duyệt đã đăng nhập (kể cả operator) vẫn gọi được và NHẬN apiKey — mirror ĐÚNG
+      // quyền tRPC `machine.approve` (`machineRegistrationGate("canEdit")`, hierarchyRouters.ts).
+      if (!(await duocQuanLyDangKyMay(socket.data, "canEdit"))) {
+        // Giá trị trong payload (`data`) do CHÍNH socket bị từ chối gửi lên — ép kiểu/escape
+        // trước khi ghép vào dòng log để một chuỗi machineId/socketId cố tình chứa "\n..." không
+        // giả được thành một dòng log khác (log forging). Number() trung hoà machineId (NaN nếu
+        // không phải số, không phải chuỗi); JSON.stringify đóng khung + escape ký tự điều khiển
+        // trong socketId.
+        console.warn(
+          `[Socket.io] ${socket.id} TU CHOI admin:approve_registration - ${moTaSocket(socket.data)} khong du quyen duyet dang ky may; ` +
+          `machineId=${Number((data as any)?.machineId)} socketId=${JSON.stringify((data as any)?.socketId ?? null)}`,
+        );
+        return;
+      }
       const registration = pendingRegistrations.get(data.socketId);
       if (!registration) {
         socket.emit("admin:approve_error", { message: "Registration not found or expired" });
@@ -562,6 +795,17 @@ export function initializeSocket(server: HttpServer): Server {
 
     // Admin rejects registration
     socket.on("admin:reject_registration", (data: { socketId: string; reason: string }) => {
+      // ★ doc 80 PLT-01 (Task 11) — mirror ĐÚNG quyền tRPC `machine.reject`: `adminProcedure`
+      // THẲNG (`_shared.ts`), không qua cờ MACHINE_APPROVE_RBAC_OPEN_ENABLED ⇒ luôn luôn role
+      // admin (xem `duocTuChoiDangKyMay`).
+      if (!duocTuChoiDangKyMay(socket.data)) {
+        // Ép kiểu/escape trước khi ghi log — cùng lý do như admin:approve_registration.
+        console.warn(
+          `[Socket.io] ${socket.id} TU CHOI admin:reject_registration - ${moTaSocket(socket.data)} khong phai admin; ` +
+          `socketId=${JSON.stringify((data as any)?.socketId ?? null)} reason=${JSON.stringify((data as any)?.reason ?? null)}`,
+        );
+        return;
+      }
       const registration = pendingRegistrations.get(data.socketId);
       if (registration) {
         registration.status = "rejected";
@@ -791,6 +1035,9 @@ export function initializeSocket(server: HttpServer): Server {
   
   // G2.7 — start the WIP twin broadcaster (no-op unless TWIN_STREAM_ENABLED=true).
   startTwinBroadcaster();
+
+  // Đợt 6 (§10.2) — nhịp 10s trạng thái máy cho `/twin` (cùng cờ, no-op khi tắt).
+  startTwinTrangThaiBroadcaster();
 
   // P2 follow-up — start the realtime OEE broadcaster (single oeeService source).
   startOeeBroadcaster();
@@ -1387,8 +1634,80 @@ function twinStreamEnabled(): boolean {
  */
 export function emitTwinUpdate(event: TwinUpdateEvent): void {
   if (!io || !twinStreamEnabled()) return;   // gate: off → no emit, FE polls
-  io.to("global").emit("twin:update", event);
-  if (event.lineId) io.to(`line:${event.lineId}`).emit("twin:update", event);
+  void phatTwinUpdateTheoPhamVi(event);
+}
+
+/**
+ * ★★★ ĐỢT 6 VÁ CHẮN-1 (b) — `twin:update` PHÁT THEO PHẠM VI TỪNG NGƯỜI XEM.
+ *
+ * ⚠ LỖ RÒ ĐO ĐƯỢC 2026-09-07: bản trước là `io.to("global").emit(...)`, mà
+ * **MỌI client trình duyệt** đều join `global`. `operator1` (KHÔNG được gán nhà
+ * máy nào) nhận 11 gói mang nguyên văn `stationId:29 wipCount:86` và 35 trạm
+ * khác của SIM-FAC.
+ *
+ * ★★★ VÌ SAO VÁ (a) — KIỂM QUYỀN Ở `subscribe` — MỘT MÌNH KHÔNG ĐỦ CHO KÊNH NÀY:
+ * kênh này KHÔNG dùng phòng `twin:{id}`. Nó phát vào `global`, một phòng ai
+ * cũng ở trong đó từ lúc kết nối — không có điểm "join" nào để chặn. Và client
+ * thật (`useTwinStream.ts`) KHÔNG hề gửi `twinFactoryId`, nên dẫn nó sang phòng
+ * có kiểm soát sẽ làm chết tính năng. ⇒ phải lọc Ở CHỖ PHÁT, từng socket.
+ *
+ * ★★★ VÀ GÓI TIN KHÔNG MANG `factoryId`: nó chỉ có `stationId`. Nên bộ lọc
+ * KHÔNG CÓ GÌ ĐỂ SO nếu không quy được trạm về nhà máy trước — đó là việc của
+ * `traBanDoTramNhaMay` (db/twin.ts). Mỗi người xem nhận ĐÚNG tập trạm thuộc
+ * phạm vi của mình; phạm vi rỗng ⇒ KHÔNG PHÁT GÌ CẢ (không phải "phát gói rỗng"
+ * — một người không được gán nhà máy nào không có quyền biết hệ đang chạy).
+ *
+ * ★ Trạm KHÔNG quy được về nhà máy (line/workshop mồ côi) ⇒ chỉ vai TOÀN
+ *   QUYỀN (`factoryIds === null`) thấy. "Không biết nó của ai" phải rơi về phía
+ *   CHẮN, không phải phía cho qua.
+ *
+ * ★ G12 — dùng ĐÚNG `resolveTenantFactoryScope` + `nguoiXemDuocNhan`.
+ */
+async function phatTwinUpdateTheoPhamVi(event: TwinUpdateEvent): Promise<void> {
+  if (!io || !twinStreamEnabled()) return;
+  try {
+    const sockets = await io.in("global").fetchSockets();
+    if (sockets.length === 0) return;
+
+    const { traBanDoTramNhaMay } = await import("../db/twin");
+    const banDo = await traBanDoTramNhaMay();
+    const { resolveTenantFactoryScope } = await import("../db/reportAggregators");
+
+    // Cache theo userId trong MỘT lần phát: 2 tab của cùng một người không
+    // được thành 2 lần hỏi DB — vòng này chạy mỗi 2 giây.
+    const cachePhamVi = new Map<number, number[] | null>();
+
+    for (const sk of sockets) {
+      const nguoi = (sk.data as any)?.user;
+      if (!coDanhTinhNguoiDung(nguoi)) continue; // client `machine`/vô danh ⇒ không nhận
+      let factoryIds = cachePhamVi.get(nguoi.id);
+      if (factoryIds === undefined) {
+        const pv = await resolveTenantFactoryScope({ userId: nguoi.id, userRole: nguoi.role });
+        factoryIds = pv.factoryIds;
+        cachePhamVi.set(nguoi.id, factoryIds);
+      }
+
+      const tramCuaHo = factoryIds === null
+        ? event.stations
+        : event.stations.filter((st) => {
+            const fid = banDo.get(st.stationId);
+            return fid !== undefined && nguoiXemDuocNhan(nguoi, factoryIds as number[], fid);
+          });
+
+      /*
+       * ★★★ PHẠM VI RỖNG ⇒ IM LẮNG HOÀN TOÀN.
+       * Đây là chỗ KHÁC với luật G15 ("phát cả khi rỗng"): G15 nói về việc
+       * phân biệt "đo xong, không có WIP" với "stream chết" — cho NGƯỜI ĐƯỢC
+       * XEM. Người KHÔNG được xem nhà máy nào thì ngay cả "hệ đang sống" cũng
+       * là thông tin không thuộc về họ.
+       */
+      if (factoryIds !== null && factoryIds.length === 0) continue;
+
+      sk.emit("twin:update", { ...event, stations: tramCuaHo });
+    }
+  } catch (err) {
+    console.error("[Twin] emitTwinUpdate scope filter failed:", (err as Error)?.message ?? err);
+  }
 }
 
 // Read-only broadcaster: periodically reads WIP-by-station (SELECT only) and
@@ -1403,7 +1722,18 @@ export function startTwinBroadcaster(intervalMs = 2000): void {
     import("../db/twin")
       .then(({ getWipByStation }) => getWipByStation())
       .then((rows) => {
-        if (!rows.length) return;
+        /*
+         * ★★★ G15 — PHÁT CẢ KHI RỖNG. Trước bản vá ở đây có `if (!rows.length)
+         * return;`, và nó làm client KHÔNG PHÂN BIỆT ĐƯỢC hai thế giới:
+         *   • "đã đo, và không có WIP nào"  → phải hiện 0
+         *   • "stream chết / server im"     → phải hiện "chưa rõ"
+         * Cả hai đều biểu hiện thành *không có sự kiện nào tới*, nên màn hình
+         * đứng im ở giá trị cuối cùng và không ai biết nó đã cũ. Một nhà máy
+         * vừa dọn sạch WIP trông y hệt một broadcaster đã chết.
+         *
+         * Mảng rỗng là một PHÉP ĐO có giá trị: nó nói "tôi vừa đọc DB xong, và
+         * kết quả là không có gì". Im lặng thì không nói gì cả.
+         */
         emitTwinUpdate({
           stations: rows.map((r) => ({ stationId: r.currentStationId, wipCount: r.count })),
           ts: Date.now(),
@@ -1420,6 +1750,181 @@ export function stopTwinBroadcaster(): void {
     clearInterval(twinBroadcaster);
     twinBroadcaster = null;
     console.log("[Twin] WIP broadcaster stopped");
+  }
+}
+
+// ============ ĐỢT 6 (§10.2) — TWIN STATUS BROADCAST `twin:trangThai`, 10s ======
+
+/**
+ * Trạng thái một máy như `/twin` cần để tô lại `instanceColor` — KHÔNG kèm hình học.
+ *
+ * ★★★ `doTuoiGiay: number | null` — `null` là ca THẬT, không phải chỗ lười.
+ * `null` ⇔ máy CHƯA TỪNG báo cáo (đo được: 3/42 máy của DB này). Nếu quy về `0`
+ * thì client đọc "vừa cập nhật 0 giây trước" về một cái máy im lặng vĩnh viễn —
+ * đúng lời nói dối mà NT-3 sinh ra để chặn.
+ */
+export interface TwinTrangThaiMay {
+  machineId: number;
+  trangThai: string | null;
+  capNhatLuc: number | null;
+  doTuoiGiay: number | null;
+  isActive: boolean;
+}
+
+export interface TwinTrangThaiEvent {
+  factoryId: number;
+  may: TwinTrangThaiMay[];
+  /** Đồng hồ SERVER lúc phát — client quy chiếu tuổi về đây, không về đồng hồ nó. */
+  bayGio: number;
+  /** `max(capNhatLuc)`; `null` khi KHÔNG máy nào từng báo cáo (NT-3.5 ⇒ `—`). */
+  capNhatMoiNhat: number | null;
+  /** Số máy đã đo. Luôn là số THẬT — mảng rỗng vẫn phát (xem docblock dưới). */
+  tong: number;
+}
+
+/*
+ * ⚠ CỐ Ý KHÔNG CÓ `emitTwinTrangThai(event)` phát cho CẢ PHÒNG.
+ *
+ * Bản đầu của Đợt 6 có hàm đó, và G16 ("ai gọi nó?") cho thấy **0 nơi gọi** —
+ * cùng khuôn `locBadge.ts` (18 test xanh mà không ai dùng). Nhưng ở đây nó tệ
+ * hơn một hàm mồ côi: `io.to("twin:"+id).emit(...)` phát cho MỌI socket trong
+ * phòng, mà phòng đó ai cũng join được (handler `subscribe` không kiểm quyền).
+ * Tức là để nó nằm đó là để sẵn một đường vòng qua chính bộ lọc phạm vi bên
+ * dưới — và đường vòng đó trông vô hại ở chỗ gọi.
+ *
+ * ⇒ Chỉ còn MỘT lối phát trạng thái: vòng lặp per-socket trong
+ *   `startTwinTrangThaiBroadcaster`, nơi mỗi người xem được lọc theo phạm vi
+ *   của chính họ.
+ */
+
+let twinTrangThaiBroadcaster: ReturnType<typeof setInterval> | null = null;
+
+/**
+ * ★★★ §10.2 — nhịp 10 GIÂY cho trạng thái máy (khác nhịp 2 giây của WIP).
+ *
+ * Vì sao 10s chứ không 2s: trạng thái máy đổi theo phút, còn WIP đổi theo giây.
+ * Bơm trạng thái ở 2s là 5 lần công DB cho cùng một thông tin — và chính vòng
+ * này là chỗ N+1 sẽ giết máy chủ nếu nó quay lại, nên nó đọc qua
+ * `traTrangThaiHangLoat` (số query CỐ ĐỊNH, đo được).
+ *
+ * ⚠ CHỈ ĐỌC, không ghi gì — cùng luật với `startTwinBroadcaster`.
+ *
+ * ★ Phát cho MỌI nhà máy đang có người xem (phòng `twin:{id}` không rỗng), chứ
+ *   không phát mù toàn hệ: không ai xem thì không tốn truy vấn nào.
+ */
+/**
+ * ★★★ ĐỢT 38 (Pareto #6 QA Đợt 37) — TÁCH "dựng gói" và "phát cho MỘT socket" ra khỏi vòng 10 s, để handler
+ * `subscribe` PHÁT NGAY gói đầu cho socket vừa join. Hai lối phát vẫn là MỘT hàm `phatTwinTrangThaiChoSocket`
+ * (cổng `nguoiXemDuocNhan` — G20: một điểm gọi, test có quyền ghim); hình dạng gói và nhịp 10 s KHÔNG đổi.
+ */
+async function dungGoiTwinTrangThai(factoryId: number): Promise<TwinTrangThaiEvent> {
+  const { traTrangThaiHangLoat } = await import("../db/twinCanh");
+  const bayGio = Date.now();
+  const may = await traTrangThaiHangLoat(factoryId, bayGio, undefined);
+  const capNhatMoiNhat = may.reduce<number | null>(
+    (max, m) => (m.capNhatLuc == null ? max : max == null || m.capNhatLuc > max ? m.capNhatLuc : max),
+    null,
+  );
+  return {
+    factoryId,
+    may: may.map((m) => ({
+      machineId: m.machineId,
+      trangThai: m.trangThai,
+      capNhatLuc: m.capNhatLuc,
+      doTuoiGiay: m.doTuoiGiay,
+      isActive: m.isActive,
+    })),
+    bayGio,
+    capNhatMoiNhat,
+    tong: may.length,
+  };
+}
+
+/**
+ * ★★★ LỐI PHÁT DUY NHẤT của `twin:trangThai` cho MỘT socket — lọc theo PHẠM VI CỦA CHÍNH NGƯỜI CẦM SOCKET.
+ *
+ * ⚠ ĐO ĐƯỢC (2026-09-07): handler `subscribe` cho socket join `twin:{twinFactoryId}` từng KHÔNG kiểm quyền — id
+ * nhà máy là lời TỰ KHAI của client. Bản trước của docblock này viết "với `twin:device` điều đó còn chịu được
+ * (gateway đã lọc trước khi phát)" — SAI: `twinStream.flush()` nhóm delta theo nhà máy CỦA MÁY — ĐỊNH TUYẾN,
+ * không phải PHÂN QUYỀN. Broadcaster tự đọc DB theo id lấy từ tên phòng — phát thẳng cho cả phòng thì một tài
+ * khoản KHÔNG được gán nhà máy nào (đo được: `operator1`) chỉ cần gửi `{twinFactoryId: 1}` là nhận trạng thái
+ * toàn SIM-FAC mỗi 10 giây. ⇒ Phát TỪNG SOCKET, mỗi socket lọc theo phạm vi của chính người đang cầm nó, qua
+ * `resolveTenantFactoryScope` — ĐÚNG bộ phân giải mà tầng dữ liệu đi qua (G12).
+ *
+ * ★★★ G20 — PHÉP QUYẾT ĐỊNH GỌI TỪ `twinPhamViQuyen.ts`, KHÔNG viết tại chỗ: bản trước viết thẳng biểu thức
+ * `pv.factoryIds === null || pv.factoryIds.includes(factoryId)`, và tệp test CHÉP TAY đúng biểu thức ấy ⇒ QA xoá
+ * sạch bộ lọc mà 5/5 test VẪN XANH. Một điểm gọi chung là điều kiện để test có quyền nói nó ghim cái gì.
+ *
+ * ★★★ G15 — PHÁT CẢ KHI `may` RỖNG: im lặng không phân biệt được "đo xong, không có máy nào" với "broadcaster
+ * đã chết". Một sự kiện mang `tong: 0` nói câu thứ nhất.
+ */
+async function phatTwinTrangThaiChoSocket(sk: Socket, factoryId: number, goi: TwinTrangThaiEvent): Promise<boolean> {
+  const nguoi = (sk.data as any)?.user;
+  // Không danh tính (client `machine`) ⇒ KHÔNG nhận trạng thái nhà máy.
+  if (!coDanhTinhNguoiDung(nguoi)) return false;
+  const { resolveTenantFactoryScope } = await import("../db/reportAggregators");
+  const pv = await resolveTenantFactoryScope({ userId: nguoi.id, userRole: nguoi.role });
+  if (!nguoiXemDuocNhan(nguoi, pv.factoryIds, factoryId)) return false;
+  if (!twinStreamEnabled()) return false;
+  sk.emit("twin:trangThai", goi);
+  return true;
+}
+
+/** Đợt 38 — phát NGAY một gói cho socket vừa join `twin:{factoryId}`: cùng cổng, cùng hình dạng gói. */
+async function phatTwinTrangThaiNgay(sk: Socket, factoryId: number): Promise<void> {
+  if (!io || !twinStreamEnabled()) return;
+  try {
+    const goi = await dungGoiTwinTrangThai(factoryId);
+    await phatTwinTrangThaiChoSocket(sk, factoryId, goi);
+  } catch (err) {
+    console.error("[Twin] trangThai phat-ngay-khi-join failed:", (err as Error)?.message ?? err);
+  }
+}
+
+export function startTwinTrangThaiBroadcaster(intervalMs = 10000): void {
+  if (twinTrangThaiBroadcaster || !io || !twinStreamEnabled()) return;
+  twinTrangThaiBroadcaster = setInterval(() => {
+    if (!io || !twinStreamEnabled()) return;
+
+    /*
+     * Chỉ đọc DB cho nhà máy CÓ NGƯỜI XEM. `io.sockets.adapter.rooms` mang mọi
+     * phòng đang sống; phòng `twin:<id>` chỉ tồn tại khi có socket đã join.
+     */
+    const factoryIds: number[] = [];
+    for (const ten of io.sockets.adapter.rooms.keys()) {
+      if (!ten.startsWith("twin:")) continue;
+      const id = Number(ten.slice(5));
+      if (Number.isInteger(id) && id > 0) factoryIds.push(id);
+    }
+    if (factoryIds.length === 0) return; // không ai xem → không tốn query
+
+    void (async () => {
+      try {
+        for (const factoryId of factoryIds) {
+          const phong = io?.sockets.adapter.rooms.get(`twin:${factoryId}`);
+          if (!phong || phong.size === 0) continue;
+          // ★ MỘT gói cho cả phòng, PHÁT TỪNG SOCKET qua cổng (Đợt 38: cùng hai hàm với phát-ngay-khi-join).
+          const goi = await dungGoiTwinTrangThai(factoryId);
+          for (const sid of phong) {
+            const sk = io?.sockets.sockets.get(sid);
+            if (!sk) continue;
+            await phatTwinTrangThaiChoSocket(sk, factoryId, goi);
+          }
+        }
+      } catch (err) {
+        console.error("[Twin] trangThai broadcaster read failed:", err);
+      }
+    })();
+  }, Math.max(1000, intervalMs));
+  if (typeof (twinTrangThaiBroadcaster as any)?.unref === "function") (twinTrangThaiBroadcaster as any).unref();
+  console.log("[Twin] trangThai broadcaster started (read-only, gated, 10s)");
+}
+
+export function stopTwinTrangThaiBroadcaster(): void {
+  if (twinTrangThaiBroadcaster) {
+    clearInterval(twinTrangThaiBroadcaster);
+    twinTrangThaiBroadcaster = null;
+    console.log("[Twin] trangThai broadcaster stopped");
   }
 }
 
@@ -1458,7 +1963,51 @@ export interface TwinDeviceDelta {
  */
 export function emitTwinDeviceDeltas(factoryId: number, deltas: TwinDeviceDelta[]): void {
   if (!io || deltas.length === 0) return;
-  io.to(`twin:${factoryId}`).emit("twin:device", { factoryId, deltas, ts: Date.now() });
+  void phatTwinDeviceTheoPhamVi(factoryId, deltas);
+}
+
+/**
+ * ★★★ ĐỢT 6 VÁ CHẮN-1 (b) — `twin:device` KIỂM QUYỀN TẮNG NGƯỜI NHẬN.
+ *
+ * ★★★ LỜI KHAI SAI CỦA ĐỢT 6, ĐÃ BỊ ĐO BÁC BỎI: bản trước khai rằng kênh này
+ * "gateway đã lọc trước khi phát" nên không cần cổng. Đo lại:
+ * `twinStream.flush()` nhóm delta theo nhà máy CỦA MÁY rồi gửi tới phòng tương
+ * ứng — đó là ĐỊNH TUYẾN (gói đi đúng phòng), KHÔNG phải PHÂN QUYỀN (ai
+ * được ở trong phòng đó). Hai câu khác hẳn nhau, và chỉ câu thứ hai là bảo mật.
+ *
+ * ★★★ VÀ ĐÂY LÀ CÁI BẪY G5 ĐÃ SUÍT LÀM PHÉP ĐO NHIỆM: khi QA đo,
+ * `operator1` nhận **0 gói `twin:device`** — trông y hệt như đã bị chặn. Lý do
+ * thật là sim KHÔNG PHÁT metric nào trong cửa sổ đo. Kết quả "an toàn" trên
+ * TẬP RỖNG trùng khít với kết quả của một hệ thực sự an toàn ⇒ số 0 ấy không
+ * chứng minh gì. Nghệm thu bản vá này BẮT BUỘC dựng CA DƯƠNG (G21).
+ *
+ * ★ Vá (a) ở `subscribe` đã bịt gốc cho kênh này; cổng ở đây là LỚP THỨ HAI:
+ *   `emitTwinDeviceDeltas` là hàm EXPORT, bất kỳ producer nào cũng gọi được, và
+ *   phòng có thể còn socket đã join từ TRƯỚC khi phạm vi người đó bị thu hẹp.
+ */
+async function phatTwinDeviceTheoPhamVi(factoryId: number, deltas: TwinDeviceDelta[]): Promise<void> {
+  if (!io) return;
+  try {
+    const sockets = await io.in(`twin:${factoryId}`).fetchSockets();
+    if (sockets.length === 0) return;
+    const { resolveTenantFactoryScope } = await import("../db/reportAggregators");
+    const goi = { factoryId, deltas, ts: Date.now() };
+    const cachePhamVi = new Map<number, number[] | null>();
+    for (const sk of sockets) {
+      const nguoi = (sk.data as any)?.user;
+      if (!coDanhTinhNguoiDung(nguoi)) continue;
+      let factoryIds = cachePhamVi.get(nguoi.id);
+      if (factoryIds === undefined) {
+        const pv = await resolveTenantFactoryScope({ userId: nguoi.id, userRole: nguoi.role });
+        factoryIds = pv.factoryIds;
+        cachePhamVi.set(nguoi.id, factoryIds);
+      }
+      if (!nguoiXemDuocNhan(nguoi, factoryIds, factoryId)) continue;
+      sk.emit("twin:device", goi);
+    }
+  } catch (err) {
+    console.error("[Twin] emitTwinDeviceDeltas scope filter failed:", (err as Error)?.message ?? err);
+  }
 }
 
 // ============ X1-c — DEVICE LIVE STREAM (UDM, tiered sampling, gated) ==========
@@ -1892,7 +2441,7 @@ export async function startDowntime(
 ): Promise<DowntimeEvent> {
   const { getDb } = await import('../db');
   const dbConnection = await getDb();
-  if (!dbConnection) throw new Error('[Downtime] Database not available');
+  if (!dbConnection) throw new DbUnavailableError();
   const { downtimeEvents } = await import('../../drizzle/schema');
 
   const [row] = await dbConnection
@@ -1924,7 +2473,7 @@ export async function startDowntime(
 export async function endDowntime(machineId: number, notes?: string): Promise<DowntimeEvent | null> {
   const { getDb } = await import('../db');
   const dbConnection = await getDb();
-  if (!dbConnection) throw new Error('[Downtime] Database not available');
+  if (!dbConnection) throw new DbUnavailableError();
   const { downtimeEvents } = await import('../../drizzle/schema');
   const { and, eq, isNull, desc } = await import('drizzle-orm');
 
@@ -1982,19 +2531,37 @@ export async function getActiveDowntime(machineId: number): Promise<DowntimeEven
 }
 
 // Get downtime history — đọc từ DB, lọc theo machineId/category/khoảng thời gian.
+/**
+ * ★ NHÓM A #3 (ca chuẩn của chủ dự án) — trước bản vá, `mqttClient.getDowntimeHistory` gọi hàm
+ * này **không có `ctx`** ⇒ mọi tài khoản đọc được 1.000 sự kiện dừng máy GẦN NHẤT của **toàn bộ
+ * đội máy**: mã máy, thời điểm, phân loại và lý do dừng của nhà máy người khác.
+ *
+ * ⚠ `userId`/`userRole` chỉ được đến từ `ctx.user`. Bỏ trống = KHÔNG lọc — đó là lối đi của
+ * broadcaster socket và tác vụ nền, và là chiều DƯƠNG chống vá quá tay.
+ */
 export async function getDowntimeHistory(options?: {
   machineId?: number;
   category?: DowntimeEvent['category'];
   startDate?: Date;
   endDate?: Date;
+  userId?: number;
+  userRole?: string;
 }): Promise<DowntimeEvent[]> {
   const { getDb } = await import('../db');
   const dbConnection = await getDb();
   if (!dbConnection) return [];
   const { downtimeEvents } = await import('../../drizzle/schema');
-  const { and, eq, gte, lte, desc } = await import('drizzle-orm');
+  const { and, eq, gte, lte, desc, inArray } = await import('drizzle-orm');
 
   const conds = [];
+  // ⚠ Cổng phạm vi ĐẶT TRƯỚC bộ lọc `machineId` của người gọi — nếu đặt sau, một `machineId` tự
+  // khai của nhà máy khác vẫn lọt qua vì hai mệnh đề `eq`/`inArray` được AND với nhau chứ không
+  // kiểm nhau. Tập RỖNG ⇒ `[-1]` ⇒ 0 hàng TƯỜNG MINH (không phải "quên lọc").
+  const { machineIdsTrongPhamVi } = await import('../db/hierarchy');
+  const trongPhamVi = await machineIdsTrongPhamVi({ userId: options?.userId, userRole: options?.userRole });
+  if (trongPhamVi !== null) {
+    conds.push(inArray(downtimeEvents.machineId, trongPhamVi.length > 0 ? trongPhamVi : [-1]));
+  }
   if (options?.machineId) conds.push(eq(downtimeEvents.machineId, options.machineId));
   if (options?.category) conds.push(eq(downtimeEvents.category, options.category));
   if (options?.startDate) conds.push(gte(downtimeEvents.startTime, options.startDate));

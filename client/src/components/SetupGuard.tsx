@@ -1,4 +1,5 @@
 import { useEffect } from "react";
+import { useTranslation } from "react-i18next";
 import { useLocation } from "wouter";
 import { trpc } from "@/lib/trpc";
 import { Loader2 } from "lucide-react";
@@ -8,6 +9,7 @@ import { Loader2 } from "lucide-react";
  * Redirects to /setup if no admin exists
  */
 export function SetupGuard({ children }: { children: React.ReactNode }) {
+  const { t } = useTranslation();
   const [, setLocation] = useLocation();
   const { data: user, isLoading } = trpc.auth.me.useQuery();
   const { data: setupRequired, isLoading: checkingSetup } = trpc.auth.checkSetupRequired.useQuery();
@@ -29,7 +31,7 @@ export function SetupGuard({ children }: { children: React.ReactNode }) {
       <div className="min-h-screen flex items-center justify-center">
         <div className="flex flex-col items-center gap-4">
           <Loader2 className="h-8 w-8 animate-spin text-primary" />
-          <p className="text-muted-foreground">Đang kiểm tra hệ thống...</p>
+          <p className="text-muted-foreground">{t("setupGuard.dangKiemTraHeThong", "Đang kiểm tra hệ thống...")}</p>
         </div>
       </div>
     );

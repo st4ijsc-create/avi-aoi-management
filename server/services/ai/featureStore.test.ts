@@ -73,13 +73,18 @@ describe("featureStore — image-embedding contract (anti train/serve skew)", ()
 
   it("group-(a) compute (via seed) equals parseVectorLiteral (store-ON == store-OFF)", async () => {
     const literal = "[0.11,0.22,0.33,0.44]";
-    const feats = await getFeatures(IMAGE_EMBEDDING_ENTITY, "123", [IMAGE_EMBEDDING_FEATURE], {
+    // ⚠ 2026-09-24: id CỐ ĐỊNH "123" đụng một hàng cache THẬT không hết hạn trong DB test (image_embedding/123,
+    // createdAt 2026-07-12) ⇒ getFeatures trả vector 384 chiều từ cache thay vì tính từ seed ⇒ ca đỏ. Id riêng mỗi
+    // lượt + dọn sau, để ca này đo đúng nhánh COMPUTE nó khai.
+    const entityId = `contract-${Date.now()}`;
+    const feats = await getFeatures(IMAGE_EMBEDDING_ENTITY, entityId, [IMAGE_EMBEDDING_FEATURE], {
       seed: { embedding: literal, embeddingDim: 4, modelCode: "dinov2-small", label: "OK" },
     });
     const f = feats[IMAGE_EMBEDDING_FEATURE] as { embedding: number[]; embeddingDim: number; label: string };
     expect(f.embedding).toEqual(parseVectorLiteral(literal));
     expect(f.embeddingDim).toBe(4);
     expect(f.label).toBe("OK");
+    await invalidate({ entityType: IMAGE_EMBEDDING_ENTITY, entityId });
   });
 
   it("skips a definition whose entityType does not match", async () => {

@@ -11,6 +11,8 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Skeleton } from "@/components/ui/skeleton";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { trpc } from "@/lib/trpc";
+import { finalYield } from "@shared/kpiYield";
+import { ScopeEmptyNotice } from "@/components/ScopeEmptyNotice";
 import { 
   Building2,
   Factory,
@@ -20,10 +22,13 @@ import {
   Activity,
   Calendar,
   Globe,
-  ArrowRight
+  ArrowRight,
+  ChevronRight
 } from "lucide-react";
 import ReportExportButton, { type ReportExportConfig } from "@/components/ReportExportButton";
+import PollFreshness from "@/components/PollFreshness";
 import { CorporateFactoryStats } from "@/components/CorporateFactoryStats";
+import { ContextDrawer } from "@/components/workspace";
 import { 
   AreaChart, 
   Area, 
@@ -39,7 +44,8 @@ import {
   Bar,
   Legend,
   LineChart,
-  Line
+  Line,
+  ReferenceLine
 } from "recharts";
 
 export default function CorporateDashboard() {
@@ -51,20 +57,118 @@ export default function CorporateDashboard() {
   const canViewFederation = hasPermission("admin_system", "canView");
   const [selectedPeriod, setSelectedPeriod] = useState("month");
   const [activeTab, setActiveTab] = useState("overview");
+  // doc 68 §3.7 P1 — dòng tập đoàn click → ContextDrawer preview (KPI + so-sánh
+  // kỳ + drill), thay vì bắt executive đổi tab "Chi tiết" (có filter kỳ riêng).
+  const [drawerCorp, setDrawerCorp] = useState<{
+    name: string;
+    isUnassigned: boolean;
+    factories: number;
+    yield: number;
+    output: number;
+  } | null>(null);
 
-  // Fetch real data from API
-  const { data: dashboardStats, isLoading: loadingStats } = trpc.dashboard.getStats.useQuery({});
-  const { data: yieldByCorp, isLoading: loadingYield } = trpc.corporateFactoryStats.yieldRateByCorporate.useQuery({});
-  const { data: yieldByFactory } = trpc.corporateFactoryStats.yieldRateByFactory.useQuery({});
-  const { data: factories } = trpc.factory.list.useQuery();
-  const { data: lines } = trpc.line.list.useQuery();
-  const { data: machinesList } = trpc.machine.list.useQuery();
-  const { data: dailyStats, isLoading: loadingDaily } = trpc.dashboard.getDailyStats.useQuery({ days: 180 });
+  // W1-P0: bộ lọc kỳ KHÔNG còn là trang trí — map selectedPeriod → khoảng thời
+  // gian thật truyền vào các query. startDate ổn định theo selectedPeriod (không
+  // tạo Date mới mỗi render → tránh churn query-key / refetch vô hạn, cùng pattern
+  // ExecutiveMobile). endDate bỏ trống = "đến nay" (server hiểu open-ended).
+  const periodRange = useMemo(() => {
+    const start = new Date();
+    start.setHours(0, 0, 0, 0);
+    let days: number;
+    switch (selectedPeriod) {
+      case "week": {
+        // Đầu tuần hiện tại (Thứ 2) → nay
+        const dow = (start.getDay() + 6) % 7; // 0 = Thứ 2
+        start.setDate(start.getDate() - dow);
+        days = 7;
+        break;
+      }
+      case "quarter": {
+        start.setMonth(Math.floor(start.getMonth() / 3) * 3, 1);
+        days = 92;
+        break;
+      }
+      case "year": {
+        start.setMonth(0, 1);
+        days = 365;
+        break;
+      }
+      case "month":
+      default: {
+        start.setDate(1);
+        days = 31;
+        break;
+      }
+    }
+    return { startDate: start, days };
+  }, [selectedPeriod]);
+
+  // Fetch real data from API — các nguồn theo-kỳ đều nhận startDate (đã xác minh
+  // server: dashboard.getStats + corporateFactoryStats.* nhận startDate/endDate
+  // optional; getDailyStats nhận days không cap).
+  // W2 (AUD-01): trang giao ban/TV mở hàng giờ — poll 60s cho dữ liệu chính để
+  // không "đứng yên vĩnh viễn" sau lần fetch lúc mount (giả-live). Lịch sử ngày
+  // (getDailyStats) đổi chậm → staleTime 5' + poll 5'. refetchOnWindowFocus giữ
+  // mặc định TanStack (true).
+  const POLL_MAIN_MS = 60_000;
+  const POLL_HISTORY_MS = 300_000;
+  const {
+    data: dashboardStats,
+    isLoading: loadingStats,
+    dataUpdatedAt: statsUpdatedAt,
+    isFetching: fetchingStats,
+  } = trpc.dashboard.getStats.useQuery(
+    { startDate: periodRange.startDate },
+    { refetchInterval: POLL_MAIN_MS },
+  );
+  const {
+    data: yieldByCorp,
+    isLoading: loadingYield,
+    dataUpdatedAt: yieldCorpUpdatedAt,
+    isFetching: fetchingYieldCorp,
+  } = trpc.corporateFactoryStats.yieldRateByCorporate.useQuery(
+    { startDate: periodRange.startDate },
+    { refetchInterval: POLL_MAIN_MS },
+  );
+  const {
+    data: yieldByFactory,
+    dataUpdatedAt: yieldFactoryUpdatedAt,
+    isFetching: fetchingYieldFactory,
+  } = trpc.corporateFactoryStats.yieldRateByFactory.useQuery(
+    { startDate: periodRange.startDate },
+    { refetchInterval: POLL_MAIN_MS },
+  );
+  // Danh mục thực thể (factory/line/machine) là số đăng ký HIỆN CÓ — không phải
+  // chuỗi thời gian, không lọc theo kỳ được → card tương ứng ghi chú trung thực.
+  // doc 67 W6 (việc 4): trước đây fetch NGUYÊN 3 list (factory/line/machine) chỉ
+  // để đếm .length → thay bằng 1 procedure COUNT(*) (cùng filter isActive với các
+  // list). Danh mục đổi chậm → staleTime 5', không cần poll.
+  const { data: overviewCounts } = trpc.dashboard.overviewCounts.useQuery(undefined, {
+    staleTime: 300_000,
+  });
+  const { data: dailyStats, isLoading: loadingDaily } = trpc.dashboard.getDailyStats.useQuery(
+    { days: periodRange.days },
+    { staleTime: POLL_HISTORY_MS, refetchInterval: POLL_HISTORY_MS },
+  );
   // Real OEE source: live per-machine OEE computed from MQTT (same source as OEEDashboard).
   // Returns [] when no live OEE has been reported — we surface that honestly as "N/A".
-  const { data: allOEE } = trpc.mqttClient.getAllOEE.useQuery();
+  const {
+    data: allOEE,
+    dataUpdatedAt: oeeUpdatedAt,
+    isFetching: fetchingOEE,
+  } = trpc.mqttClient.getAllOEE.useQuery(undefined, { refetchInterval: POLL_MAIN_MS });
 
   const isLoading = loadingStats || loadingYield || loadingDaily;
+
+  // W2 (AUD-01): mốc tươi của trang = lần fetch thành công MỚI NHẤT trong các
+  // query dữ liệu chính (dataUpdatedAt = 0 khi chưa có dữ liệu → lọc bỏ).
+  const freshnessUpdatedAt = useMemo(() => {
+    const stamps = [statsUpdatedAt, yieldCorpUpdatedAt, yieldFactoryUpdatedAt, oeeUpdatedAt].filter(
+      (ts) => ts > 0,
+    );
+    return stamps.length ? Math.max(...stamps) : undefined;
+  }, [statsUpdatedAt, yieldCorpUpdatedAt, yieldFactoryUpdatedAt, oeeUpdatedAt]);
+  const freshnessFetching = fetchingStats || fetchingYieldCorp || fetchingYieldFactory || fetchingOEE;
 
   // Real corporate-wide average OEE: mean of live per-machine OEE values.
   // null when there is no live OEE data (honest "no data" rather than a fabricated number).
@@ -76,43 +180,83 @@ export default function CorporateDashboard() {
     return Math.round((sum / valid.length) * 100) / 100;
   }, [allOEE]);
 
-  // Derive corporateOverview from real data
+  // Derive corporateOverview from real data.
+  // W1-P0: KPI "Công ty" cũ đếm Set(factoryCode) dán nhãn Công ty — SAI (không có
+  // tầng company thật trong data: yieldRateByFactory chỉ trả corporateCode +
+  // factoryCode, đã xác minh server/db/statistics.ts). Thay bằng KPI trung thực
+  // "Nhà máy có dữ liệu" (distinct factoryCode có inspection trong kỳ).
   const corporateOverview = useMemo(() => {
     const avgYield = dashboardStats?.yieldRate ?? 0;
+    const isUnassignedCode = (code: string | null | undefined) => !code || code === 'N/A';
     return {
-      totalCorporations: yieldByCorp?.length ?? 0,
-      totalCompanies: yieldByFactory ? new Set(yieldByFactory.map(f => f.factoryCode)).size : 0,
-      totalFactories: factories?.length ?? 0,
-      totalLines: lines?.length ?? 0,
-      totalMachines: machinesList?.length ?? 0,
+      // Chỉ đếm tập đoàn THẬT (loại nhóm chưa-gán 'N/A' khỏi số đếm).
+      totalCorporations: yieldByCorp
+        ? new Set(yieldByCorp.filter(c => !isUnassignedCode(c.corporateCode)).map(c => c.corporateCode)).size
+        : 0,
+      factoriesWithData: yieldByFactory ? new Set(yieldByFactory.map(f => f.factoryCode)).size : 0,
+      totalFactories: overviewCounts?.factories ?? 0,
+      totalLines: overviewCounts?.lines ?? 0,
+      totalMachines: overviewCounts?.machines ?? 0,
       avgYield: Math.round(avgYield * 100) / 100,
       avgOEE: realAvgOEE,
+      // doc 68 §3.7 P1 — "Sản lượng" cho hero band = tổng inspection trong kỳ
+      // (dashboardStats.total, cùng nguồn yieldRate).
+      totalOutput: dashboardStats?.total ?? 0,
     };
-  }, [dashboardStats, yieldByCorp, yieldByFactory, factories, lines, machinesList, realAvgOEE]);
+  }, [dashboardStats, yieldByCorp, yieldByFactory, overviewCounts, realAvgOEE]);
+
+  // W1-P2: nhãn hiển thị cho nhóm inspection chưa gán tập đoàn (corporateCode
+  // null/'N/A' phía server) — gộp một dòng, style muted, xếp CUỐI danh sách và
+  // LOẠI khỏi pie/bar so sánh (chỉ hiện trong danh sách chi tiết).
+  const UNASSIGNED_CORP_LABEL_KEY = "corpDash.chuaGanTapDoan";
 
   // Derive corporationData from yieldRateByCorporate
   const corporationData = useMemo(() => {
     if (!yieldByCorp) return [];
-    // Count factories per corporate from yieldByFactory
+    const isUnassignedCode = (code: string | null | undefined) => !code || code === 'N/A';
+    // Count factories per corporate from yieldByFactory (nhóm chưa-gán gộp chung)
     const factoriesPerCorp: Record<string, number> = {};
     if (yieldByFactory) {
       for (const f of yieldByFactory) {
-        factoriesPerCorp[f.corporateCode] = (factoriesPerCorp[f.corporateCode] || 0) + 1;
+        const key = isUnassignedCode(f.corporateCode) ? UNASSIGNED_CORP_LABEL_KEY : f.corporateCode;
+        factoriesPerCorp[key] = (factoriesPerCorp[key] || 0) + 1;
       }
     }
-    return yieldByCorp.map(c => {
-      const yieldVal = parseFloat(String(c.yieldRate));
-      return {
-        name: c.corporateCode,
-        companies: factoriesPerCorp[c.corporateCode] || 1,
-        factories: factoriesPerCorp[c.corporateCode] || 1,
-        yield: yieldVal,
+    // Gộp mọi dòng chưa-gán thành MỘT dòng; yield gộp tính lại từ ok+ntf/total
+    // (cùng công thức FINAL yield của server) thay vì trung bình các %.
+    const merged: Record<string, { name: string; isUnassigned: boolean; factories: number; ok: number; ntf: number; total: number }> = {};
+    for (const c of yieldByCorp) {
+      const isUnassigned = isUnassignedCode(c.corporateCode);
+      const name = isUnassigned ? UNASSIGNED_CORP_LABEL_KEY : c.corporateCode;
+      if (!merged[name]) {
+        merged[name] = { name, isUnassigned, factories: factoriesPerCorp[name] || 0, ok: 0, ntf: 0, total: 0 };
+      }
+      merged[name].ok += Number(c.okCount ?? 0);
+      merged[name].ntf += Number(c.ntfCount ?? 0);
+      merged[name].total += Number(c.totalInspections ?? 0);
+    }
+    return Object.values(merged)
+      .map(m => ({
+        name: m.name,
+        isUnassigned: m.isUnassigned,
+        factories: m.factories,
+        yield: m.total > 0 ? Math.round(finalYield({ ok: m.ok, ntf: m.ntf, total: m.total }) * 100) / 100 : 0,
+        // W4: sản lượng (tổng inspection trong kỳ) — nguồn dữ liệu đúng ngữ nghĩa
+        // cho pie "phân bố" (pie theo yield% là sai ngữ nghĩa part-of-whole).
+        output: m.total,
         // NOTE: per-corporate OEE and trend are intentionally omitted — there is no
         // real per-corporate OEE/historical data source. Showing yield×0.85 or trend=0
         // would be fabricated. Corporate-wide avg OEE (live) is shown in the KPI cards.
-      };
-    });
+      }))
+      // Nhóm chưa-gán xếp cuối danh sách
+      .sort((a, b) => Number(a.isUnassigned) - Number(b.isUnassigned));
   }, [yieldByCorp, yieldByFactory]);
+
+  // Dữ liệu cho pie/bar so sánh: chỉ tập đoàn thật (loại nhóm chưa-gán).
+  const assignedCorporationData = useMemo(
+    () => corporationData.filter(c => !c.isUnassigned),
+    [corporationData],
+  );
 
   // Derive monthlyTrend from dailyStats aggregated by month
   const monthlyTrend = useMemo(() => {
@@ -130,7 +274,7 @@ export default function CorporateDashboard() {
       .sort(([a], [b]) => a.localeCompare(b))
       .slice(-6)
       .map(([key, v]) => {
-        const yieldVal = v.total > 0 ? Math.round(((v.ok + v.ntf) / v.total) * 10000) / 100 : 0;
+        const yieldVal = v.total > 0 ? Math.round(finalYield({ ok: v.ok, ntf: v.ntf, total: v.total }) * 100) / 100 : 0;
         const monthNum = parseInt(key.slice(5, 7), 10);
         return {
           month: `T${monthNum}`,
@@ -141,6 +285,10 @@ export default function CorporateDashboard() {
       });
   }, [dailyStats]);
 
+  // doc 68 §3.7 P2 — chart co khi dữ liệu thưa (<3 tháng): tránh biểu đồ phình
+  // nửa card cho 1-2 điểm. Hạ ~120px (line 280→160, bar 250→140).
+  const sparseTrend = monthlyTrend.length > 0 && monthlyTrend.length < 3;
+
   // Real export (PDF / XLSX / HTML) — replaces the "coming soon" placeholder.
   const getExportConfig = (): ReportExportConfig => {
     const sections: ReportExportConfig["sections"] = [];
@@ -149,7 +297,7 @@ export default function CorporateDashboard() {
       type: 'stats',
       stats: [
         { label: t('corporate.corporation'), value: corporateOverview.totalCorporations },
-        { label: t('corporate.company'), value: corporateOverview.totalCompanies },
+        { label: t("corporateDashboard.nhaMayCoDuLieu", "Nhà máy có dữ liệu"), value: corporateOverview.factoriesWithData },
         { label: t('corporate.factory', 'Factories'), value: corporateOverview.totalFactories },
         { label: t('corporate.line', 'Lines'), value: corporateOverview.totalLines },
         { label: t('corporate.machine', 'Machines'), value: corporateOverview.totalMachines },
@@ -162,10 +310,10 @@ export default function CorporateDashboard() {
         title: t('corporate.byCorporation', 'By corporation'),
         type: 'table',
         tableHeaders: [
-          t('corporate.corporation'), t('corporate.company', 'Companies'),
+          t('corporate.corporation'),
           t('corporate.factory', 'Factories'), t('reports.yieldRate', 'Yield Rate'),
         ],
-        tableRows: corporationData.map((c) => [c.name, c.companies, c.factories, `${c.yield}%`]),
+        tableRows: corporationData.map((c) => [c.name, c.factories, `${c.yield}%`]),
       });
     if (yieldByFactory && yieldByFactory.length)
       sections.push({
@@ -212,13 +360,27 @@ export default function CorporateDashboard() {
   return (
     <DashboardLayout>
       <div className="space-y-6">
+      {/*
+        ⚠ 2026-08-17 — hero "tỷ lệ đạt" và "sản lượng" của trang này lấy từ `dashboard.getStats`, vốn mang nhãn.
+        Trước bản vá, tài khoản CHƯA ĐƯỢC GÁN NHÀ MÁY đọc những con số này như một phép đo về
+        nhà máy. Chúng không phải phép đo — chúng là hệ quả của một phạm vi rỗng.
+      */}
+        <ScopeEmptyNotice reason={(dashboardStats as { scopeEmptyReason?: string | null } | undefined)?.scopeEmptyReason} />
         {/* Header */}
         <PageHeader
           icon={<Building2 className="h-6 w-6" />}
-          title={t('corporate.dashboard')}
+          // doc 67 W5 (việc 2) — 1 key/trang: h1 = breadcrumb = menu = nav.corporateDashboard.
+          title={t("nav.corporateDashboard", "Corporate Overview")}
           description={t('corporate.dashboardDescription')}
           actions={
             <>
+              {/* W2 (AUD-01): freshness trung thực — "Cập nhật Xs trước"; amber khi
+                  quá 1,5× chu kỳ poll 60s (trễ mạng bình thường không nháy cảnh báo). */}
+              <PollFreshness
+                updatedAt={freshnessUpdatedAt}
+                isFetching={freshnessFetching}
+                staleAfterMs={POLL_MAIN_MS * 1.5}
+              />
               {canViewFederation && (
                 <Button
                   variant="outline"
@@ -248,63 +410,71 @@ export default function CorporateDashboard() {
           }
         />
 
-        {/* U7 cross-links — executive corporate roll-up; drill or go live. */}
-        <RelatedViews
-          links={[
-            { href: "/drill-down", labelKey: "nav.drillDown", labelDefault: "Drill-Down" },
-            { href: "/command-center", labelKey: "nav.commandCenter", labelDefault: "Command Center" },
-          ]}
-        />
+        {/* doc 67 W5 (việc 6) — rail 2-chiều từ map tập trung (RelatedViews.tsx). */}
+        <RelatedViews pageId="corporate-dashboard" />
 
-        {/* KPI Overview Cards */}
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+        {/* doc 68 §3.7 P1 — HERO BAND: 3 số điều hành đọc-trong-5s (Tỷ lệ đạt /
+            OEE / Sản lượng), số LỚN (MetricCard size="hero"). Tách khỏi 5 số đếm
+            (→ strip muted 1 hàng bên dưới) để khử đồng-trọng-số + neo mắt. */}
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+          {/* W4: tone theo ngưỡng thật (≥98 success · ≥95 trung tính · <95 danger)
+              — success vô điều kiện là "màu nói dối" khi yield xấu. */}
           <MetricCard
-            label={t('corporate.corporation')}
-            value={corporateOverview.totalCorporations}
-          />
-          <MetricCard
-            label={t('corporate.company')}
-            value={corporateOverview.totalCompanies}
-          />
-          <MetricCard
-            label={t('corporate.factory')}
-            value={corporateOverview.totalFactories}
-          />
-          <MetricCard
-            label={t('corporate.productionLine')}
-            value={corporateOverview.totalLines}
-          />
-          <MetricCard
-            label={t('corporate.machines')}
-            value={corporateOverview.totalMachines}
-          />
-          <MetricCard
+            size="hero"
+            icon={<TrendingUp />}
             label={t('corporate.avgYield')}
             value={`${corporateOverview.avgYield}%`}
-            tone="success"
+            tone={corporateOverview.avgYield >= 98 ? "success" : corporateOverview.avgYield >= 95 ? "default" : "danger"}
           />
           {corporateOverview.avgOEE !== null ? (
+            /* OEE là số ĐO TRỰC TIẾP (live MQTT) — không có lịch sử theo kỳ. */
             <MetricCard
+              size="hero"
+              icon={<Activity />}
               label={t('corporate.avgOEE')}
               value={`${corporateOverview.avgOEE}%`}
               tone="info"
+              delta={t("corporateDashboard.trucTiepKhongTheoKy", "Trực tiếp — không theo kỳ")}
             />
           ) : (
-            <Card>
-              <CardContent className="flex items-center gap-3 p-4">
-                <div className="min-w-0">
-                  <div
-                    className="text-sm font-medium text-muted-foreground"
-                    title={t('corporate.noOeeDataSource')}
-                  >
-                    {t('corporate.noData')}
-                  </div>
-                  <div className="truncate text-xs text-muted-foreground">{t('corporate.avgOEE')}</div>
-                </div>
-              </CardContent>
-            </Card>
+            /* doc 68 §3.7 P1 — ô no-OEE dùng MetricCard chuẩn (value="—") thay Card
+               tự chế lệch chuẩn → đồng nhất hero band + hết ô mồ côi. */
+            <MetricCard
+              size="hero"
+              icon={<Activity />}
+              label={t('corporate.avgOEE')}
+              value="—"
+              tone="default"
+              delta={t('corporate.noData', 'Chưa có dữ liệu')}
+            />
           )}
+          {/* W4: "Sản lượng" (tổng inspection trong kỳ) hoàn tất bộ 3 câu-hỏi-số-1. */}
+          <MetricCard
+            size="hero"
+            icon={<BarChart3 />}
+            label={t('corporate.output')}
+            value={corporateOverview.totalOutput.toLocaleString()}
+          />
         </div>
+
+        {/* doc 68 §3.7 P1 — strip 5 số đếm MUTED 1 hàng: hạ trọng số so với hero
+            (số đếm danh mục, không phải KPI điều hành) + khử ô mồ côi. */}
+        <Card>
+          <CardContent className="flex flex-wrap items-center gap-x-6 gap-y-2 p-3">
+            {[
+              { label: t('corporate.corporation'), value: corporateOverview.totalCorporations },
+              { label: t("corporateDashboard.nhaMayCoDuLieu2", "Nhà máy có dữ liệu"), value: corporateOverview.factoriesWithData },
+              { label: t('corporate.factory'), value: corporateOverview.totalFactories },
+              { label: t('corporate.productionLine'), value: corporateOverview.totalLines },
+              { label: t('corporate.machines'), value: corporateOverview.totalMachines },
+            ].map((s) => (
+              <span key={s.label} className="flex items-baseline gap-1.5">
+                <span className="text-lg font-semibold tabular-nums text-foreground">{s.value}</span>
+                <span className="text-xs text-muted-foreground">{s.label}</span>
+              </span>
+            ))}
+          </CardContent>
+        </Card>
 
         {/* Tabs */}
         <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
@@ -337,28 +507,43 @@ export default function CorporateDashboard() {
                 <CardContent>
                   <div className="space-y-4">
                     {corporationData.map((corp, index) => (
-                      <div key={corp.name} className="flex items-center justify-between p-3 rounded-lg bg-muted/30">
+                      /* W1-P2: nhóm "Chưa gán tập đoàn" hiển thị muted, xếp cuối
+                         (sort trong corporationData) và không vào pie/bar so sánh.
+                         doc 68 §3.7 P1: dòng click → ContextDrawer (KPI + so-kỳ +
+                         drill) thay vì bắt đổi tab "Chi tiết" (đứt mạch). */
+                      <button
+                        type="button"
+                        key={corp.name}
+                        onClick={() => setDrawerCorp(corp)}
+                        className={`flex w-full items-center justify-between rounded-lg p-3 text-left transition-colors hover:bg-muted/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring ${corp.isUnassigned ? 'bg-muted/10 opacity-70' : 'bg-muted/30'}`}
+                      >
                         <div className="flex items-center gap-3">
                           <div
                             className="h-10 w-10 rounded-lg flex items-center justify-center"
-                            style={{ backgroundColor: `color-mix(in oklch, ${chartColor(index)} 15%, transparent)` }}
+                            style={corp.isUnassigned
+                              ? { backgroundColor: 'color-mix(in oklch, var(--muted-foreground) 15%, transparent)' }
+                              : { backgroundColor: `color-mix(in oklch, ${chartColor(index)} 15%, transparent)` }}
                           >
-                            <Building2 className="h-5 w-5" style={{ color: chartColor(index) }} />
+                            <Building2
+                              className={`h-5 w-5 ${corp.isUnassigned ? 'text-muted-foreground' : ''}`}
+                              style={corp.isUnassigned ? undefined : { color: chartColor(index) }}
+                            />
                           </div>
                           <div>
-                            <p className="font-medium">{corp.name}</p>
+                            <p className={corp.isUnassigned ? 'font-medium text-muted-foreground' : 'font-medium'}>{corp.isUnassigned ? t(UNASSIGNED_CORP_LABEL_KEY) : corp.name}</p>
                             <p className="text-xs text-muted-foreground">
-                              {corp.companies} {t('corporate.companies')} • {corp.factories} {t('corporate.factories')}
+                              {corp.factories} {t('corporate.factories')}
                             </p>
                           </div>
                         </div>
-                        <div className="flex items-center gap-4">
+                        <div className="flex items-center gap-3">
                           <div className="text-right">
-                            <p className="font-bold text-success">{corp.yield}%</p>
+                            <p className={`font-bold ${corp.isUnassigned ? 'text-muted-foreground' : 'text-success'}`}>{corp.yield}%</p>
                             <p className="text-xs text-muted-foreground">{t('corporate.yield')}</p>
                           </div>
+                          <ChevronRight className="h-4 w-4 shrink-0 text-muted-foreground" />
                         </div>
-                      </div>
+                      </button>
                     ))}
                   </div>
                 </CardContent>
@@ -371,16 +556,36 @@ export default function CorporateDashboard() {
                     <TrendingUp className="h-4 w-4 text-primary" />
                     {t('corporate.monthlyTrend')}
                   </CardTitle>
+                  {/* W4: kỳ ngắn → nói thật thay vì để trend 1-2 điểm gây hiểu nhầm. */}
+                  {monthlyTrend.length > 0 && monthlyTrend.length < 3 && (
+                    <p className="text-xs text-muted-foreground">Mới có {monthlyTrend.length} tháng dữ liệu</p>
+                  )}
                 </CardHeader>
-                <CardContent>
-                  <div className="h-[280px]">
+                {/* doc 68 §3.7 P2 — cân card danh sách vs chart: flex items-center
+                    giữ chart canh giữa dọc khi thưa (list bên trái cao hơn). */}
+                <CardContent className="flex items-center">
+                  <div
+                    className={`w-full ${sparseTrend ? 'h-[160px]' : 'h-[280px]'}`}
+                    role="img"
+                    aria-label={t("corpDash.xuHuongTyLeDat", "Xu hướng tỷ lệ đạt theo tháng — biểu đồ đường, đường tham chiếu mục tiêu 95%")}
+                  >
                     <ResponsiveContainer width="100%" height="100%">
                       <LineChart data={monthlyTrend}>
                         <CartesianGrid {...chartGridProps} />
                         <XAxis dataKey="month" tick={chartAxisTick} />
-                        <YAxis domain={[80, 100]} tick={chartAxisTick} />
+                        {/* W4: domain cứng [80,100] cắt mất tháng yield xấu — nới sàn theo dataMin. */}
+                        <YAxis
+                          domain={[(dataMin: number) => Math.min(80, Math.floor(dataMin - 2)), 100]}
+                          tick={chartAxisTick}
+                        />
                         <RechartsTooltip contentStyle={chartTooltipStyle} />
                         <Legend />
+                        <ReferenceLine
+                          y={95}
+                          stroke="var(--warning)"
+                          strokeDasharray="4 4"
+                          label={{ value: t("corpDash.mucTieu", "Mục tiêu"), position: 'insideTopRight', fill: 'var(--muted-foreground)', fontSize: 11 }}
+                        />
                         <Line type="monotone" dataKey="yield" name={t('corporate.yieldPercent')} stroke="var(--success)" strokeWidth={2} dot={{ fill: 'var(--success)' }} />
                       </LineChart>
                     </ResponsiveContainer>
@@ -396,9 +601,12 @@ export default function CorporateDashboard() {
                   <Activity className="h-4 w-4 text-primary" />
                   {t('corporate.monthlyOutput')}
                 </CardTitle>
+                {monthlyTrend.length > 0 && monthlyTrend.length < 3 && (
+                  <p className="text-xs text-muted-foreground">Mới có {monthlyTrend.length} tháng dữ liệu</p>
+                )}
               </CardHeader>
               <CardContent>
-                <div className="h-[250px]">
+                <div className={sparseTrend ? 'h-[140px]' : 'h-[250px]'} role="img" aria-label={t("corpDash.sanLuongTheoThangBieu", "Sản lượng theo tháng — biểu đồ cột")}>
                   <ResponsiveContainer width="100%" height="100%">
                     <BarChart data={monthlyTrend}>
                       <CartesianGrid {...chartGridProps} />
@@ -422,31 +630,40 @@ export default function CorporateDashboard() {
               {/* Yield Distribution */}
               <Card className="glass-card">
                 <CardHeader>
+                  {/* W4: pie theo yield% là sai ngữ nghĩa (yield không phải part-of-whole)
+                      → pie theo SẢN LƯỢNG (tổng inspection trong kỳ) + đổi tiêu đề. */}
                   <CardTitle className="text-base flex items-center gap-2">
                     <PieChartIcon className="h-4 w-4 text-success" />
-                    {t('corporate.yieldDistribution')}
+                    Phân bố sản lượng theo tập đoàn
                   </CardTitle>
                 </CardHeader>
                 <CardContent>
-                  <div className="h-[300px]">
+                  <div
+                    className="h-[300px]"
+                    role="img"
+                    aria-label={t("corpDash.phanBoSanLuongTheo", "Phân bố sản lượng theo tập đoàn — biểu đồ tròn")}
+                  >
                     <ResponsiveContainer width="100%" height="100%">
                       <PieChart>
                         <Pie
-                          data={corporationData}
+                          data={assignedCorporationData}
                           cx="50%"
                           cy="50%"
                           innerRadius={60}
                           outerRadius={100}
                           paddingAngle={5}
-                          dataKey="yield"
+                          dataKey="output"
                           nameKey="name"
-                          label={({ name, yield: y }) => `${name}: ${y}%`}
+                          label={({ name, value }) => `${name}: ${Number(value ?? 0).toLocaleString()}`}
                         >
-                          {corporationData.map((entry, index) => (
+                          {assignedCorporationData.map((entry, index) => (
                             <Cell key={`cell-${index}`} fill={chartColor(index)} />
                           ))}
                         </Pie>
-                        <RechartsTooltip contentStyle={chartTooltipStyle} />
+                        <RechartsTooltip
+                          contentStyle={chartTooltipStyle}
+                          formatter={(value: number) => [value.toLocaleString(), t("corpDash.sanLuong", "Sản lượng")]}
+                        />
                       </PieChart>
                     </ResponsiveContainer>
                   </div>
@@ -463,9 +680,13 @@ export default function CorporateDashboard() {
                 </CardTitle>
               </CardHeader>
               <CardContent>
-                <div className="h-[300px]">
+                <div
+                  className="h-[300px]"
+                  role="img"
+                  aria-label={t("corpDash.soSanhTyLeDat", "So sánh tỷ lệ đạt giữa các tập đoàn — biểu đồ cột ngang")}
+                >
                   <ResponsiveContainer width="100%" height="100%">
-                    <BarChart data={corporationData} layout="vertical">
+                    <BarChart data={assignedCorporationData} layout="vertical">
                       <CartesianGrid {...chartGridProps} />
                       <XAxis type="number" domain={[0, 100]} tick={chartAxisTick} />
                       <YAxis dataKey="name" type="category" width={100} tick={chartAxisTick} />
@@ -481,9 +702,73 @@ export default function CorporateDashboard() {
 
           {/* Details Tab - Use existing CorporateFactoryStats */}
           <TabsContent value="details" className="space-y-6 mt-6">
+            {/* Trung thực: tab chi tiết có bộ lọc thời gian RIÊNG (7/30/90 ngày),
+                không theo kỳ đã chọn ở đầu trang. */}
+            <p className="text-xs text-muted-foreground">
+              Tab chi tiết dùng bộ lọc thời gian riêng bên dưới, không theo kỳ đã chọn ở đầu trang.
+            </p>
             <CorporateFactoryStats />
           </TabsContent>
         </Tabs>
+
+        {/* doc 68 §3.7 P1 — ContextDrawer preview cho dòng tập đoàn: KPI + mini
+            so-sánh kỳ (vs trung bình tập đoàn / mục tiêu 95%) + CTA drill. Giữ
+            danh sách nền để so sánh liên tiếp, thay điều hướng đổi tab đứt-mạch. */}
+        <ContextDrawer
+          open={drawerCorp !== null}
+          onOpenChange={(o) => { if (!o) setDrawerCorp(null); }}
+          title={drawerCorp?.name ?? ''}
+          description={drawerCorp
+            ? `${drawerCorp.factories} ${t('corporate.factories')} · ${t(`corporate.this${selectedPeriod.charAt(0).toUpperCase()}${selectedPeriod.slice(1)}`, selectedPeriod)}`
+            : undefined}
+        >
+          {drawerCorp && (
+            <div className="space-y-4">
+              <div className="grid grid-cols-2 gap-3">
+                <MetricCard
+                  label={t('corporate.yield')}
+                  value={`${drawerCorp.yield}%`}
+                  tone={drawerCorp.isUnassigned ? 'default' : drawerCorp.yield >= 98 ? 'success' : drawerCorp.yield >= 95 ? 'default' : 'danger'}
+                />
+                <MetricCard label={t('corporate.output')} value={drawerCorp.output.toLocaleString()} />
+                <MetricCard label={t('corporate.factories')} value={drawerCorp.factories} />
+              </div>
+
+              {/* Mini so-sánh kỳ: yield tập đoàn này vs trung bình toàn + mục tiêu. */}
+              <div className="space-y-2 rounded-lg border p-3">
+                <p className="text-xs font-medium text-muted-foreground">{t("corpDash.soSanhTrongKy", "So sánh trong kỳ")}</p>
+                {(() => {
+                  const dVsAvg = Math.round((drawerCorp.yield - corporateOverview.avgYield) * 100) / 100;
+                  const dVsTarget = Math.round((drawerCorp.yield - 95) * 100) / 100;
+                  const row = (lbl: string, d: number) => (
+                    <div className="flex items-center justify-between text-sm">
+                      <span className="text-muted-foreground">{lbl}</span>
+                      <span className={`font-semibold tabular-nums ${d > 0 ? 'text-success' : d < 0 ? 'text-destructive' : 'text-foreground'}`}>
+                        {d > 0 ? '+' : ''}{d} pp
+                      </span>
+                    </div>
+                  );
+                  return (
+                    <>
+                      {row(t("corpDash.vsTrungBinhTapDoan", "vs. Trung bình tập đoàn"), dVsAvg)}
+                      {row(t("corpDash.vsMucTieu95", "vs. Mục tiêu 95%"), dVsTarget)}
+                    </>
+                  );
+                })()}
+              </div>
+
+              <Button
+                variant="outline"
+                className="w-full gap-2"
+                onClick={() => { setDrawerCorp(null); setLocation('/drill-down'); }}
+              >
+                <Factory className="h-4 w-4" />
+                Chi tiết theo nhà máy
+                <ArrowRight className="h-4 w-4" />
+              </Button>
+            </div>
+          )}
+        </ContextDrawer>
       </div>
     </DashboardLayout>
   );

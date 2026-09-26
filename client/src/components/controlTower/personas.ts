@@ -69,7 +69,10 @@ export const PERSONA_PANELS: Record<Persona, readonly PanelKey[]> = {
  */
 export function personaForRole(role?: string | null): Persona {
   switch (role) {
+    // doc 67 W5 (việc 4) — manager đứng cùng supervisor (tab "Quản đốc"),
+    // executive/admin → tab "Điều hành", operator → tab "Vận hành".
     case "supervisor":
+    case "manager":
       return "supervisor";
     case "operator":
     case "maintenance":
@@ -78,7 +81,7 @@ export function personaForRole(role?: string | null): Persona {
       return "operations";
     case "admin":
     case "it_admin":
-    case "manager":
+    case "executive":
     case "viewer":
     case "user":
     default:

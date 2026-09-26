@@ -158,7 +158,12 @@
 
 ---
 
-## 6. 🔑 Quyết định cần bạn duyệt (trước khi thực thi)
+## 6. 🔑 Quyết định — ✅ **ĐÃ CHỐT ĐỦ 14/14** (bản gốc, lưu vết)
+
+> ⚠️ Tiêu đề cũ *"cần bạn duyệt (trước khi thực thi)"* đã gỡ. **Cả 14 quyết định đã có giá trị chốt**
+> — xem khối **"§6 — Chốt quyết định (user duyệt)"** ở §0-ter đầu tài liệu, và §0-bis liệt kê
+> 10 commit thực thi theo đúng các chốt đó. Phần dưới giữ nguyên văn câu hỏi để lưu vết.
+> *(nhóm C việc 2, 2026-08-13 — mục này từng bị chép vào backlog "14 quyết định chờ duyệt".)*
 
 ### 6.0 — Chung
 - **[Lộ trình cờ]** Cả 3 mục dùng cờ **default-OFF**, bật ON làm default ở doc SAU **sau khi PROVEN** — đồng ý mô hình 2 bước cho `INSPECTION_SINGLE_TX_ENABLED`, `MACHINE_FIDUCIAL_REGISTRATION`, `PRODUCT_VARIANT_ENABLED`?

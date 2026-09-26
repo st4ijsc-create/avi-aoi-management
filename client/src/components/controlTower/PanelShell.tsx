@@ -14,54 +14,17 @@
 import * as React from "react";
 import { Link } from "wouter";
 import { useTranslation } from "react-i18next";
-import { ArrowUpRight, Lock, Wifi, WifiOff } from "lucide-react";
+import { ArrowUpRight, Lock, CheckCircle2 } from "lucide-react";
 import { SectionCard } from "@/components/patterns";
+import { ConnectionChip } from "@/components/patterns/ConnectionChip";
 import { AsyncBoundary, type AsyncSkeletonPreset } from "@/components/AsyncBoundary";
+import { PollFreshness } from "@/components/PollFreshness";
 import { cn } from "@/lib/utils";
 
-// ── Formatting helpers (honest "—" for null/undefined) ───────────────────────
-export function pct(v: number | null | undefined, digits = 1): string {
-  return v == null || Number.isNaN(v) ? "—" : `${v.toFixed(digits)}%`;
-}
-export function num(v: number | null | undefined): string {
-  return v == null || Number.isNaN(v) ? "—" : v.toLocaleString();
-}
-export function int(v: number | null | undefined): string {
-  return v == null || Number.isNaN(v) ? "—" : Math.round(v).toLocaleString();
-}
-
-export type Tone = "default" | "success" | "warning" | "error" | "info" | "accent";
-
-/** OEE threshold → semantic tone (≥80 good · ≥60 warn · <60 poor · null neutral). */
-export function oeeTone(v: number | null | undefined): Tone {
-  if (v == null || Number.isNaN(v)) return "default";
-  if (v >= 80) return "success";
-  if (v >= 60) return "warning";
-  return "error";
-}
-
-export const TONE_TEXT: Record<Tone, string> = {
-  default: "text-muted-foreground",
-  success: "text-success",
-  warning: "text-warning",
-  error: "text-destructive",
-  info: "text-info",
-  accent: "text-primary",
-};
-
-/** Compact relative time ("5s", "3m", "2h", "4d") from a timestamp (ms) / ISO. */
-export function relTimeShort(input: number | string | Date | null | undefined, now = Date.now()): string {
-  if (input == null) return "—";
-  const ts = input instanceof Date ? input.getTime() : typeof input === "string" ? Date.parse(input) : input;
-  if (Number.isNaN(ts)) return "—";
-  const s = Math.max(0, Math.round((now - ts) / 1000));
-  if (s < 60) return `${s}s`;
-  const m = Math.floor(s / 60);
-  if (m < 60) return `${m}m`;
-  const h = Math.floor(m / 60);
-  if (h < 24) return `${h}h`;
-  return `${Math.floor(h / 24)}d`;
-}
+/* W7 GĐ2 (doc 67): pct/num/int/relTimeShort local → lib/format (fmtPct/fmtNum/
+ * fmtInt/relTimeShort) và Tone/oeeTone/TONE_TEXT local → isaStateBadges
+ * (SemanticTone/oeeTone/TONE_TEXT_CLASS). panels.tsx nay import thẳng từ nguồn
+ * shared — PanelShell chỉ còn shell + isAuthzError + LivePill. */
 
 /**
  * Is this tRPC error an authorization failure (role can't call the procedure)?
@@ -76,26 +39,51 @@ export function isAuthzError(error: unknown): boolean {
   return typeof msg === "string" && /unauthorized|forbidden|not authorized|permission|access denied/i.test(msg);
 }
 
-/** Small LIVE / POLLING pill reused across the tower. */
+/**
+ * Small LIVE / POLLING pill reused across the tower.
+ * W7 GĐ2: ngữ nghĩa riêng (API `live: boolean`, nhãn + tooltip i18n controlTower.*
+ * đã chuẩn W2) GIỮ NGUYÊN — chỉ phần thân render đổi sang ConnectionChip shared
+ * (state live|polling, size sm — cùng cỡ chữ/padding với pill cũ; icon Wifi cũ
+ * thay bằng chấm trạng thái chuẩn của chip).
+ */
 export function LivePill({ live }: { live: boolean }): React.JSX.Element {
   const { t } = useTranslation();
-  return live ? (
+  return (
     <span
-      className="inline-flex items-center gap-1 rounded-full bg-success/15 px-2 py-0.5 text-[11px] font-medium text-success"
-      title={t("controlTower.liveHint", "Live via socket — poll fallback active")}
+      title={
+        live
+          ? t("controlTower.liveHint", "Live via socket — poll fallback active")
+          : t("controlTower.pollHint", "Socket offline — polling for fresh data")
+      }
     >
-      <Wifi className="h-3 w-3" aria-hidden="true" />
-      {t("controlTower.live", "LIVE")}
-    </span>
-  ) : (
-    <span
-      className="inline-flex items-center gap-1 rounded-full bg-warning/15 px-2 py-0.5 text-[11px] font-medium text-warning"
-      title={t("controlTower.pollHint", "Socket offline — polling for fresh data")}
-    >
-      <WifiOff className="h-3 w-3" aria-hidden="true" />
-      {t("controlTower.polling", "POLLING")}
+      <ConnectionChip
+        state={live ? "live" : "polling"}
+        label={live ? t("controlTower.live", "LIVE") : t("controlTower.polling", "POLLING")}
+        size="sm"
+      />
     </span>
   );
+}
+
+/**
+ * doc 68 §3.2 (việc 4) — pill "Cập nhật Ns trước" chỉ hiện khi STALE (amber),
+ * ẩn khi dữ liệu còn tươi (ISA-101: chrome im lặng, chỉ nói khi bất thường). Tự
+ * tick 5s để phát hiện chuyển-sang-stale mà không phải chờ panel re-render.
+ */
+function StaleOnlyFreshness({
+  updatedAt,
+  staleAfterMs,
+}: {
+  updatedAt: number;
+  staleAfterMs: number;
+}): React.JSX.Element | null {
+  const [, setTick] = React.useState(0);
+  React.useEffect(() => {
+    const id = setInterval(() => setTick((n) => n + 1), 5_000);
+    return () => clearInterval(id);
+  }, []);
+  if (Date.now() - updatedAt <= staleAfterMs) return null;
+  return <PollFreshness updatedAt={updatedAt} staleAfterMs={staleAfterMs} />;
 }
 
 export interface PanelShellProps {
@@ -109,6 +97,18 @@ export interface PanelShellProps {
   /** Extra header action (e.g. a LivePill) rendered before the link. */
   headerExtra?: React.ReactNode;
 
+  /**
+   * W2 (AUD-01): react-query `dataUpdatedAt` của query chính nuôi panel — khi có,
+   * header hiện pill tuổi dữ liệu (PollFreshness, tự tick 1s trong component con,
+   * KHÔNG re-render panel). Số cũ không bao giờ hiển thị như mới nữa.
+   */
+  dataUpdatedAt?: number;
+  /**
+   * Chu kỳ poll (ms) của panel — ngưỡng stale = 2× giá trị này (ISA-101: chỉ tô
+   * amber khi dữ liệu quá 2 chu kỳ poll, tức poll fallback cũng đã fail).
+   */
+  pollIntervalMs?: number;
+
   isLoading: boolean;
   isError?: boolean;
   error?: unknown;
@@ -119,6 +119,11 @@ export interface PanelShellProps {
   preset?: AsyncSkeletonPreset;
   /** Text shown when there is genuinely no data. */
   emptyText?: string;
+  /**
+   * doc 68 §3.2 (việc 2): empty là TIN TỐT ("tất cả ổn") — hiện 1 DÒNG gọn với
+   * CheckCircle2 xanh thay vì khối py-8 cao. Mặc định false → 1 dòng trung tính.
+   */
+  emptyAllClear?: boolean;
   errorTitle?: string;
 
   children: React.ReactNode;
@@ -133,6 +138,8 @@ export function PanelShell({
   linkHref,
   linkLabel,
   headerExtra,
+  dataUpdatedAt,
+  pollIntervalMs,
   isLoading,
   isError = false,
   error,
@@ -140,6 +147,7 @@ export function PanelShell({
   onRetry,
   preset = "list",
   emptyText,
+  emptyAllClear = false,
   errorTitle,
   children,
   className,
@@ -148,10 +156,12 @@ export function PanelShell({
   const { t } = useTranslation();
   const authz = isError && isAuthzError(error);
 
+  // W4 (doc 67): vùng chạm ≥40px (min-h-10 + padding) nhưng GIỮ cỡ chữ text-xs;
+  // margin âm bù lại padding để header panel không phình cao hơn trước.
   const deepLink = (
     <Link
       href={linkHref}
-      className="inline-flex shrink-0 items-center gap-1 whitespace-nowrap text-xs font-medium text-primary transition-colors hover:underline"
+      className="-my-2 -mr-2 inline-flex min-h-10 shrink-0 items-center gap-1 whitespace-nowrap rounded-md px-2 py-2 text-xs font-medium text-primary transition-colors hover:bg-accent/50 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
     >
       {linkLabel ?? t("controlTower.openFull", "Open full view")}
       <ArrowUpRight className="h-3 w-3" aria-hidden="true" />
@@ -166,6 +176,15 @@ export function PanelShell({
       description={description}
       action={
         <div className="flex items-center gap-2">
+          {/* W2 (AUD-01): tuổi dữ liệu per-panel — PollFreshness tự tick trong chính nó,
+              amber chỉ khi quá 2× chu kỳ poll (poll fallback cũng đã fail). dataUpdatedAt=0
+              nghĩa là chưa fetch thành công lần nào → chưa có gì để khai tuổi. */}
+          {dataUpdatedAt != null && dataUpdatedAt > 0 && (
+            <StaleOnlyFreshness
+              updatedAt={dataUpdatedAt}
+              staleAfterMs={(pollIntervalMs ?? 60_000) * 2}
+            />
+          )}
           {headerExtra}
           {/* When the role can't access the data, the deep-link is misleading — hide it. */}
           {!authz && deepLink}
@@ -189,9 +208,17 @@ export function PanelShell({
           errorTitle={errorTitle ?? t("controlTower.loadError", "Couldn't load this panel")}
           retryLabel={t("controlTower.retry", "Retry")}
           emptyState={
-            <div className="py-8 text-center text-sm text-muted-foreground">
-              {emptyText ?? t("controlTower.noData", "No data yet.")}
-            </div>
+            // doc 68 §3.2 (việc 2): co lại 1 dòng (py-1.5) thay vì khối py-8 cao.
+            emptyAllClear ? (
+              <div className="flex items-center gap-2 py-1.5 text-sm text-muted-foreground">
+                <CheckCircle2 className="h-4 w-4 shrink-0 text-success" aria-hidden="true" />
+                <span>{emptyText ?? t("controlTower.allClear", "Không có gì bất thường — ổn định.")}</span>
+              </div>
+            ) : (
+              <div className="py-1.5 text-sm text-muted-foreground">
+                {emptyText ?? t("controlTower.noData", "No data yet.")}
+              </div>
+            )
           }
         >
           {children}

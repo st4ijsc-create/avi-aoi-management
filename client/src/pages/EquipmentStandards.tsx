@@ -45,6 +45,9 @@ import {
   chartGridProps,
   chartAxisTick,
 } from "@/components/patterns";
+// doc 63 AUD-08 — alarm badge 4-hue riêng (critical≠high) khi HMI_ISA101_V2 bật.
+import { AlarmPriorityBadge } from "@/components/patterns/isaStateBadges";
+import { isIsa101V2 } from "@/lib/hmiFlags";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -70,6 +73,8 @@ import {
   Boxes, Cpu, Tags, Wrench, CheckCircle2, XCircle, Send, Eye, Rocket, Layers, Activity,
 } from "lucide-react";
 import { toast } from "sonner";
+import { mapTrpcError } from "@/lib/trpcErrors";
+import { isFeatureDisabledError } from "@/lib/featureFlagError";
 
 // ── Typesafe shapes inferred from the equipmentStandardsRouter output ─────────
 type RouterOutputs = inferRouterOutputs<AppRouter>;
@@ -91,6 +96,14 @@ type Consequence = (typeof CONSEQUENCES)[number];
 const PRIORITY_TONE: Record<string, "error" | "warning" | "info" | "success" | "default"> = {
   critical: "error", high: "error", medium: "warning", low: "info",
 };
+
+// doc 63 AUD-08 — tone system chỉ có 5 tông nên critical/high từng CÙNG màu đỏ.
+// Khi HMI_ISA101_V2 bật, badge priority/severity chuyển sang AlarmPriorityBadge
+// (4 hue riêng qua token --alarm-*: đỏ25/cam55/amber85/vàng-nhạt95) — hết nhầm P1 vs P2.
+function PriorityBadge({ value, label }: { value: string; label: string }) {
+  if (isIsa101V2()) return <AlarmPriorityBadge state={value} label={label} />;
+  return <StatusBadge status={value} tone={PRIORITY_TONE[value] ?? "default"} label={label} />;
+}
 
 const SEVERITIES = ["critical", "high", "medium", "low", "diagnostic"] as const;
 type Severity = (typeof SEVERITIES)[number];
@@ -199,11 +212,11 @@ export default function EquipmentStandards() {
 
   // Surface the FLAG-OFF CONFLICT gracefully (info, not a scary red error).
   const onMutationError = (e: { data?: { code?: string } | null; message: string }) => {
-    if (e.data?.code === "CONFLICT" && /disabled/i.test(e.message)) {
+    if (isFeatureDisabledError(e)) {
       toast.info(t("eqStandards.flagOffToast", "Equipment governance is disabled (preview). Set EQ_GOVERN_ENABLED=true to act."));
       void utils.equipmentStandards.status.invalidate();
     } else {
-      toast.error(e.message);
+      toast.error(mapTrpcError(e));
     }
   };
 
@@ -456,7 +469,7 @@ export default function EquipmentStandards() {
                   <span className="font-mono">{lookup.vendor} / {lookup.nativeCode}</span>
                   <ChevronRight className="h-4 w-4 text-muted-foreground" />
                   <span className="font-mono font-medium">{mapped.standardCode}</span>
-                  <StatusBadge status={mapped.severity} tone={SEVERITY_TONE[mapped.severity as Severity] ?? "default"} label={t(`eqStandards.severity.${mapped.severity}`, mapped.severity)} />
+                  <PriorityBadge value={mapped.severity} label={t(`eqStandards.severity.${mapped.severity}`, mapped.severity)} />
                   {!mapped.mapped && <Badge variant="outline" className="text-muted-foreground">{t("eqStandards.unmappedDefault", "fail-safe default")}</Badge>}
                   {mapped.recommendedAction && <span className="text-xs text-muted-foreground">— {mapped.recommendedAction}</span>}
                 </div>
@@ -507,7 +520,7 @@ export default function EquipmentStandards() {
                       <TableCell className="font-mono text-xs">{a.nativeCode}</TableCell>
                       <TableCell className="font-mono text-xs font-medium">{a.standardCode}</TableCell>
                       <TableCell>
-                        <StatusBadge status={a.severity} tone={SEVERITY_TONE[a.severity as Severity] ?? "default"} label={t(`eqStandards.severity.${a.severity}`, a.severity)} />
+                        <PriorityBadge value={a.severity} label={t(`eqStandards.severity.${a.severity}`, a.severity)} />
                       </TableCell>
                       <TableCell className="max-w-[22rem] truncate text-xs text-muted-foreground" title={a.recommendedAction ?? undefined}>
                         {a.recommendedAction ?? "—"}
@@ -614,7 +627,7 @@ export default function EquipmentStandards() {
                         {m.alarmKey}{m.assetType ? <span className="ml-1 text-muted-foreground">/{m.assetType}</span> : null}
                       </TableCell>
                       <TableCell>
-                        <StatusBadge status={m.priority} tone={PRIORITY_TONE[m.priority] ?? "default"} label={t(`eqStandards.priority.${m.priority}`, m.priority)} />
+                        <PriorityBadge value={m.priority} label={t(`eqStandards.priority.${m.priority}`, m.priority)} />
                       </TableCell>
                       <TableCell className="text-xs">{t(`eqStandards.consequenceVal.${m.consequence}`, m.consequence)}</TableCell>
                       <TableCell className="text-xs">{m.timeToRespond != null ? `${m.timeToRespond} ${t("eqStandards.min", "min")}` : "—"}</TableCell>
@@ -1306,7 +1319,7 @@ function MasterAlarmDialog({
           {/* Derived priority preview */}
           <div className="flex items-center gap-2 rounded-md border border-border bg-muted/30 p-2 text-sm">
             <span className="text-xs text-muted-foreground">{t("eqStandards.derivedPriority", "Derived priority (EEMUA-191):")}</span>
-            <StatusBadge status={preview} tone={PRIORITY_TONE[preview] ?? "default"} label={t(`eqStandards.priority.${preview}`, preview)} />
+            <PriorityBadge value={preview} label={t(`eqStandards.priority.${preview}`, preview)} />
           </div>
           <div className="grid grid-cols-2 gap-3">
             <div className="grid gap-1">

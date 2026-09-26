@@ -1,10 +1,12 @@
 import { getDb } from "./connection";
+import { DbUnavailableError } from "../_core/dbErrors";
 import { eq, and, desc, sql, SQL } from "drizzle-orm";
 import {
   aiModels, InsertAiModel,
   modelVersions, InsertModelVersion,
   inferenceResults, InsertInferenceResult,
   predictiveAlerts,
+  aiModelCards, InsertAiModelCard,
 } from "../../drizzle/schema";
 
 // ============ PREDICTIVE ALERT FUNCTIONS (GĐ3a — reused by AI Copilot) ============
@@ -20,7 +22,7 @@ export async function getPredictiveAlertById(id: number) {
 
 export async function acknowledgePredictiveAlert(id: number, userId: number) {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  if (!db) throw new DbUnavailableError();
   await db.update(predictiveAlerts).set({
     status: "ACKNOWLEDGED",
     acknowledgedBy: userId,
@@ -30,7 +32,7 @@ export async function acknowledgePredictiveAlert(id: number, userId: number) {
 
 export async function resolvePredictiveAlert(id: number, userId: number, resolutionNotes: string) {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  if (!db) throw new DbUnavailableError();
   await db.update(predictiveAlerts).set({
     status: "RESOLVED",
     resolvedBy: userId,
@@ -43,7 +45,7 @@ export async function resolvePredictiveAlert(id: number, userId: number, resolut
 
 export async function createAiModel(data: InsertAiModel) {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  if (!db) throw new DbUnavailableError();
   const [result] = await db.insert(aiModels).values(data).returning();
   return result;
 }
@@ -83,14 +85,14 @@ export async function getAiModelByCode(code: string) {
 
 export async function updateAiModel(id: number, data: Partial<InsertAiModel>) {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  if (!db) throw new DbUnavailableError();
   const [result] = await db.update(aiModels).set({ ...data, updatedAt: new Date() }).where(eq(aiModels.id, id)).returning();
   return result;
 }
 
 export async function deleteAiModel(id: number) {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  if (!db) throw new DbUnavailableError();
   await db.delete(aiModels).where(eq(aiModels.id, id));
 }
 
@@ -110,7 +112,7 @@ export async function getActiveModelForProduct(productModelId: number, modelType
 
 export async function createModelVersion(data: InsertModelVersion) {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  if (!db) throw new DbUnavailableError();
   const [result] = await db.insert(modelVersions).values(data).returning();
   return result;
 }
@@ -130,8 +132,50 @@ export async function getModelVersionById(id: number) {
 
 export async function updateModelVersion(id: number, data: Partial<InsertModelVersion>) {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  if (!db) throw new DbUnavailableError();
   const [result] = await db.update(modelVersions).set(data).where(eq(modelVersions.id, id)).returning();
+  return result;
+}
+
+// ============ AI MODEL CARD FUNCTIONS (doc69 D3 — governance, migration 0303) ============
+//
+// These are RAW db accessors — they do NOT catch the "table does not exist" (42P01)
+// error themselves. The fail-safe degrade (missing table ⇒ "no card") lives ONE layer
+// up, in server/services/aiModelCardGate.ts's getModelCardStatus(), which is the only
+// caller that needs to distinguish "no card row" from "table not migrated yet". Router
+// write paths (create/update/approve) let 42P01 propagate and convert it to a clean
+// PRECONDITION_FAILED (see aiModelRouter.ts), matching productVariantRouter's pattern —
+// a WRITE genuinely cannot succeed against a table that doesn't exist yet.
+
+export async function getModelCardByModelId(modelId: number) {
+  const db = await getDb();
+  if (!db) return null;
+  const [result] = await db.select().from(aiModelCards).where(eq(aiModelCards.modelId, modelId)).limit(1);
+  return result ?? null;
+}
+
+export async function createModelCard(data: InsertAiModelCard) {
+  const db = await getDb();
+  if (!db) throw new DbUnavailableError();
+  const [result] = await db.insert(aiModelCards).values(data).returning();
+  return result;
+}
+
+export async function updateModelCardByModelId(modelId: number, data: Partial<InsertAiModelCard>) {
+  const db = await getDb();
+  if (!db) throw new DbUnavailableError();
+  const [result] = await db.update(aiModelCards).set({ ...data, updatedAt: new Date() }).where(eq(aiModelCards.modelId, modelId)).returning();
+  return result;
+}
+
+export async function approveModelCardByModelId(modelId: number, approvedBy: number) {
+  const db = await getDb();
+  if (!db) throw new DbUnavailableError();
+  const [result] = await db.update(aiModelCards).set({
+    approvedBy,
+    approvedAt: new Date(),
+    updatedAt: new Date(),
+  }).where(eq(aiModelCards.modelId, modelId)).returning();
   return result;
 }
 
@@ -139,7 +183,7 @@ export async function updateModelVersion(id: number, data: Partial<InsertModelVe
 
 export async function createInferenceResult(data: InsertInferenceResult) {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  if (!db) throw new DbUnavailableError();
   const [result] = await db.insert(inferenceResults).values(data).returning();
   return result;
 }

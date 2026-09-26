@@ -167,13 +167,65 @@ interface MachineStats {
 }
 
 /**
+ * Phép tính thống kê máy, tách THUẦN khỏi cache/DB để đo được.
+ * NTF = PASS (decision #4) — dùng finalYield, KHÔNG viết lại công thức.
+ */
+export function tinhThongKeMay(
+  inspections: Array<{ overallResult: string; inspectionTime: Date | string }>,
+) {
+  const total = inspections.length;
+  const okCount = inspections.filter((i) => i.overallResult === "OK").length;
+  const ngCount = inspections.filter((i) => i.overallResult === "NG").length;
+  const ntfCount = inspections.filter((i) => i.overallResult === "NTF").length;
+  const yieldRate = finalYield({ ok: okCount, ntf: ntfCount, total }).toFixed(2);
+
+  const byDate = inspections.reduce((acc, insp) => {
+    const date = new Date(insp.inspectionTime).toISOString().split("T")[0];
+    if (!acc[date]) acc[date] = { total: 0, ok: 0, ng: 0, ntf: 0 };
+    acc[date].total++;
+    if (insp.overallResult === "OK") acc[date].ok++;
+    if (insp.overallResult === "NG") acc[date].ng++;
+    if (insp.overallResult === "NTF") acc[date].ntf++;
+    return acc;
+  }, {} as Record<string, { total: number; ok: number; ng: number; ntf: number }>);
+
+  const trend = Object.entries(byDate)
+    .map(([date, s]) => ({
+      date,
+      total: s.total,
+      ok: s.ok,
+      ng: s.ng,
+      ntf: s.ntf,
+      yieldRate: finalYield({ ok: s.ok, ntf: s.ntf, total: s.total }).toFixed(2),
+    }))
+    .sort((a, b) => a.date.localeCompare(b.date));
+
+  return { total, okCount, ngCount, ntfCount, yieldRate, trend };
+}
+
+/**
  * Get machine statistics with caching
  */
 export async function getCachedMachineStats(filters: {
   machineId: number;
   startDate?: Date;
   endDate?: Date;
+  /**
+   * ★ 2026-08-18 — phạm vi NGƯỜI XEM. `machineId` là lời TỰ KHAI của người gọi, nên nếu không
+   * kiểm, một id gõ tay đọc được sản lượng/tỉ lệ NG của máy bất kỳ. Bỏ trống = lối đi không mang
+   * danh tính (tác vụ nền, cache warming) ⇒ KHÔNG lọc, giữ nguyên hành vi cũ.
+   *
+   * ⚠ Cổng đặt TRƯỚC `cacheService` — nếu đặt sau, khoá cache (`stats:machine:<id>`) không mang
+   * danh tính nên một lượt đọc hợp lệ của người A sẽ nạp sẵn ô cache mà người B đọc trúng.
+   */
+  phamVi?: import("../db/hierarchy").PhamViNguoiXem;
 }): Promise<MachineStats> {
+  {
+    const { trongPhamVi } = await import("../db/hierarchy");
+    if (!(await trongPhamVi("machine", filters.machineId, filters.phamVi))) {
+      return { total: 0, okCount: 0, ngCount: 0, ntfCount: 0, yieldRate: "0", trend: [], recentInspections: [] };
+    }
+  }
   const cacheKey = cacheService.generateKey('stats:machine', {
     machineId: filters.machineId,
     startDate: filters.startDate,
@@ -192,35 +244,7 @@ export async function getCachedMachineStats(filters: {
       });
 
       const inspections = result.data;
-      const total = inspections.length;
-      const okCount = inspections.filter(i => i.overallResult === 'OK').length;
-      const ngCount = inspections.filter(i => i.overallResult === 'NG').length;
-      const ntfCount = inspections.filter(i => i.overallResult === 'NTF').length;
-      const yieldRate = total > 0 ? ((okCount / total) * 100).toFixed(2) : '0.00';
-
-      // Group by date for trend
-      const byDate = inspections.reduce((acc, insp) => {
-        const date = new Date(insp.inspectionTime).toISOString().split('T')[0];
-        if (!acc[date]) {
-          acc[date] = { total: 0, ok: 0, ng: 0, ntf: 0 };
-        }
-        acc[date].total++;
-        if (insp.overallResult === 'OK') acc[date].ok++;
-        if (insp.overallResult === 'NG') acc[date].ng++;
-        if (insp.overallResult === 'NTF') acc[date].ntf++;
-        return acc;
-      }, {} as Record<string, { total: number; ok: number; ng: number; ntf: number }>);
-
-      const trend = Object.entries(byDate)
-        .map(([date, stats]) => ({
-          date,
-          total: stats.total,
-          ok: stats.ok,
-          ng: stats.ng,
-          ntf: stats.ntf,
-          yieldRate: stats.total > 0 ? ((stats.ok / stats.total) * 100).toFixed(2) : '0.00',
-        }))
-        .sort((a, b) => a.date.localeCompare(b.date));
+      const { total, okCount, ngCount, ntfCount, yieldRate, trend } = tinhThongKeMay(inspections);
 
       return {
         total,

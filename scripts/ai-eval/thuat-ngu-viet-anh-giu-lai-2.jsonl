@@ -1,0 +1,12 @@
+{"id":"MN01","cauHoi":"Camera của máy AOI không phản hồi thì làm gì?","nguon":["aoi-troubleshooting.md"],"dapAnTraLoi":{"regex":"restart camera|khởi động lại (?:dịch vụ )?camera|cáp kết nối"}}
+{"id":"MN02","cauHoi":"Máy báo ánh sáng không đủ thì kiểm tra bộ phận nào?","nguon":["aoi-troubleshooting.md"],"dapAnTraLoi":{"regex":"LED ring|vòng LED|thay bóng"}}
+{"id":"MN03","cauHoi":"Chụp ảnh bị quá thời gian chờ thì kiểm tra gì?","nguon":["aoi-troubleshooting.md"],"dapAnTraLoi":{"regex":"trigger|tín hiệu kích|tốc độ conveyor|tốc độ băng tải"}}
+{"id":"MN04","cauHoi":"Máy báo lệch vùng nhìn của camera thì chỉnh gì?","nguon":["aoi-troubleshooting.md"],"dapAnTraLoi":{"regex":"độ cao camera|camera height|re-calibrate"}}
+{"id":"MN05","cauHoi":"Bộ nhớ đệm ảnh bị tràn thì xử lý thế nào?","nguon":["aoi-troubleshooting.md"],"dapAnTraLoi":{"regex":"độ phân giải|resolution|tăng RAM"}}
+{"id":"MN06","cauHoi":"Tốc độ băng tải bị lỗi thì kiểm tra gì?","nguon":["aoi-troubleshooting.md"],"dapAnTraLoi":{"regex":"motor drive|encoder"}}
+{"id":"MN07","cauHoi":"Máy mất kết nối mạng thì kiểm tra những gì?","nguon":["aoi-troubleshooting.md"],"dapAnTraLoi":{"regex":"cáp mạng|switch|IP configuration|cấu hình IP"}}
+{"id":"MN08","cauHoi":"Không kết nối được cơ sở dữ liệu thì kiểm tra gì?","nguon":["aoi-troubleshooting.md"],"dapAnTraLoi":{"regex":"SQL Server|firewall|tường lửa"}}
+{"id":"MN09","cauHoi":"Không nạp được chương trình kiểm tra thì kiểm tra gì?","nguon":["aoi-troubleshooting.md"],"dapAnTraLoi":{"regex":"file path|đường dẫn tệp|quyền truy cập"}}
+{"id":"MN10","cauHoi":"Căn chỉnh bảng thất bại thì phải làm gì?","nguon":["aoi-troubleshooting.md"],"dapAnTraLoi":{"regex":"fiducial|re-teach|dạy lại"}}
+{"id":"MN11","cauHoi":"Thiếu linh kiện trên bảng thường do nguyên nhân gì?","nguon":["aoi-defect-types.md"],"dapAnTraLoi":{"regex":"feeder|hút chân không|thổi bay"}}
+{"id":"MN12","cauHoi":"Máy báo lỗi thư viện linh kiện thì làm gì?","nguon":["aoi-troubleshooting.md"],"dapAnTraLoi":{"regex":"update|cập nhật"}}

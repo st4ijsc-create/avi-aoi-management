@@ -5,6 +5,7 @@ import { z } from "zod";
 import * as db from "../db";
 import { withDbErrors } from "../_core/dbErrors";
 import { TRPCError } from "@trpc/server";
+import { appError } from "../_core/appError";
 import { nanoid } from "nanoid";
 import { storagePut, resolveImageToDataUrl } from "../storage";
 import { detectSpcViolations, detectEwma, rollingCapability } from "../utils/spcRules";
@@ -35,6 +36,18 @@ import {
   assertThresholdEditAllowed,
   type ThresholdGateResult,
 } from "../services/thresholdGovernanceService";
+// Task 8 Khối C (QĐ-5) — `touchesLimits` SUY từ POINT_LIMIT_SPEC, MỘT hàm dùng
+// chung với `measurementPointImport.ts` (xem docblock trong file đó).
+import {
+  touchesApprovalLimitFields, assertCapGioiHanHopLe, gopCapGioiHanDonGian,
+  // BG-123 (Khối C, "nợ còn mở") — xoá giới hạn về NULL: shape zod nullable
+  // SUY từ spec (không chép tay) + merge giữ nguyên null tường minh.
+  xayZodShapeGioiHanNullable, gopGiuNguyenNull,
+} from "../utils/measurementPointLimitGate";
+// BG-126 (Khối C, "nợ còn mở") — chặn changeReason/reason NGƯỜI DÙNG giả tiền
+// tố cấu trúc [VARIANT:n]. Import trực tiếp (không barrel `../db`) — xem docblock
+// `server/utils/changeReasonGuard.ts`.
+import { assertChangeReasonKhongGiaTienToBienThe } from "../utils/changeReasonGuard";
 // Doc 31 MP1/PM6 — BOM-driven componentCode backfill (lights up Pareto-by-package).
 import { backfillComponentCodesFromBom } from "../services/componentLinkBackfill";
 // Doc 31 MP3 (WB-2) — __UNMAPPED__ unmatched-rate metric + remap helpers.
@@ -43,6 +56,8 @@ import {
   getUnmappedProductModelId,
   type UnmappedRateFilter,
 } from "../services/measurementPointResolver";
+import { phamViCua } from "./_phamViNguoiXem";
+import { tuChoiNgoaiPhamVi } from "./publicProductScope";
 // Doc 31 UX2/PM9 (WD-2) — product config-completeness ("readiness") score.
 import {
   computeProductReadiness,
@@ -54,7 +69,12 @@ import {
   listLotDispositions,
 } from "../services/lotAcceptanceService";
 // Doc 42 Đợt 4A (APPLY-B) — engine import/export dùng chung cho danh sách sản phẩm.
-import { exportRows, type MasterDataColumn } from "../services/masterDataIO";
+import { exportRows } from "../services/masterDataIO";
+// Task 13 — MỘT nguồn sự thật cho spec cột (trước: PRODUCT_IMPORT_COLUMNS/
+// PRODUCT_EXPORT_COLUMNS ở đây + PRODUCT_IO_COLUMNS riêng ở ProductModels.tsx,
+// khớp 10/10 nhưng không cổng nào canh lệch). `header` KHÔNG được dịch — xem
+// docblock ở shared/productColumnSpec.ts.
+import { PRODUCT_COLUMN_SPEC, PRODUCT_EXPORT_COLUMN_SPEC } from "@shared/productColumnSpec";
 // Doc 51 P1 (R4) — machines learn about point-config changes off this MQTT topic.
 import { publishPointsConfigChanged } from "../services/mqttService";
 
@@ -278,11 +298,14 @@ function toNumberOrNull(value?: string | number | null): number | null {
 
 function deriveLegacyLimitsFromTolerance(input: {
   toleranceMode?: z.infer<typeof toleranceModeSchema>;
-  nominalValue?: string;
-  tolPlus?: string;
-  tolMinus?: string;
-  lowerLimit?: string;
-  upperLimit?: string;
+  // BG-123 — `null` tường minh = "xoá" (client gửi qua `gopGiuNguyenNull`),
+  // KHÁC `undefined` = "không đổi". `toNumberOrNull` bên dưới đã coi cả hai
+  // là "không có số" từ trước — không cần đổi phần thân hàm.
+  nominalValue?: string | null;
+  tolPlus?: string | null;
+  tolMinus?: string | null;
+  lowerLimit?: string | null;
+  upperLimit?: string | null;
 }) {
   if (input.toleranceMode !== "bilateral") {
     return {
@@ -352,28 +375,6 @@ async function extractDimsFromDataUrl(
 // Trạng thái vòng đời hợp lệ (khớp lifecycleStatusEnum + productModel.create).
 const productLifecycleValues = ["development", "active", "eol", "archived"] as const;
 
-// Cột NHẬP (parse + validate) & mẫu — trùng khớp cột client trong ProductModels.tsx
-// (cả hai phía validate cùng luật @shared/masterDataIO nên không lệch).
-const PRODUCT_IMPORT_COLUMNS: MasterDataColumn[] = [
-  { field: "code", header: "Mã sản phẩm", required: true, type: "string", example: "SP-001" },
-  { field: "name", header: "Tên sản phẩm", required: true, type: "string", example: "Bảng mạch A" },
-  { field: "description", header: "Mô tả", type: "string" },
-  { field: "category", header: "Nhóm", type: "string", example: "PCBA" },
-  { field: "productLine", header: "Dòng sản phẩm", type: "string" },
-  { field: "variant", header: "Biến thể", type: "string" },
-  { field: "revision", header: "Phiên bản (Rev)", type: "string", example: "A" },
-  { field: "lifecycleStatus", header: "Trạng thái vòng đời", type: "string", example: "active" },
-  { field: "targetYieldRate", header: "FPY mục tiêu (%)", type: "number", example: 98 },
-  { field: "minYieldRate", header: "FPY tối thiểu (%)", type: "number", example: 95 },
-];
-
-// Cột XUẤT = cột nhập + ngày tạo/cập nhật (chỉ đọc, không dùng khi nhập).
-const PRODUCT_EXPORT_COLUMNS: MasterDataColumn[] = [
-  ...PRODUCT_IMPORT_COLUMNS,
-  { field: "createdAt", header: "Ngày tạo", type: "date" },
-  { field: "updatedAt", header: "Ngày cập nhật", type: "date" },
-];
-
 export const productModelRouter = router({
   list: protectedProcedure
     .input(z.object({
@@ -396,10 +397,10 @@ export const productModelRouter = router({
 
   getByCode: protectedProcedure
     .input(z.object({ code: z.string() }))
-    .query(async ({ input }) => {
-      const productModel = await db.getProductModelByCode(input.code);
+    .query(async ({ input, ctx }) => {
+      const productModel = await db.getProductModelByCode(input.code, phamViCua(ctx));
       if (!productModel) return null;
-      const measurementPoints = await db.getMeasurementPointDefsByProductModel(productModel.id);
+      const measurementPoints = await db.getMeasurementPointDefsByProductModel(productModel.id, phamViCua(ctx));
       return { productModel, measurementPoints };
     }),
 
@@ -409,16 +410,27 @@ export const productModelRouter = router({
   // wizard via computeProductReadiness(). Returns null when the product is unknown.
   getReadiness: protectedProcedure
     .input(z.object({ productModelId: z.number().int().positive() }))
-    .query(async ({ input }) => {
+    .query(async ({ input, ctx }) => {
+      // ⚠ `productModelId` là lời TỰ KHAI. Điểm "sẵn sàng" phơi cấu hình sản phẩm (số điểm đo, %
+      // có giới hạn, có ảnh mẫu chưa…) — bí quyết công nghệ của tenant. Ngoài phạm vi ⇒ `null`,
+      // đúng hình dạng "không biết sản phẩm này" mà hàm đã tự khai.
+      if (!(await db.sanPhamTrongPhamVi(input.productModelId, phamViCua(ctx)))) return null;
       return computeProductReadiness(input.productModelId);
     }),
 
   // Batched readiness for the product-list badges — CONSTANT query cost (no N+1).
   getReadinessBatch: protectedProcedure
     .input(z.object({ ids: z.array(z.number().int().positive()).max(300) }))
-    .query(async ({ input }) => {
+    .query(async ({ input, ctx }) => {
       if (input.ids.length === 0) return [];
-      return computeProductReadinessBatch(input.ids);
+      // ⚠ Bản LÔ là chỗ dễ quên nhất: `getReadiness` được vá mà `getReadinessBatch` thì không sẽ
+      // để nguyên một cửa đọc 300 sản phẩm mỗi lượt. Lọc danh sách TRƯỚC khi tính.
+      const trongPv: number[] = [];
+      for (const id of input.ids) {
+        if (await db.sanPhamTrongPhamVi(id, phamViCua(ctx))) trongPv.push(id);
+      }
+      if (trongPv.length === 0) return [];
+      return computeProductReadinessBatch(trongPv);
     }),
 
   create: protectedProcedure.use(requirePermission("settings_products", "canCreate"))
@@ -486,7 +498,12 @@ export const productModelRouter = router({
             }
           } catch (error) {
             console.error('Failed to upload product model image to S3:', error);
-            throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: 'Failed to upload image' });
+            throw appError(
+              'INTERNAL_SERVER_ERROR',
+              'OPERATION_FAILED',
+              { operation: 'uploadProductModelImage' },
+              `Failed to upload image: ${(error as Error)?.message ?? error}`,
+            );
           }
         }
         // PM8 enforcement: an image was supplied but we could not determine its
@@ -495,12 +512,13 @@ export const productModelRouter = router({
         const w = input.imageWidth ?? autoImageWidth;
         const h = input.imageHeight ?? autoImageHeight;
         if ((!w || !h) && isProductImageDimsRequired()) {
-          throw new TRPCError({
-            code: 'BAD_REQUEST',
-            message:
-              'Could not determine reference image dimensions. Provide imageWidth/imageHeight or upload a valid image. ' +
+          throw appError(
+            'BAD_REQUEST',
+            'INVALID_VALUE',
+            { field: 'imageDimensions' },
+            'Could not determine reference image dimensions. Provide imageWidth/imageHeight or upload a valid image. ' +
               'Không xác định được kích thước ảnh — cung cấp imageWidth/imageHeight hoặc tải ảnh hợp lệ.',
-          });
+          );
         }
       }
 
@@ -565,7 +583,7 @@ export const productModelRouter = router({
       // consistent with measurementPoint/fiducial/panel update.
       const existing = await db.getProductModelById(id);
       if (!existing) {
-        throw new TRPCError({ code: 'NOT_FOUND', message: 'Không tìm thấy sản phẩm' });
+        throw appError('NOT_FOUND', 'ENTITY_NOT_FOUND', { entity: 'productModel' }, 'Không tìm thấy sản phẩm');
       }
 
       // Check if code is being updated and if it's a duplicate
@@ -575,7 +593,7 @@ export const productModelRouter = router({
           const duplicate = await db.getProductModelByCode(data.code);
           if (duplicate) {
             // WE-2 bug #2: CONFLICT for consistency with productModel.clone.
-            throw new TRPCError({ code: 'CONFLICT', message: 'Mã sản phẩm đã tồn tại' });
+            throw appError('CONFLICT', 'ENTITY_DUPLICATE', { entity: 'productModel' }, 'Mã sản phẩm đã tồn tại');
           }
         } else {
           // Code is not changing, remove it from update data to avoid duplicate key error
@@ -621,17 +639,23 @@ export const productModelRouter = router({
             }
           } catch (error) {
             console.error('Failed to upload product model image to S3:', error);
-            throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: 'Failed to upload image' });
+            throw appError(
+              'INTERNAL_SERVER_ERROR',
+              'OPERATION_FAILED',
+              { operation: 'uploadProductModelImage' },
+              `Failed to upload image: ${(error as Error)?.message ?? error}`,
+            );
           }
         }
         // PM8 enforcement: a new image without resolvable dims is refused.
         if ((!finalData.imageWidth || !finalData.imageHeight) && isProductImageDimsRequired()) {
-          throw new TRPCError({
-            code: 'BAD_REQUEST',
-            message:
-              'Could not determine reference image dimensions. Provide imageWidth/imageHeight or upload a valid image. ' +
+          throw appError(
+            'BAD_REQUEST',
+            'INVALID_VALUE',
+            { field: 'imageDimensions' },
+            'Could not determine reference image dimensions. Provide imageWidth/imageHeight or upload a valid image. ' +
               'Không xác định được kích thước ảnh — cung cấp imageWidth/imageHeight hoặc tải ảnh hợp lệ.',
-          });
+          );
         }
       }
 
@@ -705,12 +729,12 @@ export const productModelRouter = router({
     .mutation(async ({ ctx, input }) => {
       const source = await db.getProductModelById(input.sourceId);
       if (!source) {
-        throw new TRPCError({ code: "NOT_FOUND", message: "Sản phẩm nguồn không tồn tại" });
+        throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "productModel" }, "Sản phẩm nguồn không tồn tại");
       }
       // Code collision → CONFLICT (the unique index is the tx-level backstop below).
       const duplicate = await db.getProductModelByCode(input.newCode);
       if (duplicate) {
-        throw new TRPCError({ code: "CONFLICT", message: "Mã sản phẩm đã tồn tại" });
+        throw appError("CONFLICT", "ENTITY_DUPLICATE", { entity: "productModel" }, "Mã sản phẩm đã tồn tại");
       }
 
       let result: Awaited<ReturnType<typeof db.cloneProductModel>>;
@@ -725,7 +749,7 @@ export const productModelRouter = router({
       } catch (err: any) {
         // Backstop for a race that slips past the pre-check.
         if (err?.code === "23505" || /product_models_code/.test(String(err?.message))) {
-          throw new TRPCError({ code: "CONFLICT", message: "Mã sản phẩm đã tồn tại" });
+          throw appError("CONFLICT", "ENTITY_DUPLICATE", { entity: "productModel" }, "Mã sản phẩm đã tồn tại");
         }
         throw err;
       }
@@ -868,7 +892,7 @@ export const productModelRouter = router({
         createdAt: p.createdAt ?? null,
         updatedAt: p.updatedAt ?? null,
       }));
-      const buffer = await exportRows(rows, PRODUCT_EXPORT_COLUMNS, format);
+      const buffer = await exportRows(rows, [...PRODUCT_EXPORT_COLUMN_SPEC], format);
       const ext = format === "csv" ? "csv" : "xlsx";
       const mimeType =
         format === "csv"
@@ -896,7 +920,9 @@ export const productModelRouter = router({
     .mutation(async ({ ctx, input }) => {
       let inserted = 0;
       let updated = 0;
-      const errors: Array<{ row: number; message: string }> = [];
+      // F14 — mã máy-đọc-được đi KÈM chuỗi kỹ thuật: thủ tục này trả 200 OK kèm danh sách
+      // lỗi từng dòng, nên `onError` phía client không chạy và `mapTrpcError` không thấy gì.
+      const errors: Array<{ row: number; message: string; errorCode?: "OPERATION_FAILED"; errorParams?: Record<string, string | number> }> = [];
 
       const str = (v: unknown): string | undefined => {
         const s = v == null ? "" : String(v).trim();
@@ -907,6 +933,10 @@ export const productModelRouter = router({
         const n = Number(String(v).trim());
         return Number.isFinite(n) ? String(n) : undefined;
       };
+      // Thông báo bắt buộc-nhập lấy `header` từ nguồn sự thật chung — đổi header ở
+      // shared/productColumnSpec.ts thì thông báo lỗi đổi theo, không lệch tay.
+      const codeHeader = PRODUCT_COLUMN_SPEC.find((c) => c.field === "code")?.header ?? "code";
+      const nameHeader = PRODUCT_COLUMN_SPEC.find((c) => c.field === "name")?.header ?? "name";
 
       for (let i = 0; i < input.rows.length; i++) {
         const rowNo = i + 1;
@@ -914,12 +944,12 @@ export const productModelRouter = router({
         try {
           const code = String(raw.code ?? "").trim();
           const name = String(raw.name ?? "").trim();
-          if (!code) { errors.push({ row: rowNo, message: '"Mã sản phẩm" bắt buộc nhập' }); continue; }
+          if (!code) { errors.push({ row: rowNo, message: `"${codeHeader}" bắt buộc nhập` }); continue; }
           if (!/^[A-Za-z0-9_\-]+$/.test(code)) {
             errors.push({ row: rowNo, message: `Mã '${code}' chỉ được chứa chữ, số, gạch dưới, gạch ngang` });
             continue;
           }
-          if (!name) { errors.push({ row: rowNo, message: '"Tên sản phẩm" bắt buộc nhập' }); continue; }
+          if (!name) { errors.push({ row: rowNo, message: `"${nameHeader}" bắt buộc nhập` }); continue; }
 
           // Trạng thái vòng đời (nếu có) phải hợp lệ.
           let lifecycleStatus: (typeof productLifecycleValues)[number] | undefined;
@@ -959,7 +989,14 @@ export const productModelRouter = router({
             inserted++;
           }
         } catch (err: any) {
-          errors.push({ row: rowNo, message: err?.message ? String(err.message) : "Lỗi không xác định" });
+          errors.push({
+            row: rowNo,
+            // data-raw-ok: chi tiết KỸ THUẬT của DÒNG này trong file nhập — người sửa file
+            // cần biết dòng nào sai vì sao. Câu cho người dùng lấy từ errorCode ngay dưới.
+            message: err?.message ? String(err.message) : "Lỗi không xác định",
+            errorCode: "OPERATION_FAILED",
+            errorParams: { operation: "importProductPackage" },
+          });
         }
       }
 
@@ -986,26 +1023,26 @@ export const productModelRouter = router({
 // ============ MEASUREMENT POINT DEFINITION ROUTER ============
 export const measurementPointRouter = router({
   list: protectedProcedure
-    .query(async () => {
-      return db.listAllMeasurementPointDefs();
+    .query(async ({ ctx }) => {
+      return db.listAllMeasurementPointDefs(phamViCua(ctx));
     }),
 
   listByProductModel: protectedProcedure
     .input(z.object({ productModelId: z.number() }))
-    .query(async ({ input }) => {
-      return db.getMeasurementPointDefsByProductModel(input.productModelId);
+    .query(async ({ input, ctx }) => {
+      return db.getMeasurementPointDefsByProductModel(input.productModelId, phamViCua(ctx));
     }),
 
   listByMachine: protectedProcedure
     .input(z.object({ machineId: z.number() }))
-    .query(async ({ input }) => {
-      return db.getMeasurementPointDefsByMachine(input.machineId);
+    .query(async ({ input, ctx }) => {
+      return db.getMeasurementPointDefsByMachine(input.machineId, phamViCua(ctx));
     }),
 
   getById: protectedProcedure
     .input(z.object({ id: z.number() }))
-    .query(async ({ input }) => {
-      return db.getMeasurementPointDefById(input.id);
+    .query(async ({ input, ctx }) => {
+      return db.getMeasurementPointDefById(input.id, phamViCua(ctx));
     }),
 
   create: protectedProcedure.use(requirePermission("settings_measurement_points", "canCreate"))
@@ -1103,22 +1140,23 @@ export const measurementPointRouter = router({
           // not portable across machines — block the save until dims are set
           // (via image upload or product.backfillImageDimensions). Default off so
           // the current dim-less dev products still allow authoring.
-          throw new TRPCError({
-            code: "BAD_REQUEST",
-            message:
-              "This product has no reference image dimensions; set them before adding points. " +
+          throw appError(
+            "BAD_REQUEST",
+            "INVALID_VALUE",
+            { field: "imageDimensions" },
+            "This product has no reference image dimensions; set them before adding points. " +
               "Sản phẩm chưa có kích thước ảnh — hãy đặt kích thước trước khi thêm điểm đo.",
-          });
+          );
         }
       }
       // P3: Validate preferredInstrument if provided
       if (input.preferredInstrumentId) {
         const instrument = await db.getMeasurementInstrumentById(input.preferredInstrumentId);
         if (!instrument) {
-          throw new TRPCError({ code: "NOT_FOUND", message: `Instrument ID ${input.preferredInstrumentId} not found` });
+          throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "instrument" }, `Instrument ID ${input.preferredInstrumentId} not found`);
         }
         if (!instrument.isActive) {
-          throw new TRPCError({ code: "BAD_REQUEST", message: `Instrument "${instrument.code}" is inactive; cannot assign to measurement point` });
+          throw appError("BAD_REQUEST", "INVALID_VALUE", { field: "preferredInstrumentId" }, `Instrument "${instrument.code}" is inactive; cannot assign to measurement point`);
         }
       }
 
@@ -1126,13 +1164,13 @@ export const measurementPointRouter = router({
       if (input.preferredSamplingPlanId) {
         const samplingPlan = await db.getSamplingPlanById(input.preferredSamplingPlanId);
         if (!samplingPlan) {
-          throw new TRPCError({ code: "NOT_FOUND", message: `Sampling plan ID ${input.preferredSamplingPlanId} not found` });
+          throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "samplingPlan" }, `Sampling plan ID ${input.preferredSamplingPlanId} not found`);
         }
         if (samplingPlan.productModelId !== input.productModelId) {
-          throw new TRPCError({ code: "BAD_REQUEST", message: `Sampling plan does not belong to this product model` });
+          throw appError("BAD_REQUEST", "SCOPE_MISMATCH", { entity: "samplingPlan", parent: "productModel" }, `Sampling plan does not belong to this product model`);
         }
         if (!samplingPlan.isActive) {
-          throw new TRPCError({ code: "BAD_REQUEST", message: `Sampling plan "${samplingPlan.code}" is inactive; cannot assign to measurement point` });
+          throw appError("BAD_REQUEST", "INVALID_VALUE", { field: "preferredSamplingPlanId" }, `Sampling plan "${samplingPlan.code}" is inactive; cannot assign to measurement point`);
         }
       }
 
@@ -1140,13 +1178,13 @@ export const measurementPointRouter = router({
       if (input.productViewId) {
         const productView = await db.getProductViewById(input.productViewId);
         if (!productView) {
-          throw new TRPCError({ code: "NOT_FOUND", message: `Product view ID ${input.productViewId} not found` });
+          throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "productView" }, `Product view ID ${input.productViewId} not found`);
         }
         if (productView.productModelId !== input.productModelId) {
-          throw new TRPCError({ code: "BAD_REQUEST", message: `Product view does not belong to this product model` });
+          throw appError("BAD_REQUEST", "SCOPE_MISMATCH", { entity: "productView", parent: "productModel" }, `Product view does not belong to this product model`);
         }
         if (!productView.isActive) {
-          throw new TRPCError({ code: "BAD_REQUEST", message: `Product view "${productView.code}" is inactive; cannot assign to measurement point` });
+          throw appError("BAD_REQUEST", "INVALID_VALUE", { field: "productViewId" }, `Product view "${productView.code}" is inactive; cannot assign to measurement point`);
         }
       }
 
@@ -1217,38 +1255,26 @@ export const measurementPointRouter = router({
       description: z.string().optional(),
       measurementType: legacyMeasurementTypeSchema.optional(),
       measurementTypeCode: z.string().min(3).max(100).optional(),
-      unit: z.string().optional(),
-      lowerLimit: z.string().optional(),
-      upperLimit: z.string().optional(),
-      nominalValue: z.string().optional(),
+      // BG-123 — 20 field giới hạn KIỂU CHUỖI (unit/lowerLimit/upperLimit/
+      // nominalValue/tolPlus/tolMinus/height*/area*/volume*/coplanarityMax/
+      // warpageMax/voidPctMax/offsetXMax/offsetYMax/tiltMax/thicknessMin/
+      // thicknessMax) SUY từ `APPROVAL_LIMIT_FIELDS` (không chép tay) —
+      // `z.string().nullable().optional()`: undefined = không đổi, null = XOÁ
+      // giới hạn đó (SET cột NULL, có snapshot + bump version — xem `update`
+      // bên dưới, cùng cửa duyệt ngưỡng như mọi lần sửa limit khác).
+      ...xayZodShapeGioiHanNullable(),
       toleranceMode: toleranceModeSchema.optional(),
-      tolPlus: z.string().optional(),
-      tolMinus: z.string().optional(),
       criteria: z.array(criteriaItemSchema).optional(),
       datumRefs: z.array(z.string().trim().min(1).max(20)).max(10).optional(),
       materialCondition: materialConditionSchema.optional(),
       fitClass: z.string().max(20).optional(),
       positionZ: z.string().optional(),
-      heightMin: z.string().optional(),
-      heightMax: z.string().optional(),
       heightNominal: z.string().optional(),
       heightUnit: z.string().max(20).optional(),
-      areaMin: z.string().optional(),
-      areaMax: z.string().optional(),
       areaNominal: z.string().optional(),
       areaUnit: z.string().max(20).optional(),
-      volumeMin: z.string().optional(),
-      volumeMax: z.string().optional(),
       volumeNominal: z.string().optional(),
       volumeUnit: z.string().max(20).optional(),
-      coplanarityMax: z.string().optional(),
-      warpageMax: z.string().optional(),
-      voidPctMax: z.string().optional(),
-      offsetXMax: z.string().optional(),
-      offsetYMax: z.string().optional(),
-      tiltMax: z.string().optional(),
-      thicknessMin: z.string().optional(),
-      thicknessMax: z.string().optional(),
       depthMapUrl: z.string().url().optional(),
       pointCloudUrl: z.string().url().optional(),
       positionX: z.number().int().nonnegative().max(100000).optional(),
@@ -1279,23 +1305,23 @@ export const measurementPointRouter = router({
     }))
     .mutation(async ({ ctx, input }) => {
       const { id, changeReason, expectedUpdatedAt, ...rest } = input;
+      // BG-126 — chặn Ở INPUT, TRƯỚC bất kỳ đọc/ghi DB nào.
+      assertChangeReasonKhongGiaTienToBienThe(changeReason, "changeReason");
       const data: Record<string, unknown> = { ...rest };
       const existingPoint = await db.getMeasurementPointDefById(id);
       if (!existingPoint) {
-        throw new TRPCError({ code: "NOT_FOUND", message: "Measurement point not found" });
+        throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "measurementPoint" }, "Measurement point not found");
       }
 
       // Doc 31 OP2 (decision #4) — a DIRECT limit change is only allowed while the
       // owning product is in `development` (and has no released program); on a live
       // product it must go through the approval queue. Non-limit edits (name/shape/
       // position/…) are never gated. The audit row below records every direct edit.
-      const touchesLimits =
-        rest.lowerLimit !== undefined ||
-        rest.upperLimit !== undefined ||
-        rest.nominalValue !== undefined ||
-        rest.toleranceMode !== undefined ||
-        rest.tolPlus !== undefined ||
-        rest.tolMinus !== undefined;
+      // Task 8 Khối C — SUY từ APPROVAL_LIMIT_FIELDS (shared/pointLimitSpec.ts),
+      // không chép tay danh sách cột (trước bản vá chỉ 6/22 field — 16 field 3D/GD&T
+      // như heightMax/coplanarityMax/… lách gate hoàn toàn, lỗ 3D mà Task 8 Bước 1
+      // dựng lưới ĐỎ để bắt).
+      const touchesLimits = touchesApprovalLimitFields(rest as Record<string, unknown>);
       let thresholdGate: ThresholdGateResult | null = null;
       if (touchesLimits) {
         // Throws FORBIDDEN (→ approval queue) when the product is live + enforced.
@@ -1306,10 +1332,10 @@ export const measurementPointRouter = router({
       if (rest.preferredInstrumentId) {
         const instrument = await db.getMeasurementInstrumentById(rest.preferredInstrumentId);
         if (!instrument) {
-          throw new TRPCError({ code: "NOT_FOUND", message: `Instrument ID ${rest.preferredInstrumentId} not found` });
+          throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "instrument" }, `Instrument ID ${rest.preferredInstrumentId} not found`);
         }
         if (!instrument.isActive) {
-          throw new TRPCError({ code: "BAD_REQUEST", message: `Instrument "${instrument.code}" is inactive; cannot assign to measurement point` });
+          throw appError("BAD_REQUEST", "INVALID_VALUE", { field: "preferredInstrumentId" }, `Instrument "${instrument.code}" is inactive; cannot assign to measurement point`);
         }
       }
 
@@ -1317,13 +1343,13 @@ export const measurementPointRouter = router({
       if (rest.preferredSamplingPlanId) {
         const samplingPlan = await db.getSamplingPlanById(rest.preferredSamplingPlanId);
         if (!samplingPlan) {
-          throw new TRPCError({ code: "NOT_FOUND", message: `Sampling plan ID ${rest.preferredSamplingPlanId} not found` });
+          throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "samplingPlan" }, `Sampling plan ID ${rest.preferredSamplingPlanId} not found`);
         }
         if (samplingPlan.productModelId !== existingPoint.productModelId) {
-          throw new TRPCError({ code: "BAD_REQUEST", message: `Sampling plan does not belong to this product model` });
+          throw appError("BAD_REQUEST", "SCOPE_MISMATCH", { entity: "samplingPlan", parent: "productModel" }, `Sampling plan does not belong to this product model`);
         }
         if (!samplingPlan.isActive) {
-          throw new TRPCError({ code: "BAD_REQUEST", message: `Sampling plan "${samplingPlan.code}" is inactive; cannot assign to measurement point` });
+          throw appError("BAD_REQUEST", "INVALID_VALUE", { field: "preferredSamplingPlanId" }, `Sampling plan "${samplingPlan.code}" is inactive; cannot assign to measurement point`);
         }
       }
 
@@ -1331,13 +1357,13 @@ export const measurementPointRouter = router({
       if (rest.productViewId) {
         const productView = await db.getProductViewById(rest.productViewId);
         if (!productView) {
-          throw new TRPCError({ code: "NOT_FOUND", message: `Product view ID ${rest.productViewId} not found` });
+          throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "productView" }, `Product view ID ${rest.productViewId} not found`);
         }
         if (productView.productModelId !== existingPoint.productModelId) {
-          throw new TRPCError({ code: "BAD_REQUEST", message: `Product view does not belong to this product model` });
+          throw appError("BAD_REQUEST", "SCOPE_MISMATCH", { entity: "productView", parent: "productModel" }, `Product view does not belong to this product model`);
         }
         if (!productView.isActive) {
-          throw new TRPCError({ code: "BAD_REQUEST", message: `Product view "${productView.code}" is inactive; cannot assign to measurement point` });
+          throw appError("BAD_REQUEST", "INVALID_VALUE", { field: "productViewId" }, `Product view "${productView.code}" is inactive; cannot assign to measurement point`);
         }
       }
 
@@ -1348,16 +1374,51 @@ export const measurementPointRouter = router({
       );
       data.measurementType = nextLegacyType;
 
+      // ★★★ BG-123 — merge GIỮ NGUYÊN `null` tường minh (`gopGiuNguyenNull`,
+      // KHÔNG `??`): `??` coi `null` (xoá) là "vắng mặt" và âm thầm phục hồi
+      // giá trị CŨ — client gửi `nominalValue: null` để xoá sẽ bị đảo ngược
+      // ngay tại chỗ merge này, TRƯỚC khi kịp chảy xuống DB. `toleranceMode`
+      // không nằm trong tập nullable-để-xoá (enum, xem `measurementPointLimitGate.ts`)
+      // nên giữ nguyên `??`.
       const legacyLimits = deriveLegacyLimitsFromTolerance({
         toleranceMode: (rest.toleranceMode ?? existingPoint.toleranceMode ?? undefined) as z.infer<typeof toleranceModeSchema> | undefined,
-        nominalValue: (rest.nominalValue ?? existingPoint.nominalValue ?? undefined) as string | undefined,
-        tolPlus: (rest.tolPlus ?? existingPoint.tolPlus ?? undefined) as string | undefined,
-        tolMinus: (rest.tolMinus ?? existingPoint.tolMinus ?? undefined) as string | undefined,
-        lowerLimit: (rest.lowerLimit ?? existingPoint.lowerLimit ?? undefined) as string | undefined,
-        upperLimit: (rest.upperLimit ?? existingPoint.upperLimit ?? undefined) as string | undefined,
+        nominalValue: gopGiuNguyenNull(rest.nominalValue, existingPoint.nominalValue),
+        tolPlus: gopGiuNguyenNull(rest.tolPlus, existingPoint.tolPlus),
+        tolMinus: gopGiuNguyenNull(rest.tolMinus, existingPoint.tolMinus),
+        lowerLimit: gopGiuNguyenNull(rest.lowerLimit, existingPoint.lowerLimit),
+        upperLimit: gopGiuNguyenNull(rest.upperLimit, existingPoint.upperLimit),
       });
       data.lowerLimit = legacyLimits.lowerLimit;
       data.upperLimit = legacyLimits.upperLimit;
+
+      // ★★★ BG-113 (review Khối C lượt 9, I-2) — khoảng RỖNG (lowerLimit >
+      // upperLimit, hoặc heightMin > heightMax) làm 100% trị đo của điểm đó
+      // TRƯỢT (`pointResultEvaluator.ts`, hai vế min/max ĐỘC LẬP). Kiểm trên
+      // giá trị ĐÃ MERGE (legacyLimits — SAU derive tolerance-mode, đúng cái sẽ
+      // ghi xuống DB — KHÔNG kiểm `rest.lowerLimit`/`rest.upperLimit` một mình:
+      // patch chỉ gửi upperLimit mới thấp hơn lowerLimit HIỆN CÓ vẫn phải chặn).
+      // ★★★ NEW-1 (review lượt 9, vòng 2, Important) — TRƯỚC bản vá này CHỈ hai
+      // cặp (lowerLimit/upperLimit, heightMin/heightMax) được kiểm dù `judge()`
+      // (`pointResultEvaluator.ts`) chấm CẢ NĂM cặp — area/volume/thickness đi
+      // qua trắng, cùng lỗ RỖNG-KHOẢNG mà I-2 đã vá cho hai cặp kia. Nay merge +
+      // kiểm CẢ NĂM cặp trong `MIN_MAX_PAIRS` (`shared/pointLimitSpec.ts`).
+      // ★★★ BG-123 — cùng lý do ở trên: `gopGiuNguyenNull` giữ nguyên `null`
+      // tường minh (xoá heightMax nhưng KHÔNG đổi heightMin phải kiểm đúng
+      // "heightMin hiện có ≤ NULL" = luôn hợp lệ, không phải "heightMin hiện
+      // có ≤ heightMax CŨ" — `??` sẽ âm thầm dùng giá trị CŨ và có thể chặn
+      // OAN một lượt xoá hợp lệ, hoặc bỏ lọt một khoảng đáng lẽ phải chặn).
+      assertCapGioiHanHopLe({
+        lowerLimit: legacyLimits.lowerLimit,
+        upperLimit: legacyLimits.upperLimit,
+        heightMin: gopGiuNguyenNull(rest.heightMin, existingPoint.heightMin),
+        heightMax: gopGiuNguyenNull(rest.heightMax, existingPoint.heightMax),
+        areaMin: gopGiuNguyenNull(rest.areaMin, existingPoint.areaMin),
+        areaMax: gopGiuNguyenNull(rest.areaMax, existingPoint.areaMax),
+        volumeMin: gopGiuNguyenNull(rest.volumeMin, existingPoint.volumeMin),
+        volumeMax: gopGiuNguyenNull(rest.volumeMax, existingPoint.volumeMax),
+        thicknessMin: gopGiuNguyenNull(rest.thicknessMin, existingPoint.thicknessMin),
+        thicknessMax: gopGiuNguyenNull(rest.thicknessMax, existingPoint.thicknessMax),
+      });
 
       // P1: derive legacy x/y/r from supplied geometry (for any shape).
       if (rest.geometry) {
@@ -1401,33 +1462,38 @@ export const measurementPointRouter = router({
             actualUpdatedAt?: string | null;
           };
           const cur = conflictErr.current ?? {};
-          throw new TRPCError({
-            code: "CONFLICT",
-            message:
-              "Điểm đo đã bị người khác thay đổi kể từ khi bạn mở. Tải lại để xem thay đổi, hoặc ghi đè. " +
+          // Sprint 5 §4 — appError() thay cho throw TRPCError trần nhưng PHẢI giữ nguyên payload
+          // `mpConflict` trên cause: errorFormatter (trpc.ts) đọc nó ĐỘC LẬP với
+          // appCode/appParams để forward → shape.data.conflict, thứ mà ProductModels.tsx
+          // dùng để mở dialog "someone else changed X" (Doc 31 UX3) — không đi qua
+          // đường dịch appCode/message chung. Mất trường này là mất tính năng reload/
+          // overwrite-anyway, không chỉ mất câu chữ.
+          const mpConflictErr = appError(
+            "CONFLICT",
+            "OPERATION_FAILED",
+            { operation: "updateMeasurementPoint" },
+            "Điểm đo đã bị người khác thay đổi kể từ khi bạn mở. Tải lại để xem thay đổi, hoặc ghi đè. " +
               "This measurement point was changed by someone else since you opened it.",
-            cause: {
-              // Read by the additive errorFormatter forward (trpc.ts) → data.conflict.
-              mpConflict: {
-                pointDefId: id,
-                expectedUpdatedAt: conflictErr.expectedUpdatedAt ?? null,
-                actualUpdatedAt: conflictErr.actualUpdatedAt ?? null,
-                current: {
-                  code: cur.code ?? null,
-                  name: cur.name ?? null,
-                  lowerLimit: cur.lowerLimit ?? null,
-                  upperLimit: cur.upperLimit ?? null,
-                  nominalValue: cur.nominalValue ?? null,
-                  componentCode: cur.componentCode ?? null,
-                  refDesignator: cur.refDesignator ?? null,
-                  positionX: cur.positionX ?? null,
-                  positionY: cur.positionY ?? null,
-                  radius: cur.radius ?? null,
-                  updatedAt: cur.updatedAt ?? null,
-                },
-              },
-            } as unknown as Error,
-          });
+          );
+          (mpConflictErr.cause as { mpConflict?: unknown }).mpConflict = {
+            pointDefId: id,
+            expectedUpdatedAt: conflictErr.expectedUpdatedAt ?? null,
+            actualUpdatedAt: conflictErr.actualUpdatedAt ?? null,
+            current: {
+              code: cur.code ?? null,
+              name: cur.name ?? null,
+              lowerLimit: cur.lowerLimit ?? null,
+              upperLimit: cur.upperLimit ?? null,
+              nominalValue: cur.nominalValue ?? null,
+              componentCode: cur.componentCode ?? null,
+              refDesignator: cur.refDesignator ?? null,
+              positionX: cur.positionX ?? null,
+              positionY: cur.positionY ?? null,
+              radius: cur.radius ?? null,
+              updatedAt: cur.updatedAt ?? null,
+            },
+          };
+          throw mpConflictErr;
         }
         throw err;
       }
@@ -1502,6 +1568,144 @@ export const measurementPointRouter = router({
         console.warn("audit log failed (measurementPoint.update)", err);
       }
       return { success: true };
+    }),
+
+  // ══════════════════════════════════════════════════════════════════════════
+  // Task 8 Khối C (QĐ-5) — ghi giới hạn cho NHIỀU điểm đo cùng lúc, MỘT lần bump
+  // pointsConfigVersion. Tái dùng `update` ở trên cho sửa-1-điểm; đây là batch
+  // cho dialog "dạy giới hạn theo lô" (Task 11 gọi qua canvas + bảng).
+  //
+  // Field limit ở đây là TẬP CON của APPROVAL_LIMIT_FIELDS — KHÔNG gồm `criteria`
+  // (jsonb, cấu trúc mỗi điểm một khác, không có nghĩa "đặt cùng giá trị cho N
+  // điểm"; batch giới hạn scalar/numeric mới có nghĩa "áp cùng một số cho N điểm
+  // đã chọn"). `criteria` vẫn sửa được qua `update` từng điểm — không phải một lỗ,
+  // là biên phạm vi có chủ ý.
+  // ══════════════════════════════════════════════════════════════════════════
+  setLimitsBatch: protectedProcedure.use(requirePermission("settings_measurement_points", "canEdit"))
+    .input(z.object({
+      items: z.array(z.object({
+        id: z.number().int().positive(),
+        // ⚠ Cùng KIỂU với `update` ở trên — cột numeric ở DB đi qua dưới dạng
+        // chuỗi (tránh Postgres làm tròn/ép kiểu im lặng khi client gửi number).
+        // BG-123 — `z.string().nullable().optional()` SUY từ `APPROVAL_LIMIT_FIELDS`
+        // (trừ `criteria`/`toleranceMode`, không chép tay): undefined = không
+        // đổi, null = XOÁ giới hạn đó cho điểm này.
+        ...xayZodShapeGioiHanNullable(),
+        toleranceMode: toleranceModeSchema.optional(),
+      })).min(1).max(200),
+      changeReason: z.string().max(500).optional(),
+    }))
+    .mutation(async ({ ctx, input }) => {
+      const { items, changeReason } = input;
+      // BG-126 — chặn Ở INPUT, TRƯỚC bất kỳ đọc/ghi DB nào.
+      assertChangeReasonKhongGiaTienToBienThe(changeReason, "changeReason");
+      const ids = items.map((it) => it.id);
+
+      // Lọc tenant theo PHIÊN (phamViCua(ctx)), KHÔNG theo input — điểm ngoài
+      // phạm vi tenant của người gọi đơn giản không có mặt trong `found`, xử lý
+      // giống hệt "không tồn tại" (không lộ thông tin tồn tại-nhưng-không-thấy).
+      const found = await db.getMeasurementPointDefsByIds(ids, phamViCua(ctx));
+      const foundById = new Map(found.map((p) => [p.id, p]));
+      const missing = ids.filter((id) => !foundById.has(id));
+      if (missing.length > 0) {
+        throw appError(
+          "NOT_FOUND",
+          "ENTITY_NOT_FOUND",
+          { entity: "measurementPoint" },
+          `Measurement point(s) not found: ${missing.join(", ")}`,
+        );
+      }
+      // Mọi id phải cùng productModelId — batch này chỉ có MỘT cửa duyệt ngưỡng
+      // (gọi bên dưới) và MỘT lần bump; trộn hai sản phẩm sẽ bump nhầm version
+      // của sản phẩm kia hoặc bỏ sót gate của nó.
+      const productModelIds = new Set(found.map((p) => p.productModelId));
+      if (productModelIds.size > 1) {
+        throw appError(
+          "BAD_REQUEST",
+          "SCOPE_MISMATCH",
+          { entity: "measurementPoint", parent: "productModel" },
+          "All items in measurementPoint.setLimitsBatch must belong to the same product model",
+        );
+      }
+
+      // ★★★ BG-113 (review Khối C lượt 9, I-2) — MỖI item kiểm trên khoảng ĐÃ
+      // MERGE với hàng HIỆN CÓ (`foundById`, đọc ở trên) — patch một item chỉ
+      // gửi `upperLimit` mới thấp hơn `lowerLimit` hiện có của ĐÚNG điểm đó vẫn
+      // phải chặn. Chạy TRƯỚC cửa duyệt ngưỡng (fail sớm, không tốn một lượt
+      // gọi `assertThresholdEditAllowed` cho một batch chắc chắn sẽ bị từ chối).
+      // ★★★ NEW-1 (review lượt 9, vòng 2) — merge/kiểm CẢ NĂM cặp min/max (không
+      // chỉ lowerLimit/upperLimit/heightMin/heightMax) — area/volume/thickness
+      // đi qua trắng TRƯỚC bản vá này dù `judge()` chấm cả năm.
+      for (const item of items) {
+        const hienCo = foundById.get(item.id)!; // luôn có mặt — `missing` đã kiểm ở trên
+        assertCapGioiHanHopLe(
+          gopCapGioiHanDonGian(
+            {
+              lowerLimit: hienCo.lowerLimit, upperLimit: hienCo.upperLimit,
+              heightMin: hienCo.heightMin, heightMax: hienCo.heightMax,
+              areaMin: hienCo.areaMin, areaMax: hienCo.areaMax,
+              volumeMin: hienCo.volumeMin, volumeMax: hienCo.volumeMax,
+              thicknessMin: hienCo.thicknessMin, thicknessMax: hienCo.thicknessMax,
+            },
+            {
+              lowerLimit: item.lowerLimit, upperLimit: item.upperLimit,
+              heightMin: item.heightMin, heightMax: item.heightMax,
+              areaMin: item.areaMin, areaMax: item.areaMax,
+              volumeMin: item.volumeMin, volumeMax: item.volumeMax,
+              thicknessMin: item.thicknessMin, thicknessMax: item.thicknessMax,
+            },
+          ),
+        );
+      }
+
+      // Cửa duyệt ngưỡng — MỘT lần cho cả batch (cùng productModelId ⇒ cùng
+      // lifecycleStatus/gate quyết định). Throws FORBIDDEN (→ hàng đợi duyệt) khi
+      // sản phẩm live + enforced (mirror measurementPoint.update).
+      const thresholdGate = await assertThresholdEditAllowed(items[0].id);
+
+      // updateMeasurementPointLimitsBatch tự lo: FOR UPDATE từng hàng, snapshot
+      // measurement_point_versions TRƯỚC khi ghi (BG-97 — bo cũ vẫn chấm theo
+      // limit lúc đo), UPDATE chỉ field thuộc APPROVAL_LIMIT_FIELDS, MỘT lần bump
+      // pointsConfigVersion trong CÙNG transaction (mirror deleteMeasurementPointDef).
+      const result = await db.updateMeasurementPointLimitsBatch(items, {
+        changedBy: ctx.user.id,
+        changeReason: changeReason ?? null,
+      });
+
+      // Bump đã chạy TRONG transaction ở trên — KHÔNG gọi bumpAndNotifyPointsConfig
+      // ở đây (sẽ bump hai lần). Chỉ notify best-effort, machines poll nếu lỡ.
+      try {
+        publishPointsConfigChanged(result.code, result.pointsConfigVersion);
+      } catch (err) {
+        console.warn("[Task 8 Khối C] publishPointsConfigChanged failed after setLimitsBatch (machines will pick it up on next poll)", err);
+      }
+
+      // Doc 31 OP2 — mirror measurementPoint.update: mọi lần sửa giới hạn trực
+      // tiếp để lại một hàng audit mang gate decision.
+      try {
+        await db.createAuditLog({
+          userId: ctx.user.id,
+          userName: ctx.user.name ?? undefined,
+          action: "threshold.directEditBatch",
+          entityType: "product",
+          entityId: result.productModelId,
+          details: {
+            pointIds: ids,
+            updated: result.updated,
+            pointsConfigVersion: result.pointsConfigVersion,
+            lifecycleStatus: thresholdGate.lifecycleStatus,
+            gateDecision: thresholdGate.decision,
+            gateEnforced: thresholdGate.enforced,
+            hasReleasedProgram: thresholdGate.hasReleasedProgram,
+            changeReason: changeReason ?? null,
+          },
+          status: "success",
+        });
+      } catch (err) {
+        console.warn("audit log failed (threshold.directEditBatch)", err);
+      }
+
+      return { updated: result.updated, pointsConfigVersion: result.pointsConfigVersion };
     }),
 
   // Doc 31 MP1/PM6 — fill empty componentCode on a product's points from its BOM
@@ -1597,7 +1801,7 @@ export const measurementPointRouter = router({
       // Get point info
       const point = await db.getMeasurementPointDefById(input.pointId);
       if (!point) {
-        throw new TRPCError({ code: 'NOT_FOUND', message: 'Measurement point not found' });
+        throw appError('NOT_FOUND', 'ENTITY_NOT_FOUND', { entity: 'measurementPoint' }, 'Measurement point not found');
       }
 
       // Decode base64 and upload to S3
@@ -1649,22 +1853,27 @@ export const measurementPointRouter = router({
       fromTs: z.coerce.date().optional(),
       toTs: z.coerce.date().optional(),
     }).optional())
-    .query(async ({ input }) => {
+    .query(async ({ input, ctx }) => {
+      // ⚠ Tỉ lệ điểm đo chưa ánh xạ là một số ĐO trên bản ghi kiểm của tenant. `machineIds` là
+      // CỔNG (từ `ctx.user`), còn `input.machineId` là bộ lọc giao diện — hai thứ khác nhau, được
+      // AND lại, nên một `machineId` tự khai chỉ thu hẹp thêm.
+      const idsMay = await db.machineIdsTrongPhamVi(phamViCua(ctx));
       const filter: UnmappedRateFilter = {
         machineId: input?.machineId,
         productModelId: input?.productModelId,
         fromTs: input?.fromTs,
         toTs: input?.toTs,
+        machineIds: idsMay ?? undefined,
       };
       return getUnmappedPointRate(filter);
     }),
 
   /** List __UNMAPPED__ point defs with result counts + a remap suggestion. */
   listUnmapped: protectedProcedure
-    .query(async () => {
+    .query(async ({ ctx }) => {
       const unmappedModelId = await getUnmappedProductModelId();
       if (!unmappedModelId) return { unmappedModelId: null, points: [] };
-      const points = await db.listUnmappedPointDefsWithStats(unmappedModelId);
+      const points = await db.listUnmappedPointDefsWithStats(unmappedModelId, phamViCua(ctx));
       return { unmappedModelId, points };
     }),
 
@@ -1681,14 +1890,14 @@ export const measurementPointRouter = router({
     .mutation(async ({ ctx, input }) => {
       const unmappedModelId = await getUnmappedProductModelId();
       if (!unmappedModelId) {
-        throw new TRPCError({ code: "NOT_FOUND", message: "No __UNMAPPED__ model exists — nothing to remap." });
+        throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "productModel" }, "No __UNMAPPED__ model exists — nothing to remap.");
       }
       const target = await db.getProductModelById(input.targetProductModelId);
       if (!target) {
-        throw new TRPCError({ code: "NOT_FOUND", message: `Target product model ${input.targetProductModelId} not found.` });
+        throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "productModel" }, `Target product model ${input.targetProductModelId} not found.`);
       }
       if (input.targetProductModelId === unmappedModelId) {
-        throw new TRPCError({ code: "BAD_REQUEST", message: "Cannot remap into the __UNMAPPED__ model itself." });
+        throw appError("BAD_REQUEST", "INVALID_VALUE", { field: "targetProductModelId" }, "Cannot remap into the __UNMAPPED__ model itself.");
       }
       const summary = await db.remapMeasurementPoints({
         pointDefIds: input.pointDefIds,
@@ -1732,6 +1941,8 @@ export const measurementPointRouter = router({
       reason: z.string().max(500).optional(),
     }))
     .mutation(async ({ ctx, input }) => {
+      // BG-126 — chặn Ở INPUT, TRƯỚC bất kỳ đọc/ghi DB nào.
+      assertChangeReasonKhongGiaTienToBienThe(input.reason, "reason");
       const result = await withDbErrors(() =>
         db.revertPointsConfigToVersion(input.productModelId, input.targetVersion, {
           changedBy: ctx.user.id,
@@ -1740,12 +1951,12 @@ export const measurementPointRouter = router({
       ).catch((err) => {
         // Out-of-range target (target >= current, or non-positive) → 400, not 500.
         if (err instanceof db.RevertVersionError) {
-          throw new TRPCError({ code: "BAD_REQUEST", message: err.message });
+          throw appError("BAD_REQUEST", "OPERATION_FAILED", { operation: "revertPointsConfigVersion" }, err.message);
         }
         throw err;
       });
       if (!result) {
-        throw new TRPCError({ code: "NOT_FOUND", message: `Product model ${input.productModelId} not found.` });
+        throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "productModel" }, `Product model ${input.productModelId} not found.`);
       }
       // Best-effort nudge; machines otherwise converge on their next poll.
       try {
@@ -1787,20 +1998,20 @@ export const productMachineMappingRouter = router({
       machineId: z.number().optional(),
       productModelId: z.number().optional(),
     }).optional())
-    .query(async ({ input }) => {
-      return db.getProductMachineMappings(input?.machineId, input?.productModelId);
+    .query(async ({ input, ctx }) => {
+      return db.getProductMachineMappings(input?.machineId, input?.productModelId, phamViCua(ctx));
     }),
 
   byMachine: protectedProcedure
     .input(z.object({ machineId: z.number() }))
-    .query(async ({ input }) => {
-      return db.getMappingsByMachine(input.machineId);
+    .query(async ({ input, ctx }) => {
+      return db.getMappingsByMachine(input.machineId, phamViCua(ctx));
     }),
 
   byProduct: protectedProcedure
     .input(z.object({ productModelId: z.number() }))
-    .query(async ({ input }) => {
-      return db.getMappingsByProduct(input.productModelId);
+    .query(async ({ input, ctx }) => {
+      return db.getMappingsByProduct(input.productModelId, phamViCua(ctx));
     }),
 
   create: writeProcedure
@@ -1820,16 +2031,10 @@ export const productMachineMappingRouter = router({
         db.getMachineById(input.machineId),
       ]);
       if (!product) {
-        throw new TRPCError({
-          code: "BAD_REQUEST",
-          message: "Sản phẩm không tồn tại hoặc đã bị xoá — vui lòng chọn lại.",
-        });
+        throw appError("BAD_REQUEST", "ENTITY_NOT_FOUND", { entity: "productModel" }, "Sản phẩm không tồn tại hoặc đã bị xoá — vui lòng chọn lại.");
       }
       if (!machine) {
-        throw new TRPCError({
-          code: "BAD_REQUEST",
-          message: "Máy không tồn tại hoặc đã bị xoá — vui lòng chọn lại.",
-        });
+        throw appError("BAD_REQUEST", "ENTITY_NOT_FOUND", { entity: "machine" }, "Máy không tồn tại hoặc đã bị xoá — vui lòng chọn lại.");
       }
       // doc 54 P0.4 — GO-LIVE READINESS GATE: don't let an under-configured product
       // (points with no thresholds / no coordinates / no golden) be mapped to a machine,
@@ -1839,12 +2044,16 @@ export const productMachineMappingRouter = router({
         try {
           const readiness = await computeProductReadiness(input.productModelId);
           if (readiness && readiness.band === "blocked") {
-            throw new TRPCError({
-              code: "BAD_REQUEST",
-              message:
-                `Sản phẩm "${product.code}" chưa đủ cấu hình để gán máy (readiness ${readiness.score}% — band "blocked"). ` +
+            throw appError(
+              "BAD_REQUEST",
+              "OPERATION_FAILED",
+              // Task 5 (doc 71) — `reason` khôi phục readiness score + chỉ dẫn
+              // force=true đã mất khi câu chuẩn OPERATION_FAILED chỉ nội suy
+              // {{operation}} (mã "assignProductToMachine", không nói vì sao thất bại).
+              { operation: "assignProductToMachine", reason: "productReadinessBlocked", productCode: product.code, score: readiness.score },
+              `Sản phẩm "${product.code}" chưa đủ cấu hình để gán máy (readiness ${readiness.score}% — band "blocked"). ` +
                 `Hoàn thiện điểm-đo (ngưỡng/tọa độ/golden) trước, hoặc gán với force=true nếu cố ý.`,
-            });
+            );
           }
         } catch (e) {
           if (e instanceof TRPCError) throw e;
@@ -1977,7 +2186,7 @@ export const productCategoryRouter = router({
       // Check if code already exists
       const existing = await db.getProductCategoryByCode(input.code);
       if (existing) {
-        throw new TRPCError({ code: 'CONFLICT', message: 'Category code already exists' });
+        throw appError('CONFLICT', 'ENTITY_DUPLICATE', { entity: 'productCategory' }, 'Category code already exists');
       }
       const result = await db.createProductCategory(input);
       return { id: result.id };
@@ -2001,7 +2210,7 @@ export const productCategoryRouter = router({
       if (data.code) {
         const existing = await db.getProductCategoryByCode(data.code);
         if (existing && existing.id !== id) {
-          throw new TRPCError({ code: 'CONFLICT', message: 'Category code already exists' });
+          throw appError('CONFLICT', 'ENTITY_DUPLICATE', { entity: 'productCategory' }, 'Category code already exists');
         }
       }
       await db.updateProductCategory(id, data);
@@ -2038,7 +2247,7 @@ export const productDocumentRouter = router({
       const { productDocuments } = await import("../../drizzle/schema/product");
       const { eq, desc } = await import("drizzle-orm");
       const database = await db.getDb();
-      if (!database) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: 'Database not connected' });
+      if (!database) throw appError("INTERNAL_SERVER_ERROR", "DB_UNAVAILABLE", undefined, "Database not connected");
       return database.select().from(productDocuments)
         .where(eq(productDocuments.productModelId, input.productModelId))
         .orderBy(desc(productDocuments.createdAt));
@@ -2059,7 +2268,7 @@ export const productDocumentRouter = router({
     .mutation(async ({ ctx, input }) => {
       const { productDocuments } = await import("../../drizzle/schema/product");
       const database = await db.getDb();
-      if (!database) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: 'Database not connected' });
+      if (!database) throw appError("INTERNAL_SERVER_ERROR", "DB_UNAVAILABLE", undefined, "Database not connected");
 
       const buffer = Buffer.from(input.fileBase64, 'base64');
       const safeName = input.fileName.replace(/[^a-zA-Z0-9._-]/g, '_');
@@ -2086,7 +2295,7 @@ export const productDocumentRouter = router({
       const { productDocuments } = await import("../../drizzle/schema/product");
       const { eq } = await import("drizzle-orm");
       const database = await db.getDb();
-      if (!database) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: 'Database not connected' });
+      if (!database) throw appError("INTERNAL_SERVER_ERROR", "DB_UNAVAILABLE", undefined, "Database not connected");
       await database.delete(productDocuments).where(eq(productDocuments.id, input.id));
       return { success: true };
     }),
@@ -2234,7 +2443,7 @@ export const fiducialMarkRouter = router({
     }))
     .mutation(async ({ ctx, input }) => {
       const fid = await db.getFiducialMarkById(input.fiducialId);
-      if (!fid) throw new TRPCError({ code: "NOT_FOUND", message: "Fiducial mark not found" });
+      if (!fid) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "fiducialMark" }, "Fiducial mark not found");
       const buffer = Buffer.from(input.imageBase64, "base64");
       const ext = input.mimeType.split("/")[1] || "png";
       const fileKey = `fiducial-marks/${fid.productModelId}/${fid.code}-tpl-${nanoid(8)}.${ext}`;
@@ -2465,11 +2674,11 @@ export const defectCatalogRouter = router({
       onlyUnresolved: z.boolean().optional().default(true),
       limit: z.number().int().positive().max(1000).optional(),
     }).optional())
-    .query(async ({ input }) => {
+    .query(async ({ input, ctx }) => {
       return db.listUnmatchedDefectCodes({
         onlyUnresolved: input?.onlyUnresolved ?? true,
         limit: input?.limit,
-      });
+      }, phamViCua(ctx));
     }),
 
   // ── Doc 31 Đợt B (OP4) — per-component defect tendency (Pareto-by-package) ──
@@ -2482,13 +2691,13 @@ export const defectCatalogRouter = router({
       toTs: z.coerce.date().optional(),
       limit: z.number().int().positive().max(500).optional(),
     }).optional())
-    .query(async ({ input }) => {
+    .query(async ({ input, ctx }) => {
       return db.getDefectTendencyByComponent({
         productModelId: input?.productModelId,
         fromTs: input?.fromTs,
         toTs: input?.toTs,
         limit: input?.limit,
-      });
+      }, phamViCua(ctx));
     }),
 });
 
@@ -2701,7 +2910,12 @@ export const defectCatalogRouter = router({
         endDate: z.string().datetime().optional(),
         machineId: z.number().int().positive().optional(),
       }))
-      .query(async ({ input }) => {
+      .query(async ({ input, ctx }) => {
+        // ⚠ Phán quyết chấp nhận LÔ (AQL) là một số đo chất lượng của tenant. `productModelId` là
+        // lời TỰ KHAI ⇒ ngoài phạm vi thì KHÔNG đánh giá.
+        if (!(await db.sanPhamTrongPhamVi(input.productModelId, phamViCua(ctx)))) {
+          tuChoiNgoaiPhamVi("productModel", `productModelId=${input.productModelId}`);
+        }
         return evaluateLotAcceptance({
           productModelId: input.productModelId,
           samplingPlanId: input.samplingPlanId,
@@ -2722,7 +2936,10 @@ export const defectCatalogRouter = router({
         machineId: z.number().int().positive().optional(),
         limit: z.number().int().min(1).max(200).optional(),
       }))
-      .query(async ({ input }) => {
+      .query(async ({ input, ctx }) => {
+        if (!(await db.sanPhamTrongPhamVi(input.productModelId, phamViCua(ctx)))) {
+          tuChoiNgoaiPhamVi("productModel", `productModelId=${input.productModelId}`);
+        }
         return listLotDispositions({
           productModelId: input.productModelId,
           samplingPlanId: input.samplingPlanId,
@@ -2847,7 +3064,7 @@ export const msaWizardRouter = router({
     .mutation(async ({ ctx, input }) => {
       if (input.instrumentId) {
         const inst = await db.getMeasurementInstrumentById(input.instrumentId);
-        if (!inst) throw new TRPCError({ code: "NOT_FOUND", message: `Instrument ID ${input.instrumentId} not found` });
+        if (!inst) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "instrument" }, `Instrument ID ${input.instrumentId} not found`);
       }
 
       const id = await db.upsertMsaCsvMappingPreset({
@@ -2906,7 +3123,7 @@ export const msaWizardRouter = router({
     .query(async ({ input }) => {
       const study = await db.getMsaStudyById(input.studyId);
       if (!study) {
-        throw new TRPCError({ code: "NOT_FOUND", message: "MSA study not found" });
+        throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "msaStudy" }, "MSA study not found");
       }
       const observations = await db.listMsaObservationsByStudy(input.studyId);
       return { study, observations };
@@ -2927,13 +3144,13 @@ export const msaWizardRouter = router({
     .mutation(async ({ ctx, input }) => {
       if (input.instrumentId) {
         const inst = await db.getMeasurementInstrumentById(input.instrumentId);
-        if (!inst) throw new TRPCError({ code: "NOT_FOUND", message: `Instrument ID ${input.instrumentId} not found` });
+        if (!inst) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "instrument" }, `Instrument ID ${input.instrumentId} not found`);
       }
       if (input.measurementPointDefId) {
         const point = await db.getMeasurementPointDefById(input.measurementPointDefId);
-        if (!point) throw new TRPCError({ code: "NOT_FOUND", message: `Measurement point ID ${input.measurementPointDefId} not found` });
+        if (!point) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "measurementPoint" }, `Measurement point ID ${input.measurementPointDefId} not found`);
         if (point.productModelId !== input.productModelId) {
-          throw new TRPCError({ code: "BAD_REQUEST", message: "Measurement point does not belong to this product model" });
+          throw appError("BAD_REQUEST", "SCOPE_MISMATCH", { entity: "measurementPoint", parent: "productModel" }, "Measurement point does not belong to this product model");
         }
       }
 
@@ -2975,9 +3192,9 @@ export const msaWizardRouter = router({
     }))
     .mutation(async ({ ctx, input }) => {
       const study = await db.getMsaStudyById(input.studyId);
-      if (!study) throw new TRPCError({ code: "NOT_FOUND", message: "MSA study not found" });
+      if (!study) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "msaStudy" }, "MSA study not found");
       if (study.status === "completed" || study.status === "cancelled") {
-        throw new TRPCError({ code: "BAD_REQUEST", message: "Study is closed" });
+        throw appError("BAD_REQUEST", "OPERATION_FAILED", { operation: "addMsaObservation" }, "Study is closed");
       }
 
       const duplicated = await db.getMsaObservationByCell(
@@ -2987,15 +3204,17 @@ export const msaWizardRouter = router({
         input.trialNo,
       );
       if (duplicated) {
-        throw new TRPCError({
-          code: "CONFLICT",
-          message: `Observation for (${input.operatorName}, ${input.partLabel}, trial ${input.trialNo}) already exists`,
-        });
+        throw appError(
+          "CONFLICT",
+          "ENTITY_DUPLICATE",
+          { entity: "msaObservation" },
+          `Observation for (${input.operatorName}, ${input.partLabel}, trial ${input.trialNo}) already exists`,
+        );
       }
 
       const value = Number(input.measuredValue);
       if (!Number.isFinite(value)) {
-        throw new TRPCError({ code: "BAD_REQUEST", message: "measuredValue must be numeric" });
+        throw appError("BAD_REQUEST", "INVALID_VALUE", { field: "measuredValue" }, "measuredValue must be numeric");
       }
 
       const id = await db.addMsaObservation({
@@ -3033,9 +3252,9 @@ export const msaWizardRouter = router({
     }))
     .mutation(async ({ ctx, input }) => {
       const study = await db.getMsaStudyById(input.studyId);
-      if (!study) throw new TRPCError({ code: "NOT_FOUND", message: "MSA study not found" });
+      if (!study) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "msaStudy" }, "MSA study not found");
       if (study.status === "completed" || study.status === "cancelled") {
-        throw new TRPCError({ code: "BAD_REQUEST", message: "Study is closed" });
+        throw appError("BAD_REQUEST", "OPERATION_FAILED", { operation: "addMsaObservationsBatch" }, "Study is closed");
       }
 
       const skipDuplicates = input.skipDuplicates !== false;
@@ -3110,9 +3329,9 @@ export const msaWizardRouter = router({
     }))
     .mutation(async ({ ctx, input }) => {
       const study = await db.getMsaStudyById(input.studyId);
-      if (!study) throw new TRPCError({ code: "NOT_FOUND", message: "MSA study not found" });
+      if (!study) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "msaStudy" }, "MSA study not found");
       if (study.status === "completed" || study.status === "cancelled") {
-        throw new TRPCError({ code: "BAD_REQUEST", message: "Study is closed" });
+        throw appError("BAD_REQUEST", "OPERATION_FAILED", { operation: "generateMsaMatrix" }, "Study is closed");
       }
 
       const result = await db.generateMsaObservationMatrix(input.studyId, {
@@ -3138,7 +3357,7 @@ export const msaWizardRouter = router({
     .input(z.object({ studyId: z.number().int().positive() }))
     .mutation(async ({ ctx, input }) => {
       const study = await db.getMsaStudyById(input.studyId);
-      if (!study) throw new TRPCError({ code: "NOT_FOUND", message: "MSA study not found" });
+      if (!study) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "msaStudy" }, "MSA study not found");
 
       const summary = await db.calculateMsaSummary(input.studyId);
       await db.updateMsaStudy(input.studyId, {
@@ -3163,7 +3382,7 @@ export const msaWizardRouter = router({
     .input(z.object({ studyId: z.number().int().positive() }))
     .mutation(async ({ ctx, input }) => {
       const study = await db.getMsaStudyById(input.studyId);
-      if (!study) throw new TRPCError({ code: "NOT_FOUND", message: "MSA study not found" });
+      if (!study) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "msaStudy" }, "MSA study not found");
       await db.updateMsaStudy(input.studyId, { status: "cancelled", isActive: false });
       await db.createAuditLog({
         userId: ctx.user.id,
@@ -3215,7 +3434,7 @@ export const instrumentCalibrationRouter = router({
     }))
     .mutation(async ({ ctx, input }) => {
       const inst = await db.getMeasurementInstrumentById(input.instrumentId);
-      if (!inst) throw new TRPCError({ code: "NOT_FOUND", message: "Instrument not found" });
+      if (!inst) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "instrument" }, "Instrument not found");
       const id = await db.createInstrumentCalibration({ ...input, createdBy: ctx.user.id });
       // Sync convenience: update instrument's lastCalibrationAt / nextCalibrationAt
       if (input.result !== "fail") {
@@ -3282,7 +3501,7 @@ export const instrumentMsaRecordRouter = router({
     }))
     .mutation(async ({ ctx, input }) => {
       const inst = await db.getMeasurementInstrumentById(input.instrumentId);
-      if (!inst) throw new TRPCError({ code: "NOT_FOUND", message: "Instrument not found" });
+      if (!inst) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "instrument" }, "Instrument not found");
       const id = await db.createInstrumentMsaRecord({ ...input, createdBy: ctx.user.id });
       await db.createAuditLog({
         userId: ctx.user.id,
@@ -3319,8 +3538,8 @@ export const instrumentMsaRecordRouter = router({
 export const mpLightingProfileRouter = router({
   listByPoint: protectedProcedure
     .input(z.object({ pointDefId: z.number().int().positive() }))
-    .query(async ({ input }) => {
-      return db.listMpLightingProfiles(input.pointDefId);
+    .query(async ({ input, ctx }) => {
+      return db.listMpLightingProfiles(input.pointDefId, phamViCua(ctx));
     }),
 
   create: adminProcedure
@@ -3471,8 +3690,8 @@ export const measurementSamplesRouter = router({
       fromTs: z.coerce.date().optional(),
       toTs: z.coerce.date().optional(),
     }))
-    .query(async ({ input }) => {
-      return db.listMeasurementSamples(input);
+    .query(async ({ input, ctx }) => {
+      return db.listMeasurementSamples(input, phamViCua(ctx));
     }),
 
   /**
@@ -3577,8 +3796,8 @@ export const spcAlertsRouter = router({
       unackedOnly: z.boolean().optional(),
       limit: z.number().int().min(1).max(500).optional(),
     }).optional())
-    .query(async ({ input }) => {
-      return db.listSpcAlerts(input ?? {});
+    .query(async ({ input, ctx }) => {
+      return db.listSpcAlerts(input ?? {}, phamViCua(ctx));
     }),
 
   ack: protectedProcedure
@@ -3606,7 +3825,7 @@ export const mpDefectStatsRouter = router({
       // Convenience: lastNDays overrides fromTs/toTs.
       lastNDays: z.number().int().min(1).max(365).optional(),
     }))
-    .query(async ({ input }) => {
+    .query(async ({ input, ctx }) => {
       let fromTs = input.fromTs;
       let toTs = input.toTs;
       if (input.lastNDays) {
@@ -3620,7 +3839,7 @@ export const mpDefectStatsRouter = router({
         machineId: input.machineId,
         fromTs,
         toTs,
-      });
+      }, phamViCua(ctx));
     }),
 });
 
@@ -3818,9 +4037,9 @@ export const cadImportRouter = router({
     .input(z.object({ jobId: z.number().int().positive() }))
     .mutation(async ({ ctx, input }) => {
       const job = await db.getCadImportJobById(input.jobId);
-      if (!job) throw new TRPCError({ code: "NOT_FOUND", message: "CAD import job not found" });
+      if (!job) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "cadImportJob" }, "CAD import job not found");
       if (job.status === "applied") {
-        throw new TRPCError({ code: "BAD_REQUEST", message: "CAD import job already applied" });
+        throw appError("BAD_REQUEST", "OPERATION_FAILED", { operation: "applyCadImportJob" }, "CAD import job already applied");
       }
       const count = await db.applyCadImportJob(input.jobId, ctx.user.id);
       // Doc 51 P1 (R4 / CASE #12) — was a READ-MODIFY-WRITE (read version, +1,
@@ -3927,7 +4146,7 @@ export const cadImportRouter = router({
     }))
     .mutation(async ({ ctx, input }) => {
       const job = await db.getCadImportJobById(input.jobId);
-      if (!job) throw new TRPCError({ code: "NOT_FOUND", message: "Centroid import job not found" });
+      if (!job) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "cadImportJob" }, "Centroid import job not found");
       return applyCentroidImport({
         jobId: input.jobId,
         appliedBy: ctx.user.id,

@@ -20,10 +20,11 @@ const validPayload = {
 };
 
 describe("machineDataContract", () => {
-  it("lists versions and exposes latest (1.1 — doc 56 API-2 drift fix, keeps 1.0)", () => {
+  it("lists versions and exposes latest (2.0 — Pha 1A Task 4 cây 4 cấp, keeps 1.0/1.1 for reject-with-reason)", () => {
     expect(listMachineContractVersions()).toContain("1.0");
     expect(listMachineContractVersions()).toContain("1.1");
-    expect(LATEST_MACHINE_CONTRACT_VERSION).toBe("1.1");
+    expect(listMachineContractVersions()).toContain("2.0");
+    expect(LATEST_MACHINE_CONTRACT_VERSION).toBe("2.0");
   });
 
   it("accepts a valid payload", () => {

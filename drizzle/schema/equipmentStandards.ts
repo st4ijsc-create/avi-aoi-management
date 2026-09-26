@@ -198,6 +198,9 @@ export const masterAlarms = pgTable("master_alarms", {
   setpoint: varchar("setpoint", { length: 96 }),
   deadband: varchar("deadband", { length: 96 }),
   rationalization: text("rationalization"),
+  // doc 63 DEP-06 (mig 0296) — ISA-18.2 mandatory field #4: probable CAUSE, authored at
+  // rationalization time and joined into the live operator alarm feed (AUD-02).
+  cause: text("cause"),
   // ISA-18.2 shelving: silence until this instant (future = shelved). Null = not shelved.
   shelvedUntil: timestamp("shelvedUntil"),
   // Permanent design suppression (out-of-service). true = never raise.

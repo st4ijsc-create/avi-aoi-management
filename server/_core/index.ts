@@ -20,6 +20,8 @@ import { initializeSocket } from "./socket";
 import { uploadGuard } from "./uploadValidation";
 import { startOfflineMonitor } from "./offlineMonitor";
 import { initializeEmailTransporter } from "./email";
+import { finalYield } from "../utils/kpi";
+import { docGioTuongNhaMay } from "../utils/factoryTime";
 // W4-D (B7): initializeScheduledReports/Backups now start via backgroundJobs
 // (skipped when ROLE=api); only the shutdown hooks remain wired here.
 import { shutdownScheduledReports } from "../services/reportScheduler";
@@ -35,30 +37,61 @@ import { initializeLicenseSystem, licenseEnforcementMiddleware } from "../licens
 import { initializeRuntimeSecurity, shutdownRuntimeSecurity } from "../license/runtime-security";
 import { registerExternalInspectionRoutes } from "../routes/externalInspectionApi";
 import { registerAiStreamingRoutes } from "../routes/aiStreamingApi";
+import { chanTuyenAiTheoGiayPhep } from "../routes/congGiayPhepAiExpress";
 import { registerOpenAiGateway } from "../routes/openaiGateway";
 import { registerAiLocalKnowledgeRoutes } from "../routes/aiLocalKnowledgeApi";
 import { registerEdgeDownloadRoute } from "../routes/edgeDownload";
+import { kyAnhTrongThan, kyNeuLaDuongDanNoiBo } from "./anhKyUrl";
+import {
+  congAnhMo,
+  machineIdsChoLoiVao,
+  mayTrongPhamViAnh,
+  phamViDaApAnh,
+  sanPhamTrongPhamViAnh,
+  thanTuChoiPhamViAnh,
+  thuMoCongAnh,
+  type LoiVaoAnh,
+} from "../routes/_congAnh";
+import { uyQuyenDuongDanAnh } from "../routes/_uyQuyenAnh";
 import logger, { installConsoleBridge } from "../logger";
 import { correlationRequestMiddleware } from "./correlationMiddleware";
 import { livenessProbe, readinessProbe } from "./healthProbes";
 import { createApiLimiter, createAuthLimiter, createMachineIngestLimiter, createOtIngestLimiter, OT_INGEST_PATHS } from "./rateLimitConfig";
 import type { CanonicalSample, TelemetryProtocol, TelemetryQuality } from "../services/telemetryBus";
+import { assertVramEnforcementPolicy } from "../services/vram/vramBroker";
 
 // Chuẩn hoá log sang structured khi LOG_JSON=1 / LOG_BRIDGE_CONSOLE=1 (no-op nếu tắt).
 installConsoleBridge();
 
-/** Strip trailing Z so dates are always parsed as local time, not UTC */
-// drizzle-orm serializes Date via toISOString() (UTC representation).
-// Our "timestamp without time zone" columns store LOCAL time values.
-// Without compensation, toISOString() shifts dates by -N hours (e.g. -7 for UTC+7).
-// Fix: return a "fake UTC" Date whose UTC components equal the intended local time.
+/**
+ * ★★★ Pha 2B Task 5 — CỔNG CẤU HÌNH CƯỠNG CHẾ, VÀ ĐÂY LÀ **CHỖ DUY NHẤT TRONG REPO NGOÀI MỌI `try`**.
+ *
+ * Task 2 dựng `assertHeadroomPolicy()` rồi bàn giao thẳng một câu: *"lớp 'hỏng SỚM' hiện KHÔNG đạt
+ * được ở đâu cả — mọi vị trí khả dĩ đều nằm trong try/catch"*, và liệt kê ba vị trí đã bị nuốt (mức
+ * module `vramBroker` — nhập bên trong `try` của `beginVramAllocation()`; khối bật VRAM lúc boot;
+ * `startVramReconciler()`). Dòng dưới đây là câu trả lời: nó chạy ở **thân module của điểm vào**,
+ * sau `import "dotenv/config"` (ESM đánh giá xong toàn bộ import rồi mới chạy thân), và **không có
+ * `try` nào bao quanh** — một `.env` hỏng làm tiến trình chết NGAY, với đúng câu giải thích.
+ *
+ * ⚠ CÓ CHỦ Ý LÀM TIẾN TRÌNH KHÔNG KHỞI ĐỘNG ĐƯỢC. Nghe nguy hiểm, nhưng ca ngược lại nguy hiểm hơn
+ * nhiều: `VRAM_DEVICE_TOTAL_MB=` (để trống) ⇒ `Number("") === 0` ⇒ dư địa âm khổng lồ ⇒ **TỪ CHỐI
+ * 100% lượt xin, im lặng, cả cụm AI chết ba giờ sau** mà không ai nối được nguyên nhân với `.env`.
+ * Hàm chỉ ném khi người vận hành ĐÃ ĐẶT một giá trị vô nghĩa; không đặt gì thì mọi thứ về mặc định
+ * hợp lệ và dòng này im lặng tuyệt đối.
+ *
+ * ⚠ `server/worker.ts` có lượt gọi RIÊNG cùng khuôn — nó KHÔNG import file này (hai điểm vào độc
+ * lập, không vai trò nào đi qua cả hai).
+ */
+assertVramEnforcementPolicy();
+
+
+// BG-96 (spec Khối C QĐ-1): dateStr is a user-typed date/time — read as FACTORY
+// wall-clock time (FACTORY_TZ, default Asia/Ho_Chi_Minh) and converted to the
+// real UTC instant via `docGioTuongNhaMay`. Replaces the old fake-UTC trick
+// (`d.getTime() - d.getTimezoneOffset()*60000`), which depended on the
+// PROCESS's timezone, not the factory's. Call sites already guard `isNaN`.
 function parseLocalDate(dateStr: string, endOfDay = false): Date {
-  let clean = dateStr.endsWith('Z') ? dateStr.slice(0, -1) : dateStr;
-  // Date-only strings (e.g. "2026-04-03") are parsed as UTC midnight by JS spec.
-  // Append time component so they are parsed as LOCAL time instead.
-  if (!clean.includes('T')) clean += endOfDay ? 'T23:59:59.999' : 'T00:00:00';
-  const d = new Date(clean);
-  return new Date(d.getTime() - d.getTimezoneOffset() * 60000);
+  return docGioTuongNhaMay(dateStr, endOfDay) ?? new Date(NaN);
 }
 
 const HTTPS_ENABLED = process.env.HTTPS_ENABLED === "true";
@@ -449,6 +482,26 @@ async function startServer() {
     }
   });
 
+  // ── G1-E (2026-08-16) — SẴN SÀNG THẬT CỦA HẠ TẦNG AI ────────────────────────────────────────
+  // VÌ SAO THÊM MỚI CHỨ KHÔNG SỬA `/health`: `/health` + `/livez` + `/readyz` ở trên đang là cổng
+  // HEALTHCHECK/canary. Nếu nhét "llama-server chết" vào chúng, một instance VẪN PHỤC VỤ TỐT (mã
+  // lùi về in-process, câu trả lời vẫn ra) sẽ bị kéo khỏi rotation. Nên tách vai:
+  //   /readyz         → "nhận traffic được không?"  (cổng ROLLOUT — không đổi)
+  //   /api/health/ai  → "còn ĐỦ NĂNG LỰC AI không?" (cổng CẢNH BÁO — mới)
+  // ⚠ `/api/health` KHÔNG hề là route — nó rơi vào SPA catch-all (`vite.ts` `app.use("*")`) nên
+  //   trả 200 + text/html. Mọi nghiệm thu "health 200" cũ vì thế YẾU HƠN tưởng. Endpoint này nằm
+  //   dưới `/api/` nên vẫn được apiLimiter (300/phút) che, và vì là GET nên origin-check không chạm.
+  // Mã HTTP: 200 tất-cả-ok · 207 có hệ con degraded · 503 có hệ con down (xem aiReadiness.ts).
+  // Handler nằm ở `aiReadiness.ts` (createAiReadinessHandler) để bộ test mount ĐÚNG CÁI NÀY vào
+  // một app Express có SPA catch-all phía sau — chứng minh route không bị nuốt, không test bản sao.
+  try {
+    const { createAiReadinessHandler } = await import("./aiReadiness");
+    app.get('/api/health/ai', createAiReadinessHandler());
+    console.log('[AIHealth] readiness endpoint ready: GET /api/health/ai (200 ok · 207 degraded · 503 down)');
+  } catch (err) {
+    console.error('[AIHealth] wiring failed:', (err as any)?.message || err);
+  }
+
   // W0-I (doc 44 G5.7) — CSP violation report endpoint + origin-check chống CSRF.
   // Mount SAU health/metrics (không chạm health probe), TRƯỚC mọi route /api & tRPC.
   // /api/csp-report vẫn đi qua apiLimiter (mounted trên /api/ ở trên) nên được
@@ -546,6 +599,37 @@ async function startServer() {
       fs.mkdirSync(factoryAlertReleasesDir, { recursive: true });
     }
 
+    // ════════════════════════════════════════════════════════════════════════════════════════
+    // ★★★ CỔNG ẢNH cho `/uploads/**` — chủ ở `server/routes/_congAnh.ts`
+    // ════════════════════════════════════════════════════════════════════════════════════════
+    // ⚠ VỊ TRÍ CÓ Ý NGHĨA: phải đứng TRƯỚC cả `app.get("/uploads/*")` (resize) lẫn
+    //   `app.use("/uploads", express.static(...))`. Đặt sau dòng resize thì mọi yêu cầu kèm `?w=`
+    //   đi vòng qua cổng — một bản vá xanh mà cửa vẫn mở đúng bằng một query param.
+    //
+    // ⚠ `req.baseUrl + req.path` chứ KHÔNG phải `req.path`: bên trong `app.use("/uploads", …)`,
+    //   express đã cắt tiền tố `/uploads` khỏi `req.path`. Chữ ký phủ đường dẫn ĐẦY ĐỦ, nên dùng
+    //   `req.path` sẽ làm **mọi vé đều trượt** — và triệu chứng (app di động không xem được ảnh
+    //   nào) trông y hệt "cấu hình khoá sai".
+    //
+    // ★★★ TẦNG HAI (2026-08-18) — **UỶ QUYỀN theo PHÂN TÍCH ĐƯỜNG DẪN**, chủ ở
+    //     `server/routes/_uyQuyenAnh.ts`. Tầng trên chỉ trả lời *"anh là ai"*; tầng này trả lời
+    //     *"tệp này của nhà máy nào"*. Thiếu nó, một tài khoản hợp lệ của nhà máy A đoán đúng
+    //     đường dẫn vẫn tải được ảnh của nhà máy B — đã đo với `supervisor1`.
+    // ⚠ `req.path` (KHÔNG phải `req.baseUrl + req.path`): bộ phân tích làm việc trên đường dẫn
+    //   DƯỚI gốc `uploads`. Nó vẫn nhận dạng còn tiền tố, nhưng đưa đúng thứ nó cần là rẻ hơn.
+    app.use("/uploads", async (req, res, next) => {
+      if (congAnhMo()) return next();
+      const duongDan = `${req.baseUrl}${req.path}`;
+      const cong = await thuMoCongAnh(req as express.Request, "anh", duongDan);
+      if (!cong.ok) {
+        // 0 dòng im lặng: JSON có mã máy-đọc-được, KHÔNG phải 404 hay một ảnh rỗng.
+        return res.status(cong.ma).json({ success: false, ...cong.than });
+      }
+      const uq = await uyQuyenDuongDanAnh(cong.loiVao, req.path);
+      if (!uq.ok) return res.status(uq.ma).json(uq.than);
+      return next();
+    });
+
     // Image resize middleware for /uploads (supports ?w=WIDTH&q=QUALITY like AOI package endpoint)
     app.get("/uploads/*", async (req, res, next) => {
       const w = req.query.w ? Math.min(Math.max(parseInt(String(req.query.w), 10) || 0, 32), 1920) : 0;
@@ -629,6 +713,17 @@ async function startServer() {
         return res.status(400).json({ success: false, message: "Invalid inspection ID" });
       }
 
+      // ★★★ CỔNG ẢNH — `:id` ở đây là một **số nguyên TUẦN TỰ**, nên trước lượt vá này ai ở trong
+      //     mạng nhà máy chỉ cần đếm `1..N` là gom được số serial + ảnh của MỌI nhà máy.
+      // ⚠ Sau cờ `ANH_CONG_MO` vì app RN đang gọi tuyến này KHÔNG kèm một chứng thực nào
+      //   (`FactoryAlertSystem/src/services/imageService.ts:96` ghi thẳng "does not require auth").
+      let loiVaoAnh: LoiVaoAnh = { kieu: "toanCuc" };
+      if (!congAnhMo()) {
+        const cong = await thuMoCongAnh(req, "anh", req.path);
+        if (!cong.ok) return res.status(cong.ma).json({ success: false, ...cong.than });
+        loiVaoAnh = cong.loiVao;
+      }
+
       const { eq, and } = await import("drizzle-orm");
       const schema = await import("../../drizzle/schema");
       const { getDb } = await import("../db/connection");
@@ -654,6 +749,15 @@ async function startServer() {
         return res.status(404).json({ success: false, message: "Inspection not found" });
       }
 
+      // ⚠ Phép kiểm phạm vi đứng SAU lượt tra bản ghi vì nó cần `machineId`; nhưng nó đứng TRƯỚC
+      //   mọi ô dữ liệu rời khỏi máy chủ. **403 có mã**, không phải 404: bản ghi CÓ TỒN TẠI, người
+      //   hỏi chỉ không được xem — nói "không tồn tại" là một lời khai sai chỉ đổi chiều.
+      if (!(await mayTrongPhamViAnh(loiVaoAnh, inspection[0].machineId))) {
+        return res
+          .status(403)
+          .json(thanTuChoiPhamViAnh("inspection", String(inspectionId)));
+      }
+
       // Fetch measurement results with images
       const results = await dbInstance
         .select({
@@ -675,6 +779,14 @@ async function startServer() {
         .where(eq(schema.measurementResults.inspectionId, inspectionId));
 
       // Only return entries that have images
+      //
+      // ★★★ ĐÂY LÀ NƠI CẤP VÉ. Tuyến này đã xác thực và đã kiểm phạm vi ở trên, nên nó là chỗ
+      //     ĐÚNG để trao cho app di động những URL mà `<Image source={{uri}}>` dùng thẳng được —
+      //     RN không gửi được cookie lẫn header tuỳ biến, query string là kênh duy nhất còn lại.
+      //
+      // ⚠ Vé được cấp **KỂ CẢ KHI CỜ CÒN MỞ**, và đó là chủ ý: nhờ vậy lượt bật `ANH_CONG_MO=false`
+      //   không làm gãy app nào vừa nạp danh sách ảnh — URL chúng đang cầm đã hợp lệ sẵn. Bật cờ
+      //   trong khi chỉ cấp vé lúc-đã-bật sẽ tạo một khoảng chết đúng bằng thời gian mở lại màn hình.
       const pointsWithImages = results
         .filter((r) => r.imageUrl && !r.imageUrl.endsWith("..."))
         .map((r) => ({
@@ -683,8 +795,10 @@ async function startServer() {
           pointName: r.pointName || undefined,
           result: r.result,
           measuredValue: r.measuredValue,
-          imageUrl: r.imageUrl,
-          referenceImageUrl: r.referenceImageUrl || undefined,
+          imageUrl: kyNeuLaDuongDanNoiBo(r.imageUrl as string, "anh"),
+          referenceImageUrl: r.referenceImageUrl
+            ? kyNeuLaDuongDanNoiBo(r.referenceImageUrl, "anh")
+            : undefined,
         }));
 
       res.json({
@@ -694,6 +808,9 @@ async function startServer() {
         overallResult: inspection[0].overallResult,
         inspectionTime: inspection[0].inspectionTime,
         totalPoints: results.length,
+        // ⚠ BOOLEAN, không phải nhãn `no_factory_assignment` — nhãn ấy nói về một TÀI KHOẢN chưa
+        //   được gán nhà máy, còn ở đây hai lối vào kia là một VÉ và một KHOÁ.
+        scopeApplied: phamViDaApAnh(loiVaoAnh),
         pointsWithImages,
       });
     } catch (error: any) {
@@ -716,6 +833,14 @@ async function startServer() {
         return res.status(400).json({ success: false, message: "Invalid point definition ID" });
       }
 
+      // ★★★ CƯỠNG CHẾ **KHÔNG QUA CỜ** — và đây là một phép đo, không phải một lựa chọn dũng cảm:
+      //     người gọi DUY NHẤT tìm được trong toàn repo là `test-android-api.mjs:351`, và nó **đã
+      //     gửi sẵn `X-API-Key`** (helper `restGet`, :82-84). Không một màn hình trình duyệt hay
+      //     màn hình RN nào chạm tuyến này. Để nó sau cờ là trì hoãn vô cớ.
+      const cong = await thuMoCongAnh(req, "anh", req.path);
+      if (!cong.ok) return res.status(cong.ma).json({ success: false, ...cong.than });
+      const loiVaoAnh = cong.loiVao;
+
       const { eq } = await import("drizzle-orm");
       const schema = await import("../../drizzle/schema");
       const { getDb } = await import("../db/connection");
@@ -736,6 +861,7 @@ async function startServer() {
           cropWidth: schema.measurementPointDefs.cropWidth,
           cropHeight: schema.measurementPointDefs.cropHeight,
           productModelId: schema.measurementPointDefs.productModelId,
+          machineId: schema.measurementPointDefs.machineId,
         })
         .from(schema.measurementPointDefs)
         .where(eq(schema.measurementPointDefs.id, pointDefId))
@@ -746,6 +872,21 @@ async function startServer() {
       }
 
       const point = result[0];
+
+      // ⚠⚠ HAI TRỤC, vì `measurement_point_defs.machineId` là **NULLABLE**. Điểm đo gắn máy thì
+      //    chiếu thẳng qua máy; điểm đo KHÔNG gắn máy thuộc về một sản phẩm dùng chung và phải
+      //    chiếu qua hợp-ba-đường. Bỏ nhánh thứ hai ⇒ mọi điểm đo `machineId IS NULL` bị từ chối
+      //    với chính chủ của nó (vá quá tay), giữ mỗi nhánh thứ hai ⇒ điểm đo gắn máy của nhà máy
+      //    khác lọt qua. Cần CẢ HAI.
+      const trongPhamViDiem =
+        point.machineId != null
+          ? await mayTrongPhamViAnh(loiVaoAnh, point.machineId)
+          : await sanPhamTrongPhamViAnh(loiVaoAnh, point.productModelId);
+      if (!trongPhamViDiem) {
+        return res
+          .status(403)
+          .json(thanTuChoiPhamViAnh("measurementPoint", String(pointDefId)));
+      }
 
       // Also get product model reference image
       let productReferenceImageUrl: string | null = null;
@@ -769,7 +910,9 @@ async function startServer() {
         pointDefId: point.id,
         pointCode: point.code,
         pointName: point.name,
-        referenceImageUrl: point.referenceImageUrl,
+        referenceImageUrl: point.referenceImageUrl
+          ? kyNeuLaDuongDanNoiBo(point.referenceImageUrl, "anh")
+          : point.referenceImageUrl,
         position: {
           x: point.positionX,
           y: point.positionY,
@@ -777,7 +920,10 @@ async function startServer() {
           cropWidth: point.cropWidth,
           cropHeight: point.cropHeight,
         },
-        productReferenceImageUrl,
+        scopeApplied: phamViDaApAnh(loiVaoAnh),
+        productReferenceImageUrl: productReferenceImageUrl
+          ? kyNeuLaDuongDanNoiBo(productReferenceImageUrl, "anh")
+          : productReferenceImageUrl,
       });
     } catch (error: any) {
       console.error("[API] measurement-point reference-image error:", error);
@@ -791,6 +937,17 @@ async function startServer() {
       const productModelId = parseInt(req.params.id, 10);
       if (isNaN(productModelId)) {
         return res.status(400).json({ success: false, message: "Invalid product model ID" });
+      }
+
+      // ★★★ CƯỠNG CHẾ **KHÔNG QUA CỜ** — người gọi duy nhất đo được là `test-android-api.mjs:373`,
+      //     và nó đã gửi sẵn `X-API-Key`. Xem lý do đầy đủ ở tuyến `/api/measurement-point/...`.
+      const cong = await thuMoCongAnh(req, "anh", req.path);
+      if (!cong.ok) return res.status(cong.ma).json({ success: false, ...cong.than });
+      const loiVaoAnh = cong.loiVao;
+      if (!(await sanPhamTrongPhamViAnh(loiVaoAnh, productModelId))) {
+        return res
+          .status(403)
+          .json(thanTuChoiPhamViAnh("productModel", String(productModelId)));
       }
 
       const { eq } = await import("drizzle-orm");
@@ -843,15 +1000,20 @@ async function startServer() {
           id: pm[0].id,
           code: pm[0].code,
           name: pm[0].name,
-          referenceImageUrl: pm[0].referenceImageUrl,
+          referenceImageUrl: pm[0].referenceImageUrl
+            ? kyNeuLaDuongDanNoiBo(pm[0].referenceImageUrl, "anh")
+            : pm[0].referenceImageUrl,
           imageWidth: pm[0].imageWidth,
           imageHeight: pm[0].imageHeight,
         },
+        scopeApplied: phamViDaApAnh(loiVaoAnh),
         points: points.map((p) => ({
           id: p.id,
           code: p.code,
           name: p.name,
-          referenceImageUrl: p.referenceImageUrl,
+          referenceImageUrl: p.referenceImageUrl
+            ? kyNeuLaDuongDanNoiBo(p.referenceImageUrl, "anh")
+            : p.referenceImageUrl,
           position: {
             x: p.positionX,
             y: p.positionY,
@@ -1631,12 +1793,43 @@ async function startServer() {
     if (authHeader?.startsWith("Bearer ")) {
       const token = authHeader.slice(7);
       try {
-        const { sdk } = await import("./sdk");
+        const { sdk, chanNeuPhaiDoiMatKhau, chanNeuPhienDaThuHoi, chanNeuTaiKhoanBiTat } =
+          await import("./sdk");
         const session = await sdk.verifySession(token);
         if (session) {
           const { getUserByOpenId } = await import("../db");
           const user = await getUserByOpenId(session.openId);
-          if (user && user.isActive) {
+          if (user) {
+            // ★★★★ Review TOÀN NHÁNH Pha 9 · **C-1** — dòng này TRƯỚC ĐÂY là `user && user.isActive`
+            // viết thẳng tại chỗ. Đó là **bản sao thứ hai** của một vị từ an ninh (bản kia ở
+            // `authService.ts`, lượt đăng nhập) — và **đường CHÍNH không có bản nào**, nên một tài
+            // khoản bị tắt đi qua toàn bộ ứng dụng web tới một năm. Nay cả ba đường gọi **một chủ**
+            // (`chanNeuTaiKhoanBiTat`), và `taiKhoanBiTatMoiBeMat.test.ts` phát biểu lượng từ trên
+            // **hình dạng phân giải danh tính**, không trên một danh sách ba cái tên.
+            // ⚠ Vị trí giữ NGUYÊN như phép kiểm cũ (trước `chanNeuPhienDaThuHoi`) để bộ đếm
+            //   `soPhien_chanDaThuHoi_total` không đổi nghĩa: một tài khoản đã tắt không được ghi
+            //   thành một lượt "phiên bị thu hồi". Ném ⇒ rơi vào `catch` ngay dưới ⇒ **401**, đúng
+            //   hệt nhánh `if` cũ rơi xuống `return res.status(401)`.
+            await chanNeuTaiKhoanBiTat(user);
+            // ★★★★ Pha 8 Task 1 — **ĐIỂM XÁC THỰC DUY NHẤT VÒNG QUA `authenticateRequest`.**
+            // Nhánh này tự phân giải phiên (`verifySession` + `getUserByOpenId`), nên phép chặn ở
+            // biên xác thực **theo cấu tạo** không thấy nó — đúng lớp lỗi *"lưới theo ĐƯỜNG THOÁT,
+            // không theo FILE"*. Một `git grep authenticateRequest` cũng mù với nó; nó chỉ lộ ra
+            // khi lượng từ được phát biểu trên **hình dạng phân giải danh tính**, không trên tên
+            // một hàm (`buocDoiMatKhauMoiBeMat.test.ts`, nhánh `phien`).
+            // ⚠ Ném ⇒ rơi vào `catch` ngay dưới ⇒ **401**. Fail-closed, đúng như 12 bề mặt kia.
+            //
+            // ★★★★ Review TOÀN NHÁNH Pha 8 · **C-1** — VÀ ĐÚNG ĐIỂM NÀY CŨNG PHẢI **TRA SỔ PHIÊN**.
+            // Task 1 cầm chính chỗ này trên tay và chỉ vá **một nửa** (cổng đổi mật khẩu). Nửa kia —
+            // phép thu hồi phiên của Task 2 — hở trên **58 tuyến `/api/external/*`**: đo sống được
+            // rằng sau `auth.logout` (200, hàng sổ `isActive=f`, `auth.me`=null), **cùng token** vẫn
+            // vào `GET /api/external/health` ⇒ **200**.
+            // ⚠ THỨ TỰ CÓ Ý NGHĨA: phép tra sổ đứng **TRƯỚC** cổng mật khẩu. Một vé đã thu hồi phải
+            //   chết ngay cả khi chủ nó đang bị buộc đổi mật khẩu — và thứ tự này còn làm phán quyết
+            //   "đã thu hồi" **ĐO ĐƯỢC** (bộ đếm `soPhien_chanDaThuHoi_total`) trên một tài khoản
+            //   đang mang cờ, thay vì bị cổng mật khẩu che mất.
+            await chanNeuPhienDaThuHoi(token);
+            await chanNeuPhaiDoiMatKhau(user);
             (req as any).externalUser = user;
             return next();
           }
@@ -1752,6 +1945,25 @@ async function startServer() {
         return res.status(404).json({ success: false, message: "Machine not found" });
       }
 
+      // ★★★ 2026-08-18 (§D · HẠNG 2 của bảng xếp hạng lộ dữ liệu) — **TUYẾN NÀY TRẢ MỘT BÍ MẬT.**
+      //
+      // Ô `apiKey` dưới đây là **khoá của máy** — thứ mở được `/api/public/**`, `/api/machine/**`
+      // và cả `/api/v1/**` với tư cách chính máy đó. `validateMasterKey` chỉ là BÍ DANH của
+      // `validateExternalAuth`, tức nhánh **Bearer** cũng vào được: bất kỳ tài khoản nào đăng
+      // nhập qua `/api/external/auth/login` đọc được khoá của máy thuộc nhà máy KHÁC, rồi dùng
+      // khoá ấy đi tiếp. Đây là lý do nó xếp trên các tuyến trả nhiều DỮ LIỆU hơn: một lượt gọi
+      // trái phép ở đây trả về **phương tiện lấy thêm sự thật**, không chỉ sự thật.
+      //
+      // ⚠ 403 chứ KHÔNG phải 404: máy có tồn tại. Trả 404 sẽ dạy người tích hợp rằng mã máy sai,
+      //   và họ sẽ đi tạo một máy trùng mã — cùng lớp lỗi mà `tuChoiNgoaiPhamVi` đã ghi.
+      const { phamViGoiNgoai, nguoiXemCuaPhamVi, thanTuChoiPhamViNgoai } = await import(
+        "../routes/_phamViNgoai"
+      );
+      const nguoiXem = nguoiXemCuaPhamVi(phamViGoiNgoai(req));
+      if (nguoiXem !== undefined && !(await getMachineByCode(code, nguoiXem))) {
+        return res.status(403).json(thanTuChoiPhamViNgoai("machine", code));
+      }
+
       res.json({
         success: true,
         machine: {
@@ -1776,11 +1988,22 @@ async function startServer() {
   app.get("/api/external/machines", validateMasterKey, async (req, res) => {
     try {
       const { getMachines } = await import("../db");
-      const machines = await getMachines();
+      // ★★★ 2026-08-18 (§D · **HẠNG 1** của bảng xếp hạng lộ dữ liệu) — một lượt gọi trả `apiKey`
+      // của **TOÀN BỘ** đội máy. Xem lời khai đầy đủ ở tuyến `by-code/:code` ngay trên: đây là
+      // cùng bí mật, nhân với cả nhà máy. Phạm vi đến từ `req.externalUser` (máy chủ tự đặt),
+      // **không** từ `req.query` — xem `_phamViNgoai.ts`.
+      // ⚠ Nhánh `x-master-key` giữ NGUYÊN TỪNG BYTE (`nguoiXem === undefined` ⇒ không cổng nào):
+      //   đó là chiều DƯƠNG chống vá quá tay, và là quyết định đã ghi cho khoá TOÀN CỤC TƯỜNG MINH.
+      const { phamViGoiNgoai, nguoiXemCuaPhamVi, phamViDaAp } = await import("../routes/_phamViNgoai");
+      const phamVi = phamViGoiNgoai(req);
+      const machines = await getMachines(nguoiXemCuaPhamVi(phamVi));
 
       res.json({
         success: true,
         total: machines.length,
+        // ⚠ 0 dòng im lặng là nói dối: phía gọi phải phân biệt được "nhà máy tôi không có máy nào"
+        //   với "tôi vừa bị thu hẹp". Ô này THÊM VÀO, không đổi ô nào đang có.
+        scopeApplied: phamViDaAp(phamVi),
         machines: machines.map(m => ({
           id: m.id,
           code: m.code,
@@ -1808,9 +2031,34 @@ async function startServer() {
       }
 
       const bcrypt = await import("bcryptjs");
-      const { getUserByUsername, upsertUser } = await import("../db");
+      const { getUserByUsername, upsertUser, updateUserLoginAttempts, layBiMatNguoiDung } = await import("../db");
+      const { comparePasswordConstantTime } = await import("./authService");
       const user = await getUserByUsername(username);
-      if (!user || !user.isActive || !user.passwordHash) {
+
+      // F9 (doc71 task 11, vòng sửa 2) — route SỐNG hướng ra ngoài (khuyến
+      // nghị chính thức trong docs/API_REFERENCE.md, có trong OpenAPI spec,
+      // và FactoryAlertSystem/src/services/authService.ts — app React Native
+      // thật trong repo — gọi thật) từng có CÙNG lỗi đã vá ở
+      // authService.ts::verifyCredentials: kiểm !user/!isActive/!passwordHash
+      // chạy TRƯỚC bcrypt.compare, bỏ qua bcrypt hoàn toàn cho 3 nhánh đó ⇒
+      // side-channel thời gian dò được username có thật qua chính route
+      // này. Sửa bằng CÁCH SO KHỚP MẬT KHẨU dùng chung với
+      // verifyCredentials (comparePasswordConstantTime — cùng cost factor,
+      // cùng cách xử lý hash dị dạng trong DB) chạy LUÔN, TRƯỚC các nhánh
+      // early-return bên dưới. KHÔNG hợp nhất toàn bộ luồng với
+      // verifyCredentials: route này cấp Bearer token 30 ngày (không phải
+      // cookie + user_sessions row) và KHÔNG có cổng 2FA — đổi sang
+      // verifyCredentials nguyên khối sẽ đổi định dạng phản hồi (thông điệp
+      // tiếng Anh hiện tại → tiếng Việt của verifyCredentials) và hành vi
+      // 2FA cho route hướng-ra-ngoài này, ngoài phạm vi vá side-channel.
+      // Response shape / thông điệp / mã trạng thái HTTP GIỮ NGUYÊN 100%
+      // như trước — chỉ thứ tự nội bộ đổi.
+      // ★★★ Pha 7 Task 9 (9c) — hash nay ở `user_secrets`. Lượt đọc chạy VÔ ĐIỀU KIỆN (hàm nhận
+      // `null`) đúng vì lý do F9 ở ngay trên: gọi có điều kiện là dựng lại side-channel.
+      const biMat = await layBiMatNguoiDung(user?.id ?? null);
+      const passwordMatches = await comparePasswordConstantTime(bcrypt, password, biMat.passwordHash);
+
+      if (!user || !user.isActive || !biMat.passwordHash) {
         return res.status(401).json({ success: false, message: "Invalid username or password" });
       }
 
@@ -1822,9 +2070,7 @@ async function startServer() {
         return res.status(429).json({ success: false, message: `Account locked. Try again in ${remaining} minutes.` });
       }
 
-      const isValid = await bcrypt.compare(password, user.passwordHash);
-      if (!isValid) {
-        const { updateUserLoginAttempts } = await import("../db");
+      if (!passwordMatches) {
         const newAttempts = (user.loginAttempts ?? 0) + 1;
         const lockedUntil = newAttempts >= MAX_ATTEMPTS ? new Date(Date.now() + LOCKOUT_MINUTES * 60_000) : null;
         await updateUserLoginAttempts(user.id, newAttempts, lockedUntil);
@@ -1833,15 +2079,41 @@ async function startServer() {
 
       // Reset lockout on successful login
       if ((user.loginAttempts ?? 0) > 0) {
-        const { updateUserLoginAttempts } = await import("../db");
         await updateUserLoginAttempts(user.id, 0, null);
       }
 
+      // ★★★ @KHONG-CONG-2FA — **VÙNG MÙ ĐƯỢC KHAI, KHÔNG PHẢI VÙNG MÙ IM LẶNG.** (Pha 7 Task 6,
+      // phép đếm Bước 2.) Đường này xác minh MẬT KHẨU nhưng **không bao giờ hỏi `get2FAStatus`**
+      // ⇒ một tài khoản đã BẬT 2FA (đo được: `supervisor1`, id 49) vẫn lấy được thẻ 30 ngày
+      // **chỉ bằng mật khẩu**. Và thẻ ấy KHÔNG chỉ dùng được cho `/api/external/**`: nó do
+      // `sdk.createSessionToken` đúc ra — **cửa đúc JWT duy nhất** — nên dán thẳng vào cookie
+      // `app_session_id` là có phiên đầy đủ (ĐÃ ĐO trên hệ thật: `auth.me` ⇒ 200, role
+      // `supervisor`). ⇒ 2FA bị **bỏ qua hoàn toàn** qua đường này.
+      // ⚠ KHÔNG vá ở Task 6: đổi hành vi đường này là đổi một **API hướng ra ngoài đã tài liệu
+      //   hoá** (`docs/API_REFERENCE.md` + OpenAPI) có **client thật trong repo**
+      //   (`FactoryAlertSystem/src/services/authService.ts`) ⇒ **CHỦ DỰ ÁN QUYẾT**.
+      // ⚠ Dấu `@KHONG-CONG-2FA` bị ĐẾM bởi `server/routers/sessionGrantScan.test.ts` §3: một vùng
+      //   mù THỨ HAI ở bất kỳ đâu làm lưới ấy ĐỎ ngay.
       // Create JWT token (same format as session cookie, but returned as Bearer token)
       const { sdk } = await import("./sdk");
+      const HAN_MS = 30 * 24 * 60 * 60 * 1000; // 30 days
       const token = await sdk.createSessionToken(user.openId, {
         name: user.name || "",
-        expiresInMs: 30 * 24 * 60 * 60 * 1000, // 30 days
+        expiresInMs: HAN_MS,
+      });
+
+      // ★★★★ 2026-08-11 SIẾT FAIL-OPEN — **ĐÚC VÉ THÌ PHẢI GHI SỔ.** Từ lượt siết,
+      // `chanNeuPhienDaThuHoi` từ chối mọi vé không có hàng `user_sessions`, và nhánh Bearer ngay
+      // trên tuyến `/api/external/*` gọi đúng phép chặn ấy ⇒ không ghi sổ ở đây là **đứt toàn bộ**
+      // API ngoài (có client thật trong repo: `FactoryAlertSystem`). Ghi sổ cũng làm vé 30 ngày này
+      // **hiện ra** ở `session.list` và **thu hồi được** — thứ nó chưa từng có.
+      const { ghiSoPhien } = await import("./authService");
+      await ghiSoPhien({
+        userId: user.id,
+        sessionToken: token,
+        ipAddress: req.ip ?? req.socket.remoteAddress ?? undefined,
+        deviceName: req.headers["user-agent"] ?? undefined,
+        expiresAt: new Date(Date.now() + HAN_MS),
       });
 
       await upsertUser({ openId: user.openId, lastSignedIn: new Date() });
@@ -2059,7 +2331,10 @@ async function startServer() {
         return base;
       });
 
-      res.json({
+      // ★★★ NƠI CẤP VÉ. `points[].images.okImages[].imageUrl` / `.ngImages[].imageUrl` nằm sâu
+      //     **bốn** tầng (`data.points[].images.*Images[].imageUrl`) và chỉ xuất hiện khi
+      //     `?includeImages=true` — đúng loại trường mà một bộ ký theo-tên-trường sẽ bỏ sót.
+      res.json(kyAnhTrongThan({
         success: true,
         data: {
           productModel: {
@@ -2074,7 +2349,7 @@ async function startServer() {
           totalPoints: points.length,
           points,
         },
-      });
+      }, "anh"));
     } catch (error: any) {
       console.error("[External] measurement-point-stats error:", error);
       res.status(500).json({ success: false, message: error?.message || "Failed to get measurement point statistics" });
@@ -2512,7 +2787,20 @@ async function startServer() {
       const database = await getDb();
       if (!database) return res.status(500).json({ success: false, message: "Database not available" });
       const { alertHistory, mqttAlertHistory, mqttConnectionAlerts, mqttBulletinHistory } = await import("../../drizzle/schema");
-      const { sql, count, eq: eqOp, gte } = await import("drizzle-orm");
+      // ★★★ 2026-08-18 — `and`/`isNull`/`eq` được nhập THÊM để thay ba template `sql` thô bên dưới.
+      //
+      // LỖI ĐÃ ĐO: tuyến này trả **500** và rò NGUYÊN VĂN câu SQL ra client. Gốc rễ là
+      // `sql\`${cot} >= ${since}\`` — nội suy một **đối tượng `Date`** vào template THÔ của drizzle.
+      // Template thô bind giá trị làm tham số mà **không** đi qua `mapToDriverValue` của cột, nên
+      // `Date` tới thẳng bộ tuần tự hoá và ném `TypeError: The "string" argument must be of type
+      // string … Received an instance of Date`.
+      //
+      // ⚠ Vì sao khó thấy: dòng NGAY TRÊN (`gte(alertHistory.createdAt, since)`) truyền **cùng một
+      // biến `since`** và chạy tốt — helper có kiểu áp đúng mapper (Date → chuỗi ISO). Hai dòng
+      // cạnh nhau, cùng một giá trị, một chạy một vỡ. Và chạy `sql.unsafe()` với chính câu ấy
+      // ngoài app cũng **chạy được**, nên phép tái lập bằng driver trần khai VÔ CAN cho một lỗi có
+      // thật — khác biệt nằm ở tầng drizzle, không ở tầng driver.
+      const { sql, count, eq: eqOp, gte, and, isNull } = await import("drizzle-orm");
 
       // Default: today's summary
       const sinceParam = req.query.since as string | undefined;
@@ -2527,7 +2815,7 @@ async function startServer() {
       const [alertPending] = await database
         .select({ total: count() })
         .from(alertHistory)
-        .where(sql`${alertHistory.createdAt} >= ${since} AND ${alertHistory.acknowledgedAt} IS NULL`);
+        .where(and(gte(alertHistory.createdAt, since), isNull(alertHistory.acknowledgedAt)));
 
       // MQTT alert counts
       const [mqttAlertCount] = await database
@@ -2538,7 +2826,7 @@ async function startServer() {
       const [mqttAlertPending] = await database
         .select({ total: count() })
         .from(mqttAlertHistory)
-        .where(sql`${mqttAlertHistory.triggeredAt} >= ${since} AND ${mqttAlertHistory.isResolved} = false`);
+        .where(and(gte(mqttAlertHistory.triggeredAt, since), eqOp(mqttAlertHistory.isResolved, false)));
 
       // Connection alert counts
       const [connAlertCount] = await database
@@ -2549,7 +2837,11 @@ async function startServer() {
       const [connAlertPending] = await database
         .select({ total: count() })
         .from(mqttConnectionAlerts)
-        .where(sql`${mqttConnectionAlerts.triggeredAt} >= ${since} AND ${mqttConnectionAlerts.isResolved} = false AND ${mqttConnectionAlerts.isAcknowledged} = false`);
+        .where(and(
+          gte(mqttConnectionAlerts.triggeredAt, since),
+          eqOp(mqttConnectionAlerts.isResolved, false),
+          eqOp(mqttConnectionAlerts.isAcknowledged, false),
+        ));
 
       // Recent bulletins count
       const [bulletinCount] = await database
@@ -2596,7 +2888,14 @@ async function startServer() {
     try {
       const { reportType, format, dateFrom, dateTo, filters, locale } = req.body || {};
       // JWT callers carry a user (→ createdBy); master-key server-to-server does not.
-      const createdBy = (req as any).externalUser?.id ?? null;
+      const externalUser = (req as any).externalUser;
+      const createdBy = externalUser?.id ?? null;
+      // ★★★ 2026-08-17 — TRỤC PHẠM VI. `createdBy` chỉ là dấu vết; `actor` mới đi vào truy vấn.
+      // ⚠ Danh tính lấy từ `req.externalUser` (do `validateExternalAuth` đặt sau khi xác thực
+      // JWT), KHÔNG BAO GIỜ từ `req.body`. Khoá master server-to-server không có người dùng nào
+      // để thu hẹp ⇒ `undefined` = không lọc, giữ nguyên hành vi tin-cậy-máy-chủ đã có.
+      const actor =
+        externalUser?.id != null ? { id: externalUser.id, role: String(externalUser.role ?? "user") } : undefined;
 
       const { generateExternalReport, ExternalReportError } = await import("../services/externalReportService");
       try {
@@ -2608,6 +2907,7 @@ async function startServer() {
           filters,
           locale,
           createdBy,
+          actor,
           source: "external",
         });
         return res.json({
@@ -2865,8 +3165,13 @@ async function startServer() {
   app.get("/api/external/stations", validateExternalAuth, async (req, res) => {
     try {
       const { getStations } = await import("../db");
-      const stations = await getStations();
-      res.json({ success: true, data: stations });
+      // ★★★ 2026-08-18 (§D · HẠNG 3) — bản đồ TRẠM của toàn bộ các nhà máy, cho bất kỳ tài khoản
+      // nào đăng nhập được. `getStations` đã nhận `PhamViNguoiXem` từ đợt trả nợ tRPC; ở đây chỉ
+      // là nối đúng trục ấy vào cửa REST, KHÔNG một dòng SQL phân cấp mới nào.
+      const { phamViGoiNgoai, nguoiXemCuaPhamVi, phamViDaAp } = await import("../routes/_phamViNgoai");
+      const phamVi = phamViGoiNgoai(req);
+      const stations = await getStations(nguoiXemCuaPhamVi(phamVi));
+      res.json({ success: true, scopeApplied: phamViDaAp(phamVi), data: stations });
     } catch (error: any) {
       console.error("[External] stations list error:", error);
       res.status(500).json({ success: false, message: error?.message || "Failed to get stations" });
@@ -3110,7 +3415,17 @@ async function startServer() {
         }
       }
 
-      res.json({ success: true, data: pointsToReturn, total: pointsToReturn.length });
+      // ★★★ NƠI CẤP VÉ. `validateExternalAuth` đã chạy ⇒ lượt gọi đã được chứng thực.
+      //
+      // ⚠⚠ ĐÂY LÀ VÍ DỤ MẪU CHO "VÌ SAO KÝ Ở BIÊN": `pointsToReturn` gộp từ **HAI** vòng lặp riêng
+      //   (điểm-qua-máy và điểm-qua-workstation), mỗi vòng chép tay `referenceImageUrl` một lần.
+      //   Ký từng trường sẽ phải nhớ sửa cả hai — và nhánh thứ ba của người sau sẽ lặng lẽ trả thô.
+      res.json(
+        kyAnhTrongThan(
+          { success: true, data: pointsToReturn, total: pointsToReturn.length },
+          "anh",
+        ),
+      );
     } catch (error: any) {
       console.error("[External] station inspection-points error:", error);
       res.status(500).json({ success: false, message: error?.message || "Failed to get inspection points" });
@@ -3378,7 +3693,7 @@ async function startServer() {
       const ntf = Number(stats[0]?.ntf) || 0;
 
       const fpy = t > 0 ? Math.round((ok / t) * 10000) / 100 : 0;
-      const fy = t > 0 ? Math.round(((ok + ntf) / t) * 10000) / 100 : 0;
+      const fy = Math.round(finalYield({ ok, ntf, total: t }) * 100) / 100;
       const retest = t > 0 ? Math.round((ntf / t) * 10000) / 100 : 0;
 
       // Previous period yield change
@@ -3836,14 +4151,15 @@ async function startServer() {
         };
       });
 
-      res.json({
+      // ★★★ NƠI CẤP VÉ — `inspections[].failedPoints[].imageUrl` (`measurement_results.imageUrl`).
+      res.json(kyAnhTrongThan({
         success: true,
         data: {
           dateRange: { startDate: startDate.toISOString(), endDate: endDate.toISOString() },
           pagination: { total, limit, offset, hasMore: offset + limit < total },
           inspections: data,
         },
-      });
+      }, "anh"));
     } catch (error: any) {
       console.error("[External] station fail-history error:", error);
       res.status(500).json({ success: false, message: error?.message || "Failed to get fail history" });
@@ -4136,7 +4452,11 @@ async function startServer() {
         };
       });
 
-      res.json({
+      // ★★★ NƠI CẤP VÉ — `productImage.url` (`product_models.referenceImageUrl`) và
+      //     `points[].errorImages[].imageUrl` (`measurement_results.imageUrl`).
+      // ⚠ `productImage.url` hiện đo được là `data:` trên `aoi_management` (10/10 hàng) ⇒ phép ký
+      //   để nguyên nó, đúng theo `kyDuongDanAnh` chỉ chạm chuỗi có tiền tố có cổng canh.
+      res.json(kyAnhTrongThan({
         success: true,
         data: {
           dateRange: { startDate: startDate.toISOString(), endDate: endDate.toISOString() },
@@ -4145,7 +4465,7 @@ async function startServer() {
           boardInfo,
           points,
         },
-      });
+      }, "anh"));
     } catch (error: any) {
       console.error("[External] station point-detail error:", error);
       res.status(500).json({ success: false, message: error?.message || "Failed to get point detail" });
@@ -4321,7 +4641,17 @@ async function startServer() {
   // AOI Package Upload - REST endpoint for binary ZIP upload
   // Agent uploads ZIP directly via this endpoint
   // ============================================================
-  app.put("/api/aoi/upload/:packageId", express.raw({ type: "*/*", limit: "200mb" }), uploadGuard("zip"), async (req, res) => {
+  // BG-87 (docs/superpowers/specs/2026-09-01-aoi-chuan-goi-anh.md §6) — MỘT
+  // trần byte DUY NHẤT cho toàn tuyến ZIP: cùng hàm `tranByteGoiZip()`
+  // (aoiPackageRouter.ts) dùng ở cổng `sizeBytes` của `presign` VÀ ở đối
+  // chiếu bên trong handler dưới đây — import ĐỘNG MỘT LẦN ở đây (thời điểm
+  // ĐĂNG KÝ route, không phải mỗi request — `startServer()` là async nên
+  // top-level await hợp lệ) để `express.raw({ limit })` dùng ĐÚNG con số đó.
+  // TRƯỚC bản vá này, `"200mb"` ở đây là một chuỗi hardcode RIÊNG, không liên
+  // hệ gì với trần `sizeBytes` mới ở `presign` — hai hằng số có thể trôi lệch
+  // theo thời gian nếu một bên đổi mà bên kia quên.
+  const aoiPackageRouterModuleAtBoot = await import("../routers/aoiPackageRouter");
+  app.put("/api/aoi/upload/:packageId", express.raw({ type: "*/*", limit: aoiPackageRouterModuleAtBoot.tranByteGoiZip() }), uploadGuard("zip"), async (req, res) => {
     const startTime = Date.now();
     
     // Ensure CORS headers are set (even on error responses). Hardening (WS0.2):
@@ -4350,17 +4680,34 @@ async function startServer() {
         return res.status(401).json({ success: false, message: "x-api-key or x-machine-code header required" });
       }
 
-      // Validate machine
+      // ★★★ Task 10 (2026-08-24) — was a raw getMachineByApiKey/getMachineByCode
+      // resolve, bypassing the MACHINE_CODE_ONLY_ALLOWED gate entirely (this route
+      // has no tRPC ctx, so the header is read straight off `req` and passed as
+      // `headerKey`, same as the OT-ingest route above). Throws TRPCError on failure
+      // — caught below and mapped to the SAME 401/403 contract this route already had.
       const { getDb } = await import("../db");
-      const { getMachineByApiKey, getMachineByCode } = await import("../db");
+      const { authenticateMachine } = await import("../services/machineAuthService");
       let machine;
-      if (apiKey) {
-        machine = await getMachineByApiKey(apiKey);
-      } else {
-        machine = await getMachineByCode(machineCode);
-      }
-      if (!machine) {
-        return res.status(401).json({ success: false, message: "Invalid machine credentials" });
+      try {
+        const auth = await authenticateMachine({
+          headerKey: apiKey || null,
+          machineCode: machineCode || null,
+          scope: "ingest:write",
+          endpoint: "aoiPackage.upload",
+        });
+        machine = auth.machine;
+      } catch (authErr: any) {
+        // Same mapping as POST /api/ot/ingest above: TRPCError UNAUTHORIZED/FORBIDDEN
+        // → 401/403 (this route's pre-existing contract), DB-down → 503, else rethrow
+        // to the outer catch (→ 500), unchanged from before.
+        const code = authErr?.code;
+        if (code === "UNAUTHORIZED")
+          return res.status(401).json({ success: false, message: authErr?.message || "Invalid machine credentials" });
+        if (code === "FORBIDDEN")
+          return res.status(403).json({ success: false, message: authErr?.message || "Forbidden" });
+        if (authErr?.name === "DbUnavailableError")
+          return res.status(503).json({ success: false, message: "Database unavailable — retry" });
+        throw authErr;
       }
 
       // Find package record
@@ -4392,6 +4739,36 @@ async function startServer() {
         return res.json({ success: true, alreadyUploaded: true, packageId });
       }
 
+      // ★★★ BG-65 (Pha 1E Task 2 ⛔) — 'dead' là trạng thái CUỐI (migration
+      // 0344, Pha 1D Task 5/BG-52): gói đã chạm ngưỡng lỗi VĨNH VIỄN LIÊN TIẾP
+      // ở `aoiPackageRouter.commit`. TRƯỚC bản vá này, route này KHÔNG có
+      // nhánh nào cho 'dead' — nó rơi thẳng xuống dưới và GHI ĐÈ
+      // status→'uploaded' (:~4770 cũ) như một upload bình thường. Vòng Agent
+      // chuẩn `presign → upload → commit` do đó chỉ cần lặp lại là đủ đưa một
+      // gói 'dead' TRỞ VỀ 'uploaded' — xoá tác dụng của cổng
+      // `if (status === "dead")` ở `commit` (aoiPackageRouter.ts:~690), vì cổng
+      // đó không bao giờ còn thấy status='dead' nữa (đã bị route này đổi trước
+      // khi Agent gọi `commit` lại). Mỗi vòng lặp còn GHI ĐÈ ZIP cũ bằng
+      // `storagePut` bên dưới — chi phí I/O vô ích cho một gói không bao giờ
+      // commit được. Từ chối NGAY ở đây, TRƯỚC `storagePut`/UPDATE — cùng lý
+      // do `commit` từ chối sớm: một gói đã bị đánh dấu hỏng vĩnh viễn không
+      // được phép "sống lại" qua BẤT KỲ cửa nào của vòng Agent, không chỉ
+      // riêng `commit`. Dùng `laGoiDaChet` (aoiPackageRouter.ts, import ĐỘNG
+      // — cùng cách file này đã tự `await import(...)` mọi service khác) làm
+      // MỘT nguồn sự thật CHUNG với `presign`/`commit` — không tự định nghĩa
+      // "dead nghĩa là gì" một lần nữa ở đây (đúng lớp lỗi BG-65 vừa vá: một
+      // bản chép tay RIÊNG của luật trạng-thái-cuối lệch khỏi bản gốc).
+      const { laGoiDaChet, tranByteGoiZip } = await import("../routers/aoiPackageRouter");
+      if (laGoiDaChet(pkg.status)) {
+        return res.status(422).json({
+          success: false,
+          message:
+            `Gói ${packageId} đã bị đánh dấu HỎNG VĨNH VIỄN sau nhiều lần lỗi không thể phục hồi ` +
+            `(lỗi gần nhất: ${pkg.errorMessage ?? "?"}) — Agent KHÔNG được thử lại gói này nữa. ` +
+            `Cần một gói ZIP MỚI (packageId khác) nếu payload đã được sửa.`,
+        });
+      }
+
       // Detect retry (already uploaded before)
       const isRetry = pkg.status === "uploaded" || pkg.status === "uploading";
 
@@ -4402,6 +4779,75 @@ async function startServer() {
       }
 
       console.log(`[AOI-Upload] Body received: ${zipBuffer.length} bytes for ${packageId}`);
+
+      // ════════════════════════════════════════════════════════════════════
+      // BG-87 (docs/superpowers/specs/2026-09-01-aoi-chuan-goi-anh.md §6) — hai
+      // lỗ đóng Ở ĐÂY, TRÊN `zipBuffer` — byte ZIP THẬT vừa nhận qua
+      // `express.raw`, TRƯỚC `storagePut`/UPDATE (cùng nguyên tắc "từ chối
+      // TRƯỚC khi ghi" mà cổng `laGoiDaChet` ở trên đã theo).
+      // ════════════════════════════════════════════════════════════════════
+      // (1) Trần cứng — BACKSTOP. `express.raw({ limit: tranByteGoiZip() })`
+      // ở route này (xem đăng ký route phía trên) ĐÃ chặn Ở TẦNG TRANSPORT
+      // (Node/Express tự trả 413 trước khi handler này chạy) — nhánh dưới đây
+      // chỉ còn ý nghĩa nếu limit đó từng bị đổi lệch khỏi `tranByteGoiZip()`
+      // (đúng lý do dùng CHUNG một hàm — một nguồn, không hai con số tách rời
+      // có thể trôi lệch theo thời gian).
+      const tranByteUpload = tranByteGoiZip();
+      if (zipBuffer.length > tranByteUpload) {
+        return res.status(413).json({
+          success: false,
+          message: `ZIP ${(zipBuffer.length / 1048576).toFixed(1)}MB vượt trần cứng ${(tranByteUpload / 1048576).toFixed(0)}MB`,
+        });
+      }
+
+      // (2) `sizeBytes` ĐỐI CHIẾU byte THẬT — `pkg.fileSizeBytes` ở đây VẪN LÀ
+      // lời khai gốc từ `presign` (route này CHƯA overwrite nó — UPDATE nằm
+      // dưới, SAU nhánh này) CHỈ khi đây là LẦN upload ĐẦU TIÊN sau presign
+      // (`!isRetry` — biến đã có sẵn ở trên, không tính lại logic retry lần
+      // hai). Một lượt RETRY hợp lệ (sửa ZIP rồi tải lại — mệnh đề 5 CHỐNG
+      // HỒI QUY, `aoiPackageZipCuaNoiDoi.test.ts`) có thể đổi kích thước thật
+      // một cách CHÍNH ĐÁNG (nội dung đã sửa) — so nó với `fileSizeBytes` của
+      // LẦN upload TRƯỚC (không còn là lời khai gốc nữa) sẽ từ chối NHẦM một
+      // retry hợp lệ, nên chỉ đối chiếu ở lần đầu.
+      if (!isRetry && pkg.fileSizeBytes != null && Number(pkg.fileSizeBytes) !== zipBuffer.length) {
+        return res.status(400).json({
+          success: false,
+          message:
+            `sizeBytes Agent khai ở presign (${pkg.fileSizeBytes} byte) không khớp byte ZIP THẬT nhận được ` +
+            `(${zipBuffer.length} byte) — gói KHÔNG được lưu.`,
+        });
+      }
+
+      // ★★★ I-7 (review lượt 8) — `sha256` khai ở PRESIGN được ĐỐI CHIẾU TẠI
+      // ĐÂY, trên byte ZIP THẬT vừa nhận, TRƯỚC `storagePut`/UPDATE. Đây là
+      // khoảnh khắc SỚM NHẤT lời khai đó kiểm được (ở bước `presign` byte chưa
+      // tồn tại) — và `presign` là nơi DUY NHẤT hai tài liệu hướng máy dạy đặt
+      // `sha256`, nên trước bản vá này một Agent làm ĐÚNG tài liệu nhận 0 kiểm
+      // toàn vẹn trong khi tài liệu gọi trường đó là "integrity check" (bẫy §6
+      // chuẩn gói ảnh: "trường trông như bảo đảm toàn vẹn mà không phải còn
+      // nguy hiểm hơn không có trường"). `pkg.sha256Presign` đã được chuẩn hoá
+      // chữ THƯỜNG lúc ghi (aoiPackageRouter.presign, migration 0346).
+      // `!isRetry` — HOÀN TOÀN cùng lý do đã viết cho `sizeBytes` ngay trên:
+      // một retry hợp lệ (sửa ZIP rồi tải lại) đổi digest một cách CHÍNH ĐÁNG.
+      // ★★★ N-1 (re-review lượt 8) — câu cũ ở đây viết *"và `presign` lặp không
+      // cập nhật lại cột này"*: mệnh đề đó CHÍNH LÀ cái bẫy, và nay đã SAI.
+      // `aoiPackageRouter.presign` LÀM MỚI `sha256Presign`/`fileSizeBytes` mỗi
+      // lượt gọi lại trên gói chưa `'uploaded'` (xem docblock N-1 tại chỗ ghi).
+      // Nhờ vậy một Agent dựng lại ZIP giữa presign và upload chỉ cần khai lại
+      // digest MỚI ở presign là đi qua được — trước đó `packageId` bị khoá VĨNH
+      // VIỄN vì `status` không bao giờ rời `'pending'` để `isRetry` thành true.
+      if (!isRetry && pkg.sha256Presign) {
+        const { createHash } = await import("node:crypto");
+        const shaThuc = createHash("sha256").update(zipBuffer).digest("hex");
+        if (shaThuc !== pkg.sha256Presign) {
+          return res.status(400).json({
+            success: false,
+            message:
+              `sha256 Agent khai ở presign ("${pkg.sha256Presign}") không khớp sha256 THẬT của byte ZIP nhận ` +
+              `được ("${shaThuc}") — dữ liệu có thể đã hỏng khi truyền. Gói KHÔNG được lưu; tải lại ZIP.`,
+          });
+        }
+      }
 
       // Store the ZIP file
       const { storagePut } = await import("../storage");
@@ -4483,10 +4929,116 @@ async function startServer() {
     }
   });
 
+  // ══════════════════════════════════════════════════════════════════════════════
+  // ★★★ Lô 8 Mục 1 (BG-116) — PUT byte ẢNH TEMPLATE, cùng khuôn `PUT /api/aoi/upload/:packageId`
+  // ở trên (raw body, xác thực máy, ghi bằng `storagePut`) nhưng KHÔNG đụng
+  // `inspection_packages`/vòng đời gói ZIP — đây là byte của MỘT ẢNH CẤU HÌNH, không
+  // phải một gói kết quả. `:objectKey(*)` bắt TOÀN BỘ phần đuôi (khoá mang `/`, khuôn
+  // `product-models/<id>/template-<sha256>.<ext>` mà `presignTemplateImage` đã dựng).
+  //
+  // ⚠ Route này CHỈ nhận byte xuống ĐÚNG khoá đã tính trước (không tạo hàng DB nào,
+  // không đổi `product_captures`/`measurement_point_defs`) — `machineApi.commitTemplateImage`
+  // (tRPC) mới là nơi đọc lại byte này, kiểm sha256, và GHI url vào cây dạy. Tách hai
+  // bước để một PUT dở dang (mất mạng giữa chừng) không để lại một hàng cây trỏ vào
+  // ảnh chưa toàn vẹn.
+  //
+  // CÙNG khuôn `aoiPackageRouterModuleAtBoot` ở trên — import ĐỘNG MỘT LẦN lúc đăng
+  // ký route (không phải mỗi request) để `express.raw({ limit })` dùng ĐÚNG
+  // `tranByteAnhTemplate()` mà `presignTemplateImage` đối chiếu `sizeBytes`, không
+  // một con số hardcode RIÊNG có thể trôi lệch.
+  const machineApiRoutersModuleAtBoot = await import("../routers/machineApiRouters");
+  app.put(
+    "/api/machine-template-image/upload/:objectKey(*)",
+    express.raw({ type: "*/*", limit: machineApiRoutersModuleAtBoot.tranByteAnhTemplate() }),
+    uploadGuard("image"),
+    async (req, res) => {
+      try {
+        const objectKeyRaw = req.params.objectKey;
+        const apiKey = req.header("x-api-key") || req.header("X-API-Key") || "";
+        const machineCode = req.header("x-machine-code") || req.header("X-Machine-Code") || "";
+        if (!apiKey && !machineCode) {
+          return res.status(401).json({ success: false, message: "x-api-key or x-machine-code header required" });
+        }
+
+        const { authenticateMachine } = await import("../services/machineAuthService");
+        let machineId: number;
+        try {
+          const auth = await authenticateMachine({
+            headerKey: apiKey || null,
+            machineCode: machineCode || null,
+            scope: "ingest:write",
+            endpoint: "machineTemplateImage.upload",
+          });
+          machineId = auth.machine.id;
+        } catch (authErr: any) {
+          const code = authErr?.code;
+          if (code === "UNAUTHORIZED")
+            return res.status(401).json({ success: false, message: authErr?.message || "Invalid machine credentials" });
+          if (code === "FORBIDDEN")
+            return res.status(403).json({ success: false, message: authErr?.message || "Forbidden" });
+          if (authErr?.name === "DbUnavailableError")
+            return res.status(503).json({ success: false, message: "Database unavailable — retry" });
+          throw authErr;
+        }
+
+        // ⚠ Khoá PHẢI khớp NGUYÊN VĂN khuôn `product-models/<id>/template-<sha256 hex 64>.<jpg|png>`
+        // mà `presignTemplateImage` dựng — chặn TRAVERSAL/khoá lạ ở đây, TRƯỚC khi
+        // `storagePut` (bản thân nó cũng chặn `..` — đây là lớp phòng thủ THỨ HAI, đúng
+        // khuôn "path traversal" đã ghi trong `server/storage.ts`).
+        const khopKhoa = /^product-models\/([0-9]+)\/template-[0-9a-f]{64}\.(jpg|png)$/.exec(objectKeyRaw || "");
+        if (!khopKhoa) {
+          return res.status(400).json({ success: false, message: "Invalid objectKey — must match presignTemplateImage's layout" });
+        }
+
+        // ★★★ Vòng sửa 1 (HIGH, review độc lập) — ĐÓNG LỖ: FORMAT khớp regex KHÔNG
+        // chứng minh QUYỀN SỞ HỮU `productModelId` trong khoá. Trước bản vá này, một
+        // máy B xác thực THẬT (apiKey hợp lệ, scope đúng) PUT được blob vào tiền tố
+        // `product-models/<id-của-máy-A>/…` — cửa `commitTemplateImage` (tRPC) vẫn
+        // lọc đúng máy nên hàng CÂY không bị ghi sai chủ, nhưng byte đã NẰM TRÊN ĐĨA
+        // dưới tenant khác (ghi xuyên-tenant/spam dung lượng) TRƯỚC KHI commit chạy.
+        // Dùng CHÍNH khuôn `mayCoBanDay`/`traHangAnhTemplate` (Mục 1) — "máy này đã
+        // dạy CÁI ĐANG CHẠY chưa", không phải "máy này từng dạy gì chưa" — KHÔNG
+        // `storagePut` khi chưa qua được cổng này.
+        const productModelId = Number(khopKhoa[1]);
+        const { mayDaDayChoSanPham } = await import("../db/cayDay");
+        if (!(await mayDaDayChoSanPham({ machineId, productModelId }))) {
+          return res.status(403).json({
+            success: false,
+            message: `Máy này chưa dạy cây cho product model ${productModelId} — không được PUT ảnh template vào tiền tố của một sản phẩm không thuộc về nó.`,
+          });
+        }
+
+        const bytes = req.body as Buffer;
+        if (!bytes || bytes.length === 0) {
+          return res.status(400).json({ success: false, message: "Empty request body" });
+        }
+
+        const { storagePut } = await import("../storage");
+        const contentType = objectKeyRaw.endsWith(".png") ? "image/png" : "image/jpeg";
+        await storagePut(objectKeyRaw, bytes, contentType);
+
+        res.json({ success: true, objectKey: objectKeyRaw, sizeBytes: bytes.length });
+      } catch (error: any) {
+        console.error("[MachineTemplateImage] upload error:", error);
+        res.status(500).json({ success: false, message: error?.message || "Upload failed" });
+      }
+    },
+  );
+
   // AOI Package - Serve image directly (non-tRPC endpoint for <img> tags)
   app.get("/api/aoi/image/:packageId/:fileName", async (req, res) => {
     try {
       const { packageId, fileName } = req.params;
+
+      // ★★★ CỔNG ẢNH — sau cờ `ANH_CONG_MO` vì app RN nạp tuyến này **gián tiếp**: nó nhận
+      //     `imageUrl = /api/aoi/image/...` từ `/api/inspection/:id/images` rồi ghép base và đưa
+      //     thẳng vào `<Image source={{uri}}>` (không cookie, không header).
+      let loiVaoAnh: LoiVaoAnh = { kieu: "toanCuc" };
+      if (!congAnhMo()) {
+        const cong = await thuMoCongAnh(req, "anh", req.path);
+        if (!cong.ok) return res.status(cong.ma).json({ success: false, ...cong.than });
+        loiVaoAnh = cong.loiVao;
+      }
 
       // Detect content type from file extension (fallback: detect from magic bytes later)
       const ext = (fileName.split('.').pop() || '').toLowerCase();
@@ -4515,6 +5067,13 @@ async function startServer() {
 
       if (pkgs.length === 0) return res.status(404).json({ message: "Package not found" });
       const pkg = pkgs[0];
+
+      // ⚠ Trục thu hẹp là `inspection_packages.machineId` (NOT NULL) — **KHÔNG** phải `factoryCode`
+      //   trên cùng bảng: cột ấy nullable và **tự khai từ `meta.json` của máy gửi lên**, tức là lời
+      //   khai của bên được kiểm. `machineId` do máy chủ phân giải khi nhận gói.
+      if (!(await mayTrongPhamViAnh(loiVaoAnh, pkg.machineId))) {
+        return res.status(403).json(thanTuChoiPhamViAnh("inspectionPackage", packageId));
+      }
 
       // Extract & serve image (import the helper from router)
       const { storagePut: _, storageGet } = await import("../storage");
@@ -4602,8 +5161,15 @@ async function startServer() {
       }
 
       const zip = await JSZip.loadAsync(zipBuffer);
-      const imageFile = zip.file(`images/${fileName}`) || zip.file(fileName);
-      if (!imageFile) return res.status(404).json({ message: `Image ${fileName} not found in ZIP` });
+      // BG-87 — một đường dẫn duy nhất, cùng chuẩn `getOrExtractImage`
+      // (aoiPackageRouter.ts) — bỏ fallback tên trần `zip.file(fileName)`.
+      const imagePathBg87 = `images/${fileName}`;
+      const imageFile = zip.file(imagePathBg87);
+      if (!imageFile) {
+        return res.status(404).json({
+          message: `Không tìm thấy ảnh "${fileName}" trong gói ZIP — đường mong đợi DUY NHẤT là "${imagePathBg87}".`,
+        });
+      }
 
       const imageBuffer = Buffer.from(await imageFile.async("uint8array"));
 
@@ -4640,6 +5206,19 @@ async function startServer() {
   app.get("/api/aoi/download/:packageId", async (req, res) => {
     try {
       const { packageId } = req.params;
+
+      // ★★★ CỔNG — mục `"zip"`, KHÔNG phải `"anh"`. Đây là chỗ ô `pv` của vé có tải trọng thật:
+      //     một vé cấp để **xem ảnh** không mở được lượt tải **toàn bộ gói ZIP gốc** (gói mang cả
+      //     `meta.json` lẫn mọi ảnh của lần kiểm), kể cả khi vé còn hạn và chữ ký hoàn toàn hợp lệ.
+      // ⚠ Sau cờ vì ba script trong repo (`test-aoi-package.mjs:285,375`, `scripts/test-aoi-upload.ts:391`)
+      //   đang gọi tuyến này trần — trong đó có bộ kiểm mà agent giữ phần GHI có thể đang chạy.
+      let loiVaoAnh: LoiVaoAnh = { kieu: "toanCuc" };
+      if (!congAnhMo()) {
+        const cong = await thuMoCongAnh(req, "zip", req.path);
+        if (!cong.ok) return res.status(cong.ma).json({ success: false, ...cong.than });
+        loiVaoAnh = cong.loiVao;
+      }
+
       const database = await getDb();
       if (!database) return res.status(500).json({ message: "Database unavailable" });
 
@@ -4653,6 +5232,9 @@ async function startServer() {
 
       if (pkgs.length === 0) return res.status(404).json({ message: "Package not found" });
       const pkg = pkgs[0];
+      if (!(await mayTrongPhamViAnh(loiVaoAnh, pkg.machineId))) {
+        return res.status(403).json(thanTuChoiPhamViAnh("inspectionPackage", packageId));
+      }
       if (!pkg.storageKey) return res.status(404).json({ message: "ZIP not available" });
 
       const storageMode = process.env.STORAGE_MODE ?? "forge";
@@ -4715,6 +5297,33 @@ async function startServer() {
   // REST proxy for publicProductApi (for non-tRPC clients: Android, C#, Python…)
   // Auth: header X-Master-Key / X-API-Key / X-Machine-Code  OR  query masterKey / apiKey / machineCode
   // ────────────────────────────────────────────────────────────────────────────
+
+  /**
+   * ★★★ 2026-08-18 — ánh xạ mã tRPC → mã trạng thái HTTP cho cụm `/api/public/**`.
+   *
+   * ⚠ Bảng cũ viết tay ở SÁU chỗ và **không có nhánh `FORBIDDEN`**, nên khi
+   * `publicProductApi` bắt đầu từ chối vì PHẠM VI, mọi lượt chặn rơi vào `: 500`. Đo được trên
+   * HTTP thật (2026-08-18): `GET /api/public/products/by-code/<sp của nhà máy khác>` trả **500**
+   * với đúng câu "outside the factory of the calling machine".
+   *
+   * 500 ở đây là một **lời khai sai**: nó nói *"máy chủ hỏng"* trong khi sự thật là *"bạn không
+   * được phép"*. Client bên thứ ba (Android/C#/Python) sẽ THỬ LẠI một yêu cầu không bao giờ
+   * thành công, và người trực đi tìm lỗi ở chỗ không có lỗi — đúng lớp lỗi mà cả lượt vá này
+   * tồn tại để xoá.
+   */
+  const statusCuaLoiCong = (error: { code?: string }): number => {
+    switch (error?.code) {
+      case "UNAUTHORIZED":
+      case "BAD_REQUEST":
+        return 401;
+      case "FORBIDDEN":
+        return 403;
+      case "NOT_FOUND":
+        return 404;
+      default:
+        return 500;
+    }
+  };
   app.get("/api/public/products", async (req, res) => {
     try {
       const ctx = await createContext({ req, res });
@@ -4733,7 +5342,7 @@ async function startServer() {
       });
       res.json(result);
     } catch (error: any) {
-      const status = error.code === "UNAUTHORIZED" || error.code === "BAD_REQUEST" ? 401 : error.code === "NOT_FOUND" ? 404 : 500;
+      const status = statusCuaLoiCong(error);
       res.status(status).json({ success: false, error: error.message });
     }
   });
@@ -4753,7 +5362,7 @@ async function startServer() {
       });
       res.json(result);
     } catch (error: any) {
-      const status = error.code === "UNAUTHORIZED" || error.code === "BAD_REQUEST" ? 401 : error.code === "NOT_FOUND" ? 404 : 500;
+      const status = statusCuaLoiCong(error);
       res.status(status).json({ success: false, error: error.message });
     }
   });
@@ -4773,7 +5382,7 @@ async function startServer() {
       });
       res.json(result);
     } catch (error: any) {
-      const status = error.code === "UNAUTHORIZED" || error.code === "BAD_REQUEST" ? 401 : error.code === "NOT_FOUND" ? 404 : 500;
+      const status = statusCuaLoiCong(error);
       res.status(status).json({ success: false, error: error.message });
     }
   });
@@ -4791,9 +5400,18 @@ async function startServer() {
         masterKey: masterKey || undefined,
         productCode: req.params.productCode,
       });
-      res.json(result);
+      // ★★★ NƠI CẤP VÉ — tuyến app di động gọi NHIỀU NHẤT (đo bằng grep người gọi trong
+      //     `FactoryAlertSystem/src/`: đây là 1 trong 8 tuyến REST duy nhất app chạm tới).
+      //
+      // ⚠⚠ KÝ Ở **VỎ REST NÀY**, KHÔNG Ở THỦ TỤC tRPC BÊN DƯỚI. `publicProductApi.getMeasurementPoints`
+      //   cũng được trình duyệt gọi thẳng qua `/api/trpc/…`, và trình duyệt **đã** qua cổng bằng
+      //   cookie. Quan trọng hơn: giá trị `referenceImageUrl`/`imageUrl` mà tRPC phát ra được client
+      //   **gửi ngược về làm KHOÁ KHỚP** ở `annotationRouters` (`WHERE "imageUrl" = ${input.imageUrl}`)
+      //   và `db/aiSegmentation.ts:40`. Ký ở tầng tRPC sẽ làm những phép so ấy **không bao giờ khớp**
+      //   nữa — hỏng trong im lặng. Vỏ REST này không có đường quay ngược ấy.
+      res.json(kyAnhTrongThan(result, "anh"));
     } catch (error: any) {
-      const status = error.code === "UNAUTHORIZED" || error.code === "BAD_REQUEST" ? 401 : error.code === "NOT_FOUND" ? 404 : 500;
+      const status = statusCuaLoiCong(error);
       res.status(status).json({ success: false, error: error.message });
     }
   });
@@ -4813,7 +5431,7 @@ async function startServer() {
       });
       res.json(result);
     } catch (error: any) {
-      const status = error.code === "UNAUTHORIZED" || error.code === "BAD_REQUEST" ? 401 : error.code === "NOT_FOUND" ? 404 : 500;
+      const status = statusCuaLoiCong(error);
       res.status(status).json({ success: false, error: error.message });
     }
   });
@@ -4826,25 +5444,57 @@ async function startServer() {
       const apiKey = req.header("x-api-key") || (req.query.apiKey as string) || "";
       const machineCode = req.header("x-machine-code") || (req.query.machineCode as string) || "";
 
-      // Validate access
-      let authorized = false;
+      // ★★★ 2026-08-18 — TUYẾN NÀY LÀ LỖ THỨ CHÍN, và nó **vô hình với cổng điều tra dân số**.
+      //
+      // Bản mô tả nhiệm vụ liệt kê 8 thủ tục `publicProcedure` của `publicProductApiRouter`. Tuyến
+      // này phục vụ ĐÚNG cùng dữ liệu (ảnh mẫu sản phẩm) cho ĐÚNG cùng người gọi bằng ĐÚNG cùng ba
+      // chứng thực — nhưng nó là một tuyến **Express**, không đi qua tRPC. Nó chép tay lại phép
+      // xác thực thành một BOOLEAN `authorized`, rồi đọc `getProductModelByCode` KHÔNG LỌC và
+      // stream byte ảnh ra ngoài. Vá xong tám thủ tục kia mà bỏ tuyến này thì cái cổng chỉ cách
+      // một URL là đi vòng được.
+      //
+      // ⚠⚠ Vì sao KHÔNG cổng nào bắt được nó: `phamViDocScan.ts` chỉ nhìn thấy các ô trong
+      // `router({…})` của tRPC, nên một tuyến `app.get(...)` không bao giờ được ĐẾM — nó không nằm
+      // trong 2.209 thủ tục, không nằm trong sổ nợ, và §4 không thể đỏ vì nó. Đã đo trên HTTP thật
+      // (2026-08-18, cổng 3111 chạy bản ĐÃ VÁ): máy của nhà máy A tải được ảnh sản phẩm của nhà
+      // máy B, **HTTP 200, image/png**. Đó là bằng chứng trực tiếp cho câu ghi ở đầu
+      // `phamViDocCensus.test.ts`: *cổng xanh KHÔNG chứng minh không còn rò rỉ.*
+      //
+      // Cách vá: dùng LẠI đúng bộ phân giải của tám thủ tục kia (`phamViNhaMayCuaMay` +
+      // `sanPhamTrongNhaMay`) thay vì chép một luật thứ hai — hai bản luật là cách chúng lệch nhau,
+      // và bản lỏng hơn sẽ quyết định ai thấy gì.
+      const { phamViNhaMayCuaMay, factoryIdCanThuHep, sanPhamTrongNhaMay, PHAM_VI_TOAN_CUC } =
+        await import("../routers/publicProductScope");
+      let phamVi: Awaited<ReturnType<typeof phamViNhaMayCuaMay>> | null = null;
       if (isValidMasterKey(masterKey)) {
-        authorized = true;
+        phamVi = PHAM_VI_TOAN_CUC; // TOÀN CỤC TƯỜNG MINH — cùng quyết định với `validateAccess`.
       } else if (apiKey) {
         const machine = await import("../db").then(m => m.getMachineByApiKey(apiKey));
-        if (machine) authorized = true;
+        if (machine) phamVi = await phamViNhaMayCuaMay(machine);
       } else if (machineCode) {
         const machine = await import("../db").then(m => m.getMachineByCode(machineCode.trim()));
-        if (machine) authorized = true;
+        if (machine) phamVi = await phamViNhaMayCuaMay(machine);
       }
-      if (!authorized) {
+      if (!phamVi) {
         return res.status(401).json({ success: false, error: "Unauthorized" });
       }
+      const factoryIdCong = factoryIdCanThuHep(phamVi);
 
       const db = await import("../db");
       const product = await db.getProductModelByCode(req.params.productCode);
       if (!product || !product.referenceImageUrl) {
         return res.status(404).json({ success: false, error: "Product or image not found" });
+      }
+      // ⚠ Cổng đặt SAU lượt tra sản phẩm nhưng TRƯỚC mọi lượt đọc byte — và trả **403**, không
+      //   phải 404: 404 ở đây sẽ nói "sản phẩm không tồn tại" cho một sản phẩm CÓ TỒN TẠI, tức
+      //   vẫn là một lời khai sai, chỉ đổi chiều.
+      if (factoryIdCong !== null && !(await sanPhamTrongNhaMay(product.id, factoryIdCong))) {
+        return res.status(403).json({
+          success: false,
+          error:
+            `machine_factory_scope_denied: product '${product.code}' is outside the factory of the ` +
+            `calling machine. The reference image is refused instead of being streamed.`,
+        });
       }
 
       let imageData: Buffer;
@@ -4898,11 +5548,16 @@ async function startServer() {
       });
       res.json(result);
     } catch (error: any) {
-      const status = error.code === "UNAUTHORIZED" || error.code === "BAD_REQUEST" ? 401 : error.code === "NOT_FOUND" ? 404 : 500;
+      const status = statusCuaLoiCong(error);
       res.status(status).json({ success: false, error: error.message });
     }
   });
 
+  // ★★★ Cổng giấy phép MOD_AI cho nhánh Express `/api/ai/**` — PHẢI đứng TRƯỚC mọi lượt
+  //     `registerAi*` bên dưới, nếu không nó chỉ canh những tuyến đăng ký SAU nó.
+  //     `moduleGate` là middleware tRPC, không dùng lại được ở đây; middleware này gọi ĐÚNG cùng
+  //     một động cơ quyết định (`isModuleLicensed`) — xem server/routes/congGiayPhepAiExpress.ts.
+  app.use("/api/ai", chanTuyenAiTheoGiayPhep());
   // Register AI SSE streaming routes (before tRPC mount)
   registerAiStreamingRoutes(app);
   // Doc 34 §IV-P0 — OpenAI-compatible gateway (/v1/*). Gated by OPENAI_GATEWAY_ENABLED
@@ -5021,6 +5676,19 @@ async function startServer() {
     startTwinStreamGateway();
   } catch (err) {
     console.error("[TwinStream] gateway start failed:", (err as any)?.message || err);
+  }
+
+  // E2-4 (doc69 Giai đoạn 4/Wave E2) — AI Agent Command Center live refresh
+  // bridge: eventBus `ai:agent` (published by aiAgentOrchestrator.ts /
+  // aiCopilotActions.ts choke points, AFTER their state change persists) →
+  // socket room `ai:agents`. A NO-OP unless AI_AGENTS_LIVE_ENABLED — when off,
+  // the Command Center keeps its 5s poll fallback (aiAgentCenter.getReadModel)
+  // unchanged. Signal-only: no control path, no plan/args/secret data on the wire.
+  try {
+    const { installAiAgentSocketBridge } = await import("../services/aiAgentRealtime");
+    installAiAgentSocketBridge();
+  } catch (err) {
+    console.error("[AiAgentRealtime] bridge install failed:", (err as any)?.message || err);
   }
 
   // X1 (doc 16 Khối 1) — Field & device abstraction. Two flag-gated startups (no-ops
@@ -5151,9 +5819,25 @@ async function startServer() {
   
   // Start offline machine monitor
   startOfflineMonitor();
-  
+
   // Initialize email transporter
   initializeEmailTransporter();
+
+  // ★★★ QUẢN LÝ DỰ ÁN (2026-08-23) — nạp ẢNH CHỤP dự án hộp cát nguồn DB (bảng `ai_repo_du_an`,
+  // mig 0337) vào bộ đệm của `repoProjects` NGAY LÚC BOOT. Vì sao phải ở đây: `danhSachDuAn()` là
+  // SYNC (nhiều điểm gọi sync: tRPC listProjects, chat, CLI, MCP) nên nguồn DB chỉ đến được nó qua
+  // một ảnh chụp nạp bất đồng bộ — không nạp lúc boot thì selectBox chỉ thấy dự án DB sau mutation
+  // đầu tiên. Sau mỗi mutation thêm/xoá, router tự nạp lại. Non-fatal: DB vắng/bảng chưa migrate ⇒
+  // hệ chạy tiếp với danh sách `.env` thuần, đúng hành vi trước khi bảng tồn tại.
+  try {
+    const { napLaiDuAnTuDb } = await import("../services/aiLocalTools/repoProjects");
+    const kq = await napLaiDuAnTuDb();
+    if (kq.ok && kq.soMuc > 0) {
+      console.log(`[repoProjects] đã nạp ${kq.soMuc} dự án hộp cát từ DB (cộng thêm vào danh sách .env)`);
+    }
+  } catch (err) {
+    console.error("[repoProjects] không nạp được dự án từ DB (chạy tiếp với .env):", (err as any)?.message || err);
+  }
 
   // W4-D (doc 27 §8 B7) — cron-like background schedulers (reports, backups,
   // retention, integrity scan, AI cron jobs, ERP outbox drain, fleet DB
@@ -5163,6 +5847,64 @@ async function startServer() {
   // in the dedicated worker (`npm run start:worker`). Request-coupled services
   // (socket gateways, MQTT broker, event-bus subscribers, ingest paths, device
   // gateways) are NOT part of this set and keep starting below.
+  // Pha 1.5 Task 4 — sổ là của RIÊNG từng tiến trình; đối chiếu (startVramReconciler)
+  // chỉ hợp lệ ở tiến trình chạy scheduler (nhánh else bên dưới), vì hai tiến trình
+  // cùng đối chiếu trên MỘT thiết bị sẽ thấy nhau là "cấp phát chui" — biến chuông
+  // thành nhiễu (sổ chung là Pha 3). Nhưng SỰ KIỆN thì phải tới DB từ MỌI vai trò —
+  // nếu ROLE=api không ghi, Pha 2 sẽ chốt ngưỡng drift trên NỬA dữ liệu. Hàng đợi
+  // VRAM_LOG_QUEUE_MAX (5000) rơi im lặng khi không có ai xả.
+  //
+  // ⚠ review vòng 1 (Critical) — lượt bật này CHỈ phủ hai đường CHẠY ĐẾN ĐÂY: vai
+  // trò `api` (nhánh if bên dưới) và all-in-one/ROLE-không-đặt (nhánh else). Nó
+  // KHÔNG phủ vai trò `worker`: `startServer()` early-return cho `ROLE === "worker"`
+  // ở ĐẦU hàm (rất xa phía trên dòng này), và `server/worker.ts` (`npm run
+  // start:worker`/`dev:worker`) không import `index.ts` — không bao giờ chạy tới
+  // đây. Lượt bật cho `worker` nằm RIÊNG, ở ĐẦU `runWorkerProcess()`
+  // (`backgroundJobs.ts`) — điểm chung thật sự của cả hai đường vào worker. Hai
+  // nơi bật này KHÔNG trùng nhau (không role nào chạy qua cả hai), nên không phải
+  // "chọn một" — mỗi nơi phủ đúng tập vai trò của chính nó.
+  try {
+    const { __setVramLogTimerEnabled } = await import("../services/vram/vramEventLog");
+    __setVramLogTimerEnabled(true);
+  } catch (err) {
+    // Telemetry không bao giờ được làm hỏng boot.
+    console.error("[vram] không bật được bộ đếm giờ nhật ký:", (err as any)?.message || err);
+  }
+
+  /**
+   * ★★ Pha 2B Task 2 (I-1) — ĐỐI CHIẾU CHUYỂN LÊN ĐÂY, ra khỏi `startBackgroundSchedulers()`.
+   *
+   * ⚠ VÌ SAO PHẢI CHUYỂN: từ Pha 2B, nhịp đối chiếu không còn chỉ nuôi **cái chuông** — nó là
+   * **NGUỒN SỐ DUY NHẤT** của đường cưỡng chế (`readLastReconcileTick()` → `computeHeadroom()`,
+   * §5.6c). Ở chỗ cũ (`backgroundJobs.ts`, chỉ chạy ở nhánh `else` của `ROLE === "api"`), tiến
+   * trình `api` **không bao giờ** có một nhịp nào ⇒ `readLastReconcileTick()` trả `null` **vĩnh
+   * viễn** ⇒ headroom rơi về **chỉ-sổ**, tức nhánh **RỘNG NHẤT** của cả mô hình (`max(L,A) ≥ L`),
+   * với `L` là cuốn sổ mới nối 14/159 dòng. Mà **mọi điểm gọi `beginVramAllocation()` đều
+   * request-coupled**, tức cổng cưỡng chế đặt đúng ở tiến trình mù.
+   *
+   * ⚠ Lý do cấm cũ (ghi ngay phía trên: *"hai tiến trình cùng đối chiếu ⇒ thấy nhau là cấp phát
+   * chui ⇒ biến chuông thành nhiễu"*) **vẫn đúng — nhưng nó nói về CHUÔNG**. §5.6c cấm thừa kế
+   * tham số chuông (ràng buộc 8) và tiêu thụ `attributable` như một **SỐ**. ⇒ `api` chạy **nhịp**
+   * nhưng **không đánh chuông** (`ring: false`): nó có số để quyết định, và không ai bị đánh thức
+   * bởi một khoản "lệch" thật ra là model của tiến trình anh em. Sổ chung là Pha 3.
+   *
+   * ⚠ Lượt bật này phủ `api` + all-in-one (hai đường CHẠY ĐẾN ĐÂY). `ROLE=worker` early-return từ
+   * rất xa phía trên và `server/worker.ts` không import file này ⇒ lượt bật cho worker nằm RIÊNG ở
+   * đầu `runWorkerProcess()` — **cùng khuôn với `__setVramLogTimerEnabled(true)` ngay trên**, và
+   * hai nơi KHÔNG trùng nhau (không vai trò nào đi qua cả hai).
+   */
+  try {
+    const { startVramReconciler } = await import("../services/vram/vramReconciler");
+    const ring = SERVER_ROLE !== "api";
+    startVramReconciler({ ring });
+    console.log(
+      `[vram] sổ cái + đối chiếu đã bật (nhịp NGAY, rồi mỗi VRAM_RECONCILE_INTERVAL_MS) — ` +
+        `chuông: ${ring ? "BẬT" : "TẮT (vai trò api: có sổ riêng, chuông sẽ kêu oan; số vẫn được ghi để cưỡng chế đọc)"}.`,
+    );
+  } catch (err) {
+    console.error("[vram] không bật được sổ cái/đối chiếu:", (err as any)?.message || err);
+  }
+
   if (SERVER_ROLE === "api") {
     console.log(
       "[Role] ROLE=api — cron schedulers skipped; run the worker process (`npm run start:worker`)",
@@ -5261,6 +6003,23 @@ async function startServer() {
     console.error("[FOE] rehydrate wiring failed:", (err as any)?.message || err);
   }
 
+  // doc 80 final review fix #3b — DPC deploy: dòng program_deployments 'pending' là trạng thái
+  // TRONG-TIẾN-TRÌNH (giữ chỗ/nhận duyệt → adapter → ghi kết quả). Restart giữa chừng để lại
+  // dòng kẹt 'pending' mãi ⇒ đóng các dòng quá hạn thành 'failed' ("interrupted, outcome
+  // unknown") để chúng rời khỏi trạng thái treo một cách trung thực. Fail-safe, không chặn boot.
+  try {
+    const { failInterruptedDeployments } = await import("../services/programming/programmingService");
+    failInterruptedDeployments()
+      .then((r) => {
+        if (r.failedIds.length > 0) {
+          console.log(`[DPC] Interrupted deploy sweep: ${r.failedIds.length} pending row(s) → failed (outcome unknown). ids=${r.failedIds.join(",")}`);
+        }
+      })
+      .catch((err) => console.error("[DPC] interrupted deploy sweep failed:", (err as any)?.message || err));
+  } catch (err) {
+    console.error("[DPC] interrupted deploy sweep wiring failed:", (err as any)?.message || err);
+  }
+
   // QW3 — Materialized view refresh: MOVED to the W4-D background scheduler
   // set (backgroundJobs.ts); it now also runs on the dedicated jobs DB pool.
 
@@ -5275,6 +6034,19 @@ async function startServer() {
     console.error("[DbRequirements] init failed:", (err as any)?.message || err);
   }
 
+  // C-1 (review Khối C lượt 9) — BG-97 (snapshot-gate v2) TẮT im lặng: cờ
+  // `SPEC_GATE_SNAPSHOT_ENABLED` không tồn tại trong `.env` chạy thật, và không có
+  // gì trong mã/cấu hình/cổng nói cho ai biết. KHÔNG đổi mặc định cờ (quyết định
+  // của chủ dự án) — chỉ làm trạng thái TẮT ồn ào: cảnh báo MỘT LẦN lúc boot nếu
+  // cờ tắt VÀ đã có điểm cây mang lịch sử giới hạn (điều kiện tiền đề đã đủ hôm
+  // nay theo review). Non-fatal — một lượt đọc DB hỏng không chặn khởi động.
+  try {
+    const { canhBaoCongSnapshotTat } = await import("../services/gioiHanLucDoCayV2");
+    await canhBaoCongSnapshotTat();
+  } catch (err) {
+    console.error("[BG-97] canhBaoCongSnapshotTat init failed:", (err as any)?.message || err);
+  }
+
   // Doc 27 Đợt 7 W7-D (gap V4) — AI model availability honesty: ONE consolidated
   // startup line (which manifest models are present/missing + the embedding tier
   // actually in effect) + a db_feature_status row ('ai_models') so the admin
@@ -5285,6 +6057,30 @@ async function startServer() {
     await reportAiModelAvailability();
   } catch (err) {
     console.error("[AIModels] init failed:", (err as any)?.message || err);
+  }
+
+  // doc69 G2-6 — Thinking-tier honesty: AI_THINKING_TIER_ENABLED=true with GGUF_THINKING_MODEL
+  // unset (or its file missing) used to fall back to the deep model SILENTLY. Report it once at
+  // boot, independent of any request ever reaching the tier, so ops sees config drift immediately
+  // instead of discovering it later via getEngineHealth().thinkingTier. Non-fatal; the safe
+  // thinking→deep fallback itself is unchanged (see aiModelRouter.ts deepModelFor).
+  try {
+    const { reportThinkingTierStatus } = await import("../services/aiModelRouter");
+    reportThinkingTierStatus();
+  } catch (err) {
+    console.error("[AIModels] thinking-tier status check failed:", (err as any)?.message || err);
+  }
+
+  // G1-C (2026-08-16) — TỔNG QUÁT HOÁ bản vá doc69 G2-6 ở ngay trên. Lớp lỗi "cờ *_ENABLED khai
+  // BẬT nhưng model tương ứng rỗng/không có trên đĩa ⇒ tầng âm thầm rơi về thứ khác, KHÔNG có gì
+  // đỏ" đã tái diễn nhiều lần, nhưng mới chỉ được vá RIÊNG cho AI_THINKING_TIER_ENABLED. Bảng
+  // khai báo trong modelTierFlagAudit phủ luôn code-router / reranker-gguf / sidecar thị giác, và
+  // thêm cặp cờ↔model mới chỉ tốn MỘT dòng trong bảng. Non-fatal: cảnh báo, không chặn boot.
+  try {
+    const { reportModelTierFlags } = await import("../services/ai/modelTierFlagAudit");
+    await reportModelTierFlags();
+  } catch (err) {
+    console.error("[AITierFlags] tier-flag audit failed:", (err as any)?.message || err);
   }
 
   // P1 WS1.1 — Data retention pruning: MOVED to the W4-D background scheduler
@@ -5762,6 +6558,14 @@ async function startServer() {
       .catch(() => {});
     import("../services/aiAutoProposer")
       .then((m) => m.stopAutoProposer())
+      .catch(() => {});
+    // doc69 G2-5a review fix (Wave 1 W1-4b) — drain the LLM audit buffer (up to
+    // AI_LLM_AUDIT_FLUSH_MS/~5s of high-risk rca/report/vision audit rows) before the
+    // process exits below; its own module-local `beforeExit` hook never fires on this path
+    // since we explicitly process.exit() (see aiLlmAudit.ts's SHUTDOWN doc comment).
+    // Best-effort/fire-and-forget like every other stop-call above; flushLlmAudit() never throws.
+    import("../services/ai/aiLlmAudit")
+      .then((m) => m.flushLlmAudit())
       .catch(() => {});
     server.close(() => {
       logger.info("Server closed");

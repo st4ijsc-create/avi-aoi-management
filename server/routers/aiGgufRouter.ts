@@ -4,8 +4,13 @@
 
 import { z } from "zod";
 import { TRPCError } from "@trpc/server";
-import { router, protectedProcedure } from "../_core/trpc";
-import { adminProcedure } from "./_shared";
+import { router, moduleProcedure, moduleGate } from "../_core/trpc";
+import { appError } from "../_core/appError";
+import { adminProcedure as adminProcedureBase } from "./_shared";
+// ★ Cổng giấy phép MOD_AI — chỉ THÊM chiều giấy phép, RBAC/vai/2FA giữ nguyên từng ký tự.
+//   Không-brick + fail-safe ở `_core/moduleGate.ts`; lượng từ canh ở `congGiayPhepAiCensus.test.ts`.
+const protectedProcedure = moduleProcedure("MOD_AI");
+const adminProcedure = adminProcedureBase.use(moduleGate("MOD_AI"));
 import {
   loadGgufModel,
   unloadGgufModel,
@@ -23,6 +28,26 @@ import {
   countTokens,
 } from "../services/aiGgufEngine";
 import { getAIProviderStatus } from "../services/aiProviderManager";
+// ★ G5-E — bộ cắt chuỗi suy luận. Module LÁ (0 import, 0 I/O) ⇒ import TĨNH, hàng rào vô điều kiện.
+import { stripThinking } from "../services/ai/thinkingStrip";
+
+/**
+ * ★ G5-E — `generate`/`chat` trả NGUYÊN VẸN đối tượng của engine cho playground/Vision-Lab: ô
+ * `text` đi thẳng vào mắt kỹ sư, không qua một bộ lọc nào. Cả hai đều cho phép `modelId` RỖNG ⇒
+ * dùng model MẶC ĐỊNH ⇒ đổi roster sang một model họ Qwen3.x là chỗ này phát `<think>`.
+ *
+ * `stripThinking().answer` đã `.trim()`. Playground là nơi soi đầu ra THÔ, nên khi không có gì bị
+ * cắt ta trả lại nguyên văn: bản vá là **no-op từng ký tự** với roster hiện tại
+ * (Qwen3-30B-A3B-Instruct không phát `<think>`). `answer === raw.trim()` xảy ra khi và chỉ khi
+ * phép quét không xoá ký tự phi-khoảng-trắng nào — mọi lượt cắt thật đều xoá ít nhất một cặp thẻ.
+ *
+ * Các ô đo lường (`tokensPrompt`/`tokensGenerated`/`modelId`) giữ nguyên: chúng nói về LƯỢT SINH,
+ * không phải về chữ hiển thị — nắn chúng theo phép cắt là làm sai số liệu.
+ */
+function catSuyLuanGiuBien<T extends { text: string }>(ket: T): T {
+  const cut = stripThinking(ket.text);
+  return { ...ket, text: cut.answer === ket.text.trim() ? ket.text : cut.answer };
+}
 
 export const aiGgufRouter = router({
   // ─── Status ──────────────────────────────────────────
@@ -57,10 +82,12 @@ export const aiGgufRouter = router({
         const modelId = await loadGgufModel(input);
         return { success: true, modelId };
       } catch (err: any) {
-        throw new TRPCError({
-          code: "INTERNAL_SERVER_ERROR",
-          message: `Failed to load GGUF model: ${err.message}`,
-        });
+        throw appError(
+          "INTERNAL_SERVER_ERROR",
+          "OPERATION_FAILED",
+          { operation: "loadGgufModel" },
+          `Failed to load GGUF model: ${err.message}`,
+        );
       }
     }),
 
@@ -69,10 +96,7 @@ export const aiGgufRouter = router({
     .mutation(async ({ input }) => {
       const success = await unloadGgufModel(input.modelId);
       if (!success) {
-        throw new TRPCError({
-          code: "NOT_FOUND",
-          message: `Model "${input.modelId}" is not loaded`,
-        });
+        throw appError("NOT_FOUND", "OPERATION_FAILED", { operation: "unloadGgufModel" }, `Model "${input.modelId}" is not loaded`);
       }
       return { success: true };
     }),
@@ -95,12 +119,9 @@ export const aiGgufRouter = router({
     .mutation(async ({ input }) => {
       try {
         const { modelId, ...options } = input;
-        return await generateText(options, modelId);
+        return catSuyLuanGiuBien(await generateText(options, modelId));
       } catch (err: any) {
-        throw new TRPCError({
-          code: "INTERNAL_SERVER_ERROR",
-          message: `Generation failed: ${err.message}`,
-        });
+        throw appError("INTERNAL_SERVER_ERROR", "OPERATION_FAILED", { operation: "generateText" }, `Generation failed: ${err.message}`);
       }
     }),
 
@@ -122,12 +143,9 @@ export const aiGgufRouter = router({
     .mutation(async ({ input }) => {
       try {
         const { modelId, ...options } = input;
-        return await chatCompletion(options, modelId);
+        return catSuyLuanGiuBien(await chatCompletion(options, modelId));
       } catch (err: any) {
-        throw new TRPCError({
-          code: "INTERNAL_SERVER_ERROR",
-          message: `Chat completion failed: ${err.message}`,
-        });
+        throw appError("INTERNAL_SERVER_ERROR", "OPERATION_FAILED", { operation: "chatCompletion" }, `Chat completion failed: ${err.message}`);
       }
     }),
 
@@ -149,10 +167,7 @@ export const aiGgufRouter = router({
         const analysis = await analyzeDefect(defectInfo, modelId, language ?? "vi");
         return { analysis };
       } catch (err: any) {
-        throw new TRPCError({
-          code: "INTERNAL_SERVER_ERROR",
-          message: `Defect analysis failed: ${err.message}`,
-        });
+        throw appError("INTERNAL_SERVER_ERROR", "OPERATION_FAILED", { operation: "analyzeDefect" }, `Defect analysis failed: ${err.message}`);
       }
     }),
 
@@ -180,10 +195,7 @@ export const aiGgufRouter = router({
         const insights = await generateQualityInsights(input.data, input.modelId, input.language ?? "vi");
         return { insights };
       } catch (err: any) {
-        throw new TRPCError({
-          code: "INTERNAL_SERVER_ERROR",
-          message: `Insights generation failed: ${err.message}`,
-        });
+        throw appError("INTERNAL_SERVER_ERROR", "OPERATION_FAILED", { operation: "generateQualityInsights" }, `Insights generation failed: ${err.message}`);
       }
     }),
 
@@ -241,10 +253,7 @@ export const aiGgufRouter = router({
       try {
         return await generateEmbedding(input.text, input.modelId);
       } catch (err: any) {
-        throw new TRPCError({
-          code: "INTERNAL_SERVER_ERROR",
-          message: `Embedding generation failed: ${err.message}`,
-        });
+        throw appError("INTERNAL_SERVER_ERROR", "OPERATION_FAILED", { operation: "generateEmbedding" }, `Embedding generation failed: ${err.message}`);
       }
     }),
 
@@ -259,10 +268,7 @@ export const aiGgufRouter = router({
         const count = await countTokens(input.text, input.modelId);
         return { tokenCount: count, textLength: input.text.length };
       } catch (err: any) {
-        throw new TRPCError({
-          code: "INTERNAL_SERVER_ERROR",
-          message: `Token counting failed: ${err.message}`,
-        });
+        throw appError("INTERNAL_SERVER_ERROR", "OPERATION_FAILED", { operation: "countTokens" }, `Token counting failed: ${err.message}`);
       }
     }),
 });

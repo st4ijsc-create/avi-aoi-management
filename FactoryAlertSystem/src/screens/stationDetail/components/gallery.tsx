@@ -12,6 +12,7 @@ import { DK, LK } from '../palette';
 import { STATION_T } from '../translations';
 import { getS } from '../styles';
 import { MAX_IMAGE_RETRY, RETRY_DELAYS } from './panelParts';
+import { nguonAnh } from '../../../services/imageService';
 
 // ============================================
 // GALLERY THUMBNAIL (with retry per image)
@@ -59,7 +60,7 @@ const GalleryThumb: React.FC<{
       {!error ? (
         <Image
           key={`gal-${retryKey}`}
-          source={{ uri: thumbUri }}
+          source={nguonAnh(thumbUri)}
           style={galS.thumb}
           resizeMode="cover"
           resizeMethod="resize"

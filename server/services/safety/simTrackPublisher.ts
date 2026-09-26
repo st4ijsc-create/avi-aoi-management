@@ -14,12 +14,24 @@
  * cockpit) visibly work.
  *
  * ⚠ CRITICAL HONESTY / SAFETY: every track this publishes is SIMULATED — NOT a real
- *   sensor. Detections are marked source 'test' so the downstream advisory events are
- *   recorded with detectedBy 'sim'/'operator' and notes that state the source. This
- *   worker COMMANDS NO DEVICE and ACTUATES NO STOP: it only feeds the ADVISORY monitor
- *   the same way a manual test call would. A 'rated_stop' band, if a synthetic track
- *   crosses it, is LOGGED only (a certified Safety PLC performs any real rated stop in
- *   hardware). It writes NOTHING to any device-control path.
+ *   sensor. Detections are marked `source: 'test'` (buildSimDetection below) — the SAME
+ *   provenance the Safety Monitor UI's "test proximity" sandbox button uses.
+ *
+ *   Fix round 1 (doc 80 Đợt 0 Task 6, SAF-01) — because `source:'test'` is honoured
+ *   end-to-end, a sim tick that crosses the near-miss margin now records the S1
+ *   near_miss event with `detectedBy:'test'` (not `'operator'`) and NEVER raises a real
+ *   Andon (nearMissAdvisor.processDetection skips `raiseAndon` for any `source:'test'`
+ *   detection). This is INTENTIONAL, not a regression: a synthetic demo track "crying
+ *   wolf" on the live Andon board would be indistinguishable from a genuine near-miss —
+ *   exactly the failure SAF-01 closes for the UI's test button, and the same honesty
+ *   applies here since this worker sends the identical provenance. The S2a zone
+ *   evaluator (evaluateFromProximity) is unaffected by this — it never had an Andon path
+ *   to begin with; a 'rated_stop' band it detects is LOGGED only with its own `'sim'`
+ *   provenance, regardless of `source` (see safety.s3.test.ts).
+ *
+ *   This worker COMMANDS NO DEVICE and ACTUATES NO STOP in either path: it only feeds
+ *   the ADVISORY monitor the same way a manual test call would. It writes NOTHING to any
+ *   device-control path.
  *
  * NO-OP when SAFETY_SIM_TRACKS_ENABLED is off (start() returns immediately; nothing is
  * scheduled). Advisory events only PERSIST when SAFETY_AUDIT_ENABLED is ALSO on

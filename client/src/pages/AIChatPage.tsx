@@ -12,6 +12,8 @@ import { AIToolResultCard, type ToolResultPayload } from "@/components/AIToolRes
 // /ai-chat can confirm/cancel a proposed WRITE INLINE (no longer "open the bubble").
 import {
   ConfirmActionCard,
+  laKetCucThanhCong,
+  trangThaiTheTuConfirm,
   type PendingAction,
   type ActionState,
 } from "@/components/ConfirmActionCard";
@@ -53,18 +55,15 @@ import {
   ChevronRight,
   ImagePlus,
   Eye,
+  ExternalLink,
 } from "lucide-react";
 import { toast } from "sonner";
+import { toastTrpcError } from "@/lib/trpcErrors";
 import { cn } from "@/lib/utils";
-import { useAIStream } from "@/hooks/useAIStream";
 import MachineQuickScan from "@/components/MachineQuickScan";
-
-// P3/W3.1 (doc 11) — Rollback switch. When true, /ai-chat sends to the
-// RAG-grounded local knowledge-base backend (/api/ai/local-kb/stream) — the SAME
-// endpoint the floating chat bubble uses — so it answers with full KB retrieval +
-// the aiLocalTools registry. Flip to false to fall back to the old bare-LLM
-// useAIStream path (/api/ai/stream/chat) with one line.
-const USE_KB_BACKEND = true;
+// doc69 B2 — unify the renderer with AILocalChatBubble/AILocalKnowledgeBase:
+// assistant messages render via react-markdown (safe, no raw HTML), not plain text.
+import Markdown from "react-markdown";
 
 // Localized "suggested prompts" shown in the empty state for discoverability.
 const SUGGESTED_PROMPTS: { emoji: string; key: string; fallback: string }[] = [
@@ -72,6 +71,24 @@ const SUGGESTED_PROMPTS: { emoji: string; key: string; fallback: string }[] = [
   { emoji: "🏆", key: "aiChat.suggest.topDefects", fallback: "Top lỗi nhiều nhất hôm nay là gì?" },
   { emoji: "📉", key: "aiChat.suggest.lowYield", fallback: "Trạm nào có FPY thấp nhất?" },
   { emoji: "🔧", key: "aiChat.suggest.pdm", fallback: "Máy nào có nguy cơ hỏng cao nhất?" },
+];
+
+// doc69 B3 (Wave 5) — minimal "walk me through X" onboarding starters. Each is a
+// plain how-to QUESTION, not a new mechanism: it goes through the exact SAME
+// handleSend -> /api/ai/local-kb/stream pipeline as any other message, so it
+// naturally classifies as intent "how_to" (server's classifyIntent — matches
+// "hướng dẫn"/"cách"/"how"/"guide") and — once the operational-card corpus is
+// synced (doc69 G2-7/E4) — gets grounded with a 1-tap "Mở màn hình" navigate
+// button via the SAME resolveOperationalNavigate path any other how-to answer
+// uses. No new guided-tour engine: this is a prompt template that reuses
+// everything already built. Topics were picked to match real operational cards
+// (knowledge/operational-cards.json: reports/root-cause-analysis/alerts) so a
+// synced corpus is likely to ground them. Fast-follow: a topic picker sourced
+// live from the operational-card index if 3 fixed starters prove too narrow.
+const WALKTHROUGH_STARTERS: { emoji: string; key: string; fallback: string }[] = [
+  { emoji: "🧭", key: "aiChat.walkthrough.qualityReports", fallback: "Hướng dẫn tôi cách xem báo cáo chất lượng" },
+  { emoji: "🧭", key: "aiChat.walkthrough.rootCause", fallback: "Hướng dẫn tôi cách phân tích nguyên nhân gốc rễ (RCA)" },
+  { emoji: "🧭", key: "aiChat.walkthrough.alerts", fallback: "Hướng dẫn tôi cách xử lý cảnh báo lỗi" },
 ];
 
 // P3/W3.1 (doc 11) — extras returned by the RAG backend for the latest assistant
@@ -88,6 +105,9 @@ interface KbAnswerExtras {
   pendingAction: KbPendingAction | null;
   // P3/D8 (doc 34) — vision step for the latest answer (VL reading or degrade note).
   vision: KbVisionNote | null;
+  // doc69 G2-7 — how-to answer grounded in a KNOWN operational card: a 1-tap
+  // "Mở màn X" button (NOT auto-navigated — see onClientAction below).
+  navigateAction: { route: string; message: string } | null;
 }
 
 export default function AIChatPage() {
@@ -129,10 +149,10 @@ export default function AIChatPage() {
   // about that specific machine. The user can clear the chip at any time.
   const [machineCode, setMachineCode] = useState<string | null>(null);
 
-  // Streaming hooks.
-  //  - useAIStream     → old bare-LLM path (/api/ai/stream/chat). Kept for rollback.
-  //  - useKbChatStream → P3/W3.1 (doc 11) RAG-grounded path (/api/ai/local-kb/stream).
-  const { streamingText, isStreaming, error: streamError, startStream, stopStream } = useAIStream();
+  // Streaming hook — P3/W3.1 (doc 11) RAG-grounded path (/api/ai/local-kb/stream).
+  // doc69 B2 removed the legacy bare-LLM useAIStream fallback + USE_KB_BACKEND
+  // toggle — this is now the ONLY streaming engine (useAIStream the hook is kept
+  // for DashboardAIWidget, which still uses it independently).
   const {
     streamingText: kbStreamingText,
     isStreaming: kbIsStreaming,
@@ -190,7 +210,7 @@ export default function AIChatPage() {
     },
     onError: (err) => {
       setOptimisticUserMsg(null);
-      toast.error(err.message);
+      toastTrpcError(err);
     },
   });
 
@@ -207,24 +227,17 @@ export default function AIChatPage() {
     },
   });
 
-  // P3/W3.1 (doc 11) — unify the two streaming hooks behind one set of names so
-  // the render layer is backend-agnostic. Flip USE_KB_BACKEND to switch paths.
-  const effStreamingText = USE_KB_BACKEND ? kbStreamingText : streamingText;
-  const effIsStreaming = USE_KB_BACKEND ? kbIsStreaming : isStreaming;
-  const effStreamError = USE_KB_BACKEND ? kbStreamError : streamError;
-  const effStopStream = USE_KB_BACKEND ? stopKbStream : stopStream;
-
   // Auto-scroll to bottom
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [conversation?.messages, effStreamingText, optimisticUserMsg]);
+  }, [conversation?.messages, kbStreamingText, optimisticUserMsg]);
 
   // Show stream errors
   useEffect(() => {
-    if (effStreamError) {
-      toast.error(effStreamError);
+    if (kbStreamError) {
+      toast.error(kbStreamError);
     }
-  }, [effStreamError]);
+  }, [kbStreamError]);
 
   // Deep-link prefill: /ai-chat?q=...&machine=<code> (e.g. from a QR/NFC scan via
   // MachineQuickScan, or MachineAISummary "Hỏi AI"). Read ?machine= to scope the
@@ -286,131 +299,108 @@ export default function AIChatPage() {
       content: m.content,
     }));
 
-    // ── P3/W3.1 (doc 11) — RAG-grounded path ─────────────────────────────────
+    // ── P3/W3.1 (doc 11) — RAG-grounded path (SOLE engine; doc69 B2 removed the
+    // legacy bare-LLM useAIStream fallback + USE_KB_BACKEND toggle) ──────────
     // Send to the SAME backend the chat bubble uses so /ai-chat answers with the
     // full knowledge base + tool grounding. We pass the prior turns as `history`,
     // the auth-derived AI role, and the page context (route + UI lang + machine).
-    if (USE_KB_BACKEND) {
-      // Reset per-turn extras (citations/tool/structured/followups/pending) so a
-      // new answer never shows the previous turn's cards.
-      setLastExtras(null);
+    // Reset per-turn extras (citations/tool/structured/followups/pending) so a
+    // new answer never shows the previous turn's cards.
+    setLastExtras(null);
+    setStreamToolResult(null);
+    setStreamVision(null);
+    setShowSources(false);
+    // P3/W3.1 (doc 11) — reset the inline confirm lifecycle for the new turn.
+    setActionState("pending");
+    setActionMessage(null);
+
+    const kbResult = await startKbStream(
+      {
+        question: userMsg,
+        topK: 5,
+        history: existingMessages,
+        userRole: mapAppRoleToAiRole(user?.role),
+        context: {
+          route: "/ai-chat",
+          uiLanguage: i18n.language,
+          selectedMachineCode:
+            scopeCode ?? selection.selectedMachineCode ?? undefined,
+        },
+        // P3/D8 (doc 34) — attach the image (base64 data URL) when present.
+        image: image?.dataUrl,
+      },
+      {
+        // Live tool card while streaming (mirrors the bubble).
+        onToolResult: (toolResult, toolName) =>
+          setStreamToolResult({ toolResult, toolName }),
+        // P3/D8 (doc 34) — live VL step (shown above the streaming answer).
+        onVision: (v) => setStreamVision(v),
+        // FE-only directive: navigate / prefill_form. No DB mutation; never
+        // auto-executes a write. Same behaviour as the bubble — EXCEPT doc69
+        // G2-7's `suggested` (grounded from a how-to answer, not an explicit
+        // "mở trang X" command): that one must NOT auto-navigate the user away
+        // from the answer they're reading. It's surfaced as a button instead
+        // (rendered in renderKbExtras via lastExtras.navigateAction below).
+        onClientAction: (ca) => {
+          if (!ca.route) return;
+          if (ca.suggested) return; // handled via lastExtras.navigateAction, not here
+          if (ca.action === "prefill_form" && ca.values) {
+            publishPrefill(ca.route, ca.values);
+          }
+          setLocation(ca.route);
+        },
+      },
+    );
+
+    if (kbResult) {
+      setOptimisticUserMsg(null);
+      // Stash the extras so they render under the persisted assistant message.
+      setLastExtras({
+        citations: kbResult.citations,
+        toolResult: kbResult.toolResult,
+        toolName: kbResult.toolName,
+        structured: kbResult.structured,
+        followUpSuggestions: kbResult.followUpSuggestions,
+        provider: kbResult.provider,
+        cached: kbResult.cached,
+        pendingAction: kbResult.pendingAction,
+        vision: kbResult.vision,
+        navigateAction:
+          kbResult.clientAction?.suggested && kbResult.clientAction.route
+            ? { route: kbResult.clientAction.route, message: kbResult.clientAction.message }
+            : null,
+      });
       setStreamToolResult(null);
       setStreamVision(null);
-      setShowSources(false);
-      // P3/W3.1 (doc 11) — reset the inline confirm lifecycle for the new turn.
-      setActionState("pending");
-      setActionMessage(null);
-
-      const kbResult = await startKbStream(
-        {
-          question: userMsg,
-          topK: 5,
-          history: existingMessages,
-          userRole: mapAppRoleToAiRole(user?.role),
-          context: {
-            route: "/ai-chat",
-            uiLanguage: i18n.language,
-            selectedMachineCode:
-              scopeCode ?? selection.selectedMachineCode ?? undefined,
-          },
-          // P3/D8 (doc 34) — attach the image (base64 data URL) when present.
-          image: image?.dataUrl,
-        },
-        {
-          // Live tool card while streaming (mirrors the bubble).
-          onToolResult: (toolResult, toolName) =>
-            setStreamToolResult({ toolResult, toolName }),
-          // P3/D8 (doc 34) — live VL step (shown above the streaming answer).
-          onVision: (v) => setStreamVision(v),
-          // FE-only directive: navigate / prefill_form. No DB mutation; never
-          // auto-executes a write. Same behaviour as the bubble.
-          onClientAction: (ca) => {
-            if (!ca.route) return;
-            if (ca.action === "prefill_form" && ca.values) {
-              publishPrefill(ca.route, ca.values);
-            }
-            setLocation(ca.route);
-          },
-        },
-      );
-
-      if (kbResult) {
-        setOptimisticUserMsg(null);
-        // Stash the extras so they render under the persisted assistant message.
-        setLastExtras({
-          citations: kbResult.citations,
-          toolResult: kbResult.toolResult,
-          toolName: kbResult.toolName,
-          structured: kbResult.structured,
-          followUpSuggestions: kbResult.followUpSuggestions,
-          provider: kbResult.provider,
-          cached: kbResult.cached,
-          pendingAction: kbResult.pendingAction,
-          vision: kbResult.vision,
-        });
-        setStreamToolResult(null);
-        setStreamVision(null);
-        // saveStreamedMessage requires a non-empty assistant message.
-        const assistantText =
-          kbResult.fullText.trim() ||
-          t(
-            "aiChat.noAnswer",
-            "Tôi chưa tìm được câu trả lời phù hợp. Vui lòng thử câu hỏi khác.",
-          );
-        saveStreamedMsg.mutate({
-          conversationId: convId!,
-          userMessage: userMsg,
-          assistantMessage: assistantText,
-        });
-      } else if (kbAbortedRef.current) {
-        // User cancelled — just drop the optimistic message, persist nothing.
-        setOptimisticUserMsg(null);
-        setStreamToolResult(null);
-      } else {
-        // Stream failed (non-abort) — fall back to the tRPC `chat` mutation. P1
-        // (doc 11): that mutation now routes through the SAME RAG/KB backend
-        // (`answerQuestion`) as the stream, so the fallback answer is grounded in
-        // the knowledge base + tools (extractive on LLM failure) — never the old
-        // no-RAG assistant. We pass the prior turns so RAG keeps conversational
-        // context, not just the latest message.
-        chatMutation.mutate({
-          conversationId: String(convId),
-          userMessage: userMsg,
-          messages: [...existingMessages, { role: "user" as const, content: userMsg }],
-          language: "vi",
-        });
-      }
-      return;
-    }
-
-    // ── Legacy path (USE_KB_BACKEND === false): bare-LLM useAIStream ──────────
-    const allMessages = [...existingMessages, { role: "user" as const, content: userMsg }];
-
-    // Try streaming first
-    const result = await startStream(allMessages, { maxTokens: 512, temperature: 0.7 });
-
-    if (result) {
-      // Streaming succeeded — persist messages
-      setOptimisticUserMsg(null);
+      // saveStreamedMessage requires a non-empty assistant message.
+      const assistantText =
+        kbResult.fullText.trim() ||
+        t(
+          "aiChat.noAnswer",
+          "Tôi chưa tìm được câu trả lời phù hợp. Vui lòng thử câu hỏi khác.",
+        );
       saveStreamedMsg.mutate({
         conversationId: convId!,
         userMessage: userMsg,
-        assistantMessage: result.fullText,
-        tokensUsed: result.tokensGenerated,
+        assistantMessage: assistantText,
       });
-    } else if (!streamError?.includes("AbortError")) {
-      // Streaming failed — fall back to the tRPC `chat` mutation. P1 (doc 11):
-      // this mutation is now RAG/KB-backed (`answerQuestion`), so even the legacy
-      // bare-LLM stream path degrades to a knowledge-grounded answer, not the old
-      // no-RAG assistant.
+    } else if (kbAbortedRef.current) {
+      // User cancelled — just drop the optimistic message, persist nothing.
+      setOptimisticUserMsg(null);
+      setStreamToolResult(null);
+    } else {
+      // Stream failed (non-abort) — fall back to the tRPC `chat` mutation. P1
+      // (doc 11): that mutation now routes through the SAME RAG/KB backend
+      // (`answerQuestion`) as the stream, so the fallback answer is grounded in
+      // the knowledge base + tools (extractive on LLM failure) — never the old
+      // no-RAG assistant. We pass the prior turns so RAG keeps conversational
+      // context, not just the latest message.
       chatMutation.mutate({
         conversationId: String(convId),
         userMessage: userMsg,
         messages: [...existingMessages, { role: "user" as const, content: userMsg }],
         language: "vi",
       });
-    } else {
-      setOptimisticUserMsg(null);
     }
   };
 
@@ -428,15 +418,31 @@ export default function AIChatPage() {
         token: pa.token,
         lang: (i18n.language as "vi" | "en" | "zh") ?? "vi",
       });
-      const next: ActionState =
-        res.status === "executed" ? "executed"
-        : res.status === "denied" ? "denied"
-        : res.status === "expired" ? "expired"
-        : "pending";
-      setActionState(next);
+      /**
+       * ★★★ Rà soát cuối Đợt B (2026-08-29) — BẢN ĐỒ DÙNG CHUNG, KHÔNG CHÉP TAY NỮA.
+       * Chuỗi `? :` cũ dừng ở ba giá trị, nên hai trạng thái chung cục MỚI của máy chủ
+       * (`bi_tu_choi_ghi` · `ap_mot_phan`) rơi vào nhánh cuối `"pending"` ⇒ thẻ không bao giờ đóng,
+       * nút Xác nhận ở lại sống (`actionState !== "pending"`), và mỗi lượt bấm lại chỉ chạm nhánh
+       * cache-return idempotent của máy chủ rồi lại "pending" — kẹt vĩnh viễn.
+       */
+      const next = trangThaiTheTuConfirm(res.status);
+      // `pending` là đường lùi CHỈ cho status không phải kết cục (`not_found`/`invalid`): giữ
+      // nguyên hành vi cũ ở đúng những ca cũ, không mở rộng nó sang hai giá trị mới.
+      setActionState(next ?? "pending");
       setActionMessage(res.message ?? null);
-      if (res.ok) toast.success(res.message ?? t("copilot.executed", "Đã thực thi."));
-      else toast.error(res.message ?? t("copilot.failed", "Không thể thực thi."));
+      /**
+       * ⚠⚠ `res.ok` KHÔNG phải "byte đã vào đĩa" — nó chỉ nói vòng đời HITL chạy hết chặng
+       * (`shared/aiCodingLoop.ts` docblock). Báo `toast.success` theo `res.ok` vẽ một lượt TỪ CHỐI
+       * GHI thành thông báo XANH. Chỉ `executed` mới là thành công.
+       */
+      if (laKetCucThanhCong(next)) toast.success(res.message ?? t("copilot.executed", "Đã thực thi."));
+      else if (next === "ap_mot_phan") {
+        // Không xanh (chưa xong) và cũng không đỏ (đã có byte rơi) — cây làm việc đang NỬA VỜI.
+        toast.warning(
+          res.message ??
+            t("copilot.writePartial", "Áp MỘT PHẦN — một số tệp ĐÃ được ghi xuống đĩa, phần còn lại thì chưa. Kiểm bằng git diff trước khi làm tiếp."),
+        );
+      } else toast.error(res.message ?? t("copilot.failed", "Không thể thực thi."));
     } catch {
       toast.error(t("copilot.failed", "Không thể thực thi."));
     }
@@ -490,7 +496,7 @@ export default function AIChatPage() {
     [notifyImageError],
   );
 
-  const isBusy = effIsStreaming || chatMutation.isPending;
+  const isBusy = kbIsStreaming || chatMutation.isPending;
   const messages = conversation?.messages ?? [];
   // P3/W3.1 (doc 11) — index of the last assistant message (extras render here).
   const lastAssistantIdx = (() => {
@@ -547,6 +553,25 @@ export default function AIChatPage() {
         {extras.vision && renderVisionNote(extras.vision)}
         {/* Tool result card (reused from the bubble) */}
         {extras.toolResult && <AIToolResultCard toolResult={extras.toolResult} />}
+
+        {/* doc69 G2-7 — "ask→do": 1-tap "Mở màn X" button for a how-to answer
+            grounded in a KNOWN operational card. NEVER auto-navigates — the user
+            taps to leave the answer they're reading. */}
+        {extras.navigateAction && (
+          <button
+            type="button"
+            onClick={() => setLocation(extras.navigateAction!.route)}
+            className="w-full flex items-center justify-between gap-2 text-xs rounded-md border border-primary/30 bg-primary/5 hover:bg-primary/10 transition-colors px-2.5 py-1.5 text-left"
+          >
+            <span className="flex items-center gap-1.5 text-foreground/90">
+              <ExternalLink className="h-3.5 w-3.5 text-primary shrink-0" />
+              {extras.navigateAction.message}
+            </span>
+            <span className="text-primary font-medium shrink-0">
+              {t("aiChat.openScreen", "Mở màn hình")}
+            </span>
+          </button>
+        )}
 
         {/* P3/W3.1 (doc 11) — proposed write-action: confirmed/cancelled INLINE
             via the shared card (same component + mutations the bubble uses). The
@@ -612,13 +637,35 @@ export default function AIChatPage() {
             </button>
             {showSources && (
               <div className="space-y-1">
+                {/* doc69 B3 (Wave 5) — a citation is clickable ONLY when the server
+                    resolved a whitelisted deep-link route (c.route); otherwise it
+                    stays plain, non-clickable text (honest — never navigate to an
+                    arbitrary string). */}
                 {extras.citations.slice(0, 5).map((c: KbCitation, i: number) => (
                   <div
                     key={i}
                     className="flex items-start gap-1.5 text-xs text-muted-foreground bg-background/60 rounded p-1.5"
                   >
                     <span className="shrink-0 font-semibold text-primary">{i + 1}.</span>
-                    <span className="break-all">{c.title || c.sourcePath}</span>
+                    {c.route ? (
+                      <button
+                        type="button"
+                        onClick={() => setLocation(c.route!)}
+                        title={t("aiChat.openCitation", "Mở trang liên quan")}
+                        className="break-all text-left underline decoration-dotted underline-offset-2 hover:text-primary transition-colors"
+                      >
+                        {c.title || c.sourcePath}
+                      </button>
+                    ) : (
+                      <span className="break-all">{c.title || c.sourcePath}</span>
+                    )}
+                    {/* Wave 2 đường B — phân biệt nguồn hệ thống vs tài liệu người
+                        dùng tự nạp (Training Studio), honest về xuất xứ trích dẫn. */}
+                    <Badge variant="outline" className="shrink-0 text-[10px] px-1 py-0 h-4">
+                      {c.origin === "studio"
+                        ? t("ai.citation.studio", "Tài liệu bạn nạp")
+                        : t("ai.citation.system", "Kho hệ thống")}
+                    </Badge>
                   </div>
                 ))}
               </div>
@@ -756,7 +803,7 @@ export default function AIChatPage() {
             /* Messages */
             <ScrollArea className="flex-1 p-4">
                 <div className="max-w-3xl mx-auto space-y-4">
-                  {messages.length === 0 && !optimisticUserMsg && !effIsStreaming && (
+                  {messages.length === 0 && !optimisticUserMsg && !kbIsStreaming && (
                     <div className="py-10">
                       <div className="text-center text-muted-foreground mb-6">
                         <Bot className="h-12 w-12 mx-auto mb-3 opacity-30" />
@@ -772,6 +819,31 @@ export default function AIChatPage() {
                         </p>
                         <div className="flex flex-wrap gap-2">
                           {SUGGESTED_PROMPTS.map((p, i) => {
+                            const text = t(p.key, p.fallback);
+                            return (
+                              <button
+                                key={i}
+                                onClick={() => handleSend(text)}
+                                disabled={isBusy}
+                                className="text-xs px-3 py-1.5 rounded-full border bg-background hover:bg-muted transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                              >
+                                {p.emoji} {text}
+                              </button>
+                            );
+                          })}
+                        </div>
+                      </div>
+
+                      {/* doc69 B3 (Wave 5) — "walk me through X" onboarding starters:
+                          plain how-to prompts, same send pipeline, grounded via the
+                          existing operational-card system (no new mechanism). */}
+                      <div className="mb-5">
+                        <p className="text-xs font-medium text-muted-foreground mb-2 flex items-center gap-1.5">
+                          <ChevronRight className="h-3.5 w-3.5 text-primary" />
+                          {t("aiChat.walkthroughLabel", "Hướng dẫn từng bước")}
+                        </p>
+                        <div className="flex flex-wrap gap-2">
+                          {WALKTHROUGH_STARTERS.map((p, i) => {
                             const text = t(p.key, p.fallback);
                             return (
                               <button
@@ -810,7 +882,16 @@ export default function AIChatPage() {
                             : "bg-muted"
                         )}
                       >
-                        <p className="whitespace-pre-wrap">{msg.content}</p>
+                        {/* doc69 B2 — assistant messages render via react-markdown
+                            (mirrors AILocalChatBubble/AILocalKnowledgeBase); user
+                            messages stay plain text. */}
+                        {msg.role === "user" ? (
+                          <p className="whitespace-pre-wrap">{msg.content}</p>
+                        ) : (
+                          <div className="prose prose-sm dark:prose-invert max-w-none text-sm leading-relaxed">
+                            <Markdown>{msg.content}</Markdown>
+                          </div>
+                        )}
                         {msg.toolCalls && (
                           <Badge variant="outline" className="mt-1.5 text-xs">
                             <Wrench className="h-3 w-3 mr-1" />
@@ -819,8 +900,7 @@ export default function AIChatPage() {
                         )}
                         {/* P3/W3.1 (doc 11) — RAG extras (citations / tool card /
                             structured / follow-ups) under the latest answer. */}
-                        {USE_KB_BACKEND &&
-                          msg.role !== "user" &&
+                        {msg.role !== "user" &&
                           idx === lastAssistantIdx &&
                           lastExtras &&
                           renderKbExtras(lastExtras)}
@@ -844,7 +924,7 @@ export default function AIChatPage() {
                     </div>
                   )}
                   {/* Streaming AI response — also shows a live vision + tool card (KB path). */}
-                  {effIsStreaming && (effStreamingText || streamToolResult || streamVision) && (
+                  {kbIsStreaming && (kbStreamingText || streamToolResult || streamVision) && (
                     <div className="flex gap-3 justify-start">
                       <div className="h-8 w-8 rounded-full bg-primary/10 flex items-center justify-center shrink-0">
                         <Zap className="h-4 w-4 text-primary animate-pulse" />
@@ -858,8 +938,10 @@ export default function AIChatPage() {
                             <AIToolResultCard toolResult={streamToolResult.toolResult} />
                           </div>
                         )}
-                        {effStreamingText && (
-                          <p className="whitespace-pre-wrap">{effStreamingText}</p>
+                        {kbStreamingText && (
+                          <div className="prose prose-sm dark:prose-invert max-w-none text-sm leading-relaxed">
+                            <Markdown>{kbStreamingText}</Markdown>
+                          </div>
                         )}
                         <Badge variant="outline" className="mt-1.5 text-xs">
                           <Zap className="h-3 w-3 mr-1" />
@@ -870,7 +952,7 @@ export default function AIChatPage() {
                   )}
                   {/* Loading spinner (fallback non-streaming) */}
                   {(chatMutation.isPending ||
-                    (effIsStreaming && !effStreamingText && !streamToolResult && !streamVision)) && (
+                    (kbIsStreaming && !kbStreamingText && !streamToolResult && !streamVision)) && (
                     <div className="flex gap-3">
                       <div className="h-8 w-8 rounded-full bg-primary/10 flex items-center justify-center">
                         <Bot className="h-4 w-4 text-primary" />
@@ -913,6 +995,31 @@ export default function AIChatPage() {
                   </p>
                   <div className="flex flex-wrap gap-2">
                     {SUGGESTED_PROMPTS.map((p, i) => {
+                      const text = t(p.key, p.fallback);
+                      return (
+                        <button
+                          key={i}
+                          onClick={() => handleSend(text)}
+                          disabled={isBusy || createConv.isPending}
+                          className="text-xs px-3 py-1.5 rounded-full border bg-background hover:bg-muted transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                        >
+                          {p.emoji} {text}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+
+                {/* doc69 B3 (Wave 5) — "walk me through X" onboarding starters (see
+                    the constant's doc comment: reuses the existing operational-card
+                    grounding, no new guided-tour engine). */}
+                <div className="mb-6">
+                  <p className="text-xs font-medium text-muted-foreground mb-2 flex items-center gap-1.5">
+                    <ChevronRight className="h-3.5 w-3.5 text-primary" />
+                    {t("aiChat.walkthroughLabel", "Hướng dẫn từng bước")}
+                  </p>
+                  <div className="flex flex-wrap gap-2">
+                    {WALKTHROUGH_STARTERS.map((p, i) => {
                       const text = t(p.key, p.fallback);
                       return (
                         <button
@@ -1021,8 +1128,8 @@ export default function AIChatPage() {
                   }}
                   disabled={isBusy}
                 />
-                {effIsStreaming ? (
-                  <Button variant="destructive" onClick={effStopStream}>
+                {kbIsStreaming ? (
+                  <Button variant="destructive" onClick={stopKbStream}>
                     <StopCircle className="h-4 w-4" />
                   </Button>
                 ) : (

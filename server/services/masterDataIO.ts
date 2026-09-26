@@ -6,8 +6,12 @@
  * (dùng chung với client ImportExportBar → không lệch). Router chỉ cần:
  *
  *   const { rows, errors } = await parseImport(buf, "xlsx", COLUMNS);
- *   if (errors.length) throw new TRPCError({ code: "BAD_REQUEST", ... });
+ *   if (errors.length) throw appError("BAD_REQUEST", "OPERATION_FAILED", { operation: "..." }, "...");
  *   // upsert rows...
+ *
+ * (Task 10, F3, doc71 — ví dụ minh hoạ cập nhật sang appError(), khớp cơ chế
+ * ném lỗi chuẩn hoá của sprint mã-lỗi; đây KHÔNG phải mã thực thi, chỉ là
+ * hướng dẫn cho router gọi module này.)
  *
  * và để tải xuống:
  *   const buf = await exportRows(rows, COLUMNS, "xlsx");  // hoặc "csv"

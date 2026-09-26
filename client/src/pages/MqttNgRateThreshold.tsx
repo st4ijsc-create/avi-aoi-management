@@ -12,6 +12,7 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
 import { trpc } from "@/lib/trpc";
+import { toastTrpcError } from "@/lib/trpcErrors";
 import { toast } from "sonner";
 import {
   AlertTriangle, Bell, Plus, Trash2, Edit, CheckCircle, XCircle,
@@ -109,7 +110,7 @@ export function MqttNgRateThresholdContent() {
       resetForm();
       refetchThresholds();
     },
-    onError: (error) => toast.error(error.message),
+    onError: (error) => toastTrpcError(error),
   });
 
   const updateMutation = trpc.ngRateThreshold.update.useMutation({
@@ -120,7 +121,7 @@ export function MqttNgRateThresholdContent() {
       resetForm();
       refetchThresholds();
     },
-    onError: (error) => toast.error(error.message),
+    onError: (error) => toastTrpcError(error),
   });
 
   const deleteMutation = trpc.ngRateThreshold.delete.useMutation({
@@ -128,12 +129,12 @@ export function MqttNgRateThresholdContent() {
       toast.success(t("mqttNgRateThreshold.toastDeleteSuccess"));
       refetchThresholds();
     },
-    onError: (error) => toast.error(error.message),
+    onError: (error) => toastTrpcError(error),
   });
 
   const toggleMutation = trpc.ngRateThreshold.toggle.useMutation({
     onSuccess: () => refetchThresholds(),
-    onError: (error) => toast.error(error.message),
+    onError: (error) => toastTrpcError(error),
   });
 
   const resolveAlertMutation = trpc.ngRateThreshold.resolveAlert.useMutation({
@@ -143,7 +144,7 @@ export function MqttNgRateThresholdContent() {
       setResolutionNote("");
       refetchHistory();
     },
-    onError: (error) => toast.error(error.message),
+    onError: (error) => toastTrpcError(error),
   });
 
   const sendTestAlertMutation = trpc.ngRateThreshold.sendTestAlert.useMutation({
@@ -156,7 +157,7 @@ export function MqttNgRateThresholdContent() {
       setTestResult(data);
       refetchHistory();
     },
-    onError: (error) => toast.error(error.message),
+    onError: (error) => toastTrpcError(error),
   });
 
   // ─── Helpers ───────────────────────────────────────────────────────────

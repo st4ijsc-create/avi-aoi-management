@@ -6,6 +6,8 @@
  */
 
 import { useState, useRef, useCallback } from "react";
+import { thongDiepLoiRest } from "@/lib/restAuthError";
+import { mapTrpcError } from "@/lib/trpcErrors";
 
 interface StreamMessage {
   role: "system" | "user" | "assistant";
@@ -58,8 +60,9 @@ export function useAIStream() {
 
         if (!response.ok) {
           const errBody = await response.json().catch(() => ({}));
+          // ★ M-4 — mã máy-đọc-được (`code`) → câu BẢN ĐỊA; không hiển thị chuỗi tiếng Anh cứng.
           throw new Error(
-            errBody.error || `Stream failed (${response.status})`,
+            thongDiepLoiRest(errBody, `Stream failed (${response.status})`),
           );
         }
 
@@ -112,7 +115,7 @@ export function useAIStream() {
         return result ?? { fullText };
       } catch (err: any) {
         if (err.name !== "AbortError") {
-          setError(err.message);
+          setError(mapTrpcError(err));
         }
         setIsStreaming(false);
         return null;

@@ -1,4 +1,5 @@
 import { useAuth } from "@/_core/hooks/useAuth";
+import { cn } from "@/lib/utils";
 import { useTranslation } from "react-i18next";
 import DashboardLayout from "@/components/DashboardLayout";
 import { DashboardTemplatePrompt } from "@/components/DashboardTemplatePrompt";
@@ -8,12 +9,18 @@ import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { Badge } from "@/components/ui/badge";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { toast } from "sonner";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
+// doc67 W4 (a11y/touch): Popover cho chip cảnh báo (tap mở được, không cần hover).
+// doc67 W7 GĐ2: Sheet "Bộ lọc" mobile đã bỏ cùng 3 Select phạm vi cục bộ — trục
+// ISA-95 toàn cục (AssetScopeBar shell) là nguồn phạm vi duy nhất.
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { trpc } from "@/lib/trpc";
+import { finalYield } from "@shared/kpiYield";
 import { 
   Activity, 
   AlertTriangle, 
@@ -50,10 +57,13 @@ import {
   Factory,
   FileDown,
   Calendar,
-  Palette
+  Palette,
+  SlidersHorizontal
 } from "lucide-react";
 import { navItems } from "@/lib/navigation";
 import { EmptyState, NoWorkstationData } from "@/components/EmptyState";
+import { ScopeEmptyNotice, ScopeAwareEmpty } from "@/components/ScopeEmptyNotice";
+import { scopeEmptyReasonOf } from "@/lib/scopeEmpty";
 import {
   PageHeader,
   PageContainer,
@@ -61,25 +71,40 @@ import {
   chartTooltipStyle,
   chartGridProps,
   chartAxisTick,
+  // doc67 W8 (việc 2) — chấm severity DS cho dải cảnh báo khẩn.
+  severityDotClass,
 } from "@/components/patterns";
+// doc67 W7 GĐ2 — nền móng DS dùng chung: sparkline SVG token-driven (thay bản
+// recharts inline), tone ISA-101 chuẩn (oeeTone 80/60 — QĐ #2; yieldTone 95/90)
+// và formatter thống nhất (null → '—', % 1 chữ số).
+import { Sparkline } from "@/components/patterns/Sparkline";
+import { oeeTone, yieldTone, TONE_TEXT_CLASS, toneHex } from "@/components/patterns/isaStateBadges";
+import { fmtPct, fmtInt } from "@/lib/format";
 import { WidgetStylePresetManager, useWidgetStyle, type WidgetStyle } from "@/components/WidgetStylePresetManager";
 import { CorporateFactoryStats } from "@/components/CorporateFactoryStats";
 import { RelatedViews } from "@/components/RelatedViews";
 import { ChartErrorBoundary, WidgetErrorBoundary } from "@/components/ErrorBoundary";
 import { StatsCardSkeleton, ChartSkeleton, PieChartSkeleton, ListSkeleton, MachineGridSkeleton } from "@/components/AnalyticsSkeleton";
+import { DeferredMount } from "@/components/DeferredMount";
 import { WorkstationNGHeatmap, MeasurementPointNGList } from "@/components/NGVisualReflect";
 import type { WidgetData } from "@/components/WidgetDataExport";
 import CustomDashboardViewer from "@/components/CustomDashboardViewer";
-import { useState, useMemo, useEffect, useCallback, useRef } from "react";
+// doc68 §3.3 P1 (việc 2) — chuẩn hoá "chi tiết → panel phải": chi tiết máy + drilldown
+// trạm chuyển từ Dialog che toàn màn sang ContextDrawer trượt phải (so sánh liên tiếp
+// không mất lưới nền). metricsSettings GIỮ modal (form cấu hình).
+import { ContextDrawer } from "@/components/workspace/ContextDrawer";
+import { useState, useMemo, useEffect, useCallback, useRef, memo, type CSSProperties } from "react";
+// doc 64 IA-10 S1 — truc pham vi ISA-95.
+import { useScope } from "@/components/patterns/ScopeFilterBar";
+import { useScopeWired } from "@/contexts/AssetScopeContext";
 import { Socket } from "socket.io-client";
 import { getSharedSocket, releaseSharedSocket } from "@/lib/socketManager";
 import { RealtimeBadge } from "@/components/RealtimeBadge";
+import { PollFreshness } from "@/components/PollFreshness";
 import { Link, useLocation } from "wouter";
-import { 
-  AreaChart, 
-  Area, 
-  XAxis, 
-  YAxis, 
+import {
+  XAxis,
+  YAxis,
   CartesianGrid, 
   Tooltip as RechartsTooltip, 
   ResponsiveContainer,
@@ -127,6 +152,8 @@ type MachineStats = {
   ng: number;
   ntf: number;
   yieldRate: number;
+  /** Canonical TRUE first-pass yield % per machine (server getMachineStats). */
+  fpy?: number;
   lineId?: number;
   lineName?: string;
   stationId?: number;
@@ -191,17 +218,35 @@ export default function Dashboard() {
   const timeRangeStorageHydratedRef = useRef(false);
   const [customFromDate, setCustomFromDate] = useState<string>("");
   const [customToDate, setCustomToDate] = useState<string>("");
-  const [selectedFactory, setSelectedFactory] = useState<string>("all");
-  const [selectedWorkshop, setSelectedWorkshop] = useState<string>("all");
-  const [selectedLine, setSelectedLine] = useState<string>("all");
+  // doc67 W7 GĐ2 — XÓA 3 state bộ lọc cục bộ selectedFactory/Workshop/Line:
+  // trục ISA-95 toàn cục (useScope → assetScope) là nguồn phạm vi duy nhất.
   const [selectedMachine, setSelectedMachine] = useState<MachineStats | null>(null);
   const [machineDetailOpen, setMachineDetailOpen] = useState(false);
   const [machineDialogStatusFilter, setMachineDialogStatusFilter] = useState<"all" | "OK" | "NG" | "NTF">("all");
   const [, setLocation] = useLocation();
   const [autoRefreshInterval, setAutoRefreshInterval] = useState("30");
   const [isAutoRefreshing, setIsAutoRefreshing] = useState(true);
-  const [lastRefreshTime, setLastRefreshTime] = useState(new Date());
-  const [activeTab, setActiveTab] = useState<"overview" | "layout" | "ng-visual" | "corporate-stats" | "custom">("overview");
+  // doc 67 W8 (việc 2): đọc ?tab= lúc mount để deep-link từ Dashboard Center
+  // ("Mở" dashboard tùy chỉnh → /dashboard?tab=custom&dashboardId=...) vào đúng tab.
+  const [activeTab, setActiveTab] = useState<"overview" | "layout" | "ng-visual" | "corporate-stats" | "custom">(() => {
+    const tabParam = new URLSearchParams(window.location.search).get("tab");
+    return tabParam === "overview" || tabParam === "layout" || tabParam === "ng-visual" ||
+      tabParam === "corporate-stats" || tabParam === "custom"
+      ? tabParam
+      : "overview";
+  });
+  // doc67 W8 [P2] (việc 1) — TAB SYNC URL: ghi ngược ?tab= khi đổi tab (replace,
+  // GIỮ các query param khác như dashboardId) — bookmark/kiosk mở đúng tab.
+  // Tab mặc định "overview" thì xoá param cho URL sạch (khớp mount-read ở trên).
+  const handleTabChange = useCallback((v: string) => {
+    const tab = v as "overview" | "layout" | "ng-visual" | "corporate-stats" | "custom";
+    setActiveTab(tab);
+    const params = new URLSearchParams(window.location.search);
+    if (tab === "overview") params.delete("tab");
+    else params.set("tab", tab);
+    const qs = params.toString();
+    setLocation(`${window.location.pathname}${qs ? `?${qs}` : ""}`, { replace: true });
+  }, [setLocation]);
   const [machineStatusFilter, setMachineStatusFilter] = useState<"all" | "online" | "offline">("all");
   const [ngTimeFilter, setNgTimeFilter] = useState<"day" | "week" | "month">("month"); // Default to month for more data
   const [selectedWorkstationForDrilldown, setSelectedWorkstationForDrilldown] = useState<{ id: number; code: string; name: string } | null>(null);
@@ -283,10 +328,24 @@ export default function Dashboard() {
   const [onlineMachines, setOnlineMachines] = useState<Set<string>>(new Set());
   const [urgentAlerts, setUrgentAlerts] = useState<Array<{id: string; type: string; severity: string; title: string; message: string; timestamp: Date}>>([]);
   const socketRef = useRef<Socket | null>(null);
-  // Realtime connection state + live OEE pushed over the socket (oee:update).
+  // Realtime connection state. doc67 W6 [P1-3]: liveOEE/lastRealtimeAt đã TÁCH khỏi
+  // root — trước đây mỗi push oee:update setState ở gốc → re-render cả cây ~3400
+  // dòng. Nay <LiveOeeWidget>/<HeaderRealtimePulse> tự subscribe socket và giữ
+  // state riêng; root chỉ còn socketConnected (đổi hiếm: connect/disconnect).
   const [socketConnected, setSocketConnected] = useState(false);
-  const [liveOEE, setLiveOEE] = useState<LiveOEERow[] | null>(null);
-  const [lastRealtimeAt, setLastRealtimeAt] = useState<Date | null>(null);
+
+  // doc67 W6 [P1-2] — socket-invalidate: khi socket LIVE, các query nặng NGỪNG poll
+  // (refetchInterval: false); nhịp làm-mới lấy từ server đẩy:
+  //   - oee:update       heartbeat ~60s (OEE_BROADCAST_INTERVAL_SEC, mặc định 60)
+  //   - dashboard:update mỗi inspection mới
+  // → invalidate cụm dashboard, throttle 55s ⇒ tối đa ~1 refetch/phút thay vì
+  // 8 query × 30s. invalidate() chỉ refetch query ĐANG ACTIVE nên các query đã
+  // gate theo tab (P0) không bị kéo dậy.
+  const trpcUtils = trpc.useUtils();
+  const trpcUtilsRef = useRef(trpcUtils);
+  trpcUtilsRef.current = trpcUtils;
+  // Khởi tạo = now: các query vừa fetch lúc mount, khỏi invalidate ngay nhịp đầu.
+  const lastSocketInvalidateRef = useRef(Date.now());
 
   // WebSocket connection for realtime machine status + urgent alerts
   useEffect(() => {
@@ -305,33 +364,22 @@ export default function Dashboard() {
       setOnlineMachines(new Set(data.machines));
     };
 
-    // Live OEE push — single source of truth (oeeService). The broadcaster sends
-    // { metrics, at }; the legacy per-machine path may send a raw array/object.
-    // Normalize all shapes; honour honest nulls (never synthesize a factor).
-    const onOeeUpdate = (payload: any) => {
-      const raw = Array.isArray(payload)
-        ? payload
-        : Array.isArray(payload?.metrics)
-          ? payload.metrics
-          : payload && typeof payload === 'object' && payload.machineId != null
-            ? [payload]
-            : [];
-      if (raw.length === 0) return;
-      const rows: LiveOEERow[] = raw.map((m: any) => ({
-        machineId: m.machineId,
-        machineCode: m.machineCode ?? String(m.machineId),
-        availability: m.availability ?? null,
-        performance: m.performance ?? null,
-        quality: m.quality ?? null,
-        oee: m.oee ?? null,
-      }));
-      setLiveOEE((prev) => {
-        // Merge per-machine updates over the existing live snapshot.
-        const byId = new Map<number, LiveOEERow>((prev ?? []).map((r) => [r.machineId, r]));
-        for (const r of rows) byId.set(r.machineId, r);
-        return Array.from(byId.values()).sort((a, b) => a.machineId - b.machineId);
-      });
-      setLastRealtimeAt(new Date());
+    // doc67 W6 [P1-2] — nhịp làm-mới theo socket (KHÔNG setState → không re-render):
+    // throttle 55s để mỗi phút tối đa 1 loạt invalidate cho cụm query nặng.
+    const invalidateDashboardOnPush = () => {
+      const now = Date.now();
+      if (now - lastSocketInvalidateRef.current < 55_000) return;
+      lastSocketInvalidateRef.current = now;
+      const u = trpcUtilsRef.current;
+      void u.dashboard.getStatsWithComparison.invalidate();
+      void u.dashboard.getAllMachinesStats.invalidate();
+      void u.dashboard.getShiftStats.invalidate();
+      void u.dashboard.getTopBottomMachines.invalidate();
+      void u.dashboard.getActiveAlertsCount.invalidate();
+      void u.dashboard.getHourlyStats.invalidate();
+      // 2 query của MqttAlertWidget cũng ngừng poll khi socket live → mời theo nhịp này.
+      void u.mqttAlert.unresolved.invalidate();
+      void u.mqttClientManagement.getAlertWidgetData.invalidate();
     };
 
     const onStatusChange = (data: { machineCode: string; status: 'online' | 'offline' }) => {
@@ -381,7 +429,8 @@ export default function Dashboard() {
     socket.on('disconnect', onDisconnect);
     socket.on('machine:online_list', onOnlineList);
     socket.on('machine:status_change', onStatusChange);
-    socket.on('oee:update', onOeeUpdate);
+    socket.on('oee:update', invalidateDashboardOnPush);
+    socket.on('dashboard:update', invalidateDashboardOnPush);
     socket.on('inspection:alert', onInspectionAlert);
     socket.on('yield:warning', onYieldWarning);
     socket.on('ng:alert', onNgAlert);
@@ -398,7 +447,8 @@ export default function Dashboard() {
       socket.off('disconnect', onDisconnect);
       socket.off('machine:online_list', onOnlineList);
       socket.off('machine:status_change', onStatusChange);
-      socket.off('oee:update', onOeeUpdate);
+      socket.off('oee:update', invalidateDashboardOnPush);
+      socket.off('dashboard:update', invalidateDashboardOnPush);
       socket.off('inspection:alert', onInspectionAlert);
       socket.off('yield:warning', onYieldWarning);
       socket.off('ng:alert', onNgAlert);
@@ -569,30 +619,86 @@ export default function Dashboard() {
     };
   }, [ngTimeFilter]);
 
+  // doc 64 IA-10 S1 — trục phạm vi ISA-95: axis THẮNG dropdown factory cục bộ;
+  // machineId từ trục đi thẳng vào stats.
+  // doc65 W1 — wired thêm: getDailyStats/getHourlyStats/getTopBottomMachines
+  // nay đều theo effectiveFactoryId (hourly nhận cả lineId/machineId). Còn lệch
+  // duy nhất: sparkline 7 ngày không hỗ trợ machineId (có ghi chú trung thực).
+  const { scope: assetScope } = useScope(["factory", "line", "machine"]);
+  useScopeWired();
+  // doc67 W7 GĐ2 — dropdown factory cục bộ đã xóa: phạm vi CHỈ từ trục ISA-95.
+  const effectiveFactoryId = assetScope.factoryId;
+
   // Fetch stats with comparison
-  const { data: statsWithComparison, isLoading: statsLoading, refetch: refetchStats } = trpc.dashboard.getStatsWithComparison.useQuery({
-    factoryId: selectedFactory !== "all" ? parseInt(selectedFactory) : undefined,
+  // doc65 W2 (AUD-01) — lấy thêm dataUpdatedAt/isFetching để khai TUỔI DỮ LIỆU
+  // trung thực qua PollFreshness (thay chuỗi "Cập nhật lúc HH:mm" tĩnh cũ).
+  const {
+    data: statsWithComparison,
+    isLoading: statsLoading,
+    refetch: refetchStats,
+    dataUpdatedAt: statsUpdatedAt,
+    isFetching: statsFetching,
+  } = trpc.dashboard.getStatsWithComparison.useQuery({
+    factoryId: effectiveFactoryId,
+    machineId: assetScope.machineId,
     startDate: dateRange.startDate,
     endDate: dateRange.endDate,
   }, {
-    refetchInterval: isAutoRefreshing && autoRefreshInterval !== "0" ? parseInt(autoRefreshInterval) * 1000 : false,
+    // doc67 W6 [P1-2] — socket LIVE: ngừng poll, dựa socket-invalidate (nhịp đẩy
+    // ~60s ở effect socket phía trên). Poll theo Play/Pause + interval chỉ còn là
+    // FALLBACK khi socket rớt (cùng pattern getAllOEE trong LiveOeeWidget).
+    refetchInterval: socketConnected
+      ? false
+      : isAutoRefreshing && autoRefreshInterval !== "0" ? parseInt(autoRefreshInterval) * 1000 : false,
   });
 
   // Fetch all machines stats
-  const { data: machinesStats, isLoading: machinesLoading, refetch: refetchMachines } = trpc.dashboard.getAllMachinesStats.useQuery({
+  const {
+    data: machinesStats,
+    isLoading: machinesLoading,
+    refetch: refetchMachines,
+    dataUpdatedAt: machinesUpdatedAt,
+    isFetching: machinesFetching,
+  } = trpc.dashboard.getAllMachinesStats.useQuery({
     startDate: dateRange.startDate,
     endDate: dateRange.endDate,
+    // doc 64 IA-10 S2 — lưới máy lọc theo trục (server DEP-S2 đã nhận).
+    factoryId: effectiveFactoryId,
+    lineId: assetScope.lineId,
   }, {
-    refetchInterval: isAutoRefreshing && autoRefreshInterval !== "0" ? parseInt(autoRefreshInterval) * 1000 : false,
+    // doc67 W6 [P1-2] — poll chỉ khi socket rớt (socket live → socket-invalidate).
+    refetchInterval: socketConnected
+      ? false
+      : isAutoRefreshing && autoRefreshInterval !== "0" ? parseInt(autoRefreshInterval) * 1000 : false,
   });
+
+  // doc65 W2 (AUD-01) — TUỔI DỮ LIỆU của các KPI chính: mốc MỚI NHẤT trong
+  // dataUpdatedAt của hai query nền tảng (stats + machines). PollFreshness tự
+  // tick mỗi giây nên "Ns trước" luôn tươi và có cảnh báo amber khi cũ — khác
+  // với chuỗi "Cập nhật lúc HH:mm" tĩnh cũ (không tick, không cảnh báo).
+  const kpiUpdatedAt = Math.max(statsUpdatedAt || 0, machinesUpdatedAt || 0) || undefined;
+  const kpiFetching = statsFetching || machinesFetching;
+  // Ngưỡng "cũ" = 2× chu kỳ auto-refresh hiện hành (sàn 15s để không nhấp nháy
+  // với chu kỳ 5s). Khi người dùng TẮT auto-refresh, dữ liệu già theo chủ ý →
+  // nới ngưỡng 5 phút (quá 5 phút vẫn cảnh báo trung thực).
+  // doc67 W6 [P1-2] — socket LIVE: các query nặng KHÔNG poll nữa mà làm mới theo
+  // nhịp socket-invalidate (~60s heartbeat oee:update) → ngưỡng cũ = 2× nhịp = 120s.
+  const kpiRefreshMs =
+    isAutoRefreshing && autoRefreshInterval !== "0" ? parseInt(autoRefreshInterval) * 1000 : 0;
+  const kpiStaleAfterMs = socketConnected
+    ? 120_000
+    : kpiRefreshMs > 0 ? Math.max(kpiRefreshMs * 2, 15_000) : 300_000;
 
   // Fetch shift stats
   const { data: shiftStats } = trpc.dashboard.getShiftStats.useQuery({
-    factoryId: selectedFactory !== "all" ? parseInt(selectedFactory) : undefined,
+    factoryId: effectiveFactoryId,
     startDate: dateRange.startDate,
     endDate: dateRange.endDate,
   }, {
-    refetchInterval: isAutoRefreshing && autoRefreshInterval !== "0" ? parseInt(autoRefreshInterval) * 1000 : false,
+    // doc67 W6 [P1-2] — poll chỉ khi socket rớt (socket live → socket-invalidate).
+    refetchInterval: socketConnected
+      ? false
+      : isAutoRefreshing && autoRefreshInterval !== "0" ? parseInt(autoRefreshInterval) * 1000 : false,
   });
 
   // Fetch top/bottom machines
@@ -600,49 +706,71 @@ export default function Dashboard() {
     startDate: dateRange.startDate,
     endDate: dateRange.endDate,
     limit: 5,
+    // doc65 W1 — xếp hạng máy theo trục phạm vi ISA-95 (server nhận factoryId,
+    // additive optional). Trục máy đơn không áp cho ranking đa-máy.
+    factoryId: effectiveFactoryId,
   }, {
-    refetchInterval: isAutoRefreshing && autoRefreshInterval !== "0" ? parseInt(autoRefreshInterval) * 1000 : false,
+    // doc67 W6 [P1-2] — poll chỉ khi socket rớt (socket live → socket-invalidate).
+    refetchInterval: socketConnected
+      ? false
+      : isAutoRefreshing && autoRefreshInterval !== "0" ? parseInt(autoRefreshInterval) * 1000 : false,
   });
 
   // Fetch active alerts count
   const { data: activeAlertsCount } = trpc.dashboard.getActiveAlertsCount.useQuery(undefined, {
-    refetchInterval: isAutoRefreshing && autoRefreshInterval !== "0" ? parseInt(autoRefreshInterval) * 1000 : false,
+    // doc67 W6 [P1-2] — poll chỉ khi socket rớt (socket live → socket-invalidate).
+    refetchInterval: socketConnected
+      ? false
+      : isAutoRefreshing && autoRefreshInterval !== "0" ? parseInt(autoRefreshInterval) * 1000 : false,
   });
 
   // Fetch daily stats for sparklines
+  // doc65 W1 — sparkline theo trục phạm vi (trước đây chỉ theo dropdown factory
+  // cục bộ, lệch với KPI dùng effectiveFactoryId). Server chưa nhận machineId
+  // cho daily rollup → khi trục chọn tới mức MÁY, sparkline vẫn cấp nhà máy
+  // (có ghi chú trung thực tại khối KPI).
   const { data: dailyStats } = trpc.dashboard.getDailyStats.useQuery({
-    factoryId: selectedFactory !== "all" ? parseInt(selectedFactory) : undefined,
+    factoryId: effectiveFactoryId,
     days: 7,
   });
 
   // Fetch hourly stats for timeline chart
+  // doc65 W1 — chart 24h theo trục phạm vi ISA-95 đầy đủ (server vốn ĐÃ nhận
+  // factoryId/lineId/machineId — trước đây client chỉ truyền dropdown factory).
   const { data: hourlyStats } = trpc.dashboard.getHourlyStats.useQuery({
-    factoryId: selectedFactory !== "all" ? parseInt(selectedFactory) : undefined,
+    factoryId: effectiveFactoryId,
+    lineId: assetScope.lineId,
+    machineId: assetScope.machineId,
     hours: 24,
   }, {
-    refetchInterval: isAutoRefreshing && autoRefreshInterval !== "0" ? parseInt(autoRefreshInterval) * 1000 : false,
+    // doc67 W6 [P1-2] — poll chỉ khi socket rớt (socket live → socket-invalidate).
+    refetchInterval: socketConnected
+      ? false
+      : isAutoRefreshing && autoRefreshInterval !== "0" ? parseInt(autoRefreshInterval) * 1000 : false,
   });
 
   // Fetch yield alert thresholds for realtime alerts
   const { data: yieldThresholds } = trpc.yieldThreshold.list.useQuery();
 
-  // Fetch factories, workshops, lines for filters
-  const { data: factories } = trpc.factory.list.useQuery();
-  const { data: workshops } = trpc.workshop.list.useQuery();
-  const { data: lines } = trpc.line.list.useQuery();
+  // doc67 W7 GĐ2 — XÓA 3 query factory/workshop/line.list: chỉ phục vụ 3 Select
+  // bộ lọc cục bộ đã bỏ (trục ISA-95 shell tự nạp danh mục của nó).
 
   // Fetch line product assignments and production orders for line info
-  const { data: lineProductAssignments } = trpc.lineProductAssignment.list.useQuery();
-  const { data: productionOrders } = trpc.productionOrder.list.useQuery();
-  const { data: productModels } = trpc.productModel.list.useQuery();
-
-  // Fetch recent inspections for selected machine
-  const { data: recentInspections } = trpc.inspection.list.useQuery({
-    machineId: selectedMachine?.id,
-    limit: 20,
-  }, {
-    enabled: !!selectedMachine,
+  // doc67 W6 [P0] — 3 query này chỉ phục vụ tab "Bố cục" (thẻ line info) → gate
+  // theo activeTab, không bắn khi mở trang ở tab Tổng quan mặc định.
+  const { data: lineProductAssignments } = trpc.lineProductAssignment.list.useQuery(undefined, {
+    enabled: activeTab === 'layout',
   });
+  const { data: productionOrders } = trpc.productionOrder.list.useQuery(undefined, {
+    enabled: activeTab === 'layout',
+  });
+  const { data: productModels } = trpc.productModel.list.useQuery(undefined, {
+    enabled: activeTab === 'layout',
+  });
+
+  // doc67 W6 [P2] — XÓA query chết `recentInspections` (inspection.list limit 20):
+  // không nơi nào tiêu thụ — dialog chi tiết máy dùng `filteredInspections` (query
+  // riêng bên dưới, limit 50 + lọc trạng thái, enabled theo machineDetailOpen).
 
   // Fetch filtered inspections for selected machine (by status)
   const { data: filteredInspections, isLoading: filteredInspectionsLoading } = trpc.inspection.list.useQuery({
@@ -654,46 +782,51 @@ export default function Dashboard() {
   });
 
   // Fetch workstation summary for top defects (overview tab)
+  // doc67 W6 [P0] — card "Top 5 trạm lỗi cao" của tab Tổng quan dùng TRỰC TIẾP
+  // query này (dải ngày dateRange người dùng chọn) → gate theo tab overview.
+  // KHÔNG gộp được với bản ng-visual bên dưới: bản đó chạy dải ngày riêng
+  // (ngDateRange theo ngTimeFilter, mặc định 1 tháng) — 2 input khác nhau nên
+  // 2 cache-entry khác nhau; nhờ gate theo tab, mỗi thời điểm chỉ 1 bản bắn.
   const { data: workstationSummary } = trpc.workstation.summary.useQuery({
     startDate: dateRange.startDate,
     endDate: dateRange.endDate,
+  }, {
+    enabled: activeTab === 'overview',
   });
 
-  // Fetch top NG measurement points (overview tab)
-  const { data: topNGPoints } = trpc.workstation.topNGMeasurementPoints.useQuery({
-    startDate: dateRange.startDate,
-    endDate: dateRange.endDate,
-    limit: 15,
-  });
+  // doc67 W6 [P2] — XÓA query chết `topNGPoints` (workstation.topNGMeasurementPoints
+  // limit 15, dải dateRange): không nơi nào tiêu thụ — tab NG trực quan dùng
+  // `ngTopNGPoints` (limit 20, dải ngDateRange) bên dưới.
 
-  // Fetch live OEE metrics for mini-widget — first-load fallback when no socket
-  // push has arrived yet. Once oee:update pushes arrive (socketConnected), we
-  // stop polling and rely on the realtime stream.
-  const { data: allOEE } = trpc.mqttClient.getAllOEE.useQuery(undefined, {
-    refetchInterval: socketConnected ? false : 30000,
-  });
-
-  // Effective OEE: prefer the realtime socket stream (oee:update), fall back to
-  // the query for the first paint. No synthetic values — null factors stay null.
-  const effectiveOEE = useMemo<LiveOEERow[]>(() => {
-    if (liveOEE && liveOEE.length > 0) return liveOEE;
-    const q = allOEE as LiveOEERow[] | undefined;
-    return Array.isArray(q) ? q : [];
-  }, [liveOEE, allOEE]);
-
-  const oeeIsLive = !!(socketConnected && liveOEE && liveOEE.length > 0);
+  // doc67 W6 [P1-3] — query mqttClient.getAllOEE + effectiveOEE/oeeIsLive đã dời
+  // vào <LiveOeeWidget> (cuối file) cùng state liveOEE/lastRealtimeAt.
 
   // Fetch workstation summary for NG Visual tab (with separate time filter)
+  // doc67 W6 [P0] — cụm 7 query tab "NG trực quan" gate theo activeTab: không bắn
+  // khi mở trang ở tab Tổng quan (TabsContent không mount tab ẩn nên không ai đọc).
   const { data: ngWorkstationSummary, isLoading: ngWorkstationLoading } = trpc.workstation.summary.useQuery({
     startDate: ngDateRange.startDate,
     endDate: ngDateRange.endDate,
+  }, {
+    enabled: activeTab === 'ng-visual',
   });
+
+  // doc67 W6 [P0] — điều kiện cho 2 query *Direct fallback: chỉ bắn khi nguồn chính
+  // (workstation.summary bản ng-visual) ĐÃ trả về và KHÔNG có dữ liệu thực — khớp
+  // cách effectiveNGSummary chọn nguồn (length > 0 && some(totalInspections > 0)).
+  const ngWorkstationSourceEmpty = useMemo(() => {
+    const wsData = ngWorkstationSummary as any[] | undefined;
+    if (wsData === undefined) return false; // chưa trả → chưa cho fallback bắn
+    return !(wsData.length > 0 && wsData.some((w: any) => Number(w.totalInspections) > 0));
+  }, [ngWorkstationSummary]);
 
   // Fetch top NG measurement points for NG Visual tab
   const { data: ngTopNGPoints, isLoading: ngTopNGLoading } = trpc.workstation.topNGMeasurementPoints.useQuery({
     startDate: ngDateRange.startDate,
     endDate: ngDateRange.endDate,
     limit: 20,
+  }, {
+    enabled: activeTab === 'ng-visual',
   });
 
   // Fetch measurement points for selected workstation drilldown
@@ -711,26 +844,39 @@ export default function Dashboard() {
     endDate: ngDateRange.endDate,
     workstationId: trendFilterWorkstationId,
     measurementPointDefId: trendFilterMeasurementPointId,
+  }, {
+    enabled: activeTab === 'ng-visual',
   });
 
   // Fetch NG comparison data
-  const { data: ngComparisonData, isLoading: ngComparisonLoading } = trpc.workstation.ngComparison.useQuery(ngComparisonDates);
+  const { data: ngComparisonData, isLoading: ngComparisonLoading } = trpc.workstation.ngComparison.useQuery(ngComparisonDates, {
+    enabled: activeTab === 'ng-visual',
+  });
 
   // Fallback: NG summary by machine (when workstation data is unavailable)
   const { data: ngMachineSummary } = trpc.workstation.ngSummaryByMachine.useQuery({
     startDate: ngDateRange.startDate,
     endDate: ngDateRange.endDate,
+  }, {
+    enabled: activeTab === 'ng-visual',
   });
 
   // Fallback: NG trend from product_inspections directly
+  // doc67 W6 [P0] — fallback *Direct chỉ bắn khi nguồn workstation đã trả RỖNG
+  // (ngWorkstationSourceEmpty): pipeline workstation có dữ liệu thì 2 query này
+  // là tải thừa trên mỗi lần mở tab.
   const { data: ngTrendDirectData } = trpc.workstation.ngTrendDirect.useQuery({
     startDate: ngDateRange.startDate,
     endDate: ngDateRange.endDate,
     machineId: trendFilterWorkstationId, // reuse filter for machine
+  }, {
+    enabled: activeTab === 'ng-visual' && ngWorkstationSourceEmpty,
   });
 
   // Fallback: NG comparison from product_inspections directly
-  const { data: ngComparisonDirectData } = trpc.workstation.ngComparisonDirect.useQuery(ngComparisonDates);
+  const { data: ngComparisonDirectData } = trpc.workstation.ngComparisonDirect.useQuery(ngComparisonDates, {
+    enabled: activeTab === 'ng-visual' && ngWorkstationSourceEmpty,
+  });
 
   // Determine effective NG data: prefer workstation-based, fallback to machine-based
   const effectiveNGSummary = useMemo(() => {
@@ -758,7 +904,10 @@ export default function Dashboard() {
   }, [ngComparisonData, ngComparisonDirectData]);
 
   // Fetch all workstations for filter dropdown
-  const { data: allWorkstations } = trpc.workstation.list.useQuery();
+  // doc67 W6 [P0] — dropdown lọc trạm chỉ nằm trong tab NG trực quan → gate theo tab.
+  const { data: allWorkstations } = trpc.workstation.list.useQuery(undefined, {
+    enabled: activeTab === 'ng-visual',
+  });
 
   // Fetch all measurement points for filter dropdown (we'll filter by workstation in UI)
   const { data: allMeasurementPoints } = trpc.measurementPoint.listByProductModel.useQuery(
@@ -766,25 +915,18 @@ export default function Dashboard() {
     { enabled: false } // Disable for now, will use ngTopNGPoints data
   );
 
-  // Update last refresh time
-  useEffect(() => {
-    if (statsWithComparison) {
-      setLastRefreshTime(new Date());
-    }
-  }, [statsWithComparison]);
-
-  // Manual refresh
+  // Manual refresh — mốc "cập nhật lúc" nay lấy thẳng từ dataUpdatedAt của
+  // react-query (doc65 W2), không cần state lastRefreshTime tự chế nữa.
   const handleRefresh = useCallback(() => {
     refetchStats();
     refetchMachines();
-    setLastRefreshTime(new Date());
   }, [refetchStats, refetchMachines]);
 
-  // Export NG Visual as PDF
-  const handleExportPDF = useCallback(async () => {
-    setExportingPDF(true);
-    try {
-      // Prepare data for PDF
+  // doc65 W1 [P1 đã duyệt] — builder HTML báo cáo NG dùng chung cho hai đường xuất:
+  //  - "Xuất PDF (in)": mở cửa sổ mới + print-stylesheet A4 + window.print()
+  //  - "Xuất HTML": tải tệp .html (behavior cũ, dưới nhãn trung thực)
+  const buildNGReportHtml = useCallback((opts: { autoPrint: boolean }) => {
+      // Prepare data for report
       const workstationData = ngWorkstationSummary ? (ngWorkstationSummary as any[]).map((ws: any) => ({
         code: ws.workstationCode || '',
         name: ws.workstationName || 'Unknown',
@@ -825,9 +967,22 @@ export default function Dashboard() {
             .ng-warning { color: #ca8a04; }
             .ng-danger { color: #dc2626; }
             .footer { margin-top: 40px; padding-top: 20px; border-top: 1px solid #e5e7eb; color: #6b7280; font-size: 12px; }
+            /* doc65 W1 — print-stylesheet: khổ A4, font hệ, bảng không vỡ hàng qua trang, ẩn phần tử không in */
+            @page { size: A4; margin: 12mm; }
+            @media print {
+              body { padding: 0; font-family: -apple-system, "Segoe UI", Roboto, Arial, "Helvetica Neue", sans-serif; }
+              table { page-break-inside: auto; }
+              tr { page-break-inside: avoid; }
+              thead { display: table-header-group; }
+              .no-print { display: none !important; }
+            }
           </style>
+          ${opts.autoPrint ? '<script>window.addEventListener("load", function () { setTimeout(function () { window.print(); }, 300); });</' + 'script>' : ''}
         </head>
         <body>
+          ${opts.autoPrint ? `<div class="no-print" style="background:#eff6ff;border:1px solid #bfdbfe;border-radius:8px;padding:10px 14px;margin-bottom:16px;font-size:13px;color:#1e40af;">
+            ${t("dashboard.exportPdfHint", { label: t("dashboard.exportReport") })} <button onclick="window.print()" style="margin-left:8px;padding:4px 10px;border:1px solid #1e40af;border-radius:6px;background:#fff;color:#1e40af;cursor:pointer;">${t("dashboardRaw.inLuuPdf", "In / Lưu PDF")}</button>
+          </div>` : ''}
           <div class="header">
             <h1>${t("dashboard.ngReportTitle")}</h1>
             <div class="meta">
@@ -895,8 +1050,41 @@ export default function Dashboard() {
         </html>
       `;
 
-      // Create blob and download
-      const blob = new Blob([htmlContent], { type: 'text/html' });
+      return htmlContent;
+  }, [ngWorkstationSummary, ngTopNGPoints, ngTimeFilter, t]);
+
+  // doc65 W1 [P1 đã duyệt] — "Xuất PDF (in)": PDF THẬT qua hộp thoại in của trình
+  // duyệt (người dùng chọn Save as PDF). Kiosk/panel-PC có thể chặn window.open
+  // → toast hướng dẫn cho phép popup hoặc dùng "Xuất HTML".
+  const handleExportPDF = useCallback(() => {
+    setExportingPDF(true);
+    try {
+      const win = window.open('', '_blank');
+      if (!win) {
+        toast.error(t("dashboard.cuaSoInBiChan", "Cửa sổ in bị trình duyệt chặn"), {
+          description: t("dashboard.hayChoPhepPopupCua", 'Hãy cho phép popup (cửa sổ bật lên) cho trang này rồi thử lại, hoặc dùng "Xuất HTML".'),
+        });
+        return;
+      }
+      win.document.open();
+      win.document.write(buildNGReportHtml({ autoPrint: true }));
+      win.document.close();
+      win.focus();
+    } catch (error) {
+      console.error('Export PDF error:', error);
+      toast.error(t("dashboard.exportReportError"), {
+        description: t("dashboard.exportReportErrorDesc"),
+      });
+    } finally {
+      setExportingPDF(false);
+    }
+  }, [buildNGReportHtml, t]);
+
+  // doc65 W1 — "Xuất HTML": giữ behavior tải tệp .html cũ, nay dưới nhãn trung thực.
+  const handleExportHTML = useCallback(() => {
+    setExportingPDF(true);
+    try {
+      const blob = new Blob([buildNGReportHtml({ autoPrint: false })], { type: 'text/html' });
       const url = URL.createObjectURL(blob);
       const link = document.createElement('a');
       link.href = url;
@@ -910,26 +1098,14 @@ export default function Dashboard() {
         description: t("dashboard.exportSuccessDesc"),
       });
     } catch (error) {
-      console.error('Export PDF error:', error);
+      console.error('Export HTML error:', error);
       toast.error(t("dashboard.exportReportError"), {
         description: t("dashboard.exportReportErrorDesc"),
       });
     } finally {
       setExportingPDF(false);
     }
-  }, [ngWorkstationSummary, ngTopNGPoints, ngTimeFilter]);
-
-  // Filter workshops by selected factory
-  const filteredWorkshops = useMemo(() => {
-    if (!workshops || selectedFactory === "all") return workshops || [];
-    return workshops.filter(w => w.factoryId === parseInt(selectedFactory));
-  }, [workshops, selectedFactory]);
-
-  // Filter lines by selected workshop
-  const filteredLines = useMemo(() => {
-    if (!lines || selectedWorkshop === "all") return lines || [];
-    return lines.filter(l => l.workshopId === parseInt(selectedWorkshop));
-  }, [lines, selectedWorkshop]);
+  }, [buildNGReportHtml, ngTimeFilter, t]);
 
   // Group machines by production line
   const machinesByLine = useMemo(() => {
@@ -941,7 +1117,7 @@ export default function Dashboard() {
       line: { id: number; name: string; workshopId: number } | null;
       workshop: { id: number; name: string; factoryId: number } | null;
       factory: { id: number; name: string } | null;
-      stats: { total: number; ok: number; ng: number; ntf: number; yieldRate: number };
+      stats: { total: number; ok: number; ng: number; ntf: number; yieldRate: number; fpy: number };
     };
     
     const machines = (machinesStats as MachineWithHierarchy[]).map(m => ({
@@ -955,6 +1131,8 @@ export default function Dashboard() {
       ng: m.stats.ng,
       ntf: m.stats.ntf,
       yieldRate: m.stats.yieldRate,
+      // doc65 W1 — FPY canonical per-machine từ server (true first-pass yield).
+      fpy: m.stats.fpy,
       lineId: m.line?.id,
       lineName: m.line?.name || t('dashboard.unclassified'),
       stationId: m.station?.id,
@@ -967,11 +1145,9 @@ export default function Dashboard() {
     const grouped = new Map<string, MachineStats[]>();
     
     machines.forEach(machine => {
-      // Apply filters
-      if (selectedFactory !== "all" && machine.factoryId !== parseInt(selectedFactory)) return;
-      if (selectedWorkshop !== "all" && machine.workshopId !== parseInt(selectedWorkshop)) return;
-      if (selectedLine !== "all" && machine.lineId !== parseInt(selectedLine)) return;
-      
+      // doc67 W7 GĐ2 — lọc factory/line đã thực hiện Ở SERVER theo trục ISA-95
+      // (getAllMachinesStats nhận effectiveFactoryId + assetScope.lineId); bộ lọc
+      // cục bộ trùng trục đã xóa. Chỉ còn lọc online/offline phía client.
       // Apply machine status filter
       if (machineStatusFilter !== "all") {
         const isOnline = onlineMachines.has(machine.code);
@@ -987,15 +1163,28 @@ export default function Dashboard() {
     });
     
     return grouped;
-  }, [machinesStats, selectedFactory, selectedWorkshop, selectedLine, machineStatusFilter, onlineMachines]);
+  }, [machinesStats, machineStatusFilter, onlineMachines]);
 
-  // Calculate FPY, FY, NTFY for a machine
+  // doc68 §3.3 P1 (việc 1) — tra MachineStats đầy đủ theo id để khối hero "Máy cần
+  // chú ý" (nguồn topBottomMachines rút gọn) mở đúng drawer chi tiết (ok/ng/ntf/ảnh).
+  const machineById = useMemo(() => {
+    const map = new Map<number, MachineStats>();
+    for (const list of machinesByLine.values()) for (const m of list) map.set(m.id, m);
+    return map;
+  }, [machinesByLine]);
+
+  // doc65 W1 — sự thật số liệu per-machine:
+  //  - fpy: dùng trường CANONICAL từ server (true first-pass yield, getMachineStats);
+  //    fallback ok/total chỉ khi server chưa trả (dữ liệu cũ trong cache).
+  //  - ng/total và ntf/total KHÔNG phải "FY"/"NTFY" — đó là tỷ lệ NG và tỷ lệ NTF,
+  //    trả về dưới tên trung thực ngPct/ntfPct (nhãn hiển thị "NG %"/"NTF %").
+  // doc67 W7 GĐ2 — trả SỐ (không toFixed chuỗi); nơi hiển thị dùng fmtPct chung.
   const calculateYields = (machine: MachineStats) => {
     const total = machine.total || 1;
-    const fpy = ((machine.ok / total) * 100).toFixed(1);
-    const fy = ((machine.ng / total) * 100).toFixed(1);
-    const ntfy = ((machine.ntf / total) * 100).toFixed(1);
-    return { fpy, fy, ntfy };
+    const fpy = typeof machine.fpy === "number" ? machine.fpy : (machine.ok / total) * 100;
+    const ngPct = (machine.ng / total) * 100;
+    const ntfPct = (machine.ntf / total) * 100;
+    return { fpy, ngPct, ntfPct };
   };
 
   // Calculate yield alerts based on thresholds
@@ -1063,60 +1252,42 @@ export default function Dashboard() {
     return alerts;
   }, [currentStats, yieldThresholds]);
 
-  // Get status color based on FPY
-  const getStatusColor = (fpy: number) => {
-    if (fpy >= 95) return "text-success border-success/50 bg-success/10";
-    if (fpy >= 85) return "text-warning border-warning/50 bg-warning/10";
-    return "text-destructive border-destructive/50 bg-destructive/10";
-  };
-
   // Get status indicator
+  // doc67 W7 GĐ2 — ngưỡng theo yieldTone chung (95/90 — thay bản local 95/85);
+  // getStatusColor local (dead code) đã xóa.
   const getStatusIndicator = (fpy: number) => {
-    if (fpy >= 95) return { icon: CheckCircle2, color: "text-success", label: t("dashboard.good") };
-    if (fpy >= 85) return { icon: AlertTriangle, color: "text-warning", label: t("dashboard.warning") };
-    return { icon: XCircle, color: "text-destructive", label: t("dashboard.needsAttention") };
+    const tone = yieldTone(fpy);
+    if (tone === "success") return { icon: CheckCircle2, color: TONE_TEXT_CLASS.success, label: t("dashboard.good") };
+    if (tone === "warning") return { icon: AlertTriangle, color: TONE_TEXT_CLASS.warning, label: t("dashboard.warning") };
+    return { icon: XCircle, color: TONE_TEXT_CLASS.danger, label: t("dashboard.needsAttention") };
   };
 
   // Trend indicator component
-  const TrendIndicator = ({ value, suffix = "%" }: { value: number | undefined; suffix?: string }) => {
+  // doc65 PRO-100 (ISA-101): màu trend theo NGỮ NGHĨA, không theo dấu — NG/NTF tăng là XẤU
+  // (goodWhen="down"); mặc định "up" cho sản lượng/FPY.
+  const TrendIndicator = ({ value, suffix = "%", goodWhen = "up" }: { value: number | undefined; suffix?: string; goodWhen?: "up" | "down" }) => {
     if (value === undefined || value === 0) return null;
-    const isPositive = value > 0;
+    const isUp = value > 0;
+    const isGood = goodWhen === "up" ? isUp : !isUp;
     return (
-      <span className={`text-xs flex items-center gap-0.5 ${isPositive ? 'text-success' : 'text-destructive'}`}>
-        {isPositive ? <TrendingUp className="h-3 w-3" /> : <TrendingDown className="h-3 w-3" />}
-        {isPositive ? '+' : ''}{value.toFixed(1)}{suffix}
+      <span className={`text-xs flex items-center gap-0.5 ${isGood ? 'text-success' : 'text-destructive'}`}>
+        {isUp ? <TrendingUp className="h-3 w-3" /> : <TrendingDown className="h-3 w-3" />}
+        {isUp ? '+' : ''}{value.toFixed(1)}{suffix}
       </span>
     );
   };
 
-  // Sparkline component
-  const Sparkline = ({ data, dataKey, color }: { data: any[]; dataKey: string; color: string }) => {
-    if (!data || data.length === 0) return null;
-    return (
-      <div className="h-8 w-20">
-        <ResponsiveContainer width="100%" height="100%">
-          <AreaChart data={data}>
-            <Area 
-              type="monotone" 
-              dataKey={dataKey} 
-              stroke={color} 
-              fill={color} 
-              fillOpacity={0.2}
-              strokeWidth={1.5}
-            />
-          </AreaChart>
-        </ResponsiveContainer>
-      </div>
-    );
-  };
+  // doc67 W7 GĐ2 — Sparkline inline (recharts, tái tạo mỗi render, 5 ResponsiveContainer)
+  // đã XÓA: 5 call-site KPI dùng patterns/Sparkline (SVG thuần, token-driven).
 
   const pieData = useMemo(() => {
     const stats = (statsWithComparison as StatsWithComparison | undefined)?.current;
     if (!stats) return [];
+    // doc67 W7 GĐ2 — oklch hardcode → toneHex (đọc CSS var theo theme đang bật).
     return [
-      { name: "OK", value: stats.ok, color: "oklch(0.72 0.17 145)" },
-      { name: "NG", value: stats.ng, color: "oklch(0.65 0.2 25)" },
-      { name: "NTF", value: stats.ntf, color: "oklch(0.78 0.15 75)" },
+      { name: "OK", value: stats.ok, color: toneHex("success") },
+      { name: "NG", value: stats.ng, color: toneHex("danger") },
+      { name: "NTF", value: stats.ntf, color: toneHex("warning") },
     ].filter(item => item.value > 0);
   }, [statsWithComparison]);
 
@@ -1128,11 +1299,33 @@ export default function Dashboard() {
 
   const stats = (statsWithComparison as StatsWithComparison | undefined)?.current;
   const trends = (statsWithComparison as StatsWithComparison | undefined)?.trends;
+
+  /**
+   * ★ 2026-08-17 — LÝ DO RỖNG CỦA CẢ TRANG, gom MỘT LẦN rồi phát cho từng khối.
+   *
+   * `getStatsWithComparison` (→ `getDashboardStats`) và `getTopBottomMachines` đều mang nhãn.
+   * ⚠ `dashboard.getShiftStats` và `workstation.*` thì KHÔNG: hoặc trả thẳng một mảng (nhãn
+   * không đi qua được tRPC — xem `withScopeLabels`), hoặc chưa gắn nhãn ở máy chủ. Những khối
+   * ấy lấy lý do TỪ ĐÂY, đúng cách docblock `withScopeLabels` chỉ định: một truy vấn CÙNG MÀN
+   * có mang nhãn.
+   */
+  const scopeEmptyReason = scopeEmptyReasonOf(
+    (statsWithComparison as StatsWithComparison | undefined)?.current as { scopeEmptyReason?: string | null } | undefined,
+    topBottomMachines as { scopeEmptyReason?: string | null } | undefined,
+  );
+
+  /**
+   * ⚠ `showNoTodayDataBanner` PHẢI tắt khi phạm vi rỗng. Câu của nó — "Hôm nay chưa có bản
+   * ghi nào" — là một kết luận về DÂY CHUYỀN, và với tài khoản chưa gán nhà máy thì đó là kết
+   * luận SAI: dây chuyền có thể đang chạy đầy tải, chỉ là người này không được xem. Dải phạm
+   * vi rỗng ngay bên dưới đã nói đúng lý do rồi.
+   */
   const showNoTodayDataBanner =
     timeRange === "today" &&
     !statsLoading &&
     Boolean(statsWithComparison) &&
-    (stats?.total ?? 0) <= 0;
+    (stats?.total ?? 0) <= 0 &&
+    scopeEmptyReason === null;
 
   // Prepare sparkline data. Doc 27 Đợt 5 / W5-E (Đợt-1.4 leftover): fpy comes
   // from the SERVER canonical fields (getDailyStats now returns true per-day
@@ -1145,29 +1338,44 @@ export default function Dashboard() {
       output: d.totalProducts,
       fpy: Number(d.fpy) || 0,
       finalYield: Number(d.finalYield) || 0,
+      // doc65 PRO-100: server vốn ĐÃ trả per-day ok/ng/ntf — map để sparkline đủ 5/5 card.
+      ok: Number(d.okCount) || 0,
+      ng: Number(d.ngCount) || 0,
+      ntf: Number(d.ntfCount) || 0,
     }));
   }, [dailyStats]);
 
   return (
     <DashboardLayout
-      title={t("dashboard.title")}
+      title={t("nav.dashboardMain")}
       navItems={navItems}
       currentPath="/dashboard"
     >
-      {/* U11 — first-visit nudge to start from a role-aligned dashboard template */}
-      <DashboardTemplatePrompt />
+      {/* U11 — first-visit nudge to start from a role-aligned dashboard template.
+          doc67 W4: ẩn dưới md — trên mobile 390 banner chiếm chỗ KPI đầu màn. */}
+      <div className="hidden md:block">
+        <DashboardTemplatePrompt />
+      </div>
       <PageContainer fluid className="p-0 md:p-0 space-y-4 sm:space-y-6">
         {/* Header with filters and auto-refresh controls */}
         <PageHeader
           icon={<Activity className="h-5 w-5 sm:h-6 sm:w-6 text-primary" />}
-          title={t("dashboard.productionDashboard")}
+          // doc 67 W5 (việc 2) — 1 key/trang: h1 = breadcrumb = menu = nav.dashboardMain.
+          title={t("nav.dashboardMain")}
           description={
             <span className="flex flex-col sm:flex-row sm:items-center gap-1 sm:gap-2">
               <span className="text-xs sm:text-sm">{t("dashboard.monitoringQuality")}</span>
-              <RealtimeBadge connected={socketConnected} pollingFallback lastEventAt={lastRealtimeAt} />
-              <span className="text-xs text-muted-foreground">
-                • {t("dashboard.updatedAt")} {lastRefreshTime.toLocaleTimeString('vi-VN')}
-              </span>
+              {/* doc67 W6 [P1-3] — badge tự giữ mốc oee:update gần nhất, root không
+                  còn setState theo từng push (khỏi re-render cả cây). */}
+              <HeaderRealtimePulse connected={socketConnected} />
+              {/* doc65 W2 (AUD-01) — TUỔI DỮ LIỆU KPI (poll) đặt CẠNH trạng thái
+                  SOCKET: RealtimeBadge nói về kết nối đẩy, PollFreshness nói về
+                  lần fetch KPI gần nhất — 2 khái niệm, cùng hiển thị. */}
+              <PollFreshness
+                updatedAt={kpiUpdatedAt}
+                isFetching={kpiFetching}
+                staleAfterMs={kpiStaleAfterMs}
+              />
             </span>
           }
           actions={
@@ -1189,6 +1397,17 @@ export default function Dashboard() {
               )}
             </div>
 
+          {/* doc 67 W5 (việc 6) — nút nhỏ admin-only: /dashboard-center đã dời sang
+              group Admin; đây là lối tắt tùy biến bố cục ngay trên header. */}
+          {user?.role === "admin" && (
+            <Link href="/dashboard-center" className="hidden sm:block">
+              <Button variant="outline" size="sm">
+                <SlidersHorizontal className="h-4 w-4 mr-1" />
+                {t("dashboard.customizeLayout", "Tùy chỉnh bố cục")}
+              </Button>
+            </Link>
+          )}
+
           {/* Filters - scrollable on mobile */}
           <div className="flex items-center gap-2 sm:gap-3 overflow-x-auto pb-2 sm:pb-0 -mx-3 px-3 sm:mx-0 sm:px-0 sm:flex-wrap">
             {/* Alert Badge - hidden on mobile (shown in quick actions) */}
@@ -1206,58 +1425,12 @@ export default function Dashboard() {
               )}
             </div>
 
-            <Select value={selectedFactory} onValueChange={(v) => {
-              setSelectedFactory(v);
-              setSelectedWorkshop("all");
-              setSelectedLine("all");
-            }}>
-              <SelectTrigger className="w-30 sm:w-40 shrink-0">
-                <Factory className="h-4 w-4 mr-1 sm:hidden" />
-                <SelectValue placeholder={t("dashboard.factory")} />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">{t("dashboard.allFactories")}</SelectItem>
-                {factories?.map((factory) => (
-                  <SelectItem key={factory.id} value={String(factory.id)}>
-                    {factory.name}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-
-            <Select value={selectedWorkshop} onValueChange={(v) => {
-              setSelectedWorkshop(v);
-              setSelectedLine("all");
-            }}>
-              <SelectTrigger className="w-30 sm:w-40 shrink-0">
-                <SelectValue placeholder={t("dashboard.workshop")} />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">{t("dashboard.allWorkshops")}</SelectItem>
-                {filteredWorkshops?.map((workshop) => (
-                  <SelectItem key={workshop.id} value={String(workshop.id)}>
-                    {workshop.name}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-
-            <Select value={selectedLine} onValueChange={setSelectedLine}>
-              <SelectTrigger className="w-25 sm:w-40 shrink-0">
-                <SelectValue placeholder={t("dashboard.line", "Line")} />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">{t("dashboard.allLines")}</SelectItem>
-                {filteredLines?.map((line) => (
-                  <SelectItem key={line.id} value={String(line.id)}>
-                    {line.name}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-
+            {/* doc67 W7 GĐ2 — 3 Select Nhà máy/Phân xưởng/Dây chuyền cục bộ (cả bản
+                desktop lẫn Sheet mobile W4) đã XÓA: phạm vi ISA-95 chọn ở AssetScopeBar
+                của shell (một trục duy nhất, hết "hai hệ filter song song").
+                GIỮ Select khoảng-thời-gian + auto-refresh bên dưới. */}
             <Select value={timeRange} onValueChange={(value) => setTimeRange(value as DashboardTimeRange)}>
-              <SelectTrigger className="w-22.5 sm:w-30 shrink-0">
+              <SelectTrigger className="w-28 sm:w-36 shrink-0">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
@@ -1294,13 +1467,14 @@ export default function Dashboard() {
               <TooltipProvider>
                 <Tooltip>
                   <TooltipTrigger asChild>
-                    <Button 
-                      variant="ghost" 
-                      size="icon" 
+                    <Button
+                      variant="ghost"
+                      size="icon"
                       className="h-9 w-9"
+                      aria-label={isAutoRefreshing ? t('dashboard.pauseAutoRefresh') : t('dashboard.enableAutoRefresh')}
                       onClick={() => setIsAutoRefreshing(!isAutoRefreshing)}
                     >
-                      {isAutoRefreshing ? <Pause className="h-4 w-4" /> : <Play className="h-4 w-4" />}
+                      {isAutoRefreshing ? <Pause aria-hidden="true" className="h-4 w-4" /> : <Play aria-hidden="true" className="h-4 w-4" />}
                     </Button>
                   </TooltipTrigger>
                   <TooltipContent>
@@ -1310,7 +1484,7 @@ export default function Dashboard() {
               </TooltipProvider>
               
               <Select value={autoRefreshInterval} onValueChange={setAutoRefreshInterval}>
-                <SelectTrigger className="w-22.5 border-0">
+                <SelectTrigger className="w-28 border-0">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
@@ -1340,16 +1514,68 @@ export default function Dashboard() {
           }
         />
 
-        {/* U7 (doc 21 §3 G-11) — this operational dashboard stays as a rich landing;
-            point "see everything live" at the Command Center single pane of glass. */}
-        <RelatedViews
-          links={[
-            { href: "/command-center", labelKey: "nav.commandCenter", labelDefault: "Command Center" },
-            { href: "/ops-console", labelKey: "nav.opsConsole", labelDefault: "Ops Console" },
-            // W5-C (doc 27 F7): open the dedicated TV board (add ?kiosk=1&cycle=30 on the TV itself).
-            { href: "/andon", labelKey: "nav.andonBoard", labelDefault: "Bảng Andon (TV)" },
-          ]}
-        />
+        {/* doc67 W8 [P2] (việc 2) — DẢI CẢNH BÁO KHẨN: trước đây urgentAlerts chỉ
+            toast rồi biến mất (state nhận từ socket nhưng mảng không render).
+            Dải mỏng aria-live="polite" cố định đầu trang (dưới PageHeader) giữ các
+            cảnh báo CHƯA dismiss: chấm severity + tiêu đề + "Xem" → /ops-console +
+            X bỏ từng cái; >3 thì collapse phần dư thành dòng "×N". */}
+        {urgentAlerts.length > 0 && (
+          <div
+            role="status"
+            aria-live="polite"
+            aria-label={t("dashboardRaw.canhBaoKhanChuaXu", "Cảnh báo khẩn chưa xử lý")}
+            className="rounded-lg border border-destructive/30 bg-destructive/5 px-3 py-2 space-y-1"
+          >
+            {urgentAlerts.slice(0, 3).map((a) => (
+              <div key={a.id} className="flex min-w-0 items-center gap-2 text-sm">
+                <span
+                  aria-hidden="true"
+                  className={cn("h-2 w-2 shrink-0 rounded-full", severityDotClass(a.severity))}
+                />
+                <span className="truncate font-medium">{a.title}</span>
+                <span className="hidden min-w-0 truncate text-xs text-muted-foreground sm:inline">
+                  {a.message}
+                </span>
+                <div className="ml-auto flex shrink-0 items-center gap-1">
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="h-7 px-2 text-xs"
+                    onClick={() => setLocation("/ops-console")}
+                  >
+                    Xem
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="h-7 w-7 text-muted-foreground hover:text-foreground"
+                    aria-label={t("dashboard.boCanhBao", { title: a.title })}
+                    onClick={() => setUrgentAlerts((prev) => prev.filter((x) => x.id !== a.id))}
+                  >
+                    <XCircle aria-hidden="true" className="h-3.5 w-3.5" />
+                  </Button>
+                </div>
+              </div>
+            ))}
+            {urgentAlerts.length > 3 && (
+              <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                <span>×{urgentAlerts.length - 3} cảnh báo khẩn khác</span>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="h-6 px-2 text-xs"
+                  onClick={() => setLocation("/ops-console")}
+                >
+                  Xem tất cả
+                </Button>
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* doc 67 W5 (việc 6) — rail 2-chiều từ map tập trung (RelatedViews.tsx):
+            trang đã rút khỏi menu, đường về Tổng quan nhà máy + các màn anh em. */}
+        <RelatedViews pageId="dashboard" />
 
         {showNoTodayDataBanner && (
           <Card className="border-warning/40 bg-warning/5">
@@ -1372,6 +1598,19 @@ export default function Dashboard() {
           </Card>
         )}
 
+        {/*
+          ⚠ 2026-08-17 — LÝ DO CỦA MỘT MÀN HÌNH TOÀN SỐ 0.
+          Trang này vẽ KPI, thẻ theo ca và bảng xếp hạng máy. Với tài khoản CHƯA ĐƯỢC GÁN NHÀ
+          MÁY, cả ba đều ra 0 một cách hoàn toàn hợp lệ — và trước bản vá thì trông y hệt "ca
+          chưa chạy", nên người dùng đi chỉnh bộ lọc / đi báo hỏng ở đúng chỗ không có gì hỏng.
+          Máy chủ nay khai lý do máy-đọc-được ở `scopeEmptyReason`; dải này chỉ việc đọc.
+          `getStatsWithComparison` (→ `getDashboardStats`) là nguồn mang nhãn cho cả trang, còn
+          `getTopBottomMachines` mang nhãn riêng của nó — lấy cái nào có trước.
+          ⚠ `dashboard.getShiftStats` trả về MẢNG nên nhãn KHÔNG đi qua được tRPC (mảng không
+          mang được thuộc tính); thẻ theo ca dùng chung dải này. Xem `withScopeLabels`.
+        */}
+        <ScopeEmptyNotice reason={scopeEmptyReason} />
+
         {/* Summary Stats Cards with Trends - Moved to top */}
         {statsLoading ? (
           <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-4">
@@ -1380,6 +1619,14 @@ export default function Dashboard() {
             ))}
           </div>
         ) : (
+          <>
+          {/* doc65 W1 — ghi chú trung thực: số KPI lọc tới mức MÁY theo trục, nhưng
+              sparkline 7 ngày (getDailyStats) chỉ hỗ trợ tới mức nhà máy. */}
+          {assetScope.machineId != null && (
+            <p className="text-xs text-muted-foreground -mb-2">
+              Đồ thị xu hướng 7 ngày trong các thẻ KPI: phạm vi toàn nhà máy (chưa lọc theo máy đang chọn)
+            </p>
+          )}
           <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-4">
             <Card className={cardStyleProps.className} style={cardStyleProps.style}>
               <CardContent className="pt-4">
@@ -1388,11 +1635,11 @@ export default function Dashboard() {
                     <p className="text-xs uppercase tracking-wide" style={{ opacity: 0.7 }}>{t("dashboard.totalOutput")}</p>
                     <div className="flex items-center gap-2 mt-1">
                       <p className="text-2xl font-bold">
-                        {statsLoading ? "..." : stats?.total?.toLocaleString() || 0}
+                        {statsLoading ? "..." : fmtInt(stats?.total)}
                       </p>
                       <TrendIndicator value={trends?.output} suffix="%" />
                     </div>
-                    <Sparkline data={sparklineData} dataKey="output" color={cardStyleProps.accentColor} />
+                    <Sparkline data={sparklineData.map((d) => ({ x: d.date, y: d.output }))} width={80} height={32} showArea aria-label={t("dashboard.totalOutput")} />
                   </div>
                   <div className="h-10 w-10 rounded-lg flex items-center justify-center" style={{ backgroundColor: `${cardStyleProps.accentColor}20` }}>
                     <Box className="h-5 w-5" style={{ color: cardStyleProps.accentColor }} />
@@ -1409,14 +1656,14 @@ export default function Dashboard() {
                     <div className="flex items-center gap-2 mt-1">
                       {/* True FPY (server canonical) — was yieldRate (final yield) mislabelled as FPY */}
                       <p className="text-2xl font-bold text-success">
-                        {statsLoading ? "..." : `${stats?.fpy?.toFixed(1) || 0}%`}
+                        {statsLoading ? "..." : fmtPct(stats?.fpy)}
                       </p>
                       <TrendIndicator value={trends?.fpy} suffix="pp" />
                     </div>
-                    <p className="text-[10px] text-muted-foreground">
-                      {t("dashboard.finalYield")}: {statsLoading ? "..." : `${stats?.yieldRate?.toFixed(1) || 0}%`}
+                    <p className="text-xs text-muted-foreground">
+                      {t("dashboard.finalYield")}: {statsLoading ? "..." : fmtPct(stats?.yieldRate)}
                     </p>
-                    <Sparkline data={sparklineData} dataKey="fpy" color="oklch(0.72 0.17 145)" />
+                    <Sparkline data={sparklineData.map((d) => ({ x: d.date, y: d.fpy }))} width={80} height={32} tone="good" showArea aria-label={t("dashboard.fpy")} />
                   </div>
                   <div className="h-10 w-10 rounded-lg bg-success/10 flex items-center justify-center">
                     <Target className="h-5 w-5 text-success" />
@@ -1428,14 +1675,15 @@ export default function Dashboard() {
             <Card className={cardStyleProps.className} style={cardStyleProps.style}>
               <CardContent className="pt-4">
                 <div className="flex items-center justify-between">
-                  <div>
+                  <div className="flex-1 min-w-0">
                     <p className="text-xs uppercase tracking-wide" style={{ opacity: 0.7 }}>OK</p>
                     <div className="flex items-center gap-2 mt-1">
                       <p className="text-2xl font-bold text-success">
-                        {statsLoading ? "..." : stats?.ok?.toLocaleString() || 0}
+                        {statsLoading ? "..." : fmtInt(stats?.ok)}
                       </p>
                       <TrendIndicator value={trends?.ok} />
                     </div>
+                    <Sparkline data={sparklineData.map((d) => ({ x: d.date, y: d.ok }))} width={80} height={32} tone="good" showArea aria-label="OK" />
                   </div>
                   <div className="h-10 w-10 rounded-lg bg-success/10 flex items-center justify-center">
                     <CheckCircle2 className="h-5 w-5 text-success" />
@@ -1447,14 +1695,15 @@ export default function Dashboard() {
             <Card className={cardStyleProps.className} style={cardStyleProps.style}>
               <CardContent className="pt-4">
                 <div className="flex items-center justify-between">
-                  <div>
+                  <div className="flex-1 min-w-0">
                     <p className="text-xs uppercase tracking-wide" style={{ opacity: 0.7 }}>NG</p>
                     <div className="flex items-center gap-2 mt-1">
                       <p className="text-2xl font-bold text-destructive">
-                        {statsLoading ? "..." : stats?.ng?.toLocaleString() || 0}
+                        {statsLoading ? "..." : fmtInt(stats?.ng)}
                       </p>
-                      <TrendIndicator value={trends?.ng} />
+                      <TrendIndicator value={trends?.ng} goodWhen="down" />
                     </div>
+                    <Sparkline data={sparklineData.map((d) => ({ x: d.date, y: d.ng }))} width={80} height={32} tone="critical" showArea aria-label="NG" />
                   </div>
                   <div className="h-10 w-10 rounded-lg bg-destructive/10 flex items-center justify-center">
                     <XCircle className="h-5 w-5 text-destructive" />
@@ -1466,14 +1715,15 @@ export default function Dashboard() {
             <Card className={cardStyleProps.className} style={cardStyleProps.style}>
               <CardContent className="pt-4">
                 <div className="flex items-center justify-between">
-                  <div>
+                  <div className="flex-1 min-w-0">
                     <p className="text-xs uppercase tracking-wide" style={{ opacity: 0.7 }}>NTF</p>
                     <div className="flex items-center gap-2 mt-1">
                       <p className="text-2xl font-bold text-warning">
-                        {statsLoading ? "..." : stats?.ntf?.toLocaleString() || 0}
+                        {statsLoading ? "..." : fmtInt(stats?.ntf)}
                       </p>
-                      <TrendIndicator value={trends?.ntf} />
+                      <TrendIndicator value={trends?.ntf} goodWhen="down" />
                     </div>
+                    <Sparkline data={sparklineData.map((d) => ({ x: d.date, y: d.ntf }))} width={80} height={32} tone="warning" showArea aria-label="NTF" />
                   </div>
                   <div className="h-10 w-10 rounded-lg bg-warning/10 flex items-center justify-center">
                     <AlertTriangle className="h-5 w-5 text-warning" />
@@ -1482,190 +1732,248 @@ export default function Dashboard() {
               </CardContent>
             </Card>
           </div>
+          </>
         )}
 
-        {/* Yield Alert Widget + Machine Status Widget - Side by Side */}
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-          {/* Yield Alert Widget - Compact Realtime alerts */}
-          <Card className="glass-card">
-            <CardContent className="p-3">
-              <div className="flex items-center justify-between mb-2">
-                <div className="flex items-center gap-2">
-                  <div className={`h-6 w-6 rounded-md flex items-center justify-center ${
-                    yieldAlerts.some(a => a.level === 'critical') ? 'bg-destructive/20' : 'bg-warning/20'
-                  }`}>
-                    <AlertTriangle className={`h-3.5 w-3.5 ${
-                      yieldAlerts.some(a => a.level === 'critical') ? 'text-destructive' : 'text-warning'
-                    }`} />
-                  </div>
-                  <span className="text-sm font-medium">{t("dashboard.yieldWarning")}</span>
-                  <Badge variant="secondary" className="text-xs h-5">{yieldAlerts.length}</Badge>
-                </div>
-                <Link href="/settings">
-                  <Button variant="ghost" size="sm" className="h-6 text-xs px-2">{t("dashboard.configuration")}</Button>
-                </Link>
-              </div>
-              {yieldAlerts.length > 0 ? (
-                <div className="flex flex-wrap gap-2">
-                  {yieldAlerts.map((alert, index) => (
-                    <TooltipProvider key={`${alert.type}-${alert.level}-${index}`}>
-                      <Tooltip>
-                        <TooltipTrigger asChild>
-                          <div className={`flex items-center gap-1.5 px-2 py-1 rounded-md text-xs cursor-pointer ${
-                            alert.level === 'critical' 
-                              ? 'bg-destructive/10 border border-destructive/30 text-destructive' 
-                              : 'bg-warning/10 border border-warning/30 text-warning'
-                          }`}>
-                            {alert.level === 'critical' 
-                              ? <XCircle className="h-3 w-3" />
-                              : <AlertTriangle className="h-3 w-3" />
-                            }
-                            <span className="font-medium">{alert.type}</span>
-                            <span>{alert.currentValue.toFixed(1)}%</span>
-                          </div>
-                        </TooltipTrigger>
-                        <TooltipContent side="bottom" className="max-w-xs">
-                          <p className="font-medium">{alert.message}</p>
-                          <p className="text-xs text-muted-foreground mt-1">{t("dashboard.target")}: {alert.target}% | {t("dashboard.threshold")}: {alert.threshold}%</p>
-                        </TooltipContent>
-                      </Tooltip>
-                    </TooltipProvider>
-                  ))}
-                </div>
-              ) : (
-                <div className="flex flex-col items-center justify-center py-4 text-muted-foreground text-sm text-center gap-1">
-                  <CheckCircle2 className="h-4 w-4 text-success" />
-                  <span>
-                    {(currentStats?.total ?? 0) > 0
-                      ? t("dashboard.noAlerts")
-                      : t("dashboard.noDataForAlerts", "No inspection data yet. Alerts will appear once production data is available.")}
-                  </span>
-                </div>
-              )}
-            </CardContent>
-          </Card>
-
-          {/* Machine Status Widget - Compact */}
-          <Card className="glass-card">
-            <CardContent className="p-3">
-              <div className="flex items-center justify-between mb-2">
-                <div className="flex items-center gap-2">
-                  <div className="h-6 w-6 rounded-md flex items-center justify-center bg-primary/20">
-                    <Activity className="h-3.5 w-3.5 text-primary" />
-                  </div>
-                  <span className="text-sm font-medium">{t("dashboard.machineConnectionStatus")}</span>
-                </div>
-                <Link href="/machine-status">
-                  <Button variant="ghost" size="sm" className="h-6 text-xs px-2">
-                    {t("common.details")}
-                  </Button>
-                </Link>
-              </div>
-              <div className="grid grid-cols-4 gap-2">
-                <div className="flex flex-col items-center p-2 rounded-lg bg-muted/30">
-                  <p className="text-lg font-bold">{machinesStats?.length || 0}</p>
-                  <p className="text-[10px] text-muted-foreground">{t("common.total")}</p>
-                </div>
-                <div className="flex flex-col items-center p-2 rounded-lg bg-success/10">
-                  <p className="text-lg font-bold text-success">{onlineMachines.size}</p>
-                  <p className="text-[10px] text-muted-foreground">{t("dashboard.online")}</p>
-                </div>
-                <div className="flex flex-col items-center p-2 rounded-lg bg-destructive/10">
-                  <p className="text-lg font-bold text-destructive">
-                    {Math.max(0, (machinesStats?.length || 0) - onlineMachines.size)}
-                  </p>
-                  <p className="text-[10px] text-muted-foreground">{t("dashboard.offline")}</p>
-                </div>
-                <div className="flex flex-col items-center p-2 rounded-lg bg-primary/10">
-                  <p className="text-lg font-bold">
-                    {machinesStats?.length ? Math.round((onlineMachines.size / machinesStats.length) * 100) : 0}%
-                  </p>
-                  <p className="text-[10px] text-muted-foreground">{t("dashboard.avail")}</p>
-                </div>
-              </div>
-            </CardContent>
-          </Card>
+        {/* doc68 §3.3 P1 (việc 4) — "Trạng thái kết nối máy" NÉN thành dải nhỏ ngay
+            dưới KPI (thay card cao nửa hàng), để tab bar bám sát KPI. Màu theo GIÁ TRỊ
+            (ISA-101): online 0 không tô xanh, offline 0 không tô đỏ. Widget cảnh báo
+            tỷ-lệ-đạt + MQTT được gộp xuống đầu tab Tổng quan (việc 5). */}
+        <div className="flex flex-wrap items-center gap-2 rounded-lg border bg-card px-3 py-2">
+          <div className="flex items-center gap-1.5">
+            <Activity className="h-4 w-4 text-primary" />
+            <span className="text-sm font-medium">{t("dashboard.machineConnectionStatus")}</span>
+          </div>
+          <div className="ml-auto flex flex-wrap items-center gap-1.5">
+            <span className="inline-flex items-center gap-1 rounded-md bg-muted/40 px-2 py-1 text-xs">
+              <span className="font-bold">{machinesStats?.length || 0}</span>
+              <span className="text-muted-foreground">{t("common.total")}</span>
+            </span>
+            <span className={cn("inline-flex items-center gap-1 rounded-md px-2 py-1 text-xs", onlineMachines.size > 0 ? "bg-success/10" : "bg-muted/40")}>
+              <span className={cn("font-bold", onlineMachines.size > 0 ? "text-success" : "text-muted-foreground")}>{onlineMachines.size}</span>
+              <span className="text-muted-foreground">{t("dashboard.online")}</span>
+            </span>
+            {(() => {
+              const offlineN = Math.max(0, (machinesStats?.length || 0) - onlineMachines.size);
+              return (
+                <span className={cn("inline-flex items-center gap-1 rounded-md px-2 py-1 text-xs", offlineN > 0 ? "bg-destructive/10" : "bg-muted/40")}>
+                  <span className={cn("font-bold", offlineN > 0 ? "text-destructive" : "text-muted-foreground")}>{offlineN}</span>
+                  <span className="text-muted-foreground">{t("dashboard.offline")}</span>
+                </span>
+              );
+            })()}
+            {(() => {
+              const availPct = machinesStats?.length ? Math.round((onlineMachines.size / machinesStats.length) * 100) : 0;
+              return (
+                <span className={cn("inline-flex items-center gap-1 rounded-md px-2 py-1 text-xs", availPct > 0 ? "bg-primary/10" : "bg-muted/40")}>
+                  <span className={cn("font-bold", availPct === 0 && "text-muted-foreground")}>{availPct}%</span>
+                  <span className="text-muted-foreground">{t("dashboard.avail")}</span>
+                </span>
+              );
+            })()}
+            <Link href="/machine-status">
+              <Button variant="ghost" size="sm" className="h-8 text-xs px-2">{t("common.details")}</Button>
+            </Link>
+          </div>
         </div>
 
         {/* Tabs for Overview and Layout */}
-        <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as "overview" | "layout" | "ng-visual" | "corporate-stats" | "custom")} className="w-full">
-          <TabsList className="flex w-full max-w-2xl flex-wrap sm:grid sm:grid-cols-4 h-auto">
-            <TabsTrigger value="overview" className="flex flex-1 items-center gap-2">
+        {/* doc67 W8 (việc 1) — onValueChange qua handleTabChange: state + ?tab= URL (replace). */}
+        <Tabs value={activeTab} onValueChange={handleTabChange} className="w-full">
+          {/* doc67 W4 (mobile 390): tab tràn ngang → cuộn ngang + scroll-snap dưới sm thay vì wrap vỡ hàng */}
+          {/* doc68 §3.3 P1 (việc 4) — tab bar STICKY: bám đỉnh vùng cuộn khi lăn qua các
+              khối dài (chart/lưới máy) để operator luôn đổi tab được mà không cuộn ngược. */}
+          <TabsList className="sticky top-0 z-20 flex w-full max-w-2xl flex-nowrap justify-start overflow-x-auto snap-x snap-mandatory bg-background/95 supports-[backdrop-filter]:bg-background/75 backdrop-blur sm:grid sm:grid-cols-4 h-auto">
+            <TabsTrigger value="overview" className="flex flex-none sm:flex-1 items-center gap-2 snap-start whitespace-nowrap">
               <BarChart3 className="h-4 w-4" />{t("dashboard.overviewTab")}</TabsTrigger>
-            <TabsTrigger value="ng-visual" className="flex flex-1 items-center gap-2">
+            <TabsTrigger value="ng-visual" className="flex flex-none sm:flex-1 items-center gap-2 snap-start whitespace-nowrap">
               <AlertTriangle className="h-4 w-4" />{t("dashboard.ngVisualTab")}</TabsTrigger>
-            <TabsTrigger value="layout" className="flex flex-1 items-center gap-2">
+            <TabsTrigger value="layout" className="flex flex-none sm:flex-1 items-center gap-2 snap-start whitespace-nowrap">
               <LayoutGrid className="h-4 w-4" />{t("dashboard.layoutTab")}</TabsTrigger>
-            <TabsTrigger value="custom" className="flex flex-1 items-center gap-2">
+            <TabsTrigger value="custom" className="flex flex-none sm:flex-1 items-center gap-2 snap-start whitespace-nowrap">
               <Palette className="h-4 w-4" />{t("dashboard.customTab")}</TabsTrigger>
           </TabsList>
 
           {/* Overview Tab */}
           <TabsContent value="overview" className="space-y-6 mt-6">
-            {/* MQTT Alert Widget */}
-            <MqttAlertWidget />
-
-            {/* OEE Mini-widget — live (oee:update) with first-load query fallback */}
-            {effectiveOEE.length > 0 && (() => {
-              const oeeData = effectiveOEE;
-              // Average only over machines that actually have each factor (honest).
-              const avgOf = (sel: (m: LiveOEERow) => number | null): number | null => {
-                const vals = oeeData.map(sel).filter((v): v is number => v != null);
-                return vals.length ? vals.reduce((s, v) => s + v, 0) / vals.length : null;
-              };
-              const avgA = avgOf((m) => m.availability);
-              const avgP = avgOf((m) => m.performance);
-              const avgQ = avgOf((m) => m.quality);
-              const avgOEE = avgOf((m) => m.oee);
-              const oeeColor = (v: number) => v >= 85 ? 'var(--success)' : v >= 60 ? 'var(--warning)' : 'var(--destructive)';
-              const fmt = (v: number | null) => v == null ? t("common.notAvailable", "N/A") : `${v.toFixed(1)}%`;
+            {/* doc64 S5-OPT-2: toàn bộ thân tab overview (widget + 3 chart + AI) mount SAU
+                khe paint đầu — hero KPI/thẻ trạng thái phía trên paint được ngay thay vì
+                chờ cả cây nặng render xong (LCP ~5s → mục tiêu <2,5s). */}
+            <DeferredMount placeholder={<ChartSkeleton />}>
+            {/* doc68 §3.3 P1 (việc 1) — HERO "Máy/Trạm cần chú ý": gộp máy kém nhất
+                (topBottomMachines.bottom) + trạm lỗi cao nhất (workstationSummary theo
+                ngCount) lên ĐẦU tab Tổng quan → operator trả lời "máy nào lỗi" <5s
+                (trước đây bị chôn ở tab Bố cục / cuối trang). Click máy → drawer chi
+                tiết; click trạm → drawer drilldown; "Xem lưới" → tab Bố cục. */}
+            {(() => {
+              const worstMachines = ((topBottomMachines as { bottom?: any[] } | undefined)?.bottom ?? []).slice(0, 5);
+              const worstStations = ((workstationSummary as any[] | undefined) ?? [])
+                .filter((ws) => ((ws.ngCount || 0) + (ws.ntfCount || 0)) > 0)
+                .sort((a, b) => (b.ngCount || 0) - (a.ngCount || 0))
+                .slice(0, 5);
+              if (worstMachines.length === 0 && worstStations.length === 0) return null;
               return (
-              <Card className={cardStyleProps.className} style={cardStyleProps.style}>
-                <CardHeader className="pb-2 flex flex-row items-center justify-between">
-                  <CardTitle className="text-base flex items-center gap-2">
-                    <Activity className="h-4 w-4" style={{ color: cardStyleProps.accentColor }} />
-                    {t("dashboard.oeeTitle", "OEE — Overall Equipment Effectiveness")}
-                    <RealtimeBadge connected={oeeIsLive} pollingFallback lastEventAt={oeeIsLive ? lastRealtimeAt : null} />
-                  </CardTitle>
-                  <a href="/oee-dashboard" className="text-xs text-muted-foreground hover:underline">{t("common.viewAll", "Xem tất cả")}</a>
-                </CardHeader>
-                <CardContent className="space-y-4">
-                  {/* Aggregate 4-card OEE cluster */}
-                  <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-                    {([
-                      { label: t("dashboard.oeeAvailability", "Availability"), value: avgA, icon: "A" },
-                      { label: t("dashboard.oeePerformance", "Performance"), value: avgP, icon: "P" },
-                      { label: t("dashboard.oeeQuality", "Quality"), value: avgQ, icon: "Q" },
-                      { label: "OEE", value: avgOEE, icon: "OEE" },
-                    ] as const).map((item) => (
-                      <a key={item.icon} href="/oee-dashboard" className="rounded-xl border bg-card p-3 text-center hover:shadow-md transition-shadow cursor-pointer block">
-                        <p className="text-xs text-muted-foreground font-medium">{item.icon}</p>
-                        <p className="text-2xl font-bold mt-1" style={{ color: item.value == null ? 'var(--muted-foreground)' : oeeColor(item.value) }}>{fmt(item.value)}</p>
-                        <p className="text-[11px] text-muted-foreground">{item.label}</p>
-                      </a>
-                    ))}
-                  </div>
-                  {/* Per-machine detail grid */}
-                  <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-3">
-                    {oeeData.map((m) => {
-                      const color = m.oee == null ? 'var(--muted-foreground)' : oeeColor(m.oee);
-                      return (
-                        <div key={m.machineId} className="rounded-lg border p-2 space-y-1">
-                          <p className="text-xs font-medium truncate" title={m.machineCode}>{m.machineCode}</p>
-                          <p className="text-xl font-bold" style={{ color }}>{fmt(m.oee)}</p>
-                          <div className="text-[10px] text-muted-foreground space-y-0.5">
-                            <div className="flex justify-between"><span>A</span><span>{fmt(m.availability)}</span></div>
-                            <div className="flex justify-between"><span>P</span><span>{fmt(m.performance)}</span></div>
-                            <div className="flex justify-between"><span>Q</span><span>{fmt(m.quality)}</span></div>
-                          </div>
+                <Card className="border-destructive/40 bg-destructive/5">
+                  <CardHeader className="pb-2">
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <CardTitle className="text-base flex items-center gap-2">
+                        <AlertTriangle className="h-4 w-4 text-destructive" />
+                        {t("dashboard.needsAttentionTitle", "Máy/Trạm cần chú ý")}
+                      </CardTitle>
+                      <Button variant="outline" size="sm" className="h-8 text-xs" onClick={() => handleTabChange("layout")}>
+                        <LayoutGrid className="h-3.5 w-3.5 mr-1" />{t("dashboard.viewGrid", "Xem lưới")}
+                      </Button>
+                    </div>
+                  </CardHeader>
+                  <CardContent>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      <div>
+                        <p className="text-xs font-medium text-muted-foreground mb-2 flex items-center gap-1">
+                          <ThumbsDown className="h-3.5 w-3.5 text-destructive" />{t("dashboard.worstMachinesFpy", "Máy kém nhất (FPY)")}
+                        </p>
+                        <div className="space-y-1.5">
+                          {worstMachines.map((machine, index) => (
+                            <button
+                              key={machine.id}
+                              type="button"
+                              aria-label={`${t("common.details")}: ${machine.name}`}
+                              onClick={() => openMachineDetail(machineById.get(machine.id) ?? (machine as MachineStats))}
+                              className="w-full flex items-center justify-between gap-2 p-2 rounded-lg bg-background/60 border border-destructive/20 hover:bg-background transition-colors text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                            >
+                              <span className="flex items-center gap-2 min-w-0">
+                                <span className="text-xs font-bold text-destructive w-4 shrink-0">#{index + 1}</span>
+                                <span className="text-sm truncate">{machine.name}</span>
+                              </span>
+                              <span className="flex items-center gap-2 shrink-0">
+                                <span className="text-xs text-muted-foreground">{machine.total} {t("dashboard.pcsUnit", "pcs")}</span>
+                                <Badge variant="outline" className="text-destructive border-destructive/50">{machine.fpy}%</Badge>
+                              </span>
+                            </button>
+                          ))}
+                          {worstMachines.length === 0 && (
+                            <ScopeAwareEmpty reason={scopeEmptyReason} variant="inline">
+                              <p className="text-xs text-muted-foreground py-2">{t("dashboard.noDataYet")}</p>
+                            </ScopeAwareEmpty>
+                          )}
                         </div>
-                      );
-                    })}
-                  </div>
-                </CardContent>
-              </Card>
+                      </div>
+                      <div>
+                        <p className="text-xs font-medium text-muted-foreground mb-2 flex items-center gap-1">
+                          <Factory className="h-3.5 w-3.5 text-warning" />{t("dashboard.worstStationsNg", "Trạm lỗi cao nhất")}
+                        </p>
+                        <div className="space-y-1.5">
+                          {worstStations.map((ws, index) => {
+                            const totalDefects = (ws.ngCount || 0) + (ws.ntfCount || 0);
+                            return (
+                              <button
+                                key={`${ws.workstationId ?? "na"}-${ws.workstationCode ?? index}`}
+                                type="button"
+                                aria-label={`${t("common.details")}: ${ws.workstationName ?? ws.workstationCode}`}
+                                onClick={() => {
+                                  setSelectedWorkstationForDrilldown({ id: ws.workstationId, code: ws.workstationCode, name: ws.workstationName });
+                                  setDrilldownDialogOpen(true);
+                                }}
+                                className="w-full flex items-center justify-between gap-2 p-2 rounded-lg bg-background/60 border border-warning/20 hover:bg-background transition-colors text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                              >
+                                <span className="flex items-center gap-2 min-w-0">
+                                  <span className="text-xs font-bold text-warning w-4 shrink-0">#{index + 1}</span>
+                                  <span className="text-sm truncate">{ws.workstationName || ws.workstationCode || "—"}</span>
+                                </span>
+                                <Badge variant="outline" className="text-destructive border-destructive/50 shrink-0">{totalDefects} {t("common.error")}</Badge>
+                              </button>
+                            );
+                          })}
+                          {worstStations.length === 0 && (
+                            <ScopeAwareEmpty reason={scopeEmptyReason} variant="inline">
+                              <p className="text-xs text-muted-foreground py-2">{t("dashboard.noDataYet")}</p>
+                            </ScopeAwareEmpty>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  </CardContent>
+                </Card>
               );
             })()}
+
+            {/* doc68 §3.3 P2 (việc 5) — GỘP 2 hệ cảnh báo: widget cảnh báo tỷ-lệ-đạt
+                (ngưỡng yield) dời từ trên tab xuống ĐÂY, ngay trên MQTT, để 2 hệ cảnh
+                báo đứng cạnh nhau (không còn tách trên/dưới tab bar). glass-card →
+                cardStyleProps (đồng nhất token thẻ). */}
+            <Card className={cardStyleProps.className} style={cardStyleProps.style}>
+              <CardContent className="p-3">
+                <div className="flex items-center justify-between mb-2">
+                  <div className="flex items-center gap-2">
+                    <div className={`h-6 w-6 rounded-md flex items-center justify-center ${
+                      yieldAlerts.some(a => a.level === 'critical') ? 'bg-destructive/20' : 'bg-warning/20'
+                    }`}>
+                      <AlertTriangle className={`h-3.5 w-3.5 ${
+                        yieldAlerts.some(a => a.level === 'critical') ? 'text-destructive' : 'text-warning'
+                      }`} />
+                    </div>
+                    <span className="text-sm font-medium">{t("dashboard.yieldWarning")}</span>
+                    <Badge variant="secondary" className="text-xs h-5">{yieldAlerts.length}</Badge>
+                  </div>
+                  <Link href="/settings">
+                    <Button variant="ghost" size="sm" className="h-10 text-xs px-2">{t("dashboard.configuration")}</Button>
+                  </Link>
+                </div>
+                {yieldAlerts.length > 0 ? (
+                  <div className="flex flex-wrap gap-2">
+                    {/* doc67 W4 (a11y/touch): Popover (click/tap/Enter mở) thay Tooltip hover-only. */}
+                    {yieldAlerts.map((alert, index) => (
+                      <Popover key={`${alert.type}-${alert.level}-${index}`}>
+                        <PopoverTrigger asChild>
+                          <button
+                            type="button"
+                            aria-label={`${t("dashboard.yieldWarning")}: ${alert.type} ${fmtPct(alert.currentValue)}`}
+                            className={`flex items-center gap-1.5 px-2 py-1 rounded-md text-xs cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1 ${
+                              alert.level === 'critical'
+                                ? 'bg-destructive/10 border border-destructive/30 text-destructive'
+                                : 'bg-warning/10 border border-warning/30 text-warning'
+                            }`}>
+                            {alert.level === 'critical'
+                              ? <XCircle aria-hidden="true" className="h-3 w-3" />
+                              : <AlertTriangle aria-hidden="true" className="h-3 w-3" />
+                            }
+                            <span className="font-medium">{alert.type}</span>
+                            <span>{fmtPct(alert.currentValue)}</span>
+                          </button>
+                        </PopoverTrigger>
+                        <PopoverContent side="bottom" className="max-w-xs w-auto p-3">
+                          <p className="text-sm font-medium">{alert.message}</p>
+                          <p className="text-xs text-muted-foreground mt-1">{t("dashboard.target")}: {alert.target}% | {t("dashboard.threshold")}: {alert.threshold}%</p>
+                        </PopoverContent>
+                      </Popover>
+                    ))}
+                  </div>
+                ) : (
+                  /* ⚠ KHỐI NÀY LÀ CHỖ NGHIỆM THU THỊ GIÁC 2026-08-17 BẮT ĐƯỢC LỜI NÓI DỐI:
+                     dải phạm-vi-rỗng ở trên nói đúng, còn ở đây vẫn là "Tạm chưa có dữ liệu
+                     kiểm". Cả hai vế đều phải đi qua cổng: `noAlerts` ("mọi chỉ số trong
+                     ngưỡng") cũng là một KẾT LUẬN về dây chuyền mà tài khoản chưa gán nhà máy
+                     không có cơ sở để phát biểu. */
+                  <ScopeAwareEmpty reason={scopeEmptyReason} variant="inline">
+                    <div className="flex items-center justify-center gap-2 py-2 text-muted-foreground text-sm text-center">
+                      <CheckCircle2 className="h-4 w-4 text-success" />
+                      <span>
+                        {(currentStats?.total ?? 0) > 0
+                          ? t("dashboard.noAlerts")
+                          : t("dashboard.noDataForAlerts", "No inspection data yet. Alerts will appear once production data is available.")}
+                      </span>
+                    </div>
+                  </ScopeAwareEmpty>
+                )}
+              </CardContent>
+            </Card>
+
+            {/* MQTT Alert Widget — doc67 W6 [P1-2]: socket live → ngừng poll 30s */}
+            <MqttAlertWidget socketConnected={socketConnected} />
+
+            {/* OEE Mini-widget — doc67 W6 [P1-3]: tách thành component con sở hữu
+                state liveOEE/lastRealtimeAt riêng (tự subscribe oee:update); mỗi
+                push chỉ re-render widget này, không re-render cả cây Dashboard. */}
+            <LiveOeeWidget socketConnected={socketConnected} cardStyleProps={cardStyleProps} />
 
             {/* Shift Stats & Top/Bottom Machines */}
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
@@ -1687,15 +1995,20 @@ export default function Dashboard() {
                       </div>
                       <div className="flex items-center gap-4 text-sm">
                         <span className="text-muted-foreground">{shift.total} {t("dashboard.pcsUnit", "pcs")}</span>
-                        <span className={shift.fpy >= 95 ? 'text-success' : shift.fpy >= 85 ? 'text-warning' : 'text-destructive'}>
-                          {shift.fpy}%
+                        {/* doc67 W7 GĐ2 — yieldTone chung (95/90, thay ternary local 95/85) + fmtPct */}
+                        <span className={TONE_TEXT_CLASS[yieldTone(shift.fpy)]}>
+                          {fmtPct(shift.fpy)}
                         </span>
                       </div>
                     </div>
                   );
                 })}
                 {(!shiftStats || (shiftStats as ShiftStats[]).length === 0) && (
-                  <p className="text-sm text-muted-foreground text-center py-4">{t("dashboard.noDataYet")}</p>
+                  /* `getShiftStats` trả thẳng MẢNG ⇒ nhãn không qua được tRPC; lấy lý do từ
+                     `scopeEmptyReason` cấp trang (nhóm b, đúng chỉ dẫn `withScopeLabels`). */
+                  <ScopeAwareEmpty reason={scopeEmptyReason} variant="inline">
+                    <p className="text-sm text-muted-foreground text-center py-4">{t("dashboard.noDataYet")}</p>
+                  </ScopeAwareEmpty>
                 )}
               </div>
             </CardContent>
@@ -1724,7 +2037,9 @@ export default function Dashboard() {
                   </div>
                 ))}
                 {(!topBottomMachines || (topBottomMachines as { top: any[] }).top?.length === 0) && (
-                  <p className="text-sm text-muted-foreground text-center py-4">{t("dashboard.noDataYet")}</p>
+                  <ScopeAwareEmpty reason={scopeEmptyReason} variant="inline">
+                    <p className="text-sm text-muted-foreground text-center py-4">{t("dashboard.noDataYet")}</p>
+                  </ScopeAwareEmpty>
                 )}
               </div>
             </CardContent>
@@ -1753,7 +2068,9 @@ export default function Dashboard() {
                   </div>
                 ))}
                 {(!topBottomMachines || (topBottomMachines as { bottom: any[] }).bottom?.length === 0) && (
-                  <p className="text-sm text-muted-foreground text-center py-4">{t("dashboard.noDataYet")}</p>
+                  <ScopeAwareEmpty reason={scopeEmptyReason} variant="inline">
+                    <p className="text-sm text-muted-foreground text-center py-4">{t("dashboard.noDataYet")}</p>
+                  </ScopeAwareEmpty>
                 )}
               </div>
             </CardContent>
@@ -1846,7 +2163,9 @@ export default function Dashboard() {
                   </LineChart>
                 </ResponsiveContainer>
               ) : (
+                <ScopeAwareEmpty reason={scopeEmptyReason} variant="block" className="h-full">
                 <div className="h-full flex items-center justify-center text-muted-foreground">{t("dashboard.noDataYet")}</div>
+                </ScopeAwareEmpty>
               )}
             </div>
             </ChartErrorBoundary>
@@ -1855,15 +2174,20 @@ export default function Dashboard() {
 
         {/* Charts Section */}
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-          {/* Pie Chart */}
+          {/* doc68 §3.3 P2 (việc 5) — GỘP Pie phân bố (thường ít datum) + Bar top máy
+              vào 1 thẻ 2 cột: bớt thẻ phình cho ít dữ liệu, hàng chart cân đối
+              [Phân bố · Top máy][Top 5 trạm lỗi]. */}
           <Card className={cardStyleProps.className} style={cardStyleProps.style}>
             <CardHeader>
-              <CardTitle className="text-base">{t("dashboard.resultDistribution")}</CardTitle>
-              <CardDescription>{t("dashboard.resultDistributionDesc")}</CardDescription>
+              <CardTitle className="text-base">{t("dashboard.resultDistribution")} · {t("dashboard.topMachinesByOutput")}</CardTitle>
+              <CardDescription>{t("dashboard.top10MachinesDesc")}</CardDescription>
             </CardHeader>
             <CardContent>
-              <ChartErrorBoundary>
-              <div className="h-50">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div>
+                <p className="text-xs text-muted-foreground mb-1">{t("dashboard.resultDistribution")}</p>
+                <ChartErrorBoundary>
+                <div className="h-50">
                 {pieData.length > 0 ? (
                   <ResponsiveContainer width="100%" height="100%">
                     <PieChart>
@@ -1875,7 +2199,7 @@ export default function Dashboard() {
                         outerRadius={75}
                         paddingAngle={5}
                         dataKey="value"
-                        label={({ name, percent }) => `${name} ${(percent * 100).toFixed(0)}%`}
+                        label={({ name, percent }) => `${name} ${fmtPct(percent * 100, 0)}`}
                       >
                         {pieData.map((entry, index) => (
                           <Cell key={`cell-${index}`} fill={entry.color} />
@@ -1885,22 +2209,17 @@ export default function Dashboard() {
                     </PieChart>
                   </ResponsiveContainer>
                 ) : (
+                  <ScopeAwareEmpty reason={scopeEmptyReason} variant="block" className="h-full">
                   <div className="h-full flex items-center justify-center text-muted-foreground">{t("dashboard.noDataYet")}</div>
+                  </ScopeAwareEmpty>
                 )}
+                </div>
+                </ChartErrorBoundary>
               </div>
-              </ChartErrorBoundary>
-            </CardContent>
-          </Card>
-
-          {/* Bar Chart - Top machines */}
-          <Card className={cardStyleProps.className} style={cardStyleProps.style}>
-            <CardHeader>
-              <CardTitle className="text-base">{t("dashboard.topMachinesByOutput")}</CardTitle>
-              <CardDescription>{t("dashboard.top10MachinesDesc")}</CardDescription>
-            </CardHeader>
-            <CardContent>
-              <ChartErrorBoundary>
-              <div className="h-50">
+              <div>
+                <p className="text-xs text-muted-foreground mb-1">{t("dashboard.topMachinesByOutput")}</p>
+                <ChartErrorBoundary>
+                <div className="h-50">
                 {machinesStats && (machinesStats as any[]).length > 0 ? (
                   <ResponsiveContainer width="100%" height="100%">
                     <BarChart
@@ -1924,10 +2243,14 @@ export default function Dashboard() {
                     </BarChart>
                   </ResponsiveContainer>
                 ) : (
+                  <ScopeAwareEmpty reason={scopeEmptyReason} variant="block" className="h-full">
                   <div className="h-full flex items-center justify-center text-muted-foreground">{t("dashboard.noDataYet")}</div>
+                  </ScopeAwareEmpty>
                 )}
+                </div>
+                </ChartErrorBoundary>
               </div>
-              </ChartErrorBoundary>
+              </div>
             </CardContent>
           </Card>
 
@@ -1946,11 +2269,12 @@ export default function Dashboard() {
                     .slice(0, 5)
                     .map((ws: any, index: number) => {
                       const totalDefects = (ws.ngCount || 0) + (ws.ntfCount || 0);
-                      const yieldRate = ws.totalCount > 0 ? ((ws.okCount + ws.ntfCount) / ws.totalCount * 100) : 0;
+                      const yieldRate = ws.totalCount > 0 ? finalYield({ ok: ws.okCount, ntf: ws.ntfCount, total: ws.totalCount }) : 0;
                       return (
                         <div key={`${ws.workstationId ?? "na"}-${ws.workstationCode ?? "code"}-${index}`} className="flex items-center justify-between p-3 rounded-lg bg-muted/50 hover:bg-muted transition-colors">
                           <div className="flex items-center gap-3 flex-1">
-                            <div className="w-8 h-8 rounded-full bg-orange-500/20 flex items-center justify-center text-sm font-semibold text-orange-600">
+                            {/* doc67 W7 GĐ2 — orange hardcode → token warning */}
+                            <div className="w-8 h-8 rounded-full bg-warning/20 flex items-center justify-center text-sm font-semibold text-warning">
                               {index + 1}
                             </div>
                             <div className="flex-1 min-w-0">
@@ -1964,7 +2288,7 @@ export default function Dashboard() {
                               <div className="text-xs text-muted-foreground">{t("common.error")}</div>
                             </div>
                             <div className="text-right">
-                              <div className="text-sm font-semibold text-info">{yieldRate.toFixed(1)}%</div>
+                              <div className="text-sm font-semibold text-info">{fmtPct(yieldRate)}</div>
                               <div className="text-xs text-muted-foreground">{t("dashboard.yield")}</div>
                             </div>
                           </div>
@@ -1973,6 +2297,7 @@ export default function Dashboard() {
                     })
                 ) : (
                   <EmptyState
+                    scopeEmptyReason={scopeEmptyReason}
                     variant="no-analytics"
                     title={t("dashboard.noWorkstationData")}
                     description={t("dashboard.noWorkstationDataDesc")}
@@ -1986,6 +2311,7 @@ export default function Dashboard() {
 
             {/* AI Insights Widget */}
             <DashboardAIWidget />
+            </DeferredMount>
           </TabsContent>
 
           {/* NG Visual Tab */}
@@ -2004,7 +2330,10 @@ export default function Dashboard() {
                     <span>{t("dashboard.ngLevelAcceptable")}</span>
                   </div>
                   <div className="flex items-center gap-1">
-                    <div className="w-3 h-3 rounded bg-orange-500" />
+                    {/* doc67 W7 GĐ2 — bậc 3/4 của thang NG cần HUE RIÊNG (giữa warning
+                        và destructive): dùng token --alarm-high (ISA-18.2 P2, cam,
+                        theme-aware) thay orange-500 hardcode. */}
+                    <div className="w-3 h-3 rounded bg-(--alarm-high)" />
                     <span>{t("dashboard.ngLevelWarning")}</span>
                   </div>
                   <div className="flex items-center gap-1">
@@ -2024,20 +2353,35 @@ export default function Dashboard() {
                       <SelectItem value="month">{t("dashboard.last30Days")}</SelectItem>
                     </SelectContent>
                   </Select>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={handleExportPDF}
-                    disabled={exportingPDF || (effectiveNGSummary.source === 'none' && !ngTopNGPoints)}
-                    className="flex items-center gap-1"
-                  >
-                    {exportingPDF ? (
-                      <RefreshCw className="h-4 w-4 animate-spin" />
-                    ) : (
-                      <FileDown className="h-4 w-4" />
-                    )}
-                    {exportingPDF ? t("dashboard.exporting") : t("dashboard.exportReport")}
-                  </Button>
+                  {/* doc65 W1 [P1 đã duyệt] — gom 2 lựa chọn xuất vào 1 nút:
+                      "Xuất PDF (in)" = print-dialog thật; "Xuất HTML" = tải tệp (behavior cũ, nhãn trung thực) */}
+                  <DropdownMenu>
+                    <DropdownMenuTrigger asChild>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        disabled={exportingPDF || (effectiveNGSummary.source === 'none' && !ngTopNGPoints)}
+                        className="flex items-center gap-1"
+                      >
+                        {exportingPDF ? (
+                          <RefreshCw className="h-4 w-4 animate-spin" />
+                        ) : (
+                          <FileDown className="h-4 w-4" />
+                        )}
+                        {exportingPDF ? t("dashboard.exporting") : t("dashboard.exportReport")}
+                      </Button>
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent align="end">
+                      <DropdownMenuItem onClick={handleExportPDF}>
+                        <FileText className="h-4 w-4" />
+                        Xuất PDF (in)
+                      </DropdownMenuItem>
+                      <DropdownMenuItem onClick={handleExportHTML}>
+                        <FileDown className="h-4 w-4" />
+                        Xuất HTML (tải tệp)
+                      </DropdownMenuItem>
+                    </DropdownMenuContent>
+                  </DropdownMenu>
                 </div>
               </div>
 
@@ -2058,7 +2402,7 @@ export default function Dashboard() {
                     ) : effectiveNGComparison ? (
                       <div className="space-y-2">
                         <div className="flex items-baseline gap-2">
-                          <span className="text-2xl font-bold">{(effectiveNGComparison as any).current.ngRate.toFixed(2)}%</span>
+                          <span className="text-2xl font-bold">{fmtPct((effectiveNGComparison as any).current.ngRate, 2)}</span>
                           <span className="text-sm text-muted-foreground">{t("dashboard.ngRate")}</span>
                         </div>
                         <div className="flex items-center gap-4 text-sm">
@@ -2067,7 +2411,9 @@ export default function Dashboard() {
                         </div>
                       </div>
                     ) : (
+                      <ScopeAwareEmpty reason={scopeEmptyReason} variant="inline">
                       <div className="text-muted-foreground text-sm">{t("common.noData")}</div>
+                      </ScopeAwareEmpty>
                     )}
                   </CardContent>
                 </Card>
@@ -2087,7 +2433,7 @@ export default function Dashboard() {
                     ) : effectiveNGComparison ? (
                       <div className="space-y-2">
                         <div className="flex items-baseline gap-2">
-                          <span className="text-2xl font-bold">{(effectiveNGComparison as any).previous.ngRate.toFixed(2)}%</span>
+                          <span className="text-2xl font-bold">{fmtPct((effectiveNGComparison as any).previous.ngRate, 2)}</span>
                           <span className="text-sm text-muted-foreground">{t("dashboard.ngRate")}</span>
                         </div>
                         <div className="flex items-center gap-4 text-sm">
@@ -2096,7 +2442,9 @@ export default function Dashboard() {
                         </div>
                       </div>
                     ) : (
+                      <ScopeAwareEmpty reason={scopeEmptyReason} variant="inline">
                       <div className="text-muted-foreground text-sm">{t("common.noData")}</div>
+                      </ScopeAwareEmpty>
                     )}
                   </CardContent>
                 </Card>
@@ -2120,7 +2468,7 @@ export default function Dashboard() {
                             <TrendingUp className="h-6 w-6 text-destructive" />
                           )}
                           <span className={`text-2xl font-bold ${(effectiveNGComparison as any).changes.isImproved ? 'text-success' : 'text-destructive'}`}>
-                            {(effectiveNGComparison as any).changes.ngRateChange > 0 ? '+' : ''}{(effectiveNGComparison as any).changes.ngRateChange.toFixed(2)}%
+                            {(effectiveNGComparison as any).changes.ngRateChange > 0 ? '+' : ''}{fmtPct((effectiveNGComparison as any).changes.ngRateChange, 2)}
                           </span>
                         </div>
                         <div className="text-sm">
@@ -2134,7 +2482,9 @@ export default function Dashboard() {
                         </div>
                       </div>
                     ) : (
+                      <ScopeAwareEmpty reason={scopeEmptyReason} variant="inline">
                       <div className="text-muted-foreground text-sm">{t("common.noData")}</div>
+                      </ScopeAwareEmpty>
                     )}
                   </CardContent>
                 </Card>
@@ -2242,7 +2592,7 @@ export default function Dashboard() {
                           <RechartsTooltip
                             contentStyle={chartTooltipStyle}
                             formatter={(value: number, name: string) => {
-                              if (name === 'ngRate') return [`${value.toFixed(2)}%`, t('dashboard.ngRate')];
+                              if (name === 'ngRate') return [fmtPct(value, 2), t('dashboard.ngRate')];
                               if (name === 'totalCount') return [value.toLocaleString(), t('dashboard.totalInspections')];
                               if (name === 'ngCount') return [value.toLocaleString(), t('dashboard.ngCountLabel')];
                               return [value, name];
@@ -2261,6 +2611,7 @@ export default function Dashboard() {
                     </div>
                   ) : (
                     <EmptyState
+                      scopeEmptyReason={scopeEmptyReason}
                       variant="no-analytics"
                       title={t("dashboard.noTrendData")}
                       description={t("dashboard.noTrendDataDesc")}
@@ -2303,6 +2654,7 @@ export default function Dashboard() {
                     />
                   ) : (
                     <EmptyState
+                      scopeEmptyReason={scopeEmptyReason}
                       variant="no-analytics"
                       title={t("dashboard.noWorkstationData")}
                       description={t("dashboard.noWorkstationDataDesc")}
@@ -2344,6 +2696,7 @@ export default function Dashboard() {
                     />
                   ) : (
                     <EmptyState
+                      scopeEmptyReason={scopeEmptyReason}
                       variant="no-analytics"
                       title={t("dashboard.noPointData")}
                       description={t("dashboard.noPointDataDesc")}
@@ -2401,8 +2754,10 @@ export default function Dashboard() {
           ) : machinesByLine.size === 0 ? (
             <Card className="glass-card">
               <CardContent className="py-12 text-center">
-                <Cpu className="h-12 w-12 mx-auto text-muted-foreground mb-4" />
-                <p className="text-muted-foreground">{t("dashboard.noMachinesInFilter")}</p>
+                <ScopeAwareEmpty reason={scopeEmptyReason} variant="block">
+                  <Cpu className="h-12 w-12 mx-auto text-muted-foreground mb-4" />
+                  <p className="text-muted-foreground">{t("dashboard.noMachinesInFilter")}</p>
+                </ScopeAwareEmpty>
               </CardContent>
             </Card>
           ) : (
@@ -2413,7 +2768,8 @@ export default function Dashboard() {
                 const lineOk = machines.reduce((sum, m) => sum + m.ok, 0);
                 const lineNg = machines.reduce((sum, m) => sum + m.ng, 0);
                 const lineNtf = machines.reduce((sum, m) => sum + m.ntf, 0);
-                const lineFpy = lineTotal > 0 ? ((lineOk / lineTotal) * 100).toFixed(1) : "0";
+                // doc67 W7 GĐ2 — giữ SỐ, hiển thị qua fmtPct + tone qua yieldTone chung.
+                const lineFpy = lineTotal > 0 ? (lineOk / lineTotal) * 100 : 0;
                 
                 // Get line info (product and production order)
                 const lineId = machines[0]?.lineId;
@@ -2457,12 +2813,12 @@ export default function Dashboard() {
                         <div className="flex items-center gap-6 text-sm">
                           <div className="text-center">
                             <p className="text-muted-foreground">{t("dashboard.output")}</p>
-                            <p className="font-semibold text-foreground">{lineTotal.toLocaleString()}</p>
+                            <p className="font-semibold text-foreground">{fmtInt(lineTotal)}</p>
                           </div>
                           <div className="text-center">
                             <p className="text-muted-foreground">{t("dashboard.fpy")}</p>
-                            <p className={`font-semibold ${parseFloat(lineFpy) >= 95 ? 'text-success' : parseFloat(lineFpy) >= 85 ? 'text-warning' : 'text-destructive'}`}>
-                              {lineFpy}%
+                            <p className={`font-semibold ${TONE_TEXT_CLASS[yieldTone(lineFpy)]}`}>
+                              {fmtPct(lineFpy)}
                             </p>
                           </div>
                           <div className="text-center">
@@ -2483,44 +2839,55 @@ export default function Dashboard() {
                     <CardContent className="p-6">
                       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
                         {machines.map((machine) => {
-                          const { fpy, fy, ntfy } = calculateYields(machine);
-                          const fpyNum = parseFloat(fpy);
-                          const status = getStatusIndicator(fpyNum);
+                          const { fpy, ngPct, ntfPct } = calculateYields(machine);
+                          const status = getStatusIndicator(fpy);
                           const StatusIcon = status.icon;
                           const machineImage = machine.image2DUrl || machine.image3DUrl || '/default-machine-2d.svg';
 
                           return (
                             <div
                               key={machine.id}
-                              className="relative rounded-xl cursor-pointer transition-all hover:shadow-xl hover:scale-[1.02] overflow-hidden bg-card border border-border/50 group"
+                              role="button"
+                              tabIndex={0}
+                              aria-label={`${t("common.details")}: ${machine.name}`}
+                              className="relative rounded-xl cursor-pointer transition-all hover:shadow-xl hover:scale-[1.02] overflow-hidden bg-card border border-border/50 group focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
                               onClick={() => openMachineDetail(machine)}
+                              onKeyDown={(e) => {
+                                if (e.key === "Enter" || e.key === " ") {
+                                  e.preventDefault();
+                                  openMachineDetail(machine);
+                                }
+                              }}
                             >
                               {/* Metrics Bar at Top - Customizable */}
                               <div className="flex items-stretch bg-muted text-foreground">
                                 {visibleMetrics.fpy && (
                                   <div className="flex-1 text-center py-2 px-1 border-r border-border/60">
                                     <p className="text-[10px] opacity-70 uppercase tracking-wider">{t("dashboard.fpy")}</p>
-                                    <p className={`text-base font-bold ${fpyNum >= 90 ? 'text-success' : fpyNum >= 70 ? 'text-warning' : 'text-destructive'}`}>
-                                      {fpy}%
+                                    {/* doc67 W7 GĐ2 — yieldTone chung 95/90 (thay ternary local 90/70 trôi lệch) */}
+                                    <p className={`text-base font-bold ${TONE_TEXT_CLASS[yieldTone(fpy)]}`}>
+                                      {fmtPct(fpy)}
                                     </p>
                                   </div>
                                 )}
                                 {visibleMetrics.fy && (
                                   <div className="flex-1 text-center py-2 px-1 border-r border-border/60">
-                                    <p className="text-[10px] opacity-70 uppercase tracking-wider">{t("dashboard.fy")}</p>
-                                    <p className="text-base font-bold text-destructive">{fy}%</p>
+                                    {/* doc65 W1 — giá trị là ng/total: nhãn trung thực "NG %" (trước đây ghi sai "FY") */}
+                                    <p className="text-[10px] opacity-70 uppercase tracking-wider">NG %</p>
+                                    <p className="text-base font-bold text-destructive">{fmtPct(ngPct)}</p>
                                   </div>
                                 )}
                                 {visibleMetrics.ntfy && (
                                   <div className="flex-1 text-center py-2 px-1 border-r border-border/60">
-                                    <p className="text-[10px] opacity-70 uppercase tracking-wider">{t("dashboard.ntfy")}</p>
-                                    <p className="text-base font-bold text-warning">{ntfy}%</p>
+                                    {/* doc65 W1 — giá trị là ntf/total: nhãn trung thực "NTF %" (trước đây ghi sai "NTFY") */}
+                                    <p className="text-[10px] opacity-70 uppercase tracking-wider">NTF %</p>
+                                    <p className="text-base font-bold text-warning">{fmtPct(ntfPct)}</p>
                                   </div>
                                 )}
                                 {visibleMetrics.output && (
                                   <div className="flex-1 text-center py-2 px-1 relative">
                                     <p className="text-[10px] opacity-70 uppercase tracking-wider">{t("dashboard.output")}</p>
-                                    <p className="text-base font-bold text-info">{machine.total}</p>
+                                    <p className="text-base font-bold text-info">{fmtInt(machine.total)}</p>
                                   </div>
                                 )}
                                 {/* Status indicator */}
@@ -2602,24 +2969,32 @@ export default function Dashboard() {
         </Tabs>
       </PageContainer>
 
-      {/* Machine Detail Modal */
-      <Dialog open={machineDetailOpen} onOpenChange={setMachineDetailOpen}>
-        <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
-          <DialogHeader>
-            <DialogTitle className="flex items-center gap-2">
-              <Cpu className="h-5 w-5 text-primary" />
-              {selectedMachine?.name}
-            </DialogTitle>
-            <DialogDescription>
-              {t("dashboard.machineCode")} {selectedMachine?.code} • {selectedMachine?.lineName}
-            </DialogDescription>
-          </DialogHeader>
-
+      {/* doc68 §3.3 P1 (việc 2) — Chi tiết máy: Dialog che toàn màn (max-w-4xl) →
+          ContextDrawer trượt phải. So sánh máy liên tiếp không mất lưới thẻ nền;
+          nội dung (4 ô lọc + tab Tổng quan/Kết quả gần nhất) GIỮ nguyên. */}
+      <ContextDrawer
+        open={machineDetailOpen}
+        onOpenChange={setMachineDetailOpen}
+        className="flex w-[92vw] flex-col gap-0 p-0 sm:w-[600px] sm:max-w-[640px]"
+        title={<span className="flex items-center gap-2"><Cpu className="h-5 w-5 text-primary" />{selectedMachine?.name}</span>}
+        description={selectedMachine ? `${t("dashboard.machineCode")} ${selectedMachine.code} • ${selectedMachine.lineName ?? ""}` : undefined}
+      >
           {/* Stats Boxes at Top - Clickable to filter */}
+          {/* doc67 W4: grid-cols-2 dưới sm (4 ô nén trong dialog mobile) + 4 ô lọc bấm được bằng bàn phím */}
           {selectedMachine && (
-            <div className="grid grid-cols-4 gap-3 mt-2">
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mt-2">
               <div
-                className={`text-center p-4 rounded-lg cursor-pointer transition-all border-2 ${
+                role="button"
+                tabIndex={0}
+                aria-pressed={machineDialogStatusFilter === "all"}
+                aria-label={`${t("dashboard.filterBy")}: ${t("dashboard.totalOutput")}`}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" || e.key === " ") {
+                    e.preventDefault();
+                    setMachineDialogStatusFilter("all");
+                  }
+                }}
+                className={`text-center p-4 rounded-lg cursor-pointer transition-all border-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 ${
                   machineDialogStatusFilter === "all"
                     ? "bg-primary/15 border-primary shadow-md scale-[1.02]"
                     : "bg-muted/30 border-transparent hover:bg-muted/50 hover:border-muted-foreground/20"
@@ -2633,7 +3008,17 @@ export default function Dashboard() {
                 </p>
               </div>
               <div
-                className={`text-center p-4 rounded-lg cursor-pointer transition-all border-2 ${
+                role="button"
+                tabIndex={0}
+                aria-pressed={machineDialogStatusFilter === "OK"}
+                aria-label={`${t("dashboard.filterBy")}: OK`}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" || e.key === " ") {
+                    e.preventDefault();
+                    setMachineDialogStatusFilter("OK");
+                  }
+                }}
+                className={`text-center p-4 rounded-lg cursor-pointer transition-all border-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 ${
                   machineDialogStatusFilter === "OK"
                     ? "bg-success/20 border-success shadow-md scale-[1.02]"
                     : "bg-success/5 border-transparent hover:bg-success/10 hover:border-success/30"
@@ -2642,35 +3027,57 @@ export default function Dashboard() {
               >
                 <p className="text-xs text-muted-foreground uppercase tracking-wider">{t("dashboard.fpy")}</p>
                 <p className="text-2xl font-bold text-success">
-                  {calculateYields(selectedMachine).fpy}%
+                  {fmtPct(calculateYields(selectedMachine).fpy)}
                 </p>
                 <p className="text-xs text-success/70 mt-1">{selectedMachine.ok} {t("common.items")}</p>
               </div>
               <div
-                className={`text-center p-4 rounded-lg cursor-pointer transition-all border-2 ${
+                role="button"
+                tabIndex={0}
+                aria-pressed={machineDialogStatusFilter === "NG"}
+                aria-label={`${t("dashboard.filterBy")}: NG`}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" || e.key === " ") {
+                    e.preventDefault();
+                    setMachineDialogStatusFilter("NG");
+                  }
+                }}
+                className={`text-center p-4 rounded-lg cursor-pointer transition-all border-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 ${
                   machineDialogStatusFilter === "NG"
                     ? "bg-destructive/20 border-destructive shadow-md scale-[1.02]"
                     : "bg-destructive/5 border-transparent hover:bg-destructive/10 hover:border-destructive/30"
                 }`}
                 onClick={() => setMachineDialogStatusFilter("NG")}
               >
-                <p className="text-xs text-muted-foreground uppercase tracking-wider">{t("dashboard.fy")}</p>
+                {/* doc65 W1 — nhãn trung thực: giá trị là ng/total (tỷ lệ NG), không phải "FY" */}
+                <p className="text-xs text-muted-foreground uppercase tracking-wider">NG %</p>
                 <p className="text-2xl font-bold text-destructive">
-                  {calculateYields(selectedMachine).fy}%
+                  {fmtPct(calculateYields(selectedMachine).ngPct)}
                 </p>
                 <p className="text-xs text-destructive/70 mt-1">{selectedMachine.ng} {t("common.items")}</p>
               </div>
               <div
-                className={`text-center p-4 rounded-lg cursor-pointer transition-all border-2 ${
+                role="button"
+                tabIndex={0}
+                aria-pressed={machineDialogStatusFilter === "NTF"}
+                aria-label={`${t("dashboard.filterBy")}: NTF`}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" || e.key === " ") {
+                    e.preventDefault();
+                    setMachineDialogStatusFilter("NTF");
+                  }
+                }}
+                className={`text-center p-4 rounded-lg cursor-pointer transition-all border-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 ${
                   machineDialogStatusFilter === "NTF"
                     ? "bg-warning/20 border-warning shadow-md scale-[1.02]"
                     : "bg-warning/5 border-transparent hover:bg-warning/10 hover:border-warning/30"
                 }`}
                 onClick={() => setMachineDialogStatusFilter("NTF")}
               >
-                <p className="text-xs text-muted-foreground uppercase tracking-wider">{t("dashboard.ntfy")}</p>
+                {/* doc65 W1 — nhãn trung thực: giá trị là ntf/total (tỷ lệ NTF), không phải "NTFY" */}
+                <p className="text-xs text-muted-foreground uppercase tracking-wider">NTF %</p>
                 <p className="text-2xl font-bold text-warning">
-                  {calculateYields(selectedMachine).ntfy}%
+                  {fmtPct(calculateYields(selectedMachine).ntfPct)}
                 </p>
                 <p className="text-xs text-warning/70 mt-1">{selectedMachine.ntf} {t("common.items")}</p>
               </div>
@@ -2714,9 +3121,9 @@ export default function Dashboard() {
                         <PieChart>
                           <Pie
                             data={[
-                              { name: "OK", value: selectedMachine.ok, color: "oklch(0.72 0.17 145)" },
-                              { name: "NG", value: selectedMachine.ng, color: "oklch(0.65 0.2 25)" },
-                              { name: "NTF", value: selectedMachine.ntf, color: "oklch(0.78 0.15 75)" },
+                              { name: "OK", value: selectedMachine.ok, color: toneHex("success") },
+                              { name: "NG", value: selectedMachine.ng, color: toneHex("danger") },
+                              { name: "NTF", value: selectedMachine.ntf, color: toneHex("warning") },
                             ].filter(d => d.value > 0)}
                             cx="50%"
                             cy="50%"
@@ -2727,9 +3134,9 @@ export default function Dashboard() {
                             label={({ name, value }) => `${name}: ${value}`}
                           >
                             {[
-                              { name: "OK", value: selectedMachine.ok, color: "oklch(0.72 0.17 145)" },
-                              { name: "NG", value: selectedMachine.ng, color: "oklch(0.65 0.2 25)" },
-                              { name: "NTF", value: selectedMachine.ntf, color: "oklch(0.78 0.15 75)" },
+                              { name: "OK", value: selectedMachine.ok, color: toneHex("success") },
+                              { name: "NG", value: selectedMachine.ng, color: toneHex("danger") },
+                              { name: "NTF", value: selectedMachine.ntf, color: toneHex("warning") },
                             ].filter(d => d.value > 0).map((entry, index) => (
                               <Cell key={`cell-${index}`} fill={entry.color} />
                             ))}
@@ -2743,9 +3150,9 @@ export default function Dashboard() {
                     <div className="h-30 rounded-xl border border-border/50 bg-card p-3">
                       <ResponsiveContainer width="100%" height="100%">
                         <BarChart data={[
-                          { name: "OK", value: selectedMachine.ok, fill: "oklch(0.72 0.17 145)" },
-                          { name: "NG", value: selectedMachine.ng, fill: "oklch(0.65 0.2 25)" },
-                          { name: "NTF", value: selectedMachine.ntf, fill: "oklch(0.78 0.15 75)" },
+                          { name: "OK", value: selectedMachine.ok, fill: toneHex("success") },
+                          { name: "NG", value: selectedMachine.ng, fill: toneHex("danger") },
+                          { name: "NTF", value: selectedMachine.ntf, fill: toneHex("warning") },
                         ]}>
                           <CartesianGrid {...chartGridProps} opacity={0.3} />
                           <XAxis dataKey="name" tick={chartAxisTick} axisLine={{ stroke: 'var(--border)' }} />
@@ -2753,9 +3160,9 @@ export default function Dashboard() {
                           <RechartsTooltip contentStyle={chartTooltipStyle} />
                           <Bar dataKey="value" radius={[4, 4, 0, 0]}>
                             {[
-                              { name: "OK", value: selectedMachine.ok, fill: "oklch(0.72 0.17 145)" },
-                              { name: "NG", value: selectedMachine.ng, fill: "oklch(0.65 0.2 25)" },
-                              { name: "NTF", value: selectedMachine.ntf, fill: "oklch(0.78 0.15 75)" },
+                              { name: "OK", value: selectedMachine.ok, fill: toneHex("success") },
+                              { name: "NG", value: selectedMachine.ng, fill: toneHex("danger") },
+                              { name: "NTF", value: selectedMachine.ntf, fill: toneHex("warning") },
                             ].map((entry, index) => (
                               <Cell key={`bar-${index}`} fill={entry.fill} />
                             ))}
@@ -2800,9 +3207,25 @@ export default function Dashboard() {
                       {filteredInspections?.data?.map((inspection: InspectionResult) => (
                         <div
                           key={inspection.id}
-                          className="flex items-center justify-between p-3 rounded-lg bg-muted/30 cursor-pointer hover:bg-muted/60 hover:shadow-sm transition-all group"
-                          onClick={() => {
-                            window.open(`/inspection/${inspection.id}`, '_blank');
+                          role="button"
+                          tabIndex={0}
+                          aria-label={`${t("common.details")}: ${inspection.serialNumber}`}
+                          className="flex items-center justify-between p-3 rounded-lg bg-muted/30 cursor-pointer hover:bg-muted/60 hover:shadow-sm transition-all group focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                          onClick={(e) => {
+                            // doc67 W4: kiosk/panel-PC chặn window.open — điều hướng in-app;
+                            // desktop giữ Ctrl/Cmd+click để mở tab mới.
+                            if (e.ctrlKey || e.metaKey) {
+                              window.open(`/inspection/${inspection.id}`, '_blank');
+                              return;
+                            }
+                            e.preventDefault();
+                            setLocation(`/inspection/${inspection.id}`);
+                          }}
+                          onKeyDown={(e) => {
+                            if (e.key === "Enter" || e.key === " ") {
+                              e.preventDefault();
+                              setLocation(`/inspection/${inspection.id}`);
+                            }
                           }}
                         >
                           <div className="flex items-center gap-3">
@@ -2827,6 +3250,7 @@ export default function Dashboard() {
                         </div>
                       ))}
                       {(!filteredInspections?.data || filteredInspections.data.length === 0) && (
+                        <ScopeAwareEmpty reason={scopeEmptyReason} variant="block">
                         <div className="text-center py-8">
                           <p className="text-muted-foreground">{t("dashboard.noInspectionResults")}</p>
                           {machineDialogStatusFilter !== "all" && (
@@ -2840,6 +3264,7 @@ export default function Dashboard() {
                             </Button>
                           )}
                         </div>
+                        </ScopeAwareEmpty>
                       )}
                       {filteredInspections?.total && filteredInspections.total > 50 && (
                         <p className="text-center text-xs text-muted-foreground py-2">
@@ -2852,9 +3277,7 @@ export default function Dashboard() {
               </ScrollArea>
             </TabsContent>
           </Tabs>
-        </DialogContent>
-      </Dialog>
-      }
+      </ContextDrawer>
       {/* Metrics Settings Dialog */}
       <Dialog open={metricsSettingsOpen} onOpenChange={setMetricsSettingsOpen}>
         <DialogContent className="sm:max-w-md">
@@ -2888,8 +3311,9 @@ export default function Dashboard() {
                   <ThumbsDown className="h-4 w-4 text-destructive" />
                 </div>
                 <div>
-                  <p className="font-medium">{t("dashboard.fyFullName")}</p>
-                  <p className="text-xs text-muted-foreground">{t("dashboard.fyDescription")}</p>
+                  {/* doc65 W1 — nhãn trung thực khớp thẻ máy: chỉ số này là tỷ lệ NG (ng/total) */}
+                  <p className="font-medium">{t("dashboardRaw.ngTyLeNg", "NG % — Tỷ lệ NG")}</p>
+                  <p className="text-xs text-muted-foreground">{t("dashboardRaw.soBoNgTongSo", "Số bo NG / tổng số kiểm tra trên máy")}</p>
                 </div>
               </div>
               <Button
@@ -2906,8 +3330,9 @@ export default function Dashboard() {
                   <AlertTriangle className="h-4 w-4 text-warning" />
                 </div>
                 <div>
-                  <p className="font-medium">{t("dashboard.ntfyFullName")}</p>
-                  <p className="text-xs text-muted-foreground">{t("dashboard.ntfyDescription")}</p>
+                  {/* doc65 W1 — nhãn trung thực khớp thẻ máy: chỉ số này là tỷ lệ NTF (ntf/total) */}
+                  <p className="font-medium">{t("dashboardRaw.ntfTyLeNtf", "NTF % — Tỷ lệ NTF")}</p>
+                  <p className="text-xs text-muted-foreground">{t("dashboardRaw.soBoNtfLoiAo", "Số bo NTF (lỗi ảo) / tổng số kiểm tra trên máy")}</p>
                 </div>
               </div>
               <Button
@@ -2951,19 +3376,16 @@ export default function Dashboard() {
       </Dialog>
 
       {/* Workstation Drilldown Dialog */}
-      <Dialog open={drilldownDialogOpen} onOpenChange={setDrilldownDialogOpen}>
-        <DialogContent className="max-w-3xl max-h-[80vh] overflow-hidden">
-          <DialogHeader>
-            <DialogTitle className="flex items-center gap-2">
-              <Factory className="h-5 w-5 text-primary" />
-              {t("dashboard.workstationDetail")} {selectedWorkstationForDrilldown?.name}
-            </DialogTitle>
-            <DialogDescription>
-              {t("dashboard.stationCode")} {selectedWorkstationForDrilldown?.code} • {t("dashboard.dataFrom")} {ngTimeFilter === "day" ? t("dashboard.todayPeriod") : ngTimeFilter === "week" ? t("dashboard.7daysPeriod") : t("dashboard.30daysPeriod")}
-            </DialogDescription>
-          </DialogHeader>
-
-          <ScrollArea className="max-h-[60vh]">
+      {/* doc68 §3.3 P1 (việc 2) — Drilldown trạm: Dialog → ContextDrawer phải (đồng
+          mẫu với chi tiết máy). ContextDrawer tự cuộn nội dung nên bỏ ScrollArea. */}
+      <ContextDrawer
+        open={drilldownDialogOpen}
+        onOpenChange={setDrilldownDialogOpen}
+        className="flex w-[92vw] flex-col gap-0 p-0 sm:w-[540px] sm:max-w-[560px]"
+        title={<span className="flex items-center gap-2"><Factory className="h-5 w-5 text-primary" />{t("dashboard.workstationDetail")} {selectedWorkstationForDrilldown?.name}</span>}
+        description={`${t("dashboard.stationCode")} ${selectedWorkstationForDrilldown?.code ?? ""} • ${t("dashboard.dataFrom")} ${ngTimeFilter === "day" ? t("dashboard.todayPeriod") : ngTimeFilter === "week" ? t("dashboard.7daysPeriod") : t("dashboard.30daysPeriod")}`}
+      >
+          <div>
             {drilldownLoading ? (
               <div className="flex items-center justify-center h-32">
                 <RefreshCw className="h-6 w-6 animate-spin text-muted-foreground" />
@@ -2975,7 +3397,9 @@ export default function Dashboard() {
                   const getNGColorClass = (rate: number) => {
                     if (rate <= 2) return "text-success bg-success/10 border-success/30";
                     if (rate <= 5) return "text-warning bg-warning/10 border-warning/30";
-                    if (rate <= 10) return "text-orange-500 bg-orange-500/10 border-orange-500/30";
+                    // doc67 W7 GĐ2 — bậc 3/4 thang NG: token --alarm-high (cam ISA-18.2 P2,
+                    // theme-aware) thay orange-500 hardcode; khớp chú giải tab NG trực quan.
+                    if (rate <= 10) return "text-(--alarm-high) bg-(--alarm-high)/10 border-(--alarm-high)/30";
                     return "text-destructive bg-destructive/10 border-destructive/30";
                   };
                   return (
@@ -2986,7 +3410,7 @@ export default function Dashboard() {
                           <p className="text-sm text-muted-foreground">{mp.measurementPointName}</p>
                         </div>
                         <div className="text-right">
-                          <p className="text-2xl font-bold">{ngRate.toFixed(1)}%</p>
+                          <p className="text-2xl font-bold">{fmtPct(ngRate)}</p>
                           <p className="text-xs text-muted-foreground">{t("dashboard.ngRate")}</p>
                         </div>
                       </div>
@@ -3024,31 +3448,47 @@ export default function Dashboard() {
               </div>
             ) : (
               <EmptyState
+                scopeEmptyReason={scopeEmptyReason}
                 variant="no-analytics"
                 title={t("dashboard.noMeasurementPoints")}
                 description={t("dashboard.noMeasurementPointsDesc")}
                 compact
               />
             )}
-          </ScrollArea>
-        </DialogContent>
-      </Dialog>
+          </div>
+      </ContextDrawer>
     </DashboardLayout>
   );
 }
 
 // MQTT Alert Widget Component - Combined alerts from mqttAlert and mqttClientManagement
-function MqttAlertWidget() {
+// doc67 W6 [P1-2] — socket live: ngừng poll 30s, 2 query này được root invalidate
+// theo nhịp socket (~60s); chỉ poll khi socket rớt. memo: chỉ re-render khi
+// socketConnected đổi (props duy nhất) thay vì theo mọi render của root.
+const MqttAlertWidget = memo(function MqttAlertWidget({ socketConnected }: { socketConnected: boolean }) {
   const { t } = useTranslation();
   // Rule-based alerts
-  const { data: unresolvedAlerts } = trpc.mqttAlert.unresolved.useQuery(undefined, {
-    refetchInterval: 30000,
+  // doc65 W2 (AUD-01) — widget poll 30s nhưng trước đây KHÔNG khai tuổi dữ liệu;
+  // lấy dataUpdatedAt/isFetching để gắn PollFreshness ở header widget.
+  const {
+    data: unresolvedAlerts,
+    dataUpdatedAt: ruleAlertsUpdatedAt,
+    isFetching: ruleAlertsFetching,
+  } = trpc.mqttAlert.unresolved.useQuery(undefined, {
+    refetchInterval: socketConnected ? false : 30000,
   });
 
   // Connection alerts from scheduler
-  const { data: connectionAlerts } = trpc.mqttClientManagement.getAlertWidgetData.useQuery(undefined, {
-    refetchInterval: 30000,
+  const {
+    data: connectionAlerts,
+    dataUpdatedAt: connAlertsUpdatedAt,
+    isFetching: connAlertsFetching,
+  } = trpc.mqttClientManagement.getAlertWidgetData.useQuery(undefined, {
+    refetchInterval: socketConnected ? false : 30000,
   });
+
+  // Mốc mới nhất giữa hai query của widget (poll 30s → ngưỡng cũ mặc định 60s).
+  const alertsUpdatedAt = Math.max(ruleAlertsUpdatedAt || 0, connAlertsUpdatedAt || 0) || undefined;
 
   const totalRuleAlerts = unresolvedAlerts?.length || 0;
   const totalConnectionAlerts = connectionAlerts?.total || 0;
@@ -3097,11 +3537,31 @@ function MqttAlertWidget() {
 
   const hasCritical = (connectionAlerts?.critical || 0) > 0;
 
+  // doc68 §3.3 P1 (việc 3) — GỘP cảnh báo TRÙNG (cùng nguồn+mức+tiêu đề) thành 1
+  // dòng kèm "×N" và GIỚI HẠN 3 dòng (trước đây 5 dòng lặp chiếm gần 1 màn).
+  const groupedAlerts = (() => {
+    const map = new Map<string, { alert: (typeof combinedAlerts)[number]; count: number }>();
+    for (const a of combinedAlerts) {
+      const key = `${a.type}|${a.severity}|${a.title}`;
+      const g = map.get(key);
+      if (g) {
+        g.count += 1;
+        if (a.triggeredAt.getTime() > g.alert.triggeredAt.getTime()) g.alert = a;
+      } else {
+        map.set(key, { alert: a, count: 1 });
+      }
+    }
+    return Array.from(map.values()).sort(
+      (x, y) => y.alert.triggeredAt.getTime() - x.alert.triggeredAt.getTime(),
+    );
+  })();
+
   return (
     <Card className={`glass-card ${hasCritical ? 'border-destructive/50 bg-destructive/5' : 'border-warning/50 bg-warning/5'}`}>
       <CardHeader className="pb-3">
-        <div className="flex items-center justify-between">
-          <CardTitle className="text-base flex items-center gap-2">
+        {/* doc68 §3.3 P3 (việc 6) — mobile 390: flex-wrap để tiêu đề + 2 nút không đè nhau. */}
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <CardTitle className="text-base flex flex-wrap items-center gap-2">
             <AlertTriangle className={`w-5 h-5 ${hasCritical ? 'text-destructive' : 'text-warning'}`} />
             {t("dashboard.mqttAlerts")}
             <div className="flex gap-1 ml-2">
@@ -3115,6 +3575,15 @@ function MqttAlertWidget() {
                 <Badge variant="secondary">{totalRuleAlerts} {t("dashboard.rulesLabel")}</Badge>
               )}
             </div>
+            {/* doc65 W2 (AUD-01) — tuổi dữ liệu widget. doc67 W6 [P1-2]: socket live
+                → làm mới theo nhịp socket-invalidate ~60s ⇒ ngưỡng cũ 2× = 120s;
+                socket rớt → poll 30s ⇒ ngưỡng mặc định 60s như cũ. */}
+            <PollFreshness
+              updatedAt={alertsUpdatedAt}
+              isFetching={ruleAlertsFetching || connAlertsFetching}
+              staleAfterMs={socketConnected ? 120_000 : 60_000}
+              className="ml-1 font-normal"
+            />
           </CardTitle>
           <div className="flex gap-2">
             <Link href="/mqtt-profiles?tab=alerts">
@@ -3134,11 +3603,11 @@ function MqttAlertWidget() {
         <CardDescription>{t("dashboard.unresolvedMqttAlerts", { total: totalAlerts })}</CardDescription>
       </CardHeader>
       <CardContent>
-        <div className="space-y-3">
-          {combinedAlerts.slice(0, 5).map((alert) => (
+        <div className="space-y-2">
+          {groupedAlerts.slice(0, 3).map(({ alert, count }) => (
             <div
               key={alert.id}
-              className={`flex items-start gap-3 p-3 rounded-lg bg-background/50 border ${
+              className={`flex items-start gap-3 p-2.5 rounded-lg bg-background/50 border ${
                 alert.severity === 'critical' ? 'border-destructive/20' : 'border-warning/20'
               }`}
             >
@@ -3148,28 +3617,184 @@ function MqttAlertWidget() {
                 }`} />
               </div>
               <div className="flex-1 min-w-0">
-                <div className="flex items-center gap-2">
-                  <p className="font-medium text-sm">{alert.title}</p>
+                <div className="flex flex-wrap items-center gap-2">
+                  <p className="font-medium text-sm truncate">{alert.title}</p>
+                  {count > 1 && <Badge variant="secondary" className="text-xs h-5">×{count}</Badge>}
                   <Badge variant="outline" className="text-xs">
                     {alert.type === 'rule' ? t("dashboard.ruleType") : t("dashboard.connectionType")}
                   </Badge>
                 </div>
-                <p className="text-xs text-muted-foreground line-clamp-2 mt-1">
+                <p className="text-xs text-muted-foreground line-clamp-1 mt-0.5">
                   {alert.message}
                 </p>
-                <p className="text-xs text-muted-foreground mt-1">
+                <p className="text-xs text-muted-foreground mt-0.5">
                   {alert.triggeredAt.toLocaleString('vi-VN')}
                 </p>
               </div>
             </div>
           ))}
-          {combinedAlerts.length > 5 && (
-            <p className="text-xs text-muted-foreground text-center pt-2">
-              {t("dashboard.moreAlerts", { count: combinedAlerts.length - 5 })}
+          {groupedAlerts.length > 3 && (
+            <p className="text-xs text-muted-foreground text-center pt-1">
+              {t("dashboard.moreAlerts", { count: groupedAlerts.length - 3 })}
             </p>
           )}
         </div>
       </CardContent>
     </Card>
   );
-}
+});
+
+// doc67 W6 [P1-3] — HeaderRealtimePulse: RealtimeBadge ở header cần mốc push
+// oee:update gần nhất. Tách khỏi root để mỗi nhịp đẩy (~60s) chỉ re-render badge
+// nhỏ này thay vì cả cây Dashboard ~3400 dòng (trước đây setLastRealtimeAt ở gốc).
+const HeaderRealtimePulse = memo(function HeaderRealtimePulse({ connected }: { connected: boolean }) {
+  const [lastRealtimeAt, setLastRealtimeAt] = useState<Date | null>(null);
+
+  useEffect(() => {
+    const socket = getSharedSocket();
+    const onOeeUpdate = () => setLastRealtimeAt(new Date());
+    socket.on('oee:update', onOeeUpdate);
+    return () => {
+      socket.off('oee:update', onOeeUpdate);
+      releaseSharedSocket();
+    };
+  }, []);
+
+  return <RealtimeBadge connected={connected} pollingFallback lastEventAt={lastRealtimeAt} />;
+});
+
+// doc67 W6 [P1-3] — LiveOeeWidget: widget OEE sở hữu state liveOEE/lastRealtimeAt
+// riêng + tự subscribe socket 'oee:update' (root chỉ truyền socketConnected +
+// cardStyleProps đã memo). Query getAllOEE (fallback first-paint / socket rớt)
+// cũng dời vào đây. Logic dữ liệu GIỮ NGUYÊN từ bản root (normalize mọi shape,
+// honest null — không bịa factor).
+const LiveOeeWidget = memo(function LiveOeeWidget({
+  socketConnected,
+  cardStyleProps,
+}: {
+  socketConnected: boolean;
+  cardStyleProps: { style: CSSProperties; className: string; accentColor: string; textColor: string };
+}) {
+  const { t } = useTranslation();
+  const [liveOEE, setLiveOEE] = useState<LiveOEERow[] | null>(null);
+  const [lastRealtimeAt, setLastRealtimeAt] = useState<Date | null>(null);
+
+  useEffect(() => {
+    const socket = getSharedSocket();
+
+    // Live OEE push — single source of truth (oeeService). The broadcaster sends
+    // { metrics, at }; the legacy per-machine path may send a raw array/object.
+    // Normalize all shapes; honour honest nulls (never synthesize a factor).
+    const onOeeUpdate = (payload: any) => {
+      const raw = Array.isArray(payload)
+        ? payload
+        : Array.isArray(payload?.metrics)
+          ? payload.metrics
+          : payload && typeof payload === 'object' && payload.machineId != null
+            ? [payload]
+            : [];
+      if (raw.length === 0) return;
+      const rows: LiveOEERow[] = raw.map((m: any) => ({
+        machineId: m.machineId,
+        machineCode: m.machineCode ?? String(m.machineId),
+        availability: m.availability ?? null,
+        performance: m.performance ?? null,
+        quality: m.quality ?? null,
+        oee: m.oee ?? null,
+      }));
+      setLiveOEE((prev) => {
+        // Merge per-machine updates over the existing live snapshot.
+        const byId = new Map<number, LiveOEERow>((prev ?? []).map((r) => [r.machineId, r]));
+        for (const r of rows) byId.set(r.machineId, r);
+        return Array.from(byId.values()).sort((a, b) => a.machineId - b.machineId);
+      });
+      setLastRealtimeAt(new Date());
+    };
+
+    socket.on('oee:update', onOeeUpdate);
+    return () => {
+      socket.off('oee:update', onOeeUpdate);
+      releaseSharedSocket();
+    };
+  }, []);
+
+  // Fetch live OEE metrics — first-load fallback when no socket push has arrived
+  // yet. Once oee:update pushes arrive (socketConnected), we stop polling and
+  // rely on the realtime stream.
+  const { data: allOEE } = trpc.mqttClient.getAllOEE.useQuery(undefined, {
+    refetchInterval: socketConnected ? false : 30000,
+  });
+
+  // Effective OEE: prefer the realtime socket stream (oee:update), fall back to
+  // the query for the first paint. No synthetic values — null factors stay null.
+  const effectiveOEE = useMemo<LiveOEERow[]>(() => {
+    if (liveOEE && liveOEE.length > 0) return liveOEE;
+    const q = allOEE as LiveOEERow[] | undefined;
+    return Array.isArray(q) ? q : [];
+  }, [liveOEE, allOEE]);
+
+  const oeeIsLive = !!(socketConnected && liveOEE && liveOEE.length > 0);
+
+  if (effectiveOEE.length === 0) return null;
+
+  const oeeData = effectiveOEE;
+  // Average only over machines that actually have each factor (honest).
+  const avgOf = (sel: (m: LiveOEERow) => number | null): number | null => {
+    const vals = oeeData.map(sel).filter((v): v is number => v != null);
+    return vals.length ? vals.reduce((s, v) => s + v, 0) / vals.length : null;
+  };
+  const avgA = avgOf((m) => m.availability);
+  const avgP = avgOf((m) => m.performance);
+  const avgQ = avgOf((m) => m.quality);
+  const avgOEE = avgOf((m) => m.oee);
+  // doc67 W7 GĐ2 — tone OEE theo oeeTone chung 80/60 (QUYẾT ĐỊNH #2: ngưỡng success
+  // đổi 85→80 CHỦ ĐÍCH, khớp PanelShell) + fmtPct chung (null → '—' thay "N/A").
+  const oeeClass = (v: number | null) => TONE_TEXT_CLASS[oeeTone(v)];
+  const fmt = (v: number | null) => fmtPct(v);
+
+  return (
+    <Card className={cardStyleProps.className} style={cardStyleProps.style}>
+      <CardHeader className="pb-2 flex flex-row items-center justify-between">
+        <CardTitle className="text-base flex items-center gap-2">
+          <Activity className="h-4 w-4" style={{ color: cardStyleProps.accentColor }} />
+          {t("dashboard.oeeTitle", "OEE — Overall Equipment Effectiveness")}
+          <RealtimeBadge connected={oeeIsLive} pollingFallback lastEventAt={oeeIsLive ? lastRealtimeAt : null} />
+        </CardTitle>
+        <a href="/oee-dashboard" className="text-xs text-muted-foreground hover:underline">{t("common.viewAll", "Xem tất cả")}</a>
+      </CardHeader>
+      <CardContent className="space-y-4">
+        {/* Aggregate 4-card OEE cluster */}
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+          {([
+            { label: t("dashboard.oeeAvailability", "Availability"), value: avgA, icon: "A" },
+            { label: t("dashboard.oeePerformance", "Performance"), value: avgP, icon: "P" },
+            { label: t("dashboard.oeeQuality", "Quality"), value: avgQ, icon: "Q" },
+            { label: "OEE", value: avgOEE, icon: "OEE" },
+          ] as const).map((item) => (
+            <a key={item.icon} href="/oee-dashboard" className="rounded-xl border bg-card p-3 text-center hover:shadow-md transition-shadow cursor-pointer block">
+              <p className="text-xs text-muted-foreground font-medium">{item.icon}</p>
+              <p className={cn("text-2xl font-bold mt-1", oeeClass(item.value))}>{fmt(item.value)}</p>
+              <p className="text-[11px] text-muted-foreground">{item.label}</p>
+            </a>
+          ))}
+        </div>
+        {/* Per-machine detail grid */}
+        <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-3">
+          {oeeData.map((m) => {
+            return (
+              <div key={m.machineId} className="rounded-lg border p-2 space-y-1">
+                <p className="text-xs font-medium truncate" title={m.machineCode}>{m.machineCode}</p>
+                <p className={cn("text-xl font-bold", oeeClass(m.oee))}>{fmt(m.oee)}</p>
+                <div className="text-[10px] text-muted-foreground space-y-0.5">
+                  <div className="flex justify-between"><span>A</span><span>{fmt(m.availability)}</span></div>
+                  <div className="flex justify-between"><span>P</span><span>{fmt(m.performance)}</span></div>
+                  <div className="flex justify-between"><span>Q</span><span>{fmt(m.quality)}</span></div>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      </CardContent>
+    </Card>
+  );
+});

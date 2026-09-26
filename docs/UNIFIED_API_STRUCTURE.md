@@ -10,6 +10,21 @@ Mục tiêu: Client có thể sử dụng cùng một cấu trúc JSON để g�
 
 ---
 
+## ⚠ Hướng sắp tới (đã quyết định, CHƯA triển khai) — BG-85
+
+Chủ dự án đã quyết định (`docs/superpowers/specs/2026-09-01-aoi-chuan-goi-anh.md`):
+`meta.json` trong gói ZIP sẽ **không còn là một hợp đồng riêng**. Nó sẽ trở thành
+**chính payload kết quả v2.0** (`machineDataContractV2` — cây
+`surfaces[].positions[].captures[].components[]`) **cộng thêm đúng một trường**
+`images[]` (tham chiếu ảnh, nối bằng `captureId`). Cấu trúc `measurements[]`/
+`points[]` mà tài liệu này mô tả bên dưới **sẽ bị thay thế** khi BG-85 hoàn tất —
+máy di trú theo 3 giai đoạn (nhận cả hai hình dạng → đếm được → cắt hình dạng cũ
+khi số máy về 0). Bên tích hợp máy nên xem spec trên trước khi đầu tư nhiều vào
+engine sinh `meta.json` theo hình dạng hiện tại, để tránh viết lại hai lần. Chi
+tiết `images[]`/lịch trình di trú **CHƯA CHỐT** — không suy đoán thêm ngoài spec.
+
+---
+
 ## 1. Inspection Metadata - Thông tin kiểm tra
 
 ### Thông tin sản phẩm (REQUIRED)
@@ -109,28 +124,53 @@ Cấu trúc từ trên xuống (top-down):
 }
 ```
 
-### 4.2. Cấu trúc legacy (Old - Vẫn hỗ trợ)
+### 4.2. Cấu trúc legacy (BG-85, 2026-09-02 — hợp đồng phẳng KHÔNG còn được nhận cho gói ZIP)
+
+⚠️ **`meta.json` của gói ZIP (`aoiPackage.commit`) KHÔNG còn nhận hợp đồng
+PHẲNG cũ nữa** (`measurements[]`/`points[]` cấp cao nhất, tên trường
+`code`/`value`…). Từ BG-85, `meta.json` là CHÍNH payload cây
+`machineDataContractV2` (đường trực tiếp `submitInspection` cũng dùng) cộng
+thêm `images[]` — xem §6.1. Một gói ZIP gửi hình dạng phẳng như trước đây sẽ bị
+**từ chối** (`invalid_type`, thiếu `surfaces`/`ntf`/`summary`/`identity` bắt
+buộc), **không** bị khoá `'dead'` (vẫn `'failed'`, retry được) nhưng **không
+bao giờ tự commit được**. Cấu trúc CÂY tối thiểu tương đương (đo lường của MỘT
+điểm, `R1-IC1-PIN1`) trông như sau:
 
 ```json
 {
-  "points": [
-    {
-      "code": "R1-IC1-PIN1",                // Mã điểm đo (old field)
-      "name": "IC1 Pin 1 Resistance",
-      "fileName": "image_001.jpg",
-      "result": "OK",
-      "value": 1023.5,                      // Old field name
-      "unit": "Ω"
-    }
-  ]
+  "identity": {
+    "station": "AIC-01", "machine": "AOI-01", "line": "LINE-3",
+    "plant": "FACTORY-HN", "country": "VN", "solutionName": "ModelA-SOL", "appVersion": "1.0.0"
+  },
+  "productId": "modela-v2-001",
+  "serialNumber": "SN123456789",
+  "productModel": "ModelA-V2",
+  "overallResult": "OK",
+  "ntf": false,
+  "summary": {
+    "surfaces": { "total": 1, "pass": 1, "ng": 0, "ntf": 0 },
+    "positions": { "total": 1, "pass": 1, "ng": 0, "ntf": 0 },
+    "captures": { "total": 1, "pass": 1, "ng": 0, "ntf": 0 },
+    "components": { "total": 1, "pass": 1, "ng": 0, "ntf": 0 }
+  },
+  "surfaces": [{
+    "name": "TOP", "result": "OK", "ntf": false,
+    "positions": [{
+      "positionId": "P01", "result": "OK", "ntf": false,
+      "captures": [{
+        "captureId": "cap-R1-IC1-PIN1", "captureName": "IC1 Pin 1 Resistance", "result": "OK", "ntf": false,
+        "components": [{ "componentId": "comp-R1-IC1-PIN1", "result": "OK", "ntf": false, "value": "1023.5" }]
+      }]
+    }]
+  }],
+  "images": [{ "captureId": "cap-R1-IC1-PIN1", "fileName": "image_001.jpg" }]
 }
 ```
 
-**Hệ thống tự động normalize:**
-- `measurements` → ưu tiên
-- `points` → fallback nếu không có `measurements`
-- Point code: `pointId` → `pointCode` → `code`
-- Measured value: `measuredValue` → `value`
+Ghi chú: `submitInspection` (tRPC, đường trực tiếp v1.x — mục 6.2) vẫn nhận tên
+trường thay thế `code`/`value` như trước cho hình dạng PHẲNG của **chính nó**
+(`submitInspectionCoreObject`, không đổi bởi BG-85) — bảng này chỉ nói về
+`meta.json` của gói ZIP.
 
 ---
 
@@ -168,65 +208,59 @@ Cấu trúc từ trên xuống (top-down):
 
 ### 6.1. AOI Package - meta.json
 
+BG-85 (2026-09-02) — `meta.json` = `machineDataContractV2` (cây) + `images[]`:
+
 ```json
 {
-  "machineCode": "AOI-LINE1-01",
-  "inspectionTime": "2024-01-15T10:30:00Z",
-  "cycleTime": 150.5,
-  
+  "identity": {
+    "station": "AIC-LINE1-01", "machine": "AOI-LINE1-01", "line": "LINE-3",
+    "plant": "FACTORY-HN", "country": "VN", "solutionName": "PCB-V2-SOLUTION", "appVersion": "1.0.0"
+  },
+  "productId": "b3f1c2a0-1111-4a2b-9c3d-000000000001",
   "serialNumber": "SN-20240115-001",
   "productModel": "PCB-V2-Standard",
-  "batchNumber": "BATCH-2024-001",
-  
-  "companyCode": "COMPANY-A",
-  "factoryCode": "FACTORY-HN",
-  "workshopCode": "WORKSHOP-SMT",
-  "lineCode": "LINE-3",
-  "stageCode": "STAGE-AOI",
-  
-  "productionOrderCode": "PO-2024-0115-001",
-  "operatorId": "OP-0023",
-  
   "overallResult": "NG",
-  
-  "measurements": [
+  "ntf": false,
+  "startedAt": "2024-01-15T10:30:00.000",
+  "completedAt": "2024-01-15T10:32:30.400",
+
+  "summary": {
+    "surfaces":   { "total": 1, "pass": 0, "ng": 1, "ntf": 0 },
+    "positions":  { "total": 1, "pass": 0, "ng": 1, "ntf": 0 },
+    "captures":   { "total": 3, "pass": 2, "ng": 1, "ntf": 0 },
+    "components": { "total": 3, "pass": 2, "ng": 1, "ntf": 0 }
+  },
+
+  "surfaces": [
     {
-      "pointId": "POINT-001",
-      "pointCode": "R1-IC1-PIN1",
-      "name": "IC1 Pin 1 Resistance",
-      "fileName": "image_001.jpg",
-      "result": "OK",
-      "measuredValue": 1023.5,
-      "unit": "Ω",
-      "remark": "In spec"
-    },
-    {
-      "pointId": "POINT-002",
-      "pointCode": "R2-IC2-PIN5",
-      "name": "IC2 Pin 5 Resistance",
-      "fileName": "image_002.jpg",
-      "result": "NG",
-      "measuredValue": 0,
-      "unit": "Ω",
-      "remark": "Short circuit - Replace IC2"
-    },
-    {
-      "pointId": "POINT-003",
-      "pointCode": "CAP-C15",
-      "name": "C15 Capacitance",
-      "fileName": "image_003.jpg",
-      "result": "OK",
-      "measuredValue": 10.2,
-      "unit": "μF"
+      "name": "TOP", "result": "NG", "ntf": false,
+      "positions": [
+        {
+          "positionId": "P01", "result": "NG", "ntf": false,
+          "captures": [
+            {
+              "captureId": "cap-R1-IC1-PIN1", "captureName": "IC1 Pin 1 Resistance", "result": "OK", "ntf": false,
+              "components": [{ "componentId": "comp-R1-IC1-PIN1", "result": "OK", "ntf": false, "value": "1023.5" }]
+            },
+            {
+              "captureId": "cap-R2-IC2-PIN5", "captureName": "IC2 Pin 5 Resistance", "result": "NG", "ntf": false,
+              "components": [{ "componentId": "comp-R2-IC2-PIN5", "result": "NG", "ntf": false, "value": "0", "errorDesc": "Short circuit - Replace IC2" }]
+            },
+            {
+              "captureId": "cap-CAP-C15", "captureName": "C15 Capacitance", "result": "OK", "ntf": false,
+              "components": [{ "componentId": "comp-CAP-C15", "result": "OK", "ntf": false, "value": "10.2" }]
+            }
+          ]
+        }
+      ]
     }
   ],
-  
-  "summary": {
-    "totalPoints": 3,
-    "ok": 2,
-    "ng": 1,
-    "ntf": 0
-  }
+
+  "images": [
+    { "captureId": "cap-R1-IC1-PIN1", "fileName": "image_001.jpg" },
+    { "captureId": "cap-R2-IC2-PIN5", "fileName": "image_002.jpg" },
+    { "captureId": "cap-CAP-C15", "fileName": "image_003.jpg" }
+  ]
 }
 ```
 
@@ -279,21 +313,22 @@ const result = await trpc.machine.submitInspection.mutate({
 
 ## 7. Field Mapping - Bảng mapping giữa 2 API
 
-| Concept | AOI Package (meta.json) | submitInspection (tRPC) | Priority |
+> ⚠ **BG-85 (2026-09-02) — hai cột này KHÔNG còn là hai bản của cùng một hình dạng.**
+> `meta.json` nay là **hợp đồng CÂY v2.0** (`machineDataContractV2` + `images[]`);
+> `submitInspection` (tRPC) vẫn nhận hình dạng **PHẲNG v1.x** (`measurements[]`).
+> Bảng dưới đây ánh xạ **khái niệm**, không phải "cùng tên trường".
+
+| Concept | AOI Package (meta.json — CÂY v2.0) | submitInspection (tRPC — PHẲNG v1.x) | Priority |
 |---------|-------------------------|-------------------------|----------|
-| Point ID | `measurements[].pointId` | `measurements[].pointId` | ✅ Same |
-| Point Code | `measurements[].pointCode` | `measurements[].pointCode` | ✅ Same |
-| Measured Value | `measurements[].measuredValue` | `measurements[].measuredValue` | ✅ Same |
-| Result | `measurements[].result` | `measurements[].result` | ✅ Same |
-| Remark | `measurements[].remark` | `measurements[].remark` | ✅ Same |
-| Image | `measurements[].fileName` | `measurements[].imageBase64` | Different |
-| Factory | `factoryCode` (new) | `factoryCode` (new) | ✅ Same |
-| Line | `lineCode` (new) | `lineCode` (new) | ✅ Same |
-| Workshop | `workshopCode` (new) | `workshopCode` (new) | ✅ Same |
-| Stage | `stageCode` (new) | `stageCode` (new) | ✅ Same |
-| Production Order | `productionOrderCode` (new) | `productionOrderCode` (new) | ✅ Same |
-| Operator | `operatorId` (new) | `operatorId` (new) | ✅ Same |
-| Batch | `batchNumber` (new) | `batchNumber` (new) | ✅ Same |
+| Điểm chụp / điểm đo | `surfaces[].positions[].captures[].captureId` | `measurements[].pointId` / `pointCode` | ❌ Khác hẳn |
+| Giá trị đo | `…captures[].components[].value` (cấp COMPONENT) | `measurements[].measuredValue` | ❌ Khác cấp |
+| Kết quả điểm | `…captures[].result` (`"OK"`\|`"NG"`) + cờ `ntf` RIÊNG | `measurements[].result` (`"OK"`\|`"NG"`\|`"NTF"`) | ❌ Khác enum |
+| Ảnh | `images[].fileName` (nối cây bằng `images[].captureId`) | `measurements[].imageBase64` | ❌ Khác hẳn |
+| Danh tính máy/trạm | `identity.{station,machine,line,plant,country,…}` | `machineCode` + `lineCode`/`factoryCode`… | ❌ Khác hẳn |
+| Phán quyết bo | `overallResult` — server **CUỘN LẠI TỪ CÂY**, lời khai chỉ để đối chiếu | `overallResult` (auto-calculated nếu vắng) | ⚠ meta.json: lời khai KHÔNG quyết định |
+| Bốn nhóm đếm | `summary.{surfaces,positions,captures,components}` — **BẮT BUỘC**, lưu nguyên văn để đối chiếu, **KHÔNG BAO GIỜ** là nguồn | (không có) | ❌ Chỉ meta.json |
+| Serial | `serialNumber` — **được phép RỖNG** (máy chưa gán serial); gói vẫn ghi `product_inspections` | `serialNumber` | ⚠ Khác ràng buộc |
+| Factory / Line / Workshop / Stage / Production Order / Operator / Batch | (không có trong hợp đồng cây — tenant SUY TỪ MÁY đã xác thực) | `factoryCode`, `lineCode`, `workshopCode`, `stageCode`, `productionOrderCode`, `operatorId`, `batchNumber` | ❌ Chỉ tRPC |
 
 ---
 
@@ -310,9 +345,22 @@ package.zip
     └── image_003.jpg
 ```
 
-- **meta.json**: Chứa `measurements[].fileName`
-- **images/**: Folder chứa các file ảnh
+- **meta.json**: Chứa `images[].fileName` (BG-85 — KHÔNG còn `measurements[].fileName`, xem §4.2)
+- **images/**: Folder chứa các file ảnh — **đường dẫn DUY NHẤT** server tìm ảnh (BG-88/BG-87:
+  fallback tên trần ở gốc gói đã bị bỏ, ảnh đặt sai chỗ ⇒ 404 khi đọc lại)
 - **Image URL**: `/api/aoi/image/{packageId}/{fileName}`
+
+#### Chuẩn nén (BG-88, nguồn: `docs/superpowers/specs/2026-09-01-aoi-chuan-goi-anh.md` §5)
+
+| Mục | Chuẩn |
+|---|---|
+| Định dạng | ZIP, DEFLATE |
+| Mức nén | 6 (mặc định) — chỉ áp dụng cho `meta.json`; ảnh đã nén sẵn nên nén lại tốn CPU mà lợi <2% byte |
+| Ảnh | **STORE** (không nén lại) — `CompressionLevel.NoCompression` nếu dùng `System.IO.Compression` của .NET |
+| Trần kích thước gói | **200MB**, chặn cứng ở `presign` (trước khi tải byte nào lên) |
+
+Xem ví dụ C# tạo gói đúng chuẩn (per-entry compression) tại
+[`docs/examples/CSharp_API_Examples.md`](./examples/CSharp_API_Examples.md#aoi-package-upload).
 
 ### 8.2. submitInspection (Base64 inline)
 
@@ -334,20 +382,26 @@ package.zip
 
 ## 9. Backward Compatibility - Tương thích ngược
 
-Hệ thống **vẫn chấp nhận** cấu trúc cũ:
+⚠️ **BG-85 (2026-09-02) — mục này KHÔNG còn áp dụng cho `meta.json` của gói
+ZIP.** Trước BG-85, hệ thống chấp nhận TÊN TRƯỜNG cũ (`factory`/`line`/`code`/
+`value`…) miễn khoá mảng đo lường cấp cao nhất là `measurements`. Sau BG-85,
+`meta.json` là hợp đồng CÂY `machineDataContractV2` + `images[]` (§6.1) — KHÔNG
+còn `measurements[]`/`factory`/`line`/`code`/`value` ở bất kỳ đâu. Một gói ZIP
+gửi hình dạng dưới đây bị **từ chối** (`invalid_type`), **không** khoá `'dead'`
+(vẫn `'failed'`, retry được) nhưng **không bao giờ tự commit được**:
 
-### Legacy meta.json (vẫn hoạt động)
+### Legacy meta.json (tên trường cũ vẫn hoạt động)
 
 ```json
 {
   "serialNumber": "SN123",
   "productModel": "PCB-V1",
-  "factory": "FACTORY-HN",       // Old field
-  "line": "LINE-3",              // Old field
-  "points": [                     // Old field name
+  "factory": "FACTORY-HN",
+  "line": "LINE-3",
+  "measurements": [
     {
-      "code": "R1",               // Old field name
-      "value": 1023.5,            // Old field name
+      "code": "R1",
+      "value": 1023.5,
       "fileName": "image_001.jpg",
       "result": "OK"
     }
@@ -355,12 +409,44 @@ Hệ thống **vẫn chấp nhận** cấu trúc cũ:
 }
 ```
 
-**Normalization logic:**
-1. `measurements` field missing → use `points`
-2. `factoryCode` missing → use `factory`
-3. `lineCode` missing → use `line`
-4. `pointId` missing → use `pointCode` → use `code`
-5. `measuredValue` missing → use `value`
+**Hình dạng CÂY tương đương (hình dạng THẬT SỰ được chấp nhận hôm nay):**
+
+```json
+{
+  "identity": {
+    "station": "AIC-01", "machine": "AOI-01", "line": "LINE-3",
+    "plant": "FACTORY-HN", "country": "VN", "solutionName": "PCB-V1-SOL", "appVersion": "1.0.0"
+  },
+  "productId": "pcb-v1-sn123",
+  "serialNumber": "SN123",
+  "productModel": "PCB-V1",
+  "overallResult": "OK",
+  "ntf": false,
+  "summary": {
+    "surfaces": { "total": 1, "pass": 1, "ng": 0, "ntf": 0 },
+    "positions": { "total": 1, "pass": 1, "ng": 0, "ntf": 0 },
+    "captures": { "total": 1, "pass": 1, "ng": 0, "ntf": 0 },
+    "components": { "total": 1, "pass": 1, "ng": 0, "ntf": 0 }
+  },
+  "surfaces": [{
+    "name": "TOP", "result": "OK", "ntf": false,
+    "positions": [{
+      "positionId": "P01", "result": "OK", "ntf": false,
+      "captures": [{
+        "captureId": "cap-R1", "result": "OK", "ntf": false,
+        "components": [{ "componentId": "comp-R1", "result": "OK", "ntf": false, "value": "1023.5" }]
+      }]
+    }]
+  }],
+  "images": [{ "captureId": "cap-R1", "fileName": "image_001.jpg" }]
+}
+```
+
+**Ghi chú (`submitInspection` tRPC, đường trực tiếp v1.x — mục 6.2, KHÔNG đổi bởi BG-85):**
+1. `pointId` missing → use `pointCode` → use `code`
+2. `measuredValue` missing → use `value`
+3. `factoryCode` missing → use `factory`
+4. `lineCode` missing → use `line`
 
 ---
 
@@ -388,6 +474,12 @@ Hệ thống **vẫn chấp nhận** cấu trúc cũ:
 ---
 
 ## 11. Migration Guide - Hướng dẫn chuyển đổi
+
+⚠️ **Lưu ý:** khoá `points` (dòng `-` bên dưới) chỉ minh hoạ TÊN TRƯỜNG cũ để so
+sánh — một payload thật với khoá `points` mà KHÔNG có `measurements` bị server
+**từ chối ngay hôm nay** (không phải "cấu trúc cũ đang chạy, nâng cấp khi rảnh").
+Ưu tiên đổi khoá `measurements` trước các trường khác nếu client còn ở hình dạng
+này.
 
 ### Client cũ (Old structure) → Client mới (New structure)
 
@@ -471,42 +563,72 @@ ORDER BY pi.inspection_time, mr.id;
 
 ## 13. Validation Rules - Quy tắc validation
 
-### Required fields
+> ⚠ **BG-85 — HAI hợp đồng, HAI bộ luật.** Trước 2026-09-02 mục này viết như thể có
+> một bộ luật chung ("BẮT BUỘC trên MỌI payload"); điều đó **không còn đúng** và một
+> bên tích hợp làm theo sẽ dựng gói ZIP **không bao giờ commit được**.
+
+### Required fields — `meta.json` (gói ZIP, hợp đồng CÂY v2.0)
+- ✅ `identity` (đủ `station`/`machine`/`line`/`plant`/`country`/`solutionName`/`appVersion`)
+- ✅ `productId` (min 1 char)
+- ✅ `serialNumber` — **có mặt bắt buộc, nhưng ĐƯỢC PHÉP RỖNG** (`""`) khi máy chưa gán
+  serial. Gói serial rỗng **vẫn ghi** `product_inspections` (hội tụ theo `packageId`)
+- ✅ `overallResult` (`"OK"` | `"NG"`) và `ntf` (boolean) — hai trường RIÊNG
+- ✅ `summary` đủ bốn nhóm `surfaces`/`positions`/`captures`/`components`
+- ✅ `surfaces` (mảng cây, có thể rỗng)
+- ❌ **KHÔNG có** `measurements` / `points` / `pointCode` — hình dạng phẳng cũ đã NGỪNG
+  được nhận (gói vào `status="failed"`, retry được, nhưng không bao giờ tự commit)
+- 🔸 `images[]` là TUỲ CHỌN; nếu có thì **mỗi** `captureId` phải tồn tại trong cây và
+  **mỗi** `fileName` phải có tệp thật trong `images/` — sai một trong hai ⇒ **TỪ CHỐI CẢ GÓI**
+
+### Required fields — `submitInspection` (tRPC, hợp đồng PHẲNG v1.x)
 - ✅ `serialNumber` (string, min 1 char)
 - ✅ `productModel` (string, min 1 char)
-- ✅ `measurements` array (min 1 item) hoặc `points` array
+- ✅ `measurements` array — bắt buộc có mặt (có thể là mảng rỗng `[]`). `points` array là
+  bí danh CŨ của các TÊN TRƯỜNG bên trong (`code`/`value`) — KHÔNG thay thế được khoá
+  `measurements` ở cấp cao nhất
 
-### Optional but recommended
+### Optional but recommended (chỉ `submitInspection` tRPC)
 - `companyCode`, `factoryCode`, `workshopCode`, `lineCode`, `stageCode`
 - `productionOrderCode`, `operatorId`, `batchNumber`
 - `inspectionTime` (ISO 8601 datetime)
 - `overallResult` (auto-calculated if missing)
 
 ### Measurement point rules
-- Mỗi point phải có `fileName` (AOI package) hoặc `imageBase64` (submitInspection)
-- `pointId` hoặc `pointCode` hoặc `code` (at least one)
-- `result` phải là `"OK"` | `"NG"` | `"NTF"`
+- `submitInspection` (tRPC): mỗi point cần `imageBase64` (tuỳ chọn); `pointId` hoặc
+  `pointCode` hoặc `code` (ít nhất một); `result` là `"OK"` | `"NG"` | `"NTF"`
+- `meta.json` (cây v2.0): ảnh khai ở `images[]`, khoá nối là `captureId`; `result` ở MỌI
+  cấp chỉ nhận `"OK"` | `"NG"`, còn NTF là trường `ntf` (boolean) RIÊNG cùng cấp
 
 ---
 
 ## 14. FAQ
 
 ### Q1: Có cần thay đổi client code ngay không?
-**A:** Không bắt buộc. Hệ thống vẫn hỗ trợ cấu trúc cũ (backward compatible). Nhưng **khuyến nghị migrate** để có đầy đủ features mới.
+**A:** **Tuỳ đường bạn đang dùng — câu trả lời KHÔNG còn giống nhau (BG-85, 2026-09-02):**
+- **Gói ZIP (`meta.json`): CÓ, bắt buộc.** Hình dạng phẳng cũ KHÔNG còn parse được. Gói sai
+  hình dạng vào `status="failed"` và ở lại chờ retry — nó không bị khoá vĩnh viễn, nhưng
+  cũng **không bao giờ tự commit được** cho tới khi Agent gửi đúng cây v2.0 + `images[]`.
+- **`submitInspection` (tRPC): chưa bắt buộc.** Hình dạng phẳng v1.x vẫn được nhận. Việc cắt
+  nằm sau cờ `INGEST_REJECT_LEGACY_MACHINE_ENABLED` (mặc định **TẮT**) và chỉ được bật sau
+  Khối B — xem §7.
 
 ### Q2: `measurements` và `points` khác gì nhau?
-**A:** 
-- `measurements`: Cấu trúc mới, đồng bộ với submitInspection, có thêm field `pointId`, `measuredValue`, `remark`
-- `points`: Cấu trúc cũ, vẫn hoạt động nhưng thiếu một số fields mới
+**A:** Câu hỏi này chỉ còn nghĩa với **`submitInspection` (tRPC)**:
+- `measurements`: khoá cấp cao nhất, BẮT BUỘC có mặt
+- `points`: bí danh CŨ của các tên trường bên trong, KHÔNG thay thế được khoá `measurements`
+
+Với **`meta.json`** thì **cả hai đều không còn tồn tại** — hợp đồng là cây
+`surfaces[].positions[].captures[].components[]` cộng `images[]`.
 
 ### Q3: Nếu gửi cả `measurements` và `points` thì sao?
-**A:** Hệ thống ưu tiên `measurements`. Field `points` bị ignore.
+**A:** (`submitInspection` tRPC) Hệ thống ưu tiên `measurements`. Field `points` bị ignore.
+Với `meta.json`, gửi cả hai vẫn bị **từ chối** vì thiếu `surfaces`/`summary`/`identity`/`ntf`.
 
 ### Q4: `inspectionTime` và `startedAt` khác gì?
-**A:** Giống nhau, chỉ là tên khác nhau để tương thích:
-- `inspectionTime`: submitInspection (tRPC)
-- `startedAt`: AOI package (old field)
-- Hệ thống ưu tiên `inspectionTime`
+**A:**
+- `inspectionTime`: `submitInspection` (tRPC)
+- `startedAt`/`completedAt`: `meta.json` cây v2.0 — server lấy `completedAt`, thiếu thì `startedAt`
+- Trên đường tRPC, hệ thống ưu tiên `inspectionTime`
 
 ### Q5: Có thể tìm history theo production order không?
 **A:** Có! Dùng field `productionOrderCode` → Query `product_inspections.production_order_code`.

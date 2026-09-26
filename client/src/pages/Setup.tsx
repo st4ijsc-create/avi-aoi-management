@@ -6,6 +6,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { toast } from "sonner";
+import { toastTrpcError } from "@/lib/trpcErrors";
 import { useFormValidation, ValidationPatterns } from "@/hooks/useFormValidation";
 import { useTranslation } from 'react-i18next';
 import { Loader2, Shield } from "lucide-react";
@@ -59,7 +60,7 @@ export default function Setup() {
       }, 1500);
     },
     onError: (error) => {
-      toast.error(error.message || t('setup.adminCreatedError'));
+      toastTrpcError(error);
     },
   });
 
@@ -146,7 +147,7 @@ export default function Setup() {
               <Input
                 id="name"
                 type="text"
-                placeholder="Nguyễn Văn A"
+                placeholder={t("setupPage.nguyenVanA", "Nguyễn Văn A")}
                 value={form.name}
                 onChange={(e) => setForm({ ...form, name: e.target.value })}
                 onBlur={(e) => handleBlur("name", e.target.value)}

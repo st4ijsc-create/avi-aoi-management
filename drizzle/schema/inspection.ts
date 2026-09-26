@@ -13,6 +13,24 @@ import { overallResultEnum, originalResultEnum, aiDecisionEnum } from "./enums";
 import { machines } from "./hierarchy";
 import { measurementPointDefs, defectCatalog } from "./product";
 
+// Pha 1B Task 3 (BG-10). `summaryCounts` cuộn bộ đếm 4 nhóm × 4 cấp từ hợp đồng
+// máy v2.0 (`server/contracts/machineDataContractV2.ts`, trường `summary`).
+// Trước bản vá này cột khai `Record<string, number>` — GÁN `summary` (4 nhóm
+// lồng nhau, mỗi nhóm 4 số) vào đó ném `TS2322` thật: cột dựng ra để mang bộ
+// đếm của máy KHÔNG nhận được bộ đếm của máy.
+
+/** Bộ đếm một cấp — khớp `summary.<nhóm>` của hợp đồng máy v2.0. */
+export interface BoDemMotCap { total: number; pass: number; ng: number; ntf: number }
+
+/**
+ * `summaryCounts` — bộ đếm 4 cấp máy tự tính và gửi kèm.
+ * CỐ Ý giữ nguyên cấu trúc 4×4 thay vì bẹt hoá: bẹt hoá cần một lược đồ khoá tự chế
+ * ("surfaces.total"…), và lược đồ đó sẽ thành một hợp đồng ngầm không ai canh.
+ */
+export interface SummaryCounts {
+  surfaces: BoDemMotCap; positions: BoDemMotCap; captures: BoDemMotCap; components: BoDemMotCap;
+}
+
 export const productInspections = pgTable("product_inspections", {
   id: serial("id").primaryKey(),
   // W3-A (0180): fk_product_inspections_machine, ON DELETE RESTRICT — a machine
@@ -166,6 +184,28 @@ export const productInspections = pgTable("product_inspections", {
   // the generated INSERT carries it when set — additive on a DB where 0286 added
   // the column, and an omitted (undefined) value simply never references it.
   variantId: integer("variantId"),
+  // ── Pha 1A (2026-08-25, migration 0339) — CÂY KẾT QUẢ header-level fields. ────────────
+  // Tất cả NULLABLE, KHÔNG backfill: header đã Timescale-compress một phần (chunk cũ có
+  // thể đã nén) nên NOT NULL DEFAULT chưa được chứng minh an toàn — xem drizzle/
+  // 0339_inspection_result_tree.sql. NULL trên mọi cột dưới đây = hàng lịch sử trước Pha 1
+  // (kể cả sau khi ingest mới bắt đầu ghi, một số hàng vẫn có thể NULL nếu máy không khai).
+  //
+  // Nguồn của ntf HEADER-level ('machine' | ta CUỘN từ inspection_surfaces con) — đối
+  // xứng với ntfSource ở mọi cấp trong cây kết quả (surface/position/capture).
+  ntfSource: varchar("ntfSource", { length: 10 }),
+  // Chỉ số board TRONG một lượt máy báo (khác boardIndex ở trên — đó là chỉ số trong
+  // PANEL vật lý; cái này là index máy tự đếm theo THỨ TỰ SUBMIT, dùng để phát hiện board
+  // bị máy bỏ qua/trùng khi đối chiếu với productionOrderCode).
+  machineProductIndex: integer("machineProductIndex"),
+  // Cờ LỆCH cấu hình phát hiện tại ingest — mảng JSON các mã lệch (VD: surface/position/
+  // capture máy gửi không khớp cây CẤU HÌNH đã dạy ở product_surfaces/product_positions/
+  // product_captures). NULL = chưa từng đối chiếu (pre-0339) hoặc không lệch gì.
+  configDriftFlags: jsonb("configDriftFlags").$type<string[]>(),
+  // Bộ đếm tổng hợp CUỘN từ cây kết quả con (đếm surface/position/capture theo OK/NG/NTF)
+  // — cache đọc nhanh cho dashboard, không phải nguồn sự thật (nguồn sự thật là chính các
+  // hàng inspection_surfaces/positions/captures). NULL = chưa cuộn (pre-0339 hoặc cây con
+  // rỗng).
+  summaryCounts: jsonb("summaryCounts").$type<SummaryCounts>(),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().notNull(),
 }, (table) => [
@@ -193,7 +233,28 @@ export const productInspections = pgTable("product_inspections", {
   //     global, not per-chunk.
   //   • PARTIAL (serialNumber <> ''): legacy/empty-serial rows are EXEMPT so a
   //     pre-existing batch of blank serials can never collide with each other.
-  //     New ingest can't create them anyway (submitInspection zod min(1)).
+  //     ★★★ N-3 (re-review lượt 8) — CÂU CŨ Ở ĐÂY NAY SAI: nó viết *"New ingest
+  //     can't create them anyway (submitInspection zod min(1))"*. KHÔNG CÒN
+  //     ĐÚNG, ở CẢ HAI đường v2:
+  //       · `machineDataContractV2.serialNumber` CỐ Ý không `.min(1)` (serial
+  //         rỗng là hình dạng THẬT khi máy chưa gán serial) ⇒ đường trực tiếp
+  //         v2.0 sinh hàng serial-rỗng từ trước;
+  //       · C-1 (review lượt 8) bỏ cổng `if (metaData.serialNumber)` ở cửa ZIP
+  //         ⇒ cửa đó nay CŨNG sinh. Đo: `product_inspections` có
+  //         `serialNumber=''` = 188/45 679 trong `aoi_management_test`
+  //         (`current_database()`, vai `avi_app`) và ĐANG TĂNG.
+  //     ĐO LẠI 2026-09-03 (vai `avi_app`, kèm `current_database()`):
+  //         `aoi_management`      : 0/0 (DB dev rỗng hoàn toàn)
+  //         `aoi_management_test` : `serialNumber=''` = **197 / 45 780**
+  //       (re-review lượt 8 đo 188/45 679; review lượt 8 đo 99/44 596) ⇒ đường
+  //       ghi này SỐNG và đang tăng, không phải một khả năng lý thuyết.
+  //     HỆ QUẢ PHẢI ĐỌC KÈM (N-2, nợ chưa đóng): hàng serial-rỗng THOÁT HOÀN
+  //     TOÀN khoá tự nhiên này ⇒ lớp khử trùng DUY NHẤT còn lại cho chúng là sổ
+  //     idempotency `aoi-pkg:<packageId>` (`inspection_idempotency_keys`), mà
+  //     khoá đó suy từ `packageId` chứ KHÔNG từ nội dung. Cùng một bo gửi lại
+  //     dưới một `packageId` MỚI ⇒ HAI hàng ⇒ đếm hai lần. Đây là mặt ĐẾM
+  //     TRÙNG, không phải mặt TỪ CHỐI (chỉ mục RIÊNG PHẦN nên không có nguy cơ
+  //     23505).
   //   • App side: createProductInspection uses ON CONFLICT DO NOTHING and
   //     resolves the existing row — inert (harmless no-op) if the DB index is
   //     not in force yet (0272 records 'partial' in db_feature_status then).
@@ -318,6 +379,46 @@ export const measurementResults = pgTable("measurement_results", {
   defectCropUrl: text("defectCropUrl"),      // pre-cropped defect region image (optional, for fast display)
   defectCropKey: varchar("defectCropKey", { length: 255 }), // storage key for defectCropUrl
   // ============ end defect location ============
+  // ── Pha 1A (2026-08-25, migration 0339) → Pha 1B (2026-08-26, migration 0340) — CÂY KẾT
+  // QUẢ leaf-level field. Tất cả NULLABLE — measurement_results là hypertable ĐÃ NÉN một phần.
+  //
+  // 0339 tạo cột tên "captureRowId" KHÔNG FK. 0340 đổi tên thành "inspectionCaptureRowId" +
+  // thêm FK THẬT (fk_measurement_results_inspection_capture, ON DELETE SET NULL) — xem
+  // drizzle/0340_capture_rowid_ro_nghia.sql. BG-8 (Critical, §13 Đ-16): có HAI cột từng cùng
+  // tên "captureRowId" trỏ HAI bảng khác nhau (đây trỏ inspection_captures — cây KẾT QUẢ;
+  // measurement_point_defs."captureRowId" trỏ product_captures — cây CẤU HÌNH) và hai dãy id
+  // CHỒNG KHOẢNG — đổi tên để không còn nhầm lẫn khi JOIN.
+  //
+  // Soft-ref CÓ CHỦ ĐÍCH ở Drizzle (KHÔNG `.references()`): DB đã có FK THẬT (đặt trong
+  // 0340), nhưng khai `.references()` ở đây sẽ tạo import vòng inspection.ts ↔ inspectionTree.ts
+  // — mirror đúng quy ước soft-ref đã dùng ở measurement_point_defs.captureRowId (product.ts).
+  //
+  // NULL = hàng LỊCH SỬ trước Pha 1 (ghi trước khi cây inspection_captures tồn tại) —
+  // không backfill, không suy đoán. Khi có giá trị: trỏ tới inspection_captures.id mà
+  // measurement này thuộc về.
+  inspectionCaptureRowId: integer("inspectionCaptureRowId"),
+  // Khoá join sang teach data = ComponentProject.Id (measurement_point_defs.componentExtId,
+  // migration 0338) — KHÔNG phải id nội bộ, là id máy khai cho linh kiện. NULL = chưa nối
+  // được (pre-0339 hoặc máy không khai).
+  componentExtId: varchar("componentExtId", { length: 64 }),
+  // NTF do MÁY khai ở cấp measurement — đối xứng ntf/rolledNtf trong cây kết quả phía trên
+  // (inspection_surfaces/positions/captures). NULL = máy không khai (khác false = khai
+  // KHÔNG NTF).
+  ntf: boolean("ntf"),
+  // Nguồn của ntf ở dòng này ('machine' | nơi khác cuộn/gán) — cùng quy ước ntfSource ở
+  // mọi cấp khác trong cây kết quả.
+  ntfSource: varchar("ntfSource", { length: 10 }),
+  // Mã lỗi/ngoại lệ pipeline máy báo cho PHÉP ĐO này (khác defectCodeRaw — đó là mã LỖI
+  // SẢN PHẨM đã có từ trước; errorCode là lỗi VẬN HÀNH của chính phép đo, VD cảm biến
+  // timeout, camera lỗi lấy nét). NULL = đo bình thường, không lỗi.
+  errorCode: varchar("errorCode", { length: 50 }),
+  // Mô tả người-đọc-được của errorCode (raw text từ máy, không chuẩn hoá).
+  errorDesc: text("errorDesc"),
+  // Mốc thời gian bắt đầu/kết thúc phép đo NÀY (khác createdAt — đó là lúc SERVER ghi
+  // hàng, hai giá trị có thể lệch nhau nếu ingest trễ). NULL = máy không khai timing
+  // per-measurement.
+  startedAt: timestamp("startedAt"),
+  completedAt: timestamp("completedAt"),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
 }, (table) => [
   index("idx_results_inspection").on(table.inspectionId),
@@ -334,6 +435,11 @@ export const measurementResults = pgTable("measurement_results", {
   // W3-A (0180): supports the ON DELETE SET NULL scan when a defect_catalog row
   // is deleted (partial — only rows that actually reference a defect).
   index("idx_results_defect_catalog").on(table.defectCatalogId).where(sql`${table.defectCatalogId} IS NOT NULL`),
+  // Pha 1A (migration 0339, cột đổi tên ở 0340): partial — chỉ hàng ĐÃ nối vào cây kết quả
+  // mới cần scan theo inspectionCaptureRowId (hàng lịch sử pre-0339 có giá trị NULL, không
+  // cần index). Postgres tự cập nhật định nghĩa index/partial-predicate khi RENAME COLUMN
+  // (tra theo attnum, không theo tên) — index vật lý idx_results_capture không đổi tên.
+  index("idx_results_capture").on(table.inspectionCaptureRowId).where(sql`${table.inspectionCaptureRowId} IS NOT NULL`),
 ]);
 
 export type MeasurementResult = typeof measurementResults.$inferSelect;
@@ -348,7 +454,15 @@ export const packageStatusEnum = pgEnum("packagestatusenum", [
   "uploading",    // ZIP upload in progress
   "uploaded",     // ZIP uploaded to storage, not yet committed
   "committed",    // Metadata parsed and linked to inspection
-  "failed",       // Upload or processing failed
+  "failed",       // Upload or processing failed — STILL RETRYABLE (transient, or
+                  // permanent but under the threshold — xem `nguongLoiVinhVienZip()`
+                  // ở aoiPackageRouter.ts).
+  // Pha 1D Task 5 (BG-52 ⛔, migration 0344) — TRẠNG THÁI CUỐI: đủ N lỗi VĨNH
+  // VIỄN liên tiếp (isPermanentSubmitError, dùng lại từ
+  // server/services/inspection/inspectionStoreForward.ts). `commit` từ chối
+  // NGAY khi thấy trạng thái này, không tải lại ZIP/không đụng DB nữa — chấm
+  // dứt retry vô hạn của Agent trên một gói không bao giờ ghi được.
+  "dead",
 ]);
 
 /**
@@ -380,6 +494,12 @@ export const inspectionPackages = pgTable("inspection_packages", {
   // File info
   fileSizeBytes: bigint("fileSizeBytes", { mode: "number" }),
   imageCount: integer("imageCount").default(0),
+  // I-7 (review lượt 8, migration 0346) — `sha256` Agent khai ở BƯỚC PRESIGN,
+  // lưu chữ THƯỜNG đã `.trim()`. Byte ZIP chưa tồn tại lúc presign nên không
+  // kiểm được tại chỗ; cột này là cách đối chiếu nó ở đúng khoảnh khắc byte
+  // thật xuất hiện (tuyến PUT /api/aoi/upload lượt ĐẦU, và `commit` làm
+  // backstop). NULL = Agent không khai (tuỳ chọn, nguyên tắc di trú §7/Đ-20).
+  sha256Presign: varchar("sha256Presign", { length: 128 }),
   
   // Status tracking
   status: packageStatusEnum("status").default("pending").notNull(),
@@ -414,7 +534,11 @@ export const packageImages = pgTable("package_images", {
   packageId: integer("packageId").notNull(),               // FK -> inspection_packages.id
   
   // Point info from meta.json
-  pointCode: varchar("pointCode", { length: 50 }).notNull(),
+  // I-6 (review lượt 8, migration 0345) — varchar(50) → varchar(64): sau BG-85,
+  // khoá nhận diện "điểm kiểm tra có ảnh" là `images[].captureId` của hợp đồng
+  // CÂY, khai `.max(64)` khớp `inspection_captures.captureExtId varchar(64)`.
+  // Con số 50 là di sản mã điểm đo (`MP001`) của hợp đồng PHẲNG đã xoá.
+  pointCode: varchar("pointCode", { length: 64 }).notNull(),
   pointName: varchar("pointName", { length: 255 }),
   fileName: varchar("fileName", { length: 255 }).notNull(), // e.g. "MP001.jpg"
   result: overallResultEnum("result"),

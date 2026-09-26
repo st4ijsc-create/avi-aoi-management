@@ -114,6 +114,14 @@ vi.mock("../db", () => {
     getMachineByCode: vi.fn(),
     getMachineById: vi.fn(),
     updateMachineHeartbeat: vi.fn(async () => undefined),
+    // ⚠ 2026-08-18 — CHUỖI PHÂN CẤP PHẢI PHÂN GIẢI ĐƯỢC. Đường ingest nay SUY `lineCode` từ máy
+    // (`phamViGhiMay.macTenantChoGhi`) thay vì đọc `input.lineCode`, và TỪ CHỐI một máy không ra
+    // được nhà máy. Bốn hàm này KHÔNG có trong mock trước đây — tức lược đồ giả ở đây mô tả một
+    // cái máy không thuộc nhà máy nào, trạng thái mà CSDL thật không cho phép tồn tại.
+    getStationById: vi.fn(async () => ({ id: 1, code: "ST-MOCK", lineId: 1 })),
+    getLineById: vi.fn(async () => ({ id: 1, code: "LINE-MOCK", workshopId: 1 })),
+    getWorkshopById: vi.fn(async () => ({ id: 1, code: "WS-MOCK", factoryId: 1 })),
+    getFactoryById: vi.fn(async () => ({ id: 1, code: "FAC-MOCK", corporateCode: "CORP-MOCK" })),
     insertProcessResult: vi.fn(async (_row: any) => {
       if (state.insertThrows) throw state.insertThrows;
       state.processInserts += 1;
@@ -179,6 +187,11 @@ function envelope(overrides: Record<string, unknown> = {}) {
 
 beforeEach(() => {
   process.env.MACHINE_SHARED_KEY_ALLOWED = "true";
+  // File này ĐÃ khai cờ shared-key, nhưng các ca lại đi đường `machineCode` — hai đường
+  // KHÁC nhau, hai cờ KHÁC nhau. Trước 2026-08-22 (mig 0334) chỉ khai một cờ vẫn chạy
+  // được vì cờ còn lại mặc định `allow`; nay mặc định là `deny` nên chỗ thiếu lộ ra.
+  // ⇒ Một khai báo NỬA VỜI trông y hệt một khai báo đầy đủ, cho tới ngày mặc định đổi.
+  process.env.MACHINE_CODE_ONLY_ALLOWED = "true";
   process.env.PROCESS_RESULT_INGEST_ENABLED = "true"; // ON for most tests; individual tests flip OFF
   process.env.PROCESS_STORE_FORWARD_ENABLED = "false";
   delete process.env.PROCESS_ATTR_VALIDATE_MODE; // default off

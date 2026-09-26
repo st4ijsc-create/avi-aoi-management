@@ -38,7 +38,7 @@ import {
   getStatusColor,
   getStatusLabel,
 } from '../utils/helpers';
-import { imageService } from '../services';
+import { imageService, nguonAnh } from '../services';
 import { authService } from '../services/authService';
 import { useTheme, Theme } from '../context/ThemeContext';
 
@@ -417,7 +417,7 @@ Alert ID: ${alert.alertId}`;
                         activeOpacity={0.8}
                       >
                         <Image
-                          source={{ uri: point.imageUrl }}
+                          source={nguonAnh(point.imageUrl)}
                           style={styles.inspectionImage}
                           resizeMode="cover"
                         />
@@ -669,7 +669,7 @@ Alert ID: ${alert.alertId}`;
                   activeOpacity={0.8}
                 >
                   <Image
-                    source={{ uri: `${apiBaseUrl}${alert.measurementPoint.referenceImageUrl}` }}
+                    source={nguonAnh(`${apiBaseUrl}${alert.measurementPoint.referenceImageUrl}`)}
                     style={styles.singleReferenceImage}
                     resizeMode="cover"
                   />
@@ -839,7 +839,7 @@ Alert ID: ${alert.alertId}`;
                             activeOpacity={0.8}
                           >
                             <Image
-                              source={{ uri: `${apiBaseUrl}${point.referenceImageUrl}` }}
+                              source={nguonAnh(`${apiBaseUrl}${point.referenceImageUrl}`)}
                               style={styles.comparisonImage}
                               resizeMode="cover"
                             />
@@ -867,7 +867,7 @@ Alert ID: ${alert.alertId}`;
                             activeOpacity={0.8}
                           >
                             <Image
-                              source={{ uri: `${apiBaseUrl}${point.imageUrl}` }}
+                              source={nguonAnh(`${apiBaseUrl}${point.imageUrl}`)}
                               style={styles.comparisonImage}
                               resizeMode="cover"
                             />
@@ -1010,7 +1010,7 @@ Alert ID: ${alert.alertId}`;
             <Icon name="close" size={28} color="#FFFFFF" />
           </TouchableOpacity>
           <Image
-            source={{ uri: currentImageUrl }}
+            source={nguonAnh(currentImageUrl)}
             style={styles.fullscreenImage}
             resizeMode="contain"
           />

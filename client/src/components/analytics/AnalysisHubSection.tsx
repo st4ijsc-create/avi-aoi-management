@@ -26,6 +26,7 @@ import { Label } from "@/components/ui/label";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Separator } from "@/components/ui/separator";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { mapTrpcError } from "@/lib/trpcErrors";
 import {
   Sparkles,
   FileText,
@@ -127,7 +128,7 @@ export default function AnalysisHubSection() {
       else if (selected.id === "executive_summary") res = await execM.mutateAsync(base);
       setResult(res);
     } catch (err: unknown) {
-      setRunError(err instanceof Error ? err.message : String(err));
+      setRunError(mapTrpcError(err));
     }
   };
 
@@ -154,7 +155,7 @@ export default function AnalysisHubSection() {
             </div>
           ) : capsQ.error ? (
             <div className="text-sm text-destructive flex items-center gap-2">
-              <AlertTriangle className="h-4 w-4" /> {capsQ.error.message}
+              <AlertTriangle className="h-4 w-4" /> {mapTrpcError(capsQ.error)}
             </div>
           ) : allCaps.length === 0 ? (
             <div className="text-sm text-muted-foreground py-4 text-center">
@@ -212,7 +213,7 @@ export default function AnalysisHubSection() {
                             <Select value={language} onValueChange={(v: "vi" | "en") => setLanguage(v)}>
                               <SelectTrigger><SelectValue /></SelectTrigger>
                               <SelectContent>
-                                <SelectItem value="vi">Tiếng Việt</SelectItem>
+                                <SelectItem value="vi">{t("analysisHub.tiengViet", "Tiếng Việt")}</SelectItem>
                                 <SelectItem value="en">English</SelectItem>
                               </SelectContent>
                             </Select>
@@ -334,7 +335,23 @@ export default function AnalysisHubSection() {
                 {Array.isArray(result.models) && result.models.length > 0 && (
                   <StringList
                     title={t("analysisHub.models", "Mô hình")}
-                    items={result.models.map((m: any) => `${m.modelCode}: acc ${(m.currentAccuracy * 100).toFixed(1)}% · ${m.accuracyTrend}${m.driftDetected ? " · DRIFT" : ""}`)}
+                    items={result.models.map((m: any) => {
+                      // doc69 A4 — dataAvailable:true no longer guarantees EVERY field is
+                      // non-null (currentAccuracy stays null — no real accuracy source
+                      // exists yet — even when latency/error/drift ARE real). Build the
+                      // summary from whichever real fields are present instead of assuming
+                      // currentAccuracy is a number (was a NaN%/undefined-trend bug).
+                      if (m.dataAvailable === false) {
+                        return `${m.modelCode}: ${t("analysisHub.metricsUnavailable", "số liệu chưa khả dụng")}`;
+                      }
+                      const parts: string[] = [];
+                      if (m.currentAccuracy != null) parts.push(`acc ${(m.currentAccuracy * 100).toFixed(1)}%`);
+                      if (m.totalPredictions != null) parts.push(`${m.totalPredictions} ${t("analysisHub.predictions", "lượt suy luận")}`);
+                      if (m.p95LatencyMs != null) parts.push(`p95 ${m.p95LatencyMs}ms`);
+                      if (m.errorRate != null) parts.push(`${t("analysisHub.errorRate", "lỗi")} ${(m.errorRate * 100).toFixed(1)}%`);
+                      if (m.driftDetected === true) parts.push("DRIFT");
+                      return `${m.modelCode}: ${parts.length > 0 ? parts.join(" · ") : t("analysisHub.metricsUnavailable", "số liệu chưa khả dụng")}`;
+                    })}
                   />
                 )}
                 <StringList title={t("analysisHub.retrainRecommendations", "Khuyến nghị huấn luyện lại")} items={result.retrainRecommendations} icon={<Sparkles className="h-4 w-4 text-info" />} />

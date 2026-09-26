@@ -17,14 +17,22 @@ import {
   isOcrEngineEnabled,
   ocrModelsAvailable,
   _resetOcrCachesForTests,
+  dbTimHop,
+  xepThuTuDoc,
+  runOcrTrang,
+  boChuThieuDauViet,
+  ocrModelPaths,
 } from "./ocrService";
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
 
 const SAVED = { ...process.env };
 beforeEach(() => {
   _resetOcrCachesForTests();
 });
 afterEach(() => {
-  for (const k of ["OCR_ENGINE_ENABLED", "OCR_VLM_FALLBACK", "OCR_ONNX_REC_MODEL", "OCR_ONNX_DICT", "OCR_MODEL_DIR"]) {
+  for (const k of ["OCR_ENGINE_ENABLED", "OCR_VLM_FALLBACK", "OCR_ONNX_REC_MODEL", "OCR_ONNX_DICT", "OCR_MODEL_DIR", "OCR_ONNX_DET_MODEL"]) {
     if (SAVED[k] === undefined) delete process.env[k];
     else process.env[k] = SAVED[k];
   }
@@ -142,4 +150,147 @@ describe("flag OFF bit-compat", () => {
     process.env.OCR_ENGINE_ENABLED = "false";
     expect(isOcrEngineEnabled()).toBe(false);
   });
+});
+
+// ═══ R4 (2026-09-23) — OCR TRANG: DET (DBNet) → từng dòng → REC ═══════════════════════════════════════════════
+// ĐỘT BIẾN PHẢI BẮT: không nở hộp · gom hai dòng làm một · bỏ ngưỡng điểm hộp · xếp sai thứ tự đọc ·
+// kbPdfOcr quay về runOcr một dòng (lưới ở kbPdfOcr.test) · coi bộ chữ latin là đủ dấu tiếng Việt.
+
+/** Bản đồ W×H toàn 0, tô các hình chữ nhật [x,y,w,h,giaTri]. */
+function banDo(W: number, H: number, chuNhat: [number, number, number, number, number][]): Float32Array {
+  const m = new Float32Array(W * H);
+  for (const [x, y, w, h, v] of chuNhat) for (let j = y; j < y + h; j++) for (let i = x; i < x + w; i++) m[j * W + i] = v;
+  return m;
+}
+
+describe("dbTimHop — hậu xử lý DBNet (thuần)", () => {
+  it("hai dòng tách rời ⇒ HAI hộp, mỗi hộp NỞ ra quanh vùng lõi (unclip d = S·1.5/C)", () => {
+    const hops = dbTimHop(banDo(200, 60, [[20, 10, 100, 8, 0.9], [20, 40, 60, 8, 0.9]]), 200, 60);
+    expect(hops).toHaveLength(2);
+    // lõi 100×8 ⇒ d = 800·1.5/216 ≈ 5.6 ⇒ hộp phủ rộng hơn lõi ở MỌI phía
+    const [a] = hops.sort((p, q) => p.y - q.y);
+    expect(a.x).toBeLessThan(20);
+    expect(a.y).toBeLessThan(10);
+    expect(a.x + a.w).toBeGreaterThan(120);
+    expect(a.y + a.h).toBeGreaterThan(18);
+    expect(a.score).toBeGreaterThan(0.85);
+  });
+
+  it("dưới ngưỡng nhị phân ⇒ không hộp; điểm hộp < 0.6 ⇒ bỏ; cạnh < 3 px ⇒ bỏ (nhiễu)", () => {
+    expect(dbTimHop(banDo(100, 40, [[10, 10, 50, 8, 0.25]]), 100, 40)).toEqual([]);
+    expect(dbTimHop(banDo(100, 40, [[10, 10, 50, 8, 0.45]]), 100, 40)).toEqual([]);
+    expect(dbTimHop(banDo(100, 40, [[10, 10, 50, 2, 0.95]]), 100, 40)).toEqual([]);
+    expect(dbTimHop(banDo(100, 40, [[10, 10, 50, 8, 0.95]]), 100, 40)).toHaveLength(1);
+  });
+
+  it("chạm nhau theo đường chéo ⇒ MỘT thành phần (8 hướng); bản đồ ngắn hơn W×H ⇒ [] thay vì đọc lố", () => {
+    const m = banDo(40, 40, [[5, 5, 10, 10, 0.9], [15, 15, 10, 10, 0.9]]);
+    expect(dbTimHop(m, 40, 40, { nguongHop: 0.3 })).toHaveLength(1);
+    expect(dbTimHop(new Float32Array(10), 40, 40)).toEqual([]);
+  });
+});
+
+describe("xepThuTuDoc — thứ tự đọc (thuần)", () => {
+  it("gom cùng hàng theo tâm dọc, hàng trên xuống, trong hàng trái sang", () => {
+    const b = (x: number, y: number, h = 20) => ({ x, y, w: 50, h });
+    const hang = xepThuTuDoc([b(300, 102), b(10, 200), b(10, 100), b(150, 98)]);
+    expect(hang.map((r) => r.map((h) => h.x))).toEqual([[10, 150, 300], [10]]);
+  });
+});
+
+describe("boChuThieuDauViet — chỉ bộ chữ báo được mất dấu, điểm rec thì không", () => {
+  it("bộ chữ không có ư/ơ/ạ… ⇒ true; có đủ ⇒ false; không có model ⇒ null", () => {
+    const thu = fs.mkdtempSync(path.join(os.tmpdir(), "ocr-dict-"));
+    const cuEngine = process.env.OCR_REC_ENGINE;
+    process.env.OCR_REC_ENGINE = "paddle"; // ca này đo BỘ CHỮ paddle; chế độ VietOCR có ca riêng bên dưới
+    try {
+      fs.writeFileSync(path.join(thu, "rec.onnx"), "x");
+      fs.writeFileSync(path.join(thu, "ppocr_keys.txt"), ["a", "b", "á", "à", "đ"].join("\n"));
+      process.env.OCR_MODEL_DIR = thu;
+      _resetOcrCachesForTests();
+      expect(boChuThieuDauViet()).toBe(true);
+      fs.writeFileSync(path.join(thu, "ppocr_keys.txt"), ["a", "ư", "ơ", "ă", "ạ", "ả", "ế", "ộ", "ữ", "ỳ"].join("\n"));
+      _resetOcrCachesForTests();
+      expect(boChuThieuDauViet()).toBe(false);
+      process.env.OCR_MODEL_DIR = "d:/__nonexistent_ocr_models__";
+      expect(boChuThieuDauViet()).toBeNull();
+    } finally {
+      fs.rmSync(thu, { recursive: true, force: true });
+      if (cuEngine === undefined) delete process.env.OCR_REC_ENGINE; else process.env.OCR_REC_ENGINE = cuEngine;
+    }
+  });
+  it("★ bộ đọc dòng là VietOCR (tu-dong/vietocr, đủ tệp) ⇒ KHÔNG báo mất dấu dù bộ chữ paddle thiếu", async () => {
+    const { coVietOcr } = await import("./ocrVietOcr");
+    if (!coVietOcr()) return;
+    const cuEngine = process.env.OCR_REC_ENGINE;
+    const cuDir = process.env.OCR_MODEL_DIR;
+    delete process.env.OCR_MODEL_DIR;
+    process.env.OCR_REC_ENGINE = "tu-dong";
+    _resetOcrCachesForTests();
+    try {
+      expect(boChuThieuDauViet()).toBe(false);
+      process.env.OCR_REC_ENGINE = "paddle";
+      expect(boChuThieuDauViet(), "paddle latin thật thiếu ư/ơ ⇒ true").toBe(true);
+    } finally {
+      if (cuEngine === undefined) delete process.env.OCR_REC_ENGINE; else process.env.OCR_REC_ENGINE = cuEngine;
+      if (cuDir !== undefined) process.env.OCR_MODEL_DIR = cuDir;
+      _resetOcrCachesForTests();
+    }
+  });
+});
+
+// Chạy model THẬT khi models/ocr có đủ DET+REC (máy phát triển; *.onnx không vào git ⇒ CI bỏ qua, không xanh giả).
+const coModelThat = (() => {
+  try {
+    const m = ocrModelPaths();
+    return !!m.detPath && fs.existsSync(m.recPath) && fs.existsSync(m.dictPath);
+  } catch {
+    return false;
+  }
+})();
+
+describe.skipIf(!coModelThat)("runOcrTrang — model THẬT trên trang dựng sẵn", () => {
+  const DONG = ["Quy trinh bao tri may AOI", "Buoc 1: Tat nguon may va cho 5 phut.", "Ma loi E082: ap suat khi nen thap."];
+  async function trang(dong: string[]): Promise<Buffer> {
+    const sharp = (await import("sharp")).default;
+    const chu = dong.map((d, i) => `<text x="90" y="${150 + i * 90}" font-family="Arial" font-size="34">${d}</text>`).join("");
+    const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="1654" height="900"><rect width="100%" height="100%" fill="#fff"/>${chu}</svg>`;
+    return sharp(Buffer.from(svg)).png().toBuffer();
+  }
+
+  it("★ ba dòng ⇒ ba dòng ĐÚNG THỨ TỰ, mỗi dòng giống bản gốc ≥ 0.9; runOcr một dòng trên cùng ảnh thì KHÔNG đọc được", async () => {
+    const anh = await trang(DONG);
+    const r = await runOcrTrang(anh);
+    expect(r.ok).toBe(true);
+    expect(r.engine).toBe("onnx");
+    const doc = r.text.split("\n");
+    expect(doc).toHaveLength(3);
+    DONG.forEach((d, i) => expect(similarityRatio(doc[i], d), `dòng ${i}: "${doc[i]}"`).toBeGreaterThanOrEqual(0.9));
+    // Đối chứng = lỗi sống 2026-09-23: bản một dòng ép cả trang về cao 48 px.
+    const motDong = await runOcr(anh);
+    expect(similarityRatio(motDong.text, DONG.join(" "))).toBeLessThan(0.5);
+  }, 60_000);
+
+  it("trang TRẮNG ⇒ ok, 0 dòng, chữ rỗng — không bịa", async () => {
+    const r = await runOcrTrang(await trang([]));
+    expect(r.ok).toBe(true);
+    expect(r.lines).toEqual([]);
+    expect(r.text).toBe("");
+    expect(r.confidence).toBe(0);
+  }, 60_000);
+});
+
+describe.skipIf(!coModelThat)("runOcrTrang — tiếng Việt có dấu (VietOCR, chế độ tu-dong)", () => {
+  const DONG = ["Mã lỗi E082: áp suất khí nén thấp.", "Kỹ thuật viên ghi nhận kết quả vào sổ theo dõi.", "Error code E082: low air pressure."];
+  it("★★ dòng Việt giữ ĐỦ dấu (paddle latin rơi dấu ⇒ ~0,85); dòng Anh vẫn do paddle đọc", async () => {
+    const { coVietOcr } = await import("./ocrVietOcr");
+    if (!coVietOcr()) return; // máy không có tệp VietOCR ⇒ chế độ paddle, ca này không áp
+    const sharp = (await import("sharp")).default;
+    const chu = DONG.map((d, i) => `<text x="80" y="${120 + i * 80}" font-family="Arial" font-size="32">${d}</text>`).join("");
+    const anh = await sharp(Buffer.from(`<svg xmlns="http://www.w3.org/2000/svg" width="1654" height="440"><rect width="100%" height="100%" fill="#fff"/>${chu}</svg>`)).png().toBuffer();
+    const r = await runOcrTrang(anh);
+    const doc = r.text.split("\n");
+    expect(doc).toHaveLength(3);
+    DONG.forEach((d, i) => expect(similarityRatio(doc[i], d), `dòng ${i}: "${doc[i]}"`).toBeGreaterThanOrEqual(0.95));
+  }, 120_000);
 });

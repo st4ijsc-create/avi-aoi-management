@@ -1,6 +1,8 @@
-import { eq, and, desc, like, or, sql, inArray, ne, lt, isNull, isNotNull } from "drizzle-orm";
+import { eq, and, desc, like, or, sql, inArray, ne, lt, isNull, isNotNull, type SQL } from "drizzle-orm";
+import { appError } from "../_core/appError";
+import { DbUnavailableError } from "../_core/dbErrors";
 import { createHash, randomBytes } from "node:crypto";
-import { pgTable, serial, integer, varchar, timestamp, jsonb, index, uniqueIndex } from "drizzle-orm/pg-core";
+import { pgTable, serial, integer, varchar, timestamp, jsonb, index, uniqueIndex, type AnyPgColumn } from "drizzle-orm/pg-core";
 import { getDb } from "./connection";
 import {
   factories, InsertFactory,
@@ -19,6 +21,8 @@ import {
 } from "../../drizzle/schema";
 // Doc 56 Đ2a — DERIVED device class (aoi_avi | automation | iot), single source.
 import { deviceClassOf } from "../constants/machineTypes";
+// ★ Đợt 42 — trục ② (khoá API) của `PhamViDoc`; `import type` ⇒ không tạo vòng nạp `db → _core`.
+import type { TenantCodeScope } from "../_core/tenantCodeScope";
 
 export { MACHINE_LIFECYCLE_TRANSITIONS, MACHINE_LIFECYCLE_EXCLUDED, isLegalLifecycleTransition };
 export type { MachineLifecycleStatus };
@@ -121,41 +125,250 @@ const MQTT_REVOKED_PASSWORD_SENTINEL = "!revoked-by-machine-lifecycle!";
 // ============ FACTORY FUNCTIONS ============
 export async function createFactory(data: InsertFactory) {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  if (!db) throw new DbUnavailableError();
   const [result] = await db.insert(factories).values(data).returning({ id: factories.id });
   return result.id;
 }
 
-export async function getFactories() {
-  const db = await getDb();
-  if (!db) return [];
-  return db.select().from(factories).where(eq(factories.isActive, true)).orderBy(factories.name);
+/**
+ * ★★★ 2026-08-18 (điều tra dân số phạm vi đọc) — **PHẠM VI CỦA NGƯỜI XEM, MỘT KIỂU DÙNG CHUNG.**
+ *
+ * Bỏ trống CẢ HAI ô = **KHÔNG lọc**. Đó không phải một lỗ hổng bỏ ngỏ mà là hình dạng CÓ THẬT của
+ * lối đi không mang danh tính (tác vụ nền, broadcaster socket, publisher UNS, REST máy-với-máy) —
+ * và là chiều DƯƠNG chống "vá quá tay thành chặn tất cả": mọi nơi gọi cũ giữ nguyên TỪNG BYTE.
+ *
+ * ⚠⚠ `userId`/`userRole` **LUÔN** đến từ `ctx.user`. **CẤM lấy từ `input`** — một `input.userId`
+ * là lời TỰ KHAI của người gọi, tức không phải một phép xác thực mà là một cái tên do kẻ hỏi tự
+ * đặt. Cùng luật đã ghi ở `services/oeeService.ts` và `mqttOeeRouters.getScopeLabels`.
+ */
+export interface PhamViNguoiXem {
+  userId?: number;
+  userRole?: string;
 }
 
-export async function getFactoryById(id: number) {
+/**
+ * ★★★ ĐỢT 42 (QA Đợt 41 D-4 lỗ #2) — **TRỤC ②: PHẠM VI CỦA MỘT KHOÁ API**, đi qua CÙNG bộ phân giải.
+ *
+ * Một khoá API **không phải một người dùng** (`api_keys.createdBy` NULLable; xem docblock
+ * `server/api/v1/apiKeyScope.ts`) nên không diễn đạt được bằng `PhamViNguoiXem`. Trước Đợt 42, lối đi
+ * REST `/api/v1/machines/:id/detail` vì thế gọi `machineDetail(id)` KHÔNG scope — và một khoá khai
+ * `factoryCode = SIM-FAC` đọc được identity máy của nhà máy 18 (`.qa-dot41/api-vai/http-v1.json`: 200).
+ *
+ * Hình này là **bản sao NGUYÊN VĂN** nhánh ② của `TenantFactoryScopeArgs` (`db/reportAggregators.ts`):
+ * `idsTrongPhamVi`/`trongPhamVi` chuyển thẳng nó vào `resolveTenantFactoryScope`, nên KHÔNG có bộ luật
+ * thứ hai (G12). `tenantScope = {}` (khoá CHƯA KHAI) ⇒ `factoryIds: []` ⇒ mọi cổng `1 = 0` — fail-closed,
+ * cùng chiều `/ecosystem/kpi`. Khoá TOÀN CỤC tường minh ⇒ nơi gọi truyền `undefined` (không lọc).
+ */
+export interface PhamViMaTenant {
+  tenantScope: TenantCodeScope;
+  userId?: never;
+  userRole?: never;
+}
+
+/** Phạm vi ĐỌC: người xem (trục ①, `phamViCua(ctx)`) HOẶC khoá API (trục ②). */
+export type PhamViDoc = PhamViNguoiXem | PhamViMaTenant;
+
+/**
+ * ★★★ **TẬP `machines.id` NẰM TRONG PHẠM VI NGƯỜI XEM** — nguyên thuỷ DÙNG CHUNG.
+ *
+ * `null` = vai toàn quyền / lối đi không mang danh tính ⇒ nơi gọi **không được** thêm cổng nào.
+ * `[]`   = phạm vi RỖNG (tài khoản chưa được gán nhà máy) ⇒ nơi gọi phải trả 0 hàng — KHÔNG phải
+ *          "quên lọc", và giao diện phải nói đúng lý do (`common.scopeEmpty.*`).
+ *
+ * ⚠ Vì sao một hàm chứ không phải chép chuỗi JOIN vào từng nơi: chuỗi
+ * `machines → stations → production_lines → workshops."factoryId"` đã bị chép tay ở
+ * `services/oeeService.ts`; bản thứ hai chép tay sẽ là bản thứ N+1, và hai bản lệch nhau thì
+ * **bản yếu hơn** quyết định ai thấy gì. Đây là phép TRA CỨU quan hệ, KHÔNG phải một bộ luật
+ * phân quyền thứ hai — luật vẫn nằm ở `resolveTenantFactoryScope`.
+ */
+export async function machineIdsTrongPhamVi(scope?: PhamViDoc): Promise<number[] | null> {
+  return idsTrongPhamVi("machine", scope);
+}
+
+/**
+ * Các tầng của chuỗi phân cấp — trục duy nhất mà mọi cổng phạm vi ở file này chiếu lên.
+ *
+ * ⚠ `workstation` KHÔNG nằm trên chuỗi `factory → workshop → line → station → machine`: nó là một
+ * nhánh RỜI mang cả ba khoá `factoryId`/`workshopId`/`lineId` (đều nullable). Nó ở cùng kiểu này
+ * vì nơi gọi cần đúng một cách hỏi, nhưng truy vấn của nó là một truy vấn KHÁC — xem bên dưới.
+ */
+export type CapPhanCap = "factory" | "workshop" | "line" | "station" | "machine" | "workstation";
+
+/**
+ * ★★★ 2026-08-18 (trả nợ nhóm A, đợt 11-file) — **TẬP `id` CỦA MỘT TẦNG PHÂN CẤP, THEO PHẠM VI.**
+ *
+ * `machineIdsTrongPhamVi` là ô đặc biệt hoá của hàm này. Bốn tầng còn lại được thêm vì sổ nợ đo
+ * được rằng lỗ KHÔNG chỉ ở tầng máy: `workshop.list` · `line.list` · `station.list` ·
+ * `*.listDeleted` · `*.cascadeInfo` đều trả **toàn bộ cây của mọi tenant** cho mọi tài khoản.
+ *
+ * ⚠⚠ **KHÔNG lọc `isActive` ở đây, và đó là điều kiện để `listDeleted` đúng.** Bốn thủ tục thùng
+ * rác đọc chính những hàng `isActive = false`; một tập id dựng từ hàng ĐANG SỐNG sẽ khiến thùng
+ * rác của người bị thu hẹp **luôn rỗng** — một bản vá xanh mà chức năng đã chết. Chuỗi `JOIN`
+ * không quan tâm `isActive`, nên một trạm đã xoá mềm vẫn chiếu ra được nhà máy của nó.
+ *
+ * ⚠ `null` = vai toàn quyền / lối đi không mang danh tính ⇒ nơi gọi **không được** thêm cổng nào
+ * (chiều DƯƠNG chống vá quá tay). `[]` = phạm vi RỖNG ⇒ nơi gọi phải trả 0 hàng.
+ *
+ * ⚠ Truy vấn viết bằng TÊN BẢNG THÔ có bí danh (`FROM workshops w`), KHÔNG nội suy đối tượng bảng
+ * drizzle: drizzle kết xuất cột theo TÊN BẢNG (`"workshops"."factoryId"`) nên một bí danh sẽ vỡ
+ * `42P01` (bẫy đã ghi ở `services/ecosystem/commandCenterScope.ts`).
+ */
+export async function idsTrongPhamVi(cap: CapPhanCap, scope?: PhamViDoc): Promise<number[] | null> {
+  const { resolveTenantFactoryScope, factoryIdGate } = await import("./reportAggregators");
+  const pv = await resolveTenantFactoryScope(scope);
+  if (pv.factoryIds === null) return null;
+  if (pv.factoryIds.length === 0) return [];
+  const db = await getDb();
+  if (!db) return [];
+  const congNhaMay = factoryIdGate(sql`w."factoryId"`, pv.factoryIds);
+  const cauTruyVan =
+    cap === "factory"
+      ? sql`SELECT f."id" AS id FROM factories f WHERE ${factoryIdGate(sql`f."id"`, pv.factoryIds)}`
+      : cap === "workshop"
+        ? sql`SELECT w."id" AS id FROM workshops w WHERE ${congNhaMay}`
+        : cap === "line"
+          ? sql`SELECT l."id" AS id FROM production_lines l
+                JOIN workshops w ON w."id" = l."workshopId"
+                WHERE ${congNhaMay}`
+          : cap === "station"
+            ? sql`SELECT s."id" AS id FROM stations s
+                  JOIN production_lines l ON l."id" = s."lineId"
+                  JOIN workshops w ON w."id" = l."workshopId"
+                  WHERE ${congNhaMay}`
+            : cap === "machine"
+              ? sql`SELECT m."id" AS id FROM machines m
+                    JOIN stations s ON s."id" = m."stationId"
+                    JOIN production_lines l ON l."id" = s."lineId"
+                    JOIN workshops w ON w."id" = l."workshopId"
+                    WHERE ${congNhaMay}`
+              // ⚠ `workstations` là nhánh RỜI: ba khoá `factoryId`/`workshopId`/`lineId` đều
+              // nullable và độc lập, nên phải hỏi cả ba bằng HOẶC. Công trạm mồ côi (cả ba NULL)
+              // KHÔNG có đường nào ra nhà máy ⇒ bị loại — fail-closed, cùng luật đã ghi ở
+              // `services/ecosystem/commandCenterScope.scopedRobotIds`.
+              : sql`SELECT ws."id" AS id FROM workstations ws
+                    WHERE ${factoryIdGate(sql`ws."factoryId"`, pv.factoryIds)}
+                       OR ws."workshopId" IN (
+                            SELECT w."id" FROM workshops w WHERE ${congNhaMay})
+                       OR ws."lineId" IN (
+                            SELECT l."id" FROM production_lines l
+                            JOIN workshops w ON w."id" = l."workshopId"
+                            WHERE ${congNhaMay})`;
+  const rows = await db.execute(cauTruyVan);
+  const arr = (Array.isArray(rows) ? rows : ((rows as { rows?: unknown[] }).rows ?? [])) as Array<{ id: number }>;
+  return arr.map((r) => Number(r.id)).filter((n) => Number.isFinite(n));
+}
+
+/**
+ * "Một `id` cụ thể có nằm trong phạm vi không" — dùng cho các thủ tục `getById` / `cascadeInfo` /
+ * `listByX` nhận `id` từ **`input`** (tức lời TỰ KHAI của người gọi).
+ *
+ * ⚠ Đây chính là chỗ dễ vá sai nhất: nếu cổng phạm vi chỉ được áp lên DANH SÁCH mà không áp lên
+ * đường tra cứu theo `id`, thì một `id` đoán được vẫn mở được cửa sang tenant khác. `true` khi
+ * phạm vi là `null` (toàn quyền) — không thêm cổng nào.
+ */
+export async function trongPhamVi(cap: CapPhanCap, id: number, scope?: PhamViDoc): Promise<boolean> {
+  const ids = await idsTrongPhamVi(cap, scope);
+  return ids === null || ids.includes(id);
+}
+
+/** Mệnh đề `col IN (…)` cho một tập id đã suy, với `[] ⇒ IN (-1)` (0 hàng, KHÔNG phải "không lọc"). */
+function congTheoIds(col: AnyPgColumn, ids: number[]) {
+  return inArray(col, ids.length > 0 ? ids : [-1]);
+}
+
+/**
+ * ★★★ 2026-08-18 (trả nợ nhóm A) — **TRỤC MÃ: cổng cho bảng DANH MỤC mang `factoryCode` /
+ * `corporateCode`** (`suppliers` · `materials` · `tools` · `customers` · `warehouses` ·
+ * `work_calendars` · `shift_configs`…).
+ *
+ * **Vì sao KHÔNG dùng `idsTrongPhamVi`.** Những bảng này KHÔNG treo vào chuỗi phân cấp
+ * `machine → station → line → workshop`; chúng mang MÃ tenant thẳng trên hàng. Chiếu qua chuỗi
+ * phân cấp là dựng một quan hệ không tồn tại.
+ *
+ * **Một luật, một chỗ sửa.** Tập mã lấy từ ĐÚNG nguồn mà `getAccessFilterConditions` dùng
+ * (`getUserAssignmentCodes`), và phép HOẶC-hai-danh-sách ở đây là bản sao NGUYÊN VĂN của phép
+ * ấy — chỉ đổi cột. Không có luật gán nhà máy nào được dựng lại tại đây.
+ *
+ * ⚠ **0 gán ⇒ `1 = 0` TƯỜNG MINH**, không bao giờ `undefined`. `undefined` nghĩa là "không lọc",
+ * và đó chính xác là lớp lỗi `or()!` đã cho 4 tài khoản 0-gán đọc trọn 22.996 bản ghi kiểm.
+ *
+ * ⚠ Hàng có CẢ HAI mã NULL bị LOẠI cho người bị thu hẹp (`NULL IN (…)` cho `NULL` ≠ `TRUE`).
+ * Đo trên `aoi_management` ngày 2026-08-18: `materials` 20/20 · `suppliers` 5/5 · `tools` 8/8 ·
+ * `customers` 3/3 · `warehouses` 2/2 đều CÓ `factoryCode` ⇒ luật này không làm mất hàng nào đang
+ * có thật. Một hàng danh mục không khai nhà máy trong tương lai sẽ fail-CLOSED — đúng hướng.
+ *
+ * ⚠ `import()` ĐỘNG bắt buộc: `_core/accessControl` kéo theo `_core/trpc`, nhập tĩnh từ
+ * `server/db/**` tạo vòng router → db → trpc.
+ */
+export async function congMaTenant(
+  cot: { factoryCode?: AnyPgColumn; corporateCode?: AnyPgColumn },
+  scope?: PhamViNguoiXem,
+): Promise<SQL | undefined> {
+  if (!scope?.userId || scope.userRole === "admin") return undefined;
+  const { getUserAssignmentCodes } = await import("../_core/accessControl");
+  const { corporateCodes, factoryCodes, isAdmin } = await getUserAssignmentCodes(
+    scope.userId,
+    scope.userRole ?? "user",
+  );
+  if (isAdmin) return undefined;
+  const dieuKien: SQL[] = [];
+  if (cot.factoryCode !== undefined && factoryCodes.length > 0) {
+    dieuKien.push(inArray(cot.factoryCode, factoryCodes));
+  }
+  if (cot.corporateCode !== undefined && corporateCodes.length > 0) {
+    dieuKien.push(inArray(cot.corporateCode, corporateCodes));
+  }
+  if (dieuKien.length === 0) return sql`1 = 0`;
+  return dieuKien.length === 1 ? dieuKien[0] : or(...dieuKien);
+}
+
+/**
+ * ★ NHÓM A #1 (ca chuẩn của chủ dự án) — `factory.list` trước bản vá này liệt kê **MỌI nhà máy**
+ * cho **mọi tài khoản đã đăng nhập**, kể cả tài khoản 0 gán nhà máy. Tham số `scope` là TUỲ CHỌN
+ * nên 30+ nơi gọi cũ không đổi một byte nào; chỉ router có `ctx.user` mới siết.
+ */
+export async function getFactories(scope?: PhamViNguoiXem) {
+  const db = await getDb();
+  if (!db) return [];
+  const { resolveTenantFactoryScope, factoryIdGate } = await import("./reportAggregators");
+  const pv = await resolveTenantFactoryScope(scope);
+  const dieuKien = [eq(factories.isActive, true)];
+  // ⚠ `factoryIds === null` (toàn quyền / không danh tính) ⇒ KHÔNG thêm mệnh đề nào: truy vấn
+  // giữ nguyên từng byte. Tập RỖNG ⇒ `factoryIdGate` cho `1 = 0` TƯỜNG MINH (đừng dùng
+  // `col = ANY(${mảng})` — postgres.js gửi mảng JS thành `text[]` ⇒ 42809, đã cắn 10 chỗ).
+  if (pv.factoryIds !== null) dieuKien.push(factoryIdGate(factories.id, pv.factoryIds));
+  return db.select().from(factories).where(and(...dieuKien)).orderBy(factories.name);
+}
+
+export async function getFactoryById(id: number, scope?: PhamViNguoiXem) {
   const db = await getDb();
   if (!db) return undefined;
+  // ⚠ `id` đến từ `input` — lời TỰ KHAI của người gọi. Ngoài phạm vi ⇒ NHƯ KHÔNG TỒN TẠI
+  // (`undefined`), không phải một lỗi riêng: một thông báo "bạn không được xem nhà máy 42"
+  // vẫn xác nhận rằng nhà máy 42 CÓ THẬT.
+  if (!(await trongPhamVi("factory", id, scope))) return undefined;
   const result = await db.select().from(factories).where(eq(factories.id, id)).limit(1);
   return result.length > 0 ? result[0] : undefined;
 }
 
 export async function updateFactory(id: number, data: Partial<InsertFactory>) {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  if (!db) throw new DbUnavailableError();
   await db.update(factories).set(data).where(eq(factories.id, id));
 }
 
 export async function deleteFactory(id: number) {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  if (!db) throw new DbUnavailableError();
   await db.update(factories).set({ isActive: false }).where(eq(factories.id, id));
 }
 
 // ============ FACTORY ZONE FUNCTIONS (W6-25) ============
 // Vùng polygon vẽ trên mặt bằng — CRUD gated ở tầng router bằng machine_control/canEdit.
-export async function getFactoryZones(factoryId: number) {
+export async function getFactoryZones(factoryId: number, scope?: PhamViNguoiXem) {
   const db = await getDb();
   if (!db) return [];
+  if (!(await trongPhamVi("factory", factoryId, scope))) return [];
   return db.select().from(factoryZones)
     .where(eq(factoryZones.factoryId, factoryId))
     .orderBy(factoryZones.id);
@@ -163,43 +376,47 @@ export async function getFactoryZones(factoryId: number) {
 
 export async function createFactoryZone(data: InsertFactoryZone) {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  if (!db) throw new DbUnavailableError();
   const [result] = await db.insert(factoryZones).values(data).returning({ id: factoryZones.id });
   return result.id;
 }
 
 export async function updateFactoryZone(id: number, data: Partial<InsertFactoryZone>) {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  if (!db) throw new DbUnavailableError();
   await db.update(factoryZones).set({ ...data, updatedAt: new Date() }).where(eq(factoryZones.id, id));
 }
 
 export async function deleteFactoryZone(id: number) {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  if (!db) throw new DbUnavailableError();
   await db.delete(factoryZones).where(eq(factoryZones.id, id));
 }
 
 // ============ WORKSHOP FUNCTIONS ============
 export async function createWorkshop(data: InsertWorkshop) {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  if (!db) throw new DbUnavailableError();
   const [result] = await db.insert(workshops).values(data).returning({ id: workshops.id });
   return result.id;
 }
 
-export async function getWorkshopsByFactory(factoryId: number) {
+export async function getWorkshopsByFactory(factoryId: number, scope?: PhamViNguoiXem) {
   const db = await getDb();
   if (!db) return [];
+  if (!(await trongPhamVi("factory", factoryId, scope))) return [];
   return db.select().from(workshops)
     .where(and(eq(workshops.factoryId, factoryId), eq(workshops.isActive, true)))
     .orderBy(workshops.name);
 }
 
-export async function getWorkshops() {
+export async function getWorkshops(scope?: PhamViNguoiXem) {
   const db = await getDb();
   if (!db) return [];
-  return db.select().from(workshops).where(eq(workshops.isActive, true)).orderBy(workshops.name);
+  const ids = await idsTrongPhamVi("workshop", scope);
+  const dieuKien = [eq(workshops.isActive, true)];
+  if (ids !== null) dieuKien.push(congTheoIds(workshops.id, ids));
+  return db.select().from(workshops).where(and(...dieuKien)).orderBy(workshops.name);
 }
 
 export async function getWorkshopById(id: number) {
@@ -211,36 +428,40 @@ export async function getWorkshopById(id: number) {
 
 export async function updateWorkshop(id: number, data: Partial<InsertWorkshop>) {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  if (!db) throw new DbUnavailableError();
   await db.update(workshops).set(data).where(eq(workshops.id, id));
 }
 
 export async function deleteWorkshop(id: number) {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  if (!db) throw new DbUnavailableError();
   await db.update(workshops).set({ isActive: false }).where(eq(workshops.id, id));
 }
 
 // ============ PRODUCTION LINE FUNCTIONS ============
 export async function createProductionLine(data: InsertProductionLine) {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  if (!db) throw new DbUnavailableError();
   const [result] = await db.insert(productionLines).values(data).returning({ id: productionLines.id });
   return result.id;
 }
 
-export async function getProductionLinesByWorkshop(workshopId: number) {
+export async function getProductionLinesByWorkshop(workshopId: number, scope?: PhamViNguoiXem) {
   const db = await getDb();
   if (!db) return [];
+  if (!(await trongPhamVi("workshop", workshopId, scope))) return [];
   return db.select().from(productionLines)
     .where(and(eq(productionLines.workshopId, workshopId), eq(productionLines.isActive, true)))
     .orderBy(productionLines.name);
 }
 
-export async function getProductionLines() {
+export async function getProductionLines(scope?: PhamViNguoiXem) {
   const db = await getDb();
   if (!db) return [];
-  return db.select().from(productionLines).where(eq(productionLines.isActive, true)).orderBy(productionLines.name);
+  const ids = await idsTrongPhamVi("line", scope);
+  const dieuKien = [eq(productionLines.isActive, true)];
+  if (ids !== null) dieuKien.push(congTheoIds(productionLines.id, ids));
+  return db.select().from(productionLines).where(and(...dieuKien)).orderBy(productionLines.name);
 }
 
 export async function getLineById(id: number) {
@@ -252,7 +473,7 @@ export async function getLineById(id: number) {
 
 export async function updateProductionLine(id: number, data: Partial<InsertProductionLine>) {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  if (!db) throw new DbUnavailableError();
   await db.update(productionLines).set(data).where(eq(productionLines.id, id));
   // G1.10: line renamed or moved to another workshop → machine URNs under it change.
   if (data.code !== undefined || data.workshopId !== undefined) queueUrnSyncForLine(id);
@@ -260,30 +481,34 @@ export async function updateProductionLine(id: number, data: Partial<InsertProdu
 
 export async function deleteProductionLine(id: number) {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  if (!db) throw new DbUnavailableError();
   await db.update(productionLines).set({ isActive: false }).where(eq(productionLines.id, id));
 }
 
 // ============ STATION FUNCTIONS ============
 export async function createStation(data: InsertStation) {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  if (!db) throw new DbUnavailableError();
   const [result] = await db.insert(stations).values(data).returning({ id: stations.id });
   return result.id;
 }
 
-export async function getStationsByLine(lineId: number) {
+export async function getStationsByLine(lineId: number, scope?: PhamViNguoiXem) {
   const db = await getDb();
   if (!db) return [];
+  if (!(await trongPhamVi("line", lineId, scope))) return [];
   return db.select().from(stations)
     .where(and(eq(stations.lineId, lineId), eq(stations.isActive, true)))
     .orderBy(stations.orderIndex);
 }
 
-export async function getStations() {
+export async function getStations(scope?: PhamViNguoiXem) {
   const db = await getDb();
   if (!db) return [];
-  return db.select().from(stations).where(eq(stations.isActive, true)).orderBy(stations.orderIndex);
+  const ids = await idsTrongPhamVi("station", scope);
+  const dieuKien = [eq(stations.isActive, true)];
+  if (ids !== null) dieuKien.push(congTheoIds(stations.id, ids));
+  return db.select().from(stations).where(and(...dieuKien)).orderBy(stations.orderIndex);
 }
 
 // Get default station (first available station for auto-registration)
@@ -303,7 +528,7 @@ export async function getStationById(id: number) {
 
 export async function updateStation(id: number, data: Partial<InsertStation>) {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  if (!db) throw new DbUnavailableError();
   await db.update(stations).set(data).where(eq(stations.id, id));
   // G1.10: station renamed or reassigned to another line → machine URNs change.
   if (data.code !== undefined || data.lineId !== undefined) queueUrnSyncForStation(id);
@@ -311,7 +536,7 @@ export async function updateStation(id: number, data: Partial<InsertStation>) {
 
 export async function deleteStation(id: number) {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  if (!db) throw new DbUnavailableError();
   await db.update(stations).set({ isActive: false }).where(eq(stations.id, id));
 }
 
@@ -333,7 +558,7 @@ export async function deleteStation(id: number) {
  */
 export async function ensureIotVirtualStation(workshopCode: string): Promise<number> {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  if (!db) throw new DbUnavailableError();
 
   let workshop = workshopCode ? await getWorkshopByCode(workshopCode) : null;
   if (!workshop) {
@@ -378,7 +603,7 @@ export async function ensureIotVirtualStation(workshopCode: string): Promise<num
 // ============ MACHINE FUNCTIONS ============
 export async function createMachine(data: InsertMachine) {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  if (!db) throw new DbUnavailableError();
   try {
     const [result] = await db.insert(machines).values(data).returning({ id: machines.id });
     queueUrnSync(result.id); // G1.10 — stamp urn/isa95_path (fire-and-forget)
@@ -393,18 +618,36 @@ export async function createMachine(data: InsertMachine) {
   }
 }
 
-export async function getMachinesByStation(stationId: number) {
+export async function getMachinesByStation(stationId: number, scope?: PhamViNguoiXem) {
   const db = await getDb();
   if (!db) return [];
+  if (!(await trongPhamVi("station", stationId, scope))) return [];
   return db.select().from(machines)
     .where(and(eq(machines.stationId, stationId), eq(machines.isActive, true)))
     .orderBy(machines.name);
 }
 
-export async function getMachines() {
+/**
+ * ★ NHÓM A #2 (ca chuẩn của chủ dự án) — `getMachines()` là nguồn của `machine.list`,
+ * `mqttClient.getAllMachineHealth` và ~30 nơi khác. Trước bản vá nó trả **TOÀN ĐỘI máy** cho mọi
+ * tài khoản. `scope` TUỲ CHỌN ⇒ mọi nơi gọi cũ giữ nguyên hành vi; chỉ nơi có `ctx.user` mới siết.
+ *
+ * ⚠ Vai toàn quyền đi ĐÚNG truy vấn cũ (không JOIN thêm gì) — chiều DƯƠNG chống vá quá tay: một
+ * máy có chuỗi phân cấp gãy (`stationId` null) vẫn hiện y như trước với admin. Cùng lý lẽ đã ghi
+ * ở `services/oeeService.getAllMachinesOEELive`.
+ */
+export async function getMachines(scope?: PhamViNguoiXem) {
   const db = await getDb();
   if (!db) return [];
-  return db.select().from(machines).where(eq(machines.isActive, true)).orderBy(machines.name);
+  const ids = await machineIdsTrongPhamVi(scope);
+  if (ids === null) {
+    return db.select().from(machines).where(eq(machines.isActive, true)).orderBy(machines.name);
+  }
+  return db
+    .select()
+    .from(machines)
+    .where(and(eq(machines.isActive, true), inArray(machines.id, ids.length > 0 ? ids : [-1])))
+    .orderBy(machines.name);
 }
 
 // ── Doc 27 Đợt 5 / W5-E — gap F9: server-side search + pagination ──────────
@@ -416,7 +659,7 @@ export async function getMachinesPaged(opts: {
   registrationStatus?: string;
   limit?: number;
   offset?: number;
-} = {}) {
+} = {}, scope?: PhamViNguoiXem) {
   const db = await getDb();
   if (!db) return { items: [], total: 0 };
 
@@ -425,6 +668,10 @@ export async function getMachinesPaged(opts: {
   const offset = Math.max(Math.trunc(opts.offset ?? 0), 0);
 
   const conditions = [eq(machines.isActive, true)];
+  // ⚠ Cổng phạm vi phải nằm TRONG `where` dùng chung của cả hai truy vấn dưới — nếu chỉ lọc trang
+  // dữ liệu mà quên `count(*)`, người bị thu hẹp sẽ thấy 0 dòng nhưng tổng số của TOÀN ĐỘI máy.
+  const idsPhamVi = await idsTrongPhamVi("machine", scope);
+  if (idsPhamVi !== null) conditions.push(congTheoIds(machines.id, idsPhamVi));
   if (opts.registrationStatus) {
     conditions.push(eq(machines.registrationStatus, opts.registrationStatus));
   }
@@ -457,16 +704,19 @@ export async function getMachinesPaged(opts: {
 }
 
 /** F9 — registration status counts for the summary cards (single grouped query). */
-export async function getMachineRegistrationSummary() {
+export async function getMachineRegistrationSummary(scope?: PhamViNguoiXem) {
   const db = await getDb();
   if (!db) return { pending: 0, approved: 0, rejected: 0, total: 0 };
+  const ids = await idsTrongPhamVi("machine", scope);
+  const dieuKien = [eq(machines.isActive, true)];
+  if (ids !== null) dieuKien.push(congTheoIds(machines.id, ids));
   const rows = await db
     .select({
       status: machines.registrationStatus,
       count: sql<number>`count(*)`,
     })
     .from(machines)
-    .where(eq(machines.isActive, true))
+    .where(and(...dieuKien))
     .groupBy(machines.registrationStatus);
   const summary = { pending: 0, approved: 0, rejected: 0, total: 0 };
   for (const r of rows) {
@@ -534,31 +784,38 @@ export async function getMachineByApiKey(apiKey: string) {
   return result[0];
 }
 
-export async function getMachineById(id: number) {
+export async function getMachineById(id: number, scope?: PhamViNguoiXem) {
   const db = await getDb();
   if (!db) return undefined;
+  if (!(await trongPhamVi("machine", id, scope))) return undefined;
   const result = await db.select().from(machines).where(eq(machines.id, id)).limit(1);
   return result.length > 0 ? result[0] : undefined;
 }
 
-export async function getMachineByCode(code: string) {
+export async function getMachineByCode(code: string, scope?: PhamViNguoiXem) {
   const db = await getDb();
   if (!db) return undefined;
   const result = await db.select().from(machines)
     .where(and(eq(machines.code, code), eq(machines.isActive, true)))
     .limit(1);
-  return result.length > 0 ? result[0] : undefined;
+  if (result.length === 0) return undefined;
+  // ⚠ Phép soát phạm vi đặt SAU lượt đọc (chứ không thành một mệnh đề `WHERE`) là có chủ ý:
+  // `machines.code` mang chỉ mục DUY NHẤT trên hàng đang sống, nên tra cứu theo mã phải đi đúng
+  // chỉ mục ấy; và nơi gọi KHÔNG truyền `scope` (đường máy-với-máy, `redeemMachineEnrollmentToken`,
+  // `ensureIotVirtualStation`) giữ nguyên TỪNG BYTE.
+  if (!(await trongPhamVi("machine", result[0].id, scope))) return undefined;
+  return result[0];
 }
 
 export async function updateMachineHeartbeat(id: number) {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  if (!db) throw new DbUnavailableError();
   await db.update(machines).set({ lastHeartbeat: new Date() }).where(eq(machines.id, id));
 }
 
 export async function updateMachine(id: number, data: Partial<InsertMachine>) {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  if (!db) throw new DbUnavailableError();
   await db.update(machines).set(data).where(eq(machines.id, id));
   // G1.10: only code/station changes alter the URN — skip the (frequent) status writes.
   if (data.code !== undefined || data.stationId !== undefined) queueUrnSync(id);
@@ -640,7 +897,7 @@ export async function issueMachineClaimToken(opts: {
   ttlMinutes?: number;
 }): Promise<{ token: string; tokenPrefix: string; expiresAt: Date }> {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  if (!db) throw new DbUnavailableError();
 
   const ttl = opts.ttlMinutes && opts.ttlMinutes > 0 ? opts.ttlMinutes : machineClaimTokenTtlMinutes();
   const expiresAt = new Date(Date.now() + ttl * 60_000);
@@ -683,7 +940,7 @@ export async function redeemMachineClaimToken(opts: {
   fromIp?: string | null;
 }): Promise<{ machineId: number; machineCode: string; apiKey: string }> {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  if (!db) throw new DbUnavailableError();
 
   // Uniform error: never reveal whether the SERIAL or the TOKEN was the problem.
   const invalid = () => new ClaimTokenError("Invalid or expired claim token", "invalid");
@@ -851,7 +1108,7 @@ async function revokeMachineCredentialsTx(
 /** Standalone credential revocation (own transaction) — for admin tooling/rotation. */
 export async function revokeMachineCredentials(machineId: number): Promise<MachineCredentialRevocation> {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  if (!db) throw new DbUnavailableError();
   return db.transaction(async (tx) => revokeMachineCredentialsTx(tx, machineId));
 }
 
@@ -973,7 +1230,7 @@ export async function issueMachineEnrollmentToken(opts: {
   maxUses: number;
 }> {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  if (!db) throw new DbUnavailableError();
 
   const ttl = opts.ttlMinutes && opts.ttlMinutes > 0 ? opts.ttlMinutes : machineEnrollmentTokenTtlMinutes();
   const expiresAt = new Date(Date.now() + ttl * 60_000);
@@ -1034,7 +1291,7 @@ export async function redeemMachineEnrollmentToken(opts: {
   fromIp?: string | null;
 }): Promise<{ machineId: number; machineCode: string; scopes: string[]; created: boolean }> {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  if (!db) throw new DbUnavailableError();
 
   const serialNumber = opts.serialNumber.trim();
 
@@ -1205,13 +1462,13 @@ export async function listMachineEnrollmentTokens(): Promise<PublicEnrollmentTok
 /** Revoke an enrollment token: stamp revokedAt (redemption then denies it). */
 export async function revokeMachineEnrollmentToken(id: number): Promise<PublicEnrollmentTokenRow> {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  if (!db) throw new DbUnavailableError();
   const [row] = await db
     .update(machineEnrollmentTokens)
     .set({ revokedAt: new Date() })
     .where(eq(machineEnrollmentTokens.id, id))
     .returning();
-  if (!row) throw new Error(`Enrollment token ${id} not found`);
+  if (!row) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "enrollmentToken" }, `Enrollment token ${id} not found`);
   return publicEnrollmentTokenRow(row);
 }
 
@@ -1233,7 +1490,7 @@ export const MACHINE_LIFECYCLE_REVOKES_CREDENTIALS: readonly MachineLifecycleSta
  */
 export async function deleteMachine(id: number) {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  if (!db) throw new DbUnavailableError();
   await db.update(machines)
     .set({ isActive: false, lifecycleStatus: "retired", updatedAt: new Date() })
     .where(eq(machines.id, id));
@@ -1260,11 +1517,14 @@ export async function getMachineBySerialNumber(serialNumber: string) {
 }
 
 // Lấy danh sách máy chờ duyệt (pending)
-export async function getPendingMachines() {
+export async function getPendingMachines(scope?: PhamViNguoiXem) {
   const db = await getDb();
   if (!db) return [];
+  const ids = await idsTrongPhamVi("machine", scope);
+  const dieuKien = [eq(machines.registrationStatus, "pending")];
+  if (ids !== null) dieuKien.push(congTheoIds(machines.id, ids));
   return db.select().from(machines)
-    .where(eq(machines.registrationStatus, "pending"))
+    .where(and(...dieuKien))
     .orderBy(desc(machines.createdAt));
 }
 
@@ -1279,7 +1539,7 @@ export async function approveMachine(id: number, data: {
   apiKey?: string;
 }) {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  if (!db) throw new DbUnavailableError();
   await db.update(machines).set({
     ...data,
     registrationStatus: "approved",
@@ -1317,10 +1577,10 @@ export async function transitionMachineLifecycle(
   revoked?: MachineCredentialRevocation;
 }> {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  if (!db) throw new DbUnavailableError();
 
   const [machine] = await db.select().from(machines).where(eq(machines.id, id)).limit(1);
-  if (!machine) throw new Error("Machine not found");
+  if (!machine) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "machine" }, "Machine not found");
 
   const from = (machine.lifecycleStatus ?? "active") as MachineLifecycleStatus;
   if (from === to) {
@@ -1358,7 +1618,7 @@ export async function transitionMachineLifecycle(
 // Từ chối máy
 export async function rejectMachine(id: number, reason?: string) {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  if (!db) throw new DbUnavailableError();
   // Doc 56 Đ2a Việc 4 — when the IoT device class is on, rejecting a machine ALSO
   // revokes its linked MQTT device (same non-loginable state as retire), atomically
   // with the status flip. Flag OFF (default) keeps the original single UPDATE
@@ -1393,11 +1653,15 @@ export async function getLineByStationId(stationId: number) {
 // Workstations Functions
 // ==============================
 
-export async function getWorkstations(filters?: { lineId?: number; workshopId?: number; factoryId?: number; isActive?: boolean }) {
+export async function getWorkstations(filters?: { lineId?: number; workshopId?: number; factoryId?: number; isActive?: boolean }, scope?: PhamViNguoiXem) {
   const db = await getDb();
   if (!db) return [];
   
   const conditions: any[] = [];
+  {
+    const ids = await idsTrongPhamVi("workstation", scope);
+    if (ids !== null) conditions.push(congTheoIds(workstations.id, ids));
+  }
   if (filters?.isActive !== undefined) conditions.push(eq(workstations.isActive, filters.isActive));
   if (filters?.lineId) conditions.push(eq(workstations.lineId, filters.lineId));
   if (filters?.workshopId) conditions.push(eq(workstations.workshopId, filters.workshopId));
@@ -1409,9 +1673,10 @@ export async function getWorkstations(filters?: { lineId?: number; workshopId?: 
   return db.select().from(workstations).where(and(...conditions)).orderBy(workstations.orderIndex);
 }
 
-export async function getWorkstationById(id: number) {
+export async function getWorkstationById(id: number, scope?: PhamViNguoiXem) {
   const db = await getDb();
   if (!db) return null;
+  if (!(await trongPhamVi("workstation", id, scope))) return null;
   
   const result = await db.select().from(workstations).where(eq(workstations.id, id)).limit(1);
   return result.length > 0 ? result[0] : null;
@@ -1427,7 +1692,7 @@ export async function getWorkstationByCode(code: string) {
 
 export async function createWorkstation(data: Omit<InsertWorkstation, 'id' | 'createdAt' | 'updatedAt'>) {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  if (!db) throw new DbUnavailableError();
   
   const [result] = await db.insert(workstations).values(data).returning({ id: workstations.id });
   return result.id;
@@ -1435,14 +1700,14 @@ export async function createWorkstation(data: Omit<InsertWorkstation, 'id' | 'cr
 
 export async function updateWorkstation(id: number, data: Partial<Omit<InsertWorkstation, 'id' | 'createdAt' | 'updatedAt'>>) {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  if (!db) throw new DbUnavailableError();
   
   await db.update(workstations).set(data).where(eq(workstations.id, id));
 }
 
 export async function deleteWorkstation(id: number) {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  if (!db) throw new DbUnavailableError();
   
   await db.delete(workstations).where(eq(workstations.id, id));
 }
@@ -1576,9 +1841,12 @@ export async function getFactoryHierarchyFlat(factoryId: number) {
 // ============ CASCADE DELETE FUNCTIONS ============
 
 // Get counts of children under a factory
-export async function getFactoryCascadeInfo(factoryId: number) {
+export async function getFactoryCascadeInfo(factoryId: number, scope?: PhamViNguoiXem) {
   const db = await getDb();
   if (!db) return { workshops: 0, lines: 0, stations: 0, machines: 0 };
+  // ⚠ Bốn con số này là một phép ĐẾM trên cây của tenant khác — nhỏ, nhưng vẫn là số đo thật
+  // (quy mô nhà máy đối thủ). Ngoài phạm vi ⇒ trả đúng hình dạng "không có gì", như `getById`.
+  if (!(await trongPhamVi("factory", factoryId, scope))) return { workshops: 0, lines: 0, stations: 0, machines: 0 };
   const ws = await db.select({ id: workshops.id }).from(workshops)
     .where(and(eq(workshops.factoryId, factoryId), eq(workshops.isActive, true)));
   const wsIds = ws.map(w => w.id);
@@ -1602,9 +1870,10 @@ export async function getFactoryCascadeInfo(factoryId: number) {
 }
 
 // Get counts of children under a workshop
-export async function getWorkshopCascadeInfo(workshopId: number) {
+export async function getWorkshopCascadeInfo(workshopId: number, scope?: PhamViNguoiXem) {
   const db = await getDb();
   if (!db) return { lines: 0, stations: 0, machines: 0 };
+  if (!(await trongPhamVi("workshop", workshopId, scope))) return { lines: 0, stations: 0, machines: 0 };
   const ln = await db.select({ id: productionLines.id }).from(productionLines)
     .where(and(eq(productionLines.workshopId, workshopId), eq(productionLines.isActive, true)));
   const lnIds = ln.map(l => l.id);
@@ -1622,9 +1891,10 @@ export async function getWorkshopCascadeInfo(workshopId: number) {
 }
 
 // Get counts of children under a line
-export async function getLineCascadeInfo(lineId: number) {
+export async function getLineCascadeInfo(lineId: number, scope?: PhamViNguoiXem) {
   const db = await getDb();
   if (!db) return { stations: 0, machines: 0 };
+  if (!(await trongPhamVi("line", lineId, scope))) return { stations: 0, machines: 0 };
   const st = await db.select({ id: stations.id }).from(stations)
     .where(and(eq(stations.lineId, lineId), eq(stations.isActive, true)));
   const stIds = st.map(s => s.id);
@@ -1638,9 +1908,10 @@ export async function getLineCascadeInfo(lineId: number) {
 }
 
 // Get counts of children under a station
-export async function getStationCascadeInfo(stationId: number) {
+export async function getStationCascadeInfo(stationId: number, scope?: PhamViNguoiXem) {
   const db = await getDb();
   if (!db) return { machines: 0 };
+  if (!(await trongPhamVi("station", stationId, scope))) return { machines: 0 };
   const mc = await db.select({ id: machines.id }).from(machines)
     .where(and(eq(machines.stationId, stationId), eq(machines.isActive, true)));
   return { machines: mc.length };
@@ -1649,7 +1920,7 @@ export async function getStationCascadeInfo(stationId: number) {
 // Cascade soft-delete factory and all children
 export async function cascadeDeleteFactory(factoryId: number) {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  if (!db) throw new DbUnavailableError();
   // W2.8: atomic cascade — a crash mid-cascade must not leave a half-deleted hierarchy.
   await db.transaction(async (tx) => {
     const ws = await tx.select({ id: workshops.id }).from(workshops)
@@ -1678,7 +1949,7 @@ export async function cascadeDeleteFactory(factoryId: number) {
 // Cascade soft-delete workshop and all children
 export async function cascadeDeleteWorkshop(workshopId: number) {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  if (!db) throw new DbUnavailableError();
   await db.transaction(async (tx) => {
     const ln = await tx.select({ id: productionLines.id }).from(productionLines)
       .where(and(eq(productionLines.workshopId, workshopId), eq(productionLines.isActive, true)));
@@ -1700,7 +1971,7 @@ export async function cascadeDeleteWorkshop(workshopId: number) {
 // Cascade soft-delete line and all children
 export async function cascadeDeleteLine(lineId: number) {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  if (!db) throw new DbUnavailableError();
   await db.transaction(async (tx) => {
     const st = await tx.select({ id: stations.id }).from(stations)
       .where(and(eq(stations.lineId, lineId), eq(stations.isActive, true)));
@@ -1716,7 +1987,7 @@ export async function cascadeDeleteLine(lineId: number) {
 // Cascade soft-delete station and all children
 export async function cascadeDeleteStation(stationId: number) {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  if (!db) throw new DbUnavailableError();
   await db.transaction(async (tx) => {
     await tx.update(machines).set({ isActive: false, lifecycleStatus: "retired" }).where(and(eq(machines.stationId, stationId), eq(machines.isActive, true)));
     await tx.update(stations).set({ isActive: false }).where(eq(stations.id, stationId));
@@ -1725,65 +1996,86 @@ export async function cascadeDeleteStation(stationId: number) {
 
 // ============ LIST DELETED (INACTIVE) FUNCTIONS ============
 
-export async function getDeletedFactories() {
+// ⚠ THÙNG RÁC LÀ MỘT BỀ MẶT ĐỌC ĐẦY ĐỦ — nó trả **nguyên hàng** (tên, mã, mô tả) của những gì
+// tenant khác đã xoá. Vì tập id ở `idsTrongPhamVi` KHÔNG lọc `isActive`, chuỗi JOIN vẫn chiếu
+// được hàng đã xoá mềm ra nhà máy của nó, nên năm hàm này lọc đúng và vẫn còn dữ liệu để khôi phục.
+export async function getDeletedFactories(scope?: PhamViNguoiXem) {
   const db = await getDb();
   if (!db) return [];
-  return db.select().from(factories).where(eq(factories.isActive, false)).orderBy(factories.name);
+  const ids = await idsTrongPhamVi("factory", scope);
+  const dieuKien = [eq(factories.isActive, false)];
+  if (ids !== null) dieuKien.push(congTheoIds(factories.id, ids));
+  return db.select().from(factories).where(and(...dieuKien)).orderBy(factories.name);
 }
 
-export async function getDeletedWorkshops() {
+export async function getDeletedWorkshops(scope?: PhamViNguoiXem) {
   const db = await getDb();
   if (!db) return [];
-  return db.select().from(workshops).where(eq(workshops.isActive, false)).orderBy(workshops.name);
+  const ids = await idsTrongPhamVi("workshop", scope);
+  const dieuKien = [eq(workshops.isActive, false)];
+  if (ids !== null) dieuKien.push(congTheoIds(workshops.id, ids));
+  return db.select().from(workshops).where(and(...dieuKien)).orderBy(workshops.name);
 }
 
-export async function getDeletedLines() {
+export async function getDeletedLines(scope?: PhamViNguoiXem) {
   const db = await getDb();
   if (!db) return [];
-  return db.select().from(productionLines).where(eq(productionLines.isActive, false)).orderBy(productionLines.name);
+  const ids = await idsTrongPhamVi("line", scope);
+  const dieuKien = [eq(productionLines.isActive, false)];
+  if (ids !== null) dieuKien.push(congTheoIds(productionLines.id, ids));
+  return db.select().from(productionLines).where(and(...dieuKien)).orderBy(productionLines.name);
 }
 
-export async function getDeletedStations() {
+export async function getDeletedStations(scope?: PhamViNguoiXem) {
   const db = await getDb();
   if (!db) return [];
-  return db.select().from(stations).where(eq(stations.isActive, false)).orderBy(stations.orderIndex);
+  const ids = await idsTrongPhamVi("station", scope);
+  const dieuKien = [eq(stations.isActive, false)];
+  if (ids !== null) dieuKien.push(congTheoIds(stations.id, ids));
+  return db.select().from(stations).where(and(...dieuKien)).orderBy(stations.orderIndex);
 }
 
-export async function getDeletedMachines() {
+export async function getDeletedMachines(scope?: PhamViNguoiXem) {
   const db = await getDb();
   if (!db) return [];
-  return db.select().from(machines).where(eq(machines.isActive, false)).orderBy(machines.name);
+  const ids = await idsTrongPhamVi("machine", scope);
+  const dieuKien = [eq(machines.isActive, false)];
+  if (ids !== null) dieuKien.push(congTheoIds(machines.id, ids));
+  return db.select().from(machines).where(and(...dieuKien)).orderBy(machines.name);
 }
 
-export async function getDeletedWorkstations() {
+export async function getDeletedWorkstations(scope?: PhamViNguoiXem) {
   const db = await getDb();
   if (!db) return [];
-  return db.select().from(workstations).where(eq(workstations.isActive, false)).orderBy(workstations.orderIndex);
+  const ids = await idsTrongPhamVi("workstation", scope);
+  const dieuKien = [eq(workstations.isActive, false)];
+  if (ids !== null) dieuKien.push(congTheoIds(workstations.id, ids));
+  return db.select().from(workstations).where(and(...dieuKien)).orderBy(workstations.orderIndex);
 }
 
 // ============ RESTORE FUNCTIONS ============
 
 export async function restoreFactory(id: number) {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  if (!db) throw new DbUnavailableError();
   await db.update(factories).set({ isActive: true }).where(eq(factories.id, id));
 }
 
 export async function restoreWorkshop(id: number) {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  if (!db) throw new DbUnavailableError();
   await db.update(workshops).set({ isActive: true }).where(eq(workshops.id, id));
 }
 
 export async function restoreLine(id: number) {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  if (!db) throw new DbUnavailableError();
   await db.update(productionLines).set({ isActive: true }).where(eq(productionLines.id, id));
 }
 
 export async function restoreStation(id: number) {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  if (!db) throw new DbUnavailableError();
   await db.update(stations).set({ isActive: true }).where(eq(stations.id, id));
 }
 
@@ -1799,10 +2091,10 @@ export async function restoreStation(id: number) {
  */
 export async function restoreMachine(id: number) {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  if (!db) throw new DbUnavailableError();
 
   const [machine] = await db.select().from(machines).where(eq(machines.id, id)).limit(1);
-  if (!machine) throw new Error("Machine not found");
+  if (!machine) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "machine" }, "Machine not found");
   if (machine.isActive) return; // already restored — idempotent
 
   const [holder] = await db.select({ id: machines.id, name: machines.name }).from(machines)
@@ -1831,6 +2123,6 @@ export async function restoreMachine(id: number) {
 
 export async function restoreWorkstation(id: number) {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  if (!db) throw new DbUnavailableError();
   await db.update(workstations).set({ isActive: true }).where(eq(workstations.id, id));
 }

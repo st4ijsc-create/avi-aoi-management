@@ -44,14 +44,32 @@ export interface StationFlowProps {
   className?: string;
 }
 
-/** Chấm presence nhỏ cạnh tên máy (online/offline/unknown). */
+/** doc65 V5 — PackML token → nhãn Việt ngắn (StatusBadge mặc định in raw "STOPPED"). */
+const PACKML_LABEL_VI: Record<string, string> = {
+  STOPPED: "packml.dung", EXECUTE: "packml.dangChay", IDLE: "packml.cho", READY: "packml.sanSang",
+  HELD: "packml.giu", SUSPENDED: "packml.tamNgung", COMPLETE: "packml.hoanTat", ABORTED: "packml.huy",
+  RESETTING: "packml.datLai", STARTING: "packml.khoiDong", STOPPING: "packml.dangDung", UNKNOWN: "packml.khongRo",
+};
+
+/** doc65 PRO-100 (ISA-101): dừng/chờ là trạng thái KỲ VỌNG lúc idle → trung tính;
+ * màu chỉ dành cho đang-chạy (info) và bất thường (held/suspended=warning, aborted=destructive).
+ * 12 chip vàng "Dừng" đồng loạt khi tuyến Ready là nhiễu cảnh báo, không phải thông tin. */
+const PACKML_TONE: Record<string, "default" | "info" | "warning" | "error" | "success"> = {
+  STOPPED: "default", IDLE: "default", READY: "default", COMPLETE: "default", RESETTING: "default",
+  EXECUTE: "success", STARTING: "info", STOPPING: "info",
+  HELD: "warning", SUSPENDED: "warning", ABORTED: "error",
+};
+
+/** Chấm presence nhỏ cạnh tên máy (online/offline/unknown).
+ * doc65 V1 (ISA-101): presence = KẾT NỐI, không phải trạng thái chạy — dùng info (xanh dương),
+ * không mượn xanh lá "running" (đứng cạnh badge STOPPED sẽ thành 2 tín hiệu mâu thuẫn). */
 function PresenceDot({ presence }: { presence: "online" | "offline" | "unknown" }) {
   return (
     <span
       aria-hidden="true"
       className={cn(
         "inline-block size-1.5 shrink-0 rounded-full",
-        presence === "online" && "bg-success",
+        presence === "online" && "bg-info",
         presence === "offline" && "bg-destructive",
         presence === "unknown" && "bg-muted-foreground/50",
       )}
@@ -145,8 +163,8 @@ export function StationFlow({
                   <Gauge className="size-3" aria-hidden="true" />
                   {s.cycleTimeTargetS != null ? `${s.cycleTimeTargetS}s` : "—"}
                 </span>
-                <span title={t("lineView.flow.dwellAvg", "Dwell trung bình (cửa sổ quan sát)")}>
-                  {t("lineView.flow.dwellShort", "Dwell")} {s.dwell ? formatMs(s.dwell.avgDwellMs) : "—"}
+                <span title={t("lineView.flow.dwellAvg", "Thời gian lưu trung bình (cửa sổ quan sát)")}>
+                  {t("lineView.flow.dwellShort", "Lưu")} {s.dwell ? formatMs(s.dwell.avgDwellMs) : "—"}
                 </span>
               </div>
 
@@ -165,7 +183,12 @@ export function StationFlow({
                         {m.code}
                       </span>
                     </span>
-                    <StatusBadge status={m.opState} className="px-1.5 py-0 text-[10px]" />
+                    <StatusBadge
+                      status={m.opState}
+                      label={PACKML_LABEL_VI[m.opState?.toUpperCase?.() ?? ""] ? t(PACKML_LABEL_VI[m.opState?.toUpperCase?.() ?? ""]) : m.opState}
+                      tone={PACKML_TONE[m.opState?.toUpperCase?.() ?? ""]}
+                      className="px-1.5 py-0 text-[10px]"
+                    />
                   </li>
                 ))}
               </ul>

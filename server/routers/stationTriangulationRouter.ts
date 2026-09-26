@@ -9,6 +9,7 @@ import { z } from "zod";
 import { protectedProcedure, router } from "../_core/trpc";
 import * as db from "../db";
 import { TRPCError } from "@trpc/server";
+import { appError } from "../_core/appError";
 import {
   summariseSerial,
   summariseLot,
@@ -39,10 +40,7 @@ export const stationTriangulationRouter = router({
     .mutation(async ({ input }) => {
       const samples = rowsToSampleRows(await db.listSamplesForSerial(input.serialNumber));
       if (samples.length === 0) {
-        throw new TRPCError({
-          code: "NOT_FOUND",
-          message: `No measurement samples for serial ${input.serialNumber}`,
-        });
+        throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "measurementSample" }, `No measurement samples for serial ${input.serialNumber}`);
       }
       const summary = summariseSerial(input.serialNumber, samples);
       const lotCode = samples.find((s) => s.lotCode)?.lotCode ?? null;
@@ -98,7 +96,7 @@ export const stationTriangulationRouter = router({
     .query(async ({ input }) => {
       const trace = await db.getStationTrace(input.serialNumber);
       if (!trace) {
-        throw new TRPCError({ code: "NOT_FOUND", message: "Trace not found" });
+        throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "trace" }, "Trace not found");
       }
       return trace;
     }),
@@ -131,10 +129,7 @@ export const stationTriangulationRouter = router({
     }))
     .query(async ({ input }) => {
       if (!input.lotCode && !input.productModelId) {
-        throw new TRPCError({
-          code: "BAD_REQUEST",
-          message: "Provide lotCode or productModelId",
-        });
+        throw appError("BAD_REQUEST", "FIELD_REQUIRED", { field: "lotCodeOrProductModelId" }, "Provide lotCode or productModelId");
       }
       const traces = input.lotCode
         ? await db.listStationTracesByLot(input.lotCode, 5000)

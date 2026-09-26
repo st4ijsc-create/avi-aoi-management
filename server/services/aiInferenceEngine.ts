@@ -1,5 +1,10 @@
 import * as ort from "onnxruntime-node";
+import { appError } from "../_core/appError";
 import sharp from "sharp";
+// ★★★ Pha 2B Task 5 — vị từ "lỗi này có phải LỜI TỪ CHỐI không". Import TĨNH của một module
+// LÁ (không import gì, không I/O): nó phải dùng được NGAY TRONG `catch` của một lượt
+// `await import()` vừa hỏng. Xem `vramRefusalSignal.ts` để biết vì sao so TÊN, không `instanceof`.
+import { isVramRefusal } from "./vram/vramRefusalSignal";
 import path from "path";
 import fs from "fs";
 import { getAiModelById } from "../db/ai";
@@ -10,6 +15,46 @@ import { MicroBatcher, Semaphore, type BatchOutcome } from "./ai/microBatcher";
 // (no ONNX/DB imports); recordVisionInferenceLatency is a NO-OP unless
 // VISION_SLO_OBSERVE_ENABLED, so this import is bit-compatible when the flag is off.
 import { recordVisionInferenceLatency } from "./ai/visionInferenceSlo";
+// Pha 1 Task 5 (điều phối VRAM) — `import type` bị xoá hoàn toàn lúc biên dịch; module telemetry
+// chỉ được nạp bằng `import()` động tại đúng điểm cấp phát, không nằm trên đường nạp file này.
+import type { VramTicket } from "./vram/vramWiring";
+import { sessionCacheMax } from "./vram/vramCaps";
+
+/**
+ * Pha 1 Task 5 — mở MỘT giấy phép VRAM quanh một lượt cấp phát. KHÔNG BAO GIỜ ném.
+ * ⚠ Session ONNX phục vụ ĐƯỜNG KIỂM TRA AOI — tiền của nhà máy (spec §5.2) — nên giấy phép
+ * ở đây mang mức `production`, cao hơn cả chat/RCA (`interactive`) lẫn RAG (`background`).
+ */
+async function beginVram(
+  opts: import("./vram/vramWiring").VramAllocationOptions,
+): Promise<VramTicket> {
+  try {
+    const { beginVramAllocation } = await import("./vram/vramWiring");
+    return await beginVramAllocation(opts);
+  } catch (err) {
+    // ★★★ Pha 2B Task 5 — TỪ CHỐI ≠ TELEMETRY HỎNG: nuốt ở đây là TẮT cưỡng chế tại điểm gọi này.
+    if (isVramRefusal(err)) throw err;
+    return { commitMeasured: async () => {}, release: () => {}, noteRefCount: () => {} };
+  }
+}
+
+/**
+ * Pha 1 Task 5 — giấy phép VRAM theo cacheKey của session. Phải TRẢ khi session rời cache
+ * (LRU đẩy ra hoặc `evictSessionCache()`), nếu không sổ giữ chỗ cho một session không còn tồn
+ * tại và `vramReconciler` báo lệch ÂM giả.
+ */
+const sessionVramTickets = new Map<string, VramTicket>();
+
+function releaseSessionVramTicket(key: string): void {
+  try {
+    const t = sessionVramTickets.get(key);
+    if (!t) return;
+    sessionVramTickets.delete(key);
+    t.release();
+  } catch {
+    /* telemetry KHÔNG được làm hỏng vòng đời cache */
+  }
+}
 
 // ─── W7-D (doc 27 gap V6) — GPU micro-batching + concurrency knobs ───────────
 //   AI_SESSION_CACHE_MAX  LRU ONNX session cache size (default 5; 8 documented-OK
@@ -22,7 +67,40 @@ function envInt(name: string, def: number, min: number): number {
   const v = Number(process.env[name]);
   return Number.isFinite(v) && v >= min ? Math.floor(v) : def;
 }
-const SESSION_CACHE_MAX = envInt("AI_SESSION_CACHE_MAX", 5, 1);
+/**
+ * ⚠⚠ I-5 (review TOÀN NHÁNH Pha 2A) — **TRẦN CACHE LÀ 5, KHÔNG PHẢI VÔ HẠN**, và đó là ĐIỀU KIỆN
+ * CHƯA ĐƯỢC NÓI RA của kết luận "phiên ONNX được cache nên chi phí đo chấp nhận được".
+ *
+ * Từ Pha 2A, mỗi lượt tạo phiên mở một CỬA SỔ ĐO có giá **~3,35 s** (2 × ~1,5 s đầu dò
+ * `powershell.exe` + 250 ms biên lắng — `vram/vramProcessProbe.ts`), và các cửa sổ `self`
+ * **NỐI TIẾP NHAU** (`vram/vramMeasureLock.ts`). Ba điều kiện làm chi phí đó rơi vào một request
+ * `production` chứ không rơi vào lúc khởi động:
+ *   1. **`AI_SESSION_CACHE_MAX` mặc định 5** (`.env` để dòng này bị chú thích ⇒ chạy mặc định).
+ *      Quá 5 model AOI hoạt động ⇒ đuổi LRU ⇒ lượt kiểm kế tiếp trượt cache ⇒ vào lại TRỌN VẸN
+ *      cửa sổ ~3,35 s, **bên trong một request `production`**.
+ *   2. **`getSession()` KHÔNG có khoá in-flight** (xem `:245-251`): hai request đồng thời cùng một
+ *      model chưa cache mở **HAI** cửa sổ, rồi hai cửa sổ đó **nối tiếp nhau** ⇒ **2 × 3,35 s**
+ *      cho cùng một model.
+ *   3. `cacheKey` gồm `currentVersion` (`:190`) ⇒ mọi lượt `activateVersion`/`promoteStage`/
+ *      auto-rollback đổi khoá ⇒ lượt nạp CÓ ĐO bị hoãn sang **request kiểm tra đầu tiên sau khi
+ *      deploy**, không rơi vào lượt deploy.
+ * Để so sánh: khởi động nguội mở **4 cửa sổ nối tiếp ≈ 13,4 s** chi phí đo thuần
+ * (`cuda-backend` · `gguf:<30B>` · `gguf:<0,6B embed>` · `gguf-embed-ctx`).
+ *
+ * ⚠ Nâng `AI_SESSION_CACHE_MAX` để né lớp (1) là đổi lượng VRAM thường trú — quyết định của Pha 2B,
+ * không phải một nút vặn cho tiện. Xem thêm đảo ngược ưu tiên (I-3) ở `vram/vramWiring.ts`: lượt
+ * kiểm `production` này xếp hàng vào khoá đo theo FIFO, KHÔNG theo ưu tiên.
+ */
+/**
+ * ★ Pha 2B Task 7 (§8) — **KHÔNG CÒN ĐỌC `process.env` Ở ĐÂY.** `AI_SESSION_CACHE_MAX` có MỘT
+ * người đọc duy nhất (`vram/vramCaps.ts`) vì nó nay là trần của **hai** kho phiên ONNX: kho này
+ * và `ai/ocrService.recSessionCache` (trước Task 7 kho đó **không có trần nào**).
+ * ⚠ Gọi hàm ở ĐIỂM DÙNG chứ không chụp vào một `const` mức module: xem `vramCaps.ts` — hơn hai
+ * chục bộ test đặt biến này trong `beforeEach`.
+ */
+function sessionCacheMaxHienTai(): number {
+  return sessionCacheMax();
+}
 const BATCH_MAX = envInt("AI_BATCH_MAX", 8, 1);
 const BATCH_WINDOW_MS = envInt("AI_BATCH_WINDOW_MS", 25, 0);
 const GPU_CONCURRENCY = envInt("AI_GPU_CONCURRENCY", 2, 1);
@@ -48,13 +126,35 @@ class LruSessionCache {
   set(key: string, session: ort.InferenceSession): void {
     if (this.map.has(key)) this.map.delete(key);
     this.map.set(key, session);
-    if (this.map.size > SESSION_CACHE_MAX) {
+    if (this.map.size > sessionCacheMaxHienTai()) {
       // Evict the oldest (first) entry
-      this.map.delete(this.map.keys().next().value!);
+      // Pha 1 Task 5 — giữ lại key trước khi xoá để TRẢ giấy phép VRAM tương ứng.
+      // Ngữ nghĩa y hệt dòng cũ `this.map.delete(this.map.keys().next().value!)`.
+      //
+      // ⚠ I-1 (review TOÀN NHÁNH) — ĐÂY LÀ MỘT LƯỢT NHẢ **KHÔNG CÓ BẰNG CHỨNG**, và nó được
+      // đánh dấu tường minh như vậy (`releaseProof: "unverified"` ở `getSession()`), KHÔNG được
+      // im lặng coi như đã nhả thật. Đuổi khỏi cache chỉ gỡ THAM CHIẾU JS; bộ nhớ native của
+      // onnxruntime chỉ chắc chắn trả khi `session.release()` chạy — mà **không một session CÓ
+      // KHẢ NĂNG GPU nào trong repo được `release()`**.
+      //
+      // ⚠⚠ I-2 (review TOÀN NHÁNH) — CÂU NÀY TRƯỚC ĐÂY VIẾT "toàn repo KHÔNG có một lời gọi nào
+      // như vậy", RỘNG HƠN SỰ THẬT: `server/services/aiLocalTraining.ts` có NĂM lời gọi
+      // `session.release()` (`:332`, `:504`, `:765`, `:889`, `:954`). Kết luận KHÔNG đổi — bốn
+      // session của file đó ghim `executionProviders: ["cpu"]` nên chúng không chiếm VRAM — nhưng
+      // một câu SAI dùng làm chỗ dựa vẫn là lập luận hỏng, và đính chính không được nằm ở file khác.
+      //
+      // Không thêm ở đây được: `getSession()` không có khoá in-flight
+      // (:245-251) và `gpuSessionSemaphore` cho phép 2 lượt `session.run` song song ⇒ nhả native
+      // dưới chân một lượt run đang bay là ABORT ở tầng native, không phải exception bắt được.
+      // Sửa đúng cần đếm tham chiếu = ĐỔI HÀNH VI đường suy luận nóng nhất ⇒ báo cáo §10, Pha 2.
+      // Kỷ luật đầy đủ + bảng bốn điểm nhả: đầu `vram/vramWiring.ts`.
+      const evictedKey = this.map.keys().next().value!;
+      this.map.delete(evictedKey);
+      releaseSessionVramTicket(evictedKey);
     }
   }
 
-  delete(key: string): void { this.map.delete(key); }
+  delete(key: string): void { this.map.delete(key); releaseSessionVramTicket(key); }
   keys(): IterableIterator<string> { return this.map.keys(); }
   [Symbol.iterator](): IterableIterator<[string, ort.InferenceSession]> { return this.map[Symbol.iterator](); }
   get size(): number { return this.map.size; }
@@ -126,10 +226,47 @@ async function getSession(model: AiModel): Promise<ort.InferenceSession> {
   const executionProviders = getExecutionProviders();
   logProviders(executionProviders);
 
+  // Pha 1 Task 5 — CHỈ KHAI BÁO, không quyết định gì: không có hàng rào nào ở đây bị đổi.
+  const vramTicket = await beginVram({
+    owner: `onnx:${model.code}`,
+    kind: "onnx-session",
+    priority: "production",
+    filePath: modelPath,
+    // I-1 — lượt nhả của hộ này KHÔNG chứng minh được thiết bị đã nhả (đuổi LRU chỉ gỡ tham
+    // chiếu JS; `ort.InferenceSession.release()` không được gọi ở đâu trong repo). Đánh dấu để
+    // truy vấn được thay vì phải đọc comment mà tin — xem bảng bốn điểm nhả ở `vramWiring.ts`.
+    releaseProof: "unverified",
+  });
+
   const session = await ort.InferenceSession.create(modelPath, {
     executionProviders,
     graphOptimizationLevel: "all",
+    // ⚠ `.catch()` chứ không bọc try/catch, để dòng `create(...)` ở trên đứng NGUYÊN VĂN như
+    // trước — Task 5 phải chứng minh bằng diff rằng đường cấp phát không bị sửa. Nhánh này chỉ
+    // trả chỗ rồi ném lại NGUYÊN lỗi cũ.
+  }).catch((err: unknown) => {
+    vramTicket.release();
+    throw err;
   });
+
+  // Số THẬT = VRAM tăng thêm do session này. Với EP là CPU thì đúng bằng 0 — và 0 LÀ số liệu
+  // thật, được ghi để sổ không phình lên theo kích thước file .onnx (xem vramWiring.ts).
+  await vramTicket.commitMeasured();
+  // ⚠ `getSession()` KHÔNG có khoá in-flight: hai lượt cùng cacheKey chạy song song đều trượt
+  // cache và cùng tạo session (hành vi CÓ SẴN, không thuộc phạm vi Task 5). Trả giấy phép cũ
+  // trước khi ghi đè, nếu không cái cũ treo vĩnh viễn trong sổ và sinh báo động lệch ÂM giả.
+  //
+  // ⚠⚠ I-5 (review TOÀN NHÁNH) — TỪ PHA 2A, "KHÔNG có khoá in-flight" KHÔNG CÒN chỉ là lãng phí
+  // một lượt tạo phiên: hai lượt song song mở HAI cửa sổ đo, và hai cửa sổ `self` **nối tiếp
+  // nhau** ⇒ **2 × ~3,35 s** chồng lên một request `production`. Xem khối số đo đầy đủ ở
+  // `SESSION_CACHE_MAX`. Thêm khoá in-flight ở đây là ĐỔI HÀNH VI đường suy luận — Pha 2B.
+  //
+  // ⚠ Dòng `releaseSessionVramTicket()` ngay dưới, và lượt đuổi LRU trong `sessionCache.set()`,
+  // đều là ĐIỂM NHẢ: từ bản vá C-1 (review TOÀN NHÁNH) chúng ghi vào mọi cửa sổ đo CÙNG PHẠM VI
+  // đang mở, khiến phép đo của người đang đo khai `measureFailed` thay vì commit một delta HỤT.
+  // Đó là hành vi ĐÚNG và KHÔNG chặn gì cả — xem `vram/vramWiring.ts`, khối `OpenMeasureWindow`.
+  releaseSessionVramTicket(cacheKey);
+  sessionVramTickets.set(cacheKey, vramTicket);
 
   sessionCache.set(cacheKey, session);
   return session;
@@ -294,7 +431,7 @@ export function getMicroBatchStats() {
     batchMax: BATCH_MAX,
     batchWindowMs: BATCH_WINDOW_MS,
     gpuConcurrency: GPU_CONCURRENCY,
-    sessionCacheMax: SESSION_CACHE_MAX,
+    sessionCacheMax: sessionCacheMaxHienTai(),
     activeBatchers: batchers.size,
     noBatchModels: Array.from(noBatchModels),
     gpuRunning: gpuSessionSemaphore.running,
@@ -357,7 +494,7 @@ export async function runInference(
 ) {
   const startTime = Date.now();
   const model = await getAiModelById(modelId);
-  if (!model) throw new Error(`Model ${modelId} not found`);
+  if (!model) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "aiModel" }, `Model ${modelId} not found`);
   if (model.status !== "ACTIVE") throw new Error(`Model ${model.code} is not active (status: ${model.status})`);
 
   // ── AOI-C — flag-gated embedding-head dispatch (doc 24 Wave-3) ──────────────
@@ -523,7 +660,7 @@ export async function runInferenceWithFeatureMap(
   imageBuffer: Buffer,
 ): Promise<InferenceWithFeatureMap> {
   const model = await getAiModelById(modelId);
-  if (!model) throw new Error(`Model ${modelId} not found`);
+  if (!model) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "aiModel" }, `Model ${modelId} not found`);
   if (model.status !== "ACTIVE") throw new Error(`Model ${model.code} is not active (status: ${model.status})`);
 
   const session = await getSession(model);

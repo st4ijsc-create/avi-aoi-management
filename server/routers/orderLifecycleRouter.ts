@@ -15,6 +15,7 @@
  */
 import { z } from "zod";
 import { TRPCError } from "@trpc/server";
+import { appError } from "../_core/appError";
 import { router, protectedProcedure } from "../_core/trpc";
 import { requirePermission } from "../_core/accessControl";
 import {
@@ -34,10 +35,12 @@ const canEdit = requirePermission("production_orders", "canEdit");
 
 function ensureEnabled(): void {
   if (!orderLifecycleEnabled()) {
-    throw new TRPCError({
-      code: "PRECONDITION_FAILED",
-      message: "Order lifecycle is disabled (ORDER_LIFECYCLE_ENABLED, default OFF; requires migration 0258).",
-    });
+    throw appError(
+      "PRECONDITION_FAILED",
+      "FEATURE_DISABLED",
+      { feature: "orderLifecycle" },
+      "Order lifecycle is disabled (ORDER_LIFECYCLE_ENABLED, default OFF; requires migration 0258).",
+    );
   }
 }
 
@@ -50,10 +53,10 @@ function toTrpc(err: unknown): never {
       err.httpStatus === 403 ? "FORBIDDEN" :
       err.httpStatus === 503 ? "PRECONDITION_FAILED" :
       err.httpStatus >= 500 ? "INTERNAL_SERVER_ERROR" : "BAD_REQUEST";
-    throw new TRPCError({ code, message: err.message });
+    throw appError(code, "OPERATION_FAILED", { operation: "manageOrderLifecycle" }, err.message);
   }
   if (err instanceof TRPCError) throw err;
-  throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: (err as Error)?.message ?? "Order lifecycle error" });
+  throw appError("INTERNAL_SERVER_ERROR", "OPERATION_FAILED", { operation: "manageOrderLifecycle" }, (err as Error)?.message ?? "Order lifecycle error");
 }
 
 const lifecycleEnum = z.enum(["created", "allocated", "running", "held", "compensating", "done", "failed", "rejected"]);
@@ -87,7 +90,7 @@ export const orderLifecycleRouter = router({
       ensureEnabled();
       try {
         const detail = await getOrderDetail(input.orderId);
-        if (!detail) throw new TRPCError({ code: "NOT_FOUND", message: `Order ${input.orderId} not found` });
+        if (!detail) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "productionOrder" }, `Order ${input.orderId} not found`);
         return detail;
       } catch (err) {
         toTrpc(err);
@@ -102,7 +105,7 @@ export const orderLifecycleRouter = router({
       ensureEnabled();
       try {
         const trace = await traceOrder(input.orderId);
-        if (!trace) throw new TRPCError({ code: "NOT_FOUND", message: `Order ${input.orderId} not found` });
+        if (!trace) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "productionOrder" }, `Order ${input.orderId} not found`);
         return trace;
       } catch (err) {
         toTrpc(err);

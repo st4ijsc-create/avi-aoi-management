@@ -20,6 +20,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { mapTrpcError } from "@/lib/trpcErrors";
 import {
   StatusBadge,
   MetricCard,
@@ -1003,7 +1004,7 @@ export default function FederationDashboard() {
                             <TableCell colSpan={10} className="p-0">
                               <SiteDrillPanel
                                 loading={siteDetailQ.isLoading}
-                                error={siteDetailQ.error?.message ?? null}
+                                error={siteDetailQ.error ? mapTrpcError(siteDetailQ.error) : null}
                                 detail={siteDetailQ.data ?? null}
                                 deepLink={baseUrlBySite.get(r.site.id) ?? null}
                               />

@@ -52,7 +52,13 @@ import {
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { SlidersHorizontal, AlertTriangle, CheckCircle2, XCircle, Undo2 } from "lucide-react";
 import { toast } from "sonner";
+import { mapTrpcError } from "@/lib/trpcErrors";
 import { normalizeBatchResponse, type BatchSummary } from "./thresholdApprovalsBatch";
+// Lô 7 Mục 4 (BG-111) — hiển thị ĐỦ BỘ `suggestion.deXuat` (Lô 7 Mục 2). Hàm
+// THUẦN trả `[]` cho hàng CŨ (không có `deXuat`) — khối "current vs proposed"
+// bên dưới (LSL/USL/nominal) ĐỌC TRỰC TIẾP các cột legacy, KHÔNG đổi, KHÔNG
+// phụ thuộc file này — tương thích lùi giữ NGUYÊN VĂN.
+import { xayDeXuatHienThi, coDeXuatDayDu } from "./thresholdApprovalsDeXuatDisplay";
 
 type Approval = {
   id: number;
@@ -131,15 +137,15 @@ export default function ThresholdApprovalsPage() {
 
   const approveM = trpc.thresholdApproval.approve.useMutation({
     onSuccess: () => { toast.success(t("thresholdApprovals.approved")); setDetail(null); invalidate(); },
-    onError: (e) => toast.error(e.message),
+    onError: (e) => toast.error(mapTrpcError(e)),
   });
   const rejectM = trpc.thresholdApproval.reject.useMutation({
     onSuccess: () => { toast.success(t("thresholdApprovals.rejected")); setDetail(null); invalidate(); },
-    onError: (e) => toast.error(e.message),
+    onError: (e) => toast.error(mapTrpcError(e)),
   });
   const withdrawM = trpc.thresholdApproval.withdraw.useMutation({
     onSuccess: () => { toast.success(t("thresholdApprovals.withdrawn")); setDetail(null); invalidate(); },
-    onError: (e) => toast.error(e.message),
+    onError: (e) => toast.error(mapTrpcError(e)),
   });
   const batchApproveM = thresholdApi.batchApprove.useMutation({
     onSuccess: (resp: unknown) => {
@@ -151,11 +157,11 @@ export default function ThresholdApprovalsPage() {
       );
       invalidate();
     },
-    onError: (e: any) => toast.error(e?.message ?? t("thresholdApprovals.batchFailed")),
+    onError: (e: any) => toast.error(t("thresholdApprovals.batchFailed"), { description: mapTrpcError(e) }),
   });
   const revertM = thresholdApi.revert.useMutation({
     onSuccess: () => { toast.success(t("thresholdApprovals.reverted")); setRevertTarget(null); invalidate(); },
-    onError: (e: any) => toast.error(e?.message ?? t("thresholdApprovals.revertFailed")),
+    onError: (e: any) => toast.error(t("thresholdApprovals.revertFailed"), { description: mapTrpcError(e) }),
   });
 
   // Rows a reviewer may batch-approve: pending + not their own (mirror server SoD).
@@ -436,7 +442,8 @@ function ReviewDialog({
             )}
           </div>
 
-          {/* current vs proposed */}
+          {/* current vs proposed — NGUYÊN VĂN từ trước Lô 7 (LSL/USL/nominal, đọc cột legacy
+              trực tiếp), không đổi — tương thích lùi cho MỌI hàng (cũ lẫn mới). */}
           <div className="grid grid-cols-2 gap-3">
             <div className="rounded-md border p-3">
               <div className="text-xs font-medium text-muted-foreground mb-1">{t("thresholdApprovals.current")}</div>
@@ -451,6 +458,28 @@ function ReviewDialog({
               <div>{t("thresholdApprovals.nominal")}: <b>{num(item.proposedNominal)}</b></div>
             </div>
           </div>
+
+          {/* Lô 7 Mục 4 (BG-111) — ĐỦ BỘ suggestion.deXuat (Lô 7 Mục 2, hợp đồng
+              request mở rộng). Chỉ render khi hàng THẬT SỰ mang deXuat (hàng CŨ
+              trước Lô 7 ⇒ coDeXuatDayDu=false, khối này ẩn hẳn — khối current/
+              proposed ở trên đã đủ cho chúng, đúng "hàng cũ vẫn render như trước"). */}
+          {coDeXuatDayDu(item.suggestion) && (
+            <div className="rounded-md border p-3">
+              <div className="text-xs font-medium text-muted-foreground mb-1">
+                {t("thresholdApprovals.deXuatDayDu", "Đề xuất đủ bộ")}
+              </div>
+              <dl className="grid grid-cols-2 gap-x-3 gap-y-1 text-xs sm:grid-cols-3">
+                {xayDeXuatHienThi(item.suggestion).map((d) => (
+                  <div key={d.field} className="flex items-baseline justify-between gap-2 rounded border px-2 py-1">
+                    <dt className="text-muted-foreground">{t(d.i18nKey)}</dt>
+                    <dd className={d.laXoa ? "font-medium text-destructive" : "font-medium"}>
+                      {d.laXoa ? t("thresholdApprovals.deXuatXoa", "xóa") : d.giaTri}
+                    </dd>
+                  </div>
+                ))}
+              </dl>
+            </div>
+          )}
 
           {/* AI basis */}
           {(cpk != null || basis != null) && (

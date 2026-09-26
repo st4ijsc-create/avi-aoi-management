@@ -1,0 +1,32 @@
+# Chuan hoa xuong dong (2026-09-14, chu du an duyet khi "merge ve 1 moi"):
+# repo luu LF; checkout tren Windows cung LF de test doc ma nguon tu dia
+# (readFileSync + so chuoi "\n") khong doi mau theo core.autocrlf cua may.
+# Index da la LF 100% (0/11.567 tep i/crlf) => khong can renormalize.
+* text=auto eol=lf
+
+# Script Windows can CRLF
+*.bat text eol=crlf
+*.cmd text eol=crlf
+
+# 2026-09-24: du an C# mau cua /ai-coding-workspace la DE THI "repo that cua nguoi dung" - tep C# tren Windows
+# la CRLF, va aiCodingKhoiSua.stream.test.ts §8 kiem duong sua-theo-khoi GIU CRLF tren byte dia that.
+# Quy tac eol=lf o tren bien de thi thanh LF => ca "de thi dung la tep CRLF" do tu 2026-09-14 va live mat truc CRLF.
+sandbox-projects/csharp-demo/** text eol=crlf
+
+# Nhi phan (text=auto tu nhan, ghi ro de chac)
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.ico binary
+*.woff binary
+*.woff2 binary
+*.ttf binary
+*.wasm binary
+*.pdf binary
+*.vsix binary
+*.zip binary
+*.glb binary
+*.gltf binary
+*.step binary
+*.stp binary

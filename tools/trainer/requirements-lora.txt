@@ -1,0 +1,49 @@
+# LoRA/QLoRA Fine-Tune Sidecar (doc69 Giai đoạn 5 / Wave E3, task E3-6) — OPTIONAL,
+# NOT a project dependency.
+#
+# These are installed BY THE OPERATOR only when enabling the LoRA fine-tune subsystem
+# (LLM_FINETUNE_CMD). They are NOT pulled in by `pnpm install`, are NOT used by CI, and are NOT
+# required for the default RAG-grounded local-AI answer path (which stays the fast, always-on
+# default — see tools/trainer/finetune_lora.py's module doc comment for the full honest framing).
+#
+# Deliberately a SEPARATE file from requirements.txt (the EXISTING vision/ONNX trainer's deps,
+# untouched by this task) — a LoRA operator does not need torchvision/onnx/ultralytics, and a
+# vision-sidecar operator does not need transformers/peft/bitsandbytes.
+#
+# Install (CPU-only smoke / tiny models):
+#   python -m venv .venv-lora && . .venv-lora/bin/activate   # Windows: .venv-lora\Scripts\activate
+#   pip install -r tools/trainer/requirements-lora.txt
+#
+# For a real GPU fine-tune, install the matching CUDA torch wheel from the official index FIRST
+# (https://pytorch.org/get-started/locally/), e.g.:
+#   pip install torch --index-url https://download.pytorch.org/whl/cu121
+# then install the rest of this file (torch is pinned loosely below so the CUDA wheel wins).
+#
+# QLoRA (quantization: "4bit" | "8bit" in job.json's hyperparams) needs bitsandbytes, which is
+# Linux/CUDA-first — on Windows, run the sidecar under WSL2 if you need 4-bit/8-bit QLoRA; full-
+# precision LoRA (quantization: "none") works without bitsandbytes.
+#
+# GGUF conversion (merge_and_export_gguf in finetune_lora.py) is NOT a pip package — it shells
+# out to a LOCAL llama.cpp checkout's `convert_hf_to_gguf.py` via the LLAMA_CPP_CONVERT_SCRIPT
+# env var. Clone https://github.com/ggml-org/llama.cpp separately; see the runbook.
+#
+# Offline-first: the base model checkpoint (job.json's baseModelPath) must already be present
+# locally (HF_HUB_OFFLINE=1 / TRANSFORMERS_OFFLINE=1 are set by finetune_lora.py itself) — no
+# network download is attempted at train time.
+
+torch>=2.3.1
+transformers>=4.42.0
+peft>=0.11.0
+accelerate>=0.31.0
+sentencepiece>=0.2.0
+protobuf>=4.25.0
+
+# QLoRA (4-bit / 8-bit) only — see the Windows/WSL2 note above. Comment out if you only ever
+# run full-precision LoRA (quantization: "none").
+bitsandbytes>=0.43.0
+
+# Optional, faster alternative trainer path some operators may prefer for large context /
+# limited-VRAM setups (NOT what finetune_lora.py itself calls — the script uses a plain PEFT +
+# manual-loop path to mirror train.py's "no hidden framework magic" style). Left commented so
+# it's a documented, opt-in swap rather than a hard dependency:
+# unsloth>=2024.8

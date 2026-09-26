@@ -1,14 +1,20 @@
 /**
  * rootCauseRouter — update/delete shape + RBAC tests.
  *
- * Mocks the DB accessor (records SQL calls, returns canned rows) and the
- * accessControl middleware so each test can grant/deny canEdit / canDelete.
+ * Mocks the DB accessor (records SQL/builder calls, returns canned rows) and
+ * the accessControl middleware so each test can grant/deny canEdit / canDelete.
  * Verifies:
  *  - update merges review fields (confirmedCause/correctiveAction/notes) and
  *    persists status; returns { success, id, review }
  *  - update on a missing id → NOT_FOUND
  *  - delete removes by id; missing id → NOT_FOUND
  *  - RBAC: a denied canEdit/canDelete → FORBIDDEN (write never runs)
+ *
+ * W0-1 (doc 69): `update`'s WRITE (the UPDATE ... SET status/aiInsights) was
+ * converted from a raw unquoted-identifier `db.execute(sql`UPDATE ...`)` to
+ * the drizzle builder `db.update(rootCauseAnalysis).set(...).where(...)` — the
+ * pre-read SELECT still goes through `db.execute` (now quoted). The mock below
+ * models both surfaces.
  */
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
@@ -24,10 +30,20 @@ vi.mock("../_core/accessControl", () => ({
   },
 }));
 
-// ── Mock DB: record execute() calls, return scripted rows ─────────────────────
+// ── Mock DB: record execute() calls (pre-read SELECT / delete) and
+// db.update().set().where() calls (the write), return scripted rows ──────────
 const execSpy = vi.fn();
+const updateSetSpy = vi.fn();
 vi.mock("../db", () => ({
-  getDb: async () => ({ execute: (q: unknown) => execSpy(q) }),
+  getDb: async () => ({
+    execute: (q: unknown) => execSpy(q),
+    update: () => ({
+      set: (values: unknown) => {
+        updateSetSpy(values);
+        return { where: () => Promise.resolve() };
+      },
+    }),
+  }),
   // The tRPC audit middleware logs mutations; stub it so it's a no-op here.
   createAuditLog: vi.fn(async () => {}),
 }));
@@ -42,14 +58,14 @@ const caller = createCaller({ user: { id: 9, name: "Tester", role: "admin" } });
 beforeEach(() => {
   allow = true;
   execSpy.mockReset();
+  updateSetSpy.mockReset();
 });
 
 describe("rootCause.update", () => {
   it("merges review fields + persists, returns review", async () => {
-    // 1st execute = SELECT existing; 2nd = UPDATE
-    execSpy
-      .mockResolvedValueOnce({ rows: [{ id: 1, aiInsights: { summary: "s" } }] })
-      .mockResolvedValueOnce({ rows: [] });
+    // The pre-read SELECT goes through execute(); the write goes through the
+    // drizzle builder (db.update().set().where()) — see W0-1 fix note above.
+    execSpy.mockResolvedValueOnce({ rows: [{ id: 1, aiInsights: { summary: "s" } }] });
 
     const res = await caller.update({
       id: 1,
@@ -65,19 +81,31 @@ describe("rootCause.update", () => {
     expect(res.review.correctiveAction).toBe("Reduce aperture");
     expect(res.review.notes).toBe("verified on line 2");
     expect(res.review.reviewedBy).toBe(9);
-    expect(execSpy).toHaveBeenCalledTimes(2);
+    expect(execSpy).toHaveBeenCalledTimes(1); // only the pre-read SELECT
+    expect(updateSetSpy).toHaveBeenCalledTimes(1);
+    expect(updateSetSpy).toHaveBeenCalledWith(
+      expect.objectContaining({
+        status: "IN_PROGRESS",
+        aiInsights: expect.objectContaining({
+          summary: "s",
+          review: expect.objectContaining({ confirmedCause: "Excess paste" }),
+        }),
+      }),
+    );
   });
 
   it("missing id → NOT_FOUND (no UPDATE issued)", async () => {
     execSpy.mockResolvedValueOnce({ rows: [] });
     await expect(caller.update({ id: 404, notes: "x" })).rejects.toThrow(/not found/i);
     expect(execSpy).toHaveBeenCalledTimes(1); // only the SELECT ran
+    expect(updateSetSpy).not.toHaveBeenCalled();
   });
 
   it("denied canEdit → FORBIDDEN, no DB call", async () => {
     allow = false;
     await expect(caller.update({ id: 1, notes: "x" })).rejects.toThrow(/denied|forbidden/i);
     expect(execSpy).not.toHaveBeenCalled();
+    expect(updateSetSpy).not.toHaveBeenCalled();
   });
 });
 

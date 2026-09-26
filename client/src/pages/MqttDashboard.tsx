@@ -20,6 +20,7 @@ import {
   Code2, Copy, ChevronDown, ChevronUp
 } from "lucide-react";
 import { toast } from "sonner";
+import { mapTrpcError } from "@/lib/trpcErrors";
 import { alertSoundService } from "@/lib/alertSoundService";
 import { Volume2, VolumeX, Radio } from "lucide-react";
 import { io, Socket } from "socket.io-client";
@@ -196,14 +197,18 @@ export function MqttDashboardContent() {
       refetchRealtimeStats();
     },
     onError: (error) => {
+      // `lastTestResult` là dump JSON kỹ thuật cho engineer debug test-alert (nút Copy +
+      // hiển thị `JSON.stringify` thô ở dưới) — CỐ Ý giữ error.message nguyên văn ở đây,
+      // khác với toast (câu cho người dùng cuối) đã đổi sang mapTrpcError bên dưới.
+      // i18n-raw-ok: nhật ký kỹ thuật MQTT — người vận hành cần chuỗi NGUYÊN VĂN của broker.
       setLastTestResult({ type: 'error', timestamp: new Date().toISOString(), message: error.message, code: error.data?.code });
-      toast.error(t('mqtt.dashboard.errorMsg', { message: error.message }));
+      toast.error(t('mqtt.dashboard.errorMsg', { message: mapTrpcError(error) }));
     },
   });
 
   const handleTestNGAlert = () => {
     if (!testFactoryId || !testWorkshopId || !testStationId) {
-      toast.error('Vui lòng chọn Factory, Workshop và Station');
+      toast.error(t("mqttDashboard.vuiLongChonFactoryWorkshop", "Vui lòng chọn Factory, Workshop và Station"));
       return;
     }
     testNGAlertMutation.mutate({
@@ -762,7 +767,7 @@ export function MqttDashboardContent() {
               <div className="space-y-1">
                 <Label className="text-xs">Factory *</Label>
                 <Select value={testFactoryId} onValueChange={(v) => { setTestFactoryId(v); setTestWorkshopId(''); setTestLineId(''); setTestStationId(''); setTestMachineId(''); }}>
-                  <SelectTrigger><SelectValue placeholder="Chọn Factory..." /></SelectTrigger>
+                  <SelectTrigger><SelectValue placeholder={t("mqttDash.chonFactory", "Chọn Factory...")} /></SelectTrigger>
                   <SelectContent>
                     {factoriesList?.map((f: any) => (
                       <SelectItem key={f.id} value={String(f.id)}>{f.name}</SelectItem>
@@ -773,7 +778,7 @@ export function MqttDashboardContent() {
               <div className="space-y-1">
                 <Label className="text-xs">Workshop *</Label>
                 <Select value={testWorkshopId} onValueChange={(v) => { setTestWorkshopId(v); setTestLineId(''); setTestStationId(''); setTestMachineId(''); }} disabled={!testFactoryId}>
-                  <SelectTrigger><SelectValue placeholder="Chọn Workshop..." /></SelectTrigger>
+                  <SelectTrigger><SelectValue placeholder={t("mqttDash.chonWorkshop", "Chọn Workshop...")} /></SelectTrigger>
                   <SelectContent>
                     {workshopsList?.map((w: any) => (
                       <SelectItem key={w.id} value={String(w.id)}>{w.name}</SelectItem>
@@ -784,7 +789,7 @@ export function MqttDashboardContent() {
               <div className="space-y-1">
                 <Label className="text-xs">Line</Label>
                 <Select value={testLineId} onValueChange={(v) => { setTestLineId(v); setTestStationId(''); setTestMachineId(''); }} disabled={!testWorkshopId}>
-                  <SelectTrigger><SelectValue placeholder="Chọn Line..." /></SelectTrigger>
+                  <SelectTrigger><SelectValue placeholder={t("mqttDash.chonLine", "Chọn Line...")} /></SelectTrigger>
                   <SelectContent>
                     {linesList?.map((l: any) => (
                       <SelectItem key={l.id} value={String(l.id)}>{l.name}</SelectItem>
@@ -798,7 +803,7 @@ export function MqttDashboardContent() {
               <div className="space-y-1">
                 <Label className="text-xs">Station *</Label>
                 <Select value={testStationId} onValueChange={(v) => { setTestStationId(v); setTestMachineId(''); }} disabled={!testLineId}>
-                  <SelectTrigger><SelectValue placeholder="Chọn Station..." /></SelectTrigger>
+                  <SelectTrigger><SelectValue placeholder={t("mqttDash.chonStation", "Chọn Station...")} /></SelectTrigger>
                   <SelectContent>
                     {stationsList?.map((s: any) => (
                       <SelectItem key={s.id} value={String(s.id)}>{s.name}</SelectItem>
@@ -807,9 +812,9 @@ export function MqttDashboardContent() {
                 </Select>
               </div>
               <div className="space-y-1">
-                <Label className="text-xs">Machine (tùy chọn)</Label>
+                <Label className="text-xs">{t("mqttDash.machineTuyChon", "Machine (tùy chọn)")}</Label>
                 <Select value={testMachineId} onValueChange={setTestMachineId} disabled={!testStationId}>
-                  <SelectTrigger><SelectValue placeholder="Tự động chọn máy đầu tiên" /></SelectTrigger>
+                  <SelectTrigger><SelectValue placeholder={t("mqttDash.tuDongChonMayDau", "Tự động chọn máy đầu tiên")} /></SelectTrigger>
                   <SelectContent>
                     {machinesList?.map((m: any) => (
                       <SelectItem key={m.id} value={String(m.id)}>{m.name} ({m.code})</SelectItem>
@@ -831,9 +836,9 @@ export function MqttDashboardContent() {
 
             {/* Product model select */}
             <div className="space-y-1">
-              <Label className="text-xs">Sản phẩm (tùy chọn)</Label>
+              <Label className="text-xs">{t("mqttDash.sanPhamTuyChon", "Sản phẩm (tùy chọn)")}</Label>
               <Select value={testProductModelId} onValueChange={setTestProductModelId}>
-                <SelectTrigger><SelectValue placeholder="Chọn sản phẩm để load điểm đo..." /></SelectTrigger>
+                <SelectTrigger><SelectValue placeholder={t("mqttDash.chonSanPhamDeLoad", "Chọn sản phẩm để load điểm đo...")} /></SelectTrigger>
                 <SelectContent>
                   {(productModelsList as any[])?.map((pm: any) => (
                     <SelectItem key={pm.id} value={String(pm.id)}>{pm.code} - {pm.name}</SelectItem>
@@ -850,10 +855,10 @@ export function MqttDashboardContent() {
                   <div className="flex gap-2">
                     <Button variant="outline" size="sm" onClick={() => {
                       setTestMeasurementPoints(prev => prev.map(mp => ({ ...mp, result: 'OK' })));
-                    }}>Tất cả OK</Button>
+                    }}>{t("mqttDash.tatCaOk", "Tất cả OK")}</Button>
                     <Button variant="outline" size="sm" onClick={() => {
                       setTestMeasurementPoints(prev => prev.map(mp => ({ ...mp, result: 'NG' })));
-                    }}>Tất cả NG</Button>
+                    }}>{t("mqttDash.tatCaNg", "Tất cả NG")}</Button>
                   </div>
                 </div>
                 <div className="border rounded-md max-h-62.5 overflow-y-auto">
@@ -862,9 +867,9 @@ export function MqttDashboardContent() {
                       <TableRow>
                         <TableHead className="w-15">#</TableHead>
                         <TableHead>Code</TableHead>
-                        <TableHead>Tên điểm đo</TableHead>
-                        <TableHead className="w-25">Kết quả</TableHead>
-                        <TableHead className="w-30">Giá trị</TableHead>
+                        <TableHead>{t("mqttDash.tenDiemDo", "Tên điểm đo")}</TableHead>
+                        <TableHead className="w-25">{t("mqttDash.ketQua", "Kết quả")}</TableHead>
+                        <TableHead className="w-30">{t("mqttDash.giaTri", "Giá trị")}</TableHead>
                       </TableRow>
                     </TableHeader>
                     <TableBody>
@@ -934,7 +939,7 @@ export function MqttDashboardContent() {
                       onClick={(e) => {
                         e.stopPropagation();
                         navigator.clipboard.writeText(JSON.stringify(lastTestResult, null, 2));
-                        toast.info('Đã copy JSON');
+                        toast.info(t("mqttDashboard.daCopyJson", "Đã copy JSON"));
                       }}
                     >
                       <Copy aria-hidden="true" className="w-3 h-3" />
@@ -951,14 +956,14 @@ export function MqttDashboardContent() {
             )}
           </div>
           <DialogFooter>
-            <Button variant="outline" onClick={() => { setShowTestDialog(false); setLastTestResult(null); }}>Đóng</Button>
+            <Button variant="outline" onClick={() => { setShowTestDialog(false); setLastTestResult(null); }}>{t("mqttDash.dong", "Đóng")}</Button>
             <Button 
               variant="destructive" 
               onClick={handleTestNGAlert} 
               disabled={!testFactoryId || !testWorkshopId || !testStationId || testNGAlertMutation.isPending}
             >
               <Send className="w-4 h-4 mr-2" />
-              {testNGAlertMutation.isPending ? 'Đang gửi...' : 'Gửi Test'}
+              {testNGAlertMutation.isPending ? t("mqttDashboard.dangGui", "Đang gửi...") : t("mqttDashboard.guiTest", "Gửi Test")}
             </Button>
           </DialogFooter>
         </DialogContent>

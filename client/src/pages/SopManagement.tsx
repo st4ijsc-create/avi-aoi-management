@@ -15,6 +15,7 @@ import { toast } from "sonner";
 import { ClipboardList, Copy, GripVertical, Loader2, Plus, Power, Trash2, X } from "lucide-react";
 
 import { trpc } from "@/lib/trpc";
+import { toastTrpcError } from "@/lib/trpcErrors";
 import DashboardLayout from "@/components/DashboardLayout";
 import { navItems } from "@/lib/navigation";
 import { buildBreadcrumbs } from "@/lib/breadcrumbs";
@@ -31,9 +32,9 @@ import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "
 const CURRENT_PATH = "/sop-management";
 
 const STATUS_MAP = {
-  draft: { tone: "default" as const, label: "Nháp" },
-  active: { tone: "success" as const, label: "Hiệu lực" },
-  retired: { tone: "warning" as const, label: "Ngừng" },
+  draft: { tone: "default" as const },
+  active: { tone: "success" as const },
+  retired: { tone: "warning" as const },
 };
 
 interface StepDraft {
@@ -87,19 +88,19 @@ export default function SopManagement() {
 
   const createM = trpc.sop.create.useMutation({
     onSuccess: () => { toast.success(t("sop.mgmt.created", "Đã tạo SOP")); setForm(null); invalidate(); },
-    onError: (e) => toast.error(e.message),
+    onError: (e) => toastTrpcError(e),
   });
   const updateM = trpc.sop.update.useMutation({
     onSuccess: () => { toast.success(t("sop.mgmt.updated", "Đã cập nhật SOP")); setForm(null); invalidate(); },
-    onError: (e) => toast.error(e.message),
+    onError: (e) => toastTrpcError(e),
   });
   const statusM = trpc.sop.setStatus.useMutation({
     onSuccess: () => { toast.success(t("sop.mgmt.statusChanged", "Đã đổi trạng thái")); invalidate(); },
-    onError: (e) => toast.error(e.message),
+    onError: (e) => toastTrpcError(e),
   });
   const cloneM = trpc.sop.cloneNewVersion.useMutation({
     onSuccess: () => { toast.success(t("sop.mgmt.cloned", "Đã tạo phiên bản mới (nháp)")); invalidate(); },
-    onError: (e) => toast.error(e.message),
+    onError: (e) => toastTrpcError(e),
   });
   const deleteM = trpc.sop.delete.useMutation({
     onSuccess: (r) => {
@@ -110,7 +111,7 @@ export default function SopManagement() {
       }
       invalidate();
     },
-    onError: (e) => toast.error(e.message),
+    onError: (e) => toastTrpcError(e),
   });
 
   const openEdit = async (id: number) => {
@@ -225,7 +226,7 @@ export default function SopManagement() {
                       <TableCell className="text-center tabular-nums">v{r.version}</TableCell>
                       <TableCell className="text-center tabular-nums">{r.stepCount}</TableCell>
                       <TableCell>
-                        <StatusBadge status={r.status} tone={STATUS_MAP[r.status as keyof typeof STATUS_MAP]?.tone} label={t(`sop.status.${r.status}`, STATUS_MAP[r.status as keyof typeof STATUS_MAP]?.label ?? r.status)} />
+                        <StatusBadge status={r.status} tone={STATUS_MAP[r.status as keyof typeof STATUS_MAP]?.tone} label={t(`sop.status.${r.status}`, r.status)} />
                       </TableCell>
                       <TableCell className="text-right" onClick={(e) => e.stopPropagation()}>
                         <div className="flex items-center justify-end gap-1">

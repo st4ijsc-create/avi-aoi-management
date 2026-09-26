@@ -22,6 +22,7 @@
 import { z } from "zod";
 import { desc, eq } from "drizzle-orm";
 import { TRPCError } from "@trpc/server";
+import { appError } from "../_core/appError";
 import { router, protectedProcedure } from "../_core/trpc";
 import { requirePermission } from "../_core/accessControl";
 import { getDb } from "../db/connection";
@@ -38,14 +39,14 @@ import { discoverDevices, registerDiscoveredDevice, probeSupport } from "../serv
 
 async function db() {
   const d = await getDb();
-  if (!d) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Database not connected" });
+  if (!d) throw appError("INTERNAL_SERVER_ERROR", "DB_UNAVAILABLE", undefined, "Database not connected");
   return d;
 }
 
 /** Guard mutating actions behind the flag (matches the fleetRouter discipline). */
 function requireFlag() {
   if (!fieldV2Enabled()) {
-    throw new TRPCError({ code: "CONFLICT", message: "Field abstraction v2 disabled (set FIELD_V2_ENABLED=true)" });
+    throw appError("CONFLICT", "FEATURE_DISABLED", { feature: "fieldAbstractionV2" }, "Field abstraction v2 disabled (set FIELD_V2_ENABLED=true)");
   }
 }
 
@@ -71,7 +72,7 @@ export const fieldRouter = router({
     .query(async ({ input }) => {
       const d = await db();
       const [r] = await d.select().from(robots).where(eq(robots.id, input.robotId)).limit(1);
-      if (!r) throw new TRPCError({ code: "NOT_FOUND", message: `Robot ${input.robotId} not found` });
+      if (!r) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "robot" }, `Robot ${input.robotId} not found`);
       const [tel] = await d
         .select()
         .from(robotTelemetry)

@@ -40,6 +40,7 @@ import {
 } from "@/components/ui/alert-dialog";
 import { Bug, Plus, Trash2, Pencil, RefreshCw, Search, AlertTriangle, Wrench, PackageSearch } from "lucide-react";
 import { toast } from "sonner";
+import { toastTrpcError } from "@/lib/trpcErrors";
 
 type Severity = "critical" | "major" | "minor" | "cosmetic";
 const SEVERITIES: Severity[] = ["critical", "major", "minor", "cosmetic"];
@@ -159,16 +160,16 @@ export default function DefectCatalogPage() {
 
   const createM = trpc.defectCatalog.create.useMutation({
     onSuccess: () => { toast.success(t("defectCatalog.toastCreated", "Đã tạo mã lỗi")); setOpen(false); invalidate(); },
-    onError: (e) => toast.error(e.message),
+    onError: (e) => toastTrpcError(e),
   });
   const updateM = trpc.defectCatalog.update.useMutation({
     onSuccess: () => { toast.success(t("defectCatalog.toastUpdated", "Đã cập nhật")); setOpen(false); invalidate(); },
-    onError: (e) => toast.error(e.message),
+    onError: (e) => toastTrpcError(e),
   });
   const [deleteId, setDeleteId] = useState<number | null>(null);
   const deleteM = trpc.defectCatalog.delete.useMutation({
     onSuccess: () => { toast.success(t("defectCatalog.toastDeleted", "Đã xoá")); setDeleteId(null); invalidate(); },
-    onError: (e) => { toast.error(e.message); setDeleteId(null); },
+    onError: (e) => { toastTrpcError(e); setDeleteId(null); },
   });
 
   const toArr = (s: string) => s.split(",").map((x) => x.trim()).filter(Boolean);
@@ -398,7 +399,7 @@ export default function DefectCatalogPage() {
             </div>
             <div className="space-y-1.5">
               <Label className="text-xs">{t("defectCatalog.nameVi", "Tên (VI)")}</Label>
-              <Input value={form.nameVi} onChange={(e) => setForm({ ...form, nameVi: e.target.value })} placeholder="Cầu thiếc" />
+              <Input value={form.nameVi} onChange={(e) => setForm({ ...form, nameVi: e.target.value })} placeholder={t("defectCatalog.cauThiec", "Cầu thiếc")} />
             </div>
             <div className="space-y-1.5">
               <Label className="text-xs">{t("defectCatalog.severity", "Mức độ")} *</Label>

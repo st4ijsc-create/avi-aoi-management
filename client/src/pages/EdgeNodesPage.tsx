@@ -32,6 +32,7 @@ import {
 } from "@/components/ui/alert-dialog";
 import { Cpu, Plus, Trash2, Pencil, RefreshCw, AlertTriangle, Wifi, WifiOff, Activity } from "lucide-react";
 import { toast } from "sonner";
+import { toastTrpcError } from "@/lib/trpcErrors";
 
 type EdgeNodeRow = {
   id: number;
@@ -99,7 +100,7 @@ export default function EdgeNodesPage() {
       if (r?.ok) { toast.success(editing ? t("edgeNodes.toastUpdated", "Đã cập nhật node") : t("edgeNodes.toastRegistered", "Đã đăng ký node")); setOpen(false); reset(); invalidate(); }
       else toast.error(r?.message ?? t("edgeNodes.opFail", "Thao tác thất bại"));
     },
-    onError: (e) => toast.error(e.message),
+    onError: (e) => toastTrpcError(e),
   });
 
   const [deleteId, setDeleteId] = useState<number | null>(null);
@@ -108,7 +109,7 @@ export default function EdgeNodesPage() {
       if (r?.ok) { toast.success(t("edgeNodes.toastDeleted", "Đã gỡ node")); setDeleteId(null); invalidate(); }
       else { toast.error(r?.message ?? t("edgeNodes.opFail", "Thao tác thất bại")); setDeleteId(null); }
     },
-    onError: (e) => toast.error(e.message),
+    onError: (e) => toastTrpcError(e),
   });
 
   const submit = () => {

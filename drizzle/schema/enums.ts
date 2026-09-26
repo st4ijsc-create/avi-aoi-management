@@ -166,6 +166,31 @@ export const apiKeyProviderEnum = pgEnum("apikeyprovider", ["openai", "azure_ope
 export const apiKeyStatusEnum = pgEnum("apikeystatus", ["active", "inactive", "expired", "error"]);
 
 // AI Copilot pending-action lifecycle (GĐ2 HITL write-action)
+// ★★★ Đợt B · Task 6 (2026-08-29, drizzle/0341) — 'bi_tu_choi_ghi': execute() ĐÃ CHẠY nhưng TỪ
+// CHỐI GHI (BASE_MISMATCH/FILE_DIRTY/…, daBiTuChoiGhi(result) === true) — 0 byte vào đĩa. KHÁC
+// 'denied' (bị chặn TRƯỚC execute(), bởi RBAC/hợp đồng). Trước migration này `confirmAction` dán
+// nhãn SAI 'executed' cho đúng ca này — xem docblock shared/aiCodingLoop.ts:325-360.
+// ★★★ Rà soát cuối Đợt B (2026-08-29, drizzle/0342) — 'ap_mot_phan': lượt ghi LÔ hỏng GIỮA CHỪNG
+// (`apply_diff_batch` trả `BATCH_PARTIAL`) ⇒ tệp 1..k−1 **ĐÃ TRÊN ĐĨA**, phần còn lại thì chưa.
+// KHÔNG được dùng 'bi_tu_choi_ghi' cho ca này: hợp đồng chữ của nhãn đó là "0 byte vào đĩa", nên
+// dán nó lên một lượt đã ghi một phần là khai SAI ở đúng ca nguy hiểm nhất (người đọc tưởng cây làm
+// việc còn nguyên rồi đề xuất lại CẢ LÔ). Cột này phải nói được BA sự thật: ghi · không ghi · ghi
+// MỘT PHẦN. Danh sách mã "đã có byte vào đĩa" nằm ở chính nơi sinh ra mã —
+// `aiLocalTools/writeHandlers/applyDiffBatch.MA_GHI_MOT_PHAN`.
+// ★★★ Đợt C · Task 5 (2026-08-29, drizzle/0343) — BA giá trị MỚI cho chế độ LOCAL (spec §6.5):
+// `dang_ap_client`/`da_ap_client`/`ap_client_that_bai`. KHÁC HẲN sáu giá trị trên ở một trục: CHỦ
+// THỂ CẦM BÚT. `executed`/`bi_tu_choi_ghi`/`ap_mot_phan` nói về một lượt ghi MÁY CHỦ TỰ THỰC HIỆN
+// (`confirmAction` gọi `tool.execute()` rồi TỰ ĐỌC kết quả — máy chủ BIẾT chắc byte có rơi). Ba giá
+// trị mới nói về một lượt ghi MÁY CHỦ KHÔNG THỰC HIỆN — chủ thể là EXTENSION VS Code, ghi thẳng vào
+// đĩa máy lập trình viên qua `vscode.workspace.fs`, ngoài tầm với của máy chủ. Máy chủ CHỈ giữ sổ
+// những gì extension TỰ KHAI: `dang_ap_client` = "tôi SẮP ghi" (ghi TRƯỚC khi byte rơi — spec
+// "ghi TRƯỚC khi byte rơi, chốt SAU"); `da_ap_client`/`ap_client_that_bai` = "tôi ĐÃ ghi
+// xong/thất bại" (chốt SAU). Một hàng sập-giữa-chừng đứng NGUYÊN ở `dang_ap_client` MÃI MÃI — đó là
+// "chưa rõ" TRUNG THỰC, không phải một lời nói dối theo hướng nào. Đừng dùng `executed`/
+// `bi_tu_choi_ghi` cho ca này: trộn hai chủ thể (server-thực-hiện vs extension-tự-khai) vào cùng
+// nhãn là xoá mất đúng thông tin kiểm toán tồn tại để giữ. Xem docblock đầy đủ ở
+// `drizzle/0343_them_trang_thai_ap_o_client.sql` và `server/services/aiCopilotActions.ts`
+// (`batDauApDungOClient`/`chotApDungOClient`).
 export const aiPendingActionStatusEnum = pgEnum("aipendingactionstatus", [
   "proposed",
   "confirmed",
@@ -173,6 +198,11 @@ export const aiPendingActionStatusEnum = pgEnum("aipendingactionstatus", [
   "denied",
   "expired",
   "cancelled",
+  "bi_tu_choi_ghi",
+  "ap_mot_phan",
+  "dang_ap_client",
+  "da_ap_client",
+  "ap_client_that_bai",
 ]);
 
 // AI Copilot agent session lifecycle (GĐ3b multi-step agentic orchestrator).
@@ -416,4 +446,33 @@ export const programDeployStatusEnum = pgEnum("programdeploystatusenum", [
   "failed",
   "rolled_back",
   "rejected",
+]);
+
+// ════════════════════════════════════════════════════════════════════════════
+// Twin 3D — Đợt 0 (spec 2026-09-06-nha-may-3d-digital-twin-design §5.3), mig 0350/0351
+// ════════════════════════════════════════════════════════════════════════════
+
+/**
+ * NT-4 ở tầng DB: "số giả định phải TỰ KHAI là giả định".
+ *   'sinh' — hệ sinh ra (di trú, thuật toán bố cục, mặc định theo loại) ⇒ UI hiện
+ *            badge vàng "chưa đo", và một lần sinh sau ĐƯỢC PHÉP đè.
+ *   'tay'  — người nhập/kéo thả ⇒ sinh tự động KHÔNG BAO GIỜ đè (trừ khi người
+ *            dùng tích ô ghi-đè, có dialog đếm rõ bao nhiêu bản ghi sẽ mất).
+ * Là enum chứ không boolean/quy ước tầng ứng dụng: quy ước thì quên được.
+ */
+export const twinNguonEnum = pgEnum("twinnguonenum", ["sinh", "tay"]);
+
+/**
+ * Cấp thực thể ISA-95 có thể đặt chỗ trong cảnh 3D.
+ * 'workstation' TÁCH khỏi 'station' vì là hai bảng khác nhau trong repo
+ * (stations / workstations) — gộp lại thì `thucTheId` nhập nhằng giữa hai id.
+ */
+export const twinThucTheEnum = pgEnum("twinthuctheenum", [
+  "workshop", "line", "station", "machine", "workstation",
+]);
+
+/** Vật thể cảnh KHÔNG thuộc cây phân cấp (tường/cột/vùng an toàn/kệ/GLB nhập…). */
+export const twinVatTheEnum = pgEnum("twinvattheenum", [
+  "tuong", "cot", "cua", "vach_ke", "vung", "ke", "pallet",
+  "bang_tai", "rao_an_toan", "bien_bao", "nhom", "khac",
 ]);

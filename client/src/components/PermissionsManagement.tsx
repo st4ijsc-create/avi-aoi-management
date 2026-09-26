@@ -55,6 +55,7 @@ import {
   PenTool,
 } from "lucide-react";
 import { toast } from "sonner";
+import { mapTrpcError } from "@/lib/trpcErrors";
 
 interface PermissionModule {
   category: string;
@@ -132,7 +133,9 @@ export function PermissionsManagement() {
       setExpandedCategories([]);
     },
     onError: (error) => {
-      toast.error(t('common.errorMessage', { message: error.message }));
+      // Sprint 5 doc 71 F11 — khoá `common.errorMessage` đã thêm placeholder {{message}}
+      // (task-8b/8c ghi nợ, F11 dọn), tham số message giờ hiện đúng cho người dùng.
+      toast.error(t('common.errorMessage', { message: mapTrpcError(error) }));
     }
   });
 

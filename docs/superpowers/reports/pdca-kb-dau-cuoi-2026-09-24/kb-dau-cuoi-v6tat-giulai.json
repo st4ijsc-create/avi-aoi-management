@@ -1,0 +1,50 @@
+{
+  "corpus": "scripts/ai-eval/cau-tinh-nang-vs-song-giu-lai.jsonl",
+  "label": "v6tat-giulai",
+  "tom": {
+    "trong": {
+      "n": 2,
+      "dung": 0,
+      "tuChoi": 0,
+      "sai": 2
+    },
+    "ngoai": {
+      "n": 0,
+      "tuChoi": 0,
+      "traLoi": 0
+    },
+    "loi": 0
+  },
+  "ra": [
+    {
+      "id": "TQ01",
+      "ngoai": false,
+      "kq": "sai",
+      "ms": 56997,
+      "nguon": [
+        "knowledge/domain/howto-spc-control.md",
+        "knowledge/domain/howto-spc-control.md",
+        "howto-spc-control.md",
+        "knowledge/workflows/spc-critical-review.playbook.yaml",
+        "knowledge/features/analytics/spc-analysis.md"
+      ],
+      "traLoi": "Chưa đủ dữ liệu yield (2 điểm) để đánh giá SPC trong 14 ngày qua.",
+      "loi": null
+    },
+    {
+      "id": "TQ02",
+      "ngoai": false,
+      "kq": "sai",
+      "ms": 1828,
+      "nguon": [
+        "knowledge/workflows/spc-critical-review.playbook.yaml",
+        "knowledge/features/analytics/spc-analysis.md",
+        "knowledge/workflows/spc-critical-review.playbook.yaml",
+        "knowledge/domain/howto-spc-control.md",
+        "knowledge/features/analytics/spc-analysis.md"
+      ],
+      "traLoi": "Chưa đủ dữ liệu yield (2 điểm) để đánh giá SPC trong 14 ngày qua.",
+      "loi": null
+    }
+  ]
+}

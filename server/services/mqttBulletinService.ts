@@ -11,6 +11,7 @@ import * as cron from 'node-cron';
 import { eq, and, sql, gte, lte, desc, isNotNull } from 'drizzle-orm';
 import * as schema from '../../drizzle/schema';
 import { publishBulletin, isMqttRunning } from './mqttService';
+import { finalYield } from '../utils/kpi';
 
 // Types
 export interface BulletinPayload {
@@ -267,7 +268,7 @@ export async function generateAndSendBulletin(setting: BulletinSetting): Promise
     const okCount = machineStats.reduce((sum: number, m: any) => sum + (Number(m.okCount) || 0), 0);
     const ngCount = machineStats.reduce((sum: number, m: any) => sum + (Number(m.ngCount) || 0), 0);
     const ntfCount = machineStats.reduce((sum: number, m: any) => sum + (Number(m.ntfCount) || 0), 0);
-    const yieldRate = totalCount > 0 ? (okCount / totalCount) * 100 : 100;
+    const yieldRate = totalCount > 0 ? finalYield({ ok: okCount, ntf: ntfCount, total: totalCount }) : 100;
 
     // Get average cycle time
     const cycleTimeResult = await db.select({

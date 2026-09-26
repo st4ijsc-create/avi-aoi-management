@@ -3,42 +3,27 @@ import { useTranslation } from "react-i18next";
 import { useAuth } from "@/_core/hooks/useAuth";
 import { useSetCopilotContext } from "@/contexts/AiCopilotContext";
 import DashboardLayout from "@/components/DashboardLayout";
-import { PermissionGate, ViewOnlyBadge } from "@/components/PermissionGate";
+import { PermissionGate } from "@/components/PermissionGate";
 import AIThresholdSuggestButton from "@/components/AIThresholdSuggestButton";
 import { trpc } from "@/lib/trpc";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
-import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
-import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
-import { ScrollArea } from "@/components/ui/scroll-area";
-import { Accordion, AccordionItem, AccordionTrigger, AccordionContent } from "@/components/ui/accordion";
+import { DataTable } from "@/components/DataTable";
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 // Doc 43 Đợt 3 — tab-hoá cột chi tiết (Điểm đo / Thông tin SP / Phát hành / Nền tảng).
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Slider } from "@/components/ui/slider";
 import { toast } from "sonner";
-import { Plus, Package, Target, Upload, Trash2, Edit, Eye, MousePointer, Circle, Save, X, Move, ZoomIn, ZoomOut, MoreVertical, MoreHorizontal, ChevronDown, Copy, Image as ImageIcon, FileSpreadsheet, Download, Layers, CheckSquare, Square, FileText, Paperclip, Rocket, Grid3X3, Sparkles, Crosshair, AlertTriangle } from "lucide-react";
+import { Plus, Package, Target, Upload, Trash2, Edit, Eye, MousePointer, Circle, Save, X, Move, ZoomIn, ZoomOut, MoreHorizontal, ChevronDown, Image as ImageIcon, FileSpreadsheet, Download, Layers, CheckSquare, Square, FileText, Paperclip, Rocket, Grid3X3, Sparkles, Crosshair, TreePine } from "lucide-react";
 import { useSearch, useLocation } from "wouter";
-// Doc 31 UX1 (WD-1) — mount the previously-orphaned fiducial CRUD tab (0 importers).
-import { ProductFiducialsTab } from "@/components/product-fiducials/ProductFiducialsTab";
-// W3-C (doc 27 §2 M9) — inspection-program release workflow panel (Phát hành chương trình)
-import ProgramReleasePanel from "@/components/program-release/ProgramReleasePanel";
-// W8-B (doc 29 §2 — M12b) — panel N-up definition editor (Panel nhiều board)
-import PanelDefinitionPanel from "@/components/panel/PanelDefinitionPanel";
 // Doc 31 PM5/UX8 — per-product golden-samples panel (surfacing + capture deep-link)
 import ProductGoldenSamplesPanel from "@/components/products/ProductGoldenSamplesPanel";
 // Doc 31 UX2/PM9/UX7 — product readiness score + checklist + cross-links.
-import ProductReadinessPanel, { ProductReadinessBadge, type ReadinessData } from "@/components/products/ProductReadinessPanel";
-import { BulkImportDialog } from "@/components/BulkImportDialog";
-// Doc 31 MP5/PM4 (Đợt C) — generic centroid / pick-place importer.
-import { CentroidImportDialog } from "@/components/products/CentroidImportDialog";
-import { EditProductDialog } from "@/components/products/EditProductDialog";
-import { CloneProductDialog } from "@/components/products/CloneProductDialog";
-import { PointTemplateDialog } from "@/components/products/PointTemplateDialog";
+import ProductReadinessPanel, { type ReadinessData } from "@/components/products/ProductReadinessPanel";
 // Doc 31 MP6 (decision #2) — pass/fail criteria + per-point lighting recipe editors.
 import { PointCriteriaEditor, type PointCriteriaItem } from "@/components/products/PointCriteriaEditor";
 import { PointLightingEditor } from "@/components/products/PointLightingEditor";
@@ -48,83 +33,41 @@ import { ProductPackageButtons } from "@/components/ProductPackageButtons";
 import MeasurementPointCanvas, { type CanvasGeometry, type CanvasPointShape } from "@/components/measurement-point-canvas/MeasurementPointCanvas";
 import { navItems } from "@/lib/navigation";
 import { EmptyState, NoMeasurementPoints } from "@/components/EmptyState";
-import { DataTable } from "@/components/DataTable";
-// Doc 42 Đợt 4A (APPLY-B) — thanh nhập/xuất danh sách sản phẩm (Excel/CSV).
-import { ImportExportBar, type MasterDataColumn } from "@/components/patterns";
 import { usePermissions } from "@/_core/hooks/usePermissions";
 import { ErrorBoundary, WidgetErrorBoundary } from "@/components/ErrorBoundary";
-import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { useFormValidation, ValidationPatterns } from "@/hooks/useFormValidation";
 import { useFormShortcuts } from "@/hooks/useKeyboardShortcuts";
 import { ValidationMessage } from "@/components/ValidationMessage";
-import { DeleteConfirmDialog } from "@/components/ConfirmDialog";
 // Doc 42 Đợt 0.5 — bộ dịch lỗi tRPC dùng chung (FORBIDDEN/CONFLICT/zod → tiếng Việt).
-import { toastTrpcError } from "@/lib/trpcErrors";
-import { CreateProductDialog } from "@/components/productModels/CreateProductDialog";
+import { toastTrpcError, mapTrpcError } from "@/lib/trpcErrors";
 import { PointDetailsForm } from "@/components/productModels/PointDetailsForm";
 import { ProductInfoTab } from "@/components/productModels/ProductInfoTab";
 import { ProductReleaseTab } from "@/components/productModels/ProductReleaseTab";
 import { ProductFoundationTab } from "@/components/productModels/ProductFoundationTab";
-import { MsaStudyDialog } from "@/components/productModels/MsaStudyDialog";
 // doc 55 Item 3 / PV3-UI — product-variant master-data admin tab.
 import { ProductVariantsTab } from "@/components/products/ProductVariantsTab";
+// Khối C Task 10 (QĐ-4) — tab "Cây dạy": đọc cây dạy giới hạn qua appRouter.cayDay (Task 9).
+import { TeachTreeTab } from "@/components/products/teach/TeachTreeTab";
 
-interface MeasurementPoint {
-  id?: number;
-  code: string;
-  name: string;
-  description?: string;
-  measurementType: "DIMENSION" | "VISUAL" | "ELECTRICAL" | "POSITION" | "COLOR" | "SURFACE" | "OTHER";
-  unit?: string;
-  lowerLimit?: string;
-  upperLimit?: string;
-  nominalValue?: string;
-  positionX: number;
-  positionY: number;
-  radius: number;
-  shape?: CanvasPointShape;
-  geometry?: CanvasGeometry;
-  orderIndex: number;
-  referenceImageUrl?: string;
-  cropWidth: number; // Chiều rộng vùng cắt ảnh mẫu
-  cropHeight: number; // Chiều cao vùng cắt ảnh mẫu
-  workstationId?: number;
-  preferredInstrumentId?: number;
-  preferredSamplingPlanId?: number;
-  measurementTypeCode?: string;
-  toleranceMode?: "min_only" | "max_only" | "range" | "bilateral";
-  tolPlus?: string;
-  tolMinus?: string;
-  datumRefs?: string[];
-  materialCondition?: "MMC" | "LMC" | "RFS";
-  fitClass?: string;
-  positionZ?: string;
-  heightMin?: string;
-  heightMax?: string;
-  heightNominal?: string;
-  heightUnit?: string;
-  areaMin?: string;
-  areaMax?: string;
-  areaNominal?: string;
-  areaUnit?: string;
-  volumeMin?: string;
-  volumeMax?: string;
-  volumeNominal?: string;
-  volumeUnit?: string;
-  coplanarityMax?: string;
-  warpageMax?: string;
-  voidPctMax?: string;
-  offsetXMax?: string;
-  offsetYMax?: string;
-  tiltMax?: string;
-  thicknessMin?: string;
-  thicknessMax?: string;
-  // Doc 31 MP1/PM6 — component linkage (Pareto-by-package chain).
-  componentCode?: string;
-  refDesignator?: string;
-  // Doc 31 MP6 — structured pass/fail criteria (jsonb, evaluated at ingest).
-  criteria?: PointCriteriaItem[];
-}
+// Khối C Task 14 (BG-107) — `MeasurementPoint`/`ProductModel`/`ToleranceMode`/
+// `MaterialCondition`/`mapCatalogCategoryToLegacyType` TRƯỚC đây khai TAY, y hệt
+// (byte-for-byte) bản sao ở `components/productModels/types.ts` (đúng lớp lỗi
+// "doc 48 R4" tự thú: "duplicated VERBATIM from ProductModels.tsx"). Đổi sang
+// import MỘT nguồn — trang không còn giữ bản sao riêng, và `MeasurementPoint`
+// giờ suy 18 cột giới hạn từ `shared/pointLimitSpec.ts` (qua `types.ts`), không
+// còn khai tay 18 tên cột lần hai (BG-107, census §3).
+import {
+  type MeasurementPoint,
+  type ProductModel,
+  type ToleranceMode,
+  type MaterialCondition,
+  mapCatalogCategoryToLegacyType,
+} from "@/components/productModels/types";
+import { ProductListPanel } from "@/components/products/ProductListPanel";
+import { ProductDialogsHost } from "@/components/products/ProductDialogsHost";
+// I-1 (vòng sửa 9, Khối C review lượt 9), NEW-2 (vòng sửa 9, vòng 2) — xem khối
+// hằng số FIELD_* ngay dưới `sanitizeCriteria`.
+import { F } from "@shared/pointLimitSpec";
 
 /** Drop incomplete criteria rows and coerce numeric bounds to strings for the API. */
 function sanitizeCriteria(items: PointCriteriaItem[]): PointCriteriaItem[] {
@@ -150,8 +93,46 @@ function sanitizeCriteria(items: PointCriteriaItem[]): PointCriteriaItem[] {
   });
 }
 
-type ToleranceMode = "min_only" | "max_only" | "range" | "bilateral";
-type MaterialCondition = "MMC" | "LMC" | "RFS";
+/**
+ * I-1 (vòng sửa 9, Khối C) — Task 14 (`86bdf1fd`) chỉ gỡ *interface* `MeasurementPoint` chép tay
+ * (BG-107) rồi khai "đã di trú", nhưng BỐN khối DỮ LIỆU bên dưới (hydrate `measurementPoints`,
+ * `populatePointForm`, payload `handleSavePoint`, `handleSaveAsTemplate`) vẫn liệt kê tay 18 tên
+ * cột giới hạn — review lượt 9 đo được, tệp chỉ thoát census §3 nhờ bắc cầu 1 bậc (import kiểu
+ * `MeasurementPoint` từ `types.ts`), không phải vì đã suy từ spec THẬT.
+ *
+ * ★★★ NEW-2 (review Khối C lượt 9, VÒNG 2, Important) — I-1 (trên) suy 18 tên TỪ VỊ TRÍ trong
+ * `POINT_LIMIT_SPEC` (`POINT_LIMIT_SPEC[i].field`). ĐÚNG hôm nay, nhưng CÂM: đổi TẬP field
+ * (thêm/bớt) ở spec làm `tsc` đỏ ngay (khoá không còn hợp lệ trên `MeasurementPoint`), NHƯNG đổi
+ * THỨ TỰ khai (không đổi tập) KHÔNG tự báo lỗi gì — `FIELD_HEIGHT_MIN` có thể lặng lẽ trỏ sang
+ * field KHÁC (vd `"areaMin"`) mà vẫn hợp kiểu TS, vì `POINT_LIMIT_SPEC[i].field` LUÔN cho ra một
+ * string literal thuộc union hợp lệ — chỉ SAI Ý NGHĨA, hai field bị hoán đổi giá trị cho nhau ở
+ * form UI mà không ai để ý (đo được: `pointLimitSpec.test.ts` § NEW-2 đã ghim lại hình dạng này).
+ *
+ * Sửa: 18 tên cột nay suy qua `F` (`shared/pointLimitSpec.ts`) — bản đồ TÊN→TÊN, mỗi khoá tự trỏ
+ * về CHÍNH NÓ (`F.heightMin === "heightMin"` LUÔN đúng bất kể `POINT_LIMIT_SPEC` khai field đó ở
+ * vị trí nào) — không còn đọc theo CHỈ SỐ mảng, hoán đổi thứ tự khai trong spec KHÔNG còn làm hằng
+ * số nào trỏ sai. Bốn khối bên dưới vẫn dùng các hằng số này qua object-key TÍNH TOÁN (`[FIELD_X]:
+ * …`) hoặc truy cập thuộc tính tính toán (`point[FIELD_X]`) — CHỈ nguồn của hằng số đổi, cách dùng
+ * ở hạ nguồn giữ nguyên.
+ */
+const FIELD_LOWER_LIMIT = F.lowerLimit;
+const FIELD_UPPER_LIMIT = F.upperLimit;
+const FIELD_UNIT = F.unit;
+const FIELD_HEIGHT_MIN = F.heightMin;
+const FIELD_HEIGHT_MAX = F.heightMax;
+const FIELD_AREA_MIN = F.areaMin;
+const FIELD_AREA_MAX = F.areaMax;
+const FIELD_VOLUME_MIN = F.volumeMin;
+const FIELD_VOLUME_MAX = F.volumeMax;
+const FIELD_COPLANARITY_MAX = F.coplanarityMax;
+const FIELD_WARPAGE_MAX = F.warpageMax;
+const FIELD_VOID_PCT_MAX = F.voidPctMax;
+const FIELD_OFFSET_X_MAX = F.offsetXMax;
+const FIELD_OFFSET_Y_MAX = F.offsetYMax;
+const FIELD_TILT_MAX = F.tiltMax;
+const FIELD_THICKNESS_MIN = F.thicknessMin;
+const FIELD_THICKNESS_MAX = F.thicknessMax;
+const FIELD_CRITERIA = F.criteria;
 
 /**
  * Doc 43 Đợt 5 — tóm tắt ngưỡng của 1 điểm đo cho cột bảng (không cần i18n).
@@ -171,63 +152,10 @@ function thresholdSummaryOf(p: MeasurementPoint): string {
   return "—";
 }
 
-interface ProductModel {
-  id: number;
-  code: string;
-  name: string;
-  description?: string | null;
-  category?: string | null;
-  productLine?: string | null;
-  variant?: string | null;
-  revision?: string | null;
-  clonedFromId?: number | null;
-  lifecycleStatus: "development" | "active" | "eol" | "archived";
-  targetYieldRate?: string | null;
-  minYieldRate?: string | null;
-  referenceImageUrl?: string | null;
-  imageWidth?: number | null;
-  imageHeight?: number | null;
-  imageDisplayMode?: string | null;
-}
-
-function mapCatalogCategoryToLegacyType(category?: string): MeasurementPoint["measurementType"] {
-  switch ((category || "").toUpperCase()) {
-    case "DIMENSION":
-    case "GD_T":
-      return "DIMENSION";
-    case "ELECTRICAL":
-      return "ELECTRICAL";
-    case "POSITION":
-      return "POSITION";
-    case "COLOR":
-      return "COLOR";
-    case "SURFACE":
-      return "SURFACE";
-    case "OTHER":
-      return "OTHER";
-    default:
-      return "VISUAL";
-  }
-}
-
-// Doc 42 Đợt 4A (APPLY-B) — cột nhập/xuất danh sách sản phẩm. Khớp server
-// PRODUCT_IMPORT_COLUMNS (productRouters.ts); validate cùng luật @shared/masterDataIO.
 // Doc 43 Đợt 3 — 4 tab cột chi tiết + đồng bộ ?tab= URL (deep-link, reload giữ tab).
 // doc 55 Item 3 / PV3-UI — thêm tab "variants" (Biến thể) quản lý biến thể sản phẩm.
-const PRODUCT_DETAIL_TABS = ["points", "info", "release", "foundation", "variants"] as const;
-
-const PRODUCT_IO_COLUMNS: MasterDataColumn[] = [
-  { field: "code", header: "Mã sản phẩm", required: true, type: "string", example: "SP-001" },
-  { field: "name", header: "Tên sản phẩm", required: true, type: "string", example: "Bảng mạch A" },
-  { field: "description", header: "Mô tả", type: "string" },
-  { field: "category", header: "Nhóm", type: "string", example: "PCBA" },
-  { field: "productLine", header: "Dòng sản phẩm", type: "string" },
-  { field: "variant", header: "Biến thể", type: "string" },
-  { field: "revision", header: "Phiên bản (Rev)", type: "string", example: "A" },
-  { field: "lifecycleStatus", header: "Trạng thái vòng đời", type: "string", example: "active" },
-  { field: "targetYieldRate", header: "FPY mục tiêu (%)", type: "number", example: 98 },
-  { field: "minYieldRate", header: "FPY tối thiểu (%)", type: "number", example: 95 },
-];
+// Khối C Task 10 (QĐ-4) — thêm tab "teach" (Cây dạy): đọc cây dạy giới hạn qua appRouter.cayDay.
+const PRODUCT_DETAIL_TABS = ["points", "info", "release", "foundation", "variants", "teach"] as const;
 
 export default function ProductModels() {
   const { t } = useTranslation();
@@ -467,7 +395,9 @@ export default function ProductModels() {
   // Batch selection states
   const [selectedPointIds, setSelectedPointIds] = useState<Set<number>>(new Set());
   const [isBatchMode, setIsBatchMode] = useState(false);
-  
+  // Wave 2 đường A (Task 3) — đề xuất ngưỡng hàng loạt cho selectedPointIds.
+  const [isBatchSuggestOpen, setIsBatchSuggestOpen] = useState(false);
+
   // Validation errors
   const [validationErrors, setValidationErrors] = useState<Record<string, string>>({});
 
@@ -561,6 +491,14 @@ export default function ProductModels() {
     { productModelId: selectedProduct?.id || 0 },
     { enabled: !!selectedProduct }
   );
+  // Wave 2 đường A — số đề xuất ngưỡng AI đang chờ theo điểm đo, để gắn badge ngay
+  // trên bảng điểm đo (150 đề xuất trước đây vô hình vì chỉ hiện ở /threshold-approvals,
+  // một trang khác với nơi kỹ sư thực sự chỉnh điểm đo). Lỗi/rỗng ⇒ không hiện gì,
+  // KHÔNG chặn màn hình chính (đây là chỉ báo phụ).
+  const { data: pendingThresholdCounts } = trpc.thresholdApproval.countPendingByProduct.useQuery(
+    { productModelId: selectedProduct?.id ?? 0 },
+    { enabled: !!selectedProduct?.id }
+  );
   const { data: measurementInstruments, refetch: refetchMeasurementInstruments } = trpc.measurementInstrument.list.useQuery(
     undefined,
     { enabled: !!selectedProduct }
@@ -595,7 +533,7 @@ export default function ProductModels() {
       refetchMsaCsvPresets();
     },
     onError: (error) => {
-      toast.error(t("common.errorWithMessage", { message: error.message }));
+      toast.error(t("common.errorWithMessage", { message: mapTrpcError(error) }));
     },
   });
 
@@ -606,7 +544,7 @@ export default function ProductModels() {
       refetchMsaCsvPresets();
     },
     onError: (error) => {
-      toast.error(t("common.errorWithMessage", { message: error.message }));
+      toast.error(t("common.errorWithMessage", { message: mapTrpcError(error) }));
     },
   });
 
@@ -684,7 +622,7 @@ export default function ProductModels() {
       resetProductForm();
     },
     onError: (error) => {
-      toast.error(t("common.errorWithMessage", { message: error.message }));
+      toast.error(t("common.errorWithMessage", { message: mapTrpcError(error) }));
     },
   });
 
@@ -705,7 +643,7 @@ export default function ProductModels() {
       }
     },
     onError: (error) => {
-      toast.error(t("common.errorWithMessage", { message: error.message }));
+      toast.error(t("common.errorWithMessage", { message: mapTrpcError(error) }));
     },
   });
 
@@ -717,7 +655,7 @@ export default function ProductModels() {
       setSelectedProduct(null);
     },
     onError: (error: { message: string }) => {
-      toast.error(t("common.errorWithMessage", { message: error.message }));
+      toast.error(t("common.errorWithMessage", { message: mapTrpcError(error) }));
     },
   });
 
@@ -735,7 +673,7 @@ export default function ProductModels() {
       }
     },
     onError: (error: { message: string }) => {
-      toast.error(t("common.errorWithMessage", { message: error.message }));
+      toast.error(t("common.errorWithMessage", { message: mapTrpcError(error) }));
     },
   });
 
@@ -797,7 +735,7 @@ export default function ProductModels() {
       setIsSavingTemplate(false);
     },
     onError: (error) => {
-      toast.error(t("common.errorWithMessage", { message: error.message }));
+      toast.error(t("common.errorWithMessage", { message: mapTrpcError(error) }));
       setIsSavingTemplate(false);
     },
   });
@@ -808,7 +746,7 @@ export default function ProductModels() {
       refetchTemplates();
     },
     onError: (error) => {
-      toast.error(t("common.errorWithMessage", { message: error.message }));
+      toast.error(t("common.errorWithMessage", { message: mapTrpcError(error) }));
     },
   });
 
@@ -818,7 +756,7 @@ export default function ProductModels() {
       refetchPoints();
     },
     onError: (error) => {
-      toast.error(t("common.errorWithMessage", { message: error.message }));
+      toast.error(t("common.errorWithMessage", { message: mapTrpcError(error) }));
     },
   });
 
@@ -843,7 +781,7 @@ export default function ProductModels() {
       refetchPoints();
     },
     onError: (error) => {
-      toast.error(t("common.errorWithMessage", { message: error.message }));
+      toast.error(t("common.errorWithMessage", { message: mapTrpcError(error) }));
     },
   });
 
@@ -856,7 +794,7 @@ export default function ProductModels() {
       setNewInstrumentType("caliper");
     },
     onError: (error) => {
-      toast.error(t("common.errorWithMessage", { message: error.message }));
+      toast.error(t("common.errorWithMessage", { message: mapTrpcError(error) }));
     },
   });
 
@@ -866,7 +804,7 @@ export default function ProductModels() {
       refetchMeasurementInstruments();
     },
     onError: (error) => {
-      toast.error(t("common.errorWithMessage", { message: error.message }));
+      toast.error(t("common.errorWithMessage", { message: mapTrpcError(error) }));
     },
   });
 
@@ -879,7 +817,7 @@ export default function ProductModels() {
       setNewSamplingStrategy("fixed_n");
     },
     onError: (error) => {
-      toast.error(t("common.errorWithMessage", { message: error.message }));
+      toast.error(t("common.errorWithMessage", { message: mapTrpcError(error) }));
     },
   });
 
@@ -889,7 +827,7 @@ export default function ProductModels() {
       refetchSamplingPlans();
     },
     onError: (error) => {
-      toast.error(t("common.errorWithMessage", { message: error.message }));
+      toast.error(t("common.errorWithMessage", { message: mapTrpcError(error) }));
     },
   });
 
@@ -902,7 +840,7 @@ export default function ProductModels() {
       setNewViewType("top");
     },
     onError: (error) => {
-      toast.error(t("common.errorWithMessage", { message: error.message }));
+      toast.error(t("common.errorWithMessage", { message: mapTrpcError(error) }));
     },
   });
 
@@ -912,7 +850,7 @@ export default function ProductModels() {
       refetchProductViews();
     },
     onError: (error) => {
-      toast.error(t("common.errorWithMessage", { message: error.message }));
+      toast.error(t("common.errorWithMessage", { message: mapTrpcError(error) }));
     },
   });
 
@@ -925,7 +863,7 @@ export default function ProductModels() {
       refetchMsaStudyData();
     },
     onError: (error) => {
-      toast.error(t("common.errorWithMessage", { message: error.message }));
+      toast.error(t("common.errorWithMessage", { message: mapTrpcError(error) }));
     },
   });
 
@@ -952,10 +890,10 @@ export default function ProductModels() {
     onError: (error) => {
       const code = (error as any)?.data?.code;
       if (code === "CONFLICT") {
-        toast.error("Cell đã có dữ liệu. Hãy đổi operator/part/trial hoặc bật overwrite để tạo lại matrix.");
+        toast.error(t("productModels.cellDaCoDuLieu", "Cell đã có dữ liệu. Hãy đổi operator/part/trial hoặc bật overwrite để tạo lại matrix."));
         return;
       }
-      toast.error(t("common.errorWithMessage", { message: error.message }));
+      toast.error(t("common.errorWithMessage", { message: mapTrpcError(error) }));
     },
   });
 
@@ -968,7 +906,7 @@ export default function ProductModels() {
       refetchMsaStudyData();
     },
     onError: (error) => {
-      toast.error(t("common.errorWithMessage", { message: error.message }));
+      toast.error(t("common.errorWithMessage", { message: mapTrpcError(error) }));
     },
   });
 
@@ -978,7 +916,7 @@ export default function ProductModels() {
       refetchMsaStudyData();
     },
     onError: (error) => {
-      toast.error(t("common.errorWithMessage", { message: error.message }));
+      toast.error(t("common.errorWithMessage", { message: mapTrpcError(error) }));
     },
   });
 
@@ -991,7 +929,7 @@ export default function ProductModels() {
       refetchMsaStudyData();
     },
     onError: (error) => {
-      toast.error(t("common.errorWithMessage", { message: error.message }));
+      toast.error(t("common.errorWithMessage", { message: mapTrpcError(error) }));
     },
   });
 
@@ -1048,7 +986,7 @@ export default function ProductModels() {
       refetchPoints();
     },
     onError: (error) => {
-      toast.error(t("products.uploadImageError", { message: error.message }));
+      toast.error(t("products.uploadImageError", { message: mapTrpcError(error) }));
     },
   });
 
@@ -1065,7 +1003,7 @@ export default function ProductModels() {
       refetchDocuments();
     },
     onError: (error) => {
-      toast.error(t("common.errorWithMessage", { message: error.message }));
+      toast.error(t("common.errorWithMessage", { message: mapTrpcError(error) }));
     },
   });
 
@@ -1075,7 +1013,7 @@ export default function ProductModels() {
       refetchDocuments();
     },
     onError: (error) => {
-      toast.error(t("common.errorWithMessage", { message: error.message }));
+      toast.error(t("common.errorWithMessage", { message: mapTrpcError(error) }));
     },
   });
 
@@ -1238,9 +1176,13 @@ export default function ProductModels() {
         name: p.name,
         description: p.description || undefined,
         measurementType: p.measurementType,
-        unit: p.unit || undefined,
-        lowerLimit: p.lowerLimit || undefined,
-        upperLimit: p.upperLimit || undefined,
+        // I-1 (vòng sửa 9) — TẬP CON 3 field 1D suy TỪ POINT_LIMIT_SPEC (khoá tính toán qua
+        // FIELD_*, xem docblock đầu file); CHỈ 3 field này cần chuẩn hoá falsy→undefined ở đây,
+        // 15 field 3D/GD&T còn lại đến NGUYÊN TRẠNG qua `...(p as any)` phía trên — hành vi giữ y
+        // hệt trước bản vá.
+        [FIELD_UNIT]: (p as any)[FIELD_UNIT] || undefined,
+        [FIELD_LOWER_LIMIT]: (p as any)[FIELD_LOWER_LIMIT] || undefined,
+        [FIELD_UPPER_LIMIT]: (p as any)[FIELD_UPPER_LIMIT] || undefined,
         nominalValue: p.nominalValue || undefined,
         positionX: p.positionX,
         positionY: p.positionY,
@@ -1272,9 +1214,14 @@ export default function ProductModels() {
     setPointDescription(point.description || "");
     setPointType(point.measurementType);
     setPointMeasurementTypeCode(point.measurementTypeCode || "");
-    setPointUnit(point.unit || "");
-    setPointLowerLimit(point.lowerLimit || "");
-    setPointUpperLimit(point.upperLimit || "");
+    // I-1 (vòng sửa 9) — 17 field chuỗi + trường tiêu chí dạng mảng (phần tử cuối POINT_LIMIT_SPEC)
+    // đọc qua `point[FIELD_X]` (khoá tính toán, xem docblock FIELD_* đầu file) — KHÔNG gõ tay tên
+    // field lần hai. Setter (`setPointHeightMin`…) giữ NGUYÊN — tên đã an toàn (viết hoa chữ đầu
+    // field) vì mỗi field sống trong một `useState` RIÊNG, không có cách gọi setter theo tên lúc
+    // runtime.
+    setPointUnit(point[FIELD_UNIT] || "");
+    setPointLowerLimit(point[FIELD_LOWER_LIMIT] || "");
+    setPointUpperLimit(point[FIELD_UPPER_LIMIT] || "");
     setPointNominalValue(point.nominalValue || "");
     setPointToleranceMode((point.toleranceMode as ToleranceMode) || "range");
     setPointTolPlus(point.tolPlus || "");
@@ -1283,27 +1230,27 @@ export default function ProductModels() {
     setPointMaterialCondition((point.materialCondition as MaterialCondition) || "");
     setPointFitClass(point.fitClass || "");
     setPointPositionZ(point.positionZ || "");
-    setPointHeightMin(point.heightMin || "");
-    setPointHeightMax(point.heightMax || "");
+    setPointHeightMin(point[FIELD_HEIGHT_MIN] || "");
+    setPointHeightMax(point[FIELD_HEIGHT_MAX] || "");
     setPointHeightNominal(point.heightNominal || "");
     setPointHeightUnit(point.heightUnit || "");
-    setPointAreaMin(point.areaMin || "");
-    setPointAreaMax(point.areaMax || "");
+    setPointAreaMin(point[FIELD_AREA_MIN] || "");
+    setPointAreaMax(point[FIELD_AREA_MAX] || "");
     setPointAreaNominal(point.areaNominal || "");
     setPointAreaUnit(point.areaUnit || "");
-    setPointVolumeMin(point.volumeMin || "");
-    setPointVolumeMax(point.volumeMax || "");
+    setPointVolumeMin(point[FIELD_VOLUME_MIN] || "");
+    setPointVolumeMax(point[FIELD_VOLUME_MAX] || "");
     setPointVolumeNominal(point.volumeNominal || "");
     setPointVolumeUnit(point.volumeUnit || "");
-    setPointCoplanarityMax(point.coplanarityMax || "");
-    setPointWarpageMax(point.warpageMax || "");
-    setPointVoidPctMax(point.voidPctMax || "");
-    setPointOffsetXMax(point.offsetXMax || "");
-    setPointOffsetYMax(point.offsetYMax || "");
-    setPointTiltMax(point.tiltMax || "");
-    setPointThicknessMin(point.thicknessMin || "");
-    setPointThicknessMax(point.thicknessMax || "");
-    setPointCriteria(Array.isArray(point.criteria) ? (point.criteria as PointCriteriaItem[]) : []);
+    setPointCoplanarityMax(point[FIELD_COPLANARITY_MAX] || "");
+    setPointWarpageMax(point[FIELD_WARPAGE_MAX] || "");
+    setPointVoidPctMax(point[FIELD_VOID_PCT_MAX] || "");
+    setPointOffsetXMax(point[FIELD_OFFSET_X_MAX] || "");
+    setPointOffsetYMax(point[FIELD_OFFSET_Y_MAX] || "");
+    setPointTiltMax(point[FIELD_TILT_MAX] || "");
+    setPointThicknessMin(point[FIELD_THICKNESS_MIN] || "");
+    setPointThicknessMax(point[FIELD_THICKNESS_MAX] || "");
+    setPointCriteria(Array.isArray(point[FIELD_CRITERIA]) ? (point[FIELD_CRITERIA] as PointCriteriaItem[]) : []);
     setPointComponentCode(point.componentCode || "");
     setPointRefDesignator(point.refDesignator || "");
     setPointReferenceImageUrl(point.referenceImageUrl || "");
@@ -2009,9 +1956,14 @@ export default function ProductModels() {
       description: pointDescription || undefined,
       measurementType: pointType,
       measurementTypeCode: pointMeasurementTypeCode || undefined,
-      unit: pointUnit || undefined,
-      lowerLimit: pointLowerLimit || undefined,
-      upperLimit: pointUpperLimit || undefined,
+      // I-1 (vòng sửa 9) — 17 field chuỗi + trường tiêu chí dạng mảng của POINT_LIMIT_SPEC gán
+      // qua khoá TÍNH TOÁN `[FIELD_X]` (xem docblock FIELD_* đầu file) — KHÔNG gõ tay tên field
+      // lần hai. Field KHÔNG thuộc spec (nominalValue, toleranceMode, heightNominal, heightUnit,
+      // …) giữ khoá tay như cũ — chúng không phải 18 cột spec-gate chấm bằng (xem
+      // `shared/pointLimitSpec.ts`).
+      [FIELD_UNIT]: pointUnit || undefined,
+      [FIELD_LOWER_LIMIT]: pointLowerLimit || undefined,
+      [FIELD_UPPER_LIMIT]: pointUpperLimit || undefined,
       nominalValue: pointNominalValue || undefined,
       toleranceMode: pointToleranceMode,
       tolPlus: pointTolPlus || undefined,
@@ -2023,28 +1975,28 @@ export default function ProductModels() {
       materialCondition: (pointMaterialCondition || undefined) as MaterialCondition | undefined,
       fitClass: pointFitClass || undefined,
       positionZ: pointPositionZ || undefined,
-      heightMin: pointHeightMin || undefined,
-      heightMax: pointHeightMax || undefined,
+      [FIELD_HEIGHT_MIN]: pointHeightMin || undefined,
+      [FIELD_HEIGHT_MAX]: pointHeightMax || undefined,
       heightNominal: pointHeightNominal || undefined,
       heightUnit: pointHeightUnit || undefined,
-      areaMin: pointAreaMin || undefined,
-      areaMax: pointAreaMax || undefined,
+      [FIELD_AREA_MIN]: pointAreaMin || undefined,
+      [FIELD_AREA_MAX]: pointAreaMax || undefined,
       areaNominal: pointAreaNominal || undefined,
       areaUnit: pointAreaUnit || undefined,
-      volumeMin: pointVolumeMin || undefined,
-      volumeMax: pointVolumeMax || undefined,
+      [FIELD_VOLUME_MIN]: pointVolumeMin || undefined,
+      [FIELD_VOLUME_MAX]: pointVolumeMax || undefined,
       volumeNominal: pointVolumeNominal || undefined,
       volumeUnit: pointVolumeUnit || undefined,
-      coplanarityMax: pointCoplanarityMax || undefined,
-      warpageMax: pointWarpageMax || undefined,
-      voidPctMax: pointVoidPctMax || undefined,
-      offsetXMax: pointOffsetXMax || undefined,
-      offsetYMax: pointOffsetYMax || undefined,
-      tiltMax: pointTiltMax || undefined,
-      thicknessMin: pointThicknessMin || undefined,
-      thicknessMax: pointThicknessMax || undefined,
+      [FIELD_COPLANARITY_MAX]: pointCoplanarityMax || undefined,
+      [FIELD_WARPAGE_MAX]: pointWarpageMax || undefined,
+      [FIELD_VOID_PCT_MAX]: pointVoidPctMax || undefined,
+      [FIELD_OFFSET_X_MAX]: pointOffsetXMax || undefined,
+      [FIELD_OFFSET_Y_MAX]: pointOffsetYMax || undefined,
+      [FIELD_TILT_MAX]: pointTiltMax || undefined,
+      [FIELD_THICKNESS_MIN]: pointThicknessMin || undefined,
+      [FIELD_THICKNESS_MAX]: pointThicknessMax || undefined,
       // Doc 31 MP6 — send only complete criteria rows; [] clears them.
-      criteria: sanitizeCriteria(pointCriteria),
+      [FIELD_CRITERIA]: sanitizeCriteria(pointCriteria),
       componentCode: pointComponentCode.trim() || undefined,
       refDesignator: pointRefDesignator.trim() || undefined,
       positionX: point.positionX,
@@ -2234,9 +2186,12 @@ export default function ProductModels() {
       name: p.name,
       description: p.description,
       measurementType: p.measurementType,
-      unit: p.unit,
-      lowerLimit: p.lowerLimit,
-      upperLimit: p.upperLimit,
+      // I-1 (vòng sửa 9) — TẬP CON 3 field 1D (mẫu chỉ lưu ngưỡng cổ điển, không 3D/GD&T — hành
+      // vi GIỮ NGUYÊN trước bản vá) suy TỪ POINT_LIMIT_SPEC qua khoá tính toán FIELD_* (xem
+      // docblock đầu file), KHÔNG gõ tay tên field lần hai.
+      [FIELD_UNIT]: p[FIELD_UNIT],
+      [FIELD_LOWER_LIMIT]: p[FIELD_LOWER_LIMIT],
+      [FIELD_UPPER_LIMIT]: p[FIELD_UPPER_LIMIT],
       nominalValue: p.nominalValue,
       positionX: p.positionX,
       positionY: p.positionY,
@@ -2422,256 +2377,28 @@ export default function ProductModels() {
       <ErrorBoundary>
       <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">
         {/* Product List — thu gọn còn 1/4 (danh sách sản phẩm ít cần rộng) */}
-        <Card className="lg:col-span-1">
-          {/* doc 46 B3 — flex-wrap + min-w-0 so the action buttons wrap below the
-              title instead of overflowing this narrow (lg:col-span-1) column at
-              ≤1600px; previously the "Add" CTA spilled past the card edge and was
-              painted over by the adjacent col-span-3 detail card (unclickable). */}
-          <CardHeader className="flex flex-row flex-wrap items-center justify-between gap-2 space-y-0 pb-4">
-            <div className="min-w-0">
-              <div className="flex items-center gap-2">
-                <CardTitle className="text-lg">{t("products.productList")}</CardTitle>
-                <ViewOnlyBadge module="settings_products" />
-              </div>
-              <CardDescription>{t("products.selectToManage")}</CardDescription>
-            </div>
-            <div className="flex flex-wrap items-center gap-2">
-            {/* Doc 31 UX1 (WD-1) — start the guided product setup wizard (the route
-                is itself permission-guarded, so no extra write-action gate here). */}
-            <Button
-              size="sm"
-              variant="outline"
-              className="gap-1"
-              onClick={() => setLocation("/product-onboarding")}
-            >
-              <Sparkles className="h-4 w-4" />
-              {t("products.startGuidedSetup", "Guided setup")}
-            </Button>
-            <CreateProductDialog
-              createProductMutation={createProductMutation} handleCreateProduct={handleCreateProduct} handleImageUpload={handleImageUpload}
-              isCreateDialogOpen={isCreateDialogOpen} newProductCategory={newProductCategory} newProductCode={newProductCode}
-              newProductDescription={newProductDescription} newProductDisplayMode={newProductDisplayMode} newProductLifecycle={newProductLifecycle}
-              newProductLine={newProductLine} newProductMinYield={newProductMinYield} newProductName={newProductName}
-              newProductRevision={newProductRevision} newProductTargetYield={newProductTargetYield} newProductVariant={newProductVariant}
-              productValidation={productValidation} setIsCreateDialogOpen={setIsCreateDialogOpen} setNewProductCategory={setNewProductCategory}
-              setNewProductCode={setNewProductCode} setNewProductDescription={setNewProductDescription} setNewProductDisplayMode={setNewProductDisplayMode}
-              setNewProductLifecycle={setNewProductLifecycle} setNewProductLine={setNewProductLine} setNewProductMinYield={setNewProductMinYield}
-              setNewProductName={setNewProductName} setNewProductRevision={setNewProductRevision} setNewProductTargetYield={setNewProductTargetYield}
-              setNewProductVariant={setNewProductVariant} uploadedImageUrl={uploadedImageUrl}
-            />
-            </div>
-          </CardHeader>
-          <CardContent>
-            {/* Search and Filter Controls */}
-            <div className="space-y-3 mb-4">
-              {/* Search Bar */}
-              <div className="relative">
-                <Input
-                  placeholder={t("products.searchByCodeOrName")}
-                  value={productSearchQuery}
-                  onChange={(e) => setProductSearchQuery(e.target.value)}
-                  className="pr-8"
-                />
-                {productSearchQuery && (
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    className="absolute right-1 top-1/2 -translate-y-1/2 h-7 w-7 p-0"
-                    onClick={() => setProductSearchQuery("")}
-                  >
-                    <X className="h-4 w-4" />
-                  </Button>
-                )}
-              </div>
-              
-              {/* Filter and Sort Row */}
-              <div className="flex gap-2">
-                {/* Lifecycle Filter */}
-                <Select value={productLifecycleFilter} onValueChange={(val: any) => setProductLifecycleFilter(val)}>
-                  <SelectTrigger className="w-35">
-                    <SelectValue placeholder={t("common.status")} />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="all">{t("common.all")}</SelectItem>
-                    <SelectItem value="development">{t("products.development")}</SelectItem>
-                    <SelectItem value="active">{t("products.active")}</SelectItem>
-                    <SelectItem value="eol">EOL</SelectItem>
-                    <SelectItem value="archived">{t("products.archived")}</SelectItem>
-                  </SelectContent>
-                </Select>
-                
-                {/* Sort Dropdown */}
-                <Select value={`${productSortBy}-${productSortOrder}`} onValueChange={(val) => {
-                  const [sortBy, sortOrder] = val.split("-") as [typeof productSortBy, typeof productSortOrder];
-                  setProductSortBy(sortBy);
-                  setProductSortOrder(sortOrder);
-                }}>
-                  <SelectTrigger className="flex-1">
-                    <SelectValue placeholder={t("products.sortPlaceholder")} />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="createdAt-desc">{t("products.newestFirst")}</SelectItem>
-                    <SelectItem value="createdAt-asc">{t("products.oldestFirst")}</SelectItem>
-                    <SelectItem value="name-asc">{t("products.nameAZ")}</SelectItem>
-                    <SelectItem value="name-desc">{t("products.nameZA")}</SelectItem>
-                    <SelectItem value="code-asc">{t("products.codeAZ")}</SelectItem>
-                    <SelectItem value="code-desc">{t("products.codeZA")}</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-              
-              {/* Active Filters Badge */}
-              {(productSearchQuery || productLifecycleFilter !== "all") && (
-                <div className="flex items-center gap-2 text-sm">
-                  <Badge variant="secondary" className="gap-1">
-                    {t("common.filtered")}
-                  </Badge>
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    className="h-6 px-2 text-xs"
-                    onClick={() => {
-                      setProductSearchQuery("");
-                      setProductLifecycleFilter("all");
-                    }}
-                  >
-                    {t("history.clearFilters")}
-                  </Button>
-                </div>
-              )}
-            </div>
-
-            {/* Doc 42 Đợt 4A (APPLY-B) — nhập/xuất danh sách sản phẩm. Xuất/Tải mẫu cho
-                mọi người; "Nhập" chỉ hiện khi có quyền tạo (onImport = undefined nếu không). */}
-            <div className="mb-4">
-              <ImportExportBar
-                entityLabel={t("products.entityLabel", "sản phẩm")}
-                fileBaseName="san_pham"
-                columns={PRODUCT_IO_COLUMNS}
-                onExport={handleExportProducts}
-                onImport={canImportProducts ? handleImportProducts : undefined}
-              />
-            </div>
-
-            {/* Doc 42 Đợt 2 (D2) — danh sách sản phẩm dùng DataTable: skeleton khi tải,
-                phân trang, empty-state có CTA. Search/lọc/sắp xếp vẫn do controls phía
-                trên điều khiển server-side (query productModel.list). */}
-            <DataTable<ProductModel>
-              data={(productModels ?? []) as unknown as ProductModel[]}
-              getRowId={(p) => p.id}
-              loading={productModels === undefined}
-              paginated
-              pageSize={8}
-              onRowClick={(product) => {
-                setSelectedProduct(product);
-                setIsEditMode(false);
-                resetPointForm();
-                // Doc 43 Đợt 3 — ghi ?product= (giữ tab hiện tại) để reload giữ nguyên
-                // sản phẩm + tab. Preselect chỉ auto-chọn 1 lần nên không gây vòng lặp.
-                const params = new URLSearchParams(onboardingSearch);
-                params.set("product", String(product.id));
-                setLocation(`/products?${params.toString()}`, { replace: true });
-              }}
-              emptyState={
-                productSearchQuery || productLifecycleFilter !== "all" ? (
-                  <EmptyState
-                    variant="no-results"
-                    compact
-                    title={t("products.noMatchingProducts", "Không có sản phẩm khớp")}
-                    description={t("products.tryDifferentSearch", "Thử đổi từ khoá hoặc bộ lọc.")}
-                  />
-                ) : (
-                  <EmptyState
-                    variant="no-data"
-                    compact
-                    title={t("products.noProductsYet")}
-                    description={t("products.clickAddToCreate")}
-                    actionLabel={t("common.add")}
-                    onAction={() => setIsCreateDialogOpen(true)}
-                  />
-                )
-              }
-              columns={[
-                {
-                  id: "product",
-                  header: t("products.product", "Sản phẩm"),
-                  cell: (product) => {
-                    const isSelected = selectedProduct?.id === product.id;
-                    const updatedAt = (product as { updatedAt?: string | Date | null }).updatedAt;
-                    return (
-                      <div
-                        className={`flex items-start gap-3 -mx-1 rounded-md px-2 py-1 ${
-                          isSelected ? "bg-primary/5" : ""
-                        }`}
-                      >
-                        <div className="p-2 rounded-lg bg-primary/10 shrink-0">
-                          <Package className="h-5 w-5 text-primary" />
-                        </div>
-                        <div className="flex-1 min-w-0">
-                          <p className="font-medium truncate">{product.name}</p>
-                          <div className="flex items-center gap-1.5">
-                            <p className="text-sm text-muted-foreground truncate">{product.code}</p>
-                            {product.revision && (
-                              <Badge variant="outline" className="text-[10px] px-1 py-0 shrink-0">
-                                {t("products.revShort")} {product.revision}
-                              </Badge>
-                            )}
-                          </div>
-                          {/* Doc 31 UX2/PM9 — config-completeness badge (batched, no N+1) */}
-                          <div className="mt-1">
-                            <ProductReadinessBadge readiness={readinessById.get(product.id)} />
-                          </div>
-                          {updatedAt && (
-                            <p className="text-[11px] text-muted-foreground mt-1">
-                              {t("common.updated", "Cập nhật")}: {new Date(updatedAt).toLocaleDateString("vi-VN")}
-                            </p>
-                          )}
-                        </div>
-                        <DropdownMenu>
-                          <DropdownMenuTrigger asChild onClick={(e) => e.stopPropagation()}>
-                            <Button variant="ghost" size="sm" className="h-8 w-8 p-0">
-                              <MoreVertical className="h-4 w-4" />
-                            </Button>
-                          </DropdownMenuTrigger>
-                          <DropdownMenuContent align="end">
-                            <DropdownMenuItem onClick={(e) => {
-                              e.stopPropagation();
-                              setSelectedProduct(product);
-                              openEditProductDialog(product as unknown as ProductModel);
-                            }}>
-                              <Edit className="h-4 w-4 mr-2" />
-                              {t("common.edit")}
-                            </DropdownMenuItem>
-                            <PermissionGate module="settings_products" action="canCreate">
-                              <DropdownMenuItem onClick={(e) => {
-                                e.stopPropagation();
-                                openCloneProductDialog(product as unknown as ProductModel);
-                              }}>
-                                <Copy className="h-4 w-4 mr-2" />
-                                {t("products.clone")}
-                              </DropdownMenuItem>
-                            </PermissionGate>
-                            <DropdownMenuItem
-                              className="text-destructive"
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                setSelectedProduct(product);
-                                setIsDeleteProductDialogOpen(true);
-                              }}
-                            >
-                              <Trash2 className="h-4 w-4 mr-2" />
-                              {t("common.delete")}
-                            </DropdownMenuItem>
-                          </DropdownMenuContent>
-                        </DropdownMenu>
-                      </div>
-                    );
-                  },
-                },
-              ]}
-            />
-          </CardContent>
-        </Card>
+        <ProductListPanel
+          selectedProduct={selectedProduct} setSelectedProduct={setSelectedProduct} setIsEditMode={setIsEditMode}
+          resetPointForm={resetPointForm} onboardingSearch={onboardingSearch} setLocation={setLocation}
+          productSearchQuery={productSearchQuery} setProductSearchQuery={setProductSearchQuery}
+          productLifecycleFilter={productLifecycleFilter} setProductLifecycleFilter={setProductLifecycleFilter}
+          productSortBy={productSortBy} setProductSortBy={setProductSortBy}
+          productSortOrder={productSortOrder} setProductSortOrder={setProductSortOrder}
+          productModels={productModels} readinessById={readinessById} canImportProducts={canImportProducts}
+          handleExportProducts={handleExportProducts} handleImportProducts={handleImportProducts}
+          setIsDeleteProductDialogOpen={setIsDeleteProductDialogOpen}
+          openEditProductDialog={openEditProductDialog} openCloneProductDialog={openCloneProductDialog}
+          createProductMutation={createProductMutation} handleCreateProduct={handleCreateProduct} handleImageUpload={handleImageUpload}
+          isCreateDialogOpen={isCreateDialogOpen} newProductCategory={newProductCategory} newProductCode={newProductCode}
+          newProductDescription={newProductDescription} newProductDisplayMode={newProductDisplayMode} newProductLifecycle={newProductLifecycle}
+          newProductLine={newProductLine} newProductMinYield={newProductMinYield} newProductName={newProductName}
+          newProductRevision={newProductRevision} newProductTargetYield={newProductTargetYield} newProductVariant={newProductVariant}
+          productValidation={productValidation} setIsCreateDialogOpen={setIsCreateDialogOpen} setNewProductCategory={setNewProductCategory}
+          setNewProductCode={setNewProductCode} setNewProductDescription={setNewProductDescription} setNewProductDisplayMode={setNewProductDisplayMode}
+          setNewProductLifecycle={setNewProductLifecycle} setNewProductLine={setNewProductLine} setNewProductMinYield={setNewProductMinYield}
+          setNewProductName={setNewProductName} setNewProductRevision={setNewProductRevision} setNewProductTargetYield={setNewProductTargetYield}
+          setNewProductVariant={setNewProductVariant} uploadedImageUrl={uploadedImageUrl}
+        />
 
         {/* Measurement Point Editor — mở rộng 3/4 để phần điểm đo to hơn */}
         <Card className="lg:col-span-3">
@@ -2869,6 +2596,11 @@ export default function ProductModels() {
                     <Layers className="h-4 w-4" />
                     {t("products.variants.tab", "Biến thể")}
                   </TabsTrigger>
+                  {/* Khối C Task 10 (QĐ-4) — Cây dạy (đọc bản dạy giới hạn của máy) */}
+                  <TabsTrigger value="teach" className="h-7 gap-1.5 text-xs">
+                    <TreePine className="h-4 w-4" />
+                    {t("teachTree.tab", "Cây dạy")}
+                  </TabsTrigger>
                 </TabsList>
 
                 {/* ① Điểm đo — canvas + point list + form (màn làm việc chính) */}
@@ -2888,9 +2620,9 @@ export default function ProductModels() {
                         <Square className="h-3 w-3" />
                         {t("common.deselectAll")}
                       </Button>
-                      <Button 
-                        size="sm" 
-                        variant="outline" 
+                      <Button
+                        size="sm"
+                        variant="outline"
                         onClick={handleBatchExport}
                         disabled={selectedPointIds.size === 0}
                         className="gap-1"
@@ -2898,9 +2630,21 @@ export default function ProductModels() {
                         <Download className="h-3 w-3" />
                         {t("history.exportCsv")}
                       </Button>
-                      <Button 
-                        size="sm" 
-                        variant="destructive" 
+                      {/* Wave 2 đường A (Task 3) — ĐỀ XUẤT hàng loạt (xem trước, không duyệt
+                          hàng loạt — duyệt hàng loạt đã có riêng ở /threshold-approvals). */}
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={() => setIsBatchSuggestOpen(true)}
+                        disabled={selectedPointIds.size === 0}
+                        className="gap-1"
+                      >
+                        <Sparkles className="h-3 w-3" />
+                        {t("productModels.batchSuggestButton", "AI đề xuất cho {{n}} điểm", { n: selectedPointIds.size })}
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant="destructive"
                         onClick={handleBatchDelete}
                         disabled={selectedPointIds.size === 0}
                         className="gap-1"
@@ -3167,11 +2911,26 @@ export default function ProductModels() {
                           {
                             id: "threshold",
                             header: t("products.thresholdSummary", "Ngưỡng"),
-                            cell: (p) => (
-                              <span className="tabular-nums text-xs text-muted-foreground">
-                                {thresholdSummaryOf(p)}
-                              </span>
-                            ),
+                            cell: (p) => {
+                              // Wave 2 đường A — badge chỉ báo có đề xuất ngưỡng AI đang chờ
+                              // tại điểm đo này (150 đề xuất trước đây vô hình vì chỉ hiện ở
+                              // /threshold-approvals). Chỉ là chỉ báo — click hàng (đã có
+                              // onRowClick ở trên) mở form chi tiết điểm đó.
+                              const pendingCount = p.id != null ? (pendingThresholdCounts?.byPoint?.[p.id] ?? 0) : 0;
+                              return (
+                                <div className="flex items-center gap-1.5">
+                                  <span className="tabular-nums text-xs text-muted-foreground">
+                                    {thresholdSummaryOf(p)}
+                                  </span>
+                                  {pendingCount > 0 && (
+                                    <Badge variant="secondary" className="gap-1 text-[10px] px-1.5 py-0 shrink-0">
+                                      <Sparkles className="h-3 w-3" />
+                                      {t("products.pendingSuggestions", "{{n}} đề xuất AI", { n: pendingCount })}
+                                    </Badge>
+                                  )}
+                                </div>
+                              );
+                            },
                           },
                         ]}
                       />
@@ -3264,6 +3023,11 @@ export default function ProductModels() {
               <TabsContent value="variants" className="space-y-4 mt-2">
                 <ProductVariantsTab productModelId={selectedProduct.id} productName={selectedProduct.name} />
               </TabsContent>
+
+              {/* ⑥ Cây dạy — Khối C Task 10 (QĐ-4): đọc bản dạy giới hạn theo máy (appRouter.cayDay) */}
+              <TabsContent value="teach" className="space-y-4 mt-2">
+                <TeachTreeTab productModelId={selectedProduct.id} />
+              </TabsContent>
               </Tabs>
 
             ) : (
@@ -3280,46 +3044,11 @@ export default function ProductModels() {
       </ErrorBoundary>
       </DashboardLayout>
 
-      {/* W3-C (doc 27 §2 M9) — Phát hành chương trình (inspection-program release workflow) */}
-      <Dialog open={isProgramReleaseOpen} onOpenChange={setIsProgramReleaseOpen}>
-        <DialogContent className="max-w-3xl">
-          <DialogHeader>
-            <DialogTitle>{t("programRelease.title")}{selectedProduct ? ` — ${selectedProduct.name}` : ""}</DialogTitle>
-            <DialogDescription>{t("programRelease.desc")}</DialogDescription>
-          </DialogHeader>
-          {selectedProduct && isProgramReleaseOpen && (
-            <ProgramReleasePanel productModelId={selectedProduct.id} />
-          )}
-        </DialogContent>
-      </Dialog>
-
-      {/* Doc 31 UX1 (WD-1) — Fiducial marks editor (mounts the orphaned ProductFiducialsTab) */}
-      <Dialog open={isFiducialsOpen} onOpenChange={setIsFiducialsOpen}>
-        <DialogContent className="max-w-3xl max-h-[85vh] overflow-y-auto">
-          <DialogHeader>
-            <DialogTitle>{t("products.fiducialsButton", "Fiducials")}{selectedProduct ? ` — ${selectedProduct.name}` : ""}</DialogTitle>
-            <DialogDescription>{t("products.fiducialsDesc", "Alignment fiducial marks used to register the board before inspection.")}</DialogDescription>
-          </DialogHeader>
-          {selectedProduct && isFiducialsOpen && (
-            <ProductFiducialsTab productModelId={selectedProduct.id} />
-          )}
-        </DialogContent>
-      </Dialog>
-
-      {/* W8-B (doc 29 §2 — M12b) — Panel N-up definition editor */}
-      <Dialog open={isPanelDefOpen} onOpenChange={setIsPanelDefOpen}>
-        <DialogContent className="max-w-4xl max-h-[85vh] overflow-y-auto">
-          <DialogHeader>
-            <DialogTitle>{t("panelDef.title")}{selectedProduct ? ` — ${selectedProduct.name}` : ""}</DialogTitle>
-            <DialogDescription>{t("panelDef.desc")}</DialogDescription>
-          </DialogHeader>
-          {selectedProduct && isPanelDefOpen && (
-            <PanelDefinitionPanel productModelId={selectedProduct.id} />
-          )}
-        </DialogContent>
-      </Dialog>
-
-      <MsaStudyDialog
+      <ProductDialogsHost
+        selectedProduct={selectedProduct}
+        isProgramReleaseOpen={isProgramReleaseOpen} setIsProgramReleaseOpen={setIsProgramReleaseOpen}
+        isFiducialsOpen={isFiducialsOpen} setIsFiducialsOpen={setIsFiducialsOpen}
+        isPanelDefOpen={isPanelDefOpen} setIsPanelDefOpen={setIsPanelDefOpen}
         addMsaObservationMutation={addMsaObservationMutation} batchAddMsaObservationsMutation={batchAddMsaObservationsMutation} completeMsaStudyMutation={completeMsaStudyMutation}
         generateMsaMatrixMutation={generateMsaMatrixMutation} handleAddMsaObservation={handleAddMsaObservation} handleApplyMsaCsvMapping={handleApplyMsaCsvMapping}
         handleApplyMsaPreset={handleApplyMsaPreset} handleBatchImportMsaObservations={handleBatchImportMsaObservations} handleCompleteMsaStudy={handleCompleteMsaStudy}
@@ -3337,7 +3066,7 @@ export default function ProductModels() {
         msaPartCount={msaPartCount} msaPartLabel={msaPartLabel} msaStudyCode={msaStudyCode}
         msaStudyData={msaStudyData} msaStudyName={msaStudyName} msaSuggestBaseValue={msaSuggestBaseValue}
         msaTrialCount={msaTrialCount} msaTrialNo={msaTrialNo} msaWizardStep={msaWizardStep}
-        selectedProduct={selectedProduct} setIsMsaDialogOpen={setIsMsaDialogOpen} setMsaAutoAddNext={setMsaAutoAddNext}
+        setIsMsaDialogOpen={setIsMsaDialogOpen} setMsaAutoAddNext={setMsaAutoAddNext}
         setMsaBatchInput={setMsaBatchInput} setMsaBatchSkipDuplicates={setMsaBatchSkipDuplicates} setMsaCsvColumnMap={setMsaCsvColumnMap}
         setMsaCsvHasHeader={setMsaCsvHasHeader} setMsaCsvPresetName={setMsaCsvPresetName} setMsaCsvSourceKey={setMsaCsvSourceKey}
         setMsaInstrumentId={setMsaInstrumentId} setMsaMatrixBaseValue={setMsaMatrixBaseValue} setMsaMatrixNoisePct={setMsaMatrixNoisePct}
@@ -3346,163 +3075,49 @@ export default function ProductModels() {
         setMsaPartLabel={setMsaPartLabel} setMsaStudyCode={setMsaStudyCode} setMsaStudyName={setMsaStudyName}
         setMsaSuggestBaseValue={setMsaSuggestBaseValue} setMsaTrialCount={setMsaTrialCount} setMsaTrialNo={setMsaTrialNo}
         setMsaWizardStep={setMsaWizardStep} startMsaStudyMutation={startMsaStudyMutation}
-      />
-
-      {/* Edit Product Dialog — Doc 31 UX4 (WE-3): extracted to components/products/EditProductDialog */}
-      <EditProductDialog
-        open={isEditProductDialogOpen}
-        onOpenChange={setIsEditProductDialogOpen}
-        code={editProductCode} setCode={setEditProductCode}
-        name={editProductName} setName={setEditProductName}
-        description={editProductDescription} setDescription={setEditProductDescription}
-        category={editProductCategory} setCategory={setEditProductCategory}
-        line={editProductLine} setLine={setEditProductLine}
-        variant={editProductVariant} setVariant={setEditProductVariant}
-        lifecycle={editProductLifecycle} setLifecycle={setEditProductLifecycle}
-        revision={editProductRevision} setRevision={setEditProductRevision}
-        targetYield={editProductTargetYield} setTargetYield={setEditProductTargetYield}
-        minYield={editProductMinYield} setMinYield={setEditProductMinYield}
-        displayMode={editProductDisplayMode} setDisplayMode={setEditProductDisplayMode}
-        imageUrl={editProductImageUrl}
-        currentImageUrl={selectedProduct?.referenceImageUrl}
-        onImageUpload={handleEditImageUpload}
-        onSave={handleUpdateProduct}
-        isSaving={updateProductMutation.isPending}
-      />
-
-      {/* Delete Product Confirmation */}
-      <DeleteConfirmDialog
-        open={isDeleteProductDialogOpen}
-        onOpenChange={setIsDeleteProductDialogOpen}
-        itemType={t("products.productItemType")}
-        itemName={selectedProduct?.name}
-        onConfirm={handleDeleteProduct}
-        isLoading={deleteProductMutation.isPending}
-      />
-
-      {/* Clone Product Dialog — Doc 31 PM1 (WC-2) · UX4 (WE-3): extracted to components/products/CloneProductDialog */}
-      <CloneProductDialog
-        open={isCloneProductDialogOpen}
-        onOpenChange={setIsCloneProductDialogOpen}
-        sourceProduct={cloneSourceProduct}
-        newCode={cloneNewCode} setNewCode={setCloneNewCode}
-        newName={cloneNewName} setNewName={setCloneNewName}
-        newRevision={cloneNewRevision} setNewRevision={setCloneNewRevision}
-        copyMappings={cloneCopyMappings} setCopyMappings={setCloneCopyMappings}
-        onClone={handleCloneProduct}
-        isCloning={cloneProductMutation.isPending}
-      />
-
-      {/* Delete Point Confirmation */}
-      <DeleteConfirmDialog
-        open={isDeletePointDialogOpen}
-        onOpenChange={setIsDeletePointDialogOpen}
-        itemType={t("products.pointItemType")}
-        itemName={selectedPointIndex !== null ? measurementPoints[selectedPointIndex]?.name : undefined}
-        onConfirm={handleDeletePoint}
-        isLoading={deletePointMutation.isPending}
-      />
-
-      {/* Doc 31 UX3 — optimistic-lock conflict: reload vs overwrite-anyway */}
-      <AlertDialog open={pointConflict !== null} onOpenChange={(o) => { if (!o) setPointConflict(null); }}>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle className="flex items-center gap-2">
-              <AlertTriangle className="h-5 w-5 text-warning" />
-              {t("products.conflict.title", "Điểm đo đã bị thay đổi")}
-            </AlertDialogTitle>
-            <AlertDialogDescription>
-              {t(
-                "products.conflict.body",
-                "Một người khác đã thay đổi điểm đo này kể từ khi bạn mở. Tải lại để xem thay đổi của họ, hoặc ghi đè bằng thay đổi của bạn.",
-              )}
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          {pointConflict && (() => {
-            const fields: Array<[string, string]> = [
-              ["code", t("products.pointCode", "Code")],
-              ["name", t("common.name", "Name")],
-              ["lowerLimit", t("products.lowerLimit", "Lower limit")],
-              ["upperLimit", t("products.upperLimit", "Upper limit")],
-              ["nominalValue", t("products.nominalValue", "Nominal")],
-              ["componentCode", t("products.componentCode", "Component")],
-              ["refDesignator", t("products.refDesignator", "RefDes")],
-              ["positionX", "X"],
-              ["positionY", "Y"],
-              ["radius", t("products.radius", "Radius")],
-            ];
-            const norm = (v: any) => (v === null || v === undefined ? "" : String(v));
-            const changed = fields.filter(([k]) => norm(pointConflict.current[k]) !== norm((pointConflict.loaded as any)[k]));
-            if (changed.length === 0) return null;
-            return (
-              <div className="rounded-md border border-border/60 bg-muted/30 p-2 text-xs">
-                <p className="font-medium mb-1">{t("products.conflict.theirChanges", "Thay đổi của người khác:")}</p>
-                <ul className="space-y-0.5">
-                  {changed.map(([k, label]) => (
-                    <li key={k} className="flex items-center gap-1">
-                      <span className="text-muted-foreground w-24 shrink-0">{label}</span>
-                      <span className="line-through text-destructive/80">{norm((pointConflict.loaded as any)[k]) || "—"}</span>
-                      <span className="text-muted-foreground">→</span>
-                      <span className="text-success font-medium">{norm(pointConflict.current[k]) || "—"}</span>
-                    </li>
-                  ))}
-                </ul>
-              </div>
-            );
-          })()}
-          <AlertDialogFooter>
-            <AlertDialogCancel onClick={() => setPointConflict(null)}>
-              {t("common.cancel", "Hủy")}
-            </AlertDialogCancel>
-            <Button variant="outline" onClick={handleReloadConflict} disabled={isSavingPoint}>
-              {t("products.conflict.reload", "Tải lại")}
-            </Button>
-            <Button variant="destructive" onClick={handleOverwriteConflict} disabled={isSavingPoint}>
-              {t("products.conflict.overwrite", "Ghi đè")}
-            </Button>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
-
-      {/* Bulk Import Dialog */}
-      {selectedProduct && (
-        <BulkImportDialog
-          open={isBulkImportDialogOpen}
-          onOpenChange={setIsBulkImportDialogOpen}
-          productModelId={selectedProduct.id}
-          productModelName={selectedProduct.name}
-          onSuccess={() => {
-            refetchPoints();
-          }}
-        />
-      )}
-
-      {/* Doc 31 MP5/PM4 (Đợt C) — centroid / pick-place import wizard */}
-      {selectedProduct && (
-        <CentroidImportDialog
-          open={isCentroidImportOpen}
-          onOpenChange={setIsCentroidImportOpen}
-          productModelId={selectedProduct.id}
-          productModelName={selectedProduct.name}
-          onSuccess={() => {
-            refetchPoints();
-          }}
-        />
-      )}
-
-      {/* Template Dialog — Doc 31 UX4 (WE-3): extracted to components/products/PointTemplateDialog */}
-      <PointTemplateDialog
-        open={isTemplateDialogOpen}
-        onOpenChange={setIsTemplateDialogOpen}
-        name={templateName} setName={setTemplateName}
-        category={templateCategory} setCategory={setTemplateCategory}
-        description={templateDescription} setDescription={setTemplateDescription}
-        isSaving={isSavingTemplate}
-        pointCount={measurementPoints.length}
+        isEditProductDialogOpen={isEditProductDialogOpen} setIsEditProductDialogOpen={setIsEditProductDialogOpen}
+        editProductCode={editProductCode} setEditProductCode={setEditProductCode}
+        editProductName={editProductName} setEditProductName={setEditProductName}
+        editProductDescription={editProductDescription} setEditProductDescription={setEditProductDescription}
+        editProductCategory={editProductCategory} setEditProductCategory={setEditProductCategory}
+        editProductLine={editProductLine} setEditProductLine={setEditProductLine}
+        editProductVariant={editProductVariant} setEditProductVariant={setEditProductVariant}
+        editProductLifecycle={editProductLifecycle} setEditProductLifecycle={setEditProductLifecycle}
+        editProductRevision={editProductRevision} setEditProductRevision={setEditProductRevision}
+        editProductTargetYield={editProductTargetYield} setEditProductTargetYield={setEditProductTargetYield}
+        editProductMinYield={editProductMinYield} setEditProductMinYield={setEditProductMinYield}
+        editProductDisplayMode={editProductDisplayMode} setEditProductDisplayMode={setEditProductDisplayMode}
+        editProductImageUrl={editProductImageUrl}
+        handleEditImageUpload={handleEditImageUpload}
+        handleUpdateProduct={handleUpdateProduct}
+        updateProductMutation={updateProductMutation}
+        isDeleteProductDialogOpen={isDeleteProductDialogOpen} setIsDeleteProductDialogOpen={setIsDeleteProductDialogOpen}
+        handleDeleteProduct={handleDeleteProduct} deleteProductMutation={deleteProductMutation}
+        isCloneProductDialogOpen={isCloneProductDialogOpen} setIsCloneProductDialogOpen={setIsCloneProductDialogOpen}
+        cloneSourceProduct={cloneSourceProduct}
+        cloneNewCode={cloneNewCode} setCloneNewCode={setCloneNewCode}
+        cloneNewName={cloneNewName} setCloneNewName={setCloneNewName}
+        cloneNewRevision={cloneNewRevision} setCloneNewRevision={setCloneNewRevision}
+        cloneCopyMappings={cloneCopyMappings} setCloneCopyMappings={setCloneCopyMappings}
+        handleCloneProduct={handleCloneProduct} cloneProductMutation={cloneProductMutation}
+        isDeletePointDialogOpen={isDeletePointDialogOpen} setIsDeletePointDialogOpen={setIsDeletePointDialogOpen}
+        selectedPointIndex={selectedPointIndex}
+        handleDeletePoint={handleDeletePoint} deletePointMutation={deletePointMutation}
+        pointConflict={pointConflict} setPointConflict={setPointConflict}
+        handleReloadConflict={handleReloadConflict} handleOverwriteConflict={handleOverwriteConflict} isSavingPoint={isSavingPoint}
+        isBulkImportDialogOpen={isBulkImportDialogOpen} setIsBulkImportDialogOpen={setIsBulkImportDialogOpen}
+        isCentroidImportOpen={isCentroidImportOpen} setIsCentroidImportOpen={setIsCentroidImportOpen}
+        refetchPoints={refetchPoints}
+        isTemplateDialogOpen={isTemplateDialogOpen} setIsTemplateDialogOpen={setIsTemplateDialogOpen}
+        templateName={templateName} setTemplateName={setTemplateName}
+        templateCategory={templateCategory} setTemplateCategory={setTemplateCategory}
+        templateDescription={templateDescription} setTemplateDescription={setTemplateDescription}
+        isSavingTemplate={isSavingTemplate}
         templates={templates}
-        onSaveAsTemplate={handleSaveAsTemplate}
-        onApplyTemplate={handleApplyTemplate}
-        onDeleteTemplate={(id) => deleteTemplateMutation.mutate({ id })}
+        handleSaveAsTemplate={handleSaveAsTemplate}
+        handleApplyTemplate={handleApplyTemplate}
+        deleteTemplateMutation={deleteTemplateMutation}
+        isBatchSuggestOpen={isBatchSuggestOpen} selectedPointIds={selectedPointIds} setIsBatchSuggestOpen={setIsBatchSuggestOpen}
       />
     </>
   );

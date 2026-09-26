@@ -1,38 +1,110 @@
 import { protectedProcedure, router } from "../_core/trpc";
 import { adminProcedure } from "./_shared";
+import { requirePermission } from "../_core/accessControl";
+
+/**
+ * Module quyền của PHIẾU CÔNG VIỆC — chép ĐÚNG chuỗi mà `maintenanceRouter.ts`
+ * dùng (`const MODULE = "machine_monitoring"`, resolve về `machine_status`).
+ * Một hằng có tên để `assignableTechnicians` và `createWorkOrder` không lệch
+ * nhau trong im lặng. Xem docblock của `assignableTechnicians` về việc §6.4 ghi
+ * `maintenance` — một module KHÔNG TỒN TẠI trong `PERMISSION_MODULES`.
+ */
+const MODULE_PHIEU = "machine_monitoring";
 import { z } from "zod";
 import { TRPCError } from "@trpc/server";
+import { appError } from "../_core/appError";
 import * as db from "../db";
+// ★★★ Pha 7 Task 7 — chủ DUY NHẤT của "cột nào của `users` được rời máy chủ".
+// ⚠ Bốn thủ tục dưới đây từng là **thứ nguy hơn `auth.me`**: `list` và
+//   `userAssignment.getAllUserAssignments` trả hàng thô của **MỌI** người dùng ⇒ một tài khoản
+//   admin bị chiếm lấy được **hạt giống 2FA của tất cả**, kể cả các admin khác. `getById`/`search`
+//   dùng **danh sách CẤM một phần tử** (`const { passwordHash, ...safeUser }`) nên
+//   **`twoFactorSecret` vẫn ra** — đúng lớp *"phần tử thứ N+1"*.
+import { toPublicUser, toPublicUsers, type KhongMangBiMat } from "../_core/publicUser";
+// ★★★ Pha 8 Task 5 — chủ DUY NHẤT của "cột nào của `user_sessions` được rời máy chủ".
+import { toPublicSessions, type PublicSession } from "../_core/publicSession";
+// ★★★ Pha 7 / vá NHÀ TÙ I-4 — chủ DUY NHẤT của khái niệm "tài khoản xác thực nội bộ".
+// ⚠ Ba điểm gọi dưới đây từng mỗi chỗ tự so `loginMethod !== 'local'`, trong khi dữ liệu THẬT mang
+//   `'password'` ⇒ 4/4 tài khoản không-admin đang hoạt động bị khoá ra ngoài. Xem `shared/xacThucNoiBo.ts`.
+import { laXacThucNoiBo } from "@shared/xacThucNoiBo";
 
 // ============ USER ROUTER ============
 export const userRouter = router({
   list: protectedProcedure.query(async ({ ctx }) => {
     if (ctx.user.role !== 'admin') {
-      throw new TRPCError({ code: 'FORBIDDEN', message: 'Admin only' });
+      throw appError('FORBIDDEN', 'PERMISSION_DENIED', { action: 'listUsers' }, 'Admin only');
     }
-    return db.getAllUsers();
+    return toPublicUsers(await db.getAllUsers());
   }),
+
+  /**
+   * ★★★ §9.2 — DANH SÁCH GÁN KỸ THUẬT VIÊN cho `NganXuLy` của `/twin`.
+   *
+   * ══════════════════════════════════════════════════════════════════════════
+   * VÌ SAO THỦ TỤC MỚI, KHÔNG NỚI `user.list`
+   * ══════════════════════════════════════════════════════════════════════════
+   * Nợ đo được: `user.list` ở ngay trên **gate `admin`**, nên dropdown "Gán kỹ
+   * thuật viên" **RỖNG với MỌI tài khoản không phải admin** — tức với đúng
+   * những vai (bảo trì, kỹ thuật, giám sát) mà tính năng ấy sinh ra để phục vụ.
+   * QA trước tái hiện bằng admin nên không thấy: **admin bypass
+   * `requirePermission`** (`accessControl.ts:207`), và một ô rỗng trông y hệt
+   * "chưa có ai để gán".
+   *
+   * **Chủ dự án chốt: KHÔNG đổi `user.list`** — nó là hợp đồng DÙNG CHUNG,
+   * nhiều màn khác gọi, và nới nó sẽ mở danh sách nhân sự đầy đủ cho vai thấp
+   * hơn ở MỌI màn cùng lúc. Một thủ tục HẸP thì phạm vi nới đúng bằng nhu cầu.
+   *
+   * ══════════════════════════════════════════════════════════════════════════
+   * ★★★ G21 — DÒNG MÃ KIỂM QUYỀN CỦA **NGƯỜI NHẬN**
+   * ══════════════════════════════════════════════════════════════════════════
+   * `requirePermission(MODULE_PHIEU, "canCreate")` ngay dưới đây. Đây là phép
+   * kiểm trên **người gọi**, không phải phép nhóm theo thuộc tính dữ liệu.
+   *
+   * ⚠⚠ **ĐÍNH CHÍNH SPEC — §6.4 ghi *"canCreate trên module maintenance"*, và
+   * cái tên đó KHÔNG TỒN TẠI.** Đo được 2026-09-07:
+   *   • `shared/permissions.ts` — `PERMISSION_MODULES` **không có** mục nào
+   *     khớp `maintenance*` (grep ra 0 kết quả).
+   *   • Module THẬT mà `maintenanceRouter.ts:35` dùng là
+   *     `const MODULE = "machine_monitoring"`, và `PERMISSION_MODULE_ALIASES`
+   *     resolve nó về **`machine_status`**.
+   * ⇒ Dùng ĐÚNG chuỗi mà `maintenance.createWorkOrder` dùng. Đây là điều kiện
+   *   để hai bên không thể lệch: người lấy được danh sách gán **chính xác** là
+   *   người tạo được phiếu để gán. Khai một module khác (kể cả một module có
+   *   thật) sẽ dựng lại lớp lỗi Khối D "một lối vào rồi TỪ CHỐI" theo chiều
+   *   ngược — thấy danh sách rồi không tạo nổi phiếu, hoặc ngược lại.
+   *   **Báo lại thay vì tự sửa spec.**
+   *
+   * ══════════════════════════════════════════════════════════════════════════
+   * HAI QUYẾT ĐỊNH VỀ DỮ LIỆU RA
+   * ══════════════════════════════════════════════════════════════════════════
+   * • **CHỈ `{id, name}`** — không email, không vai, không phòng ban, không gì
+   *   khác. Không phải lọc sau khi đọc mà là `select` đúng hai cột ở
+   *   `traKyThuatVienGanDuoc` (mặc định ĐÓNG, cùng khuôn `publicUser`).
+   * • **Chỉ `isActive = true`**, lọc TỪ SQL. Client đã có `nguoiGanDuoc()` làm
+   *   điều tương tự, nhưng lưới ở client là lưới thứ hai — hàng vô hiệu hoá
+   *   không được rời khỏi máy chủ ngay từ đầu.
+   */
+  assignableTechnicians: protectedProcedure
+    .use(requirePermission(MODULE_PHIEU, "canCreate"))
+    .query(async () => {
+      return db.traKyThuatVienGanDuoc();
+    }),
 
   getById: adminProcedure
     .input(z.object({ id: z.number() }))
     .query(async ({ input }) => {
       const user = await db.getUserById(input.id);
       if (!user) {
-        throw new TRPCError({ code: 'NOT_FOUND', message: 'Không tìm thấy người dùng' });
+        throw appError('NOT_FOUND', 'ENTITY_NOT_FOUND', { entity: 'user' }, 'Không tìm thấy người dùng');
       }
-      // Don't return passwordHash
-      const { passwordHash, ...safeUser } = user;
-      return safeUser;
+      return toPublicUser(user);
     }),
 
   search: adminProcedure
     .input(z.object({ query: z.string() }))
     .query(async ({ input }) => {
       const users = await db.searchUsers(input.query);
-      return users.map(u => {
-        const { passwordHash, ...safeUser } = u;
-        return safeUser;
-      });
+      return toPublicUsers(users);
     }),
 
   create: adminProcedure
@@ -50,7 +122,7 @@ export const userRouter = router({
       // Check if username already exists
       const existing = await db.getUserByUsername(input.username);
       if (existing) {
-        throw new TRPCError({ code: 'CONFLICT', message: 'Tên đăng nhập đã tồn tại' });
+        throw appError('CONFLICT', 'ENTITY_DUPLICATE', { entity: 'user' }, 'Tên đăng nhập đã tồn tại');
       }
       
       // Hash password
@@ -83,12 +155,12 @@ export const userRouter = router({
       
       // Prevent admin from deactivating themselves
       if (id === ctx.user.id && inputData.isActive === false) {
-        throw new TRPCError({ code: 'BAD_REQUEST', message: 'Không thể vô hiệu hóa tài khoản của chính mình' });
+        throw appError('BAD_REQUEST', 'PERMISSION_DENIED', { action: 'disableOwnAccount' }, 'Không thể vô hiệu hóa tài khoản của chính mình');
       }
       
       // Prevent admin from changing their own role
       if (id === ctx.user.id && inputData.role && inputData.role !== ctx.user.role) {
-        throw new TRPCError({ code: 'BAD_REQUEST', message: 'Không thể thay đổi vai trò của chính mình' });
+        throw appError('BAD_REQUEST', 'PERMISSION_DENIED', { action: 'changeOwnRole' }, 'Không thể thay đổi vai trò của chính mình');
       }
       
       // Convert null to undefined for db.updateUser
@@ -115,12 +187,12 @@ export const userRouter = router({
     .mutation(async ({ input }) => {
       const user = await db.getUserById(input.id);
       if (!user) {
-        throw new TRPCError({ code: 'NOT_FOUND', message: 'Không tìm thấy người dùng' });
+        throw appError('NOT_FOUND', 'ENTITY_NOT_FOUND', { entity: 'user' }, 'Không tìm thấy người dùng');
       }
       
-      // Only local users can have password changed
-      if (user.loginMethod !== 'local') {
-        throw new TRPCError({ code: 'BAD_REQUEST', message: 'Chỉ có thể đổi mật khẩu cho tài khoản nội bộ' });
+      // Chỉ tài khoản xác thực NỘI BỘ mới có mật khẩu để đặt lại — hỏi chủ duy nhất, KHÔNG so chuỗi.
+      if (!laXacThucNoiBo(user.loginMethod)) {
+        throw appError('BAD_REQUEST', 'OPERATION_FAILED', { operation: 'resetUserPassword' }, 'Chỉ có thể đổi mật khẩu cho tài khoản nội bộ');
       }
       
       const bcrypt = await import('bcryptjs');
@@ -137,10 +209,10 @@ export const userRouter = router({
     }))
     .mutation(async ({ ctx, input }) => {
       if (ctx.user.role !== 'admin') {
-        throw new TRPCError({ code: 'FORBIDDEN', message: 'Admin only' });
+        throw appError('FORBIDDEN', 'PERMISSION_DENIED', { action: 'changeUserRole' }, 'Admin only');
       }
       if (input.userId === ctx.user.id) {
-        throw new TRPCError({ code: 'BAD_REQUEST', message: 'Cannot change your own role' });
+        throw appError('BAD_REQUEST', 'PERMISSION_DENIED', { action: 'changeOwnRole' }, 'Cannot change your own role');
       }
       await db.updateUserRole(input.userId, input.role);
       await db.createAuditLog({ userId: ctx.user.id, userName: ctx.user.name, action: 'user_update_role', entityType: 'user', entityId: input.userId, details: { newRole: input.role } }).catch(() => {});
@@ -153,10 +225,10 @@ export const userRouter = router({
     }))
     .mutation(async ({ ctx, input }) => {
       if (ctx.user.role !== 'admin') {
-        throw new TRPCError({ code: 'FORBIDDEN', message: 'Admin only' });
+        throw appError('FORBIDDEN', 'PERMISSION_DENIED', { action: 'deleteUser' }, 'Admin only');
       }
       if (input.userId === ctx.user.id) {
-        throw new TRPCError({ code: 'BAD_REQUEST', message: 'Cannot delete yourself' });
+        throw appError('BAD_REQUEST', 'PERMISSION_DENIED', { action: 'deleteOwnAccount' }, 'Cannot delete yourself');
       }
       await db.deleteUser(input.userId);
       await db.createAuditLog({ userId: ctx.user.id, userName: ctx.user.name, action: 'user_delete', entityType: 'user', entityId: input.userId }).catch(() => {});
@@ -183,22 +255,25 @@ export const userRouter = router({
       currentPassword: z.string().min(1),
       newPassword: z.string().min(6).max(100),
     }))
-    .mutation(async ({ ctx, input }) => {
+    .mutation(async ({ ctx, input }): Promise<KhongMangBiMat<{ success: boolean }>> => {
       const user = await db.getUserById(ctx.user.id);
       if (!user) {
-        throw new TRPCError({ code: 'NOT_FOUND', message: 'Không tìm thấy người dùng' });
+        throw appError('NOT_FOUND', 'ENTITY_NOT_FOUND', { entity: 'user' }, 'Không tìm thấy người dùng');
       }
       
-      // Only local users can change password
-      if (user.loginMethod !== 'local' || !user.passwordHash) {
-        throw new TRPCError({ code: 'BAD_REQUEST', message: 'Chỉ tài khoản nội bộ mới có thể đổi mật khẩu' });
+      // ★★★ Pha 7 Task 9 (9c) — hash nay ở `user_secrets`, đọc qua CỬA DUY NHẤT.
+      const biMat = await db.layBiMatNguoiDung(user.id);
+
+      // ★★★ Vá NHÀ TÙ I-4 — ĐÂY là cửa đã nhốt 4/4 tài khoản không-admin. Hỏi chủ duy nhất.
+      if (!laXacThucNoiBo(user.loginMethod) || !biMat.passwordHash) {
+        throw appError('BAD_REQUEST', 'OPERATION_FAILED', { operation: 'changeOwnPassword' }, 'Chỉ tài khoản nội bộ mới có thể đổi mật khẩu');
       }
-      
+
       // Verify current password
       const bcrypt = await import('bcryptjs');
-      const isValid = await bcrypt.compare(input.currentPassword, user.passwordHash);
+      const isValid = await bcrypt.compare(input.currentPassword, biMat.passwordHash);
       if (!isValid) {
-        throw new TRPCError({ code: 'BAD_REQUEST', message: 'Mật khẩu hiện tại không đúng' });
+        throw appError('BAD_REQUEST', 'INVALID_VALUE', { field: 'currentPassword' }, 'Mật khẩu hiện tại không đúng');
       }
       
       // Hash and save new password
@@ -220,6 +295,39 @@ export const userRouter = router({
 
       // Generate base32 secret (same encoding the old otplib path produced).
       const user = await db.getUserById(ctx.user.id);
+      /**
+       * ★★★ Pha 7 / review TOÀN NHÁNH **C-1** — HÀNG RÀO BẮT BUỘC TRƯỚC MỌI LƯỢT GHI HẠT GIỐNG.
+       *
+       * ⚠⚠⚠ Thủ tục này là `protectedProcedure` ⇒ nó chỉ đòi **một phiên hợp lệ**. Không mật khẩu,
+       * không OTP, không `requirePerCallFreshTotp`. Trước hàng rào này nó **ghi đè**
+       * `user_secrets.twoFactorSecret` **và trả secret mới về cho người gọi**, trong khi cờ
+       * `users.two_factor_enabled` **giữ nguyên `true`**. Đo được (đột biến review):
+       *   `2FA đang bật=true · secret ĐỔI=true · cờ 2FA sau=true`
+       *   `mã do KẺ TẤN CÔNG sinh qua verifyTotpOnce: hopLe=true`
+       * ⇒ **một phiên bị chiếm là đủ để tự cấp hạt giống mới**, rồi tự sinh mã hợp lệ cho MỌI cổng
+       *   step-up của Pha 4–7 (`requirePerCallFreshTotp` · vé một-lần · sổ `totp_consumed` ·
+       *   `vram.preempt`/`releaseStale`). Kẻ tấn công **không cần ĐỌC** bí mật — nó **GHI**.
+       *
+       * ⚠ Đây **KHÔNG** phải một luật mới: tuyến SONG SONG `twoFactor.generateSecret`
+       *   (`server/routers/twoFactorRouter.ts:80-82`) đã có đúng hàng rào này từ trước. Cặp tuyến
+       *   song song thứ BA (`twoFactor.generateSecret` ≡ `user.setup2FA`) là cặp mà phép đếm ở
+       *   `server/_core/totpOnce.ts:20-24` **SÓT**, và nó chính là cặp **hai bản sao BẤT ĐỒNG**.
+       * ⚠ Lượng từ cưỡng chế câu này nằm ở `server/routers/totpSeedWriteScan.test.ts` — **∀ điểm
+       *   ghi hạt giống TOTP trong `server/**` phải có hàng rào**, để cặp song song thứ TƯ không
+       *   sinh ra im lặng.
+       *
+       * ⚠⚠ Hàng rào **chỉ chặn người ĐÃ BẬT**: người chưa bật 2FA vẫn đăng ký được (đúng nghĩa
+       *    "thu hẹp"), và người đã bật **giữ nguyên hạt giống đang dùng** — đường đổi hợp lệ là
+       *    `user.disable2FA` (đòi **mật khẩu + OTP**) rồi thiết lập lại.
+       */
+      if (user?.twoFactorEnabled) {
+        throw appError(
+          'BAD_REQUEST',
+          'OPERATION_FAILED',
+          { operation: 'regenerateTwoFactorSecret' },
+          '2FA đã được bật. Hãy tắt 2FA trước khi tạo lại hạt giống.',
+        );
+      }
       const appName = 'SYNAPSE';
       const accountName = user?.username || user?.email || `user_${ctx.user.id}`;
       const generated = speakeasy.generateSecret({
@@ -244,35 +352,78 @@ export const userRouter = router({
     }),
 
   // 2FA Verify and Enable
+  /**
+   * ★★★ Pha 9 nhóm A · **A4 — TUYẾN NÀY BẬT 2FA MÀ KHÔNG CẤP MÃ DỰ PHÒNG NÀO.**
+   *
+   * ══════════════════════════════════════════════════════════════════════════════════════════════
+   * ⚠⚠⚠ CẶP BẤT ĐỒNG THỨ NĂM CỦA CÙNG MỘT HỌ — VÀ NỬA CLIENT MỚI LÀ CHỖ NGUY HIỂM
+   * ══════════════════════════════════════════════════════════════════════════════════════════════
+   * Tuyến SONG SONG `twoFactor.enable` cấp **10** mã dự phòng và trả về cho client. Tuyến này
+   * trước bản vá gọi `enable2FA()` rồi **DỪNG** ⇒ người bật 2FA qua màn **Hồ sơ** có **0 mã**:
+   * mất điện thoại là **mất tài khoản**, không đường nào vào lại.
+   *
+   * ⚠⚠ **VÌ SAO KHÔNG VÁ ĐƯỢC BẰNG MỘT DÒNG Ở MÁY CHỦ** — `hoTuyenSongSong.test.ts` đã khai đúng
+   *    lý do này khi miễn trừ cặp ấy: `Profile.tsx` **không có màn hiển thị mã dự phòng**, nên cấp
+   *    mã rồi **không hiện** còn **tệ hơn** không cấp — người dùng tưởng mình có lưới an toàn, và
+   *    cái lưới ấy là 10 chuỗi không ai từng đọc. ⇒ Bản vá **PHẢI** gồm cả nửa client, và nó có:
+   *    `Profile.tsx` nay hiện bộ mã **một lần** sau khi bật, kèm nút sao chép/tải, và chỉ đóng
+   *    được sau khi người dùng xác nhận đã lưu.
+   *
+   * ⚠ Lượt cấp đi qua `db.quayVongMaDuPhong` — NGƯỜI CẤP DUY NHẤT, dùng chung với `twoFactor.enable`
+   *   và `twoFactor.regenerateBackupCodes`. Chép bản sao thứ ba vào đây là đúng cơ chế đã đẻ ra lỗ.
+   */
   verify2FA: protectedProcedure
     .input(z.object({
       token: z.string().length(6),
     }))
-    .mutation(async ({ ctx, input }) => {
-      const speakeasy = (await import('speakeasy')).default;
+    .mutation(async ({ ctx, input }): Promise<KhongMangBiMat<{ success: boolean; backupCodes: string[] }>> => {
+      // ★★★ Pha 6 Task 6 — MỌI lượt xác minh TOTP đi qua sổ mã đã tiêu (chống phát lại).
+      const { verifyTotpOnce } = await import('../_core/totpOnce');
 
       // Get user's 2FA secret
       const status = await db.get2FAStatus(ctx.user.id);
+      /**
+       * ★★★ Pha 8 Task 5 — **HÀNG RÀO CÓ Ở TUYẾN SONG SONG, THIẾU Ở ĐÂY.**
+       *
+       * ⚠⚠ `twoFactor.enable` (`server/routers/twoFactorRouter.ts:121-123`) từ chối khi 2FA **đã
+       * bật**; tuyến này thì không. Một lượt gọi lại khi 2FA đang bật **TIÊU một mã OTP hợp lệ** vào
+       * sổ `totp_consumed` mà không đổi lấy gì (`enable2FA` đặt cờ đã `true` thành `true`), tức nó
+       * là một đường **đốt bằng chứng** ngoài mọi luồng nghiệp vụ. Trạng thái "đang bật" chỉ được
+       * rời qua `user.disable2FA` / `twoFactor.disable` — hai tuyến ĐÒI bằng chứng và DỌN vật liệu.
+       * ⚠ Đây là một phép **THU HẸP**: người chưa bật 2FA không bị ảnh hưởng (ca đối chứng dương
+       *   của `hoTuyenSongSong.test.ts` §5 đo lại điều đó mỗi lượt chạy).
+       */
+      if (status?.twoFactorEnabled) {
+        throw appError('BAD_REQUEST', 'OPERATION_FAILED', { operation: 'enableTwoFactor' }, '2FA đã được bật.');
+      }
       if (!status?.twoFactorSecret) {
-        throw new TRPCError({ code: 'BAD_REQUEST', message: 'Chưa thiết lập 2FA. Vui lòng thiết lập trước.' });
+        // Review round 1 (M-5) — verify2FA(): người dùng đang CỐ BẬT 2FA, cần chỉ
+        // đường đi thiết lập (KHÁC disable2FA() bên dưới — giữ câu trần ở đó, vì
+        // "đi thiết lập" ngược ý định khi người dùng đang TẮT 2FA).
+        throw appError('BAD_REQUEST', 'TWO_FACTOR_NOT_SET_UP', { reason: 'setUpInSecuritySettings' }, 'Chưa thiết lập 2FA. Vui lòng thiết lập trước.');
       }
 
-      // Verify token (base32 encoding, ±1 step for clock drift)
-      const valid = speakeasy.totp.verify({
+      // Verify token (base32 encoding, ±1 step for clock drift) — và TIÊU MÃ (Pha 6 Task 6).
+      const valid = (await verifyTotpOnce({
+        userId: ctx.user.id,
         secret: status.twoFactorSecret,
-        encoding: 'base32',
         token: input.token,
-        window: 1,
-      });
+      })).hopLe;
 
       if (!valid) {
-        throw new TRPCError({ code: 'BAD_REQUEST', message: 'Mã xác thực không hợp lệ' });
+        throw appError('BAD_REQUEST', 'INVALID_VALUE', { field: 'twoFactorCode' }, 'Mã xác thực không hợp lệ');
       }
 
       // Enable 2FA
       await db.enable2FA(ctx.user.id);
 
-      return { success: true };
+      // ★ Pha 9 A4 — cấp bộ mã dự phòng qua NGƯỜI CẤP DUY NHẤT, và TRẢ VỀ để client hiện đúng một
+      //   lần. ⚠ Thứ tự cố ý: cờ 2FA bật TRƯỚC, mã cấp SAU — nếu lượt cấp hỏng, người dùng vẫn ở
+      //   trạng thái "đã bật" và tự cấp lại được bằng `twoFactor.regenerateBackupCodes`; đảo lại
+      //   thì mã tồn tại cho một tài khoản chưa bật 2FA.
+      const backupCodes = await db.quayVongMaDuPhong(ctx.user.id);
+
+      return { success: true, backupCodes };
     }),
 
   // 2FA Disable
@@ -281,51 +432,88 @@ export const userRouter = router({
       token: z.string().length(6),
       password: z.string().min(1),
     }))
-    .mutation(async ({ ctx, input }) => {
-      const speakeasy = (await import('speakeasy')).default;
+    .mutation(async ({ ctx, input }): Promise<KhongMangBiMat<{ success: boolean }>> => {
+      // ★★★ Pha 6 Task 6 — MỌI lượt xác minh TOTP đi qua sổ mã đã tiêu (chống phát lại).
+      const { verifyTotpOnce } = await import('../_core/totpOnce');
       const bcrypt = await import('bcryptjs');
 
       // Get user
       const user = await db.getUserById(ctx.user.id);
       if (!user) {
-        throw new TRPCError({ code: 'NOT_FOUND', message: 'Không tìm thấy người dùng' });
+        throw appError('NOT_FOUND', 'ENTITY_NOT_FOUND', { entity: 'user' }, 'Không tìm thấy người dùng');
       }
 
-      // Verify password for local users
-      if (user.loginMethod === 'local' && user.passwordHash) {
-        const isValidPassword = await bcrypt.compare(input.password, user.passwordHash);
+      // Verify password for local users — hash ở `user_secrets` (Pha 7 Task 9).
+      // ⚠ Vá NHÀ TÙ I-4 khép luôn một lỗ theo chiều MỞ ở đây: với `loginMethod = 'password'` (4 tài
+      //   khoản đang chạy) vị từ cũ cho `false` ⇒ lượt tắt 2FA **bỏ qua** phép kiểm mật khẩu hoàn
+      //   toàn. Nay cùng một chủ trả lời ⇒ có hash thì PHẢI đúng mật khẩu mới tắt được 2FA.
+      // ⚠⚠ HỆ QUẢ ĐƯỢC NÓI RA (review TOÀN NHÁNH Pha 8 · M-3): với tài khoản **KHÔNG** xác thực nội
+      //   bộ (SSO/OIDC — không có hash cục bộ), vế này KHÔNG chạy ⇒ tắt 2FA chỉ cần **MỘT** yếu tố,
+      //   trong khi `z.string().min(1)` làm hợp đồng API trông như đòi hai. Vị từ vẫn ĐÚNG theo chủ
+      //   ý (**chống NHÀ TÙ**); lối siết đúng là **bước-up SSO** (re-auth OIDC), một quyết định sản
+      //   phẩm. ⚠ Hai tuyến KHỚP nhau nên `hoTuyenSongSong` xanh — *"khớp TẬP mà cả hai cùng hở"*;
+      //   cặp ấy so A với B, không so A với một chuẩn. Lý lẽ đầy đủ: `twoFactorRouter.ts::disable`.
+      const biMat = await db.layBiMatNguoiDung(user.id);
+      if (laXacThucNoiBo(user.loginMethod) && biMat.passwordHash) {
+        const isValidPassword = await bcrypt.compare(input.password, biMat.passwordHash);
         if (!isValidPassword) {
-          throw new TRPCError({ code: 'BAD_REQUEST', message: 'Mật khẩu không đúng' });
+          throw appError('BAD_REQUEST', 'INVALID_VALUE', { field: 'password' }, 'Mật khẩu không đúng');
         }
       }
 
       // Get 2FA status
       const status = await db.get2FAStatus(ctx.user.id);
       if (!status?.twoFactorEnabled || !status.twoFactorSecret) {
-        throw new TRPCError({ code: 'BAD_REQUEST', message: '2FA chưa được bật' });
+        throw appError('BAD_REQUEST', 'TWO_FACTOR_NOT_SET_UP', undefined, '2FA chưa được bật');
       }
 
-      // Verify token
-      const valid = speakeasy.totp.verify({
+      // Verify token — và TIÊU MÃ (Pha 6 Task 6).
+      const valid = (await verifyTotpOnce({
+        userId: ctx.user.id,
         secret: status.twoFactorSecret,
-        encoding: 'base32',
         token: input.token,
-        window: 1,
-      });
+      })).hopLe;
 
       if (!valid) {
-        throw new TRPCError({ code: 'BAD_REQUEST', message: 'Mã xác thực không hợp lệ' });
+        throw appError('BAD_REQUEST', 'INVALID_VALUE', { field: 'twoFactorCode' }, 'Mã xác thực không hợp lệ');
       }
 
       // Disable 2FA
       await db.disable2FA(ctx.user.id);
 
+      /**
+       * ★★★ Pha 8 Task 5 — **LƯỢT DỌN BỊ THIẾU Ở ĐÚNG BÊN NÀY CỦA CẶP SONG SONG.**
+       *
+       * ⚠⚠⚠ Trước bản vá, tuyến này tắt 2FA rồi **DỪNG**, trong khi tuyến SONG SONG
+       * `twoFactor.disable` (`server/routers/twoFactorRouter.ts:238-241`) còn `DELETE backup_codes`.
+       * Hệ quả đo được: **10 mã dự phòng vẫn SỐNG** sau khi người dùng "đã tắt 2FA" — và mã dự
+       * phòng là **vật liệu xác minh ĐỘC LẬP với hạt giống TOTP**, nên chúng vẫn tiêu được ở
+       * `twoFactor.verify` và ở `POST /api/auth/verify-2fa`, **kể cả sau khi người dùng bật lại 2FA
+       * bằng một hạt giống HOÀN TOÀN MỚI**. Một tờ giấy mã dự phòng bị lộ không có cách nào thu hồi
+       * qua đường này.
+       * ⚠ `disable2FA()` **KHÔNG** làm hộ: nó chỉ chạm `users.two_factor_enabled` và
+       *   `user_secrets.twoFactorSecret` (xem `server/db/auth.ts`).
+       */
+      await db.xoaMoiMaDuPhong(ctx.user.id);
+
       return { success: true };
     }),
 
   // Get 2FA status
+  /**
+   * ★★★ Pha 7 / review TOÀN NHÁNH **C-2** — **CỔNG KIỂU trên `user_secrets`.**
+   *
+   * ⚠⚠⚠ Kiểu trả về được **KHAI TƯỜNG MINH** `KhongMangBiMat<…>`, và đó là cả điểm: đây **chính
+   * là** thủ tục mà đột biến của lượt review dùng để chứng minh lỗ —
+   *     `twoFactorSecret: status?.twoFactorSecret ?? null`  ⇒ `npm run check` SẠCH, 58/58 XANH.
+   * Sau khi có phần giao `{ [K in ServerOnlyUserSecretField]?: never }`, đúng dòng ấy là một **LỖI
+   * BIÊN DỊCH**. Cổng ấy **SUY RA** từ `USER_SECRETS_FIELD_VISIBILITY`, nên một cột bí mật **thứ
+   * BA** thêm vào `user_secrets` ngày mai tự vào cổng — không cần ai nhớ sửa file này.
+   * ⚠ `hasSecret` là ô **SUY RA** (`!!`), không phải cột được mở — đúng khuôn `mustChangePassword`
+   *   của QĐ-1: client biết *"đã có hạt giống chưa"* mà **không** cần thấy hạt giống.
+   */
   get2FAStatus: protectedProcedure
-    .query(async ({ ctx }) => {
+    .query(async ({ ctx }): Promise<KhongMangBiMat<{ enabled: boolean; hasSecret: boolean }>> => {
       const status = await db.get2FAStatus(ctx.user.id);
       return {
         enabled: status?.twoFactorEnabled || false,
@@ -333,22 +521,10 @@ export const userRouter = router({
       };
     }),
 
-  // Generate backup codes
-  generateBackupCodes: protectedProcedure
-    .mutation(async ({ ctx }) => {
-      const crypto = await import('crypto');
-      
-      // Generate 10 backup codes
-      const codes: string[] = [];
-      for (let i = 0; i < 10; i++) {
-        const code = crypto.randomBytes(4).toString('hex').toUpperCase();
-        codes.push(code);
-      }
-      
-      await db.generateBackupCodes(ctx.user.id, codes);
-      
-      return { codes };
-    }),
+  // ★★★ Pha 7 Task 8a — `user.generateBackupCodes` ĐÃ BỊ XOÁ (đường ghi PLAINTEXT, và **không**
+  // đòi TOTP, nên nó còn là đường vòng qua phép step-up của `twoFactor.regenerateBackupCodes`).
+  // Đường ghi mã dự phòng **duy nhất** nay là `twoFactor.enable` / `twoFactor.regenerateBackupCodes`.
+  // Client: `client/src/components/TwoFactorSetup.tsx`.
 
   // Get backup codes status
   getBackupCodesStatus: protectedProcedure
@@ -357,10 +533,28 @@ export const userRouter = router({
       return { unusedCount: count };
     }),
 
-  // Get user sessions
+  /**
+   * ★★★ Pha 8 Task 5 — **CẶP SONG SONG THỨ TƯ, và bên này là bên HỞ.**
+   *
+   * ⚠⚠⚠ Trước bản vá, thân thủ tục là `return db.getUserSessions(ctx.user.id);` — một `db.select()`
+   * **không phép chiếu** ⇒ **NGUYÊN HÀNG** `user_sessions` rời máy chủ, **kể cả `sessionToken`**.
+   * Cột ấy là **khoá phiên**: `db.getSessionByToken` tra bằng nó, `_core/sdk.ts` đọc cookie ra nó để
+   * dựng danh tính. Ai đọc được response này **là** người dùng ấy, **trên mọi thiết bị** — không
+   * chỉ thiết bị đang mở. Và thủ tục đang được client gọi thật
+   * (`client/src/pages/SessionManagement.tsx:63`).
+   *
+   * ⚠ Tuyến **SONG SONG** `session.list` (`server/routers/sessionRouter.ts:22`) chiếu **tường minh**
+   *   và **không** trả token — tức luật đã đúng ở một bên và sai ở bên kia, **không ai canh**. Đây
+   *   chính là hình dạng mà lượng từ §4 của `server/routers/hoTuyenSongSong.test.ts` sinh ra để bắt:
+   *   ***∀ đơn vị xử lý trả kết quả một phép đọc THÔ trên bảng tài nguyên xác thực ⇒ VI PHẠM.***
+   *
+   * ⚠⚠ Bản vá đi qua **chủ duy nhất** `_core/publicSession.ts` (allow-list + cổng KIỂU), không phải
+   *    một `delete row.sessionToken` tại chỗ: một cột nhạy cảm **thứ hai** thêm vào bảng ngày mai
+   *    phải **không ra được**, chứ không phải chờ ai đó nhớ xoá nó.
+   */
   getSessions: protectedProcedure
-    .query(async ({ ctx }) => {
-      return db.getUserSessions(ctx.user.id);
+    .query(async ({ ctx }): Promise<PublicSession[]> => {
+      return toPublicSessions(await db.getUserSessions(ctx.user.id), ctx.sessionToken);
     }),
 
   // Revoke a session
@@ -409,7 +603,7 @@ export const userAssignmentRouter = router({
       for (const user of users) {
         const corporates = await db.getUserCorporateAssignments(user.id);
         const factories = await db.getUserFactoryAssignments(user.id);
-        result.push({ user, corporates, factories });
+        result.push({ user: toPublicUser(user), corporates, factories });
       }
       return result;
     }),

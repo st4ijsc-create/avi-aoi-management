@@ -15,6 +15,17 @@ import { useState, useEffect } from "react";
 import { AlertCircle, Clock, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
+/**
+ * ★★★ 2026-08-23 · UX LÔ 1 (A2/B3) — dấu máy-đọc-được server đặt trong `preview.warnings`:
+ *   • `[CMD_*] …` (`timMaChan`)       — lời chặn-CHẮC-CHẮN: `execute` chạy LẠI đúng phán quyết đã
+ *     chặn ở preview, nên cú bấm Xác nhận KHÔNG THỂ thành công ⇒ khoá nút + nói "gõ lại".
+ *   • `[DANH_SACH_LENH]` (`docDanhSachLenh`) — bảng 11 lệnh đầy đủ, GẤP sau nút "Xem cả danh sách"
+ *     (trước đây nó là bức tường ~2.300 ký tự đập vào mặt người dùng mỗi lượt gõ sai).
+ * MỘT nguồn ở `shared/` — server ghi dấu, client đọc dấu bằng đúng cặp hàm này; xem docblock ở đó.
+ * ⚠ Cảnh báo THÔNG TIN (tệp sạch/ghi đè/hạn giờ…) KHÔNG mang dấu ⇒ `timMaChan` trả `null` ⇒ nút
+ *   giữ nguyên — khoá nhầm vì một cảnh báo bình thường là đổi lỗi UX này lấy lỗi UX khác.
+ */
+import { docDanhSachLenh, timMaChan } from "@shared/aiCodingTuChoi";
 
 // ─── Shared types ──────────────────────────────────────────────────────────────
 // GĐ2 — pending write-action proposed by the AI Copilot (HITL confirm).
@@ -40,8 +51,61 @@ export interface PendingAction {
   expiresAt: string;
 }
 
-/** Confirm-card UI state for the current pending write. */
-export type ActionState = "pending" | "executed" | "cancelled" | "denied" | "expired";
+/**
+ * Confirm-card UI state for the current pending write.
+ *
+ * ★★★ Rà soát cuối Đợt B (2026-08-29) — HAI TRẠNG THÁI CHUNG CUỘC MỚI, và chúng KHÔNG phải trang
+ * trí. `confirmAction` nay trả `status` là `"bi_tu_choi_ghi"` (execute() đã chạy, TỪ CHỐI ghi, 0
+ * byte — drizzle/0341) hoặc `"ap_mot_phan"` (lô ghi hỏng giữa chừng, tệp 1..k−1 ĐÃ trên đĩa —
+ * drizzle/0342). Trước bản vá này cả hai rơi vào nhánh fall-through `"pending"` ở ba nơi tiêu thụ ⇒
+ * thẻ KHÔNG BAO GIỜ tới trạng thái chung cục, nút Xác nhận ở lại SỐNG (`state !== "pending"`), mỗi
+ * lượt bấm lại chỉ chạm nhánh cache-return idempotent rồi lại "pending" — **kẹt vĩnh viễn**, và
+ * `if (res.ok) toast.success(...)` vẽ một lượt TỪ CHỐI thành thông báo XANH.
+ */
+export type ActionState =
+  | "pending"
+  | "executed"
+  | "cancelled"
+  | "denied"
+  | "expired"
+  | "bi_tu_choi_ghi"
+  | "ap_mot_phan";
+
+/**
+ * ★★★ MỘT bản đồ `ConfirmResult.status` → `ActionState`, dùng chung cho MỌI nơi hiện thẻ duyệt
+ * (bong bóng chat · /ai-chat · thẻ hành động một-chạm). Tồn tại vì ba nơi đó từng chép tay CÙNG
+ * một chuỗi `? :` và cả ba đã trôi khỏi hợp đồng máy chủ theo đúng một kiểu khi `status` rộng ra —
+ * "hai bản sao của một vị từ là cách chắc chắn nhất để chúng trôi khỏi nhau" (bài học đã trả giá
+ * ở `shared/aiCodingLoop.daBiTuChoiGhi`).
+ *
+ * ⚠ Trả `undefined` cho những `status` KHÔNG phải kết cục của một lượt thực thi (`not_found`,
+ * `invalid`, hay hình dạng lạ) thay vì đoán bừa một nhãn: gọi `not_found` là "không có quyền" chỉ
+ * là đổi một lời khai sai lấy một lời khai sai khác. Chân thẻ có nhánh riêng cho ca đó — nó hiện
+ * NGUYÊN VĂN `message` của máy chủ.
+ */
+export function trangThaiTheTuConfirm(status: string | undefined): ActionState | undefined {
+  switch (status) {
+    case "executed":
+      return "executed";
+    case "bi_tu_choi_ghi":
+      return "bi_tu_choi_ghi";
+    case "ap_mot_phan":
+      return "ap_mot_phan";
+    case "denied":
+      return "denied";
+    case "expired":
+      return "expired";
+    case "cancelled":
+      return "cancelled";
+    default:
+      return undefined;
+  }
+}
+
+/** `true` ⇔ lượt confirm KẾT THÚC bằng byte thật vào đĩa — điều kiện DUY NHẤT được báo "thành công". */
+export function laKetCucThanhCong(state: ActionState | undefined): boolean {
+  return state === "executed";
+}
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 // Render a primitive value for the before/after cells (handles null/undefined).
@@ -81,6 +145,7 @@ export function ConfirmActionCard({
   onConfirm,
   onCancel,
   t,
+  title,
 }: {
   action: PendingAction;
   // Accept undefined too (the bubble's ChatMessage.actionState is optional) — the
@@ -92,10 +157,49 @@ export function ConfirmActionCard({
   onConfirm: () => void;
   onCancel: () => void;
   t: (key: string, fallback: string) => string;
+  /**
+   * ★★★ 2026-08-25 · ĐỢT 4 UX — tiêu đề GHI ĐÈ theo LOẠI thao tác. Mặc định (undefined) giữ NGUYÊN
+   * "Xác nhận thao tác ghi" nên mọi consumer cũ (bubble /ai-chat, bước ghi tác nhân) không đổi một
+   * pixel. `/ai-coding-workspace` truyền "Xác nhận CHẠY lệnh" cho `run_command`: gọi một lượt chạy
+   * test là "thao tác GHI" là sai NGHĨA — người dùng đọc "ghi" rồi hoảng cho một lệnh chỉ đọc/chạy.
+   */
+  title?: string;
 }) {
   const ttl = useTtlCountdown(action.expiresAt, state === "pending");
   // Prefer the richer human-readable summary when present.
   const summaryLine = action.preview.humanSummary || action.summary;
+  // (A2) mã chặn-chắc-chắn từ preview — `null` với mọi thẻ bình thường (đường ghi/diff không đổi).
+  const maChan = timMaChan(action.preview.warnings);
+  // (B3) tách cảnh báo thường khỏi bảng-danh-sách-lệnh (nếu server đính kèm).
+  const canhBaoThuong = action.preview.warnings.filter((w) => docDanhSachLenh(w) === null);
+  const danhSachLenh = action.preview.warnings.map(docDanhSachLenh).find((d) => d !== null) ?? null;
+
+  /**
+   * ★★★ Chân thẻ — MỘT câu, tính một lần. Trước đây là bốn biểu thức `&&` cạnh nhau, nên một
+   * `state` không nằm trong bốn cái đó vẽ ra một chân thẻ **RỖNG**: một lượt từ chối hiện thành SỰ
+   * IM LẶNG. Nhánh cuối bắt đúng ca ấy bằng cách hiện NGUYÊN VĂN `message` của máy chủ — nói thứ
+   * mình biết, thay vì không nói gì.
+   * ⚠ `message` (do máy chủ soạn, đã đúng ngữ cảnh từng ca) LUÔN thắng câu mặc định — cùng quy ước
+   *   với nhánh `denied` có từ trước (xem `confirmActionCardChan.unit.test.ts` §4).
+   */
+  const cauKetCuc =
+    state === "executed"
+      ? t("copilot.executed", "Đã thực thi.")
+      : state === "cancelled"
+        ? t("copilot.cancelled", "Đã hủy.")
+        : state === "denied"
+          ? (message ?? t("copilot.denied", "Không có quyền."))
+          : state === "expired"
+            ? t("copilot.expired", "Đã hết hạn.")
+            : state === "bi_tu_choi_ghi"
+              ? (message ?? t("copilot.writeRejected", "Bị từ chối ghi — KHÔNG byte nào vào đĩa."))
+              : state === "ap_mot_phan"
+                ? (message ??
+                  t(
+                    "copilot.writePartial",
+                    "Áp MỘT PHẦN — một số tệp ĐÃ được ghi xuống đĩa, phần còn lại thì chưa. Kiểm bằng git diff trước khi làm tiếp.",
+                  ))
+                : (message ?? null);
 
   return (
     <div className="rounded-lg border-2 border-amber-300 dark:border-amber-800 bg-amber-50 dark:bg-amber-950/30 p-3 space-y-2.5 text-[13px]">
@@ -103,7 +207,7 @@ export function ConfirmActionCard({
       <div className="flex items-center justify-between gap-2">
         <div className="flex items-center gap-1.5 font-semibold text-amber-800 dark:text-amber-300 text-[13px]">
           <AlertCircle className="size-4 shrink-0" />
-          {t("copilot.confirmTitle", "Xác nhận thao tác ghi")}
+          {title ?? t("copilot.confirmTitle", "Xác nhận thao tác ghi")}
         </div>
         {state === "pending" && (
           <span
@@ -155,26 +259,44 @@ export function ConfirmActionCard({
             {t("copilot.warningsTitle", "Lưu ý quan trọng")}
           </div>
           <ul className="space-y-0.5 text-[13px] text-red-700 dark:text-red-300">
-            {action.preview.warnings.map((w, i) => (
+            {canhBaoThuong.map((w, i) => (
               <li key={i} className="flex items-start gap-1.5">
                 <span aria-hidden className="mt-px shrink-0">⚠️</span>
-                <span className="leading-snug">{w}</span>
+                <span className="leading-snug whitespace-pre-wrap break-words">{w}</span>
               </li>
             ))}
           </ul>
+          {/* ★ (B3) bảng đầy đủ GẤP LẠI — `<details>` thuần HTML, không thêm state/JS nào. */}
+          {danhSachLenh && (
+            <details data-danh-sach-lenh className="mt-1 text-[12px] text-red-700 dark:text-red-300">
+              <summary className="cursor-pointer font-medium underline-offset-2 hover:underline">
+                {t("copilot.showAllCmds", "Xem cả danh sách lệnh được phép")} ({danhSachLenh.length})
+              </summary>
+              <ul className="mt-1 space-y-0.5 pl-1">
+                {danhSachLenh.map((d, i) => (
+                  <li key={i} className="leading-snug">{d}</li>
+                ))}
+              </ul>
+            </details>
+          )}
         </div>
       )}
 
       {/* Larger Confirm / Cancel buttons (min 44px height) */}
       {state === "pending" ? (
         <div className="flex items-center gap-2 pt-0.5">
+          {/* ★ (A2) `maChan` ⇒ KHOÁ nút: thẻ này tự khai lệnh sẽ bị chặn — chìa nút Xác nhận cho nó
+              là mời một cú bấm không bao giờ thành công. Nhãn đổi thành việc-phải-làm ("gõ lại"). */}
           <Button
             className="h-11 min-h-[44px] flex-1 text-[14px] font-semibold"
-            disabled={busy || ttl.expired}
+            disabled={busy || ttl.expired || maChan !== null}
+            data-ma-chan={maChan ?? undefined}
             onClick={onConfirm}
           >
             {busy ? <Loader2 className="size-4 animate-spin mr-1.5" /> : null}
-            {t("copilot.confirm", "Xác nhận")}
+            {maChan !== null
+              ? t("copilot.blockedRetype", "Lệnh không hợp lệ — gõ lại")
+              : t("copilot.confirm", "Xác nhận")}
           </Button>
           <Button
             variant="outline"
@@ -189,13 +311,17 @@ export function ConfirmActionCard({
         <div
           className={cn(
             "text-[13px] font-medium",
-            state === "executed" ? "text-green-600 dark:text-green-400" : "text-muted-foreground",
+            state === "executed"
+              ? "text-green-600 dark:text-green-400"
+              : // Áp MỘT PHẦN không phải lỗi cũng không phải thành công — cây làm việc đang NỬA VỜI
+                // và người dùng phải làm gì đó. Tô hổ phách (cùng bảng màu cảnh báo của thẻ) thay vì
+                // xám "thông tin", để nó không lướt qua mắt.
+                state === "ap_mot_phan"
+                ? "text-amber-700 dark:text-amber-400"
+                : "text-muted-foreground",
           )}
         >
-          {state === "executed" && t("copilot.executed", "Đã thực thi.")}
-          {state === "cancelled" && t("copilot.cancelled", "Đã hủy.")}
-          {state === "denied" && (message ?? t("copilot.denied", "Không có quyền."))}
-          {state === "expired" && t("copilot.expired", "Đã hết hạn.")}
+          {cauKetCuc}
         </div>
       )}
     </div>

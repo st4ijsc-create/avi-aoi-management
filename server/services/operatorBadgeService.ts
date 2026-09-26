@@ -22,6 +22,7 @@
  * a per-inspection lookup storm nor ever reject a submission over badge state.
  */
 import { eq } from "drizzle-orm";
+import { DbUnavailableError } from "../_core/dbErrors";
 import { getDb } from "../db/connection";
 import { operatorBadges, type OperatorBadge } from "../../drizzle/schema";
 
@@ -48,7 +49,7 @@ async function loadBadgeRows(badgeCode: string): Promise<OperatorBadge[]> {
   const cached = rowCache.get(badgeCode);
   if (cached && now - cached.at < CACHE_TTL_MS) return cached.rows;
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  if (!db) throw new DbUnavailableError();
   const rows = await db.select().from(operatorBadges).where(eq(operatorBadges.badgeCode, badgeCode));
   rowCache.set(badgeCode, { rows, at: now });
   return rows;
@@ -151,7 +152,7 @@ export interface IssueBadgeInput {
  */
 export async function issueBadge(input: IssueBadgeInput): Promise<number> {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  if (!db) throw new DbUnavailableError();
   const code = input.badgeCode.trim();
   if (!code) throw new Error("badgeCode must be non-empty");
   const cutover = input.validFrom ?? new Date();
@@ -192,7 +193,7 @@ export async function issueBadge(input: IssueBadgeInput): Promise<number> {
 /** Revoke a badge row (isActive=false; validTo defaults to now). */
 export async function revokeBadge(id: number, validTo?: Date): Promise<OperatorBadge | null> {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  if (!db) throw new DbUnavailableError();
   const [row] = await db
     .update(operatorBadges)
     .set({ isActive: false, validTo: validTo ?? new Date(), updatedAt: new Date() })
@@ -208,7 +209,7 @@ export async function updateBadge(
   patch: Partial<Omit<IssueBadgeInput, "badgeCode">>,
 ): Promise<OperatorBadge | null> {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  if (!db) throw new DbUnavailableError();
   const set: Record<string, unknown> = { updatedAt: new Date() };
   if (patch.userId !== undefined) set.userId = patch.userId;
   if (patch.displayName !== undefined) set.displayName = patch.displayName;

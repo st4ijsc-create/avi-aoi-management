@@ -3,6 +3,7 @@ import { AlertTriangle, RefreshCw } from "lucide-react";
 import { Alert, AlertTitle, AlertDescription } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { EmptyState } from "@/components/EmptyState";
+import { mapTrpcError } from "@/lib/trpcErrors";
 import {
   TableSkeleton,
   ListSkeleton,
@@ -54,7 +55,7 @@ export type AsyncSkeletonPreset =
  */
 function getErrorMessage(error: unknown): string {
   if (error == null) return "";
-  if (error instanceof Error) return error.message;
+  if (error instanceof Error) return mapTrpcError(error);
   if (
     typeof error === "object" &&
     "message" in error &&

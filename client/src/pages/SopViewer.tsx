@@ -13,6 +13,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useLocation, useRoute } from "wouter";
 import { toast } from "sonner";
+import { toastTrpcError } from "@/lib/trpcErrors";
 import { CheckCircle2, ChevronLeft, ChevronRight, ClipboardList, Loader2, Play, ScanLine } from "lucide-react";
 
 import { trpc } from "@/lib/trpc";
@@ -84,7 +85,7 @@ export default function SopViewer() {
 
   const startM = trpc.sop.startExecution.useMutation({
     onSuccess: (row) => { setExecutionId(row.id); setStepIndex(0); toast.success(t("sop.view.started", "Đã bắt đầu SOP")); },
-    onError: (e) => toast.error(e.message),
+    onError: (e) => toastTrpcError(e),
   });
   const confirmM = trpc.sop.confirmStep.useMutation({
     onSuccess: (r) => {
@@ -102,7 +103,7 @@ export default function SopViewer() {
       if (stepIndex < steps.length - 1) setStepIndex((i) => i + 1);
       toast.success(t("sop.view.stepConfirmed", "Đã xác nhận bước"));
     },
-    onError: (e) => toast.error(e.message),
+    onError: (e) => toastTrpcError(e),
   });
   const finishM = trpc.sop.finishExecution.useMutation({
     onSuccess: (r) => {
@@ -114,7 +115,7 @@ export default function SopViewer() {
       toast.success(t("sop.view.finished", "Đã hoàn tất SOP"));
       void utils.sop.execution.invalidate();
     },
-    onError: (e) => toast.error(e.message),
+    onError: (e) => toastTrpcError(e),
   });
 
   const currentStep = steps[stepIndex] ?? null;

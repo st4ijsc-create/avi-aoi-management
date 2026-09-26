@@ -3,6 +3,7 @@
  */
 import { z } from "zod";
 import { TRPCError } from "@trpc/server";
+import { appError } from "../_core/appError";
 import { protectedProcedure, router } from "../_core/trpc";
 import { getDb } from "../db";
 import { 
@@ -118,7 +119,7 @@ export const annotationComparisonRouter = router({
     }))
     .mutation(async ({ ctx, input }) => {
       const db = await getDb();
-      if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Database not available" });
+      if (!db) throw appError("INTERNAL_SERVER_ERROR", "DB_UNAVAILABLE", undefined, "Database not available");
 
       // Verify all inspections exist
       const inspections = await db
@@ -127,10 +128,7 @@ export const annotationComparisonRouter = router({
         .where(inArray(productInspections.id, input.inspectionIds));
       
       if (inspections.length !== input.inspectionIds.length) {
-        throw new TRPCError({
-          code: "NOT_FOUND",
-          message: "Một hoặc nhiều inspection không tồn tại",
-        });
+        throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "inspection" }, "Một hoặc nhiều inspection không tồn tại");
       }
 
       const [result] = await db.insert(annotationComparisonSessions).values({
@@ -204,7 +202,7 @@ export const annotationComparisonRouter = router({
     .input(z.object({ id: z.number() }))
     .query(async ({ input }) => {
       const db = await getDb();
-      if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Database not available" });
+      if (!db) throw appError("INTERNAL_SERVER_ERROR", "DB_UNAVAILABLE", undefined, "Database not available");
 
       const [session] = await db
         .select()
@@ -212,10 +210,7 @@ export const annotationComparisonRouter = router({
         .where(eq(annotationComparisonSessions.id, input.id));
 
       if (!session) {
-        throw new TRPCError({
-          code: "NOT_FOUND",
-          message: "Session không tồn tại",
-        });
+        throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "comparisonSession" }, "Session không tồn tại");
       }
 
       // Get inspection details
@@ -238,7 +233,7 @@ export const annotationComparisonRouter = router({
     }))
     .query(async ({ input }) => {
       const db = await getDb();
-      if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Database not available" });
+      if (!db) throw appError("INTERNAL_SERVER_ERROR", "DB_UNAVAILABLE", undefined, "Database not available");
 
       const [results1, results2] = await Promise.all([
         db.select().from(measurementResults)
@@ -300,7 +295,7 @@ export const annotationComparisonRouter = router({
     }))
     .mutation(async ({ input }) => {
       const db = await getDb();
-      if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Database not available" });
+      if (!db) throw appError("INTERNAL_SERVER_ERROR", "DB_UNAVAILABLE", undefined, "Database not available");
 
       const [session] = await db
         .select()
@@ -308,10 +303,7 @@ export const annotationComparisonRouter = router({
         .where(eq(annotationComparisonSessions.id, input.sessionId));
 
       if (!session) {
-        throw new TRPCError({
-          code: "NOT_FOUND",
-          message: "Session không tồn tại",
-        });
+        throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "comparisonSession" }, "Session không tồn tại");
       }
 
       // Get all measurement results for inspections
@@ -428,7 +420,7 @@ export const annotationComparisonRouter = router({
     }))
     .mutation(async ({ ctx, input }) => {
       const db = await getDb();
-      if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Database not available" });
+      if (!db) throw appError("INTERNAL_SERVER_ERROR", "DB_UNAVAILABLE", undefined, "Database not available");
 
       // Get inspection details
       const [inspection1, inspection2] = await Promise.all([
@@ -455,10 +447,7 @@ export const annotationComparisonRouter = router({
       ]);
 
       if (!inspection1 || !inspection2) {
-        throw new TRPCError({
-          code: "NOT_FOUND",
-          message: "Inspection không tồn tại",
-        });
+        throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "inspection" }, "Inspection không tồn tại");
       }
 
       // Get measurement results

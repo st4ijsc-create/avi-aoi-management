@@ -1,0 +1,35 @@
+{
+  "corpus": "scripts/ai-eval/cau-tinh-nang-vs-song-giu-lai.jsonl",
+  "label": "v7c-tc-TQ06",
+  "tom": {
+    "trong": {
+      "n": 1,
+      "dung": 1,
+      "tuChoi": 0,
+      "sai": 0
+    },
+    "ngoai": {
+      "n": 0,
+      "tuChoi": 0,
+      "traLoi": 0
+    },
+    "loi": 0
+  },
+  "ra": [
+    {
+      "id": "TQ06",
+      "ngoai": false,
+      "kq": "dung",
+      "ms": 23588,
+      "nguon": [
+        "knowledge/domain/howto-lot-management.md",
+        "knowledge/domain/howto-lot-management.md",
+        "knowledge/workflows/change-recipe-line-start.playbook.yaml",
+        "knowledge/workflows/change-recipe-line-start.playbook.yaml",
+        "howto-lot-management.md"
+      ],
+      "traLoi": "(1) Tóm tắt\nMỗi line chỉ được chạy **1 lô** tại một thời điểm. Để chuyển sang lô khác, bắt buộc phải tạm dừng hoặc kết thúc lô hiện tại trước.\n\n(2) Các bước thực hiện\n1. **Kiểm tra trạng thái**: Tại giao diện line, mở `Menu › Sản xuất › AOI Inspection › chọn line`. Nếu line đang `idle`, hệ thống sẽ hiển thị danh sách các lô có trạng thái `planned` tương ứng với line đó [2].\n2. **Bắt đầu lô**: Chọn một lô `planned` và bấm **\"Bắt đầu\"**. Hệ thống sẽ cập nhật trạng thái lô thành `running` và thiết lập `startedAt = now()` [2].\n3. **Theo dõi quá trình**: Trong suốt quá trình chạy, mọi sản phẩm được quét (scan) đều sẽ tự động gắn `lotId` của lô đang hoạt động [2].\n4. **Kết thúc hoặc chuyển đổi**: Khi đạt `plannedQty` hoặc cần chuyển lô, bấm **\"Kết\n\nAPI liên quan: `/api/lots/:orderCode`\n\nVí dụ:\n```\nplanned → running → (paused ⇄ running) → completed\n                                       ↘ cancelled\n```",
+      "loi": null
+    }
+  ]
+}

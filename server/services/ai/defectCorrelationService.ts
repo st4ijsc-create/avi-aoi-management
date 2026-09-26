@@ -226,6 +226,96 @@ export function logisticFit1D(
   };
 }
 
+// ─── Multiple-testing correction ──────────────────────────────────────────────
+
+/**
+ * ★★★ VÌ SAO MODULE NÀY PHẢI HIỆU CHỈNH ĐA PHÉP THỬ — VÀ VÌ SAO LÀ **BENJAMINI-HOCHBERG**.
+ *
+ * ══════════════════════════════════════════════════════════════════════════════
+ * LỚP LỖI ĐANG VÁ (không crash, không cảnh báo — người ta đi sửa NHẦM MÁY)
+ * ══════════════════════════════════════════════════════════════════════════════
+ * `rankFactors` chạy `correlateFactor` trên **MỌI** khoá `${stepType}.${metricKey}`
+ * số hoá được của mọi công đoạn trước — thực tế hàng chục yếu tố mỗi lượt. Mỗi yếu tố
+ * là **một phép thử giả thuyết riêng**. Với ngưỡng cố định `p < 0.05` áp cho từng
+ * phép thử độc lập, kỳ vọng số dương-tính-giả là `m × 0.05`: **m = 20 ⇒ ~1 yếu tố
+ * SAI được gắn `significant` MỖI LƯỢT**, kèm một p-value trông rất thuyết phục.
+ * Con số ấy đi thẳng vào prompt của `aiRcaCopilot.buildEvidenceDigest` (nhãn
+ * `SIGNIFICANT`) và vào khuyến nghị của `aiPredictiveAlertService` ⇒ AI trình bày
+ * một nguyên nhân giả **như nguyên nhân thật, có số liệu hậu thuẫn**.
+ *
+ * ══════════════════════════════════════════════════════════════════════════════
+ * VÌ SAO **FDR (Benjamini-Hochberg)** CHỨ KHÔNG PHẢI FWER (Bonferroni/Holm)
+ * ══════════════════════════════════════════════════════════════════════════════
+ * ① **Đầu ra của module này là một DANH SÁCH NGẮN ĐỂ ĐI ĐIỀU TRA, không phải một
+ *    kết luận cuối.** Người kỹ sư nhận top-k rồi tự đi đo lại. Tỷ lệ lỗi đúng ngữ
+ *    nghĩa ở đây là *"trong những yếu tố tôi nêu, bao nhiêu phần là rác?"* — đó
+ *    ĐÚNG là định nghĩa FDR. FWER trả lời một câu khác: *"xác suất có DÙ CHỈ MỘT
+ *    cái sai trong toàn lượt"* — quá đắt cho một bước sàng lọc.
+ * ② **Chi phí hai loại lỗi KHÔNG đối xứng.** Bỏ sót nguyên nhân thật = tiếp tục
+ *    sản xuất phế phẩm (đắt, kéo dài). Một dương-tính-giả = một lượt điều tra phí
+ *    (rẻ, và người kỹ sư loại nó ra ngay ở bước đo lại).
+ * ③ **Bonferroni GIẾT nguyên nhân thật THỨ HAI trở đi.**
+ *    ⚠ ĐÍNH CHÍNH MỘT ĐIỀU TÔI ĐÃ VIẾT SAI Ở BẢN NHÁP ĐẦU, do một ca test đỏ chỉ
+ *    ra: với **p NHỎ NHẤT** của họ, BH và Bonferroni **ĐỒNG NHẤT** — BH cho
+ *    `adj(1) = m/1 · p(1)`, tức đúng ngưỡng `p(1) < α/m` của Bonferroni. Vậy nếu
+ *    lượt phân tích chỉ có MỘT nguyên nhân thật, chọn BH hay Bonferroni **không
+ *    khác gì nhau**, và mọi ca "BH mạnh hơn" dựng trên một-nguyên-nhân đều là ca
+ *    GIẢ (nó xanh vì lý do khác).
+ *    Lợi thế thật của BH nằm ở khám phá **thứ 2, 3, …**: `adj(k) = m/k · p(k)` nới
+ *    dần theo hạng, trong khi Bonferroni giữ nguyên `α/m` cho mọi hạng. Nhà máy
+ *    hiếm khi hỏng vì đúng một tham số — nhiệt và thời gian của một trạm hàn cùng
+ *    trôi là chuyện thường ⇒ đây đúng là ca cần sức mạnh.
+ *    Đây không phải lập luận suông: ca `"Bonferroni GIẾT nguyên nhân thật thứ hai…"`
+ *    trong bộ test **ĐO** trên dữ liệu tất định (m=32): nguyên nhân #2 có
+ *    p thô = 2,572e-3 > α/m = 1,563e-3 (**Bonferroni bỏ sót**) nhưng
+ *    p hiệu chỉnh BH = 4,115e-2 < 0,05 (**BH giữ**), trong khi 0/30 yếu tố nhiễu
+ *    lọt qua BH — và 2/30 trong số đó ĐANG được ngưỡng thô cũ gắn cờ.
+ * ④ **BH hợp lệ dưới phụ thuộc dương (PRDS).** Các yếu tố ở đây phụ thuộc dương
+ *    theo cấu tạo: cùng đơn vị (`serialNumber`), cùng dây chuyền, nhiều metric của
+ *    CÙNG một `stepType` (nhiệt/áp/thời gian của một trạm hàn). Benjamini-Hochberg
+ *    (1995) được chứng minh kiểm soát FDR dưới đúng lớp phụ thuộc này ⇒ KHÔNG cần
+ *    hạ xuống Benjamini-Yekutieli (vốn nhân thêm hệ số điều hoà, bảo thủ như
+ *    Bonferroni ở m nhỏ và sẽ tái tạo lại chính vấn đề ③).
+ *
+ * ⚠ **KHÔNG PHẢI "ĐỔI NGƯỠNG".** p **thô** (`pValue`) và p **đã hiệu chỉnh**
+ *   (`pValueAdjusted`) cùng có mặt trong dữ liệu trả về, kèm `familySize` (hiệu
+ *   chỉnh trên BAO NHIÊU phép thử) và `correctionMethod` (hiệu chỉnh BẰNG GÌ), để
+ *   tầng trên và người đọc biết cái nào là cái nào và kiểm lại được.
+ * ⚠ **Họ phép thử = MỌI yếu tố THỰC SỰ ĐƯỢC THỬ, không phải top-k.** Hiệu chỉnh
+ *   SAU khi cắt top-k là một lưới giả: m nhỏ đi ⇒ ngưỡng lỏng ra ⇒ đúng những
+ *   dương-tính-giả lọt vào top-k lại được cấp giấy chứng nhận. Bất biến này được
+ *   ghim bằng ca `familySize` riêng.
+ */
+
+/** Ngưỡng ý nghĩa mặc định, dùng CHUNG cho mọi điểm quyết định trong module. */
+export const DEFAULT_ALPHA = 0.05;
+
+/** Phương pháp hiệu chỉnh đã áp cho `pValueAdjusted`. */
+export type PCorrectionMethod = "none" | "benjamini_hochberg";
+
+/**
+ * Benjamini-Hochberg step-up FDR adjustment — thuần, không phụ thuộc.
+ * Trả p đã hiệu chỉnh THEO ĐÚNG THỨ TỰ đầu vào.
+ *
+ * adj(i) = min_{j ≥ i} ( m/j · p(j) ) trên dãy p ĐÃ SẮP TĂNG, rồi kẹp về [0,1].
+ * Phép `min` chạy dồn từ phải sang trái là điều kiện **đơn điệu**: nếu thiếu nó,
+ * một p thô nhỏ hơn có thể nhận p hiệu chỉnh LỚN hơn của một p thô lớn hơn — vô
+ * nghĩa, và phá luôn thứ tự xếp hạng ở tầng trên.
+ */
+export function benjaminiHochberg(pValues: number[]): number[] {
+  const m = pValues.length;
+  if (m === 0) return [];
+  const order = pValues.map((p, i) => ({ p, i })).sort((a, b) => a.p - b.p);
+  const adj = new Array<number>(m);
+  let running = Number.POSITIVE_INFINITY;
+  for (let k = m - 1; k >= 0; k--) {
+    const rank = k + 1; // 1-based
+    running = Math.min(running, (m / rank) * order[k].p);
+    adj[order[k].i] = Math.max(0, Math.min(1, running));
+  }
+  return adj;
+}
+
 // ─── Per-factor correlation ───────────────────────────────────────────────────
 
 export type CorrelationDirection = "higher_more_defects" | "lower_more_defects" | "none";
@@ -235,15 +325,67 @@ export interface FactorCorrelation {
   n: number;
   /** point-biserial r (-1..1). */
   pearson: number;
+  /**
+   * p-value **THÔ** (chưa hiệu chỉnh) của RIÊNG yếu tố này, hai phía, Student-t.
+   * ⚠ KHÔNG dùng ô này để quyết định ý nghĩa thống kê khi đã thử nhiều yếu tố —
+   *   đó chính là lỗi mà `pValueAdjusted` sinh ra để vá. Giữ lại vì nó là số ĐO
+   *   ĐƯỢC của phép thử đơn lẻ, và vì người đọc cần thấy cả hai để kiểm lại.
+   */
   pValue: number;
+  /**
+   * p-value **SAU HIỆU CHỈNH ĐA PHÉP THỬ** trên `familySize` phép thử của lượt
+   * phân tích này. Đây là con số `significant` thực sự dựa vào.
+   * Với `familySize === 1` thì BH cho ra đúng `pValue` (không có gì để hiệu chỉnh).
+   */
+  pValueAdjusted: number;
+  /** Hiệu chỉnh BẰNG GÌ. */
+  correctionMethod: PCorrectionMethod;
+  /** Hiệu chỉnh trên BAO NHIÊU phép thử (họ phép thử THỰC SỰ đã chạy). */
+  familySize: number;
+  /** Ngưỡng đã dùng cho quyết định `significant`. */
+  alpha: number;
   /** logistic log-odds per unit of the parameter (original scale). */
   logisticCoef: number;
   direction: CorrelationDirection;
+  /** ⚠ `pValueAdjusted < alpha` — **KHÔNG** phải `pValue < alpha`. */
   significant: boolean;
   /** mean parameter value among defective (y=1) units. */
   meanDefect: number;
   /** mean parameter value among OK (y=0) units. */
   meanOk: number;
+}
+
+/**
+ * Áp hiệu chỉnh đa phép thử cho MỘT họ phép thử và gắn quyết định `significant`.
+ * ĐÂY LÀ NƠI DUY NHẤT trong module đặt `significant` — `correlateFactor` và
+ * `rankFactors` đều đi qua hàm này, nên không có đường thoát thứ hai nào còn dùng
+ * ngưỡng thô.
+ *
+ * Đọc `pValue` (THÔ) làm đầu vào, nên gọi lại trên một danh sách đã hiệu chỉnh là
+ * **bình thường và bất biến** (`rankFactors` hiệu chỉnh lại trên họ đầy đủ những
+ * bản ghi mà `correlateFactor` đã hiệu chỉnh với họ-một-phần-tử).
+ */
+export function applyMultipleTestingCorrection(
+  correlations: FactorCorrelation[],
+  opts: { alpha?: number; method?: PCorrectionMethod } = {},
+): FactorCorrelation[] {
+  const alpha = opts.alpha ?? DEFAULT_ALPHA;
+  const method = opts.method ?? "benjamini_hochberg";
+  const familySize = correlations.length;
+  const raw = correlations.map((c) => c.pValue);
+  const adjusted = method === "benjamini_hochberg" ? benjaminiHochberg(raw) : raw.slice();
+  return correlations.map((c, i) => {
+    // ⚠ Quyết định dựa trên ĐÚNG con số được BÁO CÁO (đã làm tròn), không phải trên
+    // một giá trị nội bộ khác. Nếu không, người đọc có thể thấy `p_adj = 0.050` bên
+    // cạnh nhãn `significant` — thước và kết luận nói hai chuyện khác nhau.
+    const padj = Number(adjusted[i].toExponential(3));
+    return { ...c, pValueAdjusted: padj, correctionMethod: method, familySize, alpha, significant: padj < alpha };
+  });
+}
+
+/** True ⇔ có ít nhất một yếu tố còn ý nghĩa SAU hiệu chỉnh. */
+export function hasSignificantFactor(factors: FactorCorrelation[]): boolean {
+  return factors.some((f) => f.significant);
 }
 
 /**
@@ -258,7 +400,7 @@ export function correlateFactor(
   opts: { minSamples?: number; alpha?: number } = {},
 ): FactorCorrelation | null {
   const minSamples = opts.minSamples ?? 8;
-  const alpha = opts.alpha ?? 0.05;
+  const alpha = opts.alpha ?? DEFAULT_ALPHA;
   const n = Math.min(values.length, outcomes.length);
   if (n < minSamples) return null;
 
@@ -281,32 +423,53 @@ export function correlateFactor(
   const direction: CorrelationDirection =
     Math.abs(signSource) < 1e-9 ? "none" : signSource > 0 ? "higher_more_defects" : "lower_more_defects";
 
-  return {
-    factor,
-    n,
-    pearson: Number(r.toFixed(4)),
-    pValue: Number(p.toExponential(3)),
-    logisticCoef: Number(fit.slope.toFixed(6)),
-    direction,
-    significant: p < alpha,
-    meanDefect: Number(mean(defectVals).toFixed(4)),
-    meanOk: Number(mean(okVals).toFixed(4)),
-  };
+  // ⚠ MỘT yếu tố ⇒ họ phép thử có ĐÚNG MỘT phần tử ⇒ BH cho ra chính p thô. Vẫn đi
+  // qua `applyMultipleTestingCorrection` thay vì gán tay `significant: p < alpha`, để
+  // repo chỉ có MỘT nơi đặt `significant` (không có đường thoát thứ hai để quên vá).
+  const [corrected] = applyMultipleTestingCorrection(
+    [
+      {
+        factor,
+        n,
+        pearson: Number(r.toFixed(4)),
+        pValue: Number(p.toExponential(3)),
+        pValueAdjusted: Number(p.toExponential(3)),
+        correctionMethod: "benjamini_hochberg",
+        familySize: 1,
+        alpha,
+        logisticCoef: Number(fit.slope.toFixed(6)),
+        direction,
+        significant: false,
+        meanDefect: Number(mean(defectVals).toFixed(4)),
+        meanOk: Number(mean(okVals).toFixed(4)),
+      },
+    ],
+    { alpha },
+  );
+  return corrected;
 }
 
 /**
- * Correlate every factor, then rank: SIGNIFICANT factors first (by |pearson|
- * desc), then the rest by |pearson| desc. Returns top-k.
+ * Correlate every factor, hiệu chỉnh đa phép thử trên **TOÀN BỘ họ đã thử**, rồi
+ * rank: yếu tố còn SIGNIFICANT sau hiệu chỉnh lên trước (theo |pearson| giảm dần),
+ * phần còn lại theo |pearson| giảm dần. Trả top-k.
+ *
+ * ⚠⚠ THỨ TỰ KHÔNG ĐẢO ĐƯỢC: hiệu chỉnh TRƯỚC, cắt top-k SAU. Cắt trước rồi hiệu
+ * chỉnh sẽ tính BH trên `m = topK` thay vì `m = số phép thử thật`, tức nới lỏng
+ * ngưỡng đúng cho những yếu tố đã lọt vào top-k — chính là dương-tính-giả mà lượt
+ * hiệu chỉnh này sinh ra để loại. `familySize` trong mỗi bản ghi là bằng chứng
+ * kiểm lại được cho việc này (ca test riêng ghim nó).
  */
 export function rankFactors(
   factors: Array<{ factor: string; values: number[]; outcomes: number[] }>,
   opts: { topK?: number; minSamples?: number; alpha?: number } = {},
 ): FactorCorrelation[] {
-  const out: FactorCorrelation[] = [];
+  const tested: FactorCorrelation[] = [];
   for (const f of factors) {
     const c = correlateFactor(f.factor, f.values, f.outcomes, { minSamples: opts.minSamples, alpha: opts.alpha });
-    if (c) out.push(c);
+    if (c) tested.push(c);
   }
+  const out = applyMultipleTestingCorrection(tested, { alpha: opts.alpha });
   out.sort((a, b) => {
     if (a.significant !== b.significant) return a.significant ? -1 : 1;
     return Math.abs(b.pearson) - Math.abs(a.pearson);
@@ -345,8 +508,20 @@ function cacheTtlMs(): number {
   return Number.isFinite(n) && n > 0 ? n : 6 * 60 * 60 * 1000; // 6h
 }
 
+/**
+ * ⚠ `v=` LÀ PHIÊN BẢN **HÌNH DẠNG BẢN GHI `factors`**, KHÔNG PHẢI TRANG TRÍ.
+ * `factors` được cất vào `defect_correlation_cache` dưới dạng `jsonb` và đọc lại
+ * NGUYÊN VĂN thành `FactorCorrelation[]`. Hàng cache ghi TRƯỚC lượt hiệu chỉnh này
+ * KHÔNG có `pValueAdjusted`/`familySize`/`correctionMethod` ⇒ đọc lại sẽ cho một
+ * bản ghi mà `significant` là quyết định THÔ cũ, còn `pValueAdjusted` là `undefined`
+ * và in ra prompt RCA thành chữ "undefined". Bơm `v=2` vào chữ ký khiến mọi hàng cũ
+ * KHÔNG BAO GIỜ khớp nữa (chúng tự hết hạn theo TTL) — rẻ hơn và chắc hơn mọi phép
+ * suy đoán hình dạng lúc đọc. Đổi hình dạng `FactorCorrelation` lần sau ⇒ tăng số này.
+ */
+const CACHE_SHAPE_VERSION = 2;
+
 function signatureOf(input: { machineId?: number; defectType?: string; windowDays: number }): string {
-  return `m=${input.machineId ?? "*"};d=${(input.defectType ?? "*").slice(0, 120)};w=${input.windowDays}`;
+  return `m=${input.machineId ?? "*"};d=${(input.defectType ?? "*").slice(0, 120)};w=${input.windowDays};v=${CACHE_SHAPE_VERSION}`;
 }
 
 /**
@@ -570,6 +745,12 @@ export async function correlateStationDefect(input: CorrelateInput): Promise<Cor
     const notes: string[] = [];
     if (factorInputs.length === 0) notes.push("no_upstream_numeric_params");
     if (defectUnits === 0) notes.push("no_defects_in_window");
+    // ★ TỪ CHỐI TRUNG THỰC, DẠNG CÓ CẤU TRÚC: "đã thử m yếu tố, KHÔNG cái nào sống sót
+    // qua hiệu chỉnh". Trước đây trạng thái này không phân biệt được với "không có yếu
+    // tố nào để thử" — cả hai đều chỉ là `factors` không có cờ `significant`, im lặng.
+    if (factorInputs.length > 0 && !hasSignificantFactor(factors)) {
+      notes.push(`no_factor_significant_after_${factors[0]?.correctionMethod ?? "benjamini_hochberg"}`);
+    }
 
     const result: CorrelateResult = {
       ok: true,

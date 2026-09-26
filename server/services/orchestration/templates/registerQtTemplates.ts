@@ -97,6 +97,8 @@ export async function registerQtTemplates(): Promise<RegisterQtTemplatesResult> 
           });
         }
       } catch (err) {
+        // data-raw-ok: kết quả ĐĂNG KÝ MẪU lúc khởi động. Ai đọc nó là người đang dựng
+        // hệ, và họ cần biết template nào hỏng vì lý do kỹ thuật gì.
         base.failed.push({ ref: def.ref, message: err instanceof Error ? err.message : String(err) });
       }
     }

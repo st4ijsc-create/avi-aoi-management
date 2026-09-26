@@ -22,6 +22,7 @@
  */
 import { z } from "zod";
 import { TRPCError } from "@trpc/server";
+import { appError } from "../_core/appError";
 import { eq, desc } from "drizzle-orm";
 import { router, moduleProcedure } from "../_core/trpc";
 // Doc 38 Đợt Q — license-gate this router behind MOD_OT_CONTROL (moduleGate = pass-through
@@ -66,33 +67,33 @@ import {
 
 async function db() {
   const d = await getDb();
-  if (!d) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Database not connected" });
+  if (!d) throw appError("INTERNAL_SERVER_ERROR", "DB_UNAVAILABLE", undefined, "Database not connected");
   return d;
 }
 
 function requireSafetyFlag() {
   if (!safetyAuditEnabled()) {
-    throw new TRPCError({ code: "CONFLICT", message: "Safety audit disabled (set SAFETY_AUDIT_ENABLED=true) — ADVISORY only, not safety-rated" });
+    throw appError("CONFLICT", "FEATURE_DISABLED", { feature: "safetyAudit" }, "Safety audit disabled (set SAFETY_AUDIT_ENABLED=true) — ADVISORY only, not safety-rated");
   }
 }
 function requireWorkforceFlag() {
   if (!workforceEnabled()) {
-    throw new TRPCError({ code: "CONFLICT", message: "Workforce disabled (set WORKFORCE_ENABLED=true)" });
+    throw appError("CONFLICT", "FEATURE_DISABLED", { feature: "workforce" }, "Workforce disabled (set WORKFORCE_ENABLED=true)");
   }
 }
 function requireSafetyZoneFlag() {
   if (!safetyZoneSwEnabled()) {
-    throw new TRPCError({ code: "CONFLICT", message: "Safety zones disabled (set SAFETY_ZONE_SW_ENABLED=true) — ADVISORY only, not SIL" });
+    throw appError("CONFLICT", "FEATURE_DISABLED", { feature: "safetyZones" }, "Safety zones disabled (set SAFETY_ZONE_SW_ENABLED=true) — ADVISORY only, not SIL");
   }
 }
 function requireSafetyVisionFlag() {
   if (!safetyVisionEnabled()) {
-    throw new TRPCError({ code: "CONFLICT", message: "Safety vision disabled (set SAFETY_VISION_ENABLED=true) — ADVISORY only, not SIL; needs a real camera + calibration + exported ONNX model" });
+    throw appError("CONFLICT", "FEATURE_DISABLED", { feature: "safetyVision" }, "Safety vision disabled (set SAFETY_VISION_ENABLED=true) — ADVISORY only, not SIL; needs a real camera + calibration + exported ONNX model");
   }
 }
 function requireSafetyPlcFlag() {
   if (!safetyPlcAdapterEnabled()) {
-    throw new TRPCError({ code: "CONFLICT", message: "Safety-PLC adapter disabled (set SAFETY_PLC_ADAPTER_ENABLED=true) — READ-ONLY monitoring; the certified Safety PLC performs the rated stop itself" });
+    throw appError("CONFLICT", "FEATURE_DISABLED", { feature: "safetyPlcAdapter" }, "Safety-PLC adapter disabled (set SAFETY_PLC_ADAPTER_ENABLED=true) — READ-ONLY monitoring; the certified Safety PLC performs the rated stop itself");
   }
 }
 
@@ -221,7 +222,7 @@ export const safetyRouter = router({
     .mutation(async ({ input, ctx }) => {
       requireSafetyFlag();
       const row = await auditEvent(input.eventId, ctx.user.id);
-      if (!row) throw new TRPCError({ code: "NOT_FOUND", message: `Safety event ${input.eventId} not found` });
+      if (!row) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "safetyEvent" }, `Safety event ${input.eventId} not found`);
       return row;
     }),
 
@@ -355,7 +356,7 @@ export const safetyRouter = router({
     .mutation(async ({ input }) => {
       requireSafetyZoneFlag();
       const r = await createZone(input);
-      if (!r.ok && r.enabled) throw new TRPCError({ code: "BAD_REQUEST", message: r.message ?? "invalid safety zone" });
+      if (!r.ok && r.enabled) throw appError("BAD_REQUEST", "OPERATION_FAILED", { operation: "createSafetyZone" }, r.message ?? "invalid safety zone");
       return r;
     }),
 
@@ -382,7 +383,7 @@ export const safetyRouter = router({
     .mutation(async ({ input }) => {
       requireSafetyZoneFlag();
       const r = await updateZone(input);
-      if (!r.ok && r.enabled) throw new TRPCError({ code: r.message?.includes("not found") ? "NOT_FOUND" : "BAD_REQUEST", message: r.message ?? "update failed" });
+      if (!r.ok && r.enabled) throw appError(r.message?.includes("not found") ? "NOT_FOUND" : "BAD_REQUEST", "OPERATION_FAILED", { operation: "updateSafetyZone" }, r.message ?? "update failed");
       return r;
     }),
 
@@ -453,7 +454,7 @@ export const safetyRouter = router({
           | [number, number, number, number, number, number, number, number, number]
           | undefined,
       });
-      if (!r.ok && r.enabled) throw new TRPCError({ code: r.message?.includes("not found") ? "NOT_FOUND" : "BAD_REQUEST", message: r.message ?? "calibration upsert failed" });
+      if (!r.ok && r.enabled) throw appError(r.message?.includes("not found") ? "NOT_FOUND" : "BAD_REQUEST", "OPERATION_FAILED", { operation: "upsertSafetyCalibration" }, r.message ?? "calibration upsert failed");
       return r;
     }),
 
@@ -549,7 +550,7 @@ export const safetyRouter = router({
     .mutation(async ({ input }) => {
       requireSafetyPlcFlag();
       const r = await upsertPlcConfig(input);
-      if (!r.ok && r.enabled) throw new TRPCError({ code: r.message?.includes("not found") ? "NOT_FOUND" : "BAD_REQUEST", message: r.message ?? "safety-PLC config upsert failed" });
+      if (!r.ok && r.enabled) throw appError(r.message?.includes("not found") ? "NOT_FOUND" : "BAD_REQUEST", "OPERATION_FAILED", { operation: "upsertSafetyPlcConfig" }, r.message ?? "safety-PLC config upsert failed");
       return r;
     }),
 
@@ -613,7 +614,7 @@ export const safetyRouter = router({
     .mutation(async ({ input }) => {
       requireWorkforceFlag();
       const row = await signalHandshake(input.sessionId, input.state);
-      if (!row) throw new TRPCError({ code: "NOT_FOUND", message: `Collaboration ${input.sessionId} not found` });
+      if (!row) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "collaboration" }, `Collaboration ${input.sessionId} not found`);
       return row;
     }),
 
@@ -631,7 +632,7 @@ export const safetyRouter = router({
     .mutation(async ({ input, ctx }) => {
       requireWorkforceFlag();
       const row = await abortCollaboration(input.sessionId, input.reason, ctx.user.id);
-      if (!row) throw new TRPCError({ code: "NOT_FOUND", message: `Collaboration ${input.sessionId} not found` });
+      if (!row) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "collaboration" }, `Collaboration ${input.sessionId} not found`);
       return row;
     }),
 
@@ -693,7 +694,7 @@ export const safetyRouter = router({
       requireWorkforceFlag();
       const r = await assignOperator(input);
       if (!r.ok && r.conflict) {
-        throw new TRPCError({ code: "CONFLICT", message: `Double-booking: ${r.conflict.reason} (assignment #${r.conflict.assignmentId})` });
+        throw appError("CONFLICT", "OPERATION_FAILED", { operation: "assignSafetyOperator" }, `Double-booking: ${r.conflict.reason} (assignment #${r.conflict.assignmentId})`);
       }
       return r;
     }),
@@ -722,7 +723,7 @@ export const safetyRouter = router({
       const { assignmentId, ...rest } = input;
       const r = await reassignOperator(assignmentId, rest);
       if (!r.ok && r.conflict) {
-        throw new TRPCError({ code: "CONFLICT", message: `Double-booking: ${r.conflict.reason} (assignment #${r.conflict.assignmentId})` });
+        throw appError("CONFLICT", "OPERATION_FAILED", { operation: "reassignSafetyOperator" }, `Double-booking: ${r.conflict.reason} (assignment #${r.conflict.assignmentId})`);
       }
       return r;
     }),
@@ -733,7 +734,7 @@ export const safetyRouter = router({
     .mutation(async ({ input, ctx }) => {
       requireWorkforceFlag();
       const row = await confirmAssignment(input.assignmentId, ctx.user.id);
-      if (!row) throw new TRPCError({ code: "NOT_FOUND", message: `Assignment ${input.assignmentId} not found` });
+      if (!row) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "workforceAssignment" }, `Assignment ${input.assignmentId} not found`);
       return row;
     }),
 
@@ -743,7 +744,7 @@ export const safetyRouter = router({
     .mutation(async ({ input, ctx }) => {
       requireWorkforceFlag();
       const row = await closeAssignment(input.assignmentId, ctx.user.id);
-      if (!row) throw new TRPCError({ code: "NOT_FOUND", message: `Assignment ${input.assignmentId} not found` });
+      if (!row) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "workforceAssignment" }, `Assignment ${input.assignmentId} not found`);
       return row;
     }),
 });

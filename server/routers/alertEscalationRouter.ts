@@ -14,6 +14,7 @@
 
 import { z } from "zod";
 import { TRPCError } from "@trpc/server";
+import { appError } from "../_core/appError";
 import { protectedProcedure, supervisorProcedure, router } from "../_core/trpc";
 import { getDb } from "../db";
 import { alertEscalationRules, mqttConnectionAlerts, mqttAlertHistory, users } from "../../drizzle/schema";
@@ -21,7 +22,7 @@ import { desc, eq, isNotNull } from "drizzle-orm";
 
 async function requireDb() {
   const db = await getDb();
-  if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Database not available" });
+  if (!db) throw appError("INTERNAL_SERVER_ERROR", "DB_UNAVAILABLE", undefined, "Database not available");
   return db;
 }
 
@@ -50,7 +51,7 @@ export const alertEscalationRouter = router({
     .query(async ({ input }) => {
       const db = await requireDb();
       const rows = await db.select().from(alertEscalationRules).where(eq(alertEscalationRules.id, input.id)).limit(1);
-      if (rows.length === 0) throw new TRPCError({ code: "NOT_FOUND", message: "Escalation rule not found" });
+      if (rows.length === 0) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "escalationRule" }, "Escalation rule not found");
       return rows[0];
     }),
 
@@ -91,7 +92,7 @@ export const alertEscalationRouter = router({
         .set(patch)
         .where(eq(alertEscalationRules.id, id))
         .returning({ id: alertEscalationRules.id });
-      if (updated.length === 0) throw new TRPCError({ code: "NOT_FOUND", message: "Escalation rule not found" });
+      if (updated.length === 0) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "escalationRule" }, "Escalation rule not found");
       return { success: true };
     }),
 
@@ -102,7 +103,7 @@ export const alertEscalationRouter = router({
       const deleted = await db.delete(alertEscalationRules)
         .where(eq(alertEscalationRules.id, input.id))
         .returning({ id: alertEscalationRules.id });
-      if (deleted.length === 0) throw new TRPCError({ code: "NOT_FOUND", message: "Escalation rule not found" });
+      if (deleted.length === 0) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "escalationRule" }, "Escalation rule not found");
       return { success: true };
     }),
 
@@ -114,7 +115,7 @@ export const alertEscalationRouter = router({
         .set({ enabled: input.enabled, updatedAt: new Date() })
         .where(eq(alertEscalationRules.id, input.id))
         .returning({ id: alertEscalationRules.id });
-      if (updated.length === 0) throw new TRPCError({ code: "NOT_FOUND", message: "Escalation rule not found" });
+      if (updated.length === 0) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "escalationRule" }, "Escalation rule not found");
       return { success: true };
     }),
 

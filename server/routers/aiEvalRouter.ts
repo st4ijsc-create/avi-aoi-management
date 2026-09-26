@@ -13,14 +13,20 @@
  */
 
 import { z } from "zod";
-import { router, protectedProcedure, adminProcedure } from "../_core/trpc";
+import { router, moduleProcedure, moduleGate, adminProcedure as adminProcedureBase } from "../_core/trpc";
+// ★ Cổng giấy phép MOD_AI — chỉ THÊM chiều giấy phép, RBAC/vai/2FA giữ nguyên từng ký tự.
+//   Không-brick + fail-safe ở `_core/moduleGate.ts`; lượng từ canh ở `congGiayPhepAiCensus.test.ts`.
+const protectedProcedure = moduleProcedure("MOD_AI");
+const adminProcedure = adminProcedureBase.use(moduleGate("MOD_AI"));
 import { TRPCError } from "@trpc/server";
+import { appError } from "../_core/appError";
 import { buildDataset } from "../services/aiDatasetBuilder";
 import { evaluateModelVersion, compareBeforeAfter, evaluateQualityGate } from "../services/aiEvalHarness";
 import { scanInferenceForUncertainty, scanCommitteeDisagreement } from "../services/aiActiveLearningAuto";
 import { createTrainingJob, checkAutoRetrainTrigger } from "../services/aiTrainingPipeline";
 import { listModelCards, generateModelCard, seedPortfolioCards } from "../services/aiModelCard";
 import { checkConfidenceDrift, getDriftMetrics } from "../services/aiDriftMonitor";
+import { bootstrapFirstClassifier, InsufficientLabeledSamplesError } from "../services/aiBootstrapClassifier";
 
 export const aiEvalRouter = router({
   // ─── Dataset materialization ────────────────────────────────
@@ -130,7 +136,7 @@ export const aiEvalRouter = router({
     .input(z.object({ modelId: z.number() }))
     .mutation(async ({ input }) => {
       const card = await generateModelCard(input.modelId);
-      if (!card) throw new TRPCError({ code: "NOT_FOUND", message: `Model ${input.modelId} not found` });
+      if (!card) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "aiModel" }, `Model ${input.modelId} not found`);
       return card;
     }),
 
@@ -171,7 +177,7 @@ export const aiEvalRouter = router({
     }))
     .mutation(async ({ input, ctx }) => {
       if (!input.datasetId) {
-        throw new TRPCError({ code: "BAD_REQUEST", message: "datasetId is required (create + build a dataset first)" });
+        throw appError("BAD_REQUEST", "FIELD_REQUIRED", { field: "datasetId" }, "datasetId is required (create + build a dataset first)");
       }
       return createTrainingJob({
         name: `pipeline-${input.modelId}-${input.targetVersion}`,
@@ -187,5 +193,40 @@ export const aiEvalRouter = router({
         gateEpsilon: input.gateEpsilon ?? 0,
         createdBy: (ctx as any).user?.id,
       });
+    }),
+
+  // ─── doc 69 Wave 6 (F1), servability fixed in the F1 review — bootstrap the
+  // FIRST defect classifier ─────
+  // Admin-gated, end-to-end: honesty check (>= minSamplesPerClass REAL labeled
+  // embedding samples) → train a DINOv2 embedding-head (the ONE classifier
+  // shape aiInferenceEngine.runInference actually dispatches) → eval on the
+  // locked TEST split → quality gate → register a model_versions row →
+  // activate ONLY on a gate PASS, via the W0-2 gated activateModelVersionManual.
+  // Never fabricates a model — see services/aiBootstrapClassifier.ts.
+  bootstrapFirstClassifier: adminProcedure
+    .input(z.object({
+      baseModelId: z.number(),
+      classifierCode: z.string().min(1).max(100),
+      classifierName: z.string().min(1).max(255).optional(),
+      classLabels: z.array(z.string().min(1)).min(2).max(100),
+      productModelId: z.number().optional(),
+      targetVersion: z.string().min(1).optional(),
+      minSamplesPerClass: z.number().min(1).max(1000).optional(),
+      datasetId: z.number().optional(),
+      gateEpsilon: z.number().min(0).max(1).optional(),
+    }))
+    .mutation(async ({ input, ctx }) => {
+      try {
+        return await bootstrapFirstClassifier({
+          ...input,
+          actorUserId: ctx.user.id,
+          createdBy: ctx.user.id,
+        });
+      } catch (err) {
+        if (err instanceof InsufficientLabeledSamplesError) {
+          throw appError("BAD_REQUEST", "OPERATION_FAILED", { operation: "bootstrapFirstClassifier" }, err.message);
+        }
+        throw err;
+      }
     }),
 });

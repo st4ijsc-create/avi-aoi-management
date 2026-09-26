@@ -51,6 +51,9 @@ export function HistoryInfiniteScroll({ filters, machines }: HistoryInfiniteScro
   const { t } = useTranslation();
   const utils = trpc.useUtils();
   const [filterKey, setFilterKey] = useState(0);
+  // Lý do phạm vi rỗng do MÁY CHỦ khai (null = phạm vi bình thường). Giữ ở state vì phép phân
+  // trang con trỏ trả từng trang một, còn lý do thì đi kèm MỌI trang.
+  const [scopeEmptyReason, setScopeEmptyReason] = useState<string | null>(null);
 
   // Create fetch function for cursor-based pagination
   const fetchInspections = useCallback(async (cursor?: string) => {
@@ -67,6 +70,8 @@ export function HistoryInfiniteScroll({ filters, machines }: HistoryInfiniteScro
       factoryCode: filters.factoryCode || undefined,
     });
     
+    setScopeEmptyReason(result.scopeEmptyReason ?? null);
+
     return {
       data: result.data as Inspection[],
       nextCursor: result.nextCursor,
@@ -183,11 +188,30 @@ export function HistoryInfiniteScroll({ filters, machines }: HistoryInfiniteScro
     </div>
   );
 
+  /**
+   * ⚠ 2026-08-17 — TRẠNG THÁI RỖNG TRUNG THỰC.
+   * 0 dòng của một tài khoản CHƯA ĐƯỢC GÁN NHÀ MÁY không được trình bày giống hệt 0 dòng của
+   * một bộ lọc không khớp. Câu "không có kết quả — thử đổi bộ lọc" gửi người dùng đi chỉnh
+   * bộ lọc suốt buổi, trong khi KHÔNG bộ lọc nào cứu được: phạm vi của họ rỗng. Máy chủ nói
+   * ra lý do ở `scopeEmptyReason`; chỗ này chỉ việc đọc và không được im lặng.
+   */
   const renderEmpty = () => (
     <div className="py-12 text-center">
-      <HistoryIcon className="h-12 w-12 mx-auto text-muted-foreground/50 mb-4" />
-      <p className="text-muted-foreground">{t('common.noResults')}</p>
-      <p className="text-sm text-muted-foreground mt-1">{t('common.tryChangeFilters')}</p>
+      {scopeEmptyReason === 'no_factory_assignment' ? (
+        <>
+          <AlertTriangle className="h-12 w-12 mx-auto text-warning mb-4" />
+          <p className="font-medium">{t('common.scopeEmpty.title')}</p>
+          <p className="text-sm text-muted-foreground mt-2 max-w-md mx-auto">
+            {t('common.scopeEmpty.hint')}
+          </p>
+        </>
+      ) : (
+        <>
+          <HistoryIcon className="h-12 w-12 mx-auto text-muted-foreground/50 mb-4" />
+          <p className="text-muted-foreground">{t('common.noResults')}</p>
+          <p className="text-sm text-muted-foreground mt-1">{t('common.tryChangeFilters')}</p>
+        </>
+      )}
     </div>
   );
 
@@ -198,7 +222,12 @@ export function HistoryInfiniteScroll({ filters, machines }: HistoryInfiniteScro
           <div>
             <CardTitle className="text-lg">{t('history.searchResults')}</CardTitle>
             <CardDescription>
-              {total ? t('history.foundResults', { count: total }) : t('common.noData')}
+              {total
+                ? t('history.foundResults', { count: total })
+                : scopeEmptyReason === 'no_factory_assignment'
+                  // Không được nói "không có dữ liệu" khi sự thật là phạm vi rỗng.
+                  ? t('common.scopeEmpty.badge')
+                  : t('common.noData')}
             </CardDescription>
           </div>
           <Button

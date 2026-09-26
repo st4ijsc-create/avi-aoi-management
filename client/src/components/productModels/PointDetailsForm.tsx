@@ -3,12 +3,25 @@
  * PURE RELOCATION: the page still owns all state/queries/mutations/handlers and threads
  * them 1:1 as props (names unchanged); `t`/`user` are re-derived from hooks locally, as in
  * the sibling components/products/* dialogs. Identical JSX/handlers — no behavior change.
+ *
+ * Khối C Task 14 (BG-107) — props đọc/ghi 17 cột giới hạn dạng chuỗi (`pointLowerLimit`,
+ * `setPointLowerLimit`, …) TRƯỚC đây khai tay từng tên (khớp NGUYÊN VĂN `shared/pointLimitSpec.ts`
+ * — đúng lớp lỗi `pointLimitSpecCensus.test.ts` §3 bắt). Tên field giờ suy TỪ `LIMIT_FIELDS`
+ * qua khoá mẫu (template literal) `point${Capitalize<F>}`/`setPoint${Capitalize<F>}` — khớp
+ * ĐÚNG quy ước đặt tên state đã dùng ở đây từ trước (đối chiếu tay, không đoán). `criteria`
+ * (kiểu khác — mảng, không phải chuỗi) giữ khai tay `pointCriteria`/`setPointCriteria` như cũ.
+ * ⚠ KHÔNG cắt bớt field nào form đang hiện — Task 14 chỉ đổi NGUỒN tên cột (từ gõ tay sang
+ * spec), KHÔNG đổi TẬP cột form hiển thị (form v1.x cố ý hiện đủ 18, kể cả các trường 3D
+ * chưa dùng nhiều — quyết định "hiện bao nhiêu cột" là của tab Cây dạy, không phải form này).
  */
 
 import type { Dispatch, SetStateAction, ChangeEvent } from "react";
 import { type RouterOutputs, mapCatalogCategoryToLegacyType, type MaterialCondition, type MeasurementPoint, type ToleranceMode } from "./types";
+import { LIMIT_FIELDS } from "@shared/pointLimitSpec";
 import { useAuth } from "@/_core/hooks/useAuth";
 import AIThresholdSuggestButton from "@/components/AIThresholdSuggestButton";
+import { PendingSuggestionCard } from "./PendingSuggestionCard";
+import { resolveAppliedThreshold } from "./resolveAppliedThreshold";
 import { ValidationMessage } from "@/components/ValidationMessage";
 import { PointCriteriaEditor, type PointCriteriaItem } from "@/components/products/PointCriteriaEditor";
 import { PointLightingEditor } from "@/components/products/PointLightingEditor";
@@ -26,7 +39,24 @@ import { AlertTriangle, Copy, Image as ImageIcon, MousePointer, Save, Trash2, X 
 import { useTranslation } from "react-i18next";
 import { toast } from "sonner";
 
-interface PointDetailsFormProps {
+/**
+ * 17/18 field giới hạn DẠNG CHUỖI của `LIMIT_FIELDS` (loại "criteria" — kiểu
+ * khác, khai tay riêng bên dưới). Suy nghiêm ngặt bằng `Exclude` — nếu spec
+ * thêm/bớt field, khoá mẫu dưới đây tự khớp, không cần sửa tay.
+ */
+type TenFieldGioiHanChuoi = Exclude<(typeof LIMIT_FIELDS)[number], "criteria">;
+
+/** Props ĐỌC — `pointLowerLimit`, `pointHeightMin`, … suy từ tên field spec. */
+type CacGiaTriGioiHanChuoi = {
+  [F in TenFieldGioiHanChuoi as `point${Capitalize<F>}`]: string;
+};
+
+/** Props GHI — `setPointLowerLimit`, `setPointHeightMin`, … cùng khuôn. */
+type CacSetterGioiHanChuoi = {
+  [F in TenFieldGioiHanChuoi as `setPoint${Capitalize<F>}`]: Dispatch<SetStateAction<string>>;
+};
+
+interface PointDetailsFormProps extends CacGiaTriGioiHanChuoi, CacSetterGioiHanChuoi {
   confirmDeletePoint: () => void;
   handleDuplicatePoint: () => void;
   handlePointImageUpload: (e: ChangeEvent<HTMLInputElement>) => void;
@@ -37,52 +67,35 @@ interface PointDetailsFormProps {
   measurementInstruments: RouterOutputs["measurementInstrument"]["list"] | undefined;
   measurementPoints: MeasurementPoint[];
   measurementTypeCatalog: RouterOutputs["measurementTypeCatalog"]["list"] | undefined;
-  pointAreaMax: string;
-  pointAreaMin: string;
   pointAreaNominal: string;
   pointAreaUnit: string;
   pointCode: string;
   pointComponentCode: string;
-  pointCoplanarityMax: string;
   pointCriteria: PointCriteriaItem[];
   pointCropHeight: number;
   pointCropWidth: number;
   pointDatumRefsInput: string;
   pointDescription: string;
   pointFitClass: string;
-  pointHeightMax: string;
-  pointHeightMin: string;
   pointHeightNominal: string;
   pointHeightUnit: string;
-  pointLowerLimit: string;
   pointMaterialCondition: MaterialCondition | "";
   pointMeasurementTypeCode: string;
   pointName: string;
   pointNominalValue: string;
-  pointOffsetXMax: string;
-  pointOffsetYMax: string;
   pointPositionZ: string;
   pointPreferredInstrumentId: number | undefined;
   pointPreferredSamplingPlanId: number | undefined;
   pointProductViewId: number | undefined;
   pointRefDesignator: string;
   pointReferenceImageUrl: string;
-  pointThicknessMax: string;
-  pointThicknessMin: string;
-  pointTiltMax: string;
   pointTolMinus: string;
   pointTolPlus: string;
   pointToleranceMode: ToleranceMode;
   pointType: MeasurementPoint["measurementType"];
-  pointUnit: string;
-  pointUpperLimit: string;
   pointValidation: ReturnType<typeof useFormValidation<{ code: string; name: string; lowerLimit: string; upperLimit: string }>>;
-  pointVoidPctMax: string;
-  pointVolumeMax: string;
-  pointVolumeMin: string;
   pointVolumeNominal: string;
   pointVolumeUnit: string;
-  pointWarpageMax: string;
   pointWorkstationId: number | undefined;
   productViews: RouterOutputs["productView"]["listByProduct"] | undefined;
   refetchPoints: () => void;
@@ -90,51 +103,34 @@ interface PointDetailsFormProps {
   saveWillRequireApproval: boolean;
   selectedPointIndex: number | null;
   setImageSourceMode: Dispatch<SetStateAction<"upload" | "auto-crop">>;
-  setPointAreaMax: Dispatch<SetStateAction<string>>;
-  setPointAreaMin: Dispatch<SetStateAction<string>>;
   setPointAreaNominal: Dispatch<SetStateAction<string>>;
   setPointAreaUnit: Dispatch<SetStateAction<string>>;
   setPointCode: Dispatch<SetStateAction<string>>;
   setPointComponentCode: Dispatch<SetStateAction<string>>;
-  setPointCoplanarityMax: Dispatch<SetStateAction<string>>;
   setPointCriteria: Dispatch<SetStateAction<PointCriteriaItem[]>>;
   setPointCropHeight: Dispatch<SetStateAction<number>>;
   setPointCropWidth: Dispatch<SetStateAction<number>>;
   setPointDatumRefsInput: Dispatch<SetStateAction<string>>;
   setPointDescription: Dispatch<SetStateAction<string>>;
   setPointFitClass: Dispatch<SetStateAction<string>>;
-  setPointHeightMax: Dispatch<SetStateAction<string>>;
-  setPointHeightMin: Dispatch<SetStateAction<string>>;
   setPointHeightNominal: Dispatch<SetStateAction<string>>;
   setPointHeightUnit: Dispatch<SetStateAction<string>>;
-  setPointLowerLimit: Dispatch<SetStateAction<string>>;
   setPointMaterialCondition: Dispatch<SetStateAction<MaterialCondition | "">>;
   setPointMeasurementTypeCode: Dispatch<SetStateAction<string>>;
   setPointName: Dispatch<SetStateAction<string>>;
   setPointNominalValue: Dispatch<SetStateAction<string>>;
-  setPointOffsetXMax: Dispatch<SetStateAction<string>>;
-  setPointOffsetYMax: Dispatch<SetStateAction<string>>;
   setPointPositionZ: Dispatch<SetStateAction<string>>;
   setPointPreferredInstrumentId: Dispatch<SetStateAction<number | undefined>>;
   setPointPreferredSamplingPlanId: Dispatch<SetStateAction<number | undefined>>;
   setPointProductViewId: Dispatch<SetStateAction<number | undefined>>;
   setPointRefDesignator: Dispatch<SetStateAction<string>>;
   setPointReferenceImageUrl: Dispatch<SetStateAction<string>>;
-  setPointThicknessMax: Dispatch<SetStateAction<string>>;
-  setPointThicknessMin: Dispatch<SetStateAction<string>>;
-  setPointTiltMax: Dispatch<SetStateAction<string>>;
   setPointTolMinus: Dispatch<SetStateAction<string>>;
   setPointTolPlus: Dispatch<SetStateAction<string>>;
   setPointToleranceMode: Dispatch<SetStateAction<ToleranceMode>>;
   setPointType: Dispatch<SetStateAction<MeasurementPoint["measurementType"]>>;
-  setPointUnit: Dispatch<SetStateAction<string>>;
-  setPointUpperLimit: Dispatch<SetStateAction<string>>;
-  setPointVoidPctMax: Dispatch<SetStateAction<string>>;
-  setPointVolumeMax: Dispatch<SetStateAction<string>>;
-  setPointVolumeMin: Dispatch<SetStateAction<string>>;
   setPointVolumeNominal: Dispatch<SetStateAction<string>>;
   setPointVolumeUnit: Dispatch<SetStateAction<string>>;
-  setPointWarpageMax: Dispatch<SetStateAction<string>>;
   setPointWorkstationId: Dispatch<SetStateAction<number | undefined>>;
   showCoatingSection: boolean;
   showCoplanaritySection: boolean;
@@ -149,6 +145,17 @@ interface PointDetailsFormProps {
 export function PointDetailsForm(props: PointDetailsFormProps) {
   const { t } = useTranslation();
   const { user } = useAuth();
+  const utils = trpc.useUtils();
+
+  // PHỤ LỤC (Task 2 review của Task 1) — nộp-mới (AIThresholdSuggestButton.onSubmitted)
+  // và quyết-định (PendingSuggestionCard.onDecided) đều dẫn tới CÙNG một trạng thái
+  // cần làm mới: badge "N đề xuất AI" trên bảng điểm đo (countPendingByProduct) và
+  // danh sách đề xuất mà PendingSuggestionCard đọc (list). Gom vào MỘT hàm để hai
+  // đường không lệch nhau (đó chính là lỗ hổng mà bản review Task 1 phát hiện).
+  const refreshSuggestionState = () => {
+    void utils.thresholdApproval.countPendingByProduct.invalidate();
+    void utils.thresholdApproval.list.invalidate();
+  };
   const {
     confirmDeletePoint, handleDuplicatePoint, handlePointImageUpload, handleSavePoint,
     imageSourceMode, isEditMode, isSavingPoint, measurementInstruments,
@@ -181,6 +188,84 @@ export function PointDetailsForm(props: PointDetailsFormProps) {
     showPositionSection, showSolderSection, showToleranceSection, showXraySection,
     workstations,
   } = props;
+
+  // Vòng sửa 2 (F1, nghiệm thu live — CRITICAL) — sau khi một đề xuất được DUYỆT
+  // VÀ ÁP DỤNG, ô nhập LSL/USL/nominal của form vẫn giữ giá trị CŨ vì chúng là
+  // state cục bộ nạp lúc CHỌN điểm — chỉ refetch danh sách/đếm KHÔNG tự nạp lại
+  // ô nhập. Hậu quả đo được: DB đã ghi 0.24/0.36 nhưng form còn 0.25/0.35, và nút
+  // "Lưu" ngay cạnh sẽ ghi đè ngược đúng giá trị vừa duyệt — im lặng, không cảnh
+  // báo. Hàm này nạp lại ĐÚNG 3 ô ngưỡng từ giá trị server vừa ghi (không phải từ
+  // refetch — dùng thẳng kết quả mutation, không round-trip thêm) — CHỈ khi điểm
+  // vừa được áp dụng LÀ điểm đang mở (bảo vệ trường hợp người dùng đã chuyển sang
+  // điểm khác trong lúc mutation còn đang chạy).
+  //
+  // Xung đột "người dùng đã gõ tay": nếu 3 ô này đã lệch khỏi giá trị vừa nạp gần
+  // nhất (measurementPoints[selectedPointIndex], tức bản trước-khi-duyệt), NGHĨA
+  // LÀ có bản nháp tay chưa lưu. Chọn NẠP ĐÈ + báo rõ bằng toast riêng (không phải
+  // giữ nguyên bản nháp) — vì rủi ro lớn hơn nằm ở việc form sai lệch với DB ngay
+  // sau một quyết định duyệt (đúng gốc rễ của F1); giữ bản nháp tay chỉ dời hiểm
+  // hoạ này sang dạng khác (nút Lưu vẫn cạnh đó, vẫn có thể ghi giá trị không còn
+  // đúng ý người dùng nếu họ quên là nó vừa bị duyệt). Nạp đè + toast tường minh
+  // đảm bảo ô nhập luôn khớp máy chủ ngay sau một quyết định — không bao giờ đổi
+  // lén: người dùng luôn thấy vì sao giá trị vừa nhảy.
+  const handleSuggestionApplied = (applied: { pointDefId: number; lsl: string; usl: string; nominal: string | null }) => {
+    refetchPoints();
+    // Final-fix round (khuyến nghị mạnh) — quyết định rủi ro (guard "điểm đang mở", so
+    // wasDirty, nhánh !showToleranceSection) chuyển sang hàm THUẦN có test riêng
+    // (resolveAppliedThreshold.unit.test.ts, 4 nhánh toast + ca "điểm đã đổi ⇒ none").
+    // Component chỉ còn setState + toast theo kết quả — không còn quyết định nào không-test
+    // nằm inline ở đây.
+    const resolved = resolveAppliedThreshold({
+      applied,
+      selectedPointIndex,
+      currentPoint: selectedPointIndex !== null ? measurementPoints[selectedPointIndex] : undefined,
+      formLowerLimit: pointLowerLimit,
+      formUpperLimit: pointUpperLimit,
+      formNominalValue: pointNominalValue,
+      showToleranceSection,
+    });
+    if (resolved.toast === "none") return;
+    // Cập nhật state LUÔN, bất kể loại điểm có hiện ô ngưỡng hay không — đây là
+    // state chung mà handleSavePoint (ProductModels.tsx) dùng để build payload
+    // Lưu; nếu bỏ qua cho POSITION/COLOR/VISUAL, "Lưu" ngay sau đó sẽ gửi state
+    // CŨ (trước khi refetch kịp đồng bộ measurementPoints) — nguy cơ y hệt F1
+    // cho 40% loại điểm không có ô ngưỡng hiển thị (vòng sửa 3, F4).
+    setPointLowerLimit(resolved.lsl!);
+    setPointUpperLimit(resolved.usl!);
+    setPointNominalValue(resolved.nominal!);
+    if (resolved.toast === "noInputs") {
+      // Vòng sửa 3 (F4) — loại điểm này (POSITION/COLOR/VISUAL/SURFACE...) không
+      // render 3 ô LSL/USL/nominal (showToleranceSection false) — nói "đã nạp vào
+      // FORM" là SAI SỰ THẬT vì không có ô nào để nạp vào. Nói đúng: ngưỡng đã
+      // được GHI VÀO ĐIỂM ĐO (server), không nhắc tới "form".
+      toast.info(
+        t(
+          "productModels.thresholdAppliedNoInputs",
+          "Ngưỡng mới ({{lsl}}–{{usl}}) đã được ghi vào điểm đo. Loại điểm này không hiển thị ô ngưỡng trên form.",
+          { lsl: applied.lsl, usl: applied.usl },
+        ),
+      );
+      return;
+    }
+    if (resolved.toast === "overDirty") {
+      toast.warning(
+        t(
+          "productModels.thresholdReloadedOverDirty",
+          "Ngưỡng vừa được duyệt và ghi vào điểm đo — đã thay bản bạn đang gõ tay bằng giá trị mới ({{lsl}}–{{usl}}). Kiểm tra lại trước khi Lưu.",
+          { lsl: applied.lsl, usl: applied.usl },
+        ),
+      );
+    } else {
+      toast.info(
+        t(
+          "productModels.thresholdReloaded",
+          "Đã nạp ngưỡng mới nhất vào form ({{lsl}}–{{usl}}) sau khi duyệt.",
+          { lsl: applied.lsl, usl: applied.usl },
+        ),
+      );
+    }
+  };
+
   return (
     <>
                 <div className="xl:col-span-1">
@@ -337,6 +422,23 @@ export function PointDetailsForm(props: PointDetailsFormProps) {
                           <p>{t("products.radius")}: {measurementPoints[selectedPointIndex]?.radius}px</p>
                         </div>
 
+                        {/* Wave 2 đường A (Task 2) — đề xuất ĐANG CHỜ. Vòng sửa 3 (F4, nghiệm thu
+                            live) — di chuyển RA KHỎI mục "Ngưỡng & dung sai" (AccordionItem
+                            "thresholds") vì mục đó chỉ render khi `showToleranceSection` đúng
+                            (DIMENSION/GD_T/ELECTRICAL) — 40% đề xuất (POSITION/COLOR/VISUAL) từng
+                            hoàn toàn không có chỗ để xem, kể cả sau khi bấm "Sửa". Đặt ở đây — LUÔN
+                            render khi đã chọn một điểm, bất kể loại — để đề xuất luôn nhìn thấy được.
+                            KHÔNG đụng `showToleranceSection`, KHÔNG ép mục Ngưỡng hiện ra cho loại
+                            không dùng ngưỡng — chỉ thẻ đề-xuất-đang-chờ di chuyển. */}
+                        {selectedPointIndex !== null && measurementPoints[selectedPointIndex]?.id ? (
+                          <PendingSuggestionCard
+                            pointDefId={measurementPoints[selectedPointIndex]!.id as number}
+                            currentUserId={user?.id}
+                            onDecided={refreshSuggestionState}
+                            onApplied={handleSuggestionApplied}
+                          />
+                        ) : null}
+
                         {/* ── Nhóm gập: Progressive disclosure (doc 43 Đợt 2 §3.1) ── */}
                         <Accordion
                           type="multiple"
@@ -393,7 +495,9 @@ export function PointDetailsForm(props: PointDetailsFormProps) {
                                     <ValidationMessage error={pointValidation.getFieldError("upperLimit")} />
                                   </div>
                                 </div>
-                                {/* AI Threshold Advisor — only for a persisted point in edit mode */}
+                                {/* AI Threshold Advisor (xin đề xuất MỚI) — đây LÀ hành động sửa đổi, giữ
+                                    nguyên chỉ ở chế độ Sửa VÀ trong mục Ngưỡng & dung sai (không đổi theo yêu
+                                    cầu vòng sửa 3 — chỉ thẻ đề-xuất-đang-chờ bị di chuyển, nút này ở nguyên). */}
                                 {isEditMode && selectedPointIndex !== null && measurementPoints[selectedPointIndex]?.id ? (
                                   <div className="flex items-center justify-between rounded-md border border-dashed bg-muted/30 px-3 py-2">
                                     <span className="text-xs text-muted-foreground">
@@ -402,7 +506,7 @@ export function PointDetailsForm(props: PointDetailsFormProps) {
                                     <AIThresholdSuggestButton
                                       target={{ kind: "point", measurementPointId: measurementPoints[selectedPointIndex]!.id! }}
                                       onApplied={() => refetchPoints()}
-                                      onSubmitted={() => refetchPoints()}
+                                      onSubmitted={() => { refetchPoints(); refreshSuggestionState(); }}
                                     />
                                   </div>
                                 ) : null}

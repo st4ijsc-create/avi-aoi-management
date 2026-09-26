@@ -206,6 +206,7 @@ function FieldError({
       <ul className="ml-4 flex list-disc flex-col gap-1">
         {errors.map(
           (error, index) =>
+            // i18n-raw-ok: lỗi VALIDATE của react-hook-form (zod resolver phía client), không phải lỗi tRPC.
             error?.message && <li key={index}>{error.message}</li>
         )}
       </ul>

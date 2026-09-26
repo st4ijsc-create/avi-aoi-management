@@ -306,7 +306,10 @@ describe("U4a — reuse + shape per endpoint", () => {
   it("machines/:id/detail reuses machineDetail; unknown → 404", async () => {
     h.machineDetail.mockClear();
     const ok = await (await call("/api/v1/machines/1/detail", "MASTER")).json();
-    expect(h.machineDetail).toHaveBeenCalledWith(1);
+    // ★ Đợt 42 — phạm vi của KHOÁ đi xuống bộ tổng hợp (`phamViCuaKhoa`). Master key = toàn cục TƯỜNG MINH
+    //   (`GLOBAL_TENANT_SCOPE`) ⇒ `undefined` = KHÔNG lọc; khoá một-nhà-máy ⇒ `{ tenantScope }` — đo ở
+    //   `moduleReadsCockpitPhamVi.db.test.ts` (CSDL thật).
+    expect(h.machineDetail).toHaveBeenCalledWith(1, undefined);
     expect(ok.data.machineId).toBe(1);
     const miss = await call("/api/v1/machines/999/detail", "MASTER");
     expect(miss.status).toBe(404);

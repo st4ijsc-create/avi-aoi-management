@@ -5,6 +5,9 @@
 
 import { z } from "zod";
 import { protectedProcedure, router } from "../_core/trpc";
+// ★★★ 2026-08-17 — xem `_core/reportExportScope.ts`. Chữ ký `exportScopeArgs(user)` chỉ nhận
+// `{id, role}` (hình dạng của `ctx.user`) nên lối "lấy danh tính từ `input`" KHÔNG diễn đạt được.
+import { exportScopeArgs } from "../_core/reportExportScope";
 import { generateComparison, calculatePreviousPeriod } from "../services/dataComparisonService";
 import type { ComparisonPeriod } from "../services/dataComparisonService";
 
@@ -24,7 +27,7 @@ export const dataComparisonRouter = router({
       lineId: z.number().optional(),
       machineId: z.number().optional(),
     }))
-    .query(async ({ input }) => {
+    .query(async ({ input, ctx }) => {
       return generateComparison({
         periodType: input.periodType as ComparisonPeriod,
         currentStart: input.currentStart,
@@ -35,6 +38,9 @@ export const dataComparisonRouter = router({
         workshopId: input.workshopId,
         lineId: input.lineId,
         machineId: input.machineId,
+        // Bề mặt JSON (không sinh file) ⇒ KHÔNG từ chối: người 0 gán nhận 0 KÈM
+        // `scopeEmptyReason`/`scopeMessage` để màn hình nói đúng lý do thay vì một ô "0" câm.
+        ...exportScopeArgs(ctx.user),
       });
     }),
 
@@ -48,7 +54,7 @@ export const dataComparisonRouter = router({
       workshopId: z.number().optional(),
       lineId: z.number().optional(),
     }))
-    .query(async ({ input }) => {
+    .query(async ({ input, ctx }) => {
       const now = new Date();
       let currentStart: Date;
       let currentEnd: Date;
@@ -91,6 +97,7 @@ export const dataComparisonRouter = router({
         factoryId: input.factoryId,
         workshopId: input.workshopId,
         lineId: input.lineId,
+        ...exportScopeArgs(ctx.user),
       });
     }),
 

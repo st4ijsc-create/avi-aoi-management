@@ -5,6 +5,7 @@
  * Additive: does not touch existing accessors.
  */
 import { getDb } from "./connection";
+import { DbUnavailableError } from "../_core/dbErrors";
 import { and, eq, or, desc, isNull, SQL } from "drizzle-orm";
 import {
   goldenSampleReferences,
@@ -104,7 +105,7 @@ export async function setGoldenReference(
   values: InsertGoldenSampleReference,
 ): Promise<GoldenSampleReference> {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  if (!db) throw new DbUnavailableError();
   const key: GoldenKey = {
     productCode: values.productCode ?? null,
     recipeCode: values.recipeCode ?? null,
@@ -201,7 +202,7 @@ export async function insertDraftGoldenReference(
   values: InsertGoldenSampleReference,
 ): Promise<GoldenSampleReference> {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  if (!db) throw new DbUnavailableError();
   const key: GoldenKey = {
     productCode: values.productCode ?? null,
     recipeCode: values.recipeCode ?? null,
@@ -238,7 +239,7 @@ export interface ApproveGoldenInput {
  */
 export async function approveGoldenReference(input: ApproveGoldenInput): Promise<GoldenSampleReference> {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  if (!db) throw new DbUnavailableError();
 
   const attempt = async (): Promise<GoldenSampleReference> =>
     db.transaction(async (tx) => {
@@ -297,7 +298,7 @@ export async function approveGoldenReference(input: ApproveGoldenInput): Promise
 /** Reject a DRAFT (→ 'retired', never activated). Throws on non-draft rows. */
 export async function rejectGoldenReference(id: number, note?: string | null): Promise<GoldenSampleReference> {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  if (!db) throw new DbUnavailableError();
   return db.transaction(async (tx) => {
     const [target] = await tx
       .select()
@@ -323,7 +324,7 @@ export async function rejectGoldenReference(id: number, note?: string | null): P
  */
 export async function retireGoldenReference(id: number, note?: string | null): Promise<GoldenSampleReference> {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  if (!db) throw new DbUnavailableError();
   return db.transaction(async (tx) => {
     const [target] = await tx
       .select()
@@ -346,7 +347,7 @@ export async function retireGoldenReference(id: number, note?: string | null): P
 /** W7-C (V7) — toggle per-golden align-before-diff. */
 export async function setGoldenAlignBeforeDiff(id: number, enabled: boolean): Promise<GoldenSampleReference> {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  if (!db) throw new DbUnavailableError();
   const [row] = await db
     .update(goldenSampleReferences)
     .set({ alignBeforeDiff: enabled, updatedAt: new Date() })
@@ -479,7 +480,7 @@ export async function listReleaseGoldenRefs(opts: {
 /** Deactivate a reference by id (soft delete). Throws when no DB. */
 export async function deactivateGoldenReference(id: number): Promise<void> {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  if (!db) throw new DbUnavailableError();
   await db
     .update(goldenSampleReferences)
     .set({ active: false, updatedAt: new Date() })

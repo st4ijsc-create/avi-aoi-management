@@ -10,7 +10,8 @@
  *    only ever invokes proposeAction + confirmAction, both mocked & asserted).
  *  - MAX_WRITES_PER_SESSION → paused. RBAC-denied propose → paused cleanly.
  *  - A failing read step → paused with a clean step trail.
- *  - The agentic gate uses the SERVER role: worker/engineer → { enabled:false }.
+ *  - The agentic gate uses the SERVER role: an unknown/legacy role (worker) →
+ *    { enabled:false }; `engineer` IS allowed (quyết định chính sách 2026-08-17).
  *
  * getDb (ai_agent_sessions), the planner, and the HITL action service are all
  * mocked, so no model and no real DB are required.
@@ -77,11 +78,26 @@ vi.mock("./aiCopilotActions", () => ({
   cancelAction: (...a: unknown[]) => cancelAction(...a),
 }));
 
-// ── Mock the planner (deterministic plans). ──
+// ── E2-4 — spy on the realtime nudge choke points call as their LAST step.
+// Mocked (not the real eventBus) so these existing behavioral tests stay
+// decoupled from the realtime channel; aiAgentRealtime.test.ts covers the
+// publish/bridge mechanics themselves.
+const publishAiAgentEvent = vi.fn();
+vi.mock("./aiAgentRealtime", () => ({
+  publishAiAgentEvent: (...a: unknown[]) => publishAiAgentEvent(...a),
+}));
+
+// ── Mock the planner (deterministic plans). replanFromObservations defaults to
+//    "no change" so pre-existing tests (which don't care about replanning) see
+//    IDENTICAL behavior to before D1 — see aiAgentOrchestrator.replan.test.ts
+//    for the observe→replan / branch-condition test suite. ──
 const planGoal = vi.fn();
+const replanFromObservations = vi.fn(async () => ({ changed: false, steps: [], available: true }));
 vi.mock("./aiAgentPlanner", () => ({
   planGoal: (...a: unknown[]) => planGoal(...a),
+  replanFromObservations: (...a: unknown[]) => replanFromObservations(...a),
   AGENT_MAX_STEPS: 6,
+  AGENT_MAX_REPLANS: 2,
 }));
 
 // ── Mock the tool registry: provide read/write/client tools. ──
@@ -94,15 +110,27 @@ const tools: Record<string, any> = {
     summarize: () => "w", preview: async () => ({}), execute: vi.fn(async () => ({})),
   },
 };
-vi.mock("./aiLocalTools/toolRegistry", () => ({
-  getTool: (name: string) => tools[name],
-  isWriteTool: (t: any) => !!t && t.kind === "write",
-  isClientTool: (t: any) => !!t && t.kind === "client",
-}));
+// RR-1 (Task 5, re-review round) — MUST keep the REAL `argsWithAuthCtx` alive here.
+// A flat `() => ({...})` factory (no such export) makes it `undefined` post-patch,
+// so `tool.handler(argsWithAuthCtx(...))` at aiAgentOrchestrator.ts:429 THROWS on
+// every read step ⇒ paused, turning 18 passing cases red for a reason unrelated to
+// what each case actually asserts. `importOriginal()` keeps the real cleaning
+// function wired (a leaf module — only imports `zod` — so this is cheap and safe)
+// while still overriding getTool/isWriteTool/isClientTool with the local test doubles.
+vi.mock("./aiLocalTools/toolRegistry", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("./aiLocalTools/toolRegistry")>();
+  return {
+    ...actual,
+    getTool: (name: string) => tools[name],
+    isWriteTool: (t: any) => !!t && t.kind === "write",
+    isClientTool: (t: any) => !!t && t.kind === "client",
+  };
+});
 
 import {
   startSession,
   approvePlan,
+  advance,
   confirmStep,
   cancelSession,
   canUseAgentic,
@@ -124,10 +152,44 @@ function plan(steps: any[]) {
 }
 
 describe("agentic gate (server role)", () => {
-  it("manager is allowed; worker/engineer are not", () => {
+  /**
+   * ══════════════════════════════════════════════════════════════════════════════════════════
+   * ⚠⚠ QUYẾT ĐỊNH CHÍNH SÁCH CỦA CHỦ DỰ ÁN — 2026-08-17: **`engineer` ĐƯỢC chạy agent.**
+   * ══════════════════════════════════════════════════════════════════════════════════════════
+   * ĐÂY KHÔNG PHẢI "dọn lưới cho xanh". Lịch sử của ô này:
+   *
+   *   • Ca này ra đời khi `AGENTIC_ROLES` **thật sự** không có `engineer`.
+   *   • 2026-06-27 (B1 go-live) mã **đổi**: `supervisor` + `maintenance` + `engineer` được thêm
+   *     vào `AGENTIC_ROLES` theo quyết định người dùng — nhưng ca này **không** được cập nhật.
+   *   • Từ đó lưới ĐỎ liên tục và bị mang sang **năm pha** dưới nhãn "nợ có trước, loại trừ tường
+   *     minh" (xem `docs/superpowers/plans/2026-08-06-vram-pha5-tra-no.md`, `…pha4-review…`).
+   *     Một ô đỏ mãn tính là một ô **không ai còn đọc** — nó che mất ô đỏ THẬT tiếp theo.
+   *
+   * 2026-08-17 chủ dự án chấm dứt tình trạng lấp lửng và chốt: **CÓ, `engineer` được chạy agent.**
+   * Vì vậy nguồn sự thật là `AGENTIC_ROLES`, và ca test được sửa để **phát biểu đúng chính sách**.
+   *
+   * ⚠ Lưới **KHÔNG bị nới**: vế ÂM vẫn còn người thật (`worker` — nhãn không nằm trong `roleEnum`)
+   * và ca dưới chứng minh mọi vai NGOÀI danh sách vẫn bị chặn. Bỏ `engineer` khỏi `AGENTIC_ROLES`
+   * ⇒ ca này ĐỎ ngay.
+   *
+   * ⚠ Mọi bước GHI của phiên agent **vẫn** đi qua HITL propose→confirm + RBAC theo từng tool —
+   * quyết định này chỉ mở **cửa vào** phiên nhiều bước, không cấp thêm một bit quyền nào.
+   */
+  it("manager + engineer are allowed; an unknown role (worker) is not", () => {
     expect(canUseAgentic(MANAGER)).toBe(true);
     expect(canUseAgentic(WORKER)).toBe(false);
-    expect(canUseAgentic({ role: "engineer" })).toBe(false);
+    // Chính sách 2026-08-17 — khớp với `AGENTIC_ROLES` (mã đã cho từ 2026-06-27).
+    expect(canUseAgentic({ role: "engineer" })).toBe(true);
+  });
+
+  it("★ vai NGOÀI `AGENTIC_ROLES` vẫn bị chặn — quyết định 2026-08-17 KHÔNG mở cho mọi người", () => {
+    for (const role of ["operator", "quality_inspector", "viewer", "user", "worker", ""]) {
+      expect(canUseAgentic({ role }), `vai "${role}" KHÔNG được phép chạy agent`).toBe(false);
+    }
+    // …và các vai kỹ thuật đã được chốt ở B1 go-live 2026-06-27 thì được.
+    for (const role of ["admin", "supervisor", "maintenance", "engineer"]) {
+      expect(canUseAgentic({ role }), `vai "${role}" PHẢI được phép chạy agent`).toBe(true);
+    }
   });
 
   it("startSession for a disallowed role returns { enabled:false } and creates NO row", async () => {
@@ -321,5 +383,152 @@ describe("cancelSession", () => {
     expect(res.status).toBe("aborted");
     expect(cancelAction).toHaveBeenCalledWith("ACT1", expect.objectContaining({ id: MANAGER.id }), undefined);
     expect(store.get(s.sessionId!)!.status).toBe("aborted");
+  });
+});
+
+describe("E2-4 — realtime nudge at each choke point", () => {
+  it("startSession publishes session_started with the new sessionId, AFTER the row is persisted", async () => {
+    plan([{ kind: "read", tool: "read_thing", args: {} }]);
+    const s = await startSession("g", { user: MANAGER as any });
+    expect(publishAiAgentEvent).toHaveBeenCalledWith("session_started", s.sessionId);
+    // the row must already be awaiting_approval by the time we publish
+    expect(store.get(s.sessionId!)!.status).toBe("awaiting_approval");
+  });
+
+  it("startSession for a disallowed role does NOT publish (no state change)", async () => {
+    plan([{ kind: "read", tool: "read_thing", args: {} }]);
+    await startSession("g", { user: WORKER as any });
+    expect(publishAiAgentEvent).not.toHaveBeenCalled();
+  });
+
+  it("advance (via approvePlan) publishes 'advanced' with the sessionId", async () => {
+    plan([{ kind: "write", tool: "write_thing", args: { id: 1 } }]);
+    proposeAction.mockResolvedValue({ ok: true, pendingAction: { actionId: "ACT1", token: "ACT1" } });
+    const s = await startSession("g", { user: MANAGER as any });
+    publishAiAgentEvent.mockClear();
+    await approvePlan(s.sessionId!, { user: MANAGER as any });
+    expect(publishAiAgentEvent).toHaveBeenCalledWith("advanced", s.sessionId);
+  });
+
+  it("confirmStep publishes 'confirmed' (plus the inner advance's 'advanced')", async () => {
+    plan([
+      { kind: "write", tool: "write_thing", args: { id: 1 } },
+      { kind: "read", tool: "read_thing", args: {} },
+    ]);
+    proposeAction.mockResolvedValue({ ok: true, pendingAction: { actionId: "ACT1", token: "ACT1" } });
+    confirmAction.mockResolvedValue({ ok: true, status: "executed", result: {} });
+    const s = await startSession("g", { user: MANAGER as any });
+    await approvePlan(s.sessionId!, { user: MANAGER as any });
+    publishAiAgentEvent.mockClear();
+    await confirmStep(s.sessionId!, "ACT1", "ACT1", { user: MANAGER as any });
+    expect(publishAiAgentEvent).toHaveBeenCalledWith("confirmed", s.sessionId);
+    expect(publishAiAgentEvent).toHaveBeenCalledWith("advanced", s.sessionId);
+  });
+
+  it("cancelSession publishes 'cancelled'", async () => {
+    plan([{ kind: "write", tool: "write_thing", args: { id: 1 } }]);
+    proposeAction.mockResolvedValue({ ok: true, pendingAction: { actionId: "ACT1", token: "ACT1" } });
+    const s = await startSession("g", { user: MANAGER as any });
+    await approvePlan(s.sessionId!, { user: MANAGER as any });
+    publishAiAgentEvent.mockClear();
+    await cancelSession(s.sessionId!, { user: MANAGER as any });
+    expect(publishAiAgentEvent).toHaveBeenCalledWith("cancelled", s.sessionId);
+  });
+
+  it("a THROWING publishAiAgentEvent never breaks the choke point (advance still returns normally)", async () => {
+    plan([{ kind: "read", tool: "read_thing", args: {} }]);
+    publishAiAgentEvent.mockImplementation(() => {
+      throw new Error("nudge boom");
+    });
+    const s = await startSession("g", { user: MANAGER as any });
+    expect(s.enabled).toBe(true);
+    expect(s.status).toBe("awaiting_approval");
+    const res = await approvePlan(s.sessionId!, { user: MANAGER as any });
+    expect(res.ok).toBe(true);
+    expect(res.status).toBe("done");
+  });
+
+  // ── FIX (E2-4 review, Important) — nudge only on a REAL state change. ──
+  // confirmStep/cancelSession/advance are protectedProcedure (ANY authenticated
+  // user); before this fix a low-privilege user could loop garbage/foreign
+  // sessionIds and force a broadcast to every Command Center viewer even though
+  // nothing ever changed. Every no-op guard below must nudge NOTHING.
+  describe("nudge gating — no-op paths must NOT publish", () => {
+    it("advance() on a NOT-FOUND sessionId does not nudge", async () => {
+      const res = await advance("does-not-exist", { user: MANAGER as any });
+      expect(res.ok).toBe(false);
+      expect(res.status).toBe("failed");
+      expect(publishAiAgentEvent).not.toHaveBeenCalled();
+    });
+
+    it("advance() on ANOTHER user's session (wrong owner) does not nudge", async () => {
+      plan([{ kind: "read", tool: "read_thing", args: {} }]);
+      const s = await startSession("g", { user: MANAGER as any });
+      publishAiAgentEvent.mockClear();
+      const res = await advance(s.sessionId!, { user: WORKER as any });
+      expect(res.ok).toBe(false);
+      expect(publishAiAgentEvent).not.toHaveBeenCalled();
+    });
+
+    it("advance() on a session that is NOT `running` (e.g. still awaiting_approval) does not nudge", async () => {
+      plan([{ kind: "read", tool: "read_thing", args: {} }]);
+      const s = await startSession("g", { user: MANAGER as any });
+      publishAiAgentEvent.mockClear();
+      const res = await advance(s.sessionId!, { user: MANAGER as any });
+      expect(res.ok).toBe(false);
+      expect(res.status).toBe("awaiting_approval");
+      expect(publishAiAgentEvent).not.toHaveBeenCalled();
+    });
+
+    it("confirmStep() on a NOT-FOUND sessionId does not nudge", async () => {
+      const res = await confirmStep("does-not-exist", "ACT1", "ACT1", { user: MANAGER as any });
+      expect(res.ok).toBe(false);
+      expect(publishAiAgentEvent).not.toHaveBeenCalled();
+    });
+
+    it("confirmStep() on a session that is NOT awaiting_confirm does not nudge", async () => {
+      // read-only plan runs straight through to `done` — never parks awaiting_confirm.
+      plan([{ kind: "read", tool: "read_thing", args: {} }]);
+      const s = await startSession("g", { user: MANAGER as any });
+      await approvePlan(s.sessionId!, { user: MANAGER as any });
+      publishAiAgentEvent.mockClear();
+      const res = await confirmStep(s.sessionId!, "ACT1", "ACT1", { user: MANAGER as any });
+      expect(res.ok).toBe(false);
+      expect(res.status).toBe("done");
+      expect(publishAiAgentEvent).not.toHaveBeenCalled();
+    });
+
+    it("confirmStep() with a MISMATCHED actionId (session IS awaiting_confirm) does not nudge", async () => {
+      plan([{ kind: "write", tool: "write_thing", args: { id: 1 } }]);
+      proposeAction.mockResolvedValue({ ok: true, pendingAction: { actionId: "ACT1", token: "ACT1" } });
+      const s = await startSession("g", { user: MANAGER as any });
+      await approvePlan(s.sessionId!, { user: MANAGER as any });
+      publishAiAgentEvent.mockClear();
+      const res = await confirmStep(s.sessionId!, "SOME-OTHER-ACTION-ID", "tok", { user: MANAGER as any });
+      expect(res.ok).toBe(false);
+      expect(confirmAction).not.toHaveBeenCalled();
+      expect(publishAiAgentEvent).not.toHaveBeenCalled();
+    });
+
+    it("cancelSession() on a NOT-FOUND sessionId does not nudge", async () => {
+      const res = await cancelSession("does-not-exist", { user: MANAGER as any });
+      expect(res.ok).toBe(false);
+      expect(publishAiAgentEvent).not.toHaveBeenCalled();
+    });
+
+    it("cancelSession() on an ALREADY-TERMINAL session (double cancel) does not nudge the 2nd time", async () => {
+      plan([{ kind: "write", tool: "write_thing", args: { id: 1 } }]);
+      proposeAction.mockResolvedValue({ ok: true, pendingAction: { actionId: "ACT1", token: "ACT1" } });
+      const s = await startSession("g", { user: MANAGER as any });
+      await approvePlan(s.sessionId!, { user: MANAGER as any });
+      const first = await cancelSession(s.sessionId!, { user: MANAGER as any });
+      expect(first.ok).toBe(true);
+      expect(publishAiAgentEvent).toHaveBeenCalledWith("cancelled", s.sessionId);
+      publishAiAgentEvent.mockClear();
+      const second = await cancelSession(s.sessionId!, { user: MANAGER as any });
+      expect(second.ok).toBe(false);
+      expect(second.status).toBe("aborted");
+      expect(publishAiAgentEvent).not.toHaveBeenCalled();
+    });
   });
 });

@@ -105,6 +105,27 @@ describe("buildInsertFromImportPoint", () => {
     expect(row.componentCode).toBe("R-1");
   });
 
+  // Task 8 Khối C (Task 7 review F2) — trước bản vá `unit` được gán VÔ ĐIỀU
+  // KIỆN ở buildInsertFromImportPoint, không qua touchesLimits nào: một sheet
+  // đổi CHỈ `unit` trên sản phẩm live ghi thẳng, lách hàng đợi duyệt hoàn toàn.
+  it("LIVE product with ONLY `unit` set: unit IS a limit field — gate strips it too", () => {
+    const p = deepImportPointSchema.parse({
+      code: "MP-5", name: "Vis", positionX: 10, positionY: 20, unit: "mm",
+    });
+    const { row, limitsStripped } = buildInsertFromImportPoint(p, 5, "VISUAL", 1, dims, true);
+    expect(limitsStripped).toBe(true);
+    expect(row.unit).toBeUndefined();
+  });
+
+  it("DEVELOPMENT product: `unit` alone is kept (no gate on a non-live product)", () => {
+    const p = deepImportPointSchema.parse({
+      code: "MP-6", name: "Vis", positionX: 10, positionY: 20, unit: "mm",
+    });
+    const { row, limitsStripped } = buildInsertFromImportPoint(p, 5, "VISUAL", 1, dims, false);
+    expect(limitsStripped).toBe(false);
+    expect(row.unit).toBe("mm");
+  });
+
   it("geometry rect derives the legacy anchor (centroid + bounding radius)", () => {
     const p = deepImportPointSchema.parse({
       code: "MP-4", name: "Rect", positionX: 0, positionY: 0,

@@ -25,6 +25,7 @@ import { authService } from './authService';
 import { hierarchyService, HierarchyFactory } from './hierarchyService';
 import { debugLogger } from '../utils/debugLogger';
 import { requireServerBaseUrl } from './serverConfig';
+import { themThamSoAnh } from './imageService';
 
 /**
  * Raw station item from API: GET /api/external/stations
@@ -242,6 +243,42 @@ function buildHeaders(): Record<string, string> {
  * Only sends x-master-key and x-api-key — avoids stale Bearer/Cookie
  * that could cause server to reject before checking the API key.
  */
+/**
+ * ★ Rút **MÃ MÁY-ĐỌC-ĐƯỢC** ra khỏi thân lỗi của máy chủ, rồi ghi vào sổ gỡ lỗi TRONG APP.
+ *
+ * ══════════════════════════════════════════════════════════════════════════════════════════════
+ * ⚠⚠ VÌ SAO — ĐO ĐƯỢC 2026-08-18
+ * ══════════════════════════════════════════════════════════════════════════════════════════════
+ * Máy chủ nay trả mã máy-đọc-được cho mọi lượt từ chối (`AUTH_REQUIRED`,
+ * `image_factory_scope_denied`, `image_path_shape_unknown`, `machine_tenant_claim_mismatch`…).
+ * Nhưng **toàn bộ** đường lỗi của app là `console.warn(...)` rồi `return null`/`[]` — đã đếm:
+ * ~20 chỗ ở `stationService`, 4 ở `alertApiService`, và `useStationData` chỉ `console.warn`.
+ * ⇒ Người vận hành ngoài hiện trường thấy **danh sách rỗng / ảnh vỡ**, không thấy một chữ nào về
+ *   lý do. Một mã máy-đọc-được mà app không hiện ra thì cũng bằng không có.
+ *
+ * ⚠ Hàm này CỐ Ý chỉ **GHI SỔ**, không đổi luồng: vẫn `return null` như cũ. Ứng dụng đang chạy
+ *   ngoài hiện trường, và đổi luồng lỗi là cách nhanh nhất để làm hỏng thứ đang chạy được. Sổ này
+ *   hiện ngay trong `DebugLogPanel` (bật ở Cài đặt) — đủ để người vận hành đọc ra `403 + mã`.
+ *
+ * ⚠ Đây là bản vá NỬA đường, và nói thẳng ra như vậy: bản đầy đủ là một dải băng trạng thái nói
+ *   "máy chủ từ chối: <mã>" trên chính màn hình. Việc ấy đụng vào luồng hiển thị của 9 màn, nên nó
+ *   là một quyết định sản phẩm, không phải một lượt trả nợ tự quyết.
+ */
+function ghiLoiCong(tag: string, status: number, than: string): void {
+  let ma = '';
+  try {
+    const b = JSON.parse(than);
+    ma = b?.code || b?.error?.json?.data?.code || b?.error?.code || b?.error || '';
+  } catch {
+    /* thân không phải JSON — giữ `ma` rỗng, vẫn ghi status + trích đoạn */
+  }
+  debugLogger.apiError(tag, {
+    status,
+    code: ma || '(máy chủ không trả mã)',
+    body: than.substring(0, 300),
+  });
+}
+
 function buildExternalHeaders(): Record<string, string> {
   const apiKey = getApiKey();
   const headers: Record<string, string> = {
@@ -1293,6 +1330,7 @@ class StationService {
       if (!response.ok) {
         const text = await response.text().catch(() => '');
         console.warn(`[StationService] tRPC ${method} HTTP ${response.status}`, text.substring(0, 200));
+        ghiLoiCong(`tRPC ${method}`, response.status, text);
         return null;
       }
       const body = await response.json();
@@ -1358,6 +1396,7 @@ class StationService {
       if (!response.ok) {
         const text = await response.text().catch(() => '');
         console.warn(`[StationService] machineApi.${method} HTTP ${response.status}`, text.substring(0, 200));
+        ghiLoiCong(`machineApi.${method}`, response.status, text);
         return null;
       }
       const body = await response.json();
@@ -1418,6 +1457,7 @@ class StationService {
       if (!response.ok) {
         const text = await response.text().catch(() => '');
         console.warn(`[StationService] machineApi.${method} (mutation) HTTP ${response.status}`, text.substring(0, 200));
+        ghiLoiCong(`machineApi.${method} (mutation)`, response.status, text);
         return null;
       }
       const body = await response.json();
@@ -1449,10 +1489,20 @@ class StationService {
     const base = getBaseUrl();
     const fullUrl = `${base}${url}`;
     // If URL is an API endpoint that requires auth, append masterKey query param
+    //
+    // ⚠⚠ 2026-08-18 — ĐÂY LÀ CHỖ DUY NHẤT trong app còn nối tham số bằng `?` CỨNG, và nó
+    // nối vào ĐÚNG tuyến nay được máy chủ cấp VÉ KÝ. Một URL đã mang vé có dạng
+    // `…/reference-image-file?exp=…&pv=anh&sig=…`; nối thêm `?masterKey=…` tạo ra HAI dấu
+    // `?` ⇒ URL hỏng ⇒ ảnh không tải được, và triệu chứng sẽ xuất hiện ĐÚNG LÚC bật cờ
+    // `ANH_CONG_MO` chứ không phải lúc sửa mã.
+    //
+    // ⚠ Ba chỗ nối tham số khác của app (`panelParts.tsx`, `ImageViewerModal.tsx`,
+    // `gallery.tsx`) đã tự tính `sep = includes('?') ? '&' : '?'` nên VỐN ĐÚNG — đã đọc
+    // từng chỗ, không sửa. Chỉ chỗ này sai.
     if (url.includes('/reference-image-file')) {
       const apiKey = getApiKey();
       if (apiKey) {
-        return `${fullUrl}?masterKey=${encodeURIComponent(apiKey)}`;
+        return themThamSoAnh(fullUrl, { masterKey: apiKey });
       }
     }
     return fullUrl;

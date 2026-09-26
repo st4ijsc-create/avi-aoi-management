@@ -41,6 +41,12 @@
  *   Each function-block BODY is linted with its own variable scope SEEDED by its params (so
  *   a param reference is in-scope, and every motion/IO/PID rule above applies inside a POU).
  *
+ * Doc 80 Đợt 0 (Task 5):
+ *   • io-ref-invalid / invalid-identifier / unsafe-string (IR-01) — every string field that
+ *     reaches generated code must pass the irSafeTokens whitelist (signals/channels, names,
+ *     tool ids / block ids / string compare values, unit, flow_id). ERROR ⇒ no code.
+ *   • accel-limit (IR-03)               — move_linear acceleration (mm/s²) ≤ ceiling.
+ *
  * The speed/force ceilings come from a resolved LimitProfile: (1) a per-device-type
  * default, (2) overridden by env tunables, (3) overridden by an explicit caller profile
  * (e.g. from a robot class's safety-rated speed when the capability model exposes it).
@@ -54,7 +60,8 @@
  */
 import type { Flow, IrBlock, Pose, TargetDeviceType, NumericOrExpr, FunctionBlockDef, FbParamType } from "./irModel";
 import { assignIds, walkBlocks } from "./irModel";
-import { slotFreeVars, isExpr } from "./irExpr";
+import { slotFreeVars, isExpr, exprFreeVars } from "./irExpr";
+import { isSafeFlowId, isSafeIdent, isSafeIoRef, isSafeLabel, isSafeUnit } from "./irSafeTokens";
 
 /** One linter finding. `error` blocks transpile; `warn` is advisory. */
 export interface LintDiagnostic {
@@ -79,6 +86,8 @@ export interface WorkspaceAABB {
 export interface LimitProfile {
   /** Max Cartesian linear speed (mm/s). */
   maxSpeedMms: number;
+  /** Doc 80 IR-03: max Cartesian linear acceleration (mm/s², the IR unit). */
+  maxAccelMms2: number;
   /** Max gripper force (N). */
   maxForceN: number;
   /** Max grip timeout (ms). */
@@ -114,6 +123,9 @@ export function resolveLimits(
     // 250 mm/s is the ISO/TS 15066 collaborative reduced-speed ballpark — a safe default
     // ceiling for a cobot workspace. Tune per cell via env.
     maxSpeedMms: num("DPC_IR_MAX_SPEED_MMS", 250),
+    // Doc 80 IR-03: 1500 mm/s² = 1.5 m/s² — just above the UR pendant's default tool
+    // acceleration (1.2 m/s²); the audit's a=40 m/s² / 100000 are far over. Tune via env.
+    maxAccelMms2: num("DPC_IR_MAX_ACCEL_MMS2", 1500),
     maxForceN: num("DPC_IR_MAX_FORCE_N", 150),
     maxGripTimeoutMs: num("DPC_IR_MAX_GRIP_TIMEOUT_MS", 30_000),
     maxBlendRadiusMm: num("DPC_IR_MAX_BLEND_RADIUS_MM", 100),
@@ -137,6 +149,7 @@ export function resolveLimits(
   if (!override) return base;
   return {
     maxSpeedMms: override.maxSpeedMms ?? base.maxSpeedMms,
+    maxAccelMms2: override.maxAccelMms2 ?? base.maxAccelMms2,
     maxForceN: override.maxForceN ?? base.maxForceN,
     maxGripTimeoutMs: override.maxGripTimeoutMs ?? base.maxGripTimeoutMs,
     maxBlendRadiusMm: override.maxBlendRadiusMm ?? base.maxBlendRadiusMm,
@@ -166,10 +179,61 @@ export function lintFlow(flow: Flow, override?: Partial<LimitProfile>): LintResu
   const push = (blockId: string | undefined, severity: LintDiagnostic["severity"], rule: string, message: string) =>
     diags.push({ blockId: blockId ?? "?", severity, rule, message });
 
+  // ── Doc 80 IR-01: string-field whitelist (one validator set shared with the emitters) ──
+  const tok = (ok: boolean, blockId: string | undefined, rule: "io-ref-invalid" | "invalid-identifier" | "unsafe-string", what: string, value: unknown) => {
+    if (!ok) push(blockId, "error", rule, `${what} ${JSON.stringify(value)} is not allowed in generated code (${rule}).`);
+  };
+  const ioRef = (id: string | undefined, what: string, v: string) => tok(isSafeIoRef(v), id, "io-ref-invalid", what, v);
+  const ident = (id: string | undefined, what: string, v: string) => tok(isSafeIdent(v), id, "invalid-identifier", what, v);
+  const label = (id: string | undefined, what: string, v: string) => tok(isSafeLabel(v), id, "unsafe-string", what, v);
+  const strValue = (id: string | undefined, what: string, v: unknown) => { if (typeof v === "string") label(id, what, v); };
+  const slotIdents = (id: string | undefined, what: string, v: NumericOrExpr) => {
+    if (isExpr(v)) for (const n of exprFreeVars(v)) ident(id, `${what} variable`, n);
+  };
+  tok(isSafeFlowId(flow.flow_id), "flow", "unsafe-string", "flow_id", flow.flow_id);
+  const checkTokens = (block: IrBlock) => {
+    const id = block.id;
+    if (id !== undefined) label(id, "block id", id);
+    switch (block.type) {
+      case "grip": label(id, "grip tool_id", block.tool_id); break;
+      case "release": if (block.tool_id !== undefined) label(id, "release tool_id", block.tool_id); break;
+      case "set_output": ioRef(id, "set_output signal", block.signal); slotIdents(id, "set_output value", block.value); break;
+      case "wait":
+        if (block.signal_ref !== undefined) ioRef(id, "wait signal_ref", block.signal_ref);
+        if (block.ms !== undefined) slotIdents(id, "wait duration", block.ms);
+        break;
+      case "if_condition": ioRef(id, "if_condition signal_ref", block.signal_ref); strValue(id, "if_condition value", block.value); break;
+      case "loop":
+        if (block.while) { ioRef(id, "loop while signal_ref", block.while.signal_ref); strValue(id, "loop while value", block.while.value); }
+        break;
+      case "set_variable": ident(id, "set_variable name", block.name); slotIdents(id, "set_variable expression", block.expr); break;
+      case "counter": ident(id, "counter name", block.name); break;
+      case "wait_until": slotIdents(id, "wait_until condition", block.condition); break;
+      case "set_analog":
+        ioRef(id, "set_analog channel", block.channel);
+        if (block.unit !== undefined) tok(isSafeUnit(block.unit), id, "unsafe-string", "set_analog unit", block.unit);
+        slotIdents(id, "set_analog value", block.value);
+        break;
+      case "pid_control":
+        ioRef(id, "pid_control input_channel", block.input_channel);
+        ioRef(id, "pid_control output_channel", block.output_channel);
+        slotIdents(id, "pid_control setpoint", block.setpoint);
+        break;
+      case "call_block":
+        ident(id, "call_block fb_name", block.fb_name);
+        for (const a of block.args) { ident(id, "call_block arg name", a.name); slotIdents(id, `call_block arg "${a.name}"`, a.value); }
+        break;
+      default: break;
+    }
+  };
+
   // ── Tier-1c: reusable function-block DEFINITIONS ──────────────────────────────
   const fbDefs: FunctionBlockDef[] = idFlow.function_blocks ?? [];
   const fbByName = new Map<string, FunctionBlockDef>();
   for (const fb of fbDefs) {
+    if (fb.id !== undefined) label(fb.id, "function_block id", fb.id);
+    ident(fb.id, "function_block name", fb.name);
+    for (const p of fb.params) ident(fb.id, "function_block param", p.name);
     if (fbByName.has(fb.name)) {
       push(fb.id, "error", "duplicate-function-block",
         `function_block "${fb.name}" is defined more than once — names must be unique.`);
@@ -234,6 +298,7 @@ export function lintFlow(flow: Flow, override?: Partial<LimitProfile>): LintResu
   };
 
   const inspectWith = (declared: Set<string>) => (block: IrBlock) => {
+    checkTokens(block);
     switch (block.type) {
       case "move_linear": {
         if (block.speed_mms > limits.maxSpeedMms) {
@@ -253,6 +318,10 @@ export function lintFlow(flow: Flow, override?: Partial<LimitProfile>): LintResu
         }
         if (block.acceleration === 0) {
           push(block.id, "warn", "zero-accel", "move_linear acceleration is 0 (implausible).");
+        }
+        if (block.acceleration > limits.maxAccelMms2) {
+          push(block.id, "error", "accel-limit",
+            `move_linear acceleration ${block.acceleration} mm/s² exceeds ceiling ${limits.maxAccelMms2} mm/s².`);
         }
         break;
       }

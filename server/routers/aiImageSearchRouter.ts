@@ -1,5 +1,16 @@
 import { z } from "zod";
-import { router, protectedProcedure, adminProcedure } from "../_core/trpc";
+import { appError } from "../_core/appError";
+import {
+  router,
+  protectedProcedure as thuTucVanHanh,
+  moduleProcedure,
+  moduleGate,
+  adminProcedure as adminProcedureBase,
+} from "../_core/trpc";
+// ★ Cổng giấy phép MOD_AI — chỉ THÊM chiều giấy phép, RBAC/vai/2FA giữ nguyên từng ký tự.
+//   Không-brick + fail-safe ở `_core/moduleGate.ts`; lượng từ canh ở `congGiayPhepAiCensus.test.ts`.
+const protectedProcedure = moduleProcedure("MOD_AI");
+const adminProcedure = adminProcedureBase.use(moduleGate("MOD_AI"));
 import path from "path";
 import fs from "fs";
 import { resolveSafeImagePath } from "../utils/safeImagePath";
@@ -42,7 +53,7 @@ function resolveImagePath(imageKey: string): string {
 async function loadImage(imageKey: string): Promise<Buffer> {
   const fullPath = resolveImagePath(imageKey);
   if (!fs.existsSync(fullPath)) {
-    throw new Error(`Image not found: ${imageKey}`);
+    throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "image" }, `Image not found: ${imageKey}`);
   }
   return fs.promises.readFile(fullPath);
 }
@@ -106,7 +117,12 @@ export const aiImageSearchRouter = router({
     }),
 
   // ─── Search by uploaded image ──────────────────────────────────────────────
-  searchByUpload: protectedProcedure
+  // ⚠⚠ CỐ Ý **KHÔNG** khoá sau MOD_AI. `components/RepairAISummary.tsx` gọi thủ tục này và nó
+  //    được gắn ở `pages/RepairStation.tsx` — màn thuộc MOD_QUALITY, KHÔNG phải màn AI. Khoá ở đây
+  //    ⇒ khách mua MOD_QUALITY mà không mua AI bấm nút "tìm lỗi tương tự" nhận FORBIDDEN. Không
+  //    mua AI thì hệ vốn KHÔNG có embedding nào để tìm — nên khoá chỉ đổi thông báo lỗi, không
+  //    thêm giá trị, mà lại thêm rủi ro. Ẩn widget ở client trước — xem báo cáo mục (b).
+  searchByUpload: thuTucVanHanh
     .input(z.object({
       modelId: z.number().optional(),
       imageKey: z.string(),
@@ -151,7 +167,10 @@ export const aiImageSearchRouter = router({
     .mutation(async ({ input }) => {
       // Chỉ chấp nhận không gian D=1024 (mxbai-embed-large) — tránh trộn vector khác chiều.
       if (input.dim !== DEFAULT_EMBEDDING_DIM || input.embedding.length !== DEFAULT_EMBEDDING_DIM) {
-        throw new Error(
+        throw appError(
+          "BAD_REQUEST",
+          "INVALID_VALUE",
+          { field: "embedding" },
           `searchByVector chỉ hỗ trợ vector ${DEFAULT_EMBEDDING_DIM}-chiều (nhận dim=${input.dim}, length=${input.embedding.length}).`,
         );
       }
@@ -237,7 +256,7 @@ export const aiImageSearchRouter = router({
       const base64 = input.imageData.replace(/^data:image\/[a-z]+;base64,/, "");
       const buffer = Buffer.from(base64, "base64");
       if (buffer.length === 0) {
-        throw new Error("Empty image data");
+        throw appError("BAD_REQUEST", "INVALID_VALUE", { field: "image", reason: "emptyImagePayload" }, "Empty image data");
       }
       fs.writeFileSync(filePath, buffer);
       return { imageKey: `temp/${safeName}` };

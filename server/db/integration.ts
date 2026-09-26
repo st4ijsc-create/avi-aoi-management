@@ -1,4 +1,5 @@
 import { getDb } from "./connection";
+import { DbUnavailableError } from "../_core/dbErrors";
 import { eq, and, desc, gte, lte, like, sql, SQL } from "drizzle-orm";
 import {
   factories,
@@ -68,7 +69,7 @@ export async function importSystemConfig(
   overwrite: boolean = false
 ) {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  if (!db) throw new DbUnavailableError();
   
   let imported = 0;
   let skipped = 0;
@@ -119,7 +120,7 @@ export async function importSystemConfig(
 
 export async function createBackupLog(log: InsertBackupLog) {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  if (!db) throw new DbUnavailableError();
   
   const [result] = await db.insert(backupLogs).values(log).returning({ id: backupLogs.id });
   return result.id;
@@ -176,7 +177,7 @@ export async function listBackupLogs(filters?: {
 
 export async function createScheduledBackup(backup: InsertScheduledBackup) {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  if (!db) throw new DbUnavailableError();
   
   const [result] = await db.insert(scheduledBackups).values(backup).returning({ id: scheduledBackups.id });
   return result.id;
@@ -184,14 +185,14 @@ export async function createScheduledBackup(backup: InsertScheduledBackup) {
 
 export async function updateScheduledBackup(id: number, data: Partial<InsertScheduledBackup>) {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  if (!db) throw new DbUnavailableError();
   
   await db.update(scheduledBackups).set(data).where(eq(scheduledBackups.id, id));
 }
 
 export async function deleteScheduledBackup(id: number) {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  if (!db) throw new DbUnavailableError();
   
   await db.delete(scheduledBackups).where(eq(scheduledBackups.id, id));
 }
@@ -233,7 +234,7 @@ export async function getScheduledBackupsDue() {
 
 export async function publishTemplateToMarketplace(data: InsertTemplateMarketplace) {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  if (!db) throw new DbUnavailableError();
   
   const [result] = await db.insert(templateMarketplace).values(data).returning({ id: templateMarketplace.id });
   return result.id;
@@ -298,7 +299,7 @@ export async function getMarketplaceTemplateById(id: number) {
 
 export async function incrementTemplateDownloads(id: number) {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  if (!db) throw new DbUnavailableError();
   
   await db.update(templateMarketplace)
     .set({ downloadCount: sql`${templateMarketplace.downloadCount} + 1` })
@@ -307,14 +308,14 @@ export async function incrementTemplateDownloads(id: number) {
 
 export async function updateMarketplaceTemplate(id: number, data: Partial<InsertTemplateMarketplace>) {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  if (!db) throw new DbUnavailableError();
   
   await db.update(templateMarketplace).set(data).where(eq(templateMarketplace.id, id));
 }
 
 export async function deleteMarketplaceTemplate(id: number) {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  if (!db) throw new DbUnavailableError();
   
   await db.delete(templateMarketplace).where(eq(templateMarketplace.id, id));
 }
@@ -323,7 +324,7 @@ export async function deleteMarketplaceTemplate(id: number) {
 
 export async function createTemplateReview(review: InsertTemplateReview) {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  if (!db) throw new DbUnavailableError();
   
   const [result] = await db.insert(templateReviews).values(review).returning({ id: templateReviews.id });
   

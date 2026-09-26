@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { appError } from "./appError";
 import { notifyOwner } from "./notification";
 import { adminProcedure, protectedProcedure, publicProcedure, router } from "./trpc";
 import {
@@ -340,7 +341,7 @@ export const systemRouter = router({
       .mutation(async ({ input }) => {
         const db = await import("../db");
         const template = await db.getMarketplaceTemplateById(input.id);
-        if (!template) throw new Error("Template not found");
+        if (!template) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "marketplaceTemplate" }, "Template not found");
         
         await db.incrementTemplateDownloads(input.id);
         

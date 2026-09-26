@@ -78,10 +78,10 @@ export default function LanguageSettings() {
         <CardContent>
           <div className="grid grid-cols-2 gap-4 text-sm">
             <div className="space-y-2">
-              <p><strong>{t("common.save")}</strong> — Save / Lưu / 保存</p>
-              <p><strong>{t("common.cancel")}</strong> — Cancel / Hủy / 取消</p>
-              <p><strong>{t("common.delete")}</strong> — Delete / Xóa / 删除</p>
-              <p><strong>{t("common.search")}</strong> — Search / Tìm kiếm / 搜索</p>
+              <p><strong>{t("common.save")}</strong>{t("langSettings.saveLuu", "— Save / Lưu / 保存")}</p>
+              <p><strong>{t("common.cancel")}</strong>{t("langSettings.cancelHuy", "— Cancel / Hủy / 取消")}</p>
+              <p><strong>{t("common.delete")}</strong>{t("langSettings.deleteXoa", "— Delete / Xóa / 删除")}</p>
+              <p><strong>{t("common.search")}</strong>{t("langSettings.searchTimKiem", "— Search / Tìm kiếm / 搜索")}</p>
             </div>
             <div className="space-y-2">
               <p><strong>{t("backup.title")}</strong></p>

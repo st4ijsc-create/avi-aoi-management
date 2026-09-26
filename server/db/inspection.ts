@@ -1,4 +1,5 @@
 import { getDb } from "./connection";
+import { DbUnavailableError } from "../_core/dbErrors";
 import { eq, and, desc, asc, gte, lte, gt, lt, like, sql, or, isNull, isNotNull, inArray, SQL } from "drizzle-orm";
 import {
   productInspections, InsertProductInspection,
@@ -14,8 +15,38 @@ import {
   productionLines,
   workshops,
   factories,
+  // Pha 1B Task 5 (BG-11) — cây KẾT QUẢ 3 cấp, migration 0339/0340.
+  inspectionSurfaces,
+  inspectionPositions,
+  inspectionCaptures,
+  // Khối B Task 3 — sổ WORM ghi CỜ LỆCH "máy khai linh kiện NGOÀI cây nó đã dạy".
+  auditLogs,
 } from "../../drizzle/schema";
 import { getUserCorporateAssignments, getUserFactoryAssignments } from "./auth";
+// ⚠ CHỈ nhập KIỂU (`import type`) — bị xoá lúc biên dịch, nên không tạo vòng import
+// router → db → `_core/accessControl` → `_core/trpc`. Giá trị vẫn nạp qua `import()` động,
+// đúng khuôn sẵn có trong file này.
+import { UNSCOPED_LABELS, type ScopeEmptyReason, type ScopeLabels, scopeLabelsOf } from "../_core/accessControlLabels";
+// Pha 1B Task 5 — bộ dịch THUẦN payload v2.0 → cây 4 cấp (Task 4). Type-only: không tạo
+// phụ thuộc runtime vòng (ingestCayKetQua.ts không import ngược lại file này).
+import type { CayDaDich, SurfaceDaDich, PositionDaDich, CaptureDaDich } from "../services/ingestCayKetQua";
+// Khối B Task 3 (B-4, Đ-19) — tra `pointDefId` cho cấp component. Import MỘT CHIỀU:
+// `cayDay.ts` không import ngược file này (đã kiểm), nên không có vòng.
+import {
+  khoaCapComponent,
+  napLichSuGioiHanTheoDiem,
+  traPointDefCapComponent,
+  type KetQuaTraPointDef,
+} from "./cayDay";
+// BG-97 — hàm THUẦN (0 I/O) neo giới hạn vào lúc bo được đo. Nhập THẲNG module đúng
+// nguyên tắc Task 3 ("hàm THUẦN đi thẳng module; hàm ĐỌC CSDL đi qua barrel để lưới
+// mock được"). `gioiHanLucDoCayV2.ts` chỉ import `pointResultEvaluator` (cũng thuần,
+// 0 import) nên không có vòng.
+import { giaiGioiHanTaiLucDo, laCongSnapshotBat } from "../services/gioiHanLucDoCayV2";
+import { verdictLuuTru } from "../../shared/rollupVerdict";
+// BG-99 (Task 5) — chuỗi thời gian TRẦN máy khai (`startedAt`/`completedAt` cấp cây)
+// đọc bằng ĐÚNG MỘT luật (trần = UTC) với mọi điểm ingest khác — xem `toDateOrUndefined`.
+import { docGioMay } from "../utils/factoryTime";
 
 // ============ LIST PROJECTION (doc 27 gap B9) ============
 /**
@@ -135,12 +166,503 @@ async function insertInspectionHeader(
   return { id: existingId, duplicate: true };
 }
 
+/**
+ * `undefined` khi máy không khai (ISO string) — Date khi có. `''`/thiếu trường ⇒ undefined.
+ *
+ * ★★★ BG-99 (Task 5) — ruột đổi sang `docGioMay` (chuỗi TRẦN = UTC, KHÔNG phải TZ hệ
+ * điều hành server — bẫy BG-96 bằng đường khác), CHỮ KÝ GIỮ NGUYÊN. Trước bản vá, ba
+ * điểm gọi (`startedAt`/`completedAt` cấp position/capture/component) đọc bằng
+ * `new Date(iso)` thô — LUẬT KHÁC với cột `inspectionTime` header (đã qua `docGioMay`
+ * từ Task 1/BG-96) trong CÙNG một request, đúng lớp lỗi BG-96 lặp lại ở cấp cây. Chuỗi
+ * KHÔNG parse được (rác) nay trả `undefined` thay vì một `Invalid Date` lọt xuống cột
+ * timestamp — hành vi ĐÚNG hơn, không phải tình cờ: hợp đồng v2.0 không kiểm parseable
+ * cho các trường này (`z.string().max(64).optional()`, khác `inspectionTime` v1.x có
+ * `superRefine`), nên "không parse được" là hình dạng THẬT có thể xảy ra.
+ */
+function toDateOrUndefined(iso: string | undefined): Date | undefined {
+  return iso === undefined ? undefined : docGioMay(iso) ?? undefined;
+}
+
+/**
+ * Cấp 1 (Pha 1B Task 5, BG-11) — ghi/khử-trùng MỘT `inspection_surfaces`. `ON CONFLICT DO
+ * NOTHING` theo `uq_insp_surfaces_inspection_name` (migration 0340): gửi lại cùng bo ⇒
+ * KHÔNG hàng mới, SELECT lại hàng đã có để lấy `id` làm cha cho các position. Cùng khuôn
+ * `insertInspectionHeader` phía trên — một chỗ sửa nếu khuôn đổi.
+ */
+async function upsertInspectionSurface(
+  runner: InsertRunner,
+  inspectionId: number,
+  inspectionTime: Date,
+  s: SurfaceDaDich,
+): Promise<number> {
+  const inserted = await runner
+    .insert(inspectionSurfaces)
+    .values({
+      inspectionId,
+      inspectionTime,
+      surfaceName: s.surfaceName,
+      // QĐ-BG6: KHÔNG ghi surfaceExtId ở đường ingest kết quả — chỉ điền từ đồng bộ teach
+      // data (Khối B, pha sau). Không đặt key ⇒ cột giữ NULL mặc định.
+      result: s.result,
+      ntf: s.ntf,
+      ntfSource: s.ntfSource,
+      rolledResult: s.rolledResult,
+      rolledNtf: s.rolledNtf,
+      declaredMismatch: s.declaredMismatch,
+    })
+    .onConflictDoNothing()
+    .returning({ id: inspectionSurfaces.id });
+
+  const newId = inserted[0]?.id;
+  if (newId !== undefined) return newId;
+
+  const existing = await runner
+    .select({ id: inspectionSurfaces.id })
+    .from(inspectionSurfaces)
+    .where(and(
+      eq(inspectionSurfaces.inspectionId, inspectionId),
+      eq(inspectionSurfaces.surfaceName, s.surfaceName),
+    ))
+    .limit(1);
+  const existingId = existing[0]?.id;
+  if (existingId === undefined) {
+    throw new Error(
+      `ghiCayKetQua: surface "${s.surfaceName}" xung đột ở uq_insp_surfaces_inspection_name ` +
+        `nhưng không tìm lại được hàng đã có (inspectionId=${inspectionId}) — bất thường.`,
+    );
+  }
+  return existingId;
+}
+
+/**
+ * Cấp 2 — ghi/khử-trùng MỘT `inspection_positions`. `ON CONFLICT DO NOTHING` theo
+ * `uq_insp_positions_surface_posid` (migration 0340).
+ */
+async function upsertInspectionPosition(
+  runner: InsertRunner,
+  surfaceRowId: number,
+  inspectionId: number,
+  inspectionTime: Date,
+  p: PositionDaDich,
+): Promise<number> {
+  const inserted = await runner
+    .insert(inspectionPositions)
+    .values({
+      surfaceRowId,
+      inspectionId,
+      inspectionTime,
+      positionId: p.positionId,
+      positionNumber: p.positionNumber,
+      result: p.result,
+      ntf: p.ntf,
+      ntfSource: p.ntfSource,
+      rolledResult: p.rolledResult,
+      rolledNtf: p.rolledNtf,
+      declaredMismatch: p.declaredMismatch,
+      startedAt: toDateOrUndefined(p.startedAt),
+      completedAt: toDateOrUndefined(p.completedAt),
+    })
+    .onConflictDoNothing()
+    .returning({ id: inspectionPositions.id });
+
+  const newId = inserted[0]?.id;
+  if (newId !== undefined) return newId;
+
+  const existing = await runner
+    .select({ id: inspectionPositions.id })
+    .from(inspectionPositions)
+    .where(and(
+      eq(inspectionPositions.surfaceRowId, surfaceRowId),
+      eq(inspectionPositions.positionId, p.positionId),
+    ))
+    .limit(1);
+  const existingId = existing[0]?.id;
+  if (existingId === undefined) {
+    throw new Error(
+      `ghiCayKetQua: position "${p.positionId}" xung đột ở uq_insp_positions_surface_posid ` +
+        `nhưng không tìm lại được hàng đã có (surfaceRowId=${surfaceRowId}) — bất thường.`,
+    );
+  }
+  return existingId;
+}
+
+/**
+ * Cấp 3 — ghi/khử-trùng MỘT `inspection_captures`. `ON CONFLICT DO NOTHING` theo
+ * `uq_insp_captures_position_extid` (migration 0339). Đây là cấp mà `measurement_results.
+ * inspectionCaptureRowId` (0340) sẽ trỏ tới — id trả về ở đây LÀ giá trị đường ingest thật
+ * (Task 6) sẽ gán vào cột đó, KHÔNG phải `product_captures.id` (cây CẤU HÌNH, dãy id khác).
+ */
+async function upsertInspectionCapture(
+  runner: InsertRunner,
+  positionRowId: number,
+  inspectionId: number,
+  inspectionTime: Date,
+  c: CaptureDaDich,
+): Promise<{ id: number; moi: boolean }> {
+  const inserted = await runner
+    .insert(inspectionCaptures)
+    .values({
+      positionRowId,
+      inspectionId,
+      inspectionTime,
+      captureExtId: c.captureId,
+      captureName: c.captureName,
+      captureIndex: c.index,
+      result: c.result,
+      ntf: c.ntf,
+      ntfSource: c.ntfSource,
+      rolledResult: c.rolledResult,
+      rolledNtf: c.rolledNtf,
+      declaredMismatch: c.declaredMismatch,
+      startedAt: toDateOrUndefined(c.startedAt),
+      completedAt: toDateOrUndefined(c.completedAt),
+    })
+    .onConflictDoNothing()
+    .returning({ id: inspectionCaptures.id });
+
+  const newId = inserted[0]?.id;
+  if (newId !== undefined) return { id: newId, moi: true };
+
+  const existing = await runner
+    .select({ id: inspectionCaptures.id })
+    .from(inspectionCaptures)
+    .where(and(
+      eq(inspectionCaptures.positionRowId, positionRowId),
+      eq(inspectionCaptures.captureExtId, c.captureId),
+    ))
+    .limit(1);
+  const existingId = existing[0]?.id;
+  if (existingId === undefined) {
+    throw new Error(
+      `ghiCayKetQua: capture "${c.captureId}" xung đột ở uq_insp_captures_position_extid ` +
+        `nhưng không tìm lại được hàng đã có (positionRowId=${positionRowId}) — bất thường.`,
+    );
+  }
+  // `moi: false` = hàng ĐÃ CÓ (gửi lại cùng bo). Cấp component ĐI THEO quyết định
+  // này, KHÔNG tự nghĩ ra một luật khử trùng thứ hai: `measurement_results` KHÔNG
+  // có ràng buộc duy nhất nào ở cặp (inspectionCaptureRowId, componentExtId) —
+  // hypertable ĐÃ NÉN, mọi unique index buộc phải mang cột phân mảnh — nên nếu ghi
+  // vô điều kiện thì một lượt phát lại sẽ NHÂN BẢN đúng những hàng mà ba cấp trên
+  // vừa khử trùng xong.
+  return { id: existingId, moi: false };
+}
+
+/** Số mẫu `captureId/componentId` giữ lại để chẩn đoán — đủ để nhận ra mẫu, không đủ để phình sổ. */
+const SO_MAU_CHUA_DAY = 20;
+
+/**
+ * `audit_logs.action` của cờ lệch cấp component. Hằng số EXPORT để lưới tra bằng
+ * đúng chuỗi mã ghi ra — một literal chép tay ở lưới là cách lưới xanh khi mã đổi.
+ * varchar(100), giữ ngắn và ổn định.
+ */
+export const HANH_DONG_LECH_CAY_DAY = "ingest.cay.component_chua_day";
+
+/**
+ * Khối B Task 3 — kết quả ĐẾM ĐƯỢC của một lượt ghi cấp component. Trả về cho
+ * caller ĐỂ NÓ KHÔNG THỂ IM LẶNG: mọi nhánh "không ghi được" đều có một con số ở
+ * đây, và cả hai cửa v2.0 (trực tiếp + ZIP) đều phải làm gì đó với nó.
+ */
+export interface ThongKeCapComponent {
+  /** Tổng số `components[]` trong cây (KHÔNG phụ thuộc tra được hay không). */
+  tong: number;
+  /** Số hàng `measurement_results` THẬT SỰ ghi ra. */
+  daGhi: number;
+  /** Số linh kiện KHÔNG tra ra `pointDefId` ⇒ không có hàng nào. */
+  chuaDay: number;
+  /** Trong đó, số linh kiện tra ra NHIỀU HƠN MỘT point-def (xem `khoaNhapNhang`). */
+  nhapNhang: number;
+  /** Bỏ qua vì capture cha ĐÃ CÓ (gửi lại cùng bo) — không phải lỗi, là khử trùng. */
+  boQuaCaptureDaCo: number;
+  /**
+   * Máy đã dạy SẢN PHẨM ĐANG CHẠY chưa (phạm vi `(máy, sản phẩm)` khi phân giải được
+   * mã sản phẩm) — phân biệt "cửa chưa mở" với "LỆCH THẬT". Xem `traPointDefCapComponent`.
+   */
+  mayCoBanDay: boolean;
+  /** Tối đa {@link SO_MAU_CHUA_DAY} mẫu `captureId/componentId` chưa dạy. */
+  mauChuaDay: string[];
+}
+
+/**
+ * Tách một trị đo THÔ về đúng hai cột của `measurement_results`:
+ * `measuredValue` (decimal) cho nhánh SỐ, `measuredValueText` (varchar 255) cho
+ * nhánh chuỗi KHÔNG parse được số.
+ *
+ * ⚠ ĐÂY LÀ MẪU HÀNH VI CỦA NHÁNH v1.x, TÁCH RA CHỨ KHÔNG PHÁT MINH LẠI:
+ * nguyên văn khối `Route measuredValue to the correct DB column based on type`
+ * trong `server/routers/machineApiRouters.ts` (đường v1.x PHẲNG), nay CẢ HAI
+ * đường gọi chung một hàm. Chuỗi rỗng `""` cố ý đi nhánh TEXT (`Number("")` là
+ * `0`, không phải `NaN` — bỏ vế `rawValue !== ''` sẽ biến "máy không đo được" thành
+ * "đo được 0").
+ */
+export function tachTriDo(
+  rawValue: string | number | null | undefined,
+): { measuredValue?: string; measuredValueText?: string } {
+  if (rawValue === undefined || rawValue === null) return {};
+  const num = Number(rawValue);
+  if (!isNaN(num) && rawValue !== "") return { measuredValue: String(num) };
+  return { measuredValueText: String(rawValue) };
+}
+
+/**
+ * Hình dạng TỐI THIỂU để gom khoá tra bản dạy: đúng `captureId` + `componentId`.
+ * CẢ `CayDaDich` (cây đã dịch) LẪN `MachineDataContractV2` (payload thô đã zod-parse)
+ * đều thoả kiểu này theo cấu tạo — nên `traBanDayChoCay` chạy được ở CẢ HAI phía của
+ * `dichCayKetQua`, và Task 4 gọi nó TRƯỚC bước dịch (xem docblock bên dưới).
+ */
+export interface CayCoKhoaTra {
+  readonly surfaces: readonly {
+    readonly positions: readonly {
+      readonly captures: readonly {
+        readonly captureId: string;
+        readonly components: readonly { readonly componentId: string }[];
+      }[];
+    }[];
+  }[];
+}
+
+/**
+ * ★★★ Khối B Task 3 — TIỆN ÍCH MỘT LƯỢT cho cả hai cửa v2.0: gom mọi cặp
+ * `(captureId, componentId)` của cây kết quả rồi tra bản dạy của **máy ĐÃ XÁC THỰC**.
+ *
+ * Gọi TRƯỚC `persistInspectionAtomic` (phép ĐỌC, không cần nằm trong tx ghi) và
+ * truyền kết quả xuống qua `opts.tra`. Hai cửa (`submitInspectionTreeV2` trực tiếp
+ * và `aoiPackageRouter` ZIP) dùng CHUNG hàm này — hai bản chép tay là cách hai cửa
+ * bắt đầu tra theo hai khoá khác nhau.
+ *
+ * ⚠ `productModelId` — TRUYỀN VÀO KHI PHÂN GIẢI ĐƯỢC. Xem `traPointDefCapComponent`:
+ * một máy dạy HAI sản phẩm bằng cây clone (cùng bộ GUID) mà thiếu lọc này thì mọi
+ * cặp khoá đều NHẬP NHẰNG và bo không ghi được hàng nào — đo được, không giả định.
+ *
+ * ★★★ Khối B Task 4 (BG-92) — THAM SỐ `cay` NAY NHẬN **CẢ PAYLOAD THÔ** (kiểu
+ * {@link CayCoKhoaTra}, nới rộng chứ không đổi: `CayDaDich` vẫn thoả). Lý do là THỨ
+ * TỰ: spec-gate phải chấm lá **trước** khi `dichCayKetQua` cuộn, nên phép tra bản dạy
+ * phải chạy **trước** `dichCayKetQua` — mà bản đồ khoá chỉ cần `captureId`/`componentId`,
+ * hai trường có mặt y hệt ở payload thô. Nếu vẫn buộc `CayDaDich` thì hai cửa phải
+ * dịch cây HAI LẦN (một lần để lấy khoá, một lần để chấm), và bản dịch thứ hai là
+ * chỗ `dungKhoaKhuTrungV2` có thể bắt đầu băm một payload khác.
+ *
+ * ── ★★★ BG-97 — `opts.lucDo`: MỐC "BO ĐƯỢC ĐO", CHỌN CÓ CHỦ Ý ────────────────
+ * Khi `SPEC_GATE_SNAPSHOT_ENABLED` BẬT và `lucDo` có mặt, `gioiHan` trả về là giới hạn
+ * **TẠI `lucDo`** (tái dựng từ `measurement_point_versions`), không phải giới hạn đang
+ * sống. Cờ TẮT (mặc định) ⇒ trả nguyên hành vi Task 4, **0 lượt đọc DB thêm**.
+ *
+ * ⚠⚠ **MỐC NÀO, VÀ VÌ SAO — Task 5 (BG-99, spec QĐ-2) ĐỔI NGUỒN.** Bản đầu (BG-97,
+ * commit `c98781db`) truyền `mocDoTuChuoi(completedAt) ?? mocDoTuChuoi(startedAt)` —
+ * NEO BẰNG ĐỒNG HỒ MÁY. Controller ruling (spec QĐ-2) LOẠI phương án đó: máy không tin
+ * được (skew 6h có thật, xem `assessClockSkew` — `machineApiRouters.ts`), và chiều nguy
+ * hiểm là đồng hồ máy CHẬM ⇒ bo MỚI (đo bây giờ, máy khai giờ cũ) bị chấm theo limit CŨ
+ * ⇒ bo XẤU đi lọt — đúng hình dạng tấn công mà một máy hỏng đồng hồ (hoặc bị chỉnh tay)
+ * có thể tạo ra ÂM THẦM.
+ *
+ * **NEO NAY LÀ MỐC MÁY CHỦ NHẬN ĐƯỢC PAYLOAD**, ba cửa tính khác nhau (không đổi hàm
+ * này — `lucDo` vẫn là `Date` đã giải quyết sẵn, chỉ đổi NƠI GỌI):
+ *   · Trực tiếp (`submitInspectionTreeV2`) — `opts.serverReceivedAt ?? new Date()`, đặt
+ *     MỘT LẦN ngay sau xác thực. Không truyền `opts` (đa số lượt gọi tRPC) ⇒ mốc ≈ NGAY
+ *     LÚC NHẬN — đúng ý nghĩa "lúc bo được đo" cho một board LIVE thật.
+ *   · WAL phát lại — `enqueuedAt` của MỤC WAL (`entry.enqueuedAt`, ghi lúc `bufferSubmission`
+ *     xếp hàng, persist trong payload đã buffer). VẪN giữ mệnh đề 2 của BG-97 ("WAL phát
+ *     lại phải cho CÙNG kết quả"): `enqueuedAt` BẤT BIẾN theo entry, không đọc đồng hồ
+ *     lúc phát lại — chỉ đổi CÁI GÌ được coi là "lúc bo được đo" (mốc XẾP HÀNG, không
+ *     phải mốc máy tự khai).
+ *   · Cửa ZIP (`aoiPackageRouter.commit`) — `inspection_packages.createdAt` (mốc GÓI
+ *     được TẠO ở bước presign, không phải lúc commit — một Agent upload chậm vẫn neo
+ *     đúng lúc nó BẮT ĐẦU gửi, không bị đẩy tới lúc mạng ổn định).
+ * `completedAt`/`startedAt` KHÔNG CÒN được đọc để neo giới hạn ở CẢ BA cửa — chúng vẫn
+ * là NGUỒN của cột `inspectionTime`/cấp cây (đường HOÀN TOÀN KHÁC, không đổi vì Task 5),
+ * qua `docGioMay` (BG-99, chuỗi TRẦN = UTC — xem `toDateOrUndefined` ở trên).
+ *
+ * ⚠ Nợ CŨ (BG-97 báo cáo, "lối ra là hợp đồng v2.0 mang `serverReceivedAt`") NAY ĐÃ
+ * ĐÓNG mà KHÔNG cần đổi hợp đồng v2.0: `serverReceivedAt` là một trường của `opts`
+ * (nội bộ, do server tự đặt), không phải trường payload máy khai — máy không có gì để
+ * gửi thêm, và không có gì để giả mạo.
+ */
+export async function traBanDayChoCay(
+  machineId: number,
+  cay: CayCoKhoaTra,
+  productModelId?: number | null,
+  opts?: { lucDo?: Date | null },
+): Promise<KetQuaTraPointDef> {
+  const khoa: { captureExtId: string; componentExtId: string }[] = [];
+  for (const s of cay.surfaces) {
+    for (const p of s.positions) {
+      for (const c of p.captures) {
+        for (const k of c.components) {
+          khoa.push({ captureExtId: c.captureId, componentExtId: k.componentId });
+        }
+      }
+    }
+  }
+  const tra = await traPointDefCapComponent({ machineId, productModelId, khoa });
+
+  // ★★★ BG-97 — NEO GIỚI HẠN VÀO **LÚC BO ĐƯỢC ĐO**.
+  // Cờ TẮT (mặc định, KHÔNG đổi) hoặc không có mốc ⇒ trả NGUYÊN đối tượng cũ: 0 lượt
+  // đọc DB thêm, hành vi giống Task 4 tới từng byte. Đó là vì sao mệnh đề "verdict bo
+  // cũ không đổi" đúng theo cấu tạo chứ không theo may mắn.
+  if (!laCongSnapshotBat()) return tra;
+  const lucDo = opts?.lucDo;
+  if (!(lucDo instanceof Date) || !Number.isFinite(lucDo.getTime())) return tra;
+  if (tra.banDo.size === 0) return tra;
+
+  const lichSu = await napLichSuGioiHanTheoDiem([...tra.banDo.values()]);
+  if (lichSu.size === 0) return tra; // không điểm nào từng bị sửa ⇒ LIVE là giới hạn thời kỳ đó
+  const giai = giaiGioiHanTaiLucDo({
+    banDo: tra.banDo,
+    gioiHanSong: tra.gioiHan,
+    lichSu,
+    lucDo,
+  });
+  if (giai.theoSnapshot > 0) {
+    // ⚠ KHÔNG ÂM THẦM: một bo chấm theo giới hạn KHÁC giới hạn đang sống là chuyện
+    // người vận hành phải thấy được — đây chính là ca "bo tồn kho / WAL phát lại".
+    console.warn(
+      `[traBanDayChoCay] BG-97 SNAPSHOT-GATE: ${giai.theoSnapshot}/${giai.theoSnapshot + giai.theoSong} ` +
+        `linh kiện chấm theo giới hạn TẠI ${lucDo.toISOString()} (không phải giới hạn đang sống) ` +
+        `· máy=${machineId} · mẫu: ${giai.mauSnapshot.join(" | ")}`,
+    );
+  }
+  // Task 5 (BG-97 phơi counters) — GHI ĐÈ hai trường mặc định của `tra` bằng kết quả
+  // THẬT của `giaiGioiHanTaiLucDo`: đây là lượt DUY NHẤT trong hàm này mà cổng snapshot
+  // thực sự chạy, nên chỉ ở đây `theoSnapshot`/`theoSong` mới khác mặc định.
+  return {
+    ...tra,
+    gioiHan: giai.gioiHan,
+    theoSnapshot: giai.theoSnapshot,
+    theoSong: giai.theoSong,
+    gioiHanVersionId: giai.gioiHanVersionId, // I-4 — basis chấm (versionId|LIVE) mỗi khoá
+  };
+}
+
+/**
+ * Pha 1B Task 5 (BG-11 ⛔, §3.6) — ghi CÂY 3 cấp `surface → position → capture` đã dịch
+ * bởi `dichCayKetQua` (Task 4, `server/services/ingestCayKetQua.ts`) vào ba bảng cây.
+ *
+ * ★★★ KHỐI B TASK 3 (B-4, Đ-19) — HÀM NÀY NAY GHI CẢ CẤP THỨ TƯ (component) vào
+ * `measurement_results`, trong CÙNG `tx`. Trước bản vá này docblock ghi "KHÔNG ghi cấp
+ * component" và đó là SỰ THẬT: `pointDefId` là `NOT NULL KHÔNG DEFAULT` nên chưa có ánh
+ * xạ `componentExtId → pointDefId` thì không ghi nổi một hàng. Task 2 (`ac8d5ab2`) đổ đầy
+ * `componentExtId` và Task 5 (`5eb881bb`) dựng chiều MÁY ⇒ ánh xạ tra được.
+ *
+ * ⚠ VÌ SAO ghi Ở ĐÂY chứ không truyền qua `measurementRows` của `persistInspectionAtomic`:
+ * `inspectionCaptureRowId` chỉ tồn tại SAU khi capture cha được ghi, mà `measurementRows`
+ * bị insert TRƯỚC `ghiCayKetQua`. Ghi ở đây thì khoá ngoại đúng là HỆ QUẢ CẤU TẠO, không
+ * phải một phép nối lại ở tầng trên.
+ *
+ * ⚠ Linh kiện KHÔNG tra ra `pointDefId` (chưa từng được dạy) ⇒ **KHÔNG ghi hàng, và ĐẾM
+ * VÀO {@link ThongKeCapComponent}** — xem docblock `traPointDefCapComponent` và báo cáo
+ * Task 3 cho hai hướng BỊ CẤM (bỏ qua im lặng ⇒ lớp C-1; tự tạo point-def ⇒ nguồn sự thật
+ * thứ hai cho bản dạy). Hàm này KHÔNG BAO GIỜ ném vì thiếu bản dạy: bo vẫn phải vào sổ,
+ * verdict vẫn cuộn từ cây.
+ *
+ * ⚠ BẮT BUỘC chạy trong CÙNG transaction với việc ghi header `product_inspections` — nếu
+ * ghi ở một lượt riêng, một lỗi giữa chừng (mất kết nối, vi phạm ràng buộc ở position/
+ * capture sau) để lại bo có header mà không có cây: đúng lớp mồ côi §3.6 phải dọn, không
+ * phải giả thuyết — `persistInspectionAtomic` gọi hàm này TRƯỚC KHI trả về, bên trong
+ * `db.transaction()` của chính nó.
+ *
+ * Khử trùng (BG-11): mỗi cấp `INSERT ... ON CONFLICT DO NOTHING` theo đúng unique index
+ * của migration 0340/0339, rồi SELECT lại hàng đã có khi bị conflict. Gửi lại một bo
+ * (retry mạng, hoặc hành vi "replay = duplicate" máy đã ghi nhận ở doc 61) không tạo thêm
+ * hàng ở BẤT KỲ cấp nào trong ba cấp — số hàng sau lượt hai bằng đúng số hàng sau lượt một.
+ *
+ * `inspectionTime` được truyền RIÊNG (không đọc từ `cay`) vì `CayDaDich` không mang mốc
+ * thời gian của bo — đúng thiết kế "sao thời gian xuống mọi cấp" của migration 0339: caller
+ * (đã có `data.inspectionTime` cho header) truyền lại y nguyên xuống đây.
+ */
+export async function ghiCayKetQua(
+  runner: InsertRunner,
+  inspectionId: number,
+  inspectionTime: Date,
+  cay: CayDaDich,
+  opts?: { tra?: KetQuaTraPointDef },
+): Promise<ThongKeCapComponent> {
+  const tk: ThongKeCapComponent = {
+    tong: 0, daGhi: 0, chuaDay: 0, nhapNhang: 0, boQuaCaptureDaCo: 0,
+    mayCoBanDay: opts?.tra?.mayCoBanDay ?? false,
+    mauChuaDay: [],
+  };
+  const hangComponent: InsertMeasurementResult[] = [];
+
+  for (const surface of cay.surfaces) {
+    const surfaceRowId = await upsertInspectionSurface(runner, inspectionId, inspectionTime, surface);
+    for (const position of surface.positions) {
+      const positionRowId = await upsertInspectionPosition(
+        runner, surfaceRowId, inspectionId, inspectionTime, position,
+      );
+      for (const capture of position.captures) {
+        const cap = await upsertInspectionCapture(
+          runner, positionRowId, inspectionId, inspectionTime, capture,
+        );
+        for (const k of capture.components) {
+          tk.tong += 1;
+          if (!cap.moi) { tk.boQuaCaptureDaCo += 1; continue; }
+          const khoa = khoaCapComponent(capture.captureId, k.componentId);
+          const pointDefId = opts?.tra?.banDo.get(khoa);
+          if (pointDefId === undefined) {
+            if (opts?.tra?.khoaNhapNhang.includes(khoa)) tk.nhapNhang += 1;
+            tk.chuaDay += 1;
+            if (tk.mauChuaDay.length < SO_MAU_CHUA_DAY) {
+              tk.mauChuaDay.push(`${capture.captureId}/${k.componentId}`);
+            }
+            continue;
+          }
+          hangComponent.push({
+            inspectionId,
+            // ⚠⚠ ĐÂY LÀ CỘT ĐỘT BIẾN BẮT BUỘC CỦA TASK 3. Bỏ dòng này ⇒ hàng ghi ra
+            // KHÔNG nối được vào cây kết quả: `inspection_captures` có N capture mà
+            // 0 hàng `measurement_results` trỏ tới — đúng hình dạng Đ-19 trước bản vá.
+            // Đo 2026-09-03 (đột biến ĐÃ CHẠY, đã hoàn tác): lưới ĐỎ 4/7 ca lúc đó, dòng đỏ
+            // nguyên văn `[aoi_management_test] 16 component ⇒ 16 hàng measurement_results:
+            // expected +0 to be 16 // Object.is equality` (và `[aoi_management_test] cửa ZIP
+            // ⇒ 16 hàng measurement_results: expected +0 to be 16` — CẢ HAI cửa cùng đỏ).
+            inspectionCaptureRowId: cap.id,
+            componentExtId: k.componentId,
+            pointDefId,
+            // Cột `result` là `overallresultenum` NOT NULL. Hợp đồng v2.0 ở lá chỉ có
+            // `OK|NG` + cờ `ntf` RIÊNG ⇒ dùng `verdictLuuTru` — CÙNG cầu nối hai bảng
+            // chữ cái mà cấp bo đã dùng, không chép công thức thứ hai. Một linh kiện
+            // `OK + ntf` KHÔNG bị hạ xuống `OK` (đó là lỗ 6,55% ở cấp bo, cùng lớp).
+            result: verdictLuuTru({ result: k.result, ntf: k.ntf }),
+            // …và cờ THÔ vẫn giữ nguyên cột riêng: `result` và `ntf` là hai tín hiệu
+            // độc lập (rollupVerdict, dòng 16-19). San phẳng một trong hai là mất dữ kiện.
+            ntf: k.ntf,
+            ntfSource: k.ntfSource ?? undefined,
+            errorCode: k.errorCode ?? undefined,
+            errorDesc: k.errorDesc ?? undefined,
+            // CÙNG phép dịch mà ba cấp trên dùng (`toDateOrUndefined`) — KHÔNG phải
+            // phép dịch "fake UTC" của `product_inspections.inspectionTime`. Xem
+            // báo cáo Task 3 §múi giờ: hai quy ước KHÁC NHAU tồn tại song song trong
+            // repo này, và hàng con phải khớp hàng CHA của nó (capture), không khớp header.
+            startedAt: toDateOrUndefined(k.startedAt),
+            completedAt: toDateOrUndefined(k.completedAt),
+            ...tachTriDo(k.value),
+            // ★★★ Khối B Task 4 (BG-92) — DẤU VẾT SPEC-GATE Ở CHÍNH HÀNG. Ba trạng
+            // thái của cổng phải ĐẾM ĐƯỢC bằng một câu `SELECT` trên đĩa, không chỉ
+            // trong bộ nhớ tiến trình: `Spec gate: …` (TRƯỢT, cùng tiền tố đường v1.x),
+            // `[SG:DAT]` (đã chấm, đạt), `[SG:KHONG_KL]` (tra ra bản dạy mà không chấm
+            // được gì ⇒ KHÔNG KẾT LUẬN). `null` = cổng tắt. Linh kiện CHƯA DẠY không
+            // có hàng nào ở đây cả — nó được đếm ở `ThongKeCapComponent.chuaDay` và
+            // (nhánh máy đã dạy) vào sổ WORM `ghiSoLechCayDay`.
+            // ⚠ Bỏ dòng này ⇒ "đã kiểm và ĐẠT" trông y hệt "chưa kiểm gì" trên bảng.
+            remark: k.ghiChuCong ?? undefined,
+          });
+          tk.daGhi += 1;
+        }
+      }
+    }
+  }
+
+  if (hangComponent.length > 0) {
+    await runner.insert(measurementResults).values(hangComponent);
+  }
+  return tk;
+}
+
 export async function createProductInspection(
   data: InsertProductInspection,
   outcome?: CreateInspectionOutcome,
 ) {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  if (!db) throw new DbUnavailableError();
 
   const idempotencyKey = data.idempotencyKey?.trim() || undefined;
 
@@ -254,7 +776,7 @@ export async function createProductInspection(
  */
 export async function reserveInspectionId(): Promise<number> {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  if (!db) throw new DbUnavailableError();
   const res = await db.execute(sql`SELECT nextval('product_inspections_id_seq') AS id`);
   const rows = ((res as { rows?: unknown[] })?.rows ?? (res as unknown[])) as Array<{ id?: unknown }>;
   const raw = rows?.[0]?.id;
@@ -288,16 +810,37 @@ export async function reserveInspectionId(): Promise<number> {
  * On duplicate the caller MUST skip every side-effect (order qty, ERP outbox, NG
  * alerts) exactly as with createProductInspection's duplicate short-circuit.
  * `opts.outcome.duplicate` is set for the out-param contract callers already use.
+ *
+ * Pha 1B Task 5 (BG-11 ⛔) — `opts.cay`: khi có, gọi `ghiCayKetQua` bằng ĐÚNG `tx` của
+ * transaction này (KHÔNG mở transaction riêng) NGAY SAU khi ghi measurements, chỉ trên
+ * nhánh board MỚI (không phải duplicate — cây của board gốc coi như đã có, giống hệt lý do
+ * measurementRows cũng bị bỏ qua trên nhánh duplicate). Đây là cách DUY NHẤT hàm này và
+ * `ghiCayKetQua` chia sẻ một transaction vật lý: nếu ghi cây ở một lượt riêng sau khi hàm
+ * này trả về, một lỗi giữa chừng để lại bo có header mà không có cây (mồ côi §3.6).
  */
 export async function persistInspectionAtomic(
   data: InsertProductInspection & { id: number },
   measurementRows: InsertMeasurementResult[],
-  opts?: { promoteOverallToNg?: boolean; outcome?: CreateInspectionOutcome },
-): Promise<{ id: number; duplicate: boolean }> {
+  opts?: {
+    promoteOverallToNg?: boolean;
+    outcome?: CreateInspectionOutcome;
+    cay?: CayDaDich;
+    /**
+     * Khối B Task 3 — bản đồ `(captureExtId, componentExtId) → pointDefId` do
+     * `traPointDefCapComponent` tra TRƯỚC transaction (một SELECT, ngoài tx: tra
+     * bản dạy là phép ĐỌC, không cần nằm trong cùng khoá ghi). Vắng ⇒ KHÔNG hàng
+     * cấp component nào được ghi, và `thongKeComponent.chuaDay === tong` nói rõ
+     * điều đó thay vì im lặng.
+     */
+    tra?: KetQuaTraPointDef;
+  },
+): Promise<{ id: number; duplicate: boolean; thongKeComponent?: ThongKeCapComponent }> {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  if (!db) throw new DbUnavailableError();
 
   const idempotencyKey = data.idempotencyKey?.trim() || undefined;
+
+  let thongKeComponent: ThongKeCapComponent | undefined;
 
   const { id, duplicate } = await db.transaction(async (tx) => {
     // ── 1) LEDGER CLAIM (only when the machine sent an explicit key) ───────────
@@ -361,6 +904,14 @@ export async function persistInspectionAtomic(
     if (measurementRows.length > 0) {
       await tx.insert(measurementResults).values(measurementRows);
     }
+    // Pha 1B Task 5 (BG-11) — cây kết quả, CÙNG tx với header + measurements ở trên.
+    // Khối B Task 3 (Đ-19) — và cấp COMPONENT của chính cây đó, cũng trong tx này.
+    if (opts?.cay) {
+      thongKeComponent = await ghiCayKetQua(
+        tx, header.id, data.inspectionTime as Date, opts.cay, { tra: opts.tra },
+      );
+      await ghiSoLechCayDay(tx, header.id, data.machineId, thongKeComponent);
+    }
     if (opts?.promoteOverallToNg) {
       await tx
         .update(productInspections)
@@ -396,7 +947,55 @@ export async function persistInspectionAtomic(
       .catch(() => {});
   }
 
-  return { id, duplicate };
+  return { id, duplicate, thongKeComponent };
+}
+
+/**
+ * ★★★ Khối B Task 3 — CỜ LỆCH cấp component, ghi vào `audit_logs` (WORM: `avi_app`
+ * chỉ có INSERT/SELECT — đo `information_schema.role_table_grants`, cả hai DB).
+ *
+ * ⚠ CHỈ ghi khi **máy ĐÃ có bản dạy** mà vẫn khai linh kiện ngoài cây đó. Đây là
+ * quyết định trung tâm của Task này, và lý do là ĐO ĐƯỢC, không phải khẩu vị:
+ *
+ *  · Nhánh "máy CHƯA dạy gì" (`mayCoBanDay === false`) — đo 2026-09-03 bằng
+ *    `avi_app`: `machine_template_versions` = **0 hàng** và `product_captures` =
+ *    **0 hàng** ở CẢ HAI DB (`aoi_management`, `aoi_management_test`). Tức HÔM NAY
+ *    100% máy rơi vào nhánh này. Ghi một hàng WORM cho MỖI BO ở nhánh đó = nhân đôi
+ *    `audit_logs` bằng một tin nhắn KHÔNG đổi (BG-93 retention còn đang mở). Nhánh
+ *    này vẫn KHÔNG im lặng: `ThongKeCapComponent` trả về tận cửa, hai router
+ *    `console.warn`, và độ chênh đo được thẳng từ dữ liệu (`inspection_captures`
+ *    có N hàng mà 0 hàng `measurement_results` nối vào).
+ *  · Nhánh "máy ĐÃ dạy nhưng khai linh kiện NGOÀI cây" — LỆCH THẬT giữa hai lời
+ *    khai của CÙNG một máy, có người phải xử, và số lượng bị chặn tự nhiên (chỉ
+ *    những máy đã đẩy cây rồi trôi). Đây là hàng đáng nằm trong sổ WORM.
+ *
+ * ⚠ TẠI SAO KHÔNG TỪ CHỐI GÓI: xem báo cáo Task 3 §quyết định — từ chối trên nền
+ * "0 bản dạy" là từ chối 100% bo v2.0 ngay ngày bật, tức một sự cố ngừng ingest,
+ * xấu hơn hẳn cái lỗ nó vá. Và khác lớp C-1: bo VẪN vào sổ, verdict VẪN cuộn từ
+ * cây, bo NG vẫn hiện ở mọi bảng yield — chỉ thiếu hàng LÁ.
+ */
+async function ghiSoLechCayDay(
+  runner: InsertRunner,
+  inspectionId: number,
+  machineId: number | null | undefined,
+  tk: ThongKeCapComponent,
+): Promise<void> {
+  if (!tk.mayCoBanDay || tk.chuaDay === 0) return;
+  await runner.insert(auditLogs).values({
+    action: HANH_DONG_LECH_CAY_DAY,
+    entityType: "inspection",
+    entityId: inspectionId,
+    entityName: `inspection#${inspectionId}`,
+    status: "failure",
+    details: JSON.stringify({
+      machineId: machineId ?? null,
+      tong: tk.tong,
+      daGhi: tk.daGhi,
+      chuaDay: tk.chuaDay,
+      nhapNhang: tk.nhapNhang,
+      mauChuaDay: tk.mauChuaDay,
+    }),
+  });
 }
 
 /**
@@ -432,7 +1031,7 @@ export async function deleteInspectionForCompensation(params: {
   idempotencyKey?: string | null;
 }): Promise<void> {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  if (!db) throw new DbUnavailableError();
   const key = params.idempotencyKey?.trim() || undefined;
   await db.transaction(async (tx) => {
     // measurement_results has an ON DELETE CASCADE FK to product_inspections (when
@@ -569,12 +1168,28 @@ export async function getInspectionById(id: number) {
 
 export async function updateProductInspectionNTF(id: number, userId: number, reason: string) {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  if (!db) throw new DbUnavailableError();
   await db.update(productInspections).set({
     overallResult: "NTF",
     ntfConfirmedBy: userId,
     ntfConfirmedAt: new Date(),
-    ntfReason: reason
+    ntfReason: reason,
+    // BG-41: NGƯỜI xác nhận NTF cũng phải cập nhật `ntfSource`, không chỉ
+    // `ntfConfirmedBy/At`. Trước bản vá này cột đứng yên ⇒ bo đã mang
+    // 'machine' (đường v2.0) vẫn khai 'machine' sau khi người xác nhận, làm
+    // `WHERE ntfSource='machine'` đếm THỪA cả bo do người đánh dấu.
+    // Ba chuyển tiếp (CASE tính TRÊN DB, tránh đọc-rồi-ghi giữa hai lượt xác
+    // nhận đồng thời): NULL (chưa có nguồn) → 'human'; 'machine' → 'both';
+    // 'human' → vẫn 'human' (xác nhận lần hai không đổi gì). 'both' → vẫn
+    // 'both' (đã có cả hai, không được phép hạ xuống một nguồn).
+    // ⚠ Cột `varchar(10)` KHÔNG CHECK/enum — ELSE gom mọi giá trị lạ về
+    // 'human' thay vì tin cột chỉ chứa ba giá trị đã biết.
+    ntfSource: sql`CASE ${productInspections.ntfSource}
+      WHEN 'machine' THEN 'both'
+      WHEN 'both' THEN 'both'
+      WHEN 'human' THEN 'human'
+      ELSE 'human'
+    END`,
   }).where(eq(productInspections.id, id));
 }
 
@@ -610,7 +1225,7 @@ export async function bulkAcknowledgeInspections(params: {
   userId: number;
 }): Promise<{ updatedIds: number[]; alreadyAcknowledgedIds: number[] }> {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  if (!db) throw new DbUnavailableError();
   if (params.ids.length === 0) return { updatedIds: [], alreadyAcknowledgedIds: [] };
 
   const now = new Date();
@@ -649,14 +1264,14 @@ export async function bulkAcknowledgeInspections(params: {
 // ============ MEASUREMENT RESULT FUNCTIONS ============
 export async function createMeasurementResult(data: InsertMeasurementResult) {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  if (!db) throw new DbUnavailableError();
   const [result] = await db.insert(measurementResults).values(data).returning({ id: measurementResults.id });
   return result.id;
 }
 
 export async function createMeasurementResults(dataList: InsertMeasurementResult[]) {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  if (!db) throw new DbUnavailableError();
   if (dataList.length === 0) return;
   await db.insert(measurementResults).values(dataList);
 }
@@ -671,6 +1286,10 @@ export async function getMeasurementResultsByInspection(inspectionId: number) {
     measuredValue: measurementResults.measuredValue,
     measuredValueText: measurementResults.measuredValueText,
     result: measurementResults.result,
+    // Pha 1F Task 5 (BG-82 ⛔) — `correctResult` (inspectionRouters.ts) cần cột
+    // này để phân biệt dòng "NTF thật" (ntfSource khác NULL) với dòng "NTF bị
+    // ép" vì `result` NOT NULL (ntfSource NULL, xem aoiPackageRouter.ts buildRecord).
+    ntfSource: measurementResults.ntfSource,
     imageUrl: measurementResults.imageUrl,
     imageKey: measurementResults.imageKey,
     remark: measurementResults.remark,
@@ -713,7 +1332,7 @@ export async function getMeasurementResultById(id: number) {
 
 export async function updateMeasurementResultRemark(id: number, remark: string) {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  if (!db) throw new DbUnavailableError();
   await db.update(measurementResults).set({ remark }).where(eq(measurementResults.id, id));
 }
 
@@ -725,6 +1344,14 @@ export interface CursorPaginationResult<T> {
   prevCursor: string | null;
   hasMore: boolean;
   totalCount?: number;
+  /**
+   * ⚠ 2026-08-17 — TRẠNG THÁI RỖNG TRUNG THỰC. `data: []` của một tài khoản CHƯA ĐƯỢC GÁN
+   * NHÀ MÁY không được trình bày giống hệt `data: []` của một bộ lọc không khớp gì. Giao
+   * diện phải đọc ô này trước khi in "không có dữ liệu" (xem `common.scopeEmpty.*`).
+   * `null` = phạm vi bình thường; `undefined` = lối đi không mang danh tính người dùng.
+   */
+  scopeEmptyReason?: ScopeEmptyReason | null;
+  scopeMessage?: string | null;
 }
 
 export interface CursorPaginationParams {
@@ -771,11 +1398,16 @@ export async function getProductInspectionsCursor(params: CursorPaginationParams
   const limit = Math.min(params.limit || 50, 500); // Max 500 per request
   const conditions: SQL[] = [];
 
-  // Access filter by user assignments
+  // Access filter by user assignments.
+  // ⚠ `resolveDataScope` trả CẢ điều kiện SQL lẫn câu giải thích: một tài khoản 0 gán nhà máy
+  // nhận vị từ FALSE (không phải `undefined` = không lọc, xem `_core/accessControl.ts`) và
+  // `data: []` của nó phải đi kèm lý do, không được im lặng thành "không có dữ liệu".
+  let scope: ScopeLabels = UNSCOPED_LABELS;
   if (params.userId && params.userRole !== 'admin') {
-    const { getAccessFilterConditions } = await import("../_core/accessControl");
-    const accessFilter = await getAccessFilterConditions(params.userId, params.userRole || 'user');
-    if (accessFilter) conditions.push(accessFilter);
+    const { resolveDataScope } = await import("../_core/accessControl");
+    const resolved = await resolveDataScope(params.userId, params.userRole || 'user');
+    if (resolved.filter) conditions.push(resolved.filter);
+    scope = scopeLabelsOf(resolved);
   }
 
   // Build filter conditions
@@ -850,6 +1482,8 @@ export async function getProductInspectionsCursor(params: CursorPaginationParams
     nextCursor: hasMore && lastItem ? encodeCursor(lastItem.id, lastItem.inspectionTime) : null,
     prevCursor: firstItem ? encodeCursor(firstItem.id, firstItem.inspectionTime) : null,
     hasMore,
+    scopeEmptyReason: scope.scopeEmptyReason,
+    scopeMessage: scope.scopeMessage,
   };
 }
 

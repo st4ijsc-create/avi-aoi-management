@@ -1,0 +1,154 @@
+/**
+ * ★★★ G6 — BỘ ĐO AGENTIC **NHIỀU TỆP**. Thứ bộ bài hàm-thuần KHÔNG nói được gì.
+ *
+ * ══════════════════════════════════════════════════════════════════════════════════════════════
+ * VÌ SAO CẦN BỘ ĐO NÀY
+ * ══════════════════════════════════════════════════════════════════════════════════════════════
+ * `tasks.json` / `tasks-hard.json` đo *"sinh một hàm thuần trong MỘT tệp có chạy không"*. Đó là
+ * một câu hỏi thật, nhưng nó **không** là câu hỏi mà người ta so Claude/Cursor: *"đưa nó một repo
+ * có lỗi, nó có tự đọc → sửa → chạy test → sửa tiếp cho tới khi XANH không?"*
+ *
+ * ⚠ **PHÉP ĐO KHÔNG TIN LỜI KHAI CỦA TÁC NHÂN.** Nó tự chạy `node --test` SAU lượt và đọc mã thoát.
+ *   Một tác nhân nói "đã xanh" mà test vẫn đỏ ⇒ TRƯỢT. Đây là điều kiện để con số có nghĩa.
+ * ⚠ **RESET giữa mỗi lượt** từ `.goc/` — một lượt không được thừa hưởng bản sửa của lượt trước,
+ *   nếu không ta đo "trí nhớ của đĩa" chứ không đo tác nhân.
+ * ⚠ Ghi cả `daChamTepTest`: nếu tác nhân sửa chính TỆP TEST để làm nó xanh thì đó KHÔNG phải sửa
+ *   lỗi — đó là gaming, và nó phải hiện ra thành một cột riêng chứ không lẫn vào tỷ lệ đạt.
+ */
+import fs from "node:fs";
+import { execSync } from "node:child_process";
+import { ck } from "./cookie.mjs";
+
+const ROOT = "D:/SOURCES/avi-aoi-management";
+const DU_AN = { A1: `${ROOT}/sandbox-projects/agentic-demo`, A2: `${ROOT}/sandbox-projects/agentic-demo2` };
+const args = process.argv.slice(2);
+const arg = (k, d) => { const i = args.indexOf(k); return i >= 0 ? args[i + 1] : d; };
+const CK = ck(arg("--cookie", `${ROOT}/tmp/audit-ai/ck.txt`));
+const LABEL = arg("--label", "agentic");
+const SO_LUOT = Number(arg("--luot", 3));
+
+const cauHoi = (ten) => `Trong dự án sandbox-projects/${ten} có test đang đỏ. Hãy tự động sửa mã nguồn cho tới khi test xanh. Chạy node --test sandbox-projects/${ten}/test/kho.test.mjs để kiểm.`;
+const BAI = [
+  /** MỘT lỗi, MỘT tệp — đo vòng tự trị có chạy trọn không. */
+  { id: "A1", ten: "agentic-demo", q: cauHoi("agentic-demo") },
+  /**
+   * HAI lỗi ở HAI tệp (`kho.mjs` thiếu chặn tong<=0 · `ca.mjs` thiếu chuẩn hoá âm nên ca vắt qua
+   * nửa đêm sai). Bài này tồn tại để trả lời ĐÚNG MỘT câu hỏi: **trần 3 vòng / 20 s có BÓ không?**
+   * Một lỗi thì một vòng vá là đủ; hai lỗi ở hai tệp thì KHÔNG. Không có bài này thì mọi con số về
+   * trần đều là phỏng đoán — và bản thiết kế cấm chốt ngưỡng bằng phỏng đoán.
+   */
+  { id: "A2", ten: "agentic-demo2", q: cauHoi("agentic-demo2") },
+];
+
+const chayTest = (DA) => {
+  try {
+    execSync("node --test test/kho.test.mjs", { cwd: DA, stdio: ["ignore", "pipe", "pipe"], timeout: 60000 });
+    return { xanh: true, out: "" };
+  } catch (e) {
+    return { xanh: false, out: `${e.stdout || ""}\n${e.stderr || ""}`.slice(-600) };
+  }
+};
+
+/**
+ * ⚠⚠ BÀI HỌC CỦA CHÍNH BỘ ĐO NÀY: bản đầu reset `src/` bằng một biến thể KHÁC với thứ đã commit
+ * ⇒ mọi tệp trong `src/` lệch git HEAD ⇒ hàng rào "tệp có thay đổi CHƯA LƯU" chặn mọi lượt ghi
+ * ⇒ A2 KHÔNG BAO GIỜ có thể đạt, và con số 0/3 khi ấy là HIỆN VẬT CÔNG CỤ, không phải giới hạn model.
+ * Nay mỗi bài có DỰ ÁN RIÊNG được commit KÈM SẴN lỗi của nó, và reset đưa về đúng nội dung đã commit.
+ */
+const datLai = (DA) => {
+  /**
+   * ★★★ KHÔI PHỤC BẰNG `git checkout`, KHÔNG bằng chép từ `.goc/` — bài học ĐO ĐƯỢC, lần thứ hai
+   * cùng một hàng rào.
+   *
+   * Bản trước chép `.goc/src` → `src`. Nội dung giống hệt TỪNG KÝ TỰ, nhưng `.goc` mang **CRLF**
+   * còn HEAD mang **LF** (`.gitattributes` đặt `eol: lf`) ⇒ tệp "bẩn" ở mức BYTE ⇒ hàng rào
+   * *"tệp đích có thay đổi CHƯA LƯU — không ghi đè"* (hoạt động ĐÚNG) chặn mọi lượt ghi ⇒ A2 tụt
+   * từ 3/3 xuống 0/2, và con số ấy là **hiện vật công cụ**, không phải hồi quy sản phẩm.
+   *
+   * `git checkout --` đưa đĩa về ĐÚNG byte của HEAD, nên "sạch" là một sự thật chứ không phải may mắn.
+   */
+  const rel = DA.replace(`${ROOT}/`, "");
+  execSync(`git checkout -- "${rel}/src" "${rel}/test"`, { cwd: ROOT, stdio: ["ignore", "pipe", "pipe"] });
+};
+
+const bam = (p) => {
+  try { return fs.readFileSync(p, "utf8"); } catch { return ""; }
+};
+
+const hoi = async (q) => {
+  const t0 = Date.now();
+  const res = await fetch("http://127.0.0.1:3000/api/ai/local-kb/stream", {
+    method: "POST", headers: { "Content-Type": "application/json", Cookie: CK },
+    body: JSON.stringify({ question: q, topK: 5, history: [], userRole: "admin",
+      context: { route: "/ai-coding-workspace", uiLanguage: "vi", codingMode: true, projectId: "repo" } }),
+  });
+  if (!res.ok) return { ms: Date.now() - t0, evs: [], text: "", err: `HTTP ${res.status}` };
+  let text = "", buf = ""; const dec = new TextDecoder(); const evs = [];
+  for await (const c of res.body) {
+    buf += dec.decode(c, { stream: true });
+    let i; while ((i = buf.indexOf("\n\n")) >= 0) {
+      const blk = buf.slice(0, i); buf = buf.slice(i + 2);
+      const m = blk.match(/^data:\s*([\s\S]*)$/m); if (!m) continue;
+      let o; try { o = JSON.parse(m[1]); } catch { continue; }
+      if (o.type === "token") text += o.token ?? "";
+      // R2 phần B — soi GƯƠNG client (useKbChatStream): `done.answerRevised` ⇒ văn bản đã sửa tất định sau stream
+      // (bổ sung `using` C#) THAY văn bản tích luỹ. Thiết bị đo phải thấy đúng thứ người dùng thấy.
+      else if (o.type === "done" && o.answerRevised === true && typeof o.answer === "string") { text = o.answer; evs.push("done:revised"); }
+      else evs.push(o.type + (o.toolName ? ":" + o.toolName : "") + (o.stop ? "(" + o.stop + ")" : ""));
+    }
+  }
+  return { ms: Date.now() - t0, evs, text };
+};
+
+/**
+ * ★★★ CỔNG SỨC KHOẺ — cùng bài học với `run.mjs`, và lần này cho CẢ HAI phía.
+ * Bản đầu chỉ canh llama-server; khi node (:3000) chết, harness NỔ bằng một `ECONNREFUSED` thô
+ * giữa chừng thay vì nói "phép đo này vô giá trị". Một bộ đo phải phân biệt được "hệ trả lời sai"
+ * với "hệ không có ở đó" — nếu không nó sẽ sinh ra số giả đúng lúc ta cần số thật nhất.
+ */
+async function kiemSong(url, ten) {
+  try {
+    const r = await fetch(url, { signal: AbortSignal.timeout(4000) });
+    if (!r.ok && r.status !== 404) throw new Error("HTTP " + r.status);
+  } catch (e) {
+    console.error(`
+⛔ VỨT KẾT QUẢ: ${ten} KHÔNG khoẻ (${e}). Mọi số của lượt này VÔ GIÁ TRỊ.`);
+    process.exit(2);
+  }
+}
+await kiemSong("http://127.0.0.1:8091/health", "llama-server :8091");
+await kiemSong("http://127.0.0.1:3000/", "server :3000");
+
+const rows = [];
+for (const b of BAI) {
+  for (let i = 1; i <= SO_LUOT; i++) {
+    const DA = DU_AN[b.id];
+    datLai(DA);
+    const truoc = chayTest(DA);
+    if (truoc.xanh) { console.error("⛔ VỨT: test ĐÃ XANH trước khi tác nhân chạy — bài không đo được gì."); process.exit(2); }
+    const testGoc = bam(`${DA}/test/kho.test.mjs`);
+
+    process.stderr.write(`▶ ${b.id} lượt ${i} … `);
+    const g = await hoi(b.q);
+    const sau = chayTest(DA);
+    const daChamTepTest = bam(`${DA}/test/kho.test.mjs`) !== testGoc;
+
+    rows.push({ id: b.id, ten: b.ten, luot: i, xanhThat: sau.xanh, daChamTepTest, ms: g.ms,
+      evs: g.evs, chars: g.text.length, loi: sau.xanh ? null : sau.out });
+    process.stderr.write(`${sau.xanh ? "XANH THẬT" : "vẫn ĐỎ"}${daChamTepTest ? "  ⚠ ĐÃ SỬA TỆP TEST" : ""}  ${g.ms}ms\n`);
+  }
+}
+
+for (const k of Object.keys(DU_AN)) datLai(DU_AN[k]);
+fs.mkdirSync(`${ROOT}/scripts/ai-eval/codegen-chay-duoc/reports`, { recursive: true });
+fs.writeFileSync(`${ROOT}/scripts/ai-eval/codegen-chay-duoc/reports/${LABEL}.json`, JSON.stringify(rows, null, 1));
+const dat = rows.filter(r => r.xanhThat && !r.daChamTepTest).length;
+const gaming = rows.filter(r => r.daChamTepTest).length;
+console.log(`\n══ ${LABEL} ══`);
+console.log(` XANH THẬT (không đụng tệp test): ${dat}/${rows.length}`);
+for (const id of [...new Set(rows.map(r => r.id))]) {
+  const g = rows.filter(r => r.id === id);
+  console.log(`   ${id}: ${g.filter(r => r.xanhThat && !r.daChamTepTest).length}/${g.length}`);
+}
+if (gaming) console.log(` ⚠ có ${gaming} lượt SỬA TỆP TEST — KHÔNG tính là đạt`);
+console.log(` thời gian trung vị: ${[...rows.map(r => r.ms)].sort((a, b) => a - b)[Math.floor(rows.length / 2)]}ms`);

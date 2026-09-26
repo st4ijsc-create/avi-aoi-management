@@ -2,6 +2,7 @@ import { useState } from "react";
 import { useTranslation } from 'react-i18next';
 import { useLocation } from "wouter";
 import { trpc } from "@/lib/trpc";
+import { toastTrpcError } from "@/lib/trpcErrors";
 import {
   templateToCustomDashboardWidgets,
   type TemplateLayoutItem,
@@ -31,11 +32,13 @@ import {
 } from "lucide-react";
 
 // Predefined system templates
-const SYSTEM_TEMPLATES = [
+// doc 67 W8 (việc 5): export để CustomDashboardContent tái dùng làm empty-state
+// quick-start (grid 6 template 1-click khi user chưa có dashboard nào).
+export const SYSTEM_TEMPLATES = [
   {
     id: "production-overview",
     name: "Production Overview",
-    description: "Tổng quan sản xuất với biểu đồ sản lượng, yield rate, và trạng thái máy",
+    description: "embTpl.tongQuanSanXuatVoi",
     templateType: "system" as const,
     icon: BarChart3,
     widgets: ["production-stats", "yield-chart", "machine-status", "hourly-trend"],
@@ -50,7 +53,7 @@ const SYSTEM_TEMPLATES = [
   {
     id: "quality-control",
     name: "Quality Control",
-    description: "Giám sát chất lượng với NG analysis, SPC charts, và defect tracking",
+    description: "embTpl.giamSatChatLuongVoi",
     templateType: "system" as const,
     icon: PieChart,
     widgets: ["ng-analysis", "spc-chart", "defect-pareto", "quality-trend"],
@@ -65,7 +68,7 @@ const SYSTEM_TEMPLATES = [
   {
     id: "machine-health",
     name: "Machine Health",
-    description: "Theo dõi sức khỏe máy với uptime, alerts, và maintenance schedule",
+    description: "embTpl.theoDoiSucKhoeMay",
     templateType: "system" as const,
     icon: Activity,
     widgets: ["machine-uptime", "alert-summary", "maintenance-calendar", "oee-gauge"],
@@ -80,7 +83,7 @@ const SYSTEM_TEMPLATES = [
   {
     id: "executive-summary",
     name: "Executive Summary",
-    description: "Báo cáo tổng hợp cho quản lý với KPIs, trends, và comparisons",
+    description: "embTpl.baoCaoTongHopCho",
     templateType: "system" as const,
     icon: Gauge,
     widgets: ["kpi-cards", "factory-comparison", "monthly-trend", "top-issues"],
@@ -95,7 +98,7 @@ const SYSTEM_TEMPLATES = [
   {
     id: "realtime-monitoring",
     name: "Realtime Monitoring",
-    description: "Giám sát thời gian thực với live data, alerts, và status updates",
+    description: "embTpl.giamSatThoiGianThuc",
     templateType: "system" as const,
     icon: TrendingUp,
     widgets: ["live-production", "active-alerts", "machine-map", "recent-inspections"],
@@ -110,7 +113,7 @@ const SYSTEM_TEMPLATES = [
   {
     id: "alert-management",
     name: "Alert Management",
-    description: "Quản lý cảnh báo với alert history, rules, và notifications",
+    description: "embTpl.quanLyCanhBaoVoi",
     templateType: "system" as const,
     icon: AlertTriangle,
     widgets: ["alert-timeline", "alert-rules", "notification-stats", "escalation-matrix"],
@@ -124,7 +127,9 @@ const SYSTEM_TEMPLATES = [
   },
 ];
 
-export default function EmbeddedDashboardTemplates() {
+// doc 67 W8 (P3): `embedded` — khi render trong hub /dashboard-center, PageHeader
+// của hub đã có tiêu đề + mô tả nên section con bỏ h2+description lặp (giữ nút hành động).
+export default function EmbeddedDashboardTemplates({ embedded = false }: { embedded?: boolean } = {}) {
   const { t } = useTranslation();
   const { user } = useAuth();
   const isAdmin = user?.role === "admin";
@@ -157,7 +162,7 @@ export default function EmbeddedDashboardTemplates() {
       setApplyingId(null);
     },
     onError: (error) => {
-      toast.error(error.message);
+      toastTrpcError(error);
       setApplyingId(null);
     },
   });
@@ -191,7 +196,7 @@ export default function EmbeddedDashboardTemplates() {
       refetch();
     },
     onError: (error) => {
-      toast.error(error.message);
+      toastTrpcError(error);
     },
   });
 
@@ -201,7 +206,7 @@ export default function EmbeddedDashboardTemplates() {
       refetch();
     },
     onError: (error) => {
-      toast.error(error.message);
+      toastTrpcError(error);
     },
   });
 
@@ -233,17 +238,19 @@ export default function EmbeddedDashboardTemplates() {
 
   return (
     <div className="space-y-6">
-      {/* Header */}
-      <div className="flex items-center justify-between">
-        <div>
-          <h2 className="text-xl font-bold flex items-center gap-2">
-            <LayoutTemplate className="h-5 w-5" />
-            Dashboard Templates
-          </h2>
-          <p className="text-sm text-muted-foreground mt-1">
-            {t('dashboard.selectOrCreateTemplate')}
-          </p>
-        </div>
+      {/* Header — embedded (doc 67 W8 P3): bỏ h2+description lặp với PageHeader hub */}
+      <div className={embedded ? "flex items-center justify-end" : "flex items-center justify-between"}>
+        {!embedded && (
+          <div>
+            <h2 className="text-xl font-bold flex items-center gap-2">
+              <LayoutTemplate className="h-5 w-5" />
+              Dashboard Templates
+            </h2>
+            <p className="text-sm text-muted-foreground mt-1">
+              {t('dashboard.selectOrCreateTemplate')}
+            </p>
+          </div>
+        )}
         {isAdmin && (
           <Dialog open={createDialogOpen} onOpenChange={setCreateDialogOpen}>
             <DialogTrigger asChild>
@@ -312,8 +319,8 @@ export default function EmbeddedDashboardTemplates() {
                     </div>
                     <Badge variant="secondary" className="text-xs">System</Badge>
                   </div>
-                  <CardTitle className="text-base mt-2">{template.name}</CardTitle>
-                  <CardDescription className="text-xs">{template.description}</CardDescription>
+                  <CardTitle className="text-base mt-2">{t(template.name)}</CardTitle>
+                  <CardDescription className="text-xs">{t(template.description)}</CardDescription>
                 </CardHeader>
                 <CardContent>
                   <div className="flex items-center justify-between mb-3">
@@ -374,8 +381,8 @@ export default function EmbeddedDashboardTemplates() {
                     </div>
                     <Badge variant="default" className="text-xs">Custom</Badge>
                   </div>
-                  <CardTitle className="text-base mt-2">{template.name}</CardTitle>
-                  <CardDescription className="text-xs">{template.description}</CardDescription>
+                  <CardTitle className="text-base mt-2">{t(template.name)}</CardTitle>
+                  <CardDescription className="text-xs">{t(template.description)}</CardDescription>
                 </CardHeader>
                 <CardContent>
                   <div className="flex items-center justify-between mb-3">

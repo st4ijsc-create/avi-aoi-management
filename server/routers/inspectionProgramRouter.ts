@@ -16,6 +16,7 @@
  */
 import { z } from "zod";
 import { TRPCError } from "@trpc/server";
+import { appError } from "../_core/appError";
 import { protectedProcedure, qualityProcedure, router } from "../_core/trpc";
 import { requirePermission } from "../_core/accessControl";
 import {
@@ -34,12 +35,20 @@ import {
 function rethrow(err: unknown): never {
   const message = err instanceof Error ? err.message : String(err);
   if (message.includes("Segregation of duties")) {
-    throw new TRPCError({ code: "FORBIDDEN", message });
+    throw appError("FORBIDDEN", "PERMISSION_DENIED", { action: "selfApproveProgramRelease" }, message);
+  }
+  // Review cuối, ca I-A #10: inspectionProgramService ném CẢ `Product model #N not
+  // found` (createRelease — thiếu SẢN PHẨM) LẪN `Program release #N not found`
+  // (approve/reject/release/compare — thiếu BẢN PHÁT HÀNH). Regex "not found" trước
+  // đây gộp cả hai vào entity:"programRelease" — SAI HẲN thực thể khi thứ thiếu là mã
+  // sản phẩm. Phân biệt theo nội dung message trước khi gán entity.
+  if (message.includes("Product model") && message.includes("not found")) {
+    throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "productModel" }, message);
   }
   if (message.includes("not found")) {
-    throw new TRPCError({ code: "NOT_FOUND", message });
+    throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "programRelease" }, message);
   }
-  throw new TRPCError({ code: "BAD_REQUEST", message });
+  throw appError("BAD_REQUEST", "OPERATION_FAILED", { operation: "manageProgramRelease" }, message);
 }
 
 export const inspectionProgramRouter = router({
@@ -54,7 +63,7 @@ export const inspectionProgramRouter = router({
     .input(z.object({ id: z.number().int().positive() }))
     .query(async ({ input }) => {
       const row = await getReleaseById(input.id);
-      if (!row) throw new TRPCError({ code: "NOT_FOUND", message: "Bản phát hành không tồn tại." });
+      if (!row) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "programRelease" }, "Bản phát hành không tồn tại.");
       return row;
     }),
 

@@ -14,7 +14,12 @@
  */
 import { z } from "zod";
 import { TRPCError } from "@trpc/server";
-import { router, protectedProcedure, adminProcedure } from "../_core/trpc";
+import { appError } from "../_core/appError";
+import { router, moduleProcedure, moduleGate, adminProcedure as adminProcedureBase } from "../_core/trpc";
+// ★ Cổng giấy phép MOD_AI — chỉ THÊM chiều giấy phép, RBAC/vai/2FA giữ nguyên từng ký tự.
+//   Không-brick + fail-safe ở `_core/moduleGate.ts`; lượng từ canh ở `congGiayPhepAiCensus.test.ts`.
+const protectedProcedure = moduleProcedure("MOD_AI");
+const adminProcedure = adminProcedureBase.use(moduleGate("MOD_AI"));
 import {
   insertDefectSegmentation,
   listDefectSegmentations,
@@ -40,10 +45,20 @@ function decodeBase64Image(b64: string): Buffer {
   try {
     buf = Buffer.from(cleaned, "base64");
   } catch {
-    throw new TRPCError({ code: "BAD_REQUEST", message: "Invalid base64 image" });
+    // Task 5 (doc 71) — xem ghi chú cùng pattern ở aiAdvancedVisionRouter.ts:
+    // reason tách 3 nguyên nhân trước đây render 1 câu; nhánh vượt dung lượng tái
+    // dùng KB_FILE_TOO_LARGE{limitMb}, KHÔNG nhồi vào INVALID_VALUE.
+    throw appError("BAD_REQUEST", "INVALID_VALUE", { field: "image", reason: "invalidBase64Image" }, "Invalid base64 image");
   }
-  if (buf.length === 0) throw new TRPCError({ code: "BAD_REQUEST", message: "Empty image payload" });
-  if (buf.length > MAX_IMAGE_BYTES) throw new TRPCError({ code: "PAYLOAD_TOO_LARGE", message: `Image exceeds ${MAX_IMAGE_BYTES} bytes` });
+  if (buf.length === 0) throw appError("BAD_REQUEST", "INVALID_VALUE", { field: "image", reason: "emptyImagePayload" }, "Empty image payload");
+  if (buf.length > MAX_IMAGE_BYTES) {
+    throw appError(
+      "PAYLOAD_TOO_LARGE",
+      "KB_FILE_TOO_LARGE",
+      { limitMb: Math.round((MAX_IMAGE_BYTES / (1024 * 1024)) * 10) / 10 },
+      `Image exceeds ${MAX_IMAGE_BYTES} bytes`,
+    );
+  }
   return buf;
 }
 
@@ -127,9 +142,9 @@ export const aiSegmentationRouter = router({
     .input(z.object({ id: z.number().int().positive() }))
     .mutation(async ({ ctx, input }) => {
       const row = await getDefectSegmentationById(input.id);
-      if (!row) throw new TRPCError({ code: "NOT_FOUND", message: "Mask not found" });
+      if (!row) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "mask" }, "Mask not found");
       if (row.createdBy !== ctx.user.id && ctx.user.role !== "admin") {
-        throw new TRPCError({ code: "FORBIDDEN", message: "Not authorized to delete this mask" });
+        throw appError("FORBIDDEN", "PERMISSION_DENIED", { action: "deleteMask" }, "Not authorized to delete this mask");
       }
       await deleteDefectSegmentation(input.id);
       return { success: true };
@@ -144,10 +159,7 @@ export const aiSegmentationRouter = router({
     .query(({ input }) => {
       const m = measureFromMaskData(input.maskData, input.umPerPx ?? null);
       if (!m) {
-        throw new TRPCError({
-          code: "BAD_REQUEST",
-          message: "Cannot measure mask: polygon requires >= 3 points (RLE measurement not supported)",
-        });
+        throw appError("BAD_REQUEST", "INVALID_VALUE", { field: "maskData" }, "Cannot measure mask: polygon requires >= 3 points (RLE measurement not supported)");
       }
       return m;
     }),
@@ -187,16 +199,20 @@ export const aiSegmentationRouter = router({
         return { ...result, masks, degraded: false as const };
       } catch (err) {
         if (err instanceof SegmentationUnavailableError) {
-          throw new TRPCError({
-            code: "PRECONDITION_FAILED",
-            message: `MODEL_NOT_AVAILABLE: ${err.message}`,
-            cause: err,
-          });
+          // Review cuối, ca I-A #12: SegmentationUnavailableError ném khi model không
+          // tồn tại HOẶC `model.status !== "ACTIVE"` — trạng thái của MỘT bản ghi model,
+          // không phải một cờ tính năng hệ thống. FEATURE_DISABLED nói "tính năng chưa
+          // bật" — sai, không có công tắc nào cho người dùng bật. Đổi sang
+          // OPERATION_FAILED, tái dùng cùng khoá "segmentImage" với nhánh catch chung ở
+          // dưới — cả hai đều là "không thực hiện được: phân đoạn ảnh".
+          throw appError("PRECONDITION_FAILED", "OPERATION_FAILED", { operation: "segmentImage" }, `MODEL_NOT_AVAILABLE: ${err.message}`);
         }
-        throw new TRPCError({
-          code: "INTERNAL_SERVER_ERROR",
-          message: err instanceof Error ? err.message : String(err),
-        });
+        throw appError(
+          "INTERNAL_SERVER_ERROR",
+          "OPERATION_FAILED",
+          { operation: "segmentImage" },
+          err instanceof Error ? err.message : String(err),
+        );
       }
     }),
 });

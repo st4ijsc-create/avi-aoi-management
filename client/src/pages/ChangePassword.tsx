@@ -10,11 +10,18 @@ import { Key, Eye, EyeOff, AlertCircle, CheckCircle } from "lucide-react";
 import { useState } from "react";
 import { useTranslation } from 'react-i18next';
 import { toast } from "sonner";
+import { toastTrpcError } from "@/lib/trpcErrors";
 import { useLocation } from "wouter";
+// ★★★ Pha 7 / vá NHÀ TÙ I-4 — chủ DUY NHẤT của "tài khoản xác thực nội bộ" (`shared/xacThucNoiBo.ts`).
+// ⚠⚠ ĐÂY là **bức tường người dùng NHÌN THẤY**: với `loginMethod = 'password'`, vị từ cũ thay cả
+//    biểu mẫu bằng màn "không thể đổi mật khẩu" — trong khi cổng buộc-đổi-mật-khẩu vừa đẩy họ TỚI
+//    đúng trang này. Client và máy chủ phải hỏi **cùng một chủ**, nếu không luật lại trôi đi.
+import { laXacThucNoiBo } from "@shared/xacThucNoiBo";
 
 export default function ChangePassword() {
   const { t } = useTranslation();
   const { user } = useAuth();
+  const utils = trpc.useUtils();
   const [, setLocation] = useLocation();
   const [showCurrentPassword, setShowCurrentPassword] = useState(false);
   const [showNewPassword, setShowNewPassword] = useState(false);
@@ -26,13 +33,27 @@ export default function ChangePassword() {
   });
 
   const changePasswordMutation = trpc.user.changePassword.useMutation({
-    onSuccess: () => {
+    onSuccess: async () => {
       toast.success(t('auth.changePasswordSuccess'));
       setFormData({ currentPassword: "", newPassword: "", confirmPassword: "" });
+      /**
+       * ★★★★ Pha 7 / I-4 — **ĐỌC LẠI `auth.me` TRƯỚC KHI RỜI MÀN NÀY.**
+       *
+       * ⚠⚠⚠ Không có dòng này, cổng buộc-đổi-mật-khẩu (`components/CongDoiMatKhau.tsx`) trở thành
+       * một **NHÀ TÙ**: máy chủ đã hạ cờ (`updateUserPassword` ghi `passwordChangedAt` trong cùng
+       * giao dịch) nhưng client vẫn giữ bản `auth.me` **CŨ** trong cache — `staleTime` 30 s và
+       * `refetchOnWindowFocus: false` (`main.tsx`) ⇒ cổng đọc `mustChangePassword: true`, đẩy
+       * người dùng **ngược lại** đúng màn này, và họ đổi mật khẩu bao nhiêu lần cũng không thoát ra
+       * cho tới khi cache tự hết hạn. Hỏng **im lặng**: không lỗi, không cảnh báo, chỉ là một vòng
+       * lặp.
+       * ⚠ `await` là bắt buộc — điều hướng trước khi cache mới về sẽ dựng lại đúng vòng lặp ấy
+       *   trong khoảnh khắc render kế tiếp.
+       */
+      await utils.auth.me.invalidate();
       setLocation("/profile");
     },
     onError: (error: any) => {
-      toast.error(error.message || t('errors.generic'));
+      toastTrpcError(error);
     },
   });
 
@@ -55,8 +76,8 @@ export default function ChangePassword() {
     });
   };
 
-  // Check if user is local account
-  const isLocalAccount = (user as any)?.loginMethod === "local";
+  // Tài khoản này có được hệ NÀY xác thực bằng mật khẩu không — hỏi chủ duy nhất, KHÔNG so chuỗi.
+  const isLocalAccount = laXacThucNoiBo((user as any)?.loginMethod);
 
   // Password strength indicator
   const getPasswordStrength = (password: string) => {

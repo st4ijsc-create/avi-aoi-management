@@ -24,6 +24,21 @@ export interface HubTool {
   /** Module name; tile hidden unless the user has canView (admin always passes). */
   requiredPermission?: string;
   /**
+   * ★★★ Đợt 62 mục A — cổng HOẶC: hiện ô nếu người dùng có **ít nhất một** quyền
+   * trong tập. Cần cho ô trỏ tới route khai `requiredPermissionAny` (vd
+   * `/twin-studio` = `settings_factory` HOẶC `machine_control`): trước đợt này,
+   * ô Layout chỉ tra được MỘT quyền nên nó tra nhầm quyền của `/digital-twin`
+   * (`analytics_oee`) — ĐO ĐƯỢC: vai chỉ có `analytics_oee` THẤY ô rồi bị
+   * RouteGuard TỪ CHỐI, còn `engineer1` (seed thật, có `settings_factory`) vào
+   * được nhưng KHÔNG THẤY ô. Hai chiều, cùng một nguyên nhân.
+   *
+   * ⚠ **FAIL-CLOSED**: tập RỖNG = ẨN ô, không phải "không ràng buộc". Nơi gọi
+   *   lấy tập này từ `getAcceptedPermissionsForHref(href)`; ngày ai đó xoá mục
+   *   nav của `href` ấy, hàm trả `[]` — nếu rỗng nghĩa là "cho qua" thì ô sẽ
+   *   hiện cho TẤT CẢ trong im lặng, đúng lớp lỗi đang chữa chạy lần thứ ba.
+   */
+  requiredPermissionAny?: readonly string[];
+  /**
    * Role gate for routes guarded by requireRole (not a module permission) — e.g.
    * "admin" for /system-config. Without this, an admin-role-only tile with no
    * requiredPermission would show to everyone and dead-end at the route guard.
@@ -59,6 +74,10 @@ export function HubLauncher({ categories, categoriesLabel }: HubLauncherProps) {
             (tool) =>
               // module-permission gate (admin passes via hasPermission)
               (!tool.requiredPermission || hasPermission(tool.requiredPermission, "canView")) &&
+              // Đợt 62 — cổng HOẶC, FAIL-CLOSED trên tập rỗng (xem HubTool ở trên)
+              (tool.requiredPermissionAny === undefined ||
+                (tool.requiredPermissionAny.length > 0 &&
+                  tool.requiredPermissionAny.some((m) => hasPermission(m, "canView")))) &&
               // role gate — a requireRole:'admin' route hides its tile for non-admins
               (!tool.requiredRole || tool.requiredRole !== "admin" || isAdmin),
           ),
@@ -94,7 +113,7 @@ export function HubLauncher({ categories, categoriesLabel }: HubLauncherProps) {
                   )}
                 >
                   {c.icon}
-                  <span className="min-w-0 flex-1 truncate">{c.label}</span>
+                  <span className="min-w-0 flex-1 truncate">{t(c.label)}</span>
                   <span className="shrink-0 text-[10px] text-muted-foreground">{c.tools.length}</span>
                 </button>
               </li>
@@ -106,11 +125,11 @@ export function HubLauncher({ categories, categoriesLabel }: HubLauncherProps) {
         <div className="space-y-3">
           <div className="flex items-center gap-2">
             {cat.icon}
-            <h2 className="text-base font-semibold">{cat.label}</h2>
+            <h2 className="text-base font-semibold">{t(cat.label)}</h2>
           </div>
           <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 xl:grid-cols-3">
             {cat.tools.map((tool) => (
-              <ToolTile key={tool.href} icon={tool.icon} label={tool.label} blurb={tool.blurb} href={tool.href} note={tool.note} beta={tool.beta} />
+              <ToolTile key={tool.href} icon={tool.icon} label={t(tool.label)} blurb={tool.blurb ? t(tool.blurb) : undefined} href={tool.href} note={tool.note ? t(tool.note) : undefined} beta={tool.beta} />
             ))}
           </div>
         </div>

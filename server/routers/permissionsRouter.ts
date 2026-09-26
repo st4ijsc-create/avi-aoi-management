@@ -3,6 +3,7 @@ import { z } from "zod";
 // instead of the local no-2FA shim that used to live in this file.
 import { router, protectedProcedure, adminProcedure } from "../_core/trpc";
 import { TRPCError } from "@trpc/server";
+import { appError } from "../_core/appError";
 import { eq, and } from "drizzle-orm";
 import { getDb as getDbRaw } from "../db";
 import { permissions, users, userRoles, type Permission, type InsertPermission } from "../../drizzle/schema";
@@ -11,7 +12,7 @@ import { permissions, users, userRoles, type Permission, type InsertPermission }
 // queries can rely on a defined handle (resolves "db is possibly null").
 async function getDb() {
   const db = await getDbRaw();
-  if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Database not connected" });
+  if (!db) throw appError("INTERNAL_SERVER_ERROR", "DB_UNAVAILABLE", undefined, "Database not connected");
   return db;
 }
 
@@ -79,6 +80,18 @@ const DEFAULT_ROLE_PERMISSIONS: Record<string, any[]> = {
     { category: 'settings', moduleName: 'settings_smtp', canView: true, canCreate: true, canEdit: true, canDelete: true, canExport: false },
     { category: 'settings', moduleName: 'settings_notification_sounds', canView: true, canCreate: false, canEdit: true, canDelete: false, canExport: false },
     { category: 'settings', moduleName: 'settings_cache', canView: true, canCreate: false, canEdit: true, canDelete: true, canExport: false },
+    // ★★★ doc 78 PHA A+C — bit "AI đọc/GHI mã nguồn". Với `admin` hàng này là để BẢNG QUYỀN của
+    // giao diện đủ mục; cổng thì không cần nó (`checkPermission` short-circuit `true` cho vai admin
+    // khi chưa bật scoped-admin). `canView`=đọc (pha A: read_file/list_files/grep_repo);
+    // `canEdit`=GHI (pha C: apply_diff — đọc/ghi cùng một đối tượng tệp repo ⇒ cùng module, khác action).
+    { category: 'settings', moduleName: 'ai_repo_read', canView: true, canCreate: false, canEdit: true, canDelete: false, canExport: false },
+    // ★★★ doc 78 PHA B — bit "AI chạy lệnh". MODULE RIÊNG, không phải một `action` khác của
+    // `ai_repo_read`: gộp chung là để một ô tick trên dòng "AI đọc mã nguồn" mở quyền SINH TIẾN
+    // TRÌNH trong im lặng (xem khối RBAC ở writeHandlers/repoCommand.ts). Chỉ `canCreate`.
+    // ⚠⚠ 2026-08-20: một trong 11 lệnh (`dotnet format <đường>`) GHI ĐÈ TỆP MÃ NGUỒN ⇒ bit này KHÔNG
+    //    thuần "chạy". Cổng bổ sung đòi thêm `ai_repo_read/canEdit` đã có, sau cờ MẶC ĐỊNH TẮT
+    //    `AI_REPO_EXEC_GHIDIA_DOI_CANEDIT` — chờ chủ dự án quyết.
+    { category: 'settings', moduleName: 'ai_repo_exec', canView: false, canCreate: true, canEdit: false, canDelete: false, canExport: false },
     // Admin
     { category: 'admin', moduleName: 'admin_users', canView: true, canCreate: true, canEdit: true, canDelete: true, canExport: false },
     { category: 'admin', moduleName: 'admin_permissions', canView: true, canCreate: true, canEdit: true, canDelete: true, canExport: false },
@@ -139,6 +152,10 @@ const DEFAULT_ROLE_PERMISSIONS: Record<string, any[]> = {
     { category: 'analytics', moduleName: 'analytics_machine_health', canView: true, canCreate: false, canEdit: false, canDelete: false, canExport: true },
     { category: 'analytics', moduleName: 'analytics_workstation', canView: true, canCreate: false, canEdit: false, canDelete: false, canExport: true },
     { category: 'analytics', moduleName: 'analytics_defect_heatmap', canView: true, canCreate: false, canEdit: false, canDelete: false, canExport: true },
+    // ★★ QĐ chủ dự án 2026-08-17 — mở `analytics_category` (VIEW-ONLY) để trợ lý trả lời được
+    // `get_model_metrics` (xếp hạng model theo NG). Mở luôn route `/category-analytics`
+    // (RouteGuard). Backfill cho user đã tồn tại: drizzle/0322_grant_analytics_category_supervisor_quality.sql
+    { category: 'analytics', moduleName: 'analytics_category', canView: true, canCreate: false, canEdit: false, canDelete: false, canExport: false },
     { category: 'analytics', moduleName: 'analytics_root_cause', canView: true, canCreate: true, canEdit: true, canDelete: false, canExport: true },
     // Reports
     { category: 'reports', moduleName: 'reports_view', canView: true, canCreate: true, canEdit: true, canDelete: false, canExport: true },
@@ -192,6 +209,8 @@ const DEFAULT_ROLE_PERMISSIONS: Record<string, any[]> = {
     { category: 'analytics', moduleName: 'analytics_advanced', canView: true, canCreate: false, canEdit: false, canDelete: false, canExport: true },
     { category: 'analytics', moduleName: 'analytics_spc', canView: true, canCreate: false, canEdit: false, canDelete: false, canExport: true },
     { category: 'analytics', moduleName: 'analytics_defect_heatmap', canView: true, canCreate: false, canEdit: false, canDelete: false, canExport: true },
+    // ★★ QĐ chủ dự án 2026-08-17 — xem chú thích ở khối `supervisor`. VIEW-ONLY.
+    { category: 'analytics', moduleName: 'analytics_category', canView: true, canCreate: false, canEdit: false, canDelete: false, canExport: false },
     { category: 'analytics', moduleName: 'analytics_root_cause', canView: true, canCreate: true, canEdit: true, canDelete: false, canExport: true },
     // Reports
     { category: 'reports', moduleName: 'reports_view', canView: true, canCreate: true, canEdit: false, canDelete: false, canExport: true },
@@ -226,6 +245,13 @@ const DEFAULT_ROLE_PERMISSIONS: Record<string, any[]> = {
     // doc 40 Lan-P0 — operator TỰ mở/tạm dừng/kết thúc/bàn giao ca của mình (không cần
     // quyền tạo đơn sản xuất). Mở khóa OperatorSessionControl + ShiftHandoverDialog.
     { category: 'production', moduleName: 'production_session', canView: true, canCreate: true, canEdit: true, canDelete: false, canExport: false },
+    // ★★ QĐ chủ dự án 2026-08-17 — mở `analytics_defect_heatmap` (VIEW-ONLY) cho operator/
+    // maintenance/engineer, để trợ lý (`analytics_defect_heatmap_summary`) và giao diện
+    // (`/defect-heatmap`) đứng sau CÙNG MỘT luật. Đường "hạ bit tool xuống dashboard_view" đã bị
+    // BÁC BỎ (đẻ hai cửa vào một lớp dữ liệu; hai tool không cùng tập — xem §10b của
+    // services/aiLocalTools/toolPermissionQuantifier.test.ts).
+    // Backfill cho user đã tồn tại: drizzle/0323_grant_analytics_defect_heatmap_ops_roles.sql
+    { category: 'analytics', moduleName: 'analytics_defect_heatmap', canView: true, canCreate: false, canEdit: false, canDelete: false, canExport: false },
     // Andon (F5a) — operators raise/ack/resolve Andons from the line
     { category: 'andon', moduleName: 'andon', canView: true, canCreate: true, canEdit: true, canDelete: false, canExport: false },
     // Energy advanced (G2.6a) — operators view + manually record energy readings (telemetry, no machine write)
@@ -249,6 +275,8 @@ const DEFAULT_ROLE_PERMISSIONS: Record<string, any[]> = {
     { category: 'machine_monitoring', moduleName: 'machine_alerts', canView: true, canCreate: false, canEdit: true, canDelete: false, canExport: false },
     { category: 'machine_monitoring', moduleName: 'machine_downtime', canView: true, canCreate: true, canEdit: true, canDelete: false, canExport: true },
     { category: 'analytics', moduleName: 'analytics_machine_health', canView: true, canCreate: false, canEdit: false, canDelete: false, canExport: true },
+    // ★★ QĐ chủ dự án 2026-08-17 — xem chú thích ở khối `operator`. VIEW-ONLY.
+    { category: 'analytics', moduleName: 'analytics_defect_heatmap', canView: true, canCreate: false, canEdit: false, canDelete: false, canExport: false },
     // Machine Control (Sprint F4a) — maintenance can set param/ack (canEdit) and view,
     // but NOT execute high-risk commands (canCreate:false → start/stop/recipe gated to supervisor/admin)
     { category: 'machine_control', moduleName: 'machine_control', canView: true, canCreate: false, canEdit: true, canDelete: false, canExport: false },
@@ -266,6 +294,8 @@ const DEFAULT_ROLE_PERMISSIONS: Record<string, any[]> = {
     { category: 'analytics', moduleName: 'analytics_view', canView: true, canCreate: false, canEdit: false, canDelete: false, canExport: false },
     { category: 'analytics', moduleName: 'analytics_spc', canView: true, canCreate: false, canEdit: false, canDelete: false, canExport: false },
     { category: 'analytics', moduleName: 'analytics_machine_health', canView: true, canCreate: false, canEdit: false, canDelete: false, canExport: false },
+    // ★★ QĐ chủ dự án 2026-08-17 — xem chú thích ở khối `operator`. VIEW-ONLY.
+    { category: 'analytics', moduleName: 'analytics_defect_heatmap', canView: true, canCreate: false, canEdit: false, canDelete: false, canExport: false },
     // Reports
     { category: 'reports', moduleName: 'reports_view', canView: true, canCreate: false, canEdit: false, canDelete: false, canExport: false },
     // Settings — engineer authors measurement points, products + alert thresholds
@@ -276,6 +306,18 @@ const DEFAULT_ROLE_PERMISSIONS: Record<string, any[]> = {
     { category: 'settings', moduleName: 'settings_measurement_points', canView: true, canCreate: true, canEdit: true, canDelete: false, canExport: false },
     { category: 'settings', moduleName: 'settings_products', canView: true, canCreate: true, canEdit: true, canDelete: false, canExport: false },
     { category: 'settings', moduleName: 'settings_alerts', canView: true, canCreate: true, canEdit: true, canDelete: false, canExport: false },
+    // ★★★ doc 78 PHA A+C — trợ lý AI ĐỌC (`read_file`/`list_files`/`grep_repo`, canView) VÀ GHI
+    // (`apply_diff`, canEdit) mã nguồn nền tảng. "Đọc được" và "ghi được" là HAI action KHÁC nhau
+    // trên CÙNG một module (cùng đối tượng: tệp repo) — thu quyền ghi mà giữ quyền đọc chỉ cần bỏ
+    // một ô tick. Backfill: mig 0330 (canView) + mig 0332 (canEdit).
+    { category: 'settings', moduleName: 'ai_repo_read', canView: true, canCreate: false, canEdit: true, canDelete: false, canExport: false },
+    // ★★★ doc 78 PHA B (2026-08-18) — trợ lý AI CHẠY LỆNH trong danh sách TRẮNG (`run_command`).
+    // Bảng có **9 mục** (doc 79 D thêm 4): npm run check · npm run check:tests · npx vitest run
+    // <đường> · git status · git diff · dotnet build/test/format <đường> · node --test <đường>.
+    // ⚠⚠ `dotnet format <đường>` **GHI ĐÈ TỆP MÃ NGUỒN** — mục DUY NHẤT làm vậy (`ghiDia: true`).
+    // Chỉ `canCreate` ("tạo một lượt chạy"); tool là WRITE nên MỌI lượt vẫn phải qua HITL.
+    // Backfill: mig 0331.
+    { category: 'settings', moduleName: 'ai_repo_exec', canView: false, canCreate: true, canEdit: false, canDelete: false, canExport: false },
     // Machine Monitoring
     { category: 'machine_monitoring', moduleName: 'machine_status', canView: true, canCreate: true, canEdit: true, canDelete: false, canExport: false },
     { category: 'machine_monitoring', moduleName: 'machine_alerts', canView: true, canCreate: true, canEdit: true, canDelete: false, canExport: false },
@@ -411,7 +453,7 @@ export const permissionsRouter = router({
       const [targetUser] = await db.select({ id: users.id }).from(users).where(eq(users.id, input.userId)).limit(1);
       
       if (!targetUser) {
-        throw new TRPCError({ code: 'NOT_FOUND', message: 'User not found' });
+        throw appError('NOT_FOUND', 'ENTITY_NOT_FOUND', { entity: 'user' }, 'User not found');
       }
       
       await db
@@ -541,7 +583,7 @@ export const permissionsRouter = router({
       const db = await getDb();
       // Users can view their own permissions, admins can view any user's permissions
       if (ctx.user.id !== input.userId && ctx.user.role !== 'admin') {
-        throw new TRPCError({ code: 'FORBIDDEN', message: 'You can only view your own permissions' });
+        throw appError('FORBIDDEN', 'PERMISSION_DENIED', { action: 'viewOthersPermissions' }, 'You can only view your own permissions');
       }
       
       const userPermissions = await db
@@ -586,7 +628,7 @@ export const permissionsRouter = router({
       const [targetUser] = await db.select({ id: users.id }).from(users).where(eq(users.id, input.userId)).limit(1);
       
       if (!targetUser) {
-        throw new TRPCError({ code: 'NOT_FOUND', message: 'User not found' });
+        throw appError('NOT_FOUND', 'ENTITY_NOT_FOUND', { entity: 'user' }, 'User not found');
       }
       
       // Check if permission already exists
@@ -660,7 +702,7 @@ export const permissionsRouter = router({
       const [targetUser] = await db.select({ id: users.id }).from(users).where(eq(users.id, input.userId)).limit(1);
       
       if (!targetUser) {
-        throw new TRPCError({ code: 'NOT_FOUND', message: 'User not found' });
+        throw appError('NOT_FOUND', 'ENTITY_NOT_FOUND', { entity: 'user' }, 'User not found');
       }
       
       // Delete all existing permissions for this user
@@ -700,7 +742,7 @@ export const permissionsRouter = router({
       const [permission] = await db.select({ id: permissions.id }).from(permissions).where(eq(permissions.id, input.id)).limit(1);
       
       if (!permission) {
-        throw new TRPCError({ code: 'NOT_FOUND', message: 'Permission not found' });
+        throw appError('NOT_FOUND', 'ENTITY_NOT_FOUND', { entity: 'permission' }, 'Permission not found');
       }
       
       await db
@@ -791,6 +833,17 @@ export const permissionsRouter = router({
         { category: 'settings', moduleName: 'settings_smtp', displayName: 'Cấu hình Email', description: 'Cấu hình SMTP, mẫu email thông báo' },
         { category: 'settings', moduleName: 'settings_notification_sounds', displayName: 'Âm thanh Thông báo', description: 'Tùy chỉnh âm thanh cảnh báo/thông báo' },
         { category: 'settings', moduleName: 'settings_cache', displayName: 'Quản lý Cache', description: 'Xem thống kê cache, xóa cache' },
+        // doc 78 PHA A — bit này phải HIỆN trong bảng phân quyền, nếu không quản trị viên không có
+        // đường cấp/thu hồi nó cho một người cụ thể (và bit sẽ chỉ đổi được bằng migration).
+        { category: 'settings', moduleName: 'ai_repo_read', displayName: 'AI đọc/ghi mã nguồn', description: 'Cho trợ lý AI ĐỌC mã nguồn nền tảng (canView: read_file/list_files/grep_repo) và GHI/SỬA tệp (canEdit: apply_diff) — trong hộp cát repo, cấm .env và khoá bí mật. GHI luôn qua XÁC NHẬN của người dùng (HITL), TỪ CHỐI tệp có thay đổi chưa commit, và so băm chống ghi nhầm phiên bản.' },
+        // doc 78 PHA B — bit RIÊNG cho mặt CHẠY LỆNH. Tách khỏi `ai_repo_read` theo đúng tiền lệ
+        // `vram_control` (mặt lệnh tách khỏi mặt đọc): cấp quyền ĐỌC mã nguồn không được kéo theo
+        // quyền SINH TIẾN TRÌNH trên máy chủ. Đây là DÒNG CATALOG — nó KHÔNG cấp quyền cho ai.
+        // ⚠⚠⚠ 2026-08-20 — DÒNG NÀY TỪNG KHAI **5 LỆNH, TOÀN CHỈ-ĐỌC** trong khi bit thật cấp **9**,
+        // trong đó có MỘT lệnh GHI ĐÈ MÃ NGUỒN. Đây là chữ quản trị viên đọc ĐÚNG LÚC quyết định cấp
+        // bit, nên chỗ lệch ở đây có hậu quả trực tiếp nhất trong cả bảy chỗ lệch. Nếu bảng
+        // `DANH_SACH_TRANG` đổi lần nữa, `repoCommand.census.test.ts §K` sẽ ĐỎ ở đây.
+        { category: 'settings', moduleName: 'ai_repo_exec', displayName: 'AI chạy lệnh (danh sách trắng)', displayNameEn: 'AI run command (allowlist)', displayNameZh: 'AI 运行命令（白名单）', description: 'Cho trợ lý AI ĐỀ XUẤT chạy MỘT trong 11 lệnh của danh sách TRẮNG tại thư mục dự án (canCreate): npm run check · npm run check:tests · npx vitest run <đường-dẫn> · git status · git diff · dotnet build <đường-dẫn> · dotnet test <đường-dẫn> · dotnet format <đường-dẫn> · node --test <đường-dẫn> · python -m pytest <đường-dẫn> · python -m unittest <đường-dẫn>. ⚠ MƯỜI lệnh chỉ HỎI/KIỂM TRA, nhưng "dotnet format <đường-dẫn>" GHI ĐÈ TỆP MÃ NGUỒN (ghi đè mọi tệp .cs dưới đường đó theo .editorconfig) — và nó KHÔNG đi qua các hàng rào của đường ghi tệp: không kiểm tệp có thay đổi chưa commit, không so băm chống TOCTOU, không có diff để xem trước. Nghĩa là cấp bit NÀY cho phép AI đề xuất ghi đè mã nguồn kể cả khi bạn đã thu hồi ai_repo_read/canEdit. Mọi lượt vẫn phải qua XÁC NHẬN của người dùng (HITL); git checkout/git reset/rm KHÔNG BAO GIỜ được phép. KHÔNG bao gồm quyền ĐỌC mã nguồn — mặt đọc đứng trên ai_repo_read/canView.' },
 
         // ======================== ADMIN ========================
         { category: 'admin', moduleName: 'admin_users', displayName: 'QL Người dùng', description: 'Tạo/sửa/xóa tài khoản người dùng' },
@@ -816,6 +869,12 @@ export const permissionsRouter = router({
 
         // ======================== MACHINE CONTROL (Sprint F4a — OT HITL) ========================
         { category: 'machine_control', moduleName: 'machine_control', displayName: 'Điều khiển Máy (OT)', description: 'Gửi lệnh điều khiển máy qua HITL: start/stop/recipe (canCreate), đặt tham số/ack (canEdit), xem preview/log (canView). MỌI lệnh phải qua xác nhận của người dùng + audit.' },
+        // ★★★ Pha 5 Task 3b — BIT RIÊNG cho mặt LỆNH của bộ điều phối VRAM. Tách khỏi `machine_control`
+        // vì `machine_control/canDelete` là sàn dùng chung của 10 thủ tục ở 8 router (8/10 KHÔNG có 2FA,
+        // gồm `programming.deleteProject` xoá CASCADE cây mã nguồn) — cấp nó để mở 2 nút VRAM sẽ mở
+        // luôn 9 thủ tục khác. `category` dùng lại `machine_control` (chỉ để gom nhóm trong UI; cưỡng
+        // chế đọc `moduleName`). Đây là DÒNG CATALOG — nó KHÔNG cấp quyền cho ai.
+        { category: 'machine_control', moduleName: 'vram_control', displayName: 'Điều phối VRAM (thu hồi)', displayNameEn: 'VRAM Broker (reclaim)', displayNameZh: '显存调度（回收）', description: 'Ra lệnh cho bộ điều phối VRAM: thu hồi VRAM của một hộ + dọn giấy phép ma (canDelete — PHÁ HUỶ, kèm role-floor + 2FA + OTP tươi), thử lại một lượt nạp đã hoãn (canCreate). KHÔNG bao gồm quyền XEM trạng thái VRAM — mặt đọc đứng trên machine_control/canView.' },
 
         // ======================== ANDON + INTERLOCK (Sprint F5a — ALERT-ONLY) ========================
         { category: 'andon', moduleName: 'andon', displayName: 'Andon (Cảnh báo)', displayNameEn: 'Andon', displayNameZh: 'Andon 安灯', description: 'Tín hiệu Andon: raise (canCreate), ack/resolve (canEdit), xem danh sách/metrics (canView). Andon CHỈ là tín hiệu — KHÔNG ghi lệnh máy.' },
@@ -858,7 +917,7 @@ export const permissionsRouter = router({
       const [existing] = await db.select({ id: userRoles.id }).from(userRoles).where(eq(userRoles.name, input.name)).limit(1);
       
       if (existing) {
-        throw new TRPCError({ code: 'CONFLICT', message: 'Role name already exists' });
+        throw appError('CONFLICT', 'ENTITY_DUPLICATE', { entity: 'role' }, 'Role name already exists');
       }
       
       const [newRole] = await db
@@ -886,11 +945,11 @@ export const permissionsRouter = router({
       const [existing] = await db.select().from(userRoles).where(eq(userRoles.id, input.id)).limit(1);
       
       if (!existing) {
-        throw new TRPCError({ code: 'NOT_FOUND', message: 'Role not found' });
+        throw appError('NOT_FOUND', 'ENTITY_NOT_FOUND', { entity: 'role' }, 'Role not found');
       }
       
       if (existing.isSystem) {
-        throw new TRPCError({ code: 'FORBIDDEN', message: 'Cannot modify system roles' });
+        throw appError('FORBIDDEN', 'OPERATION_FAILED', { operation: 'updateRole' }, 'Cannot modify system roles');
       }
       
       await db
@@ -913,11 +972,11 @@ export const permissionsRouter = router({
       const [existing] = await db.select().from(userRoles).where(eq(userRoles.id, input.id)).limit(1);
       
       if (!existing) {
-        throw new TRPCError({ code: 'NOT_FOUND', message: 'Role not found' });
+        throw appError('NOT_FOUND', 'ENTITY_NOT_FOUND', { entity: 'role' }, 'Role not found');
       }
       
       if (existing.isSystem) {
-        throw new TRPCError({ code: 'FORBIDDEN', message: 'Cannot delete system roles' });
+        throw appError('FORBIDDEN', 'OPERATION_FAILED', { operation: 'deleteRole' }, 'Cannot delete system roles');
       }
       
       await db
@@ -952,7 +1011,7 @@ export const permissionsRouter = router({
         .where(eq(userRoles.name, input.newName))
         .limit(1);
       if (existing) {
-        throw new TRPCError({ code: 'CONFLICT', message: 'Tên role đã tồn tại' });
+        throw appError('CONFLICT', 'ENTITY_DUPLICATE', { entity: 'role' }, 'Tên role đã tồn tại');
       }
 
       let sourcePermissions: any[];
@@ -965,7 +1024,7 @@ export const permissionsRouter = router({
           .where(eq(userRoles.id, input.sourceRoleId))
           .limit(1);
         if (!sourceRole) {
-          throw new TRPCError({ code: 'NOT_FOUND', message: 'Source role not found' });
+          throw appError('NOT_FOUND', 'ENTITY_NOT_FOUND', { entity: 'role' }, 'Source role not found');
         }
         sourcePermissions = (sourceRole.permissions as any[]) || [];
       } else if (input.sourceBuiltInRole && DEFAULT_ROLE_PERMISSIONS[input.sourceBuiltInRole]) {
@@ -1011,7 +1070,7 @@ export const permissionsRouter = router({
         .where(eq(userRoles.id, input.roleId))
         .limit(1);
       if (!role) {
-        throw new TRPCError({ code: 'NOT_FOUND', message: 'Role not found' });
+        throw appError('NOT_FOUND', 'ENTITY_NOT_FOUND', { entity: 'role' }, 'Role not found');
       }
 
       // Validate user exists
@@ -1021,7 +1080,7 @@ export const permissionsRouter = router({
         .where(eq(users.id, input.userId))
         .limit(1);
       if (!targetUser) {
-        throw new TRPCError({ code: 'NOT_FOUND', message: 'User not found' });
+        throw appError('NOT_FOUND', 'ENTITY_NOT_FOUND', { entity: 'user' }, 'User not found');
       }
 
       const permTemplates = (role.permissions as any[]) || [];
@@ -1098,10 +1157,15 @@ export const permissionsRouter = router({
       const permTemplates = DEFAULT_ROLE_PERMISSIONS[input.builtInRole];
 
       if (!permTemplates) {
-        throw new TRPCError({
-          code: 'BAD_REQUEST',
-          message: `Unknown built-in role: ${input.builtInRole}. Available: ${Object.keys(DEFAULT_ROLE_PERMISSIONS).join(', ')}`,
-        });
+        // Task 5 (doc 71) — reason khôi phục danh sách role hợp lệ (validRoles) đã mất
+        // khi câu chuẩn INVALID_VALUE chỉ nội suy {{field}} ("vai trò dựng sẵn", không
+        // liệt kê role nào mới hợp lệ).
+        throw appError(
+          'BAD_REQUEST',
+          'INVALID_VALUE',
+          { field: 'builtInRole', reason: 'unknownBuiltInRole', validRoles: Object.keys(DEFAULT_ROLE_PERMISSIONS).join(', ') },
+          `Unknown built-in role: ${input.builtInRole}. Available: ${Object.keys(DEFAULT_ROLE_PERMISSIONS).join(', ')}`,
+        );
       }
 
       // Validate user exists
@@ -1111,7 +1175,7 @@ export const permissionsRouter = router({
         .where(eq(users.id, input.userId))
         .limit(1);
       if (!targetUser) {
-        throw new TRPCError({ code: 'NOT_FOUND', message: 'User not found' });
+        throw appError('NOT_FOUND', 'ENTITY_NOT_FOUND', { entity: 'user' }, 'User not found');
       }
 
       let applied = 0;

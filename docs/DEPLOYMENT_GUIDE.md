@@ -121,9 +121,46 @@ cd /opt/avi-aoi-management
 # Install dependencies
 pnpm install
 
-# Run migrations (drizzle-kit generate + runner standalone áp file drizzle/*.sql)
+# Run migrations — runner standalone áp lần lượt file drizzle/*.sql, theo dõi
+# bằng bảng __applied_migrations (scripts/migrate-standalone.mjs).
+# ⚠ `pnpm db:push` KHÔNG phải `drizzle-kit push` và KHÔNG gọi `drizzle-kit
+#   generate`. Đừng thay nó bằng lệnh drizzle-kit nào — xem mục 3.3 ngay dưới.
 pnpm db:push
 ```
+
+### 3.3 ⛔ CẤM `drizzle-kit push` — và `generate` cũng không dùng được
+
+Đo 2026-09-15: `drizzle/` có 355 tệp `.sql` (cao nhất `0356`), nhưng
+`drizzle/meta/_journal.json` chỉ ghi 18 mục, ảnh chụp dừng ở `0017_snapshot.json`.
+Lệch **337** migration (`node scripts/kiem-drizzle-meta.mjs` in ra con số này và
+thoát mã 1).
+
+- `drizzle-kit generate` so schema với **ảnh chụp**, không so với cơ sở dữ liệu
+  sống ⇒ nó sẽ sinh một migration khổng lồ dựng lại gần như toàn bộ schema.
+- `drizzle-kit push` so với **cơ sở dữ liệu sống** ⇒ nó GỠ mọi cột không có
+  trong `schema.ts`. **Mất dữ liệu.** Đo 2026-09-15 trên DB dev `aoi_management`
+  (409 bảng / 5.826 cột) so với `drizzle/schema/*.ts` (372 bảng khai):
+  - `workshops.tangId` — đã khai lại 2026-09-15 (migration 0350);
+  - `equipment_3d_models`: `soTamGiac`, `kichThuocByte`, `anhXemTruocUrl`,
+    `phanLoai`, `nguonGoc` — 5 cột từ migration 0353, **chưa khai**;
+  - `training_datasets.contentHash` — từ migration 0301, **chưa khai**;
+  - `kb_chunks.embedding_vec` và `product_inspections.gateConfigVersion` /
+    `suspectedDuplicateSerial` — cố ý để ngoài Drizzle, có ghi lý do tại chỗ
+    (`drizzle/schema/kb.ts`, `drizzle/schema/inspection.ts`). Cố ý hay bỏ sót thì
+    `push` vẫn gỡ như nhau;
+  - **37 bảng** trong DB không có `pgTable()` nào khai — 25 trong đó là phân
+    mảnh `measurement_samples_*`, phần còn lại gồm `__applied_migrations`,
+    `machine_operating_config`, `workstation_machines`, `deployment_events`,
+    `integrity_scan_results`, `db_feature_status`, `machine_claim_tokens`,
+    `machine_enrollment_tokens`, `robot_commissioning_records`,
+    `defect_correlation_cache`, `w3_backup_alerts`, `w3_backup_insights`.
+
+**Cách làm đúng:** viết migration bằng tay, đánh số tiếp, chạy bằng owner `aoi`
+(xem `scripts/apply-migration-0349.mjs` làm mẫu), hoặc áp cả chuỗi bằng
+`pnpm db:push` (runner standalone, KHÔNG phải drizzle-kit). Kiểm độ lệch bất cứ
+lúc nào bằng `node scripts/kiem-drizzle-meta.mjs`.
+
+Muốn dùng lại `drizzle-kit`, phải rebase ảnh chụp trước — đó là một đợt riêng.
 
 ---
 
@@ -361,6 +398,23 @@ sudo ufw allow 443/tcp
 sudo ufw allow 1883/tcp  # MQTT (internal only)
 sudo ufw enable
 ```
+
+### 8.4 Chính Sách 2FA Bắt Buộc (`AUTH_2FA_BAT_BUOC`)
+
+> Chính sách chủ dự án chốt 2026-09-05 (Lô 10 Mục 2). Xem chi tiết đầy đủ ở khối chú thích
+> `AUTH_2FA_BAT_BUOC` trong `.env.example` và docblock `batBuoc2FA()` ở `server/_core/trpc.ts`.
+
+Biến môi trường `AUTH_2FA_BAT_BUOC` (mặc định = ép buộc khi không đặt) quyết định server có đòi
+admin/vai đặc quyền (supervisor, quality_inspector, engineer) phải bật 2FA trước khi gọi các thủ
+tục đặc quyền hay không:
+
+| Kiểu triển khai | Giá trị bắt buộc | Vì sao |
+|---|---|---|
+| **Internet-facing** (cổng đăng nhập lộ ra ngoài LAN nhà máy, kể cả qua VPN/reverse-proxy công khai) | `AUTH_2FA_BAT_BUOC=1` **hoặc để trống/không đặt** (mặc định trong mã đã là ép) | Đặt `=0` tắt đòi-BẬT-2FA cho **mọi** `adminProcedure`/`require2FA` cùng lúc, gồm cả các thủ tục quản trị đã hợp nhất RBAC với dead-letter WAL (`integrityRouter`, BG-131 Lô 9 Mục 3) — các thủ tục đó chạy được mà không cần OTP khi cờ này tắt. |
+| **Mạng LOCAL** (nội bộ nhà máy, không có lối vào Internet) | `AUTH_2FA_BAT_BUOC=0` được phép | Đánh đổi đã chấp nhận: chi phí bắt ~100 kỹ sư quẹt OTP mỗi lần đăng nhập/đăng xuất nhiều lần trong ca không tương xứng với rủi ro khi không có tầng truy cập Internet nào phải chắn. RBAC/kiểm vai vẫn giữ nguyên; step-up OTP cho lệnh chạm máy/deploy (`ACTUATION_STEPUP_2FA`) không đổi. |
+
+**Không đổi hành vi mặc định trong mã** — đây thuần là chính sách cấu hình `.env` theo môi trường
+triển khai, không phải một thay đổi runtime mới.
 
 ---
 

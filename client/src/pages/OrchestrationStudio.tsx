@@ -35,6 +35,7 @@ import {
 } from "@/components/ui/select";
 import { Checkbox } from "@/components/ui/checkbox";
 import { trpc } from "@/lib/trpc";
+import { mapTrpcError, toastTrpcError } from "@/lib/trpcErrors";
 import { usePermissions } from "@/_core/hooks/usePermissions";
 import { ViewOnlyBadge } from "@/components/PermissionGate";
 import { toast } from "sonner";
@@ -100,6 +101,7 @@ import {
 } from "@/components/orchestration/workflowTypes";
 import { WorkflowGraphCanvas } from "@/components/orchestration/WorkflowGraphCanvas";
 import { useStepUpOtp } from "@/components/security/StepUpOtpDialog";
+import { ConfirmWithReason } from "@/components/patterns/ConfirmWithReason";
 
 // ════════════════════════════════════════════════════════════════════════════
 // STEP-TREE CANVAS (left) — nested visual blocks per step type
@@ -455,7 +457,7 @@ function Inspector({
             <Textarea value={step.prompt ?? ""} onChange={(e) => onPatch({ prompt: e.target.value })} rows={3} />
           </div>
           <div className="space-y-1.5">
-            <Label className="text-xs">{t("studio.approverRoles", "Approver roles (advisory, comma-separated)")}</Label>
+            <Label className="text-xs">{t("studio.approverRoles", "Approver roles (comma-separated)")}</Label>
             <Input
               value={(step.approverRoles ?? []).join(", ")}
               placeholder="supervisor, admin"
@@ -464,7 +466,15 @@ function Inspector({
                 onPatch({ approverRoles: roles.length ? roles : undefined });
               }}
             />
-            <p className="text-[10px] text-muted-foreground">{t("studio.approverRolesHint", "Advisory only — RBAC is enforced at the API.")}</p>
+            {/* doc 80 ORC-03 — server ÉP approverRoles (admin luôn được); câu cũ "advisory" là SAI. */}
+            <p className="text-[10px] text-muted-foreground">{t("studio.approverRolesHint", "Enforced by the server: only these roles (or admin) can approve this gate; empty = anyone with machine-control permission.")}</p>
+          </div>
+          <div className="flex items-center justify-between rounded-md border bg-muted/30 px-2 py-1.5">
+            <div className="space-y-0.5">
+              <Label className="text-xs">{t("studio.fourEyes", "Four-eyes required")}</Label>
+              <p className="text-[10px] text-muted-foreground">{t("studio.fourEyesHint", "The user who started the run cannot approve this gate (admin included).")}</p>
+            </div>
+            <Checkbox checked={Boolean(step.fourEyes)} onCheckedChange={(v) => onPatch({ fourEyes: v ? true : undefined })} />
           </div>
         </>
       )}
@@ -1115,8 +1125,14 @@ export default function OrchestrationStudio() {
 
   const [runStatusFilter, setRunStatusFilter] = useState<string>("all");
   const allRuns = (runsQ.data ?? []) as Array<Record<string, unknown>>;
-  // Trạng thái "chờ duyệt" = held / awaiting_confirm (HITL gate đang mở).
+  // doc 80 ORC-04 — run 'held' do server khởi động lại (rehydrate ghi contextJson.interrupted)
+  // KHÔNG phải cổng chờ duyệt: tách nhóm "Bị gián đoạn" (Tiếp tục… có xác nhận / Huỷ), không nút Approve.
+  const isInterruptedRun = (r: Record<string, unknown>) =>
+    String(r.status ?? "") === "held" &&
+    Boolean((r.contextJson as Record<string, unknown> | null | undefined)?.interrupted);
+  // Trạng thái "chờ duyệt" = held / awaiting_confirm (HITL gate đang mở) — trừ run bị gián đoạn.
   const isAwaitingRun = (r: Record<string, unknown>) => {
+    if (isInterruptedRun(r)) return false;
     const s = String(r.status ?? "");
     return s === "awaiting_confirm" || s === "held";
   };
@@ -1131,7 +1147,11 @@ export default function OrchestrationStudio() {
   );
   // §2.3 — tách nhóm "Đang chờ duyệt" LÊN ĐẦU; phần còn lại giữ thứ tự gốc.
   const awaitingRuns = useMemo(() => filteredRuns.filter(isAwaitingRun), [filteredRuns]);
-  const otherRuns = useMemo(() => filteredRuns.filter((r) => !isAwaitingRun(r)), [filteredRuns]);
+  const interruptedRuns = useMemo(() => filteredRuns.filter(isInterruptedRun), [filteredRuns]);
+  const otherRuns = useMemo(
+    () => filteredRuns.filter((r) => !isAwaitingRun(r) && !isInterruptedRun(r)),
+    [filteredRuns],
+  );
   // Badge đếm luôn dựa trên TỔNG số run chờ duyệt (không phụ thuộc bộ lọc đang chọn).
   const awaitingCount = useMemo(() => allRuns.filter(isAwaitingRun).length, [allRuns]);
 
@@ -1145,22 +1165,24 @@ export default function OrchestrationStudio() {
       if (r?.ok) { toast.success(t("studio.deployed", "Workflow saved / deployed")); void workflowsQ.refetch(); }
       else toast.error(r?.message ?? t("studio.deployFail", "Deploy failed"));
     },
-    onError: (e) => toast.error(e.message),
+    onError: (e) => toastTrpcError(e),
   });
   const startRunM = trpc.orchestration.startRun.useMutation({
     onSuccess: (r) => {
-      toast.success(t("studio.runStarted", "Run started (run #{{id}})", { id: r?.runId ?? "?" }));
+      // doc 80 ORC-06 — server từ chối run workflow chưa deploy (bản nháp) bằng ok:false + message.
+      if (r && !r.ok && r.runId == null) toast.error(r.message ?? t("studio.runFail", "Could not start the run"));
+      else toast.success(t("studio.runStarted", "Run started (run #{{id}})", { id: r?.runId ?? "?" }));
       void runsQ.refetch();
     },
-    onError: (e) => toast.error(e.message),
+    onError: (e) => toastTrpcError(e),
   });
   const resumeM = trpc.orchestration.resumeRun.useMutation({
     onSuccess: () => { void runsQ.refetch(); void utils.orchestration.getRun.invalidate(); },
-    onError: (e) => toast.error(e.message),
+    onError: (e) => toastTrpcError(e),
   });
   const abortM = trpc.orchestration.abortRun.useMutation({
     onSuccess: () => { void runsQ.refetch(); },
-    onError: (e) => toast.error(e.message),
+    onError: (e) => toastTrpcError(e),
   });
 
   // ── Saved-workflow delete / duplicate ──
@@ -1170,18 +1192,17 @@ export default function OrchestrationStudio() {
 
   const deleteWfM = trpc.orchestration.deleteWorkflow.useMutation({
     onSuccess: () => { toast.success(t("studio.wfDeleted", "Workflow deleted")); setDeleteWf(null); void workflowsQ.refetch(); },
-    onError: (e) => toast.error(e.message),
+    onError: (e) => toastTrpcError(e),
   });
   const duplicateWfM = trpc.orchestration.duplicateWorkflow.useMutation({
     onSuccess: () => { toast.success(t("studio.wfDuplicated", "Workflow duplicated")); setDupWf(null); setDupNewRef(""); void workflowsQ.refetch(); },
-    onError: (e) => toast.error(e.message),
+    onError: (e) => toastTrpcError(e),
   });
 
   // ── W3-11: version history panel (diff 2 phiên bản + rollback) ──
   const [versionsWf, setVersionsWf] = useState<{ id: number; ref: string } | null>(null);
   const [vDiffBaseId, setVDiffBaseId] = useState<number | null>(null);
   const [vDiffCompareId, setVDiffCompareId] = useState<number | null>(null);
-  const [rollbackVer, setRollbackVer] = useState<{ workflowId: number; version: number } | null>(null);
   const versionsQ = trpc.orchestration.listVersions.useQuery(
     { workflowId: versionsWf?.id ?? 0 },
     { enabled: versionsWf != null },
@@ -1193,14 +1214,13 @@ export default function OrchestrationStudio() {
     onSuccess: (r) => {
       if (r?.ok) {
         toast.success(t("studio.rollbackDone", "Đã khôi phục — tạo phiên bản mới từ bản cũ"));
-        setRollbackVer(null);
         void workflowsQ.refetch();
         void versionsQ.refetch();
       } else {
         toast.error(r?.message ?? t("studio.rollbackFail", "Khôi phục thất bại"));
       }
     },
-    onError: (e) => toast.error(e.message),
+    onError: (e) => toastTrpcError(e),
   });
 
   const selectedStep = selectedId ? findStep(def.steps, selectedId) : null;
@@ -1261,7 +1281,7 @@ export default function OrchestrationStudio() {
       if (res?.ok) setSimPass({ hash: submittedHash, token: (res as { simToken?: string }).simToken });
       else setSimPass(null);
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : String(err));
+      toast.error(mapTrpcError(err));
     } finally {
       setSimulating(false);
     }
@@ -1303,7 +1323,7 @@ export default function OrchestrationStudio() {
         toast.error(res.message ?? t("studio.aiInvalid", "AI could not produce a valid workflow"));
       }
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : String(err));
+      toast.error(mapTrpcError(err));
     } finally {
       setAiBusy(false);
     }
@@ -1333,7 +1353,7 @@ export default function OrchestrationStudio() {
         toast.error(res.message ?? t("studio.aiInvalid", "AI could not produce a valid workflow"));
       }
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : String(err));
+      toast.error(mapTrpcError(err));
     } finally {
       setAiBusy(false);
     }
@@ -1751,10 +1771,31 @@ export default function OrchestrationStudio() {
                   ))}
                 </div>
               )}
+              {/* doc 80 ORC-04 — nhóm "Bị gián đoạn" (held do restart): KHÔNG phải cổng chờ duyệt. */}
+              {interruptedRuns.length > 0 && (
+                <div className="space-y-1.5">
+                  <div className="flex items-center gap-2 pt-1 text-xs font-semibold text-orange-600 dark:text-orange-400">
+                    <AlertTriangle className="h-3.5 w-3.5" />
+                    {t("studio.interruptedRuns", "Interrupted")}
+                    <Badge variant="outline" className="text-[10px]">{interruptedRuns.length}</Badge>
+                  </div>
+                  {interruptedRuns.map((r: Record<string, unknown>) => (
+                    <RunRow
+                      key={String(r.id)}
+                      run={r}
+                      interrupted
+                      canControl={canControl}
+                      onResume={(approved, note) => resumeM.mutate({ runId: Number(r.id), approved, note })}
+                      onAbort={() => abortM.mutate({ runId: Number(r.id) })}
+                      t={t}
+                    />
+                  ))}
+                </div>
+              )}
               {/* Các run còn lại. */}
               {otherRuns.length > 0 && (
                 <div className="space-y-1.5">
-                  {awaitingRuns.length > 0 && (
+                  {(awaitingRuns.length > 0 || interruptedRuns.length > 0) && (
                     <div className="pt-1 text-xs font-semibold text-muted-foreground">
                       {t("studio.otherRuns", "Lần chạy khác")}
                     </div>
@@ -1848,14 +1889,30 @@ export default function OrchestrationStudio() {
                 {versionRows.map((v) => (
                   <div key={v.id} className="flex items-center justify-between rounded px-2 py-1 text-sm hover:bg-muted/50">
                     <span className="font-mono text-xs">v{v.version} <span className="text-muted-foreground">· {v.name}</span></span>
-                    <Button
-                      size="sm" variant="outline" className="h-7"
+                    {/* doc 80 ORC-05 — rollback = deploy: lý do bắt buộc (≥3) + OTP tươi mỗi lượt. */}
+                    <ConfirmWithReason
+                      trigger={
+                        <Button
+                          size="sm" variant="outline" className="h-7"
+                          disabled={!canControl || rollbackWfM.isPending}
+                          title={permReason}
+                        >
+                          <RotateCcw className="mr-1 h-3.5 w-3.5" /> {t("studio.rollback", "Rollback")}
+                        </Button>
+                      }
                       disabled={!canControl || rollbackWfM.isPending}
-                      title={permReason}
-                      onClick={() => setRollbackVer({ workflowId: versionsWf!.id, version: v.version })}
-                    >
-                      <RotateCcw className="mr-1 h-3.5 w-3.5" /> {t("studio.rollback", "Rollback")}
-                    </Button>
+                      title={t("studio.rollbackTitle", "Roll back to this version?")}
+                      description={t("studio.rollbackConfirm", "This re-deploys version v{{version}}'s definition as a NEW version (append-only; history is preserved). Flag-gated by FOE_ENABLED.", { version: v.version })}
+                      impact={t("studio.rollbackImpact", "Requires an OTP code and a reason; the reason is recorded in the audit log.")}
+                      minReasonLength={3}
+                      confirmLabel={t("studio.rollback", "Rollback")}
+                      onConfirm={(reason) => {
+                        const workflowId = versionsWf!.id;
+                        stepUp.guard((totpCode) =>
+                          rollbackWfM.mutate({ workflowId, version: v.version, reason, totpCode }),
+                        );
+                      }}
+                    />
                   </div>
                 ))}
               </div>
@@ -1897,25 +1954,6 @@ export default function OrchestrationStudio() {
         </DialogContent>
       </Dialog>
 
-      {/* W3-11 — Rollback confirm */}
-      <AlertDialog open={rollbackVer != null} onOpenChange={(o) => { if (!o) setRollbackVer(null); }}>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>{t("studio.rollbackTitle", "Roll back to this version?")}</AlertDialogTitle>
-            <AlertDialogDescription>
-              {t("studio.rollbackConfirm", "This re-deploys version v{{version}}'s definition as a NEW version (append-only; history is preserved). Flag-gated by FOE_ENABLED.", { version: rollbackVer?.version ?? "" })}
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel>{t("common.cancel", "Cancel")}</AlertDialogCancel>
-            <AlertDialogAction
-              onClick={() => { if (rollbackVer) rollbackWfM.mutate({ workflowId: rollbackVer.workflowId, version: rollbackVer.version }); }}
-            >
-              {t("studio.rollback", "Rollback")}
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
       {/* doc 54 P3.2 — step-up 2FA prompt for workflow deploy */}
       {stepUp.dialog}
     </DashboardLayout>
@@ -1944,12 +1982,15 @@ type RunStepView = {
 
 function RunRow({
   run,
+  interrupted = false,
   canControl,
   onResume,
   onAbort,
   t,
 }: {
   run: Record<string, unknown>;
+  /** doc 80 ORC-04 — run 'held' do server khởi động lại (không phải cổng chờ duyệt). */
+  interrupted?: boolean;
   canControl: boolean;
   onResume: (approved: boolean, note?: string) => void;
   onAbort: () => void;
@@ -1959,9 +2000,13 @@ function RunRow({
   // U6 — chế độ nhập lý do khi từ chối (reject) + nội dung lý do.
   const [rejecting, setRejecting] = useState(false);
   const [rejectNote, setRejectNote] = useState("");
+  // doc 80 ORC-04 — "Tiếp tục…" một run bị gián đoạn phải qua hộp xác nhận.
+  const [confirmContinue, setConfirmContinue] = useState(false);
   const status = String(run.status ?? "");
   const runId = Number(run.id);
-  const awaiting = status === "awaiting_confirm" || status === "held";
+  const awaiting = !interrupted && (status === "awaiting_confirm" || status === "held");
+  // doc 80 ORC-01 — Abort nay dừng THẬT run đang chạy ⇒ hiện nút cho run queued/running.
+  const abortable = status === "running" || status === "queued";
   // Realtime: khi panel mở → poll bước; run đang chờ duyệt cũng nạp 1 lần (không poll)
   // để lấy NGỮ CẢNH gate (prompt/approverRoles) hiển thị cạnh nút Approve.
   const detailQ = trpc.orchestration.getRun.useQuery(
@@ -1992,6 +2037,21 @@ function RunRow({
           <Badge className={`${RUN_STATUS_COLOR[status] ?? "bg-slate-400"} text-white`}>{status}</Badge>
           <span className="truncate font-mono text-[11px] text-muted-foreground">run #{runId} · {String(run.workflowRef ?? run.workflowId ?? "")}</span>
         </button>
+        {interrupted && canControl && (
+          <div className="flex gap-1">
+            <Button size="sm" variant="outline" className="h-7" onClick={() => setConfirmContinue(true)}>
+              {t("studio.continueRun", "Continue…")}
+            </Button>
+            <Button size="sm" variant="destructive" className="h-7" onClick={onAbort}>
+              {t("studio.cancelRun", "Cancel run")}
+            </Button>
+          </div>
+        )}
+        {abortable && canControl && (
+          <Button size="sm" variant="destructive" className="h-7" onClick={onAbort}>
+            {t("studio.abort", "Abort")}
+          </Button>
+        )}
         {awaiting && canControl && (
           <div className="flex gap-1">
             <Button size="sm" className="h-7 bg-emerald-600 hover:bg-emerald-700" onClick={() => onResume(true)}>
@@ -2006,6 +2066,28 @@ function RunRow({
           </div>
         )}
       </div>
+
+      {interrupted && (
+        <div className="border-t bg-orange-500/5 px-2 py-1.5 text-xs text-muted-foreground">
+          {t("studio.interruptedHint", "Interrupted by a server restart — this is NOT an approval gate. Check the line before continuing; completed steps will not run again.")}
+        </div>
+      )}
+      <AlertDialog open={confirmContinue} onOpenChange={setConfirmContinue}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>{t("studio.continueRunTitle", "Continue run #{{id}}?", { id: runId })}</AlertDialogTitle>
+            <AlertDialogDescription>
+              {t("studio.continueRunDesc", "The run resumes from where it was interrupted and may send real commands to machines. Completed steps are skipped.")}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>{t("common.cancel", "Cancel")}</AlertDialogCancel>
+            <AlertDialogAction onClick={() => { setConfirmContinue(false); onResume(true); }}>
+              {t("studio.continueRunConfirm", "Continue run")}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
 
       {/* U6 (doc 26 §2.3) — NGỮ CẢNH duyệt: người duyệt thấy đang duyệt BƯỚC GÌ. */}
       {awaiting && canControl && (

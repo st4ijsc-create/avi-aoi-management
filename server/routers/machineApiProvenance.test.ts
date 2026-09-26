@@ -44,10 +44,15 @@ vi.mock("../db", () => {
     createProductInspection: vi.fn(),
     createMeasurementResults: vi.fn(async () => undefined),
     getMachineStats: vi.fn(async () => ({ total: 10, ok: 10, ng: 0, ntf: 0, yieldRate: 100 })),
-    getStationById: vi.fn(async () => undefined),
-    getLineById: vi.fn(async () => undefined),
-    getWorkshopById: vi.fn(async () => undefined),
-    getFactoryById: vi.fn(async () => undefined),
+    // ⚠ 2026-08-18 — CHUỖI PHÂN CẤP PHẢI PHÂN GIẢI ĐƯỢC. Đường ingest nay SUY mã tenant từ máy
+    // (`phamViGhiMay.macTenantChoGhi`) và TỪ CHỐI một máy không ra được nhà máy. Bốn stub cũ trả
+    // `undefined` mô tả một cái máy KHÔNG THUỘC NHÀ MÁY NÀO — trạng thái mà lược đồ KHÔNG cho
+    // phép tồn tại (`machines.stationId` NOT NULL + ba FK `ON DELETE RESTRICT`), nên stub cũ là
+    // một lời khai SAI VỀ THẾ GIỚI, không phải một lối tắt vô hại.
+    getStationById: vi.fn(async () => ({ id: 1, code: "ST-MOCK", lineId: 1 })),
+    getLineById: vi.fn(async () => ({ id: 1, code: "LINE-MOCK", workshopId: 1 })),
+    getWorkshopById: vi.fn(async () => ({ id: 1, code: "WS-MOCK", factoryId: 1 })),
+    getFactoryById: vi.fn(async () => ({ id: 1, code: "FAC-MOCK", corporateCode: "CORP-MOCK" })),
     getDefectCatalogByCode: vi.fn(async () => undefined),
     recordUnmatchedDefectCodes: vi.fn(async () => undefined),
     getMeasurementPointDefByCode: vi.fn(async () => undefined),
@@ -272,12 +277,9 @@ describe("CASE #3 — clock skew", () => {
     expect(row.clockSkewFlagged).toBe(true);
     expect(row.timeSkewSeconds).toBe(6 * 3600);
     expect(row.timeSource).toBe("machine_utc");
-    // serverReceivedAt = giờ SERVER nhận (áp cùng phép dịch fake-UTC như
-    // inspectionTime), KHÔNG phải giờ máy khai.
-    const expectedLocalRecv = new Date(
-      serverNow.getTime() - serverNow.getTimezoneOffset() * 60000,
-    );
-    expect((row.serverReceivedAt as Date).toISOString()).toBe(expectedLocalRecv.toISOString());
+    // serverReceivedAt = giờ SERVER nhận, ghi THÔ (cutover 2026-09-03, BG-96 — KHÔNG còn
+    // phép dịch "fake UTC"), KHÔNG phải giờ máy khai.
+    expect((row.serverReceivedAt as Date).toISOString()).toBe(serverNow.toISOString());
   });
 
   it("máy lệch 6h VỀ QUÁ KHỨ → skew ÂM (giữ dấu: chạy chậm ≠ chạy trước)", async () => {

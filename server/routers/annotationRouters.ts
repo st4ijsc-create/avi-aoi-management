@@ -1,83 +1,111 @@
 import { protectedProcedure, router } from "../_core/trpc";
 import { z } from "zod";
 import { TRPCError } from "@trpc/server";
+import { appError } from "../_core/appError";
 import * as db from "../db";
 import { getDb } from "../db";
 import { sql } from "drizzle-orm";
 import { nanoid } from "nanoid";
 import { invokeLLM } from "../_core/llm";
+import { finalYield } from "../utils/kpi";
 
 // ============ DRILL DOWN ROUTER ============
+
+/**
+ * W1 (sự thật số liệu): bucket sentinel cho inspection CHƯA GÁN tập đoàn
+ * (corporateCode NULL/rỗng). Đây không phải mã tập đoàn thật — client hiển thị
+ * "Chưa gán tập đoàn" và factoriesByCorporate hiểu sentinel này là "match NULL".
+ */
+const UNASSIGNED_CORPORATE_CODE = 'Unknown';
+
+/** Shape 1 hàng của factoriesByCorporate (thêm optional isUnassigned — không đổi contract cũ). */
+type FactoryDrillStat = {
+  id: number;
+  code: string;
+  name: string;
+  total: number;
+  ok: number;
+  ng: number;
+  ntf: number;
+  yieldRate: number;
+  /** true = bucket "chưa gán nhà máy" (factoryCode không khớp master data) — client render KHÔNG drill được. */
+  isUnassigned?: boolean;
+};
+
+/**
+ * doc 67 W6 — kỳ dữ liệu optional cho các tầng drill. Không truyền = toàn thời gian
+ * (client /drill-down mặc định gửi kỳ "Hôm nay"). superjson transformer → z.date()
+ * đi qua wire nguyên bản.
+ */
+const drillPeriodInput = z.object({
+  from: z.date().optional(),
+  to: z.date().optional(),
+});
+
 export const drillDownRouter = router({
   // Get stats by corporate
+  // doc 67 W6: trước đây fetch tới 50.000 row inspection rồi group bằng Map trong
+  // Node (mỗi client poll 60s + socket-invalidate → full-scan lặp). Giờ GROUP BY
+  // COALESCE(corporateCode,'Unknown') thẳng trong PG (getDrillStatsByCorporate) —
+  // giữ nguyên shape trả về + sentinel W1 + access-control (corporate/factory
+  // assignment OR, không assignment → rỗng, hệt getProductInspections cũ).
   corporateStats: protectedProcedure
-    .query(async ({ ctx }) => {
-      // Get inspections grouped by corporate code
-      const { data: inspections } = await db.getProductInspections({ 
-        limit: 50000,
+    .input(drillPeriodInput.optional())
+    .query(async ({ ctx, input }) => {
+      const stats = await db.getDrillStatsByCorporate({
+        startDate: input?.from,
+        endDate: input?.to,
         userId: ctx.user.id,
         userRole: ctx.user.role as 'admin' | 'user',
       });
-      
-      // Group by corporate code
-      const corporateMap = new Map<string, { total: number; ok: number; ng: number; ntf: number }>();
-      
-      for (const inspection of inspections) {
-        const corpCode = inspection.corporateCode || 'Unknown';
-        
-        if (!corporateMap.has(corpCode)) {
-          corporateMap.set(corpCode, { total: 0, ok: 0, ng: 0, ntf: 0 });
-        }
-        
-        const stats = corporateMap.get(corpCode)!;
-        stats.total++;
-        if (inspection.overallResult === 'OK') stats.ok++;
-        else if (inspection.overallResult === 'NG') stats.ng++;
-        else if (inspection.overallResult === 'NTF') stats.ntf++;
-      }
-      
-      return Array.from(corporateMap.entries()).map(([code, stats]) => ({
-        code,
-        name: code,
-        total: stats.total,
-        ok: stats.ok,
-        ng: stats.ng,
-        ntf: stats.ntf,
-        yieldRate: stats.total > 0 ? (stats.ok / stats.total) * 100 : 0,
+
+      return stats.map(s => ({
+        code: s.code,
+        name: s.code,
+        total: s.total,
+        ok: s.ok,
+        ng: s.ng,
+        ntf: s.ntf,
+        yieldRate: finalYield({ ok: s.ok, ntf: s.ntf, total: s.total }),
+        // W1: đánh dấu bucket "chưa gán tập đoàn" để client đổi nhãn + xếp cuối
+        // (hàng này VẪN drill được — factoriesByCorporate hiểu sentinel = NULL).
+        isUnassigned: s.code === UNASSIGNED_CORPORATE_CODE ? (true as const) : undefined,
       })).sort((a, b) => b.total - a.total);
     }),
 
   // Get factories by corporate
   factoriesByCorporate: protectedProcedure
-    .input(z.object({ corporateCode: z.string() }))
+    .input(z.object({ corporateCode: z.string() }).merge(drillPeriodInput))
     .query(async ({ ctx, input }) => {
       const allFactories = await db.getFactories();
-      const { data: inspections } = await db.getProductInspections({ 
-        corporateCode: input.corporateCode,
-        limit: 50000,
+      // W1: 'Unknown' là sentinel "chưa gán tập đoàn" do corporateStats phát ra
+      // (corporateCode NULL/rỗng) — không phải mã thật nên KHÔNG lọc eq() mà match
+      // NULL/'' trong SQL (unassignedCorporate). doc 67 W6: group ở PG thay vì
+      // fetch 50k row rồi Map trong Node.
+      const isUnassignedCorporate = input.corporateCode === UNASSIGNED_CORPORATE_CODE;
+      const factoryAgg = await db.getDrillStatsByFactory({
+        ...(isUnassignedCorporate
+          ? { unassignedCorporate: true }
+          : { corporateCode: input.corporateCode }),
+        startDate: input.from,
+        endDate: input.to,
         userId: ctx.user.id,
         userRole: ctx.user.role as 'admin' | 'user',
       });
-      
-      // Group inspections by factory code
+
+      // Bucket theo factoryCode (SQL đã COALESCE NULL/'' → 'Unknown' hệt JS cũ).
       const factoryStatsMap = new Map<string, { total: number; ok: number; ng: number; ntf: number }>();
-      
-      for (const inspection of inspections) {
-        const factoryCode = inspection.factoryCode || 'Unknown';
-        
-        if (!factoryStatsMap.has(factoryCode)) {
-          factoryStatsMap.set(factoryCode, { total: 0, ok: 0, ng: 0, ntf: 0 });
-        }
-        
-        const stats = factoryStatsMap.get(factoryCode)!;
-        stats.total++;
-        if (inspection.overallResult === 'OK') stats.ok++;
-        else if (inspection.overallResult === 'NG') stats.ng++;
-        else if (inspection.overallResult === 'NTF') stats.ntf++;
+      for (const agg of factoryAgg) {
+        factoryStatsMap.set(agg.factoryCode, {
+          total: agg.total,
+          ok: agg.ok,
+          ng: agg.ng,
+          ntf: agg.ntf,
+        });
       }
-      
-      // Map to factories
-      return allFactories
+
+      // Map to factories (khớp master data)
+      const rows: FactoryDrillStat[] = allFactories
         .filter(f => factoryStatsMap.has(f.code))
         .map(factory => {
           const stats = factoryStatsMap.get(factory.code) || { total: 0, ok: 0, ng: 0, ntf: 0 };
@@ -89,53 +117,76 @@ export const drillDownRouter = router({
             ok: stats.ok,
             ng: stats.ng,
             ntf: stats.ntf,
-            yieldRate: stats.total > 0 ? (stats.ok / stats.total) * 100 : 0,
+            yieldRate: finalYield({ ok: stats.ok, ntf: stats.ntf, total: stats.total }),
           };
         })
         .sort((a, b) => b.total - a.total);
+
+      // W1 (tổng các tầng phải khớp): trước đây .filter(has) VỨT IM LẶNG các bucket
+      // factoryCode không có trong master data (hoặc NULL) → tổng tầng Factory hụt so
+      // với tầng Corporate. Gom phần dư thành 1 hàng "Chưa gán nhà máy" KHÔNG drill
+      // được (isUnassigned: true) để chênh lệch được giải thích ngay trên UI.
+      const masterFactoryCodes = new Set(allFactories.map(f => f.code));
+      let unTotal = 0, unOk = 0, unNg = 0, unNtf = 0;
+      for (const [code, stats] of factoryStatsMap) {
+        if (masterFactoryCodes.has(code)) continue;
+        unTotal += stats.total;
+        unOk += stats.ok;
+        unNg += stats.ng;
+        unNtf += stats.ntf;
+      }
+      if (unTotal > 0) {
+        rows.push({
+          id: -1, // sentinel — client không dùng để drill (isUnassigned)
+          code: 'UNASSIGNED',
+          name: `Chưa gán nhà máy (${unTotal.toLocaleString('vi-VN')} kết quả)`,
+          total: unTotal,
+          ok: unOk,
+          ng: unNg,
+          ntf: unNtf,
+          yieldRate: finalYield({ ok: unOk, ntf: unNtf, total: unTotal }),
+          isUnassigned: true,
+        });
+      }
+
+      return rows;
     }),
 
   // Get lines by factory
+  // doc 67 W6: group ở PG (JOIN machines→stations, GROUP BY lineId) thay vì fetch
+  // 50k row + lọc từng line trong Node. Semantics giữ nguyên: chỉ đếm inspection
+  // mang factoryCode của nhà máy; line không có inspection vẫn trả total=0.
   linesByFactory: protectedProcedure
-    .input(z.object({ factoryId: z.number() }))
+    .input(z.object({ factoryId: z.number() }).merge(drillPeriodInput))
     .query(async ({ ctx, input }) => {
       const allLines = await db.getProductionLines();
       const factory = await db.getFactoryById(input.factoryId);
       if (!factory) return [];
-      
+
       // Get workshops for this factory
       const allWorkshops = await db.getWorkshops();
       const factoryWorkshops = allWorkshops.filter(w => w.factoryId === input.factoryId);
       const workshopIds = factoryWorkshops.map(w => w.id);
-      
-      const { data: inspections } = await db.getProductInspections({ 
+
+      // Get lines for this factory (via workshops)
+      const factoryLines = allLines.filter(l => workshopIds.includes(l.workshopId));
+
+      const lineAgg = await db.getDrillStatsByLine({
         factoryCode: factory.code,
-        limit: 50000,
+        startDate: input.from,
+        endDate: input.to,
         userId: ctx.user.id,
         userRole: ctx.user.role as 'admin' | 'user',
       });
-      
-      // Get lines for this factory (via workshops)
-      const factoryLines = allLines.filter(l => workshopIds.includes(l.workshopId));
-      
-      // Group inspections by machine, then map to lines
-      const allMachines = await db.getMachines();
-      const allStations = await db.getStations();
-      
+      const lineAggMap = new Map(lineAgg.map(a => [a.lineId, a]));
+
       return factoryLines.map(line => {
-        // Get stations for this line
-        const lineStations = allStations.filter(s => s.lineId === line.id);
-        const stationIds = lineStations.map(s => s.id);
-        
-        // Get machines for these stations
-        const lineMachineIds = allMachines.filter(m => stationIds.includes(m.stationId)).map(m => m.id);
-        const lineInspections = inspections.filter(i => lineMachineIds.includes(i.machineId));
-        
-        const total = lineInspections.length;
-        const ok = lineInspections.filter(i => i.overallResult === 'OK').length;
-        const ng = lineInspections.filter(i => i.overallResult === 'NG').length;
-        const ntf = lineInspections.filter(i => i.overallResult === 'NTF').length;
-        
+        const stats = lineAggMap.get(line.id);
+        const total = stats?.total ?? 0;
+        const ok = stats?.ok ?? 0;
+        const ng = stats?.ng ?? 0;
+        const ntf = stats?.ntf ?? 0;
+
         return {
           id: line.id,
           code: line.code,
@@ -144,14 +195,16 @@ export const drillDownRouter = router({
           ok,
           ng,
           ntf,
-          yieldRate: total > 0 ? (ok / total) * 100 : 0,
+          yieldRate: finalYield({ ok, ntf, total }),
         };
       }).sort((a, b) => b.total - a.total);
     }),
 
   // Get machines by line
+  // doc 67 W6: nhận kỳ from/to như 3 tầng trên — thiếu nó, drill tới tầng máy sẽ
+  // âm thầm đổi sang "toàn thời gian" và tổng các tầng lệch nhau (phản W1).
   machinesByLine: protectedProcedure
-    .input(z.object({ lineId: z.number() }))
+    .input(z.object({ lineId: z.number() }).merge(drillPeriodInput))
     .query(async ({ ctx, input }) => {
       const allMachines = await db.getMachines();
       const allStations = await db.getStations();
@@ -167,8 +220,10 @@ export const drillDownRouter = router({
       const machineIds = lineMachines.map(m => m.id);
       
       const results = await Promise.all(lineMachines.map(async (machine) => {
-        const { data: machineInspections } = await db.getProductInspections({ 
+        const { data: machineInspections } = await db.getProductInspections({
           machineId: machine.id,
+          startDate: input.from,
+          endDate: input.to,
           limit: 10000,
           userId: ctx.user.id,
           userRole: ctx.user.role as 'admin' | 'user',
@@ -187,10 +242,10 @@ export const drillDownRouter = router({
           ok,
           ng,
           ntf,
-          yieldRate: total > 0 ? (ok / total) * 100 : 0,
+          yieldRate: finalYield({ ok, ntf, total }),
         };
       }));
-      
+
       return results.sort((a, b) => b.total - a.total);
     }),
 });
@@ -215,7 +270,7 @@ export const annotationRouter = router({
     }))
     .mutation(async ({ ctx, input }) => {
       const db = await getDb();
-      if (!db) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: 'Database not available' });
+      if (!db) throw appError("INTERNAL_SERVER_ERROR", "DB_UNAVAILABLE", undefined, "Database not available");
       // Check if annotation exists for this image
       const existing = await db.execute(
         sql`SELECT id FROM image_annotations WHERE "imageUrl" = ${input.imageUrl} AND "createdBy" = ${ctx.user.id} LIMIT 1`
@@ -241,7 +296,7 @@ export const annotationRouter = router({
     .input(z.object({ imageUrl: z.string() }))
     .query(async ({ input }) => {
       const db = await getDb();
-      if (!db) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: 'Database not available' });
+      if (!db) throw appError("INTERNAL_SERVER_ERROR", "DB_UNAVAILABLE", undefined, "Database not available");
       const result = await db.execute(
         sql`SELECT * FROM image_annotations WHERE "imageUrl" = ${input.imageUrl} ORDER BY "updatedAt" DESC LIMIT 1`
       ) as any;
@@ -264,7 +319,7 @@ export const annotationRouter = router({
     .input(z.object({ inspectionId: z.number() }))
     .query(async ({ input }) => {
       const db = await getDb();
-      if (!db) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: 'Database not available' });
+      if (!db) throw appError("INTERNAL_SERVER_ERROR", "DB_UNAVAILABLE", undefined, "Database not available");
       const result = await db.execute(
         sql`SELECT * FROM image_annotations WHERE "inspectionId" = ${input.inspectionId} ORDER BY "createdAt" DESC`
       ) as any;
@@ -291,7 +346,7 @@ export const annotationRouter = router({
     }).optional())
     .query(async ({ input }) => {
       const db = await getDb();
-      if (!db) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: 'Database not available' });
+      if (!db) throw appError("INTERNAL_SERVER_ERROR", "DB_UNAVAILABLE", undefined, "Database not available");
       
       // Get all annotations and filter in memory for complex JSON queries
       const result = await db.execute(
@@ -371,7 +426,7 @@ export const annotationRouter = router({
     }).optional())
     .query(async ({ input }) => {
       const db = await getDb();
-      if (!db) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: 'Database not available' });
+      if (!db) throw appError("INTERNAL_SERVER_ERROR", "DB_UNAVAILABLE", undefined, "Database not available");
       
       // Get all annotations with inspection data
       let query = sql`
@@ -476,14 +531,14 @@ export const annotationRouter = router({
     }))
     .mutation(async ({ ctx, input }) => {
       const db = await getDb();
-      if (!db) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: 'Database not available' });
+      if (!db) throw appError("INTERNAL_SERVER_ERROR", "DB_UNAVAILABLE", undefined, "Database not available");
       
       // Get template
       const templateResult = await db.execute(
         sql`SELECT annotations FROM annotation_templates WHERE id = ${input.templateId}`
       ) as any;
       if (!templateResult.length) {
-        throw new TRPCError({ code: 'NOT_FOUND', message: 'Template not found' });
+        throw appError('NOT_FOUND', 'ENTITY_NOT_FOUND', { entity: 'annotationTemplate' }, 'Template not found');
       }
       const templateAnnotations = typeof templateResult[0].annotations === 'string'
         ? JSON.parse(templateResult[0].annotations)
@@ -528,7 +583,7 @@ export const annotationRouter = router({
     }))
     .mutation(async ({ ctx, input }) => {
       const db = await getDb();
-      if (!db) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: 'Database not available' });
+      if (!db) throw appError("INTERNAL_SERVER_ERROR", "DB_UNAVAILABLE", undefined, "Database not available");
       
       let deletedCount = 0;
       for (const imageUrl of input.imageUrls) {
@@ -550,14 +605,14 @@ export const annotationRouter = router({
     }))
     .mutation(async ({ ctx, input }) => {
       const db = await getDb();
-      if (!db) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: 'Database not available' });
+      if (!db) throw appError("INTERNAL_SERVER_ERROR", "DB_UNAVAILABLE", undefined, "Database not available");
       
       // Get source annotations
       const sourceResult = await db.execute(
         sql`SELECT annotations FROM image_annotations WHERE "imageUrl" = ${input.sourceImageUrl} ORDER BY "updatedAt" DESC LIMIT 1`
       ) as any;
       if (!sourceResult.length) {
-        throw new TRPCError({ code: 'NOT_FOUND', message: 'Source image has no annotations' });
+        throw appError('NOT_FOUND', 'ENTITY_NOT_FOUND', { entity: 'annotation' }, 'Source image has no annotations');
       }
       const sourceAnnotations = typeof sourceResult[0].annotations === 'string'
         ? JSON.parse(sourceResult[0].annotations)
@@ -671,7 +726,7 @@ Respond in JSON format with an array of findings.`
         
         const content = response.choices[0]?.message?.content;
         if (!content) {
-          throw new Error('No response from AI');
+          throw appError("INTERNAL_SERVER_ERROR", "OPERATION_FAILED", { operation: "analyzeAnnotationWithAI" }, "No response from AI");
         }
         
         const contentStr = typeof content === 'string' ? content : JSON.stringify(content);
@@ -739,10 +794,7 @@ Respond in JSON format with an array of findings.`
         };
       } catch (error: any) {
         console.error('AI analysis error:', error);
-        throw new TRPCError({
-          code: 'INTERNAL_SERVER_ERROR',
-          message: `AI analysis failed: ${error.message}`
-        });
+        throw appError('INTERNAL_SERVER_ERROR', 'OPERATION_FAILED', { operation: 'analyzeAnnotationWithAI' }, `AI analysis failed: ${error.message}`);
       }
     }),
 
@@ -751,16 +803,16 @@ Respond in JSON format with an array of findings.`
     .input(z.object({ id: z.number() }))
     .mutation(async ({ ctx, input }) => {
       const db = await getDb();
-      if (!db) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: 'Database not available' });
+      if (!db) throw appError("INTERNAL_SERVER_ERROR", "DB_UNAVAILABLE", undefined, "Database not available");
       // Check ownership
       const existing = await db.execute(
         sql`SELECT "createdBy" FROM image_annotations WHERE id = ${input.id}`
       ) as any;
       if (!existing.length) {
-        throw new TRPCError({ code: 'NOT_FOUND', message: 'Annotation not found' });
+        throw appError('NOT_FOUND', 'ENTITY_NOT_FOUND', { entity: 'annotation' }, 'Annotation not found');
       }
       if (existing[0].createdBy !== ctx.user.id && ctx.user.role !== 'admin') {
-        throw new TRPCError({ code: 'FORBIDDEN', message: 'Not authorized to delete this annotation' });
+        throw appError('FORBIDDEN', 'PERMISSION_DENIED', { action: 'deleteAnnotation' }, 'Not authorized to delete this annotation');
       }
       await db.execute(sql`DELETE FROM image_annotations WHERE id = ${input.id}`);
       return { success: true };
@@ -779,7 +831,7 @@ Respond in JSON format with an array of findings.`
     }))
     .query(async ({ input }) => {
       const db = await getDb();
-      if (!db) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: 'Database not available' });
+      if (!db) throw appError("INTERNAL_SERVER_ERROR", "DB_UNAVAILABLE", undefined, "Database not available");
       
       // Build dynamic conditions using parameterized queries
       const conditions = [sql`mr."imageUrl" IS NOT NULL`];
@@ -870,7 +922,7 @@ Respond in JSON format with an array of findings.`
     }))
     .query(async ({ input }) => {
       const db = await getDb();
-      if (!db) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: 'Database not available' });
+      if (!db) throw appError("INTERNAL_SERVER_ERROR", "DB_UNAVAILABLE", undefined, "Database not available");
       
       // Build dynamic conditions using parameterized queries
       const conditions = [sql`ia.annotations IS NOT NULL`];
@@ -1021,7 +1073,7 @@ Respond in JSON format with an array of findings.`
     }))
     .query(async ({ input }) => {
       const db = await getDb();
-      if (!db) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: 'Database not available' });
+      if (!db) throw appError("INTERNAL_SERVER_ERROR", "DB_UNAVAILABLE", undefined, "Database not available");
       
       // Build dynamic conditions using parameterized queries
       const conditions = [
@@ -1147,7 +1199,7 @@ Respond in JSON format with an array of findings.`
     }))
     .mutation(async ({ input }) => {
       const db = await getDb();
-      if (!db) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: 'Database not available' });
+      if (!db) throw appError("INTERNAL_SERVER_ERROR", "DB_UNAVAILABLE", undefined, "Database not available");
       
       // Build dynamic conditions using parameterized queries
       const conditions = [sql`ia.annotations IS NOT NULL`];
@@ -1258,12 +1310,12 @@ Respond in JSON format with an array of findings.`
     }))
     .mutation(async ({ ctx, input }) => {
       const db = await getDb();
-      if (!db) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: 'Database not available' });
+      if (!db) throw appError("INTERNAL_SERVER_ERROR", "DB_UNAVAILABLE", undefined, "Database not available");
       
       try {
         const importData = JSON.parse(input.data);
         if (!Array.isArray(importData)) {
-          throw new TRPCError({ code: 'BAD_REQUEST', message: 'Invalid import data format' });
+          throw appError('BAD_REQUEST', 'INVALID_VALUE', { field: 'importData' }, 'Invalid import data format');
         }
         
         let imported = 0;
@@ -1324,7 +1376,14 @@ Respond in JSON format with an array of findings.`
           errors: errors.slice(0, 10), // Limit errors shown
         };
       } catch (err: any) {
-        throw new TRPCError({ code: 'BAD_REQUEST', message: `Import failed: ${err.message}` });
+        // I-B (review cuối): lời ném INVALID_VALUE (field importData, phía trên trong cùng
+        // khối try — JSON không phải mảng) rơi vào ĐÚNG khối try này — không có chốt
+        // instanceof TRPCError, nên bị catch bắt lại và ném ĐÈ thành OPERATION_FAILED ở
+        // đây. Lời ném gốc không bao giờ tới được client; JSON hỏng của người dùng và một
+        // sự cố DB/service thật ra chung một câu "Import failed". Rethrow ngay khi đã có
+        // mã đúng — chỉ bọc lỗi CHƯA có mã.
+        if (err instanceof TRPCError) throw err;
+        throw appError('BAD_REQUEST', 'OPERATION_FAILED', { operation: 'importAnnotations' }, `Import failed: ${err.message}`);
       }
     }),
 });
@@ -1339,7 +1398,7 @@ export const annotationTemplateRouter = router({
     }).optional())
     .query(async ({ input }) => {
       const db = await getDb();
-      if (!db) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: 'Database not available' });
+      if (!db) throw appError("INTERNAL_SERVER_ERROR", "DB_UNAVAILABLE", undefined, "Database not available");
       
       // Build dynamic query
       let result: any;
@@ -1383,7 +1442,7 @@ export const annotationTemplateRouter = router({
     }))
     .mutation(async ({ ctx, input }) => {
       const db = await getDb();
-      if (!db) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: 'Database not available' });
+      if (!db) throw appError("INTERNAL_SERVER_ERROR", "DB_UNAVAILABLE", undefined, "Database not available");
       
       await db.execute(
         sql`INSERT INTO annotation_templates (name, category, description, annotations, "createdBy") VALUES (${input.name}, ${input.category}, ${input.description || null}, ${JSON.stringify(input.annotations)}, ${ctx.user.id})`
@@ -1396,20 +1455,20 @@ export const annotationTemplateRouter = router({
     .input(z.object({ id: z.number() }))
     .mutation(async ({ ctx, input }) => {
       const db = await getDb();
-      if (!db) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: 'Database not available' });
+      if (!db) throw appError("INTERNAL_SERVER_ERROR", "DB_UNAVAILABLE", undefined, "Database not available");
       
       // Check if system template
       const existing = await db.execute(
         sql`SELECT "isSystem", "createdBy" FROM annotation_templates WHERE id = ${input.id}`
       ) as any;
       if (!existing.length) {
-        throw new TRPCError({ code: 'NOT_FOUND', message: 'Template not found' });
+        throw appError('NOT_FOUND', 'ENTITY_NOT_FOUND', { entity: 'annotationTemplate' }, 'Template not found');
       }
       if (existing[0].isSystem) {
-        throw new TRPCError({ code: 'FORBIDDEN', message: 'Cannot delete system templates' });
+        throw appError('FORBIDDEN', 'OPERATION_FAILED', { operation: 'deleteAnnotationTemplate' }, 'Cannot delete system templates');
       }
       if (existing[0].createdBy !== ctx.user.id && ctx.user.role !== 'admin') {
-        throw new TRPCError({ code: 'FORBIDDEN', message: 'Not authorized to delete this template' });
+        throw appError('FORBIDDEN', 'PERMISSION_DENIED', { action: 'deleteAnnotationTemplate' }, 'Not authorized to delete this template');
       }
       
       await db.execute(sql`DELETE FROM annotation_templates WHERE id = ${input.id}`);
@@ -1428,7 +1487,7 @@ export const annotationHistoryRouter = router({
     }))
     .query(async ({ input }) => {
       const db = await getDb();
-      if (!db) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: 'Database not available' });
+      if (!db) throw appError("INTERNAL_SERVER_ERROR", "DB_UNAVAILABLE", undefined, "Database not available");
       
       let query;
       if (input.annotationId) {
@@ -1436,7 +1495,7 @@ export const annotationHistoryRouter = router({
       } else if (input.imageUrl) {
         query = sql`SELECT * FROM annotation_history WHERE "imageUrl" = ${input.imageUrl} ORDER BY "versionNumber" DESC LIMIT ${input.limit}`;
       } else {
-        throw new TRPCError({ code: 'BAD_REQUEST', message: 'Either annotationId or imageUrl is required' });
+        throw appError('BAD_REQUEST', 'FIELD_REQUIRED', { field: 'annotationIdOrImageUrl' }, 'Either annotationId or imageUrl is required');
       }
       
       const result = await db.execute(query) as any;
@@ -1459,14 +1518,14 @@ export const annotationHistoryRouter = router({
     .input(z.object({ id: z.number() }))
     .query(async ({ input }) => {
       const db = await getDb();
-      if (!db) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: 'Database not available' });
+      if (!db) throw appError("INTERNAL_SERVER_ERROR", "DB_UNAVAILABLE", undefined, "Database not available");
       
       const result = await db.execute(
         sql`SELECT * FROM annotation_history WHERE id = ${input.id}`
       ) as any;
       
       if (!result.length) {
-        throw new TRPCError({ code: 'NOT_FOUND', message: 'Version not found' });
+        throw appError('NOT_FOUND', 'ENTITY_NOT_FOUND', { entity: 'annotationVersion' }, 'Version not found');
       }
       
       const row = result[0];
@@ -1489,7 +1548,7 @@ export const annotationHistoryRouter = router({
     .input(z.object({ historyId: z.number() }))
     .mutation(async ({ ctx, input }) => {
       const db = await getDb();
-      if (!db) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: 'Database not available' });
+      if (!db) throw appError("INTERNAL_SERVER_ERROR", "DB_UNAVAILABLE", undefined, "Database not available");
       
       // Get the history record
       const historyResult = await db.execute(
@@ -1497,7 +1556,7 @@ export const annotationHistoryRouter = router({
       ) as any;
       
       if (!historyResult.length) {
-        throw new TRPCError({ code: 'NOT_FOUND', message: 'Version not found' });
+        throw appError('NOT_FOUND', 'ENTITY_NOT_FOUND', { entity: 'annotationVersion' }, 'Version not found');
       }
       
       const historyRow = historyResult[0];
@@ -1533,14 +1592,14 @@ export const annotationHistoryRouter = router({
     }))
     .query(async ({ input }) => {
       const db = await getDb();
-      if (!db) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: 'Database not available' });
+      if (!db) throw appError("INTERNAL_SERVER_ERROR", "DB_UNAVAILABLE", undefined, "Database not available");
       
       const result = await db.execute(
         sql`SELECT * FROM annotation_history WHERE id IN (${input.versionId1}, ${input.versionId2})`
       ) as any;
       
       if (result.length !== 2) {
-        throw new TRPCError({ code: 'NOT_FOUND', message: 'One or both versions not found' });
+        throw appError('NOT_FOUND', 'ENTITY_NOT_FOUND', { entity: 'annotationVersion' }, 'One or both versions not found');
       }
       
       const versions = result.map((row: any) => ({

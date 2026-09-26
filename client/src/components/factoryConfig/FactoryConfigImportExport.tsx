@@ -26,7 +26,7 @@ import {
 } from "lucide-react";
 
 import { trpc } from "@/lib/trpc";
-import { toastTrpcError } from "@/lib/trpcErrors";
+import { mapTrpcError, toastTrpcError } from "@/lib/trpcErrors";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -160,7 +160,7 @@ export function FactoryConfigImportExport(): React.JSX.Element {
       setRawRows(rows);
     } catch (err) {
       setRawRows(null);
-      setParseError(err instanceof Error ? err.message : String(err));
+      setParseError(mapTrpcError(err));
     }
   };
 

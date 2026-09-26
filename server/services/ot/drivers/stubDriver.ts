@@ -16,6 +16,7 @@ import type {
   OtHealth,
   OnOtSample,
 } from "../otDriver";
+import { DeviceUnreachableError } from "../../../_core/deviceErrors";
 
 /** Hash ổn định từ chuỗi để mỗi tagKey có pha riêng. */
 function hashString(s: string): number {
@@ -100,12 +101,12 @@ export class StubDriver implements OtDriver {
   }
 
   async readTags(tags: OtTagAddress[]): Promise<OtSample[]> {
-    if (!this.connected) throw new Error("StubDriver: not connected");
+    if (!this.connected) throw new DeviceUnreachableError("stub");
     return tags.map((t) => this.sampleFor(t));
   }
 
   async subscribe(tags: OtTagAddress[], onSample: OnOtSample, intervalMs = 5000): Promise<OtSubscriptionHandle> {
-    if (!this.connected) throw new Error("StubDriver: not connected");
+    if (!this.connected) throw new DeviceUnreachableError("stub");
 
     const tick = () => {
       for (const t of tags) {

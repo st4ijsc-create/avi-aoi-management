@@ -34,6 +34,7 @@
 import { and, eq, inArray, desc } from "drizzle-orm";
 import { getDb } from "../../db/connection";
 import { tasks, robots, robotTelemetry } from "../../../drizzle/schema";
+import { traTelemetryMoiNhatTheoRobot } from "../../db/telemetryMoiNhat"; // Đợt 50 mục E — một chỗ duy nhất đọc "telemetry mới nhất mỗi robot"
 import type { Task } from "../../../drizzle/schema/fleet";
 import { getDefaultCapability, type EquipmentCapability } from "../equipment/capabilityModel";
 import { publishTaskEvent } from "../ecosystem/ecosystemEvents";
@@ -289,21 +290,28 @@ async function loadCandidatesFromDb(): Promise<AllocCandidate[]> {
     if (t.assignedDeviceId != null) queueByDevice.set(t.assignedDeviceId, (queueByDevice.get(t.assignedDeviceId) ?? 0) + 1);
   }
 
-  // doc 22 P3 — SINGLE batched "latest telemetry per robot" read (was N+1: one query
-  // per candidate). Pull every candidate robot's telemetry in ONE query ordered by
-  // timestamp DESC, then keep the first (= latest) row seen per robotId. This is one
-  // round-trip and yields the identical per-robot latest snapshot the old loop did.
+  /*
+   * ★★★ ĐỢT 50 MỤC E — CHỖ NẶNG NHẤT TRÊN NHỊP 60 GIÂY.
+   * ═══════════════════════════════════════════════════════════════════════════
+   * Lời chú "doc 22 P3 — SINGLE batched read … ONE round-trip" ở đây ĐÚNG VỀ SỐ
+   * LƯỢT GỌI và SAI VỀ KẾT CỤC (G118 — thủ tục ≠ lượt gọi): một lượt gọi ấy
+   * KHÔNG có `LIMIT` nên nó kéo TOÀN BỘ lịch sử telemetry của mọi robot ứng viên
+   * về Node chỉ để vòng `for` bên dưới giữ lại hàng đầu mỗi robot. Trên DB dev
+   * (1,38 triệu hàng) = 4,2 – 16,0 giây MỘT LƯỢT.
+   *
+   * Hàm này nằm trong `allocateTask`, mà `[Fleet] pending-drain sweep started
+   * (every 60000ms)` gọi MỖI 60 GIÂY. Đo trên log server Đợt 50: số lượt sweep
+   * khớp 1:1 với số câu telemetry > 2 s (6/6 ở bản `sau`, 4/4 ở bản `truoc`) —
+   * và đó chính là nhịp các ĐỘT BIẾN 2,6 – 6,9 s khi vào màn mà QA lần 7 đo được.
+   * Vá `fleetRouter.robotPositions` (mục A) KHÔNG chạm tới chỗ này; đây là bản
+   * sao thứ hai của cùng một lớp lỗi.
+   *
+   * Hợp đồng giữ nguyên: `traTelemetryMoiNhatTheoRobot` trả về ĐÚNG cái map mà
+   * vòng `for` cũ dựng (robot chưa có telemetry ⇒ vắng khỏi map, không cửa sổ
+   * thời gian). Xem `server/db/telemetryMoiNhat.ts` cho số đo đầy đủ.
+   */
   const robotIds = robotRows.map((r) => r.id);
-  const telRows = await db
-    .select()
-    .from(robotTelemetry)
-    .where(inArray(robotTelemetry.robotId, robotIds))
-    .orderBy(desc(robotTelemetry.timestamp)); // latest snapshots first (global order)
-  const latestTelByRobot = new Map<number, (typeof telRows)[number]>();
-  for (const tel of telRows) {
-    // First occurrence per robotId is its latest row (rows are timestamp-DESC ordered).
-    if (!latestTelByRobot.has(tel.robotId)) latestTelByRobot.set(tel.robotId, tel);
-  }
+  const latestTelByRobot = await traTelemetryMoiNhatTheoRobot(db, robotIds);
 
   const candidates: AllocCandidate[] = [];
   for (const r of robotRows) {
@@ -376,7 +384,16 @@ export async function allocateTask(taskId: number): Promise<AllocateResult> {
     return { ok: false, enabled: true, decision, message: "no eligible device" };
   }
 
-  await db
+  // FLOW-05/FLT-06 (doc 80 Đợt 0) — CAS transition, not read-then-write. The
+  // `task.status !== "pending"` guard above reads a SNAPSHOT: two concurrent
+  // allocateTask(taskId) calls for the SAME task both pass it (both read the row
+  // BEFORE either writes), so an unconditional UPDATE let whichever writer ran LAST
+  // silently overwrite the earlier one's assignment (double allocation, one
+  // publishTaskEvent lying about a device the DB no longer agrees with). The WHERE
+  // clause below re-checks status AT THE MOMENT OF WRITE — Postgres executes one
+  // UPDATE at a time on a given row, so only the writer that still finds
+  // status='pending' gets a row back from `.returning()`; the loser sees 0 rows.
+  const [updated] = await db
     .update(tasks)
     .set({
       status: "assigned",
@@ -385,7 +402,15 @@ export async function allocateTask(taskId: number): Promise<AllocateResult> {
       assignedAt: new Date(),
       updatedAt: new Date(),
     })
-    .where(eq(tasks.id, taskId));
+    .where(and(eq(tasks.id, taskId), eq(tasks.status, "pending")))
+    .returning();
+  if (!updated) {
+    // Lost the race — another allocate/rebalance/drain pass already transitioned this
+    // task concurrently. Honest no-op (not a thrown error): this function also runs
+    // from a background sweep (drainPendingTasks) that must not blow up mid-loop.
+    console.log(`[Fleet] allocateTask ${taskId}: lost the allocation race (status changed concurrently) — not assigned`);
+    return { ok: false, enabled: true, decision, message: `task ${taskId} allocation conflict — status changed concurrently` };
+  }
   console.log(`[Fleet] task ${taskId} → device ${decision.best.deviceId} (score ${decision.best.score})`);
   // U1-a — publish task.assigned (fire-and-forget; never throws into the allocator).
   publishTaskEvent("assigned", {
@@ -440,8 +465,12 @@ export async function rebalanceDeviceTasks(deviceId: number, reason = "device_of
 
   // Release the failed device's claim: each task back to pending, retryCount bumped,
   // assignment dropped. Per-row so retryCount increments from each task's own value.
+  // Final review fix #4 — CAS like allocateTask: release ONLY if the task is still exactly what
+  // we read (same status, still on this device). A task completed / reassigned meanwhile is not
+  // ours to release (an unconditional write would revive or steal it) → skip it entirely.
+  const released: typeof open = [];
   for (const t of open) {
-    await db
+    const [rel] = await db
       .update(tasks)
       .set({
         status: "pending",
@@ -452,7 +481,13 @@ export async function rebalanceDeviceTasks(deviceId: number, reason = "device_of
         lastError: reason,
         updatedAt: new Date(),
       })
-      .where(eq(tasks.id, t.id));
+      .where(and(eq(tasks.id, t.id), eq(tasks.status, t.status), eq(tasks.assignedDeviceId, deviceId)))
+      .returning({ id: tasks.id });
+    if (!rel) {
+      console.log(`[Fleet] rebalance device ${deviceId}: task ${t.id} changed concurrently — not released`);
+      continue;
+    }
+    released.push(t);
     // U1-a — publish task.failed (the device dropped this task mid-work; it will be
     // re-queued below). Fire-and-forget; the re-allocation may then emit task.assigned.
     publishTaskEvent("failed", {
@@ -472,12 +507,16 @@ export async function rebalanceDeviceTasks(deviceId: number, reason = "device_of
   // Re-allocate each (now pending) task to a DIFFERENT eligible device.
   let reassigned = 0;
   let unassigned = 0;
-  for (const t of open) {
+  for (const t of released) {
     const candidates = (await loadCandidatesFromDb()).filter((c) => c.deviceId !== deviceId);
     const decision = scoreCandidates(taskToAllocInput(t), candidates);
     traceAllocation(`task-${t.id}`, decision, `rebalance (${reason})`); // doc 33 I1 (F6)
     if (decision.best) {
-      await db
+      // Final review fix #4 — CAS on 'pending' (same as allocateTask): the task sat in 'pending'
+      // between the release above and here, so a concurrent allocateTask / drain may already have
+      // assigned it. An unconditional write would assign it a SECOND time (overwriting the other
+      // winner, whose task.assigned event is then a lie). Lost race ⇒ counted as unassigned.
+      const [won] = await db
         .update(tasks)
         .set({
           status: "assigned",
@@ -486,8 +525,14 @@ export async function rebalanceDeviceTasks(deviceId: number, reason = "device_of
           assignedAt: new Date(),
           updatedAt: new Date(),
         })
-        .where(eq(tasks.id, t.id));
-      reassigned++;
+        .where(and(eq(tasks.id, t.id), eq(tasks.status, "pending")))
+        .returning({ id: tasks.id });
+      if (won) {
+        reassigned++;
+      } else {
+        console.log(`[Fleet] rebalance device ${deviceId}: task ${t.id} lost the reassignment race (assigned concurrently)`);
+        unassigned++;
+      }
     } else {
       unassigned++;
     }

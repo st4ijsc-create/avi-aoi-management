@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "description": "Doc 34 · P4 programming-KB retrieval golden set. Each query is grounded in a manual actually ingested into knowledge/programming (verified on disk: docTitles + tokens + pages exist). A retrieved top-K chunk is a HIT when its docTitle/sourcePath contains any expectDocContains entry OR its text contains any expectKeywords entry (case-insensitive) — mirrors scripts/ai-kb/eval-rag.mjs isHit. vendor scopes retrieval to that corpus. Covers all 6 ingested vendors (universal-robots, zmotion, mitsubishi, omron, fanuc, delta) + one multilingual (vi) query + one unfiltered query.",
+  "description": "Doc 34 · P4 programming-KB retrieval golden set. Each query is grounded in a manual actually ingested into knowledge/programming (verified on disk: docTitles + tokens + pages exist). A retrieved top-K chunk is a HIT when its docTitle/sourcePath contains any expectDocContains entry OR its text contains any expectKeywords entry (case-insensitive) — mirrors scripts/ai-kb/eval-rag.mjs isHit. vendor scopes retrieval to that corpus. Covers all 6 ingested vendors (universal-robots, zmotion, mitsubishi, omron, fanuc, delta) + one multilingual (vi) query + one unfiltered query. Việc 3 (2026-09-04, task-v3): added 6 'serial-*' cases, ONE per vendor, targeting the RS232/RS485/Modbus communication-protocol domain a C# tool author needs (SerialPort/Modbus register glue code around a machine) — this is the domain gap B2 found had ZERO grounded cases despite 273-343 raw keyword mentions per vendor in the ingested corpus (grep-verified: `grep -ci 'RS232\\\\|RS-232\\\\|RS485\\\\|RS-485' knowledge/programming/<vendor>/chunks.jsonl`). Each expectDocContains/expectKeywords pair was hand-verified against the actual chunk text on disk (docTitle+page cited in the case's own id/notes below), not guessed from the doc title alone — see task-v3-report.md B3 for the exact verification command per case.",
   "cases": [
     {
       "id": "ur-movel-gripper",
@@ -104,6 +104,54 @@
       "id": "any-movel-unfiltered",
       "query": "linear move movel command to move a robot tool along a straight line",
       "expectKeywords": ["movel"]
+    },
+    {
+      "id": "serial-delta-modbus-asda",
+      "query": "Kết nối RS232/RS485 Modbus RTU từ chương trình C# tới servo Delta ASD-MS, cấu hình giao thức truyền thông ở đâu?",
+      "vendor": "delta",
+      "note": "C#/RS232-serial domain gap (Việc 3 B3). Verified: knowledge/programming/delta/chunks.jsonl docTitle=ASD-MS_UM_EN_20161230 page 10-11 has both MODBUS and RS-232 in body text (not just TOC).",
+      "expectDocContains": ["ASD-MS"],
+      "expectKeywords": ["MODBUS", "RS-232"]
+    },
+    {
+      "id": "serial-mitsubishi-rs232-melsec",
+      "query": "Giao thức truyền thông nối tiếp RS-232/RS-422 của module MELSEC (QJ71C24) dùng để một chương trình C# đọc dữ liệu thế nào?",
+      "vendor": "mitsubishi",
+      "note": "C#/RS232-serial domain gap (Việc 3 B3). Verified: docTitle='MELSEC Communication Protocol Reference Manual' page 349 body text describes QJ71C24 RS-232/RS-422/485 ports.",
+      "expectDocContains": ["MELSEC Communication Protocol"],
+      "expectKeywords": ["RS-232"]
+    },
+    {
+      "id": "serial-omron-modbus-crc",
+      "query": "Tính CRC-16 theo chuẩn MODBUS trong Omron NJ/NX dùng lệnh Structured Text nào?",
+      "vendor": "omron",
+      "note": "RS232/Modbus domain gap (Việc 3 B3). Verified: docTitle=W502-E1-01_NJ-series Instructions Reference Manual — page 558 (StringCRC16) / page 43 (CRC-16) body text.",
+      "expectDocContains": ["W502", "Instructions Reference"],
+      "expectKeywords": ["MODBUS", "CRC-16"]
+    },
+    {
+      "id": "serial-zmotion-setcom",
+      "query": "Cấu hình cổng nối tiếp (serial port) trên bộ điều khiển Zmotion bằng lệnh gì trong RTBasic?",
+      "vendor": "zmotion",
+      "note": "RS232-serial domain gap (Việc 3 B3). Verified: docTitle='RTBasic Progamming Manual V1.1.6' page 19 body text: 'Chapter 13 Communication Instructions / 13.1. Serial Communication Instructions / SETCOM -- Serial Port Configuration'.",
+      "expectDocContains": ["RTBasic"],
+      "expectKeywords": ["SETCOM"]
+    },
+    {
+      "id": "serial-ur-modbus-script",
+      "query": "URScript có hàm nào để đọc/ghi thanh ghi Modbus (modbus signal) từ một chương trình C# giám sát robot UR qua mạng?",
+      "vendor": "universal-robots",
+      "note": "C#/Modbus domain gap (Việc 3 B3). Verified: docTitle='The URScript Programming Language 1' page 45 body text: 'modbus get signal status(signal name, is secondary program)'.",
+      "expectDocContains": ["URScript"],
+      "expectKeywords": ["modbus get signal status"]
+    },
+    {
+      "id": "serial-fanuc-rs232-karel",
+      "query": "Cổng RS-232-C trên panel điều khiển Fanuc dùng để làm gì, tài liệu KAREL mô tả sơ đồ cổng ở đâu?",
+      "vendor": "fanuc",
+      "note": "RS232-serial domain gap (Việc 3 B3). Verified: docTitle='FANUC Robotics KAREL Reference Manual' page 160 body text lists RS-232-C ports (P2/P4) on the operator panel/Main CPU board.",
+      "expectDocContains": ["KAREL"],
+      "expectKeywords": ["RS-232-C"]
     }
   ]
 }

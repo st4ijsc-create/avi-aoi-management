@@ -9,6 +9,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { Switch } from '@/components/ui/switch';
 import { Slider } from '@/components/ui/slider';
 import { toast } from 'sonner';
+import { mapTrpcError } from '@/lib/trpcErrors';
 import {
   Dialog,
   DialogContent,
@@ -235,12 +236,12 @@ export function WidgetStylePresetManager({ currentStyle, onStyleChange }: { curr
       setPresetDescription('');
       refetchPresets();
     },
-    onError: (error) => toast.error(error.message || 'Failed to save preset'),
+    onError: (error) => toast.error(mapTrpcError(error)),
   });
 
   const deletePresetMutation = trpc.dashboardWidget.deleteStylePreset.useMutation({
     onSuccess: () => { toast.success('Preset deleted'); refetchPresets(); },
-    onError: (error) => toast.error(error.message || 'Failed to delete preset'),
+    onError: (error) => toast.error(mapTrpcError(error)),
   });
 
   const applyPresetMutation = trpc.dashboardWidget.applyStylePreset.useMutation();
@@ -257,7 +258,7 @@ export function WidgetStylePresetManager({ currentStyle, onStyleChange }: { curr
       setImportJson('');
       refetchPresets();
     },
-    onError: (error) => toast.error(error.message || 'Failed to import preset'),
+    onError: (error) => toast.error(mapTrpcError(error)),
   });
 
   const importMultipleMutation = trpc.dashboardWidget.importMultiplePresets.useMutation({
@@ -267,7 +268,7 @@ export function WidgetStylePresetManager({ currentStyle, onStyleChange }: { curr
       setImportJson('');
       refetchPresets();
     },
-    onError: (error) => toast.error(error.message || 'Failed to import presets'),
+    onError: (error) => toast.error(mapTrpcError(error)),
   });
 
   // Shared presets query
@@ -280,7 +281,7 @@ export function WidgetStylePresetManager({ currentStyle, onStyleChange }: { curr
       refetchPresets();
       refetchSharedPresets();
     },
-    onError: (error) => toast.error(error.message || 'Failed to share preset'),
+    onError: (error) => toast.error(mapTrpcError(error)),
   });
 
   const unsharePresetMutation = trpc.dashboardWidget.unsharePreset.useMutation({
@@ -289,7 +290,7 @@ export function WidgetStylePresetManager({ currentStyle, onStyleChange }: { curr
       refetchPresets();
       refetchSharedPresets();
     },
-    onError: (error) => toast.error(error.message || 'Failed to unshare preset'),
+    onError: (error) => toast.error(mapTrpcError(error)),
   });
 
   // Clone shared preset
@@ -298,7 +299,7 @@ export function WidgetStylePresetManager({ currentStyle, onStyleChange }: { curr
       toast.success('Preset cloned to your collection');
       refetchPresets();
     },
-    onError: (error) => toast.error(error.message || 'Failed to clone preset'),
+    onError: (error) => toast.error(mapTrpcError(error)),
   });
 
   useEffect(() => { if (currentStyle) setEditingStyle(currentStyle); }, [currentStyle]);
@@ -448,7 +449,7 @@ export function WidgetStylePresetManager({ currentStyle, onStyleChange }: { curr
         <DialogTrigger asChild>
           <Button variant="outline" size="sm" className="gap-2">
             <Palette className="h-4 w-4" />
-            Style Presets
+            {t("widgetPreset.kieuThe", "Kiểu thẻ")}
           </Button>
         </DialogTrigger>
         <DialogContent className="max-w-4xl max-h-[85vh] overflow-hidden flex flex-col">

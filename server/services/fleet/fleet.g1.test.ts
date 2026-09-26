@@ -88,9 +88,20 @@ function makeFakeDb() {
     }),
     update: (t: any) => ({
       set: (vals: Row) => ({
-        where: async (pred: any) => {
+        // FLOW-05/FLT-06 — the real `allocateTask` CAS update now chains `.returning()`
+        // to see whether its conditional WHERE actually matched a row. The filter+mutate
+        // happens SYNCHRONOUSLY the instant `.where()` is called (matching one atomic SQL
+        // UPDATE statement — no interleaving possible mid-statement), so two "concurrent"
+        // allocateTask() calls racing via Promise.all still resolve the CAS correctly:
+        // whichever call's `.where()` runs first sees status='pending' and wins; the
+        // other's `.where()` runs against the ALREADY-mutated row and matches nothing.
+        where: (pred: any) => {
           const name = tableName(t);
-          for (const r of (store[name] ?? []).filter((row) => matches(row, pred))) Object.assign(r, vals);
+          const matched = (store[name] ?? []).filter((row) => matches(row, pred));
+          for (const r of matched) Object.assign(r, vals);
+          const ret: any = { returning: async () => matched };
+          ret.then = (resolve: any) => resolve(matched);
+          return ret;
         },
       }),
     }),
@@ -247,6 +258,28 @@ describe("allocateTask + rebalanceDeviceTasks (flag-gated)", () => {
     expect(a.ok).toBe(true);
     expect(a.assignedDeviceId).toBe(1);
     expect(store.tasks[0].status).toBe("assigned");
+  });
+
+  it("★★★ FLOW-05/FLT-06 — two concurrent allocateTask() calls on the SAME pending task ⇒ assigned exactly once", async () => {
+    // Audit evidence: taskAllocator.ts:369-411 read task.status, THEN write — an
+    // unconditional final UPDATE let both racing callers succeed (double allocation).
+    // The fix re-checks status IN the UPDATE's WHERE clause (CAS): only the caller that
+    // still finds status='pending' at write time gets a row back; the loser is ok:false.
+    process.env.FLEET_ORCH_ENABLED = "true";
+    seedRobot(1, "arm", "idle");
+    seedRobot(2, "arm", "idle");
+    store.tasks.push({ id: 1, taskKey: "t1", requiredCapability: "run_job", priority: 3, status: "pending", retryCount: 0 });
+
+    const [a, b] = await Promise.all([allocateTask(1), allocateTask(1)]);
+
+    const winners = [a, b].filter((r) => r.ok);
+    const losers = [a, b].filter((r) => !r.ok);
+    expect(winners).toHaveLength(1); // exactly once, not zero, not two
+    expect(losers).toHaveLength(1);
+    expect(losers[0]!.message).toMatch(/conflict/i);
+    expect(store.tasks).toHaveLength(1); // one task row, no phantom duplicate
+    expect(store.tasks[0].status).toBe("assigned");
+    expect([1, 2]).toContain(store.tasks[0].assignedDeviceId);
   });
 
   it("flag ON → allocator reads the LATEST telemetry per robot (batched, no N+1)", async () => {

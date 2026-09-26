@@ -11,6 +11,8 @@
  * (DEFAULT OFF). Opening/closing/baking + status queries work regardless of the flag.
  */
 import { getDb } from "../db";
+import { appError } from "../_core/appError";
+import { DbUnavailableError } from "../_core/dbErrors";
 import { eq, desc, isNull } from "drizzle-orm";
 import { msdExposureLogs, type InsertMsdExposureLog } from "../../drizzle/schema";
 
@@ -118,7 +120,7 @@ export interface OpenExposureInput {
 /** Open a new MSD exposure (starts the floor-life clock). */
 export async function openExposure(input: OpenExposureInput) {
   const db = await getDb();
-  if (!db) throw new Error("DB not available");
+  if (!db) throw new DbUnavailableError();
 
   const removedFromDryAt = input.removedFromDryAt ?? new Date();
   const allowedHours = floorLifeHoursForMsl(input.mslLevel);
@@ -145,7 +147,7 @@ export async function openExposure(input: OpenExposureInput) {
 /** Mark a bake started for an exposure (status → baking; floor-life clock pauses). */
 export async function startBake(id: number, bakeStartedAt?: Date) {
   const db = await getDb();
-  if (!db) throw new Error("DB not available");
+  if (!db) throw new DbUnavailableError();
   const when = bakeStartedAt ?? new Date();
   await db
     .update(msdExposureLogs)
@@ -157,11 +159,11 @@ export async function startBake(id: number, bakeStartedAt?: Date) {
 /** Close an exposure (reel returned to dry storage — clock stops). */
 export async function closeExposure(id: number, closedAt?: Date) {
   const db = await getDb();
-  if (!db) throw new Error("DB not available");
+  if (!db) throw new DbUnavailableError();
   const when = closedAt ?? new Date();
 
   const [existing] = await db.select().from(msdExposureLogs).where(eq(msdExposureLogs.id, id)).limit(1);
-  if (!existing) throw new Error("MSD exposure not found");
+  if (!existing) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "msdExposure" }, "MSD exposure not found");
 
   const comp = computeMsdStatus({
     removedFromDryAt: existing.removedFromDryAt,
@@ -194,7 +196,7 @@ function withComputed(row: MsdRow, now: Date): MsdRowWithComputed {
 /** List OPEN exposures (not yet closed) with live computed status. */
 export async function listActive(): Promise<MsdRowWithComputed[]> {
   const db = await getDb();
-  if (!db) throw new Error("DB not available");
+  if (!db) throw new DbUnavailableError();
   const rows = await db
     .select()
     .from(msdExposureLogs)

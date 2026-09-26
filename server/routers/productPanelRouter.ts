@@ -10,6 +10,7 @@
  */
 import { z } from "zod";
 import { TRPCError } from "@trpc/server";
+import { appError } from "../_core/appError";
 import { router, protectedProcedure } from "../_core/trpc";
 import { requirePermission } from "../_core/accessControl";
 import * as db from "../db";
@@ -64,7 +65,7 @@ export const productPanelRouter = router({
     .input(z.object({ id: z.number().int().positive() }))
     .query(async ({ input }) => {
       const def = await getPanelDef(input.id);
-      if (!def) throw new TRPCError({ code: "NOT_FOUND", message: "Panel definition not found" });
+      if (!def) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "panelDefinition" }, "Panel definition not found");
       return def;
     }),
 
@@ -100,16 +101,18 @@ export const productPanelRouter = router({
     }))
     .mutation(async ({ input }) => {
       const product = await db.getProductModelById(input.productModelId);
-      if (!product) throw new TRPCError({ code: "NOT_FOUND", message: "Product model not found" });
+      if (!product) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "productModel" }, "Product model not found");
       const { boards, ...def } = input;
       try {
         const id = await createPanelDef(def, boards);
         return { id };
       } catch (err) {
-        throw new TRPCError({
-          code: "BAD_REQUEST",
-          message: err instanceof Error ? err.message : "Failed to create panel definition",
-        });
+        throw appError(
+          "BAD_REQUEST",
+          "OPERATION_FAILED",
+          { operation: "createPanelDefinition" },
+          err instanceof Error ? err.message : "Failed to create panel definition",
+        );
       }
     }),
 
@@ -134,7 +137,7 @@ export const productPanelRouter = router({
     .mutation(async ({ input }) => {
       const { id, ...patch } = input;
       const row = await updatePanelDef(id, patch);
-      if (!row) throw new TRPCError({ code: "NOT_FOUND", message: "Panel definition not found" });
+      if (!row) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "panelDefinition" }, "Panel definition not found");
       return row;
     }),
 
@@ -154,10 +157,12 @@ export const productPanelRouter = router({
       try {
         return await replaceBoards(input.panelDefId, input.boards);
       } catch (err) {
-        throw new TRPCError({
-          code: "BAD_REQUEST",
-          message: err instanceof Error ? err.message : "Failed to save boards",
-        });
+        throw appError(
+          "BAD_REQUEST",
+          "OPERATION_FAILED",
+          { operation: "savePanelBoards" },
+          err instanceof Error ? err.message : "Failed to save boards",
+        );
       }
     }),
 });

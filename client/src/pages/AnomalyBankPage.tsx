@@ -37,6 +37,7 @@ import {
 } from "@/components/ui/alert-dialog";
 import { Database, AlertTriangle, RefreshCw, Trash2, Hammer } from "lucide-react";
 import { toast } from "sonner";
+import { toastTrpcError } from "@/lib/trpcErrors";
 
 type Profile = {
   id: number;
@@ -98,11 +99,11 @@ export default function AnomalyBankPage() {
       toast.success(t("anomalyBanks.rebuilt") + flag);
       invalidate();
     },
-    onError: (e) => toast.error(e.message),
+    onError: (e) => toastTrpcError(e),
   });
   const deleteM = trpc.aiAnomaly.deleteBank.useMutation({
     onSuccess: () => { toast.success(t("anomalyBanks.deleted")); setConfirmDelete(null); invalidate(); },
-    onError: (e) => toast.error(e.message),
+    onError: (e) => toastTrpcError(e),
   });
 
   const profiles = ((statsQ.data as any)?.profiles ?? []) as Profile[];

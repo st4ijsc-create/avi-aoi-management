@@ -3,6 +3,7 @@ import { useTranslation } from 'react-i18next';
 import { useAuth } from "@/_core/hooks/useAuth";
 import { trpc } from "@/lib/trpc";
 import { toast } from "sonner";
+import { toastTrpcError } from "@/lib/trpcErrors";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -102,7 +103,7 @@ export default function WorkstationManagement() {
       resetForm();
       refetch();
     },
-    onError: (err) => toast.error(err.message),
+    onError: (err) => toastTrpcError(err),
   });
 
   const updateMutation = trpc.workstation.update.useMutation({
@@ -112,7 +113,7 @@ export default function WorkstationManagement() {
       setEditingWorkstation(null);
       refetch();
     },
-    onError: (err) => toast.error(err.message),
+    onError: (err) => toastTrpcError(err),
   });
 
   const deleteMutation = trpc.workstation.delete.useMutation({
@@ -120,7 +121,7 @@ export default function WorkstationManagement() {
       toast.success(t('workstations.deleted'));
       refetch();
     },
-    onError: (err) => toast.error(err.message),
+    onError: (err) => toastTrpcError(err),
   });
 
   const importWorkstationsMutation = trpc.import.importWorkstations.useMutation();
@@ -138,7 +139,7 @@ export default function WorkstationManagement() {
       refetch();
       refetchDeletedWorkstations();
     },
-    onError: (err) => toast.error(err.message),
+    onError: (err) => toastTrpcError(err),
   });
 
   const resetForm = () => {

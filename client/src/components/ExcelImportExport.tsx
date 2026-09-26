@@ -8,6 +8,7 @@ import { toast } from "sonner";
 import { Upload, Download, FileSpreadsheet, Loader2 } from "lucide-react";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import * as XLSX from "xlsx";
+import { mapTrpcError } from "@/lib/trpcErrors";
 
 interface ExcelImportExportProps {
   entityType: string;
@@ -52,16 +53,16 @@ export function ExcelImportExport({
       const jsonData = XLSX.utils.sheet_to_json(worksheet);
 
       if (jsonData.length === 0) {
-        toast.error("File không có dữ liệu");
+        toast.error(t("excelImportExport.fileKhongCoDuLieu", "File không có dữ liệu"));
         return;
       }
 
       const result = await onImport(jsonData, replaceIfExists);
 
       if (result.failed === 0) {
-        toast.success(`Import thành công ${result.success} ${entityType}`);
+        toast.success(t("excelIo.importOk", { count: result.success, entity: entityType }));
       } else {
-        toast.warning(`Import: ${result.success} thành công, ${result.failed} lỗi`);
+        toast.warning(t("excelIo.importPartial", { ok: result.success, failed: result.failed }));
         if (result.errors.length > 0) {
           console.warn("Import errors:", result.errors);
         }
@@ -73,7 +74,7 @@ export function ExcelImportExport({
       if (fileInputRef.current) fileInputRef.current.value = "";
       onImportComplete?.();
     } catch (error: any) {
-      toast.error(`Import lỗi: ${error.message}`);
+      toast.error(t("excelIo.importErr", { msg: mapTrpcError(error) }));
     } finally {
       setImporting(false);
     }
@@ -84,9 +85,9 @@ export function ExcelImportExport({
     try {
       const result = await onExport();
       window.open(result.url, "_blank");
-      toast.success(`Xuất Excel thành công: ${result.count} ${entityType}`);
+      toast.success(t("excelIo.exportOk", { count: result.count, entity: entityType }));
     } catch (error: any) {
-      toast.error(`Xuất lỗi: ${error.message}`);
+      toast.error(t("excelIo.exportErr", { msg: mapTrpcError(error) }));
     } finally {
       setExporting(false);
     }
@@ -97,7 +98,7 @@ export function ExcelImportExport({
     const ws = XLSX.utils.json_to_sheet(templateData);
     XLSX.utils.book_append_sheet(wb, ws, "Template");
     XLSX.writeFile(wb, templateFilename);
-    toast.success("Đã tải template mẫu");
+    toast.success(t("excelImportExport.daTaiTemplateMau", "Đã tải template mẫu"));
   };
 
   return (
@@ -136,11 +137,11 @@ export function ExcelImportExport({
         <DialogContent>
           <DialogHeader>
             <DialogTitle>Import {entityType} từ Excel</DialogTitle>
-            <DialogDescription>Chọn file Excel (.xlsx) để import dữ liệu. Tải template mẫu nếu cần.</DialogDescription>
+            <DialogDescription>{t("excelIo.chonFileExcelXlsxDe", "Chọn file Excel (.xlsx) để import dữ liệu. Tải template mẫu nếu cần.")}</DialogDescription>
           </DialogHeader>
           <div className="space-y-4 py-4">
             <div className="space-y-2">
-              <Label>Chọn file Excel</Label>
+              <Label>{t("excelIo.chonFileExcel", "Chọn file Excel")}</Label>
               <input
                 ref={fileInputRef}
                 type="file"
@@ -166,8 +167,8 @@ export function ExcelImportExport({
                 </Label>
                 <p className="text-xs text-muted-foreground mt-0.5">
                   {replaceIfExists
-                    ? "Dữ liệu trùng mã sẽ được CẬP NHẬT với thông tin từ file"
-                    : "Dữ liệu trùng mã sẽ được BỎ QUA (giữ nguyên dữ liệu cũ)"}
+                    ? t("excelImportExport.duLieuTrungMaSe", "Dữ liệu trùng mã sẽ được CẬP NHẬT với thông tin từ file")
+                    : t("excelImportExport.duLieuTrungMaSe2", "Dữ liệu trùng mã sẽ được BỎ QUA (giữ nguyên dữ liệu cũ)")}
                 </p>
               </div>
             </div>

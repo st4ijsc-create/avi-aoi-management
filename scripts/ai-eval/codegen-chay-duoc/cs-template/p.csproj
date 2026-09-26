@@ -1,0 +1,22 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net10.0</TargetFramework>
+    <RootNamespace>solbench</RootNamespace>
+    <AssemblyName>solbench</AssemblyName>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <GenerateAssemblyInfo>false</GenerateAssemblyInfo>
+  </PropertyGroup>
+  <!--
+    G11 (2026-09-22) — Hai goi nay o day vi THIET BI DO thieu, khong phai vi bai toan can.
+    Do duoc: don hang D1/D2 yeu cau C# + SQL Server; model sinh `using System.Data.SqlClient;`
+    (dung va pho bien), nhung khuon toi toi gian den muc khong tham chieu driver nao ⇒ 6 loi
+    bien dich bi ghi nham thanh "model sai". Them ca HAI ten goi: ma cu dung `System.Data.SqlClient`,
+    ma moi dung `Microsoft.Data.SqlClient`; cham diem khong duoc phat mot lua chon hop le.
+  -->
+  <ItemGroup>
+    <PackageReference Include="System.Data.SqlClient" Version="4.8.6" />
+    <PackageReference Include="Microsoft.Data.SqlClient" Version="5.2.2" />
+  </ItemGroup>
+</Project>

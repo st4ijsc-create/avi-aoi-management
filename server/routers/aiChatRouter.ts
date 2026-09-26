@@ -6,15 +6,31 @@
 
 import { z } from "zod";
 import { TRPCError } from "@trpc/server";
-import { router, protectedProcedure } from "../_core/trpc";
+import { appError } from "../_core/appError";
+import { router, moduleProcedure } from "../_core/trpc";
+// ★ Cổng giấy phép MOD_AI — chỉ THÊM chiều giấy phép, RBAC/vai/2FA giữ nguyên từng ký tự.
+//   Không-brick + fail-safe ở `_core/moduleGate.ts`; lượng từ canh ở `congGiayPhepAiCensus.test.ts`.
+const protectedProcedure = moduleProcedure("MOD_AI");
 // P1 (doc 11) — unify on the RAG/KB backend. The non-stream `chat` mutation now
 // routes through `answerQuestion` (the SAME pipeline `streamAnswer` uses: tool →
 // RAG retrieval → LLM → extractive fallback), NOT the inferior no-RAG
-// `aiChatAssistant.processChat`. `getAvailableTools` still surfaces the tool
-// catalogue for the UI footer (read-only metadata).
+// `processChat` (aiChatAssistant.ts).
+//
+// doc69 W0-5 item 3 — the UI tool-count footer used to read from
+// `aiChatAssistant.getAvailableTools()`, a hard-coded list of the 6 tools the
+// deprecated `processChat` backend knew about. That backend has been dead since P1
+// (doc 11) — the real assistant runs on the `aiLocalTools` registry (~67 tools:
+// read/write/client, F6/F7/P2 groups, programming copilot, etc.), so the footer was
+// silently advertising a stale 1/10th of the real tool surface. `listTools()` is the
+// real registry (server/services/aiLocalTools/toolRegistry.ts) — source the footer
+// from it.
+//
+// doc69 B2 (Wave 5) — `aiChatAssistant.ts` (processChat + its 6 hard-coded SQL
+// tools + getAvailableTools) has been DELETED entirely: confirmed no live caller,
+// this router never imported it. The RAG path (`answerQuestion` /
+// `aiLocalKnowledgeService`) is now the sole chat backend.
 import { answerQuestion, type UserRole } from "../services/aiLocalKnowledgeService";
-import type { ToolExecContext, ToolLang } from "../services/aiLocalTools";
-import { getAvailableTools } from "../services/aiChatAssistant";
+import { listTools, type ToolExecContext, type ToolLang } from "../services/aiLocalTools";
 import { getDb } from "../db/connection";
 import { aiChatConversations, aiChatMessages } from "../../drizzle/schema/ai";
 import { eq, and, desc, sql } from "drizzle-orm";
@@ -76,11 +92,11 @@ export const aiChatRouter = router({
     }))
     .query(async ({ ctx, input }) => {
       const db = await getDb();
-      if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Database not available" });
+      if (!db) throw appError("INTERNAL_SERVER_ERROR", "DB_UNAVAILABLE", undefined, "Database not available");
       const [conv] = await db.select().from(aiChatConversations)
         .where(and(eq(aiChatConversations.id, input.id), eq(aiChatConversations.userId, ctx.user.id)))
         .limit(1);
-      if (!conv) throw new TRPCError({ code: "NOT_FOUND", message: "Conversation not found" });
+      if (!conv) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "conversation" }, "Conversation not found");
       const messages = await db.select().from(aiChatMessages)
         .where(eq(aiChatMessages.conversationId, input.id))
         .orderBy(aiChatMessages.createdAt)
@@ -97,7 +113,7 @@ export const aiChatRouter = router({
     }))
     .mutation(async ({ ctx, input }) => {
       const db = await getDb();
-      if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Database not available" });
+      if (!db) throw appError("INTERNAL_SERVER_ERROR", "DB_UNAVAILABLE", undefined, "Database not available");
       const [result] = await db.insert(aiChatConversations).values({
         userId: ctx.user.id,
         title: input.title ?? "New Conversation",
@@ -116,13 +132,13 @@ export const aiChatRouter = router({
     }))
     .mutation(async ({ ctx, input }) => {
       const db = await getDb();
-      if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Database not available" });
+      if (!db) throw appError("INTERNAL_SERVER_ERROR", "DB_UNAVAILABLE", undefined, "Database not available");
       const { id, ...data } = input;
       const [result] = await db.update(aiChatConversations)
         .set({ ...data, updatedAt: new Date() })
         .where(and(eq(aiChatConversations.id, id), eq(aiChatConversations.userId, ctx.user.id)))
         .returning();
-      if (!result) throw new TRPCError({ code: "NOT_FOUND", message: "Conversation not found" });
+      if (!result) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "conversation" }, "Conversation not found");
       return result;
     }),
 
@@ -131,12 +147,12 @@ export const aiChatRouter = router({
     .input(z.object({ id: z.number() }))
     .mutation(async ({ ctx, input }) => {
       const db = await getDb();
-      if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Database not available" });
+      if (!db) throw appError("INTERNAL_SERVER_ERROR", "DB_UNAVAILABLE", undefined, "Database not available");
       // Verify ownership
       const [conv] = await db.select({ id: aiChatConversations.id }).from(aiChatConversations)
         .where(and(eq(aiChatConversations.id, input.id), eq(aiChatConversations.userId, ctx.user.id)))
         .limit(1);
-      if (!conv) throw new TRPCError({ code: "NOT_FOUND", message: "Conversation not found" });
+      if (!conv) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "conversation" }, "Conversation not found");
       // Delete messages first, then conversation
       await db.delete(aiChatMessages).where(eq(aiChatMessages.conversationId, input.id));
       await db.delete(aiChatConversations).where(eq(aiChatConversations.id, input.id));
@@ -159,7 +175,7 @@ export const aiChatRouter = router({
       const [conv] = await db.select({ id: aiChatConversations.id }).from(aiChatConversations)
         .where(and(eq(aiChatConversations.id, input.conversationId), eq(aiChatConversations.userId, ctx.user.id)))
         .limit(1);
-      if (!conv) throw new TRPCError({ code: "NOT_FOUND", message: "Conversation not found" });
+      if (!conv) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "conversation" }, "Conversation not found");
       return db.select().from(aiChatMessages)
         .where(eq(aiChatMessages.conversationId, input.conversationId))
         .orderBy(aiChatMessages.createdAt)
@@ -172,12 +188,12 @@ export const aiChatRouter = router({
     .input(z.object({ messageId: z.number(), conversationId: z.number() }))
     .mutation(async ({ ctx, input }) => {
       const db = await getDb();
-      if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Database not available" });
+      if (!db) throw appError("INTERNAL_SERVER_ERROR", "DB_UNAVAILABLE", undefined, "Database not available");
       // Verify conversation ownership
       const [conv] = await db.select({ id: aiChatConversations.id }).from(aiChatConversations)
         .where(and(eq(aiChatConversations.id, input.conversationId), eq(aiChatConversations.userId, ctx.user.id)))
         .limit(1);
-      if (!conv) throw new TRPCError({ code: "NOT_FOUND", message: "Conversation not found" });
+      if (!conv) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "conversation" }, "Conversation not found");
       await db.delete(aiChatMessages).where(
         and(eq(aiChatMessages.id, input.messageId), eq(aiChatMessages.conversationId, input.conversationId))
       );
@@ -267,7 +283,7 @@ export const aiChatRouter = router({
             .where(and(eq(aiChatConversations.id, convIdNum), eq(aiChatConversations.userId, ctx.user.id)))
             .limit(1);
           if (!conv) {
-            throw new TRPCError({ code: "NOT_FOUND", message: "Conversation not found" });
+            throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "conversation" }, "Conversation not found");
           }
 
           // Save user message
@@ -291,7 +307,7 @@ export const aiChatRouter = router({
             })
             .where(eq(aiChatConversations.id, convIdNum));
         } else {
-          throw new TRPCError({ code: "BAD_REQUEST", message: "Invalid conversationId" });
+          throw appError("BAD_REQUEST", "INVALID_VALUE", { field: "conversationId" }, "Invalid conversationId");
         }
       }
 
@@ -308,12 +324,12 @@ export const aiChatRouter = router({
     }))
     .mutation(async ({ ctx, input }) => {
       const db = await getDb();
-      if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Database not available" });
+      if (!db) throw appError("INTERNAL_SERVER_ERROR", "DB_UNAVAILABLE", undefined, "Database not available");
       // Verify ownership
       const [conv] = await db.select({ id: aiChatConversations.id }).from(aiChatConversations)
         .where(and(eq(aiChatConversations.id, input.conversationId), eq(aiChatConversations.userId, ctx.user.id)))
         .limit(1);
-      if (!conv) throw new TRPCError({ code: "NOT_FOUND", message: "Conversation not found" });
+      if (!conv) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "conversation" }, "Conversation not found");
       // Save user message
       await db.insert(aiChatMessages).values({
         conversationId: input.conversationId,
@@ -339,8 +355,11 @@ export const aiChatRouter = router({
     }),
 
   // ─── Get Available Chat Tools ────────────────────────────────
+  // doc69 W0-5 item 3 — sourced from the REAL tool registry (~67 tools), not the
+  // deprecated aiChatAssistant.getAvailableTools() 6-tool stub (that whole file
+  // was deleted in doc69 B2, Wave 5). See import comment.
   tools: protectedProcedure
     .query(() => {
-      return getAvailableTools();
+      return listTools().map((t) => ({ name: t.name, description: t.description }));
     }),
 });

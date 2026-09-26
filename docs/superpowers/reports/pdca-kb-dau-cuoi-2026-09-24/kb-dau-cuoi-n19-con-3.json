@@ -1,0 +1,35 @@
+{
+  "corpus": "st4i-may-aoi",
+  "label": "n19-con-3",
+  "tom": {
+    "trong": {
+      "n": 0,
+      "dung": 0,
+      "tuChoi": 0,
+      "sai": 0
+    },
+    "ngoai": {
+      "n": 1,
+      "tuChoi": 0,
+      "traLoi": 1
+    },
+    "loi": 0
+  },
+  "ra": [
+    {
+      "id": "N19",
+      "ngoai": true,
+      "kq": "tra-loi",
+      "ms": 1958,
+      "nguon": [
+        "knowledge/workflows/ng-burst-response.playbook.yaml",
+        "knowledge/operational-approved/machine-registration.md",
+        "knowledge/domain/aoi-troubleshooting.md",
+        "knowledge/operational-approved/alerts.md",
+        "knowledge/domain/aoi-troubleshooting.md"
+      ],
+      "traLoi": "(1) Khi máy gắp đặt linh kiện báo lỗi \"nozzle hút không lên\", cần kiểm tra hệ thống hút và các cảnh báo liên quan theo quy trình xử lý sự cố AOI.  \n(2) Bước 1: Mở màn hình `/alerts` để xem danh sách cảnh báo hiện tại, tìm mã lỗi tương ứng (ví dụ E083 hoặc E099). Nếu có mã như **E082** (áp suất không khí thấp), kiểm tra máy nén khí và van điều áp [4]. Bước 2: Xác minh trạng thái hệ thống hút bằng cách nhấn **Emergency Stop**, đợi dừng hoàn toàn, mở nắp an toàn theo quy trình, rồi kiểm tra nozzle có bị kẹt hoặc tắc bụi không (theo hướng dẫn xử lý board jam) [3]. Nếu lỗi liên quan đến cảm biến hoặc điều khiển, cần xác nhận thông qua `/ai-inspection-analytics` để tìm điểm bất thường. Bước 3: Nếu cảnh báo vẫn hiện và chưa được xác nhận, thực hiện lệnh `acknowledge_alert` để đánh dấu đã xử lý (cần người dùng xác nhận HITL) [1].  \n\n(3) Lỗi thường gặp: Cảnh báo không tắt do chưa gọi `acknowledge`, hoặc ngưỡng cảnh báo quá nhạy. Thiếu quyền `machine_status` khiến màn hình hiển thị rỗng — cần kiểm",
+      "loi": null
+    }
+  ]
+}

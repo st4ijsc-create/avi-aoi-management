@@ -80,4 +80,22 @@ describe("importMeasurementPoints — bulk-import limit gate (B.6)", () => {
     expect(updateMeasurementPointDef).toHaveBeenCalledWith(42, expect.objectContaining({ upperLimit: "10" }));
     expect(createAuditLog).toHaveBeenCalledWith(expect.objectContaining({ action: "threshold.directEdit" }));
   });
+
+  // Task 8 Khối C — trước bản vá `touchesLimits` ở đây chỉ chép tay
+  // upperLimit/lowerLimit/nominalValue: một dòng CHỈ đổi `unit` không bao giờ
+  // gọi resolveThresholdEditGate, ghi thẳng kể cả trên sản phẩm live.
+  it("ACTIVE product + ONLY `unit` changed → cũng SKIPPED (unit LÀ một field giới hạn)", async () => {
+    resolveThresholdEditGate.mockResolvedValue({
+      decision: "requires_approval", productModelId: 5, lifecycleStatus: "active",
+      hasReleasedProgram: false, enforced: true,
+    });
+    const caller = appRouter.createCaller(adminCtx());
+    const unitOnlyItem = { ...item, upperLimit: undefined, unit: "mm" };
+    const res = await caller.import.importMeasurementPoints({ data: [unitOnlyItem], replaceIfExists: true });
+
+    expect(resolveThresholdEditGate).toHaveBeenCalledWith(42);
+    expect(res.skipped).toBe(1);
+    expect(res.success).toBe(0);
+    expect(updateMeasurementPointDef).not.toHaveBeenCalled();
+  });
 });

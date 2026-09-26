@@ -85,6 +85,8 @@ export interface StudioStep {
   // hitl_gate
   prompt?: string;
   approverRoles?: string[];
+  /** doc 80 ORC-03 — người khởi động run không được tự duyệt cổng này (server ÉP). */
+  fourEyes?: boolean;
 }
 
 export interface StudioParam {
@@ -289,6 +291,7 @@ function serializeStep(s: StudioStep): Record<string, unknown> {
     case "hitl_gate":
       out.prompt = s.prompt ?? "";
       if (s.approverRoles && s.approverRoles.length) out.approverRoles = s.approverRoles;
+      if (s.fourEyes) out.fourEyes = true;
       break;
     case "delay":
       out.ms = s.ms ?? 0;

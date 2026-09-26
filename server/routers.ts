@@ -1,10 +1,13 @@
 import { COOKIE_NAME } from "@shared/const";
 import { getSessionCookieOptions } from "./_core/cookies";
-import { establishSession, LoginError, verifyCredentials } from "./_core/authService";
+import { establishSession, LOCKOUT_MINUTES, LoginError, verifyCredentials } from "./_core/authService";
+import { capVe2FA } from "./_core/pendingTwoFactor";
 import { systemRouter } from "./_core/systemRouter";
 import { listEnabledSsoMethods } from "./_core/oauthProviders";
 import { publicProcedure, router } from "./_core/trpc";
-import { invalidateAuthSession } from "./services/authSessionCache";
+// ★★★ Pha 7 Task 7 — chủ DUY NHẤT của "cột nào của `users` được rời máy chủ".
+import { toPublicUser, type MeUser, type KhongMangBiMat } from "./_core/publicUser";
+import { appError } from "./_core/appError";
 import { z } from "zod";
 import { TRPCError } from "@trpc/server";
 import * as db from "./db";
@@ -29,6 +32,9 @@ import { spcConfigRouter, workstationSpcRouter, correlationRouter, spcRuleViolat
 // ─── Extracted domain router imports ─────────────────────────────────────────
 import { factoryRouter, factoryZoneRouter, workshopRouter, lineRouter, stationRouter, machineRouter } from "./routers/hierarchyRouters";
 import { productModelRouter, measurementPointRouter, productMachineMappingRouter, productCategoryRouter, productDocumentRouter, fiducialMarkRouter, measurementTypeCatalogRouter, defectCatalogRouter, measurementInstrumentRouter, samplingPlanRouter, productViewRouter, msaWizardRouter, instrumentCalibrationRouter, instrumentMsaRecordRouter, mpLightingProfileRouter, measurementSamplesRouter, spcAlertsRouter, mpDefectStatsRouter, msaAdvancedRouter, cadImportRouter } from "./routers/productRouters";
+// Khối C Task 9 (QĐ-6) — đường ĐỌC cây dạy (surface→position→capture→component)
+// kèm trạng thái giới hạn; tiêu thụ bởi tab "Cây dạy" (Task 10/11).
+import { cayDayRouter } from "./routers/cayDayRouter";
 import { productVariantRouter } from "./routers/productVariantRouter"; // doc 55 Item 3 / PV3: product-variant master-data admin
 import { inspectionRouter, measurementResultRouter } from "./routers/inspectionRouters";
 import { layoutRouter } from "./routers/layoutRouters";
@@ -116,16 +122,19 @@ import { aiChatRouter } from "./routers/aiChatRouter";
 import { aiAnalysisHubRouter } from "./routers/aiAnalysisHubRouter";
 import { aiSettingsRouter } from "./routers/aiSettingsRouter";
 import { aiGgufRouter } from "./routers/aiGgufRouter";
+import { vramRouter } from "./routers/vramRouter"; // Pha 4 Task 1: mặt ĐỌC trạng thái VRAM cho AI Agent
 import { aiInspectionAnalyticsRouter } from "./routers/aiInspectionAnalyticsRouter";
 import { aiAdvancedVisionRouter } from "./routers/aiAdvancedVisionRouter";
 import { aiSpecialistAgentRouter } from "./routers/aiSpecialistAgentRouter";
 import { aiLocalKbRouter } from "./routers/aiLocalKbRouter";
 import { aiProgrammingKbRouter } from "./routers/aiProgrammingKbRouter"; // doc 34 · P1: programming (vendor-manual) KB retrieval
 import { aiCopilotRouter } from "./routers/aiCopilotRouter"; // GĐ2: HITL write-action confirm/cancel
+import { repoWorkspaceRouter } from "./routers/repoWorkspaceRouter"; // doc 78 PHA D: cổng mỏng gọi read tool (list_files/read_file/grep_repo) cho cây tệp + trình xem
 import { aiRcaCopilotRouter } from "./routers/aiRcaCopilotRouter"; // Technician Copilot ③: RCA diagnose + 1-tap fix
 import { aiThresholdAdvisorRouter } from "./routers/aiThresholdAdvisorRouter"; // Technician Copilot ②: Threshold/Param Advisor (recommend + HITL apply)
 import { aiSetupAdvisorRouter } from "./routers/aiSetupAdvisorRouter"; // Technician Copilot ①: Setup Advisor (pre-fill new-machine config from similar template)
 import { aiAgentRouter } from "./routers/aiAgentRouter"; // GĐ3b: multi-step agentic orchestrator (on top of HITL)
+import { aiAgentCenterRouter } from "./routers/aiAgentCenterRouter"; // doc69 GĐ4/Wave E2 (E2-1): unified agent roster read-model (ops-scoped)
 import { aiCalibrationRouter } from "./routers/aiCalibrationRouter"; // B2: confidence calibration (ECE + reliability)
 import { aiAnomalyRouter } from "./routers/aiAnomalyRouter"; // B3: unsupervised anomaly detection (PatchCore-style)
 import { aiSegmentationRouter } from "./routers/aiSegmentationRouter"; // B7: segmentation mask + sub-pixel metrology
@@ -161,6 +170,7 @@ import { vda5050Router } from "./routers/vda5050Router"; // P3b: VDA 5050 AGV/AM
 import { simTargetsRouter } from "./routers/simTargetsRouter"; // I3a (doc 20 §3/§5): URSim + ROS2 validation harness (URSIM_ENABLED / ROS2_BRIDGE_ENABLED)
 import { fleetRouter } from "./routers/fleetRouter"; // G1 (doc 16 Khối 2): Fleet & Task Orchestration (FLEET_ORCH_ENABLED)
 import { twinRouter } from "./routers/twinRouter"; // T1 (doc 16 Khối 7): Digital Twin — models/sceneGraph/replay/occupancyGrid (TWIN_LIVE_ENABLED)
+import { twinCanhRouter } from "./routers/twinCanhRouter"; // Twin 3D Đợt 3 (§10A): dựng nhà xưởng — toà nhà/tầng/ảnh nền/tường bao. Quyền §6.4: settings_factory HOẶC machine_control
 import { safetyRouter } from "./routers/safetyRouter"; // S1 (doc 16 Khối 3): Safety audit + mixed workforce + near-miss advisory (ADVISORY; SAFETY_AUDIT_ENABLED / WORKFORCE_ENABLED)
 import { oversightRouter } from "./routers/oversightRouter"; // U5 (doc 26 §2.3): "Hộp phê duyệt" gộp — đếm việc chờ duyệt/xử lý toàn tầng Kỹ thuật & Điều khiển (READ-ONLY, fail-safe)
 import { equipmentStandardsRouter } from "./routers/equipmentStandardsRouter"; // E1 (doc 16 Khối 5): Equipment standardization governance — device type registry/alarm taxonomy/CR workflow/conformance/compliance (EQ_GOVERN_ENABLED)
@@ -171,6 +181,8 @@ import { aiInsightRouter } from "./routers/aiInsightRouter"; // Phase 4: AI orch
 import { aiInboxRouter } from "./routers/aiInboxRouter"; // AI Action Inbox: push + 1-tap approve/dismiss/ask
 import { aiTodayRouter } from "./routers/aiTodayRouter"; // "Today" briefing: role-aware zero-click login summary
 import { kbVectorRouter } from "./routers/kbVectorRouter"; // Phase 4: KB pgvector store (ingest + search)
+import { kbIngestRouter } from "./routers/kbIngestRouter"; // doc69 Giai đoạn 5/Wave E3 (E3-1): Training Studio doc ingest upload (pdf/docx/md/txt, admin/engineer, KB_STUDIO_ENABLED)
+import { kbStudioRouter } from "./routers/kbStudioRouter"; // doc69 Giai đoạn 5/Wave E3 (E3-2): Training Studio corpus/job registry + job-tracked ingest + corpus preview (wraps kbIngest, admin/engineer, deleteCorpus admin-only)
 import { sitesRouter } from "./routers/sitesRouter"; // Doc 13 / F0: Multi-site Federation sites registry (admin CRUD + probe + self-enroll-local; read-only)
 import { federationRouter } from "./routers/federationRouter"; // Doc 13 / F1: Federation roll-up read API (siteRollups/history/syncLog/aggregateSummary; read-only)
 import { commandCenterRouter } from "./routers/commandCenterRouter"; // Doc 21 / U2: Ecosystem Command Center aggregation (hierarchy tree + KPI strip + seed alerts; read-only)
@@ -213,7 +225,34 @@ export const appRouter = router({
   // doc 44 G5.9: client RUM web-vitals ingest (public; đo được cả trước login)
   rum: rumRouter,
   auth: router({
-    me: publicProcedure.query(opts => opts.ctx.user),
+    /**
+     * ★★★ Pha 7 Task 7 — **CHIẾU THEO DANH SÁCH CHO PHÉP.** Trước bản vá đây là
+     * `opts.ctx.user` — **nguyên hàng `users`** — và đo được trên hệ thật (Bước 1):
+     * `passwordHash: "$2b$10$xY5z…"` · `twoFactorSecret: "IA2DCZK5LBKTSOTYGMUXCM2UHZ2G4ULQ"`.
+     * `twoFactorSecret` là **hạt giống sinh mọi mã OTP** ⇒ vé một-lần (Task 6), sổ chống phát lại
+     * (Task 5), step-up mỗi lượt (Pha 6) **đều thành trang trí**.
+     * ⚠ Hai tầng cưỡng chế, cố ý: **GIÁ TRỊ** đã sạch từ `sdk.authenticateRequest`
+     * (`redactServerOnlyUserFields`), và **KIỂU** trả về ở đây là `PublicUser` — nhét một ô bí mật
+     * trở lại là **lỗi biên dịch**, không phải một lượt review bỏ sót.
+     *
+     * ★★★ Pha 7 Task 9 (9b) / **QĐ-1** — **MỘT Ô SUY RA, KHÔNG PHẢI MỘT CỘT ĐƯỢC MỞ.**
+     * Chủ dự án chọn đặt hai mốc *"buộc đổi mật khẩu"* trên `users`. Nếu phân loại chúng là
+     * `"public"` thì `user.list` sẽ phát cho trình duyệt **danh sách chính xác các tài khoản đang
+     * bị buộc đổi mật khẩu**. Nên chúng là `"server-only"`, và client biết về **CHÍNH NÓ** qua ô
+     * `mustChangePassword` dưới đây.
+     * ⚠⚠ Ô này **PHẢI** suy từ một lượt đọc DB **MỚI** (`db.phaiDoiMatKhau`), **KHÔNG** từ
+     *    `opts.ctx.user`: hai mốc trên `ctx.user` đã bị `redactServerOnlyUserFields` làm **rỗng**
+     *    (đúng theo thiết kế), nên suy ra từ đó cho `false` **luôn luôn** — một lời nói dối im
+     *    lặng **theo chiều MỞ** (không ai bị buộc đổi). Ca §4 của
+     *    `server/routers/mustChangePassword.test.ts` canh đúng chuyện này.
+     */
+    me: publicProcedure.query(async (opts): Promise<MeUser | null> => {
+      if (!opts.ctx.user) return null;
+      return {
+        ...toPublicUser(opts.ctx.user),
+        mustChangePassword: await db.phaiDoiMatKhau(opts.ctx.user.id),
+      };
+    }),
     checkSetupRequired: publicProcedure.query(async () => {
       const existingAdmins = await db.getUsersByRole('admin');
       return {
@@ -222,13 +261,31 @@ export const appRouter = router({
       };
     }),
     oauthProviders: publicProcedure.query(() => listEnabledSsoMethods()),
+    /**
+     * ★★★ Pha 8 Task 2 — **ĐĂNG XUẤT THÔI LÀ LỜI HỨA SUÔNG.**
+     *
+     * Bản trước làm **hai** việc: xoá cookie ở trình duyệt, và dọn cache phiên (W4-B / doc 27 B4).
+     * Thiếu đúng việc **thứ ba**, và đó là việc duy nhất kẻ tấn công không đi vòng được: **lật ô
+     * `isActive` của hàng `user_sessions`**. Cookie là JWT **phi trạng thái** — xoá bản sao trong
+     * trình duyệt không đụng gì tới bản sao kẻ khác đã bắt được.
+     *
+     * Đo được trên máy chủ sống (`engineer1` #51, trước bản vá):
+     *   `auth.logout` ⇒ **200** · **cùng cookie** ⇒ `auth.me` trả **đủ hồ sơ** · hàng phiên `isActive`=**t**.
+     * Đối chứng cùng lượt: `session.revoke` trên **chính** phiên ấy ⇒ `auth.me` = `null`. Nghĩa là
+     * cơ chế thu hồi **có sẵn và chạy được**; chỉ riêng đường đăng xuất không gọi nó.
+     *
+     * ⚠ Hệ quả vượt ra ngoài một người dùng: nó làm **nhẹ đi mọi cơ chế thu hồi phiên khác** — kể
+     *   cả lượt thu hồi **236 phiên** ở Pha 7 Task 8 — vì ai cũng có thể tin *"tôi đã đăng xuất"*.
+     *
+     * ⚠⚠ Cả hai nửa (**sổ DB** + **cache**) nằm trong `db.thuHoiPhienTheoToken` — **một chủ cho
+     *    một bất biến**. Đừng thêm lượt dọn cache thứ hai ở đây: bản sao thứ hai chỉ chứng minh
+     *    được chính bản sao ấy đúng, và nó làm đột biến trên bản gốc **im lặng**.
+     */
     logout: publicProcedure.mutation(async ({ ctx }) => {
       const cookieOptions = getSessionCookieOptions(ctx.req);
       ctx.res.clearCookie(COOKIE_NAME, { ...cookieOptions, maxAge: -1 });
-      // W4-B (doc 27 B4): evict the short-TTL auth cache entry for this
-      // session so a captured cookie cannot ride the cache after logout.
       if (ctx.sessionToken) {
-        await invalidateAuthSession(ctx.sessionToken);
+        await db.thuHoiPhienTheoToken(ctx.sessionToken);
       }
       return { success: true } as const;
     }),
@@ -237,7 +294,7 @@ export const appRouter = router({
         username: z.string().min(1),
         password: z.string().min(1),
       }))
-      .mutation(async ({ input, ctx }) => {
+      .mutation(async ({ input, ctx }): Promise<KhongMangBiMat<{ requires2FA: boolean; userId: number; message: string } | { success: boolean; user: { id: number; name: string | null; email: string | null; role: string } }>> => {
         // Single source of truth for brute-force lockout + login audit logging
         // (audit A bug #1). verifyCredentials throws LoginError with the right
         // semantics; we map it to the matching tRPC error code.
@@ -252,7 +309,33 @@ export const appRouter = router({
               PASSWORD_UNSUPPORTED: "BAD_REQUEST",
               ACCOUNT_LOCKED: "TOO_MANY_REQUESTS",
             };
-            throw new TRPCError({ code: codeMap[err.code], message: err.message });
+            const trpcCode = codeMap[err.code];
+            // Bốn nhánh LoginError là BỐN tình huống thật khác nhau — không gộp
+            // chung một mã (đúng bài học fix round 1 I-1: đọc đúng lý do, không đoán
+            // theo mặt chữ).
+            //
+            // Review cuối, ca I-A #2: ACCOUNT_LOCKED KHÔNG PHẢI RATE_LIMITED — đây là
+            // KHOÁ TÀI KHOẢN có thời hạn (brute-force lockout), không phải "thao tác quá
+            // nhanh" (throttle). Dùng đúng mã ACCOUNT_LOCKED + số phút còn lại thật
+            // (LoginError.meta.remainingMinutes khi có — nhánh lockout-đang-hiệu-lực ở
+            // authService.ts:107-115 — else dùng LOCKOUT_MINUTES, đúng số phút vừa khoá ở
+            // nhánh vừa-chạm-ngưỡng authService.ts:137-141), thay vì truyền `undefined`
+            // và để "ít phút" nói giảm so với 15 phút thật.
+            if (err.code === "ACCOUNT_LOCKED") {
+              const remainingMinutes =
+                typeof err.meta?.remainingMinutes === "number" ? err.meta.remainingMinutes : LOCKOUT_MINUTES;
+              throw appError(trpcCode, "ACCOUNT_LOCKED", { remainingMinutes }, err.message);
+            }
+            // Review cuối, ca I-A #3: tài khoản bị VÔ HIỆU HOÁ ≠ THIẾU QUYỀN.
+            // PERMISSION_DENIED khiến người dùng đi xin quyền — sai hướng hoàn toàn, tài
+            // khoản này cần được admin kích hoạt lại, không phải cấp thêm quyền.
+            if (err.code === "ACCOUNT_DISABLED") {
+              throw appError(trpcCode, "ACCOUNT_DISABLED", undefined, err.message);
+            }
+            if (err.code === "PASSWORD_UNSUPPORTED") {
+              throw appError(trpcCode, "OPERATION_FAILED", { operation: "loginWithPassword" }, err.message);
+            }
+            throw appError(trpcCode, "INVALID_VALUE", { field: "credentials" }, err.message);
           }
           throw err;
         }
@@ -261,6 +344,11 @@ export const appRouter = router({
         if (twoFAStatus?.twoFactorEnabled) {
           // Password verified + lockout reset; defer session creation until the
           // 2FA step completes (POST /api/auth/verify-2fa).
+          // ★★★ Pha 7 Task 6 — và ĐÂY là chỗ duy nhất chứng minh được *"bước mật khẩu đã qua"*
+          // cho đường tRPC: cấp vé một-lần, hạn ngắn, cookie HttpOnly. `verify-2fa` ĐÒI nó.
+          // ⚠ Cả HAI đường `login` phải cấp vé; bỏ sót một đường ⇒ luồng đúng của đường ấy vỡ
+          //   (fail-closed, nhưng vẫn là vỡ) — nên lưới `sessionGrantScan.test.ts` đếm chúng.
+          capVe2FA(user.id, ctx.req, ctx.res);
           return {
             requires2FA: true,
             userId: user.id,
@@ -290,12 +378,12 @@ export const appRouter = router({
       .mutation(async ({ input }) => {
         const existingAdmins = await db.getUsersByRole('admin');
         if (existingAdmins.length > 0) {
-          throw new TRPCError({ code: 'FORBIDDEN', message: 'Admin already exists' });
+          throw appError('FORBIDDEN', 'OPERATION_FAILED', { operation: 'setupAdmin' }, 'Admin already exists');
         }
 
         const existingUser = await db.getUserByUsername(input.username);
         if (existingUser) {
-          throw new TRPCError({ code: 'CONFLICT', message: 'Tên đăng nhập đã tồn tại' });
+          throw appError('CONFLICT', 'ENTITY_DUPLICATE', { entity: 'user' }, 'Tên đăng nhập đã tồn tại');
         }
 
         const userId = await db.createUser({
@@ -333,6 +421,8 @@ export const appRouter = router({
   samplingPlan: samplingPlanRouter,
   productView: productViewRouter,
   msaWizard: msaWizardRouter,
+  // Khối C Task 9 (QĐ-6) — đọc cây dạy (máy, model) kèm giới hạn + phiên bản.
+  cayDay: cayDayRouter,
   // P4.A G19 + G17
   instrumentCalibration: instrumentCalibrationRouter,
   instrumentMsaRecord: instrumentMsaRecordRouter,
@@ -480,6 +570,8 @@ export const appRouter = router({
   simTargets: simTargetsRouter, // I3a (doc 20 §3/§5): URSim + ROS2 validation harness (URSIM_ENABLED / ROS2_BRIDGE_ENABLED)
   fleet: fleetRouter, // G1 (doc 16 Khối 2): Fleet & Task Orchestration (FLEET_ORCH_ENABLED)
   twin: twinRouter, // T1 (doc 16 Khối 7): Digital Twin — models/sceneGraph/replay/occupancyGrid (TWIN_LIVE_ENABLED)
+  twinCanh: twinCanhRouter, // Twin 3D Đợt 3 (§10A): dựng nhà xưởng (twin_toa_nha/twin_tang/twin_vat_the). KHÁC `twin` ở trên — đó là twin realtime cũ (doc 16), đây là cảnh 3D mới của spec 2026-09-06
+
   simulation: simulationRouter, // T5 (doc 24 Wave-4): discrete-event throughput/bottleneck what-if + scheduling advisory (read-only, pure)
   safety: safetyRouter, // S1 (doc 16 Khối 3): Safety audit + mixed workforce + near-miss advisory (ADVISORY ONLY; SAFETY_AUDIT_ENABLED / WORKFORCE_ENABLED)
   oversight: oversightRouter, // U5 (doc 26 §2.3): "Hộp phê duyệt" gộp — đếm việc chờ duyệt/xử lý toàn tầng Kỹ thuật & Điều khiển (READ-ONLY, fail-safe)
@@ -492,6 +584,8 @@ export const appRouter = router({
   aiInbox: aiInboxRouter,
   aiToday: aiTodayRouter,
   kbVector: kbVectorRouter,
+  kbIngest: kbIngestRouter, // doc69 GĐ5/Wave E3 (E3-1): Training Studio doc ingest upload — separate from kbVector (kb_chunks, mig 0121)
+  kbStudio: kbStudioRouter, // doc69 GĐ5/Wave E3 (E3-2): Training Studio corpus/job registry (kb_corpora/kb_ingest_jobs, mig 0305) + job-tracked ingest wrapping kbIngest + corpus preview
 
   // Federation (doc 13 / F0) — sites registry + enrollment + probe (read-only)
   sites: sitesRouter,
@@ -651,6 +745,8 @@ export const appRouter = router({
   aiSettings: aiSettingsRouter,
   // AI GGUF — Local LLM model management & inference
   aiGguf: aiGgufRouter,
+  // VRAM — mặt ĐỌC trạng thái điều phối VRAM (Pha 4 Task 1). CHỈ ĐỌC: không đổi hành vi cấp phát.
+  vram: vramRouter,
   // AI Specialist Agents — Data/Backend/Frontend/QA assistants on local GGUF
   aiSpecialistAgent: aiSpecialistAgentRouter,
   // AI Inspection Analytics — Trend, Pareto, forecast, SPC, risk
@@ -663,6 +759,9 @@ export const appRouter = router({
   aiProgrammingKb: aiProgrammingKbRouter,
   // AI Copilot — GĐ2 HITL write-action confirm/cancel/get
   aiCopilot: aiCopilotRouter,
+  // doc 78 PHA D — Không gian làm việc lập trình: cổng mỏng ĐỌC repo (list_files/read_file/grep_repo).
+  // RBAC ai_repo_read/canView cưỡng chế TRONG tool; hai tool GHI/CHẠY vẫn đi qua đường HITL (aiCopilot).
+  repoWorkspace: repoWorkspaceRouter,
   aiRcaCopilot: aiRcaCopilotRouter,
   // AI Threshold/Param Advisor — LUỒNG ②: recommend LSL/USL/target + NG warning/critical, HITL apply
   aiThresholdAdvisor: aiThresholdAdvisorRouter,
@@ -670,6 +769,8 @@ export const appRouter = router({
   aiSetupAdvisor: aiSetupAdvisorRouter,
   // AI Agent — GĐ3b multi-step agentic orchestrator (on top of HITL)
   aiAgent: aiAgentRouter,
+  // AI Agent Command Center — doc69 GĐ4/Wave E2 (E2-1): unified agent roster read-model (ops-scoped)
+  aiAgentCenter: aiAgentCenterRouter,
   // AI Confidence Calibration — ECE / reliability diagram (B2)
   aiCalibration: aiCalibrationRouter,
   // AI Anomaly Detection — unsupervised PatchCore-style memory bank + kNN (B3)

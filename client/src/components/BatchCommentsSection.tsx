@@ -4,6 +4,7 @@
 import { useState } from "react";
 import { useTranslation } from 'react-i18next';
 import { trpc } from "@/lib/trpc";
+import { toastTrpcError } from "@/lib/trpcErrors";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -67,7 +68,7 @@ export function BatchCommentsSection({ batchId, batchName }: BatchCommentsSectio
       toast.success(t('annotation.comments.added'));
     },
     onError: (error) => {
-      toast.error(error.message);
+      toastTrpcError(error);
     },
   });
 
@@ -79,7 +80,7 @@ export function BatchCommentsSection({ batchId, batchName }: BatchCommentsSectio
       toast.success(t('annotation.comments.updated'));
     },
     onError: (error) => {
-      toast.error(error.message);
+      toastTrpcError(error);
     },
   });
 
@@ -89,7 +90,7 @@ export function BatchCommentsSection({ batchId, batchName }: BatchCommentsSectio
       toast.success(t('annotation.comments.deleted'));
     },
     onError: (error) => {
-      toast.error(error.message);
+      toastTrpcError(error);
     },
   });
 
@@ -102,7 +103,7 @@ export function BatchCommentsSection({ batchId, batchName }: BatchCommentsSectio
       toast.success(t('annotation.tags.created'));
     },
     onError: (error) => {
-      toast.error(error.message);
+      toastTrpcError(error);
     },
   });
 
@@ -113,7 +114,7 @@ export function BatchCommentsSection({ batchId, batchName }: BatchCommentsSectio
       toast.success(t('annotation.tags.assigned'));
     },
     onError: (error) => {
-      toast.error(error.message);
+      toastTrpcError(error);
     },
   });
 
@@ -123,7 +124,7 @@ export function BatchCommentsSection({ batchId, batchName }: BatchCommentsSectio
       toast.success(t('annotation.tags.removed'));
     },
     onError: (error) => {
-      toast.error(error.message);
+      toastTrpcError(error);
     },
   });
 

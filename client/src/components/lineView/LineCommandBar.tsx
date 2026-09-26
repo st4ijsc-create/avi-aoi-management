@@ -23,6 +23,7 @@ import {
   Wrench,
 } from "lucide-react";
 import { toast } from "sonner";
+import { toastTrpcError } from "@/lib/trpcErrors";
 import { trpc } from "@/lib/trpc";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -83,17 +84,17 @@ export function LineCommandBar({ lineId, lineCode, state, canControl, onSettled 
 
   const commandMutation = trpc.lineController.command.useMutation({
     // TRPCError thật (mất mạng / role-floor / 2FA) — khác với ok:false nghiệp vụ.
-    onError: (e) => toast.error(e.message),
+    onError: (e) => toastTrpcError(e),
   });
 
   const cmdLabel = (c: LineViewCommand): string =>
     t(`lineView.cmd.${c}`, {
-      start: "Chạy (Start)",
-      hold: "Giữ (Hold)",
-      resume: "Tiếp tục (Resume)",
-      changeover: "Đổi sản phẩm (Changeover)",
-      complete: "Hoàn tất (Complete)",
-      reset_fault: "Xác nhận khắc phục lỗi",
+      start: t("lineCommandBar.chayStart", "Chạy (Start)"),
+      hold: t("lineCommandBar.giuHold", "Giữ (Hold)"),
+      resume: t("lineCommandBar.tiepTucResume", "Tiếp tục (Resume)"),
+      changeover: t("lineCommandBar.doiSanPhamChangeover", "Đổi sản phẩm (Changeover)"),
+      complete: t("lineCommandBar.hoanTatComplete", "Hoàn tất (Complete)"),
+      reset_fault: t("lineCommandBar.xacNhanKhacPhucLoi", "Xác nhận khắc phục lỗi"),
     }[c]);
 
   const runCommand = async (command: LineViewCommand, reason: string) => {

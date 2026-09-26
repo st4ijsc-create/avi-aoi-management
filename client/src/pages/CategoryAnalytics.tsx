@@ -3,6 +3,7 @@ import { useTranslation } from 'react-i18next';
 import DashboardLayout from "@/components/DashboardLayout";
 import ReportExportButton, { type ReportExportConfig } from "@/components/ReportExportButton";
 import { trpc } from "@/lib/trpc";
+import { finalYield } from "@shared/kpiYield";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -107,7 +108,7 @@ export default function CategoryAnalytics() {
     // Convert to chart data
     const categoryData = categories.map(cat => {
       const stats = categoryStats.get(cat.id) || { total: 0, ok: 0, ng: 0, ntf: 0 };
-      const yieldRate = stats.total > 0 ? ((stats.ok + stats.ntf) / stats.total * 100) : 0;
+      const yieldRate = stats.total > 0 ? finalYield({ ok: stats.ok, ntf: stats.ntf, total: stats.total }) : 0;
       return {
         id: cat.id,
         name: cat.name,
@@ -153,7 +154,7 @@ export default function CategoryAnalytics() {
       ntf: acc.ntf + d.ntf,
     }), { total: 0, ok: 0, ng: 0, ntf: 0 });
 
-    const overallYield = totals.total > 0 ? ((totals.ok + totals.ntf) / totals.total * 100) : 0;
+    const overallYield = totals.total > 0 ? finalYield({ ok: totals.ok, ntf: totals.ntf, total: totals.total }) : 0;
 
     return {
       categoryData,

@@ -50,6 +50,16 @@ jobs:
       - name: Database push (generate + migrate)
         run: pnpm db:push
 
+      # ⚠⚠ ĐỌC KỸ TÊN BƯỚC NÀY. CSDL ở đây là Postgres MỚI + `db:push` (chỉ lược đồ, KHÔNG
+      #    seed), nên 12 phép kiểm dữ liệu KHÔNG CÓ GÌ ĐỂ BÁC BỎ. Thứ nó thật sự chứng minh
+      #    là 12 truy vấn còn chạy được ⇒ **canh gác TRÔI LƯỢC ĐỒ**: đổi tên một cột/bảng
+      #    của `twin_*` là đỏ ngay tại đây thay vì đỏ ở một phép đo thủ công nào đó sau này.
+      #    Kịch bản TỰ IN ra cảnh báo "TẬP RỖNG" nên không ai đọc nhầm dấu xanh thành
+      #    "dữ liệu sạch" (bài học G146: `every()` trên tập rỗng là xanh giả).
+      #    Ở môi trường CÓ dữ liệu thật thì chạy kèm `--yeu-cau-du-lieu` để tập rỗng thành ĐỎ.
+      - name: Twin data sweep (EMPTY DB here → this only guards SCHEMA DRIFT, not data)
+        run: pnpm run kiem:du-lieu-twin
+
       - name: Build app
         run: pnpm run build
 
@@ -78,8 +88,33 @@ jobs:
       - name: Typecheck
         run: pnpm run check
 
+      # tsconfig.json LOẠI TRỪ **/*.test.ts ⇒ bước "Typecheck" ở trên không canh một
+      # dòng nào trong 820 file test. Đó là cơ chế đứng sau lớp lỗi "lưới xanh vì lý
+      # do sai" (ca gọi hàm sản xuất bằng tên ô SAI vẫn biên dịch ⇒ khẳng định đúng
+      # một cách tầm thường). Bước này canh file test qua tsconfig.tests.json, với
+      # danh sách CÁCH LY 174 file nợ cũ — mọi file test MỚI được canh ngay.
+      - name: Typecheck (file test — tsconfig.tests.json)
+        run: pnpm run check:tests
+
       - name: Contract schema BACKWARD gate (doc 44 G2.5)
         run: node scripts/contracts-compat-check.mjs
+
+      # Pha 7 §4.1 — BỀ MẶT NGƯỜI được canh NGANG BỀ MẶT AGENT.
+      # Mặt Agent bị cưỡng chế ba bản thật bằng vitest (chạy ở bước dưới); mặt NGƯỜI
+      # trước đây có 0 phép canh trong CI — `grep -rn "i18n" .github/workflows/` trả
+      # về 0 kết quả trên cả 7 workflow, trong khi 841/13.859 khoá được mã tham chiếu
+      # thiếu ở CẢ BA locale và cổng vẫn khai XANH. Bước này hỏi đúng câu "MỌI khoá mã
+      # tham chiếu có mặt ở cả ba locale không", cộng hai phép canh nền (sửa tay ⇒ đỏ,
+      # phình quá trần ⇒ đỏ). Nợ CÓ TRƯỚC được đóng băng ở scripts/i18n-missing-baseline.json.
+      #
+      # ⚠⚠ GIỚI HẠN PHẢI NÓI THẲNG (Pha 7 / M-5): workflow này chỉ chạy ở `push` vào
+      # [main, VPMS] và `pull_request` vào [main, VPMS] — xem khối `on:` ở đầu file. Một
+      # lượt ĐẨY NHÁNH TÍNH NĂNG (feat/*) KHÔNG kích hoạt bước này. Nên bước CI là lưới
+      # cho chặng MERGE, không phải cho chặng đẩy hằng ngày; chặng ấy do §Cổng kiểm chung
+      # (chạy cục bộ) và lưới vitest client/src/lib/i18nQuantifierGate.unit.test.ts gánh.
+      # Đừng đọc màu xanh của nhánh feat/* thành "i18n đã được canh ở CI".
+      - name: i18n gate (∀ khoá mã tham chiếu có ở cả ba locale + nền chỉ được thu hẹp)
+        run: pnpm run i18n:check
 
       - name: Unit tests (vitest)
         run: pnpm test

@@ -329,14 +329,58 @@ MACHINE_CODE_ONLY_ALLOWED=allow
 > Ký từng dòng. Dòng nào chưa ✓ = **chưa go-live**.
 
 ### 6.1 Danh tính máy (doc 51 R1 / QĐ#1)
-- [ ] `node scripts/machine-key-rotation-report.mjs` → exit **0**, BLOCKING = 0.
-- [ ] Mọi máy đang chạy có khoá `mk_` **và đã dùng thật** (`lastUsedAt` mới).
-- [ ] Máy retired/decommissioned **không còn** credential (verdict `WARN`/`RETIRED_WITH_CREDS` = rỗng).
-- [ ] `MACHINE_SHARED_KEY_ALLOWED=deny` + `MACHINE_CODE_ONLY_ALLOWED=deny` ở production.
-- [ ] `MACHINE_CONFIG_EXPOSE_APIKEY=false` (endpoint public **không** trả apiKey — R1).
-- [ ] Smoke NGƯỢC: `machineCode`-only → **401**; `mk_` qua header → **200**.
-- [ ] `machine_weak_auth_denied` = 0 suốt ≥1 ca sau flip.
-- [ ] `machines.apiKey` đã dọn (§3.f) — hoặc có lịch hẹn dọn.
+
+> **Trạng thái ở MÔI TRƯỜNG DEV, đo ngày 2026-08-21.** Production vẫn phải ký lại
+> từ đầu — mọi ô ✓ dưới đây chỉ nói về `.env` dev và CSDL dev.
+
+- [x] `node scripts/machine-key-rotation-report.mjs` → exit **0**, BLOCKING = 0.
+      *Đo 2026-08-21: "✓ AN TOÀN ĐỂ FLIP — không máy nào đang chạy còn bám đường yếu."*
+- [~] Mọi máy đang chạy có khoá `mk_` **và đã dùng thật** (`lastUsedAt` mới).
+      *41/41 máy đang dùng ĐÃ CÓ khoá (cấp 23 khoá còn thiếu ngày 2026-08-21).*
+      ⚠ **Nửa sau CHƯA đạt:** không máy nào từng dùng khoá — nhịp tim cuối của cả đội
+      là **2026-07-19, cách 33 ngày**, 0 bản ghi kiểm tra trong 7 ngày. Đội máy đang
+      đứng, nên "đã dùng thật" không thể xác nhận cho tới khi chúng chạy lại.
+- [x] Máy retired/decommissioned **không còn** credential.
+      ⚠ *Ô này TỪNG ĐỎ vì chính đợt cấp khoá 2026-08-21: script không kiểm vòng đời nên
+      cấp cả cho `SN-ST4I-TRIAL-WELD-20260818` (`retired`/`rejected`). Báo cáo trên tố
+      ra, khoá đã bị revoke, và script nay BỎ QUA máy retired/decommissioned/rejected.*
+- [x] `MACHINE_SHARED_KEY_ALLOWED=deny` + `MACHINE_CODE_ONLY_ALLOWED=deny` — **ở dev**.
+      *`SHARED_KEY=false` vốn đã là `deny` từ trước; `CODE_ONLY` đặt ngày 2026-08-21.*
+- [x] `MACHINE_CONFIG_EXPOSE_APIKEY=false` — mặc định OFF trong mã
+      (`hierarchyRouters.ts:658` đòi `=== "true"`), và **không có trong `.env`** ⇒ tắt.
+- [x] Smoke NGƯỢC — chạy live 2026-08-21 trên `:3000`, qua **tRPC
+      `machineApi.submitInspection`**:
+      · `machineCode` trần ⇒ **401** *"machineCode-only authentication is disabled for
+        `ingest:write` on this server"* — tức CHÍNH SÁCH từ chối.
+      · cùng thủ tục + `apiKey: mk_…` ⇒ **`{"success":true,"inspectionId":…}`**, ghi
+        thật một bản ghi kiểm (đã xoá sau khi đo).
+
+      ⚠ **LƯỢT SMOKE ĐẦU TIÊN CỦA TÔI ĐÚNG KẾT QUẢ NHƯNG SAI LÝ DO — đừng lặp lại.**
+      Tôi gọi `POST /api/v1/ingest/inspection` với `machineCode` trong body và nhận
+      401 *"Missing API key"*. Trông như bằng chứng, thật ra không phải: `/api/v1/**`
+      có middleware ĐÒI header khoá, nên request bị chặn **trước khi** chạm
+      `machineAuthService` — cờ `MACHINE_CODE_ONLY_ALLOWED` không hề được thi hành
+      trong lượt đó. Bằng chứng: metric `machine_weak_auth_*` **không nhích một mẫu
+      nào**. Đường yếu `machineCode`-only sống ở **tRPC `machineApiRouters`**; phải
+      smoke ở đó.
+
+- [~] `machine_weak_auth_denied` = 0 suốt ≥1 ca sau flip.
+      ⚠ **ĐÍNH CHÍNH lời khai trước của tôi trong chính tài liệu này:** tôi từng ghi ô
+      này *"KHÔNG THỂ ĐẠT vì telemetry chỉ nằm trong `Map` bộ nhớ"* — **SAI**. Cái
+      `Map` (`machineAuthService.ts:348`) chỉ là sổ CHI TIẾT theo từng máy (dễ mất, có
+      chủ ý). Bản thân ô checklist gọi đích danh **`machine_weak_auth_denied`**, và đó
+      là một **counter Prometheus BỀN**:
+      `avi_aoi_security_events_total{type="machine_weak_auth_denied", mode="machine-code"}`
+      — đã đo live, nó nhích đúng khi đường yếu bị từ chối. `METRICS_ENABLED=true`,
+      `GET /metrics` trả 200.
+      ⇒ Ô này **ký được**, chỉ còn thiếu phần "suốt ≥1 ca": cần một ca có lưu lượng
+      thật. Đội máy đang đứng (nhịp tim cuối cách 33 ngày) nên chưa quan sát được.
+
+      ⚠ Bẫy khi đọc số: cầu nối metric nạp **lười** (`import()` động, xem
+      `emitWeakAuthMetric`). Lượt weak-auth ĐẦU TIÊN sau mỗi lần restart **không được
+      đếm** — đo live thấy 2 lượt bị từ chối mà counter chỉ lên 1. Sổ `Map` trong bộ
+      nhớ mới là con số CHÍNH XÁC; metric là con số BỀN. Đọc cả hai, đừng đọc một.
+- [ ] `machines.apiKey` đã dọn (§3.f) — **17 máy còn plaintext**, chờ flip ổn định ≥1 tuần.
 
 ### 6.2 Bền dữ liệu — **QĐ#6 BẮT BUỘC** (doc 51 R7)
 - [ ] **`INSPECTION_STORE_FORWARD_ENABLED=true` trong `.env` production.**

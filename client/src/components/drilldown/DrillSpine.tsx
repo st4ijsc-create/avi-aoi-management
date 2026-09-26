@@ -6,7 +6,11 @@
  *
  * Two rows:
  *   1. BREADCRUMB — the drilled path (Home / Corp / Factory / Line), each crumb
- *      clickable to jump back to that tier. A LIVE badge (socket + 60s poll).
+ *      clickable to jump back to that tier. A FreshnessStrip (W2/AUD-01): the old
+ *      hand-rolled LIVE badge keyed on socket-connected ONLY — a live socket with
+ *      failing/stale queries still said LIVE (fake-live). FreshnessStrip derives
+ *      truth from socket AND data-age, and degrades to "Định kỳ · tính đến HH:MM:SS"
+ *      when the socket drops instead of silently losing the badge.
  *   2. TIER STEPPER — the full 6-tier canonical model so the drill reads as one
  *      consistent spine. Real rollup tiers (corporate/factory/line/machine) are
  *      active/done/future; the Workshop & Station tiers are HONESTLY DEGRADED —
@@ -18,6 +22,7 @@
 import * as React from "react";
 import { useTranslation } from "react-i18next";
 import { Button } from "@/components/ui/button";
+import { FreshnessStrip } from "@/components/FreshnessStrip";
 import { cn } from "@/lib/utils";
 import {
   Building2,
@@ -28,7 +33,6 @@ import {
   Cpu,
   ChevronRight,
   Home,
-  Wifi,
   Info,
 } from "lucide-react";
 
@@ -88,10 +92,24 @@ function tierPhase(tier: TierMeta, level: DrillLevel): TierPhase {
 export interface DrillSpineProps {
   state: DrillDownState;
   onNavigate: (level: DrillLevel, data?: Partial<DrillDownState>) => void;
-  live?: boolean;
+  /**
+   * W2 (AUD-01): react-query `dataUpdatedAt` (ms) of the tier query that is
+   * currently ENABLED (only one of the 4 drill queries is active at a time).
+   * Undefined → not fetched yet (freshness unknown, no fake stamp).
+   */
+  updatedAt?: number | null;
+  /** Ecosystem socket state (useEcosystemEvents.isConnected). */
+  connected?: boolean;
 }
 
-export function DrillSpine({ state, onNavigate, live = false }: DrillSpineProps): React.JSX.Element {
+/**
+ * W2: drill queries poll-fallback at 60s — only past 2 missed cycles (+ fetch
+ * latency margin) is the data genuinely stale, else the strip cries wolf
+ * between normal polls.
+ */
+const DRILL_STALE_AFTER_MS = 2 * 60_000 + 15_000;
+
+export function DrillSpine({ state, onNavigate, updatedAt, connected = false }: DrillSpineProps): React.JSX.Element {
   const { t } = useTranslation();
 
   const tierLabel = (key: TierKey): string =>
@@ -168,9 +186,10 @@ export function DrillSpine({ state, onNavigate, live = false }: DrillSpineProps)
 
   return (
     <div className="space-y-3">
-      {/* Row 1 — breadcrumb of the drilled path + live badge */}
+      {/* Row 1 — breadcrumb of the drilled path + freshness strip (W2/AUD-01) */}
       <nav className="flex items-center gap-1 text-sm" aria-label={t("dashboard.drill.canonicalPath", "Corporate → Factory → Workshop → Line → Station → Machine")}>
-        <Button variant="ghost" size="sm" onClick={() => onNavigate("corporate")} className="gap-1" aria-label={t("dashboard.overview", "Overview")}>
+        {/* W4 touch: min-h-11 (44px) on every nav control — operator panel-PC with gloves. */}
+        <Button variant="ghost" size="sm" onClick={() => onNavigate("corporate")} className="min-h-11 gap-1" aria-label={t("dashboard.overview", "Overview")}>
           <Home className="h-4 w-4" />
         </Button>
         {crumbs.map((c, i) => (
@@ -179,7 +198,7 @@ export function DrillSpine({ state, onNavigate, live = false }: DrillSpineProps)
             <Button
               variant={i === crumbs.length - 1 ? "secondary" : "ghost"}
               size="sm"
-              className="max-w-[220px] gap-1"
+              className="min-h-11 max-w-[220px] gap-1"
               onClick={() => navigateTier(TIERS.find((tt) => tt.level === c.level)!)}
             >
               <c.icon className="h-4 w-4 shrink-0" />
@@ -187,15 +206,16 @@ export function DrillSpine({ state, onNavigate, live = false }: DrillSpineProps)
             </Button>
           </div>
         ))}
-        {live && (
-          <span
-            className="ml-auto inline-flex items-center gap-1 rounded-full bg-success/15 px-2 py-0.5 text-[11px] font-medium text-success"
-            title={t("dashboard.drill.liveHint", "Live via socket (60s poll fallback)")}
-          >
-            <Wifi className="h-3 w-3" aria-hidden="true" />
-            {t("dashboard.drill.live", "LIVE")}
-          </span>
-        )}
+        {/* W2 (AUD-01): socket + data-age truth. Socket down → degrades to the
+            amber "Định kỳ · tính đến HH:MM:SS" state (poll fallback keeps
+            refetching) instead of the badge silently disappearing. */}
+        <FreshnessStrip
+          updatedAt={updatedAt}
+          connected={connected}
+          pollingFallback
+          staleAfterMs={DRILL_STALE_AFTER_MS}
+          className="ml-auto"
+        />
       </nav>
 
       {/* Row 2 — canonical 6-tier stepper (honest-degradation for workshop/station) */}
@@ -214,7 +234,8 @@ export function DrillSpine({ state, onNavigate, live = false }: DrillSpineProps)
                 onClick={clickable ? () => navigateTier(tier) : undefined}
                 title={phase === "degraded" ? degradedHint(tier.key) : label}
                 className={cn(
-                  "inline-flex items-center gap-1.5 rounded-md px-2 py-1 text-xs font-medium transition-colors",
+                  // W4 touch: min-h-11 (44px) — the stepper tiers are tap targets too.
+                  "inline-flex min-h-11 items-center gap-1.5 rounded-md px-2 py-1 text-xs font-medium transition-colors",
                   phase === "active" && "bg-primary text-primary-foreground",
                   phase === "done" && "bg-primary/10 text-primary hover:bg-primary/20",
                   phase === "future" && "text-muted-foreground",

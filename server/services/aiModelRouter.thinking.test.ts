@@ -109,6 +109,90 @@ describe("thinking-tier routing", () => {
   });
 });
 
+describe("thinking-tier HONESTY (doc69 G2-6 — getThinkingTierStatus / reportThinkingTierStatus)", () => {
+  it("reports inactive with a clear reason when enabled but GGUF_THINKING_MODEL is unset (the drift the audit flagged)", async () => {
+    process.env.AI_THINKING_TIER_ENABLED = "true"; // GGUF_THINKING_MODEL intentionally left unset
+    const { getThinkingTierStatus } = await freshRouter();
+    const status = getThinkingTierStatus();
+    expect(status.enabled).toBe(true);
+    expect(status.modelConfigured).toBe(false);
+    expect(status.active).toBe(false);
+    expect(status.reason).toMatch(/unset/i);
+  });
+
+  it("reports inactive (with a different reason) when the model is configured but its file is missing", async () => {
+    FILE_EXISTS = false;
+    process.env.AI_THINKING_TIER_ENABLED = "true";
+    process.env.GGUF_THINKING_MODEL = "does-not-exist";
+    const { getThinkingTierStatus } = await freshRouter();
+    const status = getThinkingTierStatus();
+    expect(status.modelConfigured).toBe(true);
+    expect(status.fileExists).toBe(false);
+    expect(status.active).toBe(false);
+    expect(status.reason).toMatch(/not found/i);
+  });
+
+  it("reports active when flag + model + file all line up", async () => {
+    process.env.AI_THINKING_TIER_ENABLED = "true";
+    process.env.GGUF_THINKING_MODEL = "qwen3-30b-a3b-thinking";
+    const { getThinkingTierStatus } = await freshRouter();
+    const status = getThinkingTierStatus();
+    expect(status.enabled).toBe(true);
+    expect(status.modelConfigured).toBe(true);
+    expect(status.fileExists).toBe(true);
+    expect(status.active).toBe(true);
+    expect(status.reason).toMatch(/^active/);
+  });
+
+  it("reports disabled (not misleading) when the master flag is off, even if a model happens to be set", async () => {
+    process.env.GGUF_THINKING_MODEL = "qwen3-30b-a3b-thinking"; // set but AI_THINKING_TIER_ENABLED left off
+    const { getThinkingTierStatus } = await freshRouter();
+    const status = getThinkingTierStatus();
+    expect(status.enabled).toBe(false);
+    expect(status.active).toBe(false);
+    expect(status.reason).toMatch(/disabled/i);
+  });
+
+  it("reportThinkingTierStatus warns ONCE at startup when misconfigured, and routing still safely uses the deep model", async () => {
+    process.env.AI_THINKING_TIER_ENABLED = "true"; // GGUF_THINKING_MODEL left unset
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const { reportThinkingTierStatus, route } = await freshRouter();
+
+    reportThinkingTierStatus();
+    reportThinkingTierStatus();
+    reportThinkingTierStatus();
+    expect(warnSpy).toHaveBeenCalledTimes(1);
+    expect(String(warnSpy.mock.calls[0]?.[0])).toMatch(/Thinking tier INACTIVE/);
+
+    // Fail-safe: routing a hard rca/report request still safely resolves to the deep model —
+    // the flag being misconfigured never breaks the answer, it's just no longer silent about it.
+    const d = route({ task: "rca", requiredQuality: "high" });
+    expect(d.thinking).toBeFalsy();
+    expect(d.modelId).toBe("qwen3-30b-a3b-instruct");
+
+    warnSpy.mockRestore();
+  });
+
+  it("reportThinkingTierStatus does NOT warn when the tier is disabled (default, everyone today)", async () => {
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const { reportThinkingTierStatus } = await freshRouter();
+    reportThinkingTierStatus();
+    expect(warnSpy).not.toHaveBeenCalled();
+    warnSpy.mockRestore();
+  });
+
+  it("reportThinkingTierStatus does NOT warn when the tier is genuinely active", async () => {
+    process.env.AI_THINKING_TIER_ENABLED = "true";
+    process.env.GGUF_THINKING_MODEL = "qwen3-30b-a3b-thinking";
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const { reportThinkingTierStatus } = await freshRouter();
+    const status = reportThinkingTierStatus();
+    expect(status.active).toBe(true);
+    expect(warnSpy).not.toHaveBeenCalled();
+    warnSpy.mockRestore();
+  });
+});
+
 describe("stripThinking helper", () => {
   it("removes a well-formed <think>…</think> block and returns the clean answer", async () => {
     const { stripThinking } = await import("./aiGgufEngine");
@@ -146,9 +230,20 @@ describe("stripThinking helper", () => {
     expect(out.thinking).toBe("");
   });
 
-  it("fail-safe: keeps the original when stripping would leave an empty answer", async () => {
+  /**
+   * ★ ĐỔI CÓ CHỦ Ý — G5-B (2026-08-16). Ca này TRƯỚC ĐÂY khẳng định điều NGƯỢC LẠI:
+   *     expect(out.answer).toBe("<think>only reasoning, no answer</think>")
+   * tức là nó **đóng dấu hợp lệ cho một đường rò**: cắt xong không còn gì ⇒ trả nguyên văn cả
+   * khối suy luận kèm thẻ ra giao diện. Chú thích cũ gọi đó là "fail-safe" nhưng "noisy answer"
+   * ở đây chính là thứ hàm này tồn tại để giấu. Ca kích hoạt không hiếm: model reasoning tiêu hết
+   * `maxTokens` vào `<think>` trước khi kịp trả lời.
+   * Lưới đầy đủ cho lớp lỗi này: `aiGgufEngine.stripThinking.test.ts` §R2.
+   */
+  it("★ fail-SAFE: cắt xong rỗng ⇒ trả RỖNG, KHÔNG trả nguyên văn khối suy luận", async () => {
     const { stripThinking } = await import("./aiGgufEngine");
     const out = stripThinking("<think>only reasoning, no answer</think>");
-    expect(out.answer).toBe("<think>only reasoning, no answer</think>");
+    expect(out.answer).toBe("");
+    expect(out.answer).not.toContain("only reasoning");
+    expect(out.thinking).toContain("only reasoning");
   });
 });

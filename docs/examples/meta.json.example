@@ -1,80 +1,84 @@
 {
-  "machineCode": "AOI-LINE1-01",
-  "inspectionId": "INS-20240115-001",
-  
+  "type": "aoi_package",
+  "identity": {
+    "station": "AIC-MA3",
+    "machine": "ASSY-04",
+    "line": "JUNIPER",
+    "plant": "FAC-HN",
+    "country": "VN",
+    "solutionName": "MODEL-X-SOLUTION",
+    "appVersion": "1.0.0"
+  },
+  "productId": "b3f1c2a0-1111-4a2b-9c3d-000000000001",
   "serialNumber": "SN-20240115-001",
   "productModel": "PCB-V2-Standard",
-  "batchNumber": "BATCH-2024-001",
-  
-  "inspectionTime": "2024-01-15T10:30:00Z",
-  "startedAt": "2024-01-15T10:30:00Z",
-  "finishedAt": "2024-01-15T10:32:30Z",
-  "cycleTime": 150.5,
-  
-  "companyCode": "COMPANY-A",
-  "factoryCode": "FACTORY-HN",
-  "workshopCode": "WORKSHOP-SMT",
-  "lineCode": "LINE-3",
-  "stageCode": "STAGE-AOI",
-  
-  "productionOrderCode": "PO-2024-0115-001",
-  "operatorId": "OP-0023",
-  
   "overallResult": "NG",
-  
-  "measurements": [
+  "ntf": false,
+  "startedAt": "2024-01-15T10:30:00.000",
+  "completedAt": "2024-01-15T10:32:30.400",
+
+  "summary": {
+    "surfaces":   { "total": 1, "pass": 0, "ng": 1, "ntf": 0 },
+    "positions":  { "total": 1, "pass": 0, "ng": 1, "ntf": 0 },
+    "captures":   { "total": 2, "pass": 1, "ng": 1, "ntf": 0 },
+    "components": { "total": 2, "pass": 1, "ng": 1, "ntf": 0 }
+  },
+
+  "surfaces": [
     {
-      "pointId": "POINT-001",
-      "pointCode": "R1-IC1-PIN1",
-      "name": "IC1 Pin 1 Resistance",
-      "fileName": "image_001.jpg",
-      "result": "OK",
-      "measuredValue": 1023.5,
-      "unit": "Ω",
-      "remark": "In spec"
-    },
-    {
-      "pointId": "POINT-002",
-      "pointCode": "R2-IC2-PIN5",
-      "name": "IC2 Pin 5 Resistance",
-      "fileName": "image_002.jpg",
+      "name": "TOP",
       "result": "NG",
-      "measuredValue": 0,
-      "unit": "Ω",
-      "remark": "Short circuit - Replace IC2"
-    },
-    {
-      "pointId": "POINT-003",
-      "pointCode": "CAP-C15",
-      "name": "C15 Capacitance",
-      "fileName": "image_003.jpg",
-      "result": "OK",
-      "measuredValue": 10.2,
-      "unit": "μF",
-      "remark": "Within tolerance"
-    },
-    {
-      "pointId": "POINT-004",
-      "pointCode": "LED-D1",
-      "name": "D1 LED Polarity",
-      "fileName": "image_004.jpg",
-      "result": "OK",
-      "remark": "Correct orientation"
-    },
-    {
-      "pointId": "POINT-005",
-      "pointCode": "CONN-J1",
-      "name": "J1 Connector Alignment",
-      "fileName": "image_005.jpg",
-      "result": "NTF",
-      "remark": "Not tested - skipped in this run"
+      "ntf": false,
+      "positions": [
+        {
+          "positionId": "P01",
+          "result": "NG",
+          "ntf": false,
+          "captures": [
+            {
+              "captureId": "a1b2c3d4-0000-4000-8000-000000001011",
+              "captureName": "Default",
+              "result": "OK",
+              "ntf": false,
+              "components": [
+                {
+                  "componentId": "a1b2c3d4-0000-4000-8000-000000010111",
+                  "componentName": "C15",
+                  "result": "OK",
+                  "ntf": false,
+                  "value": "10.2",
+                  "lowerLimit": "9",
+                  "upperLimit": "11"
+                }
+              ]
+            },
+            {
+              "captureId": "a1b2c3d4-0000-4000-8000-000000001012",
+              "captureName": "Sang nghieng",
+              "result": "NG",
+              "ntf": false,
+              "components": [
+                {
+                  "componentId": "a1b2c3d4-0000-4000-8000-000000010112",
+                  "componentName": "IC2-PIN5",
+                  "result": "NG",
+                  "ntf": false,
+                  "value": "0",
+                  "lowerLimit": "900",
+                  "upperLimit": "1100",
+                  "errorCode": "E-SHORT",
+                  "errorDesc": "Short circuit - Replace IC2"
+                }
+              ]
+            }
+          ]
+        }
+      ]
     }
   ],
-  
-  "summary": {
-    "totalPoints": 5,
-    "ok": 3,
-    "ng": 1,
-    "ntf": 1
-  }
+
+  "images": [
+    { "captureId": "a1b2c3d4-0000-4000-8000-000000001011", "fileName": "TOP_P01_Default.jpg", "captureName": "Default" },
+    { "captureId": "a1b2c3d4-0000-4000-8000-000000001012", "fileName": "TOP_P01_SangNghieng.jpg", "captureName": "Sang nghieng" }
+  ]
 }

@@ -2,6 +2,7 @@ import { useEffect, useState, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 import { useLocation } from "wouter";
 import { trpc } from "@/lib/trpc";
+import { mapTrpcError } from "@/lib/trpcErrors";
 import DashboardLayout from "@/components/DashboardLayout";
 import { PageHeader, PageContainer, MetricCard } from "@/components/patterns";
 import { navItems } from "@/lib/navigation";
@@ -318,7 +319,7 @@ export function MachineRegistrationContent() {
       }
     },
     onError: (err) => {
-      toast.error(t('machineRegistration.toast.approveError'), { description: err.message });
+      toast.error(t('machineRegistration.toast.approveError'), { description: mapTrpcError(err) });
     },
   });
 
@@ -340,7 +341,7 @@ export function MachineRegistrationContent() {
           });
         },
         onError: (err) => {
-          toast.error(t('machineRegistration.credential.toast.claimIssueError'), { description: err.message });
+          toast.error(t('machineRegistration.credential.toast.claimIssueError'), { description: mapTrpcError(err) });
         },
       },
     );
@@ -365,7 +366,7 @@ export function MachineRegistrationContent() {
           });
         },
         onError: (err) => {
-          toast.error(t('machineRegistration.credential.toast.rotateError'), { description: err.message });
+          toast.error(t('machineRegistration.credential.toast.rotateError'), { description: mapTrpcError(err) });
         },
       },
     );
@@ -380,7 +381,7 @@ export function MachineRegistrationContent() {
       invalidateMachines();
     },
     onError: (err) => {
-      toast.error(t('machineRegistration.toast.rejectError'), { description: err.message });
+      toast.error(t('machineRegistration.toast.rejectError'), { description: mapTrpcError(err) });
     },
   });
 
@@ -393,7 +394,7 @@ export function MachineRegistrationContent() {
       invalidateMachines();
     },
     onError: (err) => {
-      toast.error(t('machineRegistration.toast.revokeError'), { description: err.message });
+      toast.error(t('machineRegistration.toast.revokeError'), { description: mapTrpcError(err) });
     },
   });
 
@@ -410,7 +411,7 @@ export function MachineRegistrationContent() {
       invalidateMachines();
     },
     onError: (err) => {
-      toast.error(t('machineRegistration.lifecycle.toast.error'), { description: err.message });
+      toast.error(t('machineRegistration.lifecycle.toast.error'), { description: mapTrpcError(err) });
     },
   });
 
@@ -423,7 +424,7 @@ export function MachineRegistrationContent() {
       invalidateMachines();
     },
     onError: (err) => {
-      toast.error(t('machineRegistration.toast.editError'), { description: err.message });
+      toast.error(t('machineRegistration.toast.editError'), { description: mapTrpcError(err) });
     },
   });
 

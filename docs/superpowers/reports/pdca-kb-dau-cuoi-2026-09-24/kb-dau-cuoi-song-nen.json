@@ -1,0 +1,110 @@
+{
+  "corpus": "scripts/ai-eval/kb-doi-chung-song.jsonl",
+  "label": "song-nen",
+  "tom": {
+    "trong": {
+      "n": 0,
+      "dung": 0,
+      "tuChoi": 0,
+      "sai": 0
+    },
+    "ngoai": {
+      "n": 6,
+      "tuChoi": 0,
+      "traLoi": 6
+    },
+    "loi": 0
+  },
+  "ra": [
+    {
+      "id": "C01",
+      "ngoai": true,
+      "kq": "tra-loi",
+      "ms": 605,
+      "nguon": [
+        "knowledge/domain/howto-lot-management.md",
+        "howto-lot-management.md",
+        "knowledge/operational-approved/defect-catalog.md",
+        "knowledge/domain/howto-lot-management.md",
+        "knowledge/operational-approved/defect-catalog.md"
+      ],
+      "traLoi": "Bạn muốn tra cứu lô sản xuất nào? Vui lòng cung cấp **mã lệnh sản xuất** (ví dụ `L20260505-001` hoặc `PO12345`).\nBạn cũng có thể vào *Menu › Sản xuất › Lệnh sản xuất* để chọn trực tiếp từ danh sách.",
+      "loi": null
+    },
+    {
+      "id": "C02",
+      "ngoai": true,
+      "kq": "tra-loi",
+      "ms": 1757,
+      "nguon": [
+        "knowledge/operational/machine-registration.md",
+        "knowledge/workflows/change-recipe-line-start.playbook.yaml",
+        "knowledge/features/monitoring/machine-registration.md",
+        "knowledge/workflows/change-recipe-line-start.playbook.yaml",
+        "knowledge/operational/factory-command.md"
+      ],
+      "traLoi": "(1) Hiện trạng máy: 0 máy hoạt động, 1699 máy bị mất kết nối (offline), trong đó có 129 lỗi được ghi nhận. Các thiết bị offline bao gồm ESP32-ENV-01 và các máy FUYU-F-T1-L1-Mx (M1–M12).  \n\n(2)  \n* Bước 1: Truy cập màn hình `/machine-status` trong menu \"Thiết bị & Giám sát\" để xem trạng thái thực tế của từng thiết bị. → Kết quả hiển thị danh sách máy với cột Status, và các dòng có giá trị `offline`",
+      "loi": null
+    },
+    {
+      "id": "C03",
+      "ngoai": true,
+      "kq": "tra-loi",
+      "ms": 1523,
+      "nguon": [
+        "knowledge/operational/device-monitor.md",
+        "knowledge/operational-approved/device-adapters.md",
+        "knowledge/operational/equipment-standards.md",
+        "knowledge/operational/equipment-integration.md",
+        "knowledge/operational/device-onboarding.md"
+      ],
+      "traLoi": "(1) Tình trạng thiết bị hiện tại được giám sát qua màn hình `/device-monitor`, yêu cầu quyền `machine_status` để truy cập.  \n(2) Bước 1: Truy cập URL `/device-monitor` hoặc menu \"Thiết bị & Giám sát › Giám sát thiết bị\" → hiển thị danh sách các thiết bị đang hoạt động, lỗi hay cảnh báo hiện tại [1]. Kết quả là bảng tổng hợp trạng thái (active/inactive/alarmed) với thông tin thời gian và loại sự cố",
+      "loi": null
+    },
+    {
+      "id": "C04",
+      "ngoai": true,
+      "kq": "tra-loi",
+      "ms": 1703,
+      "nguon": [
+        "knowledge/workflows/change-recipe-line-start.playbook.yaml",
+        "knowledge/operational/today.md",
+        "knowledge/workflows/change-recipe-line-start.playbook.yaml",
+        "knowledge/operational/feeder-verify.md",
+        "client/src/components/twin3d/van-hanh/DongChayLine.tsx"
+      ],
+      "traLoi": "(1) Hôm nay không có sản phẩm nào bị lỗi (NG = 0), tỷ lệ NG là 0%, cho thấy line vận hành ổn định.  \n(2) Bước 1: Truy cập màn hình `/today` để xem báo cáo tổng quan — kết quả hiển thị số lượng kiểm tra và tỉ lệ lỗi [2]. Bước 2: Xác minh thông tin sản phẩm trong giao diện `/machine-status`, đối chiếu recipe đang hoạt động với recipe cần chạy theo quy trình `change-recipe-line-start` [1][3]. Kết quả",
+      "loi": null
+    },
+    {
+      "id": "C05",
+      "ngoai": true,
+      "kq": "tra-loi",
+      "ms": 1865,
+      "nguon": [
+        "knowledge/features/monitoring/machine-registration.md",
+        "knowledge/operational-approved/machine-registration.md",
+        "knowledge/features/products/product-machine-mapping.md",
+        "knowledge/operational-approved/defect-catalog.md",
+        "knowledge/operational/machine-registration.md"
+      ],
+      "traLoi": "(1) 129 máy đang gặp lỗi, trong đó có các thiết bị như ESP32-ENV-01 và FUYU-F-T1-L1-M1 đến M12.  \n(2) Bước 1: Truy cập trang giám sát thiết bị để xem danh sách trạng thái; ở tab \"Machine Status\", tìm thấy các máy có trạng thái offline hoặc lỗi (ví dụ: ESP32-ENV-01, FUYU-F-T1-L1-M1). Kết quả hiển thị rõ ràng trong bảng liệt kê. Bước 2: Kiểm tra thông tin chi tiết bằng lệnh `machine.list` để xác min",
+      "loi": null
+    },
+    {
+      "id": "C06",
+      "ngoai": true,
+      "kq": "tra-loi",
+      "ms": 379,
+      "nguon": [
+        "knowledge/operational-approved/defect-catalog.md",
+        "knowledge/domain/howto-lot-management.md",
+        "knowledge/domain/howto-lot-management.md",
+        "howto-lot-management.md",
+        "knowledge/operational-approved/andon.md"
+      ],
+      "traLoi": "Bạn muốn tra cứu lô sản xuất nào? Vui lòng cung cấp **mã lệnh sản xuất** (ví dụ `L20260505-001` hoặc `PO12345`).\nBạn cũng có thể vào *Menu › Sản xuất › Lệnh sản xuất* để chọn trực tiếp từ danh sách.",
+      "loi": null
+    }
+  ]
+}

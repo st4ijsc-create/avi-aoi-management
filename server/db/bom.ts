@@ -6,9 +6,10 @@
  * clamp at ≥0 and are plain UPDATEs of telemetry quantities.
  *
  * Mirrors the getDb()-guarded style of product.ts: read helpers degrade to []/null
- * when the DB is not connected; writers throw "Database not available".
+ * when the DB is not connected; writers ném `DbUnavailableError`.
  */
 import { getDb } from "./connection";
+import { DbUnavailableError } from "../_core/dbErrors";
 import { and, asc, desc, eq, isNull, lte, sql } from "drizzle-orm";
 import {
   bomDefinitions, InsertBomDefinition,
@@ -23,7 +24,7 @@ import {
 // ============================================================
 export async function createBomDefinition(data: InsertBomDefinition): Promise<number> {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  if (!db) throw new DbUnavailableError();
   const [row] = await db.insert(bomDefinitions).values(data).returning({ id: bomDefinitions.id });
   return row.id;
 }
@@ -62,7 +63,7 @@ export async function getActiveBomForProduct(productModelId: number) {
 
 export async function updateBomDefinition(id: number, patch: Partial<InsertBomDefinition>) {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  if (!db) throw new DbUnavailableError();
   const [row] = await db
     .update(bomDefinitions)
     .set({ ...patch, updatedAt: new Date() })
@@ -74,7 +75,7 @@ export async function updateBomDefinition(id: number, patch: Partial<InsertBomDe
 /** Soft delete: set deletedAt + isActive=false. */
 export async function softDeleteBomDefinition(id: number) {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  if (!db) throw new DbUnavailableError();
   const [row] = await db
     .update(bomDefinitions)
     .set({ deletedAt: new Date(), isActive: false, status: "archived", updatedAt: new Date() })
@@ -88,14 +89,14 @@ export async function softDeleteBomDefinition(id: number) {
 // ============================================================
 export async function createBomLineItem(data: InsertBomLineItem): Promise<number> {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  if (!db) throw new DbUnavailableError();
   const [row] = await db.insert(bomLineItems).values(data).returning({ id: bomLineItems.id });
   return row.id;
 }
 
 export async function bulkCreateBomLineItems(rows: InsertBomLineItem[]) {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  if (!db) throw new DbUnavailableError();
   if (rows.length === 0) return [];
   return db.insert(bomLineItems).values(rows).returning({ id: bomLineItems.id });
 }
@@ -108,7 +109,7 @@ export async function listBomLineItemsByBom(bomId: number) {
 
 export async function updateBomLineItem(id: number, patch: Partial<InsertBomLineItem>) {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  if (!db) throw new DbUnavailableError();
   const [row] = await db
     .update(bomLineItems)
     .set({ ...patch, updatedAt: new Date() })
@@ -119,7 +120,7 @@ export async function updateBomLineItem(id: number, patch: Partial<InsertBomLine
 
 export async function deleteBomLineItem(id: number) {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  if (!db) throw new DbUnavailableError();
   await db.delete(bomLineItems).where(eq(bomLineItems.id, id));
   return { success: true };
 }
@@ -129,7 +130,7 @@ export async function deleteBomLineItem(id: number) {
 // ============================================================
 export async function createFeederMaterial(data: InsertFeederMaterial): Promise<number> {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  if (!db) throw new DbUnavailableError();
   const [row] = await db.insert(feederMaterials).values(data).returning({ id: feederMaterials.id });
   return row.id;
 }
@@ -149,7 +150,7 @@ export async function getFeederMaterialById(id: number) {
 
 export async function updateFeederMaterial(id: number, patch: Partial<InsertFeederMaterial>) {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  if (!db) throw new DbUnavailableError();
   const [row] = await db
     .update(feederMaterials)
     .set({ ...patch, updatedAt: new Date() })
@@ -172,7 +173,7 @@ export interface ConsumeFeederResult {
  */
 export async function consumeFeederMaterial(id: number, qty: number): Promise<ConsumeFeederResult> {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  if (!db) throw new DbUnavailableError();
   const [feeder] = await db.select().from(feederMaterials).where(eq(feederMaterials.id, id)).limit(1);
   if (!feeder) return { found: false, remaining: 0, reorderFlag: false, status: null };
 
@@ -223,7 +224,7 @@ export interface ConsumeSupplierLotResult {
  */
 export async function consumeSupplierLot(id: number, qty: number): Promise<ConsumeSupplierLotResult> {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  if (!db) throw new DbUnavailableError();
   const [lot] = await db.select().from(supplierLots).where(eq(supplierLots.id, id)).limit(1);
   if (!lot) return { found: false, remaining: 0, status: null };
 
@@ -245,14 +246,14 @@ export async function consumeSupplierLot(id: number, qty: number): Promise<Consu
 // ============================================================
 export async function insertComponentInstallation(data: InsertComponentInstallation): Promise<number> {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  if (!db) throw new DbUnavailableError();
   const [row] = await db.insert(componentInstallations).values(data).returning({ id: componentInstallations.id });
   return row.id;
 }
 
 export async function updateComponentInstallationGenealogyHash(id: number, genealogyHash: string | null) {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  if (!db) throw new DbUnavailableError();
   await db.update(componentInstallations).set({ genealogyHash }).where(eq(componentInstallations.id, id));
 }
 

@@ -1,0 +1,37 @@
+#43 xong  chunk=159 nguon=10 ms=108015 wall=108129
+{"mrr":0.8691983122362869,"soCau":111,"duongOng":0.6455696202531646,"quaNguong":0.9493670886075949,"soCauHong":0,"soCauNgoai":32,"soCauTrong":79,"trungNguon":0.9493670886075949,"tuChoiDung":0.375,"dapAnNguCanh":0.9113924050632911,"duongOngBatKy":0.9620253164556962}
+  SAI T01 de=ok hang=null diem=undefined qua=false dapAn=false ong=false batKy=true top1=howto-ng-handling-sop.md:0.577
+  SAI T06 de=ok hang=1 diem=0.622 qua=true dapAn=true ong=false batKy=true top1=aoi-thresholds.md:0.622
+  SAI T09 de=ok hang=4 diem=0.626 qua=true dapAn=false ong=false batKy=true top1=aoi-troubleshooting.md:0.686
+  SAI T11 de=ok hang=1 diem=0.597 qua=true dapAn=true ong=false batKy=true top1=aoi-troubleshooting.md:0.597
+  SAI T16 de=ok hang=1 diem=0.628 qua=true dapAn=true ong=false batKy=true top1=aoi-workflow.md:0.628
+  SAI T17 de=ok hang=null diem=undefined qua=false dapAn=false ong=false batKy=false top1=aoi-troubleshooting.md:0.554
+  SAI T18 de=ok hang=1 diem=0.609 qua=true dapAn=true ong=false batKy=true top1=aoi-reports.md:0.609
+  SAI T26 de=ok hang=1 diem=0.716 qua=true dapAn=true ong=false batKy=true top1=howto-shift-change.md:0.716
+  SAI T28 de=ok hang=1 diem=0.558 qua=true dapAn=true ong=false batKy=true top1=howto-lot-management.md:0.558
+  SAI T30 de=ok hang=1 diem=0.606 qua=true dapAn=true ong=false batKy=true top1=howto-spc-control.md:0.606
+  SAI N05 de=ok hang=null diem=undefined qua=false dapAn=null ong=true batKy=null top1=aoi-thresholds.md:0.459
+  SAI N06 de=ok hang=null diem=undefined qua=false dapAn=null ong=false batKy=null top1=aoi-thresholds.md:0.533
+  SAI N07 de=ok hang=null diem=undefined qua=false dapAn=null ong=true batKy=null top1=aoi-workflow.md:0.494
+  SAI N08 de=ok hang=null diem=undefined qua=false dapAn=null ong=true batKy=null top1=howto-spc-control.md:0.469
+  SAI N09 de=ok hang=null diem=undefined qua=false dapAn=null ong=false batKy=null top1=aoi-workflow.md:0.472
+  SAI N12 de=ok hang=null diem=undefined qua=false dapAn=null ong=true batKy=null top1=aoi-defect-types.md:0.607
+  SAI T31 de=ok hang=3 diem=0.647 qua=true dapAn=true ong=false batKy=true top1=howto-ng-handling-sop.md:0.671
+  SAI T35 de=ok hang=1 diem=0.563 qua=true dapAn=true ong=false batKy=true top1=aoi-thresholds.md:0.563
+  SAI T36 de=ok hang=4 diem=0.626 qua=true dapAn=true ong=false batKy=true top1=howto-shift-change.md:0.663
+  SAI T40 de=ok hang=2 diem=0.662 qua=true dapAn=true ong=false batKy=true top1=aoi-troubleshooting.md:0.758
+  SAI T45 de=ok hang=1 diem=0.598 qua=true dapAn=true ong=false batKy=true top1=aoi-troubleshooting.md:0.598
+  SAI T46 de=ok hang=1 diem=0.710 qua=true dapAn=false ong=true batKy=true top1=aoi-troubleshooting.md:0.710
+  SAI T47 de=ok hang=1 diem=0.758 qua=true dapAn=false ong=true batKy=true top1=aoi-troubleshooting.md:0.758
+  SAI T53 de=ok hang=1 diem=0.579 qua=true dapAn=true ong=false batKy=true top1=aoi-workflow.md:0.579
+  SAI T54 de=ok hang=null diem=undefined qua=false dapAn=false ong=false batKy=false top1=aoi-troubleshooting.md:0.589
+  SAI T55 de=ok hang=1 diem=0.623 qua=true dapAn=true ong=false batKy=true top1=aoi-workflow.md:0.623
+  SAI T56 de=ok hang=1 diem=0.510 qua=true dapAn=true ong=false batKy=true top1=aoi-workflow.md:0.510
+  SAI T57 de=ok hang=2 diem=0.650 qua=true dapAn=true ong=false batKy=true top1=howto-lot-management.md:0.721
+  SAI T58 de=ok hang=1 diem=0.581 qua=true dapAn=true ong=false batKy=true top1=aoi-reports.md:0.581
+  SAI T59 de=ok hang=1 diem=0.811 qua=true dapAn=true ong=false batKy=true top1=aoi-reports.md:0.811
+  SAI T61 de=ok hang=1 diem=0.612 qua=true dapAn=true ong=false batKy=true top1=aoi-reports.md:0.612
+  SAI T66 de=ok hang=2 diem=0.649 qua=true dapAn=true ong=false batKy=true top1=aoi-thresholds.md:0.662
+  SAI T72 de=ok hang=1 diem=0.602 qua=true dapAn=true ong=false batKy=true top1=howto-lot-management.md:0.602
+  SAI T76 de=ok hang=3 diem=0.471 qua=true dapAn=true ong=false batKy=true top1=aoi-workflow.md:0.540
+  SAI T77 de=ok hang=1 diem=0.625 qua=true dapAn=true ong=false batKy=true top1=commission-a-new-pcb.md:0.6

@@ -226,6 +226,38 @@ export type RecipeDeployment = typeof recipeDeployments.$inferSelect;
 export type InsertRecipeDeployment = typeof recipeDeployments.$inferInsert;
 
 /**
+ * doc 63 DEP-08 (mig 0297) — Changeover Requests: hàng đợi duyệt 2-NGƯỜI cho đổi model.
+ * Operator (quyền thấp) TẠO yêu cầu (inert — không actuation); supervisor/engineer DUYỆT
+ * (actuation + 2FA + SoD approver≠requester) → chạy đường deployRecipe sẵn có (ledger-only,
+ * tự từ chối recipe chưa second-approve W2-9). Bản ghi = audit (ai/lúc nào/quyết định).
+ * status: pending | approved | rejected | cancelled (varchar — không pg enum mới).
+ */
+export const changeoverRequests = pgTable("changeover_requests", {
+  id: serial("id").primaryKey(),
+  machineId: integer("machineId").notNull()
+    .references(() => machines.id, { onDelete: "restrict" }),
+  recipeId: integer("recipeId").notNull()
+    .references(() => machineRecipes.id, { onDelete: "restrict" }),
+  requestedBy: integer("requestedBy").notNull(),
+  requestNote: text("requestNote"),
+  status: varchar("status", { length: 16 }).default("pending").notNull(),
+  decidedBy: integer("decidedBy"),
+  decisionNote: text("decisionNote"),
+  decidedAt: timestamp("decidedAt"),
+  deploymentId: integer("deploymentId")
+    .references(() => recipeDeployments.id, { onDelete: "set null" }),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().notNull(),
+}, (table) => [
+  index("idx_changeover_requests_status").on(table.status),
+  index("idx_changeover_requests_machine").on(table.machineId),
+  index("idx_changeover_requests_requester").on(table.requestedBy),
+]);
+
+export type ChangeoverRequest = typeof changeoverRequests.$inferSelect;
+export type InsertChangeoverRequest = typeof changeoverRequests.$inferInsert;
+
+/**
  * Command Log — append-only record of every command the dispatcher handled,
  * across ALL branches (rejected / failed / simulated / [F4b: sent/acked]).
  * `actionId` ties back to the ai_pending_actions row that was confirmed (HITL).

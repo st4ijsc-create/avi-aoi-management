@@ -4,7 +4,9 @@
  * threads them as props (1:1 names). Identical JSX/handlers — no behavior change.
  */
 import type { Dispatch, SetStateAction } from "react";
+import { useState } from "react";
 import { useTranslation } from "react-i18next";
+import { useLocation } from "wouter";
 import { trpc } from "@/lib/trpc";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -15,10 +17,45 @@ import { DataTable } from "@/components/DataTable";
 import { EmptyState } from "@/components/patterns";
 import { Badge } from "@/components/ui/badge";
 import { ExcelImportExport } from "@/components/ExcelImportExport";
-import { Warehouse, Plus, Loader2, Pencil, Trash2, RotateCcw } from "lucide-react";
+import { usePermissions } from "@/_core/hooks/usePermissions";
+import { toastTrpcError } from "@/lib/trpcErrors";
+import { Warehouse, Plus, Loader2, Pencil, Trash2, RotateCcw, LayoutGrid } from "lucide-react";
 import type { Factory, Workshop } from "./entityTypes";
 
 type WorkshopForm = { factoryId: string; code: string; name: string; description: string };
+
+/**
+ * Lô 5 Mục 3 — logic THUẦN, tách khỏi async handler để test được không cần render/network.
+ * "/layout/:id" đòi route param THẬT (factory_layouts.id) — không đoán id giả (xem docblock
+ * `handleOpenLayout` bên dưới cho lý do). Hàm này chỉ quyết định: xưởng đã có layout thì lấy
+ * layout ĐẦU TIÊN (không suy đoán "layout đúng" nào khác); chưa có thì báo `null` để nơi gọi
+ * tạo mới rồi tự truyền id thật vào `buildWorkshopLayoutUrl`.
+ */
+export function pickExistingLayoutId(layouts: readonly { id: number }[] | undefined): number | null {
+  return layouts && layouts.length > 0 ? layouts[0].id : null;
+}
+
+/** Lô 5 Mục 3 — URL đích, MỘT chỗ dựng chuỗi (tránh viết tay `/layout/${x}?workshopId=${y}` rải rác). */
+export function buildWorkshopLayoutUrl(layoutId: number, workshopId: number): string {
+  return `/layout/${layoutId}?workshopId=${workshopId}`;
+}
+
+/**
+ * Vòng sửa review Lô 5 (Important) — logic THUẦN cho điều kiện hiển thị nút, tách ra để ghim
+ * ĐÚNG action bằng test (chống trôi ngược về `canEdit`). PHẢI khớp NGUYÊN VĂN vị từ `RouteGuard`
+ * dùng cho `/layout/:id` (`App.tsx:587` → `RouteGuard requirePermission="settings_factory"`, xét
+ * `canView` — RouteGuard.tsx dòng ~156-169: `isAdmin || role==='admin'`, rồi nhánh
+ * `requirePermission` mà KHÔNG `navHref` dùng `hasPermission(requirePermission, "canView")`).
+ * `canView`/`canEdit` là hai cột ĐỘC LẬP của bảng `permissions` — dùng `canEdit` ở đây từng tạo
+ * lại đúng lớp "một lối vào rồi TỪ CHỐI" mà Mục 2 vừa dẹp (canEdit=true/canView=false: thấy nút,
+ * bị RouteGuard chặn).
+ */
+export function canOpenWorkshopLayoutButton(
+  isAdmin: boolean,
+  hasPermission: (module: string, action: "canView") => boolean,
+): boolean {
+  return isAdmin || hasPermission("settings_factory", "canView");
+}
 
 interface WorkshopsTabProps {
   filteredWorkshops: Workshop[];
@@ -66,6 +103,43 @@ export function WorkshopsTab({
   restoreWorkshopMutation,
 }: WorkshopsTabProps) {
   const { t } = useTranslation();
+  const [, setLocation] = useLocation();
+  const utils = trpc.useUtils();
+  const { hasPermission } = usePermissions();
+  const [openingLayoutForWorkshopId, setOpeningLayoutForWorkshopId] = useState<number | null>(null);
+  const createLayoutForWorkshopMutation = trpc.layout.create.useMutation();
+  // Vòng sửa review Lô 5 (Important) — nút mở "/layout/:id" phải khớp CỔNG VÀO của route đó,
+  // KHÔNG phải canEdit (xem docblock `canOpenWorkshopLayoutButton` phía trên cho lý do đầy đủ).
+  const canOpenLayoutButton = canOpenWorkshopLayoutButton(isAdmin, hasPermission);
+
+  // Lô 5 Mục 3 — "/layout/:id" (server + client GIỮ RIÊNG gate settings_factory, xem
+  // App.tsx) sống mà trước Lô 5 KHÔNG có lối vào nào trong UI (đo: grep "/layout/" toàn
+  // client — 0 kết quả sinh href động tới route này). Nút "Bố cục xưởng" ở đây là lối
+  // vào hợp ngữ cảnh nhất: từ đúng hàng xưởng trong danh sách xưởng.
+  //
+  // "/layout/:id" đòi MỘT route param THẬT (factory_layouts.id) — không có cú pháp param
+  // tuỳ chọn ở App.tsx và Layout.tsx tự nó không dung thứ một id giả (getById ném
+  // NOT_FOUND, và hiệu ứng tự-chọn-layout-đầu-tiên bị chặn vì params.id đã có giá trị
+  // "có vẻ hợp lệ"). Vì vậy KHÔNG đoán id: tra layout CÓ SẴN của xưởng qua
+  // `layout.listByWorkshop` (utils.fetch — một lần, không phải hook), điều tới layout đầu
+  // tiên nếu có; nếu xưởng CHƯA có layout nào, tạo một layout mặc định (cùng
+  // `layout.create` mà nút "+" trong chính trang Layout.tsx dùng — không cơ chế mới) rồi
+  // điều tới id vừa tạo. `?workshopId=` kèm theo để trang Layout.tsx tự chọn đúng xưởng
+  // (dùng lại cơ chế `?workshopId=` đã có ở CorporateLayout.tsx/CorporateManagement.tsx).
+  const handleOpenLayout = async (workshop: Workshop) => {
+    setOpeningLayoutForWorkshopId(workshop.id);
+    try {
+      const layouts = await utils.layout.listByWorkshop.fetch({ workshopId: workshop.id });
+      const targetId = pickExistingLayoutId(layouts)
+        ?? (await createLayoutForWorkshopMutation.mutateAsync({ workshopId: workshop.id, name: workshop.name })).id;
+      setLocation(buildWorkshopLayoutUrl(targetId, workshop.id));
+    } catch (err) {
+      toastTrpcError(err);
+    } finally {
+      setOpeningLayoutForWorkshopId(null);
+    }
+  };
+
   return (
     <Card className="glass-card">
               <CardHeader>
@@ -76,7 +150,7 @@ export function WorkshopsTab({
                   </div>
                   <div className="flex items-center gap-2">
                   <ExcelImportExport
-                    entityType="phân xưởng"
+                    entityType={t("workshopsTab.phanXuong", "phân xưởng")}
                     templateData={[{ factoryCode: "F001", code: "W001", name: "Workshop 1", description: "", isActive: true }]}
                     templateFilename="workshops_template.xlsx"
                     onImport={async (data, replaceIfExists) => importWorkshopsMutation.mutateAsync({ data, replaceIfExists })}
@@ -173,8 +247,28 @@ export function WorkshopsTab({
                     { id: "name", header: t("settings.workshopName"), cell: (w) => <span className="font-medium text-foreground">{w.name}</span>, sortValue: (w) => w.name, filterValue: (w) => w.name },
                     { id: "code", header: t("settings.workshopCode"), width: "160px", cell: (w) => <span className="font-mono text-sm text-muted-foreground">{w.code}</span>, sortValue: (w) => w.code, filterValue: (w) => w.code },
                     { id: "factory", header: t("dashboard.factory"), cell: (w) => <span className="text-sm text-muted-foreground">{factories?.find(f => f.id === w.factoryId)?.name || t("common.na")}</span>, sortValue: (w) => factories?.find(f => f.id === w.factoryId)?.name || "", filterValue: (w) => factories?.find(f => f.id === w.factoryId)?.name || "" },
-                    { id: "actions", header: "", align: "right", width: "96px", cell: (w) => (
+                    { id: "actions", header: "", align: "right", width: "128px", cell: (w) => (
                       <div className="flex items-center justify-end gap-1">
+                        {/* Lô 5 Mục 3 — lối vào /layout/:id (i18n mồ côi nav.factoryLayout* tái
+                            dùng, KHÔNG tạo khoá mới). Điều kiện hiển thị = quyền của ĐÍCH: khớp
+                            ĐÚNG cổng vào route (RouteGuard requirePermission="settings_factory"
+                            kiểm canView — RouteGuard.tsx:38/168), KHÔNG dùng canEdit (review Lô 5
+                            Important — canView/canEdit độc lập, canEdit lẻ loi tạo lại đúng lớp
+                            "một lối vào rồi TỪ CHỐI" Mục 2 vừa dẹp). Mutations bên trong trang đã
+                            tự gate settings_factory riêng (layoutRouters.ts) — không cần canEdit
+                            ở lối vào. */}
+                        {canOpenLayoutButton && (
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            title={t("nav.factoryLayoutDesc")}
+                            aria-label={t("nav.factoryLayout")}
+                            disabled={openingLayoutForWorkshopId === w.id}
+                            onClick={() => handleOpenLayout(w)}
+                          >
+                            {openingLayoutForWorkshopId === w.id ? <Loader2 className="h-4 w-4 animate-spin" /> : <LayoutGrid className="h-4 w-4" />}
+                          </Button>
+                        )}
                         <Button variant="ghost" size="icon" onClick={() => handleEditWorkshop(w)}><Pencil className="h-4 w-4" /></Button>
                         <Button variant="ghost" size="icon" className="text-destructive hover:text-destructive" onClick={() => setWorkshopToDelete(w)}><Trash2 className="h-4 w-4" /></Button>
                       </div>

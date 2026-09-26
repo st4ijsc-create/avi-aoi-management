@@ -21,6 +21,8 @@
  * product between databases / sites. They are intentionally independent.
  */
 import { z } from "zod";
+import { appError } from "../_core/appError";
+import { DbUnavailableError } from "../_core/dbErrors";
 import { and, asc, desc, eq, isNull } from "drizzle-orm";
 import { getDb } from "../db/connection";
 import {
@@ -31,6 +33,11 @@ import {
   productPanelDefs,
   productPanelBoards,
 } from "../../drizzle/schema";
+// Task 7 Khối C (QĐ-3) vòng sửa 1 — 22 cột giới hạn+duyệt-ngưỡng của
+// POINT_COPY_COLS (18 field spec-gate + 4 field nghiệp vụ) suy từ MỘT nguồn
+// `shared/pointLimitSpec.ts`, thay cho khối chép tay reviewer grep độc lập bắt
+// được (ngoài vùng canh của `pointLimitSpecCensus.test.ts` §1/§2).
+import { APPROVAL_LIMIT_FIELDS } from "@shared/pointLimitSpec";
 
 export const PRODUCT_PACKAGE_FORMAT_VERSION = 1 as const;
 
@@ -42,22 +49,27 @@ const MODEL_COPY_COLS = [
   "imageWidth", "imageHeight", "imageDisplayMode", "coordinateMode", "imageHash",
 ] as const;
 
-const POINT_COPY_COLS = [
-  "code", "name", "description", "measurementType", "measurementTypeCode", "unit",
-  "lowerLimit", "upperLimit", "nominalValue",
+// Cột KHÔNG phải giới hạn (vật lý/hiển thị/liên kết) — vẫn khai tay, tách rõ
+// khỏi 22 cột giới hạn+duyệt-ngưỡng suy từ spec (xem `POINT_COPY_COLS` dưới).
+// ⚠ `heightNominal/areaNominal/volumeNominal/…Unit` KHÔNG nằm trong
+// `POINT_LIMIT_SPEC`/`APPROVAL_LIMIT_FIELDS` — chúng là danh nghĩa/đơn vị hiển
+// thị cho TỪNG NHÓM 3D, không phải field spec-gate chấm bằng hay field qua cửa
+// duyệt ngưỡng (xem cảnh báo "HAI DANH SÁCH" đầu `shared/pointLimitSpec.ts`).
+const POINT_NON_LIMIT_COLS = [
+  "code", "name", "description", "measurementType", "measurementTypeCode",
   "positionX", "positionY", "radius", "normalizedX", "normalizedY", "normalizedRadius",
   "referenceImageUrl", "referenceImageKey", "cropWidth", "cropHeight", "orderIndex",
   "machineId", "workstationId", "preferredInstrumentId", "imageHash",
   "shape", "geometry", "positionZ",
-  "heightMin", "heightMax", "heightNominal", "heightUnit",
-  "areaMin", "areaMax", "areaNominal", "areaUnit",
-  "volumeMin", "volumeMax", "volumeNominal", "volumeUnit",
-  "coplanarityMax", "warpageMax", "voidPctMax", "offsetXMax", "offsetYMax", "tiltMax",
-  "thicknessMin", "thicknessMax", "depthMapUrl", "pointCloudUrl",
-  "toleranceMode", "tolPlus", "tolMinus", "criteria", "extraFields",
+  "heightNominal", "heightUnit",
+  "areaNominal", "areaUnit",
+  "volumeNominal", "volumeUnit",
+  "depthMapUrl", "pointCloudUrl", "extraFields",
   "datumRefs", "materialCondition", "fitClass",
   "componentCode", "refDesignator", "isActive",
 ] as const;
+
+const POINT_COPY_COLS = [...POINT_NON_LIMIT_COLS, ...APPROVAL_LIMIT_FIELDS] as const;
 
 const FIDUCIAL_COPY_COLS = [
   "code", "name", "description", "type", "positionX", "positionY",
@@ -109,14 +121,14 @@ export type ProductPackage = z.infer<typeof productPackageSchema>;
  */
 export async function exportProductPackage(productModelId: number): Promise<ProductPackage> {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  if (!db) throw new DbUnavailableError();
 
   const [model] = await db
     .select()
     .from(productModels)
     .where(and(eq(productModels.id, productModelId), isNull(productModels.deletedAt)))
     .limit(1);
-  if (!model) throw new Error(`Product model ${productModelId} not found`);
+  if (!model) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "productModel" }, `Product model ${productModelId} not found`);
 
   const points = await db
     .select()
@@ -199,7 +211,7 @@ export async function importProductPackage(
   opts: { newCode: string; newName?: string; createdBy?: number },
 ): Promise<ImportPackageResult> {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  if (!db) throw new DbUnavailableError();
 
   const pkg = productPackageSchema.parse(raw);
   const warnings: string[] = [];

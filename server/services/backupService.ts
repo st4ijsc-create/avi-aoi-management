@@ -267,6 +267,8 @@ export async function createConfigBundle(opts: {
       const { replicateBackup } = await import("./backupReplicationService");
       offsite = await replicateBackup(filePath);
     } catch (err: any) {
+      // data-raw-ok: trạng thái nhân bản ngoài site, đi kèm kết quả sao lưu. Bề mặt QUẢN TRỊ —
+      // người bấm nút sao lưu là người có quyền sửa cấu hình lưu trữ.
       offsite = { skipped: false, error: err?.message ?? String(err) };
     }
   }
@@ -435,6 +437,7 @@ export async function createPgDump(opts: {
     const { replicateBackup } = await import("./backupReplicationService");
     offsite = await replicateBackup(gzFilePath);
   } catch (err: any) {
+    // data-raw-ok: như trên — trạng thái nhân bản ngoài site.
     offsite = { skipped: false, error: err?.message ?? String(err) };
   }
 
@@ -505,6 +508,7 @@ async function createCustomJsonBackup(opts: {
     const { replicateBackup } = await import("./backupReplicationService");
     offsite = await replicateBackup(filePath);
   } catch (err: any) {
+    // data-raw-ok: như trên — trạng thái nhân bản ngoài site.
     offsite = { skipped: false, error: err?.message ?? String(err) };
   }
 

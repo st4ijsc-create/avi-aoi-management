@@ -47,6 +47,8 @@
 import { createHash } from "node:crypto";
 import superjson from "superjson";
 import type { User } from "../../drizzle/schema";
+// ★★★ Pha 7 Task 7 — chủ DUY NHẤT của "cột nào của `users` được rời máy chủ".
+import { redactServerOnlyUserFields } from "../_core/publicUser";
 import { cacheService } from "./cacheService";
 
 const KEY_PREFIX = "auth:session:";
@@ -125,7 +127,13 @@ export async function setCachedAuthUser(sessionToken: string, user: User): Promi
   if (ttlMs <= 0) return;
   try {
     // Strip secrets before the value can reach the Redis tier.
-    const cacheable: User = { ...user, passwordHash: null, twoFactorSecret: null };
+    // ★★★ Pha 7 Task 7 — **THÔI GIỮ DANH SÁCH RIÊNG.** Dòng này từng là
+    // `{ ...user, passwordHash: null, twoFactorSecret: null }` — một **danh sách CẤM hai phần tử**,
+    // đúng **hôm nay** nhưng một cột bí mật **thứ ba** sẽ đi thẳng vào Redis mà không ai biết.
+    // Nay nó gọi lại chủ DUY NHẤT của bất biến (`_core/publicUser.ts`), nơi tập cột bị chặn được
+    // **suy ra** từ một phân loại được canh **hai chiều** với `getTableColumns(users)`.
+    // ⚠ Đây là lớp lỗi *"nhiều chủ cho một bất biến"* — đã đẻ **ba** Critical trong chuỗi pha này.
+    const cacheable: User = redactServerOnlyUserFields(user);
     const key = keyFor(sessionToken);
     await cacheService.setAsync(key, superjson.stringify(cacheable), ttlMs);
     indexKey(user, key);

@@ -1,0 +1,9 @@
+#42 xong  chunk=29 nguon=10 ms=64320 wall=64395
+{"mrr":0.8073839662447257,"soCau":111,"duongOng":0.3670886075949367,"quaNguong":0.8354430379746836,"soCauHong":0,"soCauNgoai":32,"soCauTrong":79,"trungNguon":0.9493670886075949,"tuChoiDung":0.59375,"dapAnNguCanh":0.8607594936708861,"duongOngBatKy":0.9620253164556962}
+  SAI T01 de=ok hang=null diem=undefined qua=false dapAn=false ong=false batKy=true top1=howto-ng-handling-sop.md:0.577
+  SAI T04 de=ok hang=2 diem=0.429 qua=false dapAn=true ong=false batKy=true top1=aoi-defect-types.md:0.459
+  SAI T05 de=ok hang=1 diem=0.470 qua=true dapAn=true ong=false batKy=true top1=aoi-thresholds.md:0.470
+  SAI T06 de=ok hang=1 diem=0.610 qua=true dapAn=true ong=false batKy=true top1=aoi-thresholds.md:0.610
+  SAI T09 de=ok hang=3 diem=0.596 qua=true dapAn=false ong=false batKy=true top1=aoi-troubleshooting.md:0.686
+  SAI T11 de=ok hang=1 diem=0.522 qua=true dapAn=true ong=false batKy=true top1=aoi-troubleshooting.md:0.522
+  SAI T12 de=ok hang=1 diem=0.457 qua=true dapAn=true 

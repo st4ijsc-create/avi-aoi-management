@@ -8,6 +8,7 @@ import { Progress } from "@/components/ui/progress";
 import { Badge } from "@/components/ui/badge";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { toast } from "sonner";
+import { mapTrpcError } from "@/lib/trpcErrors";
 import { Upload, FileSpreadsheet, CheckCircle, XCircle, AlertTriangle, Download, Loader2 } from "lucide-react";
 import * as XLSX from "xlsx";
 
@@ -94,7 +95,9 @@ export function BulkImportDialog({
       setIsImporting(false);
     },
     onError: (error) => {
-      toast.error(t('products.bulkImport.importError', { message: error.message }));
+      // Sprint 5 doc 71 F11 — khoá `products.bulkImport.importError` đã thêm placeholder
+      // {{message}} (task-8d ghi nợ, F11 dọn), tham số message giờ hiện đúng.
+      toast.error(t('products.bulkImport.importError', { message: mapTrpcError(error) }));
       setIsImporting(false);
     },
   });
@@ -282,7 +285,7 @@ export function BulkImportDialog({
       setParseErrors(errors);
       setParsedPoints(points);
     } catch (error: any) {
-      setParseErrors([t('products.bulkImport.readError', { message: error.message })]);
+      setParseErrors([t('products.bulkImport.readError', { message: mapTrpcError(error) })]);
       setParsedPoints([]);
     }
   };

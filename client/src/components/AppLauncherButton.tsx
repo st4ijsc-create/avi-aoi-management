@@ -30,7 +30,7 @@ export const AppLauncherButton = forwardRef<HTMLButtonElement, AppLauncherButton
       onClick={(e) => { onClick?.(e); onOpen?.(); }}
       aria-label={t("nav.app.openLauncher")}
       className={cn(
-        "flex h-9 items-center gap-2 rounded-lg border border-border bg-muted/40 px-2.5 text-sm transition-colors hover:bg-muted focus:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+        "flex h-10 items-center gap-2 rounded-lg border border-border bg-muted/40 px-2.5 text-sm transition-colors hover:bg-muted focus:outline-none focus-visible:ring-2 focus-visible:ring-ring",
         className,
       )}
       {...rest}

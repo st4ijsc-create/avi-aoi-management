@@ -34,7 +34,13 @@
  */
 
 import path from "node:path";
+// ★★★ Pha 2B Task 5 — vị từ "lỗi này có phải LỜI TỪ CHỐI không" (module LÁ, dùng được ngay
+// trong `catch` của một lượt `await import()` vừa hỏng). Xem `vram/vramRefusalSignal.ts`.
+import { isVramRefusal } from "./vram/vramRefusalSignal";
 import fs from "node:fs";
+// doc69 W1 "modelfix" — shared env→GGUF-basename resolver. The "llm" backend below documents that
+// it scores with the FAST model (Qwen3-4B); that intent is now PINNED rather than implicit.
+import { resolveLogicalModel } from "./ai/modelResolver";
 
 // ─── Public interface ─────────────────────────────────────────────────────────
 
@@ -83,6 +89,96 @@ function clip(text: string): string {
   return t.length > DOC_CHAR_CAP ? t.slice(0, DOC_CHAR_CAP) + "…" : t;
 }
 
+// ─── G0 phần C — ĐỒNG HỒ ──────────────────────────────────────────────────────
+//
+// ⚠ Trước bản này, cả file 759 dòng KHÔNG có một `Date.now()`/`performance.now()`
+// nào. Số duy nhất đang lưu hành về chi phí rerank là dòng chú thích ở
+// `getRankingContext()` bên dưới — *"CPU rerank of ~20 short docs is only tens of
+// ms"* — **không kèm bất kỳ phép đo nào**. Trong khi đó cấu hình đang chạy là
+// `RAG_RERANKER_MODE=gguf` + `RAG_RERANKER_GPU=false`, tức một cross-encoder
+// `bge-reranker-v2-m3-Q8_0` (635 MB, 25 lớp) chấm 20 tài liệu × 480 ký tự **trên
+// CPU**, NẰM TRÊN ĐƯỜNG PHỤC VỤ MỖI TRUY VẤN RAG. "Vài chục ms" là một GIẢ ĐỊNH,
+// không phải một kết quả.
+//
+// Ba phép đo tách bạch, vì chúng trả lời ba câu hỏi khác nhau:
+//   • `lastMs`        — TỔNG một lượt `rerank()` (thứ người dùng thật sự chờ);
+//   • `lastScoringMs` — riêng lượt chấm điểm của backend (rankAll / generateText);
+//   • `contextLoadMs` — MỘT LẦN duy nhất/tiến trình: nạp 635 MB + dựng ranking
+//     context. Gộp nó vào `lastMs` của lượt đầu tiên sẽ làm mọi trung bình sau đó
+//     nói dối theo hướng bi quan, nên nó được ghi RIÊNG.
+// `null` = CHƯA ĐO, không phải 0.
+export interface RerankTimings {
+  /** Số lượt `rerank()` đã chạy trong tiến trình này (kể cả lượt identity). */
+  runs: number;
+  /** Tổng ms của lượt gần nhất. null khi chưa có lượt nào. */
+  lastMs: number | null;
+  /** Riêng phần chấm điểm của backend ở lượt gần nhất. null với identity/lỗi. */
+  lastScoringMs: number | null;
+  /** Backend đã phục vụ lượt gần nhất. */
+  lastBackend: "gguf" | "llm" | "identity" | null;
+  /** Trung bình cộng `lastMs` trên toàn bộ `runs`. */
+  avgMs: number | null;
+  /** Lượt chậm nhất từ khi tiến trình khởi động. */
+  maxMs: number | null;
+  /**
+   * Thời gian nạp model + dựng ranking context (một lần/tiến trình, backend gguf).
+   * null = chưa từng nạp trong tiến trình này (hoặc đang dùng backend llm).
+   */
+  contextLoadMs: number | null;
+}
+
+let _runs = 0;
+let _lastMs: number | null = null;
+let _lastScoringMs: number | null = null;
+let _lastBackend: "gguf" | "llm" | "identity" | null = null;
+let _sumMs = 0;
+let _maxMs: number | null = null;
+let _ctxLoadMs: number | null = null;
+
+/** Đồng hồ đơn điệu — không nhảy khi đồng hồ hệ thống bị chỉnh giữa lượt đo. */
+function nowMs(): number {
+  return typeof performance !== "undefined" && typeof performance.now === "function"
+    ? performance.now()
+    : Date.now();
+}
+
+function recordRun(totalMs: number, backend: "gguf" | "llm" | "identity", scoringMs: number | null): void {
+  _runs += 1;
+  _lastMs = Math.round(totalMs);
+  _lastScoringMs = scoringMs == null ? null : Math.round(scoringMs);
+  _lastBackend = backend;
+  _sumMs += _lastMs;
+  _maxMs = _maxMs == null ? _lastMs : Math.max(_maxMs, _lastMs);
+}
+
+/**
+ * Phép đo mới nhất + tổng hợp. THUẦN ĐỌC — không nạp model, không chạy suy luận.
+ * Dùng cho endpoint sức khoẻ / bảng điều khiển; cũng được nhúng vào
+ * `getRerankerStatus()`.
+ */
+export function getRerankerTimings(): RerankTimings {
+  return {
+    runs: _runs,
+    lastMs: _lastMs,
+    lastScoringMs: _lastScoringMs,
+    lastBackend: _lastBackend,
+    avgMs: _runs > 0 ? Math.round(_sumMs / _runs) : null,
+    maxMs: _maxMs,
+    contextLoadMs: _ctxLoadMs,
+  };
+}
+
+/** Xoá bộ đếm (test / lượt chẩn đoán). KHÔNG đụng tới model đã nạp. */
+export function resetRerankerTimings(): void {
+  _runs = 0;
+  _lastMs = null;
+  _lastScoringMs = null;
+  _lastBackend = null;
+  _sumMs = 0;
+  _maxMs = null;
+  _ctxLoadMs = null;
+}
+
 function docOf(c: RerankCandidate): string {
   const title = c.title ? c.title.trim() + " — " : "";
   return clip(title + (c.text ?? ""));
@@ -107,14 +203,25 @@ export async function rerank<T extends RerankCandidate>(
       rerankScore: candidates.length > 0 ? 1 - i / Math.max(1, candidates.length) : 0,
     }));
 
-  if (!isRerankerEnabled()) return identity();
-  if (!Array.isArray(candidates) || candidates.length === 0) return identity();
+  // G0 phần C — đồng hồ mở NGAY ĐẦU lượt: mọi đường thoát bên dưới (kể cả identity
+  // vì cờ tắt) đều đi qua `finishIdentity`/`recordRun`, nên KHÔNG có lượt nào rời
+  // hàm này mà không để lại phép đo.
+  const t0 = nowMs();
+  let scoringMs: number | null = null;
+  const finishIdentity = (backend: "gguf" | "llm" | "identity" = "identity"): RerankResult<T>[] => {
+    recordRun(nowMs() - t0, backend, scoringMs);
+    return identity();
+  };
+
+  if (!isRerankerEnabled()) return finishIdentity();
+  if (!Array.isArray(candidates) || candidates.length === 0) return finishIdentity();
 
   const pool = candidates.slice(0, MAX_CANDIDATES);
 
   try {
     let scores: number[] | null = null;
     let activeBackend: "gguf" | "llm" | "identity" = "identity";
+    const tScore = nowMs();
     if (getMode() === "gguf") {
       scores = await rankWithGguf(query, pool);
       if (scores) {
@@ -129,8 +236,13 @@ export async function rerank<T extends RerankCandidate>(
       scores = await rankWithLlm(query, pool);
       if (scores) activeBackend = "llm";
     }
+    scoringMs = nowMs() - tScore;
     logActiveBackendOnce(activeBackend);
-    if (!scores || scores.length !== pool.length) return identity();
+    if (!scores || scores.length !== pool.length) {
+      const out = finishIdentity(activeBackend);
+      logRerankTiming(activeBackend, pool.length, topN);
+      return out;
+    }
 
     const blended = pool.map((candidate, i) => {
       const orig = typeof candidate.score === "number" ? clamp01(candidate.score) : 0;
@@ -139,11 +251,37 @@ export async function rerank<T extends RerankCandidate>(
       return { candidate, rerankScore };
     });
     blended.sort((a, b) => b.rerankScore - a.rerankScore);
-    return blended.slice(0, Math.max(1, topN));
+    const out = blended.slice(0, Math.max(1, topN));
+    recordRun(nowMs() - t0, activeBackend, scoringMs);
+    logRerankTiming(activeBackend, pool.length, topN);
+    return out;
   } catch (err) {
     console.warn("[aiReranker] rerank failed, returning original order:", err);
-    return identity();
+    const out = finishIdentity();
+    logRerankTiming("identity", pool.length, topN);
+    return out;
   }
+}
+
+/**
+ * Dòng log CÓ CẤU TRÚC của một lượt rerank. CHỈ SỐ ĐẾM VÀ MILI-GIÂY — không câu
+ * hỏi, không tiêu đề, không nội dung tài liệu, không điểm số của từng chunk. Câu
+ * truy vấn RAG có thể chứa dữ liệu vận hành/nhân sự do người dùng gõ vào, và log
+ * máy chủ ở dự án này không phải mặt phẳng bảo mật ngang với DB — nên mặt tiếp
+ * xúc duy nhất được phép ra đây là các CON SỐ.
+ *
+ * KHÔNG log khi reranker đang TẮT: lượt đó tốn ~0 ms và nằm trên đường của MỌI
+ * truy vấn RAG ⇒ log là nhiễu thuần tuý.
+ */
+function logRerankTiming(backend: "gguf" | "llm" | "identity", docs: number, topN: number): void {
+  if (!isRerankerEnabled()) return;
+  const t = getRerankerTimings();
+  console.log(
+    `[aiReranker] rerank backend=${backend} docs=${docs} topN=${topN} ms=${t.lastMs ?? -1}` +
+      (t.lastScoringMs != null ? ` scoringMs=${t.lastScoringMs}` : "") +
+      (t.contextLoadMs != null ? ` ctxLoadMs=${t.contextLoadMs}` : "") +
+      ` avgMs=${t.avgMs ?? -1} maxMs=${t.maxMs ?? -1} runs=${t.runs}`,
+  );
 }
 
 function clamp01(n: number): number {
@@ -187,7 +325,10 @@ async function rankWithLlm(query: string, pool: RerankCandidate[]): Promise<numb
     temperature: 0,
     topP: 1,
     jsonMode: true,
-  });
+    // FAST tier — this module's header explicitly specifies "the existing fast GGUF text model
+    // (Qwen3-4B)" for the llm backend. If GGUF_FAST_MODEL is unset this resolves to undefined and
+    // the engine falls back to GGUF_DEFAULT_MODEL (still a real text model, never the embedder).
+  }, resolveLogicalModel("fast"));
 
   const parsed = parseScoreArray(result.text, pool.length);
   return parsed;
@@ -243,6 +384,36 @@ export function parseScoreArray(text: string | undefined | null, n: number): num
 
 let _rankLlama: unknown = null;
 let _rankModel: unknown = null;
+/**
+ * Pha 1 Task 5 — giấy phép VRAM của HỘ TIÊU THỤ THỨ SÁU.
+ *
+ * ⚠ Đây là hộ tiêu thụ mà không công cụ nào của ba đợt trước nhìn thấy: `getRankingContext()`
+ * bên dưới gọi THẲNG `llama.loadModel` (dòng ~361) — KHÔNG qua `loadGgufModel()` của
+ * aiGgufEngine — nên nó vắng mặt khỏi `loadedModels`, khỏi `evictLRU()` và khỏi MỌI phép cộng
+ * VRAM đã làm. Hôm nay nó chiếm 0 MiB CHỈ VÌ `RAG_RERANKER_GPU=false` (mặc định); đổi đúng một
+ * cờ môi trường là có ngay một model nữa trên card mà không bảng nào cộng vào.
+ */
+let _rankVramTicket: import("./vram/vramWiring").VramTicket | null = null;
+/**
+ * ★ I-1 (Pha 1.5, vá sau review TOÀN NHÁNH) — giấy phép của BACKEND CUDA **THỨ HAI** của tiến trình.
+ *
+ * Task 2 đã đưa backend CUDA (~430 MiB — khoản LỚN NHẤT của "sàn cấu trúc" mà Pha 1 đo được) vào
+ * sổ, nhưng chỉ khép **MỘT** thể hiện: `aiGgufEngine.getLlama()`. Hàm bên dưới gọi `getLlama()`
+ * của node-llama-cpp **THẲNG** và mở giấy phép mãi SAU đó ⇒ ~430 MiB của backend nằm gọn trong
+ * `beforeUsed` của giấy phép model và **KHÔNG BAO GIỜ vào sổ**. Chính comment cạnh lượt gọi đó tự
+ * khai: *"Runs on the reranker's own backend instance"*.
+ *
+ * ⚠ Hôm nay vô hại vì `.env` đang `RAG_RERANKER_GPU=false` ⇒ `gpu:false` ⇒ backend không chiếm
+ * VRAM. **Một lần lật cờ** là Pha 2 tính `headroom` thiếu ~430 MiB — đúng quy luật Ư0 đã tự rút
+ * ("Task 2 chỉ khép MỘT thể hiện") và đúng lớp mù đã sinh ra hộ tiêu thụ thứ sáu/thứ bảy.
+ *
+ * ⚠ GIỮ QUA `disposeReranker()`, CỐ Ý: hàm đó dispose ranking-context và model, nhưng KHÔNG hề
+ * dispose thể hiện `Llama` — backend vẫn sống trong tiến trình. Trả giấy phép ở đó là nói dối sổ.
+ * Biến này còn là KHOÁ chống cộng trùng: `getLlama()` của node-llama-cpp cache theo tham số, nên
+ * một lượt gọi thứ hai sau `disposeReranker()` sẽ KHÔNG cấp phát lại — mở giấy phép thứ hai ở đó
+ * là ghi CÙNG MỘT KHỐI BYTE hai lần, đúng lỗi C-1 mà Task 8 vừa vá ở chỗ khác.
+ */
+let _rankBackendTicket: import("./vram/vramWiring").VramTicket | null = null;
 let _rankCtx: { rankAll: (q: string, docs: string[]) => Promise<number[]> } | null = null;
 let _rankCtxFailed = false;
 // One-time "which backend is active" log guard, so we emit exactly one clear line
@@ -303,6 +474,12 @@ async function getRankingContext(): Promise<typeof _rankCtx> {
   if (_rankCtx) return _rankCtx;
   if (_rankCtxFailed) return null;
 
+  // G0 phần C — đồng hồ của lượt nạp MỘT LẦN (635 MB, 25 lớp, CPU khi
+  // RAG_RERANKER_GPU=false). Ghi RIÊNG khỏi `lastMs` của lượt rerank: nếu gộp,
+  // lượt truy vấn RAG ĐẦU TIÊN của tiến trình sẽ mang toàn bộ chi phí nạp model
+  // và mọi trung bình về sau nói dối theo hướng bi quan.
+  const tLoad = nowMs();
+
   const modelPath = resolveRerankerModelPath();
   if (!modelPath) {
     // Configured filename didn't resolve (or GGUF_RERANKER_MODEL is unset).
@@ -327,16 +504,99 @@ async function getRankingContext(): Promise<typeof _rankCtx> {
     return null;
   }
 
+  // ⚠ M-2 (review vòng 1): giấy phép của CHÍNH lượt gọi này, khai báo NGOÀI `try` để nhánh
+  // `catch` ở cuối hàm trả được chỗ. Bản trước commit qua biến module `_rankVramTicket`, nên khi
+  // hai lượt nạp chạy song song (không có khoá in-flight — hành vi CÓ SẴN), lượt ĐẦU commit
+  // nhầm lease của lượt SAU.
+  let localTicket: import("./vram/vramWiring").VramTicket | null = null;
+  // ★ I-1 — giấy phép của backend CUDA riêng của reranker. Khai NGOÀI `try` cùng lý do với
+  // `localTicket`: nhánh `catch` ở cuối hàm phải trả được chỗ khi `getLlama()` ném giữa chừng.
+  let backendTicket: import("./vram/vramWiring").VramTicket | null = null;
+
   try {
     // doc 11 fix — the reranker is a tiny cross-encoder (~0.6B). By DEFAULT we load
     // it on CPU so it does NOT compete for VRAM with the big chat/RCA models
     // (Qwen3-30B ~17GB). Loading it on the GPU previously caused the 30B load to
-    // OOM on a 32GB card. CPU rerank of ~20 short docs is only tens of ms. Opt back
-    // onto the GPU with RAG_RERANKER_GPU=true (only if VRAM headroom allows).
+    // OOM on a 32GB card. Opt back onto the GPU with RAG_RERANKER_GPU=true (only
+    // if VRAM headroom allows).
+    //
+    // ★★★ G0 phần C — ĐÍNH CHÍNH MỘT CON SỐ ĐÃ LƯU HÀNH KHÔNG KÈM PHÉP ĐO.
+    // Dòng này trước đây khẳng định *"CPU rerank of ~20 short docs is only tens of
+    // ms"*. Đó là một GIẢ ĐỊNH: tới trước bản này cả file KHÔNG có một `Date.now()`
+    // nào, nên chưa ai từng đo. Nay đã đo, ĐÚNG cấu hình `.env` đang chạy
+    // (mode=gguf, RAG_RERANKER_GPU=false, bge-reranker-v2-m3-Q8_0 635 MB/25 lớp,
+    // 20 tài liệu × 480 ký tự), hai lượt độc lập / 10 mẫu trên máy dev này:
+    //     • dựng ranking context (một lần/tiến trình): 9.882 ms và 17.399 ms
+    //     • MỖI lượt rerank: 87.744 · 97.683 · 102.249 · 139.716 · 151.482 ·
+    //       154.554 · 192.452 · 196.268 · 201.071 · 257.003 ms
+    // Tức **87–257 GIÂY mỗi lượt**, không phải "vài chục ms" — lệch ~3 bậc độ lớn,
+    // và nó nằm trên đường phục vụ MỌI truy vấn RAG (aiLocalKnowledgeService:~1825).
+    // ⚠ Máy đo KHÔNG rỗi (app `node dist/index.js` ~6 GB + playwright đang chạy), nên
+    // đây là số của điều kiện thực tế trên máy đó, chưa phải số của một máy sạch —
+    // nhưng ngay cả cận dưới 87 s cũng đã bác bỏ dứt khoát câu "tens of ms".
+    // ⇒ Số đo trực tiếp của mỗi lượt nay có sẵn qua `getRerankerTimings()` /
+    //   `getRerankerStatus().timings`, đừng quay lại ước lượng bằng trực giác.
     const useGpu = String(process.env.RAG_RERANKER_GPU ?? "false").toLowerCase() === "true";
     const nlc = (await import("node-llama-cpp")) as any;
     const { getLlama, LlamaLogLevel } = nlc;
     const L = LlamaLogLevel ?? {};
+    // ★ I-1 — MỞ giấy phép NGAY TRƯỚC lượt gọi `getLlama()` thật (và đóng NGAY SAU, dưới đây):
+    // đó là cách DUY NHẤT để delta đo được là của backend chứ không phải của trọng số model nạp
+    // sau nó. CHỈ QUAN SÁT — thời điểm/tham số lượt gọi `getLlama()` KHÔNG ĐỔI.
+    // ⚠ Chỉ mở khi CHƯA có giấy phép backend (xem docstring `_rankBackendTicket`): `getLlama()`
+    // cache theo tham số nên lượt gọi thứ hai không cấp phát lại, mở thêm là cộng trùng.
+    if (_rankBackendTicket === null) {
+      try {
+        const { beginVramAllocation, CUDA_BACKEND_FALLBACK_BYTES } = await import("./vram/vramWiring");
+        const { xinVramCoHoan, vramRequestDeferBudgetMs } = await import("./vram/vramDefer");
+        /**
+         * ★★★ Pha 3 Task 5 (B) — HỘ `background` TRÊN **ĐƯỜNG PHỤC VỤ YÊU CẦU**.
+         *
+         * ⚠⚠ NGÂN SÁCH MẶC ĐỊNH LÀ **0**, VÀ ĐÓ LÀ CÂU TRẢ LỜI ĐÚNG CHO ĐÚNG HỘ NÀY, KHÔNG PHẢI
+         * MỘT LƯỢT BỎ SÓT: có một request RAG đang treo trên lời gọi này. Ngủ 15 phút ở đây là
+         * **CHẶN** — đúng thứ "hoãn-không-chặn" tồn tại để cấm. Hộ này **vốn đã không chặn** theo
+         * cách khác: `rerank()` bắt mọi lỗi và trả về **thứ tự cosine gốc** (suy giảm tại chỗ,
+         * người dùng vẫn có câu trả lời). Thứ nó THIẾU là **VẾT** — trước Task 5, một lượt từ chối
+         * chỉ để lại đúng một `console.warn` và không ai truy được bằng SQL.
+         * ⇒ Đi qua `xinVramCoHoan()` với ngân sách 0: **không một mili giây chờ**, nhưng có
+         * `defer_exceeded` trong `vram_events` + một ô trạng thái ở mặt sức khoẻ.
+         * Người vận hành muốn nó ĐỢI: đặt `VRAM_DEFER_REQUEST_BUDGET_MS`.
+         */
+        backendTicket = await xinVramCoHoan({
+          owner: "cuda-backend:reranker",
+          leaseKind: "gguf-backend",
+          priority: "background",
+          budgetMs: vramRequestDeferBudgetMs(),
+          xin: () =>
+            beginVramAllocation({
+          owner: "cuda-backend:reranker",
+          kind: "gguf-backend",
+          /**
+           * ★★★ Pha 2A Task 4 (T5-15) — giấy phép này CỐ Ý sống qua `disposeReranker()` (thể hiện
+           * `Llama` vẫn sống) ⇒ nó KHÔNG có đường release nào ⇒ một lượt đo hỏng ghim
+           * `actualBytes = null` VĨNH VIỄN và khoá lá chắn nền tới lúc khởi động lại tiến trình.
+           *
+           * ⚠ SỐ DỰ PHÒNG PHẢI THEO ĐÚNG THAM SỐ `gpu` TRUYỀN CHO `getLlama()` NGAY DƯỚI:
+           * `RAG_RERANKER_GPU=false` (MẶC ĐỊNH của `.env` hôm nay) ⇒ `gpu:false` ⇒ backend này
+           * chiếm **0 byte**. Dùng 431,6 MiB ở cấu hình đó là bơm một khoản MA bằng 84 % ngân sách
+           * ngưỡng 512 MiB vào sổ — đúng lý do `fallbackBytes` là opt-in theo ĐIỂM GỌI chứ không
+           * theo `kind`. `0` vẫn gỡ được chặn nền, nên cả hai cấu hình đều thoát T5-15.
+           */
+          fallbackBytes: useGpu && process.env.GGUF_GPU !== "false" ? CUDA_BACKEND_FALLBACK_BYTES : 0,
+          // `background` (KHÁC `production` của backend aiGgufEngine): backend này chỉ phục vụ
+          // rerank — tiện ích của RAG — nên nó phải nhường chỗ trước AOI và chat/RCA.
+          priority: "background",
+            }),
+        });
+      } catch (err) {
+        // ★★★ Pha 2B Task 5 — TỪ CHỐI ≠ TELEMETRY HỎNG: nuốt ở đây là TẮT cưỡng chế tại điểm gọi
+        // này. Hộ `background` bị từ chối là ca THƯỜNG GẶP NHẤT của cả pha (§5.2: nền nhường
+        // trước tiên) — nếu nó tự nuốt lời từ chối rồi nạp tiếp thì bậc thang ưu tiên vô nghĩa.
+        if (isVramRefusal(err)) throw err;
+        /* telemetry KHÔNG được làm hỏng đường nạp reranker */
+        backendTicket = null;
+      }
+    }
     const llama = (await getLlama({
       gpu: useGpu ? (process.env.GGUF_GPU === "false" ? false : "auto") : false,
       // Quiet the benign llama.cpp ranking-context init spam ("embeddings required
@@ -350,20 +610,197 @@ async function getRankingContext(): Promise<typeof _rankCtx> {
         else if (level === L.warn) console.warn(msg);
         // drop info/log/debug
       },
-    })) as { loadModel: (o: { modelPath: string; gpuLayers?: number }) => Promise<unknown> };
+    // ⚠ Pha 2B Task 3 (I-3) — `gpuLayers` của node-llama-cpp 3.x là `"auto" | "max" | number | {…}`,
+    // KHÔNG phải `number`. Chữ ký hẹp cũ ở đây chính là thứ làm `-1` trông như lựa chọn hợp lệ duy
+    // nhất để nói "tất cả các lớp" — trong khi `-1` nghĩa là 0 lớp. Nới cho khớp thư viện thật.
+    })) as { loadModel: (o: { modelPath: string; gpuLayers?: "auto" | "max" | number }) => Promise<unknown> };
+    // ★ I-1 — ĐÓNG cửa sổ đo của backend NGAY, TRƯỚC khi mở cửa sổ của model bên dưới. Giữ nó mở
+    // qua `loadModel()` sẽ làm HAI cửa sổ CHỒNG nhau và Task 8 (C-1) gắn `measureFailed` cho CẢ
+    // HAI — bản vá này tự tay làm mù đúng phép đo nó vừa thêm. `wiring.rerankerBackend.test.ts`
+    // ca 2 canh chính xác điều đó.
+    if (backendTicket) {
+      // ★★ N-1 (review cổng cuối) — TRẢ GIẤY PHÉP CŨ TRƯỚC KHI GHI ĐÈ CON TRỎ. Đúng khuôn mà
+      // đường model ngay dưới đã dùng từ M-2 vòng 1 (`_rankVramTicket?.release()`).
+      // ⚠ BẮT BUỘC vì `getRankingContext()` KHÔNG có khoá in-flight: hai lượt `rerank()` song song
+      // đều thấy `_rankBackendTicket === null` ở lượt kiểm phía trên, ĐỀU mở giấy phép, và lượt sau
+      // đè con trỏ ⇒ lượt đầu treo VĨNH VIỄN (`disposeReranker()` CỐ Ý không đụng giấy phép này).
+      // Hậu quả 1: `getLlama()` cache theo tham số nên lượt hai KHÔNG cấp phát lại ⇒ lease thừa là
+      //   một lease MA, cộng trùng +430 MiB = 84 % ngân sách ngưỡng 512 MiB.
+      // Hậu quả 2 (KHÔNG phụ thuộc cờ GPU, nặng hơn): hai cửa sổ đo chồng nhau ⇒ Task 8 gắn
+      //   `measureFailed` cho CẢ HAI ⇒ `actualBytes === null` vĩnh viễn trên giấy phép KHÔNG có
+      //   đường release ⇒ lá chắn HOÃN (T5-1) chặn nền VĨNH VIỄN, không tự lành kể cả sau
+      //   unload/evict. Đó là ngoại lệ DUY NHẤT của lời hứa "≤ 1 nhịp" ở báo cáo §11.4 — và dòng
+      //   release dưới đây là thứ đóng nó lại.
+      if (_rankBackendTicket && _rankBackendTicket !== backendTicket) {
+        try {
+          _rankBackendTicket.release();
+        } catch {
+          /* telemetry KHÔNG được làm hỏng đường nạp reranker */
+        }
+      }
+      _rankBackendTicket = backendTicket;
+      try {
+        await backendTicket.commitMeasured();
+      } catch {
+        /* telemetry KHÔNG được làm hỏng đường nạp reranker */
+      }
+    }
     _rankLlama = llama;
-    const model = (await llama.loadModel({ modelPath, gpuLayers: useGpu ? -1 : 0 })) as {
+    // Pha 1 Task 5 — KHAI BÁO hộ tiêu thụ thứ sáu vào sổ cái. `background`: rerank là tiện ích
+    // của RAG, phải nhường chỗ cho AOI (`production`) và cho chat/RCA (`interactive`).
+    // Telemetry hỏng ⇒ giấy phép rỗng; lượt nạp reranker chạy y nguyên như trước.
+    try {
+      const { beginVramAllocation } = await import("./vram/vramWiring");
+      const { xinVramCoHoan, vramRequestDeferBudgetMs } = await import("./vram/vramDefer");
+      // ★ Pha 3 Task 5 (B) — cùng lý lẽ "đường PHỤC VỤ YÊU CẦU" với lời gọi backend ở trên:
+      // ngân sách mặc định 0 (không chặn request), nhưng lời từ chối nay để lại VẾT truy được.
+      localTicket = await xinVramCoHoan({
+        owner: `reranker:${modelPath}`,
+        leaseKind: "gguf-model",
+        priority: "background",
+        budgetMs: vramRequestDeferBudgetMs(),
+        xin: () =>
+          beginVramAllocation({
+            owner: `reranker:${modelPath}`,
+            kind: "gguf-model",
+            priority: "background",
+            filePath: modelPath,
+          }),
+      });
+      // Trả giấy phép cũ trước khi ghi đè, không để nó treo trong sổ.
+      _rankVramTicket?.release();
+      _rankVramTicket = localTicket;
+    } catch (err) {
+      // ★★★ Pha 2B Task 5 — TỪ CHỐI ≠ TELEMETRY HỎNG (xem lời gọi backend ở trên).
+      if (isVramRefusal(err)) throw err;
+      /* telemetry KHÔNG được làm hỏng đường nạp reranker */
+    }
+    /**
+     * ★★ Pha 2B Task 3, I-3 (review vòng 1) — `-1` GHIM CỨNG Ở ĐÂY LÀ MỘT SUY BIẾN IM LẶNG THẬT.
+     *
+     * `node-llama-cpp` 3.x (`gguf/insights/utils/resolveModelGpuLayersOption.js:23`) tính
+     * `Math.max(0, Math.min(totalLayers, gpuLayers))` ⇒ **mọi số âm nghĩa là 0 LỚP TRÊN GPU**, tức
+     * suy luận chạy CPU, chậm gấp bội, **không một dòng cảnh báo**. `-1` = "tất cả các lớp" là quy
+     * ước của llama.cpp **CLI**, KHÔNG phải của thư viện này.
+     *
+     * **Đo trên phần cứng thật, đúng file model này** (`bge-reranker-v2-m3-Q8_0.gguf`, reviewer
+     * 2026-08-04): `gpuLayers: -1` ⇒ `model.gpuLayers === 0` trong khi `totalLayers === 25`.
+     *
+     * Hôm nay `.env` có `RAG_RERANKER_GPU=false` nên nhánh này truyền `0` và vô hại — nhưng
+     * `vramAllocationSites.ts` đã ghi *"Mở khoá bằng RAG_RERANKER_GPU=true"*, và bật đúng một cờ
+     * đó là có ngay một hộ tiêu thụ chạy CPU trong im lặng.
+     *
+     * ⚠ Dùng `"auto"` chứ KHÔNG phải `"max"`: reranker ở mức `background` (nó phải nhường chỗ cho
+     * AOI/chat), nên "nạp nhiều lớp nhất còn vừa" là đúng ngữ nghĩa của nó, còn `"max"` sẽ NÉM khi
+     * không đủ chỗ và làm hỏng cả lượt rerank thay vì chạy chậm hơn.
+     * ⚠ Điểm gọi này KHÔNG đi qua `loadWithVramOutcomes()` (nó không phải lượt nạp model sinh chữ),
+     * nên `chuanHoaSoLop()` không với tới — hằng số phải đúng NGAY TẠI CHỖ.
+     */
+    const model = (await llama.loadModel({ modelPath, gpuLayers: useGpu ? "auto" : 0 })) as {
       createRankingContext: (o?: { contextSize?: "auto" | number }) => Promise<{
         rankAll: (q: string, docs: string[]) => Promise<number[]>;
       }>;
     };
     _rankModel = model;
+    /**
+     * ★★ N-4 (re-review) — LÁ CHẮN THỨ HAI, VÀ NÓ LÀ CÁI DIỆT ĐƯỢC LỚP LỖI.
+     *
+     * Đổi `-1` → `"auto"` ở trên mới hạ suy biến im lặng từ **"luôn luôn"** xuống **"mỗi khi thiết
+     * bị đầy"**: `"auto"` **KHÔNG BAO GIỜ NÉM** (`resolveModelGpuLayersOption` nhánh chuỗi kết bằng
+     * `?? 0`), nên máy chật cho ra một lượt nạp "thành công" chạy CPU thuần. Chỉ ĐỌC LẠI
+     * `model.gpuLayers` mới bắt được — đúng lá chắn `zero-gpu-layers-on-success` mà lượt nạp model
+     * sinh chữ đã có. KHÔNG BAO GIỜ ném, và im lặng ở đường ĐÚNG (số lớp > 0).
+     */
+    if (useGpu) {
+      try {
+        const { noteGpuLayersResolved } = await import("./vram/vramLoadOutcome");
+        noteGpuLayersResolved({
+          owner: `reranker:${modelPath}`,
+          kind: "gguf-model",
+          priority: "background",
+          site: "aiReranker.loadModel",
+          requestedGpuLayers: "auto",
+          resolvedGpuLayers: (model as unknown as { gpuLayers?: unknown }).gpuLayers,
+        });
+      } catch {
+        /* telemetry KHÔNG được làm hỏng đường nạp reranker (chính sách của file này) */
+      }
+    }
     _rankCtx = await model.createRankingContext({ contextSize: "auto" });
+    // Số THẬT sau khi CẢ trọng số LẪN ranking context đã cấp phát. Chạy CPU (mặc định) thì
+    // delta đúng bằng 0 — và 0 được ghi làm số liệu thật, nên sổ KHÔNG cộng nhầm cả trăm MiB
+    // theo kích thước file cho một model không hề ở trên card.
+    await localTicket?.commitMeasured();
+    // G0 phần C — SỐ THẬT của lượt nạp, thay cho câu "chỉ vài chục ms" không kèm
+    // phép đo ở chú thích `useGpu` phía trên.
+    _ctxLoadMs = Math.round(nowMs() - tLoad);
     console.log(
-      `[aiReranker] mode=gguf model=${path.basename(modelPath, ".gguf")} device=${useGpu ? "gpu" : "cpu"} (ranking context ready)`,
+      `[aiReranker] mode=gguf model=${path.basename(modelPath, ".gguf")} device=${useGpu ? "gpu" : "cpu"} ` +
+        `(ranking context ready in ${_ctxLoadMs}ms)`,
     );
     return _rankCtx;
   } catch (err) {
+    /**
+     * ★★★ Pha 2B Task 5, review vòng 1 (E) — CỬA MỘT CHIỀU: LỜI TỪ CHỐI PHẢI ĐI TIẾP.
+     *
+     * `catch` này bao **cả hai** điểm `beginVramAllocation()` bên trên, và nhánh dưới đặt
+     * `_rankCtxFailed = true` — một cửa **KHÔNG BAO GIỜ mở lại** trong đời tiến trình. Nuốt một
+     * lời từ chối ở đây nghĩa là **một lần thiếu VRAM TẠM THỜI = MẤT reranker GGUF VĨNH VIỄN**,
+     * kèm chẩn đoán sai *"model not a reranker?"*. Một lượt xin `background` bị từ chối là kết cục
+     * BÌNH THƯỜNG của §5.2 — nó phải trả lại chỗ rồi ném tiếp, để lượt sau còn thử lại được.
+     *
+     * ⚠ Vẫn trả giấy phép TRƯỚC khi ném (khối `try` ngay dưới), nếu không sổ giữ chỗ cho một
+     * thứ không tồn tại.
+     */
+    // Pha 1 Task 5 — nạp/tạo ranking context hỏng ⇒ TRẢ chỗ ngay, không để giấy phép treo.
+    //
+    // ⚠ NEW-6 (review vòng 2): CHỈ trả giấy phép của CHÍNH lượt này. Bản trước còn thu hồi cả
+    // `_rankVramTicket` khi nó khác `localTicket` — nghĩa là một lượt nạp HỎNG đi cướp giấy
+    // phép của một lượt nạp THÀNH CÔNG chạy song song (getRankingContext() không có khoá
+    // in-flight — hành vi CÓ SẴN), làm model đang sống biến mất khỏi sổ.
+    try {
+      localTicket?.release();
+    } catch {
+      /* telemetry KHÔNG được làm hỏng đường degrade sang backend llm */
+    }
+    // ★ I-1 — giấy phép backend: TRẢ chỉ khi `getLlama()` ĐÃ NÉM (khi đó `_rankBackendTicket` chưa
+    // được gán, tức backend KHÔNG hình thành thật). Nếu backend đã sống mà `loadModel()`/
+    // `createRankingContext()` mới ném thì KHÔNG trả — backend vẫn đang giữ VRAM, trả là nói dối sổ
+    // và mở lại đúng lỗ hổng "hộ tiêu thụ vô hình" mà bản vá này vừa bịt.
+    if (backendTicket && _rankBackendTicket !== backendTicket) {
+      try {
+        backendTicket.release();
+      } catch {
+        /* telemetry KHÔNG được làm hỏng đường degrade sang backend llm */
+      }
+    }
+    // Chỉ xoá con trỏ chung nếu nó ĐANG trỏ vào giấy phép vừa trả. Lượt song song thành công
+    // giữ nguyên giấy phép của nó.
+    if (_rankVramTicket === localTicket) _rankVramTicket = null;
+    /**
+     * ★★★ (E) — CỬA MỘT CHIỀU KHÔNG ĐƯỢC ĐÓNG VÌ MỘT LỜI TỪ CHỐI.
+     *
+     * `_rankCtxFailed = true` bên dưới là VĨNH VIỄN (`:343` thoát sớm ở mọi lượt sau). Đóng nó vì
+     * một lượt xin `background` bị từ chối — kết cục BÌNH THƯỜNG và TẠM THỜI của §5.2 — là mất
+     * reranker GGUF tới lúc khởi động lại, kèm một chẩn đoán SAI hoàn toàn (*"model not a
+     * reranker?"*). Nay: KHÔNG đóng cửa, nói ĐÚNG nguyên nhân, và lượt sau thử lại.
+     *
+     * ⚠⚠ VÌ SAO **KHÔNG NÉM TIẾP** ở đây (khác 11 điểm gọi kia — một sai lệch CÓ CHỦ Ý, khai
+     * thẳng để review bác được nếu thấy sai): ném ở đây KHÔNG chặn thêm được lượt cấp phát nào —
+     * giấy phép đã trả ở ngay trên, và không byte nào được cấp. Cái nó làm là **giết luôn nấc lùi
+     * đã có sẵn**: `rankWithGguf()` trả `null` ⇒ `rerank()` chuyển sang **reranker LLM** (`:131`);
+     * một cú ném đi thẳng vào `catch` của `rerank()` và rơi về `identity`, tức chất lượng xếp hạng
+     * TỆ HƠN cho cùng một lượt truy vấn. "Từ chối" ở đây được **XỬ LÝ** (hạ cấp có tiếng), không
+     * phải bị **NUỐT** (chạy tiếp như chưa có gì).
+     */
+    if (isVramRefusal(err)) {
+      console.warn(
+        `[aiReranker] cổng SỔ TỪ CHỐI giấy phép VRAM cho reranker GGUF (mức background — §5.2 ` +
+          `nhường trước tiên) ⇒ lượt này hạ xuống reranker LLM. KHÔNG đóng cửa vĩnh viễn: lượt sau ` +
+          `sẽ xin lại. ${(err as Error)?.message ?? String(err)}`,
+      );
+      return null;
+    }
     // Most common cause: the model isn't a reranker (no rank head) → llama.cpp
     // throws on createRankingContext. Mark failed so we don't retry per-query.
     console.warn(
@@ -381,8 +818,16 @@ async function rankWithGguf(query: string, pool: RerankCandidate[]): Promise<num
   if (!ctx) return null;
   try {
     const docs = pool.map((c) => docOf(c));
+    // G0 phần C — đo RIÊNG lượt `rankAll`: đây là phép nhân cross-encoder thật
+    // (25 lớp × N tài liệu) và là thứ mà "chỉ vài chục ms" nói về. Log ở mức
+    // debug-thấp qua bộ đếm chung; dòng tổng kết do `logRerankTiming` phát.
+    const tRank = nowMs();
     const scores = await ctx.rankAll(query.slice(0, 1000), docs);
-    if (!Array.isArray(scores) || scores.length !== pool.length) return null;
+    const rankMs = Math.round(nowMs() - tRank);
+    if (!Array.isArray(scores) || scores.length !== pool.length) {
+      console.warn(`[aiReranker] gguf rankAll trả sai số lượng điểm (docs=${docs.length}) sau ${rankMs}ms — hạ cấp`);
+      return null;
+    }
     return scores.map((s) => clamp01(Number(s)));
   } catch (err) {
     console.warn("[aiReranker] GGUF rankAll failed, falling back:", err);
@@ -429,6 +874,8 @@ export function getRerankerStatus(): {
   modelConfigured: boolean;
   modelResolved: boolean;
   activeBackend: "gguf" | "llm" | "identity";
+  /** G0 phần C — phép đo thật của các lượt đã chạy (null = CHƯA ĐO, không phải 0). */
+  timings: RerankTimings;
 } {
   const enabled = isRerankerEnabled();
   const mode = getMode();
@@ -446,7 +893,7 @@ export function getRerankerStatus(): {
   } else {
     activeBackend = "llm";
   }
-  return { enabled, mode, modelConfigured, modelResolved, activeBackend };
+  return { enabled, mode, modelConfigured, modelResolved, activeBackend, timings: getRerankerTimings() };
 }
 
 /** Free the native ranking context/model (best-effort; not normally needed). */
@@ -466,9 +913,19 @@ export async function disposeReranker(): Promise<void> {
   } catch {
     /* best-effort */
   }
+  // Pha 1 Task 5 — trả giấy phép của hộ tiêu thụ thứ sáu SAU khi đã dispose thật.
+  try {
+    _rankVramTicket?.release();
+  } catch {
+    /* best-effort — telemetry không được làm hỏng lượt dispose */
+  }
+  _rankVramTicket = null;
   _rankCtx = null;
   _rankModel = null;
   _rankLlama = null;
   _rankCtxFailed = false;
   _backendLogged = false;
+  // Model đã bị dispose ⇒ số ms nạp cũ không còn mô tả trạng thái hiện tại. Về
+  // null (CHƯA ĐO) chứ không giữ số cũ — giữ lại là báo cáo một model không tồn tại.
+  _ctxLoadMs = null;
 }

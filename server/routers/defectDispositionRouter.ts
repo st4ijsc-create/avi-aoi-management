@@ -18,7 +18,8 @@
  */
 import { z } from "zod";
 import { TRPCError } from "@trpc/server";
-import { router, moduleProcedure, qualityProcedure, roleProcedure } from "../_core/trpc";
+import { appError } from "../_core/appError";
+import { router, moduleProcedure, qualityProcedure, roleProcedure, batBuoc2FA } from "../_core/trpc";
 // Doc 38 Đợt Q — license-gate this router behind MOD_QUALITY (moduleGate = pass-through
 // until the deployment's SKU is configured — no-brick). Shadows `protectedProcedure`
 // (read surface). Write mutations keep their qualityProcedure role-floor + 2FA.
@@ -67,7 +68,7 @@ function rethrow(err: unknown): never {
       : err.code === "CONFLICT" ? "CONFLICT"
       : err.code === "BAD_REQUEST" ? "BAD_REQUEST"
       : "INTERNAL_SERVER_ERROR";
-    throw new TRPCError({ code, message: err.message });
+    throw appError(code, "OPERATION_FAILED", { operation: "manageDefectDisposition" }, err.message);
   }
   throw err;
 }
@@ -162,11 +163,20 @@ export const defectDispositionRouter = router({
     }))
     .mutation(async ({ input, ctx }) => {
       // Mirror _core require2FA for privileged roles (roleProcedure alone does not).
-      if (TWO_FA_ROLES.has(ctx.user.role) && !ctx.user.twoFactorEnabled) {
-        throw new TRPCError({
-          code: "FORBIDDEN",
-          message: "Tài khoản đặc quyền phải bật xác thực 2 bước (2FA). Vào Cài đặt > Bảo mật để thiết lập.",
-        });
+      // ★ 2026-08-24 — theo CÙNG công tắc `AUTH_2FA_BAT_BUOC` với require2FA (quyết định chủ dự án:
+      //   nội bộ nhà máy không ép 2FA). Đây là bản CHÉP TAY của require2FA nên khi ba tầng ở
+      //   `trpc.ts` nhận công tắc, chỗ này bị audit (d)(1) bắt là điểm LỆCH — quality_inspector
+      //   chuyển trạng thái trạm sửa lỗi nhiều lượt mỗi ngày là đúng nhóm chủ dự án nêu.
+      if (batBuoc2FA() && TWO_FA_ROLES.has(ctx.user.role) && !ctx.user.twoFactorEnabled) {
+        // Review round 1 (M-5) — reason chỉ áp cho luồng CẦN 2FA để tiếp tục (setup),
+        // KHÔNG áp cho luồng đang TẮT 2FA (twoFactorRouter.ts disable/userRouters.ts
+        // disable2FA giữ câu trần — chỉ dẫn "đi thiết lập" ngược ý định ở đó).
+        throw appError(
+          "FORBIDDEN",
+          "TWO_FACTOR_NOT_SET_UP",
+          { reason: "setUpInSecuritySettings" },
+          "Tài khoản đặc quyền phải bật xác thực 2 bước (2FA). Vào Cài đặt > Bảo mật để thiết lập.",
+        );
       }
       try {
         return await updateDispositionStatus(

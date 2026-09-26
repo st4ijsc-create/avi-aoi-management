@@ -58,6 +58,7 @@ import {
   getEmbeddingForAnomaly,
   buildMemoryBank,
   scoreImage,
+  scoreFromVector,
   extractHandcraftedFeatures,
   anomalyModelCode,
   shouldEscalateToVision,
@@ -248,6 +249,37 @@ describe("scoreImage degrade safety", () => {
     const r = await scoreImage({ buffer: await solidImage(100), productModelId: 1, machineId: 1, modelId: null });
     expect(r.isAnomaly).toBe(false);
     expect(r.reason).toBe("empty_bank");
+  });
+});
+
+// ── F3/D2 (doc69 G9) — scorer uses calibratedThreshold when present, else the
+// existing fixed p99 `threshold` (behaviour-preserving fallback). ──────────────
+
+describe("scoreFromVector — calibrated threshold vs p99 fallback", () => {
+  // bank=[[1,0,0]], query=[3,4,0] → cosineSimilarity = dot/(|a||b|) = 3/(5*1) = 0.6
+  // → cosineDistance = 0.4 exactly. knnScore(k=1) = 0.4.
+  const bank = [[1, 0, 0]];
+  const query = [3, 4, 0];
+  const scope = { productModelId: 1, machineId: 1, modelCode: "anomaly:onnx:1" };
+
+  it("no calibratedThreshold on the profile → uses p99 threshold, unchanged", async () => {
+    mockState.profile = { threshold: "0.50000000", k: 1, degraded: false };
+    mockState.bank = bank;
+    const r = await scoreFromVector(query, scope);
+    expect(r.score).toBeCloseTo(0.4, 10);
+    expect(r.threshold).toBe(0.5);
+    expect(r.calibrated).toBe(false);
+    expect(r.isAnomaly).toBe(false); // 0.4 is NOT > 0.5
+  });
+
+  it("calibratedThreshold present → overrides p99, flips the isAnomaly verdict", async () => {
+    mockState.profile = { threshold: "0.50000000", calibratedThreshold: "0.10000000", k: 1, degraded: false };
+    mockState.bank = bank;
+    const r = await scoreFromVector(query, scope);
+    expect(r.score).toBeCloseTo(0.4, 10);
+    expect(r.threshold).toBe(0.1);
+    expect(r.calibrated).toBe(true);
+    expect(r.isAnomaly).toBe(true); // 0.4 IS > 0.1
   });
 });
 

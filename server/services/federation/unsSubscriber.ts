@@ -35,6 +35,7 @@ import { sites, type Site } from "../../../drizzle/schema";
 import { decodePayload, type SparkplugMetric } from "../uns/sparkplugEncoder";
 import { upsertSnapshot } from "./rollupStore";
 import type { SiteKpiSnapshot } from "./siteClient";
+import { finalYield } from "../../utils/kpi";
 
 type Db = NonNullable<Awaited<ReturnType<typeof getDb>>>;
 
@@ -130,8 +131,11 @@ function buildSnapshot(conn: SiteConnection): SiteKpiSnapshot | null {
   const ntfCount = l.get("ntfCount") ?? null;
   let yieldRate = l.get("yieldRate") ?? null;
   // Derive yield if not streamed but ok/total are present (honest, not fabricated).
+  // NTF = PASS (decision #4) — ntfCount may not have streamed yet, default 0 (never fabricated up).
   if (yieldRate == null && okCount != null && totalInspections && totalInspections > 0) {
-    yieldRate = Number(((okCount / totalInspections) * 100).toFixed(2));
+    yieldRate = Number(
+      finalYield({ ok: okCount, ntf: ntfCount ?? 0, total: totalInspections }).toFixed(2),
+    );
   }
   const ngRate =
     ngCount != null && totalInspections && totalInspections > 0

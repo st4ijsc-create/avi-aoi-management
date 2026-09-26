@@ -15,6 +15,7 @@
  * ════════════════════════════════════════════════════════════════════════════
  */
 import { z } from "zod";
+import { DbUnavailableError } from "../../../_core/dbErrors";
 import { getDb } from "../../../db/connection";
 import { interlockRules } from "../../../../drizzle/schema";
 import {
@@ -104,7 +105,7 @@ registerTool<Params, { id: number }>({
   preview,
   execute: async (p, ctx) => {
     const db = await getDb();
-    if (!db) throw new Error("Database not available");
+    if (!db) throw new DbUnavailableError();
     // SAFETY: forced-safe defaults — AI-proposed rules are always inert.
     const [row] = await db
       .insert(interlockRules)

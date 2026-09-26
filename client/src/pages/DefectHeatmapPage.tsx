@@ -1,4 +1,7 @@
 import { lazy, Suspense } from 'react';
+// doc 64 IA-10 S3 — truc pham vi ISA-95.
+import { useScope } from "@/components/patterns/ScopeFilterBar";
+import { useScopeWired } from "@/contexts/AssetScopeContext";
 import { useTranslation } from 'react-i18next';
 import DashboardLayout from '@/components/DashboardLayout';
 import { PageHeader, PageContainer } from '@/components/patterns';
@@ -30,6 +33,9 @@ function LoadingSkeleton() {
 
 export default function DefectHeatmapPage() {
   const { t } = useTranslation();
+  // doc 64 IA-10 S3-B — trục phạm vi cấp máy cho tab Xu hướng (2 tab kia tự seed).
+  const { scope: assetScope } = useScope(["machine"]);
+  useScopeWired();
 
   return (
     <DashboardLayout>
@@ -90,7 +96,8 @@ export default function DefectHeatmapPage() {
               showDetails
             >
               <Suspense fallback={<LoadingSkeleton />}>
-                <TrendAnalysisChart />
+                {/* doc 64 IA-10 S3-B — máy từ trục phạm vi seed vào tab xu hướng. */}
+                <TrendAnalysisChart machineId={assetScope.machineId} />
               </Suspense>
             </ErrorBoundary>
           </TabsContent>

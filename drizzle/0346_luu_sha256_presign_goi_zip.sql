@@ -1,0 +1,33 @@
+-- 0346 — I-7 (review lượt 8): LƯU `sha256` khai ở `presign` để thật sự ĐỐI CHIẾU
+--
+-- VÌ SAO
+-- ------
+-- Chuẩn gói ảnh §6 tự gọi tên cái bẫy: *"trường trông như bảo đảm toàn vẹn mà
+-- không phải còn nguy hiểm hơn không có trường."* BG-87 đã đóng NỬA `commit`
+-- (băm `zipBuffer` thật, so, lệch ⇒ từ chối). Nửa `presign` thì nguyên vẹn:
+-- `presignCoreObject.sha256` được NHẬN, không lưu, không so, không cả log.
+--
+-- Và đó lại là nơi DUY NHẤT tài liệu hướng máy dạy đặt nó:
+--   · docs/CSHARP_CLIENT_UPLOAD_GUIDE.md — `sha256` trong body **presign**;
+--     bước commit chỉ có `apiKey` + `packageId`.
+--   · client/src/components/apiDocs/AoiPackageSection.tsx — tab Presign:
+--     "sha256 — (optional) hash SHA-256 cho **integrity check**".
+-- ⇒ Một Agent làm ĐÚNG tài liệu công bố nhận 0 kiểm toàn vẹn trong khi tin rằng
+--    mình có. Đây là dạng tệ nhất: không phải thiếu bảo đảm, mà là bảo đảm GIẢ.
+--
+-- Không thể kiểm NGAY tại `presign` — byte ZIP chưa tồn tại ở thời điểm đó. Cách
+-- duy nhất giữ được lời hứa của tài liệu là LƯU lời khai lên hàng gói, rồi đối
+-- chiếu ở đúng khoảnh khắc byte thật xuất hiện: tuyến
+-- `PUT /api/aoi/upload/:packageId` (lượt tải ĐẦU sau presign) và `commit`
+-- (backstop cho đường ghi thẳng vào storage không qua Express).
+--
+-- varchar(128): CÙNG con số `presignCoreObject.sha256 .max(128)` và
+-- `imageRefSchema.sha256 .max(128)` — dư sức SHA-256 hex thật (64 ký tự), chặn
+-- payload rác. NULL = Agent không khai (tuỳ chọn — nguyên tắc di trú §7/Đ-20:
+-- đo được 0/296 gói `committed` trong `aoi_management_test` có khai `sha256`,
+-- bắt buộc NGAY sẽ từ chối 100% lưu lượng thật).
+--
+-- AN TOÀN: thêm cột NULLABLE, không mặc định ⇒ không viết lại bảng, không đụng
+-- hàng nào đang có, không đổi quyền (`inspection_packages` KHÔNG phải bảng WORM).
+
+ALTER TABLE "inspection_packages" ADD COLUMN IF NOT EXISTS "sha256Presign" varchar(128);

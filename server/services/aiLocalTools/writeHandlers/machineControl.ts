@@ -18,11 +18,19 @@
  */
 
 import { z } from "zod";
+import { DbUnavailableError } from "../../../_core/dbErrors";
 import { and, eq } from "drizzle-orm";
 import { getDb } from "../../../db/connection";
 import { deviceAdapters, deviceTags } from "../../../../drizzle/schema";
 import { getActiveRecipe } from "../../../db/machineRecipe";
 import { dispatch, type DispatchInput } from "../../ot/commandDispatcher";
+import {
+  kiemCongAi,
+  siriengChoAi,
+  ketQuaTuChoiChoTool,
+  type KetQuaDispatchToiThieu,
+} from "../../ot/aiControlGate";
+import { preflightSafetyChoAi } from "../../ot/aiControlGate.safety";
 import {
   registerTool,
   type ActionPreview,
@@ -75,11 +83,44 @@ function w(lang: ToolLang, vi: string, en: string, zh: string): string {
   return lang === "en" ? en : lang === "zh" ? zh : vi;
 }
 
-/** Build the dispatcher call from a confirmed exec context + resolved writes. */
+/**
+ * L-7 T2 — Build the dispatcher call from a confirmed exec context + resolved writes.
+ *
+ * ★★★ MỌI tool trong tệp này đi qua ĐÚNG hàm này để tới `dispatch()`. Đó là lý
+ * do cổng AI được đặt Ở ĐÂY, không rải ở 8 chỗ execute(): một chokepoint thì
+ * không thể quên một nhánh, còn 8 chỗ chép tay thì chắc chắn sẽ quên.
+ *
+ * `toolName` là tham số BẮT BUỘC (không optional, không mặc định). Nếu để nó
+ * optional thì một lời gọi quên truyền sẽ lặng lẽ được phân loại theo `undefined`
+ * — và dù `phanLoaiMuc` fail-closed sẽ chặn, ta muốn TRÌNH BIÊN DỊCH bắt lỗi đó
+ * trước khi chạy, chứ không phải bắt bằng một lệnh bị chặn oan trong production.
+ */
 async function runDispatch(
   ctx: ToolExecContext,
-  args: { machineId: number; adapterId: number; commandType: string; writes: Array<{ tagKey: string; value: unknown }> },
+  args: {
+    machineId: number;
+    adapterId: number;
+    commandType: string;
+    writes: Array<{ tagKey: string; value: unknown }>;
+    toolName: string;
+    /** Tag mà MODEL tự chọn (chỉ set_machine_param). Dùng để nâng mức tag an toàn. */
+    tagKeyDoModelChon?: string | null;
+  },
 ): Promise<ToolExecuteResult> {
+  // ── L-7 CỔNG AI — TRƯỚC dispatcher, KHÔNG thay dispatcher ────────────────
+  // Đọc safety CHỈ-ĐỌC rồi truyền vào cổng (cổng là hàm thuần, không tự đọc).
+  const safety = await preflightSafetyChoAi(args.adapterId, args.machineId);
+  const cong = kiemCongAi({
+    toolName: args.toolName,
+    tagKey: args.tagKeyDoModelChon ?? null,
+    userId: ctx.user.id,
+    adapterId: args.adapterId,
+    safety,
+  });
+  if (!cong.choPhep) {
+    return ketQuaTuChoiChoTool(cong, args.toolName) as ToolExecuteResult;
+  }
+
   const idempotencyKey = ctx.actionId ?? `mc-${args.machineId}-${args.commandType}-${Date.now()}`;
   const input: DispatchInput = {
     adapterId: args.adapterId,
@@ -97,7 +138,11 @@ async function runDispatch(
     lang: ctx.lang,
     idempotencyKey,
   };
-  const result = await dispatch(input);
+  // ── L-7 T3 — `acked_unverified` KHÔNG phải thành công KHI NGƯỜI GỌI LÀ AI ──
+  // Bọc BÊN NGOÀI. `dispatch()` giữ nguyên ngữ nghĩa của nó cho đường người.
+  const result = siriengChoAi(
+    (await dispatch(input)) as unknown as KetQuaDispatchToiThieu,
+  ) as unknown as Awaited<ReturnType<typeof dispatch>>;
   const title = result.simulated
     ? w(ctx.lang, `[DRY-RUN] Đã mô phỏng lệnh ${args.commandType} cho máy #${args.machineId}`, `[DRY-RUN] Simulated command ${args.commandType} for machine #${args.machineId}`, `[DRY-RUN] 已模拟机器 #${args.machineId} 的命令 ${args.commandType}`)
     : w(ctx.lang, `Lệnh ${args.commandType} cho máy #${args.machineId}: ${result.status}`, `Command ${args.commandType} for machine #${args.machineId}: ${result.status}`, `机器 #${args.machineId} 的命令 ${args.commandType}：${result.status}`);
@@ -113,7 +158,7 @@ async function runDispatch(
 /** Resolve the adapter at execute time (defensive — preview already warned). */
 async function adapterIdForMachine(machineId: number): Promise<number> {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  if (!db) throw new DbUnavailableError();
   const [adapter] = await db.select().from(deviceAdapters).where(eq(deviceAdapters.machineId, machineId)).limit(1);
   if (!adapter) throw new Error(`No OT adapter for machine #${machineId}`);
   return adapter.id;
@@ -171,7 +216,7 @@ for (const cfg of lifecycle) {
     execute: async (p, ctx) => {
       const tagKey = p.tagKey ?? cfg.defaultTag;
       const adapterId = await adapterIdForMachine(p.machineId);
-      return runDispatch(ctx, { machineId: p.machineId, adapterId, commandType: cfg.verb, writes: [{ tagKey, value: true }] });
+      return runDispatch(ctx, { machineId: p.machineId, adapterId, commandType: cfg.verb, writes: [{ tagKey, value: true }], toolName: cfg.name });
     },
   };
   registerTool(tool);
@@ -223,6 +268,7 @@ registerTool<SelectRecipeParams, unknown>({
       adapterId,
       commandType: "select_recipe",
       writes: [{ tagKey, value: recipe?.version ?? p.recipeCode }],
+      toolName: "select_recipe",
     });
   },
 });
@@ -263,7 +309,7 @@ registerTool<DownloadJobParams, unknown>({
   execute: async (p, ctx) => {
     const tagKey = p.tagKey ?? "job_download";
     const adapterId = await adapterIdForMachine(p.machineId);
-    return runDispatch(ctx, { machineId: p.machineId, adapterId, commandType: "download_job", writes: [{ tagKey, value: p.jobId }] });
+    return runDispatch(ctx, { machineId: p.machineId, adapterId, commandType: "download_job", writes: [{ tagKey, value: p.jobId }], toolName: "download_job" });
   },
 });
 
@@ -341,7 +387,7 @@ registerTool<SetParamParams, unknown>({
     // OFF (default) → identical to the pre-batch path (no check, no change-log write).
     const { paramGuardrailEnabled } = await import("../../ai/parameterGuardrailService");
     if (!paramGuardrailEnabled()) {
-      return runDispatch(ctx, { machineId: p.machineId, adapterId, commandType: "set_param", writes: [{ tagKey: p.tagKey, value: p.value }] });
+      return runDispatch(ctx, { machineId: p.machineId, adapterId, commandType: "set_param", writes: [{ tagKey: p.tagKey, value: p.value }], toolName: "set_machine_param", tagKeyDoModelChon: p.tagKey });
     }
     const { resolveGuardrail, checkAgainstGuardrail, paramGuardrailStrict, lastKnownValue, recordChange } = await import(
       "../../ai/parameterGuardrailService"
@@ -366,7 +412,7 @@ registerTool<SetParamParams, unknown>({
         note: check.detail,
       };
     }
-    const result = await runDispatch(ctx, { machineId: p.machineId, adapterId, commandType: "set_param", writes: [{ tagKey: p.tagKey, value: p.value }] });
+    const result = await runDispatch(ctx, { machineId: p.machineId, adapterId, commandType: "set_param", writes: [{ tagKey: p.tagKey, value: p.value }], toolName: "set_machine_param", tagKeyDoModelChon: p.tagKey });
     // Record the applied change (append-only) so the closed-loop verify sweep can
     // later judge whether it helped or hurt. Fail-safe (never affects the result).
     if ((result.data as { ok?: boolean } | undefined)?.ok !== false) {
@@ -419,6 +465,6 @@ registerTool<AckAlarmParams, unknown>({
   execute: async (p, ctx) => {
     const tagKey = p.tagKey ?? "alarm_ack";
     const adapterId = await adapterIdForMachine(p.machineId);
-    return runDispatch(ctx, { machineId: p.machineId, adapterId, commandType: "ack_alarm", writes: [{ tagKey, value: true }] });
+    return runDispatch(ctx, { machineId: p.machineId, adapterId, commandType: "ack_alarm", writes: [{ tagKey, value: true }], toolName: "acknowledge_machine_alarm" });
   },
 });

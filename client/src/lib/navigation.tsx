@@ -88,6 +88,7 @@
   Star,
   Repeat,
   Waypoints,
+  FileStack,
 } from "lucide-react";
 import { ReactNode } from "react";
 
@@ -106,9 +107,37 @@ export interface NavItem {
   icon: ReactNode;
   badge?: string | number;
   description?: string;
-  requiredRole?: 'admin' | 'user';
+  /**
+   * Role gate. A single role (legacy, e.g. `'admin'`) or a role-set (doc69 Wave 0-C —
+   * e.g. `['admin', 'engineer']`) — any role in the set is admitted. `isItemAccessible`
+   * normalizes both shapes; admin always bypasses regardless of this field.
+   */
+  requiredRole?: string | string[];
   /** Module permission name required to view this item (checked via canView) */
   requiredPermission?: string;
+  /**
+   * ★★★ Đợt 3 CHẶN-1 — tập quyền chấp nhận theo phép **HOẶC**: có BẤT KỲ quyền nào
+   * trong danh sách là vào được. Dùng cho những route mà router phía server khai
+   * `requireAnyPermission([...])` — vd `/twin-studio` (§6.4: `settings_factory`
+   * HOẶC `machine_control`).
+   *
+   * ⚠⚠ Vì sao cần một trường RIÊNG thay vì nhồi thêm chuỗi vào `requiredPermission`:
+   * `requiredPermission` là ô ĐƠN, và mọi consumer (nav filter, RouteGuard qua
+   * `hasAccessToItem`, `getRequiredPermissionForHref`) đều đọc nó như MỘT tên
+   * module. Biến nó thành mảng sẽ phải sửa mọi consumer cùng lúc; thêm ô mới thì
+   * ô cũ giữ nguyên ngữ nghĩa và chỉ `isItemAccessible` phải hiểu thêm một nhánh.
+   *
+   * ⚠⚠ **LỚP LỖI "MỘT LỐI VÀO RỒI TỪ CHỐI" (Khối D) chạy CẢ HAI CHIỀU.** Chiều đã
+   * biết: nav rộng hơn router ⇒ thấy menu rồi bị API chặn. Chiều NGƯỢC LẠI cũng
+   * là lỗi: nav HẸP hơn router ⇒ người có quyền hợp lệ theo spec KHÔNG BAO GIỜ
+   * thấy lối vào, và không có lỗi nào nổ để ai truy ra. Đợt 3 dính đúng chiều
+   * này: router mở cho `machine_control` còn nav chỉ khai `settings_factory`, nên
+   * `supervisor1`/`maint1` bị UI chặn khỏi màn mà API cho phép.
+   *
+   * Quan hệ với `requiredPermission`: nếu khai CẢ HAI thì phép là HOẶC trên hợp
+   * của hai (ô đơn được coi như một phần tử nữa của tập). Thường chỉ khai một.
+   */
+  requiredPermissionAny?: string[];
   /** Permission category this item belongs to */
   permissionCategory?: string;
   /** Cấp-2 section key; items sharing a key are grouped under one sub-header (i18n nav.section.<key>) */
@@ -171,9 +200,13 @@ export interface NavGroup {
  */
 export const navGroups: NavGroup[] = [
   // ──────────────────────────────────────────────────────────────────────────
-  // 1. OVERVIEW — Dashboard Center · War-Room (Ops Console) · drill-down.
-  //    Landing for viewer/user (read-only). defaultOpen so it's the first thing
-  //    every role sees.
+  // 1. OVERVIEW — doc 67 W5 (quyết định #1a): rút 9 mục chồng lấp còn 4 cửa rõ vai:
+  //    (1) /control-tower "Tổng quan nhà máy" — landing chính · (2) /ops-console
+  //    "Xử lý cảnh báo" · (3) /andon "Bảng Andon (TV)" · (4) /drill-down "Phân tích
+  //    tập đoàn". Các mục /command-center · /dashboard · /corporate-dashboard ·
+  //    /executive VẪN NẰM TRONG navGroups (RouteGuard navHref + breadcrumb + ⌘K
+  //    cần item tồn tại) nhưng bị ẨN khỏi rail qua COLLAPSED_INTO_HUB — truy cập
+  //    qua RelatedViews / deep-link / ⌘K. /dashboard-center DỜI sang group Admin.
   // ──────────────────────────────────────────────────────────────────────────
   {
     id: "overview",
@@ -182,35 +215,65 @@ export const navGroups: NavGroup[] = [
     description: "nav.overviewGroupDesc",
     defaultOpen: true,
     permissionCategory: "dashboard",
+    // doc 68 §2 (Navbar Phương án B) — landing /control-tower (không section, leading
+    // bucket) + 2 sub-nhóm có tiêu đề: "Bảng tổng hợp" (dashboards) · "Vận hành" (ops).
+    sections: [
+      { key: "dashboards", label: "nav.section.overviewDashboards" },
+      { key: "ops", label: "nav.section.overviewOps" },
+    ],
     items: [
       {
-        // doc 46 FE-W3.1 (D4) — Executive Control Tower: persona-configurable single
-        // surface hợp nhất 6 màn command, cross-link ra view chuyên sâu. Mục cửa-ngõ.
+        // doc 67 W5 — "Tổng quan nhà máy": landing chính của group, tab tự chọn theo
+        // vai (Điều hành/Quản đốc/Vận hành), cross-link ra các màn chuyên sâu.
+        // doc 68 §2: KHÔNG gắn section + đứng đầu mảng → leading landing (không header).
         href: "/control-tower",
-        label: "Trung tâm Điều hành (Control Tower)",
+        label: "nav.controlTower",
         icon: <LayoutDashboard className="h-4 w-4" />,
-        description: "Bảng điều hành 1-cửa theo persona: OEE/andon/kế hoạch/AI · liên kết ra 6 màn command chuyên sâu",
+        description: "nav.controlTowerDesc",
         requiredPermission: "machine_status",
         permissionCategory: "machine_monitoring",
       },
+      // ── Bảng tổng hợp (dashboards) ──
       {
-        // U2 (doc 21 §6 G-3) — flagship single pane of glass: hierarchy tree +
-        // factory twin + KPI strip + unified live alarm rail. First/prominent item.
-        href: "/command-center",
-        label: "nav.commandCenter",
-        icon: <Gauge className="h-4 w-4" />,
-        description: "nav.commandCenterDesc",
-        requiredPermission: "machine_status",
-        permissionCategory: "machine_monitoring",
-      },
-      {
+        // doc 67 W5: đổi tên "Chất lượng sản xuất" (dashboard chất lượng/KPI sản xuất).
         href: "/dashboard",
         label: "nav.dashboardMain",
         icon: <BarChart3 className="h-4 w-4" />,
         description: "nav.dashboardMainDesc",
         requiredPermission: "dashboard_view",
         permissionCategory: "dashboard",
+        section: "dashboards",
       },
+      {
+        href: "/drill-down",
+        label: "nav.drillDown",
+        icon: <TrendingUp className="h-4 w-4" />,
+        description: "nav.drillDownDesc",
+        requiredPermission: "dashboard_drilldown",
+        permissionCategory: "dashboard",
+        section: "dashboards",
+      },
+      {
+        href: "/corporate-dashboard",
+        label: "nav.corporateDashboard",
+        icon: <Building2 className="h-4 w-4" />,
+        description: "nav.corporateDashboardDesc",
+        requiredPermission: "dashboard_corporate",
+        permissionCategory: "dashboard",
+        section: "dashboards",
+      },
+      {
+        // doc 46 FE-W3.5 (D5) — Executive mobile/PWA: OEE/KPI briefing + AI summary +
+        // duyệt nhanh, tối ưu điện thoại (cài PWA). doc 67 W5: "Bản tin điều hành".
+        href: "/executive",
+        label: "nav.executiveMobile",
+        icon: <LayoutGrid className="h-4 w-4" />,
+        description: "nav.executiveMobileDesc",
+        requiredPermission: "dashboard_corporate",
+        permissionCategory: "dashboard",
+        section: "dashboards",
+      },
+      // ── Vận hành (ops) ──
       {
         // P1: unified War-Room / Ops Console (consolidates Andon + Predictive + alerts).
         href: "/ops-console",
@@ -219,6 +282,7 @@ export const navGroups: NavGroup[] = [
         description: "nav.opsConsoleDesc",
         requiredPermission: "andon",
         permissionCategory: "andon",
+        section: "ops",
       },
       {
         // W5-C (doc 27 F7): dedicated Andon/TV wall board (huge type, auto-cycle,
@@ -229,43 +293,18 @@ export const navGroups: NavGroup[] = [
         description: "nav.andonBoardDesc",
         requiredPermission: "dashboard_view",
         permissionCategory: "dashboard",
-      },
-      // doc 39 — Dashboard Center: 3 ?tab= deep-link rows collapsed into ONE landing
-      // entry (Custom / Templates / Marketplace are tabs inside the page).
-      {
-        href: "/dashboard-center",
-        label: "nav.dashboardCenter",
-        icon: <LayoutDashboard className="h-4 w-4" />,
-        description: "nav.dashboardCenterDesc",
-        requiredRole: 'admin',
-        requiredPermission: "admin_system",
-        permissionCategory: "admin",
+        section: "ops",
       },
       {
-        href: "/drill-down",
-        label: "nav.drillDown",
-        icon: <TrendingUp className="h-4 w-4" />,
-        description: "nav.drillDownDesc",
-        requiredPermission: "dashboard_drilldown",
-        permissionCategory: "dashboard",
-      },
-      {
-        href: "/corporate-dashboard",
-        label: "nav.corporateDashboard",
-        icon: <Building2 className="h-4 w-4" />,
-        description: "nav.corporateDashboardDesc",
-        requiredPermission: "dashboard_corporate",
-        permissionCategory: "dashboard",
-      },
-      {
-        // doc 46 FE-W3.5 (D5) — Executive mobile/PWA: OEE/KPI briefing + AI summary +
-        // duyệt nhanh, tối ưu điện thoại (cài PWA). Cửa-ngõ điều hành trên di động.
-        href: "/executive",
-        label: "Điều hành Di động (Executive)",
-        icon: <LayoutGrid className="h-4 w-4" />,
-        description: "Bảng điều hành gọn cho điện thoại: OEE/KPI · tóm tắt AI · phê duyệt chờ · cài như app (PWA)",
-        requiredPermission: "dashboard_corporate",
-        permissionCategory: "dashboard",
+        // U2 (doc 21 §6 G-3) — sơ đồ + twin + KPI strip + alarm rail. doc 67 W5:
+        // đổi tên "Sơ đồ & bản sao số"; vào từ RelatedViews của Tổng quan nhà máy.
+        href: "/command-center",
+        label: "nav.commandCenter",
+        icon: <Gauge className="h-4 w-4" />,
+        description: "nav.commandCenterDesc",
+        requiredPermission: "machine_status",
+        permissionCategory: "machine_monitoring",
+        section: "ops",
       },
     ],
   },
@@ -303,9 +342,9 @@ export const navGroups: NavGroup[] = [
         // Công cụ giao ban cốt lõi của quản đốc/quản lý → tier simple. Nhãn tiếng Việt
         // trực tiếp (i18n key hoãn sang đợt i18n — theo tiền lệ Feeder/ECN/NCR).
         href: "/war-room",
-        label: "Giao ban (War-room)",
+        label: "nav.warRoom",
         icon: <Presentation className="h-4 w-4" />,
-        description: "Bảng giao ban theo ca: OEE theo Line · top máy dừng · so sánh ca · kế hoạch vs thực tế",
+        description: "nav.warRoomDesc",
         requiredPermission: "machine_status",
         permissionCategory: "machine_monitoring",
         section: "mes",
@@ -316,9 +355,9 @@ export const navGroups: NavGroup[] = [
         // (companion của Alarm KPI). MTTA/MTTR = trpc.andon.metrics (backend-aggregated);
         // breach/breakdown tính từ andon.list. Nhãn trực tiếp (i18n key hoãn — theo tiền lệ War-room).
         href: "/sla-cockpit",
-        label: "Cockpit SLA (MTTA/MTTR)",
+        label: "nav.slaCockpit",
         icon: <Gauge className="h-4 w-4" />,
-        description: "SLA cảnh báo/Andon: thời gian tiếp nhận (MTTA) · khắc phục (MTTR) · vi phạm leo thang · quá hạn",
+        description: "nav.slaCockpitDesc",
         // Gate = /andon board (dashboard_view) → cùng đối tượng có andon/canView (supervisor/operator);
         // maintenance thiếu andon/canView sẽ thấy trạng thái rỗng trung thực (giống andon board).
         requiredPermission: "dashboard_view",
@@ -332,9 +371,9 @@ export const navGroups: NavGroup[] = [
         // cốt lõi tại line → tier simple. Gate machine_status (operator/maintenance đều
         // có). Nhãn tiếng Việt trực tiếp (i18n key hoãn — theo tiền lệ Feeder/ECN/NCR).
         href: "/product-changeover",
-        label: "Đổi sản phẩm",
+        label: "nav.productChangeover",
         icon: <Repeat className="h-4 w-4" />,
-        description: "Trình đổi sản phẩm tại line: quét mã → kiểm tra readiness · ánh xạ máy · feeder → xác nhận",
+        description: "nav.productChangeoverDesc",
         requiredPermission: "machine_status",
         permissionCategory: "machine_monitoring",
         section: "mes",
@@ -367,13 +406,88 @@ export const navGroups: NavGroup[] = [
         permissionCategory: "analytics",
         section: "mes",
       },
+      /*
+       * ════════════════════════════════════════════════════════════════════
+       * ★★★ ĐỢT 62 (QĐ-31) — Ô NAV `/digital-twin` **ĐÃ XOÁ**
+       * ════════════════════════════════════════════════════════════════════
+       * Đợt 21 GIỮ ô này, và giữ là ĐÚNG lúc ấy: `DataManagementHub.tsx:24` +
+       * `DataSettings.tsx:796` tra quyền quick-link "Layout" bằng
+       * `getRequiredPermissionForHref("/digital-twin")`. Xoá ô ⇒ hàm trả
+       * `undefined` ⇒ cả hai rơi về fallback `"analytics_oee"` TRONG IM LẶNG.
+       * Tức xoá một dòng menu trùng sẽ ĐẺ LẠI chính lớp lỗi "một lối vào rồi
+       * TỪ CHỐI" ở hai màn khác. Đợt 61 dò lại và DỪNG đúng ở đây vì lý do đó.
+       *
+       * ★ Đợt 62 mục A gỡ ĐÚNG điều kiện chặn ấy trước: hai màn kia nay tra
+       *   `getAcceptedPermissionsForHref("/twin-studio")` — ĐÍCH THẬT — và
+       *   KHÔNG còn fallback chuỗi cứng. Đo lại bằng vai thật, hai chiều, trên
+       *   cổng 3062: 6/6 xanh; ablation (gỡ vá) 3 đỏ trở lại.
+       *   ⇒ Điều kiện chặn HẾT HẠN, và "lý do hoãn có HẠN SỬ DỤNG" (Khối D).
+       *
+       * ★ BA đường tra quyền đã kiểm lại khi xoá, không phải hai:
+       *     1. `navHref=` của `RouteGuard`      → 0 chỗ dùng `/digital-twin`
+       *     2. `hasAccessToItem("/digital-twin")` → 0 chỗ gọi
+       *     3. `getRequiredPermissionForHref("/digital-twin")` → 0 chỗ gọi
+       *        (đường thứ ba này là thứ brief Đợt 61 bỏ sót)
+       *
+       * ⚠ `<Route path="/digital-twin">` + bảng `dinhTuyenTwinCu` KHÔNG XOÁ:
+       *   bookmark và link cũ vẫn phải tới đúng đích. Cái bị bỏ là DÒNG MENU
+       *   trùng, không phải LỐI VÀO BẰNG URL.
+       */
+      // ── Twin 3D Đợt 0 (spec 2026-09-06 §6.4) ────────────────────────────────
+      // ★ Quyền ở ĐÂY là NGUỒN DUY NHẤT: `App.tsx` gate hai route này bằng
+      // `RouteGuard navHref=…`, tức là guard TRA lại chính hai dòng dưới. Không có
+      // chuỗi quyền nào bị chép tay sang bên kia ⇒ không thể tái diễn lớp lỗi "một
+      // lối vào rồi TỪ CHỐI" (nav khai `settings_factory`, route gate `analytics_oee`)
+      // đã gặp ở Khối D. Đổi quyền ở đây là đổi cho cả hai bên.
+      //
+      // ⚠ Nghiệm thu quyền PHẢI dùng tài khoản KHÔNG phải admin — admin bypass
+      // `requirePermission`, nên đo bằng admin chứng minh số 0.
       {
-        href: "/digital-twin",
-        label: "nav.digitalTwin",
+        // Vận hành: xem cảnh, điều hướng, xử lý cảnh báo.
+        //
+        // ★★★ Đợt 5 CHẶN-1 — ô này TỪNG khai MỘT quyền `analytics_oee`. Hậu quả
+        // ĐO ĐƯỢC: trong 4 vai non-admin của seed, CHỈ `supervisor1` có
+        // `analytics_oee`; `engineer1`/`maint1`/`operator1` đều có
+        // `machine_status` nhưng KHÔNG có `analytics_oee` ⇒ 3/4 vai vận hành
+        // bị chặn khỏi chính màn Vận hành. 1/4 vào được, không lỗi nào nổ.
+        //
+        // Đây lại là lớp lỗi "một lối vào rồi TỪ CHỐI" chạy chiều NGƯỢC (nav
+        // hẹp hơn nhu cầu vai), cùng họ với CHẶN-1 của Đợt 3 ở `/twin-studio`
+        // ngay dưới — khuôn sửa cũng y hệt: mở bằng `requiredPermissionAny`.
+        //
+        // `RouteGuard navHref="/twin"` (App.tsx:325) TRA lại chính ô này qua
+        // `hasAccessToItem`, nên nav và guard không thể lệch.
+        href: "/twin",
+        label: "nav.twin3d",
         icon: <Boxes className="h-4 w-4" />,
-        description: "nav.digitalTwinDesc",
-        requiredPermission: "analytics_oee",
+        description: "nav.twin3dDesc",
+        requiredPermissionAny: ["analytics_oee", "machine_status"],
         permissionCategory: "analytics",
+        section: "mes",
+      },
+      {
+        // Thiết kế: sửa bố cục nhà xưởng. §6.4 cho vào bằng `settings_factory`
+        // **HOẶC** `machine_control` — khớp CHÍNH XÁC `quyenThietKe()` của
+        // `server/routers/twinCanhRouter.ts:63` (`requireAnyPermission`).
+        //
+        // ★★★ Đợt 3 CHẶN-1 — trước đây ô này khai MỘT quyền `settings_factory`
+        // trong khi router mở HAI. Hậu quả ĐO ĐƯỢC: `supervisor1` và `maint1`
+        // (có `machine_control`, KHÔNG có `settings_factory`) bị UI chặn khỏi
+        // đúng màn mà API cho phép họ ghi — 2/4 vai non-admin mất lối vào mà
+        // không lỗi nào nổ. Đó là lớp lỗi "một lối vào rồi TỪ CHỐI" của Khối D
+        // chạy theo CHIỀU NGƯỢC (nav hẹp hơn router), và nó câm hơn chiều xuôi.
+        //
+        // ⚠ Sửa ĐÚNG là mở nav ra bằng router, KHÔNG phải thu router về một
+        //   quyền: thu router lại là đi ngược §6.4 và cắt quyền của vai vận hành.
+        // ⚠ Đổi ô này thì phải đổi `quyenThietKe()` cùng lượt — hai bên là một
+        //   hợp đồng, và chỉ có nghiệm thu bằng tài khoản KHÔNG-admin mới thấy
+        //   được lệch (admin bypass `requirePermission` ⇒ đo bằng admin ra số 0).
+        href: "/twin-studio",
+        label: "nav.twinStudio",
+        icon: <Building2 className="h-4 w-4" />,
+        description: "nav.twinStudioDesc",
+        requiredPermissionAny: ["settings_factory", "machine_control"],
+        permissionCategory: "settings",
         section: "mes",
       },
       {
@@ -446,9 +560,9 @@ export const navGroups: NavGroup[] = [
         // Thiết bị (section maintenance sai ngữ nghĩa) về ĐÂY: định tuyến công đoạn
         // theo sản phẩm là MES/kế hoạch, thuộc "Đơn hàng & Lịch".
         href: "/routing-master",
-        label: "Định tuyến sản xuất (Routing)",
+        label: "nav.routingMaster",
         icon: <ClipboardList className="h-4 w-4" />,
-        description: "Routing master ISA-95: chuỗi công đoạn theo sản phẩm — nguồn ERP resolve operations",
+        description: "nav.routingMasterDesc",
         requiredPermission: "production_orders",
         permissionCategory: "production_orders",
         section: "ordersSchedule",
@@ -467,9 +581,9 @@ export const navGroups: NavGroup[] = [
         // module Thiết bị (section maintenance sai ngữ nghĩa) về ĐÂY: quản lý vật tư
         // tại line (feeder/MSD/stencil) thuộc BOM & Máng cấp, không phải bảo trì máy.
         href: "/feeder-verify",
-        label: "Vật tư tại line (Feeder/MSD/Stencil)",
+        label: "nav.materialsAtLine",
         icon: <ClipboardList className="h-4 w-4" />,
-        description: "Feeder scan-verify (chống gắn nhầm) · MSD floor-life (J-STD-020) · stencil cycle counter",
+        description: "nav.materialsAtLineDesc",
         requiredPermission: "machine_status",
         permissionCategory: "machine_monitoring",
         section: "bom",
@@ -607,9 +721,9 @@ export const navGroups: NavGroup[] = [
         // Nhãn tiếng Việt trực tiếp (i18n key hoãn sang đợt i18n; locale ngoài phạm vi
         // sở hữu của agent này) — theo tiền lệ Feeder/ECN/NCR trong file này.
         href: "/factory-command",
-        label: "Chỉ huy nhà máy",
+        label: "nav.factoryCommand",
         icon: <Factory className="h-4 w-4" />,
-        description: "Sơ đồ 2D/3D toàn nhà máy theo Line · click máy xem chi tiết · vấn đề đang mở",
+        description: "nav.factoryCommandDesc",
         requiredPermission: "machine_status",
         permissionCategory: "machine_monitoring",
         section: "monitoring",
@@ -795,9 +909,9 @@ export const navGroups: NavGroup[] = [
       {
         // doc 59 Cụm I — Trung tâm bảo trì: hub-launcher (work-order · CMMS · copilot).
         href: "/maintenance-hub",
-        label: "Trung tâm bảo trì",
+        label: "nav.maintenanceHub",
         icon: <Wrench className="h-4 w-4" />,
-        description: "Một cửa cho bảo trì: lệnh công việc · CMMS/độ tin cậy · copilot",
+        description: "nav.maintenanceHubDesc",
         requiredPermission: "machine_status",
         permissionCategory: "machine_monitoring",
         section: "maintenance",
@@ -828,9 +942,9 @@ export const navGroups: NavGroup[] = [
         // + phụ tùng/độ tin cậy (MTTR/MTBF). Gate machine_control (bảo trì có mutation).
         // Nhãn tiếng Việt trực tiếp (i18n key hoãn — theo tiền lệ Feeder/ECN/NCR).
         href: "/cmms",
-        label: "Bảo trì (CMMS)",
+        label: "nav.cmms",
         icon: <Wrench className="h-4 w-4" />,
-        description: "Lịch bảo trì phòng ngừa · phụ tùng & độ tin cậy (MTTR/MTBF)",
+        description: "nav.cmmsDesc",
         requiredPermission: "machine_control",
         permissionCategory: "machine_control",
         section: "maintenance",
@@ -909,9 +1023,9 @@ export const navGroups: NavGroup[] = [
         // doc 59 cụm phụ — Engineering Studio: launcher danh mục (soạn thảo/điều phối/
         // an toàn/chuẩn-hoá). Song song /engineering-home (landing tác vụ). Per-tile RBAC.
         href: "/engineering-studio",
-        label: "Xưởng kỹ thuật",
+        label: "nav.engineeringStudio",
         icon: <FlaskConical className="h-4 w-4" />,
-        description: "Soạn thảo · điều phối · an toàn · chuẩn hoá — một danh mục",
+        description: "nav.engineeringStudioDesc",
         requiredPermission: "machine_control",
         permissionCategory: "machine_control",
       },
@@ -930,9 +1044,9 @@ export const navGroups: NavGroup[] = [
       {
         // doc 35 W4-D — plain labels (i18n keys deferred to the i18n polish pass)
         href: "/engineering-changes",
-        label: "Thay đổi kỹ thuật (ECN)",
+        label: "nav.engineeringChanges",
         icon: <GitCompare className="h-4 w-4" />,
-        description: "Phiếu thay đổi kỹ thuật: yêu cầu → phân tích tác động → duyệt (SoD) → hiệu lực; + backfill componentCode",
+        description: "nav.engineeringChangesDesc",
         // doc 54 Đ2 — ECN là tác vụ kỹ thuật: gate theo machine_control (engineer có)
         // thay masterdata (kỹ sư không có → trước bị Access Denied). SoD vẫn ở service.
         requiredPermission: "machine_control",
@@ -1101,9 +1215,9 @@ export const navGroups: NavGroup[] = [
       {
         // doc 59 Cụm G — Xưởng báo cáo: studio 4 tab (tạo/lịch/xuất/so sánh) hợp nhất.
         href: "/reporting-studio",
-        label: "Xưởng báo cáo",
+        label: "nav.reportingStudio",
         icon: <FileBarChart className="h-4 w-4" />,
-        description: "Tạo · lịch · xuất PDF/PPTX · so sánh — một studio",
+        description: "nav.reportingStudioDesc",
         requiredPermission: "reports_view",
         permissionCategory: "reports",
         section: "reports",
@@ -1166,9 +1280,9 @@ export const navGroups: NavGroup[] = [
         // doc 46 FE-W3.3 — Comparison Studio: hợp nhất so sánh đa chiều (tuyến/ca/SP/kỳ)
         // + benchmark, 1 công cụ (gộp data-comparison/product-comparison/history-comparison).
         href: "/comparison-studio",
-        label: "So sánh Đa chiều (Comparison Studio)",
+        label: "nav.comparisonStudio",
         icon: <GitCompare className="h-4 w-4" />,
-        description: "So sánh tuyến/ca/sản phẩm/kỳ + đường benchmark trong 1 công cụ · xuất báo cáo font-chuẩn",
+        description: "nav.comparisonStudioDesc",
         requiredPermission: "analytics_advanced",
         permissionCategory: "analytics",
         section: "analysis",
@@ -1252,9 +1366,9 @@ export const navGroups: NavGroup[] = [
       {
         // doc 35 W4-B — NCR/MRB; plain label (i18n polish deferred)
         href: "/nonconformance",
-        label: "Báo cáo không phù hợp (NCR/MRB)",
+        label: "nav.nonconformance",
         icon: <ClipboardList className="h-4 w-4" />,
-        description: "Nonconformance/MRB: mở → review → disposition (use-as-is/rework/scrap/return/RTV) → đóng, SoD",
+        description: "nav.nonconformanceDesc",
         requiredPermission: "analytics_spc",
         permissionCategory: "analytics",
         section: "targetsSettings",
@@ -1276,9 +1390,18 @@ export const navGroups: NavGroup[] = [
   },
 
   // ──────────────────────────────────────────────────────────────────────────
-  // 6. AI — AI Workspace (chat / copilot / management-insight) is READ-OPEN to
-  //    EVERY role (no requiredPermission). AI Control Plane / AI Ops / AI Vision
-  //    are admin-gated (requiredRole:'admin').
+  // 6. AI — doc 69 Wave E1 (T6): SINGLE AI taxonomy. The rail is now the only
+  //    index of the ~20 AI pages — previously they were indexed a 3rd time by
+  //    two separate hub walls (AIHub's read-open 20-tile grid + AIStudioHub's
+  //    admin-only 20-tool launcher, both at /ai-hub and /ai-studio). Both are
+  //    RETIRED and MERGED into one "AI Home" landing (/ai-home, App.tsx
+  //    redirects the old URLs) that presents this SAME taxonomy as tiles.
+  //    "Assistant" (Chat/Inbox/Management Insight) + AI Home itself are
+  //    tier:'simple' — rescued from the group's tier:'advanced' so they stay
+  //    visible in Simple mode (doc 22 P4). The deeper Agent Operations /
+  //    Analytics & Reports / Vision Lab / Models / Settings sections keep
+  //    their original per-item requiredRole/requiredPermission gates
+  //    UNCHANGED and stay hidden in Simple mode (untagged → advanced default).
   // ──────────────────────────────────────────────────────────────────────────
   {
     id: "ai",
@@ -1286,33 +1409,79 @@ export const navGroups: NavGroup[] = [
     icon: <Sparkles className="h-4 w-4" />,
     description: "nav.aiGroupDesc",
     defaultOpen: false,
-    // doc 22 P4 — AI Control Plane / Ops / Vision are engineering internals; the
-    // whole module is hidden in Simple mode. (The read-open AI Workspace chat/inbox
-    // stays reachable via /ai-chat + the Me group, which remain Simple.)
     tier: "advanced",
     // No permissionCategory → group is visible to every authenticated role; the
-    // AI Workspace items below are read-open. Admin-only items below still gate.
+    // Assistant items below are read-open. Admin-only items below still gate.
     sections: [
-      { key: "aiWorkspace", label: "nav.section.aiWorkspace" },
-      { key: "aiControlPlane", label: "nav.section.aiControlPlane" },
-      { key: "aiOps", label: "nav.section.aiOps" },
-      { key: "aiVision", label: "nav.section.aiVision" },
+      { key: "assistant", label: "nav.section.aiAssistant" },
+      { key: "agentOps", label: "nav.section.aiAgentOps" },
+      { key: "analyticsReports", label: "nav.section.aiAnalyticsReports" },
+      { key: "visionLab", label: "nav.section.aiVisionLab" },
+      // doc 69 Wave E1 (T7) — NEW section T6 deferred: durable training assets
+      // (dataset splits; Knowledge Base RAG docs is a later E3 task, NOT built here —
+      // see doc 69 §B1.2/§B3). Training Studio (E3-2) added below.
+      { key: "knowledgeTraining", label: "nav.section.aiKnowledgeTraining" },
+      { key: "models", label: "nav.section.aiModels" },
+      { key: "settings", label: "nav.section.aiSettings" },
     ],
     items: [
-      // ─ AI Workspace (read-open, all roles) ─
+      // ─ AI Home — merged landing (doc 69 B1.2), leading row (no section,
+      //   same pattern as /control-tower in the Overview group). Read-open +
+      //   tier:'simple' so every role has a single front door into AI. ─
+      {
+        href: "/ai-home",
+        label: "nav.aiHome",
+        icon: <Sparkles className="h-4 w-4" />,
+        description: "nav.aiHomeDesc",
+        tier: "simple",
+      },
+      // ─ Assistant (read-open, all roles; rescued to Simple mode) ─
       {
         href: "/ai-chat",
         label: "nav.aiChat",
         icon: <MessageSquare className="h-4 w-4" />,
         description: "nav.aiChatDesc",
-        section: "aiWorkspace",
+        section: "assistant",
+        tier: "simple",
       },
       {
-        href: "/ai-hub",
-        label: "nav.aiHub",
-        icon: <Sparkles className="h-4 w-4" />,
-        description: "nav.aiHubDesc",
-        section: "aiWorkspace",
+        /**
+         * ★★★ doc 81 · VIỆC 3 (3) — KHÔNG GIAN LẬP TRÌNH AI. Trước lượt này grep
+         * `ai-coding-workspace` trong file này = **0**: trang tồn tại, có route, có RBAC, có cổng
+         * giấy phép — nhưng **không có đường nào tới nó ngoài gõ URL bằng tay**.
+         *
+         * ⚠⚠ HAI CỔNG, VÀ CẢ HAI ĐỀU ĐÃ ĐƯỢC CƯỠNG CHẾ Ở ĐÂY:
+         *  1. **RBAC** — `requiredPermission: "ai_repo_read"` là ô mà `isItemAccessible` ĐỌC
+         *     (`permissionCategory` chỉ có tác dụng ở CẤP GROUP; xem ghi chú m-2 ở `/ai-brain`).
+         *     Khớp đúng bit mà `App.tsx` ghim cho tuyến này (mig 0330).
+         *  2. **GIẤY PHÉP `MOD_AI`** — cưỡng chế theo CẤU TẠO, không phải bằng một ô khai thêm:
+         *     `DashboardLayout` lọc `items.filter(item => isLicenseRouteAllowed(item.href))`, và
+         *     `/ai-coding-workspace` **đã** nằm trong danh sách route của `MOD_AI`
+         *     (`shared/module-registry.ts`, doc 80). ⇒ khách KHÔNG mua AI không thấy mục này, cùng
+         *     một nguồn sự thật với `RouteGuard requireModule="MOD_AI"`. Khai module lần thứ hai ở
+         *     đây sẽ là bản sao thứ hai của một sự thật — đúng lớp lỗi repo này đã trả giá nhiều lần.
+         *
+         * ⚠ KHÔNG gắn `tier:"simple"`: nhóm `ai` là `tier:"advanced"`, và đây là công cụ kỹ sư, không
+         * phải cửa trước. `engineer`/`admin` mặc định ở chế độ advanced nên vẫn thấy.
+         */
+        href: "/ai-coding-workspace",
+        label: "nav.aiCodingWorkspace",
+        icon: <Code2 className="h-4 w-4" />,
+        description: "nav.aiCodingWorkspaceDesc",
+        requiredPermission: "ai_repo_read",
+        section: "assistant",
+      },
+      {
+        // doc 69 T6 — fix orphan: promoted into the AI taxonomy's Assistant
+        // section. Was already reachable via the header AIActionInboxLauncher
+        // and the "Me" group's personal shortcut row (nav.inbox); both of
+        // those stay unchanged — this ADDS the AI-context entry point.
+        href: "/inbox",
+        label: "nav.inbox",
+        icon: <Inbox className="h-4 w-4" />,
+        description: "nav.inboxDesc",
+        section: "assistant",
+        tier: "simple",
       },
       // doc 41 (2026-07-11) — /programming-copilot entry TRÙNG ở đây ĐÃ GỠ. Copilot lập
       // trình là một EXTENSION nhúng trong các editor (Engineering Workspace / IR / POU),
@@ -1323,36 +1492,114 @@ export const navGroups: NavGroup[] = [
         label: "nav.managementInsight",
         icon: <Sparkles className="h-4 w-4" />,
         description: "nav.managementInsightDesc",
-        section: "aiWorkspace",
+        section: "assistant",
+        tier: "simple",
       },
-      // ─ AI Control Plane (admin) ─
-      {
-        // doc 59 Cụm H — AI Studio: hub-launcher hợp nhất ~17 surface control-plane.
-        href: "/ai-studio",
-        label: "AI Studio",
-        icon: <FlaskConical className="h-4 w-4" />,
-        description: "Một cửa: mô hình · giám sát · vận hành · vision lab · cài đặt",
-        requiredRole: 'admin',
-        permissionCategory: "admin",
-        section: "aiControlPlane",
-      },
+      // ─ Agent Operations (admin) ─
       {
         href: "/ai-brain",
         label: "nav.aiBrainDashboard",
         icon: <Brain className="h-4 w-4" />,
         description: "nav.aiBrainDashboardDesc",
-        requiredRole: 'admin',
+        // doc69 Wave 0-C — engineer (kỹ thuật) does agent-ops daily work; backend
+        // (opsAgentCenterProcedure / equivalent role gates) already allows engineer.
+        //
+        // ★★★ Pha 5 Task 3 (N9) — 'supervisor' THÊM VÀO, và đây là LỚP 1 của năm lớp.
+        // Màn này là nhà DUY NHẤT của `VramBrokerPanel` (mặt lệnh VRAM). Chủ dự án chốt
+        // `supervisor` được ra lệnh phá huỷ VRAM (`ACTUATION_ROLES` đã có nó —
+        // `server/_core/trpc.ts:495`). Bật nút cho một vai KHÔNG VÀO ĐƯỢC MÀN là dựng một
+        // cái nút không ai bấm được, và khai đã trao quyền trong khi chưa.
+        // ⚠ `/ai-command-center` và các màn agent-ops khác KHÔNG mở: `supervisor` không có
+        // sàn `aiAgent.listAgentSessionsForOps` (admin|engineer) — mở nav ở đó sẽ là đúng
+        // cùng lỗi, chỉ đổi bề mặt. Trên /ai-brain phần Agent Ops tự khai "cần quyền admin
+        // hoặc kỹ thuật" qua `isOpsRole`, KHÔNG bịa dữ liệu.
+        requiredRole: ['admin', 'engineer', 'supervisor'],
+        // ⚠ m-2 — Ô CHẾT, giữ vì nợ có trước: `isItemAccessible` (:2334) chỉ đọc
+        // `requiredPermission`; `permissionCategory` chỉ có tác dụng ở CẤP GROUP
+        // (`applyRbacFilter`). Đừng đọc dòng này thành "còn một cổng quyền nữa".
         permissionCategory: "admin",
-        section: "aiControlPlane",
+        section: "agentOps",
+        // ★★★ Pha 5 Task 3 review (I-1) — LỚP THỨ SÁU, và nó đóng ĐÚNG với `supervisor`.
+        // `defaultNavModeForRole('supervisor') === 'simple'` (:2119 `ADVANCED_DEFAULT_ROLES`
+        // không có supervisor) và group `ai` khai `tier:"advanced"` ⇒ `filterNavGroupsByMode`
+        // ở chế độ `simple` giữ **CHỈ** item khai TƯỜNG MINH `tier:'simple'`. Không có dòng
+        // này thì supervisor mở thanh bên và **không thấy dòng nào** — đúng câu "anh bảo cấp
+        // quyền rồi mà tôi không thấy màn đâu". Vô hình tới giờ vì `engineer` mặc định
+        // `advanced`; nó chỉ lộ khi thêm một vai KHÔNG kỹ thuật, tức đúng lúc này.
+        tier: "simple",
       },
       {
+        // doc69 GĐ4/E2-3 — Agent Command Center (roster + savings + task feed + drill-in).
+        // Wave 0-C: backend opsAgentCenterProcedure = roleProcedure("admin","engineer").
+        href: "/ai-command-center",
+        label: "nav.aiCommandCenter",
+        icon: <Bot className="h-4 w-4" />,
+        description: "nav.aiCommandCenterDesc",
+        requiredRole: ['admin', 'engineer'],
+        permissionCategory: "admin",
+        section: "agentOps",
+      },
+      {
+        // Wave 1 — cửa vào GIAO VIỆC cho 4 specialist agent. Cùng bộ quyền với
+        // /ai-command-center vì đây là việc phát triển phần mềm, không phải vận hành.
+        href: "/ai-specialist-studio",
+        label: "nav.aiSpecialistStudio",
+        icon: <Wrench className="h-4 w-4" />,
+        description: "nav.aiSpecialistStudioDesc",
+        requiredRole: ['admin', 'engineer'],
+        permissionCategory: "admin",
+        section: "agentOps",
+      },
+      {
+        // Wave 0-C: left admin-only — system health/config, not engineer daily work.
         href: "/ai-monitoring",
         label: "nav.aiMonitoring",
         icon: <MonitorCheck className="h-4 w-4" />,
         description: "nav.aiMonitoringDesc",
         requiredRole: 'admin',
         permissionCategory: "admin",
-        section: "aiControlPlane",
+        section: "agentOps",
+      },
+      {
+        // doc69 Wave 0-C — engineer curates active-learning queues as daily work.
+        href: "/ai-active-learning",
+        label: "nav.aiActiveLearning",
+        icon: <GraduationCap className="h-4 w-4" />,
+        description: "nav.aiActiveLearningDesc",
+        requiredRole: ['admin', 'engineer'],
+        permissionCategory: "admin",
+        section: "agentOps",
+      },
+      {
+        href: "/ai-batch-jobs",
+        label: "nav.aiBatchJobs",
+        icon: <Layers className="h-4 w-4" />,
+        description: "nav.aiBatchJobsDesc",
+        requiredRole: 'admin',
+        permissionCategory: "admin",
+        section: "agentOps",
+      },
+      {
+        href: "/ai-data-processing",
+        label: "nav.aiDataProcessing",
+        icon: <Database className="h-4 w-4" />,
+        description: "nav.aiDataProcessingDesc",
+        requiredRole: 'admin',
+        permissionCategory: "admin",
+        section: "agentOps",
+      },
+      // ─ Analytics & Reports ─
+      {
+        // doc 69 T6 — fix orphan: page existed (App.tsx guards it explicitly
+        // with requirePermission="analytics_ai_performance") but had NO nav
+        // row anywhere before this.
+        href: "/ai-inspection-analytics",
+        label: "nav.aiInspectionAnalytics",
+        icon: <Sparkles className="h-4 w-4" />,
+        description: "nav.aiInspectionAnalyticsDesc",
+        requiredPermission: "analytics_ai_performance",
+        permissionCategory: "analytics",
+        section: "analyticsReports",
       },
       {
         href: "/ai-performance",
@@ -1361,8 +1608,129 @@ export const navGroups: NavGroup[] = [
         description: "nav.aiPerformanceDesc",
         requiredRole: 'admin',
         permissionCategory: "admin",
-        section: "aiControlPlane",
+        section: "analyticsReports",
       },
+      {
+        // doc 69 Wave E1 (T7) — split out of AIPerformanceDashboard's evaluation
+        // (before/after) + A/B canary tabs. Same RBAC gate as /ai-performance.
+        href: "/ai-experiments",
+        label: "nav.aiExperiments",
+        icon: <FlaskConical className="h-4 w-4" />,
+        description: "nav.aiExperimentsDesc",
+        requiredRole: 'admin',
+        permissionCategory: "admin",
+        section: "analyticsReports",
+      },
+      {
+        href: "/ai-time-series",
+        label: "nav.aiTimeSeries",
+        icon: <TrendingUp className="h-4 w-4" />,
+        description: "nav.aiTimeSeriesDesc",
+        requiredRole: 'admin',
+        permissionCategory: "admin",
+        section: "analyticsReports",
+      },
+      {
+        href: "/ai-reports",
+        label: "nav.aiReports",
+        icon: <FileBarChart className="h-4 w-4" />,
+        description: "nav.aiReportsDesc",
+        requiredRole: 'admin',
+        permissionCategory: "admin",
+        section: "analyticsReports",
+      },
+      // ─ Vision Lab ─
+      {
+        href: "/ai-quality-gate",
+        label: "nav.aiQualityGate",
+        icon: <ShieldCheck className="h-4 w-4" />,
+        description: "nav.aiQualityGateDesc",
+        requiredRole: 'admin',
+        permissionCategory: "admin",
+        section: "visionLab",
+      },
+      {
+        href: "/ai-image-search",
+        label: "nav.aiImageSearch",
+        icon: <Search className="h-4 w-4" />,
+        description: "nav.aiImageSearchDesc",
+        requiredRole: 'admin',
+        permissionCategory: "admin",
+        section: "visionLab",
+      },
+      {
+        href: "/ai-advanced-vision-lab",
+        label: "nav.advancedVisionLab",
+        icon: <Camera className="h-4 w-4" />,
+        description: "nav.advancedVisionLabDesc",
+        requiredRole: 'admin',
+        permissionCategory: "admin",
+        section: "visionLab",
+      },
+      {
+        // doc69 Wave 0-C — engineers curate anomaly banks as daily vision-lab work.
+        href: "/anomaly-banks",
+        label: "nav.anomalyBanks",
+        icon: <Database className="h-4 w-4" />,
+        description: "nav.anomalyBanksDesc",
+        requiredRole: ['admin', 'engineer'],
+        permissionCategory: "admin",
+        section: "visionLab",
+      },
+      {
+        // doc69 Wave 0-C — engineers annotate defect masks as daily vision-lab work.
+        href: "/mask-annotation",
+        label: "nav.maskAnnotation",
+        icon: <Brush className="h-4 w-4" />,
+        description: "nav.maskAnnotationDesc",
+        requiredRole: ['admin', 'engineer'],
+        permissionCategory: "admin",
+        section: "visionLab",
+      },
+      {
+        href: "/causal-graph",
+        label: "nav.causalGraph",
+        icon: <Workflow className="h-4 w-4" />,
+        description: "nav.causalGraphDesc",
+        requiredPermission: "analytics_root_cause",
+        permissionCategory: "analytics",
+        section: "visionLab",
+      },
+      // ─ Knowledge & Training (doc 69 Wave E1 / T7 — NEW section) ─
+      {
+        // Split out of AIDataProcessingPage's dataset tab: a dataset split is a
+        // durable training asset, not an ephemeral pipeline step. Same RBAC
+        // gate as /ai-data-processing. Knowledge Base (RAG docs, /ai-knowledge)
+        // is a later E3 task — NOT added here.
+        // doc69 Wave 0-C fix round 1 — kept admin-only, NOT widened: the aiEval/MLOps
+        // surface (buildDataset, model eval, pipelines) is intentionally admin-governed
+        // (backend `aiEval.buildDataset` is `adminProcedure` by design, not an
+        // oversight). The engineer's training screen is /ai-training-studio (KB
+        // corpus/ingest, admin+engineer by design) — widening this one too would leave
+        // engineers on a page whose only action always 403s.
+        href: "/ai-datasets",
+        label: "nav.aiDatasets",
+        icon: <Boxes className="h-4 w-4" />,
+        description: "nav.aiDatasetsDesc",
+        requiredRole: 'admin',
+        permissionCategory: "admin",
+        section: "knowledgeTraining",
+      },
+      {
+        // doc69 GĐ5/Wave E3 (E3-2) — Training Studio: corpus registry + job-tracked
+        // doc/URL ingest (Source/Jobs/Corpus/Eval/Model Builder tabs). doc69 Wave 0-C:
+        // nav gate widened to match the backend kbStudioRouter.ts, which is already
+        // admin+engineer (+2FA); deleteCorpus stays narrower, admin-only, unaffected
+        // by this nav-level widening.
+        href: "/ai-training-studio",
+        label: "nav.aiTrainingStudio",
+        icon: <GraduationCap className="h-4 w-4" />,
+        description: "nav.aiTrainingStudioDesc",
+        requiredRole: ['admin', 'engineer'],
+        permissionCategory: "admin",
+        section: "knowledgeTraining",
+      },
+      // ─ Models ─
       {
         href: "/ai-models",
         label: "nav.aiModelManagement",
@@ -1370,7 +1738,7 @@ export const navGroups: NavGroup[] = [
         description: "nav.aiModelManagementDesc",
         requiredRole: 'admin',
         permissionCategory: "admin",
-        section: "aiControlPlane",
+        section: "models",
       },
       {
         href: "/model-versions",
@@ -1379,7 +1747,18 @@ export const navGroups: NavGroup[] = [
         description: "nav.modelVersionsDesc",
         requiredRole: 'admin',
         permissionCategory: "admin",
-        section: "aiControlPlane",
+        section: "models",
+      },
+      {
+        // doc 69 T6 — fix orphan: page existed (App.tsx guards it explicitly
+        // with requireRole={["admin"]}) but had NO nav row anywhere before this.
+        href: "/ai-gguf-models",
+        label: "nav.aiGgufModels",
+        icon: <FileStack className="h-4 w-4" />,
+        description: "nav.aiGgufModelsDesc",
+        requiredRole: 'admin',
+        permissionCategory: "admin",
+        section: "models",
       },
       {
         // Automation Orchestration (Khối 4, I2) — advisory robot-behaviour anomaly
@@ -1392,8 +1771,9 @@ export const navGroups: NavGroup[] = [
         description: "nav.robotModelHealthDesc",
         requiredPermission: "machine_status",
         permissionCategory: "machine_monitoring",
-        section: "aiControlPlane",
+        section: "models",
       },
+      // ─ Settings ─
       {
         href: "/ai-settings",
         label: "nav.aiSettings",
@@ -1402,108 +1782,7 @@ export const navGroups: NavGroup[] = [
         requiredRole: 'admin',
         requiredPermission: "admin_system",
         permissionCategory: "admin",
-        section: "aiControlPlane",
-      },
-      // ─ AI Ops (admin) ─
-      {
-        href: "/ai-active-learning",
-        label: "nav.aiActiveLearning",
-        icon: <GraduationCap className="h-4 w-4" />,
-        description: "nav.aiActiveLearningDesc",
-        requiredRole: 'admin',
-        permissionCategory: "admin",
-        section: "aiOps",
-      },
-      {
-        href: "/ai-batch-jobs",
-        label: "nav.aiBatchJobs",
-        icon: <Layers className="h-4 w-4" />,
-        description: "nav.aiBatchJobsDesc",
-        requiredRole: 'admin',
-        permissionCategory: "admin",
-        section: "aiOps",
-      },
-      {
-        href: "/ai-data-processing",
-        label: "nav.aiDataProcessing",
-        icon: <Database className="h-4 w-4" />,
-        description: "nav.aiDataProcessingDesc",
-        requiredRole: 'admin',
-        permissionCategory: "admin",
-        section: "aiOps",
-      },
-      {
-        href: "/ai-time-series",
-        label: "nav.aiTimeSeries",
-        icon: <TrendingUp className="h-4 w-4" />,
-        description: "nav.aiTimeSeriesDesc",
-        requiredRole: 'admin',
-        permissionCategory: "admin",
-        section: "aiOps",
-      },
-      {
-        href: "/ai-reports",
-        label: "nav.aiReports",
-        icon: <FileBarChart className="h-4 w-4" />,
-        description: "nav.aiReportsDesc",
-        requiredRole: 'admin',
-        permissionCategory: "admin",
-        section: "aiOps",
-      },
-      // ─ AI Vision (admin) ─
-      {
-        href: "/ai-quality-gate",
-        label: "nav.aiQualityGate",
-        icon: <ShieldCheck className="h-4 w-4" />,
-        description: "nav.aiQualityGateDesc",
-        requiredRole: 'admin',
-        permissionCategory: "admin",
-        section: "aiVision",
-      },
-      {
-        href: "/ai-image-search",
-        label: "nav.aiImageSearch",
-        icon: <Search className="h-4 w-4" />,
-        description: "nav.aiImageSearchDesc",
-        requiredRole: 'admin',
-        permissionCategory: "admin",
-        section: "aiVision",
-      },
-      {
-        href: "/ai-advanced-vision-lab",
-        label: "nav.advancedVisionLab",
-        icon: <Camera className="h-4 w-4" />,
-        description: "nav.advancedVisionLabDesc",
-        requiredRole: 'admin',
-        permissionCategory: "admin",
-        section: "aiVision",
-      },
-      {
-        href: "/anomaly-banks",
-        label: "nav.anomalyBanks",
-        icon: <Database className="h-4 w-4" />,
-        description: "nav.anomalyBanksDesc",
-        requiredRole: 'admin',
-        permissionCategory: "admin",
-        section: "aiVision",
-      },
-      {
-        href: "/mask-annotation",
-        label: "nav.maskAnnotation",
-        icon: <Brush className="h-4 w-4" />,
-        description: "nav.maskAnnotationDesc",
-        requiredRole: 'admin',
-        permissionCategory: "admin",
-        section: "aiVision",
-      },
-      {
-        href: "/causal-graph",
-        label: "nav.causalGraph",
-        icon: <Workflow className="h-4 w-4" />,
-        description: "nav.causalGraphDesc",
-        requiredPermission: "analytics_root_cause",
-        permissionCategory: "analytics",
-        section: "aiVision",
+        section: "settings",
       },
     ],
   },
@@ -1533,10 +1812,23 @@ export const navGroups: NavGroup[] = [
         // doc 59 cụm phụ — Settings Hub: một cửa cho mọi trang cài đặt (hệ thống/bảo mật/
         // thiết bị/AI/mục tiêu). Per-tile RBAC (tile admin ẩn cho non-admin).
         href: "/settings-hub",
-        label: "Trung tâm cài đặt",
+        label: "nav.settingsHub",
         icon: <SlidersHorizontal className="h-4 w-4" />,
-        description: "Cài đặt hệ thống · bảo mật · thiết bị · AI · mục tiêu — một nơi",
+        description: "nav.settingsHubDesc",
         requiredRole: 'admin',
+        permissionCategory: "admin",
+        section: "platform",
+      },
+      {
+        // doc 67 W5 (việc 1) — DỜI từ group Tổng quan về Admin: quản lý/tùy biến
+        // dashboard (Custom / Templates / Marketplace) là tác vụ quản trị, không
+        // phải cửa vào hằng ngày. Giữ nguyên gate admin như cũ.
+        href: "/dashboard-center",
+        label: "nav.dashboardCenter",
+        icon: <LayoutDashboard className="h-4 w-4" />,
+        description: "nav.dashboardCenterDesc",
+        requiredRole: 'admin',
+        requiredPermission: "admin_system",
         permissionCategory: "admin",
         section: "platform",
       },
@@ -1727,9 +2019,9 @@ export const navGroups: NavGroup[] = [
         // Dữ liệu chủ / Cấu hình nhà máy&Quản trị) ⇄ launcher managers. Một cửa vào duy
         // nhất thay vì rải; các mục con vẫn giữ để deep-link.
         href: "/data-management",
-        label: "Trung tâm dữ liệu",
+        label: "nav.dataManagement",
         icon: <Database className="h-4 w-4" />,
-        description: "Một nơi cho mọi dữ liệu: sản phẩm · dữ liệu chủ · cấu hình nhà máy",
+        description: "nav.dataManagementDesc",
         requiredPermission: "masterdata",
         permissionCategory: "settings",
         section: "productProgram",
@@ -1738,9 +2030,9 @@ export const navGroups: NavGroup[] = [
         // doc 59 Cụm E — Xưởng sản phẩm: hub-launcher hợp nhất định-nghĩa/chuẩn-vàng theo
         // sản phẩm. Gate BẬC THẤP NHẤT (history_view) + per-tile RBAC trong hub.
         href: "/product-workspace",
-        label: "Xưởng sản phẩm",
+        label: "nav.productWorkspace",
         icon: <Package className="h-4 w-4" />,
-        description: "Định nghĩa sản phẩm · biến thể · chuẩn vàng · chất lượng — một nơi",
+        description: "nav.productWorkspaceDesc",
         requiredPermission: "history_view",
         permissionCategory: "history",
         section: "productProgram",
@@ -1804,9 +2096,9 @@ export const navGroups: NavGroup[] = [
         // OEE@v1 + công thức + lineage, chỉ đọc; trpc.semantics). Gate machine_status để
         // quản lý/kỹ sư đọc được định nghĩa KPI. Nhãn trực tiếp (i18n key hoãn — theo tiền lệ War-room).
         href: "/metric-catalog",
-        label: "Danh mục chỉ số (Metric Catalog)",
+        label: "nav.metricCatalog",
         icon: <BookOpen className="h-4 w-4" />,
-        description: "Semantic layer: định nghĩa KPI có phiên bản (OEE@v1) · công thức · nguồn dữ liệu (lineage)",
+        description: "nav.metricCatalogDesc",
         requiredPermission: "machine_status",
         permissionCategory: "machine_monitoring",
         section: "masterData",
@@ -1851,15 +2143,13 @@ export const navGroups: NavGroup[] = [
         permissionCategory: "settings",
         section: "factoryConfig",
       },
-      {
-        href: "/layout",
-        label: "nav.factoryLayout",
-        icon: <LayoutGrid className="h-4 w-4" />,
-        description: "nav.factoryLayoutDesc",
-        requiredPermission: "settings_factory",
-        permissionCategory: "settings",
-        section: "factoryConfig",
-      },
+      // Khối D Task 2 — mục "/layout" ĐÃ BỎ: từ Task 1 (a86e7017), route "/layout" chỉ
+      // còn là <Redirect> vào hub /digital-twin?tab=layout (gate analytics_oee), trong khi
+      // mục nav này còn khai settings_factory — một lối vào hiện ra rồi RouteGuard của hub
+      // từ chối (khác quyền với quyền nó thật sự dẫn tới). "/layout/:id" KHÔNG bị ảnh hưởng:
+      // đó là route riêng, mang route param, giữ nguyên gate settings_factory (xem App.tsx).
+      // Khoá `nav.factoryLayout`/`nav.factoryLayoutDesc` CỐ Ý giữ trong 3 locale (mồ côi vô
+      // hại — /layout/:id có thể cần lại khi có breadcrumb/tiêu đề).
       {
         href: "/workstation-management",
         label: "nav.workstationManagement",
@@ -2183,9 +2473,23 @@ function isItemAccessible(
   // Admin bypasses all checks
   if (userRole === 'admin') return true;
 
-  // Legacy role-based gate (still enforced even with permissions)
-  if (item.requiredRole === 'admin' && userRole !== 'admin') {
-    return false;
+  // Role-based gate (still enforced even with permissions). Normalizes the legacy
+  // single-role shape (`'admin'`) and the doc69 Wave 0-C role-set shape
+  // (`['admin', 'engineer']`) into one allow-list check.
+  if (item.requiredRole) {
+    const allowedRoles = Array.isArray(item.requiredRole) ? item.requiredRole : [item.requiredRole];
+    if (!userRole || !allowedRoles.includes(userRole)) return false;
+  }
+
+  // ★★★ Đợt 3 CHẶN-1 — cổng quyền HOẶC. Đặt TRƯỚC cổng ô-đơn: khi một item khai
+  // `requiredPermissionAny`, tập đó (hợp với ô đơn nếu có) là câu trả lời đầy đủ,
+  // và chạy tiếp xuống cổng ô-đơn sẽ biến HOẶC thành VÀ — tức đúng cái lỗi mà
+  // docblock của `twinCanhRouter` cảnh báo khi nối hai `requirePermission`.
+  if (hasPermission && item.requiredPermissionAny && item.requiredPermissionAny.length > 0) {
+    const tap = item.requiredPermission
+      ? [...item.requiredPermissionAny, item.requiredPermission]
+      : item.requiredPermissionAny;
+    return tap.some(quyen => hasPermission(quyen, 'canView'));
   }
 
   // Permission-based gate (if permission checker is provided and item has a mapping)
@@ -2247,6 +2551,50 @@ export function hasAccessToItem(
 }
 
 /**
+ * Lô 5 Mục 2 — MỘT NGUỒN cho "quyền của route đích", để nơi hiển thị một lối vào KHÔNG
+ * hand-copy chuỗi quyền của route đó (lớp lỗi "một lối vào rồi TỪ CHỐI": mục điều hướng
+ * khai quyền X trong khi route đích thật đòi quyền Y — vd `/layout` từng khai
+ * `settings_factory` trong khi từ Khối D Task 1 nó chỉ còn là <Redirect> vào
+ * `/digital-twin?tab=layout`, route thật đòi `analytics_oee`). Truyền THẲNG href của route
+ * ĐÍCH (sau redirect) — không truyền href của mục điều hướng cũ nếu mục đó đã bị xoá khỏi
+ * `navGroups` (trả `undefined`, không suy ra quyền sai).
+ */
+export function getRequiredPermissionForHref(href: string): string | undefined {
+  for (const group of navGroups) {
+    const item = group.items.find(i => i.href === href);
+    if (item) return item.requiredPermission;
+  }
+  return undefined;
+}
+
+/**
+ * ★★★ Đợt 3 CHẶN-1 — TẬP quyền chấp nhận (phép HOẶC) của một route, gộp cả ô đơn
+ * `requiredPermission` lẫn ô tập `requiredPermissionAny`. Trả mảng RỖNG khi route
+ * không có trong `navGroups` hoặc không gán quyền nào.
+ *
+ * ⚠ Vì sao thêm hàm này thay vì để mọi nơi gọi `getRequiredPermissionForHref`:
+ * hàm kia chỉ đọc ô ĐƠN, nên với một route khai quyền-HOẶC (như `/twin-studio`)
+ * nó trả `undefined` — tức "route này không gán quyền", SAI hoàn toàn và sai một
+ * cách CÂM. Nơi nào cần hỏi "route này đòi quyền gì" phải hỏi hàm này; hàm kia
+ * chỉ còn đúng cho route một-quyền và được giữ vì các consumer hiện có
+ * (`DataManagementHub`, `DataSettings`) — nhưng Đợt 62 đã chuyển CẢ HAI sang
+ * `getAcceptedPermissionsForHref("/twin-studio")`, và ô nav `/digital-twin` đã bị
+ * xoá. Hàm này nay KHÔNG còn chỗ gọi sản phẩm nào; giữ vì nó là câu trả lời đúng
+ * cho route MỘT quyền, và vì lưới ghim cái bẫy câm ở trên.
+ */
+export function getAcceptedPermissionsForHref(href: string): string[] {
+  for (const group of navGroups) {
+    const item = group.items.find(i => i.href === href);
+    if (!item) continue;
+    const tap: string[] = [];
+    if (item.requiredPermissionAny) tap.push(...item.requiredPermissionAny);
+    if (item.requiredPermission) tap.push(item.requiredPermission);
+    return tap;
+  }
+  return [];
+}
+
+/**
  * Get filtered navigation groups based on user role AND granular permissions.
  */
 /**
@@ -2257,17 +2605,27 @@ export function hasAccessToItem(
  * (/scheduled-reports, /robot-model-health, /causal-graph, /products…) GIỮ trong menu.
  */
 const COLLAPSED_INTO_HUB: ReadonlySet<string> = new Set([
-  // → /ai-studio (hub admin-only; 16 row đều requiredRole:'admin')
-  "/ai-models", "/model-versions", "/ai-brain", "/ai-monitoring", "/ai-performance",
-  "/ai-active-learning", "/ai-batch-jobs", "/ai-data-processing", "/ai-time-series",
-  "/ai-reports", "/ai-quality-gate", "/ai-image-search", "/ai-advanced-vision-lab",
-  "/anomaly-banks", "/mask-annotation", "/ai-settings",
+  // doc 69 T6 — the 16 rows previously folded into /ai-studio (now retired/merged
+  // into /ai-home) were REMOVED from this set: the AI rail is now the single
+  // taxonomy (doc 69 B1.2) — folding its own rows into its own hub landing would
+  // defeat that goal. All AI rows show directly in the rail again.
   // → /data-management (hub gate masterdata)
   "/master-data", "/operator-badges", "/master-data-audit", "/data-quality", "/component-library",
   // → /product-workspace (hub gate history_view)
   "/golden-samples", "/defect-catalog", "/measurement-point-health", "/product-comparison",
   // → /reporting-studio (hub gate reports_view). GIỮ /scheduled-reports (gate reports_schedule ≠ hub)
   "/report-builder", "/pdf-reports", "/powerpoint-export",
+  // doc 63 AUD-N4 — /data-comparison đã được Comparison Studio GỘP (doc 46 FE-W3.3);
+  // gate khớp (analytics_advanced) → ẩn row near-dup khỏi rail; ⌘K vẫn tìm được (IA-09).
+  "/data-comparison",
+  // doc 68 §2 (Navbar Phương án B, ĐẢO doc 67 W5) — 4 dashboard tổng hợp
+  // (/command-center · /dashboard · /corporate-dashboard · /executive) TRỞ LẠI rail,
+  // tổ chức dưới group "Tổng quan" thành landing (/control-tower) + 2 sub-nhóm có tiêu đề
+  // ("Bảng tổng hợp" / "Vận hành") qua cơ chế `sections`. Không còn ẩn khỏi rail.
+  // doc 65 PRO-100 nợ-nhỏ — /oee-dashboard là REDIRECT thuần về /device-monitor?tab=oee
+  // (QA4F-1) nhưng vẫn còn row rail riêng → "2 đường vào 1 nội dung" + sidebar-active lệch
+  // (finding vòng xác nhận). Gate khớp hub → ẩn row; ⌘K vẫn tìm được.
+  "/oee-dashboard",
 ]);
 
 /** Remove collapsed rows from every group, then drop groups left empty. */
@@ -2277,13 +2635,14 @@ function collapseNavGroups(groups: NavGroup[]): NavGroup[] {
     .filter(group => group.items.length > 0);
 }
 
-export function getFilteredNavGroups(
+/** Apply role/permission filtering to an already-decided set of groups (collapsed or not). */
+function applyRbacFilter(
+  base: NavGroup[],
   userRole?: string,
   hasPermission?: PermissionChecker,
   hasAnyCategoryPermission?: CategoryChecker,
 ): NavGroup[] {
-  const base = collapseNavGroups(navGroups);
-  // Admin sees everything (except the hub-collapsed rows above)
+  // Admin sees everything in `base`.
   if (userRole === 'admin') return base;
 
   return base
@@ -2305,4 +2664,28 @@ export function getFilteredNavGroups(
       ),
     }))
     .filter(group => group.items.length > 0);
+}
+
+export function getFilteredNavGroups(
+  userRole?: string,
+  hasPermission?: PermissionChecker,
+  hasAnyCategoryPermission?: CategoryChecker,
+): NavGroup[] {
+  // Sidebar view: rows folded into consolidation hubs are removed.
+  return applyRbacFilter(collapseNavGroups(navGroups), userRole, hasPermission, hasAnyCategoryPermission);
+}
+
+/**
+ * doc 63 (AUD-05 / IA-09) — SEARCH index for the ⌘K command palette. Identical
+ * role/permission filtering to getFilteredNavGroups but WITHOUT collapseNavGroups: the
+ * 28 rows folded into consolidation hubs (COLLAPSED_INTO_HUB) stay searchable, so a page
+ * hidden from the sidebar is still reachable by name (Nielsen H7). Only the command palette
+ * consumes this fuller set; the rail keeps using the collapsed getFilteredNavGroups.
+ */
+export function getSearchNavGroups(
+  userRole?: string,
+  hasPermission?: PermissionChecker,
+  hasAnyCategoryPermission?: CategoryChecker,
+): NavGroup[] {
+  return applyRbacFilter(navGroups, userRole, hasPermission, hasAnyCategoryPermission);
 }

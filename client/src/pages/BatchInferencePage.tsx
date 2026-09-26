@@ -32,6 +32,7 @@ import {
 import { Layers, Plus, RefreshCw, XCircle, ChevronRight } from "lucide-react";
 import { format } from "date-fns";
 import { toast } from "sonner";
+import { toastTrpcError } from "@/lib/trpcErrors";
 import { usePollingInterval } from "@/hooks/usePollingInterval";
 
 /** Job status → shared <StatusBadge> map (solid shadcn variant, W4). */
@@ -89,12 +90,12 @@ export default function BatchInferencePage() {
       setNewInputs("");
       refetch();
     },
-    onError: (err) => toast.error(err.message),
+    onError: (err) => toastTrpcError(err),
   });
 
   const cancelMutation = trpc.aiAdvanced.batch.cancel.useMutation({
     onSuccess: () => { refetch(); refetchJob(); },
-    onError: (err) => toast.error(err.message),
+    onError: (err) => toastTrpcError(err),
   });
 
   // ── Helpers ────────────────────────────────────────────────

@@ -12,6 +12,8 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { Label } from "@/components/ui/label";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger, DropdownMenuSeparator } from "@/components/ui/dropdown-menu";
 import { trpc } from "@/lib/trpc";
+import { mapTrpcError } from "@/lib/trpcErrors";
+import { finalYield } from "@shared/kpiYield";
 import { 
   Search, 
   Filter, 
@@ -77,6 +79,8 @@ import {
 import BarcodeScanner from "@/components/BarcodeScanner";
 import ImageGallery, { GalleryImage } from "@/components/ImageGallery";
 import { EmptyState, NoWorkstationData, NoChartData } from "@/components/EmptyState";
+import { ScopeEmptyNotice, ScopeAwareEmpty } from "@/components/ScopeEmptyNotice";
+import { scopeEmptyReasonOf } from "@/lib/scopeEmpty";
 import HistoryComparison from "@/components/HistoryComparison";
 import { AnnotationSearch } from "@/components/AnnotationSearch";
 import { ChartErrorBoundary, TableErrorBoundary, AnalyticsErrorBoundary } from "@/components/ErrorBoundary";
@@ -84,6 +88,9 @@ import { StatsCardSkeleton, ChartSkeleton, TableSkeleton, WorkstationSummarySkel
 import { toast } from "sonner";
 import { navItems } from "@/lib/navigation";
 import { useState, useMemo, useCallback } from "react";
+// doc 64 IA-10 S3 — truc pham vi ISA-95.
+import { useScope } from "@/components/patterns/ScopeFilterBar";
+import { useScopeWired } from "@/contexts/AssetScopeContext";
 import { HistoryInfiniteScroll } from "@/components/HistoryInfiniteScroll";
 import { Link } from "wouter";
 import { format as formatDate, subDays, startOfDay, endOfDay } from "date-fns";
@@ -252,6 +259,11 @@ export default function History() {
   const utils = trpc.useUtils();
   const bulkAcknowledgeMutation = trpc.inspection.bulkAcknowledge.useMutation();
 
+  // doc 64 IA-10 S3-A — trục phạm vi gửi ID; server resolve id→code (DEP-S3 đã đóng).
+  // CODE gõ tay tại trang luôn THẮNG id (server ưu tiên code).
+  const { scope: assetScope } = useScope(["factory", "line", "machine"]);
+  useScopeWired();
+
   const { data, isLoading, refetch } = trpc.inspection.search.useQuery({
     factoryCode: filters.factoryCode || undefined,
     workshopCode: filters.workshopCode || undefined,
@@ -263,6 +275,9 @@ export default function History() {
     result: filters.result !== "all" ? filters.result : undefined,
     startDate: dateRangeValues.startDate,
     endDate: dateRangeValues.endDate,
+    factoryId: assetScope.factoryId,
+    lineId: assetScope.lineId,
+    machineId: assetScope.machineId,
     limit,
     offset: (page - 1) * limit,
     sortBy,
@@ -280,9 +295,20 @@ export default function History() {
     result: filters.result !== "all" ? filters.result : undefined,
     startDate: dateRangeValues.startDate,
     endDate: dateRangeValues.endDate,
+    factoryId: assetScope.factoryId,
+    lineId: assetScope.lineId,
+    machineId: assetScope.machineId,
     limit: analysisLimit, // Progressive loading for analysis
     offset: 0,
   });
+
+  /**
+   * ★ 2026-08-17 — LÝ DO RỖNG CỦA CẢ TRANG, gom MỘT LẦN.
+   * "inspection.search" mang nhãn (data phân trang + allData cho phân tích).
+   * ⚠ "inspection.topNGPoints" và các truy vấn "workstation.*" KHÔNG mang nhãn — mảng trần
+   * không đi qua được tRPC (xem "withScopeLabels") — nên chúng lấy lý do TỪ ĐÂY (nhóm b).
+   */
+  const scopeEmptyReason = scopeEmptyReasonOf(data, allData);
 
   const { data: machines } = trpc.machine.list.useQuery();
 
@@ -355,7 +381,7 @@ export default function History() {
     const okCount = inspections.filter((i: any) => i.overallResult === "OK").length;
     const ngCount = inspections.filter((i: any) => i.overallResult === "NG").length;
     const ntfCount = inspections.filter((i: any) => i.overallResult === "NTF").length;
-    const yieldRate = total > 0 ? ((okCount + ntfCount) / total * 100) : 0;
+    const yieldRate = total > 0 ? finalYield({ ok: okCount, ntf: ntfCount, total }) : 0;
 
     // Group by machine
     const machineStats: Record<string, { ok: number; ng: number; ntf: number; total: number; name: string }> = {};
@@ -406,17 +432,17 @@ export default function History() {
       machineStats: Object.entries(machineStats).map(([id, stats]) => ({
         id,
         ...stats,
-        yieldRate: stats.total > 0 ? ((stats.ok + stats.ntf) / stats.total * 100) : 0,
+        yieldRate: stats.total > 0 ? finalYield({ ok: stats.ok, ntf: stats.ntf, total: stats.total }) : 0,
       })),
       dateStats: Object.entries(dateStats).map(([date, stats]) => ({
         date,
         ...stats,
-        yieldRate: stats.total > 0 ? ((stats.ok + stats.ntf) / stats.total * 100) : 0,
+        yieldRate: stats.total > 0 ? finalYield({ ok: stats.ok, ntf: stats.ntf, total: stats.total }) : 0,
       })).slice(-14), // Last 14 days
       productStats: Object.entries(productStats).map(([model, stats]) => ({
         model,
         ...stats,
-        yieldRate: stats.total > 0 ? ((stats.ok + stats.ntf) / stats.total * 100) : 0,
+        yieldRate: stats.total > 0 ? finalYield({ ok: stats.ok, ntf: stats.ntf, total: stats.total }) : 0,
       })),
     };
   }, [allData?.data, machines]);
@@ -505,7 +531,7 @@ export default function History() {
         const ngCount = inspection.ngCount || 0;
         const ntfCount = inspection.ntfCount || 0;
         const total = okCount + ngCount + ntfCount;
-        const yieldRate = total > 0 ? ((okCount + ntfCount) / total * 100).toFixed(2) : "0.00";
+        const yieldRate = total > 0 ? finalYield({ ok: okCount, ntf: ntfCount, total }).toFixed(2) : "0.00";
         
         return [
           index + 1,
@@ -619,7 +645,7 @@ export default function History() {
         const ngCount = inspection.ngCount || 0;
         const ntfCount = inspection.ntfCount || 0;
         const total = okCount + ngCount + ntfCount;
-        const yieldRate = total > 0 ? ((okCount + ntfCount) / total * 100).toFixed(2) : "0.00";
+        const yieldRate = total > 0 ? finalYield({ ok: okCount, ntf: ntfCount, total }).toFixed(2) : "0.00";
         
         return [
           index + 1,
@@ -691,7 +717,7 @@ export default function History() {
       await utils.inspection.search.invalidate();
     } catch (error) {
       console.error("Bulk acknowledge error:", error);
-      toast.error(error instanceof Error && error.message ? error.message : t("history.acknowledgeError"));
+      toast.error(mapTrpcError(error));
     } finally {
       setIsBulkAcknowledging(false);
     }
@@ -832,7 +858,7 @@ export default function History() {
       }, []) || [];
 
       const rows = summaryData.map((ws: any) => {
-        const yieldRate = ws.totalCount > 0 ? ((ws.okCount + ws.ntfCount) / ws.totalCount * 100) : 0;
+        const yieldRate = ws.totalCount > 0 ? finalYield({ ok: ws.okCount, ntf: ws.ntfCount, total: ws.totalCount }) : 0;
         return [
           ws.workstationName || t('common.unknown'),
           ws.workstationCode,
@@ -883,7 +909,7 @@ export default function History() {
         doc.text(t('history.summaryLabel') + ':', 14, 45);
         doc.setFontSize(10);
         const totalDefects = summaryData.reduce((sum: number, ws: any) => sum + (ws.ngCount || 0), 0);
-        const avgYield = summaryData.length > 0 ? summaryData.reduce((sum: number, ws: any) => sum + ((ws.okCount + ws.ntfCount) / Math.max(ws.totalCount, 1) * 100), 0) / summaryData.length : 0;
+        const avgYield = summaryData.length > 0 ? summaryData.reduce((sum: number, ws: any) => sum + finalYield({ ok: ws.okCount, ntf: ws.ntfCount, total: ws.totalCount }), 0) / summaryData.length : 0;
         doc.text(`- ${t('history.totalWorkstations')}: ${summaryData.length}`, 20, 52);
         doc.text(`- ${t('history.totalNgDefects')}: ${totalDefects}`, 20, 59);
         doc.text(`- ${t('history.avgYield')}: ${avgYield.toFixed(2)}%`, 20, 66);
@@ -975,6 +1001,14 @@ export default function History() {
           title={t("history.title")}
           description={t("history.subtitle")}
         />
+
+        {/*
+          ⚠ 2026-08-17 — LÝ DO CỦA MỘT TRANG 0 DÒNG. Tài khoản CHƯA ĐƯỢC GÁN NHÀ MÁY nhận 0 bản
+          ghi, 0 điểm NG và mọi biểu đồ trống — hợp lệ, nhưng trông y hệt "bộ lọc không khớp".
+          `inspection.search` mang `scopeEmptyReason` cho cả trang; `inspection.topNGPoints` trả
+          MẢNG nên nhãn không đi qua được tRPC và dùng chung dải này (xem `withScopeLabels`).
+        */}
+        <ScopeEmptyNotice reason={scopeEmptyReason} />
 
         {/* Recent Searches Chips */}
         {recentSearches.length > 0 && (
@@ -1084,7 +1118,7 @@ export default function History() {
               <div className="space-y-2">
                 <label className="text-sm text-muted-foreground">{t("history.productCodeLabel")}</label>
                 <Input
-                  placeholder="VD: MODEL-A, PRODUCT-001"
+                  placeholder="VD: MODEL-A"
                   value={filters.productModel}
                   onChange={(e) => setFilters({ ...filters, productModel: e.target.value })}
                 />
@@ -1270,7 +1304,12 @@ export default function History() {
                   <div>
                     <CardTitle className="text-lg">{t("history.searchResults")}</CardTitle>
                     <CardDescription>
-                      {data?.total ? t("history.foundResults", { count: data.total }) : t("dashboard.noDataYet")}
+                      {/* doc65 PRO-100: dấu phân cách nghìn theo vi-VN (22.996) */}
+                      {data?.total
+                        ? t("history.foundResults", { count: data.total.toLocaleString("vi-VN") as unknown as number })
+                        : scopeEmptyReason
+                          ? t("common.scopeEmpty.badge")
+                          : t("dashboard.noDataYet")}
                     </CardDescription>
                   </div>
                   <div className="flex items-center gap-2">
@@ -1290,7 +1329,7 @@ export default function History() {
 
                     {/* Page Size Selector */}
                     <Select value={String(pageSize)} onValueChange={(v) => { setPageSize(Number(v)); setPage(1); }}>
-                      <SelectTrigger className="w-25">
+                      <SelectTrigger className="w-30">
                         <SelectValue />
                       </SelectTrigger>
                       <SelectContent>
@@ -1664,6 +1703,7 @@ export default function History() {
                   </div>
                 ) : (
                   <EmptyState
+                    scopeEmptyReason={scopeEmptyReason}
                     icon={HistoryIcon}
                     title={t("common.noResults")}
                     description={t("history.tryChangingFilters")}
@@ -1939,6 +1979,7 @@ export default function History() {
               <Card className="glass-card">
                 <CardContent>
                   <EmptyState
+                    scopeEmptyReason={scopeEmptyReason}
                     icon={BarChart3}
                     title={t("history.noDataToAnalyze")}
                     description={t("history.tryDifferentFilters")}
@@ -2069,7 +2110,7 @@ export default function History() {
                           }
                           return acc;
                         }, []).map((ws: any) => {
-                          const yieldRate = ws.totalCount > 0 ? ((ws.okCount + ws.ntfCount) / ws.totalCount * 100) : 0;
+                          const yieldRate = ws.totalCount > 0 ? finalYield({ ok: ws.okCount, ntf: ws.ntfCount, total: ws.totalCount }) : 0;
                           return (
                             <Card key={ws.workstationId} className="border-l-4 border-l-info">
                               <CardContent className="pt-4">
@@ -2100,7 +2141,7 @@ export default function History() {
                           );
                         })
                       ) : (
-                        <div className="col-span-full"><NoWorkstationData /></div>
+                        <div className="col-span-full"><NoWorkstationData scopeEmptyReason={scopeEmptyReason} /></div>
                       )}
                     </div>
                   </div>
@@ -2141,7 +2182,7 @@ export default function History() {
                         </BarChart>
                       </ResponsiveContainer>
                     ) : (
-                      <NoChartData />
+                      <NoChartData scopeEmptyReason={scopeEmptyReason} />
                     )}
                   </div>
                   </ChartErrorBoundary>
@@ -2182,6 +2223,7 @@ export default function History() {
                       ))
                     ) : (
                       <EmptyState
+                        scopeEmptyReason={scopeEmptyReason}
                         variant="no-analytics"
                         title={t("history.noPointData")}
                         description={t("history.noPointDataDesc")}
@@ -2225,7 +2267,7 @@ export default function History() {
                             }
                             return acc;
                           }, []).map((ws: any) => {
-                            const yieldRate = ws.totalCount > 0 ? ((ws.okCount + ws.ntfCount) / ws.totalCount * 100) : 0;
+                            const yieldRate = ws.totalCount > 0 ? finalYield({ ok: ws.okCount, ntf: ws.ntfCount, total: ws.totalCount }) : 0;
                             return (
                               <TableRow key={ws.workstationId} className="border-b hover:bg-muted/50">
                                 <TableCell className="py-2 px-2">{ws.workstationName || t('common.unknown')}</TableCell>
@@ -2242,6 +2284,7 @@ export default function History() {
                           <TableRow>
                             <TableCell colSpan={7}>
                               <EmptyState
+                                scopeEmptyReason={scopeEmptyReason}
                                 variant="no-data"
                                 title={t("dashboard.noWorkstationData")}
                                 description={t("dashboard.noWorkstationDataDesc")}
@@ -2402,6 +2445,7 @@ export default function History() {
                             ) : (
                               <div className="h-full flex items-center justify-center">
                                 <EmptyState
+                                  scopeEmptyReason={scopeEmptyReason}
                                   variant="no-analytics"
                                   title={t("history.noErrorDataToShow")}
                                   compact
@@ -2479,109 +2523,29 @@ export default function History() {
                     </CardContent>
                   </Card>
 
-                  {/* Heatmap - NG Distribution by Hour and Day */}
+                  {/* NG by Day — real backend data (analysisStats.dateStats), no simulated/random distribution */}
                   <Card className="glass-card">
                     <CardHeader>
                       <CardTitle className="text-lg flex items-center gap-2">
                         <Activity className="h-5 w-5 text-primary" />
-                        {t("history.heatmapTitle")}
+                        {t("history.ngTheoNgayTitle")}
                       </CardTitle>
                       <CardDescription>
-                        {t("history.heatmapDesc")}
+                        {t("history.ngTheoNgayDesc")}
                       </CardDescription>
                     </CardHeader>
                     <CardContent>
-                      {(() => {
-                        // Generate heatmap data from dateStats
-                        const hours = Array.from({ length: 24 }, (_, i) => i);
-                        const days = analysisStats.dateStats.slice(-7).map(d => d.date);
-                        
-                        // Create heatmap data: simulate distribution based on NG count
-                        const heatmapData = days.flatMap((day, dayIndex) => {
-                          const dayData = analysisStats.dateStats.find(d => d.date === day);
-                          const baseNG = dayData?.ng || 0;
-                          
-                          return hours.map(hour => {
-                            // Simulate hourly distribution (higher during work hours)
-                            const workHourMultiplier = (hour >= 8 && hour <= 17) ? 1.5 : 
-                                                       (hour >= 6 && hour <= 20) ? 1.0 : 0.3;
-                            const randomVariation = 0.5 + Math.random();
-                            const ngCount = Math.round((baseNG / 24) * workHourMultiplier * randomVariation);
-                            
-                            return {
-                              day: day,
-                              hour: hour,
-                              value: ngCount,
-                              dayIndex,
-                              hourLabel: `${hour.toString().padStart(2, '0')}:00`
-                            };
-                          });
-                        });
-                        
-                        const maxValue = Math.max(...heatmapData.map(d => d.value), 1);
-                        
-                        return (
-                          <div className="space-y-4">
-                            {/* Heatmap Grid */}
-                            <div className="overflow-x-auto">
-                              <div className="min-w-150">
-                                {/* Hour labels */}
-                                <div className="flex mb-2">
-                                  <div className="w-20"></div>
-                                  {hours.filter((_, i) => i % 3 === 0).map(hour => (
-                                    <div key={hour} className="flex-1 text-center text-xs text-muted-foreground">
-                                      {hour.toString().padStart(2, '0')}:00
-                                    </div>
-                                  ))}
-                                </div>
-                                
-                                {/* Heatmap rows */}
-                                {days.map((day, dayIndex) => (
-                                  <div key={day} className="flex items-center mb-1">
-                                    <div className="w-20 text-xs text-muted-foreground truncate pr-2">
-                                      {day}
-                                    </div>
-                                    <div className="flex-1 flex gap-0.5">
-                                      {hours.map(hour => {
-                                        const cellData = heatmapData.find(
-                                          d => d.dayIndex === dayIndex && d.hour === hour
-                                        );
-                                        const intensity = cellData ? cellData.value / maxValue : 0;
-                                        const bgColor = intensity === 0 ? 'bg-secondary/30' :
-                                                       intensity < 0.25 ? 'bg-success/30' :
-                                                       intensity < 0.5 ? 'bg-warning/30' :
-                                                       intensity < 0.75 ? 'bg-warning/60' :
-                                                       'bg-destructive/60';
-                                        
-                                        return (
-                                          <div
-                                            key={hour}
-                                            className={`flex-1 h-6 rounded-sm ${bgColor} cursor-pointer transition-all hover:ring-1 hover:ring-primary`}
-                                            title={`${day} ${hour.toString().padStart(2, '0')}:00 - ${cellData?.value || 0} NG`}
-                                          />
-                                        );
-                                      })}
-                                    </div>
-                                  </div>
-                                ))}
-                              </div>
-                            </div>
-                            
-                            {/* Legend */}
-                            <div className="flex items-center justify-center gap-4 pt-2">
-                              <span className="text-xs text-muted-foreground">{t("history.lowNg")}</span>
-                              <div className="flex gap-1">
-                                <div className="w-6 h-4 rounded bg-secondary/30" />
-                                <div className="w-6 h-4 rounded bg-success/30" />
-                                <div className="w-6 h-4 rounded bg-warning/30" />
-                                <div className="w-6 h-4 rounded bg-warning/60" />
-                                <div className="w-6 h-4 rounded bg-destructive/60" />
-                              </div>
-                              <span className="text-xs text-muted-foreground">{t("history.highNg")}</span>
-                            </div>
-                          </div>
-                        );
-                      })()}
+                      <div className="h-75">
+                        <ResponsiveContainer width="100%" height="100%">
+                          <BarChart data={analysisStats.dateStats}>
+                            <CartesianGrid {...chartGridProps} />
+                            <XAxis dataKey="date" tick={chartAxisTick} />
+                            <YAxis tick={chartAxisTick} />
+                            <Tooltip contentStyle={chartTooltipStyle} />
+                            <Bar dataKey="ng" name="NG" fill={COLORS.ng} radius={[4, 4, 0, 0]} />
+                          </BarChart>
+                        </ResponsiveContainer>
+                      </div>
                     </CardContent>
                   </Card>
 
@@ -2679,11 +2643,16 @@ export default function History() {
                             ))}
                           </div>
                         ) : (
+                          /* ⚠ "Tiến trình ổn định" là một KẾT LUẬN về dây chuyền. Tài khoản
+                             chưa gán nhà máy không có cơ sở phát biểu nó — 0 vi phạm ở đây chỉ
+                             vì 0 bản ghi lọt vào phạm vi. */
+                          <ScopeAwareEmpty reason={scopeEmptyReason} variant="block">
                           <div className="p-6 rounded-lg bg-success/20 text-center">
                             <CheckCircle2 className="h-8 w-8 text-success mx-auto mb-2" />
                             <span className="font-medium text-success block">{t("history.processStable")}</span>
                             <span className="text-sm text-muted-foreground mt-1 block">{t("history.noWesternElectricViolation")}</span>
                           </div>
+                          </ScopeAwareEmpty>
                         );
                       })()}
                     </CardContent>
@@ -2693,6 +2662,7 @@ export default function History() {
                 <Card className="glass-card">
                   <CardContent>
                     <EmptyState
+                      scopeEmptyReason={scopeEmptyReason}
                       icon={TrendingUp}
                       title={t("history.noSPCData")}
                       description={t("history.tryDifferentFilters")}
@@ -2939,6 +2909,7 @@ export default function History() {
                 <Card className="glass-card">
                   <CardContent>
                     <EmptyState
+                      scopeEmptyReason={scopeEmptyReason}
                       icon={Brain}
                       title={t("history.noAIData")}
                       description={t("history.minDataRequired")}
@@ -3259,6 +3230,7 @@ export default function History() {
                 <Card className="glass-card">
                   <CardContent>
                     <EmptyState
+                      scopeEmptyReason={scopeEmptyReason}
                       icon={Target}
                       title={t("history.noYieldData")}
                       description={t("history.tryDifferentFilters")}
@@ -3315,6 +3287,7 @@ export default function History() {
                   />
                 ) : (
                   <EmptyState
+                    scopeEmptyReason={scopeEmptyReason}
                     icon={Image}
                     title={t("history.noImages")}
                     description={t("history.noImagesDesc")}

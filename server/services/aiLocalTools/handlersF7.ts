@@ -13,8 +13,23 @@
  *     type / deviceClass. Serves QUẢN LÝ ("phân xưởng automation hôm nay thế nào?").
  *
  * Same KHUÔN as handlersF6: zod `.strict()` params, getDb() guard → noDbResult,
- * db/* helpers (no ad-hoc SQL), Vietnamese textSummary. kind:'read' (omitted) — NO
+ * db/* helpers (no ad-hoc SQL), Vietnamese textSummary. kind:'read' — NO
  * write/execute. Self-registers on import (index.ts → `import "./handlersF7"`).
+ *
+ * ══════════════════════════════════════════════════════════════════════════════════════════════
+ * ★★★ G3-A — HAI TOOL NÀY NAY ĐỨNG SAU `machine_status/canView`.
+ * ══════════════════════════════════════════════════════════════════════════════════════════════
+ * Cả hai đọc **đúng bộ dữ liệu mà `/process-analytics` bày ra** (`processResult.stats`,
+ * `processResult.spcChart`, `processResult.fleetRollup` — xem `ProcessAnalytics.tsx`), và màn ấy
+ * khai `requiredPermission: "machine_status"` trong `client/src/lib/navigation.tsx`. Tool anh em
+ * `get_machine_health` (readToolsP2bc) cũng đứng sau `machine_monitoring/canView`, mà
+ * `machine_monitoring` là **alias** trỏ về `machine_status` (`shared/permissions.ts`) ⇒ cùng một bit.
+ *
+ * ⚠ GHI NHẬN MỘT VÊNH CÓ THẬT, KHÔNG SIẾT LÉN: `get_device_health` trả cả một **phán quyết SPC**
+ * (Cpk, số điểm ngoài kiểm soát) và hệ có riêng bit `analytics_spc`. Nhưng chính `/process-analytics`
+ * đã render `processResult.spcChart` sau `machine_status`, nên siết tool này lên `analytics_spc` sẽ
+ * **chặt hơn giao diện** và từ chối đúng những kỹ thuật viên đang xem biểu đồ ấy mỗi ngày. Thống
+ * nhất hai cổng là quyết định RBAC của chủ dự án — ghi ra, không tự quyết ở đây.
  */
 
 import { z } from "zod";
@@ -30,7 +45,11 @@ import {
 import { readConfigState } from "../configDriftService";
 import { buildProcessControlChart } from "../processSpc";
 import { deviceClassOf } from "../../constants/machineTypes";
-import { registerTool, type Tool, type ToolResult } from "./toolRegistry";
+import { registerTool, type Tool, type ToolPermission, type ToolResult } from "./toolRegistry";
+import { authCtxParam, rbacGate } from "./readToolRbac";
+
+/** G3-A — MỘT hằng dùng ở CẢ `requiredPermission` LẪN `rbacGate` (xem handlers.ts). */
+const PERM_DEVICE: ToolPermission = { module: "machine_status", action: "canView" };
 
 function sinceDays(days: number): Date {
   return new Date(Date.now() - Math.min(Math.max(days, 1), 90) * 24 * 60 * 60 * 1000);
@@ -69,6 +88,7 @@ const deviceHealthParams = z
     machineCode: z.string().min(1).max(50),
     metricKey: z.string().min(1).max(64).optional(),
     days: z.number().int().min(1).max(30).optional().default(7),
+    __authCtx: authCtxParam,
   })
   .strict();
 
@@ -82,12 +102,19 @@ const getDeviceHealth: Tool<z.infer<typeof deviceHealthParams>, DeviceHealthData
     "năng lực quá trình", "cpk máy", "máy này thế nào",
   ],
   parameters: deviceHealthParams,
-  handler: async ({ machineCode, metricKey, days }) => {
+  kind: "read",
+  requiredPermission: PERM_DEVICE,
+  handler: async ({ machineCode, metricKey, days, __authCtx }) => {
     const empty: DeviceHealthData = {
       machineCode, machineType: null, deviceClass: null, lastActivity: null,
       process: { pass: 0, fail: 0, warn: 0, skip: 0, total: 0, failRate: 0, fpy: null },
       configDrift: null, spc: null,
     };
+    const denied = await rbacGate<DeviceHealthData>(
+      __authCtx, PERM_DEVICE, "device_health", "Sức khỏe thiết bị", empty,
+    );
+    if (denied) return denied;
+
     const db = await getDb();
     if (!db) return noDb<DeviceHealthData>("device_health", "Sức khỏe thiết bị", empty);
 
@@ -167,6 +194,7 @@ const fleetSummaryParams = z
   .object({
     days: z.number().int().min(1).max(90).optional().default(7),
     deviceClass: z.enum(["aoi_avi", "automation", "iot"]).optional(),
+    __authCtx: authCtxParam,
   })
   .strict();
 
@@ -180,8 +208,15 @@ const getFleetProcessSummary: Tool<z.infer<typeof fleetSummaryParams>, FleetSumm
     "automation hôm nay", "tổng quan sản xuất",
   ],
   parameters: fleetSummaryParams,
-  handler: async ({ days, deviceClass }) => {
+  kind: "read",
+  requiredPermission: PERM_DEVICE,
+  handler: async ({ days, deviceClass, __authCtx }) => {
     const empty: FleetSummaryData = { days, deviceClass: deviceClass ?? null, groups: [], totals: { total: 0, pass: 0, fail: 0, fpy: null } };
+    const denied = await rbacGate<FleetSummaryData>(
+      __authCtx, PERM_DEVICE, "fleet_process_summary", "Tổng hợp phân xưởng", empty,
+    );
+    if (denied) return denied;
+
     const db = await getDb();
     if (!db) return noDb<FleetSummaryData>("fleet_process_summary", "Tổng hợp phân xưởng", empty);
 

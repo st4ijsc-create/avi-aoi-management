@@ -44,234 +44,234 @@ type GuideSection = {
 const sections: GuideSection[] = [
   {
     id: "overview",
-    title: "1. Giới thiệu",
-    description: "Tổng quan hệ thống MES SYNAPSE và cấu trúc menu chính",
+    title: "userGuide.overview.1GioiThieu",
+    description: "userGuide.overview.tongQuanHeThongMes",
     icon: <BookOpen className="h-5 w-5" />,
     topics: [
       {
-        title: "Mục tiêu hệ thống",
+        title: "userGuide.overview.mucTieuHeThong",
         content: [
-          "Hệ thống MES SYNAPSE dùng để giám sát và quản lý quy trình kiểm tra chất lượng theo thời gian thực, từ cấp tập đoàn đến từng máy.",
-          "Người dùng có thể theo dõi KPI sản xuất, lịch sử kiểm tra, trạng thái thiết bị, cảnh báo chất lượng và toàn bộ vòng đời dữ liệu liên quan.",
+          "userGuide.overview.heThongMesSynapseDung",
+          "userGuide.overview.nguoiDungCoTheTheo",
         ],
       },
       {
-        title: "Tính năng chính",
+        title: "userGuide.overview.tinhNangChinh",
         content: [
-          "Dashboard realtime hiển thị Total Output, FPY, Yield Rate, OK/NG/NTF và các cảnh báo theo ngưỡng.",
-          "Theo dõi trạng thái online/offline/error của máy, xem lịch sử kiểm tra kèm ảnh và dữ liệu đo.",
-          "Hỗ trợ cảnh báo tự động, báo cáo định kỳ, phân tích SPC, root cause và quản trị phân quyền người dùng.",
+          "userGuide.overview.dashboardRealtimeHienThiTotal",
+          "userGuide.overview.theoDoiTrangThaiOnline",
+          "userGuide.overview.hoTroCanhBaoTu",
         ],
       },
       {
-        title: "Nhóm chức năng",
-        content: ["Hệ thống được tổ chức theo các nhóm menu chính dưới đây:"],
+        title: "userGuide.overview.nhomChucNang",
+        content: ["userGuide.overview.heThongDuocToChuc"],
         bullets: [
-          "Dashboard: Tổng quan, Drill-down, Dashboard Center",
-          "Giám sát: Monitoring Settings, MQTT, Device Management",
-          "Cảnh báo: Alert rules, lịch sử cảnh báo, predictive alerts",
-          "Sản xuất: Production orders, lịch sử sản xuất, quản lý công đoạn",
-          "Phân tích: Defect heatmap, SPC, root cause, dự đoán lỗi",
-          "Dữ liệu: Cấu trúc dữ liệu nền, layout, import/export, backup",
-          "Cài đặt: Cấu hình hệ thống, ngưỡng cảnh báo, OEE targets",
-          "Quản trị: Users, roles/permissions, audit logs, sessions",
+          "userGuide.overview.dashboardTongQuanDrillDown",
+          "userGuide.overview.giamSatMonitoringSettingsMqtt",
+          "userGuide.overview.canhBaoAlertRulesLich",
+          "userGuide.overview.sanXuatProductionOrdersLich",
+          "userGuide.overview.phanTichDefectHeatmapSpc",
+          "userGuide.overview.duLieuCauTrucDu",
+          "userGuide.overview.caiDatCauHinhHe",
+          "userGuide.overview.quanTriUsersRolesPermissions",
         ],
       },
     ],
   },
   {
     id: "security",
-    title: "2. Đăng nhập và bảo mật",
-    description: "Đăng nhập, 2FA, đổi mật khẩu và nguyên tắc bảo mật tài khoản",
+    title: "userGuide.security.2DangNhapVaBao",
+    description: "userGuide.security.dangNhap2faDoiMat",
     icon: <Shield className="h-5 w-5" />,
     topics: [
       {
-        title: "Đăng nhập hệ thống",
+        title: "userGuide.security.dangNhapHeThong",
         content: [
-          "Người dùng đăng nhập bằng tài khoản được cấp. Nếu tài khoản bật xác thực 2 lớp, hệ thống yêu cầu mã OTP.",
+          "userGuide.security.nguoiDungDangNhapBang",
         ],
       },
       {
-        title: "Bật 2FA",
-        content: ["Thực hiện theo luồng: Profile → Bảo mật → Bật 2FA → quét QR bằng Authenticator → nhập OTP xác nhận."],
+        title: "userGuide.security.bat2fa",
+        content: ["userGuide.security.thucHienTheoLuongProfile"],
       },
       {
-        title: "Đổi mật khẩu",
+        title: "userGuide.security.doiMatKhau",
         content: [
-          "Thực hiện tại Profile → Đổi mật khẩu.",
-          "Mật khẩu nên có tối thiểu 8 ký tự, gồm chữ hoa, chữ thường, số và ký tự đặc biệt.",
+          "userGuide.security.thucHienTaiProfileDoi",
+          "userGuide.security.matKhauNenCoToi",
         ],
       },
     ],
   },
   {
     id: "dashboard",
-    title: "3. Dashboard chính",
-    description: "Theo dõi KPI, cảnh báo yield, trạng thái kết nối và các tab phân tích nhanh",
+    title: "userGuide.dashboard.3DashboardChinh",
+    description: "userGuide.dashboard.theoDoiKpiCanhBao",
     icon: <BarChart3 className="h-5 w-5" />,
     topics: [
       {
         title: "KPI cards",
-        content: ["Dashboard hiển thị các KPI cốt lõi của dây chuyền và chất lượng."],
+        content: ["userGuide.dashboard.dashboardHienThiCacKpi"],
         bullets: [
-          "Total Output: Tổng số sản phẩm đã kiểm tra",
-          "OK Count / NG Count / NTF Count: Kết quả phân loại",
+          "userGuide.dashboard.totalOutputTongSoSan",
+          "userGuide.dashboard.okCountNgCountNtf",
           "FPY = OK / (OK + NG)",
           "Yield Rate = (OK + NTF) / Total",
         ],
       },
       {
-        title: "Cảnh báo yield và trạng thái máy",
+        title: "userGuide.dashboard.canhBaoYieldVaTrang",
         content: [
-          "Phần cảnh báo hiển thị máy có yield thấp hơn ngưỡng Warning/Critical.",
-          "Trạng thái kết nối thể hiện online, offline hoặc error để hỗ trợ xử lý nhanh.",
+          "userGuide.dashboard.phanCanhBaoHienThi",
+          "userGuide.dashboard.trangThaiKetNoiThe",
         ],
       },
       {
-        title: "Các tab bổ sung",
-        content: ["Tab tổng quan, NG visual và layout dây chuyền giúp phân tích nhanh theo nhiều góc nhìn."],
+        title: "userGuide.dashboard.cacTabBoSung",
+        content: ["userGuide.dashboard.tabTongQuanNgVisual"],
       },
     ],
   },
   {
     id: "corporate",
-    title: "4. Quản lý tập đoàn",
-    description: "Theo dõi hiệu suất nhiều nhà máy theo cấu trúc tập đoàn",
+    title: "userGuide.corporate.4QuanLyTapDoan",
+    description: "userGuide.corporate.theoDoiHieuSuatNhieu",
     icon: <Factory className="h-5 w-5" />,
     topics: [
       {
         title: "Corporate Dashboard",
         content: [
-          "Dành cho quản lý cấp cao, cung cấp góc nhìn toàn cảnh theo cấp tập đoàn, công ty và nhà máy.",
+          "userGuide.corporate.danhChoQuanLyCap",
         ],
       },
       {
-        title: "So sánh hiệu suất",
-        content: ["Hỗ trợ so sánh output, yield, OEE, downtime giữa các nhà máy/dây chuyền."],
+        title: "userGuide.corporate.soSanhHieuSuat",
+        content: ["userGuide.corporate.hoTroSoSanhOutput"],
       },
       {
-        title: "Drill-down chi tiết",
+        title: "userGuide.corporate.drillDownChiTiet",
         content: [
-          "Có thể đi từ cấp tập đoàn đến công ty, nhà máy, dây chuyền và máy để phân tích nguyên nhân tại điểm phát sinh.",
+          "userGuide.corporate.coTheDiTuCap",
         ],
       },
     ],
   },
   {
     id: "monitoring",
-    title: "5. Giám sát máy",
-    description: "Giám sát MQTT, trạng thái thiết bị, layout 2D/3D và quản lý kết nối",
+    title: "userGuide.monitoring.5GiamSatMay",
+    description: "userGuide.monitoring.giamSatMqttTrangThai",
     icon: <Radio className="h-5 w-5" />,
     topics: [
       {
         title: "MQTT Monitor",
         content: [
-          "Live Stream theo dõi message realtime; History xem lại dữ liệu theo thời gian/topic; Auto-Discovery phát hiện máy mới.",
+          "userGuide.monitoring.liveStreamTheoDoiMessage",
         ],
       },
       {
         title: "Device Management",
         content: [
-          "Quản lý ánh xạ và đăng ký thiết bị trong Monitoring Settings → Device Management.",
-          "Bao gồm cả manual registration và cơ chế auto registration legacy để tương thích hạ tầng cũ.",
+          "userGuide.monitoring.quanLyAnhXaVa",
+          "userGuide.monitoring.baoGomCaManualRegistration",
         ],
       },
       {
-        title: "Machine Status và Layout",
+        title: "userGuide.monitoring.machineStatusVaLayout",
         content: [
-          "Xem tình trạng heartbeat, thông số máy (nếu có) và vị trí máy trên layout để xử lý sự cố tại hiện trường.",
+          "userGuide.monitoring.xemTinhTrangHeartbeatThong",
         ],
       },
     ],
   },
   {
     id: "history",
-    title: "6. Lịch sử kiểm tra",
-    description: "Tra cứu bản ghi kiểm tra, xem chi tiết và thao tác hàng loạt",
+    title: "userGuide.history.6LichSuKiemTra",
+    description: "userGuide.history.traCuuBanGhiKiem",
     icon: <History className="h-5 w-5" />,
     topics: [
       {
-        title: "Bộ lọc tìm kiếm",
+        title: "userGuide.history.boLocTimKiem",
         content: [
-          "Lọc theo serial, model, machine, kết quả (OK/NG/NTF), thời gian và các thuộc tính nghiệp vụ khác.",
+          "userGuide.history.locTheoSerialModelMachine",
         ],
       },
       {
-        title: "Chi tiết bản ghi",
-        content: ["Hiển thị ảnh, kết quả đo và annotation để truy vết đầy đủ một inspection record."],
+        title: "userGuide.history.chiTietBanGhi",
+        content: ["userGuide.history.hienThiAnhKetQua"],
       },
       {
-        title: "Bulk operations và NTF",
+        title: "userGuide.history.bulkOperationsVaNtf",
         content: [
-          "Hỗ trợ export/acknowledge hàng loạt và xác nhận NTF cho false positive có nhập lý do để audit.",
+          "userGuide.history.hoTroExportAcknowledgeHang",
         ],
       },
     ],
   },
   {
     id: "quality",
-    title: "7. Phân tích chất lượng",
-    description: "Phân tích lỗi bằng heatmap, SPC, root cause và dự đoán",
+    title: "userGuide.quality.7PhanTichChatLuong",
+    description: "userGuide.quality.phanTichLoiBangHeatmap",
     icon: <Brain className="h-5 w-5" />,
     topics: [
       {
         title: "Defect Heatmap",
-        content: ["Hiển thị vùng lỗi tập trung để nhận diện nhanh điểm nóng cần can thiệp."],
+        content: ["userGuide.quality.hienThiVungLoiTap"],
       },
       {
         title: "Root Cause & Prediction",
         content: [
-          "Kết hợp phân tích Pareto/AI để đề xuất nguyên nhân và xu hướng lỗi tương lai.",
+          "userGuide.quality.ketHopPhanTichPareto",
         ],
       },
       {
         title: "SPC Analysis",
-        content: ["Cung cấp control charts, capability và process performance để kiểm soát ổn định quá trình."],
+        content: ["userGuide.quality.cungCapControlChartsCapability"],
       },
     ],
   },
   {
     id: "reports",
-    title: "8. Báo cáo",
-    description: "Báo cáo tức thì, báo cáo tự động và lịch xuất dữ liệu",
+    title: "userGuide.reports.8BaoCao",
+    description: "userGuide.reports.baoCaoTucThiBao",
     icon: <FileText className="h-5 w-5" />,
     topics: [
       {
-        title: "Báo cáo tức thì",
-        content: ["Tạo nhanh báo cáo Production Summary, Quality Analysis, Machine Performance, OEE."],
+        title: "userGuide.reports.baoCaoTucThi",
+        content: ["userGuide.reports.taoNhanhBaoCaoProduction"],
       },
       {
         title: "Scheduled Reports",
         content: [
-          "Lên lịch gửi báo cáo định kỳ (daily/weekly/monthly), cấu hình người nhận email và phạm vi dữ liệu.",
+          "userGuide.reports.lenLichGuiBaoCao",
         ],
       },
       {
         title: "Export Scheduling",
-        content: ["Lên lịch xuất lịch sử dưới dạng CSV/Excel/JSON và gửi tự động theo lịch."],
+        content: ["userGuide.reports.lenLichXuatLichSu"],
       },
     ],
   },
   {
     id: "system",
-    title: "9. Cài đặt hệ thống",
-    description: "Cấu hình hệ thống, ngưỡng cảnh báo, ca làm việc và OEE targets",
+    title: "userGuide.system.9CaiDatHeThong",
+    description: "userGuide.system.cauHinhHeThongNguong",
     icon: <Settings className="h-5 w-5" />,
     topics: [
       {
         title: "System Configuration",
         content: [
-          "Quản trị tham số toàn hệ thống như tên hệ thống, timezone, ngôn ngữ, các cấu hình kỹ thuật.",
+          "userGuide.system.quanTriThamSoToan",
         ],
       },
       {
         title: "Yield alert thresholds",
-        content: ["Thiết lập mức Warning/Critical cho FPY, Yield Rate, UPH và các chỉ số theo nhà máy/dây chuyền."],
+        content: ["userGuide.system.thietLapMucWarningCritical"],
       },
       {
         title: "Shift Configuration & OEE Targets",
         content: [
-          "Khai báo ca làm việc theo phạm vi áp dụng và thiết lập target OEE (Availability, Performance, Quality, Overall).",
+          "userGuide.system.khaiBaoCaLamViec",
         ],
       },
     ],
@@ -280,24 +280,24 @@ const sections: GuideSection[] = [
 
 const faq = [
   {
-    q: "Làm sao để thêm máy mới vào hệ thống?",
-    a: "Vào Monitoring Settings hoặc Data Settings theo quyền được cấp, tạo máy mới và cấu hình API key tương ứng trên máy AVI/AOI.",
+    q: "userGuide.system.lamSaoDeThemMay",
+    a: "userGuide.system.vaoMonitoringSettingsHoacData",
   },
   {
-    q: "Tại sao Yield Rate khác FPY?",
-    a: "FPY chỉ tính OK/(OK+NG), còn Yield Rate tính (OK+NTF)/Total nên bao gồm các trường hợp false positive đã xác nhận.",
+    q: "userGuide.system.taiSaoYieldRateKhac",
+    a: "userGuide.system.fpyChiTinhOkOk",
   },
   {
-    q: "Làm sao để xuất dữ liệu Excel?",
-    a: "Vào History hoặc Reports, lọc dữ liệu cần xuất, chọn chức năng Export và định dạng Excel.",
+    q: "userGuide.system.lamSaoDeXuatDu",
+    a: "userGuide.system.vaoHistoryHoacReportsLoc",
   },
   {
-    q: "Nên dùng WebSocket hay Polling?",
-    a: "WebSocket phù hợp giám sát realtime; Polling tiết kiệm tài nguyên hơn khi chỉ cần theo dõi tổng quan theo chu kỳ.",
+    q: "userGuide.system.nenDungWebsocketHayPolling",
+    a: "userGuide.system.websocketPhuHopGiamSat",
   },
   {
-    q: "Backup dữ liệu ở đâu?",
-    a: "Sử dụng Backup & Restore để tạo backup thủ công hoặc cấu hình lịch backup tự động.",
+    q: "userGuide.system.backupDuLieuODau",
+    a: "userGuide.system.suDungBackupRestoreDe",
   },
 ];
 
@@ -310,9 +310,9 @@ export default function UserGuide() {
     if (!search.trim()) return sections;
     const q = search.toLowerCase();
     return sections.filter((section) => {
-      const baseMatch = `${section.title} ${section.description}`.toLowerCase().includes(q);
+      const baseMatch = `${t(section.title)} ${t(section.description)}`.toLowerCase().includes(q);
       const topicMatch = section.topics.some((topic) => {
-        const text = `${topic.title} ${topic.content.join(" ")} ${(topic.bullets || []).join(" ")}`.toLowerCase();
+        const text = `${t(topic.title)} ${topic.content.map((c) => t(c)).join(" ")} ${(topic.bullets || []).map((b) => t(b)).join(" ")}`.toLowerCase();
         return text.includes(q);
       });
       return baseMatch || topicMatch;
@@ -371,7 +371,7 @@ export default function UserGuide() {
                   }`}
                 >
                   {section.icon}
-                  <span className="flex-1">{section.title}</span>
+                  <span className="flex-1">{t(section.title)}</span>
                   <ChevronRight className="h-4 w-4" />
                 </button>
               ))}
@@ -395,17 +395,17 @@ export default function UserGuide() {
                 <Accordion type="multiple" defaultValue={currentSection.topics.map((_, idx) => `topic-${idx}`)}>
                   {currentSection.topics.map((topic, idx) => (
                     <AccordionItem key={topic.title} value={`topic-${idx}`}>
-                      <AccordionTrigger className="text-left">{topic.title}</AccordionTrigger>
+                      <AccordionTrigger className="text-left">{t(topic.title)}</AccordionTrigger>
                       <AccordionContent className="space-y-3">
                         {topic.content.map((paragraph, i) => (
                           <p key={i} className="text-sm text-muted-foreground leading-6">
-                            {paragraph}
+                            {t(paragraph)}
                           </p>
                         ))}
                         {topic.bullets && topic.bullets.length > 0 && (
                           <ul className="list-disc pl-5 space-y-1 text-sm text-muted-foreground">
                             {topic.bullets.map((item) => (
-                              <li key={item}>{item}</li>
+                              <li key={item}>{t(item)}</li>
                             ))}
                           </ul>
                         )}

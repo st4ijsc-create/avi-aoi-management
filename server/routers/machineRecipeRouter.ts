@@ -18,6 +18,7 @@
  */
 import { z } from "zod";
 import { TRPCError } from "@trpc/server";
+import { appError } from "../_core/appError";
 import { and, desc, eq, sql } from "drizzle-orm";
 import { router, moduleProcedure, moduleGate, actuationProcedure as actuationBase } from "../_core/trpc";
 import { requirePermission } from "../_core/accessControl";
@@ -29,7 +30,7 @@ const protectedProcedure = moduleProcedure("MOD_OT_CONTROL");
 // approve / deploy / rollback change what a MACHINE runs → actuation role-floor
 // (admin/supervisor/engineer) + 2FA, plus the MOD_OT_CONTROL license gate.
 const actuationProcedure = actuationBase.use(moduleGate("MOD_OT_CONTROL"));
-import { machineRecipes, recipeDeployments, machines, parameterGuardrails } from "../../drizzle/schema";
+import { machineRecipes, recipeDeployments, machines, parameterGuardrails, changeoverRequests } from "../../drizzle/schema";
 import {
   createRecipe,
   getRecipeById,
@@ -72,8 +73,76 @@ async function recordGenealogySafe(
 
 async function getDb() {
   const db = await getDbRaw();
-  if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Database not connected" });
+  if (!db) throw appError("INTERNAL_SERVER_ERROR", "DB_UNAVAILABLE", undefined, "Database not connected");
   return db;
+}
+
+/**
+ * doc 63 DEP-08 — PURE EXTRACT of the recipes.deploy mutation body so the changeover
+ * approval path (changeover.approve) runs the EXACT same ledger-flip + genealogy +
+ * config-sync side-effects instead of duplicating a safety-relevant block. Behaviour
+ * is byte-identical for recipes.deploy: it now just calls this helper.
+ * SAFETY unchanged: deployRecipe only flips the active version + writes the ledger row
+ * (refusing un-approved recipes — W2-9); NO device command is pushed from here.
+ */
+async function performDeploy(
+  args: { recipeId: number; machineId: number; adapterId?: number | null; notes?: string | null },
+  userId: number,
+) {
+  const deployment = await deployRecipe({
+    recipeId: args.recipeId,
+    machineId: args.machineId,
+    adapterId: args.adapterId ?? null,
+    deployedBy: userId,
+    notes: args.notes ?? null,
+  });
+  // W5-22 — ghi vết genealogy: recipe được nạp (deploy) lên máy.
+  const deployed = await getRecipeById(deployment.recipeId);
+  if (deployed) {
+    await recordGenealogySafe("load", deployed, {
+      performedBy: userId,
+      machineId: args.machineId,
+      notes: args.notes ?? null,
+      meta: { deploymentId: deployment.id, previousRecipeId: deployment.previousRecipeId ?? null },
+    });
+  }
+
+  // Doc 56 Đ4 (CONFIG-SYNC-3) — write the DESIRED shadow + a RETAINED MQTT notify
+  // so the machine converges on the newly-active recipe (payload is always PULLED
+  // over HTTP; poll of checkConfigVersion is the backstop). Gated OFF by default →
+  // deploy stays byte-identical. Best-effort: a shadow/notify failure must NOT fail
+  // a deploy that already committed (the active flip + ledger row are durable).
+  if (configSyncGenericEnabled() && deployed) {
+    try {
+      await upsertDesiredConfig({
+        machineId: args.machineId,
+        configKind: "recipe",
+        code: deployed.code,
+        version: deployed.version,
+        checksum: deployed.checksum ?? null,
+      });
+      const db = await getDb();
+      const [m] = await db
+        .select({ code: machines.code })
+        .from(machines)
+        .where(eq(machines.id, args.machineId))
+        .limit(1);
+      if (m?.code) {
+        publishConfigChanged(m.code, "recipe", {
+          code: deployed.code,
+          version: deployed.version,
+          checksum: deployed.checksum ?? null,
+        });
+      }
+    } catch (err) {
+      console.error(
+        "[machineRecipe] config-sync desired/notify failed (deploy already committed):",
+        err instanceof Error ? err.message : err,
+      );
+    }
+  }
+
+  return deployment;
 }
 
 const machineTypeEnum = z.enum([
@@ -102,10 +171,12 @@ function assertRecipePayloadValid(machineType: string | null, payload: unknown):
     );
     return;
   }
-  throw new TRPCError({
-    code: "BAD_REQUEST",
-    message: `Recipe payload không hợp lệ cho "${res.kind}": ${res.errors.join("; ")}`,
-  });
+  throw appError(
+    "BAD_REQUEST",
+    "INVALID_VALUE",
+    { field: "recipePayload" },
+    `Recipe payload không hợp lệ cho "${res.kind}": ${res.errors.join("; ")}`,
+  );
 }
 
 /**
@@ -155,10 +226,12 @@ async function assertRecipeWithinGuardrails(recipe: {
     const guardrail = await resolveRecipeGuardrail(recipe.machineId ?? null, recipe.machineType ?? null, paramKey);
     const check = checkAgainstGuardrail(guardrail, value);
     if (!check.ok) {
-      throw new TRPCError({
-        code: "BAD_REQUEST",
-        message: `Guardrail chặn duyệt recipe: tham số "${paramKey}"=${value} — ${check.detail}`,
-      });
+      throw appError(
+        "BAD_REQUEST",
+        "INVALID_VALUE",
+        { field: "recipeParam" },
+        `Guardrail chặn duyệt recipe: tham số "${paramKey}"=${value} — ${check.detail}`,
+      );
     }
   }
 }
@@ -197,7 +270,7 @@ export const machineRecipeRouter = router({
       .input(z.object({ id: z.number().int().positive() }))
       .query(async ({ input }) => {
         const row = await getRecipeById(input.id);
-        if (!row) throw new TRPCError({ code: "NOT_FOUND", message: "Recipe không tồn tại." });
+        if (!row) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "recipe" }, "Recipe không tồn tại.");
         return row;
       }),
 
@@ -209,7 +282,7 @@ export const machineRecipeRouter = router({
       }))
       .query(async ({ input }) => {
         if (input.code == null && input.machineId == null) {
-          throw new TRPCError({ code: "BAD_REQUEST", message: "Cần code hoặc machineId." });
+          throw appError("BAD_REQUEST", "FIELD_REQUIRED", { field: "codeOrMachineId" }, "Cần code hoặc machineId.");
         }
         return (await getActiveRecipe({ code: input.code, machineId: input.machineId })) ?? null;
       }),
@@ -254,7 +327,7 @@ export const machineRecipeRouter = router({
       .input(z.object({ id: z.number().int().positive() }))
       .mutation(async ({ input, ctx }) => {
         const existing = await getRecipeById(input.id);
-        if (!existing) throw new TRPCError({ code: "NOT_FOUND", message: "Recipe không tồn tại." });
+        if (!existing) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "recipe" }, "Recipe không tồn tại.");
         await archiveRecipe(input.id);
         // W5-22 — archive từng làm MẤT actor; nay ghi vết genealogy với người thực hiện.
         await recordGenealogySafe("archive", { ...existing, status: "archived" }, {
@@ -274,7 +347,7 @@ export const machineRecipeRouter = router({
       .input(z.object({ id: z.number().int().positive(), isGolden: z.boolean() }))
       .mutation(async ({ input }) => {
         const existing = await getRecipeById(input.id);
-        if (!existing) throw new TRPCError({ code: "NOT_FOUND", message: "Recipe không tồn tại." });
+        if (!existing) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "recipe" }, "Recipe không tồn tại.");
         return setGoldenRecipe(input.id, input.isGolden);
       }),
 
@@ -307,7 +380,7 @@ export const machineRecipeRouter = router({
         try {
           return await approveRecipe({ recipeId: input.recipeId, approvedBy: ctx.user.id, note: input.note ?? null });
         } catch (err) {
-          throw new TRPCError({ code: "BAD_REQUEST", message: err instanceof Error ? err.message : String(err) });
+          throw appError("BAD_REQUEST", "OPERATION_FAILED", { operation: "approveRecipe" }, err instanceof Error ? err.message : String(err));
         }
       }),
 
@@ -327,62 +400,11 @@ export const machineRecipeRouter = router({
       }))
       .mutation(async ({ input, ctx }) => {
         try {
-          const deployment = await deployRecipe({
-            recipeId: input.recipeId,
-            machineId: input.machineId,
-            adapterId: input.adapterId ?? null,
-            deployedBy: ctx.user.id,
-            notes: input.notes ?? null,
-          });
-          // W5-22 — ghi vết genealogy: recipe được nạp (deploy) lên máy.
-          const deployed = await getRecipeById(deployment.recipeId);
-          if (deployed) {
-            await recordGenealogySafe("load", deployed, {
-              performedBy: ctx.user.id,
-              machineId: input.machineId,
-              notes: input.notes ?? null,
-              meta: { deploymentId: deployment.id, previousRecipeId: deployment.previousRecipeId ?? null },
-            });
-          }
-
-          // Doc 56 Đ4 (CONFIG-SYNC-3) — write the DESIRED shadow + a RETAINED MQTT notify
-          // so the machine converges on the newly-active recipe (payload is always PULLED
-          // over HTTP; poll of checkConfigVersion is the backstop). Gated OFF by default →
-          // deploy stays byte-identical. Best-effort: a shadow/notify failure must NOT fail
-          // a deploy that already committed (the active flip + ledger row are durable).
-          if (configSyncGenericEnabled() && deployed) {
-            try {
-              await upsertDesiredConfig({
-                machineId: input.machineId,
-                configKind: "recipe",
-                code: deployed.code,
-                version: deployed.version,
-                checksum: deployed.checksum ?? null,
-              });
-              const db = await getDb();
-              const [m] = await db
-                .select({ code: machines.code })
-                .from(machines)
-                .where(eq(machines.id, input.machineId))
-                .limit(1);
-              if (m?.code) {
-                publishConfigChanged(m.code, "recipe", {
-                  code: deployed.code,
-                  version: deployed.version,
-                  checksum: deployed.checksum ?? null,
-                });
-              }
-            } catch (err) {
-              console.error(
-                "[machineRecipe] config-sync desired/notify failed (deploy already committed):",
-                err instanceof Error ? err.message : err,
-              );
-            }
-          }
-
-          return deployment;
+          // doc 63 DEP-08 — body extracted to performDeploy() (pure move; shared with
+          // changeover.approve). Behaviour identical.
+          return await performDeploy(input, ctx.user.id);
         } catch (err) {
-          throw new TRPCError({ code: "BAD_REQUEST", message: err instanceof Error ? err.message : String(err) });
+          throw appError("BAD_REQUEST", "OPERATION_FAILED", { operation: "deployRecipe" }, err instanceof Error ? err.message : String(err));
         }
       }),
 
@@ -405,7 +427,7 @@ export const machineRecipeRouter = router({
           }
           return deployment;
         } catch (err) {
-          throw new TRPCError({ code: "BAD_REQUEST", message: err instanceof Error ? err.message : String(err) });
+          throw appError("BAD_REQUEST", "OPERATION_FAILED", { operation: "rollbackRecipeDeployment" }, err instanceof Error ? err.message : String(err));
         }
       }),
 
@@ -467,6 +489,220 @@ export const machineRecipeRouter = router({
           .select({ id: machines.id, code: machines.code, name: machines.name, machineType: machines.machineType })
           .from(machines)
           .orderBy(machines.name);
+      }),
+  }),
+
+  // ══════════════════════════════════════════════════════════════════════════
+  // doc 63 DEP-08 (FLW-03) — CHANGEOVER two-person approval queue.
+  // Operator (thấp quyền) TẠO yêu cầu đổi model — hành động TRƠ (chỉ 1 hàng DB,
+  // không actuation, không đụng máy). Supervisor/engineer DUYỆT qua actuation
+  // role-floor + 2FA + SoD (approver ≠ requester) → chạy ĐÚNG performDeploy sẵn có
+  // (ledger-only; deployRecipe tự từ chối recipe chưa second-approve W2-9 → tường
+  // kép). Bản ghi tự nó là audit (ai / lúc nào / quyết định gì / deployment nào).
+  // ══════════════════════════════════════════════════════════════════════════
+  changeover: router({
+    /**
+     * Operator tạo yêu cầu đổi model. Gate = machine_monitoring/canView (mức quyền
+     * operator ĐANG có — xem P1 RBAC audit) vì yêu cầu là INERT: bức tường thực thi
+     * nằm ở approve (actuation + 2FA + SoD), không phải ở đây.
+     */
+    request: protectedProcedure
+      .use(requirePermission("machine_monitoring", "canView"))
+      .input(z.object({
+        machineId: z.number().int().positive(),
+        recipeId: z.number().int().positive(),
+        note: z.string().max(2000).optional(),
+      }))
+      .mutation(async ({ input, ctx }) => {
+        const db = await getDb();
+        const [machine] = await db.select({ id: machines.id }).from(machines)
+          .where(eq(machines.id, input.machineId)).limit(1);
+        if (!machine) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "machine" }, "Máy không tồn tại.");
+        const recipe = await getRecipeById(input.recipeId);
+        if (!recipe) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "recipe" }, "Recipe không tồn tại.");
+        if (recipe.status === "archived") {
+          throw appError("BAD_REQUEST", "OPERATION_FAILED", { operation: "requestRecipeModelChangeover" }, "Recipe đã lưu trữ — không thể yêu cầu đổi model.");
+        }
+        const [row] = await db.insert(changeoverRequests).values({
+          machineId: input.machineId,
+          recipeId: input.recipeId,
+          requestedBy: ctx.user.id,
+          requestNote: input.note ?? null,
+        }).returning();
+        return row;
+      }),
+
+    /**
+     * Nguồn recipe cho FORM YÊU CẦU của operator (đọc catalog metadata, không payload).
+     * Gate machine_monitoring/canView (mức operator) — nhất quán triết lý request-inert:
+     * đọc danh mục để CHỌN không phải actuation; tường thực thi vẫn ở approve.
+     * Trả các bản active/approved khớp máy (machineId cụ thể HOẶC generic theo machineType).
+     */
+    recipeOptions: protectedProcedure
+      .use(requirePermission("machine_monitoring", "canView"))
+      .input(z.object({ machineId: z.number().int().positive() }))
+      .query(async ({ input }) => {
+        const db = await getDb();
+        const [machine] = await db
+          .select({ id: machines.id, machineType: machines.machineType })
+          .from(machines).where(eq(machines.id, input.machineId)).limit(1);
+        if (!machine) return [];
+        return db
+          .select({
+            id: machineRecipes.id,
+            code: machineRecipes.code,
+            name: machineRecipes.name,
+            version: machineRecipes.version,
+            status: machineRecipes.status,
+            machineId: machineRecipes.machineId,
+            approvedBy: machineRecipes.approvedBy,
+          })
+          .from(machineRecipes)
+          .where(and(
+            sql`${machineRecipes.status} != 'archived'`,
+            machine.machineType
+              ? sql`(${machineRecipes.machineId} = ${input.machineId} OR (${machineRecipes.machineId} IS NULL AND ${machineRecipes.machineType} = ${machine.machineType}))`
+              : eq(machineRecipes.machineId, input.machineId),
+          ))
+          .orderBy(desc(machineRecipes.updatedAt))
+          .limit(100);
+      }),
+
+    /** Yêu cầu CỦA TÔI (operator theo dõi trạng thái xử lý). */
+    listMine: protectedProcedure
+      .use(requirePermission("machine_monitoring", "canView"))
+      .input(z.object({ limit: z.number().int().min(1).max(200).default(50) }).optional())
+      .query(async ({ input, ctx }) => {
+        const db = await getDb();
+        return db
+          .select({
+            id: changeoverRequests.id,
+            machineId: changeoverRequests.machineId,
+            recipeId: changeoverRequests.recipeId,
+            status: changeoverRequests.status,
+            requestNote: changeoverRequests.requestNote,
+            decisionNote: changeoverRequests.decisionNote,
+            decidedAt: changeoverRequests.decidedAt,
+            createdAt: changeoverRequests.createdAt,
+            machineName: machines.name,
+            machineCode: machines.code,
+            recipeName: machineRecipes.name,
+            recipeCode: machineRecipes.code,
+            recipeVersion: machineRecipes.version,
+          })
+          .from(changeoverRequests)
+          .leftJoin(machines, eq(changeoverRequests.machineId, machines.id))
+          .leftJoin(machineRecipes, eq(changeoverRequests.recipeId, machineRecipes.id))
+          .where(eq(changeoverRequests.requestedBy, ctx.user.id))
+          .orderBy(desc(changeoverRequests.createdAt))
+          .limit(input?.limit ?? 50);
+      }),
+
+    /** Hàng đợi cho người duyệt (lọc theo status; mặc định pending). */
+    list: protectedProcedure
+      .use(requirePermission("machine_control", "canView"))
+      .input(z.object({
+        status: z.enum(["pending", "approved", "rejected", "cancelled"]).optional(),
+        limit: z.number().int().min(1).max(200).default(100),
+      }).optional())
+      .query(async ({ input }) => {
+        const db = await getDb();
+        const conds = [] as ReturnType<typeof eq>[];
+        if (input?.status) conds.push(eq(changeoverRequests.status, input.status));
+        return db
+          .select({
+            id: changeoverRequests.id,
+            machineId: changeoverRequests.machineId,
+            recipeId: changeoverRequests.recipeId,
+            requestedBy: changeoverRequests.requestedBy,
+            status: changeoverRequests.status,
+            requestNote: changeoverRequests.requestNote,
+            decidedBy: changeoverRequests.decidedBy,
+            decisionNote: changeoverRequests.decisionNote,
+            decidedAt: changeoverRequests.decidedAt,
+            deploymentId: changeoverRequests.deploymentId,
+            createdAt: changeoverRequests.createdAt,
+            machineName: machines.name,
+            machineCode: machines.code,
+            recipeName: machineRecipes.name,
+            recipeCode: machineRecipes.code,
+            recipeVersion: machineRecipes.version,
+            recipeStatus: machineRecipes.status,
+          })
+          .from(changeoverRequests)
+          .leftJoin(machines, eq(changeoverRequests.machineId, machines.id))
+          .leftJoin(machineRecipes, eq(changeoverRequests.recipeId, machineRecipes.id))
+          .where(conds.length ? and(...conds) : undefined)
+          .orderBy(desc(changeoverRequests.createdAt))
+          .limit(input?.limit ?? 100);
+      }),
+
+    /**
+     * DUYỆT + THI HÀNH: SoD approver ≠ requester (403), row phải pending, rồi chạy
+     * performDeploy (đúng đường recipes.deploy — ledger flip + genealogy + config-sync;
+     * deployRecipe từ chối recipe chưa được second-approve). Ghi lại deploymentId.
+     */
+    approve: actuationProcedure
+      .use(requirePermission("machine_control", "canEdit"))
+      .input(z.object({
+        id: z.number().int().positive(),
+        note: z.string().max(2000).optional(),
+      }))
+      .mutation(async ({ input, ctx }) => {
+        const db = await getDb();
+        const [row] = await db.select().from(changeoverRequests)
+          .where(eq(changeoverRequests.id, input.id)).limit(1);
+        if (!row) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "changeoverRequest" }, "Yêu cầu không tồn tại.");
+        if (row.status !== "pending") {
+          throw appError("BAD_REQUEST", "OPERATION_FAILED", { operation: "approveChangeoverRequest" }, `Không thể duyệt từ trạng thái ${row.status}.`);
+        }
+        // Segregation of duties — người duyệt phải KHÁC người yêu cầu.
+        if (row.requestedBy === ctx.user.id) {
+          throw appError("FORBIDDEN", "PERMISSION_DENIED", { action: "selfApproveChangeover" }, "SoD: không thể tự duyệt yêu cầu của chính mình.");
+        }
+        let deployment;
+        try {
+          deployment = await performDeploy(
+            { recipeId: row.recipeId, machineId: row.machineId, notes: input.note ?? row.requestNote ?? null },
+            ctx.user.id,
+          );
+        } catch (err) {
+          throw appError("BAD_REQUEST", "OPERATION_FAILED", { operation: "approveChangeoverRequest" }, err instanceof Error ? err.message : String(err));
+        }
+        const [updated] = await db.update(changeoverRequests).set({
+          status: "approved",
+          decidedBy: ctx.user.id,
+          decisionNote: input.note ?? null,
+          decidedAt: new Date(),
+          deploymentId: deployment.id,
+          updatedAt: new Date(),
+        }).where(eq(changeoverRequests.id, row.id)).returning();
+        return { request: updated, deployment };
+      }),
+
+    /** TỪ CHỐI (bắt buộc lý do ≥3 ký tự — người yêu cầu đọc được vì sao). */
+    reject: protectedProcedure
+      .use(requirePermission("machine_control", "canEdit"))
+      .input(z.object({
+        id: z.number().int().positive(),
+        note: z.string().min(3).max(2000),
+      }))
+      .mutation(async ({ input, ctx }) => {
+        const db = await getDb();
+        const [row] = await db.select().from(changeoverRequests)
+          .where(eq(changeoverRequests.id, input.id)).limit(1);
+        if (!row) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "changeoverRequest" }, "Yêu cầu không tồn tại.");
+        if (row.status !== "pending") {
+          throw appError("BAD_REQUEST", "OPERATION_FAILED", { operation: "rejectChangeoverRequest" }, `Không thể từ chối từ trạng thái ${row.status}.`);
+        }
+        const [updated] = await db.update(changeoverRequests).set({
+          status: "rejected",
+          decidedBy: ctx.user.id,
+          decisionNote: input.note,
+          decidedAt: new Date(),
+          updatedAt: new Date(),
+        }).where(eq(changeoverRequests.id, row.id)).returning();
+        return updated;
       }),
   }),
 });

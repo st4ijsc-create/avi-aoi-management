@@ -23,6 +23,7 @@
 import { z } from "zod";
 import fs from "fs";
 import { TRPCError } from "@trpc/server";
+import { appError } from "../_core/appError";
 import { router, protectedProcedure, qualityProcedure } from "../_core/trpc";
 import {
   resolveActiveReference,
@@ -61,11 +62,19 @@ function decodeBase64Image(b64: string): Buffer {
   try {
     buf = Buffer.from(cleaned, "base64");
   } catch {
-    throw new TRPCError({ code: "BAD_REQUEST", message: "Invalid base64 image" });
+    // Task 5 (doc 71) — xem ghi chú cùng pattern ở aiAdvancedVisionRouter.ts:
+    // reason tách 3 nguyên nhân trước đây render 1 câu; nhánh vượt dung lượng tái
+    // dùng KB_FILE_TOO_LARGE{limitMb}, KHÔNG nhồi vào INVALID_VALUE.
+    throw appError("BAD_REQUEST", "INVALID_VALUE", { field: "image", reason: "invalidBase64Image" }, "Invalid base64 image");
   }
-  if (buf.length === 0) throw new TRPCError({ code: "BAD_REQUEST", message: "Empty image payload" });
+  if (buf.length === 0) throw appError("BAD_REQUEST", "INVALID_VALUE", { field: "image", reason: "emptyImagePayload" }, "Empty image payload");
   if (buf.length > MAX_IMAGE_BYTES) {
-    throw new TRPCError({ code: "PAYLOAD_TOO_LARGE", message: `Image exceeds ${MAX_IMAGE_BYTES} bytes` });
+    throw appError(
+      "PAYLOAD_TOO_LARGE",
+      "KB_FILE_TOO_LARGE",
+      { limitMb: Math.round((MAX_IMAGE_BYTES / (1024 * 1024)) * 10) / 10 },
+      `Image exceeds ${MAX_IMAGE_BYTES} bytes`,
+    );
   }
   return buf;
 }
@@ -89,7 +98,7 @@ async function loadMeasurementImage(m: { imageUrl: string | null; imageKey?: str
   }
   const url = m.imageUrl;
   if (!url) {
-    throw new TRPCError({ code: "BAD_REQUEST", message: "Measurement has no stored image (imageUrl/imageKey empty)" });
+    throw appError("BAD_REQUEST", "ENTITY_NOT_FOUND", { entity: "image" }, "Measurement has no stored image (imageUrl/imageKey empty)");
   }
   // data: URL or /uploads/… (resolveImageToDataUrl converts local files to data URLs)
   const resolved = url.startsWith("data:") ? url : await resolveImageToDataUrl(url);
@@ -101,21 +110,34 @@ async function loadMeasurementImage(m: { imageUrl: string | null; imageKey?: str
     try {
       res = await fetch(resolved);
     } catch (err) {
-      throw new TRPCError({
-        code: "BAD_REQUEST",
-        message: `Cannot fetch measurement image: ${err instanceof Error ? err.message : String(err)}`,
-      });
+      throw appError(
+        "BAD_REQUEST",
+        "OPERATION_FAILED",
+        { operation: "fetchMeasurementImage" },
+        `Cannot fetch measurement image: ${err instanceof Error ? err.message : String(err)}`,
+      );
     }
     if (!res.ok) {
-      throw new TRPCError({ code: "BAD_REQUEST", message: `Cannot fetch measurement image (HTTP ${res.status})` });
+      throw appError("BAD_REQUEST", "OPERATION_FAILED", { operation: "fetchMeasurementImage" }, `Cannot fetch measurement image (HTTP ${res.status})`);
     }
     const buf = Buffer.from(await res.arrayBuffer());
-    if (buf.length === 0 || buf.length > MAX_IMAGE_BYTES) {
-      throw new TRPCError({ code: "BAD_REQUEST", message: "Fetched image is empty or exceeds the 10 MB cap" });
+    // Review round 1 (M-4) — cùng bệnh đã sửa ở decodeBase64Image() phía trên (2 nguyên
+    // nhân khác nhau, cùng render "Giá trị không hợp lệ ở hình ảnh."): tách reason cho
+    // ca rỗng, tái dùng KB_FILE_TOO_LARGE{limitMb} cho ca vượt dung lượng.
+    if (buf.length === 0) {
+      throw appError("BAD_REQUEST", "INVALID_VALUE", { field: "image", reason: "emptyImagePayload" }, "Fetched image is empty or exceeds the 10 MB cap");
+    }
+    if (buf.length > MAX_IMAGE_BYTES) {
+      throw appError(
+        "BAD_REQUEST",
+        "KB_FILE_TOO_LARGE",
+        { limitMb: Math.round((MAX_IMAGE_BYTES / (1024 * 1024)) * 10) / 10 },
+        "Fetched image is empty or exceeds the 10 MB cap",
+      );
     }
     return buf;
   }
-  throw new TRPCError({ code: "BAD_REQUEST", message: `Unresolvable measurement image URL: ${url.slice(0, 80)}` });
+  throw appError("BAD_REQUEST", "OPERATION_FAILED", { operation: "fetchMeasurementImage" }, `Unresolvable measurement image URL: ${url.slice(0, 80)}`);
 }
 
 /** Serialize a golden row for API responses (metadata only — no gray plane). */
@@ -149,10 +171,10 @@ function rowMeta(r: GoldenSampleReference) {
 /** Map workflow errors to honest TRPC codes (SoD → FORBIDDEN, lifecycle → BAD_REQUEST). */
 function mapGoldenError(err: unknown): never {
   if (err instanceof GoldenSoDError) {
-    throw new TRPCError({ code: "FORBIDDEN", message: err.message });
+    throw appError("FORBIDDEN", "PERMISSION_DENIED", { action: "selfApproveGoldenSample" }, err.message);
   }
   if (err instanceof GoldenStatusError) {
-    throw new TRPCError({ code: "BAD_REQUEST", message: err.message });
+    throw appError("BAD_REQUEST", "OPERATION_FAILED", { operation: "manageGoldenSample" }, err.message);
   }
   throw err;
 }
@@ -314,18 +336,20 @@ export const goldenSampleRouter = router({
     }))
     .mutation(async ({ input, ctx }) => {
       const m = await db.getMeasurementResultById(input.measurementResultId);
-      if (!m) throw new TRPCError({ code: "NOT_FOUND", message: "Measurement result not found" });
+      if (!m) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "measurementResult" }, "Measurement result not found");
       if (m.result !== "OK") {
-        throw new TRPCError({
-          code: "BAD_REQUEST",
-          message: `Chỉ chụp golden từ điểm đo OK (điểm này: ${m.result})`,
-        });
+        throw appError(
+          "BAD_REQUEST",
+          "OPERATION_FAILED",
+          { operation: "captureGoldenSample" },
+          `Chỉ chụp golden từ điểm đo OK (điểm này: ${m.result})`,
+        );
       }
       const inspection = await db.getProductInspectionById(m.inspectionId);
-      if (!inspection) throw new TRPCError({ code: "NOT_FOUND", message: "Inspection not found" });
+      if (!inspection) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "inspection" }, "Inspection not found");
       const productCode = inspection.productModel;
       if (!productCode) {
-        throw new TRPCError({ code: "BAD_REQUEST", message: "Inspection has no product model — cannot key the golden" });
+        throw appError("BAD_REQUEST", "OPERATION_FAILED", { operation: "captureGoldenSample" }, "Inspection has no product model — cannot key the golden");
       }
 
       // Point code → roiKey (same join style as measurementResult.getById).
@@ -446,7 +470,7 @@ export const goldenSampleRouter = router({
     .input(z.object({ id: z.number().int().positive() }))
     .query(async ({ input }) => {
       const row = await getReferenceById(input.id);
-      if (!row) throw new TRPCError({ code: "NOT_FOUND", message: "Golden reference not found" });
+      if (!row) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "goldenReference" }, "Golden reference not found");
       return { id: row.id, thumbnailDataUrl: await referenceThumbnailDataUrl(row) };
     }),
 
@@ -462,10 +486,10 @@ export const goldenSampleRouter = router({
     }))
     .mutation(async ({ input }) => {
       const m = await db.getMeasurementResultById(input.measurementResultId);
-      if (!m) throw new TRPCError({ code: "NOT_FOUND", message: "Measurement result not found" });
+      if (!m) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "measurementResult" }, "Measurement result not found");
       const inspection = await db.getProductInspectionById(m.inspectionId);
       if (!inspection?.productModel) {
-        throw new TRPCError({ code: "BAD_REQUEST", message: "Inspection has no product model — cannot resolve a golden" });
+        throw appError("BAD_REQUEST", "OPERATION_FAILED", { operation: "resolveGoldenSample" }, "Inspection has no product model — cannot resolve a golden");
       }
       // roiKey = point code (same key InspectionDetail queries with).
       let roiKey: string | null = null;

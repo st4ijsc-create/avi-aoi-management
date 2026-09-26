@@ -80,6 +80,13 @@ export interface ScoreResult {
    * undefined → whole-image behaviour byte-for-byte unchanged. Additive.
    */
   patch?: PatchScoreResult;
+  /**
+   * F3/D2 (doc69 G9) — true when `threshold` came from an ROC calibration
+   * (`aiAnomalyCalibration.calibrateThreshold`, `ai_anomaly_profiles.calibratedThreshold`),
+   * false when it's the fixed p99 self-distance (uncalibrated, the pre-existing
+   * behaviour). Additive/informational only — does not change isAnomaly's meaning.
+   */
+  calibrated?: boolean;
 }
 
 export interface BuildBankResult {
@@ -773,10 +780,12 @@ export async function scoreFromVector(
   }
 
   if (!profile || bank.length === 0) {
+    const eff = profile ? resolveEffectiveThreshold(profile) : null;
     return {
-      score: 0, isAnomaly: false, threshold: profile ? Number(profile.threshold) : null,
+      score: 0, isAnomaly: false, threshold: eff?.threshold ?? null,
       source, degraded: true, bankSize: bank.length, k: profile?.k ?? DEFAULT_KNN_K,
       reason: !profile ? "no_profile" : "empty_bank",
+      calibrated: eff?.calibrated,
     };
   }
 
@@ -785,15 +794,17 @@ export async function scoreFromVector(
   const dim = vector.length;
   const sameDimBank = bank.filter((v) => v.length === dim);
   if (sameDimBank.length === 0) {
+    const eff = resolveEffectiveThreshold(profile);
     return {
-      score: 0, isAnomaly: false, threshold: Number(profile.threshold),
+      score: 0, isAnomaly: false, threshold: eff.threshold,
       source, degraded: true, bankSize: bank.length, k,
       reason: "dim_mismatch",
+      calibrated: eff.calibrated,
     };
   }
 
   const score = knnScore(vector, sameDimBank, k);
-  const threshold = Number(profile.threshold);
+  const { threshold, calibrated } = resolveEffectiveThreshold(profile);
   const isAnomaly = score > threshold;
 
   return {
@@ -805,7 +816,24 @@ export async function scoreFromVector(
     degraded: !!opts.degraded || !!profile.degraded,
     bankSize: sameDimBank.length,
     k,
+    calibrated,
   };
+}
+
+/**
+ * F3/D2 (doc69 G9) — resolve the threshold `scoreFromVector` should use:
+ * `ai_anomaly_profiles.calibratedThreshold` (ROC-swept to a target recall/FPR)
+ * when set, else the existing fixed p99 self-distance `threshold`. Absent
+ * calibratedThreshold (never calibrated, OR migration 0300 not yet applied on
+ * this DB — see server/db/aiAnomaly.ts getProfile()'s fallback) → byte-for-byte
+ * the pre-D2 behaviour.
+ */
+function resolveEffectiveThreshold(
+  profile: NonNullable<Awaited<ReturnType<typeof getProfile>>>,
+): { threshold: number; calibrated: boolean } {
+  const calibratedRaw = (profile as { calibratedThreshold?: string | null }).calibratedThreshold;
+  if (calibratedRaw != null) return { threshold: Number(calibratedRaw), calibrated: true };
+  return { threshold: Number(profile.threshold), calibrated: false };
 }
 
 // ─── Scope / modelCode helper ─────────────────────────────────────────────────

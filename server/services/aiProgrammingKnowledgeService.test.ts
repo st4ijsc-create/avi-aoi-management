@@ -14,7 +14,7 @@
  * PROG_KB_ENABLED=off returns an empty well-formed result; citations carry page +
  * docTitle.
  */
-import { describe, it, expect, vi, beforeAll, beforeEach, afterAll } from "vitest";
+import { describe, it, expect, vi, beforeAll, beforeEach, afterEach, afterAll } from "vitest";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -36,12 +36,17 @@ vi.mock("./aiGgufEngine", () => ({
 }));
 
 // Reranker → identity passthrough (keeps cosine order deterministic; no model).
+// G0 phần C — `RERANK_DELAY_MS` cho phép ca đo thời gian ép backend "tốn" một
+// khoảng THẬT, để chứng minh `rerankMs` là phép ĐO chứ không phải hằng số 0.
+let RERANK_DELAY_MS = 0;
 vi.mock("./aiReranker", () => ({
-  rerank: async (_q: string, candidates: Array<{ id: string }>, topN = 5) =>
-    candidates.slice(0, Math.max(1, topN)).map((candidate, i) => ({
+  rerank: async (_q: string, candidates: Array<{ id: string }>, topN = 5) => {
+    if (RERANK_DELAY_MS > 0) await new Promise((r) => setTimeout(r, RERANK_DELAY_MS));
+    return candidates.slice(0, Math.max(1, topN)).map((candidate, i) => ({
       candidate,
       rerankScore: candidates.length > 0 ? 1 - i / candidates.length : 0,
-    })),
+    }));
+  },
 }));
 
 // ─── Fixture corpus ───────────────────────────────────────────────────────────
@@ -78,6 +83,7 @@ import {
   getProgrammingKbStatus,
   reloadProgrammingKb,
   isProgrammingKbEnabled,
+  getProgrammingKbVendorSlugs,
 } from "./aiProgrammingKnowledgeService";
 
 beforeAll(() => {
@@ -185,6 +191,36 @@ describe("aiProgrammingKnowledgeService", () => {
     expect(res.semanticUsed).toBe(false);
   });
 
+  // ─── G0 phần C — chi phí rerank phải ĐO ĐƯỢC từ tầng trên ──────────────────
+
+  it("rerankMs mang số ĐO THẬT (backend chậm 40 ms ⇒ ≥ 35 ms), không phải hằng số", async () => {
+    RERANK_DELAY_MS = 40;
+    try {
+      const res = await searchProgrammingKb({ query: "MOV instruction" });
+      expect(typeof res.rerankMs).toBe("number");
+      expect(res.rerankMs!).toBeGreaterThanOrEqual(35);
+    } finally {
+      RERANK_DELAY_MS = 0;
+    }
+  });
+
+  it("PROG_KB_RERANKER_ENABLED=false ⇒ rerankMs = null (CHƯA CHẠY), KHÔNG phải 0", async () => {
+    process.env.PROG_KB_RERANKER_ENABLED = "false";
+    try {
+      const res = await searchProgrammingKb({ query: "MOV instruction" });
+      expect(res.citations.length).toBeGreaterThan(0); // vẫn trả kết quả cosine
+      expect(res.rerankMs).toBeNull();
+    } finally {
+      delete process.env.PROG_KB_RERANKER_ENABLED;
+    }
+  });
+
+  it("kết quả rỗng (cờ tắt) cũng khai rerankMs = null, không bỏ trống trường", async () => {
+    process.env.PROG_KB_ENABLED = "false";
+    const res = await searchProgrammingKb({ query: "MOV instruction" });
+    expect(res.rerankMs).toBeNull();
+  });
+
   it("degrades to an empty result when the corpus dir is absent (never throws)", async () => {
     const missing = path.join(tmpDir, "does-not-exist-xyz");
     const prev = process.env.PROG_KB_DIR;
@@ -196,5 +232,60 @@ describe("aiProgrammingKnowledgeService", () => {
     // restore for subsequent tests
     process.env.PROG_KB_DIR = prev;
     reloadProgrammingKb();
+  });
+
+  // ─── ★★★ Phản hồi chủ dự án 2026-09-04 (sau task-v7) — "danh sách hãng chép tay là bản sao thứ
+  // hai của một sự thật": `getProgrammingKbVendorSlugs()` phải đọc TỪ `manifest.json`, KHÔNG phải
+  // một bảng hằng ở nơi gọi (`aiLocalKnowledgeService.detectProgrammingVendors`). Dùng CHÍNH cây
+  // tmpDir thật (không mock fs) — viết một `manifest.json` KHÁC (hãng giả thêm vào, hoặc hỏng) rồi
+  // `reloadProgrammingKb()` để buộc đọc lại đĩa. KHÔNG đụng `knowledge/programming/manifest.json`
+  // thật của dự án — mọi thao tác ở đây chỉ chạm `tmpDir` (dọn ở `afterAll`).
+  describe("getProgrammingKbVendorSlugs — nguồn THẬT là manifest.json, fail-safe khi hỏng", () => {
+    afterEach(() => {
+      // mọi ca dưới đây tự ghi đè manifest.json trong tmpDir — khôi phục bản gốc (2 hãng) +
+      // reload, để không rò rỉ trạng thái sang các describe khác trong cùng tệp.
+      fs.writeFileSync(path.join(tmpDir, "manifest.json"), JSON.stringify(manifest), "utf8");
+      reloadProgrammingKb();
+    });
+
+    it("đọc đúng danh sách hãng từ manifest.json thật (fixture 2 hãng), viết thường", () => {
+      expect(getProgrammingKbVendorSlugs().sort()).toEqual(["mitsubishi", "zmotion"]);
+    });
+
+    it("★★★ hãng thứ ba thêm vào manifest.json (KHÔNG đụng tệp thật của dự án, không cần thư mục thật) ⇒ NHẬN ĐƯỢC ngay — chứng minh nguồn là manifest, không phải bảng tay", () => {
+      const withThirdVendor = {
+        ...manifest,
+        collections: [...manifest.collections, { vendor: "Acme-Robotics", docs: 1, chunks: 1, sourceDir: "acme-robotics" }],
+      };
+      fs.writeFileSync(path.join(tmpDir, "manifest.json"), JSON.stringify(withThirdVendor), "utf8");
+      reloadProgrammingKb();
+      expect(getProgrammingKbVendorSlugs().sort()).toEqual(["acme-robotics", "mitsubishi", "zmotion"]);
+    });
+
+    it("manifest.json BỊ XOÁ ⇒ mảng RỖNG, KHÔNG throw (an toàn = không lọc, không phải lỗi)", () => {
+      fs.rmSync(path.join(tmpDir, "manifest.json"));
+      reloadProgrammingKb();
+      expect(() => getProgrammingKbVendorSlugs()).not.toThrow();
+      expect(getProgrammingKbVendorSlugs()).toEqual([]);
+    });
+
+    it("manifest.json JSON HỎNG (không parse được) ⇒ mảng RỖNG, KHÔNG throw", () => {
+      fs.writeFileSync(path.join(tmpDir, "manifest.json"), "{ khong phai json hop le ][", "utf8");
+      reloadProgrammingKb();
+      expect(() => getProgrammingKbVendorSlugs()).not.toThrow();
+      expect(getProgrammingKbVendorSlugs()).toEqual([]);
+    });
+
+    it("manifest.json thiếu hẳn trường `collections` ⇒ mảng RỖNG, KHÔNG throw", () => {
+      fs.writeFileSync(path.join(tmpDir, "manifest.json"), JSON.stringify({ generatedAt: manifest.generatedAt }), "utf8");
+      reloadProgrammingKb();
+      expect(getProgrammingKbVendorSlugs()).toEqual([]);
+    });
+
+    it("`collections` không phải mảng (bị hỏng dạng khác) ⇒ mảng RỖNG, KHÔNG throw", () => {
+      fs.writeFileSync(path.join(tmpDir, "manifest.json"), JSON.stringify({ ...manifest, collections: "khong-phai-mang" }), "utf8");
+      reloadProgrammingKb();
+      expect(getProgrammingKbVendorSlugs()).toEqual([]);
+    });
   });
 });

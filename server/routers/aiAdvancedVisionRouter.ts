@@ -8,7 +8,11 @@
 
 import { z } from "zod";
 import { TRPCError } from "@trpc/server";
-import { router, protectedProcedure } from "../_core/trpc";
+import { router, moduleProcedure } from "../_core/trpc";
+// ★ Cổng giấy phép MOD_AI — chỉ THÊM chiều giấy phép, RBAC/vai/2FA giữ nguyên từng ký tự.
+//   Không-brick + fail-safe ở `_core/moduleGate.ts`; lượng từ canh ở `congGiayPhepAiCensus.test.ts`.
+const protectedProcedure = moduleProcedure("MOD_AI");
+import { appError } from "../_core/appError";
 import {
   compareOkVsNg,
   imageQualityCheck,
@@ -34,16 +38,23 @@ function decodeBase64Image(b64: string): Buffer {
   try {
     buf = Buffer.from(cleaned, "base64");
   } catch {
-    throw new TRPCError({ code: "BAD_REQUEST", message: "Invalid base64 image" });
+    // Task 5 (doc 71) — 3 nhánh ở đây trước kia đều render CÙNG một câu
+    // ("Giá trị không hợp lệ ở hình ảnh.") dù nguyên nhân khác hẳn nhau (base64 hỏng /
+    // ảnh rỗng / vượt dung lượng) — đúng bệnh "76 nhóm ≥2 nguyên nhân → 1 câu". `reason`
+    // tách 2 nhánh đầu; nhánh vượt dung lượng tái dùng KB_FILE_TOO_LARGE{limitMb} đã có
+    // (Task 3) thay vì nhồi vào INVALID_VALUE — cùng bệnh KB đã chữa, tái phát ở luồng ảnh.
+    throw appError("BAD_REQUEST", "INVALID_VALUE", { field: "image", reason: "invalidBase64Image" }, "Invalid base64 image");
   }
   if (buf.length === 0) {
-    throw new TRPCError({ code: "BAD_REQUEST", message: "Empty image payload" });
+    throw appError("BAD_REQUEST", "INVALID_VALUE", { field: "image", reason: "emptyImagePayload" }, "Empty image payload");
   }
   if (buf.length > MAX_IMAGE_BYTES) {
-    throw new TRPCError({
-      code: "PAYLOAD_TOO_LARGE",
-      message: `Image exceeds ${MAX_IMAGE_BYTES} bytes`,
-    });
+    throw appError(
+      "PAYLOAD_TOO_LARGE",
+      "KB_FILE_TOO_LARGE",
+      { limitMb: Math.round((MAX_IMAGE_BYTES / (1024 * 1024)) * 10) / 10 },
+      `Image exceeds ${MAX_IMAGE_BYTES} bytes`,
+    );
   }
   return buf;
 }

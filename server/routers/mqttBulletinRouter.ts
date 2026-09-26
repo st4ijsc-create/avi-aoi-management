@@ -10,6 +10,7 @@
 
 import { z } from "zod";
 import { TRPCError } from "@trpc/server";
+import { appError } from "../_core/appError";
 // doc 54 Wave B — bulletin config + publish mutations were bare protectedProcedure (any
 // authenticated user, incl. viewer, could publish/config). writeProcedure blocks read-only
 // roles; requirePermission("mqtt_bulletin", ...) adds the module check (admin-effective by
@@ -28,6 +29,7 @@ import {
   type BulletinPayload,
 } from "../services/mqttBulletinService";
 import { publishBulletin } from "../services/mqttService";
+import { finalYield } from "../utils/kpi";
 
 export const mqttBulletinRouter = router({
 
@@ -299,7 +301,7 @@ export const mqttBulletinRouter = router({
       .limit(1);
 
       if (result.length === 0) {
-        throw new TRPCError({ code: 'NOT_FOUND', message: 'Bulletin not found' });
+        throw appError('NOT_FOUND', 'ENTITY_NOT_FOUND', { entity: 'bulletin' }, 'Bulletin not found');
       }
 
       return {
@@ -486,7 +488,7 @@ export const mqttBulletinRouter = router({
       .limit(1);
 
       if (stationInfo.length === 0) {
-        throw new TRPCError({ code: 'NOT_FOUND', message: `Station ${input.stationId} không tồn tại` });
+        throw appError('NOT_FOUND', 'ENTITY_NOT_FOUND', { entity: 'station' }, `Station ${input.stationId} không tồn tại`);
       }
 
       const { station, line, workshop, factory } = stationInfo[0];
@@ -501,7 +503,7 @@ export const mqttBulletinRouter = router({
       const ngCount = rand(5, Math.floor(totalCount * 0.1));
       const ntfCount = rand(0, Math.floor(totalCount * 0.03));
       const okCount = totalCount - ngCount - ntfCount;
-      const yieldRate = Math.round((okCount / totalCount) * 10000) / 100;
+      const yieldRate = Math.round(finalYield({ ok: okCount, ntf: ntfCount, total: totalCount }) * 100) / 100;
 
       // Random fail points
       const failPointNames = [

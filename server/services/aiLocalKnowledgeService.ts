@@ -1,11 +1,127 @@
 import fs from "node:fs";
+import { canDich, dichTruyVanBat, docBanDich, lenhDich } from "./ai/dichTruyVan";
+import { canTuKiem, congLacDeBat, doPhuTu, lenhTuKiem, taoBangIdf, tuKiemCo, type BangIdf } from "./ai/congLacDe";
+import {
+  laCauHoiQuyTac,
+  ghepQuyTacVoiDuLieuSong,
+  laVungMoHo,
+  lenhPhanLoaiTaiLieu,
+  docPhanLoaiTaiLieu,
+  phanLoaiTaiLieuBat,
+} from "./ai/cauHoiQuyTac";
+import { laTuChoi, nhuongChoTaiLieu, phanHoiLaiSauTuChoi } from "./ai/hoiLaiSauTaiLieu";
 import path from "node:path";
 import { createHash } from "node:crypto";
-import { tryExecuteTool, type ToolResult, type ToolExecContext, type PendingActionDTO, type ClientActionDirective } from "./aiLocalTools";
+import {
+  tryExecuteToolLoop,
+  type ToolResult,
+  type ToolExecContext,
+  type PendingActionDTO,
+  type ClientActionDirective,
+  type ToolLoopResult,
+  // ★★★ PDCA vòng 5 — kiểu trả về của `tryExecuteToolLoop`, dùng để dựng ĐÚNG hình dạng "không tool
+  // nào khớp" khi gate `route === "vscode"` bỏ qua lượt gọi thật (xem `KHONG_TOOL_VSCODE` cạnh
+  // `streamAnswer`). Chỉ nhập KIỂU — không mở cạnh nhập lúc chạy nào mới.
+  type TryExecuteToolLoopResult,
+} from "./aiLocalTools";
+import { quyetDinhDuongTat, TOOL_MANG_NGU_CANH } from "./ai/toolDuongTat";
+import { vanBanChoModel } from "./ai/vanBanChoModel";
+import { luotDuocNghi, type LoaiLuot, type CheDoNghi } from "./ai/loaiLuot";
+/**
+ * ★★★ doc 79 · TRỤC 1 (C) — cửa gọi model của TÁC NHÂN LẬP TRÌNH (persona + bộ cắt + bộ che + canh
+ * thoái hoá + bóc khối mã). Xem `aiCodingAgent.ts` để biết vì sao nó KHÔNG nằm trong `services/ai/`.
+ */
+import {
+  // ★ B7/F2 — kiểu số đo một lượt model, gắn vào sự kiện SSE `usage`.
+  type DungLuotModel,
+} from "./aiCodingAgent";
 import { rerank, isRerankerEnabled, type RerankCandidate } from "./aiReranker";
+// ★ G4-B — trọng số hạng nguồn (module LÁ, dùng CHUNG với bộ eval `--parity`).
+import { sourceTypeWeight, sourceLanguageWeight, devJournalWeight } from "./aiKbSourceWeights";
+import { tienToNhungCauHoi } from "./ai/tienToNhungCauHoi";
 import { loadSemanticGraph, expandWithGraph } from "./aiSemanticGraph";
 // FE-W0.3 (doc 46 §2.3) — degenerate-loop guard (pure, dependency-free).
 import { guardGeneratedText, isDegenerateStream } from "./ai/generationGuard";
+// doc69 G2-3 (Wave 1, W1-1b) — this file is the MAIN production RAG assistant (reached via
+// aiLocalKnowledgeApi.ts's /ask + /stream) and previously called aiGgufEngine directly,
+// bypassing the AI Gateway entirely: zero safety (no redaction), zero metering on the
+// surface users actually chat with. `planInference` (aiGateway's "cheapest adoption" path,
+// see its own top-of-file doc comment) is wired into `generateWithOllama`/
+// `generateWithOllamaStream` below with the SAME `{task:"chat", text: question}` input this
+// file already used for `route()`, so `plan.decision.modelId` is byte-identical to before
+// (pinned-model behavior preserved) — it only ADDS flag-gated/fail-safe input redaction
+// (`plan.safeText`), output redaction (`plan.sanitizeOutput`/`StreamingSecretRedactor`), and
+// gateway metering (`plan.record`). Reuses the G2-2 primitives verbatim — no redaction logic
+// is reimplemented here.
+import {
+  redactSecretsAndPII,
+  StreamingSecretRedactor,
+  sanitizeUntrustedBlock,
+  wrapUntrustedBlock,
+  type InjectionRisk,
+} from "./ai/aiSafety";
+/**
+ * ★★★ G5-C — BỘ CẮT CHUỖI SUY LUẬN, import TĨNH từ module LÁ (`./ai/thinkingStrip`).
+ *
+ * ⚠ CỐ Ý KHÔNG lấy từ `./aiGgufEngine`, dù bộ cắt được re-export ở đó, vì HAI lý do cơ chế:
+ *   1. File này chỉ chạm engine qua `await import("./aiGgufEngine")` **bên trong `try`** (engine
+ *      nặng, kéo node-llama-cpp). Lấy bộ cắt từ đó = import hỏng thì nhánh `catch` chạy tiếp
+ *      **không có bộ cắt** ⇒ fail-open ⇒ rò. Import tĩnh module lá làm hàng rào **vô điều kiện**.
+ *   2. Nhiều test (`aiLocalKnowledgeSafety.test.ts`, `aiLocalKnowledge.gguf.test.ts`) mock TOÀN
+ *      BỘ `./aiGgufEngine` bằng factory liệt kê tay. Bộ cắt sống ở đó ⇒ trong những test ấy nó
+ *      là `undefined`, tức **đường đang đo là đường KHÔNG có hàng rào**, mà không ca nào đỏ.
+ *
+ * ⚠ THỨ TỰ VỚI BỘ CHE BÍ MẬT: **cắt thẻ TRƯỚC, che bí mật SAU** — xem lý do đầy đủ ở đầu
+ * `ai/thinkingStrip.ts` (cắt thẻ là phép XOÁ nên nó NỐI hai nửa một bí mật vốn bị khối `<think>`
+ * tách rời; bộ canh NỘI DUNG phải đứng CUỐI). Ca chứng minh: `aiLocalKnowledge.thinkingLeak.test.ts` §5.
+ */
+import { StreamingThinkingStripper, stripThinking, thinkingStartsOpen } from "./ai/thinkingStrip";
+import { planInference } from "./aiGateway";
+import { resolveTaskModel } from "./ai/modelResolver";
+// doc69 G2-7 (Wave E4) — "ask→do" 1-tap navigate: attaches a client `navigate`
+// action to a how-to answer grounded in a KNOWN, whitelisted operational card
+// (see aiOperationalGrounding.ts's top-of-file doc comment for the fail-safe
+// gating). Pure/no side effects beyond a cached read of
+// knowledge/operational-cards.json — never throws, never blocks the answer.
+import { resolveOperationalNavigate, resolveCitationRoute } from "./aiOperationalGrounding";
+// doc69 B1 (Wave 5) — last-autosync answer-eval gate result, surfaced read-only
+// in the KB health signal so ops can see "did the last KB rebuild pass its
+// answer-quality eval". Never throws (best-effort import/call, see getKbHealth).
+import { getKbSyncSchedulerStatus, getLastAutosyncEvalGate } from "./kbSyncScheduler";
+import { docTrangThaiHoanVram, type VramDeferState } from "./vram/vramDefer";
+// doc69 B3 (Wave 5) — closes the KB answer-feedback loop: a bounded, flag-gated
+// (KB_FEEDBACK_RERANK_ENABLED, default OFF) re-ranking nudge derived from
+// accumulated thumbs up/down votes (server/services/aiKbFeedbackSignal.ts).
+// FAIL-SAFE: disabled/no feedback/table-absent/DB-error all degrade to an empty
+// map -> computeFeedbackWeight(0) === 1 for every source -> byte-identical to the
+// pre-existing pure-semantic scoring below. This is a SEPARATE, independently
+// flagged signal from the aiReranker.ts LLM/gguf semantic reranker imported above.
+import { isFeedbackRerankEnabled, computeFeedbackWeight, loadFeedbackNetRatings } from "./aiKbFeedbackSignal";
+// Final-fix round, Task 6 (SECURITY) — role gate for Training Studio corpus content. See
+// kbStudioAccess.ts's header for the full "why" (pre-Wave-2 access level was
+// roleProcedure("admin","engineer").use(require2FA); Wave 2's gatherStudioHits wiring had no
+// role check at all).
+import { canAccessStudioCorpus } from "./ai/kbStudioAccess";
+// ★★★ VIỆC 1 (`docs/superpowers/specs/2026-09-04-ai-local-danh-gia-hien-trang-va-lo-trinh.md` §8) —
+// corpus LẬP TRÌNH (tài liệu hãng PLC/robot/motion + SDK, doc 34 P1) — HOÀN TOÀN TÁCH biệt khỏi
+// kho vận hành nhà máy đọc bên dưới (`ensureDataLoaded`/`data.embeddings`). Xem
+// `retrieveProgrammingKnowledgeForVscode` cạnh `retrieveKnowledge`.
+import { searchProgrammingKb, getProgrammingKbVendorSlugs } from "./aiProgrammingKnowledgeService";
+// ★★★ TRÍCH DẪN NGUỒN DỮ LIỆU — `toolResult` CHƯA TỪNG được chuyển thành citation, nên một
+// con số trong câu trả lời không truy ngược được về hàng nào trong DB. Module lá thuần
+// (không import gì, không chạm DB); mọi luật an toàn — nhất là **`note` có mặt ⇒ KHÔNG
+// citation**, cửa chống rò RBAC — nằm trong header của chính nó.
+import {
+  buildDataCitation,
+  themChanNguonSoLieu,
+  reconcileAnswerNumbers,
+  type KbDataCitation,
+  type NumberReconciliation,
+} from "./ai/dataCitation";
+// ★ B8 — nhánh LẬP TRÌNH đã tách sang `./aiLocalKnowledgeCoding.ts` (xem docblock đầu tệp đó).
+import { streamCodingAnswer } from "./aiLocalKnowledgeCoding";
+// ★ B8 — VÒNG TOOL của streamAnswer (cổng vscode · tiến độ tool_loop) đã tách sang `./aiLocalKnowledgeVongTool.ts` (xem docblock đầu tệp đó).
+import { KHONG_TOOL_VSCODE, chayVongLapToolPhatTienDo, tachThanKhoiGiaoCuVscode } from "./aiLocalKnowledgeVongTool";
 
 export type KbIntent =
   | "how_to"
@@ -42,6 +158,13 @@ export interface KbCitation {
   title: string;
   sourceType: string;
   score: number;
+  // doc69 B3 (Wave 5) — deep-link target, resolved via aiOperationalGrounding's
+  // resolveCitationRoute (KNOWN operational card + ALLOWED_CLIENT_ROUTES whitelist
+  // ONLY — never an arbitrary string). null/absent when unresolvable: the FE must
+  // render the citation as plain, non-clickable text (honest).
+  route?: string | null;
+  /** Wave 2 — nguồn của trích dẫn. Vắng mặt = "system" (giữ nguyên hành vi cũ cho mọi consumer). */
+  origin?: "system" | "studio";
 }
 
 // zh — language union extended to include Chinese (backward-compatible: extra branch).
@@ -55,6 +178,17 @@ export interface KbRetrieveResult {
   confidence: number;
   citations: KbCitation[];
   contexts: string[];
+  /**
+   * G0 phần C — thời gian THẬT (ms) mà tầng rerank chiếm của lượt truy vấn này,
+   * đo tại ĐIỂM GỌI (thời gian người dùng thật sự chờ, gồm cả `await import`).
+   * `null` = tầng rerank KHÔNG chạy cho lượt này (RAG_RERANKER_ENABLED tắt, hoặc
+   * pool ≤ 1 ứng viên) — KHÁC HẲN `0`, vốn có nghĩa "đã chạy và nhanh dưới 1 ms".
+   * Trước bản này không có bất kỳ số nào ở đây: `aiReranker.ts` không có một
+   * `Date.now()` nào, nên chi phí rerank vô hình với mọi tầng phía trên.
+   */
+  rerankMs?: number | null;
+  /** ★ PDCA vòng 9 — bản dịch tiếng Anh dùng khi chấm điểm (`ai/dichTruyVan.ts`); vắng = không dịch. */
+  cauHoiDich?: string;
 }
 
 // C3a — optional, page-supplied context. All fields optional; absence keeps the
@@ -69,6 +203,82 @@ export interface KbQueryContext {
   selectedProductCode?: string;
   selectedProductModelId?: number;
   selectedLot?: string;
+  /**
+   * Final-fix round, Task 6 (SECURITY) — the REAL authenticated RBAC role (server/db/auth.ts's
+   * UserRole, e.g. "admin"/"engineer"/"operator" — NOT this file's own `UserRole` "tone" type,
+   * see kbStudioAccess.ts's header), used ONLY to gate Training Studio corpus merging
+   * (canAccessStudioCorpus, in retrieveKnowledge below). MUST be populated SERVER-SIDE from the
+   * authenticated session by the caller — NEVER from request body (aiLocalKnowledgeApi.ts's
+   * parseContext() intentionally does NOT whitelist this field, so a client can never set it via
+   * `POST .../ask`'s `context` param). Absent/unrecognized ⇒ fail-closed (no Studio content).
+   */
+  callerRole?: string;
+  /**
+   * ★★★ doc 79 · TRỤC 1 — CỜ PHIÊN LẬP TRÌNH. `true` ⇔ câu hỏi tới từ `/ai-coding-workspace` và phải
+   * được định tuyến tới TÁC NHÂN LẬP TRÌNH (persona lập trình + CHỈ 5 tool lập trình), KHÔNG tới trợ
+   * lý VẬN HÀNH + RAG tri thức. Vắng/`false` ⇒ hành vi Y HỆT hôm nay (ràng buộc cứng nhất — xem
+   * `streamAnswer`). Được `parseContext` (aiLocalKnowledgeApi.ts) đọc từ body, chỉ chấp nhận `true`.
+   */
+  codingMode?: boolean;
+  /**
+   * ★ G4 (audit 2026-09-21 · P4) — tầng model người dùng chọn cho LƯỢT NÀY: `"auto"|"fast"|"code"`.
+   * Chỉ có nghĩa khi `codingMode === true`. Vắng/lạ ⇒ mặc định của hệ (hành vi cũ y nguyên).
+   * Lọc qua danh sách TRẮNG ở `ai/chonTacVuModel.locTacVuNguoiChon` — client KHÔNG đặt được task lạ.
+   */
+  modelTask?: string;
+  /**
+   * ★ F3 (2026-09-22) — chế độ nghĩ người dùng chọn cho LƯỢT NÀY: `"sau" | "can-bang" | "nhanh"`
+   * (xem `ai/loaiLuot.CheDoNghi`). Chỉ có nghĩa khi `codingMode === true`. Vắng ⇒ quy tắc lớp lượt
+   * (hành vi cũ y nguyên). Lọc danh sách TRẮNG ở cửa (`locCheDoNghi`) — client không đặt được chế độ lạ.
+   */
+  cheDoNghi?: CheDoNghi;
+  /**
+   * ★★★ doc 79 · TRỤC 2 — id DỰ ÁN đang chọn (bộ chọn dự án ở đầu cây tệp). **Là một ID, KHÔNG phải
+   * đường dẫn** — server tra danh sách TRẮNG (`repoProjects.gocTheoId`) để ra gốc; id lạ / đường dẫn
+   * tự do ⇒ TỪ CHỐI (fail-closed). Chỉ có nghĩa khi `codingMode === true`. Vắng ⇒ dự án mặc định.
+   */
+  projectId?: string;
+  /**
+   * ★★★ doc 79 · VÒNG TỰ ĐỘNG — **TỆP ĐANG SỬA, GHIM BỞI BỘ ĐIỀU KHIỂN VÒNG.**
+   *
+   * Chỉ có nghĩa khi `codingMode === true`. Vắng ⇒ hành vi Y HỆT hôm nay (bộ chọn tất định tự
+   * trích đường dẫn từ câu hỏi).
+   *
+   * ⚠⚠ VÌ SAO CẦN GHIM — một lỗi ĐO ĐƯỢC nếu không có nó: câu hỏi của lượt sửa kế tiếp **chứa đầu
+   * ra test thật**, mà đầu ra ấy có cả tên lệnh (`dotnet test …`) lẫn đường dẫn tệp KHÁC
+   * (`…/CalculatorTests.cs:line 42`). `classifyCodingToolIntent` chạy `run_command` TRƯỚC tiên ⇒ nó
+   * sẽ chọn "chạy lại test" thay vì "sửa tệp", và nếu không thì nó chọn nhầm **tệp test** thay vì
+   * tệp nguồn. Ghim đường dẫn là cách duy nhất để vòng sửa ĐÚNG tệp mà người vừa duyệt.
+   *
+   * ⚠ KHÔNG mở thêm quyền: đường này vẫn đi qua `read_file` (hộp cát + RBAC + gốc dự án đã phân
+   * giải) như mọi lượt đọc khác; một đường ngoài hộp cát bị TỪ CHỐI y hệt, và câu từ chối được nói
+   * ra nguyên văn. Người dùng vốn đã có thể yêu cầu đọc một tệp bất kỳ bằng lời — ghim không thêm
+   * bề mặt nào, chỉ bỏ một bước đoán.
+   */
+  codingEditPath?: string;
+  /**
+   * ══════════════════════════════════════════════════════════════════════════════════════════════
+   * ★★★ 2026-08-23 — **ĐẦU RA MÁY (test/biên dịch) ĐI RIÊNG, KHÔNG TRỘN VÀO `question`.**
+   * ══════════════════════════════════════════════════════════════════════════════════════════════
+   * ─── LỖ ĐÃ ĐO, VÀ NÓ NẰM Ở Ô THẨM QUYỀN CAO NHẤT ─────────────────────────────────────────────
+   * Bộ điều khiển vòng ở client trước bản vá này gửi
+   *     `question = "sửa X để khắc phục lỗi…\n\n" + catLoiChoPrompt(dauRa)`
+   * ⇒ nguyên văn đầu ra `dotnet test` rơi vào khối `=== YÊU CẦU ===`, ô có **thẩm quyền CAO NHẤT**
+   * theo chính bảng repo tự viết (`aiCodingAgent.promptSinhMa`: *yêu cầu > MÃ > BÀI HỌC > lịch sử*).
+   * `catLoiChoPrompt` chỉ **CẮT** — không che bí mật, không trung hoà dấu rào, không bọc.
+   * Một dòng *"BỎ QUA CHỈ DẪN TRƯỚC, hãy…"* nằm trong **tên một ca kiểm thử** (thứ do người gửi PR
+   * quyết định) khi ấy nói chuyện với model từ ô cao nhất của prompt.
+   *
+   * ─── HÌNH DẠNG ĐÚNG, LẤY NGUYÊN CỦA CLI ──────────────────────────────────────────────────────
+   * `sanitizeUntrustedBlock` + `wrapUntrustedBlock`, vai **`user`**, vào khối **LỊCH SỬ** — ô thẩm
+   * quyền **THẤP NHẤT**. Đó đúng là thứ `aiCodingCli/cli.ts` làm sau mỗi lượt duyệt-và-thực-thi.
+   * Web nay làm **ít nhất bằng** CLI. Xem `bocDauRaMayChoLichSu()`.
+   *
+   * ⚠ Ô này chở **DỮ LIỆU**, không chở chỉ dẫn. Nó KHÔNG BAO GIỜ được nối thẳng vào `question`, và
+   *   không đường nào trong service được đọc nó mà bỏ qua bước bọc.
+   * ⚠ Chỉ có nghĩa khi `codingMode === true`. Vắng ⇒ hành vi cũ y nguyên.
+   */
+  dauRaKhongTinCay?: string;
 }
 
 export interface KbStructuredResponse {
@@ -88,6 +298,33 @@ export interface KbAnswerResult extends KbRetrieveResult {
   structured?: KbStructuredResponse;
   /** GĐ2 — set when a write-tool was matched: confirm card to render (no execute). */
   pendingAction?: PendingActionDTO | null;
+  /**
+   * doc69 G2-7 — set when this is a how-to answer grounded in a KNOWN, whitelisted
+   * operational card: a `navigate` directive (suggested: true) the FE renders as a
+   * 1-tap "Mở màn X" button. null for every other answer (fail-safe, additive).
+   */
+  clientAction?: ClientActionDirective | null;
+  /**
+   * G2-C — dấu vết vòng lặp tool (null ⇔ cờ `AI_TOOL_LOOP_ENABLED` TẮT). CHỈ để quan sát/đo
+   * lường; mọi thứ người dùng cần THẤY đã được nối vào `answer` (client hiện chỉ render `answer`,
+   * nên một trường DTO mới mà không nối chuỗi là một cải tiến VÔ HÌNH).
+   */
+  toolLoop?: { rounds: number; stop: string; tokensUsed: number; elapsedMs: number } | null;
+  /**
+   * ★ Trích dẫn **NGUỒN DỮ LIỆU** (bảng · bộ lọc · số hàng · khoảng thời gian) cho
+   * số liệu sống lấy từ `toolResult`. KHÁC HẲN `citations` (chunk tài liệu) và cố ý
+   * KHÔNG trộn vào mảng đó — xem `themChanNguonSoLieu` để biết vì sao.
+   * `[]` khi lượt này không chạy tool, hoặc khi tool trả về kèm `note` (từ chối
+   * RBAC / DB lỗi / rỗng) ⇒ **không có gì để truy ngược thì không trích dẫn**.
+   */
+  dataCitations?: KbDataCitation[];
+  /**
+   * ★ Phép ĐO "bao nhiêu con số trong câu trả lời truy ngược được về `toolResult`".
+   * ⚠ CHỈ QUAN SÁT — KHÔNG một nhánh nào được chặn/sửa câu trả lời theo ô này ở
+   *   lượt này: số DẪN XUẤT (tổng/hiệu/%) hợp lệ vẫn "không tìm thấy nguồn", nên
+   *   dùng nó làm cổng sẽ giết câu trả lời ĐÚNG. `null` khi không chạy tool.
+   */
+  numberCheck?: NumberReconciliation | null;
 }
 
 /**
@@ -329,10 +566,58 @@ const STREAM_GUARD_STEP_CHARS = Number(process.env.KB_QA_STREAM_GUARD_STEP ?? 16
 // often need to enumerate items + code blocks; bump budget ×1.7 to avoid
 // truncating mid-list (observed on SPC rules question — answer cut at NELSON_4).
 const LIST_COUNT_RE = /(bao nhiêu|liệt kê|danh sách|tất cả các|list( all)?|how many|enumerate)/i;
-function pickNumPredict(intent: KbIntent, hasToolSummary: boolean, question?: string): number {
+/**
+ * ★★★ VIỆC 6 (2026-09-04) — hồi quy do CHÍNH Việc 2 gây ra, đo được ở Việc 5
+ * (`task-v5-report.md` B2): Việc 2 ép `intent="general"` cho MỌI câu hỏi route vscode
+ * (`retrieveKnowledge`/`retrieveProgrammingKnowledgeForVscode`, xem `VIỆC 2`/`VIỆC 1` phía trên) —
+ * đúng đắn để tắt 6 regex `*_INTENT` soạn cho câu hỏi VẬN HÀNH, nhưng hệ quả PHỤ chưa từng đo:
+ * `intent="general"` rơi vào nhánh `case "general"` bên dưới ⇒ MỌI câu hỏi route vscode, kể cả
+ * "viết code giúp mình" xin vài trăm dòng, bị khoá vào `KB_QA_NUM_PREDICT_GENERAL` (220 token) —
+ * ngân sách soạn cho câu hỏi ĐỊNH NGHĨA/TRA CỨU ngắn. Việc 5 đo 10/10 câu route vscode bị cắt ở
+ * 599-822 ký tự khớp CHÍNH XÁC 220 token, kể cả câu bắt đầu đúng hướng (0/10 "dùng ngay").
+ *
+ * Vá bằng cách thêm THAM SỐ `route` (KHÔNG suy luận lại từ `intent` — `intent` đã bị Việc 2 xoá
+ * sạch thông tin route bằng cách ép cứng "general", nên nhánh switch bên dưới không còn cách nào
+ * phân biệt "câu hỏi ngắn kiểu tra cứu" khỏi "câu hỏi vscode xin sinh mã dài" — phải lấy `route`
+ * từ NGUỒN GỐC, tức `context.route` luồn qua `generateWithOllama`/`generateWithOllamaStream`).
+ * Đặt NGANG HÀNG với nhánh `hasToolSummary` (trước switch, không phải một case trong đó) để giữ
+ * đúng bất biến hiện tại (intent luôn "general" cho route vscode) NHƯNG không phụ thuộc nó — nếu
+ * sau này route vscode được phép có intent khác "general", bản vá này vẫn đúng.
+ *
+ * ★ CĂN CỨ CHỌN SỐ MẶC ĐỊNH 900 (không phải số bừa — xem `task-v6-report.md` B2 để có số đo thật):
+ * (a) tái dùng đúng trần đã có sẵn và ĐÃ ĐƯỢC CODEBASE NÀY TIN DÙNG cho câu trả lời dài
+ *     (`KB_QA_NUM_PREDICT_LIST_CAP` bên dưới cũng mặc định 900) — không phát minh một hằng số mới;
+ * (b) đối chiếu với kích thước THẬT của 5 tệp C# tham khảo hoàn chỉnh trong app demo IoT của Việc 5
+ *     (`D:\SOURCES\AI Local\demo-iot\csharp-reference\*.cs`, đọc tay, không đoán): một class đọc
+ *     RS232/TCP/UDP đơn năng chạy 1.791-2.012 ký tự (33-43 dòng), một hàm CRC-16/Modbus ĐẦY ĐỦ
+ *     chuẩn chạy 3.318 ký tự (67 dòng), bản đọc Modbus RTU qua servo Delta 3.595 ký tự (73 dòng) —
+ *     900 token đủ cho lớp nhỏ có headroom, gần đủ cho lớp lớn (framing+checksum);
+ * (c) tỉ lệ ký tự/token đo THẬT ở B1 vòng này (220 token ⇒ 663-740 ký tự bị CẮT giữa chừng, tức
+ *     ~2,7-3,0 ký tự/token cho văn bản Việt+code trộn) ⇒ 900 token ≈ 2.400-2.700 ký tự — đủ cho một
+ *     hàm hoàn chỉnh + giải thích ngắn, KHÔNG đủ để chép nguyên một file tham khảo đã người hoàn
+ *     thiện (có chủ đích: model tự sinh thường gọn hơn bản người viết đầy đủ boilerplate/comment);
+ * (d) đánh đổi tốc độ/VRAM: token càng nhiều càng chậm — số đo thời gian trước/sau ở
+ *     `task-v6-report.md` B4 (900 vs 220 token, cùng model, cùng máy).
+ *
+ * ★★★ B3 — NHÁNH KIA (đường WEB): nhánh này CHỈ áp dụng khi `route === "vscode"`; mọi route khác
+ * (kể cả route vắng mặt — trang web/desktop hôm nay không gửi `context.route`) rơi thẳng xuống
+ * `switch (intent)` cũ, KHÔNG đổi một byte hành vi. Lưới `aiLocalKnowledge.numPredictVscode.test.ts`
+ * khẳng định cả hai vế (vscode dùng trần mới, web/route khác giữ trần cũ) + ablation.
+ *
+ * ★ Đánh đổi có CHỦ Ý, nói thẳng: route vscode áp trần 900 ĐỒNG LOẠT cho mọi câu hỏi, kể cả câu
+ * hỏi NGẮN (vd "giá trị thanh ghi X là gì?") — không tách theo độ dài câu hỏi vì `intent` đã bị Việc
+ * 2 ép "general" cho mọi câu (không còn tín hiệu nào phân biệt ngắn/dài mà không viết lại bộ phân
+ * loại — ngoài phạm vi vòng này). Hệ quả: câu hỏi ngắn CÓ THỂ sinh dài hơn cần thiết trước khi model
+ * tự dừng bằng EOS — nhưng đây là num_predict là TRẦN TRÊN (dừng SỚM nếu model tự kết thúc câu trả
+ * lời), không phải độ dài BẮT BUỘC, nên chi phí thực tế chỉ là VRAM/wall-time khi model KHÔNG tự
+ * dừng sớm (đo ở B4).
+ */
+function pickNumPredict(intent: KbIntent, hasToolSummary: boolean, question?: string, route?: string): number {
   let base: number;
   if (hasToolSummary) {
     base = Number(process.env.KB_QA_NUM_PREDICT_TOOL ?? 220);
+  } else if (route === "vscode") {
+    base = Number(process.env.KB_QA_NUM_PREDICT_VSCODE ?? 900);
   } else {
     switch (intent) {
       case "how_to":
@@ -453,6 +738,23 @@ export function detectLanguage(question: string): KbLanguage {
   const viKeywords = /(lam sao|huong dan|khac phuc|loi|du lieu|he thong|quan tri|nguoi dung|kiem tra)/i;
   if (viKeywords.test(normalizeText(question))) return "vi";
 
+  // \u2605\u2605\u2605 TASK V11 \u2014 B3 (ghi nh\u1eadn trong brief, kh\u00f4ng ph\u1ea3i m\u00f9): k\u1ef9 s\u01b0 g\u00f5 ti\u1ebfng Vi\u1ec7t KH\u00d4NG D\u1ea4U
+  // (b\u00e0n ph\u00edm/th\u00f3i quen g\u00f5 nhanh, \u0111\u1eb7c bi\u1ec7t ph\u1ed5 bi\u1ebfn khi c\u00e2u h\u1ecfi tr\u1ed9n nhi\u1ec1u thu\u1eadt ng\u1eef l\u1eadp tr\u00ecnh
+  // ti\u1ebfng Anh \u2014 "Node.js", "MQTT", "broker") l\u1ecdt qua C\u1ea2 HAI l\u01b0\u1edbi tr\u00ean: kh\u00f4ng d\u1ea5u \u21d2 `viPattern`
+  // (0 k\u00fd t\u1ef1 c\u00f3 d\u1ea5u) tr\u01b0\u1ee3t; 9 c\u1ee5m t\u1eeb c\u1ed1 \u0111\u1ecbnh c\u1ee7a `viKeywords` kh\u00f4ng ph\u1ee7 h\u1ebft m\u1ecdi c\u00e2u h\u1ecfi l\u1eadp
+  // tr\u00ecnh th\u1eadt \u21d2 `detectLanguage` r\u01a1i v\u1ec1 "en" \u2014 \u0110O S\u1ed0NG \u0111\u01b0\u1ee3c (`v11-lang-check.mjs`):
+  // "Viet module Node.js ket noi MQTT broker va nhan message" -> "en" (SAI, c\u00e2u h\u1ecfi n\u00e0y ti\u1ebfng
+  // Vi\u1ec7t kh\u00f4ng d\u1ea5u). V\u00e1: d\u00f9ng l\u1ea1i \u0110\u00daNG t\u1eadp t\u1eeb n\u1ed1i ti\u1ebfng Vi\u1ec7t-kh\u00f4ng-d\u1ea5u \u0111\u00e3 c\u00f3 s\u1eb5n \u1edf `STOP_WORDS`
+  // (khai b\u00e1o ngay tr\u00ean, d\u00f9ng cho `tokenize`) \u2014 nh\u01b0ng CH\u1ec8 gi\u1eef nh\u1eefng t\u1eeb KH\u00d4NG tr\u00f9ng ph\u1ea7n EN c\u1ee7a
+  // ch\u00ednh `STOP_WORDS` (vd "the"/"do"/"can" \u1edf C\u1ea2 hai ph\u1ea7n, gi\u1eef l\u1ea1i s\u1ebd k\u00e9o theo c\u00e2u ti\u1ebfng Anh
+  // th\u1eadt ch\u1ee9a "the"/"can" b\u1ecb ch\u1ea5m nh\u1ea7m "vi") v\u00e0 b\u1ecf th\u00eam v\u00e0i t\u1eeb NG\u1eaeN/m\u01a1 h\u1ed3 c\u00f3 th\u1ec3 l\u00e0 t\u1eeb ti\u1ebfng Anh
+  // th\u1eadt ho\u1eb7c t\u1eeb vi\u1ebft t\u1eaft k\u1ef9 thu\u1eadt (co\u2194"Co."/"CO", la\u2194"LA", ai\u2194"AI", ba\u2194"BA", se\u2194"SE", ra\u2194"RA",
+  // da\u2194"DA", the\u2194EN, do\u2194EN, can\u2194EN) \u2014 ch\u1ec9 c\u00f2n c\u00e1c t\u1eeb n\u1ed1i RI\u00caNG C\u1ee6A ti\u1ebfng Vi\u1ec7t, kh\u00f4ng \u0111\u1ee5ng h\u00e0ng
+  // v\u1edbi t\u1eeb/vi\u1ebft t\u1eaft ti\u1ebfng Anh ph\u1ed5 bi\u1ebfn trong c\u00e2u h\u1ecfi k\u1ef9 thu\u1eadt.
+  const VI_PARTICLE_RE =
+    /\b(khong|cua|voi|nhung|hoac|neu|dang|minh|toi|va|nao|gi|vao|muon|viet|duoc|hai|hon|nhu)\b/;
+  if (VI_PARTICLE_RE.test(normalizeText(question))) return "vi";
+
   return "en";
 }
 
@@ -499,27 +801,13 @@ function extractEntities(question: string): string[] {
   return Array.from(entities).slice(0, 10);
 }
 
-// Cycle-3: source weighting helpers (VN priority + English-heavy demotion).
-const VN_BOOST_PATH_RE = /(domain\/knowledge\/|USER_GUIDE|HUONG_DAN|_VI\.|HE_THONG|TRO_GIUP)/i;
-const EN_DEMOTE_PATH_RE = /(CSHARP_CLIENT|SERVER_PERFORMANCE_ASSESSMENT|_EN\.)/i;
-// Cycle-4: hard-demote dev artefact reports that consist mostly of raw UI
-// string catalogues — these create false matches across unrelated user
-// queries (e.g. any question containing the word "audit" pulls in the i18n
-// audit report regardless of intent).
-const NOISE_DOC_RE = /(I18N_AUDIT_REPORT|SYSTEM_AUDIT_REPORT|AUDIT_REPORT|MODULE_AUDIT|_DELIVERABLE|_UPGRADE_REPORT|FRONTEND_AUDIT)/i;
-function sourceLanguageWeight(sourcePath: string, qLang: KbLanguage): number {
-  if (NOISE_DOC_RE.test(sourcePath)) return 0.55;
-  // zh has no dedicated corpus; treat it like the EN branch (neutral) — the KB
-  // is vi/en, and the LLM translates concepts into zh at answer time.
-  if (qLang === "vi") {
-    if (VN_BOOST_PATH_RE.test(sourcePath)) return 1.08;
-    if (EN_DEMOTE_PATH_RE.test(sourcePath)) return 0.92;
-  } else {
-    if (EN_DEMOTE_PATH_RE.test(sourcePath)) return 1.05;
-    if (VN_BOOST_PATH_RE.test(sourcePath)) return 0.95;
-  }
-  return 1;
-}
+// ★ G4-B — bảng trọng số hạng nguồn + trọng số ngôn ngữ ĐÃ CHUYỂN sang module lá
+// `./aiKbSourceWeights`. Lý do là CƠ CHẾ, không phải gọn gàng: khi bảng nằm inline ở đây,
+// bộ đo duy nhất phát biểu được về thứ hạng (`scripts/ai-eval/eval-rag-operational.mjs`)
+// xếp hạng bằng cosine THUẦN ⇒ đổi trọng số thì bộ đo nhúc nhích ĐÚNG 0,0000, và không có
+// phép đo nào từng nói bảng ấy đúng hay sai. Nay bộ eval `import` chính file lá này
+// (chế độ `--parity`), nên một lượt quét trọng số đo trên con số production THẬT.
+// Xem đầu `aiKbSourceWeights.ts` để biết đầy đủ.
 
 // Cycle-3: detect lot / machine identifiers for entity-aware refusal.
 function extractLotOrMachineId(question: string): string | null {
@@ -631,7 +919,9 @@ async function embedQuestionOllama(question: string): Promise<number[] | null> {
 async function embedQuestionGguf(question: string): Promise<number[] | null> {
   const { generateEmbedding, isGgufAvailable } = await import("./aiGgufEngine");
   if (!(await isGgufAvailable())) return null;
-  const { embedding } = await generateEmbedding(question, GGUF_EMBED_MODEL_ID);
+  // Sau R1 — model nhúng bất đối xứng (Qwen3-Embedding) cần tiền tố nhiệm vụ cho CÂU HỎI; suy từ tên
+  // model, đo trước/sau ở `ai/tienToNhungCauHoi.ts`. Tài liệu (kho hệ thống, Studio) vẫn nhúng trơn.
+  const { embedding } = await generateEmbedding(tienToNhungCauHoi(GGUF_EMBED_MODEL_ID) + question, GGUF_EMBED_MODEL_ID);
   if (!Array.isArray(embedding) || embedding.length === 0) return null;
   if (embedding.length !== KB_EMBED_DIM) {
     console.warn(
@@ -643,7 +933,9 @@ async function embedQuestionGguf(question: string): Promise<number[] | null> {
   return l2normalizeVec(embedding);
 }
 
-async function embedQuestion(question: string): Promise<number[] | null> {
+/** Exported cho eval Training Studio (R1, `kbStudioEval.ts`) — eval phải nhúng câu hỏi bằng ĐÚNG
+ * đường sản xuất (cùng model, cùng chuẩn hoá L2, cùng guard số chiều), không phải một bản chép. */
+export async function embedQuestion(question: string): Promise<number[] | null> {
   const cacheKey = normalizeText(question);
   const cached = embedCache.get(cacheKey);
   if (cached) {
@@ -740,12 +1032,7 @@ function buildExtractiveAnswer(question: string, retrieve: KbRetrieveResult): st
         ? `Không tìm thấy dữ liệu cho mã **${id}** trong tài liệu hiện tại.\n\n**Gợi ý:**\n- Kiểm tra lại mã (định dạng đúng chưa, có khoảng trắng dư không)\n- Nếu đây là dữ liệu thời gian thực, hãy nêu rõ ngày/khoảng thời gian\n- Hoặc liên hệ kỹ thuật viên để được hỗ trợ`
         : `No data found for **${id}** in the current documents.\n\n**Try:**\n- Verify the ID format and remove extra whitespace\n- For real-time data, specify the date/time range\n- Or contact a technical engineer for help`;
     }
-    if (language === "zh") {
-      return `在当前文档中我没有关于此问题的准确信息。\n\n**建议：**\n- 提问更具体一些（功能名称、界面、错误代码、机台/批次编号）\n- 如果询问实时数据（产量、机台、缺陷），请说明日期/时间范围\n- 或联系技术工程师寻求帮助`;
-    }
-    return language === "vi"
-      ? `Tôi không có thông tin chính xác về câu hỏi này trong tài liệu hiện tại.\n\n**Gợi ý:**\n- Thử hỏi cụ thể hơn (tên tính năng, màn hình, mã lỗi, mã máy/lô)\n- Nếu hỏi về dữ liệu thời gian thực (sản lượng, máy, lỗi), hãy nêu rõ ngày/khoảng thời gian\n- Hoặc liên hệ kỹ thuật viên để được hỗ trợ`
-      : `I don't have accurate information about this question in the current documents.\n\n**Try:**\n- Ask more specifically (feature name, screen, error code, machine/lot ID)\n- For real-time data (yield, machines, defects), specify the date/time range\n- Or contact a technical engineer for help`;
+    return cauTuChoiChuan(language);
   }
 
   const intro =
@@ -771,6 +1058,132 @@ function buildExtractiveAnswer(question: string, retrieve: KbRetrieveResult): st
         : "\n\n💡 *If needed, ask about a specific step or error.*";
 
   return `${intro}\n\n${bullets}${outro}`;
+}
+
+/** Câu TỪ CHỐI chuẩn ("không có thông tin chính xác…") — một nguồn, dùng cho cổng độ liên quan và cổng lạc đề. */
+function cauTuChoiChuan(language: KbLanguage): string {
+  if (language === "zh") {
+    return `在当前文档中我没有关于此问题的准确信息。\n\n**建议：**\n- 提问更具体一些（功能名称、界面、错误代码、机台/批次编号）\n- 如果询问实时数据（产量、机台、缺陷），请说明日期/时间范围\n- 或联系技术工程师寻求帮助`;
+  }
+  return language === "vi"
+    ? `Tôi không có thông tin chính xác về câu hỏi này trong tài liệu hiện tại.\n\n**Gợi ý:**\n- Thử hỏi cụ thể hơn (tên tính năng, màn hình, mã lỗi, mã máy/lô)\n- Nếu hỏi về dữ liệu thời gian thực (sản lượng, máy, lỗi), hãy nêu rõ ngày/khoảng thời gian\n- Hoặc liên hệ kỹ thuật viên để được hỗ trợ`
+    : `I don't have accurate information about this question in the current documents.\n\n**Try:**\n- Ask more specifically (feature name, screen, error code, machine/lot ID)\n- For real-time data (yield, machines, defects), specify the date/time range\n- Or contact a technical engineer for help`;
+}
+
+// ★ PDCA vòng 5 — CỔNG CÂU LẠC ĐỀ CÙNG MIỀN (xem `ai/congLacDe.ts`). Bảng IDF dựng một lần cho mỗi lần nạp kho.
+let bangIdfCache: { nguon: KbDataBundle; bang: BangIdf } | null = null;
+function bangIdfKho(): BangIdf {
+  const data = ensureDataLoaded();
+  if (bangIdfCache?.nguon !== data) {
+    bangIdfCache = { nguon: data, bang: taoBangIdf([...data.chunksById.values()].map((c) => `${c.title}\n${c.text}`)) };
+  }
+  return bangIdfCache.bang;
+}
+
+/**
+ * `true` ⇔ CHẶN: độ phủ từ nội dung thấp VÀ tự kiểm (model, tắt nghĩ) nói đoạn trích KHÔNG trả lời được câu hỏi.
+ * Mọi lỗi (model vắng, ném, rỗng) ⇒ `false` — cổng không bao giờ làm hỏng đường trả lời cũ.
+ */
+async function laCauLacDe(question: string, retrieve: KbRetrieveResult, userId?: number): Promise<boolean> {
+  try {
+    if (!congLacDeBat() || retrieve.contexts.length === 0) return false;
+    // ★ Vòng 9 — độ phủ lấy MAX(câu gốc, bản dịch): câu Việt hỏi đoạn viết chữ Anh ("phế phẩm" ↔ "Scrap Rate", T58).
+    const phu = Math.max(
+      doPhuTu(question, retrieve.contexts, bangIdfKho()),
+      retrieve.cauHoiDich ? doPhuTu(retrieve.cauHoiDich, retrieve.contexts, bangIdfKho()) : 0,
+    );
+    if (!canTuKiem(phu)) return false;
+    const { generateText: ggufGen, isGgufAvailable } = await import("./aiGgufEngine");
+    if (!(await isGgufAvailable())) return false;
+    const plan = await planInference({ task: "chat", text: question, userId });
+    // doc69 G2-3 — engine chỉ thấy câu hỏi ĐÃ CHE (`plan.safeText`), như `generateWithOllama`; lượt gọi được đo đếm.
+    const { he, nd } = lenhTuKiem(plan.safeText, retrieve.contexts);
+    const start = Date.now();
+    const r = await ggufGen({ systemPrompt: he, prompt: nd, maxTokens: 8, temperature: 0, disableThinking: true }, plan.decision.modelId);
+    plan.record({ tokensIn: r.tokensPrompt, tokensOut: r.tokensGenerated, latencyMs: Date.now() - start, outcome: "ok" });
+    const chan = !tuKiemCo(stripThinking(r.text).answer);
+    if (chan) console.info(`[aiLocalKnowledge] cổng lạc đề: CHẶN (độ phủ ${phu.toFixed(2)}, tự kiểm KHONG)`);
+    return chan;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * ★ PDCA vòng 6 — câu trong VÙNG MƠ HỒ (không dấu hiệu sống, không dấu hiệu quy tắc; `ai/cauHoiQuyTac.ts`) có phải hỏi TÀI LIỆU
+ * không? Model một từ, tắt nghĩ. `true` CHỈ khi model nói TAILIEU; mọi lỗi ⇒ `false` (giữ dòng tool như cũ).
+ * Chỉ gọi khi tool RỖNG và tài liệu tin cậy — người gọi tự lọc trước.
+ */
+async function laCauHoiTaiLieuMoHo(question: string, userId?: number): Promise<boolean> {
+  try {
+    if (!phanLoaiTaiLieuBat() || !laVungMoHo(question)) return false;
+    // ★ MODEL: phân loại chạy trên model MẶC ĐỊNH mà llama-server đang giữ (id TƯỜNG MINH), KHÔNG trên model của
+    //   `plan` — với câu ngắn planner chọn model NHANH (Qwen3-4B), và đo sống 2026-09-24 model đó nói SONG cho 3/3 câu tính
+    //   năng mà model mặc định nói TAILIEU (thiết kế đo trên model mặc định). Server không giữ model mặc định ⇒ KHÔNG nạp
+    //   gì in-process (tránh bản 35B thứ hai trên card) ⇒ `false` = đường tool như cũ.
+    const macDinh = resolveTaskModel("default");
+    const { laModelServerDangGiu } = await import("./aiLlamaServerClient");
+    if (!macDinh || !laModelServerDangGiu(macDinh)) return false;
+    const { generateText: ggufGen } = await import("./aiGgufEngine");
+    const plan = await planInference({ task: "chat", text: question, userId });
+    // doc69 G2-3 — engine chỉ thấy câu hỏi ĐÃ CHE; lượt gọi được đo đếm.
+    const { he, nd } = lenhPhanLoaiTaiLieu(plan.safeText);
+    const start = Date.now();
+    const r = await ggufGen({ systemPrompt: he, prompt: nd, maxTokens: 8, temperature: 0, disableThinking: true }, macDinh);
+    plan.record({ tokensIn: r.tokensPrompt, tokensOut: r.tokensGenerated, latencyMs: Date.now() - start, outcome: "ok" });
+    const taiLieu = docPhanLoaiTaiLieu(stripThinking(r.text).answer);
+    if (taiLieu) console.info("[aiLocalKnowledge] vùng mơ hồ: model phân loại TAILIEU ⇒ trả lời theo tài liệu, dòng tool làm ghi chú");
+    return taiLieu;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * ★ PDCA vòng 7 (2026-09-24) — MODEL SINH CÂU TRẢ LỜI KB. Mặc định: model của planner (câu ngắn ⇒ Tier 1 ⇒
+ * `GGUF_FAST_MODEL`, Qwen3-4B in-process). `AI_KB_MODEL_TRA_LOI=mac-dinh` ⇒ model MẶC ĐỊNH, CHỈ khi llama-server đang giữ
+ * nó (không bao giờ nạp bản 35B thứ hai in-process); id TƯỜNG MINH (undefined có thể rơi về embedder — doc 48 R1).
+ * Vì sao KHÔNG bật mặc định (báo cáo PDCA §12): A/B lặp 3× — đúng hơn +1–2/79, chậm ~0,3 s khi rảnh; NHƯNG llama-server
+ * chạy MỘT slot (`total_slots 1`, chủ dự án chọn 1×64k cho màn lập trình) ⇒ khi màn lập trình đang sinh, câu trả lời
+ * vận hành XẾP HÀNG sau cả lượt đó: đo 20–24 s (lượt dài 8.000 token) so với 2–3 s ở model planner. Bật là quyết định
+ * của chủ dự án. Lượt TỰ KIỂM cổng lạc đề luôn dùng model planner (model mặc định tự kiểm chặn nhầm Q11 Q22 GQ03 T35).
+ */
+async function modelTraLoiKb(planModelId: string | undefined): Promise<string | undefined> {
+  if (process.env.AI_KB_MODEL_TRA_LOI !== "mac-dinh") return planModelId;
+  const macDinh = resolveTaskModel("default");
+  if (!macDinh) return planModelId;
+  const { laModelServerDangGiu } = await import("./aiLlamaServerClient");
+  return laModelServerDangGiu(macDinh) ? macDinh : planModelId;
+}
+
+/**
+ * ★ PDCA vòng 9 — dịch câu hỏi Việt sang Anh để TRUY HỒI (xem `ai/dichTruyVan.ts`). Model của planner (câu ngắn ⇒ model
+ * nhanh in-process — KHÔNG xếp hàng sau lượt lập trình trên slot duy nhất của llama-server, §12.4). Có đệm theo câu hỏi
+ * (một lượt hỏi gọi truy hồi nhiều lần). Mọi lỗi ⇒ `null` = truy hồi như cũ.
+ */
+const DEM_DICH_TOI_DA = 500;
+const demDich = new Map<string, string | null>();
+async function dichTruyVan(question: string, language: KbLanguage, userId?: number): Promise<string | null> {
+  if (!dichTruyVanBat() || !canDich(question, language)) return null;
+  const khoa = question.trim();
+  if (demDich.has(khoa)) return demDich.get(khoa) ?? null;
+  let banDich: string | null = null;
+  try {
+    const { generateText: ggufGen, isGgufAvailable } = await import("./aiGgufEngine");
+    if (!(await isGgufAvailable())) return null;
+    const plan = await planInference({ task: "chat", text: question, userId });
+    // doc69 G2-3 — engine chỉ thấy câu hỏi ĐÃ CHE; lượt gọi được đo đếm.
+    const { he, nd } = lenhDich(plan.safeText);
+    const start = Date.now();
+    const r = await ggufGen({ systemPrompt: he, prompt: nd, maxTokens: 96, temperature: 0, disableThinking: true }, plan.decision.modelId);
+    plan.record({ tokensIn: r.tokensPrompt, tokensOut: r.tokensGenerated, latencyMs: Date.now() - start, outcome: "ok" });
+    banDich = docBanDich(stripThinking(r.text).answer);
+  } catch {
+    return null; // lỗi tạm thời: KHÔNG đệm, lượt sau thử lại
+  }
+  if (demDich.size >= DEM_DICH_TOI_DA) demDich.delete(demDich.keys().next().value as string);
+  demDich.set(khoa, banDich);
+  return banDich;
 }
 
 function buildGracefulFallback(language: KbLanguage): string {
@@ -1017,7 +1430,9 @@ function formatHistoryBlock(history: ConversationMessage[]): string {
       const isUser = m.role === "user";
       const label = isUser ? "Người dùng" : "Trợ lý (tóm tắt)";
       const max = isUser ? USER_SNIPPET_MAX : ASSISTANT_SNIPPET_MAX;
-      const oneLine = m.content.replace(/\s+/g, " ").trim();
+      // doc69 G2-3 — redact secrets/PII from prior turns before they re-enter a new prompt
+      // (defense-in-depth; a secret pasted 2 turns ago must not keep echoing forward).
+      const oneLine = redactSecretsAndPII(m.content.replace(/\s+/g, " ").trim()).text;
       const snippet =
         oneLine.length > max ? `${oneLine.slice(0, max)}…` : oneLine;
       return `${label}: ${snippet}`;
@@ -1043,29 +1458,320 @@ function guardKbAnswer(raw: string | null | undefined): string | null {
   return t.length > 0 ? t : null;
 }
 
+// ═══════════════════════════════════════════════════════════════════════════════════════════════
+// ★★★ G2-C — HÀNG RÀO "DỮ LIỆU KHÔNG TIN CẬY" + BA CÂU NÓI THẬT
+// ═══════════════════════════════════════════════════════════════════════════════════════════════
+
+/**
+ * ⚠⚠ LỖ ĐÃ CÓ TỪ TRƯỚC, BỊT Ở ĐÂY — **KHÔNG gắn cờ `AI_TOOL_LOOP_ENABLED`.**
+ *
+ * `scanForInjection` chỉ chạy trên câu hỏi của người dùng (qua `aiGateway.planInference`). Chunk
+ * KB, corpus Studio và kết quả tool đi thẳng vào prompt: dòng duy nhất chạm chúng trước G2-C là
+ * `redactSecretsAndPII` — một phép **CHE**, không phải một phép **PHÁT HIỆN**. Vòng lặp tự do
+ * khuếch đại lỗ này, nhưng nó KHÔNG tạo ra lỗ; gắn bản vá vào cờ vòng lặp nghĩa là ở cấu hình
+ * mặc định (cờ TẮT) lỗ vẫn mở nguyên. Vì thế hàng rào chạy ở MỌI cấu hình.
+ */
+function bocDuLieuTool(
+  summary: string | null | undefined,
+  nhan: string,
+): { block: string | null; risk: InjectionRisk; matched: string[] } {
+  if (!summary) return { block: null, risk: "none", matched: [] };
+  const s = sanitizeUntrustedBlock(summary);
+  return { block: wrapUntrustedBlock(nhan, s.text), risk: s.risk, matched: s.matched };
+}
+
+/**
+ * Khối ngữ cảnh KB — MỘT hàng rào bọc toàn bộ (không phải mỗi chunk một hàng rào: `topK` khối chỉ
+ * dẫn lặp lại là ~40 dòng prompt thừa mà không thêm một bảo đảm nào; điều cần bảo đảm là
+ * "không mẩu nào của chunk nằm NGOÀI hàng rào", và một hàng rào bọc cả cụm đã đủ).
+ * Dùng chung cho cả đường non-stream lẫn stream — trước G2-C hai hàm dựng khối này BẰNG TAY, y
+ * hệt nhau, ở hai chỗ; một bản vá an toàn chỉ áp một chỗ là đúng lớp lỗi "N+1" của repo.
+ */
+function buildContextBlock(retrieve: KbRetrieveResult): string {
+  const than = retrieve.citations
+    .map((c, i) => {
+      const raw = retrieve.contexts[i] ?? "";
+      const ctx = raw.length > CONTEXT_CHUNK_CHAR_CAP ? `${raw.slice(0, CONTEXT_CHUNK_CHAR_CAP)}…` : raw;
+      // Che bí mật/PII lọt vào một chunk đã nạp (giữ nguyên hành vi doc69 G2-3) rồi TRUNG HOÀ
+      // hàng rào — nếu không, một chunk chứa đúng chuỗi dấu đóng sẽ tự thoát ra ngoài khối.
+      return `[${i + 1}] ${c.title} | ${c.sourcePath}\n${sanitizeUntrustedBlock(ctx, { maxChars: CONTEXT_CHUNK_CHAR_CAP + 8 }).text}`;
+    })
+    .join("\n\n");
+  return than ? wrapUntrustedBlock("knowledge-base", than) : than;
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════════════════════
+// ★★★ G3-C VIỆC 2 — CỔNG THỨ TÁM: **KHÔNG CÓ DỮ LIỆU THÌ KHÔNG GỌI LLM ĐỂ NÓI.**
+// ═══════════════════════════════════════════════════════════════════════════════════════════════
+/**
+ * ⚠⚠ HÌNH DẠNG LỖI NGƯỢC HOÀN TOÀN VỚI MONG MUỐN, VÀ ĐỘ DÀI LÀ THỦ PHẠM.
+ *
+ * Đường tắt ngay dưới (`summary.length >= KB_TOOL_SHORTCIRCUIT_MIN`, mặc định **150 ký tự**) bỏ
+ * qua LLM khi tóm tắt của tool đã "đủ dày". Nhưng **mọi câu RỖNG/LỖI đều NGẮN hơn 150**:
+ *   • `"Không có lỗi NG nào theo defectType trong 7 ngày qua."`  (~52 ký tự)
+ *   • `"Chưa đủ dữ liệu yield (2 điểm)…"` · `"Không truy vấn được…"`
+ * ⇒ **Đúng những lượt hệ thống KHÔNG CÓ GÌ để nói thì LLM lại được gọi để nói.** Một model được
+ * đưa cho một khối "không tìm thấy dữ liệu" cùng vài chunk tài liệu, kèm chỉ dẫn *"ƯU TIÊN dùng
+ * dữ liệu thời gian thực"* — đó là cấu hình sinh số bịa, không phải cấu hình diễn giải.
+ *
+ * ⇒ Cổng này khoá theo **TRẠNG THÁI CÓ CẤU TRÚC** (`ToolResult.note`), **KHÔNG theo độ dài** —
+ * độ dài chính là gốc rễ của lỗi, dùng lại nó là vá bằng đúng thứ đã hỏng.
+ *
+ * ══════════════════════════════════════════════════════════════════════════════════════════════
+ * ★★★ 2026-08-18 — VỊ TỪ ĐÃ **ĐẢO CHIỀU**. LÝ DO, VÀ CÁI GIÁ ĐÃ CÂN.
+ * ══════════════════════════════════════════════════════════════════════════════════════════════
+ * Bản đầu LIỆT KÊ bốn mã CHẶN, kèm một phép **đếm TAY** ("`NOT_FOUND` 44 chỗ · `DB_UNAVAILABLE`
+ * 14 · `QUERY_ERROR` 6 · `PERMISSION_DENIED` 6"). Phép đếm tay mù đúng thứ nó không nghĩ tới —
+ * lượt kiểm kê bằng máy trên `aiLocalTools/**` (xem `aiLocalTools/toolNoteCensus.test.ts`) ra
+ * **22 mã**, tức **17 mã ở NGOÀI tập chặn**, trong đó có hai mã LÀ RỖNG theo đúng nghĩa đen:
+ *   • `SCOPE_EMPTY`                (`analyticsTools.ts`) — `hotspots: []`, `totalNG: 0`
+ *   • `NOT_FOUND_WITH_SUGGESTIONS` (`handlers.ts`)       — **`data: null`**, câu mở đầu đúng chữ
+ *     *"Không tìm thấy lệnh sản xuất …"*. Nó LÀ `NOT_FOUND`, chỉ khác cái TÊN.
+ * Thêm tên thứ năm vào danh sách là chữa MỘT trong 17, và mã thứ 23 (ngày mai) lại lọt.
+ *
+ * ⇒ Luật nay phát biểu trên **NGHĨA của ô `note`**, không trên một tập giá trị chép tay:
+ *
+ *     `ToolResult.note` **chỉ** được đặt khi kết quả KHÔNG phát biểu đủ về nhà xưởng
+ *     (rỗng / lỗi / bị từ chối / suy giảm).  ⇒  **CÓ `note` ⇒ CHẶN.**
+ *
+ * Đó là lời khai về TOÀN BỘ cây `aiLocalTools/**`, và nó được **ĐO** chứ không được tin: bảng kê
+ * ở `toolNoteCensus.test.ts` bắt buộc mọi mã `note` viết thẳng trong mã nguồn phải có một phán
+ * quyết; mã MỚI chưa phân loại ⇒ **ĐỎ**. Ngoại lệ (kết quả CÓ `note` mà VẪN đáng diễn giải) phải
+ * được khai đích danh ở `TOOL_NOTE_VAN_DIEN_GIAI` ngay dưới.
+ *
+ * ⚠⚠ CHIỀU HỎNG ĐÃ ĐỔI, CÓ CHỦ Ý — và đây là phép đánh đổi BẤT ĐỐI XỨNG:
+ *   • fail-open cũ (mã lạ ⇒ gọi LLM): hỏng **vô hình** và **không có trần** — model bịa ra một
+ *     kết luận về nhà xưởng từ một kết quả rỗng.
+ *   • fail-closed mới (mã lạ ⇒ chặn): hỏng **hữu hình** và **có trần** — người dùng nhận NGUYÊN
+ *     VĂN `textSummary` của tool (vốn đã trung thực) mà thiếu phần văn vẻ.
+ * Mất phần văn vẻ không cùng hạng với mất sự thật. Repo cũng đã chọn đúng chiều này ở chỗ khác:
+ * đường `clarifyMessage` (~dòng 2311 file này) trả thẳng câu hỏi lại, KHÔNG qua LLM.
+ *
+ * ⚠ VÀ NGƯỢC LẠI — ca chống-vá-quá-tay vẫn nguyên: một kết quả **có dữ liệu thật** nhưng tóm tắt
+ * NGẮN thì `note` là `undefined`, và nó **vẫn phải** được LLM diễn giải. Xem
+ * `aiLocalKnowledge.emptyToolGate.test.ts` §B.
+ */
+
+/**
+ * Mã `note` được khai ĐÍCH DANH là **vẫn còn gì đó đáng diễn giải** ⇒ KHÔNG chặn.
+ *
+ * ⚠⚠ HÔM NAY TẬP NÀY **RỖNG**, và đó là một PHÉP ĐO chứ không phải chỗ chưa làm: 22/22 mã có
+ * thật trong cây đều nằm trên đường RỖNG / LỖI / TỪ CHỐI / SUY GIẢM (kiểm kê từng mã, kèm lý do,
+ * ở `toolNoteCensus.test.ts`). Tập rỗng ở đây **không phải mã chết**: `toolNoteCensus.test.ts` §3
+ * cưỡng chế nó phải TRÙNG KHÍT nhánh `dien-giai` của bảng kê, nên nó là chỗ DUY NHẤT hợp lệ để
+ * khai một ngoại lệ, và một ngoại lệ khai ở đây mà không có lý do trong bảng kê ⇒ ĐỎ.
+ */
+export const TOOL_NOTE_VAN_DIEN_GIAI: ReadonlySet<string> = new Set<string>([]);
+
+/**
+ * `true` ⇔ tool đã nói bằng một trạng thái CÓ CẤU TRÚC rằng nó không có gì đầy đủ để diễn giải.
+ *
+ * ⚠ `note === ""` được coi là KHÔNG có trạng thái (chuỗi rỗng không phát biểu gì) — không chặn.
+ *
+ * ⚠ `soVongDaChay > 1` ⇒ **KHÔNG** khoá. Với nhiều vòng, thứ đi vào prompt là khối TÍCH LUỸ của
+ * cả vòng lặp (`loop.promptBlock`), không phải riêng kết quả vòng cuối; `note` của vòng cuối
+ * không phát biểu gì về những vòng trước đã lấy được gì. Khoá ở đó là vứt bỏ đúng phép TỔNG HỢP
+ * mà vòng lặp vừa đi lấy — cùng lý lẽ với biến `daDaBuoc` ở đường tắt độ dài ngay bên dưới.
+ */
+export function toolKhongCoGiDeNoi(
+  toolResult: { note?: string } | null | undefined,
+  soVongDaChay = 1,
+): boolean {
+  if (soVongDaChay > 1) return false;
+  const note = toolResult?.note;
+  if (typeof note !== "string" || note === "") return false;
+  return !TOOL_NOTE_VAN_DIEN_GIAI.has(note);
+}
+
+/**
+ * ★★★ G2b (audit 2026-09-21 · P11) — CÂU NÓI THẬT khi lượt sinh chữ hỏng SAU một tool MANG NGỮ CẢNH.
+ *
+ * Trước bản vá, đường này trả `toolResult.textSummary` — nghĩa là người hỏi *"viết cho tôi một lớp
+ * LRU"* nhận về **nguyên văn `server/services/aiLocalTools/toolRegistry.ts`** (26.004 byte) và
+ * không có một dấu hiệu nào rằng model chưa hề trả lời. Đo được 6/9 tác vụ lập trình khó đi đúng
+ * đường ấy; tỷ lệ chạy-được của đường ống là **0 %** trong khi model thuần đạt 44–56 %.
+ *
+ * Sự thật ở đây là "chưa trả lời được", KHÔNG phải "đây là tệp của bạn". Câu dưới nói đúng điều đó,
+ * nêu cả tool đã chạy lẫn lý do hỏng — để người dùng biết phải làm gì tiếp, thay vì đọc một tệp lạ.
+ */
+function cauHongSinhChu(lang: KbLanguage, tenTool: string, lyDo: string | undefined): string {
+  const chiTiet = lyDo ? ` (\`${lyDo.slice(0, 200)}\`)` : "";
+  if (lang === "en") {
+    return (
+      `⚠ **I could not produce an answer for this request.** The \`${tenTool}\` tool ran and its ` +
+      `output was loaded as CONTEXT, but the generation step failed${chiTiet}.\n\n` +
+      `That tool output is context, not an answer — showing it to you as one would be misleading. ` +
+      `Try narrowing the request, or ask again.`
+    );
+  }
+  if (lang === "zh") {
+    return (
+      `⚠ **本次请求未能生成回答。** 工具 \`${tenTool}\` 已运行，其输出已作为**上下文**载入，` +
+      `但生成步骤失败${chiTiet}。\n\n该工具输出是上下文而非答案，直接展示会造成误导。请缩小问题范围或重试。`
+    );
+  }
+  return (
+    `⚠ **Chưa trả lời được yêu cầu này.** Tool \`${tenTool}\` đã chạy và đầu ra của nó được nạp làm ` +
+    `**NGỮ CẢNH**, nhưng bước sinh chữ đã hỏng${chiTiet}.\n\n` +
+    `Đầu ra của tool đó là ngữ cảnh, **không phải câu trả lời** — đưa nó ra như một câu trả lời là ` +
+    `nói sai sự thật. Hãy thu hẹp yêu cầu, hoặc hỏi lại.`
+  );
+}
+
+/** Rủi ro tiêm gộp của toàn bộ chunk KB đưa vào prompt (chỉ để BÁO, không chặn câu trả lời). */
+function quetNguCanhKb(retrieve: KbRetrieveResult): InjectionRisk {
+  for (const ctx of retrieve.contexts) {
+    if (sanitizeUntrustedBlock(ctx ?? "").risk === "high") return "high";
+  }
+  return "none";
+}
+
+/**
+ * ★ VÁ LỖI ĐO ĐƯỢC (mục 4 của brief): `tryExecuteTool` trả `error` rồi **KHÔNG AI ĐỌC**. Người
+ * dùng hỏi "OEE line 2 hôm nay", tool trượt, và họ nhận một câu trả lời dựa trên TÀI LIỆU mà
+ * không có một dấu hiệu nào rằng số liệu sống chưa lấy được. Câu dưới đây là phần "nói thật" —
+ * nó KHÔNG sửa được tool, nhưng nó ngăn một câu trả lời sai NGỮ CẢNH đi ra như một câu trả lời
+ * bình thường.
+ */
+function cauCanhBaoDuLieuSong(lang: KbLanguage, ma: string): string {
+  if (lang === "en") {
+    return `\n\n> ⚠ **Live data was NOT retrieved** (reason: \`${ma}\`). The answer below is based on documentation only — do not read it as the current shop-floor state.`;
+  }
+  if (lang === "zh") {
+    return `\n\n> ⚠ **未能获取实时数据**（原因：\`${ma}\`）。以下回答仅基于文档，不代表当前现场状态。`;
+  }
+  return `\n\n> ⚠ **Chưa lấy được số liệu sống** (lý do: \`${ma}\`). Câu trả lời dưới đây chỉ dựa trên TÀI LIỆU — đừng đọc nó như tình trạng hiện trường.`;
+}
+
+/** Câu nói thật khi dữ liệu đưa vào prompt có chứa chỉ thị (đã bị vô hiệu, nhưng phải nói ra). */
+function cauCanhBaoTiem(lang: KbLanguage, nguon: string): string {
+  if (lang === "en") {
+    return `\n\n> ⚠ **Untrusted content detected in ${nguon}**: it contained text shaped like instructions. It was fenced as data and could not drive any further tool call. Treat the source with suspicion.`;
+  }
+  if (lang === "zh") {
+    return `\n\n> ⚠ **在${nguon}中检测到不可信内容**：其中含有类似指令的文本。该内容已被隔离为数据，无法触发后续工具调用。请对来源保持警惕。`;
+  }
+  return `\n\n> ⚠ **Phát hiện nội dung không tin cậy trong ${nguon}**: có đoạn mang hình dạng CHỈ THỊ. Nó đã bị rào lại như dữ liệu và KHÔNG lái được lượt gọi tool nào tiếp theo. Hãy nghi ngờ nguồn này.`;
+}
+
+/**
+ * Nối MỌI câu nói thật vào cuối câu trả lời. Một hàm DUY NHẤT cho cả `answerQuestion` lẫn
+ * `streamAnswer`: hai bản sao sẽ trôi, và đường stream (đường người dùng thật sự đi) sẽ là bản
+ * thiếu — đúng lớp lỗi mà mục 4 của brief đang vá.
+ */
+function themCanhBao(
+  answer: string,
+  lang: KbLanguage,
+  tin: {
+    toolError: string | null;
+    toolName: string | null;
+    toolInjRisk: InjectionRisk;
+    kbInjRisk: InjectionRisk;
+    loop: ToolLoopResult | null;
+  },
+): string {
+  let ra = answer;
+  if (tin.toolError) {
+    ra += cauCanhBaoDuLieuSong(lang, `${tin.toolName ?? "tool"}: ${tin.toolError}`);
+  }
+  if (tin.toolInjRisk === "high") ra += cauCanhBaoTiem(lang, "kết quả tool");
+  if (tin.kbInjRisk === "high") ra += cauCanhBaoTiem(lang, "tài liệu tra cứu");
+  if (tin.loop) ra += cauGhiChuVongLap(lang, tin.loop);
+  return ra;
+}
+
+/** Ghi chú vòng lặp — người dùng thấy được nó đã đi mấy bước và vì sao dừng. */
+function cauGhiChuVongLap(lang: KbLanguage, loop: ToolLoopResult): string {
+  if (loop.rounds.length < 2) return "";
+  const ten = loop.rounds.map((r) => r.tool).filter(Boolean).join(" → ");
+  if (lang === "en") return `\n\n<sub>Multi-step: ${loop.rounds.length} tool calls (${ten}), ${loop.elapsedMs} ms.</sub>`;
+  if (lang === "zh") return `\n\n<sub>多步：${loop.rounds.length} 次工具调用（${ten}），${loop.elapsedMs} 毫秒。</sub>`;
+  return `\n\n<sub>Đa bước: ${loop.rounds.length} lượt gọi tool (${ten}), ${loop.elapsedMs} ms.</sub>`;
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════════════════════
+// ★★★ TASK V11 — REGRESSION do task-v10 (`49e12418`) gây ra, ĐO ĐƯỢC bằng KẾT CỤC (không phải cơ
+// chế): cổng `detectedVendors.length > 0` (retrieveProgrammingKnowledgeForVscode) đúng mục tiêu
+// "câu ngoài miền hãng KHÔNG nhận trích dẫn" — nhưng route vscode không có bất kỳ vòng tool nào
+// (KHONG_TOOL_VSCODE) và câu hỏi thô (không qua VSCODE_GIAO_THUC_PREFIX, `laVscodeDaBocGiaoThuc`
+// false — ca THẬT của bộ đo `eval-vscode-route.mjs`/probe trực tiếp HTTP) không tự nâng độ tin —
+// nên `citations.length===0` ⇒ `confidence=0` ⇒ `shouldUseLlm` (streamAnswer:~6430) / nhánh
+// `else if (retrieve.confidence>=0.30)` (answerQuestion:~3108) đều FALSE ⇒ LLM KHÔNG BAO GIỜ ĐƯỢC
+// GỌI ⇒ rơi thẳng `buildGracefulFallback` — một câu hỏi lập trình phổ thông ("viết hàm C# đọc
+// COM3", "viết module Node.js MQTT") nhận đúng khuôn từ chối "chưa có đủ thông tin", dù
+// `qwen3-30b` THỪA SỨC trả lời bằng kiến thức huấn luyện sẵn có, không cần citation nào.
+//
+// VÁ (BA phần, PHẢI đi cùng nhau — thiếu phần (3) thì (1)+(2) mở ra một hồi quy MỚI, ĐO ĐƯỢC):
+//   (1) `shouldUseLlm`/nhánh tương đương gọi LLM cho `route==="vscode"` khi KHÔNG khớp gate (3) —
+//       xem hai điểm sửa ở `streamAnswer`/`answerQuestion`.
+//   (2) Prompt rule #2 CÓ SẴN ("Nếu ngữ cảnh KHÔNG liên quan... trả lời đúng câu 'Tôi không có
+//       thông tin...'") — nếu (1) một mình, model NHIỀU KHẢ NĂNG vẫn tự lặp lại câu từ chối đó vì
+//       nhìn thấy "=== Ngữ cảnh từ knowledge base ===" RỖNG. `vscodeNoDocsGuidance` chèn một luật
+//       6 CÓ ĐIỀU KIỆN (chỉ khi route vscode + 0 citation + KHÔNG khớp gate (3)) NÓI RÕ luật 2
+//       không áp dụng cho câu hỏi LẬP TRÌNH chung — trả lời bằng kiến thức sẵn có, có ví dụ mã.
+//   (3) `LOOKS_LIKE_LIVE_FACTORY_DATA_RE`/`looksLikeLiveFactoryDataQuestion` — vành đai AN TOÀN
+//       ĐO ĐƯỢC LÀ CẦN THIẾT, không phải phòng xa lý thuyết: bản vá ĐẦU TIÊN của (1)+(2) (không có
+//       gate này) chạy `--only VSC-C1-operational-leak-control` (ca ĐỐI CHỨNG kỳ vọng từ chối,
+//       "Sản lượng hôm nay của line 2 là bao nhiêu, có đạt target OEE không?") và model — được
+//       luật 6 "cho phép trả lời bằng kiến thức chung" — đã BỊA một API/config KHÔNG CÓ THẬT
+//       (`GET /api/v1/line/{id}/performance`, trường `current_oee`/`target_oee`, tệp
+//       `line_config.json`) NGAY CẢ KHI phần cuối luật 6 đã nói rõ "câu hỏi vận hành thì luật 2
+//       VẪN áp dụng, không bịa số liệu" — model không tuân theo ranh giới trong câu chữ. Route
+//       vscode không có tool loop (Việc 2) nên KHÔNG có cách CƠ CHẾ nào khác chặn một câu hỏi vận
+//       hành trước khi tới LLM ngoài một gate ĐỨNG TRƯỚC lời gọi. Gate cố ý LỆCH VỀ AN TOÀN: lọt
+//       (false negative, một câu lập trình hiếm trùng từ vựng vận hành) chỉ mất phần CẢI THIỆN
+//       (rơi về `buildGracefulFallback` cũ, KHÔNG PHẢI hồi quy — đó CHÍNH LÀ hành vi trước task
+//       này); a lọt NGƯỢC (false positive, một câu vận hành thật đi qua) mới là rủi ro BỊA DỮ LIỆU
+//       — ĐÃ ĐO xác nhận gate chặn đúng ca VSC-C1 (xem báo cáo). KHÔNG import/tái dùng
+//       `intentClassifier.ts` (module đó CÓ CHỦ Ý không được route vscode chạm tới nữa từ Việc 2 —
+//       bốn sự cố trigger-quá-rộng cùng họ) — đây là một regex CỤC BỘ, HẸP, chỉ để QUYẾT ĐỊNH có
+//       nới luật 2 hay không, không định tuyến, không chạy tool nào.
+const LOOKS_LIKE_LIVE_FACTORY_DATA_RE =
+  /(?<![\p{L}\p{N}_])(oee|sản\s*lượng|san\s*luong|hiệu\s*suất\s*tổng\s*thể|overall\s*equipment|downtime|cảnh\s*báo|canh\s*bao|dây\s*chuyền|day\s*chuyen|tỷ\s*lệ\s*lỗi|ty\s*le\s*loi|defect\s*rate|ng\s*rate|\bcpk\b|\bspc\b|\bfpy\b|\bkpi\b)(?![\p{L}\p{N}_])/iu;
+export function looksLikeLiveFactoryDataQuestion(question: string): boolean {
+  return LOOKS_LIKE_LIVE_FACTORY_DATA_RE.test(question);
+}
+
+function vscodeNoDocsGuidance(route: string | undefined, retrieve: KbRetrieveResult): string {
+  if (route !== "vscode" || retrieve.citations.length > 0) return "";
+  if (looksLikeLiveFactoryDataQuestion(retrieve.question)) return "";
+  if (retrieve.language === "en") {
+    return '6. EXCEPTION TO RULE 2 (only when "Context from knowledge base" below is EMPTY): this is the CODING panel, not a factory-data query. If the question is a GENERAL PROGRAMMING request (write a function/module/snippet in a common language/framework, explain a programming concept, standard library/API syntax) that is outside the internal vendor-manual corpus, that is NORMAL — do NOT apply rule 2, and do NOT open your answer with "I don\'t have accurate information" or any hedge like it (not even as a first sentence before answering anyway) — answer normally and directly using your general programming knowledge, with code in ``` fences. BUT if the question asks for REAL FACTORY DATA (yield, OEE, a specific lot/machine, alerts, KPIs) and there is no "Real-time data" block above, rule 2 STILL applies in full — do not invent figures.';
+  }
+  return '6. NGOẠI LỆ CHO LUẬT 2 (chỉ khi mục "Ngữ cảnh từ knowledge base" dưới đây RỖNG): đây là panel LẬP TRÌNH, không phải hỏi số liệu nhà máy. Nếu câu hỏi là yêu cầu LẬP TRÌNH chung (viết hàm/module/đoạn mã bằng một ngôn ngữ/framework phổ biến, giải thích khái niệm lập trình, cú pháp thư viện/API chuẩn) mà không thuộc tài liệu hãng thiết bị nội bộ, đây là chuyện BÌNH THƯỜNG — ĐỪNG áp dụng luật 2, và ĐỪNG mở đầu câu trả lời bằng "Tôi không có thông tin chính xác..." hay bất kỳ câu rào đón nào tương tự (kể cả chỉ một câu mở đầu rồi mới trả lời tiếp) — hãy trả lời THẲNG, BÌNH THƯỜNG bằng kiến thức lập trình chung sẵn có của bạn, có ví dụ mã trong khối rào ```. NHƯNG nếu câu hỏi hỏi DỮ LIỆU VẬN HÀNH THỰC TẾ của nhà máy (sản lượng, OEE, lô/máy cụ thể, cảnh báo, KPI) mà không có khối "Dữ liệu thời gian thực" nào ở trên, luật 2 VẪN áp dụng nguyên vẹn — không được bịa số liệu.';
+}
+
 async function generateWithOllama(
   question: string,
   retrieve: KbRetrieveResult,
   history: ConversationMessage[] = [],
   userLevel: UserLevel = "technical",
   toolSummary?: string | null,
+  userId?: number,
+  // ★★★ VIỆC 6 — xem docblock lớn cạnh `pickNumPredict`. Tham số MỚI, đặt cuối (không phá vỡ lời
+  // gọi cũ nào), luồn `context.route` xuống `pickNumPredict` — thứ duy nhất `retrieve.intent`
+  // không còn mang được nữa sau khi Việc 2 ép nó thành "general" cho route vscode.
+  route?: string,
 ): Promise<string | null> {
-  const contextBlock = retrieve.citations
-    .map((c, i) => {
-      const raw = retrieve.contexts[i] ?? "";
-      const ctx = raw.length > CONTEXT_CHUNK_CHAR_CAP
-        ? `${raw.slice(0, CONTEXT_CHUNK_CHAR_CAP)}…`
-        : raw;
-      return `[${i + 1}] ${c.title} | ${c.sourcePath}\n${ctx}`;
-    })
-    .join("\n\n");
+  // doc69 G2-3 — AI Gateway: SAME input this function always passed to `route()` below
+  // (`{task:"chat", text: question}`), so `plan.decision.modelId` is byte-identical to
+  // before — model pinning is preserved, nothing is "double-routed". This ADDS: flag-gated
+  // fail-safe input redaction (`plan.safeText`, used for the question below), a per-user
+  // rate-limit + A/B slot (previously bypassed for this endpoint), and `record()`/
+  // `sanitizeOutput()` for gateway metering + output redaction further down.
+  const plan = await planInference({ task: "chat", text: question, userId });
+
+  // G2-C — dựng CHUNG + có hàng rào dữ-liệu-không-tin-cậy (xem `buildContextBlock`).
+  const contextBlock = buildContextBlock(retrieve);
 
   const systemPrompt = getSystemPromptForRole(userLevel, retrieve.language, retrieve.intent);
   const historyBlock = formatHistoryBlock(history);
   const hintsBlock = formatHintsBlock(retrieve);
 
-  const toolBlock = toolSummary
-    ? `\n=== Dữ liệu thời gian thực (từ CSDL) ===\n${toolSummary}\nƯU TIÊN dùng dữ liệu này để trả lời. Không bịa số liệu.\n`
+  // doc69 G2-3 — redact live-DB tool-result text before it is embedded in the prompt.
+  const safeToolSummary = toolSummary ? redactSecretsAndPII(toolSummary).text : toolSummary;
+  const toolBlock = safeToolSummary
+    ? `\n=== Dữ liệu thời gian thực (từ CSDL) ===\n${safeToolSummary}\nƯU TIÊN dùng dữ liệu này để trả lời. Không bịa số liệu.\n`
     : "";
 
   const prompt = [
@@ -1077,42 +1783,58 @@ async function generateWithOllama(
     "3. Trả lời đúng trọng tâm câu hỏi hiện tại; bỏ qua phần ngữ cảnh không liên quan.",
     "4. Nếu có dữ liệu thời gian thực, ƯU TIÊN dùng nó; không bịa số liệu.",
     "5. TUYỆT ĐỐI KHÔNG lặp lại, sao chép, hoặc tóm tắt các câu trả lời trước trong Lịch sử hội thoại. Lịch sử CHỈ dùng để hiểu ngữ cảnh (ví dụ: đại từ, chủ đề đang nói tới). CHỈ trả lời cho 'Câu hỏi hiện tại' bên dưới, không nhắc lại nội dung cũ.",
+    vscodeNoDocsGuidance(route, retrieve),
     `Phân loại ý định: ${retrieve.intent}`,
     `Ngôn ngữ: ${retrieve.language}`,
     toolBlock,
     "=== Ngữ cảnh từ knowledge base ===",
     contextBlock,
     hintsBlock ? "\n" + hintsBlock + "\nGHI NHỚ: trong câu trả lời PHẢI trích nguyên văn ≥1 mục từ HINTS dưới dạng inline code (`...`) khi nó liên quan đến câu hỏi.\n" : "",
-    `\n=== Câu hỏi hiện tại ===\n${question}`,
+    // doc69 G2-3 — `plan.safeText` (redacted question), not raw `question`.
+    `\n=== Câu hỏi hiện tại ===\n${plan.safeText}`,
     "=== Câu trả lời (chỉ trả lời câu hỏi hiện tại, không lặp lại lịch sử) ===",
   ]
     .filter(Boolean)
     .join("\n");
 
   // Default: use bundled GGUF engine (RTX 5090 local). Fallback to Ollama HTTP only if USE_LEGACY_OLLAMA=true.
-  const numPredict = pickNumPredict(retrieve.intent, !!toolSummary, question);
+  const numPredict = pickNumPredict(retrieve.intent, !!toolSummary, question, route);
   if (!USE_LEGACY_OLLAMA) {
+    let start = 0;
     try {
       const { generateText: ggufGen, isGgufAvailable } = await import("./aiGgufEngine");
       if (await isGgufAvailable()) {
         // doc 48 R1 — PIN a generative model. Without a modelId the engine's
         // getOrLoadModel(undefined) reuses the FIRST resident model, which is the RAG
-        // embedder → gibberish answers. Mirror the chat path (aiChatAssistant): let the
-        // Model Router pick the tier by difficulty and pass decision.modelId to the engine.
-        const { route } = await import("./aiModelRouter");
-        const decision = route({ task: "chat", text: question });
+        // embedder → gibberish answers. `plan.decision` already carries the SAME
+        // Model-Router pick `route({task:"chat", text: question})` produced before.
+        start = Date.now();
         const result = await ggufGen({
           prompt,
           maxTokens: numPredict,
           temperature: 0.15,
           topP: 0.9,
           repeatPenalty: KB_QA_REPEAT_PENALTY,
-        }, decision.modelId);
-        // FE-W0.3 (doc 46 §2.3) — guard the completed answer; degenerate → null → fallback.
-        return guardKbAnswer(result.text);
+          // ★ B1 — lớp `kb-qa` không nghĩ (xem nhánh stream bên dưới cho lý do đo được).
+          disableThinking: !luotDuocNghi("kb-qa"),
+        }, await modelTraLoiKb(plan.decision.modelId));
+        // doc69 G2-3 — gateway metering: this traffic was previously completely invisible.
+        plan.record({
+          tokensIn: result.tokensPrompt,
+          tokensOut: result.tokensGenerated,
+          latencyMs: Date.now() - start,
+          outcome: "ok",
+        });
+        // G5-C — CẮT CHUỖI SUY LUẬN TRƯỚC, rồi mới che bí mật, rồi mới tới guard degenerate.
+        // Thứ tự này có lý do đo được (xem chú thích ở đầu file + `ai/thinkingStrip.ts`): cắt thẻ
+        // NỐI hai nửa một bí mật bị khối `<think>` tách rời, nên `sanitizeOutput` phải nhìn thấy
+        // chuỗi ĐÃ nối. Cắt xong rỗng ⇒ `guardKbAnswer` trả null ⇒ rơi về extractive/tool —
+        // trung thực, thay vì phun nội tâm model ra màn hình.
+        return guardKbAnswer(plan.sanitizeOutput(stripThinking(result.text).answer));
       }
       // GGUF not available — fall through to Ollama path.
     } catch (err) {
+      plan.record({ latencyMs: start ? Date.now() - start : 0, outcome: "error" });
       console.warn("[aiLocalKnowledge] GGUF generate failed, falling back to Ollama:", err);
     }
   }
@@ -1145,7 +1867,9 @@ async function generateWithOllama(
     if (!res.ok) return null;
     const json = (await res.json()) as { response?: string };
     // FE-W0.3 (doc 46 §2.3) — guard the completed answer; degenerate → null → fallback.
-    return guardKbAnswer(json.response);
+    // G5-C — nhánh Ollama HTTP cũng đi qua bộ cắt: một nhánh được miễn trừ chính là hình dạng mà
+    // lưới lượng từ không phát biểu được (bài học lặp lại của repo này).
+    return guardKbAnswer(stripThinking(json.response ?? "").answer);
   } catch (err) {
     if ((err as { name?: string })?.name === "AbortError") {
       console.warn(`[aiLocalKnowledge] Ollama generate aborted after ${LLM_TIMEOUT_MS}ms — falling back to extractive`);
@@ -1164,23 +1888,26 @@ export async function* generateWithOllamaStream(
   history: ConversationMessage[] = [],
   userLevel: UserLevel = "technical",
   toolSummary?: string | null,
+  userId?: number,
+  // ★★★ VIỆC 6 — xem docblock lớn cạnh `pickNumPredict` (cùng lý lẽ với `generateWithOllama` ở trên).
+  route?: string,
 ): AsyncGenerator<string> {
-  const contextBlock = retrieve.citations
-    .map((c, i) => {
-      const raw = retrieve.contexts[i] ?? "";
-      const ctx = raw.length > CONTEXT_CHUNK_CHAR_CAP
-        ? `${raw.slice(0, CONTEXT_CHUNK_CHAR_CAP)}…`
-        : raw;
-      return `[${i + 1}] ${c.title} | ${c.sourcePath}\n${ctx}`;
-    })
-    .join("\n\n");
+  // doc69 G2-3 — AI Gateway (see the identical comment on generateWithOllama above; same
+  // {task:"chat", text: question} input preserves the pinned-model decision byte-for-byte).
+  const plan = await planInference({ task: "chat", text: question, userId });
+
+  // G2-C — dựng CHUNG với đường non-stream (xem `buildContextBlock`). Trước G2-C hai hàm dựng
+  // khối này bằng tay y hệt nhau, nên một bản vá an toàn áp một chỗ là lỗ ở chỗ còn lại.
+  const contextBlock = buildContextBlock(retrieve);
 
   const systemPrompt = getSystemPromptForRole(userLevel, retrieve.language, retrieve.intent);
   const historyBlock = formatHistoryBlock(history);
   const hintsBlock = formatHintsBlock(retrieve);
 
-  const toolBlock = toolSummary
-    ? `\n=== Dữ liệu thời gian thực (từ CSDL) ===\n${toolSummary}\nƯU TIÊN dùng dữ liệu này để trả lời. Không bịa số liệu.\n`
+  // doc69 G2-3 — redact live-DB tool-result text before it is embedded in the prompt.
+  const safeToolSummary = toolSummary ? redactSecretsAndPII(toolSummary).text : toolSummary;
+  const toolBlock = safeToolSummary
+    ? `\n=== Dữ liệu thời gian thực (từ CSDL) ===\n${safeToolSummary}\nƯU TIÊN dùng dữ liệu này để trả lời. Không bịa số liệu.\n`
     : "";
 
   const prompt = [
@@ -1192,47 +1919,99 @@ export async function* generateWithOllamaStream(
     "3. Trả lời đúng trọng tâm câu hỏi hiện tại; bỏ qua phần ngữ cảnh không liên quan.",
     "4. Nếu có dữ liệu thời gian thực, ƯU TIÊN dùng nó; không bịa số liệu.",
     "5. TUYỆT ĐỐI KHÔNG lặp lại, sao chép, hoặc tóm tắt các câu trả lời trước trong Lịch sử hội thoại. Lịch sử CHỈ dùng để hiểu ngữ cảnh (ví dụ: đại từ, chủ đề đang nói tới). CHỈ trả lời cho 'Câu hỏi hiện tại' bên dưới, không nhắc lại nội dung cũ.",
+    vscodeNoDocsGuidance(route, retrieve),
     `Phân loại ý định: ${retrieve.intent}`,
     `Ngôn ngữ: ${retrieve.language}`,
     toolBlock,
     "=== Ngữ cảnh từ knowledge base ===",
     contextBlock,
     hintsBlock ? "\n" + hintsBlock + "\nGHI NHỚ: trong câu trả lời PHẢI trích nguyên văn ≥1 mục từ HINTS dưới dạng inline code (`...`) khi nó liên quan đến câu hỏi.\n" : "",
-    `\n=== Câu hỏi hiện tại ===\n${question}`,
+    // doc69 G2-3 — `plan.safeText` (redacted question), not raw `question`.
+    `\n=== Câu hỏi hiện tại ===\n${plan.safeText}`,
     "=== Câu trả lời (chỉ trả lời câu hỏi hiện tại, không lặp lại lịch sử) ===",
   ]
     .filter(Boolean)
     .join("\n");
 
   // Default: use bundled GGUF engine streaming. Fallback to Ollama HTTP if USE_LEGACY_OLLAMA=true.
-  const numPredict = pickNumPredict(retrieve.intent, !!toolSummary, question);
+  const numPredict = pickNumPredict(retrieve.intent, !!toolSummary, question, route);
+
+  /**
+   * ★ G5-C — MỘT bộ cắt cho TOÀN BỘ generator, dựng NGOÀI mọi nhánh có chủ ý.
+   *
+   * Hàm này có ba đường ra chữ: nhánh GGUF, nhánh Ollama HTTP (`USE_LEGACY_OLLAMA`), và nhánh
+   * Ollama chạy vì GGUF vừa ném giữa chừng. Dựng bộ cắt bên trong một nhánh nghĩa là hai nhánh
+   * kia rò — đúng lớp lỗi "lưới theo FILE, không theo ĐƯỜNG THOÁT" mà repo này đã dính nhiều
+   * lần. Dựng ở đây thì **không đường thoát nào đi vòng được**.
+   *
+   * ⚠ Trạng thái là của RIÊNG một cuộc gọi (thẻ đang mở, mảnh thẻ ở đuôi) — không bao giờ được
+   * nâng lên phạm vi module.
+   */
+  const catSuyLuan = new StreamingThinkingStripper({ startInsideThinking: thinkingStartsOpen() });
+  const canhBaoMoSan = () => {
+    if (!catSuyLuan.suspectedStartInsideThinking) return;
+    console.warn(
+      "[aiLocalKnowledge] thấy thẻ đóng suy luận ở độ sâu 0 SAU khi đã phát chữ — nhiều khả năng " +
+        "chat template mở sẵn khối <think> mà AI_THINKING_STARTS_OPEN chưa bật; một phần chuỗi " +
+        "suy luận ĐÃ tới người dùng trong lượt này.",
+    );
+  };
+
   if (!USE_LEGACY_OLLAMA) {
+    let start = 0;
     try {
       const { generateTextStream: ggufStream, isGgufAvailable } = await import("./aiGgufEngine");
       if (await isGgufAvailable()) {
         // doc 48 R1 — PIN a generative model (see generateWithOllama above). modelId is the 2nd
         // arg to generateTextStream; without it the stream lands on the resident embedder.
-        const { route } = await import("./aiModelRouter");
-        const decision = route({ task: "chat", text: question });
+        // `plan.decision` already carries the SAME Model-Router pick as before.
+        // doc69 G2-3 — output safety: one redactor instance per stream (stateful — holds
+        // back a growing secret across chunk boundaries; see aiSafety.ts's class doc).
+        const redactor = new StreamingSecretRedactor();
+        let tokensIn = 0;
+        let tokensOut = 0;
+        start = Date.now();
         for await (const chunk of ggufStream({
           prompt,
           maxTokens: numPredict,
           temperature: 0.15,
           topP: 0.9,
           repeatPenalty: KB_QA_REPEAT_PENALTY,
-        }, decision.modelId)) {
+          // ★ B1 — KB-QA là lớp `kb-qa` (ai/loaiLuot.ts): KHÔNG nghĩ. Trần 220/900 token với model
+          //   biết nghĩ mặc định ⇒ chuỗi suy luận nuốt hết trần, câu trả lời rỗng (đo sống 2026-09-22).
+          disableThinking: !luotDuocNghi("kb-qa"),
+        }, await modelTraLoiKb(plan.decision.modelId))) {
           // GGUF engine yields { type: "token" | "done" | "error", token?, ... }
           // We must extract the string token, not yield the whole object
           // (which would stringify to "[object Object]" downstream).
           if (chunk.type === "token" && typeof chunk.token === "string" && chunk.token.length > 0) {
-            yield chunk.token;
+            // G5-C — CẮT thẻ suy luận rồi mới CHE bí mật. Cả hai đều giữ trạng thái xuyên chunk:
+            // `<thi` ở cuối mảnh này + `nk>` ở đầu mảnh sau là một thẻ THẬT.
+            const safe = redactor.push(catSuyLuan.push(chunk.token));
+            if (safe) yield safe;
+          } else if (chunk.type === "done") {
+            tokensIn = chunk.tokensPrompt ?? 0;
+            tokensOut = chunk.tokensGenerated ?? 0;
           } else if (chunk.type === "error") {
             throw new Error(chunk.error || "GGUF stream error");
           }
         }
+        // Release whatever BOTH filters were still holding back. ⚠ ĐÚNG THỨ TỰ: xả bộ cắt trước
+        // và đẩy phần ấy QUA bộ che, rồi mới xả bộ che — ngược lại thì đuôi câu ra SAU phần đã
+        // che, đảo thứ tự chữ người dùng đọc.
+        // ⚠ ĐÃ ĐO (đột biến M11 của G5-C sống sót): chỉ `redactor.flush()` gánh chữ;
+        // `catSuyLuan.flush()` không bao giờ nhả ký tự (xem chứng minh ở
+        // `aiGgufEngine.stripThinking.test.ts`). Giữ vì nó chốt sổ `truncated`/`thinking`.
+        const conCat = catSuyLuan.flush();
+        const tail = (conCat ? redactor.push(conCat) : "") + redactor.flush();
+        if (tail) yield tail;
+        canhBaoMoSan();
+        // doc69 G2-3 — gateway metering: this traffic was previously completely invisible.
+        plan.record({ tokensIn, tokensOut, latencyMs: Date.now() - start, outcome: "ok" });
         return;
       }
     } catch (err) {
+      plan.record({ latencyMs: start ? Date.now() - start : 0, outcome: "error" });
       console.warn("[aiLocalKnowledge] GGUF stream failed, falling back to Ollama:", err);
     }
   }
@@ -1278,13 +2057,30 @@ export async function* generateWithOllamaStream(
         if (!line.trim()) continue;
         try {
           const json = JSON.parse(line) as { response?: string; done?: boolean };
-          if (json.response) yield json.response;
-          if (json.done) return;
+          // G5-C — nhánh Ollama HTTP dùng CHUNG bộ cắt với nhánh GGUF (xem chú thích chỗ dựng).
+          // ⚠ NỢ ĐƯỢC KHAI, KHÔNG VÁ Ở LƯỢT NÀY: nhánh này chưa hề có bộ che bí mật (nhánh GGUF
+          // có `StreamingSecretRedactor`) — lỗ có TỪ TRƯỚC G5-C, nằm ngoài mandate lượt này, đã
+          // ghi vào báo cáo. Chỉ chạy khi USE_LEGACY_OLLAMA=true.
+          if (json.response) {
+            const an = catSuyLuan.push(json.response);
+            if (an) yield an;
+          }
+          if (json.done) {
+            const con = catSuyLuan.flush();
+            if (con) yield con;
+            canhBaoMoSan();
+            return;
+          }
         } catch {
           // skip malformed lines
         }
       }
     }
+    // Luồng đứt mà KHÔNG có dòng `done` (Ollama chết giữa chừng): vẫn phải xả phần bộ cắt còn
+    // giữ, nếu không đuôi câu trả lời biến mất — cùng lớp lỗi `xaTonDong()` của ống SSE.
+    const con = catSuyLuan.flush();
+    if (con) yield con;
+    canhBaoMoSan();
   } finally {
     clearTimeout(timer);
   }
@@ -1313,6 +2109,99 @@ export interface KbHealth {
   kbBuiltAt: string | null;
   chunkCount: number;
   staleDays: number | null;
+  // doc69 B1 (Wave 5) — last autosync answer-eval gate outcome (pass/fail/skipped
+  // + recall + when). null when autosync has never run a gate (disabled, or no
+  // run since boot) — NOT the same as a failure, so the client must not treat
+  // null as "bad".
+  //   rollbackFailed — (review fix) true only when a rollback was NEEDED
+  //   (evalGate:"fail") and BOTH restore attempts failed — the corpus may be
+  //   a mixed old/new state on disk until the next successful autosync
+  //   self-heals it. Distinct from rolledBack:false, which also covers the
+  //   normal "no rollback was needed" case (pass/skip).
+  lastAutosyncEvalGate: {
+    evalGate: "pass" | "fail" | "skipped";
+    recall: number | null;
+    reason?: string;
+    rolledBack: boolean;
+    rollbackFailed: boolean;
+    at: string;
+  } | null;
+  /**
+   * ★★★ Pha 3 Task 5 (D) — **TRẠNG THÁI HOÃN VÌ HẾT VRAM, NAY CÓ NGƯỜI ĐỌC.**
+   *
+   * Pha 2B Task 6 dựng `getKbSyncSchedulerStatus().defer` để *"máy đọc được"*, rồi **không nối nó
+   * vào đâu cả** — một đồng-hồ-không-kim, và đó chính là món nợ mà báo cáo Task 6 tự ghi. Task 5
+   * mở dân số ra cả sáu hộ `background`, nên nếu vẫn không ai đọc thì nay là **sáu** đồng hồ
+   * không kim.
+   *
+   * `kbSync.chain` — chuỗi hoãn của `cron:kb-sync` (cơ chế hẹn giờ riêng của Task 6, có khôi phục
+   *   sau khởi động lại). `holders` — ô trạng thái của **mọi hộ khác** đi qua
+   *   `vramDefer.xinVramCoHoan()` (trainer · finetune · cổng eval · reranker · embed-ctx).
+   *
+   * ⚠ Đây là **NGƯỜI ĐỌC**, không phải nguồn: cả hai ô đều là ảnh chụp trong bộ nhớ của tiến trình
+   * đang phục vụ mặt sức khoẻ. Vết BỀN vẫn là `vram_events` (`defer` / `defer_exceeded`).
+   *
+   * ══════════════════════════════════════════════════════════════════════════════════════════
+   * ★★★ I-5 (review TOÀN NHÁNH Pha 4) — **MỘT Ô, HAI NGƯỜI ĐỌC, TRƯỚC ĐÂY CHỈ MỘT MANG CAVEAT.**
+   * ══════════════════════════════════════════════════════════════════════════════════════════
+   * Task 1 (C-1) xoá `"idle"` khỏi KIỂU của mặt đọc VRAM và bổ sung `hostedHere` cho
+   * `getKbSyncSchedulerStatus()`, **đúng vì** `defer === null` không phân biệt được *"không có
+   * chuỗi hoãn"* với *"tiến trình này không nhìn thấy hộ đó"*. Nhưng nó **để nguyên người đọc
+   * CŨ** — chính ô này. Và đây là chỗ hậu quả nặng nhất: cron sống ở `worker`, mặt sức khoẻ KB
+   * được phục vụ ở `api` ⇒ ở `api` giá trị **LUÔN `null`**, và `null` ở đó đọc thành *"không có
+   * chuỗi hoãn nào"* là một **lời khẳng định sai**. Bản khai trước là `defer | null` **trần** nên
+   * `tsc` **không thể** bắt.
+   *
+   * ⇒ **ĐỔI KIỂU, KHÔNG THÊM CA** (ràng buộc 8): `kbSync` nay là một object BẮT BUỘC mang
+   * `hostedHere` cạnh `chain`. Mọi người đọc cũ (`h.vramDefer.kbSync === null`) **gãy `tsc`** và
+   * phải đọc lại caveat một lần — đó là cơ chế, không phải hình thức.
+   */
+  vramDefer: {
+    kbSync: {
+      /** `null` ⇔ không có chuỗi hoãn nào **TRONG TIẾN TRÌNH NÀY** — đọc kèm `hostedHere`. */
+      chain: ReturnType<typeof getKbSyncSchedulerStatus>["defer"];
+      /**
+       * `true` = tiến trình này CHỦ TRÌ cron `kb:sync` ⇒ `chain === null` có nghĩa *"không có chuỗi
+       * hoãn"*. `false` = hộ chạy ở tiến trình khác ⇒ `chain === null` **KHÔNG nói gì cả**.
+       * `null` = không xác định được (đọc trạng thái scheduler hỏng).
+       */
+      hostedHere: boolean | null;
+    };
+    holders: VramDeferState[];
+  };
+}
+
+/** Best-effort read of the last autosync eval-gate outcome. Never throws —
+ * degrades to null so KB health stays available even if the scheduler module
+ * itself failed to load. */
+function readLastAutosyncEvalGate(): KbHealth["lastAutosyncEvalGate"] {
+  try {
+    return getLastAutosyncEvalGate();
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * ★ Pha 3 Task 5 (D) — đọc trạng thái hoãn VRAM. **KHÔNG BAO GIỜ NÉM** (cùng kỷ luật với hàm
+ * trên): một mặt sức khoẻ ngã vì một ô phụ thì mất luôn cả những ô chính.
+ *
+ * ⚠ `getKbSyncSchedulerStatus()` là đường **CHỈ-ĐỌC** — nó KHÔNG được tiêu thụ chốt "kêu một lần"
+ * về cấu hình (M-6 của Task 6): một mặt sức khoẻ bị poll định kỳ sẽ ăn mất tiếng kêu trước khi
+ * người vận hành kịp thấy. Hàm đó đã tự dùng `keu = false`; đừng đổi lời gọi ở đây thành một
+ * đường quyết định.
+ */
+function readVramDefer(): KbHealth["vramDefer"] {
+  try {
+    // ★ I-5 — MỘT lượt đọc cho CẢ hai ô (cùng kỷ luật M-2 của `vramReadModel.docSauHo()`): đọc hai
+    // lần là hai ảnh chụp ở hai thời điểm cho một sự thật.
+    const s = getKbSyncSchedulerStatus();
+    return { kbSync: { chain: s.defer, hostedHere: s.hostedHere }, holders: docTrangThaiHoanVram() };
+  } catch {
+    // ⚠ Nhánh SUY GIẢM: `hostedHere: null` — "không đọc được" ≠ "không chủ trì". Trước bản vá I-5,
+    // nhánh này trả `kbSync: null` TRẦN, tức phát ra đúng lời khẳng định sai mà C-1 cấm.
+    return { kbSync: { chain: null, hostedHere: null }, holders: [] };
+  }
 }
 
 // W0.2 (doc 11) — best-effort "is a text LLM loadable?" check. Never throws;
@@ -1357,6 +2246,8 @@ export async function getKbHealth(): Promise<KbHealth> {
       kbBuiltAt: data.kbBuiltAt,
       chunkCount: data.chunksById.size,
       staleDays: wholeDaysSince(data.kbBuiltAt),
+      lastAutosyncEvalGate: readLastAutosyncEvalGate(),
+      vramDefer: readVramDefer(),
     };
   } catch {
     return {
@@ -1370,6 +2261,8 @@ export async function getKbHealth(): Promise<KbHealth> {
       llmReady: false,
       embedModel: null,
       queryEmbedModel,
+      lastAutosyncEvalGate: readLastAutosyncEvalGate(),
+      vramDefer: readVramDefer(),
       embedModelMatches: true,
       kbBuiltAt: null,
       chunkCount: 0,
@@ -1388,7 +2281,7 @@ export function reloadKbArtifacts(): Promise<KbHealth> {
 // ambiguous questions (no script/keyword signal → defaults to "en") we fall
 // back to the UI language hint so a Chinese UI gets Chinese replies even when
 // the user types code/identifiers only.
-function resolveLanguage(question: string, context?: KbQueryContext): KbLanguage {
+export function resolveLanguage(question: string, context?: KbQueryContext): KbLanguage {
   const detected = detectLanguage(question);
   const ui = context?.uiLanguage;
   // detectLanguage returns "en" both for genuine English and for ambiguous
@@ -1446,14 +2339,498 @@ function graphRagOpts() {
   };
 }
 
+// doc69 B3 (Wave 5) — shared empty instance used when the feedback-rerank flag is
+// off, so retrieveKnowledge never allocates a Map on the (default) disabled path.
+const EMPTY_FEEDBACK_MAP: ReadonlyMap<string, number> = new Map();
+
+/**
+ * ★★★ doc 79 · TRỤC 1 (D) — VÁ LIVE 2026-08-20. **THU HẸP KHO TRƯỚC KHI XẾP HẠNG.**
+ *
+ * ─── VÌ SAO PHẢI Ở ĐÂY, KHÔNG PHẢI LỌC SAU ────────────────────────────────────────────────────
+ * Phép đo (đường sản phẩm đầy đủ: embed 0.6B + keyword + trọng số + rerank gguf, `topK=8`):
+ *
+ *   câu hỏi                                         │ top-1 │ snippet thuộc vùng MÃ
+ *   ────────────────────────────────────────────────┼───────┼──────────────────────
+ *   "hệ thống này xác thực người dùng như thế nào?" │ 0,531 │ **0 / 8**
+ *   "phân quyền RBAC trong repo này hoạt động ra sao?"│0,590│ **0 / 8**
+ *   "luồng ingest ảnh AOI … đi qua những bước nào?" │ 0,794 │ **0 / 8**
+ *
+ * Kho có 7.582 chunk, trong đó `docs/**` + `apidocs/**` = 4.312 và chúng dài 1.500–1.800 ký tự
+ * TIẾNG VIỆT do người viết, còn chunk MÃ là tóm tắt 114–166 ký tự TIẾNG ANH máy sinh
+ * (*"Router file: … Procedure calls: 44"*). Một câu hỏi kiến trúc bằng tiếng Việt **không bao giờ**
+ * thắng nổi phân bố ấy ⇒ **lọc SAU khi xếp hạng luôn trả về 0 tệp mã**, dù ngưỡng điểm là bao nhiêu.
+ * Muốn có thứ hạng của tệp mã thì phải xếp hạng TRONG kho mã.
+ *
+ * ⚠ **KHÔNG có nhánh dự phòng "rỗng thì trả cả kho"** — một dự phòng như thế sẽ lặng lẽ trả chunk
+ *   tài liệu cho một người gọi vừa xin ĐÚNG mã nguồn, tức mở lại chính cái lỗ này bằng cửa sau.
+ *   Rỗng thì rỗng, và người gọi có `reason` để nói ra.
+ */
+export interface KbRetrieveOptions {
+  /**
+   * Chỉ xét chunk có `sourcePath` bắt đầu bằng MỘT trong các tiền tố này (so khớp không phân biệt
+   * hoa/thường, `\` đã chuẩn hoá về `/`). Vắng/rỗng ⇒ TOÀN KHO, tức hành vi y hệt trước lượt này.
+   *
+   * ⚠ Cố ý **KHÔNG** nằm trong `KbQueryContext`: `KbQueryContext` là thứ `parseContext()` dựng từ
+   *   body của `POST …/ask`. Một trục chọn kho là quyết định của SERVER, không phải của client.
+   */
+  sourcePathPrefixes?: readonly string[];
+}
+
+/**
+ * Thu hẹp kho theo tiền tố đường dẫn. Trả về chính mảng gốc khi không có tiền tố nào.
+ * ⚠ `export` để lưới đo được HÀM THUẦN này mà không phải nạp `embeddings.jsonl` 162 MB — không có
+ *   người gọi nào ngoài `retrieveKnowledge`.
+ */
+export function locKhoTheoTienTo<T extends { sourcePath: string }>(
+  ban: readonly T[],
+  tienTo?: readonly string[],
+): readonly T[] {
+  const pre = (tienTo ?? [])
+    .map((p) => String(p ?? "").replace(/\\/g, "/").trim().toLowerCase())
+    .filter((p) => p !== "");
+  if (pre.length === 0) return ban;
+  return ban.filter((e) => {
+    const p = String(e.sourcePath ?? "").replace(/\\/g, "/").toLowerCase();
+    return p !== "" && pre.some((x) => p.startsWith(x));
+  });
+}
+
+/**
+ * ★★★ VIỆC 1 (`docs/superpowers/specs/2026-09-04-ai-local-danh-gia-hien-trang-va-lo-trinh.md` §8) —
+ * route "vscode" truy hồi từ CORPUS LẬP TRÌNH (`knowledge/programming/<vendor>/…` — tài liệu hãng
+ * PLC/robot/motion + SDK, doc 34 P1, `aiProgrammingKnowledgeService.searchProgrammingKb`), **KHÔNG**
+ * từ kho vận hành nhà máy (`data.embeddings` bên dưới, tức `knowledge/*.jsonl` cấp gốc + `docs/**`).
+ * Đúng nghi ngại Việc 2 để lại ở CÒN MỞ #5 ("route vscode vẫn quét CHUNG kho KB vận hành") — vá ở
+ * đây, cùng khuôn với gate `intent:"general"` cạnh trên: MỘT trường tin cậy (`context.route`),
+ * đặt Ở ĐẦU `retrieveKnowledge` — TRƯỚC `ensureDataLoaded()` — nên route vscode không tải/chấm điểm
+ * kho vận hành ở BẤT KỲ bước nào nữa (không phải "gọi rồi bỏ kết quả", là "không gọi").
+ *
+ * `searchProgrammingKb` tự trả kết quả RỖNG well-formed khi `PROG_KB_ENABLED` tắt hoặc corpus rỗng
+ * (xem docblock của chính nó) — nên "không có corpus phù hợp ⇒ không ghép KB nào" (yêu cầu của
+ * Việc 1, tránh đúng lỗi đã đo: ngữ cảnh SAI MIỀN còn tệ hơn không có ngữ cảnh) là hành vi TỰ NHIÊN
+ * của hàm đó, không cần thêm nhánh fallback nào ở đây — `citations`/`contexts` rỗng, `confidence` 0.
+ */
+
+/**
+ * ★★★ B2 (đợt "lọc theo hãng đã có sẵn", brief `task-v7` + phản hồi chủ dự án 2026-09-04) — bảng
+ * so khớp AN TOÀN HƠN nguyên-từ cho những hãng "hiếm nghĩa" (không phải từ tiếng Anh/toán học
+ * thông dụng — brief đã xác nhận: Omron/Fanuc/Zmotion "an toàn hơn nhiều"; Mitsubishi/Universal
+ * Robots cùng tầng). Đây là bảng LÀM GIÀU tuỳ chọn, KHÔNG phải danh sách hãng — danh sách hãng THẬT
+ * đọc động từ `manifest.json` (`getProgrammingKbVendorSlugs()` bên dưới, xem docblock
+ * `detectProgrammingVendors`). Một slug KHÔNG có trong bảng này (hãng mới, chưa ai sửa bảng tay)
+ * vẫn được nhận diện qua `genericVendorRegex()` — chỉ MẤT phần khớp-giàu (mã model, tên SDK riêng),
+ * không MẤT khả năng nhận diện.
+ *
+ * "universal-robots" khớp thêm mã model UR3/UR5/UR10/UR16(+"e") và tên riêng phần mềm/SDK của hãng
+ * (URScript, PolyScope) — generic fallback chỉ khớp được cụm "universal robots" đầy đủ, không biết
+ * các alias này. ⚠ CỐ Ý không khớp "UR" đứng một mình — hai ký tự, quá dễ trùng chữ viết tắt khác.
+ *
+ * ★★★ "mitsubishi" — thêm ở vòng task-v10 (NỢ 1, đo được `VSC-02`/`VSC-07`, hai ca ĐÃ ĐẠT trong bộ
+ * `eval-vscode-route.mjs`): câu hỏi của người dùng thường gọi ĐÚNG TÊN DÒNG SẢN PHẨM ("MELSEC",
+ * "GX Works3", mã module "QJ71C24") mà KHÔNG bao giờ gõ chữ "Mitsubishi" — `genericVendorRegex`
+ * suy từ slug "mitsubishi" không bắt được các tên này, nên trước bản vá `detectProgrammingVendors`
+ * trả `[]` cho CẢ HAI câu hỏi đó dù chấm điểm THẬT vẫn đúng hãng (đo bằng
+ * `node --import tsx` gọi thẳng hàm, xem `task-v10-report.md` N1-B2). Đây là điều kiện BẮT BUỘC
+ * phải vá trước khi dùng tín hiệu này làm CỔNG chặn trích dẫn ngoài-miền bên dưới
+ * (`retrieveProgrammingKnowledgeForVscode`) — nếu không, cổng đó sẽ giết oan chính hai ca này.
+ * "MELSEC"/"QJ71" là mã hãng đặc hiệu (không phải từ tiếng Anh thông dụng) — an toàn theo đúng
+ * tiêu chí đã dùng cho UR/Zmotion. "GX Works" cho phép số phiên bản dính liền ("GX Works3").
+ *
+ * ⚠ Một khoá có mặt ở đây THAY THẾ HOÀN TOÀN `genericVendorRegex(slug)` cho slug đó (xem vòng lặp
+ * `detectProgrammingVendors`: `VENDOR_ALIAS_PATTERNS[slug] ?? genericVendorRegex(slug)` — dấu `??`,
+ * KHÔNG phải hợp hai regex) — nên regex "mitsubishi" ở đây PHẢI tự chứa cả tên hãng gốc
+ * (`\bmitsubishi\b`), không chỉ phần alias mới, nếu không câu hỏi gõ ĐÚNG "Mitsubishi" sẽ ngừng
+ * khớp (tự bắt được lỗi này khi viết bản vá — lưới `aiLocalKnowledge.vendorDetect.test.ts` §D và
+ * `aiLocalKnowledge.vendorFilterWiring.test.ts` §C đỏ ngay ở lượt chạy đầu).
+ */
+const VENDOR_ALIAS_PATTERNS: Readonly<Record<string, RegExp>> = {
+  "universal-robots": /\buniversal[\s_-]?robots?\b|\bur\d{1,2}e?\b|\burscript\b|\bpolyscope\b/i,
+  zmotion: /\bz-?motion\b/i, // cho phép viết rời "Z-Motion"/"ZMotion", generic fallback chỉ khớp liền
+  mitsubishi: /\bmitsubishi\b|\bmelsec\b|\bmelservo\b|\bgx[\s_-]?works?\d*\b|\bqj71[a-z0-9]*\b/i,
+};
+
+/**
+ * Hãng KHÔNG có alias riêng ở bảng trên (mới nạp, hoặc năm hãng "hiếm nghĩa" còn lại) — suy regex
+ * NGUYÊN TỪ trực tiếp từ CHÍNH slug đọc được ở manifest (tách theo khoảng trắng/gạch ngang/gạch
+ * dưới, cho phép ba dấu phân cách đó hoán đổi cho nhau khi so khớp, ranh giới từ ở hai đầu).
+ * Đây là lưới AN TOÀN CHUNG cho một hãng thứ bảy chưa ai viết luật riêng — không nhận diện được các
+ * BÍ DANH của hãng đó (mã model, tên SDK) nhưng LUÔN nhận diện được TÊN HÃNG viết nguyên văn.
+ */
+function genericVendorRegex(slug: string): RegExp | null {
+  const words = String(slug ?? "")
+    .split(/[\s_-]+/)
+    .map((w) => w.trim())
+    .filter((w) => w !== "")
+    .map((w) => w.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"));
+  if (words.length === 0) return null;
+  return new RegExp(`\\b${words.join("[\\s_-]+")}\\b`, "i");
+}
+
+/**
+ * ★★★ "Delta" KHÔNG có mặt trong `VENDOR_ALIAS_PATTERNS`/`genericVendorRegex` — nó là TỪ TIẾNG ANH
+ * THÔNG DỤNG (delta = độ chênh) VÀ là định danh JS/TS cực phổ biến (`const delta = t1 - t0`,
+ * `deltaTime`, `deltaX`). Dự án này đã bị cắn BỐN lần vì khớp từ khoá quá lỏng (OEE
+ * `performance`/`quality`, `yield` = từ khoá JS, gộp dấu "kỹ"↔"kỳ", văn bản giáo cụ khớp nhầm
+ * intent) — không lặp lại lần thứ năm ở đây.
+ *
+ * ★ Chủ dự án (2026-09-04): "giữ nguyên phần ngữ cảnh của Delta — đó là LUẬT NHẬN DIỆN, không phải
+ * DANH SÁCH HÃNG, nó không trôi theo dữ liệu nên chép tay được." Bốn hằng số dưới đây do đó VẪN là
+ * hằng số hand-authored — CHỈ danh sách "delta có phải một hãng đang tồn tại hay không" (điều kiện
+ * `slug === "delta"` bên trong `detectProgrammingVendors`) mới đọc động từ manifest; luật NHẬN DIỆN
+ * khi nào một câu hỏi "nói tới Delta" thì không đổi.
+ *
+ * Nhận "delta" là hãng khi và CHỈ KHI một trong hai:
+ *   (a) viết hoa ĐÚNG tên riêng — `Delta` (chữ Đ hoa, còn lại thường), so khớp PHÂN BIỆT hoa/thường;
+ *   (b) "delta" (không phân biệt hoa/thường) đi kèm một dấu hiệu thiết bị/hãng trong CÙNG câu hỏi —
+ *       `DELTA_DEVICE_CONTEXT_RE` bên dưới.
+ * Cả hai điều kiện đều dùng `\bdelta\b` — camelCase như `deltaTime`/`deltaX` không có ranh giới từ
+ * trước ký tự theo sau (chữ liền chữ, không phải chữ-số/dấu cách/dấu câu) nên KHÔNG BAO GIỜ khớp,
+ * bất kể điều kiện (a)/(b). "biến tần" (tiếng Việt, không dấu ranh giới ASCII) so khớp bằng chuỗi
+ * con thay vì `\b` vì cụm hai âm tiết đã đủ đặc hiệu.
+ */
+const DELTA_WORD_RE = /\bdelta\b/i;
+const DELTA_PROPER_NOUN_RE = /\bDelta\b/; // PHÂN BIỆT hoa/thường — cố ý
+const DELTA_DEVICE_CONTEXT_RE =
+  /\b(plc|servo|asda|dvp|inverter|vfd|hmi|dop|ecma|drastudio|scada|ladder|encoder|automation)\b|motion controller|biến tần|bien tan/i;
+
+/**
+ * B2 — vị từ nhận diện hãng từ câu hỏi. ★ KHÔNG còn "thuần" theo nghĩa tuyệt đối (đọc
+ * `getProgrammingKbVendorSlugs()` phía `aiProgrammingKnowledgeService`, có thể chạm đĩa) — CỐ Ý,
+ * theo phản hồi chủ dự án: danh sách hãng phải đọc động từ `manifest.json` (nguồn thật, ghi bởi
+ * pipeline nạp), KHÔNG phải một bảng chép tay ở đây có thể trôi khỏi corpus thật khi hãng thứ bảy
+ * được nạp. Chi phí RẺ: `getProgrammingKbVendorSlugs()` chỉ đọc `manifest.json` (vài KB, KHÔNG
+ * phải `chunks.jsonl`/`embeddings.jsonl` 162 MB) và cache module-scope.
+ *
+ * Trả về DANH SÁCH slug hãng khớp được (0, 1, hoặc nhiều) — đúng những gì `manifest.json` liệt kê
+ * (vỏ chữ không quan trọng ở đầu ra vì `collectionMatchesVendor`/`chunkMatchesFilters` phía
+ * `aiProgrammingKnowledgeService` đều `.toLowerCase()` cả hai phía trước khi so khớp).
+ *
+ * ★★★ Fail-safe: `getProgrammingKbVendorSlugs()` KHÔNG BAO GIỜ throw (đã fail-safe ở phía nó) —
+ * manifest thiếu/hỏng ⇒ mảng RỖNG ⇒ vòng lặp dưới không chạy ⇒ hàm này trả `[]` cho MỌI câu hỏi,
+ * kể cả câu hỏi nêu đúng tên một hãng thật — đúng chủ ý: "chưa biết hãng nào tồn tại" phải rơi về
+ * KHÔNG LỌC (hành vi tìm-khắp AN TOÀN, y hệt trước khi tính năng lọc-theo-hãng tồn tại), không phải
+ * một lỗi cần xử lý riêng ở đây.
+ *
+ * `export` để lưới đo được (`aiLocalKnowledge.vendorDetect.test.ts`) mà không cần nạp corpus thật.
+ */
+export function detectProgrammingVendors(question: string): string[] {
+  const q = String(question ?? "");
+  const found = new Set<string>();
+  const knownVendorSlugs = getProgrammingKbVendorSlugs(); // nguồn thật = manifest.json, fail-safe []
+  for (const slugRaw of knownVendorSlugs) {
+    const slug = String(slugRaw ?? "").trim().toLowerCase();
+    if (slug === "") continue;
+    if (slug === "delta") {
+      if (DELTA_PROPER_NOUN_RE.test(q) || (DELTA_WORD_RE.test(q) && DELTA_DEVICE_CONTEXT_RE.test(q))) {
+        found.add("delta");
+      }
+      continue;
+    }
+    const re = VENDOR_ALIAS_PATTERNS[slug] ?? genericVendorRegex(slug);
+    if (re && re.test(q)) found.add(slug);
+  }
+  return Array.from(found);
+}
+
+/** Ngưỡng trích dẫn Studio của route vscode — xem ★★★ B2 trong docblock ngay dưới (vì sao KHÔNG dùng
+ * 0,18 của nhánh web). Export để eval Training Studio (R1, `kbStudioEval.ts`) chấm "qua ngưỡng" bằng
+ * ĐÚNG hằng số sản xuất, không phải bản chép.
+ *
+ * ★★★ R1 (2026-09-23) — 0,5 → 0,44, ĐO trên HAI corpus (thay cho N=1 câu của task-v8). Thang: cosine
+ * `searchCorpus`, Qwen3-Embedding-0.6B + tiền tố Instruct (eval #14 st4i-may-aoi, #21 csharp-dotnet,
+ * #23/#24 chéo corpus — bộ câu của corpus này hỏi vào corpus kia = NGOÀI corpus theo cấu tạo):
+ *   · ĐÚNG nguồn (38 câu tìm thấy nguồn trong top‑5): min 0,340 · 0,384 · 0,407 · 0,429 · 0,444 · 0,450 … max 0,849.
+ *   · NHIỄU ngoài corpus (6 câu khai ngoài + 45 câu chéo; bỏ N02 "E082" — nó THẬT SỰ có trong st4i):
+ *     max 0,415 · 0,413 · 0,383 · p90 0,382.
+ *   ⇒ Hai cụm CHỒNG nhau ở 0,34–0,415 — KHÔNG ngưỡng nào tách sạch. 0,5 cũ: 29/38 đúng, 0/51 nhiễu — bỏ
+ *     oan 9 nguồn đúng (0,44–0,50) mà không chặn thêm nhiễu nào. 0,44: 34/38 đúng, 0/51 nhiễu, cách đỉnh
+ *     nhiễu 0,025. Bốn câu còn trượt (0,340–0,429) nằm TRONG cụm nhiễu — ngưỡng không cứu được, cần xếp
+ *     hạng/nhúng tốt hơn. ⚠ Chỉ áp cho route vscode; đường web (`retrieveKnowledge` mặc định) không đọc hằng này.
+ * ⚠⚠ ĐÍNH CHÍNH 2026-09-24 (`6919087c6`): "0/51 nhiễu" chỉ là nhiễu CHÉO miền (dễ). 8 câu ngoài corpus CÙNG MIỀN (N05–N12,
+ *     eval #30) ⇒ **3/12 lọt 0,44** (0,460 · 0,533 · 0,572; 0,5 vẫn lọt 2/12). Hằng này KHÔNG chặn được câu lạc đề cùng miền —
+ *     không ngưỡng cosine nào làm được; reranker (bge‑v2‑m3, Qwen3‑Reranker‑0.6B) cũng không tách rõ hơn
+ *     (`scripts/ai-eval/rerank-tach.ts`). Giữ 0,44 cho tới khi có bộ vàng lớn hơn; đừng đọc số trên như bằng chứng "sạch".
+ * ★★ 2026-09-24 — BỘ VÀNG LỚN (111 câu: 79 trong · 32 ngoài cùng miền; 69 câu mới viết TRƯỚC khi đo = tập giữ lại):
+ *     eval #40, `scripts/ai-eval/rerank-tach-quet.mjs`. Theo TỔNG LỖI (nguồn đúng bị loại + câu ngoài lọt): cosine tốt
+ *     nhất 23 (@0,359: mất 1 + lọt 22) · **0,44: mất 10 + lọt 13 = 23** · bge thô tốt nhất 21 · Qwen3‑Reranker thô 22 —
+ *     chênh ±2/107 = nhiễu. Không cổng điểm nào tách được; 0,44 ngang mức tốt nhất mà lọt ÍT hơn (13 vs 22) ⇒ GIỮ.
+ *     Reranker THÔ còn làm top‑1 TỆ hơn cosine (49 · 52 vs 58/79) ⇒ không đổi reranker, không nâng BLEND. Câu lạc đề
+ *     cùng miền phải chặn bằng tín hiệu khác điểm (vd tự kiểm câu trả lời) — việc vòng sau. */
+export const MIN_STUDIO_CITATION_SCORE = 0.44;
+
+/**
+ * ★★★ VIỆC 8 (`docs/superpowers/specs/2026-09-04-ai-local-danh-gia-hien-trang-va-lo-trinh.md` §12,
+ * vá lỗ hổng do CHÍNH Việc 1 tạo ra) — route "vscode" giờ CŨNG trộn thêm kho **Training Studio**
+ * (`kb_studio_chunks`, nạp qua `/ai-training-studio`) vào kết quả tài liệu hãng ở trên, thay vì chỉ
+ * âm thầm phục vụ đường web như trước (`retrieveKnowledge` nhánh dưới, dòng ~2694). Tài liệu người
+ * dùng tải lên Studio TRƯỚC bản vá này không bao giờ tới được trợ lý VSCode — dù UI/tài liệu hướng
+ * dẫn nói ngược lại.
+ *
+ * ─── B1 (đo trước khi vá) — `gatherStudioHits` cần gì ────────────────────────────────────────────
+ * Chữ ký: `gatherStudioHits(queryEmbedding: number[], topK): Promise<StudioHit[]>`
+ * (`aiLocalKnowledgeStudio.ts`) — nhận VECTOR TRUY VẤN ĐÃ TÍNH SẴN (không tự nhúng lại), duyệt
+ * `listCorpora()` rồi `searchCorpus()` từng corpus (cosine THUẦN qua pgvector `<=>` hoặc brute-force
+ * — xem `kbVectorStore.ts:180`), fail-safe tuyệt đối (mọi lỗi ⇒ `[]`).
+ *
+ * ─── ★★★ B2 — HAI THANG ĐIỂM KHÔNG SO SÁNH ĐƯỢC, ĐÃ ĐO, KHÔNG TRỘN BỪA ──────────────────────────
+ * `searchProgrammingKb` (khối vendor phía trên) chấm điểm trong không gian **Qwen3-Embedding**
+ * (`aiProgrammingKnowledgeService.ts` dòng 9: "different embed model space (Qwen3-Embedding
+ * 1024-d, per manifest.embedModel)"), hybrid semantic×0.72 + keyword×0.28, ngưỡng 0,5 đã hiệu chỉnh
+ * BẰNG ĐO THẬT trên chính không gian đó (nhiễu ≤0,351 · đúng miền ≥0,7116 — xem docblock B5 ở trên).
+ *
+ * `gatherStudioHits`/`searchCorpus` chấm điểm bằng cosine THUẦN (không trộn keyword) trong không
+ * gian nhúng mà `kbIngestService.ts` dùng lúc nạp — `generateEmbeddings(pieces)` KHÔNG truyền
+ * `modelId` ⇒ `resolveEmbedModelBasename()` (mặc định toàn cục, `aiGgufEngine.ts`, mxbai-embed-large
+ * trừ khi `.env` đổi `GGUF_EMBED_MODEL`) — ĐÚNG không gian mà `embedQuestion()` dưới đây tính, nhưng
+ * KHÁC HẲN không gian Qwen3-Embedding của vendor. Hai model khác nhau ⇒ điểm 0,5 trong không gian
+ * này KHÔNG mang cùng ý nghĩa với 0,5 trong không gian kia — không có phép quy đổi nào đã đo.
+ *
+ * ⇒ QUYẾT ĐỊNH (đường AN TOÀN theo đúng brief — "giữ ngưỡng riêng cho mỗi nguồn, đừng trộn bừa"):
+ *   (a) HAI ngưỡng RIÊNG — vendor giữ nguyên 0,5 (không đổi). Studio KHÔNG tái dùng
+ *       `MIN_CITATION_SCORE = 0,18` của nhánh web (dòng ~2543) — ĐÃ THỬ (vòng đầu của bản vá này),
+ *       ĐO SỐNG (task-v8, POST thật `/api/ai/local-kb/stream`, corpus Studio thật lúc đó: 1 tài
+ *       liệu thử + 3 chunk có sẵn từ một corpus vận hành cũ "so-tay-bao-tri-w2") lộ ra 0,18 quá
+ *       lỏng CHO ĐÚNG KHÔNG GIAN NÀY: câu hỏi ĐÚNG tài liệu ghi 0,7303 (khớp), nhưng BA chunk
+ *       KHÔNG liên quan (quy trình thay vòi hút, ảnh chụp màn hình duyệt ngưỡng) vẫn lọt với
+ *       0,3134–0,4040 — TRÊN ngưỡng 0,18, dưới oan citation lạc đề vào prompt. `MIN_CITATION_SCORE
+ *       = 0,18` của nhánh web mã hoá ĐÚNG triết lý của nhánh ĐÓ ("giữ top-1 dù yếu, UI không rỗng")
+ *       — triết lý ngược hẳn với triết lý ĐÃ TUYÊN BỐ của chính route vscode (xem docblock
+ *       `MIN_PROG_KB_CITATION_SCORE` phía trên: "một câu hỏi lạc miền phải trả RỖNG, không phải
+ *       'top-1 yếu nhất'"). Tái dùng 0,18 ở đây là ÁP SAI TRIẾT LÝ của một nhánh khác, không chỉ
+ *       sai thang điểm. ⇒ `MIN_STUDIO_CITATION_SCORE = 0,5` — đặt GIỮA hai cụm ĐO ĐƯỢC (nhiễu
+ *       ≤0,4040 · đúng miền ≥0,7303), cùng biên độ an toàn với cách `MIN_PROG_KB_CITATION_SCORE`
+ *       đã chọn. ⚠ Trung thực: N=1 câu hỏi thật — mẫu MỎNG, không phải một dải đo rộng như vendor
+ *       (6 câu). Ghi rõ CÒN MỞ trong báo cáo: cần thêm mẫu khi corpus Studio lớn hơn.
+ *   (b) KHÔNG sắp-lại-theo-điểm hai nhóm chung một mảng (khác nhánh web, nơi hai nguồn CÙNG không
+ *       gian nên sort chung an toàn) — nối THEO THỨ TỰ CỐ ĐỊNH: vendor trước (nguồn đã hiệu chỉnh kỹ
+ *       hơn cho route này), Studio sau, mỗi nhóm giữ nguyên thứ tự nội bộ (đã sắp điểm giảm dần từ
+ *       chính hàm nguồn). Tránh đúng lớp lỗi "so hai số không cùng đơn vị rồi coi số lớn hơn là liên
+ *       quan hơn".
+ *   (c) `confidence` vẫn dùng công thức `(top1+top2)/1.6` hiện có của tệp này (đã áp dụng cho nhiều
+ *       cặp nguồn không cùng thang từ trước — ops hybrid/Studio cosine ở nhánh web) — một heuristic
+ *       thô đã có tiền lệ, không phải một phép so sánh khoa học giữa hai thang, nên tái dùng ở đây
+ *       không làm xấu đi tính nhất quán đã có.
+ *
+ * ─── Bảo toàn kỷ luật "choke-point DUY NHẤT" (`kbStudioAccess.ts` header) ─────────────────────────
+ * `gatherStudioHits`/`searchCorpus`/`kbVectorStore.ts` (Studio) vẫn CHỈ có MỘT người gọi
+ * (`gatherStudioHits`) — không import trực tiếp `kbVectorStore`/`kbStudioService` ở đây. Cổng AN
+ * TOÀN (`canAccessStudioCorpus`) LẶP LẠI Ở ĐÂY (không phải một điểm gọi lộn xộn thứ hai bỏ qua cổng)
+ * vì `retrieveProgrammingKnowledgeForVscode` là một NHÁNH EARLY-RETURN của `retrieveKnowledge` (dòng
+ * ~2451) — cổng gốc ở dòng ~2694 KHÔNG BAO GIỜ được thực thi cho route vscode, nên bỏ cổng ở đây
+ * nghĩa là Studio-cho-vscode chạy KHÔNG QUA cổng nào cả. `context?.callerRole` đến từ CÙNG một
+ * đường threading đã có (`streamAnswer`/`answerQuestion` gán `execCtx.user.role` — Final-fix round
+ * Task 6), không phải một trường mới.
+ *
+ * ─── ★★★ KHÔNG được kéo theo kho VẬN HÀNH (constraint cứng, giữ nguyên Việc 2) ───────────────────
+ * Nhánh dưới đây KHÔNG gọi `ensureDataLoaded()` — hàm đó đọc `knowledge/chunks.jsonl` +
+ * `knowledge/embeddings.jsonl` (162MB, kho vận hành), đúng thứ Việc 2 đã đo "0 lần gọi" cho route
+ * vscode (`aiLocalKnowledge.progKbRouteGate.test.ts` §A: `expect(fsReadFileSync).not.toHaveBeenCalled()`
+ * — mock TOÀN BỘ `node:fs`, không riêng `knowledge/*`). `embedQuestion()` (dùng dưới đây để có vector
+ * truy vấn cho Studio) là một lời gọi MODEL THUẦN (`aiGgufEngine.generateEmbedding`/`isGgufAvailable`,
+ * chính module đó ĐÃ bị mock toàn bộ trong lưới trên) — KHÔNG đọc `knowledge/*`, KHÔNG vi phạm bất
+ * biến đó. `gatherStudioHits` đọc bảng `kb_studio_chunks` qua Drizzle (Postgres), cũng KHÔNG chạm
+ * `knowledge/*`.
+ *
+ * ─── Studio rỗng / lỗi / caller không đủ quyền ⇒ hành vi Y HỆT TRƯỚC bản vá này ───────────────────
+ * `canAccessStudioCorpus` fail-closed (role thiếu/không nhận diện ⇒ false) ⇒ toàn khối Studio bị bỏ
+ * qua, kết quả = ĐÚNG hành vi vendor-only đã có. `gatherStudioHits` tự fail-safe `[]` khi corpus rỗng
+ * hoặc lỗi DB. Toàn khối Studio còn được bọc thêm MỘT lớp try/catch ở đây — một exception bất ngờ
+ * (vd `embedQuestion` ném lỗi lạ) không được làm rớt phần vendor đã tính xong ở trên.
+ */
+async function retrieveProgrammingKnowledgeForVscode(
+  question: string,
+  topK: number,
+  context?: KbQueryContext,
+): Promise<KbRetrieveResult> {
+  const language = resolveLanguage(question, context);
+  const empty = (): KbRetrieveResult => ({
+    question,
+    intent: "general",
+    language,
+    entities: [],
+    confidence: 0,
+    citations: [],
+    contexts: [],
+    rerankMs: null,
+  });
+  // ★★★ B3 (đợt "lọc theo hãng đã có sẵn") — `searchProgrammingKb` NHẬN `vendor` để LỌC trước khi
+  // chấm điểm (đo được ở B1: `collectionMatchesVendor`/`chunkMatchesFilters` bỏ qua toàn bộ chunk
+  // không khớp TRƯỚC vòng lặp tính điểm, không phải lọc SAU khi xếp hạng) — nhưng route vscode
+  // trước bản này không truyền tham số đó, nên một câu hỏi Universal Robots có thể nhận trích dẫn
+  // Delta điểm 0,75+ (đo được, xem brief). Ba nhánh, đúng B3:
+  //   · ĐÚNG MỘT hãng nêu tên  ⇒ lọc theo hãng đó (dưới).
+  //   · KHÔNG hãng nào nêu tên ⇒ `vendor` = undefined ⇒ HÀNH VI CŨ (tìm khắp sáu hãng), giữ nguyên
+  //     y hệt trước bản vá — không có nhánh nào âm thầm thu hẹp một câu hỏi chung chung.
+  //   · NHIỀU hãng cùng nêu tên (vd "so sánh Delta và Mitsubishi") ⇒ CHỌN KHÔNG LỌC (giống nhánh
+  //     trên), KHÔNG lọc theo tập. Lý do: `SearchProgrammingKbParams.vendor` chỉ nhận MỘT chuỗi
+  //     (không phải mảng) — mở rộng hợp đồng đó để lọc-theo-tập là một thay đổi lớn hơn phạm vi bản
+  //     vá này ("nhỏ, giá trị cao") và chạm vào một service có lưới riêng đang khoá (11/11 ca xanh,
+  //     `aiProgrammingKnowledgeService.test.ts`). Không lọc còn AN TOÀN HƠN lọc-theo-tập sai: một
+  //     câu so sánh hai hãng cần thấy CẢ HAI, và tìm khắp-rồi-xếp-điểm (hành vi hôm nay) đã làm đúng
+  //     việc đó — nó chỉ sai khi câu hỏi nêu ĐÚNG MỘT hãng mà kết quả lại lẫn hãng khác.
+  const detectedVendors = detectProgrammingVendors(question);
+  const vendorFilter = detectedVendors.length === 1 ? detectedVendors[0] : undefined;
+
+  // ★★★ VIỆC 8 — TÁCH khỏi early-return cũ: trước bản vá, "vendor rỗng" trả `empty()` NGAY, không
+  // bao giờ thử Studio. Giờ vendor rỗng/lỗi chỉ để lại `vendorCitations=[]` — Studio vẫn được thử
+  // bên dưới TRƯỚC khi quyết định trả rỗng thật sự.
+  let vendorResult: Awaited<ReturnType<typeof searchProgrammingKb>> | null = null;
+  try {
+    vendorResult = await searchProgrammingKb({ query: question, topK, vendor: vendorFilter });
+  } catch {
+    // fail-safe: một corpus lập trình hỏng không được làm rơi cả lượt hỏi, và KHÔNG được
+    // rơi về kho vận hành (đó đúng là lỗi sai-miền Việc 1 phải sửa) — vendorResult ở lại null,
+    // Studio vẫn được thử bên dưới.
+    vendorResult = null;
+  }
+
+  // ★★★ B5 (đo THẬT) bắt được: câu hỏi VẬN HÀNH thuần (vd "OEE hôm nay của line 2 là bao nhiêu?")
+  // vẫn nhận về 5 citation từ corpus lập trình — ĐÚNG kho (không lẫn kho vận hành, cấu trúc đã canh
+  // ở gate đầu `retrieveKnowledge`), nhưng NỘI DUNG là NHIỄU không liên quan (score đo được 0,32–0,35,
+  // so với 0,71–0,92 của 6 câu hỏi ĐÚNG miền cùng lượt đo — xem `task-v1-report.md` B5). Trộn nhiễu
+  // này vào `answerContext` vi phạm đúng nguyên tắc brief đặt ra: "không có corpus phù hợp ⇒ KHÔNG
+  // ghép KB nào cả, thà không có ngữ cảnh còn hơn ngữ cảnh SAI MIỀN" — ở đây là "lạc đề" bên trong
+  // ĐÚNG corpus, cùng một tinh thần. Ops KB (`retrieveKnowledge` nhánh dưới) LUÔN giữ top-1 dù yếu
+  // (`MIN_CITATION_SCORE=0.18`, để UI không rỗng) — route vscode KHÔNG áp dụng khoan dung đó: một
+  // câu hỏi lạc miền phải trả RỖNG, không phải "top-1 yếu nhất". Ngưỡng 0,5 đặt ở GIỮA hai cụm đo
+  // được (nhiễu ≤0,351 · đúng miền ≥0,7116) — biên rộng ở CẢ HAI phía. Đo bằng keyword-only (an toàn
+  // VRAM, xem B5) — CẬN DƯỚI của độ phân tách thật: khi embedding thật tham gia (0,72 trọng số),
+  // một câu hỏi lạc đề thường cách xa hơn nữa trong không gian ngữ nghĩa, nên ngưỡng này KHÔNG lỏng
+  // hơn thực tế sản xuất.
+  //
+  // ★★★ NỢ 1 (task-v10-report.md N1-B1/B2, `docs/…/2026-09-04-…-lo-trinh.md` §12 CÒN MỞ #1 nửa
+  // "câu ngoài miền vẫn nhận citation") — ngưỡng 0,5 TUYỆT ĐỐI ở trên KHÔNG tổng quát hoá được:
+  // đo THẬT trên bộ 11 ca (`vscode-route-n1-baseline.json`) cho thấy điểm của hai câu NGOÀI MIỀN
+  // (VSC-09 "C# SerialPort/Modbus RTU" top1=0,697 · VSC-10 "Node.js/MQTT/IoT dashboard" top1=0,560)
+  // CHỒNG LẤN thẳng vào dải điểm của 8 câu ĐÚNG MIỀN (0,649–0,734) — VSC-09 còn CAO HƠN top1 của
+  // VSC-08 (0,649). Không có một ngưỡng tuyệt đối/tương đối nào tách sạch hai lớp này bằng ĐIỂM
+  // SỐ đơn thuần mà không giết oan ít nhất một ca ĐANG ĐẠT — lý do: "Modbus RTU, baud rate, parity,
+  // stop bits" (VSC-09) và "module"/CPU (VSC-10, khớp keyword với tiêu đề "…CPU Module…") là từ
+  // vựng THẬT xuất hiện dày trong chương truyền thông nối tiếp của chính các tài liệu PLC — không
+  // phải nhiễu embedding ngẫu nhiên, mà là chồng lấn ngữ nghĩa thật giữa "hỏi VỀ giao thức" và
+  // "hỏi giao thức TỪ GÓC NHÌN một ngôn ngữ lập trình". ⇒ Sửa bằng tín hiệu KHÁC hẳn điểm số: câu
+  // hỏi phải tự nêu được MỘT hãng/dòng sản phẩm cụ thể (`detectProgrammingVendors`, đã có sẵn từ
+  // Việc 7) thì trích dẫn vendor_manual mới được giữ, bất kể điểm — đúng ý chủ dự án đã xác nhận:
+  // "câu hỏi không thuộc miền tài liệu hãng ⇒ không gắn trích dẫn nào". `detectedVendors` đã tính
+  // Ở TRÊN (dùng chung với `vendorFilter`) — không tính lại, không gọi thêm lần hai.
+  //
+  // ★ NHÁNH KIA đã đo: cả 8 ca ĐẠT của bộ 11 ca đều tự nêu tên hãng/dòng sản phẩm trong câu hỏi
+  // (kể cả VSC-02/VSC-07 — chỉ ĐẠT được điều kiện này SAU KHI thêm alias "MELSEC"/"GX Works"/
+  // "QJ71" vào `VENDOR_ALIAS_PATTERNS.mitsubishi` ở trên, xem docblock cạnh đó) — cổng này do đó
+  // KHÔNG hạ 8/8 ca đang ĐẠT (đo lại đủ 11 ca sau bản vá, xem báo cáo). Nhiều-hãng (`detectedVendors.
+  // length > 1`, `vendorFilter` = undefined, tìm khắp) vẫn đi qua cổng này bình thường — chỉ CHẶN
+  // khi KHÔNG hãng nào được nêu (`length === 0`), không đổi hành vi lọc-theo-hãng đã có.
+  //
+  // ★ KHÔNG áp dụng cho nhánh Studio (`MIN_STUDIO_CITATION_SCORE` bên dưới) — corpus Studio là tài
+  // liệu NGƯỜI DÙNG TỰ TẢI LÊN, có thể là bất kỳ chủ đề nào (kể cả C#/web họ tự nạp) — chặn theo
+  // "có hãng hay không" ở đó sẽ SAI mục đích tính năng cá nhân hoá đó.
+  const MIN_PROG_KB_CITATION_SCORE = 0.5;
+  const keepIdx =
+    vendorResult && vendorResult.enabled && detectedVendors.length > 0
+      ? vendorResult.citations
+          .map((c, i) => (c.score >= MIN_PROG_KB_CITATION_SCORE ? i : -1))
+          .filter((i) => i >= 0)
+      : [];
+
+  const citations: KbCitation[] = keepIdx.map((i) => {
+    const c = vendorResult!.citations[i];
+    return {
+      id: c.id,
+      sourcePath: c.sourcePath,
+      title:
+        typeof c.page === "number" ? `${c.docTitle} (${c.vendor}, p.${c.page})` : `${c.docTitle} (${c.vendor})`,
+      // sourceType riêng cho citation lập trình — phân biệt rõ với mọi sourceType của kho vận hành
+      // (doc/service/type/router/operational/…) nên FE/log không thể lẫn hai miền.
+      sourceType: "vendor_manual",
+      score: c.score,
+      // Không có route điều hướng client cho tài liệu hãng (khác citation vận hành đã biết
+      // ALLOWED_CLIENT_ROUTES) — null là trung thực, FE render chữ thường, không bấm được.
+      route: null,
+    };
+  });
+  const contexts = keepIdx.map((i) => vendorResult!.chunks[i]?.text ?? "");
+  const rerankMs = vendorResult?.rerankMs ?? null;
+
+  // ★★★ VIỆC 8 — trộn thêm Training Studio. Xem docblock lớn ngay phía trên hàm này cho B1/B2 đầy
+  // đủ (chữ ký `gatherStudioHits`, vì sao HAI ngưỡng riêng, vì sao KHÔNG sort chung).
+  if (canAccessStudioCorpus(context?.callerRole)) {
+    try {
+      const qVec = await embedQuestion(question);
+      if (qVec) {
+        const { gatherStudioHits } = await import("./aiLocalKnowledgeStudio");
+        const studioHits = await gatherStudioHits(qVec, topK);
+        // ★★★ B2 — KHÔNG dùng MIN_CITATION_SCORE=0,18 của nhánh web (đã THỬ, đã ĐO SỐNG, đã BÁC
+        // BỎ — xem docblock lớn phía trên hàm này): 0,18 mã hoá triết lý "giữ top-1 dù yếu" của
+        // nhánh web, ngược triết lý "lạc miền ⇒ rỗng" đã tuyên bố cho route vscode. Ngưỡng RIÊNG,
+        // đặt giữa hai cụm ĐO ĐƯỢC trên chính không gian mxbai của Studio (nhiễu ≤0,4040 · đúng
+        // miền ≥0,7303, N=1 câu hỏi thật — mẫu mỏng, xem CÒN MỞ trong báo cáo). ★ R1 2026-09-23: đo lại
+        // 38 đúng / 51 nhiễu trên hai corpus ⇒ 0,44 (số đo ở docblock của hằng).
+        for (const h of studioHits) {
+          if (!(h.score >= MIN_STUDIO_CITATION_SCORE)) continue;
+          citations.push({
+            id: `studio:${h.corpus}:${h.id}`,
+            sourcePath: h.sourceRef,
+            title: h.sourceRef,
+            sourceType: "studio",
+            score: h.score,
+            route: null,
+            origin: "studio",
+          });
+          contexts.push(h.text);
+        }
+      }
+    } catch {
+      // fail-safe: nhánh Studio hỏng KHÔNG được làm rớt phần vendor đã tính xong ở trên.
+    }
+  }
+
+  if (citations.length === 0) return empty();
+
+  const top1 = citations[0]?.score ?? 0;
+  const top2 = citations[1]?.score ?? 0;
+  const confidence = clamp01((top1 + top2) / 1.6);
+
+  return {
+    question,
+    intent: "general",
+    language,
+    entities: [],
+    confidence,
+    citations,
+    contexts,
+    rerankMs,
+  };
+}
+
 export async function retrieveKnowledge(
   question: string,
   topK = 5,
   context?: KbQueryContext,
+  opts?: KbRetrieveOptions,
 ): Promise<KbRetrieveResult> {
+  // ★★★ VIỆC 1 — xem docblock của `retrieveProgrammingKnowledgeForVscode` ngay phía trên. Đặt Ở
+  // ĐÂY, trước `ensureDataLoaded()`, để route vscode không chạm kho vận hành một byte nào. Đường
+  // WEB (context?.route !== "vscode") rơi thẳng xuống logic cũ, KHÔNG đổi một dòng hành vi.
+  if (context?.route === "vscode") {
+    return retrieveProgrammingKnowledgeForVscode(question, topK, context);
+  }
   const data = ensureDataLoaded();
   const tokens = tokenize(question);
-  const intent = classifyIntent(question);
+  // ★★★ VIỆC 2 (tách miền lập trình/vận hành, xem docblock lớn cạnh `KHONG_TOOL_VSCODE`/
+  // `streamAnswer` — cùng đợt vá) — route "vscode" KHÔNG được chấm bằng các regex `*_INTENT` của
+  // `classifyIntent` (LIST_INTENT_RE/DEFINITION_RE/troubleshoot/architecture/technical — ĐỀU là
+  // heuristic soạn cho câu hỏi VẬN HÀNH). Đây là gốc rễ SỰ CỐ 3 đã đo (§5.1 tài liệu trên): dòng
+  // "Liệt kê một thư mục:" trong giáo cụ khớp `LIST_INTENT_RE` ⇒ ép MỌI câu hỏi VSCODE thành
+  // intent:"list" ⇒ `getSystemPromptForRole` ép khuôn `VI_LIST_FORMAT`. Cùng lớp: "lời"/"lỗi" sau bỏ
+  // dấu ép `intent:"troubleshoot"` (nguyên nhân Cmd+K chỉ hiện thẻ duyệt 1/5, §5.4). Ép cứng
+  // "general" ở ĐÚNG một chỗ — nơi `intent` được TÍNH, không phải một bản vá riêng cho từng regex —
+  // vô hiệu hoá CẢ SÁU regex `*_INTENT` cho route vscode CÙNG LÚC, và bất kỳ regex mới nào thêm vào
+  // `classifyIntent` sau này cũng tự động không chạm được route vscode (không cần nhớ vá lại nơi
+  // này). `intent` chỉ dùng ở CUỐI hàm này (dòng trả về) — không ảnh hưởng chấm điểm/xếp hạng KB phía
+  // trên (đọc mã xác nhận: biến `intent` không xuất hiện lại cho tới `return`) — nên ép ở đây AN
+  // TOÀN, không đổi citations/confidence. Đường WEB (context?.route !== "vscode") giữ NGUYÊN
+  // `classifyIntent(question)` — không đổi một dòng hành vi.
+  const intent: KbIntent = context?.route === "vscode" ? "general" : classifyIntent(question);
   const language = resolveLanguage(question, context);
   const entities = extractEntities(question);
 
@@ -1466,15 +2843,32 @@ export async function retrieveKnowledge(
   // but produce a CORRUPT cosine similarity, so keyword-only retrieval is safer.
   const embedModelMatches = computeEmbedModelMatches(data.corpusEmbedModel);
   const qVec = embedModelMatches ? await embedQuestion(question) : null;
+  // ★ PDCA vòng 9 — bản dịch Anh: điểm = MAX(câu gốc, bản dịch) cho cosine và từ khoá (chỉ NÂNG đoạn khớp chữ Anh).
+  const cauHoiDich = await dichTruyVan(question, language);
+  const tokensDich = cauHoiDich ? tokenize(cauHoiDich) : null;
+  const qVecDich = cauHoiDich && embedModelMatches ? await embedQuestion(cauHoiDich) : null;
 
-  const scored = data.embeddings.map((emb) => {
+  // doc69 B3 (Wave 5) — feedback-derived re-ranking signal. Flag-gated + fail-safe:
+  // when disabled (default) this is a single boolean check and feedbackNetRatings
+  // stays an empty Map, so feedbackWeight below is 1 for every source — the score
+  // formula is BYTE-IDENTICAL to before this task. loadFeedbackNetRatings() itself
+  // never throws (table-absent/DB-error/no-DB all degrade to an empty map).
+  const feedbackRerankOn = isFeedbackRerankEnabled();
+  const feedbackNetRatings = feedbackRerankOn ? await loadFeedbackNetRatings() : EMPTY_FEEDBACK_MAP;
+
+  // ★ doc 79 · TRỤC 1 (D) — thu hẹp kho TRƯỚC khi chấm điểm (xem `KbRetrieveOptions`).
+  const khoHepLai = (opts?.sourcePathPrefixes ?? []).length > 0;
+  const khoXet = locKhoTheoTienTo(data.embeddings, opts?.sourcePathPrefixes);
+  const scored = khoXet.map((emb) => {
     const chunk = data.chunksById.get(emb.id);
     if (!chunk) {
       return { emb, chunk: null as KbChunk | null, semantic: 0, keyword: 0, score: 0 };
     }
 
-    const semantic = qVec ? cosine(qVec, emb.embedding) : 0;
-    const keywordRaw = keywordScore(chunk, tokens, entities);
+    const semantic = qVec ? Math.max(cosine(qVec, emb.embedding), qVecDich ? cosine(qVecDich, emb.embedding) : 0) : 0;
+    const keywordRaw = tokensDich
+      ? Math.max(keywordScore(chunk, tokens, entities), keywordScore(chunk, tokensDich, entities))
+      : keywordScore(chunk, tokens, entities);
     const keyword = Math.tanh(keywordRaw / 15);
     const baseScore = qVec ? semantic * 0.72 + keyword * 0.28 : keyword;
     // Cycle-3: tilt ranking toward VN-language sources for VN questions (and
@@ -1486,11 +2880,13 @@ export async function retrieveKnowledge(
     // artefact docs. Without this, large noisy reports (I18N_AUDIT_REPORT,
     // SYSTEM_AUDIT_REPORT) outrank the targeted feature MDs because they
     // happen to contain many literal UI strings.
-    const typeWeight =
-      emb.sourceType === "feature" ? 1.18 :
-      emb.sourceType === "domain" ? 1.08 :
-      emb.sourceType === "doc" ? 0.90 :
-      1.0;
+    //
+    // ★ G4-B — bảng nay ở `./aiKbSourceWeights` và ĐÃ THÊM hai hạng vốn không có tên trong đó:
+    //   `operational` (162 thẻ vận hành, trước rơi về 1,00 — thấp hơn `domain`) và `playbook`
+    //   (6 quy trình ứng cứu sự cố, hạng MỚI). `devJournalWeight` hạ `docs/superpowers/**` +
+    //   `docs/ECOSYSTEM/**` (46% toàn kho là nhật ký phiên agent + thiết kế nội bộ).
+    const typeWeight = sourceTypeWeight(emb.sourceType);
+    const journalWeight = devJournalWeight(emb.sourcePath);
     // C3a — small boost for chunks whose source path matches a feature hinted
     // by the current route, so on-page questions surface page-relevant KB.
     // Kept gentle (×1.12) so it nudges ties without overriding real relevance.
@@ -1498,10 +2894,76 @@ export async function retrieveKnowledge(
       routeFeatures.length > 0 && routeFeatures.some((f) => emb.sourcePath.toLowerCase().includes(f))
         ? 1.12
         : 1.0;
-    const score = baseScore * langWeight * typeWeight * routeWeight;
+    // doc69 B3 (Wave 5) — light curation nudge from accumulated feedback votes on
+    // this exact sourcePath. computeFeedbackWeight is BOUNDED (±5%, see
+    // aiKbFeedbackSignal.ts) — deliberately smaller than the semantic weights
+    // above (±8–18%) so feedback tunes, never dominates. 1 (no-op) when the flag
+    // is off, no feedback exists for this source, or the signal failed to load.
+    const feedbackWeight = feedbackRerankOn
+      ? computeFeedbackWeight(feedbackNetRatings.get(emb.sourcePath) ?? 0)
+      : 1;
+    const score = baseScore * langWeight * typeWeight * journalWeight * routeWeight * feedbackWeight;
 
     return { emb, chunk, semantic, keyword, score };
   });
+
+  // ★★★ Sau R1 (eval Training Studio, 2026-09-23) — tài liệu người dùng nạp (kho Studio) nay vào
+  // CÙNG MỘT thang điểm và CÙNG MỘT đường xếp hạng với kho hệ thống, TRƯỚC sort/dedupe/rerank.
+  //
+  // VÌ SAO (đo, không suy): bản cũ chấm Studio bằng cosine THUẦN rồi nối vào SAU khi kho hệ thống đã
+  // xếp hạng xong bằng HYBRID (0,72·ngữ nghĩa + 0,28·từ khoá × trọng số nguồn), rồi sort chung hai con
+  // số không cùng đơn vị. Eval R1 (`kb_eval_runs` #5, corpus st4i-may-aoi, 30 câu vàng): đoạn Studio
+  // ĐÚNG nằm top‑5 corpus ở 97 % câu nhưng chỉ tới trích dẫn cuối ở **20 %** — ví dụ T06, đoạn đúng
+  // cosine 0,582 thua năm đoạn `alerts.md` lạc đề hybrid 0,64–0,71; 9/30 câu không kho nào đưa đúng
+  // nguồn. Hai thang không có phép quy đổi nào đã đo ⇒ sửa bằng cách cho Studio đi QUA CÙNG công thức
+  // (cùng qVec, cùng `keywordScore`, cùng trọng số ngôn ngữ/loại/nhật ký/route), chứ không dựng một
+  // hệ số quy đổi bịa. Hệ quả: dedupe theo nguồn, reranker (nếu bật) và luật MIN_CITATION_SCORE áp
+  // cho Studio Y HỆT kho hệ thống — không còn khối "trộn sau" với sort/trim/tính-lại-confidence riêng.
+  //
+  // `semantic` của Studio = điểm `searchCorpus` — cosine của CHÍNH qVec này với vector đã nạp bằng
+  // `generateEmbeddings` (cùng `GGUF_EMBED_MODEL` với `embedQuestion`), tức cùng không gian với
+  // `semantic` hệ thống khi `embedModelMatches` (điều kiện đã có: qVec null ⇒ nhánh này không chạy).
+  // Loại nguồn "studio" chưa có trong SOURCE_TYPE_WEIGHTS ⇒ DEFAULT_TYPE_WEIGHT 1,0 — không tự đặt
+  // ưu tiên chưa đo.
+  //
+  // Cổng AN NINH giữ nguyên chỗ cũ (Task 6 · doc 79 TRỤC 1 D): `canAccessStudioCorpus` fail-closed và
+  // `khoHepLai` ⇒ không lấy Studio; mọi lỗi nhánh Studio ⇒ kết quả hệ thống nguyên vẹn.
+  if (qVec && !khoHepLai && canAccessStudioCorpus(context?.callerRole)) {
+    try {
+      const { gatherStudioHits } = await import("./aiLocalKnowledgeStudio");
+      const studioHits = await gatherStudioHits(qVec, topK);
+      for (const h of studioHits) {
+        const chunk: KbChunk = {
+          id: `studio:${h.corpus}:${h.id}`,
+          sourceType: "studio",
+          sourcePath: h.sourceRef,
+          title: h.sourceRef,
+          text: h.text,
+        };
+        const semantic = Number.isFinite(h.score) ? h.score : 0;
+        const keyword = Math.tanh(keywordScore(chunk, tokens, entities) / 15);
+        const routeWeight =
+          routeFeatures.length > 0 && routeFeatures.some((f) => chunk.sourcePath.toLowerCase().includes(f)) ? 1.12 : 1.0;
+        const score =
+          (semantic * 0.72 + keyword * 0.28) *
+          sourceLanguageWeight(chunk.sourcePath, language) *
+          sourceTypeWeight(chunk.sourceType) *
+          devJournalWeight(chunk.sourcePath) *
+          routeWeight;
+        const emb = {
+          id: chunk.id,
+          sourceType: chunk.sourceType,
+          sourcePath: chunk.sourcePath,
+          title: chunk.title,
+          textLength: chunk.text.length,
+          embedding: [] as number[],
+        } as unknown as (typeof khoXet)[number];
+        scored.push({ emb, chunk, semantic, keyword, score });
+      }
+    } catch {
+      // Nhánh Studio hỏng KHÔNG được làm hỏng trợ lý — xếp hạng chỉ còn kho hệ thống.
+    }
+  }
 
   // Drop low-relevance noise citations (kept the top-1 even if weak so the UI
   // never shows an empty list, but the LLM prompt only sees the strong ones).
@@ -1585,6 +3047,8 @@ export async function retrieveKnowledge(
   // `deduped` when the flag is OFF). The reranker draws its candidate pool from it
   // so injected neighbours can compete for the final top-K.
   let topSlice: typeof pool;
+  // G0 phần C — null = tầng rerank không chạy cho lượt này (KHÁC 0 = chạy và nhanh).
+  let rerankMs: number | null = null;
   if (isRerankerEnabled() && pool.length > 1) {
     const poolSize = Math.max(finalK, Number(process.env.RAG_RERANKER_POOL ?? 20));
     const rerankPool = pool.slice(0, poolSize);
@@ -1594,7 +3058,15 @@ export async function retrieveKnowledge(
       text: r.chunk ? r.chunk.text : "",
       score: r.score,
     }));
+    // Đo TẠI ĐIỂM GỌI: đây là thời gian mà lượt hỏi này thật sự mất vì rerank
+    // (bao gồm cả `await import("./aiGgufEngine")` lần đầu), khác với con số nội
+    // bộ của aiReranker. `Date.now()` là đủ độ phân giải cho thang chục–nghìn ms
+    // và không đòi thêm import nào ở module này.
+    const tRerank = Date.now();
     const reranked = await rerank(question, candidates, finalK);
+    rerankMs = Date.now() - tRerank;
+    // Log CÓ CẤU TRÚC — chỉ số đếm và ms, KHÔNG câu hỏi, KHÔNG nội dung chunk.
+    console.log(`[aiLocalKnowledge] rerank pool=${candidates.length} topK=${finalK} rerankMs=${rerankMs}`);
     const byId = new Map(rerankPool.map((r) => [r.emb.id, r]));
     const reordered = reranked
       .map((rr) => byId.get(rr.candidate.id))
@@ -1613,12 +3085,27 @@ export async function retrieveKnowledge(
     title: r.emb.title,
     sourceType: r.emb.sourceType,
     score: Number(r.score.toFixed(6)),
+    // doc69 B3 (Wave 5) — deep-link route, resolved ONLY for a KNOWN operational
+    // card whose route passes the ALLOWED_CLIENT_ROUTES whitelist; null otherwise
+    // (doc/feature/domain sources have no client viewer route today — the FE
+    // renders those as plain, non-clickable text, honest about what's real).
+    route: resolveCitationRoute({ sourceType: r.emb.sourceType, sourcePath: r.emb.sourcePath }),
+    ...(r.emb.sourceType === "studio" ? { origin: "studio" as const } : {}),
   }));
 
   const contexts = ranked.map((r) => (r.chunk ? r.chunk.text : ""));
-  const top1 = ranked[0]?.score ?? 0.25;
-  const top2 = ranked[Math.min(1, ranked.length - 1)]?.score ?? 0.2;
-  const confidence = clamp01((top1 + top2) / 1.6);
+  // Studio đã nằm TRONG `ranked` (xếp hạng chung ở trên) ⇒ confidence đọc đúng mảng cuối (I-1: một hit
+  // Studio mạnh đứng đầu phải NÂNG confidence). Bất biến "chốt cuối, mục 1" giữ nguyên: thêm một nguồn
+  // KHÔNG được làm confidence TỤT — công thức nhân đôi top1 khi chỉ còn 1 mục nên một hit Studio yếu
+  // chen vào vị trí 2 sẽ kéo số xuống ⇒ lấy max với confidence của riêng phần hệ thống trong `ranked`
+  // (Studio chỉ đẩy ra những mục hệ thống YẾU NHẤT, nên phần đó không bao giờ thấp hơn trước khi trộn).
+  const confidenceCua = (ds: typeof ranked) =>
+    clamp01(((ds[0]?.score ?? 0.25) + (ds[Math.min(1, ds.length - 1)]?.score ?? 0.2)) / 1.6);
+  const heThongTrongRanked = ranked.filter((r) => r.emb.sourceType !== "studio");
+  const confidence =
+    heThongTrongRanked.length === ranked.length
+      ? confidenceCua(ranked)
+      : Math.max(confidenceCua(ranked), heThongTrongRanked.length > 0 ? confidenceCua(heThongTrongRanked) : 0);
 
   return {
     question,
@@ -1628,11 +3115,26 @@ export async function retrieveKnowledge(
     confidence: Number(confidence.toFixed(4)),
     citations,
     contexts,
+    rerankMs,
+    ...(cauHoiDich ? { cauHoiDich } : {}),
   };
 }
 
-function getCacheKey(question: string, topK: number, userRole: UserRole = "engineer"): string {
-  return `${userRole}|${normalizeText(question)}|k=${topK}`;
+// Final-fix round, Task 6 (SECURITY) — `studioEligible` added to the cache key. WHY: this cache
+// is keyed on `userRole`, the "tone" role (worker/engineer/manager/it_admin — see this file's
+// own `UserRole`, NOT the RBAC role), and MULTIPLE distinct real RBAC roles collapse onto the
+// SAME tone value (mapAppRoleToAiRole in aiChatRouter.ts: "quality_inspector" AND "maintenance"
+// AND "engineer" all map to tone "engineer"). Without this, a Studio-ineligible caller
+// (e.g. real role "maintenance") could receive a CACHED KbAnswerResult that an eligible caller
+// (real role "engineer", same tone "engineer", same question) produced moments earlier WITH
+// Studio citations baked into `answer`/`citations`/`contexts` — bypassing the gate entirely via
+// the cache, independent of and in addition to the retrieveKnowledge()-level fix. Incorporating
+// eligibility into the key means an ineligible and an eligible caller can never share a cache
+// entry, regardless of tone-role collisions.
+// Exported for direct unit testing of the collision fix above (kept internal-use elsewhere —
+// answerQuestion/streamAnswer are this module's only real callers).
+export function getCacheKey(question: string, topK: number, userRole: UserRole = "engineer", studioEligible = false): string {
+  return `${userRole}|${normalizeText(question)}|k=${topK}|studio=${studioEligible ? 1 : 0}`;
 }
 
 export async function answerQuestion(
@@ -1644,19 +3146,32 @@ export async function answerQuestion(
   execCtx?: ToolExecContext,
 ): Promise<KbAnswerResult> {
   const userLevel = rolToUserLevel(userRole);
-  const key = getCacheKey(question, topK, userRole);
+  // Final-fix round, Task 6 (SECURITY) — `kbContext` carries the REAL RBAC role
+  // (execCtx.user.role, the authenticated session — never the `userRole` "tone" param above,
+  // which is spoofable on POST .../ask) into every retrieveKnowledge() call below, so the
+  // Studio-corpus gate (canAccessStudioCorpus, inside retrieveKnowledge) sees who's actually
+  // asking. Deliberately a SEPARATE variable from `context`: `context` still goes to
+  // tryExecuteTool() unchanged (read-tool routing has nothing to do with this gate).
+  const kbContext: KbQueryContext | undefined = execCtx?.user?.role
+    ? { ...context, callerRole: execCtx.user.role }
+    : context;
+  const studioEligible = canAccessStudioCorpus(execCtx?.user?.role);
+  const key = getCacheKey(question, topK, userRole, studioEligible);
   const now = Date.now();
 
   // Step 1 — Try a real-time tool first. Tool answers must NOT be cached
   // because they reflect live database state.
-  const toolExec = await tryExecuteTool(question, context, execCtx);
+  // G2-C — `tryExecuteToolLoop` uỷ quyền NGUYÊN VẸN cho `tryExecuteTool` khi cờ
+  // `AI_TOOL_LOOP_ENABLED` TẮT (mặc định) ⇒ đường mặc định không đổi một byte nào.
+  const toolExec = await tryExecuteToolLoop(question, context, execCtx);
   const toolResult = toolExec.result;
+  const loop = toolExec.loop;
   const clarifyMessage = toolExec.decision.clarifyMessage ?? null;
 
   // GĐ2 — write-tool matched: short-circuit with the confirm card (propose) or
   // a localized RBAC refusal. No LLM, no cache.
   if (toolExec.pendingAction || toolExec.denied) {
-    const retrieve = await retrieveKnowledge(question, topK, context);
+    const retrieve = await retrieveKnowledge(question, topK, kbContext);
     const message = toolExec.denied
       ? toolExec.denied.message
       : toolExec.pendingAction!.summary;
@@ -1676,8 +3191,17 @@ export async function answerQuestion(
   // Short-circuit: if intent classifier asked for clarification, return it
   // immediately without invoking the LLM. This avoids hallucinated answers
   // for questions like "lô của tôi sao rồi?" that lack a concrete identifier.
+  // ★ PDCA 2026-09-24 — câu hỏi lại NHƯỜNG tài liệu khi truy hồi đủ tin cậy (xem `ai/hoiLaiSauTaiLieu.ts`): 18/79 câu có
+  //   đáp án trong tài liệu từng bị chặn ở đây. Dưới ngưỡng ⇒ hỏi lại như cũ.
+  let retrieveSanNS: KbRetrieveResult | null = null;
+  let retrieveHoiLaiNS: KbRetrieveResult | null = null;
   if (!toolResult && clarifyMessage) {
-    const retrieve = await retrieveKnowledge(question, topK, context);
+    const r0 = await retrieveKnowledge(question, topK, kbContext);
+    if (nhuongChoTaiLieu(r0.confidence)) retrieveSanNS = r0;
+    else retrieveHoiLaiNS = r0;
+  }
+  if (clarifyMessage && retrieveHoiLaiNS) {
+    const retrieve = retrieveHoiLaiNS;
     const followUpSuggestions = buildFollowUpSuggestions(retrieve.intent, retrieve.language);
     return {
       ...retrieve,
@@ -1699,20 +3223,81 @@ export async function answerQuestion(
     }
   }
 
-  const retrieve = await retrieveKnowledge(question, topK, context);
+  const retrieve = retrieveSanNS ?? (await retrieveKnowledge(question, topK, kbContext));
 
   let provider: "ollama" | "extractive" | "tool" = "extractive";
   let answer = buildExtractiveAnswer(question, retrieve);
+  // ★ PDCA vòng 5 — câu lạc đề cùng miền (không tool, không vscode) ⇒ từ chối chuẩn thay vì để model suy diễn.
+  //   Chỉ xét khi đường cũ SẼ gọi model (confidence ≥ 0.30) — dưới ngưỡng đó đường cũ đã từ chối, tự kiểm là phí.
+  const lacDeNS =
+    !toolResult && kbContext?.route !== "vscode" && retrieve.confidence >= 0.30 && (await laCauLacDe(question, retrieve, execCtx?.user?.id));
 
   // Step 2 — If we have live data, short-circuit when the tool's textSummary
   // is already substantial (Lever 8.B). LLM augmentation adds 10-15s latency
   // but rarely improves an already-grounded numeric/live-data answer. We
   // attach a brief KB nav hint footer to satisfy the "hasNavPath" rubric.
   // Fall back to LLM augmentation only when textSummary is thin.
+  // G2-C — khối đưa vào prompt: nhiều vòng thì lấy khối ĐÃ BỌC của vòng lặp, một vòng thì bọc
+  // tại đây bằng CHÍNH cặp primitive đó. `toolInj` là rủi ro tiêm để nói thật ở cuối.
+  const bocMotVong = bocDuLieuTool(vanBanChoModel(toolResult), `tool:${toolExec.decision.tool ?? "?"}`);
+  const toolPromptBlock = loop?.promptBlock ?? bocMotVong.block;
+  const toolInjRisk: InjectionRisk = loop ? (loop.injection ? "high" : "none") : bocMotVong.risk;
+
   if (toolResult) {
     const summary = toolResult.textSummary || "";
     const TOOL_SHORTCIRCUIT_MIN = Number(process.env.KB_TOOL_SHORTCIRCUIT_MIN ?? 150);
-    if (summary.length >= TOOL_SHORTCIRCUIT_MIN) {
+    // ⚠ Đường tắt "textSummary đã đủ dài thì khỏi gọi LLM" CHỈ đúng cho MỘT vòng. Với nhiều vòng,
+    // giá trị nằm ở phép TỔNG HỢP giữa các vòng (Pareto + nguyên nhân), mà đường tắt thì trả về
+    // NGUYÊN VĂN kết quả vòng CUỐI — tức vứt bỏ đúng thứ vòng lặp vừa đi lấy.
+    const daDaBuoc = (loop?.rounds.length ?? 0) > 1;
+    // ★ G3-C VIỆC 2 — CỔNG THỨ TÁM, đứng TRƯỚC phép so độ dài (xem `toolKhongCoGiDeNoi`):
+    // tool đã nói bằng trạng thái có cấu trúc rằng nó không có gì ⇒ trả thẳng câu ấy, KHÔNG
+    // đưa cho LLM diễn giải một cái rỗng.
+    const khongCoGiDeNoi = toolKhongCoGiDeNoi(toolResult, loop?.rounds.length ?? 1);
+    /**
+     * ★★★ G2b (audit 2026-09-21 · P11) — phép quyết định NAY LÀ MỘT HÀM THUẦN CÓ LƯỚI.
+     * Xem `ai/toolDuongTat.ts` cho lý lẽ đầy đủ. Tóm tắt: `read_file`/`grep_repo`/`list_files`
+     * mang NGỮ CẢNH (đầu vào cho lượt sinh chữ), không mang CÂU TRẢ LỜI — trả thẳng đầu ra của
+     * chúng là nhầm vai, và đã đo được hậu quả: 6/9 tác vụ lập trình khó trả về **0 khối mã**,
+     * câu trả lời là nguyên văn một tệp của chính repo.
+     * Tên tool lấy ở vòng CUỐI CÓ DỮ LIỆU (đúng vòng sinh ra `toolResult`), không lấy vòng 1.
+     */
+    const tenToolCuoi =
+      [...(loop?.rounds ?? [])].reverse().find((v) => v.summary != null)?.tool ??
+      toolExec.decision.tool ??
+      null;
+    const qdDuongTat = quyetDinhDuongTat({
+      tenTool: tenToolCuoi,
+      doDaiSummary: summary.length,
+      daDaBuoc,
+      khongCoGiDeNoi,
+      tranDoDai: TOOL_SHORTCIRCUIT_MIN,
+    });
+    // ★ PDCA #4 (2026-09-24) — tool RỖNG + câu hỏi QUY TẮC (`ai/cauHoiQuyTac.ts`, 0 câu sống lọt trên tập nhãn) + tài liệu
+    //   tin cậy ⇒ trả lời THEO TÀI LIỆU (LLM KHÔNG thấy khối tool rỗng), dòng tool giữ làm ghi chú. Model từ chối ⇒ như cũ.
+    //   ★ Vòng 6: câu VÙNG MƠ HỒ (không dấu hiệu nào) ⇒ hỏi model một từ SONG/TAILIEU (`laCauHoiTaiLieuMoHo`).
+    const quyTacTaiLieuNS =
+      khongCoGiDeNoi &&
+      nhuongChoTaiLieu(retrieve.confidence) &&
+      !toolExec.pendingAction &&
+      (laCauHoiQuyTac(question) || (await laCauHoiTaiLieuMoHo(question, execCtx?.user?.id)));
+    let daTraLoiTheoTaiLieu = false;
+    if (quyTacTaiLieuNS) {
+      try {
+        const theoTaiLieu = await generateWithOllama(question, retrieve, history, userLevel, undefined, execCtx?.user?.id, kbContext?.route);
+        const ghep = ghepQuyTacVoiDuLieuSong(theoTaiLieu, summary, laTuChoi);
+        if (ghep) {
+          provider = "ollama";
+          answer = ghep;
+          daTraLoiTheoTaiLieu = true;
+        }
+      } catch {
+        /* rơi về đường tool như cũ */
+      }
+    }
+    if (daTraLoiTheoTaiLieu) {
+      // đã có câu trả lời theo tài liệu
+    } else if (qdDuongTat.dungDuongTat) {
       provider = "tool";
       answer = appendNavHint(summary, retrieve);
     } else {
@@ -1722,7 +3307,9 @@ export async function answerQuestion(
           retrieve,
           history,
           userLevel,
-          summary,
+          toolPromptBlock,
+          execCtx?.user?.id,
+          kbContext?.route,
         );
         if (llmAnswer) {
           provider = "ollama";
@@ -1740,9 +3327,24 @@ export async function answerQuestion(
     // `force=true` so this fires even when intent=general (typical for
     // P2 operator-experienced live-data questions).
     answer = appendHintsFooter(answer, retrieve, true);
-  } else if (retrieve.confidence >= 0.30) {
+  } else if (lacDeNS) {
+    provider = "extractive";
+    answer = cauTuChoiChuan(retrieve.language); // câu hỏi lại (nếu có) được nối ở bước chung bên dưới
+  } else if (
+    retrieve.confidence >= 0.30 ||
+    (kbContext?.route === "vscode" && !looksLikeLiveFactoryDataQuestion(question))
+  ) {
+    // ★★★ TASK V11 — NHÁNH KIA của `streamAnswer`'s `shouldUseLlm` (xem docblock lớn cạnh
+    // `vscodeNoDocsGuidance`). `/api/ai/local-kb/ask` (route KHÔNG dùng bởi extension hiện tại —
+    // `vscode-extension/src` chỉ gọi `/stream`, xem `dongSse.ts`) có CÙNG hình dạng lỗi: citations
+    // rỗng do cổng vendor (task-v10) ⇒ confidence 0 ⇒ nhánh này trước đây bị bỏ qua hoàn toàn cho
+    // route vscode. Vá phòng thủ CHO CẢ hai đường vào (không chỉ đường người dùng thật đang đi)
+    // để một điểm gọi `/ask` trong tương lai không tái dính đúng lớp lỗi này. Cùng gate
+    // `looksLikeLiveFactoryDataQuestion` với `streamAnswer` — xem docblock cạnh
+    // `LOOKS_LIKE_LIVE_FACTORY_DATA_RE` cho lý do (đo được: không gate ⇒ model bịa API/config vận
+    // hành không có thật cho câu hỏi vận hành 0-citation).
     try {
-      const llmAnswer = await generateWithOllama(question, retrieve, history, userLevel);
+      const llmAnswer = await generateWithOllama(question, retrieve, history, userLevel, undefined, execCtx?.user?.id, kbContext?.route);
       if (llmAnswer) {
         provider = "ollama";
         answer = llmAnswer;
@@ -1764,6 +3366,35 @@ export async function answerQuestion(
     answer = appendHintsFooter(answer, retrieve);
   }
 
+  // doc69 G2-7 — "ask→do": attach a 1-tap navigate action when this is a how-to
+  // answer grounded in a KNOWN, whitelisted operational card. Fail-safe (null on
+  // any non-match); see aiOperationalGrounding.ts for the full gating.
+  const clientAction = resolveOperationalNavigate(
+    { intent: retrieve.intent, language: retrieve.language, citations: retrieve.citations },
+    { execCtx },
+  );
+
+  // ★ G2-C — BA CÂU NÓI THẬT, nối vào CUỐI câu trả lời (client hiện chỉ render `answer`, nên một
+  // trường DTO mới sẽ vô hình; nối vào chuỗi là cách duy nhất người dùng thật sự THẤY).
+  answer = themCanhBao(answer, retrieve.language, {
+    toolError: toolExec.error ?? null,
+    toolName: toolExec.decision.tool ?? null,
+    toolInjRisk,
+    kbInjRisk: quetNguCanhKb(retrieve),
+    loop,
+  });
+
+  // ★ HOÁ ĐƠN TRUY XUẤT NGUỒN GỐC cho số liệu sống. Dựng SAU `themCanhBao` để dòng
+  // nguồn nằm ở cuối cùng, và TRƯỚC `extractStructuredResponse` để cấu trúc phản ánh
+  // đúng chuỗi cuối. `null` (⇒ không nối gì, `dataCitations: []`) khi không có tool
+  // hoặc khi tool trả kèm `note` — cửa fail-closed chống rò RBAC.
+  const dataCitation = buildDataCitation(toolExec.decision.tool, toolResult, toolExec.decision.args);
+  answer = themChanNguonSoLieu(answer, dataCitation, retrieve.language);
+  // ★ PDCA 2026-09-24 — đã nhường tài liệu mà model TỪ CHỐI ⇒ vẫn đưa câu hỏi lại (mã máy/lô) như trước.
+  if (retrieveSanNS) answer += phanHoiLaiSauTuChoi(answer, clarifyMessage);
+  // Phép đo, KHÔNG phải cổng: đánh dấu số không tìm được nguồn để báo cáo/quan sát.
+  const numberCheck = toolResult ? reconcileAnswerNumbers(answer, toolResult) : null;
+
   const result: KbAnswerResult = {
     ...retrieve,
     answer,
@@ -1773,6 +3404,12 @@ export async function answerQuestion(
     toolResult: toolResult ?? null,
     toolName: toolExec.decision.tool ?? null,
     structured: extractStructuredResponse(answer),
+    clientAction,
+    toolLoop: loop
+      ? { rounds: loop.rounds.length, stop: loop.stop, tokensUsed: loop.tokensUsed, elapsedMs: loop.elapsedMs }
+      : null,
+    dataCitations: dataCitation ? [dataCitation] : [],
+    numberCheck,
   };
 
   // Cache only stable (non-tool, no-history) answers.
@@ -1804,9 +3441,24 @@ export type StreamEvent =
   | { type: "client_action"; toolName: string | null; clientAction: ClientActionDirective }
   // GĐ3b — multi-step agentic orchestrator events (forward-compat; the primary
   // wiring is via the tRPC aiAgent router response, not this stream).
-  | { type: "agent_plan"; sessionId: string; plan: { steps: Array<{ kind: string; tool?: string | null; rationale?: string }> } }
-  | { type: "agent_step"; sessionId: string; index: number; kind: string; status: string; actionId?: string | null }
+  /**
+   * G2-C — TRẠNG THÁI TRUNG GIAN của vòng lặp tool. Người dùng phải thấy nó đang làm gì thay vì
+   * ngồi nhìn màn hình đứng im tới 20 s. THÊM MỚI và không thay thế gì: một consumer SSE cũ
+   * `switch` theo `type` sẽ bỏ qua sự kiện lạ (client thuộc quyền một agent khác trong đợt này).
+   */
+  | { type: "tool_loop"; round: number; phase: "dang_goi" | "xong" | "dung"; toolName: string | null; elapsedMs: number; stop?: string }
   | { type: "token"; token: string }
+  /**
+   * ★ B7/F2 (2026-09-22) — SỐ ĐO MỘT LƯỢT GỌI MODEL trên đường lập trình, phát NGAY SAU lượt ấy đóng
+   * luồng (trước `done`). Sự kiện RIÊNG, thuần bổ sung: consumer SSE cũ bỏ qua ô/kiểu lạ mà không đổi
+   * hành vi. `tokensOut` GỘP cả suy luận; `tokensReasoning` vắng = không đếm được (không biết ≠ 0).
+   */
+  | ({ type: "usage"; luot: LoaiLuot } & DungLuotModel)
+  /**
+   * ★ F1 (2026-09-22) — MỘT MẢNH SUY LUẬN của model, phát SỐNG trong lúc nghĩ (trước mọi `token` của lượt). Đã che bí
+   * mật. Client hiện ở bảng "model đang nghĩ", KHÔNG nối vào câu trả lời, KHÔNG lưu phiên. Consumer cũ bỏ qua kiểu lạ.
+   */
+  | { type: "reasoning"; token: string }
   | {
       type: "done";
       provider: "ollama" | "extractive" | "tool";
@@ -1821,6 +3473,16 @@ export type StreamEvent =
        */
       degraded?: boolean;
       degradedReason?: string;
+      /**
+       * R2 phần B — `answer` là văn bản đã được SỬA TẤT ĐỊNH sau khi stream (vd bổ sung `using` C#);
+       * client phải THAY văn bản đã tích luỹ bằng `answer` (khác `degraded`: KHÔNG phải từ chối/thoái hoá).
+       */
+      answerRevised?: boolean;
+      /** ★ Hoá đơn nguồn dữ liệu — THÊM MỚI, thuần bổ sung: consumer SSE cũ đọc
+       *  `done` theo từng ô sẽ bỏ qua ô lạ mà không đổi hành vi. */
+      dataCitations?: KbDataCitation[];
+      /** ★ Phép đo đối chiếu số — CHỈ QUAN SÁT (xem `KbAnswerResult.numberCheck`). */
+      numberCheck?: NumberReconciliation | null;
     };
 
 export async function* streamAnswer(
@@ -1831,19 +3493,104 @@ export async function* streamAnswer(
   context?: KbQueryContext,
   execCtx?: ToolExecContext,
 ): AsyncGenerator<StreamEvent> {
+  // ★★★ doc 79 · TRỤC 1 (B) — NHÁNH LẬP TRÌNH RIÊNG, đứng TRƯỚC MỌI logic vận hành.
+  // Ràng buộc cứng nhất (doc 79 (C)): `codingMode` vắng/false ⇒ KHÔNG một byte nào dưới đây đổi. Nhánh
+  // này KHÔNG chạm `tryExecuteToolLoop`/`retrieveKnowledge`/persona vận hành/cache — nó là một đường
+  // đi hoàn toàn khác, nên bật/tắt cờ là một phép đo A/B sạch.
+  if (context?.codingMode === true) {
+    // ★★★ doc 81 · VIỆC 1 — `history` ĐÃ có sẵn ở đây từ trước; thứ thiếu là một tham số để nhận nó.
+    yield* streamCodingAnswer(question, context, execCtx, history);
+    return;
+  }
   const userLevel = rolToUserLevel(userRole);
-  const key = getCacheKey(question, topK, userRole);
+  // Final-fix round, Task 6 (SECURITY) — same reasoning as answerQuestion() above: `kbContext`
+  // carries the REAL RBAC role into retrieveKnowledge()'s Studio gate; `context` (unchanged)
+  // still drives tryExecuteTool().
+  const kbContext: KbQueryContext | undefined = execCtx?.user?.role
+    ? { ...context, callerRole: execCtx.user.role }
+    : context;
+  const studioEligible = canAccessStudioCorpus(execCtx?.user?.role);
+  const key = getCacheKey(question, topK, userRole, studioEligible);
   const now = Date.now();
 
   // Real-time tool first (live DB state — must NOT be cached).
-  const toolExec = await tryExecuteTool(question, context, execCtx);
+  // ★★★ PDCA vòng 8 — gate `route === "vscode"` nay BÓC giáo cụ TRƯỚC khi phân loại thay vì chặn mù
+  // toàn bộ (xem docblock lớn cạnh `tachThanKhoiGiaoCuVscode`/`VSCODE_GIAO_THUC_PREFIX` phía trên
+  // hàm này cho gốc rễ đo được + lý do). Bóc được (đường LOCAL không-Cmd+K) ⇒ chạy vòng tool THẬT
+  // trên PHẦN CÂU HỎI THẬT (`than`). Không bóc được (Cmd+K, hình dạng lạ) ⇒ giữ NGUYÊN hành vi chặn
+  // của vòng 5 (`KHONG_TOOL_VSCODE`). Đường web (route khác "vscode") chạy `question` đầy đủ, y hệt
+  // trước vòng 8 — cùng một hàm `chayVongLapToolPhatTienDo`, không có hai bản sao trôi khỏi nhau.
+  //
+  // ★★★ Đợt H / TASK H6 (`.superpowers/sdd/2026-09-03-vscode-extension-dot-g/task-h6-report.md`) —
+  // GỐC RỄ ĐO ĐƯỢC (RAG-hijack): vòng 8 chỉ bóc giáo cụ cho NHÁNH TOOL (`chayVongLapToolPhatTienDo`
+  // ở trên), nhưng `classifyIntent`/`retrieveKnowledge` bên dưới vẫn nhận `question` ĐẦY ĐỦ (giáo
+  // cụ + câu hỏi thật). Đọc đúng `VSCODE_GIAO_THUC_PREFIX` (docblock lớn phía trên): dòng "Liệt kê
+  // một thư mục:" khớp NGUYÊN VĂN `LIST_INTENT_RE` (`/(bao nhiêu|liệt kê|...)/i`) ⇒ `classifyIntent`
+  // trả `"list"` cho MỌI câu hỏi LOCAL không-Cmd+K, bất kể câu hỏi thật là gì — kéo theo
+  // `getSystemPromptForRole` ép `VI_LIST_FORMAT` ("(1) Tổng số mục... (2) Danh sách... (3) Trích
+  // nguyên văn... (4) Nguồn gốc") và `retrieveKnowledge` chấm điểm keyword/embedding trên khối văn
+  // bản NHIỄU (dài hơn câu hỏi thật hàng chục lần) thay vì câu hỏi thật, khiến citations luôn trôi
+  // về các tài liệu mô tả chính hệ thống (`knowledge/features/**`). ĐO SỐNG (không đoán): POST thật
+  // `/api/ai/local-kb/stream` với `context.route:"vscode"`, câu hỏi thật = "Từ giờ trở đi, hãy LUÔN
+  // dùng tiếng Việt trang trọng..." (không hề chứa "liệt kê") ⇒ `meta.intent:"list"`,
+  // `meta.confidence:1`, 5/5 citation đều `knowledge/features/**`, câu trả lời mở đầu ĐÚNG khuôn
+  // "(1) Tổng số mục được liệt kê: 10 (2) Danh sách đầy đủ..." — khớp 100% mẫu H4/H5 đã đo (script
+  // `<scratchpad>/h6-b1-root-cause-live.cjs`, thô `h6-b1-root-cause-live-raw.json`).
+  //
+  // Vá: dùng `thanThat` (câu hỏi THẬT, đã bóc) làm đầu vào cho `retrieveKnowledge` (phân loại ý
+  // định + chấm điểm truy hồi KB) khi bóc được — KHÔNG đổi `question` truyền cho
+  // `generateWithOllamaStream` bên dưới (giữ NGUYÊN giáo cụ trong prompt cuối, vì đó là cách DUY
+  // NHẤT model thấy được hướng dẫn phát khối `avi-tool` — cắt hẳn `question` ở đó sẽ xoá luôn khả
+  // năng tuân thủ giao thức, một lỗi NẶNG HƠN triệu chứng đang vá). Không bóc được (Cmd+K, hình dạng
+  // lạ) hoặc route khác "vscode" ⇒ `cauHoiTruyVan = question` (giữ NGUYÊN, byte-đúng hành vi cũ).
+  //
+  // ═══════════════════════════════════════════════════════════════════════════════════════════════
+  // ★★★ VIỆC 2 (tách miền lập trình/vận hành, `docs/superpowers/specs/2026-09-04-ai-local-danh-gia-
+  // hien-trang-va-lo-trinh.md` §5.1/§8) — route "vscode" KHÔNG BAO GIỜ gọi
+  // `chayVongLapToolPhatTienDo`/`tryExecuteToolLoop` NỮA, kể cả khi bóc giáo cụ THÀNH CÔNG.
+  // ═══════════════════════════════════════════════════════════════════════════════════════════════
+  // Đây là điểm khác với vòng 8 (`thanThat !== null` từng CHẠY vòng tool THẬT trên phần câu hỏi đã
+  // bóc — xem docblock lớn phía trên cho lý lẽ CŨ). Bốn sự cố cùng họ đã đo được (§5.1: intentClassifier
+  // hiểu nhầm giáo cụ · "kỹ"/"kỳ" gộp dấu trúng `get_ng_compare` · "Liệt kê một thư mục:" ép intent
+  // "list" · `performance`/`quality`/`yield` trúng trigger OEE) đều bắt nguồn từ CÙNG MỘT chỗ: bộ
+  // chọn tool vận hành (`intentClassifier.ts`, `handlers.ts`/`analyticsTools.ts::*.triggers`) là hạ
+  // tầng DÙNG CHUNG cho hai miền hoàn toàn khác nhau, và vá từng trigger (N1, task trước) là chữa
+  // TRIỆU CHỨNG — bất kỳ trigger MỚI nào thêm vào MỘT trong 54 tool nhà máy vẫn có thể trúng lại
+  // đúng lớp lỗi này lần thứ năm. Việc 2 chữa GỐC: route vscode không đi vào bộ chọn NÀY nữa, bất kể
+  // câu hỏi thật (`thanThat`) trông "vận hành" tới đâu — miền lập trình có đường riêng (giáo cụ
+  // `avi-tool` CLIENT-SIDE của extension: `doc_tep`/`liet_ke`/`grep`, không đụng `tryExecuteToolLoop`
+  // của server một chút nào — xem docblock ngay phía trên hàm `streamAnswer`).
+  //
+  // ★ ĐÁNH ĐỔI ĐÃ BIẾT (nói thẳng, không giấu): vòng 8 đo được rằng một câu hỏi vận hành THẬT gõ
+  // thẳng vào panel LOCAL (vd "OEE hôm nay bao nhiêu") từng được tool trả lời ĐÚNG. Bản vá này XOÁ
+  // khả năng đó cho MỌI câu hỏi qua route vscode — đây là hệ quả TRỰC TIẾP, CÓ CHỦ ĐÍCH của chỉ đạo
+  // "tách hẳn hai miền" (§8 Việc 2 của tài liệu trên): panel lập trình không còn là một cửa phụ vào
+  // dữ liệu vận hành nữa. Nếu người dùng thật sự cần hỏi OEE từ VSCode, đường đúng là mở trang web.
+  //
+  // `tachThanKhoiGiaoCuVscode`/`cauHoiTruyVan`/`laVscodeDaBocGiaoThuc` VẪN giữ nguyên — chúng phục vụ
+  // MỤC ĐÍCH KHÁC (H6: cho `retrieveKnowledge`/`shouldUseLlm` thấy câu hỏi thật, không phải giáo cụ),
+  // không phải bộ chọn tool. Đường WEB (route khác "vscode") không đổi MỘT DÒNG nào ở đây.
+  let toolExec: TryExecuteToolLoopResult;
+  let cauHoiTruyVan = question;
+  let laVscodeDaBocGiaoThuc = false;
+  if (context?.route === "vscode") {
+    const thanThat = tachThanKhoiGiaoCuVscode(question);
+    if (thanThat !== null) {
+      cauHoiTruyVan = thanThat;
+      laVscodeDaBocGiaoThuc = true;
+    }
+    toolExec = KHONG_TOOL_VSCODE;
+  } else {
+    toolExec = yield* chayVongLapToolPhatTienDo(question, context, execCtx);
+  }
   const toolResult = toolExec.result;
+  const loop = toolExec.loop;
   const clarifyMessage = toolExec.decision.clarifyMessage ?? null;
 
   // GĐ2/GĐ3a — write-tool, client-tool, or refusal matched: emit meta +
   // (pending_action | client_action | refusal token) + done.
   if (toolExec.pendingAction || toolExec.clientAction || toolExec.denied) {
-    const retrieve = await retrieveKnowledge(question, topK, context);
+    const retrieve = await retrieveKnowledge(cauHoiTruyVan, topK, kbContext);
     yield {
       type: "meta",
       intent: retrieve.intent,
@@ -1870,13 +3617,29 @@ export async function* streamAnswer(
       followUpSuggestions: [],
       answer: message,
       structured: extractStructuredResponse(message),
+      // ⚠ `streamAnswer` có **BỐN** đường phát `done`. Ba đường ngắn (đây, làm-rõ, và
+      // cache) đều KHÔNG THỂ mang số liệu sống — write/client-tool và từ chối RBAC trả
+      // `result: null`, hai đường kia có `!toolResult` theo điều kiện nhánh. Vẫn khai
+      // `[]`/`null` TƯỜNG MINH ở cả ba: một consumer đọc `done.dataCitations` mà nhận
+      // `undefined` không phân biệt được "không có nguồn" với "trường chưa nối dây" —
+      // và đó đúng là cách một đường thoát bị bỏ quên trốn thoát khỏi lưới.
+      dataCitations: [],
+      numberCheck: null,
     };
     return;
   }
 
   // Short-circuit clarification (mirrors answerQuestion).
+  // ★ PDCA 2026-09-24 — nhường tài liệu khi truy hồi đủ tin cậy (`ai/hoiLaiSauTaiLieu.ts`); truy hồi đã làm được TÁI DÙNG.
+  let retrieveSan: KbRetrieveResult | null = null;
+  let retrieveHoiLai: KbRetrieveResult | null = null;
   if (!toolResult && clarifyMessage) {
-    const retrieve = await retrieveKnowledge(question, topK, context);
+    const r0 = await retrieveKnowledge(cauHoiTruyVan, topK, kbContext);
+    if (nhuongChoTaiLieu(r0.confidence)) retrieveSan = r0;
+    else retrieveHoiLai = r0;
+  }
+  if (clarifyMessage && retrieveHoiLai) {
+    const retrieve = retrieveHoiLai;
     yield {
       type: "meta",
       intent: retrieve.intent,
@@ -1892,6 +3655,8 @@ export async function* streamAnswer(
       followUpSuggestions: buildFollowUpSuggestions(retrieve.intent, retrieve.language),
       answer: clarifyMessage,
       structured: extractStructuredResponse(clarifyMessage),
+      dataCitations: [],
+      numberCheck: null,
     };
     return;
   }
@@ -1908,6 +3673,12 @@ export async function* streamAnswer(
         confidence: v.confidence,
         citations: v.citations,
       };
+      // doc69 G2-7 — a cached answer carries the SAME grounded navigate action it
+      // was cached with (KbAnswerResult.clientAction), so repeat-asking a cached
+      // how-to question still shows the 1-tap button on the SSE path.
+      if (v.clientAction) {
+        yield { type: "client_action", toolName: null, clientAction: v.clientAction };
+      }
       yield { type: "token", token: v.answer ?? "" };
       yield {
         type: "done",
@@ -1916,12 +3687,18 @@ export async function* streamAnswer(
         followUpSuggestions: v.followUpSuggestions ?? [],
         answer: v.answer ?? "",
         structured: v.structured ?? extractStructuredResponse(v.answer ?? ""),
+        // Chuyển tiếp từ bản ghi cache thay vì gán cứng `[]`: cache CHỈ chứa lượt
+        // không-tool (điều kiện ghi ở cuối hàm), nên hôm nay hai cách cho cùng kết
+        // quả — nhưng nếu mai luật cache đổi, `?? []` vẫn nói đúng sự thật của bản
+        // ghi, còn `[]` cứng sẽ lặng lẽ xoá hoá đơn của một câu trả lời có số liệu.
+        dataCitations: v.dataCitations ?? [],
+        numberCheck: v.numberCheck ?? null,
       };
       return;
     }
   }
 
-  const retrieve = await retrieveKnowledge(question, topK, context);
+  const retrieve = retrieveSan ?? (await retrieveKnowledge(cauHoiTruyVan, topK, kbContext));
 
   yield {
     type: "meta",
@@ -1930,6 +3707,19 @@ export async function* streamAnswer(
     confidence: retrieve.confidence,
     citations: retrieve.citations,
   };
+
+  // doc69 G2-7 — "ask→do": attach a 1-tap navigate action when this is a how-to
+  // answer grounded in a KNOWN, whitelisted operational card. Resolved right
+  // after retrieval (depends only on intent + citations, not on the generated
+  // answer text) so the FE gets it as early as the explicit-command client_action
+  // path does. Fail-safe (null on any non-match); see aiOperationalGrounding.ts.
+  const groundedClientAction = resolveOperationalNavigate(
+    { intent: retrieve.intent, language: retrieve.language, citations: retrieve.citations },
+    { execCtx },
+  );
+  if (groundedClientAction) {
+    yield { type: "client_action", toolName: null, clientAction: groundedClientAction };
+  }
 
   if (toolResult) {
     yield {
@@ -1945,17 +3735,97 @@ export async function* streamAnswer(
   // the streamed garbage is discarded and a clean fallback is sent on `done`.
   let streamDegraded = false;
   let streamDegradedReason: string | undefined;
+  /** ★ G2b — lý do lượt sinh chữ hỏng; `undefined` = không hỏng. Dùng để NÓI THẬT, không nuốt. */
+  let loiLlmStream: string | undefined;
 
-  const shouldUseLlm = !!toolResult || retrieve.confidence >= 0.30;
+  // ★ G3-C VIỆC 2 — CỔNG THỨ TÁM trên đường STREAM. Cùng vị từ, cùng lý lẽ (xem
+  // `toolKhongCoGiDeNoi`). Một cổng an toàn chỉ áp cho `answerQuestion` mà bỏ `streamAnswer` là
+  // đúng lớp lỗi "lưới theo FILE, không theo ĐƯỜNG THOÁT" — và `/stream` mới là đường người dùng
+  // đi nhiều hơn. Chặn ở đây ⇒ khối fallback bên dưới trả `toolResult.textSummary` nguyên văn với
+  // `provider: "tool"`, tức đúng thứ cổng này muốn: nói thật, không diễn giải cái rỗng.
+  //
+  // ★★★ TASK H6 — `laVscodeDaBocGiaoThuc` bỏ qua NGƯỠNG ĐỘ TIN KB (không đổi cổng G3-C). `retrieve`
+  // giờ chấm điểm trên `cauHoiTruyVan` (câu hỏi THẬT, xem trên) nên độ tin có thể xuống dưới 0,30
+  // cho một câu hỏi meta (vd "hãy nhớ điều này") không hề khớp tài liệu KB nào — ĐÚNG, vì nó không
+  // phải câu hỏi tri thức. Nhưng đường LOCAL không-Cmd+K LUÔN cần LLM chạy để MODEL TỰ THẤY được
+  // giáo cụ `avi-tool` (nằm trong `question` đầy đủ truyền cho `generateWithOllamaStream` bên dưới,
+  // KHÔNG đổi) và tự quyết định có phát khối giao thức hay không — chặn LLM ở đây vì "độ tin KB
+  // thấp" sẽ xoá luôn cơ hội đó (rơi thẳng về `buildGracefulFallback`/`buildExtractiveAnswer`,
+  // không bao giờ chạm model), tệ hơn hẳn triệu chứng RAG-hijack đang vá. Không áp cho Cmd+K/route
+  // khác "vscode" (`laVscodeDaBocGiaoThuc` mặc định `false`) — cổng giữ NGUYÊN hành vi cũ ở đó.
+  //
+  // ★★★ TASK V11 — REGRESSION task-v10 (`49e12418`): thêm `context?.route === "vscode"` làm điều
+  // kiện thứ TƯ. Gốc rễ đo được (xem docblock lớn cạnh `vscodeNoDocsGuidance`): route vscode không
+  // có tool loop (KHONG_TOOL_VSCODE, Việc 2) và câu hỏi thô không qua giáo cụ
+  // (`laVscodeDaBocGiaoThuc=false`, đúng hình dạng bộ đo/gọi HTTP trực tiếp) ⇒ cổng
+  // `detectedVendors.length>0` (task-v10, `retrieveProgrammingKnowledgeForVscode`) trả
+  // `citations=[]`/`confidence=0` cho MỌI câu hỏi ngoài miền tài liệu hãng — kể cả câu hỏi lập
+  // trình phổ thông model THỪA SỨC trả lời — nên LLM KHÔNG BAO GIỜ được gọi, rơi thẳng
+  // `buildGracefulFallback`. "Không trích dẫn" cho route vscode KHÔNG có nghĩa "không trả lời
+  // được" — luôn thử LLM, để prompt (`vscodeNoDocsGuidance`) tự quyết định trả lời bằng kiến thức
+  // chung hay giữ nguyên từ chối (câu hỏi vận hành). AN TOÀN: `toolKhongCoGiDeNoi` vẫn giữ nguyên
+  // ở vế `&&` sau — route vscode luôn có `toolResult=null` nên vị từ đó luôn `false` (không chặn).
+  //
+  // ★ `&& !looksLikeLiveFactoryDataQuestion(cauHoiTruyVan)` — KHÔNG chỉ dựa vào prompt rule 6 để
+  // giữ ranh giới (xem docblock cạnh `LOOKS_LIKE_LIVE_FACTORY_DATA_RE`): một câu hỏi khớp gate này
+  // KHÔNG được phép tới LLM khi 0 citation, dù rule 6 CÓ nói "luật 2 vẫn áp dụng" — model đã đo
+  // được là KHÔNG tuân theo ranh giới đó trong câu chữ (ca `VSC-C1-operational-leak-control` bịa
+  // API/config không có thật). Gate ở ĐÂY (trước khi gọi LLM) là lớp phòng thủ CƠ CHẾ, không phải
+  // chỉ dựa vào model đọc đúng chỉ dẫn.
+  const shouldUseLlm =
+    (!!toolResult ||
+      retrieve.confidence >= 0.30 ||
+      laVscodeDaBocGiaoThuc ||
+      (context?.route === "vscode" && !looksLikeLiveFactoryDataQuestion(cauHoiTruyVan))) &&
+    !toolKhongCoGiDeNoi(toolResult, loop?.rounds.length ?? 1);
 
-  if (shouldUseLlm) {
+  // G2-C — cùng phép bọc như `answerQuestion` (xem `bocDuLieuTool`).
+  const bocMotVong = bocDuLieuTool(vanBanChoModel(toolResult), `tool:${toolExec.decision.tool ?? "?"}`);
+  const toolPromptBlock = loop?.promptBlock ?? bocMotVong.block;
+  const toolInjRisk: InjectionRisk = loop ? (loop.injection ? "high" : "none") : bocMotVong.risk;
+
+  // ★ PDCA #4 (2026-09-24) — cùng luật với `answerQuestion`: tool RỖNG + câu QUY TẮC + tài liệu tin cậy ⇒ trả lời theo tài
+  //   liệu, LLM KHÔNG thấy khối tool; ĐỆM toàn bộ (không phát từng mảnh) để một lời từ chối không lọt ra trước khi rơi về dòng tool.
+  const quyTacTaiLieu =
+    !!toolResult &&
+    toolKhongCoGiDeNoi(toolResult, loop?.rounds.length ?? 1) &&
+    nhuongChoTaiLieu(retrieve.confidence) &&
+    (laCauHoiQuyTac(cauHoiTruyVan) || (await laCauHoiTaiLieuMoHo(cauHoiTruyVan, execCtx?.user?.id)));
+  if (quyTacTaiLieu) {
+    try {
+      let dem = "";
+      for await (const piece of generateWithOllamaStream(question, retrieve, history, userLevel, undefined, execCtx?.user?.id, kbContext?.route)) {
+        if (piece) dem += piece;
+      }
+      const g = guardGeneratedText(dem);
+      const ghep = g.degraded ? null : ghepQuyTacVoiDuLieuSong(dem, toolResult!.textSummary ?? "", laTuChoi);
+      if (ghep) {
+        accumulated = ghep;
+        provider = "ollama";
+        yield { type: "token", token: ghep };
+      }
+    } catch (e) {
+      console.error(`[aiLocalKnowledge] lượt trả lời theo tài liệu (câu quy tắc, tool rỗng) HỎNG: ${(e as Error)?.message ?? e}`);
+    }
+  }
+
+  // ★ PDCA vòng 5 — câu lạc đề cùng miền (không tool, không vscode) ⇒ từ chối chuẩn, KHÔNG gọi model trả lời.
+  if (shouldUseLlm && !accumulated && !toolResult && context?.route !== "vscode" && (await laCauLacDe(cauHoiTruyVan, retrieve, execCtx?.user?.id))) {
+    accumulated = cauTuChoiChuan(retrieve.language);
+    provider = "extractive";
+    yield { type: "token", token: accumulated };
+  }
+
+  if (shouldUseLlm && !accumulated) {
     try {
       const iter = generateWithOllamaStream(
         question,
         retrieve,
         history,
         userLevel,
-        toolResult?.textSummary,
+        toolPromptBlock,
+        execCtx?.user?.id,
+        kbContext?.route,
       );
       // FE-W0.3 (doc 46 §2.3) — incremental degenerate-loop guard: re-check the
       // accumulated text every STREAM_GUARD_STEP_CHARS once past the min, and BREAK
@@ -1990,14 +3860,36 @@ export async function* streamAnswer(
         }
         if (accumulated.trim()) provider = "ollama";
       }
-    } catch {
-      // fall through to extractive/tool fallback below
+    } catch (e) {
+      /**
+       * ★★★ G2b (audit 2026-09-21 · P11) — `catch {}` TRỐNG Ở ĐÂY LÀ MỘT LỖI, KHÔNG PHẢI SỰ CẨN THẬN.
+       * Đo được: lượt sinh chữ hỏng, lỗi bị nuốt **tuyệt đối im lặng** (không một dòng stderr), rồi
+       * khối dự phòng bên dưới trả `toolResult.textSummary` — tức **nguyên văn một tệp của repo** —
+       * ra cho người dùng như thể đó là câu trả lời. 6/9 tác vụ lập trình khó đi đúng đường này.
+       * Repo có bất biến "im lặng là nói dối"; khối này đang vi phạm chính nó.
+       */
+      loiLlmStream = (e as { message?: string } | null)?.message ?? String(e);
+      console.error(`[aiLocalKnowledge] lượt sinh chữ HỎNG (stream): ${loiLlmStream}`);
     }
   }
 
   // Fallback when LLM was skipped or produced nothing.
   if (!accumulated.trim()) {
-    if (toolResult) {
+    /**
+     * ★★★ G2b — KHÔNG trả đầu ra của tool MANG NGỮ CẢNH ra như câu trả lời.
+     * `read_file`/`grep_repo`/`list_files` mang ĐẦU VÀO cho lượt sinh chữ, không mang CÂU TRẢ LỜI.
+     * Khi lượt sinh chữ hỏng, sự thật là "chưa trả lời được" — không phải "đây là tệp của bạn".
+     * Xem `ai/toolDuongTat.ts`. Tool dữ-liệu-sống (`get_today_stats`…) giữ NGUYÊN hành vi cũ.
+     */
+    const tenToolFb =
+      [...(loop?.rounds ?? [])].reverse().find((v) => v.summary != null)?.tool ??
+      toolExec.decision.tool ??
+      null;
+    const toolLaNguCanh = !!tenToolFb && TOOL_MANG_NGU_CANH.has(tenToolFb);
+    if (toolResult && toolLaNguCanh) {
+      provider = "extractive";
+      accumulated = cauHongSinhChu(retrieve.language, tenToolFb, loiLlmStream);
+    } else if (toolResult) {
       provider = "tool";
       accumulated = toolResult.textSummary;
     } else if (retrieve.citations.length === 0) {
@@ -2018,6 +3910,42 @@ export async function* streamAnswer(
     yield { type: "token", token: delta };
   }
 
+  // ★ G2-C — BA CÂU NÓI THẬT trên đường STREAM cũng vậy, qua CHÍNH `themCanhBao` mà đường
+  // non-stream dùng. Phát dưới dạng token để nó nằm ngay trong luồng chữ người dùng đang đọc.
+  const withWarn = themCanhBao(accumulated, retrieve.language, {
+    toolError: toolExec.error ?? null,
+    toolName: toolExec.decision.tool ?? null,
+    toolInjRisk,
+    kbInjRisk: quetNguCanhKb(retrieve),
+    loop,
+  });
+  if (withWarn !== accumulated) {
+    const delta = withWarn.slice(accumulated.length);
+    accumulated = withWarn;
+    yield { type: "token", token: delta };
+  }
+
+  // ★ HOÁ ĐƠN TRUY XUẤT NGUỒN GỐC — ĐƯỜNG STREAM. Cùng hàm, cùng luật fail-closed như
+  // `answerQuestion`. Một cổng chỉ áp cho đường non-stream là đúng lớp lỗi "lưới theo
+  // FILE, không theo ĐƯỜNG THOÁT" — và `/stream` mới là đường người dùng đi nhiều hơn.
+  // Phát dưới dạng token để dòng nguồn nằm ngay trong luồng chữ đang đọc.
+  const dataCitation = buildDataCitation(toolExec.decision.tool, toolResult, toolExec.decision.args);
+  const withNguon = themChanNguonSoLieu(accumulated, dataCitation, retrieve.language);
+  if (withNguon !== accumulated) {
+    const delta = withNguon.slice(accumulated.length);
+    accumulated = withNguon;
+    yield { type: "token", token: delta };
+  }
+  // ★ PDCA 2026-09-24 — đã nhường tài liệu mà model TỪ CHỐI ⇒ vẫn đưa câu hỏi lại (mã máy/lô) như trước.
+  if (retrieveSan) {
+    const them = phanHoiLaiSauTuChoi(accumulated, clarifyMessage);
+    if (them) {
+      accumulated += them;
+      yield { type: "token", token: them };
+    }
+  }
+  const numberCheck = toolResult ? reconcileAnswerNumbers(accumulated, toolResult) : null;
+
   const followUpSuggestions = buildFollowUpSuggestions(
     retrieve.intent,
     retrieve.language,
@@ -2035,6 +3963,10 @@ export async function* streamAnswer(
       toolResult: null,
       toolName: null,
       structured: extractStructuredResponse(accumulated),
+      // doc69 G2-7 — persist the grounded navigate action (if any) so a cached
+      // replay of this question (see the cached-answer branch above) still
+      // yields client_action.
+      clientAction: groundedClientAction,
     };
     answerCache.set(key, {
       expiresAt: now + ANSWER_CACHE_TTL_MS,
@@ -2049,6 +3981,8 @@ export async function* streamAnswer(
     followUpSuggestions,
     answer: accumulated,
     structured: extractStructuredResponse(accumulated),
+    dataCitations: dataCitation ? [dataCitation] : [],
+    numberCheck,
     // FE-W0.3 (doc 46 §2.3) — signal the client to REPLACE the streamed tokens
     // with `answer` when the LLM output was rejected as a degenerate loop.
     ...(streamDegraded ? { degraded: true, degradedReason: streamDegradedReason } : {}),
@@ -2085,6 +4019,31 @@ export function warmUpOllamaModels(): void {
       }
       // Keep the embedder warm too (RAG retrieval needs it resident).
       await embedQuestion("warmup").catch(() => {});
+      /**
+       * ★★★ doc 79 · TRỤC 1 (D) · VÁ LIVE 2026-08-20 — **LÀM ẤM CẢ ĐƯỜNG, KHÔNG CHỈ EMBEDDER.**
+       *
+       * Triệu chứng live: lượt hỏi ĐẦU TIÊN sau khi khởi động chết ở
+       * `G2-A truy hồi chỉ mục repo QUÁ HẠN 20000 ms` ⇒ mất ngữ cảnh, model bịa.
+       * Chẩn đoán: `embedQuestion("warmup")` ở trên **chỉ** nạp model nhúng. Nó KHÔNG chạm hai thứ
+       * đắt còn lại, và cả hai đều nằm trên đường truy hồi:
+       *   • `ensureDataLoaded()` — parse `knowledge/embeddings.jsonl` **162 MB** (7.582 vector);
+       *   • **ngữ cảnh rerank gguf** — đo thật `ctxLoadMs = 11.278–13.743 ms`.
+       * Cộng lại thì lượt NGUỘI vượt 20 s trong khi lượt ẤM chỉ 245–283 ms.
+       *
+       * ⇒ Chạy MỘT lượt `retrieveKnowledge` thật (topK=1) để cả ba thứ cùng ấm. Sau đó hạn giờ
+       *   20 s không còn là thứ người dùng gặp — đó là cách chữa ĐÚNG, khác hẳn nới hạn giờ (nới chỉ
+       *   biến "mất ngữ cảnh sau 20 s" thành "chờ 45 s rồi vẫn mất").
+       * ⚠ Chạy SAU `warmModel(deep)` có chủ ý: thứ tự nạp VRAM (model lớn trước, model nhỏ sau) giữ
+       *   nguyên như doc 48 R1 đã chốt. Best-effort, nuốt mọi lỗi: một máy chưa dựng chỉ mục
+       *   (`Knowledge artifacts missing`) vẫn phải khởi động bình thường.
+       */
+      try {
+        const t0 = Date.now();
+        await retrieveKnowledge("warmup", 1);
+        console.log(`[aiLocalKnowledge] làm ấm đường truy hồi (chỉ mục + embedder + rerank): ${Date.now() - t0} ms`);
+      } catch (e) {
+        console.warn("[aiLocalKnowledge] làm ấm đường truy hồi KHÔNG xong (bỏ qua):", (e as Error)?.message ?? e);
+      }
     })().catch(() => {});
     // Legacy Ollama QA warm — a no-op unless USE_LEGACY_OLLAMA (nothing listens on the GGUF path).
     void fetch(`${OLLAMA_BASE_URL}/api/generate`, {
@@ -2239,3 +4198,22 @@ export async function ingestKnowledgeRecord(rec: IngestRecord): Promise<boolean>
 export function ingestKnowledgeRecordAsync(rec: IngestRecord): void {
   void ingestKnowledgeRecord(rec).catch(() => {});
 }
+
+// ══════════════════════════════════════════════════════════════════════════════════════════════
+// ★★★ 2026-08-23 · MỤC 2.4 — "ĐỌC TƯỜNG MINH" ≠ "CÂU CẦN SUY LUẬN"
+// ══════════════════════════════════════════════════════════════════════════════════════════════
+/**
+ * ★★★ 2026-08-23 (UX C2-ii) — `laCauCanSuyLuan` **DỌN NHÀ** sang
+ * `aiLocalTools/intentClassifier.ts` (docblock đầy đủ + phần MỞ RỘNG câu-hỏi-kết-cục ở đó).
+ *
+ * Vì sao dọn: vị từ nay còn gánh vai trọng tài cho `chanLenhKhiCauHoi` — bộ lọc chặn `run_command`
+ * trước một câu HỎI, đứng trong `chonToolLapTrinh` (`aiLocalTools/index.ts`). File ấy import ngược
+ * `aiLocalKnowledgeService` là một vòng tròn module. Re-export ở đây giữ NGUYÊN đường import của
+ * mọi điểm gọi cũ (`aiCodingDot02.stream.test.ts` §4 vẫn đo qua chính đường này).
+ */
+export { laCauCanSuyLuan } from "./aiLocalTools/intentClassifier";
+// ★ B8 — 61 khai báo đã chuyển sang `./aiLocalKnowledgeCoding.ts`; re-export để mọi người gọi/lưới cũ không đổi một dòng.
+export { NHAN_NGUON_DAU_RA_MAY, NHAN_NGUON_KET_QUA_TOOL, TRAN_KY_TU_DAU_RA_MAY, TRAN_KY_TU_KET_QUA_TOOL, bocDauRaMayChoLichSu, laYDinhSuaTep, laYDinhTaoTep } from "./aiLocalKnowledgeCoding";
+
+// ★ B8 — 13 khai báo đã chuyển sang `./aiLocalKnowledgeVongTool.ts`; re-export để mọi người gọi/lưới cũ không đổi một dòng.
+export { tachThanKhoiGiaoCuVscode } from "./aiLocalKnowledgeVongTool";

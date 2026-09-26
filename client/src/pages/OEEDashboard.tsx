@@ -1,10 +1,20 @@
 import { useState, useEffect, useRef, useCallback } from "react";
+import { cn } from "@/lib/utils";
+// doc 64 IA-10 S1 — truc pham vi ISA-95.
+import { useScope } from "@/components/patterns/ScopeFilterBar";
+import { useScopeWired } from "@/contexts/AssetScopeContext";
 import { Redirect } from "wouter";
 import { useTranslation } from 'react-i18next';
 import { trpc } from "@/lib/trpc";
 import { useEcosystemEvents } from "@/hooks/useEcosystemEvents";
 import { PageHeader } from "@/components/patterns";
+// doc 63 (AUD-09) — flag-gated E10 badge (own palette, distinct from PackML/alarm).
+import { E10StateBadge } from "@/components/patterns/isaStateBadges";
+import { isIsa101V2 } from "@/lib/hmiFlags";
 import { RelatedViews } from "@/components/RelatedViews";
+// ⚠ 2026-08-18 — câu rỗng TRUNG THỰC. Màn này ăn toàn mảng trần nên nhãn phạm vi phải tới
+// bằng `mqttClient.getScopeLabels` (xem docblock ở thủ tục ấy). MỘT nguồn câu chữ, không chép.
+import { ScopeEmptyNotice, ScopeAwareEmpty, scopeEmptyReasonOf } from "@/components/ScopeEmptyNotice";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -57,6 +67,7 @@ import {
   Pie
 } from "recharts";
 import { toast } from "sonner";
+import { toastTrpcError } from "@/lib/trpcErrors";
 import { chartColor, chartGridProps, chartAxisProps, chartTooltipStyle } from "@/components/patterns";
 
 interface OEEMetrics {
@@ -166,12 +177,30 @@ export function OEEDashboardContent() {
     reason: "",
   });
 
+  // doc 64 IA-10 S1 — máy từ trục phạm vi (header) tự chọn vào panel máy của trang.
+  // getAllOEE (lưới fleet) server chưa nhận scope — DEP-S2 (doc 64).
+  const { scope: assetScope } = useScope(["line", "machine"]);
+  useScopeWired();
+  useEffect(() => {
+    if (assetScope.machineId !== undefined) setSelectedMachine(assetScope.machineId);
+  }, [assetScope.machineId]);
+
   // Queries
   const { data: machines } = trpc.machine.list.useQuery();
   // doc 40 DEV-10 — auto-refresh mỗi 60s (trước đây chỉ cập nhật khi bấm Refresh).
-  const { data: allOEE, refetch: refetchOEE } = trpc.mqttClient.getAllOEE.useQuery(undefined, {
-    refetchInterval: 60_000,
-  });
+  const { data: allOEE, refetch: refetchOEE } = trpc.mqttClient.getAllOEE.useQuery(
+    // doc 64 IA-10 S2 — lưới fleet OEE lọc theo trục (server DEP-S2 đã nhận).
+    { machineId: assetScope.machineId, lineId: assetScope.lineId },
+    { refetchInterval: 60_000 },
+  );
+  // ★ LÝ DO phạm vi rỗng. `getAllOEE` trả MẢNG nên ba ô nhãn không qua được superjson
+  // (`withScopeLabels` đính chúng không-liệt-kê-được, CỐ Ý). Không có truy vấn nào khác trên màn
+  // này mang nhãn — `machine.list` cũng là mảng trần — nên phải hỏi riêng.
+  // ⚠ Đây KHÔNG phải "0 máy thì báo phạm vi rỗng": chỉ đổi câu khi máy chủ khai ĐÚNG mã
+  // `no_factory_assignment`. Một nhà máy thật sự chưa có máy nào báo OEE trong cửa sổ 24h vẫn
+  // nhận `null` ⇒ vẫn nói "chưa có dữ liệu". Hai lý do "0 máy" là HAI thứ khác nhau.
+  const { data: oeeScope } = trpc.mqttClient.getScopeLabels.useQuery();
+  const scopeEmptyReason = scopeEmptyReasonOf(oeeScope);
   const { data: machineOEE } = trpc.mqttClient.getMachineOEE.useQuery(
     { machineId: selectedMachine! },
     { enabled: !!selectedMachine }
@@ -235,7 +264,7 @@ export function OEEDashboardContent() {
       setShowCalculator(false);
     },
     onError: (error) => {
-      toast.error(error.message);
+      toastTrpcError(error);
     },
   });
 
@@ -245,7 +274,7 @@ export function OEEDashboardContent() {
       setShowDowntimeDialog(false);
     },
     onError: (error) => {
-      toast.error(error.message);
+      toastTrpcError(error);
     },
   });
 
@@ -421,7 +450,7 @@ export function OEEDashboardContent() {
         {/* Header */}
         <PageHeader
           icon={<Gauge className="h-5 w-5 sm:h-6 sm:w-6 text-primary" />}
-          title="OEE Dashboard"
+          title={t('oee.title', 'Bảng OEE')}
           description={t('oee.subtitle')}
           actions={
             <>
@@ -561,6 +590,11 @@ export function OEEDashboardContent() {
           }
         />
 
+        {/* ★ Dải phạm-vi-rỗng. Tự trả `null` khi phạm vi bình thường nên gọi vô điều kiện.
+            ⚠ Dải này KHÔNG đủ một mình — mắt đọc khối GẦN NHẤT chỗ đang nhìn, nên từng khối
+            rỗng bên dưới còn được bọc `ScopeAwareEmpty` riêng. */}
+        <ScopeEmptyNotice reason={scopeEmptyReason} />
+
         {/* U7 cross-links — OEE-focused view; the Command Center KPI strip + the
             device monitor give the wider live picture. */}
         <RelatedViews
@@ -574,25 +608,34 @@ export function OEEDashboardContent() {
         <div className="grid grid-cols-2 md:grid-cols-4 gap-2 sm:gap-4">
           <Card>
             <CardHeader className="p-3 sm:p-4 pb-2">
-              <CardTitle className="text-xs sm:text-sm font-medium flex items-center gap-1 sm:gap-2">
-                <Gauge className="h-3 w-3 sm:h-4 sm:w-4 text-info" />
+              <CardTitle className="text-xs sm:text-sm font-medium flex min-h-10 items-start gap-1 sm:gap-2">
+                <Gauge className="h-3 w-3 sm:h-4 sm:w-4 text-muted-foreground" />
                 <span className="hidden sm:inline">{t('oee.avgOee')}</span>
                 <span className="sm:hidden">{t('oee.avgOeeShort')}</span>
               </CardTitle>
             </CardHeader>
             <CardContent className="p-3 sm:p-4 pt-0">
               <div className="text-2xl sm:text-3xl font-bold">{avgOEE.toFixed(1)}%</div>
-              <Progress value={avgOEE} className="mt-2" />
+              {/* doc65 PRO-100: caption ĐỨNG TRƯỚC progress → hàng caption 4 card cùng độ cao
+                  (card này từng chèn progress giữa làm caption tụt ~16px so 3 card kia). */}
               <p className="text-xs text-muted-foreground mt-1">
-                {avgOEE >= 85 ? "World Class" : avgOEE >= 60 ? "Typical" : t('oee.needsImprovement')}
+                {/* doc65 V5: không phán xét khi CHƯA có dữ liệu — 0 máy giám sát ≠ "cần cải thiện" */}
+                {/* ⚠ 2026-08-18: và 0 máy VÌ PHẠM VI RỖNG ≠ "chưa có dữ liệu". Ô 0% này là thứ
+                    được chụp màn hình; để nó nói "chưa có dữ liệu" cho người 0 gán nhà máy là dạy
+                    họ rằng NHÀ MÁY KHÔNG CHẠY. `scopeEmptyReason` khác null mới đổi câu. */}
+                {!allOEE?.length
+                  ? (scopeEmptyReason ? t('common.scopeEmpty.badge') : t('oee.noData', 'Chưa có dữ liệu'))
+                  : avgOEE >= 85 ? t('oee.worldClass', 'Hàng đầu (≥85%)') : avgOEE >= 60 ? t('oee.typical', 'Trung bình (60–85%)') : t('oee.needsImprovement')}
               </p>
+              {/* doc65 V1: thanh tiến trình phải mang màu THEO NGƯỠNG — 0% mà thanh teal đầy là nói dối thị giác */}
+              <Progress value={avgOEE} className={cn("mt-1.5", avgOEE >= 85 ? "[&>div]:bg-success" : avgOEE >= 60 ? "[&>div]:bg-warning" : "[&>div]:bg-destructive")} />
             </CardContent>
           </Card>
 
           <Card>
             <CardHeader className="p-3 sm:p-4 pb-2">
-              <CardTitle className="text-xs sm:text-sm font-medium flex items-center gap-1 sm:gap-2">
-                <Activity className="h-3 w-3 sm:h-4 sm:w-4 text-success" />
+              <CardTitle className="text-xs sm:text-sm font-medium flex min-h-10 items-start gap-1 sm:gap-2">
+                <Activity className="h-3 w-3 sm:h-4 sm:w-4 text-muted-foreground" />
                 <span className="hidden sm:inline">{t('oee.machinesMonitored')}</span>
                 <span className="sm:hidden">{t('oee.machinesShort')}</span>
               </CardTitle>
@@ -607,15 +650,16 @@ export function OEEDashboardContent() {
 
           <Card>
             <CardHeader className="p-3 sm:p-4 pb-2">
-              <CardTitle className="text-xs sm:text-sm font-medium flex items-center gap-1 sm:gap-2">
-                <Clock className="h-3 w-3 sm:h-4 sm:w-4 text-warning" />
+              <CardTitle className="text-xs sm:text-sm font-medium flex min-h-10 items-start gap-1 sm:gap-2">
+                <Clock className="h-3 w-3 sm:h-4 sm:w-4 text-muted-foreground" />
                 <span className="hidden sm:inline">{t('oee.downtimeToday')}</span>
                 <span className="sm:hidden">Downtime</span>
               </CardTitle>
             </CardHeader>
             <CardContent className="p-3 sm:p-4 pt-0">
-              <div className="text-2xl sm:text-3xl font-bold">
-                {Object.values(downtimeByCategory).reduce((a, b) => a + b, 0)} {t('oee.minutes')}
+              <div className="text-2xl sm:text-3xl font-bold whitespace-nowrap">
+                {Object.values(downtimeByCategory).reduce((a, b) => a + b, 0).toLocaleString("vi-VN")}
+                <span className="ml-1 text-base font-medium text-muted-foreground">{t('oee.minutes', 'phút')}</span>
               </div>
               <p className="text-xs text-muted-foreground mt-1">
                 {Object.keys(downtimeByCategory).length} {t('oee.events')}
@@ -625,8 +669,8 @@ export function OEEDashboardContent() {
 
           <Card>
             <CardHeader className="p-3 sm:p-4 pb-2">
-              <CardTitle className="text-xs sm:text-sm font-medium flex items-center gap-1 sm:gap-2">
-                <AlertTriangle className="h-3 w-3 sm:h-4 sm:w-4 text-destructive" />
+              <CardTitle className="text-xs sm:text-sm font-medium flex min-h-10 items-start gap-1 sm:gap-2">
+                <AlertTriangle className="h-3 w-3 sm:h-4 sm:w-4 text-muted-foreground" />
                 {t('oee.alerts')}
               </CardTitle>
             </CardHeader>
@@ -643,9 +687,9 @@ export function OEEDashboardContent() {
 
         <Tabs defaultValue="oee" className="space-y-4">
           <TabsList>
-            <TabsTrigger value="oee">OEE Machines</TabsTrigger>
-            <TabsTrigger value="downtime">Downtime</TabsTrigger>
-            <TabsTrigger value="health">Machine Health</TabsTrigger>
+            <TabsTrigger value="oee">{t('oee.tabMachines', 'Máy theo OEE')}</TabsTrigger>
+            <TabsTrigger value="downtime">{t('oee.tabDowntime', 'Thời gian dừng')}</TabsTrigger>
+            <TabsTrigger value="health">{t('oee.tabHealth', 'Sức khỏe máy')}</TabsTrigger>
           </TabsList>
 
           {/* OEE Tab */}
@@ -679,12 +723,14 @@ export function OEEDashboardContent() {
                     </div>
                   ))}
                   {(!allOEE || allOEE.length === 0) && (
-                    <div className="rounded-lg border border-dashed border-border bg-muted/30 px-4 py-6 text-center">
-                      <p className="font-medium text-foreground">{t('oee.noOeeData')}</p>
-                      <p className="mt-2 text-xs text-muted-foreground leading-relaxed">
-                        {t('oee.noOeeDataHelp', 'Start recording inspections or reconnect a machine to populate OEE, downtime, and comparison charts.')}
-                      </p>
-                    </div>
+                    <ScopeAwareEmpty reason={scopeEmptyReason} variant="block">
+                      <div className="rounded-lg border border-dashed border-border bg-muted/30 px-4 py-6 text-center">
+                        <p className="font-medium text-foreground">{t('oee.noOeeData')}</p>
+                        <p className="mt-2 text-xs text-muted-foreground leading-relaxed">
+                          {t('oee.noOeeDataHelp', 'Start recording inspections or reconnect a machine to populate OEE, downtime, and comparison charts.')}
+                        </p>
+                      </div>
+                    </ScopeAwareEmpty>
                   )}
                 </CardContent>
               </Card>
@@ -786,10 +832,15 @@ export function OEEDashboardContent() {
                       </div>
                     </div>
                   ) : (
-                    <div className="flex flex-col items-center justify-center h-64 text-muted-foreground">
-                      <Gauge className="h-12 w-12 mb-4" />
-                      <p>{t('oee.selectMachineForDetails')}</p>
-                    </div>
+                    /* ⚠ "Chọn một máy để xem" là NGÕ CỤT khi phạm vi rỗng: danh sách bên trái
+                       không có máy nào để chọn, nên lời mời ấy đẩy người dùng đi tìm lỗi ở bộ lọc.
+                       Phạm vi bình thường mà chưa chọn máy thì câu cũ vẫn đúng — giữ nguyên. */
+                    <ScopeAwareEmpty reason={scopeEmptyReason} variant="block">
+                      <div className="flex flex-col items-center justify-center h-64 text-muted-foreground">
+                        <Gauge className="h-12 w-12 mb-4" />
+                        <p>{t('oee.selectMachineForDetails')}</p>
+                      </div>
+                    </ScopeAwareEmpty>
                   )}
                 </CardContent>
               </Card>
@@ -834,8 +885,15 @@ export function OEEDashboardContent() {
                         <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3">
                           {tiles.map((t) => (
                             <div key={t.k} className="rounded-md border p-3">
-                              <div className="text-xs text-muted-foreground">{t.label}</div>
-                              <div className={`text-xl font-semibold ${t.color}`}>
+                              {/* doc 63 (AUD-09) — flag-gated: E10 states get their OWN palette
+                                  (E10StateBadge) instead of sharing success/info/warning with
+                                  PackML; the minute value goes neutral (ISA-101 quiet). */}
+                              {isIsa101V2() ? (
+                                <E10StateBadge state={String(t.k)} label={t.label} className="mb-1" />
+                              ) : (
+                                <div className="text-xs text-muted-foreground">{t.label}</div>
+                              )}
+                              <div className={`text-xl font-semibold ${isIsa101V2() ? "text-foreground" : t.color}`}>
                                 {Math.round(b.states[t.k])}
                                 <span className="text-xs text-muted-foreground ml-1">min</span>
                               </div>

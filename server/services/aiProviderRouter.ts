@@ -16,6 +16,25 @@ import {
   generateJSON as ggufGenerateJSON,
   describeImage as ggufDescribeImage,
 } from "./aiGgufEngine";
+// doc69 G2-1 — route every model call through the AI Gateway (routing already happens via
+// req.modelId set by the caller; the gateway here is ADDITIVE bookkeeping only: per-user
+// rate-limit + A/B tagging + token/latency metering into ai_gateway_metrics). See
+// planGateway() below for the fail-open contract that keeps this behavior-preserving.
+import { planInference, RateLimitError, type GatewayPlan } from "./aiGateway";
+// doc69 G2-2 — AI safety layer. `planGateway()` below threads the gateway's redacted
+// `safeText` into the actual engine call (see planGateway's PlannedCall.safeText), and
+// callers run `sanitizeOutput` on the model's response before returning it.
+// doc69 W1-2 fix — `StreamingSecretRedactor` is a STATEFUL per-stream redactor used by
+// `generateNarrativeStream` to redact secret-shaped text on individual streamed token chunks
+// (see the class doc comment in aiSafety.ts for why a fixed-size window fails on long secrets).
+import { StreamingSecretRedactor } from "./ai/aiSafety";
+// ★ G5-E — bộ cắt chuỗi suy luận cho nhánh KHÔNG-streaming (`runText`). Khác
+// `generateNarrativeStream` — vốn được cắt Ở HẠ NGUỒN bởi ống SSE `/api/ai/stream/narrative` —
+// `runText` KHÔNG có bề mặt nào cắt hộ: bên gọi (báo cáo điều hành, RCA) hiển thị thẳng `text`.
+// ⚠ THỨ TỰ: cắt thẻ TRƯỚC `plan.sanitizeOutput`. Cắt thẻ là phép XOÁ nên nó NỐI hai nửa một bí mật
+// vốn bị khối <think> chẻ rời ⇒ bộ canh NỘI DUNG phải đứng CUỐI (xem `ai/thinkingStrip.ts`).
+import { stripThinking } from "./ai/thinkingStrip";
+import type { TaskKind } from "./aiModelRouter";
 
 // ─── Types ─────────────────────────────────────────────────────
 
@@ -25,6 +44,17 @@ export type Capability = "text" | "json" | "vision";
 export interface NarrativeRequest {
   systemPrompt?: string;
   prompt: string;
+  /**
+   * doc69 G2-1 — AI Gateway task kind for routing/rate-limit/metering bucketing ONLY.
+   * Does NOT influence model selection here (callers already control that via `modelId`
+   * and their own maxTokens/temperature) — it only tells the gateway which task-shaped
+   * bucket to meter this call under. Defaults to "report" when omitted (narrative
+   * generation is predominantly report/summary text in this codebase today).
+   */
+  task?: TaskKind;
+  /** doc69 G2-1 — caller's user id, threaded to the AI Gateway for per-user rate-limit +
+   * metrics attribution. Omit for system/cron callers — the gateway tolerates undefined. */
+  userId?: number;
   /**
    * doc 48 R1 — PIN the GGUF model for this generation (basename sans ".gguf", e.g. the
    * Model Router's `decision.modelId`). Threaded straight into the engine's getOrLoadModel(),
@@ -82,6 +112,10 @@ export interface DescribeImageRequest {
   language?: "en" | "vi";
   /** Ignored — cloud vision removed. Kept for backward compatibility. */
   useCloudVision?: boolean;
+  /** doc69 G2-1 — AI Gateway task override for metering bucketing. Defaults to "vision". */
+  task?: TaskKind;
+  /** doc69 G2-1 — caller's user id for gateway rate-limit + metrics attribution. */
+  userId?: number;
 }
 
 export interface DescribeImageResult {
@@ -117,6 +151,53 @@ function emit(ev: AiProviderEvent) {
 
 export function getRecentEvents(limit = 100): AiProviderEvent[] {
   return recentEvents.slice(-limit).reverse();
+}
+
+// ─── AI Gateway adoption (doc69 G2-1) + AI Safety (doc69 G2-2) ─
+//
+// Every real model call below is wrapped with a gateway "plan": per-user rate-limit check,
+// A/B tagging, token/latency METERING into ai_gateway_metrics, AND (G2-2) an injection scan
+// + secret/PII redaction of the prompt. This is intentionally the "full adoption" shape from
+// aiGateway.ts's own doc comment (wrap the engine call, record afterwards) — but with ONE
+// deliberate deviation from routeInference(): we do NOT let a RateLimitError block the call.
+//
+// Why: this module is a low-level choke point used by ~10 unrelated services (reports,
+// RCA batch jobs, vision/OCR, chat tool-selection, inspection/annotation routers via
+// _core/llm.ts) that today NEVER get rate-limited — some of them (aiBatchRcaScheduler)
+// legitimately burst dozens of calls back-to-back with no per-request userId, which would
+// collide in the gateway's single "anon" bucket. Rate-limiting stays BEHAVIOR-PRESERVING
+// (metering/limit *visibility*, not enforcement): when the gateway's budget is exhausted,
+// planInference() ALREADY records the rejection (outcome "rate_limited") before throwing —
+// we catch that specific error and proceed WITHOUT a plan, so the underlying engine call
+// always still happens, exactly like before G2-1. Any other unexpected error from
+// planInference (should not happen — it is documented fail-open internally) is NOT
+// swallowed, since that would hide a real bug — this includes SafetyBlockedError, which
+// stays OFF by default (AI_SAFETY_BLOCK_HIGH_RISK) and, when explicitly enabled, is meant
+// to propagate exactly like any other engine failure (callers already catch-and-degrade to
+// their offline/rule-based fallback, see aiProviderGatewayRouting.test.ts §3).
+//
+// G2-2 redaction, unlike rate-limiting, is NOT best-effort/skippable: `safeText` is what
+// actually reaches ggufGenerateText/JSON/describeImage below — see each call site.
+interface PlannedCall {
+  plan: GatewayPlan | null;
+  /** doc69 G2-2 — sanitized prompt (secrets/PII redacted); THIS is what must reach the
+   * engine, not the raw `text` argument. Falls back to the raw text only in the (should
+   * never happen) case a RateLimitError is thrown without the redacted text attached. */
+  safeText: string;
+}
+
+async function planGateway(
+  task: TaskKind,
+  text: string | undefined,
+  userId: number | undefined,
+): Promise<PlannedCall> {
+  try {
+    const plan = await planInference({ task, text, userId });
+    return { plan, safeText: plan.safeText };
+  } catch (err) {
+    if (err instanceof RateLimitError) return { plan: null, safeText: err.safeText ?? text ?? "" };
+    throw err;
+  }
 }
 
 // ─── Circuit breaker shim (no-op in local-only mode) ──────────
@@ -155,10 +236,12 @@ export function getProviderConfig() {
 
 async function runText(req: NarrativeRequest): Promise<NarrativeResult> {
   const start = Date.now();
+  // doc69 G2-2 — `safeText` is the redacted prompt; it (NOT req.prompt) is what reaches the engine.
+  const { plan, safeText } = await planGateway(req.task ?? "report", req.prompt, req.userId);
   try {
     const r = await ggufGenerateText({
       systemPrompt: req.systemPrompt,
-      prompt: req.prompt,
+      prompt: safeText,
       maxTokens: req.maxTokens ?? 1024,
       temperature: req.temperature ?? 0.7,
       language: req.language,
@@ -169,8 +252,15 @@ async function runText(req: NarrativeRequest): Promise<NarrativeResult> {
       ...(req.stopSequences ? { stopSequences: req.stopSequences } : {}),
     // doc 48 R1 — PIN the model (2nd arg → engine getOrLoadModel). undefined = engine default.
     }, req.modelId);
+    // ★ G5-E — cắt thẻ TRƯỚC, che bí mật SAU. `answer` đã `.trim()`, mà `runText` xưa nay KHÔNG
+    // trim ⇒ khi không có gì bị cắt phải trả lại NGUYÊN VĂN để bản vá là no-op TỪNG KÝ TỰ với
+    // roster hiện tại. `answer === r.text.trim()` xảy ra khi và chỉ khi phép quét không xoá ký tự
+    // phi-khoảng-trắng nào (mọi lượt cắt thật đều xoá ít nhất một cặp thẻ).
+    const catNoiTam = stripThinking(r.text);
+    const chuHienThi = catNoiTam.answer === r.text.trim() ? r.text : catNoiTam.answer;
     const result: NarrativeResult = {
-      text: r.text,
+      // doc69 G2-2 — output safety: redact any secret the model echoed back before it returns.
+      text: plan?.sanitizeOutput(chuHienThi) ?? chuHienThi,
       provider: "gguf",
       model: r.modelId,
       totalTimeMs: r.totalTimeMs,
@@ -179,6 +269,15 @@ async function runText(req: NarrativeRequest): Promise<NarrativeResult> {
       tokensPerSecond: r.tokensPerSecond,
       fallbackUsed: false,
     };
+    plan?.record({
+      tokensIn: r.tokensPrompt,
+      tokensOut: r.tokensGenerated,
+      latencyMs: r.totalTimeMs,
+      outcome: "ok",
+      // doc69 G2-5a — already-output-redacted (result.text ran through plan.sanitizeOutput
+      // above); only consulted by the gateway for HIGH-RISK tasks (report is one of them).
+      responseText: result.text,
+    });
     emit({
       ts: Date.now(),
       capability: "text",
@@ -192,6 +291,7 @@ async function runText(req: NarrativeRequest): Promise<NarrativeResult> {
     });
     return result;
   } catch (err: any) {
+    plan?.record({ latencyMs: Date.now() - start, outcome: "error" });
     emit({
       ts: Date.now(),
       capability: "text",
@@ -228,15 +328,26 @@ export async function generateInsightJson<T = unknown>(
 ): Promise<InsightJsonResult<T>> {
   const exec = async (): Promise<InsightJsonResult<T>> => {
     const start = Date.now();
+    // doc69 G2-1 — structured-JSON extraction defaults to task "extract" (see planGateway()
+    // doc comment for the fail-open contract). Callers doing RCA-flavored insight generation
+    // (e.g. aiInsightsService) already pin their own model via req.modelId — this task label
+    // only affects gateway metering/rate-limit bucketing, not model choice.
+    // doc69 G2-2 — safeText (redacted) reaches the engine below, same as runText().
+    const { plan, safeText } = await planGateway(req.task ?? "extract", req.prompt, req.userId);
     try {
       const r = await ggufGenerateJSON<T>(req.jsonSchema, {
         systemPrompt: req.systemPrompt,
-        prompt: req.prompt,
+        prompt: safeText,
         maxTokens: req.maxTokens ?? 1024,
         temperature: req.temperature ?? 0.2,
         language: req.language,
       // doc 48 R1 — PIN the model (3rd arg → engine getOrLoadModel). undefined = engine default.
       }, req.modelId);
+      // doc69 G2-2 — output safety SCAN ONLY here (flags/stats), deliberately NOT applied to
+      // r.raw/r.data: `data` is already the PARSED object by this point, and rewriting `raw`
+      // without also deep-rewriting `data` would make the two inconsistent for callers that
+      // compare them. Structured-output redaction is left to a follow-up if it proves needed.
+      plan?.sanitizeOutput(r.raw);
       const result: InsightJsonResult<T> = {
         data: r.data,
         raw: r.raw,
@@ -245,6 +356,12 @@ export async function generateInsightJson<T = unknown>(
         totalTimeMs: r.totalTimeMs,
         fallbackUsed: false,
       };
+      plan?.record({
+        tokensIn: r.tokensPrompt,
+        tokensOut: r.tokensGenerated,
+        latencyMs: r.totalTimeMs,
+        outcome: "ok",
+      });
       emit({
         ts: Date.now(),
         capability: "json",
@@ -256,6 +373,7 @@ export async function generateInsightJson<T = unknown>(
       });
       return result;
     } catch (err: any) {
+      plan?.record({ latencyMs: Date.now() - start, outcome: "error" });
       emit({
         ts: Date.now(),
         capability: "json",
@@ -312,22 +430,35 @@ export async function describeImage(req: DescribeImageRequest): Promise<Describe
     };
   }
 
+  // doc69 G2-1 — meter/rate-limit ONLY the real inference below; the honest-degrade branch
+  // above returns before any model is invoked, so there is nothing to gateway-plan there.
+  // doc69 G2-2 — safeText (redacted prompt) reaches the engine below.
+  const { plan, safeText } = await planGateway(req.task ?? "vision", req.prompt, req.userId);
   try {
     const r = await ggufDescribeImage({
       image: req.image,
-      prompt: req.prompt,
+      prompt: safeText,
       systemPrompt: req.systemPrompt,
       maxTokens: req.maxTokens ?? 512,
       temperature: req.temperature ?? 0.2,
       language: req.language,
     });
     const result: DescribeImageResult = {
-      text: r.text,
+      text: plan?.sanitizeOutput(r.text) ?? r.text,
       provider: "gguf",
       model: r.modelId,
       totalTimeMs: r.totalTimeMs,
       fallbackUsed: false,
     };
+    plan?.record({
+      tokensIn: r.tokensPrompt,
+      tokensOut: r.tokensGenerated,
+      latencyMs: r.totalTimeMs,
+      outcome: "ok",
+      // doc69 G2-5a — already-output-redacted (result.text ran through plan.sanitizeOutput
+      // above); only consulted by the gateway for HIGH-RISK tasks (vision is one of them).
+      responseText: result.text,
+    });
     emit({
       ts: Date.now(),
       capability: "vision",
@@ -339,6 +470,7 @@ export async function describeImage(req: DescribeImageRequest): Promise<Describe
     });
     return result;
   } catch (err: any) {
+    plan?.record({ latencyMs: Date.now() - start, outcome: "error" });
     emit({
       ts: Date.now(),
       capability: "vision",
@@ -368,17 +500,37 @@ export interface NarrativeStreamChunk {
   error?: string;
 }
 
+// doc69 W1-2 fix — streaming per-chunk secret redaction via a STATEFUL redactor
+// (`StreamingSecretRedactor`, aiSafety.ts). Text is held back across "token" events so a secret
+// straddling a chunk boundary — including a LONG secret whose opening delimiter
+// (`-----BEGIN...KEY-----`, `eyJ...`) arrives many chunks before its closing delimiter — is
+// still caught before it reaches the SSE client, instead of only being redacted in the
+// aggregated `fullText` on "done" (too late — the raw token chunks already went out by then).
+// An earlier version of this fix used a FIXED 64-char trailing window, which looked correct but
+// failed exactly on realistic long secrets (a ~180-char PEM key or ~150-char JWT would have its
+// start delimiter scroll out of the window before the end arrived, so the two-delimiter regex
+// never matched and the secret leaked in full) — see the class doc comment in aiSafety.ts.
+// This is defense-in-depth on the OUTPUT side only, using ONLY the secret/API-key patterns (not
+// the full PII scan, and not the injection scanner) — the real safety boundary is still the
+// INPUT redaction above (`safeText`).
+
 export async function* generateNarrativeStream(
   req: NarrativeRequest,
   signal?: AbortSignal,
 ): AsyncGenerator<NarrativeStreamChunk> {
   const start = Date.now();
   const { generateTextStream: ggufStream } = await import("./aiGgufEngine");
+  // doc69 G2-1 — same fail-open gateway plan as the non-streaming paths (see planGateway()).
+  // doc69 G2-2 — safeText (redacted prompt) reaches the engine below.
+  const { plan, safeText } = await planGateway(req.task ?? "report", req.prompt, req.userId);
+  // doc69 W1-2 fix — one stateful redactor instance per stream (never module-level: concurrent
+  // streams must not share hold-back state). See the class doc comment in aiSafety.ts.
+  const redactor = new StreamingSecretRedactor();
   try {
     for await (const c of ggufStream(
       {
         systemPrompt: req.systemPrompt,
-        prompt: req.prompt,
+        prompt: safeText,
         maxTokens: req.maxTokens ?? 1024,
         temperature: req.temperature ?? 0.7,
         language: req.language,
@@ -389,11 +541,23 @@ export async function* generateNarrativeStream(
       signal,
     )) {
       if (c.type === "token") {
-        yield { type: "token", token: c.token, provider: "gguf", model: c.modelId };
+        // doc69 W1-2 fix — redact secret-shaped text on the token chunk itself (not just the
+        // aggregated fullText on "done") via the stateful redactor, which holds back the WHOLE
+        // pending fragment (not just a fixed-size tail) while a secret looks like it's still
+        // forming, so long secrets can't scroll their start delimiter out of view before their
+        // end arrives. Always yield a "token" event per underlying stream token (even when the
+        // released text is "") — mirrors the underlying stream's chunking cadence.
+        yield { type: "token", token: redactor.push(c.token ?? ""), provider: "gguf", model: c.modelId };
       } else if (c.type === "done") {
+        const remaining = redactor.flush();
+        if (remaining) {
+          // Flush whatever remains held so the total streamed token text (minus any
+          // redactions) matches the source — nothing is silently dropped.
+          yield { type: "token", token: remaining, provider: "gguf", model: c.modelId };
+        }
         yield {
           type: "done",
-          fullText: c.fullText,
+          fullText: plan && c.fullText != null ? plan.sanitizeOutput(c.fullText) : c.fullText,
           provider: "gguf",
           model: c.modelId,
           fallbackUsed: false,
@@ -401,6 +565,12 @@ export async function* generateNarrativeStream(
           tokensGenerated: c.tokensGenerated,
           tokensPerSecond: c.tokensPerSecond,
         };
+        plan?.record({
+          tokensIn: c.tokensPrompt,
+          tokensOut: c.tokensGenerated,
+          latencyMs: c.totalTimeMs,
+          outcome: "ok",
+        });
         emit({
           ts: Date.now(),
           capability: "text",
@@ -413,10 +583,12 @@ export async function* generateNarrativeStream(
           tokensPerSecond: c.tokensPerSecond,
         });
       } else if (c.type === "error") {
+        plan?.record({ latencyMs: Date.now() - start, outcome: "error" });
         yield { type: "error", error: c.error, provider: "gguf" };
       }
     }
   } catch (err: any) {
+    plan?.record({ latencyMs: Date.now() - start, outcome: "error" });
     emit({
       ts: Date.now(),
       capability: "text",

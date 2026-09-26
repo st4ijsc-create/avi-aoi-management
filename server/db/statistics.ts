@@ -1,4 +1,5 @@
 import { getDb } from "./connection";
+import { DbUnavailableError } from "../_core/dbErrors";
 import { eq, and, desc, gte, lte, like, sql, or, inArray, SQL } from "drizzle-orm";
 import {
   factories,
@@ -18,6 +19,18 @@ import {
 import { getUserCorporateAssignments, getUserFactoryAssignments } from "./auth";
 // Shared list projection for product_inspections hot paths (doc 27 gap B9).
 import { inspectionListProjection } from "./inspection";
+// Nhãn phạm vi từ module KHÔNG phụ thuộc (nhập tĩnh an toàn — `_core/accessControl` vẫn phải
+// nạp bằng `import()` động vì nó kéo theo `_core/trpc`).
+import {
+  UNSCOPED_LABELS,
+  type ScopeLabels,
+  type ScopedRows,
+  scopeLabelsOf,
+  withScopeLabels,
+} from "../_core/accessControlLabels";
+// ★ 2026-08-18 — trục phạm vi THỨ HAI (mã tenant tường minh của khoá API). Module thuần, chỉ
+// phụ thuộc drizzle ⇒ nhập TĨNH an toàn từ `server/db/**`.
+import { tenantCodeInspectionFilter, type TenantCodeScope } from "../_core/tenantCodeScope";
 // Canonical KPI math + factory-timezone bucketing (doc 27 decision #4, gaps A2/A3/A4).
 import {
   finalYield,
@@ -43,7 +56,7 @@ import {
 
 export async function upsertDailyStatistics(data: InsertDailyStatistics) {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  if (!db) throw new DbUnavailableError();
   
   await db.insert(dailyStatistics).values(data).onConflictDoUpdate({
     target: [dailyStatistics.machineId, dailyStatistics.date],
@@ -143,6 +156,116 @@ function machineIdsInHierarchySubquery(db: Db, filters: { factoryId?: number; wo
     .where(and(...hierarchyConditions));
 }
 
+// ══════════════════════════════════════════════════════════════════════════════════════════
+// TRỤC PHẠM VI DÙNG CHUNG CHO CẢ FILE (2026-08-17, đợt trả nợ thứ hai)
+// ══════════════════════════════════════════════════════════════════════════════════════════
+
+/** Ô danh tính người gọi mà MỌI hàm đọc bản ghi kiểm trong file này phải nhận. */
+export interface StatsScopeArgs {
+  userId?: number;
+  userRole?: string;
+}
+
+/**
+ * Kết quả phân giải phạm vi, với `filter` và nhãn TÁCH RỜI NGAY TỪ KIỂU.
+ *
+ * ⚠⚠ Vì sao không trả thẳng `ResolvedDataScope`. Nó gộp `filter` (đối tượng SQL của drizzle,
+ * tham chiếu vòng `PgTable → PgSerial → table`) CHUNG một mức với ba ô nhãn, nên `scope = resolved`
+ * rồi `return { ...scope }` là một phép gán HỢP LỆ với `tsc` mà lúc chạy đẩy `filter` vào đáp ứng
+ * tRPC ⇒ superjson chết `Converting circular structure to JSON` ⇒ **500 cho mọi người dùng**
+ * (đã xảy ra thật trên `dashboard.getStats` ngày 2026-08-17; sống sót qua `tsc` cả hai config VÀ
+ * 220 ca test). Ở đây `labels` là ĐÃ đi qua `scopeLabelsOf`, còn `filter` nằm ở một ô KHÁC TÊN —
+ * `...scope.labels` không có đường nào lôi được `filter` ra.
+ */
+interface ResolvedStatsScope {
+  /** Vị từ SQL trên BẢNG `product_inspections`. `undefined` = vai toàn quyền / lối đi vô danh. */
+  filter: SQL | undefined;
+  labels: ScopeLabels;
+}
+
+/**
+ * ★★★ BỘ PHÂN GIẢI DUY NHẤT của file này. Mọi hàm đọc `product_inspections` gọi hàm NÀY —
+ * không hàm nào tự dựng lại logic gán nhà máy (một quy tắc, một chỗ sửa).
+ *
+ * Lối đi KHÔNG mang danh tính (`userId` rỗng: tác vụ nền, REST máy-với-máy, export không ngữ
+ * cảnh) và vai `admin` đều nhận `filter: undefined` + `UNSCOPED_LABELS` — GIỮ NGUYÊN hành vi cũ,
+ * đây là chiều DƯƠNG chống "vá quá tay thành chặn tất cả".
+ */
+async function resolveStatsScope(args?: StatsScopeArgs): Promise<ResolvedStatsScope> {
+  if (!args?.userId || args.userRole === 'admin') {
+    return { filter: undefined, labels: UNSCOPED_LABELS };
+  }
+  const { resolveDataScope } = await import("../_core/accessControl");
+  const resolved = await resolveDataScope(args.userId, args.userRole || 'user');
+  // ⚠ `scopeLabelsOf` chép ĐÚNG BA ô — `filter` không có đường lọt vào `labels`.
+  return { filter: resolved.filter, labels: scopeLabelsOf(resolved) };
+}
+
+/**
+ * ★★ CỔNG PHẠM VI cho các truy vấn RAW SQL có ĐẶT BÍ DANH cho bảng (`FROM product_inspections pi`).
+ *
+ * **Vì sao không nhét thẳng `filter` vào.** `resolveStatsScope().filter` do drizzle sinh ra, luôn
+ * tự đặt tên bảng ĐẦY ĐỦ: `"product_inspections"."factoryCode" in (…)`. Trong một truy vấn
+ * `FROM product_inspections pi`, bí danh **che** tên bảng gốc, nên tham chiếu ấy là lỗi Postgres
+ * `missing FROM-clause entry for table "product_inspections"` — bản vá sẽ ném 500 thay vì lọc.
+ *
+ * **Vì sao là bán-nối (semi-join) chứ không phải một vị từ viết tay trên bí danh.** Viết tay
+ * `pi."factoryCode" IN (…)` là dựng bộ quy tắc phạm vi THỨ HAI: hai chỗ phải sửa mỗi khi quy tắc
+ * đổi, và cái thứ hai sẽ lệch trong im lặng. Ở đây `filter` được dùng **NGUYÊN VĂN** bên trong
+ * truy vấn con — nơi tên bảng đầy đủ lại hợp lệ — nên vẫn chỉ có MỘT nguồn quyền lực.
+ *
+ * **Giá phải trả, đã đo** (`EXPLAIN ANALYZE`, 22.996 hàng, 2026-08-17): 12,7 ms → 27,0 ms, kế
+ * hoạch là *Hash Join* (bán-nối băm), KHÔNG phải vòng lặp lồng — chi phí ~2×, tuyến tính. Đổi lại
+ * là một nguồn quyền lực duy nhất; nếu bảng lớn lên tới mức này thành nút thắt thì cách sửa ĐÚNG
+ * là cho bộ phân giải nhận tham số bảng/bí danh, KHÔNG phải chép luật ra chỗ thứ hai.
+ *
+ * @param aliasIdCol cột khoá chính qua bí danh, ví dụ sql`pi.id`
+ */
+function scopeGateOnAlias(aliasIdCol: SQL, filter: SQL): SQL {
+  return sql`${aliasIdCol} IN (SELECT ${productInspections.id} FROM ${productInspections} WHERE ${filter})`;
+}
+
+/**
+ * ★★★ Như `scopeGateOnAlias` nhưng GIỮ LẠI phần DANH MỤC của các truy vấn
+ * `… LEFT JOIN measurement_results mr … LEFT JOIN product_inspections pi …`.
+ *
+ * **Vì sao cần biến thể này.** Mấy bề mặt "danh mục + số đếm" (`getWorkstationSummary`,
+ * `getDefectsByWorkstation`, `getMeasurementPointsByWorkstation`,
+ * `getTopNGMeasurementPointsByWorkstation`) cố ý `LEFT JOIN` để một trạm/điểm đo CHƯA CÓ kết quả
+ * đo nào vẫn hiện với số 0 — chính vì thế bộ lọc ngày của chúng cũng viết
+ * `(pi."inspectionTime" IS NULL OR pi."inspectionTime" >= …)`. Một cổng phạm vi TRẦN
+ * (`pi.id IN (…)`) sẽ loại luôn các hàng ấy và **xoá mất danh mục** — vá quá tay.
+ *
+ * ⚠⚠ VÌ SAO NEO VÀO `mr.id` CHỨ KHÔNG PHẢI `pi.id` — LỖ ĐÃ ĐO, KHÔNG PHẢI LO XA.
+ * Bản đầu của hàm này viết `(pi.id IS NULL OR pi.id IN (…))`. Nghe thì cùng ý, nhưng
+ * `pi.id IS NULL` KHÔNG chỉ đúng với hàng "chưa có kết quả đo": nó còn đúng với **kết quả đo MỒ
+ * CÔI** — hàng `measurement_results` có `inspectionId` không nối được về bản ghi kiểm nào.
+ * `product_inspections` là hypertable Timescale nên Postgres KHÔNG cho đặt khoá ngoại trỏ vào
+ * nó ⇒ mồ côi là chuyện có thật, không phải giả định: đo trên `aoi_management` ngày 2026-08-17
+ * có **383 kết quả NG/NTF mồ côi** trên tổng 588. Với vế `pi.id IS NULL`, `supervisor1`
+ * (**0 gán nhà máy**) vẫn đọc được **383 NG** qua `workstation.topNGMeasurementPoints` — bản vá
+ * XANH ở lưới mà lỗ vẫn mở.
+ *
+ * Neo `mr.id IS NULL` phát biểu đúng thứ cần giữ: *"hàng này KHÔNG mang kết quả đo nào"*. Hàng
+ * CÓ kết quả đo thì phải chứng minh được bản ghi kiểm của nó nằm trong phạm vi — mồ côi (không
+ * xác định được nhà máy) KHÔNG rơi vào phạm vi của ai cả, trừ vai toàn quyền (vốn không có
+ * `filter` nên không đi qua cổng này).
+ *
+ * ⚠ Lưới 138 ca KHÔNG bắt được lỗ này ở lượt đầu vì dữ liệu dựng sẵn **không có mồ côi** — một
+ * hình dạng dữ liệu CÓ THẬT trong sản xuất mà thước không hề chứa. Nghiệm thu HTTP thật mới lộ
+ * ra. Nay dữ liệu dựng sẵn của `statisticsScope.test.ts` có một kết quả NG mồ côi.
+ *
+ * Giới hạn TRUNG THỰC (giống hệt bộ lọc ngày đã có, không phải hồi quy mới): một điểm đo mà TẤT
+ * CẢ kết quả đều nằm NGOÀI phạm vi sẽ biến mất khỏi danh sách thay vì hiện số 0 — đúng như một
+ * điểm đo mà mọi kết quả đều nằm ngoài cửa sổ ngày đang chọn.
+ *
+ * @param resultRowCol cột khoá chính của hàng KẾT QUẢ ĐO qua bí danh, ví dụ sql`mr.id`
+ * @param aliasIdCol   cột khoá chính của bản ghi kiểm qua bí danh, ví dụ sql`pi.id`
+ */
+function scopeGateKeepingCatalogue(resultRowCol: SQL, aliasIdCol: SQL, filter: SQL): SQL {
+  return sql`(${resultRowCol} IS NULL OR ${scopeGateOnAlias(aliasIdCol, filter)})`;
+}
+
 export async function getDashboardStats(filters?: {
   factoryId?: number;
   workshopId?: number;
@@ -153,7 +276,7 @@ export async function getDashboardStats(filters?: {
   userRole?: string;
 }) {
   const db = await getDb();
-  if (!db) return { total: 0, ok: 0, ng: 0, ntf: 0, yieldRate: 0, fpy: 0, firstPass: 0, firstTotal: 0 };
+  if (!db) return { total: 0, ok: 0, ng: 0, ntf: 0, yieldRate: 0, fpy: 0, firstPass: 0, firstTotal: 0, ...UNSCOPED_LABELS };
 
   // Build conditions for inspections
   const conditions: SQL[] = [];
@@ -161,11 +284,16 @@ export async function getDashboardStats(filters?: {
   if (filters?.endDate) conditions.push(lte(productInspections.inspectionTime, filters.endDate));
   if (filters?.machineId) conditions.push(eq(productInspections.machineId, filters.machineId));
 
-  // Access filter by user assignments
+  // Access filter by user assignments.
+  // ⚠ `resolveDataScope` trả CẢ điều kiện SQL lẫn câu giải thích: một tài khoản 0 gán nhà máy
+  // nhận vị từ FALSE (không phải `undefined` = không lọc, xem `_core/accessControl.ts`) và
+  // các số 0 của nó phải đi kèm lý do, không được im lặng thành "chưa có sản lượng".
+  let scope: ScopeLabels = UNSCOPED_LABELS;
   if (filters?.userId && filters?.userRole !== 'admin') {
-    const { getAccessFilterConditions } = await import("../_core/accessControl");
-    const accessFilter = await getAccessFilterConditions(filters.userId, filters.userRole || 'user');
-    if (accessFilter) conditions.push(accessFilter);
+    const { resolveDataScope } = await import("../_core/accessControl");
+    const resolved = await resolveDataScope(filters.userId, filters.userRole || 'user');
+    if (resolved.filter) conditions.push(resolved.filter);
+    scope = scopeLabelsOf(resolved);
   }
 
   // Hierarchy filter (doc 27 gap B3): ONE machineId IN (subquery) instead of the
@@ -216,16 +344,33 @@ export async function getDashboardStats(filters?: {
     fpy: roundPct(fpyFromFirstInspections({ firstPass, firstTotal }), 2),
     firstPass,
     firstTotal,
+    ...scope,
   };
 }
 
-export async function getMachineStats(machineId: number, startDate?: Date, endDate?: Date) {
+/**
+ * ⚠ `scope` là tham số VỊ TRÍ THỨ TƯ, cố ý tuỳ chọn: ba nơi gọi cũ
+ * (`dashboardStatsRouters`, `hierarchyRouters`, `machineApiRouters`) truyền theo vị trí, và
+ * `machineApiRouters` là lối đi MÁY-VỚI-MÁY không có danh tính người dùng — nó phải tiếp tục
+ * chạy y nguyên. Đổi sang một đối tượng tham số sẽ làm `tsc` đỏ ở cả ba mà không thu được gì.
+ */
+export async function getMachineStats(
+  machineId: number,
+  startDate?: Date,
+  endDate?: Date,
+  scope?: StatsScopeArgs,
+) {
   const db = await getDb();
-  if (!db) return { total: 0, ok: 0, ng: 0, ntf: 0, yieldRate: 0, fpy: 0, firstPass: 0, firstTotal: 0 };
+  if (!db) return { total: 0, ok: 0, ng: 0, ntf: 0, yieldRate: 0, fpy: 0, firstPass: 0, firstTotal: 0, ...UNSCOPED_LABELS };
 
   const conditions = [eq(productInspections.machineId, machineId)];
   if (startDate) conditions.push(gte(productInspections.inspectionTime, startDate));
   if (endDate) conditions.push(lte(productInspections.inspectionTime, endDate));
+
+  // Trục phạm vi — khuôn dùng chung (xem `resolveStatsScope`).
+  const { filter, labels } = await resolveStatsScope(scope);
+  if (filter) conditions.push(filter);
+
   const whereClause = and(...conditions);
 
   const [result, fpyResult] = await Promise.all([
@@ -256,6 +401,8 @@ export async function getMachineStats(machineId: number, startDate?: Date, endDa
     fpy: roundPct(fpyFromFirstInspections({ firstPass, firstTotal }), 2),
     firstPass,
     firstTotal,
+    // ⚠ BA ô nhãn — KHÔNG bao giờ `...resolved` (kéo theo `filter` có tham chiếu vòng).
+    ...labels,
   };
 }
 
@@ -357,7 +504,42 @@ export async function getStatsWithComparison(filters?: {
  * Purely additive + read-only; not wired to any router yet (see doc 51 report
  * for the proposed wiring into the dashboard KPI endpoint).
  */
-export interface PanelYieldStats {
+/**
+ * ★★★ 2026-08-17 — KHUÔN NHÃN PHẠM VI DÙNG CHUNG CHO MỌI HÀM THỐNG KÊ TRONG FILE NÀY.
+ *
+ * ⚠ ĐỢT HAI (cùng ngày) đã mở rộng khuôn này ra TOÀN BỘ file: 36 hàm xuất ra có đọc
+ * `product_inspections`, nay tất cả đều nhận trục phạm vi trừ ba trường hợp MIỄN TRỪ khai tên
+ * kèm lý do trong `statisticsScope.test.ts`. Bảy hàm dưới đây giữ nguyên khối `resolveDataScope`
+ * viết tay của đợt một; các hàm vá sau dùng bộ phân giải dùng chung `resolveStatsScope` — hai
+ * lối viết, CÙNG một nguồn quyền lực (`_core/accessControl`).
+ *
+ * Bảy hàm ở đây nhận `userId`/`userRole` và bị `resolveDataScope` thu hẹp ĐÚNG. Nhưng chặn đúng
+ * mà IM LẶNG thì người dùng chưa được gán nhà máy đọc số 0 thành "chưa có sản lượng" và đi tìm
+ * lỗi ở dây chuyền — đúng chỗ không có lỗi. Vì thế MỌI hàm phải mang ba ô
+ * `scopeApplied`/`scopeEmptyReason`/`scopeMessage`, cùng một khuôn với `getDashboardStats`:
+ *
+ *   let scope: ScopeLabels = UNSCOPED_LABELS;                  // lối đi không mang danh tính
+ *   if (userId && userRole !== 'admin') {
+ *     const resolved = await resolveDataScope(userId, role);
+ *     if (resolved.filter) conditions.push(resolved.filter);   // `filter` ở BIẾN RIÊNG
+ *     scope = scopeLabelsOf(resolved);                         // ← chỉ BA ô, không bao giờ gán khối
+ *   }
+ *
+ * ⚠⚠ CẤM `scope = resolved`. `ResolvedDataScope` gán được cho `ScopeLabels` (TypeScript chỉ cấm
+ * thuộc tính thừa với *object literal*), nên `tsc` XANH, nhưng giá trị lúc chạy vẫn mang `filter`
+ * — một đối tượng SQL của drizzle có tham chiếu vòng `PgTable → PgSerial → table`. Phép
+ * `return { ...scope }` sẽ đẩy nó vào đáp ứng tRPC và superjson chết
+ * `Converting circular structure to JSON` ⇒ 500 cho MỌI người dùng. Đã xảy ra thật ngày
+ * 2026-08-17 trên `dashboard.getStats`; sống sót qua `tsc` cả hai config VÀ 220 ca test, chỉ lộ
+ * ở lượt gọi HTTP. `accessControlScope.test.ts` nay có một tầng riêng canh đúng chuyện này
+ * (stringify TỪNG đáp ứng của chín bề mặt), vì `tsc` không canh được.
+ *
+ * Hàm trả về MẢNG dùng `withScopeLabels(rows, resolved)` — nhãn đính lên chính mảng, hình dạng
+ * mảng giữ nguyên cho các nơi gọi cũ; xem docblock của hàm ấy để biết vì sao không đổi thành
+ * `{ rows, …nhãn }`.
+ */
+
+export interface PanelYieldStats extends ScopeLabels {
   // Board-level (ALL inspections in the slice; same math as getDashboardStats).
   boardTotal: number;
   boardOk: number;
@@ -401,6 +583,7 @@ export async function getPanelYieldStats(filters?: {
     panelTotal: 0, panelPass: 0, panelNg: 0, panelYieldRate: 0,
     panelFpy: 0, panelFirstPass: 0, panelFirstTotal: 0,
     boardsWithoutPanel: 0,
+    ...UNSCOPED_LABELS,
   };
   const db = await getDb();
   if (!db) return empty;
@@ -412,10 +595,13 @@ export async function getPanelYieldStats(filters?: {
   if (filters?.endDate) conditions.push(lte(productInspections.inspectionTime, filters.endDate));
   if (filters?.machineId) conditions.push(eq(productInspections.machineId, filters.machineId));
 
+  // Nhãn phạm vi — khuôn dùng chung (xem docblock trên `PanelYieldStats`).
+  let scope: ScopeLabels = UNSCOPED_LABELS;
   if (filters?.userId && filters?.userRole !== 'admin') {
-    const { getAccessFilterConditions } = await import("../_core/accessControl");
-    const accessFilter = await getAccessFilterConditions(filters.userId, filters.userRole || 'user');
-    if (accessFilter) conditions.push(accessFilter);
+    const { resolveDataScope } = await import("../_core/accessControl");
+    const resolved = await resolveDataScope(filters.userId, filters.userRole || 'user');
+    if (resolved.filter) conditions.push(resolved.filter);
+    scope = scopeLabelsOf(resolved);
   }
   if (filters?.factoryId || filters?.workshopId) {
     conditions.push(inArray(productInspections.machineId, machineIdsInHierarchySubquery(db, {
@@ -511,6 +697,8 @@ export async function getPanelYieldStats(filters?: {
     panelFpy: roundPct(fpyFromFirstInspections({ firstPass: panelFirstPass, firstTotal: panelFirstTotal }), 2),
     panelFirstPass, panelFirstTotal,
     boardsWithoutPanel,
+    // ⚠ `...scope` = ĐÚNG BA ô nhãn. KHÔNG bao giờ `...resolved` (kéo theo `filter` có vòng).
+    ...scope,
   };
 }
 
@@ -544,15 +732,31 @@ async function resolveFactoryCode(db: Db, factoryId: number): Promise<string | u
  * preserved). FPY per shift = true FPY of boards whose FIRST inspection fell in
  * the shift (canonical, decision #4).
  */
+export interface ShiftStatsRow {
+  shift: string;
+  shiftName: string;
+  /** Factory-local window "HH:MM-HH:MM". */
+  shiftWindow: string;
+  total: number;
+  ok: number;
+  ng: number;
+  ntf: number;
+  /** Wire name kept for the frontend; VALUE is true FPY (decision #4). */
+  fpy: number;
+  finalYield: number;
+}
+
 export async function getShiftStats(filters?: {
   factoryId?: number;
   startDate?: Date;
   endDate?: Date;
   userId?: number;
   userRole?: string;
-}) {
+}): Promise<ScopedRows<ShiftStatsRow>> {
   const db = await getDb();
-  if (!db) return [];
+  // ⚠ Kể cả nhánh "không có CSDL" cũng phải mang nhãn, nếu không một mảng rỗng ở đây lại thành
+  // số 0 im lặng — đúng lớp lỗi bản vá này đi xoá.
+  if (!db) return withScopeLabels<ShiftStatsRow>([], UNSCOPED_LABELS);
 
   const conditions: SQL[] = [];
   if (filters?.startDate) conditions.push(gte(productInspections.inspectionTime, filters.startDate));
@@ -564,11 +768,13 @@ export async function getShiftStats(filters?: {
     if (factoryCode) conditions.push(eq(productInspections.factoryCode, factoryCode));
   }
 
-  // Access filter by user assignments
+  // Access filter by user assignments — khuôn nhãn dùng chung.
+  let scope: ScopeLabels = UNSCOPED_LABELS;
   if (filters?.userId && filters?.userRole !== 'admin') {
-    const { getAccessFilterConditions } = await import("../_core/accessControl");
-    const accessFilter = await getAccessFilterConditions(filters.userId, filters.userRole || 'user');
-    if (accessFilter) conditions.push(accessFilter);
+    const { resolveDataScope } = await import("../_core/accessControl");
+    const resolved = await resolveDataScope(filters.userId, filters.userRole || 'user');
+    if (resolved.filter) conditions.push(resolved.filter);
+    scope = scopeLabelsOf(resolved);
   }
 
   const whereClause = conditions.length > 0 ? and(...conditions) : undefined;
@@ -601,7 +807,7 @@ export async function getShiftStats(filters?: {
     }]),
   );
 
-  const rows = result.map(r => {
+  const rows: ShiftStatsRow[] = result.map(r => {
     const code = String(r.shift);
     const meta = metaByCode.get(code) ?? UNASSIGNED_SHIFT;
     const total = Number(r.total) || 0;
@@ -631,7 +837,8 @@ export async function getShiftStats(filters?: {
         (orderByCode.get(b.shift) ?? UNASSIGNED_SHIFT.orderIndex) ||
       a.shift.localeCompare(b.shift),
   );
-  return rows;
+  // Nhãn đính lên chính mảng (không đổi hình dạng) — xem `withScopeLabels`.
+  return withScopeLabels(rows, scope);
 }
 
 // ============ SHIFT REPORT ============
@@ -673,16 +880,24 @@ export interface ShiftReportRow {
  * (sessions are sparse; a per-row correlated session lookup over the inspection
  * hypertable is not worth it here).
  */
-export async function getShiftReport(filters?: {
+export type ShiftReportFilters = {
   factoryId?: number;
   lineId?: number;
   startDate?: Date;
   endDate?: Date;
-  userId?: number;
-  userRole?: string;
-}): Promise<ShiftReportRow[]> {
+} & (
+  | { userId?: number; userRole?: string; tenantScope?: never }
+  /**
+   * ★★★ 2026-08-18 — TRỤC PHẠM VI THỨ HAI: mã tenant TƯỜNG MINH của một khoá API (mig 0325).
+   * Loại trừ trục danh tính ở mức KIỂU — xem `ReportRollupFilters` ở `db/reportAggregators.ts`
+   * cho lý lẽ đầy đủ (`api_keys.createdBy` NULLable ⇒ mượn danh tính người tạo là sai ngữ nghĩa).
+   */
+  | { tenantScope: TenantCodeScope; userId?: never; userRole?: never }
+);
+
+export async function getShiftReport(filters?: ShiftReportFilters): Promise<ScopedRows<ShiftReportRow>> {
   const db = await getDb();
-  if (!db) return [];
+  if (!db) return withScopeLabels<ShiftReportRow>([], UNSCOPED_LABELS);
 
   const conditions: SQL[] = [];
   if (filters?.startDate) conditions.push(gte(productInspections.inspectionTime, filters.startDate));
@@ -701,10 +916,23 @@ export async function getShiftReport(filters?: {
     if (l?.code) conditions.push(eq(productInspections.lineCode, l.code));
   }
 
-  if (filters?.userId && filters?.userRole !== 'admin') {
-    const { getAccessFilterConditions } = await import("../_core/accessControl");
-    const accessFilter = await getAccessFilterConditions(filters.userId, filters.userRole || 'user');
-    if (accessFilter) conditions.push(accessFilter);
+  // Khuôn nhãn dùng chung (xem docblock trên `PanelYieldStats`).
+  let scope: ScopeLabels = UNSCOPED_LABELS;
+  if (filters?.tenantScope) {
+    // ★ TRỤC ②. Hỏi TRƯỚC trục ① có chủ đích: kiểu đã cấm hai trục cùng có mặt, nên thứ tự này
+    //   chỉ quan sát được từ một lời gọi đã ép kiểu — và lời gọi ấy phải rơi về phía THU HẸP.
+    //
+    // ⚠ VÌ SAO KHÔNG DỰA VÀO `filters.factoryId` Ở TRÊN. Nhánh ấy fail-OPEN theo cấu tạo
+    //   (`if (factoryCode) …` — mã không tra được thì KHÔNG có mệnh đề nào được thêm), và nó chỉ
+    //   so `factoryCode`, bỏ qua `corporateCode`. Với một khoá khai CẢ HAI mã, dựa vào nó sẽ
+    //   NỚI phạm vi so với `inspectionTenantFilter`. Vị từ dưới đây là ĐÚNG cùng phép AND ấy.
+    conditions.push(tenantCodeInspectionFilter(filters.tenantScope));
+    scope = { scopeApplied: true, scopeEmptyReason: null, scopeMessage: null };
+  } else if (filters?.userId && filters?.userRole !== 'admin') {
+    const { resolveDataScope } = await import("../_core/accessControl");
+    const resolved = await resolveDataScope(filters.userId, filters.userRole || 'user');
+    if (resolved.filter) conditions.push(resolved.filter);
+    scope = scopeLabelsOf(resolved);
   }
 
   const whereClause = conditions.length > 0 ? and(...conditions) : undefined;
@@ -790,7 +1018,7 @@ export async function getShiftReport(filters?: {
         (metaByCode.get(b.shift)?.orderIndex ?? UNASSIGNED_SHIFT.orderIndex) ||
       a.shift.localeCompare(b.shift),
   );
-  return rows;
+  return withScopeLabels(rows, scope);
 }
 
 // ============ TOP/BOTTOM MACHINES ============
@@ -798,21 +1026,31 @@ export async function getTopBottomMachines(filters?: {
   startDate?: Date;
   endDate?: Date;
   limit?: number;
+  // doc65 W1 (additive optional) — scope trục ISA-95; no-op khi không truyền.
+  factoryId?: number;
   userId?: number;
   userRole?: string;
 }) {
   const db = await getDb();
-  if (!db) return { top: [], bottom: [] };
+  if (!db) return { top: [], bottom: [], ...UNSCOPED_LABELS };
 
   const conditions: SQL[] = [];
   if (filters?.startDate) conditions.push(gte(productInspections.inspectionTime, filters.startDate));
   if (filters?.endDate) conditions.push(lte(productInspections.inspectionTime, filters.endDate));
+  // doc65 W1 — hierarchy filter, cùng subquery pattern như getDashboardStats (gap B3).
+  if (filters?.factoryId) {
+    conditions.push(inArray(productInspections.machineId, machineIdsInHierarchySubquery(db, {
+      factoryId: filters.factoryId,
+    })));
+  }
 
-  // Access filter by user assignments
+  // Access filter by user assignments — khuôn nhãn dùng chung.
+  let scope: ScopeLabels = UNSCOPED_LABELS;
   if (filters?.userId && filters?.userRole !== 'admin') {
-    const { getAccessFilterConditions } = await import("../_core/accessControl");
-    const accessFilter = await getAccessFilterConditions(filters.userId, filters.userRole || 'user');
-    if (accessFilter) conditions.push(accessFilter);
+    const { resolveDataScope } = await import("../_core/accessControl");
+    const resolved = await resolveDataScope(filters.userId, filters.userRole || 'user');
+    if (resolved.filter) conditions.push(resolved.filter);
+    scope = scopeLabelsOf(resolved);
   }
 
   const whereClause = conditions.length > 0 ? and(...conditions) : undefined;
@@ -877,6 +1115,8 @@ export async function getTopBottomMachines(filters?: {
   return {
     top: sorted.slice(0, limit),
     bottom: sorted.slice(-limit).reverse(),
+    // ⚠ BA ô nhãn, KHÔNG phải `...resolved` — xem docblock trên `PanelYieldStats`.
+    ...scope,
   };
 }
 
@@ -894,10 +1134,77 @@ export async function getActiveAlertsCount() {
   return Number(result[0]?.count) || 0;
 }
 
-// ============ DAILY STATS ============
-export async function getDailyStats(factoryId?: number, workshopId?: number, days: number = 30) {
+// ============ OVERVIEW ENTITY COUNTS (doc 67 W6, việc 4) ============
+// CorporateDashboard only needs the REGISTRY sizes for its KPI cards — it was
+// fetching factory.list + line.list + machine.list in full just to read .length.
+// One COUNT(*) round-trip instead; filters mirror the list procedures exactly
+// (getFactories / getProductionLines / getMachines all filter isActive = true —
+// soft-deletes on these tables are isActive=false tombstones), so the numbers
+// match what the lists would have counted.
+export async function getOverviewEntityCounts() {
   const db = await getDb();
-  if (!db) return [];
+  if (!db) return { factories: 0, lines: 0, machines: 0 };
+
+  const [result] = await db.select({
+    factories: sql<number>`(SELECT count(*) FROM ${factories} WHERE ${factories.isActive} = true)`,
+    lines: sql<number>`(SELECT count(*) FROM ${productionLines} WHERE ${productionLines.isActive} = true)`,
+    machines: sql<number>`(SELECT count(*) FROM ${machines} WHERE ${machines.isActive} = true)`,
+  }).from(sql`(SELECT 1) AS one`);
+
+  return {
+    factories: Number(result?.factories) || 0,
+    lines: Number(result?.lines) || 0,
+    machines: Number(result?.machines) || 0,
+  };
+}
+
+// ============ DAILY STATS ============
+/**
+ * ★★★ 2026-08-18 — `factoryId`/`workshopId` HẾT LÀ THAM SỐ CHẾT.
+ *
+ * ══════════════════════════════════════════════════════════════════════════════════════════════
+ * LỖI ĐÃ VÁ — **KHÔNG PHẢI RÒ, LÀ SAI SỐ**, và nó nguy hiểm theo một kiểu khác
+ * ══════════════════════════════════════════════════════════════════════════════════════════════
+ * Hai tham số này được **nhận vào rồi im lặng bỏ qua**. `resolveStatsScope` vẫn áp phạm vi nên
+ * không ai đọc được dữ liệu ngoài phần mình — nhưng một người được gán **N nhà máy**, bấm chọn
+ * nhà máy A, nhận về **số của cả N nhà máy TRỘN LẪN, dán nhãn A**.
+ *
+ * ⚠ Một tham số nhận vào rồi bỏ qua nguy hiểm hơn KHÔNG CÓ tham số: nơi gọi TIN nó hoạt động, và
+ * cả ba nơi gọi đều tin — `Dashboard.tsx` (trục ISA-95, chú thích *"sparkline theo trục phạm
+ * vi"*), `Reports.tsx` (dropdown nhà máy), và `dashboardStatsRouters` còn đưa `factoryId` vào
+ * **KHOÁ NHỚ ĐỆM**, tức giữ hai bản ghi khác khoá mà nội dung hệt nhau.
+ *
+ * ⇒ Chọn **THỰC HIỆN** phép lọc (không phải gỡ tham số): hai nơi gọi có bộ chọn nhà máy THẬT do
+ * người dùng bấm, nên gỡ đi là lấy mất một tính năng người dùng đang trông thấy. Đây cũng đúng
+ * tiền lệ của chính file này — `getDashboardStats` đã trả đúng món nợ này ở doc 27 gap B3
+ * (*"workshopId was previously a DEAD parameter (accepted, silently ignored); it now actually
+ * filters"*) và để lại sẵn `machineIdsInHierarchySubquery`; dùng lại nó, không dựng cơ chế thứ hai.
+ *
+ * ⚠⚠ BỘ LỌC NÀY CHỈ **THU HẸP**, KHÔNG BAO GIỜ **NỚI**. Nó được `AND` vào SAU vị từ của
+ * `resolveStatsScope`, không thay thế vị từ ấy: người gán nhà máy A chọn xem B ⇒ **rỗng**, chứ
+ * KHÔNG phải thấy B. `statisticsDailyScope.test.ts` §2 canh đúng chiều đó bằng CSDL thật.
+ *
+ * ⚠ Ngữ nghĩa cạnh, giữ y hệt `getDashboardStats` (cố ý, không phải bỏ sót): truy vấn con KHÔNG
+ * lọc `isActive` ở bất kỳ mức nào — lịch sử của máy đã ngừng dùng vẫn phải cộng vào nhà máy của
+ * nó; và một nhà máy phân giải ra 0 máy trả về **0 một cách trung thực**, không âm thầm rơi về
+ * "toàn hệ thống".
+ */
+export async function getDailyStats(
+  factoryId?: number,
+  workshopId?: number,
+  days: number = 30,
+  scope?: StatsScopeArgs,
+): Promise<ScopedRows<{
+  date: string;
+  totalProducts: number;
+  okCount: number;
+  ngCount: number;
+  ntfCount: number;
+  fpy: number;
+  finalYield: number;
+}>> {
+  const db = await getDb();
+  if (!db) return withScopeLabels([], UNSCOPED_LABELS);
 
   const startDate = new Date();
   startDate.setDate(startDate.getDate() - days);
@@ -906,7 +1213,34 @@ export async function getDailyStats(factoryId?: number, workshopId?: number, day
   // Use parameterized Drizzle query (safe from SQL injection).
   // Day buckets are computed in the FACTORY timezone (gap A2).
   const dayBucket = factoryDayTextSql(productInspections.inspectionTime);
-  const whereClause = sql`${productInspections.inspectionTime} >= ${startDate.toISOString()}`;
+  // Trục phạm vi — khuôn dùng chung. Truy vấn này KHÔNG đặt bí danh (`FROM ${productInspections}`
+  // sinh ra tên bảng đầy đủ) nên `filter` nhét thẳng được, không cần cổng bán-nối.
+  const { filter, labels } = await resolveStatsScope(scope);
+  // ⚠ THỨ TỰ CÓ NGHĨA: `filter` (phạm vi của TÀI KHOẢN) và `hierarchy` (lựa chọn của NGƯỜI DÙNG)
+  // đều là mệnh đề `AND`. Cái sau chỉ thu hẹp thêm bên trong cái trước — không có nhánh nào bỏ
+  // qua `filter` khi có `factoryId`, và đó chính là chỗ một bản vá cẩu thả biến sai-số thành RÒ.
+  //
+  // ⚠ CỔNG `factoryId || workshopId` KHÔNG PHẢI TỐI ƯU VẶT — nó là thứ giữ cho bán-nối này không
+  //   bao giờ có cơ hội LÀM MẤT hàng. Đột biến bỏ cổng (luôn áp bán-nối) ĐÃ CHẠY ngày 2026-08-18
+  //   và **SỐNG SÓT** qua cả 156 ca; đã truy tới cùng thay vì ghi "lưới thủng": nó sống vì đúng là
+  //   TƯƠNG ĐƯƠNG hôm nay — cả bốn mức đều `notNull` + FK `ON DELETE RESTRICT`
+  //   (`product_inspections.machineId`→`machines.stationId`→`stations.lineId`→
+  //   `production_lines.workshopId`), nên mọi bản ghi kiểm đều đi hết được chuỗi join. ĐO trên
+  //   `aoi_management` cùng ngày: **0/22.996** bản ghi nằm ngoài chuỗi, và FK trỏ ra khỏi
+  //   hypertable vẫn còn sống (`pg_constraint` = 1 — chiều này Postgres cho phép, khác chiều trỏ
+  //   VÀO hypertable đã đẻ ra 383 kết quả đo mồ côi ở đợt trước).
+  // ⇒ Tương đương HÔM NAY, không phải mãi mãi: nếu ai đó bỏ `notNull`/FK ở bất kỳ mức nào, bán-nối
+  //   vô điều kiện sẽ âm thầm nuốt hàng. Cổng dưới đây làm điều đó KHÔNG THỂ xảy ra, và nó cũng
+  //   tránh khoản ~2× của bán-nối (đã đo bằng `EXPLAIN ANALYZE`, xem `scopeGateOnAlias`).
+  const hierarchy =
+    factoryId || workshopId
+      ? inArray(productInspections.machineId, machineIdsInHierarchySubquery(db, { factoryId, workshopId }))
+      : undefined;
+  const dieuKien: SQL[] = [sql`${productInspections.inspectionTime} >= ${startDate.toISOString()}`];
+  if (filter) dieuKien.push(filter);
+  if (hierarchy) dieuKien.push(hierarchy);
+  // ⚠ `and(...)` chắc chắn không trả `undefined` (mảng luôn có ≥1 phần tử là mốc thời gian).
+  const whereClause = and(...dieuKien)!;
   const [result, fpyResult] = await Promise.all([
     db.execute(sql`
     SELECT
@@ -935,7 +1269,7 @@ export async function getDailyStats(factoryId?: number, workshopId?: number, day
   );
 
   const rows = Array.isArray(result) ? result : (result as any).rows || [];
-  return rows.map((r: any) => {
+  return withScopeLabels(rows.map((r: any) => {
     const totalProducts = Number(r.totalProducts) || 0;
     const okCount = Number(r.okCount) || 0;
     const ntfCount = Number(r.ntfCount) || 0;
@@ -951,7 +1285,7 @@ export async function getDailyStats(factoryId?: number, workshopId?: number, day
       // Canonical final yield (NTF = pass).
       finalYield: roundPct(finalYield({ ok: okCount, ntf: ntfCount, total: totalProducts }), 2),
     };
-  });
+  }), labels);
 }
 
 // ============ HOURLY STATS ============
@@ -961,9 +1295,18 @@ export async function getHourlyStats(filters?: {
   lineId?: number;
   machineId?: number;
   hours?: number;
-}) {
+} & StatsScopeArgs): Promise<ScopedRows<{
+  hour: string;
+  total: number;
+  ok: number;
+  ng: number;
+  ntf: number;
+  fpy: string;
+  fy: string;
+  ntfy: string;
+}>> {
   const db = await getDb();
-  if (!db) return [];
+  if (!db) return withScopeLabels([], UNSCOPED_LABELS);
 
   const hoursBack = filters?.hours || 24;
   const startDate = new Date();
@@ -974,6 +1317,9 @@ export async function getHourlyStats(filters?: {
   if (filters?.machineId) {
     conditions.push(sql`${productInspections.machineId} = ${filters.machineId}`);
   }
+  // Trục phạm vi — truy vấn KHÔNG đặt bí danh, `filter` nhét thẳng được.
+  const { filter, labels } = await resolveStatsScope(filters);
+  if (filter) conditions.push(filter);
   const whereClause = sql.join(conditions, sql` AND `);
 
   // Hour buckets in the FACTORY timezone (gap A2).
@@ -1003,7 +1349,7 @@ export async function getHourlyStats(filters?: {
   );
 
   const rows = Array.isArray(result) ? result : (result as any).rows || [];
-  return rows.map((r: any) => {
+  return withScopeLabels(rows.map((r: any) => {
     const total = Number(r.totalProducts) || 1;
     const ok = Number(r.okCount) || 0;
     const ng = Number(r.ngCount) || 0;
@@ -1023,7 +1369,7 @@ export async function getHourlyStats(filters?: {
       fy: finalYield({ ok, ntf, total }).toFixed(1),
       ntfy: ((ntf / total) * 100).toFixed(1),
     };
-  });
+  }), labels);
 }
 
 // ============ SEARCH INSPECTIONS ============
@@ -1048,7 +1394,7 @@ export async function searchInspections(params: {
   sortBy?: "time" | "ntfScore";
 }) {
   const db = await getDb();
-  if (!db) return { data: [], total: 0 };
+  if (!db) return { data: [], total: 0, ...UNSCOPED_LABELS };
 
   // Hierarchy filter (doc 27 gap B3): ONE machineId IN (subquery) instead of
   // up to 6 sequential round-trips (factories→workshops→lines→stations→machines
@@ -1089,13 +1435,13 @@ export async function searchInspections(params: {
   if (params.startDate) conditions.push(gte(productInspections.inspectionTime, params.startDate));
   if (params.endDate) conditions.push(lte(productInspections.inspectionTime, params.endDate));
 
-  // Apply access control for non-admin users
+  // Apply access control for non-admin users — khuôn nhãn dùng chung.
+  let scope: ScopeLabels = UNSCOPED_LABELS;
   if (params.userId && params.userRole !== 'admin') {
-    const { getAccessFilterConditions } = await import("../_core/accessControl");
-    const accessFilter = await getAccessFilterConditions(params.userId, params.userRole || 'user');
-    if (accessFilter) {
-      conditions.push(accessFilter);
-    }
+    const { resolveDataScope } = await import("../_core/accessControl");
+    const resolved = await resolveDataScope(params.userId, params.userRole || 'user');
+    if (resolved.filter) conditions.push(resolved.filter);
+    scope = scopeLabelsOf(resolved);
   }
 
   const whereClause = conditions.length > 0 ? and(...conditions) : undefined;
@@ -1116,10 +1462,22 @@ export async function searchInspections(params: {
     db.select({ count: sql<number>`count(*)` }).from(productInspections).where(whereClause)
   ]);
 
-  return { data, total: countResult[0]?.count || 0 };
+  // ⚠ `...scope` = BA ô nhãn. `filter` sống ở `conditions`, KHÔNG bao giờ trong đối tượng này.
+  return { data, total: countResult[0]?.count || 0, ...scope };
 }
 
 // ============ TOP NG MEASUREMENT POINTS ============
+export interface TopNGMeasurementPoint {
+  pointDefId: number;
+  code: string;
+  name: string;
+  productModelId: number | null;
+  productCode: string | null;
+  productName: string | null;
+  ngCount: number;
+  percentage: number;
+}
+
 export async function getTopNGMeasurementPoints(params: {
   machineId?: number;
   startDate?: Date;
@@ -1127,23 +1485,23 @@ export async function getTopNGMeasurementPoints(params: {
   limit?: number;
   userId?: number;
   userRole?: string;
-}) {
+}): Promise<ScopedRows<TopNGMeasurementPoint>> {
   const db = await getDb();
-  if (!db) return [];
+  if (!db) return withScopeLabels<TopNGMeasurementPoint>([], UNSCOPED_LABELS);
 
   const conditions = [eq(measurementResults.result, 'NG')];
 
-  // Build inspection-level access filter for non-admin users
+  // Build inspection-level access filter for non-admin users — khuôn nhãn dùng chung.
   const inspectionFilterConditions: SQL[] = [];
+  let scope: ScopeLabels = UNSCOPED_LABELS;
 
   if (params.userId && params.userRole !== 'admin') {
-    const { getAccessFilterConditions } = await import("../_core/accessControl");
-    const accessFilter = await getAccessFilterConditions(params.userId, params.userRole || 'user');
-    if (accessFilter) {
-      inspectionFilterConditions.push(accessFilter);
-    }
+    const { resolveDataScope } = await import("../_core/accessControl");
+    const resolved = await resolveDataScope(params.userId, params.userRole || 'user');
+    if (resolved.filter) inspectionFilterConditions.push(resolved.filter);
+    scope = scopeLabelsOf(resolved);
   }
-  
+
   if (params.machineId) {
     inspectionFilterConditions.push(eq(productInspections.machineId, params.machineId));
   }
@@ -1159,7 +1517,9 @@ export async function getTopNGMeasurementPoints(params: {
     if (inspectionIds.length > 0) {
       conditions.push(inArray(measurementResults.inspectionId, inspectionIds.map(i => i.id)));
     } else {
-      return [];
+      // ⚠ Đây LÀ đường mà tài khoản 0 gán nhà máy đi qua (vị từ `1 = 0` ⇒ 0 bản ghi kiểm).
+      // Trả mảng rỗng TRẦN ở đây chính là "số 0 im lặng" — phải mang nhãn.
+      return withScopeLabels<TopNGMeasurementPoint>([], scope);
     }
   }
 
@@ -1175,7 +1535,7 @@ export async function getTopNGMeasurementPoints(params: {
 
   // Get point definition details
   const pointDefIds = result.map(r => r.pointDefId);
-  if (pointDefIds.length === 0) return [];
+  if (pointDefIds.length === 0) return withScopeLabels<TopNGMeasurementPoint>([], scope);
 
   const pointDefs = await db.select({
     id: measurementPointDefs.id,
@@ -1199,7 +1559,7 @@ export async function getTopNGMeasurementPoints(params: {
     .where(and(...conditions));
   const totalNG = totalNGResult[0]?.total || 0;
 
-  return result.map(r => {
+  const rows: TopNGMeasurementPoint[] = result.map(r => {
     const pointDef = pointDefMap.get(r.pointDefId);
     return {
       pointDefId: r.pointDefId,
@@ -1212,12 +1572,13 @@ export async function getTopNGMeasurementPoints(params: {
       percentage: totalNG > 0 ? (Number(r.ngCount) / totalNG * 100) : 0,
     };
   });
+  return withScopeLabels(rows, scope);
 }
 
 // ============ SEED DATA FUNCTIONS ============
 export async function seedSampleData() {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  if (!db) throw new DbUnavailableError();
 
   // Check if data already exists
   const existingFactories = await db.select().from(factories).limit(1);
@@ -1344,107 +1705,42 @@ export async function seedSampleData() {
   };
 }
 
-// ============ SEED INSPECTION DATA ============
-export async function seedInspectionData(count: number = 100) {
-  const db = await getDb();
-  if (!db) throw new Error("Database not available");
-
-  // Get all machines
-  const allMachines = await db.select().from(machines).where(eq(machines.isActive, true));
-  if (allMachines.length === 0) {
-    throw new Error("No machines found. Please seed sample data first.");
-  }
-
-  // Get product model with measurement points
-  const productModel = await db.select().from(productModels).limit(1);
-  if (productModel.length === 0) {
-    throw new Error("No product model found. Please seed sample data first.");
-  }
-  const productModelId = productModel[0].id;
-
-  const measurementPoints = await db.select().from(measurementPointDefs)
-    .where(eq(measurementPointDefs.productModelId, productModelId));
-
-  const results: string[] = ['OK', 'OK', 'OK', 'OK', 'OK', 'OK', 'OK', 'OK', 'NG', 'NTF']; // 80% OK, 10% NG, 10% NTF
-  const ngReasons = ['Scratch detected', 'Dimension out of spec', 'Position shifted', 'Color mismatch', 'Surface defect'];
-  
-  let createdCount = 0;
-  const now = new Date();
-
-  for (let i = 0; i < count; i++) {
-    // Random machine
-    const machine = allMachines[Math.floor(Math.random() * allMachines.length)];
-    
-    // Random date within last 30 days
-    const inspectionDate = new Date(now.getTime() - Math.random() * 30 * 24 * 60 * 60 * 1000);
-    
-    // Generate serial number
-    const serialNumber = `SN-${inspectionDate.toISOString().slice(0, 10).replace(/-/g, '')}-${String(i + 1).padStart(5, '0')}`;
-    
-    // Determine overall result
-    const overallResult = results[Math.floor(Math.random() * results.length)] as 'OK' | 'NG' | 'NTF';
-    
-    // Create inspection record
-    const [inspectionResult] = await db.insert(productInspections).values({
-      machineId: machine.id,
-      productModelId: productModelId,
-      serialNumber,
-      productModel: productModel[0].code,
-      batchNumber: `BATCH-${inspectionDate.toISOString().slice(0, 7).replace(/-/g, '')}`,
-      overallResult,
-      originalResult: overallResult === 'NTF' ? 'NG' : overallResult,
-      inspectionTime: inspectionDate,
-      cycleTime: String((Math.random() * 5 + 1).toFixed(2)), // 1-6 seconds
-    }).returning({ id: productInspections.id });
-    const inspectionId = inspectionResult.id;
-
-    // Create measurement results for each point
-    for (const point of measurementPoints) {
-      // If overall is NG, make 1-3 points NG
-      let pointResult: 'OK' | 'NG' = 'OK';
-      if (overallResult === 'NG' || overallResult === 'NTF') {
-        // 10-20% chance each point is NG when overall is NG
-        if (Math.random() < 0.15) {
-          pointResult = 'NG';
-        }
-      }
-
-      await db.insert(measurementResults).values({
-        inspectionId,
-        pointDefId: point.id,
-        result: pointResult,
-        measuredValue: pointResult === 'OK' ? (Math.random() * 0.1 + 0.95).toFixed(3) : (Math.random() * 0.2 + 0.7).toFixed(3),
-        remark: pointResult === 'NG' ? ngReasons[Math.floor(Math.random() * ngReasons.length)] : null,
-      });
-    }
-
-    createdCount++;
-  }
-
-  return {
-    message: `Created ${createdCount} inspection records with measurement results`,
-    inspections: createdCount,
-    measurementResultsPerInspection: measurementPoints.length,
-  };
-}
-
 // ============ WORKSTATION ANALYTICS ============
 
+export interface DefectsByWorkstationRow {
+  workstationId: number | null;
+  workstationCode: string | null;
+  workstationName: string | null;
+  processType: string | null;
+  measurementPointId: number;
+  measurementPointCode: string;
+  measurementPointName: string;
+  totalCount: number;
+  okCount: number;
+  ngCount: number;
+  ntfCount: number;
+}
+
 // Get defect statistics by workstation
-export async function getDefectsByWorkstation(filters?: { 
-  startDate?: Date; 
-  endDate?: Date; 
+export async function getDefectsByWorkstation(filters?: {
+  startDate?: Date;
+  endDate?: Date;
   productModelId?: number;
   machineId?: number;
-}) {
+} & StatsScopeArgs) {
   const db = await getDb();
-  if (!db) return [];
-  
+  if (!db) return withScopeLabels<DefectsByWorkstationRow>([], UNSCOPED_LABELS);
+
+  // Trục phạm vi. Truy vấn đặt bí danh `pi` ⇒ phải đi qua cổng bán-nối (xem `scopeGateOnAlias`),
+  // và phải là biến thể GIỮ NULL vì đây là bề mặt "danh mục trạm + số đếm" dùng LEFT JOIN.
+  const { filter, labels } = await resolveStatsScope(filters);
+  const scopeGate = filter ? scopeGateKeepingCatalogue(sql`mr.id`, sql`pi.id`, filter) : undefined;
+
   try {
     // Convert Date objects to ISO strings for postgres-js
     const startDateStr = filters?.startDate?.toISOString();
     const endDateStr = filters?.endDate?.toISOString();
-    
+
     // Simplified query: Use LEFT JOIN to handle cases with no measurement results
     const query = sql`
       SELECT 
@@ -1468,31 +1764,33 @@ export async function getDefectsByWorkstation(filters?: {
       ${endDateStr ? sql`AND (pi."inspectionTime" IS NULL OR pi."inspectionTime" <= ${endDateStr})` : sql``}
       ${filters?.productModelId ? sql`AND (mpd."productModelId" IS NULL OR mpd."productModelId" = ${filters.productModelId})` : sql``}
       ${filters?.machineId ? sql`AND (pi."machineId" IS NULL OR pi."machineId" = ${filters.machineId})` : sql``}
+      ${scopeGate ? sql`AND ${scopeGate}` : sql``}
       GROUP BY w.id, w.code, w.name, w."processType", mpd.id, mpd.code, mpd.name
       HAVING mpd.id IS NOT NULL
       ORDER BY "ngCount" DESC
     `;
-    
+
     const result = await db.execute(query);
     // PostgreSQL returns rows directly
     const rows = (result as any).rows || result;
-    return (rows as unknown) as Array<{
-      workstationId: number | null;
-      workstationCode: string | null;
-      workstationName: string | null;
-      processType: string | null;
-      measurementPointId: number;
-      measurementPointCode: string;
-      measurementPointName: string;
-      totalCount: number;
-      okCount: number;
-      ngCount: number;
-      ntfCount: number;
-    }>;
+    return withScopeLabels((rows as unknown) as DefectsByWorkstationRow[], labels);
   } catch (error) {
     console.error('getDefectsByWorkstation error:', error);
-    return [];
+    // ⚠ Kể cả nhánh HỎNG cũng mang nhãn — mảng rỗng trần ở đây lại thành "số 0 im lặng".
+    return withScopeLabels<DefectsByWorkstationRow>([], labels);
   }
+}
+
+export interface TopNGByWorkstationRow {
+  workstationId: number | null;
+  workstationCode: string | null;
+  workstationName: string | null;
+  measurementPointId: number;
+  measurementPointCode: string;
+  measurementPointName: string;
+  totalCount: number;
+  ngCount: number;
+  ntfCount: number;
 }
 
 // Get top NG measurement points by workstation
@@ -1500,9 +1798,13 @@ export async function getTopNGMeasurementPointsByWorkstation(filters?: {
   startDate?: Date;
   endDate?: Date;
   limit?: number;
-}) {
+} & StatsScopeArgs) {
   const db = await getDb();
-  if (!db) return [];
+  if (!db) return withScopeLabels<TopNGByWorkstationRow>([], UNSCOPED_LABELS);
+
+  // Trục phạm vi — LEFT JOIN `pi`, giữ hàng NULL (danh mục điểm đo).
+  const { filter, labels } = await resolveStatsScope(filters);
+  const scopeGate = filter ? scopeGateKeepingCatalogue(sql`mr.id`, sql`pi.id`, filter) : undefined;
 
   try {
     const limitVal = filters?.limit || 10;
@@ -1528,6 +1830,7 @@ export async function getTopNGMeasurementPointsByWorkstation(filters?: {
       WHERE 1=1
       ${startDateStr ? sql`AND (pi."inspectionTime" IS NULL OR pi."inspectionTime" >= ${startDateStr})` : sql``}
       ${endDateStr ? sql`AND (pi."inspectionTime" IS NULL OR pi."inspectionTime" <= ${endDateStr})` : sql``}
+      ${scopeGate ? sql`AND ${scopeGate}` : sql``}
       GROUP BY w.id, w.code, w.name, mpd.id, mpd.code, mpd.name
       HAVING SUM(CASE WHEN mr.result = 'NG' THEN 1 ELSE 0 END) > 0 OR SUM(CASE WHEN mr.result = 'NTF' THEN 1 ELSE 0 END) > 0
       ORDER BY "ngCount" DESC
@@ -1537,31 +1840,38 @@ export async function getTopNGMeasurementPointsByWorkstation(filters?: {
     const result = await db.execute(query);
     // PostgreSQL returns rows directly
     const rows = (result as any).rows || result;
-    return (rows as unknown) as Array<{
-      workstationId: number | null;
-      workstationCode: string | null;
-      workstationName: string | null;
-      measurementPointId: number;
-      measurementPointCode: string;
-      measurementPointName: string;
-      totalCount: number;
-      ngCount: number;
-      ntfCount: number;
-    }>;
+    return withScopeLabels((rows as unknown) as TopNGByWorkstationRow[], labels);
   } catch (error) {
     console.error('getTopNGMeasurementPointsByWorkstation error:', error);
-    return [];
+    return withScopeLabels<TopNGByWorkstationRow>([], labels);
   }
 }
 
+export interface WorkstationSummaryRow {
+  workstationId: number;
+  workstationCode: string;
+  workstationName: string;
+  processType: string;
+  measurementPointCount: number;
+  totalInspections: number;
+  okCount: number;
+  ngCount: number;
+  ntfCount: number;
+  yieldRate: number;
+}
+
 // Get workstation summary statistics
-export async function getWorkstationSummary(filters?: { 
-  startDate?: Date; 
-  endDate?: Date; 
-}) {
+export async function getWorkstationSummary(filters?: {
+  startDate?: Date;
+  endDate?: Date;
+} & StatsScopeArgs) {
   const db = await getDb();
-  if (!db) return [];
-  
+  if (!db) return withScopeLabels<WorkstationSummaryRow>([], UNSCOPED_LABELS);
+
+  // Trục phạm vi — LEFT JOIN `pi`, giữ hàng NULL (danh mục trạm phải còn nguyên).
+  const { filter, labels } = await resolveStatsScope(filters);
+  const scopeGate = filter ? scopeGateKeepingCatalogue(sql`mr.id`, sql`pi.id`, filter) : undefined;
+
   try {
     // Convert Date objects to ISO strings for postgres-js
     const startDateStr = filters?.startDate?.toISOString();
@@ -1586,40 +1896,51 @@ export async function getWorkstationSummary(filters?: {
       WHERE w."isActive" = true
       ${startDateStr ? sql`AND (pi."inspectionTime" IS NULL OR pi."inspectionTime" >= ${startDateStr})` : sql``}
       ${endDateStr ? sql`AND (pi."inspectionTime" IS NULL OR pi."inspectionTime" <= ${endDateStr})` : sql``}
+      ${scopeGate ? sql`AND ${scopeGate}` : sql``}
       GROUP BY w.id, w.code, w.name, w."processType"
       ORDER BY "ngCount" DESC
     `;
-    
+
     const result = await db.execute(query);
     // PostgreSQL returns rows directly
     const rows = (result as any).rows || result;
-    return (rows as unknown) as Array<{
-      workstationId: number;
-      workstationCode: string;
-      workstationName: string;
-      processType: string;
-      measurementPointCount: number;
-      totalInspections: number;
-      okCount: number;
-      ngCount: number;
-      ntfCount: number;
-      yieldRate: number;
-    }>;
+    return withScopeLabels((rows as unknown) as WorkstationSummaryRow[], labels);
   } catch (error) {
     console.error('getWorkstationSummary error:', error);
-    return [];
+    return withScopeLabels<WorkstationSummaryRow>([], labels);
   }
 }
 
+
+export interface MeasurementPointByWorkstationRow {
+  measurementPointId: number;
+  measurementPointCode: string;
+  measurementPointName: string;
+  pointType: string;
+  lowerLimit: number | null;
+  upperLimit: number | null;
+  unit: string | null;
+  totalCount: number;
+  okCount: number;
+  ngCount: number;
+  ntfCount: number;
+  avgValue: number;
+  minValue: number;
+  maxValue: number;
+}
 
 // Get measurement points by workstation with NG statistics
 export async function getMeasurementPointsByWorkstation(filters: {
   workstationId: number;
   startDate?: Date;
   endDate?: Date;
-}) {
+} & StatsScopeArgs) {
   const db = await getDb();
-  if (!db) return [];
+  if (!db) return withScopeLabels<MeasurementPointByWorkstationRow>([], UNSCOPED_LABELS);
+
+  // Trục phạm vi — LEFT JOIN `pi`, giữ hàng NULL (danh mục điểm đo của trạm).
+  const { filter, labels } = await resolveStatsScope(filters);
+  const scopeGate = filter ? scopeGateKeepingCatalogue(sql`mr.id`, sql`pi.id`, filter) : undefined;
 
   try {
     // Convert Date objects to ISO strings for postgres-js
@@ -1648,6 +1969,7 @@ export async function getMeasurementPointsByWorkstation(filters: {
       WHERE mpd."workstationId" = ${filters.workstationId}
       ${startDateStr ? sql`AND (pi."inspectionTime" IS NULL OR pi."inspectionTime" >= ${startDateStr})` : sql``}
       ${endDateStr ? sql`AND (pi."inspectionTime" IS NULL OR pi."inspectionTime" <= ${endDateStr})` : sql``}
+      ${scopeGate ? sql`AND ${scopeGate}` : sql``}
       GROUP BY mpd.id, mpd.code, mpd.name, mpd."measurementType", mpd."lowerLimit", mpd."upperLimit", mpd.unit
       ORDER BY "ngCount" DESC, mpd.code ASC
     `;
@@ -1655,208 +1977,37 @@ export async function getMeasurementPointsByWorkstation(filters: {
     const result = await db.execute(query);
     // PostgreSQL returns rows directly
     const rows = (result as any).rows || result;
-    return (rows as unknown) as Array<{
-      measurementPointId: number;
-      measurementPointCode: string;
-      measurementPointName: string;
-      pointType: string;
-      lowerLimit: number | null;
-      upperLimit: number | null;
-      unit: string | null;
-      totalCount: number;
-      okCount: number;
-      ngCount: number;
-      ntfCount: number;
-      avgValue: number;
-      minValue: number;
-      maxValue: number;
-    }>;
+    return withScopeLabels((rows as unknown) as MeasurementPointByWorkstationRow[], labels);
   } catch (error) {
     console.error('getMeasurementPointsByWorkstation error:', error);
-    return [];
+    return withScopeLabels<MeasurementPointByWorkstationRow>([], labels);
   }
 }
-
-// ============ SEED WORKSTATION ANALYTICS DATA ============
-export async function seedWorkstationAnalyticsData(options?: {
-  inspectionCount?: number;
-  daysBack?: number;
-}) {
-  const db = await getDb();
-  if (!db) throw new Error("Database not available");
-
-  const inspectionCount = options?.inspectionCount || 500;
-  const daysBack = options?.daysBack || 7;
-
-  // Step 1: Ensure workstations exist
-  const existingWorkstations = await db.select().from(workstations);
-  if (existingWorkstations.length === 0) {
-    // Create default workstations
-    const defaultWorkstations = [
-      { code: 'WS-SMT', name: 'SMT Assembly', description: 'Surface Mount Technology', processType: 'SMT' as const, orderIndex: 1, isActive: true },
-      { code: 'WS-DIP', name: 'DIP Soldering', description: 'Dual In-line Package Soldering', processType: 'DIP' as const, orderIndex: 2, isActive: true },
-      { code: 'WS-AOI', name: 'AOI Inspection', description: 'Automated Optical Inspection', processType: 'TESTING' as const, orderIndex: 3, isActive: true },
-      { code: 'WS-FCT', name: 'Functional Test', description: 'Functional Circuit Testing', processType: 'TESTING' as const, orderIndex: 4, isActive: true },
-      { code: 'WS-PKG', name: 'Packaging', description: 'Final Packaging', processType: 'PACKAGING' as const, orderIndex: 5, isActive: true },
-    ];
-
-    for (const ws of defaultWorkstations) {
-      await db.insert(workstations).values(ws);
-    }
-    console.log(`Created ${defaultWorkstations.length} default workstations`);
-  }
-
-  // Step 2: Get all workstations
-  const allWorkstations = await db.select().from(workstations).where(eq(workstations.isActive, true));
-  if (allWorkstations.length === 0) {
-    throw new Error("No active workstations found");
-  }
-
-  // Step 3: Get all machines
-  const allMachines = await db.select().from(machines).where(eq(machines.isActive, true));
-  if (allMachines.length === 0) {
-    throw new Error("No machines found. Please seed sample data first.");
-  }
-
-  // Step 4: Get product model with measurement points
-  const productModel = await db.select().from(productModels).limit(1);
-  if (productModel.length === 0) {
-    throw new Error("No product model found. Please seed sample data first.");
-  }
-  const productModelId = productModel[0].id;
-
-  // Step 5: Get measurement points and assign workstations if not assigned
-  let measurementPoints = await db.select().from(measurementPointDefs)
-    .where(eq(measurementPointDefs.productModelId, productModelId));
-
-  if (measurementPoints.length === 0) {
-    throw new Error("No measurement points found. Please create measurement points first.");
-  }
-
-  // Assign workstations to measurement points if not already assigned
-  let assignedCount = 0;
-  for (let i = 0; i < measurementPoints.length; i++) {
-    const point = measurementPoints[i];
-    if (!point.workstationId) {
-      const workstation = allWorkstations[i % allWorkstations.length];
-      await db.update(measurementPointDefs)
-        .set({ workstationId: workstation.id })
-        .where(eq(measurementPointDefs.id, point.id));
-      assignedCount++;
-    }
-  }
-  if (assignedCount > 0) {
-    console.log(`Assigned workstations to ${assignedCount} measurement points`);
-    // Refresh measurement points
-    measurementPoints = await db.select().from(measurementPointDefs)
-      .where(eq(measurementPointDefs.productModelId, productModelId));
-  }
-
-  // Step 6: Generate inspection data
-  const results: string[] = ['OK', 'OK', 'OK', 'OK', 'OK', 'OK', 'OK', 'NG', 'NG', 'NTF']; // 70% OK, 20% NG, 10% NTF
-  const ngReasons = [
-    'Scratch detected', 
-    'Dimension out of spec', 
-    'Position shifted', 
-    'Color mismatch', 
-    'Surface defect',
-    'Solder bridge',
-    'Missing component',
-    'Wrong polarity',
-    'Cold solder joint',
-    'Tombstone effect'
-  ];
-  
-  let createdInspections = 0;
-  let createdResults = 0;
-  const now = new Date();
-
-  for (let i = 0; i < inspectionCount; i++) {
-    // Random machine
-    const machine = allMachines[Math.floor(Math.random() * allMachines.length)];
-    
-    // Random date within last N days
-    const inspectionDate = new Date(now.getTime() - Math.random() * daysBack * 24 * 60 * 60 * 1000);
-    
-    // Generate serial number
-    const serialNumber = `SN-WS-${inspectionDate.toISOString().slice(0, 10).replace(/-/g, '')}-${String(i + 1).padStart(5, '0')}`;
-    
-    // Determine overall result
-    const overallResult = results[Math.floor(Math.random() * results.length)] as 'OK' | 'NG' | 'NTF';
-    
-    // Create inspection record
-    const [inspectionResult] = await db.insert(productInspections).values({
-      machineId: machine.id,
-      productModelId: productModelId,
-      serialNumber,
-      productModel: productModel[0].code,
-      batchNumber: `BATCH-WS-${inspectionDate.toISOString().slice(0, 7).replace(/-/g, '')}`,
-      overallResult,
-      originalResult: overallResult === 'NTF' ? 'NG' : overallResult,
-      inspectionTime: inspectionDate,
-      cycleTime: String((Math.random() * 5 + 1).toFixed(2)),
-    }).returning({ id: productInspections.id });
-    const inspectionId = inspectionResult.id;
-    createdInspections++;
-
-    // Create measurement results for each point
-    for (const point of measurementPoints) {
-      // If overall is NG/NTF, make some points NG based on workstation
-      let pointResult: 'OK' | 'NG' | 'NTF' = 'OK';
-      
-      if (overallResult === 'NG' || overallResult === 'NTF') {
-        // Higher chance of NG for certain workstations (simulate real-world patterns)
-        const workstation = allWorkstations.find(ws => ws.id === point.workstationId);
-        let ngProbability = 0.15; // default 15%
-        
-        if (workstation) {
-          // SMT and DIP have higher defect rates
-          if (workstation.code === 'WS-SMT') ngProbability = 0.25;
-          else if (workstation.code === 'WS-DIP') ngProbability = 0.20;
-          else if (workstation.code === 'WS-AOI') ngProbability = 0.10;
-        }
-        
-        if (Math.random() < ngProbability) {
-          pointResult = overallResult === 'NTF' ? 'NTF' : 'NG';
-        }
-      }
-
-      await db.insert(measurementResults).values({
-        inspectionId,
-        pointDefId: point.id,
-        result: pointResult,
-        measuredValue: pointResult === 'OK' 
-          ? (Math.random() * 0.1 + 0.95).toFixed(3) 
-          : (Math.random() * 0.2 + 0.7).toFixed(3),
-        remark: pointResult === 'NG' || pointResult === 'NTF' 
-          ? ngReasons[Math.floor(Math.random() * ngReasons.length)] 
-          : null,
-      });
-      createdResults++;
-    }
-  }
-
-  return {
-    message: `Created ${createdInspections} inspection records with ${createdResults} measurement results`,
-    inspections: createdInspections,
-    measurementResults: createdResults,
-    workstationsUsed: allWorkstations.length,
-    measurementPointsPerInspection: measurementPoints.length,
-  };
-}
-
 
 // ============ NG TREND AND COMPARISON FUNCTIONS ============
 
 // Get NG trend data by day
+export interface NGTrendRow {
+  date: string;
+  totalCount: number;
+  okCount: number;
+  ngCount: number;
+  ntfCount: number;
+  ngRate: number;
+}
+
 export async function getNGTrendByDay(filters?: {
   startDate?: Date;
   endDate?: Date;
   workstationId?: number;
   measurementPointDefId?: number;
-}) {
+} & StatsScopeArgs) {
   const db = await getDb();
-  if (!db) return [];
+  if (!db) return withScopeLabels<NGTrendRow>([], UNSCOPED_LABELS);
+
+  // Trục phạm vi. INNER JOIN `pi` ⇒ không có hàng NULL để giữ, dùng cổng bán-nối TRẦN.
+  const { filter, labels } = await resolveStatsScope(filters);
+  const scopeGate = filter ? scopeGateOnAlias(sql`pi.id`, filter) : undefined;
 
   try {
     // Convert Date objects to ISO strings for postgres-js
@@ -1881,6 +2032,7 @@ export async function getNGTrendByDay(filters?: {
       ${endDateStr ? sql`AND pi."inspectionTime" <= ${endDateStr}` : sql``}
       ${filters?.workstationId ? sql`AND mpd."workstationId" = ${filters.workstationId}` : sql``}
       ${filters?.measurementPointDefId ? sql`AND mr."pointDefId" = ${filters.measurementPointDefId}` : sql``}
+      ${scopeGate ? sql`AND ${scopeGate}` : sql``}
       GROUP BY 1
       ORDER BY date ASC
     `;
@@ -1891,24 +2043,17 @@ export async function getNGTrendByDay(filters?: {
     // V3: postgres.js returns COUNT/SUM (bigint) and ROUND (numeric) as STRINGS. The API
     // contract (and every consumer: charts, PDF/PPT reports, report builder) expects numbers,
     // so coerce the numeric columns here at the source rather than in each caller.
-    return ((rows as any[]) ?? []).map((r) => ({
+    return withScopeLabels(((rows as any[]) ?? []).map((r) => ({
       date: String(r.date),
       totalCount: Number(r.totalCount),
       okCount: Number(r.okCount),
       ngCount: Number(r.ngCount),
       ntfCount: Number(r.ntfCount),
       ngRate: Number(r.ngRate),
-    })) as Array<{
-      date: string;
-      totalCount: number;
-      okCount: number;
-      ngCount: number;
-      ntfCount: number;
-      ngRate: number;
-    }>;
+    })) as NGTrendRow[], labels);
   } catch (error) {
     console.error('getNGTrendByDay error:', error);
-    return [];
+    return withScopeLabels<NGTrendRow>([], labels);
   }
 }
 
@@ -1918,9 +2063,13 @@ export async function getNGComparison(filters: {
   currentEndDate: Date;
   previousStartDate: Date;
   previousEndDate: Date;
-}) {
+} & StatsScopeArgs) {
   const db = await getDb();
   if (!db) return null;
+
+  // Trục phạm vi — INNER JOIN `pi`, cổng bán-nối trần.
+  const { filter, labels } = await resolveStatsScope(filters);
+  const scopeGate = filter ? scopeGateOnAlias(sql`pi.id`, filter) : undefined;
 
   try {
     // Convert Date objects to ISO strings for postgres-js
@@ -1941,6 +2090,7 @@ export async function getNGComparison(filters: {
       INNER JOIN product_inspections pi ON mr."inspectionId" = pi.id
       WHERE pi."inspectionTime" >= ${currentStartStr}
         AND pi."inspectionTime" <= ${currentEndStr}
+        ${scopeGate ? sql`AND ${scopeGate}` : sql``}
     `;
 
     // Get previous period stats
@@ -1955,6 +2105,7 @@ export async function getNGComparison(filters: {
       INNER JOIN product_inspections pi ON mr."inspectionId" = pi.id
       WHERE pi."inspectionTime" >= ${previousStartStr}
         AND pi."inspectionTime" <= ${previousEndStr}
+        ${scopeGate ? sql`AND ${scopeGate}` : sql``}
     `;
 
     const [currentResult, previousResult] = await Promise.all([
@@ -1994,6 +2145,8 @@ export async function getNGComparison(filters: {
         ngCountChangePercent: previous.ngCount > 0 ? (ngCountChange / Number(previous.ngCount)) * 100 : 0,
         isImproved: ngRateChange < 0, // NG rate decreased = improved
       },
+      // ⚠ BA ô nhãn, KHÔNG phải `...resolved`.
+      ...labels,
     };
   } catch (error) {
     console.error('getNGComparison error:', error);
@@ -2003,13 +2156,29 @@ export async function getNGComparison(filters: {
 
 // ============ FALLBACK NG FUNCTIONS (product_inspections-based) ============
 
+export interface NGSummaryByMachineRow {
+  machineId: number;
+  machineCode: string;
+  machineName: string;
+  totalInspections: number;
+  okCount: number;
+  ngCount: number;
+  ntfCount: number;
+  yieldRate: number;
+}
+
 // Get NG summary by machine (fallback when workstation data is unavailable)
 export async function getNGSummaryByMachine(filters?: {
   startDate?: Date;
   endDate?: Date;
-}) {
+} & StatsScopeArgs) {
   const db = await getDb();
-  if (!db) return [];
+  if (!db) return withScopeLabels<NGSummaryByMachineRow>([], UNSCOPED_LABELS);
+
+  // Trục phạm vi. Cổng nằm trong điều kiện ON của LEFT JOIN (như bộ lọc ngày ngay cạnh), nên
+  // DANH MỤC MÁY vẫn hiện đủ với số 0 — chặn đúng mà không xoá mất danh sách máy.
+  const { filter, labels } = await resolveStatsScope(filters);
+  const scopeGate = filter ? scopeGateOnAlias(sql`pi.id`, filter) : undefined;
 
   try {
     const startDateStr = filters?.startDate?.toISOString();
@@ -2029,6 +2198,7 @@ export async function getNGSummaryByMachine(filters?: {
       LEFT JOIN product_inspections pi ON pi."machineId" = m.id
         ${startDateStr ? sql`AND pi."inspectionTime" >= ${startDateStr}` : sql``}
         ${endDateStr ? sql`AND pi."inspectionTime" <= ${endDateStr}` : sql``}
+        ${scopeGate ? sql`AND ${scopeGate}` : sql``}
       WHERE m."isActive" = true
       GROUP BY m.id, m.code, m.name
       ORDER BY "ngCount" DESC
@@ -2036,19 +2206,10 @@ export async function getNGSummaryByMachine(filters?: {
 
     const result = await db.execute(query);
     const rows = (result as any).rows || result;
-    return (rows as unknown) as Array<{
-      machineId: number;
-      machineCode: string;
-      machineName: string;
-      totalInspections: number;
-      okCount: number;
-      ngCount: number;
-      ntfCount: number;
-      yieldRate: number;
-    }>;
+    return withScopeLabels((rows as unknown) as NGSummaryByMachineRow[], labels);
   } catch (error) {
     console.error('getNGSummaryByMachine error:', error);
-    return [];
+    return withScopeLabels<NGSummaryByMachineRow>([], labels);
   }
 }
 
@@ -2057,9 +2218,13 @@ export async function getNGTrendByDayDirect(filters?: {
   startDate?: Date;
   endDate?: Date;
   machineId?: number;
-}) {
+} & StatsScopeArgs) {
   const db = await getDb();
-  if (!db) return [];
+  if (!db) return withScopeLabels<NGTrendRow>([], UNSCOPED_LABELS);
+
+  // Trục phạm vi — `FROM product_inspections pi` (có bí danh) ⇒ cổng bán-nối trần.
+  const { filter, labels } = await resolveStatsScope(filters);
+  const scopeGate = filter ? scopeGateOnAlias(sql`pi.id`, filter) : undefined;
 
   try {
     const startDateStr = filters?.startDate?.toISOString();
@@ -2079,23 +2244,17 @@ export async function getNGTrendByDayDirect(filters?: {
       ${startDateStr ? sql`AND pi."inspectionTime" >= ${startDateStr}` : sql``}
       ${endDateStr ? sql`AND pi."inspectionTime" <= ${endDateStr}` : sql``}
       ${filters?.machineId ? sql`AND pi."machineId" = ${filters.machineId}` : sql``}
+      ${scopeGate ? sql`AND ${scopeGate}` : sql``}
       GROUP BY 1
       ORDER BY date ASC
     `;
 
     const result = await db.execute(query);
     const rows = (result as any).rows || result;
-    return (rows as unknown) as Array<{
-      date: string;
-      totalCount: number;
-      okCount: number;
-      ngCount: number;
-      ntfCount: number;
-      ngRate: number;
-    }>;
+    return withScopeLabels((rows as unknown) as NGTrendRow[], labels);
   } catch (error) {
     console.error('getNGTrendByDayDirect error:', error);
-    return [];
+    return withScopeLabels<NGTrendRow>([], labels);
   }
 }
 
@@ -2105,9 +2264,13 @@ export async function getNGComparisonDirect(filters: {
   currentEndDate: Date;
   previousStartDate: Date;
   previousEndDate: Date;
-}) {
+} & StatsScopeArgs) {
   const db = await getDb();
   if (!db) return null;
+
+  // Trục phạm vi — `FROM product_inspections pi` (có bí danh) ⇒ cổng bán-nối trần.
+  const { filter, labels } = await resolveStatsScope(filters);
+  const scopeGate = filter ? scopeGateOnAlias(sql`pi.id`, filter) : undefined;
 
   try {
     const currentStartStr = filters.currentStartDate.toISOString();
@@ -2125,6 +2288,7 @@ export async function getNGComparisonDirect(filters: {
       FROM product_inspections pi
       WHERE pi."inspectionTime" >= ${currentStartStr}
         AND pi."inspectionTime" <= ${currentEndStr}
+        ${scopeGate ? sql`AND ${scopeGate}` : sql``}
     `;
 
     const previousQuery = sql`
@@ -2137,6 +2301,7 @@ export async function getNGComparisonDirect(filters: {
       FROM product_inspections pi
       WHERE pi."inspectionTime" >= ${previousStartStr}
         AND pi."inspectionTime" <= ${previousEndStr}
+        ${scopeGate ? sql`AND ${scopeGate}` : sql``}
     `;
 
     const [currentResult, previousResult] = await Promise.all([
@@ -2175,6 +2340,8 @@ export async function getNGComparisonDirect(filters: {
         ngCountChangePercent: previous.ngCount > 0 ? (ngCountChange / Number(previous.ngCount)) * 100 : 0,
         isImproved: ngRateChange < 0,
       },
+      // ⚠ BA ô nhãn, KHÔNG phải `...resolved`.
+      ...labels,
     };
   } catch (error) {
     console.error('getNGComparisonDirect error:', error);
@@ -2200,17 +2367,21 @@ export async function getGalleryImages(params: {
   userRole?: string;
 }) {
   const db = await getDb();
-  if (!db) return { data: [], total: 0 };
+  if (!db) return { data: [], total: 0, ...UNSCOPED_LABELS };
 
-  // Reuse searchInspections to get matching inspection IDs
+  // Phạm vi được cưỡng chế Ở TẦNG DƯỚI: `searchInspections` nhận `userId`/`userRole` qua
+  // `...params` và chỉ trả về những bản ghi kiểm trong phạm vi; ảnh ở đây bị chặn bởi
+  // `inArray(inspectionId, …)` nên KHÔNG có đường vòng. Cái thiếu là ba ô NHÃN — nếu không
+  // chuyển tiếp, người 0 gán nhà máy nhận thư viện ảnh rỗng KHÔNG kèm lý do.
   const inspectionResult = await searchInspections({
     ...params,
     limit: params.limit || 100,
     offset: params.offset || 0,
   });
+  const labels = scopeLabelsOf(inspectionResult);
 
   if (inspectionResult.data.length === 0) {
-    return { data: [], total: 0 };
+    return { data: [], total: 0, ...labels };
   }
 
   const inspectionIds = inspectionResult.data.map(i => i.id);
@@ -2250,6 +2421,7 @@ export async function getGalleryImages(params: {
     data: results,
     total: results.length,
     inspectionCount: inspectionResult.total,
+    ...labels,
   };
 }
 
@@ -2509,6 +2681,21 @@ export async function getThroughputByFactory(filters: {
 
 // ============ TOP NG ANALYSIS FUNCTIONS (ENHANCED) ============
 
+export interface TopNGEnhancedRow {
+  rank: number;
+  measurementPointId: number;
+  pointCode: string;
+  pointName: string;
+  measurementType: string;
+  productModelId: number | null;
+  productCode: string | null;
+  productName: string | null;
+  ngCount: number;
+  totalCount: number;
+  ngRate: string;
+  cumulativePercent: number;
+}
+
 export async function getTopNGMeasurementPointsEnhanced(filters: {
   startDate?: Date;
   endDate?: Date;
@@ -2516,13 +2703,20 @@ export async function getTopNGMeasurementPointsEnhanced(filters: {
   factoryCode?: string;
   productModelId?: number;
   limit?: number;
-}) {
+} & StatsScopeArgs) {
   const db = await getDb();
-  if (!db) return [];
-  
+  if (!db) return withScopeLabels<TopNGEnhancedRow>([], UNSCOPED_LABELS);
+
   const limitCount = filters.limit || 10;
   const conditions: SQL[] = [];
-  
+
+  // Trục phạm vi — truy vấn drizzle (không bí danh), `filter` nhét thẳng vào `conditions`.
+  // ⚠ `productInspections` ở đây được nối bằng LEFT JOIN, nên một kết quả đo KHÔNG gắn được với
+  // bản ghi kiểm nào (`pi.*` NULL) sẽ bị vị từ này loại — ĐÚNG chủ ý: không xác định được nhà
+  // máy thì không được rơi vào phạm vi của bất kỳ ai (trừ vai toàn quyền, vốn không có `filter`).
+  const { filter, labels } = await resolveStatsScope(filters);
+  if (filter) conditions.push(filter);
+
   // Join with inspections to filter by date and factory
   if (filters.startDate) {
     conditions.push(gte(productInspections.inspectionTime, filters.startDate));
@@ -2569,26 +2763,36 @@ export async function getTopNGMeasurementPointsEnhanced(filters: {
     .orderBy(sql`COUNT(*) DESC`)
     .limit(limitCount);
   
-  return results.map((r, index) => ({
+  return withScopeLabels(results.map((r, index) => ({
     rank: index + 1,
     measurementPointId: r.measurementPointId,
     pointCode: r.pointCode || 'N/A',
     pointName: r.pointName || 'Unknown',
-    measurementType: r.measurementType || 'OTHER',
+    measurementType: (r.measurementType || 'OTHER') as string,
     productModelId: r.productModelId || null,
     productCode: r.productCode || null,
     productName: r.productName || null,
     ngCount: Number(r.ngCount),
     totalCount: Number(r.totalCount),
-    ngRate: Number(r.totalCount) > 0 
+    ngRate: Number(r.totalCount) > 0
       ? ((Number(r.ngCount) / Number(r.totalCount)) * 100).toFixed(2)
       : '0.00',
     // For Pareto chart - cumulative percentage
     cumulativePercent: 0, // Will be calculated in router
-  }));
+  })), labels);
 }
 
 // ============ TREND ANALYSIS FUNCTIONS ============
+
+export interface YieldTrendRow {
+  timeInterval: unknown;
+  totalCount: number;
+  okCount: number;
+  ngCount: number;
+  ntfCount: number;
+  yieldRate: number;
+  ngRate: number;
+}
 
 export async function getYieldTrendData(filters: {
   startDate: Date;
@@ -2596,23 +2800,27 @@ export async function getYieldTrendData(filters: {
   machineId?: number;
   factoryCode?: string;
   interval?: 'hour' | 'day' | 'week' | 'month';
-}) {
+} & StatsScopeArgs) {
   const db = await getDb();
-  if (!db) return [];
-  
+  if (!db) return withScopeLabels<YieldTrendRow>([], UNSCOPED_LABELS);
+
   const interval = filters.interval || 'day';
   const conditions: SQL[] = [
     gte(productInspections.inspectionTime, filters.startDate),
     lte(productInspections.inspectionTime, filters.endDate),
   ];
-  
+
   if (filters.machineId) {
     conditions.push(eq(productInspections.machineId, filters.machineId));
   }
   if (filters.factoryCode) {
     conditions.push(eq(productInspections.factoryCode, filters.factoryCode));
   }
-  
+
+  // Trục phạm vi — truy vấn drizzle không bí danh.
+  const { filter, labels } = await resolveStatsScope(filters);
+  if (filter) conditions.push(filter);
+
   // Buckets in the FACTORY timezone (gap A2).
   let dateFormat: SQL;
   if (interval === 'hour') {
@@ -2638,7 +2846,7 @@ export async function getYieldTrendData(filters: {
     .groupBy(dateFormat)
     .orderBy(dateFormat);
 
-  return results.map(r => ({
+  return withScopeLabels(results.map(r => ({
     timeInterval: r.timeInterval,
     totalCount: Number(r.totalCount),
     okCount: Number(r.okCount),
@@ -2653,33 +2861,47 @@ export async function getYieldTrendData(filters: {
     ngRate: Number(r.totalCount) > 0
       ? ((Number(r.ngCount) / Number(r.totalCount)) * 100)
       : 0,
-  }));
+  })), labels);
 }
 
 // ============ ANOMALY DETECTION FUNCTIONS ============
+
+export interface RecentYieldRow {
+  date: unknown;
+  totalCount: number;
+  okCount: number;
+  ngCount: number;
+  ntfCount: number;
+  yieldRate: number;
+  ngRate: number;
+}
 
 export async function getRecentYieldData(filters: {
   machineId?: number;
   factoryCode?: string;
   days?: number;
-}) {
+} & StatsScopeArgs) {
   const db = await getDb();
-  if (!db) return [];
-  
+  if (!db) return withScopeLabels<RecentYieldRow>([], UNSCOPED_LABELS);
+
   const days = filters.days || 30;
   const startDate = new Date(Date.now() - days * 24 * 60 * 60 * 1000);
-  
+
   const conditions: SQL[] = [
     gte(productInspections.inspectionTime, startDate),
   ];
-  
+
   if (filters.machineId) {
     conditions.push(eq(productInspections.machineId, filters.machineId));
   }
   if (filters.factoryCode) {
     conditions.push(eq(productInspections.factoryCode, filters.factoryCode));
   }
-  
+
+  // Trục phạm vi — truy vấn drizzle không bí danh.
+  const { filter, labels } = await resolveStatsScope(filters);
+  if (filter) conditions.push(filter);
+
   const results = await db
     .select({
       // Day bucket in the FACTORY timezone (gap A2).
@@ -2694,7 +2916,7 @@ export async function getRecentYieldData(filters: {
     .groupBy(sql`date`)
     .orderBy(sql`date`);
 
-  return results.map(r => ({
+  return withScopeLabels(results.map(r => ({
     date: r.date,
     totalCount: Number(r.totalCount),
     okCount: Number(r.okCount),
@@ -2709,22 +2931,36 @@ export async function getRecentYieldData(filters: {
     ngRate: Number(r.totalCount) > 0
       ? ((Number(r.ngCount) / Number(r.totalCount)) * 100)
       : 0,
-  }));
+  })), labels);
 }
 
 // ============ WORKSTATION ANALYSIS FUNCTIONS ============
+
+export interface NGByWorkstationRow {
+  workstationId: number | null;
+  workstationCode: string;
+  workstationName: string;
+  processType: string;
+  ngCount: number;
+  totalCount: number;
+}
 
 export async function getNGByWorkstation(filters: {
   startDate?: Date;
   endDate?: Date;
   machineId?: number;
   factoryCode?: string;
-}) {
+} & StatsScopeArgs) {
   const db = await getDb();
-  if (!db) return [];
-  
+  if (!db) return withScopeLabels<NGByWorkstationRow>([], UNSCOPED_LABELS);
+
+  // Trục phạm vi — áp lên CẢ HAI truy vấn (đếm NG và đếm TỔNG). Bỏ sót truy vấn thứ hai thì
+  // `ngRate` = NG-trong-phạm-vi / TỔNG-toàn-cục — vẫn rò số liệu, chỉ là dưới dạng mẫu số.
+  const { filter, labels } = await resolveStatsScope(filters);
+
   const conditions: SQL[] = [];
-  
+  if (filter) conditions.push(filter);
+
   if (filters.startDate) {
     conditions.push(gte(productInspections.inspectionTime, filters.startDate));
   }
@@ -2762,6 +2998,7 @@ export async function getNGByWorkstation(filters: {
   
   // Get total counts per workstation (all results, not just NG)
   const totalConditions: SQL[] = [];
+  if (filter) totalConditions.push(filter);
   if (filters.startDate) {
     totalConditions.push(gte(productInspections.inspectionTime, filters.startDate));
   }
@@ -2791,18 +3028,26 @@ export async function getNGByWorkstation(filters: {
   // Create map of total counts
   const totalMap = new Map(totalResults.map(r => [r.workstationId, Number(r.totalCount)]));
   
-  return ngResults.map(r => ({
+  return withScopeLabels(ngResults.map(r => ({
     workstationId: r.workstationId,
     workstationCode: r.workstationCode || 'N/A',
     workstationName: r.workstationName || 'Unknown',
-    processType: r.processType || 'OTHER',
+    processType: (r.processType || 'OTHER') as string,
     ngCount: Number(r.ngCount),
     totalCount: totalMap.get(r.workstationId) || Number(r.ngCount),
-  }));
+  })), labels);
 }
 
 
 // ============ WORKSTATION-MEASUREMENT POINT LINKED ANALYSIS ============
+
+export interface NGByPointForWorkstationRow {
+  pointDefId: number;
+  pointCode: string;
+  pointName: string;
+  ngCount: number;
+  totalCount: number;
+}
 
 export async function getNGByMeasurementPointForWorkstation(filters: {
   workstationId: number;
@@ -2810,15 +3055,19 @@ export async function getNGByMeasurementPointForWorkstation(filters: {
   endDate?: Date;
   machineId?: number;
   factoryCode?: string;
-}) {
+} & StatsScopeArgs) {
   const db = await getDb();
-  if (!db) return [];
-  
+  if (!db) return withScopeLabels<NGByPointForWorkstationRow>([], UNSCOPED_LABELS);
+
+  // Trục phạm vi — áp lên CẢ HAI truy vấn (NG và TỔNG), xem `getNGByWorkstation`.
+  const { filter, labels } = await resolveStatsScope(filters);
+
   const conditions: SQL[] = [
     eq(measurementPointDefs.workstationId, filters.workstationId),
     eq(measurementResults.result, 'NG'),
   ];
-  
+  if (filter) conditions.push(filter);
+
   if (filters.startDate) {
     conditions.push(gte(productInspections.inspectionTime, filters.startDate));
   }
@@ -2853,6 +3102,7 @@ export async function getNGByMeasurementPointForWorkstation(filters: {
   const totalConditions: SQL[] = [
     eq(measurementPointDefs.workstationId, filters.workstationId),
   ];
+  if (filter) totalConditions.push(filter);
   if (filters.startDate) {
     totalConditions.push(gte(productInspections.inspectionTime, filters.startDate));
   }
@@ -2882,13 +3132,13 @@ export async function getNGByMeasurementPointForWorkstation(filters: {
   // Create map of total counts
   const totalMap = new Map(totalResults.map(r => [r.pointDefId, Number(r.totalCount)]));
   
-  return ngResults.map(r => ({
+  return withScopeLabels(ngResults.map(r => ({
     pointDefId: r.pointDefId,
     pointCode: r.pointCode || 'N/A',
     pointName: r.pointName || 'Unknown',
     ngCount: Number(r.ngCount),
     totalCount: totalMap.get(r.pointDefId) || Number(r.ngCount),
-  }));
+  })), labels);
 }
 
 // Get linked measurement points for a workstation
@@ -2912,16 +3162,40 @@ export async function getLinkedMeasurementPointsForWorkstation(workstationId: nu
 }
 
 // ============ MEASUREMENT POINT STATISTICS BY PRODUCT ============
+export interface MeasurementPointStatsRow {
+  pointDefId: number;
+  pointCode: string;
+  pointName: string;
+  measurementType: string;
+  unit: string;
+  lowerLimit: number | null;
+  upperLimit: number | null;
+  nominalValue: number | null;
+  totalCount: number;
+  okCount: number;
+  ngCount: number;
+  ngRate: number;
+  minValue: number | null;
+  maxValue: number | null;
+  avgValue: number | null;
+}
+
 export async function getMeasurementPointStatsByProduct(params: {
   productModelId: number;
   startDate: Date;
   endDate: Date;
-}) {
+} & StatsScopeArgs) {
   const db = await getDb();
-  if (!db) return [];
+  if (!db) return withScopeLabels<MeasurementPointStatsRow>([], UNSCOPED_LABELS);
 
   const startStr = params.startDate.toISOString();
   const endStr = params.endDate.toISOString();
+
+  // Trục phạm vi — cổng nằm TRONG nhánh LATERAL (nơi có bí danh `pi`), nên DANH MỤC điểm đo của
+  // sản phẩm vẫn hiện đủ với số 0, chỉ phần SỐ ĐẾM bị thu hẹp. Đây là bề mặt "cấu hình + số
+  // đếm": danh mục điểm đo là dữ liệu chủ, số đếm mới là bản ghi kiểm.
+  const { filter, labels } = await resolveStatsScope(params);
+  const scopeGate = filter ? scopeGateOnAlias(sql`pi.id`, filter) : undefined;
 
   const result = await db.execute(sql`
     SELECT
@@ -2954,6 +3228,7 @@ export async function getMeasurementPointStatsByProduct(params: {
         AND pi."productModelId" = ${params.productModelId}
         AND pi."inspectionTime" >= ${startStr}::timestamp
         AND pi."inspectionTime" <= ${endStr}::timestamp
+        ${scopeGate ? sql`AND ${scopeGate}` : sql``}
     ) stats ON true
     WHERE mpd."productModelId" = ${params.productModelId}
       AND mpd."isActive" = true
@@ -2961,7 +3236,7 @@ export async function getMeasurementPointStatsByProduct(params: {
   `);
 
   const rows = (result as any).rows || (result as any);
-  return (rows as any[]).map((r: any) => ({
+  return withScopeLabels((rows as any[]).map((r: any) => ({
     pointDefId: Number(r.pointDefId),
     pointCode: r.pointCode || '',
     pointName: r.pointName || '',
@@ -2979,22 +3254,33 @@ export async function getMeasurementPointStatsByProduct(params: {
     minValue: r.minValue != null ? Number(Number(r.minValue).toFixed(6)) : null,
     maxValue: r.maxValue != null ? Number(Number(r.maxValue).toFixed(6)) : null,
     avgValue: r.avgValue != null ? Number(Number(r.avgValue).toFixed(6)) : null,
-  }));
+  })) as MeasurementPointStatsRow[], labels);
 }
 
 /**
  * Lấy danh sách ảnh (OK/NG) cho từng điểm đo theo sản phẩm trong khoảng thời gian
+ *
+ * ⚠ MIỄN TRỪ NHÃN (không phải miễn trừ LỌC — bộ lọc vẫn áp đủ). Hàm trả về một BẢN ĐỒ khoá theo
+ * `pointDefId` (`Record<number, …>`), không phải mảng hay đối tượng cố định, nên ba ô
+ * `scopeApplied`/`scopeEmptyReason`/`scopeMessage` không có chỗ đặt mà không đụng vào không gian
+ * khoá số. Nơi gọi DUY NHẤT là tuyến REST ngoài `/api/external/statistics/measurement-points`
+ * (`validateExternalAuth`: master-key/bearer máy-với-máy) — lối đi KHÔNG mang danh tính người
+ * dùng, nên nó không truyền `userId` và cũng không có giao diện nào để hiển thị lý do.
  */
 export async function getMeasurementPointImagesByProduct(params: {
   productModelId: number;
   startDate: Date;
   endDate: Date;
-}) {
+} & StatsScopeArgs) {
   const db = await getDb();
   if (!db) return [];
 
   const startStr = params.startDate.toISOString();
   const endStr = params.endDate.toISOString();
+
+  // Trục phạm vi — `INNER JOIN product_inspections pi` ⇒ cổng bán-nối trần.
+  const { filter } = await resolveStatsScope(params);
+  const scopeGate = filter ? scopeGateOnAlias(sql`pi.id`, filter) : undefined;
 
   const result = await db.execute(sql`
     SELECT
@@ -3011,6 +3297,7 @@ export async function getMeasurementPointImagesByProduct(params: {
       AND pi."inspectionTime" <= ${endStr}::timestamp
       AND mr."imageUrl" IS NOT NULL
       AND mr."imageUrl" != ''
+      ${scopeGate ? sql`AND ${scopeGate}` : sql``}
     ORDER BY mr."pointDefId", pi."inspectionTime" DESC
   `);
 
@@ -3037,4 +3324,186 @@ export async function getMeasurementPointImagesByProduct(params: {
   }
 
   return grouped;
+}
+
+// ============ DRILL-DOWN AGGREGATES (doc 67 W6) ============
+//
+// Thay thế đường "fetch 50k row → group bằng Map trong Node" của drillDownRouter
+// (annotationRouters.ts) bằng GROUP BY trực tiếp trên product_inspections.
+// Contract shape của router GIỮ NGUYÊN — các hàm này chỉ trả aggregate thô
+// (bucket + đếm), router map sang code/name/yieldRate/isUnassigned như cũ.
+
+/** 1 bucket aggregate thô của drill-down (đếm theo overallResult). */
+export interface DrillAggRow {
+  total: number;
+  ok: number;
+  ng: number;
+  ntf: number;
+}
+
+/**
+ * Access-control cho drill-down — SAO NGUYÊN logic của getProductInspections
+ * (inspection.ts): non-admin bị giới hạn theo corporate-assignment OR
+ * factory-assignment; không có assignment nào → KHÔNG có quyền (trả granted=false,
+ * caller trả []).
+ */
+async function drillAccessCondition(
+  userId?: number,
+  userRole?: 'admin' | 'user',
+): Promise<{ granted: boolean; condition?: SQL }> {
+  if (!userId || userRole === 'admin') return { granted: true };
+  const corporateAssignments = await getUserCorporateAssignments(userId);
+  const factoryAssignments = await getUserFactoryAssignments(userId);
+  const accessConditions: SQL[] = [];
+  if (corporateAssignments.length > 0) {
+    accessConditions.push(
+      inArray(productInspections.corporateCode, corporateAssignments.map(a => a.corporateCode)),
+    );
+  }
+  if (factoryAssignments.length > 0) {
+    accessConditions.push(
+      inArray(productInspections.factoryCode, factoryAssignments.map(a => a.factoryCode)),
+    );
+  }
+  if (accessConditions.length === 0) return { granted: false };
+  return { granted: true, condition: or(...accessConditions) as SQL };
+}
+
+/** Các cột đếm dùng chung cho 3 hàm drill (đếm theo overallResult). */
+const drillCountColumns = {
+  total: sql<number>`COUNT(*)`,
+  ok: sql<number>`SUM(CASE WHEN ${productInspections.overallResult} = 'OK' THEN 1 ELSE 0 END)`,
+  ng: sql<number>`SUM(CASE WHEN ${productInspections.overallResult} = 'NG' THEN 1 ELSE 0 END)`,
+  ntf: sql<number>`SUM(CASE WHEN ${productInspections.overallResult} = 'NTF' THEN 1 ELSE 0 END)`,
+};
+
+/**
+ * Tầng CORPORATE: GROUP BY COALESCE(NULLIF(corporateCode,''),'Unknown') — bucket
+ * 'Unknown' = sentinel "chưa gán tập đoàn" (W1), khớp hệt hành vi JS cũ
+ * `corporateCode || 'Unknown'` (NULL và chuỗi rỗng đều vào bucket sentinel).
+ */
+export async function getDrillStatsByCorporate(filters: {
+  startDate?: Date;
+  endDate?: Date;
+  userId?: number;
+  userRole?: 'admin' | 'user';
+}): Promise<Array<DrillAggRow & { code: string }>> {
+  const db = await getDb();
+  if (!db) return [];
+
+  const access = await drillAccessCondition(filters.userId, filters.userRole);
+  if (!access.granted) return [];
+
+  const conditions: SQL[] = [];
+  if (filters.startDate) conditions.push(gte(productInspections.inspectionTime, filters.startDate));
+  if (filters.endDate) conditions.push(lte(productInspections.inspectionTime, filters.endDate));
+  if (access.condition) conditions.push(access.condition);
+
+  const corpBucket = sql<string>`COALESCE(NULLIF(${productInspections.corporateCode}, ''), 'Unknown')`;
+
+  const rows = await db
+    .select({ code: corpBucket, ...drillCountColumns })
+    .from(productInspections)
+    .where(conditions.length > 0 ? and(...conditions) : undefined)
+    .groupBy(corpBucket);
+
+  return rows.map(r => ({
+    code: r.code,
+    total: Number(r.total),
+    ok: Number(r.ok),
+    ng: Number(r.ng),
+    ntf: Number(r.ntf),
+  }));
+}
+
+/**
+ * Tầng FACTORY: GROUP BY COALESCE(NULLIF(factoryCode,''),'Unknown') trong 1
+ * corporate. `unassignedCorporate: true` = drill từ sentinel 'Unknown' (W1) —
+ * match corporateCode NULL/rỗng thay vì eq().
+ */
+export async function getDrillStatsByFactory(filters: {
+  corporateCode?: string;
+  /** true → lọc corporateCode NULL/'' (drill từ bucket "Chưa gán tập đoàn"). */
+  unassignedCorporate?: boolean;
+  startDate?: Date;
+  endDate?: Date;
+  userId?: number;
+  userRole?: 'admin' | 'user';
+}): Promise<Array<DrillAggRow & { factoryCode: string }>> {
+  const db = await getDb();
+  if (!db) return [];
+
+  const access = await drillAccessCondition(filters.userId, filters.userRole);
+  if (!access.granted) return [];
+
+  const conditions: SQL[] = [];
+  if (filters.unassignedCorporate) {
+    conditions.push(
+      sql`(${productInspections.corporateCode} IS NULL OR ${productInspections.corporateCode} = '')`,
+    );
+  } else if (filters.corporateCode) {
+    conditions.push(eq(productInspections.corporateCode, filters.corporateCode));
+  }
+  if (filters.startDate) conditions.push(gte(productInspections.inspectionTime, filters.startDate));
+  if (filters.endDate) conditions.push(lte(productInspections.inspectionTime, filters.endDate));
+  if (access.condition) conditions.push(access.condition);
+
+  const factoryBucket = sql<string>`COALESCE(NULLIF(${productInspections.factoryCode}, ''), 'Unknown')`;
+
+  const rows = await db
+    .select({ factoryCode: factoryBucket, ...drillCountColumns })
+    .from(productInspections)
+    .where(conditions.length > 0 ? and(...conditions) : undefined)
+    .groupBy(factoryBucket);
+
+  return rows.map(r => ({
+    factoryCode: r.factoryCode,
+    total: Number(r.total),
+    ok: Number(r.ok),
+    ng: Number(r.ng),
+    ntf: Number(r.ntf),
+  }));
+}
+
+/**
+ * Tầng LINE: JOIN machines→stations rồi GROUP BY stations."lineId" trong 1
+ * factory (lọc theo factoryCode của inspection — giữ hệt semantics cũ: chỉ đếm
+ * inspection mang factoryCode của nhà máy đang drill). INNER JOIN đồng nghĩa
+ * machine không gắn station bị loại — khớp JS cũ (stationIds.includes(null) = false).
+ */
+export async function getDrillStatsByLine(filters: {
+  factoryCode: string;
+  startDate?: Date;
+  endDate?: Date;
+  userId?: number;
+  userRole?: 'admin' | 'user';
+}): Promise<Array<DrillAggRow & { lineId: number }>> {
+  const db = await getDb();
+  if (!db) return [];
+
+  const access = await drillAccessCondition(filters.userId, filters.userRole);
+  if (!access.granted) return [];
+
+  const conditions: SQL[] = [eq(productInspections.factoryCode, filters.factoryCode)];
+  if (filters.startDate) conditions.push(gte(productInspections.inspectionTime, filters.startDate));
+  if (filters.endDate) conditions.push(lte(productInspections.inspectionTime, filters.endDate));
+  if (access.condition) conditions.push(access.condition);
+
+  const rows = await db
+    .select({ lineId: stations.lineId, ...drillCountColumns })
+    .from(productInspections)
+    .innerJoin(machines, eq(productInspections.machineId, machines.id))
+    .innerJoin(stations, eq(machines.stationId, stations.id))
+    .where(and(...conditions))
+    .groupBy(stations.lineId);
+
+  return rows
+    .filter(r => r.lineId != null)
+    .map(r => ({
+      lineId: Number(r.lineId),
+      total: Number(r.total),
+      ok: Number(r.ok),
+      ng: Number(r.ng),
+      ntf: Number(r.ntf),
+    }));
 }

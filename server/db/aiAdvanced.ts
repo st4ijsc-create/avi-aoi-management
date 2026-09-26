@@ -1,4 +1,5 @@
 import { getDb } from "./connection";
+import { DbUnavailableError } from "../_core/dbErrors";
 import { eq, and, desc, asc, sql, lt, gte, lte, SQL, isNull } from "drizzle-orm";
 import {
   batchInferenceJobs, InsertBatchInferenceJob,
@@ -25,7 +26,7 @@ import { inArray } from "drizzle-orm";
 
 export async function createBatchInferenceJob(data: InsertBatchInferenceJob) {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  if (!db) throw new DbUnavailableError();
   const [result] = await db.insert(batchInferenceJobs).values(data).returning();
   return result!;
 }
@@ -39,7 +40,7 @@ export async function getBatchInferenceJob(id: number) {
 
 export async function updateBatchInferenceJob(id: number, data: Partial<InsertBatchInferenceJob>) {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  if (!db) throw new DbUnavailableError();
   const [result] = await db.update(batchInferenceJobs).set(data).where(eq(batchInferenceJobs.id, id)).returning();
   return result;
 }
@@ -63,14 +64,14 @@ export async function getBatchInferenceJobs(options?: {
 
 export async function createBatchInferenceItem(data: InsertBatchInferenceItem) {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  if (!db) throw new DbUnavailableError();
   const [result] = await db.insert(batchInferenceItems).values(data).returning();
   return result!;
 }
 
 export async function createBatchInferenceItems(items: InsertBatchInferenceItem[]) {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  if (!db) throw new DbUnavailableError();
   return db.insert(batchInferenceItems).values(items).returning();
 }
 
@@ -84,14 +85,14 @@ export async function getBatchInferenceItems(batchJobId: number, status?: string
 
 export async function updateBatchInferenceItem(id: number, data: Partial<InsertBatchInferenceItem>) {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  if (!db) throw new DbUnavailableError();
   const [result] = await db.update(batchInferenceItems).set(data).where(eq(batchInferenceItems.id, id)).returning();
   return result;
 }
 
 export async function updateBatchItemsByJob(batchJobId: number, fromStatus: string, data: Partial<InsertBatchInferenceItem>) {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  if (!db) throw new DbUnavailableError();
   return db.update(batchInferenceItems).set(data).where(
     and(eq(batchInferenceItems.batchJobId, batchJobId), eq(batchInferenceItems.status, fromStatus as any)),
   );
@@ -101,7 +102,7 @@ export async function updateBatchItemsByJob(batchJobId: number, fromStatus: stri
 
 export async function createABTestExperiment(data: InsertAbTestExperiment) {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  if (!db) throw new DbUnavailableError();
   const [result] = await db.insert(abTestExperiments).values(data).returning();
   return result!;
 }
@@ -118,7 +119,7 @@ export async function getABTestExperiment(id: number) {
 // modelAInferences) at the call site instead of silently no-op'ing the update.
 export async function updateABTestExperiment(id: number, data: Partial<InsertAbTestExperiment>) {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  if (!db) throw new DbUnavailableError();
   const [result] = await db.update(abTestExperiments).set({ ...data, updatedAt: new Date() }).where(eq(abTestExperiments.id, id)).returning();
   return result;
 }
@@ -142,14 +143,14 @@ export async function getABTestExperiments(options?: {
 
 export async function createABTestResult(data: InsertAbTestResult) {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  if (!db) throw new DbUnavailableError();
   const [result] = await db.insert(abTestResults).values(data).returning();
   return result!;
 }
 
 export async function updateABTestResult(id: number, data: Partial<InsertAbTestResult>) {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  if (!db) throw new DbUnavailableError();
   const [result] = await db.update(abTestResults).set(data).where(eq(abTestResults.id, id)).returning();
   return result;
 }
@@ -202,14 +203,14 @@ export async function getABTestStats(experimentId: number) {
 
 export async function createPerformanceSnapshot(data: InsertModelPerformanceSnapshot) {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  if (!db) throw new DbUnavailableError();
   const [result] = await db.insert(modelPerformanceSnapshots).values(data).returning();
   return result!;
 }
 
 export async function updatePerformanceSnapshot(id: number, data: Partial<InsertModelPerformanceSnapshot>) {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  if (!db) throw new DbUnavailableError();
   const [result] = await db.update(modelPerformanceSnapshots).set(data).where(eq(modelPerformanceSnapshots.id, id)).returning();
   return result;
 }
@@ -319,14 +320,14 @@ export async function getInferenceStatsForPeriod(
 
 export async function createDriftAlert(data: InsertModelDriftAlert) {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  if (!db) throw new DbUnavailableError();
   const [result] = await db.insert(modelDriftAlerts).values(data).returning();
   return result!;
 }
 
 export async function updateDriftAlert(id: number, data: Partial<InsertModelDriftAlert>) {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  if (!db) throw new DbUnavailableError();
   const [result] = await db.update(modelDriftAlerts).set(data).where(eq(modelDriftAlerts.id, id)).returning();
   return result;
 }
@@ -364,7 +365,7 @@ export async function getDriftAlerts(options?: {
 
 export async function createTrainingJob(data: InsertTrainingJob) {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  if (!db) throw new DbUnavailableError();
   const [result] = await db.insert(trainingJobs).values(data).returning();
   return result!;
 }
@@ -378,7 +379,7 @@ export async function getTrainingJob(id: number) {
 
 export async function updateTrainingJob(id: number, data: Partial<InsertTrainingJob> & Record<string, unknown>) {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  if (!db) throw new DbUnavailableError();
   const [result] = await db.update(trainingJobs).set({ ...data, updatedAt: new Date() } as any).where(eq(trainingJobs.id, id)).returning();
   return result;
 }
@@ -458,7 +459,7 @@ export async function getTrainingDataStats(modelId: number) {
 
 export async function createTrainingDataset(data: InsertTrainingDataset) {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  if (!db) throw new DbUnavailableError();
   const [result] = await db.insert(trainingDatasets).values(data).returning();
   return result!;
 }
@@ -487,7 +488,7 @@ export async function getTrainingDatasets(options?: {
 
 export async function createEdgeDeployment(data: InsertEdgeDeployment) {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  if (!db) throw new DbUnavailableError();
   const [result] = await db.insert(edgeDeployments).values(data).returning();
   return result!;
 }
@@ -501,7 +502,7 @@ export async function getEdgeDeployment(id: number) {
 
 export async function updateEdgeDeployment(id: number, data: Partial<InsertEdgeDeployment> & Record<string, unknown>) {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  if (!db) throw new DbUnavailableError();
   const [result] = await db.update(edgeDeployments).set({ ...data, updatedAt: new Date() } as any).where(eq(edgeDeployments.id, id)).returning();
   return result;
 }
@@ -555,7 +556,7 @@ export async function getModelVersionForDeployment(modelId: number, version: str
 
 export async function createEdgeInferenceSync(data: InsertEdgeInferenceSync) {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  if (!db) throw new DbUnavailableError();
   const [result] = await db.insert(edgeInferenceSync).values(data).returning();
   return result!;
 }
@@ -581,7 +582,7 @@ export async function getEdgeInferenceResults(options?: {
 
 export async function createCalibrationReport(data: InsertAiCalibrationReport) {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  if (!db) throw new DbUnavailableError();
   const [result] = await db.insert(aiCalibrationReports).values(data).returning();
   return result!;
 }

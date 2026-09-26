@@ -21,7 +21,14 @@
  */
 import { z } from "zod";
 import { TRPCError } from "@trpc/server";
-import { router, protectedProcedure } from "../_core/trpc";
+import { appError } from "../_core/appError";
+import { router, moduleProcedure } from "../_core/trpc";
+// ★ Cổng giấy phép MOD_AI — `moduleAccessMap.ts` đã khai `causalGraph: MOD.AI` từ doc 38 nhưng
+//   CHƯA BAO GIỜ nối dây; tuyến `/causal-graph` cũng đã nằm trong `MOD_AI.routes`. Nối ở đây để
+//   client và máy chủ nói cùng một câu. Người gọi duy nhất là `pages/CausalGraphEditorPage.tsx`
+//   (tuyến MOD_AI); dịch vụ `aiCausalGraph` được `aiRcaCopilot` gọi THẲNG, không qua tRPC, nên
+//   không lượt gọi máy-chủ-tới-máy-chủ nào bị chạm.
+const protectedProcedure = moduleProcedure("MOD_AI");
 import { requirePermission } from "../_core/accessControl";
 import {
   getEditableGraph,
@@ -76,12 +83,14 @@ function guard<T>(fn: () => T): T {
     return fn();
   } catch (err) {
     if (err instanceof CausalGraphValidationError) {
-      throw new TRPCError({ code: "BAD_REQUEST", message: err.message });
+      throw appError("BAD_REQUEST", "INVALID_VALUE", { field: "causalGraph" }, err.message);
     }
-    throw new TRPCError({
-      code: "INTERNAL_SERVER_ERROR",
-      message: err instanceof Error ? err.message : "Causal graph write failed",
-    });
+    throw appError(
+      "INTERNAL_SERVER_ERROR",
+      "OPERATION_FAILED",
+      { operation: "writeCausalGraph" },
+      err instanceof Error ? err.message : "Causal graph write failed",
+    );
   }
 }
 

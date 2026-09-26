@@ -50,6 +50,8 @@ function agg(partial: Partial<ReadinessAggregate>): ReadinessAggregate {
     numericPoints: 0,
     numericWithLimits: 0,
     withComponent: 0,
+    treeRows: 0,
+    treeRowsWithLimit: 0,
     fiducials: 0,
     goldens: 0,
     releases: 0,
@@ -118,6 +120,47 @@ describe("scoreReadiness — math + checklist", () => {
     expect(byKey.points.status).toBe("missing");
     expect(byKey.limits.status).toBe("missing");
   });
+
+  // QĐ-7 (Khối C, Task 12) — cây dạy (component point-defs, `captureRowId IS
+  // NOT NULL`) mặc định `measurementType='VISUAL'` nên KHÔNG rơi vào
+  // `numericPoints`; trước bản vá một sản phẩm dạy ONLY qua cây (0 điểm phẳng)
+  // degenerate về numeric===0 ⇒ "na"/100% dù 0 component có giới hạn thật. Đây
+  // là lưới ĐỎ-nguyên-văn bước 1 (Task 12) tái hiện ở tầng pure scorer.
+  it("QĐ-7 — a product taught ONLY via cây dạy (0 flat points, 16 tree rows, 0 taught) is missing/0%, NOT na/100%", () => {
+    const r = scoreReadiness(agg({
+      hasImage: true, hasDims: true,
+      pointCount: 16, numericPoints: 0, numericWithLimits: 0, withComponent: 16,
+      treeRows: 16, treeRowsWithLimit: 0,
+    }));
+    const limits = r.items.find((i) => i.key === "limits")!;
+    expect(limits.status).toBe("missing");
+    expect(limits.fraction).toBe(0);
+    expect(limits.counts).toMatchObject({ numericPoints: 16, withLimits: 0, missing: 16 });
+  });
+
+  it("QĐ-7 — teaching 8/16 tree rows yields limits fraction 0.5 / partial", () => {
+    const r = scoreReadiness(agg({
+      hasImage: true, hasDims: true,
+      pointCount: 16, numericPoints: 0, numericWithLimits: 0, withComponent: 16,
+      treeRows: 16, treeRowsWithLimit: 8,
+    }));
+    const limits = r.items.find((i) => i.key === "limits")!;
+    expect(limits.status).toBe("partial");
+    expect(limits.fraction).toBe(0.5);
+    expect(limits.counts).toMatchObject({ numericPoints: 16, withLimits: 8, missing: 8 });
+  });
+
+  it("QĐ-7 — flat DIMENSION points + tree rows combine additively in the limits item", () => {
+    const r = scoreReadiness(agg({
+      hasImage: true, hasDims: true,
+      pointCount: 20, numericPoints: 4, numericWithLimits: 4, withComponent: 20,
+      treeRows: 16, treeRowsWithLimit: 8,
+    }));
+    const limits = r.items.find((i) => i.key === "limits")!;
+    // (4 flat, all with limits) + (16 tree, 8 with limits) = 12/20.
+    expect(limits.counts).toMatchObject({ numericPoints: 20, withLimits: 12, missing: 8 });
+    expect(limits.fraction).toBe(0.6);
+  });
 });
 
 describe("computeProductReadinessBatch — no N+1", () => {
@@ -130,7 +173,8 @@ describe("computeProductReadinessBatch — no N+1", () => {
     await computeProductReadinessBatch(Array.from({ length: 50 }, (_, i) => i + 1));
     const forFifty = counts.select;
     expect(forOne).toBe(forFifty);
-    // 7 aggregate queries: products + points + fiducials + golden + release + mapping + panel.
-    expect(forOne).toBe(7);
+    // 8 aggregate queries: products + points + fiducials + golden + release + mapping
+    // + panel + tree-rows (QĐ-7, Task 12 — hàng cây captureRowId IS NOT NULL).
+    expect(forOne).toBe(8);
   });
 });

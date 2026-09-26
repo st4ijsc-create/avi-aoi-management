@@ -1,5 +1,7 @@
 import { getDb } from "./connection";
-import { eq, and, desc, gte, lte, or, isNull, sql, SQL } from "drizzle-orm";
+import { DbUnavailableError } from "../_core/dbErrors";
+import { eq, and, desc, gte, lte, or, isNull, inArray, sql, SQL } from "drizzle-orm";
+import type { PhamViNguoiXem } from "./hierarchy";
 import {
   auditLogs,
   type InsertAuditLog,
@@ -22,6 +24,7 @@ import {
   reportTemplates,
   type InsertReportTemplate,
 } from "../../drizzle/schema";
+import { catTheoTranCot } from "./catTheoTranCot";
 
 // =====================================================
 // Audit Functions
@@ -38,6 +41,39 @@ export type AuditEntityType =
   | 'factory' | 'workshop' | 'line' | 'station'
   | 'alert' | 'threshold' | 'mapping' | 'order';
 
+/**
+ * ★★★ NGƯỜI GHI SỔ KIỂM TOÁN — điểm ghi DUY NHẤT vào `audit_logs`.
+ *
+ * ══════════════════════════════════════════════════════════════════════════════════════
+ * ⚠⚠⚠ VÌ SAO HÀM NÀY PHẢI CHỊU ĐƯỢC DỮ LIỆU THIẾU/XẤU (đo 2026-08-18)
+ * ══════════════════════════════════════════════════════════════════════════════════════
+ * Nó được gọi ở ĐÚNG lúc có sự cố — nơi mọi thứ quanh nó đang hỏng: phản hồi vừa bị
+ * `res.destroy()`, `req.ip` đã thành `undefined`, CSDL vừa ném `statement_timeout`. Một
+ * hàm ghi-sổ mà **giả định đầu vào đầy đủ** sẽ hỏng ĐÚNG lúc nó cần thiết nhất, và khi
+ * ấy sự cố **không để lại dấu vết nào** — lớp lỗi tệ nhất trong nhóm ghi-nhận.
+ *
+ * Ba điều được ghim ở đây:
+ *
+ *   1. **`[result]` KHÔNG BAO GIỜ được đọc thẳng `.id`.** Dòng cũ là
+ *      `return { id: Number(result.id) }` — nếu `RETURNING` trả 0 hàng thì `result` là
+ *      `undefined` và câu ấy ném **`Cannot read properties of undefined (reading 'id')`**.
+ *      Đó là **BIỂU THỨC DUY NHẤT** trong toàn bộ chuỗi ghi audit có thể đúc ra câu lỗi ấy
+ *      (đã soát cả mã nguồn lẫn bundle `dist`). Và nó ném vì một lý do **vô hại**: chỉ
+ *      *tiếng vọng id* vắng, còn `INSERT` thì **không ném** ⇒ hàng ĐÃ nằm trong bảng.
+ *      Ném ở đây = báo "mất dấu vết" trong khi dấu vết vẫn còn — vừa sai vừa che mất
+ *      nguyên nhân thật. Nay: cảnh báo, trả `id: 0`, KHÔNG ném.
+ *
+ *   2. **Trần `varchar` được tôn trọng theo SCHEMA** (`catTheoTranCot`). `userAgent` là
+ *      `varchar(500)` và nạp thẳng từ header của KẺ GỌI; `ipAddress` là `varchar(45)` và
+ *      sẽ thành dữ liệu kẻ gọi ngay khi ai đó bật `trust proxy`. Một giá trị quá dài
+ *      trước đây = `22001` = **mất trọn hàng audit**. Nay nó chỉ bị **cắt**.
+ *      ⇒ *Thiếu một trường không được làm mất cả bản ghi.*
+ *
+ *   3. `details` là `text` (không trần) và được `JSON.stringify` phòng thủ: một đối tượng
+ *      vòng lặp/`BigInt` ở đường lỗi không được phép giết bản ghi — mất `details` còn hơn
+ *      mất cả hàng.
+ * ══════════════════════════════════════════════════════════════════════════════════════
+ */
 export async function createAuditLog(data: {
   userId?: number | null;
   userName?: string | null;
@@ -51,22 +87,48 @@ export async function createAuditLog(data: {
   status?: 'success' | 'failure';
 }): Promise<{ id: number }> {
   const db = await getDb();
-  if (!db) throw new Error("Database not connected");
-  
-  const [result] = await db.insert(auditLogs).values({
+  if (!db) throw new DbUnavailableError();
+
+  const values = catTheoTranCot(auditLogs, {
     userId: data.userId ?? null,
     userName: data.userName ?? null,
     action: data.action,
     entityType: data.entityType ?? null,
     entityId: data.entityId ?? null,
     entityName: data.entityName ?? null,
-    details: data.details ? JSON.stringify(data.details) : null,
+    details: serializeAuditDetails(data.details),
     ipAddress: data.ipAddress ?? null,
     userAgent: data.userAgent ?? null,
     status: data.status ?? 'success',
-  }).returning({ id: auditLogs.id });
-  
-  return { id: Number(result.id) };
+  } satisfies InsertAuditLog);
+
+  const inserted = await db.insert(auditLogs).values(values).returning({ id: auditLogs.id });
+  const row = inserted[0];
+  if (!row) {
+    // `INSERT` không ném ⇒ hàng ĐÃ được ghi; chỉ `RETURNING` không trả về gì.
+    // Ném ở đây sẽ báo "mất dấu vết" cho một dấu vết vẫn tồn tại. Xem khối §1 ở trên.
+    console.warn(
+      `[audit] INSERT ... RETURNING trả 0 hàng cho action="${data.action}" — hàng audit ĐÃ ghi, ` +
+        `chỉ không đọc lại được id.`,
+    );
+    return { id: 0 };
+  }
+  return { id: Number(row.id) };
+}
+
+/**
+ * `details` → chuỗi JSON, KHÔNG BAO GIỜ ném. Một đối tượng có vòng lặp (hay `BigInt`) lọt
+ * vào đây ở đường lỗi sẽ làm `JSON.stringify` ném, và cả hàng audit biến mất vì một ô phụ.
+ * Mất `details` là thiệt hại chấp nhận được; mất cả hàng thì không.
+ */
+function serializeAuditDetails(details: Record<string, any> | null | undefined): string | null {
+  if (!details) return null;
+  try {
+    return JSON.stringify(details);
+  } catch (err) {
+    console.warn("[audit] không tuần tự hoá được `details` — giữ hàng, bỏ ô:", (err as Error)?.message ?? err);
+    return JSON.stringify({ _detailsUnserializable: String((err as Error)?.message ?? err) });
+  }
 }
 
 export async function getAuditLogs(params: {
@@ -97,7 +159,7 @@ export async function getAuditLogs(params: {
   total: number;
 }> {
   const db = await getDb();
-  if (!db) throw new Error("Database not connected");
+  if (!db) throw new DbUnavailableError();
   
   const conditions: SQL[] = [];
   
@@ -173,7 +235,7 @@ export async function getAuditLogStats(days: number = 7): Promise<{
   actionsByDay: Array<{ date: string; count: number }>;
 }> {
   const db = await getDb();
-  if (!db) throw new Error("Database not connected");
+  if (!db) throw new DbUnavailableError();
   
   const startDate = new Date();
   startDate.setDate(startDate.getDate() - days);
@@ -292,17 +354,27 @@ export async function createSystemSetting(data: InsertSystemSetting) {
 
 // ==================== Scheduled Reports ====================
 
+/**
+ * ★ 2026-08-18 (trả nợ nhóm A) — báo cáo hẹn giờ mang `factoryId`/`workshopId`/`lineId` (đều
+ * nullable) và một danh sách NGƯỜI NHẬN. Hàng KHÔNG khai phạm vi nào là báo cáo TOÀN HỆ THỐNG:
+ * nó tổng hợp số liệu của mọi nhà máy, nên nó **bị loại** cho người bị thu hẹp — khác với ngưỡng
+ * cấu hình (`oee_targets`, mẫu lệnh) vốn không mang số đo của ai.
+ */
 export async function getScheduledReports(filters?: {
   isActive?: boolean;
   reportType?: string;
   schedule?: string;
-}) {
+}, scope?: PhamViNguoiXem) {
   const db = await getDb();
   if (!db) return [];
   
   let query = db.select().from(scheduledReports);
   
   const conditions = [];
+  {
+    const cong = await congBaoCaoHenGio(scope);
+    if (cong) conditions.push(cong);
+  }
   if (filters?.isActive !== undefined) {
     conditions.push(eq(scheduledReports.isActive, filters.isActive));
   }
@@ -320,20 +392,37 @@ export async function getScheduledReports(filters?: {
   return query.orderBy(desc(scheduledReports.createdAt));
 }
 
-export async function getScheduledReportById(id: number) {
+export async function getScheduledReportById(id: number, scope?: PhamViNguoiXem) {
   const db = await getDb();
   if (!db) return null;
   
+  const cong = await congBaoCaoHenGio(scope);
   const results = await db.select().from(scheduledReports)
-    .where(eq(scheduledReports.id, id))
+    .where(cong ? and(eq(scheduledReports.id, id), cong) : eq(scheduledReports.id, id))
     .limit(1);
   
   return results[0] || null;
 }
 
+/** Cổng phạm vi cho `scheduled_reports` — xem docblock `getScheduledReports`. */
+async function congBaoCaoHenGio(scope?: PhamViNguoiXem) {
+  const { idsTrongPhamVi } = await import("./hierarchy");
+  const [idsNhaMay, idsXuong, idsTuyen] = await Promise.all([
+    idsTrongPhamVi("factory", scope),
+    idsTrongPhamVi("workshop", scope),
+    idsTrongPhamVi("line", scope),
+  ]);
+  if (idsNhaMay === null || idsXuong === null || idsTuyen === null) return undefined;
+  return or(
+    inArray(scheduledReports.factoryId, idsNhaMay.length ? idsNhaMay : [-1]),
+    inArray(scheduledReports.workshopId, idsXuong.length ? idsXuong : [-1]),
+    inArray(scheduledReports.lineId, idsTuyen.length ? idsTuyen : [-1]),
+  );
+}
+
 export async function createScheduledReport(data: InsertScheduledReport) {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  if (!db) throw new DbUnavailableError();
   
   const [result] = await db.insert(scheduledReports).values(data).returning({ id: scheduledReports.id });
   return result.id;
@@ -341,7 +430,7 @@ export async function createScheduledReport(data: InsertScheduledReport) {
 
 export async function updateScheduledReport(id: number, data: Partial<InsertScheduledReport>) {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  if (!db) throw new DbUnavailableError();
   
   await db.update(scheduledReports)
     .set({ ...data, updatedAt: new Date() })
@@ -350,7 +439,7 @@ export async function updateScheduledReport(id: number, data: Partial<InsertSche
 
 export async function deleteScheduledReport(id: number) {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  if (!db) throw new DbUnavailableError();
   
   // Delete logs first
   await db.delete(scheduledReportLogs).where(eq(scheduledReportLogs.reportId, id));
@@ -370,7 +459,7 @@ export async function getScheduledReportLogs(reportId: number, limit: number = 5
 
 export async function createScheduledReportLog(data: InsertScheduledReportLog) {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  if (!db) throw new DbUnavailableError();
   
   const [result] = await db.insert(scheduledReportLogs).values(data).returning({ id: scheduledReportLogs.id });
   return result.id;
@@ -395,7 +484,7 @@ export async function getReportsDueForSending() {
 
 export async function updateReportNextSchedule(id: number, nextScheduledAt: Date) {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  if (!db) throw new DbUnavailableError();
   
   await db.update(scheduledReports)
     .set({ 
@@ -418,7 +507,7 @@ export async function getSmtpConfig() {
 
 export async function createOrUpdateSmtpConfig(data: Omit<InsertSmtpConfig, 'id' | 'createdAt' | 'updatedAt'>) {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  if (!db) throw new DbUnavailableError();
   
   const existing = await getSmtpConfig();
   
@@ -745,7 +834,7 @@ export async function createReportTemplate(data: {
   isDefault?: boolean;
 }) {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  if (!db) throw new DbUnavailableError();
 
   const code = generateTemplateCode(data.name);
 
@@ -786,7 +875,7 @@ export async function updateReportTemplate(id: number, data: {
   isDefault?: boolean;
 }) {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  if (!db) throw new DbUnavailableError();
 
   const updateData: Record<string, any> = { updatedAt: new Date() };
 
@@ -820,7 +909,7 @@ export async function updateReportTemplate(id: number, data: {
  */
 export async function deleteReportTemplate(id: number) {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  if (!db) throw new DbUnavailableError();
 
   await db.update(reportTemplates)
     .set({ isActive: false, updatedAt: new Date() })

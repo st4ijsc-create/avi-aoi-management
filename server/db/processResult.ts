@@ -1,12 +1,13 @@
 // Sprint F2 — DB access for generic process results (parallel to inspection).
 import { getDb } from "./connection";
+import { DbUnavailableError } from "../_core/dbErrors";
 import { and, asc, desc, eq, gte, sql } from "drizzle-orm";
 import { processResults, processStepTypes, processResultDaily, InsertProcessResult } from "../../drizzle/schema";
 
 /** Insert one process-result row; returns the new id. */
 export async function insertProcessResult(row: InsertProcessResult): Promise<number> {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  if (!db) throw new DbUnavailableError();
   const [inserted] = await db
     .insert(processResults)
     .values(row)

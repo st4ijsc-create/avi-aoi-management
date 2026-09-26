@@ -15,6 +15,7 @@
 import { useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { trpc } from "@/lib/trpc";
+import { toastTrpcError } from "@/lib/trpcErrors";
 import { usePermissions } from "@/_core/hooks/usePermissions";
 import DashboardLayout from "@/components/DashboardLayout";
 import { ViewOnlyBadge } from "@/components/PermissionGate";
@@ -110,19 +111,19 @@ export function UnsMappingDesignerContent() {
 
   const createMut = trpc.unsMapping.create.useMutation({
     onSuccess: () => { toast.success(t("unsMapping.toast.created", "Đã tạo mapping")); setDialogOpen(false); invalidate(); },
-    onError: (e) => toast.error(e.message),
+    onError: (e) => toastTrpcError(e),
   });
   const updateMut = trpc.unsMapping.update.useMutation({
     onSuccess: () => { toast.success(t("unsMapping.toast.updated", "Đã cập nhật mapping")); setDialogOpen(false); invalidate(); },
-    onError: (e) => toast.error(e.message),
+    onError: (e) => toastTrpcError(e),
   });
   const deleteMut = trpc.unsMapping.delete.useMutation({
     onSuccess: () => { toast.success(t("unsMapping.toast.deleted", "Đã xoá mapping")); invalidate(); },
-    onError: (e) => toast.error(e.message),
+    onError: (e) => toastTrpcError(e),
   });
   const toggleMut = trpc.unsMapping.update.useMutation({
     onSuccess: () => invalidate(),
-    onError: (e) => toast.error(e.message),
+    onError: (e) => toastTrpcError(e),
   });
 
   // Build a transform object from the form (only set fields).

@@ -9,6 +9,7 @@ import { z } from "zod";
 import { protectedProcedure, router } from "../_core/trpc";
 import * as db from "../db";
 import { TRPCError } from "@trpc/server";
+import { appError } from "../_core/appError";
 import { suggestThresholds } from "../utils/thresholdSuggestion";
 
 function toNum(x: unknown): number | null {
@@ -31,7 +32,7 @@ export const thresholdSuggestionRouter = router({
     .query(async ({ input }) => {
       const def = await db.getMeasurementPointDefById(input.pointDefId);
       if (!def) {
-        throw new TRPCError({ code: "NOT_FOUND", message: `MP ${input.pointDefId} not found` });
+        throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "measurementPoint" }, `MP ${input.pointDefId} not found`);
       }
       const rows = await db.listMeasurementSamples({
         pointDefId: input.pointDefId,

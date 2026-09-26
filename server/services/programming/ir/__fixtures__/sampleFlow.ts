@@ -20,7 +20,7 @@ export const SAMPLE_FLOW: Flow = {
       type: "move_linear",
       target_pose: { x: 300, y: 100, z: 200, rx: 0, ry: 3.14, rz: 0 },
       speed_mms: 200,
-      acceleration: 1.2,
+      acceleration: 1200, // mm/s² (IR unit) ⇒ URScript a=1.2 m/s²
       blend_radius: 10,
     },
     { id: "b3", type: "grip", tool_id: "gripper_a", force_limit_n: 40, timeout_ms: 2000 },
@@ -36,7 +36,7 @@ export const SAMPLE_FLOW: Flow = {
           type: "move_linear",
           target_pose: { x: 300, y: -100, z: 200, rx: 0, ry: 3.14, rz: 0 },
           speed_mms: 150,
-          acceleration: 1.0,
+          acceleration: 1000, // mm/s² ⇒ a=1 m/s²
           blend_radius: 0,
         },
       ],

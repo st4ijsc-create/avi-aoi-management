@@ -24,6 +24,7 @@ import {
 } from "@/components/ui/alert-dialog";
 import { trpc } from "@/lib/trpc";
 import { toast } from "sonner";
+import { toastTrpcError, mapTrpcError } from "@/lib/trpcErrors";
 import {
   Card,
   CardContent,
@@ -175,7 +176,7 @@ export function MqttBulletinContent() {
       refetchNgAlert();
       setShowNgAlertDialog(false);
     },
-    onError: (err) => toast.error(err.message),
+    onError: (err) => toastTrpcError(err),
   });
 
   const ngAlertToggleMutation = trpc.mqttNgAlertSettings.toggleEnabled.useMutation({
@@ -183,7 +184,7 @@ export function MqttBulletinContent() {
       toast.success(t('mqtt.ngAlert.statusUpdated', 'Đã cập nhật trạng thái'));
       refetchNgAlert();
     },
-    onError: (err) => toast.error(err.message),
+    onError: (err) => toastTrpcError(err),
   });
 
   const ngAlertDeleteMutation = trpc.mqttNgAlertSettings.deleteSetting.useMutation({
@@ -191,7 +192,7 @@ export function MqttBulletinContent() {
       toast.success(t('mqtt.ngAlert.deleted', 'Đã xóa cấu hình'));
       refetchNgAlert();
     },
-    onError: (err) => toast.error(err.message),
+    onError: (err) => toastTrpcError(err),
   });
 
   // Mutations
@@ -201,7 +202,7 @@ export function MqttBulletinContent() {
       refetchSettings();
       setShowAddDialog(false);
     },
-    onError: (err) => toast.error(t('mqtt.bulletinPage.errorMsg', { message: err.message })),
+    onError: (err) => toast.error(t('mqtt.bulletinPage.errorMsg', { message: mapTrpcError(err) })),
   });
 
   const quickSetupMutation = trpc.mqttBulletin.quickSetup.useMutation({
@@ -211,7 +212,7 @@ export function MqttBulletinContent() {
       setShowAddDialog(false);
       setSelectedStationIds([]);
     },
-    onError: (err) => toast.error(t('mqtt.bulletinPage.errorMsg', { message: err.message })),
+    onError: (err) => toast.error(t('mqtt.bulletinPage.errorMsg', { message: mapTrpcError(err) })),
   });
 
   const toggleMutation = trpc.mqttBulletin.toggleEnabled.useMutation({
@@ -219,7 +220,7 @@ export function MqttBulletinContent() {
       toast.success(t('mqtt.bulletinPage.statusUpdated'));
       refetchSettings();
     },
-    onError: (err) => toast.error(t('mqtt.bulletinPage.errorMsg', { message: err.message })),
+    onError: (err) => toast.error(t('mqtt.bulletinPage.errorMsg', { message: mapTrpcError(err) })),
   });
 
   const deleteMutation = trpc.mqttBulletin.deleteSetting.useMutation({
@@ -227,7 +228,7 @@ export function MqttBulletinContent() {
       toast.success(t('mqtt.bulletinPage.settingsDeleted'));
       refetchSettings();
     },
-    onError: (err) => toast.error(t('mqtt.bulletinPage.errorMsg', { message: err.message })),
+    onError: (err) => toast.error(t('mqtt.bulletinPage.errorMsg', { message: mapTrpcError(err) })),
   });
 
   const triggerMutation = trpc.mqttBulletin.triggerNow.useMutation({
@@ -236,7 +237,7 @@ export function MqttBulletinContent() {
       refetchHistory();
       refetchStats();
     },
-    onError: (err) => toast.error(t('mqtt.bulletinPage.errorMsg', { message: err.message })),
+    onError: (err) => toast.error(t('mqtt.bulletinPage.errorMsg', { message: mapTrpcError(err) })),
   });
 
   const testBulletinMutation = trpc.mqttBulletin.sendTestBulletin.useMutation({
@@ -250,7 +251,7 @@ export function MqttBulletinContent() {
       refetchHistory();
       refetchStats();
     },
-    onError: (err) => toast.error(t('mqtt.bulletinPage.testSendError', { message: err.message })),
+    onError: (err) => toast.error(t('mqtt.bulletinPage.testSendError', { message: mapTrpcError(err) })),
   });
 
   const handleSendTest = () => {

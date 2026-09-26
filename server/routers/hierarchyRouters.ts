@@ -1,7 +1,9 @@
 import { publicProcedure, protectedProcedure, router, roleProcedure } from "../_core/trpc";
 import { adminProcedure } from "./_shared";
+import { phamViCua } from "./_phamViNguoiXem";
 import { z } from "zod";
 import { TRPCError } from "@trpc/server";
+import { appError } from "../_core/appError";
 import { nanoid } from "nanoid";
 import * as db from "../db";
 import { storagePut } from "../storage";
@@ -72,7 +74,7 @@ function machineRegistrationGate(action: "canView" | "canEdit") {
       return requirePermission("machine_registration", action)(opts);
     }
     if (opts.ctx.user?.role !== "admin") {
-      throw new TRPCError({ code: "FORBIDDEN", message: "Admin access required" });
+      throw appError("FORBIDDEN", "PERMISSION_DENIED", { action: "adminAccess" }, "Admin access required");
     }
     return opts.next({ ctx: opts.ctx });
   };
@@ -147,16 +149,124 @@ function commissionGovernanceWarning(machineType: string): string | undefined {
   return undefined;
 }
 
+/**
+ * ★★★ Task 13 (PH-03) — "người gọi giữ ÍT NHẤT MỘT quyền còn hiệu lực".
+ *
+ * Trả `true` nếu `userId` có ≥1 hàng `permissions` **thật sự cấp** một hành động nào đó và **chưa
+ * hết hạn**. Một hàng toàn `false` (hoặc đã quá `expiresAt`) KHÔNG phải quyền — `checkPermission`
+ * cũng đọc `expiresAt` đúng như vậy (`_core/accessControl.ts`), nên hai đường không lệch nhau.
+ *
+ * Nhập ĐỘNG theo đúng lệ của tệp này (xem `machine.regenerateApiKey`): `server/db/hierarchy.ts`
+ * đã ghi rõ nhập TĨNH từ tầng dữ liệu vào `_core/accessControl` tạo vòng router → db → trpc.
+ * Đọc thẳng `../db/connection` (KHÔNG qua `* as db`) vì đó là cùng một handle mà
+ * `checkPermission` dùng — cổng quyền và bộ lọc phạm vi phải nhìn cùng một CSDL.
+ */
+async function coItNhatMotQuyenConHieuLuc(userId: number): Promise<boolean> {
+  const { getDb } = await import("../db/connection");
+  const conn = await getDb();
+  // CSDL không mở được ⇒ FAIL-CLOSED cho vai không-admin, đúng nếp `checkPermission`
+  // (`if (!db) return isAdmin;`). Ở nhánh này `getFactories` cũng trả `[]` nên không mất gì.
+  if (!conn) return false;
+  const { permissions } = await import("../../drizzle/schema");
+  const { and, eq, gt, isNull, or } = await import("drizzle-orm");
+  const hang = await conn
+    .select({ id: permissions.id })
+    .from(permissions)
+    .where(
+      and(
+        eq(permissions.userId, userId),
+        or(
+          eq(permissions.canView, true),
+          eq(permissions.canCreate, true),
+          eq(permissions.canEdit, true),
+          eq(permissions.canDelete, true),
+          eq(permissions.canExport, true),
+        ),
+        or(isNull(permissions.expiresAt), gt(permissions.expiresAt, new Date())),
+      ),
+    )
+    .limit(1);
+  return hang.length > 0;
+}
+
+/**
+ * ★★★ Task 13 (PH-03) — **CỔNG QUYỀN cho `factory.list`.**
+ *
+ * ── Lỗ đã đo (QA lần 11) ──────────────────────────────────────────────────────────────────────
+ * Tài khoản **0 hàng quyền** vẫn nhận về danh sách nhà máy mình được gán, trong khi
+ * `factoryCommand.overview` và `twinCanh.danhSachToaNha` của **cùng phiên ấy** trả về từ chối.
+ * `protectedProcedure` chỉ hỏi "đã đăng nhập chưa"; bộ lọc phạm vi chỉ hỏi "được gán nhà máy
+ * nào" — **không ai hỏi "có quyền không"**. Rò tên + mã nhà máy được gán.
+ *
+ * ── ⚠⚠⚠ VÌ SAO KHÔNG DÙNG `requirePermission("machine_status","canView")` ─────────────────────
+ * Kế hoạch đề xuất khoá ấy *"vì màn twin vốn đã đòi nó nên không thu hẹp ai"*. **Đo lại thì đề
+ * xuất ấy THU HẸP người đang dùng được**, theo hai hướng:
+ *
+ *  (A) `factory.list` KHÔNG phải thủ tục của riêng màn twin. Đếm `trpc.factory.list.useQuery`
+ *      ở client: 36 lượt khớp / 36 tệp, trừ 2 lượt KHÔNG phải nơi gọi thật (`pages/ApiDocs.tsx`
+ *      in chuỗi mẫu trong `<CodeBlock>`; `twin3d/van-hanh/tang1KhongTachDuoc.unit.test.ts` là
+ *      lưới) ⇒ **34 nơi gọi thật** — Báo cáo (`Reports`/`PdfReports`/`PowerPointExport`/
+ *      `ReportTemplates`/`ScheduledReports`), Phân tích (`ParetoAnalysis`/`CategoryAnalytics`/
+ *      `RootCauseAnalysisPage`/`DataComparison`/`DrillDownDashboard`), MQTT, Cài đặt, Sản xuất,
+ *      bốn màn twin, và `components/patterns/EntityPicker.tsx` — một bộ chọn DÙNG CHUNG nhúng
+ *      được vào bất kỳ màn nào. Không danh sách khoá hữu hạn nào bao nổi tập ấy một cách bền vững.
+ *
+ *  (B) Vai `quality_inspector` **không có** `machine_status`, cũng **không có** `analytics_oee`
+ *      (đọc `DEFAULT_ROLE_PERMISSIONS`, `permissionsRouter.ts`: 24 module, vắng cả hai). Vai ấy
+ *      sống trên Báo cáo/Phân tích và đang gọi `factory.list` mỗi lần mở bộ lọc nhà máy. Khoá
+ *      `machine_status` sẽ cắt đúng vai đó — **vá một lỗ, mở một lỗ khác**.
+ *
+ * ⇒ Khoá đã chọn là **phần bù ĐÚNG BẰNG lớp rò**: ai có dù chỉ MỘT ô tick quyền còn hiệu lực đều
+ * đi qua; chỉ tài khoản 0 quyền — đúng lớp mà QA đo được — bị chặn. Nên nó **không thu hẹp một
+ * ai**: không `quality_inspector`, không vai tuỳ biến chủ dự án tự nhân bản, không màn nào chưa
+ * ai nghĩ tới. `server/routers/factoryListCongQuyen.db.test.ts` neo cả hai chiều: ca ① ② chặn
+ * lớp rò, ca ③ ④ ⑤ ⑥ ĐỎ ngay nếu ai đó siết cổng về một module cụ thể.
+ *
+ * ── Hàng rào phạm vi KHÔNG bị nới ─────────────────────────────────────────────────────────────
+ * Cổng này CỘNG THÊM, không thay thế. Người có quyền nhưng 0 gán vẫn nhận `[]` (ca ⑦), người của
+ * A vẫn không thấy nhà máy B — `db.getFactories({userId,userRole})` giữ nguyên từng byte.
+ *
+ * ── Vai `admin` ───────────────────────────────────────────────────────────────────────────────
+ * Đi thẳng qua, đúng nếp `checkPermission` (`if (isAdmin && !scopedAdminEnabled()) return true`).
+ * "Bất kỳ quyền nào" không có module để `RBAC_SCOPED_ADMIN` siết, và một admin chưa được seed
+ * hàng quyền nào KHÔNG được phép mất bộ chọn nhà máy.
+ *
+ * Hình dạng lỗi trùng khít `requirePermission` (FORBIDDEN / PERMISSION_DENIED / `{action}`) để
+ * `readAppErrorMeta` và từ điển i18n `errors.action.*` phía client đọc được như mọi cổng khác.
+ */
+function requireBatKyQuyenNao() {
+  return async (opts: { ctx: any; next: any }) => {
+    const user = opts.ctx.user;
+    if (user?.role === "admin") return opts.next({ ctx: opts.ctx });
+    if (typeof user?.id === "number" && (await coItNhatMotQuyenConHieuLuc(user.id))) {
+      return opts.next({ ctx: opts.ctx });
+    }
+    throw appError(
+      "FORBIDDEN",
+      "PERMISSION_DENIED",
+      { action: "canView" },
+      "Tài khoản chưa được cấp quyền nào nên không xem được danh sách nhà máy",
+    );
+  };
+}
+
 // ============ FACTORY ROUTER ============
 export const factoryRouter = router({
-  list: protectedProcedure.query(async () => {
-    return db.getFactories();
+  // ★ NHÓM A #1 — trước bản vá: `async () => db.getFactories()`, KHÔNG nhận `ctx`, không lọc ⇒ ai
+  // đăng nhập cũng liệt kê được MỌI nhà máy (tên, mã, địa chỉ) của mọi tenant. `ctx.user` là
+  // nguồn danh tính DUY NHẤT được phép ở đây — xem `PhamViNguoiXem` ở `server/db/hierarchy.ts`.
+  // ★ Task 13 (PH-03) — `protectedProcedure` + lọc phạm vi vẫn CHƯA đủ: nó trả lời "đã đăng nhập
+  // chưa" và "được gán nhà máy nào", chứ không hỏi "có quyền không". Xem docblock
+  // `requireBatKyQuyenNao` ở trên để biết vì sao khoá là "bất kỳ quyền nào" chứ không phải
+  // `machine_status` (khoá ấy cắt mất vai `quality_inspector`).
+  list: protectedProcedure.use(requireBatKyQuyenNao()).query(async ({ ctx }) => {
+    return db.getFactories({ userId: ctx.user?.id, userRole: ctx.user?.role });
   }),
 
   getById: protectedProcedure
     .input(z.object({ id: z.number() }))
-    .query(async ({ input }) => {
-      return db.getFactoryById(input.id);
+    .query(async ({ input, ctx }) => {
+      return db.getFactoryById(input.id, phamViCua(ctx));
     }),
 
   create: protectedProcedure.use(requirePermission("settings_factory", "canCreate"))
@@ -273,12 +383,12 @@ export const factoryRouter = router({
 
   cascadeInfo: protectedProcedure.use(requirePermission("settings_factory", "canView"))
     .input(z.object({ id: z.number() }))
-    .query(async ({ input }) => {
-      return db.getFactoryCascadeInfo(input.id);
+    .query(async ({ input, ctx }) => {
+      return db.getFactoryCascadeInfo(input.id, phamViCua(ctx));
     }),
 
-  listDeleted: protectedProcedure.use(requirePermission("settings_factory", "canView")).query(async () => {
-    return db.getDeletedFactories();
+  listDeleted: protectedProcedure.use(requirePermission("settings_factory", "canView")).query(async ({ ctx }) => {
+    return db.getDeletedFactories(phamViCua(ctx));
   }),
 
   restore: protectedProcedure.use(requirePermission("settings_factory", "canEdit"))
@@ -300,8 +410,8 @@ const zonePointsSchema = z.array(z.object({
 export const factoryZoneRouter = router({
   listByFactory: protectedProcedure
     .input(z.object({ factoryId: z.number() }))
-    .query(async ({ input }) => {
-      return db.getFactoryZones(input.factoryId);
+    .query(async ({ input, ctx }) => {
+      return db.getFactoryZones(input.factoryId, phamViCua(ctx));
     }),
 
   create: protectedProcedure
@@ -356,14 +466,14 @@ export const factoryZoneRouter = router({
 
 // ============ WORKSHOP ROUTER ============
 export const workshopRouter = router({
-  list: protectedProcedure.query(async () => {
-    return db.getWorkshops();
+  list: protectedProcedure.query(async ({ ctx }) => {
+    return db.getWorkshops(phamViCua(ctx));
   }),
 
   listByFactory: protectedProcedure
     .input(z.object({ factoryId: z.number() }))
-    .query(async ({ input }) => {
-      return db.getWorkshopsByFactory(input.factoryId);
+    .query(async ({ input, ctx }) => {
+      return db.getWorkshopsByFactory(input.factoryId, phamViCua(ctx));
     }),
 
   create: protectedProcedure.use(requirePermission("settings_factory", "canCreate"))
@@ -410,12 +520,12 @@ export const workshopRouter = router({
 
   cascadeInfo: protectedProcedure.use(requirePermission("settings_factory", "canView"))
     .input(z.object({ id: z.number() }))
-    .query(async ({ input }) => {
-      return db.getWorkshopCascadeInfo(input.id);
+    .query(async ({ input, ctx }) => {
+      return db.getWorkshopCascadeInfo(input.id, phamViCua(ctx));
     }),
 
-  listDeleted: protectedProcedure.use(requirePermission("settings_factory", "canView")).query(async () => {
-    return db.getDeletedWorkshops();
+  listDeleted: protectedProcedure.use(requirePermission("settings_factory", "canView")).query(async ({ ctx }) => {
+    return db.getDeletedWorkshops(phamViCua(ctx));
   }),
 
   restore: protectedProcedure.use(requirePermission("settings_factory", "canEdit"))
@@ -429,14 +539,14 @@ export const workshopRouter = router({
 
 // ============ PRODUCTION LINE ROUTER ============
 export const lineRouter = router({
-  list: protectedProcedure.query(async () => {
-    return db.getProductionLines();
+  list: protectedProcedure.query(async ({ ctx }) => {
+    return db.getProductionLines(phamViCua(ctx));
   }),
 
   listByWorkshop: protectedProcedure
     .input(z.object({ workshopId: z.number() }))
-    .query(async ({ input }) => {
-      return db.getProductionLinesByWorkshop(input.workshopId);
+    .query(async ({ input, ctx }) => {
+      return db.getProductionLinesByWorkshop(input.workshopId, phamViCua(ctx));
     }),
 
   create: protectedProcedure.use(requirePermission("settings_factory", "canCreate"))
@@ -483,12 +593,12 @@ export const lineRouter = router({
 
   cascadeInfo: protectedProcedure.use(requirePermission("settings_factory", "canView"))
     .input(z.object({ id: z.number() }))
-    .query(async ({ input }) => {
-      return db.getLineCascadeInfo(input.id);
+    .query(async ({ input, ctx }) => {
+      return db.getLineCascadeInfo(input.id, phamViCua(ctx));
     }),
 
-  listDeleted: protectedProcedure.use(requirePermission("settings_factory", "canView")).query(async () => {
-    return db.getDeletedLines();
+  listDeleted: protectedProcedure.use(requirePermission("settings_factory", "canView")).query(async ({ ctx }) => {
+    return db.getDeletedLines(phamViCua(ctx));
   }),
 
   restore: protectedProcedure.use(requirePermission("settings_factory", "canEdit"))
@@ -502,14 +612,14 @@ export const lineRouter = router({
 
 // ============ STATION ROUTER ============
 export const stationRouter = router({
-  list: protectedProcedure.query(async () => {
-    return db.getStations();
+  list: protectedProcedure.query(async ({ ctx }) => {
+    return db.getStations(phamViCua(ctx));
   }),
 
   listByLine: protectedProcedure
     .input(z.object({ lineId: z.number() }))
-    .query(async ({ input }) => {
-      return db.getStationsByLine(input.lineId);
+    .query(async ({ input, ctx }) => {
+      return db.getStationsByLine(input.lineId, phamViCua(ctx));
     }),
 
   create: protectedProcedure.use(requirePermission("settings_factory", "canCreate"))
@@ -558,12 +668,12 @@ export const stationRouter = router({
 
   cascadeInfo: protectedProcedure.use(requirePermission("settings_factory", "canView"))
     .input(z.object({ id: z.number() }))
-    .query(async ({ input }) => {
-      return db.getStationCascadeInfo(input.id);
+    .query(async ({ input, ctx }) => {
+      return db.getStationCascadeInfo(input.id, phamViCua(ctx));
     }),
 
-  listDeleted: protectedProcedure.use(requirePermission("settings_factory", "canView")).query(async () => {
-    return db.getDeletedStations();
+  listDeleted: protectedProcedure.use(requirePermission("settings_factory", "canView")).query(async ({ ctx }) => {
+    return db.getDeletedStations(phamViCua(ctx));
   }),
 
   restore: protectedProcedure.use(requirePermission("settings_factory", "canEdit"))
@@ -619,7 +729,7 @@ function enforceIpWindow(
   }
   win.count += 1;
   if (win.count > limit) {
-    throw new TRPCError({ code: "TOO_MANY_REQUESTS", message });
+    throw appError("TOO_MANY_REQUESTS", "RATE_LIMITED", undefined, message);
   }
 }
 
@@ -757,10 +867,12 @@ export const machineRouter = router({
         // approval queue — re-commissioning is an explicit admin decision.
         const lifecycle = (existing as { lifecycleStatus?: string | null }).lifecycleStatus;
         if (lifecycle === "retired" || lifecycle === "decommissioned") {
-          throw new TRPCError({
-            code: "CONFLICT",
-            message: `Machine '${existing.code}' is ${lifecycle} — an admin must re-commission it before it can register again`,
-          });
+          throw appError(
+            "CONFLICT",
+            "OPERATION_FAILED",
+            { operation: "registerMachine" },
+            `Machine '${existing.code}' is ${lifecycle} — an admin must re-commission it before it can register again`,
+          );
         }
         // Nếu đã có, cập nhật thông tin (trừ APIKey)
         await db.updateMachine(existing.id, {
@@ -786,20 +898,24 @@ export const machineRouter = router({
       if (cap > 0) {
         const pending = await db.getPendingMachines();
         if (Array.isArray(pending) && pending.length >= cap) {
-          throw new TRPCError({
-            code: "PRECONDITION_FAILED",
-            message: `Registration queue is full (${cap} pending machines) — ask an admin to approve/reject pending registrations first`,
-          });
+          throw appError(
+            "PRECONDITION_FAILED",
+            "OPERATION_FAILED",
+            { operation: "registerMachine" },
+            `Registration queue is full (${cap} pending machines) — ask an admin to approve/reject pending registrations first`,
+          );
         }
       }
 
       // M4: resolve + validate the default station instead of hardcoding id 1.
       const defaultStation = await db.getDefaultStation();
       if (!defaultStation) {
-        throw new TRPCError({
-          code: "PRECONDITION_FAILED",
-          message: "No active station configured — create the factory hierarchy before registering machines",
-        });
+        throw appError(
+          "PRECONDITION_FAILED",
+          "OPERATION_FAILED",
+          { operation: "registerMachine" },
+          "No active station configured — create the factory hierarchy before registering machines",
+        );
       }
 
       // M7: the generated SN-code can collide with an ACTIVE machine that has a
@@ -814,10 +930,12 @@ export const machineRouter = router({
           if (!(await db.getMachineByCode(candidate))) resolved = candidate;
         }
         if (!resolved) {
-          throw new TRPCError({
-            code: "CONFLICT",
-            message: `Machine code '${code}' (and suffixed variants) are already in use by active machines — contact an admin`,
-          });
+          throw appError(
+            "CONFLICT",
+            "ENTITY_DUPLICATE",
+            { entity: "machine" },
+            `Machine code '${code}' (and suffixed variants) are already in use by active machines — contact an admin`,
+          );
         }
         code = resolved;
       }
@@ -846,7 +964,7 @@ export const machineRouter = router({
       } catch (e) {
         // Concurrent register racing the pre-check — clean CONFLICT, not a raw 500.
         if (isErrorNamed(e, "MachineCodeCollisionError")) {
-          throw new TRPCError({ code: "CONFLICT", message: (e as Error).message });
+          throw appError("CONFLICT", "ENTITY_DUPLICATE", { entity: "machine" }, (e as Error).message);
         }
         throw e;
       }
@@ -866,7 +984,7 @@ export const machineRouter = router({
     }))
     .query(async ({ input }) => {
       const machine = await db.getMachineBySerialNumber(input.serialNumber);
-      if (!machine) throw new TRPCError({ code: "NOT_FOUND", message: "Machine not found. Please call register first." });
+      if (!machine) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "machine" }, "Machine not found. Please call register first.");
 
       const station = await db.getStationById(machine.stationId);
       const line = await db.getLineByStationId(machine.stationId);
@@ -908,8 +1026,8 @@ export const machineRouter = router({
   // MACHINE_APPROVE_RBAC_OPEN_ENABLED=true (gate is byte-identical to adminProcedure OFF).
   listPending: protectedProcedure
     .use(machineRegistrationGate("canView"))
-    .query(async () => {
-      return db.getPendingMachines();
+    .query(async ({ ctx }) => {
+      return db.getPendingMachines(phamViCua(ctx));
     }),
 
   // Admin duyệt máy + mapping
@@ -924,17 +1042,19 @@ export const machineRouter = router({
     }))
     .mutation(async ({ input, ctx }) => {
       const machine = await db.getMachineById(input.id);
-      if (!machine) throw new TRPCError({ code: "NOT_FOUND", message: "Machine not found" });
+      if (!machine) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "machine" }, "Machine not found");
 
       // M7: the admin may normalise the code at approval — pre-check it against
       // ACTIVE machines so the rename fails as a clean CONFLICT, not a raw 500.
       if (input.code && input.code !== machine.code) {
         const holder = await db.getMachineByCode(input.code);
         if (holder && holder.id !== input.id) {
-          throw new TRPCError({
-            code: "CONFLICT",
-            message: `Machine code '${input.code}' is already in use by machine #${holder.id} (${holder.name})`,
-          });
+          throw appError(
+            "CONFLICT",
+            "ENTITY_DUPLICATE",
+            { entity: "machine" },
+            `Machine code '${input.code}' is already in use by machine #${holder.id} (${holder.name})`,
+          );
         }
       }
 
@@ -995,6 +1115,32 @@ export const machineRouter = router({
       // approval is already committed, so a credential failure must not 500 the admin.
       let mkKey: Awaited<ReturnType<typeof issueFleetMachineKey>> | null = null;
       let claim: { token: string; tokenPrefix: string; expiresAt: Date } | null = null;
+      /**
+       * ★★★ 2026-09-19 — "BEST-EFFORT" ĐƯỢC GIỮ, NHƯNG THÔI IM LẶNG.
+       *
+       * Lý lẽ của `try/catch` ở đây ĐÚNG và không bị đụng tới: lượt duyệt đã commit trước khi
+       * tới đoạn này, nên ném lỗi sẽ báo "thất bại" cho một thao tác THỰC SỰ đã thành công —
+       * còn tệ hơn. Cái sai không nằm ở việc nuốt lỗi, mà ở chỗ **không ai biết nó đã xảy ra**:
+       *
+       *   · `success: true` và `message` vẫn khẳng định *"per-device key (mk_) issued (shown
+       *     once)"* **kể cả khi đúc khoá vừa ném** — nói thẳng với quản trị viên một điều SAI;
+       *   · `apiKey: null` không phân biệt được "đội máy này không dùng mk_" với "đúc hỏng";
+       *   · vết kiểm toán chỉ **bỏ trống** `keyPrefix`, mà bỏ trống cũng là hình dạng của
+       *     "không áp dụng" ⇒ không tra ngược được.
+       *
+       * Đo được 2026-09-18: **1.108 máy QATD `approved` mà không một giấy tờ nào** (không
+       * `machines.apiKey`, không `mk_`, không claim token). Dù nguyên nhân của CHÍNH 1.108 máy
+       * ấy là được tạo đi tắt chứ không qua đây, chúng cho thấy trạng thái đó **tồn tại được và
+       * sống rất lâu mà không ai kêu** — và nhánh này là một đường hợp lệ để rơi vào đó.
+       *
+       * ⇒ Giữ nguyên hành vi (duyệt vẫn thành công), chỉ **khai báo kết cục THẬT**:
+       *   `credentialIssued` trong phản hồi · `message` đúng sự thật · `logger.error` cho nhánh
+       *   mk_ (máy không thể xác thực) so với `logger.warn` cho nhánh claim token (máy vẫn còn
+       *   `machines.apiKey`) · và ghi `credentialIssued` vào vết kiểm toán để tra ngược được.
+       *
+       * Đối soát định kỳ vẫn là `npx tsx scripts/issue-machine-keys.ts --dry-run` ⇒ `CẦN CẤP` > 0.
+       */
+      let loiGiayTo: string | null = null;
       if (mkOnly) {
         try {
           mkKey = await issueFleetMachineKey({
@@ -1003,7 +1149,9 @@ export const machineRouter = router({
             createdBy: ctx.user?.id ?? null,
           });
         } catch (e) {
-          logger.warn(
+          loiGiayTo = e instanceof Error ? e.message : String(e);
+          // ERROR chứ không WARN: máy rời khỏi đây KHÔNG có cách nào xác thực.
+          logger.error(
             { err: e, machineId: input.id },
             "[MachineApprove] mk_ key mint failed — machine approved without a credential; re-issue via machineApi.issueKey",
           );
@@ -1012,12 +1160,19 @@ export const machineRouter = router({
         try {
           claim = await db.issueMachineClaimToken({ machineId: input.id, issuedBy: ctx.user?.id ?? null });
         } catch (e) {
+          loiGiayTo = e instanceof Error ? e.message : String(e);
           logger.warn(
             { err: e, machineId: input.id },
             "[MachineApprove] could not mint a claim token — machine approved without one; re-issue via machine.issueClaimToken",
           );
         }
       }
+      /**
+       * Đội AOI/AVI: `machines.apiKey` đã được `approveMachine` ghi TRƯỚC đoạn này, nên máy vẫn
+       * có giấy tờ kể cả khi claim token hỏng — claim token là tiện lợi cho kỹ thuật viên, không
+       * phải giấy tờ duy nhất. Đội mk_: khoá mk_ LÀ giấy tờ duy nhất, hỏng là trắng tay.
+       */
+      const credentialIssued = mkOnly ? mkKey !== null : Boolean(legacyApiKey);
 
       // M5: audit — snapshots NEVER include a plaintext key, and NEVER the claim
       // token plaintext (only its non-secret prefix + expiry).
@@ -1025,9 +1180,14 @@ export const machineRouter = router({
         action: "machine.approve", entityType: ENTITY_TYPES.MACHINE, entityId: input.id, entityName: input.code || machine.code,
         before: { code: machine.code, name: machine.name, stationId: machine.stationId, registrationStatus: machine.registrationStatus },
         after: { code: input.code || machine.code, name: input.name || machine.name, stationId, registrationStatus: "approved" },
+        // ★ `credentialIssued` LUÔN có mặt (kể cả khi true): một trường chỉ xuất hiện lúc hỏng
+        //   thì vắng mặt lại mang hai nghĩa — "không hỏng" và "bản cũ chưa biết ghi trường này".
         metadata: mkOnly
-          ? { mkOnly: true, deviceClass, ...(mkKey ? { keyPrefix: mkKey.keyPrefix, keyId: mkKey.id } : {}) }
-          : (claim ? { claimPrefix: claim.tokenPrefix, claimExpiresAt: claim.expiresAt.toISOString() } : undefined),
+          ? { mkOnly: true, deviceClass, credentialIssued, ...(mkKey ? { keyPrefix: mkKey.keyPrefix, keyId: mkKey.id } : {}) }
+          : {
+              mkOnly: false, deviceClass, credentialIssued,
+              ...(claim ? { claimPrefix: claim.tokenPrefix, claimExpiresAt: claim.expiresAt.toISOString() } : { claimTokenIssued: false }),
+            },
       });
 
       return {
@@ -1039,7 +1199,21 @@ export const machineRouter = router({
         /** Shown to the admin ONCE — hand to the technician, expires shortly (AOI fleet only). */
         claimToken: claim?.token ?? null,
         claimExpiresAt: claim?.expiresAt ?? null,
-        message: mkOnly ? "Machine approved — per-device key (mk_) issued (shown once)" : "Machine approved and mapped",
+        /**
+         * ★ Máy rời khỏi lượt duyệt này CÓ giấy tờ để xác thực hay không. `false` ⇒ máy đã
+         *   `approved` nhưng KHÔNG gọi được API nào; phải cấp lại bằng `machineApi.issueKey`
+         *   (đội mk_) hoặc `machine.issueClaimToken` (đội AOI). Đừng suy điều này từ
+         *   `apiKey === null`: `null` còn là hình dạng bình thường của đội máy khác.
+         */
+        credentialIssued,
+        credentialError: loiGiayTo,
+        message: !credentialIssued
+          ? "Machine approved, but NO credential could be issued — it cannot authenticate yet; re-issue a key before handing it to the technician"
+          : mkOnly
+          ? "Machine approved — per-device key (mk_) issued (shown once)"
+          : claim
+          ? "Machine approved and mapped"
+          : "Machine approved and mapped — but the one-time claim token could not be issued; re-issue via machine.issueClaimToken",
       };
     }),
 
@@ -1051,22 +1225,26 @@ export const machineRouter = router({
     .input(z.object({ id: z.number() }))
     .mutation(async ({ input, ctx }) => {
       const machine = await db.getMachineById(input.id);
-      if (!machine) throw new TRPCError({ code: "NOT_FOUND", message: "Machine not found" });
+      if (!machine) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "machine" }, "Machine not found");
       if (machine.registrationStatus !== "approved") {
-        throw new TRPCError({
-          code: "PRECONDITION_FAILED",
-          message: "Machine must be approved before a claim token can be issued",
-        });
+        throw appError(
+          "PRECONDITION_FAILED",
+          "OPERATION_FAILED",
+          { operation: "issueMachineClaimToken" },
+          "Machine must be approved before a claim token can be issued",
+        );
       }
       if (machine.isActive === false) {
-        throw new TRPCError({ code: "PRECONDITION_FAILED", message: "Machine is deleted" });
+        throw appError("PRECONDITION_FAILED", "OPERATION_FAILED", { operation: "issueMachineClaimToken" }, "Machine is deleted");
       }
       const lifecycle = (machine as { lifecycleStatus?: string | null }).lifecycleStatus;
       if (lifecycle === "retired" || lifecycle === "decommissioned") {
-        throw new TRPCError({
-          code: "PRECONDITION_FAILED",
-          message: `Machine is ${lifecycle} — re-commission it before issuing a new claim token`,
-        });
+        throw appError(
+          "PRECONDITION_FAILED",
+          "OPERATION_FAILED",
+          { operation: "issueMachineClaimToken" },
+          `Machine is ${lifecycle} — re-commission it before issuing a new claim token`,
+        );
       }
 
       const claim = await db.issueMachineClaimToken({ machineId: input.id, issuedBy: ctx.user?.id ?? null });
@@ -1120,10 +1298,12 @@ export const machineRouter = router({
           action: "machine.claimKey", entityType: ENTITY_TYPES.MACHINE, entityId: null,
           metadata: { outcome: "failed", reason, serialNumber: input.serialNumber, ip: ip ?? null },
         });
-        throw new TRPCError({
-          code: reason === "no_key" ? "PRECONDITION_FAILED" : "UNAUTHORIZED",
-          message: (e as Error).message,
-        });
+        throw appError(
+          reason === "no_key" ? "PRECONDITION_FAILED" : "UNAUTHORIZED",
+          "OPERATION_FAILED",
+          { operation: "claimMachineKey" },
+          (e as Error).message,
+        );
       }
     }),
 
@@ -1151,10 +1331,12 @@ export const machineRouter = router({
       const ip = (ctx as { req?: { ip?: string } })?.req?.ip;
       enforceEnrollThrottle(ip);
       if (!enrollmentEnabled()) {
-        throw new TRPCError({
-          code: "PRECONDITION_FAILED",
-          message: "Zero-touch enrollment is disabled on this server (set ENROLLMENT_ENABLED=true to enable)",
-        });
+        throw appError(
+          "PRECONDITION_FAILED",
+          "FEATURE_DISABLED",
+          { feature: "zeroTouchEnrollment" },
+          "Zero-touch enrollment is disabled on this server (set ENROLLMENT_ENABLED=true to enable)",
+        );
       }
 
       try {
@@ -1199,7 +1381,7 @@ export const machineRouter = router({
           reason === "needs_info" ? "BAD_REQUEST" :
           reason === "machine_locked" || reason === "no_station" ? "PRECONDITION_FAILED" :
           "UNAUTHORIZED"; // invalid | expired | exhausted
-        throw new TRPCError({ code, message: (e as Error).message });
+        throw appError(code, "OPERATION_FAILED", { operation: "enrollMachine" }, (e as Error).message);
       }
     }),
 
@@ -1217,10 +1399,12 @@ export const machineRouter = router({
     }))
     .mutation(async ({ input, ctx }) => {
       if (input.scopes && !input.scopes.every(isValidScopeGrant)) {
-        throw new TRPCError({
-          code: "BAD_REQUEST",
-          message: "One or more scopes are not in the published scope vocabulary",
-        });
+        throw appError(
+          "BAD_REQUEST",
+          "INVALID_VALUE",
+          { field: "scopes" },
+          "One or more scopes are not in the published scope vocabulary",
+        );
       }
       const token = await db.issueMachineEnrollmentToken({
         serialPattern: input.serialPattern ?? null,
@@ -1281,10 +1465,15 @@ export const machineRouter = router({
       return { success: true, message: "Machine registration rejected" };
     }),
 
-  list: protectedProcedure.query(async () => {
+  // ★ NHÓM A #4 — `machine.list` là bề mặt ĐỌC được tiêu thụ nhiều nhất của cây phân cấp (30+ nơi
+  // gọi ở client). Trước bản vá nó trả TOÀN ĐỘI máy của mọi nhà máy cho mọi tài khoản, cùng đúng
+  // một hình dạng với ba ca chuẩn: `.query(async () => …)`, không nhận `ctx`.
+  // ⚠ Kết quả là MẢNG TRẦN ⇒ không chở được nhãn phạm vi (cố ý, xem `withScopeLabels`). Màn nào
+  // cần lý do rỗng thì đọc `mqttClient.getScopeLabels` trên cùng màn.
+  list: protectedProcedure.query(async ({ ctx }) => {
     // Doc 42 (theme 10) — KHÔNG trả apiKey trong list (kể cả admin); màn hình
     // cần key dùng endpoint theo-máy (getById/approve/regenerateApiKey).
-    const rows = await db.getMachines();
+    const rows = await db.getMachines({ userId: ctx.user?.id, userRole: ctx.user?.role });
     return rows.map(({ apiKey: _apiKey, ...rest }) => rest);
   }),
 
@@ -1312,12 +1501,12 @@ export const machineRouter = router({
       limit: z.number().int().min(1).max(200).default(50),
       offset: z.number().int().min(0).default(0),
     }).default({ limit: 50, offset: 0 }))
-    .query(async ({ input }) => {
+    .query(async ({ input, ctx }) => {
       // Doc 56 Đ0-A (MGMTUI-3/REG-1) — db.getMachinesPaged already strips the
       // plaintext apiKey (and derives hasApiKey); this belt-and-braces strip
       // keeps the ROUTE sealed even if the db layer ever regresses to full rows
       // (doc 54 P0-1 precedent: the sibling list/getById strip at the router).
-      const { items, total } = await db.getMachinesPaged(input);
+      const { items, total } = await db.getMachinesPaged(input, phamViCua(ctx));
       return {
         items: items.map((m) => {
           const { apiKey: _omitApiKey, ...safe } = m as typeof m & { apiKey?: string | null };
@@ -1329,8 +1518,8 @@ export const machineRouter = router({
 
   // F9 — registration-status counts for the summary cards (replaces counting a
   // full client-side list).
-  registrationSummary: protectedProcedure.query(async () => {
-    return db.getMachineRegistrationSummary();
+  registrationSummary: protectedProcedure.query(async ({ ctx }) => {
+    return db.getMachineRegistrationSummary(phamViCua(ctx));
   }),
 
   // ── Doc 27 Đợt 5 / W5-E — gap F3: onboarding duplicate-code pre-check ────
@@ -1344,8 +1533,8 @@ export const machineRouter = router({
       /** When editing an existing machine, its own code is not a conflict. */
       excludeId: z.number().int().optional(),
     }))
-    .query(async ({ input }) => {
-      const holder = await db.getMachineByCode(input.code);
+    .query(async ({ input, ctx }) => {
+      const holder = await db.getMachineByCode(input.code, phamViCua(ctx));
       if (!holder || (input.excludeId !== undefined && holder.id === input.excludeId)) {
         return { available: true as const, holder: null };
       }
@@ -1357,14 +1546,14 @@ export const machineRouter = router({
 
   listByStation: protectedProcedure
     .input(z.object({ stationId: z.number() }))
-    .query(async ({ input }) => {
-      return db.getMachinesByStation(input.stationId);
+    .query(async ({ input, ctx }) => {
+      return db.getMachinesByStation(input.stationId, phamViCua(ctx));
     }),
 
   getById: protectedProcedure
     .input(z.object({ id: z.number() }))
-    .query(async ({ input }) => {
-      const m = await db.getMachineById(input.id);
+    .query(async ({ input, ctx }) => {
+      const m = await db.getMachineById(input.id, phamViCua(ctx));
       if (!m) return m;
       // doc 54 P0-1 — NEVER expose the plaintext ingest apiKey on a read path. The
       // sibling `list` already strips it; `getById` did not, leaking the machine
@@ -1381,8 +1570,11 @@ export const machineRouter = router({
       startDate: z.date().optional(),
       endDate: z.date().optional(),
     }))
-    .query(async ({ input }) => {
-      return db.getMachineStats(input.id, input.startDate, input.endDate);
+    .query(async ({ input, ctx }) => {
+      return db.getMachineStats(input.id, input.startDate, input.endDate, {
+        userId: ctx.user.id,
+        userRole: ctx.user.role,
+      });
     }),
 
   // Doc 40 W1 (Minh-P1) — role-floor: engineer/supervisor may ONBOARD (create) a
@@ -1413,10 +1605,12 @@ export const machineRouter = router({
       // instead of a raw 500 from the unique index.
       const dup = await db.getMachineByCode(input.code);
       if (dup) {
-        throw new TRPCError({
-          code: "CONFLICT",
-          message: `Mã máy '${input.code}' đã được dùng bởi máy #${dup.id} (${dup.name})`,
-        });
+        throw appError(
+          "CONFLICT",
+          "ENTITY_DUPLICATE",
+          { entity: "machine" },
+          `Mã máy '${input.code}' đã được dùng bởi máy #${dup.id} (${dup.name})`,
+        );
       }
 
       const governanceWarning = commissionGovernanceWarning(input.machineType);
@@ -1429,7 +1623,7 @@ export const machineRouter = router({
         return { id, apiKey, governanceWarning };
       } catch (e) {
         if (isErrorNamed(e, "MachineCodeCollisionError")) {
-          throw new TRPCError({ code: "CONFLICT", message: (e as Error).message });
+          throw appError("CONFLICT", "ENTITY_DUPLICATE", { entity: "machine" }, (e as Error).message);
         }
         rethrowDbError(e, { conflictMessage: `Mã máy '${input.code}' đã tồn tại` });
       }
@@ -1440,7 +1634,7 @@ export const machineRouter = router({
     .mutation(async ({ input, ctx }) => {
       const apiKey = `mach_${nanoid(32)}`;
       const dbInstance = await db.getDb();
-      if (!dbInstance) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR' });
+      if (!dbInstance) throw appError("INTERNAL_SERVER_ERROR", "DB_UNAVAILABLE", undefined, "Database not available");
 
       const { machines } = await import("../../drizzle/schema");
       const { eq } = await import("drizzle-orm");
@@ -1483,10 +1677,12 @@ export const machineRouter = router({
       // admin so a non-admin (engineer via settings_factory) cannot self-approve a
       // machine registration, bypassing the admin-only `approve` path.
       if (data.registrationStatus !== undefined && ctx.user.role !== "admin") {
-        throw new TRPCError({
-          code: "FORBIDDEN",
-          message: "Chỉ admin được đổi trạng thái đăng ký máy (dùng duyệt/approve).",
-        });
+        throw appError(
+          "FORBIDDEN",
+          "PERMISSION_DENIED",
+          { action: "changeMachineRegistrationStatus" },
+          "Chỉ admin được đổi trạng thái đăng ký máy (dùng duyệt/approve).",
+        );
       }
       const before = await db.getMachineById(id);
 
@@ -1494,7 +1690,7 @@ export const machineRouter = router({
       let capabilitiesValidation: ReturnType<typeof toStamp> | null | undefined;
       if (capabilities !== undefined) {
         if (!before) {
-          throw new TRPCError({ code: "NOT_FOUND", message: "Machine not found" });
+          throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "machine" }, "Machine not found");
         }
         if (capabilities === null) {
           capabilitiesValidation = null; // cleared payload → cleared stamp
@@ -1502,12 +1698,13 @@ export const machineRouter = router({
           const nodes = await loadDeviceTypeNodes();
           const result = validateCapabilities(before.machineType, capabilities, nodes);
           if (capabilitiesValidationEnforced() && result.blockingErrors.length > 0) {
-            throw new TRPCError({
-              code: "BAD_REQUEST",
-              message:
-                `Capabilities rejected (CAPABILITIES_VALIDATION_ENFORCED): required attribute(s) invalid — ` +
+            throw appError(
+              "BAD_REQUEST",
+              "INVALID_VALUE",
+              { field: "capabilities" },
+              `Capabilities rejected (CAPABILITIES_VALIDATION_ENFORCED): required attribute(s) invalid — ` +
                 result.blockingErrors.map((e) => `${e.path} (expected ${e.expected}, got ${e.got})`).join("; "),
-            });
+            );
           }
           capabilitiesValidation = toStamp(result, "save");
         }
@@ -1531,9 +1728,9 @@ export const machineRouter = router({
   /** Stored stamp + a FRESH re-check of a machine's capabilities vs its device type. */
   checkCapabilities: protectedProcedure
     .input(z.object({ id: z.number() }))
-    .query(async ({ input }) => {
-      const machine = await db.getMachineById(input.id);
-      if (!machine) throw new TRPCError({ code: "NOT_FOUND", message: "Machine not found" });
+    .query(async ({ input, ctx }) => {
+      const machine = await db.getMachineById(input.id, phamViCua(ctx));
+      if (!machine) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "machine" }, "Machine not found");
       const nodes = await loadDeviceTypeNodes();
       const fresh = validateCapabilities(machine.machineType, (machine as { capabilities?: unknown }).capabilities ?? null, nodes);
       return {
@@ -1613,8 +1810,8 @@ export const machineRouter = router({
       return { success: true };
     }),
 
-  listDeleted: protectedProcedure.use(requirePermission("settings_factory", "canView")).query(async () => {
-    return db.getDeletedMachines();
+  listDeleted: protectedProcedure.use(requirePermission("settings_factory", "canView")).query(async ({ ctx }) => {
+    return db.getDeletedMachines(phamViCua(ctx));
   }),
 
   restore: protectedProcedure.use(requirePermission("settings_factory", "canEdit"))
@@ -1626,10 +1823,10 @@ export const machineRouter = router({
         await db.restoreMachine(input.id);
       } catch (e) {
         if (isErrorNamed(e, "MachineCodeCollisionError")) {
-          throw new TRPCError({ code: "CONFLICT", message: (e as Error).message });
+          throw appError("CONFLICT", "ENTITY_DUPLICATE", { entity: "machine" }, (e as Error).message);
         }
         if (e instanceof Error && e.message === "Machine not found") {
-          throw new TRPCError({ code: "NOT_FOUND", message: "Machine not found" });
+          throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "machine" }, "Machine not found");
         }
         throw e;
       }
@@ -1657,10 +1854,12 @@ export const machineRouter = router({
     }))
     .mutation(async ({ input, ctx }) => {
       if ((input.status === "decommissioned" || input.status === "retired") && !input.reason?.trim()) {
-        throw new TRPCError({
-          code: "BAD_REQUEST",
-          message: "A reason is required when decommissioning or retiring a machine",
-        });
+        throw appError(
+          "BAD_REQUEST",
+          "FIELD_REQUIRED",
+          { field: "decommissionReason" },
+          "A reason is required when decommissioning or retiring a machine",
+        );
       }
 
       let result: Awaited<ReturnType<typeof db.transitionMachineLifecycle>>;
@@ -1668,10 +1867,10 @@ export const machineRouter = router({
         result = await db.transitionMachineLifecycle(input.id, input.status);
       } catch (e) {
         if (isErrorNamed(e, "LifecycleTransitionError")) {
-          throw new TRPCError({ code: "CONFLICT", message: (e as Error).message });
+          throw appError("CONFLICT", "OPERATION_FAILED", { operation: "transitionMachineLifecycle" }, (e as Error).message);
         }
         if (e instanceof Error && e.message === "Machine not found") {
-          throw new TRPCError({ code: "NOT_FOUND", message: "Machine not found" });
+          throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "machine" }, "Machine not found");
         }
         throw e;
       }
@@ -1714,9 +1913,9 @@ export const machineRouter = router({
   // Legal next lifecycle states for a machine (single source of truth for the UI).
   lifecycleTransitions: protectedProcedure
     .input(z.object({ id: z.number() }))
-    .query(async ({ input }) => {
-      const machine = await db.getMachineById(input.id);
-      if (!machine) throw new TRPCError({ code: "NOT_FOUND", message: "Machine not found" });
+    .query(async ({ input, ctx }) => {
+      const machine = await db.getMachineById(input.id, phamViCua(ctx));
+      if (!machine) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "machine" }, "Machine not found");
       const current = ((machine as { lifecycleStatus?: string }).lifecycleStatus ?? "active") as keyof typeof MACHINE_LIFECYCLE_TRANSITIONS;
       return {
         current,

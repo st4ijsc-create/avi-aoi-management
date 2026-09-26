@@ -17,6 +17,7 @@ import { z } from "zod";
 import { TRPCError } from "@trpc/server";
 import { router, protectedProcedure } from "../_core/trpc";
 import { requirePermission } from "../_core/accessControl";
+import { appError } from "../_core/appError";
 import {
   UrsimClient,
   validateUrscriptOnUrsim,
@@ -97,11 +98,11 @@ export const simTargetsRouter = router({
     }))
     .mutation(async ({ input }) => {
       if (!ursimEnabled()) {
-        throw new TRPCError({ code: "CONFLICT", message: "URSim harness disabled (set URSIM_ENABLED=true)" });
+        throw appError("CONFLICT", "FEATURE_DISABLED", { feature: "ursimHarness" }, "URSim harness disabled (set URSIM_ENABLED=true)");
       }
       const ep = resolveEndpoint(input.endpoint);
       if (!ep) {
-        throw new TRPCError({ code: "BAD_REQUEST", message: "No URSim endpoint (set URSIM_HOST or pass endpoint)" });
+        throw appError("BAD_REQUEST", "FIELD_REQUIRED", { field: "ursimEndpoint" }, "No URSim endpoint (set URSIM_HOST or pass endpoint)");
       }
       const result = await validateUrscriptOnUrsim(input.urscript, ep, { powerOn: input.powerOn });
       lastUrsimValidation = { at: new Date().toISOString(), result };
@@ -113,15 +114,23 @@ export const simTargetsRouter = router({
     .use(requirePermission("machine_control", "canCreate"))
     .mutation(async () => {
       if (!ros2BridgeEnabled()) {
-        throw new TRPCError({ code: "CONFLICT", message: "ROS2 bridge disabled (set ROS2_BRIDGE_ENABLED=true)" });
+        throw appError("CONFLICT", "FEATURE_DISABLED", { feature: "ros2Bridge" }, "ROS2 bridge disabled (set ROS2_BRIDGE_ENABLED=true)");
       }
       if (!rosbridgeUrlFromEnv()) {
-        throw new TRPCError({ code: "BAD_REQUEST", message: "ROSBRIDGE_URL is empty" });
+        // Review cuối, ca I-A #4: `ros2Connect` KHÔNG có `.input()` — không có trường
+        // "rosbridgeUrl" nào trên màn hình để người dùng điền. FIELD_REQUIRED sẽ chỉ
+        // người vận hành đi tìm một ô nhập không tồn tại. ROSBRIDGE_URL là biến môi
+        // trường phía máy chủ — đây là lỗi CẤU HÌNH MÁY CHỦ, cùng họ với guard ngay
+        // dưới (:128, OPERATION_FAILED — đã sửa đúng ở fix round 1, I-1).
+        throw appError("BAD_REQUEST", "OPERATION_FAILED", { operation: "connectRos2Bridge" }, "ROSBRIDGE_URL is empty");
       }
       const bridge = await startRos2Bridge();
       if (!bridge) {
-        // startRos2Bridge already logged the honest reason; surface it.
-        throw new TRPCError({ code: "SERVICE_UNAVAILABLE", message: "ROS2 bridge did not connect (rosbridge unreachable?)" });
+        // startRos2Bridge already logged the honest reason; surface it. NOT
+        // FEATURE_DISABLED — the flag IS on (checked above) and the URL IS set; this
+        // is a live connect failure, a different situation needing a different action
+        // than "go enable the feature" (fix round 1, I-1).
+        throw appError("SERVICE_UNAVAILABLE", "OPERATION_FAILED", { operation: "connectRos2Bridge" }, "ROS2 bridge did not connect (rosbridge unreachable?)");
       }
       return bridge.status();
     }),

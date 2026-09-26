@@ -4,6 +4,7 @@
  */
 import { z } from "zod";
 import { TRPCError } from "@trpc/server";
+import { appError } from "../_core/appError";
 import { protectedProcedure, router } from "../_core/trpc";
 import { getDb } from "../db";
 import { 
@@ -26,7 +27,7 @@ export const trainingBatchCommentsRouter = router({
     }))
     .mutation(async ({ ctx, input }) => {
       const db = await getDb();
-      if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Database not available" });
+      if (!db) throw appError("INTERNAL_SERVER_ERROR", "DB_UNAVAILABLE", undefined, "Database not available");
 
       // Verify batch exists
       const [batch] = await db
@@ -35,7 +36,7 @@ export const trainingBatchCommentsRouter = router({
         .where(eq(aiTrainingBatches.batchId, input.batchId));
 
       if (!batch) {
-        throw new TRPCError({ code: "NOT_FOUND", message: "Training batch không tồn tại" });
+        throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "trainingBatch" }, "Training batch không tồn tại");
       }
 
       const [result] = await db.insert(trainingBatchComments).values({
@@ -87,7 +88,7 @@ export const trainingBatchCommentsRouter = router({
     }))
     .mutation(async ({ ctx, input }) => {
       const db = await getDb();
-      if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Database not available" });
+      if (!db) throw appError("INTERNAL_SERVER_ERROR", "DB_UNAVAILABLE", undefined, "Database not available");
 
       // Verify ownership
       const [comment] = await db
@@ -96,11 +97,11 @@ export const trainingBatchCommentsRouter = router({
         .where(eq(trainingBatchComments.id, input.commentId));
 
       if (!comment) {
-        throw new TRPCError({ code: "NOT_FOUND", message: "Comment không tồn tại" });
+        throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "comment" }, "Comment không tồn tại");
       }
 
       if (comment.userId !== ctx.user.id && ctx.user.role !== "admin") {
-        throw new TRPCError({ code: "FORBIDDEN", message: "Không có quyền sửa comment này" });
+        throw appError("FORBIDDEN", "PERMISSION_DENIED", { action: "editComment" }, "Không có quyền sửa comment này");
       }
 
       await db
@@ -116,7 +117,7 @@ export const trainingBatchCommentsRouter = router({
     .input(z.object({ commentId: z.number() }))
     .mutation(async ({ ctx, input }) => {
       const db = await getDb();
-      if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Database not available" });
+      if (!db) throw appError("INTERNAL_SERVER_ERROR", "DB_UNAVAILABLE", undefined, "Database not available");
 
       // Verify ownership
       const [comment] = await db
@@ -125,11 +126,11 @@ export const trainingBatchCommentsRouter = router({
         .where(eq(trainingBatchComments.id, input.commentId));
 
       if (!comment) {
-        throw new TRPCError({ code: "NOT_FOUND", message: "Comment không tồn tại" });
+        throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "comment" }, "Comment không tồn tại");
       }
 
       if (comment.userId !== ctx.user.id && ctx.user.role !== "admin") {
-        throw new TRPCError({ code: "FORBIDDEN", message: "Không có quyền xóa comment này" });
+        throw appError("FORBIDDEN", "PERMISSION_DENIED", { action: "deleteComment" }, "Không có quyền xóa comment này");
       }
 
       // Delete replies first
@@ -156,7 +157,7 @@ export const trainingBatchCommentsRouter = router({
     }))
     .mutation(async ({ input }) => {
       const db = await getDb();
-      if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Database not available" });
+      if (!db) throw appError("INTERNAL_SERVER_ERROR", "DB_UNAVAILABLE", undefined, "Database not available");
 
       // Check if tag already exists
       const [existing] = await db
@@ -165,7 +166,7 @@ export const trainingBatchCommentsRouter = router({
         .where(eq(trainingBatchTags.name, input.name));
 
       if (existing) {
-        throw new TRPCError({ code: "CONFLICT", message: "Tag với tên này đã tồn tại" });
+        throw appError("CONFLICT", "ENTITY_DUPLICATE", { entity: "trainingBatchTag" }, "Tag với tên này đã tồn tại");
       }
 
       const [result] = await db.insert(trainingBatchTags).values({
@@ -199,7 +200,7 @@ export const trainingBatchCommentsRouter = router({
     }))
     .mutation(async ({ input }) => {
       const db = await getDb();
-      if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Database not available" });
+      if (!db) throw appError("INTERNAL_SERVER_ERROR", "DB_UNAVAILABLE", undefined, "Database not available");
 
       const updateData: Record<string, string | undefined> = {};
       if (input.name) updateData.name = input.name;
@@ -219,7 +220,7 @@ export const trainingBatchCommentsRouter = router({
     .input(z.object({ tagId: z.number() }))
     .mutation(async ({ input }) => {
       const db = await getDb();
-      if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Database not available" });
+      if (!db) throw appError("INTERNAL_SERVER_ERROR", "DB_UNAVAILABLE", undefined, "Database not available");
 
       // Delete all assignments first
       await db
@@ -244,7 +245,7 @@ export const trainingBatchCommentsRouter = router({
     }))
     .mutation(async ({ ctx, input }) => {
       const db = await getDb();
-      if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Database not available" });
+      if (!db) throw appError("INTERNAL_SERVER_ERROR", "DB_UNAVAILABLE", undefined, "Database not available");
 
       // Check if already assigned
       const [existing] = await db
@@ -276,7 +277,7 @@ export const trainingBatchCommentsRouter = router({
     }))
     .mutation(async ({ input }) => {
       const db = await getDb();
-      if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Database not available" });
+      if (!db) throw appError("INTERNAL_SERVER_ERROR", "DB_UNAVAILABLE", undefined, "Database not available");
 
       await db
         .delete(trainingBatchTagAssignments)

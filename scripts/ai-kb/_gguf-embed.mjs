@@ -16,6 +16,12 @@
  *   GGUF_MODELS_DIR   (default ./uploads/gguf-models) — directory holding .gguf files
  *   GGUF_EMBED_MODEL  (default mxbai-embed-large-v1-f16.gguf) — embedding model filename
  *   GGUF_GPU          ("false" → CPU only; otherwise auto CUDA/Vulkan)
+ *   GGUF_EMBED_CTX    (default 2048) — embedding contextSize, MUST match the production
+ *                     default in server/services/aiGgufEngine.ts (EMBED_CTX, ~246-254 /
+ *                     getEmbeddingContext ~2281-2296). dot2 Task 1: this file used to
+ *                     hard-code contextSize:"auto" (the model's FULL context window),
+ *                     measured to cost ~2.030 MiB extra vs. the production default.
+ *   GGUF_MAX_CTX      (default 32768) — clamp ceiling, same as production.
  *
  * Exports:
  *   embedTextGguf(text) → Promise<number[]>  (L2-normalized unit vector)
@@ -66,9 +72,26 @@ async function getEmbedContext() {
 
   _llama = await getLlama({ gpu: process.env.GGUF_GPU === "false" ? false : "auto" });
   const modelPath = resolveEmbedModelPath();
-  _model = await _llama.loadModel({ modelPath, gpuLayers: -1 });
+  // ★ ĐO 2026-08-16 — node-llama-cpp v3 hiểu SỐ là *số lớp*, không theo quy ước llama.cpp
+  // ("-1 = tất cả"). Đo trực tiếp: gpuLayers:-1 ⇒ model.gpuLayers === 0 (CHẠY TOÀN CPU, im lặng);
+  // gpuLayers:"max" ⇒ 37. Mọi lượt kb:embed trước ngày này đều nhúng bằng CPU mà không ai biết.
+  // Cùng lớp lỗi đã được vá trong server/services/aiReranker.ts (xem chú thích ~dòng 682-687).
+  _model = await _llama.loadModel({ modelPath, gpuLayers: process.env.GGUF_GPU === "false" ? 0 : "max" });
   // Public factory in node-llama-cpp v3 (do NOT `new LlamaEmbeddingContext`).
-  _embedCtx = await _model.createEmbeddingContext({ contextSize: "auto" });
+  // dot2 Task 1 — "auto" cấp TOÀN BỘ cửa sổ ngữ cảnh gốc của model thay vì
+  // EMBED_CTX production thật sự dùng (getEmbeddingContext, server/services/
+  // aiGgufEngine.ts ~2281-2296) — cùng lỗi đã sửa ở scripts/ai-bench/bench.mjs
+  // (hụt 2.030 MiB đo được ở Đợt 1 Task 2). Đọc CÙNG biến môi trường
+  // GGUF_EMBED_CTX + GGUF_MAX_CTX, cùng công thức mặc định/clamp EMBED_CTX.
+  const rawEmbedCtx = Number(process.env.GGUF_EMBED_CTX);
+  const DEFAULT_EMBED_CTX = 2048;
+  const rawMaxCtx = parseInt(process.env.GGUF_MAX_CTX || "32768", 10);
+  const maxCtx = Number.isFinite(rawMaxCtx) && rawMaxCtx > 0 ? rawMaxCtx : 32768;
+  const embedCtx = Number.isFinite(rawEmbedCtx) && rawEmbedCtx >= 256 ? Math.floor(rawEmbedCtx) : DEFAULT_EMBED_CTX;
+  _embedCtx = await _model.createEmbeddingContext({
+    contextSize: Math.min(embedCtx, maxCtx),
+    batchSize: 512,
+  });
   return _embedCtx;
 }
 

@@ -1,0 +1,587 @@
+# Sprint 5 — Backlog hợp nhất sau Wave 0→4
+
+**Ngày lập:** 2026-07-29 · **Nhánh:** `feat/hmi-dep` · **HEAD khi lập:** `208301dc`
+
+**Tài liệu này là điểm bắt đầu cho một session MỚI.** Nó gom toàn bộ nợ đã ghi sổ qua bốn wave, loại những mục đã được wave sau trả, và xếp theo mức thiệt hại thật — không theo thứ tự phát hiện.
+
+---
+
+## ⓘ TIẾN ĐỘ — cập nhật 2026-08-22 (lần 10), HEAD `e862fe07`+ (remote `fresh`)
+
+> ### ⚠ ĐỌC DÒNG NÀY TRƯỚC KHI ĐỌC BẤT KỲ CON SỐ NÀO Ở DƯỚI
+> Trong hai ngày 21–22/08, **hai mươi hai** mục của tài liệu này bị phép đo bác bỏ: E1 · F3 ·
+> F1 · D2 · D3 · E3 · E5 · E6 (đã đóng hoặc sai số) và ba mục nữa sai về *bản chất*
+> (C1↔C2 là một việc chứ không phải hai; F3 chỉ ra sai file; F1 sai theo hướng **bi quan**
+> gấp ba). Tỉ lệ ấy đủ cao để đảo ngược mặc định:
+> **coi mọi con số ở đây là LỜI KHAI CHƯA ĐƯỢC KIỂM, cho tới khi bạn tự đo lại.**
+> Đo trước tốn vài phút; tin nhầm tốn cả một đợt sửa vào chỗ không có gì để sửa.
+
+| Nhóm | Trạng thái | Ghi chú |
+|---|---|---|
+| **A** (làm phiền người thật) | ✅ ĐÓNG | A1-A4, sprint 5 `6ad3e57d..13b58676` |
+| **B1** (hai bản sao logic) | ✅ ĐÓNG | cùng sprint 5 |
+| **B3.3** (sweeper có gọi prune?) | ✅ ĐÓNG `17f78546` | khoảng trống ĐƯỢC ĐO: gỡ lời gọi ⇒ 7/7 vẫn xanh. Nay có lưới đồng-hồ-giả |
+| **B2, B3.2** | ✅ ĐÓNG `20f751bb` | B3.1 vốn ĐÃ ĐÓNG (kbDocParser.test.ts:124) |
+| **C1, C2** | ✅ ĐÓNG `b74a3b33` | **là MỘT việc, không phải hai** — C2 là điều kiện cần của C1 |
+| **C3** (sắp sai trục) | ✅ ĐÓNG `17f78546` | `ORDER BY` sai + `LIMIT` = MẤT DÒNG |
+| **D1, D2** | ✅ ĐÓNG `17f78546` | ⚠ D2 khai 9 khoá thiếu — đo được **1** |
+| **D3** | ✅ vốn ĐÃ ĐÓNG | đã có `.limit()` + zod `max(500)` từ trước |
+| **D4** (cột chỉ-ghi) | ✅ ĐÓNG | mig 0335 ĐÃ CHẠY (owner `aoi`): cột biến mất, 73 dòng nhật ký giữ nguyên |
+| **E1** | ✅ vốn ĐÃ ĐÓNG `7d2d42d9` | + lưới `timeframeGuard` bổ sung |
+| **E3, E5, E6** | ✅ vốn ĐÃ ĐÓNG | xác minh bằng ĐỌC MÃ 2026-08-22, không bằng comment |
+| **E4** (env gõ sai im lặng) | ✅ ĐÓNG `a93afd69` | `server/_core/envNumber.ts` |
+| **E2** | ✅ vốn ĐÃ ĐÓNG TRỌN | cooldown qua Redis + 3 ca test. Nhãn "cần chủ dự án" là SAI |
+| **E7** | ✅ vốn ĐÃ ĐÓNG cả ba | E7(a) alarmKpiMissingTable:129 · E7(c) valve.test:113 · E7(b) nhánh không còn tồn tại |
+| **F14** (lớp nợ MỚI) | ✅ ĐÓNG TRỌN `adc24316` | tRPC `20→0` · service `49→0` · REST 95 + log = KHÔNG phải nợ. Nợ thật chỉ **13 chỗ** trong 164 |
+| **F1** (chỉ 15% màn hưởng lợi) | ✅ ĐÓNG `4b157955` | ⚠ **cả bốn con số của F1 đã lạc hậu theo hướng BI QUAN** — xem ghi chú dưới. Nợ thật `139 → 0`, nay là BẤT BIẾN (`rawErrorMessageCensus`) |
+| **F2** | ✅ ĐÓNG `8993b868` | khai 75 chỗ — đo được **3**. Nay BẤT BIẾN 0 |
+| **F4, F5, F6, F7, F8** | ✅ vốn ĐÃ ĐÓNG | đo 2026-08-22: F7a **0/77** câu en chữ thường (khai 336/384) · `errors.reason.*` 45 khoá + 12 khoá `_WITH_REASON` · entity hết trùng nghĩa · zh hết lệch thuật ngữ · `entity.factory` KHÔNG chết (dùng 3 chỗ) |
+| **F3** | ⏳ CÒN — mục DUY NHẤT | **Pha 1 XONG** `592d26ef`: 547 → **502**. Còn pha 2 (224 chỗ có đường tới giao diện) + pha 3 (nội bộ) |
+| **F9** | ✅ vốn ĐÃ ĐÓNG (doc71 task 11) | hash giả sinh runtime đúng cost · `bcrypt.compare` chạy MỌI nhánh · truy vấn `userId=-1` giữ nguyên hình dạng · có ca đo TRUNG VỊ độ trễ (F9-D, F9-E) |
+| **F10-F13** (nhãn giao diện en/zh) | ✅ ĐÓNG | xem §4c/§4d — hình-dạng-3 `914 → 0` qua 17 lô |
+| **G** (machine-auth + giấy phép) | ✅ ĐÓNG | `fa00e4cb` — 17→0 khoá plaintext (mig 0334), hai đường yếu nay mặc định `deny` |
+
+---
+
+## ⓘ NỢ CÒN LẠI — CHỈ CÒN MỘT MỤC, KÈM KẾ HOẠCH
+
+### F3 — 547 chỗ `throw new Error(...)` ngoài `server/routers/**`
+
+Cổng: `server/_core/rawErrorCensus.test.ts` (ngân sách **502**, chỉ được GIẢM; cộng hai bất biến
+"0 chỗ ném thô họ DB" cho `server/db/**` và cho toàn server).
+
+**⚠ F3 KHÁC F14 Ở MỘT ĐIỂM QUYẾT ĐỊNH — đọc trước khi lập kế hoạch.**
+F14 là lỗi **TRẢ VỀ** như dữ liệu: nó chỉ tới người dùng nếu có ai đó hiển thị nó.
+F3 là lỗi **ĐƯỢC NÉM**: nó tự động nổi lên qua tRPC tới `mapTrpcError` **trừ khi** có ai
+bắt lại giữa đường. Nghĩa là mặc định của F3 là *"tới được người dùng"*, ngược hẳn F14.
+⇒ Câu hỏi phải hỏi ở đây là **"có ai BẮT nó giữa đường không?"**, không phải "có ai hiển
+thị nó không".
+
+#### Phép đo 2026-08-22 (đo lại trước khi làm — đừng tin bảng này)
+
+| Phân nhóm | Số chỗ |
+|---|---|
+| driver / giao thức OT (`ot`, `secsgem`, `robot`, `equipment`) | **127** |
+| AI engine / model (`aiGguf`, `aiInference`, `aiLocal*`, `aiTraining`…) | **83** |
+| thị giác (`services/vision/**`) | **72** |
+| bảo mật / chính sách / giấy phép | **32** |
+| `server/db/**` | **20** |
+| lập trình / PLC / IEC | **19** |
+| chưa phân nhóm (76 file lẻ) | **194** |
+
+Theo khả năng tới người dùng:
+- **224 chỗ / 69 file** nằm trong file mà **một router có import** ⇒ có đường sống tới giao diện;
+- **323 chỗ** nằm trong file **không router nào import** ⇒ nội bộ thuần, chỉ tới được người dùng qua chuỗi gọi dài hơn.
+
+#### Kế hoạch — ba pha, theo GIÁ TRỊ chứ không theo số lượng
+
+**Pha 1 — họ "driver không kết nối" — ✅ XONG `592d26ef` (2026-08-22).**
+45 chỗ / 17 file: 38 chỗ `"<X>Driver: not connected"` → `DeviceUnreachableError` (7 driver OT
++ 6 driver robot + ursim + rosbridge + HSMS), 7 chỗ driver chưa hiện thực →
+`DeviceProtocolUnsupportedError`.
+
+Dùng **LỚP LỖI** (khuôn `DbUnavailableError`) chứ không `appError()`: `appError` dựng một
+`TRPCError`, tức kéo `@trpc/server` vào tầng driver — một driver Modbus không nên phụ thuộc
+giao thức truyền tải để nói được câu "tôi chưa kết nối". tRPC bọc mọi throw thành
+`TRPCError({ cause })`, và `readAppErrorMeta()` đọc `cause.appCode` **và** `cause.appParams`.
+
+⚠ **Ở ĐÂY KHÔNG MẤT THÔNG TIN, KHÁC F14.** F14 phải trả CẢ HAI (mã + chuỗi thô) vì chuỗi thô
+mang thông tin mã không có (`"ECONNREFUSED 10.0.0.5:502"`). Còn `"ModbusDriver: not connected"`
+chỉ mang ĐÚNG MỘT thông tin — driver nào — mà `appParams.entity` đã chở rồi. Chỗ nào chuỗi
+gốc có thêm chi tiết thì truyền vào tham số `chiTiet` → vào `message` → làm fallback.
+
+⚠ **Bẫy "hai tập trùng MỘT PHẦN" (lần thứ tư trong đợt):** `OtProtocol` khớp đúng 7 khoá
+entity đã có, nhưng `RobotVendor` thì không — và nguy hiểm nhất là nó có `"mitsubishi"`
+(robot) trong khi `OtProtocol` có `"mitsubishi-mc"` (PLC MELSEC). Dùng thẳng giá trị vendor
+làm khoá thì hoặc tra trúng khoá KHÁC NGHĨA, hoặc không có khoá nào và người dùng đọc
+*"Không kết nối được tới thiết bị mitsubishi"*. ⇒ Bảng ánh xạ tường minh
+`KHOA_THUC_THE_ROBOT` + 9 khoá entity mới ×3 locale.
+
+Cổng: `server/_core/deviceErrors.test.ts` — đường này **nằm ngoài tầm nói của**
+`entityDictionaryCoverage` (cổng đó chỉ quét `appError(...)`).
+
+### ⚠ PHA 2/3 ĐÃ ĐƯỢC ĐO LẠI — VÀ KẾT LUẬN ĐỔI (2026-08-22)
+
+Kế hoạch pha 2/3 bên dưới viết **trước khi** đo hình dạng câu chữ. Đo xong thì nó sai giả
+định nền, nên giữ lại để đối chiếu chứ đừng làm theo:
+
+- **299 CÂU KHÁC NHAU** trên 502 chỗ, **266 câu (89%) chỉ xuất hiện ĐÚNG MỘT LẦN.**
+  Họ đồng nhất DUY NHẤT — "driver không kết nối", 45 chỗ — đã đóng ở Pha 1. **Không còn họ nào.**
+- Trong 339 chỗ có chuỗi hằng: chỉ **80 chỗ** khớp một mã CHUNG đã có; **259 chỗ không mã nào hợp.**
+- 12 chỗ `"not found"` hoá ra là lỗi **HỆ THỐNG TỆP** — ánh xạ sang `ENTITY_NOT_FOUND` sẽ
+  nuốt mất ĐƯỜNG DẪN, thứ mang toàn bộ giá trị chẩn đoán.
+
+⇒ **Đẻ 259 mã dùng-một-lần là TỆ HƠN để nguyên.** Một registry mà mỗi mã chỉ dùng một chỗ
+thì không còn là registry — nó là bản dịch tiếng Việt của chính chuỗi tiếng Anh, đội thêm
+chi phí bảo trì ba locale mà không thêm một chút khả năng máy-đọc nào. Mã lỗi có giá trị vì
+nó **GOM** các chỗ cùng nghĩa; không gom được thì không có giá trị.
+
+**LUẬT CHO MỌI ĐỢT SAU — chỉ di trú khi ĐỦ CẢ HAI:**
+&nbsp;&nbsp;(a) chỗ đó THẬT SỰ tới người dùng cuối (không phải kỹ sư/máy/LLM — F14 đo được 13/164);
+&nbsp;&nbsp;(b) có mã CHUNG ĐÃ CÓ diễn đạt đúng nghĩa, và di trú KHÔNG làm mất thông tin (đường dẫn, mã socket, số hiệu bước) mà chuỗi gốc đang mang.
+Thiếu một trong hai ⇒ **giữ nguyên**. Ngân sách đứng yên KHÔNG phải thất bại; nó là kết quả
+ĐÚNG khi phần còn lại không phải nợ.
+
+**Kết luận đó nay TỰ ĐO LẠI mỗi lần chạy test** — `rawErrorCensus.test.ts` có một ca tính
+lại phân bố câu và ĐỎ nếu có họ ≥8 chỗ xuất hiện. Nó vừa bảo vệ kết luận "không còn gì để
+di trú", vừa tự huỷ kết luận ấy đúng lúc nó hết đúng.
+
+<details><summary>Kế hoạch pha 2/3 nguyên bản (đã lạc hậu — giữ để đối chiếu)</summary>
+
+**Pha 2 — 224 chỗ trong file được router import.**
+Với từng chỗ, hỏi **"có ai BẮT nó giữa đường không?"**:
+- có `catch` bọc và chuyển thành `appError` ⇒ **không phải nợ**, đánh dấu lý do;
+- không ai bắt ⇒ nợ thật, đổi sang `appError(...)` hoặc một lớp lỗi tự mang `appCode`
+  (khuôn `DbUnavailableError` — không đổi hình dạng phản hồi, chỉ đặt đúng tên).
+
+**Pha 3 — 323 chỗ nội bộ thuần.**
+Ưu tiên thấp nhất. Nhiều chỗ trong đây là lỗi codec/protocol mà **chuỗi gốc mới là nội
+dung đúng** (xem kết luận F14). Chỉ đụng khi có bằng chứng nó nổi lên tới một màn hình.
+
+</details>
+
+#### ⚠ Ba điều KHÔNG được làm
+
+1. **Đừng di trú hàng loạt theo hình dạng mã.** F14 đã đo: trong 164 chỗ trông y hệt nhau,
+   chỉ **13** là nợ thật; 151 chỗ còn lại mà "sửa" thì HỎNG — phá hợp đồng SDK OpenAI, làm
+   bẩn dữ liệu OpenTelemetry, làm chính mô hình LLM khó hiểu hơn, nuốt mất chỗ hỏng kỹ sư cần.
+2. **Đừng tin hình dạng mã để đoán người đọc.** Năm chỗ ở `edgeCoordinator` giống hệt nhau,
+   mà bốn cái là luồng MÁY-MÁY. Phải đọc tới docblock của router tiêu thụ.
+3. **Đừng "trả nợ" bằng cách đổi cách viết.** Đổi `throw new Error(x)` thành
+   `throw new Error(String(x))` làm ngân sách xanh mà người dùng không đỡ hơn một chữ.
+
+---
+
+## ⓘ CÁC CỔNG ĐANG CANH — tra ở đây TRƯỚC khi dựng cổng mới
+
+Đợt 21–22/08 để lại tám cổng. Ba cái đầu dùng chung một bộ đếm ở `scripts/` (bài học
+hình-dạng-3: bản sao của bộ đếm sẽ TRÔI LỆCH mà không ai thấy — một bộ đếm, cổng IMPORT nó).
+
+| Cổng | Canh gì | Mốc |
+|---|---|---|
+| `client/src/lib/rawErrorMessageCensus.unit.test.ts` | `err.message` thô tới mắt người dùng (client) | **0** — bất biến |
+| `server/_core/dataErrorStringCensus.test.ts` | F14: lỗi đi ra bằng cửa THÀNH CÔNG | tRPC **0** · service **0** — bất biến |
+| `server/_core/rawErrorCensus.test.ts` | F3: `throw new Error(` ngoài routers | **547** — chỉ được GIẢM |
+| `server/routers/appErrorCoverage.test.ts` | ném thô TRONG routers | **0** — bất biến |
+| `server/_core/envNumber.test.ts` | env gõ sai không được im lặng | — |
+| `server/services/weakAuthFailClosed.test.ts` | hai đường xác thực yếu ĐÓNG SẴN | — |
+| `server/services/alertExpirySweeperInit.test.ts` | nhịp quét gọi ĐỦ hai việc, và LẶP LẠI | — |
+| `server/routers/predictiveAlertFieldPassthrough.test.ts` | trường đi HẾT đường tới client | — |
+
+**Bốn tính chất mà mọi cổng ở đây đều có — giữ nguyên khi thêm cổng mới:**
+1. **Cầu chì**: phép quét phải THẤY file/entity, nếu không nó đang canh tập rỗng và mọi
+   khẳng định đúng một cách vô nghĩa (bài học glob rỗng, Pha 4).
+2. **Bám SÁT số thật (`toBe`, không chỉ `≤`)** — cả hai chiều. Số PHÌNH thì có người thấy đỏ
+   và đi sửa; **số TỤT thì cổng tự chúc mừng và món nợ biến mất khỏi tầm nhìn**.
+3. **Bất biến 0 phải có cầu chì riêng**: bơm một chuỗi ĐÚNG hình dạng nợ rồi hỏi thước có
+   thấy không — một bộ đếm HỎNG cũng trả 0 và trông y hệt "đã sạch".
+4. **Dấu miễn trừ bắt buộc kèm LÝ DO** (`i18n-raw-ok:` / `data-raw-ok:` + nội dung). Không
+   cho tắt cổng bằng một từ, và buộc mỗi chỗ phải được nghĩ RIÊNG.
+
+**⚠ MỌI MỤC KHÁC ĐÃ ĐÓNG — kể cả ba mục từng gắn nhãn "cần chủ dự án".** Trong đó **hai mươi hai** mục hoá ra đã đóng từ trước hoặc sai số; xem cảnh báo đầu tài liệu.
+
+**✅ BA MỤC TỪNG "CHỜ CHỦ DỰ ÁN" NAY ĐÃ ĐÓNG HẾT (2026-08-22).**
+Chủ dự án xác nhận dữ liệu hệ thống là dữ liệu TEST ⇒ hai mục bị chặn vì rủi ro mất dữ
+liệu thật không còn bị chặn. Mục thứ ba hoá ra chưa từng cần ai quyết.
+
+- **G** ✅ `fa00e4cb` — mig 0334 xoá **17 → 0** khoá plaintext (đo live, 42/42 máy vẫn có khoá `mk_` riêng), và hai chính sách xác thực yếu đổi mặc định `allow` → `deny`.
+- **E2** ✅ **vốn đã đóng trọn từ trước** — cooldown cho nhóm không-`machineId` đã có qua Redis, đóng dấu sau khi gửi thành công, và đã có ba ca test phủ. Nhãn "cần chủ dự án" là SAI.
+  ⚠ Đây là loại sai đắt nhất trong tài liệu này: nó **chặn việc bằng một hàng đợi người**, và không ai đi kiểm lại thứ đang chờ người khác quyết.
+- **D4** ✅ `a3b02fe3` — bỏ cột chỉ-ghi `occurrences.confidenceScore`. **mig 0335 ĐÃ ÁP** bằng owner `aoi`: đo trước/sau cho thấy cột biến mất và **73 dòng nhật ký giữ nguyên**; 10 file test đường nhật ký xanh trên CSDL đã đổi.
+
+**Việc ops:** ✅ xong — chủ dự án đã xoá `machine-keys-2026-08-21.csv` (2026-08-22).
+
+⚠ **Trước khi làm bất kỳ mục nào: ĐO LẠI.** Bảng này đã sai theo cách đó **ba lần**:
+  • lần 1 xếp E1 "ưu tiên cao, còn" — nó đã đóng từ `7d2d42d9`;
+  • F3 khai *"64 chỗ, nặng nhất `_core/trpc.ts` 12 chỗ = mọi chối-quyền RBAC"* — đo lại: hai file đó **0 chỗ**, nợ thật nằm ở `server/db/**` + `server/services/**` và **lớn gấp 16 lần**;
+  • F1 khai *"535 `onError`, 82 qua `mapTrpcError`, 446 hiện thẳng `.message` ở 159 file, 19/748 file import `lib/trpcErrors`, `main.tsx` không có handler toàn cục"* — đo lại 2026-08-21: **189** file import, **163** lời gọi, `main.tsx` **CÓ** lưới cuối cho cả query lẫn mutation (dựng ở F11, `2026-08-14`), nợ thật **139/76**. Làm theo backlog thì sẽ đi sửa 446 chỗ trong đó ~307 chỗ không tồn tại.
+  ⇒ **Con số trong tài liệu là LỜI KHAI, không phải phép đo.**
+
+---
+
+## 0. Đọc trước — bối cảnh tối thiểu cho session mới
+
+| Wave | Đã làm | Commit |
+|---|---|---|
+| 0 | Kích hoạt AI chặng cuối | `f02b4b88` |
+| 1 | 4 agent chuyên môn gọi-được + **sửa gốc rễ: hệ đang sinh chữ bằng model NHÚNG** | `65dbc2fa` |
+| 2 | Sửa 3 đường giao hàng đứt (150 đề xuất→3 áp dụng · kho 0 chunk→trợ lý trích dẫn được · ghost-text) | `8e4d2f66` |
+| 3 | Ngừng sản xuất nhiễu tại nguồn (52 cảnh báo→6, một-cảnh-báo-mở mỗi máy×loại) | `f53bb004` |
+| 4 | Đo đúng cái vừa sửa (KPI đếm theo lần-tái-diễn, ISA-18.2) | `208301dc` |
+
+Memory: `ai-wave0-activation`, `ai-wave1-specialist-studio`, `ai-wave2-delivery`, `ai-wave3-alert-trust`, `ai-wave4-alert-kpi-truth`.
+
+**Ba bài học đã trả giá để có — mang vào mọi brief của sprint này:**
+1. **Mock phải mô tả thế giới CÓ THẬT.** Wave 3+4 có 4 lỗi vì mock trả hình dạng mã thật không bao giờ nhận (`.returning()` khi không gọi; mảng đầy khi driver trả rỗng; `.innerJoin()` bỏ qua điều kiện nối).
+2. **Kiểm hợp đồng API TRƯỚC khi viết giao diện.** Hai lần `.map()` liệt kê tay thiếu trường ⇒ tính năng không bao giờ hiện được (`occurrenceCount` ở Wave 3, `resolutionNotes` ở Wave 4).
+3. **Nói thẳng brief có thể sai** + chỉ đích danh cần kiểm gì. Wave 4 vẫn có 3 lỗi brief nhưng **cả ba bị bắt ngay trong task**, không lọt vào mã.
+
+**Đã trả rồi — ĐỪNG làm lại:** Wave 3 I3 (KPI đếm theo dòng) → Wave 4 T4 · Wave 3 M5 (nút sinh dự đoán bỏ qua `routeAlert`) → Wave 4 T5 · Wave 3 M3 (dòng `EXPIRED` vô hình) → Wave 4 T6.
+
+---
+
+## 1. NHÓM A — Hệ vẫn làm phiền người thật (ưu tiên cao nhất)
+
+### A1. Thông báo vẫn bắn MỖI LẦN tái diễn — Wave 3 gộp dòng nhưng KHÔNG giảm tải người vận hành
+`aiSmartAlertRouter.ts` — thông báo gửi ở Step 4, **trước** khi quyết insert/update.
+
+Hệ quả đo được: máy tái diễn 22 lần/ngày ⇒ **vẫn tới 22 lượt push**, dù bảng cảnh báo chỉ còn 1 dòng. Wave 3 tuyên bố "52 → 6" là đúng về **dòng**, sai nếu ai hiểu là hết nhiễu.
+
+**Vì sao bây giờ mới làm được:** Wave 3 §4.5 và Wave 4 đều từ chối chặn bớt thông báo vì "cần dữ liệu để quyết". Nhật ký lần-tái-diễn (Wave 4) **chính là dữ liệu đó** — nay có rồi.
+
+⚠ Đây là **thay đổi tải thật lên người vận hành** ⇒ phải hỏi chủ dự án trước, không tự quyết.
+
+### A2. Phép "ngập báo động" ISA-18.2 không thể kích hoạt cho MỘT máy
+`aiSmartAlertRouter.ts:130-147` return sớm khi `nextCount > 3` trong cửa sổ gộp 5 phút ⇒ **trần cứng 6 lượt/10 phút** cho mỗi `(loại, máy, xưởng)`, trong khi ISA-18.2 cần **>10 lượt/10 phút**.
+
+⇒ Flood chỉ kích hoạt được khi nhiều máy cùng kêu. **Wave 4 sửa xong phần ĐẾM, chưa sửa phần PHÁT HIỆN.**
+
+Cùng gốc với A1 (đều là cửa sổ gộp 5 phút) ⇒ nên làm cùng lúc, nhưng **cẩn thận**: A1 muốn gộp NHIỀU hơn, A2 muốn ghi ĐỦ hơn. Hai hướng ngược nhau — phải tách rõ "ghi nhật ký" (luôn đủ) khỏi "gửi thông báo" (được phép gộp).
+
+### A3. KPI sẽ hiện 0 sau khi triển khai, không giải thích
+Nhật ký lần-tái-diễn rỗng lúc bắt đầu (cấm nạp ngược quá khứ — quyết định đúng). Bảng điều khiển sẽ hiện "0 cảnh báo AI" mà không nói vì sao, cho tới khi có cảnh báo mới đi qua `routeAlert`.
+
+Cần một câu trên giao diện kiểu *"chưa có dữ liệu lần-tái-diễn kể từ khi bật tính năng"* — nếu không, người dùng sẽ kết luận "AI hỏng rồi", đúng thứ Wave 3 §6 đã cảnh báo.
+
+### A4. Câu từ chối nạp tài liệu bằng tiếng Anh và khó dùng
+`Document exceeds 20971520 bytes` (byte thô, không phải "20 MB") · `Unsupported document type: "pptx". Supported: pdf, docx, md, txt.` · `Failed to fetch` · `File "notes.txt" has a TXT (text) extension but its content is a PNG image…`
+
+Cùng một luồng nạp tài liệu nhưng `kbImageDescriber.ts` lại tiếng Việt ⇒ **không nhất quán ngay trong một luồng**. Người vận hành Việt Nam khó hiểu "magic bytes"/"NUL byte".
+
+**Cách sửa rẻ và đúng** (reviewer Wave 2 đề xuất): **đừng dịch chuỗi máy chủ** (dùng chung nhiều caller) — gắn `code` máy-đọc-được ổn định lên lỗi rồi ánh xạ i18n ở `mapTrpcError` phía client. Một việc, không phải bốn.
+
+---
+
+## 2. NHÓM B — Lỗ hổng đo lường (số liệu có thể nói dối mà không ai biết)
+
+### B1. `classifySuppression` và biểu thức phát cảnh báo là HAI BẢN SAO logic, không test nào so khớp
+Wave 3 cố ý giữ hai đường tách biệt để phát hiện sai lệch. Nhưng **không test nào so chúng** ⇒ đổi ngưỡng ở một nơi thì số đếm nói dối mà không ai biết — mà **độ tin của số đếm chính là toàn bộ giá trị** của tính năng đó.
+
+Đặc biệt cấp thiết vì Wave 4 vừa dùng chính số đếm này để phát hiện *"độ tin cậy mới là ràng buộc thật, không phải rủi ro"* (hạ ngưỡng rủi ro 60→25 ⇒ `low-risk` 39→30 nhưng `low-confidence` **2→11**). Nếu số đó sai, kết luận đó sai theo.
+
+### B2. Không test nào chứng minh `occurrenceCount` tới được client
+Đúng lớp lỗi đã xảy ra **hai lần** (`occurrenceCount` Wave 3, `resolutionNotes` Wave 4): `.map()` liệt kê tay thiếu trường ⇒ tính năng không bao giờ hiện được. Hiện chỉ được canh bằng mắt người.
+
+### B3. Test còn thiếu, rẻ
+- Ca dương tính cho `.md` hợp lệ (hiện chỉ có ca âm tính PNG-trong-`.md`).
+- Tổ hợp `unknown-user` + `no-permission` trong `canDecide` — nếu ai đảo hai bước đầu, không test nào bắt.
+- `initAlertExpirySweeper` có thật sự gọi `pruneOldOccurrences` không — xoá dòng đó khỏi `setInterval` thì **toàn bộ test vẫn xanh**.
+
+---
+
+## 3. NHÓM C — Dữ liệu không tới đích
+
+### C1. `aiQualityGate.ts:1020` INSERT thẳng, không qua `routeAlert`
+⇒ không gộp trùng, không `expiresAt`, **không ghi nhật ký** ⇒ vô hình với KPI. Cờ `ANOMALY_CREATE_ALERTS` mặc định `false`, nhưng bật lên là mất hẳn nhóm `PATTERN_ANOMALY` khỏi KPI, **không một dấu hiệu nào**.
+
+Đây là **nguồn ghi cuối cùng** chưa đi qua cửa chung (Wave 4 đã xử `generatePredictions`).
+
+### C2. `routeAlert` chưa nhận `predictedValue`, `productModelCode`, `modelUsed`
+Ba trường mà đường INSERT cũ có ghi. Không màn nào đọc chúng hiện tại, nhưng chúng là dữ liệu thật đang bị bỏ. `modelUsed` bị **gán cứng** `"smart-alert-router"` (`:177`, `:188`), che mất tên thuật toán thật.
+
+### C3. Danh sách "cảnh báo vừa đóng" sắp theo `createdAt`, không theo lúc đóng
+`aiRouters.ts:443-444` `orderBy(desc(createdAt)).limit(50)`. Cảnh báo sống 30 ngày rồi vừa bị đóng hôm nay sẽ bị 50 dòng mới-tạo-hơn đẩy ra ⇒ **không bao giờ hiện** trong mục tên là "vừa đóng". Mà cảnh báo sống lâu **chính là loại sweeper hay đóng nhất**.
+
+---
+
+## 4. NHÓM D — Vận hành, rẻ
+
+- **D1.** `.env.example` thiếu `ALERT_TTL_HOURS`, `ALERT_EXPIRY_SWEEP_ENABLED/MINUTES`, `ALERT_OCCURRENCE_RETENTION_DAYS`. ⚠ Đặt retention < 30 ngày sẽ khiến API cửa sổ dài đọc phải khoảng trống **không báo gì**.
+- **D2.** 9 khoá `manualHelp.*` chưa có trong `vi/en/zh` (nợ từ doc 37). Vô hại vì mọi `t()` có mặc định tiếng Việt tại chỗ — chỉ khiến bản en/zh hiện tiếng Việt.
+- **D3.** `countPendingByProduct` không có `.limit()` (Wave 2). Đúng vẫn đúng; rủi ro chỉ khi tồn đọng một sản phẩm phình to.
+- **D4.** `predictive_alert_occurrences.confidenceScore` **được ghi nhưng không nơi nào đọc** — cột chết, hoặc dùng nó, hoặc bỏ.
+
+---
+
+## 4b. NHÓM E — phát sinh KHI THI CÔNG nhóm A (2026-07-30)
+
+Do review tìm ra trong lúc làm nhóm A + B1, **không** thuộc phạm vi đã chốt nên cố ý để lại.
+
+- **E1. ~~`-Infinity` bị chặn ở CỔNG, chưa chặn ở NGUỒN.~~ ✅ ĐÃ ĐÓNG từ `7d2d42d9` — mục này ĐÃ CŨ.**
+  *(Mô tả gốc: `Math.round(-Infinity)` giữ nguyên `-Infinity`, `new Date(-Infinity)` là Invalid
+  Date đi vào `recordMachineHealthSnapshot`, drizzle/postgres-js có thể ném `RangeError`.)*
+
+  **Đo lại 2026-08-21 — nợ này KHÔNG CÒN, và đã đóng từ trước khi tôi đọc mục này.**
+  Commit `7d2d42d9` đã chặn tại nguồn: cả **bốn** nơi gán `timeframeHours` đều tự canh
+  `Number.isFinite` (`:415` · `:431-432` · `:502-505` · `:519-520`), cộng guard **hội tụ**
+  ở `:541` (null-hoá + hạ `rulMethod` về `insufficient_data` cho trung thực), cộng hai
+  điểm ra cuối tự canh độc lập. `predictiveMaintenanceService.rul.test.ts` 3/3 xanh.
+
+  ⚠ **Bảng tiến độ tôi viết ngày 2026-08-21 xếp E1 là "ƯU TIÊN CAO — còn" — SAI.** Tôi
+  chép lại lời khai của chính mục này mà không đo. Đúng lớp lỗi "tin vào chữ thay vì
+  đo" đã trả giá nhiều lần trong dự án.
+
+  ### Việc THẬT còn lại ở E1 — và nó khác hẳn mô tả gốc
+  Đột biến 2026-08-21: **vô hiệu CẢ BA lớp guard mà `rul.test.ts` vẫn XANH 3/3.** Không
+  phải lỗi của bộ test đó — nó khoá *hành vi quan sát được* cho ba đầu vào thù địch, và
+  với những đầu vào ấy mã đi nhánh khác nên giá trị không hữu hạn **không bao giờ chạm
+  tới guard**. Guard hội tụ hiện **không thể chạm tới**; nó là phòng vệ cho *đường mới
+  sau này*, đúng như docstring của nó tự nói.
+
+  Nhưng phòng vệ cho tương lai mà không ai canh thì tương lai đó không được bảo vệ: thêm
+  **đường gán thứ NĂM** không guard sẽ không làm đỏ bất cứ thứ gì.
+  ⇒ Đã thêm `predictiveMaintenanceService.timeframeGuard.test.ts` — lưới đọc **mã nguồn**
+  (bất biến cấu trúc "không đường gán nào thiếu canh"), không chạy hàm.
+  ⚠ Bản đầu của lưới lấy cứng 8 dòng ngữ cảnh và **đột biến M1 SỐNG SÓT**: đường gán mới
+  chèn ngay sau khối guard được coi là "đã canh" vì cửa sổ nhìn thấy `Number.isFinite`
+  CỦA GUARD ĐÓ. Thước rộng quá thì nó chứng nhận cho thứ nó không hề kiểm. Đã siết về
+  đúng phạm vi câu lệnh; 5/5 đột biến nay đỏ.
+
+- **E2. Cảnh báo KHÔNG có `machineId` không được cooldown nào chi phối. CẦN CHỦ DỰ ÁN QUYẾT.**
+  `routeAlert` chỉ tra cảnh báo đang mở khi `machineId != null`, nên `decideAlertWrite` luôn trả `insert/no-machine` ⇒ `decideNotify` luôn trả `first` ⇒ **luôn báo**. Cooldown 4 giờ không áp dụng cho nhóm này (`YIELD_DROP` cấp nhà máy; `modelAutoRollback.ts:244` không có cả `machineId` lẫn `factoryId`).
+  Sprint 5 đã gỡ trần 3 lượt/5 phút vốn là throttle **duy nhất** của nhóm này ⇒ trần thực tế đi từ 3 lên 200 lượt/cửa sổ.
+  Chưa hồi quy thực tế vì `alertEvaluatorScheduler` chạy 2 phút/lượt (≈2-3 lượt/cửa sổ, gần như không chạm trần cũ), nhưng van đã mất nếu một nguồn bùng. **Đã tài liệu hoá trong `.env.example`; phần đổi hành vi chờ quyết.**
+
+- **E3. `notificationSentAt` đóng dấu TRƯỚC khi gửi.** Dấu nằm trong khối ghi, lượt gửi thật xảy ra sau. Tiến trình chết trong khe vài mili-giây đó ⇒ cảnh báo mang dấu "đã báo" mà không ai được báo ⇒ im 4 giờ về một máy sắp hỏng. Cùng lớp rủi ro mà §2.4 đã lo cho ca `targets = 0` nhưng bỏ sót ca này.
+
+- **E4. Sai chính tả biến môi trường rơi về mặc định trong im lặng.** `Number("abc")` → NaN ⇒ 240; `-1` ⇒ 240. Người vận hành gõ nhầm khi định **tắt** tính năng sẽ nhận đúng 4 giờ im lặng và không một dòng log. Nên `console.log` một lần lúc khởi động ba giá trị đang có hiệu lực.
+
+- **E5. Van an toàn kêu MỖI lượt khi chạm trần.** Vòng lặp hỏng 1000 lượt/phút sinh 1000 dòng warn/phút. Đánh đổi đúng hướng (log ồn hơn DB ồn) nhưng nên có throttle log.
+
+- **E6. Truy vấn `MIN(occurredAt)` của `occurrenceLog` là toàn bảng, không lọc `lineId`/`machineId`.** Nhất quán với `sourceCounts.predictive` (cũng chưa lọc) nên câu giải thích không sai, nhưng ở màn đã lọc theo máy, một máy im lặng vẫn không được giải thích nếu nhà máy có dữ liệu.
+
+- **E7. Khoảng trống test nhỏ:** khối `try/catch` quanh truy vấn `MIN` (`alarmKpiRouter.ts`) không cô lập test được bằng cơ chế mock hiện tại · nhánh `!input.generatedAt` (`alarmKpiEmptyState.ts`) chưa có test · assert nội dung `console.warn` của van chưa nêu khoá.
+
+---
+
+## 4c. NHÓM F — nợ A4 sau khi di trú xong (2026-07-30)
+
+Cổng đếm `server/routers/**` đã về **0** (1056 → 0, 43 commit). Nhưng review toàn cục chỉ ra mức phủ thật hẹp hơn con số đó gợi ra. Ghi lại trung thực để sprint sau không tưởng nhầm là đã xong.
+
+- **F1. ~~Chỉ ~15% màn hình thật sự hưởng lợi.~~ ✅ ĐÃ ĐÓNG `4b157955` (2026-08-21) — MÔ TẢ GỐC DƯỚI ĐÂY SAI SỐ, giữ lại để không lặp lại cách làm.**
+
+  **Đo lại 2026-08-21, cả bốn con số đều lạc hậu theo hướng BI QUAN:** 189 file import
+  `lib/trpcErrors` (không phải 19) · 163 lời gọi `mapTrpcError` (không phải 82) ·
+  `main.tsx` **CÓ** lưới cuối cho cả query lẫn mutation, cả hai gọi `mapTrpcError`
+  (dựng ở F11 ngày 2026-08-14) · nợ thật **139 chỗ / 76 file**, không phải 446/159.
+
+  **Việc đã làm, khác hẳn mô tả gốc:**
+  1. **Gốc rễ trước ngọn** (`8dc59ef9`) — chính `trpcErrors.ts` nói tiếng Việt gán cứng ở
+     MỌI nhánh dự phòng (hết phiên · chối quyền generic · **lỗi zod**, lớp lỗi thường gặp
+     nhất của biểu mẫu · message rỗng/leak SQL). Mọi điểm gọi sau khi di trú đều đổ về
+     đúng đó. Thêm 13 khoá `errors.client.*` × 3 locale + `translateClientKey()`.
+     ⚠ 12 cổng cũ VẪN XANH sau bản vá — trong test bundle chưa nạp nên fallback trùng
+     khít hành vi cũ. Phải thêm `trpcErrors.locale.unit.test.ts` mới đo được.
+  2. **Di trú 125 chỗ** (`4b157955`), 8 chỗ giữ thô có lý do viết tại chỗ (`i18n-raw-ok:`).
+     `139 → 0`, nay là BẤT BIẾN.
+
+  *(Mô tả gốc, số liệu 2026-07-30 — đã lạc hậu:)*
+  `translateAppError` chỉ chạy khi lỗi đi qua `mapTrpcError`. Đo trên `client/src` (748 file): **535** handler `onError`, chỉ **82 (15%)** qua `mapTrpcError`; **446 (83%) hiện thẳng `.message`** ở 159 file. Chỉ 19/748 file import `lib/trpcErrors`. `client/src/main.tsx` không có handler lỗi toàn cục.
+  ⇒ 1061 chỗ máy chủ đã có mã, nhưng phần lớn màn hình vẫn hiện y nguyên chuỗi cũ. **Tuyên bố "người dùng Việt thôi đọc tiếng Anh thô" chỉ đúng cho 15% bề mặt.** Việc còn lại là di trú handler client — đó mới là chỗ người dùng thật sự nhận được giá trị.
+
+- **F2. 75 chỗ `throw new Error(...)` trong chính `server/routers/**` — vô hình với cổng cũ.**
+  Trong đó **31 chỗ** là `"Database not available"` — đúng chuỗi mà loạt này tuyên bố đã xoá sổ. tRPC v11 đặt `message = cause?.message` nên chúng đi nguyên vẹn tới client. Đã dựng ngân sách `ALLOWED_RAW_ERROR_THROWS = 75` để không phình thêm; việc di trú là một đợt quét riêng.
+
+- **F3. 64 chỗ / 13 file ngoài `server/routers/**` chưa di trú.** Nặng nhất: `machineAuthService.ts` 17 · `aiAnalyticsScope.ts` 13 · `_core/trpc.ts` 12 (mọi chối-quyền RBAC, mọi gọi chưa đăng nhập) · `securityIdentityRouter.ts` 5 · `thresholdGovernanceService.ts` 5. Hạ tầng lõi + security-critical, cần sprint riêng.
+
+- **F4. Mất thông tin hành-động-được — lớn hơn ước tính ban đầu.**
+  **184 chỗ** `fallbackMessage` vốn ĐÃ là tiếng Việt (di trú ở đó là thuần lỗ), và **76 nhóm** trong đó ≥2 nguyên nhân khác nhau nay render một câu y hệt. Nặng nhất: `productionRouters.ts:201/224/238` mất danh sách lệnh trùng lịch + chỉ dẫn `forceOverride=true` ⇒ người dùng **kẹt hoàn toàn**; `deviceAdapterRouter.ts:188` mất "hãy tắt trước khi xoá"; `defectDispositionRouter.ts:167` mất "Vào Cài đặt > Bảo mật".
+  Gốc: `OPERATION_FAILED`/`INVALID_VALUE` không có chỗ chứa lý do. **Nếu làm lại: thêm không gian từ điển `errors.reason.*` TRƯỚC đợt quét, không phải sau.**
+
+- **F5. Hợp đồng chết trong registry.** `ENTITY_DUPLICATE // params: { entity, field? }` và `INVALID_VALUE // params: { field, reason? }` quảng cáo tham số mà không template nào render — 12 chỗ truyền `field:` vô ích, 36 khoá từ điển không bao giờ hiện. Cùng lớp bug `errors.action.*` đã bắt ở Task 7.
+
+- **F6. Nhất quán chéo task.** "Bảng chưa migrate" có **4** cách xử lý (`FEATURE_DISABLED` / `OPERATION_FAILED` / `PRECONDITION_FAILED` / `throw new Error` thô) · `product` ↔ `productModel` cùng trỏ `product_models` · `report` ↔ `reportTemplate` cùng trỏ `report_templates` · `TWO_FACTOR_NOT_SET_UP` mang cả `FORBIDDEN` lẫn `BAD_REQUEST`.
+
+- **F7. Chất lượng bản dịch.** en: **336/384** câu bắt đầu bằng chữ thường (`"{{entity}} not found."` × entity viết thường ⇒ *"user not found."*) · zh lệch thuật ngữ (`entity.machine`=设备 vs `operation.registerMachine`=机台; `entity.fleetTask`=车队任务 vs `operation.assignFleetTask`=机队) · `errors.feature.web_ingest` là khoá snake_case duy nhất giữa 307 khoá camelCase · `errors.entity.factory` là khoá chết.
+
+- **F8. i18n lười + `fallbackLng:'vi'`.** en/zh nạp bằng `import()` động. Trong cửa sổ chờ hoặc khi chunk hỏng (offline), `translateAppError` trả **chuỗi tiếng Việt** — không phải sentinel — nên fallback tiếng Anh không bao giờ tới. Người dùng en đọc "Không tìm thấy sản phẩm.". **Đường này mới có sau di trú.**
+
+- **F9. Bảo mật đăng nhập, tiền tồn tại, ngoài phạm vi.** Kiểm `isActive`/`lockedUntil` chạy TRƯỚC `bcrypt.compare`, nên chỉ cần username là phân biệt được "tồn tại + vô hiệu/khoá" với "không tồn tại"; nhánh unknown-user bỏ qua bcrypt ⇒ side-channel thời gian. Đợt di trú **không làm tệ hơn** (`INVALID_CREDENTIALS` vẫn gộp chung sai-mật-khẩu với không-có-tài-khoản).
+
+- **F10. ~~Chưa kiểm bằng mắt trên trình duyệt.~~ ✅ ĐÃ LÀM** (rebuild + restart `:3000`, 14 ảnh qua Playwright). Xem F11/F12 — nó tìm ra hai thứ mà mọi cổng xanh đều không thấy.
+
+**Công tắc quay lui:** `APP_ERROR_CODES_ENABLED=false` gỡ `appCode` khỏi phản hồi ⇒ client tự rơi về hành vi trước sprint, **không cần build lại FE**.
+
+---
+
+## 4d. NHÓM F (tiếp) — HAI PHÁT HIỆN CỦA LƯỢT KIỂM MẮT
+
+Toàn bộ 12 task của plan trả nợ E+F **đã hoàn tất và đã push**. Nhưng lượt kiểm mắt cuối cùng (F10) tìm ra hai điều mà **không cổng nào, không test nào bắt được**. Ghi vào đây vì trước đó chúng chỉ nằm trong sổ tiến độ tạm (`.superpowers/sdd/**`, bị gitignore — `git clean -fdx` là mất trắng).
+
+- **F11. ~~`FEATURE_DISABLED` và `DB_UNAVAILABLE` hầu như KHÔNG BAO GIỜ tới người dùng thật.~~ ✅ ĐÃ ĐÓNG 2026-08-14** — 4 commit `f5aa0aa3` · `560b75a5` · `834f2e3b` · `97f97296`.
+
+  ⚠ **Chẩn đoán ban đầu SAI hai chỗ, đọc mã mới rõ:**
+  1. Tôi viết *"`DB_UNAVAILABLE` … rồi bị đá về trang đăng nhập"*. **Không phải.** `redirectToLoginIfUnauthorized` chỉ điều hướng khi message khớp đúng `'Please login (10001)'`, nên `DB_UNAVAILABLE` không hề gây điều hướng. Việc "đá về login" trong ảnh là phiên hết hạn riêng xảy ra cùng lúc.
+  2. Tôi viết *"`FEATURE_DISABLED` bị một tầng UI **nuốt** và thay bằng câu tự chế"*. Đúng về hiện tượng nhưng **sai về bản chất**: tầng UI đó cố ý thay lỗi đỏ bằng một câu bình tĩnh, actionable (*"Preview mode… set X_ENABLED=true"*) — tốt hơn hẳn. Vấn đề thật nằm ở **cách nhận diện**.
+
+  **Bốn gốc rễ thật, đều đã vá:**
+  | | Bệnh | Đã sửa |
+  |---|---|---|
+  | a | 6 tuyến ném `UNAUTHORIZED` + `AUTH_REQUIRED` nhưng message khác `UNAUTHED_ERR_MSG` ⇒ **không điều hướng và cũng không hiện gì**; phiên hết hạn cho ra màn hình rỗng câm | nhận diện theo `appCode`, vị từ tách ra `lib/authRedirect.ts` |
+  | b | **8 màn** nhận diện cờ-tắt bằng `/disabled/i.test(e.message)` — khớp chữ tiếng Anh; 2 màn còn có tầng regex thứ hai để phân biệt hai cờ | helper `lib/featureFlagError.ts` dùng `appCode` + `params.feature` (17 khoá) |
+  | c | **248/910 mutation** không khai `onError` ⇒ bấm nút, hỏng, **không có gì xảy ra** | lưới cuối ở `MutationCache`, chỉ bắn khi component chưa tự xử lý (tránh toast đôi ở 662 chỗ) |
+  | d | React Query v5 **bỏ hẳn `onError` khỏi `useQuery`** ⇒ **cả 1310 query** không có chỗ xử lý lỗi; handler toàn cục chỉ `console.error` ⇒ `DB_UNAVAILABLE` im hoàn toàn | toast gộp theo `appCode` trong cửa sổ 10s; im với refetch nền đã có dữ liệu cũ |
+
+  Cả bốn đều có lưới + mutation-test (gỡ bản vá ⇒ đúng ca cần đỏ mới đỏ).
+  Bài học giữ lại: **cổng xanh và test xanh không chứng minh đường giao hàng thông** — chỉ lượt kiểm mắt mới thấy.
+
+- **F12. Nhãn giao diện tiếng Việt lọt sang bản en/zh — KHÔNG chữa được bằng bản vá F8.**
+  Menu ở bản tiếng Anh vẫn hiện "Thay đổi kỹ thuật (ECN)", "Xưởng kỹ thuật", "Chỉ huy nhà máy", "Trung tâm bảo trì", "Bảo trì (CMMS)", "Vật tư đã dùng" — lặp nhất quán ở **cả en lẫn zh**.
+  ⚠ **Chẩn đoán đầu tiên SAI và đã bị đo lại bác bỏ.** Ban đầu quy cho "cùng gốc rễ F8 (khoá thiếu + `fallbackLng: 'vi'`)". Đo thật: khoá có ở `vi` mà thiếu ở `en` chỉ **4** (không phải 168); khoá khớp đúng mẫu bị đổ lỗi = **0**.
+  **Gốc rễ thật:** (a) hàng trăm lời gọi `t(key, "<mặc định tiếng Việt>")` mà khoá **vắng ở cả ba** locale — `defaultValue` LUÔN thắng, nên `fallbackLng: false` **về nguyên lý không thể chữa**; (b) **≥186 chuỗi tiếng Việt trần KHÔNG đi qua `t()`**, gồm đúng các nhãn thấy trong ảnh.
+  ⇒ Cần một đợt riêng cho nhãn giao diện. Là nợ **tiền tồn tại**, KHÔNG phải hồi quy do sprint gây ra.
+
+  ### ✅ F12 ĐÃ ĐÓNG — 2026-08-16 (`e4532027` → `2c7c0460`)
+
+  | Nhánh | Trước | Sau | Cổng canh |
+  |---|---:|---:|---|
+  | (a) `t(key,"vi")` khoá vắng cả ba locale | 533 | **0** | `i18n:check`, nền 817→340 |
+  | (b) chuỗi trần — màn **vận hành** | 200 | **0** | `viStringCoverage` |
+  | (b) chuỗi trần — nhóm **ApiDocs** | 410 | 410 *(để lại, có lý do)* | trần riêng, không bù trừ được |
+
+  **ApiDocs để lại là quyết định của chủ dự án, không phải bỏ sót.** 410 chuỗi trong 8 file
+  `ApiDocs` là *tài liệu tham chiếu API cho bên tích hợp* (`factory.list - Danh sách nhà máy`:
+  tên tuyến tiếng Anh + mô tả tiếng Việt) — tài liệu, không phải nhãn vận hành.
+
+  **Nghiệm thu bằng mắt bắt được BA lỗi mà cả ba cổng xanh đều không thấy** — đây mới là phần
+  đáng đọc của F12:
+  1. **Hình dạng thứ ba.** `{cond ? "…tiếng Việt…" : "…"}` — chuỗi ở nhánh ternary không mang
+     hình dạng `>text<` cũng không phải `attr="text"`, tức hai hình dạng duy nhất cổng biết đọc.
+     `ConnectionBanner` vì thế hiện tiếng Việt trên đầu **mọi màn** cho người dùng en/zh, trong
+     khi cổng khai *0 nợ*. Quét ra **914 chuỗi / 143 file** mang hình dạng này.
+  2. **Khoá CÓ MẶT nhưng nội dung là chữ giữ chỗ.** `en.json` có `auth.loginTitle` =
+     `"Login title"` và `auth.systemDescription` = `"System description"`. Mọi cổng đếm khoá đều
+     xanh; đó là màn **đầu tiên** người dùng tiếng Anh nhìn thấy.
+  3. **Chuỗi thô đến từ MÁY CHỦ.** Sai mật khẩu ⇒ người dùng `zh` nhận một lúc **hai** toast:
+     bản dịch đúng + `Tên đăng nhập hoặc mật khẩu không đúng`. Không có gì trong `client/src`
+     để quét ra lỗi này. Cùng khuôn ở 6 câu của REST `/api/auth/verify-2fa`.
+
+  ⇒ **Bài học mang sang:** cổng tĩnh xanh chỉ chứng minh *"không còn thứ TÔI BIẾT CÁCH NHÌN"*.
+
+- **F13. Chuỗi "hình dạng thứ ba" — ✅ ĐÓNG 2026-08-21.** `914 → 770 → 500 → … → **0**` qua 17 lô (`bd737e1d` → `15b53fe3`). `FROZEN_SHAPE3 = 0` nay là BẤT BIẾN, không còn là ngân sách.
+
+  ⚠ **0 KHÔNG nghĩa là hết chữ Việt trong `client/src`.** Nó nghĩa mọi chuỗi còn lại thuộc một nhóm ĐÃ KIỂM TẬN NƠI, lý do ghi trong `scripts/viStringScan.mjs`: khuôn vốn đã đúng · DỮ LIỆU chứ không phải nhãn (bí danh cột Excel, khoá khớp `header`, từ khoá phân loại lỗi, mác vật liệu) · MẪU MÃ trong `apiDocs/` (về cấu tạo không i18n được).
+
+  **Ba lỗi ĐANG HIỂN THỊ tìm ra trong lúc làm:** (1) `DashboardTemplates` render `t(descriptionKey)` với 6 khoá không tồn tại ở locale nào ⇒ hiện chuỗi khoá ở MỌI ngôn ngữ; (2) `Dashboard` nút in hiện nguyên văn `{t("dashboardRaw.inLuuPdf", …)}` — do chính đợt F12 chèn JSX vào giữa một chuỗi HTML; (3) `ConfigHealthPanel`/`QuickIssueReport` còn nhánh mặc định thô cạnh nhánh đã dịch.
+
+  **(mô tả tiến độ cũ)** `914 → 770 → 652 → 619`
+
+  **Đính chính con số của chính tôi: 914 NÓI QUÁ.** Lọc bốn khuôn vốn đã đúng —
+  `pick(vi,en,zh)` (bộ chọn ba ngôn ngữ tự viết ở `MachineAISummary`) · tuple
+  `["khoá","mặc định"]` · `defaultValue:` · `{key, fallback}` — cộng comment `//` **cuối**
+  dòng (phép bỏ comment cũ chỉ xét **đầu** dòng) ⇒ số thật là **770**.
+
+  | Lô | Nội dung | Còn lại |
+  |---|---|---:|
+  | 1 | `navigation.tsx` (12 label + 18 desc) + 6 hub qua `HubLauncher`; 167 khoá | 652 |
+  | 2 | Bản đồ trạng thái/enum `CommandCenter` + `MasterDataManagement`; 42 khoá | 619 |
+
+  Lô 1 đóng đúng **năm nhãn của triệu chứng F12 gốc**: "Thay đổi kỹ thuật (ECN)",
+  "Xưởng kỹ thuật", "Chỉ huy nhà máy", "Trung tâm bảo trì", "Bảo trì (CMMS)". Chúng sống
+  lâu vì comment tại chỗ ghi *"i18n key hoãn — theo tiền lệ Feeder/ECN/NCR"*: nợ **có chủ
+  ý**, ghi lại đàng hoàng, rồi không ai quay lại.
+
+  ### ⚠ HAI CÁI BẪY ĐÃ SẬP — đọc trước khi làm lô 3
+
+  1. **`col.header` KHÔNG chỉ là nhãn.** Bộ di trú lô 2 đã chuyển 33 `header:` trong đặc
+     tả cột nhập, và bị hoàn nguyên trước khi commit: `shared/masterDataIO.ts:137` khớp
+     cột file Excel người dùng tải lên bằng `normalizeKey(col.header)`. Dịch nó ⇒ template
+     xuất ra mang tên cột là chuỗi khoá, **và mọi file cũ hết nhập được**. Muốn dịch phải
+     **tách khái niệm** (`header` khớp · `headerLabel` hiện) — việc riêng, không phải i18n.
+     ⇒ Trước khi bọc `t()`, hỏi: *"chuỗi này có ai KHỚP theo nó không?"*
+  2. **Tiếng Việt KHÔNG DẤU vô hình với mọi phép quét.** `high: "Cao"`,
+     `escalation: "Leo thang"` không có ký tự có dấu nào ⇒ cổng lẫn bộ di trú đều mù, và
+     chúng sẽ lặng lẽ hiện tiếng Việt cho người dùng en/zh mãi mãi. Bắt được nhờ **cầu chì
+     tự-kiểm của bộ áp bản dịch**, không phải nhờ cổng. Lô 3 phải soi tay nhóm này.
+
+  ### Cổng mới: `client/src/lib/navKeyResolution.unit.test.ts`
+  F13 chuyển nhãn thành **khoá lưu như dữ liệu** rồi `t()` sau. `t(key)` không có
+  defaultValue ⇒ khoá sai/thiếu thì i18next **trả lại chính chuỗi khoá**, không lỗi,
+  không cảnh báo. Hai cổng cũ đều mù (`i18n-check` chỉ thấy tham chiếu **tĩnh**;
+  `viStringCoverage` so file-với-file nên khoá vắng ở **cả ba** locale vẫn xanh). Cổng mới
+  đi từ mã nguồn ra locale, có cầu chì "phải thấy >150 khoá" để không canh tập rỗng.
+
+  ### Còn 619 — thành phần
+  `UserGuide` 86 (văn xuôi hướng dẫn) · `ApiDocs` ~60 (**ngoài phạm vi, đã chốt ở F12**) ·
+  `MasterDataManagement` 33 (**phần lớn là `header` — xem bẫy 1, KHÔNG đụng nếu chưa tách
+  khái niệm**) · `BulkImportDialog` 21 (**bí danh cột, phải giữ**) · còn lại rải rác.
+  ⇒ Nợ thật sự dịch được ước ~**450**, nhiều mục là template literal có nội suy nên phải
+  chuyển sang tham số i18n, không nối chuỗi.
+
+- **F13 (mô tả cũ). Phân loại 914 chuỗi "hình dạng thứ ba" — đã thay bằng mục trên.**
+  Cổng `viStringCoverage` giữ nó không phình thêm. ⚠ **KHÔNG quét-và-thay hàng loạt** — đã lấy
+  mẫu và biết chắc trong đó có thứ *phải* giữ tiếng Việt:
+  · `ApiDocs`: `name: "Nhà máy Bắc Ninh"` — dữ liệu JSON **mẫu** của tài liệu API;
+  · `BulkImportDialog`: `findCol("code", "mã", "ma", …)` — **bí danh cột** để khớp file Excel
+    người dùng nhập, dịch chúng là **làm hỏng chức năng nhập**;
+  · `FirstRunTour`/`FactoryConfigAudit`: `{ key: "…", fallback: "…" }` — đã có khoá i18n đi kèm,
+    chuỗi Việt chỉ là lưới an toàn, **đúng khuôn**.
+  Việc cần làm là *phân loại rồi mới di trú*, và ước lượng phần thật sự là nợ trước khi cam kết.
+
+---
+
+## 4e. NHÓM G — machine-auth + giấy phép (runbook doc 52) · ✅ ĐÓNG 2026-08-21
+
+> ⚠ Đừng nhầm với **§3 "NHÓM C — Dữ liệu không tới đích"** ở trên. Hai nhóm khác hẳn
+> nhau nhưng cùng bị gọi là "nhóm C" trong các phiên trước; đổi tên thành **G** ở đây.
+
+Ba mục treo nhiều phiên. **Cả ba lời khai trước đó về chúng đều bị phép đo bác bỏ** —
+phần đáng đọc nằm ở chỗ đó, không ở kết quả.
+
+| Từng khai | Đo được 2026-08-21 |
+|---|---|
+| *"chờ quan sát telemetry weak-auth ≥1 ca rồi mới flip"* | **BẤT KHẢ THI với thiết bị đo hiện tại.** `weakAuthUsage` là `Map` **trong bộ nhớ** (`machineAuthService.ts:348`), xoá sạch mỗi lần restart — mà máy chủ đã restart hàng chục lần. Thêm nữa: nhịp tim cuối của cả đội máy là **2026-07-19, cách 33 ngày**, 0 bản ghi kiểm tra trong 7 ngày ⇒ **không có lưu lượng nào để quan sát**. Điều kiện này lặp đi lặp lại qua nhiều phiên mà không bao giờ thoả được. |
+| *"0/42 máy có khoá `mk_`"* | **19/42 đã có.** Tôi đọc cột `machines.apiKey` (khoá **DÙNG CHUNG** cũ) rồi khai về khoá **RIÊNG** — khoá riêng nằm ở bảng `api_keys`. 4 tên `mk_*` + 15 tên `sim-sim-l*`; tiền tố `mk_` chỉ là siêu dữ liệu, xác thực tra theo `hashMachineKey` nên khoá `sim-*` vẫn hợp lệ. |
+| *"cấp khoá `mk_` là việc phụ"* | **Là ĐIỀU KIỆN TRƯỚC.** Siết mà chưa cấp là khoá sạch cả đội máy lúc chúng quay lại. Thứ tự phụ thuộc ngược với cách tôi từng trình bày. |
+
+**Đã làm:**
+- `scripts/issue-machine-keys.ts` (mới) — cấp khoá riêng, idempotent, in bản rõ MỘT lần,
+  `--dry-run` mặc định. Cấp 23 khoá còn thiếu ⇒ **41/41 máy đang dùng có khoá**.
+  ⚠ *Lượt đầu KHÔNG kiểm vòng đời nên cấp cả cho máy `retired`/`rejected`. Chính báo cáo
+  của runbook (`machine-key-rotation-report.mjs`) tố ra; khoá đã revoke, script đã vá.*
+- `MACHINE_CODE_ONLY_ALLOWED=deny` (đường yếu NHẤT: chỉ mã máy in trên nhãn thiết bị,
+  không bí mật nào). `MACHINE_SHARED_KEY_ALLOWED=false` vốn ĐÃ là `deny` từ trước.
+- Gỡ `license-state-cache.json`: **hiện vật kiểm thử** tự ghi
+  `licenseKey: "TEST-KHONG-AI-XOA-SAU-KHI-DO"`, nằm lại 5 tháng, và là **nguồn SKU DUY
+  NHẤT** khi máy chủ giấy phép chết (curl timeout, 143 ngày). Nó chỉ cho **10/145**
+  module ⇒ ai tắt `LICENSE_BYPASS` là mất `ADMIN_USERS` + toàn bộ AI/OT/Quality/Engineering.
+  ⚠ Xoá file **chỉ sửa được hôm nay** ⇒ vá gốc: `loadLicenseStateCache` nay TỪ CHỐI cache
+  mà `licenseKey`/`customerName` chứa `TEST|DEMO|FAKE|NGHIEM THU|XOA`.
+
+**Nghiệm thu sống** (redeploy `:3000`): mã-máy-trần ⇒ **401**; `Bearer mk_…` ⇒ **400 lỗi
+schema** (tức đã qua lớp xác thực).
+
+**CÒN LẠI — xem checklist GO-LIVE doc 52 §6.1:**
+- Production **chưa** flip; mọi ô ✓ hiện tại chỉ nói về `.env` dev.
+- *"máy đã dùng khoá thật (`lastUsedAt`)"* chưa xác nhận được — đội máy đang đứng.
+- *"`machine_weak_auth_denied` = 0 suốt ≥1 ca"* — ⚠ **ĐÍNH CHÍNH:** tôi từng ghi ô này "không ký được vì telemetry chỉ nằm trong Map bộ nhớ" — SAI. Metric `avi_aoi_security_events_total{type="machine_weak_auth_denied"}` là counter Prometheus BỀN, đã đo live thấy nhích đúng. Chỉ còn thiếu phần "suốt ≥1 ca" vì đội máy đang đứng. Bẫy: cầu nối metric nạp LƯỜI ⇒ lượt weak-auth ĐẦU TIÊN sau mỗi restart không được đếm.
+- 17 máy còn `machines.apiKey` plaintext — dọn sau khi flip ổn định ≥1 tuần.
+- ⚠ Bản rõ 23 khoá `mk_` nằm ở scratchpad phiên — **chứa bí mật, nạp xong phải xoá**.
+
+---
+
+## 5. KHÔNG phải nợ — ngoại lệ CÓ CHỦ Ý đã chốt
+
+**Đừng "sửa giúp" những mục này ở sprint sau mà không hỏi lại:**
+
+- **RCA đã lưu rò TÊN TỆP kho Studio cho operator.** Chủ dự án chốt **để mở** sau khi biết đúng chi phí sửa (1 dòng filter tại 2 chỗ, `aiRcaCopilot.ts:182`/`:195`). Đánh đổi: chặn thì kỹ sư mất bằng chứng từ tài liệu tự nạp khi chạy RCA.
+- **Cổng kho Studio role-only, KHÔNG đòi 2FA.** Lý do: *"2FA có thể bật tắt, trong môi trường khách hàng offline đôi khi không quan trọng"* — gắn cứng `require2FA` là sai bối cảnh sản phẩm.
+- **Không nạp ngược quá khứ cho nhật ký lần-tái-diễn.** Không ai biết 52 lần đó xảy ra lúc nào.
+
+---
+
+## 6. Đề xuất phạm vi Sprint 5
+
+**Khuyến nghị: chỉ lấy NHÓM A + B1.** Lý do: nhóm A là thứ người dùng thật cảm nhận được (bị làm phiền, thấy số 0 không giải thích, đọc câu lỗi không hiểu); B1 bảo vệ con số mà sprint sau sẽ dùng để quyết ngưỡng.
+
+Nhóm C và D là nợ thật nhưng **không ai đang đau vì chúng** — C1 nằm sau một cờ mặc định tắt, C2 không màn nào đọc, D toàn việc vệ sinh.
+
+**Quyết định cần chủ dự án trước khi thi công:**
+1. **A1 — chặn bớt thông báo?** Đây là đổi tải thật lên người vận hành. Nay đã có dữ liệu để quyết. Cần chốt: gộp theo cửa sổ bao lâu, và mức độ nào thì **không bao giờ** gộp (ví dụ `CRITICAL` luôn báo ngay).
+2. **A2 — nới trần gộp để flood phát hiện được?** Ngược hướng A1. Phải tách "ghi nhật ký" khỏi "gửi thông báo" thì mới làm được cả hai.
+
+---
+
+## 7. Cách bắt đầu ở session mới
+
+```
+Đọc docs/superpowers/specs/2026-07-29-ai-sprint5-backlog-consolidated.md
+rồi bắt đầu Sprint 5 theo phạm vi khuyến nghị (nhóm A + B1).
+```
+
+Session mới nên: **đo lại trước khi thi công** (số liệu trong tài liệu này chụp tại `208301dc`, có thể đã đổi), rồi qua `superpowers:brainstorming` → `writing-plans` → `subagent-driven-development` như bốn wave trước.
+
+⚠ **Gotcha vận hành đã trả giá:**
+- Chạy migration: `docker exec avi-aoi-management-postgres-1 psql -U aoi -d <db> -f /tmp/x.sql` (socket cục bộ, vai chủ bảng). Git Bash dịch `/tmp/…` ⇒ phải `MSYS_NO_PATHCONV=1`. **DB test tên `aoi_management_test` phải áp migration RIÊNG**, không thì test "xanh rỗng".
+- **Chạy migration NGAY sau task tạo bảng**, đừng để cuối — drizzle liệt kê toàn bộ cột từ schema nên lệch schema/DB làm **cả INSERT lẫn SELECT** ném `42703`.
+- **Không bao giờ chạy hai implementer song song**, kể cả khác file — tranh chấp git index. Review (chỉ đọc) thì song song được.

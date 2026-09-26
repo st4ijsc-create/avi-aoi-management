@@ -24,6 +24,7 @@
  * ════════════════════════════════════════════════════════════════════════════
  */
 import fs from "node:fs";
+import { DbUnavailableError } from "../../_core/dbErrors";
 import path from "node:path";
 import { parseAllDocuments } from "yaml";
 import { desc, eq, and, gte, lte } from "drizzle-orm";
@@ -237,6 +238,9 @@ export async function syncPoliciesFromFiles(opts: { dir?: string } = {}): Promis
   try {
     defs = loadPolicyFiles(opts.dir);
   } catch (err) {
+    // data-raw-ok: lỗi ĐỌC/PHÂN TÍCH tệp chính sách trên đĩa (YAML hỏng, thiếu tệp).
+    // `policyId: "(load)"` cho thấy đây là sự cố tầng TỆP, không phải một chính sách cụ
+    // thể. Người sửa là quản trị đang biên tập chính tệp đó.
     return [{ policyId: "(load)", version: 0, action: "error", detail: err instanceof Error ? err.message : String(err) }];
   }
   if (defs.length === 0) return results;
@@ -303,6 +307,8 @@ export async function syncPoliciesFromFiles(opts: { dir?: string } = {}): Promis
         policyId: def.policyId,
         version: def.version,
         action: "error",
+        // data-raw-ok: kết quả nạp MỘT tệp chính sách; quản trị đang biên tập chính tệp đó cần
+        // biết dòng nào sai.
         detail: err instanceof Error ? err.message : String(err),
       });
     }
@@ -336,7 +342,7 @@ export function rowsToRules(rows: readonly PolicyDefinition[]): PolicyRule[] {
 /** Read the active rule set from the DB (throws on DB errors — callers decide). */
 export async function loadPoliciesFromDb(): Promise<PolicyRule[]> {
   const db = await getDb();
-  if (!db) throw new Error("db unavailable");
+  if (!db) throw new DbUnavailableError();
   const rows = (await db.select().from(policyDefinitions)) as PolicyDefinition[];
   return rowsToRules(rows);
 }
@@ -559,7 +565,7 @@ export interface DecisionLogFilters {
 /** Query the immutable decision log (newest first) for GET /v1/policy/audit. */
 export async function queryDecisionLog(filters: DecisionLogFilters): Promise<Array<Record<string, unknown>>> {
   const db = await getDb();
-  if (!db) throw new Error("db unavailable");
+  if (!db) throw new DbUnavailableError();
   const conds = [];
   if (filters.subject) conds.push(eq(policyDecisionLog.subject, filters.subject));
   if (filters.action) conds.push(eq(policyDecisionLog.action, filters.action));

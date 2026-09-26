@@ -14,9 +14,14 @@
  * safety pattern: a dedicated flag `V1_MODEL_MUTATIONS_ENABLED` (default OFF) —
  * OFF → structured 501 `v1_model_mutations_disabled` (published contract, not
  * yet open). ON → the endpoints wrap the EXACT internal lifecycle paths:
- *   • promote  → aiModelService.activateModelVersion (same as manual activation)
+ *   • promote  → aiModelService.activateModelVersionManual (doc69 W0-2 fix: the
+ *     SAME gated path the admin-facing "manual activation" uses — an API caller
+ *     promoting an un-evaluated/gate-failing version must explicitly override
+ *     with `{ force: true, reason }`, audited via createAuditLog)
  *   • rollback → modelAutoRollback.manualRollback (same append-only
- *     model_rollback_events audit row the auto-rollback sweep writes)
+ *     model_rollback_events audit row the auto-rollback sweep writes; also now
+ *     gate-enforced — see modelAutoRollback.ts doc69 W0-2 follow-up — `force`/
+ *     `reason` in the request body thread through for a legitimate override)
  * No model-registry fork, no new lifecycle logic.
  * ════════════════════════════════════════════════════════════════════════════
  */
@@ -141,15 +146,22 @@ export function registerModelRegistryRoutes(r: Router): void {
     wrap(async (req, res) => {
       if (!ensureMutationsEnabled(res)) return;
       const modelId = posInt(req.params.id, "model id");
-      const body = (req.body ?? {}) as { versionId?: number };
+      const body = (req.body ?? {}) as { versionId?: number; force?: boolean; reason?: string };
       if (!Number.isInteger(body.versionId) || (body.versionId as number) <= 0) {
         throw new ApiHttpError(400, "bad_request", "Body field `versionId` (positive integer) is required.");
       }
-      const { activateModelVersion } = await import("../../services/aiModelService");
+      // doc69 W0-2 fix: route through the GATED wrapper — an external API caller
+      // promoting a version whose eval quality gate hasn't passed must explicitly
+      // override with { force: true, reason } (audited), exactly like the admin UI.
+      const { activateModelVersionManual } = await import("../../services/aiModelService");
       try {
         // SAME path as manual activation (marks previous ACTIVE → INACTIVE,
         // bumps aiModels.currentVersion) — no registry fork.
-        const target = await activateModelVersion(modelId, body.versionId as number);
+        const target = await activateModelVersionManual(modelId, body.versionId as number, {
+          force: body.force === true,
+          reason: typeof body.reason === "string" ? body.reason : undefined,
+          actorUserId: null, // external API principal — no internal user id to attribute
+        });
         sendOk(res, {
           modelId,
           promotedVersionId: target.id,
@@ -158,8 +170,14 @@ export function registerModelRegistryRoutes(r: Router): void {
           promotedBy: req.apiPrincipal?.name ?? "api-key",
         });
       } catch (err) {
-        // activateModelVersion throws plain Errors for unknown model/version.
-        throw new ApiHttpError(404, "not_found", (err as Error)?.message ?? "Promote failed.");
+        // activateModelVersionManual throws plain Errors both for unknown
+        // model/version (404, preserved) and for a gate rejection / missing
+        // override reason (422 — distinct from the pre-existing 404 contract).
+        const msg = (err as Error)?.message ?? "Promote failed.";
+        if (/not found/i.test(msg)) {
+          throw new ApiHttpError(404, "not_found", msg);
+        }
+        throw new ApiHttpError(422, "eval_gate_rejected", msg);
       }
     }),
   );
@@ -171,7 +189,7 @@ export function registerModelRegistryRoutes(r: Router): void {
     wrap(async (req, res) => {
       if (!ensureMutationsEnabled(res)) return;
       const modelId = posInt(req.params.id, "model id");
-      const body = (req.body ?? {}) as { toVersionId?: number; reason?: string };
+      const body = (req.body ?? {}) as { toVersionId?: number; reason?: string; force?: boolean };
       const { manualRollback, pickRollbackTarget } = await import("../../services/ai/modelAutoRollback");
 
       // Resolve the target: explicit toVersionId wins; otherwise pick the most
@@ -197,13 +215,17 @@ export function registerModelRegistryRoutes(r: Router): void {
       }
 
       // SAME manualRollback path the internal operator flow uses — flips the
-      // version via activateModelVersion AND records the append-only
-      // model_rollback_events audit row. triggeredBy 0 = external API principal
-      // (name carried in the response for audit correlation).
+      // version via the gated activateModelVersionManual AND records the
+      // append-only model_rollback_events audit row. triggeredBy 0 = external API
+      // principal (name carried in the response for audit correlation). doc69
+      // W0-2 follow-up: manualRollback now enforces the eval quality gate on the
+      // (possibly auto-picked) target — `force: true` threads through for a
+      // legitimate override (e.g. a stable target that predates eval-gate
+      // tracking), reusing `reason` as the audited override reason.
       const reason = typeof body.reason === "string" && body.reason.trim()
         ? body.reason.trim()
         : `Rollback via /api/v1 by ${req.apiPrincipal?.name ?? "api-key"}`;
-      const outcome = await manualRollback(modelId, toVersionId, 0, reason);
+      const outcome = await manualRollback(modelId, toVersionId, 0, reason, { force: body.force === true });
       if (!outcome.rolledBack) {
         throw new ApiHttpError(409, "rollback_failed", outcome.reason);
       }

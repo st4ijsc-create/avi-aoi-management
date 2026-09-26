@@ -13,6 +13,7 @@
  * file). The nav LABEL should now read "Vật tư tại line (Feeder/MSD/Stencil)".
  */
 import { useMemo, useState } from "react";
+import { useTranslation } from "react-i18next";
 import DashboardLayout from "@/components/DashboardLayout";
 import { PageHeader, PageContainer } from "@/components/patterns";
 import { trpc } from "@/lib/trpc";
@@ -24,12 +25,14 @@ import { Badge } from "@/components/ui/badge";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { toast } from "sonner";
+import { toastTrpcError } from "@/lib/trpcErrors";
 import { ScanLine, CheckCircle2, XCircle, AlertTriangle, RefreshCw, Thermometer, Layers } from "lucide-react";
 import MsdPanel from "@/components/materials/MsdPanel";
 import StencilPanel from "@/components/materials/StencilPanel";
 
 /** Tab 1 — existing feeder-setup scan verification (behavior unchanged). */
 function FeederVerifyTab() {
+  const { t } = useTranslation();
   const [machineId, setMachineId] = useState<number | null>(null);
   const [slotCode, setSlotCode] = useState("");
   const [scannedReel, setScannedReel] = useState("");
@@ -51,21 +54,21 @@ function FeederVerifyTab() {
 
   const verify = trpc.feederVerify.verifyScan.useMutation({
     onSuccess: (res) => {
-      if (res.verdict === "match") toast.success(`Khớp: slot ${slotCode || "?"} → ${res.expectedComponentCode ?? "?"}`);
+      if (res.verdict === "match") toast.success(t("feederVerify.khopSlot", { slot: slotCode || "?", code: res.expectedComponentCode ?? "?" }));
       else
         toast.error(
-          `LỆCH: slot ${slotCode || "?"} kỳ vọng ${res.expectedComponentCode ?? "?"}, quét ${res.scannedComponentCode || "?"}`,
+          t("feederVerify.lechSlot", { slot: slotCode || "?", expected: res.expectedComponentCode ?? "?", scanned: res.scannedComponentCode || "?" }),
         );
       setScannedReel("");
       setupStatus.refetch();
       recent.refetch();
     },
-    onError: (e) => toast.error(e.message),
+    onError: (e) => toastTrpcError(e),
   });
 
   const onVerify = () => {
-    if (machineId == null) return toast.error("Chọn máy trước");
-    if (!scannedReel.trim()) return toast.error("Quét/nhập mã reel");
+    if (machineId == null) return toast.error(t("feederVerify.chonMayTruoc", "Chọn máy trước"));
+    if (!scannedReel.trim()) return toast.error(t("feederVerify.quetNhapMaReel", "Quét/nhập mã reel"));
     verify.mutate({ machineId, slotCode: slotCode.trim() || undefined, scannedReel: scannedReel.trim() });
   };
 
@@ -77,18 +80,18 @@ function FeederVerifyTab() {
           {/* Scan panel */}
           <Card>
             <CardHeader>
-              <CardTitle>Quét kiểm tra</CardTitle>
-              <CardDescription>Chọn máy, nhập slot và quét reel</CardDescription>
+              <CardTitle>{t("feederVerify.quetKiemTra", "Quét kiểm tra")}</CardTitle>
+              <CardDescription>{t("feederVerify.chonMayNhapSlotVa", "Chọn máy, nhập slot và quét reel")}</CardDescription>
             </CardHeader>
             <CardContent className="space-y-3">
               <div className="space-y-1">
-                <Label>Máy</Label>
+                <Label>{t("feederVerify.may", "Máy")}</Label>
                 <Select
                   value={machineId != null ? String(machineId) : undefined}
                   onValueChange={(v) => setMachineId(Number(v))}
                 >
                   <SelectTrigger>
-                    <SelectValue placeholder="Chọn máy…" />
+                    <SelectValue placeholder={t("feederVerify.chonMay", "Chọn máy…")} />
                   </SelectTrigger>
                   <SelectContent>
                     {machines.map((m) => (
@@ -100,16 +103,16 @@ function FeederVerifyTab() {
                 </Select>
               </div>
               <div className="space-y-1">
-                <Label>Slot / vị trí feeder</Label>
+                <Label>{t("feederVerify.slotViTriFeeder", "Slot / vị trí feeder")}</Label>
                 <Input value={slotCode} onChange={(e) => setSlotCode(e.target.value)} placeholder="VD: F01" />
               </div>
               <div className="space-y-1">
-                <Label>Mã reel (quét barcode)</Label>
+                <Label>{t("feederVerify.maReelQuetBarcode", "Mã reel (quét barcode)")}</Label>
                 <Input
                   value={scannedReel}
                   onChange={(e) => setScannedReel(e.target.value)}
                   onKeyDown={(e) => e.key === "Enter" && onVerify()}
-                  placeholder="Quét hoặc nhập mã reel/linh kiện"
+                  placeholder={t("feederVerify.quetHoacNhapMaReel", "Quét hoặc nhập mã reel/linh kiện")}
                   autoFocus
                 />
               </div>
@@ -123,28 +126,28 @@ function FeederVerifyTab() {
           <Card>
             <CardHeader>
               <CardTitle className="flex items-center justify-between">
-                <span>Trạng thái setup</span>
+                <span>{t("feederVerify.trangThaiSetup", "Trạng thái setup")}</span>
                 <Button variant="ghost" size="sm" onClick={() => setupStatus.refetch()}>
                   <RefreshCw className="h-4 w-4" />
                 </Button>
               </CardTitle>
               <CardDescription>
-                {status?.enforced ? "Chế độ CHẶN chạy khi có lệch (FEEDER_VERIFY_ENFORCED bật)" : "Chế độ cảnh báo (không chặn)"}
+                {status?.enforced ? t("feederVerify.cheDoChanChayKhi", "Chế độ CHẶN chạy khi có lệch (FEEDER_VERIFY_ENFORCED bật)") : t("feederVerify.cheDoCanhBaoKhong", "Chế độ cảnh báo (không chặn)")}
               </CardDescription>
             </CardHeader>
             <CardContent className="space-y-3">
               {machineId == null ? (
-                <p className="text-sm text-muted-foreground">Chọn máy để xem trạng thái.</p>
+                <p className="text-sm text-muted-foreground">{t("feederVerify.chonMayDeXemTrang", "Chọn máy để xem trạng thái.")}</p>
               ) : (
                 <>
                   <div className="flex items-center gap-2">
                     {status?.complete ? (
-                      <Badge className="bg-green-600"><CheckCircle2 className="mr-1 h-3 w-3" /> Hoàn tất</Badge>
+                      <Badge className="bg-green-600"><CheckCircle2 className="mr-1 h-3 w-3" />{t("feederVerify.hoanTat", "Hoàn tất")}</Badge>
                     ) : (
-                      <Badge variant="secondary"><AlertTriangle className="mr-1 h-3 w-3" /> Chưa hoàn tất</Badge>
+                      <Badge variant="secondary"><AlertTriangle className="mr-1 h-3 w-3" />{t("feederVerify.chuaHoanTat", "Chưa hoàn tất")}</Badge>
                     )}
                     {status?.hasMismatch && (
-                      <Badge variant="destructive"><XCircle className="mr-1 h-3 w-3" /> Có lệch</Badge>
+                      <Badge variant="destructive"><XCircle className="mr-1 h-3 w-3" />{t("feederVerify.coLech", "Có lệch")}</Badge>
                     )}
                   </div>
                   <div className="text-sm text-muted-foreground">
@@ -166,7 +169,7 @@ function FeederVerifyTab() {
                       </div>
                     ))}
                     {(status?.slots?.length ?? 0) === 0 && (
-                      <div className="px-3 py-2 text-sm text-muted-foreground">Chưa có lượt kiểm nào.</div>
+                      <div className="px-3 py-2 text-sm text-muted-foreground">{t("feederVerify.chuaCoLuotKiemNao", "Chưa có lượt kiểm nào.")}</div>
                     )}
                   </div>
                 </>
@@ -179,7 +182,7 @@ function FeederVerifyTab() {
         {machineId != null && (
           <Card className="mt-4">
             <CardHeader>
-              <CardTitle>Lịch sử kiểm tra gần đây</CardTitle>
+              <CardTitle>{t("feederVerify.lichSuKiemTraGan", "Lịch sử kiểm tra gần đây")}</CardTitle>
             </CardHeader>
             <CardContent>
               <div className="divide-y">
@@ -200,7 +203,7 @@ function FeederVerifyTab() {
                   </div>
                 ))}
                 {(recent.data?.length ?? 0) === 0 && (
-                  <div className="py-2 text-sm text-muted-foreground">Chưa có dữ liệu.</div>
+                  <div className="py-2 text-sm text-muted-foreground">{t("feederVerify.chuaCoDuLieu", "Chưa có dữ liệu.")}</div>
                 )}
               </div>
             </CardContent>
@@ -211,14 +214,15 @@ function FeederVerifyTab() {
 }
 
 export default function FeederVerify() {
+  const { t } = useTranslation();
   const [tab, setTab] = useState("feeder");
 
   return (
     <DashboardLayout>
       <PageContainer fluid>
         <PageHeader
-          title="Vật tư tại line"
-          description="Kiểm tra nạp Feeder · đồng hồ floor-life MSD (J-STD-020) · đếm chu kỳ khuôn in Stencil (doc 35 W4-C)"
+          title={t("feederVerify.vatTuTaiLine", "Vật tư tại line")}
+          description={t("feederVerify.kiemTraNapFeederDong", "Kiểm tra nạp Feeder · đồng hồ floor-life MSD (J-STD-020) · đếm chu kỳ khuôn in Stencil (doc 35 W4-C)")}
           icon={<ScanLine className="h-6 w-6 text-primary" />}
         />
 

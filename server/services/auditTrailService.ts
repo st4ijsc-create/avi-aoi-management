@@ -119,6 +119,13 @@ export interface AuditLogEntry {
     stackTrace?: string;
     affectedFields?: string[];
     relatedEntities?: Array<{ type: string; id: number; name?: string }>;
+    /**
+     * Chế độ 2FA theo triển khai (2026-08-24, `AUTH_2FA_BAT_BUOC=0`): lượt MUTATION chạm
+     * máy/deploy đi QUA cổng step-up KHÔNG có OTP vì người gọi CHƯA bật 2FA. Người ghi DUY
+     * NHẤT: `_core/trpc.ts` (`stepUpTotpMiddleware`) — kiểu literal để giá trị không trôi;
+     * lưới đọc lại bảng thật: `_core/cheDo2faTheoTrienKhai.test.ts` §3.
+     */
+    stepUp?: "bo_qua_che_do_noi_bo";
   };
   status: "success" | "failure";
 }
@@ -151,7 +158,25 @@ export const AUDIT_ACTIONS = {
   INSPECT_NTF: "inspection_ntf_confirm",
   INSPECT_ACKNOWLEDGE: "inspection_acknowledge",
   INSPECT_ARCHIVE: "inspection_archive",
-  
+
+  // ★★★ Việc 1 (BG-89, docs/superpowers/specs/2026-09-01-aoi-chuan-goi-anh.md §7.2) — tín hiệu
+  // ĐẾM ĐƯỢC cho hai hình dạng payload máy gửi (v1.x/v1.1 phẳng ↔ v2.0 cây), ghi bởi
+  // `quyetDinhPhienBanIngest` (server/routers/machineApiRouters.ts) — MỘT điểm quyết định dùng
+  // chung cho `submitInspection`/`submitInspectionBatch`. Trả lời câu hỏi vận hành "còn bao
+  // nhiêu máy gửi hình dạng cũ?" bằng SELECT/COUNT trên `audit_logs`, không phải suy đoán từ
+  // trạng thái cờ `INGEST_REJECT_LEGACY_MACHINE_ENABLED`.
+  INGEST_SHAPE_LEGACY: "ingest_shape_legacy",
+  INGEST_SHAPE_V2: "ingest_shape_v2",
+  // ★★★ Lô 3 Mục 2 (BG-57b) — lượt TỪ CHỐI (cờ BẬT + payload phẳng) phải ĐẾM ĐƯỢC riêng, KHÁC
+  // hẳn `INGEST_SHAPE_LEGACY` ở trên (hàng đó chỉ ghi khi payload phẳng được NHẬN, cờ TẮT). Ghi
+  // qua CÙNG cơ chế `ghiTinHieuHinhDangIngest`/`logCrudOperation` (một điểm ghi, không chép) —
+  // xem `server/routers/machineApiRouters.ts` (định nghĩa) và `server/routers/aoiPackageRouter.ts`
+  // (điểm gọi THẬT — cửa ZIP `commit`, SAU authenticateMachine, xem BG-39 gđ2). ⚠ Đường v1 trực
+  // tiếp (`submitInspection`/`submitInspectionBatch`) từ chối TRƯỚC xác thực (`.input()` transform,
+  // I-4) nên KHÔNG ghi action này — đúng đánh đổi đã khai ở `dangKyTinHieuHinhDangIngestBg89.test.ts`
+  // §C (một hàng WORM cho người gọi CHƯA XÁC THỰC là chính lỗ I-4 đã đóng).
+  INGEST_SHAPE_LEGACY_REJECTED: "ingest_shape_legacy_rejected",
+
   // Reports
   REPORT_GENERATE: "report_generate",
   REPORT_EXPORT: "report_export",
@@ -176,11 +201,40 @@ export const AUDIT_ACTIONS = {
   AI_ACTION_EXECUTED: "ai_action_executed",
   AI_ACTION_DENIED: "ai_action_denied",
   AI_ACTION_CANCELLED: "ai_action_cancelled",
+  // ★★★ Đợt C · Task 5 (2026-08-29, spec §6.5) — kiểm toán lượt-áp-ở-CLIENT (chế độ LOCAL). CHỦ
+  // THỂ CỦA BA HÀNG NÀY LÀ EXTENSION VS CODE, KHÔNG PHẢI MÁY CHỦ — máy chủ không ghi byte nào ở
+  // chế độ này, nó chỉ giữ sổ những gì extension TỰ KHAI qua `batDauApDungOClient`/
+  // `chotApDungOClient` (server/services/aiCopilotActions.ts). Khác nhóm AI_ACTION_* ở trên (nơi
+  // `AI_ACTION_EXECUTED` đúng nghĩa "máy chủ vừa tự chạy `tool.execute()`") — đừng dùng lẫn.
+  AI_CLIENT_APPLY_STARTED: "ai_client_apply_started",
+  AI_CLIENT_APPLIED: "ai_client_applied",
+  AI_CLIENT_APPLY_FAILED: "ai_client_apply_failed",
+  // D2 (doc69 Giai đoạn 4/Wave 3) — bounded-autonomy DECISION, audited as a separate
+  // lightweight follow-up entry AFTER the PROPOSED row (and after any CONFIRMED/
+  // EXECUTED/DENIED rows an auto-confirm attempt wrote), so it never distorts the
+  // causal PROPOSED → CONFIRMED → EXECUTED ordering. See aiCopilotActions.ts:proposeAction.
+  AI_AUTONOMY_DECISION: "ai_autonomy_decision",
+  // D4 (doc69 Giai đoạn 4/Wave 3) — operator trip/untrip of the D2 bounded-autonomy
+  // kill-switch (admin + 2FA). Distinct from AI_AUTONOMY_DECISION (a per-proposal
+  // decision trace): this is the durable master-switch flip itself.
+  AI_AUTONOMY_KILL_SWITCH: "ai_autonomy_kill_switch",
+  // ★★★ 2026-08-24 — VÒNG TỰ-TRỊ-GHI (AI_CODING_TU_TRI_GHI). MỘT hàng WORM cho MỖI lượt của vòng
+  // model-tự-ghi-mã-KHÔNG-người-duyệt: băm tệp TRƯỚC/SAU, lệnh kiểm chứng đã chạy, kết quả test,
+  // lượt thứ mấy. Đây là sổ để sau truy được CHÍNH XÁC model đã làm gì mà KHÔNG có người xem —
+  // xem server/services/aiCodingTuTriGhi.ts.
+  AI_CODING_TU_TRI_LUOT: "ai_coding_tu_tri_luot",
 
   // Interlock auto-block (GĐ F5b) — a DETERMINISTIC, human-approved interlock
   // rule auto-fired a block/stop/reduce command down to the machine. NOT an AI
   // action: the AI has no code path here (it can only propose inert rules).
   INTERLOCK_AUTO_BLOCK: "interlock_auto_block",
+
+  // D3 (doc69 Giai đoạn 4/Wave 3) — MODEL-LIFECYCLE governance trail: every
+  // activate / rollback / force-override of a model_versions row writes ONE of these,
+  // recording modelId/versionId/actor/evalGate result/card-gate result/forced/reason.
+  // Distinct from ai_llm_audit (LLM-decision audit, G2-5) and from stageHistory (the
+  // per-version transition ledger this does NOT duplicate — see aiModelService.ts).
+  AI_MODEL_GOVERNANCE: "ai_model_governance",
 } as const;
 
 export const ENTITY_TYPES = {
@@ -207,6 +261,11 @@ export const ENTITY_TYPES = {
   SPC_CONFIG: "spc_config",
   QUALITY_GATE: "quality_gate",
   AI_ACTION: "ai_action",
+  // D3 (doc69 Giai đoạn 4/Wave 3) — model registry governance.
+  MODEL_VERSION: "model_version",
+  AI_MODEL_CARD: "ai_model_card",
+  // D4 (doc69 Giai đoạn 4/Wave 3) — bounded-autonomy kill-switch entity.
+  AI_AUTONOMY: "ai_autonomy",
 } as const;
 
 // ─── Utility Functions ──────────────────────────────────────────────────────

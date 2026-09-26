@@ -26,6 +26,10 @@
  */
 import express from "express";
 import { sql } from "drizzle-orm";
+// ★★★ Vé ảnh ngắn hạn — chủ DUY NHẤT của phép ký là `_core/anhKyUrl`. Xem khối chú thích tại mỗi
+//     lời gọi `kyAnhTrongThan` bên dưới để biết vì sao ký ở BIÊN phản hồi chứ không từng trường.
+import { kyAnhTrongThan } from "../_core/anhKyUrl";
+import { docGioTuongNhaMay } from "../utils/factoryTime";
 // Canonical KPI math + factory-timezone bucketing (doc 27 decision #4, gaps A2/A3/A4).
 import {
   finalYield,
@@ -52,19 +56,14 @@ function parseIntParam(val: unknown): number | undefined {
   return isNaN(n) ? undefined : n;
 }
 
-// Helper: parse date query param — returns a "fake UTC" Date for timestamp without time zone.
-// drizzle-orm calls toISOString() (UTC) when serializing, but our columns store LOCAL time.
-// Shift so UTC representation = local time to avoid timezone offset in queries.
+// Helper: parse date query param — val is a user-typed date/time, read as
+// FACTORY wall-clock time (FACTORY_TZ, default Asia/Ho_Chi_Minh) and converted
+// to the real UTC instant via `docGioTuongNhaMay` (BG-96, spec Khối C QĐ-1).
+// Replaces the old fake-UTC trick (`d.getTime() - d.getTimezoneOffset()*60000`),
+// which depended on the PROCESS's timezone, not the factory's.
 function parseDateParam(val: unknown, endOfDay = false): Date | undefined {
   if (val == null || val === "") return undefined;
-  let str = String(val);
-  if (str.endsWith('Z')) str = str.slice(0, -1);
-  // Date-only strings (e.g. "2026-04-03") are parsed as UTC midnight by JS spec.
-  // Append time component so they are parsed as LOCAL time instead.
-  if (!str.includes('T')) str += endOfDay ? 'T23:59:59.999' : 'T00:00:00';
-  const d = new Date(str);
-  if (isNaN(d.getTime())) return undefined;
-  return new Date(d.getTime() - d.getTimezoneOffset() * 60000);
+  return docGioTuongNhaMay(String(val), endOfDay);
 }
 
 // Helper: clamp limit
@@ -758,14 +757,28 @@ export function registerExternalInspectionRoutes(
         stationName: r.stationName || "",
       }));
 
-      res.json({
-        success: true,
-        data: {
-          dateRange: { startDate: startStr, endDate: endStr },
-          pagination: { total, limit, offset, hasMore: offset + limit < total },
-          images,
-        },
-      });
+      // ★★★ NƠI CẤP VÉ. `validateExternalAuth` đã chạy ở trên ⇒ lượt gọi này đã được chứng thực,
+      //     nên đây là chỗ ĐÚNG để trao URL mà `<Image source={{uri}}>` của app dùng thẳng được.
+      //
+      // ⚠ Ký ở BIÊN (cả thân) chứ không từng trường: `images[]` được dựng bởi một `map` chép tay
+      //   22 trường, và `imageUrl` chỉ là một trong số đó. Thêm một trường ảnh thứ hai vào `map` ấy
+      //   mà quên ký là chuyện xảy ra trong im lặng — ký ở biên làm điều đó **không diễn đạt được**.
+      //
+      // ⚠ Vé được cấp KỂ CẢ khi `ANH_CONG_MO` còn mở, cùng lý do với `/api/inspection/:id/images`:
+      //   để lượt bật cưỡng chế không tạo khoảng chết cho app đang cầm URL cũ.
+      res.json(
+        kyAnhTrongThan(
+          {
+            success: true,
+            data: {
+              dateRange: { startDate: startStr, endDate: endStr },
+              pagination: { total, limit, offset, hasMore: offset + limit < total },
+              images,
+            },
+          },
+          "anh",
+        ),
+      );
     } catch (error: any) {
       console.error("[External] inspections/images error:", error);
       res.status(500).json({ success: false, message: error?.message || "Failed to get inspection images" });
@@ -1015,27 +1028,35 @@ export function registerExternalInspectionRoutes(
         stationCode: r.stationCode || "",
       }));
 
-      res.json({
-        success: true,
-        data: {
-          pointDef: {
-            id: Number(pointDef.id),
-            code: pointDef.code || "",
-            name: pointDef.name || "",
-            measurementType: pointDef.measurementType || "OTHER",
-            unit: pointDef.unit || "",
-            lowerLimit: pointDef.lowerLimit != null ? Number(pointDef.lowerLimit) : null,
-            upperLimit: pointDef.upperLimit != null ? Number(pointDef.upperLimit) : null,
-            nominalValue: pointDef.nominalValue != null ? Number(pointDef.nominalValue) : null,
-            productModelId: pointDef.productModelId ? Number(pointDef.productModelId) : null,
-            productCode: pointDef.productCode || "",
-            productName: pointDef.productName || "",
+      // ★★★ NƠI CẤP VÉ — cùng lý do với `/api/external/inspections/images` ở trên.
+      //     `measurements[].imageUrl` đến thẳng từ `measurement_results.imageUrl` (1.996 hàng đo
+      //     được trên `aoi_management`, **toàn bộ** ở dạng `/uploads/inspections/…`).
+      res.json(
+        kyAnhTrongThan(
+          {
+            success: true,
+            data: {
+              pointDef: {
+                id: Number(pointDef.id),
+                code: pointDef.code || "",
+                name: pointDef.name || "",
+                measurementType: pointDef.measurementType || "OTHER",
+                unit: pointDef.unit || "",
+                lowerLimit: pointDef.lowerLimit != null ? Number(pointDef.lowerLimit) : null,
+                upperLimit: pointDef.upperLimit != null ? Number(pointDef.upperLimit) : null,
+                nominalValue: pointDef.nominalValue != null ? Number(pointDef.nominalValue) : null,
+                productModelId: pointDef.productModelId ? Number(pointDef.productModelId) : null,
+                productCode: pointDef.productCode || "",
+                productName: pointDef.productName || "",
+              },
+              dateRange: { startDate: startStr, endDate: endStr },
+              pagination: { total, limit, offset, hasMore: offset + limit < total },
+              measurements,
+            },
           },
-          dateRange: { startDate: startStr, endDate: endStr },
-          pagination: { total, limit, offset, hasMore: offset + limit < total },
-          measurements,
-        },
-      });
+          "anh",
+        ),
+      );
     } catch (error: any) {
       console.error("[External] inspections/measurements error:", error);
       res.status(500).json({ success: false, message: error?.message || "Failed to get measurements" });

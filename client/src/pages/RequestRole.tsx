@@ -33,10 +33,10 @@ export default function RequestRole() {
   const body = useMemo(() => {
     const who = (user as any)?.name ?? (user as any)?.username ?? `user#${(user as any)?.id ?? "?"}`;
     return [
-      `Người yêu cầu / Requester: ${who}`,
-      `Vai trò hiện tại / Current role: ${user?.role ?? "user"}`,
-      `Vai trò mong muốn / Requested role: ${desired || "(chưa chọn)"}`,
-      `Lý do / Reason: ${reason || "(trống)"}`,
+      t("requestRole.nguoiYeuCau", { who }),
+      t("requestRole.vaiTroHienTai", { role: user?.role ?? "user" }),
+      t("requestRole.vaiTroMongMuon", { role: desired || t("requestRole.chuaChon", "(chưa chọn)") }),
+      t("requestRole.lyDo", { reason: reason || t("requestRole.trong", "(trống)") }),
     ].join("\n");
   }, [user, desired, reason]);
 

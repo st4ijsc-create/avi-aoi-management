@@ -1,0 +1,75 @@
+{
+  // ══════════════════════════════════════════════════════════════════════════════════════════════
+  // CỬA SỔ "AI LẬP TRÌNH" — mở tệp này bằng VS Code (File → Open Workspace from File…)
+  //
+  // Mục đích: TẬP TRUNG, không phải tách kiến trúc. Mã không đổi một dòng; đây chỉ là bộ lọc của
+  // trình soạn thảo. Cặp đôi của nó là `he-sinh-thai.code-workspace` — mở cái đó ở cửa sổ thứ hai
+  // để làm các module khác mà không thấy mã AI.
+  //
+  // ⚠ VÌ SAO KHÔNG tách repo: đo được 47 tệp ngoài vùng AI phụ thuộc engine (thị giác, OCR, RCA,
+  //   cố vấn ngưỡng, chat vận hành), và `aiLocalTools` chứa 69 tool mà CHỈ 5 là tool lập trình.
+  //   Cắt ra là làm hỏng bốn module khác. Ranh giới SẢN PHẨM đã có rồi: cổng giấy phép `MOD_AI`.
+  // ══════════════════════════════════════════════════════════════════════════════════════════════
+  "folders": [
+    { "name": "① Tool lập trình + hộp cát", "path": "server/services/aiLocalTools" },
+    { "name": "② VRAM broker",              "path": "server/services/vram" },
+    { "name": "③ Copilot PLC/robot",        "path": "server/services/programming" },
+    { "name": "④ Dự án thử (đề thi)",       "path": "sandbox-projects" },
+    { "name": "⑤ Tài liệu hệ sinh thái",    "path": "docs/ECOSYSTEM" },
+    // Gốc repo để mở được các tệp NẰM LẺ trong thư mục lớn (aiCodingAgent.ts, aiCodingVerify.ts,
+    // aiLocalKnowledgeService.ts, AICodingWorkspace.tsx…). Tìm kiếm đã được thu hẹp bên dưới.
+    { "name": "⑥ Gốc repo (khi cần)",       "path": "." }
+  ],
+
+  "settings": {
+    // ── Thu hẹp TÌM KIẾM: đây mới là thứ quyết định cảm giác "cửa sổ riêng" ────────────────────
+    // Ẩn khỏi Ctrl+Shift+F những vùng không liên quan tới AI lập trình. Không ẩn khỏi Explorer
+    // (files.exclude) vì đôi khi vẫn cần mở tệp bên ngoài — chỉ làm tìm kiếm sạch và nhanh.
+    "search.exclude": {
+      "**/node_modules": true,
+      "**/dist": true,
+      "**/dist-secure": true,
+      "uploads": true,
+      "knowledge": true,
+      "models": true,
+      "logs": true,
+      "monitoring": true,
+      "validation-reports": true,
+      "apidocs": true,
+      "patches": true,
+      "e2e": true,
+      "tests": true,
+      "FactoryAlertSystem": true,
+      "apps": true,
+      "drizzle/meta": true,
+      "**/*.png": true,
+      "**/*.gguf": true,
+      "**/*.jsonl": true,
+      "client/src/pages/**": false
+    },
+    "files.watcherExclude": {
+      "**/node_modules/**": true,
+      "**/dist/**": true,
+      "uploads/**": true,
+      "knowledge/**": true,
+      "models/**": true
+    },
+
+    // ── Ngữ cảnh làm việc ──────────────────────────────────────────────────────────────────────
+    "window.title": "AI LẬP TRÌNH — ${activeEditorShort}${separator}${rootName}",
+    "typescript.tsdk": "node_modules/typescript/lib",
+    "typescript.tsserver.maxTsServerMemory": 8192,
+    "search.followSymlinks": false,
+    "files.trimTrailingWhitespace": true,
+
+    // Cây tệp gọn khi đọc mã AI
+    "explorer.fileNesting.enabled": true,
+    "explorer.fileNesting.patterns": {
+      "*.ts": "${capture}.test.ts, ${capture}.census.test.ts, ${capture}.unit.test.ts"
+    }
+  },
+
+  "extensions": {
+    "recommendations": ["dbaeumer.vscode-eslint", "esbenp.prettier-vscode"]
+  }
+}

@@ -1,8 +1,9 @@
 import React from 'react';
 import { useTranslation } from 'react-i18next';
-import { LucideIcon, Inbox, FileQuestion, Database, BarChart3, Settings, AlertCircle } from 'lucide-react';
+import { LucideIcon, Inbox, FileQuestion, Database, BarChart3, Settings, AlertCircle, AlertTriangle, CheckCircle2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
+import { isScopeEmpty } from '@/lib/scopeEmpty';
 
 export type EmptyStateVariant = 
   | 'default' 
@@ -21,6 +22,24 @@ interface EmptyStateProps {
   onAction?: () => void;
   className?: string;
   compact?: boolean;
+  /**
+   * doc 67 W7 GĐ1 — trạng thái "TẤT CẢ ỔN" (ISA-101: trạng thái quan-trọng-nhất,
+   * nhận diện được từ xa). "Rỗng" ở đây là TIN TỐT chứ không phải thiếu dữ liệu:
+   * icon CheckCircle2 tone success + thông điệp tích cực mặc định
+   * "Không có gì bất thường — hệ thống ổn định" (override qua title/description).
+   * Khi bật, `allClear` thắng `variant`. Mặc định false → không đổi hành vi cũ.
+   */
+  allClear?: boolean;
+  /**
+   * ⚠ 2026-08-17 — `scopeEmptyReason` lấy thẳng từ phản hồi máy chủ.
+   *
+   * Khi bằng `"no_factory_assignment"`, khối này ngừng nói "chưa có dữ liệu" và nói ĐÚNG lý do:
+   * phạm vi của tài khoản rỗng. **Thắng cả `title`/`description` do nơi gọi truyền vào** — nếu
+   * không, mọi call site đang truyền `title` (đa số) sẽ tiếp tục nói dối và prop này thành đồ
+   * trang trí. Mọi giá trị khác (kể cả `null`) ⇒ giữ nguyên hành vi cũ: một dây chuyền thật sự
+   * chưa chạy VẪN phải được báo là chưa có dữ liệu.
+   */
+  scopeEmptyReason?: string | null;
 }
 
 const variantConfig: Record<EmptyStateVariant, { 
@@ -75,13 +94,27 @@ export function EmptyState({
   actionLabel,
   onAction,
   className,
-  compact = false
+  compact = false,
+  allClear = false,
+  scopeEmptyReason
 }: EmptyStateProps) {
   const { t } = useTranslation();
-  const config = variantConfig[variant];
-  const Icon = CustomIcon || config.icon;
-  const title = customTitle || t(config.titleKey);
-  const description = customDescription || t(config.descriptionKey);
+  // ⚠ Nhánh phạm-vi-rỗng đứng TRƯỚC `allClear`: "không có gì bất thường" cũng là một kết luận
+  // về dây chuyền, và với tài khoản chưa gán nhà máy thì chính nó cũng chưa được phép nói.
+  const scopeEmpty = isScopeEmpty(scopeEmptyReason);
+  const config = scopeEmpty
+    ? { icon: AlertTriangle, titleKey: 'common.scopeEmpty.title', descriptionKey: 'common.scopeEmpty.hint', iconColor: 'text-warning' }
+    : allClear
+    ? // Chuỗi tiếng Việt trực tiếp (không thêm key i18n ở GĐ1); override được.
+      { icon: CheckCircle2, titleKey: '', descriptionKey: '', iconColor: 'text-success' }
+    : variantConfig[variant];
+  const Icon = scopeEmpty ? config.icon : CustomIcon || config.icon;
+  const title = scopeEmpty
+    ? t(config.titleKey)
+    : customTitle || (allClear ? t("emptyState.khongCoGiBatThuong", "Không có gì bất thường") : t(config.titleKey));
+  const description = scopeEmpty
+    ? t(config.descriptionKey)
+    : customDescription || (allClear ? t("emptyState.heThongOnDinh", "Hệ thống ổn định") : t(config.descriptionKey));
 
   if (compact) {
     return (
@@ -113,7 +146,7 @@ export function EmptyState({
     )}>
       <div className={cn(
         'rounded-full p-4 mb-4',
-        variant === 'error' ? 'bg-destructive/10' : 'bg-muted'
+        allClear ? 'bg-success/10' : variant === 'error' ? 'bg-destructive/10' : 'bg-muted'
       )}>
         <Icon className={cn('h-12 w-12', config.iconColor)} />
       </div>
@@ -133,10 +166,11 @@ export function EmptyState({
 }
 
 // Specialized empty states for common use cases
-export function NoWorkstationData({ onRefresh }: { onRefresh?: () => void }) {
+export function NoWorkstationData({ onRefresh, scopeEmptyReason }: { onRefresh?: () => void; scopeEmptyReason?: string | null }) {
   const { t } = useTranslation();
   return (
     <EmptyState
+      scopeEmptyReason={scopeEmptyReason}
       variant="no-analytics"
       title={t('machines.noWorkstationData')}
       description={t('machines.noWorkstationDataDescription')}
@@ -172,10 +206,11 @@ export function NoInspectionResults({ onSeedData }: { onSeedData?: () => void })
   );
 }
 
-export function NoChartData() {
+export function NoChartData({ scopeEmptyReason }: { scopeEmptyReason?: string | null } = {}) {
   const { t } = useTranslation();
   return (
     <EmptyState
+      scopeEmptyReason={scopeEmptyReason}
       variant="no-analytics"
       title={t('dashboard.notEnoughData')}
       description={t('dashboard.notEnoughDataDescription')}

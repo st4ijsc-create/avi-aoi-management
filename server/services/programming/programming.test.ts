@@ -78,9 +78,25 @@ function makeDb() {
             onConflictDoUpdate() {
               return { returning: () => Promise.resolve(inserted) };
             },
+            // doc 80 WS-06 — deployBuild giữ chỗ bằng INSERT … ON CONFLICT (idempotencyKey)
+            // DO NOTHING RETURNING. Mô phỏng unique: dòng vừa chèn trùng khoá với dòng CŨ hơn
+            // bị gỡ lại và RETURNING rỗng.
+            onConflictDoNothing() {
+              const kept = inserted.filter((row) => {
+                const dup =
+                  row.idempotencyKey != null &&
+                  rows(name).some((r) => r !== row && r.idempotencyKey === row.idempotencyKey);
+                if (dup) store.set(name, rows(name).filter((r) => r !== row));
+                return !dup;
+              });
+              return { returning: () => Promise.resolve(kept) };
+            },
           };
         },
       };
+    },
+    transaction(fn: (tx: any) => Promise<any>) {
+      return fn(this);
     },
     update(t: any) {
       const name = tbl(t);

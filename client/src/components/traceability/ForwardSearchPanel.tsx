@@ -26,6 +26,7 @@ import { Badge } from "@/components/ui/badge";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { StatChip, StatChipRow } from "@/components/patterns";
 import { Search, Save, Play, Trash2, Info, Radar, ShieldAlert } from "lucide-react";
+import { mapTrpcError } from "@/lib/trpcErrors";
 import {
   affectedFromRows,
   type ChainRow,
@@ -222,7 +223,7 @@ export default function ForwardSearchPanel({
           {isLot && (
             <>
               {lotQ.isLoading && <p className="text-muted-foreground">{t("common.loading", "Loading...")}</p>}
-              {lotQ.isError && <p className="text-destructive">{lotQ.error?.message}</p>}
+              {lotQ.isError && <p className="text-destructive">{mapTrpcError(lotQ.error)}</p>}
               {lotQ.data && lotScope.serials.length === 0 && (
                 <p className="text-muted-foreground">{t("trace.notFound", "No data found for")} {active.value}</p>
               )}
@@ -380,7 +381,7 @@ export default function ForwardSearchPanel({
                 </Alert>
               )}
               {componentQ.isError && !componentForbidden && (
-                <p className="text-destructive">{componentQ.error?.message}</p>
+                <p className="text-destructive">{mapTrpcError(componentQ.error)}</p>
               )}
               {componentQ.data && componentSerials.length === 0 && (
                 <p className="text-muted-foreground">{t("trace.notFound", "No data found for")} {active.value}</p>

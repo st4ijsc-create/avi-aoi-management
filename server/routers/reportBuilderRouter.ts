@@ -5,7 +5,10 @@
 
 import { z } from "zod";
 import { TRPCError } from "@trpc/server";
+import { appError } from "../_core/appError";
 import { protectedProcedure, router } from "../_core/trpc";
+// ★★★ 2026-08-17 — xem `_core/reportExportScope.ts`.
+import { exportScopeArgs, resolveExportScope } from "../_core/reportExportScope";
 import * as db from "../db";
 import { getDb } from "../db/connection";
 import { sql, eq, desc } from "drizzle-orm";
@@ -70,14 +73,14 @@ const reportDefinitionSchema = z.object({
 async function assertReportOwnership(id: number, ctx: { user: { id: number; role: string } }): Promise<void> {
   if (ctx.user.role === "admin") return;
   const conn = await getDb();
-  if (!conn) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR" });
+  if (!conn) throw appError("INTERNAL_SERVER_ERROR", "DB_UNAVAILABLE", undefined, "Database not available");
   const result: any = await conn.execute(sql`
     SELECT "createdBy" FROM report_templates WHERE id = ${id}
   `);
   const rows = result.rows || result;
-  if (!rows[0]) throw new TRPCError({ code: "NOT_FOUND", message: "Không tìm thấy báo cáo" });
+  if (!rows[0]) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "reportTemplate" }, "Không tìm thấy báo cáo");
   if (rows[0].createdBy == null || rows[0].createdBy !== ctx.user.id) {
-    throw new TRPCError({ code: "FORBIDDEN", message: "Bạn không có quyền sửa hoặc xóa báo cáo này" });
+    throw appError("FORBIDDEN", "PERMISSION_DENIED", { action: "editOrDeleteReport" }, "Bạn không có quyền sửa hoặc xóa báo cáo này");
   }
 }
 
@@ -134,14 +137,14 @@ export const reportBuilderRouter = router({
     .input(z.number())
     .query(async ({ input: id, ctx }) => {
       const conn = await getDb();
-      if (!conn) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR" });
+      if (!conn) throw appError("INTERNAL_SERVER_ERROR", "DB_UNAVAILABLE", undefined, "Database not available");
 
       try {
         const result: any = await conn.execute(sql`
           SELECT * FROM report_templates WHERE id = ${id}
         `);
         const rows = result.rows || result;
-        if (!rows[0]) throw new TRPCError({ code: "NOT_FOUND", message: "Không tìm thấy báo cáo" });
+        if (!rows[0]) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "reportTemplate" }, "Không tìm thấy báo cáo");
 
         // IDOR guard: only the owner, an admin, or anyone for a default/public
         // report may read it.
@@ -149,12 +152,12 @@ export const reportBuilderRouter = router({
         const isOwner = report.createdBy != null && report.createdBy === ctx.user.id;
         const isPublic = report.isDefault === true;
         if (!isOwner && !isPublic && ctx.user.role !== "admin") {
-          throw new TRPCError({ code: "FORBIDDEN", message: "Bạn không có quyền xem báo cáo này" });
+          throw appError("FORBIDDEN", "PERMISSION_DENIED", { action: "viewReport" }, "Bạn không có quyền xem báo cáo này");
         }
         return report;
       } catch (err: any) {
         if (err.code === "NOT_FOUND" || err.code === "FORBIDDEN") throw err;
-        throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: err.message });
+        throw appError("INTERNAL_SERVER_ERROR", "OPERATION_FAILED", { operation: "getReport" }, err.message);
       }
     }),
 
@@ -226,14 +229,14 @@ export const reportBuilderRouter = router({
     }))
     .mutation(async ({ input, ctx }) => {
       const conn = await getDb();
-      if (!conn) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR" });
+      if (!conn) throw appError("INTERNAL_SERVER_ERROR", "DB_UNAVAILABLE", undefined, "Database not available");
 
       try {
         const result: any = await conn.execute(sql`
           SELECT * FROM report_templates WHERE id = ${input.id}
         `);
         const rows = result.rows || result;
-        if (!rows[0]) throw new TRPCError({ code: "NOT_FOUND" });
+        if (!rows[0]) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "reportTemplate" }, `Report template ${input.id} not found`);
 
         const source = rows[0];
         const newTemplate = await db.createReportTemplate({
@@ -246,7 +249,7 @@ export const reportBuilderRouter = router({
         return newTemplate;
       } catch (err: any) {
         if (err.code === "NOT_FOUND") throw err;
-        throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: err.message });
+        throw appError("INTERNAL_SERVER_ERROR", "OPERATION_FAILED", { operation: "cloneReport" }, err.message);
       }
     }),
 
@@ -285,10 +288,21 @@ export const reportBuilderRouter = router({
         lineId: z.number().optional(),
       }).optional(),
     }))
-    .query(async ({ input }) => {
+    .query(async ({ input, ctx }) => {
       const { widgetType, config, filters } = input;
       const startDate = filters?.startDate || new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
       const endDate = filters?.endDate || new Date();
+
+      // ⚠ Danh tính LẤY TỪ `ctx.user`, KHÔNG BAO GIỜ từ `input`. Năm điểm gọi trong `switch`
+      // dưới đây trước bản vá không truyền gì ⇒ mọi widget phát số TOÀN CỤC.
+      const actor = exportScopeArgs(ctx.user);
+      // ⚠ Bề mặt này KHÁC PDF/PPTX: nó trả JSON cho widget ĐANG SỐNG trên màn hình, không sinh
+      // file rời hệ thống. Nên KHÔNG `assertExportableScope` ở đây — từ chối sẽ giết cả trang
+      // dựng báo cáo. Thay vào đó số 0 đi KÈM LÝ DO, để widget nói "chưa được gán nhà máy" thay
+      // vì vẽ một ô "0" câm mà người đọc tự dịch thành "dây chuyền ngừng chạy".
+      // ⚠ CHỈ ba ô CHỮ (`scopeLabelsOf`) — `filter` của drizzle có tham chiếu vòng, spread nó
+      // vào đáp ứng tRPC là `Converting circular structure to JSON` ⇒ 500 cho mọi người dùng.
+      const scope = await resolveExportScope(ctx.user);
 
       switch (widgetType) {
         case "kpi_card": {
@@ -297,16 +311,21 @@ export const reportBuilderRouter = router({
             endDate,
             factoryId: filters?.factoryId,
             workshopId: filters?.workshopId,
+            ...actor,
           });
           const metric = config?.metric || "totalInspections";
           const value = (stats as any)?.[metric] ?? 0;
-          return { value, metric };
+          return { value, metric, ...scope };
         }
 
         case "yield_trend":
         case "line_chart": {
-          const data = await db.getNGTrendByDay({ startDate, endDate });
-          return { data };
+          // NỢ ĐÃ TRẢ 2026-08-17 — `getNGTrendByDay` nay nhận trục phạm vi.
+          // ⚠ `data` là MẢNG: nhãn do `withScopeLabels` đính KHÔNG liệt kê được nên không đi
+          // được qua superjson. Lý do rỗng của widget này lấy từ `...scope` ngay bên cạnh —
+          // đó là ô mang nhãn thật sự lên dây.
+          const data = await db.getNGTrendByDay({ startDate, endDate, ...actor });
+          return { data, ...scope };
         }
 
         case "ng_analysis":
@@ -315,18 +334,20 @@ export const reportBuilderRouter = router({
             startDate,
             endDate,
             limit: config?.limit || 10,
+            ...actor,
           });
-          return { data };
+          return { data, ...scope };
         }
 
         case "machine_comparison": {
+          // `workshopId` bỏ đi (hàm không nhận) + bỏ `as any` ⇒ tsc canh thật điểm gọi này.
           const data = await db.getTopBottomMachines({
             startDate,
             endDate,
             factoryId: filters?.factoryId,
-            workshopId: filters?.workshopId,
-          } as any);
-          return { data };
+            ...actor,
+          });
+          return { data, ...scope };
         }
 
         case "shift_analysis": {
@@ -334,8 +355,9 @@ export const reportBuilderRouter = router({
             startDate,
             endDate,
             factoryId: filters?.factoryId,
+            ...actor,
           });
-          return { data };
+          return { data, ...scope };
         }
 
         case "table": {
@@ -344,12 +366,13 @@ export const reportBuilderRouter = router({
             endDate,
             factoryId: filters?.factoryId,
             workshopId: filters?.workshopId,
+            ...actor,
           });
-          return { data: stats };
+          return { data: stats, ...scope };
         }
 
         default:
-          return { data: null };
+          return { data: null, ...scope };
       }
     }),
 });

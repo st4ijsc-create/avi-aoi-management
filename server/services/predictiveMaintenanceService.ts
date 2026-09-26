@@ -38,6 +38,7 @@ import {
 import { recordMachineHealthSnapshot } from "../db/machine";
 import type { RulEstimate } from "./ai/rulEstimatorService";
 import type { FailureModeResult } from "./ai/failureModeClassifier";
+import type { SuppressionReason } from "./alerts/classifySuppression";
 
 // ─── Tunables (env-overridable) ──────────────────────────────────────────────
 
@@ -117,6 +118,34 @@ export interface FailureRiskResult {
     confidence: number;
     recommendedAction: string;
   } | null;
+  /**
+   * ★★★ PH-39 (QA tập đoàn 2026-09-15) — XUẤT XỨ CỦA `failureRisk`.
+   *
+   * `failureRisk` là `number`, nên nó KHÔNG tự nói được sự khác nhau giữa hai
+   * câu hoàn toàn khác nghĩa:
+   *     "đã tính, nguy cơ bằng 0"   ↔   "chưa tính được gì, mặc định là 0"
+   * Dòng sinh ra số ấy là `weightSum > 0 ? clamp(weightedRisk / weightSum) : 0`
+   * — nhánh `: 0` chạy khi KHÔNG đặc trưng nào (độ tin cậy / xu hướng sức khoẻ /
+   * bất thường / nhiệt độ) đủ dữ liệu. Đo được ở cơ sở dữ liệu QA: mỗi máy có
+   * ĐÚNG MỘT điểm `machine_health_history` không phải `PREDICTIVE_WS4`, tức
+   * `healthSeries.length = 1 < MIN_HEALTH_POINTS` ⇒ **mọi máy** nhận `0 / LOW`,
+   * và màn máy in "Failure risk 0 %" cạnh chip "Health 40 % · critical".
+   *
+   * Trường này là thứ DUY NHẤT tách ba trạng thái ở tầng dữ liệu:
+   *   • `"measured"`          — ít nhất một đặc trưng có trọng số ⇒ số là PHÉP ĐO
+   *                             (kể cả khi phép đo ấy ra đúng 0).
+   *   • `"insufficient_data"` — không đặc trưng nào đủ dữ liệu ⇒ `failureRisk` là
+   *                             MẶC ĐỊNH; tầng trình bày PHẢI nói "chưa đủ dữ
+   *                             liệu", KHÔNG được in "0 %".
+   *   • `"unavailable"`       — không đọc được nguồn (không có cơ sở dữ liệu).
+   *
+   * Cùng lớp lỗi với "Cảnh báo (0)" đã vá ở `trungThucDuLieu.ts` (NT-3.5): NÓI
+   * **KHÔNG** KHI NGHĨA LÀ **CHƯA BIẾT**. Giữ `failureRisk: number` (không đổi
+   * thành `number | null`) để 9 chỗ gọi hiện có — vốn chỉ so ngưỡng `>= X` nên
+   * số 0 không sinh cảnh báo giả — không phải đổi cùng lúc; chỗ nào HIỂN THỊ thì
+   * đọc `riskMethod` trước khi in.
+   */
+  riskMethod: "measured" | "insufficient_data" | "unavailable";
 }
 
 /** Raw inputs for pure risk computation — enables unit testing without a DB. */
@@ -404,12 +433,30 @@ export function computeFailureRiskFromInputs(inputs: RiskInputs): FailureRiskRes
     // horizon whose lower-CI crosses the danger threshold.
     for (const fp of forecast) {
       if (fp.lower <= DANGER_HEALTH_THRESHOLD) {
-        timeframeHours = Math.max(0, (fp.timestamp - healthSeries[healthSeries.length - 1].timestamp) / 3600_000);
+        const candidate = Math.max(0, (fp.timestamp - healthSeries[healthSeries.length - 1].timestamp) / 3600_000);
+        // Sprint 5 §5 (backlog E1) — chặn tại NGUỒN: Math.max(0, x) chỉ kẹp x ÂM lên 0,
+        // KHÔNG kẹp NaN (Math.max(0, NaN) === NaN). NaN chỉ có thể sinh ra ở đây nếu
+        // timestamp trong forecast bị hỏng; đo thực nghiệm cho thấy đường gọi hiện tại
+        // (horizonSteps cũng suy từ cùng timestamp) đã tự chặn trường hợp đó bằng cách
+        // trả forecast rỗng — nhưng giữ guard tường minh ở đây để không phụ thuộc vào
+        // một hiệu ứng phụ tình cờ của chỗ khác (phòng khi horizonSteps đổi công thức).
+        if (Number.isFinite(candidate)) timeframeHours = candidate;
         break;
       }
     }
-    // Cap timeframe by MTBF if available
-    if (timeframeHours != null && reliability?.mtbfHours) {
+    // Cap timeframe by MTBF if available.
+    // Sprint 5 §5 (backlog E1) — chặn tại NGUỒN: khác Math.max(0, x), Math.min không
+    // kẹp toán hạng không hữu hạn — reliability.mtbfHours = -Infinity (kiểu number|null,
+    // không có gì đảm bảo hữu hạn khi tới đây) sẽ ép timeframeHours thành -Infinity
+    // NGUYÊN VẸN. B1 (classifySuppression.ts) đã chặn -Infinity ở CỔNG PHÁT cảnh báo;
+    // guard này chặn ở NGUỒN — trước khi giá trị này còn được record xuống DB qua
+    // recordMachineHealthSnapshot (gọi vô điều kiện, không qua cổng phát cảnh báo).
+    // Quyết định có chủ ý: khi mtbfHours không hữu hạn, BỎ QUA việc áp trần (thay vì
+    // null hoá luôn timeframeHours) — timeframeHours ở đây LUÔN đã là một ước lượng
+    // hữu hạn hợp lệ từ forecast xu hướng sức khoẻ (đến từ tín hiệu KHÁC, độc lập với
+    // MTBF); một trường MTBF hỏng không nên xoá một ước lượng hợp lệ đã có, chỉ nên
+    // huỷ đúng bước áp trần dùng dữ liệu hỏng đó.
+    if (timeframeHours != null && reliability?.mtbfHours && Number.isFinite(reliability.mtbfHours)) {
       timeframeHours = Math.min(timeframeHours, reliability.mtbfHours);
     }
     factors.push({
@@ -454,6 +501,14 @@ export function computeFailureRiskFromInputs(inputs: RiskInputs): FailureRiskRes
     });
   }
 
+  /**
+   * ★★★ PH-39 — `weightSum === 0` nghĩa là KHÔNG một đặc trưng nào chạy được:
+   * không phải "rủi ro bằng 0", mà là "chưa đo được gì". Nhánh `: 0` bên dưới
+   * vẫn giữ nguyên (hợp đồng `failureRisk: number` không đổi), nhưng từ nay nó
+   * đi kèm nhãn `riskMethod` để tầng trình bày không in nó ra như một phép đo.
+   * Xem docblock `FailureRiskResult.riskMethod`.
+   */
+  const riskMethod: "measured" | "insufficient_data" = weightSum > 0 ? "measured" : "insufficient_data";
   const failureRisk = weightSum > 0 ? clamp(weightedRisk / weightSum) : 0;
 
   // Confidence: more data, more agreeing features, narrower CI -> higher.
@@ -473,7 +528,16 @@ export function computeFailureRiskFromInputs(inputs: RiskInputs): FailureRiskRes
   const confidenceScore = clamp(dataComponent + agreementComponent + ciComponent);
 
   // If trend gave no timeframe but reliability is overdue, fall back to MTBF horizon.
-  if (timeframeHours == null && riskReliability >= 60 && reliability?.mtbfHours && uptimeSinceLastHours != null) {
+  // Sprint 5 §5 (backlog E1) — chặn tại NGUỒN: nếu mtbfHours/uptimeSinceLastHours
+  // không hữu hạn, phép trừ có thể ra NaN hoặc +Infinity mà Math.max(0, x) không kẹp
+  // được (nó chỉ kẹp x ÂM lên 0). Trong thực tế nhánh này khó chạm tới với toán hạng
+  // hỏng vì riskReliability (dùng CÙNG hai biến này ở hazard phía trên) đã bị clamp()
+  // về 0 khi không hữu hạn — nhưng guard tường minh ở đây không phụ thuộc vào việc
+  // đọc-hiểu hiệu ứng phụ đó, nên vẫn giữ cho chắc.
+  if (
+    timeframeHours == null && riskReliability >= 60 && reliability?.mtbfHours &&
+    Number.isFinite(reliability.mtbfHours) && uptimeSinceLastHours != null && Number.isFinite(uptimeSinceLastHours)
+  ) {
     timeframeHours = Math.max(0, reliability.mtbfHours - uptimeSinceLastHours);
   }
 
@@ -501,7 +565,24 @@ export function computeFailureRiskFromInputs(inputs: RiskInputs): FailureRiskRes
     }
   }
 
-  const recommendedMaintenanceDate = timeframeHours != null
+  // ── Sprint 5 §5 (backlog E1) — CHẶN TẠI NGUỒN (bổ sung cho B1 ở classifySuppression.ts,
+  // vốn chỉ chặn ở CỔNG PHÁT cảnh báo). Đây là điểm hội tụ DUY NHẤT trước khi
+  // `timeframeHours` được dùng để tính `recommendedMaintenanceDate`/`predictedTimeframeHours`
+  // /`rulHours` — bất kể nó không hữu hạn vì lý do gì (Math.min với mtbfHours không hữu
+  // hạn, hay bất kỳ đường mới nào sau này), guard này đảm bảo giá trị không hữu hạn
+  // KHÔNG BAO GIỜ tới được `Math.round()` (vốn giữ nguyên -Infinity/+Infinity/NaN) hay
+  // `new Date()` (vốn sinh Invalid Date — record xuống DB qua recordMachineHealthSnapshot
+  // có thể khiến driver postgres-js/drizzle ném RangeError). Không hữu hạn = KHÔNG ước
+  // lượng được, phải là `null` — KHÔNG phải 0 và KHÔNG phải giá trị không hữu hạn đó.
+  if (timeframeHours != null && !Number.isFinite(timeframeHours)) {
+    timeframeHours = null;
+    // Trung thực: nếu rulMethod từng được gán 'weibull' (dòng rul.method ở trên) mà
+    // timeframeHours cuối cùng lại không hữu hạn, nhãn 'weibull' không còn đúng nữa —
+    // hạ về 'insufficient_data' (giá trị đã có sẵn trong union type, không bịa thêm).
+    rulMethod = "insufficient_data";
+  }
+
+  const recommendedMaintenanceDate = timeframeHours != null && Number.isFinite(timeframeHours)
     ? new Date(Date.now() + timeframeHours * 3600_000)
     : null;
 
@@ -519,13 +600,16 @@ export function computeFailureRiskFromInputs(inputs: RiskInputs): FailureRiskRes
     failureRisk: Math.round(failureRisk),
     confidenceScore: Math.round(confidenceScore),
     predictedTimeframe: describeTimeframe(timeframeHours),
-    predictedTimeframeHours: timeframeHours != null ? Math.round(timeframeHours) : null,
+    // Number.isFinite(timeframeHours) ở đây tưởng thừa (guard hội tụ phía trên đã null
+    // hoá giá trị không hữu hạn) nhưng KHÔNG dựa vào đó — đây là bản vá thứ hai, độc
+    // lập, đúng ngay tại nơi Math.round() từng "nuốt" -Infinity/NaN mà không kiểm tra.
+    predictedTimeframeHours: timeframeHours != null && Number.isFinite(timeframeHours) ? Math.round(timeframeHours) : null,
     recommendedMaintenanceDate,
     maintenanceUrgency: urgencyFromRisk(failureRisk),
     factors,
     dataPoints,
     rulMethod,
-    rulHours: timeframeHours != null ? Math.round(timeframeHours) : null,
+    rulHours: timeframeHours != null && Number.isFinite(timeframeHours) ? Math.round(timeframeHours) : null,
     rulConfidence,
     rulNote,
     failureMode: failureMode
@@ -536,6 +620,7 @@ export function computeFailureRiskFromInputs(inputs: RiskInputs): FailureRiskRes
           recommendedAction: failureMode.recommendedAction,
         }
       : null,
+    riskMethod,
   };
 }
 
@@ -562,6 +647,9 @@ export async function computeFailureRisk(
       rulConfidence: null,
       rulNote: null,
       failureMode: null,
+      // ★ PH-39 — không có cơ sở dữ liệu thì đây KHÔNG phải "chưa đủ dữ liệu"
+      //   (điều đó hàm ý ĐÃ đọc được và đọc thấy ít), mà là KHÔNG ĐỌC ĐƯỢC.
+      riskMethod: "unavailable",
     };
   }
 
@@ -723,6 +811,18 @@ export async function computeFailureRisk(
 // ─── Cycle + background job ──────────────────────────────────────────────────
 
 /**
+ * Vòng sửa cuối (review toàn nhánh, mục 4) — khởi tạo đủ 4 nhãn `SuppressionReason`
+ * = 0, KHÔNG dùng object rỗng `{}`. `JSON.stringify({})` bỏ hẳn mọi nhãn có đếm = 0
+ * (JS không lặp qua key không tồn tại) — người đọc log sau này KHÔNG phân biệt được
+ * "đúng 0 ứng viên bị chặn vì low-risk" với "chưa đo được/log hỏng". Cả Task 6 tồn
+ * tại để sinh dữ liệu hiệu chỉnh ngưỡng — thiếu key đúng loại nhập nhằng làm hỏng
+ * quyết định mà Task 6 muốn ngăn. Xuất khẩu để test không cần dựng cả chu kỳ dự đoán.
+ */
+export function initSuppressionTally(): Record<SuppressionReason, number> {
+  return { emit: 0, "low-risk": 0, "low-confidence": 0, "out-of-timeframe": 0 };
+}
+
+/**
  * Run one predictive-maintenance cycle over active machines.
  * For each machine: compute risk, persist a health snapshot (updating the
  * predicted* fields), and emit a MACHINE_FAILURE alert when risk + confidence +
@@ -741,6 +841,7 @@ export async function runPredictiveMaintenanceCycle(): Promise<{
   let alertsEmitted = 0;
   let workOrdersCreated = 0;
   let errors = 0;
+  const suppressionTally: Record<SuppressionReason, number> = initSuppressionTally();
 
   const activeMachines = await db
     .select({ id: machines.id, code: machines.code })
@@ -801,14 +902,25 @@ export async function runPredictiveMaintenanceCycle(): Promise<{
         }
       }
 
+      // Sprint 5 §5 (backlog B1) — HỢP NHẤT. Trước đây đây là hai bản sao: một
+      // để ĐẾM (classifySuppression, Wave 3 §4.5 chỉ-quan-sát), một để PHÁT
+      // (biểu thức inline). Không test nào so chúng, và chúng ĐÃ lệch thật:
+      // predictedTimeframeHours = -Infinity thì classify trả "out-of-timeframe"
+      // (đếm là đã chặn) trong khi `-Inf <= T` là true nên biểu thức vẫn PHÁT.
+      // Nay chỉ còn MỘT nguồn sự thật ⇒ số đếm không thể nói dối về việc phát.
+      const { classifySuppression } = await import("./alerts/classifySuppression");
+      const suppression = classifySuppression(
+        {
+          failureRisk: risk.failureRisk,
+          confidenceScore: risk.confidenceScore,
+          predictedTimeframeHours: risk.predictedTimeframeHours,
+        },
+        { risk: RISK_ALERT_THRESHOLD, confidence: CONFIDENCE_ALERT_THRESHOLD, timeframeHours: TIMEFRAME_ALERT_HOURS },
+      );
+      suppressionTally[suppression] = (suppressionTally[suppression] ?? 0) + 1;
+
       // Alert gating: avoid false positives on sparse/low-confidence data.
-      const timeframeOk =
-        risk.predictedTimeframeHours != null && risk.predictedTimeframeHours <= TIMEFRAME_ALERT_HOURS;
-      if (
-        risk.failureRisk >= RISK_ALERT_THRESHOLD &&
-        risk.confidenceScore >= CONFIDENCE_ALERT_THRESHOLD &&
-        timeframeOk
-      ) {
+      if (suppression === "emit") {
         try {
           const { routeAlert } = await import("./aiSmartAlertRouter");
           await routeAlert({
@@ -855,6 +967,8 @@ export async function runPredictiveMaintenanceCycle(): Promise<{
       console.error(`[PredictiveMaintenance] machine ${m.id} failed:`, (err as Error)?.message ?? err);
     }
   }
+
+  console.log(`[PredictiveMaintenance] ứng viên theo kết cục: ${JSON.stringify(suppressionTally)} (ngưỡng: rủi ro ${RISK_ALERT_THRESHOLD}, tin cậy ${CONFIDENCE_ALERT_THRESHOLD}, khung ${TIMEFRAME_ALERT_HOURS}h)`);
 
   return { evaluated, alertsEmitted, workOrdersCreated, errors };
 }

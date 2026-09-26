@@ -13,6 +13,18 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 
+/**
+ * ★★★ G3-A — hai tool insight nay đứng sau cổng quyền (`analytics_oee` / `analytics_advanced`).
+ * Bộ ca cũ gọi thẳng `handler(...)` không danh tính ⇒ nay bị TỪ CHỐI. Ở đây cấp danh tính hợp lệ +
+ * mở cổng để giữ NGUYÊN ý định từng ca; cổng được kiểm riêng ở cuối file.
+ */
+type ChiSoQuyen = [userId: number, role: string, moduleName: string, action: string];
+const checkPermissionMock = vi.fn(async (..._a: ChiSoQuyen) => true);
+vi.mock("../../_core/accessControl", () => ({
+  checkPermission: (...a: ChiSoQuyen) => checkPermissionMock(...a),
+}));
+const AUTH_TEST = { userId: 7, role: "supervisor" };
+
 const getDbMock = vi.fn();
 vi.mock("../../db/connection", () => ({ getDb: (...a: unknown[]) => getDbMock(...a) }));
 
@@ -37,7 +49,10 @@ vi.mock("../../../drizzle/schema", () => ({
 
 import { analyzeLineBottleneck, correlateProcessQuality } from "./insightHandlersF6";
 
-beforeEach(() => vi.clearAllMocks());
+beforeEach(() => {
+  vi.clearAllMocks();
+  checkPermissionMock.mockResolvedValue(true as never);
+});
 
 /** Build a fake db that serves two sequential select() calls (upstream, downstream). */
 function fakeDbForCorrelation(upstreamRows: any[], downstreamRows: any[]) {
@@ -62,7 +77,7 @@ function fakeDbForCorrelation(upstreamRows: any[], downstreamRows: any[]) {
 describe("correlate_process_quality", () => {
   it("returns noDbResult when getDb is null", async () => {
     getDbMock.mockResolvedValue(null);
-    const r = await correlateProcessQuality.handler!({
+    const r = await correlateProcessQuality.handler!({ __authCtx: AUTH_TEST,
       upstreamStepType: "torque", metricKey: "torque", days: 7,
     } as any);
     expect(r.note).toBe("DB_UNAVAILABLE");
@@ -82,7 +97,7 @@ describe("correlate_process_quality", () => {
     }));
     getDbMock.mockResolvedValue(fakeDbForCorrelation(upstream, downstream));
 
-    const r = await correlateProcessQuality.handler!({
+    const r = await correlateProcessQuality.handler!({ __authCtx: AUTH_TEST,
       upstreamStepType: "torque", metricKey: "torque", downstreamStepType: "function", days: 7,
     } as any);
 
@@ -98,7 +113,7 @@ describe("correlate_process_quality", () => {
       [{ serialNumber: "SN1", metrics: { torque: 1 }, result: "pass" }],
       [{ serialNumber: "SN1", result: "fail", stepType: "function" }],
     ));
-    const r = await correlateProcessQuality.handler!({
+    const r = await correlateProcessQuality.handler!({ __authCtx: AUTH_TEST,
       upstreamStepType: "torque", metricKey: "torque", downstreamStepType: "function", days: 7,
     } as any);
     expect(r.note).toBe("NOT_FOUND");
@@ -120,7 +135,7 @@ describe("analyze_line_bottleneck", () => {
         bottleneckStationId: 3,
       })),
     );
-    const r = await analyzeLineBottleneck.handler!({ lineCode: "A", days: 7 } as any);
+    const r = await analyzeLineBottleneck.handler!({ __authCtx: AUTH_TEST, lineCode: "A", days: 7 } as any);
     expect(r.type).toBe("line_insight");
     expect(r.data!.cycleTrend).toBe("increasing");
     expect(r.textSummary).toContain("[Hiện trạng]");
@@ -134,18 +149,50 @@ describe("analyze_line_bottleneck", () => {
     getLineBalanceSeries.mockResolvedValue([
       { periodStart: new Date().toISOString(), maxCycleTimeMs: 800, taktTimeMs: 1000, wipCount: 5, bottleneckStationId: 3 },
     ]);
-    const r = await analyzeLineBottleneck.handler!({ lineCode: "A", days: 7 } as any);
+    const r = await analyzeLineBottleneck.handler!({ __authCtx: AUTH_TEST, lineCode: "A", days: 7 } as any);
     expect(r.note).toBe("NOT_FOUND");
   });
 });
 
 describe("F6 insight — read-only safety", () => {
-  it("both insight tools are read tools with no write surface", () => {
+  it("both insight tools are read tools with no write surface — nhưng CÓ cổng ĐỌC (G3-A)", () => {
     for (const t of [analyzeLineBottleneck, correlateProcessQuality]) {
       expect(t.kind ?? "read").toBe("read");
       expect(t.preview).toBeUndefined();
       expect(t.execute).toBeUndefined();
-      expect(t.requiredPermission).toBeUndefined();
+      // ⚠ ĐÍNH CHÍNH: dòng cũ đòi `requiredPermission` VẮNG — "không ghi gì" đã bị hiểu nhầm thành
+      // "không cần quyền", trong khi hai tool này ĐỌC dữ liệu mà giao diện gác sau cổng.
+      expect(t.requiredPermission?.action).toBe("canView");
+    }
+    expect(analyzeLineBottleneck.requiredPermission).toEqual({ module: "analytics_oee", action: "canView" });
+    expect(correlateProcessQuality.requiredPermission).toEqual({ module: "analytics_advanced", action: "canView" });
+  });
+
+  it("★★★ G3-A — KHÔNG danh tính ⇒ TỪ CHỐI TRUNG THỰC, không chạm CSDL", async () => {
+    getDbMock.mockResolvedValue({});
+    for (const t of [analyzeLineBottleneck, correlateProcessQuality]) {
+      const r: any = await (t.handler as any)({ lineCode: "A", days: 7, upstreamStepType: "torque", metricKey: "torque" });
+      expect(r.note).toBe("PERMISSION_DENIED");
+      expect(r.textSummary).toContain(t.requiredPermission!.module);
+      expect(r.textSummary).not.toMatch(/không có dữ liệu|chưa có dữ liệu/i);
+    }
+    expect(checkPermissionMock).not.toHaveBeenCalled();
+    expect(getDbMock).not.toHaveBeenCalled();
+  });
+
+  it("★★★ G3-A — cặp (module, action) TỚI CỔNG đúng bằng cặp đã KHAI", async () => {
+    getDbMock.mockResolvedValue({});
+    checkPermissionMock.mockResolvedValue(false as never);
+    for (const t of [analyzeLineBottleneck, correlateProcessQuality]) {
+      checkPermissionMock.mockClear();
+      const r: any = await (t.handler as any)({
+        lineCode: "A", days: 7, upstreamStepType: "torque", metricKey: "torque", __authCtx: AUTH_TEST,
+      });
+      expect(r.note).toBe("PERMISSION_DENIED");
+      expect(checkPermissionMock).toHaveBeenCalledWith(
+        7, "supervisor", t.requiredPermission!.module, t.requiredPermission!.action,
+      );
+      expect(getDbMock).not.toHaveBeenCalled();
     }
   });
 

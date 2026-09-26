@@ -70,7 +70,14 @@ export default function SupervisorHome() {
           {ngQuery.isLoading ? (
             <div className="space-y-1.5"><Skeleton className="h-10 w-full" /><Skeleton className="h-10 w-full" /></div>
           ) : ngRows.length === 0 ? (
-            <p className="text-sm text-muted-foreground">{t("supervisor.attentionEmpty", "Không có mục cần chú ý")}</p>
+            <p className="text-sm text-muted-foreground">
+              {/* ⚠ "Không có mục cần chú ý" là lời TRẤN AN. Tài khoản chưa gán nhà máy nhận 0
+                  dòng vì phạm vi rỗng, không vì dây chuyền sạch — "inspection.search" khai lý
+                  do ở "scopeEmptyReason". */}
+              {ngQuery.data?.scopeEmptyReason === "no_factory_assignment"
+                ? t("common.scopeEmpty.badge")
+                : t("supervisor.attentionEmpty", "Không có mục cần chú ý")}
+            </p>
           ) : (
             <div className="space-y-1.5">
               {ngRows.map((row, i) => (

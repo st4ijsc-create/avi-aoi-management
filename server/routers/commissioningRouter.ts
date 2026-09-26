@@ -18,6 +18,7 @@
  */
 import { z } from "zod";
 import { TRPCError } from "@trpc/server";
+import { appError } from "../_core/appError";
 import { eq } from "drizzle-orm";
 import { router, protectedProcedure } from "../_core/trpc";
 import { requirePermission } from "../_core/accessControl";
@@ -33,7 +34,7 @@ import {
 
 async function db() {
   const d = await getDb();
-  if (!d) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Database not connected" });
+  if (!d) throw appError("INTERNAL_SERVER_ERROR", "DB_UNAVAILABLE", undefined, "Database not connected");
   return d;
 }
 
@@ -41,7 +42,7 @@ async function db() {
 async function assertAdapterExists(adapterId: number): Promise<void> {
   const d = await db();
   const [adapter] = await d.select().from(deviceAdapters).where(eq(deviceAdapters.id, adapterId)).limit(1);
-  if (!adapter) throw new TRPCError({ code: "NOT_FOUND", message: `Adapter #${adapterId} không tồn tại.` });
+  if (!adapter) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "adapter" }, `Adapter #${adapterId} không tồn tại.`);
 }
 
 export const commissioningRouter = router({
@@ -86,7 +87,7 @@ export const commissioningRouter = router({
       await assertAdapterExists(input.adapterId);
       // Guard against an already-expired expiry (would create a dead record).
       if (input.expiresAt != null && input.expiresAt.getTime() <= Date.now()) {
-        throw new TRPCError({ code: "BAD_REQUEST", message: "expiresAt đã ở quá khứ — bản ghi sẽ vô hiệu ngay." });
+        throw appError("BAD_REQUEST", "INVALID_VALUE", { field: "expiresAt" }, "expiresAt đã ở quá khứ — bản ghi sẽ vô hiệu ngay.");
       }
       return createRecord({
         adapterId: input.adapterId,
@@ -107,10 +108,11 @@ export const commissioningRouter = router({
     .mutation(async ({ input, ctx }) => {
       const row = await revokeRecord(input.recordId, ctx.user.id, input.reason ?? null);
       if (!row) {
-        throw new TRPCError({
-          code: "NOT_FOUND",
-          message: "Bản ghi commissioning không tồn tại hoặc không còn ở trạng thái 'active'.",
-        });
+        // Review cuối, ca I-A #7: revokeRecord() UPDATE ... WHERE id=? AND status='active'
+        // — trả null khi bản ghi CÓ TỒN TẠI nhưng không còn 'active' (đã revoke từ trước),
+        // không chỉ khi id không tồn tại. ENTITY_NOT_FOUND khẳng định "không có" — sai khi
+        // rơi vào nhánh "đã hết hiệu lực". fallbackMessage giữ nguyên (chỉ vào log).
+        throw appError("NOT_FOUND", "OPERATION_FAILED", { operation: "revokeCommissioningRecord" }, "Bản ghi commissioning không tồn tại hoặc không còn ở trạng thái 'active'.");
       }
       return row;
     }),

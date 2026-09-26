@@ -11,7 +11,7 @@
  *   - navigate route whitelist (unknown route refused, no directive)
  *   - LLM routing picks the right WRITE tool (generateJSON mocked)
  */
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 
 // ── Fake ai_pending_actions store + drizzle-like builder (mirrors GĐ2 test) ──
 type Row = Record<string, any>;
@@ -29,8 +29,23 @@ function makeFakeDb() {
     }),
     update: () => ({
       set: (patch: Row) => ({
-        where: async (pred: (r: Row) => boolean) => {
-          let c = 0; for (const r of store.values()) if (pred(r)) { Object.assign(r, patch); c++; } return { rowCount: c };
+        // ★★★ 2026-08-23 — `where()` nay vừa AWAIT được vừa có `.returning()`: `confirmAction`
+        // giành quyền bằng `UPDATE … WHERE status=<đã quan sát>` rồi ĐẾM hàng trả về. `run()` được
+        // nhớ lại (memo) nên một lượt gọi không bao giờ áp `patch` hai lần.
+        where: (pred: (r: Row) => boolean) => {
+          let memo: Row[] | null = null;
+          const run = (): Row[] => {
+            if (memo) return memo;
+            const hit: Row[] = [];
+            for (const r of store.values()) if (pred(r)) { Object.assign(r, patch); hit.push(r); }
+            memo = hit;
+            return hit;
+          };
+          return {
+            then: (ok: (v: unknown) => unknown, ng?: (e: unknown) => unknown) =>
+              Promise.resolve({ rowCount: run().length }).then(ok, ng),
+            returning: async (_c?: unknown) => run().map((r) => ({ id: r.id })),
+          };
         },
       }),
     }),
@@ -132,6 +147,7 @@ vi.mock("../../db/system", () => ({ createAuditLog: (...a: unknown[]) => systemC
 import { getTool } from "./toolRegistry";
 import "./writeHandlers"; // registers all GĐ2 + GĐ3a tools
 import { proposeAction, confirmAction } from "../aiCopilotActions";
+import { boDemChungChoTest } from "../ot/aiControlGate";
 
 const ADMIN = { id: 1, role: "admin", name: "Admin" } as const;
 const OPERATOR = { id: 2, role: "operator", name: "Op" } as const;
@@ -146,12 +162,20 @@ function tool(name: string) {
 beforeEach(() => {
   store.clear();
   vi.clearAllMocks();
+  // L-7 — `set_yield_threshold` là Mức 3: qua cổng AI, cần cờ riêng bật.
+  // (Không cần safety-PLC: tool này ghi bảng ngưỡng trong CSDL, không chạm PLC.)
+  process.env.AI_OT_CONTROL_ENABLED = "true";
+  boDemChungChoTest().xoaHet(); // trần tần suất dùng chung — dọn giữa các ca
   checkPermission.mockResolvedValue(true);
   getAlertHistoryById.mockResolvedValue({ id: 5, message: "NG cao", acknowledgedAt: null, acknowledgedBy: null });
   getPredictiveAlertById.mockResolvedValue({ id: 7, title: "Yield drop", status: "ACTIVE", acknowledgedBy: null, resolvedBy: null, resolutionNotes: null });
   getMeasurementPointDefById.mockResolvedValue({ id: 12, code: "MP12", name: "Điểm đo 12", upperLimit: "9.0", lowerLimit: "8.0", nominalValue: "8.5", unit: "mm" });
   getMeasurementPointDefByCode.mockResolvedValue(undefined);
   getYieldAlertThresholdByType.mockResolvedValue({ id: 3, metricType: "FPY", warningThreshold: "95", criticalThreshold: "90", targetValue: "98", comparisonOperator: "gte" });
+});
+
+afterEach(() => {
+  delete process.env.AI_OT_CONTROL_ENABLED;
 });
 
 describe("acknowledge_alert", () => {
@@ -224,7 +248,12 @@ describe("create_measurement_point", () => {
 });
 
 describe("update_measurement_point", () => {
-  it("execute calls db with changedBy + changeReason", async () => {
+  it("execute calls db with changedBy + changeReason (development product — gate allows)", async () => {
+    // upperLimit is a limit field ⇒ Task 8 hard gate now runs first.
+    resolveThresholdEditGate.mockResolvedValue({
+      decision: "direct", productModelId: 5, lifecycleStatus: "development",
+      hasReleasedProgram: false, enforced: true,
+    });
     const p = await proposeAction(tool("update_measurement_point"), { id: 12, name: "Đổi tên", upperLimit: 10 }, ctx(ADMIN));
     expect(updateMeasurementPointDef).not.toHaveBeenCalled();
     const c = await confirmAction(p.pendingAction!.actionId, p.pendingAction!.token, ADMIN, "vi");
@@ -232,9 +261,77 @@ describe("update_measurement_point", () => {
     expect(updateMeasurementPointDef).toHaveBeenCalledWith(12, expect.objectContaining({ name: "Đổi tên", upperLimit: "10" }), expect.objectContaining({ changedBy: 1, changeReason: "AI Copilot" }));
   });
 
+  it("name-only edit (non-limit) NEVER consults the gate", async () => {
+    const p = await proposeAction(tool("update_measurement_point"), { id: 12, name: "Chỉ đổi tên" }, ctx(ADMIN));
+    const c = await confirmAction(p.pendingAction!.actionId, p.pendingAction!.token, ADMIN, "vi");
+    expect(c.status).toBe("executed");
+    expect(resolveThresholdEditGate).not.toHaveBeenCalled();
+    expect(updateMeasurementPointDef).toHaveBeenCalledWith(12, expect.objectContaining({ name: "Chỉ đổi tên" }), expect.anything());
+  });
+
   it("zod requires at least one updatable field", () => {
     const r = (tool("update_measurement_point").parameters as any).safeParse({ id: 12 });
     expect(r.success).toBe(false);
+  });
+});
+
+// Task 8 Khối C — TRƯỚC bản vá, `update_measurement_point` gọi thẳng
+// `updateMeasurementPointDef` KHÔNG hề qua `resolveThresholdEditGate`: một AI
+// Copilot có thể ghi lowerLimit/upperLimit/nominalValue/unit lên một sản phẩm
+// LIVE mà không có cửa duyệt nào — bản vá này mirror ĐÚNG khuôn `set_spec_limits`
+// ngay dưới (cùng file, cùng gate, cùng chỗ AI đã học "trước đây db fn này an
+// toàn gọi thẳng").
+describe("update_measurement_point — Task 8 Khối C lifecycle gate (mirror set_spec_limits)", () => {
+  const upCtx = ctx(ADMIN);
+
+  it("development product + limit field → applies + writes threshold.directEdit audit", async () => {
+    resolveThresholdEditGate.mockResolvedValue({
+      decision: "direct", productModelId: 5, lifecycleStatus: "development",
+      hasReleasedProgram: false, enforced: true,
+    });
+    const res = await tool("update_measurement_point").execute!({ id: 12, lowerLimit: 1, upperLimit: 9 }, upCtx);
+    expect((res.data as any).ok).toBe(true);
+    expect(updateMeasurementPointDef).toHaveBeenCalledWith(
+      12,
+      expect.objectContaining({ lowerLimit: "1", upperLimit: "9" }),
+      expect.objectContaining({ changedBy: 1, changeReason: "AI Copilot" }),
+    );
+    expect(systemCreateAuditLog).toHaveBeenCalledWith(expect.objectContaining({
+      action: "threshold.directEdit",
+      details: expect.objectContaining({ source: "aiCopilot.update_measurement_point", gateDecision: "direct" }),
+    }));
+  });
+
+  it("active (LIVE) product + limit field → BLOCKS: ok:false, honest message, NO db write, NO throw", async () => {
+    resolveThresholdEditGate.mockResolvedValue({
+      decision: "requires_approval", productModelId: 5, lifecycleStatus: "active",
+      hasReleasedProgram: false, enforced: true,
+    });
+    const res = await tool("update_measurement_point").execute!({ id: 12, upperLimit: 9 }, upCtx);
+    expect((res.data as any).ok).toBe(false);
+    expect(res.note ?? res.textSummary).toMatch(/approval|duyệt/i);
+    expect(updateMeasurementPointDef).not.toHaveBeenCalled();
+    expect(systemCreateAuditLog).not.toHaveBeenCalledWith(expect.objectContaining({ action: "threshold.directEdit" }));
+  });
+
+  it("active (LIVE) product + `unit` ONLY → ALSO blocks (unit is a limit field, not exempt)", async () => {
+    resolveThresholdEditGate.mockResolvedValue({
+      decision: "requires_approval", productModelId: 5, lifecycleStatus: "active",
+      hasReleasedProgram: false, enforced: true,
+    });
+    const res = await tool("update_measurement_point").execute!({ id: 12, unit: "mm" }, upCtx);
+    expect((res.data as any).ok).toBe(false);
+    expect(updateMeasurementPointDef).not.toHaveBeenCalled();
+  });
+
+  it("break-glass (enforced=false) → passes through even on an active product", async () => {
+    resolveThresholdEditGate.mockResolvedValue({
+      decision: "requires_approval", productModelId: 5, lifecycleStatus: "active",
+      hasReleasedProgram: false, enforced: false,
+    });
+    const res = await tool("update_measurement_point").execute!({ id: 12, upperLimit: 9 }, upCtx);
+    expect((res.data as any).ok).toBe(true);
+    expect(updateMeasurementPointDef).toHaveBeenCalled();
   });
 });
 

@@ -25,6 +25,7 @@ import {
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
 import { toast } from "sonner";
+import { toastTrpcError } from "@/lib/trpcErrors";
 import { usePermissions } from "@/_core/hooks/usePermissions";
 import {
   Download,
@@ -207,7 +208,7 @@ export function BackupRestorePageContent() {
       setOverwrite(false);
     },
     onError: (error) => {
-      toast.error(t('backup.restoreError') + error.message);
+      toastTrpcError(error);
     },
   });
 

@@ -184,7 +184,7 @@ describe("runSidecarTraining — happy path", () => {
 
     // Result + ONNX copy into the canonical trained dir.
     expect(res.success).toBe(true);
-    expect(res.outputModelPath).toMatch(/sidecar_42_1\.3\.0\.onnx$/);
+    expect(res.outputModelPath).toMatch(/sidecar_42\.onnx$/);
     expect(copySpy).toHaveBeenCalled();
     expect(res.finalMetrics!.accuracy).toBe(0.94);
     expect(res.finalMetrics!.confusionMatrix).toEqual([[20, 0], [1, 19]]);
@@ -215,6 +215,44 @@ describe("runSidecarTraining — failures", () => {
     expect(res.success).toBe(false);
     expect(res.error).toMatch(/no model/i);
     expect(copySpy).not.toHaveBeenCalled();
+  });
+});
+
+// ─── targetVersion path-traversal safety (inherited from the same one-line bug class fixed in
+//     server/services/aiLlmFinetuneSidecar.ts's finalPath construction) ─────────────────────
+describe("runSidecarTraining — a malicious targetVersion cannot escape the trained-models dir", () => {
+  it.each([
+    "../../../etc/passwd",
+    "..\\..\\x",
+    "a/b",
+  ])("targetVersion=%j never influences the output artifact path", async (maliciousVersion) => {
+    process.env.LOCAL_TRAINER_CMD = "python train.py";
+    const p = runSidecarTraining({
+      jobId: 42, modelId: 7, targetVersion: maliciousVersion, datasetId: 12, classLabels: ["NG", "OK"],
+    });
+    await vi.waitFor(() => expect(lastChild).not.toBeNull());
+
+    const jobJsonKey = findWritten("job.json")!;
+    const contract = JSON.parse(fsStore.get(jobJsonKey)!);
+    fsExist.add(contract.output.modelPath);
+    fsStore.set(contract.output.resultPath, JSON.stringify({ success: true, metrics: {} }));
+    fsExist.add(contract.output.resultPath);
+    lastChild!.emit("exit", 0);
+
+    const res = await p;
+    expect(res.success).toBe(true);
+
+    // targetVersion still flows through as plain METADATA inside job.json (read by the Python
+    // sidecar) — that's fine, it's never used as a filesystem path there either.
+    expect(contract.targetVersion).toBe(maliciousVersion);
+
+    // But the produced artifact's path is built SOLELY from the internally-generated numeric
+    // jobId and stays confined to the canonical trained-models dir — the malicious targetVersion
+    // never appears in it, and no traversal sequence survives into the resolved path.
+    expect(res.outputModelPath).toMatch(/sidecar_42\.onnx$/);
+    expect(res.outputModelPath).not.toContain("..");
+    expect(res.outputModelPath).not.toContain(maliciousVersion);
+    expect(copySpy).toHaveBeenCalledWith(contract.output.modelPath, res.outputModelPath);
   });
 });
 

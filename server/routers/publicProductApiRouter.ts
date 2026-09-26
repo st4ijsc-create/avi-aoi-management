@@ -1,6 +1,7 @@
 import { publicProcedure, router } from "../_core/trpc";
 import { z } from "zod";
 import { TRPCError } from "@trpc/server";
+import { appError } from "../_core/appError";
 import { isValidMasterKey } from "../_core/masterKey";
 import * as db from "../db";
 import { storageGet, resolveImageToDataUrl } from "../storage";
@@ -14,6 +15,18 @@ import {
   measurementPointDefs,
   productModels,
 } from "../../drizzle/schema";
+// ★★★ 2026-08-18 — trục PHẠM VI NHÀ MÁY của lối đi MÁY. Toàn bộ lời khai (vì sao `masterKey` là
+// toàn cục, vì sao hợp BA đường liên kết, vì sao ném thay vì trả rỗng) nằm ở docblock file dưới.
+import {
+  PHAM_VI_TOAN_CUC,
+  congSanPhamTrongNhaMay,
+  factoryIdCanThuHep,
+  factoryIdCuaTram,
+  phamViNhaMayCuaMay,
+  sanPhamTrongNhaMay,
+  tuChoiNgoaiPhamVi,
+  type PhamViMayGoi,
+} from "./publicProductScope";
 
 /**
  * Extract image dimensions from a base64 data URI (JPEG or PNG).
@@ -54,25 +67,86 @@ function extractImageDimensionsFromDataUri(dataUri: string): { width: number; he
 // Cho phép ứng dụng bên thứ 3 truy xuất thông tin sản phẩm, ảnh mẫu và điểm đo
 // Xác thực bằng masterKey, apiKey hoặc machineCode
 
-async function validateAccess(input: { apiKey?: string; machineCode?: string; masterKey?: string }) {
-  // Option 1: Master API Key (cho app bên thứ 3 dùng x-master-key)
+/**
+ * ★★★ 2026-08-18 — **XÁC THỰC ⇒ PHẠM VI**, không còn là hai việc rời nhau.
+ *
+ * ⚠⚠ HÌNH DẠNG LỖI CŨ, ghi lại để không ai dựng lại nó: hàm này TỪNG trả về `machine | null`, và
+ * cả **tám** nơi gọi viết `await validateAccess(input);` rồi **vứt giá trị trả về đi**. Danh tính
+ * đã nằm trong tay mà không ai dùng ⇒ mọi truy vấn phía sau chạy KHÔNG LỌC, và bất kỳ ai đọc được
+ * **mã máy** in trên nhãn thiết bị đọc trọn danh mục sản phẩm/ảnh/điểm đo/thống kê của MỌI nhà máy.
+ *
+ * Kiểu trả về mới `PhamViMayGoi` làm cho lỗi ấy **không diễn đạt được nữa**: nó không phải một
+ * `machine` để tiện tay bỏ qua mà là *"phạm vi bạn phải áp"*, và `factoryIdCanThuHep` là một
+ * `switch` vét cạn nên một lối vào thứ tư quên xử lý sẽ làm `tsc` đỏ.
+ *
+ * ⚠ Cả ba lối vào đều lấy danh tính từ `input` — điều mà `phamViDocScan.ts` cấm với thủ tục có
+ * `ctx`. Ở đây KHÔNG có `ctx.user`: người gọi là MÁY. Hai lối `masterKey`/`apiKey` trình một BÍ MẬT
+ * (đối chiếu `timingSafeEqual` / `machines.apiKey`), nên chúng là xác thực thật.
+ * ⚠⚠ Lối `machineCode` thì **KHÔNG**: mã máy nằm trên nhãn thiết bị, trong URL và trong file xuất.
+ * Nó là ngưỡng vào THẤP NHẤT của bề mặt này. Bản vá này thu hẹp thiệt hại của nó xuống còn ĐÚNG
+ * MỘT nhà máy, nhưng không biến nó thành một phép xác thực — quyết định bỏ hay giữ lối vào ấy
+ * thuộc về chủ dự án (xem báo cáo kèm bản vá).
+ */
+async function validateAccess(input: {
+  apiKey?: string;
+  machineCode?: string;
+  masterKey?: string;
+}): Promise<PhamViMayGoi> {
+  // Lối 1: Master API Key — TOÀN CỤC TƯỜNG MINH, không phải một nhánh mặc định.
+  // `MASTER_API_KEY` là MỘT bí mật của cả bản triển khai; không có bảng nào buộc nó vào một nhà
+  // máy (cơ chế khoá CÓ phạm vi là `api_keys` với `factoryCode`/`corporateCode` — cơ chế khác).
+  // Tức không tồn tại nhà máy nào để thu hẹp về. Lời khai đầy đủ: `publicProductScope.ts`.
   if (input.masterKey) {
-    if (isValidMasterKey(input.masterKey)) return null;
-    throw new TRPCError({ code: "UNAUTHORIZED", message: "Invalid master key" });
+    if (isValidMasterKey(input.masterKey)) return PHAM_VI_TOAN_CUC;
+    throw appError("UNAUTHORIZED", "INVALID_VALUE", { field: "masterKey" }, "Invalid master key");
   }
-  // Option 2: Machine API Key
+  // Lối 2: Machine API Key (bí mật) ⇒ phạm vi = nhà máy của máy ấy.
   if (input.apiKey) {
     const machine = await db.getMachineByApiKey(input.apiKey);
-    if (!machine) throw new TRPCError({ code: "UNAUTHORIZED", message: "Invalid API key" });
-    return machine;
+    if (!machine) throw appError("UNAUTHORIZED", "INVALID_VALUE", { field: "apiKey" }, "Invalid API key");
+    return phamViNhaMayCuaMay(machine);
   }
-  // Option 3: Machine Code
+  // Lối 3: Machine Code (KHÔNG phải bí mật) ⇒ vẫn thu hẹp về đúng nhà máy của máy ấy.
   if (input.machineCode) {
     const machine = await db.getMachineByCode(input.machineCode.trim());
-    if (!machine) throw new TRPCError({ code: "UNAUTHORIZED", message: "Invalid machine code" });
-    return machine;
+    if (!machine) throw appError("UNAUTHORIZED", "INVALID_VALUE", { field: "machineCode" }, "Invalid machine code");
+    return phamViNhaMayCuaMay(machine);
   }
-  throw new TRPCError({ code: "UNAUTHORIZED", message: "Either masterKey, apiKey, or machineCode must be provided" });
+  throw appError("UNAUTHORIZED", "FIELD_REQUIRED", { field: "masterKeyOrApiKeyOrMachineCode" }, "Either masterKey, apiKey, or machineCode must be provided");
+}
+
+/**
+ * Cổng cho một sản phẩm ĐÃ phân giải. `factoryId === null` (toàn cục tường minh) ⇒ không làm gì —
+ * đó là chiều DƯƠNG chống "vá quá tay thành chặn tất cả".
+ *
+ * Một hàm chứ không phải năm lần chép `if (…) throw`: năm bản chép là năm chỗ để một bản lệch, và
+ * bản lỏng nhất sẽ quyết định ai thấy gì.
+ */
+async function chanSanPhamNgoaiPhamVi(
+  product: { id: number; code: string },
+  factoryId: number | null,
+): Promise<void> {
+  if (factoryId === null) return;
+  if (await sanPhamTrongNhaMay(product.id, factoryId)) return;
+  tuChoiNgoaiPhamVi("productModel", `product '${product.code}'`);
+}
+
+/**
+ * Cổng cho một TRẠM đã phân giải, dùng chung bởi `getPointStatsByStation` và
+ * `getPointImagesByStation`.
+ *
+ * ⚠ Kiểm trên `stations.lineId` (liên kết THẬT, `NOT NULL` + FK `ON DELETE RESTRICT`) chứ không
+ * suy từ tập máy của trạm: một trạm CHƯA CÓ MÁY vẫn thuộc về một nhà máy xác định, và nếu phán
+ * quyết theo tập máy thì trạm ấy sẽ tụt vào nhánh "0 máy ⇒ trả rỗng" — tức lại là một câu trả lời
+ * rỗng IM LẶNG cho một lượt hỏi lẽ ra phải bị TỪ CHỐI.
+ */
+async function chanTramNgoaiPhamVi(
+  station: { code: string; lineId: number },
+  factoryId: number | null,
+): Promise<void> {
+  if (factoryId === null) return;
+  if ((await factoryIdCuaTram(station)) === factoryId) return;
+  tuChoiNgoaiPhamVi("station", `station '${station.code}'`);
 }
 
 const authInput = z.object({
@@ -98,7 +172,7 @@ export const publicProductApiRouter = router({
       message: "Either masterKey, apiKey, or machineCode must be provided",
     }))
     .query(async ({ input }) => {
-      await validateAccess(input);
+      const factoryId = factoryIdCanThuHep(await validateAccess(input));
 
       const products = await db.getProductModels({
         search: input.search,
@@ -108,10 +182,18 @@ export const publicProductApiRouter = router({
         offset: input.offset,
         sortBy: "name",
         sortOrder: "asc",
+        // ★ Cổng phạm vi ghép TRONG truy vấn (không lọc sau) — nếu lọc sau thì `limit`/`offset`
+        //   sẽ trả về một trang thiếu hàng và `total` khai sai. `undefined` = toàn cục tường minh.
+        congPhamVi: factoryId !== null ? congSanPhamTrongNhaMay(productModels.id, factoryId) : undefined,
       });
 
       return {
         success: true,
+        // ⚠ 0 DÒNG IM LẶNG LÀ NÓI DỐI: một danh sách rỗng vì PHẠM VI trông y hệt một danh sách
+        //   rỗng vì nhà máy chưa khai sản phẩm nào. Ô này là thứ duy nhất phân biệt được hai
+        //   trạng thái ấy ở phía gọi. Nó CHỈ mang một boolean — không mang `filter` (đối tượng SQL
+        //   drizzle có tham chiếu vòng ⇒ superjson chết `Converting circular structure to JSON`).
+        scopeApplied: factoryId !== null,
         data: products.map(p => ({
           id: p.id,
           code: p.code,
@@ -142,12 +224,13 @@ export const publicProductApiRouter = router({
       message: "Either masterKey, apiKey, or machineCode must be provided",
     }))
     .query(async ({ input }) => {
-      await validateAccess(input);
+      const factoryId = factoryIdCanThuHep(await validateAccess(input));
 
       const product = await db.getProductModelByCode(input.code);
       if (!product) {
-        throw new TRPCError({ code: "NOT_FOUND", message: `Product not found: ${input.code}` });
+        throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "productModel" }, `Product not found: ${input.code}`);
       }
+      await chanSanPhamNgoaiPhamVi(product, factoryId);
 
       const measurementPoints = await db.getMeasurementPointDefsByProductModel(product.id);
 
@@ -224,12 +307,13 @@ export const publicProductApiRouter = router({
       message: "Either masterKey, apiKey, or machineCode must be provided",
     }))
     .query(async ({ input }) => {
-      await validateAccess(input);
+      const factoryId = factoryIdCanThuHep(await validateAccess(input));
 
       const product = await db.getProductModelById(input.id);
       if (!product) {
-        throw new TRPCError({ code: "NOT_FOUND", message: `Product not found: ${input.id}` });
+        throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "productModel" }, `Product not found: ${input.id}`);
       }
+      await chanSanPhamNgoaiPhamVi(product, factoryId);
 
       const measurementPoints = await db.getMeasurementPointDefsByProductModel(product.id);
 
@@ -303,12 +387,13 @@ export const publicProductApiRouter = router({
       message: "Either masterKey, apiKey, or machineCode must be provided",
     }))
     .query(async ({ input }) => {
-      await validateAccess(input);
+      const factoryId = factoryIdCanThuHep(await validateAccess(input));
 
       const product = await db.getProductModelByCode(input.productCode);
       if (!product) {
-        throw new TRPCError({ code: "NOT_FOUND", message: `Product not found: ${input.productCode}` });
+        throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "productModel" }, `Product not found: ${input.productCode}`);
       }
+      await chanSanPhamNgoaiPhamVi(product, factoryId);
 
       const points = await db.getMeasurementPointDefsByProductModel(product.id);
 
@@ -353,15 +438,16 @@ export const publicProductApiRouter = router({
       message: "Either masterKey, apiKey, or machineCode must be provided",
     }))
     .query(async ({ input }) => {
-      await validateAccess(input);
+      const factoryId = factoryIdCanThuHep(await validateAccess(input));
 
       const product = await db.getProductModelByCode(input.productCode);
       if (!product) {
-        throw new TRPCError({ code: "NOT_FOUND", message: `Product not found: ${input.productCode}` });
+        throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "productModel" }, `Product not found: ${input.productCode}`);
       }
+      await chanSanPhamNgoaiPhamVi(product, factoryId);
 
       if (!product.referenceImageUrl && !product.referenceImageKey) {
-        throw new TRPCError({ code: "NOT_FOUND", message: "Product has no reference image" });
+        throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "referenceImage" }, "Product has no reference image");
       }
 
       // Nếu có storageKey thì lấy URL tải từ storage, ngược lại trả về URL trực tiếp
@@ -412,7 +498,7 @@ export const publicProductApiRouter = router({
       message: "Provide pointId, or both pointCode and productCode",
     }))
     .query(async ({ input }) => {
-      await validateAccess(input);
+      const factoryId = factoryIdCanThuHep(await validateAccess(input));
 
       let point;
       if (input.pointId) {
@@ -420,17 +506,26 @@ export const publicProductApiRouter = router({
       } else if (input.pointCode && input.productCode) {
         const product = await db.getProductModelByCode(input.productCode);
         if (!product) {
-          throw new TRPCError({ code: "NOT_FOUND", message: `Product not found: ${input.productCode}` });
+          throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "productModel" }, `Product not found: ${input.productCode}`);
         }
+        await chanSanPhamNgoaiPhamVi(product, factoryId);
         point = await db.getMeasurementPointDefByCode(product.id, input.pointCode);
       }
 
       if (!point) {
-        throw new TRPCError({ code: "NOT_FOUND", message: "Measurement point not found" });
+        throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "measurementPoint" }, "Measurement point not found");
+      }
+
+      // ⚠ Cổng phải đặt ở ĐÂY, không chỉ ở nhánh `productCode` phía trên: lối `pointId` bỏ qua
+      //   hoàn toàn khối kia (`measurement_point_defs.id` là khoá TOÀN CỤC, không mang nhà máy),
+      //   nên chỉ chặn ở nhánh kia là để nguyên một cửa sau mở toang. Điểm đo thuộc về sản phẩm,
+      //   nên phán quyết theo `productModelId` — cùng vị từ mà danh sách dùng, không phải bản thứ hai.
+      if (factoryId !== null && !(await sanPhamTrongNhaMay(point.productModelId, factoryId))) {
+        tuChoiNgoaiPhamVi("measurementPoint", `measurement point '${point.code}'`);
       }
 
       if (!point.referenceImageUrl && !point.referenceImageKey) {
-        throw new TRPCError({ code: "NOT_FOUND", message: "Measurement point has no reference image" });
+        throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "referenceImage" }, "Measurement point has no reference image");
       }
 
       let downloadUrl = point.referenceImageUrl;
@@ -469,22 +564,23 @@ export const publicProductApiRouter = router({
       message: "Either masterKey, apiKey, or machineCode must be provided",
     }))
     .query(async ({ input }) => {
-      await validateAccess(input);
+      const factoryId = factoryIdCanThuHep(await validateAccess(input));
 
       const database = await getDb();
-      if (!database) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Database not available" });
+      if (!database) throw appError("INTERNAL_SERVER_ERROR", "DB_UNAVAILABLE", undefined, "Database not available");
 
       // Find station by code
       const station = await db.getStationByCode(input.stationCode);
       if (!station) {
-        throw new TRPCError({ code: "NOT_FOUND", message: `Station not found: ${input.stationCode}` });
+        throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "station" }, `Station not found: ${input.stationCode}`);
       }
+      await chanTramNgoaiPhamVi(station, factoryId);
 
       // Get machines in this station
       const stationMachines = await db.getMachinesByStation(station.id);
       const machineIds = stationMachines.filter(m => m.isActive).map(m => m.id);
       if (machineIds.length === 0) {
-        return { success: true, station: { id: station.id, code: station.code, name: station.name }, product: null, data: [], total: 0 };
+        return { success: true, scopeApplied: factoryId !== null, station: { id: station.id, code: station.code, name: station.name }, product: null, data: [], total: 0 };
       }
 
       // Build date filters
@@ -497,7 +593,11 @@ export const publicProductApiRouter = router({
 
       if (input.productCode) {
         const product = await db.getProductModelByCode(input.productCode);
-        if (!product) throw new TRPCError({ code: "NOT_FOUND", message: `Product not found: ${input.productCode}` });
+        if (!product) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "productModel" }, `Product not found: ${input.productCode}`);
+        // ⚠ Trạm ĐÚNG nhà máy KHÔNG đủ: lối lùi bên dưới (`pointDefs` theo `productModelId` khi
+        //   không có điểm đo nào gắn máy của trạm) đọc `measurement_point_defs` mà KHÔNG qua
+        //   `machineId`, nên một `productCode` của nhà máy khác vẫn lộ trọn định nghĩa điểm đo.
+        await chanSanPhamNgoaiPhamVi(product, factoryId);
         productModelId = product.id;
         productInfo = { id: product.id, code: product.code, name: product.name };
       } else {
@@ -525,7 +625,7 @@ export const publicProductApiRouter = router({
       }
 
       if (!productModelId) {
-        return { success: true, station: { id: station.id, code: station.code, name: station.name }, product: null, data: [], total: 0 };
+        return { success: true, scopeApplied: factoryId !== null, station: { id: station.id, code: station.code, name: station.name }, product: null, data: [], total: 0 };
       }
 
       // Get active measurement point defs for station machines or product model
@@ -548,7 +648,7 @@ export const publicProductApiRouter = router({
       }
 
       if (pointDefs.length === 0) {
-        return { success: true, station: { id: station.id, code: station.code, name: station.name }, product: productInfo, data: [], total: 0 };
+        return { success: true, scopeApplied: factoryId !== null, station: { id: station.id, code: station.code, name: station.name }, product: productInfo, data: [], total: 0 };
       }
 
       const pointDefIds = pointDefs.map(p => p.id);
@@ -606,6 +706,7 @@ export const publicProductApiRouter = router({
 
       return {
         success: true,
+        scopeApplied: factoryId !== null,
         station: { id: station.id, code: station.code, name: station.name },
         product: productInfo,
         startDate: input.startDate || null,
@@ -633,29 +734,31 @@ export const publicProductApiRouter = router({
       message: "Either masterKey, apiKey, or machineCode must be provided",
     }))
     .query(async ({ input }) => {
-      await validateAccess(input);
+      const factoryId = factoryIdCanThuHep(await validateAccess(input));
 
       const database = await getDb();
-      if (!database) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Database not available" });
+      if (!database) throw appError("INTERNAL_SERVER_ERROR", "DB_UNAVAILABLE", undefined, "Database not available");
 
       // Find station
       const station = await db.getStationByCode(input.stationCode);
       if (!station) {
-        throw new TRPCError({ code: "NOT_FOUND", message: `Station not found: ${input.stationCode}` });
+        throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "station" }, `Station not found: ${input.stationCode}`);
       }
+      await chanTramNgoaiPhamVi(station, factoryId);
 
       // Get machines in station
       const stationMachines = await db.getMachinesByStation(station.id);
       const machineIds = stationMachines.filter(m => m.isActive).map(m => m.id);
       if (machineIds.length === 0) {
-        return { success: true, data: [], total: 0 };
+        return { success: true, scopeApplied: factoryId !== null, data: [], total: 0 };
       }
 
       // Resolve product model
       let productModelId: number | null = null;
       if (input.productCode) {
         const product = await db.getProductModelByCode(input.productCode);
-        if (!product) throw new TRPCError({ code: "NOT_FOUND", message: `Product not found: ${input.productCode}` });
+        if (!product) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "productModel" }, `Product not found: ${input.productCode}`);
+        await chanSanPhamNgoaiPhamVi(product, factoryId);
         productModelId = product.id;
       }
 
@@ -676,12 +779,21 @@ export const publicProductApiRouter = router({
         pointDef = pointDefs.length > 0 ? pointDefs[0] : null;
 
         // Fallback: search by product model
+        // ⚠⚠ ĐÂY là lượt đọc RỘNG NHẤT của cả router: nó tra `measurement_point_defs` chỉ bằng
+        //    `code` — không nhà máy, không trạm, không sản phẩm. `code` KHÔNG duy nhất toàn hệ
+        //    (chỉ mục là `(productModelId, code)`), nên một mã điểm đo phổ biến ("P01") sẽ trúng
+        //    hàng của một nhà máy BẤT KỲ, rồi cả khối truy vấn ảnh phía dưới chạy trên hàng ấy.
+        //    Cổng phạm vi phải nằm TRONG chính mệnh đề `where` — lọc sau khi `limit(1)` là vô
+        //    nghĩa: hàng của nhà máy khác đã chiếm mất chỗ và kết quả thành rỗng IM LẶNG.
         if (!pointDef) {
           const pointDefsByProduct = await database.select()
             .from(measurementPointDefs)
             .where(and(
               eq(measurementPointDefs.code, input.pointCode),
               eq(measurementPointDefs.isActive, true),
+              ...(factoryId !== null
+                ? [congSanPhamTrongNhaMay(measurementPointDefs.productModelId, factoryId)]
+                : []),
             ))
             .limit(1);
           pointDef = pointDefsByProduct.length > 0 ? pointDefsByProduct[0] : null;
@@ -689,7 +801,7 @@ export const publicProductApiRouter = router({
       }
 
       if (!pointDef) {
-        throw new TRPCError({ code: "NOT_FOUND", message: `Measurement point not found: ${input.pointCode}` });
+        throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "measurementPoint" }, `Measurement point not found: ${input.pointCode}`);
       }
 
       // Build date/filter conditions
@@ -744,6 +856,7 @@ export const publicProductApiRouter = router({
 
       return {
         success: true,
+        scopeApplied: factoryId !== null,
         point: {
           id: pointDef.id,
           code: pointDef.code,

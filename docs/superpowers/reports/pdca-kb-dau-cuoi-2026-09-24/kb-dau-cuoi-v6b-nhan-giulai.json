@@ -1,0 +1,380 @@
+{
+  "corpus": "scripts/ai-eval/cau-quy-tac-vs-song-giu-lai.jsonl",
+  "label": "v6b-nhan-giulai",
+  "tom": {
+    "trong": {
+      "n": 0,
+      "dung": 0,
+      "tuChoi": 0,
+      "sai": 0
+    },
+    "ngoai": {
+      "n": 24,
+      "tuChoi": 7,
+      "traLoi": 17
+    },
+    "loi": 0
+  },
+  "ra": [
+    {
+      "id": "GQ01",
+      "ngoai": true,
+      "kq": "tu-choi",
+      "ms": 5002,
+      "nguon": [
+        "knowledge/features/alerts/oee-targets.md",
+        "knowledge/features/alerts/oee-targets.md",
+        "knowledge/features/monitoring/oee-dashboard.md",
+        "knowledge/features/monitoring/oee-dashboard.md",
+        "knowledge/operational/oee-target-settings.md"
+      ],
+      "traLoi": "Tôi không có thông tin chính xác về câu hỏi này trong tài liệu hiện tại.  \n\nDữ liệu được cung cấp chỉ đề cập đến các ngưỡng (target) cho các chỉ số đo lường như USL, LSL và target theo từng thiết bị cụ thể (ví dụ: MP-SLDR-H, MP-PAD-W), nhưng **không có thông tin nào về phần trăm ngưỡng cảnh báo OEE thấp** được định nghĩa trong hệ thống.  \n\nCác tài liệu liên quan đến mục tiêu OEE chỉ nói rằng khi giá trị thực tế dưới mức target thì hệ thống sẽ tạo alert và hiển thị màu đỏ trên dashboard, tuy nhiên **giá trị cụ thể của \"ngưỡng cảnh báo\" (ví dụ: 80%, 75%) không được nêu rõ** trong các nguồn [1], [2], [3].  \n\nDo đó, câu hỏi về phần trăm ngưỡng cảnh báo OEE thấp **không có dữ liệu trực tiếp để trả lời chính xác**, và không thể suy ra từ thông tin hiện tại.  \n\n👉 Đề xuất: Câu hỏi cần được cụ thể hóa hơn — ví dụ như \"Ngưỡng cảnh báo OEE thấp cho máy MCH-004 là bao nhiêu phần trăm?\" hoặc \"Các ngưỡng mục tiêu (target) của OEE theo từng thiết bị có giá trị nào không?\" để có dữ liệu phản hồi chính xác.\n\n<sub>Đa bước: 2 lượt gọi tool (get_oee → list_thresholds), 862 ms.</sub>\n\n_Nguồn số liệu: `oee_metrics` · 7d_",
+      "loi": null
+    },
+    {
+      "id": "GQ02",
+      "ngoai": true,
+      "kq": "tra-loi",
+      "ms": 3965,
+      "nguon": [
+        "knowledge/domain/aoi-defect-types.md",
+        "knowledge/domain/aoi-defect-types.md",
+        "knowledge/features/analytics/defect-heatmap.md",
+        "knowledge/features/analytics/pareto-analysis.md",
+        "aoi-defect-types.md"
+      ],
+      "traLoi": "(1) Lỗi solder bridge được phân loại mức nghiêm trọng là **Critical** vì gây ngắn mạch và ảnh hưởng trực tiếp đến tính năng của bảng mạch.  \n(2) Bước 1: Truy cập giao diện AOI, chọn tab \"Defect Types\" → tìm lỗi có mã BRG hoặc SB → xem thông tin chi tiết ở phần \"Severity\". Kết quả hiển thị rõ mức độ là Critical [1]. Bước 2: Nhấn vào biểu tượng cảnh báo để mở hình ảnh lỗi và xác nhận trong quy trình xử lý (bước 3 của quy trình AOI), hệ thống tự động ghi nhận mức độ Critical → yêu cầu dừng dây chuyền tại bước 4.  \n(3) Lỗi thường gặp khi không kiểm soát nhiệt reflow hoặc lượng paste hàn quá nhiều; nếu không phát hiện sớm, có thể dẫn đến ngắn mạch nghiêm trọng [1]. Cần xác minh bằng hình ảnh và so sánh với mẫu chuẩn để tránh báo lỗi sai (false alarm).  \n(4) Liên quan trực tiếp tới **Pareto Analysis** – nơi solder bridge chiếm tỷ lệ lớn nhất trong các loại lỗi (ví dụ: 450/92%) [4], từ đó cần ưu tiên xử lý và đào tạo kỹ thuật. Đồng thời liên hệ với **Defect Heatmap**, giúp phát hiện khu vực có xu hướng tăng lỗi như trên PCB-A, đặc biệt sau khi th",
+      "loi": null
+    },
+    {
+      "id": "GQ03",
+      "ngoai": true,
+      "kq": "tra-loi",
+      "ms": 2495,
+      "nguon": [
+        "knowledge/domain/aoi-reports.md",
+        "knowledge/features/alerts/oee-targets.md",
+        "knowledge/features/alerts/oee-targets.md",
+        "knowledge/workflows/change-recipe-line-start.playbook.yaml",
+        "knowledge/features/analytics/defect-prediction.md"
+      ],
+      "traLoi": "(1) Tổng số mục được liệt kê: 1  \n\n(2) Danh sách đầy đủ:  \n- Tỷ lệ rework mục tiêu < 5%  \n\n(3) Trích nguyên văn code/giá trị từ ngữ cảnh:  \n| KPI | Công thức | Target |  \n|-----|-----------|--------|  \n| Rework Rate | Rework / Total | < 5% |\n\n(4) Nguồn gốc (file/đường dẫn): [1] AOI Reports & Analytics (Báo Cáo và Phân Tích) (bảng, nhóm 2) | knowledge/domain/aoi-reports.md",
+      "loi": null
+    },
+    {
+      "id": "GQ04",
+      "ngoai": true,
+      "kq": "tra-loi",
+      "ms": 4356,
+      "nguon": [
+        "knowledge/domain/howto-pareto-defects.md",
+        "knowledge/domain/howto-pareto-defects.md",
+        "knowledge/features/analytics/pareto-analysis.md",
+        "knowledge/domain/aoi-reports.md",
+        "knowledge/features/analytics/pareto-analysis.md"
+      ],
+      "traLoi": "(1) Biểu đồ Pareto sắp xếp các loại lỗi NG theo tần suất giảm dần, kèm đường tích lũy phần trăm để xác định *Vital Few* (khoảng 20% lỗi gây ra 80% số lỗi không đạt chuẩn).  \n(2) Bước 1: Truy cập `Menu › Báo cáo chất lượng › Pareto NG` hoặc dùng lệnh AI Assistant *\"top lỗi 7 ngày qua\"* để gọi tool `get_top_defects`. Tại đây, các loại lỗi được sắp xếp theo tần suất giảm dần (từ cao xuống thấp). Bước 2: Hover vào từng cột để xem số lượng (count), tỷ lệ phần trăm (%), và tích lũy (%) – ví dụ như trong bảng sau:  \n```\nDefect Type     | Count | %      | Cumulative%\n----------------|-------|--------|-------------\nBridging        |  145  | 38.4%  | 38.4%\nMissing Part    |   98  | 26.0%  | 64.4%\nMisalignment    |   67  | 17.8%  | 82.2%\nOthers          |   67  | 17.8%  | 100%\n```  \nKết quả cho thấy nhóm lỗi đầu chiếm tích l\n\n_Dữ liệu sống: Không có lỗi NG nào theo defectType trong 7 ngày qua._",
+      "loi": null
+    },
+    {
+      "id": "GQ05",
+      "ngoai": true,
+      "kq": "tra-loi",
+      "ms": 3662,
+      "nguon": [
+        "knowledge/domain/howto-lot-management.md",
+        "knowledge/domain/howto-lot-management.md",
+        "knowledge/operational-approved/production-orders.md",
+        "knowledge/features/production/production-scheduling.md",
+        "howto-lot-management.md"
+      ],
+      "traLoi": "(1) Một lô được chuyển sang trạng thái `completed` khi đạt đủ số lượng dự kiến (`plannedQty`) hoặc khi người dùng bấm nút \"Kết thúc lô\" trong giao diện.  \n(2) Bước 1: Tại line, mở menu **AOI Inspection** → chọn line đang hoạt động; nếu hệ thống hiển thị danh sách lô `planned`, nhấn **\"Bắt đầu\"**, trạng thái chuyển sang `running` và thời điểm bắt đầu (`startedAt`) được ghi nhận. Bước 2: Khi số lượng sản phẩm scan đạt hoặc vượt quá giá trị `plannedQty`, hoặc người dùng chọn \"Kết thúc lô\", hệ thống tự động cập nhật trạng thái thành `completed` với trường `endedAt = now()`. Kết quả là trạng thái vòng đời đi theo quy trình: `planned → running → completed`.  \n(3) Lưu ý: Không thể chỉnh sửa số lượng sau khi lô được đánh dấu hoàn thành. Nếu cần thay đổi, phải\n\nAPI liên quan: `/api/lots/:orderCode`\n\nVí dụ:\n```\nplanned → running → (paused ⇄ running) → completed\n                                       ↘ cancelled\n```",
+      "loi": null
+    },
+    {
+      "id": "GQ06",
+      "ngoai": true,
+      "kq": "tra-loi",
+      "ms": 6740,
+      "nguon": [
+        "knowledge/features/monitoring/ng-rate-threshold.md",
+        "knowledge/domain/howto-ng-handling-sop.md",
+        "knowledge/features/analytics/correlation-analysis.md",
+        "knowledge/features/monitoring/ng-rate-threshold.md",
+        "knowledge/domain/howto-lot-management.md"
+      ],
+      "traLoi": "(1) Công thức tính tỷ lệ NG (NG Rate) là tỉ số giữa số lượng sản phẩm không đạt chuẩn (ngCount) và tổng số sản phẩm được kiểm tra (inspectedCount), nhân với 100% để chuyển thành phần trăm.  \n(2) Thành phần chính:  \n- `ngRate = ngCount / inspectedCount × 100 %` [5]  \n- Được cập nhật mỗi 60 giây [2].  \n\n(3) Ví dụ cụ thể: Nếu trong một lần kiểm tra có 3 sản phẩm không đạt chuẩn (ngCount=3), tổng số sản phẩm được kiểm tra là 100, thì tỷ lệ NG sẽ là:  \n`3 / 100 × 100% = 3.0%`.  \n\n(4) Chủ đề liên quan: Tỷ lệ FPY (First Pass Yield), phân tích SPC, cảnh báo ngưỡng NG Rate.\n\n_Nguồn số liệu: `product_inspections` · 0 hàng_",
+      "loi": null
+    },
+    {
+      "id": "GQ07",
+      "ngoai": true,
+      "kq": "tra-loi",
+      "ms": 2883,
+      "nguon": [
+        "knowledge/domain/aoi-thresholds.md",
+        "knowledge/domain/aoi-thresholds.md",
+        "aoi-thresholds.md",
+        "knowledge/features/inspection/aoi-packages.md",
+        "knowledge/domain/aoi-troubleshooting.md"
+      ],
+      "traLoi": "(1) Máy AOI cần hiệu chỉnh ánh sáng (lighting calibration) hàng tuần.  \n(2) Bước 1: Truy cập **Giao diện Quản lý Bảo trì** → chọn mục *Calibration* → tìm loại \"Lighting check\" → xác nhận tần suất là “Hàng tuần” [1]. Kết quả hiển thị rõ ràng trong lịch bảo trì, được thực hiện bởi Technician. Bước 2: Kiểm tra log hiệu chỉnh để xem thời gian thực hiện gần nhất (ví dụ: ngày 5/4). Nếu lệch > ±5% so với giá trị chuẩn → cần vệ sinh lens hoặc kiểm tra LED ring [3].  \n(3) Lỗi thường gặp: Sai lệch ánh sáng vượt quá ±5%, do bụi bẩn trên lens hay lỗi LED ring. Cần thực hiện kiểm tra bằng white calibration board để xác minh. Nếu không có log hiệu chỉnh, khó định vị thời gian gần nhất.  \n(4) Liên quan đến chủ đề *hiệu chỉnh camera",
+      "loi": null
+    },
+    {
+      "id": "GQ08",
+      "ngoai": true,
+      "kq": "tra-loi",
+      "ms": 2837,
+      "nguon": [
+        "knowledge/domain/aoi-workflow.md",
+        "knowledge/domain/aoi-workflow.md",
+        "knowledge/operational-approved/andon.md",
+        "knowledge/features/monitoring/machine-sync.md",
+        "knowledge/features/production/production-dashboard.md"
+      ],
+      "traLoi": "(1) Có, cần đeo vòng tĩnh điện (ESD wrist strap) khi cầm bảng mạch.  \n(2) Bước 1: Khi tiếp cận bảng mạch, kiểm tra xem có đang sử dụng thiết bị ESD hay không → ở phần hướng dẫn an toàn trong UI \"Quy Định An Toàn\" tại mục `/andon` hoặc menu chính của hệ thống [1]. Kết quả là xác nhận việc đeo vòng tĩnh điện được yêu cầu để tránh tổn hại đến linh kiện. Bước 2: Thực hiện đeo ESD wrist strap trước khi cầm bảng mạch → ở khu vực làm việc, trong quy trình vận hành chuẩn (SOP) [2], có ghi rõ điều này là bắt buộc. Kết quả là đảm bảo an toàn điện tĩnh cho các thành phần nhạy cảm trên bảng mạch.  \n(3) Lỗi thường gặp: Không đeo ESD khi cầm bảng → dẫn đến hư hỏng linh kiện do phóng điện tĩnh (ESD). Lưu ý: Chỉ cần đeo vòng tĩnh điện khi tiếp",
+      "loi": null
+    },
+    {
+      "id": "GQ09",
+      "ngoai": true,
+      "kq": "tu-choi",
+      "ms": 1488,
+      "nguon": [
+        "knowledge/features/analytics/reports.md",
+        "knowledge/features/monitoring/oee-dashboard.md",
+        "knowledge/features/ai/ai-reports.md",
+        "knowledge/features/analytics/scheduled-reports.md",
+        "knowledge/domain/aoi-reports.md"
+      ],
+      "traLoi": "Tôi không có thông tin chính xác về câu hỏi này trong tài liệu hiện tại.",
+      "loi": null
+    },
+    {
+      "id": "GQ10",
+      "ngoai": true,
+      "kq": "tra-loi",
+      "ms": 3111,
+      "nguon": [
+        "knowledge/features/analytics/spc-rules.md",
+        "knowledge/features/analytics/spc-analysis.md",
+        "knowledge/features/analytics/spc-rules.md",
+        "knowledge/features/analytics/spc-analysis.md",
+        "knowledge/workflows/spc-critical-review.playbook.yaml"
+      ],
+      "traLoi": "(1) Hệ thống SPC sử dụng tổng cộng **13 quy tắc** để phát hiện bất thường, bao gồm 4 quy tắc Western Electric (WE), 8 quy tắc Nelson (NELSON) và 1 quy tắc EWMA.  \n(2) Các bước: *Chọn tab \"Control Chart + Violations\" trên UI `/spc-advanced`* → xem biểu đồ kiểm soát và danh sách vi phạm theo từng luật như `WE_1`, `WE_2`, ..., `NELSON_8`. Mỗi quy tắc được áp dụng dựa trên dữ liệu measurement point: ví dụ, `WE_1` phát hiện 1 điểm vượt ±3σ (critical), `NELSON_7` yêu cầu ≥15 điểm trong vùng ±1σ để cảnh báo. Kết quả là hệ thống sinh cảnh báo vào bảng `mp_spc_alerts`.  \n(3) Lưu ý: Các quy tắc WE và NELSON đều phát hiện 1 điểm vượt ±3σ (critical), nhưng thuộc hai chuẩn khác nhau\n\n_Dữ liệu sống: Chưa đủ dữ liệu yield (2 điểm) để đánh giá SPC trong 14 ngày qua._",
+      "loi": null
+    },
+    {
+      "id": "GQ11",
+      "ngoai": true,
+      "kq": "tra-loi",
+      "ms": 2900,
+      "nguon": [
+        "knowledge/features/monitoring/ng-rate-threshold.md",
+        "knowledge/operational-approved/users.md",
+        "knowledge/operational/operator.md",
+        "knowledge/operational/repair-station.md",
+        "knowledge/operational/threshold-approvals.md"
+      ],
+      "traLoi": "(1) Người vận hành **không được phép** tự sửa ngưỡng NG Rate vì quyền truy cập chỉ dành cho các vai trò như admin, engineer hoặc manager.  \n(2) Các bước liên quan:  \n- Truy cập `Monitoring` › `MQTT` › `NG Rate Threshold` tại URL `/mqtt/ng-rate-threshold`. Tại đây, người dùng có thể xem danh sách rules với thông tin station, threshold %, window và minSamples [1]. Tuy nhiên, để **thay đổi hoặc tạo rule**, cần quyền hành động như `create`, `update`, `delete` (được kiểm soát bởi middleware `requirePermission('mqtt_ng_rate_threshold')`).  \n- Nếu người vận hành cố thao tác, hệ thống sẽ hiển thị thông báo lỗi do thiếu quyền. Không có bước nào trong UI cho phép sửa ngưỡng mà không yêu cầu xác nhận hoặc phê duyệt [1].  \n\n(3) Lỗi thường gặp: Người dùng thấy màn hình nhưng không thể chỉnh sửa → nguyên nhân là **thiếu quyền** (`",
+      "loi": null
+    },
+    {
+      "id": "GQ12",
+      "ngoai": true,
+      "kq": "tu-choi",
+      "ms": 1159,
+      "nguon": [
+        "knowledge/features/settings/shift-config.md",
+        "knowledge/features/settings/shift-config.md",
+        "knowledge/domain/howto-shift-change.md",
+        "knowledge/domain/howto-shift-change.md",
+        "howto-shift-change.md"
+      ],
+      "traLoi": "Tôi không có thông tin chính xác về câu hỏi này trong tài liệu hiện tại.",
+      "loi": null
+    },
+    {
+      "id": "GS01",
+      "ngoai": true,
+      "kq": "tra-loi",
+      "ms": 1291,
+      "nguon": [
+        "knowledge/features/monitoring/oee-dashboard.md",
+        "knowledge/features/monitoring/oee-dashboard.md",
+        "knowledge/features/alerts/oee-targets.md",
+        "knowledge/features/alerts/oee-targets.md",
+        "knowledge/operational/oee-target-settings.md"
+      ],
+      "traLoi": "Chưa có dữ liệu OEE trong kỳ này.",
+      "loi": null
+    },
+    {
+      "id": "GS02",
+      "ngoai": true,
+      "kq": "tra-loi",
+      "ms": 2984,
+      "nguon": [
+        "knowledge/domain/howto-lot-management.md",
+        "knowledge/workflows/change-recipe-line-start.playbook.yaml",
+        "knowledge/workflows/change-recipe-line-start.playbook.yaml",
+        "knowledge/domain/howto-lot-management.md",
+        "knowledge/operational/feeder-verify.md"
+      ],
+      "traLoi": "(1) Không thể xác định chính xác lô nào đang chạy trên line 4 vì không có thông tin về trạng thái hiện tại của line hoặc danh sách các lô được lập kế hoạch.  \n(2) Để kiểm tra, cần:  \n- Truy cập UI tại `Menu › Sản xuất › AOI Inspection` và chọn line 4 [1]. Nếu line đang ở trạng thái `idle`, sẽ hiển thị danh sách lô `planned`. Khi đã chạy, hệ thống gán `lotId` cho từng sản phẩm scan và trạng thái chuyển sang `running` với trường `startedAt = now()` [1]. Trong UI, tìm mục có trạng thái là `running` để xác định lô đang thực hiện.  \n- Nếu không thấy trạng thái hoạt động, kiểm tra màn hình `/machine-status`, nơi hiển thị thông tin về máy và recipe đang chạy — tuy nhiên, đây chỉ cung cấp dữ liệu về sản phẩm/recipe chứ không trực tiếp cho biết tên hoặc ID của lô [2].  \n\n(3) L",
+      "loi": null
+    },
+    {
+      "id": "GS03",
+      "ngoai": true,
+      "kq": "tra-loi",
+      "ms": 3132,
+      "nguon": [
+        "knowledge/domain/aoi-reports.md",
+        "knowledge/domain/aoi-reports.md",
+        "knowledge/domain/aoi-defect-types.md",
+        "knowledge/operational-approved/work-orders.md",
+        "knowledge/features/analytics/reports.md"
+      ],
+      "traLoi": "(1) Tỷ lệ rework tháng này là 0%, không có dữ liệu về số lượng bảng kiểm tra hoặc lỗi cần xử lý.  \n(2) *Bước 1*: Truy cập báo cáo tổng quan tại `/reports` → tab `Executive`, chọn khoảng thời gian \"tháng hiện tại\". Tại đây, hệ thống hiển thị chỉ số Rework Rate theo công thức: **Rework / Total < 5%** [1]. Nếu không có dữ liệu, màn hình sẽ cho thấy trạng thái rỗng (empty state). *Kết quả*: Không thể xác định tỷ lệ rework vì chưa có giá trị cụ thể.  \n*Bước 2*: Kiểm tra báo cáo chi tiết tại tab `Detailed` → lọc theo máy và ngày để xem số lượng bảng bị rework. Nếu không thấy dữ liệu, hệ thống sẽ hiển thị thông báo \"không có dữ liệu\" [5]. *Kết quả*: Không tìm được giá trị Rework Rate cụ thể do thiếu dữ liệu kiểm tra thực tế\n\n_Nguồn số liệu: `daily_statistics` · 1 hàng_",
+      "loi": null
+    },
+    {
+      "id": "GS04",
+      "ngoai": true,
+      "kq": "tra-loi",
+      "ms": 1613,
+      "nguon": [
+        "knowledge/features/analytics/category-analytics.md",
+        "knowledge/features/analytics/pareto-analysis.md",
+        "knowledge/domain/howto-pareto-defects.md",
+        "knowledge/features/analytics/pareto-analysis.md",
+        "knowledge/domain/howto-ng-handling-sop.md"
+      ],
+      "traLoi": "Không có lỗi NG nào theo defectType trong 7 ngày qua.",
+      "loi": null
+    },
+    {
+      "id": "GS05",
+      "ngoai": true,
+      "kq": "tu-choi",
+      "ms": 925,
+      "nguon": [
+        "knowledge/domain/howto-edge-model-deploy.md",
+        "knowledge/domain/aoi-troubleshooting.md",
+        "knowledge/domain/aoi-troubleshooting.md",
+        "knowledge/domain/howto-edge-model-deploy.md",
+        "knowledge/features/monitoring/machine-registration.md"
+      ],
+      "traLoi": "Tôi không có thông tin chính xác về câu hỏi này trong tài liệu hiện tại.\n\n**Gợi ý:**\n- Thử hỏi cụ thể hơn (tên tính năng, màn hình, mã lỗi, mã máy/lô)\n- Nếu hỏi về dữ liệu thời gian thực (sản lượng, máy, lỗi), hãy nêu rõ ngày/khoảng thời gian\n- Hoặc liên hệ kỹ thuật viên để được hỗ trợ\n\nBạn muốn xem trạng thái **máy nào** hoặc **toàn bộ máy đang offline**? Hãy nêu rõ tên máy/line, hoặc nói \"máy đang offline\" để tôi liệt kê.",
+      "loi": null
+    },
+    {
+      "id": "GS06",
+      "ngoai": true,
+      "kq": "tra-loi",
+      "ms": 4052,
+      "nguon": [
+        "knowledge/features/monitoring/ng-rate-threshold.md",
+        "knowledge/features/analytics/defect-prediction.md",
+        "knowledge/features/monitoring/ng-rate-threshold.md",
+        "knowledge/domain/howto-ng-handling-sop.md",
+        "knowledge/domain/howto-ng-handling-sop.md"
+      ],
+      "traLoi": "(1) Tỉ lệ NG hiện tại của line 1 là 0%, do hệ thống đã kiểm tra 0 sản phẩm trong hôm nay.  \n(2) Bước 1: Truy cập `Monitoring` › `MQTT` › `NG Rate Threshold`, ở bảng hiển thị các rule, tìm station có tên chứa \"Line 1\". Hiện tại không có dữ liệu inspection để tính NG rate → kết quả là NG = 0%. Bước 2: Kiểm tra thông báo trên giao diện AOI Live View hoặc tab **Sản phẩm NG** trong menu `Sản xuất › AOI Inspection` — nếu thấy badge \"NG\" thì mới có sản phẩm lỗi. Hiện tại không có dữ liệu, nên kết quả là OK=0, NG=0 [1].  \n(3) Lưu ý: Không thể xác định chính xác ngưỡng hoặc tỉ lệ hiện hành vì chưa có inspection data; hệ thống chỉ báo khi vượt ngưỡng (mặc định 5%) trong cửa sổ thời gian. Nếu không thấy dữ liệu\n\n_Nguồn số liệu: `product_inspections` · 0 hàng_",
+      "loi": null
+    },
+    {
+      "id": "GS07",
+      "ngoai": true,
+      "kq": "tra-loi",
+      "ms": 3677,
+      "nguon": [
+        "knowledge/features/monitoring/ng-rate-threshold.md",
+        "knowledge/workflows/ng-burst-response.playbook.yaml",
+        "knowledge/features/monitoring/ng-rate-threshold.md",
+        "knowledge/operational/threshold-approvals.md",
+        "knowledge/domain/howto-ng-handling-sop.md"
+      ],
+      "traLoi": "(1) Hôm nay không có lô nào vượt ngưỡng NG, với tỉ lệ lỗi (NG Rate) là 0%.  \n(2) Dữ liệu thời gian thực cho thấy: `Hôm nay đã kiểm tra 0 sản phẩm: OK=0, NG=0, NTF=0. Tỉ lệ NG = 0%`. Điều này xác nhận không có bất kỳ lô nào vượt ngưỡng cảnh báo (mặc định ≥5%). Trong UI, người dùng truy cập `/mqtt/ng-rate-threshold` để xem các rule và trạng thái alert; hiện tại tất cả các rule đều chưa được trigger do NG Rate = 0%. Nếu cần kiểm tra chi tiết hơn, có thể mở màn hình `/mqtt-alerts` hoặc `/ai-inspection-analytics`.  \n(3) Lưu ý: Lỗi thường gặp là hệ thống không phát cảnh báo dù có lỗi nếu `enabled=false`, hoặc ngưỡng quá thấp gây spam. Trong trường hợp này, do NG Rate = 0%, nên không có alert nào\n\n_Nguồn số liệu: `product_inspections` · 0 hàng_",
+      "loi": null
+    },
+    {
+      "id": "GS08",
+      "ngoai": true,
+      "kq": "tu-choi",
+      "ms": 1942,
+      "nguon": [
+        "knowledge/features/monitoring/oee-dashboard.md",
+        "knowledge/features/analytics/reports.md",
+        "server/services/downtimeDetectionService.ts",
+        "knowledge/features/monitoring/oee-dashboard.md",
+        "knowledge/features/ai/ai-reports.md"
+      ],
+      "traLoi": "Tôi không có thông tin chính xác về câu hỏi này trong tài liệu hiện tại.\n\n_Nguồn số liệu: `daily_statistics` · 1 hàng_",
+      "loi": null
+    },
+    {
+      "id": "GS09",
+      "ngoai": true,
+      "kq": "tra-loi",
+      "ms": 3137,
+      "nguon": [
+        "knowledge/domain/howto-spc-control.md",
+        "knowledge/domain/howto-spc-control.md",
+        "knowledge/features/production/production-dashboard.md",
+        "docs/ECOSYSTEM/06_TECHNICIAN_COPILOT_DESIGN_2026-06.md",
+        "aoi-reports.md"
+      ],
+      "traLoi": "(1) Cpk dưới 1.33 có thể được phát hiện qua biểu đồ SPC hoặc thông báo cảnh báo từ hệ thống khi vi phạm ngưỡng, đặc biệt là tại các điểm đo có giá trị Cpk < 1.0 hay trong khoảng (1.0 – 1.33).  \n(2) Bước 1: Truy cập `Menu › Chất lượng › SPC`, chọn sản phẩm và điểm đo → hệ thống hiển thị đường UCL/LCL/CL cùng chỉ số Cpk tại mỗi điểm đo [1]. Tại đây, kỹ sư thấy các giá trị **Cpk < 1.33** (ví dụ: Cpk = 0.78) được đánh dấu rõ ràng hoặc có thông báo cảnh báo. Bước 2: Xem log `spc_violations` để xác minh điểm đo vi phạm, ví dụ như \"Điểm đo 'Cao độ chân chì' – Cpk hiện tại 0.78 (dưới ngưỡng 1.",
+      "loi": null
+    },
+    {
+      "id": "GS10",
+      "ngoai": true,
+      "kq": "tu-choi",
+      "ms": 1785,
+      "nguon": [
+        "knowledge/domain/howto-shift-change.md",
+        "knowledge/domain/howto-shift-change.md",
+        "knowledge/domain/aoi-reports.md",
+        "knowledge/features/settings/shift-config.md",
+        "knowledge/features/monitoring/ng-rate-threshold.md"
+      ],
+      "traLoi": "Tôi không có thông tin chính xác về câu hỏi này trong tài liệu hiện tại.",
+      "loi": null
+    },
+    {
+      "id": "GS11",
+      "ngoai": true,
+      "kq": "tu-choi",
+      "ms": 1444,
+      "nguon": [
+        "aoi-troubleshooting.md",
+        "knowledge/domain/aoi-troubleshooting.md",
+        "knowledge/domain/aoi-defect-types.md",
+        "knowledge/domain/aoi-defect-types.md",
+        "knowledge/features/inspection/aoi-packages.md"
+      ],
+      "traLoi": "Tôi không có thông tin chính xác về câu hỏi này trong tài liệu hiện tại.\n\n**Gợi ý:**\n- Thử hỏi cụ thể hơn (tên tính năng, màn hình, mã lỗi, mã máy/lô)\n- Nếu hỏi về dữ liệu thời gian thực (sản lượng, máy, lỗi), hãy nêu rõ ngày/khoảng thời gian\n- Hoặc liên hệ kỹ thuật viên để được hỗ trợ\n\nBạn muốn xem trạng thái **máy nào** hoặc **toàn bộ máy đang offline**? Hãy nêu rõ tên máy/line, hoặc nói \"máy đang offline\" để tôi liệt kê.",
+      "loi": null
+    },
+    {
+      "id": "GS12",
+      "ngoai": true,
+      "kq": "tra-loi",
+      "ms": 4374,
+      "nguon": [
+        "knowledge/workflows/spc-critical-review.playbook.yaml",
+        "knowledge/features/analytics/spc-analysis.md",
+        "knowledge/domain/howto-spc-control.md",
+        "knowledge/workflows/spc-critical-review.playbook.yaml",
+        "knowledge/features/analytics/spc-analysis.md"
+      ],
+      "traLoi": "(1) Hệ thống không phát hiện vi phạm quy tắc SPC trong 7 ngày và 14 ngày qua do thiếu dữ liệu yield.  \n(2) Bước 1: Truy cập `/spc-analysis` → chọn khoảng thời gian (ví dụ 7 hoặc 14 ngày), máy sản xuất để kiểm tra. Kết quả hiển thị tab `Anomaly`: nếu có điểm vi phạm, sẽ được tô đỏ và cảnh báo; hiện tại không có dữ liệu đủ để phát hiện [2]. Bước 2: Gọi API `trpc.spcAnalysis.detectAnomalies({ days: 7 })` → trả về danh sách các điểm bất thường với z-score. Nếu kết quả rỗng, hệ thống thông báo \"Chưa đủ dữ liệu yield (0 điểm)\" hoặc \"Không có forecast\" [1]. Bước 3: Kiểm tra điều kiện tiền xử lý: cần ≥30 điểm lịch sử để dự báo → nếu thiếu thì không thể phát hiện vi phạm. Kết quả là không thấy bất thường nào trong\n\n<sub>Đa bước: 2 lượt gọi tool (analytics_spc_status → analytics_spc_status), 1226 ms.</sub>",
+      "loi": null
+    }
+  ]
+}

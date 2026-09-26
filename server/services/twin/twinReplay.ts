@@ -258,7 +258,7 @@ export async function runReplay(q: ReplayQuery): Promise<ReplayResult> {
              (array_agg("textValue" ORDER BY "ts" DESC))[1] AS "textValue"
       FROM ot_telemetry
       WHERE "ts" >= ${fromIso}::timestamptz AND "ts" < ${toIso}::timestamptz
-        AND lower("metric") = ANY(${allMetrics})
+        AND lower("metric") = ANY(${sql`ARRAY[${sql.join(allMetrics.map((m) => sql`${m}`), sql`,`)}]`}::text[])
       GROUP BY bucket, "machineId", "deviceId", "metric"
       ORDER BY bucket ASC
     `);

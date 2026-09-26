@@ -4,10 +4,15 @@
  * Endpoints for managing quality gate configs, processing inspections,
  * and reviewing AI decisions.
  */
-import { protectedProcedure, router } from "../_core/trpc";
-import { adminProcedure } from "./_shared";
+import { moduleProcedure, moduleGate, router } from "../_core/trpc";
+import { adminProcedure as adminProcedureBase } from "./_shared";
+// ★ Cổng giấy phép MOD_AI — chỉ THÊM chiều giấy phép, RBAC/vai/2FA giữ nguyên từng ký tự.
+//   Không-brick + fail-safe ở `_core/moduleGate.ts`; lượng từ canh ở `congGiayPhepAiCensus.test.ts`.
+const protectedProcedure = moduleProcedure("MOD_AI");
+const adminProcedure = adminProcedureBase.use(moduleGate("MOD_AI"));
 import { z } from "zod";
 import { TRPCError } from "@trpc/server";
+import { appError } from "../_core/appError";
 import { getDb } from "../db";
 import { eq, and, desc, sql } from "drizzle-orm";
 import {
@@ -68,9 +73,9 @@ export const aiQualityGateRouter = router({
     .input(z.object({ id: z.number() }))
     .query(async ({ input }) => {
       const db = await getDb();
-      if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Database not available" });
+      if (!db) throw appError("INTERNAL_SERVER_ERROR", "DB_UNAVAILABLE", undefined, "Database not available");
       const [config] = await db.select().from(aiQualityGateConfigs).where(eq(aiQualityGateConfigs.id, input.id)).limit(1);
-      if (!config) throw new TRPCError({ code: "NOT_FOUND", message: "Quality gate config not found" });
+      if (!config) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "qualityGateConfig" }, "Quality gate config not found");
       return config;
     }),
 
@@ -95,7 +100,7 @@ export const aiQualityGateRouter = router({
     )
     .mutation(async ({ input, ctx }) => {
       const db = await getDb();
-      if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Database not available" });
+      if (!db) throw appError("INTERNAL_SERVER_ERROR", "DB_UNAVAILABLE", undefined, "Database not available");
       const [result] = await db
         .insert(aiQualityGateConfigs)
         .values({
@@ -130,7 +135,7 @@ export const aiQualityGateRouter = router({
     )
     .mutation(async ({ input }) => {
       const db = await getDb();
-      if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Database not available" });
+      if (!db) throw appError("INTERNAL_SERVER_ERROR", "DB_UNAVAILABLE", undefined, "Database not available");
       const { id, autoOkThreshold, autoNgThreshold, reviewThreshold, ...rest } = input;
       const updateData: Record<string, unknown> = { ...rest, updatedAt: new Date() };
       if (autoOkThreshold !== undefined) updateData.autoOkThreshold = autoOkThreshold.toFixed(4);
@@ -141,7 +146,7 @@ export const aiQualityGateRouter = router({
         .set(updateData)
         .where(eq(aiQualityGateConfigs.id, id))
         .returning();
-      if (!result) throw new TRPCError({ code: "NOT_FOUND", message: "Config not found" });
+      if (!result) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "qualityGateConfig" }, "Config not found");
       invalidateConfigCache();
       return result;
     }),
@@ -150,7 +155,7 @@ export const aiQualityGateRouter = router({
     .input(z.object({ id: z.number() }))
     .mutation(async ({ input }) => {
       const db = await getDb();
-      if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Database not available" });
+      if (!db) throw appError("INTERNAL_SERVER_ERROR", "DB_UNAVAILABLE", undefined, "Database not available");
       await db.delete(aiQualityGateConfigs).where(eq(aiQualityGateConfigs.id, input.id));
       invalidateConfigCache();
       return { success: true };
@@ -167,14 +172,14 @@ export const aiQualityGateRouter = router({
     )
     .mutation(async ({ input }) => {
       const db = await getDb();
-      if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Database not available" });
+      if (!db) throw appError("INTERNAL_SERVER_ERROR", "DB_UNAVAILABLE", undefined, "Database not available");
 
       // Get inspection to find machine & product
       const inspResult = await db.execute(
         sql`SELECT "machineId", "productModelId" FROM product_inspections WHERE id = ${input.inspectionId}`,
       ) as any;
       const insp = inspResult.rows?.[0];
-      if (!insp) throw new TRPCError({ code: "NOT_FOUND", message: "Inspection not found" });
+      if (!insp) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "inspection" }, "Inspection not found");
 
       // Find matching quality gate config
       const config = await getQualityGateConfig(
@@ -182,10 +187,7 @@ export const aiQualityGateRouter = router({
         insp.productModelId,
       );
       if (!config) {
-        throw new TRPCError({
-          code: "NOT_FOUND",
-          message: "No quality gate config found for this machine/product",
-        });
+        throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "qualityGateConfig" }, "No quality gate config found for this machine/product");
       }
 
       // Load image from storage
@@ -194,7 +196,7 @@ export const aiQualityGateRouter = router({
         : path.join(process.cwd(), "uploads");
       const imagePath = path.join(uploadsRoot, input.imageKey);
       if (!fs.existsSync(imagePath)) {
-        throw new TRPCError({ code: "NOT_FOUND", message: "Image file not found" });
+        throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "image" }, "Image file not found");
       }
       const imageBuffer = fs.readFileSync(imagePath);
 
@@ -245,7 +247,7 @@ export const aiQualityGateRouter = router({
     )
     .mutation(async ({ input, ctx }) => {
       const db = await getDb();
-      if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Database not available" });
+      if (!db) throw appError("INTERNAL_SERVER_ERROR", "DB_UNAVAILABLE", undefined, "Database not available");
       const [result] = await db
         .update(aiQualityGateResults)
         .set({
@@ -256,7 +258,7 @@ export const aiQualityGateRouter = router({
         })
         .where(eq(aiQualityGateResults.id, input.resultId))
         .returning();
-      if (!result) throw new TRPCError({ code: "NOT_FOUND", message: "Quality gate result not found" });
+      if (!result) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "qualityGateResult" }, "Quality gate result not found");
 
       // Also update the inspection's AI decision based on human review
       const newDecision = input.reviewDecision === "OK" ? "AUTO_OK" : "AUTO_NG";
@@ -340,7 +342,7 @@ export const aiQualityGateRouter = router({
     .input(z.object({ experimentId: z.number(), configId: z.number() }))
     .mutation(async ({ input }) => {
       const db = await getDb();
-      if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Database not available" });
+      if (!db) throw appError("INTERNAL_SERVER_ERROR", "DB_UNAVAILABLE", undefined, "Database not available");
       await pauseExperiment(input.experimentId);
       await db
         .update(aiQualityGateConfigs)
@@ -419,7 +421,7 @@ export const aiQualityGateRouter = router({
     )
     .mutation(async ({ input, ctx }) => {
       const db = await getDb();
-      if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Database not available" });
+      if (!db) throw appError("INTERNAL_SERVER_ERROR", "DB_UNAVAILABLE", undefined, "Database not available");
       const [result] = await db
         .insert(aiEnsembleConfigs)
         .values({
@@ -446,7 +448,7 @@ export const aiQualityGateRouter = router({
     )
     .mutation(async ({ input }) => {
       const db = await getDb();
-      if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Database not available" });
+      if (!db) throw appError("INTERNAL_SERVER_ERROR", "DB_UNAVAILABLE", undefined, "Database not available");
       const { id, cascadeThreshold, ...rest } = input;
       const updateData: Record<string, unknown> = { ...rest, updatedAt: new Date() };
       if (cascadeThreshold !== undefined) updateData.cascadeThreshold = cascadeThreshold.toFixed(4);
@@ -455,7 +457,7 @@ export const aiQualityGateRouter = router({
         .set(updateData)
         .where(eq(aiEnsembleConfigs.id, id))
         .returning();
-      if (!result) throw new TRPCError({ code: "NOT_FOUND", message: "Ensemble config not found" });
+      if (!result) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "ensembleConfig" }, "Ensemble config not found");
       return result;
     }),
 
@@ -463,7 +465,7 @@ export const aiQualityGateRouter = router({
     .input(z.object({ id: z.number() }))
     .mutation(async ({ input }) => {
       const db = await getDb();
-      if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Database not available" });
+      if (!db) throw appError("INTERNAL_SERVER_ERROR", "DB_UNAVAILABLE", undefined, "Database not available");
       await db.delete(aiEnsembleConfigs).where(eq(aiEnsembleConfigs.id, input.id));
       return { success: true };
     }),

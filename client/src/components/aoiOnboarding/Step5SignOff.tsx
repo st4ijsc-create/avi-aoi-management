@@ -15,6 +15,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { BadgeCheck, CheckCircle2, Info, Loader2, PenLine, XCircle } from "lucide-react";
 import { toast } from "sonner";
+import { mapTrpcError } from "@/lib/trpcErrors";
 import type { StepProps } from "./types";
 
 export default function Step5SignOff({ state, update, onBack }: StepProps) {
@@ -39,7 +40,7 @@ export default function Step5SignOff({ state, update, onBack }: StepProps) {
       void utils.aoiOnboarding.status.invalidate();
       void utils.aoiOnboarding.listAoiMachines.invalidate();
     },
-    onError: (err) => toast.error(t("aoiOnboarding.step5.signError"), { description: err.message }),
+    onError: (err) => toast.error(t("aoiOnboarding.step5.signError"), { description: mapTrpcError(err) }),
   });
 
   const usingOverride = !state.dryRunPassed && state.overrideReason.trim().length >= 5;

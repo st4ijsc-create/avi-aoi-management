@@ -16,6 +16,7 @@ import {
 } from "@/components/ui/alert-dialog";
 import { trpc } from "@/lib/trpc";
 import { toast } from "sonner";
+import { mapTrpcError } from "@/lib/trpcErrors";
 import { 
   Monitor, 
   Smartphone, 
@@ -29,6 +30,28 @@ import {
   Trash2
 } from "lucide-react";
 import { formatDistanceToNow } from "date-fns";
+
+// doc65 PRO-100 — fallback parse UA phía FE khi server chưa nhận diện được browser/os
+// (từng hiển thị "Trình duyệt không rõ trên Hệ điều hành không rõ" trong khi chuỗi UA
+// ngay bên dưới ghi rõ Windows NT 10.0 / HeadlessChrome).
+function parseUaFallback(ua: string | null | undefined): { browser: string | null; os: string | null } {
+  if (!ua) return { browser: null, os: null };
+  let browser: string | null = null;
+  let os: string | null = null;
+  if (/HeadlessChrome\//.test(ua)) browser = "Chrome (Headless)";
+  else if (/Edg\//.test(ua)) browser = "Edge";
+  else if (/OPR\//.test(ua)) browser = "Opera";
+  else if (/Chrome\//.test(ua)) browser = "Chrome";
+  else if (/Firefox\//.test(ua)) browser = "Firefox";
+  else if (/Safari\//.test(ua) && /Version\//.test(ua)) browser = "Safari";
+  if (/Windows NT 10\./.test(ua)) os = "Windows 10/11";
+  else if (/Windows NT/.test(ua)) os = "Windows";
+  else if (/Mac OS X|Macintosh/.test(ua)) os = "macOS";
+  else if (/Android/.test(ua)) os = "Android";
+  else if (/iPhone|iPad|iOS/.test(ua)) os = "iOS";
+  else if (/Linux/.test(ua)) os = "Linux";
+  return { browser, os };
+}
 import { vi } from "date-fns/locale";
 import { useTranslation } from 'react-i18next';
 
@@ -45,7 +68,7 @@ export default function SessionManagement() {
       refetch();
     },
     onError: (error) => {
-      toast.error(error.message || t('session.logoutError'));
+      toast.error(t('session.logoutError'), { description: mapTrpcError(error) });
     },
   });
 
@@ -55,7 +78,7 @@ export default function SessionManagement() {
       refetch();
     },
     onError: (error) => {
-      toast.error(error.message || t('session.logoutAllError'));
+      toast.error(t('session.logoutAllError'), { description: mapTrpcError(error) });
     },
   });
 
@@ -87,8 +110,9 @@ export default function SessionManagement() {
   return (
     <DashboardLayout>
       <PageContainer>
-        {/* Header — DS PageHeader (shared pattern) */}
+        {/* Header — DS PageHeader (shared pattern); doc65 PRO-100: icon-square đồng nhất liên màn */}
         <PageHeader
+          icon={<Monitor className="h-6 w-6" />}
           title={t('session.title')}
           description={t('session.description')}
           actions={
@@ -97,9 +121,12 @@ export default function SessionManagement() {
                 <RefreshCw className="h-4 w-4 mr-2" />
                 {t('common.refresh')}
               </Button>
+              {/* doc65 V1 (ISA-101): đỏ filled thường trực = mượn màu alarm; hành động
+                  phá hủy dùng outline + màu chữ đỏ, đỏ đậm chỉ ở dialog xác nhận. */}
               {sessions && sessions.length > 1 && (
                 <Button
-                  variant="destructive"
+                  variant="outline"
+                  className="border-destructive/40 text-destructive hover:bg-destructive/10 hover:text-destructive"
                   onClick={() => setShowRevokeAllDialog(true)}
                 >
                   <LogOut className="h-4 w-4 mr-2" />
@@ -146,15 +173,26 @@ export default function SessionManagement() {
               </div>
             ) : sessions && sessions.length > 0 ? (
               <div className="space-y-4">
-                {sessions.map((session, index) => (
+                {sessions.map((session) => (
+                  /**
+                   * ★★★ Review TOÀN NHÁNH Pha 8 · **M-4** — *"phiên hiện tại"* đọc từ **`isCurrent`
+                   * do MÁY CHỦ suy ra**, không từ `index === 0`.
+                   *
+                   * `db.getUserSessions` sắp theo `lastActivityAt desc`, nên hàng đầu là hàng **hoạt
+                   * động gần nhất** — không nhất thiết là phiên của người đang xem. Hệ quả thật của
+                   * phép đoán cũ: nút thu hồi bị **giấu** ở một phiên KHÔNG phải của bạn, và **hiện**
+                   * ở chính phiên bạn đang dùng ⇒ tự đá mình ra trong khi giao diện khai ngược lại.
+                   * Task 5 đã dựng `isCurrent` ở máy chủ cho **cả hai** tuyến; trang này (khác với
+                   * `components/SessionManagement.tsx`) chưa dùng — grep đo được **0** điểm.
+                   */
                   <div
                     key={session.id}
                     className={`flex items-center gap-4 p-4 border rounded-lg ${
-                      index === 0 ? "border-success/50 bg-success/5" : ""
+                      session.isCurrent ? "border-success/50 bg-success/5" : ""
                     }`}
                   >
                     <div className={`p-2 rounded-full ${
-                      index === 0 ? "bg-success/20 text-success" : "bg-muted"
+                      session.isCurrent ? "bg-success/20 text-success" : "bg-muted"
                     }`}>
                       {getDeviceIcon(session.deviceType)}
                     </div>
@@ -162,9 +200,17 @@ export default function SessionManagement() {
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-2">
                         <span className="font-medium truncate">
-                          {session.browser || t('session.unknownBrowser', 'Unknown browser')} {t('session.deviceOn', 'on')} {session.os || t('session.unknownOs', 'Unknown OS')}
+                          {(() => {
+                            // server có thể trả sẵn CHUỖI "không rõ/Unknown" (truthy) → coi như thiếu.
+                            const known = (v: string | null | undefined) => (v && !/không rõ|unknown/i.test(v) ? v : null);
+                            // chuỗi UA thô nằm ở deviceName (authService.ts: deviceName = audit.userAgent)
+                            const ua = parseUaFallback(session.deviceName);
+                            const browser = known(session.browser) || ua.browser || t('session.unknownBrowser', 'Trình duyệt không rõ');
+                            const os = known(session.os) || ua.os || t('session.unknownOs', 'HĐH không rõ');
+                            return `${browser} ${t('session.deviceOn', 'trên')} ${os}`;
+                          })()}
                         </span>
-                        {index === 0 && (
+                        {session.isCurrent && (
                           <StatusBadge status={t('session.currentSession')} tone="success" />
                         )}
                       </div>
@@ -179,7 +225,7 @@ export default function SessionManagement() {
                         {session.ipAddress && (
                           <span className="flex items-center gap-1">
                             <MapPin className="h-3 w-3" />
-                            {session.ipAddress}
+                            {/^(::1|127\.0\.0\.1)$/.test(session.ipAddress) ? t('session.localhost', 'Máy cục bộ') : session.ipAddress}
                             {session.location && ` (${session.location})`}
                           </span>
                         )}
@@ -193,7 +239,7 @@ export default function SessionManagement() {
                       </div>
                     </div>
 
-                    {index !== 0 && (
+                    {!session.isCurrent && (
                       <Button 
                         variant="ghost" 
                         size="sm"

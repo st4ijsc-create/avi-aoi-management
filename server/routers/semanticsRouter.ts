@@ -16,6 +16,7 @@
  */
 import { z } from "zod";
 import { TRPCError } from "@trpc/server";
+import { appError } from "../_core/appError";
 import { router, protectedProcedure } from "../_core/trpc";
 import {
   listMetrics,
@@ -51,10 +52,7 @@ export const semanticsRouter = router({
     .query(({ input }) => {
       const def = getDefinition(input.metric);
       if (!def) {
-        throw new TRPCError({
-          code: "NOT_FOUND",
-          message: `Unknown metric "${input.metric}" — see semantics.list`,
-        });
+        throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "metricDefinition" }, `Unknown metric "${input.metric}" — see semantics.list`);
       }
       return def;
     }),
@@ -70,10 +68,7 @@ export const semanticsRouter = router({
       });
     } catch (e) {
       if (e instanceof MetricComputeError) {
-        throw new TRPCError({
-          code: e.code === "METRIC_NOT_FOUND" ? "NOT_FOUND" : "BAD_REQUEST",
-          message: e.message,
-        });
+        throw appError(e.code === "METRIC_NOT_FOUND" ? "NOT_FOUND" : "BAD_REQUEST", "OPERATION_FAILED", { operation: "computeMetric" }, e.message);
       }
       throw e;
     }

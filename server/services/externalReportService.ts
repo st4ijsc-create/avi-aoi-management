@@ -38,12 +38,21 @@ import {
 import {
   getDefectParetoByCategory,
   getYieldByProduct,
+  getYieldTrendByDay,
   getYieldTrendByWeek,
   getWorkstationHeatmap,
   type ReportRollupFilters,
 } from "../db/reportAggregators";
-import { getShiftReport, getYieldTrendData } from "../db/statistics";
+import { getShiftReport, type ShiftReportRow } from "../db/statistics";
 import { resolveFactoryDateWindow, executeRows } from "../utils/kpi";
+// ★★★ 2026-08-17 — xem `_core/reportExportScope.ts`. `exportScopeArgs(user)` chỉ nhận `{id, role}`
+// (hình dạng của `ctx.user`) nên lối "lấy danh tính từ `input`" KHÔNG diễn đạt được.
+import {
+  exportScopeArgs,
+  exportScopeNote,
+  resolveExportScope,
+  type ExportActor,
+} from "../_core/reportExportScope";
 
 // ─── Vocabulary ──────────────────────────────────────────────────────────────
 
@@ -160,6 +169,22 @@ export interface GenerateExternalReportInput {
   createdBy?: number | null;
   /** Artifact provenance. Default "external" (mobile / third-party). */
   source?: ReportArtifactSource;
+  /**
+   * ★★★ 2026-08-17 — DANH TÍNH NGƯỜI XUẤT, trục phạm vi của TOÀN BỘ họ bộ tổng hợp bên dưới.
+   *
+   * **Khác `createdBy`.** `createdBy` chỉ là dấu vết "ai tạo" ghi vào hàng artefact — nó KHÔNG
+   * đi vào truy vấn nào. Đó chính là lỗ đã đo: `reportArtifact.generate` là `protectedProcedure`
+   * mà `ctx.user.id` chỉ chạm tới `createdBy`, nên **bất kỳ tài khoản đăng nhập nào cũng dựng
+   * được artefact số liệu TOÀN CỤC rồi tải về**.
+   *
+   * ⚠⚠ LUÔN từ `ctx.user` / `req.externalUser` (máy chủ tự xác thực), KHÔNG BAO GIỜ từ thân
+   * yêu cầu. Kiểu `ExportActor` chỉ có `{id, role}` nên lối sai không diễn đạt được.
+   *
+   * Bỏ trống = KHÔNG lọc. Đó là hình dạng HỢP LỆ của đúng một lối đi: khoá master
+   * server-to-server (`x-master-key`) ở `/api/external/reports/generate` — người gọi tin cậy,
+   * không có danh tính người dùng nào để thu hẹp. Mọi lối có phiên PHẢI truyền.
+   */
+  actor?: ExportActor;
 }
 
 export interface GenerateExternalReportResult {
@@ -217,10 +242,16 @@ export function resolveReportWindow(
   return { start, end };
 }
 
-/** Map the flexible external filter object → the R1 aggregator filter shape. */
+/**
+ * Map the flexible external filter object → the R1 aggregator filter shape.
+ *
+ * ⚠ `actor` là tham số RIÊNG, không lấy từ `f`: `f` là thân yêu cầu do người gọi soạn, còn
+ * danh tính phải đến từ máy chủ. Hai nguồn không được trộn vào một đối tượng.
+ */
 export function buildRollupFilters(
   window: { start: Date; end: Date },
   f: ExternalReportFilters | undefined,
+  actor?: ExportActor,
 ): ReportRollupFilters {
   const filters = f ?? {};
   return {
@@ -231,24 +262,8 @@ export function buildRollupFilters(
     lineId: toInt(filters.lineId ?? filters.line),
     machineId: toInt(filters.machineId ?? filters.machine),
     productModelId: toInt(filters.productModelId ?? filters.productId ?? filters.product),
+    ...(actor ? exportScopeArgs(actor) : {}),
   };
-}
-
-/** Resolve factory/line ids → the varchar codes getYieldTrendData filters on. */
-async function resolveScopeCodes(
-  filters: ReportRollupFilters,
-): Promise<{ factoryCode?: string }> {
-  if (!filters.factoryId) return {};
-  const db = await getDb();
-  if (!db) return {};
-  const { factories } = await import("../../drizzle/schema");
-  const { eq } = await import("drizzle-orm");
-  const [row] = await db
-    .select({ code: factories.code })
-    .from(factories)
-    .where(eq(factories.id, filters.factoryId))
-    .limit(1);
-  return { factoryCode: row?.code };
 }
 
 // ─── i18n column/title labels ──────────────────────────────────────────────────
@@ -320,14 +335,49 @@ interface OeeRow {
  * Per-machine-per-day OEE from the persisted oee_metrics table (values stored
  * ×100 → /100 back to a percent number). Scoped to the window + optional
  * machineId. Sparse by design (R1 finding: OEE is written on-demand only).
+ *
+ * ★★★ 2026-08-17 — PHẠM VI CHO MỘT BẢNG KHÔNG CÓ CỘT TENANT.
+ *
+ * `oee_metrics` (drizzle/schema/oee.ts) chỉ có `machineId`/`machineCode` — **không có**
+ * `factoryCode`/`corporateCode`, nên mệnh đề của `getAccessFilterConditions` (vốn nói về
+ * `"product_inspections"."factoryCode"`) không gắn thẳng vào được.
+ *
+ * Bản vá **không** dựng lại luật phân quyền theo đường `machines → stations → production_lines
+ * → workshops → factories.code`. Làm thế là tạo NGUỒN THỨ HAI của cùng một luật — cái sẽ lệch
+ * khỏi `getAccessFilterConditions` ở lần sửa sau mà không lưới nào đỏ. Thay vào đó nó **dùng
+ * lại đúng mệnh đề ấy** trong một truy vấn phụ trên `product_inspections`: máy nào có bản ghi
+ * kiểm NẰM TRONG phạm vi người xem, TRONG CÙNG cửa sổ thời gian.
+ *
+ * ⚠ Đánh đổi đã biết, nói ra thay vì giấu: một máy có hàng OEE nhưng KHÔNG có bản ghi kiểm nào
+ * trong cửa sổ sẽ rơi khỏi báo cáo của người bị thu hẹp (admin không bị ảnh hưởng — họ không có
+ * mệnh đề nào). Sai lệch nghiêng về phía ĐÓNG (thiếu một dòng), không về phía RÒ (lộ máy của
+ * nhà máy khác). Cửa sổ trong truy vấn phụ giữ nó khỏi thành một lượt quét toàn bảng.
  */
 async function fetchOeeReportRows(
   window: { start: Date; end: Date },
   machineId?: number,
+  scopeFilter?: import("drizzle-orm").SQL,
 ): Promise<OeeRow[]> {
   const db = await getDb();
   if (!db) return [];
+  // ⚠⚠ BUG CÓ SẴN, PHÁT HIỆN 2026-08-17 khi dựng lưới cho bản vá này: hai mốc dưới đây trước
+  // đây được nhúng dưới dạng **đối tượng `Date`**. postgres.js từ chối tham số ấy —
+  // `ERR_INVALID_ARG_TYPE: The "string" argument must be of type string … Received an instance
+  // of Date` — nên báo cáo `oee` **CHƯA BAO GIỜ chạy được trên CSDL thật**; nó chỉ xanh trong
+  // `externalReportService.test.ts` vì file đó giả lập `getDb`. Truyền chuỗi ISO như MỌI truy
+  // vấn thô khác trong repo (`dataComparisonService`, `db/statistics`).
+  const startStr = window.start.toISOString();
+  const endStr = window.end.toISOString();
   const machineFilter = machineId ? sql` AND "machineId" = ${machineId}` : sql``;
+  const tenantFilter = scopeFilter
+    ? sql` AND "machineId" IN (
+        SELECT DISTINCT product_inspections."machineId"
+        FROM product_inspections
+        WHERE product_inspections."inspectionTime" >= ${startStr}
+          AND product_inspections."inspectionTime" < ${endStr}
+          AND ${scopeFilter}
+      )`
+    : sql``;
   const res = await db.execute(sql`
     SELECT
       TO_CHAR(date_trunc('day', "timestamp"), 'YYYY-MM-DD') AS day,
@@ -340,7 +390,7 @@ async function fetchOeeReportRows(
       SUM("goodCount")::int   AS good_count,
       SUM("rejectCount")::int AS reject_count
     FROM oee_metrics
-    WHERE "timestamp" >= ${window.start} AND "timestamp" < ${window.end}${machineFilter}
+    WHERE "timestamp" >= ${startStr} AND "timestamp" < ${endStr}${machineFilter}${tenantFilter}
     GROUP BY 1, 2
     ORDER BY 1, 2
   `);
@@ -372,17 +422,17 @@ async function buildReportData(
   rollup: ReportRollupFilters,
   filters: ExternalReportFilters | undefined,
   loc: ReportLocale,
+  /** ⚠ CHỈ dùng cho `oee_metrics` (bảng không có cột tenant) — xem `fetchOeeReportRows`. */
+  oeeScopeFilter?: import("drizzle-orm").SQL,
 ): Promise<ReportData> {
   switch (reportType) {
     case "daily": {
-      const { factoryCode } = await resolveScopeCodes(rollup);
-      const rows = await getYieldTrendData({
-        startDate: window.start,
-        endDate: window.end,
-        interval: "day",
-        machineId: rollup.machineId,
-        factoryCode,
-      });
+      // ★ 2026-08-17 — ĐỔI NGUỒN: `db/statistics.getYieldTrendData` → `getYieldTrendByDay`.
+      // Hàm cũ KHÔNG có trục `userId`; thứ duy nhất nó nhận là MỘT `factoryCode` đơn lẻ, nên
+      // một người được gán HAI nhà máy không diễn đạt được — bản vá "truyền factoryCode" vừa
+      // để lọt vừa chặn nhầm theo cấu tạo. Bản `day` ở `db/reportAggregators.ts` đi qua CÙNG
+      // `scopedConditions` với ba bộ tổng hợp còn lại (xem docblock của hàm ấy).
+      const rows = await getYieldTrendByDay(rollup);
       return {
         columns: [
           col("day", COL.date, loc, "text", 16),
@@ -394,11 +444,11 @@ async function buildReportData(
           col("ngRate", COL.ngRate, loc, "percentage"),
         ],
         rows: rows.map((r) => ({
-          day: typeof r.timeInterval === "string" ? r.timeInterval : new Date(r.timeInterval as any).toISOString().slice(0, 10),
-          total: r.totalCount,
-          ok: r.okCount,
-          ng: r.ngCount,
-          ntf: r.ntfCount,
+          day: r.day,
+          total: r.total,
+          ok: r.ok,
+          ng: r.ng,
+          ntf: r.ntf,
           yield: round2(r.yieldRate),
           ngRate: round2(r.ngRate),
         })),
@@ -430,11 +480,19 @@ async function buildReportData(
     }
 
     case "shift": {
-      let rows = await getShiftReport({
+      // ⚠ Kiểu KHAI BÁO là mảng trần có chủ đích: `getShiftReport` trả `ScopedRows<…>` (mảng có
+      // đính nhãn phạm vi), nhưng `.filter()` bên dưới sinh ra mảng MỚI không còn nhãn. Đây là
+      // đường xuất báo cáo, không phải bề mặt vẽ số 0 cho người vận hành, nên bỏ nhãn ở đây là
+      // đúng — chỉ cần nói ra thay vì để `tsc` bịt miệng bằng một phép ép kiểu.
+      let rows: ShiftReportRow[] = await getShiftReport({
         startDate: window.start,
         endDate: window.end,
         factoryId: rollup.factoryId,
         lineId: rollup.lineId,
+        // `getShiftReport` ĐÃ có sẵn trục danh tính (`filters.userId && userRole !== 'admin'`);
+        // lỗ ở đây là NƠI GỌI chưa bao giờ truyền nó xuống.
+        userId: rollup.userId,
+        userRole: rollup.userRole,
       });
       const wantShift = filters?.shift?.trim();
       if (wantShift) rows = rows.filter((r) => r.shift === wantShift || r.shiftName === wantShift);
@@ -535,7 +593,7 @@ async function buildReportData(
     }
 
     case "oee": {
-      const rows = await fetchOeeReportRows(window, rollup.machineId);
+      const rows = await fetchOeeReportRows(window, rollup.machineId, oeeScopeFilter);
       return {
         columns: [
           col("day", COL.date, loc, "text", 16),
@@ -572,8 +630,22 @@ async function buildReportData(
   }
 }
 
-/** Human-readable window + filter summary for the report subtitle. */
-function buildSubtitle(window: { start: Date; end: Date }, filters: ExternalReportFilters | undefined, loc: ReportLocale): string {
+/**
+ * Human-readable window + filter summary for the report subtitle.
+ *
+ * ★ `scopeNote` (2026-08-17): một PDF của `engineer1` (gán một nhà máy) chứa 22.995 dòng trông
+ * y hệt báo cáo TOÀN CÔNG TY 22.996 — chênh đúng một hàng, và không ô nào trên trang nói rằng
+ * đây chỉ là một nhà máy. File rời khỏi hệ thống rồi được chuyển tiếp, in ra, dán vào slide
+ * họp; lúc ấy không còn ngữ cảnh nào để đính chính. Nên tài liệu TỰ KHAI phạm vi của nó, đúng
+ * theo tiền lệ vừa dựng ở `pdfReportRouter`/`powerpointRouter`. Admin không nhận câu này —
+ * báo cáo của họ ĐÚNG là toàn hệ thống.
+ */
+function buildSubtitle(
+  window: { start: Date; end: Date },
+  filters: ExternalReportFilters | undefined,
+  loc: ReportLocale,
+  scopeNote?: string,
+): string {
   const fmt = (d: Date) => d.toISOString().slice(0, 10);
   const parts = [`${fmt(window.start)} → ${fmt(window.end)}`];
   const f = filters ?? {};
@@ -588,6 +660,7 @@ function buildSubtitle(window: { start: Date; end: Date }, filters: ExternalRepo
   if (productId) scope.push(`${t(loc, { vi: "SP", en: "Product", zh: "产品" })}#${productId}`);
   if (f.shift) scope.push(`${t(loc, { vi: "Ca", en: "Shift", zh: "班次" })} ${f.shift}`);
   if (scope.length) parts.push(scope.join(" · "));
+  if (scopeNote) parts.push(scopeNote);
   return parts.join("  |  ");
 }
 
@@ -620,12 +693,33 @@ export async function generateExternalReport(
   const dateFrom = input.dateFrom ?? input.filters?.startDate;
   const dateTo = input.dateTo ?? input.filters?.endDate;
   const window = resolveReportWindow(dateFrom, dateTo);
-  const rollup = buildRollupFilters(window, input.filters);
+  const rollup = buildRollupFilters(window, input.filters, input.actor);
 
-  const { columns, rows, emptyReason } = await buildReportData(reportType, window, rollup, input.filters, locale);
+  // ⚠⚠ HAI BIẾN RIÊNG, CỐ Ý. `resolveExportScope` trả về ĐÚNG BA Ô CHỮ (`scopeLabelsOf`), còn
+  // `filter` — đối tượng SQL drizzle có tham chiếu vòng — chỉ tồn tại trong `oeeScopeFilter` và
+  // không có đường nào đi ra ngoài. Gộp chúng làm một là công thức của
+  // `Converting circular structure to JSON` mà `tsc` không bắt được (xem `accessControlLabels`).
+  const scope = input.actor ? await resolveExportScope(input.actor) : undefined;
+  const oeeScopeFilter =
+    input.actor && reportType === "oee"
+      ? (await import("../_core/accessControl")).getAccessFilterConditions(
+          input.actor.id,
+          input.actor.role,
+        )
+      : undefined;
+
+  const { columns, rows, emptyReason } = await buildReportData(
+    reportType,
+    window,
+    rollup,
+    input.filters,
+    locale,
+    await oeeScopeFilter,
+  );
 
   const title = t(locale, TITLES[reportType]);
-  const subtitle = buildSubtitle(window, input.filters, locale);
+  const scopeNote = scope ? exportScopeNote(scope) : undefined;
+  const subtitle = buildSubtitle(window, input.filters, locale, scopeNote);
 
   // Branding from the company profile — never blocks a report.
   let branding: ReportBranding | undefined;
@@ -661,6 +755,15 @@ export async function generateExternalReport(
       rowCount: rows.length,
       truncated: rendered.truncated,
       totalRows: rendered.totalRows,
+      // Dấu vết phạm vi đi kèm HÀNG artefact, không chỉ trên trang giấy: một file tải lại sau
+      // sáu tháng vẫn trả lời được câu "số này của ai" mà không phải đoán từ `createdBy`.
+      // ⚠ CHỈ ba ô CHỮ — `filter` không bao giờ được serialize (tham chiếu vòng ⇒ 500).
+      ...(scope
+        ? {
+            scopeApplied: scope.scopeApplied,
+            scopeEmptyReason: scope.scopeEmptyReason,
+          }
+        : {}),
     },
     createdBy: input.createdBy ?? null,
     source: input.source ?? "external",

@@ -33,6 +33,7 @@
  *   - Bounded work per run (IMAGE_LIFECYCLE_MAX_DIRS_PER_RUN, default 5000 dirs).
  */
 import fs from "fs";
+import { DbUnavailableError } from "../_core/dbErrors";
 import path from "path";
 
 // ── Configuration helpers ─────────────────────────────────────────────────────
@@ -523,7 +524,7 @@ export async function reapOrphanImages(opts?: {
         import("drizzle-orm"),
       ]);
       const db = await getJobsDb();
-      if (!db) throw new Error("database unavailable");
+      if (!db) throw new DbUnavailableError();
       return defaultFetchReferencedKeys(db, (drizzle as any).sql);
     });
 

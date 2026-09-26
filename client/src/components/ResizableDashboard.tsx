@@ -6,6 +6,7 @@ import { useAuth } from '@/_core/hooks/useAuth';
 import { Button } from '@/components/ui/button';
 import { Switch } from '@/components/ui/switch';
 import { toast } from 'sonner';
+import { toastTrpcError } from '@/lib/trpcErrors';
 import {
   Dialog,
   DialogContent,
@@ -328,7 +329,7 @@ export function ResizableDashboard({ children, onRefreshWidget, widgetCacheStatu
       toast.success('Template saved and shared with team');
     },
     onError: (error) => {
-      toast.error(error.message);
+      toastTrpcError(error);
     },
   });
 

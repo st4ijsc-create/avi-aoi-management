@@ -1,0 +1,82 @@
+{
+ "PB01": {
+  "hang": 1,
+  "top": [
+   "workflows/ng-burst-response.playbook.yaml",
+   "workflows/ng-handling.playbook.yaml",
+   "domain/aoi-workflow.md",
+   "domain/howto-ng-handling-sop.md",
+   "domain/aoi-defect-types.md"
+  ]
+ },
+ "PB02": {
+  "hang": 1,
+  "top": [
+   "workflows/ng-handling.playbook.yaml",
+   "domain/howto-ng-handling-sop.md[bảng]",
+   "domain/howto-ng-handling-sop.md",
+   "workflows/ng-handling.playbook.yaml",
+   "domain/aoi-defect-types.md"
+  ]
+ },
+ "PB03": {
+  "hang": 1,
+  "top": [
+   "workflows/spc-critical-review.playbook.yaml",
+   "workflows/spc-critical-review.playbook.yaml",
+   "analytics/spc-rules.md",
+   "analytics/spc-analysis.md",
+   "analytics/spc-rules.md"
+  ]
+ },
+ "PB04": {
+  "hang": 1,
+  "top": [
+   "workflows/install-new-machine.playbook.yaml",
+   "workflows/install-new-machine.playbook.yaml",
+   "monitoring/machine-registration.md",
+   "monitoring/machine-registration.md",
+   "domain/commission-a-new-pcb.md[bảng]"
+  ]
+ },
+ "PB05": {
+  "hang": 1,
+  "top": [
+   "workflows/change-recipe-line-start.playbook.yaml",
+   "workflows/change-recipe-line-start.playbook.yaml",
+   "domain/howto-shift-change.md[bảng]",
+   "domain/howto-shift-change.md[bảng]",
+   "operational/recipes.md"
+  ]
+ },
+ "PB06": {
+  "hang": 1,
+  "top": [
+   "workflows/create-measurement-point.playbook.yaml",
+   "workflows/create-measurement-point.playbook.yaml",
+   "products/measurement-point-setup.md",
+   "domain/commission-a-new-pcb.md[bảng]",
+   "products/measurement-point-setup.md"
+  ]
+ },
+ "PB07": {
+  "hang": 3,
+  "top": [
+   "domain/howto-ng-handling-sop.md",
+   "domain/howto-ng-handling-sop.md[bảng]",
+   "workflows/ng-burst-response.playbook.yaml",
+   "workflows/ng-handling.playbook.yaml",
+   "operational-approved/defect-catalog.md"
+  ]
+ },
+ "PB08": {
+  "hang": 1,
+  "top": [
+   "workflows/ng-handling.playbook.yaml",
+   "workflows/ng-burst-response.playbook.yaml",
+   "domain/howto-ng-handling-sop.md[bảng]",
+   "operational/root-cause-analysis.md",
+   "domain/aoi-workflow.md"
+  ]
+ }
+}

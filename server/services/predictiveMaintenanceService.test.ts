@@ -36,6 +36,7 @@ vi.mock("../db/machine", () => ({
 import {
   computeReliabilityStats,
   computeFailureRiskFromInputs,
+  initSuppressionTally,
   type RiskInputs,
 } from "./predictiveMaintenanceService";
 import type { TimeSeriesPoint, MultivariatePoint } from "./aiTimeSeriesEngine";
@@ -163,5 +164,28 @@ describe("computeFailureRiskFromInputs", () => {
     expect(r.failureRisk).toBeLessThanOrEqual(100);
     expect(r.confidenceScore).toBeGreaterThanOrEqual(0);
     expect(r.confidenceScore).toBeLessThanOrEqual(100);
+  });
+});
+
+describe("initSuppressionTally — vòng sửa cuối (review toàn nhánh, mục 4)", () => {
+  it("khởi tạo đủ 4 nhãn = 0, KHÔNG object rỗng — nhãn đúng-0 phải HIỆN trong JSON.stringify", () => {
+    const tally = initSuppressionTally();
+    expect(tally).toEqual({ emit: 0, "low-risk": 0, "low-confidence": 0, "out-of-timeframe": 0 });
+    // Chứng minh trực tiếp lỗi mà mục 4 mô tả: object rỗng bị JSON.stringify bỏ hẳn
+    // key có đếm=0 (JS không lặp key không tồn tại); object đủ-key thì không.
+    const asLogged = JSON.parse(JSON.stringify(tally));
+    for (const label of ["emit", "low-risk", "low-confidence", "out-of-timeframe"]) {
+      expect(asLogged).toHaveProperty(label, 0);
+    }
+  });
+
+  it("chỉ tăng 1 nhãn vẫn giữ 3 nhãn kia = 0 và HIỆN trong log — không im lặng biến mất", () => {
+    const tally = initSuppressionTally();
+    tally["low-risk"] += 3;
+    const logged = `[PredictiveMaintenance] ứng viên theo kết cục: ${JSON.stringify(tally)}`;
+    expect(logged).toContain('"emit":0');
+    expect(logged).toContain('"low-risk":3');
+    expect(logged).toContain('"low-confidence":0');
+    expect(logged).toContain('"out-of-timeframe":0');
   });
 });

@@ -5,12 +5,21 @@
 
 import { z } from "zod";
 import { protectedProcedure, router } from "../_core/trpc";
+// ★★★ 2026-08-17 — xem `_core/reportExportScope.ts`. Router này ĐÃ có `ctx` trong tay và chỉ
+// dùng nó cho `author` của slide; danh tính có sẵn mà không đi vào truy vấn nào.
+import {
+  exportScopeArgs,
+  exportScopeNote,
+  resolveExportScope,
+  assertExportableScope,
+} from "../_core/reportExportScope";
 import * as db from "../db";
 import { exportQualityReportToPowerPoint, exportComparisonToPowerPoint, exportDashboardToPowerPoint } from "../services/powerpointService";
 import { generateComparison } from "../services/dataComparisonService";
 import type { QualityReportData } from "../services/pdfTemplateService";
 import type { ComparisonPeriod } from "../services/dataComparisonService";
 import type { DashboardSlideData, PowerPointConfig } from "../services/powerpointService";
+import { finalYield } from "../utils/kpi";
 
 export const powerpointRouter = router({
   /**
@@ -33,11 +42,18 @@ export const powerpointRouter = router({
     .mutation(async ({ input, ctx }) => {
       const { startDate, endDate, factoryId, workshopId, lineId } = input;
 
+      // ⚠ Danh tính LẤY TỪ `ctx.user`, KHÔNG BAO GIỜ từ `input`.
+      const actor = exportScopeArgs(ctx.user);
+      const scope = await resolveExportScope(ctx.user);
+      assertExportableScope(scope);
+
       // Gather data
-      const stats = await db.getDashboardStats({ startDate, endDate, factoryId, workshopId });
-      const trendData = await db.getNGTrendByDay({ startDate, endDate });
-      const topNG = await db.getTopNGMeasurementPoints({ startDate, endDate, limit: 10 });
-      const topMachines = await db.getTopBottomMachines({ startDate, endDate, factoryId, workshopId } as any);
+      const stats = await db.getDashboardStats({ startDate, endDate, factoryId, workshopId, ...actor });
+      // NỢ ĐÃ TRẢ 2026-08-17 — `getNGTrendByDay` nay nhận trục phạm vi (xem `scopeGateOnAlias`).
+      const trendData = await db.getNGTrendByDay({ startDate, endDate, ...actor });
+      const topNG = await db.getTopNGMeasurementPoints({ startDate, endDate, limit: 10, ...actor });
+      // `workshopId` bỏ đi (hàm không nhận) + bỏ `as any` ⇒ tsc canh thật điểm gọi này.
+      const topMachines = await db.getTopBottomMachines({ startDate, endDate, factoryId, ...actor });
 
       const data: QualityReportData = {
         period: { start: startDate, end: endDate },
@@ -67,8 +83,10 @@ export const powerpointRouter = router({
           totalInspections: Number(d.totalCount || 0),
           okCount: Number(d.okCount || 0),
           ngCount: Number(d.ngCount || 0),
-          yieldRate: Number(d.totalCount) > 0 ? (Number(d.okCount) / Number(d.totalCount)) * 100 : 0,
+          yieldRate: finalYield({ ok: Number(d.okCount || 0), ntf: Number(d.ntfCount || 0), total: Number(d.totalCount || 0) }),
         })),
+        // Bộ slide TỰ KHAI phạm vi — xem chú thích cùng nội dung ở pdfReportRouter.
+        filters: { scopeNote: exportScopeNote(scope) },
       };
 
       const pptxBuffer = await exportQualityReportToPowerPoint(data, {
@@ -106,6 +124,14 @@ export const powerpointRouter = router({
       }).optional(),
     }))
     .mutation(async ({ input, ctx }) => {
+      // ★★★ 2026-08-17 (lượt hai) — NỢ ĐÃ TRẢ. Bốn truy vấn SQL THÔ của
+      // `services/dataComparisonService.ts` nay mang mệnh đề tenant do
+      // `getAccessFilterConditions` sinh ra (bí danh `pi` bị bỏ để cột `"product_inspections".*`
+      // của drizzle bám đúng bảng — xem docblock `applyScope` ở service). Cổng dưới vẫn giữ
+      // nguyên vai trò của nó: TỪ CHỐI xuất file cho tài khoản 0 gán, thay vì giao một bộ
+      // slide toàn số 0 mà người đọc sẽ hiểu thành "nhà máy ngừng chạy".
+      assertExportableScope(await resolveExportScope(ctx.user));
+
       const comparisonData = await generateComparison({
         periodType: input.periodType as ComparisonPeriod,
         currentStart: input.currentStart,
@@ -115,6 +141,8 @@ export const powerpointRouter = router({
         factoryId: input.factoryId,
         workshopId: input.workshopId,
         lineId: input.lineId,
+        // ⚠ Danh tính LẤY TỪ `ctx.user`, KHÔNG BAO GIỜ từ `input`.
+        ...exportScopeArgs(ctx.user),
       });
 
       const pptxBuffer = await exportComparisonToPowerPoint(comparisonData, {

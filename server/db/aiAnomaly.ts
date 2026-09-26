@@ -3,13 +3,14 @@
  *
  * Mọi hàm getDb() null-guard:
  *   • read  → trả rỗng/null an toàn (best-effort, không throw trên hot path).
- *   • write → throw "Database not available" (admin action, cần biết thất bại).
+ *   • write → ném `DbUnavailableError` (admin action, cần biết thất bại).
  *
  * pgvector OPTIONAL: ghi cột embedding_vec là best-effort (try/catch). Cột
  * embedding TEXT luôn là nguồn raw → load brute-force JS hoạt động kể cả khi
  * thiếu pgvector.
  */
 import { getDb } from "./connection";
+import { DbUnavailableError } from "../_core/dbErrors";
 import { and, eq, desc, sql, SQL } from "drizzle-orm";
 import {
   aiAnomalyMemoryBank,
@@ -58,7 +59,7 @@ function parseVectorLiteral(raw: string | null | undefined): number[] {
 
 export async function clearBank(scope: AnomalyScope): Promise<void> {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  if (!db) throw new DbUnavailableError();
   await db.delete(aiAnomalyMemoryBank).where(and(...scopeConditions(scope)));
 }
 
@@ -71,7 +72,7 @@ export interface BankRowInput {
 
 export async function insertBankRows(scope: AnomalyScope, rows: BankRowInput[]): Promise<number> {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  if (!db) throw new DbUnavailableError();
   if (rows.length === 0) return 0;
 
   // Insert qua raw SQL CHỈ các cột chắc chắn tồn tại (KHÔNG đụng embedding_vec — cột
@@ -337,7 +338,7 @@ function profileScopeConds(scope: AnomalyScope): SQL[] {
 
 export async function upsertProfile(scope: AnomalyScope, input: ProfileInput): Promise<void> {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  if (!db) throw new DbUnavailableError();
 
   const [existing] = await db
     .select({ id: aiAnomalyProfiles.id })
@@ -365,20 +366,84 @@ export async function upsertProfile(scope: AnomalyScope, input: ProfileInput): P
   }
 }
 
+// ── F3/D2 (doc69 G9) — calibratedThreshold/calibrationTarget (migration 0300)
+// may not be applied to a given DB yet. A full-row `.select()` of
+// aiAnomalyProfiles references EVERY declared column, including these — so it
+// fails with 42703 (undefined_column) pre-migration. Both call sites below
+// guard against that and retry with this legacy (pre-0300) projection, so
+// scoring/stats keep working byte-for-byte until the migration runs. ──
+const LEGACY_PROFILE_COLUMNS = {
+  id: aiAnomalyProfiles.id,
+  productModelId: aiAnomalyProfiles.productModelId,
+  machineId: aiAnomalyProfiles.machineId,
+  modelCode: aiAnomalyProfiles.modelCode,
+  threshold: aiAnomalyProfiles.threshold,
+  k: aiAnomalyProfiles.k,
+  distStats: aiAnomalyProfiles.distStats,
+  bankSize: aiAnomalyProfiles.bankSize,
+  source: aiAnomalyProfiles.source,
+  degraded: aiAnomalyProfiles.degraded,
+  corporateCode: aiAnomalyProfiles.corporateCode,
+  factoryId: aiAnomalyProfiles.factoryId,
+  builtAt: aiAnomalyProfiles.builtAt,
+};
+
+function isMissingColumnError(e: unknown): boolean {
+  return (e as { code?: string } | null | undefined)?.code === "42703";
+}
+
 export async function getProfile(scope: AnomalyScope): Promise<AiAnomalyProfile | null> {
   const db = await getDb();
   if (!db) return null;
-  const [row] = await db
-    .select()
-    .from(aiAnomalyProfiles)
-    .where(and(...profileScopeConds(scope)))
-    .limit(1);
-  return row ?? null;
+  try {
+    const [row] = await db
+      .select()
+      .from(aiAnomalyProfiles)
+      .where(and(...profileScopeConds(scope)))
+      .limit(1);
+    return row ?? null;
+  } catch (e) {
+    if (!isMissingColumnError(e)) throw e;
+    const [row] = await db
+      .select(LEGACY_PROFILE_COLUMNS)
+      .from(aiAnomalyProfiles)
+      .where(and(...profileScopeConds(scope)))
+      .limit(1);
+    return (row as AiAnomalyProfile | undefined) ?? null;
+  }
+}
+
+/**
+ * Persist a ROC-calibrated threshold onto an EXISTING profile row (the scope
+ * must already have a profile from buildBankFromVectors/upsertProfile). Additive columns
+ * (migration 0300, NOT applied by this task). Unlike `getProfile` (hot-path
+ * read, must never throw), this is an explicit admin/calibration action — if
+ * the columns are absent it throws a clear error (module convention: "write →
+ * throw", see file header) so the caller/operator knows to run the migration.
+ */
+export async function setCalibratedThreshold(
+  scope: AnomalyScope,
+  calibratedThreshold: number,
+  calibrationTarget: {
+    targetRecall?: number;
+    targetFpr?: number;
+    achievedRecall: number;
+    achievedFpr: number;
+    sampleCount: { ng: number; ok: number };
+    calibratedAt: string;
+  },
+): Promise<void> {
+  const db = await getDb();
+  if (!db) throw new DbUnavailableError();
+  await db
+    .update(aiAnomalyProfiles)
+    .set({ calibratedThreshold: calibratedThreshold.toFixed(8), calibrationTarget })
+    .where(and(...profileScopeConds(scope)));
 }
 
 export async function deleteScope(scope: AnomalyScope): Promise<void> {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  if (!db) throw new DbUnavailableError();
   await db.delete(aiAnomalyMemoryBank).where(and(...scopeConditions(scope)));
   await db.delete(aiAnomalyProfiles).where(and(...profileScopeConds(scope)));
 }
@@ -405,13 +470,27 @@ export async function getBankStats(filter: { productModelId: number | null; mach
   const profConds: SQL[] = [];
   if (filter.productModelId != null) profConds.push(eq(aiAnomalyProfiles.productModelId, filter.productModelId));
   if (filter.machineId != null) profConds.push(eq(aiAnomalyProfiles.machineId, filter.machineId));
+  const profWhere = profConds.length > 0 ? and(...profConds) : undefined;
 
-  const profiles = await db
-    .select()
-    .from(aiAnomalyProfiles)
-    .where(profConds.length > 0 ? and(...profConds) : undefined)
-    .orderBy(desc(aiAnomalyProfiles.builtAt))
-    .limit(50);
+  // Same 42703 (undefined_column) guard as getProfile() — calibratedThreshold/
+  // calibrationTarget (migration 0300) may not exist yet on this DB.
+  let profiles: AiAnomalyProfile[];
+  try {
+    profiles = await db
+      .select()
+      .from(aiAnomalyProfiles)
+      .where(profWhere)
+      .orderBy(desc(aiAnomalyProfiles.builtAt))
+      .limit(50);
+  } catch (e) {
+    if (!isMissingColumnError(e)) throw e;
+    profiles = (await db
+      .select(LEGACY_PROFILE_COLUMNS)
+      .from(aiAnomalyProfiles)
+      .where(profWhere)
+      .orderBy(desc(aiAnomalyProfiles.builtAt))
+      .limit(50)) as AiAnomalyProfile[];
+  }
 
   return {
     totalVectors: Number(agg?.totalVectors ?? 0),

@@ -12,6 +12,7 @@
  */
 import { z } from "zod";
 import { TRPCError } from "@trpc/server";
+import { appError } from "../_core/appError";
 import { and, eq, gte, desc, sql, isNotNull } from "drizzle-orm";
 import { router, protectedProcedure } from "../_core/trpc";
 import { requirePermission } from "../_core/accessControl";
@@ -20,7 +21,7 @@ import { commandLog } from "../../drizzle/schema";
 
 async function getDb() {
   const db = await getDbRaw();
-  if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Database not connected" });
+  if (!db) throw appError("INTERNAL_SERVER_ERROR", "DB_UNAVAILABLE", undefined, "Database not connected");
   return db;
 }
 
@@ -62,7 +63,7 @@ export const commandLogRouter = router({
     .query(async ({ input }) => {
       const db = await getDb();
       const [row] = await db.select().from(commandLog).where(eq(commandLog.id, input.id)).limit(1);
-      if (!row) throw new TRPCError({ code: "NOT_FOUND", message: "Command log không tồn tại." });
+      if (!row) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "commandLog" }, "Command log không tồn tại.");
       return row;
     }),
 

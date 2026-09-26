@@ -35,6 +35,7 @@ import type {
 import { NotImplementedDriver } from "./notImplementedDriver";
 import { parseEipTag, coerceEipValue } from "./eipTag";
 import { inverseScale } from "./otScale";
+import { DeviceUnreachableError } from "../../../_core/deviceErrors";
 
 /** Ép raw (đã inverse scale) sang kiểu st-ethernet-ip chấp nhận theo dataType. */
 function coerceEipWrite(raw: unknown, dataType: string): number | boolean | string {
@@ -205,7 +206,7 @@ export class EthernetIpDriver extends NotImplementedDriver {
 
   override async readTags(tags: OtTagAddress[]): Promise<OtSample[]> {
     if (!this.connected || !this.plc) {
-      throw new Error("EthernetIpDriver: not connected");
+      throw new DeviceUnreachableError("ethernet-ip");
     }
     if (tags.length === 0) return [];
 
@@ -223,7 +224,7 @@ export class EthernetIpDriver extends NotImplementedDriver {
     onSample: OnOtSample,
     intervalMs = 5000,
   ): Promise<OtSubscriptionHandle> {
-    if (!this.connected) throw new Error("EthernetIpDriver: not connected");
+    if (!this.connected) throw new DeviceUnreachableError("ethernet-ip");
 
     const tick = async () => {
       try {
@@ -283,7 +284,7 @@ export class EthernetIpDriver extends NotImplementedDriver {
    */
   override async writeTags(writes: OtWrite[]): Promise<OtCommandResult[]> {
     if (!this.connected || !this.plc) {
-      throw new Error("EthernetIpDriver: not connected");
+      throw new DeviceUnreachableError("ethernet-ip");
     }
     if (writes.length === 0) return [];
 

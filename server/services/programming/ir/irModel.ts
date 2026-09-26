@@ -95,6 +95,12 @@ export const moveLinearBlockSchema = z.object({
   type: z.literal("move_linear"),
   target_pose: poseSchema,
   speed_mms: z.number().nonnegative(),
+  /**
+   * Cartesian acceleration in mm/s² — the IR's mm-based unit system (pose mm, speed mm/s,
+   * blend mm; the kinematic sim gate reads it as mm/s²). Doc 80 IR-03: transpilers convert
+   * (URScript a = value/1000 m/s²; ROS2 scaling = value/1000 clamped to [0.01, 1]); lint
+   * `accel-limit` caps it (DPC_IR_MAX_ACCEL_MMS2, default 1500).
+   */
   acceleration: z.number().nonnegative(),
   blend_radius: z.number().nonnegative().default(0),
 });

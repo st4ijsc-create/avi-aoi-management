@@ -40,17 +40,29 @@ function makeFakeDb() {
         }),
       }),
     }),
+    // ★★★ 2026-08-23 — xem chú thích cùng tên ở `aiCopilotActions.test.ts`: `where()` vừa await được
+    // vừa có `.returning()`, và `run()` được nhớ lại để không áp `patch` hai lần.
     update: (_table: unknown) => ({
       set: (patch: Row) => ({
-        where: async (pred: (r: Row) => boolean) => {
-          let count = 0;
-          for (const r of store.values()) {
-            if (pred(r)) {
-              Object.assign(r, patch);
-              count++;
+        where: (pred: (r: Row) => boolean) => {
+          let daChay: Row[] | null = null;
+          const run = (): Row[] => {
+            if (daChay) return daChay;
+            const trung: Row[] = [];
+            for (const r of store.values()) {
+              if (pred(r)) {
+                Object.assign(r, patch);
+                trung.push(r);
+              }
             }
-          }
-          return { rowCount: count };
+            daChay = trung;
+            return trung;
+          };
+          return {
+            then: (ok: (v: unknown) => unknown, ng?: (e: unknown) => unknown) =>
+              Promise.resolve({ rowCount: run().length }).then(ok, ng),
+            returning: async (_cols?: unknown) => run().map((r) => ({ id: r.id })),
+          };
         },
       }),
     }),

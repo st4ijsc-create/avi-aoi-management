@@ -7,6 +7,7 @@ import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, LineChart, Line, AreaChart, Area } from 'recharts';
 import { ArrowLeft, Factory, TrendingUp, TrendingDown, Minus, CheckCircle, XCircle, AlertTriangle, Clock } from 'lucide-react';
+import { finalYield } from '@shared/kpiYield';
 
 interface MachineAnalyticsViewProps {
   machineId: number;
@@ -165,7 +166,9 @@ export function MachineAnalyticsView({
           <CardContent>
             <div className="text-2xl font-bold text-green-500">{machineStats?.okCount || 0}</div>
             <p className="text-xs text-muted-foreground mt-1">
-              {machineStats?.total ? ((machineStats.okCount / machineStats.total) * 100).toFixed(1) : 0}%
+              {machineStats?.total
+                ? finalYield({ ok: machineStats.okCount, ntf: machineStats.ntfCount ?? 0, total: machineStats.total }).toFixed(1)
+                : 0}%
             </p>
           </CardContent>
         </Card>

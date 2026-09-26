@@ -25,6 +25,7 @@
  * caller (processResultRouter, F2/W2-B2 tests).
  */
 import { and, eq } from "drizzle-orm";
+import { DbUnavailableError } from "../_core/dbErrors";
 import * as db from "../db";
 import {
   hashEntry,
@@ -128,7 +129,7 @@ async function claimAndInsertProcessResult(
   measuredAt: Date,
 ): Promise<{ id: number; duplicate: boolean }> {
   const dbi = await db.getDb();
-  if (!dbi) throw new Error("Database not available");
+  if (!dbi) throw new DbUnavailableError();
   return dbi.transaction(async (tx) => {
     const claimed = await tx
       .insert(processIdempotencyKeys)

@@ -16,6 +16,7 @@ import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from "@/components/ui/select";
 import { toast } from "sonner";
+import { toastTrpcError } from "@/lib/trpcErrors";
 import {
   Boxes,
   GitMerge,
@@ -746,7 +747,7 @@ function MaterialFlowPanel() {
       setD({ lotNumber: "", disposition: "rework", quantity: "1", reason: "" });
       utils.mesControlTower.listDispositions.invalidate();
     },
-    onError: (e) => toast.error(e.message),
+    onError: (e) => toastTrpcError(e),
   });
 
   return (

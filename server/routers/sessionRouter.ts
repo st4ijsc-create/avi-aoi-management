@@ -1,6 +1,22 @@
 import { z } from "zod";
 import { router, protectedProcedure } from "../_core/trpc";
 import * as db from "../db";
+// ★★★ Pha 8 Task 5 — chủ DUY NHẤT của "cột nào của `user_sessions` được rời máy chủ".
+import { toPublicSessions, type PublicSession } from "../_core/publicSession";
+
+/**
+ * Hình dạng `session.list` trả cho client: **phép chiếu công khai** (cổng KIỂU giữ nguyên — phần
+ * giao `{ [K in ServerOnlySessionField]?: never }` vẫn cấm `sessionToken`) **cộng** các giá trị
+ * thay thế cho ô rỗng, là hợp đồng hiển thị sẵn có của `client/src/components/SessionManagement.tsx`.
+ */
+type PhienHienThi = PublicSession & {
+  deviceName: string;
+  deviceType: string;
+  browser: string;
+  os: string;
+  ipAddress: string;
+  location: string;
+};
 
 /**
  * Session management router.
@@ -14,27 +30,39 @@ import * as db from "../db";
  * canonical identifier of the CALLER's session, so `isCurrent` resolves
  * correctly and `revokeAll` preserves the caller's own session.
  *
- * TODO(doc 12 §12.5): session TTL is still the pending 1-year default — do NOT
- * shorten it here until that decision is finalised with the user.
+ * ✅ **TODO(doc 12 §12.5) ĐÃ ĐÓNG — Pha 9, chủ dự án duyệt.** Câu cũ ở đây là: *"session TTL is
+ * still the pending 1-year default — do NOT shorten it here until that decision is finalised"*.
+ * Quyết định đã có: hạn phiên về **MỘT CHỦ** `server/_core/hanPhien.ts`, mặc định **30 ngày**
+ * (`SESSION_TTL_DAYS` ghi đè được — và nay nó **thật sự** có hiệu lực; trước Pha 9 nó là mã chết vì
+ * cả bốn cửa đúc truyền `expiresInMs` tường minh). Đo sống trước lượt vá: `Max-Age=31536000`,
+ * `exp` = 2027 ⇒ cửa sổ khai thác của một cookie bị bắt là **365 ngày**.
+ * ⚠ Router này **không** phải chỗ đặt hạn — nó chỉ **đọc** `expiresAt` của hàng sổ. Lượt siết chỉ
+ *   chạm **vé MỚI**; mọi phiên đang sống giữ nguyên hạn cũ (`sessionGrantScan.test.ts` §5c ghim
+ *   rằng không cửa đúc nào `UPDATE` cột `expiresAt` của hàng đã có).
  */
 export const sessionRouter = router({
-  // List all active sessions for the current user
-  list: protectedProcedure.query(async ({ ctx }) => {
+  /**
+   * ★★★ Pha 8 Task 5 — phép chiếu nay đi qua **CHỦ DUY NHẤT** `_core/publicSession.ts`.
+   *
+   * ⚠ Trước bản vá, đây là **bên ĐÚNG** của một cặp song song bất đồng: nó liệt kê tay 10 cột và
+   *   **không** trả `sessionToken`, trong khi tuyến song song `user.getSessions` trả **nguyên hàng**.
+   *   Nhưng "đúng nhờ liệt kê tay" là đúng **theo thời điểm**: một cột nhạy cảm mới thêm vào
+   *   `user_sessions` sẽ không tự vào danh sách này, và bên kia vẫn ở đó để hở lại.
+   * ⚠⚠ Các giá trị thay thế (`"Unknown Device"` …) **giữ nguyên** — chúng là hợp đồng hiển thị của
+   *    `client/src/components/SessionManagement.tsx`, và đổi chúng là một quyết định về UI, không
+   *    phải một phần của bản vá an ninh này. Chúng nay phủ **lên trên** phép chiếu, chứ không còn
+   *    **thay** phép chiếu.
+   */
+  list: protectedProcedure.query(async ({ ctx }): Promise<PhienHienThi[]> => {
     const sessions = await db.getUserSessions(ctx.user.id);
-    const currentSessionToken = ctx.sessionToken;
-
-    return sessions.map(session => ({
-      id: session.id,
-      deviceName: session.deviceName || "Unknown Device",
-      deviceType: session.deviceType || "unknown",
-      browser: session.browser || "Unknown Browser",
-      os: session.os || "Unknown OS",
-      ipAddress: session.ipAddress || "Unknown",
-      location: session.location || "Unknown Location",
-      lastActivityAt: session.lastActivityAt,
-      createdAt: session.createdAt,
-      expiresAt: session.expiresAt,
-      isCurrent: !!currentSessionToken && session.sessionToken === currentSessionToken,
+    return toPublicSessions(sessions, ctx.sessionToken).map((s) => ({
+      ...s,
+      deviceName: s.deviceName || "Unknown Device",
+      deviceType: s.deviceType || "unknown",
+      browser: s.browser || "Unknown Browser",
+      os: s.os || "Unknown OS",
+      ipAddress: s.ipAddress || "Unknown",
+      location: s.location || "Unknown Location",
     }));
   }),
 

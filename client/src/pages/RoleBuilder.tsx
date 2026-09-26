@@ -9,6 +9,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { mapTrpcError } from "@/lib/trpcErrors";
 import {
   Dialog,
   DialogContent,
@@ -158,7 +159,7 @@ export function RoleBuilderContent() {
       setNewRoleDesc('');
       refetchRoles();
     } catch (error: any) {
-      toast.error(t('common.error') + ': ' + error.message);
+      toast.error(t('common.error') + ': ' + mapTrpcError(error));
     }
   };
 
@@ -180,7 +181,7 @@ export function RoleBuilderContent() {
       setDupDesc('');
       refetchRoles();
     } catch (error: any) {
-      toast.error(t('common.error') + ': ' + error.message);
+      toast.error(t('common.error') + ': ' + mapTrpcError(error));
     }
   };
 
@@ -191,7 +192,7 @@ export function RoleBuilderContent() {
       if (editRoleId === roleId) setEditRoleId(null);
       refetchRoles();
     } catch (error: any) {
-      toast.error(t('common.error') + ': ' + error.message);
+      toast.error(t('common.error') + ': ' + mapTrpcError(error));
     }
   };
 
@@ -229,7 +230,7 @@ export function RoleBuilderContent() {
       });
       refetchRoles();
     } catch (error: any) {
-      toast.error(t('common.error') + ': ' + error.message);
+      toast.error(t('common.error') + ': ' + mapTrpcError(error));
     }
   };
 
@@ -261,7 +262,7 @@ export function RoleBuilderContent() {
       });
       refetchRoles();
     } catch (error: any) {
-      toast.error(t('common.error') + ': ' + error.message);
+      toast.error(t('common.error') + ': ' + mapTrpcError(error));
     }
   };
 
@@ -279,7 +280,7 @@ export function RoleBuilderContent() {
       toast.success(t('roles.permissionsApplied', { applied: result.applied, skipped: result.skipped }));
       setApplyOpen(false);
     } catch (error: any) {
-      toast.error(t('common.error') + ': ' + error.message);
+      toast.error(t('common.error') + ': ' + mapTrpcError(error));
     }
   };
 

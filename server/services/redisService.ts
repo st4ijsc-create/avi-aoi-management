@@ -277,6 +277,65 @@ class RedisService {
   }
 
   /**
+   * Review fix (doc69 G2-4 W1-4) — single Lua script for `incrWithExpire`: `INCR`, read
+   * `PTTL`, and (re)apply `PEXPIRE` in ONE atomic round-trip whenever the key is brand-new
+   * (`count == 1`) OR was found with no/expired TTL (`pttl <= 0`) despite `count > 1` — the
+   * self-heal branch. `ARGV[1]` is the window length in milliseconds. Returns `{count, pttl}`
+   * as a 2-element array (Redis/Lua table → ioredis array).
+   */
+  private static readonly INCR_WITH_EXPIRE_SCRIPT = `
+local count = redis.call('INCR', KEYS[1])
+local pttl = redis.call('PTTL', KEYS[1])
+if count == 1 or pttl <= 0 then
+  redis.call('PEXPIRE', KEYS[1], ARGV[1])
+  pttl = tonumber(ARGV[1])
+end
+return {count, pttl}
+`.trim();
+
+  /**
+   * doc69 G2-4 (+ review fix W1-4) — ATOMIC durable counter for a fixed-window rate limiter.
+   * Backs aiGateway's Redis rate limit so the count survives a process restart and is shared
+   * correctly across multiple app instances/nodes (unlike the previous in-process `Map`-based
+   * counter).
+   *
+   * Review fix: previously this ran `INCR` then a SEPARATE `EXPIRE` round-trip on the first
+   * increment — if the `EXPIRE` call ever failed/threw AFTER the `INCR` had already landed
+   * (count=1), the key would persist with NO TTL forever: every later call would `INCR` past 1
+   * and skip the `if (count===1)` branch, permanently rate-limiting that bucket until a manual
+   * `DEL`. Now the whole `INCR` + conditional `PEXPIRE` decision happens inside ONE Lua `EVAL`
+   * (`INCR_WITH_EXPIRE_SCRIPT` above), which Redis executes atomically — no window where the
+   * counter can be bumped without its TTL being set. The script ALSO self-heals: if it ever
+   * observes `count > 1` on a key whose `pttl <= 0` (a stuck key from before this fix, or any
+   * other cause of a lost TTL), it re-applies `PEXPIRE` right then, so a stuck bucket recovers
+   * on its very next hit instead of staying stuck until a manual `DEL`.
+   *
+   * Trả về:
+   *   • `{ count, ttlMs }` — count sau lần tăng này, cùng TTL còn lại (ms) của cửa sổ.
+   *   • `null` — Redis chưa kết nối/chưa cấu hình, hoặc thao tác lỗi. Caller BẮT BUỘC fallback
+   *     sang cơ chế đếm khác (vd in-memory) — fail-open, KHÔNG BAO GIỜ throw.
+   */
+  async incrWithExpire(key: string, windowSeconds: number): Promise<{ count: number; ttlMs: number } | null> {
+    if (!(this.isConnected && this.redis) || !(windowSeconds > 0)) return null;
+    const fullKey = this.getFullKey(key);
+    const windowMs = Math.ceil(windowSeconds * 1000);
+    try {
+      const result = (await this.redis.eval(
+        RedisService.INCR_WITH_EXPIRE_SCRIPT,
+        1,
+        fullKey,
+        windowMs,
+      )) as [number, number];
+      const count = Number(result[0]);
+      const pttl = Number(result[1]);
+      return { count, ttlMs: pttl > 0 ? pttl : windowMs };
+    } catch (err: any) {
+      console.error(`[Redis] incrWithExpire error: ${err?.message ?? err}`);
+      return null; // fail-open: caller falls back to in-memory
+    }
+  }
+
+  /**
    * Delete cached value
    */
   async delete(key: string): Promise<boolean> {

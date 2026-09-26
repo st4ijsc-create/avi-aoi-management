@@ -9,6 +9,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Slider } from "@/components/ui/slider";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { mapTrpcError } from "@/lib/trpcErrors";
 import {
   Search,
   Upload,
@@ -64,15 +65,7 @@ export default function AIImageSearchPage() {
       { enabled: false },
     );
 
-  const { data: clusterData, refetch: runClustering, isFetching: isClustering } =
-    trpc.aiImageSearch.clusterDefects.useQuery({}, { enabled: false });
-
   // Mutations
-  const embedImage = trpc.aiImageSearch.embed.useMutation({
-    onSuccess: () => toast.success(t("is.embedded", "Đã tạo embedding cho ảnh")),
-    onError: (err) => toast.error(err.message),
-  });
-
   const uploadForSearch = trpc.aiImageSearch.uploadForSearch.useMutation();
   const searchByUpload = trpc.aiImageSearch.searchByUpload.useMutation();
 
@@ -108,7 +101,7 @@ export default function AIImageSearchPage() {
       setUploadSearchMode((result.searchMode ?? null) as SearchMode | null);
       setUploadEmbeddingSource(((result as any).embeddingSource ?? null) as EmbeddingSource | null);
     } catch (err: any) {
-      toast.error(err?.message ?? t("common.error", "Lỗi"));
+      toast.error(mapTrpcError(err));
     } finally {
       setIsUploadSearching(false);
     }
@@ -121,13 +114,7 @@ export default function AIImageSearchPage() {
         <PageHeader
           icon={<Search className="h-6 w-6" />}
           title={t("is.title", "Tìm kiếm ảnh AI")}
-          description={t("is.subtitle", "Tìm kiếm ảnh tương tự bằng AI - Phân cụm lỗi tự động")}
-          actions={
-            <Button variant="outline" size="sm" onClick={() => runClustering()} disabled={isClustering}>
-              <Layers className="h-4 w-4 mr-1.5" />
-              {t("is.cluster", "Phân cụm")}
-            </Button>
-          }
+          description={t("is.subtitle", "Tìm kiếm ảnh tương tự bằng AI")}
         />
 
         {/* Stats */}
@@ -416,7 +403,7 @@ export default function AIImageSearchPage() {
               </CardHeader>
               <CardContent>
                 <p className="text-sm text-muted-foreground mb-4">
-                  {t("is.embedDesc", "Sau khi bỏ ONNX, luồng tạo embedding đã tạm dừng. Tìm kiếm ảnh hiện tự chuyển sang chế độ AI mô tả/label khi không có model chỉ mục phù hợp.")}
+                  {t("is.embedDesc", "Nhúng ảnh (DINOv2 ONNX) được tạo tự động khi có ảnh mới — không cần thao tác thủ công. Tìm kiếm ảnh tự chuyển sang chế độ AI mô tả/label khi không có model chỉ mục phù hợp cho ảnh đó.")}
                 </p>
                 <div className="rounded-lg border border-dashed p-4 text-sm text-muted-foreground">
                   {t(

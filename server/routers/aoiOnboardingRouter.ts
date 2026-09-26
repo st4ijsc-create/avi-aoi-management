@@ -43,6 +43,7 @@
  */
 import { z } from "zod";
 import { TRPCError } from "@trpc/server";
+import { appError } from "../_core/appError";
 import { eq } from "drizzle-orm";
 import { router, protectedProcedure } from "../_core/trpc";
 import { requirePermission } from "../_core/accessControl";
@@ -70,7 +71,7 @@ const INSPECTION_MACHINE_TYPES = new Set(["AOI", "AVI", "SPI", "AXI"]);
 
 async function db() {
   const d = await getDb();
-  if (!d) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Database not connected" });
+  if (!d) throw appError("INTERNAL_SERVER_ERROR", "DB_UNAVAILABLE", undefined, "Database not connected");
   return d;
 }
 
@@ -78,7 +79,7 @@ async function db() {
 async function requireMachine(machineId: number) {
   const d = await db();
   const [m] = await d.select().from(machines).where(eq(machines.id, machineId)).limit(1);
-  if (!m) throw new TRPCError({ code: "NOT_FOUND", message: `Machine #${machineId} không tồn tại.` });
+  if (!m) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "machine" }, `Machine #${machineId} không tồn tại.`);
   return m;
 }
 
@@ -429,10 +430,7 @@ export const aoiOnboardingRouter = router({
       const machine = await requireMachine(input.machineId);
       const draft = await getDraftRecord(input.machineId);
       if (!draft) {
-        throw new TRPCError({
-          code: "NOT_FOUND",
-          message: "Chưa có bản nháp onboarding cho máy này — hoàn thành các bước wizard trước khi ký.",
-        });
+        throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "onboardingDraft" }, "Chưa có bản nháp onboarding cho máy này — hoàn thành các bước wizard trước khi ký.");
       }
 
       const snapshot = (draft.configSnapshot ?? {}) as {
@@ -447,16 +445,20 @@ export const aoiOnboardingRouter = router({
       if (!dryRunPassed) {
         const reason = input.overrideReason?.trim() ?? "";
         if (ctx.user.role !== "admin") {
-          throw new TRPCError({
-            code: "PRECONDITION_FAILED",
-            message: "Máy chưa có dry-run đạt — chạy bước 3 (Dry-run) trước, hoặc nhờ admin ký với lý do override.",
-          });
+          throw appError(
+            "PRECONDITION_FAILED",
+            "OPERATION_FAILED",
+            // Task 5 (doc 71) — reason tĩnh (không tham số động): mọi lần rơi vào nhánh
+            // này đều cần ĐÚNG MỘT chỉ dẫn "chạy Dry-run hoặc nhờ admin ký".
+            { operation: "signOnboarding", reason: "dryRunNotPassed" },
+            "Máy chưa có dry-run đạt — chạy bước 3 (Dry-run) trước, hoặc nhờ admin ký với lý do override.",
+          );
         }
         if (reason.length < 5) {
-          throw new TRPCError({
-            code: "BAD_REQUEST",
-            message: "Override cần lý do (≥ 5 ký tự) — sẽ được ghi vào audit log.",
-          });
+          // Review cuối, ca I-A #14: `reason` ĐÃ được nhập (admin có thể gõ "ok") — chỉ
+          // chưa đủ độ dài. FIELD_REQUIRED nói "thiếu", nhưng trường này không thiếu, nó
+          // KHÔNG HỢP LỆ (quá ngắn). Đổi sang INVALID_VALUE để câu hiện đúng sự thật.
+          throw appError("BAD_REQUEST", "INVALID_VALUE", { field: "overrideReason" }, "Override cần lý do (≥ 5 ký tự) — sẽ được ghi vào audit log.");
         }
         overridden = true;
       }
@@ -467,7 +469,7 @@ export const aoiOnboardingRouter = router({
         note: input.note?.trim() || null,
       });
       if (!record) {
-        throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Không promote được bản nháp." });
+        throw appError("INTERNAL_SERVER_ERROR", "OPERATION_FAILED", { operation: "signOnboarding" }, "Không promote được bản nháp.");
       }
 
       // Immutable audit row (repo pattern: recordAuditEvent, append-only).
@@ -525,10 +527,13 @@ export const aoiOnboardingRouter = router({
         reason: input.reason.trim(),
       });
       if (!row) {
-        throw new TRPCError({
-          code: "NOT_FOUND",
-          message: "Máy này không có bản ghi commissioning đang hiệu lực.",
-        });
+        // Review cuối, ca I-A #8: decommissionMachine() trả null khi
+        // `!latest || latest.status !== "commissioned"` — máy có thể CÓ bản ghi (draft,
+        // hoặc đã decommissioned từ trước), chỉ không ở trạng thái "commissioned" để
+        // decommission tiếp. ENTITY_NOT_FOUND khẳng định "không có bản ghi" — sai khi máy
+        // có bản ghi nhưng sai trạng thái. Đổi sang OPERATION_FAILED, tái dùng khoá
+        // "transitionMachineLifecycle" đã có sẵn cho lớp thao tác chuyển trạng thái máy.
+        throw appError("NOT_FOUND", "OPERATION_FAILED", { operation: "transitionMachineLifecycle" }, "Máy này không có bản ghi commissioning đang hiệu lực.");
       }
       try {
         const d = await db();

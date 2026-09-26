@@ -34,6 +34,7 @@
  * ──────────────────────────────────────────────────────────────────────────
  */
 import { createConnection } from "node:net";
+import { DeviceUnreachableError } from "../../../_core/deviceErrors";
 import type {
   RobotDriver, RobotVendor, RobotConnectionConfig, RobotState, RobotStateHandle,
   OnRobotState, RobotJobSpec, RobotJobResult, RobotHealth,
@@ -263,7 +264,7 @@ export class TechmanDriver implements RobotDriver {
   }
 
   async getState(): Promise<RobotState> {
-    if (!this.connected || !this.mbClient) throw new Error("TechmanDriver: not connected");
+    if (!this.connected || !this.mbClient) throw new DeviceUnreachableError("techmanRobot");
     try {
       const [running] = await this.readReg(this.mbClient, MODBUS_REGISTERS.running);
       const [errorCode] = await this.readReg(this.mbClient, MODBUS_REGISTERS.errorCode);
@@ -292,7 +293,7 @@ export class TechmanDriver implements RobotDriver {
   }
 
   async subscribeState(onState: OnRobotState, intervalMs = 5000): Promise<RobotStateHandle> {
-    if (!this.connected) throw new Error("TechmanDriver: not connected");
+    if (!this.connected) throw new DeviceUnreachableError("techmanRobot");
     const tick = async () => {
       try {
         const s = await this.getState();

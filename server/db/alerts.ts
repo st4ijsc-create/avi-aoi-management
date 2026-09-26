@@ -1,5 +1,6 @@
 import { getDb } from "./connection";
-import { eq, desc, and, gte } from "drizzle-orm";
+import { DbUnavailableError } from "../_core/dbErrors";
+import { eq, desc, and, gte, isNull, type SQL } from "drizzle-orm";
 import {
   alertSettings,
   type InsertAlertSetting,
@@ -36,41 +37,45 @@ export async function getAlertSettingById(id: number) {
 
 export async function createAlertSetting(data: InsertAlertSetting) {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  if (!db) throw new DbUnavailableError();
   const [result] = await db.insert(alertSettings).values(data).returning({ id: alertSettings.id });
   return { id: result.id };
 }
 
 export async function updateAlertSetting(id: number, data: Partial<InsertAlertSetting>) {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  if (!db) throw new DbUnavailableError();
   await db.update(alertSettings).set(data).where(eq(alertSettings.id, id));
 }
 
 export async function deleteAlertSetting(id: number) {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  if (!db) throw new DbUnavailableError();
   await db.delete(alertSettings).where(eq(alertSettings.id, id));
 }
 
-export async function getAlertHistory(alertSettingId?: number, limit: number = 50) {
+/**
+ * doc 67 W3 (việc 6): `onlyOpen` lọc acknowledged_at IS NULL Ở SERVER.
+ * Trước đây console lấy 50 bản MỚI NHẤT rồi client lọc đã-ack → nếu 50 bản gần
+ * nhất đều đã ack thì breach mở CŨ hơn biến mất khỏi console (mất cảnh báo).
+ * Với onlyOpen=true, limit áp lên đúng tập "đang mở" nên breach mở cũ vẫn hiện.
+ */
+export async function getAlertHistory(alertSettingId?: number, limit: number = 50, onlyOpen?: boolean) {
   const db = await getDb();
   if (!db) return [];
-  
-  if (alertSettingId) {
-    return db.select().from(alertHistory)
-      .where(eq(alertHistory.alertSettingId, alertSettingId))
-      .orderBy(desc(alertHistory.createdAt))
-      .limit(limit);
-  }
-  return db.select().from(alertHistory)
-    .orderBy(desc(alertHistory.createdAt))
-    .limit(limit);
+
+  const conditions: SQL[] = [];
+  if (alertSettingId) conditions.push(eq(alertHistory.alertSettingId, alertSettingId));
+  if (onlyOpen) conditions.push(isNull(alertHistory.acknowledgedAt));
+
+  const base = db.select().from(alertHistory);
+  const query = conditions.length > 0 ? base.where(and(...conditions)) : base;
+  return query.orderBy(desc(alertHistory.createdAt)).limit(limit);
 }
 
 export async function createAlertHistory(data: InsertAlertHistory) {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  if (!db) throw new DbUnavailableError();
   const [result] = await db.insert(alertHistory).values(data).returning({ id: alertHistory.id });
   return { id: result.id };
 }
@@ -86,7 +91,7 @@ export async function getAlertHistoryById(id: number) {
 
 export async function acknowledgeAlert(id: number, userId: number) {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  if (!db) throw new DbUnavailableError();
   await db.update(alertHistory).set({
     acknowledgedAt: new Date(),
     acknowledgedBy: userId,
@@ -117,20 +122,20 @@ export async function getYieldAlertThresholdByType(metricType: 'FPY' | 'FY' | 'N
 
 export async function createYieldAlertThreshold(data: InsertYieldAlertThreshold) {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  if (!db) throw new DbUnavailableError();
   const [result] = await db.insert(yieldAlertThresholds).values(data).returning({ id: yieldAlertThresholds.id });
   return result.id;
 }
 
 export async function updateYieldAlertThreshold(id: number, data: Partial<InsertYieldAlertThreshold>) {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  if (!db) throw new DbUnavailableError();
   await db.update(yieldAlertThresholds).set(data).where(eq(yieldAlertThresholds.id, id));
 }
 
 export async function deleteYieldAlertThreshold(id: number) {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  if (!db) throw new DbUnavailableError();
   await db.delete(yieldAlertThresholds).where(eq(yieldAlertThresholds.id, id));
 }
 
@@ -145,7 +150,7 @@ export async function getEnabledYieldAlertThresholds() {
 
 export async function createYieldThresholdHistory(data: InsertYieldThresholdHistory) {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  if (!db) throw new DbUnavailableError();
   const [result] = await db.insert(yieldThresholdHistory).values(data).returning({ id: yieldThresholdHistory.id });
   return { id: Number(result.id), ...data };
 }

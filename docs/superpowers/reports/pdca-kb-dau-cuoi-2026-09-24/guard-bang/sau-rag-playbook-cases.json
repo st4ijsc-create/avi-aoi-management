@@ -1,0 +1,272 @@
+{
+  "label": "2026-09-24",
+  "timestamp": "2026-09-24T07:19:40.221Z",
+  "casesFile": "scripts\\ai-eval\\rag-playbook-cases.json",
+  "corpus": {
+    "chunks": 6421,
+    "vectors": 6421,
+    "embedModel": "Qwen3-Embedding-0.6B-f16",
+    "embedModelMatches": true
+  },
+  "params": {
+    "k": 5,
+    "ndcgK": 10,
+    "pool": 20,
+    "mrrWindow": 50
+  },
+  "hitRule": "STRICT — sourcePath BẰNG ĐÚNG expectPaths hoặc bắt đầu bằng expectPrefixes; CẤM khớp chuỗi con / từ khoá",
+  "absentExpectPaths": [],
+  "baseline": {
+    "n": 8,
+    "hitRateAt5": 0.75,
+    "precisionAt5": 0.275,
+    "mrr": 0.7262,
+    "ndcgAt10": 0.7623,
+    "recallAt5": 0.6875,
+    "recallAt5Capped": 0.6875,
+    "distractorAboveRate": 0,
+    "avgDistractorsInTopK": 0
+  },
+  "parity": {
+    "available": true,
+    "n": 8,
+    "hitRateAt5": 1,
+    "precisionAt5": 0.325,
+    "mrr": 0.8542,
+    "ndcgAt10": 0.7818,
+    "recallAt5": 0.8125,
+    "recallAt5Capped": 0.8125,
+    "distractorAboveRate": 0,
+    "avgDistractorsInTopK": 0
+  },
+  "weightSweep": {
+    "available": false,
+    "requested": false
+  },
+  "reranked": {
+    "available": false,
+    "requested": false,
+    "reason": "không truyền --rerank"
+  },
+  "graphRag": {
+    "available": false,
+    "requested": false,
+    "reason": "không truyền --graph"
+  },
+  "perDomain": {
+    "cai-dat": {
+      "n": 1,
+      "hitRateAt5": 1,
+      "precisionAt5": 0.4,
+      "mrr": 1,
+      "ndcgAt10": 1,
+      "recallAt5": 1,
+      "recallAt5Capped": 1,
+      "distractorAboveRate": 0,
+      "avgDistractorsInTopK": 0
+    },
+    "lap-dat": {
+      "n": 1,
+      "hitRateAt5": 1,
+      "precisionAt5": 0.4,
+      "mrr": 1,
+      "ndcgAt10": 1,
+      "recallAt5": 1,
+      "recallAt5Capped": 1,
+      "distractorAboveRate": 0,
+      "avgDistractorsInTopK": 0
+    },
+    "san-xuat": {
+      "n": 1,
+      "hitRateAt5": 1,
+      "precisionAt5": 0.4,
+      "mrr": 1,
+      "ndcgAt10": 1,
+      "recallAt5": 1,
+      "recallAt5Capped": 1,
+      "distractorAboveRate": 0,
+      "avgDistractorsInTopK": 0
+    },
+    "ung-cuu": {
+      "n": 5,
+      "hitRateAt5": 0.6,
+      "precisionAt5": 0.2,
+      "mrr": 0.5619,
+      "ndcgAt10": 0.6197,
+      "recallAt5": 0.5,
+      "recallAt5Capped": 0.5,
+      "distractorAboveRate": 0,
+      "avgDistractorsInTopK": 0
+    }
+  },
+  "cases": [
+    {
+      "id": "PB01",
+      "domain": "ung-cuu",
+      "question": "Phát hiện chùm NG liên tiếp trên một máy AOI, quy trình điều tra và xử lý từng bước thế nào?",
+      "R": 2,
+      "base": {
+        "hitAt5": false,
+        "precisionAt5": 0,
+        "relevantInTopK": 0,
+        "recallAt5": 0,
+        "recallAt5Capped": 0,
+        "rr": 0.1429,
+        "firstRelRank": 7,
+        "ndcgAt10": 0.2044,
+        "distractorsAbove": 0,
+        "distractorsInTopK": 0,
+        "top1": "knowledge/workflows/ng-handling.playbook.yaml"
+      },
+      "rerank": null,
+      "graph": null
+    },
+    {
+      "id": "PB02",
+      "domain": "ung-cuu",
+      "question": "Sản phẩm bị máy chấm NG tại line AOI thì thao tác xử lý theo trình tự nào?",
+      "R": 2,
+      "base": {
+        "hitAt5": true,
+        "precisionAt5": 0.2,
+        "relevantInTopK": 1,
+        "recallAt5": 0.5,
+        "recallAt5Capped": 0.5,
+        "rr": 1,
+        "firstRelRank": 1,
+        "ndcgAt10": 0.8316,
+        "distractorsAbove": 0,
+        "distractorsInTopK": 0,
+        "top1": "knowledge/workflows/ng-handling.playbook.yaml"
+      },
+      "rerank": null,
+      "graph": null
+    },
+    {
+      "id": "PB03",
+      "domain": "ung-cuu",
+      "question": "Có vi phạm SPC mức critical, các bước rà soát xu hướng và cân nhắc chỉnh ngưỡng là gì?",
+      "R": 2,
+      "base": {
+        "hitAt5": true,
+        "precisionAt5": 0.4,
+        "relevantInTopK": 2,
+        "recallAt5": 1,
+        "recallAt5Capped": 1,
+        "rr": 1,
+        "firstRelRank": 1,
+        "ndcgAt10": 1,
+        "distractorsAbove": 0,
+        "distractorsInTopK": 0,
+        "top1": "knowledge/workflows/spc-critical-review.playbook.yaml"
+      },
+      "rerank": null,
+      "graph": null
+    },
+    {
+      "id": "PB04",
+      "domain": "lap-dat",
+      "question": "Trình tự lắp đặt và khai báo một máy mới vào hệ thống gồm những bước nào?",
+      "R": 2,
+      "base": {
+        "hitAt5": true,
+        "precisionAt5": 0.4,
+        "relevantInTopK": 2,
+        "recallAt5": 1,
+        "recallAt5Capped": 1,
+        "rr": 1,
+        "firstRelRank": 1,
+        "ndcgAt10": 1,
+        "distractorsAbove": 0,
+        "distractorsInTopK": 0,
+        "top1": "knowledge/workflows/install-new-machine.playbook.yaml"
+      },
+      "rerank": null,
+      "graph": null
+    },
+    {
+      "id": "PB05",
+      "domain": "san-xuat",
+      "question": "Đổi recipe khi bắt đầu chạy line thì làm theo các bước nào, cần quyền gì?",
+      "R": 2,
+      "base": {
+        "hitAt5": true,
+        "precisionAt5": 0.4,
+        "relevantInTopK": 2,
+        "recallAt5": 1,
+        "recallAt5Capped": 1,
+        "rr": 1,
+        "firstRelRank": 1,
+        "ndcgAt10": 1,
+        "distractorsAbove": 0,
+        "distractorsInTopK": 0,
+        "top1": "knowledge/workflows/change-recipe-line-start.playbook.yaml"
+      },
+      "rerank": null,
+      "graph": null
+    },
+    {
+      "id": "PB06",
+      "domain": "cai-dat",
+      "question": "Các bước tạo một điểm đo mới và đặt giới hạn spec cho nó?",
+      "R": 2,
+      "base": {
+        "hitAt5": true,
+        "precisionAt5": 0.4,
+        "relevantInTopK": 2,
+        "recallAt5": 1,
+        "recallAt5Capped": 1,
+        "rr": 1,
+        "firstRelRank": 1,
+        "ndcgAt10": 1,
+        "distractorsAbove": 0,
+        "distractorsInTopK": 0,
+        "top1": "knowledge/workflows/create-measurement-point.playbook.yaml"
+      },
+      "rerank": null,
+      "graph": null
+    },
+    {
+      "id": "PB07",
+      "domain": "ung-cuu",
+      "question": "Cách phân biệt lỗi giả false call với lỗi thật lặp lại khi có cụm khuyết tật, và xử lý tiếp ra sao?",
+      "R": 2,
+      "base": {
+        "hitAt5": false,
+        "precisionAt5": 0,
+        "relevantInTopK": 0,
+        "recallAt5": 0,
+        "recallAt5Capped": 0,
+        "rr": 0.1667,
+        "firstRelRank": 6,
+        "ndcgAt10": 0.4118,
+        "distractorsAbove": 0,
+        "distractorsInTopK": 0,
+        "top1": "knowledge/operational-approved/defect-catalog.md"
+      },
+      "rerank": null,
+      "graph": null
+    },
+    {
+      "id": "PB08",
+      "domain": "ung-cuu",
+      "question": "Quy trình cô lập hàng NG vào khay chờ phân loại rồi chuyển phân tích nguyên nhân gốc?",
+      "R": 2,
+      "base": {
+        "hitAt5": true,
+        "precisionAt5": 0.4,
+        "relevantInTopK": 2,
+        "recallAt5": 1,
+        "recallAt5Capped": 1,
+        "rr": 0.5,
+        "firstRelRank": 2,
+        "ndcgAt10": 0.6509,
+        "distractorsAbove": 0,
+        "distractorsInTopK": 0,
+        "top1": "knowledge/domain/howto-ng-handling-sop.md"
+      },
+      "rerank": null,
+      "graph": null
+    }
+  ]
+}

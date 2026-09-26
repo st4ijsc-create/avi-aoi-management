@@ -23,9 +23,16 @@
  *     (programmingAdapter.ts header) — a build/sim NEVER deploys or runs on hardware.
  *   - `calc` parses a whitelisted arithmetic grammar by hand — there is NO `eval`,
  *     `Function`, or dynamic code execution anywhere in this file.
- *   - `read_project_file` is confined to PROG_WORKSPACE_DIR: absolute paths, `..`
- *     traversal, and any path that resolves outside the root are rejected BEFORE any
- *     disk read (see resolveWorkspacePath — reused by the write tool for symmetry).
+ *   - `read_project_file` is confined to PROG_WORKSPACE_DIR by the SINGLE shared door
+ *     below — `confineTarget()` + `readConfined()` / `writeConfined()`. The write tool
+ *     (writeHandlers/programmingFile.ts) goes through that SAME door; it has no disk
+ *     access of its own (it imports neither `node:fs` nor `node:path`).
+ *     The door rejects, in order: bad path SHAPE (absolute / `..` / NUL / escaping the
+ *     root) BEFORE any disk I/O; then a target whose realpath leaves the root (symlink /
+ *     NTFS directory junction); then a directory; then `nlink > 1` — an NTFS HARD LINK
+ *     keeps its realpath INSIDE the root, so no path check can see it (Pha 5 N13;
+ *     measured leak of 57 bytes before the fix). `isFile`/`nlink`/`size` are re-checked
+ *     on the OPEN fd, so a stat-then-open swap cannot slip past.
  *
  * Self-registers on import (see index.ts → `import "./readToolsProgramming"`).
  * ════════════════════════════════════════════════════════════════════════════
@@ -142,17 +149,62 @@ function languageForKind(kind: ProgrammingKind): string {
 // Workspace-path confinement (also consumed by writeHandlers/programmingFile.ts)
 // ════════════════════════════════════════════════════════════════════════════
 
-/** Absolute root of the programming workspace (env PROG_WORKSPACE_DIR, read at call-time). */
-export function programmingWorkspaceRoot(): string {
+/**
+ * Absolute root of the programming workspace (env PROG_WORKSPACE_DIR, read at call-time).
+ *
+ * ⚠⚠⚠ **KHÔNG export** (review, N-2). Nó từng export cùng `resolveWorkspacePath`, và **ghép hai cái
+ * lại là dựng được một đường dẫn tuyệt đối CHƯA CHỨNG MINH** — đúng thứ mà "đổi kiểu" vừa dựng rào
+ * để cấm. Tệ hơn: cặp ấy nằm **ngoài tầm cả hai lưới** (census chỉ quét `aiLocalTools/`, canary chỉ
+ * thấy tool). Một cửa hậu không ai canh, mở sẵn, **0 người dùng**.
+ */
+function programmingWorkspaceRoot(): string {
   const raw = (process.env.PROG_WORKSPACE_DIR || "programming-workspace").trim() || "programming-workspace";
   return path.isAbsolute(raw) ? path.resolve(raw) : path.resolve(process.cwd(), raw);
 }
 
 export type WorkspaceRejectReason = "EMPTY" | "NUL" | "ABSOLUTE" | "TRAVERSAL" | "ESCAPE";
 
-export interface WorkspacePathResolution {
+/**
+ * ★★★ 2026-08-18 (doc 78 · PHA A) — **CỬA NÀY NAY NHẬN GỐC LÀM THAM SỐ.**
+ *
+ * ══════════════════════════════════════════════════════════════════════════════════════════════
+ * VÌ SAO KHÔNG VIẾT CỬA THỨ HAI CHO HỘP CÁT REPO
+ * ══════════════════════════════════════════════════════════════════════════════════════════════
+ * Doc 78 PHA A mở cho LLM tự chọn tệp để đọc **trong chính repo này**. Gốc khác
+ * (`process.cwd()` thay vì `PROG_WORKSPACE_DIR`), nhưng **LUẬT thì y hệt**: hình dạng đường dẫn →
+ * realpath của cha/target → thư mục? → `nlink > 1`? → rồi mọi byte đi qua `readConfined` trên
+ * **chính fd**. Viết bản thứ hai của luật ấy là đúng lớp lỗi *"hai bản sao một vị từ"* mà cả
+ * `programmingFileIo.census.test.ts` lẫn `authCtxInjection.test.ts` tồn tại để chặn — và bản sao
+ * mới **chắc chắn** sẽ thiếu tầng fd (nó là tầng KHÔNG nhìn thấy được từ đường dẫn).
+ *
+ * ⇒ Gốc trở thành **tham số tường minh**; `confineTarget()` chỉ là bản ghim sẵn gốc workspace lập
+ * trình. `readConfined`/`writeConfined` **không đổi một dòng** — chúng vốn làm việc trên
+ * `ConfinedTarget` (đường dẫn tuyệt đối nằm trong `ABS_OF`, ngoài tầm với của mọi module khác).
+ *
+ * ⚠ Gốc là **tham số của MÃ SERVER**, không bao giờ của người dùng/LLM: nó được tính bởi
+ * `repoSandbox.gocHopCat()` hoặc `programmingWorkspaceRoot()`, cả hai đều đọc env + `path.resolve`.
+ * Một gốc TƯƠNG ĐỐI sẽ làm mọi phép so tiền tố mất nghĩa ⇒ `chuanHoaGoc()` ép tuyệt đối.
+ */
+function chuanHoaGoc(root: unknown): string {
+  const raw = typeof root === "string" ? root.trim() : "";
+  if (raw === "") return programmingWorkspaceRoot();
+  return path.isAbsolute(raw) ? path.resolve(raw) : path.resolve(process.cwd(), raw);
+}
+
+/**
+ * ★★★ Pha 5 Task 1 (review, M-1) — `"HARD_LINK"` **PHẢI phát biểu được ở CẢ HAI đường.**
+ *
+ * ⚠⚠ Vòng trước tôi **cố ý không** mở rộng kiểu này, với lý lẽ *"bên GHI không bao giờ sinh ra
+ * `HARD_LINK`"*. Người review bác đúng: **việc bên ghi không sinh ra nó CHÍNH LÀ con bug** — và lý
+ * lẽ ấy là chỗ duy nhất trong báo cáo **chủ động bảo vệ một lỗ hổng**. Ghi lại nguyên văn để lớp
+ * lập luận này bị nhận ra ngay lần sau: *"bên kia không dùng"* **không bao giờ** là lý do giữ một
+ * kiểu hẹp — nó là câu hỏi *"vì sao bên kia không dùng?"*.
+ */
+export type ConfinementRejectReason = WorkspaceRejectReason | "HARD_LINK";
+
+/** Nội bộ, KHÔNG export — kết quả kiểm HÌNH DẠNG đường dẫn. Xem `confineTarget`. */
+interface InternalResolution {
   ok: boolean;
-  /** Absolute, confined path (present only when ok). */
   absPath?: string;
   /** POSIX-style path relative to the workspace root (present only when ok). */
   relPath?: string;
@@ -160,14 +212,11 @@ export interface WorkspacePathResolution {
 }
 
 /**
- * Resolve an untrusted relative path against the workspace root and PROVE containment.
- * Rejects (defense-in-depth, before any disk I/O):
- *   - empty / non-string / NUL byte
- *   - absolute paths (POSIX `/…`, Windows `C:\…`, and drive-relative `C:foo`)
- *   - any explicit `..` segment (either slash style)
- *   - anything that, once resolved, is the root itself or escapes it (path.relative check)
+ * Kiểm HÌNH DẠNG đường dẫn (rỗng / NUL / tuyệt đối / `..` / thoát root) — **trước mọi I/O đĩa**.
+ * Đây là **tầng 1** của `confineTarget()`, không phải một cửa dùng được một mình: nó chỉ nói đường
+ * dẫn *trông* hợp lệ, **chưa** nói gì về realpath hay `nlink`.
  */
-export function resolveWorkspacePath(inputPath: unknown): WorkspacePathResolution {
+function resolveInternal(inputPath: unknown, rootIn?: string): InternalResolution {
   if (typeof inputPath !== "string") return { ok: false, reason: "EMPTY" };
   const raw = inputPath.trim();
   if (raw === "") return { ok: false, reason: "EMPTY" };
@@ -177,8 +226,20 @@ export function resolveWorkspacePath(inputPath: unknown): WorkspacePathResolutio
   // Any explicit parent-dir segment, in either slash convention.
   const segs = raw.replace(/\\/g, "/").split("/");
   if (segs.some((s) => s === "..")) return { ok: false, reason: "TRAVERSAL" };
+  /**
+   * ★★★ 2026-08-18 — **SOI TỪNG ĐOẠN, KHÔNG SOI ĐẦU CHUỖI.** Tiền lệ ĐO ĐƯỢC cùng ngày ở
+   * `server/routes/_uyQuyenAnh.ts:180`: bản đầu của bộ lọc ảnh chỉ soi `/^[A-Za-z]:/` trên **cả
+   * chuỗi**, nên `uploads/C:/Windows/win.ini` đi lọt — sau khi cắt tiền tố, đoạn `C:` nằm ở GIỮA.
+   *
+   * ⚠ Đo lại trên chính máy này (`path.win32.resolve`): `resolve("D:\\repo", "sub/C:/Windows/win.ini")`
+   * cho `D:\repo\sub\C:\Windows\win.ini` — `path.relative` vẫn ra `sub\C:\Windows\win.ini`, tức
+   * **phép kiểm hình dạng CŨ CHO QUA**. Hôm nay nó không thành một lượt thoát thật vì NTFS coi `C:`
+   * giữa đường là cú pháp ADS và `openSync` hỏng ⇒ rơi xuống `NOT_FOUND`. **"Hỏng ở tầng dưới" không
+   * phải một hàng rào** — nó là một sự trùng hợp của nền tảng. Chặn ở đúng tầng phát biểu được.
+   */
+  if (segs.some((s) => /^[a-zA-Z]:/.test(s))) return { ok: false, reason: "ABSOLUTE" };
 
-  const root = programmingWorkspaceRoot();
+  const root = chuanHoaGoc(rootIn);
   const candidate = path.resolve(root, raw);
   const rel = path.relative(root, candidate);
   if (rel === "" || rel.startsWith("..") || path.isAbsolute(rel)) return { ok: false, reason: "ESCAPE" };
@@ -186,23 +247,354 @@ export function resolveWorkspacePath(inputPath: unknown): WorkspacePathResolutio
 }
 
 /**
- * Best-effort symlink hardening: once a target is known to exist, re-verify that its
- * REAL path (following symlinks) is still inside the REAL workspace root. Returns true
- * when safe or when realpath cannot be resolved (target/root may not exist yet).
+ * Best-effort symlink hardening: re-verify that a path's REAL path (following symlinks/junctions)
+ * is still inside the REAL workspace root. Returns true when safe or when realpath cannot be
+ * resolved (target/root may not exist yet).
+ * @param allowRootItself `true` cho THƯ MỤC CHA (bản thân root là cha hợp lệ), `false` cho TARGET.
  */
-function realpathStillContained(absPath: string): boolean {
+function realpathContained(absPath: string, allowRootItself: boolean, rootIn?: string): boolean {
   try {
-    const realRoot = fs.realpathSync(programmingWorkspaceRoot());
+    const realRoot = fs.realpathSync(chuanHoaGoc(rootIn));
     const realTarget = fs.realpathSync(absPath);
     const rel = path.relative(realRoot, realTarget);
-    return rel === "" ? false : !rel.startsWith("..") && !path.isAbsolute(rel);
+    return rel === "" ? allowRootItself : !rel.startsWith("..") && !path.isAbsolute(rel);
   } catch {
-    return true; // cannot resolve (not created yet) → the resolve-based check already applied
+    return true; // cannot resolve (not created yet) → the shape check already applied
   }
 }
 
-function rejectReasonMsg(reason: WorkspaceRejectReason, lang: Lang): string {
+// ────────────────────────────────────────────────────────────────────────────
+// ★★★ CỬA DUY NHẤT — mọi byte vào/ra thư mục làm việc đều qua đây
+// ────────────────────────────────────────────────────────────────────────────
+
+/**
+ * Nhãn RIÊNG TƯ: `unique symbol` **không được export**, nên **không mã nào ngoài module này viết ra
+ * được** một giá trị hợp kiểu `ConfinedTarget`. Đó là điểm mấu chốt của "đổi kiểu": câu
+ * *"ghi vào một đường dẫn chưa chứng minh"* nay **không viết ra được**, chứ không phải "có thêm một
+ * ca test canh nó".
+ */
+declare const PROVEN_CONFINED: unique symbol;
+
+/** Một đích ĐÃ CHỨNG MINH nằm trong workspace. Chỉ `confineTarget()` tạo ra được. */
+export interface ConfinedTarget {
+  /** POSIX-style, tương đối với workspace root — an toàn để hiển thị. */
+  readonly relPath: string;
+  /** Đích đã tồn tại trên đĩa hay chưa (chưa tồn tại vẫn hợp lệ cho một lượt GHI). */
+  readonly exists: boolean;
+  readonly [PROVEN_CONFINED]: true;
+}
+
+/**
+ * ⚠ Đường dẫn tuyệt đối **KHÔNG nằm trên kiểu** — nó ở đây, ngoài tầm với của mọi module khác.
+ * Người gọi cầm `ConfinedTarget` vẫn **không** lấy được chuỗi đường dẫn để tự `fs.*`; họ buộc phải
+ * dùng `readConfined()` / `writeConfined()`.
+ */
+const ABS_OF = new WeakMap<ConfinedTarget, string>();
+
+export type ConfineOutcome =
+  | { ok: true; target: ConfinedTarget }
+  | { ok: false; kind: "PATH_REJECTED"; reason: ConfinementRejectReason }
+  | { ok: false; kind: "NOT_A_FILE" };
+
+/**
+ * ★★★ Chứng minh một đường dẫn NGƯỜI DÙNG ĐƯA nằm trong workspace — **cho cả ĐỌC lẫn GHI**.
+ *
+ * Bốn tầng, theo đúng thứ tự (mã cụ thể hơn thắng trước):
+ *   1. hình dạng đường dẫn (`resolveInternal`) — trước mọi I/O;
+ *   2. đích **chưa tồn tại** ⇒ kiểm realpath của **THƯ MỤC CHA** (sẽ tạo file mới ở đó);
+ *   3. đích **đã tồn tại** ⇒ kiểm realpath của **CHÍNH TARGET** — đóng bất đối xứng I-2: bên ghi
+ *      trước đây chỉ kiểm thư mục cha, nên một **symlink FILE** trong một thư mục cha hợp lệ lọt
+ *      qua đường ghi (sống trên Linux / Windows bật Developer Mode);
+ *   4. thư mục ⇒ `NOT_A_FILE`; `nlink > 1` ⇒ `HARD_LINK`.
+ *
+ * ⚠ Đây là phép kiểm **theo đường dẫn**, nên nó là *sàng thô*. Phép kiểm **có thẩm quyền** nằm ở
+ * `readConfined`/`writeConfined`, chạy trên **chính fd** sắp đọc/ghi (chống TOCTOU — xem ở đó).
+ */
+export function confineTarget(inputPath: unknown): ConfineOutcome {
+  return confineTargetUnder(programmingWorkspaceRoot(), inputPath);
+}
+
+/**
+ * ★★★ Cùng bốn tầng của `confineTarget`, nhưng gốc do NGƯỜI GỌI (mã server) khai — xem
+ * `chuanHoaGoc`. Đây là mặt tiếp xúc mà **hộp cát repo** (doc 78 PHA A → `repoSandbox.ts`) và mọi
+ * pha sau (B: chạy lệnh · C: ghi tệp) dùng lại; **không có cửa thứ hai ra đĩa trong nhóm tool này**
+ * (`programmingFileIo.census.test.ts` cưỡng chế điều đó bằng AST trên cả thư mục).
+ */
+export function confineTargetUnder(root: string, inputPath: unknown): ConfineOutcome {
+  const r = resolveInternal(inputPath, root);
+  if (!r.ok || !r.absPath || !r.relPath) {
+    return { ok: false, kind: "PATH_REJECTED", reason: r.reason ?? "EMPTY" };
+  }
+  const abs = r.absPath;
+
+  let stat: fs.Stats | null = null;
+  try {
+    stat = fs.statSync(abs);
+  } catch {
+    stat = null; // chưa tồn tại (hoặc không stat được) → đích GHI mới
+  }
+
+  if (stat === null) {
+    if (!realpathContained(path.dirname(abs), true, root)) {
+      return { ok: false, kind: "PATH_REJECTED", reason: "ESCAPE" };
+    }
+  } else {
+    if (!realpathContained(abs, false, root)) {
+      return { ok: false, kind: "PATH_REJECTED", reason: "ESCAPE" };
+    }
+    if (!stat.isFile()) return { ok: false, kind: "NOT_A_FILE" };
+    if (stat.nlink > 1) return { ok: false, kind: "PATH_REJECTED", reason: "HARD_LINK" };
+  }
+
+  const target = { relPath: r.relPath, exists: stat !== null } as ConfinedTarget;
+  ABS_OF.set(target, abs);
+  return { ok: true, target };
+}
+
+export type ConfinedReadOutcome =
+  | { ok: true; content: string; size: number; truncated: boolean }
+  | { ok: false; kind: "NOT_FOUND" }
+  | { ok: false; kind: "NOT_A_FILE" }
+  | { ok: false; kind: "PATH_REJECTED"; reason: ConfinementRejectReason }
+  | { ok: false; kind: "READ_ERROR"; message: string };
+
+/**
+ * ★★★ ĐỌC — **lượt đọc file DUY NHẤT** của nhóm tool lập trình.
+ *
+ * ⚠⚠ I-1 (TOCTOU): bản trước `statSync(path)` rồi `openSync(path)` — **HAI lượt phân giải đường
+ * dẫn**. Mô hình đe doạ của chính N13 đã cho kẻ tấn công quyền tạo file trong workspace, nên nó có
+ * thể để `x.st` là file thường lúc `stat` và là hard link lúc `open` ⇒ đọc được bí mật với
+ * `note=undefined`. Nay: **`open` TRƯỚC, rồi `fstat(fd)`** — `isFile`/`nlink`/`size` đều hỏi **chính
+ * cái file sắp bị đọc**, cùng số syscall, **không còn cửa sổ đua**.
+ */
+export function readConfined(target: ConfinedTarget, maxBytes: number): ConfinedReadOutcome {
+  const abs = ABS_OF.get(target);
+  if (abs === undefined) return { ok: false, kind: "READ_ERROR", message: "unproven target" };
+  let fd: number;
+  try {
+    fd = fs.openSync(abs, "r");
+  } catch (err) {
+    const code = (err as NodeJS.ErrnoException)?.code;
+    if (code === "ENOENT") return { ok: false, kind: "NOT_FOUND" };
+    if (code === "EISDIR") return { ok: false, kind: "NOT_A_FILE" };
+    return { ok: false, kind: "READ_ERROR", message: code ?? String(err) };
+  }
+  try {
+    // ⚠ Trên Windows `openSync` MỞ ĐƯỢC một thư mục (đo được) — nên `isFile()` phải hỏi trên fd.
+    const st = fs.fstatSync(fd);
+    if (!st.isFile()) return { ok: false, kind: "NOT_A_FILE" };
+    if (st.nlink > 1) return { ok: false, kind: "PATH_REJECTED", reason: "HARD_LINK" };
+    const buf = Buffer.alloc(Math.min(st.size, maxBytes));
+    const read = fs.readSync(fd, buf, 0, buf.length, 0);
+    return { ok: true, content: buf.toString("utf8", 0, read), size: st.size, truncated: st.size > maxBytes };
+  } catch (err) {
+    // data-raw-ok: `kind: "READ_ERROR"` ĐÃ là mã máy-đọc-được; chuỗi kèm theo nói rõ tệp
+    // nào/vì sao (EACCES, EISDIR…). Người đọc là kỹ sư đang dùng tác nhân lập trình.
+    return { ok: false, kind: "READ_ERROR", message: err instanceof Error ? err.message : String(err) };
+  } finally {
+    fs.closeSync(fd);
+  }
+}
+
+export type ConfinedWriteOutcome =
+  | { ok: true; bytes: number }
+  | { ok: false; kind: "NOT_A_FILE" }
+  | { ok: false; kind: "PATH_REJECTED"; reason: ConfinementRejectReason }
+  | { ok: false; kind: "WRITE_ERROR"; message: string };
+
+/**
+ * ★★★ GHI — **lượt ghi file DUY NHẤT** của nhóm tool lập trình.
+ *
+ * ⚠⚠ C-2 (review, Critical): bản trước `fs.writeFileSync` **không hỏi `nlink` một dòng nào** ⇒ ghi
+ * đè xuyên hard link ra ngoài workspace **và trả `ok: true`** — đúng lớp *"làm hỏng rồi BÁO CÁO
+ * THÀNH CÔNG"* đã là Critical của Pha 3.
+ * ⚠ Mở bằng `O_RDWR | O_CREAT` (**KHÔNG** `O_TRUNC`): kiểm `nlink` trên **chính fd** *trước* khi cắt
+ * một byte nào. Đích hợp lệ mới ⇒ tạo rỗng rồi ghi; đích là hard link ⇒ **từ chối khi file vẫn còn
+ * NGUYÊN VẸN**. Đây là điểm khác biệt giữa "chặn" và "chặn sau khi đã phá".
+ */
+export function writeConfined(target: ConfinedTarget, content: string): ConfinedWriteOutcome {
+  const abs = ABS_OF.get(target);
+  if (abs === undefined) return { ok: false, kind: "WRITE_ERROR", message: "unproven target" };
+  let fd: number;
+  try {
+    fs.mkdirSync(path.dirname(abs), { recursive: true });
+    fd = fs.openSync(abs, fs.constants.O_RDWR | fs.constants.O_CREAT);
+  } catch (err) {
+    const code = (err as NodeJS.ErrnoException)?.code;
+    if (code === "EISDIR") return { ok: false, kind: "NOT_A_FILE" };
+    // data-raw-ok: như trên — lỗi hệ thống tệp của công cụ đọc mã.
+    return { ok: false, kind: "WRITE_ERROR", message: err instanceof Error ? err.message : String(err) };
+  }
+  try {
+    const st = fs.fstatSync(fd);
+    if (!st.isFile()) return { ok: false, kind: "NOT_A_FILE" };
+    if (st.nlink > 1) return { ok: false, kind: "PATH_REJECTED", reason: "HARD_LINK" };
+    const buf = Buffer.from(content, "utf8");
+    fs.ftruncateSync(fd, 0);
+    fs.writeSync(fd, buf, 0, buf.length, 0);
+    return { ok: true, bytes: buf.length };
+  } catch (err) {
+    // data-raw-ok: như trên — lỗi hệ thống tệp của công cụ đọc mã.
+    return { ok: false, kind: "WRITE_ERROR", message: err instanceof Error ? err.message : String(err) };
+  } finally {
+    fs.closeSync(fd);
+  }
+}
+
+// ────────────────────────────────────────────────────────────────────────────
+// ★★★ 2026-08-18 (doc 78 · PHA A) — CỬA **LIỆT KÊ THƯ MỤC**, cùng bốn tầng, cùng module
+// ────────────────────────────────────────────────────────────────────────────
+/**
+ * ⚠⚠ VÌ SAO NÓ Ở ĐÂY CHỨ KHÔNG Ở `repoSandbox.ts`: bất biến giữ cho cả cụm này an toàn là
+ * *"đường dẫn TUYỆT ĐỐI không bao giờ rời module này"* (xem `ABS_OF` + `PROVEN_CONFINED`). Một hàm
+ * liệt kê ở module khác buộc phải cầm chuỗi tuyệt đối để `readdirSync` — tức phá đúng bất biến ấy,
+ * và mở lại con đường mà khối "KHÔNG export `programmingWorkspaceRoot`" (N-2) vừa đóng.
+ *
+ * ⚠ `readdirSync`/`statSync` **không** phải API chở byte, nên chúng nằm ngoài
+ * `programmingFileIo.census.test.ts` một cách CÓ CHỦ Ý (bảng `API_CHO_BYTE` ở đó nói rõ vì sao):
+ * chúng trả TÊN và KÍCH THƯỚC, không trả nội dung. Nội dung vẫn chỉ đi qua `readConfined`.
+ */
+declare const PROVEN_CONFINED_DIR: unique symbol;
+
+/** Một THƯ MỤC đã chứng minh nằm trong gốc. Chỉ `confineDirUnder()` tạo ra được. */
+export interface ConfinedDir {
+  /** POSIX-style, tương đối với gốc; `""` nghĩa là chính gốc. */
+  readonly relPath: string;
+  readonly [PROVEN_CONFINED_DIR]: true;
+}
+
+const ABS_OF_DIR = new WeakMap<ConfinedDir, string>();
+
+export type ConfineDirOutcome =
+  | { ok: true; dir: ConfinedDir }
+  | { ok: false; kind: "PATH_REJECTED"; reason: ConfinementRejectReason }
+  | { ok: false; kind: "NOT_FOUND" }
+  | { ok: false; kind: "NOT_A_DIRECTORY" };
+
+/**
+ * Chứng minh một THƯ MỤC do người dùng đưa nằm trong `root`.
+ * `""`, `"."`, `"./"` ⇒ **chính gốc** (hợp lệ) — `resolveInternal` cố ý coi `rel === ""` là ESCAPE
+ * vì với một FILE thì "chính gốc" là vô nghĩa; với một THƯ MỤC thì đó là ca thường gặp nhất.
+ */
+export function confineDirUnder(root: string, inputPath: unknown): ConfineDirOutcome {
+  const raw = typeof inputPath === "string" ? inputPath.trim() : "";
+  const laGoc = raw === "" || raw === "." || raw === "./" || raw === ".\\";
+
+  let abs: string;
+  let rel: string;
+  if (laGoc) {
+    abs = chuanHoaGoc(root);
+    rel = "";
+  } else {
+    const r = resolveInternal(inputPath, root);
+    if (!r.ok || !r.absPath || !r.relPath) {
+      return { ok: false, kind: "PATH_REJECTED", reason: r.reason ?? "EMPTY" };
+    }
+    abs = r.absPath;
+    rel = r.relPath;
+  }
+
+  let stat: fs.Stats | null = null;
+  try {
+    stat = fs.statSync(abs);
+  } catch {
+    return { ok: false, kind: "NOT_FOUND" };
+  }
+  // realpath TRƯỚC `isDirectory` — một junction trỏ RA NGOÀI vẫn là "thư mục".
+  if (!realpathContained(abs, true, root)) return { ok: false, kind: "PATH_REJECTED", reason: "ESCAPE" };
+  if (!stat.isDirectory()) return { ok: false, kind: "NOT_A_DIRECTORY" };
+
+  const dir = { relPath: rel } as ConfinedDir;
+  ABS_OF_DIR.set(dir, abs);
+  return { ok: true, dir };
+}
+
+export interface ConfinedEntry {
+  /** Tên trong thư mục cha. */
+  readonly name: string;
+  /** POSIX-style, tương đối với GỐC hộp cát — dùng thẳng lại được cho `confineTargetUnder`. */
+  readonly relPath: string;
+  /**
+   * `"symlink"` là một loại RIÊNG, không gộp vào `file`/`dir`: `withFileTypes` dùng ngữ nghĩa
+   * `lstat`, nên một symlink trỏ RA NGOÀI gốc vẫn hiện ra ở đây. Nó được **khai đúng bản chất** và
+   * người gọi phải tự quyết; lượt ĐỌC sau đó vẫn phải qua `confineTargetUnder` (realpath) nên
+   * không có đường nào lách.
+   */
+  readonly kind: "file" | "dir" | "symlink" | "other";
+  readonly bytes: number | null;
+}
+
+/** Tách ra để kiểu `Dirent` được SUY RA (đời `@types/node` này để `Dirent` là kiểu tổng quát). */
+function docThuMuc(abs: string) {
+  return fs.readdirSync(abs, { withFileTypes: true });
+}
+
+/** Liệt kê MỘT nấc. Không đệ quy — người gọi tự quyết độ sâu và tự chịu trần của mình. */
+export function listConfined(
+  dir: ConfinedDir,
+  max: number,
+): { ok: true; entries: ConfinedEntry[]; truncated: boolean } | { ok: false; kind: "READ_ERROR"; message: string } {
+  const abs = ABS_OF_DIR.get(dir);
+  if (abs === undefined) return { ok: false, kind: "READ_ERROR", message: "unproven dir" };
+  let raw: ReturnType<typeof docThuMuc>;
+  try {
+    raw = docThuMuc(abs);
+  } catch (err) {
+    return { ok: false, kind: "READ_ERROR", message: (err as NodeJS.ErrnoException)?.code ?? String(err) };
+  }
+  raw.sort((a, b) => a.name.localeCompare(b.name));
+  const entries: ConfinedEntry[] = [];
+  const gioiHan = Math.max(0, Math.floor(max));
+  for (const e of raw) {
+    if (entries.length >= gioiHan) return { ok: true, entries, truncated: true };
+    const kind: ConfinedEntry["kind"] = e.isSymbolicLink()
+      ? "symlink"
+      : e.isDirectory()
+        ? "dir"
+        : e.isFile()
+          ? "file"
+          : "other";
+    let bytes: number | null = null;
+    if (kind === "file") {
+      try {
+        bytes = fs.statSync(path.join(abs, e.name)).size;
+      } catch {
+        bytes = null;
+      }
+    }
+    entries.push({
+      name: e.name,
+      relPath: (dir.relPath ? `${dir.relPath}/` : "") + e.name,
+      kind,
+      bytes,
+    });
+  }
+  return { ok: true, entries, truncated: false };
+}
+
+/**
+ * ★★★ Pha 5 Task 1 (N13) — **CÂU TỪ CHỐI, MỘT BẢNG DUY NHẤT cho CẢ HAI đường.**
+ *
+ * ⚠ Bản trước có **hai bản sao giống nhau từng byte** (một ở đây, một ở `writeHandlers/
+ * programmingFile.ts`), khác đúng một alias kiểu. Nay chỉ còn bản này; bên ghi **import** nó.
+ *
+ * ⚠ VÌ SAO `HARD_LINK` KHÔNG MƯỢN CÂU `ESCAPE`: câu ESCAPE nói *"đường dẫn thoát khỏi thư mục làm
+ * việc"* — **SAI SỰ THẬT** ở lớp này. Đường dẫn **KHÔNG** thoát; `realpath` của hard link nằm gọn
+ * trong workspace. Người vận hành đọc câu ESCAPE sẽ đi soi đường dẫn, **không thấy gì sai**, rồi
+ * kết luận là báo động giả — tức lưới **chỉ đường tới bản vá sai**.
+ * ⚠ Mã từ chối vẫn là `PATH_REJECTED` **y như cũ** — không đẻ mã mới; chỉ **câu chữ** nói đúng lý do.
+ */
+export function confinementRejectMsg(reason: ConfinementRejectReason, lang: Lang): string {
   switch (reason) {
+    case "HARD_LINK":
+      return w(
+        lang,
+        "File có nhiều liên kết cứng (hard link) nên nội dung của nó có thể nằm ngoài thư mục làm việc — bị từ chối. " +
+          "Hãy chép nội dung thành một file thường trong thư mục làm việc rồi thao tác lại.",
+        "This file has multiple hard links, so its content may live outside the workspace — rejected. " +
+          "Copy it into the workspace as a regular file and try again.",
+        "该文件存在多个硬链接，其内容可能位于工作区之外——已拒绝。请先将其复制为工作区内的普通文件再操作。",
+      );
     case "ABSOLUTE":
       return w(lang, "Đường dẫn tuyệt đối không được phép.", "Absolute paths are not allowed.", "不允许使用绝对路径。");
     case "TRAVERSAL":
@@ -837,8 +1229,9 @@ const readFileParams = z
 const readProjectFile: Tool<z.infer<typeof readFileParams>, FileReadData> = {
   name: "read_project_file",
   description:
-    "Đọc một file NẰM TRONG thư mục làm việc lập trình (PROG_WORKSPACE_DIR). Từ chối đường dẫn tuyệt đối/'..'/thoát thư mục. " +
-    "Read a file confined to the programming workspace root. READ-ONLY, RBAC machine_monitoring/canView.",
+    "Đọc một file NẰM TRONG thư mục làm việc lập trình (PROG_WORKSPACE_DIR). Từ chối đường dẫn tuyệt đối/'..'/thoát thư mục, " +
+    "và từ chối cả file có liên kết cứng (hard link) vì nội dung của nó có thể nằm ngoài thư mục làm việc. " +
+    "Read a file confined to the programming workspace root; hard-linked files are refused too. READ-ONLY, RBAC machine_monitoring/canView.",
   parameters: readFileParams,
   triggers: [
     "đọc file", "mở file", "xem file", "read file", "open file", "nội dung file", "读取文件", "打开文件",
@@ -852,43 +1245,39 @@ const readProjectFile: Tool<z.infer<typeof readFileParams>, FileReadData> = {
     const denied = await rbacGate<FileReadData>((params as any).__authCtx, title, empty, lang);
     if (denied) return denied;
 
-    const resolved = resolveWorkspacePath(params.path);
-    if (!resolved.ok || !resolved.absPath) {
-      return { type: RESULT_TYPE, title, data: empty, textSummary: rejectReasonMsg(resolved.reason ?? "EMPTY", lang), note: "PATH_REJECTED" };
-    }
-    try {
-      const stat = fs.statSync(resolved.absPath);
-      if (!stat.isFile()) {
-        return { type: RESULT_TYPE, title, data: empty, textSummary: w(lang, "Đường dẫn không phải một file.", "Path is not a file.", "路径不是文件。"), note: "NOT_A_FILE" };
-      }
-      if (!realpathStillContained(resolved.absPath)) {
-        return { type: RESULT_TYPE, title, data: empty, textSummary: rejectReasonMsg("ESCAPE", lang), note: "PATH_REJECTED" };
-      }
-      const fd = fs.openSync(resolved.absPath, "r");
-      try {
-        const buf = Buffer.alloc(Math.min(stat.size, READ_FILE_MAX_BYTES));
-        const read = fs.readSync(fd, buf, 0, buf.length, 0);
-        const content = buf.toString("utf8", 0, read);
-        const truncated = stat.size > READ_FILE_MAX_BYTES;
-        const data: FileReadData = { path: resolved.relPath ?? params.path, bytes: stat.size, truncated, content };
-        const header = w(
-          lang,
-          `Đọc "${data.path}" (${stat.size} byte${truncated ? ", đã cắt bớt" : ""}):`,
-          `Read "${data.path}" (${stat.size} bytes${truncated ? ", truncated" : ""}):`,
-          `已读取 "${data.path}"（${stat.size} 字节${truncated ? "，已截断" : ""}）：`,
-        );
-        const body = content.length > READ_FILE_SUMMARY_CHARS ? `${content.slice(0, READ_FILE_SUMMARY_CHARS)}\n…` : content;
-        return { type: RESULT_TYPE, title, data, textSummary: `${header}\n${body}` };
-      } finally {
-        fs.closeSync(fd);
-      }
-    } catch (err) {
-      const code = (err as NodeJS.ErrnoException)?.code;
-      if (code === "ENOENT") {
-        return { type: RESULT_TYPE, title, data: empty, textSummary: w(lang, `Không tìm thấy file "${params.path}".`, `File "${params.path}" not found.`, `未找到文件 "${params.path}"。`), note: "NOT_FOUND" };
-      }
+    const notAFile = (): ToolResult<FileReadData> => ({
+      type: RESULT_TYPE, title, data: empty,
+      textSummary: w(lang, "Đường dẫn không phải một file.", "Path is not a file.", "路径不是文件。"), note: "NOT_A_FILE",
+    });
+    const notFound = (): ToolResult<FileReadData> => ({
+      type: RESULT_TYPE, title, data: empty,
+      textSummary: w(lang, `Không tìm thấy file "${params.path}".`, `File "${params.path}" not found.`, `未找到文件 "${params.path}"。`), note: "NOT_FOUND",
+    });
+    const rejected = (reason: ConfinementRejectReason): ToolResult<FileReadData> => ({
+      type: RESULT_TYPE, title, data: empty, textSummary: confinementRejectMsg(reason, lang), note: "PATH_REJECTED",
+    });
+
+    // ★★★ CỬA DUY NHẤT. Không còn `absPath` trần, không còn phép kiểm tự bịa tại chỗ.
+    const confined = confineTarget(params.path);
+    if (!confined.ok) return confined.kind === "NOT_A_FILE" ? notAFile() : rejected(confined.reason);
+
+    const rd = readConfined(confined.target, READ_FILE_MAX_BYTES);
+    if (!rd.ok) {
+      if (rd.kind === "NOT_FOUND") return notFound();
+      if (rd.kind === "NOT_A_FILE") return notAFile();
+      if (rd.kind === "PATH_REJECTED") return rejected(rd.reason);
       return { type: RESULT_TYPE, title, data: empty, textSummary: w(lang, "Không đọc được file.", "Could not read the file.", "无法读取文件。"), note: "READ_ERROR" };
     }
+
+    const data: FileReadData = { path: confined.target.relPath, bytes: rd.size, truncated: rd.truncated, content: rd.content };
+    const header = w(
+      lang,
+      `Đọc "${data.path}" (${rd.size} byte${rd.truncated ? ", đã cắt bớt" : ""}):`,
+      `Read "${data.path}" (${rd.size} bytes${rd.truncated ? ", truncated" : ""}):`,
+      `已读取 "${data.path}"（${rd.size} 字节${rd.truncated ? "，已截断" : ""}）：`,
+    );
+    const body = rd.content.length > READ_FILE_SUMMARY_CHARS ? `${rd.content.slice(0, READ_FILE_SUMMARY_CHARS)}\n…` : rd.content;
+    return { type: RESULT_TYPE, title, data, textSummary: `${header}\n${body}` };
   },
 };
 

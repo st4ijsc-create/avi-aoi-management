@@ -57,6 +57,8 @@ import {
   Battery, ShieldAlert, Search, PlusCircle, CircleSlash, Activity, Wifi,
 } from "lucide-react";
 import { toast } from "sonner";
+import { toastTrpcError } from "@/lib/trpcErrors";
+import { isFeatureDisabledError } from "@/lib/featureFlagError";
 
 // ── Typesafe shapes inferred from the fieldRouter output ──────────────────────
 type RouterOutputs = inferRouterOutputs<AppRouter>;
@@ -144,11 +146,11 @@ export function FieldDevicesContent() {
 
   // Surface the FLAG-OFF CONFLICT gracefully (info, not a scary red error).
   const onMutationError = (e: { data?: { code?: string } | null; message: string }) => {
-    if (e.data?.code === "CONFLICT" && /disabled/i.test(e.message)) {
+    if (isFeatureDisabledError(e)) {
       toast.info(t("field.flagOffToast", "Field abstraction is disabled (preview). Set FIELD_V2_ENABLED=true to act."));
       void utils.field.status.invalidate();
     } else {
-      toast.error(e.message);
+      toastTrpcError(e);
     }
   };
 

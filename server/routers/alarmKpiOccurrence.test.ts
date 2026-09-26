@@ -1,0 +1,513 @@
+/**
+ * Wave 4 §4 (task-4-brief.md) — alarmKpiRouter.summary() phải đếm theo LẦN
+ * TÁI DIỄN (predictive_alert_occurrences), không theo DÒNG cảnh báo cha
+ * (predictive_alerts). Wave 3 gộp cảnh báo trùng thành MỘT dòng (occurrenceCount
+ * lũy kế trong dòng cha), nhưng đếm KPI theo dòng làm lộ ba lỗi cùng lúc:
+ *   1. Đếm thiếu — 22 lần tái diễn chỉ báo 1.
+ *   2. "Biến mất" khỏi cửa sổ — dòng cha createdAt cũ (Wave 3 cố ý giữ nguyên),
+ *      dù tình trạng tái diễn ngay hôm nay.
+ *   3. Ngập báo động (>10/10 phút, ISA-18.2) không bao giờ kích hoạt vì
+ *      một dòng cảnh báo = một sự kiện, bất kể tái diễn bao nhiêu lần.
+ *
+ * Mock db.select() phân theo BẢNG truyền vào .from(...) và mô phỏng INNER JOIN
+ * predictive_alert_occurrences ⋈ predictive_alerts THẬT (lọc theo cây điều
+ * kiện SQL thật truyền vào .where(), không trả cố định) — để ca "KHÔNG BIẾN
+ * MẤT" thật sự ĐỎ nếu ai lọc nhầm về createdAt. Ca thứ ba duyệt cây điều kiện
+ * SQL thật (đúng kỹ thuật columnNamesInCondition() của alertExpirySweeper.test.ts,
+ * Wave 3) để khẳng định WHERE tham chiếu cột occurredAt. Bài học Wave 3: mock
+ * trả cố định "bất kể lọc gì" là lý do lỗi "biến mất" lọt qua — không lặp lại.
+ */
+import { describe, it, expect, vi, beforeEach } from "vitest";
+import { initTRPC } from "@trpc/server";
+import { andonEvents, predictiveAlerts, predictiveAlertOccurrences, machines, users } from "../../drizzle/schema";
+
+// ── "Fake DB" state, reset mỗi test ────────────────────────────────────────
+let seedAndonRows: any[] = [];
+let seedAlertRows: any[] = [];       // predictive_alerts (dòng cha)
+let seedOccurrenceRows: any[] = [];  // predictive_alert_occurrences (nhật ký lần-tái-diễn)
+let seedMachineRows: any[] = [];
+let lastPredWhereCond: any = null;
+// Vòng sửa 1 (review coordinator) — mock .innerJoin() ban đầu nhận (_joinTable, _on)
+// nhưng KHÔNG DÙNG chúng: joinedOccurrenceRows() tự áp cứng logic join đúng
+// (occ.alertId === parent.id) BẤT KỂ router truyền điều kiện JOIN gì. Reviewer
+// chứng minh: đổi router thành `eq(predictiveAlertOccurrences.id, predictiveAlerts.id)`
+// (join PK-với-PK, vô nghĩa) thì test vẫn XANH 3/3 vì mock không hề đọc `_on`.
+// Capture lastJoinTable/lastJoinCond để một test riêng duyệt cây điều kiện JOIN
+// thật — cùng kỹ thuật đã dùng cho lastPredWhereCond.
+let lastJoinTable: any = null;
+let lastJoinCond: any = null;
+let sinceForTest: Date = new Date();
+
+/** Duyệt cây SQL THẬT của drizzle-orm (queryChunks lồng nhau), gom tên cột
+ *  Column thật được tham chiếu. Y hệt kỹ thuật alertExpirySweeper.test.ts
+ *  (Wave 3) — Column thật có .name (string) + .columnType (string);
+ *  StringChunk/Param không có .columnType nên không lẫn vào. */
+function columnNamesInCondition(cond: any): string[] {
+  const names: string[] = [];
+  function walk(node: any, depth: number) {
+    if (node == null || depth > 12) return;
+    if (Array.isArray(node)) { for (const n of node) walk(n, depth); return; }
+    if (typeof node !== "object") return;
+    if (typeof node.name === "string" && typeof node.columnType === "string") names.push(node.name);
+    if (Array.isArray(node.queryChunks)) walk(node.queryChunks, depth + 1);
+  }
+  walk(cond, 0);
+  return names;
+}
+
+/**
+ * Mô phỏng WHERE THẬT: lọc `rows` theo BẤT KỲ cột thời gian nào `cond` thật
+ * sự tham chiếu (occurredAt HOẶC createdAt) — KHÔNG trả cố định bất kể lọc
+ * gì. Đây chính là điều khiến ca "KHÔNG BIẾN MẤT" và ca "mệnh đề lọc" thật sự
+ * ĐỎ khi code lọc nhầm cột: nếu ai đổi truy vấn về `gte(createdAt, since)`,
+ * hàm này sẽ lọc theo `createdAt` của các dòng — đúng như Postgres thật sẽ làm.
+ *
+ * Debt E6 — .where() nay có thể kèm thêm eq(predictiveAlerts.machineId, X).
+ * Bổ sung lọc THEO GIÁ TRỊ THẬT (không chỉ tên cột) để ca kiểm E6 dưới đây
+ * thật sự ĐỎ nếu ai bỏ điều kiện machineId khỏi WHERE — cùng bài học Wave 3
+ * (mock trả cố định là lý do lỗi "biến mất" lọt qua, không lặp lại ở đây).
+ */
+function paramValuesInCondition(cond: any): any[] {
+  const values: any[] = [];
+  function walk(node: any, depth: number) {
+    if (node == null || depth > 12) return;
+    if (Array.isArray(node)) { for (const n of node) walk(n, depth); return; }
+    if (typeof node !== "object") return;
+    if ("value" in node && typeof node.columnType !== "string") values.push((node as any).value);
+    if (Array.isArray(node.queryChunks)) walk(node.queryChunks, depth + 1);
+  }
+  walk(cond, 0);
+  return values;
+}
+
+function applyWindowFilter(rows: any[], cond: any, since: Date): any[] {
+  const names = columnNamesInCondition(cond);
+  const field = names.includes("occurredAt") ? "occurredAt" : names.includes("createdAt") ? "createdAt" : null;
+  let filtered = field ? rows.filter((r) => r[field] != null && new Date(r[field]).getTime() >= since.getTime()) : rows;
+  if (names.includes("machineId")) {
+    const machineIdValue = paramValuesInCondition(cond).find((v) => typeof v === "number");
+    if (machineIdValue != null) filtered = filtered.filter((r) => r.machineId === machineIdValue);
+  }
+  return filtered;
+}
+
+/** Mô phỏng INNER JOIN predictive_alert_occurrences ⋈ predictive_alerts thật:
+ *  mỗi dòng nhật ký ghép với dòng cha của nó, giữ CẢ occurredAt (nhật ký) LẪN
+ *  createdAt (dòng cha) trên cùng object để applyWindowFilter() lọc đúng theo
+ *  bất kỳ cột nào cond thật sự tham chiếu. */
+function joinedOccurrenceRows(): any[] {
+  return seedOccurrenceRows
+    .map((occ) => {
+      const parent = seedAlertRows.find((a) => a.id === occ.alertId);
+      if (!parent) return null;
+      return {
+        occurrenceId: occ.id,
+        occurredAt: occ.occurredAt,
+        occurrenceSeverity: occ.severity,
+        id: parent.id,
+        severity: parent.severity,
+        createdAt: parent.createdAt,
+        acknowledgedAt: parent.acknowledgedAt,
+        resolvedAt: parent.resolvedAt,
+        status: parent.status,
+        machineId: parent.machineId,
+        machineCode: parent.machineCode,
+        title: parent.title,
+      };
+    })
+    .filter((x): x is NonNullable<typeof x> => x != null);
+}
+
+vi.mock("../db/connection", () => ({
+  getDb: async () => ({
+    select: (cols?: any) => ({
+      from: (table: any) => {
+        if (table === andonEvents) {
+          return { where: async () => seedAndonRows };
+        }
+        if (table === predictiveAlertOccurrences) {
+          // Debt E6 — MIN(occurredAt) (select({first:...})) nay CÓ THỂ join sang
+          // predictive_alerts để lọc machineId, dùng CHUNG bảng .from() với truy
+          // vấn sự kiện (nhiều cột) bên dưới. Phân biệt bằng hình dạng cols (có
+          // khoá "first" hay không) — node RIÊNG để không đụng
+          // lastJoinTable/lastJoinCond/lastPredWhereCond (đang phục vụ các ca
+          // duyệt truy vấn SỰ KIỆN ở dưới).
+          const isMinQuery = !!(cols && typeof cols === "object" && "first" in cols);
+          if (isMinQuery) {
+            return {
+              innerJoin: (_joinTable: any, _on: any) => ({
+                where: (cond: any) => {
+                  const machineIdValue = paramValuesInCondition(cond).find((v) => typeof v === "number");
+                  const rows = joinedOccurrenceRows().filter(
+                    (r) => machineIdValue == null || r.machineId === machineIdValue,
+                  );
+                  const first = rows.length > 0
+                    ? rows.reduce((min: any, r: any) => (new Date(r.occurredAt).getTime() < new Date(min).getTime() ? r.occurredAt : min), rows[0].occurredAt)
+                    : null;
+                  return Promise.resolve([{ first }]);
+                },
+              }),
+              // Không machineId ⇒ router KHÔNG gọi .innerJoin(), await thẳng node
+              // này (giữ đúng hình dạng truy vấn cũ, quét thẳng theo
+              // idx_alert_occurrences_time). Không ca nào ở đây assert
+              // occurrenceLog nên trả rỗng mặc định là mô tả trung thực đủ dùng.
+              then: (resolve: any) => resolve([{ first: null }]),
+            };
+          }
+          // Truy vấn MỚI (sau Step 3/4): .from(occurrences).innerJoin(predictiveAlerts, ...).where(...)
+          const node: any = {
+            innerJoin: (joinTable: any, on: any) => {
+              // Vòng sửa 1 — GHI LẠI bảng + điều kiện JOIN thật (không bỏ qua như trước).
+              // joinedOccurrenceRows() dưới đây vẫn tự áp logic join đúng cứng (đơn
+              // giản hoá mock), nhưng giờ có một test riêng duyệt lastJoinCond để
+              // khẳng định router THẬT SỰ truyền đúng điều kiện — bắt được nếu ai
+              // đổi sang join sai cột (vd PK-với-PK).
+              lastJoinTable = joinTable;
+              lastJoinCond = on;
+              return {
+                where: (cond: any) => {
+                  lastPredWhereCond = cond;
+                  return Promise.resolve(applyWindowFilter(joinedOccurrenceRows(), cond, sinceForTest));
+                },
+              };
+            },
+            // Sprint 5 §3.1 (task 4) — cùng .from() nay còn phục vụ MIN(occurredAt)
+            // (await thẳng, không qua .innerJoin). Không ca nào ở đây assert
+            // occurrenceLog nên trả rỗng mặc định là mô tả trung thực đủ dùng —
+            // đúng bài học "mock phải mô tả thế giới CÓ THẬT" mà chính file
+            // alarmKpiMissingTable.test.ts (anh em của file này) vừa áp dụng.
+            then: (resolve: any) => resolve([{ first: null }]),
+          };
+          return node;
+        }
+        if (table === predictiveAlerts) {
+          // Truy vấn CŨ (trước sửa): .from(predictiveAlerts).where(...) — giữ nhánh
+          // này để test vẫn diễn giải ĐÚNG hành vi khi chạy trước khi Step 3/4 áp dụng.
+          return {
+            where: (cond: any) => {
+              lastPredWhereCond = cond;
+              return Promise.resolve(applyWindowFilter(seedAlertRows, cond, sinceForTest));
+            },
+          };
+        }
+        if (table === machines) {
+          return { where: async () => seedMachineRows };
+        }
+        if (table === users) {
+          return { where: async () => [] };
+        }
+        return { where: async () => [] };
+      },
+    }),
+  }),
+}));
+
+import { alarmKpiRouter } from "./alarmKpiRouter";
+
+const t = initTRPC.context<any>().create();
+const createCaller = t.createCallerFactory(alarmKpiRouter);
+const caller = createCaller({ user: { id: 1, role: "admin" } });
+
+beforeEach(() => {
+  seedAndonRows = [];
+  seedAlertRows = [];
+  seedOccurrenceRows = [];
+  seedMachineRows = [];
+  lastPredWhereCond = null;
+  lastJoinTable = null;
+  lastJoinCond = null;
+  sinceForTest = new Date();
+});
+
+describe("alarmKpi — đọc từ nhật ký lần-tái-diễn", () => {
+  it("ĐẾM ĐỦ: một cảnh báo tái diễn 22 lần ⇒ 22 sự kiện, không phải 1", async () => {
+    const now = Date.now();
+    sinceForTest = new Date(now - 8 * 3600_000);
+    seedAlertRows = [{
+      id: 501,
+      severity: "LOW",
+      createdAt: new Date(now - 3600_000),
+      acknowledgedAt: null,
+      resolvedAt: null,
+      status: "ACTIVE",
+      machineId: 11,
+      machineCode: "M11",
+      title: "rung bất thường",
+    }];
+    seedOccurrenceRows = Array.from({ length: 22 }, (_, i) => ({
+      id: 9000 + i,
+      alertId: 501,
+      occurredAt: new Date(now - i * 60_000), // 22 lần trong ~22 phút gần đây
+      severity: "LOW",
+    }));
+
+    const res = await caller.summary({ windowHours: 8 });
+    expect(res.sourceCounts.predictive).toBe(22);
+  });
+
+  it("KHÔNG BIẾN MẤT: cảnh báo tạo 4 ngày trước, tái diễn HÔM NAY ⇒ vẫn trong cửa sổ 24h", async () => {
+    const now = Date.now();
+    sinceForTest = new Date(now - 24 * 3600_000);
+    seedAlertRows = [{
+      id: 502,
+      severity: "MEDIUM",
+      createdAt: new Date(now - 4 * 24 * 3600_000), // 4 ngày trước — NGOÀI cửa sổ 24h
+      acknowledgedAt: null,
+      resolvedAt: null,
+      status: "ACTIVE",
+      machineId: 12,
+      machineCode: "M12",
+      title: "nhiệt độ cao",
+    }];
+    seedOccurrenceRows = [{
+      id: 9100,
+      alertId: 502,
+      occurredAt: new Date(now - 3600_000), // 1h trước — TRONG cửa sổ 24h
+      severity: "MEDIUM",
+    }];
+
+    const res = await caller.summary({ windowHours: 24 });
+    expect(res.sourceCounts.predictive).toBe(1);
+    expect(res.totalAlarms).toBeGreaterThanOrEqual(1);
+  });
+
+  it("mệnh đề lọc cửa sổ phải theo occurredAt, KHÔNG theo createdAt", async () => {
+    const now = Date.now();
+    sinceForTest = new Date(now - 8 * 3600_000);
+    seedAlertRows = [{
+      id: 503,
+      severity: "HIGH",
+      createdAt: new Date(now - 3600_000),
+      acknowledgedAt: null,
+      resolvedAt: null,
+      status: "ACTIVE",
+      machineId: 13,
+      machineCode: "M13",
+      title: "kẹt băng tải",
+    }];
+    seedOccurrenceRows = [{ id: 9200, alertId: 503, occurredAt: new Date(now - 60_000), severity: "HIGH" }];
+
+    await caller.summary({ windowHours: 8 });
+
+    expect(lastPredWhereCond).toBeTruthy();
+    const names = columnNamesInCondition(lastPredWhereCond);
+    expect(names).toContain("occurredAt"); // ★ đây là cái đổi sang createdAt sẽ làm ĐỎ
+    expect(names).not.toContain("createdAt");
+  });
+
+  /**
+   * Vòng sửa 1 (review coordinator) — trước bản sửa này, mock .innerJoin() nhận
+   * (_joinTable, _on) nhưng KHÔNG DÙNG: joinedOccurrenceRows() tự áp cứng đúng
+   * logic join (alertId ↔ id) bất kể router truyền gì. Reviewer chứng minh: đổi
+   * router thành join PK-với-PK (`eq(predictiveAlertOccurrences.id, predictiveAlerts.id)`
+   * — vô nghĩa hoàn toàn) thì tsc không bắt được (kiểu `eq()` lỏng) và 3 test cũ
+   * vẫn XANH. Ca này duyệt cây điều kiện JOIN THẬT (đúng kỹ thuật đã dùng cho
+   * lastPredWhereCond) để khẳng định điều kiện tham chiếu ĐÚNG cột: "alertId"
+   * (khoá ngoại bên nhật ký) và "id" (khoá chính bên dòng cha) — và bảng thứ
+   * hai truyền vào .innerJoin() đúng là predictiveAlerts.
+   */
+  it("mệnh đề JOIN phải khớp alertId (nhật ký) với id (dòng cha) — không phải khoá khác", async () => {
+    const now = Date.now();
+    sinceForTest = new Date(now - 8 * 3600_000);
+    seedAlertRows = [{
+      id: 505,
+      severity: "LOW",
+      createdAt: new Date(now - 3600_000),
+      acknowledgedAt: null,
+      resolvedAt: null,
+      status: "ACTIVE",
+      machineId: 15,
+      machineCode: "M15",
+      title: "rò rỉ khí nén",
+    }];
+    seedOccurrenceRows = [{ id: 9400, alertId: 505, occurredAt: new Date(now - 60_000), severity: "LOW" }];
+
+    await caller.summary({ windowHours: 8 });
+
+    expect(lastJoinTable).toBe(predictiveAlerts); // bảng thứ hai của .innerJoin() phải là predictive_alerts
+    expect(lastJoinCond).toBeTruthy();
+    const names = columnNamesInCondition(lastJoinCond);
+    // ★ join PK-với-PK (predictiveAlertOccurrences.id ↔ predictiveAlerts.id) sẽ
+    // cho names = ["id","id"] — KHÔNG có "alertId" — nên assertion dưới sẽ ĐỎ.
+    expect(names).toContain("alertId");
+    expect(names).toContain("id");
+  });
+
+  /**
+   * Vòng sửa 1 (review coordinator) — nhánh lùi cấp `r.occurrenceSeverity ?? r.severity`
+   * (alarmKpiRouter.ts) chưa từng chạy: 3 ca trên đều seed occurrence.severity có
+   * giá trị. Cột này NULLABLE thật trong schema (predictive_alert_occurrences.severity
+   * varchar, không notNull) nên trường hợp thiếu là có thật. Ca này seed
+   * occurrence.severity = null với dòng cha severity="CRITICAL" — nếu code LÙI
+   * VỀ đúng mức cha, alarm rơi vào bucket "high" (gồm critical); nếu bỏ sót
+   * `?? r.severity`, normalizePredictiveSeverity(null) mặc định về "low" sai.
+   */
+  /**
+   * Vòng sửa cuối (review toàn nhánh, mục 1) — hồi quy do CHÍNH Wave 4 gây ra.
+   * computeStanding() (alarmKpiMath.ts) lọc `resolvedAt == null && tuổi ≥ 24h`
+   * trên TOÀN BỘ sự kiện — nó đếm LƯỢT KÍCH HOẠT, trong khi ISA-18.2 "standing
+   * alarm" đếm BÁO ĐỘNG. Trước sửa này, mọi lần tái diễn của một cảnh báo còn
+   * mở đều giữ `resolvedAt=null` (vì `isResolved` chỉ nhìn TRẠNG THÁI CỦA DÒNG
+   * CHA — dòng cha còn mở thì mọi lần tái diễn cũ cũng "còn mở") ⇒ N lần tái
+   * diễn = N dòng "tồn đọng" cho MỘT cảnh báo.
+   *
+   * Reviewer đo bằng probe thật: 1 cảnh báo chưa xử lý, tái diễn ~22 lần/ngày ×
+   * 3 ngày, cửa sổ 72h ⇒ CŨ (trước Wave 4, 1 dòng/cảnh báo) standing.count=1
+   * status=ok; SAU Wave 4 (lỗi) standing.count=43 status=warning. Sự thật vẫn
+   * là 1 cảnh báo tồn đọng — không phải 43.
+   *
+   * Kịch bản dựng ở đây: 66 lần tái diễn (~22/ngày × 3 ngày) trải từ now-70h
+   * đến now-26h (đều nằm trong cửa sổ 72h VÀ đều cũ hơn ngưỡng 24h) — tức
+   * TRƯỚC sửa, cả 66 dòng sẽ bị đếm là "tồn đọng" cho một cảnh báo.
+   */
+  it("TỒN ĐỌNG ĐẾM THEO CẢNH BÁO: chuỗi 66 lần tái diễn (3 ngày) của MỘT cảnh báo ⇒ standing.count===1, không phải 66", async () => {
+    const now = Date.now();
+    sinceForTest = new Date(now - 72 * 3600_000);
+    seedAlertRows = [{
+      id: 601,
+      severity: "MEDIUM",
+      createdAt: new Date(now - 90 * 3600_000),
+      acknowledgedAt: null,
+      resolvedAt: null,
+      status: "ACTIVE",
+      machineId: 21,
+      machineCode: "M21",
+      title: "rung bất thường kéo dài",
+    }];
+    const N = 66;
+    const spanMs = 44 * 3600_000; // now-70h .. now-26h
+    seedOccurrenceRows = Array.from({ length: N }, (_, i) => ({
+      id: 9600 + i,
+      alertId: 601,
+      occurredAt: new Date(now - 70 * 3600_000 + (i * spanMs) / (N - 1)),
+      severity: "MEDIUM",
+    }));
+
+    const res = await caller.summary({ windowHours: 72 });
+
+    // ★ Cạm bẫy chính: KHÔNG được bỏ bớt sự kiện để "sửa" ca này. rate/flood/
+    // badActors vẫn phải đếm đủ 66 lần — đây là chính điều Wave 4 vừa sửa.
+    expect(res.sourceCounts.predictive).toBe(N);
+    expect(res.totalAlarms).toBe(N);
+    expect(res.rate.count).toBe(N);
+    expect(res.badActors.find((b) => b.actorKey === "machine:21")?.count).toBe(N);
+
+    // ★ Đây là chỗ hồi quy: standing phải đếm THEO CẢNH BÁO (1), không theo
+    // LƯỢT KÍCH HOẠT (66).
+    expect(res.standing.count).toBe(1);
+    expect(res.standing.status).toBe("ok");
+    expect(res.standing.worst).toHaveLength(1);
+    expect(res.standing.worst[0].title).toBe("rung bất thường kéo dài");
+    // Không có breach "standing" giả — chỉ 1 cảnh báo tồn đọng, dưới ngưỡng 5.
+    expect(res.breaches).not.toContain("standing");
+  });
+
+  /**
+   * Vòng sửa cuối, mục 1 — "cùng khối" với ca trên: `isResolved` (router) thiếu
+   * `status === "EXPIRED"`. `alertExpirySweeper` (Wave 3, sweepExpiredAlerts)
+   * đóng cảnh báo bằng status='EXPIRED' và KHÔNG set resolvedAt ⇒ trước sửa,
+   * mọi cảnh báo tự hết hạn vẫn bị coi là "đang mở" và có thể lộ ra như
+   * standing giả nếu đủ tuổi.
+   */
+  it("EXPIRED (tự đóng, không set resolvedAt) KHÔNG được tính là tồn đọng", async () => {
+    const now = Date.now();
+    sinceForTest = new Date(now - 72 * 3600_000);
+    seedAlertRows = [{
+      id: 602,
+      severity: "LOW",
+      createdAt: new Date(now - 40 * 3600_000),
+      acknowledgedAt: null,
+      resolvedAt: null, // sweepExpiredAlerts KHÔNG set resolvedAt khi tự đóng
+      status: "EXPIRED",
+      machineId: 22,
+      machineCode: "M22",
+      title: "cảnh báo đã tự hết hạn",
+    }];
+    seedOccurrenceRows = [{
+      id: 9700,
+      alertId: 602,
+      occurredAt: new Date(now - 30 * 3600_000), // 30h tuổi — quá ngưỡng 24h nếu tính nhầm là "mở"
+      severity: "LOW",
+    }];
+
+    const res = await caller.summary({ windowHours: 72 });
+
+    expect(res.sourceCounts.predictive).toBe(1); // vẫn đếm đủ sự kiện
+    expect(res.standing.count).toBe(0); // nhưng KHÔNG được tính là tồn đọng
+  });
+
+  it("thiếu occurrenceSeverity (nhật ký không ghi mức) ⇒ lùi về mức của dòng cha", async () => {
+    const now = Date.now();
+    sinceForTest = new Date(now - 8 * 3600_000);
+    seedAlertRows = [{
+      id: 506,
+      severity: "CRITICAL",
+      createdAt: new Date(now - 3600_000),
+      acknowledgedAt: null,
+      resolvedAt: null,
+      status: "ACTIVE",
+      machineId: 16,
+      machineCode: "M16",
+      title: "quá nhiệt động cơ",
+    }];
+    seedOccurrenceRows = [{ id: 9500, alertId: 506, occurredAt: new Date(now - 60_000), severity: null }];
+
+    const res = await caller.summary({ windowHours: 8 });
+
+    expect(res.distribution.counts.high).toBe(1); // lùi về CRITICAL của dòng cha ⇒ bucket "high"
+    expect(res.distribution.counts.low).toBe(0);  // KHÔNG được rớt về mặc định "low" của severity=null
+  });
+
+  /**
+   * Sprint 5 debt E6 — MIN(occurredAt) (occurrenceLog.firstOccurredAt) trước
+   * đây quét TOÀN BẢNG bất kể input.machineId. Ở màn đã lọc theo máy 32 (máy
+   * ĐANG im lặng), mốc trả về SAI là của máy 31 (có cảnh báo từ 60 ngày
+   * trước) — người vận hành sẽ đọc nhầm "sổ máy 32 mới có dữ liệu từ 60 ngày
+   * trước" trong khi thật ra máy 32 chỉ mới phát sinh 2 giờ trước.
+   *
+   * Review round 1, Important-1 — bản gốc chỉ cho máy 31 MỘT lần tái diễn
+   * 60 NGÀY trước (ngoài cửa sổ 8h). `sourceCounts.predictive` khi đó đúng=1
+   * BẤT KỂ có lọc machineId hay không, vì cửa sổ thời gian một mình nó đã
+   * loại máy 31 — assertion không hề canh phần lọc machineId của loadPredRows()
+   * (`server/routers/alarmKpiRouter.ts`). Thêm cho máy 31 một lần tái diễn
+   * TRONG cửa sổ 8h (3h trước) để `sourceCounts.predictive` thật sự phân biệt
+   * được "có lọc" (=1, chỉ máy 32) với "không lọc" (=2, cả hai máy) — giữ
+   * nguyên dòng 60-ngày để vẫn canh riêng phần MIN không lộ mốc máy khác.
+   */
+  it("debt E6 — MIN(occurredAt) VÀ sourceCounts.predictive đều lọc theo machineId, KHÔNG lộ dữ liệu máy khác", async () => {
+    const now = Date.now();
+    sinceForTest = new Date(now - 8 * 3600_000);
+    seedAlertRows = [
+      {
+        id: 701, severity: "LOW", createdAt: new Date(now - 60 * 24 * 3600_000),
+        acknowledgedAt: null, resolvedAt: null, status: "ACTIVE",
+        machineId: 31, machineCode: "M31", title: "máy 31 — cảnh báo cũ",
+      },
+      {
+        id: 702, severity: "LOW", createdAt: new Date(now - 2 * 3600_000),
+        acknowledgedAt: null, resolvedAt: null, status: "ACTIVE",
+        machineId: 32, machineCode: "M32", title: "máy 32 — cảnh báo mới",
+      },
+    ];
+    seedOccurrenceRows = [
+      // Máy 31: lần đầu RẤT SỚM (60 ngày, ngoài cửa sổ 8h) — canh riêng MIN.
+      { id: 9800, alertId: 701, occurredAt: new Date(now - 60 * 24 * 3600_000), severity: "LOW" },
+      // Máy 31: MỘT lần tái diễn NỮA, lần này TRONG cửa sổ 8h (3h trước) — nếu
+      // không lọc machineId, dòng này sẽ lọt vào sourceCounts.predictive của
+      // máy 32 (đang lọc) và cũng làm ĐỎ assertion firstOccurredAt (mốc cũ
+      // nhất máy 31 vẫn là dòng 60-ngày, dòng này chỉ để canh sourceCounts).
+      { id: 9802, alertId: 701, occurredAt: new Date(now - 3 * 3600_000), severity: "LOW" },
+      // Máy 32: lần (và cũng là lần đầu) duy nhất, 2h trước.
+      { id: 9801, alertId: 702, occurredAt: new Date(now - 2 * 3600_000), severity: "LOW" },
+    ];
+
+    const res = await caller.summary({ windowHours: 8, machineId: 32 });
+
+    // Trước sửa: MIN quét toàn bảng ⇒ trả mốc 60 ngày trước của máy 31 — SAI
+    // cho màn đã lọc theo máy 32. Sau sửa: chỉ còn mốc của chính máy 32.
+    expect(res.occurrenceLog.firstOccurredAt).toBe(new Date(now - 2 * 3600_000).toISOString());
+    // Máy 31 có 1 lần tái diễn TRONG cùng cửa sổ 8h (dòng 9802) — nếu
+    // loadPredRows() không lọc machineId, con số này sẽ là 2 (lẫn cả máy 31).
+    expect(res.sourceCounts.predictive).toBe(1); // chỉ 1 lần tái diễn của máy 32 trong cửa sổ 8h
+  });
+});

@@ -392,7 +392,21 @@ IR Editor (chọn Device Type) → save IR JSON + git commit → Safety Linter (
 
 ---
 
-## 15. KẾ HOẠCH NÂNG CẤP *(phần chờ bạn DUYỆT trước khi gọi agent thực thi)*
+## 15. KẾ HOẠCH NÂNG CẤP — ✅ **ĐÃ DUYỆT & ĐÃ THỰC THI** (xem khối ⓘ đầu tài liệu)
+
+> ⚠️ Nhãn *"phần chờ bạn DUYỆT trước khi gọi agent thực thi"* cũ ở tiêu đề này đã gỡ: nó mâu thuẫn
+> với khối **ⓘ CẬP NHẬT TRẠNG THÁI THỰC THI 2026-07-01** ở đầu tài liệu (32 commit, mig 0141–0154,
+> 2408/0 test xanh), và là lý do 12 pha ở đây bị chép vào backlog "chờ duyệt".
+>
+> **Đo lại 2026-08-13 (nhóm C việc 2)** — đối chứng độc lập, không dựa lời tự khai:
+> bảng thật trong DB `tasks`/`zones` (G1) · `safety_events`/`operator_assignments` (S1) · `skills` (G2)
+> · `device_types` (E1) · `program_symbols` (D1) · `machine_sensor_readings` (R0); cờ **BẬT thật** trong
+> `.env`: `FOE_ENABLED` · `PDM_SENSOR_INGEST_ENABLED` · `WORKFORCE_ENABLED` · `SAFETY_AUDIT_ENABLED`
+> · `EQ_GOVERN_ENABLED` · `EQ_INTEG_ENABLED` · `FLEET_ORCH_ENABLED` · `DPC_IR_V2_ENABLED` · `TWIN_LIVE_ENABLED`.
+> **Còn lại đúng bốn cờ TẮT** (`SAFETY_ZONE` cần phần cứng · `SIM_PHYSICS` · `FIELD_V2` · `ERP_INBOUND`)
+> — chi tiết phép đo từng cờ ở `docs/superpowers/reports/2026-08-12-nhom-c-xu-ly.md`.
+>
+> Nội dung dưới giữ nguyên làm bản ghi phạm vi từng giai đoạn.
 
 > Lộ trình theo độ-ưu-tiên-gap + giá-trị/công-sức. Mỗi giai đoạn = 1 nhóm agent chuyên môn, **flag OFF mặc định**, có exit-criteria + smoke-test, không phá vỡ golden-thread hiện có.
 

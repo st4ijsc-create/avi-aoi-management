@@ -6,8 +6,12 @@
  */
 
 import { z } from "zod";
-import { router, protectedProcedure } from "../_core/trpc";
+import { router, moduleProcedure } from "../_core/trpc";
+// ★ Cổng giấy phép MOD_AI — chỉ THÊM chiều giấy phép, RBAC/vai/2FA giữ nguyên từng ký tự.
+//   Không-brick + fail-safe ở `_core/moduleGate.ts`; lượng từ canh ở `congGiayPhepAiCensus.test.ts`.
+const protectedProcedure = moduleProcedure("MOD_AI");
 import { TRPCError } from "@trpc/server";
+import { appError } from "../_core/appError";
 import fs from "fs";
 
 // ─── Service imports ──────────────────────────────────────────
@@ -39,6 +43,15 @@ import {
 
 import { resolveSafeImagePath } from "../utils/safeImagePath";
 
+// doc 69 W0-3 security review fix #3 — this router calls the EXACT SAME
+// aiReportGenerator functions as server/routers/aiReportRouter.ts but, before this fix,
+// applied NO factory-scope check and NO per-user rate limit at all: any authenticated
+// user could reach cross-factory report data through this sibling endpoint even after
+// aiReportRouter itself was locked down. Reuses the identical composed guards (see
+// server/_core/aiAnalyticsScope.ts) — same rate-limit bucket, same scope rules, same
+// admin-only restriction on the two inherently-global report types.
+import { applyReportScope, applyGlobalReportScope } from "../_core/aiAnalyticsScope";
+
 // ─── Helpers ──────────────────────────────────────────────────
 function resolveImagePath(imageKey: string): string {
   return resolveSafeImagePath(imageKey);
@@ -47,7 +60,7 @@ function resolveImagePath(imageKey: string): string {
 function loadImage(imageKey: string): Buffer {
   const imagePath = resolveImagePath(imageKey);
   if (!fs.existsSync(imagePath)) {
-    throw new TRPCError({ code: "NOT_FOUND", message: `Image not found: ${imageKey}` });
+    throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "image" }, `Image not found: ${imageKey}`);
   }
   return fs.readFileSync(imagePath);
 }
@@ -383,7 +396,8 @@ export const aiAnalysisHubRouter = router({
    */
   dailyQualitySummary: protectedProcedure
     .input(reportParamsSchema)
-    .mutation(async ({ input }) => {
+    .mutation(async ({ input, ctx }) => {
+      await applyReportScope(ctx, input);
       const result = await generateDailyQualitySummary({ ...input, reportType: "daily" });
       return { analysisType: "daily_quality_summary", ...result };
     }),
@@ -393,27 +407,32 @@ export const aiAnalysisHubRouter = router({
    */
   rootCauseAnalysis: protectedProcedure
     .input(reportParamsSchema.extend({ triggerReason: z.string().optional() }))
-    .mutation(async ({ input }) => {
+    .mutation(async ({ input, ctx }) => {
+      await applyReportScope(ctx, input);
       const result = await generateRCAReport({ ...input, reportType: "rca" });
       return { analysisType: "root_cause_analysis", ...result };
     }),
 
   /**
-   * Generate model performance report.
+   * Generate model performance report. doc 69 W0-3 fix #1 — inherently global
+   * (ignores machineId), so admin-only rather than factory-narrowed.
    */
   modelPerformanceReport: protectedProcedure
     .input(reportParamsSchema)
-    .mutation(async ({ input }) => {
+    .mutation(async ({ input, ctx }) => {
+      await applyGlobalReportScope(ctx);
       const result = await generateModelPerformanceReport({ ...input, reportType: "model_performance" });
       return { analysisType: "model_performance_report", ...result };
     }),
 
   /**
-   * Generate executive summary report.
+   * Generate executive summary report. doc 69 W0-3 fix #1 — inherently global
+   * (all-factory KPIs/machine rankings), so admin-only rather than factory-narrowed.
    */
   executiveSummary: protectedProcedure
     .input(reportParamsSchema)
-    .mutation(async ({ input }) => {
+    .mutation(async ({ input, ctx }) => {
+      await applyGlobalReportScope(ctx);
       const result = await generateExecutiveSummary({ ...input, reportType: "executive" });
       return { analysisType: "executive_summary", ...result };
     }),

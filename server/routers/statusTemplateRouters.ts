@@ -6,7 +6,9 @@ import { requirePermission } from "../_core/accessControl";
 import { adminProcedure } from "./_shared";
 import { z } from "zod";
 import { TRPCError } from "@trpc/server";
+import { appError } from "../_core/appError";
 import * as db from "../db";
+import { phamViCua } from "./_phamViNguoiXem";
 // Doc 31 Đợt C (MP7/MP8) — deep bulk-import derivation + lifecycle gate.
 import {
   deepImportPointSchema,
@@ -17,11 +19,25 @@ import {
 import { resolveProductThresholdGate } from "../services/thresholdGovernanceService";
 
 export const machineStatusRouter = router({
+  // doc 64 IA-10 S2 (DEP-S2) — nhận scope trục ISA-95 (optional, additive):
+  // row đã mang đủ join {line, factory} nên lọc tại router, shape KHÔNG đổi.
   listWithStatus: protectedProcedure
     .use(requirePermission("machine_monitoring", "canView"))
-    .query(async () => {
-    return db.getAllMachinesWithStatus();
-  }),
+    .input(z.object({
+      machineId: z.number().int().positive().optional(),
+      lineId: z.number().int().positive().optional(),
+      factoryId: z.number().int().positive().optional(),
+    }).optional())
+    .query(async ({ input, ctx }) => {
+      const rows = await db.getAllMachinesWithStatus(phamViCua(ctx));
+      if (!input || (input.machineId === undefined && input.lineId === undefined && input.factoryId === undefined)) {
+        return rows;
+      }
+      return rows.filter((r: { id: number; line?: { id: number } | null; factory?: { id: number } | null }) =>
+        (input.machineId === undefined || r.id === input.machineId) &&
+        (input.lineId === undefined || r.line?.id === input.lineId) &&
+        (input.factoryId === undefined || r.factory?.id === input.factoryId));
+    }),
 
   getLogs: protectedProcedure
     .use(requirePermission("machine_monitoring", "canView"))
@@ -29,8 +45,8 @@ export const machineStatusRouter = router({
       machineId: z.number(),
       limit: z.number().min(1).max(1000).default(100),
     }))
-    .query(async ({ input }) => {
-      return db.getMachineStatusLogs(input.machineId, input.limit);
+    .query(async ({ input, ctx }) => {
+      return db.getMachineStatusLogs(input.machineId, input.limit, phamViCua(ctx));
     }),
 
   getHeartbeats: protectedProcedure
@@ -39,8 +55,8 @@ export const machineStatusRouter = router({
       machineId: z.number(),
       hours: z.number().min(1).max(168).default(24),
     }))
-    .query(async ({ input }) => {
-      return db.getHeartbeatHistory(input.machineId, input.hours);
+    .query(async ({ input, ctx }) => {
+      return db.getHeartbeatHistory(input.machineId, input.hours, phamViCua(ctx));
     }),
 
   getUptimeStats: protectedProcedure
@@ -49,16 +65,16 @@ export const machineStatusRouter = router({
       machineId: z.number(),
       hours: z.number().min(1).max(720).default(24),
     }))
-    .query(async ({ input }) => {
-      return db.getMachineUptimeStats(input.machineId, input.hours);
+    .query(async ({ input, ctx }) => {
+      return db.getMachineUptimeStats(input.machineId, input.hours, phamViCua(ctx));
     }),
 
   getUnnotifiedOffline: adminProcedure
     .input(z.object({
       thresholdMinutes: z.number().min(1).max(60).default(5),
     }))
-    .query(async ({ input }) => {
-      return db.getUnnotifiedOfflineMachines(input.thresholdMinutes);
+    .query(async ({ input, ctx }) => {
+      return db.getUnnotifiedOfflineMachines(input.thresholdMinutes, phamViCua(ctx));
     }),
 
   markNotificationSent: adminProcedure
@@ -74,21 +90,21 @@ export const machineStatusRouter = router({
       machineId: z.number(),
       hours: z.number().min(1).max(720).default(24),
     }))
-    .query(async ({ input }) => {
-      return db.getUptimeTimeline(input.machineId, input.hours);
+    .query(async ({ input, ctx }) => {
+      return db.getUptimeTimeline(input.machineId, input.hours, phamViCua(ctx));
     }),
 
   getAllUptimeTimelines: protectedProcedure
     .input(z.object({
       hours: z.number().min(1).max(720).default(24),
     }))
-    .query(async ({ input }) => {
-      return db.getAllMachinesUptimeTimeline(input.hours);
+    .query(async ({ input, ctx }) => {
+      return db.getAllMachinesUptimeTimeline(input.hours, phamViCua(ctx));
     }),
 
   // Alert Configuration
-  getAlertConfig: adminProcedure.query(async () => {
-    return db.getAlertConfiguration();
+  getAlertConfig: adminProcedure.query(async ({ ctx }) => {
+    return db.getAlertConfiguration(phamViCua(ctx));
   }),
 
   updateAlertConfig: adminProcedure
@@ -108,11 +124,12 @@ export const machineStatusRouter = router({
       startDate: z.string(),
       endDate: z.string(),
     }))
-    .query(async ({ input }) => {
+    .query(async ({ input, ctx }) => {
       return db.getMachineStatusReport(
         input.machineId,
         new Date(input.startDate),
-        new Date(input.endDate)
+        new Date(input.endDate),
+        phamViCua(ctx),
       );
     }),
 });
@@ -322,6 +339,11 @@ export const bulkImportRouter = router({
       const rows = [];
       let limitsStrippedCount = 0;
       const strippedCodes: string[] = [];
+      // BG-113 (review Khối C lượt 9, I-2) — điểm ghi thứ 4/5 (bulk-import):
+      // `rangeError` (từ `buildInsertFromImportPoint`) là một cặp giới hạn
+      // (lowerLimit>upperLimit hoặc heightMin>heightMax) đã bị GATE xoá vì
+      // ngược khoảng — nêu ĐÍCH DANH mã điểm, không âm thầm import khoảng RỖNG.
+      const rangeErrors: string[] = [];
       for (let i = 0; i < input.points.length; i++) {
         const p = input.points[i];
         const legacyType = await resolveLegacyType(p.measurementTypeCode, p.measurementType);
@@ -337,6 +359,7 @@ export const bulkImportRouter = router({
           limitsStrippedCount++;
           strippedCodes.push(p.code);
         }
+        if (built.rangeError) rangeErrors.push(built.rangeError);
         rows.push(built.row);
       }
 
@@ -345,7 +368,7 @@ export const bulkImportRouter = router({
       // product is live. Surfaced in the dialog so the engineer routes limits
       // through approval instead of assuming they imported.
       const skipped = limitsStrippedCount;
-      const errors = [...result.errors];
+      const errors = [...result.errors, ...rangeErrors];
       if (skipped > 0) {
         errors.push(
           `${skipped} point(s) imported WITHOUT limits — product is live; set limits via the Threshold Approvals queue. ` +
@@ -359,20 +382,20 @@ export const bulkImportRouter = router({
 
 // ============ MANUAL MACHINE MAPPING ROUTER ============
 export const manualMappingRouter = router({
-  list: protectedProcedure.query(async () => {
-    return db.listManualConnections();
+  list: protectedProcedure.query(async ({ ctx }) => {
+    return db.listManualConnections(phamViCua(ctx));
   }),
 
   getById: protectedProcedure
     .input(z.object({ id: z.number() }))
-    .query(async ({ input }) => {
-      return db.getManualConnectionById(input.id);
+    .query(async ({ input, ctx }) => {
+      return db.getManualConnectionById(input.id, phamViCua(ctx));
     }),
 
   getByMachineId: protectedProcedure
     .input(z.object({ machineId: z.number() }))
-    .query(async ({ input }) => {
-      return db.getManualConnectionByMachineId(input.machineId);
+    .query(async ({ input, ctx }) => {
+      return db.getManualConnectionByMachineId(input.machineId, phamViCua(ctx));
     }),
 
   create: adminProcedure
@@ -389,10 +412,7 @@ export const manualMappingRouter = router({
       // Check if machine already has a manual connection
       const existing = await db.getManualConnectionByMachineId(input.machineId);
       if (existing) {
-        throw new TRPCError({
-          code: 'CONFLICT',
-          message: 'Máy này đã có cấu hình kết nối thủ công',
-        });
+        throw appError('CONFLICT', 'ENTITY_DUPLICATE', { entity: 'connectionConfig' }, 'Máy này đã có cấu hình kết nối thủ công');
       }
       return db.createManualConnection(input);
     }),
@@ -438,10 +458,7 @@ export const manualMappingRouter = router({
     .mutation(async ({ input }) => {
       const connection = await db.getManualConnectionById(input.id);
       if (!connection) {
-        throw new TRPCError({
-          code: 'NOT_FOUND',
-          message: 'Không tìm thấy cấu hình kết nối',
-        });
+        throw appError('NOT_FOUND', 'ENTITY_NOT_FOUND', { entity: 'connectionConfig' }, 'Không tìm thấy cấu hình kết nối');
       }
       
       // Update status to pending

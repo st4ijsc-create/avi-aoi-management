@@ -117,6 +117,63 @@ export async function startBackgroundSchedulers(): Promise<void> {
     console.error("[BackupScheduler] init failed:", (err as any)?.message || err);
   }
 
+  // Pha 1 điều phối VRAM (Task 5) — bật SỔ CÁI + ĐỐI CHIẾU. ⚠ CHỈ QUAN SÁT: `reserve()` không
+  // bao giờ từ chối và không thu hồi của ai ở pha này; giá trị nằm ở chỗ `reconcileOnce()` so sổ
+  // với thiết bị mỗi 60 s và hét lên khi lệch — sidecar 7,8 GB (Đợt 0), ONNX +339 và cron +1.251
+  // (Đợt 2) đều từng phải chờ một lượt review TOÀN NHÁNH mới lộ ra.
+  //
+  // ⚠ VỊ TRÍ CÓ CHỦ ĐÍCH — PHẢI ĐỨNG TRƯỚC `initDeepModelWarmup()` ngay bên dưới.
+  // `startVramReconciler()` chụp NỀN THIẾT BỊ một lần (review vòng 1, I-1); nền phải được đo
+  // khi tiến trình này CHƯA cấp phát gì. Đẩy khối này xuống sau lượt warm model là tự tay nuốt
+  // ~17 GB trọng số vào "nền" và làm mù luôn cái sổ.
+  //
+  // Pha 1.5 Task 4 — bộ đếm giờ nhật ký (`__setVramLogTimerEnabled(true)`) KHÔNG bật ở đây.
+  // `startBackgroundSchedulers()` (hàm hiện tại) được gọi từ HAI chỗ khác nhau, và MỖI chỗ gọi
+  // tự bật timer TRƯỚC khi gọi vào đây — không phải một điểm bật chung duy nhất:
+  //   • all-in-one / `ROLE=api` — bật ở `server/_core/index.ts`, tại lượt gọi
+  //     `__setVramLogTimerEnabled(true)` DUY NHẤT của file đó, đứng TRƯỚC nhánh rẽ theo `ROLE`.
+  //     ⚠ Minor-4 (review TOÀN NHÁNH): bản trước ghi số dòng cứng (`:5198`) và nó đã LỆCH sang
+  //     `:5216` chỉ sau vài commit. Con trỏ vào một file 5.000 dòng phải là MÔ TẢ TƯƠNG ĐỐI
+  //     (grep được), không phải một số đếm mà mọi lượt chèn dòng đều làm sai.
+  //   • `ROLE=worker` (`server/worker.ts` HOẶC `ROLE=worker` qua `index.ts`) — bật ở ĐẦU
+  //     `runWorkerProcess()` (trên, review vòng 1 Critical: bật ở `index.ts` KHÔNG phủ được
+  //     worker, vì `worker.ts` không import `index.ts`, và `ROLE=worker` qua `index.ts`
+  //     early-return trước khi chạm dòng bật ở đó).
+  // `__setVramLogTimerEnabled` idempotent (`if (on && !timer)`) nên hai điểm bật này không
+  // đụng nhau — không role nào đi qua CẢ HAI, mỗi nơi chỉ phủ đúng đường vào của chính nó.
+  // ★★ Pha 2B Task 2 (I-1) — LƯỢT BẬT ĐỐI CHIẾU ĐÃ RỜI KHỎI ĐÂY, CÓ CHỦ ĐÍCH. Từ Pha 2B, nhịp đối
+  // chiếu là NGUỒN SỐ của đường cưỡng chế chứ không chỉ nuôi cái chuông, nên nó không được phụ
+  // thuộc vào việc tiến trình này có chạy scheduler hay không: `ROLE=api` không bao giờ vào hàm
+  // này ⇒ ô tick rỗng vĩnh viễn ⇒ headroom rơi về chỉ-sổ (nhánh RỘNG NHẤT) đúng ở tiến trình chứa
+  // MỌI điểm cấp phát. Hai điểm bật mới nằm cùng chỗ với `__setVramLogTimerEnabled(true)`:
+  //   • `server/_core/index.ts` — TRƯỚC nhánh rẽ theo `ROLE` (phủ `api` + all-in-one; `api` bật ở
+  //     chế độ `ring: false` — có SỐ, không có CHUÔNG);
+  //   • đầu `runWorkerProcess()` (dưới, phủ `ROLE=worker` qua cả `worker.ts` lẫn `index.ts`).
+  // ⚠ ĐỪNG THÊM LẠI ở đây: `startVramReconciler()` idempotent (`if (timer) return`) nên lượt gọi
+  // thứ hai sẽ ÂM THẦM BỎ QUA tham số `ring` của nó — một cái bẫy im lặng, không phải một no-op.
+  // ⚠ Ràng buộc thứ tự CŨ vẫn còn nguyên giá trị và nay do `index.ts` gánh: lượt chụp nền phải
+  // đứng TRƯỚC `initDeepModelWarmup()` bên dưới, nếu không ~17 GB trọng số bị nuốt vào "nền".
+
+  // doc69 W1 "modelfix" — WARM THE DEEP (text-generation) MODEL FIRST. node-llama-cpp fragments
+  // VRAM when the 30B loads AFTER a small model, and RAG pulls in the 0.6B embedder on the first
+  // retrieval; `warmModel()` was written for exactly this and was never called from production
+  // code. Best-effort: initDeepModelWarmup never throws, uses an unref'd timer and self-gates on
+  // GGUF_WARM_DEEP_MODEL_ON_BOOT=false.
+  try {
+    const { initDeepModelWarmup } = await import("../services/aiGgufEngine");
+    initDeepModelWarmup();
+  } catch (err) {
+    console.error("[aiGgufEngine] deep-model warm init failed:", (err as any)?.message || err);
+  }
+
+  // Wave 3 §4.2 — đóng cảnh báo đã thôi tái diễn, kèm lý do. Best-effort.
+  try {
+    const { initAlertExpirySweeper } = await import("../services/alertExpirySweeper");
+    initAlertExpirySweeper();
+  } catch (err) {
+    console.error("[alertExpiry] khởi tạo thất bại:", (err as any)?.message || err);
+  }
+
   // S3.4 — AI batch RCA cron (daily 02:00 by default).
   try {
     const { initBatchRcaScheduler } = await import("../services/aiBatchRcaScheduler");
@@ -125,12 +182,31 @@ export async function startBackgroundSchedulers(): Promise<void> {
     console.error("[aiBatchRcaScheduler] init failed:", (err as any)?.message || err);
   }
 
+  // W0-D — proactive SPC-alert sweep. Opt in via AI_SPC_ALERT_SWEEP_ENABLED=true.
+  try {
+    const { initSpcAlertScheduler } = await import("../services/aiSpcAlertScheduler");
+    initSpcAlertScheduler();
+  } catch (err) {
+    console.error("[aiSpcAlertScheduler] init failed:", (err as any)?.message || err);
+  }
+
   // WS-1 — AI self-learning scan. Opt in via AI_SELF_LEARNING_ENABLED=true.
   try {
     const { initSelfLearningScheduler } = await import("../services/aiSelfLearningScheduler");
     initSelfLearningScheduler();
   } catch (err) {
     console.error("[aiSelfLearningScheduler] init failed:", (err as any)?.message || err);
+  }
+
+  // doc69 Giai đoạn 4/Wave 3 D4 — AI agent housekeeping cron: runs the EXISTING
+  // expireStaleSessions()/expireStaleActions() lazy-cleanup functions on an interval
+  // instead of leaving them purely reactive. Default ON (only expires ALREADY-stale
+  // rows — safe + desirable); opt out via AI_AGENT_HOUSEKEEPING_ENABLED=false.
+  try {
+    const { initAgentHousekeepingScheduler } = await import("../services/aiAgentHousekeepingScheduler");
+    initAgentHousekeepingScheduler();
+  } catch (err) {
+    console.error("[aiAgentHousekeepingScheduler] init failed:", (err as any)?.message || err);
   }
 
   // WS-4 — Predictive maintenance cycle. Opt in via PREDICTIVE_MAINTENANCE_ENABLED=true.
@@ -592,6 +668,17 @@ export function stopBackgroundSchedulers(): void {
     clearInterval(machineKeyExpiryTimer);
     machineKeyExpiryTimer = null;
   }
+  // Pha 1 điều phối VRAM (Task 5) — tắt VÔ ĐIỀU KIỆN, idempotent (no-op khi chưa từng bật).
+  // ⚠ Pha 2B Task 2 (I-1) — KHÔNG CÒN ĐỐI XỨNG với một chỗ bật trong CÙNG file: lượt bật đã dời
+  // sang `index.ts` (trước nhánh rẽ `ROLE`) và đầu `runWorkerProcess()`. Giữ lượt tắt ở đây là CỐ
+  // Ý và đúng khuôn `__setVramLogTimerEnabled(false)` ngay dưới — vốn đã tắt vô điều kiện từ Pha
+  // 1.5 Task 4 dù chỗ bật của nó cũng nằm ở hai file khác. Đường tắt duy nhất phải phủ mọi đường bật.
+  import("../services/vram/vramReconciler")
+    .then((m) => m.stopVramReconciler())
+    .catch(() => {});
+  import("../services/vram/vramEventLog")
+    .then((m) => m.__setVramLogTimerEnabled(false))
+    .catch(() => {});
   import("../services/reportScheduler")
     .then((m) => {
       m.shutdownScheduledReports();
@@ -612,6 +699,10 @@ export function stopBackgroundSchedulers(): void {
     .catch(() => {});
   import("../services/aiSelfLearningScheduler")
     .then((m) => m.stopSelfLearningScheduler())
+    .catch(() => {});
+  // doc69 Giai đoạn 4/Wave 3 D4 — idempotent no-op when never started.
+  import("../services/aiAgentHousekeepingScheduler")
+    .then((m) => m.stopAgentHousekeepingScheduler())
     .catch(() => {});
   import("../services/predictiveMaintenanceService")
     .then((m) => m.stopPredictiveMaintenanceJob())
@@ -710,6 +801,25 @@ export function stopBackgroundSchedulers(): void {
 export async function runWorkerProcess(): Promise<void> {
   console.log("[Worker] Starting scheduler-only worker (no HTTP listener).");
 
+  // Pha 1.5 Task 4, review vòng 1 (Critical) — BẬT nhật ký NGAY ĐÂY, không phải ở
+  // `index.ts`. `runWorkerProcess()` là điểm CHUNG của CẢ HAI đường vào worker:
+  //   1. `server/worker.ts` (`npm run start:worker` / `dev:worker`) import THẲNG
+  //      hàm này — KHÔNG BAO GIỜ chạm `index.ts`.
+  //   2. `ROLE=worker` qua `index.ts` — `startServer()` early-return RẤT SỚM
+  //      (đầu hàm), TRƯỚC lượt bật đặt gần khối `SERVER_ROLE === "api"` phía dưới.
+  // Đặt lượt bật ở `index.ts` (như bản vá đầu của Task 4 đã làm) là VÔ NGHĨA với
+  // cả hai đường trên ⇒ `worker` mất nhật ký hoàn toàn, kể cả sự kiện `baseline`/
+  // `drift` do CHÍNH `reconcileOnce()` của tiến trình này ghi — hồi quy so với
+  // trước Task 4. Đối xứng với `stopBackgroundSchedulers()` (dưới) vốn đã tắt nó
+  // VÔ ĐIỀU KIỆN bất kể ai gọi.
+  try {
+    const { __setVramLogTimerEnabled } = await import("../services/vram/vramEventLog");
+    __setVramLogTimerEnabled(true);
+  } catch (err) {
+    // Telemetry không bao giờ được làm hỏng boot của worker.
+    console.error("[Worker] không bật được bộ đếm giờ nhật ký vram:", (err as any)?.message || err);
+  }
+
   // Observability bootstrap (Sentry/OTel) — no-op unless configured.
   try {
     const { initObservability } = await import("./observability");
@@ -761,6 +871,35 @@ export async function runWorkerProcess(): Promise<void> {
       "[Worker] SINGLE-WORKER ASSUMPTION: leader-election OFF — run exactly ONE worker " +
         "(set WORKER_LEADER_ELECTION_ENABLED=true to run HA replicas).",
     );
+  }
+
+  /**
+   * ★★ Pha 2B Task 2 (I-1) — ĐỐI CHIẾU: điểm bật của vai trò `worker`.
+   * `runWorkerProcess()` là điểm CHUNG của cả HAI đường vào worker (`server/worker.ts` import
+   * thẳng hàm này và KHÔNG BAO GIỜ chạm `index.ts`; còn `ROLE=worker` qua `index.ts` thì
+   * early-return từ rất sớm) — cùng khuôn và cùng lý do với lượt bật nhật ký ở đầu hàm. Trước
+   * Pha 2B nó nằm TRONG `startBackgroundSchedulers()`; nay ra ngoài vì chỗ đó không phủ `ROLE=api`,
+   * và từ Pha 2B nhịp đối chiếu là NGUỒN SỐ của đường cưỡng chế chứ không chỉ là cái chuông.
+   *
+   * ⚠⚠ N-3 (re-review) — VỊ TRÍ NÀY LÀ **SAU** KHỐI BẦU LEADER, CÓ CHỦ ĐÍCH, VÀ ĐÃ TỪNG ĐẶT SAI.
+   * Bản vá I-1 đặt nó ở ĐẦU hàm (cạnh lượt bật nhật ký) ⇒ với `WORKER_LEADER_ELECTION_ENABLED=true`,
+   * một replica **ĐANG CHỜ** leadership sẽ đối chiếu **và ĐÁNH CHUÔNG** suốt thời gian chờ — nó
+   * thấy VRAM của leader và gọi đó là "cấp phát KHÔNG XIN PHÉP", tức đúng cái nhiễu mà cờ `ring`
+   * sinh ra để diệt, chỉ khác vai. Chỗ CŨ (trong `startBackgroundSchedulers()`) nằm **sau** khối
+   * bầu, nên đặt ở đây là **khôi phục đúng ngữ nghĩa cũ** cho worker.
+   * ⚠ Đánh đổi đã cân và chấp nhận: replica ở chế độ CHỜ **không có nhịp nào** ⇒ ô tick rỗng ⇒
+   * `"no-tick"`. Đúng: một replica chờ **không chạy scheduler và không cấp phát gì**, nên nó không
+   * có quyết định nào để ra; và ngay khi giành được leadership nó chạy nhịp NGAY tại dòng dưới.
+   * ⚠ VẪN ĐỨNG TRƯỚC `startBackgroundSchedulers()`: nền phải được chụp khi tiến trình này CHƯA cấp
+   * phát gì (ràng buộc thứ tự từ Pha 1 — đẩy xuống sau lượt warm model là nuốt ~17 GB vào nền).
+   * Worker chạy scheduler ⇒ nó LÀ vai trò được đánh chuông (`ring` mặc định true).
+   */
+  try {
+    const { startVramReconciler } = await import("../services/vram/vramReconciler");
+    startVramReconciler();
+    console.log("[Worker] [vram] sổ cái + đối chiếu đã bật (nhịp NGAY, chuông BẬT).");
+  } catch (err) {
+    console.error("[Worker] không bật được sổ cái/đối chiếu vram:", (err as any)?.message || err);
   }
 
   await startBackgroundSchedulers();

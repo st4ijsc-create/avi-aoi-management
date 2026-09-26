@@ -1,0 +1,380 @@
+{
+  "corpus": "scripts/ai-eval/cau-tinh-nang-vs-song-giu-lai.jsonl",
+  "label": "v6b-giulai",
+  "tom": {
+    "trong": {
+      "n": 12,
+      "dung": 11,
+      "tuChoi": 0,
+      "sai": 1
+    },
+    "ngoai": {
+      "n": 12,
+      "tuChoi": 2,
+      "traLoi": 10
+    },
+    "loi": 0
+  },
+  "ra": [
+    {
+      "id": "TQ01",
+      "ngoai": false,
+      "kq": "dung",
+      "ms": 53453,
+      "nguon": [
+        "knowledge/domain/howto-spc-control.md",
+        "knowledge/domain/howto-spc-control.md",
+        "howto-spc-control.md",
+        "knowledge/workflows/spc-critical-review.playbook.yaml",
+        "knowledge/features/analytics/spc-analysis.md"
+      ],
+      "traLoi": "(1) Biểu đồ SPC có các đường giới hạn bao gồm đường trung bình (CL), giới hạn kiểm soát trên/dưới (UCL/LCL), và giới hạn kỹ thuật của khách hàng (USL/LSL).  \n(2) Bước 1: Truy cập `Menu › Chất lượng › SPC`, chọn sản phẩm và điểm đo → hệ thống tự động vẽ biểu đồ với các đường CL, UCL, LCL. Đường CL là trung bình mẫu; UCL/LCL được tính bằng công thức `mean ± 3·σ`. Bước 2: Tại tab \"Điểm đo\", chỉnh sửa cột UCL/LCL/USL/LSL để cấu hình ngưỡng → hệ thống cập nhật biểu đồ và cảnh báo nếu có điểm vượt giới hạn. Kết quả là các đường được hiển thị rõ ràng, giúp nhận diện sự bất thường theo quy tắc Western Electric (ví dụ: 1 điểm ngoài 3σ).  \n(3) Lưu ý: Hệ thống KHÔNG tự\n\n_Dữ liệu sống: Chưa đủ dữ liệu yield (2 điểm) để đánh giá SPC trong 14 ngày qua._",
+      "loi": null
+    },
+    {
+      "id": "TQ02",
+      "ngoai": false,
+      "kq": "sai",
+      "ms": 5369,
+      "nguon": [
+        "knowledge/workflows/spc-critical-review.playbook.yaml",
+        "knowledge/features/analytics/spc-analysis.md",
+        "knowledge/workflows/spc-critical-review.playbook.yaml",
+        "knowledge/domain/howto-spc-control.md",
+        "knowledge/features/analytics/spc-analysis.md"
+      ],
+      "traLoi": "(1) Biểu đồ kiểm soát SPC không có thời gian tự làm mới được định nghĩa rõ trong tài liệu. Quy trình cập nhật dữ liệu xảy ra theo chu kỳ nhập liệu và phân tích, chứ không phải tự động tái tạo biểu đồ.  \n\n(2) Các bước:  \n* **Xác minh dữ liệu** → ở màn hình `/spc-analysis`, kiểm tra tab `Trend + Prediction` để xác định thời gian cập nhật (mặc định 30 ngày). Nếu thiếu dữ liệu, mở rộng khoảng thời gian trong UI. [2]  \n* **Kiểm tra xu hướng và dự báo** → tại tab `Trend + Prediction`, hệ thống chỉ có thể dự báo khi ≥30 điểm lịch sử; nếu không đủ, cần kéo dài thời gian nhập liệu (trong UI). [2]  \n* **Xác định vi phạm theo luật SPC** → hệ thống chạy 13 luật tự động trên dữ liệu đo lường mỗi lần cập nhật dữ liệu mới. Không có\n\n_Dữ liệu sống: Chưa đủ dữ liệu yield (2 điểm) để đánh giá SPC trong 14 ngày qua._",
+      "loi": null
+    },
+    {
+      "id": "TQ03",
+      "ngoai": false,
+      "kq": "dung",
+      "ms": 3516,
+      "nguon": [
+        "knowledge/domain/howto-spc-control.md",
+        "knowledge/domain/PRODUCTS_MEASUREMENT_POINTS_PHASE4_AUDIT.md",
+        "knowledge/domain/howto-spc-control.md",
+        "knowledge/domain/PRODUCTS_MEASUREMENT_POINTS_PHASE4_AUDIT.md",
+        "docs/ECOSYSTEM/06_TECHNICIAN_COPILOT_DESIGN_2026-06.md"
+      ],
+      "traLoi": "(1) Tổng số mục được liệt kê: **1**\n\n(2) Danh sách đầy đủ:\n- Cpk được tính lại mỗi 100 mẫu mới.\n\n(3) Trích nguyên văn code/giá trị từ ngữ cảnh:\n> - Cpk được tính lại mỗi 100 mẫu mới.  \n> Lưu ý: nếu thấy Cpk = 1.33 không đổi cho mọi sản phẩm → **CẢNH BÁO**: hệ thống có thể đang dùng giá trị cứng (xem audit `AI_ANALYTICS_MODULE_AUDIT.md`).\n\n(4) Nguồn gốc: [1] SPC — Đường UCL / LCL / Cpk (đoạn con 6) | knowledge/domain/howto-spc-control.md",
+      "loi": null
+    },
+    {
+      "id": "TQ04",
+      "ngoai": false,
+      "kq": "dung",
+      "ms": 2706,
+      "nguon": [
+        "knowledge/domain/howto-lot-management.md",
+        "knowledge/domain/howto-lot-management.md",
+        "knowledge/features/production/production-orders.md",
+        "howto-lot-management.md",
+        "knowledge/features/production/production-orders.md"
+      ],
+      "traLoi": "(1) Một lô sản xuất có thể ở các trạng thái: `planned`, `running`, `paused`, `completed` hoặc `cancelled`.  \n(2)  \n- **Bước 1**: Truy cập UI tại `Menu › Sản xuất › Lệnh sản xuất`, nhập mã lô vào ô tìm → hiển thị danh sách với cột *Status* cho thấy trạng thái hiện tại. Kết quả: trạng thái được liệt kê rõ ràng theo vòng đời.  \n- **Bước 2**: Gọi API `GET /api/lots/:orderCode` (thay thế `:orderCode` bằng mã lô cụ thể) → phản hồi trả về trường `status`, ví dụ như `\"running\"` hoặc `\"completed\"`. Kết quả là dữ liệu chi tiết gồm tiến độ %, số lượng OK/NG và ETA.  \n(3) Lưu ý: trạng thái không hợp lệ (ví dụ nhập sai mã) sẽ gây lỗi 404; nếu lô bị hủy (`cancelled`), không thể chạy lại hoặc cập nhật",
+      "loi": null
+    },
+    {
+      "id": "TQ05",
+      "ngoai": false,
+      "kq": "dung",
+      "ms": 4045,
+      "nguon": [
+        "knowledge/domain/howto-lot-management.md",
+        "knowledge/domain/howto-lot-management.md",
+        "knowledge/domain/aoi-reports.md",
+        "howto-lot-management.md",
+        "knowledge/features/production/production-dashboard.md"
+      ],
+      "traLoi": "(1) FPY (First Pass Yield) của lô được tính bằng tỷ lệ số lượng sản phẩm đạt chuẩn trong lần kiểm tra đầu tiên so với tổng số bảng kiểm tra.  \n(2) Bước 1: Truy cập trang chi tiết lô → chọn tab \"KPI\" hoặc dùng API `GET /api/lots/:orderCode` để lấy dữ liệu, ở đây hệ thống trả về các chỉ số bao gồm `okQty`, `actualQty`. Bước 2: Áp dụng công thức FPY = `(okQty / actualQty) × 100%` như trong tài liệu [3] và [1]. Kết quả là tỷ lệ phần trăm thể hiện hiệu suất đầu vào của lô.  \n(3) Lỗi thường gặp khi tính toán FPY bao gồm việc sử dụng sai dữ liệu (ví dụ: dùng tổng sản phẩm sau rework thay vì lần kiểm tra đầu tiên). Cần đảm bảo `okQty` chỉ là số lượng đạt chuẩn trong lần kiểm tra đầu, không bao\n\n_Nguồn số liệu: `product_inspections` · interval=day · 14d · 2 hàng_",
+      "loi": null
+    },
+    {
+      "id": "TQ06",
+      "ngoai": false,
+      "kq": "dung",
+      "ms": 2443,
+      "nguon": [
+        "knowledge/domain/howto-lot-management.md",
+        "knowledge/domain/howto-lot-management.md",
+        "knowledge/workflows/change-recipe-line-start.playbook.yaml",
+        "knowledge/workflows/change-recipe-line-start.playbook.yaml",
+        "howto-lot-management.md"
+      ],
+      "traLoi": "(1) Một line chỉ chạy 1 lô tại một thời điểm.  \n(2) Bước 1: Tại giao diện `Menu › Sản xuất › AOI Inspection`, chọn line cần vận hành → nếu đang ở trạng thái `idle`, hệ thống hiển thị danh sách các lô `planned`. Bước 2: Nhấn **\"Bắt đầu\"** để chuyển sang trạng thái `running` và bắt đầu scan sản phẩm, mỗi sản phẩm sẽ gắn `lotId` của lô hiện tại. Khi muốn chạy lô mới, phải tạm dừng hoặc kết thúc lô đang chạy trước đó — không thể đồng thời thực hiện hai lô trong cùng một line [1].  \n(3) Lỗi thường gặp: cố gắng bắt đầu lô thứ 2 mà chưa hoàn tất hay tạm ngừng lô cũ → hệ thống sẽ báo lỗi và giữ trạng thái `running` của lô đang chạy. Không có khả năng chuyển đổi tự động giữa các lô trong cùng line [1].  \n(4) Liên quan đến\n\nAPI liên quan: `/api/lots/:orderCode`\n\nVí dụ:\n```\nplanned → running → (paused ⇄ running) → completed\n                                       ↘ cancelled\n```",
+      "loi": null
+    },
+    {
+      "id": "TQ07",
+      "ngoai": false,
+      "kq": "dung",
+      "ms": 4112,
+      "nguon": [
+        "knowledge/domain/howto-lot-management.md",
+        "knowledge/domain/howto-lot-management.md",
+        "knowledge/features/production/production-orders.md",
+        "knowledge/operational/production-scheduling.md",
+        "knowledge/operational/routing-master.md"
+      ],
+      "traLoi": "(1) Để hủy lô sản xuất, người dùng cần có quyền `production_manager` hoặc cấp cao hơn.  \n(2) Bước 1: Truy cập trang **Quản lý lô sản xuất** qua menu *Sản xuất → Quản lý lô sản xuất* [1]. Tại đây, chọn lô muốn hủy và nhấn nút \"Hủy\". Hệ thống yêu cầu xác nhận hai bước. Bước 2: Nhập mã xác nhận (mã này được hệ thống sinh ra khi mở màn hình) tại ô xác nhận thứ nhất → sau đó nhập lại ở bước thứ hai để hoàn tất [1]. Kết quả là trạng thái lô chuyển sang `cancelled` và ghi nhật ký hành động.  \n(3) Lỗi thường gặp: Người dùng không có quyền `production_manager`, dẫn đến lỗi \"Access denied\". Giải pháp: kiểm tra vai trò trong hệ thống hoặc yêu cầu cấp quyền từ quản lý. Ngoài ra, nếu chưa đăng nhập đúng session thì sẽ bị chặn truy cập [1].  \n\n(",
+      "loi": null
+    },
+    {
+      "id": "TQ08",
+      "ngoai": false,
+      "kq": "dung",
+      "ms": 1686,
+      "nguon": [
+        "knowledge/domain/howto-shift-change.md",
+        "knowledge/operational/war-room.md",
+        "knowledge/operational/bom-management.md",
+        "knowledge/operational-approved/carbon-dashboard.md",
+        "knowledge/features/products/process-management.md"
+      ],
+      "traLoi": "(1) Tổng số mục được liệt kê: **3**\n\n(2) Danh sách đầy đủ:\n\n- Lô đang chạy  \n- Sản lượng tích lũy  \n- NG count  \n- Máy offline  \n- Alert chưa xử lý  \n\n(3) Trích nguyên văn code/giá trị từ ngữ cảnh khi có:\n> \"Hệ thống tự liệt kê: lô đang chạy, sản lượng tích lũy, NG count, máy offline, alert chưa xử lý.\"\n\n(4) Nguồn gốc (file/đường dẫn): [1] Hướng dẫn đổi ca làm việc (Shift change) (bảng, nhóm 1) | knowledge/domain/howto-shift-change.md",
+      "loi": null
+    },
+    {
+      "id": "TQ09",
+      "ngoai": false,
+      "kq": "dung",
+      "ms": 1679,
+      "nguon": [
+        "knowledge/domain/howto-shift-change.md",
+        "knowledge/domain/howto-shift-change.md",
+        "knowledge/features/settings/shift-config.md",
+        "knowledge/features/settings/shift-config.md",
+        "knowledge/operational/war-room.md"
+      ],
+      "traLoi": "(1) Tổng số mục được liệt kê: 1  \n\n(2) Danh sách đầy đủ:  \n- Trưởng ca đến trước giờ giao ca 10 phút.  \n\n(3) Trích nguyên văn code/giá trị từ ngữ cảnh khi có:  \n\"Trưởng ca đến trước giờ giao 10 phút, mở `Menu › Sản xuất › Bàn giao ca`.\" [1]  \n\n(4) Nguồn gốc (file/đường dẫn): [1]",
+      "loi": null
+    },
+    {
+      "id": "TQ10",
+      "ngoai": false,
+      "kq": "dung",
+      "ms": 1193,
+      "nguon": [
+        "knowledge/domain/howto-shift-change.md",
+        "knowledge/features/settings/shift-config.md",
+        "server/services/reportScheduler.timezone.test.ts",
+        "knowledge/domain/howto-shift-change.md",
+        "howto-shift-change.md"
+      ],
+      "traLoi": "Server sai timezone làm cột giờ lệch 7h.  \n\n> Trích nguyên văn từ tài liệu: \"Nếu sai, mọi cột giờ đều lệch 7h.\" [1]",
+      "loi": null
+    },
+    {
+      "id": "TQ11",
+      "ngoai": false,
+      "kq": "dung",
+      "ms": 2714,
+      "nguon": [
+        "knowledge/domain/aoi-reports.md",
+        "knowledge/features/analytics/reports.md",
+        "knowledge/domain/aoi-reports.md",
+        "knowledge/operational/reporting-studio.md",
+        "knowledge/features/ai/ai-reports.md"
+      ],
+      "traLoi": "(1) Báo cáo xu hướng theo dõi các chỉ số như tỷ lệ NG theo ngày/tuần/tháng, tần suất từng loại lỗi, so sánh giữa các line/máy và tỷ lệ false alarm.  \n(2) Bước 1: Truy cập `/reports` → chọn tab `Trend Report`, làm việc tại phần biểu đồ xu hướng để xem NG rate theo thời gian; kết quả là trend đi lên (NG tăng) hoặc spike đột ngột [3]. Bước 2: Xác định loại lỗi phổ biến bằng cách nhìn vào tần suất từng loại trong bảng phân tích, ở tab `Detailed` → thấy các lỗi như solder bridges hay missing pads có tỷ lệ cao; kết quả là nhận diện được nguyên nhân tiềm tàng.  \n(3) Lưu ý: Nếu trend ổn định nhưng cao thì cần cải thiện process [1]. Lỗi thường gặp khi không có dữ liệu kiểm tra (empty state), do đó phải mở rộng khoảng thời gian hoặc kiểm tra bộ lọc Factory\n\n_Nguồn số liệu: `product_inspections` · 7d · 7 hàng_",
+      "loi": null
+    },
+    {
+      "id": "TQ12",
+      "ngoai": false,
+      "kq": "dung",
+      "ms": 2288,
+      "nguon": [
+        "knowledge/domain/aoi-reports.md",
+        "knowledge/domain/aoi-reports.md",
+        "aoi-reports.md",
+        "knowledge/features/analytics/reports.md",
+        "knowledge/operational/reporting-studio.md"
+      ],
+      "traLoi": "(1) Báo cáo Lot (Lot Report) hiển thị các chỉ số liên quan đến chất lượng sản phẩm theo lô, bao gồm tỷ lệ đạt đầu tiên và cuối cùng, phân tích lỗi theo tần suất, và khả năng truy xuất thông tin bảng.  \n(2) *Bước 1*: Vào **Reports → Lot Report** trong giao diện UI để mở báo cáo [1]. Tại đây, người dùng chọn Work Order Number hoặc Model/Part Number để lọc dữ liệu. Kết quả hiển thị các cột: Planned vs Actual quantity, FPY, Final Yield và Defect Pareto chart. *Bước 2*: Xem chi tiết traceability bằng cách nhấp vào serial number từng bảng trong phần Traceability [1]. Công thức tính toán được áp dụng như sau: `FPY = (Pass lần đầu / Tổng bảng kiểm tra) × 100%` và `Final Yield = ((Pass + Pass after rework) / Tổng bảng) × 100%`.  \n(3)",
+      "loi": null
+    },
+    {
+      "id": "TL01",
+      "ngoai": true,
+      "kq": "tra-loi",
+      "ms": 2643,
+      "nguon": [
+        "knowledge/features/ai/ai-chat.md",
+        "knowledge/domain/aoi-troubleshooting.md",
+        "knowledge/domain/aoi-defect-types.md",
+        "knowledge/operational/defect-catalog.md",
+        "knowledge/operational-approved/defect-catalog.md"
+      ],
+      "traLoi": "(1) Lỗi nhiều nhất được xác định qua báo cáo phân tích theo tần suất, thường xuất hiện trong danh mục lỗi và có thể kiểm tra trực tiếp tại giao diện quản lý.  \n(2) Bước 1: Truy cập UI tại **Chất lượng › Danh mục lỗi** (`/defect-catalog`) để xem bảng tổng hợp các loại lỗi theo tần suất [4]. Tại đây, dữ liệu được hiển thị dưới dạng biểu đồ hoặc danh sách có cột \"Tỷ lệ phát sinh\". Bước 2: Dùng chức năng tìm kiếm (search) với cả tên tiếng Việt và mã lỗi để lọc nhanh – ví dụ nhập `Solder Bridge` hoặc mã như `SB-01`. Kết quả trả về sẽ hiển thị loại lỗi có tần suất cao nhất, thường là **Solder Bridge** (>38%) theo ví dụ thực tế [1].  \n(3) Lưu ý: Nếu không thấy dữ liệu rõ ràng, có thể do danh mục chưa được cập nhật hoặc quyền truy cập `history_view` bị hạn chế. Lỗi phổ biến khác bao gồm trùng mã lỗi (ví dụ hai tên như \"Missing Pad\" và \"Pad Missing\") khiến tần suất bị chia đôi [5].  \n(4) Liên quan đến: **Xử lý false alarm** – khi tỷ lệ cảnh báo sai >30%, cần phân",
+      "loi": null
+    },
+    {
+      "id": "TL02",
+      "ngoai": true,
+      "kq": "tra-loi",
+      "ms": 1422,
+      "nguon": [
+        "knowledge/features/monitoring/oee-dashboard.md",
+        "knowledge/features/monitoring/oee-dashboard.md",
+        "knowledge/features/alerts/oee-targets.md",
+        "knowledge/features/alerts/oee-targets.md",
+        "knowledge/operational/oee-target-settings.md"
+      ],
+      "traLoi": "Chưa có dữ liệu OEE trong 7 ngày qua.",
+      "loi": null
+    },
+    {
+      "id": "TL03",
+      "ngoai": true,
+      "kq": "tra-loi",
+      "ms": 4338,
+      "nguon": [
+        "knowledge/features/monitoring/ng-rate-threshold.md",
+        "knowledge/features/monitoring/ng-rate-threshold.md",
+        "knowledge/domain/howto-ng-handling-sop.md",
+        "knowledge/domain/aoi-reports.md",
+        "knowledge/features/analytics/defect-prediction.md"
+      ],
+      "traLoi": "(1) Tỷ lệ NG hiện tại là 0%, được cập nhật từ kiểm tra sản phẩm hôm nay.  \n(2) Bước 1: Truy cập UI tại `Monitoring` › `MQTT` › `NG Rate Threshold`, bảng hiển thị các rule với cột `station`, `threshold %`, và `ngRate`. Hiện tại, ngRate = 0% (từ dữ liệu thời gian thực). Bước 2: Kiểm tra giá trị `ngCount / inspectedCount × 100` trong phần **AOI Reports & Analytics** [4], công thức này được dùng để tính tỷ lệ NG. Kết quả hiện tại là 0%.  \n(3) Lưu ý: Nếu không có dữ liệu inspection, hệ thống sẽ không thể tính ngRate (tiền điều kiện theo [1]). Lỗi thường gặp khi `minSamples` quá thấp gây false positive — cần tăng lên ≥50 như trong ví dụ thực tế. Tỷ lệ NG mặc định là 2% tại mục KPI [\n\n_Nguồn số liệu: `product_inspections` · 0 hàng_",
+      "loi": null
+    },
+    {
+      "id": "TL04",
+      "ngoai": true,
+      "kq": "tra-loi",
+      "ms": 2405,
+      "nguon": [
+        "server/routers/stationAnalysis.yield.test.ts",
+        "server/routers/alertRouters.yield.test.ts",
+        "knowledge/features/analytics/category-analytics.md",
+        "knowledge/features/analytics/reports.md",
+        "knowledge/features/production/production-dashboard.md"
+      ],
+      "traLoi": "1. Yield là chỉ số hiệu suất sản xuất, được tính theo tỷ lệ phần trăm của các trạm (station) hoặc nhóm sản phẩm dựa trên dữ liệu kiểm tra hàng ngày.\n\n2. *What*: Xem tab **Production Dashboard** → chọn filter Factory và khoảng thời gian (ví dụ: 7 ngày gần nhất).  \n*Where in UI*: Trên bảng điều khiển, phần Strip KPI hiển thị FPY trung bình (xanh), tổng sản lượng, tỉ lệ retest (đỏ nếu >5%), số trạm Low Yield.  \n*Expected result*: Dữ liệu yield được cập nhật tức thì; các trạm có FPY <70% sẽ được tô đỏ, từ 70–89% là vàng, ≥90% là xanh.\n\n3. Gotchas:  \n- Nếu bảng trạm hiển thị \"No data\", kiểm tra khoảng thời gian hoặc dữ liệu `product_inspections` [5].  \n- Yield thấp có thể do logic FPY tính trên first-pass (không b",
+      "loi": null
+    },
+    {
+      "id": "TL05",
+      "ngoai": true,
+      "kq": "tra-loi",
+      "ms": 4409,
+      "nguon": [
+        "knowledge/domain/howto-lot-management.md",
+        "knowledge/features/production/production-orders.md",
+        "knowledge/operational/production-dashboard.md",
+        "knowledge/features/analytics/category-analytics.md",
+        "knowledge/features/production/production-dashboard.md"
+      ],
+      "traLoi": "(1) Tổng số mục được liệt kê: **0**\n\n(2) Danh sách đầy đủ:\n- Không có dữ liệu về sản lượng cụ thể trong thời gian hiện tại. Hệ thống đã kiểm tra 0 sản phẩm, với kết quả OK = 0, NG = 0, NTF = 0 và tỉ lệ NG = 0%.\n\n(3) Trích nguyên văn code/giá trị từ ngữ cảnh:\n> Hôm nay đã kiểm tra 0 sản phẩm: OK=0, NG=0, NTF=0. Tỉ lệ NG = 0%.  \n[1] Báo cáo theo lô: `Menu › Báo cáo › Sản lượng theo lô`.  \nTuy nhiên, không có thông tin cụ thể về tổng số sản lượng được ghi nhận trong ngày hiện tại.\n\n(4) Nguồn gốc (file/đường dẫn):  \n<<<DU_LIEU_KHONG_TIN_CAY nguồn=tool:get_today_stats (vòng 1)>>>\n\n**Giải thích thiết kế và xử lý lỗi**:  \nDữ liệu thời gian thực cho thấy hôm nay không có sản phẩm nào được kiểm tra, do đó tổng số sản lượng là 0. Hệ thống phản hồi trực tiếp với giá trị này vì đây là dữ liệu chính xác từ hệ thống (không phải dự đoán hoặc tính toán). Không có lỗi trong xử lý vì điều kiện đầu vào rõ ràng: không có sản phẩm để kiểm tra → kết quả là 0 cho tất cả các chỉ số.\n\nKhông có thông tin về tổng sản lượng theo dây chuyền, nhà máy hay mã sản phẩm cụ thể do dữ liệu thời gian thực hiện tại điểm này là trống. Nếu cần phân tích sâu hơn (ví dụ: theo nhóm sản phẩm hoặc lô), thì phải tham khảo các API như `trpc.productCategory.list`, `trpc.inspection.list` [4], nhưng không có dữ liệu cụ thể trong ngữ cảnh hiện tại để thực hiện điều đó.\n\n→ Kết luận: Sản lượng được ghi nhận là **0**.\n\n_Nguồn số liệu: `product_inspections` · 0 hàng_",
+      "loi": null
+    },
+    {
+      "id": "TL06",
+      "ngoai": true,
+      "kq": "tra-loi",
+      "ms": 5312,
+      "nguon": [
+        "knowledge/features/monitoring/machine-status-monitor.md",
+        "knowledge/features/monitoring/machine-sync.md",
+        "knowledge/domain/aoi-thresholds.md",
+        "knowledge/features/monitoring/machine-health.md",
+        "knowledge/features/monitoring/machine-sync.md"
+      ],
+      "traLoi": "(1) Có 1699 máy đang offline, trong đó các thiết bị như ESP32-ENV-01 và FUYU-F-T1-L1-M1 đến M12 đều nằm trong danh sách này. Trạng thái online là 0, tổng số lỗi ghi nhận là 129 [1].  \n(2) Bước 1: Truy cập `/machine-status` → hiển thị grid card với màu sắc phản ánh trạng thái (xanh ≥95%, vàng từ 60–80%, cam <60%) và icon Wifi/WifiOff cho offline. Tại đây, các máy bị mất kết nối được ghi nhận rõ ràng [1]. Bước 2: Nhấn vào card bất kỳ để mở **Detail Dialog**, chuyển sang tab **Status History** → xem lịch sử thay đổi trạng thái (gồm thời điểm và IP) để xác minh. Kết quả là danh sách offline có thể được kiểm tra chi tiết, bao gồm các thiết bị cụ thể như ESP\n\nAPI liên quan: `/api/machine/sync-points`, `/api/machine/:id/sync-logs`\n\n_Nguồn số liệu: `machines` · onlyOffline=true · 1699 hàng_",
+      "loi": null
+    },
+    {
+      "id": "TL07",
+      "ngoai": true,
+      "kq": "tu-choi",
+      "ms": 895,
+      "nguon": [
+        "knowledge/features/monitoring/ng-rate-threshold.md",
+        "knowledge/workflows/ng-burst-response.playbook.yaml",
+        "knowledge/domain/howto-ng-handling-sop.md",
+        "knowledge/workflows/ng-handling.playbook.yaml",
+        "knowledge/features/monitoring/ng-rate-threshold.md"
+      ],
+      "traLoi": "Tôi không có thông tin chính xác về câu hỏi này trong tài liệu hiện tại.\n\n**Gợi ý:**\n- Thử hỏi cụ thể hơn (tên tính năng, màn hình, mã lỗi, mã máy/lô)\n- Nếu hỏi về dữ liệu thời gian thực (sản lượng, máy, lỗi), hãy nêu rõ ngày/khoảng thời gian\n- Hoặc liên hệ kỹ thuật viên để được hỗ trợ",
+      "loi": null
+    },
+    {
+      "id": "TL08",
+      "ngoai": true,
+      "kq": "tu-choi",
+      "ms": 2596,
+      "nguon": [
+        "knowledge/workflows/ng-burst-response.playbook.yaml",
+        "knowledge/features/monitoring/ng-rate-threshold.md",
+        "knowledge/workflows/ng-handling.playbook.yaml",
+        "knowledge/domain/howto-ng-handling-sop.md",
+        "knowledge/workflows/ng-burst-response.playbook.yaml"
+      ],
+      "traLoi": "Tôi không có thông tin chính xác về câu hỏi này trong tài liệu hiện tại.  \n\nCâu hỏi \"lô nào bị NG cao nhất?\" không được liên kết với bất kỳ dữ liệu cụ thể nào như bảng thống kê, báo cáo lô sản phẩm hoặc chỉ số NG-rate theo thời gian thực trong các nguồn đã cung cấp [1], [2], [3], [4]. Các tài liệu hiện có tập trung vào việc phát hiện cảnh báo khi tỉ lệ lỗi vượt ngưỡng (ng-threshold), xử lý sản phẩm NG, phân tích nguyên nhân gốc (RCA) hoặc xác nhận cảnh báo qua công cụ `acknowledge_alert`, nhưng **không cung cấp dữ liệu về số lượng lô bị ảnh hưởng hay xếp hạng theo mức độ NG**.  \n\nĐể trả lời câu hỏi này chính xác, cần truy cập vào màn hình như `/mqtt-alerts` để xem danh sách cảnh báo NG hiện hành hoặc bảng phân tích lỗi (Pareto) trong giao diện quản lý chất lượng — tuy nhiên\n\nBạn muốn tra cứu lô sản xuất nào? Vui lòng cung cấp **mã lệnh sản xuất** (ví dụ `L20260505-001` hoặc `PO12345`).\nBạn cũng có thể vào *Menu › Sản xuất › Lệnh sản xuất* để chọn trực tiếp từ danh sách.",
+      "loi": null
+    },
+    {
+      "id": "TL09",
+      "ngoai": true,
+      "kq": "tra-loi",
+      "ms": 2705,
+      "nguon": [
+        "knowledge/features/inspection/history.md",
+        "knowledge/features/products/measurement-point-setup.md",
+        "knowledge/features/products/measurement-point-setup.md",
+        "knowledge/features/analytics/defect-heatmap.md",
+        "knowledge/features/inspection/inspection-submit.md"
+      ],
+      "traLoi": "(1) Điểm đo hay lỗi nhất được xác định qua bản đồ nhiệt lỗi (Defect Heatmap), hiển thị vị trí tập trung các sự cố theo gradient màu.  \n(2) Bước 1: Truy cập **Analytics → Defect Heatmap** trong UI. Tại tab *Heatmap*, bảng biểu hiện vùng đỏ thể hiện điểm đo có tần suất lỗi cao nhất [4]. Bước 2: Hover vào khu vực đỏ để xem tooltip hiển thị số lượng lỗi, loại lỗi và thời gian gần nhất [4]. Kết quả là nhận diện được cụ thể điểm đo (ví dụ: `MP-05`) nào bị lỗi nhiều.  \n(3) Lỗi thường gặp: Nếu ảnh outline sản phẩm không tải → fallback placeholder; cần kiểm tra URL hình trong thiết lập product [4]. Không có dữ liệu vị trí thì phải bật *Enable measurement points* trước khi dùng bản đồ nhiệt [4].  \n(4) Liên quan đến hai chủ đề: **Cấu hình Điểm đo (Measurement Points)** – nơi định nghĩa loại, vị trí và spec của từng điểm để máy kiểm tra; và **Bản đồ nhiệt lỗi** – phân tích dữ liệu thực tế từ các inspection để xác định điểm nào thường xuyên bị lỗi. Cả hai đều dựa vào thông tin toạ độ X/Y trong cấu hình sản phẩm [3][4].  \n\n*API liên quan: `DefectHeat\n\nAPI liên quan: `/api/machines/:id/refresh-config`, `/api/public/products/:productCode/measurement-points`, `/api/machine/submit-inspection`\nMàn hình liên quan: `/products/PCB-A7-V2`, `/machines/5`, `/products/:productModelId`",
+      "loi": null
+    },
+    {
+      "id": "TL10",
+      "ngoai": true,
+      "kq": "tra-loi",
+      "ms": 2561,
+      "nguon": [
+        "knowledge/features/analytics/data-comparison.md",
+        "knowledge/domain/howto-ng-handling-sop.md",
+        "knowledge/domain/howto-ng-handling-sop.md",
+        "knowledge/workflows/ng-handling.playbook.yaml",
+        "knowledge/features/analytics/data-comparison.md"
+      ],
+      "traLoi": "(1) Tóm tắt\nĐể so sánh tỷ lệ lỗi NG giữa các line sản xuất, sử dụng tính năng **So sánh Dữ liệu (Data Comparison)** trong module Analytics. Công cụ này cho phép đối chiếu chỉ số chất lượng giữa các nhóm line khác nhau để đánh giá hiệu quả cải tiến hoặc phát hiện bất thường.\n\n(2) Các bước thực hiện\n1. **Truy cập giao diện**: Điều hướng đến Menu `Analytics` › `Data Comparison` hoặc truy cập trực tiếp URL `/analytics/data-comparison` [5].\n2. **Chọn chế độ so sánh**: Tại mục \"Chọn mode\", chọn tùy chọn **by Line** để so sánh giữa các đường dây sản xuất [5].\n3. **Cấu hình nhóm dữ liệu**:\n    - **Group A**: Thiết lập filter để chọn Line cần so sánh thứ nhất (ví dụ: Line A).\n    - **Group B**: Thiết lập filter để chọn Line cần so sánh thứ hai (ví dụ: Line B).\n    - Đảm bảo khoảng thời gian (date range)",
+      "loi": null
+    },
+    {
+      "id": "TL11",
+      "ngoai": true,
+      "kq": "tra-loi",
+      "ms": 2294,
+      "nguon": [
+        "knowledge/domain/howto-spc-control.md",
+        "knowledge/domain/howto-spc-control.md",
+        "knowledge/features/analytics/quality-gates.md",
+        "knowledge/features/analytics/category-analytics.md",
+        "knowledge/features/products/product-machine-mapping.md"
+      ],
+      "traLoi": "(1) Cpk là chỉ số đánh giá khả năng quá trình sản xuất, tính lệch tâm so với giới hạn kỹ thuật; hệ thống cập nhật Cpk mỗi 100 mẫu mới và cảnh báo nếu giá trị luôn ở mức 1.33 [1].  \n(2) Bước 1: Truy cập `Menu › Chất lượng › SPC`, chọn sản phẩm và điểm đo → biểu đồ hiển thị CL, UCL/LCL và Cpk tại góc trên cùng bên phải của chart. Kết quả là giá trị số hiện trực tiếp trong giao diện. Bước 2: Nếu thấy Cpk = 1.33 không thay đổi cho nhiều sản phẩm → kiểm tra audit `AI_ANALYTICS_MODULE_AUDIT.md` để xác minh có dùng giá trị cứng hay không [1].  \n(3) Lỗi thường gặp: Cpk không cập nhật sau mỗi 100 mẫu (do lỗi cấu hình hoặc dữ liệu thiếu), hoặc hệ thống hiển thị Cpk = 1.33 cố định",
+      "loi": null
+    },
+    {
+      "id": "TL12",
+      "ngoai": true,
+      "kq": "tra-loi",
+      "ms": 3797,
+      "nguon": [
+        "knowledge/domain/aoi-troubleshooting.md",
+        "knowledge/domain/aoi-defect-types.md",
+        "knowledge/features/inspection/aoi-packages.md",
+        "knowledge/domain/aoi-defect-types.md",
+        "aoi-troubleshooting.md"
+      ],
+      "traLoi": "(1) Máy AOI có thể báo lỗi camera, vận chuyển hoặc giao tiếp tùy theo loại mã lỗi.  \n(2) Bước 1: Truy cập **Gói ảnh AOI** → lọc `Machine Code = AOI-LINE2-03`, `Status = failed` để xác định các package bị lỗi [3]. Bước 2: Chọn một package thất bại, mở tab **Logs**, kiểm tra nội dung lỗi như `meta.json: missing field \"pointCode\"` – đây là dấu hiệu sai format dữ liệu đầu vào. Kết quả: Nhận diện được nguyên nhân cụ thể để liên hệ team firmware sửa chữa [3].  \n\n(3) Lỗi thường gặp nhất trong thực tế là thiếu trường thông tin (ví dụ: `\"missing field 'pointCode'\"`) hoặc lỗi giao tiếp giữa máy và phần mềm xử lý ảnh, dẫn đến không tải hình ảnh. Cần kiểm tra định dạng file `meta.json` và cấu hình firmware [3].  \n\n(4) Liên quan hai chủ đề: Lỗi camera như E015 (multiple exposure error) liên hệ với việc thiếu dữ liệu trong meta.json – cả hai đều liên quan đến sai lệch trong quá trình thu thập ảnh. Đồng thời, lỗi vận chuyển (E022 board not detected) có thể gây ra sự cố đầu vào dẫn đến các package bị đánh dấu NG và cần xử lý lại [4].  \n\n*Ch",
+      "loi": null
+    }
+  ]
+}

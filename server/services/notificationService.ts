@@ -9,6 +9,13 @@ import {
   getUserNotificationPreferences,
   getUnreadNotificationCount,
 } from '../db';
+// doc69 W1 "modelfix" — shared env→GGUF-basename resolver; the digest/personalization calls below
+// must PIN a text model (un-pinned calls used to land on the 0.6B RAG embedder → repetition garbage).
+import { resolveLogicalModel } from './ai/modelResolver';
+// ★ G5-E — bộ cắt chuỗi suy luận (module LÁ, import TĨNH ⇒ hàng rào vô điều kiện theo cấu tạo).
+import { stripThinking } from './ai/thinkingStrip';
+// ★ doc 80 PLT-01 — phân quyền vào phòng socket (một nơi duy nhất, dùng chung với socket.ts).
+import { duocVaoPhongNguoiDung, moTaSocket } from '../_core/socketPhongQuyen';
 
 // Store Socket.io server instance
 let io: SocketIOServer | null = null;
@@ -23,6 +30,12 @@ export function initNotificationService(socketServer: SocketIOServer) {
     // Handle user authentication
     socket.on('auth:user', (userId: number) => {
       if (!userId) return;
+      // ★ doc 80 PLT-01 — trước bản vá MỌI socket (kể cả `machine` vô danh) tự khai userId bất kỳ
+      // là vào `user:{id}` và đọc thông báo của người khác. Chỉ socket người dùng, chỉ phòng của mình.
+      if (!duocVaoPhongNguoiDung(socket.data, userId)) {
+        console.warn(`[Notification] ${socket.id} TU CHOI join user:${userId} - ${moTaSocket(socket.data)}`);
+        return;
+      }
       
       // Add socket to user's set
       if (!userSockets.has(userId)) {
@@ -278,9 +291,11 @@ export async function generateNotificationSummary(
       prompt: `Summarize these ${notifications.length} notifications:\n${notifList}`,
       maxTokens: 256,
       temperature: 0.5,
-    });
+    }, resolveLogicalModel('chat'));
 
-    return response.text?.trim() || null;
+    // ★ G5-E — đây là THÂN THÔNG BÁO đẩy tới điện thoại / bảng Andon: bề mặt hiển thị dễ quên
+    // nhất trong 12 chỗ, vì không ai gọi nó là "màn hình AI". Cắt chuỗi suy luận trước khi trả.
+    return stripThinking(response.text ?? '').answer.trim() || null;
   } catch {
     return null;
   }
@@ -310,7 +325,7 @@ Reply in JSON: { "title": string, "message": string }`,
       maxTokens: 200,
       temperature: 0.3,
       jsonMode: true,
-    });
+    }, resolveLogicalModel('chat'));
 
     const parsed = JSON.parse(response.text);
     if (parsed.title && parsed.message) {

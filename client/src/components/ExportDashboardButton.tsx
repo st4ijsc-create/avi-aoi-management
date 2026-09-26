@@ -21,6 +21,7 @@ import {
 import { Calendar } from '@/components/ui/calendar';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { toast } from 'sonner';
+import { mapTrpcError } from '@/lib/trpcErrors';
 import { FileDown, FileSpreadsheet, FileText, Calendar as CalendarIcon, Loader2 } from 'lucide-react';
 import { format } from 'date-fns';
 import { vi } from 'date-fns/locale';
@@ -54,7 +55,7 @@ export function ExportDashboardButton({ corporateCode }: ExportDashboardButtonPr
     },
     onError: (error) => {
       toast.error(t('reports.exportError'), {
-        description: error.message,
+        description: mapTrpcError(error),
       });
     },
   });

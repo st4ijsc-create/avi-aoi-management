@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Badge } from "@/components/ui/badge";
+import { mapTrpcError } from "@/lib/trpcErrors";
 import {
   StatusBadge as PatternStatusBadge,
   type BadgeVariant,
@@ -70,6 +71,7 @@ import {
 } from "lucide-react";
 import { Label } from "@/components/ui/label";
 import { toast } from "sonner";
+import { toastTrpcError } from "@/lib/trpcErrors";
 import { PermissionGate, ViewOnlyBadge } from "@/components/PermissionGate";
 
 type RouterInputs = inferRouterInputs<AppRouter>;
@@ -156,7 +158,7 @@ export default function ProductionScheduling() {
         })
       );
     },
-    onError: (err) => toast.error(err.message),
+    onError: (err) => toastTrpcError(err),
   });
 
   // WIP status query
@@ -177,7 +179,7 @@ export default function ProductionScheduling() {
         })
       );
     },
-    onError: (err) => toast.error(err.message),
+    onError: (err) => toastTrpcError(err),
   });
 
   const applyRunMutation = trpc.productionOrder.applyScheduleRun.useMutation({
@@ -185,11 +187,11 @@ export default function ProductionScheduling() {
       toast.success(t("scheduling.runApplied", "Đã áp dụng {{count}} đơn", { count: data?.applied || 0 }));
       refetchOrders();
     },
-    onError: (err) => toast.error(err.message),
+    onError: (err) => toastTrpcError(err),
   });
 
   const whatIfMutation = trpc.productionOrder.whatIf.useMutation({
-    onError: (err) => toast.error(err.message),
+    onError: (err) => toastTrpcError(err),
   });
 
   const handleGenerateRun = () => {
@@ -209,7 +211,7 @@ export default function ProductionScheduling() {
       toast.success(t("scheduling.applySuccess", "Đã áp dụng gợi ý lịch"));
       refetchOrders();
     },
-    onError: (err) => toast.error(err.message),
+    onError: (err) => toastTrpcError(err),
   });
 
   const rescheduleMutation = trpc.productionOrder.reschedule.useMutation({
@@ -217,7 +219,7 @@ export default function ProductionScheduling() {
       refetchOrders();
     },
     onError: (error) => {
-      toast.error(error.message);
+      toastTrpcError(error);
       throw error;
     },
   });
@@ -883,7 +885,7 @@ function ThroughputWhatIfPanel({ lines }: { lines: LineRow[] }) {
           <AlertTriangle className="h-4 w-4" />
           <AlertTitle>{t("scheduling.sim.errorTitle", "Simulation unavailable")}</AlertTitle>
           <AlertDescription>
-            {sceneQ.error?.message ||
+            {(sceneQ.error ? mapTrpcError(sceneQ.error) : null) ||
               t("scheduling.sim.errorBody", "This line is not in factory #1's scene graph, or the twin is unreachable.")}
           </AlertDescription>
         </Alert>

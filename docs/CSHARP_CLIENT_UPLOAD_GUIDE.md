@@ -16,9 +16,19 @@ Content-Type: application/json
   "apiKey": "YOUR_API_KEY",
   "inspectionId": "unique-inspection-id",
   "sizeBytes": 12345678,
-  "sha256": "optional-file-hash"
+  "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
 }
 ```
+
+**`sha256` (tuỳ chọn) — được KIỂM THẬT:** SHA-256 hex của **toàn bộ tệp ZIP**
+sắp tải lên (hoa/thường đều được — máy chủ so không phân biệt). Máy chủ lưu lời
+khai này và **băm lại byte ZIP thật** ở Bước 2; lệch ⇒ **HTTP 400 và gói KHÔNG
+được lưu**. Không gửi ⇒ không có phép kiểm toàn vẹn nào cho gói đó (chỉ còn đối
+chiếu `sizeBytes`) — không gửi *không* an toàn hơn gửi sai.
+
+**`sizeBytes` (bắt buộc):** số byte CHÍNH XÁC của tệp ZIP. Vượt trần (mặc định
+200 MB, cấu hình bằng `AOI_PACKAGE_ZIP_MAX_BYTES`) ⇒ bị từ chối ngay tại bước
+presign, trước khi tốn một lượt tải.
 
 **Response:**
 ```json
@@ -50,7 +60,11 @@ x-api-key: YOUR_API_KEY
   - `x-api-key` HOẶC `x-machine-code`
   - `Content-Length`
 - **Body**: Binary data của file ZIP (không encode base64)
-- **Kích thước tối đa**: 200MB
+- **Kích thước tối đa**: mặc định 200 MB — trần THẬT do `AOI_PACKAGE_ZIP_MAX_BYTES`
+  quyết định (cùng một con số cho `presign`, tuyến upload này và `commit`).
+- **Toàn vẹn**: nếu Bước 1 có khai `sha256`, máy chủ băm lại byte nhận được ở
+  ĐÂY và trả **400** khi lệch — gói không được lưu. Cũng trả **400** nếu số byte
+  thật khác `sizeBytes` đã khai.
 
 ### Bước 3: Commit Package
 ```http
@@ -59,9 +73,16 @@ Content-Type: application/json
 
 {
   "apiKey": "YOUR_API_KEY",
-  "packageId": "unique-inspection-id"
+  "packageId": "unique-inspection-id",
+  "sizeBytes": 12345678,
+  "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
 }
 ```
+
+`sizeBytes` và `sha256` ở bước này **tuỳ chọn và độc lập** với lời khai ở Bước 1:
+khai thì máy chủ băm/đếm lại byte ZIP đã lưu và so; lệch ⇒ từ chối commit. Khai
+ở Bước 1 là đủ cho vòng `presign → upload → commit` chuẩn; khai lại ở đây chỉ
+thêm một lớp kiểm cho đường tải ZIP vào storage **không** đi qua Bước 2.
 
 ## Phương thức 2: Single Image Upload
 
@@ -77,6 +98,161 @@ x-api-key: YOUR_API_KEY
   "machineCode": "optional-machine-code"
 }
 ```
+
+## Phương thức 3: Template Image Upload (ảnh của cây dạy — TÙY CHỌN, BG-116)
+
+**Bối cảnh:** khi máy đẩy cây dạy qua `submitMachineTemplate` (`surfaces[].positions[].
+captures[].components[]`), trường `templateImagePath` trong payload chỉ mang **đường
+dẫn hệ tệp của chính máy** (vd `D:/InspectProAOI/Solutions/MODEL-X/template.jpg`) —
+server **không fetch được** đường dẫn đó, nên canvas dạy giới hạn trên hệ không hiện
+được ảnh nền cho các điểm dạy từ cây. Phương thức này mở đường để máy (tùy chọn) tải
+**chính byte ảnh** lên server, theo đúng khuôn presign→PUT→commit của ZIP Package Upload.
+
+**⚠ TÙY CHỌN — máy chưa nâng cấp không bị ảnh hưởng.** Đây là bước RIÊNG, chạy SAU
+khi cây đã đẩy xong; hợp đồng `submitMachineTemplate`/cấu trúc cây **không đổi**. Máy
+không gọi ba bước dưới đây vẫn đẩy cây và ingest kết quả bình thường như hôm nay —
+canvas trên hệ chỉ hiện thông điệp "Ảnh template chưa được máy tải lên hệ" thay vì vẽ
+ảnh nền, không phải một lỗi.
+
+### Bước 1: Gọi Presign Endpoint
+```http
+POST /api/trpc/machineApi.presignTemplateImage
+Content-Type: application/json
+
+{
+  "apiKey": "YOUR_API_KEY",
+  "captureExtId": "a1b2c3d4-0000-4000-8000-000000001011",
+  "componentExtId": "a1b2c3d4-0000-4000-8000-000000010111",
+  "productModelCode": "PCBA-REV3",
+  "contentHash": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+  "sizeBytes": 245678,
+  "ext": "jpg"
+}
+```
+
+- **`captureExtId` (bắt buộc):** `Capture.Id` (GUID) — cùng giá trị đã gửi trong cây
+  dạy ở `submitMachineTemplate`. KHÔNG có `componentExtId` ⇒ ảnh áp cho CẢ CAPTURE
+  (ảnh nền của cả lượt chụp, ghi vào `product_captures.templateImageUrl`).
+- **`componentExtId` (tùy chọn):** `Component.Id` (GUID) của MỘT linh kiện thuộc
+  ĐÚNG capture ở trên. Có mặt ⇒ ảnh là ảnh RIÊNG của linh kiện đó (crop), ghi vào
+  `measurement_point_defs.referenceImageUrl` — khác cột với ảnh cấp capture.
+- **`productModelCode` (tùy chọn, NÊN LUÔN GỬI):** mã sản phẩm — cùng giá trị đã
+  gửi ở `submitMachineTemplate`. `captureExtId` là GUID do MÁY cấp, không đảm bảo
+  duy nhất trên toàn hệ (một máy dạy CLONE cây cho hai sản phẩm khác nhau có thể
+  mang cùng bộ GUID). Không gửi mà server tìm thấy captureExtId này ở NHIỀU sản
+  phẩm của cùng máy ⇒ **400 BAD_REQUEST** ("cần khai productModelCode để chọn
+  đúng sản phẩm") thay vì đoán bừa.
+- **`contentHash` (bắt buộc):** SHA-256 hex (64 ký tự, hoa/thường đều được) của
+  TOÀN BỘ byte ảnh sắp tải lên. Cùng nội dung ⇒ cùng `contentHash` ⇒ commit lặp là
+  AN TOÀN (idempotent) — không tạo hàng mới, không lỗi.
+- **`sizeBytes` (bắt buộc):** số byte chính xác của ảnh. Trần mặc định 15 MB (cấu
+  hình bằng `MACHINE_TEMPLATE_IMAGE_MAX_BYTES`).
+- **`ext` (bắt buộc):** `"jpg"` hoặc `"png"`.
+
+**Response:**
+```json
+{
+  "result": {
+    "data": {
+      "success": true,
+      "objectKey": "product-models/33/template-e3b0c4...jpg",
+      "uploadUrl": "/api/machine-template-image/upload/product-models/33/template-e3b0c4...jpg",
+      "cap": "component"
+    }
+  }
+}
+```
+
+`cap` cho biết đích thật của lượt commit sắp tới: `"capture"` hay `"component"` —
+dùng để tự kiểm chéo với ý định gửi (có/không `componentExtId`).
+
+**Lỗi thường gặp:**
+- `NOT_FOUND` — `captureExtId` không tồn tại (chưa đẩy cây, hoặc gõ sai GUID), HOẶC
+  `componentExtId` không thuộc ĐÚNG `captureExtId` đã khai (đúng máy, sai capture).
+- `FORBIDDEN` — `captureExtId` tồn tại nhưng thuộc MÁY KHÁC (đẩy cây bằng API key
+  của máy khác, hoặc gõ nhầm GUID của máy khác).
+- `BAD_REQUEST` (field `productModelCode`) — `captureExtId` khớp NHIỀU sản phẩm
+  của cùng máy (cây clone) và `productModelCode` không được khai để chọn đúng
+  sản phẩm — gửi lại kèm `productModelCode`.
+- `UNAUTHORIZED` — `apiKey`/`machineCode` sai hoặc thiếu quyền `ingest:write`
+  (CÙNG quyền mà `submitMachineTemplate` đang dùng — không cần cấp quyền mới).
+
+### Bước 2: Upload ảnh
+```http
+PUT {uploadUrl}
+Content-Type: image/jpeg
+Content-Length: 245678
+x-api-key: YOUR_API_KEY
+
+[BINARY JPG/PNG DATA]
+```
+
+Cùng quy tắc header với ZIP Package Upload (`x-api-key` HOẶC `x-machine-code`,
+`Content-Length`, body nhị phân — KHÔNG encode base64). `uploadUrl` đã bao gồm toàn
+bộ đường dẫn — dùng NGUYÊN VĂN giá trị presign trả về, không tự dựng lại.
+
+**Xác thực + kiểm quyền:** server xác thực `apiKey`/`x-machine-code` NHƯ Bước 1, RỒI
+kiểm máy này ĐÃ TỪNG dạy cây cho đúng product model có trong `uploadUrl` — một máy
+xác thực hợp lệ nhưng khai `objectKey` của một sản phẩm không thuộc về nó (vd
+`uploadUrl` bị chỉnh tay, hoặc dùng lại `uploadUrl` cũ sau khi đổi sang sản phẩm
+khác) sẽ nhận **403 FORBIDDEN** và byte KHÔNG được ghi lên đĩa.
+
+### Bước 3: Commit
+```http
+POST /api/trpc/machineApi.commitTemplateImage
+Content-Type: application/json
+
+{
+  "apiKey": "YOUR_API_KEY",
+  "captureExtId": "a1b2c3d4-0000-4000-8000-000000001011",
+  "componentExtId": "a1b2c3d4-0000-4000-8000-000000010111",
+  "productModelCode": "PCBA-REV3",
+  "contentHash": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+  "sizeBytes": 245678,
+  "ext": "jpg"
+}
+```
+
+Khai LẠI đúng `captureExtId`/`componentExtId`/`productModelCode`/`contentHash`/`ext` như Bước 1 — server
+đọc byte đã nhận ở Bước 2, băm lại và đối chiếu với `contentHash`, rồi ghi URL vào
+đúng hàng (`product_captures.templateImageUrl` hoặc
+`measurement_point_defs.referenceImageUrl`, tùy `cap` ở Bước 1).
+
+**`sizeBytes` (tùy chọn, NÊN LUÔN gửi lại — cùng giá trị đã khai ở Bước 1):** server
+đối chiếu với số byte THẬT vừa đọc từ đĩa (byte đã tải ở Bước 2) — lệch ⇒ **400
+BAD_REQUEST**, cây KHÔNG bị ghi. Đây là phép kiểm TOÀN VẸN THỨ HAI, độc lập với
+`contentHash` — không gửi thì bước này không kiểm kích thước (vẫn còn `contentHash`
+làm phép kiểm chính), gửi sai thì bị từ chối ngay, không phải "nhận rồi vứt".
+
+**Response:**
+```json
+{
+  "result": {
+    "data": {
+      "success": true,
+      "cap": "component",
+      "url": "/uploads/product-models/33/template-e3b0c4...jpg",
+      "objectKey": "product-models/33/template-e3b0c4...jpg",
+      "daDoi": true
+    }
+  }
+}
+```
+
+`daDoi: false` nghĩa là lượt commit này KHÔNG đổi gì (cùng nội dung đã được ghi từ
+trước — idempotent, không phải lỗi).
+
+**Lỗi thường gặp (ngoài `NOT_FOUND`/`FORBIDDEN`/`UNAUTHORIZED` như Bước 1):**
+- `BAD_REQUEST` — `contentHash` khai KHÔNG khớp SHA-256 thật của byte đã tải lên ở
+  Bước 2 (dữ liệu hỏng khi truyền, hoặc PUT nhầm ảnh khác), HOẶC `sizeBytes` khai
+  (nếu có gửi) KHÔNG khớp số byte thật đã tải lên. Tải lại đúng ảnh rồi commit lại
+  — hàng cây KHÔNG bị ghi khi lỗi này xảy ra.
+- `UNPROCESSABLE_CONTENT` — commit được gọi TRƯỚC khi Bước 2 hoàn tất (chưa có byte
+  nào tại `objectKey`). Gọi PUT trước, đợi phản hồi thành công, rồi mới commit.
+- `FORBIDDEN` (ở Bước 2, PUT) — máy xác thực đúng nhưng CHƯA dạy cây cho product
+  model trong `objectKey` (vd đã đổi model, hoặc gõ nhầm `objectKey` của một máy
+  khác) — server KHÔNG cho PUT byte vào tiền tố của một sản phẩm không thuộc về
+  máy đó, dù `apiKey`/`x-machine-code` hợp lệ.
 
 ## C# Code Example
 

@@ -288,7 +288,10 @@ export interface IrGraphCanvasProps {
   onAddTopLevel: (type: BlockType) => void;
   /** Add a child block of `type` into a container node's slot (dropped on a container). */
   onAddChild: (parentId: string, slot: Slot, type: BlockType) => void;
-  /** Reorder a block relative to a sibling by reconnecting the `next` edge. */
+  /**
+   * A `next` edge was drawn sourceId → targetId (edge direction as drawn). The handler
+   * applies it with irTree.applyNextEdge ⇒ target runs right after source (doc 80 IR-05).
+   */
   onReorderToSibling: (sourceId: string, targetId: string) => void;
   /** W4-19: LƯU vị trí node sau khi kéo-thả (ghi vào block.ui trong AST). */
   onMoveNode: (id: string, pos: { x: number; y: number }) => void;

@@ -76,8 +76,10 @@ const getMachineOEELive = vi.fn(async (_p: any): Promise<any> => ({
 vi.mock("../oeeService", () => ({ getMachineOEELive: (p: any) => getMachineOEELive(p) }));
 
 const computeFailureRisk = vi.fn(async (_id: number): Promise<any> => ({
+  // ★ PH-39 — `riskMethod` là phần của hợp đồng: thiếu nó thì mọi ca ở đây chạy
+  //   nhánh "chưa đo được" và xanh vì lý do sai.
   failureRisk: 42, maintenanceUrgency: "MEDIUM", predictedTimeframeHours: 72,
-  recommendedMaintenanceDate: new Date(), dataPoints: 10,
+  recommendedMaintenanceDate: new Date(), dataPoints: 10, riskMethod: "measured",
 }));
 const computeReliabilityStats = vi.fn(async (_id: number): Promise<any> => ({
   mtbfHours: 120, mttrHours: 3, unplannedEvents: 2, uptimeMinutes: 5000,
@@ -120,7 +122,7 @@ beforeEach(() => {
   getLatestMachineStatus.mockResolvedValue({ status: "online", timestamp: new Date() });
   getLatestMachineHeartbeat.mockResolvedValue({ status: "running", timestamp: new Date() });
   getMachineOEELive.mockResolvedValue({ availability: 0.9, performance: 0.8, quality: 0.95, oee: 0.68, details: { hasUptimeData: true, hasProductionData: true } });
-  computeFailureRisk.mockResolvedValue({ failureRisk: 42, maintenanceUrgency: "MEDIUM", predictedTimeframeHours: 72, recommendedMaintenanceDate: new Date(), dataPoints: 10 });
+  computeFailureRisk.mockResolvedValue({ failureRisk: 42, maintenanceUrgency: "MEDIUM", predictedTimeframeHours: 72, recommendedMaintenanceDate: new Date(), dataPoints: 10, riskMethod: "measured" });
   computeReliabilityStats.mockResolvedValue({ mtbfHours: 120, mttrHours: 3, unplannedEvents: 2, uptimeMinutes: 5000 });
   resolveModel.mockResolvedValue(null);
   listLoadHistory.mockResolvedValue([{ action: "load", recipeCode: "R1" }]);
@@ -185,6 +187,59 @@ describe("machineDetail — assembly", () => {
     expect(d!.health.value).toBeNull();
     // other sections still assemble
     expect(d!.oee.available).toBe(true);
+  });
+
+  /**
+   * ★★★ PH-39 (QA tập đoàn 2026-09-15) — "Failure risk 0 %" là GIÁ TRỊ MẶC ĐỊNH.
+   *
+   * `computeFailureRisk` trả `failureRisk 0 / maintenanceUrgency LOW` cho MỌI máy
+   * khi không đặc trưng nào đủ dữ liệu (`riskMethod: "insufficient_data"`, chính
+   * `rulNote` của nó ghi "cold start"). Mục `health` của cockpit trước đây chuyền
+   * thẳng số 0 ấy ra màn ⇒ màn máy in "0 %" cạnh chip "Health 40 % · critical".
+   *
+   * Luật của chính tệp này đã có sẵn ("honest null … not a fake 0", mục OEE ngay
+   * dưới): CHƯA ĐO ĐƯỢC thì trả `null`, không trả một con số trông như phép đo.
+   * Ba trạng thái phải TÁCH NHAU ở tầng dữ liệu:
+   *   measured          → số thật
+   *   insufficient_data → `failureRisk: null` + nhãn lý do (mục vẫn `available`,
+   *                       vì MTBF/MTTR cạnh bên VẪN là số đo thật)
+   *   nguồn lỗi/tắt     → cả mục `available: false` (ca "HONEST-NULLS" phía trên)
+   */
+  it("★★★ PH-39 — PdM 'insufficient_data' ⇒ failureRisk null + nhãn lý do, KHÔNG phải 0", async () => {
+    computeFailureRisk.mockResolvedValueOnce({
+      failureRisk: 0, maintenanceUrgency: "LOW", predictedTimeframeHours: null,
+      recommendedMaintenanceDate: null, dataPoints: 1, riskMethod: "insufficient_data",
+    });
+    const d = await machineDetail(7);
+    expect(d!.health.available).toBe(true); // MTBF/MTTR vẫn đo được
+    expect(d!.health.value!.riskMethod).toBe("insufficient_data");
+    expect(d!.health.value!.failureRisk).toBeNull();
+    // "LOW" cũng là một lời khai về thế giới ("việc này không gấp") — cùng lớp lỗi.
+    expect(d!.health.value!.maintenanceUrgency).toBeNull();
+    // Đối chứng: phần ĐO ĐƯỢC của mục sức khoẻ không bị bản vá nuốt theo.
+    expect(d!.health.value!.mtbfHours).toBe(120);
+    expect(d!.health.value!.mttrHours).toBe(3);
+  });
+
+  it("★★★ PH-39 đối chứng dương — PdM 'measured' ⇒ con số đi qua NGUYÊN VẸN (lưới biết KÊU)", async () => {
+    computeFailureRisk.mockResolvedValueOnce({
+      failureRisk: 42, maintenanceUrgency: "MEDIUM", predictedTimeframeHours: 72,
+      recommendedMaintenanceDate: new Date(), dataPoints: 10, riskMethod: "measured",
+    });
+    const d = await machineDetail(7);
+    expect(d!.health.value!.riskMethod).toBe("measured");
+    expect(d!.health.value!.failureRisk).toBe(42);
+    expect(d!.health.value!.maintenanceUrgency).toBe("MEDIUM");
+  });
+
+  it("★★★ PH-39 — 0 ĐO ĐƯỢC vẫn là 0 (máy khoẻ có đủ dữ liệu không bị đổi thành 'chưa biết')", async () => {
+    computeFailureRisk.mockResolvedValueOnce({
+      failureRisk: 0, maintenanceUrgency: "LOW", predictedTimeframeHours: null,
+      recommendedMaintenanceDate: null, dataPoints: 30, riskMethod: "measured",
+    });
+    const d = await machineDetail(7);
+    expect(d!.health.value!.failureRisk).toBe(0);
+    expect(d!.health.value!.maintenanceUrgency).toBe("LOW");
   });
 
   it("honest-nulls OEE when there is no uptime/production data (not a fake 0)", async () => {
@@ -299,5 +354,100 @@ describe("robotAlarms — per-robot safety → ISA-18.2", () => {
     expect(alarms[0].standardCode).toBe("SAFETY_INTRUSION");
     expect(alarms[0].severity).toBe("high"); // near-miss
     expect(alarms[0].source).toBe("safety");
+  });
+});
+
+/* ════════════════════════════════════════════════════════════════════════════ */
+/* ★★★ Đợt 34 (Pareto #1 QA Đợt 32) — `liveState.connected`: NHỊP TIM quyết định, log `online` không   */
+/* ════════════════════════════════════════════════════════════════════════════ */
+/*
+ * Số đo thật 2026-09-10 (`.qa-dot34/truoc/db-may-14.json`): máy 14 log `online` ~3 ngày (một lần khởi
+ * động lại, 42 máy cùng ~8 giây), heartbeat 54 ngày — bản cũ `(status ?? "offline") === "online" || hb < 5′`
+ * cho `connected = true` ⇒ cockpit "ONLINE · Connected" cho một máy im lặng 54 ngày.
+ * Hàng `machine_status_logs` là SỰ KIỆN chuyển trạng thái (`recordPresence` chỉ ghi khi đổi; `socket.ts`
+ * ghi lúc connect/disconnect) — tuổi của nó không đo "máy còn nói chuyện không". Nhịp tim mới đo được.
+ * ★ G5 hai chiều: hai cửa ⇒ FALSE, hai đối chứng nhịp tim tươi ⇒ TRUE.
+ */
+describe("★★★ Đợt 34 — liveState.connected: nhịp tim quyết định", () => {
+  const PHUT = 60_000;
+  const NGAY = 24 * 60 * PHUT;
+  it("máy 14 thật: log online 3 ngày + heartbeat 54 ngày ⇒ connected FALSE (status vẫn online — trung thực về log)", async () => {
+    getLatestMachineStatus.mockResolvedValue({ status: "online", timestamp: new Date(Date.now() - 3 * NGAY) });
+    getLatestMachineHeartbeat.mockResolvedValue({ status: "running", timestamp: new Date(Date.now() - 54 * NGAY) });
+    const d = await machineDetail(7);
+    expect(d!.liveState.available).toBe(true);
+    expect(d!.liveState.value!.status).toBe("online");
+    expect(d!.liveState.value!.connected).toBe(false);
+    // ★ Đợt 40 (QA Đợt 39 #3) — trường ĐÃ ÁNH XẠ cùng từ điển fleet: máy im lặng 54 ngày ⇒ `offline`,
+    //   trong khi `status` thô vẫn `online` (giữ nguyên hợp đồng cũ, thêm trường mới).
+    expect(d!.liveState.value!.statusMapped).toBe("offline");
+  });
+  it("★ CHỖ BRIEF SAI: log online 10 GIÂY + heartbeat 54 ngày ⇒ vẫn FALSE (tuổi log không phải liveness)", async () => {
+    getLatestMachineStatus.mockResolvedValue({ status: "online", timestamp: new Date(Date.now() - 10_000) });
+    getLatestMachineHeartbeat.mockResolvedValue({ status: "running", timestamp: new Date(Date.now() - 54 * NGAY) });
+    const d = await machineDetail(7);
+    expect(d!.liveState.value!.connected).toBe(false);
+  });
+  it("★ ĐỐI CHỨNG: heartbeat 10 giây (bảng machine_heartbeats) + log online 3 ngày ⇒ TRUE — gate không giết máy sống", async () => {
+    getLatestMachineStatus.mockResolvedValue({ status: "online", timestamp: new Date(Date.now() - 3 * NGAY) });
+    getLatestMachineHeartbeat.mockResolvedValue({ status: "running", timestamp: new Date(Date.now() - 10_000) });
+    const d = await machineDetail(7);
+    expect(d!.liveState.value!.connected).toBe(true);
+    /*
+     * ★★★ ĐỢT 53 (QA lần 8, SAI #2) — Ô NÀY ĐỔI TỪ `running` SANG `idle`, VÀ ĐÓ LÀ BẢN VÁ.
+     *
+     * Đợt 40 viết `expect(...).toBe("running")` với lý lẽ *"không `operationStatus` ở lớp này"* —
+     * tức chính lưới này GHIM cái hành vi đã làm `factoryCommand.machineDetail` nói "running"
+     * trong khi `overview` nói "idle" cho CÙNG máy, CÙNG giây (đo được trên dist 3053 khi chèn
+     * nhịp tim `now()`: `.qa-dot53/hd-truoc-co-hb/tong.json`).
+     * Nay: hàng `machines` giả ở `beforeEach` KHÔNG có `operationStatus` ⇒ `undefined` ⇒ `idle`
+     * ("đang kết nối, KHÔNG BIẾT làm gì"), không còn là lời khai "đang chạy".
+     */
+    expect(d!.liveState.value!.operationStatus).toBeNull();
+    expect(d!.liveState.value!.statusMapped).toBe("idle");
+  });
+  it("★★★ Đợt 53 — `operationStatus` ĐI QUA hợp đồng liveState và quyết định `statusMapped`", async () => {
+    getLatestMachineStatus.mockResolvedValue({ status: "online", timestamp: new Date(Date.now() - 3 * NGAY) });
+    getLatestMachineHeartbeat.mockResolvedValue({ status: "running", timestamp: new Date(Date.now() - 10_000) });
+    // Cột THẬT của `machines` — cùng cột mà `factoryCommand.overview` đọc (`factoryCommandService:369`).
+    for (const [cot, mong] of [
+      ["running", "running"],
+      ["stopped", "idle"],
+      ["error", "down"],
+      ["maintenance", "maintenance"],
+    ] as const) {
+      (dbRows["machines"][0] as Record<string, unknown>).operationStatus = cot;
+      const d = await machineDetail(7);
+      expect(d!.liveState.value!.operationStatus).toBe(cot);
+      expect(d!.liveState.value!.statusMapped).toBe(mong);
+    }
+    // Máy im lặng thì cột vận hành KHÔNG cứu được — bằng chứng kết nối vẫn quyết định trước.
+    (dbRows["machines"][0] as Record<string, unknown>).operationStatus = "running";
+    getLatestMachineHeartbeat.mockResolvedValue({ status: "running", timestamp: new Date(Date.now() - 54 * NGAY) });
+    expect((await machineDetail(7))!.liveState.value!.statusMapped).toBe("offline");
+  });
+  it("★ ĐỐI CHỨNG: chỉ machines.lastHeartbeat tươi (bảng heartbeat cũ) ⇒ TRUE, và lastHeartbeat = mốc đã chọn (max)", async () => {
+    const moc = Date.now() - 20_000;
+    (dbRows["machines"][0] as any).lastHeartbeat = new Date(moc);
+    getLatestMachineStatus.mockResolvedValue({ status: "online", timestamp: new Date(Date.now() - 3 * NGAY) });
+    getLatestMachineHeartbeat.mockResolvedValue({ status: "running", timestamp: new Date(Date.now() - 54 * NGAY) });
+    const d = await machineDetail(7);
+    expect(d!.liveState.value!.connected).toBe(true);
+    expect(d!.liveState.value!.lastHeartbeat).toBe(moc);
+  });
+  it("log `offline` ghi SAU nhịp tim tươi ⇒ FALSE (đã ngắt); ghi TRƯỚC ⇒ TRUE (đã nối lại)", async () => {
+    getLatestMachineHeartbeat.mockResolvedValue({ status: "running", timestamp: new Date(Date.now() - 30_000) });
+    getLatestMachineStatus.mockResolvedValue({ status: "offline", timestamp: new Date(Date.now() - 5_000) });
+    expect((await machineDetail(7))!.liveState.value!.connected).toBe(false);
+    getLatestMachineStatus.mockResolvedValue({ status: "offline", timestamp: new Date(Date.now() - 60_000) });
+    expect((await machineDetail(7))!.liveState.value!.connected).toBe(true);
+  });
+  it("không có log nào + không heartbeat ⇒ FALSE, lastHeartbeat null (fail-closed, NT-3.5)", async () => {
+    getLatestMachineStatus.mockResolvedValue(null);
+    getLatestMachineHeartbeat.mockResolvedValue(null);
+    const d = await machineDetail(7);
+    expect(d!.liveState.value!.status).toBeNull();
+    expect(d!.liveState.value!.lastHeartbeat).toBeNull();
+    expect(d!.liveState.value!.connected).toBe(false);
   });
 });

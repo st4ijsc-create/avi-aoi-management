@@ -231,6 +231,27 @@ export const measurementPointDefs = pgTable("measurement_point_defs", {
   // still below that version. NULL = deleted before 0274 (version unknown) → the
   // tombstone is shipped unconditionally (over-ship beats a point that never dies).
   deletedAtVersion: integer("deletedAtVersion"),
+  // ── Pha 1A (0338) — neo cấp component (chính bảng này) lên cây CẤU HÌNH 4 cấp
+  // surface → position → capture → component. `captureRowId IS NULL` = điểm đo PHẲNG cũ,
+  // chạy y hệt trước khi có cây (không backfill, không đổi hành vi resolveEffectivePoints/
+  // variant_point_overrides/spec-gate/revertPointsConfigToVersion). Soft-ref có chủ đích
+  // (KHÔNG `.references()`): DB có FK THẬT `REFERENCES product_captures(id) ON DELETE SET
+  // NULL` (đặt trong chính migration 0338), nhưng khai `.references()` ở đây sẽ tạo import
+  // vòng product.ts ↔ productConfigTree.ts — mirror quy ước soft-ref đã dùng nhiều lần trong
+  // chính bảng này (variantId, componentCode, …).
+  captureRowId: integer("captureRowId"),
+  // = Component.Id / RefDesignator phía máy, gắn với capture cha. Free-text, không FK.
+  componentExtId: varchar("componentExtId", { length: 64 }),
+  // ROI PIXEL TUYỆT ĐỐI trong khung ảnh capture (khác relX/relY 0..1 của product_positions).
+  roiX: integer("roiX"),
+  roiY: integer("roiY"),
+  roiWidth: integer("roiWidth"),
+  roiHeight: integer("roiHeight"),
+  // Khối B Task 5 (0347) — `machine_template_versions(id)` đã ghi hàng này lần CUỐI.
+  // Soft ref (cùng lý do vòng import với `captureRowId` ở trên). NULL = điểm đo phẳng
+  // cũ / hàng chưa qua cửa cây dạy. ⚠ Cột này nói bản HIỆN TẠI; muốn biết một bo CŨ
+  // chấm theo bản nào thì tra KHOẢNG `[pushedAt, supersededAt)` của sổ bản dạy.
+  templateVersionId: integer("templateVersionId"),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().notNull(),
 }, (table) => [
@@ -250,9 +271,20 @@ export const measurementPointDefs = pgTable("measurement_point_defs", {
   //   0286 is guarded and keeps the old index when pre-existing duplicates block the
   //   swap. All writers use bare ON CONFLICT DO NOTHING so they behave identically
   //   either way.
+  // ⚠ Khối B Task 5 (0347) SIẾT VỊ TỪ, KHÔNG đổi tên: thêm `"captureRowId" IS NULL`
+  // ⇒ index này nay chỉ phủ hàng PHẲNG. Đo được: 100% hàng đang sống ở CẢ HAI DB
+  // (110 / 2.892) là hàng phẳng, nên nghĩa trên dữ liệu thật KHÔNG đổi một chút nào.
+  // Hàng CÂY có index riêng `uq_point_defs_cay_may_code` bên dưới, có thêm chiều MÁY —
+  // hai máy dạy cùng sản phẩm rất hay mang CÙNG bộ UUID linh kiện (clone bản dạy), và
+  // nếu để chung một index thì máy thứ hai vỡ `23505` ở một index KHÔNG AI NHẮM.
   uniqueIndex("uq_point_defs_product_variant_code")
     .on(table.productModelId, sql`COALESCE("variantId", 0)`, table.code)
-    .where(sql`${table.deletedAt} IS NULL`),
+    .where(sql`${table.deletedAt} IS NULL AND ${table.captureRowId} IS NULL`),
+  uniqueIndex("uq_point_defs_cay_may_code")
+    .on(table.productModelId, sql`COALESCE("variantId", 0)`, sql`COALESCE("machineId", 0)`, table.code)
+    .where(sql`${table.deletedAt} IS NULL AND ${table.captureRowId} IS NOT NULL`),
+  index("idx_point_defs_template_version").on(table.templateVersionId)
+    .where(sql`${table.templateVersionId} IS NOT NULL`),
   index("idx_point_defs_last_modified").on(table.lastModifiedAt),
   index("idx_point_defs_product_modified").on(table.productModelId, table.lastModifiedAt),
   index("idx_point_defs_image_hash").on(table.imageHash),
@@ -260,6 +292,16 @@ export const measurementPointDefs = pgTable("measurement_point_defs", {
   index("idx_point_defs_type_code").on(table.measurementTypeCode),
   // W8-A (0191): partial — the column is sparse until points are linked.
   index("idx_point_defs_component_code").on(table.componentCode).where(sql`${table.componentCode} IS NOT NULL`),
+  // Pha 1A (0338): partial — sparse until the point is anchored on the config tree.
+  index("idx_point_defs_capture").on(table.captureRowId).where(sql`${table.captureRowId} IS NOT NULL`),
+  index("idx_point_defs_component_ext").on(table.componentExtId).where(sql`${table.componentExtId} IS NOT NULL`),
+  // Pha 1B (migration 0340, BG-13) — cấp component là cấp DUY NHẤT trong cây chưa có đích
+  // ON CONFLICT cho Task 5. Partial: chỉ áp cho hàng ĐÃ chuyển sang cây (captureRowId +
+  // componentExtId khác NULL) và CHƯA xoá mềm — điểm đo phẳng cũ (captureRowId NULL) không
+  // bị ràng buộc này chạm tới, hành vi y hệt trước 0340.
+  uniqueIndex("uq_point_defs_capture_component")
+    .on(table.captureRowId, table.componentExtId)
+    .where(sql`${table.captureRowId} IS NOT NULL AND ${table.componentExtId} IS NOT NULL AND ${table.deletedAt} IS NULL`),
 ]);
 
 export type MeasurementPointDef = typeof measurementPointDefs.$inferSelect;
@@ -1081,8 +1123,11 @@ export const thresholdApprovals = pgTable("threshold_approvals", {
   currentLsl: decimal("currentLsl", { precision: 18, scale: 6 }),
   currentUsl: decimal("currentUsl", { precision: 18, scale: 6 }),
   currentNominal: decimal("currentNominal", { precision: 18, scale: 6 }),
-  proposedLsl: decimal("proposedLsl", { precision: 18, scale: 6 }).notNull(),
-  proposedUsl: decimal("proposedUsl", { precision: 18, scale: 6 }).notNull(),
+  // 0348 (Lô 7 Mục 1, BG-111) — NULLABLE: một yêu cầu duyệt có thể chỉ đề xuất
+  // field khác LSL/USL (vd heightMax) qua suggestion.deXuat. Đường ghi legacy
+  // (client cũ gửi proposedLsl/Usl) vẫn hoạt động y nguyên — cột KHÔNG bị xoá.
+  proposedLsl: decimal("proposedLsl", { precision: 18, scale: 6 }),
+  proposedUsl: decimal("proposedUsl", { precision: 18, scale: 6 }),
   proposedNominal: decimal("proposedNominal", { precision: 18, scale: 6 }),
   // requested | approved | rejected | applied | withdrawn
   status: varchar("status", { length: 20 }).default("requested").notNull(),

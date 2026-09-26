@@ -52,6 +52,7 @@ import { FilterBar, useUrlFilters, type FilterDef } from "@/components/FilterBar
 import { PageHeader, StatusBadge, type BadgeVariant } from "@/components/patterns";
 import { GitPullRequestArrow, AlertTriangle, Wrench, Plus } from "lucide-react";
 import { toast } from "sonner";
+import { toastTrpcError, mapTrpcError } from "@/lib/trpcErrors";
 
 const CHANGE_TYPES = ["product", "bom", "recipe", "program", "process", "document"] as const;
 type ChangeType = (typeof CHANGE_TYPES)[number];
@@ -170,6 +171,13 @@ export default function EngineeringChanges() {
   const [rejectTarget, setRejectTarget] = useState<Ecn | null>(null);
   const [rejectReason, setRejectReason] = useState("");
 
+  // ── Approve confirmation dialog state (doc 80 Task 8, ECN-05) ──────────
+  // Approve is a maker-checker DECISION exactly like reject — it must not fire
+  // on a bare button click. Comment is optional here (mandatory only for
+  // reject, per task-8-brief.md ECN-05).
+  const [approveTarget, setApproveTarget] = useState<Ecn | null>(null);
+  const [approveComment, setApproveComment] = useState("");
+
   // ── Detail dialog state ────────────────────────────────────────────────
   const [detail, setDetail] = useState<Ecn | null>(null);
 
@@ -180,11 +188,11 @@ export default function EngineeringChanges() {
 
   const createM = trpc.ecn.create.useMutation({
     onSuccess: () => { toast.success(t("ecn.created", "Đã tạo thay đổi kỹ thuật")); setOpen(false); resetForm(); invalidate(); },
-    onError: (e) => toast.error(e.message),
+    onError: (e) => toastTrpcError(e),
   });
   const transitionM = trpc.ecn.transition.useMutation({
     onSuccess: () => { toast.success(t("ecn.updated", "Đã cập nhật thay đổi kỹ thuật")); invalidate(); },
-    onError: (e) => toast.error(e.message),
+    onError: (e) => toastTrpcError(e),
   });
 
   const submitCreate = () => {
@@ -206,7 +214,17 @@ export default function EngineeringChanges() {
       setRejectTarget(ecn);
       return;
     }
-    transitionM.mutate({ id: ecn.id, action: action as any });
+    // doc 80 Task 8 (ECN-05) — approve is a maker-checker decision: open a
+    // confirmation dialog (comment optional) instead of firing on one click.
+    if (action === "approve") {
+      setApproveComment("");
+      setApproveTarget(ecn);
+      return;
+    }
+    // doc 80 Task 8 (ECN-03) — every transition carries the status this row is
+    // CURRENTLY showing on screen; the server CAS-updates `WHERE status =
+    // expectedStatus` and returns CONFLICT if someone else moved it first.
+    transitionM.mutate({ id: ecn.id, action: action as any, expectedStatus: ecn.status as any });
   };
 
   const confirmReject = () => {
@@ -214,8 +232,22 @@ export default function EngineeringChanges() {
     if (!comment) { toast.error(t("ecn.rejectReasonRequired", "Bắt buộc nhập lý do từ chối")); return; }
     if (!rejectTarget) return;
     transitionM.mutate(
-      { id: rejectTarget.id, action: "reject", comment },
+      { id: rejectTarget.id, action: "reject", comment, expectedStatus: rejectTarget.status as any },
       { onSuccess: () => setRejectTarget(null) },
+    );
+  };
+
+  const confirmApprove = () => {
+    if (!approveTarget) return;
+    const comment = approveComment.trim();
+    transitionM.mutate(
+      {
+        id: approveTarget.id,
+        action: "approve",
+        expectedStatus: approveTarget.status as any,
+        ...(comment ? { comment } : {}),
+      },
+      { onSuccess: () => setApproveTarget(null) },
     );
   };
 
@@ -421,6 +453,36 @@ export default function EngineeringChanges() {
         </AlertDialogContent>
       </AlertDialog>
 
+      {/* ── Approve confirmation dialog (doc 80 Task 8, ECN-05) ─────────── */}
+      <AlertDialog open={approveTarget != null} onOpenChange={(o) => { if (!o) setApproveTarget(null); }}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>{t("ecn.approveTitle", "Phê duyệt thay đổi kỹ thuật")}</AlertDialogTitle>
+            <AlertDialogDescription>
+              {approveTarget
+                ? t("ecn.approvePrompt", "Xác nhận phê duyệt {{key}}. Có thể thêm ý kiến (không bắt buộc) — ý kiến được ghi vào nhật ký quyết định.", { key: approveTarget.ecnKey })
+                : ""}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <div className="space-y-1">
+            <Label>{t("ecn.approveComment", "Ý kiến (tùy chọn):")}</Label>
+            <Textarea
+              rows={3}
+              autoFocus
+              value={approveComment}
+              onChange={(e) => setApproveComment(e.target.value)}
+              placeholder={t("ecn.approvePlaceholder", "VD: Đã kiểm tra tài liệu đính kèm, đạt yêu cầu…")}
+            />
+          </div>
+          <AlertDialogFooter>
+            <Button variant="outline" onClick={() => setApproveTarget(null)}>{t("common.cancel", "Hủy")}</Button>
+            <Button disabled={transitionM.isPending} onClick={confirmApprove}>
+              {t("ecn.action.approve", "Phê duyệt")}
+            </Button>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
       {/* ── Detail dialog ─────────────────────────────────────────────── */}
       <EcnDetailDialog ecn={detail} onClose={() => setDetail(null)} userName={userName} products={products} />
     </DashboardLayout>
@@ -579,7 +641,7 @@ function ComponentCodeBackfillPanel({ products }: { products: Array<{ id: number
       setResult(r);
       toast.success(t("ecn.backfill.done", `Backfill ${r?.dryRun ? "(dry-run) " : ""}— matched ${r?.matched ?? 0}, updated ${r?.updated ?? 0}`));
     },
-    onError: (e: any) => toast.error(e?.message ?? "Backfill failed"),
+    onError: (e: any) => toast.error(mapTrpcError(e)),
   });
 
   const run = (dryRun: boolean) => {

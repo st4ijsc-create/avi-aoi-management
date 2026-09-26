@@ -31,11 +31,57 @@ import { protectedProcedure, router } from "../_core/trpc";
 import { requirePermission } from "../_core/accessControl";
 import { z } from "zod";
 import { TRPCError } from "@trpc/server";
+import { appError } from "../_core/appError";
 import * as db from "../db";
 import type { ProductVariant, VariantPointOverride } from "../../drizzle/schema";
+// ★★★ BG-113/I-3 (review Khối C lượt 9) — `setOverride.patchJson` là nguồn giới
+// hạn THỨ HAI ngoài `POINT_LIMIT_SPEC`/`APPROVAL_LIMIT_FIELDS`: whitelist khoá
+// (schema), cửa duyệt ngưỡng (assertThresholdEditAllowed), và ghi version
+// (db.recordVariantOverrideVersion) — xem docblock tại chỗ dùng bên dưới.
+import { APPROVAL_LIMIT_FIELDS, MIN_MAX_PAIRS } from "@shared/pointLimitSpec";
+import { assertThresholdEditAllowed } from "../services/thresholdGovernanceService";
+import { assertCapGioiHanHopLe, gopCapGioiHanDonGian, type CapGioiHan } from "../utils/measurementPointLimitGate";
+
+/**
+ * ★★★ NEW-1 (review Khối C lượt 9, vòng 2, Important) — rút đúng các field tham
+ * gia MỘT cặp min/max (`MIN_MAX_PAIRS`, `shared/pointLimitSpec.ts`) từ một object
+ * bất kỳ (hàng DB hoặc `patchJson` đã qua whitelist) — dùng ở CẢ `setOverride`
+ * lẫn `removeOverride` để không lặp lại 10 tên field hai lần. TRƯỚC bản vá này
+ * hai điểm gọi chỉ đọc `lowerLimit`/`upperLimit` (hoặc thêm `heightMin`/`heightMax`
+ * ở setOverride) — area/volume/thickness đi qua trắng dù whitelist patchJson
+ * ĐÃ cho phép (SUY từ APPROVAL_LIMIT_FIELDS, không phải một khoá mới thêm).
+ */
+function layCapGioiHanTuDoi(obj: Record<string, unknown> | null | undefined): CapGioiHan {
+  const ket: CapGioiHan = {};
+  if (!obj) return ket;
+  for (const { min, max } of MIN_MAX_PAIRS) {
+    ket[min] = obj[min];
+    ket[max] = obj[max];
+  }
+  return ket;
+}
 
 // ── Reserved code for the model's inheritance root — never manually creatable. ──
 const BASE_VARIANT_CODE = "BASE";
+
+/**
+ * ★★★ BG-113/I-3 (review Khối C lượt 9) — WHITELIST khoá `patchJson` của
+ * `setOverride`, SUY từ `APPROVAL_LIMIT_FIELDS` (MỘT nguồn, `shared/
+ * pointLimitSpec.ts` — không chép tay danh sách cột lần nữa). TRƯỚC bản vá:
+ * `z.record(z.string(), z.unknown())` nhận BẤT KỲ khoá nào — một patch
+ * `{deletedAt: null}`/`{id: 999}` đi thẳng vào `gateLimits` qua
+ * `apDungVariantPatch` (chỉ lọc khoá ĐỊNH DANH, không lọc khoá LẠ khác).
+ *
+ * Đo được (review lượt 9): client (`ProductVariantsTab.tsx`) hôm nay CHỈ gửi
+ * `lowerLimit`/`upperLimit`/`nominalValue` — tập con của `APPROVAL_LIMIT_FIELDS`
+ * — nên whitelist này KHÔNG cắt bất kỳ hành vi thật nào đang chạy. `.strict()`
+ * từ chối khoá lạ (bao gồm khoá phi-giới-hạn) — `variant_point_overrides` =
+ * 0 hàng hôm nay (đo được) nên không có bằng chứng cần thêm khoá phi-giới-hạn
+ * nào; mở rộng sau nếu một nhu cầu THẬT xuất hiện, không đoán trước.
+ */
+const variantOverridePatchSchema = z
+  .object(Object.fromEntries(APPROVAL_LIMIT_FIELDS.map((f) => [f, z.unknown().optional()])))
+  .strict();
 
 /**
  * Assert migration 0286 landed. Cheap (cached probe) — throws a clean, actionable
@@ -46,12 +92,14 @@ const BASE_VARIANT_CODE = "BASE";
 async function assertVariantTableAvailable(): Promise<void> {
   const ok = await db.productVariantsTableAvailable();
   if (!ok) {
-    throw new TRPCError({
-      code: "PRECONDITION_FAILED",
-      message:
-        "Tính năng biến thể sản phẩm chưa sẵn sàng: cần áp dụng migration 0286 (product_variants). " +
+    throw appError(
+      "PRECONDITION_FAILED",
+      // F6 (doc 71) — "bảng chưa migrate" chốt về FEATURE_NOT_CONFIGURED trong toàn repo.
+      "FEATURE_NOT_CONFIGURED",
+      { feature: "productVariants" },
+      "Tính năng biến thể sản phẩm chưa sẵn sàng: cần áp dụng migration 0286 (product_variants). " +
         "Product variants require migration 0286 to be applied.",
-    });
+    );
   }
 }
 
@@ -120,7 +168,7 @@ export const productVariantRouter = router({
       await assertVariantTableAvailable();
       const variant = await db.getVariantById(input.variantId);
       if (!variant) {
-        throw new TRPCError({ code: "NOT_FOUND", message: "Không tìm thấy biến thể" });
+        throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "productVariant" }, "Không tìm thấy biến thể");
       }
       const [overrides, effective] = await Promise.all([
         db.getVariantOverrides(variant.id),
@@ -150,20 +198,17 @@ export const productVariantRouter = router({
 
       const model = await db.getProductModelById(input.productModelId);
       if (!model) {
-        throw new TRPCError({ code: "NOT_FOUND", message: "Không tìm thấy sản phẩm" });
+        throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "productModel" }, "Không tìm thấy sản phẩm");
       }
       // 'BASE' is reserved for the model's inheritance root (created by 0286 /
       // ensureBaseVariant); an author never mints one manually.
       if (input.code.toUpperCase() === BASE_VARIANT_CODE) {
-        throw new TRPCError({
-          code: "BAD_REQUEST",
-          message: `Mã '${BASE_VARIANT_CODE}' được dành riêng cho biến thể gốc`,
-        });
+        throw appError("BAD_REQUEST", "INVALID_VALUE", { field: "code" }, `Mã '${BASE_VARIANT_CODE}' được dành riêng cho biến thể gốc`);
       }
       // Live-uniqueness pre-check (the partial unique index is the tx-level backstop).
       const existing = await db.getVariantByCode(input.productModelId, input.code);
       if (existing) {
-        throw new TRPCError({ code: "CONFLICT", message: `Biến thể '${input.code}' đã tồn tại` });
+        throw appError("CONFLICT", "ENTITY_DUPLICATE", { entity: "productVariant" }, `Biến thể '${input.code}' đã tồn tại`);
       }
 
       let id: number;
@@ -180,7 +225,7 @@ export const productVariantRouter = router({
         });
       } catch (err: any) {
         if (err?.code === "23505" || /uq_product_variants_model_code/.test(String(err?.message))) {
-          throw new TRPCError({ code: "CONFLICT", message: `Biến thể '${input.code}' đã tồn tại` });
+          throw appError("CONFLICT", "ENTITY_DUPLICATE", { entity: "productVariant" }, `Biến thể '${input.code}' đã tồn tại`);
         }
         throw err;
       }
@@ -216,23 +261,20 @@ export const productVariantRouter = router({
       const { variantId, ...patch } = input;
       const existing = await db.getVariantById(variantId);
       if (!existing) {
-        throw new TRPCError({ code: "NOT_FOUND", message: "Không tìm thấy biến thể" });
+        throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "productVariant" }, "Không tìm thấy biến thể");
       }
 
       if (patch.code !== undefined && patch.code !== existing.code) {
         // The base variant is the model's stable inheritance root — its code never moves.
         if (existing.isBase) {
-          throw new TRPCError({ code: "BAD_REQUEST", message: "Không thể đổi mã biến thể gốc" });
+          throw appError("BAD_REQUEST", "OPERATION_FAILED", { operation: "renameRootVariantCode" }, "Không thể đổi mã biến thể gốc");
         }
         if (patch.code.toUpperCase() === BASE_VARIANT_CODE) {
-          throw new TRPCError({
-            code: "BAD_REQUEST",
-            message: `Mã '${BASE_VARIANT_CODE}' được dành riêng cho biến thể gốc`,
-          });
+          throw appError("BAD_REQUEST", "INVALID_VALUE", { field: "code" }, `Mã '${BASE_VARIANT_CODE}' được dành riêng cho biến thể gốc`);
         }
         const clash = await db.getVariantByCode(existing.productModelId, patch.code);
         if (clash && clash.id !== variantId) {
-          throw new TRPCError({ code: "CONFLICT", message: `Biến thể '${patch.code}' đã tồn tại` });
+          throw appError("CONFLICT", "ENTITY_DUPLICATE", { entity: "productVariant" }, `Biến thể '${patch.code}' đã tồn tại`);
         }
       }
 
@@ -244,7 +286,7 @@ export const productVariantRouter = router({
         await db.updateVariant(variantId, data as any);
       } catch (err: any) {
         if (err?.code === "23505" || /uq_product_variants_model_code/.test(String(err?.message))) {
-          throw new TRPCError({ code: "CONFLICT", message: "Mã biến thể đã tồn tại" });
+          throw appError("CONFLICT", "ENTITY_DUPLICATE", { entity: "productVariant" }, "Mã biến thể đã tồn tại");
         }
         throw err;
       }
@@ -271,10 +313,10 @@ export const productVariantRouter = router({
 
       const existing = await db.getVariantById(input.variantId);
       if (!existing) {
-        throw new TRPCError({ code: "NOT_FOUND", message: "Không tìm thấy biến thể" });
+        throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "productVariant" }, "Không tìm thấy biến thể");
       }
       if (existing.isBase) {
-        throw new TRPCError({ code: "BAD_REQUEST", message: "Không thể xoá biến thể gốc" });
+        throw appError("BAD_REQUEST", "OPERATION_FAILED", { operation: "deleteRootVariant" }, "Không thể xoá biến thể gốc");
       }
 
       await db.softDeleteVariant(input.variantId);
@@ -310,10 +352,10 @@ export const productVariantRouter = router({
       if (variantId != null) {
         const variant = await db.getVariantById(variantId);
         if (!variant) {
-          throw new TRPCError({ code: "NOT_FOUND", message: "Không tìm thấy biến thể" });
+          throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "productVariant" }, "Không tìm thấy biến thể");
         }
         if (variant.productModelId !== input.productModelId) {
-          throw new TRPCError({ code: "BAD_REQUEST", message: "Biến thể không thuộc sản phẩm này" });
+          throw appError("BAD_REQUEST", "SCOPE_MISMATCH", { entity: "productVariant", parent: "productModel" }, "Biến thể không thuộc sản phẩm này");
         }
         isNonBaseVariant = !variant.isBase;
         if (isNonBaseVariant) {
@@ -341,45 +383,105 @@ export const productVariantRouter = router({
       variantId: z.number().int().positive(),
       basePointDefId: z.number().int().positive(),
       action: overrideActionSchema,
-      patchJson: z.record(z.string(), z.unknown()).optional(),
+      // BG-113/I-3 — whitelist APPROVAL_LIMIT_FIELDS (xem docblock hằng số ở trên).
+      patchJson: variantOverridePatchSchema.optional(),
     }))
     .mutation(async ({ ctx, input }) => {
       await assertVariantTableAvailable();
 
       const variant = await db.getVariantById(input.variantId);
       if (!variant) {
-        throw new TRPCError({ code: "NOT_FOUND", message: "Không tìm thấy biến thể" });
+        throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "productVariant" }, "Không tìm thấy biến thể");
       }
       // Overrides express how a NON-BASE variant diverges FROM the base; the base
       // variant owns the common points directly and cannot override itself.
       if (variant.isBase) {
-        throw new TRPCError({
-          code: "BAD_REQUEST",
-          message: "Biến thể gốc không thể ghi đè điểm đo của chính nó",
-        });
+        throw appError(
+          "BAD_REQUEST",
+          "OPERATION_FAILED",
+          { operation: "overrideBaseVariantPoint" },
+          "Biến thể gốc không thể ghi đè điểm đo của chính nó",
+        );
       }
       // action='override' must carry a patch; 'exclude' must not.
       if (input.action === "override" && (!input.patchJson || Object.keys(input.patchJson).length === 0)) {
-        throw new TRPCError({
-          code: "BAD_REQUEST",
-          message: "Ghi đè cần patchJson (các trường thay đổi)",
-        });
+        throw appError("BAD_REQUEST", "FIELD_REQUIRED", { field: "patchJson" }, "Ghi đè cần patchJson (các trường thay đổi)");
       }
 
       // The target must be a BASE/common point (variantId NULL) of THIS variant's model.
       const basePoint = await db.getMeasurementPointDefById(input.basePointDefId);
       if (!basePoint) {
-        throw new TRPCError({ code: "NOT_FOUND", message: "Không tìm thấy điểm đo gốc" });
+        throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "measurementPoint" }, "Không tìm thấy điểm đo gốc");
       }
       if (basePoint.productModelId !== variant.productModelId) {
-        throw new TRPCError({ code: "BAD_REQUEST", message: "Điểm đo không thuộc sản phẩm của biến thể" });
+        throw appError("BAD_REQUEST", "SCOPE_MISMATCH", { entity: "measurementPoint", parent: "productModel" }, "Điểm đo không thuộc sản phẩm của biến thể");
       }
       if (basePoint.variantId != null) {
-        throw new TRPCError({
-          code: "BAD_REQUEST",
-          message: "Chỉ được ghi đè điểm đo chung (base) — không phải điểm riêng của biến thể",
-        });
+        throw appError(
+          "BAD_REQUEST",
+          "OPERATION_FAILED",
+          { operation: "overrideBaseVariantPoint" },
+          "Chỉ được ghi đè điểm đo chung (base) — không phải điểm riêng của biến thể",
+        );
       }
+
+      // ★★★ BG-113/I-3 (review Khối C lượt 9) — (b) CỬA DUYỆT NGƯỠNG, như 5 đường
+      // ghi giới hạn khác (measurementPoint.update/setLimitsBatch/bulk-import/AI
+      // Copilot).
+      // ★★★ NEW-4 (review lượt 9, vòng 2, BG-125) — TRƯỚC bản vá này cửa CHỈ đứng
+      // khi `action==='override'`; `'exclude'` đi thẳng qua, 0 gate. Lý do cũ ("exclude
+      // không mang giá trị số nào để duyệt") SAI Ở CHỖ: loại hẳn một điểm khỏi cổng
+      // của một biến thể LIVE là một thay đổi ngưỡng TRIỆT ĐỂ HƠN nới một cận số —
+      // điểm đó không còn ai chấm nữa, bo XẤU lọt qua êm (BG-125). Cửa nay đứng cho
+      // CẢ HAI action.
+      await assertThresholdEditAllowed(input.basePointDefId);
+
+      // ★★★ BG-113/I-3 — (c) GHI VERSION trước khi ghi đè, TRÊN CHÍNH bảng
+      // `measurement_point_versions` mà snapshot-gate BG-97 đọc (xem docblock
+      // `db.recordVariantOverrideVersion` cho phạm vi THẬT/giới hạn đã biết).
+      // Snapshot là hiệu lực TRƯỚC lượt này: base + override CŨ (nếu có, dùng
+      // LẠI `apDungVariantPatch` — Task 6, cùng công thức mà đường CHẤM dùng ở
+      // `machineApiRouters.ts`), không phải base trơ — một override THAY một
+      // override khác (hay một `exclude` xoá mất một override cũ) vẫn phải để lại
+      // đúng trạng thái đã mất.
+      // ★★★ NEW-4 — GHI VERSION nay chạy cho CẢ HAI action, cùng lý do cửa (b) ở trên:
+      // `exclude` xoá hiệu lực số của điểm khỏi biến thể mà TRƯỚC bản vá không để
+      // lại dấu vết nào trong `measurement_point_versions` — 0 version, đúng lớp lỗi
+      // "đường ghi ẩn danh" mà I-3 đã vá cho `override`.
+      const overridesHienCo = await db.getVariantOverrides(input.variantId);
+      const ovHienCo = overridesHienCo.find((o) => o.basePointDefId === input.basePointDefId);
+      const hieuLucTruoc = db.apDungVariantPatch(
+        basePoint as unknown as Record<string, unknown>,
+        ovHienCo?.action === "override" ? ovHienCo.patchJson : null,
+      );
+
+      // ★★★ BG-113 (I-2, đường ghi giới hạn THỨ SÁU) — patchJson biến thể có thể
+      // mang BẤT KỲ field nào thuộc APPROVAL_LIMIT_FIELDS (whitelist ở trên cho
+      // phép — bao gồm areaMin/areaMax/volumeMin/volumeMax/thicknessMin/thicknessMax,
+      // không chỉ lowerLimit/upperLimit/heightMin/heightMax) ⇒ CÙNG lỗ "0 kiểm
+      // min ≤ max" mà các đường kia đã vá. Kiểm trên khoảng ĐÃ MERGE: hiệu lực
+      // TRƯỚC override (base + override CŨ, vừa tính ở trên cho bước ghi version)
+      // đè bởi patch MỚI — patch chỉ đổi MỘT cận vẫn phải chặn nếu mâu thuẫn với
+      // cận HIỆN CÓ (đúng nguyên tắc I-2).
+      // ★★★ NEW-4 (CÙNG điểm gọi thứ 6/census, `limitRangeGateCensus` — override VÀ
+      // exclude gộp một vùng) — `exclude` không mang patch số nào ⇒ merge với `{}`
+      // (RỖNG, không đổi gì) — một lượt kiểm KHÔNG-ĐỔI, nhưng CÙNG một đường mã
+      // bảo vệ tất cả ghi vào `measurement_point_versions` qua router này.
+      // ★★★ NEW-1 — `layCapGioiHanTuDoi` rút CẢ NĂM cặp (10 field), không chỉ hai
+      // cặp hard-code trước đây — area/volume/thickness nay được kiểm.
+      assertCapGioiHanHopLe(
+        gopCapGioiHanDonGian(
+          layCapGioiHanTuDoi(hieuLucTruoc as unknown as Record<string, unknown>),
+          input.action === "override" ? layCapGioiHanTuDoi(input.patchJson ?? null) : {},
+        ),
+      );
+
+      // NEW-3 (review lượt 9, vòng 2) — `variantId` BẮT BUỘC (không còn suy từ
+      // chuỗi `changeReason` tự do): hàm tự gắn tiền tố `[VARIANT:<id>]`.
+      await db.recordVariantOverrideVersion(input.basePointDefId, input.variantId, hieuLucTruoc, {
+        changedBy: ctx.user.id,
+        changeReason: input.action === "override" ? "productVariant.setOverride" : "productVariant.setOverride(exclude)",
+      });
 
       const id = await db.setVariantPointOverride({
         variantId: input.variantId,
@@ -423,8 +525,37 @@ export const productVariantRouter = router({
 
       const variant = await db.getVariantById(input.variantId);
       if (!variant) {
-        throw new TRPCError({ code: "NOT_FOUND", message: "Không tìm thấy biến thể" });
+        throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "productVariant" }, "Không tìm thấy biến thể");
       }
+
+      // ★★★ NEW-4 (review lượt 9, vòng 2, BG-125) — CÙNG cửa/version như `setOverride`:
+      // TRƯỚC bản vá này, gỡ một override (số HOẶC `exclude`) đi thẳng qua — 0 gate,
+      // 0 version, y hệt lỗ mà I-3 đã vá cho `setOverride`. Gỡ MỘT `exclude` trên biến
+      // thể LIVE hoàn tác chính lượt loại-điểm-khỏi-cổng — cùng mức nghiêm trọng cần
+      // duyệt như tạo ra nó. Snapshot ghi lại hiệu lực TRƯỚC lượt gỡ (base + override
+      // sắp mất, cùng `apDungVariantPatch`) — để lại đúng trạng thái đã mất.
+      const basePoint = await db.getMeasurementPointDefById(input.basePointDefId);
+      if (!basePoint) {
+        throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "measurementPoint" }, "Không tìm thấy điểm đo gốc");
+      }
+      await assertThresholdEditAllowed(input.basePointDefId);
+
+      const overridesHienCo = await db.getVariantOverrides(input.variantId);
+      const ovHienCo = overridesHienCo.find((o) => o.basePointDefId === input.basePointDefId);
+      const hieuLucTruoc = db.apDungVariantPatch(
+        basePoint as unknown as Record<string, unknown>,
+        ovHienCo?.action === "override" ? ovHienCo.patchJson : null,
+      );
+      // NEW-4 (đường ghi giới hạn thứ BẢY/census, `limitRangeGateCensus`) — gỡ override
+      // không mang patch số nào ⇒ merge với `{}` (không đổi gì), cùng lý do đã ghi ở `setOverride`.
+      // NEW-1 — `layCapGioiHanTuDoi` rút CẢ NĂM cặp, không chỉ hai cặp hard-code.
+      assertCapGioiHanHopLe(
+        gopCapGioiHanDonGian(layCapGioiHanTuDoi(hieuLucTruoc as unknown as Record<string, unknown>), {}),
+      );
+      await db.recordVariantOverrideVersion(input.basePointDefId, input.variantId, hieuLucTruoc, {
+        changedBy: ctx.user.id,
+        changeReason: "productVariant.removeOverride",
+      });
 
       await db.removeVariantOverride(input.variantId, input.basePointDefId);
 

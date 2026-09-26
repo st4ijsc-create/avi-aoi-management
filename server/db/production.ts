@@ -1,5 +1,8 @@
-import { eq, and, desc, asc, or, isNull, ilike, SQL } from "drizzle-orm";
+import { eq, and, desc, asc, or, isNull, ilike, inArray, SQL } from "drizzle-orm";
+import { appError } from "../_core/appError";
+import { DbUnavailableError } from "../_core/dbErrors";
 import { getDb } from "./connection";
+import { idsTrongPhamVi, trongPhamVi, type PhamViNguoiXem } from "./hierarchy";
 import {
   shiftConfigs, InsertShiftConfig,
   productionOrders, InsertProductionOrder,
@@ -30,20 +33,20 @@ export async function getShiftConfigs(factoryId?: number) {
 
 export async function createShiftConfig(data: InsertShiftConfig) {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  if (!db) throw new DbUnavailableError();
   const [result] = await db.insert(shiftConfigs).values(data).returning({ id: shiftConfigs.id });
   return { id: result.id };
 }
 
 export async function updateShiftConfig(id: number, data: Partial<InsertShiftConfig>) {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  if (!db) throw new DbUnavailableError();
   await db.update(shiftConfigs).set(data).where(eq(shiftConfigs.id, id));
 }
 
 export async function deleteShiftConfig(id: number) {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  if (!db) throw new DbUnavailableError();
   await db.delete(shiftConfigs).where(eq(shiftConfigs.id, id));
 }
 
@@ -59,6 +62,18 @@ export async function getDefaultShiftConfigs() {
 
 
 // ============ PRODUCTION ORDER FUNCTIONS ============
+/**
+ * ★★★ 2026-08-18 (trả nợ nhóm A) — **TRỤC PHẠM VI CỦA LỆNH SẢN XUẤT LÀ `lineId`, KHÔNG PHẢI
+ * `factoryId`.**
+ *
+ * `production_orders` mang CẢ HAI cột và chúng có thể BẤT ĐỒNG — không ràng buộc nào bắt
+ * `factoryId` phải khớp nhà máy của `lineId`. Chọn cột ghi rời là mở lại đúng lớp lỗi "hàng mang
+ * `factoryId` của nhà máy KHÁC" đã cắn tuần này (`daily_statistics`). Luật đã ghi ở
+ * `services/ecosystem/commandCenterScope.scopedWorkOrderIds` — đây là cùng luật, cùng cột.
+ *
+ * ⚠ Cổng được AND vào **SAU** bộ lọc `factoryId`/`lineId` của người gọi, nên một `factoryId` TỰ
+ * KHAI chỉ THU HẸP thêm; nó không bao giờ mở được cửa sang nhà máy khác.
+ */
 export async function getProductionOrders(filters?: {
   factoryId?: number;
   workshopId?: number;
@@ -67,11 +82,15 @@ export async function getProductionOrders(filters?: {
   companyCode?: string;
   search?: string;
   limit?: number;
-}) {
+}, scope?: PhamViNguoiXem) {
   const db = await getDb();
   if (!db) return [];
   
   const conditions = [];
+  {
+    const idsTuyen = await idsTrongPhamVi("line", scope);
+    if (idsTuyen !== null) conditions.push(inArray(productionOrders.lineId, idsTuyen.length ? idsTuyen : [-1]));
+  }
   if (filters?.factoryId) conditions.push(eq(productionOrders.factoryId, filters.factoryId));
   if (filters?.workshopId) conditions.push(eq(productionOrders.workshopId, filters.workshopId));
   if (filters?.lineId) conditions.push(eq(productionOrders.lineId, filters.lineId));
@@ -93,45 +112,49 @@ export async function getProductionOrders(filters?: {
     .limit(limit);
 }
 
-export async function getProductionOrderById(id: number) {
+export async function getProductionOrderById(id: number, scope?: PhamViNguoiXem) {
   const db = await getDb();
   if (!db) return null;
   const result = await db.select().from(productionOrders).where(eq(productionOrders.id, id)).limit(1);
-  return result.length > 0 ? result[0] : null;
+  if (result.length === 0) return null;
+  if (!(await trongPhamVi("line", result[0].lineId, scope))) return null;
+  return result[0];
 }
 
-export async function getProductionOrderByCode(orderCode: string) {
+export async function getProductionOrderByCode(orderCode: string, scope?: PhamViNguoiXem) {
   const db = await getDb();
   if (!db) return null;
   const result = await db.select().from(productionOrders).where(eq(productionOrders.orderCode, orderCode)).limit(1);
-  return result.length > 0 ? result[0] : null;
+  if (result.length === 0) return null;
+  if (!(await trongPhamVi("line", result[0].lineId, scope))) return null;
+  return result[0];
 }
 
 export async function createProductionOrder(data: InsertProductionOrder) {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  if (!db) throw new DbUnavailableError();
   const [result] = await db.insert(productionOrders).values(data).returning({ id: productionOrders.id });
   return result;
 }
 
 export async function updateProductionOrder(id: number, data: Partial<InsertProductionOrder>) {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  if (!db) throw new DbUnavailableError();
   return db.update(productionOrders).set(data).where(eq(productionOrders.id, id));
 }
 
 export async function deleteProductionOrder(id: number) {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  if (!db) throw new DbUnavailableError();
   return db.delete(productionOrders).where(eq(productionOrders.id, id));
 }
 
 export async function updateProductionOrderQuantities(id: number, result: 'OK' | 'NG' | 'NTF') {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  if (!db) throw new DbUnavailableError();
   
   const order = await getProductionOrderById(id);
-  if (!order) throw new Error("Production order not found");
+  if (!order) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "productionOrder" }, "Production order not found");
   
   const updates: Partial<InsertProductionOrder> = {
     completedQuantity: order.completedQuantity + 1,
@@ -154,48 +177,51 @@ export async function updateProductionOrderQuantities(id: number, result: 'OK' |
 }
 
 // ============ LINE STAGE FUNCTIONS ============
-export async function getLineStages(lineId?: number) {
+export async function getLineStages(lineId?: number, scope?: PhamViNguoiXem) {
   const db = await getDb();
   if (!db) return [];
-  
-  if (lineId) {
-    return db.select().from(lineStages)
-      .where(eq(lineStages.lineId, lineId))
-      .orderBy(lineStages.orderIndex);
-  }
-  
-  return db.select().from(lineStages).orderBy(lineStages.orderIndex);
+  const idsTuyen = await idsTrongPhamVi("line", scope);
+  const dieuKien = [
+    ...(idsTuyen === null ? [] : [inArray(lineStages.lineId, idsTuyen.length ? idsTuyen : [-1])]),
+    ...(lineId ? [eq(lineStages.lineId, lineId)] : []),
+  ];
+  return db.select().from(lineStages)
+    .where(dieuKien.length ? and(...dieuKien) : undefined)
+    .orderBy(lineStages.orderIndex);
 }
 
-export async function getLineStageById(id: number) {
+export async function getLineStageById(id: number, scope?: PhamViNguoiXem) {
   const db = await getDb();
   if (!db) return null;
   const result = await db.select().from(lineStages).where(eq(lineStages.id, id));
+  // ⚠ Hàm này trả về MẢNG (hợp đồng cũ, không sửa ở đây). Ngoài phạm vi ⇒ mảng RỖNG, đúng hình
+  // dạng "không tìm thấy" mà nơi gọi đã xử lý được.
+  if (result.length > 0 && !(await trongPhamVi("line", result[0].lineId, scope))) return [];
   return result || null;
 }
 
 export async function createLineStage(data: InsertLineStage) {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  if (!db) throw new DbUnavailableError();
   const [result] = await db.insert(lineStages).values(data).returning({ id: lineStages.id });
   return result;
 }
 
 export async function updateLineStage(id: number, data: Partial<InsertLineStage>) {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  if (!db) throw new DbUnavailableError();
   return db.update(lineStages).set(data).where(eq(lineStages.id, id));
 }
 
 export async function deleteLineStage(id: number) {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  if (!db) throw new DbUnavailableError();
   return db.delete(lineStages).where(eq(lineStages.id, id));
 }
 
 export async function reorderLineStages(lineId: number, stageIds: number[]) {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  if (!db) throw new DbUnavailableError();
   
   // Update orderIndex for each stage based on position in array
   for (let i = 0; i < stageIds.length; i++) {
@@ -211,11 +237,15 @@ export async function getLineProductAssignments(filters?: {
   productModelId?: number;
   productionOrderId?: number;
   isActive?: boolean;
-}) {
+}, scope?: PhamViNguoiXem) {
   const db = await getDb();
   if (!db) return [];
   
   const conditions = [];
+  {
+    const idsTuyen = await idsTrongPhamVi("line", scope);
+    if (idsTuyen !== null) conditions.push(inArray(lineProductAssignments.lineId, idsTuyen.length ? idsTuyen : [-1]));
+  }
   if (filters?.lineId) conditions.push(eq(lineProductAssignments.lineId, filters.lineId));
   if (filters?.productModelId) conditions.push(eq(lineProductAssignments.productModelId, filters.productModelId));
   if (filters?.productionOrderId) conditions.push(eq(lineProductAssignments.productionOrderId, filters.productionOrderId));
@@ -228,20 +258,20 @@ export async function getLineProductAssignments(filters?: {
 
 export async function createLineProductAssignment(data: InsertLineProductAssignment) {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  if (!db) throw new DbUnavailableError();
   const [result] = await db.insert(lineProductAssignments).values(data).returning({ id: lineProductAssignments.id });
   return result;
 }
 
 export async function updateLineProductAssignment(id: number, data: Partial<InsertLineProductAssignment>) {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  if (!db) throw new DbUnavailableError();
   return db.update(lineProductAssignments).set(data).where(eq(lineProductAssignments.id, id));
 }
 
 export async function deleteLineProductAssignment(id: number) {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  if (!db) throw new DbUnavailableError();
   return db.delete(lineProductAssignments).where(eq(lineProductAssignments.id, id));
 }
 
@@ -297,7 +327,7 @@ export async function getProcessByCode(code: string) {
 
 export async function createProcess(data: InsertProcess) {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  if (!db) throw new DbUnavailableError();
   
   const [result] = await db.insert(processes).values(data).returning({ id: processes.id });
   return { id: Number(result.id) };
@@ -305,7 +335,7 @@ export async function createProcess(data: InsertProcess) {
 
 export async function updateProcess(id: number, data: Partial<InsertProcess>) {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  if (!db) throw new DbUnavailableError();
   
   await db.update(processes)
     .set(data)
@@ -314,7 +344,7 @@ export async function updateProcess(id: number, data: Partial<InsertProcess>) {
 
 export async function deleteProcess(id: number) {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  if (!db) throw new DbUnavailableError();
   
   // First delete all line process assignments
   await db.delete(lineProcessAssignments)
@@ -327,7 +357,7 @@ export async function deleteProcess(id: number) {
 
 export async function reorderProcesses(orderedIds: number[]) {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  if (!db) throw new DbUnavailableError();
   
   for (let i = 0; i < orderedIds.length; i++) {
     await db.update(processes)
@@ -366,7 +396,7 @@ export async function getLineProcessAssignmentById(id: number) {
 
 export async function createLineProcessAssignment(data: InsertLineProcessAssignment) {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  if (!db) throw new DbUnavailableError();
   
   const [result] = await db.insert(lineProcessAssignments).values(data).returning({ id: lineProcessAssignments.id });
   return { id: Number(result.id) };
@@ -374,7 +404,7 @@ export async function createLineProcessAssignment(data: InsertLineProcessAssignm
 
 export async function updateLineProcessAssignment(id: number, data: Partial<InsertLineProcessAssignment>) {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  if (!db) throw new DbUnavailableError();
   
   await db.update(lineProcessAssignments)
     .set(data)
@@ -383,7 +413,7 @@ export async function updateLineProcessAssignment(id: number, data: Partial<Inse
 
 export async function deleteLineProcessAssignment(id: number) {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  if (!db) throw new DbUnavailableError();
   
   await db.delete(lineProcessAssignments)
     .where(eq(lineProcessAssignments.id, id));
@@ -391,7 +421,7 @@ export async function deleteLineProcessAssignment(id: number) {
 
 export async function reorderLineProcessAssignments(lineId: number, orderedIds: number[]) {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  if (!db) throw new DbUnavailableError();
   
   for (let i = 0; i < orderedIds.length; i++) {
     await db.update(lineProcessAssignments)
@@ -405,43 +435,54 @@ export async function reorderLineProcessAssignments(lineId: number, orderedIds: 
 
 export async function deleteLineProcessAssignmentsByLine(lineId: number) {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  if (!db) throw new DbUnavailableError();
   
   await db.delete(lineProcessAssignments)
     .where(eq(lineProcessAssignments.lineId, lineId));
 }
 
 // ============ PRODUCTION ORDER TEMPLATES ============
-export async function listOrderTemplates(factoryId?: number) {
+export async function listOrderTemplates(factoryId?: number, scope?: PhamViNguoiXem) {
   const db = await getDb();
   if (!db) return [];
   
-  let query = db.select().from(productionOrderTemplates).where(eq(productionOrderTemplates.isActive, true));
-  if (factoryId) {
-    query = db.select().from(productionOrderTemplates).where(
-      and(
-        eq(productionOrderTemplates.isActive, true),
-        or(
-          eq(productionOrderTemplates.factoryId, factoryId),
-          isNull(productionOrderTemplates.factoryId)
-        )
-      )
+  // ⚠ `factoryId` NULL = mẫu DÙNG CHUNG cho mọi nhà máy (chú thích ở lược đồ). Nó không mang số
+  // đo của ai cả nên KHÔNG bị loại — loại nó đi thì người bị thu hẹp mất luôn bộ mẫu mặc định và
+  // màn hình đọc thành "chưa có mẫu nào". Đây là ngoại lệ CÓ LÝ DO, giống `oee_targets`.
+  const idsNhaMay = await idsTrongPhamVi("factory", scope);
+  const dieuKien = [eq(productionOrderTemplates.isActive, true)];
+  if (idsNhaMay !== null) {
+    const cong = or(
+      isNull(productionOrderTemplates.factoryId),
+      inArray(productionOrderTemplates.factoryId, idsNhaMay.length ? idsNhaMay : [-1]),
     );
+    if (cong) dieuKien.push(cong);
   }
-  return await query;
+  if (factoryId) {
+    const cong = or(
+      eq(productionOrderTemplates.factoryId, factoryId),
+      isNull(productionOrderTemplates.factoryId),
+    );
+    if (cong) dieuKien.push(cong);
+  }
+  return await db.select().from(productionOrderTemplates).where(and(...dieuKien));
 }
 
-export async function getOrderTemplate(id: number) {
+export async function getOrderTemplate(id: number, scope?: PhamViNguoiXem) {
   const db = await getDb();
   if (!db) return null;
   
   const results = await db.select().from(productionOrderTemplates).where(eq(productionOrderTemplates.id, id));
-  return results[0] || null;
+  const mau = results[0];
+  if (!mau) return null;
+  // `factoryId` NULL = mẫu dùng chung ⇒ ai cũng đọc được (xem `listOrderTemplates`).
+  if (mau.factoryId !== null && !(await trongPhamVi("factory", mau.factoryId, scope))) return null;
+  return mau;
 }
 
 export async function createOrderTemplate(data: InsertProductionOrderTemplate) {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  if (!db) throw new DbUnavailableError();
   
   const [result] = await db.insert(productionOrderTemplates).values(data).returning({ id: productionOrderTemplates.id });
   return { id: result.id };
@@ -449,25 +490,29 @@ export async function createOrderTemplate(data: InsertProductionOrderTemplate) {
 
 export async function updateOrderTemplate(id: number, data: Partial<InsertProductionOrderTemplate>) {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  if (!db) throw new DbUnavailableError();
   
   await db.update(productionOrderTemplates).set(data).where(eq(productionOrderTemplates.id, id));
 }
 
 export async function deleteOrderTemplate(id: number) {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  if (!db) throw new DbUnavailableError();
   
   await db.update(productionOrderTemplates).set({ isActive: false }).where(eq(productionOrderTemplates.id, id));
 }
 
 // ============ WIP TRACKING ============
-export async function getWIPStatus(factoryId?: number) {
+export async function getWIPStatus(factoryId?: number, scope?: PhamViNguoiXem) {
   const db = await getDb();
   if (!db) return { orders: [], summary: { total: 0, inProgress: 0, completed: 0, pending: 0 } };
   
   // Get all orders with line info
   const conditions: SQL[] = [];
+  {
+    const idsTuyen = await idsTrongPhamVi("line", scope);
+    if (idsTuyen !== null) conditions.push(inArray(productionOrders.lineId, idsTuyen.length ? idsTuyen : [-1]));
+  }
   if (factoryId) conditions.push(eq(productionOrders.factoryId, factoryId));
   
   const allOrders = await db.select({
@@ -560,9 +605,10 @@ export async function getWIPStatus(factoryId?: number) {
   return { orders, summary };
 }
 
-export async function getWIPByLine(lineId: number) {
+export async function getWIPByLine(lineId: number, scope?: PhamViNguoiXem) {
   const db = await getDb();
   if (!db) return [];
+  if (!(await trongPhamVi("line", lineId, scope))) return [];
   
   return await db.select().from(productionOrders)
     .where(and(
@@ -659,7 +705,7 @@ export async function optimizeSchedule(factoryId: number): Promise<ScheduleOptim
 
 export async function applyScheduleSuggestion(suggestion: ScheduleOptimizationResult) {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  if (!db) throw new DbUnavailableError();
 
   await db.update(productionOrders)
     .set({
@@ -695,7 +741,7 @@ export async function createScheduleRun(
   items: Omit<InsertScheduleRunItem, "runId">[],
 ): Promise<{ id: number }> {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  if (!db) throw new DbUnavailableError();
   const [created] = await db.insert(scheduleRuns).values(run).returning({ id: scheduleRuns.id });
   const runId = created.id;
   if (items.length > 0) {
@@ -704,10 +750,27 @@ export async function createScheduleRun(
   return { id: runId };
 }
 
-export async function listScheduleRuns(filters?: { factoryId?: number; lineId?: number; limit?: number }) {
+export async function listScheduleRuns(filters?: { factoryId?: number; lineId?: number; limit?: number }, scope?: PhamViNguoiXem) {
   const db = await getDb();
   if (!db) return [];
   const conditions = [];
+  {
+    // `schedule_runs` có CẢ HAI cột và cả hai đều nullable (null/null = chạy TOÀN CỤC). Ưu tiên
+    // liên kết tuyến; hàng toàn cục là kết quả lập lịch cho mọi nhà máy nên nó CHỨA dữ liệu của
+    // tenant khác ⇒ bị LOẠI cho người bị thu hẹp (khác với `oee_targets`/mẫu lệnh, vốn chỉ là
+    // ngưỡng cấu hình không mang số đo).
+    const [idsTuyen, idsNhaMay] = await Promise.all([
+      idsTrongPhamVi("line", scope),
+      idsTrongPhamVi("factory", scope),
+    ]);
+    if (idsTuyen !== null && idsNhaMay !== null) {
+      const cong = or(
+        inArray(scheduleRuns.lineId, idsTuyen.length ? idsTuyen : [-1]),
+        and(isNull(scheduleRuns.lineId), inArray(scheduleRuns.factoryId, idsNhaMay.length ? idsNhaMay : [-1])),
+      );
+      if (cong) conditions.push(cong);
+    }
+  }
   if (filters?.factoryId) conditions.push(eq(scheduleRuns.factoryId, filters.factoryId));
   if (filters?.lineId) conditions.push(eq(scheduleRuns.lineId, filters.lineId));
   const limit = Math.min(Math.max(filters?.limit ?? 50, 1), 500);
@@ -717,11 +780,21 @@ export async function listScheduleRuns(filters?: { factoryId?: number; lineId?: 
     .limit(limit);
 }
 
-export async function getScheduleRunById(id: number) {
+export async function getScheduleRunById(id: number, scope?: PhamViNguoiXem) {
   const db = await getDb();
   if (!db) return null;
   const [run] = await db.select().from(scheduleRuns).where(eq(scheduleRuns.id, id)).limit(1);
   if (!run) return null;
+  {
+    const capCanh: "line" | "factory" | null = run.lineId !== null ? "line" : run.factoryId !== null ? "factory" : null;
+    const idCanh = run.lineId ?? run.factoryId;
+    // Cả hai NULL = chạy TOÀN CỤC ⇒ chứa lịch của mọi nhà máy ⇒ fail-CLOSED cho người bị thu hẹp.
+    if (capCanh === null || idCanh === null) {
+      if ((await idsTrongPhamVi("line", scope)) !== null) return null;
+    } else if (!(await trongPhamVi(capCanh, idCanh, scope))) {
+      return null;
+    }
+  }
   const items = await db.select().from(scheduleRunItems).where(eq(scheduleRunItems.runId, id));
   return { ...run, items };
 }
@@ -733,7 +806,7 @@ export async function getScheduleRunById(id: number) {
  */
 export async function applyScheduleRun(id: number): Promise<{ applied: number }> {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  if (!db) throw new DbUnavailableError();
   const items = await db.select().from(scheduleRunItems).where(eq(scheduleRunItems.runId, id));
   let applied = 0;
   for (const item of items) {
@@ -755,6 +828,6 @@ export async function applyScheduleRun(id: number): Promise<{ applied: number }>
 
 export async function dismissScheduleRun(id: number): Promise<void> {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  if (!db) throw new DbUnavailableError();
   await db.update(scheduleRuns).set({ status: "DISMISSED" }).where(eq(scheduleRuns.id, id));
 }

@@ -138,6 +138,9 @@ export const predictiveAlerts = pgTable("predictive_alerts", {
   // (SLO burn-rate alerts carry their catalogue runbook) — never fabricated.
   runbookRef: text("runbook_ref"),
   recommendationRef: text("recommendation_ref"),
+  // Wave 3 §3 — số lần tình trạng này tái diễn khi cảnh báo vẫn đang mở.
+  occurrenceCount: integer("occurrenceCount").notNull().default(1),
+  lastOccurredAt: timestamp("lastOccurredAt", { withTimezone: true }),
   // Timestamps
   expiresAt: timestamp("expiresAt"), // Alert expiration
   createdAt: timestamp("createdAt").defaultNow().notNull(),
@@ -156,6 +159,22 @@ export const predictiveAlerts = pgTable("predictive_alerts", {
 
 export type PredictiveAlert = typeof predictiveAlerts.$inferSelect;
 export type InsertPredictiveAlert = typeof predictiveAlerts.$inferInsert;
+
+/** Wave 4 §3 — mỗi lần tình trạng tái diễn = một dòng có mốc thời gian riêng. */
+export const predictiveAlertOccurrences = pgTable("predictive_alert_occurrences", {
+  id: serial("id").primaryKey(),
+  alertId: integer("alertId").notNull().references(() => predictiveAlerts.id, { onDelete: "cascade" }),
+  occurredAt: timestamp("occurredAt", { withTimezone: true }).notNull().defaultNow(),
+  severity: varchar("severity", { length: 20 }),
+  // D4 (mig 0335) — `confidenceScore` ĐÃ BỎ: được ghi mỗi lần tái diễn mà không nơi nào
+  // đọc. Thêm lại thì phải thêm CẢ chỗ đọc trong cùng một lượt.
+}, (table) => [
+  index("idx_alert_occurrences_time").on(table.occurredAt),
+  index("idx_alert_occurrences_alert").on(table.alertId),
+]);
+
+export type PredictiveAlertOccurrence = typeof predictiveAlertOccurrences.$inferSelect;
+export type InsertPredictiveAlertOccurrence = typeof predictiveAlertOccurrences.$inferInsert;
 
 /**
  * Alert Escalations - Audit log of all escalation events
@@ -209,7 +228,14 @@ export const rootCauseAnalysis = pgTable("root_cause_analysis", {
   aiInsights: json("aiInsights").$type<{
     summary: string;
     rootCauses: Array<{cause: string; probability: number; evidence: string}>;
-    recommendations: Array<{action: string; priority: "high" | "medium" | "low"; expectedImpact: string}>;
+    // W0-1 (doc 69): was declared as Array<{action;priority;expectedImpact}>,
+    // but the actual producer (aiInsightsService.generateRCAInsights — used by
+    // both rootCauseRouter.analyze and aiBatchRcaScheduler) has always emitted
+    // a flat string[] (see aiBatchRcaScheduler.ts's `.join("; ")` on this
+    // field). The prior raw-SQL INSERT never type-checked this, masking the
+    // mismatch. aiRcaCopilot.persistRca's richer per-recommendation object is
+    // written via an explicit `as any` and is unaffected by this correction.
+    recommendations: string[];
     preventiveMeasures: string[];
   }>(),
   // Pareto analysis
@@ -320,6 +346,18 @@ export const defectHeatmapData = pgTable("defect_heatmap_data", {
   stationId: integer("stationId"),
   machineId: integer("machineId"),
   productModelId: integer("productModelId"),
+  // ── PHẠM VI NHÀ MÁY (mig 0324, 2026-08-17) ────────────────────────────────
+  // Cùng KHÔNG GIAN MÃ với `product_inspections.corporateCode/factoryCode` và
+  // `user_factory_assignments.factoryCode` (= `factories.code`) — đó là thứ quyền
+  // của người dùng so sánh, khác hẳn `factoryId` (khoá số, chưa từng được ghi).
+  //
+  // NULL = "KHÔNG RÕ NGUỒN GỐC", KHÔNG phải "toàn cục được phép xem". Một heatmap
+  // là con số GỘP; khi tập hàng đóng góp trải trên ≥2 nhà máy (hoặc trên 0 hàng)
+  // thì KHÔNG tồn tại một mã đúng để ghi, và điền bừa một mã mặc định sẽ biến
+  // "không biết" thành lời khai sai. Luật đọc vì thế FAIL-CLOSED: hàng NULL chỉ
+  // admin thấy (xem `resolveSavedHeatmapScope` trong services/defectSpatialHeatmap.ts).
+  corporateCode: varchar("corporateCode", { length: 50 }),
+  factoryCode: varchar("factoryCode", { length: 50 }),
   // Time period
   periodType: periodTypeEnum_1("periodType").notNull(),
   periodStart: timestamp("periodStart").notNull(),
@@ -354,6 +392,8 @@ export const defectHeatmapData = pgTable("defect_heatmap_data", {
   processingTimeMs: integer("processingTimeMs"),
 }, (table) => [
   index("idx_heatmap_factory").on(table.factoryId),
+  index("idx_heatmap_factory_code").on(table.factoryCode),
+  index("idx_heatmap_corporate_code").on(table.corporateCode),
   index("idx_heatmap_machine").on(table.machineId),
   index("idx_heatmap_product").on(table.productModelId),
   index("idx_heatmap_period").on(table.periodType),
@@ -678,6 +718,52 @@ export interface ModelStageHistoryEntry {
 
 export type ModelVersion = typeof modelVersions.$inferSelect;
 export type InsertModelVersion = typeof modelVersions.$inferInsert;
+
+// ============= AI Model Cards — governance (doc69 D3, Giai đoạn 4/Wave 3) =============
+// The full ModelCard §12.2 governance record — ONE per model (keyed by modelId), the
+// SOURCE OF TRUTH for governance metadata. Subsumes (does not contradict) the existing
+// inline `modelVersions.owner`/`trainedOn` fields above: those stay populated for
+// back-compat / legacy versions, and aiModelRouter.createCard falls back to the latest
+// version's inline `owner` when the card doesn't specify one explicitly.
+//
+// ── Distinct from server/services/aiModelCard.ts (B5.4, doc 04 AI Brain NextGen) ──
+// That EARLIER module (singular `ModelCard` type, `ai_models.metadata.modelCard` JSON,
+// no migration) is an AUTO-GENERATED, ungated documentation card for the LLM/vision
+// BRAIN portfolio (Qwen3 etc. — most of which have no ai_models row at all): role/
+// source/quant/contextSize, no approval, never blocks anything. THIS table is the
+// OPPOSITE shape: a HUMAN-AUTHORED, APPROVED governance record for a defect-classifier
+// model that — once AI_MODEL_CARD_REQUIRED is on — actively GATES version activation
+// (see aiModelCardGate.ts). The two do not read or write each other; keep them separate.
+//
+// Additive migration: drizzle/0303_ai_model_cards.sql (CREATE TABLE IF NOT EXISTS, owner
+// `aoi`) — NOT applied by this task, ships unapplied until an operator runs it. Every
+// read/write path MUST treat a missing table (pg error 42P01) as "no card" / a clean
+// PRECONDITION_FAILED — see server/services/aiModelCardGate.ts's getModelCardStatus() and
+// aiModelRouter.ts's card CRUD handlers. Never referenced unconditionally on a hot path
+// that must survive an unmigrated DB.
+export type ModelCardRiskClass = "low" | "medium" | "high";
+
+export const aiModelCards = pgTable("ai_model_cards", {
+  id: serial("id").primaryKey(),
+  modelId: integer("modelId").notNull().unique(), // one governance card per ai_models row
+  intendedUse: text("intendedUse"),
+  trainingDataDesc: text("trainingDataDesc"),
+  evalSummary: text("evalSummary"),
+  limitations: text("limitations"),
+  riskClass: varchar("riskClass", { length: 20 }).$type<ModelCardRiskClass>(),
+  owner: varchar("owner", { length: 255 }),
+  approvedBy: integer("approvedBy"),
+  approvedAt: timestamp("approvedAt"),
+  notes: text("notes"),
+  createdBy: integer("createdBy"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().notNull(),
+}, (table) => [
+  index("idx_ai_model_cards_model").on(table.modelId),
+]);
+
+export type AiModelCard = typeof aiModelCards.$inferSelect;
+export type InsertAiModelCard = typeof aiModelCards.$inferInsert;
 
 /**
  * Inference Results - Kết quả inference từ ML models
@@ -1429,6 +1515,28 @@ export const aiSpecialistSessionSteps = pgTable("ai_specialist_session_steps", {
 export type AiSpecialistSessionStep = typeof aiSpecialistSessionSteps.$inferSelect;
 export type InsertAiSpecialistSessionStep = typeof aiSpecialistSessionSteps.$inferInsert;
 
+/** Wave 1 — chấm tay mức hữu ích của một phiên specialist (1 người 1 phiếu/phiên). */
+export const aiSpecialistFeedback = pgTable("ai_specialist_feedback", {
+  id: serial("id").primaryKey(),
+  sessionId: integer("sessionId").notNull(),
+  userId: integer("userId").notNull(),
+  agentId: varchar("agentId", { length: 64 }).notNull(),
+  moduleName: varchar("moduleName", { length: 255 }),
+  rating: varchar("rating", { length: 16 }).notNull(),
+  usefulSections: json("usefulSections").$type<string[]>(),
+  reason: text("reason"),
+  repoContextUsed: boolean("repoContextUsed").default(false).notNull(),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().notNull(),
+}, (table) => [
+  uniqueIndex("uq_ai_specialist_feedback_session_user").on(table.sessionId, table.userId),
+  index("idx_ai_specialist_feedback_agent").on(table.agentId),
+  index("idx_ai_specialist_feedback_module").on(table.moduleName),
+]);
+
+export type AiSpecialistFeedback = typeof aiSpecialistFeedback.$inferSelect;
+export type InsertAiSpecialistFeedback = typeof aiSpecialistFeedback.$inferInsert;
+
 // ============= B3 — Unsupervised Anomaly Detection (PatchCore-style) =============
 //
 // Memory bank chứa embedding ảnh OK (coreset subsample) theo scope
@@ -1494,6 +1602,24 @@ export const aiAnomalyProfiles = pgTable("ai_anomaly_profiles", {
   // ── U6-a (0156, additive, nullable) — tenant scope + inert RLS (G-9). ──
   corporateCode: varchar("corporateCode", { length: 50 }),
   factoryId: integer("factoryId"),
+  // ── F3/D2 (doc69 G9, migration 0300, additive, nullable, NOT YET APPLIED) ──
+  // ROC-calibrated threshold (ai/aiAnomalyCalibration.calibrateThreshold), swept
+  // to hit a target recall/FPR over labelled NG/OK scores. When set, the scorer
+  // (aiAnomalyDetection.scoreFromVector) uses THIS instead of `threshold` (the
+  // fixed p99 self-distance). null = uncalibrated → unchanged p99 behaviour.
+  // NOTE: server/db/aiAnomaly.ts getProfile()/getBankStats() guard their
+  // full-row SELECT against this column being absent pre-migration (42703
+  // undefined_column → fall back to a legacy column list) — do NOT add a
+  // .select() of this table elsewhere without the same guard.
+  calibratedThreshold: decimal("calibratedThreshold", { precision: 12, scale: 8 }),
+  calibrationTarget: json("calibrationTarget").$type<{
+    targetRecall?: number;
+    targetFpr?: number;
+    achievedRecall: number;
+    achievedFpr: number;
+    sampleCount: { ng: number; ok: number };
+    calibratedAt: string;
+  }>(),
   builtAt: timestamp("builtAt").defaultNow().notNull(),
 }, (table) => [
   uniqueIndex("uq_anomaly_profile_scope").on(table.productModelId, table.machineId, table.modelCode),
@@ -1604,6 +1730,34 @@ export type InsertAiPendingAction = typeof aiPendingActions.$inferInsert;
 // awaiting_confirm); the cursor only moves past a write after the user confirms it
 // (confirmStep → core confirmAction). Migration: drizzle/0017_ai_agent_sessions.sql.
 
+/**
+ * Deterministic, minimal condition a `branch` step evaluates against the
+ * observations gathered so far (read-step results only — no LLM at eval time).
+ * `when.path` is resolved against the payload of the most recent DONE read-step
+ * observation (or the most recent one whose `tool` matches `observationTool`,
+ * when given) using dotted-path lookup (e.g. "data.count"). `thenGoto`/
+ * `elseGoto` are step INDICES the orchestrator jumps the cursor to — both MUST
+ * be forward-only (> the branch step's own index); the orchestrator re-checks
+ * this at eval time and fails safe (fall-through) on any violation. Omitting
+ * `thenGoto`/`elseGoto` means "fall through" for that outcome — identical to
+ * today's no-condition skip behavior.
+ */
+export interface AgentBranchCondition {
+  when: {
+    /** Dotted path into the observation payload, e.g. "data.count". Empty/"" = the whole payload. */
+    path: string;
+    op: "eq" | "neq" | "gt" | "lt" | "exists" | "contains";
+    /** Comparison value (unused by "exists"). */
+    value?: unknown;
+    /** Restrict which read step's payload to inspect by tool name (default: most recent read observation). */
+    observationTool?: string;
+  };
+  /** Step index to jump to when the condition is true. Omitted = fall through. */
+  thenGoto?: number;
+  /** Step index to jump to when the condition is false. Omitted = fall through. */
+  elseGoto?: number;
+}
+
 /** A single planned step produced by the planner (validated against the registry). */
 export interface AgentPlanStep {
   /** read = run immediately; write = HITL propose+confirm; guidance/navigate/prefill = client directive; branch = conditional cursor jump. */
@@ -1614,6 +1768,8 @@ export interface AgentPlanStep {
   args?: Record<string, unknown>;
   /** Short human-readable reason this step exists. */
   rationale?: string;
+  /** `branch` steps only. Absent = today's unconditional skip/fall-through behavior. */
+  condition?: AgentBranchCondition;
 }
 
 export interface AgentPlan {
@@ -1624,6 +1780,15 @@ export interface AgentPlan {
 
 /** Outcome of a single executed/handled step (appended to stepResults in order). */
 export interface AgentStepResult {
+  /**
+   * `index >= 0` — the step's real position in `plan.steps` at the time it ran.
+   * `index < 0` — a SYNTHETIC audit-only entry (e.g. the observe→replan
+   * "REPLANNED" note, sentinel `-1 - cursor`), never a real plan step. Any
+   * consumer computing progress/step-count (server or client) MUST filter
+   * `index < 0` entries out first — otherwise a synthetic note can inflate
+   * `completed` past `plan.steps.length` (e.g. after a replan truncates the
+   * tail) and render >100% progress.
+   */
   index: number;
   kind: AgentPlanStep["kind"];
   tool?: string | null;
@@ -1647,6 +1812,15 @@ export const aiAgentSessions = pgTable("ai_agent_sessions", {
   stepResults: json("stepResults").$type<AgentStepResult[]>().default([]).notNull(),
   linkedActionIds: json("linkedActionIds").$type<string[]>().default([]).notNull(),
   writeCount: integer("writeCount").default(0).notNull(),
+  /**
+   * Wave 3 / D1 — observe→replan budget counter (migration 0302, NOT applied by
+   * this task; owner `aoi` runs it — see brief). Nullable/additive: reads treat
+   * a missing value (column not yet migrated, or a pre-migration row) as 0 via
+   * `?? 0`; `aiAgentOrchestrator` also falls back to an explicit legacy column
+   * list on 42703 (undefined_column) so session loading never breaks before the
+   * migration runs. Survives a process restart because it lives on the session row.
+   */
+  replanCount: integer("replanCount").default(0),
   playbookId: varchar("playbookId", { length: 120 }),
   lang: varchar("lang", { length: 5 }).default("vi").notNull(),
   expiresAt: timestamp("expiresAt").notNull(),
@@ -1685,6 +1859,17 @@ export const aiGatewayMetrics = pgTable("ai_gateway_metrics", {
   outcome: varchar("outcome", { length: 16 }).default("ok").notNull(),
   // Whether a fast (3B/4B) tier model was configured at decision time.
   fastModelConfigured: boolean("fastModelConfigured").default(false).notNull(),
+  /**
+   * ★ B7 (2026-09-22, migration 0358) — ba cột để phân biệt *"nghĩ 5k rồi trả 300"* với *"trả 5k"*
+   * trên model biết nghĩ (Qwen3.6). Cả ba **nullable**: `NULL` = lượt/đường không đo được (in-process,
+   * không-stream, hàng cũ) — **không biết ≠ 0**. `tokensOut` của server GỘP cả suy luận.
+   *   · `reasoningTokens`  — số token trong `<think>` (đếm sự kiện SSE `delta.reasoning_content`).
+   *   · `thinking`         — lượt có được PHÉP nghĩ không (`false` = đã gửi `enable_thinking=false`).
+   *   · `samplingProfile`  — tên hồ sơ sampling đã dùng (`hien-tai` | `chinh-hang`, xem `ai/hoSoSampling.ts`).
+   */
+  reasoningTokens: integer("reasoningTokens"),
+  thinking: boolean("thinking"),
+  samplingProfile: varchar("samplingProfile", { length: 24 }),
   // Who triggered it (best-effort; null for system/cron callers).
   userId: integer("userId"),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
@@ -1696,3 +1881,127 @@ export const aiGatewayMetrics = pgTable("ai_gateway_metrics", {
 
 export type AiGatewayMetric = typeof aiGatewayMetrics.$inferSelect;
 export type InsertAiGatewayMetric = typeof aiGatewayMetrics.$inferInsert;
+
+// ============= AI Gateway Quota (doc69 G2-4) =============
+// Per-user/role DAILY (rolling 24h) token budget, enforced by aiGateway.planInference when
+// AI_QUOTA_ENFORCE is on (default OFF). Usage itself is read from ai_gateway_metrics above —
+// this table only stores the budget. See drizzle/0298_ai_gateway_quota.sql for the exact DDL
+// (incl. the two partial-unique indexes this schema definition documents but does not encode
+// — drizzle-kit push is not the deploy path here; the hand-authored migration is authoritative).
+export const aiGatewayQuota = pgTable("ai_gateway_quota", {
+  id: serial("id").primaryKey(),
+  // Scope: userId set → per-user row (highest priority). userId null + role set → per-role
+  // default. Both null → deployment-wide default. See 0298's partial unique indexes for the
+  // "at most one ENABLED row per scope" constraint (not expressible in this generic index()).
+  userId: integer("userId"),
+  role: varchar("role", { length: 32 }),
+  dailyTokenBudget: integer("dailyTokenBudget").notNull(),
+  enabled: boolean("enabled").default(true).notNull(),
+  notes: text("notes"),
+  createdBy: integer("createdBy"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().notNull(),
+}, (table) => [
+  index("idx_ai_gateway_quota_user").on(table.userId),
+  index("idx_ai_gateway_quota_role").on(table.role),
+  index("idx_ai_gateway_quota_created").on(table.createdAt),
+]);
+
+export type AiGatewayQuota = typeof aiGatewayQuota.$inferSelect;
+export type InsertAiGatewayQuota = typeof aiGatewayQuota.$inferInsert;
+
+// ============= AI LLM Audit (doc69 G2-5a, Wave 1 W1-4a) =============
+// Privacy-safe audit trail for HIGH-RISK AI-influenced decisions (rca / report / vision — see
+// server/services/aiGateway.ts's HIGH_RISK_TASKS + server/services/ai/aiLlmAudit.ts). Stores
+// sha256 HASHES of the already-REDACTED prompt/response (never raw text) so an operator can
+// PROVE "this exact (redacted) prompt produced this exact (redacted) response" for a
+// quality-affecting decision, without ever persisting anything sensitive — no secret enters a
+// hash preimage because aiSafety's redaction runs BEFORE hashing. Gated by
+// AI_LLM_AUDIT_ENABLED (default ON — see the flag's doc comment in aiGateway.ts). Migration:
+// drizzle/0299_ai_llm_audit.sql (additive, CREATE TABLE IF NOT EXISTS, DDL by owner `aoi` —
+// UNAPPLIED until an operator runs it; the audit path no-ops fail-safe until then).
+interface AiLlmAuditSafetyFlags {
+  scope: "input" | "output";
+  risk: "none" | "low" | "high";
+  matched: string[];
+  redactedCount: number;
+  redactionTypes: string[];
+}
+
+export const aiLlmAudit = pgTable("ai_llm_audit", {
+  id: serial("id").primaryKey(),
+  // Who triggered it (best-effort; null for system/cron callers).
+  userId: integer("userId"),
+  // Logical task kind — only the HIGH-RISK subset of TaskKind is ever audited (rca/report/
+  // vision), never chat/intent/extract/embed/code/fim (volume — see aiGateway.ts).
+  task: varchar("task", { length: 32 }).notNull(),
+  // Cognitive-ladder tier (0–4) the request was routed to.
+  tier: integer("tier").notNull(),
+  // Resolved GGUF model basename (or "default" when the engine default was used).
+  model: varchar("model", { length: 160 }).notNull().default("default"),
+  // ok | error | blocked. (rate_limited/quota_exceeded/license_denied never reach a model —
+  // there is nothing to audit for those, they are pure gateway-policy rejections.)
+  outcome: varchar("outcome", { length: 16 }).notNull(),
+  // sha256(hex) of the already-REDACTED prompt text (GatewayPlan.safeText).
+  promptSha256: varchar("promptSha256", { length: 64 }).notNull(),
+  // sha256(hex) of the already-OUTPUT-REDACTED response text, or null (error/blocked calls —
+  // and calls whose caller did not supply a response text — may have none).
+  responseSha256: varchar("responseSha256", { length: 64 }),
+  promptChars: integer("promptChars").default(0).notNull(),
+  responseChars: integer("responseChars").default(0).notNull(),
+  latencyMs: integer("latencyMs").default(0).notNull(),
+  // Compact G2-2 safety summary (injection risk + redaction counts) — no raw text.
+  safetyFlagsJson: json("safetyFlagsJson").$type<AiLlmAuditSafetyFlags | null>(),
+  // doc44 W6-4 correlation id (server/services/observability/correlation.ts), when available.
+  correlationId: varchar("correlationId", { length: 128 }),
+  // Left NULL by default — a future opt-in could store a redacted excerpt; not populated now.
+  redactedSnippet: text("redactedSnippet"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+}, (table) => [
+  index("idx_ai_llm_audit_created").on(table.createdAt),
+  index("idx_ai_llm_audit_user").on(table.userId),
+  index("idx_ai_llm_audit_task").on(table.task),
+]);
+
+export type AiLlmAuditRow = typeof aiLlmAudit.$inferSelect;
+export type InsertAiLlmAudit = typeof aiLlmAudit.$inferInsert;
+
+// ============= KB Answer Feedback — doc69 B3 (Wave 5, AI#2) =============
+// Closes the KB answer feedback loop: every thumbs up/down on an assistant answer
+// (server/routers/aiLocalKbRouter.ts's `feedback` mutation) is now persisted here IN
+// ADDITION to the pre-existing append-only knowledge/feedback.jsonl log (Stage 13.D,
+// server/routes/aiLocalKnowledgeApi.ts) — the JSONL stays unchanged as a secondary
+// log; this table is the QUERYABLE source. server/services/aiKbFeedbackSignal.ts
+// aggregates it into a net rating (SUM of -1/0/1) per cited sourcePath and folds a
+// BOUNDED multiplier into aiLocalKnowledgeService.retrieveKnowledge()'s existing
+// score blend, flag-gated by KB_FEEDBACK_RERANK_ENABLED (default OFF — pure semantic
+// ranking is unchanged until an operator opts in).
+//
+// `citations` is a SNAPSHOT (jsonb array of {id?, sourcePath}) of what was shown for
+// that answer at feedback time — NOT a live FK to any chunk/embedding row, so a later
+// re-embed/removal of that source never breaks this table or an old vote's meaning.
+//
+// Additive migration: drizzle/0306_kb_answer_feedback.sql (CREATE TABLE IF NOT
+// EXISTS, owner `aoi`) — NOT applied by this task, ships unapplied until an operator
+// with the `aoi` role runs it. Every read/write path MUST treat a missing table (pg
+// error 42P01, walked via server/_core/dbErrors.ts's isMissingTable cause-walker —
+// NOT a naive `.code` check, which misses drizzle-orm's DrizzleQueryError wrapping)
+// as "no signal" / "not persisted" — see aiKbFeedbackSignal.ts.
+export const kbAnswerFeedback = pgTable("kb_answer_feedback", {
+  id: serial("id").primaryKey(),
+  query: text("query").notNull(),
+  // FE-generated per-turn message id (Stage 13.D's `messageId`) — a stable handle
+  // for "which answer", not a FK to any chat-messages table.
+  answerId: varchar("answerId", { length: 100 }).notNull(),
+  rating: integer("rating").notNull(), // -1 | 0 | 1
+  citations: jsonb("citations").$type<Array<{ id?: string; sourcePath: string }>>().default([]),
+  userId: integer("userId"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+}, (table) => [
+  index("idx_kb_answer_feedback_answer").on(table.answerId),
+  index("idx_kb_answer_feedback_created").on(table.createdAt),
+  index("idx_kb_answer_feedback_rating").on(table.rating),
+]);
+
+export type KbAnswerFeedback = typeof kbAnswerFeedback.$inferSelect;
+export type InsertKbAnswerFeedback = typeof kbAnswerFeedback.$inferInsert;

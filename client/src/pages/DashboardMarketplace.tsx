@@ -14,6 +14,7 @@ import { trpc } from '@/lib/trpc';
 import { templateToCustomDashboardWidgets } from '@/lib/dashboardTemplateApply';
 import { useLocation } from 'wouter';
 import { toast } from 'sonner';
+import { toastTrpcError, mapTrpcError } from '@/lib/trpcErrors';
 import {
   Search, Download, Star, Upload, Grid3X3, LayoutDashboard,
   TrendingUp, Users, Clock, CheckCircle, Filter, Heart, Share2,
@@ -116,7 +117,9 @@ export function DashboardMarketplaceContent() {
       setSelectedTemplate(null);
     },
     onError: (err) => {
-      toast.error(t('dashboard.templateDownloadError', { message: err.message }));
+      // Sprint 5 doc 71 F11 — khoá `dashboard.templateDownloadError` đã thêm placeholder
+      // {{message}} (task-8d ghi nợ, F11 dọn), tham số message giờ hiện đúng.
+      toast.error(t('dashboard.templateDownloadError', { message: mapTrpcError(err) }));
     },
   });
 
@@ -176,7 +179,7 @@ export function DashboardMarketplaceContent() {
       setPublishForm({ name: '', description: '', category: 'custom' });
     },
     onError: (err) => {
-      toast.error(err.message);
+      toastTrpcError(err);
     },
   });
 
@@ -242,7 +245,7 @@ export function DashboardMarketplaceContent() {
           <Card className="p-12 text-center">
             <LayoutDashboard className="h-12 w-12 mx-auto text-destructive mb-4" />
             <h3 className="text-lg font-medium mb-2">{t('dashboard.errorLoadingTemplates')}</h3>
-            <p className="text-muted-foreground">{error.message}</p>
+            <p className="text-muted-foreground">{mapTrpcError(error)}</p>
           </Card>
         )}
 

@@ -6,10 +6,12 @@
 import { Button } from "@/components/ui/button";
 import { Copy } from "lucide-react";
 import { toast } from "sonner";
+import i18n from "@/i18n";
 
 export const copyToClipboard = (text: string) => {
   navigator.clipboard.writeText(text).then(() => {
-    toast.success("Đã copy vào clipboard");
+    // Hàm THUẦN (không phải component) nên không dùng được hook — gọi thẳng i18n.t.
+    toast.success(i18n.t("apiDocs.daCopyVaoClipboard", "Đã copy vào clipboard"));
   });
 };
 

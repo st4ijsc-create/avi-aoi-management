@@ -4,9 +4,16 @@
  * ProductReleaseTab, ProductFoundationTab, PointDetailsForm, MsaStudyDialog) can share the
  * same shapes without importing from the page. Kept structurally identical to the page's
  * local copies (interchangeable via structural typing, mirroring factoryConfig/entityTypes.ts).
+ *
+ * Khối C Task 14 (BG-107) — 18 field giới hạn của `MeasurementPoint` TRƯỚC đây chép tay
+ * (khớp NGUYÊN VĂN `shared/pointLimitSpec.ts`, không cổng nào canh lệch — đúng lớp lỗi
+ * `server/contracts/pointLimitSpecCensus.test.ts` §3 bắt). Giờ suy TỪ `LIMIT_FIELDS`
+ * (xem `CacCotGioiHan` dưới) — 0 tên cột gõ tay lần hai. Kết quả kiểu GIỮ NGUYÊN hình
+ * dạng cũ (đối chiếu bằng tay từng field khi vá — 17 field chuỗi + `criteria` mảng).
  */
 import { type PointCriteriaItem } from "@/components/products/PointCriteriaEditor";
 import { type CanvasGeometry, type CanvasPointShape } from "@/components/measurement-point-canvas/MeasurementPointCanvas";
+import { LIMIT_FIELDS } from "@shared/pointLimitSpec";
 import type { inferRouterOutputs } from "@trpc/server";
 import type { AppRouter } from "../../../../server/routers";
 
@@ -14,15 +21,25 @@ import type { AppRouter } from "../../../../server/routers";
 // threaded query-result props exactly (ReturnType<typeof …useQuery>["data"] collapses to {}).
 export type RouterOutputs = inferRouterOutputs<AppRouter>;
 
-export interface MeasurementPoint {
+/**
+ * Kiểu GIÁ TRỊ của một cột giới hạn — 17/18 field là chuỗi (LSL/USL/3D/GD&T đều
+ * lưu dạng string ở form), riêng `criteria` là mảng tiêu chí (jsonb). Đây là
+ * NGOẠI LỆ DUY NHẤT phải khai tay (kiểu khác nhau không suy được từ tên field);
+ * KHÔNG phải một field bị gõ tay lại — tên field vẫn đến từ `LIMIT_FIELDS`.
+ */
+type GiaTriCotGioiHan<F extends string> = F extends "criteria" ? PointCriteriaItem[] : string;
+
+/** 18 field giới hạn, TÊN suy từ `LIMIT_FIELDS` (spec) — không liệt kê tay. */
+type CacCotGioiHan = {
+  [F in (typeof LIMIT_FIELDS)[number]]?: GiaTriCotGioiHan<F>;
+};
+
+export interface MeasurementPoint extends CacCotGioiHan {
   id?: number;
   code: string;
   name: string;
   description?: string;
   measurementType: "DIMENSION" | "VISUAL" | "ELECTRICAL" | "POSITION" | "COLOR" | "SURFACE" | "OTHER";
-  unit?: string;
-  lowerLimit?: string;
-  upperLimit?: string;
   nominalValue?: string;
   positionX: number;
   positionY: number;
@@ -44,31 +61,18 @@ export interface MeasurementPoint {
   materialCondition?: "MMC" | "LMC" | "RFS";
   fitClass?: string;
   positionZ?: string;
-  heightMin?: string;
-  heightMax?: string;
+  // heightMin/heightMax/areaMin/areaMax/volumeMin/volumeMax/coplanarityMax/warpageMax/
+  // voidPctMax/offsetXMax/offsetYMax/tiltMax/thicknessMin/thicknessMax/unit/lowerLimit/
+  // upperLimit/criteria — 18 field spec-gate, nay đến từ CacCotGioiHan ở trên.
   heightNominal?: string;
   heightUnit?: string;
-  areaMin?: string;
-  areaMax?: string;
   areaNominal?: string;
   areaUnit?: string;
-  volumeMin?: string;
-  volumeMax?: string;
   volumeNominal?: string;
   volumeUnit?: string;
-  coplanarityMax?: string;
-  warpageMax?: string;
-  voidPctMax?: string;
-  offsetXMax?: string;
-  offsetYMax?: string;
-  tiltMax?: string;
-  thicknessMin?: string;
-  thicknessMax?: string;
   // Doc 31 MP1/PM6 — component linkage (Pareto-by-package chain).
   componentCode?: string;
   refDesignator?: string;
-  // Doc 31 MP6 — structured pass/fail criteria (jsonb, evaluated at ingest).
-  criteria?: PointCriteriaItem[];
 }
 
 export type ToleranceMode = "min_only" | "max_only" | "range" | "bilateral";

@@ -32,6 +32,8 @@ const BASE = {
   uphLastHour: 42,
   openAlerts: 3,
   dayStart: new Date("2026-07-04T17:00:00Z"),
+  // Nửa đêm KẾ TIẾP theo giờ nhà máy (2026-07-06 00:00 +07) — biên TRÊN của "hôm nay".
+  dayEnd: new Date("2026-07-05T17:00:00Z"),
   timezone: "Asia/Ho_Chi_Minh",
   now: new Date("2026-07-05T02:00:00Z"),
 };

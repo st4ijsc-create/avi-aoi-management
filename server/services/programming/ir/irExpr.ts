@@ -27,6 +27,7 @@
  * ════════════════════════════════════════════════════════════════════════════
  */
 import { z } from "zod";
+import { emitIdent } from "./irSafeTokens";
 
 // ── Operators (whitelist) ─────────────────────────────────────────────────────
 /** Binary operators an expression supports. Arithmetic + comparison + boolean. */
@@ -161,7 +162,9 @@ export function renderExpr(e: Expr, fmtNum: (n: number) => string): string {
     case "lit":
       return typeof e.value === "boolean" ? (e.value ? "True" : "False") : fmtNum(e.value);
     case "var":
-      return sanitizeVar(e.name);
+      // Doc 80 IR-01: a var leaf is emitted as code ⇒ it must be a whitelisted identifier
+      // (throws IrUnsafeTokenError otherwise — defence layer 2 behind the linter).
+      return emitIdent(e.name, "expression variable");
     case "binop":
       return `(${renderExpr(e.left, fmtNum)} ${OP_INFIX[e.op]} ${renderExpr(e.right, fmtNum)})`;
   }

@@ -1,6 +1,7 @@
 import { useState, useRef } from "react";
 import { useTranslation } from 'react-i18next';
 import { trpc } from "@/lib/trpc";
+import { mapTrpcError } from "@/lib/trpcErrors";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -82,7 +83,7 @@ export default function ScheduledReports() {
       resetForm();
     },
     onError: (error) => {
-      toast.error(t('common.errorMessage', { message: error.message }));
+      toast.error(t('common.errorMessage', { message: mapTrpcError(error) }));
     },
   });
 
@@ -95,7 +96,7 @@ export default function ScheduledReports() {
       resetForm();
     },
     onError: (error) => {
-      toast.error(t('common.errorMessage', { message: error.message }));
+      toast.error(t('common.errorMessage', { message: mapTrpcError(error) }));
     },
   });
 
@@ -107,7 +108,7 @@ export default function ScheduledReports() {
       setReportToDelete(null);
     },
     onError: (error) => {
-      toast.error(t('common.errorMessage', { message: error.message }));
+      toast.error(t('common.errorMessage', { message: mapTrpcError(error) }));
     },
   });
 
@@ -117,7 +118,7 @@ export default function ScheduledReports() {
       utils.scheduledReport.list.invalidate();
     },
     onError: (error: any) => {
-      toast.error(t('common.errorMessage', { message: error.message }));
+      toast.error(t('common.errorMessage', { message: mapTrpcError(error) }));
     },
   });
 
@@ -127,7 +128,7 @@ export default function ScheduledReports() {
       utils.scheduledReport.list.invalidate();
     },
     onError: (error: any) => {
-      toast.error(t('reports.errorSendEmail', { message: error.message }));
+      toast.error(t('reports.errorSendEmail', { message: mapTrpcError(error) }));
     },
   });
 
@@ -138,7 +139,7 @@ export default function ScheduledReports() {
       setIsUploadingLogo(false);
     },
     onError: (error: any) => {
-      toast.error(t('reports.errorUpload', { message: error.message }));
+      toast.error(t('reports.errorUpload', { message: mapTrpcError(error) }));
       setIsUploadingLogo(false);
     },
   });
@@ -730,7 +731,7 @@ export default function ScheduledReports() {
                     id="footerText"
                     value={form.footerText}
                     onChange={(e) => setForm({ ...form, footerText: e.target.value })}
-                    placeholder="Ví dụ: © 2025 Công ty TNHH ABC. Mọi quyền được bảo lưu."
+                    placeholder={t("schedReports.viDu2025CongTy", "Ví dụ: © 2025 Công ty TNHH ABC. Mọi quyền được bảo lưu.")}
                     rows={3}
                   />
                   <p className="text-xs text-muted-foreground">
@@ -849,7 +850,7 @@ function EmailPreviewDialog({
             <div className="flex flex-col items-center justify-center h-96 text-center">
               <Mail className="h-12 w-12 text-destructive mb-4" />
               <h3 className="text-lg font-semibold text-destructive mb-2">{t('reports.errorLoadPreview')}</h3>
-              <p className="text-sm text-muted-foreground">{error.message}</p>
+              <p className="text-sm text-muted-foreground">{mapTrpcError(error)}</p>
             </div>
           ) : data ? (
             <div className="h-[60vh] overflow-auto border rounded-lg bg-white">

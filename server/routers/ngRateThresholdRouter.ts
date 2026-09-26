@@ -19,6 +19,7 @@
 
 import { z } from "zod";
 import { TRPCError } from "@trpc/server";
+import { appError } from "../_core/appError";
 import { protectedProcedure, adminProcedure, qualityProcedure, router } from "../_core/trpc";
 import { getDb } from "../db";
 import {
@@ -49,7 +50,7 @@ export const ngRateThresholdRouter = router({
     )
     .query(async ({ input }) => {
       const db = await getDb();
-      if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "DB not available" });
+      if (!db) throw appError("INTERNAL_SERVER_ERROR", "DB_UNAVAILABLE", undefined, "DB not available");
 
       const conditions = [];
       if (input?.stationId) conditions.push(eq(mqttNgRateThresholds.stationId, input.stationId));
@@ -92,7 +93,7 @@ export const ngRateThresholdRouter = router({
     .input(z.object({ id: z.number() }))
     .query(async ({ input }) => {
       const db = await getDb();
-      if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "DB not available" });
+      if (!db) throw appError("INTERNAL_SERVER_ERROR", "DB_UNAVAILABLE", undefined, "DB not available");
 
       const result = await db
         .select({
@@ -112,7 +113,7 @@ export const ngRateThresholdRouter = router({
         .limit(1);
 
       if (result.length === 0) {
-        throw new TRPCError({ code: "NOT_FOUND", message: "Threshold not found" });
+        throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "ngRateThreshold" }, "Threshold not found");
       }
 
       return {
@@ -149,14 +150,11 @@ export const ngRateThresholdRouter = router({
     )
     .mutation(async ({ input, ctx }) => {
       const db = await getDb();
-      if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "DB not available" });
+      if (!db) throw appError("INTERNAL_SERVER_ERROR", "DB_UNAVAILABLE", undefined, "DB not available");
 
       // Validate: criticalThreshold phải >= warningThreshold
       if (input.criticalThreshold < input.warningThreshold) {
-        throw new TRPCError({
-          code: "BAD_REQUEST",
-          message: "Ngưỡng nghiêm trọng phải lớn hơn hoặc bằng ngưỡng cảnh báo",
-        });
+        throw appError("BAD_REQUEST", "INVALID_VALUE", { field: "criticalThreshold" }, "Ngưỡng nghiêm trọng phải lớn hơn hoặc bằng ngưỡng cảnh báo");
       }
 
       const [result] = await db
@@ -207,7 +205,7 @@ export const ngRateThresholdRouter = router({
     )
     .mutation(async ({ input }) => {
       const db = await getDb();
-      if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "DB not available" });
+      if (!db) throw appError("INTERNAL_SERVER_ERROR", "DB_UNAVAILABLE", undefined, "DB not available");
 
       const { id, ...updateData } = input;
       const setData: any = { updatedAt: new Date() };
@@ -233,15 +231,12 @@ export const ngRateThresholdRouter = router({
           .from(mqttNgRateThresholds)
           .where(eq(mqttNgRateThresholds.id, id))
           .limit(1);
-        if (existing.length === 0) throw new TRPCError({ code: "NOT_FOUND" });
-        
+        if (existing.length === 0) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "ngRateThreshold" }, `NG rate threshold ${id} not found`);
+
         const warning = updateData.warningThreshold ?? Number(existing[0].warningThreshold);
         const critical = updateData.criticalThreshold ?? Number(existing[0].criticalThreshold);
         if (critical < warning) {
-          throw new TRPCError({
-            code: "BAD_REQUEST",
-            message: "Ngưỡng nghiêm trọng phải lớn hơn hoặc bằng ngưỡng cảnh báo",
-          });
+          throw appError("BAD_REQUEST", "INVALID_VALUE", { field: "criticalThreshold" }, "Ngưỡng nghiêm trọng phải lớn hơn hoặc bằng ngưỡng cảnh báo");
         }
       }
 
@@ -260,7 +255,7 @@ export const ngRateThresholdRouter = router({
     .input(z.object({ id: z.number() }))
     .mutation(async ({ input }) => {
       const db = await getDb();
-      if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "DB not available" });
+      if (!db) throw appError("INTERNAL_SERVER_ERROR", "DB_UNAVAILABLE", undefined, "DB not available");
 
       await db.delete(mqttNgRateThresholds).where(eq(mqttNgRateThresholds.id, input.id));
       return { success: true };
@@ -273,7 +268,7 @@ export const ngRateThresholdRouter = router({
     .input(z.object({ id: z.number(), isEnabled: z.boolean() }))
     .mutation(async ({ input }) => {
       const db = await getDb();
-      if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "DB not available" });
+      if (!db) throw appError("INTERNAL_SERVER_ERROR", "DB_UNAVAILABLE", undefined, "DB not available");
 
       await db
         .update(mqttNgRateThresholds)
@@ -299,7 +294,7 @@ export const ngRateThresholdRouter = router({
     )
     .query(async ({ input }) => {
       const db = await getDb();
-      if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "DB not available" });
+      if (!db) throw appError("INTERNAL_SERVER_ERROR", "DB_UNAVAILABLE", undefined, "DB not available");
 
       const conditions = [];
       if (input?.stationId) conditions.push(eq(mqttNgRateAlertHistory.stationId, input.stationId));
@@ -341,7 +336,7 @@ export const ngRateThresholdRouter = router({
     )
     .mutation(async ({ input, ctx }) => {
       const db = await getDb();
-      if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "DB not available" });
+      if (!db) throw appError("INTERNAL_SERVER_ERROR", "DB_UNAVAILABLE", undefined, "DB not available");
 
       await db
         .update(mqttNgRateAlertHistory)
@@ -401,7 +396,7 @@ export const ngRateThresholdRouter = router({
     )
     .mutation(async ({ input }) => {
       const db = await getDb();
-      if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "DB not available" });
+      if (!db) throw appError("INTERNAL_SERVER_ERROR", "DB_UNAVAILABLE", undefined, "DB not available");
 
       // Get station info with hierarchy
       const stationInfo = await db.select({
@@ -418,7 +413,7 @@ export const ngRateThresholdRouter = router({
       .limit(1);
 
       if (stationInfo.length === 0) {
-        throw new TRPCError({ code: "NOT_FOUND", message: `Station ${input.stationId} không tồn tại` });
+        throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "station" }, `Station ${input.stationId} không tồn tại`);
       }
 
       const { station, line, workshop, factory } = stationInfo[0];

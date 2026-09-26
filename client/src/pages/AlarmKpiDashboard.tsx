@@ -9,6 +9,9 @@
  * Cảnh báo trực quan khi vượt ngưỡng. ISA-101: nền trung tính, màu chỉ cho bất thường.
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+// doc 64 IA-10 S3 — truc pham vi ISA-95.
+import { useScope } from "@/components/patterns/ScopeFilterBar";
+import { useScopeWired } from "@/contexts/AssetScopeContext";
 import { useTranslation } from "react-i18next";
 import { useLocation } from "wouter";
 import { AlarmClock, Activity, Bell, Gauge, Layers, ShieldAlert, TriangleAlert, Wifi, WifiOff } from "lucide-react";
@@ -32,6 +35,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { cn } from "@/lib/utils";
+import { pickOccurrenceLogNotice } from "./alarmKpiEmptyState";
 
 const CURRENT_PATH = "/alarm-kpi";
 const WINDOW_OPTIONS = [4, 8, 12, 24, 72] as const;
@@ -50,7 +54,13 @@ export default function AlarmKpiDashboard() {
   // doc 46 FE-W2 — socket drives freshness now, so the poll is lengthened to 60s and
   // kept only as a fallback backstop (was 30s).
   const polling = usePollingInterval(60_000);
-  const q = trpc.alarmKpi.summary.useQuery({ windowHours }, { staleTime: 20_000, ...polling });
+  // doc 64 IA-10 S3-D — KPI alarm theo trục Chuyền/Máy (server đã nhận lineId+machineId).
+  const { scope: assetScope } = useScope(["line", "machine"]);
+  useScopeWired();
+  const q = trpc.alarmKpi.summary.useQuery(
+    { windowHours, lineId: assetScope.lineId, machineId: assetScope.machineId },
+    { staleTime: 20_000, ...polling },
+  );
   const data = q.data;
 
   // doc 46 FE-W2 — socket-first freshness. This KPI aggregates andon_events +
@@ -242,6 +252,27 @@ export default function AlarmKpiDashboard() {
                     pred: data.sourceCounts.predictive,
                   })}
                 </p>
+                {(() => {
+                  // Sprint 5 §3 — số 0 phải tự giải thích, nếu không người dùng
+                  // kết luận "AI hỏng rồi" (đúng thứ Wave 3 §6 đã cảnh báo).
+                  const notice = pickOccurrenceLogNotice({
+                    predictiveCount: data.sourceCounts.predictive,
+                    occurrenceLog: data.occurrenceLog,
+                    generatedAt: data.generatedAt,
+                    windowHours,
+                  });
+                  if (!notice) return null;
+                  const text =
+                    notice.kind === "table-missing"
+                      ? t("alarmKpi.emptyLog.tableMissing", "Nhật ký lần-tái-diễn chưa sẵn sàng (migration chưa chạy) — phần cảnh báo AI không được tính vào KPI.")
+                      : notice.kind === "log-empty"
+                        ? t("alarmKpi.emptyLog.empty", "Chưa ghi lần-tái-diễn nào kể từ khi bật tính năng. Số 0 nghĩa là chưa có dữ liệu, không phải nhà máy im lặng.")
+                        : t("alarmKpi.emptyLog.younger", "Nhật ký bắt đầu ghi từ {{date}} — cửa sổ {{h}} giờ này bắt đầu trước mốc đó, phần trước không tồn tại.", {
+                            date: new Date(notice.firstOccurredAt).toLocaleString(),
+                            h: windowHours,
+                          });
+                  return <p className="mt-1 text-xs text-amber-600 dark:text-amber-400">{text}</p>;
+                })()}
               </SectionCard>
 
               {/* ── Standing alarms (tồn đọng lâu nhất) ─────────────────────────── */}

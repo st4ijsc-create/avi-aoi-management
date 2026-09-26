@@ -4,6 +4,7 @@ import { createHash } from "crypto";
 import * as db from "../db";
 import { storagePut } from "../storage";
 import { protectedProcedure } from "../_core/trpc";
+import { appError } from "../_core/appError";
 
 export { protectedProcedure };
 
@@ -136,7 +137,11 @@ export async function uploadPointReferenceImage(
     const upload = await storagePut(fileKey, buffer, actualMime);
     return upload;
   } catch (error) {
-    throw new TRPCError({ code: "BAD_REQUEST", message: `Invalid image payload for point ${pointCode}` });
+    // I-C (review cuối): trong khối try này, Buffer.from không ném; inferImageExtension/
+    // nanoid là hàm sync thuần; nguồn ném DUY NHẤT còn lại là `await storagePut(...)`
+    // (đĩa đầy, S3/Forge chết, v.v). INVALID_VALUE{field:"image"} bảo người vận hành đi
+    // soi tấm ảnh — sai hướng khi lỗi thật là ở tầng lưu trữ. Đổi sang OPERATION_FAILED.
+    throw appError("BAD_REQUEST", "OPERATION_FAILED", { operation: "uploadReferenceImage" }, `Invalid image payload for point ${pointCode}`);
   }
 }
 
@@ -189,14 +194,17 @@ export async function uploadProductReferenceImage(
 
     return { ...upload, imageWidth, imageHeight };
   } catch (error) {
-    throw new TRPCError({ code: "BAD_REQUEST", message: `Invalid image payload for product model ${productModelId}` });
+    // I-C (review cuối) — cùng lý do như uploadPointReferenceImage ở trên: nguồn ném duy
+    // nhất còn lại trong khối try này là `await storagePut(...)`; sharp đã tự bọc try
+    // riêng ở trên (nuốt lỗi metadata, không ném ra ngoài). Đổi sang OPERATION_FAILED.
+    throw appError("BAD_REQUEST", "OPERATION_FAILED", { operation: "uploadReferenceImage" }, `Invalid image payload for product model ${productModelId}`);
   }
 }
 
 // Admin procedure - only admin users can access
 export const adminProcedure = protectedProcedure.use(({ ctx, next }) => {
   if (ctx.user.role !== 'admin') {
-    throw new TRPCError({ code: 'FORBIDDEN', message: 'Admin access required' });
+    throw appError('FORBIDDEN', 'PERMISSION_DENIED', { action: 'adminAccess' }, 'Admin access required');
   }
   return next({ ctx });
 });

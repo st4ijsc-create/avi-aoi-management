@@ -1,4 +1,5 @@
 import { createHash } from "crypto";
+import { appError } from "../_core/appError";
 import * as db from "../db/aiAdvanced";
 import { runInference } from "./aiInferenceEngine";
 import { getAiModelById } from "../db/ai";
@@ -64,8 +65,8 @@ export async function createExperiment(options: CreateExperimentOptions) {
     getAiModelById(options.modelAId),
     getAiModelById(options.modelBId),
   ]);
-  if (!modelA) throw new Error(`Model A (${options.modelAId}) not found`);
-  if (!modelB) throw new Error(`Model B (${options.modelBId}) not found`);
+  if (!modelA) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "aiModel" }, `Model A (${options.modelAId}) not found`);
+  if (!modelB) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "aiModel" }, `Model B (${options.modelBId}) not found`);
 
   return db.createABTestExperiment({
     name: options.name,
@@ -85,7 +86,7 @@ export async function createExperiment(options: CreateExperimentOptions) {
  */
 export async function startExperiment(experimentId: number) {
   const exp = await db.getABTestExperiment(experimentId);
-  if (!exp) throw new Error(`Experiment ${experimentId} not found`);
+  if (!exp) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "abTestExperiment" }, `Experiment ${experimentId} not found`);
   if (exp.status !== "DRAFT" && exp.status !== "PAUSED") {
     throw new Error(`Cannot start experiment in status ${exp.status}`);
   }
@@ -112,7 +113,7 @@ export async function runABInference(
   processingTimeMs: number;
 }> {
   const exp = await db.getABTestExperiment(experimentId);
-  if (!exp) throw new Error(`Experiment ${experimentId} not found`);
+  if (!exp) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "abTestExperiment" }, `Experiment ${experimentId} not found`);
   if (exp.status !== "RUNNING") {
     throw new Error(`Experiment is not running (status: ${exp.status})`);
   }
@@ -195,7 +196,7 @@ export async function submitABFeedback(
  */
 export async function getExperimentStats(experimentId: number) {
   const exp = await db.getABTestExperiment(experimentId);
-  if (!exp) throw new Error(`Experiment ${experimentId} not found`);
+  if (!exp) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "abTestExperiment" }, `Experiment ${experimentId} not found`);
 
   const stats = await db.getABTestStats(experimentId);
 
@@ -297,7 +298,7 @@ export async function concludeExperiment(experimentId: number) {
  */
 export async function pauseExperiment(experimentId: number) {
   const exp = await db.getABTestExperiment(experimentId);
-  if (!exp) throw new Error(`Experiment ${experimentId} not found`);
+  if (!exp) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "abTestExperiment" }, `Experiment ${experimentId} not found`);
   if (exp.status !== "RUNNING") return exp;
   return db.updateABTestExperiment(experimentId, { status: "PAUSED" });
 }
@@ -375,7 +376,7 @@ export async function evaluateCanaryGuardrail(
  */
 export async function promoteWinner(experimentId: number, configId?: number) {
   const exp = await db.getABTestExperiment(experimentId);
-  if (!exp) throw new Error(`Experiment ${experimentId} not found`);
+  if (!exp) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "abTestExperiment" }, `Experiment ${experimentId} not found`);
 
   if (configId != null) {
     // Lazy import to avoid a module cycle (aiQualityGate ↔ aiABTesting).

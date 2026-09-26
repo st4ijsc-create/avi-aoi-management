@@ -13,6 +13,7 @@
  */
 import { z } from "zod";
 import { TRPCError } from "@trpc/server";
+import { appError } from "../_core/appError";
 import { router, protectedProcedure, adminProcedure } from "../_core/trpc";
 import { buildSeedSpecs } from "../services/contracts/apiSpec";
 import {
@@ -75,7 +76,7 @@ export const contractsRouter = router({
     .query(async ({ input }) => {
       const { getDb } = await import("../db/connection");
       const db = await getDb();
-      if (!db) throw new TRPCError({ code: "PRECONDITION_FAILED", message: "Database not available" });
+      if (!db) throw appError("PRECONDITION_FAILED", "DB_UNAVAILABLE", undefined, "Database not available");
       const { contractSchemas } = await import("../../drizzle/schema/contracts");
       const { eq, and, desc } = await import("drizzle-orm");
       const where = input.version
@@ -87,7 +88,7 @@ export const contractsRouter = router({
         .where(where)
         .orderBy(desc(contractSchemas.version))
         .limit(1);
-      if (rows.length === 0) throw new TRPCError({ code: "NOT_FOUND", message: `No schema for subject "${input.subject}"` });
+      if (rows.length === 0) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "contractSchema" }, `No schema for subject "${input.subject}"`);
       return rows[0];
     }),
 
@@ -118,7 +119,7 @@ export const contractsRouter = router({
         return { subject: entry.name, version: entry.version, persisted };
       } catch (err) {
         if (err instanceof SchemaCompatError) {
-          throw new TRPCError({ code: "BAD_REQUEST", message: err.message });
+          throw appError("BAD_REQUEST", "OPERATION_FAILED", { operation: "registerContractSchemaVersion" }, err.message);
         }
         throw err;
       }
@@ -194,7 +195,7 @@ export const contractsRouter = router({
     .mutation(async ({ input, ctx }) => {
       const { getDb } = await import("../db/connection");
       const db = await getDb();
-      if (!db) throw new TRPCError({ code: "PRECONDITION_FAILED", message: "Database not available" });
+      if (!db) throw appError("PRECONDITION_FAILED", "DB_UNAVAILABLE", undefined, "Database not available");
       const { contractQuarantine } = await import("../../drizzle/schema/contracts");
       const { eq } = await import("drizzle-orm");
       const updated = await db
@@ -202,7 +203,7 @@ export const contractsRouter = router({
         .set({ status: input.action, reviewedBy: ctx.user.id, reviewedAt: new Date() })
         .where(eq(contractQuarantine.id, input.id))
         .returning({ id: contractQuarantine.id, status: contractQuarantine.status });
-      if (updated.length === 0) throw new TRPCError({ code: "NOT_FOUND", message: `Quarantine item ${input.id} not found` });
+      if (updated.length === 0) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "quarantineItem" }, `Quarantine item ${input.id} not found`);
       return updated[0];
     }),
 
@@ -220,7 +221,7 @@ export const contractsRouter = router({
     .mutation(async ({ input, ctx }) => {
       const { getDb } = await import("../db/connection");
       const db = await getDb();
-      if (!db) throw new TRPCError({ code: "PRECONDITION_FAILED", message: "Database not available" });
+      if (!db) throw appError("PRECONDITION_FAILED", "DB_UNAVAILABLE", undefined, "Database not available");
       const { contractQuarantine } = await import("../../drizzle/schema/contracts");
       const { eq } = await import("drizzle-orm");
       const updated = await db
@@ -233,7 +234,7 @@ export const contractsRouter = router({
           source: contractQuarantine.source,
           payload: contractQuarantine.payload,
         });
-      if (updated.length === 0) throw new TRPCError({ code: "NOT_FOUND", message: `Quarantine item ${input.id} not found` });
+      if (updated.length === 0) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "quarantineItem" }, `Quarantine item ${input.id} not found`);
       return { ...updated[0], reinjected: false as const };
     }),
 });

@@ -1,6 +1,11 @@
 import { publicProcedure, protectedProcedure, router } from "../_core/trpc";
 import { z } from "zod";
 import { TRPCError } from "@trpc/server";
+import { appError } from "../_core/appError";
+// F2 — `DbUnavailableError` tự mang `appCode: "DB_UNAVAILABLE"` (đã đủ ba bản dịch), nên
+// client dịch được mà `errorFormatter` không phải đổi dòng nào. ⚠ `name` của lớp này phải
+// giữ nguyên: đường ingest WAL (`_core/index.ts`) khoá theo nó để đệm khi CSDL sập.
+import { DbUnavailableError } from "../_core/dbErrors";
 import { nanoid } from "nanoid";
 import { and as drizzleAnd, eq as drizzleEq, ne as drizzleNe, gte as drizzleGte, asc as drizzleAsc, sql } from "drizzle-orm";
 import * as db from "../db";
@@ -14,8 +19,50 @@ import {
   // Doc 56 Đ1 (nhóm B) — generic process-result ingest (stepType vocab + idempotency ledger).
   processStepTypes,
   processIdempotencyKeys,
+  // Doc 2026-08-29 (WAL cho cây v2.0, Task 2) — bảng LEDGER khử trùng (migration 0275), dùng
+  // bởi `inspectionAlreadyPersistedV2` để tra "khoá đã áp dụng" khi khoá gửi v2.0
+  // (`dungKhoaKhuTrungV2`) không phụ thuộc `serialNumber` nên KHÔNG tra được qua
+  // `product_inspections` bằng công thức của `inspectionAlreadyPersisted` (v1.x).
+  inspectionIdempotencyKeys,
 } from "../../drizzle/schema";
 import { requirePermission } from "../_core/accessControl";
+// ★★★ Khối B Task 2 (B-2/B-3) — CỬA INGEST CẤU HÌNH: hợp đồng CÂY DẠY (Task 1,
+// commit `7088b433`), phép kiểm THUẦN ở cửa, và đường ghi bốn bảng.
+import { machineTemplateContract } from "../contracts/machineTemplateContract";
+import { kiemTraCayDay } from "../services/kiemTraCayDay";
+import { ghiCayDay, demDiemDoTheoNeo, traHangAnhTemplate, ghiUrlAnhTemplate } from "../db/cayDay";
+// Khối B Task 3 — hàm THUẦN (không chạm DB) tách trị đo về hai cột. Nhập TRỰC TIẾP
+// từ module, KHÔNG qua barrel `../db`: ~9 lưới `vi.mock("../db")` liệt kê export
+// tường minh, và một hàm thuần đi qua barrel sẽ bắt tất cả chúng phải khai thêm một
+// mock KHÔNG có tác dụng gì. Ngược lại `db.traBanDayChoCay` CỐ Ý ở lại barrel: nó
+// ĐỌC CSDL, nên lưới phải mock được nó.
+import { tachTriDo } from "../db/inspection";
+// Khối B Task 4 (BG-92) — cổng spec cho đường CÂY v2. Hàm THUẦN ⇒ nhập TRỰC TIẾP
+// module (cùng nguyên tắc dòng trên): `db.traBanDayChoCay` mới là hàm ĐỌC CSDL và
+// nó vẫn đi qua barrel `../db` để lưới mock được.
+import { congSpecTuBanDay } from "../services/specGateCayV2";
+// Khối C Task 6 — MỘT hàm merge patch variant (Doc 55 Item 3), thay khối inline
+// shallow-merge THÔ từng ở đây (không lọc khoá bảo vệ, trôi khỏi bản trong
+// `mergeEffectivePoints`). Hàm THUẦN ⇒ nhập TRỰC TIẾP module, cùng nguyên tắc các
+// dòng import trên (không qua barrel `../db`).
+import { apDungVariantPatch } from "../db/product";
+// ★★★ NEW-3 (review lượt 9, vòng 2) — CÙNG lý do dòng import trên: `db.RE_TIEN_TO_VERSION_BIEN_THE`
+// (qua barrel `import * as db from "../db"`) TRỐNG trong bất kỳ test nào mock
+// nguyên module `"../db"` mà không liệt kê lại export này (đo được:
+// `machineApiVersionGate.test.ts` mock `../db` KHÔNG có `RE_TIEN_TO_VERSION_BIEN_THE`
+// ⇒ `db.RE_TIEN_TO_VERSION_BIEN_THE` là `undefined` ⇒ `.test(...)` NÉM lỗi, bị nuốt
+// bởi `try/catch` của `loadPointLimitSnapshots`, ÂM THẦM làm rỗng TOÀN BỘ lịch sử
+// snapshot của điểm đó — hỏng CẢ đường version-exact 0282, không chỉ nhánh NEW-3).
+// Hằng số này THUẦN (không cần mock) ⇒ nhập TRỰC TIẾP, không qua barrel.
+import { RE_TIEN_TO_VERSION_BIEN_THE } from "../db/product";
+// ★★★ Khối C Task 13 (BG-98, spec QĐ-8) — cổng "máy tự mâu thuẫn", HAI nguồn KHÁC
+// cổng bản-dạy ở trên (chỉ so máy với CHÍNH máy, không đọc bản dạy). Xem docblock
+// đầu `../services/mayTuMauThuan.ts`.
+import { taoDemMayTuMauThuan } from "../services/mayTuMauThuan";
+// BG-99 (Task 5) — chuỗi thời gian TRẦN máy khai đọc bằng ĐÚNG MỘT luật (trần = UTC)
+// ở mọi điểm ingest. `mocDoTuChuoi` (BG-97, chỗ ở CŨ của luật này) đã XOÁ — hết caller
+// sản xuất sau khi Task 5 đổi neo spec-gate sang mốc-nhận-server (xem `submitInspectionTreeV2`).
+import { docGioMay } from "../utils/factoryTime";
 // Doc 27 W2-C (C7/M4): per-machine credential auth + ingest rate limit.
 import {
   authenticateMachine,
@@ -37,6 +84,11 @@ import {
   isPermanentSubmitError,
   setProcessFn as walSetProcessFn,
   setDedupFn as walSetDedupFn,
+  // Doc 2026-08-29 (WAL cho cây v2.0, Task 2, §QĐ-WAL-B) — khoá gửi điều phối THEO HÌNH
+  // DẠNG (dùng để ledger khi LIVE thành công, đối xứng với `computeSubmissionKey` mà
+  // nhánh v1.x dùng ở dưới — xem `submitInspection.mutation`, nhánh kind==="v2").
+  dungKhoaGuiTheoHinhDang,
+  type BufferedSubmission,
 } from "../services/inspection/inspectionStoreForward";
 // Doc 56 Đ1 (nhóm B) — PROCESS RESULT ingest durability (disk WAL, parallel to
 // the inspection store-forward above). Flag-gated OFF → every entry point no-op.
@@ -111,6 +163,32 @@ import {
   resolveOrCreateMeasurementPointDefId,
   assertValidPointDefId,
 } from "../services/measurementPointResolver";
+// ★★★ 2026-08-18 — mã tenant của một hàng ĐƯỢC GHI phải suy từ MÁY ĐÃ XÁC THỰC, không lấy từ
+// JSON. `macTenantChoGhi` phân giải + đối chiếu lời khai + ném khi lệch/không suy được.
+import { macTenantChoGhi } from "./phamViGhiMay";
+// Pha 1B Task 6 (BG-1, §13 Đ-19) — nối payload máy v2.0 (cây 4 cấp) vào ingest THẬT +
+// hàm từ chối v1.x đã viết sẵn nhưng chưa có nơi gọi (§13 Đ-11).
+import { machineDataContractV2 } from "../contracts/machineDataContractV2";
+// Pha 1B Task 7 phần 2 (quyết định chủ dự án 2026-08-28) — `laHinhDangCayV2` CHUYỂN sang
+// contracts/machineDataContract.ts để `machineContractRouter.validate()` dùng CHUNG một bản,
+// không đẻ bản thứ hai trôi khỏi bản gốc (xem chú thích tại định nghĩa).
+import { loiMayChuaNangCap, laHinhDangCayV2, dungKhoaKhuTrungV2 } from "../contracts/machineDataContract";
+import { dichCayKetQua, type MachinePayloadV2 } from "../services/ingestCayKetQua";
+// Việc 1 (BG-89) — tín hiệu ĐẾM ĐƯỢC hai hình dạng ingest, ghi qua `audit_logs` CÓ SẴN (tái
+// dùng người-ghi-sổ dùng chung, KHÔNG thêm bảng/migration). Xem `ghiTinHieuHinhDangIngest`.
+import { logCrudOperation, AUDIT_ACTIONS, ENTITY_TYPES } from "../services/auditTrailService";
+// Pha 1D Task 6 (món nợ cuối trước Khối B) — đường v1.x dùng LẠI đúng bộ hàm cuộn dùng
+// chung với đường v2.0 (ingestCayKetQua.ts) và đường ZIP (aoiPackageRouter.ts). KHÔNG
+// viết bản chép tay thứ tư — xem docblock tại nơi dùng (khoảng dòng ~2050).
+import { rollupVerdict, verdictXauHon, type NutKetQua, type ResultVerdict } from "@shared/rollupVerdict";
+// Task 7 Khối C (QĐ-3) vòng sửa 1 — MỘT nguồn 18 cột giới hạn cho `projectSyncPoint`
+// (khoảng dòng ~2727), thay cho khối chép tay reviewer grep độc lập bắt được.
+import { POINT_LIMIT_SPEC } from "@shared/pointLimitSpec";
+// Doc 2026-08-29 (WAL cho cây v2.0, §QĐ-WAL-A) — `dungKhoaKhuTrungV2` CHUYỂN sang
+// `contracts/machineDataContract.ts` (xem doc-comment tại đó) để `inspectionStoreForward.ts`
+// dùng được mà không tạo vòng import với file này. Re-export lại để giữ NGUYÊN bề mặt
+// công khai — `server/db/ingestV2KhuTrung.db.test.ts` import tên này từ file này.
+export { dungKhoaKhuTrungV2 };
 
 // ════════════════════════════════════════════════════════════════════════════
 // Doc 51 P1 (CASE #5) — per-image base64 size cap.
@@ -135,6 +213,21 @@ function maxImageBase64Chars(): number {
 }
 const MAX_IMAGE_B64 = maxImageBase64Chars();
 const IMAGE_B64_TOO_LARGE = `image exceeds MACHINE_INGEST_MAX_IMAGE_B64 (${MAX_IMAGE_B64} base64 chars)`;
+
+// ════════════════════════════════════════════════════════════════════════════
+// Lô 8 Mục 1 (BG-116) — trần `sizeBytes` cho `presignTemplateImage`. Đo TRẦN GÓI
+// HIỆN DÙNG (brief đòi "đo trần gói hiện dùng"): `MAX_IMAGE_B64` ở trên ≈ 15MB
+// GIẢI MÃ (20.000.000 ký tự base64 ⇒ *0.75) cho ẢNH ĐO LƯỜNG trên đường ingest
+// nóng — một ảnh TEMPLATE (dạy MỘT LẦN, không phải mỗi bo) có thể lớn hơn một
+// chút nhưng cùng LỚP kích thước (ảnh chụp linh kiện/mặt sản phẩm, không phải
+// ZIP hàng trăm MB) nên dùng CÙNG con số mặc định, cấu hình RIÊNG qua ENV để
+// không trôi lệch cùng `MACHINE_INGEST_MAX_IMAGE_B64` khi một bên đổi.
+// ════════════════════════════════════════════════════════════════════════════
+export function tranByteAnhTemplate(): number {
+  const raw = process.env.MACHINE_TEMPLATE_IMAGE_MAX_BYTES;
+  const n = raw === undefined || String(raw).trim() === "" ? NaN : Number(raw);
+  return Number.isFinite(n) && n > 0 ? Math.floor(n) : 15 * 1024 * 1024;
+}
 
 // ════════════════════════════════════════════════════════════════════════════
 // Doc 51 P3 batch-1 (§5.4 / CASE #2 / CASE #9) — BATCH INGEST cap.
@@ -514,7 +607,7 @@ async function resolvePointsConfigForSync(
   if (trimmedCode) {
     const productModel = await db.getProductModelByCode(trimmedCode);
     if (!productModel) {
-      throw new TRPCError({ code: 'NOT_FOUND', message: `Product model '${trimmedCode}' not found` });
+      throw appError('NOT_FOUND', 'ENTITY_NOT_FOUND', { entity: 'productModel' }, `Product model '${trimmedCode}' not found`);
     }
     const version = variantOn
       ? (await resolveSyncVariant(productModel.id, variantCode, Number(productModel.pointsConfigVersion ?? 1))).version
@@ -666,10 +759,23 @@ function raiseClockSkewAlert(params: {
  * durability layer (inspectionStoreForward) can buffer + replay the EXACT
  * payload through the same pipeline.
  */
-const submitInspectionCoreObject = z.object({
+// Pha 1D Task 5 (BG-52 ⛔) — exported (đổi `const` → `export const`, KHÔNG đổi
+// hình dạng/hành vi) chỉ để census schema-walk (server/contracts/capChuoiVarcharScan.ts)
+// soi được đối tượng ZodType THẬT, không phải để dùng ở nơi khác.
+export const submitInspectionCoreObject = z.object({
       // Machine identification
-      machineCode: z.string().optional(), // Mã máy (alternative to apiKey)
-      apiKey: z.string().optional(), // API key (backward compatible)
+      // Pha 1E Task 3 (BG-69) — .max() VỆ SINH (không phải rủi ro 22001): cả hai
+      // chỉ dùng để SO KHỚP qua authenticateMachine (SELECT eq(), không INSERT).
+      // machineCode khớp sức chứa machines.code varchar(50) (đo avi_app,
+      // 2026-08-30) — một giá trị dài hơn 50 KHÔNG BAO GIỜ khớp được hàng nào dù
+      // có .max() hay không, nên siết ở đây không từ chối bất kỳ máy nào từng xác
+      // thực thành công hôm nay. apiKey giữ .max(256) — CÙNG con số đã chọn cho
+      // trường `apiKey` của machineDataContractV2 (capChuoiVarcharScan.ts,
+      // KIEM_KE_CAP_CHUOI: "so khớp bằng SELECT eq(), không INSERT — không có
+      // rủi ro 22001"), tái dùng để hai trường CÙNG TÊN trong hai hợp đồng không
+      // lệch quy ước.
+      machineCode: z.string().max(50).optional(), // Mã máy (alternative to apiKey)
+      apiKey: z.string().max(256).optional(), // API key (backward compatible)
 
       // Doc 56 Đ1 (API-2) — OPTIONAL, LOG-ONLY feed schema version. Accepted +
       // logged when present; changes NO behaviour (zod would silently strip an
@@ -684,13 +790,22 @@ const submitInspectionCoreObject = z.object({
       // serialNumber <> ''), so accepting one would silently re-open the
       // double-count hole. `.trim()` normalises before both checks.
       serialNumber: z.string().trim().min(1).max(100), // Số serial sản phẩm
-      productModel: z.string().optional(), // Model sản phẩm
+      // Pha 1D Task 5 (BG-52 ⛔) — KHỚP CỘT THẬT `product_inspections.productModel`
+      // varchar(100) (đo bằng vai avi_app qua information_schema, 2026-08-30).
+      // Sau BG-40 (T1), một chuỗi quá 100 ký tự KHÔNG còn kẹt WAL vô hạn — nó
+      // ném thẳng về máy — nhưng vẫn là lỗi rơi SAU cửa hợp đồng với thông điệp
+      // Postgres `[22001] value too long for type character varying(100)` mà kỹ
+      // sư hiện trường không đọc nổi. Siết Ở ĐÂY để câu trả lời nêu đúng tên
+      // trường máy gửi.
+      productModel: z.string().max(100).optional(), // Model sản phẩm
       // Doc 55 Item 3 PV2 — OPTIONAL variant code (additive). Inert unless
       // PRODUCT_VARIANT_ENABLED is on: absent ⇒ base (+ tag when the model has >1
       // variant, QĐ#12); present ⇒ the board is filed AS that variant. A machine
       // that never sends it keeps exactly today's behaviour.
       variantCode: z.string().trim().min(1).max(50).optional(),
-      batchNumber: z.string().optional(), // Số lô
+      // Pha 1D Task 5 (BG-52 ⛔) — KHỚP CỘT THẬT `product_inspections.batchNumber`
+      // varchar(100) (đo avi_app, cùng lý do productModel ở trên).
+      batchNumber: z.string().max(100).optional(), // Số lô
       
       // Inspection results
       cycleTime: z.number().optional(), // Thời gian chu kỳ (giây)
@@ -701,7 +816,28 @@ const submitInspectionCoreObject = z.object({
       // purpose: z.string().datetime({offset:true}) would be a HARD tightening
       // applied at import time, killing every machine that sends naive stamps —
       // QĐ#1 requires the flag + a backward-compatible default.
-      inspectionTime: z.string().optional(),
+      // ★★★ BG-72 (Pha 1F Task 2 ⛔) — Pha 1E Task 3 đặt `.max(40)` ở đây và
+      // khẳng định "không siết hơn HÀNH VI hôm nay" — SAI SỰ THẬT, đo LIVE bằng
+      // `new Date()`/zod THẬT (không suy đoán): một Agent C# dùng
+      // `DateTime.ToString()` MẶC ĐỊNH (không phải ISO-8601) sinh chuỗi dài tới
+      // 45-50 ký tự (vd `"Sunday, August 30, 2026 12:00:00 PM GMT+07:00"`,
+      // `"Sun Aug 30 2026 14:26:51 GMT+0700 (Indochina Time)"`) — CẢ HAI `new
+      // Date(...)` parse được (không phải payload rác) NHƯNG `.max(40)` từ
+      // chối trước khi tới `superRefine`, trên đường v1.x (`submitInspection`)
+      // — đường BẬN NHẤT. TRƯỚC Pha 1E T3 (`z.string().optional()`, không
+      // `.max()`) cả hai được nhận và ghi bình thường ⇒ đây là HỒI QUY THẬT,
+      // không phải chặn payload rác. Cột đích `product_inspections.inspectionTime`
+      // là `timestamp`, KHÔNG PHẢI `varchar` — không có rủi ro Postgres `22001`
+      // nào để đóng ở trường này; sự "parseable hay không" đã được `superRefine`
+      // (`refineInspectionTime` bên dưới) canh VÔ ĐIỀU KIỆN, độc lập với độ dài.
+      // Nới lên `.max(64)` — dư margin (14 ký tự) trên mẫu dài nhất đã đo (50),
+      // đủ cho các biến thể văn hoá/múi giờ khác chưa đo tới, đồng thời vẫn
+      // chặn payload THẬT SỰ bệnh hoạn (chuỗi hàng nghìn ký tự) trước khi vào
+      // `new Date(...)` — không unbounded hoàn toàn, nhưng không còn từ chối
+      // nhầm một chuỗi thời gian hợp lệ đang chạy sản xuất. (Đối xứng
+      // `KIEM_KE_SUBMIT_INSPECTION_CORE` ở `capChuoiVarcharScan.ts` — census
+      // "vệ sinh" cũng cập nhật số này, KHÔNG đổi cột "db" nào khác.)
+      inspectionTime: z.string().max(64).optional(),
 
       // Doc 51 P1 — EXPLICIT INGEST IDEMPOTENCY KEY (closes the 0272 hole).
       // CLIENT-generated and STABLE across retries of the SAME board (e.g. a UUID
@@ -727,20 +863,39 @@ const submitInspectionCoreObject = z.object({
       // would re-derive provenance from the replay clock and report every buffered
       // board as wildly clock-skewed. The mutation OVERWRITES both unconditionally
       // from the ORIGINAL request, so a machine cannot forge either one.
-      serverReceivedAt: z.string().optional(),
+      // ★★★ BG-72 (Pha 1F Task 2 ⛔) — cùng hồi quy VÀ cùng bản vá với
+      // `inspectionTime` ở trên (xem docblock tại chỗ đó cho bằng chứng đo
+      // được đầy đủ): trường này đi qua CÙNG cửa `.input()` (zod validate
+      // TRƯỚC KHI mutation kịp GHI ĐÈ nó bằng đồng hồ máy chủ — dòng "OVERWRITES
+      // unconditionally" ở trên chỉ áp dụng cho GIÁ TRỊ ĐƯỢC LƯU, không áp dụng
+      // cho bước validate input), cùng cột đích `timestamp` (không phải
+      // `varchar`), cùng lý do KHÔNG có rủi ro `22001`. Nới `.max(40)` →
+      // `.max(64)` — không có bằng chứng field này CẦN trần khác `inspectionTime`.
+      serverReceivedAt: z.string().max(64).optional(),
       timeSource: z.enum(["machine_utc", "machine_naive", "server"]).optional(),
 
 
       // Enterprise hierarchy (top-down)
-      companyCode: z.string().optional(), // Mã tập đoàn/công ty
-      factoryCode: z.string().optional(), // Mã nhà máy
-      workshopCode: z.string().optional(), // Mã nhà xưởng
-      lineCode: z.string().optional(), // Mã dây chuyền
-      stageCode: z.string().optional(), // Mã công đoạn
-      
-      // Production context
-      productionOrderCode: z.string().optional(), // Mã lệnh sản xuất
-      operatorId: z.string().optional(), // Mã công nhân vận hành (doc 29 §3: BADGE CODE — resolved to users.id at ingest, fail-open)
+      // Pha 1D Task 5 (BG-52 ⛔) — VỆ SINH (không phải khớp cột thật): bốn trường
+      // này KHÔNG được ghi verbatim vào `product_inspections` — `macTenantChoGhi`
+      // (phamViGhiMay.ts) chỉ dùng chúng để ĐỐI CHIẾU với chuỗi SUY TỪ MÁY
+      // (`doiChieuKhai`), giá trị THẬT được ghi luôn là bản suy. `.max(50)` khớp
+      // sức chứa `factories.code`/`workshops.code`/`production_lines.code`/
+      // `corporates.code` — đều `varchar(50)` (đo avi_app) — mà chuỗi khai được so
+      // sánh với; không phải rủi ro `22001` (WHERE, không INSERT) nhưng vẫn chặn
+      // payload rác (chuỗi khổng lồ trôi vào `doiChieuKhai`/console.warn/message lỗi).
+      companyCode: z.string().max(50).optional(), // Mã tập đoàn/công ty
+      factoryCode: z.string().max(50).optional(), // Mã nhà máy
+      workshopCode: z.string().max(50).optional(), // Mã nhà xưởng
+      lineCode: z.string().max(50).optional(), // Mã dây chuyền
+      // KHỚP CỘT THẬT `product_inspections.stageCode` varchar(50) (đo avi_app) —
+      // KHÁC bốn trường trên: `stageCode` KHÔNG suy được (không phải nút phân
+      // cấp, xem phamViGhiMay.ts), nên `input.stageCode` được ghi NGUYÊN VĂN.
+      stageCode: z.string().max(50).optional(), // Mã công đoạn
+
+      // Production context — KHỚP CỘT THẬT, ghi verbatim (đo avi_app).
+      productionOrderCode: z.string().max(100).optional(), // Mã lệnh sản xuất — product_inspections.productionOrderCode varchar(100)
+      operatorId: z.string().max(50).optional(), // Mã công nhân vận hành (doc 29 §3: BADGE CODE — resolved to users.id at ingest, fail-open) — product_inspections.operatorId varchar(50)
 
       // W8-B (doc 29 §2.3, migration 0192) — panel multi-up context (ADDITIVE,
       // optional): machine-reported panel serial + 1-based board index inside
@@ -750,10 +905,19 @@ const submitInspectionCoreObject = z.object({
       boardIndex: z.number().int().min(1).optional(),
 
       // Measurement data
+      // Pha 1E Task 3 (BG-69) — pointId/pointCode KHỚP CỘT THẬT
+      // `measurement_point_defs.code` varchar(50) VÀ `.name` varchar(255) (đo
+      // avi_app, 2026-08-30): `resolveOrCreateMeasurementPointDefId`
+      // (measurementPointResolver.ts, autoCreate:true) ghi CÙNG một chuỗi
+      // (`normalizedCode`, suy từ pointId||pointCode) vào CẢ HAI cột — trần
+      // ràng buộc là cột HẸP HƠN trong hai (50), không phải 255.
+      // measuredValue KHỚP CỘT THẬT `measurement_results.measuredValueText`
+      // varchar(255) (đo avi_app) — nhánh không-phải-số của `measuredValue`
+      // (machineApiRouters.ts ~dòng 1865: `textValue = String(rawValue)`).
       measurements: z.array(z.object({
-        pointId: z.string().optional(), // ID điểm đo (new)
-        pointCode: z.string().optional(), // Mã điểm đo (backward compatible)
-        measuredValue: z.union([z.number(), z.string()]).optional(), // Giá trị đo (number hoặc string)
+        pointId: z.string().max(50).optional(), // ID điểm đo (new) — measurement_point_defs.code varchar(50)
+        pointCode: z.string().max(50).optional(), // Mã điểm đo (backward compatible) — cùng cột trên
+        measuredValue: z.union([z.number(), z.string().max(255)]).optional(), // Giá trị đo (number hoặc string) — measurement_results.measuredValueText varchar(255)
         // Doc 51 P2 (CASE #11) — the unit the machine measured `measuredValue` in
         // (e.g. "mil"). Optional + additive: absent ⇒ exactly today's behaviour.
         // When it differs from the point def's unit, the server converts the value
@@ -761,21 +925,40 @@ const submitInspectionCoreObject = z.object({
         // silently downgrade a good board. `unitScaleToCanonical` optionally gives
         // an explicit factor to mm for a non-standard unit the table doesn't know.
         unit: z.string().trim().max(20).optional(),
-        unitScaleToCanonical: z.union([z.number(), z.string()]).optional(),
+        // Pha 1E Task 3 (BG-69) — VỆ SINH: `unitScaleToCanonical` KHÔNG được ghi
+        // xuống DB ở đâu cả (chỉ vào `toNum()` trong pointResultEvaluator.ts để
+        // đổi đơn vị TRONG BỘ NHỚ) — `.max(255)` chỉ chặn payload rác, cùng con
+        // số ĐÃ CHỌN cho nhánh chuỗi của `value`/`lowerLimit`/`upperLimit` ở
+        // machineDataContractV2.ts (đối xứng, không phải đo từ cột nào).
+        unitScaleToCanonical: z.union([z.number(), z.string().max(255)]).optional(),
         result: z.enum(["OK", "NG", "NTF"]), // Kết quả
-        remark: z.string().optional(), // Ghi chú
+        // Pha 1E Task 3 (BG-69) — MIỄN TRỪ có chủ đích, KHÔNG phải lỗ bỏ sót:
+        // cột đích `measurement_results.remark` là `text` (đo avi_app, NULL =
+        // không giới hạn thật) — cùng lý do `errorDesc` bị loại trừ ở
+        // machineDataContractV2.ts và `measurements[].remark` bị loại trừ ở
+        // `metaJsonSchema` (aoiPackageRouter.ts). Đăng ký trong
+        // `MIEN_TRU_SUBMIT_INSPECTION_CORE` (capChuoiVarcharDuongIngestMacDinh.test.ts)
+        // để walker biết đây là loại trừ TƯỜNG MINH, không phải một lá bị quên.
+        remark: z.string().optional(), // Ghi chú — measurement_results.remark là `text`, KHÔNG `.max()`
         imageBase64: z.string().max(MAX_IMAGE_B64, IMAGE_B64_TOO_LARGE).optional(), // Hình ảnh base64 (optional)
-        valueZ: z.union([z.number(), z.string()]).optional(),
-        valueHeight: z.union([z.number(), z.string()]).optional(),
-        valueArea: z.union([z.number(), z.string()]).optional(),
-        valueVolume: z.union([z.number(), z.string()]).optional(),
-        valueVoidPct: z.union([z.number(), z.string()]).optional(),
-        valueCoplanarity: z.union([z.number(), z.string()]).optional(),
-        valueWarpage: z.union([z.number(), z.string()]).optional(),
-        valueOffsetX: z.union([z.number(), z.string()]).optional(),
-        valueOffsetY: z.union([z.number(), z.string()]).optional(),
-        valueTilt: z.union([z.number(), z.string()]).optional(),
-        valueThickness: z.union([z.number(), z.string()]).optional(),
+        // Pha 1E Task 3 (BG-69) — VỆ SINH: cả mười trường dưới đây đi cột
+        // `decimal(15,6)` (drizzle/schema/inspection.ts) qua `toOptionalDecimal()`
+        // — KHÔNG PHẢI varchar, không có rủi ro `22001`. `.max(255)` chỉ chặn
+        // payload rác trước khi `Number()`/`toOptionalDecimal()` xử lý, cùng
+        // hằng số 255 dùng cho mọi nhánh chuỗi "giá trị đo" khác trong hai hợp
+        // đồng (đối xứng `measuredValue`/`value`/`lowerLimit`/`upperLimit`) —
+        // không phải số đo từ cột nào (không có cột varchar đích).
+        valueZ: z.union([z.number(), z.string().max(255)]).optional(),
+        valueHeight: z.union([z.number(), z.string().max(255)]).optional(),
+        valueArea: z.union([z.number(), z.string().max(255)]).optional(),
+        valueVolume: z.union([z.number(), z.string().max(255)]).optional(),
+        valueVoidPct: z.union([z.number(), z.string().max(255)]).optional(),
+        valueCoplanarity: z.union([z.number(), z.string().max(255)]).optional(),
+        valueWarpage: z.union([z.number(), z.string().max(255)]).optional(),
+        valueOffsetX: z.union([z.number(), z.string().max(255)]).optional(),
+        valueOffsetY: z.union([z.number(), z.string().max(255)]).optional(),
+        valueTilt: z.union([z.number(), z.string().max(255)]).optional(),
+        valueThickness: z.union([z.number(), z.string().max(255)]).optional(),
         defectCatalogCode: z.string().max(50).optional(),
         defectSeverity: z.enum(["critical", "major", "minor", "cosmetic"]).optional(),
       })),
@@ -798,7 +981,10 @@ function refineInspectionTime(
   //     insert time and was classified TRANSIENT, so the payload was buffered to
   //     the WAL and retried FOREVER (a poison entry that can never succeed). A
   //     clean BAD_REQUEST is strictly better — no machine that works today fails.
-  if (Number.isNaN(new Date(data.inspectionTime).getTime())) {
+  // BG-99 (Task 5) — route through `docGioMay`, the SAME rule the write path
+  // (`rawInspTime` below) actually uses, instead of a raw `new Date(...)` that would
+  // silently apply a different (TZ-dependent) parse rule than what gets persisted.
+  if (docGioMay(data.inspectionTime) === null) {
     ctx.addIssue({
       code: z.ZodIssueCode.custom,
       path: ["inspectionTime"],
@@ -861,8 +1047,14 @@ const submitInspectionBatchInputSchema = z
     message: "Either apiKey or machineCode must be provided",
   });
 
-/** Extract a machine credential from Authorization: Bearer / X-API-Key headers. */
-function machineHeaderKey(ctx: unknown): string | null {
+/**
+ * Extract a machine credential from Authorization: Bearer / X-API-Key headers.
+ *
+ * ⚠ EXPORT có chủ ý (Task 10, 2026-08-24) — `aoiPackageRouter.ts` cần chính hàm
+ * này để gọi `authenticateMachine` với `headerKey` đúng, thay vì tự chép lại
+ * logic đọc header (hai bản chép sẽ lệch hành vi theo thời gian).
+ */
+export function machineHeaderKey(ctx: unknown): string | null {
   try {
     const headers = (ctx as { req?: { headers?: Record<string, unknown> } })?.req?.headers;
     if (!headers) return null;
@@ -883,10 +1075,64 @@ function machineHeaderKey(ctx: unknown): string | null {
  * Wire the WAL's replay + dedup functions to THIS pipeline. Idempotent cheap
  * assignment (same pattern as telemetryBus.ensureStoreForwardWired) so the
  * wiring survives a store-forward _reset in tests/maintenance.
+ *
+ * ── Doc 2026-08-29 (WAL cho cây v2.0, Task 2, §QĐ-WAL-B) ─────────────────────────────
+ * MỘT điểm điều phối, dispatch THEO HÌNH DẠNG (`laHinhDangCayV2` — cùng vị từ mà
+ * `dungKhoaGuiTheoHinhDang` dùng khi GỬI vào hàng đợi, xem `inspectionStoreForward.ts`):
+ *   • payload cây v2.0 (`surfaces`) → `submitInspectionTreeV2` (dịch cây + ghi qua
+ *     `persistInspectionAtomic({cay})`) — CHUỖI RIÊNG của nó, y hệt đường LIVE.
+ *   • payload v1.x (`measurements`) → `processInspectionSubmission` như cũ, KHÔNG đổi.
+ * ⚠ TRƯỚC bản vá này CẢ HAI hình dạng đều đi qua `processInspectionSubmission` — đó
+ * chính là lỗ đã ghi trong docblock đầu file (KNOWN GAP §QĐ-WAL-A): một mục v2.0 xếp
+ * hàng xong không rút được, vì đường đó không hiểu `surfaces` ⇒ ghi ĐƯỢC một header
+ * (measurements rỗng) nhưng KHÔNG BAO GIỜ tạo `inspection_surfaces/positions/captures`
+ * — mất cả ba cấp cây một cách ÂM THẦM (không ném lỗi, không log — trông như thành
+ * công). Đột biến ép TRỞ LẠI hành vi cũ (bỏ nhánh `laHinhDangCayV2`, luôn gọi
+ * `processInspectionSubmission`) phải làm mệnh đề "đủ ba cấp cây" ĐỎ — xem
+ * `server/db/walCayV2PhatLai.db.test.ts`.
+ *
+ * ── Doc 2026-08-29 (WAL cho cây v2.0, Task 3 hotfix — census `ghiInspectionWalCensus.test.ts`
+ *    bắt được đường số 9) — EXPORT có chủ ý ────────────────────────────────────────────────
+ * Task 2 chỉ nối lại đường LIVE (nhánh `submitInspection.mutation` gọi hàm này SAU MỖI lượt
+ * thành công/tạm-lỗi). `initInspectionStoreForward` (`inspectionStoreForward.ts`, chạy Ở BOOT
+ * — TRƯỚC bất kỳ lượt live nào) từng WIRE CỨNG `processFn`/`dedupFn` thẳng vào
+ * `processInspectionSubmission`/`inspectionAlreadyPersisted` (v1.x, tự chép lại một BẢN THỨ HAI
+ * của phép dispatch thay vì gọi hàm NÀY) — TÁI DIỄN đúng lớp lỗi §QĐ-WAL-B qua một cửa khác: nếu
+ * đĩa còn mục v2.0 từ trước lúc khởi động lại và backfill worker chạy TRƯỚC lượt submit LIVE đầu
+ * tiên sau boot, mục đó phát lại qua đường v1.x và mất cây ÂM THẦM — CHÍNH LỚP LỖI mệnh đề "đủ ba
+ * cấp cây" ở trên canh, chỉ khác Ở NƠI GỌI. EXPORT hàm này để `initInspectionStoreForward` gọi
+ * THẲNG (KHÔNG tự chép lại phép dispatch — đúng kỷ luật "một điểm điều phối" đã nêu ở trên, đúng
+ * cái mà `ghiInspectionWalScan.ts`/BG-19 được dựng ra để chặn: hai bản dispatch trôi khỏi nhau).
+ * Canh bằng mệnh đề BOOT trong `server/db/walCayV2PhatLai.db.test.ts` (KHÔNG gọi live trước khi
+ * gọi `initInspectionStoreForward`) — đột biến ép `initInspectionStoreForward` quay lại wire cứng
+ * làm mệnh đề đó ĐỎ (đo được: `processInspectionSubmission` ném lỗi thường ngay khi đọc
+ * `input.measurements` trên một payload chỉ có `surfaces` — không phải TRPCError nên
+ * `isPermanentSubmitError` xếp nhầm TẠM THỜI ⇒ hàng đợi KẸT, thử lại vô hạn, KHÔNG board nào
+ * được tạo — biểu hiện cụ thể là "hàng đợi không rút được" chứ KHÔNG phải "ghi header rồi bỏ mất
+ * cây" như dự đoán ban đầu; cả hai đều là hệ quả hợp lệ của ĐÚNG một nguyên nhân: processFn sai
+ * hình dạng).
  */
-function ensureInspectionWalWired(): void {
-  walSetProcessFn((payload) => processInspectionSubmission(payload as SubmitInspectionInput));
-  walSetDedupFn((payload) => inspectionAlreadyPersisted(payload as SubmitInspectionInput));
+export function ensureInspectionWalWired(): void {
+  walSetProcessFn(async (payload, meta) => {
+    if (laHinhDangCayV2(payload)) {
+      // ★★★ Task 5 (BG-97 → BG-99) — neo spec-gate của lượt PHÁT LẠI là mốc XẾP HÀNG
+      // của MỤC WAL này (`meta.enqueuedAt`), KHÔNG phải đồng hồ lúc phát lại và KHÔNG
+      // phải `payload.completedAt/startedAt` (đồng hồ máy — spec QĐ-2 đã loại). Xem
+      // docblock `mocDo` trong `submitInspectionTreeV2` và `ProcessFn`
+      // (`inspectionStoreForward.ts`).
+      const ketQua = await submitInspectionTreeV2(payload as unknown as MachinePayloadV2, {
+        serverReceivedAt: meta?.enqueuedAt,
+      });
+      return { inspectionId: ketQua.inspectionId };
+    }
+    return processInspectionSubmission(payload as SubmitInspectionInput);
+  });
+  walSetDedupFn(async (payload) => {
+    if (laHinhDangCayV2(payload)) {
+      return inspectionAlreadyPersistedV2(payload as unknown as MachinePayloadV2);
+    }
+    return inspectionAlreadyPersisted(payload as SubmitInspectionInput);
+  });
 }
 
 /**
@@ -906,10 +1152,28 @@ export async function inspectionAlreadyPersisted(input: SubmitInspectionInput): 
     throw err; // DbUnavailableError etc. → transient
   }
   const dbi = await db.getDb();
-  if (!dbi) throw new Error("Database not available");
-  // Same "fake UTC" shift the insert path applies (see processInspectionSubmission).
-  const raw = new Date(input.inspectionTime);
-  const local = new Date(raw.getTime() - raw.getTimezoneOffset() * 60000);
+  // F2 (2026-08-22) — dùng `DbUnavailableError` thay `new Error("Database not available")`.
+  //
+  // Ghi chú Task 9 (doc71) trước đây để nguyên chỗ này với lý do ĐÚNG: hàm chỉ được gọi
+  // qua `walSetDedupFn` → `inspectionStoreForward.backfillInspections()`, nơi catch là
+  // `catch { break; }` — không đọc `message` hay `code`, chỉ dùng exception làm tín hiệu
+  // nhị phân "còn lỗi ⇒ DB vẫn down, dừng". Không người dùng nào đọc chuỗi này, nên
+  // migrate sang `appError()` quả thật chỉ là cosmetic.
+  //
+  // Nhưng `DbUnavailableError` KHÁC `appError()`: nó không đổi hình dạng phản hồi, chỉ
+  // đặt đúng TÊN cho tình trạng. Với người gọi hiện tại (catch-all) đây là thay đổi TRUNG
+  // TÍNH về hành vi — đã kiểm tận nơi (`inspectionStoreForward.ts:456-459`), không suy đoán.
+  // Cái được: câu "Database not available" không còn là một chuỗi tự do trôi nổi, và cổng
+  // `rawErrorCensus` giữ được bất biến "0 chỗ ném thô họ DB" trên TOÀN server.
+  if (!dbi) throw new DbUnavailableError();
+  // Cutover 2026-09-03 (Khối C QĐ-1, BG-96) — KHÔNG dịch "fake UTC" nữa; `inspectionTime`
+  // là UTC thật, cùng hệ quy chiếu mà đường ghi dùng (xem chú thích lớn ở
+  // processInspectionSubmission).
+  // BG-99 (Task 5) — tra bằng ĐÚNG luật `docGioMay` mà `rawInspTime` dùng lúc GHI
+  // (trần = UTC): một chuỗi trần tra bằng `new Date(...)` thô ở đây có thể lệch khỏi
+  // giá trị đã ghi bởi TZ hệ điều hành server ⇒ dedup tra TRẬT, tạo hàng trùng khi WAL
+  // backfill. `?? new Date()` chỉ chạm tới khi `input.inspectionTime` (đã kiểm non-empty
+  // ở trên) là rác không parse được — cùng lối thoát mà `rawInspTime` dùng.
   const rows = await dbi
     .select({ id: productInspections.id })
     .from(productInspections)
@@ -917,11 +1181,53 @@ export async function inspectionAlreadyPersisted(input: SubmitInspectionInput): 
       drizzleAnd(
         drizzleEq(productInspections.machineId, auth.machine.id),
         drizzleEq(productInspections.serialNumber, input.serialNumber),
-        drizzleEq(productInspections.inspectionTime, local),
+        drizzleEq(productInspections.inspectionTime, docGioMay(input.inspectionTime) ?? new Date()),
       ),
     )
     .limit(1);
   return rows.length > 0;
+}
+
+/**
+ * Doc 2026-08-29 (WAL cho cây v2.0, Task 2, §QĐ-WAL-B) — bản v2.0 của
+ * `inspectionAlreadyPersisted` ở trên. KHÔNG dùng lại công thức (machineId +
+ * serialNumber + inspectionTime): payload v2.0 cho phép `serialNumber` RỖNG
+ * (§QĐ-WAL-A) — tra theo bộ ba đó có thể khớp NHẦM một board v2.0 khác cùng máy cũng
+ * serial rỗng (dương tính giả) hoặc trật hoàn toàn nếu `inspectionTime` không tồn tại
+ * ở hình dạng này (v2.0 dùng `startedAt`/`completedAt`, không có trường `inspectionTime`).
+ *
+ * Tra thẳng bảng LEDGER `inspection_idempotency_keys` (migration 0275) theo
+ * (machineId, `dungKhoaKhuTrungV2(payload)`) — ĐÚNG khoá mà `submitInspectionTreeV2`
+ * luôn đặt khi ghi (bất kể `serialNumber`, xem doc-comment tại chỗ set `idempotencyKey`
+ * trong hàm đó). Đây là bảng DUY NHẤT giữ khoá này: `product_inspections` không có cột
+ * nào tra được v2.0 theo khoá khử trùng của nó mà không đụng vấn đề nêu trên.
+ */
+export async function inspectionAlreadyPersistedV2(input: MachinePayloadV2): Promise<boolean> {
+  let auth: MachineAuthResult;
+  try {
+    auth = await authenticateMachine({ apiKey: input.apiKey, scope: "ingest:write" });
+  } catch (err) {
+    if (err instanceof TRPCError) return false; // creds sai → phát lại sẽ dead-letter với lỗi thật
+    throw err; // DbUnavailableError v.v. → tạm thời
+  }
+  const dbi = await db.getDb();
+  if (!dbi) throw new DbUnavailableError();
+  const key = dungKhoaKhuTrungV2(input);
+  const rows = await dbi
+    .select({ inspectionId: inspectionIdempotencyKeys.inspectionId })
+    .from(inspectionIdempotencyKeys)
+    .where(
+      drizzleAnd(
+        drizzleEq(inspectionIdempotencyKeys.machineId, auth.machine.id),
+        drizzleEq(inspectionIdempotencyKeys.idempotencyKey, key),
+      ),
+    )
+    .limit(1);
+  // `inspectionId` NULL nghĩa là khoá đang được CLAIM giữa chừng bởi một transaction
+  // khác (xem persistInspectionAtomic bước 1/4) — không coi là "đã áp dụng" cho tới khi
+  // back-fill xong; trả false để backfill thử processFn (nó tự serialize đúng qua
+  // onConflictDoNothing, không tạo hàng thứ hai).
+  return rows.length > 0 && rows[0].inspectionId != null;
 }
 
 /**
@@ -954,6 +1260,12 @@ async function loadPointLimitSnapshots(
       const projection: Record<string, unknown> = {
         changedAt: measurementPointVersions.changedAt,
         snapshotJson: measurementPointVersions.snapshotJson,
+        // ★★★ NEW-3 (review lượt 9, vòng 2) — CÙNG lỗ với v2 (`napLichSuGioiHanTheoDiem`,
+        // `server/db/cayDay.ts`): `recordVariantOverrideVersion` (I-3) ghi giới
+        // hạn HIỆU LỰC CỦA BIẾN THỂ vào ĐÚNG chuỗi `pointDefId` này. Đường v1.x ở
+        // đây cũng KHÔNG biết phân biệt base/biến thể (chưa phân giải `variantCode`
+        // khi gọi hàm này) ⇒ lọc theo CÙNG tiền tố cấu trúc, không chỉ vá riêng v2.
+        changeReason: measurementPointVersions.changeReason,
       };
       if (hasConfigVersionCol) {
         projection.productPointsConfigVersion = measurementPointVersions.productPointsConfigVersion;
@@ -965,6 +1277,7 @@ async function loadPointLimitSnapshots(
         .orderBy(drizzleAsc(measurementPointVersions.changedAt));
       snaps = (rows as Array<Record<string, unknown>>)
         .filter((r) => r.changedAt instanceof Date)
+        .filter((r) => !RE_TIEN_TO_VERSION_BIEN_THE.test((r.changeReason as string | null) ?? ""))
         .map((r) => ({
           changedAt: r.changedAt as Date,
           limits: (r.snapshotJson ?? {}) as PointLimitSource,
@@ -1155,6 +1468,14 @@ export async function processInspectionSubmission(
     // Doc 51 P3 batch-1 — skip the per-item machine-heartbeat write. The batch
     // path stamps the heartbeat ONCE (200 boards ⇒ 1 heartbeat write, not 200).
     skipHeartbeat?: boolean;
+    // ★★★ I-4 (review lượt 8) — móc chạy NGAY SAU khi danh tính máy đã được XÁC THỰC (và sau
+    // trần tốc độ, nếu bật). Sinh ra cho ĐÚNG một việc: cửa `submitInspection` ghi tín hiệu ĐẾM
+    // hình dạng ingest (`ghiTinHieuHinhDangIngest`) mà KHÔNG phải xác thực lần thứ hai chỉ để
+    // biết mình đang nói về máy nào. ⚠ CỐ Ý không có nơi gọi nào khác truyền móc này: đường
+    // BATCH tự đếm MỘT lần ở cấp request (không phải per-item), và đường PHÁT LẠI từ WAL không
+    // đếm (phát lại không phải một lượt gửi MỚI). Đồng bộ, không await — xem docblock
+    // `ghiTinHieuHinhDangIngest`.
+    sauXacThuc?: (auth: MachineAuthResult) => void;
   },
 ): Promise<{ success: true; inspectionId: number; duplicate?: boolean }> {
       // Validate machine — per-machine scoped key (Authorization header or apiKey
@@ -1172,6 +1493,24 @@ export async function processInspectionSubmission(
       // and the batch path enforces the limit itself — once PER inspection —
       // before dispatching each item, so it never double-counts here).
       if (opts?.rateLimit) enforceMachineIngestRateLimit(auth);
+      // ★★★ I-4 — danh tính máy nay là THẬT (đã tra CSDL, đã qua scope check) và lượt gọi đã
+      // trả token trần tốc độ. Đây là khoảnh khắc SỚM NHẤT mà một lượt ghi sổ đếm là hợp lệ.
+      opts?.sauXacThuc?.(auth);
+
+      // ══ 2026-08-18 — MÃ TENANT SUY TỪ MÁY, KHÔNG LẤY TỪ JSON ═══════════════
+      // Đặt NGAY ĐÂY, trước mọi tác dụng phụ (heartbeat, biến thể, commissioning):
+      // một máy cấu hình sai phải bị chặn TRƯỚC khi nó kịp chạm vào bất cứ thứ gì,
+      // chứ không phải sau khi đã cập nhật nhịp tim + tra biến thể của nhà máy khác.
+      // `input.companyCode/factoryCode/workshopCode/lineCode` vẫn được NHẬN — nhưng
+      // chỉ để ĐỐI CHIẾU; lệch ⇒ FORBIDDEN kèm `machine_tenant_claim_mismatch`.
+      // ⚠ `input.stageCode` KHÔNG nằm ở đây: nó không phải nút phân cấp (đo được:
+      // AVI/FCT/SPI/AOI/ICT, `line_stages` rỗng) ⇒ giữ nguyên văn. Xem phamViGhiMay.ts.
+      const macTenant = await macTenantChoGhi(machine, {
+        corporateCode: input.companyCode,
+        factoryCode: input.factoryCode,
+        workshopCode: input.workshopCode,
+        lineCode: input.lineCode,
+      });
 
       const normalizedProductModelCode = input.productModel?.trim();
       const productModelRecord = normalizedProductModelCode
@@ -1264,21 +1603,24 @@ export async function processInspectionSubmission(
       }
 
       // Create inspection record
-      // Fix timezone: Drizzle ORM serializes Date via .toISOString() (UTC),
-      // but timestamp without time zone strips Z → stores UTC value.
-      // Shift to "fake UTC" so PostgreSQL stores local time.
-      //
-      // ⚠ Doc 51 P1 (CASE #3) — THIS SHIFT IS LEFT IN PLACE ON PURPOSE. It is
-      // process-TZ dependent and the read layer (server/utils/kpi.ts
-      // getDbStorageTimezone) defaults to assuming UTC, so the two only agree when
-      // FACTORY_DB_STORAGE_TZ is set to the server's zone. Removing the shift here
-      // would silently re-interpret EVERY historical row (22,995 on dev) that was
-      // written WITH it — a data-corruption event dressed as a bug fix. The cutover
-      // needs its own migration (rewrite stored values + flip FACTORY_DB_STORAGE_TZ
-      // atomically); see the doc 51 P1 report. What P1 adds is the ability to SEE
-      // the problem: serverReceivedAt + signed skew + timeSource, below.
-      const rawInspTime = input.inspectionTime ? new Date(input.inspectionTime) : new Date();
-      const localInspTime = new Date(rawInspTime.getTime() - rawInspTime.getTimezoneOffset() * 60000);
+      // ⚠ Cutover 2026-09-03 (Khối C QĐ-1, BG-96) — bỏ hẳn phép dịch "fake UTC" từng áp
+      // Ở ĐÂY (doc 51 P1 CASE #3, xem lịch sử git nếu cần bản cũ). Lý do bỏ: header
+      // (`inspectionTime`) và cây (`inspection_captures.startedAt` v.v. — LUÔN ghi thô,
+      // `server/db/inspection.ts`) lệch nhau đúng MỘT offset múi giờ trong CÙNG một
+      // request (BG-96) — chỉ header từng bị dịch, cây thì không. Quyết định chủ dự án
+      // (spec Khối C QĐ-1): dữ liệu test được phép làm lại, MỌI cột thời gian họ
+      // inspection nay là UTC thật; `FACTORY_DB_STORAGE_TZ` giữ mặc định UTC (không cần
+      // đặt bằng múi giờ máy chủ nữa — read layer `server/utils/kpi.ts
+      // getDbStorageTimezone` vẫn mặc định UTC, nay khớp THẬT với dữ liệu, không phải
+      // khớp CÓ ĐIỀU KIỆN như trước). serverReceivedAt + signed skew + timeSource bên
+      // dưới vẫn giữ nguyên — vẫn cần để THẤY lệch đồng hồ máy, không liên quan cutover này.
+      // ★★★ BG-99 (Task 5) — MỘT LỖ KHÁC, CÙNG HỌ: cutover trên bỏ phép DỊCH "fake UTC",
+      // nhưng chuỗi TRẦN máy gửi (không hậu tố "Z", mẫu thật `"2026-08-18T09:30:00.150"`)
+      // vẫn bị `new Date(...)` đọc theo TZ HỆ ĐIỀU HÀNH SERVER — CHÍNH tội BG-96 tái sinh
+      // qua đường khác. `docGioMay` áp luật CHUNG toàn đường ingest: trần = UTC (khớp
+      // đúng luật drizzle dùng khi đọc cột `timestamp` không múi giờ trở lại — nối
+      // "+0000"), có offset thì tôn trọng nguyên văn. Xem `server/utils/factoryTime.ts`.
+      const rawInspTime = docGioMay(input.inspectionTime) ?? new Date();
 
       // ══ Doc 51 P1 (CASE #3) — PROVENANCE + CLOCK-SKEW ══════════════════════
       // serverReceivedAt/timeSource are normally stamped by the mutation from the
@@ -1303,14 +1645,9 @@ export async function processInspectionSubmission(
           serverReceivedAt,
         });
       }
-      // serverReceivedAt is stored with the SAME fake-UTC shift as inspectionTime.
-      // Not because the shift is right — because a column in a different time base
-      // than the one it is compared against is worse than a consistently-wrong one.
-      // Both move together at cutover. timeSkewSeconds is a DURATION, so it is
-      // immune to all of this: it stays correct across the cutover either way.
-      const localServerReceivedAt = new Date(
-        serverReceivedAt.getTime() - serverReceivedAt.getTimezoneOffset() * 60000,
-      );
+      // Cutover 2026-09-03 (BG-96) — serverReceivedAt ghi THÔ (UTC thật), cùng hệ quy
+      // chiếu với inspectionTime ở trên; không còn "dịch cùng nhau" vì không còn dịch.
+      // timeSkewSeconds là một DURATION nên không hề bị ảnh hưởng bởi cutover này.
 
       // ══ Doc 51 P1 (CASE #12) — CONFIG VERSION PIN ══════════════════════════
       // Which thresholds graded this board? Unanswerable until now: the machine's
@@ -1413,22 +1750,28 @@ export async function processInspectionSubmission(
         batchNumber: input.batchNumber,
         overallResult: input.overallResult as any,
         originalResult: input.overallResult as any,
-        corporateCode: input.companyCode, // Mã tập đoàn
-        factoryCode: input.factoryCode, // Mã nhà máy
-        workshopCode: input.workshopCode, // Mã nhà xưởng
-        lineCode: input.lineCode, // Mã dây chuyền
-        stageCode: input.stageCode, // Mã công đoạn
+        // ⚠ BỐN Ô NÀY KHÔNG CÒN ĐẾN TỪ `input`. Chúng suy từ chuỗi phân cấp của MÁY ĐÃ XÁC
+        // THỰC (`macTenantChoGhi`, xem phamViGhiMay.ts); lời khai trong JSON đã được đối chiếu
+        // ở đầu hàm và một lượt lệch đã bị TỪ CHỐI trước khi tới đây. Đo trước khi vá trên
+        // `aoi_management`: 22.996/22.996 hàng suy được, 0 hàng khai lệch ⇒ đổi nguồn KHÔNG mất
+        // một hàng nào. ⚠ Đừng "đơn giản hoá" ngược về `input.*`: đó chính là cái ô chọn trên
+        // giao diện của kẻ tấn công mà `db/reportAggregators.ts` đã cấm thành văn.
+        corporateCode: macTenant.corporateCode, // Mã tập đoàn (suy; NULL khi nhà máy chưa gắn tập đoàn)
+        factoryCode: macTenant.factoryCode, // Mã nhà máy (suy)
+        workshopCode: macTenant.workshopCode, // Mã nhà xưởng (suy)
+        lineCode: macTenant.lineCode, // Mã dây chuyền (suy)
+        stageCode: input.stageCode, // Mã công đoạn — KHÔNG suy được, nguyên văn lời khai của máy
         productionOrderCode: input.productionOrderCode, // Mã lệnh sản xuất
         operatorId: input.operatorId, // Mã công nhân vận hành (badge code — kept verbatim)
         // W8-B (0192): resolved users.id (fail-open null) + panel context.
         operatorUserId: operatorUserId ?? undefined,
         panelSerial: input.panelId,
         boardIndex: input.boardIndex,
-        inspectionTime: localInspTime,
+        inspectionTime: rawInspTime,
         cycleTime: input.cycleTime ? String(input.cycleTime) : undefined,
         // Doc 51 P1 (0275) — provenance. Written on EVERY row, flags off or on:
         // the measurement is what makes CASE #3 / CASE #12 visible at all.
-        serverReceivedAt: localServerReceivedAt,
+        serverReceivedAt,
         timeSkewSeconds: skew.skewSeconds,
         clockSkewFlagged: skew.flagged,
         timeSource,
@@ -1473,7 +1816,7 @@ export async function processInspectionSubmission(
         console.warn(
           `[submitInspection] duplicate submission ignored (idempotency key hit) — ` +
             `machine=${machine.code} serial=${input.serialNumber} ` +
-            `inspectionTime=${localInspTime.toISOString()} → existing inspectionId=${inspectionId}`,
+            `inspectionTime=${rawInspTime.toISOString()} → existing inspectionId=${inspectionId}`,
         );
         // Doc 51 P2 (§5.6) — the retry is still a request worth auditing (default OFF).
         auditInspectionSubmission({
@@ -1666,18 +2009,13 @@ export async function processInspectionSubmission(
         }
         assertValidPointDefId(resolvedPointDefId, `submitInspection (machine=${machine.code}, point=${pointCode})`);
 
-        // Route measuredValue to the correct DB column based on type
-        const rawValue = measurement.measuredValue;
-        let numericValue: string | undefined = undefined;
-        let textValue: string | undefined = undefined;
-        if (rawValue !== undefined && rawValue !== null) {
-          const num = Number(rawValue);
-          if (!isNaN(num) && rawValue !== '') {
-            numericValue = String(num); // decimal column accepts numeric string
-          } else {
-            textValue = String(rawValue); // non-numeric → measuredValueText
-          }
-        }
+        // Route measuredValue to the correct DB column based on type.
+        // ⚠ Khối B Task 3 — khối này TỪNG nằm inline ở đây; nay là `db.tachTriDo`
+        // (server/db/inspection.ts) để đường CÂY v2.0 dùng LẠI ĐÚNG mẫu hành vi này
+        // thay vì chép một bản thứ hai. Hàm là bản TÁCH NGUYÊN VĂN — cùng vế
+        // `rawValue !== ''`, cùng `String(num)`, cùng `undefined` khi không có trị.
+        const { measuredValue: numericValue, measuredValueText: textValue } =
+          tachTriDo(measurement.measuredValue);
 
         // Image was already uploaded in the bounded-concurrency pre-pass above
         // (P1-2, doc 38 R-2b); read this row's pre-computed result by index.
@@ -1770,11 +2108,10 @@ export async function processInspectionSubmission(
             if (variantOv.action === "exclude") {
               gateLimits = null; // not in the variant's effective set → skip the gate
             } else if (variantOv.action === "override" && gateLimits) {
-              const patch =
-                variantOv.patchJson && typeof variantOv.patchJson === "object"
-                  ? (variantOv.patchJson as Record<string, unknown>)
-                  : {};
-              gateLimits = { ...gateLimits, ...patch } as PointLimitSource;
+              // Khối C Task 6 — dùng CHUNG apDungVariantPatch (lọc khoá bảo vệ),
+              // trước đây shallow-merge THÔ tại chỗ: patch có thể ghi đè
+              // id/deletedAt/... của point-def gốc.
+              gateLimits = apDungVariantPatch(gateLimits, variantOv.patchJson);
             }
           }
           if (gateLimits) {
@@ -1850,23 +2187,87 @@ export async function processInspectionSubmission(
         }
       }
 
-      // Doc 35 W2.8 (W2-A) — persist the measurement rows AND the spec-gate
-      // overall-NG promotion in ONE transaction so a crash mid-write can't leave
-      // a board whose per-point rows say NG under an OK header. The inspection
+      // Doc 35 W2.8 (W2-A) — persist the measurement rows AND the overall-NG
+      // promotion (Pha 1D Task 6: spec-gate downgrade OR machine-declared NG
+      // point, see docblock below) in ONE transaction so a crash mid-write
+      // can't leave a board whose per-point rows say NG under an OK header. The inspection
       // header insert + external image uploads already ran above (image/object
       // I/O must stay OUTSIDE the DB transaction), and the fire-and-forget
       // post-ACK hooks below (embedding, quality-gate, WIP, inline AI) stay
       // OUTSIDE too so they can never block/roll back ingest. Uses the repo's
       // getDb()/db.transaction/tx.insert convention (see fleet/resourceManager).
       //
-      // Doc 31 MP6 — when the server spec-gate downgraded ≥1 point to NG on a
-      // machine-"OK" inspection, promote the board's overallResult to NG so
-      // yield/FPY stays consistent with the per-point verdicts. originalResult
-      // (the machine's original) is left intact for audit. NOTE: downstream
-      // realtime NG alerts below key off the machine's original overall
-      // (input.overallResult) — a server-downgraded board is reflected in stored
-      // data/analytics but does not retro-fire the live NG alert.
-      const promoteOverallToNg = serverDowngradeCount > 0 && input.overallResult === "OK";
+      // ══ Pha 1D Task 6 (món nợ CUỐI trước Khối B) ════════════════════════════
+      // TRƯỚC bản vá này, `promoteOverallToNg` chỉ bắn khi SPEC-GATE MÁY CHỦ hạ
+      // ≥1 điểm OK→NG (serverDowngradeCount > 0) — bỏ sót trường hợp CHÍNH MÁY
+      // gửi overallResult="OK" kèm điểm ĐÃ mang result="NG" (bo lỗi THẬT, không
+      // qua spec-gate). Đo trên `aoi_management_test` (vai avi_app) trước bản vá:
+      // 3 bo (id 97438/97442/97444) khai OK với 5/5, 2/2, 1/1 điểm NG — lưu thành
+      // "OK" ⇒ `FINAL_YIELD_PASS_RESULTS` (shared/kpiYield.ts) tính PASS, xuất xưởng.
+      //
+      // Đây là đường v1.x — đường MẶC ĐỊNH hôm nay (cờ
+      // INGEST_REJECT_LEGACY_MACHINE_ENABLED tắt) — nên đóng ĐÚNG luật cuộn mà
+      // Pha 1C đã chốt cho v2.0 (`dichCayKetQua`, verdictXauHon(khai, cuộn-từ-lá))
+      // và Pha 1D vừa chốt cho ZIP (`inferAoiOverallResult`, cùng công thức):
+      // verdict lưu trữ = XẤU HƠN giữa LỜI KHAI của máy và CUỘN TỪ CÂY ĐIỂM ĐO.
+      // Dùng LẠI `rollupVerdict`/`verdictXauHon` (shared/rollupVerdict.ts, ĐÃ CÓ)
+      // — KHÔNG viết bản chép tay thứ tư của luật cuộn.
+      //
+      // `effectiveResult` (đã set vào measurementResults[i].result ở vòng lặp
+      // trên) đã GỘP CẢ HAI nguồn NG: điểm máy tự khai NG (đi thẳng, spec-gate
+      // tắt hoặc không có limits) VÀ điểm bị spec-gate hạ cấp (serverDowngradeCount).
+      // Cuộn trên `measurementResults` do đó tự động phủ CẢ HAI, không cần tách
+      // hai trường hợp riêng.
+      const conDiem: NutKetQua[] = measurementResults.map((m) => ({
+        result: (m.result as ResultVerdict | undefined) ?? "OK",
+        ntf: m.result === "NTF",
+      }));
+      const cuonDiem = rollupVerdict(conDiem);
+      // Đếm riêng cho log — bao nhiêu điểm NG đến từ MÁY TỰ KHAI (không qua spec-gate),
+      // để log không còn nói "spec-gate downgraded" khi thực ra máy đã tự báo NG.
+      const machineDeclaredNgCount = conDiem.filter((c) => c.result === "NG").length - serverDowngradeCount;
+      const overallVerdictCuoi = verdictXauHon(
+        input.overallResult as ResultVerdict,
+        cuonDiem.result,
+      );
+      // PHẠM VI CỐ Ý HẸP: chỉ nâng khi verdict cuối là "NG" VÀ máy khai "OK" —
+      // đúng 5 mệnh đề chống hồi quy của Task 6 (không mệnh đề nào canh OK→NTF).
+      // `promoteOverallToNg` (biến này + `persistInspectionAtomic`, server/db/
+      // inspection.ts) là một UPDATE NG-CHUYÊN-BIỆT (WHERE overallResult='OK' →
+      // SET 'NG'), có lưới riêng canh ĐÚNG hình dạng đó
+      // (persistInspectionAtomic.db.test.ts). Mở rộng thành cuộn 3 chiều đầy đủ
+      // (OK→NTF, hoặc NTF khai→NG cuộn) đòi tái cấu trúc contract của một helper
+      // DB dùng chung — NGOÀI phạm vi "món nợ NG" mà brief Task 6 mô tả và NGOÀI
+      // 3 bo bằng chứng (cả ba đều khai "OK", không bo nào khai "NTF"). Để lại
+      // CHƯA LÀM, nêu rõ trong task-6-report.md — không phải hệ quả ngẫu nhiên.
+      //
+      // originalResult (lời khai gốc của máy) giữ NGUYÊN, không đổi ở đây — vẫn
+      // set từ `input.overallResult` tại `inspectionHeaderData` phía trên, phục
+      // vụ truy vết (mệnh đề 5).
+      //
+      // ⚠ QUYẾT ĐỊNH THIẾT KẾ (câu hỏi bắt buộc của Task 6) — cảnh báo NG thời
+      // gian thực (emitNGAlert/publishNGAlert bên dưới, khoảng dòng ~2300) VẪN
+      // khoá theo `input.overallResult` (lời khai GỐC của máy), KHÔNG đổi theo
+      // `overallVerdictCuoi`/`promoteOverallToNg` — GIỮ NGUYÊN hành vi cũ, áp
+      // dụng ĐỒNG NHẤT cho CẢ hai nguồn nâng cấp (spec-gate lẫn nguồn mới này).
+      // Lý do CHỌN "KHÔNG bắn thêm":
+      //   1) Nhất quán với tiền lệ ĐÃ CÓ — spec-gate downgrade (nguồn nâng cấp
+      //      CŨ) chưa từng retro-fire alert (xem chú thích gốc, nay chuyển
+      //      xuống dưới); tách hai nguồn nâng cấp CÙNG MỘT LOẠI ra hai hành vi
+      //      khác nhau (một im lặng, một bắn) mới là hệ quả ngẫu nhiên, không
+      //      phải quyết định có chủ đích.
+      //   2) Đây là bản vá "dữ liệu lưu trữ đúng" (yield/FPY/analytics) — cảnh
+      //      báo Andon thời gian thực là một mối quan tâm VẬN HÀNH khác, có
+      //      người tiêu thụ MQTT/dashboard đã CHỈNH theo lưu lượng hôm nay; đổi
+      //      lưu lượng đó là quyết định vận hành riêng, cần người biên đơn
+      //      chấp thuận, không phải hệ quả phụ của một bản vá tính đúng cột.
+      //   3) Cảnh báo bắn SAU khi bo đã ACK xong (board có thể đã rời trạm) —
+      //      một alert "trễ" cho một bo đã trôi qua dây chuyền có thể GÂY HIỂU
+      //      LẦM cho vận hành viên đang đứng máy (ngỡ là bo HIỆN TẠI).
+      // Nếu sau này nhà máy muốn bắn alert cho lớp bo mới được bắt (bo khai OK,
+      // có điểm NG, trước đây im lặng), đó là một thay đổi HÀNH VI có chủ đích,
+      // cần bàn riêng — không lẫn vào bản vá này.
+      const promoteOverallToNg = overallVerdictCuoi === "NG" && input.overallResult === "OK";
 
       if (singleTxOn) {
         // ── Doc 55 Item 1 (PA-A) — SINGLE PHYSICAL TRANSACTION ─────────────────
@@ -1892,7 +2293,7 @@ export async function processInspectionSubmission(
           console.warn(
             `[submitInspection] duplicate submission ignored (single-tx path) — ` +
               `machine=${machine.code} serial=${input.serialNumber} ` +
-              `inspectionTime=${localInspTime.toISOString()} → existing inspectionId=${inspectionId}`,
+              `inspectionTime=${rawInspTime.toISOString()} → existing inspectionId=${inspectionId}`,
           );
           auditInspectionSubmission({
             machineId: machine.id,
@@ -1906,7 +2307,10 @@ export async function processInspectionSubmission(
           return { success: true as const, inspectionId, duplicate: true as const };
         }
         if (promoteOverallToNg) {
-          console.warn(`[submitInspection] spec-gate downgraded ${serverDowngradeCount} point(s) → inspection ${inspectionId} overall promoted to NG`);
+          console.warn(
+            `[submitInspection] overall promoted OK→NG for inspection ${inspectionId} ` +
+              `(${serverDowngradeCount} point(s) spec-gate downgraded, ${machineDeclaredNgCount} point(s) machine-declared NG)`,
+          );
         }
       } else {
       // Doc 51 P1 (CASE #5) — keys of images ALREADY uploaded to object storage for
@@ -1918,7 +2322,15 @@ export async function processInspectionSubmission(
         .filter((k): k is string => typeof k === "string" && k.length > 0);
       if (measurementResults.length > 0 || promoteOverallToNg) {
         const dbInstance = await getDb();
-        if (!dbInstance) throw new Error("Database not available");
+        // Task 9 (F2, doc71) — trpcCode PHẢI giữ "INTERNAL_SERVER_ERROR": đây là
+        // đường LIVE của submitInspection, lỗi này bị bắt ở catch bên ngoài
+        // (~dòng 2937) và phân loại bằng isPermanentSubmitError() (đọc
+        // err.code trong PERMANENT_TRPC_CODES, inspectionStoreForward.ts) —
+        // đổi sang một code NẰM TRONG tập đó (BAD_REQUEST/CONFLICT/NOT_FOUND/
+        // FORBIDDEN/UNAUTHORIZED) sẽ biến một lỗi TRANSIENT (DB down, nên
+        // queue vào WAL rồi trả "queued: true") thành PERMANENT (trả lỗi
+        // thẳng cho máy, không backfill) — đổi hành vi store-forward âm thầm.
+        if (!dbInstance) throw appError("INTERNAL_SERVER_ERROR", "DB_UNAVAILABLE", undefined, "Database not available");
         try {
           await dbInstance.transaction(async (tx) => {
             if (measurementResults.length > 0) {
@@ -1987,7 +2399,10 @@ export async function processInspectionSubmission(
           throw txErr;
         }
         if (promoteOverallToNg) {
-          console.warn(`[submitInspection] spec-gate downgraded ${serverDowngradeCount} point(s) → inspection ${inspectionId} overall promoted to NG`);
+          console.warn(
+            `[submitInspection] overall promoted OK→NG for inspection ${inspectionId} ` +
+              `(${serverDowngradeCount} point(s) spec-gate downgraded, ${machineDeclaredNgCount} point(s) machine-declared NG)`,
+          );
         }
       }
       } // end two-phase (INSPECTION_SINGLE_TX_ENABLED off) measurement path
@@ -2008,10 +2423,12 @@ export async function processInspectionSubmission(
           overallResult: input.overallResult,
           productModelId: productModelRecord?.id ?? null,
           productionOrderCode: input.productionOrderCode ?? null,
-          inspectionTime: localInspTime.toISOString(),
+          inspectionTime: rawInspTime.toISOString(),
         },
         idempotencyKey: `qr-${inspectionId}`,
-        corporateCode: input.companyCode ?? null,
+        // Cùng nguồn với hàng đã ghi: sự kiện ERP đi ra ngoài KHÔNG được mang một mã tập đoàn
+        // khác với mã đã đóng dấu vào `product_inspections` — đó là hai lời khai về cùng một bo.
+        corporateCode: macTenant.corporateCode ?? null,
       });
 
       // Update production order quantities if linked
@@ -2040,7 +2457,7 @@ export async function processInspectionSubmission(
       // one throttled alert. Opt-in (one extra read/board on the hot path). This
       // is NOT an idempotency retry: same machine + same key already short-circuited.
       if (serialCollisionDetectEnabled()) {
-        const since = new Date(localInspTime.getTime() - serialCollisionWindowSeconds() * 1000);
+        const since = new Date(rawInspTime.getTime() - serialCollisionWindowSeconds() * 1000);
         const otherMachineId = await findCollidingSerialMachine({
           serialNumber: input.serialNumber,
           machineId: machine.id,
@@ -2342,6 +2759,20 @@ export async function processInspectionSubmission(
 /** Project one measurement_point_defs row into the machine sync payload (geometry-
  *  complete). `lighting` is the point's illumination recipe rows (may be empty). */
 function projectSyncPoint(p: Record<string, any>, lighting: any[] = []): Record<string, unknown> {
+  // Task 7 Khối C (QĐ-3) vòng sửa 1 — 18 field giới hạn (unit/lowerLimit/
+  // upperLimit + khối 3D/GD&T/criteria) suy từ MỘT nguồn `shared/pointLimitSpec.ts`,
+  // thay cho 18 dòng chép tay trước đây. Reviewer grep độc lập bắt được đây là
+  // bản chép tay thứ ba ngoài vùng canh của `pointLimitSpecCensus.test.ts` §1/§2
+  // (schema DB + `PointLimitSource`) — file này giờ IMPORT spec nên nằm ngoài
+  // diện "chép tay" của §3 (mệnh đề quét mới). `?? null` giữ nguyên hành vi cũ
+  // của khối 3D (đã có từ trước); áp dụng thêm cho unit/lowerLimit/upperLimit
+  // là TƯƠNG ĐƯƠNG với hành vi cũ trên dữ liệu THẬT — cột NULL từ drizzle luôn
+  // đọc ra `null`, không bao giờ `undefined`, nên `p.unit` và `p.unit ?? null`
+  // cùng giá trị ở CẢ hai đường gọi (`buildModelEntry`/`deltaSyncPoints`, đều
+  // SELECT nguyên hàng, không pick thưa).
+  const gioiHanSyncPoint = Object.fromEntries(
+    POINT_LIMIT_SPEC.map((m) => [m.field, p[m.field] ?? null]),
+  ) as Record<(typeof POINT_LIMIT_SPEC)[number]["field"], unknown>;
   const base: Record<string, unknown> = {
     id: p.id,
     code: p.code,
@@ -2350,9 +2781,7 @@ function projectSyncPoint(p: Record<string, any>, lighting: any[] = []): Record<
     measurementType: p.measurementType,
     // Fine-grained catalog type (SOLDER/XRAY/POSITION/…).
     measurementTypeCode: p.measurementTypeCode ?? null,
-    unit: p.unit,
-    lowerLimit: p.lowerLimit,
-    upperLimit: p.upperLimit,
+    ...gioiHanSyncPoint,
     nominalValue: p.nominalValue,
     positionX: p.positionX,
     positionY: p.positionY,
@@ -2367,24 +2796,11 @@ function projectSyncPoint(p: Record<string, any>, lighting: any[] = []): Record<
     // P1: shape + geometry (additive) — the fields getPoints previously omitted.
     shape: p.shape ?? "circle",
     geometry: p.geometry ?? null,
-    // 3D/solder/xray/position limits + criteria (same limits the server gates with).
+    // positionZ/heightNominal: KHÔNG nằm trong POINT_LIMIT_SPEC (không phải field
+    // spec-gate chấm bằng — positionZ là toạ độ, heightNominal là danh nghĩa/hiển
+    // thị) nên vẫn khai tay, giữ nguyên hành vi cũ.
     positionZ: p.positionZ ?? null,
-    heightMin: p.heightMin ?? null,
-    heightMax: p.heightMax ?? null,
     heightNominal: p.heightNominal ?? null,
-    areaMin: p.areaMin ?? null,
-    areaMax: p.areaMax ?? null,
-    volumeMin: p.volumeMin ?? null,
-    volumeMax: p.volumeMax ?? null,
-    coplanarityMax: p.coplanarityMax ?? null,
-    warpageMax: p.warpageMax ?? null,
-    voidPctMax: p.voidPctMax ?? null,
-    offsetXMax: p.offsetXMax ?? null,
-    offsetYMax: p.offsetYMax ?? null,
-    tiltMax: p.tiltMax ?? null,
-    thicknessMin: p.thicknessMin ?? null,
-    thicknessMax: p.thicknessMax ?? null,
-    criteria: p.criteria ?? null,
     // Multi-shot lighting recipe for this point (may be []).
     lighting: (lighting ?? []).map((l: any) => ({
       shotIndex: l.shotIndex,
@@ -2469,10 +2885,7 @@ function enforceMachineHeartbeatRateLimit(machineId: number, machineCode: string
   }
   win.count += 1;
   if (win.count > limit) {
-    throw new TRPCError({
-      code: "TOO_MANY_REQUESTS",
-      message: `Heartbeat rate limit exceeded for machine ${machineCode} (${limit}/min)`,
-    });
+    throw appError("TOO_MANY_REQUESTS", "RATE_LIMITED", undefined, `Heartbeat rate limit exceeded for machine ${machineCode} (${limit}/min)`);
   }
 }
 
@@ -2615,16 +3028,40 @@ const processWaveformSchema = z.object({
   samples: z.array(z.tuple([z.number(), z.number()])).max(100_000),
 });
 
-const submitProcessResultCoreObject = z.object({
+// Pha 1E Task 3 (BG-69) — `export` (KHÔNG đổi hình dạng/hành vi) CHỈ để census
+// schema-walk (server/contracts/capChuoiVarcharScan.ts) soi được đối tượng
+// ZodType THẬT của cửa ingest thứ ba/tư (submitProcessResult/…Batch, cùng
+// `laTenCuaIngest` mà cuaIngestScan.ts đã canh) — cùng quy ước
+// `submitInspectionCoreObject` ở trên. serialNumber/stepType/recipe.*/
+// lineCode/productionOrderCode/lotCode/idempotencyKey ĐÃ khớp cột thật
+// `process_results.*` (đo avi_app, 2026-08-30: serialNumber(128)/stepType(64)/
+// lineCode(50)/productionOrderCode(80)/lotCode(80)/idempotencyKey(200)) TRƯỚC
+// lượt sửa này — chỉ machineCode/apiKey/ts/serverReceivedAt còn thiếu `.max()`,
+// cùng lý do (SO KHỚP/timestamp, không INSERT verbatim) + cùng con số đã chọn
+// cho các trường CÙNG TÊN ở `submitInspectionCoreObject`.
+// ★★★ Pha 1F Task 6 (review lượt 7, C-2 ⛔) — `ts`/`serverReceivedAt` nới
+// `.max(40)` → `.max(64)`, cùng lý lẽ `startedAt`/`completedAt` của
+// `machineDataContractV2`/`metaJsonSchema`: MỌI trường thời gian của MỌI hợp
+// đồng ingest phải chịu được `DateTime.ToString()` mặc định (dài tới 50 ký
+// tự) — tiêu chí quét MỚI, không phải "có bằng chứng too_big hôm nay không".
+// `refineProcessTime` (bên dưới) VẪN đòi `ts` có offset UTC tường minh
+// (`hasExplicitUtcOffset`) nên `DateTime.ToString()` mặc định (không có
+// offset dạng `+07:00`/`Z`) KHÔNG qua được cửa này hôm nay dù `.max()` đã
+// nới — bản vá này PHÒNG NGỪA cùng lớp lỗi, không phải đóng một lỗ `too_big`
+// đã đo LIVE ở đây (khác `startedAt`/`finishedAt` của `metaJsonSchema`, nơi
+// lỗ đã đo LIVE).
+export const submitProcessResultCoreObject = z.object({
   schemaVersion: z.string().max(20).optional(), // log-only provenance (shared w/ inspection feed)
-  machineCode: z.string().optional(),           // OR authenticate via Authorization header
-  apiKey: z.string().optional(),
+  machineCode: z.string().max(50).optional(),   // OR authenticate via Authorization header
+  apiKey: z.string().max(256).optional(),
   serialNumber: z.string().trim().min(1).max(128),
   stepType: z.string().trim().min(1).max(64),   // SHOULD be in process_step_types (validate mode)
   result: z.enum(PROCESS_RESULT_VALUES),
   // ISO-8601. OPTIONAL: absent ⇒ server stamps now() + timeSource='server'. When
   // PRESENT it MUST be parseable AND carry an explicit UTC offset (refine below).
-  ts: z.string().optional(),
+  // .max(64) — Pha 1F Task 6 (C-2 ⛔): nới từ .max(40), timestamp column,
+  // không phải varchar — xem docblock trên.
+  ts: z.string().max(64).optional(),
   recipe: z
     .object({
       code: z.string().trim().min(1).max(128),
@@ -2641,8 +3078,77 @@ const submitProcessResultCoreObject = z.object({
   productionOrderCode: z.string().trim().max(80).optional(),
   lotCode: z.string().trim().max(80).optional(),
   // ── SERVER-STAMPED, carried through the WAL (a machine cannot forge them) ──
-  serverReceivedAt: z.string().optional(),
+  // .max(64) — Pha 1F Task 6 (C-2 ⛔): nới từ .max(40), cùng lý do `ts` ở trên.
+  serverReceivedAt: z.string().max(64).optional(),
   timeSource: z.enum(["device", "server"]).optional(),
+});
+
+/**
+ * Pha 1E Task 3 (BG-69) — `syncEdgeResults.input`, TRÍCH XUẤT từ inline
+ * `.input(z.object({…}))` thành named export CÙNG quy ước
+ * `submitInspectionCoreObject`/`submitProcessResultCoreObject` ở trên — cửa
+ * ingest thứ năm (`laTenCuaIngest`: `/^sync.*result/i` khớp "syncEdgeResults").
+ *
+ * `localResultId`/`topLabel` ĐÃ khớp cột thật `edge_inference_sync.*` varchar(100)
+ * (đo avi_app, 2026-08-30) TRƯỚC lượt sửa này — không đổi. `machineCode`/
+ * `apiKey` — VỆ SINH, cùng lý do + cùng con số hai trường CÙNG TÊN ở
+ * `submitInspectionCoreObject`. `inferredAt` (nhánh chuỗi) — VỆ SINH:
+ * `edge_inference_sync.inferredAt` là cột `timestamp` (không phải varchar).
+ * ★★★ Pha 1F Task 6 (review lượt 7, C-2 ⛔) — `.max(40)` → `.max(64)`, cùng
+ * lý lẽ `ts`/`serverReceivedAt` ở `submitProcessResultCoreObject` (tiêu chí
+ * quét MỚI: trần phải chịu được `DateTime.ToString()` mặc định, không phải
+ * "có bằng chứng too_big hôm nay không").
+ * `results[].inputReference` — MIỄN TRỪ có chủ đích: cột đích
+ * `edge_inference_sync.inputReference` là `text` (đo avi_app, NULL = không
+ * giới hạn thật), cùng lớp lý do `errorDesc`/`measurements[].remark`.
+ * `results[].predictions[].label` — VỆ SINH: `predictions` là cột `json`
+ * (`drizzle/schema/ai.ts`, `.$type<Array<{label,confidence}>>()`), cả mảng
+ * được serialize NGUYÊN VẸN — không có trần varchar nào cho riêng `label`,
+ * nhưng KHÔNG unbounded thật như `text` (JSON vẫn có thể phình vô hạn nếu
+ * không chặn) — `.max(255)` chặn payload rác, cùng hằng số 255 dùng cho các
+ * nhánh chuỗi "giá trị" khác trong ba hợp đồng.
+ */
+export const syncEdgeResultsCoreObject = z.object({
+  machineCode: z.string().max(50).optional(),
+  apiKey: z.string().max(256).optional(),
+  deploymentId: z.number().int().positive(),
+  results: z.array(z.object({
+    localResultId: z.string().min(1).max(100),
+    inputReference: z.string().optional(), // edge_inference_sync.inputReference là `text`, KHÔNG `.max()` (xem docblock)
+    predictions: z.array(z.object({ label: z.string().max(255), confidence: z.number() })),
+    confidence: z.number(),
+    topLabel: z.string().max(100),
+    processingTimeMs: z.number().int().nonnegative().optional(),
+    inferredAt: z.union([z.string().max(64), z.date()]), // Pha 1F Task 6 (C-2 ⛔): nới từ .max(40), xem docblock trên
+    inspectionId: z.number().int().positive().optional(),
+  })).max(500),
+});
+
+/**
+ * ★★★ Khối B — Task 2 (B-2): hình dạng `.input()` của cửa **ĐẨY CÂY DẠY** (máy → hệ).
+ *
+ * Export vì census `capChuoiVarcharDuongIngestMacDinh.test.ts` soi nó (cùng khuôn
+ * `submitInspectionCoreObject`/`submitProcessResultCoreObject`/`presignCoreObject`/
+ * `syncEdgeResultsCoreObject`): MỌI lá chuỗi phải có `.max()` khớp cột đích.
+ *
+ * ⚠ `.refine()` (đòi apiKey HOẶC machineCode) đặt TẠI `.input(...)`, KHÔNG bọc vào
+ * hằng này — đúng tiền lệ `presignCoreObject`, để census còn `.shape` mà đối chiếu
+ * THAM CHIẾU OBJECT (§0f), không chỉ đối chiếu TÊN.
+ *
+ * Sức chứa đo `information_schema.columns`, vai **`avi_app`**, 2026-09-03, CÙNG con
+ * số ở CẢ HAI DB `current_database()='aoi_management'` và `='aoi_management_test'`:
+ *   `productModelCode` → `product_models.code` **varchar(100)** (NOT NULL).
+ *   `machineCode` → `machines.code` varchar(50) · `apiKey` VỆ SINH 256 (chỉ SO KHỚP
+ *   qua `authenticateMachine`, KHÔNG INSERT) — cùng con số hai cửa kia đang dùng.
+ *
+ * `template` là **NGUYÊN VĂN** `machineTemplateContract` (Task 1) — KHÔNG `.extend()`,
+ * KHÔNG bọc: một hình dạng thứ hai cho cùng cây dạy là đúng lớp "hai nguồn sự thật".
+ */
+export const submitMachineTemplateCoreObject = z.object({
+  machineCode: z.string().max(50).optional(),
+  apiKey: z.string().max(256).optional(),
+  productModelCode: z.string().trim().min(1).max(100),
+  template: machineTemplateContract,
 });
 
 /**
@@ -2731,10 +3237,7 @@ async function validateProcessStepType(stepType: string, machineCode: string): P
   }
   if (known) return;
   if (mode === "enforce") {
-    throw new TRPCError({
-      code: "BAD_REQUEST",
-      message: `Unknown stepType "${stepType}" (not in process_step_types; PROCESS_ATTR_VALIDATE_MODE=enforce)`,
-    });
+    throw appError("BAD_REQUEST", "INVALID_VALUE", { field: "stepType" }, `Unknown stepType "${stepType}" (not in process_step_types; PROCESS_ATTR_VALIDATE_MODE=enforce)`);
   }
   console.warn(
     `[submitProcessResult] UNKNOWN stepType "${stepType}" from machine=${machineCode} — ACCEPTED ` +
@@ -2773,14 +3276,17 @@ export async function processProcessResultSubmission(
   // charges the limit itself once per item before dispatching).
   if (opts?.rateLimit) enforceMachineIngestRateLimit(auth);
 
+  // ══ 2026-08-18 — cùng luật với đường bo mạch ═══════════════════════════════
+  // `process_results` chỉ mang MỘT trục tự khai (`lineCode`; không có factoryCode/
+  // corporateCode), nhưng nó là ĐÚNG lớp lỗi ấy: một chuỗi trong JSON quyết định
+  // dây chuyền nào "sở hữu" chu kỳ này. Suy từ máy, đối chiếu lời khai, lệch ⇒ từ chối.
+  const macTenantProcess = await macTenantChoGhi(machine, { lineCode: input.lineCode });
+
   // Waveform TOTAL byte cap — permanent (BAD_REQUEST), never buffered.
   if (input.waveforms && input.waveforms.length > 0) {
     const bytes = Buffer.byteLength(JSON.stringify(input.waveforms), "utf8");
     if (bytes > processWaveformMaxBytes()) {
-      throw new TRPCError({
-        code: "BAD_REQUEST",
-        message: `waveforms exceed PROCESS_WAVEFORM_MAX_BYTES (${processWaveformMaxBytes()} bytes; got ${bytes})`,
-      });
+      throw appError("BAD_REQUEST", "INVALID_VALUE", { field: "waveforms" }, `waveforms exceed PROCESS_WAVEFORM_MAX_BYTES (${processWaveformMaxBytes()} bytes; got ${bytes})`);
     }
   }
 
@@ -2822,7 +3328,7 @@ export async function processProcessResultSubmission(
       stepType: input.stepType,
       result: input.result,
       stationId: input.stationId,
-      lineCode: input.lineCode,
+      lineCode: macTenantProcess.lineCode, // suy từ máy — xem macTenantProcess ở trên
       productionOrderCode: input.productionOrderCode,
       lotCode: input.lotCode,
       metricSpecs: input.metrics,
@@ -2863,7 +3369,11 @@ export async function processResultAlreadyPersisted(input: SubmitProcessResultIn
     throw err; // DbUnavailableError etc. → transient
   }
   const dbi = await getDb();
-  if (!dbi) throw new Error("Database not available");
+  // F2 (2026-08-22) — cùng lý do và cùng kết luận với `inspectionAlreadyPersisted()` ở
+  // trên: chỉ gọi qua `processWalSetDedupFn` → `processStoreForward` backfill loop, catch
+  // ở đó bỏ qua nội dung lỗi hoàn toàn. Đổi sang `DbUnavailableError` là trung tính về
+  // hành vi và đặt đúng tên cho tình trạng.
+  if (!dbi) throw new DbUnavailableError();
   const rows = await dbi
     .select({ resultId: processIdempotencyKeys.resultId })
     .from(processIdempotencyKeys)
@@ -2886,6 +3396,592 @@ function ensureProcessWalWired(): void {
   processWalSetDedupFn((payload) => processResultAlreadyPersisted(payload as SubmitProcessResultInput));
 }
 
+// ════════════════════════════════════════════════════════════════════════════
+// Pha 1B Task 6 (BG-1, spec §13 Đ-11/Đ-19) — NỐI payload máy v2.0 (cây 4 cấp) vào
+// ingest THẬT, và đặt đường TỪ CHỐI v1.x sau một cờ MẶC ĐỊNH TẮT.
+//
+// QĐ chủ dự án: "chỉ nhận v2.0, cắt máy cũ". Task này KHÔNG thi hành vế "cắt" NGAY —
+// đo được (Đ-19): `measurement_results.pointDefId` là NOT NULL với FK ON DELETE
+// RESTRICT ⇒ đường v2.0 CHƯA lưu được kết quả CẤP COMPONENT (đo trên DB test:
+// measurement_results nối vào cây = 0/31.256) cho tới khi Khối B (đồng bộ teach data,
+// mở khoá componentExtId → pointDefId) chạy xong. Từ chối v1.x NGAY BÂY GIỜ, trong khi
+// v2.0 còn mất chi tiết component, làm hệ thống XẤU HƠN Ở CẢ HAI ĐẦU: máy cũ bị chặn,
+// máy mới mất dữ liệu cấp component. Vì vậy pha này NHẬN CẢ HAI — v2.0 đi đường cây
+// (Task 4 dịch + Task 5 ghi), v1.x giữ NGUYÊN đường cũ — và việc từ chối v1.x nằm sau
+// một cờ tính năng.
+// ════════════════════════════════════════════════════════════════════════════
+
+// `laHinhDangCayV2` (nhận diện phiên bản THEO HÌNH DẠNG payload — mảng `surfaces` ⇒ cây v2.0)
+// CHUYỂN sang `../contracts/machineDataContract.ts` (Pha 1B Task 7 phần 2, 2026-08-28) để
+// `machineContractRouter.validate()` dùng CHUNG một bản với ingest thật — xem import ở đầu file
+// và chú thích tại định nghĩa gốc.
+
+/**
+ * Cờ CẮT máy cũ (BG-1). Mặc định TẮT. CHỈ bật SAU KHI Khối B (đồng bộ teach data)
+ * xong và cấp component lưu được — xem §13 Đ-19. Bật sớm hơn mốc đó chặn máy cũ trong
+ * khi máy mới còn chưa lưu được chi tiết component ⇒ xấu hơn hôm nay ở CẢ HAI đầu.
+ *
+ * ★★★ Lô 3 Mục 3 (BG-39 gđ2) — EXPORT có chủ ý: cửa ZIP (`aoiPackageRouter.commit`) dùng LẠI
+ * NGUYÊN VĂN hàm này để gác hình dạng phẳng ở `meta.json`, thay vì đọc thẳng
+ * `process.env.INGEST_REJECT_LEGACY_MACHINE_ENABLED` lần thứ hai ở file khác (hai nơi đọc cùng
+ * một biến môi trường qua hai hàm khác nhau là cách một trong hai bị SỬA mà cái kia không hay).
+ */
+export function ingestRejectLegacyMachineEnabled(): boolean {
+  return envTrue(process.env.INGEST_REJECT_LEGACY_MACHINE_ENABLED);
+}
+
+/**
+ * ★★★ Việc 1 (BG-89, docs/superpowers/specs/2026-09-01-aoi-chuan-goi-anh.md §7.2) — LƯỢT GHI
+ * ĐANG BAY của tín hiệu đếm hình dạng ingest. Rỗng ngoài lúc test đang đợi một lượt ghi hoàn
+ * tất — `ghiTinHieuHinhDangIngest` tự xoá phần tử của mình khỏi tập này khi ghi xong (thành
+ * công hay thất bại đều xoá, xem `.finally`).
+ *
+ * Dùng CHO TEST (qua `choTinHieuHinhDangIngestGhiXong`) để chờ đúng lượt ghi bất đồng bộ đã
+ * kích hoạt — KHÔNG dùng `setTimeout`/sleep đoán giờ.
+ */
+const ingestShapeSignalGhiDangBay = new Set<Promise<unknown>>();
+
+/**
+ * ★★★ Việc 1 (BG-89) — tín hiệu ĐẾM ĐƯỢC cho hai hình dạng ingest (v1.x/v1.1 phẳng ↔ v2.0 cây),
+ * ghi vào bảng `audit_logs` CÓ SẴN qua `logCrudOperation` (auditTrailService.ts) — KHÔNG thêm
+ * bảng/migration mới (đúng kỷ luật Task 2 vừa áp dụng: tận dụng chỗ sẵn có).
+ *
+ * ★ ĐO LIVE: `audit_logs` CŨNG WORM cho vai `avi_app` (`REVOKE UPDATE, DELETE ON audit_logs
+ * FROM avi_app`, drizzle/0224_avi_app_least_privilege_worm.sql:64) — một tác dụng phụ TỐT cho
+ * một sổ đếm: không ai (kể cả một bug ở nơi khác) xoá/sửa được hàng đã ghi bằng vai ứng dụng.
+ *
+ * ⚠⚠⚠ ĐIỂM GHI ĐÃ DỜI (I-4, review lượt 8, 2026-08-31) — ĐỌC TRƯỚC KHI DỜI LẠI.
+ * Bản đầu gọi hàm này TỪ `quyetDinhPhienBanIngest`, tức trong `.transform()` của `.input()`,
+ * tức **TRƯỚC** `authenticateMachine` (xác thực nằm trong thân `.mutation()`); cả hai cửa ingest
+ * là `publicProcedure`. Lý lẽ khi ấy — "một điểm quyết định dùng chung phủ mọi cửa MIỄN PHÍ" —
+ * đúng về mặt PHỦ, nhưng nó mua cái phủ đó bằng ba thứ ĐO ĐƯỢC:
+ *   (a) `entityName` là LỜI MÁY TỰ KHAI chưa xác thực ⇒ số đếm GIẢ MẠO ĐƯỢC ⇒ nó không trả lời
+ *       được đúng câu nó sinh ra để trả lời ("còn bao nhiêu MÁY THẬT gửi hình dạng cũ?");
+ *   (b) người gọi KHÔNG CÓ credential nào ghi được số hàng KHÔNG GIỚI HẠN vào `audit_logs` —
+ *       bảng WORM cho vai `avi_app` (mig 0224) ⇒ **ứng dụng không dọn được** hàng nào đã ghi;
+ *   (c) chuỗi tự khai > 255 ký tự làm INSERT ném `22001` và bị `.catch()` nuốt ⇒ đếm HỤT đúng
+ *       những payload dị dạng nhất.
+ * Nay hàm nhận MÁY ĐÃ XÁC THỰC và chỉ được gọi từ trong thân `.mutation()`, NGAY SAU
+ * `authenticateMachine` thành công. `entityName` là `machines.code` đọc từ CSDL (không phải lời
+ * khai), `entityId` là FK máy thật ⇒ (a) và (c) đóng theo CẤU TẠO. (b) đóng vì không có
+ * credential hợp lệ thì không có hàng nào.
+ *
+ * ★ ĐÁNH ĐỔI KHAI RÕ — cái MẤT khi dời: lượt hỏng XÁC THỰC, lượt hỏng ZOD, và lượt v1.x bị
+ * `loiMayChuaNangCap` TỪ CHỐI khi cờ `INGEST_REJECT_LEGACY_MACHINE_ENABLED` BẬT (phép từ chối
+ * ném trong `.input()`, trước xác thực) nay **KHÔNG** được đếm. Bản trước khai ngược lại
+ * ("★ GHI Ở CẢ HAI TRẠNG THÁI CỜ") — câu đó nay SAI và đã bị xoá, không để lại làm bẫy cho
+ * người đọc sau. Chấp nhận được vì câu hỏi này được hỏi để QUYẾT ĐỊNH có bật cờ hay không, tức
+ * khi cờ còn TẮT (mặc định hôm nay); và một máy chưa xác thực không phải một MÁY THẬT.
+ * ⚠ Còn mất một thứ nữa, khai luôn: lượt ingest bị đệm vào WAL vì CSDL sập (xác thực cũng cần
+ * CSDL nên nó hỏng TRƯỚC) không được đếm, và lượt PHÁT LẠI từ WAL cũng không (backfill gọi
+ * `processInspectionSubmission` KHÔNG kèm `sauXacThuc`) — cố ý: phát lại không phải một lượt
+ * gửi MỚI, đếm nó là đếm hai lần cùng một bo.
+ * `§C`/`§B` của `dangKyTinHieuHinhDangIngestBg89.test.ts` GHIM cả hai chiều bằng SELECT thật.
+ *
+ * ★ TRẦN TĂNG TRƯỞNG: điểm gọi của `submitInspection` nằm SAU `enforceMachineIngestRateLimit`
+ * (khoá theo `keyId`/`machine.id` ĐÃ XÁC THỰC — machineAuthService.ts), nên số hàng ghi được
+ * bị chặn bởi đúng trần ingest per-máy, KHÔNG còn bởi một trần đọc credential từ BODY mà chỉ
+ * kiểm CÓ MẶT (`rateLimitConfig.credentialKey`) — xoay vòng credential giả nay không ghi được
+ * hàng nào. `submitInspectionBatch` ghi MỘT hàng cho CẢ batch (trần per-item nằm trong vòng lặp).
+ * ⚠ Vẫn CHƯA có retention/partition cho `audit_logs` — nợ **BG-93**, xem backlog toàn cảnh §3.
+ *
+ * ★ FIRE-AND-FORGET có chủ đích, KHÔNG await: một lượt ghi tín hiệu ĐẾM chậm/lỗi KHÔNG được
+ * phép làm chậm/rớt một lượt ingest THẬT — cùng nguyên tắc
+ * `void backfillInspections().catch(() => undefined)` đã dùng trong chính file này.
+ *
+ * KHÔNG NÉM RA NGOÀI: `logCrudOperation` tự bọc try/catch (auditTrailService.ts) và trả
+ * `{id:-1}` khi CSDL lỗi/không sẵn sàng — một tín hiệu đếm mất không được phép làm rớt một lượt
+ * ingest THẬT. `.catch()` ở đây là lớp phòng thủ THỨ HAI (vd CSDL bị mock thiếu `createAuditLog`
+ * trong các test file mock `../db` toàn phần — ném `TypeError` đồng bộ NGAY TRONG try của
+ * `logCrudOperation`, vẫn bị bắt ở đó, `.catch()` này chỉ chặn phần còn sót nếu có).
+ *
+ * @param hinhDang HÌNH DẠNG **ĐÃ QUYẾT ĐỊNH** bởi `quyetDinhPhienBanIngest` và mang tới đây
+ *   nguyên vẹn (`parsedInput.kind` / `hinhDangIngest`). ⚠ ĐỪNG suy lại bằng `laHinhDangCayV2`
+ *   ở đây: một nguồn sự thật thứ hai là cách hai con số bắt đầu lệch nhau mà không ai biết.
+ *   ★★★ Lô 3 Mục 2 (BG-57b) — giá trị THỨ BA `"v1-rejected"` ghi action MỚI
+ *   `INGEST_SHAPE_LEGACY_REJECTED`, dùng cho một lượt TỪ CHỐI (cờ BẬT + payload phẳng) xảy ra
+ *   SAU xác thực — khác hẳn `"v1"`/`"v2"` (payload được NHẬN). Điểm gọi THẬT hôm nay nằm ở
+ *   `aoiPackageRouter.commit` (BG-39 gđ2, cửa ZIP xác thực TRƯỚC KHI parse `meta.json` nên gác ở
+ *   đó là AN TOÀN — khác đường v1 trực tiếp, nơi `loiMayChuaNangCap` ném TRONG `.input()`, TRƯỚC
+ *   xác thực, nên KHÔNG gọi hàm này cho nhánh đó, đúng đánh đổi I-4 đã khai ở trên).
+ * @param may Máy **ĐÃ XÁC THỰC** (`auth.machine`) — nguồn DUY NHẤT của `entityName`/`entityId`.
+ * @param schemaVersionKhai `schemaVersion` máy khai, lấy từ payload **ĐÃ QUA ZOD** (bị hợp đồng
+ *   chặn độ dài), giữ lại vì nó là một phần của thứ đang được đếm.
+ */
+export function ghiTinHieuHinhDangIngest(
+  hinhDang: "v1" | "v2" | "v1-rejected",
+  may: { id: number; code: string },
+  schemaVersionKhai: string | null,
+): void {
+  const action =
+    hinhDang === "v2"
+      ? AUDIT_ACTIONS.INGEST_SHAPE_V2
+      : hinhDang === "v1-rejected"
+        ? AUDIT_ACTIONS.INGEST_SHAPE_LEGACY_REJECTED
+        : AUDIT_ACTIONS.INGEST_SHAPE_LEGACY;
+  const luot = logCrudOperation(
+    { source: "api" },
+    {
+      action,
+      entityType: ENTITY_TYPES.MACHINE,
+      entityId: may.id,
+      entityName: may.code,
+      details: {
+        operation: action.toUpperCase(),
+        metadata: {
+          hinhDang,
+          coCoCheCatMayCuDangBat: ingestRejectLegacyMachineEnabled(),
+          schemaVersionKhai,
+        },
+      },
+      status: "success",
+    },
+  ).catch((err) => {
+    console.error(
+      "[ghiTinHieuHinhDangIngest] ghi tín hiệu đếm hình dạng ingest thất bại (KHÔNG chặn ingest thật):",
+      err,
+    );
+  });
+  ingestShapeSignalGhiDangBay.add(luot);
+  void luot.finally(() => ingestShapeSignalGhiDangBay.delete(luot));
+}
+
+/**
+ * ★★★ CHỈ DÙNG CHO TEST — đợi MỌI lượt ghi tín hiệu đếm hình dạng ingest (`ghiTinHieuHinhDangIngest`)
+ * đang bay hoàn tất, trước khi SELECT lại `audit_logs`. Không đoán bằng sleep: đợi ĐÚNG promise đã
+ * kích hoạt qua chính route dưới kiểm tra (xem `cuaIngestCensus.test.ts`/lưới Task 3 BG-89).
+ */
+export async function choTinHieuHinhDangIngestGhiXong(): Promise<void> {
+  await Promise.all(ingestShapeSignalGhiDangBay);
+}
+
+/**
+ * ★★★ Pha 1C Task 3 (BG-21 ⛔) — MỘT điểm quyết định phiên bản, DÙNG CHUNG cho mọi cửa ingest có
+ * hình dạng thuộc `machineDataContract` (phẳng v1.x/v1.1 ↔ cây v2.0).
+ *
+ * ⚠⚠⚠ VÌ SAO HÀM NÀY TỒN TẠI — lỗ đã đo được (Đ-20, spec §13, review toàn nhánh Pha 1B):
+ * ```
+ * // TRƯỚC bản vá — hai nhánh KHÔNG cùng một điểm quyết định:
+ * if (laHinhDangCayV2(raw)) { return { kind: "v2", … }; }   // ← dòng cũ 3007, KHÔNG kiểm cờ
+ * if (ingestRejectLegacyMachineEnabled()) { … }              // ← dòng cũ 3010, cờ CHỈ ở đây
+ * ```
+ * Nhánh NHẬN v2.0 `return` TRƯỚC phép kiểm cờ — cờ chỉ quyết định có TỪ CHỐI v1.x hay không, KHÔNG
+ * gác nhánh NHẬN. Tôi từng khai ở cổng ra Pha 1B rằng "thứ đang ngăn tai hoạ chỉ là một giá trị mặc
+ * định" — SAI: không có gì đang ngăn, vì nhánh nhận không hề đọc cờ. Gộp CẢ HAI phép kiểm vào một
+ * hàm: câu "khi cờ BẬT, payload v2.0 được xử lý thế nào?" nay có câu trả lời TƯỜNG MINH đọc được
+ * ngay tại đây (luôn "v2" — cờ không áp dụng cho hình dạng cây, chỉ áp dụng cho hình dạng CŨ),
+ * không còn là hệ quả của thứ tự dòng trong một hàm khác.
+ *
+ * Ném `loiMayChuaNangCap` NGAY TẠI ĐÂY (không trả "reject" rồi bắt nơi gọi tự throw) để không nơi
+ * gọi nào quên kiểm giá trị trả về và vô tình NHẬN một payload lẽ ra phải bị từ chối.
+ *
+ * `cuaIngestCensus.test.ts` (BG-31) quét TOÀN BỘ `machineApiRouter` bằng AST và đòi MỌI cửa nhận
+ * dữ liệu kiểm tra từ máy (`submit*`/`sync*Result*`) hoặc gọi được tới hàm này, hoặc có tên trong
+ * `MIEN_TRU_QUYET_DINH_PHIEN_BAN` kèm lý do — không cửa nào được im lặng đứng ngoài cả hai.
+ *
+ * ★★★ HÀM NÀY THUẦN — MỘT vị từ trả lời MỘT câu hỏi ("payload này hình dạng nào, và có được
+ * nhận không?"), KHÔNG kèm tác dụng phụ nào. Việc 1 (BG-89) từng gắn `ghiTinHieuHinhDangIngest`
+ * ngay tại đây; I-4 (review lượt 8) đã DỜI nó ra: hàm này chạy trong `.transform()` của
+ * `.input()`, tức TRƯỚC `authenticateMachine`, nên mọi lượt ghi CSDL đặt ở đây là một lượt ghi
+ * CHƯA XÁC THỰC vào bảng `audit_logs` **WORM** (mig 0224 — `avi_app` không có DELETE). Điểm ghi
+ * nay nằm trong thân `.mutation()` của hai cửa ingest, NGAY SAU xác thực thành công; hình dạng
+ * mà nơi ghi dùng là ĐÚNG GIÁ TRỊ hàm này TRẢ VỀ, không suy lại lần hai.
+ * ⚠ Ai muốn thêm tác dụng phụ vào đây phải trả lời trước: nó chạy cho người gọi CHƯA XÁC THỰC
+ * nào? `dangKyTinHieuHinhDangIngestBg89.test.ts` §D canh sự THUẦN này và sẽ ĐỎ.
+ */
+function quyetDinhPhienBanIngest(raw: unknown): "v2" | "v1" {
+  const laCay = laHinhDangCayV2(raw);
+  if (laCay) return "v2";
+  if (ingestRejectLegacyMachineEnabled()) {
+    const declared =
+      raw && typeof raw === "object" && typeof (raw as { schemaVersion?: unknown }).schemaVersion === "string"
+        ? (raw as { schemaVersion: string }).schemaVersion
+        : "(không khai schemaVersion — payload hình dạng phẳng v1.x/`measurements`)";
+    throw loiMayChuaNangCap(declared);
+  }
+  return "v1";
+}
+
+/**
+ * ★★★ Pha 1C Task 3 (BG-31) — SỔ MIỄN TRỪ khỏi `quyetDinhPhienBanIngest`, mỗi tên PHẢI kèm LÝ DO
+ * đo được. `cuaIngestCensus.test.ts` CHẤP NHẬN các thủ tục có tên trong bảng này KHÔNG gọi tới
+ * điểm quyết định phiên bản, với điều kiện lý do còn đúng.
+ *
+ * ⚠ Đây KHÔNG phải một cửa lách âm thầm — mỗi dòng là một khẳng định "cửa này SỐNG NGOÀI phạm vi
+ * cutover phẳng-v1.x/v1.1 → cây-v2.0 của `machineDataContract`", và census sẽ ĐỎ nêu đúng tên nếu
+ * ai thêm một cửa `submit*`/`sync*Result*` MỚI mà không có mặt ở đây VÀ cũng không gọi
+ * `quyetDinhPhienBanIngest`.
+ */
+export const MIEN_TRU_QUYET_DINH_PHIEN_BAN: Readonly<Record<string, string>> = {
+  submitMachineTemplate:
+    "Khối B Task 2 — cửa ĐẨY CÂY DẠY (CẤU HÌNH máy → hệ), hợp đồng `machineTemplateContract` " +
+    "(`server/contracts/machineTemplateContract.ts`). Payload KHÔNG BAO GIỜ mang `measurements` " +
+    "(hình dạng phẳng v1.x) lẫn `surfaces[].positions[].captures[].components[].result` (hình " +
+    "dạng cây KẾT QUẢ v2.0) — nó mang `roi`/`markerWidth`/`relX`/`templateImagePath`, tức TOẠ ĐỘ " +
+    "DẠY, không có một trường KẾT QUẢ nào. Cờ INGEST_REJECT_LEGACY_MACHINE_ENABLED nói về cutover " +
+    "phẳng→cây của dữ liệu KIỂM TRA; ép cửa này qua `quyetDinhPhienBanIngest` sẽ TỪ CHỐI 100% " +
+    "lượt gọi HỢP LỆ ngay khi cờ BẬT (payload không có `surfaces[].result` nên `laHinhDangCayV2` " +
+    "trả false ⇒ bị coi là máy cũ) — sai đúng mục tiêu của cờ. Cùng lý lẽ `syncEdgeResults`. " +
+    "⚠ Cửa này VẪN nằm TRONG census `.max()` đường ingest (`DANH_SACH_SCHEMA_INGEST`) — miễn trừ " +
+    "chỉ áp cho ĐIỂM QUYẾT ĐỊNH PHIÊN BẢN, không phải một lối ra khỏi mọi census.",
+  submitProcessResult:
+    "Hợp đồng \"process feed\" (`MACHINE_PROCESS_CONTRACT_VERSIONS`, doc 56/57 — xem " +
+    "`server/contracts/machineDataContract.ts`) là HỌ HỢP ĐỒNG KHÁC, có registry RIÊNG chỉ " +
+    "gồm \"1.0\" (log-only, không ép buộc), không hề mang hình dạng phẳng v1.x/v1.1 hay cây " +
+    "v2.0 của `machineDataContract`. Cờ INGEST_REJECT_LEGACY_MACHINE_ENABLED nói về cutover " +
+    "INSPECTION AVI/AOI, không áp dụng cho quy trình chung (test/ép/hàn/dán…).",
+  submitProcessResultBatch:
+    "Cùng lý do với submitProcessResult — cùng hợp đồng `machineProcessResultContractV1`, cùng " +
+    "registry riêng, cùng schemaVersion log-only \"1.0\" không liên quan machineDataContract.",
+  syncEdgeResults:
+    "Payload là KẾT QUẢ SUY LUẬN EDGE (predictions/topLabel/confidence) tham chiếu một " +
+    "inspectionId ĐÃ TỒN TẠI — không phải một payload đo lường máy theo hợp đồng v1.x/v2.0 nào. " +
+    "Payload này KHÔNG BAO GIỜ mang `surfaces` lẫn `measurements`; ép nó qua " +
+    "`quyetDinhPhienBanIngest` sẽ từ chối 100% lượt gọi HỢP LỆ ngay khi cờ BẬT — sai đúng mục " +
+    "tiêu của cờ (cắt máy AVI/AOI cũ gửi kết quả đo, không phải cắt đường đồng bộ suy luận biên).",
+};
+
+/**
+ * Kết quả phân giải input CỦA `submitInspection` sau khi đã parse ĐÚNG hợp đồng của
+ * nhánh phát hiện được (không phải union thô của hai schema — mỗi nhánh tự `.parse()`
+ * hợp đồng của MÌNH, giữ nguyên hành vi lỗi riêng của từng nhánh).
+ */
+type SubmitInspectionRouterInput =
+  | { kind: "v1"; data: SubmitInspectionInput }
+  | { kind: "v2"; data: MachinePayloadV2 };
+
+/**
+ * Input parser THẬT của `submitInspection`, dùng làm `.input()` thay cho
+ * `submitInspectionInputSchema` trực tiếp. `z.unknown().transform(...)` là một zod
+ * schema THẬT (`_input=unknown`, `_output=SubmitInspectionRouterInput`) nên chữ ký
+ * client-facing KHÔNG đổi (`unknown` nhận mọi payload — mọi test/caller hiện có biên
+ * dịch nguyên vẹn). Lỗi ném RA TỪ BÊN TRONG `.transform()` (kể cả `Error` thường như
+ * `loiMayChuaNangCap()`, không chỉ ZodError — đã tự đo bằng node: transform không nuốt
+ * exception, `parse()`/`safeParse()` để lỗi thoát nguyên văn) được `createInputMiddleware`
+ * của tRPC bọc thành `TRPCError({code:"BAD_REQUEST", cause})` — ĐÚNG cơ chế `.input()`
+ * vẫn dùng xưa nay, không cần router tự viết middleware bọc lỗi riêng.
+ *
+ * Cả hai nhánh (NHẬN v2.0 / TỪ CHỐI v1.x khi cờ BẬT) nay cùng nằm sau đúng MỘT lời gọi
+ * `quyetDinhPhienBanIngest(raw)` — đóng BG-21, xem doc-comment tại định nghĩa hàm đó.
+ */
+const submitInspectionRouterInputSchema = z.unknown().transform((raw): SubmitInspectionRouterInput => {
+  const quyetDinh = quyetDinhPhienBanIngest(raw);
+  if (quyetDinh === "v2") {
+    return { kind: "v2", data: machineDataContractV2.parse(raw) };
+  }
+  // Nhánh v1.x KHÔNG đổi: gọi lại ĐÚNG schema/lỗi mà `.input()` vẫn tự động chạy
+  // trước bản vá này — hành vi lỗi (zod issues thô cho payload sai) giữ nguyên văn.
+  return { kind: "v1", data: submitInspectionInputSchema.parse(raw) };
+});
+
+/**
+ * ★★★ Pha 1C Task 3 (BG-31) — gác `submitInspectionBatch` qua ĐÚNG điểm quyết định dùng chung.
+ *
+ * Cửa này chỉ nhận mảng PHẲNG `measurements` (`submitInspectionBatchItemSchema` = hợp đồng
+ * v1.x/v1.1, KHÔNG có nhánh cây v2.0 nào) — không phải "cửa quên gác vì không ai nghĩ tới", mà là
+ * cửa mà TOÀN BỘ nội dung của nó thuộc đúng hình dạng mà cờ CẮT máy cũ nhắm tới. Trước bản vá, một
+ * máy cũ bị `submitInspection` từ chối (cờ BẬT) vẫn lách được bằng cách gói CHÍNH payload đó vào
+ * `{inspections:[payload]}` rồi gọi cửa này — cờ hoàn toàn vô hiệu qua đường batch.
+ *
+ * `laHinhDangCayV2(raw)` ở CẤP TOP-LEVEL của request batch (`{machineCode, apiKey, inspections}`)
+ * luôn `false` (mảng `surfaces` không nằm ở tầng này dù một item bên trong có mang nó — và dù có,
+ * `submitInspectionCoreObject` không khai trường đó nên zod strip mất) — nên `quyetDinhPhienBanIngest`
+ * chỉ còn hỏi ĐÚNG MỘT câu cho cả batch: "cờ CẮT máy cũ có đang BẬT không?". Gọi MỘT lần ở cấp
+ * request, không phải per-item, phản ánh đúng bản chất "cả batch cùng một hình dạng cũ".
+ *
+ * ⚠ Cố ý đặt trong `.input()` (input-parse-time), KHÔNG phải trong thân `.mutation()`/per-item
+ * try-catch: `isPermanentSubmitError()` (`server/services/inspection/inspectionStoreForward.ts`)
+ * chỉ nhận diện `TRPCError` với code cố định — một `Error` thường như `loiMayChuaNangCap()` sẽ bị
+ * phân loại TRANSIENT và bị đệm vào WAL rồi thử lại MÃI MÃI thay vì bị từ chối thẳng. Đặt ở
+ * `.input()` cho lỗi thoát qua đúng đường `createInputMiddleware` → `TRPCError(BAD_REQUEST)` —
+ * CÙNG cơ chế, CÙNG loại lỗi với `submitInspection`.
+ *
+ * ★★★ I-4 — transform nay TRẢ VỀ hình dạng đã quyết định kèm dữ liệu đã parse
+ * (`{hinhDangIngest, duLieu}`) thay vì vứt giá trị trả về đi. Thân `.mutation()` cần biết hình
+ * dạng để ghi tín hiệu ĐẾM sau khi xác thực xong, và nó phải dùng LẠI quyết định này chứ không
+ * gọi `laHinhDangCayV2` lần thứ hai — hai nguồn sự thật là cách hai con số bắt đầu lệch nhau.
+ * Chữ ký client-facing KHÔNG đổi (`.input()` vẫn nhận `unknown`); chỉ kiểu ĐẦU RA nội bộ đổi,
+ * và nó chỉ có đúng một hộ tiêu thụ ngay bên dưới.
+ * ⚠ Thứ tự định trị giữ NGUYÊN: `quyetDinhPhienBanIngest` (có thể ném `loiMayChuaNangCap`) chạy
+ * TRƯỚC `.parse()`, đúng như trước bản vá.
+ */
+const submitInspectionBatchRouterInputSchema = z.unknown().transform((raw) => {
+  const hinhDangIngest = quyetDinhPhienBanIngest(raw);
+  return { hinhDangIngest, duLieu: submitInspectionBatchInputSchema.parse(raw) };
+});
+
+/**
+ * Pha 1B Task 6 (BG-1) — nhánh v2.0 của `submitInspection`: dịch cây (Task 4,
+ * `dichCayKetQua`) rồi ghi qua `persistInspectionAtomic` với `opts.cay` (Task 5) — CÙNG
+ * một transaction header+cây, bảo đảm CẤU TRÚC (server/db/inspection.ts), không phải
+ * quy ước bằng lời. `product_inspections.overallResult` PHẢI là `cay.verdictLuuTru`
+ * (KHÔNG phải `payload.overallResult` — đó chính là nơi 6,55% bo NTF biến mất, đã đo ở
+ * Task 1/4/5).
+ *
+ * PHẠM VI CỐ Ý HẸP HƠN `processInspectionSubmission` (nhánh v1.x): KHÔNG ghi
+ * `measurement_results` cấp component (chờ Khối B — xem khối chú thích Đ-19 phía trên),
+ * KHÔNG spec-gate/ảnh/ERP-outbox/NG-alert/production-order. Đây đúng phạm vi "nối đường
+ * ingest thật" của brief Task 6; phần còn thiếu nêu rõ trong báo cáo, không âm thầm bỏ
+ * qua.
+ *
+ * ── Doc 2026-08-29 (WAL cho cây v2.0, Task 1) — hàm này KHÔNG còn ném thẳng ra ngoài
+ * trên lỗi tạm thời. Nơi gọi (`submitInspection.mutation`, nhánh `kind==="v2"`) bọc lời
+ * gọi này bằng try/catch: lỗi TẠM THỜI (`!isPermanentSubmitError`) ⇒ buffer nguyên văn
+ * payload vào `inspectionStoreForward` WAL (khoá gửi tính bằng `dungKhoaGuiTheoHinhDang`,
+ * KHÔNG phải `computeSubmissionKey` — xem §QĐ-WAL-A) và ACK
+ * `{success:true, queued:true, submissionId}`; lỗi VĨNH VIỄN (xác thực/hợp đồng) vẫn ném
+ * NGUYÊN VĂN như hàm này luôn làm — không đổi gì Ở ĐÂY, chỉ đổi Ở NƠI GỌI.
+ *
+ * ★★★ EXPORT có chủ ý (Task 5, BG-97/BG-99) — hai hộ gọi ngoài module:
+ * `ensureInspectionWalWired` (WAL phát lại, dưới đây, truyền `opts.serverReceivedAt =
+ * meta.enqueuedAt`) và lưới DB `server/db/specGateCayV2.db.test.ts` (mệnh đề 7 —
+ * "cửa trực tiếp" cần bơm `opts.serverReceivedAt` THẲNG để mô phỏng một board nhận
+ * SỚM hơn "bây giờ", việc mà `caller().submitInspection(...)` qua tRPC KHÔNG cho làm
+ * — đúng theo thiết kế: máy không được tự khai mốc-nhận-server của chính nó).
+ */
+export async function submitInspectionTreeV2(
+  payload: MachinePayloadV2,
+  opts: {
+    headerKey?: string | null;
+    // `sauXacThuc`: xem docblock cùng tên ở `processInspectionSubmission` — cùng mục đích, cùng
+    // vị trí gọi (sau xác thực + sau trần tốc độ), để nhánh v2.0 và nhánh v1.x đếm ở ĐÚNG một
+    // khoảnh khắc như nhau.
+    sauXacThuc?: (auth: MachineAuthResult) => void;
+    /**
+     * ★★★ Task 5 (BG-97 → BG-99, spec QĐ-2) — NEO của spec-gate snapshot (xem `mocDo`
+     * bên dưới). `undefined` (đa số lượt gọi tRPC trực tiếp) ⇒ `mocDo ≈ new Date()`
+     * (chấm theo giới hạn ĐANG SỐNG — đúng ý nghĩa "bo LIVE, đo NGAY BÂY GIỜ"). WAL
+     * phát lại truyền `enqueuedAt` của mục hàng đợi — xem `ensureInspectionWalWired`.
+     */
+    serverReceivedAt?: Date;
+  },
+): Promise<{
+  success: true;
+  inspectionId: number;
+  duplicate?: boolean;
+  /** Khối B Task 3 (Đ-19) — số hàng cấp component ghi được / số linh kiện chưa dạy. */
+  capComponent?: { tong: number; daGhi: number; chuaDay: number; mayCoBanDay: boolean };
+  /**
+   * Khối B Task 4 (BG-92) — kết luận của spec-gate, BA TRẠNG THÁI tách rời.
+   * `dat`/`truot` = đã chấm được. `chuaDay`/`khongGioiHan`/`tatCong` = KHÔNG KẾT
+   * LUẬN ĐƯỢC, và **không** được cộng vào `dat` ở bất kỳ hộ đọc nào.
+   */
+  specGate: {
+    batCong: boolean; tong: number; dat: number; truot: number; haCap: number;
+    chuaDay: number; khongGioiHan: number; tatCong: number;
+    /** Task 5 (BG-97 phơi counters) — trong `dat`+`truot`: bao nhiêu chấm bằng giới hạn
+     * TÁI DỰNG (`theoSnapshot`) so với giới hạn ĐANG SỐNG (`theoSong`). Cả hai `0` khi
+     * cổng snapshot không áp dụng (cờ tắt / không có lịch sử sửa). */
+    theoSnapshot: number;
+    theoSong: number;
+  };
+  /**
+   * ★★★ Khối C Task 13 (BG-98, spec QĐ-8) — cổng "MÁY TỰ MÂU THUẪN". KHÁC HẲN
+   * `specGate` ở trên (nguồn KỸ SƯ): đây chỉ so `value`/`result` máy khai với
+   * `lowerLimit`/`upperLimit` MÁY TỰ KHAI kèm CHÍNH lá đó, không đọc bản dạy, và
+   * KHÔNG ảnh hưởng `overallResult`/`verdictLuuTru` ở trên — thuần tín hiệu chất
+   * lượng pipeline máy. `mauThuan` > 0 ⇒ có lá máy khai `value` ngoài chính giới
+   * hạn nó gửi mà vẫn kết `OK`. Xem `../services/mayTuMauThuan.ts`.
+   */
+  mayTuMauThuan: { tong: number; mauThuan: number };
+}> {
+  const auth = await authenticateMachine({
+    apiKey: payload.apiKey,
+    headerKey: opts.headerKey,
+    scope: "ingest:write",
+  });
+  const machine = auth.machine;
+  enforceMachineIngestRateLimit(auth);
+  opts.sauXacThuc?.(auth);
+
+  // ★★★ Task 5 (BG-97 → BG-99, spec QĐ-2) — NEO của spec-gate snapshot: MỐC MÁY CHỦ
+  // NHẬN ĐƯỢC PAYLOAD, đặt MỘT LẦN ngay đây (sau xác thực + trần tốc độ, không gọi lại
+  // ở dưới). ĐÂY LÀ RULING, KHÔNG PHẢI TIỆN LỢI: bản đầu (BG-97, commit `c98781db`) neo
+  // bằng `mocDoTuChuoi(payload.completedAt) ?? mocDoTuChuoi(payload.startedAt)` — ĐỒNG
+  // HỒ MÁY. Controller LOẠI phương án đó (spec QĐ-2): máy không tin được (skew 6h có
+  // thật — `assessClockSkew`), và chiều nguy hiểm là đồng hồ máy CHẬM ⇒ một bo MỚI (đo
+  // bây giờ, máy khai giờ cũ) bị chấm theo limit CŨ ⇒ bo XẤU đi lọt — máy hỏng đồng hồ
+  // (hay bị chỉnh tay) có thể tạo ra chính hình dạng tấn công này ÂM THẦM.
+  // `opts.serverReceivedAt` KHÔNG có mặt ở lượt gọi tRPC trực tiếp thông thường (không
+  // trường nào trong hợp đồng máy cho phép máy tự khai nó) ⇒ `mocDo ≈ new Date()` —
+  // đúng ý nghĩa "board LIVE, đo ngay bây giờ" ⇒ chấm theo giới hạn ĐANG SỐNG. Chỉ WAL
+  // phát lại (`ensureInspectionWalWired`, dưới) truyền giá trị khác `undefined`
+  // (`enqueuedAt` của mục hàng đợi) — vẫn TẤT ĐỊNH qua phát lại vì `enqueuedAt` được
+  // persist trong entry, không đọc đồng hồ lúc phát lại (mệnh đề 2 của BG-97 còn nguyên).
+  const mocDo: Date = opts.serverReceivedAt ?? new Date();
+
+  // Mã tenant SUY từ máy đã xác thực (★★★ 2026-08-18) — hợp đồng v2.0 không mang
+  // companyCode/factoryCode/workshopCode/lineCode để đối chiếu (khác v1.x), nên `khai`
+  // luôn rỗng: không có lời tự khai nào để so.
+  const macTenant = await macTenantChoGhi(machine, {});
+
+  const normalizedProductModelCode = payload.productModel?.trim();
+  const productModelRecord = normalizedProductModelCode
+    ? await db.getProductModelByCode(normalizedProductModelCode)
+    : undefined;
+  const resolvedProductModelCode = productModelRecord?.code || normalizedProductModelCode;
+
+  await db.updateMachineHeartbeat(machine.id);
+
+  // ★★★ Khối B Task 3 (Đ-19) + Task 4 (BG-92) — tra bản dạy CỦA CHÍNH MÁY NÀY cho mọi
+  // cặp `(captureId, componentId)` TRƯỚC khi dịch cây. Phép ĐỌC, ngoài mọi transaction.
+  // ⚠ THỨ TỰ LÀ BẮT BUỘC, KHÔNG PHẢI SỞ THÍCH: spec-gate phải chấm TỪNG LÁ trước khi
+  // `dichCayKetQua` cuộn lên bốn cấp (cuộn trước rồi mới chấm sẽ để cấp bo chốt OK
+  // trong khi lá đã bị hạ thành NG). Vì vậy lượt tra chạy trên PAYLOAD THÔ — cùng bộ
+  // khoá, cùng hàm `db.traBanDayChoCay` (xem `CayCoKhoaTra`). `mocDo` (neo giới hạn) đã
+  // tính Ở TRÊN, ngay sau xác thực — xem chú thích lớn tại chỗ đặt nó.
+  const traBanDay = await db.traBanDayChoCay(machine.id, payload, productModelRecord?.id, {
+    lucDo: mocDo,
+  });
+  const congSpec = congSpecTuBanDay(traBanDay);
+  // ★★★ Khối C Task 13 (BG-98) — bộ đếm MỚI cho ĐÚNG lượt ingest này, TÁCH HẲN khỏi
+  // `congSpec` (cùng quy tắc "cổng mới mỗi bo" như `congSpec` ở trên — xem docblock
+  // `dichCayKetQua`). KHÔNG đọc bản dạy, KHÔNG đổi verdict/remark.
+  const demMauThuan = taoDemMayTuMauThuan();
+
+  const cay = dichCayKetQua(payload, { cong: congSpec, demMauThuan });
+
+  // ⚠ Cutover 2026-09-03 (Khối C QĐ-1, BG-96) — bỏ dịch "fake UTC": cột `inspectionTime`
+  // (dưới) nay là UTC thật. ⚠⚠ BG-99 (Task 5) — chuỗi TRẦN đọc bằng `docGioMay` (trần =
+  // UTC), KHÔNG `new Date(chuỗi trần)` thô (phụ thuộc TZ hệ điều hành server — bẫy BG-96
+  // tái sinh qua đường khác, đã đo được trên chính máy chạy lưới này: `Asia/Bangkok`).
+  // ⚠ KHÁC `mocDo` Ở TRÊN: `rawInspTime` là NGUỒN CỦA CỘT `inspectionTime` (lời khai máy
+  // giữ nguyên, kể cả khi lệch xa "bây giờ") — KHÔNG phải neo spec-gate. Task 5 tách hẳn
+  // hai khái niệm: "máy nói nó đo lúc nào" (rawInspTime, không đổi ý nghĩa) khác "server
+  // nhận payload lúc nào" (mocDo, quyết định giới hạn nào áp dụng).
+  const rawInspTime = docGioMay(payload.completedAt) ?? docGioMay(payload.startedAt) ?? new Date();
+
+  const reservedInspectionId = await db.reserveInspectionId();
+  const insertOutcome: CreateInspectionOutcome = { duplicate: false };
+
+  const persisted = await db.persistInspectionAtomic(
+    {
+      id: reservedInspectionId,
+      machineId: machine.id,
+      serialNumber: payload.serialNumber,
+      productModelId: productModelRecord?.id,
+      productModel: resolvedProductModelCode,
+      // ⚠ CỘT THẬT — cay.verdictLuuTru, KHÔNG phải payload.overallResult (mệnh đề 2).
+      overallResult: cay.verdictLuuTru,
+      originalResult: payload.overallResult,
+      corporateCode: macTenant.corporateCode,
+      factoryCode: macTenant.factoryCode,
+      workshopCode: macTenant.workshopCode,
+      lineCode: macTenant.lineCode,
+      inspectionTime: rawInspTime,
+      ntfSource: cay.ntfSource ?? undefined,
+      machineProductIndex: payload.machineProductIndex ?? undefined,
+      summaryCounts: payload.summary,
+      // Pha 1C Task 2 (BG-23 ⛔) — LUÔN đặt, KHÔNG phụ thuộc `serialNumber` (xem
+      // doc-comment của `dungKhoaKhuTrungV2` ngay phía trên). Đây là điều khoản
+      // trung tâm đóng lỗ đếm trùng serial-rỗng: `persistInspectionAtomic` claim
+      // khoá này TRƯỚC khi ghi header (server/db/inspection.ts), nên một lượt
+      // gửi lại (retry mạng, ACK timeout) với CÙNG payload không tạo bo thứ hai
+      // dù `serialNumber` rỗng thoát khỏi chỉ mục riêng phần 0272.
+      idempotencyKey: dungKhoaKhuTrungV2(payload),
+    },
+    [],
+    { cay, outcome: insertOutcome, tra: traBanDay },
+  );
+
+  // ★★★ BG-92 — SPEC-GATE NÓI RA CẢ BA TRẠNG THÁI. `truot > 0` là bo XẤU vừa bị chặn
+  // (trước bản vá nó đi lọt); `chuaDay`/`khongGioiHan` là "KHÔNG KẾT LUẬN ĐƯỢC" —
+  // KHÔNG phải "đạt". Ghi ở mức `warn` khi cổng không kết luận được điều gì cả: một
+  // cổng chạy trên tập rỗng mà im lặng chính là giấy vô can giả.
+  const tkCong = congSpec.thongKe;
+  if (tkCong.truot > 0) {
+    console.warn(
+      `[submitInspection][v2.0] SPEC-GATE: ${tkCong.truot}/${tkCong.tong} linh kiện VI PHẠM ` +
+        `giới hạn đã dạy (${tkCong.haCap} lần HẠ OK→NG) · máy=${machine.code} ` +
+        `inspectionId=${persisted.id} · mẫu: ${tkCong.mauTruot.join(" | ")}`,
+    );
+  }
+  if (tkCong.batCong && tkCong.dat + tkCong.truot === 0 && tkCong.tong > 0) {
+    console.warn(
+      `[submitInspection][v2.0] SPEC-GATE KHÔNG KẾT LUẬN ĐƯỢC gì: ${tkCong.tong} linh kiện — ` +
+        `${tkCong.chuaDay} chưa dạy, ${tkCong.khongGioiHan} đã dạy mà bản dạy CHƯA CÓ giới hạn ` +
+        `· máy=${machine.code} inspectionId=${persisted.id}`,
+    );
+  }
+
+  // ★★★ Khối C Task 13 (BG-98, spec QĐ-8) — MÁY TỰ MÂU THUẪN, cổng KHÁC hẳn cổng
+  // bản-dạy ở trên (không đọc bản dạy, không đổi verdict/remark). `mauThuan > 0` là
+  // lỗi PIPELINE của máy: `value` ngoài chính `lowerLimit`/`upperLimit` máy gửi kèm
+  // mà máy vẫn kết `OK`.
+  const tkMauThuan = demMauThuan.thongKe;
+  if (tkMauThuan.mauThuan > 0) {
+    console.warn(
+      `[submitInspection][v2.0] MÁY TỰ MÂU THUẪN: ${tkMauThuan.mauThuan}/${tkMauThuan.tong} ` +
+        `linh kiện value NGOÀI giới hạn MÁY TỰ KHAI kèm kết quả mà máy vẫn kết OK · ` +
+        `máy=${machine.code} inspectionId=${persisted.id} · mẫu: ${tkMauThuan.mau.join(" | ")}`,
+    );
+  }
+
+  // ⚠ KHÔNG ÂM THẦM: mọi linh kiện không tra ra `pointDefId` đều có mặt ở đây, và
+  // hàng `audit_logs` (nhánh máy ĐÃ dạy) đã được ghi TRONG chính transaction trên.
+  const tk = persisted.thongKeComponent;
+  if (tk && tk.chuaDay > 0) {
+    console.warn(
+      `[submitInspection][v2.0] cấp component: ghi ${tk.daGhi}/${tk.tong} hàng — ` +
+        `${tk.chuaDay} linh kiện CHƯA CÓ BẢN DẠY` +
+        (tk.nhapNhang > 0 ? ` (trong đó ${tk.nhapNhang} nhập nhằng)` : "") +
+        ` · máy=${machine.code} mayCoBanDay=${tk.mayCoBanDay} inspectionId=${persisted.id}` +
+        ` · mẫu: ${tk.mauChuaDay.join(", ")}`,
+    );
+  }
+
+  if (persisted.duplicate) {
+    console.warn(
+      `[submitInspection][v2.0] duplicate submission ignored (natural key hit) — ` +
+        `machine=${machine.code} serial=${payload.serialNumber} ` +
+        `inspectionTime=${rawInspTime.toISOString()} → existing inspectionId=${persisted.id}`,
+    );
+  }
+
+  return {
+    success: true as const,
+    inspectionId: persisted.id,
+    duplicate: persisted.duplicate,
+    // Khối B Task 3 — ĐẾM ĐƯỢC TẬN CỬA. Máy đọc được ngay rằng nó vừa khai N linh
+    // kiện chưa dạy; trường phụ, KHÔNG đổi ba trường cũ (thêm, không sửa).
+    capComponent: persisted.thongKeComponent
+      ? {
+          tong: persisted.thongKeComponent.tong,
+          daGhi: persisted.thongKeComponent.daGhi,
+          chuaDay: persisted.thongKeComponent.chuaDay,
+          mayCoBanDay: persisted.thongKeComponent.mayCoBanDay,
+        }
+      : undefined,
+    // ★★★ Khối B Task 4 (BG-92) — BA TRẠNG THÁI CỦA SPEC-GATE, trả TẬN CỬA. Máy (và
+    // lưới nghiệm thu) đọc được ngay rằng cổng đã kết luận gì: `dat` + `truot` là số
+    // linh kiện THỰC SỰ được chấm; `chuaDay` + `khongGioiHan` là số linh kiện KHÔNG
+    // KẾT LUẬN ĐƯỢC — và chúng nằm ở BỐN trường KHÁC NHAU, không gộp vào `dat`.
+    specGate: {
+      batCong: congSpec.thongKe.batCong,
+      tong: congSpec.thongKe.tong,
+      dat: congSpec.thongKe.dat,
+      truot: congSpec.thongKe.truot,
+      haCap: congSpec.thongKe.haCap,
+      chuaDay: congSpec.thongKe.chuaDay,
+      khongGioiHan: congSpec.thongKe.khongGioiHan,
+      tatCong: congSpec.thongKe.tatCong,
+      // Task 5 (BG-97 phơi counters) — nguồn THẬT là `traBanDay` (kết quả
+      // `db.traBanDayChoCay`), KHÔNG phải `congSpec.thongKe` (cổng OK/NG không biết gì
+      // về NGUỒN của giới hạn nó vừa dùng).
+      theoSnapshot: traBanDay.theoSnapshot,
+      theoSong: traBanDay.theoSong,
+    },
+    // ★★★ Khối C Task 13 (BG-98, spec QĐ-8) — cổng "MÁY TỰ MÂU THUẪN", HAI nguồn
+    // KHÁC `specGate` ở trên (xem docblock chữ ký hàm). `mau` (mẫu chẩn đoán) CỐ Ý
+    // không trả ở đây — cùng cách `specGate.mauTruot` cũng chỉ đi vào log warn,
+    // không vào response — chỉ hai con số đếm được.
+    mayTuMauThuan: {
+      tong: demMauThuan.thongKe.tong,
+      mauThuan: demMauThuan.thongKe.mauThuan,
+    },
+  };
+}
+
 export const machineApiRouter = router({
   // Submit inspection data from machine — DURABLE (doc 27 W2-C, gap C3/R11):
   // a transient failure (DB down) buffers the full payload to the disk WAL and
@@ -2893,9 +3989,76 @@ export const machineApiRouter = router({
   // idempotency once the DB recovers. Permanent errors (bad key / validation)
   // still throw. With INSPECTION_STORE_FORWARD_ENABLED off → exact old behaviour.
   submitInspection: publicProcedure
-    .input(submitInspectionInputSchema)
-    .mutation(async ({ input, ctx }) => {
+    .input(submitInspectionRouterInputSchema)
+    .mutation(async ({ input: parsedInput, ctx }) => {
       const headerKey = machineHeaderKey(ctx);
+      // Pha 1B Task 6 (BG-1) — nhánh v2.0 tách hẳn khỏi pipeline v1.x bên dưới (xem
+      // `submitInspectionTreeV2`). Nhánh v1.x (kind:"v1") KHÔNG đổi một dòng hành vi
+      // nào so với trước bản vá: chỉ đổi CHỖ `submitInspectionInputSchema.parse` được
+      // gọi (từ `.input()` tự động sang bên trong `submitInspectionRouterInputSchema`
+      // ở trên), không đổi input/output/lỗi của nhánh này.
+      //
+      // Doc 2026-08-29 (WAL cho cây v2.0, Task 1) — bọc bằng ĐÚNG khuôn buffer-khi-lỗi-
+      // tạm-thời mà nhánh v1.x đã dùng bên dưới (isPermanentSubmitError/bufferSubmission/
+      // ensureInspectionWalWired): lỗi VĨNH VIỄN (xác thực/hợp đồng, hoặc cờ WAL TẮT) ném
+      // NGUYÊN VĂN — không đổi hành vi khi cờ tắt (docblock module, HONESTY). Lỗi TẠM THỜI
+      // → buffer nguyên văn payload cây, khoá gửi qua `dungKhoaGuiTheoHinhDang` (§QĐ-WAL-A,
+      // KHÔNG phải `computeSubmissionKey` — hai bo v2.0 khác nhau cùng serial rỗng sẽ trùng
+      // khoá theo công thức đó, xem doc-comment `inspectionStoreForward.ts`).
+      if (parsedInput.kind === "v2") {
+        const v2Payload = parsedInput.data;
+        try {
+          const result = await submitInspectionTreeV2(v2Payload, {
+            headerKey,
+            // ★★★ Việc 1 (BG-89) + I-4 — tín hiệu ĐẾM hình dạng ingest, ghi NGAY SAU
+            // `authenticateMachine` thành công (móc `sauXacThuc`), KHÔNG ở `.input()` nữa.
+            // Hình dạng dùng là `parsedInput.kind` — ĐÚNG giá trị `quyetDinhPhienBanIngest`
+            // đã quyết định, không suy lại.
+            sauXacThuc: (auth) =>
+              ghiTinHieuHinhDangIngest(parsedInput.kind, auth.machine, v2Payload.schemaVersion),
+          });
+          // Doc 2026-08-29 (WAL cho cây v2.0, Task 2) — ĐỐI XỨNG với nhánh v1.x bên dưới
+          // (dòng ~markSubmissionApplied(computeSubmissionKey(walPayload))): ledger THÀNH
+          // CÔNG live để một bản SAO đang nằm trong hàng đợi (payload gửi lại trước khi DB
+          // hồi phục, xem mệnh đề 4 `walCayV2PhatLai.db.test.ts`) khử trùng được ở BACKFILL
+          // mà không cần chạm lại `persistInspectionAtomic`. Khoá dùng ĐÚNG
+          // `dungKhoaGuiTheoHinhDang` (§QĐ-WAL-A) — KHÔNG phải `computeSubmissionKey`, vì
+          // v2Payload có thể serial rỗng (xem docblock `inspectionStoreForward.ts`).
+          if (inspectionStoreForwardEnabled()) {
+            markSubmissionApplied(dungKhoaGuiTheoHinhDang(v2Payload as unknown as BufferedSubmission));
+            if (bufferedInspectionCount() > 0) {
+              // Rút cơ hội: DB rõ ràng vừa chứng minh nó SỐNG (lượt ghi này vừa thành công).
+              ensureInspectionWalWired();
+              void backfillInspections().catch(() => undefined);
+            }
+          }
+          return result;
+        } catch (err) {
+          if (!inspectionStoreForwardEnabled() || isPermanentSubmitError(err)) throw err;
+          ensureInspectionWalWired();
+          // Tự-xác-thực khi phát lại (giống hệt nhánh v1.x bên dưới): gấp credential từ
+          // header vào `apiKey` — payload v2.0 KHÔNG mang `machineCode`, chỉ có `apiKey`.
+          const walPayload: BufferedSubmission = {
+            ...v2Payload,
+            apiKey: v2Payload.apiKey ?? headerKey ?? undefined,
+          };
+          const buffered = await bufferSubmission(walPayload);
+          if (!buffered.buffered && !buffered.duplicate) throw err; // bounds evicted it → never lie
+          console.error(
+            `[submitInspection][v2.0] transient failure (${(err as Error)?.message || err}) — ` +
+              `${buffered.duplicate ? "submission already queued in" : "payload queued to"} inspection WAL ` +
+              `(station=${v2Payload.identity?.station}, machine=${v2Payload.identity?.machine}, ` +
+              `submissionId=${buffered.key.slice(0, 12)}…)`,
+          );
+          return {
+            success: true as const,
+            queued: true as const,
+            submissionId: buffered.key,
+            inspectionId: null,
+          };
+        }
+      }
+      const input = parsedInput.data;
       // Doc 56 Đ1 (API-2) — log-only: surface the machine's declared feed schema
       // version if it sent one. Debug level so the hottest ingest path is not
       // flooded; behaviour is otherwise unchanged.
@@ -2930,7 +4093,15 @@ export const machineApiRouter = router({
         apiKey: payload.apiKey ?? headerKey ?? undefined,
       };
       try {
-        const result = await processInspectionSubmission(payload, { headerKey, rateLimit: true });
+        const result = await processInspectionSubmission(payload, {
+          headerKey,
+          rateLimit: true,
+          // ★★★ Việc 1 (BG-89) + I-4 — xem nhánh v2.0 phía trên. `parsedInput.kind` ở đây là
+          // "v1" (nhánh v2.0 đã `return` trước), tức ĐÚNG giá trị `quyetDinhPhienBanIngest`
+          // trả về cho payload này.
+          sauXacThuc: (auth) =>
+            ghiTinHieuHinhDangIngest(parsedInput.kind, auth.machine, input.schemaVersion ?? null),
+        });
         if (inspectionStoreForwardEnabled()) {
           // Ledger the live success so a queued duplicate of the SAME submission
           // (machine retry captured while the DB flapped) dedupes on backfill.
@@ -2987,8 +4158,11 @@ export const machineApiRouter = router({
   // require rewriting the entire per-board side-effect chain and is out of scope.
   // ════════════════════════════════════════════════════════════════════════════
   submitInspectionBatch: publicProcedure
-    .input(submitInspectionBatchInputSchema)
-    .mutation(async ({ input, ctx }) => {
+    .input(submitInspectionBatchRouterInputSchema)
+    .mutation(async ({ input: goiVao, ctx }) => {
+      // I-4 — `.input()` nay trả `{hinhDangIngest, duLieu}`; `input` bên dưới GIỮ NGUYÊN nghĩa
+      // cũ (payload batch đã parse) để phần thân không đổi một dòng nào ngoài điểm ghi tín hiệu.
+      const { hinhDangIngest, duLieu: input } = goiVao;
       const headerKey = machineHeaderKey(ctx);
       // AUTH ONCE for the whole batch (the throughput point). Throws
       // UNAUTHORIZED/FORBIDDEN or DbUnavailableError exactly like the single path;
@@ -3002,6 +4176,12 @@ export const machineApiRouter = router({
         endpoint: "submitInspectionBatch",
       });
       const machine = auth.machine;
+      // ★★★ Việc 1 (BG-89) + I-4 — tín hiệu ĐẾM hình dạng ingest: NGAY SAU xác thực thành công,
+      // MỘT hàng cho CẢ batch (không phải một hàng mỗi item — trần tốc độ per-item nằm trong
+      // `runItem` bên dưới, còn câu hỏi "máy này gửi hình dạng nào" chỉ có MỘT câu trả lời cho
+      // cả request). Hình dạng là giá trị `quyetDinhPhienBanIngest` đã quyết định ở `.input()`,
+      // mang xuống nguyên vẹn — KHÔNG suy lại từ `input`.
+      ghiTinHieuHinhDangIngest(hinhDangIngest, machine, null);
 
       // ONE heartbeat for the batch (per-item heartbeat is suppressed below).
       // Best-effort — a heartbeat write must not fail the ingest.
@@ -3046,6 +4226,8 @@ export const machineApiRouter = router({
               success: false,
               inspectionId: null,
               rateLimited: true,
+              // data-raw-ok: kết quả TỪNG DÒNG của batch ingest, khách hàng là MÁY —
+              // tiếng Anh là quy ước đúng, y như tuyến REST. Dịch đi là phá hợp đồng máy-máy.
               error: rlErr.message,
             };
             return;
@@ -3160,10 +4342,12 @@ export const machineApiRouter = router({
       if (!processResultIngestEnabled()) {
         // OFF ⇒ the endpoint ships dark. PRECONDITION_FAILED is permanent, so even
         // with store-forward on it is surfaced (never buffered).
-        throw new TRPCError({
-          code: "PRECONDITION_FAILED",
-          message: "Process result ingest is disabled on this server (PROCESS_RESULT_INGEST_ENABLED).",
-        });
+        throw appError(
+          "PRECONDITION_FAILED",
+          "FEATURE_DISABLED",
+          { feature: "processResultIngest" },
+          "Process result ingest is disabled on this server (PROCESS_RESULT_INGEST_ENABLED).",
+        );
       }
       if (input.schemaVersion) {
         console.debug(`[submitProcessResult] schemaVersion="${input.schemaVersion}" (serial=${input.serialNumber})`);
@@ -3225,10 +4409,12 @@ export const machineApiRouter = router({
     .input(submitProcessResultBatchInputSchema)
     .mutation(async ({ input, ctx }) => {
       if (!processResultIngestEnabled()) {
-        throw new TRPCError({
-          code: "PRECONDITION_FAILED",
-          message: "Process result ingest is disabled on this server (PROCESS_RESULT_INGEST_ENABLED).",
-        });
+        throw appError(
+          "PRECONDITION_FAILED",
+          "FEATURE_DISABLED",
+          { feature: "processResultIngest" },
+          "Process result ingest is disabled on this server (PROCESS_RESULT_INGEST_ENABLED).",
+        );
       }
       const headerKey = machineHeaderKey(ctx);
       // AUTH ONCE for the whole batch. A bad credential rejects the batch as a
@@ -3280,6 +4466,8 @@ export const machineApiRouter = router({
               success: false,
               processResultId: null,
               rateLimited: true,
+              // data-raw-ok: kết quả TỪNG DÒNG của batch ingest, khách hàng là MÁY —
+              // tiếng Anh là quy ước đúng, y như tuyến REST. Dịch đi là phá hợp đồng máy-máy.
               error: rlErr.message,
             };
             return;
@@ -3390,7 +4578,7 @@ export const machineApiRouter = router({
         ? null
         : input.expiresAt instanceof Date ? input.expiresAt : new Date(input.expiresAt);
       if (expiresAt && Number.isNaN(expiresAt.getTime())) {
-        throw new TRPCError({ code: "BAD_REQUEST", message: "Invalid expiresAt date" });
+        throw appError("BAD_REQUEST", "INVALID_VALUE", { field: "expiresAt" }, "Invalid expiresAt date");
       }
       return issueMachineKey({
         machineId: input.machineId,
@@ -3432,7 +4620,7 @@ export const machineApiRouter = router({
 
       const inspection = await db.getProductInspectionById(input.inspectionId);
       if (!inspection) {
-        throw new TRPCError({ code: 'NOT_FOUND', message: 'Inspection not found' });
+        throw appError('NOT_FOUND', 'ENTITY_NOT_FOUND', { entity: 'inspection' }, 'Inspection not found');
       }
 
       const inspectionModel = inspection.productModelId
@@ -3451,7 +4639,7 @@ export const machineApiRouter = router({
         machinePointCache,
       );
       if (!pointDef) {
-        throw new TRPCError({ code: 'NOT_FOUND', message: 'Measurement point not found' });
+        throw appError('NOT_FOUND', 'ENTITY_NOT_FOUND', { entity: 'measurementPoint' }, 'Measurement point not found');
       }
 
       // Find the measurement result
@@ -3459,7 +4647,7 @@ export const machineApiRouter = router({
       const { eq, and } = await import("drizzle-orm");
       const dbInstance = await db.getDb();
       if (!dbInstance) {
-        throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR' });
+        throw appError('INTERNAL_SERVER_ERROR', 'DB_UNAVAILABLE', undefined, 'Database not available');
       }
 
       const results = await dbInstance.select().from(measurementResults)
@@ -3470,7 +4658,7 @@ export const machineApiRouter = router({
         .limit(1);
 
       if (results.length === 0) {
-        throw new TRPCError({ code: 'NOT_FOUND', message: 'Measurement result not found' });
+        throw appError('NOT_FOUND', 'ENTITY_NOT_FOUND', { entity: 'measurementResult' }, 'Measurement result not found');
       }
 
       // Upload image to S3
@@ -3538,7 +4726,7 @@ export const machineApiRouter = router({
       const normalizedModelCode = input.productModelCode.trim();
       const productModel = await db.getProductModelByCode(normalizedModelCode);
       if (!productModel) {
-        throw new TRPCError({ code: 'NOT_FOUND', message: 'Product model not found' });
+        throw appError('NOT_FOUND', 'ENTITY_NOT_FOUND', { entity: 'productModel' }, 'Product model not found');
       }
 
       const workstationCache: WorkstationCache = new Map();
@@ -3932,6 +5120,8 @@ export const machineApiRouter = router({
             errors.push({
               code: point.code,
               message: error instanceof TRPCError
+                // data-raw-ok: danh sách lỗi TỪNG ĐIỂM trả cho MÁY (đồng bộ point-spec) —
+                // tiếng Anh là quy ước máy-máy, y như tuyến REST.
                 ? error.message
                 : error instanceof Error
                   ? error.message
@@ -4143,7 +5333,7 @@ export const machineApiRouter = router({
       if (input.productModelCode) {
         const productModel = await db.getProductModelByCode(input.productModelCode.trim());
         if (!productModel) {
-          throw new TRPCError({ code: 'NOT_FOUND', message: `Product model '${input.productModelCode}' not found` });
+          throw appError('NOT_FOUND', 'ENTITY_NOT_FOUND', { entity: 'productModel' }, `Product model '${input.productModelCode}' not found`);
         }
         // PV1: report the resolved variant's version (base == model version) under
         // the flag; otherwise the model version exactly as before.
@@ -4204,10 +5394,12 @@ export const machineApiRouter = router({
     }))
     .query(async ({ input, ctx }) => {
       if (!configSyncGenericEnabled()) {
-        throw new TRPCError({
-          code: "PRECONDITION_FAILED",
-          message: "Generic config-sync is disabled on this server (CONFIG_SYNC_GENERIC_ENABLED).",
-        });
+        throw appError(
+          "PRECONDITION_FAILED",
+          "FEATURE_DISABLED",
+          { feature: "configSyncGeneric" },
+          "Generic config-sync is disabled on this server (CONFIG_SYNC_GENERIC_ENABLED).",
+        );
       }
       const { machine } = await authenticateMachine({
         apiKey: input.apiKey,
@@ -4255,10 +5447,12 @@ export const machineApiRouter = router({
     }))
     .query(async ({ input, ctx }) => {
       if (!configSyncGenericEnabled()) {
-        throw new TRPCError({
-          code: "PRECONDITION_FAILED",
-          message: "Generic config-sync is disabled on this server (CONFIG_SYNC_GENERIC_ENABLED).",
-        });
+        throw appError(
+          "PRECONDITION_FAILED",
+          "FEATURE_DISABLED",
+          { feature: "configSyncGeneric" },
+          "Generic config-sync is disabled on this server (CONFIG_SYNC_GENERIC_ENABLED).",
+        );
       }
       const { machine } = await authenticateMachine({
         apiKey: input.apiKey,
@@ -4321,10 +5515,12 @@ export const machineApiRouter = router({
     }))
     .mutation(async ({ input, ctx }) => {
       if (!configSyncGenericEnabled()) {
-        throw new TRPCError({
-          code: "PRECONDITION_FAILED",
-          message: "Generic config-sync is disabled on this server (CONFIG_SYNC_GENERIC_ENABLED).",
-        });
+        throw appError(
+          "PRECONDITION_FAILED",
+          "FEATURE_DISABLED",
+          { feature: "configSyncGeneric" },
+          "Generic config-sync is disabled on this server (CONFIG_SYNC_GENERIC_ENABLED).",
+        );
       }
       const { machine } = await authenticateMachine({
         apiKey: input.apiKey,
@@ -4428,7 +5624,7 @@ export const machineApiRouter = router({
         const normalizedModelCode = input.productModelCode.trim();
         const productModel = await db.getProductModelByCode(normalizedModelCode);
         if (!productModel) {
-          throw new TRPCError({ code: 'NOT_FOUND', message: `Product model '${normalizedModelCode}' not found` });
+          throw appError('NOT_FOUND', 'ENTITY_NOT_FOUND', { entity: 'productModel' }, `Product model '${normalizedModelCode}' not found`);
         }
 
         const { points, versionOverride } = await pointsForModel(productModel);
@@ -4459,6 +5655,347 @@ export const machineApiRouter = router({
       };
     }),
 
+  // ══════════════════════════════════════════════════════════════════════════════
+  // ★★★ Khối B — Task 2 (B-2 + B-3): CỬA INGEST CẤU HÌNH — máy ĐẨY CÂY DẠY lên hệ.
+  //     Chiều: **AOI Machine → Server** (NGƯỢC với `configSyncGeneric` bên trên, gần
+  //     như toàn `.query()` = máy KÉO cấu hình TỪ hệ). Quyết định của chủ dự án
+  //     2026-09-03 chọn hướng (a): máy dạy xong thì đẩy cây + UUID của CHÍNH NÓ lên,
+  //     hệ soi gương máy — vì payload KẾT QUẢ đã mang UUID do máy sinh, hệ buộc phải
+  //     nhận đúng UUID đó mới join được (nền đo được §6/§7).
+  //
+  // ⚠⚠⚠ VÌ SAO CỬA NÀY LÀ MẮT XÍCH: `measurement_point_defs.componentExtId` đo được
+  //     **0/110** (`aoi_management`) và **0/2834** (`aoi_management_test`) — cột nối
+  //     tồn tại ở CẢ HAI phía và CHƯA hàng nào được ghi ở bên nào. Task 3 (Đ-19) và
+  //     Task 4 (BG-92) KHÔNG có gì để join cho tới khi cửa này đổ đầy nó.
+  //
+  // ⚠⚠⚠ XÁC THỰC TRƯỚC MỌI TÁC DỤNG PHỤ — bài học **I-4** vừa trả giá ở chính file
+  //     này: `ghiTinHieuHinhDangIngest` từng được gọi trong `.transform()` của
+  //     `.input()`, tức TRƯỚC `authenticateMachine`, ghi hàng do người CHƯA XÁC THỰC
+  //     điều khiển vào `audit_logs` — bảng **WORM** (`avi_app` không có DELETE, mig
+  //     0224) nên ứng dụng không dọn được. Ở đây `.input()` KHÔNG có `.transform()`,
+  //     KHÔNG có `.superRefine()` chạm CSDL: mọi phép kiểm nội dung là hàm THUẦN
+  //     (`kiemTraCayDay`) và chỉ chạy SAU dòng `authenticateMachine` bên dưới.
+  //
+  // ⚠ KHÔNG đi qua `quyetDinhPhienBanIngest`: cây DẠY không thuộc họ hợp đồng
+  //   `machineDataContract` (phẳng v1.x ↔ cây kết quả v2.0). Miễn trừ được KÝ tường
+  //   minh trong `MIEN_TRU_QUYET_DINH_PHIEN_BAN` kèm lý do — census
+  //   `cuaIngestCensus.test.ts` sẽ ĐỎ nêu đúng tên nếu ai gỡ dòng đó.
+  //
+  // ⚠ KHÔNG bump `product_models.pointsConfigVersion`: bump là RA LỆNH cho MỌI máy
+  //   đang ánh xạ tới model này tải lại điểm đo (`checkPointsVersion`/`deltaSyncPoints`).
+  //   Một lượt đẩy cây dạy KHÔNG được kéo theo một đợt đồng bộ toàn phân xưởng mà
+  //   không ai yêu cầu. Chiều "bản dạy nào đang hiện hành" là **Task 5**.
+  // ══════════════════════════════════════════════════════════════════════════════
+  submitMachineTemplate: publicProcedure
+    .input(submitMachineTemplateCoreObject.refine((data) => data.apiKey || data.machineCode, {
+      message: 'Either apiKey or machineCode must be provided',
+    }))
+    .mutation(async ({ input, ctx }) => {
+      // ── (0) XÁC THỰC. Không một byte nào được ghi trước dòng này. ───────────────
+      const { machine } = await authenticateMachine({
+        apiKey: input.apiKey,
+        machineCode: input.machineCode,
+        headerKey: machineHeaderKey(ctx),
+        scope: "ingest:write",
+        endpoint: "submitMachineTemplate",
+      });
+
+      // ── (1) Phép kiểm THUẦN trên cây (cây rỗng · trùng khoá · trần) ────────────
+      const kiem = kiemTraCayDay(input.template);
+      if (kiem.loi.length > 0) {
+        // ⚠ `field` PHẢI là một literal ĐÃ CÓ khoá i18n ở CẢ BA ngôn ngữ — cổng
+        // `appErrorParamsCoverage.test.ts` canh việc đó và sẽ ĐỎ nêu đúng tên. Khoá
+        // chính xác hơn (`errors.field.template`) đòi sửa `client/src/i18n/locales/*`,
+        // mà lượt việc này bị CẤM chạm `client/src/**` — nên dùng `payload` (đã có
+        // khoá, "dữ liệu payload") và để câu THẬT ở `fallbackMessage`, thứ máy và log
+        // đọc. NỢ khai rõ: một khoá riêng cho `template` sẽ chính xác hơn.
+        throw appError(
+          "BAD_REQUEST",
+          "INVALID_VALUE",
+          { field: "payload" },
+          `Cây dạy không ghi được (máy ${machine.code}): ` + kiem.loi.join(" | "),
+        );
+      }
+
+      // ── (2) Sản phẩm đích ─────────────────────────────────────────────────────
+      const productModel = await db.getProductModelByCode(input.productModelCode.trim());
+      if (!productModel) {
+        throw appError(
+          "NOT_FOUND",
+          "ENTITY_NOT_FOUND",
+          { entity: "productModel" },
+          `Product model '${input.productModelCode}' not found`,
+        );
+      }
+
+      // ── (3) BẤT BIẾN "không trộn điểm PHẲNG với điểm CÂY" ──────────────────────
+      // `server/db/cayCauHinhBatBien.db.test.ts` khai: một sản phẩm HOẶC đã chuyển
+      // sang cây, HOẶC còn phẳng — nửa vời là "nguồn của lỗi phân giải KHÔNG THỂ
+      // CHẨN ĐOÁN". Cửa này là đường ghi ĐẦU TIÊN tạo được điểm neo cây, nên nó
+      // phải tự chặn. Từ chối, KHÔNG tự xoá mềm điểm phẳng: xoá điểm đo đang chạy
+      // vì một lượt đẩy cấu hình là một quyết định của NGƯỜI, không phải của cửa.
+      const neo = await demDiemDoTheoNeo(productModel.id);
+      if (neo.phang > 0) {
+        // ⚠ `field: "code"` chứ không phải `"productModelCode"` — cùng lý do i18n ở trên.
+        throw appError(
+          "PRECONDITION_FAILED",
+          "INVALID_VALUE",
+          { field: "code" },
+          `Sản phẩm '${productModel.code}' đang có ${neo.phang} điểm đo PHẲNG còn sống ` +
+            `(captureRowId IS NULL). Nhận cây dạy vào đây sẽ tạo trạng thái NỬA VỜI (vừa phẳng ` +
+            `vừa cây) mà bất biến cấu hình cấm — engine phân giải sẽ đọc đúng cho nửa này, sai ` +
+            `cho nửa kia, không tín hiệu nào báo. Hãy chuyển ${neo.phang} điểm phẳng đó đi ` +
+            `(xoá mềm hoặc di trú) TRƯỚC, bằng một thao tác có người duyệt.`,
+        );
+      }
+
+      // ── (4) GHI — một transaction, bốn bảng + sổ bản dạy ──────────────────────
+      // ⚠⚠ Task 5 — `machineId` là `machine.id`, tức id máy TRẢ VỀ TỪ
+      // `authenticateMachine` ở bước (0), KHÔNG phải `input.machineCode` (nhãn máy
+      // TỰ KHAI trong payload). Đúng bài học I-4: `entityId` phải là khoá ngoại máy
+      // THẬT. Đây cũng là lý do dòng này KHÔNG THỂ dời lên trước bước (0).
+      const ketQua = await ghiCayDay({
+        productModelId: productModel.id,
+        machineId: machine.id,
+        cay: input.template,
+        phienBanLucXoa: Number(productModel.pointsConfigVersion ?? 1),
+      });
+
+      await db.updateMachineHeartbeat(machine.id);
+
+      return {
+        success: true,
+        machineId: machine.id,
+        machineCode: machine.code,
+        productModelId: productModel.id,
+        productModelCode: productModel.code,
+        ...ketQua,
+      };
+    }),
+
+  // ══════════════════════════════════════════════════════════════════════════════
+  // ★★★ Lô 8 Mục 1 (BG-116) — ẢNH TEMPLATE do MÁY tải lên, SAU khi cây đã dạy.
+  // ══════════════════════════════════════════════════════════════════════════════
+  //
+  // Gốc: cây dạy Khối B ghi `referenceImageUrl`/`templateImageUrl` = ĐƯỜNG DẪN HỆ
+  // TỆP MÁY AOI (`templateImagePath` trong `machineTemplateContract`, vd
+  // `D:/InspectProAOI/...jpg`) — trình duyệt không fetch được, canvas dạy giới hạn
+  // (`ComponentLimitsDialog`/`MeasurementPointCanvas`) vẽ ROI trên nền câm (R-KC-1).
+  // Đây là CỬA RIÊNG cho ảnh — KHÔNG trộn vào `submitMachineTemplate` (hợp đồng đẩy
+  // cây GIỮ NGUYÊN, máy cũ không upload ảnh vẫn hoạt động y hệt hôm nay) và KHÔNG
+  // trộn vào luồng gói kết quả (`aoiPackageRouter.presign`/`.commit`) — đó là ẢNH
+  // NG/gói ZIP, đây là ẢNH CẤU HÌNH của bản dạy.
+  //
+  // Hai bước, CÙNG hình dạng `presign`/`commit` của `aoiPackageRouter` (đo TRƯỚC —
+  // xem docblock ở đó): `presignTemplateImage` chỉ XÁC NHẬN quyền + tra hàng đích
+  // (không ghi byte nào); `commitTemplateImage` đọc byte THẬT từ đúng `objectKey`
+  // mà `presign` đã tính, đối chiếu sha256, rồi GHI url+key vào ĐÚNG hàng.
+  //
+  // ⚠ KHÁC ZIP Ở MỘT ĐIỂM CÓ CHỦ Ý: `objectKey` ở đây là HÀM THUẦN của
+  // `(productModelId, contentHash, ext)` — `product-models/<id>/template-<sha256>.<ext>`
+  // (khuôn Storage ĐÃ CÓ, xem `server/routers/_shared.ts` dòng dựng `fileKey` cho
+  // `ref-*.png`) — KHÔNG cần một bảng "package" trung gian để nhớ khoá giữa hai
+  // bước như ZIP (gói ZIP không tự mang khoá hội tụ, ảnh template thì có: cùng nội
+  // dung ⇒ cùng sha256 ⇒ cùng khoá). Đây CŨNG LÀ cơ chế idempotent theo (hàng,
+  // sha256): commit lặp cùng nội dung ghi ĐÈ đúng cùng key (`ghiUrlAnhTemplate` so
+  // key cũ/mới, no-op nếu trùng) — không có "gói" nào để nhân bản.
+  presignTemplateImage: publicProcedure
+    .input(z.object({
+      apiKey: z.string().optional(),
+      machineCode: z.string().optional(),
+      captureExtId: z.string().trim().min(1).max(64),
+      componentExtId: z.string().trim().min(1).max(64).optional(),
+      // ★ Lô 8 Mục 1 review — TUỲ CHỌN nhưng BẮT BUỘC KHI BIẾT (đúng khuôn
+      // `traPointDefCapComponent.productModelId`): một máy có thể dạy CÙNG
+      // captureExtId cho HAI sản phẩm khác nhau (cây clone) — không khai
+      // productModelCode mà tra ra >1 hàng ⇒ từ chối rõ ràng (`nhapNhang`),
+      // không đoán bừa một trong hai. Đo được THẬT trên chính db test Lô 8
+      // (ba file Khối B khác chạy song song, cùng máy, cùng mẫu máy thật).
+      productModelCode: z.string().trim().min(1).max(100).optional(),
+      contentHash: z.string().trim().toLowerCase().regex(/^[0-9a-f]{64}$/, "contentHash phải là sha256 hex 64 ký tự"),
+      sizeBytes: z.number().int().positive().max(tranByteAnhTemplate()),
+      ext: z.enum(["jpg", "png"]),
+    }).refine((data) => data.apiKey || data.machineCode, {
+      message: "Either apiKey or machineCode must be provided",
+    }))
+    .mutation(async ({ input, ctx }) => {
+      // ── (0) XÁC THỰC — CÙNG scope `submitMachineTemplate` đang dùng. Đo TRƯỚC:
+      // vocabulary scope (`server/api/v1/scopes.ts`) KHÔNG có `config:write` — cửa
+      // đẩy cây dạy (cấu hình máy→hệ, cùng lớp với ảnh template) dùng `ingest:write`,
+      // nên cửa ảnh này dùng ĐÚNG scope đó, không bịa một scope mới không có trong
+      // vocabulary.
+      const { machine } = await authenticateMachine({
+        apiKey: input.apiKey,
+        machineCode: input.machineCode,
+        headerKey: machineHeaderKey(ctx),
+        scope: "ingest:write",
+        endpoint: "presignTemplateImage",
+      });
+
+      const productModel = input.productModelCode
+        ? await db.getProductModelByCode(input.productModelCode.trim())
+        : null;
+      if (input.productModelCode && !productModel) {
+        throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "productModel" }, `Product model '${input.productModelCode}' not found`);
+      }
+
+      const tra = await traHangAnhTemplate({
+        machineId: machine.id,
+        captureExtId: input.captureExtId,
+        componentExtId: input.componentExtId ?? null,
+        productModelId: productModel?.id ?? null,
+      });
+      if (tra.ket === "khongThayCapture") {
+        throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "productCapture" }, `captureExtId '${input.captureExtId}' not found`);
+      }
+      if (tra.ket === "khacMay") {
+        throw appError("FORBIDDEN", "SCOPE_MISMATCH", { entity: "productCapture", parent: "machine" }, "Capture belongs to another machine");
+      }
+      if (tra.ket === "khongThayComponent") {
+        throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "measurementPoint" }, `componentExtId '${input.componentExtId}' not found under this capture`);
+      }
+      if (tra.ket === "nhapNhang") {
+        throw appError(
+          "BAD_REQUEST",
+          "INVALID_VALUE",
+          { field: "productModelCode" },
+          `captureExtId '${input.captureExtId}' được dạy cho NHIỀU sản phẩm trên máy này — khai kèm productModelCode để chọn đúng sản phẩm.`,
+        );
+      }
+
+      const objectKey = `product-models/${tra.hang.productModelId}/template-${input.contentHash}.${input.ext}`;
+      await db.updateMachineHeartbeat(machine.id);
+
+      return {
+        success: true,
+        objectKey,
+        uploadUrl: `/api/machine-template-image/upload/${objectKey}`,
+        cap: tra.hang.cap,
+      };
+    }),
+
+  commitTemplateImage: publicProcedure
+    .input(z.object({
+      apiKey: z.string().optional(),
+      machineCode: z.string().optional(),
+      captureExtId: z.string().trim().min(1).max(64),
+      componentExtId: z.string().trim().min(1).max(64).optional(),
+      productModelCode: z.string().trim().min(1).max(100).optional(),
+      contentHash: z.string().trim().toLowerCase().regex(/^[0-9a-f]{64}$/, "contentHash phải là sha256 hex 64 ký tự"),
+      // ★ Vòng sửa 1 (Important 1, review độc lập) — TUỲ CHỌN, ĐỐI CHIẾU THẬT khi có
+      // mặt: so với byte THẬT vừa đọc từ đĩa (cùng khuôn `aoiPackageRouter`
+      // `presignCoreObject.sizeBytes`/`commit.sizeBytes` — xem đối chiếu ngay dưới).
+      sizeBytes: z.number().int().positive().max(tranByteAnhTemplate()).optional(),
+      ext: z.enum(["jpg", "png"]),
+    }).refine((data) => data.apiKey || data.machineCode, {
+      message: "Either apiKey or machineCode must be provided",
+    }))
+    .mutation(async ({ input, ctx }) => {
+      const { machine } = await authenticateMachine({
+        apiKey: input.apiKey,
+        machineCode: input.machineCode,
+        headerKey: machineHeaderKey(ctx),
+        scope: "ingest:write",
+        endpoint: "commitTemplateImage",
+      });
+
+      const productModel = input.productModelCode
+        ? await db.getProductModelByCode(input.productModelCode.trim())
+        : null;
+      if (input.productModelCode && !productModel) {
+        throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "productModel" }, `Product model '${input.productModelCode}' not found`);
+      }
+
+      const tra = await traHangAnhTemplate({
+        machineId: machine.id,
+        captureExtId: input.captureExtId,
+        componentExtId: input.componentExtId ?? null,
+        productModelId: productModel?.id ?? null,
+      });
+      if (tra.ket === "khongThayCapture") {
+        throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "productCapture" }, `captureExtId '${input.captureExtId}' not found`);
+      }
+      if (tra.ket === "khacMay") {
+        throw appError("FORBIDDEN", "SCOPE_MISMATCH", { entity: "productCapture", parent: "machine" }, "Capture belongs to another machine");
+      }
+      if (tra.ket === "khongThayComponent") {
+        throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "measurementPoint" }, `componentExtId '${input.componentExtId}' not found under this capture`);
+      }
+      if (tra.ket === "nhapNhang") {
+        throw appError(
+          "BAD_REQUEST",
+          "INVALID_VALUE",
+          { field: "productModelCode" },
+          `captureExtId '${input.captureExtId}' được dạy cho NHIỀU sản phẩm trên máy này — khai kèm productModelCode để chọn đúng sản phẩm.`,
+        );
+      }
+
+      const objectKey = `product-models/${tra.hang.productModelId}/template-${input.contentHash}.${input.ext}`;
+
+      // ── Đọc byte THẬT vừa được PUT vào đúng objectKey, KIỂM sha256 TRƯỚC khi ghi.
+      // ★ Vòng sửa 1 (Minor, review độc lập) — dùng CHUNG `duongDanCucBoAnToan` với
+      // `storagePut`/`storageDelete` (đối xứng ghi-đọc): trước bản vá này đường đọc
+      // này tự dựng `path.join(uploadsRoot, objectKey)` RIÊNG, không qua guard
+      // traversal — vô hại hôm nay vì `objectKey` do CHÍNH SERVER sinh (không phải
+      // input người dùng), nhưng một guard RIÊNG dễ trôi lệch khỏi bản gốc khi
+      // storage.ts đổi quy ước sau này.
+      const { promises: fsp } = await import("node:fs");
+      const { createHash } = await import("node:crypto");
+      const { duongDanCucBoAnToan } = await import("../storage");
+      const filePath = duongDanCucBoAnToan(objectKey);
+
+      let bytes: Buffer;
+      try {
+        bytes = await fsp.readFile(filePath);
+      } catch {
+        throw appError(
+          "UNPROCESSABLE_CONTENT",
+          "OPERATION_FAILED",
+          { operation: "commitTemplateImage" },
+          `Chưa thấy byte ảnh tại '${objectKey}' — gọi PUT lên uploadUrl của presign TRƯỚC khi commit.`,
+        );
+      }
+      const shaThuc = createHash("sha256").update(bytes).digest("hex");
+      if (shaThuc !== input.contentHash) {
+        throw appError(
+          "BAD_REQUEST",
+          "INVALID_VALUE",
+          { field: "payload" },
+          `contentHash khai ("${input.contentHash}") không khớp sha256 THẬT của byte đã tải lên ("${shaThuc}") — tải lại ảnh và commit lại.`,
+        );
+      }
+
+      // ★ Vòng sửa 1 (Important 1) — CÙNG khuôn `aoiPackageRouter`/`_core/index.ts:~4803`
+      // ("sizeBytes ĐỐI CHIẾU byte THẬT"): trước bản vá này, `sizeBytes` chỉ được khai
+      // ở `presignTemplateImage` (đối chiếu trần cứng `tranByteAnhTemplate()`), KHÔNG
+      // BAO GIỜ đối chiếu với byte THẬT đã nằm trên đĩa — một lời khai "trông như bảo
+      // đảm kích thước" mà không kiểm gì (đúng bẫy §6 chuẩn gói ảnh ZIP đã tự gọi tên:
+      // "trường trông như bảo đảm toàn vẹn mà không phải còn nguy hiểm hơn không có
+      // trường"). Tuỳ chọn (không bắt buộc, giữ tương thích lời gọi cũ) — khai thì kiểm
+      // THẬT, không khai thì không có phép kiểm nào cho kích thước ở bước này (đã có
+      // sha256 làm phép kiểm toàn vẹn chính).
+      if (input.sizeBytes != null && input.sizeBytes !== bytes.length) {
+        throw appError(
+          "BAD_REQUEST",
+          "INVALID_VALUE",
+          { field: "payload" },
+          `sizeBytes khai ("${input.sizeBytes}" byte) không khớp số byte THẬT đã tải lên ("${bytes.length}" byte) — tải lại ảnh và commit lại.`,
+        );
+      }
+
+      const { url } = await storagePut(objectKey, bytes, input.ext === "png" ? "image/png" : "image/jpeg");
+      const ketQuaGhi = await ghiUrlAnhTemplate(tra.hang, { url, key: objectKey });
+      await db.updateMachineHeartbeat(machine.id);
+
+      return {
+        success: true,
+        cap: tra.hang.cap,
+        url,
+        objectKey,
+        daDoi: ketQuaGhi.daDoi,
+      };
+    }),
+
   // ============================================================
   // GET Product Image — Machine client downloads product reference image from server
   // Direction: Server → AOI Machine
@@ -4483,11 +6020,11 @@ export const machineApiRouter = router({
 
       const productModel = await db.getProductModelByCode(input.productModelCode.trim());
       if (!productModel) {
-        throw new TRPCError({ code: 'NOT_FOUND', message: `Product model '${input.productModelCode}' not found` });
+        throw appError('NOT_FOUND', 'ENTITY_NOT_FOUND', { entity: 'productModel' }, `Product model '${input.productModelCode}' not found`);
       }
 
       if (!productModel.referenceImageUrl && !productModel.referenceImageKey) {
-        throw new TRPCError({ code: 'NOT_FOUND', message: 'Product has no reference image' });
+        throw appError('NOT_FOUND', 'ENTITY_NOT_FOUND', { entity: 'referenceImage' }, 'Product has no reference image');
       }
 
       let downloadUrl = productModel.referenceImageUrl;
@@ -4544,7 +6081,7 @@ export const machineApiRouter = router({
 
       const productModel = await db.getProductModelByCode(input.productModelCode.trim());
       if (!productModel) {
-        throw new TRPCError({ code: 'NOT_FOUND', message: `Product model '${input.productModelCode}' not found` });
+        throw appError('NOT_FOUND', 'ENTITY_NOT_FOUND', { entity: 'productModel' }, `Product model '${input.productModelCode}' not found`);
       }
 
       // Compute image hash for deduplication
@@ -4591,7 +6128,7 @@ export const machineApiRouter = router({
       );
 
       if (!referenceImage) {
-        throw new TRPCError({ code: 'BAD_REQUEST', message: 'No valid image data provided' });
+        throw appError('BAD_REQUEST', 'INVALID_VALUE', { field: 'image' }, 'No valid image data provided');
       }
 
       const updatePayload: Record<string, unknown> = {
@@ -4671,12 +6208,12 @@ export const machineApiRouter = router({
 
       const productModel = await db.getProductModelByCode(input.productModelCode.trim());
       if (!productModel) {
-        throw new TRPCError({ code: 'NOT_FOUND', message: `Product model '${input.productModelCode}' not found` });
+        throw appError('NOT_FOUND', 'ENTITY_NOT_FOUND', { entity: 'productModel' }, `Product model '${input.productModelCode}' not found`);
       }
 
       const existing = await db.getMeasurementPointDefByCode(productModel.id, input.pointCode.trim());
       if (!existing) {
-        throw new TRPCError({ code: 'NOT_FOUND', message: `Measurement point '${input.pointCode}' not found in product model '${input.productModelCode}'` });
+        throw appError('NOT_FOUND', 'ENTITY_NOT_FOUND', { entity: 'measurementPoint' }, `Measurement point '${input.pointCode}' not found in product model '${input.productModelCode}'`);
       }
 
       // Compute image hash for deduplication (same pattern as syncProductImage)
@@ -4710,7 +6247,7 @@ export const machineApiRouter = router({
       );
 
       if (!referenceImage) {
-        throw new TRPCError({ code: 'BAD_REQUEST', message: 'No valid image data provided' });
+        throw appError('BAD_REQUEST', 'INVALID_VALUE', { field: 'image' }, 'No valid image data provided');
       }
 
       // Doc 31 B.6 — NO threshold gate here: this endpoint updates ONLY the point's
@@ -4770,16 +6307,16 @@ export const machineApiRouter = router({
 
       const productModel = await db.getProductModelByCode(input.productModelCode.trim());
       if (!productModel) {
-        throw new TRPCError({ code: 'NOT_FOUND', message: `Product model '${input.productModelCode}' not found` });
+        throw appError('NOT_FOUND', 'ENTITY_NOT_FOUND', { entity: 'productModel' }, `Product model '${input.productModelCode}' not found`);
       }
 
       const point = await db.getMeasurementPointDefByCode(productModel.id, input.pointCode.trim());
       if (!point) {
-        throw new TRPCError({ code: 'NOT_FOUND', message: `Measurement point '${input.pointCode}' not found in product model '${input.productModelCode}'` });
+        throw appError('NOT_FOUND', 'ENTITY_NOT_FOUND', { entity: 'measurementPoint' }, `Measurement point '${input.pointCode}' not found in product model '${input.productModelCode}'`);
       }
 
       if (!point.referenceImageUrl) {
-        throw new TRPCError({ code: 'NOT_FOUND', message: `Measurement point '${input.pointCode}' has no reference image` });
+        throw appError('NOT_FOUND', 'ENTITY_NOT_FOUND', { entity: 'referenceImage' }, `Measurement point '${input.pointCode}' has no reference image`);
       }
 
       // Convert relative /uploads/ URLs to base64 data URLs for external clients
@@ -4838,7 +6375,7 @@ export const machineApiRouter = router({
 
       const productModel = await db.getProductModelByCode(input.productModelCode.trim());
       if (!productModel) {
-        throw new TRPCError({ code: 'NOT_FOUND', message: `Product model '${input.productModelCode}' not found` });
+        throw appError('NOT_FOUND', 'ENTITY_NOT_FOUND', { entity: 'productModel' }, `Product model '${input.productModelCode}' not found`);
       }
 
       // Doc 55 Item 3 PV1 — variant-aware version gate + point source (flag-gated).
@@ -5057,15 +6594,15 @@ export const machineApiRouter = router({
       const machine = edgeAuth.machine;
 
       const deployment = await aiAdvancedDb.getEdgeDeployment(input.deploymentId);
-      if (!deployment) throw new TRPCError({ code: 'NOT_FOUND', message: 'Deployment not found' });
+      if (!deployment) throw appError('NOT_FOUND', 'ENTITY_NOT_FOUND', { entity: 'edgeDeployment' }, 'Deployment not found');
 
       const owns = (deployment.machineId != null && deployment.machineId === machine.id)
         || (!!deployment.deviceId && deployment.deviceId === machine.code);
       if (!owns) {
-        throw new TRPCError({ code: 'FORBIDDEN', message: 'Deployment does not belong to this machine' });
+        throw appError('FORBIDDEN', 'SCOPE_MISMATCH', { entity: 'edgeDeployment', parent: 'machine' }, 'Deployment does not belong to this machine');
       }
       if (!deployment.packageKey || !deployment.packageHash) {
-        throw new TRPCError({ code: 'CONFLICT', message: 'Package not ready' });
+        throw appError('CONFLICT', 'OPERATION_FAILED', { operation: 'downloadEdgePackage' }, 'Package not ready');
       }
 
       if (deployment.status === "READY") {
@@ -5107,10 +6644,10 @@ export const machineApiRouter = router({
       const machine = edgeAuth.machine;
 
       const deployment = await aiAdvancedDb.getEdgeDeployment(input.deploymentId);
-      if (!deployment) throw new TRPCError({ code: 'NOT_FOUND', message: 'Deployment not found' });
+      if (!deployment) throw appError('NOT_FOUND', 'ENTITY_NOT_FOUND', { entity: 'edgeDeployment' }, 'Deployment not found');
       const owns = (deployment.machineId != null && deployment.machineId === machine.id)
         || (!!deployment.deviceId && deployment.deviceId === machine.code);
-      if (!owns) throw new TRPCError({ code: 'FORBIDDEN', message: 'Deployment does not belong to this machine' });
+      if (!owns) throw appError('FORBIDDEN', 'SCOPE_MISMATCH', { entity: 'edgeDeployment', parent: 'machine' }, 'Deployment does not belong to this machine');
 
       const result = await svcConfirmDeployment(input.deploymentId, input.localHash);
       return { success: result.matched, ...result };
@@ -5136,10 +6673,10 @@ export const machineApiRouter = router({
       const machine = edgeAuth.machine;
 
       const deployment = await aiAdvancedDb.getEdgeDeployment(input.deploymentId);
-      if (!deployment) throw new TRPCError({ code: 'NOT_FOUND', message: 'Deployment not found' });
+      if (!deployment) throw appError('NOT_FOUND', 'ENTITY_NOT_FOUND', { entity: 'edgeDeployment' }, 'Deployment not found');
       const owns = (deployment.machineId != null && deployment.machineId === machine.id)
         || (!!deployment.deviceId && deployment.deviceId === machine.code);
-      if (!owns) throw new TRPCError({ code: 'FORBIDDEN', message: 'Deployment does not belong to this machine' });
+      if (!owns) throw appError('FORBIDDEN', 'SCOPE_MISMATCH', { entity: 'edgeDeployment', parent: 'machine' }, 'Deployment does not belong to this machine');
 
       const result = await svcRecordHeartbeat(input.deploymentId);
       return { success: true, ...result };
@@ -5148,21 +6685,7 @@ export const machineApiRouter = router({
   // syncEdgeResults — machine pushes offline inference results. Idempotent via
   // localResultId (re-sending the same batch never duplicates rows).
   syncEdgeResults: publicProcedure
-    .input(z.object({
-      machineCode: z.string().optional(),
-      apiKey: z.string().optional(),
-      deploymentId: z.number().int().positive(),
-      results: z.array(z.object({
-        localResultId: z.string().min(1).max(100),
-        inputReference: z.string().optional(),
-        predictions: z.array(z.object({ label: z.string(), confidence: z.number() })),
-        confidence: z.number(),
-        topLabel: z.string().max(100),
-        processingTimeMs: z.number().int().nonnegative().optional(),
-        inferredAt: z.union([z.string(), z.date()]),
-        inspectionId: z.number().int().positive().optional(),
-      })).max(500),
-    }).refine((d) => d.apiKey || d.machineCode, {
+    .input(syncEdgeResultsCoreObject.refine((d) => d.apiKey || d.machineCode, {
       message: 'Either apiKey or machineCode must be provided',
     }))
     .mutation(async ({ input, ctx }) => {
@@ -5175,10 +6698,10 @@ export const machineApiRouter = router({
       const machine = edgeAuth.machine;
 
       const deployment = await aiAdvancedDb.getEdgeDeployment(input.deploymentId);
-      if (!deployment) throw new TRPCError({ code: 'NOT_FOUND', message: 'Deployment not found' });
+      if (!deployment) throw appError('NOT_FOUND', 'ENTITY_NOT_FOUND', { entity: 'edgeDeployment' }, 'Deployment not found');
       const owns = (deployment.machineId != null && deployment.machineId === machine.id)
         || (!!deployment.deviceId && deployment.deviceId === machine.code);
-      if (!owns) throw new TRPCError({ code: 'FORBIDDEN', message: 'Deployment does not belong to this machine' });
+      if (!owns) throw appError('FORBIDDEN', 'SCOPE_MISMATCH', { entity: 'edgeDeployment', parent: 'machine' }, 'Deployment does not belong to this machine');
 
       await db.updateMachineHeartbeat(machine.id).catch(() => {});
       // syncEdgeResults is an ingest-volume endpoint → rate-limited like submitInspection.

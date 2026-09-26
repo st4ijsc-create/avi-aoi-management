@@ -16,6 +16,7 @@
 import { z } from "zod";
 import { and, desc, eq, or } from "drizzle-orm";
 import { TRPCError } from "@trpc/server";
+import { appError } from "../_core/appError";
 import { router, moduleProcedure, moduleGate, deployProcedure as deployBase, writeProcedure as writeBase } from "../_core/trpc";
 import { requirePermission } from "../_core/accessControl";
 import { isUniqueViolation } from "../_core/dbErrors";
@@ -26,8 +27,18 @@ import { getDb } from "../db/connection";
 const protectedProcedure = moduleProcedure("MOD_ENGINEERING");
 // Doc 54 P3.2 (doc 40 CTL-07) — DEPLOY/rollback/fleet-rollout của một chương trình ra thiết bị là
 // đường ACTUATION MẠNH NHẤT: role-floor (admin/supervisor/engineer) + 2FA + STEP-UP OTP TƯƠI
-// (requireFreshTotp, sau cờ ACTUATION_STEPUP_2FA — mặc định OFF → hệt actuationProcedure cũ), cùng
-// license gate MOD_ENGINEERING. Client mang `totpCode` (OTP 6 số tươi) trong input khi cờ bật.
+// (sau cờ ACTUATION_STEPUP_2FA — mặc định OFF → hệt actuationProcedure cũ), cùng license gate
+// MOD_ENGINEERING. Client mang `totpCode` (OTP 6 số tươi) trong input khi cờ bật.
+// ★★★ Pha 6 Task 1b — `deployProcedure` (gốc, `_core/trpc.ts`) nay chain `requirePerCallFreshTotp`:
+// khi cờ BẬT, `totpCode` là **BẮT BUỘC MỖI LƯỢT GỌI**, không còn cache phiên 10 phút.
+// ★★★ I-4 (review Task 1b) — `.optional()` ĐÃ ĐƯỢC GỠ khỏi zod bên dưới. Lý do cũ (*"bắt buộc sẽ
+// gãy mọi lượt gọi khi cờ TẮT"*) **không đứng vững khi kiểm**: `useStepUpOtp.guard` KHÔNG đọc cờ
+// client nên UI gửi mã ở **cả hai** trạng thái cờ, và **0** người gọi tRPC nội bộ. Cái `.optional()`
+// ấy **không phải mỹ quan** — nó là **CƠ CHẾ** khiến `tsc` **ban phước** cho đột biến R2 (gỡ
+// `stepUp.guard` + `totpCode` khỏi một điểm gọi client ⇒ 108 file/1837 ca XANH, tsc SẠCH).
+// Bắt buộc ở zod ⇒ lượt gỡ ấy nay là một **lỗi biên dịch**. ⚠ CHỈ THU HẸP: middleware vẫn đọc raw
+// input TRƯỚC zod và fail-closed, nên zod không phải cổng an ninh — nó là cổng **hợp đồng**.
+// Lưới: `server/routers/deployStepUpFreshness.test.ts` · `client/src/lib/vramPanelStepUp.unit.test.ts`.
 const deployProcedure = deployBase.use(moduleGate("MOD_ENGINEERING"));
 // Doc 54 Wave B — authoring/compile writes (createArtifact/buildArtifact/upsertSymbol)
 // get a write floor (blocks read-only roles viewer/user) so a stray machine_control
@@ -72,7 +83,10 @@ import {
   explainProgram,
   copilotEnabled,
   generateProgram,
+  completeInline,
 } from "../services/programming/aiProgrammingCopilot";
+// ── Doc 80 · Task 10 (D4) — MỘT module cổng an toàn cho copilot (thay hai regex trùng) ──
+import { isSafetyRelevantText, stripPlatformDiagnostics } from "../services/programming/copilotSafetyGate";
 // ── doc 40 W5 §11 — fleet program rollout (canary) + machine×version matrix ──
 import { deployToFleet, fleetVersionMatrix } from "../services/programming/fleetRollout";
 // ── D6 (doc 25 T4) — Online Monitor: watch-session manager bound to the socket room ──
@@ -91,7 +105,7 @@ function toDpcUser(user: { id: number; role: string; name?: string | null }): Dp
 
 async function db() {
   const d = await getDb();
-  if (!d) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Database not connected" });
+  if (!d) throw appError("INTERNAL_SERVER_ERROR", "DB_UNAVAILABLE", undefined, "Database not connected");
   return d;
 }
 
@@ -138,31 +152,39 @@ async function assertIdempotencyKeyConsistent(
     .limit(1);
   if (!prior) return; // key mới → không xung đột
   if (idempotencyKeyConflicts(prior, want)) {
-    throw new TRPCError({
-      code: "CONFLICT",
-      message:
-        `Khóa idempotency "${idempotencyKey}" đã được dùng cho một lần deploy KHÁC ` +
+    throw appError(
+      "CONFLICT",
+      "INVALID_VALUE",
+      { field: "idempotencyKey" },
+      `Khóa idempotency "${idempotencyKey}" đã được dùng cho một lần deploy KHÁC ` +
         `(build #${prior.buildId}, ${prior.stage}${prior.deviceId != null ? `, thiết bị #${prior.deviceId}` : ""}). ` +
         `Yêu cầu hiện tại khác → hãy dùng khóa mới; hệ thống không ghi đè hay nuốt xung đột.`,
-    });
+    );
   }
 }
 
 // ════════════════════════════════════════════════════════════════════════════
-// Doc 54 P3.4 (#1) — COPILOT SAFETY GUARD cho REVIEW/EXPLAIN.
+// Doc 54 P3.4 (#1) → Doc 80 · Task 10 (D4) — nhận diện CHỦ ĐỀ an toàn cho nhãn "không chứng nhận".
 //
-// generateProgram() chỉ HARD-REFUSE khi AUTHOR code (generate/complete/translate). Với
-// review/explain nó trả THẲNG lời của model → có nguy cơ "chứng nhận" logic an toàn. Regex dưới
-// đây mirror SAFETY_RE của aiProgrammingCopilot (const nội bộ, không export được) — bảo thủ:
-// thà nhận nhầm còn hơn bỏ sót. Neo word-boundary để "silicon"/"place" không kích nhầm.
+// Regex trùng `COPILOT_SAFETY_RE` (bản sao của SAFETY_RE trong copilot) đã được THAY bằng module
+// `copilotSafetyGate`. Việc CHẶN nay do cổng làm TRƯỚC model bên trong `generateProgram` (mọi
+// mode); hàm dưới đây CHỈ còn dùng để GẮN NHÃN `safetyReviewRequired / certified:false` lên một
+// câu trả lời được phép (copilotExplain tất định, copilotGenerate mode explain) — gắn thừa vô hại.
 // ════════════════════════════════════════════════════════════════════════════
-const COPILOT_SAFETY_RE =
-  /\b(e-?stops?|emergency[-\s]?stops?|emergency|interlocks?|safety(?:[-\s]?(?:function|relay|plc|logic|circuit|door|gate|rated))?|safeties|sil\s?[1-4]?|pl[-\s]?[a-e]|performance[-\s]?level|guard[-\s]?lock(?:ing)?|guard|light[-\s]?curtain|two[-\s]?hand|lockout|tagout|muting|estop)\b|(?:安全|急停|安全门|安全回路|安全继电器|紧急停止|光幕|双手)/i;
 
-/** true nếu bất kỳ đoạn text nào (request/mã) chạm từ khoá LIÊN QUAN AN TOÀN. Pure/testable. */
+/** true nếu bất kỳ đoạn text nào (request/mã) chạm chủ đề an toàn. Pure/testable. */
 export function isSafetyRelevantProgram(...texts: (string | undefined | null)[]): boolean {
-  const joined = texts.filter((t): t is string => typeof t === "string" && t.length > 0).join("\n");
-  return joined.length > 0 && COPILOT_SAFETY_RE.test(joined);
+  return isSafetyRelevantText(...texts);
+}
+
+/**
+ * Doc 80 · Task 10 · AI-09 — chi tiết kỹ thuật (`devDetail`: chuỗi chẩn đoán G1-D/G5-D, trích suy
+ * luận của model) CHỈ trả cho admin. Kỹ sư nhận câu ngắn trong `note` + `errorCode`. Pure/testable.
+ */
+export function anChiTietKyThuat<T extends { devDetail?: string }>(result: T, role: string | undefined | null): T {
+  if (role === "admin" || !("devDetail" in result)) return result;
+  const { devDetail: _bo, ...conLai } = result;
+  return conLai as T;
 }
 
 export const programmingRouter = router({
@@ -196,7 +218,7 @@ export const programmingRouter = router({
     .query(async ({ input }) => {
       const d = await db();
       const [row] = await d.select().from(programProjects).where(eq(programProjects.id, input.id)).limit(1);
-      if (!row) throw new TRPCError({ code: "NOT_FOUND", message: `Project ${input.id} not found` });
+      if (!row) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "programmingProject" }, `Project ${input.id} not found`);
       return row;
     }),
 
@@ -216,7 +238,7 @@ export const programmingRouter = router({
       const d = await db();
       const code = input.code.trim();
       const [clash] = await d.select().from(programProjects).where(eq(programProjects.code, code)).limit(1);
-      if (clash) throw new TRPCError({ code: "CONFLICT", message: `A project with code "${code}" already exists.` });
+      if (clash) throw appError("CONFLICT", "ENTITY_DUPLICATE", { entity: "programmingProject" }, `A project with code "${code}" already exists.`);
       const [row] = await d
         .insert(programProjects)
         .values({
@@ -251,7 +273,7 @@ export const programmingRouter = router({
       if (input.description !== undefined) patch.description = input.description;
       if (input.defaultBranch !== undefined) patch.defaultBranch = input.defaultBranch;
       const [row] = await d.update(programProjects).set(patch).where(eq(programProjects.id, input.id)).returning();
-      if (!row) throw new TRPCError({ code: "NOT_FOUND", message: `Project ${input.id} not found` });
+      if (!row) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "programmingProject" }, `Project ${input.id} not found`);
       return row;
     }),
 
@@ -296,7 +318,7 @@ export const programmingRouter = router({
     .query(async ({ input }) => {
       const d = await db();
       const [row] = await d.select().from(programArtifacts).where(eq(programArtifacts.id, input.id)).limit(1);
-      if (!row) throw new TRPCError({ code: "NOT_FOUND", message: `Artifact ${input.id} not found` });
+      if (!row) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "programmingArtifact" }, `Artifact ${input.id} not found`);
       return row;
     }),
 
@@ -314,7 +336,7 @@ export const programmingRouter = router({
     .mutation(async ({ input, ctx }) => {
       const d = await db();
       const [proj] = await d.select().from(programProjects).where(eq(programProjects.id, input.projectId)).limit(1);
-      if (!proj) throw new TRPCError({ code: "NOT_FOUND", message: `Project ${input.projectId} not found` });
+      if (!proj) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "programmingProject" }, `Project ${input.projectId} not found`);
 
       // Next version on this branch = max(existing)+1. doc 54 Wave C — this read-max
       // then-insert is NOT atomic: two concurrent saves on the same (projectId, branch)
@@ -349,19 +371,23 @@ export const programmingRouter = router({
         } catch (err) {
           if (isUniqueViolation(err) && attempt < MAX_ATTEMPTS) continue; // recompute max + retry
           if (isUniqueViolation(err)) {
-            throw new TRPCError({
-              code: "CONFLICT",
-              message: `Không thể cấp phiên bản mới cho nhánh "${input.branch}" do có lưu đồng thời — vui lòng thử lại.`,
-            });
+            throw appError(
+              "CONFLICT",
+              "OPERATION_FAILED",
+              { operation: "createProgramArtifactVersion" },
+              `Không thể cấp phiên bản mới cho nhánh "${input.branch}" do có lưu đồng thời — vui lòng thử lại.`,
+            );
           }
           throw err;
         }
       }
       // Unreachable: the loop always returns a row or throws.
-      throw new TRPCError({
-        code: "CONFLICT",
-        message: `Không thể cấp phiên bản mới cho nhánh "${input.branch}" — vui lòng thử lại.`,
-      });
+      throw appError(
+        "CONFLICT",
+        "OPERATION_FAILED",
+        { operation: "createProgramArtifactVersion" },
+        `Không thể cấp phiên bản mới cho nhánh "${input.branch}" — vui lòng thử lại.`,
+      );
     }),
 
   validateArtifact: protectedProcedure
@@ -433,7 +459,7 @@ export const programmingRouter = router({
         /** W2-9 — lý do duyệt (bắt buộc ở UI cho deploy production); lưu vào detailJson. */
         reason: z.string().max(2000).optional(),
         /** Doc 54 P3.2 (CTL-07) — OTP 6 số TƯƠI cho step-up 2FA (đọc bởi requireFreshTotp khi cờ bật). */
-        totpCode: z.string().max(16).optional(),
+        totpCode: z.string().max(16),
       })
         // Doc 38 Đợt Q — four-eyes enforced AT THE SCHEMA for the sensitive path: a
         // PRODUCTION deploy must name a confirming approver (staging may self-sign).
@@ -588,7 +614,7 @@ export const programmingRouter = router({
         deploymentId: z.number().int().positive(),
         reason: z.string().max(2000).optional(),
         /** Doc 54 P3.2 (CTL-07) — OTP 6 số TƯƠI cho step-up 2FA (đọc bởi requireFreshTotp khi cờ bật). */
-        totpCode: z.string().max(16).optional(),
+        totpCode: z.string().max(16),
       }),
     )
     .mutation(async ({ input, ctx }) =>
@@ -640,7 +666,7 @@ export const programmingRouter = router({
         actionId: z.string().min(1).max(128),
         confirmedBy: z.number().int().positive().optional(),
         /** Doc 54 P3.2 (CTL-07) — OTP 6 số TƯƠI cho step-up 2FA (đọc bởi requireFreshTotp khi cờ bật). */
-        totpCode: z.string().max(16).optional(),
+        totpCode: z.string().max(16),
       }),
     )
     .mutation(async ({ input, ctx }) => {
@@ -676,7 +702,7 @@ export const programmingRouter = router({
         confirmedBy: z.number().int().positive().optional(),
         reason: z.string().max(2000).optional(),
         /** Doc 54 P3.2 (CTL-07) — OTP 6 số TƯƠI cho step-up 2FA (đọc bởi requireFreshTotp khi cờ bật). */
-        totpCode: z.string().max(16).optional(),
+        totpCode: z.string().max(16),
       })
         // Four-eyes AT THE SCHEMA cho đường nhạy cảm: rollout production phải có approver.
         .refine((v) => v.stage !== "production" || v.confirmedBy != null, {
@@ -797,7 +823,7 @@ export const programmingRouter = router({
       }
       const d = await db();
       const [proj] = await d.select().from(programProjects).where(eq(programProjects.id, input.projectId)).limit(1);
-      if (!proj) throw new TRPCError({ code: "NOT_FOUND", message: `Project ${input.projectId} not found` });
+      if (!proj) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "programmingProject" }, `Project ${input.projectId} not found`);
       const machineId = proj.deviceId;
       // Không gắn thiết bị → không có nguồn để đọc (báo trung thực về UI).
       if (machineId == null) {
@@ -874,31 +900,63 @@ export const programmingRouter = router({
         targetKind: KIND.optional(),
       }),
     )
-    .mutation(async ({ input }) => {
-      const result = await generateProgram(input);
-      // Doc 54 P3.4 (#1) — SAFETY GUARD. generateProgram HARD-REFUSE khi AUTHOR
-      // (generate/complete/translate), NHƯNG review/explain trả THẲNG lời của model → có nguy cơ
-      // "chứng nhận" logic an toàn. Nếu chương trình được phân tích chạm từ khoá an toàn (e-stop/
-      // interlock/light-curtain/two-hand/guard/muting/safety-PLC/SIL/PL): KHÔNG lặng lẽ duyệt —
-      // gắn cờ yêu cầu người kiểm định an toàn và TỪ CHỐI chứng nhận. Bảo thủ: nghi ngờ thì chặn.
+    .mutation(async ({ input, ctx }) => {
+      // G2-A — `callerRole` được điền TỪ PHIÊN ĐÃ XÁC THỰC, KHÔNG từ thân request (schema zod ở
+      // trên cố tình KHÔNG khai trường này, nên client không thể tự đặt vai). Nó chỉ đi tới cổng
+      // corpus Training Studio của `retrieveKnowledge` khi copilot truy hồi chỉ mục repo.
+      const result = anChiTietKyThuat(
+        await generateProgram({ ...input, callerRole: String(ctx.user?.role ?? "") }),
+        ctx.user?.role,
+      );
+      // Doc 80 · Task 10 (D4) — cổng an toàn đã chạy TRƯỚC model bên trong generateProgram cho MỌI
+      // mode (review mã an toàn ⇒ refusalSource:"gate", không tốn lượt model). Ở đây chỉ còn việc
+      // GẮN NHÃN: explain (được phép) trên mã/yêu cầu chạm chủ đề an toàn ⇒ "không phải chứng nhận".
+      // AI-13 — chẩn đoán `[safety-lint:…]` của CHÍNH nền tảng bị loại trước khi xét nhãn.
       if (
-        (input.mode === "review" || input.mode === "explain") &&
-        isSafetyRelevantProgram(input.request, input.contextCode)
+        input.mode === "explain" &&
+        !result.refused &&
+        isSafetyRelevantProgram(stripPlatformDiagnostics(input.request), input.contextCode)
       ) {
         return {
           ...result,
-          ok: false as const,
-          refused: true as const,
           safetyReviewRequired: true as const,
           certified: false as const,
-          reason:
-            "Chương trình chứa logic liên quan AN TOÀN (e-stop/interlock/light-curtain/two-hand/guard/" +
-            "muting/safety-PLC/SIL/PL). Copilot KHÔNG chứng nhận hay phê duyệt logic an toàn — yêu cầu " +
-            "KỸ SƯ AN TOÀN có thẩm quyền kiểm định trên bộ điều khiển đã được chứng nhận. Nhận xét kèm " +
-            "theo (nếu có) CHỈ để tham khảo, KHÔNG phải chứng nhận.",
+          safetyNote:
+            "Chương trình chứa logic liên quan AN TOÀN — phần giải thích này KHÔNG phải chứng nhận. " +
+            "Yêu cầu KỸ SƯ AN TOÀN có thẩm quyền kiểm định trên bộ điều khiển đã được chứng nhận.",
         };
       }
       return result;
+    }),
+
+  /**
+   * Doc 69 · Wave 4 / C1 — IN-EDITOR INLINE completion (CodeMirror ghost text ↔ generateFim).
+   *
+   * A DIFFERENT surface from copilotGenerate: a short fill-in-middle infill requested by the
+   * CodeMirror extension as the engineer types (debounced), rendered as dimmed ghost text,
+   * Tab to accept. NOT the AUTHOR path — no HARD-REFUSE guard, no substrate validation — this
+   * is a trivially short infill and nothing is inserted without an explicit Tab; `completeInline`
+   * still keeps it BOUNDED (small maxTokens + char cap). Read-gated exactly like copilotSuggest
+   * (machine_monitoring / canView) — a suggestion, not a write. FAIL-SAFE: flag off / model
+   * absent-slow-or-erroring → `{ completion: "" }`, NEVER throws (the try/catch here is a
+   * belt-and-braces second layer on top of completeInline's own internal fail-safe).
+   */
+  copilotComplete: protectedProcedure
+    .use(requirePermission("machine_monitoring", "canView"))
+    .input(
+      z.object({
+        prefix: z.string().max(4000),
+        suffix: z.string().max(2000).optional(),
+        language: z.string().max(32).optional(),
+        maxTokens: z.number().int().positive().max(128).optional(),
+      }),
+    )
+    .mutation(async ({ input }) => {
+      try {
+        return await completeInline(input);
+      } catch {
+        return { completion: "" as const };
+      }
     }),
 
   // ── IEC 61131-3 structured POU (LAD/FBD/SFC) — P4 (doc 24 Wave-3) ──

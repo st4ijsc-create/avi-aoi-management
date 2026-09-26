@@ -1,6 +1,7 @@
 import { protectedProcedure, router } from "../_core/trpc";
 import { z } from "zod";
 import { TRPCError } from "@trpc/server";
+import { appError } from "../_core/appError";
 import * as db from "../db";
 import { adminProcedure } from "./_shared";
 
@@ -146,7 +147,9 @@ export const dashboardWidgetRouter = router({
       const currentLayout = await db.getDashboardWidgetLayout(ctx.user.id);
       
       if (!currentLayout) {
-        throw new TRPCError({ code: 'NOT_FOUND', message: 'No layout found to save' });
+        // Review cuối — ghi sổ trước: thứ thiếu là LAYOUT của user, không phải "dashboard"
+        // (một khái niệm rộng hơn — bảng điều khiển vẫn tồn tại, chỉ chưa có bố cục lưu).
+        throw appError('NOT_FOUND', 'ENTITY_NOT_FOUND', { entity: 'dashboardLayout' }, 'No layout found to save');
       }
       
       // Extract widgets and layout from current layout
@@ -203,7 +206,7 @@ export const dashboardWidgetRouter = router({
     .mutation(async ({ ctx, input }) => {
       // Only admin can create shared presets
       if (input.presetType === 'shared' && ctx.user.role !== 'admin') {
-        throw new TRPCError({ code: 'FORBIDDEN', message: 'Only admin can create shared presets' });
+        throw appError('FORBIDDEN', 'PERMISSION_DENIED', { action: 'createSharedDashboardPreset' }, 'Only admin can create shared presets');
       }
       return db.createWidgetStylePreset({
         ...input,
@@ -229,11 +232,11 @@ export const dashboardWidgetRouter = router({
     .mutation(async ({ ctx, input }) => {
       const preset = await db.getWidgetStylePresetById(input.id);
       if (!preset) {
-        throw new TRPCError({ code: 'NOT_FOUND', message: 'Preset not found' });
+        throw appError('NOT_FOUND', 'ENTITY_NOT_FOUND', { entity: 'widgetStylePreset' }, 'Preset not found');
       }
       // Only owner or admin can update
       if (preset.createdBy !== ctx.user.id && ctx.user.role !== 'admin') {
-        throw new TRPCError({ code: 'FORBIDDEN', message: 'Not authorized to update this preset' });
+        throw appError('FORBIDDEN', 'PERMISSION_DENIED', { action: 'updateDashboardPreset' }, 'Not authorized to update this preset');
       }
       const { id, ...data } = input;
       await db.updateWidgetStylePreset(id, data);
@@ -246,15 +249,15 @@ export const dashboardWidgetRouter = router({
     .mutation(async ({ ctx, input }) => {
       const preset = await db.getWidgetStylePresetById(input.id);
       if (!preset) {
-        throw new TRPCError({ code: 'NOT_FOUND', message: 'Preset not found' });
+        throw appError('NOT_FOUND', 'ENTITY_NOT_FOUND', { entity: 'widgetStylePreset' }, 'Preset not found');
       }
       // Only owner or admin can delete
       if (preset.createdBy !== ctx.user.id && ctx.user.role !== 'admin') {
-        throw new TRPCError({ code: 'FORBIDDEN', message: 'Not authorized to delete this preset' });
+        throw appError('FORBIDDEN', 'PERMISSION_DENIED', { action: 'deleteDashboardPreset' }, 'Not authorized to delete this preset');
       }
       // Cannot delete system presets
       if (preset.presetType === 'system') {
-        throw new TRPCError({ code: 'FORBIDDEN', message: 'Cannot delete system presets' });
+        throw appError('FORBIDDEN', 'OPERATION_FAILED', { operation: 'deleteDashboardPreset' }, 'Cannot delete system presets');
       }
       await db.deleteWidgetStylePreset(input.id);
       return { success: true };
@@ -280,11 +283,11 @@ export const dashboardWidgetRouter = router({
     .query(async ({ ctx, input }) => {
       const preset = await db.getWidgetStylePresetById(input.id);
       if (!preset) {
-        throw new TRPCError({ code: 'NOT_FOUND', message: 'Preset not found' });
+        throw appError('NOT_FOUND', 'ENTITY_NOT_FOUND', { entity: 'widgetStylePreset' }, 'Preset not found');
       }
       // Check access - user can export their own, public, or system presets
       if (preset.createdBy !== ctx.user.id && !preset.isPublic && preset.presetType !== 'system') {
-        throw new TRPCError({ code: 'FORBIDDEN', message: 'Not authorized to export this preset' });
+        throw appError('FORBIDDEN', 'PERMISSION_DENIED', { action: 'exportDashboardPreset' }, 'Not authorized to export this preset');
       }
       return {
         name: preset.name,
@@ -416,7 +419,7 @@ export const dashboardWidgetRouter = router({
     .mutation(async ({ ctx, input }) => {
       const preset = await db.getWidgetStylePresetById(input.id);
       if (!preset) {
-        throw new TRPCError({ code: 'NOT_FOUND', message: 'Preset not found' });
+        throw appError('NOT_FOUND', 'ENTITY_NOT_FOUND', { entity: 'widgetStylePreset' }, 'Preset not found');
       }
       // Update preset to be shared and public
       await db.updateWidgetStylePreset(input.id, {
@@ -432,11 +435,11 @@ export const dashboardWidgetRouter = router({
     .mutation(async ({ ctx, input }) => {
       const preset = await db.getWidgetStylePresetById(input.id);
       if (!preset) {
-        throw new TRPCError({ code: 'NOT_FOUND', message: 'Preset not found' });
+        throw appError('NOT_FOUND', 'ENTITY_NOT_FOUND', { entity: 'widgetStylePreset' }, 'Preset not found');
       }
       // Cannot unshare system presets
       if (preset.presetType === 'system') {
-        throw new TRPCError({ code: 'FORBIDDEN', message: 'Cannot modify system presets' });
+        throw appError('FORBIDDEN', 'OPERATION_FAILED', { operation: 'unshareDashboardPreset' }, 'Cannot modify system presets');
       }
       // Update preset to be private
       await db.updateWidgetStylePreset(input.id, {
@@ -458,11 +461,11 @@ export const dashboardWidgetRouter = router({
     .mutation(async ({ ctx, input }) => {
       const preset = await db.getWidgetStylePresetById(input.id);
       if (!preset) {
-        throw new TRPCError({ code: 'NOT_FOUND', message: 'Preset not found' });
+        throw appError('NOT_FOUND', 'ENTITY_NOT_FOUND', { entity: 'widgetStylePreset' }, 'Preset not found');
       }
       // Check if preset is accessible (public or shared)
       if (!preset.isPublic && preset.presetType !== 'shared' && preset.createdBy !== ctx.user.id) {
-        throw new TRPCError({ code: 'FORBIDDEN', message: 'Not authorized to clone this preset' });
+        throw appError('FORBIDDEN', 'PERMISSION_DENIED', { action: 'cloneDashboardPreset' }, 'Not authorized to clone this preset');
       }
       // Create a copy for the user
       const newPresetId = await db.createWidgetStylePreset({
@@ -499,11 +502,11 @@ export const dashboardWidgetRouter = router({
     .query(async ({ ctx, input }) => {
       const dashboard = await db.getUserCustomDashboardById(input.id);
       if (!dashboard) {
-        throw new TRPCError({ code: 'NOT_FOUND', message: 'Dashboard not found' });
+        throw appError('NOT_FOUND', 'ENTITY_NOT_FOUND', { entity: 'dashboard' }, 'Dashboard not found');
       }
       // Check access: owner or public
       if (dashboard.userId !== ctx.user.id && !dashboard.isPublic) {
-        throw new TRPCError({ code: 'FORBIDDEN', message: 'Not authorized to view this dashboard' });
+        throw appError('FORBIDDEN', 'PERMISSION_DENIED', { action: 'viewDashboard' }, 'Not authorized to view this dashboard');
       }
       return dashboard;
     }),
@@ -597,10 +600,10 @@ export const dashboardWidgetRouter = router({
     .query(async ({ ctx, input }) => {
       const dashboard = await db.getUserCustomDashboardById(input.id);
       if (!dashboard) {
-        throw new TRPCError({ code: 'NOT_FOUND', message: 'Dashboard not found' });
+        throw appError('NOT_FOUND', 'ENTITY_NOT_FOUND', { entity: 'dashboard' }, 'Dashboard not found');
       }
       if (dashboard.userId !== ctx.user.id && !dashboard.isPublic) {
-        throw new TRPCError({ code: 'FORBIDDEN', message: 'Not authorized' });
+        throw appError('FORBIDDEN', 'PERMISSION_DENIED', { action: 'exportDashboard' }, 'Not authorized');
       }
 
       if (input.format === 'json') {
@@ -659,11 +662,11 @@ h1 { margin-bottom: 8px; } p { color: #666; margin-bottom: 24px; }
       try {
         parsed = JSON.parse(input.jsonContent);
       } catch {
-        throw new TRPCError({ code: 'BAD_REQUEST', message: 'Invalid JSON' });
+        throw appError('BAD_REQUEST', 'INVALID_VALUE', { field: 'dashboardImport' }, 'Invalid JSON');
       }
       
       if (!parsed.name || !Array.isArray(parsed.widgets)) {
-        throw new TRPCError({ code: 'BAD_REQUEST', message: 'Invalid dashboard format' });
+        throw appError('BAD_REQUEST', 'INVALID_VALUE', { field: 'dashboardFormat' }, 'Invalid dashboard format');
       }
       
       return db.createUserCustomDashboard({
@@ -689,9 +692,9 @@ h1 { margin-bottom: 8px; } p { color: #666; margin-bottom: 24px; }
     .mutation(async ({ ctx, input }) => {
       const dashboard = await db.getUserCustomDashboardById(input.dashboardId);
       if (!dashboard || dashboard.userId !== ctx.user.id) {
-        throw new TRPCError({ code: 'FORBIDDEN', message: 'Not authorized' });
+        throw appError('FORBIDDEN', 'PERMISSION_DENIED', { action: 'convertDashboardToTemplate' }, 'Not authorized');
       }
-      
+
       const widgetsArr = Array.isArray(dashboard.widgets) ? dashboard.widgets : [];
       
       // Convert to template-compatible format
@@ -735,17 +738,17 @@ h1 { margin-bottom: 8px; } p { color: #666; margin-bottom: 24px; }
     }))
     .mutation(async ({ ctx, input }) => {
       if (input.dashboardTemplateId != null && input.customDashboardId != null) {
-        throw new TRPCError({ code: 'BAD_REQUEST', message: 'Set either a template or a custom dashboard, not both' });
+        throw appError('BAD_REQUEST', 'INVALID_VALUE', { field: 'dashboardTarget' }, 'Set either a template or a custom dashboard, not both');
       }
       if (input.dashboardTemplateId != null) {
         const template = await db.getDashboardTemplateById(input.dashboardTemplateId);
-        if (!template) throw new TRPCError({ code: 'NOT_FOUND', message: 'Template not found' });
+        if (!template) throw appError('NOT_FOUND', 'ENTITY_NOT_FOUND', { entity: 'dashboardTemplate' }, 'Template not found');
       }
       if (input.customDashboardId != null) {
         const dashboard = await db.getUserCustomDashboardById(input.customDashboardId);
-        if (!dashboard) throw new TRPCError({ code: 'NOT_FOUND', message: 'Dashboard not found' });
+        if (!dashboard) throw appError('NOT_FOUND', 'ENTITY_NOT_FOUND', { entity: 'dashboard' }, 'Dashboard not found');
         if (!dashboard.isPublic) {
-          throw new TRPCError({ code: 'BAD_REQUEST', message: 'Role default dashboard must be a PUBLIC custom dashboard' });
+          throw appError('BAD_REQUEST', 'INVALID_VALUE', { field: 'visibility' }, 'Role default dashboard must be a PUBLIC custom dashboard');
         }
       }
       return db.upsertRoleDashboardDefault({

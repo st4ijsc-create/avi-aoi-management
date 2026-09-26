@@ -29,6 +29,7 @@ import {
   CheckCircle,
 } from "lucide-react";
 import { toast } from "sonner";
+import { toastTrpcError } from "@/lib/trpcErrors";
 
 const STANDARD_COLORS: Record<string, string> = {
   "IPC-A-610": "bg-blue-500",
@@ -40,11 +41,11 @@ const STANDARD_COLORS: Record<string, string> = {
 };
 
 const CATEGORY_LABELS: Record<string, string> = {
-  electronics: "Điện tử",
-  automotive: "Ô tô",
-  aerospace: "Hàng không",
-  medical: "Y tế",
-  general: "Chung",
+  electronics: "qgCategory.dienTu",
+  automotive: "qgCategory.oTo",
+  aerospace: "qgCategory.hangKhong",
+  medical: "qgCategory.yTe",
+  general: "qgCategory.chung",
 };
 
 export function QualityGateTemplatesContent() {
@@ -78,7 +79,7 @@ export function QualityGateTemplatesContent() {
       resetForm();
       refetchCustom();
     },
-    onError: (err) => toast.error(err.message),
+    onError: (err) => toastTrpcError(err),
   });
 
   const deleteMutation = trpc.qualityGateTemplate.deleteCustom.useMutation({
@@ -86,7 +87,7 @@ export function QualityGateTemplatesContent() {
       toast.success(t("qualityGateTemplates.deleteSuccess", "Xóa template thành công"));
       refetchCustom();
     },
-    onError: (err) => toast.error(err.message),
+    onError: (err) => toastTrpcError(err),
   });
 
   const applyMutation = trpc.qualityGateTemplate.applyToLine.useMutation({
@@ -100,7 +101,7 @@ export function QualityGateTemplatesContent() {
       setSelectedTemplate(null);
       setSelectedLineId("");
     },
-    onError: (err) => toast.error(err.message),
+    onError: (err) => toastTrpcError(err),
   });
 
   const resetForm = () => {
@@ -341,9 +342,9 @@ export function QualityGateTemplatesContent() {
                         <Select value={rule.action} onValueChange={(v) => handleRuleChange(index, "action", v)}>
                           <SelectTrigger><SelectValue /></SelectTrigger>
                           <SelectContent>
-                            <SelectItem value="alert">Cảnh báo</SelectItem>
-                            <SelectItem value="pause">Tạm dừng</SelectItem>
-                            <SelectItem value="stop">Dừng hẳn</SelectItem>
+                            <SelectItem value="alert">{t("qgTemplates.canhBao", "Cảnh báo")}</SelectItem>
+                            <SelectItem value="pause">{t("qgTemplates.tamDung", "Tạm dừng")}</SelectItem>
+                            <SelectItem value="stop">{t("qgTemplates.dungHan", "Dừng hẳn")}</SelectItem>
                           </SelectContent>
                         </Select>
                       </div>
@@ -465,7 +466,7 @@ function TemplateCard({
       </CardHeader>
       <CardContent className="space-y-3">
         <div className="flex items-center gap-2 text-sm">
-          <Badge variant="outline">{CATEGORY_LABELS[template.category] || template.category}</Badge>
+          <Badge variant="outline">{CATEGORY_LABELS[template.category] ? t(CATEGORY_LABELS[template.category]) : template.category}</Badge>
           <span className="text-muted-foreground">
             {template.rules?.length || 0} {t("qualityGateTemplates.rulesCount", "quy tắc")}
           </span>

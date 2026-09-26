@@ -1,0 +1,441 @@
+/**
+ * doc69 Giai đoạn 5 / Wave E3 (E3-1) — Knowledge & Training Studio document parser.
+ *
+ * Extracts plain text from an operator-uploaded document so it can be chunked + embedded by
+ * kbIngestService.ts. Supported today: pdf (pdf-parse, already a dependency), docx (mammoth,
+ * added by this task), md/txt (plain read), url (E3-3 — pass-through only: kbWebFetcher.ts
+ * fetches + extracts the page text itself via html-to-text/pdf-parse BEFORE calling
+ * ingestDocument, so this module's "url" case is just bound+trim, same as md/txt — there is no
+ * network I/O or HTML parsing in this file), video (E3-4 — same pass-through shape:
+ * kbVideoTranscriber.ts runs ffmpeg+whisper.cpp and hands the ALREADY-transcribed plain text to
+ * ingestDocument BEFORE this file ever sees it — this module's "video" case never touches
+ * audio/video bytes, a sidecar process, or the filesystem, it just bounds+trims text like url/
+ * md/txt).
+ *
+ * E3-5 — scanned/image-only PDF OCR: `parsePdf` extracts text via pdf-parse as before, then
+ * computes a text-density heuristic (chars ÷ pageCount). A NORMAL text PDF is always far above
+ * the threshold, so it returns exactly as before (byte-identical behavior, unchanged code path).
+ * Only when density is low (a scanned/image-only PDF — no text layer) does it call
+ * `kbPdfOcr.ocrScannedPdf`, which renders pages via an injection-safe pdftoppm sidecar (mirrors
+ * E3-4's `runSidecar`) and OCRs each page image through the EXISTING `server/services/ai/
+ * ocrService.ts` engine (not reimplemented here). Gated behind BOTH `OCR_ENGINE_ENABLED`
+ * (ocrService's own master flag) AND `KB_OCR_ENABLED` (this ingest path's own flag, default
+ * OFF) — see kbPdfOcr.ts. When OCR is off/unavailable/fails, the ORIGINAL (possibly empty)
+ * pdf-parse text is returned with `meta.scannedNoOcr:true` — never fabricated, never a crash.
+ *
+ * Fail-safe discipline:
+ *  - An unrecognised mime/extension throws {@link KbUnsupportedTypeError} BEFORE any parsing
+ *    is attempted (never silently mis-parses).
+ *  - A corrupt/unparseable file (malformed PDF/DOCX, parser exception) throws
+ *    {@link KbParseError} — never crashes the process, never hangs (pdf/docx parses are
+ *    wrapped in a timeout, see {@link withTimeout}).
+ *  - Extracted text is bounded to `KB_PARSE_MAX_CHARS` (default 2,000,000 chars ≈ 2MB) —
+ *    `meta.truncated` tells the caller when a document was cut.
+ *  - Task 6 (Wave 2 đường B) review round 1: a raw uploaded `Buffer` claiming "md"/"txt" whose
+ *    content is actually binary (an image, or contains a NUL byte) throws {@link KbParseError}
+ *    instead of being silently `Buffer.toString("utf8")`'d into garbage text and embedded — see
+ *    {@link detectBinaryContentReason} / {@link toTextChecked}.
+ */
+
+export type KbSourceType = "pdf" | "docx" | "md" | "txt" | "url" | "video" | "image";
+
+/** Thrown when `mimeOrExt` does not resolve to a supported {@link KbSourceType}. */
+export class KbUnsupportedTypeError extends Error {
+  constructor(public readonly input: string) {
+    super(`Unsupported document type: "${input}". Supported: pdf, docx, md, txt, png, jpg, jpeg, webp.`);
+    this.name = "KbUnsupportedTypeError";
+  }
+}
+
+/** Thrown when a recognised document type fails to parse (corrupt file, parser crash, timeout). */
+export class KbParseError extends Error {
+  constructor(message: string, public readonly cause?: unknown) {
+    super(message);
+    this.name = "KbParseError";
+  }
+}
+
+/**
+ * Sprint 5 §4 (Task 3, I-2 fix round 1) — lỗi tệp khai một định dạng nhưng nội dung byte thực
+ * tế lại là định dạng khác (vd. "notes.txt" nhưng bytes là PNG). Đây là MỘT lỗi con của
+ * {@link KbParseError} (không phải lớp độc lập) để mọi chỗ đang bắt `instanceof KbParseError`
+ * VẪN bắt được nó — tương thích ngược 100% với router/test hiện có — nhưng mang thêm hai
+ * trường có cấu trúc (`claimed`/`detected`) để router map sang mã KB_CONTENT_TYPE_MISMATCH
+ * (kèm i18n `{{claimed}}`/`{{detected}}`) thay vì rơi vào bucket chung KB_PARSE_FAILED. */
+export class KbContentTypeMismatchError extends KbParseError {
+  constructor(message: string, public readonly claimed: string, public readonly detected: string) {
+    super(message);
+    this.name = "KbContentTypeMismatchError";
+  }
+}
+
+export interface ParsedDocumentMeta {
+  sourceType: KbSourceType;
+  charCount: number;
+  truncated: boolean;
+  pageCount?: number;
+  /** E3-5: true only when the returned `text` came from OCR (kbPdfOcr.ocrScannedPdf), i.e. a
+   * scanned/image-only PDF was successfully OCR'd. Absent/false for every other document. */
+  ocrUsed?: boolean;
+  /** E3-5: true when a PDF was detected as scanned/low-text (density below
+   * `KB_OCR_SCANNED_DENSITY_THRESHOLD`) but OCR did NOT supply text — either OCR is
+   * disabled/unavailable/unconfigured, or every page failed. `text` is the original (possibly
+   * empty) pdf-parse result, never fabricated — the caller/UI can honestly surface "scanned PDF
+   * — OCR not available". */
+  scannedNoOcr?: boolean;
+  /** E3-5: number of pages actually OCR'd successfully when `ocrUsed:true`. */
+  ocrPagesProcessed?: number;
+  /** R4 — chỉ khi `scannedNoOcr`: vì sao OCR không cấp được chữ (`kbPdfOcr.lyDoOcrKhongSan`), hoặc
+   * `khong-doc-duoc` khi OCR có chạy mà không trang nào ra chữ. */
+  ocrLyDo?: string;
+  /** R4 — chữ OCR đến từ một model có bộ chữ THIẾU dấu tiếng Việt (`kbPdfOcr.thieuDauViet`). */
+  ocrThieuDauViet?: boolean;
+}
+
+export interface ParsedDocument {
+  text: string;
+  meta: ParsedDocumentMeta;
+}
+
+/** Max extracted text length (chars). Bounds memory/DB row size regardless of input size. */
+const MAX_EXTRACTED_CHARS = (() => {
+  const n = Number(process.env.KB_PARSE_MAX_CHARS ?? 2_000_000);
+  return Number.isFinite(n) && n > 0 ? n : 2_000_000;
+})();
+
+/** Wall-clock guard for the pdf/docx parser calls — "never hang" per the task brief. */
+const PARSE_TIMEOUT_MS = (() => {
+  const n = Number(process.env.KB_PARSE_TIMEOUT_MS ?? 30_000);
+  return Number.isFinite(n) && n > 0 ? n : 30_000;
+})();
+
+/** E3-5: below this chars-per-page density, a PDF's pdf-parse extraction is presumed to be a
+ * scanned/image-only page (no meaningful text layer) — a normal text page is typically 1000+
+ * chars, so the default of ~20 is a wide margin that never mis-fires on a real text PDF. */
+const SCANNED_DENSITY_THRESHOLD = (() => {
+  const n = Number(process.env.KB_OCR_SCANNED_DENSITY_THRESHOLD ?? 20);
+  return Number.isFinite(n) && n >= 0 ? n : 20;
+})();
+
+function boundText(raw: string): { text: string; truncated: boolean } {
+  const normalized = (raw ?? "").replace(/\r\n/g, "\n").trim();
+  if (normalized.length <= MAX_EXTRACTED_CHARS) return { text: normalized, truncated: false };
+  return { text: normalized.slice(0, MAX_EXTRACTED_CHARS), truncated: true };
+}
+
+async function withTimeout<T>(promise: Promise<T>, ms: number, label: string): Promise<T> {
+  let timer: ReturnType<typeof setTimeout>;
+  const timeout = new Promise<never>((_, reject) => {
+    timer = setTimeout(() => reject(new KbParseError(`${label} timed out after ${ms}ms`)), ms);
+  });
+  try {
+    return await Promise.race([promise, timeout]);
+  } finally {
+    clearTimeout(timer!);
+  }
+}
+
+/** Image kinds this module can verify by magic bytes (Task 6, Wave 2 đường B). */
+export type KbImageKind = "png" | "jpeg" | "webp";
+
+/**
+ * Resolve a MIME type, bare extension, or filename to the image kind it CLAIMS to be — or
+ * `null` if it doesn't look like one of the three supported image formats. Shared by
+ * `normalizeSourceType` (does the label say "image"?) and `parseImage` (does the label's
+ * CLAIMED kind match the bytes?) so the two checks can never drift apart.
+ */
+export function detectImageKindFromLabel(mimeOrExt: string): KbImageKind | null {
+  const raw = (mimeOrExt ?? "").toLowerCase().trim();
+  const extFromFilename = raw.match(/\.([a-z0-9]+)$/)?.[1];
+  const candidate = extFromFilename ?? (raw.startsWith(".") ? raw.slice(1) : raw);
+
+  if (candidate === "png" || raw.includes("image/png")) return "png";
+  if (candidate === "jpg" || candidate === "jpeg" || raw.includes("image/jpeg") || raw.includes("image/jpg")) {
+    return "jpeg";
+  }
+  if (candidate === "webp" || raw.includes("image/webp")) return "webp";
+  return null;
+}
+
+/**
+ * True when `buf` STARTS WITH the magic bytes for `kind`. Task 6, Wave 2 đường B —
+ * "chống nhầm định dạng": a claimed extension alone is operator-controlled and free to lie
+ * (e.g. a renamed/corrupt file); this is the minimum content-based check before the bytes are
+ * ever handed to the vision model or trusted as an image at all.
+ *   PNG:  89 50 4E 47 (…0D 0A 1A 0A, only the first 4 bytes are checked here — sufficient to
+ *         reject non-PNG content)
+ *   JPEG: FF D8 FF
+ *   WEBP: "RIFF" (bytes 0-3) + "WEBP" (bytes 8-11) — a RIFF container tagged WEBP
+ */
+export function matchesImageMagicBytes(buf: Buffer, kind: KbImageKind): boolean {
+  if (kind === "png") {
+    return buf.length >= 4 && buf[0] === 0x89 && buf[1] === 0x50 && buf[2] === 0x4e && buf[3] === 0x47;
+  }
+  if (kind === "jpeg") {
+    return buf.length >= 3 && buf[0] === 0xff && buf[1] === 0xd8 && buf[2] === 0xff;
+  }
+  return buf.length >= 12 && buf.toString("ascii", 0, 4) === "RIFF" && buf.toString("ascii", 8, 12) === "WEBP";
+}
+
+/**
+ * Review round 1 (Task 6) — closes the mirror-image hole: a file claiming a TEXT extension
+ * (md/txt) but whose actual bytes are binary/image content used to slip straight through
+ * `toText()` (`Buffer.toString("utf8")` never throws — it just produces mojibake) and get
+ * embedded into the knowledge base as garbage text, silently, with no error — and since Task 4
+ * already wired this corpus into the assistant, that garbage would then surface as a citation
+ * labeled "Tài liệu bạn nạp" in a real answer.
+ *
+ * Deliberately only TWO signals, both zero-false-positive on real text (no fuzzy "weird char
+ * ratio" heuristic — that would misfire on legitimate Vietnamese diacritics, CSV, logs, etc):
+ *  1. The content starts with one of the SAME image magic-byte signatures already defined above
+ *     for the image path (PNG/JPEG/WEBP) — reused, not reinvented.
+ *  2. The content contains a NUL byte (0x00) — never appears in valid UTF-8/ASCII text, a
+ *     reliable binary tell used by the same heuristic `file(1)`/git use to classify a blob as
+ *     binary.
+ * Returns a human-readable reason naming the format that WAS detected (e.g. "PNG image"), or
+ * `null` when the content looks like real text.
+ */
+function detectBinaryContentReason(buf: Buffer): string | null {
+  if (matchesImageMagicBytes(buf, "png")) return "a PNG image";
+  if (matchesImageMagicBytes(buf, "jpeg")) return "a JPEG image";
+  if (matchesImageMagicBytes(buf, "webp")) return "a WEBP image";
+  if (buf.includes(0x00)) return "binary data (contains a NUL byte)";
+  return null;
+}
+
+/**
+ * Same as {@link toText}, PLUS the binary-content guard above — ONLY when `input` is an actual
+ * uploaded `Buffer` (raw, untrusted bytes from `kbIngestRouter.uploadDocument` /
+ * `kbStudioRouter.ingestDocumentJob`). When `input` is already a `string`, it can only have
+ * arrived via `url`/`video`'s pass-through callers (`kbWebFetcher.ingestUrl`,
+ * `kbVideoTranscriber.ingestVideo`) or a caller supplying `text` directly — content that was
+ * already produced by a trusted extraction/transcription step, never raw operator-uploaded
+ * bytes — so there is nothing to sniff and no reason to risk a spurious rejection.
+ *
+ * Scope: applied to BOTH "md" and "txt" (not just "txt") — both accept a raw uploaded `Buffer`
+ * through the exact same code shape (`kbIngestRouter.ts`'s `allowedTypes` lists both), so the
+ * "photo.png renamed to photo.md" variant of this hole is identical and gets the identical fix.
+ * "url"/"video" are NOT touched — see above.
+ */
+function toTextChecked(input: Buffer | string, sourceType: "md" | "txt", mimeOrExt: string): string {
+  if (Buffer.isBuffer(input)) {
+    const detected = detectBinaryContentReason(input);
+    if (detected) {
+      // I-2 fix round 1 — trước là KbParseError chung; giờ là KbContentTypeMismatchError (con
+      // của KbParseError) mang claimed/detected có cấu trúc, để router map ra KB_CONTENT_TYPE_
+      // MISMATCH thay vì KB_PARSE_FAILED. Message tiếng Anh giữ NGUYÊN VĂN — test cũ assert nó.
+      throw new KbContentTypeMismatchError(
+        `File "${mimeOrExt}" has a ${sourceType.toUpperCase()} (text) extension but its content is ${detected}, ` +
+          `not text — refusing to ingest binary bytes as text.`,
+        sourceType.toUpperCase(),
+        detected,
+      );
+    }
+  }
+  return toText(input);
+}
+
+/**
+ * Resolve a MIME type, bare extension, or filename to a {@link KbSourceType}. Throws
+ * {@link KbUnsupportedTypeError} for anything else — the caller must not attempt to parse.
+ */
+export function normalizeSourceType(mimeOrExt: string): KbSourceType {
+  const raw = (mimeOrExt ?? "").toLowerCase().trim();
+  const extFromFilename = raw.match(/\.([a-z0-9]+)$/)?.[1];
+  const candidate = extFromFilename ?? (raw.startsWith(".") ? raw.slice(1) : raw);
+
+  if (candidate === "pdf" || raw.includes("application/pdf")) return "pdf";
+  if (candidate === "docx" || raw.includes("wordprocessingml")) return "docx";
+  if (candidate === "md" || candidate === "markdown" || raw.includes("text/markdown") || raw === "text/x-markdown") {
+    return "md";
+  }
+  if (candidate === "txt" || raw.includes("text/plain")) return "txt";
+  // E3-3: kbWebFetcher.ts passes sourceType:"url" into ingestDocument for already-fetched,
+  // already-extracted page text — this is a pass-through marker, not a MIME type.
+  if (candidate === "url" || raw === "url") return "url";
+  // E3-4: kbVideoTranscriber.ts passes sourceType:"video" into ingestDocument for an
+  // already-transcribed plain-text transcript — same pass-through marker convention as "url".
+  if (candidate === "video" || raw === "video") return "video";
+  // Task 6, Wave 2 đường B: png/jpg/jpeg/webp → "image" (described via VLM, see kbImageDescriber.ts
+  // / parseImage below). Content-vs-label mismatch is checked in parseImage, not here — this
+  // function only classifies what the LABEL claims.
+  if (detectImageKindFromLabel(mimeOrExt)) return "image";
+  throw new KbUnsupportedTypeError(mimeOrExt);
+}
+
+function toBuffer(input: Buffer | string): Buffer {
+  return Buffer.isBuffer(input) ? input : Buffer.from(input, "utf8");
+}
+
+function toText(input: Buffer | string): string {
+  return Buffer.isBuffer(input) ? input.toString("utf8") : input;
+}
+
+async function parsePdf(buf: Buffer): Promise<ParsedDocument> {
+  const { PDFParse } = await import("pdf-parse");
+  const parser = new PDFParse({ data: new Uint8Array(buf), verbosity: 0 });
+  try {
+    const res = await withTimeout(
+      parser.getText({ pageJoiner: "\n\n", parsePageInfo: false, parseHyperlinks: false }),
+      PARSE_TIMEOUT_MS,
+      "pdf parse",
+    );
+    const raw = res.text ?? (res.pages ?? []).map((p) => p.text ?? "").join("\n\n");
+    const { text, truncated } = boundText(raw);
+    const pageCount = res.total ?? res.pages?.length;
+
+    // E3-5: scanned/image-only PDF detection. A normal text PDF's density is always far above
+    // SCANNED_DENSITY_THRESHOLD, so this branch — and every OCR-related import/call it leads
+    // to — is never reached for it: the pre-E3-5 behavior below is byte-for-byte unchanged.
+    const density = text.length / Math.max(1, pageCount ?? 1);
+    if (density < SCANNED_DENSITY_THRESHOLD) {
+      try {
+        const { ocrScannedPdf } = await import("./kbPdfOcr");
+        const ocr = await ocrScannedPdf(buf, pageCount ?? 1);
+        if (ocr.ocrUsed) {
+          const bounded = boundText(ocr.text);
+          return {
+            text: bounded.text,
+            meta: {
+              sourceType: "pdf",
+              charCount: bounded.text.length,
+              truncated: bounded.truncated,
+              pageCount,
+              ocrUsed: true,
+              ocrPagesProcessed: ocr.pagesProcessed,
+              ...(ocr.thieuDauViet ? { ocrThieuDauViet: true } : {}),
+            },
+          };
+        }
+      } catch {
+        // kbPdfOcr.ocrScannedPdf is documented to never throw, but this is defense-in-depth:
+        // ANY unexpected failure here must fall back to the honest pdf-parse result below, not
+        // crash parsePdf or fabricate text.
+      }
+      let ocrLyDo = "khong-doc-duoc";
+      try {
+        const { lyDoOcrKhongSan } = await import("./kbPdfOcr");
+        ocrLyDo = (await lyDoOcrKhongSan()) ?? "khong-doc-duoc";
+      } catch {
+        /* giữ "khong-doc-duoc" — không bao giờ làm hỏng lượt parse vì một câu chẩn đoán */
+      }
+      return {
+        text,
+        meta: { sourceType: "pdf", charCount: text.length, truncated, pageCount, ocrUsed: false, scannedNoOcr: true, ocrLyDo },
+      };
+    }
+
+    return { text, meta: { sourceType: "pdf", charCount: text.length, truncated, pageCount } };
+  } finally {
+    await parser.destroy().catch(() => {});
+  }
+}
+
+async function parseDocx(buf: Buffer): Promise<ParsedDocument> {
+  const mammoth = await import("mammoth");
+  const result = await withTimeout(mammoth.extractRawText({ buffer: buf }), PARSE_TIMEOUT_MS, "docx parse");
+  const { text, truncated } = boundText(result.value ?? "");
+  return { text, meta: { sourceType: "docx", charCount: text.length, truncated } };
+}
+
+function parsePlain(raw: string, sourceType: "md" | "txt" | "url" | "video"): ParsedDocument {
+  const { text, truncated } = boundText(raw);
+  return { text, meta: { sourceType, charCount: text.length, truncated } };
+}
+
+/**
+ * Task 6, Wave 2 đường B — turn an image into knowledge-base text via the local VLM
+ * (`kbImageDescriber.describeImageForKnowledge`, which itself routes through
+ * `aiProviderRouter.describeImage()` — NOT `aiVisionLanguage.describeDefect()`, see
+ * kbImageDescriber.ts's module doc comment for why the AOI-defect prompt is the wrong tool
+ * here).
+ *
+ * `hint` is the caller-supplied `mimeOrExt` (in practice the original filename — see
+ * kbIngestRouter.ts's `uploadDocument`, which passes `mimeOrExt: file.name`) — used both for
+ * the magic-byte cross-check below and as a filename hint in the VLM prompt.
+ *
+ * Fail-safe discipline (mirrors parsePdf/parseDocx — never fabricates, never silently drops):
+ *  - Extension says image but content bytes don't match ⇒ {@link KbParseError} BEFORE the
+ *    vision model is ever invoked (chống nhầm định dạng — a renamed/corrupt file is refused,
+ *    not silently sent to the VLM as if it were real image bytes).
+ *  - VLM unavailable / throws / returns an empty description ⇒ {@link KbParseError} carrying
+ *    the VERBATIM reason from `describeImageForKnowledge` (never `KbIngestValidationError`:
+ *    that class lives in kbIngestService.ts, which itself imports FROM this file — reusing it
+ *    here would create a circular module dependency. `KbParseError` maps to the exact same
+ *    `TRPCError({code:"BAD_REQUEST"})` in both kbIngestRouter.ts and kbStudioRouter.ts, and
+ *    kbStudioService.markJobFailed only ever reads `err.message` regardless of class, so the
+ *    Jobs tab / caller-visible behavior is identical either way).
+ */
+/** I-2 fix round 1 — dò xem bytes THỰC TẾ khớp định dạng ảnh nào (nếu có), để
+ *  KbContentTypeMismatchError's `detected` là một giá trị có cấu trúc (vd. "a JPEG image")
+ *  thay vì chỉ nói "không khớp" chung chung. Tái dùng matchesImageMagicBytes đã có — không dò
+ *  lại từ đầu. */
+function detectActualImageKind(buf: Buffer): KbImageKind | null {
+  if (matchesImageMagicBytes(buf, "png")) return "png";
+  if (matchesImageMagicBytes(buf, "jpeg")) return "jpeg";
+  if (matchesImageMagicBytes(buf, "webp")) return "webp";
+  return null;
+}
+
+async function parseImage(buf: Buffer, hint: string): Promise<ParsedDocument> {
+  const claimedKind = detectImageKindFromLabel(hint);
+  if (claimedKind && !matchesImageMagicBytes(buf, claimedKind)) {
+    const actualKind = detectActualImageKind(buf);
+    const detected = actualKind
+      ? `a ${actualKind.toUpperCase()} image`
+      : "content that does not match any recognised image format";
+    // I-2 fix round 1 — KbContentTypeMismatchError (con của KbParseError) thay vì KbParseError
+    // chung, để router map ra KB_CONTENT_TYPE_MISMATCH. Message tiếng Anh giữ NGUYÊN VĂN.
+    throw new KbContentTypeMismatchError(
+      `File "${hint}" is labeled as ${claimedKind.toUpperCase()} but its content does not start with the ` +
+        `${claimedKind.toUpperCase()} magic bytes — refusing to ingest mismatched bytes as an image.`,
+      claimedKind.toUpperCase(),
+      detected,
+    );
+  }
+
+  const { describeImageForKnowledge } = await import("./kbImageDescriber");
+  const described = await describeImageForKnowledge(buf, hint);
+  if (!described.ok) {
+    throw new KbParseError(described.reason);
+  }
+
+  const { text, truncated } = boundText(described.text);
+  return { text, meta: { sourceType: "image", charCount: text.length, truncated } };
+}
+
+/**
+ * Extract plain text from an uploaded document. `input` is a Buffer for binary formats
+ * (pdf/docx) or either a Buffer/string for text formats (md/txt). `mimeOrExt` may be a MIME
+ * type, a bare extension ("pdf"), a dotted extension (".pdf"), or a filename ("manual.pdf").
+ *
+ * Throws {@link KbUnsupportedTypeError} for an unrecognised type (never attempts to parse),
+ * or {@link KbParseError} when a recognised type fails to parse (corrupt file / timeout).
+ */
+export async function parseDocument(input: Buffer | string, mimeOrExt: string): Promise<ParsedDocument> {
+  const sourceType = normalizeSourceType(mimeOrExt);
+  try {
+    switch (sourceType) {
+      case "pdf":
+        return await parsePdf(toBuffer(input));
+      case "docx":
+        return await parseDocx(toBuffer(input));
+      case "md":
+        return parsePlain(toTextChecked(input, "md", mimeOrExt), "md");
+      case "txt":
+        return parsePlain(toTextChecked(input, "txt", mimeOrExt), "txt");
+      case "url":
+        return parsePlain(toText(input), "url");
+      case "video":
+        return parsePlain(toText(input), "video");
+      case "image":
+        return await parseImage(toBuffer(input), mimeOrExt);
+    }
+  } catch (err) {
+    if (err instanceof KbParseError) throw err;
+    throw new KbParseError(
+      `Failed to parse ${sourceType} document: ${(err as Error)?.message ?? String(err)}`,
+      err,
+    );
+  }
+}
