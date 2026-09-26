@@ -22,6 +22,8 @@ import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from "@/components/ui/select";
 import { ScrollText, RefreshCw } from "lucide-react";
+import { Badge } from "@/components/ui/badge";
+import { commandLedgerRole } from "@/lib/commandLedger";
 
 const STATUSES = ["simulated", "sent", "acked", "acked_verified", "acked_unverified", "failed", "timeout", "rejected"] as const;
 const TRIGGERS = ["hitl", "interlock"] as const;
@@ -70,6 +72,16 @@ export function CommandAuditLogContent() {
   );
 
   const rows = query.data ?? [];
+
+  // doc 81 Đợt 1B Task 6 fix round 1 — a real write is TWO rows (write-ahead intent + result);
+  // label them so an intent is never read as a second command.
+  const renderLedger = (role: ReturnType<typeof commandLedgerRole>) => {
+    if (!role) return "—";
+    if (role.kind === "intent") return <Badge variant="outline">{t('commandAudit.ledgerIntent')}</Badge>;
+    return role.intentId != null
+      ? <Badge variant="secondary">{t('commandAudit.ledgerResultOf', { id: role.intentId })}</Badge>
+      : <Badge variant="secondary">{t('commandAudit.ledgerResult')}</Badge>;
+  };
 
   return (
     <PageContainer fluid>
@@ -133,6 +145,7 @@ export function CommandAuditLogContent() {
               <TableHead>{t('commandAudit.command')}</TableHead>
               <TableHead>{t('common.value')}</TableHead>
               <TableHead>{t('common.status')}</TableHead>
+              <TableHead>{t('commandAudit.ledger')}</TableHead>
               <TableHead>{t('commandAudit.source')}</TableHead>
               <TableHead>{t('commandAudit.confirmed')}</TableHead>
               <TableHead>{t('commandAudit.approved')}</TableHead>
@@ -143,7 +156,7 @@ export function CommandAuditLogContent() {
           <TableBody>
             {rows.length === 0 && (
               <TableRow>
-                <TableCell colSpan={12} className="p-0">
+                <TableCell colSpan={13} className="p-0">
                   <EmptyState variant="no-data" title={t('audit.noData')} compact />
                 </TableCell>
               </TableRow>
@@ -157,6 +170,7 @@ export function CommandAuditLogContent() {
                 <TableCell>{r.commandType ?? "—"}</TableCell>
                 <TableCell className="max-w-[140px] truncate" title={fmtValue(r.requestedValue)}>{fmtValue(r.requestedValue)}</TableCell>
                 <TableCell><StatusBadge status={r.status} map={STATUS_MAP} /></TableCell>
+                <TableCell>{renderLedger(commandLedgerRole(r.ackValue))}</TableCell>
                 <TableCell><StatusBadge status={r.triggerKind} variant={r.triggerKind === "interlock" ? "destructive" : "secondary"} /></TableCell>
                 <TableCell>{r.confirmedBy ?? "—"}</TableCell>
                 <TableCell>{r.approvedBy ?? "—"}</TableCell>

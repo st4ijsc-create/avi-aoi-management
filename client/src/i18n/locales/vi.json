@@ -17505,7 +17505,11 @@
     "confirmed": "Đã xác nhận",
     "approved": "Đã phê duyệt",
     "readBack": "Đọc lại (read-back)",
-    "error": "Lỗi"
+    "error": "Lỗi",
+    "ledger": "Sổ ghi",
+    "ledgerIntent": "Ghi trước (ý định)",
+    "ledgerResult": "Kết quả",
+    "ledgerResultOf": "Kết quả của #{{id}}"
   },
   "license": {
     "title": "Quản lý giấy phép",

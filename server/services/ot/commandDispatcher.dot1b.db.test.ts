@@ -28,7 +28,7 @@ vi.mock("./otManager", async (importOriginal) => {
 });
 
 import { getDb } from "../../db/connection";
-import { aiPendingActions, commandLog, deviceAdapters, deviceTags } from "../../../drizzle/schema";
+import { aiPendingActions, commandLog, deviceAdapters, deviceTags, interlockEvents, interlockRules } from "../../../drizzle/schema";
 import { dispatch, NO_CONFIRMER, type DispatchInput } from "./commandDispatcher";
 import { otPayloadHash, withOtPayloadHash } from "./otActionBinding";
 import { SparkplugCommandHandler, SPARKPLUG_ACTION_ID_METRIC, SPARKPLUG_COMMAND_TOOL } from "../uns/sparkplugCommand";
@@ -566,5 +566,255 @@ describe.skipIf(!DB_URL)("Task 6 — OT dispatcher HITL binding + write-ahead + 
     } finally {
       await (await d()).delete(aiPendingActions).where(eq(aiPendingActions.id, actionId));
     }
+  });
+});
+
+// ══════════════════════════════════════════════════════════════════════════════════════════
+// doc 81 Đợt 1B Task 6 — FIX ROUND 1: interlock rule pins the command exactly (R15 hardening);
+// keys > 128 chars stay unique; command-log stats do not double-count write-ahead intents.
+// ══════════════════════════════════════════════════════════════════════════════════════════
+describe.skipIf(!DB_URL)("Task 6 fix round 1 — interlock exact match, long keys, stats (DB thật)", () => {
+  const MI = 990_600_011; // machine of the interlock/long-key adapter
+  const MS = 990_600_012; // machine of the stats-only adapter
+  const APPROVER = 990_600_201;
+  let adI = 0;
+  let adS = 0;
+  let ruleReduce = 0;
+  let ruleStop = 0;
+  let evReduce = 0;
+  let evStop = 0;
+  let ruleObj = 0;
+  let evObj = 0;
+
+  async function makeAdapter(code: string, machineId: number) {
+    const x = await d();
+    const [a] = await x
+      .insert(deviceAdapters)
+      .values({ code: `${DAU}-${code}`, name: `${DAU} ${code}`, protocol: "stub", endpoint: "stub://t6f", isEnabled: true, machineId })
+      .returning();
+    await x.insert(deviceTags).values([
+      { adapterId: a!.id, tagKey: "speed_sp", address: "D100", dataType: "int", writable: true },
+      { adapterId: a!.id, tagKey: "other_sp", address: "D101", dataType: "int", writable: true },
+      { adapterId: a!.id, tagKey: "label_sp", address: "D102", dataType: "string", writable: true },
+      { adapterId: a!.id, tagKey: "cmd_run", address: "M10", dataType: "bool", writable: true },
+    ]);
+    fake.drivers.set(a!.id, fakeDriver);
+    return a!.id;
+  }
+
+  async function makeRule(v: { action: "reduce_speed" | "stop_line" | "block_downstream"; commandTag: string; commandValue: unknown }) {
+    const x = await d();
+    const [rule] = await x
+      .insert(interlockRules)
+      .values({
+        name: `${DAU} rule ${v.action}`,
+        scope: "machine",
+        machineId: MI,
+        sourceType: "ng_rate",
+        comparisonOperator: "gt",
+        threshold: "99999",
+        action: v.action,
+        targetMachineId: MI,
+        targetAdapterId: adI,
+        commandTag: v.commandTag,
+        commandValue: v.commandValue as never,
+        requiresHumanConfirm: false,
+        enabled: true,
+        approvedBy: APPROVER,
+        approvedAt: new Date(),
+      })
+      .returning();
+    const [ev] = await x.insert(interlockEvents).values({ ruleId: rule!.id, action: v.action, status: "fired" }).returning();
+    return { ruleId: rule!.id, eventId: ev!.id };
+  }
+
+  const ilInput = (
+    r: { ruleId: number; eventId: number },
+    over: { commandType?: string; writes?: Writes } = {},
+  ): DispatchInput => ({
+    adapterId: adI,
+    machineId: MI,
+    commandType: over.commandType ?? "reduce_speed",
+    writes: over.writes ?? [{ tagKey: "speed_sp", value: 30 }],
+    triggeredBy: { kind: "interlock", ruleId: r.ruleId, eventId: r.eventId, approvedBy: APPROVER },
+    idempotencyKey: nextKey("il"),
+  });
+
+  beforeAll(async () => {
+    expect(DB_URL).toMatch(/_test/);
+    for (const k of [...ENV_KEYS, "INTERLOCK_AUTO_BLOCK_ENABLED"]) savedEnv[k] = process.env[k];
+    adI = await makeAdapter("FI", MI);
+    adS = await makeAdapter("FS", MS);
+    ({ ruleId: ruleReduce, eventId: evReduce } = await makeRule({ action: "reduce_speed", commandTag: "speed_sp", commandValue: 30 }));
+    ({ ruleId: ruleStop, eventId: evStop } = await makeRule({ action: "stop_line", commandTag: "cmd_run", commandValue: null }));
+    ({ ruleId: ruleObj, eventId: evObj } = await makeRule({ action: "block_downstream", commandTag: "other_sp", commandValue: { pct: 30, mode: "slow" } }));
+  }, 60_000);
+
+  afterAll(async () => {
+    const x = await d();
+    // Disable first (belt and braces), then remove the fixtures.
+    await x.update(interlockRules).set({ enabled: false }).where(like(interlockRules.name, `${DAU}%`));
+    await x.delete(interlockEvents).where(eq(interlockEvents.ruleId, ruleReduce)).catch(() => {});
+    await x.delete(interlockEvents).where(eq(interlockEvents.ruleId, ruleStop)).catch(() => {});
+    await x.delete(interlockEvents).where(eq(interlockEvents.ruleId, ruleObj)).catch(() => {});
+    await x.delete(interlockRules).where(like(interlockRules.name, `${DAU}%`)).catch(() => {});
+    await x.delete(aiPendingActions).where(like(aiPendingActions.id, `${DAU}%`));
+    for (const id of [adI, adS]) {
+      fake.drivers.delete(id);
+      await x.delete(deviceTags).where(eq(deviceTags.adapterId, id));
+      await x.delete(deviceAdapters).where(eq(deviceAdapters.id, id));
+    }
+    for (const k of [...ENV_KEYS, "INTERLOCK_AUTO_BLOCK_ENABLED"]) {
+      if (savedEnv[k] === undefined) delete process.env[k];
+      else process.env[k] = savedEnv[k];
+    }
+  }, 60_000);
+
+  beforeEach(() => {
+    writeCalls = 0;
+    writtenBatches = [];
+    safetyState = "OK";
+    process.env.OT_CONTROL_ENABLED = "true";
+    process.env.OT_COMMISSIONING_REQUIRED = "false";
+    process.env.INTERLOCK_AUTO_BLOCK_ENABLED = "true";
+    delete process.env.OT_SAFETY_PREFLIGHT_ENABLED;
+    delete process.env.OT_READBACK_ENABLED;
+    delete process.env.OT_CMD_SERIALIZE_ENABLED;
+    delete process.env.SEC_PLATFORM;
+    delete process.env.UNS_CMD_ACK_ENABLED;
+  });
+
+  // ───────────── (1) interlock rule pins the command exactly ─────────────
+  it("interlock hợp lệ (đúng tag, đúng commandValue, đúng action, 1 write) ⇒ ghi ĐÚNG 1 lần, có intent + kết quả", async () => {
+    const inp = ilInput({ ruleId: ruleReduce, eventId: evReduce });
+    const res = await dispatch(inp);
+    expect(res.status).toBe("acked");
+    expect(writeCalls).toBe(1);
+    expect(writtenBatches[0]).toEqual([{ tagKey: "speed_sp", value: 30 }]);
+    const rows = await ledger(inp.idempotencyKey);
+    expect(rows.map((r) => r.status).sort()).toEqual(["acked", "sent"]);
+  });
+
+  it("interlock commandValue null ⇒ giá trị mặc định true (đúng thứ interlockEngine gửi) ⇒ ghi 1 lần", async () => {
+    const res = await dispatch(ilInput({ ruleId: ruleStop, eventId: evStop }, { commandType: "stop_line", writes: [{ tagKey: "cmd_run", value: true }] }));
+    expect(res.status).toBe("acked");
+    expect(writeCalls).toBe(1);
+  });
+
+  it("interlock commandValue là OBJECT (jsonb) — lệnh mang cùng giá trị, khác thứ tự khoá ⇒ so theo dạng chuẩn hoá ⇒ ghi 1 lần; khác một trường ⇒ VALUE_MISMATCH", async () => {
+    const r = { ruleId: ruleObj, eventId: evObj };
+    const ok = await dispatch(ilInput(r, { commandType: "block_downstream", writes: [{ tagKey: "other_sp", value: { mode: "slow", pct: 30 } }] }));
+    expect(ok.status).toBe("acked");
+    expect(writeCalls).toBe(1);
+    const bad = await dispatch(ilInput(r, { commandType: "block_downstream", writes: [{ tagKey: "other_sp", value: { mode: "slow", pct: 31 } }] }));
+    expect(bad.reason).toBe("INTERLOCK_VALUE_MISMATCH");
+    expect(writeCalls).toBe(1);
+  });
+
+  it.each([
+    ["giá trị khác (reduce_speed đặt speed_sp=9999)", "INTERLOCK_VALUE_MISMATCH", { writes: [{ tagKey: "speed_sp", value: 9999 }] }, "reduce"],
+    ["giá trị khác KIỂU ('30' ≠ 30)", "INTERLOCK_VALUE_MISMATCH", { writes: [{ tagKey: "speed_sp", value: "30" }] }, "reduce"],
+    ["commandValue null ⇒ chỉ true được phép (1 ≠ true)", "INTERLOCK_VALUE_MISMATCH", { commandType: "stop_line", writes: [{ tagKey: "cmd_run", value: 1 }] }, "stop"],
+    ["write thừa trên tag khác", "INTERLOCK_WRITES_MISMATCH", { writes: [{ tagKey: "speed_sp", value: 30 }, { tagKey: "other_sp", value: 1 }] }, "reduce"],
+    ["write thừa trùng tag lệnh (2 write)", "INTERLOCK_WRITES_MISMATCH", { writes: [{ tagKey: "speed_sp", value: 30 }, { tagKey: "speed_sp", value: 30 }] }, "reduce"],
+    ["tag khác", "INTERLOCK_TAG_MISMATCH", { writes: [{ tagKey: "other_sp", value: 30 }] }, "reduce"],
+    ["commandType ≠ rule.action", "INTERLOCK_COMMAND_MISMATCH", { commandType: "stop_line" }, "reduce"],
+  ] as const)("interlock %s ⇒ rejected %s + ghi sổ, driver 0 lần", async (_n, reason, over, which) => {
+    const r = which === "reduce" ? { ruleId: ruleReduce, eventId: evReduce } : { ruleId: ruleStop, eventId: evStop };
+    const inp = ilInput(r, over as { commandType?: string; writes?: Writes });
+    const res = await dispatch(inp);
+    expect(res.status).toBe("rejected");
+    expect(res.reason).toBe(reason);
+    expect(writeCalls).toBe(0);
+    const rows = await ledger(inp.idempotencyKey);
+    expect(rows.length).toBeGreaterThanOrEqual(1);
+    expect(rows.every((row) => row.status === "rejected" && String(row.errorText).startsWith(reason))).toBe(true);
+  });
+
+  // ───────────── (3) idempotency keys > 128 chars ─────────────
+  it("khoá idempotency DÀI (150 ký tự) + 3 write ⇒ 3 intent + 3 kết quả, khoá KHÁC nhau, ≤128, gắn đúng cặp; ghi 1 lần", async () => {
+    const writes = [
+      { tagKey: "speed_sp", value: 11 },
+      { tagKey: "other_sp", value: 12 },
+      { tagKey: "label_sp", value: "x" },
+    ];
+    const actionId = await makeAction({ bind: { adapterId: adI, machineId: MI, writes } });
+    const key = `${DAU}-long-${"k".repeat(150)}`;
+    const res = await dispatch({ ...input({ actionId, writes }), adapterId: adI, machineId: MI, idempotencyKey: key });
+    expect(res.status).toBe("acked");
+    expect(writeCalls).toBe(1);
+    const rows = await ledger(key.slice(0, 60));
+    const intents = rows.filter((r) => (r.ackValue as { ledger?: string } | null)?.ledger === "intent");
+    const results = rows.filter((r) => (r.ackValue as { ledger?: string } | null)?.ledger === "result");
+    expect(intents).toHaveLength(3);
+    expect(results).toHaveLength(3);
+    const keys = rows.map((r) => r.idempotencyKey!);
+    expect(new Set(keys).size).toBe(6);
+    expect(keys.every((k) => k.length <= 128)).toBe(true);
+    expect(new Set(results.map((r) => (r.ackValue as { intentId: number }).intentId))).toEqual(new Set(intents.map((r) => r.id)));
+    // Replaying the same long key ⇒ cached, no second write.
+    const again = await dispatch({ ...input({ actionId, writes }), adapterId: adI, machineId: MI, idempotencyKey: key });
+    expect(again.status).toBe("acked");
+    expect(writeCalls).toBe(1);
+  });
+
+  it("khoá kết quả VỪA ≤128 nhưng khoá intent >128, 2 write cùng tag (khác nhau đúng ':0'/':1') ⇒ 2 intent khác nhau, ghi 1 lần", async () => {
+    const writes = [
+      { tagKey: "speed_sp", value: 1 },
+      { tagKey: "speed_sp", value: 2 },
+    ];
+    const actionId = await makeAction({ bind: { adapterId: adI, machineId: MI, writes } });
+    const head = `${DAU}-edge-`;
+    const key = head + "e".repeat(114 - head.length); // result key = 114 + ':speed_sp:N' = 125 chars
+    expect(`${key}:speed_sp:0`.length).toBe(125);
+    const res = await dispatch({ ...input({ actionId, writes }), adapterId: adI, machineId: MI, idempotencyKey: key });
+    expect(res.status).toBe("acked");
+    expect(writeCalls).toBe(1);
+    const rows = await ledger(key.slice(0, 60));
+    expect(rows.filter((r) => (r.ackValue as { ledger?: string } | null)?.ledger === "intent")).toHaveLength(2);
+    expect(rows.map((r) => r.idempotencyKey)).toEqual(expect.arrayContaining([`${key}:speed_sp:0`, `${key}:speed_sp:1`]));
+  });
+
+  it("hai khoá dài KHÁC nhau chỉ ở đuôi (chung 128 ký tự đầu) ⇒ HAI lệnh độc lập, không cache/DUPLICATE giả", async () => {
+    const writes = [{ tagKey: "speed_sp", value: 21 }];
+    const common = `${DAU}-tail-${"p".repeat(140)}`;
+    const a1 = await makeAction({ bind: { adapterId: adI, machineId: MI, writes } });
+    const a2 = await makeAction({ bind: { adapterId: adI, machineId: MI, writes } });
+    const r1 = await dispatch({ ...input({ actionId: a1, writes }), adapterId: adI, machineId: MI, idempotencyKey: `${common}-A` });
+    const r2 = await dispatch({ ...input({ actionId: a2, writes }), adapterId: adI, machineId: MI, idempotencyKey: `${common}-B` });
+    expect(r1.status).toBe("acked");
+    expect(r2.status).toBe("acked");
+    expect(writeCalls).toBe(2);
+  });
+
+  // ───────────── (2) stats do not double-count intents ─────────────
+  it("commandLog.stats: 1 ghi thật + 1 từ chối + 1 intent mồ côi ⇒ byStatus KHÔNG có 'sent' (không đếm 2 lần), intents {total 2, open 1}", async () => {
+    const writes = [{ tagKey: "speed_sp", value: 5 }];
+    const actionId = await makeAction({ bind: { adapterId: adS, machineId: MS, writes } });
+    const ok = await dispatch({ ...input({ actionId, writes }), adapterId: adS, machineId: MS });
+    expect(ok.status).toBe("acked");
+    const rej = await dispatch({ ...input({ actionId: undefined, writes }), adapterId: adS, machineId: MS });
+    expect(rej.reason).toBe("PRECONDITION_FAILED");
+    await (await d()).insert(commandLog).values({
+      adapterId: adS,
+      machineId: MS,
+      tagKey: "speed_sp",
+      commandType: "set_param",
+      requestedValue: 5 as any,
+      requestedBy: OWNER,
+      confirmedBy: OWNER,
+      status: "sent",
+      ackValue: { ledger: "intent" } as any,
+      idempotencyKey: `intent:${nextKey("orphanS")}:speed_sp:0`,
+      sentAt: new Date(),
+    });
+
+    const { commandLogRouter } = await import("../../routers/commandLogRouter");
+    const caller = commandLogRouter.createCaller({ user: { id: OWNER, role: "admin", name: "t6" } } as never);
+    const st = await caller.stats({ sinceHours: 1, adapterId: adS });
+    const byStatus = Object.fromEntries(st.byStatus.map((r) => [r.status, r.count]));
+    expect(byStatus).toEqual({ acked: 1, rejected: 1 });
+    expect(Object.fromEntries(st.byTrigger.map((r) => [r.triggerKind, r.count]))).toEqual({ hitl: 2 });
+    expect(st.intents).toEqual({ total: 2, open: 1 });
   });
 });

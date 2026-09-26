@@ -65,6 +65,25 @@ function canonicalValue(v: unknown): unknown {
   return v; // string | boolean
 }
 
+/**
+ * Canonical string of ONE value — the same canonical form the payload hash uses. Exported so
+ * other exact-match checks (interlock rule commandValue vs written value) cannot drift from it.
+ */
+export function canonicalOtValue(v: unknown): string {
+  return JSON.stringify(canonicalValue(v));
+}
+
+/**
+ * doc 81 Đợt 1B Task 6 fix round 1 — a varchar(128) key that stays UNIQUE: unchanged when it
+ * fits, else `<prefix>~<16 hex of sha256(full key)>` (exactly `max` chars). A bare slice would
+ * drop the distinguishing tail (e.g. the ':<idx>' of a per-write key).
+ */
+export function boundedKey(key: string, max = 128): string {
+  if (key.length <= max) return key;
+  const h = createHash("sha256").update(key, "utf8").digest("hex").slice(0, 16);
+  return `${key.slice(0, max - 17)}~${h}`;
+}
+
 /** Stable JSON of the payload (exported for tests / diagnostics only). */
 export function canonicalOtPayload(p: OtWriteBindingPayload): string {
   return JSON.stringify(

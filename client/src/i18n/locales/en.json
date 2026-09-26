@@ -17525,7 +17525,11 @@
     "confirmed": "Confirmed",
     "approved": "Approved",
     "readBack": "Read-back",
-    "error": "Error"
+    "error": "Error",
+    "ledger": "Ledger",
+    "ledgerIntent": "Write-ahead intent",
+    "ledgerResult": "Result",
+    "ledgerResultOf": "Result of #{{id}}"
   },
   "license": {
     "title": "License management",

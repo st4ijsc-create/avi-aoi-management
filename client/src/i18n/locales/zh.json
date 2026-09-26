@@ -17841,7 +17841,11 @@
     "confirmed": "已确认",
     "approved": "已批准",
     "readBack": "回读",
-    "error": "错误"
+    "error": "错误",
+    "ledger": "账本",
+    "ledgerIntent": "预写意图",
+    "ledgerResult": "结果",
+    "ledgerResultOf": "#{{id}} 的结果"
   },
   "license": {
     "title": "许可管理",

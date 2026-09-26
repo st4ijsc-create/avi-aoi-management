@@ -109,7 +109,7 @@ import {
   type AiPendingAction,
   type CommandLog,
 } from "../../../drizzle/schema";
-import { otPayloadHash, readOtPayloadHash } from "./otActionBinding";
+import { boundedKey, canonicalOtValue, otPayloadHash, readOtPayloadHash } from "./otActionBinding";
 import { getActiveDriver } from "./otManager";
 import { AUDIT_ACTIONS, createAuditContext, logCrudOperation } from "../auditTrailService";
 import type { OtTagAddress } from "./otDriver";
@@ -1061,8 +1061,9 @@ const OT_COMMAND_LOCK_NS = "ot.command:";
 
 /** The intent row's key — derived deterministically from the result row's per-write key. */
 function intentKeyFor(resultKey: string): string {
-  const k = `intent:${resultKey}`;
-  return k.length <= 128 ? k : k.slice(0, 128);
+  // fix round 1 — prefix + short hash when too long (was a bare 128-char cut that dropped the
+  // ':<idx>' suffix ⇒ all writes of a long-key command shared ONE intent key).
+  return boundedKey(`intent:${resultKey}`);
 }
 
 type Reservation =
@@ -1242,10 +1243,34 @@ async function verifyInterlockAuthorization(
   if (rule.targetAdapterId == null || rule.targetAdapterId !== input.adapterId) {
     return { ok: false, reason: "INTERLOCK_TARGET_MISMATCH", detail: "Rule targetAdapterId does not match dispatch adapter" };
   }
-  // commandTag must match the (single) tag being written.
-  const tagKeys = input.writes.map((w) => w.tagKey);
-  if (!rule.commandTag || !tagKeys.includes(rule.commandTag)) {
+  // doc 81 Đợt 1B Task 6 fix round 1 (R15 hardening) — an interlock-triggered command skips
+  // HITL, so the rule itself IS the authorisation and must pin the command EXACTLY: one write,
+  // to the rule's commandTag, with the rule's commandValue (default true — the value the
+  // interlock engine sends), and commandType === rule.action. Before this a "reduce_speed" rule
+  // authorised any value on its tag (speed_sp=9999) plus extra writes on other tags.
+  // ⚠ CÒN MỞ: this proves "the command is exactly what the approved rule says", NOT that the
+  //   rule's value is protective (de-energising). Real protective-direction enforcement needs
+  //   per-tag safe-state metadata (e.g. the safe value / allowed direction of each tag), which
+  //   does not exist yet.
+  if (input.writes.length !== 1) {
+    return {
+      ok: false,
+      reason: "INTERLOCK_WRITES_MISMATCH",
+      detail: `Interlock command must carry exactly ONE write (got ${input.writes.length})`,
+    };
+  }
+  if (!rule.commandTag || input.writes[0].tagKey !== rule.commandTag) {
     return { ok: false, reason: "INTERLOCK_TAG_MISMATCH", detail: "Rule commandTag does not match the written tag" };
+  }
+  if (canonicalOtValue(input.writes[0].value) !== canonicalOtValue(rule.commandValue ?? true)) {
+    return { ok: false, reason: "INTERLOCK_VALUE_MISMATCH", detail: "Written value differs from the rule's commandValue" };
+  }
+  if (input.commandType !== rule.action) {
+    return {
+      ok: false,
+      reason: "INTERLOCK_COMMAND_MISMATCH",
+      detail: `commandType "${input.commandType}" does not match rule action "${rule.action}"`,
+    };
   }
 
   // Defense-in-depth: the event must exist, belong to the rule, and be live.
@@ -1432,6 +1457,7 @@ function failedResults(input: DispatchInput, reason: string, status: DispatchSta
 
 /** Make a per-write idempotency key so a multi-write command keeps the unique constraint. */
 function perWriteKey(base: string, tagKey: string, index: number): string {
-  const k = `${base}:${tagKey}:${index}`;
-  return k.length <= 128 ? k : k.slice(0, 128);
+  // doc 81 Đợt 1B Task 6 fix round 1 — ≤128 AND unique: a bare slice(0,128) collapsed every
+  // write of a long-key command onto one key. Keys ≤128 chars are unchanged byte for byte.
+  return boundedKey(`${base}:${tagKey}:${index}`);
 }
