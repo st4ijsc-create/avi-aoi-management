@@ -423,23 +423,81 @@ interface NganSachNguCanhCopilot {
   tranVao: number;
 }
 
+// ════════════════════════════════════════════════════════════════════════════════════════════
+// Doc 80 · Task 10 · D1 vá nóng (AI-01) — CHÍNH SÁCH NGHĨ THEO LOẠI LƯỢT.
+//
+// Đo (phụ lục A §1, cánh A): `route("code")` cấp `maxTokens` 1536 cho MỌI lượt, còn Qwen3.6 trên
+// :8091 NGHĨ (server `--reasoning-budget 12000`) ⇒ 13/14 tác vụ HỎNG vì model tiêu hết 1536 token
+// vào `reasoning_content`. Cánh B (chỉ tắt nghĩ) ⇒ HỎNG 0; cánh C (nghĩ, trần 14k) ⇒ ĐẠT nhiều hơn.
+//
+// ⚠ KHÔNG đổi route `code` — nó dùng chung với AI Coding Workspace (phiên khác sở hữu). Chính
+// sách chỉ đặt THAM SỐ TỪNG LƯỢT trong đường copilot:
+//   • "sinh" (lượt sinh chính) / "giai-thich": ngân sách nghĩ có giới hạn (`thinkingBudgetTokens`,
+//     mặc định 6000 — env `AI_COPILOT_THINKING_BUDGET_TOKENS`, 0 = tắt) và `maxTokens` = ngân
+//     sách + 4000 cho phần trả lời. Chỉ khi cửa sổ ngữ cảnh còn ≥ 4096 token cho phần đưa vào;
+//     không đủ ⇒ tắt nghĩ (một lượt nghĩ không chỗ trả lời là đúng ca hỏng đã đo).
+//   • "tu-sua" (tự sửa) / "json" (IR/POU, grammar): LUÔN tắt nghĩ — lượt sửa có sẵn chẩn đoán cụ
+//     thể; lượt JSON bị llama.cpp hoãn grammar tới khi khối nghĩ đóng (`grammar_lazy`).
+//   Lượt tắt nghĩ giữ `maxTokens` của route (cánh B: 1536 đủ khi không nghĩ ⇒ HỎNG 0).
+//   Ghost-text (inline) đi `/infill` của model FIM — không có chat template ⇒ không có khối nghĩ.
+// ════════════════════════════════════════════════════════════════════════════════════════════
+
+export type LoaiLuotCopilot = "sinh" | "giai-thich" | "tu-sua" | "json";
+
+export interface ChinhSachLuot {
+  maxTokens: number;
+  disableThinking?: boolean;
+  thinkingBudgetTokens?: number;
+}
+
+/** Token dành cho phần TRẢ LỜI sau khi nghĩ xong (mã chương trình / lời giải thích). */
+const TRA_LOI_SAU_NGHI = 4000;
+/** Phần tối thiểu phải còn cho prompt đưa vào khi bật nghĩ — ít hơn thì nghĩ là vô ích. */
+const VAO_TOI_THIEU_KHI_NGHI = 4096;
+const NGAN_SACH_NGHI_MAC_DINH = 6000;
+
+function nganSachNghiCopilot(): number {
+  const raw = process.env.AI_COPILOT_THINKING_BUDGET_TOKENS;
+  if (raw === undefined || raw.trim() === "") return NGAN_SACH_NGHI_MAC_DINH;
+  const n = Number(raw);
+  if (!Number.isFinite(n)) return NGAN_SACH_NGHI_MAC_DINH;
+  return Math.max(0, Math.floor(n));
+}
+
+/**
+ * Tham số nghĩ cho MỘT lượt gọi model. Thuần theo (loại lượt, maxTokens của route, cửa sổ ctx,
+ * env) — `canNganSach` và `runCodeModel` gọi CÙNG hàm này nên ngân sách prompt và lượt gọi thật
+ * không thể trôi khỏi nhau.
+ */
+export function chinhSachLuot(loai: LoaiLuotCopilot, routeMaxTokens: number, ctx: number): ChinhSachLuot {
+  const tatNghi: ChinhSachLuot = { maxTokens: Math.max(512, routeMaxTokens), disableThinking: true };
+  if (loai === "tu-sua" || loai === "json") return tatNghi;
+  const budget = nganSachNghiCopilot();
+  if (budget <= 0) return tatNghi;
+  const maxTokens = budget + TRA_LOI_SAU_NGHI;
+  if (ctx < maxTokens + VAO_TOI_THIEU_KHI_NGHI) return tatNghi;
+  return { maxTokens, thinkingBudgetTokens: budget };
+}
+
 /**
  * Hỏi CHÍNH `aiModelRouter.route()` xem lượt sinh mã này được cấp bao nhiêu — rồi kẹp y hệt cách
  * `runCodeModel`/`runStructuredCodeModel` kẹp. Cố ý KHÔNG chép hằng "1536/8192" vào đây: nếu
  * router đổi quyết định mà ngân sách vẫn dùng số cũ thì cái thước và cái bị đo sẽ trôi khỏi nhau.
  * Best-effort: router hỏng ⇒ dùng đúng mặc định mà `runCodeModel` dùng khi router hỏng.
  */
-async function canNganSach(text: string): Promise<NganSachNguCanhCopilot> {
-  let traLoi = 1536;
+async function canNganSach(text: string, loai: LoaiLuotCopilot): Promise<NganSachNguCanhCopilot> {
+  let routeMax = 1536;
   let ctx = CODE_CTX;
   try {
     const { route } = await import("../aiModelRouter");
     const d = route({ task: "code", text, requiredQuality: "high" });
-    traLoi = Math.max(512, d.maxTokens ?? traLoi);
+    routeMax = Math.max(512, d.maxTokens ?? routeMax);
     ctx = Math.min(d.contextSize ?? CODE_CTX, CODE_CTX);
   } catch {
     /* giữ mặc định — giống hệt nhánh catch của runCodeModel */
   }
+  // Doc 80 · D1 — phần trả lời là `maxTokens` THẬT của lượt (có thể gồm cả ngân sách nghĩ).
+  const traLoi = chinhSachLuot(loai, routeMax, ctx).maxTokens;
   return { ctx, traLoi, tranVao: Math.max(0, ctx - traLoi - DU_TRU_KHUNG_TOKEN) };
 }
 
@@ -587,7 +645,7 @@ function cauKhongCoMa(kc: Exclude<KetCucModelMa, { loai: "co-chu" }>, viec: stri
  * LLAMA_SERVER_MODEL`) chỉ để lại một `console.warn` rồi trả `null`, và người dùng đọc "AI
  * offline". Nay lỗi được PHÂN LOẠI và mang lên tới câu trả lời.
  */
-async function runCodeModel(system: string, user: string): Promise<KetCucModelMa> {
+async function runCodeModel(system: string, user: string, loai: LoaiLuotCopilot): Promise<KetCucModelMa> {
   const metricStart = Date.now();
   let metricPlan: Awaited<ReturnType<typeof planMetric>> = null;
   try {
@@ -609,6 +667,9 @@ async function runCodeModel(system: string, user: string): Promise<KetCucModelMa
       /* keep defaults — router is best-effort */
     }
 
+    // Doc 80 · D1 — chính sách nghĩ theo loại lượt (route `code` dùng chung KHÔNG đổi).
+    const cs = chinhSachLuot(loai, maxTokens, contextSize ?? CODE_CTX);
+
     // Đợt 2 · Task 2 — lập kế hoạch đo (SONG SONG, không ảnh hưởng modelId/maxTokens/temperature/
     // contextSize ở TRÊN — những giá trị đó vẫn đến từ route() cục bộ y hệt trước Task 2).
     metricPlan = await planMetric("code", user);
@@ -619,9 +680,11 @@ async function runCodeModel(system: string, user: string): Promise<KetCucModelMa
           { role: "system", content: system },
           { role: "user", content: user },
         ],
-        maxTokens,
+        maxTokens: cs.maxTokens,
         temperature,
         contextSize,
+        ...(cs.disableThinking ? { disableThinking: true } : {}),
+        ...(cs.thinkingBudgetTokens ? { thinkingBudgetTokens: cs.thinkingBudgetTokens } : {}),
       },
       modelId,
     );
@@ -705,9 +768,11 @@ async function runStructuredCodeModel(
     // constrained thay vì free-text).
     metricPlan = await planMetric("code", user);
 
+    // Doc 80 · D1 — lượt JSON LUÔN tắt nghĩ (llama.cpp hoãn grammar tới khi khối nghĩ đóng).
+    const cs = chinhSachLuot("json", maxTokens, contextSize);
     const result = await generateJSON<unknown>(
       schema,
-      { systemPrompt: system, prompt: user, maxTokens, temperature, contextSize },
+      { systemPrompt: system, prompt: user, maxTokens: cs.maxTokens, temperature, contextSize, disableThinking: cs.disableThinking },
       modelId,
     );
     safeRecordMetric(metricPlan, {
@@ -905,7 +970,7 @@ export async function generateProgram(input: GenerateProgramInput): Promise<Gene
   const { answerContext, citations } = await retrieveContext(`${outKind} ${ragSeed}`.trim(), input?.vendor);
 
   // G2-A — ngân sách ngữ cảnh của lượt này (xem khối NGAN_SACH_PHAN ở trên về thứ tự ưu tiên).
-  const nganSach = await canNganSach(request);
+  const nganSach = await canNganSach(request, mode === "explain" || mode === "review" ? "giai-thich" : "sinh");
 
   // ── EXPLAIN / REVIEW: no codegen; grounded LLM explanation of the provided code. ──
   if (mode === "explain" || mode === "review") {
@@ -934,7 +999,7 @@ export async function generateProgram(input: GenerateProgramInput): Promise<Gene
       };
     }
     const user = buildExplainPrompt(mode, outKind, language, request, codeVua, vendorVua, repo);
-    const out = await runCodeModel(system, user);
+    const out = await runCodeModel(system, user, "giai-thich");
     if (out.loai !== "co-chu") {
       return { ok: false, refused: false, kind, citations, note: cauKhongCoMa(out, "explanation") };
     }
@@ -977,7 +1042,7 @@ export async function generateProgram(input: GenerateProgramInput): Promise<Gene
     if (json != null) code = json; // else falls through to free-text below
   }
   if (!code) {
-    const out = await runCodeModel(system, user);
+    const out = await runCodeModel(system, user, "sinh");
     if (out.loai !== "co-chu") {
       return { ok: false, refused: false, kind: outKind, citations, note: cauKhongCoMa(out, "suggestion") };
     }
@@ -1010,7 +1075,7 @@ export async function generateProgram(input: GenerateProgramInput): Promise<Gene
       if (j != null) fixed = j;
     }
     if (!fixed) {
-      const out = await runCodeModel(system, repairUser);
+      const out = await runCodeModel(system, repairUser, "tu-sua");
       if (out.loai === "co-chu") fixed = extractCode(out.text);
       // ⚠ Vòng TỰ SỬA cố ý KHÔNG dựng câu lỗi ở đây: lượt trước đã có mã + chẩn đoán để trả về, và
       // thay nó bằng một câu lỗi là làm người dùng MẤT thứ đã có. Nhưng ca `hong` phải để lại dấu
