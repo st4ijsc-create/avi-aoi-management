@@ -3812,6 +3812,11 @@
       "kbGoldenSet": "golden question set"
     },
     "operation": {
+      "deployBuild": "deploy the program build",
+      "requestDeployApproval": "request deploy approval",
+      "approveDeployment": "approve the program deployment",
+      "rejectDeployment": "reject the deploy request",
+      "rollbackDeployment": "roll back the deployment",
       "extractAoiPackageImage": "extract image from AOI package",
       "revokeCommissioningRecord": "revoke commissioning record",
       "manageRecipeVersion": "manage recipe version",
@@ -4100,6 +4105,7 @@
       "kbEvalRuns": "Training Studio evaluation log"
     },
     "action": {
+      "selfApproveProgramDeploy": "approve your own program deploy request",
       "viewOthersPermissions": "view another user's permissions",
       "editOrDeleteReport": "edit or delete report",
       "viewReport": "view report",
@@ -4170,6 +4176,12 @@
     "cannotDisplayChart": "Cannot display chart",
     "analyticsRenderError": "Analytics render error",
     "reason": {
+      "deploymentNotAwaitingApproval": "This request is no longer awaiting approval (someone else approved/rejected it or it is being processed). Reload the list to see its current status.",
+      "deployApprovalRecordMissing": "The approval record for this request was not found — it cannot be approved; submit the deploy request again.",
+      "deployApprovalRecordInvalid": "The approval record is no longer valid (executed, cancelled or expired) — it cannot be approved again.",
+      "rollbackTargetNotDeployed": "Only a deployment that was carried out can be rolled back; this one was rejected, is awaiting approval or is still running.",
+      "noPriorDeploymentToRollBack": "There is no earlier successful deployment on the same device/stage to roll back to.",
+      "idempotencyKeyUnreadable": "The idempotency key is already in use but its record could not be read back — retry with a new attempt.",
       "owner-not-in-local-ledger": "This owner isn't in the responding process's LOCAL ledger; it may be held by another process (see state.ledger.foreign.holders) — issue vram.preempt against the process that actually holds it.",
       "production-never-preempted": "This holder has production priority — per §5.2, production holders are NEVER preempted or reclaimed, no matter who's asking. There is no way for this command to override that rule.",
       "busy-in-use": "The holder is currently IN USE (refCount > 0) and isn't eligible for reclaim yet. Wait for the current use to finish and retry, or check why it hasn't released.",
@@ -15455,6 +15467,12 @@
     "defaultPortHint": "Default {{protocol}} port: {{port}}"
   },
   "engineering": {
+    "rollbackFailed": "Rollback did NOT succeed — the target deployment keeps its status",
+    "rollbackSimulated": "Rollback recorded (SIMULATED — no device touched)",
+    "rollbackNotApplied": "The rollback was only recorded as simulated — the device did NOT change and the target deployment keeps its status",
+    "deployRequestRejected": "Deploy request rejected",
+    "deployInProgress": "A deploy with the same key is still in progress — check its status in the deployments table",
+    "deployAwaitingApproval": "Deploy is AWAITING APPROVAL in the Approval Inbox — no device touched yet",
     "gtNav": "Golden thread progress",
     "gtCompose": "Author",
     "gtValidate": "Validate",

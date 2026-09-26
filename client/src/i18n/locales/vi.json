@@ -3812,6 +3812,11 @@
       "kbGoldenSet": "bộ câu hỏi vàng"
     },
     "operation": {
+      "deployBuild": "deploy build chương trình",
+      "requestDeployApproval": "gửi yêu cầu duyệt deploy",
+      "approveDeployment": "duyệt deploy chương trình",
+      "rejectDeployment": "từ chối yêu cầu deploy",
+      "rollbackDeployment": "khôi phục deploy về phiên bản trước",
       "extractAoiPackageImage": "trích xuất ảnh từ gói AOI",
       "revokeCommissioningRecord": "thu hồi bản ghi commissioning",
       "manageRecipeVersion": "quản lý phiên bản công thức",
@@ -4100,6 +4105,7 @@
       "kbEvalRuns": "sổ lượt đánh giá Training Studio"
     },
     "action": {
+      "selfApproveProgramDeploy": "tự duyệt yêu cầu deploy chương trình của chính mình",
       "viewOthersPermissions": "xem quyền của người khác",
       "editOrDeleteReport": "sửa hoặc xoá báo cáo",
       "viewReport": "xem báo cáo",
@@ -4162,6 +4168,12 @@
       "selfApproveOrchestrationGate": "tự duyệt cổng 4 mắt của lượt chạy do chính mình khởi động"
     },
     "reason": {
+      "deploymentNotAwaitingApproval": "Yêu cầu này không còn ở trạng thái chờ duyệt (đã được người khác duyệt/từ chối hoặc đang xử lý). Tải lại danh sách để xem trạng thái hiện tại.",
+      "deployApprovalRecordMissing": "Không tìm thấy bản ghi phê duyệt gắn với yêu cầu này — không thể duyệt; hãy gửi lại yêu cầu deploy.",
+      "deployApprovalRecordInvalid": "Bản ghi phê duyệt đã hết hiệu lực (đã thực thi, bị huỷ hoặc hết hạn) — không thể duyệt lại.",
+      "rollbackTargetNotDeployed": "Chỉ khôi phục được một lần deploy đã thực hiện; deployment này bị từ chối, đang chờ duyệt hoặc đang chạy.",
+      "noPriorDeploymentToRollBack": "Không có lần deploy thành công nào trước đó trên cùng thiết bị/giai đoạn để khôi phục về.",
+      "idempotencyKeyUnreadable": "Khoá idempotency đã được dùng nhưng không đọc lại được bản ghi — thử lại với một lượt mới.",
       "owner-not-in-local-ledger": "Hộ này không có trong SỔ CỤC BỘ của tiến trình đang trả lời; nó có thể do một tiến trình khác giữ (xem state.ledger.foreign.holders) — hãy ra lệnh vram.preempt ở ĐÚNG tiến trình đang giữ hộ đó.",
       "production-never-preempted": "Hộ này có mức ưu tiên production — theo §5.2, hộ production KHÔNG BAO GIỜ bị nhường/thu hồi, bất kể ai xin. Không có cách nào để lệnh này thắng quy tắc đó.",
       "busy-in-use": "Hộ đang được DÙNG (refCount > 0), chưa đủ điều kiện để thu hồi. Đợi lượt dùng hiện tại kết thúc rồi thử lại, hoặc kiểm tra vì sao hộ chưa nhả.",
@@ -15435,6 +15447,12 @@
     "defaultPortHint": "Cổng mặc định {{protocol}}: {{port}}"
   },
   "engineering": {
+    "rollbackFailed": "Khôi phục KHÔNG thành công — deployment đích giữ nguyên trạng thái",
+    "rollbackSimulated": "Đã ghi nhận khôi phục (SIMULATED — không chạm thiết bị)",
+    "rollbackNotApplied": "Lượt khôi phục chỉ được ghi nhận mô phỏng — thiết bị KHÔNG đổi, deployment đích giữ nguyên trạng thái",
+    "deployRequestRejected": "Yêu cầu deploy bị từ chối",
+    "deployInProgress": "Lượt deploy với cùng khoá đang được xử lý — xem trạng thái trong bảng deploy",
+    "deployAwaitingApproval": "Deploy đang CHỜ DUYỆT ở Hộp duyệt — chưa chạm thiết bị",
     "gtNav": "Tiến độ luồng vàng",
     "gtCompose": "Soạn",
     "gtValidate": "Kiểm tra",

@@ -3804,6 +3804,11 @@
       "kbGoldenSet": "黄金问题集"
     },
     "operation": {
+      "deployBuild": "部署程序构建",
+      "requestDeployApproval": "提交部署审批请求",
+      "approveDeployment": "审批程序部署",
+      "rejectDeployment": "拒绝部署请求",
+      "rollbackDeployment": "回滚部署",
       "extractAoiPackageImage": "从AOI数据包提取图像",
       "revokeCommissioningRecord": "撤销commissioning记录",
       "manageRecipeVersion": "管理配方版本",
@@ -4092,6 +4097,7 @@
       "kbEvalRuns": "Training Studio 评估记录"
     },
     "action": {
+      "selfApproveProgramDeploy": "审批自己提交的程序部署请求",
       "viewOthersPermissions": "查看他人的权限",
       "editOrDeleteReport": "编辑或删除报告",
       "viewReport": "查看报告",
@@ -4162,6 +4168,12 @@
     "cannotDisplayChart": "无法显示图表",
     "analyticsRenderError": "分析render错误",
     "reason": {
+      "deploymentNotAwaitingApproval": "该请求已不再处于待审批状态（已被他人审批/拒绝或正在处理）。请刷新列表查看当前状态。",
+      "deployApprovalRecordMissing": "未找到与此请求关联的审批记录——无法审批；请重新提交部署请求。",
+      "deployApprovalRecordInvalid": "审批记录已失效（已执行、已取消或已过期）——无法再次审批。",
+      "rollbackTargetNotDeployed": "只能回滚已执行的部署；该部署已被拒绝、正在等待审批或仍在运行。",
+      "noPriorDeploymentToRollBack": "同一设备/阶段上没有更早的成功部署可回滚。",
+      "idempotencyKeyUnreadable": "幂等键已被使用但无法读回其记录——请发起新的尝试重试。",
       "owner-not-in-local-ledger": "此持有者不在应答进程的本地台账中——它可能由另一个进程持有（参见 state.ledger.foreign.holders）。请在真正持有它的那个进程上执行 vram.preempt。",
       "production-never-preempted": "此持有者的优先级为 production——根据 §5.2，production 持有者永远不会被抢占/回收，无论谁在申请。此指令无法覆盖该规则。",
       "busy-in-use": "该持有者目前正在使用中（refCount > 0），尚不具备回收条件。请等待当前使用结束后重试，或检查它为何尚未释放。",
@@ -16014,6 +16026,12 @@
     "defaultPortHint": "{{protocol}} 默认端口：{{port}}"
   },
   "engineering": {
+    "rollbackFailed": "回滚未成功——目标部署保持原状态",
+    "rollbackSimulated": "已记录回滚（模拟——未触及设备）",
+    "rollbackNotApplied": "回滚仅以模拟方式记录——设备未改变，目标部署保持原状态",
+    "deployRequestRejected": "部署请求被拒绝",
+    "deployInProgress": "相同密钥的部署仍在处理中——请在部署表中查看状态",
+    "deployAwaitingApproval": "部署正在审批收件箱中等待审批——尚未触及设备",
     "gtNav": "黄金链进度",
     "gtCompose": "编写",
     "gtValidate": "校验",
