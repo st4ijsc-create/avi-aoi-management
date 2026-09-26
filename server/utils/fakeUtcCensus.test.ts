@@ -726,6 +726,13 @@ describe("BG-99 — census cấm ĐỌC chuỗi thời gian MÁY bằng hai lu�
       "services/inspection/inspectionStoreForward.ts",
       "services/mqttService.ts",
       "services/telemetryBus.ts",
+      // doc 81 Đợt 1B Task 8 (2026-09-27, đo lại): HAI cửa ingest CÓ SẴN (không phải cửa mới) nay
+      // bộ quét thấy vì chúng import `api/v1/ingestRangBuoc` / `_core/otIngestRoute`. Cả hai đọc
+      // `ts` của máy bằng `new Date(...)` (toCanonicalSample / toOtCanonicalSample) — BẤT BIẾN BG-99
+      // bên dưới vẫn 0 (đã chạy), nên chúng hợp lệ đứng trong tập ỨNG VIÊN; rủi ro `new Date(ts)` thô
+      // có từ trước task này, để mở (CÒN MỞ, BG-96/99).
+      "_core/otIngestRoute.ts",
+      "api/v1/router.ts",
     ];
     expect([...FILE_INGEST_BG99].sort()).toEqual(
       [...BA_FILE_CON_NEW_DATE_THAT, ...BON_UNG_VIEN_MOI_DO_DUOC].sort(),
@@ -903,7 +910,7 @@ describe("BG-99 — census cấm ĐỌC chuỗi thời gian MÁY bằng hai lu�
   });
 
   it("★★★ BẤT BIẾN: 0 dòng MÃ đọc chuỗi thời gian MÁY bằng `new Date(...)` thô trong TOÀN BỘ file ứng viên (quét ĐỘNG, không còn gắn tay 4 file)", () => {
-    const ket = quetBg99(); // mặc định relFiles=FILE_INGEST_BG99 — danh sách ĐỘNG hôm nay (7 file, xem cầu chì/mô tả ở trên).
+    const ket = quetBg99(); // mặc định relFiles=FILE_INGEST_BG99 — danh sách ĐỘNG hôm nay (9 file từ 2026-09-27, xem cầu chì/mô tả ở trên).
     if (ket.length) console.error("[BG-99] đọc chuỗi thời gian máy KHÔNG qua docGioMay ở:", ket);
     expect(ket).toEqual([]);
   });

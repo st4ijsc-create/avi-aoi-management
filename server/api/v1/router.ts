@@ -41,7 +41,8 @@ import { registerLineRoutes } from "./lines";
 import { registerOrdersLifecycleRoutes } from "./ordersLifecycle";
 import { registerErpOauthRoutes } from "./erpOauth";
 import { mtlsGuard } from "./erpMtls";
-import { mayCuaKhoa, kiemMauTelemetryThuocMay, kiemMachineCodeThuocMay, nemLoiIngest } from "./khoaGanMay";
+import { mayCuaKhoa, kiemMauTelemetryThuocMay, kiemMachineCodeThuocMay, nemLoiIngest } from "./ingestRangBuoc";
+import { otIngestHttpStatus } from "../../_core/otIngestRoute";
 import {
   getCapabilitiesForMachine,
   type EquipmentCapability,
@@ -342,7 +343,7 @@ export function createV1Router(): Router {
     requireScope(API_SCOPES.INGEST_WRITE),
     wrap(async (req, res) => {
       const body = (req.body ?? {}) as Record<string, unknown>;
-      // doc 81 Đợt 1B Task 8 — khoá gắn máy chỉ ghi cho CHÍNH máy đó (khoaGanMay.ts).
+      // doc 81 Đợt 1B Task 8 — khoá gắn máy chỉ ghi cho CHÍNH máy đó (ingestRangBuoc.ts).
       const may = await mayCuaKhoa(req.apiPrincipal);
       if (may) kiemMachineCodeThuocMay(body, may);
       // Reuse the tRPC machineApi.submitInspection caller (same validation/side-effects).
@@ -379,7 +380,7 @@ export function createV1Router(): Router {
     requireScope(API_SCOPES.INGEST_WRITE),
     wrap(async (req, res) => {
       const body = (req.body ?? {}) as Record<string, unknown>;
-      // doc 81 Đợt 1B Task 8 — khoá gắn máy chỉ ghi cho CHÍNH máy đó (khoaGanMay.ts).
+      // doc 81 Đợt 1B Task 8 — khoá gắn máy chỉ ghi cho CHÍNH máy đó (ingestRangBuoc.ts).
       const may = await mayCuaKhoa(req.apiPrincipal);
       if (may) kiemMachineCodeThuocMay(body, may);
       const { appRouter } = await import("../../routers");
@@ -436,15 +437,12 @@ export function createV1Router(): Router {
       // doc 81 Đợt 1B Task 8 — ĐO (BE3 §L4): khoá của ESP32 ghi được telemetry cho SCRW-SIM-01
       // vì body quyết định deviceId/machineId. Khoá gắn máy ⇒ machineId/deviceId (nếu có) phải
       // KHỚP CHÍNH XÁC máy ấy, lệch ⇒ 403 cả lô, KHÔNG ghi dòng nào; hợp lệ ⇒ GHIM machineId của
-      // khoá lên mọi mẫu để bus không tự quy máy (R16, luật đầy đủ: khoaGanMay.ts).
+      // khoá lên mọi mẫu để bus không tự quy máy (R16, luật đầy đủ: ingestRangBuoc.ts).
       const may = await mayCuaKhoa(req.apiPrincipal);
       if (may) samples = kiemMauTelemetryThuocMay(samples, may);
       // Sổ sách từng mẫu (T7) + hợp đồng trung thực của /api/ot/ingest: không bao giờ báo thành
       // công khi accepted < received. Thành công ĐỦ giữ nguyên 202 + thân cũ (máy pilot không đổi).
       const { ingestTelemetryDetailed } = await import("../../services/telemetryBus");
-      // import ĐỘNG như mọi service khác của tệp này (fix round 2: import tĩnh làm fakeUtcCensus BG-99
-      // coi router.ts là cửa ingest MỚI chỉ vì tên module chứa "ingest" — xem report Task 8).
-      const { otIngestHttpStatus } = await import("../../_core/otIngestRoute");
       const result = await ingestTelemetryDetailed(samples);
       const machine = req.apiPrincipal?.kind === "machine" ? req.apiPrincipal.name : undefined;
       const status = otIngestHttpStatus(result);

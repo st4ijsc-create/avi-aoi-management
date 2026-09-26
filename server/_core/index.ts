@@ -430,7 +430,7 @@ async function startServer() {
     //
     // Nhánh anh em (Task 8, đã làm): /api/v1/ingest/telemetry (api/v1/router.ts) dùng
     // ingestTelemetryDetailed + otIngestHttpStatus (202 khi đủ · 207 · 400 · 503), ràng buộc
-    // khoá ↔ máy (api/v1/khoaGanMay.ts) và đi CÙNG tầng rate-limit này (OT_INGEST_PATHS).
+    // khoá ↔ máy (api/v1/ingestRangBuoc.ts) và đi CÙNG tầng rate-limit này (OT_INGEST_PATHS).
     //
     // Xác thực máy (x-api-key / body.apiKey / machineCode, scope ingest:write)
     // giữ NGUYÊN, không nới; tầng rate-limit OT riêng (createOtIngestLimiter) giữ

@@ -14,7 +14,7 @@
  *
  * Xác thực: khoá theo máy, scope "ingest:write" — GIỮ NGUYÊN, không nới.
  * Module này chỉ import KIỂU từ telemetryBus/machineAuthService — không kéo tác dụng phụ nào lúc nạp
- * (`api/v1/khoaGanMay` chỉ mang hàm thuần + lớp lỗi; truy cập DB của nó là import động).
+ * (`api/v1/ingestRangBuoc` chỉ mang hàm thuần + lớp lỗi; truy cập DB của nó là import động).
  *
  * ★ doc 81 Đợt 1B Task 8 fix round 1 (R17) — RÀNG BUỘC khoá ↔ máy, cùng luật `/api/v1/ingest/telemetry`:
  * credential đã xác thực là khoá CỦA MỘT MÁY (mk_, plaintext `machines.apiKey`, hoặc machineCode khi
@@ -28,7 +28,7 @@
  */
 import type { Request, Response } from "express";
 import { ApiHttpError } from "../api/v1/envelope";
-import { kiemMauTelemetryThuocMay } from "../api/v1/khoaGanMay";
+import { kiemMauTelemetryThuocMay } from "../api/v1/ingestRangBuoc";
 import type {
   CanonicalSample,
   TelemetryIngestResult,

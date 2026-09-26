@@ -2,10 +2,6 @@
  * doc 81 Đợt 1B Task 8 — ingest `/api/v1/ingest/*` (+ `/api/ot/ingest`, R17): RÀNG BUỘC khoá ↔ máy
  * + mã HTTP ĐÚNG NGHĨA.
  *
- * (Fix round 2: tên cũ `ingestRangBuoc.ts` bị đổi — `fakeUtcCensus` (BG-99) coi MỌI tệp import một
- * module có tên chứa "ingest" và có `new Date(x)` là cửa ứng viên, nên tên cũ làm census đổi số mà
- * không có cửa ingest mới nào.)
- *
  * ── ĐO (BE3 §L4) ────────────────────────────────────────────────────────────────────────────
  *   • khoá `mk_` của ESP32 ghi được telemetry cho `SCRW-SIM-01` (HTTP 200, dòng rơi vào máy khác):
  *     `deviceId`/`machineId` trong BODY quyết định máy (router.ts `toCanonicalSample`).
