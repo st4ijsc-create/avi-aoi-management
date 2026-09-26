@@ -486,7 +486,7 @@ export class TechmanDriver implements RobotDriver {
     if (!this.connected) return { ok: false, status: "failed", error: "not connected" };
     // doc 81 Đợt 1B Task 5 fix round 1 — abort fence, checked in the socket's connect handler
     // right before the frame is written (the connect phase is where a job can outlive abort()).
-    const guard = this.fence.capture();
+    const guard = this.fence.capture(job);
 
     const id = this.tmsctSeq++;
     let command: string;

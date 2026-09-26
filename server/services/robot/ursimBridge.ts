@@ -236,7 +236,7 @@ export class UrsimBridgeDriver implements RobotDriver {
   async runJob(job: RobotJobSpec): Promise<RobotJobResult> {
     if (!this.connected || !this.client) return { ok: false, status: "failed", error: "not connected" };
     // doc 81 Đợt 1B Task 5 fix round 1 — abort fence, checked inside sendScript after connect.
-    const guard = this.fence.capture();
+    const guard = this.fence.capture(job);
 
     // Abort routes through the dashboard `stop` (not a script) when control is enabled.
     let urscript: string;

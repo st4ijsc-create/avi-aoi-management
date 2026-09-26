@@ -386,7 +386,7 @@ export class MitsubishiDriver implements RobotDriver {
     if (!this.connected || !this.client) return { ok: false, status: "failed", error: "not connected" };
     // doc 81 Đợt 1B Task 5 fix round 1 — abort fence: checked right before EVERY write
     // (inside TcpLineClient.send, after any reconnect), so nothing follows a STOP.
-    const guard = this.fence.capture();
+    const guard = this.fence.capture(job);
 
     const isAbort = job.jobType === "abort";
     const motionCmd = isAbort ? "STOP" : buildMelfaMotion(job);

@@ -542,17 +542,41 @@ describe("fix round 1 — hàng rào abort MELFA: không lệnh chuyển động
 });
 
 describe("fix round 1 — đóng kết nối giữa lệnh chuyển động = kết cục không rõ (line_connection_closed)", () => {
-  it("robot đóng socket khi EXEC đang chờ ⇒ dispatcher thử dừng và ghi rõ kết quả dừng (không im lặng failed)", async () => {
+  // Fix round 2 — sau khi peer đóng, client KHÔNG chết mà "cũ": STOP của abort nối lại (MELFA gửi lại
+  // OPEN=) và TỚI được robot trên kết nối MỚI; sổ ghi abort_sent. (Round 1 từng ghim abort_failed.)
+  it("robot đóng socket khi EXEC đang chờ ⇒ STOP tới robot trên kết nối MỚI (sau OPEN=), sổ abort_sent", async () => {
     process.env.ROBOT_CONTROL_TIMEOUT_MS = "5000";
     await connectDriver(2000);
+    const before = fake.conns.length;
     fake.respond = (cmd) => (cmd.startsWith("EXEC") ? "__CLOSE__" : healthy(cmd));
+    let atFinalize: string[] | null = null;
+    ledger.onUpdate = () => {
+      if (atFinalize === null) atFinalize = allCmds(fake);
+    };
     const r = await within(dispatchRobotJob(HOME), 10_000);
     expect(r.status).toBe("failed");
-    expect(ledger.rows[0].result).toMatchObject({ reasonCode: "line_connection_closed" });
-    // Kết nối đã mất ⇒ STOP không gửi được: sổ ghi abort_failed một cách trung thực.
-    expect(ledger.rows[0].result.abort).toBe("abort_failed");
-    expect(ledger.rows[0].errorText).toMatch(/line_connection_closed|socket closed/);
-    expect(ledger.rows[0].errorText).toMatch(/abort_failed/);
+    expect(ledger.rows[0].result).toMatchObject({ reasonCode: "line_connection_closed", abort: "abort_sent" });
+    expect(ledger.rows[0].errorText).toMatch(/abort_sent/);
+    // kết nối đang dùng lúc EXEC bị đóng; STOP đi trên kết nối kế tiếp, sau bắt tay OPEN=.
+    expect(fake.conns.length).toBe(before + 1);
+    expect(fake.conns[fake.conns.length - 1]).toEqual(["OPEN=AOICTRL", "STOP"]);
+    expect(atFinalize).toContain("STOP"); // STOP đã tới robot trước khi sổ chốt
+  });
+});
+
+describe("fix round 2 — abort thứ hai KHÔNG rào STOP của abort thứ nhất", () => {
+  it("hai abort() liên tiếp khi đang chờ nối lại ⇒ cả hai STOP tới robot, cả hai resolve (không job_fenced_by_abort)", async () => {
+    await connectDriver(300);
+    fake.respond = (cmd) => (cmd.startsWith("EXEC") ? null : healthy(cmd));
+    const first = await within(driver.runJob({ jobType: "home" }), 5000);
+    expect(first.detail?.reasonCode).toBe("line_reply_timeout"); // client giờ "cũ" ⇒ lần gửi sau phải nối lại
+    fake.respond = healthy;
+    const before = fake.conns.length;
+    const a1 = driver.abort().then(() => "ok", (e: Error) => e.message);
+    const a2 = driver.abort().then(() => "ok", (e: Error) => e.message);
+    expect(await within(a1, 5000)).toBe("ok");
+    expect(await within(a2, 5000)).toBe("ok");
+    expect(fake.conns.slice(before).flat()).toEqual(["OPEN=AOICTRL", "STOP", "STOP"]);
   });
 });
 

@@ -130,15 +130,25 @@ const HOME = { robotId: 7, job: { jobType: "home" as const }, triggerKind: "hitl
 
 // ── FANUC RMI giả ─────────────────────────────────────────────────────────────
 type RmiPkt = Record<string, any>;
+interface RmiAnswer {
+  reply: RmiPkt | null;
+  delayMs?: number;
+  /** true ⇒ server ĐÓNG kết nối ngay khi nhận gói này (không trả lời). */
+  drop?: boolean;
+}
 interface FakeRmi {
   port: number;
   received: string[]; // Command / Communication / Instruction theo thứ tự nhận
-  /** Trả lời cho gói; null = im lặng. `delayMs` = trễ trước khi trả lời (xử lý tuần tự). */
-  respond: (pkt: RmiPkt) => { reply: RmiPkt | null; delayMs?: number };
+  /** Cùng danh sách, tách theo TỪNG kết nối. */
+  conns: string[][];
+  /** Trả lời cho gói; null = im lặng. `delayMs` = trễ trước khi trả lời. */
+  respond: (pkt: RmiPkt) => RmiAnswer;
+  /** true (mặc định) = xử lý TUẦN TỰ như bộ điều khiển thật; false = mỗi gói trễ ĐỘC LẬP (trả lời lệch thứ tự). */
+  sequential: boolean;
 }
 
 /** Literal replies per the RMI manual (ErrorID 0 = success). */
-function rmiHealthy(pkt: RmiPkt): { reply: RmiPkt | null; delayMs?: number } {
+function rmiHealthy(pkt: RmiPkt): RmiAnswer {
   if (pkt.Communication === "FRC_Connect")
     return { reply: { Communication: "FRC_Connect", ErrorID: 0, PortNumber: 16002, MajorVersion: 1, MinorVersion: 3 } };
   if (pkt.Communication === "FRC_Disconnect") return { reply: { Communication: "FRC_Disconnect", ErrorID: 0 } };
@@ -152,11 +162,13 @@ function rmiHealthy(pkt: RmiPkt): { reply: RmiPkt | null; delayMs?: number } {
 
 async function startFakeRmi(): Promise<FakeRmi> {
   const socks = new Set<net.Socket>();
-  const fake: FakeRmi = { port: 0, received: [], respond: rmiHealthy };
+  const fake: FakeRmi = { port: 0, received: [], conns: [], respond: rmiHealthy, sequential: true };
   const srv = net.createServer((sock) => {
     socks.add(sock);
     sock.on("close", () => socks.delete(sock));
     sock.on("error", () => undefined);
+    const mine: string[] = [];
+    fake.conns.push(mine);
     let buf = "";
     let chain = Promise.resolve();
     sock.on("data", (d) => {
@@ -167,8 +179,20 @@ async function startFakeRmi(): Promise<FakeRmi> {
         buf = buf.slice(i + 1);
         if (!line) continue;
         const pkt = JSON.parse(line) as RmiPkt;
-        fake.received.push(String(pkt.Command ?? pkt.Communication ?? pkt.Instruction));
-        const { reply, delayMs = 0 } = fake.respond(pkt);
+        const name = String(pkt.Command ?? pkt.Communication ?? pkt.Instruction);
+        fake.received.push(name);
+        mine.push(name);
+        const { reply, delayMs = 0, drop } = fake.respond(pkt);
+        if (drop) {
+          sock.destroy();
+          return;
+        }
+        if (!fake.sequential) {
+          setTimeout(() => {
+            if (reply && !sock.destroyed) sock.write(JSON.stringify(reply) + "\r\n");
+          }, delayMs);
+          continue;
+        }
         // TUẦN TỰ như bộ điều khiển thật.
         chain = chain.then(
           () =>
@@ -196,6 +220,7 @@ async function fanucOn(fake: FakeRmi, driverTimeoutMs: number): Promise<FanucDri
   await d.connect({ endpoint: `127.0.0.1:${fake.port}`, timeoutMs: driverTimeoutMs, options: { skipPortReconnect: true } });
   active.driver = d;
   fake.received.length = 0; // chỉ tính gói SAU khi kết nối
+  for (const c of fake.conns) c.length = 0;
   return d;
 }
 
@@ -233,6 +258,130 @@ describe("FANUC RMI — hạn dispatcher rơi GIỮA chuỗi GetStatus→Initial
     expect(afterAbort).toEqual([]);
     expect(fake.received).not.toContain("FRC_Initialize");
     expect(fake.received).not.toContain("FRC_JointMotionJRep");
+  });
+});
+
+describe("FANUC RMI — robot rớt kết nối giữa lệnh chuyển động (rmi_connection_closed, fix round 2)", () => {
+  it("server đóng socket khi nhận gói chuyển động ⇒ phiên RMI MỚI (FRC_Connect) rồi FRC_Abort; sổ abort_sent", async () => {
+    process.env.ROBOT_CONTROL_TIMEOUT_MS = "5000";
+    const fake = await startFakeRmi();
+    await fanucOn(fake, 1000);
+    const before = fake.conns.length;
+    fake.respond = (pkt) => (typeof pkt.Instruction === "string" ? { reply: null, drop: true } : rmiHealthy(pkt));
+    let atFinalize: string[] | null = null;
+    ledger.snapshotAtFinalize = () => {
+      atFinalize = [...fake.received];
+    };
+    const r = await within(dispatchRobotJob(HOME), 10_000);
+    expect(r.status).toBe("failed");
+    expect(ledger.rows[0].result).toMatchObject({ reasonCode: "rmi_connection_closed", abort: "abort_sent" });
+    expect(fake.conns.length).toBe(before + 1);
+    expect(fake.conns[fake.conns.length - 1]).toEqual(["FRC_Connect", "FRC_Abort"]);
+    expect(atFinalize).toContain("FRC_Abort");
+  });
+});
+
+/**
+ * Ruling R12 — đối chiếu reply theo `Command`/`Instruction` (+ `SequenceID`) thay vì FIFO. Hai đường
+ * reviewer lần ra, tái hiện bằng server giả trả lời MUỘN và LỆCH THỨ TỰ (mỗi gói trễ độc lập):
+ */
+describe("FANUC RMI — reply muộn/lệch thứ tự không bao giờ thành ack sai (R12, fix round 2)", () => {
+  it("(a) FRC_Abort tiền-khởi-tạo hết hạn, reply muộn của nó KHÔNG được làm ack cho Initialize, reply Initialize KHÔNG làm ack cho chuyển động ⇒ không 'done'", async () => {
+    process.env.ROBOT_CONTROL_TIMEOUT_MS = "5000";
+    const fake = await startFakeRmi();
+    await fanucOn(fake, 300);
+    fake.sequential = false;
+    fake.respond = (pkt) => {
+      if (pkt.Command === "FRC_GetStatus")
+        return { reply: { Command: "FRC_GetStatus", ErrorID: 0, ServoReady: 1, TPMode: 0, RMIMotionStatus: 1, ProgramStatus: 1, NextSequenceID: 1 } };
+      if (pkt.Command === "FRC_Abort") return { reply: { Command: "FRC_Abort", ErrorID: 0 }, delayMs: 450 };
+      if (pkt.Command === "FRC_Initialize") return { reply: { Command: "FRC_Initialize", ErrorID: 0, GroupMask: 1 }, delayMs: 350 };
+      if (typeof pkt.Instruction === "string") return { reply: null }; // chuyển động KHÔNG BAO GIỜ được xác nhận
+      return rmiHealthy(pkt);
+    };
+    const r = await within(dispatchRobotJob(HOME), 10_000);
+    expect(r.status).not.toBe("done");
+    expect(r.status).toBe("failed");
+    expect(ledger.rows[0].result).toMatchObject({ reasonCode: "rmi_reply_timeout" });
+  });
+
+  it("(b) reply MUỘN của lệnh chuyển động KHÔNG được làm ack cho FRC_Abort ⇒ robot không xác nhận dừng ⇒ abort_failed, không abort_sent", async () => {
+    process.env.ROBOT_CONTROL_TIMEOUT_MS = "5000";
+    const fake = await startFakeRmi();
+    await fanucOn(fake, 400);
+    fake.sequential = false;
+    fake.respond = (pkt) => {
+      if (typeof pkt.Instruction === "string")
+        return { reply: { Instruction: pkt.Instruction, ErrorID: 0, SequenceID: pkt.SequenceID }, delayMs: 600 };
+      if (pkt.Command === "FRC_Abort") return { reply: null }; // robot KHÔNG xác nhận dừng
+      return rmiHealthy(pkt);
+    };
+    const r = await within(dispatchRobotJob(HOME), 10_000);
+    expect(r.status).toBe("failed");
+    expect(fake.received).toContain("FRC_Abort");
+    expect(ledger.rows[0].result).toMatchObject({ reasonCode: "rmi_reply_timeout", abort: "abort_failed" });
+  });
+});
+
+/**
+ * Mỗi LỚP của phép đối chiếu R12 có ca riêng (một lớp không được che đột biến của lớp kia):
+ *   (c) khoá theo tên gói — hai yêu cầu KHÁC tên cùng đang chờ, trả lời LỆCH thứ tự (không có timeout ⇒
+ *       không có bia mộ nào che);
+ *   (d) bia mộ — reply muộn của một FRC_Abort đã hết hạn tới đúng lúc FRC_Abort MỚI (cùng tên) đang chờ;
+ *   (e) SequenceID — reply chuyển động mang SequenceID KHÁC không phải ack của lệnh này.
+ */
+describe("FANUC RMI — từng lớp đối chiếu reply (R12, fix round 2)", () => {
+  it("(c) FRC_Abort gửi khi lệnh chuyển động còn chờ; robot TỪ CHỐI dừng (ErrorID 9) trước, ack chuyển động tới sau ⇒ abort_failed (FIFO từng ghi abort_sent)", async () => {
+    process.env.ROBOT_CONTROL_TIMEOUT_MS = "1000"; // hạn dispatcher < hạn driver
+    const fake = await startFakeRmi();
+    await fanucOn(fake, 3000);
+    fake.sequential = false;
+    fake.respond = (pkt) => {
+      if (typeof pkt.Instruction === "string")
+        return { reply: { Instruction: pkt.Instruction, ErrorID: 0, SequenceID: pkt.SequenceID }, delayMs: 1500 };
+      if (pkt.Command === "FRC_Abort") return { reply: { Command: "FRC_Abort", ErrorID: 9 } };
+      return rmiHealthy(pkt);
+    };
+    const r = await within(dispatchRobotJob(HOME), 10_000);
+    expect(r.status).toBe("failed");
+    expect(ledger.rows[0].result).toMatchObject({ timeout: true, abort: "abort_failed" });
+    expect(String(ledger.rows[0].result.abortError)).toMatch(/ErrorID 9/);
+  });
+
+  it("(d) reply MUỘN của FRC_Abort tiền-khởi-tạo (đã hết hạn) KHÔNG được làm ack cho FRC_Abort của lệnh dừng ⇒ abort_failed", async () => {
+    process.env.ROBOT_CONTROL_TIMEOUT_MS = "5000";
+    const fake = await startFakeRmi();
+    await fanucOn(fake, 400);
+    fake.sequential = false;
+    let aborts = 0;
+    fake.respond = (pkt) => {
+      if (pkt.Command === "FRC_GetStatus")
+        return { reply: { Command: "FRC_GetStatus", ErrorID: 0, ServoReady: 1, TPMode: 0, RMIMotionStatus: 1, ProgramStatus: 1, NextSequenceID: 1 } };
+      if (pkt.Command === "FRC_Abort") {
+        aborts++;
+        // lần 1 (tiền-khởi-tạo): trả lời RẤT muộn; lần 2 (lệnh dừng): robot KHÔNG xác nhận
+        return aborts === 1 ? { reply: { Command: "FRC_Abort", ErrorID: 0 }, delayMs: 1000 } : { reply: null };
+      }
+      if (typeof pkt.Instruction === "string") return { reply: null };
+      return rmiHealthy(pkt);
+    };
+    const r = await within(dispatchRobotJob(HOME), 10_000);
+    expect(r.status).toBe("failed");
+    expect(aborts).toBe(2);
+    expect(ledger.rows[0].result).toMatchObject({ reasonCode: "rmi_reply_timeout", abort: "abort_failed" });
+  });
+
+  it("(e) reply chuyển động mang SequenceID KHÁC ⇒ không phải ack của lệnh này ⇒ không 'done'", async () => {
+    process.env.ROBOT_CONTROL_TIMEOUT_MS = "5000";
+    const fake = await startFakeRmi();
+    await fanucOn(fake, 400);
+    fake.respond = (pkt) =>
+      typeof pkt.Instruction === "string"
+        ? { reply: { Instruction: pkt.Instruction, ErrorID: 0, SequenceID: Number(pkt.SequenceID) + 100 } }
+        : rmiHealthy(pkt);
+    const r = await within(dispatchRobotJob(HOME), 10_000);
+    expect(r.status).not.toBe("done");
+    expect(ledger.rows[0].result).toMatchObject({ reasonCode: "rmi_reply_timeout", abort: "abort_sent" });
   });
 });
 

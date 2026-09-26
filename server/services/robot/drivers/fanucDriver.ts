@@ -243,20 +243,71 @@ function packetType(pkt: Record<string, unknown>): string {
 
 type NetSocket = ReturnType<typeof createConnection>;
 
+/** Stable reason code: the RMI socket closed / errored while a request was pending. */
+export const RMI_CONNECTION_CLOSED = "rmi_connection_closed" as const;
+
+/** doc 81 Đợt 1B Task 5 fix round 2 — RMI socket drop under a pending request (outcome unknown). */
+export class FanucRmiClosedError extends Error {
+  readonly reasonCode = RMI_CONNECTION_CLOSED;
+  constructor(message: string) {
+    super(message);
+    this.name = "FanucRmiClosedError";
+  }
+}
+
 /**
- * Minimal RMI transport: one TCP socket, CRLF-framed JSON, FIFO request/response.
- * Requests are issued sequentially (one `await send()` at a time) so first-in
- * first-out matching is correct. Any socket error/close rejects all pending sends
- * (callers turn that into a failed job / thrown read — never a hang).
+ * Correlation key of an RMI packet: the echoed discriminator (`Communication` / `Command` /
+ * `Instruction`) and, for an Instruction, its `SequenceID` (RMI B-84184EN: every response
+ * echoes the packet name; instruction responses echo the SequenceID). Exported for tests.
+ */
+export function rmiReplyKey(pkt: Record<string, unknown>): string {
+  if (typeof pkt.Communication === "string") return `C:${pkt.Communication}`;
+  if (typeof pkt.Command === "string") return `K:${pkt.Command}`;
+  if (typeof pkt.Instruction === "string") {
+    return pkt.SequenceID != null ? `I:${pkt.Instruction}#${String(pkt.SequenceID)}` : `I:${pkt.Instruction}`;
+  }
+  return "?";
+}
+
+/**
+ * Minimal RMI transport: one TCP socket, CRLF-framed JSON request/response.
+ *
+ * doc 81 Đợt 1B Task 5 fix round 2 (ruling R12) — replies are CORRELATED, not FIFO. Each
+ * waiter carries the key of its request ({@link rmiReplyKey}); an incoming packet resolves the
+ * OLDEST waiter with the same key. A packet matching no waiter is DISCARDED — never handed to
+ * the next waiter (FIFO used to let a late FRC_Abort reply resolve FRC_Initialize and a late
+ * motion reply resolve FRC_Abort ⇒ false "done" / false "abort_sent"). On timeout the waiter
+ * is dropped and a TOMBSTONE for its key is kept: the next reply with that key is the stale
+ * answer of the timed-out request and is discarded, not given to a newer waiter of the same
+ * command (Commands carry no sequence id; fail-closed: at worst a newer waiter times out).
+ *
+ * A socket error/close under us rejects every pending send with {@link FanucRmiClosedError}
+ * (reasonCode rmi_connection_closed) and marks the client DROPPED, so the driver can open a
+ * fresh RMI session (FRC_Connect again) to deliver a stop.
  */
 export class FanucRmiClient {
   private socket: NetSocket | null = null;
   private rxBuf = "";
-  private pending: Array<{ resolve: (v: Record<string, unknown>) => void; reject: (e: Error) => void; timer: NodeJS.Timeout }> = [];
+  private pending: Array<{
+    key: string;
+    resolve: (v: Record<string, unknown>) => void;
+    reject: (e: Error) => void;
+    timer: NodeJS.Timeout;
+  }> = [];
+  /** Keys of requests that timed out: their late reply must be discarded. */
+  private tombstones: string[] = [];
   private connected = false;
+  private dropped = false;
+  /** Count of reply packets discarded as stale/unmatched (observability + tests). */
+  discarded = 0;
 
   isConnected(): boolean {
     return this.connected;
+  }
+
+  /** True when the PEER closed / the socket errored (not a local close()). */
+  wasDropped(): boolean {
+    return this.dropped;
   }
 
   open(host: string, port: number, timeoutMs: number): Promise<void> {
@@ -264,6 +315,10 @@ export class FanucRmiClient {
       let settled = false;
       const socket = createConnection({ host, port });
       this.socket = socket;
+      this.rxBuf = "";
+      this.tombstones = [];
+      this.dropped = false;
+      const isCurrent = () => this.socket === socket;
 
       const connectTimer = setTimeout(() => {
         if (settled) return;
@@ -280,21 +335,34 @@ export class FanucRmiClient {
         this.connected = true;
         resolve();
       });
-      socket.on("data", (buf: Buffer) => this.onData(buf));
+      socket.on("data", (buf: Buffer) => {
+        if (!isCurrent()) return;
+        this.onData(buf);
+      });
       socket.on("error", (err: Error) => {
-        this.connected = false;
-        this.failAllPending(err);
         if (!settled) {
           settled = true;
           clearTimeout(connectTimer);
           reject(err);
         }
+        if (!isCurrent()) return;
+        this.drop(new FanucRmiClosedError(`FANUC RMI socket error: ${err?.message ?? String(err)}`));
       });
       socket.on("close", () => {
-        this.connected = false;
-        this.failAllPending(new Error("FANUC RMI socket closed"));
+        if (!isCurrent()) return;
+        this.drop(new FanucRmiClosedError("FANUC RMI socket closed"));
       });
     });
+  }
+
+  private drop(err: Error): void {
+    const wasConnected = this.connected;
+    this.connected = false;
+    this.socket = null;
+    this.rxBuf = "";
+    this.tombstones = [];
+    if (wasConnected) this.dropped = true;
+    this.failAllPending(err);
   }
 
   private onData(buf: Buffer | string): void {
@@ -302,8 +370,19 @@ export class FanucRmiClient {
     const { packets, rest } = parseFanucFrames(this.rxBuf);
     this.rxBuf = rest;
     for (const pkt of packets) {
-      const waiter = this.pending.shift();
-      if (!waiter) continue; // unsolicited packet with no pending request → ignore
+      const key = rmiReplyKey(pkt);
+      const tomb = this.tombstones.indexOf(key);
+      if (tomb >= 0) {
+        this.tombstones.splice(tomb, 1); // late answer of a timed-out request ⇒ stale
+        this.discarded++;
+        continue;
+      }
+      const idx = this.pending.findIndex((w) => w.key === key);
+      if (idx < 0) {
+        this.discarded++; // matches no waiter ⇒ never handed to another request
+        continue;
+      }
+      const [waiter] = this.pending.splice(idx, 1);
       clearTimeout(waiter.timer);
       waiter.resolve(pkt);
     }
@@ -317,21 +396,24 @@ export class FanucRmiClient {
     }
   }
 
-  /** Write one packet and await the next response line (FIFO), under a timeout. */
+  /** Write one packet and await ITS response (correlated by key), under a timeout. */
   send(pkt: Record<string, unknown>, timeoutMs: number): Promise<Record<string, unknown>> {
     return new Promise<Record<string, unknown>>((resolve, reject) => {
       if (!this.socket || !this.connected) {
         reject(new Error("FANUC RMI: not connected"));
         return;
       }
+      const key = rmiReplyKey(pkt);
       const timer = setTimeout(() => {
-        // Drop this waiter from the queue on timeout.
         const idx = this.pending.findIndex((w) => w.timer === timer);
-        if (idx >= 0) this.pending.splice(idx, 1);
+        if (idx >= 0) {
+          this.pending.splice(idx, 1);
+          this.tombstones.push(key); // its late reply, if any, is stale
+        }
         reject(new FanucRmiTimeoutError(`FANUC RMI ${packetType(pkt)} timeout after ${timeoutMs}ms`));
       }, timeoutMs);
       if (typeof timer.unref === "function") timer.unref();
-      this.pending.push({ resolve, reject, timer });
+      this.pending.push({ key, resolve, reject, timer });
       try {
         this.socket.write(frameFanucPacket(pkt));
       } catch (err) {
@@ -346,9 +428,10 @@ export class FanucRmiClient {
   close(): void {
     this.failAllPending(new Error("FANUC RMI closing"));
     this.connected = false;
-    if (this.socket) {
-      try { this.socket.destroy(); } catch { /* ignore */ }
-      this.socket = null;
+    const s = this.socket;
+    this.socket = null;
+    if (s) {
+      try { s.destroy(); } catch { /* ignore */ }
     }
   }
 }
@@ -414,7 +497,35 @@ export class FanucDriver implements RobotDriver {
     this.host = host;
     this.port = port;
 
-    // Socket #1: connect port. FRC_Connect is the ONLY packet sent here.
+    try {
+      await this.openSession();
+
+      // Read-only probe on the session socket (does NOT enable motion). Also seeds the
+      // instruction SequenceID from the controller when it tracks one. [RMI §2.3.7 p.14]
+      const status = await this.client!.send(buildGetStatusPacket(), this.timeoutMs);
+      this.assertOk(status, "FRC_GetStatus");
+      const nextSeq = Number(status.NextSequenceID);
+      if (Number.isFinite(nextSeq) && nextSeq > 0) this.seq = nextSeq;
+
+      this.connected = true;
+      this.connectedAt = new Date();
+      this.lastOkAt = new Date();
+      this.lastError = undefined;
+    } catch (err) {
+      this.lastError = (err as Error)?.message || String(err);
+      try { this.client?.close(); } catch { /* ignore */ }
+      this.client = null;
+      this.connected = false;
+      throw err;
+    }
+  }
+
+  /**
+   * Open an RMI session: socket #1 on the connect port, FRC_Connect (the ONLY packet sent
+   * there), then socket #2 on the returned session port. [RMI §2.2.1 p.6] Sets this.client.
+   * Used by connect() and — fix round 2 — to re-open a session the peer dropped.
+   */
+  private async openSession(): Promise<void> {
     const connectClient = new FanucRmiClient();
     try {
       await connectClient.open(this.host, this.port, this.timeoutMs);
@@ -436,26 +547,17 @@ export class FanucDriver implements RobotDriver {
         this.sessionPort = this.port;
         this.client = connectClient;
       }
-
-      // Read-only probe on the session socket (does NOT enable motion). Also seeds the
-      // instruction SequenceID from the controller when it tracks one. [RMI §2.3.7 p.14]
-      const status = await this.client.send(buildGetStatusPacket(), this.timeoutMs);
-      this.assertOk(status, "FRC_GetStatus");
-      const nextSeq = Number(status.NextSequenceID);
-      if (Number.isFinite(nextSeq) && nextSeq > 0) this.seq = nextSeq;
-
-      this.connected = true;
-      this.connectedAt = new Date();
-      this.lastOkAt = new Date();
-      this.lastError = undefined;
     } catch (err) {
-      this.lastError = (err as Error)?.message || String(err);
       try { connectClient.close(); } catch { /* ignore */ }
-      try { this.client?.close(); } catch { /* ignore */ }
-      this.client = null;
-      this.connected = false;
       throw err;
     }
+  }
+
+  /** Replace a session the peer dropped with a fresh one (old client closed first). */
+  private async reopenSession(): Promise<void> {
+    try { this.client?.close(); } catch { /* ignore */ }
+    this.client = null;
+    await this.openSession();
   }
 
   private assertOk(resp: Record<string, unknown>, label: string): void {
@@ -571,7 +673,7 @@ export class FanucDriver implements RobotDriver {
     // doc 81 Đợt 1B Task 5 fix round 1 — abort fence: `guard()` runs right before EVERY send
     // below (FanucRmiClient.send writes synchronously), so once abort() has bumped the epoch
     // this job — possibly mid GetStatus→Abort→Initialize chain — sends nothing more.
-    const guard = this.fence.capture();
+    const guard = this.fence.capture(job);
     let sequenceId = this.seq++;
     let packet = job.jobType === "abort"
       ? buildAbortPacket()
@@ -587,6 +689,13 @@ export class FanucDriver implements RobotDriver {
     }
 
     try {
+      // doc 81 Đợt 1B Task 5 fix round 2 — the peer dropped the RMI socket (e.g. mid-motion):
+      // the session is gone, so open a NEW one (FRC_Connect again) before sending — this is
+      // how the dispatcher's FRC_Abort still reaches the controller after a drop.
+      if (this.client.wasDropped()) {
+        guard();
+        await this.reopenSession();
+      }
       // FRC_Abort is a Command that needs no Initialize; motion instructions do.
       if (job.jobType !== "abort") {
         // Manual startup pre-check before creating the RMI_MOVE program. [RMI §2.3.1 p.9]
@@ -617,7 +726,7 @@ export class FanucDriver implements RobotDriver {
         packet = buildFanucInstruction(job, sequenceId);
       }
       guard();
-      const resp = await this.client.send(packet, this.timeoutMs);
+      const resp = await this.client!.send(packet, this.timeoutMs);
       const errId = Number(resp.ErrorID ?? 0);
       if (errId !== 0) {
         return { ok: false, status: "failed", error: `RMI ErrorID ${errId}`, detail: { sequenceId, sent: true } };

@@ -9,6 +9,7 @@ import type { RobotStateHandle } from "./robotDriver";
 import type { RuntimeRobot } from "./robotAdapter";
 
 let running = false;
+let orphanSweepScheduled = false;
 const active: Array<{ robot: RuntimeRobot; handle: RobotStateHandle }> = [];
 
 function flagEnabled(): boolean {
@@ -20,8 +21,16 @@ export async function startRobots(): Promise<boolean> {
   // doc 81 Đợt 1B Task 5 fix round 1 (M1) — reconcile robot_jobs rows a previous process left
   // 'running' (died between the pre-motion row and its finalize). Runs even when the gateway
   // is off: a stale row would otherwise block its idempotency key forever. Never throws.
-  const { reconcileOrphanedRobotJobs } = await import("./robotCommandDispatcher");
+  // Fix round 2 — a crash + restart within the threshold leaves the row younger than the
+  // threshold at boot, so ONE more pass runs once the threshold has elapsed (unref'd timer:
+  // never keeps the process alive). Scheduled once per process.
+  const { reconcileOrphanedRobotJobs, orphanedRunningThresholdMs } = await import("./robotCommandDispatcher");
   await reconcileOrphanedRobotJobs();
+  if (!orphanSweepScheduled) {
+    orphanSweepScheduled = true;
+    const t = setTimeout(() => void reconcileOrphanedRobotJobs(), orphanedRunningThresholdMs());
+    if (typeof t.unref === "function") t.unref();
+  }
   if (!flagEnabled()) {
     console.log("[Robot] disabled (set ROBOT_GATEWAY_ENABLED=true to enable)");
     return false;

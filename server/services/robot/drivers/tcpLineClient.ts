@@ -121,8 +121,8 @@ export class TcpLineClient {
   ) {}
 
   /**
-   * Logically open: true after open() until close() / peer close / failed reconnect.
-   * A connection dropped by a timeout still counts (it is re-established lazily).
+   * Logically open: true after open() until close() or a failed reconnect. A connection
+   * dropped by a timeout or by the peer still counts (it is re-established lazily).
    */
   isConnected(): boolean {
     return this.connected;
@@ -172,15 +172,27 @@ export class TcpLineClient {
           reject(err);
         }
         if (!isCurrent()) return;
-        this.connected = false;
-        this.failAllPending(new TcpLineClosedError(`${this.name} socket error: ${err?.message ?? String(err)}`));
+        this.dropByPeer(new TcpLineClosedError(`${this.name} socket error: ${err?.message ?? String(err)}`));
       });
       socket.on("close", () => {
         if (!isCurrent()) return;
-        this.connected = false;
-        this.failAllPending(new TcpLineClosedError(`${this.name} socket closed`));
+        this.dropByPeer(new TcpLineClosedError(`${this.name} socket closed`));
       });
     });
+  }
+
+  /**
+   * doc 81 Đợt 1B Task 5 fix round 2 — the peer closed / the socket errored. The client stays
+   * LOGICALLY open but STALE: every pending request fails (line_connection_closed ⇒ outcome
+   * unknown), and the next send() — typically the abort's STOP — reconnects first through the
+   * same path as after a timeout (MELFA re-sends OPEN=). Only a failed reconnect makes the
+   * client disconnected. (It used to go dead here, so the STOP could never be delivered.)
+   */
+  private dropByPeer(err: Error): void {
+    this.socket = null;
+    this.rxBuf = "";
+    if (this.connected) this.stale = true;
+    this.failAllPending(err);
   }
 
   private onData(buf: Buffer | string): void {

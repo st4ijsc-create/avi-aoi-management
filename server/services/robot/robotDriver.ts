@@ -138,6 +138,7 @@ export const MOTION_OUTCOME_UNKNOWN_REASON_CODES: ReadonlySet<string> = new Set(
   "line_reply_timeout",     // TcpLineClient (MELFA / Delta): no reply line in time
   "line_connection_closed", // TcpLineClient: peer closed / socket error while a command was pending
   "rmi_reply_timeout",      // FANUC RMI: no reply packet in time
+  "rmi_connection_closed",  // FANUC RMI: socket dropped while a request was pending
   "tm_reply_timeout",       // Techman Listen Node (Task 4 classification)
   "tm_connection_closed",   // Techman Listen Node closed before a complete reply
 ]);
@@ -158,16 +159,20 @@ export class RobotJobFencedError extends Error {
 
 /**
  * Abort epoch shared by every robot driver. `abort()` calls `bump()` FIRST (synchronously,
- * before its own stop goes out); `runJob()` calls `capture()` at its start and invokes the
+ * before its own stop goes out); `runJob()` calls `capture(job)` at its start and invokes the
  * returned guard immediately before every socket write — a changed epoch throws
  * {@link RobotJobFencedError}, so no motion byte can follow the stop.
+ *
+ * Fix round 2 — the invariant is "no MOTION byte after a STOP", so an `abort` job gets a
+ * no-op guard: a second abort() must never fence the first abort's STOP.
  */
 export class AbortFence {
   private epoch = 0;
   bump(): void {
     this.epoch++;
   }
-  capture(): () => void {
+  capture(job: RobotJobSpec): () => void {
+    if (job.jobType === "abort") return () => undefined;
     const at = this.epoch;
     return () => {
       if (this.epoch !== at) throw new RobotJobFencedError();

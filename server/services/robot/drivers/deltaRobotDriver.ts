@@ -356,7 +356,7 @@ export class DeltaDriver implements RobotDriver {
   async runJob(job: RobotJobSpec): Promise<RobotJobResult> {
     if (!this.connected || !this.client) return { ok: false, status: "failed", error: "not connected" };
     // doc 81 Đợt 1B Task 5 fix round 1 — abort fence (see MitsubishiDriver.runJob).
-    const guard = this.fence.capture();
+    const guard = this.fence.capture(job);
 
     const isAbort = job.jobType === "abort";
     const { cmd, args } = isAbort ? { cmd: "STOP", args: [] as Array<string | number> } : buildDeltaMotion(job);

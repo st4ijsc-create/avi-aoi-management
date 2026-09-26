@@ -185,3 +185,31 @@ describe("TcpLineClient — đóng kết nối khi lệnh đang chờ mang reaso
   });
 });
 
+describe("TcpLineClient — peer đóng ⇒ client 'cũ' (nối lại được), không chết (fix round 2)", () => {
+  it("sau khi peer đóng giữa lệnh, lần gửi kế tiếp nối lại (chạy onReconnect) và nhận đúng reply", async () => {
+    const c = await openClient({
+      onReconnect: async (client) => {
+        await client.send("HELLO\r", 1000);
+      },
+    });
+    await within(c.send("DIE\r", 2000), 3000).catch(() => undefined);
+    expect(c.isConnected()).toBe(true);
+    const b = await within(c.send("B\r", 1000), 3000);
+    expect(b).toBe("B-REPLY");
+    expect(server.perConnection.length).toBe(2);
+    expect(server.perConnection[1]).toEqual(["HELLO", "B"]);
+  });
+
+  it("nối lại THẤT BẠI (server tắt) ⇒ lúc đó mới báo mất kết nối", async () => {
+    const lone = await startSequentialLineServer({});
+    const c = new TcpLineClient("lone");
+    clients.push(c);
+    await c.open("127.0.0.1", lone.port, 500);
+    await lone.close();
+    // server tắt (đóng socket đang mở) ⇒ client "cũ"; lần gửi sau phải thử nối lại và thất bại
+    await new Promise((r) => setTimeout(r, 50));
+    await expect(within(c.send("X\r", 500), 3000)).rejects.toBeTruthy();
+    expect(c.isConnected()).toBe(false);
+  });
+});
+
