@@ -41,6 +41,8 @@ import { registerLineRoutes } from "./lines";
 import { registerOrdersLifecycleRoutes } from "./ordersLifecycle";
 import { registerErpOauthRoutes } from "./erpOauth";
 import { mtlsGuard } from "./erpMtls";
+import { mayCuaKhoa, kiemMauTelemetryThuocMay, kiemMachineCodeThuocMay, nemLoiIngest } from "./ingestRangBuoc";
+import { otIngestHttpStatus } from "../../_core/otIngestRoute";
 import {
   getCapabilitiesForMachine,
   type EquipmentCapability,
@@ -341,6 +343,9 @@ export function createV1Router(): Router {
     requireScope(API_SCOPES.INGEST_WRITE),
     wrap(async (req, res) => {
       const body = (req.body ?? {}) as Record<string, unknown>;
+      // doc 81 Đợt 1B Task 8 — khoá gắn máy chỉ ghi cho CHÍNH máy đó (ingestRangBuoc.ts).
+      const may = await mayCuaKhoa(req.apiPrincipal);
+      if (may) kiemMachineCodeThuocMay(body, may);
       // Reuse the tRPC machineApi.submitInspection caller (same validation/side-effects).
       const { appRouter } = await import("../../routers");
       const { createContext } = await import("../../_core/context");
@@ -359,9 +364,9 @@ export function createV1Router(): Router {
         });
         sendOk(res, result, 201);
       } catch (err) {
-        const message = err instanceof Error ? err.message : String(err);
-        // tRPC validation / auth errors → 400 (structured), not a crash.
-        throw new ApiHttpError(400, "ingest_failed", message);
+        // doc 81 Đợt 1B Task 8 — mã đúng nghĩa (ingestLoiHttp): dữ liệu 400 · 401/403 · 429 +
+        // Retry-After · DB/hạ tầng 503. Trước: MỌI lỗi 400 ⇒ SDK vứt bản ghi khi DB chỉ chớp.
+        nemLoiIngest(res, err);
       }
     }),
   );
@@ -375,6 +380,9 @@ export function createV1Router(): Router {
     requireScope(API_SCOPES.INGEST_WRITE),
     wrap(async (req, res) => {
       const body = (req.body ?? {}) as Record<string, unknown>;
+      // doc 81 Đợt 1B Task 8 — khoá gắn máy chỉ ghi cho CHÍNH máy đó (ingestRangBuoc.ts).
+      const may = await mayCuaKhoa(req.apiPrincipal);
+      if (may) kiemMachineCodeThuocMay(body, may);
       const { appRouter } = await import("../../routers");
       const { createContext } = await import("../../_core/context");
       const ctx = await createContext({ req: req as never, res: res as never });
@@ -404,9 +412,9 @@ export function createV1Router(): Router {
         });
         sendOk(res, result, 201);
       } catch (err) {
-        const message = err instanceof Error ? err.message : String(err);
-        // tRPC validation / auth errors → 400 (structured), not a crash.
-        throw new ApiHttpError(400, "ingest_failed", message);
+        // doc 81 Đợt 1B Task 8 — ĐO (BE3 §L4): mọi lỗi (kể cả DB sập, 429) từng thành 400 ⇒ SDK
+        // coi 4xx là vĩnh viễn và VỨT bản ghi. Nay: dữ liệu 400 · 429 + Retry-After · DB 503.
+        nemLoiIngest(res, err);
       }
     }),
   );
@@ -426,17 +434,43 @@ export function createV1Router(): Router {
         throw new ApiHttpError(400, "bad_request", "Body must be { samples: [ ... ] } (or a bare array) with at least one sample.");
       }
       const samples = rawSamples.map(toCanonicalSample);
-      const { ingestTelemetry } = await import("../../services/telemetryBus");
-      const accepted = await ingestTelemetry(samples);
-      sendOk(
-        res,
-        {
-          accepted,
-          received: samples.length,
-          machine: req.apiPrincipal?.kind === "machine" ? req.apiPrincipal.name : undefined,
-        },
-        202,
-      );
+      // doc 81 Đợt 1B Task 8 — ĐO (BE3 §L4): khoá của ESP32 ghi được telemetry cho SCRW-SIM-01
+      // vì body quyết định deviceId/machineId. Khoá gắn máy ⇒ mọi mẫu phải thuộc máy ấy, lệch ⇒
+      // 403 cả lô, KHÔNG ghi dòng nào (luật đầy đủ: ingestRangBuoc.ts).
+      const may = await mayCuaKhoa(req.apiPrincipal);
+      if (may) await kiemMauTelemetryThuocMay(samples, may);
+      // Sổ sách từng mẫu (T7) + hợp đồng trung thực của /api/ot/ingest: không bao giờ báo thành
+      // công khi accepted < received. Thành công ĐỦ giữ nguyên 202 + thân cũ (máy pilot không đổi).
+      const { ingestTelemetryDetailed } = await import("../../services/telemetryBus");
+      const result = await ingestTelemetryDetailed(samples);
+      const machine = req.apiPrincipal?.kind === "machine" ? req.apiPrincipal.name : undefined;
+      const status = otIngestHttpStatus(result);
+      if (status === 200) {
+        sendOk(res, { accepted: result.accepted, received: result.received, machine }, 202);
+        return;
+      }
+      const details = {
+        accepted: result.accepted,
+        received: result.received,
+        rejectedCount: result.rejected.length,
+        rejected: result.rejected,
+        machine,
+      };
+      if (status === 207) {
+        sendError(
+          res,
+          207,
+          "partial",
+          `Stored ${result.accepted}/${result.received} samples — see rejected[] (db_error ⇒ retry those; others will never be stored).`,
+          details,
+        );
+        return;
+      }
+      if (status === 503) {
+        sendError(res, 503, "db_unavailable", "Database unavailable — retry.", details);
+        return;
+      }
+      sendError(res, 400, "all_rejected", "Every sample was rejected — nothing stored.", details);
     }),
   );
 

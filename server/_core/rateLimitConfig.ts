@@ -79,7 +79,12 @@ export const OT_INGEST_RATE_LIMIT = {
  * `/api` limiter can `skip` EXACTLY these paths while the dedicated ingest limiter
  * mounts on them — the exemption and the high tier can never drift apart.
  */
-export const OT_INGEST_PATHS = ["/api/ot/ingest"] as const;
+//
+// doc 81 Đợt 1B Task 8 — `/api/v1/ingest` (telemetry · process-result · inspection: đường doc 61
+// hướng dẫn thiết bị) ĐO được 429 sau 300 request/phút vì rơi vào limiter trình duyệt (BE3 §L4:
+// 47.952/48.252 bị 429). Nay đi CÙNG tầng OT (khoá theo credential đã băm, OT_INGEST_RATE_MAX).
+// Xác thực vẫn do `requireScope` của router v1 (khoá thiếu/sai ⇒ 401 trước mọi truy cập ghi).
+export const OT_INGEST_PATHS = ["/api/ot/ingest", "/api/v1/ingest"] as const;
 
 /** True when a request targets the high-throughput OT ingest tier (query-string safe). */
 export function isOtIngestRequest(req: Request): boolean {

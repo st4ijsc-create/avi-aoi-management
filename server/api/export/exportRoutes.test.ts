@@ -28,6 +28,10 @@ const h = vi.hoisted(() => ({
   expectedOverride: null as number | null,
 }));
 
+// doc 81 Đợt 1B Task 8 — "MACHINE_KEY" là khoá plaintext `machines.apiKey`; resolvePrincipal nay tôn trọng
+// MACHINE_SHARED_KEY_ALLOWED (mặc định "deny" ⇒ 401). Tệp này đo SCOPE của máy-principal nên mở cờ.
+process.env.MACHINE_SHARED_KEY_ALLOWED = "true";
+
 // Master key: only "MASTER" is valid in this test.
 vi.mock("../../_core/masterKey", () => ({
   isValidMasterKey: (k: string | undefined | null) => k === "MASTER",
