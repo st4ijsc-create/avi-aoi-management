@@ -35,7 +35,7 @@ import rateLimit, {
   type Store,
 } from "express-rate-limit";
 import { createHash } from "crypto";
-import type { Request } from "express";
+import type { NextFunction, Request, Response } from "express";
 import Redis from "ioredis";
 import { COOKIE_NAME } from "@shared/const";
 
@@ -360,9 +360,34 @@ function bodyKeyEnabled(): boolean {
 }
 
 /**
+ * The bearer / x-api-key credential EXACTLY as the auth layers read it — `api/v1/auth.ts`
+ * `extractKey` and `machineApiRouters.ts` `machineHeaderKey`: `Authorization: Bearer <tok>`
+ * (scheme case-insensitive, token trimmed) FIRST, then `X-API-Key` (trimmed). Exported for tests.
+ */
+export function headerCredentials(req: Request): { bearer: string | null; xApiKey: string | null } {
+  let bearer: string | null = null;
+  const auth = req.headers?.authorization;
+  if (typeof auth === "string" && /^bearer\s+/i.test(auth)) {
+    const tok = auth.replace(/^bearer\s+/i, "").trim();
+    if (tok) bearer = tok.slice(0, MAX_CREDENTIAL_LEN);
+  }
+  const x = req.headers?.["x-api-key"];
+  const xApiKey = typeof x === "string" && x.trim() ? x.trim().slice(0, MAX_CREDENTIAL_LEN) : null;
+  return { bearer, xApiKey };
+}
+
+/**
  * The credential-derived bucket key, or null when the request carries no credential
- * at all. Order: x-api-key header > Bearer > session cookie > body apiKey >
+ * at all. Order: Bearer > x-api-key header > session cookie > body apiKey >
  * query apiKey > machineCode. Credentials are hashed — never stored/logged raw.
+ *
+ * doc 81 Đợt 1B Task 8 fix round 1 — the bucket MUST follow the credential that AUTH uses,
+ * otherwise a client authenticates with `Bearer K` while rotating a random `X-API-Key` per
+ * request and gets a fresh bucket every time. Header precedence therefore mirrors
+ * `headerCredentials` (bearer first, case-insensitive), and on the MACHINE data plane (OT ingest
+ * + allowlisted machine procedures — which never authenticate by session) the body/query key
+ * outranks a session cookie for the same reason. `credentialConflictGuard` additionally 400s a
+ * request that carries two DIFFERENT credentials.
  *
  * doc 51 R6: the header-only version silently fell through to the client IP for
  * machines that send their key in the tRPC BODY (`{json:{apiKey}}`) or the query
@@ -372,33 +397,65 @@ function bodyKeyEnabled(): boolean {
  * keeps the SAME bucket identity instead of being double-counted.
  */
 function credentialKey(req: Request): string | null {
-  const apiKey = req.headers["x-api-key"];
-  if (typeof apiKey === "string" && apiKey.length > 0) return `key:${hashToken(apiKey)}`;
+  const { bearer, xApiKey } = headerCredentials(req);
+  if (bearer) return `bearer:${hashToken(bearer)}`;
+  if (xApiKey) return `key:${hashToken(xApiKey)}`;
 
-  const auth = req.headers.authorization;
-  if (typeof auth === "string" && auth.startsWith("Bearer ") && auth.length > 7) {
-    return `bearer:${hashToken(auth.slice(7))}`;
+  const sessionKey = (): string | null => {
+    const cookies = req.headers?.cookie;
+    if (typeof cookies === "string" && cookies.length > 0) {
+      const m = cookies.match(new RegExp(`(?:^|;\\s*)${COOKIE_NAME}=([^;]+)`));
+      if (m?.[1]) return `sess:${hashToken(m[1])}`;
+    }
+    return null;
+  };
+  const machinePlane = isOtIngestRequest(req) || isMachineIngestRequest(req);
+  if (!machinePlane) {
+    const sess = sessionKey();
+    if (sess) return sess;
   }
 
-  const cookies = req.headers.cookie;
-  if (typeof cookies === "string" && cookies.length > 0) {
-    const m = cookies.match(new RegExp(`(?:^|;\\s*)${COOKIE_NAME}=([^;]+)`));
-    if (m?.[1]) return `sess:${hashToken(m[1])}`;
+  if (bodyKeyEnabled()) {
+    try {
+      const q = req.query as Record<string, unknown> | undefined;
+      const bodyKey = pickFromBody(req.body, "apiKey") ?? cleanCredential(q?.apiKey);
+      if (bodyKey) return `key:${hashToken(bodyKey)}`;
+      // machineCode-only is a WEAK auth path (machineAuthService) but still identifies a
+      // single machine — far better than collapsing the whole factory onto one IP bucket.
+      const code = pickFromBody(req.body, "machineCode") ?? cleanCredential(q?.machineCode);
+      if (code) return `mcode:${hashToken(code)}`;
+    } catch {
+      // Key extraction must NEVER break the limiter — fall through to the IP bucket.
+    }
   }
+  return machinePlane ? sessionKey() : null;
+}
 
-  if (!bodyKeyEnabled()) return null;
+/**
+ * doc 81 Đợt 1B Task 8 fix round 1 — a request carrying two DIFFERENT credentials among
+ * `Authorization: Bearer`, `X-API-Key` and the body `apiKey` is rejected with 400 BEFORE any
+ * limiter counts it: the limiter and the auth layer must never be able to disagree about who
+ * is calling. Same value in several places (the SDKs send `Bearer K` + `X-API-Key: K`, the
+ * heartbeat sends header + body) passes. Mounted with the limiters in `_core/index.ts`.
+ */
+export function credentialConflictGuard(req: Request, res: Response, next: NextFunction): void {
+  let distinct = 0;
   try {
-    const q = req.query as Record<string, unknown> | undefined;
-    const bodyKey = pickFromBody(req.body, "apiKey") ?? cleanCredential(q?.apiKey);
-    if (bodyKey) return `key:${hashToken(bodyKey)}`;
-    // machineCode-only is a WEAK auth path (machineAuthService) but still identifies a
-    // single machine — far better than collapsing the whole factory onto one IP bucket.
-    const code = pickFromBody(req.body, "machineCode") ?? cleanCredential(q?.machineCode);
-    if (code) return `mcode:${hashToken(code)}`;
+    const { bearer, xApiKey } = headerCredentials(req);
+    const bodyKey = pickFromBody(req.body, "apiKey");
+    distinct = new Set([bearer, xApiKey, bodyKey].filter((v): v is string => !!v)).size;
   } catch {
-    // Key extraction must NEVER break the limiter — fall through to the IP bucket.
+    distinct = 0; // extraction must never break the request path
   }
-  return null;
+  if (distinct > 1) {
+    res.status(400).json({
+      ok: false,
+      code: "conflicting_credentials",
+      error: "Request carries more than one different credential (Authorization Bearer / X-API-Key / body apiKey) — send exactly one.",
+    });
+    return;
+  }
+  next();
 }
 
 /** True when the request carries an identifying credential (i.e. is not IP-keyed). */
@@ -407,8 +464,9 @@ export function hasCredentialKey(req: Request): boolean {
 }
 
 /**
- * Per-client key for the general API limiter: API-key > bearer token >
- * session cookie > body/query machine credential > IP. Credentials are hashed —
+ * Per-client key for the general API limiter: bearer token > API-key >
+ * session cookie > body/query machine credential > IP (machine data plane: body/query
+ * credential before the session cookie — see credentialKey). Credentials are hashed —
  * never stored/logged raw. The IP fallback is deliberately UN-prefixed (bare
  * ipKeyGenerator output) so it stays compatible with pre-B6 behaviour
  * (`limiter.resetKey("<ip>")`). Exported for tests.

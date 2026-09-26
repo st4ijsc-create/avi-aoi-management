@@ -38,9 +38,11 @@ static const char* SERVER_URL  = "https://factory.local:5000";  // <-- KHÔNG k�
 // Khóa per-machine mk_ (do admin cấp qua claim/enroll — xem ghi chú đầu file).
 static const char* MK_KEY      = "mk_live_XXXXXXXXXXXXXXXX";     // <-- dán mk_ vào đây
 
-// Định danh thiết bị (1 gateway có thể forward nhiều deviceId; server tự resolve máy).
-static const char* DEVICE_ID   = "esp32-ws3-01";                // <-- id cảm biến/trạm
-static const char* MACHINE_CODE = "IOT-WS3";                    // (tùy chọn) mã trạm
+// Định danh: khoá mk_ CHỈ ghi được cho CHÍNH máy của nó. deviceId (nếu gửi) PHẢI đúng mã máy
+// (machines.code) của khoá — khác ⇒ server trả 403 cả lô, không lưu mẫu nào (doc 81 Đợt 1B Task 8).
+// Nhiều cảm biến ⇒ mỗi cảm biến là một máy riêng với mk_ riêng (không forward deviceId khác qua 1 khoá).
+static const char* MACHINE_CODE = "IOT-WS3";                    // <-- mã máy của khoá mk_ ở trên
+static const char* DEVICE_ID   = MACHINE_CODE;                  // = mã máy (bắt buộc khớp khoá)
 
 // Múi giờ để đóng dấu ts. Việt Nam = GMT+7, KHÔNG DST.
 static const long  GMT_OFFSET_SEC = 7L * 3600L;                 // <-- đổi nếu khác múi giờ

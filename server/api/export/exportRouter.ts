@@ -32,7 +32,7 @@ import { and, asc, eq, exists, gt, gte, inArray, like, lte, sql, type SQL } from
 import { apiKeyGenerator } from "../../_core/rateLimitConfig";
 import { resolvePrincipal, type ApiPrincipal } from "../v1/auth";
 import { API_SCOPES } from "../v1/scopes";
-import { scopeSatisfied } from "../v1/scopes";
+import { scopeSatisfied, type ApiScope } from "../v1/scopes";
 import {
   TENANT_SCOPE_UNDECLARED_CODE,
   TENANT_SCOPE_UNDECLARED_MESSAGE,
@@ -184,7 +184,9 @@ export async function authenticateExportRequest(
   if (key) {
     let apiPrincipal: ApiPrincipal | null = null;
     try {
-      apiPrincipal = await resolvePrincipal(key);
+      // doc 81 Đợt 1B Task 8 fix round 1 — truyền scope yêu cầu: quyết định khoá dùng chung plaintext
+      // (`decideSharedMachineKey`, chính sách read-only đọc scope) và sổ weak-auth ghi ĐÚNG endpoint.
+      apiPrincipal = await resolvePrincipal(key, requiredScope as ApiScope);
     } catch {
       apiPrincipal = null;
     }

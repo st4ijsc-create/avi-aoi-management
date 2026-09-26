@@ -433,12 +433,13 @@ export function createV1Router(): Router {
       if (!Array.isArray(rawSamples) || rawSamples.length === 0) {
         throw new ApiHttpError(400, "bad_request", "Body must be { samples: [ ... ] } (or a bare array) with at least one sample.");
       }
-      const samples = rawSamples.map(toCanonicalSample);
+      let samples = rawSamples.map(toCanonicalSample);
       // doc 81 Đợt 1B Task 8 — ĐO (BE3 §L4): khoá của ESP32 ghi được telemetry cho SCRW-SIM-01
-      // vì body quyết định deviceId/machineId. Khoá gắn máy ⇒ mọi mẫu phải thuộc máy ấy, lệch ⇒
-      // 403 cả lô, KHÔNG ghi dòng nào (luật đầy đủ: ingestRangBuoc.ts).
+      // vì body quyết định deviceId/machineId. Khoá gắn máy ⇒ machineId/deviceId (nếu có) phải
+      // KHỚP CHÍNH XÁC máy ấy, lệch ⇒ 403 cả lô, KHÔNG ghi dòng nào; hợp lệ ⇒ GHIM machineId của
+      // khoá lên mọi mẫu để bus không tự quy máy (R16, luật đầy đủ: ingestRangBuoc.ts).
       const may = await mayCuaKhoa(req.apiPrincipal);
-      if (may) await kiemMauTelemetryThuocMay(samples, may);
+      if (may) samples = kiemMauTelemetryThuocMay(samples, may);
       // Sổ sách từng mẫu (T7) + hợp đồng trung thực của /api/ot/ingest: không bao giờ báo thành
       // công khi accepted < received. Thành công ĐỦ giữ nguyên 202 + thân cũ (máy pilot không đổi).
       const { ingestTelemetryDetailed } = await import("../../services/telemetryBus");

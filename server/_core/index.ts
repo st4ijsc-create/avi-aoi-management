@@ -55,7 +55,7 @@ import { uyQuyenDuongDanAnh } from "../routes/_uyQuyenAnh";
 import logger, { installConsoleBridge } from "../logger";
 import { correlationRequestMiddleware } from "./correlationMiddleware";
 import { livenessProbe, readinessProbe } from "./healthProbes";
-import { createApiLimiter, createAuthLimiter, createMachineIngestLimiter, createOtIngestLimiter, OT_INGEST_PATHS } from "./rateLimitConfig";
+import { createApiLimiter, createAuthLimiter, createMachineIngestLimiter, createOtIngestLimiter, credentialConflictGuard, OT_INGEST_PATHS } from "./rateLimitConfig";
 import type { CanonicalSample, TelemetryProtocol, TelemetryQuality } from "../services/telemetryBus";
 import { assertVramEnforcementPolicy } from "../services/vram/vramBroker";
 import { listenThenStartOt } from "../services/ot/backgroundStart";
@@ -326,7 +326,10 @@ async function startServer() {
   // the general /api limiter; the general limiter `skip`s these exact paths
   // (OT_INGEST_PATHS) so the two never double-count. Tune via OT_INGEST_RATE_MAX.
   const otIngestLimiter = createOtIngestLimiter();
-  app.use([...OT_INGEST_PATHS], otIngestLimiter);
+  // doc 81 Đợt 1B Task 8 fix round 1 — credentialConflictGuard chạy TRƯỚC limiter: request mang hai
+  // credential KHÁC nhau (Bearer / X-API-Key / body apiKey) ⇒ 400, để bucket giới hạn và lớp xác thực
+  // không thể hiểu hai người gọi khác nhau (xoay X-API-Key ngẫu nhiên để thoát bucket).
+  app.use([...OT_INGEST_PATHS], credentialConflictGuard, otIngestLimiter);
   // doc 51 R6 — DEDICATED machine data-plane tier (CASE #2/#9 mất dữ liệu). AVI/AOI
   // machines submit inspections via /api/trpc/machineApi.* and /api/machine/*, which
   // both rode the 300/60 BROWSER bucket; worse, a machine sending its key in the tRPC
@@ -339,7 +342,7 @@ async function startServer() {
   // double-counting). Tune via MACHINE_INGEST_RATE_MAX; RATE_LIMIT_BODY_KEY=false
   // restores pre-R6 header-only keying.
   const machineIngestLimiter = createMachineIngestLimiter();
-  app.use('/api/', machineIngestLimiter);
+  app.use('/api/', credentialConflictGuard, machineIngestLimiter);
   app.use('/api/', apiLimiter);
   app.use('/trpc/', apiLimiter);
 

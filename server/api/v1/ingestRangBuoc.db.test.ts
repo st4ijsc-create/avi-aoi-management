@@ -61,9 +61,13 @@ const METRIC = `t8.${RUN}`;
 let sql: ReturnType<typeof postgres>;
 let server: Server;
 let base = "";
-const ids = { factory: 0, workshop: 0, line: 0, station: 0, a: 0, b: 0, c: 0 };
+const ids = { factory: 0, workshop: 0, line: 0, station: 0, a: 0, b: 0, c: 0, gw: 0 };
+/** Máy dựng thêm trong từng ca (đổi mã / tombstone) — dọn ở afterAll. */
+const idsThem: number[] = [];
+const CODE_GW = `${RUN}-GW`; // máy IOT_GATEWAY — lỗ đã biết của /api/ot/ingest (R17)
 let keyA = "";
 let keyB = "";
+let keyGw = "";
 
 async function post(p: string, key: string | null, body: unknown) {
   const headers: Record<string, string> = { "content-type": "application/json" };
@@ -128,17 +132,26 @@ describe.skipIf(!DB_URL)("doc 81 Đợt 1B Task 8 — /api/v1/ingest: khoá ↔ 
     const { issueMachineKey } = await import("../../services/machineAuthService");
     keyA = (await issueMachineKey({ machineId: ids.a, name: `${RUN}-A` })).plaintextKey;
     keyB = (await issueMachineKey({ machineId: ids.b, name: `${RUN}-B` })).plaintextKey;
+    ids.gw = await one(sql`
+      INSERT INTO machines ("stationId", code, name, "machineType", "isActive")
+      VALUES (${ids.station}, ${CODE_GW}, 'T8 gateway', 'IOT_GATEWAY', true) RETURNING id`);
+    keyGw = (await issueMachineKey({ machineId: ids.gw, name: `${RUN}-GW` })).plaintextKey;
 
     // App dựng theo ĐÚNG thứ tự middleware của _core/index.ts.
     const rl = await import("../../_core/rateLimitConfig");
     const { createV1Router } = await import("./router");
     const app = express();
     app.use(express.json({ limit: "25mb" }));
-    app.use([...rl.OT_INGEST_PATHS], rl.createOtIngestLimiter());
-    app.use("/api/", rl.createMachineIngestLimiter());
+    app.use([...rl.OT_INGEST_PATHS], rl.credentialConflictGuard, rl.createOtIngestLimiter());
+    app.use("/api/", rl.credentialConflictGuard, rl.createMachineIngestLimiter());
     const apiLimiter = rl.createApiLimiter();
     app.use("/api/", apiLimiter);
     app.use("/trpc/", apiLimiter);
+    // POST /api/ot/ingest — ĐÚNG handler + deps mà _core/index.ts gắn (R17).
+    const { createOtIngestHandler } = await import("../../_core/otIngestRoute");
+    const { authenticateMachine } = await import("../../services/machineAuthService");
+    const { ingestTelemetryDetailed } = await import("../../services/telemetryBus");
+    app.post("/api/ot/ingest", createOtIngestHandler({ authenticateMachine, ingestTelemetryDetailed }));
     app.use("/api/v1", createV1Router());
     await new Promise<void>((resolve) => {
       server = createServer(app).listen(0, "127.0.0.1", () => resolve());
@@ -157,7 +170,7 @@ describe.skipIf(!DB_URL)("doc 81 Đợt 1B Task 8 — /api/v1/ingest: khoá ↔ 
   afterAll(async () => {
     if (server) await new Promise<void>((resolve) => server.close(() => resolve()));
     if (!sql) return;
-    const machineIds = [ids.a, ids.b, ids.c].filter((x) => x > 0);
+    const machineIds = [ids.a, ids.b, ids.c, ids.gw, ...idsThem].filter((x) => x > 0);
     await sql`DELETE FROM ot_telemetry WHERE metric LIKE ${"t8." + RUN + "%"}`;
     await sql`DELETE FROM process_results WHERE "serialNumber" LIKE ${RUN + "%"}`;
     await sql`DELETE FROM process_idempotency_keys WHERE "machineId" = ANY(${machineIds})`;
@@ -224,21 +237,75 @@ describe.skipIf(!DB_URL)("doc 81 Đợt 1B Task 8 — /api/v1/ingest: khoá ↔ 
       expect(await demTelemetry(ids.a, m)).toBe(2);
     });
 
-    it("khoá A, không deviceId/machineId (SDK không biết mã) ⇒ 202 như cũ", async () => {
+    it("khoá A, không deviceId/machineId (SDK không biết mã) ⇒ 202, dòng GHIM về máy A (R16 — không còn NULL)", async () => {
       const m = `${METRIC}.bare`;
       const r = await post("/api/v1/ingest/telemetry", keyA, [{ metric: m, value: 1 }]);
       expect(r.status).toBe(202);
-      expect(await demTelemetryTatCa(m)).toBe(1);
+      expect(await demTelemetry(ids.a, m)).toBe(1);
+      expect(await demTelemetry(null, m)).toBe(0);
     });
 
-    it("khoá A, deviceId là mã CẢM BIẾN không phải máy nào (doc 61 §5.2) ⇒ 202, dòng KHÔNG quy về máy nào", async () => {
+    it("★ R16 nghiêm: khoá A, deviceId KHÔNG phải mã máy nào (mã cảm biến) ⇒ 403 cả lô, không dòng nào", async () => {
       const m = `${METRIC}.sensor`;
       const r = await post("/api/v1/ingest/telemetry", keyA, {
         samples: [{ deviceId: `${RUN}-sensor-not-a-machine`, metric: m, value: 7 }],
       });
+      expect(r.status).toBe(403);
+      expect(r.body.error.details.violations).toEqual([{ index: 0, field: "deviceId", value: `${RUN}-sensor-not-a-machine` }]);
+      expect(await demTelemetryTatCa(m)).toBe(0);
+    });
+
+    it("★ R16 (a) ĐỔI MÃ: cache bus còn trỏ mã cũ về máy cũ R ⇒ dòng của khoá N (mã mới = mã cũ của R) VẪN về N", async () => {
+      const code = `${RUN}-REN`;
+      const m = `${METRIC}.rename`;
+      const one = async (q: Promise<Array<{ id: number | string }>>) => Number((await q)[0].id);
+      const idR = await one(sql`
+        INSERT INTO machines ("stationId", code, name, "machineType", "isActive")
+        VALUES (${ids.station}, ${code}, 'T8 rename old owner', 'IOT_SENSOR', true) RETURNING id`);
+      idsThem.push(idR);
+      // Gieo cache bus THẬT: một mẫu deviceId=code, không machineId ⇒ bus quy code→R và cache VĨNH VIỄN.
+      const bus = await import("../../services/telemetryBus");
+      bus.clearMachineIdCache();
+      const seed = await bus.ingestTelemetryDetailed([
+        { deviceId: code, metric: `${m}.seed`, value: 1, protocol: "other", quality: "good" } as never,
+      ]);
+      expect(seed.accepted).toBe(1);
+      expect(await demTelemetry(idR, `${m}.seed`)).toBe(1); // cache đã trỏ code → R
+      // Đổi mã R, rồi một máy MỚI N nhận đúng mã cũ đó (uq_machines_code_active cho phép).
+      await sql`UPDATE machines SET code = ${code + "-old"} WHERE id = ${idR}`;
+      const idN = await one(sql`
+        INSERT INTO machines ("stationId", code, name, "machineType", "isActive")
+        VALUES (${ids.station}, ${code}, 'T8 rename new owner', 'IOT_SENSOR', true) RETURNING id`);
+      idsThem.push(idN);
+      const { issueMachineKey } = await import("../../services/machineAuthService");
+      const keyN = (await issueMachineKey({ machineId: idN, name: `${RUN}-N` })).plaintextKey;
+
+      const r = await post("/api/v1/ingest/telemetry", keyN, { samples: [{ deviceId: code, metric: m, value: 2 }] });
       expect(r.status).toBe(202);
-      expect(await demTelemetry(null, m)).toBe(1);
-      expect(await demTelemetry(ids.b, m)).toBe(0);
+      expect(await demTelemetry(idN, m)).toBe(1);
+      expect(await demTelemetry(idR, m)).toBe(0);
+    });
+
+    it("★ R16 (b) TOMBSTONE: máy đã ngừng mang CÙNG mã (tạo trước) ⇒ dòng của khoá D vẫn về D, không về tombstone", async () => {
+      const code = `${RUN}-TMB`;
+      const m = `${METRIC}.tomb`;
+      const one = async (q: Promise<Array<{ id: number | string }>>) => Number((await q)[0].id);
+      const idT = await one(sql`
+        INSERT INTO machines ("stationId", code, name, "machineType", "isActive")
+        VALUES (${ids.station}, ${code}, 'T8 tombstone', 'IOT_SENSOR', false) RETURNING id`);
+      idsThem.push(idT);
+      const idD = await one(sql`
+        INSERT INTO machines ("stationId", code, name, "machineType", "isActive")
+        VALUES (${ids.station}, ${code}, 'T8 live', 'IOT_SENSOR', true) RETURNING id`);
+      idsThem.push(idD);
+      const { issueMachineKey } = await import("../../services/machineAuthService");
+      const keyD = (await issueMachineKey({ machineId: idD, name: `${RUN}-D` })).plaintextKey;
+      (await import("../../services/telemetryBus")).clearMachineIdCache();
+
+      const r = await post("/api/v1/ingest/telemetry", keyD, { samples: [{ deviceId: code, metric: m, value: 3 }] });
+      expect(r.status).toBe(202);
+      expect(await demTelemetry(idD, m)).toBe(1);
+      expect(await demTelemetry(idT, m)).toBe(0);
     });
 
     it("khoá B ghi cho CHÍNH B ⇒ 202 (ràng buộc không chặn oan máy kia)", async () => {
@@ -266,6 +333,48 @@ describe.skipIf(!DB_URL)("doc 81 Đợt 1B Task 8 — /api/v1/ingest: khoá ↔ 
       const r = await post("/api/v1/ingest/telemetry", keyA, { samples: [{ deviceId: CODE_A, metric: `${METRIC}.bad`, value: 1, ts: "rác" }] });
       expect(r.status).toBe(400);
       expect(r.body.error.code).toBe("all_rejected");
+    });
+  });
+
+  // ── 1b. R17 — cùng ràng buộc ở POST /api/ot/ingest ────────────────────────────────────────
+  describe("/api/ot/ingest (R17)", () => {
+    const postOt = async (key: string, body: unknown) => {
+      const res = await fetch(`${base}/api/ot/ingest`, {
+        method: "POST",
+        headers: { "content-type": "application/json", "x-api-key": key },
+        body: JSON.stringify(body),
+      });
+      return { status: res.status, body: await res.json() };
+    };
+
+    it("★ khoá mk_ của A gửi deviceId = mã B ⇒ 403, KHÔNG dòng nào", async () => {
+      const m = `${METRIC}.ot.x`;
+      const r = await postOt(keyA, { samples: [{ deviceId: CODE_B, metric: m, value: 1 }] });
+      expect(r.status).toBe(403);
+      expect(r.body.code).toBe("machine_mismatch");
+      expect(await demTelemetryTatCa(m)).toBe(0);
+    });
+
+    it("khoá A gửi machineId = B ⇒ 403, không dòng nào", async () => {
+      const m = `${METRIC}.ot.mid`;
+      const r = await postOt(keyA, { samples: [{ machineId: ids.b, metric: m, value: 1 }] });
+      expect(r.status).toBe(403);
+      expect(await demTelemetryTatCa(m)).toBe(0);
+    });
+
+    it("đường hợp lệ: khoá A, deviceId = mã A ⇒ 200 như cũ, dòng về A", async () => {
+      const m = `${METRIC}.ot.ok`;
+      const r = await postOt(keyA, { samples: [{ deviceId: CODE_A, metric: m, value: 1 }] });
+      expect(r.status).toBe(200);
+      expect(r.body).toEqual({ ok: true, accepted: 1, received: 1, machine: CODE_A });
+      expect(await demTelemetry(ids.a, m)).toBe(1);
+    });
+
+    it("LỖ ĐÃ BIẾT (ghi rõ trong mã): khoá của máy IOT_GATEWAY KHÔNG bị ràng buộc — chuyển tiếp deviceId khác vẫn 200", async () => {
+      const m = `${METRIC}.ot.gw`;
+      const r = await postOt(keyGw, { samples: [{ deviceId: CODE_A, metric: m, value: 1 }] });
+      expect(r.status).toBe(200);
+      expect(await demTelemetry(ids.a, m)).toBe(1);
     });
   });
 
@@ -393,7 +502,7 @@ describe.skipIf(!DB_URL)("doc 81 Đợt 1B Task 8 — /api/v1/ingest: khoá ↔ 
 
     it("_core/index.ts gắn limiter OT trên OT_INGEST_PATHS TRƯỚC limiter trình duyệt, và /api/v1 SAU cả hai", () => {
       const src = readFileSync(path.resolve(__dirname, "../../_core/index.ts"), "utf8");
-      const iOt = src.indexOf("app.use([...OT_INGEST_PATHS], otIngestLimiter)");
+      const iOt = src.indexOf("app.use([...OT_INGEST_PATHS], credentialConflictGuard, otIngestLimiter)");
       const iApi = src.indexOf("app.use('/api/', apiLimiter)");
       const iV1 = src.indexOf('app.use("/api/v1", createV1Router())');
       expect(iOt).toBeGreaterThan(0);

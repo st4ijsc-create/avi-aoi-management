@@ -13,9 +13,22 @@
  * Lý do loại (`reason`): invalid_ts · ts_too_far_future · contract_invalid · invalid_value · db_error.
  *
  * Xác thực: khoá theo máy, scope "ingest:write" — GIỮ NGUYÊN, không nới.
- * Module này chỉ import KIỂU từ telemetryBus/machineAuthService — không kéo tác dụng phụ nào lúc nạp.
+ * Module này chỉ import KIỂU từ telemetryBus/machineAuthService — không kéo tác dụng phụ nào lúc nạp
+ * (`api/v1/ingestRangBuoc` chỉ mang hàm thuần + lớp lỗi; truy cập DB của nó là import động).
+ *
+ * ★ doc 81 Đợt 1B Task 8 fix round 1 (R17) — RÀNG BUỘC khoá ↔ máy, cùng luật `/api/v1/ingest/telemetry`:
+ * credential đã xác thực là khoá CỦA MỘT MÁY (mk_, plaintext `machines.apiKey`, hoặc machineCode khi
+ * cờ cho phép) ⇒ `machineId`/`deviceId` (nếu có) phải khớp CHÍNH XÁC máy ấy, lệch ⇒ 403 cả lô, không
+ * ghi dòng nào; hợp lệ ⇒ GHIM `machineId` của khoá lên mọi mẫu (bus không tự quy máy từ deviceId).
+ * ⚠ LỖ ĐÃ BIẾT (cố ý để ngỏ, cần quyết định chủ dự án): máy loại `IOT_GATEWAY` KHÔNG bị ràng buộc —
+ * đây là đường "một credential gateway chuyển tiếp nhiều thiết bị" mà route này được thiết kế cho;
+ * repo chưa có danh sách thiết bị được phép theo gateway, nên một khoá gateway VẪN ghi được cho bất kỳ
+ * deviceId nào (bus quy máy theo `machines.code`). Khoá ak_/master không vào được route này
+ * (`authenticateMachine` chỉ nhận credential máy).
  */
 import type { Request, Response } from "express";
+import { ApiHttpError } from "../api/v1/envelope";
+import { kiemMauTelemetryThuocMay } from "../api/v1/ingestRangBuoc";
 import type {
   CanonicalSample,
   TelemetryIngestResult,
@@ -70,13 +83,16 @@ export function otIngestHttpStatus(r: TelemetryIngestResult): 200 | 207 | 400 | 
   return r.rejected.some((x) => x.reason === "db_error") ? 503 : 400;
 }
 
+/** Loại máy được coi là GATEWAY (chuyển tiếp nhiều thiết bị) — KHÔNG bị ràng buộc (lỗ đã biết, R17). */
+const MAY_GATEWAY: ReadonlySet<string> = new Set(["IOT_GATEWAY"]);
+
 export interface OtIngestDeps {
   authenticateMachine: (opts: {
     headerKey: string | null;
     apiKey: string | null;
     machineCode: string | null;
     scope: "ingest:write";
-  }) => Promise<{ machine: { code: string } }>;
+  }) => Promise<{ machine: { id: number; code: string; machineType?: string | null } }>;
   ingestTelemetryDetailed: (samples: CanonicalSample[]) => Promise<TelemetryIngestResult>;
 }
 
@@ -111,7 +127,11 @@ export function createOtIngestHandler(deps: OtIngestDeps) {
         scope: "ingest:write",
       });
 
-      const samples = rawSamples.map(toOtCanonicalSample);
+      let samples = rawSamples.map(toOtCanonicalSample);
+      // R17 — khoá của MỘT máy chỉ ghi cho chính máy đó (xem docblock; IOT_GATEWAY = lỗ đã biết).
+      if (!MAY_GATEWAY.has(String(auth.machine.machineType ?? ""))) {
+        samples = kiemMauTelemetryThuocMay(samples, { id: auth.machine.id, code: auth.machine.code });
+      }
       const result = await deps.ingestTelemetryDetailed(samples);
       const status = otIngestHttpStatus(result);
       const machine = auth.machine.code;
@@ -139,6 +159,10 @@ export function createOtIngestHandler(deps: OtIngestDeps) {
       return res.status(400).json({ ...common, code: "all_rejected", error: "Every sample was rejected — nothing stored" });
     } catch (error: any) {
       // Auth failures (TRPCError) → 401/403; DB down → 503; everything else → 500.
+      if (error instanceof ApiHttpError) {
+        const d = (error.details ?? {}) as Record<string, unknown>;
+        return res.status(error.status).json({ ok: false, code: error.code, error: error.message, ...d });
+      }
       const code = error?.code;
       if (code === "UNAUTHORIZED")
         return res.status(401).json({ ok: false, error: error?.message || "Unauthorized" });

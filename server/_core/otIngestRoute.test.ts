@@ -35,7 +35,9 @@ let authFail: "UNAUTHORIZED" | null = null;
 const authenticateMachine = async () => {
   authCalls += 1;
   if (authFail) throw Object.assign(new Error("Invalid API key"), { code: authFail });
-  return { machine: { code: "T7-GW" } };
+  // Task 8 fix round 1 (R17): máy thật luôn có id; "T7-GW" là GATEWAY (chuyển tiếp nhiều deviceId)
+  // ⇒ không bị ràng buộc khoá ↔ máy — các ca T7 ở đây đo sổ sách/mã HTTP, không đo ràng buộc.
+  return { machine: { id: 7007, code: "T7-GW", machineType: "IOT_GATEWAY" } };
 };
 
 let server: Server;

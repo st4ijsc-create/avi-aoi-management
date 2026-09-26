@@ -222,6 +222,26 @@ describe("/api/v1/ingest/process-result", () => {
     expect(r403.res.status).toBe(403);
   });
 
+  it("fix round 1 — NOT_IMPLEMENTED → 501, METHOD_NOT_SUPPORTED → 405, CLIENT_CLOSED_REQUEST → 499 (không 503 ⇒ không thử lại mãi)", async () => {
+    const { TRPCError } = await import("@trpc/server");
+    expect((await guiVoiLoi(new TRPCError({ code: "NOT_IMPLEMENTED", message: "x" }))).res.status).toBe(501);
+    expect((await guiVoiLoi(new TRPCError({ code: "METHOD_NOT_SUPPORTED", message: "x" }))).res.status).toBe(405);
+    expect((await guiVoiLoi(new TRPCError({ code: "CLIENT_CLOSED_REQUEST", message: "x" }))).res.status).toBe(499);
+  });
+
+  it("fix round 1 — khoá plaintext của máy đã NGỪNG (isActive=false khi tra lại theo id) → 401, không gọi submitProcessResult", async () => {
+    h.submitProcessResultMock.mockClear();
+    const dbm = await import("../../db");
+    vi.mocked(dbm.getMachineById).mockResolvedValueOnce({ ...MACHINE, isActive: false } as never);
+    const res = await call("/api/v1/ingest/process-result", {
+      key: "MACHINE_KEY",
+      method: "POST",
+      body: JSON.stringify(VALID_PROCESS),
+    });
+    expect(res.status).toBe(401);
+    expect(h.submitProcessResultMock).not.toHaveBeenCalled();
+  });
+
   it("★ khoá máy (AOI-01) khai machineCode của máy KHÁC → 403, submitProcessResult KHÔNG được gọi", async () => {
     h.submitProcessResultMock.mockClear();
     const res = await call("/api/v1/ingest/process-result", {
@@ -315,6 +335,24 @@ describe("/api/v1/ingest/telemetry (alias of POST /api/ot/ingest)", () => {
     });
     expect(res.status).toBe(403);
     expect(h.ingestTelemetryMock).not.toHaveBeenCalled();
+  });
+
+  it("★ R16 — khoá máy AOI-01: mẫu hợp lệ được GHIM machineId = 1 trước khi vào bus; deviceId lạ → 403", async () => {
+    h.ingestTelemetryMock.mockClear();
+    const ok = await call("/api/v1/ingest/telemetry", {
+      key: "MACHINE_KEY",
+      method: "POST",
+      body: JSON.stringify({ samples: [{ deviceId: "AOI-01", metric: "t", value: 1 }, { metric: "u", value: 2 }] }),
+    });
+    expect(ok.status).toBe(202);
+    const sent = h.ingestTelemetryMock.mock.calls[0][0] as Array<Record<string, unknown>>;
+    expect(sent.map((x) => x.machineId)).toEqual([1, 1]);
+    const bad = await call("/api/v1/ingest/telemetry", {
+      key: "MACHINE_KEY",
+      method: "POST",
+      body: JSON.stringify({ samples: [{ deviceId: "esp32-sensor-1", metric: "t", value: 1 }] }),
+    });
+    expect(bad.status).toBe(403);
   });
 
   it("khoá máy AOI-01 gửi deviceId = chính mã mình → 202 {accepted, received, machine}", async () => {

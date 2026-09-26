@@ -1,5 +1,6 @@
 /**
- * doc 81 Đợt 1B Task 8 — ingest `/api/v1/ingest/*`: RÀNG BUỘC khoá ↔ máy + mã HTTP ĐÚNG NGHĨA.
+ * doc 81 Đợt 1B Task 8 — ingest `/api/v1/ingest/*` (+ `/api/ot/ingest`, R17): RÀNG BUỘC khoá ↔ máy
+ * + mã HTTP ĐÚNG NGHĨA.
  *
  * ── ĐO (BE3 §L4) ────────────────────────────────────────────────────────────────────────────
  *   • khoá `mk_` của ESP32 ghi được telemetry cho `SCRW-SIM-01` (HTTP 200, dòng rơi vào máy khác):
@@ -7,23 +8,26 @@
  *   • process-result gộp MỌI lỗi (kể cả DB sập, 429) thành 400 ⇒ SDK coi 4xx là vĩnh viễn và VỨT
  *     bản ghi.
  *
- * ── LUẬT ─────────────────────────────────────────────────────────────────────────────────────
+ * ── LUẬT (R16 — NGHIÊM, fix round 1) ──────────────────────────────────────────────────────────
  * "Máy của khoá" (`mayCuaKhoa`) = máy mà credential thuộc về:
  *   • khoá `mk_` (hàng `api_keys` có `machineId`) → máy đó;
  *   • khoá plaintext `machines.apiKey` (khi `MACHINE_SHARED_KEY_ALLOWED` cho phép) → máy đó.
+ * Cả hai đều tra lại máy theo id (còn hoạt động không, mã HIỆN TẠI là gì); máy vắng/ngừng ⇒ 401.
  * Khoá KHÔNG gắn máy (MASTER_API_KEY, khoá chung `api_keys.machineId IS NULL`, token OAuth) giữ
  * nguyên hành vi cũ — repo KHÔNG có cơ chế "danh sách thiết bị được phép của gateway" nào (đã grep:
  * `api_keys`, `edge_nodes`, `apiKeyScope.ts` chỉ mang phạm vi TENANT), nên không bịa bảng mới.
  *
  * Với khoá gắn máy M (id, code), một request bị 403 và KHÔNG GHI GÌ nếu:
- *   telemetry — ∃ mẫu có `machineId` ≠ M.id; hoặc ∃ mẫu có `deviceId` ≠ M.code mà `deviceId` ấy là
- *               MÃ CỦA MỘT MÁY KHÁC đã đăng ký (`machines.code`, đúng khoá bus dùng để quy máy).
- *               `deviceId` không phải mã máy nào (mã cảm biến con, doc 61 §5.2) vẫn nhận — bus ghi
- *               `machineId` NULL, không quy về máy nào ⇒ không giả mạo được presence/OEE của ai.
+ *   telemetry — ∃ mẫu có `machineId` ≠ M.id, hoặc ∃ mẫu có `deviceId` (có mặt) ≠ M.code — so KHỚP
+ *               CHÍNH XÁC, không tra `machines`. Mẫu hợp lệ rồi bị GHIM `machineId = M.id`, nên bus
+ *               KHÔNG BAO GIỜ tự quy máy từ `deviceId` cho khoá gắn máy. Lý do (review fix round 1):
+ *               đường quy máy của bus (a) cache `deviceId→machineId` VĨNH VIỄN (máy đổi mã ⇒ mã cũ
+ *               vẫn trỏ máy cũ) và (b) `machines.code` chỉ duy nhất trong hàng ĐANG HOẠT ĐỘNG, bus
+ *               không lọc `isActive` và không ORDER BY ⇒ một máy đã ngừng cùng mã có thể "thắng".
+ *               Ghim theo khoá cắt cả hai đường; `deviceId` vẫn lưu nguyên văn trong dòng.
  *   inspection / process-result — body `machineCode` (nếu có) ≠ M.code. (Máy thật của bản ghi vốn đã
  *               theo header key trong `authenticateMachine`; trước bản vá, lời khai lệch bị lặng lẽ
  *               ghi sang máy của khoá — nay nói thẳng 403.)
- * Tra `machines` hỏng/DB vắng khi cần tra ⇒ 503 (fail-closed: không đoán "không phải máy nào").
  */
 import { TRPCError } from "@trpc/server";
 import { ZodError } from "zod";
@@ -36,39 +40,22 @@ export interface MayCuaKhoa {
   code: string;
 }
 
-async function dbHoac503() {
-  let db: Awaited<ReturnType<typeof import("../../db/connection").getDb>> | null = null;
-  try {
-    const { getDb } = await import("../../db/connection");
-    db = await getDb();
-  } catch {
-    db = null;
-  }
-  if (!db) throw new ApiHttpError(503, "db_unavailable", "Database unavailable — retry.");
-  return db;
-}
-
 /**
  * Máy mà credential của request thuộc về; `null` = khoá không gắn máy (hành vi cũ, không ràng buộc).
- * Khoá `mk_` trỏ tới máy đã xoá/ngừng ⇒ 401 (cùng kết luận `authenticateMachine`: machineInactiveOrMissing).
+ * Khoá `mk_` HOẶC khoá plaintext trỏ tới máy đã xoá/ngừng ⇒ 401 (cùng kết luận `authenticateMachine`:
+ * machineInactiveOrMissing). DB vắng/lỗi ⇒ 503 (không đoán).
  */
 export async function mayCuaKhoa(p: ApiPrincipal | undefined): Promise<MayCuaKhoa | null> {
   if (!p || p.machineId == null) return null;
-  if (p.kind === "machine") return { id: p.machineId, code: p.name };
-  const db = await dbHoac503();
-  const { machines } = await import("../../../drizzle/schema");
-  const { eq } = await import("drizzle-orm");
-  let rows: Array<{ id: number; code: string; isActive: boolean | null }>;
+  const { getMachineById, getDb } = await import("../../db");
+  let m: { id: number; code: string; isActive?: boolean | null } | undefined;
   try {
-    rows = await db
-      .select({ id: machines.id, code: machines.code, isActive: machines.isActive })
-      .from(machines)
-      .where(eq(machines.id, p.machineId))
-      .limit(1);
+    m = (await getMachineById(p.machineId)) as typeof m;
+    // getMachineById trả `undefined` CẢ khi DB vắng — tách hai trường hợp, đừng biến DB sập thành 401.
+    if (!m && !(await getDb())) throw new Error("db unavailable");
   } catch {
     throw new ApiHttpError(503, "db_unavailable", "Database unavailable — retry.");
   }
-  const m = rows[0];
   if (!m || m.isActive === false) {
     throw new ApiHttpError(401, "unauthorized", "Invalid API key (its machine is missing or inactive).");
   }
@@ -84,6 +71,7 @@ export interface ViPhamRangBuoc {
 /** Trần số vi phạm liệt kê trong phản hồi (một lô 20k mẫu sai không được thành 20k dòng JSON). */
 const VI_PHAM_TOI_DA = 20;
 
+/** Lỗi 403 ràng buộc — `ApiHttpError` (bề mặt /api/v1) mang `details` để route OT dựng thân riêng. */
 function nem403(may: MayCuaKhoa, viPham: ViPhamRangBuoc[]): never {
   throw new ApiHttpError(
     403,
@@ -94,45 +82,21 @@ function nem403(may: MayCuaKhoa, viPham: ViPhamRangBuoc[]): never {
 }
 
 /**
- * Telemetry: mọi mẫu phải thuộc máy của khoá (luật ở docblock đầu tệp). Vi phạm ⇒ ném 403 (cả lô,
- * không ghi dòng nào). Tra `machines.code` CHỈ cho các `deviceId` khác mã của khoá.
+ * Telemetry (R16 nghiêm): mọi mẫu phải thuộc máy của khoá — `machineId` (nếu có) === M.id VÀ
+ * `deviceId` (nếu có) === M.code. Vi phạm ⇒ ném 403 (cả lô, không ghi dòng nào). Hợp lệ ⇒ trả MẢNG
+ * MỚI với `machineId = M.id` trên MỌI mẫu (bus không tự quy máy nữa). Thuần, không I/O.
  */
-export async function kiemMauTelemetryThuocMay(
-  samples: ReadonlyArray<{ machineId?: number | null; deviceId?: string | null }>,
+export function kiemMauTelemetryThuocMay<T extends { machineId?: number | null; deviceId?: string | null }>(
+  samples: ReadonlyArray<T>,
   may: MayCuaKhoa,
-): Promise<void> {
+): T[] {
   const viPham: ViPhamRangBuoc[] = [];
-  const la = new Map<string, number[]>(); // deviceId lạ → các index mang nó
   samples.forEach((s, index) => {
     if (s.machineId != null && s.machineId !== may.id) viPham.push({ index, field: "machineId", value: s.machineId });
-    if (s.deviceId != null && s.deviceId !== may.code) {
-      const arr = la.get(s.deviceId);
-      if (arr) arr.push(index);
-      else la.set(s.deviceId, [index]);
-    }
+    else if (s.deviceId != null && s.deviceId !== may.code) viPham.push({ index, field: "deviceId", value: s.deviceId });
   });
-  if (la.size > 0) {
-    const db = await dbHoac503();
-    const { machines } = await import("../../../drizzle/schema");
-    const { inArray } = await import("drizzle-orm");
-    let rows: Array<{ id: number; code: string }>;
-    try {
-      rows = await db
-        .select({ id: machines.id, code: machines.code })
-        .from(machines)
-        .where(inArray(machines.code, [...la.keys()]));
-    } catch {
-      throw new ApiHttpError(503, "db_unavailable", "Database unavailable — retry.");
-    }
-    const mayKhac = new Set(rows.filter((r) => r.id !== may.id).map((r) => r.code));
-    for (const [deviceId, idx] of la) {
-      if (mayKhac.has(deviceId)) for (const index of idx) viPham.push({ index, field: "deviceId", value: deviceId });
-    }
-  }
-  if (viPham.length > 0) {
-    viPham.sort((a, b) => a.index - b.index);
-    nem403(may, viPham);
-  }
+  if (viPham.length > 0) nem403(may, viPham);
+  return samples.map((s) => ({ ...s, machineId: may.id }));
 }
 
 /** inspection / process-result: `machineCode` khai trong body (nếu có) phải là mã máy của khoá. */
@@ -202,6 +166,14 @@ export function ingestLoiHttp(err: unknown): IngestLoiHttp {
       return { status: 413, code: "payload_too_large", message };
     case "TOO_MANY_REQUESTS":
       return { status: 429, code: "rate_limited", message, retryAfterS: INGEST_RETRY_AFTER_S };
+    // Fix round 1 — ba mã KHÔNG tạm thời: gửi lại y nguyên không bao giờ thành công, nên không được
+    // rơi xuống 503 (thiết bị sẽ thử lại mãi). Mã HTTP theo đúng bảng của tRPC.
+    case "METHOD_NOT_SUPPORTED":
+      return { status: 405, code: "method_not_supported", message };
+    case "CLIENT_CLOSED_REQUEST":
+      return { status: 499, code: "client_closed_request", message };
+    case "NOT_IMPLEMENTED":
+      return { status: 501, code: "not_implemented", message };
     default:
       if (laLoiDuLieu(err)) return { status: 400, code: "ingest_failed", message };
       return { status: 503, code: "ingest_unavailable", message: "Ingest temporarily unavailable — retry." };
