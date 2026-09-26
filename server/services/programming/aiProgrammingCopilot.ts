@@ -42,6 +42,11 @@ import { gatherRepoIndexContext, catTheoNganSachToken } from "../ai/repoContextS
 // Bộ ước lượng token DÙNG CHUNG với cổng từ-chối-trung-thực `kiemNganSachNguCanh()`. Không tự
 // viết `len/4` ở đây — hai cái thước khác nhau thì ngân sách và cổng sẽ trôi khỏi nhau.
 import { uocLuongSoToken } from "../aiLlamaServerClient";
+import {
+  checkCopilotSafety,
+  inlineCompletionBlocked,
+  type GateReasonCode,
+} from "./copilotSafetyGate";
 
 export type CopilotLang = "vi" | "en" | "zh";
 
@@ -69,13 +74,10 @@ export function copilotEnabled(): boolean {
   );
 }
 
-// HARD REFUSAL — the copilot must NEVER author safety-function logic. Strengthened (doc 34
-// §5.2): matches E-stop / emergency-stop / interlock / safety-function/relay/PLC / light-
-// curtain / two-hand / guard-lock / lockout-tagout / muting, SIL 1..4, Performance-Level a..e,
-// plus CJK 安全/急停 terms. Deliberately broad — over-refusal is the safe side. Word-boundary
-// anchored so ordinary words ("silicon", "place") do not false-trigger.
-const SAFETY_RE =
-  /\b(e-?stops?|emergency[-\s]?stops?|emergency|interlocks?|safety(?:[-\s]?(?:function|relay|plc|logic|circuit|door|gate|rated))?|safeties|sil\s?[1-4]?|pl[-\s]?[a-e]|performance[-\s]?level|guard[-\s]?lock(?:ing)?|guard|light[-\s]?curtain|two[-\s]?hand|lockout|tagout|muting|estop)\b|(?:安全|急停|安全门|安全回路|安全继电器|紧急停止|光幕|双手)/i;
+// HARD REFUSAL — Doc 80 · Task 10 (D4): hai bản regex từ-đơn trùng nhau (`SAFETY_RE` ở đây và
+// `COPILOT_SAFETY_RE` ở programmingRouter) đã được THAY bằng MỘT module `copilotSafetyGate` (cụm
+// động từ nguy hiểm × đối tượng an toàn VI/EN/ZH + soi `contextCode` + loại chẩn đoán nền tảng).
+// Đo trước: regex cũ lọt S2 (tiếng Việt), lọt S3 (qua contextCode), chặn oan S4 ("guard rail").
 
 const LANG_OF: Record<ProgrammingKind, string> = {
   stub: "text",
@@ -122,14 +124,9 @@ function skeleton(kind: ProgrammingKind, intent: string): string {
 export async function suggestProgram(input: SuggestInput): Promise<SuggestResult> {
   if (!copilotEnabled()) return { available: false, refused: false, reason: "AI_PROGRAMMING_COPILOT_ENABLED is off." };
 
-  if (SAFETY_RE.test(input.intent)) {
-    return {
-      available: true,
-      refused: true,
-      reason:
-        "The copilot does not author safety logic (E-stop / interlock / SIL / guards). " +
-        "That must be implemented by a certified engineer on the certified PLC.",
-    };
+  const gate = checkCopilotSafety({ mode: "generate", request: input.intent });
+  if (gate.refused) {
+    return { available: true, refused: true, reason: gate.userMessage };
   }
 
   // Unknown/unimplemented kind → honest unavailable (no fake source).
@@ -221,6 +218,12 @@ export interface GenCitation {
 export interface GenerateProgramResult {
   ok: boolean;
   refused: boolean;
+  /** Doc 80 · D4 — ai từ chối: cổng an toàn ("gate") trước model. */
+  refusalSource?: "gate";
+  /** Doc 80 · D4 — khoá ổn định cho i18n phía client (`progCopilot.refusal.<reasonCode>`). */
+  reasonCode?: GateReasonCode;
+  /** Doc 80 · D4 — câu từ chối cho người dùng, theo ngôn ngữ của yêu cầu (vi/en/zh). */
+  userMessage?: string;
   reason?: string;
   kind: string;
   /** Generated / translated code (absent for explain/review or when refused/degraded). */
@@ -246,10 +249,6 @@ const COMPILE_ALSO: ReadonlySet<string> = new Set(["ir-flow", "iec61131-pou"]);
 function validateRequired(): boolean {
   const v = (process.env.PROG_CODEGEN_VALIDATE_REQUIRED ?? "true").trim().toLowerCase();
   return v !== "false" && v !== "0" && v !== "off" && v !== "no";
-}
-
-function isCodeMode(mode: CopilotMode): boolean {
-  return mode === "generate" || mode === "complete" || mode === "translate";
 }
 
 function langForKind(kind: string): string {
@@ -871,18 +870,25 @@ export async function generateProgram(input: GenerateProgramInput): Promise<Gene
     return { ok: false, refused: false, kind, note: "AI_PROGRAMMING_COPILOT_ENABLED is off." };
   }
 
-  // 2) SAFETY (hard, strengthened) — never AUTHOR safety-function logic. Applies to every
-  //    code-producing mode; probes the request + any target-kind/kind hint.
-  const safetyProbe = `${request} ${input?.targetKind ?? ""} ${kind}`;
-  if (isCodeMode(mode) && SAFETY_RE.test(safetyProbe)) {
+  // 2) SAFETY GATE (Doc 80 · Task 10 · D4) — chạy TRƯỚC mọi thứ tốn kém (warm model, RAG, model)
+  //    cho MỌI mode, kể cả review/explain: bị chặn ⇒ không tốn một lượt model nào. Kết quả thống
+  //    nhất { refused, refusalSource:"gate", reasonCode, userMessage }; `reason` giữ cho client cũ.
+  const gate = checkCopilotSafety({
+    mode,
+    request,
+    contextCode: input?.contextCode,
+    targetKind: input?.targetKind,
+    kind,
+  });
+  if (gate.refused) {
     return {
       ok: false,
       refused: true,
+      refusalSource: "gate",
+      reasonCode: gate.reasonCode,
+      userMessage: gate.userMessage,
+      reason: gate.userMessage,
       kind,
-      reason:
-        "Refused: the copilot does not author safety-function logic (E-stop / emergency / interlock / " +
-        "light-curtain / two-hand / guard-lock / SIL / PL). That must be implemented and verified by a " +
-        "certified engineer on the certified safety controller — never generated by AI.",
     };
   }
 
@@ -1089,6 +1095,10 @@ export async function completeInline(input: CompleteInlineInput): Promise<Comple
   const prefix = typeof input?.prefix === "string" ? input.prefix : "";
   const suffix = typeof input?.suffix === "string" ? input.suffix : "";
   if (!prefix.trim() && !suffix.trim()) return { completion: "" };
+  // Doc 80 · Task 10 · D4 — ghost-text: 400 ký tự quanh con trỏ có tín hiệu an toàn (ESTOP*,
+  // *INTERLOCK*, GUARD*…) hoặc một cụm bypass ⇒ KHÔNG gợi ý (đo phụ lục A: I4 "bypass e-stop" từng
+  // nhận `Q_Motor := 0` ×7). Chặn trước model — không tốn lượt FIM.
+  if (inlineCompletionBlocked(prefix, suffix)) return { completion: "" };
 
   const metricStart = Date.now();
   let metricPlan: Awaited<ReturnType<typeof planMetric>> = null;

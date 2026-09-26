@@ -85,6 +85,8 @@ import {
   generateProgram,
   completeInline,
 } from "../services/programming/aiProgrammingCopilot";
+// ── Doc 80 · Task 10 (D4) — MỘT module cổng an toàn cho copilot (thay hai regex trùng) ──
+import { isSafetyRelevantText, stripPlatformDiagnostics } from "../services/programming/copilotSafetyGate";
 // ── doc 40 W5 §11 — fleet program rollout (canary) + machine×version matrix ──
 import { deployToFleet, fleetVersionMatrix } from "../services/programming/fleetRollout";
 // ── D6 (doc 25 T4) — Online Monitor: watch-session manager bound to the socket room ──
@@ -162,20 +164,17 @@ async function assertIdempotencyKeyConsistent(
 }
 
 // ════════════════════════════════════════════════════════════════════════════
-// Doc 54 P3.4 (#1) — COPILOT SAFETY GUARD cho REVIEW/EXPLAIN.
+// Doc 54 P3.4 (#1) → Doc 80 · Task 10 (D4) — nhận diện CHỦ ĐỀ an toàn cho nhãn "không chứng nhận".
 //
-// generateProgram() chỉ HARD-REFUSE khi AUTHOR code (generate/complete/translate). Với
-// review/explain nó trả THẲNG lời của model → có nguy cơ "chứng nhận" logic an toàn. Regex dưới
-// đây mirror SAFETY_RE của aiProgrammingCopilot (const nội bộ, không export được) — bảo thủ:
-// thà nhận nhầm còn hơn bỏ sót. Neo word-boundary để "silicon"/"place" không kích nhầm.
+// Regex trùng `COPILOT_SAFETY_RE` (bản sao của SAFETY_RE trong copilot) đã được THAY bằng module
+// `copilotSafetyGate`. Việc CHẶN nay do cổng làm TRƯỚC model bên trong `generateProgram` (mọi
+// mode); hàm dưới đây CHỈ còn dùng để GẮN NHÃN `safetyReviewRequired / certified:false` lên một
+// câu trả lời được phép (copilotExplain tất định, copilotGenerate mode explain) — gắn thừa vô hại.
 // ════════════════════════════════════════════════════════════════════════════
-const COPILOT_SAFETY_RE =
-  /\b(e-?stops?|emergency[-\s]?stops?|emergency|interlocks?|safety(?:[-\s]?(?:function|relay|plc|logic|circuit|door|gate|rated))?|safeties|sil\s?[1-4]?|pl[-\s]?[a-e]|performance[-\s]?level|guard[-\s]?lock(?:ing)?|guard|light[-\s]?curtain|two[-\s]?hand|lockout|tagout|muting|estop)\b|(?:安全|急停|安全门|安全回路|安全继电器|紧急停止|光幕|双手)/i;
 
-/** true nếu bất kỳ đoạn text nào (request/mã) chạm từ khoá LIÊN QUAN AN TOÀN. Pure/testable. */
+/** true nếu bất kỳ đoạn text nào (request/mã) chạm chủ đề an toàn. Pure/testable. */
 export function isSafetyRelevantProgram(...texts: (string | undefined | null)[]): boolean {
-  const joined = texts.filter((t): t is string => typeof t === "string" && t.length > 0).join("\n");
-  return joined.length > 0 && COPILOT_SAFETY_RE.test(joined);
+  return isSafetyRelevantText(...texts);
 }
 
 export const programmingRouter = router({
@@ -896,26 +895,22 @@ export const programmingRouter = router({
       // trên cố tình KHÔNG khai trường này, nên client không thể tự đặt vai). Nó chỉ đi tới cổng
       // corpus Training Studio của `retrieveKnowledge` khi copilot truy hồi chỉ mục repo.
       const result = await generateProgram({ ...input, callerRole: String(ctx.user?.role ?? "") });
-      // Doc 54 P3.4 (#1) — SAFETY GUARD. generateProgram HARD-REFUSE khi AUTHOR
-      // (generate/complete/translate), NHƯNG review/explain trả THẲNG lời của model → có nguy cơ
-      // "chứng nhận" logic an toàn. Nếu chương trình được phân tích chạm từ khoá an toàn (e-stop/
-      // interlock/light-curtain/two-hand/guard/muting/safety-PLC/SIL/PL): KHÔNG lặng lẽ duyệt —
-      // gắn cờ yêu cầu người kiểm định an toàn và TỪ CHỐI chứng nhận. Bảo thủ: nghi ngờ thì chặn.
+      // Doc 80 · Task 10 (D4) — cổng an toàn đã chạy TRƯỚC model bên trong generateProgram cho MỌI
+      // mode (review mã an toàn ⇒ refusalSource:"gate", không tốn lượt model). Ở đây chỉ còn việc
+      // GẮN NHÃN: explain (được phép) trên mã/yêu cầu chạm chủ đề an toàn ⇒ "không phải chứng nhận".
+      // AI-13 — chẩn đoán `[safety-lint:…]` của CHÍNH nền tảng bị loại trước khi xét nhãn.
       if (
-        (input.mode === "review" || input.mode === "explain") &&
-        isSafetyRelevantProgram(input.request, input.contextCode)
+        input.mode === "explain" &&
+        !result.refused &&
+        isSafetyRelevantProgram(stripPlatformDiagnostics(input.request), input.contextCode)
       ) {
         return {
           ...result,
-          ok: false as const,
-          refused: true as const,
           safetyReviewRequired: true as const,
           certified: false as const,
-          reason:
-            "Chương trình chứa logic liên quan AN TOÀN (e-stop/interlock/light-curtain/two-hand/guard/" +
-            "muting/safety-PLC/SIL/PL). Copilot KHÔNG chứng nhận hay phê duyệt logic an toàn — yêu cầu " +
-            "KỸ SƯ AN TOÀN có thẩm quyền kiểm định trên bộ điều khiển đã được chứng nhận. Nhận xét kèm " +
-            "theo (nếu có) CHỈ để tham khảo, KHÔNG phải chứng nhận.",
+          safetyNote:
+            "Chương trình chứa logic liên quan AN TOÀN — phần giải thích này KHÔNG phải chứng nhận. " +
+            "Yêu cầu KỸ SƯ AN TOÀN có thẩm quyền kiểm định trên bộ điều khiển đã được chứng nhận.",
         };
       }
       return result;
