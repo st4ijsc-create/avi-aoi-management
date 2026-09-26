@@ -27,12 +27,20 @@ import { UrsimClient, type UrsimEndpoint } from "./ursimClient";
 export interface UrsimValidationResult {
   /** The URScript reached the controller over the primary/secondary socket. */
   sent: boolean;
-  /** The controller powered on + started (robotmode RUNNING / program PLAYING). */
+  /**
+   * doc 81 Đợt 1B Task 3 — the controller COMPILED + STARTED our program: `Program running:
+   * true` was OBSERVED after the send AND the safety status stayed NORMAL/REDUCED for the
+   * whole observation window. `robotmode RUNNING` alone is NOT acceptance — after `power on`
+   * + `brake release` the arm reports RUNNING with no program at all (UR Dashboard manual),
+   * so a syntactically-broken script used to "pass" here (BE2 §L3 T2).
+   */
   accepted: boolean;
-  /** A program is currently executing on the controller. */
+  /** A running program was observed on the controller after the send. */
   running: boolean;
   robotMode?: string;
   programState?: string;
+  /** Last safety status read in the observation window (NORMAL, REDUCED, PROTECTIVE_STOP, …). */
+  safetyStatus?: string;
   /** Present ⇔ something failed (unreachable / power / send). Honest, never faked. */
   error?: string;
   /** How long the harness spent (ms). */
@@ -47,6 +55,13 @@ export interface UrsimValidationOptions {
   /** Max time (ms) to wait for the program to reach a running state. Default 3000. */
   runWaitMs?: number;
 }
+
+/**
+ * Safety statuses under which a program run counts as healthy. Anything else (PROTECTIVE_STOP,
+ * SAFEGUARD_STOP, *_EMERGENCY_STOP, VIOLATION, FAULT, RECOVERY, …) during the observation
+ * window ⇒ NOT accepted. Unreadable status ⇒ NOT accepted (fail-closed).
+ */
+const SAFETY_OK = new Set(["NORMAL", "REDUCED"]);
 
 function sleep(ms: number): Promise<void> {
   return new Promise((r) => setTimeout(r, ms).unref?.());
@@ -98,27 +113,64 @@ export async function validateUrscriptOnUrsim(
       return done({ sent: false, accepted: false, running: false, error: `sendScript failed: ${(err as Error)?.message ?? err}` });
     }
 
-    // 3) Poll robotmode + programState until running or the wait budget elapses. A real UR
-    //    controller that REJECTED our script (bad transpile) never enters PLAYING/RUNNING.
+    // 3) Poll robotmode + programState + running + SAFETY until a running program is
+    //    OBSERVED or the wait budget elapses. A real UR controller that REJECTED our script
+    //    (bad transpile → compile error) never reports "Program running: true" — even though
+    //    robotmode is RUNNING (arm powered + brakes released). doc 81 Đợt 1B Task 3.
     let robotMode: string | undefined;
     let programState: string | undefined;
-    let running = false;
+    let safetyStatus: string | undefined;
+    let observedRunning = false;
+    const readSafety = async (): Promise<string | null> => {
+      const s = await client.safetyStatus();
+      if (s != null) safetyStatus = s;
+      return s;
+    };
+    const safetyFail = (s: string | null) =>
+      done({
+        sent,
+        accepted: false,
+        running: observedRunning,
+        robotMode,
+        programState,
+        safetyStatus,
+        error: s == null
+          ? "safety status unreadable (dashboard answered neither `safetystatus` nor `safetymode`) — cannot confirm a healthy run"
+          : `safety status ${s} during the observation window — program not accepted`,
+      });
     const deadline = Date.now() + runWaitMs;
     do {
+      let safety: string | null;
       try {
         robotMode = await client.robotMode();
         programState = await client.programState();
-        running = await client.isProgramRunning();
+        const running = await client.isProgramRunning();
+        safety = await readSafety();
+        if (running) observedRunning = true;
       } catch (err) {
-        return done({ sent, accepted: false, running: false, robotMode, programState, error: `state poll failed: ${(err as Error)?.message ?? err}` });
+        return done({ sent, accepted: false, running: false, robotMode, programState, safetyStatus, error: `state poll failed: ${(err as Error)?.message ?? err}` });
       }
-      if (running) break;
+      if (safety == null || !SAFETY_OK.has(safety)) return safetyFail(safety);
+      if (observedRunning) break;
       if (Date.now() >= deadline) break;
       await sleep(pollIntervalMs);
     } while (Date.now() < deadline);
 
-    const accepted = running || /RUNNING/i.test(robotMode ?? "") || /PLAYING/i.test(programState ?? "");
-    return done({ sent, accepted, running, robotMode, programState });
+    // 4) Confirmation read: a safety fault right after the program starts (protective stop,
+    //    e-stop, violation) must still fail the run — one more poll interval, safety re-read.
+    if (observedRunning) {
+      await sleep(pollIntervalMs);
+      let safety: string | null;
+      try {
+        safety = await readSafety();
+      } catch (err) {
+        return done({ sent, accepted: false, running: observedRunning, robotMode, programState, safetyStatus, error: `state poll failed: ${(err as Error)?.message ?? err}` });
+      }
+      if (safety == null || !SAFETY_OK.has(safety)) return safetyFail(safety);
+    }
+
+    const accepted = observedRunning;
+    return done({ sent, accepted, running: observedRunning, robotMode, programState, safetyStatus });
   } catch (err) {
     return done({ sent: false, accepted: false, running: false, error: (err as Error)?.message ?? String(err) });
   }

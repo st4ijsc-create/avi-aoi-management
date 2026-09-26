@@ -24,11 +24,11 @@
  */
 import {
   validateUrscriptOnUrsim,
-  ursimEndpointFromEnv,
   type UrsimValidationResult,
   type UrsimValidationOptions,
 } from "../../robot/ursim/ursimHarness";
 import type { UrsimEndpoint } from "../../robot/ursim/ursimClient";
+import { resolveSimTarget, DEFAULT_SIM_TARGET_ID } from "../../robot/ursim/simTargetRegistry";
 
 /** Runtime flag (default OFF → today's behaviour: HIL is a no-op that never blocks). */
 export function dpcHilEnabled(): boolean {
@@ -58,8 +58,13 @@ export interface HilStageResult {
 export interface HilStageDeps {
   /** URSim validator (default: validateUrscriptOnUrsim). */
   validate?: (urscript: string, endpoint: UrsimEndpoint, opts?: UrsimValidationOptions) => Promise<UrsimValidationResult>;
-  /** Endpoint resolver (default: ursimEndpointFromEnv — reads URSIM_HOST/ports). */
-  resolveEndpoint?: () => UrsimEndpoint | null;
+  /**
+   * Endpoint resolver. Default (doc 81 Đợt 1B Task 3): the REGISTERED sim target "default"
+   * (`resolveSimTarget` — URSIM_HOST/ports, refused when that host is a real robot/adapter in
+   * the DB), because HIL sends `power on` + `brake release` + the script. A refusal surfaces
+   * as `null` + `refusal` reason ⇒ fail-closed.
+   */
+  resolveEndpoint?: () => UrsimEndpoint | null | Promise<UrsimEndpoint | null>;
   /** Validation timing overrides (poll/run-wait) — handy to keep tests fast. */
   validationOptions?: UrsimValidationOptions;
 }
@@ -82,21 +87,36 @@ export async function runHilStage(
   if (!targetIsUr) {
     return { ran: false, pass: true, skipped: "not-ur", reason: "HIL (URSim) applies to Universal-Robots targets only — skipped (not blocking)." };
   }
-  const resolveEndpoint = deps.resolveEndpoint ?? ursimEndpointFromEnv;
-  const endpoint = resolveEndpoint();
-  // Flag ON + UR but no endpoint configured → fail-closed. We required a HIL proof and cannot
-  // obtain one; refusing is the safe outcome (never a fabricated pass).
+  let endpoint: UrsimEndpoint | null;
+  let refusal: string | null = null;
+  if (deps.resolveEndpoint) {
+    endpoint = await deps.resolveEndpoint();
+  } else {
+    try {
+      endpoint = (await resolveSimTarget(DEFAULT_SIM_TARGET_ID)).endpoint;
+    } catch (e) {
+      endpoint = null;
+      refusal = (e as Error)?.message ?? String(e);
+    }
+  }
+  // Flag ON + UR but no (registered, verified-virtual) endpoint → fail-closed. We required a
+  // HIL proof and cannot obtain one; refusing is the safe outcome (never a fabricated pass).
   if (!endpoint) {
     return {
       ran: false,
       pass: false,
       skipped: "no-endpoint",
-      reason: "DPC_HIL_ENABLED on but no URSim endpoint configured (set URSIM_HOST + ports) — HIL could not run; blocking.",
+      reason: refusal
+        ? `DPC_HIL_ENABLED on but the URSim sim target was refused: ${refusal} — HIL could not run; blocking.`
+        : "DPC_HIL_ENABLED on but no URSim endpoint configured (set URSIM_HOST + ports) — HIL could not run; blocking.",
     };
   }
   const validate = deps.validate ?? validateUrscriptOnUrsim;
   const validation = await validate(urscript, endpoint, deps.validationOptions);
-  const pass = !validation.error && (validation.running || validation.accepted);
+  // doc 81 Đợt 1B Task 3 — PASS only when the program was OBSERVED running (and the harness
+  // accepted it: safety NORMAL/REDUCED through the observation window). `robotmode RUNNING`
+  // alone (the old `running || accepted`) let a broken script pass.
+  const pass = !validation.error && validation.running === true && validation.accepted === true;
   return {
     ran: true,
     pass,

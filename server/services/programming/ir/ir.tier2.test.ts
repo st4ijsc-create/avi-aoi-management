@@ -280,6 +280,9 @@ describe("Tier-2 (c) HIL end-to-end via the REAL ursimHarness (mock net.Server)"
       if (cmd === "robotmode") return "Robotmode: RUNNING";
       if (cmd === "programState") return "PLAYING prog.urp";
       if (cmd === "running") return "Program running: true";
+      // doc 81 Đợt 1B Task 3 — harness now requires a readable, NORMAL safety status (UR
+      // Dashboard protocol text); an unreadable status is fail-closed.
+      if (cmd === "safetystatus") return "Safetystatus: NORMAL";
       return "ok"; // power on / brake release
     });
     const script = await startScriptServer();
