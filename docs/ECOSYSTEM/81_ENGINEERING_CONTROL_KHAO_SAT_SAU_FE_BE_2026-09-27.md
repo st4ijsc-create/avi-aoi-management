@@ -209,5 +209,7 @@ HA nhiều node (Redis adapter + EMQX + Postgres replica), metric ingest/MQTT/WA
 4. **Bàn thử đầu tiên:** OpenPLC docker (không cần phần cứng) + một FX5U? Khuyến nghị: **OpenPLC trước**.
 5. **Đợt 2 bố cục:** bắt đầu sau Đợt 1B, theo thứ tự FE2 §5 (ECN → … → IDE → IR/POU)?
 
+**Đã chốt (2026-09-26):** (1) chèn Đợt 1B — plan `docs/superpowers/plans/2026-09-27-engineering-control-dot1b.md`; (2) không sửa `.env` từ phiên mã — Task 6 Đợt 1B chặn DCMD thiếu actionId ngay trong mã, cờ `SPARKPLUG_COMMAND_ENABLED` do chủ dự án tự quyết; (3) O1/O2/O3/O6 giao **bộ phận Kỹ thuật**; (4) bàn thử đầu tiên **OpenPLC docker**, sau đó FX5U; (5) Đợt 2 sau Đợt 1B theo FE2 §5. **QĐ7 doc 80 (2FA):** không phải điều kiện tiên quyết — nhà máy không có internet thì 2FA là rào cản; chức năng đã được chủ dự án tự kiểm, bật thủ công khi cần.
+
 ## 6. Phương pháp và giới hạn
 5 tác tử khảo sát song song (2 FE, 3 BE), chỉ đọc repo; DB dev chỉ SELECT; đo tải trên instance riêng :3017 với DB `_test`; driver chạy với giả lập giao thức cục bộ (node-opcua, modbus-serial ServerTCP, mock SLMP theo đặc tả, sim MTConnect/HSMS/VDA 5050 của repo, listener AMQP) và server TCP giả cho robot. **Chưa có:** thiết bị thật, giả lập của hãng (PLCSIM, URSim, ZDevelop, TMflow, OpenPLC), diễn tập DB sập, HA nhiều node, TLS, soak dài. Tác dụng phụ đã ghi ở từng phụ lục (NBIRTH/NDEATH trùng id trên EMQX dùng chung; 2 máy pilot trong `_test`; 722 hàng fixture `_test` ở Đợt 0).
