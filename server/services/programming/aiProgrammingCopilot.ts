@@ -35,7 +35,7 @@ import {
   type ProgrammingKind,
   type ProgDiagnostic,
 } from "./programmingAdapter";
-import { selectGoldenExamples, formatGoldenExamplesForPrompt } from "./goldenExamples";
+import { selectGoldenExamples, formatGoldenExamplesForPrompt, goHeaderGoldenKhoiMa } from "./goldenExamples";
 import { getCodegenJsonSchema } from "./codegenSchemas";
 // G2-A — CHỈ MỤC REPO (7.306 chunk mô tả CHÍNH nền tảng này) + bộ cắt theo ngân sách token.
 import { gatherRepoIndexContext, catTheoNganSachToken } from "../ai/repoContextService";
@@ -45,6 +45,8 @@ import { uocLuongSoToken } from "../aiLlamaServerClient";
 import {
   checkCopilotSafety,
   inlineCompletionBlocked,
+  detectRequestLang,
+  type GateLang,
   type GateReasonCode,
 } from "./copilotSafetyGate";
 
@@ -235,6 +237,10 @@ export interface GenerateProgramResult {
   note?: string;
   /** How many self-repair rounds ran (doc 34 P4c #1). 0 = valid first try or repair off. */
   repairAttempts?: number;
+  /** Doc 80 · AI-09 — mã lỗi HỆ THỐNG (không có mã/giải thích); `note` là câu ngắn tương ứng. */
+  errorCode?: CopilotErrorCode;
+  /** Doc 80 · AI-09 — chi tiết kỹ thuật nguyên văn (chỉ dành cho admin; router gỡ với vai khác). */
+  devDetail?: string;
 }
 
 /** ir-flow / iec61131-pou also COMPILE (safety-linter/transpile hard gate) before display. */
@@ -287,7 +293,9 @@ function buildSystemPrompt(mode: CopilotMode, outKind: string, language: string)
     );
   } else {
     base.push(
-      `TASK STYLE: Output ONLY the ${outKind} program (language: ${language}) inside a SINGLE fenced code block. Put a "SAFETY: simulate and test before running on a device." comment as the LAST line INSIDE the block. No prose outside the block.`,
+      // Doc 80 · D3 (AI-04) — BỎ luật cũ "đặt dòng SAFETY làm dòng CUỐI trong khối mã": nó phá cú
+      // pháp ST và làm vỡ JSON (IR/POU). Lời nhắc an toàn là băng vàng thường trực trên UI.
+      `TASK STYLE: Output ONLY the ${outKind} program (language: ${language}) inside a SINGLE fenced code block. No prose outside the block. Do not copy the header comments of the reference examples.`,
     );
   }
   return base.join("\n");
@@ -632,6 +640,79 @@ function cauKhongCoMa(kc: Exclude<KetCucModelMa, { loai: "co-chu" }>, viec: stri
     `HỆ THỐNG HỎNG — không sinh được ${viec}, và đây KHÔNG phải "AI không nghĩ ra gì": ${kc.lyDo} ` +
     `Thử lại y nguyên sẽ hỏng y nguyên; xem nhật ký máy chủ (và llama-server nếu đang bật) trước khi thử lại.`
   );
+}
+
+// ════════════════════════════════════════════════════════════════════════════════════════════
+// Doc 80 · Task 10 · AI-09 — CÂU CHO KỸ SƯ ≠ CHI TIẾT CHO NGƯỜI VẬN HÀNH.
+//
+// Đo (phụ lục A §0): kỹ sư nhận NGUYÊN chuỗi chẩn đoán G1-D/G5-D kèm "TRÍCH SUY LUẬN: Here's a
+// thinking process…" trong hộp ghi chú xám. Chuỗi đó ĐÚNG và CẦN (bất biến G5-D: không nuốt lỗi) —
+// nhưng người cần nó là người vận hành, không phải kỹ sư đang bấm "Sinh mã". Tách hai kênh:
+//   • `note`      — câu NGẮN, theo ngôn ngữ yêu cầu, nói kỹ sư làm gì tiếp;
+//   • `errorCode` — khoá ổn định cho i18n phía client;
+//   • `devDetail` — `cauKhongCoMa()` NGUYÊN VĂN (router chỉ trả cho admin, UI gập mặc định).
+// ════════════════════════════════════════════════════════════════════════════════════════════
+
+export type CopilotErrorCode =
+  | "MODEL_OFFLINE"
+  | "TOKEN_BUDGET"
+  | "CONTEXT_TOO_LARGE"
+  | "MODEL_UNAVAILABLE"
+  | "EMPTY_OUTPUT"
+  | "INTERNAL";
+
+const CAU_LOI: Record<CopilotErrorCode, Record<GateLang, string>> = {
+  MODEL_OFFLINE: {
+    vi: "Trợ lý lập trình chưa sẵn sàng (model offline). Liên hệ quản trị viên.",
+    en: "The programming assistant is not available (model offline). Contact your administrator.",
+    zh: "编程助手暂不可用（模型离线）。请联系管理员。",
+  },
+  TOKEN_BUDGET: {
+    vi: "Trợ lý chưa trả lời được (hết ngân sách xử lý). Thử lại hoặc rút ngắn yêu cầu.",
+    en: "The assistant could not finish (processing budget exhausted). Try again or shorten the request.",
+    zh: "助手未能完成回答（处理预算已用尽）。请重试或缩短请求。",
+  },
+  CONTEXT_TOO_LARGE: {
+    vi: "Yêu cầu hoặc chương trình quá dài để trợ lý xử lý. Rút ngắn rồi thử lại.",
+    en: "The request or program is too long for the assistant. Shorten it and try again.",
+    zh: "请求或程序过长，助手无法处理。请缩短后重试。",
+  },
+  MODEL_UNAVAILABLE: {
+    vi: "Máy chủ AI đang bận hoặc không phản hồi. Thử lại sau ít phút.",
+    en: "The AI server is busy or not responding. Try again in a few minutes.",
+    zh: "AI 服务器繁忙或无响应。请稍后重试。",
+  },
+  EMPTY_OUTPUT: {
+    vi: "Trợ lý không đưa ra được kết quả dùng được. Thử diễn đạt lại yêu cầu.",
+    en: "The assistant did not produce a usable result. Try rephrasing the request.",
+    zh: "助手未能给出可用结果。请换一种说法重试。",
+  },
+  INTERNAL: {
+    vi: "Trợ lý gặp lỗi hệ thống. Thử lại; nếu lặp lại, báo quản trị viên.",
+    en: "The assistant hit a system error. Try again; if it repeats, contact your administrator.",
+    zh: "助手遇到系统错误。请重试；如仍出现，请联系管理员。",
+  },
+};
+
+function maLoiCua(kc: Exclude<KetCucModelMa, { loai: "co-chu" }>): CopilotErrorCode {
+  if (kc.loai === "offline") return "MODEL_OFFLINE";
+  if (kc.loai === "im-lang") return "EMPTY_OUTPUT";
+  const s = kc.lyDo;
+  // Thứ tự có chủ đích: câu G5-D (cạn token vào suy luận) có thể nằm LỒNG trong câu G1-D.
+  if (/G5-D|reasoning_content|SUY LUẬN/i.test(s)) return "TOKEN_BUDGET";
+  if (/exceed_context_size|exceeds the available context|maximum context length|prompt is too long|n_ctx|vượt ngữ cảnh|NGÂN SÁCH NGỮ CẢNH/i.test(s)) return "CONTEXT_TOO_LARGE";
+  if (/timeout|timed out|aborted|ECONNREFUSED|ECONNRESET|fetch failed|HTTP 5\d\d|slot/i.test(s)) return "MODEL_UNAVAILABLE";
+  return "INTERNAL";
+}
+
+/** Một lượt KHÔNG có mã ⇒ { note ngắn, errorCode, devDetail nguyên văn }. MỘT chỗ dựng cho mọi điểm gọi. */
+function ketQuaKhongCoMa(
+  kc: Exclude<KetCucModelMa, { loai: "co-chu" }>,
+  viec: string,
+  lang: GateLang,
+): { note: string; errorCode: CopilotErrorCode; devDetail: string } {
+  const errorCode = maLoiCua(kc);
+  return { note: CAU_LOI[errorCode][lang], errorCode, devDetail: cauKhongCoMa(kc, viec) };
 }
 
 /**
@@ -1001,7 +1082,7 @@ export async function generateProgram(input: GenerateProgramInput): Promise<Gene
     const user = buildExplainPrompt(mode, outKind, language, request, codeVua, vendorVua, repo);
     const out = await runCodeModel(system, user, "giai-thich");
     if (out.loai !== "co-chu") {
-      return { ok: false, refused: false, kind, citations, note: cauKhongCoMa(out, "explanation") };
+      return { ok: false, refused: false, kind, citations, ...ketQuaKhongCoMa(out, "explanation", detectRequestLang(request)) };
     }
     return { ok: true, refused: false, kind, explanation: out.text.trim(), citations };
   }
@@ -1044,10 +1125,12 @@ export async function generateProgram(input: GenerateProgramInput): Promise<Gene
   if (!code) {
     const out = await runCodeModel(system, user, "sinh");
     if (out.loai !== "co-chu") {
-      return { ok: false, refused: false, kind: outKind, citations, note: cauKhongCoMa(out, "suggestion") };
+      return { ok: false, refused: false, kind: outKind, citations, ...ketQuaKhongCoMa(out, "suggestion", detectRequestLang(request)) };
     }
     code = extractCode(out.text);
   }
+  // Doc 80 · D3 (AI-05) — hậu kiểm: gỡ header golden / dòng SAFETY / `_safety_note` bị model chép lại.
+  code = goHeaderGoldenKhoiMa(code);
   if (!code) {
     return { ok: false, refused: false, kind: outKind, citations, note: "The model returned no code." };
   }
@@ -1084,6 +1167,7 @@ export async function generateProgram(input: GenerateProgramInput): Promise<Gene
         console.error(`[aiProgrammingCopilot] vòng tự sửa ${repairAttempts}: lượt gọi model HỎNG — ${out.lyDo}`);
       }
     }
+    if (fixed) fixed = goHeaderGoldenKhoiMa(fixed); // Doc 80 · D3 — cùng hậu kiểm cho lượt tự sửa
     if (!fixed) break; // model returned nothing — keep the previous attempt + its diagnostics
     const re = await runValidation(outKind, language, fixed);
     code = fixed;

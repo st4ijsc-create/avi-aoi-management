@@ -12210,7 +12210,24 @@
     "needRequest": "Describe what you want to generate.",
     "needContext": "Paste the program to review / explain first.",
     "safetyReminder": "AI-generated — review, validate and simulate before running on real equipment. The copilot never authors safety logic (E-stop / interlock / SIL).",
-    "failed": "Code generation failed"
+    "failed": "Code generation failed",
+    "refusal": {
+      "SAFETY_BYPASS_REQUEST": "Cannot help: this request bypasses or disables a safety function (E-stop, interlock, guard door, light curtain…). Safety functions may only be changed and verified by an authorised engineer on the certified safety controller.",
+      "SAFETY_FUNCTION_AUTHORING": "The assistant does not author safety-function logic (E-stop, interlock, light curtain, SIL/PL). That must be implemented and verified by a safety engineer on the certified safety controller.",
+      "SAFETY_CODE_MODIFY": "This program contains safety signals (e.g. ESTOP, INTERLOCK, GUARD). The assistant does not modify, translate or complete code that touches safety conditions — it can only explain it.",
+      "SAFETY_CODE_REVIEW": "This program is safety-related — the assistant does not review or certify safety logic. Use Explain mode, and have an authorised safety engineer verify it."
+    },
+    "error": {
+      "title": "The assistant could not answer",
+      "MODEL_OFFLINE": "The programming assistant is not available (model offline). Contact your administrator.",
+      "TOKEN_BUDGET": "The assistant could not finish (processing budget exhausted). Try again or shorten the request.",
+      "CONTEXT_TOO_LARGE": "The request or program is too long for the assistant. Shorten it and try again.",
+      "MODEL_UNAVAILABLE": "The AI server is busy or not responding. Try again in a few minutes.",
+      "EMPTY_OUTPUT": "The assistant did not produce a usable result. Try rephrasing the request.",
+      "INTERNAL": "The assistant hit a system error. Try again; if it repeats, contact your administrator.",
+      "devDetail": "Technical details (administrator)"
+    },
+    "safetyNotCertified": "Safety-related program — this explanation is NOT a certification. An authorised safety engineer must verify it."
   },
   "technicianCopilot": {
     "title": "Technician Copilot",

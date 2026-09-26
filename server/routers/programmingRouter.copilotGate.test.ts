@@ -105,6 +105,26 @@ describe("programming.copilotGenerate — cổng an toàn TRƯỚC model", () =>
   });
 });
 
+describe("AI-09 — devDetail (chi tiết kỹ thuật) chỉ tới admin", () => {
+  it("anChiTietKyThuat: vai khác admin ⇒ gỡ devDetail; admin ⇒ giữ", async () => {
+    const { anChiTietKyThuat } = await import("./programmingRouter");
+    const r = { ok: false, note: "Trợ lý chưa trả lời được", errorCode: "TOKEN_BUDGET", devDetail: "TRÍCH SUY LUẬN: …" };
+    expect(anChiTietKyThuat(r, "engineer")).not.toHaveProperty("devDetail");
+    expect(anChiTietKyThuat(r, "engineer").note).toBe(r.note);
+    expect(anChiTietKyThuat(r, undefined)).not.toHaveProperty("devDetail");
+    expect(anChiTietKyThuat(r, "admin").devDetail).toBe(r.devDetail);
+  });
+
+  it("router THẬT: lượt hỏng cạn-token ⇒ admin nhận note ngắn + errorCode + devDetail", async () => {
+    chatCompletionMock.mockRejectedValue(new Error("[llamaServer] TỪ CHỐI TRUNG THỰC (G5-D, chat): model đã tiêu HẾT hạn mức 1536 token vào chuỗi SUY LUẬN"));
+    const caller = (await importRouter()).createCaller(admin());
+    const r: any = await caller.copilotGenerate({ kind: "iec61131-st", request: "Viết ST bật băng tải" });
+    expect(r.errorCode).toBe("TOKEN_BUDGET");
+    expect(r.note).toBe("Trợ lý chưa trả lời được (hết ngân sách xử lý). Thử lại hoặc rút ngắn yêu cầu.");
+    expect(r.devDetail).toMatch(/SUY LUẬN/);
+  });
+});
+
 describe("programming.copilotComplete — ghost-text qua cổng", () => {
   it("I4 (bypass e-stop + ESTOP_PRESSED quanh con trỏ) ⇒ completion rỗng, KHÔNG gọi FIM", async () => {
     const caller = (await importRouter()).createCaller(admin());

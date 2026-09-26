@@ -12190,7 +12190,24 @@
     "needRequest": "Hãy mô tả bạn muốn sinh gì.",
     "needContext": "Hãy dán chương trình cần rà soát / giải thích trước.",
     "safetyReminder": "Mã do AI sinh — hãy rà soát, kiểm tra và mô phỏng trước khi chạy trên thiết bị thật. Trợ lý không bao giờ soạn logic an toàn (E-stop / interlock / SIL).",
-    "failed": "Sinh mã thất bại"
+    "failed": "Sinh mã thất bại",
+    "refusal": {
+      "SAFETY_BYPASS_REQUEST": "Không thể hỗ trợ: yêu cầu này bỏ qua hoặc vô hiệu hoá chức năng an toàn (dừng khẩn cấp, liên động, cửa bảo vệ, rèm quang…). Chức năng an toàn chỉ do kỹ sư có thẩm quyền thay đổi và kiểm định trên bộ điều khiển an toàn đã chứng nhận.",
+      "SAFETY_FUNCTION_AUTHORING": "Trợ lý không viết logic chức năng an toàn (dừng khẩn cấp, liên động, rèm quang, SIL/PL). Phần này phải do kỹ sư an toàn thực hiện và kiểm định trên bộ điều khiển an toàn đã chứng nhận.",
+      "SAFETY_CODE_MODIFY": "Chương trình có tín hiệu an toàn (vd ESTOP, INTERLOCK, GUARD). Trợ lý không sửa, dịch hay hoàn thiện mã chạm tới điều kiện an toàn — chỉ có thể giải thích.",
+      "SAFETY_CODE_REVIEW": "Chương trình liên quan an toàn — trợ lý không rà soát hay chứng nhận logic an toàn. Hãy dùng chế độ Giải thích, và nhờ kỹ sư an toàn có thẩm quyền kiểm định."
+    },
+    "error": {
+      "title": "Trợ lý chưa trả lời được",
+      "MODEL_OFFLINE": "Trợ lý lập trình chưa sẵn sàng (model offline). Liên hệ quản trị viên.",
+      "TOKEN_BUDGET": "Trợ lý chưa trả lời được (hết ngân sách xử lý). Thử lại hoặc rút ngắn yêu cầu.",
+      "CONTEXT_TOO_LARGE": "Yêu cầu hoặc chương trình quá dài để trợ lý xử lý. Rút ngắn rồi thử lại.",
+      "MODEL_UNAVAILABLE": "Máy chủ AI đang bận hoặc không phản hồi. Thử lại sau ít phút.",
+      "EMPTY_OUTPUT": "Trợ lý không đưa ra được kết quả dùng được. Thử diễn đạt lại yêu cầu.",
+      "INTERNAL": "Trợ lý gặp lỗi hệ thống. Thử lại; nếu lặp lại, báo quản trị viên.",
+      "devDetail": "Chi tiết kỹ thuật (quản trị viên)"
+    },
+    "safetyNotCertified": "Chương trình liên quan an toàn — phần giải thích này KHÔNG phải chứng nhận. Cần kỹ sư an toàn có thẩm quyền kiểm định."
   },
   "technicianCopilot": {
     "title": "Trợ lý Kỹ thuật",

@@ -72,6 +72,10 @@ afterEach(() => {
   delete process.env.PROG_KB_ENABLED;
 });
 
+// ★ Doc 80 · Task 10 · AI-09 — hợp đồng MỚI: `note` là câu NGẮN cho kỹ sư (không chuỗi chẩn đoán dài,
+// không trích suy luận); chi tiết kỹ thuật NGUYÊN VĂN đi trong `devDetail` (router chỉ trả cho admin);
+// `errorCode` phân biệt các ca. Bất biến G5-D giữ nguyên: ba ca hỏng KHÔNG gộp thành "offline", và lý
+// do nguyên văn vẫn tới được người đọc (qua `devDetail`, không qua mặt kỹ sư).
 describe("G5-D — ba ca hỏng nói BA câu khác nhau, không gộp thành \"offline\"", () => {
   it("★★★ cổng G1-D chặn nạp trùng (ca đang xảy ra thật) ⇒ nói ra HỎNG + nguyên văn lý do", async () => {
     const CAU_CONG =
@@ -84,9 +88,13 @@ describe("G5-D — ba ca hỏng nói BA câu khác nhau, không gộp thành \"o
     expect(r.ok).toBe(false);
     // ⚠ Câu "offline" cho một hệ thống KHÔNG offline là lời khai SAI, không chỉ là mơ hồ.
     expect(r.note, "vẫn đang nói 'offline' cho một ca hệ thống hỏng").not.toMatch(/offline/i);
-    expect(r.note).toMatch(/HỆ THỐNG HỎNG/);
-    // Nguyên văn lý do phải đi tới người đọc — nếu chỉ ghi "có lỗi" thì vẫn phải mò log.
-    expect(r.note).toMatch(/G1-D|llama-server/);
+    expect(r.errorCode).toBe("INTERNAL");
+    // AI-09 — câu cho kỹ sư NGẮN, không chuỗi chẩn đoán nội bộ.
+    expect(r.note!.length).toBeLessThan(160);
+    expect(r.note).not.toMatch(/G1-D|TỪ CHỐI TRUNG THỰC/);
+    // Nguyên văn lý do phải đi tới người đọc — nay qua `devDetail`.
+    expect(r.devDetail).toMatch(/HỆ THỐNG HỎNG/);
+    expect(r.devDetail).toMatch(/G1-D|llama-server/);
   });
 
   it("★★ model cạn token vào suy luận (G5-D ca B) ⇒ lý do đi nguyên tới người dùng", async () => {
@@ -96,8 +104,11 @@ describe("G5-D — ba ca hỏng nói BA câu khác nhau, không gộp thành \"o
     const { generateProgram } = await fresh();
     const r = await generateProgram(YEU_CAU);
     expect(r.ok).toBe(false);
-    expect(r.note).toMatch(/HỆ THỐNG HỎNG/);
-    expect(r.note).toMatch(/SUY LUẬN/);
+    expect(r.errorCode).toBe("TOKEN_BUDGET");
+    // AI-09 — đúng câu ngắn phụ lục A đề xuất; KHÔNG lộ trích suy luận / tên trường nội bộ.
+    expect(r.note).toBe("Trợ lý chưa trả lời được (hết ngân sách xử lý). Thử lại hoặc rút ngắn yêu cầu.");
+    expect(r.note).not.toMatch(/SUY LUẬN|reasoning_content|TRÍCH/);
+    expect(r.devDetail).toMatch(/SUY LUẬN/);
     expect(r.note).not.toMatch(/offline/i);
   });
 
@@ -106,9 +117,10 @@ describe("G5-D — ba ca hỏng nói BA câu khác nhau, không gộp thành \"o
     const { generateProgram } = await fresh();
     const r = await generateProgram(YEU_CAU);
     expect(r.ok).toBe(false);
+    expect(r.errorCode).toBe("MODEL_OFFLINE");
     expect(r.note).toMatch(/offline/i);
     expect(r.note, "ca offline KHÔNG được bị gắn nhãn hệ-thống-hỏng — sai theo chiều ngược lại").not.toMatch(
-      /HỆ THỐNG HỎNG/,
+      /HỆ THỐNG HỎNG|lỗi hệ thống/i,
     );
   });
 
@@ -119,7 +131,8 @@ describe("G5-D — ba ca hỏng nói BA câu khác nhau, không gộp thành \"o
     const { generateProgram } = await fresh();
     const r = await generateProgram(YEU_CAU);
     expect(r.ok).toBe(false);
-    expect(r.note).not.toMatch(/HỆ THỐNG HỎNG/);
+    expect(r.errorCode).toBe("EMPTY_OUTPUT");
+    expect(r.note).not.toMatch(/HỆ THỐNG HỎNG|lỗi hệ thống/i);
     expect(r.note).not.toMatch(/offline/i);
     expect(r.note).toMatch(/không đưa ra được|rỗng/i);
   });
@@ -134,8 +147,19 @@ describe("G5-D — ba ca hỏng nói BA câu khác nhau, không gộp thành \"o
       contextCode: "VAR x : BOOL; END_VAR",
     });
     expect(r.ok).toBe(false);
-    expect(r.note).toMatch(/HỆ THỐNG HỎNG/);
-    expect(r.note).not.toMatch(/offline/i);
+    expect(r.errorCode).toBe("INTERNAL");
+    expect(r.devDetail).toMatch(/HỆ THỐNG HỎNG/);
+    expect(r.note).not.toMatch(/offline|G1-D/i);
+  });
+
+  it("AI-09 — câu cho kỹ sư theo ngôn ngữ yêu cầu (EN)", async () => {
+    chatCompletionMock.mockRejectedValue(
+      new Error("[llamaServer] TỪ CHỐI TRUNG THỰC (G5-D, chat): model đã tiêu HẾT hạn mức 1536 token vào chuỗi SUY LUẬN"),
+    );
+    const { generateProgram } = await fresh();
+    const r = await generateProgram({ ...YEU_CAU, request: "write an ST block that starts the conveyor" });
+    expect(r.errorCode).toBe("TOKEN_BUDGET");
+    expect(r.note).toMatch(/processing budget/i);
   });
 
   it("đường sống bình thường KHÔNG bị bản vá làm hỏng: có mã ⇒ trả mã", async () => {
@@ -147,6 +171,8 @@ describe("G5-D — ba ca hỏng nói BA câu khác nhau, không gộp thành \"o
     const r = await generateProgram(YEU_CAU);
     expect(r.code).toMatch(/run := TRUE/);
     expect(r.note ?? "").not.toMatch(/HỆ THỐNG HỎNG|offline/i);
+    expect(r.errorCode).toBeUndefined();
+    expect(r.devDetail).toBeUndefined();
   });
 });
 

@@ -11993,7 +11993,24 @@
     "needRequest": "请描述你想生成的内容。",
     "needContext": "请先粘贴要审查/解释的程序。",
     "safetyReminder": "AI 生成的代码 — 在真实设备上运行前请审阅、校验并仿真。副驾从不编写安全逻辑（急停/联锁/SIL）。",
-    "failed": "生成失败"
+    "failed": "生成失败",
+    "refusal": {
+      "SAFETY_BYPASS_REQUEST": "无法协助：该请求会绕过或禁用安全功能（急停、联锁、防护门、光幕等）。安全功能只能由授权工程师在经认证的安全控制器上修改和验证。",
+      "SAFETY_FUNCTION_AUTHORING": "助手不编写安全功能逻辑（急停、联锁、光幕、SIL/PL）。此类逻辑必须由安全工程师在经认证的安全控制器上实现并验证。",
+      "SAFETY_CODE_MODIFY": "该程序包含安全信号（如 ESTOP、INTERLOCK、GUARD）。助手不修改、翻译或补全涉及安全条件的代码，只能进行解释。",
+      "SAFETY_CODE_REVIEW": "该程序与安全相关——助手不审查或认证安全逻辑。请使用“解释”模式，并由授权安全工程师验证。"
+    },
+    "error": {
+      "title": "助手未能回答",
+      "MODEL_OFFLINE": "编程助手暂不可用（模型离线）。请联系管理员。",
+      "TOKEN_BUDGET": "助手未能完成回答（处理预算已用尽）。请重试或缩短请求。",
+      "CONTEXT_TOO_LARGE": "请求或程序过长，助手无法处理。请缩短后重试。",
+      "MODEL_UNAVAILABLE": "AI 服务器繁忙或无响应。请稍后重试。",
+      "EMPTY_OUTPUT": "助手未能给出可用结果。请换一种说法重试。",
+      "INTERNAL": "助手遇到系统错误。请重试；如仍出现，请联系管理员。",
+      "devDetail": "技术细节（管理员）"
+    },
+    "safetyNotCertified": "与安全相关的程序——此解释不构成认证。须由授权安全工程师验证。"
   },
   "technicianCopilot": {
     "title": "技术副驾",

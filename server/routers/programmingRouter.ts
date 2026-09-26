@@ -177,6 +177,16 @@ export function isSafetyRelevantProgram(...texts: (string | undefined | null)[])
   return isSafetyRelevantText(...texts);
 }
 
+/**
+ * Doc 80 · Task 10 · AI-09 — chi tiết kỹ thuật (`devDetail`: chuỗi chẩn đoán G1-D/G5-D, trích suy
+ * luận của model) CHỈ trả cho admin. Kỹ sư nhận câu ngắn trong `note` + `errorCode`. Pure/testable.
+ */
+export function anChiTietKyThuat<T extends { devDetail?: string }>(result: T, role: string | undefined | null): T {
+  if (role === "admin" || !("devDetail" in result)) return result;
+  const { devDetail: _bo, ...conLai } = result;
+  return conLai as T;
+}
+
 export const programmingRouter = router({
   /** DPC flag/capability snapshot (UI gating hint). */
   status: protectedProcedure
@@ -894,7 +904,10 @@ export const programmingRouter = router({
       // G2-A — `callerRole` được điền TỪ PHIÊN ĐÃ XÁC THỰC, KHÔNG từ thân request (schema zod ở
       // trên cố tình KHÔNG khai trường này, nên client không thể tự đặt vai). Nó chỉ đi tới cổng
       // corpus Training Studio của `retrieveKnowledge` khi copilot truy hồi chỉ mục repo.
-      const result = await generateProgram({ ...input, callerRole: String(ctx.user?.role ?? "") });
+      const result = anChiTietKyThuat(
+        await generateProgram({ ...input, callerRole: String(ctx.user?.role ?? "") }),
+        ctx.user?.role,
+      );
       // Doc 80 · Task 10 (D4) — cổng an toàn đã chạy TRƯỚC model bên trong generateProgram cho MỌI
       // mode (review mã an toàn ⇒ refusalSource:"gate", không tốn lượt model). Ở đây chỉ còn việc
       // GẮN NHÃN: explain (được phép) trên mã/yêu cầu chạm chủ đề an toàn ⇒ "không phải chứng nhận".

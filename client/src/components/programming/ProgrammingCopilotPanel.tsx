@@ -24,6 +24,8 @@
 import { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { trpc } from "@/lib/trpc";
+import { useAuth } from "@/_core/hooks/useAuth";
+import { copilotErrorView, copilotRefusalView } from "./copilotResultView";
 import { cn } from "@/lib/utils";
 import { CodeEditor } from "@/components/engineering/CodeEditor";
 import { HunkDiffView } from "@/components/diff/HunkDiffView";
@@ -89,12 +91,21 @@ interface GenResult {
   ok: boolean;
   refused: boolean;
   reason?: string;
+  /** Doc 80 · D4 — cổng an toàn: nguồn + mã lý do (khoá i18n) + câu theo ngôn ngữ yêu cầu. */
+  refusalSource?: "gate";
+  reasonCode?: string;
+  userMessage?: string;
   kind: string;
   code?: string;
   validation?: GenValidation;
   citations?: GenCitation[];
   explanation?: string;
   note?: string;
+  /** Doc 80 · AI-09 — lỗi hệ thống: mã (khoá i18n) + chi tiết kỹ thuật (server chỉ gửi cho admin). */
+  errorCode?: string;
+  devDetail?: string;
+  /** Explain trên mã liên quan an toàn — không phải chứng nhận. */
+  safetyReviewRequired?: boolean;
 }
 
 export interface ProgrammingCopilotPanelProps {
@@ -135,6 +146,8 @@ export function ProgrammingCopilotPanel({
   className,
 }: ProgrammingCopilotPanelProps) {
   const { t } = useTranslation();
+  const { user } = useAuth();
+  const isAdmin = (user as { role?: string } | null | undefined)?.role === "admin";
   const embedded = variant === "embedded";
 
   const [kind, setKind] = useState<CopilotKind>(initialKind);
@@ -172,6 +185,8 @@ export function ProgrammingCopilotPanel({
   });
 
   const result = (gen.data ?? null) as GenResult | null;
+  const errorView = copilotErrorView(result, isAdmin);
+  const refusalView = result?.refused ? copilotRefusalView(result) : null;
   const busy = gen.isPending;
   const language = KIND_LANGUAGE[kind] ?? "text";
   const editorHeight = embedded ? "220px" : "340px";
@@ -377,7 +392,9 @@ export function ProgrammingCopilotPanel({
               <ShieldAlert className="mt-0.5 h-5 w-5 shrink-0" />
               <div>
                 <p className="font-semibold">{t("progCopilot.refusedTitle", "Refused for safety")}</p>
-                <p className="mt-0.5 leading-snug">{result.reason}</p>
+                <p className="mt-0.5 leading-snug">
+                  {refusalView?.i18nKey ? t(refusalView.i18nKey, refusalView.fallback) : refusalView?.fallback}
+                </p>
               </div>
             </div>
           ) : (
@@ -457,8 +474,43 @@ export function ProgrammingCopilotPanel({
                 </div>
               )}
 
-              {/* Note (flag off / offline / unvalidated Tier-B / failed-validation hint) */}
-              {result.note && (
+              {/* Doc 80 · AI-09 — lỗi hệ thống: câu NGẮN cho kỹ sư; chi tiết kỹ thuật chỉ admin, gập mặc định. */}
+              {errorView && (
+                <div
+                  role="alert"
+                  className="flex items-start gap-2 rounded-md border border-destructive/40 bg-destructive/10 p-3 text-sm text-destructive"
+                >
+                  <XCircle className="mt-0.5 h-4 w-4 shrink-0" />
+                  <div className="min-w-0 space-y-1">
+                    <p className="font-medium">{t("progCopilot.error.title", "The assistant could not answer")}</p>
+                    <p className="leading-snug">{t(errorView.i18nKey, errorView.fallback)}</p>
+                    {errorView.devDetail && (
+                      <details className="text-xs text-muted-foreground">
+                        <summary className="cursor-pointer select-none">
+                          {t("progCopilot.error.devDetail", "Technical details (administrator)")}
+                        </summary>
+                        <pre className="mt-1 max-h-48 overflow-auto whitespace-pre-wrap break-words">{errorView.devDetail}</pre>
+                      </details>
+                    )}
+                  </div>
+                </div>
+              )}
+
+              {/* Explain on safety-related code — not a certification */}
+              {result.safetyReviewRequired && (
+                <div className="flex items-start gap-2 rounded-md border border-warning/40 bg-warning/10 p-2 text-xs text-warning">
+                  <ShieldAlert className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+                  <span>
+                    {t(
+                      "progCopilot.safetyNotCertified",
+                      "Safety-related program — this explanation is NOT a certification. An authorised safety engineer must verify it.",
+                    )}
+                  </span>
+                </div>
+              )}
+
+              {/* Note (flag off / unvalidated Tier-B / failed-validation hint) */}
+              {result.note && !errorView && (
                 <div className="flex items-start gap-2 rounded-md border bg-muted/30 p-2 text-xs text-muted-foreground">
                   <Info className="mt-0.5 h-3.5 w-3.5 shrink-0 text-primary" />
                   <span>{result.note}</span>

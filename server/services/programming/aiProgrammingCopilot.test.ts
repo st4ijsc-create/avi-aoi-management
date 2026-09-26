@@ -408,6 +408,32 @@ describe("generateProgram (doc 34 · P2) — LLM codegen on the safety substrate
     });
   });
 
+  // ── Doc 80 · Task 10 · D3 — đầu ra sạch ──
+  describe("D3 — không ép dòng SAFETY vào khối mã, không chép header golden", () => {
+    it("system prompt KHÔNG còn luật 'SAFETY comment trong khối mã'; few-shot KHÔNG còn header SAFETY", async () => {
+      vi.mocked(chatCompletion).mockResolvedValueOnce(llm("```st\nVAR\n  run : BOOL;\nEND_VAR\nrun := TRUE;\n```"));
+      await generateProgram({ kind: "iec61131-st", request: "moving average filter over an analog input" });
+      const msgs = vi.mocked(chatCompletion).mock.calls[0][0].messages as Array<{ role: string; content: string }>;
+      const system = msgs.find((m) => m.role === "system")!.content;
+      const user = msgs.find((m) => m.role === "user")!.content;
+      expect(system).not.toMatch(/SAFETY:/);
+      expect(system).not.toMatch(/INSIDE the block/i);
+      expect(user).toMatch(/Golden example/); // few-shot vẫn có
+      expect(user).not.toMatch(/SAFETY:|AI-assisted golden/);
+    });
+
+    it("mã trả về có header golden chép lại + dòng SAFETY cuối ⇒ hậu kiểm gỡ, mã vẫn validate", async () => {
+      vi.mocked(chatCompletion).mockResolvedValueOnce(
+        llm(
+          "```st\n(* SAFETY: AI-assisted golden example. The author reviews, validates and tests it on a\n   simulator before any device runs it. *)\nPROGRAM P\nVAR\n  run : BOOL;\nEND_VAR\nrun := TRUE;\nEND_PROGRAM\n(* SAFETY: simulate and test before running on a device. *)\n```",
+        ),
+      );
+      const r = await generateProgram({ kind: "iec61131-st", request: "toggle a run bit" });
+      expect(r.code).toBe("PROGRAM P\nVAR\n  run : BOOL;\nEND_VAR\nrun := TRUE;\nEND_PROGRAM");
+      expect(r.validation!.ok).toBe(true);
+    });
+  });
+
   it("STRUCTURED KIND falls back to the free-text path when grammar generation throws (no crash)", async () => {
     // generateJSON throwing (e.g. a grammar-build failure) must NOT crash — it degrades to the
     // free-text chatCompletion path, which then validates as usual.
