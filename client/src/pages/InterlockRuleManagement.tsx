@@ -49,7 +49,13 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { ShieldAlert, Plus, Pencil, Trash2, CheckCircle2, Play, Pause, FlaskConical, Info } from "lucide-react";
 import { toast } from "sonner";
-import { commandValueOrNull, serializeCommandValueForEdit } from "@/lib/interlockCommandValue";
+import {
+  serializeCommandValueForEdit,
+  inferCommandValueType,
+  resolveCommandValueForSubmit,
+  CommandValueParseError,
+  type CommandValueType,
+} from "@/lib/interlockCommandValue";
 
 const SCOPES = ["line", "station", "machine"] as const;
 const SOURCE_TYPES = ["spc_violation", "ng_rate", "process_result", "telemetry_tag", "cpk"] as const;
@@ -81,6 +87,9 @@ interface RuleForm {
   targetAdapterId: string;
   commandTag: string;
   commandValue: string;
+  // Fix round 2 (doc 80 Task 2 review) — explicit "Kiểu giá trị" selector so a
+  // typed edit is unambiguous (no more auto-detecting "1" as text vs number).
+  commandValueType: CommandValueType;
   cooldownSeconds: string;
 }
 
@@ -88,7 +97,8 @@ const emptyRule: RuleForm = {
   name: "", description: "", scope: "machine", lineId: "", stationId: "", machineId: "",
   sourceType: "ng_rate", sourceKey: "", comparisonOperator: "gt", threshold: "",
   windowSize: "", consecutiveCount: "", windowSeconds: "", action: "alert",
-  targetMachineId: "", targetAdapterId: "", commandTag: "", commandValue: "", cooldownSeconds: "300",
+  targetMachineId: "", targetAdapterId: "", commandTag: "", commandValue: "", commandValueType: "text",
+  cooldownSeconds: "300",
 };
 
 function numOrNull(s: string): number | null {
@@ -136,6 +146,12 @@ export default function InterlockRuleManagement() {
   // ── Rule dialog ──
   const [ruleOpen, setRuleOpen] = useState(false);
   const [form, setForm] = useState<RuleForm>(emptyRule);
+  // Fix round 2 (doc 80 Task 2 review) — "preserve-if-untouched": the commandValue
+  // this dialog opened with, captured VERBATIM (exact type). If the operator never
+  // edits the text field, submitRule() sends this back byte-for-byte instead of
+  // re-parsing — a rename can never alter the command payload. See
+  // client/src/lib/interlockCommandValue.ts (resolveCommandValueForSubmit).
+  const [initialCommandValue, setInitialCommandValue] = useState<{ raw: unknown; text: string }>({ raw: null, text: "" });
 
   const createRule = trpc.interlock.create.useMutation({
     onSuccess: () => { toast.success(t("interlockRules.toastCreated")); setRuleOpen(false); invalidateRules(); },
@@ -185,8 +201,14 @@ export default function InterlockRuleManagement() {
     { enabled: testEnabled && testRuleId != null },
   );
 
-  const openCreate = () => { setForm(emptyRule); setRuleOpen(true); };
+  const openCreate = () => {
+    setForm(emptyRule);
+    setInitialCommandValue({ raw: null, text: "" });
+    setRuleOpen(true);
+  };
   const openEdit = (r: any) => {
+    const initialCommandText = serializeCommandValueForEdit(r.commandValue);
+    setInitialCommandValue({ raw: r.commandValue ?? null, text: initialCommandText });
     setForm({
       id: r.id,
       name: r.name ?? "",
@@ -206,16 +228,40 @@ export default function InterlockRuleManagement() {
       targetMachineId: r.targetMachineId != null ? String(r.targetMachineId) : "",
       targetAdapterId: r.targetAdapterId != null ? String(r.targetAdapterId) : "",
       commandTag: r.commandTag ?? "",
-      // Fix round 1 (doc 80 Task 2 review) — String(v) turned an object into
-      // the literal "[object Object]" (unparseable ⇒ corrupted on next save).
-      // See client/src/lib/interlockCommandValue.ts for the round-trip contract.
-      commandValue: serializeCommandValueForEdit(r.commandValue),
+      // Fix round 1/2 (doc 80 Task 2 review) — see client/src/lib/interlockCommandValue.ts.
+      commandValue: initialCommandText,
+      commandValueType: inferCommandValueType(r.commandValue),
       cooldownSeconds: r.cooldownSeconds != null ? String(r.cooldownSeconds) : "300",
     });
     setRuleOpen(true);
   };
 
   const submitRule = () => {
+    // Fix round 2 (doc 80 Task 2 review) — resolve commandValue BEFORE building
+    // `base`: preserve-if-untouched (exact original, any type) when the field
+    // wasn't edited; otherwise parse STRICTLY per the chosen "Kiểu giá trị".
+    // Reject (toast + abort — do NOT submit) rather than silently coerce/drop.
+    let commandValue: unknown;
+    try {
+      commandValue = resolveCommandValueForSubmit({
+        actionIsAlert: form.action === "alert",
+        currentText: form.commandValue,
+        initialText: initialCommandValue.text,
+        initialRaw: initialCommandValue.raw,
+        selectedType: form.commandValueType,
+      });
+    } catch (err) {
+      const key = err instanceof CommandValueParseError
+        ? ({
+            invalid_number: "interlockRules.commandValueInvalidNumber",
+            invalid_boolean: "interlockRules.commandValueInvalidBoolean",
+            invalid_json: "interlockRules.commandValueInvalidJson",
+          } as const)[err.code]
+        : "interlockRules.commandValueInvalidJson";
+      toast.error(t(key));
+      return;
+    }
+
     const base = {
       name: form.name.trim(),
       description: form.description.trim() || undefined,
@@ -234,8 +280,7 @@ export default function InterlockRuleManagement() {
       targetMachineId: form.action !== "alert" ? numOrNull(form.targetMachineId) : null,
       targetAdapterId: form.action !== "alert" ? numOrNull(form.targetAdapterId) : null,
       commandTag: form.action !== "alert" ? (form.commandTag.trim() || null) : null,
-      // ILK-05 — router giờ CHẤP NHẬN commandValue (cột jsonb có thật, lưu thật).
-      commandValue: form.action !== "alert" ? commandValueOrNull(form.commandValue) : null,
+      commandValue,
       cooldownSeconds: numOrNull(form.cooldownSeconds) ?? 300,
     };
     if (form.id != null) updateRule.mutate({ id: form.id, ...base });
@@ -650,11 +695,27 @@ export default function InterlockRuleManagement() {
                     <Input value={form.commandTag} onChange={(e) => setForm({ ...form, commandTag: e.target.value })} />
                   </div>
                   <div>
-                    <Label>{t("interlockRules.commandValue")}</Label>
-                    <Input value={form.commandValue} onChange={(e) => setForm({ ...form, commandValue: e.target.value })} />
+                    {/* Fix round 2 (doc 80 Task 2 review) — explicit type selector, chỉ
+                        được dùng khi ô commandValue THỰC SỰ bị sửa (preserve-if-untouched
+                        gửi lại giá trị gốc y nguyên khi text không đổi, bất kể ô này). */}
+                    <Label>{t("interlockRules.commandValueType")}</Label>
+                    <Select value={form.commandValueType} onValueChange={(v) => setForm({ ...form, commandValueType: v as CommandValueType })}>
+                      <SelectTrigger><SelectValue /></SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="text">{t("interlockRules.commandValueTypeText")}</SelectItem>
+                        <SelectItem value="number">{t("interlockRules.commandValueTypeNumber")}</SelectItem>
+                        <SelectItem value="boolean">{t("interlockRules.commandValueTypeBoolean")}</SelectItem>
+                        <SelectItem value="json">{t("interlockRules.commandValueTypeJson")}</SelectItem>
+                      </SelectContent>
+                    </Select>
                   </div>
                 </div>
+                <div>
+                  <Label>{t("interlockRules.commandValue")}</Label>
+                  <Input value={form.commandValue} onChange={(e) => setForm({ ...form, commandValue: e.target.value })} />
+                </div>
                 <p className="text-xs text-muted-foreground">{t("interlockRules.commandValueNote")}</p>
+                <p className="text-xs text-muted-foreground">{t("interlockRules.commandValueUnchangedHint")}</p>
               </div>
             )}
           </div>

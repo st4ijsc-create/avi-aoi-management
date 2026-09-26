@@ -1,38 +1,43 @@
 /**
- * Interlock rule `commandValue` — parse/serialize pair for the plain-text
- * `<Input>` in `InterlockRuleManagement.tsx` (ILK-05, doc 80 Phụ lục D §7.4).
+ * Interlock rule `commandValue` — edit-form contract for `InterlockRuleManagement.tsx`
+ * (ILK-05, doc 80 Phụ lục D §7.4).
  *
  * ════════════════════════════════════════════════════════════════════════════
- * Fix round 1 (reviewer finding, doc 80 Task 2) — SAFETY:
- *   `commandValue` is not decorative: `server/services/interlock/interlockEngine.ts:284`
- *   sends `value: rule.commandValue ?? true` straight to `dispatch()` for a
- *   PLC/adapter write. Whatever this pair round-trips WRONG becomes the actual
- *   command payload — silently, on ANY edit (including a pure rename), because
- *   `submitRule()` always re-sends `commandValueOrNull(form.commandValue)`
- *   even when the operator never touched that field.
+ * SAFETY: `commandValue` is not decorative — `server/services/interlock/interlockEngine.ts:284`
+ * sends `value: rule.commandValue ?? true` straight to `dispatch()` for a
+ * PLC/adapter write. Whatever this module round-trips WRONG becomes the actual
+ * command payload, silently, on ANY edit (including a pure rename), because
+ * `submitRule()` always re-sends a `commandValue`.
  *
- *   BEFORE this fix, `openEdit()` used `String(r.commandValue)` to populate the
- *   form field. `String({...})` → the literal text "[object Object]" — an
- *   object commandValue is DESTROYED (replaced by an unparseable string) the
- *   first time ANYONE opens-and-saves the rule for an unrelated reason (e.g. a
- *   rename), with the approver seeing only a name diff.
+ * Fix round 1 (object corruption): `openEdit()` used to populate the edit field
+ * with `String(r.commandValue)`. `String({...})` → the literal text
+ * "[object Object]" — an object commandValue was DESTROYED (replaced by an
+ * unparseable string) the first time anyone opened-and-saved the rule for an
+ * unrelated reason. `serializeCommandValueForEdit` fixed that (JSON.stringify
+ * for non-strings).
  *
- *   FIX: `serializeCommandValueForEdit` keeps a string AS-IS (unquoted — the
- *   existing "type a plain tag name" UX for the common case) but JSON.stringifies
- *   every non-string value, so `commandValueOrNull(serializeCommandValueForEdit(x))`
- *   round-trips exactly for object/array/number/boolean/null.
+ * Fix round 2 (type drift — the part round 1 left open): a single auto-detecting
+ * parser (`JSON.parse` with a raw-string fallback) cannot tell "the stored value
+ * IS the string '1'" from "the stored value is the number 1" — both display as
+ * the text `1`. Re-review found this still let ANY edit (a rename included)
+ * silently turn a stored string "1"/"true" into the number 1 / boolean true.
+ * Closed with TWO complementary mechanisms, neither of which requires quoting
+ * plain tag-name strings:
  *
- *   ⚠ RESIDUAL, KNOWN LIMITATION (documented, not silently masked): a stored
- *   STRING that happens to look like a JSON number/boolean (e.g. the string
- *   "1" or "true") still does NOT round-trip as a string — `serialize` returns
- *   it unquoted (by design, so a plain string like "STOP_LINE" stays readable
- *   without quotes), and `commandValueOrNull` then parses "1"/"true" as the
- *   JSON primitives `1`/`true`, not the original string. A plain single-line
- *   text field cannot express "this text is deliberately a STRING" vs "this
- *   text IS the number/boolean" without a quoting convention — closing this
- *   gap needs a real JSON-aware editor (out of Đợt 0 "vá ngay" scope). The
- *   round-trip test below asserts this EXACT known behavior so it stays a
- *   visible, intentional trade-off instead of a silent regression.
+ *   1. PRESERVE-IF-UNTOUCHED (`resolveCommandValueForSubmit`) — if the edit
+ *      field's text is byte-identical to what it was when the dialog opened,
+ *      the ORIGINAL captured value is sent back VERBATIM (exact reference/type,
+ *      no re-parse at all) — regardless of what the type selector says. A
+ *      rename, or editing any OTHER field, can therefore never alter the
+ *      command payload, full stop — this guarantee does not depend on
+ *      `parseCommandValueByType`/`inferCommandValueType` being bug-free.
+ *   2. EXPLICIT TYPE ON EDIT (`parseCommandValueByType` + `inferCommandValueType`) —
+ *      when the operator DOES change the text, a "Kiểu giá trị" selector
+ *      (Văn bản/Số/Đúng-Sai/JSON) says unambiguously how to parse it. No more
+ *      auto-detection: typing `1` with type=Văn bản yields the STRING "1";
+ *      typing `1` with type=Số yields the NUMBER 1. Invalid input for the
+ *      selected type (e.g. "abc" as Số, "{bad" as JSON) is REJECTED
+ *      (`CommandValueParseError`) rather than silently coerced or dropped.
  * ════════════════════════════════════════════════════════════════════════════
  */
 
@@ -42,13 +47,81 @@ export function serializeCommandValueForEdit(v: unknown): string {
   return typeof v === "string" ? v : JSON.stringify(v);
 }
 
-/** Text from the edit `<Input>` → value sent to the router (JSON when parseable, else the raw string; empty ⇒ null). */
-export function commandValueOrNull(s: string): unknown {
-  const v = s.trim();
-  if (!v) return null;
-  try {
-    return JSON.parse(v);
-  } catch {
-    return v;
+export type CommandValueType = "text" | "number" | "boolean" | "json";
+
+export type CommandValueParseErrorCode = "invalid_number" | "invalid_boolean" | "invalid_json";
+
+/** Thrown by `parseCommandValueByType`/`resolveCommandValueForSubmit` on input that doesn't match the selected type. */
+export class CommandValueParseError extends Error {
+  readonly code: CommandValueParseErrorCode;
+  constructor(code: CommandValueParseErrorCode) {
+    super(code);
+    this.name = "CommandValueParseError";
+    this.code = code;
   }
+}
+
+/** Default the "Kiểu giá trị" selector from a stored value's actual JS type. */
+export function inferCommandValueType(v: unknown): CommandValueType {
+  if (v == null) return "text";
+  if (typeof v === "string") return "text";
+  if (typeof v === "number") return "number";
+  if (typeof v === "boolean") return "boolean";
+  return "json"; // object / array
+}
+
+/**
+ * Parse edit-field text STRICTLY per an explicit type — no auto-detection.
+ * Empty (whitespace-only) text always means "clear the value" ⇒ null,
+ * regardless of the selected type.
+ */
+export function parseCommandValueByType(text: string, type: CommandValueType): unknown {
+  const t = text.trim();
+  if (!t) return null;
+  switch (type) {
+    case "text":
+      return t;
+    case "number": {
+      const n = Number(t);
+      if (!Number.isFinite(n)) throw new CommandValueParseError("invalid_number");
+      return n;
+    }
+    case "boolean": {
+      if (t === "true") return true;
+      if (t === "false") return false;
+      throw new CommandValueParseError("invalid_boolean");
+    }
+    case "json": {
+      try {
+        return JSON.parse(t);
+      } catch {
+        throw new CommandValueParseError("invalid_json");
+      }
+    }
+    default:
+      return t;
+  }
+}
+
+export interface ResolveCommandValueInput {
+  /** action === "alert" ⇒ commandValue is always forced to null (unchanged from before ILK-05). */
+  actionIsAlert: boolean;
+  /** Current text of the edit `<Input>`. */
+  currentText: string;
+  /** Text the edit `<Input>` was initialized with when the dialog opened (`serializeCommandValueForEdit(original)`). */
+  initialText: string;
+  /** The ORIGINAL stored value (captured verbatim when the dialog opened). */
+  initialRaw: unknown;
+  /** The "Kiểu giá trị" selector's current value — consulted ONLY when the text has actually changed. */
+  selectedType: CommandValueType;
+}
+
+/**
+ * The submit-time contract (Fix round 2). See module docblock for the two
+ * mechanisms this composes: preserve-if-untouched, then explicit-type parse.
+ */
+export function resolveCommandValueForSubmit(input: ResolveCommandValueInput): unknown {
+  if (input.actionIsAlert) return null;
+  if (input.currentText === input.initialText) return input.initialRaw;
+  return parseCommandValueByType(input.currentText, input.selectedType);
 }
