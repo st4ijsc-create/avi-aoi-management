@@ -4054,7 +4054,9 @@
       "productModelCode": "mã sản phẩm",
       "deXuat": "nội dung đề xuất",
       "mimeType": "định dạng ảnh",
-      "goldenSet": "bộ câu hỏi vàng"
+      "goldenSet": "bộ câu hỏi vàng",
+      "target": "đích tác động",
+      "endpoint": "địa chỉ endpoint"
     },
     "feature": {
       "webIngest": "nạp nội dung từ web",
@@ -4170,7 +4172,8 @@
       "viewGlobalAiReport": "xem báo cáo AI toàn hệ thống",
       "viewAiTimeSeries": "xem chuỗi thời gian AI",
       "approveOrchestrationGate": "duyệt cổng này của quy trình điều phối",
-      "selfApproveOrchestrationGate": "tự duyệt cổng 4 mắt của lượt chạy do chính mình khởi động"
+      "selfApproveOrchestrationGate": "tự duyệt cổng 4 mắt của lượt chạy do chính mình khởi động",
+      "selfApproveInterlockRule": "tự duyệt quy tắc khoá liên động của chính mình"
     },
     "reason": {
       "deploymentNotAwaitingApproval": "Yêu cầu này không còn ở trạng thái chờ duyệt (đã được người khác duyệt/từ chối hoặc đang xử lý). Tải lại danh sách để xem trạng thái hiện tại.",
@@ -15599,7 +15602,7 @@
     "sodHintInbox": "Deploy production được gửi CHỜ DUYỆT: một người KHÁC bạn sẽ ký bằng session của họ (phân tách nhiệm vụ).",
     "fleetTitle": "Triển khai đội máy (canary)",
     "fleetHint": "Đẩy build đang chọn ra nhiều máy TUẦN TỰ qua đúng đường deploy (giữ nguyên mọi cổng an toàn). Canary N máy đầu; nếu không đạt sẽ DỪNG và (tùy chọn) tự khôi phục các máy đã ghi.",
-    "fleetNeedBuild": "Chọn một build ở khối \\",
+    "fleetNeedBuild": "Chọn một build ở khối \"Builds & Mô phỏng\" trước để triển khai ra đội máy.",
     "fleetTargets": "Máy đích",
     "fleetCanaryCount": "Số máy canary",
     "fleetPromoteVerified": "Chỉ promote khi canary VERIFIED",

@@ -4046,7 +4046,9 @@
       "productModelCode": "产品型号编码",
       "deXuat": "提案内容",
       "mimeType": "图像格式",
-      "goldenSet": "黄金问题集"
+      "goldenSet": "黄金问题集",
+      "target": "目标",
+      "endpoint": "endpoint地址"
     },
     "feature": {
       "webIngest": "网页内容导入",
@@ -4162,7 +4164,8 @@
       "viewGlobalAiReport": "查看全系统AI报告",
       "viewAiTimeSeries": "查看 AI 时间序列",
       "approveOrchestrationGate": "批准此编排关卡",
-      "selfApproveOrchestrationGate": "批准由您本人启动的运行中的四眼关卡"
+      "selfApproveOrchestrationGate": "批准由您本人启动的运行中的四眼关卡",
+      "selfApproveInterlockRule": "自行审批自己提交的联锁规则"
     },
     "chartRenderError": "图表渲染错误",
     "cannotLoadDataDescription": "加载数据时出错，请重试。",
@@ -16178,7 +16181,7 @@
     "sodHintInbox": "生产部署需提交审批：由您以外的人使用其自身会话签署（职责分离）。",
     "fleetTitle": "设备群部署（金丝雀）",
     "fleetHint": "沿同一部署路径将所选版本顺序推送到多台设备（所有安全闸门依然生效）。先对前 N 台做金丝雀；若未通过则停止，并（可选）回滚已写入的设备。",
-    "fleetNeedBuild": "请在此区块中选择一个版本",
+    "fleetNeedBuild": "请先在“构建与仿真”区块中选择一个版本，再部署到设备群。",
     "fleetTargets": "目标设备",
     "fleetCanaryCount": "金丝雀设备数量",
     "fleetPromoteVerified": "仅当金丝雀已验证时才推广",

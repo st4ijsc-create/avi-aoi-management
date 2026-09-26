@@ -4054,7 +4054,9 @@
       "productModelCode": "product model code",
       "deXuat": "proposal",
       "mimeType": "image format",
-      "goldenSet": "golden set"
+      "goldenSet": "golden set",
+      "target": "target",
+      "endpoint": "endpoint"
     },
     "feature": {
       "webIngest": "web content ingestion",
@@ -4170,7 +4172,8 @@
       "viewGlobalAiReport": "view system-wide AI report",
       "viewAiTimeSeries": "view AI time-series",
       "approveOrchestrationGate": "approve this orchestration gate",
-      "selfApproveOrchestrationGate": "approve a four-eyes gate of a run you started yourself"
+      "selfApproveOrchestrationGate": "approve a four-eyes gate of a run you started yourself",
+      "selfApproveInterlockRule": "self-approve your own interlock rule"
     },
     "chartRenderError": "Chart render error",
     "cannotLoadDataDescription": "Cannot load data description",
@@ -15619,7 +15622,7 @@
     "sodHintInbox": "Production deploys are submitted for APPROVAL: someone OTHER than you signs with their own session (separation of duties).",
     "fleetTitle": "Fleet rollout (canary)",
     "fleetHint": "Push the selected build to several machines SEQUENTIALLY through the same deploy path (all safety gates stay in force). Canary the first N machines; on failure it HALTS and (optionally) rolls back the machines already written.",
-    "fleetNeedBuild": "Select a build in the block",
+    "fleetNeedBuild": "Select a build in the \"Builds & Simulation\" block first to roll it out to the fleet.",
     "fleetTargets": "Target machines",
     "fleetCanaryCount": "Canary machine count",
     "fleetPromoteVerified": "Promote only when the canary is VERIFIED",
