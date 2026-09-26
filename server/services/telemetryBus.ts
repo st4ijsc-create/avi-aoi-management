@@ -29,7 +29,7 @@ import { createBusFanout } from "../_core/busFanout";
 // array reference immediately; zero added cost). No cycle: ingestValidation never imports
 // this module at runtime.
 import { filterTelemetrySamples } from "./contracts/ingestValidation";
-import { isPgDataError, MIN_PG_TS_MS, warnGop } from "./ot/otGuards";
+import { isPgDataError, MIN_PG_TS_MS, recordTsDrops, warnGop } from "./ot/otGuards";
 
 /** The canonical telemetry protocol set (mirrors telemetryProtocolEnum). */
 /**
@@ -577,6 +577,7 @@ function gateSampleTs(samples: CanonicalSample[]): {
   }
   if (rejected.length > 0) {
     const nInvalid = rejected.filter((r) => r.reason === "invalid_ts").length;
+    recordTsDrops(nInvalid, rejected.length - nInvalid); // bộ đếm TÍCH LUỸ (log thì bị gộp)
     warnGop(
       "telemetryBus:ts",
       `[TelemetryBus] loại ${rejected.length}/${samples.length} mẫu vì ts (invalid_ts=${nInvalid}, ` +
@@ -639,8 +640,9 @@ export async function insertTelemetryChunked(
     accepted += r.persisted;
     for (const i of r.badData) rejected.push({ index: start + i, reason: "invalid_value" });
     if (r.abort) {
+      const bad = new Set(r.badData);
       for (let i = start + r.abort.done; i < rows.length; i++) {
-        if (!r.badData.includes(i - start)) rejected.push({ index: i, reason: "db_error" });
+        if (!bad.has(i - start)) rejected.push({ index: i, reason: "db_error" });
       }
       console.error(
         `[TelemetryBus] insert failed — ${rows.length - start - r.abort.done}/${rows.length} dòng chưa lưu, dừng ở khối ${start / TELEMETRY_INSERT_CHUNK_ROWS + 1}:`,

@@ -217,3 +217,98 @@ describe("T7 — mẫu hỏng bị CÁCH LY, không chặn các mẫu sau", () =
     expect(getStatus().quarantined).toBe(0);
   });
 });
+
+// ════════════════════════════════════════════════════════════════════════════════════
+// Fix round 1 (T7) — nhánh anh em: WAL UNS (DurableBuffer) + restore không chép lại .corrupt
+// ════════════════════════════════════════════════════════════════════════════════════
+describe("T7 fix r1 — restore OT không chép lại dòng hỏng mỗi lần khởi động", () => {
+  it("★ restore lần 2 (sau 'khởi động lại') KHÔNG append thêm vào .corrupt, WAL đã sạch dòng hỏng", async () => {
+    const good = JSON.stringify({ key: "1|a|1000", enqueuedAt: Date.now(), row: { ...row("a", 1000), ts: new Date(1000).toISOString() } });
+    await fsp.writeFile(wal, [good, '{"cut":', "rác không phải JSON"].join("\n") + "\n");
+    vi.spyOn(console, "warn").mockImplementation(() => {});
+    expect(await restore()).toBe(1);
+    const q1 = (await fsp.readFile(wal + ".corrupt", "utf8")).split("\n").filter(Boolean).length;
+    expect(q1).toBe(2);
+    _reset(); // khởi động lại tiến trình
+    expect(await restore()).toBe(1);
+    const q2 = (await fsp.readFile(wal + ".corrupt", "utf8")).split("\n").filter(Boolean).length;
+    expect(q2).toBe(2);
+    expect(getStatus().corruptLinesSkipped).toBe(0);
+    expect((await walLines()).map((l) => l.row.metric)).toEqual(["a"]);
+  });
+});
+
+describe("T7 fix r1 — WAL UNS (DurableBuffer, edge) ghi nguyên tử + restore cách ly dòng hỏng", () => {
+  let uwal: string;
+  const u = (tag: string, tsMs: number) => ({
+    deviceId: "EDGE-1",
+    adapterId: 1,
+    machineId: null,
+    tagKey: tag,
+    value: 1,
+    quality: "good",
+    tsMs,
+    sparkplugType: "Double",
+    topic: `avi/edge/${tag}`,
+  });
+  const uLines = async () =>
+    (await fsp.readFile(uwal, "utf8")).split("\n").filter((l) => l.trim()).map((l) => JSON.parse(l) as { item: { tagKey: string } });
+  let sfm: typeof import("./storeForward");
+  beforeEach(async () => {
+    uwal = path.join(dir, "edge-uns.jsonl");
+    process.env.EDGE_UNS_STORE_FORWARD_FILE = uwal;
+    process.env.EDGE_UNS_STORE_FORWARD_ENABLED = "true";
+    sfm = await import("./storeForward");
+    sfm._resetUnsStoreForward();
+  });
+  afterEach(() => {
+    sfm._resetUnsStoreForward();
+    delete process.env.EDGE_UNS_STORE_FORWARD_FILE;
+    delete process.env.EDGE_UNS_STORE_FORWARD_ENABLED;
+  });
+
+  it("★ chết GIỮA ghi-tệp-tạm và rename ⇒ tệp WAL UNS cũ còn NGUYÊN từng byte", async () => {
+    await sfm.bufferUnsSamples([u("a", 1000)]);
+    const before = await fsp.readFile(uwal);
+    const rename = vi.spyOn(fsp, "rename").mockRejectedValueOnce(new Error("mô phỏng: chết trước rename"));
+    await sfm.bufferUnsSamples([u("b", 2000)]);
+    expect(rename).toHaveBeenCalledTimes(1);
+    expect(Buffer.compare(await fsp.readFile(uwal), before)).toBe(0);
+    rename.mockRestore();
+    await sfm.bufferUnsSamples([u("c", 3000)]);
+    expect((await uLines()).map((l) => l.item.tagKey)).toEqual(["a", "b", "c"]);
+  });
+
+  it("★ chết GIỮA lúc ghi byte ⇒ tệp WAL UNS cũ còn nguyên, không sót tệp tạm", async () => {
+    await sfm.bufferUnsSamples([u("a", 1000), u("b", 2000)]);
+    const before = await fsp.readFile(uwal);
+    const proto = await fileHandleProto();
+    const orig = proto.writeFile;
+    vi.spyOn(proto, "writeFile").mockImplementationOnce(async function (this: unknown, data: unknown) {
+      await orig.call(this, String(data).slice(0, 13));
+      throw new Error("mô phỏng: kill giữa lúc ghi");
+    });
+    await sfm.bufferUnsSamples([u("c", 3000)]);
+    expect(Buffer.compare(await fsp.readFile(uwal), before)).toBe(0);
+    const left = (await fsp.readdir(dir)).filter((f) => f.startsWith("edge-uns.jsonl."));
+    expect(left).toEqual([]);
+  });
+
+  it("20 lượt buffer UNS song song ⇒ tệp chứa đủ 20 dòng (tuần tự hoá)", async () => {
+    await Promise.all(Array.from({ length: 20 }, (_, i) => sfm.bufferUnsSamples([u(`t${i}`, 1000 + i)])));
+    expect((await uLines()).length).toBe(20);
+  });
+
+  it("★ restore UNS: dòng hỏng bị BỎ, ĐẾM, chép sang .corrupt; dòng tốt được nạp; khởi động lại không chép lại", async () => {
+    const good = (tag: string, ts: number) => JSON.stringify({ key: `EDGE-1|${tag}|${ts}`, enqueuedAt: Date.now(), item: u(tag, ts) });
+    await fsp.writeFile(uwal, [good("a", 1000), '{"key":"cut","item":{"devi', '{"key":"x","item":{"tagKey":"no-device"}}', good("b", 2000)].join("\n") + "\n");
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    expect(await sfm.restoreUns()).toBe(2);
+    expect(sfm.getUnsStatus().corruptLinesSkipped).toBe(2);
+    expect(warn.mock.calls.filter((c) => String(c[0]).includes("restore")).length).toBe(1);
+    expect((await fsp.readFile(uwal + ".corrupt", "utf8")).split("\n").filter(Boolean).length).toBe(2);
+    sfm._resetUnsStoreForward();
+    expect(await sfm.restoreUns()).toBe(2);
+    expect((await fsp.readFile(uwal + ".corrupt", "utf8")).split("\n").filter(Boolean).length).toBe(2);
+  });
+});

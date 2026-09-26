@@ -41,3 +41,25 @@ export function isPgDataError(err: unknown): boolean {
 
 /** 0001-01-01T00:00:00Z — dưới mốc này chuỗi ISO của JS có dạng năm mở rộng mà Postgres không đọc. */
 export const MIN_PG_TS_MS = -62135596800000;
+
+/**
+ * T7 fix r1 — bộ đếm TÍCH LUỸ số mẫu bị cổng `ts` của telemetryBus loại (mọi đầu đọc, mọi đường).
+ * Log của cổng bị GỘP ⇒ không có con số này thì một thiết bị lệch đồng hồ bị loại hàng triệu mẫu
+ * chỉ để lại vài dòng log. Hiện ra qua storeForward.getStatus() (droppedInvalidTs, droppedFutureSkew).
+ */
+const tsDropStats = { droppedInvalidTs: 0, droppedFutureSkew: 0 };
+
+export function recordTsDrops(invalidTs: number, futureSkew: number): void {
+  tsDropStats.droppedInvalidTs += invalidTs;
+  tsDropStats.droppedFutureSkew += futureSkew;
+}
+
+export function getTsDropStats(): { droppedInvalidTs: number; droppedFutureSkew: number } {
+  return { ...tsDropStats };
+}
+
+/** Xoá bộ đếm (test). */
+export function _resetTsDropStats(): void {
+  tsDropStats.droppedInvalidTs = 0;
+  tsDropStats.droppedFutureSkew = 0;
+}

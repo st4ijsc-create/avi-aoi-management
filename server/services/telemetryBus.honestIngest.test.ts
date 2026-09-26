@@ -67,8 +67,8 @@ vi.mock("../db/connection", () => ({ getDb: vi.fn(async () => (db.mode === "abse
 vi.mock("../_core/socket", () => ({ emitTelemetrySamples: vi.fn() }));
 
 import { ingestTelemetry, ingestTelemetryDetailed, wireStoreForward, type CanonicalSample } from "./telemetryBus";
-import { _reset, bufferedCount, backfill } from "./ot/storeForward";
-import { _resetLogGop } from "./ot/otGuards";
+import { _reset, bufferedCount, backfill, getStatus } from "./ot/storeForward";
+import { _resetLogGop, _resetTsDropStats } from "./ot/otGuards";
 
 const NOW = Date.now();
 function s(i: number, over: Partial<CanonicalSample> = {}): CanonicalSample {
@@ -98,6 +98,7 @@ beforeEach(() => {
   db.stored.length = 0;
   _reset();
   _resetLogGop();
+  _resetTsDropStats();
 });
 afterEach(async () => {
   _reset();
@@ -226,5 +227,35 @@ describe("T7 — nhánh anh em: backfill store-forward cũng chia khối", () =>
     expect(r.drained).toBe(7000);
     expect(bufferedCount()).toBe(0);
     expect(Math.max(...db.statements)).toBeLessThanOrEqual(1000);
+  });
+});
+
+describe("T7 fix r1 — backfill không ghi lại khối đã lưu khi khối SAU hỏng", () => {
+  it("★ drain batch 2500, khối 2 sập kết nối ⇒ sau khi DB hồi, tổng dòng lưu = 2500 (không trùng)", async () => {
+    process.env.OT_STORE_FORWARD_ENABLED = "true";
+    process.env.OT_STORE_FORWARD_DRAIN_BATCH = "2500";
+    db.mode = "down";
+    await ingestTelemetry(Array.from({ length: 2500 }, (_, i) => s(i, { deviceId: null })));
+    expect(bufferedCount()).toBe(2500);
+    db.mode = "up";
+    db.calls = 0;
+    db.failOnCall = 2;
+    await wireStoreForward();
+    await backfill();
+    db.failOnCall = 0;
+    await backfill();
+    expect(bufferedCount()).toBe(0);
+    expect(db.stored.length).toBe(2500);
+    expect(new Set(db.stored.map((r) => r.numValue)).size).toBe(2500);
+  });
+});
+
+describe("T7 fix r1 — bộ đếm tích luỹ mẫu bị cổng ts loại", () => {
+  it("★ droppedInvalidTs / droppedFutureSkew cộng dồn qua cả hai đường ingest, hiện ở getStatus()", async () => {
+    await ingestTelemetry([s(0), s(1, { ts: new Date("rác") }), s(2, { ts: new Date(NOW + 3 * 86_400_000) })]);
+    await ingestTelemetryDetailed([s(3, { ts: new Date(NaN) }), s(4, { ts: new Date(NaN) }), s(5)]);
+    const st = getStatus();
+    expect(st.droppedInvalidTs).toBe(3);
+    expect(st.droppedFutureSkew).toBe(1);
   });
 });

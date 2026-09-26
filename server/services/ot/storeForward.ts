@@ -32,7 +32,7 @@
 import { promises as fs } from "node:fs";
 import path from "node:path";
 import type { InsertOtTelemetry } from "../../../drizzle/schema/ot";
-import { isPgDataError, MIN_PG_TS_MS, warnGop } from "./otGuards";
+import { getTsDropStats, isPgDataError, MIN_PG_TS_MS, warnGop } from "./otGuards";
 
 // ── flag ───────────────────────────────────────────────────────────────────────
 
@@ -64,10 +64,19 @@ function maxAgeMs(): number {
   return Number.isFinite(n) && n > 0 ? n : 24 * 60 * 60 * 1000;
 }
 
-/** How many entries to drain per backfill batch (bounded work per attempt). */
+/**
+ * T7 fix r1 — trần CỨNG của một lô xả WAL: 1000 dòng = đúng MỘT câu INSERT của đường ghi
+ * (TELEMETRY_INSERT_CHUNK_ROWS). Lô lớn hơn thì đường ghi chia thành NHIỀU câu tự-commit: khối 1
+ * đã lưu mà khối 2 hỏng ⇒ cả lô vẫn nằm trong hàng đợi ⇒ lần xả sau (hoặc lượt phân xử từng dòng)
+ * ghi LẠI khối 1 ⇒ dòng `deviceId` NULL bị NHÂN ĐÔI (uq index NULLS DISTINCT). Kẹp ≤1000 thì mỗi
+ * lời gọi insertFn là một câu nguyên tử: lưu hết hoặc không lưu gì, và được gỡ khỏi hàng đợi ngay.
+ */
+export const BACKFILL_MAX_BATCH_ROWS = 1000;
+
+/** How many entries to drain per backfill batch (bounded work per attempt; clamped ≤ 1000). */
 function drainBatch(): number {
   const n = parseInt(process.env.OT_STORE_FORWARD_DRAIN_BATCH || "500", 10);
-  return Number.isFinite(n) && n > 0 ? n : 500;
+  return Math.min(Number.isFinite(n) && n > 0 ? n : 500, BACKFILL_MAX_BATCH_ROWS);
 }
 
 // ── the durable WAL (in-memory queue is source of truth; optional file mirror) ──
@@ -333,6 +342,10 @@ export async function restore(): Promise<number> {
       `[StoreForward] restore: bỏ ${corrupt.length} dòng WAL hỏng (chép sang ${path.basename(quarantineFile())}); ` +
         `nạp ${queue.length} dòng tốt`,
     );
+    // Fix r1: viết lại WAL NGAY (không còn dòng hỏng) — nếu không, mỗi lần khởi động lại sẽ
+    // đọc lại đúng những dòng ấy và chép chúng vào .corrupt thêm một lần nữa.
+    fileDirty = true;
+    await flushFile();
   }
   return queue.length;
 }
@@ -617,6 +630,9 @@ function removeFront(n: number): void {
 
 export interface StoreForwardStatus extends StoreForwardMetrics {
   enabled: boolean;
+  /** T7 fix r1 — mẫu bị cổng `ts` của telemetryBus loại (tích luỹ, mọi đầu đọc; KHÔNG vào DB/WAL). */
+  droppedInvalidTs: number;
+  droppedFutureSkew: number;
   /** Rows currently buffered (not yet backfilled). */
   bufferedCount: number;
   /** Configured bounds (for the health card). */
@@ -635,6 +651,7 @@ export function getStatus(): StoreForwardStatus {
     maxAgeMs: maxAgeMs(),
     walFile: walFile(),
     ...metrics,
+    ...getTsDropStats(),
   };
 }
 
@@ -705,6 +722,8 @@ export interface DurableBufferStatus {
   deduped: number;
   droppedOverflow: number;
   droppedAge: number;
+  /** T7 fix r1 — WAL lines skipped by restore() (unparsable / no item / rejected by fromWire); copied to `<file>.corrupt`. */
+  corruptLinesSkipped: number;
   lastBackfillAt: string | null;
   lastBufferedAt: string | null;
 }
@@ -756,6 +775,7 @@ class DurableBuffer<T> {
     deduped: 0,
     droppedOverflow: 0,
     droppedAge: 0,
+    corruptLinesSkipped: 0,
     lastBackfillAt: null as string | null,
     lastBufferedAt: null as string | null,
   };
@@ -784,17 +804,35 @@ class DurableBuffer<T> {
     return JSON.stringify({ key: e.key, enqueuedAt: e.enqueuedAt, item: this.cfg.toWire(e.item) });
   }
 
-  private async flushFile(): Promise<void> {
+  /**
+   * T7 fix r1 — cùng hợp đồng với WAL OT phía trên: ghi NGUYÊN TỬ (writeFileAtomic: tệp tạm →
+   * fsync → rename) và TUẦN TỰ HOÁ (một chuỗi promise mỗi buffer). Trước đây `fs.writeFile` đè
+   * tại chỗ, không fsync, không khoá ⇒ chết giữa lúc ghi là mất cả backlog UNS của edge.
+   */
+  private flushChain: Promise<void> = Promise.resolve();
+
+  private flushFile(): Promise<void> {
+    const run = this.flushChain.then(
+      () => this.writeSnapshot(),
+      () => this.writeSnapshot(),
+    );
+    this.flushChain = run.catch(() => {});
+    return run;
+  }
+
+  private async writeSnapshot(): Promise<void> {
     if (!this.fileDirty) return;
     this.fileDirty = false;
     const file = this.cfg.file();
     try {
-      await fs.mkdir(path.dirname(file), { recursive: true });
       const lines = this.queue.map((e) => this.entryToLine(e)).join("\n");
-      await fs.writeFile(file, lines.length ? lines + "\n" : "", "utf8");
+      await writeFileAtomic(file, lines.length ? lines + "\n" : "");
     } catch (err) {
       this.fileDirty = true; // retry next flush; the in-memory queue is the truth
-      console.warn(`[${this.cfg.name}] WAL file flush failed:`, (err as Error)?.message || err);
+      warnGop(
+        `${this.cfg.name}:flush`,
+        `[${this.cfg.name}] WAL file flush failed (tệp cũ giữ nguyên): ${(err as Error)?.message || err}`,
+      );
     }
   }
 
@@ -806,21 +844,45 @@ class DurableBuffer<T> {
     } catch {
       return this.queue.length;
     }
+    const corrupt: string[] = [];
     for (const line of raw.split("\n")) {
       const t = line.trim();
       if (!t) continue;
       try {
         const parsed = JSON.parse(t) as { key?: string; enqueuedAt?: number; item?: Record<string, unknown> };
-        if (!parsed.item) continue;
+        if (!parsed || typeof parsed !== "object" || !parsed.item || typeof parsed.item !== "object") {
+          corrupt.push(t);
+          continue;
+        }
         const item = this.cfg.fromWire(parsed.item);
-        if (item == null) continue;
+        if (item == null) {
+          corrupt.push(t);
+          continue;
+        }
         const key = typeof parsed.key === "string" ? parsed.key : this.cfg.keyOf(item);
         if (this.queuedKeys.has(key) || this.appliedKeys.has(key)) continue;
         this.queue.push({ key, enqueuedAt: parsed.enqueuedAt ?? Date.now(), item });
         this.queuedKeys.add(key);
       } catch {
-        /* skip a corrupt line */
+        corrupt.push(t); // unparsable (e.g. a line cut by a crash under the OLD in-place writer)
       }
+    }
+    if (corrupt.length > 0) {
+      // T7 fix r1 — như WAL OT: đếm, chép nguyên văn sang `<file>.corrupt`, log GỘP một dòng, rồi
+      // viết lại WAL ngay để lần khởi động sau không chép lại đúng những dòng ấy.
+      this.metrics.corruptLinesSkipped += corrupt.length;
+      try {
+        await fs.mkdir(path.dirname(file), { recursive: true });
+        await fs.appendFile(file + ".corrupt", corrupt.map((l) => l.replace(/\r?\n/g, " ")).join("\n") + "\n", "utf8");
+      } catch (err) {
+        warnGop(`${this.cfg.name}:quarantine`, `[${this.cfg.name}] không ghi được tệp cách ly: ${(err as Error)?.message || err}`);
+      }
+      console.warn(
+        `[${this.cfg.name}] restore: bỏ ${corrupt.length} dòng WAL hỏng (chép sang ${path.basename(file)}.corrupt); ` +
+          `nạp ${this.queue.length} dòng tốt`,
+      );
+      this.fileDirty = true;
+      await this.flushFile();
     }
     return this.queue.length;
   }
@@ -957,6 +1019,7 @@ class DurableBuffer<T> {
     this.metrics.deduped = 0;
     this.metrics.droppedOverflow = 0;
     this.metrics.droppedAge = 0;
+    this.metrics.corruptLinesSkipped = 0;
     this.metrics.lastBackfillAt = null;
     this.metrics.lastBufferedAt = null;
     this.fileDirty = false;

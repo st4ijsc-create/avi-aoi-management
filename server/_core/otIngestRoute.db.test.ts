@@ -22,7 +22,7 @@ vi.mock("./socket", () => ({ emitTelemetrySamples: vi.fn() }));
 
 import { createOtIngestHandler } from "./otIngestRoute";
 import { ingestTelemetryDetailed, wireStoreForward } from "../services/telemetryBus";
-import { restore, backfill, getStatus, _reset } from "../services/ot/storeForward";
+import { restore, backfill, buffer, getStatus, _reset } from "../services/ot/storeForward";
 
 const DAU = `T7DB-${Date.now()}`;
 const sqlc = postgres(process.env.DATABASE_URL as string, { max: 2 });
@@ -51,6 +51,7 @@ beforeAll(async () => {
 afterAll(async () => {
   await new Promise<void>((r) => server.close(() => r()));
   await sqlc`DELETE FROM ot_telemetry WHERE "deviceId" LIKE ${DAU + "%"}`;
+  await sqlc`DELETE FROM ot_telemetry WHERE "deviceId" IS NULL AND metric = ${DAU + "-nulldev"}`;
   await sqlc.end();
   _reset();
   delete process.env.OT_STORE_FORWARD_ENABLED;
@@ -164,4 +165,41 @@ describe("T7 — CSDL _test thật: WAL chứa dòng hỏng ⇒ replay vẫn lư
     const rows = await sqlc`SELECT metric FROM ot_telemetry WHERE "deviceId" = ${dev} ORDER BY ts`;
     expect(rows.map((x) => x.metric)).toEqual(["good_a", "good_b", "good_c"]);
   }, 30_000);
+});
+
+describe("T7 fix r1 — CSDL _test thật: backfill KHÔNG nhân đôi khối đã lưu (deviceId NULL, NULLS DISTINCT)", () => {
+  it("★ drain batch 2500, khối 2 có dòng Postgres từ chối ⇒ 0 dòng trùng, đúng 2499 dòng", async () => {
+    process.env.OT_STORE_FORWARD_ENABLED = "true";
+    process.env.OT_STORE_FORWARD_FILE = path.join(walDir, "ot-sf-dup.jsonl");
+    process.env.OT_STORE_FORWARD_DRAIN_BATCH = "2500";
+    _reset();
+    const metric = `${DAU}-nulldev`;
+    const rows = Array.from({ length: 2500 }, (_, i) => ({
+      ts: new Date(T0 + i),
+      deviceId: null,
+      protocol: "modbus" as const,
+      metric: i === 1500 ? `${metric}\u0000x` : metric,
+      numValue: i,
+      textValue: null,
+      boolValue: null,
+      unit: null,
+      quality: "good" as const,
+      meta: { adapterId: DAU, tagKey: `k${i}` },
+    }));
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const err = vi.spyOn(console, "error").mockImplementation(() => {});
+    try {
+      expect(await buffer(rows)).toBe(2500);
+      await wireStoreForward();
+      const r = await backfill();
+      expect(r.remaining).toBe(0);
+    } finally {
+      warn.mockRestore();
+      err.mockRestore();
+      delete process.env.OT_STORE_FORWARD_DRAIN_BATCH;
+    }
+    const [{ n, d }] = await sqlc`SELECT count(*)::int AS n, count(DISTINCT "numValue")::int AS d
+      FROM ot_telemetry WHERE "deviceId" IS NULL AND metric = ${metric}`;
+    expect({ n, d }).toEqual({ n: 2499, d: 2499 });
+  }, 60_000);
 });
