@@ -306,6 +306,30 @@ function goVoSuyLuan(text: string): string | null {
   return null;
 }
 
+/**
+ * Fix round 1 (#4, đo lại T04) — kind VĂN BẢN (ST/LD/ZBasic/TM/MELSEC…) mà đầu ra lại là một object
+ * JSON (`{"program": "…"}`, `{"steps": […]}`) ⇒ đó là VỎ, không phải chương trình. Có một trường mã
+ * dạng chuỗi (code/program/source) ⇒ gỡ vỏ; không có ⇒ KHÔNG có mã (validator robot-tm quá lỏng đã
+ * từng gắn ok:true cho cả vỏ JSON). Kind JSON thật (ir-flow / iec61131-pou) ⇒ không đụng.
+ */
+function goVoJsonChoKindVanBan(code: string, laKindJson: boolean): string {
+  if (laKindJson) return code;
+  const t = code.trim();
+  if (!t.startsWith("{")) return code;
+  let o: unknown;
+  try {
+    o = JSON.parse(t);
+  } catch {
+    return code;
+  }
+  if (!o || typeof o !== "object" || Array.isArray(o)) return code;
+  const rec = o as Record<string, unknown>;
+  for (const k of Object.keys(rec)) {
+    if (KHOA_MA.includes(k.toLowerCase()) && typeof rec[k] === "string") return extractCode(String(rec[k]));
+  }
+  return "";
+}
+
 /** Cheap keyword signals from the request/code → tag bonuses for golden-example selection. */
 function deriveTags(request: string, contextCode?: string): string[] {
   const src = `${request ?? ""} ${contextCode ?? ""}`.toLowerCase();
@@ -1167,7 +1191,7 @@ export async function generateProgram(input: GenerateProgramInput): Promise<Gene
     code = extractCode(out.text);
   }
   // Doc 80 · D3 (AI-05) — hậu kiểm: gỡ header golden / dòng SAFETY / `_safety_note` bị model chép lại.
-  code = goHeaderGoldenKhoiMa(code);
+  code = goVoJsonChoKindVanBan(goHeaderGoldenKhoiMa(code), !!jsonSchema);
   if (!code) {
     return { ok: false, refused: false, kind: outKind, citations, note: "The model returned no code." };
   }
@@ -1204,7 +1228,7 @@ export async function generateProgram(input: GenerateProgramInput): Promise<Gene
         console.error(`[aiProgrammingCopilot] vòng tự sửa ${repairAttempts}: lượt gọi model HỎNG — ${out.lyDo}`);
       }
     }
-    if (fixed) fixed = goHeaderGoldenKhoiMa(fixed); // Doc 80 · D3 — cùng hậu kiểm cho lượt tự sửa
+    if (fixed) fixed = goVoJsonChoKindVanBan(goHeaderGoldenKhoiMa(fixed), !!jsonSchema); // D3 + Fix 4 — cùng hậu kiểm cho lượt tự sửa
     if (!fixed) break; // model returned nothing — keep the previous attempt + its diagnostics
     const re = await runValidation(outKind, language, fixed);
     code = fixed;

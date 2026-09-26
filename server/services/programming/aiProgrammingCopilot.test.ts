@@ -469,6 +469,24 @@ describe("generateProgram (doc 34 · P2) — LLM codegen on the safety substrate
       }
     });
 
+    it("đo lại thật T04: kind VĂN BẢN (robot-tm) nhận vỏ JSON {\"program\": …} (không khoá suy luận) ⇒ gỡ vỏ", async () => {
+      vi.mocked(chatCompletion).mockResolvedValueOnce(llm(JSON.stringify({ program: TM_OK }, null, 2)));
+      const r = await generateProgram({ kind: "robot-tm", request: "gắp đặt" });
+      expect(r.code).toBe(TM_OK);
+    });
+
+    it("kind VĂN BẢN nhận một object JSON không có trường mã ⇒ KHÔNG có mã, không bao giờ ok:true", async () => {
+      process.env.AI_CODEGEN_REPAIR_MAX = "0";
+      try {
+        vi.mocked(chatCompletion).mockResolvedValueOnce(llm(JSON.stringify({ steps: ["HOME", "MOVE P1"] })));
+        const r = await generateProgram({ kind: "robot-tm", request: "gắp đặt" });
+        expect(r.ok).toBe(false);
+        expect(r.code).toBeUndefined();
+      } finally {
+        delete process.env.AI_CODEGEN_REPAIR_MAX;
+      }
+    });
+
     it("JSON hợp lệ của kind cấu trúc (ir-flow) KHÔNG bị đụng", async () => {
       vi.mocked(generateJSON).mockRejectedValueOnce(new Error("grammar off"));
       vi.mocked(chatCompletion).mockResolvedValueOnce(
