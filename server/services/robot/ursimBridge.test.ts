@@ -7,7 +7,7 @@
  */
 import net from "node:net";
 import { describe, it, expect, afterEach } from "vitest";
-import { UrsimBridgeDriver, jobToUrscript, UR_VENDOR } from "./ursimBridge";
+import { UrsimBridgeDriver, jobToUrscript, UR_VENDOR, UrJobRefusedError } from "./ursimBridge";
 
 function startDashboardServer(replies: (cmd: string) => string): Promise<{ port: number; received: string[]; close: () => Promise<void> }> {
   const received: string[] = [];
@@ -61,9 +61,22 @@ function defaultReplies(cmd: string): string {
   return "ok";
 }
 
+const HOME_CFG = [0.1, -1.57, 1.57, -1.57, -1.57, 0]; // home pose lưu trong connectionOptions.home (rad)
+
 describe("jobToUrscript", () => {
-  it("home → movej to zeros", () => {
-    expect(jobToUrscript({ jobType: "home" })).toContain("movej([0, 0, 0, 0, 0, 0]");
+  // doc 81 Đợt 1B Task 5 (R10b) — home CHỈ lấy từ cấu hình robot (trước đây: params.home của người
+  // gọi, mặc định toàn 0 — cả hai đều là đích tuỳ ý chưa kiểm).
+  it("home → movej tới home ĐÃ CẤU HÌNH", () => {
+    expect(jobToUrscript({ jobType: "home" }, { home: HOME_CFG })).toContain("movej([0.1, -1.57, 1.57, -1.57, -1.57, 0]");
+  });
+  it("home KHÔNG có cấu hình ⇒ từ chối ur_home_not_configured (không còn movej về toàn 0)", () => {
+    expect(() => jobToUrscript({ jobType: "home" })).toThrow(UrJobRefusedError);
+    expect(() => jobToUrscript({ jobType: "home" })).toThrow(/ur_home_not_configured/);
+  });
+  it("params.home của người gọi ⇒ từ chối ur_home_param_forbidden, kể cả khi đã có cấu hình", () => {
+    expect(() => jobToUrscript({ jobType: "home", params: { home: [1, 2, 3, 4, 5, 6] } }, { home: HOME_CFG })).toThrow(
+      /ur_home_param_forbidden/,
+    );
   });
   it("move with joints → movej", () => {
     const s = jobToUrscript({ jobType: "move", params: { joints: [1, 2, 3, 4, 5, 6] } });
@@ -73,8 +86,8 @@ describe("jobToUrscript", () => {
     const s = jobToUrscript({ jobType: "move", params: { cartesian: [0.1, 0.2, 0.3, 0, 0, 0] } });
     expect(s).toContain("movel(p[0.1, 0.2, 0.3, 0, 0, 0]");
   });
-  it("custom passes raw URScript through", () => {
-    expect(jobToUrscript({ jobType: "custom", params: { script: "def x():\nend" } })).toBe("def x():\nend");
+  it("custom + params.script ⇒ từ chối ur_script_forbidden (không còn chuyển nguyên văn URScript)", () => {
+    expect(() => jobToUrscript({ jobType: "custom", params: { script: "def x():\nend" } })).toThrow(/ur_script_forbidden/);
   });
 });
 
@@ -123,7 +136,7 @@ describe("UrsimBridgeDriver", () => {
     const script = await startScriptServer();
     cleanups.push(dash.close); cleanups.push(script.close);
     const d = new UrsimBridgeDriver();
-    await d.connect({ endpoint: "127.0.0.1", options: { dashboardPort: dash.port, scriptPort: script.port } });
+    await d.connect({ endpoint: "127.0.0.1", options: { dashboardPort: dash.port, scriptPort: script.port, home: HOME_CFG } });
     const res = await d.runJob({ jobType: "home" });
     expect(res.ok).toBe(true);
     expect(res.detail?.dryRun).toBe(true);
@@ -156,6 +169,74 @@ describe("UrsimBridgeDriver", () => {
     await d.connect({ endpoint: "127.0.0.1", options: { dashboardPort: dash.port, scriptPort: 1 } });
     const res = await d.runJob({ jobType: "abort" });
     expect(res.ok).toBe(true);
+    expect(dash.received).toContain("stop");
+    await d.disconnect();
+  });
+
+  it.each([
+    ["custom + params.script", { jobType: "custom" as const, params: { script: "def x():\n  movej([1,1,1,1,1,1])\nend\n" } }, "ur_script_forbidden"],
+    ["home + params.home", { jobType: "home" as const, params: { home: [1, 1, 1, 1, 1, 1] } }, "ur_home_param_forbidden"],
+  ])("CONTROL BẬT: %s ⇒ failed + reasonCode, 0 byte tới cổng script", async (_label, job, code) => {
+    process.env.ROBOT_CONTROL_ENABLED = "true";
+    const dash = await startDashboardServer(defaultReplies);
+    const script = await startScriptServer();
+    cleanups.push(dash.close); cleanups.push(script.close);
+    const d = new UrsimBridgeDriver();
+    await d.connect({ endpoint: "127.0.0.1", options: { dashboardPort: dash.port, scriptPort: script.port, home: HOME_CFG } });
+    const res = await d.runJob(job);
+    expect(res.ok).toBe(false);
+    expect(res.detail?.reasonCode).toBe(code);
+    expect(res.detail?.sent).toBe(false);
+    await new Promise((r) => setTimeout(r, 50));
+    expect(script.getReceived()).toBe("");
+    await d.disconnect();
+  });
+
+  it("CONTROL BẬT: home dùng connectionOptions.home ⇒ gửi movej tới đúng pose đã lưu", async () => {
+    process.env.ROBOT_CONTROL_ENABLED = "true";
+    const dash = await startDashboardServer(defaultReplies);
+    const script = await startScriptServer();
+    cleanups.push(dash.close); cleanups.push(script.close);
+    const d = new UrsimBridgeDriver();
+    await d.connect({ endpoint: "127.0.0.1", options: { dashboardPort: dash.port, scriptPort: script.port, home: HOME_CFG } });
+    const res = await d.runJob({ jobType: "home" });
+    expect(res.ok).toBe(true);
+    await new Promise((r) => setTimeout(r, 50));
+    expect(script.getReceived()).toContain("movej([0.1, -1.57, 1.57, -1.57, -1.57, 0]");
+    await d.disconnect();
+  });
+
+  it("CONTROL BẬT: home khi cấu hình thiếu/sai (5 phần tử) ⇒ ur_home_not_configured, 0 byte", async () => {
+    process.env.ROBOT_CONTROL_ENABLED = "true";
+    const dash = await startDashboardServer(defaultReplies);
+    const script = await startScriptServer();
+    cleanups.push(dash.close); cleanups.push(script.close);
+    const d = new UrsimBridgeDriver();
+    await d.connect({ endpoint: "127.0.0.1", options: { dashboardPort: dash.port, scriptPort: script.port, home: [0, 0, 0, 0, 0] } });
+    const res = await d.runJob({ jobType: "home" });
+    expect(res.detail?.reasonCode).toBe("ur_home_not_configured");
+    await new Promise((r) => setTimeout(r, 50));
+    expect(script.getReceived()).toBe("");
+    await d.disconnect();
+  });
+
+  it("abort() NÊU lỗi khi dừng thất bại (dashboard đã tắt) — không còn nuốt", async () => {
+    process.env.ROBOT_CONTROL_ENABLED = "true";
+    const dash = await startDashboardServer(defaultReplies);
+    const d = new UrsimBridgeDriver();
+    await d.connect({ endpoint: "127.0.0.1", options: { dashboardPort: dash.port, scriptPort: 1 }, timeoutMs: 300 });
+    await dash.close();
+    await expect(d.abort()).rejects.toThrow(/abort failed/);
+    await d.disconnect();
+  });
+
+  it("abort() thành công khi dashboard nhận `stop`", async () => {
+    process.env.ROBOT_CONTROL_ENABLED = "true";
+    const dash = await startDashboardServer(defaultReplies);
+    cleanups.push(dash.close);
+    const d = new UrsimBridgeDriver();
+    await d.connect({ endpoint: "127.0.0.1", options: { dashboardPort: dash.port, scriptPort: 1 } });
+    await expect(d.abort()).resolves.toBeUndefined();
     expect(dash.received).toContain("stop");
     await d.disconnect();
   });

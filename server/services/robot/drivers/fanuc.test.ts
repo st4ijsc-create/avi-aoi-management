@@ -245,6 +245,23 @@ describe("FanucDriver — motion gate + fail-safe", () => {
     expect(res.error).toMatch(/ErrorID 5/);
   });
 
+  // doc 81 Đợt 1B Task 5 — abort() NÊU thất bại thay vì nuốt.
+  it("abort(): FRC_Abort ErrorID != 0 ⇒ reject 'FANUC RMI abort failed'", async () => {
+    process.env.ROBOT_CONTROL_ENABLED = "true";
+    const { d } = await connectedDriver((pkt) =>
+      pkt.Command === "FRC_Abort" ? { Command: "FRC_Abort", ErrorID: 3 } : defaultResponder(pkt),
+    );
+    await expect(d.abort()).rejects.toThrow(/FANUC RMI abort failed.*ErrorID 3/);
+  });
+
+  it("abort(): FRC_Abort ErrorID 0 ⇒ resolve", async () => {
+    process.env.ROBOT_CONTROL_ENABLED = "true";
+    const { d, sock } = await connectedDriver();
+    await expect(d.abort()).resolves.toBeUndefined();
+    const types = sock.written.map((w) => JSON.parse(w.trim())).map((p) => p.Command ?? p.Instruction);
+    expect(types).toContain("FRC_Abort");
+  });
+
   it("runJob: not connected → failed result, never throws", async () => {
     const { FanucDriver } = await import("./fanucDriver");
     const d = new FanucDriver();

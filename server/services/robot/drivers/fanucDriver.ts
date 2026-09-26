@@ -64,6 +64,7 @@ import type {
   RobotDriver, RobotVendor, RobotConnectionConfig, RobotState, RobotStateHandle,
   OnRobotState, RobotJobSpec, RobotJobResult, RobotHealth,
 } from "../robotDriver";
+import { abortThroughRunJob } from "../robotDriver";
 
 /**
  * Well-known RMI "connect" port on R-30iB Plus controllers. FRC_Connect is sent
@@ -609,13 +610,12 @@ export class FanucDriver implements RobotDriver {
     }
   }
 
-  /** Best-effort abort routed through the gated runJob path (dry-run unless enabled). */
+  /**
+   * FRC_Abort routed through the gated runJob path (dry-run unless enabled). doc 81 Đợt 1B
+   * Task 5: a failed/unsent abort is SURFACED (throws), no longer swallowed.
+   */
   async abort(): Promise<void> {
-    try {
-      await this.runJob({ jobType: "abort" });
-    } catch {
-      /* ignore — abort is best-effort */
-    }
+    await abortThroughRunJob((job) => this.runJob(job), "FANUC RMI");
   }
 
   async health(): Promise<RobotHealth> {

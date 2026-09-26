@@ -4171,7 +4171,10 @@
       "approveOrchestrationGate": "批准此编排关卡",
       "selfApproveOrchestrationGate": "批准由您本人启动的运行中的四眼关卡",
       "selfApproveInterlockRule": "自行审批自己提交的联锁规则",
-      "sendTechmanScript": "向 Techman 机器人发送脚本"
+      "sendTechmanScript": "向 Techman 机器人发送脚本",
+      "sendTechmanConsoleVerb": "向 Techman 机器人发送 start/reset/pause 控制台指令",
+      "sendUrScript": "向 UR 机器人发送任意 URScript",
+      "overrideUrHome": "通过指令设置 UR 机器人的 home 位置"
     },
     "chartRenderError": "图表渲染错误",
     "cannotLoadDataDescription": "加载数据时出错，请重试。",
@@ -4240,7 +4243,10 @@
       "productLifecycleRequiresApproval": "该产品处于生命周期状态 '{{lifecycleStatus}}'——阈值变更须通过审批队列（Threshold Approvals）。",
       "evalAlreadyRunning": "已有一轮评估在运行——请等待其完成。",
       "runAlreadyClaimed": "该运行已被他人批准、拒绝或停止 — 请刷新列表。",
-      "techmanScriptNotAllowlisted": "仅接受 Techman 白名单中的指令（ScriptExit()、StopAndClearBuffer()）；其他脚本一律拒绝，不会向机器人发送任何内容。"
+      "techmanScriptNotAllowlisted": "仅接受 Techman 白名单中的指令（ScriptExit()、StopAndClearBuffer()）；其他脚本一律拒绝，不会向机器人发送任何内容。",
+      "techmanConsoleVerbUnvalidated": "Techman 机器人的 start/reset/pause 尚未经过验证（FAT）：它们会发送 ScriptExit()，TMflow 将继续执行流程，机器人可能运动。指令已拒绝，不会向机器人发送任何内容。",
+      "urScriptForbidden": "控制台不接受发往 UR 机器人的任意 URScript；指令已拒绝，不会向机器人发送任何内容。",
+      "urHomeParamForbidden": "UR 机器人的 home 位置只能来自其已保存的配置，不能来自指令；指令已拒绝，不会向机器人发送任何内容。"
     },
     "client": {
       "generic": "系统错误，请重试",

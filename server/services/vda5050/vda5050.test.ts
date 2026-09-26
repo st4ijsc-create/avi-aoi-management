@@ -60,6 +60,13 @@ vi.mock("../robot/robotManager", () => ({
   getActiveRobot: vi.fn((id: number) => (id === 42 ? activeRobot : undefined)),
 }));
 
+// doc 81 Đợt 1B Task 5 — dispatcher robot đọc safety-PLC (facade OT) trước chuyển động; ở đây
+// không có safety-PLC thật ⇒ giả OK để nhánh control-enabled chảy tới publish (safety có test riêng
+// ở robot/robotCommandDispatcher.safety.test.ts).
+vi.mock("../ot/adapterFacade", () => ({
+  createAdapterFacade: () => ({ getSafetyStatus: async () => ({ state: "OK", source: "test", ts: "" }) }),
+}));
+
 // ── fake mqtt client capturing publishes ──────────────────────────────────────
 const publishes: Array<{ topic: string; payload: string }> = [];
 function makeFakeClient() {
@@ -342,5 +349,17 @@ describe("VDA5050 manager flag gating", () => {
   it("flag OFF → startVda5050 is a no-op returning false", async () => {
     const { startVda5050 } = await import("./vda5050Manager");
     expect(await startVda5050()).toBe(false);
+  });
+});
+
+// doc 81 Đợt 1B Task 5 — driver VDA 5050 chưa có cancelOrder ⇒ abort() nói THẬT là không hỗ trợ
+// (dispatcher ghi abort_unsupported), không còn no-op trông như đã dừng.
+describe("VDA5050 driver abort", () => {
+  it("abort() reject RobotAbortUnsupportedError (abort_unsupported)", async () => {
+    const { createVda5050Driver } = await import("./vda5050Driver");
+    const { RobotAbortUnsupportedError } = await import("../robot/robotDriver");
+    const err = await createVda5050Driver().abort().then(() => null, (e) => e);
+    expect(err).toBeInstanceOf(RobotAbortUnsupportedError);
+    expect((err as InstanceType<typeof RobotAbortUnsupportedError>).reasonCode).toBe("abort_unsupported");
   });
 });

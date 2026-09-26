@@ -28,6 +28,7 @@ import type {
   RobotJobResult,
   RobotHealth,
 } from "../robot/robotDriver";
+import { RobotAbortUnsupportedError } from "../robot/robotDriver";
 import {
   buildVda5050Topic,
   VDA5050_DEFAULT_INTERFACE,
@@ -195,8 +196,10 @@ export class Vda5050RobotDriver implements RobotDriver {
   }
 
   async abort(): Promise<void> {
-    // A real abort publishes an instantActions cancelOrder — out of scope for the
-    // scaffold (would also need to pass the dispatcher gate). No-op here.
+    // A real abort publishes an instantActions cancelOrder — not implemented in this
+    // scaffold. doc 81 Đợt 1B Task 5: say so (the dispatcher records abort_unsupported)
+    // instead of a silent no-op that looked like a successful stop.
+    throw new RobotAbortUnsupportedError(this.vendor);
   }
 
   async health(): Promise<RobotHealth> {

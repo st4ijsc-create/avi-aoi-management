@@ -4179,7 +4179,10 @@
       "approveOrchestrationGate": "approve this orchestration gate",
       "selfApproveOrchestrationGate": "approve a four-eyes gate of a run you started yourself",
       "selfApproveInterlockRule": "self-approve your own interlock rule",
-      "sendTechmanScript": "send a script to a Techman robot"
+      "sendTechmanScript": "send a script to a Techman robot",
+      "sendTechmanConsoleVerb": "send a start/reset/pause console command to a Techman robot",
+      "sendUrScript": "send arbitrary URScript to a UR robot",
+      "overrideUrHome": "set the home pose of a UR robot from the command"
     },
     "chartRenderError": "Chart render error",
     "cannotLoadDataDescription": "Cannot load data description",
@@ -4248,7 +4251,10 @@
       "productLifecycleRequiresApproval": "The product is in lifecycle status '{{lifecycleStatus}}' — threshold changes require approval via the queue (Threshold Approvals).",
       "evalAlreadyRunning": "An evaluation is already running — wait for it to finish.",
       "runAlreadyClaimed": "The run was already approved, rejected or stopped by someone else — reload the list.",
-      "techmanScriptNotAllowlisted": "Only commands in the Techman allowlist (ScriptExit(), StopAndClearBuffer()) are accepted; any other script is refused and nothing is sent to the robot."
+      "techmanScriptNotAllowlisted": "Only commands in the Techman allowlist (ScriptExit(), StopAndClearBuffer()) are accepted; any other script is refused and nothing is sent to the robot.",
+      "techmanConsoleVerbUnvalidated": "Start/reset/pause on a Techman robot are not validated (FAT): they would send ScriptExit() and TMflow would continue the flow, possibly moving the robot. The command is refused and nothing is sent to the robot.",
+      "urScriptForbidden": "Arbitrary URScript is not accepted from the console for a UR robot; the command is refused and nothing is sent to the robot.",
+      "urHomeParamForbidden": "A UR robot's home pose comes only from its stored configuration, not from the command; the command is refused and nothing is sent to the robot."
     },
     "client": {
       "generic": "System error, please try again",

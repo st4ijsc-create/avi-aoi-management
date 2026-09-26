@@ -12,16 +12,26 @@
  *   4. MODE GATE: ROBOT_CONTROL_ENABLED!=='true' → record status 'simulated',
  *      never call driver.runJob (default is dry-run),
  *   4a. commissioning/FAT gate, 4a-policy. policy-as-code seam (W3-B2, SEC_PLATFORM,
- *      action robot.command.{verb} — DENY → rejected POLICY_DENIED), 4b. interlock gate,
- *   5. real run under timeout → record done/failed.
- * Every branch writes an append-only robot_jobs row.
+ *      action robot.command.{verb} — DENY → rejected POLICY_DENIED), 4a-safety. safety-PLC
+ *      preflight (motion only; anything but OK blocks), 4b. interlock gate,
+ *   5. real run under timeout: ledger row 'running' FIRST (fail-closed), then runJob; on a
+ *      timeout the driver's stop is sent BEFORE the row is finalised 'failed'.
+ * Every branch writes a robot_jobs row; a ledger write failure is never swallowed.
+ *
+ * doc 81 Đợt 1B Task 5 (BE2 §L2 robotCommandDispatcher, §3 S5/S9) changed four things:
+ *   • HITL also applies to triggerKind='manual' for MOTION jobs (see isMotionJob / step 2).
+ *   • safety-PLC preflight (the OT adapter facade's getSafetyStatus) before motion.
+ *   • record() no longer swallows insert errors; the pre-motion row is mandatory.
+ *   • a motion whose outcome is unknown (deadline / driver reply timeout) is stopped.
  */
 import { and, eq } from "drizzle-orm";
 import { pgTable, serial, integer, varchar, timestamp, text } from "drizzle-orm/pg-core";
 import { getDb } from "../../db/connection";
 import { robotJobs, robots, aiPendingActions } from "../../../drizzle/schema";
 import { getActiveRobot } from "./robotManager";
-import type { RobotJobSpec, RobotJobResult } from "./robotDriver";
+import type { RobotJobSpec, RobotDriver } from "./robotDriver";
+import { MOTION_OUTCOME_UNKNOWN_REASON_CODES, RobotAbortUnsupportedError } from "./robotDriver";
+import { withDeadline } from "../ot/drivers/boundedClose";
 
 /**
  * CTL-02 (doc 40) — ROBOT COMMISSIONING / FAT LEDGER (bảng migration 0240). Định nghĩa
@@ -122,22 +132,68 @@ export interface RobotDispatchResult {
   status: "done" | "failed" | "simulated" | "rejected";
   jobId?: number;
   error?: string;
+  /** Set when the motion ran but its terminal ledger update failed (row stays 'running'). */
+  ledgerError?: string;
 }
 
 function controlEnabled(): boolean {
   return process.env.ROBOT_CONTROL_ENABLED === "true";
 }
 
+/**
+ * doc 81 Đợt 1B Task 5 — a job that can move the robot. Only `abort` (a stop) is not:
+ * it stays exempt from the manual-HITL and safety preflight gates so a stop can never
+ * be locked out by the very conditions that call for it.
+ */
+export function isMotionJob(job: RobotJobSpec): boolean {
+  return job.jobType !== "abort";
+}
+
+/**
+ * doc 81 Đợt 1B Task 5 — the key the robot's interlock gate (and the console's
+ * interlockPreview) evaluates. Decision after reading interlockGate.isTargeted: the gate
+ * does NOT need a real OT adapter — a rule reaches a command through targetAdapterId,
+ * targetMachineId or commandTag. A robot has no device_adapters row, so no adapter id is
+ * real for it; ROBOT_NO_OT_ADAPTER_ID (-1) can never equal a device_adapters.id (serial ≥ 1)
+ * nor an interlockRouter targetAdapterId (z.number().int().positive()), so an adapter- or
+ * tag-targeted OT rule never blocks a robot by accident. The robot itself is keyed as
+ * machineId = robotId, the convention interlockEngine already uses for robot rules
+ * (robotId = rule.targetMachineId ?? rule.machineId).
+ */
+export const ROBOT_NO_OT_ADAPTER_ID = -1;
+export function robotInterlockTarget(robotId: number): { adapterId: number; machineId: number; tagKeys: string[] } {
+  return { adapterId: ROBOT_NO_OT_ADAPTER_ID, machineId: robotId, tagKeys: [] };
+}
+
+/** Upper bound for the safety-PLC preflight read (a hung read must not hang the command). */
+const SAFETY_PREFLIGHT_DEADLINE_MS = 5000;
+
+/** A robot_jobs write failed — never swallowed (doc 81 Đợt 1B Task 5). */
+export class RobotLedgerWriteError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "RobotLedgerWriteError";
+  }
+}
+
+/**
+ * Append a robot_jobs row. Insert errors are THROWN as RobotLedgerWriteError (they used to
+ * be logged and swallowed ⇒ a robot could move with no ledger entry). `requireDb` makes a
+ * missing DB an error too — used for the pre-motion row; the non-motion branches keep the
+ * old "no DB ⇒ no row" behaviour (nothing moves on those branches).
+ */
 async function record(
   input: RobotDispatchInput,
-  // "running" is accepted so an in-flight job can be recorded before it reaches a terminal
-  // state; the completedAt guard below relies on it. Callers currently pass terminal statuses.
   status: RobotDispatchResult["status"] | "running",
   result?: Record<string, unknown>,
   errorText?: string,
+  opts: { requireDb?: boolean } = {},
 ): Promise<number | undefined> {
   const db = await getDb();
-  if (!db) return undefined;
+  if (!db) {
+    if (opts.requireDb) throw new RobotLedgerWriteError("robot ledger unavailable (no DB)");
+    return undefined;
+  }
   try {
     const now = new Date();
     const [row] = await db.insert(robotJobs).values({
@@ -155,15 +211,74 @@ async function record(
       startedAt: now,
       completedAt: status === "running" ? undefined : now,
     }).returning({ id: robotJobs.id });
+    if (opts.requireDb && row?.id == null) throw new RobotLedgerWriteError("robot ledger insert returned no id");
     return row?.id;
   } catch (err) {
-    console.error("[Robot] failed to record job:", (err as Error)?.message ?? err);
-    return undefined;
+    if (err instanceof RobotLedgerWriteError) throw err;
+    throw new RobotLedgerWriteError(`robot ledger insert failed: ${(err as Error)?.message ?? String(err)}`);
+  }
+}
+
+/** Move the pre-motion row to its terminal state. Throws RobotLedgerWriteError on failure. */
+async function finalize(
+  jobId: number,
+  status: "done" | "failed",
+  result?: Record<string, unknown>,
+  errorText?: string,
+): Promise<void> {
+  const db = await getDb();
+  if (!db) throw new RobotLedgerWriteError("robot ledger unavailable (no DB) at finalize");
+  try {
+    await db
+      .update(robotJobs)
+      .set({ status, result, errorText, completedAt: new Date() })
+      .where(eq(robotJobs.id, jobId));
+  } catch (err) {
+    throw new RobotLedgerWriteError(`robot ledger finalize failed: ${(err as Error)?.message ?? String(err)}`);
+  }
+}
+
+type AbortOutcome =
+  | { abort: "abort_sent" }
+  | { abort: "abort_failed"; abortError: string }
+  | { abort: "abort_unsupported"; abortError: string };
+
+/**
+ * doc 81 Đợt 1B Task 5 (BE2 §3 S5) — stop a motion whose outcome is unknown. Goes straight
+ * to the driver's stop (NOT through the gates: a stop must never be blocked by them),
+ * bounded by `deadlineMs`. Never throws; the outcome is recorded in the ledger.
+ */
+async function stopAfterUnknownOutcome(driver: RobotDriver, deadlineMs: number): Promise<AbortOutcome> {
+  if (typeof (driver as Partial<RobotDriver>).abort !== "function") {
+    return { abort: "abort_unsupported", abortError: `${driver.vendor} driver has no abort()` };
+  }
+  try {
+    await withDeadline(driver.abort(), deadlineMs, `${driver.vendor} abort`);
+    return { abort: "abort_sent" };
+  } catch (err) {
+    const msg = (err as Error)?.message ?? String(err);
+    if (err instanceof RobotAbortUnsupportedError) return { abort: "abort_unsupported", abortError: msg };
+    return { abort: "abort_failed", abortError: msg };
   }
 }
 
 export async function dispatchRobotJob(input: RobotDispatchInput): Promise<RobotDispatchResult> {
+  try {
+    return await dispatchRobotJobCore(input);
+  } catch (err) {
+    if (err instanceof RobotLedgerWriteError) {
+      // Every branch that can reach here is BEFORE any driver call (the post-motion finalize
+      // is handled inside the core) ⇒ nothing moved; refuse honestly, never pretend success.
+      console.error(`[Robot] ledger write failed — command refused (robot ${input.robotId}):`, err.message);
+      return { ok: false, status: "rejected", error: "LEDGER_WRITE_FAILED" };
+    }
+    throw err;
+  }
+}
+
+async function dispatchRobotJobCore(input: RobotDispatchInput): Promise<RobotDispatchResult> {
   const triggerKind = input.triggerKind ?? "hitl";
+  const motion = isMotionJob(input.job);
 
   // 1) Idempotency — return a prior terminal job for the same key.
   if (input.idempotencyKey) {
@@ -178,7 +293,15 @@ export async function dispatchRobotJob(input: RobotDispatchInput): Promise<Robot
   }
 
   // 2) HITL gate — ĐỐI XỨNG với OT commandDispatcher (doc 25 T1).
-  if (triggerKind === "hitl") {
+  //    doc 81 Đợt 1B Task 5 — triggerKind='manual' NO LONGER skips this gate for a MOTION
+  //    job. Equivalent-confirmation condition for 'manual': the same rule as 'hitl' — a
+  //    human `confirmedBy` is mandatory, and an `actionId`, when given, is re-verified.
+  //    The only manual caller (robot.actuate) passes confirmedBy = the authenticated
+  //    operator who typed the confirmation in the console, behind actuationProcedure
+  //    (role floor + 2FA when enabled) and machine_control/canEdit — that is the human
+  //    gate; a manual MOTION with no confirmedBy is refused. A manual `abort` (stop) stays
+  //    exempt, as before, so a stop is never locked out.
+  if (triggerKind === "hitl" || motion) {
     // 2.a Bắt buộc có người xác nhận.
     if (!input.confirmedBy) {
       const jobId = await record(input, "rejected", undefined, "HITL required: no confirmedBy");
@@ -305,22 +428,53 @@ export async function dispatchRobotJob(input: RobotDispatchInput): Promise<Robot
     }
   }
 
+  // 4a-safety) SAFETY-PLC PREFLIGHT (doc 81 Đợt 1B Task 5, BE2 §3 S9) — MOTION only.
+  //     Reads the SAME source as the OT dispatcher's (5a-safety) preflight: the OT adapter
+  //     facade's READ-ONLY getSafetyStatus (driver.getSafetyStatus → else the safety-PLC
+  //     status adapter). A robot has no OT adapter ⇒ ROBOT_NO_OT_ADAPTER_ID, so the facade
+  //     resolves no driver and reads the safety-PLC adapter. UNLIKE the OT path (which lets
+  //     UNKNOWN pass — Task 6 owns that side) the robot BLOCKS on anything but OK:
+  //     BLOCKED, UNKNOWN (no safety-PLC configured/readable), a read error or a hung read.
+  //     A stop (abort) is never gated here.
+  if (motion) {
+    let safetyState: string;
+    let safetySource: string | undefined;
+    try {
+      const { createAdapterFacade } = await import("../ot/adapterFacade");
+      const s = await withDeadline(
+        createAdapterFacade({ adapterId: ROBOT_NO_OT_ADAPTER_ID, machineId: null }).getSafetyStatus(),
+        SAFETY_PREFLIGHT_DEADLINE_MS,
+        "safety-PLC preflight",
+      );
+      safetyState = s?.state ?? "UNKNOWN";
+      safetySource = s?.source;
+    } catch (err) {
+      safetyState = "ERROR";
+      safetySource = (err as Error)?.message ?? String(err);
+    }
+    if (safetyState !== "OK") {
+      const error = safetyState === "BLOCKED" ? "SAFETY_PLC_BLOCKED" : "SAFETY_PLC_NOT_OK";
+      const jobId = await record(
+        input,
+        "rejected",
+        { safety: safetyState, safetySource },
+        `${error}: safety-PLC preflight returned ${safetyState} — motion refused before any driver call`,
+      );
+      return { ok: false, status: "rejected", jobId, error };
+    }
+  }
+
   // 4b) INTERLOCK GATE (doc 35 quy-trình-6) — fail-closed, ĐỒNG BỘ, TRƯỚC driver.runJob.
   //     ĐỐI XỨNG với OT commandDispatcher (bước 5a-bis). Reachable ONLY khi
   //     ROBOT_CONTROL_ENABLED==="true" (bước 4 đã trả 'simulated' nếu không) → chỉ gate
-  //     nhánh REAL-MOTION. Robot được định danh trong interlock rule qua targetMachineId
-  //     (quy ước xuyên suốt interlockEngine: robotId = rule.targetMachineId ?? rule.machineId),
-  //     nên map machineId=robotId. Robot không có OT-adapter/tag → adapterId sentinel (-1, không
-  //     serial thật nào khớp) + tagKeys rỗng, vì vậy CHỈ rule nhắm targetMachineId=robotId (action
-  //     chặn/dừng, enabled+approved) mới chặn. Rule đang vi phạm HOẶC lỗi đánh giá (failClosed) →
-  //     TỪ CHỐI, KHÔNG gọi driver.runJob.
+  //     nhánh REAL-MOTION. Khoá đánh giá = robotInterlockTarget(robotId) (xem lựa chọn ở
+  //     định nghĩa hàm: cổng KHÔNG cần adapter thật; machineId=robotId theo quy ước
+  //     interlockEngine; ROBOT_NO_OT_ADAPTER_ID không bao giờ trùng adapter thật) — CHỈ rule
+  //     nhắm targetMachineId=robotId (action chặn/dừng, enabled+approved) mới chặn. Rule đang
+  //     vi phạm HOẶC lỗi đánh giá (failClosed) → TỪ CHỐI, KHÔNG gọi driver.runJob.
   {
     const { evaluateInterlockGate } = await import("../interlock/interlockGate");
-    const gate = await evaluateInterlockGate({
-      adapterId: -1,
-      machineId: input.robotId,
-      tagKeys: [],
-    });
+    const gate = await evaluateInterlockGate(robotInterlockTarget(input.robotId));
     if (gate.blocked) {
       const detail = gate.failClosed
         ? "interlock evaluation error — fail-closed (no run)"
@@ -333,18 +487,71 @@ export async function dispatchRobotJob(input: RobotDispatchInput): Promise<Robot
   }
 
   // 5) Real run under timeout.
+  //    doc 81 Đợt 1B Task 5 — (a) the ledger row is written BEFORE the driver is called
+  //    ('running'); if that write fails nothing is sent (fail-closed). The row is then
+  //    UPDATEd to its terminal state (robot_jobs keeps the UPDATE grant for exactly this
+  //    lifecycle, migration 0279; one row per job also keeps the UNIQUE idempotencyKey,
+  //    which now also stops a concurrent duplicate before it can move the robot).
+  //    (b) a MOTION whose outcome is unknown — our deadline, or a driver reply timeout /
+  //    dropped connection (MOTION_OUTCOME_UNKNOWN_REASON_CODES) — gets the driver's stop
+  //    FIRST; only then is the row finalised 'failed' with abort_sent / abort_failed /
+  //    abort_unsupported.
   const timeoutMs = Math.max(1000, Number(process.env.ROBOT_CONTROL_TIMEOUT_MS) || 10_000);
+  let jobId: number;
   try {
-    const result = await Promise.race<RobotJobResult>([
-      robot.driver.runJob(input.job),
-      new Promise<RobotJobResult>((_, rej) => setTimeout(() => rej(new Error("robot job timeout")), timeoutMs)),
-    ]);
-    const status = result.ok ? "done" : "failed";
-    const jobId = await record(input, status, result.detail, result.error);
-    return { ok: result.ok, status, jobId, error: result.error };
+    jobId = (await record(input, "running", undefined, undefined, { requireDb: true })) as number;
   } catch (err) {
     const msg = (err as Error)?.message ?? String(err);
-    const jobId = await record(input, "failed", undefined, msg);
-    return { ok: false, status: "failed", jobId, error: msg };
+    console.error(`[Robot] pre-motion ledger write failed — nothing sent to robot ${input.robotId}:`, msg);
+    return { ok: false, status: "rejected", error: "LEDGER_WRITE_FAILED" };
   }
+
+  let timer: NodeJS.Timeout | undefined;
+  const deadline = new Promise<{ kind: "timeout" }>((resolve) => {
+    timer = setTimeout(() => resolve({ kind: "timeout" }), timeoutMs);
+  });
+  const outcome = await Promise.race([
+    robot.driver.runJob(input.job).then(
+      (r) => ({ kind: "result" as const, r }),
+      (e: unknown) => ({ kind: "error" as const, e }),
+    ),
+    deadline,
+  ]);
+  clearTimeout(timer);
+
+  let status: "done" | "failed";
+  let detail: Record<string, unknown> | undefined;
+  let errorText: string | undefined;
+  if (outcome.kind === "result") {
+    status = outcome.r.ok ? "done" : "failed";
+    detail = outcome.r.detail;
+    errorText = outcome.r.error;
+  } else if (outcome.kind === "error") {
+    status = "failed";
+    errorText = (outcome.e as Error)?.message ?? String(outcome.e);
+  } else {
+    status = "failed";
+    detail = { timeout: true, timeoutMs };
+    errorText = `robot job timeout after ${timeoutMs}ms`;
+  }
+
+  const reasonCode = typeof detail?.reasonCode === "string" ? detail.reasonCode : undefined;
+  const outcomeUnknown =
+    outcome.kind === "timeout" ||
+    (status === "failed" && reasonCode != null && MOTION_OUTCOME_UNKNOWN_REASON_CODES.has(reasonCode));
+  if (motion && outcomeUnknown) {
+    const stop = await stopAfterUnknownOutcome(robot.driver, timeoutMs);
+    detail = { ...(detail ?? {}), ...stop };
+    errorText = `${errorText ?? "motion outcome unknown"} — ${stop.abort}${"abortError" in stop ? `: ${stop.abortError}` : ""}`;
+  }
+
+  try {
+    await finalize(jobId, status, detail, errorText);
+  } catch (err) {
+    // The driver WAS called; the row stays 'running' (honest: terminal state not recorded).
+    const msg = (err as Error)?.message ?? String(err);
+    console.error(`[Robot] ledger finalize failed for job ${jobId} (robot ${input.robotId}):`, msg);
+    return { ok: status === "done", status, jobId, error: errorText, ledgerError: "LEDGER_FINALIZE_FAILED" };
+  }
+  return { ok: status === "done", status, jobId, error: errorText };
 }

@@ -4179,7 +4179,10 @@
       "approveOrchestrationGate": "duyệt cổng này của quy trình điều phối",
       "selfApproveOrchestrationGate": "tự duyệt cổng 4 mắt của lượt chạy do chính mình khởi động",
       "selfApproveInterlockRule": "tự duyệt quy tắc khoá liên động của chính mình",
-      "sendTechmanScript": "gửi script tới robot Techman"
+      "sendTechmanScript": "gửi script tới robot Techman",
+      "sendTechmanConsoleVerb": "gửi lệnh console start/reset/pause tới robot Techman",
+      "sendUrScript": "gửi URScript tuỳ ý tới robot UR",
+      "overrideUrHome": "tự đặt vị trí home cho robot UR"
     },
     "reason": {
       "deploymentNotAwaitingApproval": "Yêu cầu này không còn ở trạng thái chờ duyệt (đã được người khác duyệt/từ chối hoặc đang xử lý). Tải lại danh sách để xem trạng thái hiện tại.",
@@ -4240,7 +4243,10 @@
       "productLifecycleRequiresApproval": "Sản phẩm đang ở trạng thái vòng đời '{{lifecycleStatus}}' — thay đổi ngưỡng phải qua hàng đợi duyệt (Threshold Approvals).",
       "evalAlreadyRunning": "Đang có một lượt đánh giá chạy — chờ lượt đó xong.",
       "runAlreadyClaimed": "Lượt chạy đã được người khác duyệt, từ chối hoặc dừng — hãy tải lại danh sách.",
-      "techmanScriptNotAllowlisted": "Chỉ nhận các lệnh trong danh sách trắng Techman (ScriptExit(), StopAndClearBuffer()); script khác bị từ chối và không có gì được gửi tới robot."
+      "techmanScriptNotAllowlisted": "Chỉ nhận các lệnh trong danh sách trắng Techman (ScriptExit(), StopAndClearBuffer()); script khác bị từ chối và không có gì được gửi tới robot.",
+      "techmanConsoleVerbUnvalidated": "Lệnh start/reset/pause trên robot Techman chưa được kiểm chứng (FAT): chúng sẽ gửi ScriptExit() và TMflow chạy tiếp flow, có thể làm robot chuyển động. Lệnh bị từ chối, không có gì được gửi tới robot.",
+      "urScriptForbidden": "Không nhận URScript tuỳ ý từ console cho robot UR; lệnh bị từ chối, không có gì được gửi tới robot.",
+      "urHomeParamForbidden": "Vị trí home của robot UR chỉ lấy từ cấu hình đã lưu của robot, không nhận từ lệnh; lệnh bị từ chối, không có gì được gửi tới robot."
     },
     "client": {
       "generic": "Lỗi hệ thống, vui lòng thử lại",

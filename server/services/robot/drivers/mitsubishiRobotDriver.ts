@@ -96,6 +96,7 @@ import type {
   RobotDriver, RobotVendor, RobotConnectionConfig, RobotState, RobotStateHandle,
   OnRobotState, RobotJobSpec, RobotJobResult, RobotHealth, RobotPose,
 } from "../robotDriver";
+import { abortThroughRunJob } from "../robotDriver";
 import { TcpLineClient } from "./tcpLineClient";
 import { DeviceUnreachableError } from "../../../_core/deviceErrors";
 
@@ -276,7 +277,17 @@ export class MitsubishiDriver implements RobotDriver {
     this.host = host;
     this.port = port;
 
-    const client = new TcpLineClient("MELFA R3");
+    // doc 81 Đợt 1B Task 5 — after a timeout/abort the transport opens a NEW TCP connection
+    // (T4 fix); the controller treats it as a new session, so re-declare the client with
+    // OPEN= before the queued command (BFP-A3379 R3: OPEN precedes any other command).
+    const client = new TcpLineClient("MELFA R3", {
+      onReconnect: async (c) => {
+        const r = parseMelfaResponse(
+          await c.send(frameMelfaCommand(`OPEN=${this.clientName}`, this.robotNo, this.slotNo), this.timeoutMs),
+        );
+        if (!r.ok) throw new Error(`MELFA OPEN failed on reconnect: error ${r.errorNo ?? "?"}`);
+      },
+    });
     try {
       await client.open(this.host, this.port, this.timeoutMs);
       this.client = client;
@@ -396,17 +407,27 @@ export class MitsubishiDriver implements RobotDriver {
     } catch (err) {
       const msg = (err as Error)?.message || String(err);
       this.lastError = msg;
-      return { ok: false, status: "failed", error: msg };
+      // doc 81 Đợt 1B Task 5 — keep the transport's reason code (e.g. line_reply_timeout ⇒
+      // the command may be executing; the dispatcher then sends a stop).
+      const reasonCode = (err as { reasonCode?: unknown })?.reasonCode;
+      return {
+        ok: false,
+        status: "failed",
+        error: msg,
+        ...(typeof reasonCode === "string" ? { detail: { jobType: job.jobType, reasonCode } } : {}),
+      };
     }
   }
 
-  /** Best-effort abort routed through the gated runJob path (dry-run unless enabled). */
+  /**
+   * Abort routed through the gated runJob path (dry-run unless enabled). doc 81 Đợt 1B
+   * Task 5: an in-flight request is PREEMPTED first (connection renewed) so its late reply
+   * can never be taken as the STOP's ack, and a failed/unsent STOP is SURFACED (throws)
+   * instead of swallowed — the dispatcher records abort_failed.
+   */
   async abort(): Promise<void> {
-    try {
-      await this.runJob({ jobType: "abort" });
-    } catch {
-      /* ignore — abort is best-effort */
-    }
+    if (this.client && this.client.inFlight() > 0) this.client.resetConnection("abort preempts in-flight request");
+    await abortThroughRunJob((job) => this.runJob(job), "MELFA");
   }
 
   async health(): Promise<RobotHealth> {

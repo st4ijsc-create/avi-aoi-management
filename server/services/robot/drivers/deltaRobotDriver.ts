@@ -84,6 +84,7 @@ import type {
   RobotDriver, RobotVendor, RobotConnectionConfig, RobotState, RobotStateHandle,
   OnRobotState, RobotJobSpec, RobotJobResult, RobotHealth, RobotPose,
 } from "../robotDriver";
+import { abortThroughRunJob } from "../robotDriver";
 import type { RobotValidationStatus } from "../index";
 import { TcpLineClient } from "./tcpLineClient";
 import { DeviceUnreachableError } from "../../../_core/deviceErrors";
@@ -379,17 +380,27 @@ export class DeltaDriver implements RobotDriver {
     } catch (err) {
       const msg = (err as Error)?.message || String(err);
       this.lastError = msg;
-      return { ok: false, status: "failed", error: msg };
+      // doc 81 Đợt 1B Task 5 — keep the transport's reason code (e.g. line_reply_timeout ⇒
+      // the command may be executing; the dispatcher then sends a stop).
+      const reasonCode = (err as { reasonCode?: unknown })?.reasonCode;
+      return {
+        ok: false,
+        status: "failed",
+        error: msg,
+        ...(typeof reasonCode === "string" ? { detail: { jobType: job.jobType, reasonCode } } : {}),
+      };
     }
   }
 
-  /** Best-effort abort routed through the gated runJob path (dry-run unless enabled). */
+  /**
+   * Abort routed through the gated runJob path (dry-run unless enabled). doc 81 Đợt 1B
+   * Task 5: an in-flight request is PREEMPTED first (connection renewed) so its late reply
+   * can never be taken as the STOP's ack, and a failed/unsent STOP is SURFACED (throws)
+   * instead of swallowed — the dispatcher records abort_failed.
+   */
   async abort(): Promise<void> {
-    try {
-      await this.runJob({ jobType: "abort" });
-    } catch {
-      /* ignore — abort is best-effort */
-    }
+    if (this.client && this.client.inFlight() > 0) this.client.resetConnection("abort preempts in-flight request");
+    await abortThroughRunJob((job) => this.runJob(job), "Delta");
   }
 
   async health(): Promise<RobotHealth> {

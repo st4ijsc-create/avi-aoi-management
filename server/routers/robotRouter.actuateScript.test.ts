@@ -52,6 +52,7 @@ vi.mock("../services/robot/robotCommandDispatcher", () => ({
     dispatch.calls.push(input);
     return { ok: true, status: "simulated", jobId: 1 };
   }),
+  robotInterlockTarget: (robotId: number) => ({ adapterId: -1, machineId: robotId, tagKeys: [] }),
 }));
 
 import { robotRouter } from "./robotRouter";
@@ -88,13 +89,16 @@ describe("robot.actuate — danh sách trắng script Techman (doc 81 Đợt 1B 
     expect(dispatch.calls).toEqual([]);
   });
 
+  // doc 81 Đợt 1B Task 5 (R10a) — ca này từng dùng verb `start`; Techman start/reset/pause nay bị
+  // từ chối riêng (xem describe bên dưới), nên dùng `stop` để vẫn chứng minh script TRONG danh sách
+  // không bị cổng danh sách trắng chặn.
   it("Techman + script TRONG danh sách ⇒ đi tới dispatcher nguyên vẹn", async () => {
-    const r = await caller.actuate({ robotId: 5, command: "start", params: { script: "ScriptExit()" } });
+    const r = await caller.actuate({ robotId: 5, command: "stop", params: { script: "StopAndClearBuffer()" } });
     expect(r.status).toBe("simulated");
     expect(dispatch.calls).toHaveLength(1);
     expect(dispatch.calls[0].job).toEqual({
-      jobType: "custom",
-      params: { command: "start", script: "ScriptExit()" },
+      jobType: "abort",
+      params: { command: "stop", script: "StopAndClearBuffer()" },
     });
   });
 
@@ -117,6 +121,63 @@ describe("robot.actuate — danh sách trắng script Techman (doc 81 Đợt 1B 
     await expect(
       caller.actuate({ robotId: 999, command: "start", params: { script: "ScriptExit()" } }),
     ).rejects.toMatchObject({ code: "NOT_FOUND" });
+    expect(dispatch.calls).toEqual([]);
+  });
+});
+
+describe("robot.actuate — verb console Techman chưa kiểm chứng + UR script/home (doc 81 Đợt 1B Task 5, R10)", () => {
+  it.each(["start", "reset", "pause"] as const)(
+    "Techman + %s ⇒ FORBIDDEN techman_console_verb_unvalidated, dispatcher KHÔNG được gọi",
+    async (command) => {
+      const err = await expectForbidden(caller.actuate({ robotId: 5, command }));
+      expect(err.message).toMatch(/techman_console_verb_unvalidated/);
+      expect((err.cause as any)?.appParams).toMatchObject({ reason: "techmanConsoleVerbUnvalidated" });
+    },
+  );
+
+  it("Techman + start KÈM script trong danh sách ⇒ vẫn FORBIDDEN (ScriptExit() chính là thứ bị cấm)", async () => {
+    await expectForbidden(caller.actuate({ robotId: 5, command: "start", params: { script: "ScriptExit()" } }));
+    expect(dispatch.calls).toEqual([]);
+  });
+
+  it.each(["stop", "abort", "home"] as const)("Techman + %s ⇒ không bị cổng verb chặn", async (command) => {
+    await caller.actuate({ robotId: 5, command });
+    expect(dispatch.calls).toHaveLength(1);
+  });
+
+  it("vendor KHÁC Techman + start ⇒ đi tới dispatcher như cũ (không chặn oan)", async () => {
+    dbState.robots = [{ id: 5, vendor: "mitsubishi" }];
+    const r = await caller.actuate({ robotId: 5, command: "start" });
+    expect(r.status).toBe("simulated");
+    expect(dispatch.calls).toHaveLength(1);
+  });
+
+  it("UR + params.script ⇒ FORBIDDEN ur_script_forbidden, dispatcher KHÔNG được gọi", async () => {
+    dbState.robots = [{ id: 5, vendor: "ur" }];
+    const err = await expectForbidden(
+      caller.actuate({ robotId: 5, command: "start", params: { script: "def p():\n  movej([1,1,1,1,1,1])\nend\n" } }),
+    );
+    expect(err.message).toMatch(/ur_script_forbidden/);
+    expect(dispatch.calls).toEqual([]);
+  });
+
+  it("UR + params.home ⇒ FORBIDDEN ur_home_param_forbidden, dispatcher KHÔNG được gọi", async () => {
+    dbState.robots = [{ id: 5, vendor: "ur" }];
+    const err = await expectForbidden(caller.actuate({ robotId: 5, command: "home", params: { home: [1, 1, 1, 1, 1, 1] } }));
+    expect(err.message).toMatch(/ur_home_param_forbidden/);
+    expect(dispatch.calls).toEqual([]);
+  });
+
+  it("UR + home KHÔNG kèm params ⇒ đi tới dispatcher (home lấy từ cấu hình ở driver)", async () => {
+    dbState.robots = [{ id: 5, vendor: "ur" }];
+    await caller.actuate({ robotId: 5, command: "home" });
+    expect(dispatch.calls).toHaveLength(1);
+    expect(dbState.selects).toBe(0);
+  });
+
+  it("start/reset/pause mà không xác định được vendor (CSDL vắng) ⇒ từ chối (fail-closed)", async () => {
+    dbState.unavailable = true;
+    await expect(caller.actuate({ robotId: 5, command: "pause" })).rejects.toBeInstanceOf(TRPCError);
     expect(dispatch.calls).toEqual([]);
   });
 });

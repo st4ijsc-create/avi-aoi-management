@@ -229,6 +229,41 @@ describe("DeltaDriver — motion gate + fail-safe", () => {
     expect(res.error).toMatch(/error 5/);
   });
 
+  // doc 81 Đợt 1B Task 5 — reasonCode của transport được giữ (dispatcher dựa vào nó để gửi dừng).
+  it("runJob live: MOVL không trả lời ⇒ failed + detail.reasonCode line_reply_timeout", async () => {
+    process.env.ROBOT_CONTROL_ENABLED = "true";
+    nextSocket = makeController((cmd) => (cmd === "MOVL" ? null : defaultResponder(cmd, "1", [])));
+    const { DeltaDriver } = await import("./deltaRobotDriver");
+    const d = new DeltaDriver();
+    await d.connect({ endpoint: "tcp://192.168.0.40:5000", timeoutMs: 100 });
+    nextSocket = null; // kết nối lại (nếu có) nhận bộ điều khiển mới
+    const res = await d.runJob({ jobType: "move", params: { x: 1, y: 1, z: 1 } });
+    expect(res.ok).toBe(false);
+    expect(res.detail?.reasonCode).toBe("line_reply_timeout");
+  });
+
+  // doc 81 Đợt 1B Task 5 — abort() NÊU thất bại thay vì nuốt.
+  it("abort(): STOP bị từ chối (ERR) ⇒ reject 'Delta abort failed'", async () => {
+    process.env.ROBOT_CONTROL_ENABLED = "true";
+    const { d, sock } = await connectedDriver((cmd) => (cmd === "STOP" ? "ERR,9" : defaultResponder(cmd, "1", [])));
+    await expect(d.abort()).rejects.toThrow(/Delta abort failed/);
+    expect(sock.written.map(cmdOf)).toContain("STOP");
+  });
+
+  it("abort(): STOP OK ⇒ resolve", async () => {
+    process.env.ROBOT_CONTROL_ENABLED = "true";
+    const { d, sock } = await connectedDriver();
+    await expect(d.abort()).resolves.toBeUndefined();
+    expect(sock.written.map(cmdOf)).toContain("STOP");
+  });
+
+  it("abort() khi control TẮT (dry-run, không gửi byte) ⇒ reject — không được coi là đã dừng", async () => {
+    const { d, sock } = await connectedDriver();
+    const before = sock.written.length;
+    await expect(d.abort()).rejects.toThrow(/not sent \(dry-run/);
+    expect(sock.written.length).toBe(before);
+  });
+
   it("runJob: not connected → failed result, never throws", async () => {
     const { DeltaDriver } = await import("./deltaRobotDriver");
     const d = new DeltaDriver();

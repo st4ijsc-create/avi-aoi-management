@@ -11,9 +11,14 @@ import { getDb } from "../db/connection";
 import { robots, robotTelemetry, robotJobs } from "../../drizzle/schema";
 import { eq, desc } from "drizzle-orm";
 import { getRobotVendorValidation, ROBOT_VENDOR_VALIDATION } from "../services/robot";
-import { dispatchRobotJob } from "../services/robot/robotCommandDispatcher";
+import { dispatchRobotJob, robotInterlockTarget } from "../services/robot/robotCommandDispatcher";
 import type { RobotJobType } from "../services/robot/robotDriver";
-import { isTechmanScriptAllowed, TECHMAN_SCRIPT_ALLOWLIST } from "../services/robot/drivers/techmanScriptAllowlist";
+import {
+  isTechmanScriptAllowed,
+  isTechmanUnvalidatedConsoleVerb,
+  TECHMAN_CONSOLE_VERB_UNVALIDATED,
+  TECHMAN_SCRIPT_ALLOWLIST,
+} from "../services/robot/drivers/techmanScriptAllowlist";
 
 const vendorEnum = z.enum(["fanuc", "mitsubishi", "delta", "techman", "sim", "vda5050"]);
 const kindEnum = z.enum(["arm", "scara", "cobot", "agv"]);
@@ -170,7 +175,7 @@ export const robotRouter = router({
     }),
 
   // ENG-F1 (doc 40) — INTERLOCK PREVIEW (read-only). Chạy CHÍNH XÁC phép đánh giá interlock
-  // mà dispatcher sẽ dùng cho robot này (adapterId=-1, machineId=robotId, tagKeys=[]) nhưng
+  // mà dispatcher sẽ dùng cho robot này (robotInterlockTarget: machineId=robotId) nhưng
   // KHÔNG ghi gì — để Command Console hiển thị interlock-check TRƯỚC khi gửi. Đây chỉ là bản
   // xem trước; gate THẬT vẫn nằm trong robotCommandDispatcher (fail-closed, đồng bộ).
   interlockPreview: protectedProcedure
@@ -178,7 +183,8 @@ export const robotRouter = router({
     .input(z.object({ robotId: z.number() }))
     .query(async ({ input }) => {
       const { evaluateInterlockGate } = await import("../services/interlock/interlockGate");
-      const gate = await evaluateInterlockGate({ adapterId: -1, machineId: input.robotId, tagKeys: [] });
+      // doc 81 Đợt 1B Task 5 — CÙNG khoá với cổng thật (robotInterlockTarget), không hai định nghĩa.
+      const gate = await evaluateInterlockGate(robotInterlockTarget(input.robotId));
       return { blocked: gate.blocked, failClosed: gate.failClosed, violations: gate.violations };
     }),
 
@@ -203,9 +209,18 @@ export const robotRouter = router({
     .mutation(async ({ ctx, input }) => {
       // doc 81 Đợt 1B Task 4 (BE2 T1-G) — `params` được trải thẳng vào job và TechmanDriver đặt
       // nguyên văn `params.script` vào khung TMSCT ⇒ trước đây gửi được BẤT KỲ TM script nào.
-      // Có khoá `script` ⇒ tra vendor; Techman chỉ nhận đúng TECHMAN_SCRIPT_ALLOWLIST. Không có
-      // `script` ⇒ không tra gì, đường cũ giữ nguyên. Driver còn tự chặn lần nữa (phòng thủ sâu).
-      if (input.params && Object.prototype.hasOwnProperty.call(input.params, "script")) {
+      // Có khoá `script` ⇒ tra vendor; Techman chỉ nhận đúng TECHMAN_SCRIPT_ALLOWLIST. Driver còn
+      // tự chặn lần nữa (phòng thủ sâu).
+      // doc 81 Đợt 1B Task 5 (R10) — cùng mẫu hai lớp (router FORBIDDEN + driver từ chối):
+      //   • Techman + verb start/reset/pause ⇒ từ chối `techman_console_verb_unvalidated` (job
+      //     `custom` mặc định ScriptExit() ⇒ TMflow chạy tiếp flow, có thể chuyển động);
+      //   • UR + `params.script` ⇒ từ chối (URScript tuỳ ý đi thẳng xuống robot);
+      //   • UR + `params.home` ⇒ từ chối (movej tới đích tuỳ ý); home CHỈ lấy từ cấu hình robot.
+      // Không có khoá script/home và không phải verb start/reset/pause ⇒ không tra CSDL, đường cũ
+      // giữ nguyên.
+      const params = input.params ?? {};
+      const hasParam = (k: string) => Object.prototype.hasOwnProperty.call(params, k);
+      if (hasParam("script") || hasParam("home") || isTechmanUnvalidatedConsoleVerb(input.command)) {
         const db = await getDb();
         if (!db) throw appError("INTERNAL_SERVER_ERROR", "DB_UNAVAILABLE", undefined, "DB unavailable");
         const [r] = await db
@@ -214,12 +229,36 @@ export const robotRouter = router({
           .where(eq(robots.id, input.robotId))
           .limit(1);
         if (!r) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "robot" }, "robot not found");
-        if (r.vendor === "techman" && !isTechmanScriptAllowed(input.params.script)) {
+        if (r.vendor === "techman" && hasParam("script") && !isTechmanScriptAllowed(params.script)) {
           throw appError(
             "FORBIDDEN",
             "PERMISSION_DENIED",
             { action: "sendTechmanScript", reason: "techmanScriptNotAllowlisted" },
             `Techman script is not in the allowlist (${TECHMAN_SCRIPT_ALLOWLIST.join(", ")}) — refused, nothing was sent.`,
+          );
+        }
+        if (r.vendor === "techman" && isTechmanUnvalidatedConsoleVerb(input.command)) {
+          throw appError(
+            "FORBIDDEN",
+            "PERMISSION_DENIED",
+            { action: "sendTechmanConsoleVerb", reason: "techmanConsoleVerbUnvalidated" },
+            `${TECHMAN_CONSOLE_VERB_UNVALIDATED}: Techman console '${input.command}' is not validated (it would send ScriptExit() and TMflow would continue the flow) — refused, nothing was sent.`,
+          );
+        }
+        if (r.vendor === "ur" && hasParam("script")) {
+          throw appError(
+            "FORBIDDEN",
+            "PERMISSION_DENIED",
+            { action: "sendUrScript", reason: "urScriptForbidden" },
+            "ur_script_forbidden: raw URScript is not accepted from the console — refused, nothing was sent.",
+          );
+        }
+        if (r.vendor === "ur" && hasParam("home")) {
+          throw appError(
+            "FORBIDDEN",
+            "PERMISSION_DENIED",
+            { action: "overrideUrHome", reason: "urHomeParamForbidden" },
+            "ur_home_param_forbidden: the UR home pose comes only from the robot's stored configuration — refused, nothing was sent.",
           );
         }
       }

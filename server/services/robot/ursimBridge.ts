@@ -29,6 +29,7 @@ import type {
   RobotDriver, RobotVendor, RobotConnectionConfig, RobotState, RobotStateHandle,
   OnRobotState, RobotJobSpec, RobotJobResult, RobotHealth,
 } from "./robotDriver";
+import { abortThroughRunJob } from "./robotDriver";
 
 /**
  * The vendor key. 'ur' is NOT yet a member of the RobotVendor union / robotVendorEnum
@@ -50,18 +51,49 @@ function parseHost(endpoint: string): { host: string; port?: number } {
 }
 
 /**
- * Translate a platform RobotJobSpec → a URScript program string. Conservative +
- * exported for unit testing of the exact wire text. `params.script` (raw URScript) is
- * passed through for 'custom'. Joint moves use movej; cartesian uses movel(p[...]).
+ * doc 81 Đợt 1B Task 5 (R10b) — stable reason codes for a UR job refused BEFORE any socket.
+ *   • ur_script_forbidden     — `params.script` (raw URScript) is never passed through: it
+ *                               was an arbitrary-program channel via `robot.actuate`.
+ *   • ur_home_param_forbidden — `params.home` from the caller used to become `movej(home)`,
+ *                               i.e. an arbitrary joint target; home comes only from config.
+ *   • ur_home_not_configured  — no valid `home` (6 finite joint values, rad) in the robot's
+ *                               stored connectionOptions ⇒ no home move (the old default
+ *                               all-zero pose is itself an unvalidated target).
  */
-export function jobToUrscript(job: RobotJobSpec): string {
+export type UrJobRefusalCode = "ur_script_forbidden" | "ur_home_param_forbidden" | "ur_home_not_configured";
+
+export class UrJobRefusedError extends Error {
+  constructor(readonly reasonCode: UrJobRefusalCode) {
+    super(`${reasonCode}: UR job refused before any byte was sent`);
+    this.name = "UrJobRefusedError";
+  }
+}
+
+/** Parse a stored home pose: exactly 6 finite numbers, else undefined (= not configured). */
+export function parseUrHome(value: unknown): number[] | undefined {
+  if (!Array.isArray(value) || value.length !== 6) return undefined;
+  const nums = value.map((n) => (typeof n === "number" ? n : Number.NaN));
+  return nums.every((n) => Number.isFinite(n)) ? nums : undefined;
+}
+
+/**
+ * Translate a platform RobotJobSpec → a URScript program string. Conservative +
+ * exported for unit testing of the exact wire text. Joint moves use movej; cartesian
+ * uses movel(p[...]). Throws {@link UrJobRefusedError} for `params.script` /
+ * `params.home` and for a home job without a configured home (`opts.home`, from the
+ * robot's STORED connectionOptions — never from the job).
+ */
+export function jobToUrscript(job: RobotJobSpec, opts: { home?: number[] } = {}): string {
   const p = job.params ?? {};
+  if (Object.prototype.hasOwnProperty.call(p, "script")) throw new UrJobRefusedError("ur_script_forbidden");
+  if (Object.prototype.hasOwnProperty.call(p, "home")) throw new UrJobRefusedError("ur_home_param_forbidden");
   const a = Number(p.accel ?? 1.4);
   const v = Number(p.speed ?? 1.05);
   const wrap = (stmt: string) => `def prog():\n  ${stmt}\nend\n`;
   switch (job.jobType) {
     case "home": {
-      const j = Array.isArray(p.home) ? (p.home as number[]) : [0, 0, 0, 0, 0, 0];
+      const j = parseUrHome(opts.home);
+      if (!j) throw new UrJobRefusedError("ur_home_not_configured");
       return wrap(`movej([${sixNums(j)}], a=${a}, v=${v})`);
     }
     case "move":
@@ -81,7 +113,7 @@ export function jobToUrscript(job: RobotJobSpec): string {
       return wrap(`halt`);
     case "custom":
     default:
-      return typeof p.script === "string" ? String(p.script) : wrap(`# no-op`);
+      return wrap(`# no-op`);
   }
 }
 
@@ -109,10 +141,13 @@ export class UrsimBridgeDriver implements RobotDriver {
   private connectedAt: Date | null = null;
   private lastOkAt: Date | undefined;
   private lastError: string | undefined;
+  /** Home pose from the robot's STORED config (connectionOptions.home), never from a job. */
+  private home: number[] | undefined;
 
   async connect(cfg: RobotConnectionConfig): Promise<void> {
     const { host, port } = parseHost(cfg.endpoint);
     const opts = cfg.options ?? {};
+    this.home = parseUrHome(opts.home);
     const endpoint: UrsimEndpoint = {
       host,
       dashboardPort: numOr(opts.dashboardPort, port ?? UR_PORTS.dashboard),
@@ -192,7 +227,22 @@ export class UrsimBridgeDriver implements RobotDriver {
     if (!this.connected || !this.client) return { ok: false, status: "failed", error: "not connected" };
 
     // Abort routes through the dashboard `stop` (not a script) when control is enabled.
-    const urscript = jobToUrscript(job);
+    let urscript: string;
+    try {
+      urscript = jobToUrscript(job, { home: this.home });
+    } catch (err) {
+      // doc 81 Đợt 1B Task 5 — refused BEFORE any socket, dry-run and live alike.
+      if (err instanceof UrJobRefusedError) {
+        this.lastError = err.message;
+        return {
+          ok: false,
+          status: "failed",
+          error: err.message,
+          detail: { jobType: job.jobType, sent: false, reasonCode: err.reasonCode },
+        };
+      }
+      throw err;
+    }
 
     if (process.env.ROBOT_CONTROL_ENABLED !== "true") {
       return {
@@ -216,11 +266,12 @@ export class UrsimBridgeDriver implements RobotDriver {
     }
   }
 
-  /** Best-effort abort via the dashboard `stop` (goes through the gated runJob path). */
+  /**
+   * Abort via the dashboard `stop` (goes through the gated runJob path). doc 81 Đợt 1B
+   * Task 5: a failed/unsent stop is SURFACED (throws), no longer swallowed.
+   */
   async abort(): Promise<void> {
-    try {
-      await this.runJob({ jobType: "abort" });
-    } catch { /* best-effort */ }
+    await abortThroughRunJob((job) => this.runJob(job), "UR");
   }
 
   async health(): Promise<RobotHealth> {

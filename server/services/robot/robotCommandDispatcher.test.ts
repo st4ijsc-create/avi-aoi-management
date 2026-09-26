@@ -10,7 +10,7 @@
  *   - actionId + status 'proposed' (chưa confirmed) → rejected.
  *   - thiếu confirmedBy → rejected (hành vi cũ, giữ nguyên).
  *   - KHÔNG có actionId (đường manual/legacy) → chỉ cần confirmedBy → qua (không regress).
- *   - triggerKind='manual' → bỏ qua cổng HITL → qua.
+ *   - triggerKind='manual' + chuyển động → CÙNG cổng HITL (doc 81 Đợt 1B Task 5); abort manual vẫn miễn.
  */
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
@@ -138,8 +138,31 @@ describe("robotCommandDispatcher — HITL pending-action verify (doc 25 T1)", ()
     expect(r.ok).toBe(true);
   });
 
-  it("triggerKind='manual' → bỏ qua cổng HITL → simulated", async () => {
+  // doc 81 Đợt 1B Task 5 — manual KHÔNG còn bỏ qua HITL cho lệnh CHUYỂN ĐỘNG (trước đây ca này
+  // khẳng định "manual → bỏ qua cổng HITL"). Điều kiện tương đương: có confirmedBy (người vận hành
+  // đã xác nhận); lệnh dừng (abort) vẫn được miễn để không bao giờ bị khoá.
+  it("triggerKind='manual' + chuyển động + KHÔNG confirmedBy → rejected (không còn bỏ qua HITL)", async () => {
     const r = await dispatchRobotJob(baseInput({ triggerKind: "manual", confirmedBy: undefined, actionId: undefined }));
+    expect(r.status).toBe("rejected");
+    expect(r.error).toBe("HITL confirmation required");
+  });
+
+  it("triggerKind='manual' + chuyển động + confirmedBy → qua cổng → simulated", async () => {
+    const r = await dispatchRobotJob(baseInput({ triggerKind: "manual", actionId: undefined }));
+    expect(r.status).toBe("simulated");
+  });
+
+  it("triggerKind='manual' + actionId sai owner → rejected (actionId của manual cũng được tái xác minh)", async () => {
+    pending.set("foe-r1", { id: "foe-r1", status: "executed", userId: 999 });
+    const r = await dispatchRobotJob(baseInput({ triggerKind: "manual" }));
+    expect(r.status).toBe("rejected");
+    expect(r.error).toBe("NOT_CONFIRMED");
+  });
+
+  it("triggerKind='manual' + abort (dừng) KHÔNG confirmedBy → vẫn qua (dừng không bị khoá)", async () => {
+    const r = await dispatchRobotJob(
+      baseInput({ triggerKind: "manual", confirmedBy: undefined, actionId: undefined, job: { jobType: "abort", params: {} } }),
+    );
     expect(r.status).toBe("simulated");
   });
 });

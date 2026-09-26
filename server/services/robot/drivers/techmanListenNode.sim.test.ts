@@ -176,3 +176,67 @@ describe("Techman — danh sách trắng script ở tầng driver (doc 81 Đợt
     expect(node.received).toEqual([SCRIPT_EXIT_ID1]);
   });
 });
+
+/**
+ * doc 81 Đợt 1B Task 5 (R10a + R10c).
+ * Khung abort id 1 tính ĐỘC LẬP (Python một dòng, XOR mọi byte giữa `$` và `*`, cùng phép đã tái
+ * tạo đúng vector tài liệu `*61` cho id 7): `$TMSCT,22,1,StopAndClearBuffer(),*67`.
+ */
+const ABORT_ID1 = "$TMSCT,22,1,StopAndClearBuffer(),*67\r\n";
+
+describe("Techman — abort() NÊU thất bại thay vì nuốt (doc 81 Đợt 1B Task 5, R10c)", () => {
+  it("OK khớp id ⇒ abort() resolve; khung StopAndClearBuffer() đúng từng byte", async () => {
+    const { d, node } = await rig({ kind: "reply", chunks: ["$TMSCT,4,1,OK,*5C\r\n"] });
+    const r = await settleWithin(d.abort().then(() => "resolved"), 3000);
+    expect(r.settled).toBe(true);
+    expect(r.value).toBe("resolved");
+    expect(node.received).toEqual([ABORT_ID1]);
+  });
+
+  it.each([
+    ["silent", { kind: "silent" } as FakeListenNodeBehaviour, /tm_reply_timeout/],
+    ["close", { kind: "close" } as FakeListenNodeBehaviour, /tm_connection_closed/],
+    ["ERROR", { kind: "reply", chunks: ["$TMSCT,9,1,ERROR;1,*07\r\n"] } as FakeListenNodeBehaviour, /tm_script_error/],
+  ])("Listen Node %s ⇒ abort() REJECT kèm lý do (không còn im lặng như đã dừng)", async (_l, behaviour, re) => {
+    const { d } = await rig(behaviour);
+    const r = await settleWithin(
+      d.abort().then(
+        () => "resolved",
+        (e: Error) => e,
+      ),
+      3000,
+    );
+    expect(r.settled).toBe(true);
+    expect(r.value).toBeInstanceOf(Error);
+    expect((r.value as Error).message).toMatch(/Techman abort failed/);
+    expect((r.value as Error).message).toMatch(re);
+  });
+});
+
+describe("Techman — verb console start/reset/pause bị từ chối ở driver (doc 81 Đợt 1B Task 5, R10a)", () => {
+  it.each(["start", "reset", "pause"])(
+    "custom {command:%s} ⇒ failed techman_console_verb_unvalidated, KHÔNG kết nối/byte nào (không gửi ScriptExit())",
+    async (command) => {
+      const { d, node } = await rig({ kind: "reply", chunks: ["$TMSCT,4,1,OK,*5C\r\n"] });
+      const r = await settleWithin(d.runJob({ jobType: "custom", params: { command } }), 3000);
+      expect(r.value?.ok).toBe(false);
+      expect(r.value?.detail?.reasonCode).toBe("techman_console_verb_unvalidated");
+      expect(node.connections()).toBe(0);
+      expect(node.received).toEqual([]);
+    },
+  );
+
+  it("kèm script trong danh sách vẫn bị từ chối (ScriptExit() chính là hành vi bị cấm)", async () => {
+    const { d, node } = await rig({ kind: "reply", chunks: ["$TMSCT,4,1,OK,*5C\r\n"] });
+    const r = await settleWithin(d.runJob({ jobType: "custom", params: { command: "start", script: "ScriptExit()" } }), 3000);
+    expect(r.value?.detail?.reasonCode).toBe("techman_console_verb_unvalidated");
+    expect(node.connections()).toBe(0);
+  });
+
+  it("custom KHÔNG có command console (đường khác) ⇒ không bị cổng verb chặn", async () => {
+    const { d, node } = await rig({ kind: "reply", chunks: ["$TMSCT,4,1,OK,*5C\r\n"] });
+    const r = await settleWithin(d.runJob({ jobType: "custom", params: { script: "ScriptExit()" } }), 3000);
+    expect(r.value?.status).toBe("done");
+    expect(node.received).toEqual([SCRIPT_EXIT_ID1]);
+  });
+});

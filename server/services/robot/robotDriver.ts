@@ -82,8 +82,62 @@ export interface RobotDriver {
   getState(): Promise<RobotState>;
   subscribeState(onState: OnRobotState, intervalMs?: number): Promise<RobotStateHandle>;
   runJob(job: RobotJobSpec): Promise<RobotJobResult>;
+  /**
+   * Stop the robot's current motion. doc 81 Đợt 1B Task 5 — MUST surface failure:
+   * resolves ONLY when the stop was sent and acknowledged; rejects with
+   * {@link RobotAbortUnsupportedError} when the driver has no stop command, and with
+   * any other error (typically {@link RobotAbortFailedError}) when the stop failed.
+   * (It used to swallow every failure — the dispatcher's timeout path could not tell.)
+   */
   abort(): Promise<void>;
   health(): Promise<RobotHealth>;
 }
+
+/** Driver has no stop/abort command at all (dispatcher records `abort_unsupported`). */
+export class RobotAbortUnsupportedError extends Error {
+  readonly reasonCode = "abort_unsupported" as const;
+  constructor(vendor: string) {
+    super(`abort_unsupported: ${vendor} driver has no stop/abort command`);
+    this.name = "RobotAbortUnsupportedError";
+  }
+}
+
+/** The stop/abort was attempted but not confirmed (dispatcher records `abort_failed`). */
+export class RobotAbortFailedError extends Error {
+  readonly reasonCode = "abort_failed" as const;
+  constructor(message: string, readonly detail?: Record<string, unknown>) {
+    super(message);
+    this.name = "RobotAbortFailedError";
+  }
+}
+
+/**
+ * Shared abort for drivers whose stop is a gated `runJob({jobType:"abort"})`: runs it and
+ * THROWS unless the stop really went out and was acknowledged (a `failed` verdict or a
+ * dry-run intent is NOT a stop).
+ */
+export async function abortThroughRunJob(
+  runJob: (job: RobotJobSpec) => Promise<RobotJobResult>,
+  label: string,
+): Promise<void> {
+  const r = await runJob({ jobType: "abort" });
+  if (!r.ok) {
+    throw new RobotAbortFailedError(`${label} abort failed: ${r.error ?? "no reason given"}`, r.detail);
+  }
+  if (r.detail?.dryRun === true) {
+    throw new RobotAbortFailedError(`${label} abort not sent (dry-run: ROBOT_CONTROL_ENABLED is not true)`, r.detail);
+  }
+}
+
+/**
+ * Driver-level failure reason codes that mean "the command may be executing on the robot,
+ * outcome unknown" (reply never arrived / connection dropped mid-command). The dispatcher
+ * treats them like its own deadline: it sends the driver's stop before recording `failed`.
+ */
+export const MOTION_OUTCOME_UNKNOWN_REASON_CODES: ReadonlySet<string> = new Set([
+  "line_reply_timeout",   // TcpLineClient (MELFA / Delta)
+  "tm_reply_timeout",     // Techman Listen Node (Task 4 classification)
+  "tm_connection_closed", // Techman Listen Node closed before a complete reply
+]);
 
 export type RobotDriverFactory = () => RobotDriver;

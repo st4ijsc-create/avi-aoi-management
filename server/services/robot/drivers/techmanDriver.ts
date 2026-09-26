@@ -36,11 +36,17 @@
 import { createConnection } from "node:net";
 import { DeviceUnreachableError } from "../../../_core/deviceErrors";
 import { closeModbusClient } from "../../ot/drivers/boundedClose";
-import { isTechmanScriptAllowed, TECHMAN_SCRIPT_NOT_ALLOWLISTED } from "./techmanScriptAllowlist";
+import {
+  isTechmanScriptAllowed,
+  isTechmanUnvalidatedConsoleVerb,
+  TECHMAN_CONSOLE_VERB_UNVALIDATED,
+  TECHMAN_SCRIPT_NOT_ALLOWLISTED,
+} from "./techmanScriptAllowlist";
 import type {
   RobotDriver, RobotVendor, RobotConnectionConfig, RobotState, RobotStateHandle,
   OnRobotState, RobotJobSpec, RobotJobResult, RobotHealth,
 } from "../robotDriver";
+import { abortThroughRunJob } from "../robotDriver";
 
 /**
  * ─── TMflow Modbus register map (ASSUMED — EDIT FOR YOUR DEPLOYMENT) ────────
@@ -279,6 +285,12 @@ function jobToScript(job: RobotJobSpec): string {
       return `StopAndClearBuffer()`;
     case "custom":
     default:
+      // doc 81 Đợt 1B Task 5 (R10a) — console start/reset/pause arrive as `custom` and would
+      // default to ScriptExit() (TMflow then continues the flow, possibly with motion).
+      // Refused until FAT validates them — even with an allowlisted script.
+      if (isTechmanUnvalidatedConsoleVerb(p.command)) {
+        throw new TechmanScriptRefusedError(TECHMAN_CONSOLE_VERB_UNVALIDATED);
+      }
       // doc 81 Đợt 1B Task 4 — an explicit script passes ONLY if it is in the allowlist
       // (BE2 T1-G: any string used to go straight to the Listen Node).
       if (p.script !== undefined) {
@@ -293,9 +305,16 @@ function jobToScript(job: RobotJobSpec): string {
 
 /** Thrown by jobToScript/buildTmsct for a `params.script` outside TECHMAN_SCRIPT_ALLOWLIST. */
 export class TechmanScriptRefusedError extends Error {
-  readonly reasonCode = TECHMAN_SCRIPT_NOT_ALLOWLISTED;
-  constructor() {
-    super(`${TECHMAN_SCRIPT_NOT_ALLOWLISTED}: params.script is not in TECHMAN_SCRIPT_ALLOWLIST`);
+  constructor(
+    readonly reasonCode:
+      | typeof TECHMAN_SCRIPT_NOT_ALLOWLISTED
+      | typeof TECHMAN_CONSOLE_VERB_UNVALIDATED = TECHMAN_SCRIPT_NOT_ALLOWLISTED,
+  ) {
+    super(
+      reasonCode === TECHMAN_CONSOLE_VERB_UNVALIDATED
+        ? `${TECHMAN_CONSOLE_VERB_UNVALIDATED}: console start/reset/pause are not validated on Techman (would send ScriptExit())`
+        : `${TECHMAN_SCRIPT_NOT_ALLOWLISTED}: params.script is not in TECHMAN_SCRIPT_ALLOWLIST`,
+    );
     this.name = "TechmanScriptRefusedError";
   }
 }
@@ -585,13 +604,14 @@ export class TechmanDriver implements RobotDriver {
     });
   }
 
-  /** Best-effort abort: send a stop script through the gated runJob path. */
+  /**
+   * Abort: send `StopAndClearBuffer()` through the gated runJob path. doc 81 Đợt 1B Task 5
+   * (R10c): the classified verdict is SURFACED — a `failed` reply (tm_reply_timeout,
+   * tm_connection_closed, ERROR, …) throws RobotAbortFailedError instead of being discarded,
+   * so the dispatcher's timeout path records abort_failed honestly.
+   */
   async abort(): Promise<void> {
-    try {
-      await this.runJob({ jobType: "abort" });
-    } catch {
-      /* ignore — abort is best-effort */
-    }
+    await abortThroughRunJob((job) => this.runJob(job), "Techman");
   }
 
   async health(): Promise<RobotHealth> {

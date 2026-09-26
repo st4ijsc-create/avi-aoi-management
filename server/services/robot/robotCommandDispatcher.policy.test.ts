@@ -62,6 +62,14 @@ function makeFakeDb() {
         },
       }),
     }),
+    // doc 81 Đợt 1B Task 5 — nhánh real ghi sổ 'running' TRƯỚC rồi UPDATE về trạng thái cuối.
+    update: (table: any) => ({
+      set: (vals: Row) => ({
+        where: async (pred: any) => {
+          for (const r of tableFor(table)) if (matches(r, pred)) Object.assign(r, vals);
+        },
+      }),
+    }),
   };
 }
 
@@ -95,6 +103,12 @@ vi.mock("../interlock/interlockGate", () => ({
   evaluateInterlockGate: vi.fn(async () => ({ blocked: false, failClosed: false, violations: [] })),
 }));
 
+// Cô lập gate 4a-safety (doc 81 Đợt 1B Task 5 — có test riêng robotCommandDispatcher.safety.test.ts):
+// safety-PLC OK để PERMIT chảy tới driver.
+vi.mock("../ot/adapterFacade", () => ({
+  createAdapterFacade: () => ({ getSafetyStatus: async () => ({ state: "OK", source: "test", ts: "" }) }),
+}));
+
 // Policy seam mock — điều khiển được từng test (pattern lineControllerService.test.ts).
 const policyMock = vi.hoisted(() => ({
   secPlatformEnabled: vi.fn((): boolean => false),
@@ -114,8 +128,9 @@ import { dispatchRobotJob } from "./robotCommandDispatcher";
 const baseInput = (over: Record<string, any> = {}) => ({
   robotId: 3,
   job: { jobType: "home" as const, params: { speed: 50 } },
-  triggerKind: "manual" as const, // đường manual: cô lập seam khỏi cổng HITL (đã có test riêng)
+  triggerKind: "manual" as const, // đường manual (HITL có test riêng)
   requestedBy: 7,
+  confirmedBy: 7, // doc 81 Đợt 1B Task 5 — manual + chuyển động cần người xác nhận
   ...over,
 });
 
