@@ -648,6 +648,8 @@
   "ecn": {
     "title": "工程变更",
     "subtitle": "ECN / ECO 变更请求流程——影响分析、审批（maker-checker）与生效日期。",
+    "filteringPending": "正在筛选：仅显示待审批的工程变更（已提交/审查中）",
+    "showAll": "显示全部",
     "noPermission": "您没有查看工程变更的权限。",
     "new": "新建变更",
     "newTitle": "新建工程变更",
@@ -13111,6 +13113,8 @@
   },
   "recipes": {
     "title": "设备配方管理",
+    "filteringPending": "正在筛选：仅显示有需要关注版本的配方",
+    "showAll": "显示全部",
     "newVersion": "保存新版本",
     "newVersionDesc": "创建新的配方版本（草稿状态）。部署将激活某个版本。",
     "saveNewVersion": "保存新版本",
@@ -13337,6 +13341,8 @@
   },
   "interlockRules": {
     "title": "联锁规则管理",
+    "filteringPending": "正在筛选：仅显示未批准的规则",
+    "showAll": "显示全部",
     "subtitle": "配置 + 审批 + 启用/停用联锁规则。本页绝不向设备写入命令；写入通过已审批的 HITL/联锁流程。",
     "newRule": "新建规则",
     "editRule": "编辑规则",
@@ -16236,12 +16242,30 @@
     "allClear": "当前没有等待审批的事项。",
     "error": "无法加载待审查摘要。将自动重试。",
     "degraded": "不可用",
+    "sourcesUnavailable": "无法读取：{{sources}}",
     "category": {
       "recipes": "待审批的配方",
+      "recipeActiveUnapproved": "运行中但未批准的配方",
       "interlock": "待审批的联锁",
+      "interlockEventsOpen": "未处理的联锁事件",
+      "ecn": "待审批的工程变更",
+      "changeover": "待审批的换型",
       "orchestration": "等待确认的运行",
       "safety": "未审计的安全事件",
       "deadlocks": "机群死锁"
+    },
+    "posture": {
+      "title": "安全姿态",
+      "otWrites": "OT真实写入",
+      "robotWrites": "机器人真实写入",
+      "dpcDeploy": "设备程序部署",
+      "interlockEngine": "联锁引擎",
+      "interlockAutoBlock": "联锁自动阻断",
+      "on": "开",
+      "off": "关",
+      "ruleCoverage": "已启用且有目标的规则：{{count}}",
+      "coverageUnavailable": "无法读取规则覆盖率",
+      "writesOnEngineOffWarning": "联锁引擎已关闭，但设备真实写入已开启——违规将不会被自动阻断。"
     }
   },
   "eqStandards": {

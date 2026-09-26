@@ -648,6 +648,8 @@
   "ecn": {
     "title": "Thay đổi kỹ thuật",
     "subtitle": "Quy trình yêu cầu thay đổi ECN / ECO — phân tích tác động, phê duyệt maker-checker và ngày hiệu lực.",
+    "filteringPending": "Đang lọc: chỉ hiện ECN chờ duyệt (đang gửi / đang xem xét)",
+    "showAll": "Xem tất cả",
     "noPermission": "Bạn không có quyền xem thay đổi kỹ thuật.",
     "new": "Thay đổi mới",
     "newTitle": "Thay đổi kỹ thuật mới",
@@ -13308,6 +13310,8 @@
   },
   "recipes": {
     "title": "Quản lý Recipe máy",
+    "filteringPending": "Đang lọc: chỉ hiện mã có phiên bản cần chú ý",
+    "showAll": "Xem tất cả",
     "toastApproved": "Đã duyệt công thức",
     "approvalStatus": "Duyệt",
     "approved": "Đã duyệt",
@@ -13534,6 +13538,8 @@
   },
   "interlockRules": {
     "whenToUse": "Khi nào dùng — định nghĩa quy tắc an toàn tự động dừng/giảm tốc máy khi vượt giới hạn, và xem lại các sự kiện đã kích hoạt.",
+    "filteringPending": "Đang lọc: chỉ hiện quy tắc chưa duyệt",
+    "showAll": "Xem tất cả",
     "title": "Quản lý quy tắc Interlock",
     "subtitle": "Cấu hình + duyệt + bật/tắt quy tắc interlock. Trang KHÔNG ghi lệnh xuống máy; lệnh ghi đi qua HITL/interlock đã duyệt.",
     "newRule": "Thêm quy tắc",
@@ -15654,12 +15660,30 @@
     "allClear": "Hiện không có việc nào chờ duyệt.",
     "error": "Không tải được tổng hợp việc chờ duyệt. Hệ thống sẽ tự thử lại.",
     "degraded": "không khả dụng",
+    "sourcesUnavailable": "Không đọc được: {{sources}}",
     "category": {
       "recipes": "Recipe chờ duyệt",
+      "recipeActiveUnapproved": "Recipe đang chạy CHƯA duyệt",
       "interlock": "Interlock chờ duyệt",
+      "interlockEventsOpen": "Sự kiện interlock đang mở",
+      "ecn": "ECN chờ duyệt",
+      "changeover": "Đổi model chờ duyệt",
       "orchestration": "Run chờ xác nhận",
       "safety": "Sự cố an toàn chưa soát",
       "deadlocks": "Kẹt đội xe"
+    },
+    "posture": {
+      "title": "Tư thế an toàn",
+      "otWrites": "Ghi lệnh OT thật",
+      "robotWrites": "Ghi lệnh robot thật",
+      "dpcDeploy": "Nạp chương trình thiết bị",
+      "interlockEngine": "Engine interlock",
+      "interlockAutoBlock": "Tự động chặn interlock",
+      "on": "BẬT",
+      "off": "TẮT",
+      "ruleCoverage": "Rule chặn có đích: {{count}}",
+      "coverageUnavailable": "Không đọc được độ phủ rule",
+      "writesOnEngineOffWarning": "Đang ghi lệnh thật xuống thiết bị trong khi engine interlock đang TẮT — vi phạm sẽ KHÔNG được tự động chặn."
     }
   },
   "eqIntegration": {

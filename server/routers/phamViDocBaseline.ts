@@ -364,7 +364,14 @@ export const NO_PHAM_VI_DOC: readonly string[] = [
   "server/routers/orderLifecycleRouter.ts#orderLifecycleRouter.list",
   "server/routers/orderLifecycleRouter.ts#orderLifecycleRouter.trace",
   // ── server/routers/oversightRouter.ts (1) ──────────────────────────────────────────────────
-  "server/routers/oversightRouter.ts#oversightRouter.pendingSummary",
+  // 2026-09-27 (doc 80 Đợt 1 Task 2, HUB-02) — `pendingSummary` giờ nhận `ctx` (để tính
+  // showNames qua `checkPermission(ctx.user.id, ctx.user.role, …)`) ⇒ danh tính RỜI TAY
+  // handler ⇒ chuyển sang nhóm S, XOÁ khỏi sổ này (GHIM.A không đổi: −1 pendingSummary,
+  // +1 posture dưới đây). `posture` (MỚI, ILK-06) đọc `interlock_rules` (đếm rule bật+có
+  // đích) để tính độ phủ interlock cho dải "Tư thế an toàn" — một chỉ số TOÀN NHÀ MÁY cho
+  // trưởng ca L3, cùng bản chất với `pendingSummary` cũ (đã ở sổ này từ 2026-08-18): không
+  // trả một HÀNG dữ liệu tenant nào, chỉ một SỐ ĐẾM gộp toàn hệ thống.
+  "server/routers/oversightRouter.ts#oversightRouter.posture",
   // ── server/routers/parameterGuardrailRouter.ts (5) ─────────────────────────────────────────
   "server/routers/parameterGuardrailRouter.ts#parameterGuardrailRouter.changeLog",
   "server/routers/parameterGuardrailRouter.ts#parameterGuardrailRouter.get",

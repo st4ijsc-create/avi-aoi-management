@@ -119,6 +119,15 @@ export default function RecipeManagement() {
   const search = useSearch();
   const [selectedMachineId, setSelectedMachineId] = useState<number | null>(null);
 
+  // Doc 80 Đợt 1 Task 2 (HUB-03) — deep-link `?filter=pending` từ Engineering Hub
+  // (trước bản vá: bị BỎ QUA, trang chỉ đọc `machineId`). Lọc danh sách mã xuống
+  // còn mã có phiên bản CẦN CHÚ Ý (draft chưa duyệt, hoặc RCP-06: active chưa duyệt).
+  const filterPending = useMemo(() => new URLSearchParams(search).get("filter") === "pending", [search]);
+  const [showPendingOnly, setShowPendingOnly] = useState(false);
+  useEffect(() => {
+    if (filterPending) setShowPendingOnly(true);
+  }, [filterPending]);
+
   const versionsQuery = trpc.machineRecipe.recipes.listVersions.useQuery(
     { code: selectedCode ?? "" },
     { enabled: canView && selectedCode != null && selectedCode.length > 0 },
@@ -258,6 +267,8 @@ export default function RecipeManagement() {
   };
 
   const codes = codesQuery.data ?? [];
+  // HUB-03 — chỉ mã có phiên bản CẦN CHÚ Ý (`pendingCount` từ `listCodes`).
+  const visibleCodes = showPendingOnly ? codes.filter((c) => c.pendingCount > 0) : codes;
   const versions = versionsQuery.data ?? [];
   const deployments = deploymentsQuery.data ?? [];
   const machineList = machinesQuery.data ?? [];
@@ -419,8 +430,17 @@ export default function RecipeManagement() {
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         {/* Codes list */}
         <Card className="lg:col-span-1">
-          <CardHeader><CardTitle>{t("recipes.codes")} ({codes.length})</CardTitle></CardHeader>
-          <CardContent>
+          <CardHeader><CardTitle>{t("recipes.codes")} ({visibleCodes.length})</CardTitle></CardHeader>
+          <CardContent className="space-y-3">
+            {/* Doc 80 Đợt 1 Task 2 (HUB-03) — deep-link `?filter=pending` từ Hub. */}
+            {showPendingOnly && (
+              <div className="flex items-center justify-between gap-2 rounded-md border border-warning/40 bg-warning/10 px-3 py-2 text-xs text-muted-foreground">
+                <span>{t("recipes.filteringPending", "Đang lọc: chỉ hiện mã có phiên bản cần chú ý")}</span>
+                <Button size="sm" variant="ghost" className="h-6 px-2 text-xs" onClick={() => setShowPendingOnly(false)}>
+                  {t("recipes.showAll", "Xem tất cả")}
+                </Button>
+              </div>
+            )}
             <Table>
               <TableHeader>
                 <TableRow>
@@ -451,10 +471,10 @@ export default function RecipeManagement() {
                     </TableCell>
                   </TableRow>
                 )}
-                {!codesQuery.isLoading && !codesQuery.isError && codes.length === 0 && (
+                {!codesQuery.isLoading && !codesQuery.isError && visibleCodes.length === 0 && (
                   <TableRow><TableCell colSpan={3} className="text-center text-muted-foreground">{t("recipes.empty")}</TableCell></TableRow>
                 )}
-                {!codesQuery.isLoading && !codesQuery.isError && codes.map((c) => (
+                {!codesQuery.isLoading && !codesQuery.isError && visibleCodes.map((c) => (
                   <TableRow
                     key={c.code}
                     className={`cursor-pointer ${selectedCode === c.code ? "bg-muted" : ""}`}

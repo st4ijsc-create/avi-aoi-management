@@ -648,6 +648,8 @@
   "ecn": {
     "title": "Engineering Changes",
     "subtitle": "ECN / ECO change-request workflow — impact analysis, maker-checker approval, and effectivity.",
+    "filteringPending": "Filtering: only showing ECNs to approve (submitted / in review)",
+    "showAll": "Show all",
     "noPermission": "You do not have permission to view engineering changes.",
     "new": "New change",
     "newTitle": "New engineering change",
@@ -13328,6 +13330,8 @@
   },
   "recipes": {
     "title": "Machine Recipe Management",
+    "filteringPending": "Filtering: only showing codes with a version needing attention",
+    "showAll": "Show all",
     "toastApproved": "Recipe approved",
     "approvalStatus": "Approval",
     "approved": "Approved",
@@ -13554,6 +13558,8 @@
   },
   "interlockRules": {
     "whenToUse": "When to use — define safety rules that automatically stop or slow a machine when a limit is crossed, and review the events they fired.",
+    "filteringPending": "Filtering: only showing unapproved rules",
+    "showAll": "Show all",
     "title": "Interlock Rule Management",
     "subtitle": "Configure + approve + enable/disable interlock rules. This page never writes a command to a machine; writes go through approved HITL/interlock.",
     "newRule": "New rule",
@@ -15674,12 +15680,30 @@
     "allClear": "Nothing waiting for approval right now.",
     "error": "Could not load the pending-review summary. It will retry automatically.",
     "degraded": "unavailable",
+    "sourcesUnavailable": "Could not read: {{sources}}",
     "category": {
       "recipes": "Recipes to approve",
+      "recipeActiveUnapproved": "Running recipe unapproved",
       "interlock": "Interlocks to approve",
+      "interlockEventsOpen": "Open interlock events",
+      "ecn": "ECNs to approve",
+      "changeover": "Changeovers to approve",
       "orchestration": "Runs awaiting confirm",
       "safety": "Unaudited safety events",
       "deadlocks": "Fleet deadlocks"
+    },
+    "posture": {
+      "title": "Safety posture",
+      "otWrites": "Real OT writes",
+      "robotWrites": "Real robot writes",
+      "dpcDeploy": "Program deploy",
+      "interlockEngine": "Interlock engine",
+      "interlockAutoBlock": "Interlock auto-block",
+      "on": "ON",
+      "off": "OFF",
+      "ruleCoverage": "Rules enabled with a target: {{count}}",
+      "coverageUnavailable": "Rule coverage unavailable",
+      "writesOnEngineOffWarning": "Real device writes are ON while the interlock engine is OFF — violations will not be auto-blocked."
     }
   },
   "eqIntegration": {

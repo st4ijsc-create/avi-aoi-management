@@ -28,7 +28,7 @@ import { ViewOnlyBadge } from "@/components/PermissionGate";
 import { PollFreshness } from "@/components/PollFreshness";
 import { ConfirmWithReason, PageContainer, PageHeader } from "@/components/patterns";
 import { buildBreadcrumbs } from "@/lib/breadcrumbs";
-import { useLocation } from "wouter";
+import { useLocation, useSearch } from "wouter";
 import { navItems } from "@/lib/navigation";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -296,8 +296,22 @@ export default function InterlockRuleManagement() {
     return m;
   }, [rules]);
 
+  // Doc 80 Đợt 1 Task 2 (HUB-03) — deep-link `?filter=pending` từ Engineering Hub
+  // (trước bản vá: BỊ BỎ QUA hoàn toàn — trang không đọc query nào).
+  const search = useSearch();
+  const filterPending = useMemo(() => new URLSearchParams(search).get("filter") === "pending", [search]);
+  const [showPendingOnly, setShowPendingOnly] = useState(false);
+
   // U13 (doc 26 §2.2) — lọc sự kiện open/resolved + đếm chưa xử lý cho badge tab.
   const [eventFilter, setEventFilter] = useState<"all" | "open" | "resolved">("all");
+
+  // HUB-03 — filter=pending ⇒ rule chưa duyệt + tab Sự kiện mặc định "Đang mở".
+  useEffect(() => {
+    if (filterPending) {
+      setShowPendingOnly(true);
+      setEventFilter("open");
+    }
+  }, [filterPending]);
   const unresolvedCount = useMemo(
     () => events.filter((e) => e.status !== "resolved").length,
     [events],
@@ -307,6 +321,11 @@ export default function InterlockRuleManagement() {
     if (eventFilter === "resolved") return events.filter((e) => e.status === "resolved");
     return events;
   }, [events, eventFilter]);
+  // HUB-03 — rule CHƯA DUYỆT (approvedBy null) khi đến từ deep-link `?filter=pending`.
+  const visibleRules = useMemo(
+    () => (showPendingOnly ? rules.filter((r) => r.approvedBy == null) : rules),
+    [rules, showPendingOnly],
+  );
   // "Dòng mới" = sự kiện vừa fire trong 2 phút gần đây & chưa xử lý → tô nổi để KTV chú ý.
   const isRecentEvent = (firedAt: unknown, status: string) => {
     if (status === "resolved" || !firedAt) return false;
@@ -384,8 +403,17 @@ export default function InterlockRuleManagement() {
         {/* ── Rules tab ── */}
         <TabsContent value="rules">
           <Card>
-            <CardHeader><CardTitle>{t("interlockRules.rules")} ({rules.length})</CardTitle></CardHeader>
-            <CardContent>
+            <CardHeader><CardTitle>{t("interlockRules.rules")} ({visibleRules.length})</CardTitle></CardHeader>
+            <CardContent className="space-y-3">
+              {/* Doc 80 Đợt 1 Task 2 (HUB-03) — deep-link `?filter=pending` từ Hub. */}
+              {showPendingOnly && (
+                <div className="flex items-center justify-between gap-2 rounded-md border border-warning/40 bg-warning/10 px-3 py-2 text-xs text-muted-foreground">
+                  <span>{t("interlockRules.filteringPending", "Đang lọc: chỉ hiện quy tắc chưa duyệt")}</span>
+                  <Button size="sm" variant="ghost" className="h-6 px-2 text-xs" onClick={() => setShowPendingOnly(false)}>
+                    {t("interlockRules.showAll", "Xem tất cả")}
+                  </Button>
+                </div>
+              )}
               <TooltipProvider>
                 <Table>
                   <TableHeader>
@@ -401,10 +429,10 @@ export default function InterlockRuleManagement() {
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {rules.length === 0 && (
+                    {visibleRules.length === 0 && (
                       <TableRow><TableCell colSpan={8} className="text-center text-muted-foreground">{t("interlockRules.empty")}</TableCell></TableRow>
                     )}
-                    {rules.map((r) => {
+                    {visibleRules.map((r) => {
                       const approved = r.approvedBy != null;
                       return (
                         <TableRow key={r.id}>

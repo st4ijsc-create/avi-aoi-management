@@ -26,6 +26,7 @@
  */
 import { useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
+import { useLocation, useSearch } from "wouter";
 import { trpc } from "@/lib/trpc";
 import { usePermissions } from "@/_core/hooks/usePermissions";
 import DashboardLayout from "@/components/DashboardLayout";
@@ -266,11 +267,20 @@ export default function EngineeringChanges() {
   ], [t]);
   const { values: filterValues } = useUrlFilters(filterDefs);
 
+  // Doc 80 Đợt 1 Task 2 (HUB-03) — deep-link `?filter=pending` từ Engineering Hub
+  // (trước bản vá: BỊ BỎ QUA — trang chỉ đọc `status`/`type` qua FilterBar). "Chờ
+  // duyệt" = submitted | in_review (khớp `oversight.pendingSummary` nhánh `ecn`).
+  // Tách khỏi FilterBar vì đây là OR của HAI trạng thái, không phải một giá trị.
+  const [location, setLocation] = useLocation();
+  const search = useSearch();
+  const filterPending = new URLSearchParams(search).get("filter") === "pending";
+
   const allRows = (listQ.data ?? []) as Ecn[];
   const rows = useMemo(() => allRows.filter((r) =>
     (!filterValues.status || r.status === filterValues.status) &&
-    (!filterValues.type || r.changeType === filterValues.type)
-  ), [allRows, filterValues.status, filterValues.type]);
+    (!filterValues.type || r.changeType === filterValues.type) &&
+    (!filterPending || r.status === "submitted" || r.status === "in_review")
+  ), [allRows, filterValues.status, filterValues.type, filterPending]);
 
   if (!canView) {
     return (
@@ -356,6 +366,16 @@ export default function EngineeringChanges() {
             ) : undefined
           }
         />
+
+        {/* Doc 80 Đợt 1 Task 2 (HUB-03) — deep-link `?filter=pending` từ Hub. */}
+        {filterPending && (
+          <div className="flex items-center justify-between gap-2 rounded-md border border-warning/40 bg-warning/10 px-3 py-2 text-xs text-muted-foreground">
+            <span>{t("ecn.filteringPending", "Đang lọc: chỉ hiện ECN chờ duyệt (đang gửi / đang xem xét)")}</span>
+            <Button size="sm" variant="ghost" className="h-6 px-2 text-xs" onClick={() => setLocation(location)}>
+              {t("ecn.showAll", "Xem tất cả")}
+            </Button>
+          </div>
+        )}
 
         {/* ── Status / type filter ─────────────────────────────────────── */}
         <FilterBar filters={filterDefs} />

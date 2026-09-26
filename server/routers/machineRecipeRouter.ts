@@ -238,7 +238,12 @@ async function assertRecipeWithinGuardrails(recipe: {
 
 export const machineRecipeRouter = router({
   recipes: router({
-    /** Distinct recipe codes with their currently-active version (if any). */
+    /**
+     * Distinct recipe codes with their currently-active version (if any).
+     * Doc 80 Đợt 1 Task 2 (HUB-03) — `pendingCount` thêm cho `/recipes?filter=pending`
+     * (từ Hub): số phiên bản của mã này ĐANG CẦN chú ý — draft chưa duyệt hoặc (RCP-06)
+     * ĐANG CHẠY (active) mà chưa qua second-approver. KHÔNG đổi hàng nào/cột nào cũ.
+     */
     listCodes: protectedProcedure
       .use(requirePermission("machine_control", "canView"))
       .query(async () => {
@@ -251,6 +256,7 @@ export const machineRecipeRouter = router({
             versions: sql<number>`count(*)::int`,
             maxVersion: sql<number>`max(${machineRecipes.version})::int`,
             activeVersion: sql<number | null>`max(${machineRecipes.version}) filter (where ${machineRecipes.status} = 'active')::int`,
+            pendingCount: sql<number>`count(*) filter (where ${machineRecipes.approvedBy} is null and ${machineRecipes.status} in ('draft', 'active'))::int`,
           })
           .from(machineRecipes)
           .groupBy(machineRecipes.code)

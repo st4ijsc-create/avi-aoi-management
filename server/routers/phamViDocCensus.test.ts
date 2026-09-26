@@ -453,7 +453,36 @@ const cua = (n: NhomPhamVi): ThuTuc[] => NHOM.get(n) ?? [];
 //   rò MỚI ⇒ nhóm A + không trong sổ nợ" — vẫn XANH ở cùng lượt chạy.
 // ★ Thủ tục này cũng có ca hai chiều trên CSDL thật ở `twinBonManApiVaiPhamVi.db.test.ts` (CA_DOC,
 //   `chan: laRong` + đối chứng dương ghim mã toà), nên con số ở đây không phải chỗ duy nhất canh nó.
-const GHIM = { A: 341, B: 8, C: 474, D: 1120, S: 328, tong: 2271 } as const;
+/**
+ * ══════════════════════════════════════════════════════════════════════════════════════════════
+ * ★★★ 2026-09-27 (doc 80 Đợt 1 Task 2, Hub trung thực) — **C: 474→481 · D: 1120→1122 · S: 328→329 ·
+ * tong: 2271→2281.** Lời khai kèm số liệu — TÁCH hai nguồn, đo ĐÚNG khuôn "trước-khi-sửa" của các
+ * lượt trước (branch dùng chung, nhiều phiên Claude khác cùng sửa — xem dispatch-common.md):
+ * ══════════════════════════════════════════════════════════════════════════════════════════════
+ *   ĐO TRƯỚC KHI CHẠM BẤT KỲ TỆP NÀO của lượt này (HEAD lúc bắt đầu Task 2):
+ *     `A 341 · B 8 · C 481 · D 1122 · S 328 · tong 2280`
+ *   ⇒ Ghim cũ (474/1120/2271) đã SAI TRƯỚC lượt này — độ trôi `C +7 · D +2 · tong +9` là của các
+ *     phiên khác đang chạy song song trên CÙNG nhánh (không phải của Task 2; không đụng tới, không
+ *     ký hộ — xem G139/G152 trong MEMORY.md: đo, đừng suy).
+ *
+ *   ĐO SAU lượt này (chỉ hai tệp `server/routers/oversightRouter.ts` +
+ *   `server/routers/machineRecipeRouter.ts` đổi trong `server/**`):
+ *     `A 341 · B 8 · C 481 · D 1122 · S 329 · tong 2281`
+ *
+ *   ⇒ Delta CỦA TASK 2, đầy đủ, không dư một đơn vị: **tong +1, S +1, A ±0** (không phải "không
+ *   đổi" theo nghĩa không có gì xảy ra — HAI thủ tục đổi nhóm bù trừ nhau):
+ *     • `oversightRouter.pendingSummary` — HUB-02 đòi "người chỉ có `machine_status` chỉ nhận SỐ
+ *       ĐẾM, không nhận TÊN mục"; để phân biệt được ai đang gọi, handler giờ nhận `ctx` và gọi
+ *       `checkPermission(ctx.user.id, ctx.user.role, …)` — danh tính RỜI TAY handler ⇒ nhóm A → **S**
+ *       (đã XOÁ khỏi `phamViDocBaseline.ts`, xem khối chú thích ở đó).
+ *     • `oversightRouter.posture` (MỚI, ILK-06) — đọc `interlock_rules` (đếm rule bật + có đích)
+ *       để tính độ phủ interlock cho dải "Tư thế an toàn"; như `pendingSummary` cũ, đây là một SỐ
+ *       ĐẾM gộp toàn nhà máy cho trưởng ca L3, không phải một hàng dữ liệu tenant — **A** (đã THÊM
+ *       vào `phamViDocBaseline.ts`).
+ *   C/D không đổi bởi Task 2 (0 thủ tục mới thuộc hai nhóm đó từ hai file đã sửa) — đúng như đo được.
+ * ══════════════════════════════════════════════════════════════════════════════════════════════
+ */
+const GHIM = { A: 341, B: 8, C: 481, D: 1122, S: 329, tong: 2281 } as const;
 
 describe("§1 — CẦU CHÌ: bộ suy có thật sự nhìn thấy gì không", () => {
   it("★ không có ô MÙ nào (mỗi ô mù là một chỗ KHÔNG AI CANH)", () => {
