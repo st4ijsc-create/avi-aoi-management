@@ -372,71 +372,71 @@ async function startServer() {
   //   NOT weakened to raise throughput. Rate limit: the dedicated high tier mounted
   //   above (createOtIngestLimiter), NOT the 300/60 browser /api limiter (which skips
   //   this path). Samples funnel straight into the ONE unified telemetry bus
-  //   (ingestTelemetry) → one bulk insert per batch. Module resolved ONCE at boot.
+  //   (ingestTelemetryDetailed) → chunked inserts (≤1000 rows). Module resolved ONCE at boot.
   // ────────────────────────────────────────────────────────────────────────────
   {
     const { authenticateMachine } = await import("../services/machineAuthService");
-    const { ingestTelemetry } = await import("../services/telemetryBus");
-    const OT_PROTOCOLS = new Set<string>([
-      "mqtt", "opcua", "modbus", "s7", "ethernet_ip", "mtconnect", "sparkplug", "inspection", "other",
-    ]);
-    const OT_QUALITY = new Set<string>(["good", "bad", "uncertain"]);
-    const normProtocol = (p: unknown): TelemetryProtocol =>
-      typeof p === "string" && OT_PROTOCOLS.has(p) ? (p as TelemetryProtocol) : "other";
-    const normQuality = (q: unknown): TelemetryQuality =>
-      typeof q === "string" && OT_QUALITY.has(q) ? (q as TelemetryQuality) : "good";
-
-    app.post("/api/ot/ingest", async (req, res) => {
-      try {
-        const body = (req.body ?? {}) as any;
-        const rawSamples = Array.isArray(body) ? body : body.samples;
-        if (!Array.isArray(rawSamples) || rawSamples.length === 0) {
-          return res
-            .status(400)
-            .json({ ok: false, error: "Body must be { samples: [ ... ] } with at least one sample" });
-        }
-
-        // Auth (per-machine key) — preserved, NOT weakened. Throws TRPCError on failure.
-        const auth = await authenticateMachine({
-          headerKey: req.header("x-api-key") || null,
-          apiKey: typeof body.apiKey === "string" ? body.apiKey : null,
-          machineCode:
-            typeof body.machineCode === "string" ? body.machineCode : req.header("x-machine-code") || null,
-          scope: "ingest:write",
-        });
-
-        // Map → CanonicalSample[]. deviceId is preserved so the bus resolves the soft
-        // machineId itself (one gateway credential forwards many devices).
-        const samples: CanonicalSample[] = rawSamples.map((s: any): CanonicalSample => ({
-          ts: s?.ts ? new Date(s.ts) : undefined,
-          machineId: typeof s?.machineId === "number" ? s.machineId : null,
-          deviceId: typeof s?.deviceId === "string" ? s.deviceId : null,
-          protocol: normProtocol(s?.protocol),
-          metric: String(s?.metric ?? ""),
-          value:
-            typeof s?.value === "number" || typeof s?.value === "string" || typeof s?.value === "boolean"
-              ? s.value
-              : null,
-          unit: typeof s?.unit === "string" ? s.unit : null,
-          quality: normQuality(s?.quality),
-          meta: s?.meta && typeof s.meta === "object" ? s.meta : null,
-        }));
-
-        const accepted = await ingestTelemetry(samples);
-        res.json({ ok: true, accepted, received: samples.length, machine: auth.machine.code });
-      } catch (error: any) {
-        // Auth failures (TRPCError) → 401/403; DB down → 503; everything else → 500.
-        const code = error?.code;
-        if (code === "UNAUTHORIZED")
-          return res.status(401).json({ ok: false, error: error?.message || "Unauthorized" });
-        if (code === "FORBIDDEN")
-          return res.status(403).json({ ok: false, error: error?.message || "Forbidden" });
-        if (error?.name === "DbUnavailableError")
-          return res.status(503).json({ ok: false, error: "Database unavailable — retry" });
-        console.error("[OT ingest] error:", error?.message || error);
-        res.status(500).json({ ok: false, error: error?.message || "Ingest failed" });
-      }
-    });
+    const { ingestTelemetryDetailed } = await import("../services/telemetryBus");
+    const { createOtIngestHandler } = await import("./otIngestRoute");
+    // ══════════════════════════════════════════════════════════════════════════
+    // doc 81 Đợt 1B Task 7 — handler tách sang ./otIngestRoute (createOtIngestHandler)
+    // để test mount được ĐÚNG handler đang chạy; điểm gắn tuyến vẫn DUY NHẤT ở đây.
+    //
+    // ĐO trước khi vá (BE3 §L4, instance riêng :3017, DB _test):
+    //   • lô 7.000 / 8.000 / 12.000 mẫu ⇒ `200 {ok:true, accepted:0}` và KHÔNG lưu gì —
+    //     một câu INSERT mang 11 tham số bind mỗi dòng, trần Postgres 65535 ⇒ ~5957
+    //     dòng; drizzle không tự chia khối, bus nuốt lỗi, route vẫn nói ok;
+    //   • một mẫu `ts` hỏng ⇒ 500 cho cả lô (RangeError ở telemetryBus.toBroadcast)
+    //     và làm hỏng WAL store-forward (entryToLine ném ⇒ mọi lần ghi sau đều hỏng).
+    //
+    // Hợp đồng HTTP mới — phản hồi phản ánh ĐÚNG số đã lưu:
+    //   200 — accepted === received (thân y như cũ {ok, accepted, received, machine});
+    //   207 — lưu một phần, kèm rejected[{index, reason}];
+    //   400 — không mẫu nào nhận và không do DB (vd cả lô ts hỏng);
+    //   503 — không mẫu nào lưu và có lỗi DB (db_error) ⇒ gửi lại được;
+    //   413 — lô vượt OT_INGEST_MAX_BATCH (mặc định 20000), kiểm trước xác thực.
+    // Không bao giờ trả 200 ok:true khi accepted < received.
+    //
+    // Mẫu `ts` không hợp lệ hoặc vượt now + OT_INGEST_MAX_FUTURE_SKEW_MS (mặc định
+    // 24 h) bị loại RIÊNG ở lối vào bus (mọi đầu đọc khác cũng hưởng), không vào WAL.
+    // Lỗi DỮ LIỆU của một dòng (SQLSTATE lớp 22/23) chỉ loại dòng đó (invalid_value).
+    // Test: _core/otIngestRoute.test.ts (HTTP + DB giả), otIngestRoute.db.test.ts
+    // (CSDL _test thật: 7.000 / 12.000 mẫu ⇒ đúng bấy nhiêu dòng), và
+    // services/telemetryBus.honestIngest.test.ts, services/ot/storeForward.wal.test.ts.
+    //
+    // ⚠ Khối này giữ ĐÚNG số dòng cũ để các census ghim theo số dòng phía dưới
+    //   (vd bề mặt tĩnh `/uploads` ghim ở dòng 650) không trôi vì một lượt tách handler.
+    // ══════════════════════════════════════════════════════════════════════════
+    // Lý do loại (`reason`, máy đọc được — client quyết định gửi lại hay bỏ):
+    //   invalid_ts        — ts không phải ngày hợp lệ (gửi lại vô ích);
+    //   ts_too_far_future — ts vượt now + trần lệch (đồng hồ thiết bị sai);
+    //   contract_invalid  — CONTRACT_VALIDATE_INGEST_MODE=quarantine loại mẫu sai
+    //                       hợp đồng telemetry (chế độ off/log không loại gì);
+    //   invalid_value     — Postgres từ chối DỮ LIỆU của đúng dòng đó;
+    //   db_error          — DB vắng / mất kết nối ⇒ gửi lại được (ON CONFLICT
+    //                       DO NOTHING trên (deviceId, metric, ts) chặn ghi lặp).
+    // Ghi theo khối: khối đầu tiên hỏng vì DB ⇒ DỪNG (không đập tiếp một DB đang
+    // sập), mọi dòng chưa lưu = db_error; các khối trước đó đã lưu được ĐẾM đúng.
+    //
+    // Store-and-forward (OT_STORE_FORWARD_ENABLED): CHỈ dòng db_error được đệm
+    // vào WAL; WAL ghi NGUYÊN TỬ (tệp tạm → fsync → rename), dòng hỏng khi đọc
+    // lại bị bỏ + đếm + chép sang `<wal>.corrupt`, lượt xả WAL cũng chia khối
+    // và cách ly dòng Postgres từ chối dữ liệu (không chặn các dòng sau).
+    //
+    // TELEMETRY_BATCH_ENABLED (bộ đệm gộp) KHÔNG áp cho route này nữa: "accepted"
+    // phải là số ĐÃ LƯU, nên ingestTelemetryDetailed luôn ghi đồng bộ. Các đầu
+    // đọc nội bộ (OT adapters, MQTT bridge, MTConnect…) vẫn đi ingestTelemetry
+    // như cũ (vẫn hưởng cổng ts + chia khối).
+    //
+    // Nhánh anh em (Task 8): /api/v1/ingest/telemetry (api/v1/router.ts) vẫn gọi
+    // ingestTelemetry và trả 202 {accepted, received}; dùng lại được
+    // ingestTelemetryDetailed + otIngestHttpStatus + toOtCanonicalSample từ đây.
+    //
+    // Xác thực máy (x-api-key / body.apiKey / machineCode, scope ingest:write)
+    // giữ NGUYÊN, không nới; tầng rate-limit OT riêng (createOtIngestLimiter) giữ
+    // nguyên. Một lô vượt trần bị 413 TRƯỚC xác thực: rẻ, không đụng DB, chỉ lộ
+    // con số trần (không phải bí mật).
+    app.post("/api/ot/ingest", createOtIngestHandler({ authenticateMachine, ingestTelemetryDetailed }));
     console.log("[OT] high-throughput ingest route ready: POST /api/ot/ingest (dedicated rate tier)");
   }
 
