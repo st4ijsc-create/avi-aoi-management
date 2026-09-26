@@ -6,10 +6,11 @@
  *   • canary ĐẠT → promote nốt phần còn lại.
  *   • rejected (build not ok) làm canary fail nhưng KHÔNG rollback (không ghi HW).
  *   • promoteOnVerified: 'deployed' (chưa verify) chặn promote.
- *   • simulated (cờ OFF) → canary đạt, promote bình thường.
+ *   • simulated (cờ OFF / không người ký ⇒ promote cũng chỉ giả lập) → canary đạt, promote bình thường.
+ *   • doc 81 Đợt 1B Task 3: simulated khi promote SẼ ghi thật → DỪNG, haltCode canary_not_real.
  *   • pickLatestPerDevice: chọn hàng hiệu lực mới nhất mỗi máy (ma trận version).
  */
-import { describe, it, expect, vi } from "vitest";
+import { describe, it, expect, vi, afterEach } from "vitest";
 import {
   deployToFleet,
   canaryPasses,
@@ -81,17 +82,29 @@ function makeDeps(statusByDevice: Record<number, string>, calls: number[], rollb
 }
 
 describe("canaryPasses / isForwardWrite (pure)", () => {
-  it("rejected & failed KHÔNG đạt; verified/simulated/deployed đạt (promoteOnVerified=false)", () => {
-    expect(canaryPasses("rejected", false)).toBe(false);
-    expect(canaryPasses("failed", false)).toBe(false);
-    expect(canaryPasses("deployed", false)).toBe(true);
-    expect(canaryPasses("verified", false)).toBe(true);
-    expect(canaryPasses("simulated", false)).toBe(true);
+  it("rejected & failed KHÔNG đạt; verified/deployed đạt (promoteOnVerified=false)", () => {
+    for (const real of [true, false]) {
+      expect(canaryPasses("rejected", false, real)).toBe(false);
+      expect(canaryPasses("failed", false, real)).toBe(false);
+      expect(canaryPasses("deployed", false, real)).toBe(true);
+      expect(canaryPasses("verified", false, real)).toBe(true);
+    }
   });
   it("promoteOnVerified=true: 'deployed' (chưa verify) KHÔNG đạt; 'verified' đạt", () => {
-    expect(canaryPasses("deployed", true)).toBe(false);
-    expect(canaryPasses("verified", true)).toBe(true);
-    expect(canaryPasses("simulated", true)).toBe(true);
+    expect(canaryPasses("deployed", true, true)).toBe(false);
+    expect(canaryPasses("verified", true, true)).toBe(true);
+  });
+  it("doc 81 Đợt 1B Task 3 — 'simulated' KHÔNG đạt khi promote có thể GHI THẬT; chỉ đạt khi promote cũng chỉ giả lập", () => {
+    expect(canaryPasses("simulated", false, true)).toBe(false);
+    expect(canaryPasses("simulated", true, true)).toBe(false);
+    expect(canaryPasses("simulated", false, false)).toBe(true);
+    expect(canaryPasses("simulated", true, false)).toBe(true);
+  });
+  it("trạng thái không phải kết quả deploy (pending / awaiting_approval / rolled_back) KHÔNG đạt", () => {
+    for (const s of ["pending", "awaiting_approval", "rolled_back"]) {
+      expect(canaryPasses(s, false, false)).toBe(false);
+      expect(canaryPasses(s, false, true)).toBe(false);
+    }
   });
   it("isForwardWrite: chỉ deployed/verified là ghi thật", () => {
     expect(isForwardWrite("deployed")).toBe(true);
@@ -242,6 +255,17 @@ describe("deployToFleet — canary ĐẠT promote", () => {
     expect(res.summary.simulated).toBe(4);
   });
 
+  it("cờ deploy OFF (mặc định: DPC_DEPLOY_ENABLED vắng) + có confirmedBy → mọi máy 'simulated' → vẫn promote (không có ghi HW nào để chặn)", async () => {
+    delete process.env.DPC_DEPLOY_ENABLED;
+    const calls: number[] = [];
+    const deps = makeDeps({ 1: "simulated", 2: "simulated", 3: "simulated", 4: "simulated" }, calls);
+    const res = await deployToFleet(baseInput({ confirmedBy: 8 }), USER, deps);
+    expect(res.halted).toBe(false);
+    expect(res.haltCode).toBeNull();
+    expect(res.promoted).toBe(true);
+    expect(calls).toEqual([1, 2, 3, 4]);
+  });
+
   it("canaryCount kẹp về số máy; deviceIds rỗng → không gọi deploy", async () => {
     const calls: number[] = [];
     const deps = makeDeps({}, calls);
@@ -284,5 +308,70 @@ describe("pickLatestPerDevice — ma trận máy × version (pure)", () => {
     expect(map.has(12)).toBe(false);
     expect(map.get(13)!.id).toBe(8);
     expect(map.size).toBe(3);
+  });
+});
+
+describe("doc 81 Đợt 1B Task 3 — canary 'simulated' KHÔNG được promote sang máy ghi thật", () => {
+  afterEach(() => {
+    delete process.env.DPC_DEPLOY_ENABLED;
+  });
+
+  it("DPC_DEPLOY_ENABLED bật + có người ký (promote SẼ ghi thật) + canary 'simulated' ⇒ DỪNG, haltCode canary_not_real, không đẩy máy còn lại", async () => {
+    process.env.DPC_DEPLOY_ENABLED = "true";
+    const calls: number[] = [];
+    const rollbacks: number[] = [];
+    // Canary 1,2 chưa commission ⇒ adapter chỉ giả lập; máy 3,4 đã commission sẽ ghi THẬT nếu promote.
+    const deps = makeDeps({ 1: "simulated", 2: "simulated", 3: "deployed", 4: "deployed" }, calls, rollbacks);
+    const res = await deployToFleet(baseInput({ confirmedBy: 8 }), USER, deps);
+    expect(calls).toEqual([1, 2]);
+    expect(res.halted).toBe(true);
+    expect(res.promoted).toBe(false);
+    expect(res.haltCode).toBe("canary_not_real");
+    expect(res.haltReason).toMatch(/canary THẬT/);
+    expect(rollbacks).toEqual([]);
+    // Không có trạng thái mới: từng máy giữ đúng status thật của nó.
+    expect(res.results.map((r) => r.status)).toEqual(["simulated", "simulated"]);
+  });
+
+  it("canary trộn: 1 'deployed' + 1 'simulated' (promote ghi thật) ⇒ DỪNG canary_not_real, KHÔNG rollback canary thật (không có mismatch)", async () => {
+    process.env.DPC_DEPLOY_ENABLED = "true";
+    const calls: number[] = [];
+    const rollbacks: number[] = [];
+    const deps = makeDeps({ 1: "deployed", 2: "simulated" }, calls, rollbacks);
+    const res = await deployToFleet(baseInput({ confirmedBy: 8 }), USER, deps);
+    expect(calls).toEqual([1, 2]);
+    expect(res.halted).toBe(true);
+    expect(res.haltCode).toBe("canary_not_real");
+    expect(rollbacks).toEqual([]);
+  });
+
+  it("canary 'failed' + 'simulated' ⇒ haltCode canary_failed (lỗi thật ưu tiên), rollback như cũ", async () => {
+    process.env.DPC_DEPLOY_ENABLED = "true";
+    const calls: number[] = [];
+    const rollbacks: number[] = [];
+    const deps = makeDeps({ 1: "failed", 2: "simulated" }, calls, rollbacks);
+    const res = await deployToFleet(baseInput({ confirmedBy: 8 }), USER, deps);
+    expect(res.halted).toBe(true);
+    expect(res.haltCode).toBe("canary_failed");
+  });
+
+  it("canary 'verified' thật (promote ghi thật) ⇒ promote bình thường (đường hợp lệ không bị chặn oan)", async () => {
+    process.env.DPC_DEPLOY_ENABLED = "true";
+    const calls: number[] = [];
+    const deps = makeDeps({ 1: "verified", 2: "verified", 3: "verified", 4: "verified" }, calls);
+    const res = await deployToFleet(baseInput({ confirmedBy: 8 }), USER, deps);
+    expect(res.halted).toBe(false);
+    expect(res.haltCode).toBeNull();
+    expect(res.promoted).toBe(true);
+    expect(calls).toEqual([1, 2, 3, 4]);
+  });
+
+  it("DPC_DEPLOY_ENABLED bật nhưng KHÔNG có người ký (deployBuild chỉ giả lập mọi máy) ⇒ canary 'simulated' vẫn promote", async () => {
+    process.env.DPC_DEPLOY_ENABLED = "true";
+    const calls: number[] = [];
+    const deps = makeDeps({ 1: "simulated", 2: "simulated", 3: "simulated", 4: "simulated" }, calls);
+    const res = await deployToFleet(baseInput(), USER, deps); // confirmedBy vắng
+    expect(res.halted).toBe(false);
+    expect(res.promoted).toBe(true);
   });
 });

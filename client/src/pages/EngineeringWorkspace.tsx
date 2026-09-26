@@ -441,7 +441,10 @@ export default function EngineeringWorkspace() {
     onSuccess: (r) => {
       utils.programming.listDeployments.invalidate();
       utils.programming.fleetVersionMatrix.invalidate();
-      if (r.halted) {
+      if (r.halted && r.haltCode === "canary_not_real") {
+        // doc 81 Đợt 1B Task 3 — canary chỉ giả lập không được promote sang máy ghi thật.
+        toast.error(t("engineering.fleetNeedsRealCanary", "Rollout đã DỪNG: canary chỉ giả lập (không ghi xuống thiết bị) nên không được tính là đạt khi promote sẽ ghi thật. Cần một canary thật (deployed/verified)."));
+      } else if (r.halted) {
         toast.error(r.haltReason || t("engineering.fleetHalted", "Rollout đã DỪNG do canary không đạt"));
       } else if (r.promoted) {
         toast.success(t("engineering.fleetPromoted", "Canary đạt — đã promote toàn đội máy"));
@@ -1543,12 +1546,18 @@ export default function EngineeringWorkspace() {
                         }`}>
                           {fleetResult.halted ? <XCircle className="h-4 w-4 shrink-0" /> : <CheckCircle2 className="h-4 w-4 shrink-0" />}
                           {fleetResult.halted
-                            ? t("engineering.fleetHaltedShort", "DỪNG — canary không đạt")
+                            ? fleetResult.haltCode === "canary_not_real"
+                              ? t("engineering.fleetNeedsRealCanaryShort", "DỪNG — cần canary thật")
+                              : t("engineering.fleetHaltedShort", "DỪNG — canary không đạt")
                             : fleetResult.promoted
                               ? t("engineering.fleetPromotedShort", "Đã promote toàn đội máy")
                               : t("engineering.fleetCanaryOkShort", "Canary đã chạy")}
                         </div>
-                        {fleetResult.haltReason && (
+                        {fleetResult.halted && fleetResult.haltCode === "canary_not_real" ? (
+                          <p className="text-xs text-destructive">
+                            {t("engineering.fleetNeedsRealCanary", "Rollout đã DỪNG: canary chỉ giả lập (không ghi xuống thiết bị) nên không được tính là đạt khi promote sẽ ghi thật. Cần một canary thật (deployed/verified).")}
+                          </p>
+                        ) : fleetResult.haltReason && (
                           <p className="text-xs text-destructive">{fleetResult.haltReason}</p>
                         )}
                         <Table>
