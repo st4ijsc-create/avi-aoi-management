@@ -35,6 +35,14 @@ function caller(userId: number) {
   } as any);
 }
 
+/** doc 80 Đợt 1 Task 9 — approve/enable nay BẮT BUỘC `expectedVersion` = token của bản đang hiển thị.
+ *  Các ca ở đây đo SoD/MOC/khoá hàng (không đo token) ⇒ gửi đúng token màn hình sẽ có lúc bấm
+ *  (đọc bằng `get`, cùng giá trị `list` trả). Token cũ ⇒ CONFLICT được đo riêng ở
+ *  interlockRouter.dot1.db.test.ts. */
+async function ver(id: number): Promise<string> {
+  return (await caller(990_599_999).get({ id })).versionToken;
+}
+
 function baseInput(name: string, over: Record<string, unknown> = {}) {
   return {
     name,
@@ -92,8 +100,8 @@ describe.skipIf(!DB_URL)("Task 2 — interlockRouter MOC (ILK-01/02/03/05)", () 
     it("★★★ update trên rule ĐÃ duyệt + ĐANG bật ⇒ approvedBy/approvedAt=null, enabled=false, audit reason đúng chữ", async () => {
       const created = await caller(A).create(baseInput(`${DAU}-ilk01a`));
       ruleIds.push(created.id);
-      await caller(B).approve({ id: created.id }); // B ≠ A (createdBy) → SoD OK
-      const enabled = await caller(A).enable({ id: created.id });
+      await caller(B).approve({ id: created.id, expectedVersion: await ver(created.id) }); // B ≠ A (createdBy) → SoD OK
+      const enabled = await caller(A).enable({ id: created.id, expectedVersion: await ver(created.id) });
       expect(enabled.approvedBy).toBe(B);
       expect(enabled.enabled).toBe(true);
 
@@ -111,8 +119,8 @@ describe.skipIf(!DB_URL)("Task 2 — interlockRouter MOC (ILK-01/02/03/05)", () 
     it("update chỉ đổi trường KHÔNG ảnh hưởng hành vi (description) trên rule đã duyệt ⇒ VẪN reset (Đợt 0 chọn an toàn)", async () => {
       const created = await caller(A).create(baseInput(`${DAU}-ilk01b`));
       ruleIds.push(created.id);
-      await caller(B).approve({ id: created.id });
-      await caller(A).enable({ id: created.id });
+      await caller(B).approve({ id: created.id, expectedVersion: await ver(created.id) });
+      await caller(A).enable({ id: created.id, expectedVersion: await ver(created.id) });
 
       const updated = await caller(A).update({ id: created.id, description: "chỉ đổi mô tả" });
       expect(updated.description).toBe("chỉ đổi mô tả");
@@ -136,7 +144,7 @@ describe.skipIf(!DB_URL)("Task 2 — interlockRouter MOC (ILK-01/02/03/05)", () 
     it("★★★ người TẠO tự duyệt ⇒ FORBIDDEN/PERMISSION_DENIED, approvedBy KHÔNG đổi", async () => {
       const created = await caller(A).create(baseInput(`${DAU}-ilk02a`));
       ruleIds.push(created.id);
-      await expectAppCode(caller(A).approve({ id: created.id }), "PERMISSION_DENIED");
+      await expectAppCode(caller(A).approve({ id: created.id, expectedVersion: await ver(created.id) }), "PERMISSION_DENIED");
       const row = await caller(B).get({ id: created.id });
       expect(row.approvedBy).toBeNull();
     });
@@ -145,13 +153,13 @@ describe.skipIf(!DB_URL)("Task 2 — interlockRouter MOC (ILK-01/02/03/05)", () 
       const created = await caller(A).create(baseInput(`${DAU}-ilk02b`));
       ruleIds.push(created.id);
       await caller(C).update({ id: created.id, description: "C sửa cuối" });
-      await expectAppCode(caller(C).approve({ id: created.id }), "PERMISSION_DENIED");
+      await expectAppCode(caller(C).approve({ id: created.id, expectedVersion: await ver(created.id) }), "PERMISSION_DENIED");
     });
 
     it("người ĐỘC LẬP (≠ tạo, ≠ sửa cuối) duyệt ⇒ thành công", async () => {
       const created = await caller(A).create(baseInput(`${DAU}-ilk02c`));
       ruleIds.push(created.id);
-      const row = await caller(B).approve({ id: created.id });
+      const row = await caller(B).approve({ id: created.id, expectedVersion: await ver(created.id) });
       expect(row.approvedBy).toBe(B);
     });
   });
@@ -161,8 +169,8 @@ describe.skipIf(!DB_URL)("Task 2 — interlockRouter MOC (ILK-01/02/03/05)", () 
     it("disable với reason quá ngắn ⇒ zod từ chối, enabled KHÔNG đổi", async () => {
       const created = await caller(A).create(baseInput(`${DAU}-ilk03a`));
       ruleIds.push(created.id);
-      await caller(B).approve({ id: created.id });
-      await caller(A).enable({ id: created.id });
+      await caller(B).approve({ id: created.id, expectedVersion: await ver(created.id) });
+      await caller(A).enable({ id: created.id, expectedVersion: await ver(created.id) });
       await expect(caller(A).disable({ id: created.id, reason: "ab" } as any)).rejects.toThrow();
       const row = await caller(A).get({ id: created.id });
       expect(row.enabled).toBe(true);
@@ -171,8 +179,8 @@ describe.skipIf(!DB_URL)("Task 2 — interlockRouter MOC (ILK-01/02/03/05)", () 
     it("★★★ disable với reason hợp lệ ⇒ tắt + ghi audit reason ĐÚNG CHỮ (không còn console.info)", async () => {
       const created = await caller(A).create(baseInput(`${DAU}-ilk03b`));
       ruleIds.push(created.id);
-      await caller(B).approve({ id: created.id });
-      await caller(A).enable({ id: created.id });
+      await caller(B).approve({ id: created.id, expectedVersion: await ver(created.id) });
+      await caller(A).enable({ id: created.id, expectedVersion: await ver(created.id) });
       const row = await caller(A).disable({ id: created.id, reason: "Bảo trì định kỳ theo lịch" });
       expect(row.enabled).toBe(false);
       const audit = await auditRowsFor("interlock_rule", created.id, "disable");

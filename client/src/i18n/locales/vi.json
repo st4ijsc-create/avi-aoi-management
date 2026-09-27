@@ -3971,7 +3971,10 @@
       "resumeOrchestrationRun": "tiếp tục lượt chạy điều phối",
       "buildArtifact": "build phiên bản chương trình",
       "requestVersionReview": "yêu cầu duyệt phiên bản chương trình",
-      "reviewArtifact": "duyệt phiên bản chương trình"
+      "reviewArtifact": "duyệt phiên bản chương trình",
+      "approveInterlockRule": "duyệt quy tắc khoá liên động",
+      "releaseRecipeVersion": "phát hành phiên bản công thức",
+      "rollbackRecipeVersion": "quay lui phiên bản công thức"
     },
     "field": {
       "changeReason": "lý do thay đổi",
@@ -4261,7 +4264,12 @@
       "urHomeParamForbidden": "Vị trí home của robot UR chỉ lấy từ cấu hình đã lưu của robot, không nhận từ lệnh; lệnh bị từ chối, không có gì được gửi tới robot.",
       "versionNotApproved": "Phiên bản này chưa được DUYỆT. Một người khác tác giả phải duyệt nó (nút \"Duyệt\" trên thẻ phiên bản) trước khi build/deploy.",
       "versionReviewNotPending": "Phiên bản này không còn chờ duyệt (đã duyệt hoặc bị từ chối). Muốn sửa thì lưu một phiên bản mới.",
-      "buildChecksumMismatch": "Biên dịch lại nguồn của phiên bản không khớp build đã lưu — bản sắp nạp không phải bản đã build/mô phỏng. Hãy build và mô phỏng lại rồi deploy. Chưa có gì được ghi xuống thiết bị."
+      "buildChecksumMismatch": "Biên dịch lại nguồn của phiên bản không khớp build đã lưu — bản sắp nạp không phải bản đã build/mô phỏng. Hãy build và mô phỏng lại rồi deploy. Chưa có gì được ghi xuống thiết bị.",
+      "interlockRuleChanged": "Quy tắc đã bị sửa kể từ lúc bạn mở trang — danh sách đã được tải lại. Xem nội dung mới rồi duyệt/bật lại.",
+      "runGateChanged": "Lượt chạy không còn chờ ở bước bạn đang xem (bước đó đã được người khác quyết định). Tải lại để xem bước đang chờ hiện tại.",
+      "recipeNotApproved": "Phiên bản công thức này chưa được người thứ hai duyệt — không thể triển khai/phát hành/quay lui về nó.",
+      "recipeArchived": "Phiên bản công thức này đã lưu trữ — hãy tạo phiên bản mới thay vì đưa bản đã lưu trữ vào chạy.",
+      "recipeMachineTypeMismatch": "Công thức này dành cho loại máy khác với máy đích — không thể triển khai lên máy này."
     },
     "client": {
       "generic": "Lỗi hệ thống, vui lòng thử lại",

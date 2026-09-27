@@ -165,13 +165,16 @@ export default function InterlockRuleManagement() {
     onSuccess: () => { toast.success(t("interlockRules.toastDeleted")); invalidateRules(); },
     onError: (e) => toastTrpcError(e),
   });
+  // doc 80 Đợt 1 Task 9 — approve/enable gửi `expectedVersion` = versionToken của HÀNG đang hiển
+  // thị. Server trả CONFLICT khi rule đã bị sửa từ lúc tải trang ⇒ toast lý do ("tải lại để
+  // duyệt") VÀ tải lại danh sách ngay, để người duyệt thấy nội dung mới trước khi bấm lại.
   const approveRule = trpc.interlock.approve.useMutation({
     onSuccess: () => { toast.success(t("interlockRules.toastApproved")); invalidateRules(); },
-    onError: (e) => toastTrpcError(e),
+    onError: (e) => { toastTrpcError(e); if (e.data?.code === "CONFLICT") invalidateRules(); },
   });
   const enableRule = trpc.interlock.enable.useMutation({
     onSuccess: () => { toast.success(t("interlockRules.toastEnabled")); invalidateRules(); },
-    onError: (e) => toastTrpcError(e),
+    onError: (e) => { toastTrpcError(e); if (e.data?.code === "CONFLICT") invalidateRules(); },
   });
   const disableRule = trpc.interlock.disable.useMutation({
     onSuccess: () => { toast.success(t("interlockRules.toastDisabled")); invalidateRules(); },
@@ -458,7 +461,7 @@ export default function InterlockRuleManagement() {
                             {!approved && (
                               <Button size="sm" variant="outline" disabled={!isAdmin || approveRule.isPending}
                                 title={approveReason}
-                                onClick={() => approveRule.mutate({ id: r.id })}>
+                                onClick={() => approveRule.mutate({ id: r.id, expectedVersion: r.versionToken })}>
                                 <CheckCircle2 className="h-4 w-4 mr-1" /> {t("interlockRules.approve")}
                               </Button>
                             )}
@@ -466,7 +469,7 @@ export default function InterlockRuleManagement() {
                               approved ? (
                                 <Button size="sm" variant="outline" disabled={!canEdit || enableRule.isPending}
                                   title={editReason}
-                                  onClick={() => enableRule.mutate({ id: r.id })}>
+                                  onClick={() => enableRule.mutate({ id: r.id, expectedVersion: r.versionToken })}>
                                   <Play className="h-4 w-4 mr-1" /> {t("interlockRules.enable")}
                                 </Button>
                               ) : (

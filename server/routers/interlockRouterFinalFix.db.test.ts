@@ -54,6 +54,14 @@ function caller(userId: number) {
   } as any);
 }
 
+/** doc 80 Đợt 1 Task 9 — approve/enable nay BẮT BUỘC `expectedVersion` = token của bản đang hiển thị.
+ *  Các ca ở đây đo SoD/MOC/khoá hàng (không đo token) ⇒ gửi đúng token màn hình sẽ có lúc bấm
+ *  (đọc bằng `get`, cùng giá trị `list` trả). Token cũ ⇒ CONFLICT được đo riêng ở
+ *  interlockRouter.dot1.db.test.ts. */
+async function ver(id: number): Promise<string> {
+  return (await caller(990_599_999).get({ id })).versionToken;
+}
+
 function baseInput(name: string, over: Record<string, unknown> = {}) {
   return {
     name,
@@ -108,7 +116,7 @@ describe.skipIf(!DB_URL)("interlock — final review fix wave (#2 khoá hàng, #
       const newName = `${DAU}-race1-SUA`;
 
       const h = armHold("approve");
-      const pApprove = caller(B).approve({ id: created.id });
+      const pApprove = caller(B).approve({ id: created.id, expectedVersion: await ver(created.id) });
       await h.reached; // approve đã UPDATE (approvedBy=B), transaction còn mở
       const pUpdate = caller(A).update({ id: created.id, name: newName });
       await new Promise((r) => setTimeout(r, 400)); // cho update chạy tới chỗ nó bị chặn
@@ -132,7 +140,7 @@ describe.skipIf(!DB_URL)("interlock — final review fix wave (#2 khoá hàng, #
       const h = armHold("update");
       const pUpdate = caller(B).update({ id: created.id, threshold: 9 });
       await h.reached; // update đã UPDATE (updatedBy=B), transaction còn mở, audit chưa ghi
-      const pApprove = caller(B).approve({ id: created.id });
+      const pApprove = caller(B).approve({ id: created.id, expectedVersion: await ver(created.id) });
       await new Promise((r) => setTimeout(r, 400));
       h.release();
       const [ru, ra] = await Promise.allSettled([pUpdate, pApprove]);
@@ -153,7 +161,7 @@ describe.skipIf(!DB_URL)("interlock — final review fix wave (#2 khoá hàng, #
       const h = armHold("update");
       const pUpdate = caller(B).update({ id: created.id, name: newName });
       await h.reached;
-      const pApprove = caller(C).approve({ id: created.id });
+      const pApprove = caller(C).approve({ id: created.id, expectedVersion: await ver(created.id) });
       await new Promise((r) => setTimeout(r, 400));
       h.release();
       await Promise.allSettled([pUpdate, pApprove]);
@@ -179,7 +187,7 @@ describe.skipIf(!DB_URL)("interlock — final review fix wave (#2 khoá hàng, #
       await caller(A).update({ id: created.id, description: "chỉ đổi mô tả" });
       expect((await ruleRow(created.id)).updatedBy).toBe(A);
 
-      const err = await caller(B).approve({ id: created.id }).catch((e) => e);
+      const err = await caller(B).approve({ id: created.id, expectedVersion: await ver(created.id) }).catch((e) => e);
       expect(appCodeOf(err)).toBe("PERMISSION_DENIED");
       expect((await ruleRow(created.id)).approvedBy).toBeNull();
     });
@@ -189,7 +197,7 @@ describe.skipIf(!DB_URL)("interlock — final review fix wave (#2 khoá hàng, #
       ruleIds.push(created.id);
       await caller(B).update({ id: created.id, threshold: 42 });
       await caller(A).update({ id: created.id, description: "mô tả" });
-      const row = await caller(C).approve({ id: created.id });
+      const row = await caller(C).approve({ id: created.id, expectedVersion: await ver(created.id) });
       expect(row.approvedBy).toBe(C);
     });
 
@@ -197,15 +205,15 @@ describe.skipIf(!DB_URL)("interlock — final review fix wave (#2 khoá hàng, #
       const created = await caller(A).create(baseInput(`${DAU}-sod3`));
       ruleIds.push(created.id);
       await caller(B).update({ id: created.id, threshold: 7 }); // B sửa — TRƯỚC lần duyệt 1
-      await caller(C).approve({ id: created.id }); // lần duyệt 1 (C độc lập)
+      await caller(C).approve({ id: created.id, expectedVersion: await ver(created.id) }); // lần duyệt 1 (C độc lập)
       await caller(D).update({ id: created.id, threshold: 8 }); // D sửa ⇒ reset duyệt
-      const row = await caller(B).approve({ id: created.id }); // B không sửa gì kể từ lần duyệt 1
+      const row = await caller(B).approve({ id: created.id, expectedVersion: await ver(created.id) }); // B không sửa gì kể từ lần duyệt 1
       expect(row.approvedBy).toBe(B);
       // còn D (vừa sửa sau lần duyệt 1) thì bị chặn ở vòng kế:
       await caller(A).update({ id: created.id, description: "x" }); // reset
       await caller(D).update({ id: created.id, threshold: 9 });
       await caller(A).update({ id: created.id, description: "y" }); // updatedBy=A, che D
-      const err = await caller(D).approve({ id: created.id }).catch((e) => e);
+      const err = await caller(D).approve({ id: created.id, expectedVersion: await ver(created.id) }).catch((e) => e);
       expect(appCodeOf(err)).toBe("PERMISSION_DENIED");
     });
   });
@@ -219,7 +227,7 @@ describe.skipIf(!DB_URL)("interlock — final review fix wave (#2 khoá hàng, #
         RETURNING id`;
       const id = (r[0] as unknown as { id: number }).id;
       ruleIds.push(id);
-      const err = await caller(B).approve({ id }).catch((e) => e);
+      const err = await caller(B).approve({ id, expectedVersion: await ver(id) }).catch((e) => e);
       expect(appCodeOf(err)).toBe("FIELD_REQUIRED");
       expect((await ruleRow(id)).approvedBy).toBeNull();
     });
@@ -231,7 +239,7 @@ describe.skipIf(!DB_URL)("interlock — final review fix wave (#2 khoá hàng, #
         RETURNING id`;
       const id = (r[0] as unknown as { id: number }).id;
       ruleIds.push(id);
-      const err = await caller(A).enable({ id }).catch((e) => e);
+      const err = await caller(A).enable({ id, expectedVersion: await ver(id) }).catch((e) => e);
       expect(appCodeOf(err)).toBe("FIELD_REQUIRED");
       expect((await ruleRow(id)).enabled).toBe(false);
     });
@@ -239,8 +247,8 @@ describe.skipIf(!DB_URL)("interlock — final review fix wave (#2 khoá hàng, #
     it("rule stop_line CÓ đích ⇒ approve + enable vẫn đi như cũ", async () => {
       const created = await caller(A).create(baseInput(`${DAU}-target-ok`, { action: "stop_line", targetMachineId: 1 }));
       ruleIds.push(created.id);
-      await caller(B).approve({ id: created.id });
-      const row = await caller(A).enable({ id: created.id });
+      await caller(B).approve({ id: created.id, expectedVersion: await ver(created.id) });
+      const row = await caller(A).enable({ id: created.id, expectedVersion: await ver(created.id) });
       expect(row.enabled).toBe(true);
     });
   });

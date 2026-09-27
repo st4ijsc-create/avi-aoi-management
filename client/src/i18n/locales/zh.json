@@ -3963,7 +3963,10 @@
       "resumeOrchestrationRun": "继续编排运行",
       "buildArtifact": "构建程序版本",
       "requestVersionReview": "请求审核程序版本",
-      "reviewArtifact": "审核程序版本"
+      "reviewArtifact": "审核程序版本",
+      "approveInterlockRule": "批准联锁规则",
+      "releaseRecipeVersion": "发布配方版本",
+      "rollbackRecipeVersion": "回滚配方版本"
     },
     "field": {
       "changeReason": "变更原因",
@@ -4261,7 +4264,12 @@
       "urHomeParamForbidden": "UR 机器人的 home 位置只能来自其已保存的配置，不能来自指令；指令已拒绝，不会向机器人发送任何内容。",
       "versionNotApproved": "此版本尚未批准。须由作者以外的人（版本卡片上的\"批准\"按钮）批准后才能构建/部署。",
       "versionReviewNotPending": "此版本已不再待审核（已批准或已驳回）。如需修改请保存新版本。",
-      "buildChecksumMismatch": "重新编译该版本源码与已存构建不一致 — 将下载的不是已构建/仿真的版本。请重新构建并仿真后再部署。尚未向设备写入任何内容。"
+      "buildChecksumMismatch": "重新编译该版本源码与已存构建不一致 — 将下载的不是已构建/仿真的版本。请重新构建并仿真后再部署。尚未向设备写入任何内容。",
+      "interlockRuleChanged": "您打开页面后该规则已被修改——列表已重新加载。请查看新内容后再批准/启用。",
+      "runGateChanged": "该运行已不在您查看的步骤等待（该步骤已由他人决定）。请刷新以查看当前等待的步骤。",
+      "recipeNotApproved": "此配方版本尚未经第二人批准——不能部署、发布或回滚到该版本。",
+      "recipeArchived": "此配方版本已归档——请创建新版本，而不是将已归档版本投入生产。",
+      "recipeMachineTypeMismatch": "此配方适用的机型与目标设备不同——不能部署到该设备。"
     },
     "client": {
       "generic": "系统错误，请重试",
