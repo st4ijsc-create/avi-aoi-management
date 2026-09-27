@@ -476,20 +476,21 @@ function orchestrationActionId(idempotencyKey: string): string {
 /**
  * Tạo (idempotent, fail-safe) một bản ghi ai_pending_actions ĐÃ CONFIRMED cho một
  * bước lệnh của run — chủ sở hữu là user đã khởi động run. Đây là ủy quyền THẬT mà
- * dispatcher OT/robot tái-xác-minh (status confirmed/executed + đúng owner) trước khi
- * ghi. Dùng status 'executed' (terminal) nên KHÔNG lọt vào action inbox (inbox chỉ hiện
- * 'proposed'). Lỗi tạo bản ghi → nuốt: bản ghi không có ⇒ dispatcher fail-closed (từ chối),
- * an toàn hơn là để lệnh lọt.
+ * dispatcher OT/robot tái-xác-minh trước khi ghi. Bản ghi không hiện trong action inbox
+ * (inbox chỉ hiện 'proposed'). Lỗi tạo bản ghi → nuốt: bản ghi không có ⇒ dispatcher
+ * fail-closed (từ chối), an toàn hơn là để lệnh lọt.
  */
 /**
  * doc 81 Đợt 1B Task 6 (Ruling R4) — the OT dispatcher now accepts a real write only for a
  * 'confirmed' action BOUND to the exact command (tool + canonical payload hash) and consumes
  * it (confirmed→executed). So for an OT step the row is created 'confirmed' and carries the
  * hash of EXACTLY the command FOE is about to send (built from the same EquipmentCommand the
- * OtEquipmentAdapter maps to DispatchInput). Robot/AGV steps keep the legacy 'executed' row
- * (the robot dispatcher's HITL check is unchanged — out of Task 6 scope).
+ * OtEquipmentAdapter maps to DispatchInput). Final wave (item 2): robot/AGV steps get the SAME
+ * treatment — a 'confirmed' row bound with robotPayloadHash to the job toRobotJob(cmd) yields,
+ * which the robot dispatcher verifies under FOR UPDATE and consumes once. Only a step that is
+ * neither OT nor robot (no adapterId, no robotId) still gets the legacy unbound 'executed' row.
  * ⚠ CÒN MỞ (doc 81 BE2 §L2): FOE still GRANTS ITSELF this approval — no human confirms the
- * step; Task 6 only binds the self-grant to the one command it was minted for.
+ * step; Task 6 / the final wave only bind the self-grant to the one command it was minted for.
  */
 export const FOE_ACTION_TOOL = "foe.orchestration";
 

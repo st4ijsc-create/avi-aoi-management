@@ -219,13 +219,27 @@ describe.skipIf(!DB_URL)("robot dispatcher — HITL binding + single-use consume
     expect(rt.runJobCalls).toBe(2);
   });
 
-  it("★ hai lượt song song với CÙNG bản ghi confirmed ⇒ đúng MỘT lượt chạy (CAS dưới FOR UPDATE / slot R14), bản ghi executed", async () => {
+  it("★ hai lượt song song với CÙNG bản ghi confirmed ⇒ đúng MỘT lượt chạy nhờ LỚP CSDL (FOR UPDATE + CAS), bản ghi executed — dùng job `abort` (miễn slot R14 theo thiết kế) để cả hai lượt THẬT SỰ tới reserveRobotJob", async () => {
+    // final wave 5b — bản trước dùng job chuyển động nên slot R14 (trong tiến trình) chặn lượt hai
+    // TRƯỚC khi nó chạm CSDL, tức lớp tiêu thụ một lần (FOR UPDATE + CAS) không được đo: bỏ CAS mà
+    // ca vẫn xanh. `abort` là job duy nhất KHÔNG qua slot (một lệnh dừng không bao giờ bị chặn) nhưng
+    // VẪN đi qua reserveRobotJob khi có actionId ⇒ hai giao dịch đua nhau đúng trên hàng ai_pending_actions.
+    const job = { jobType: "abort" as const, params: {} };
+    const actionId = await makeAction({ bind: { jobType: "abort" } });
+    const [a, b] = await Promise.all([dispatchRobotJob(input({ actionId, job })), dispatchRobotJob(input({ actionId, job }))]);
+    expect([a.status, b.status].sort()).toEqual(["done", "rejected"]);
+    const rejected = a.status === "rejected" ? a : b;
+    expect(rejected.error).toBe("NOT_CONFIRMED"); // KHÔNG phải robot_motion_in_progress: slot không tham gia
+    expect(rt.runJobCalls).toBe(1);
+    expect(await pendingStatus(actionId)).toBe("executed");
+  });
+
+  it("chuyển động song song cùng bản ghi: lớp slot R14 chặn lượt hai TRƯỚC CSDL (robot_motion_in_progress) — bản ghi vẫn chỉ tiêu thụ một lần", async () => {
     const actionId = await makeAction({});
     const [a, b] = await Promise.all([dispatchRobotJob(input({ actionId })), dispatchRobotJob(input({ actionId }))]);
-    const statuses = [a.status, b.status].sort();
-    expect(statuses).toEqual(["done", "rejected"]);
+    expect([a.status, b.status].sort()).toEqual(["done", "rejected"]);
     const rejected = a.status === "rejected" ? a : b;
-    expect(["NOT_CONFIRMED", ROBOT_MOTION_IN_PROGRESS]).toContain(rejected.error);
+    expect([ROBOT_MOTION_IN_PROGRESS, "NOT_CONFIRMED"]).toContain(rejected.error);
     expect(rt.runJobCalls).toBe(1);
     expect(await pendingStatus(actionId)).toBe("executed");
   });

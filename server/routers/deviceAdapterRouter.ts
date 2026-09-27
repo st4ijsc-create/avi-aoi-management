@@ -199,45 +199,55 @@ export const deviceAdapterRouter = router({
     .mutation(async ({ input }) => {
       const db = await getDb();
       const { id, ...rest } = input;
-      const patch: Record<string, unknown> = { ...rest, updatedAt: new Date() };
-      if (rest.connectionOptions !== undefined || rest.protocol === "opcua" || rest.endpoint !== undefined) {
-        // Fix round 1 — cần dòng đã lưu để (a) giữ bí mật khi form gửi lại "[redacted]",
-        // (b) biết protocol thực khi kiểm bảo mật OPC UA lúc lưu; final wave (item 5): (c) biết
-        // endpoint/bảo mật CÓ ĐỔI không — đổi thì placeholder KHÔNG được khôi phục.
-        const [existing] = await db.select().from(deviceAdapters).where(eq(deviceAdapters.id, id)).limit(1);
-        if (!existing) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "adapter" }, "Adapter không tồn tại.");
-        const storedOptions = (existing.connectionOptions as Record<string, unknown> | null) ?? null;
-        // doc 81 Đợt 1B final wave (item 5, security) — một người có canEdit đổi endpoint (hoặc hạ
-        // securityMode xuống None / đổi policy / bật TOFU) mà gửi kèm "[redacted]" thì bí mật đã
-        // lưu KHÔNG được dùng lại (nó sẽ đi tới host họ chọn / đi trần trên dây): BAD_REQUEST, dòng
-        // giữ nguyên, phải nhập lại bí mật. Áp cho cả ha.secondaryEndpoint / ha.secondaryOptions.
-        const reentry = secretReentryRequired(
-          { endpoint: rest.endpoint, options: rest.connectionOptions },
-          { endpoint: existing.endpoint, options: storedOptions },
-        );
-        if (reentry) {
-          throw appError(
-            "BAD_REQUEST",
-            "INVALID_VALUE",
-            { field: reentry.field, reason: "secretReentryRequired" },
-            `Secret re-entry required: "${reentry.field}" changed (where or how the stored secret is sent) while the request still carries the "${REDACTED_SECRET}" placeholder — re-enter the password/secret to save.`,
-          );
-        }
-        const nextOptions =
-          rest.connectionOptions === undefined
-            ? storedOptions
-            : rest.connectionOptions === null
-              ? null
-              : (restoreRedactedSecrets(rest.connectionOptions, storedOptions) as Record<string, unknown>);
-        if ((rest.protocol ?? existing.protocol) === "opcua") assertOpcuaSecurityOnSave(nextOptions);
-        // doc 81 Đợt 1B Task 12 — cùng niêm phong mật khẩu như create (idempotent với enc:v1:).
-        if (rest.connectionOptions !== undefined) {
-          patch.connectionOptions = sealConnectionOptionSecrets(nextOptions);
-        }
-      }
       try {
-        const [row] = await db.update(deviceAdapters).set(patch).where(eq(deviceAdapters.id, id)).returning();
-        if (!row) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "adapter" }, "Adapter không tồn tại.");
+        // ★ doc 81 Đợt 1B final wave 5b (security) — ĐỌC-KIỂM-KHÔI PHỤC-GHI trong MỘT giao dịch, hàng
+        // adapter khoá bằng SELECT … FOR UPDATE (ràng buộc chung 6: không migration, dùng khoá hàng).
+        // Trước đây: SELECT thường rồi UPDATE vô điều kiện ⇒ hai yêu cầu đồng thời lách được luật
+        // nhập lại bí mật: B (chỉ connectionOptions + "[redacted]") đọc TRƯỚC khi A (đổi endpoint sang
+        // host lạ + bí mật mới) commit, ghi SAU ⇒ hàng = endpoint của A + bí mật CŨ do B khôi phục.
+        // Với FOR UPDATE, B chờ A commit rồi đọc ĐÚNG hàng sắp bị ghi đè: placeholder khôi phục bí mật
+        // của A (A tự cung cấp), còn form cũ mang endpoint E0 ≠ hàng của A ⇒ bị từ chối.
+        const row = await db.transaction(async (tx) => {
+          const patch: Record<string, unknown> = { ...rest, updatedAt: new Date() };
+          if (rest.connectionOptions !== undefined || rest.protocol === "opcua" || rest.endpoint !== undefined) {
+            // Fix round 1 — cần dòng đã lưu để (a) giữ bí mật khi form gửi lại "[redacted]",
+            // (b) biết protocol thực khi kiểm bảo mật OPC UA lúc lưu; final wave (item 5): (c) biết
+            // endpoint/bảo mật CÓ ĐỔI không — đổi thì placeholder KHÔNG được khôi phục.
+            const [existing] = await tx.select().from(deviceAdapters).where(eq(deviceAdapters.id, id)).for("update");
+            if (!existing) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "adapter" }, "Adapter không tồn tại.");
+            const storedOptions = (existing.connectionOptions as Record<string, unknown> | null) ?? null;
+            // doc 81 Đợt 1B final wave (item 5, security) — một người có canEdit đổi endpoint (hoặc hạ
+            // securityMode xuống None / đổi policy / bật TOFU) mà gửi kèm "[redacted]" thì bí mật đã
+            // lưu KHÔNG được dùng lại (nó sẽ đi tới host họ chọn / đi trần trên dây): BAD_REQUEST, dòng
+            // giữ nguyên, phải nhập lại bí mật. Áp cho cả ha.secondaryEndpoint / ha.secondaryOptions.
+            const reentry = secretReentryRequired(
+              { endpoint: rest.endpoint, options: rest.connectionOptions },
+              { endpoint: existing.endpoint, options: storedOptions },
+            );
+            if (reentry) {
+              throw appError(
+                "BAD_REQUEST",
+                "INVALID_VALUE",
+                { field: reentry.field, reason: "secretReentryRequired" },
+                `Secret re-entry required: "${reentry.field}" changed (where or how the stored secret is sent) while the request still carries the "${REDACTED_SECRET}" placeholder — re-enter the password/secret to save.`,
+              );
+            }
+            const nextOptions =
+              rest.connectionOptions === undefined
+                ? storedOptions
+                : rest.connectionOptions === null
+                  ? null
+                  : (restoreRedactedSecrets(rest.connectionOptions, storedOptions) as Record<string, unknown>);
+            if ((rest.protocol ?? existing.protocol) === "opcua") assertOpcuaSecurityOnSave(nextOptions);
+            // doc 81 Đợt 1B Task 12 — cùng niêm phong mật khẩu như create (idempotent với enc:v1:).
+            if (rest.connectionOptions !== undefined) {
+              patch.connectionOptions = sealConnectionOptionSecrets(nextOptions);
+            }
+          }
+          const [updated] = await tx.update(deviceAdapters).set(patch).where(eq(deviceAdapters.id, id)).returning();
+          if (!updated) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "adapter" }, "Adapter không tồn tại.");
+          return updated;
+        });
         return redactAdapterRow(row);
       } catch (err) {
         if (err instanceof TRPCError) throw err;
