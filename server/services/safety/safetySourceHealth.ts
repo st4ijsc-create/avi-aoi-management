@@ -35,6 +35,7 @@ import {
   type SafetyPreflightReason,
 } from "../ot/safetyPreflightPolicy";
 import { isOtControlEnabled } from "../ot/commandDispatcher";
+import { isRobotControlEnabled } from "../robot/robotCommandDispatcher"; // final wave item 5 — cùng vị từ với cổng bước 4
 import { getIO } from "../../_core/socket";
 import { deriveProvenance, type ProvenanceLabel } from "../../../shared/provenance";
 
@@ -290,6 +291,26 @@ export function computeSafetySourceHealth(s: SourceHealthSnapshot): SafetySource
 // ── Nạp ảnh chụp (chỉ đọc) ───────────────────────────────────────────────────────────
 
 /**
+ * Doc 80 Đợt 1 final wave (item 5) — các cờ mà bảng nguồn an toàn HIỂN THỊ, đọc bằng ĐÚNG vị từ mà các
+ * cổng thật dùng (`isOtControlEnabled` của commandDispatcher, `isRobotControlEnabled` của
+ * robotCommandDispatcher, hai vị từ preflight của safetyPreflightPolicy…). Không bao giờ tự parse
+ * `process.env` ở đây: bản sao cũ `ROBOT_CONTROL_ENABLED === "true"` hôm nay khớp, nhưng một chỗ đổi
+ * sang nhận "1" là bảng nói "tắt" trong khi cổng ghi thật. Xuất riêng để lưới lật từng biến và so với cổng.
+ */
+export function docCoDangBat(): SourceHealthSnapshot["flags"] {
+  return {
+    safetyPlcAdapter: safetyPlcAdapterEnabled(),
+    otPreflight: isOtSafetyPreflightEnabled(),
+    robotPreflight: isRobotSafetyPreflightEnabled(),
+    otControl: isOtControlEnabled(),
+    robotControl: isRobotControlEnabled(),
+    safetyVision: safetyVisionEnabled(),
+    safetyZoneSw: safetyZoneSwEnabled(),
+    safetyEstopAdapter: safetyEstopAdapterEnabled(),
+  };
+}
+
+/**
  * Nạp ảnh chụp cho người xem `viewer` rồi tính. Mọi lỗi đọc đều thành trạng thái trung thực
  * (plcRead='error', 0 zone/camera) — không ném, không bịa.
  */
@@ -335,17 +356,7 @@ export async function loadSafetySourceHealth(viewer: PhamViNguoiXem): Promise<Sa
 
   return computeSafetySourceHealth({
     checkedAt: new Date().toISOString(),
-    flags: {
-      safetyPlcAdapter: safetyPlcAdapterEnabled(),
-      otPreflight: isOtSafetyPreflightEnabled(),
-      robotPreflight: isRobotSafetyPreflightEnabled(),
-      otControl: isOtControlEnabled(),
-      // Cùng vị từ với robotCommandDispatcher.controlEnabled() (không export) — đúng "true".
-      robotControl: process.env.ROBOT_CONTROL_ENABLED === "true",
-      safetyVision: safetyVisionEnabled(),
-      safetyZoneSw: safetyZoneSwEnabled(),
-      safetyEstopAdapter: safetyEstopAdapterEnabled(),
-    },
+    flags: docCoDangBat(),
     plcConfigsEnabled,
     plcRead,
     visibleFactoryIds,

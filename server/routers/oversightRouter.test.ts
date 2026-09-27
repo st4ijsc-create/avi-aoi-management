@@ -310,3 +310,61 @@ describe("oversightRouter.posture (ILK-06)", () => {
     expect(r.writesOnEngineOff).toBe(false);
   });
 });
+
+// Doc 80 Đợt 1 final wave (item 5) — bảng tư thế KHÔNG tự parse env: mỗi ô == đúng vị từ của cổng thật.
+// Lật từng biến qua các giá trị hay gặp ("1", "TRUE", "yes"…): nếu một bên nhận "1" mà bên kia không, ô đó
+// khác cổng ⇒ ĐỎ. Hôm nay `dpcDeployEnabled` nhận cả "1"; bốn cờ kia chỉ nhận "true" — bảng phải nói y vậy.
+import { isOtControlEnabled, isInterlockAutoBlockEnabled } from "../services/ot/commandDispatcher";
+import { isRobotControlEnabled } from "../services/robot/robotCommandDispatcher";
+import { dpcDeployEnabled } from "../services/programming/programmingService";
+import { isInterlockEngineEnabled } from "../services/interlock/interlockEngine";
+
+describe("final wave item 5 — posture == cổng thật cho MỌI giá trị env", () => {
+  const admin = () => ({ user: { id: 1, role: "admin" } }) as never;
+  const CO = [
+    { env: "OT_CONTROL_ENABLED", o: "otControlEnabled", cong: isOtControlEnabled },
+    { env: "ROBOT_CONTROL_ENABLED", o: "robotControlEnabled", cong: isRobotControlEnabled },
+    { env: "DPC_DEPLOY_ENABLED", o: "dpcDeployEnabled", cong: dpcDeployEnabled },
+    { env: "INTERLOCK_ENGINE_ENABLED", o: "interlockEngineEnabled", cong: isInterlockEngineEnabled },
+    { env: "INTERLOCK_AUTO_BLOCK_ENABLED", o: "interlockAutoBlockEnabled", cong: isInterlockAutoBlockEnabled },
+  ] as const;
+  const GIA_TRI = ["true", "1", "TRUE", "yes", "false", "0", "", undefined] as const;
+  const savedEnv: Record<string, string | undefined> = {};
+
+  beforeEach(() => {
+    for (const c of CO) { savedEnv[c.env] = process.env[c.env]; delete process.env[c.env]; }
+    mockGetDb.mockResolvedValue(fakeDb([[{ c: 0 }]]).db);
+  });
+  afterEach(() => {
+    for (const c of CO) {
+      if (savedEnv[c.env] === undefined) delete process.env[c.env];
+      else process.env[c.env] = savedEnv[c.env];
+    }
+  });
+
+  for (const c of CO) {
+    it(`${c.env}: bảng == cổng qua ${GIA_TRI.length} giá trị (kể cả "1")`, async () => {
+      const lech: string[] = [];
+      let soBat = 0;
+      for (const v of GIA_TRI) {
+        if (v === undefined) delete process.env[c.env];
+        else process.env[c.env] = v;
+        const cong = c.cong();
+        const bang = (await oversightRouter.createCaller(admin()).posture())[c.o];
+        if (cong) soBat++;
+        if (bang !== cong) lech.push(`${c.env}=${JSON.stringify(v)}: bảng=${bang} cổng=${cong}`);
+      }
+      expect(lech).toEqual([]);
+      // Cầu chì: vị từ phải bật ít nhất một lần trong dãy, không thì phép so trên đúng một cách vô nghĩa.
+      expect(soBat).toBeGreaterThan(0);
+    });
+  }
+
+  it("★ đối chứng ĐỌC: `dpcDeployEnabled` nhận \"1\" còn `isOtControlEnabled` thì không — bảng phản ánh đúng sự khác ấy", async () => {
+    process.env.DPC_DEPLOY_ENABLED = "1";
+    process.env.OT_CONTROL_ENABLED = "1";
+    const r = await oversightRouter.createCaller(admin()).posture();
+    expect(r.dpcDeployEnabled).toBe(true);
+    expect(r.otControlEnabled).toBe(false);
+  });
+});

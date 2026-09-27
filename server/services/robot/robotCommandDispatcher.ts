@@ -152,8 +152,17 @@ export interface RobotDispatchResult {
   ledgerError?: string;
 }
 
-function controlEnabled(): boolean {
+/**
+ * Doc 80 Đợt 1 final wave (item 5) — vị từ DUY NHẤT "điều khiển robot THẬT đang bật" (cổng bước 4).
+ * Bảng tư thế Hub (`oversightRouter.posture`) và bảng nguồn an toàn (`safetySourceHealth`) đọc qua đây,
+ * không tự parse `process.env.ROBOT_CONTROL_ENABLED` — để dải hiển thị không bao giờ khác cổng thật.
+ */
+export function isRobotControlEnabled(): boolean {
   return process.env.ROBOT_CONTROL_ENABLED === "true";
+}
+
+function controlEnabled(): boolean {
+  return isRobotControlEnabled();
 }
 
 /**

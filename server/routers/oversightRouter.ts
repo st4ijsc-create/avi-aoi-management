@@ -55,6 +55,13 @@ import { detectDeadlocks } from "../services/fleet/trafficManager";
 // inline thật sự chặn lệnh (`evaluateInterlockGate`), để "độ phủ interlock" không đếm
 // rule chỉ `alert` (không chặn gì) là "có phủ" — chính hình dạng báo-xanh-giả cần tránh.
 import { INTERLOCK_GATE_ACTIONS } from "../services/interlock/interlockGate";
+// Doc 80 Đợt 1 final wave (item 5) — `posture` đọc CÙNG vị từ mà các cổng thật dùng (không tự parse env):
+// OT/auto-block = commandDispatcher · robot = robotCommandDispatcher · deploy = programmingService ·
+// engine interlock = interlockEngine. Xem `oversightRouter.test.ts` (lật từng biến ⇒ bảng == cổng).
+import { isOtControlEnabled, isInterlockAutoBlockEnabled } from "../services/ot/commandDispatcher";
+import { isRobotControlEnabled } from "../services/robot/robotCommandDispatcher";
+import { dpcDeployEnabled as isDpcDeployEnabled } from "../services/programming/programmingService";
+import { isInterlockEngineEnabled } from "../services/interlock/interlockEngine";
 
 type Db = NonNullable<Awaited<ReturnType<typeof getDb>>>;
 
@@ -478,11 +485,12 @@ export const oversightRouter = router({
   posture: protectedProcedure
     .use(requirePermission("machine_monitoring", "canView"))
     .query(async () => {
-      const otControlEnabled = process.env.OT_CONTROL_ENABLED === "true";
-      const robotControlEnabled = process.env.ROBOT_CONTROL_ENABLED === "true";
-      const dpcDeployEnabled = process.env.DPC_DEPLOY_ENABLED === "true" || process.env.DPC_DEPLOY_ENABLED === "1";
-      const interlockEngineEnabled = process.env.INTERLOCK_ENGINE_ENABLED === "true";
-      const interlockAutoBlockEnabled = process.env.INTERLOCK_AUTO_BLOCK_ENABLED === "true";
+      // Final wave item 5 — KHÔNG parse env ở đây: đọc đúng vị từ của từng cổng thật.
+      const otControlEnabled = isOtControlEnabled();
+      const robotControlEnabled = isRobotControlEnabled();
+      const dpcDeployEnabled = isDpcDeployEnabled();
+      const interlockEngineEnabled = isInterlockEngineEnabled();
+      const interlockAutoBlockEnabled = isInterlockAutoBlockEnabled();
 
       const d = await getDb();
       const coverage = await fetchInterlockCoverage(d);

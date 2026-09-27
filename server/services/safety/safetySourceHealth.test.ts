@@ -229,3 +229,47 @@ describe("computeSafetySourceHealth — vision / zone / e-stop / socket", () => 
     expect(h.vision.calibrations).toBe(1);
   });
 });
+
+// Doc 80 Đợt 1 final wave (item 5) — cờ bảng nguồn an toàn == vị từ của cổng thật, lật từng biến.
+// Trước final wave `robotControl` là bản parse riêng (`process.env.ROBOT_CONTROL_ENABLED === "true"`) —
+// hôm nay khớp, nhưng là hai chỗ có thể trôi. Nay `docCoDangBat()` gọi thẳng `isRobotControlEnabled()`.
+import { afterEach } from "vitest";
+import { docCoDangBat } from "./safetySourceHealth";
+import { isOtControlEnabled } from "../ot/commandDispatcher";
+import { isRobotControlEnabled } from "../robot/robotCommandDispatcher";
+import { isOtSafetyPreflightEnabled, isRobotSafetyPreflightEnabled } from "../ot/safetyPreflightPolicy";
+
+describe("final wave item 5 — docCoDangBat() == cổng thật cho MỌI giá trị env", () => {
+  const CO = [
+    { env: "ROBOT_CONTROL_ENABLED", o: "robotControl", cong: isRobotControlEnabled },
+    { env: "OT_CONTROL_ENABLED", o: "otControl", cong: isOtControlEnabled },
+    { env: "OT_SAFETY_PREFLIGHT_ENABLED", o: "otPreflight", cong: isOtSafetyPreflightEnabled },
+    { env: "ROBOT_SAFETY_PREFLIGHT_ENABLED", o: "robotPreflight", cong: isRobotSafetyPreflightEnabled },
+  ] as const;
+  const GIA_TRI = ["true", "1", "TRUE", "yes", "false", "0", "", undefined] as const;
+  const savedEnv: Record<string, string | undefined> = {};
+  beforeEach(() => { for (const c of CO) { savedEnv[c.env] = process.env[c.env]; delete process.env[c.env]; } });
+  afterEach(() => {
+    for (const c of CO) {
+      if (savedEnv[c.env] === undefined) delete process.env[c.env];
+      else process.env[c.env] = savedEnv[c.env];
+    }
+  });
+
+  for (const c of CO) {
+    it(`${c.env}: bảng == cổng qua ${GIA_TRI.length} giá trị`, () => {
+      const lech: string[] = [];
+      let soBat = 0;
+      for (const v of GIA_TRI) {
+        if (v === undefined) delete process.env[c.env];
+        else process.env[c.env] = v;
+        const cong = c.cong();
+        const bang = docCoDangBat()[c.o];
+        if (cong) soBat++;
+        if (bang !== cong) lech.push(`${c.env}=${JSON.stringify(v)}: bảng=${bang} cổng=${cong}`);
+      }
+      expect(lech).toEqual([]);
+      expect(soBat, "vị từ không bật lần nào trong dãy ⇒ phép so vô nghĩa (tên biến env sai?)").toBeGreaterThan(0);
+    });
+  }
+});
