@@ -55,6 +55,36 @@ async function resolveAnalyticsMachineIds(scope: {
   return giao(rows.map((r) => Number(r.id)));
 }
 
+/** doc 81 Đợt 1C Task 5b — vai được gắn/gỡ máy cho thiết bị MQTT (cùng quyết định Task 4: admin/engineer). */
+const VAI_GAN_MAY_MQTT: ReadonlySet<string> = new Set(["admin", "engineer"]);
+
+/** IP/UA của yêu cầu cho dòng audit_logs (cùng nguồn createAuditContext). */
+function nguonYeuCau(ctx: { req?: { ip?: string; headers?: Record<string, any>; socket?: { remoteAddress?: string } } }) {
+  const ip = ctx.req?.headers?.["x-forwarded-for"] || ctx.req?.headers?.["x-real-ip"] || ctx.req?.socket?.remoteAddress || ctx.req?.ip || null;
+  const ua = ctx.req?.headers?.["user-agent"];
+  return { ipAddress: typeof ip === "string" ? ip : null, userAgent: typeof ua === "string" ? ua : null };
+}
+
+/** Lỗi nghiệp vụ của mqttBindingService → appError có mã (khoá errors.reason.* ở vi/en/zh). */
+function loiGanMay(
+  loai: "device_not_found" | "device_rejected" | "device_no_credential" | "bound_machine_out_of_scope" | "machine_not_found" | "machine_not_bindable",
+) {
+  switch (loai) {
+    case "device_not_found":
+      return appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "mqttClient" }, "MQTT device not found");
+    case "machine_not_found":
+      return appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "machine" }, "Machine not found");
+    case "device_rejected":
+      return appError("BAD_REQUEST", "INVALID_VALUE", { field: "clientId", reason: "mqttDeviceRejected" }, "A REJECTED MQTT device cannot be bound to a machine");
+    case "device_no_credential":
+      return appError("BAD_REQUEST", "INVALID_VALUE", { field: "clientId", reason: "mqttDeviceNoCredential" }, "An MQTT device without a stored password cannot be bound to a machine");
+    case "bound_machine_out_of_scope":
+      return appError("FORBIDDEN", "INVALID_VALUE", { field: "machineId", reason: "mqttBoundMachineOutOfScope" }, "The device is bound to a machine outside your scope");
+    case "machine_not_bindable":
+      return appError("BAD_REQUEST", "INVALID_VALUE", { field: "machineId", reason: "mqttMachineNotBindable" }, "Target machine is inactive, retired/decommissioned or has no station/factory chain");
+  }
+}
+
 // ============================================================
 // MQTT Client Router (lines 3859-4379)
 // ============================================================
@@ -152,6 +182,54 @@ export const mqttClientRouter = router({
     .mutation(async ({ input }) => {
       await db.disconnectAndResetMqttClient(input.id);
       return { success: true };
+    }),
+
+  // doc 81 Đợt 1C Task 5b — GẮN / GỠ thiết bị MQTT với máy (`mqtt_clients."machineId"`). Ràng buộc này
+  // là thứ Task 5 dùng để khoá publish/subscribe `factory/…`, `syn/…` và cầu telemetry vào đúng máy.
+  // Cổng: settings_factory canEdit + vai admin/engineer (khuôn Task 4 gatewayAllowlistRouter — KHÔNG
+  // dùng adminProcedure trần không phạm vi). Phạm vi, khoá hàng, luật và audit: mqttBindingService.
+  // SAU commit: đóng mọi phiên MQTT sống của thiết bị (ràng buộc được cache theo kết nối).
+  bindMachine: protectedProcedure
+    .use(requirePermission("settings_factory", "canEdit"))
+    .input(z.object({
+      clientId: z.number().int().positive(),
+      machineId: z.number().int().positive().nullable(),
+      reason: z.string().trim().min(3).max(500),
+    }))
+    .mutation(async ({ input, ctx }) => {
+      if (!VAI_GAN_MAY_MQTT.has(String(ctx.user.role))) {
+        throw appError("FORBIDDEN", "PERMISSION_DENIED", { action: "insufficientRole" }, "Required role: admin or engineer");
+      }
+      const phamVi = phamViCua(ctx);
+      const [phamViTram, phamViMay] = await Promise.all([
+        db.idsTrongPhamVi("station", phamVi),
+        db.idsTrongPhamVi("machine", phamVi),
+      ]);
+      const { ganMayChoThietBi, GanMayLoi } = await import("../services/mqttBindingService");
+      let kq;
+      try {
+        kq = await ganMayChoThietBi({
+          clientId: input.clientId,
+          machineId: input.machineId,
+          reason: input.reason,
+          nguoiSua: {
+            id: ctx.user.id ?? null,
+            name: ctx.user.name ?? null,
+            ...nguonYeuCau(ctx),
+          },
+          phamViTram,
+          phamViMay,
+        });
+      } catch (e) {
+        if (e instanceof GanMayLoi) throw loiGanMay(e.loai);
+        throw e;
+      }
+      let sessionsClosed = 0;
+      if (kq.changed) {
+        const { disconnectMqttDevice } = await import("../services/mqttService");
+        sessionsClosed = disconnectMqttDevice(kq.deviceId);
+      }
+      return { clientId: kq.clientId, machineId: kq.sau, previousMachineId: kq.truoc, changed: kq.changed, sessionsClosed };
     }),
 
   // Get MQTT status

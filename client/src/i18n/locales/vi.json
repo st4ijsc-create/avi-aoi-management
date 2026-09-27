@@ -3646,6 +3646,7 @@
       "queued-for-shared-ledger": "Bản sao đọc đã sạch NGAY (dư địa thấy đúng ngay lập tức), nhưng hàng chỉ thật sự RỜI DATABASE ở lượt đồng bộ sổ chung KẾ TIẾP — xem unsyncedWritesAfter để biết còn bao nhiêu ý định ghi chưa gửi."
     },
     "entity": {
+      "mqttClient": "thiết bị MQTT",
       "abTestExperiment": "thử nghiệm A/B",
       "adapter": "bộ chuyển đổi thiết bị",
       "agentSession": "phiên agent",
@@ -3977,6 +3978,7 @@
       "rollbackRecipeVersion": "quay lui phiên bản công thức"
     },
     "field": {
+      "clientId": "thiết bị MQTT",
       "changeReason": "lý do thay đổi",
       "reason": "lý do",
       "comment": "bình luận",
@@ -4197,6 +4199,10 @@
       "selfApproveProgramVersion": "tự duyệt phiên bản chương trình của chính mình"
     },
     "reason": {
+      "mqttMachineNotBindable": "Máy đích đã ngừng/xoá, đang ở trạng thái ngừng khai thác/loại bỏ, hoặc chưa gắn với trạm → nhà máy.",
+      "mqttBoundMachineOutOfScope": "Thiết bị đang gắn với một máy ngoài phạm vi của bạn — không thể đổi hay gỡ ràng buộc này.",
+      "mqttDeviceNoCredential": "Thiết bị chưa có mật khẩu MQTT nên vào broker chỉ bằng tên đăng nhập (đoán được) — không thể gắn với máy. Cấp mật khẩu cho thiết bị trước.",
+      "mqttDeviceRejected": "Thiết bị này đã bị TỪ CHỐI — không thể gắn với máy. Duyệt lại thiết bị trước.",
       "robotNotActive": "Robot này chưa được cổng robot của tiến trình nạp (đang tắt hoặc ROBOT_GATEWAY_ENABLED chưa bật) nên không có khoá chuyển động sống để gỡ.",
       "opcuaSecurityInvalid": "securityMode/securityPolicy không hợp lệ hoặc mâu thuẫn (vd None đi với Basic256Sha256, hoặc SignAndEncrypt đi với None). Chọn None/None, hoặc Sign/SignAndEncrypt với một chính sách như Basic256Sha256.",
       "secretReentryRequired": "Bạn vừa đổi {{field}} — tức nơi gửi hoặc cách bảo vệ mật khẩu đã lưu — nên hệ thống không dùng lại mật khẩu cũ. Hãy nhập lại mật khẩu/bí mật rồi lưu; chưa có gì được thay đổi.",
@@ -5761,6 +5767,17 @@
       "stationLabel": "trạm"
     },
     "clientMgmt": {
+      "bindNoChange": "Ràng buộc không đổi",
+      "bindSaved": "Đã cập nhật ràng buộc máy",
+      "confirmBind": "Xác nhận",
+      "bindReasonPlaceholder": "Vì sao gắn/gỡ thiết bị này?",
+      "bindReason": "Lý do (bắt buộc)",
+      "unbind": "Gỡ ràng buộc",
+      "bindMachineDesc": "Thiết bị chỉ được ghi và đọc dữ liệu factory/… và syn/… của đúng máy này. Phiên MQTT đang mở của thiết bị sẽ bị ngắt để ràng buộc mới có hiệu lực ngay.",
+      "bindMachineTitle": "Gắn thiết bị với máy",
+      "bindMachine": "Gắn máy",
+      "notBound": "Chưa gắn",
+      "boundMachineHeader": "Gắn với máy",
       "manualConnectionCreated": "Đã tạo kết nối thủ công",
       "selectClientForHistory": "Chọn client để xem lịch sử",
       "manualConnectionsDesc": "Kết nối trực tiếp tới máy qua MQTT",

@@ -1061,6 +1061,53 @@ export const MQTT_ACL_APPROVAL_PROP = '__aviAclApprovalStatus';
  * mqtt_clients."machineId" at authenticate and stamped on the aedes client (per-connection cache).
  */
 export const MQTT_ACL_MACHINE_PROP = '__aviAclBoundMachine';
+/**
+ * doc 81 Đợt 1C Task 5b — the device's BINDING GENERATION at authenticate. The binding above is a
+ * per-connection cache; `disconnectMqttDevice` (called after `mqttClient.bindMachine` commits) bumps
+ * the generation and closes every live session of the device. A connection whose stamped generation
+ * is no longer current (it authenticated while the rebind was committing and registered after the
+ * sweep) is closed at its first 'client' event / publish / subscribe. Stamped BEFORE the DB read.
+ */
+export const MQTT_ACL_BINDING_EPOCH_PROP = '__aviAclBindingEpoch';
+const bindingEpochs = new Map<string, number>();
+
+function currentBindingEpoch(deviceId: string): number {
+  return bindingEpochs.get(deviceId) ?? 0;
+}
+
+/** Was this aedes client authenticated under an older binding generation of its device? */
+function hasStaleBinding(client: unknown): boolean {
+  const c = client as { [k: string]: unknown } | null | undefined;
+  const dev = c?.[MQTT_ACL_DEVICE_ID_PROP];
+  const epoch = c?.[MQTT_ACL_BINDING_EPOCH_PROP];
+  // Fail-closed: every device session gets its generation stamped next to its deviceId at
+  // authenticate, so a device session WITHOUT a stamp is not one this code admitted ⇒ stale.
+  return typeof dev === 'string' && (typeof epoch !== 'number' || epoch !== currentBindingEpoch(dev));
+}
+
+/**
+ * doc 81 Đợt 1C Task 5b — make a device's (re/un)binding take effect NOW: bump its binding
+ * generation and close every live session of that deviceId (all clientIds). Returns the number of
+ * sessions closed. Safe when the broker is not running (generation still bumped).
+ */
+export function disconnectMqttDevice(deviceId: string): number {
+  bindingEpochs.set(deviceId, currentBindingEpoch(deviceId) + 1);
+  const clients = (aedes as unknown as { clients?: Record<string, unknown> } | null)?.clients;
+  if (!clients) return 0;
+  let closed = 0;
+  for (const c of Object.values(clients)) {
+    const cl = c as { [k: string]: unknown; close?: () => void };
+    if (cl?.[MQTT_ACL_DEVICE_ID_PROP] !== deviceId) continue;
+    try {
+      cl.close?.();
+      closed += 1;
+    } catch {
+      /* already closing */
+    }
+  }
+  connectionLog.hit(`rebind|${deviceId}`, `[MQTT] Binding changed for device ${logSafe(deviceId)} — closed ${closed} live session(s)`);
+  return closed;
+}
 
 /** Who is asking. `deviceId` is the value proven at authenticate, NOT a client-supplied id. */
 export interface MqttAclContext {
@@ -1992,6 +2039,8 @@ function setupEventHandlers() {
       // a deviceId: `client.id` (clientId) is chosen freely by the device and must never be
       // used for authorisation. Stamped before any callback(null, true) below.
       (client as any)[MQTT_ACL_DEVICE_ID_PROP] = deviceId;
+      // doc 81 Đợt 1C Task 5b — binding generation, stamped BEFORE the row (and machineId) is read.
+      (client as any)[MQTT_ACL_BINDING_EPOCH_PROP] = currentBindingEpoch(deviceId);
 
       // Check if client exists in database
       const existingClient = await db!.select()
@@ -2152,6 +2201,12 @@ function setupEventHandlers() {
   // either misconfigured or hostile. Use warn-only mode to find such clients without cutting
   // them off. NOTE: `client` is null for `aedes.publish()` (server-internal) → allowed.
   aedes.authorizePublish = (client, packet, callback) => {
+    // doc 81 Đợt 1C Task 5b — session authenticated under a superseded binding ⇒ close, refuse.
+    if (hasStaleBinding(client)) {
+      client?.close();
+      callback(new Error('[MQTT] device binding changed — reconnect required'));
+      return;
+    }
     const ctx = aclContextFromClient(client);
     const decision = canPublish(ctx, packet.topic);
     if (decision.violation) logAclViolation('publish', ctx, packet.topic, decision);
@@ -2167,6 +2222,11 @@ function setupEventHandlers() {
   // keeps its good subscriptions. Gentler than the publish path — and correct per MQTT 3.1.1
   // §3.9.3 (aedes/lib/handlers/subscribe.js storeSubscriptions → granted = 128).
   aedes.authorizeSubscribe = (client, sub, callback) => {
+    if (hasStaleBinding(client)) {
+      client?.close();
+      callback(null, null);
+      return;
+    }
     const ctx = aclContextFromClient(client);
     const decision = canSubscribe(ctx, sub.topic);
     if (decision.violation) logAclViolation('subscribe', ctx, sub.topic, decision);
@@ -2216,6 +2276,11 @@ function setupEventHandlers() {
 
   // Client connected
   aedes.on('client', async (client) => {
+    // doc 81 Đợt 1C Task 5b — registered after a rebind sweep with a superseded binding ⇒ close now.
+    if (hasStaleBinding(client)) {
+      client.close();
+      return;
+    }
     connectionLog.hit(`connected|${connectionKey(client)}`, `[MQTT] Client connected: ${client.id}`); // fix round 1 — coalesced
     lastClientSeenAt = Date.now(); // doc 54 P2.3 — presence baseline for CLIENT_OFFLINE
 

@@ -545,7 +545,17 @@ const cua = (n: NhomPhamVi): ThuTuc[] => NHOM.get(n) ?? [];
  *   ⇒ D +1 · S +1 · tong +2, không dư một đơn vị.
  * ══════════════════════════════════════════════════════════════════════════════════════════════
  */
-const GHIM = { A: 341, B: 8, C: 480, D: 1125, S: 333, tong: 2287 } as const;
+/*
+ * ★★★ 2026-09-28 (doc 81 Đợt 1C Task 5b, gắn thiết bị MQTT ↔ máy) — **D 1125→1126 · tong 2287→2288 ·
+ * A/B/C/S không đổi.** ĐO bằng chính bộ quét này sau lượt sửa (trước lượt sửa, cùng bộ quét trên HEAD
+ * `551551fb6` = D 1125 · tong 2287 — khớp ghim cũ):
+ *   • `mqttClientRouter.bindMachine` (mutation, MỚI, `server/routers/mqttOeeRouters.ts`): **D +1** — ghi
+ *     `mqtt_clients."machineId"`; thiết bị soát theo trạm ∈ `idsTrongPhamVi("station", phamViCua(ctx))`,
+ *     máy đích + máy đang gắn soát theo `idsTrongPhamVi("machine", …)`, TRONG transaction
+ *     (`services/mqttBindingService.ts`). KHÔNG thêm dòng nào vào `phamViDocBaseline.ts`.
+ *   ⇒ D +1 · tong +1, không dư một đơn vị.
+ */
+const GHIM = { A: 341, B: 8, C: 480, D: 1126, S: 333, tong: 2288 } as const;
 
 describe("§1 — CẦU CHÌ: bộ suy có thật sự nhìn thấy gì không", () => {
   it("★ không có ô MÙ nào (mỗi ô mù là một chỗ KHÔNG AI CANH)", () => {

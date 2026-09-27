@@ -35,12 +35,19 @@ import {
 } from "lucide-react";
 import { useTranslation } from 'react-i18next';
 import { SoftwareVersionsTab } from "./SoftwareVersionsTab";
+import { useAuth } from "@/_core/hooks/useAuth";
+import { usePermissions } from "@/_core/hooks/usePermissions";
+import { MqttMachineBindingCell, coTheGanMayMqtt } from "@/components/mqtt/MqttMachineBindingCell";
 
 type ConnectionStatus = 'all' | 'ONLINE' | 'OFFLINE' | 'DISCONNECTED' | 'connected' | 'disconnected' | 'error' | 'pending';
 type ApprovalFilter = 'all' | 'PENDING' | 'APPROVED' | 'REJECTED';
 
 export function MqttClientManagementContent() {
   const { t } = useTranslation();
+  // doc 81 Đợt 1C Task 5b — cột "Gắn với máy" chỉ cho admin/engineer có settings_factory canEdit.
+  const { user } = useAuth();
+  const { hasPermission } = usePermissions();
+  const canBindMachine = coTheGanMayMqtt(user?.role, user?.role === "admin" || hasPermission("settings_factory", "canEdit"));
   const [isCreateDialogOpen, setIsCreateDialogOpen] = useState(false);
   const [editingClient, setEditingClient] = useState<any>(null);
   const [selectedClient, setSelectedClient] = useState<number | null>(null);
@@ -721,6 +728,7 @@ export function MqttClientManagementContent() {
                       <TableHead>{t('mqtt.clientMgmt.connection')}</TableHead>
                       <TableHead>{t('mqtt.clientMgmt.approvalHeader')}</TableHead>
                       <TableHead>{t('mqtt.clientMgmt.workstationHeader')}</TableHead>
+                      {canBindMachine && <TableHead>{t('mqtt.clientMgmt.boundMachineHeader')}</TableHead>}
                       <TableHead>{t('mqtt.clientMgmt.notifications')}</TableHead>
                       <TableHead>Last Seen</TableHead>
                       <TableHead className="text-right">{t('common.actions')}</TableHead>
@@ -767,6 +775,11 @@ export function MqttClientManagementContent() {
                             <span className="text-muted-foreground">-</span>
                           )}
                         </TableCell>
+                        {canBindMachine && (
+                          <TableCell>
+                            <MqttMachineBindingCell client={client} machines={machines} canEdit={canBindMachine} onChanged={() => refetchClients()} />
+                          </TableCell>
+                        )}
                         <TableCell>
                           <div className="flex gap-1">
                             {client.receiveNGAlerts && <Badge variant="outline" className="text-xs">NG</Badge>}
@@ -901,7 +914,7 @@ export function MqttClientManagementContent() {
                     ))}
                     {filteredClients.length === 0 && (
                       <TableRow>
-                        <TableCell colSpan={10} className="text-center py-8 text-muted-foreground">
+                        <TableCell colSpan={canBindMachine ? 11 : 10} className="text-center py-8 text-muted-foreground">
                           {clients.length === 0 ? t('mqtt.clientMgmt.noClients') : t('mqtt.clientMgmt.noMatchingClients')}
                         </TableCell>
                       </TableRow>

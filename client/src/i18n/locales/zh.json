@@ -3638,6 +3638,7 @@
       "queued-for-shared-ledger": "读取副本已立即清理（余量会立刻反映出来），但该行要到下一次共享台账同步时才会真正从数据库中移除——查看 unsyncedWritesAfter 了解还有多少写入尚未发送。"
     },
     "entity": {
+      "mqttClient": "MQTT设备",
       "abTestExperiment": "A/B测试实验",
       "adapter": "设备适配器",
       "agentSession": "智能体会话",
@@ -3969,6 +3970,7 @@
       "rollbackRecipeVersion": "回滚配方版本"
     },
     "field": {
+      "clientId": "MQTT设备",
       "changeReason": "变更原因",
       "reason": "原因",
       "comment": "备注",
@@ -4197,6 +4199,10 @@
     "cannotDisplayChart": "无法显示图表",
     "analyticsRenderError": "分析render错误",
     "reason": {
+      "mqttMachineNotBindable": "目标机器已停用/删除、已退役/报废，或未关联到工位 → 工厂。",
+      "mqttBoundMachineOutOfScope": "该设备绑定的机器不在您的范围内，您无法更改或解除该绑定。",
+      "mqttDeviceNoCredential": "该设备没有MQTT密码，仅凭（可猜测的）用户名连接，无法绑定到机器。请先为设备配置密码。",
+      "mqttDeviceRejected": "该设备已被拒绝，无法绑定到机器。请先批准该设备。",
       "robotNotActive": "本进程的机器人网关尚未加载该机器人（已禁用或 ROBOT_GATEWAY_ENABLED 未开启），因此没有可解除的实时运动锁定。",
       "opcuaSecurityInvalid": "securityMode/securityPolicy 无效或相互矛盾（例如 None 搭配 Basic256Sha256，或 SignAndEncrypt 搭配 None）。请使用 None/None，或 Sign/SignAndEncrypt 搭配 Basic256Sha256 等策略。",
       "secretReentryRequired": "您更改了 {{field}}（已保存密钥的发送位置或保护方式），因此不会复用已保存的密码/密钥。请重新输入密码/密钥后再保存；目前尚未更改任何内容。",
@@ -5606,6 +5612,17 @@
       "latencyAvg": "延迟（平均）"
     },
     "clientMgmt": {
+      "bindNoChange": "绑定未变化",
+      "bindSaved": "机器绑定已更新",
+      "confirmBind": "确认",
+      "bindReasonPlaceholder": "为什么绑定/解除该设备？",
+      "bindReason": "原因（必填）",
+      "unbind": "解除绑定",
+      "bindMachineDesc": "设备只能写入和读取该机器的 factory/… 与 syn/… 数据。设备当前的MQTT会话将被断开，使新绑定立即生效。",
+      "bindMachineTitle": "将设备绑定到机器",
+      "bindMachine": "绑定机器",
+      "notBound": "未绑定",
+      "boundMachineHeader": "绑定机器",
       "workstationOptional": "工位(optional)",
       "workstationHeader": "工位",
       "workstation": "工位",

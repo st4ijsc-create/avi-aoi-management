@@ -240,6 +240,13 @@ const MIEN_TRU_VAN_HANH: readonly string[] = [
  *   `hierarchyRouters.ts`, không SKU nào). Không phải bề mặt AI ⇒ `beMatAi`/`aiCoCong`/`aiMienTru`/
  *   `ngoaiAiCoCong` không đổi vì lượt này; `GHIM_MODULE_KHAC` không đổi. `tong` 2287 trùng
  *   `phamViDocCensus.test.ts#GHIM.tong` (D +1 · S +1).
+ *
+ * ★ 2026-09-28 doc 81 Đợt 1C Task 5b (gắn thiết bị MQTT ↔ máy) — **tong +1, KHÔNG ghim lại** (cùng lý do
+ *   Task 4: ô `tong` đỏ từ trước do trôi của lượt khác). Đo `quetCongGiayPhep` trên HEAD `551551fb6` =
+ *   **2287**, sau lượt này = **2288**: đúng MỘT thủ tục MỚI `mqttClient.bindMachine` (mutation,
+ *   `server/routers/mqttOeeRouters.ts`, sàn `protectedProcedure` + `requirePermission("settings_factory",
+ *   "canEdit")`, `module = null`). Không phải bề mặt AI ⇒ `beMatAi`/`aiCoCong`/`aiMienTru`/`ngoaiAiCoCong`
+ *   không đổi vì lượt này. `tong` 2288 trùng `phamViDocCensus.test.ts#GHIM.tong` (D +1).
  */
 const GHIM = { tong: 2223, beMatAi: 357, aiCoCong: 295, aiMienTru: 62, ngoaiAiCoCong: 0 } as const;
 
