@@ -504,7 +504,21 @@ const cua = (n: NhomPhamVi): ThuTuc[] => NHOM.get(n) ?? [];
  *   • `complianceMetrics` VẪN ở A (đọc `machines` toàn cục, không đổi phạm vi) — vẫn trong sổ nợ.
  * ══════════════════════════════════════════════════════════════════════════════════════════════
  */
-const GHIM = { A: 341, B: 8, C: 480, D: 1123, S: 330, tong: 2282 } as const;
+/*
+ * ══════════════════════════════════════════════════════════════════════════════════════════════
+ * ★★★ 2026-09-27 (doc 80 Đợt 1 Task 4, SAF-02) — **S 330→331 · tong 2282→2283 · A/B/C/D không đổi.**
+ * ĐO bằng chính bộ quét này trên HEAD `290004e2c` TRƯỚC khi sửa (xanh: A 341 · S 330 · tong 2282)
+ * rồi SAU lượt sửa; tra từng khoá bằng `nhomCua(khoaCua)` của bộ quét:
+ *   • `safetyRouter.sourceHealth` (query, MỚI): **S +1**. Đọc `safety_plc_configs` (bảng tenant)
+ *     và danh tính RỜI TAY qua `loadSafetySourceHealth(phamViCua(ctx))` ⇒ mã cấu hình chỉ lộ trong
+ *     phạm vi nhà máy của người xem; số tổng (nền của preflight, toàn hệ) chỉ là số đếm. KHÔNG
+ *     thêm dòng nào vào `phamViDocBaseline.ts`.
+ *   • `orchestrationRouter.listRuns` (đã có) thêm một truy vấn `orchestration_run_steps` cho ô
+ *     `dispatch` (ORC-13) — VẪN ở **C** (bộ quét xác nhận), không đổi nhóm.
+ *   ⇒ S +1 · tong +1, không dư một đơn vị.
+ * ══════════════════════════════════════════════════════════════════════════════════════════════
+ */
+const GHIM = { A: 341, B: 8, C: 480, D: 1123, S: 331, tong: 2283 } as const;
 
 describe("§1 — CẦU CHÌ: bộ suy có thật sự nhìn thấy gì không", () => {
   it("★ không có ô MÙ nào (mỗi ô mù là một chỗ KHÔNG AI CANH)", () => {

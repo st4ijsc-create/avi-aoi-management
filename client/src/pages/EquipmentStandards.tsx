@@ -80,6 +80,8 @@ import {
   FeatureStatusGate,
   isFeatureStatusUnsettled,
 } from "@/components/common/FeatureStatusGate";
+// doc 80 Đợt 1 Task 4 (X-01) — nhãn SEED trên cây device type + dải tóm tắt.
+import { ProvenanceBadge, ProvenanceSummary } from "@/components/common/ProvenanceBadge";
 
 // ── Typesafe shapes inferred from the equipmentStandardsRouter output ─────────
 type RouterOutputs = inferRouterOutputs<AppRouter>;
@@ -195,6 +197,13 @@ export default function EquipmentStandards() {
   const mastersQ = trpc.equipmentStandards.listMasterAlarms.useQuery(undefined, { enabled: canView });
 
   const tree = (treeQ.data?.tree ?? []) as TreeNode[];
+  // doc 80 Task 4 — every node of the tree (roots + descendants) for the "N/M are seed" strip.
+  const treeFlat = useMemo(() => {
+    const out: TreeNode[] = [];
+    const walk = (ns: TreeNode[]) => { for (const n of ns) { out.push(n); walk(n.children as TreeNode[]); } };
+    walk(tree);
+    return out;
+  }, [tree]);
   const resolved = resolveQ.data as ResolvedType | undefined;
   const alarms = (alarmsQ.data?.mappings ?? []) as AlarmMapping[];
   const vendors = (alarmsQ.data?.vendors ?? []) as string[];
@@ -426,6 +435,7 @@ export default function EquipmentStandards() {
               {!treeQ.isLoading && tree.length === 0 && (
                 <Text tone="muted" variant="body-sm">{t("eqStandards.treeEmpty", "No device types.")}</Text>
               )}
+              <ProvenanceSummary rows={treeFlat} className="mb-2" />
               <div className="space-y-0.5">
                 {tree.map((node) => (
                   <TreeRow
@@ -968,6 +978,7 @@ function TreeRow({
   return (
     <>
       <div
+        data-testid={`type-row-${node.typeKey}`}
         className={`flex cursor-pointer items-center gap-1 rounded px-2 py-1 text-sm hover:bg-muted/60 ${isSel ? "bg-primary/10" : ""}`}
         style={{ paddingLeft: `${depth * 1.1 + 0.5}rem` }}
         onClick={() => onSelect(node.typeKey)}
@@ -986,6 +997,7 @@ function TreeRow({
         <Boxes className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
         <span className={`truncate ${isSel ? "font-medium" : ""}`}>{node.label ?? node.typeKey}</span>
         <span className="ml-auto flex shrink-0 items-center gap-1">
+          <ProvenanceBadge row={node} />
           <span className="font-mono text-[10px] text-muted-foreground">v{node.version}</span>
           <StatusBadge status={node.status} className="px-1 py-0 text-[10px]" />
         </span>

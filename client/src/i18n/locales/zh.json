@@ -17277,7 +17277,45 @@
     "trendEmpty": "此窗口内无未遂事件记录。",
     "trendTitle": "未遂事件趋势（PDCA，最近 30 天）",
     "unaudited": "待处理",
-    "viewOnly": "仅查看"
+    "viewOnly": "仅查看",
+    "source": {
+      "title": "来源",
+      "loading": "正在检查安全来源…",
+      "error": "无法读取安全来源 — 请视为未知。",
+      "plcLabel": "安全 PLC",
+      "plc": {
+        "sim": "⚠ SIM（预检依赖于模拟）",
+        "mixed": "⚠ 真实 + SIM（单个 SIM 配置即可使预检通过）",
+        "real": "● 真实 PLC",
+        "adapterOff": "○ 关闭 — 无安全来源",
+        "noConfig": "○ 没有已启用的配置",
+        "readError": "⚠ 无法读取配置"
+      },
+      "hiddenConfigs": "不在您的范围内",
+      "ot": "OT 写入",
+      "robot": "机器人运动",
+      "verdict": {
+        "dry_run": "仅 dry-run（控制已关闭 — 不写入任何内容）",
+        "unguarded": "⚠ 预检已关闭 — 真实指令不受检查",
+        "blocked": "真实指令被阻止",
+        "sim_basis": "⚠ 基于模拟读数放行",
+        "sim_can_satisfy": "⚠ SIM 配置即可使检查通过",
+        "real_basis": "已对照真实安全 PLC 检查"
+      },
+      "on": "● 开启",
+      "off": "○ 关闭",
+      "vision": "视觉",
+      "cameras": "个摄像头",
+      "zone": "区域软件",
+      "zones": "个区域",
+      "estop": "急停",
+      "estopRated": "● 安全等级认证",
+      "estopNotRated": "⚠ 开启 — 非安全等级",
+      "socket": "Socket",
+      "socketServerDown": "○ 服务器 socket 未运行",
+      "socketConnected": "● 已连接",
+      "socketDisconnected": "○ 已断开"
+    }
   },
   "sites": {
     "colBaseUrl": "基础 URL",
@@ -20966,6 +21004,28 @@
     "daiHopNhat": {
       "an": "隐藏",
       "tomTat": "{{so}} 项需知"
+    }
+  },
+  "provenance": {
+    "label": {
+      "SIM": "SIM",
+      "DEMO": "DEMO",
+      "SEED": "SEED"
+    },
+    "tip": "非真实数据 — 来源标记",
+    "summary": "{{count}}/{{total}} 行为演示 / 种子 / 模拟数据 — 并非来自真实设备",
+    "dispatch": {
+      "simulated": "DRY-RUN",
+      "mixed": "部分模拟",
+      "live": "真实",
+      "simulatedTip": "本次运行的指令仅为模拟（dry-run）— 未向设备写入任何内容（{{simulated}} 步）。",
+      "mixedTip": "{{simulated}} 步为模拟，{{live}} 步已发送至设备。",
+      "liveTip": "{{live}} 个指令步骤已发送至设备。"
+    },
+    "step": {
+      "simulated": "模拟",
+      "live": "已发送",
+      "other": "未发送"
     }
   }
 }

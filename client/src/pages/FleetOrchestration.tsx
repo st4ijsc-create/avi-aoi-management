@@ -68,6 +68,8 @@ import {
   FeatureStatusGate,
   isFeatureStatusUnsettled,
 } from "@/components/common/FeatureStatusGate";
+// doc 80 Đợt 1 Task 4 (X-01) — nhãn DEMO/SEED/SIM + dải tóm tắt trên bảng task.
+import { ProvenanceBadge, ProvenanceSummary } from "@/components/common/ProvenanceBadge";
 
 // ── Typesafe shapes inferred from the fleetRouter output ──────────────────────
 type RouterOutputs = inferRouterOutputs<AppRouter>;
@@ -729,6 +731,7 @@ export default function FleetOrchestration() {
             </div>
           </CardHeader>
           <CardContent className="p-0">
+            <ProvenanceSummary rows={tasks} className="mx-3 mb-2" />
             <Table>
               <TableHeader>
                 <TableRow>
@@ -761,7 +764,12 @@ export default function FleetOrchestration() {
                   const terminal = TERMINAL.has(tk.status);
                   return (
                     <TableRow key={tk.id}>
-                      <TableCell className="font-mono text-xs">{tk.taskKey}</TableCell>
+                      <TableCell className="font-mono text-xs">
+                        <span className="inline-flex items-center gap-1.5">
+                          <span>{tk.taskKey}</span>
+                          <ProvenanceBadge row={tk} />
+                        </span>
+                      </TableCell>
                       <TableCell><Badge variant="outline">{tk.requiredCapability}</Badge></TableCell>
                       <TableCell>
                         <Badge variant={tk.priority <= 2 ? "destructive" : "outline"}>P{tk.priority}</Badge>

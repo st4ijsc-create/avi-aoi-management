@@ -229,3 +229,53 @@ describe("FleetOrchestration — G2 (fleet.resourceStatus) khoá 5 nút ghi Oper
   // về `canControl` khiến TOÀN BỘ 5 ca "ĐANG TẢI" ở trên ĐỎ (không còn khoá) — xác nhận rồi
   // hoàn nguyên.
 });
+
+// ── doc 80 Đợt 1 Task 4 (X-01) — nhãn nguồn dữ liệu trên hàng task ──────────────────────
+// ORACLE ĐỘC LẬP: tập hàng seed/demo được KHAI TAY cùng fixture (SEEDED_TASK_IDS) — từ dấu hiệu
+// mà chính fixture mang (hai hàng giống hệt DB dev: taskKey DEMO-TASK-*, payload.demo=true),
+// KHÔNG suy bằng hàm gắn nhãn đang bị kiểm.
+function task(id: number, taskKey: string, payload: Record<string, unknown> | null) {
+  return {
+    id, taskKey, sourceWorkOrderId: null, requiredCapability: "run_job", priority: 3, status: "pending",
+    assignedDeviceId: null, assignedDeviceKind: null, locationStart: null, locationEnd: null,
+    estimatedDurationMs: 1000, actualDurationMs: null, retryCount: 0, payload,
+    corporateCode: null, factoryId: 1, lastError: null,
+    createdAt: "2026-09-26T05:07:17.928Z", updatedAt: "2026-09-26T05:07:17.928Z",
+    assignedAt: null, startedAt: null, completedAt: null,
+  };
+}
+const TASKS = [
+  task(3, "DEMO-TASK-PICK-1", { demo: true, operationCode: "PICK_PLACE" }),
+  task(4, "DEMO-TASK-INSPECT-1", { demo: true, operationCode: "INSPECT_AOI" }),
+  task(5, "WO-7788-SMT", { operationCode: "PICK_PLACE" }),
+  task(6, "LINE-B-REFILL", null),
+];
+const SEEDED_TASK_IDS = new Set([3, 4]);
+
+describe("FleetOrchestration — Task 4 X-01: badge DEMO trên task seed", () => {
+  it("dải tóm tắt '2/4 hàng là dữ liệu demo'", () => {
+    setQueryOverride("fleet.status", makeQuery({ data: { enabled: true } }));
+    setQueryOverride("fleet.listTasks", makeQuery({ data: TASKS }));
+    render(<FleetOrchestration />);
+    const s = screen.getByTestId("provenance-summary");
+    expect(s).toHaveAttribute("data-count", "2");
+    expect(s).toHaveAttribute("data-total", "4");
+  });
+
+  it("BẤT BIẾN: không hàng seed nào hiện mà không có badge — và hàng thật không bị gắn nhầm", () => {
+    setQueryOverride("fleet.status", makeQuery({ data: { enabled: true } }));
+    setQueryOverride("fleet.listTasks", makeQuery({ data: TASKS }));
+    render(<FleetOrchestration />);
+    for (const tk of TASKS) {
+      const row = screen.getByText(tk.taskKey).closest("tr") as HTMLElement;
+      expect(row, `hàng ${tk.taskKey}`).not.toBeNull();
+      const badge = row.querySelector('[data-testid="provenance-badge"]');
+      if (SEEDED_TASK_IDS.has(tk.id)) {
+        expect(badge, `hàng seed ${tk.taskKey} THIẾU badge`).not.toBeNull();
+        expect(badge!.getAttribute("data-provenance")).toBe("DEMO");
+      } else {
+        expect(badge, `hàng thật ${tk.taskKey} bị gắn nhãn nhầm`).toBeNull();
+      }
+    }
+  });
+});

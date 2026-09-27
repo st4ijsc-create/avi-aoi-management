@@ -102,6 +102,9 @@ import {
 import { WorkflowGraphCanvas } from "@/components/orchestration/WorkflowGraphCanvas";
 import { useStepUpOtp } from "@/components/security/StepUpOtpDialog";
 import { ConfirmWithReason } from "@/components/patterns/ConfirmWithReason";
+// doc 80 Đợt 1 Task 4 (X-01 · ORC-13) — nhãn SEED/DEMO/SIM + DRY-RUN trên run.
+import { ProvenanceBadge, ProvenanceSummary, DispatchModeBadge } from "@/components/common/ProvenanceBadge";
+import { classifyStepDispatch, type RunDispatchSummary } from "@shared/provenance";
 
 // ════════════════════════════════════════════════════════════════════════════
 // STEP-TREE CANVAS (left) — nested visual blocks per step type
@@ -1745,6 +1748,7 @@ export default function OrchestrationStudio() {
                   </SelectContent>
                 </Select>
               )}
+              <ProvenanceSummary rows={allRuns} />
               {allRuns.length === 0 && (
                 <p className="py-4 text-center text-sm text-muted-foreground">{t("studio.noRuns", "No runs yet.")}</p>
               )}
@@ -1980,6 +1984,29 @@ type RunStepView = {
   result?: Record<string, unknown> | null;
 };
 
+/** doc 80 Task 4 (ORC-13) — per-step dispatch marker in the run drawer (routedTo + simulated/sent). */
+function StepDispatchTag({ result, t }: { result: Record<string, unknown> | null | undefined; t: TFunction }) {
+  const kind = classifyStepDispatch(result);
+  if (!kind) return null;
+  const routedTo = typeof result?.routedTo === "string" ? result.routedTo : "";
+  const label =
+    kind === "simulated"
+      ? t("provenance.step.simulated", "simulated")
+      : kind === "live"
+        ? t("provenance.step.live", "sent")
+        : t("provenance.step.other", "not sent");
+  return (
+    <Badge
+      variant="outline"
+      data-testid="step-dispatch"
+      data-kind={kind}
+      className={`text-[10px] ${kind === "simulated" ? "border-violet-500/50 text-violet-700 dark:text-violet-300" : kind === "live" ? "border-emerald-500/50 text-emerald-700 dark:text-emerald-300" : "text-muted-foreground"}`}
+    >
+      {routedTo ? `${routedTo} · ` : ""}{label}
+    </Badge>
+  );
+}
+
 function RunRow({
   run,
   interrupted = false,
@@ -2031,11 +2058,14 @@ function RunRow({
   const closeReject = () => { setRejecting(false); setRejectNote(""); };
 
   return (
-    <div className="rounded border text-sm">
+    <div className="rounded border text-sm" data-run-row={runId}>
       <div className="flex items-center justify-between px-2 py-1.5">
         <button className="flex min-w-0 items-center gap-2" onClick={() => setOpen((o) => !o)}>
           <Badge className={`${RUN_STATUS_COLOR[status] ?? "bg-slate-400"} text-white`}>{status}</Badge>
           <span className="truncate font-mono text-[11px] text-muted-foreground">run #{runId} · {String(run.workflowRef ?? run.workflowId ?? "")}</span>
+          {/* doc 80 Task 4 — X-01 source label + ORC-13 dry-run/live marker. */}
+          <ProvenanceBadge row={run} />
+          <DispatchModeBadge dispatch={run.dispatch as RunDispatchSummary | undefined} />
         </button>
         {interrupted && canControl && (
           <div className="flex gap-1">
@@ -2155,7 +2185,11 @@ function RunRow({
                   {isCurrent && <span className="mr-1 text-primary">▶</span>}
                   {s.stepId} <span className="text-muted-foreground">({s.stepType})</span>
                 </span>
-                <Badge variant="outline" className="text-[10px]">{s.status}</Badge>
+                <span className="flex items-center gap-1">
+                  {/* doc 80 Task 4 (ORC-13) — where the command went and whether it was simulated. */}
+                  <StepDispatchTag result={s.result} t={t} />
+                  <Badge variant="outline" className="text-[10px]">{s.status}</Badge>
+                </span>
               </div>
             );
           })}

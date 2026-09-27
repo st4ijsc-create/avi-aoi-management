@@ -46,6 +46,7 @@ const deployProcedure = deployBase.use(moduleGate("MOD_ENGINEERING"));
 // doc 80 ORC-06 — write floor (not a read-only role) + the same MOD_ENGINEERING license gate.
 const writeProcedure = writeBase.use(moduleGate("MOD_ENGINEERING"));
 import { orchestrationWorkflows, orchestrationWorkflowVersions, orchestrationRuns, orchestrationRunSteps, machines } from "../../drizzle/schema";
+import { summarizeRunDispatch } from "../../shared/provenance";
 import {
   deployWorkflow,
   rollbackWorkflow,
@@ -200,12 +201,24 @@ export const orchestrationRouter = router({
     )
     .query(async ({ input }) => {
       const d = await db();
-      return d
+      const runs = await d
         .select()
         .from(orchestrationRuns)
         .where(input?.workflowId != null ? eq(orchestrationRuns.workflowId, input.workflowId) : undefined)
         .orderBy(desc(orchestrationRuns.createdAt))
         .limit(input?.limit ?? 100);
+      // doc 80 Đợt 1 Task 4 (ORC-13) — additive `dispatch`: were this run's commands simulated
+      // (DRY-RUN) or really sent? Derived from the step results foeEngine records
+      // ({routedTo, status, simulated}); one extra query over the listed run ids.
+      const stepRows = runs.length
+        ? await d
+            .select({ runId: orchestrationRunSteps.runId, resultJson: orchestrationRunSteps.resultJson })
+            .from(orchestrationRunSteps)
+            .where(inArray(orchestrationRunSteps.runId, runs.map((r) => r.id)))
+        : [];
+      const byRun = new Map<number, unknown[]>();
+      for (const s of stepRows) byRun.set(s.runId, [...(byRun.get(s.runId) ?? []), s.resultJson]);
+      return runs.map((r) => ({ ...r, dispatch: summarizeRunDispatch(byRun.get(r.id) ?? []) }));
     }),
 
   /** Get a run + its per-step audit. */

@@ -21,6 +21,7 @@ import {
   compareSemver,
   bumpSemver,
   eqGovernEnabled,
+  nodeFromDeviceTypeRow,
   type DeviceTypeNode,
 } from "./deviceTypeRegistry";
 import { listDefaultProfiles } from "../equipment/capabilityModel";
@@ -126,6 +127,26 @@ describe("deviceTypeRegistry — seed + inheritance", () => {
     const childKeys = equip!.children.map((c) => c.typeKey);
     expect(childKeys).toContain("Robot");
     expect(childKeys).toContain("Inspection");
+  });
+
+  // doc 80 Đợt 1 Task 4 (X-01) — nguồn gốc 'seed' phải tới được cây để trang gắn nhãn SEED.
+  it("tree nodes carry origin: seed constants ⇒ 'seed'; a DB row keeps its own origin", () => {
+    const flat = (ns: ReturnType<typeof buildTree>): ReturnType<typeof buildTree> => ns.flatMap((n) => [n, ...flat(n.children)]);
+    const seedTree = flat(buildTree(seed));
+    expect(seedTree.length).toBeGreaterThan(0);
+    expect(seedTree.every((n) => n.origin === "seed")).toBe(true);
+
+    const row = nodeFromDeviceTypeRow({
+      id: 1, typeKey: "Robot", parentTypeKey: "Equipment", version: "2.0.0", status: "published",
+      label: "Robot v2", description: null, attributesSchema: [], supportedCommands: [], supportedStates: [],
+      extensionFields: {}, mappedMachineTypes: [], adapterKind: null, changelog: null, publishedAt: null,
+      origin: "manual", scope: null, corporateCode: null, factoryId: null, createdBy: null,
+      createdAt: new Date(), updatedAt: new Date(),
+    });
+    expect(row.origin).toBe("manual");
+    const robot = flat(buildTree([...seed, row])).find((n) => n.typeKey === "Robot");
+    expect(robot?.version).toBe("2.0.0");
+    expect(robot?.origin).toBe("manual");
   });
 });
 

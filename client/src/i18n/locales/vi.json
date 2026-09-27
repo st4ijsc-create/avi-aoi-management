@@ -16883,7 +16883,45 @@
     "trendEmpty": "Không ghi nhận suýt sự cố nào trong khoảng thời gian.",
     "trendTitle": "Xu hướng suýt sự cố (PDCA, 30 ngày qua)",
     "unaudited": "Đang chờ",
-    "viewOnly": "Chỉ xem"
+    "viewOnly": "Chỉ xem",
+    "source": {
+      "title": "Nguồn",
+      "loading": "Đang kiểm tra nguồn an toàn…",
+      "error": "Không đọc được nguồn an toàn — hãy coi như chưa biết.",
+      "plcLabel": "Safety PLC",
+      "plc": {
+        "sim": "⚠ SIM (preflight dựa vào GIẢ LẬP)",
+        "mixed": "⚠ thật + SIM (một cấu hình SIM đủ làm preflight qua)",
+        "real": "● PLC thật",
+        "adapterOff": "○ tắt — không có nguồn an toàn",
+        "noConfig": "○ không có cấu hình nào bật",
+        "readError": "⚠ không đọc được cấu hình"
+      },
+      "hiddenConfigs": "ngoài phạm vi của bạn",
+      "ot": "Ghi OT",
+      "robot": "Chuyển động robot",
+      "verdict": {
+        "dry_run": "chỉ dry-run (điều khiển đang tắt — không ghi gì)",
+        "unguarded": "⚠ preflight bị tắt — lệnh thật không được kiểm",
+        "blocked": "lệnh thật bị chặn",
+        "sim_basis": "⚠ được phép dựa trên kết quả GIẢ LẬP",
+        "sim_can_satisfy": "⚠ một cấu hình SIM đủ làm phép kiểm qua",
+        "real_basis": "kiểm với Safety PLC thật"
+      },
+      "on": "● bật",
+      "off": "○ tắt",
+      "vision": "Vision",
+      "cameras": "camera",
+      "zone": "Zone SW",
+      "zones": "vùng",
+      "estop": "E-stop",
+      "estopRated": "● safety-rated",
+      "estopNotRated": "⚠ bật — không safety-rated",
+      "socket": "Socket",
+      "socketServerDown": "○ socket máy chủ không chạy",
+      "socketConnected": "● đã kết nối",
+      "socketDisconnected": "○ mất kết nối"
+    }
   },
   "sessionSignoff": {
     "shift": "Ca",
@@ -20938,6 +20976,28 @@
     "daiHopNhat": {
       "an": "ẩn",
       "tomTat": "{{so}} việc cần biết"
+    }
+  },
+  "provenance": {
+    "label": {
+      "SIM": "SIM",
+      "DEMO": "DEMO",
+      "SEED": "SEED"
+    },
+    "tip": "Không phải dữ liệu thật — dấu hiệu nguồn",
+    "summary": "{{count}}/{{total}} hàng là dữ liệu demo / seed / giả lập — không đến từ thiết bị thật",
+    "dispatch": {
+      "simulated": "DRY-RUN",
+      "mixed": "MỘT PHẦN GIẢ LẬP",
+      "live": "THẬT",
+      "simulatedTip": "Lệnh trong lần chạy này chỉ được mô phỏng (dry-run) — không ghi gì xuống thiết bị ({{simulated}} bước).",
+      "mixedTip": "{{simulated}} bước mô phỏng, {{live}} bước đã gửi xuống thiết bị.",
+      "liveTip": "{{live}} bước lệnh đã được gửi xuống thiết bị."
+    },
+    "step": {
+      "simulated": "mô phỏng",
+      "live": "đã gửi",
+      "other": "không gửi"
     }
   }
 }

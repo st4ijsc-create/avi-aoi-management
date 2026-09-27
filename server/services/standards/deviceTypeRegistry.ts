@@ -55,6 +55,12 @@ export interface DeviceTypeNode {
   extensionFields: Record<string, unknown>;
   mappedMachineTypes: string[];
   adapterKind?: string;
+  /**
+   * Where the node came from: 'seed' (capabilityModel constants / device_types.origin='seed')
+   * or the row's own origin ('manual'…). doc 80 Đợt 1 Task 4 (X-01) — carried to the tree so
+   * the page can badge seed types. Optional: absent = unknown (never guessed).
+   */
+  origin?: string;
 }
 
 /**
@@ -76,6 +82,7 @@ export function nodeFromDeviceTypeRow(r: DeviceType): DeviceTypeNode {
     extensionFields: (r.extensionFields ?? {}) as Record<string, unknown>,
     mappedMachineTypes: (r.mappedMachineTypes ?? []) as string[],
     adapterKind: r.adapterKind ?? undefined,
+    origin: r.origin ?? undefined,
   };
 }
 
@@ -102,6 +109,8 @@ export interface DeviceTypeTreeNode {
   status: string;
   label?: string;
   mappedMachineTypes: string[];
+  /** doc 80 Đợt 1 Task 4 — see DeviceTypeNode.origin. */
+  origin?: string;
   children: DeviceTypeTreeNode[];
 }
 
@@ -183,6 +192,7 @@ export function buildSeedTypes(): DeviceTypeNode[] {
     supportedStates: [],
     extensionFields: {},
     mappedMachineTypes: [],
+    origin: "seed",
     ...n,
   });
 
@@ -369,7 +379,7 @@ export function buildTree(nodes: DeviceTypeNode[]): DeviceTypeTreeNode[] {
   for (const n of byKey.values()) {
     tnodes.set(n.typeKey, {
       typeKey: n.typeKey, version: n.version, status: n.status, label: n.label,
-      mappedMachineTypes: n.mappedMachineTypes ?? [], children: [],
+      mappedMachineTypes: n.mappedMachineTypes ?? [], origin: n.origin, children: [],
     });
   }
   const roots: DeviceTypeTreeNode[] = [];

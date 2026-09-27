@@ -16903,7 +16903,45 @@
     "trendEmpty": "No near-misses recorded in the window.",
     "trendTitle": "Near-miss trend (PDCA, last 30 days)",
     "unaudited": "Pending",
-    "viewOnly": "View only"
+    "viewOnly": "View only",
+    "source": {
+      "title": "Sources",
+      "loading": "Checking safety sources…",
+      "error": "Could not read safety sources — treat them as unknown.",
+      "plcLabel": "Safety PLC",
+      "plc": {
+        "sim": "⚠ SIM (preflight relies on a SIMULATION)",
+        "mixed": "⚠ real + SIM (a SIM config alone can satisfy the preflight)",
+        "real": "● real PLC",
+        "adapterOff": "○ off — no safety source",
+        "noConfig": "○ no enabled config",
+        "readError": "⚠ configs could not be read"
+      },
+      "hiddenConfigs": "outside your scope",
+      "ot": "OT writes",
+      "robot": "Robot motion",
+      "verdict": {
+        "dry_run": "dry-run only (control disabled — nothing is written)",
+        "unguarded": "⚠ preflight disabled — real commands are not checked",
+        "blocked": "real commands blocked",
+        "sim_basis": "⚠ allowed on a SIMULATED reading",
+        "sim_can_satisfy": "⚠ a SIM config can satisfy the check",
+        "real_basis": "checked against the real safety PLC"
+      },
+      "on": "● on",
+      "off": "○ off",
+      "vision": "Vision",
+      "cameras": "camera(s)",
+      "zone": "Zone SW",
+      "zones": "zone(s)",
+      "estop": "E-stop",
+      "estopRated": "● safety-rated",
+      "estopNotRated": "⚠ on — not safety-rated",
+      "socket": "Socket",
+      "socketServerDown": "○ server socket down",
+      "socketConnected": "● connected",
+      "socketDisconnected": "○ disconnected"
+    }
   },
   "sessionSignoff": {
     "shift": "Shift",
@@ -20964,6 +21002,28 @@
       "tomTat": "{{so}} things to know",
       "tomTat_one": "{{so}} thing to know",
       "tomTat_other": "{{so}} things to know"
+    }
+  },
+  "provenance": {
+    "label": {
+      "SIM": "SIM",
+      "DEMO": "DEMO",
+      "SEED": "SEED"
+    },
+    "tip": "Not live data — source marker",
+    "summary": "{{count}}/{{total}} rows are demo / seed / simulated data — not from real equipment",
+    "dispatch": {
+      "simulated": "DRY-RUN",
+      "mixed": "PARTLY SIMULATED",
+      "live": "LIVE",
+      "simulatedTip": "Commands in this run were simulated (dry-run) — nothing was written to equipment ({{simulated}} step(s)).",
+      "mixedTip": "{{simulated}} step(s) simulated, {{live}} step(s) sent to equipment.",
+      "liveTip": "{{live}} command step(s) were sent to equipment."
+    },
+    "step": {
+      "simulated": "simulated",
+      "live": "sent",
+      "other": "not sent"
     }
   }
 }

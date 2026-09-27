@@ -289,3 +289,53 @@ describe("EquipmentStandards — Fix round 1 (badge Shelved + ô Chattering)", (
     expect(tile.getAttribute("title") ?? "").toMatch(/does not compute chattering/i);
   });
 });
+
+// ── doc 80 Đợt 1 Task 4 (X-01) — badge SEED trên device type ─────────────────────────────
+// ORACLE ĐỘC LẬP: SEEDED_TYPE_KEYS khai tay cùng fixture (origin='seed', như 31/31 hàng DB dev),
+// không suy bằng hàm gắn nhãn. Cây LỒNG (Equipment → Robot → CustomCell) để bất biến phủ cả
+// nút con, không chỉ gốc.
+const TREE = [
+  {
+    typeKey: "Equipment", version: "1.0.0", status: "published", label: "Equipment (base)", mappedMachineTypes: [], origin: "seed",
+    children: [
+      {
+        typeKey: "Robot", version: "1.0.0", status: "published", label: "Robot", mappedMachineTypes: [], origin: "seed",
+        children: [
+          { typeKey: "CustomCell", version: "2.0.0", status: "published", label: "Custom cell", mappedMachineTypes: [], origin: "manual", children: [] },
+        ],
+      },
+      { typeKey: "Inspection", version: "1.0.0", status: "published", label: "Inspection cell", mappedMachineTypes: [], origin: "seed", children: [] },
+      { typeKey: "LegacyPress", version: "1.0.0", status: "draft", label: "Legacy press", mappedMachineTypes: [], children: [] },
+    ],
+  },
+];
+const SEEDED_TYPE_KEYS = new Set(["Equipment", "Robot", "Inspection"]);
+const ALL_TYPES: Array<{ typeKey: string; label: string }> = [
+  { typeKey: "Equipment", label: "Equipment (base)" },
+  { typeKey: "Robot", label: "Robot" },
+  { typeKey: "CustomCell", label: "Custom cell" },
+  { typeKey: "Inspection", label: "Inspection cell" },
+  { typeKey: "LegacyPress", label: "Legacy press" },
+];
+
+describe("EquipmentStandards — Task 4 X-01: badge SEED trên cây device type", () => {
+  it("dải tóm tắt 3/5 + BẤT BIẾN: mọi nút seed (kể cả nút con) có badge, nút thật không", () => {
+    setQueryOverride("equipmentStandards.status", makeQuery({ data: { enabled: true } }));
+    setQueryOverride("equipmentStandards.hierarchyTree", makeQuery({ data: { tree: TREE, typeCount: 5 } }));
+    render(<EquipmentStandards />);
+    const s = screen.getByTestId("provenance-summary");
+    expect(s).toHaveAttribute("data-count", "3");
+    expect(s).toHaveAttribute("data-total", "5");
+    for (const ty of ALL_TYPES) {
+      const row = screen.getByTestId(`type-row-${ty.typeKey}`);
+      expect(row.textContent).toContain(ty.label);
+      const badge = row.querySelector('[data-testid="provenance-badge"]');
+      if (SEEDED_TYPE_KEYS.has(ty.typeKey)) {
+        expect(badge, `kiểu seed ${ty.typeKey} THIẾU badge`).not.toBeNull();
+        expect(badge!.getAttribute("data-provenance")).toBe("SEED");
+      } else {
+        expect(badge, `kiểu thật ${ty.typeKey} bị gắn nhầm`).toBeNull();
+      }
+    }
+  });
+});

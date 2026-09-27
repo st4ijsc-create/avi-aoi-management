@@ -206,3 +206,109 @@ describe("SafetyWorkforce — 'Start collaboration' (tab Collaboration) cùng wo
     expect(screen.getByRole("button", { name: "Start collaboration" })).not.toBeDisabled();
   });
 });
+
+// ══════════════════════════════════════════════════════════════════════════════════════
+// doc 80 Đợt 1 Task 4 — SAF-02 panel NGUỒN (safety.sourceHealth) + X-01 badge assignment
+// ══════════════════════════════════════════════════════════════════════════════════════
+function health(over: Record<string, unknown> = {}) {
+  return {
+    checkedAt: "2026-09-27T00:00:00.000Z",
+    safetyPlc: {
+      adapterEnabled: true, enabledConfigs: 1, simConfigs: 1, realConfigs: 0, basis: "sim",
+      configs: [{ code: "SIM-SAFETY-PLC-1", backend: "sim", effective: "sim", provenance: "SIM" }], hiddenConfigs: 0,
+    },
+    preflight: {
+      expectedReading: "SIM",
+      ot: { flag: "OT_SAFETY_PREFLIGHT_ENABLED", preflightEnabled: true, controlEnabled: true, realWrites: "sim_basis", refusalReason: null },
+      robot: { flag: "ROBOT_SAFETY_PREFLIGHT_ENABLED", preflightEnabled: true, controlEnabled: false, realWrites: "dry_run", refusalReason: null },
+    },
+    vision: { enabled: false, calibrations: 0, onnxPersonModelWired: false },
+    zoneSw: { enabled: false, zones: 0 },
+    estop: { enabled: false, adapter: "null", label: "null (scaffold)", rated: false, reachable: false },
+    socket: { serverUp: true },
+    ...over,
+  };
+}
+
+describe("SafetyWorkforce — SAF-02 panel nguồn an toàn", () => {
+  it("PLC SIM ⇒ '⚠ SIM (preflight relies on a SIMULATION)' + OT 'allowed on a SIMULATED reading' + robot dry-run", () => {
+    setQueryOverride("safety.sourceHealth", makeQuery({ data: health() }));
+    render(<SafetyWorkforce />);
+    const plc = screen.getByTestId("safety-source-plc");
+    expect(plc).toHaveAttribute("data-basis", "sim");
+    expect(plc.textContent).toMatch(/SIM/);
+    expect(plc.textContent).toMatch(/preflight relies on a SIMULATION/);
+    expect(screen.getByTestId("safety-source-ot")).toHaveAttribute("data-verdict", "sim_basis");
+    expect(screen.getByTestId("safety-source-robot")).toHaveAttribute("data-verdict", "dry_run");
+    expect(screen.getByTestId("safety-source-vision").textContent).toMatch(/off/i);
+    expect(screen.getByTestId("safety-source-zone").textContent).toMatch(/off/i);
+    expect(screen.getByTestId("safety-source-estop").textContent).toMatch(/off/i);
+    expect(screen.getByTestId("safety-source-socket")).toBeInTheDocument();
+  });
+
+  it("adapter TẮT ⇒ nói rõ ghi thật BỊ CHẶN (SAFETY_UNKNOWN)", () => {
+    setQueryOverride(
+      "safety.sourceHealth",
+      makeQuery({
+        data: health({
+          safetyPlc: { adapterEnabled: false, enabledConfigs: 1, simConfigs: 1, realConfigs: 0, basis: "adapter_off", configs: [], hiddenConfigs: 0 },
+          preflight: {
+            expectedReading: "UNKNOWN",
+            ot: { flag: "OT_SAFETY_PREFLIGHT_ENABLED", preflightEnabled: true, controlEnabled: true, realWrites: "blocked", refusalReason: "SAFETY_UNKNOWN" },
+            robot: { flag: "ROBOT_SAFETY_PREFLIGHT_ENABLED", preflightEnabled: true, controlEnabled: true, realWrites: "blocked", refusalReason: "SAFETY_UNKNOWN" },
+          },
+        }),
+      }),
+    );
+    render(<SafetyWorkforce />);
+    expect(screen.getByTestId("safety-source-plc")).toHaveAttribute("data-basis", "adapter_off");
+    expect(screen.getByTestId("safety-source-ot")).toHaveAttribute("data-verdict", "blocked");
+    expect(screen.getByTestId("safety-source-ot").textContent).toMatch(/SAFETY_UNKNOWN/);
+  });
+
+  it("đang tải / lỗi ⇒ KHÔNG bịa trạng thái nguồn", () => {
+    setQueryOverride("safety.sourceHealth", makeQuery({ isLoading: true }));
+    const { rerender } = render(<SafetyWorkforce />);
+    expect(screen.getByTestId("safety-source-panel").textContent).toMatch(/Checking safety sources/);
+    expect(screen.queryByTestId("safety-source-plc")).not.toBeInTheDocument();
+    setQueryOverride("safety.sourceHealth", makeQuery({ isError: true }));
+    rerender(<SafetyWorkforce />);
+    expect(screen.getByTestId("safety-source-panel").textContent).toMatch(/Could not read safety sources/);
+    expect(screen.queryByTestId("safety-source-plc")).not.toBeInTheDocument();
+  });
+});
+
+// ORACLE ĐỘC LẬP: SEEDED_ASSIGNMENT_IDS khai tay cùng fixture (scope='demo', như 2 hàng DB dev).
+function assignment(id: number, scope: string | null) {
+  return {
+    id, operatorId: 40 + id, lineId: 1, stationId: 2, shiftConfigId: null, skillLevel: "qualified", role: "human",
+    status: "planned", assignedStart: "2026-09-26T05:00:00.000Z", assignedEnd: "2026-09-26T13:00:00.000Z",
+    confirmedBy: null, confirmedAt: null, closedBy: null, notes: null, scope, corporateCode: null, factoryId: 1,
+    createdAt: "2026-09-26T05:00:00.000Z", updatedAt: "2026-09-26T05:00:00.000Z",
+  };
+}
+const ASSIGNMENTS = [assignment(3, "demo"), assignment(4, "demo"), assignment(5, "F1:L1"), assignment(6, null)];
+const SEEDED_ASSIGNMENT_IDS = new Set([3, 4]);
+
+describe("SafetyWorkforce — Task 4 X-01: badge DEMO trên assignment", () => {
+  it("dải tóm tắt 2/4 + BẤT BIẾN: mọi hàng seed có badge, hàng thật không", async () => {
+    setQueryOverride("safety.status", makeQuery({ data: { safetyAudit: true, workforce: true } }));
+    setQueryOverride("safety.listAssignments", makeQuery({ data: ASSIGNMENTS }));
+    render(<SafetyWorkforce />);
+    await openWorkforceTab();
+    const s = screen.getByTestId("provenance-summary");
+    expect(s).toHaveAttribute("data-count", "2");
+    expect(s).toHaveAttribute("data-total", "4");
+    for (const a of ASSIGNMENTS) {
+      const row = screen.getByText(`#${a.operatorId}`).closest("tr") as HTMLElement;
+      expect(row, `assignment ${a.id}`).not.toBeNull();
+      const badge = row.querySelector('[data-testid="provenance-badge"]');
+      if (SEEDED_ASSIGNMENT_IDS.has(a.id)) {
+        expect(badge, `assignment seed #${a.id} THIẾU badge`).not.toBeNull();
+        expect(badge!.getAttribute("data-provenance")).toBe("DEMO");
+      } else {
+        expect(badge, `assignment thật #${a.id} bị gắn nhầm`).toBeNull();
+      }
+    }
+  });
+});

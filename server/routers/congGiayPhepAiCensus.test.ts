@@ -249,7 +249,12 @@ const GHIM_MODULE_KHAC = {
   //   như `orchestrationRouter`. Cố ý — lời khai ở `server/routers/orchestrationGovRouter.ts`.
   MOD_ENGINEERING: 73,
   MOD_FEDERATION: 8,
-  MOD_OT_CONTROL: 105,
+  // ★ 2026-09-27 doc 80 Đợt 1 Task 4 (SAF-02) — 105 → 106: thủ tục MỚI `safety.sourceHealth`
+  //   (query chỉ đọc) nằm trong `safetyRouter.ts`, nơi `protectedProcedure` đã bị che bằng
+  //   `moduleProcedure("MOD_OT_CONTROL")` cho MỌI thủ tục (Doc 38 Đợt Q). Cố ý: cùng cổng giấy phép
+  //   với các thủ tục an toàn anh em. Không thủ tục cũ nào đổi cổng. (Ô `tong` của §2 đỏ TỪ TRƯỚC —
+  //   ghim 2223, đo HEAD `290004e2c` = 2282; lượt này +1 → 2283, chính là thủ tục này.)
+  MOD_OT_CONTROL: 106,
 } as const;
 
 describe("§1 — CẦU CHÌ: bộ suy có thật sự nhìn thấy gì không", () => {
