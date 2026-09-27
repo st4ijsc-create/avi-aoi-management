@@ -14,6 +14,9 @@
  *   4a. commissioning/FAT gate, 4a-policy. policy-as-code seam (W3-B2, SEC_PLATFORM,
  *      action robot.command.{verb} — DENY → rejected POLICY_DENIED), 4a-safety. safety-PLC
  *      preflight (motion only; anything but OK blocks), 4b. interlock gate,
+ *   5-R14. per-robot MOTION slot (final wave, ruling R14): a second motion on a robot whose
+ *      motion is still in flight in this process is refused (robot_motion_in_progress); a stop
+ *      never is,
  *   5. real run under timeout: ledger row 'running' FIRST (fail-closed), then runJob; on a
  *      timeout the driver's stop is sent BEFORE the row is finalised 'failed'.
  * Every branch writes a robot_jobs row; a ledger write failure is never swallowed.
@@ -289,6 +292,32 @@ function idempotentReplay(prior: { id: number; status: string }): RobotDispatchR
 
 /** errorText written by the startup sweep on an orphaned `running` row. */
 export const PROCESS_RESTART_OUTCOME_UNKNOWN = "process_restart_outcome_unknown" as const;
+
+/**
+ * doc 81 Đợt 1B final wave (ruling R14) — refusal reason: another MOTION job on the same robot
+ * is in flight in this process. `rejected` status (no new enum value); never applied to a stop.
+ */
+export const ROBOT_MOTION_IN_PROGRESS = "robot_motion_in_progress" as const;
+
+/**
+ * Ruling R14 — PER-ROBOT MOTION SERIALISATION (this process). Two overlapping motions on one
+ * robot used to share ONE transport session; on FANUC the SequenceIDs restart after every
+ * FRC_Initialize, so M2's reply could be taken for M1's ("false done"). The only prior stop was
+ * the robot_jobs.idempotencyKey UNIQUE, which exists only when a caller supplies a key.
+ *
+ * The slot is claimed SYNCHRONOUSLY (no await between the check and the set — JS is
+ * single-threaded, so two concurrent dispatches cannot both pass) right before the real-motion
+ * path starts, and released when that job's terminal ledger write is done (try/finally). A
+ * second motion is REFUSED (rejected + ROBOT_MOTION_IN_PROGRESS), not queued. A STOP (abort)
+ * never claims or checks the slot — it must always reach the robot. The dry-run/simulated path
+ * never claims it (nothing moves). Restart drops it (like the driver motion lock).
+ */
+const motionInFlight = new Map<number, { jobType: string; since: string }>();
+
+/** Snapshot of the in-flight motion on `robotId` (null when idle) — observability + tests. */
+export function robotMotionInFlight(robotId: number): { jobType: string; since: string } | null {
+  return motionInFlight.get(robotId) ?? null;
+}
 
 /**
  * Age after which a `running` row cannot belong to a live dispatch: the job deadline plus the
@@ -601,6 +630,41 @@ async function dispatchRobotJobCore(input: RobotDispatchInput): Promise<RobotDis
   //    FIRST; only then is the row finalised 'failed' with abort_sent / abort_failed /
   //    abort_unsupported.
   const timeoutMs = Math.max(1000, Number(process.env.ROBOT_CONTROL_TIMEOUT_MS) || 10_000);
+
+  // 5-R14) PER-ROBOT MOTION SLOT (final wave, ruling R14) — claimed synchronously, BEFORE the
+  //     first await of the real path, so two concurrent motions on one robot cannot both pass.
+  //     Refused ⇒ rejected + ROBOT_MOTION_IN_PROGRESS (not queued). A stop never checks it.
+  if (motion) {
+    const busy = motionInFlight.get(input.robotId);
+    if (busy) {
+      const jobId = await record(
+        input,
+        "rejected",
+        { reasonCode: ROBOT_MOTION_IN_PROGRESS, inFlight: busy },
+        `${ROBOT_MOTION_IN_PROGRESS}: a '${busy.jobType}' job on robot ${input.robotId} has been in flight since ${busy.since} — motion refused before any driver call (R14: one motion per robot at a time, not queued)`,
+      );
+      return { ok: false, status: "rejected", jobId, error: ROBOT_MOTION_IN_PROGRESS };
+    }
+    motionInFlight.set(input.robotId, { jobType: input.job.jobType, since: new Date().toISOString() });
+  }
+  try {
+    return await runRealJob(input, robot.driver, motion, timeoutMs);
+  } finally {
+    if (motion) motionInFlight.delete(input.robotId);
+  }
+}
+
+/**
+ * Step 5 proper — the real run under timeout (see the comment block above the slot claim in
+ * dispatchRobotJobCore). Split out so the R14 slot is released by ONE try/finally whatever path
+ * this takes (ledger failure, driver result, deadline + stop, finalize failure).
+ */
+async function runRealJob(
+  input: RobotDispatchInput,
+  driver: RobotDriver,
+  motion: boolean,
+  timeoutMs: number,
+): Promise<RobotDispatchResult> {
   let jobId: number;
   try {
     jobId = (await record(input, "running", undefined, undefined, { requireDb: true })) as number;
@@ -615,7 +679,7 @@ async function dispatchRobotJobCore(input: RobotDispatchInput): Promise<RobotDis
     timer = setTimeout(() => resolve({ kind: "timeout" }), timeoutMs);
   });
   const outcome = await Promise.race([
-    robot.driver.runJob(input.job).then(
+    driver.runJob(input.job).then(
       (r) => ({ kind: "result" as const, r }),
       (e: unknown) => ({ kind: "error" as const, e }),
     ),
@@ -648,11 +712,11 @@ async function dispatchRobotJobCore(input: RobotDispatchInput): Promise<RobotDis
     // stop goes out (the driver's own timer may not have fired yet when OUR deadline did). A
     // confirmed stop clears it again; a failed stop leaves it set. Drivers without a lock no-op.
     try {
-      robot.driver.lockMotion?.(reasonCode ?? DISPATCH_DEADLINE_REASON_CODE, errorText);
+      driver.lockMotion?.(reasonCode ?? DISPATCH_DEADLINE_REASON_CODE, errorText);
     } catch (err) {
       console.error(`[Robot] lockMotion failed for robot ${input.robotId} (stop still sent):`, (err as Error)?.message ?? err);
     }
-    const stop = await stopAfterUnknownOutcome(robot.driver, timeoutMs);
+    const stop = await stopAfterUnknownOutcome(driver, timeoutMs);
     detail = { ...(detail ?? {}), ...stop };
     errorText = `${errorText ?? "motion outcome unknown"} — ${stop.abort}${"abortError" in stop ? `: ${stop.abortError}` : ""}`;
   }

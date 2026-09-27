@@ -262,6 +262,39 @@ describe("FanucDriver — motion gate + fail-safe", () => {
     expect(types).toContain("FRC_Abort");
   });
 
+  // doc 81 Đợt 1B final wave (R14) — không FRC_Initialize khi phiên còn Instruction chưa được trả lời.
+  it("R14: một Instruction chưa được trả lời ⇒ chuyển động kế tiếp bị từ chối rmi_instruction_pending TRƯỚC mọi byte (đúng MỘT FRC_Initialize trên dây); STOP vẫn đi", async () => {
+    process.env.ROBOT_CONTROL_ENABLED = "true";
+    // Bộ điều khiển giả: KHÔNG BAO GIỜ trả lời Instruction (M1 treo cho tới hạn giờ của driver).
+    nextSocket = makeController((pkt) => (typeof pkt.Instruction === "string" ? null : defaultResponder(pkt)));
+    const { FanucDriver, RMI_INSTRUCTION_PENDING, RMI_REPLY_TIMEOUT } = await import("./fanucDriver");
+    const d = new FanucDriver();
+    await d.connect({ endpoint: "tcp://192.168.0.20:16001", timeoutMs: 400 });
+    const sock = nextSocket!;
+    const types = () => sock.written.map((w) => JSON.parse(w.trim())).map((p) => p.Command ?? p.Instruction);
+
+    const m1 = d.runJob({ jobType: "move", params: { x: 1, y: 2, z: 3 } });
+    // Chờ M1 đã ghi Initialize + Instruction ra dây (đang chờ trả lời).
+    for (let i = 0; i < 100 && !types().includes("FRC_LinearMotion"); i++) await new Promise((r) => setTimeout(r, 5));
+    expect(types().filter((t) => t === "FRC_Initialize")).toHaveLength(1);
+    const before = sock.written.length;
+
+    const m2 = await d.runJob({ jobType: "move", params: { x: 9, y: 9, z: 9 } });
+    expect(m2.ok).toBe(false);
+    expect(m2.detail?.reasonCode).toBe(RMI_INSTRUCTION_PENDING);
+    expect(m2.detail?.sent).toBe(false);
+    expect(sock.written.length).toBe(before); // 0 byte cho M2 — không GetStatus, không Initialize
+    expect(types().filter((t) => t === "FRC_Initialize")).toHaveLength(1);
+
+    // STOP không bị chặn bởi luật này (FRC_Abort được trả lời ⇒ resolve).
+    await expect(d.abort()).resolves.toBeUndefined();
+    expect(types()).toContain("FRC_Abort");
+
+    const r1 = await m1;
+    expect(r1.ok).toBe(false);
+    expect([RMI_REPLY_TIMEOUT, "rmi_aborted_by_stop"]).toContain(r1.detail?.reasonCode);
+  });
+
   it("runJob: not connected → failed result, never throws", async () => {
     const { FanucDriver } = await import("./fanucDriver");
     const d = new FanucDriver();

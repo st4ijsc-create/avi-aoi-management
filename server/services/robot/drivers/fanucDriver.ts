@@ -289,6 +289,13 @@ export class FanucRmiAbortedByStopError extends Error {
 }
 
 /** Stable reason code: refused before any byte (no client / session down). */
+/**
+ * doc 81 Đợt 1B final wave (ruling R14) — a MOTION was refused before any byte because an
+ * earlier Instruction on this session is still unanswered (pending or timed out). FRC_Initialize
+ * restarts SequenceIDs, so that late reply could otherwise be taken for the new motion's.
+ */
+export const RMI_INSTRUCTION_PENDING = "rmi_instruction_pending" as const;
+
 export const RMI_NOT_CONNECTED = "rmi_not_connected" as const;
 
 export class FanucRmiNotConnectedError extends Error {
@@ -846,6 +853,18 @@ export class FanucDriver implements RobotDriver {
       }
       // FRC_Abort is a Command that needs no Initialize; motion instructions do.
       if (job.jobType !== "abort") {
+        // Final wave (R14) — never FRC_Initialize while an earlier Instruction on this session is
+        // unanswered (pending OR timed out): Initialize restarts SequenceIDs, so its late reply
+        // could be matched to the new motion. Refused before any byte (no GetStatus either);
+        // a STOP is unaffected and, once acknowledged, renews the tainted session.
+        if (this.rmi().hasUnansweredInstructions()) {
+          return {
+            ok: false,
+            status: "failed",
+            error: `${RMI_INSTRUCTION_PENDING}: an earlier RMI instruction on this session is still unanswered — motion refused (no FRC_Initialize sent; a stop clears the session)`,
+            detail: { jobType: job.jobType, sequenceId, reasonCode: RMI_INSTRUCTION_PENDING, sent: false },
+          };
+        }
         // Manual startup pre-check before creating the RMI_MOVE program. [RMI §2.3.1 p.9]
         guard();
         const st = await this.rmi().send(buildGetStatusPacket(), this.timeoutMs);
