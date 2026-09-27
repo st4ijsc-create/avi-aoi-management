@@ -292,6 +292,73 @@ export function docGioTuongNhaMay(dateStr: string, endOfDay = false): Date | und
 const CO_MUI_GIO_MAY = /(?:Z|[+-]\d{2}:?\d{2})$/i;
 
 /**
+ * Chuỗi thời gian có mang múi giờ TƯỜNG MINH (`Z`, `+07:00`, `-0500`) hay không — MỘT định nghĩa
+ * dùng chung cho `docGioMay`, `docTsThietBi` và `hasExplicitUtcOffset` (luồng process-result).
+ */
+export function coMuiGioTuongMinh(s: string): boolean {
+  return CO_MUI_GIO_MAY.test(s.trim());
+}
+
+/** Lý do một `ts` thiết bị không dùng được (trùng tên `TelemetryRejectReason` của telemetryBus). */
+export type LyDoTsThietBi = "ts_no_timezone" | "invalid_ts";
+
+/** Kết quả đọc `ts` thiết bị: `ts: undefined` = thiết bị KHÔNG gửi ⇒ bus đóng dấu giờ server. */
+export type KetQuaTsThietBi = { ok: true; ts: Date | undefined } | { ok: false; reason: LyDoTsThietBi };
+
+/**
+ * ★★★ doc 81 Đợt 1C Task 6 — ruling R-1C-a, lựa chọn (a): LUẬT DUY NHẤT cho `ts` do THIẾT BỊ
+ * khai trên MỌI cửa ingest telemetry/sensor (`/api/ot/ingest`, `/api/v1/ingest/telemetry`, cầu MQTT
+ * `synapse/…/telemetry`, cảm biến MQTT `factory/…/sensor`, MTConnect, CFX, plugin driver).
+ *
+ *   · vắng (`undefined`/`null`/chuỗi rỗng/falsy)  ⇒ `{ok, ts: undefined}` — giữ hành vi cũ (giờ server);
+ *   · `Date` hợp lệ / số epoch-ms hữu hạn         ⇒ nhận nguyên (một instant tuyệt đối, không mơ hồ);
+ *   · chuỗi CÓ múi giờ (`Z`/`±hh:mm`/`±hhmm`)     ⇒ `new Date(chuỗi)`, hỏng ⇒ `invalid_ts`;
+ *   · chuỗi KHÔNG múi giờ mà vẫn đọc được          ⇒ TỪ CHỐI `ts_no_timezone`;
+ *   · còn lại (rác, kiểu lạ)                       ⇒ `invalid_ts`.
+ *
+ * VÌ SAO TỪ CHỐI chứ không diễn giải theo `FACTORY_TZ` (lựa chọn b): trước bản vá `new Date(naive)`
+ * đọc theo TZ của TIẾN TRÌNH Node — máy dev (Asia/Bangkok, +07) cho kết quả đúng TÌNH CỜ, còn container
+ * Docker (TZ=UTC) đặt cùng chuỗi lệch +7 h về tương lai; (b) sẽ gắn thêm một giả định im lặng nữa (thiết
+ * bị cấu hình sai múi giờ ⇒ lệch 0 đo được mà vẫn sai giờ — "nửa im lặng của CASE #3"). Từ chối có
+ * reason + bộ đếm theo thiết bị làm lộ nguyên nhân ngay ở cửa. Luồng process-result (API-10) đã áp đúng
+ * luật này từ trước (`refineProcessTime`); mọi bộ phát trong repo (simulator C# `zzz`, FactoryAlertSystem
+ * `toISOString`, sim-factory, mqtt_simulator.py `…Z`) đều gửi múi giờ ⇒ không đường hợp lệ nào bị chặn.
+ *
+ * ⚠ KHÁC `docGioMay` (chuỗi trần = UTC): hàm đó phục vụ hợp đồng KIỂM TRA AOI/AVI (`inspectionTime`/
+ * `completedAt`/`startedAt`) — nơi quyết định QĐ#1 buộc giữ tương thích ngược sau cờ
+ * `INGEST_REQUIRE_TIME_OFFSET` (chuỗi trần được nhận, gắn `timeSource=machine_naive`, lệch được đo).
+ */
+export function docTsThietBi(raw: unknown): KetQuaTsThietBi {
+  if (!raw) return { ok: true, ts: undefined };
+  if (raw instanceof Date) {
+    return Number.isFinite(raw.getTime()) ? { ok: true, ts: raw } : { ok: false, reason: "invalid_ts" };
+  }
+  if (typeof raw === "number") {
+    const d = new Date(raw);
+    return Number.isFinite(d.getTime()) ? { ok: true, ts: d } : { ok: false, reason: "invalid_ts" };
+  }
+  if (typeof raw !== "string") return { ok: false, reason: "invalid_ts" };
+  const t = raw.trim();
+  if (t.length === 0) return { ok: true, ts: undefined };
+  const d = new Date(t);
+  if (!Number.isFinite(d.getTime())) return { ok: false, reason: "invalid_ts" };
+  if (!coMuiGioTuongMinh(t)) return { ok: false, reason: "ts_no_timezone" };
+  return { ok: true, ts: d };
+}
+
+/**
+ * Trường `ts` (+ `tsReject`) cho một mẫu telemetry từ `ts` thô của thiết bị — dùng ở MỌI cửa dựng
+ * `CanonicalSample`. `invalid_ts` giữ HÌNH DẠNG cũ (`Invalid Date` ⇒ cổng bus loại `invalid_ts`);
+ * `ts_no_timezone` gắn `tsReject` ⇒ cổng bus loại với đúng lý do đó (và đếm theo thiết bị).
+ */
+export function truongTsMau(raw: unknown): { ts: Date | undefined; tsReject?: "ts_no_timezone" } {
+  const k = docTsThietBi(raw);
+  if (k.ok) return { ts: k.ts };
+  if (k.reason === "invalid_ts") return { ts: new Date(NaN) };
+  return { ts: undefined, tsReject: "ts_no_timezone" };
+}
+
+/**
  * ★★★ BG-99 (Khối C, ruling controller 2026-09-03, Task 5) — đọc một chuỗi thời gian
  * do MÁY AOI/AVI khai trên đường ingest (`completedAt`/`startedAt`/`inspectionTime` của
  * `machineDataContractV2`/v1.x) thành một instant UTC thật. Di trú nguyên luật từ

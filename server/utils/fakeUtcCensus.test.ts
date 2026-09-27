@@ -731,7 +731,13 @@ describe("BG-99 — census cấm ĐỌC chuỗi thời gian MÁY bằng hai lu�
       // `ts` của máy bằng `new Date(...)` (toCanonicalSample / toOtCanonicalSample) — BẤT BIẾN BG-99
       // bên dưới vẫn 0 (đã chạy), nên chúng hợp lệ đứng trong tập ỨNG VIÊN; rủi ro `new Date(ts)` thô
       // có từ trước task này, để mở (CÒN MỞ, BG-96/99).
-      "_core/otIngestRoute.ts",
+      // ★ doc 81 Đợt 1C Task 6 (2026-09-28): ĐÃ ĐÓNG — cả hai đọc `ts` qua `truongTsMau` (luật R-1C-a:
+      // chuỗi không múi giờ ⇒ `ts_no_timezone`). Hai file VẪN là ứng viên (còn `new Date(<đối số>)` khác:
+      // bộ lọc from/to của GET, `new Date(NaN)` trong helper…). Thước RIÊNG cho `ts` thiết bị: khối
+      // "BG-99-ts" cuối tệp — thước BG-99 ở đây chỉ nhìn completedAt/startedAt/inspectionTime nên đã MÙ `ts`.
+      // ĐO LẠI 2026-09-28: `_core/otIngestRoute.ts` RỚT khỏi tập ứng viên — lời gọi `new Date(s.ts)` là
+      // `new Date(<đối số>)` DUY NHẤT của file và đã bị thay bằng `truongTsMau` ⇒ điều kiện (a) không còn
+      // đúng (rớt vì đã di trú, giống `ingestCayKetQua.ts`). File vẫn được thước "BG-99-ts" canh qua SỔ CỬA.
       "api/v1/router.ts",
     ];
     expect([...FILE_INGEST_BG99].sort()).toEqual(
@@ -912,6 +918,109 @@ describe("BG-99 — census cấm ĐỌC chuỗi thời gian MÁY bằng hai lu�
   it("★★★ BẤT BIẾN: 0 dòng MÃ đọc chuỗi thời gian MÁY bằng `new Date(...)` thô trong TOÀN BỘ file ứng viên (quét ĐỘNG, không còn gắn tay 4 file)", () => {
     const ket = quetBg99(); // mặc định relFiles=FILE_INGEST_BG99 — danh sách ĐỘNG hôm nay (9 file từ 2026-09-27, xem cầu chì/mô tả ở trên).
     if (ket.length) console.error("[BG-99] đọc chuỗi thời gian máy KHÔNG qua docGioMay ở:", ket);
+    expect(ket).toEqual([]);
+  });
+});
+
+// ══════════════════════════════════════════════════════════════════════════════════
+// BG-99-ts (doc 81 Đợt 1C Task 6, 2026-09-28) — `ts` do THIẾT BỊ khai trên đường telemetry/cảm biến.
+// ══════════════════════════════════════════════════════════════════════════════════
+/**
+ * Khối BG-99 ở trên chỉ canh ba từ khoá của hợp đồng KIỂM TRA (completedAt/startedAt/inspectionTime) —
+ * nó MÙ trường `ts`/`timestamp`/`timeStamp` của telemetry: `new Date(o.ts)` ở `/api/v1/ingest/telemetry`
+ * và `new Date(s.ts)` ở `/api/ot/ingest` đứng trong tập ứng viên mà vẫn XANH (ghi chú "CÒN MỞ" ở trên).
+ * Task 6 chốt MỘT luật (ruling R-1C-a, lựa chọn (a)): chuỗi không múi giờ ⇒ từ chối `ts_no_timezone`,
+ * qua `docTsThietBi`/`truongTsMau` (`server/utils/factoryTime.ts`). Thước này khoá trạng thái đó:
+ *   (1) trong mọi file ứng viên — tập BG-99 động ∪ mọi file import `telemetryBus`/`sensorIngestService`
+ *       ∪ SỔ CỬA bên dưới — một dòng MÃ `new Date(<x>.ts|.timestamp|.timeStamp …)` là ĐỎ, trừ khi mang
+ *       `bg99-ok: <lý do>` trên CÙNG dòng;
+ *   (2) mỗi cửa trong SỔ CỬA phải thật sự gọi luật chung (`docTsThietBi`/`truongTsMau`) ở dòng MÃ.
+ * Giới hạn (cùng lớp thước dòng-thẳng BG-99): `new Date(bienTrungGian)` sau khi gán `const t = o.ts`
+ * không bị bắt — (2) là lưới thứ hai cho đúng các cửa đã biết.
+ */
+const RE_NEW_DATE_TS_THIET_BI = /new Date\(\s*[A-Za-z_$][\w$]*(?:\??\.[\w$]+)*\??\.(?:ts|timestamp|timeStamp)\b/;
+
+/** SỔ CỬA ingest đọc `ts` thiết bị (đo 2026-09-28 bằng grep `ingestTelemetry`/`new Date(.*ts`). */
+const SO_CUA_TS_THIET_BI = [
+  "_core/otIngestRoute.ts", // POST /api/ot/ingest
+  "api/v1/router.ts", // POST /api/v1/ingest/telemetry
+  "services/mqttService.ts", // cầu MQTT synapse/…/telemetry
+  "services/mtconnect/mtconnectClient.ts", // MTConnect <… timestamp="">
+  "services/cfx/cfxMessages.ts", // IPC-CFX TimeStamp
+  "services/plugins/pluginDriverBridge.ts", // plugin sidecar WireSample.timestamp
+  "services/sensorIngestService.ts", // MQTT factory/…/sensor → machine_sensor_readings
+];
+
+function timFileUngVienTs(goc: string = SERVER_ROOT): string[] {
+  const ra = new Set<string>([...timFileIngestBg99(goc), ...SO_CUA_TS_THIET_BI]);
+  for (const file of walkTs(goc)) {
+    const noiDung = dongMaKhongComment(file).join("\n");
+    if (/from\s+["'][^"']*(?:telemetryBus|sensorIngestService)["']/.test(noiDung)) {
+      ra.add(relative(goc, file).split("\\").join("/"));
+    }
+  }
+  return [...ra].sort();
+}
+
+function quetTsThietBiTuVanBan(rel: string, dongs: string[], raw: string[]): Bg99Hit[] {
+  const ket: Bg99Hit[] = [];
+  dongs.forEach((ln, i) => {
+    if (RE_NEW_DATE_TS_THIET_BI.test(ln) && !RE_MIEN_TRU_BG99.test(raw[i] ?? "")) {
+      ket.push({ file: rel, line: i + 1, text: ln.trim() });
+    }
+  });
+  return ket;
+}
+
+function quetTsThietBi(relFiles: readonly string[] = timFileUngVienTs(), goc: string = SERVER_ROOT): Bg99Hit[] {
+  const ket: Bg99Hit[] = [];
+  for (const rel of relFiles) {
+    const full = join(goc, rel);
+    if (!existsSync(full)) continue;
+    ket.push(...quetTsThietBiTuVanBan(rel, dongMaKhongComment(full), docMaNguon(full).split("\n")));
+  }
+  return ket;
+}
+
+describe("BG-99-ts — `ts` thiết bị KHÔNG được đọc bằng `new Date(...)` thô (Đợt 1C Task 6, ruling R-1C-a)", () => {
+  it("cầu chì: tập ứng viên chứa ĐỦ sổ cửa và rộng hơn nó (quét động thật sự chạy)", () => {
+    const uv = timFileUngVienTs();
+    for (const c of SO_CUA_TS_THIET_BI) expect(uv, c).toContain(c);
+    expect(uv.length).toBeGreaterThan(SO_CUA_TS_THIET_BI.length);
+  });
+
+  it("★ ĐỘT BIẾN (dòng cũ NGUYÊN VĂN trước Task 6, trong bộ nhớ): thước phải bắt cả sáu dạng", () => {
+    const DONG_CU = [
+      "    ts: s?.ts ? new Date(s.ts) : undefined,", // otIngestRoute.ts:62 (HEAD e69450aac)
+      "    ts: o.ts ? new Date(o.ts as string) : undefined,", // api/v1/router.ts:154
+      "  const batchTs = typeof msg.ts === 'string' ? new Date(msg.ts) : undefined;", // mqttService.ts:324
+      "      ts: validTs(typeof m.ts === 'string' ? new Date(m.ts) : batchTs),", // mqttService.ts:333
+      "  const d = new Date(env.timeStamp);", // cfxMessages.ts:189
+      "        const t = new Date(obj.timestamp as string);", // sensorIngestService.ts:100
+    ];
+    const bat = quetTsThietBiTuVanBan("mo-phong.ts", DONG_CU, DONG_CU);
+    expect(bat.map((h) => h.line)).toEqual([1, 2, 3, 4, 5, 6]);
+  });
+
+  it("fuse: `bg99-ok:` trên CÙNG dòng miễn trừ; `new Date()` trần và `new Date(fromRaw)` không bị bắt", () => {
+    const d = [
+      "  const x = new Date(r.ts); // bg99-ok: dong DB da chuan hoa",
+      "  const y = new Date();",
+      "  const z = new Date(fromRaw);",
+    ];
+    expect(quetTsThietBiTuVanBan("mo-phong.ts", d, d)).toEqual([]);
+  });
+
+  it("★ mỗi cửa trong sổ gọi luật chung docTsThietBi/truongTsMau ở dòng MÃ", () => {
+    for (const rel of SO_CUA_TS_THIET_BI) {
+      const ma = dongMaKhongComment(join(SERVER_ROOT, rel)).join("\n");
+      expect(/\b(?:docTsThietBi|truongTsMau)\(/.test(ma), `${rel} không gọi luật chung`).toBe(true);
+    }
+  });
+
+  it("★★★ BẤT BIẾN: 0 dòng MÃ đọc `ts` thiết bị bằng new Date(...) thô trong toàn bộ tập ứng viên", () => {
+    const ket = quetTsThietBi();
+    if (ket.length) console.error("[BG-99-ts] ts thiết bị đọc thô ở:", ket);
     expect(ket).toEqual([]);
   });
 });

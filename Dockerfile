@@ -51,8 +51,10 @@ RUN mkdir -p /app/uploads /app/backups && chown -R app:app /app
 USER app
 
 EXPOSE 3000
+# doc 81 Dot 1C Task 6 - /readyz (SELECT 1 that, 503 khi DB mat) thay /health (luon 200 khi tien trinh song).
+# Liveness cua Helm/k8s VAN /health (deploy/helm/synapse/values.yaml) - khong restart pod vi DB chap.
 HEALTHCHECK --interval=30s --timeout=5s --start-period=30s --retries=3 \
-    CMD wget -qO- http://127.0.0.1:${PORT}/health || exit 1
+    CMD wget -qO- http://127.0.0.1:${PORT}/readyz || exit 1
 
 ENTRYPOINT ["/usr/bin/tini", "--"]
 CMD ["node", "dist/index.js"]

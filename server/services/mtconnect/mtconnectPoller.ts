@@ -23,6 +23,7 @@ import { fetchCurrent } from "./mtconnectClient";
 import type { MtcReading } from "./mtconnectClient";
 import type { InsertProcessResult } from "../../../drizzle/schema";
 import { ingestTelemetry, type CanonicalSample } from "../telemetryBus";
+import { recordTsDrops, recordTsObservation } from "../ot/otGuards";
 
 export interface MtcSource {
   agentUrl: string;
@@ -187,7 +188,8 @@ export function mapReadings(
 
     if (r.category === "SAMPLE" && r.numericValue !== null) {
       telemetry.push({
-        ts: r.timestamp,
+        ts: r.tsReject ? undefined : r.timestamp,
+        ...(r.tsReject ? { tsReject: r.tsReject } : {}),
         machineId: ctx.machineId,
         deviceId: ctx.machineCode,
         protocol: "mtconnect",
@@ -196,6 +198,14 @@ export function mapReadings(
         quality: r.value.toUpperCase() === "UNAVAILABLE" ? "bad" : "good",
         meta: { adapterId: ctx.adapterId },
       });
+      continue;
+    }
+
+    // Đợt 1C Task 6 (R-1C-a) — sự kiện không đi qua cổng ts của bus: timestamp KHÔNG múi giờ ⇒ bỏ
+    // (không ghi process_results với giờ đoán) + đếm theo thiết bị ở cùng sổ lệch giờ.
+    if (r.tsReject) {
+      recordTsObservation({ deviceId: ctx.machineCode, machineId: ctx.machineId }, null, r.tsReject);
+      recordTsDrops(0, 0, 1);
       continue;
     }
 

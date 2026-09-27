@@ -30,6 +30,7 @@
 import type { Request, Response } from "express";
 import { ApiHttpError } from "../api/v1/envelope";
 import { rangBuocMauTheoKhoa, type DocThietBiDuocPhep } from "../api/v1/ingestRangBuoc";
+import { truongTsMau } from "../utils/factoryTime";
 import type {
   CanonicalSample,
   TelemetryIngestResult,
@@ -56,10 +57,12 @@ const normQuality = (q: unknown): TelemetryQuality =>
  * Map one raw JSON sample → CanonicalSample (y như route cũ). deviceId is preserved so the bus
  * resolves the soft machineId itself (one gateway credential forwards many devices). Một `ts`
  * không đọc được thành `Invalid Date` — bus loại RIÊNG mẫu đó (invalid_ts), không ném cả lô.
+ * Đợt 1C Task 6 (R-1C-a) — `ts` chuỗi KHÔNG múi giờ ⇒ `tsReject: ts_no_timezone` (luật chung
+ * `truongTsMau`), không còn `new Date(naive)` đọc theo TZ của tiến trình Node.
  */
 export function toOtCanonicalSample(s: any): CanonicalSample {
   return {
-    ts: s?.ts ? new Date(s.ts) : undefined,
+    ...truongTsMau(s?.ts),
     machineId: typeof s?.machineId === "number" ? s.machineId : null,
     deviceId: typeof s?.deviceId === "string" ? s.deviceId : null,
     protocol: normProtocol(s?.protocol),

@@ -29,7 +29,7 @@ import { createBusFanout } from "../_core/busFanout";
 // array reference immediately; zero added cost). No cycle: ingestValidation never imports
 // this module at runtime.
 import { filterTelemetrySamples } from "./contracts/ingestValidation";
-import { isPgDataError, MIN_PG_TS_MS, recordTsDrops, warnGop } from "./ot/otGuards";
+import { isPgDataError, maxFutureSkewMs, MIN_PG_TS_MS, recordTsDrops, recordTsObservation, warnGop } from "./ot/otGuards";
 
 /** The canonical telemetry protocol set (mirrors telemetryProtocolEnum). */
 /**
@@ -73,6 +73,11 @@ export type TelemetryQuality = NonNullable<OtTelemetry["quality"]>;
 export interface CanonicalSample {
   /** Event/source time. Defaults to now() when omitted. */
   ts?: Date;
+  /**
+   * Đợt 1C Task 6 (ruling R-1C-a) — cửa ingest đặt khi `ts` thiết bị là chuỗi KHÔNG múi giờ
+   * (`truongTsMau`, `server/utils/factoryTime.ts`). Cổng `ts` loại mẫu với đúng lý do này.
+   */
+  tsReject?: "ts_no_timezone";
   /** Soft machine ref if already known (preferred — skips resolution). */
   machineId?: number | null;
   /** External device identifier; also used to resolve machineId when machineId absent. */
@@ -258,7 +263,7 @@ async function broadcastAndTap(rows: BroadcastRow[], remote: boolean): Promise<v
 
 /** Convert a persisted/insert row to the socket broadcast shape (ts → ISO). */
 function toBroadcast(row: InsertOtTelemetry) {
-  const ts = row.ts instanceof Date ? row.ts.toISOString() : new Date(row.ts as any).toISOString();
+  const ts = row.ts instanceof Date ? row.ts.toISOString() : new Date(row.ts as any).toISOString(); // bg99-ok: dong da chuan hoa sau cong ts
   return {
     machineId: row.machineId ?? null,
     deviceId: row.deviceId ?? null,
@@ -361,7 +366,7 @@ const COPY_NULL = "\\N";
  * .values(rows) insert writes. Pure (no I/O) — exported for unit tests.
  */
 export function encodeCopyTextRow(r: InsertOtTelemetry): string {
-  const ts = r.ts instanceof Date ? r.ts : new Date(r.ts as unknown as string | number);
+  const ts = r.ts instanceof Date ? r.ts : new Date(r.ts as unknown as string | number); // bg99-ok: dong ot_telemetry da chuan hoa (khong phai chuoi thiet bi)
   return (
     [
       ts.toISOString(), //                                                    ts (NOT NULL)
@@ -521,6 +526,7 @@ export const TELEMETRY_INSERT_CHUNK_ROWS = 1000;
 export type TelemetryRejectReason =
   | "invalid_ts" // ts không phải ngày hợp lệ ⇒ gửi lại vô ích
   | "ts_too_far_future" // ts vượt now + OT_INGEST_MAX_FUTURE_SKEW_MS ⇒ đồng hồ thiết bị sai
+  | "ts_no_timezone" // Đợt 1C T6: ts là chuỗi KHÔNG múi giờ ⇒ mơ hồ, gửi lại vô ích (gửi kèm Z/±hh:mm)
   | "contract_invalid" // CONTRACT_VALIDATE_INGEST_MODE=quarantine loại mẫu sai hợp đồng
   | "invalid_value" // Postgres từ chối DỮ LIỆU của đúng dòng này (SQLSTATE lớp 22/23)
   | "db_error"; // DB vắng / mất kết nối ⇒ gửi lại được (ghi lặp được ON CONFLICT chặn)
@@ -539,10 +545,8 @@ export interface TelemetryIngestResult {
   rejected: TelemetryRejection[];
 }
 
-/** Độ lệch tương lai tối đa của `ts` (ms). Mặc định 24 h. Đọc lúc gọi. */
-export function maxFutureSkewMs(): number {
-  return intEnv("OT_INGEST_MAX_FUTURE_SKEW_MS", 24 * 60 * 60 * 1000);
-}
+/** Độ lệch tương lai tối đa của `ts` (ms). Mặc định 24 h. Đọc lúc gọi. (Đợt 1C T6: dùng chung với cổng cảm biến.) */
+export { maxFutureSkewMs };
 
 /**
  * Pure: `ts` của một mẫu có ghi được không? `undefined`/`null` = "bây giờ" (hành vi cũ).
@@ -568,20 +572,30 @@ function gateSampleTs(samples: CanonicalSample[]): {
   const keptIndex: number[] = [];
   const rejected: TelemetryRejection[] = [];
   for (let i = 0; i < samples.length; i++) {
-    const reason = checkSampleTs(samples[i]?.ts, now);
+    const s = samples[i];
+    // Đợt 1C T6 — cửa ingest đã đánh dấu `ts` không múi giờ ⇒ loại với lý do riêng (không đoán giờ).
+    const reason = s?.tsReject === "ts_no_timezone" ? "ts_no_timezone" : checkSampleTs(s?.ts, now);
+    // Số đo lệch theo thiết bị: chỉ mẫu THIẾT BỊ khai ts (mẫu giờ server không có gì để đo).
+    if (s && (s.ts != null || s.tsReject)) {
+      const t = s.ts instanceof Date ? s.ts.getTime() : NaN;
+      const lech = reason === null || reason === "ts_too_far_future" ? t - now : null;
+      recordTsObservation(s, lech, reason === "ts_too_far_future" || reason === "invalid_ts" || reason === "ts_no_timezone" ? reason : null, now);
+    }
     if (reason) rejected.push({ index: i, reason });
     else {
-      kept.push(samples[i]);
+      kept.push(s);
       keptIndex.push(i);
     }
   }
   if (rejected.length > 0) {
     const nInvalid = rejected.filter((r) => r.reason === "invalid_ts").length;
-    recordTsDrops(nInvalid, rejected.length - nInvalid); // bộ đếm TÍCH LUỸ (log thì bị gộp)
+    const nNoTz = rejected.filter((r) => r.reason === "ts_no_timezone").length;
+    const nFuture = rejected.length - nInvalid - nNoTz;
+    recordTsDrops(nInvalid, nFuture, nNoTz); // bộ đếm TÍCH LUỸ (log thì bị gộp)
     warnGop(
       "telemetryBus:ts",
       `[TelemetryBus] loại ${rejected.length}/${samples.length} mẫu vì ts (invalid_ts=${nInvalid}, ` +
-        `ts_too_far_future=${rejected.length - nInvalid}, trần tương lai ${maxFutureSkewMs()} ms)`,
+        `ts_too_far_future=${nFuture}, ts_no_timezone=${nNoTz}, trần tương lai ${maxFutureSkewMs()} ms)`,
     );
   }
   return { kept, keptIndex, rejected };
@@ -1072,7 +1086,7 @@ function energyMirrorTap(rows: InsertOtTelemetry[]): void {
           source: "electricity",
           value: valueStr, // NOT NULL — always the measured value of this metric
           unit: unit || ENERGY_DEFAULT_UNIT[col] || "kWh",
-          timestamp: row.ts instanceof Date ? row.ts : new Date(row.ts as string | number),
+          timestamp: row.ts instanceof Date ? row.ts : new Date(row.ts as string | number), // bg99-ok: dong da chuan hoa sau cong ts
         };
         // Populate the typed column too (value already holds it when col === 'value').
         if (col !== "value") er[col] = valueStr;

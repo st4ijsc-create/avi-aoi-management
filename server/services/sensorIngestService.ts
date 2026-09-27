@@ -27,6 +27,8 @@
  *     publish loop (mirrors telemetryBus / mqttService error handling).
  */
 import { logger } from "../logger";
+import { docTsThietBi } from "../utils/factoryTime";
+import { maxFutureSkewMs, recordTsDrops, recordTsObservation, warnGop } from "./ot/otGuards";
 
 export const SENSOR_INGEST_ENABLED_FLAG = "PDM_SENSOR_INGEST_ENABLED";
 
@@ -43,6 +45,10 @@ export interface ParsedSensorReading extends ParsedSensorTopic {
   value: number;
   unit: string | null;
   timestamp: Date;
+  /** Đợt 1C T6 — `timestamp` do THIẾT BỊ khai (true) hay giờ nhận (false). */
+  tsTuThietBi?: boolean;
+  /** Đợt 1C T6 (R-1C-a) — thiết bị khai `timestamp` KHÔNG múi giờ ⇒ số đo bị từ chối. */
+  tsReject?: "ts_no_timezone";
 }
 
 /** True when the sensor-ingest feature flag is on. */
@@ -85,6 +91,8 @@ export function parseSensorMessage(
   let value: number | null = null;
   let unit: string | null = null;
   let timestamp: Date = new Date();
+  let tsTuThietBi = false;
+  let tsReject: "ts_no_timezone" | undefined;
 
   const trimmed = raw.trim();
   if (trimmed.length === 0) return null;
@@ -97,8 +105,15 @@ export function parseSensorMessage(
       if (Number.isFinite(v)) value = v;
       if (typeof obj.unit === "string") unit = obj.unit.slice(0, 20);
       if (obj.timestamp != null) {
-        const t = new Date(obj.timestamp as string);
-        if (!Number.isNaN(t.getTime())) timestamp = t;
+        // Đợt 1C Task 6 (R-1C-a) — luật chung `docTsThietBi`: chuỗi KHÔNG múi giờ ⇒ đánh dấu để
+        // handleSensorMessage từ chối (không đoán giờ); chuỗi hỏng giữ hành vi cũ (giờ nhận).
+        const k = docTsThietBi(obj.timestamp);
+        if (k.ok && k.ts) {
+          timestamp = k.ts;
+          tsTuThietBi = true;
+        } else if (!k.ok && k.reason === "ts_no_timezone") {
+          tsReject = "ts_no_timezone";
+        }
       }
     } catch {
       return null; // malformed JSON → skip (no throw).
@@ -110,7 +125,7 @@ export function parseSensorMessage(
 
   if (value == null || !Number.isFinite(value)) return null;
 
-  return { ...parsedTopic, value, unit, timestamp };
+  return { ...parsedTopic, value, unit, timestamp, tsTuThietBi, ...(tsReject ? { tsReject } : {}) };
 }
 
 // machineCode → machineId resolution cache (negative results cached as null).
@@ -223,6 +238,30 @@ export async function handleSensorMessage(
     return false;
   }
   if (!reading) return false;
+
+  // Đợt 1C Task 6 — CÙNG luật ts với cổng telemetryBus (nhánh anh em: đường cảm biến trước đây không
+  // có cổng nào): chuỗi không múi giờ ⇒ từ chối; thiết bị khai giờ > giờ server + trần (mặc định 24 h)
+  // ⇒ từ chối. Mọi quan sát ts thiết bị vào sổ lệch giờ theo máy (storeForward.getStatus().skewByDevice).
+  {
+    const now = Date.now();
+    const tb = { deviceId: `sensor:${reading.machineCode}`, machineId: opts.machineId ?? null };
+    if (reading.tsReject) {
+      recordTsObservation(tb, null, "ts_no_timezone", now);
+      recordTsDrops(0, 0, 1);
+      warnGop("sensorIngest:ts", `[SensorIngest] loại số đo vì ts không múi giờ (máy ${reading.machineCode})`);
+      return false;
+    }
+    if (reading.tsTuThietBi) {
+      const lech = reading.timestamp.getTime() - now;
+      const qua = lech > maxFutureSkewMs();
+      recordTsObservation(tb, lech, qua ? "ts_too_far_future" : null, now);
+      if (qua) {
+        recordTsDrops(0, 1, 0);
+        warnGop("sensorIngest:ts", `[SensorIngest] loại số đo vì ts vượt trần tương lai ${maxFutureSkewMs()} ms (máy ${reading.machineCode})`);
+        return false;
+      }
+    }
+  }
 
   try {
     // doc 81 Đợt 1C Task 5 — the MQTT path passes the machine the authenticated device is BOUND to

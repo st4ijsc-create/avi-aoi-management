@@ -59,6 +59,7 @@ import mqtt, { MqttClient } from 'mqtt';
 // The bus itself is dynamically imported inside handleTelemetryBridge, only when the
 // bridge flag is on and a telemetry frame actually arrives.
 import type { CanonicalSample } from './telemetryBus';
+import { docTsThietBi } from '../utils/factoryTime';
 
 // Types
 interface MqttClientInfo {
@@ -321,8 +322,15 @@ export function parseCanonicalTelemetry(topic: string, payload: Buffer | string 
   const machineMatch = /^machine:(\d+)$/.exec(assetId);
   const machineId = machineMatch ? Number(machineMatch[1]) : null;
   const deviceId = machineMatch ? null : assetId;
-  const batchTs = typeof msg.ts === 'string' ? new Date(msg.ts) : undefined;
-  const validTs = (d: Date | undefined): Date | undefined => (d && !Number.isNaN(d.getTime()) ? d : undefined);
+  // Đợt 1C Task 6 (R-1C-a) — luật chung `docTsThietBi`: chuỗi KHÔNG múi giờ ⇒ mẫu mang
+  // `tsReject: ts_no_timezone` (bus loại + đếm theo thiết bị). Chuỗi hỏng giữ hành vi cũ (= giờ nhận).
+  const tsCua = (raw: unknown): Pick<CanonicalSample, 'ts' | 'tsReject'> => {
+    if (typeof raw !== 'string') return { ts: undefined };
+    const k = docTsThietBi(raw);
+    if (k.ok) return { ts: k.ts };
+    return k.reason === 'ts_no_timezone' ? { ts: undefined, tsReject: 'ts_no_timezone' } : { ts: undefined };
+  };
+  const batchTs = tsCua(msg.ts);
 
   const out: CanonicalSample[] = [];
   for (const m of msg.metrics) {
@@ -330,7 +338,7 @@ export function parseCanonicalTelemetry(topic: string, payload: Buffer | string 
     const v = m.value;
     const value = typeof v === 'number' || typeof v === 'string' || typeof v === 'boolean' ? v : null;
     out.push({
-      ts: validTs(typeof m.ts === 'string' ? new Date(m.ts) : batchTs),
+      ...(typeof m.ts === 'string' ? tsCua(m.ts) : batchTs),
       machineId,
       deviceId,
       protocol: 'mqtt',

@@ -44,7 +44,8 @@ export function otProtocolToCanonical(p: OtProtocol): TelemetryProtocol {
  */
 export function sampleToCanonical(adapter: RuntimeAdapter, sample: OtSample): CanonicalSample {
   return {
-    ts: sample.timestamp,
+    ts: sample.tsReject ? undefined : sample.timestamp,
+    ...(sample.tsReject ? { tsReject: sample.tsReject } : {}),
     machineId: adapter.machineId ?? null,
     deviceId: adapter.code,
     protocol: otProtocolToCanonical(adapter.protocol),

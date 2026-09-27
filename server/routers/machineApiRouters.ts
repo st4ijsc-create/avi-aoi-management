@@ -62,7 +62,7 @@ import { taoDemMayTuMauThuan } from "../services/mayTuMauThuan";
 // BG-99 (Task 5) — chuỗi thời gian TRẦN máy khai đọc bằng ĐÚNG MỘT luật (trần = UTC)
 // ở mọi điểm ingest. `mocDoTuChuoi` (BG-97, chỗ ở CŨ của luật này) đã XOÁ — hết caller
 // sản xuất sau khi Task 5 đổi neo spec-gate sang mốc-nhận-server (xem `submitInspectionTreeV2`).
-import { docGioMay } from "../utils/factoryTime";
+import { coMuiGioTuongMinh, docGioMay } from "../utils/factoryTime";
 // Doc 27 W2-C (C7/M4): per-machine credential auth + ingest rate limit.
 import {
   authenticateMachine,
@@ -644,7 +644,8 @@ async function resolvePointsConfigForSync(
  * being completely wrong. Naive stamps are the silent half of CASE #3.
  */
 export function hasExplicitUtcOffset(value: string): boolean {
-  return /(?:Z|[+-]\d{2}:?\d{2})$/i.test(value.trim());
+  // Đợt 1C Task 6 — MỘT định nghĩa "có múi giờ" cho mọi cửa ingest (docTsThietBi/docGioMay dùng chung).
+  return coMuiGioTuongMinh(value);
 }
 
 export type InspectionTimeSource = "machine_utc" | "machine_naive" | "server";
@@ -3158,7 +3159,7 @@ export const submitMachineTemplateCoreObject = z.object({
  */
 function refineProcessTime(data: { ts?: string }, ctx: z.RefinementCtx): void {
   if (data.ts === undefined) return;
-  if (Number.isNaN(new Date(data.ts).getTime())) {
+  if (Number.isNaN(new Date(data.ts).getTime())) { // bg99-ok: chi kiem parse; ngay duoi tu choi ts KHONG mui gio (hasExplicitUtcOffset)
     ctx.addIssue({
       code: z.ZodIssueCode.custom,
       path: ["ts"],
@@ -3298,7 +3299,7 @@ export async function processProcessResultSubmission(
   // stamps now(); timeSource honours an already-stamped value (WAL replay) else
   // derives 'device' when a ts was sent, 'server' otherwise. serverReceivedAt is
   // the ORIGINAL receive time carried through the WAL (else now()).
-  const measuredAt = input.ts ? new Date(input.ts) : undefined;
+  const measuredAt = input.ts ? new Date(input.ts) : undefined; // bg99-ok: input.ts da qua refineProcessTime (bat buoc Z/offset)
   const serverReceivedAt = input.serverReceivedAt ? new Date(input.serverReceivedAt) : new Date();
   const timeSource: "device" | "server" = input.timeSource ?? (input.ts ? "device" : "server");
   const recipeRef = input.recipe

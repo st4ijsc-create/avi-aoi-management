@@ -35,6 +35,7 @@
  * ════════════════════════════════════════════════════════════════════════════
  */
 import type { CanonicalSample } from "../telemetryBus";
+import { docTsThietBi } from "../../utils/factoryTime";
 
 /** A normalized CFX envelope after parsing (namespace stripped from the name). */
 export interface CfxEnvelope {
@@ -183,21 +184,25 @@ export function parseTimespanSeconds(v: unknown): number | null {
   return days * 86400 + h * 3600 + min * 60 + sec;
 }
 
-/** Best-effort event time as a Date from the envelope timestamp (else undefined → now()). */
-function envTime(env: CfxEnvelope): Date | undefined {
-  if (!env.timeStamp) return undefined;
-  const d = new Date(env.timeStamp);
-  return Number.isNaN(d.getTime()) ? undefined : d;
+/**
+ * Best-effort event time from the envelope timestamp (else undefined → now()). Đợt 1C Task 6 (R-1C-a):
+ * luật chung `docTsThietBi` — TimeStamp KHÔNG múi giờ (CFX đòi ISO-8601 có offset) ⇒ `tsReject`, bus
+ * loại `ts_no_timezone`; chuỗi hỏng giữ hành vi cũ (giờ nhận).
+ */
+function envTime(env: CfxEnvelope): Pick<CanonicalSample, "ts" | "tsReject"> {
+  const k = docTsThietBi(env.timeStamp);
+  if (k.ok) return { ts: k.ts };
+  return k.reason === "ts_no_timezone" ? { ts: undefined, tsReject: "ts_no_timezone" } : { ts: undefined };
 }
 
 /** Common per-sample fields for one envelope. */
 function baseSample(
   env: CfxEnvelope,
   ctx: CfxMapContext | undefined,
-): Pick<CanonicalSample, "ts" | "machineId" | "deviceId" | "protocol"> {
+): Pick<CanonicalSample, "ts" | "tsReject" | "machineId" | "deviceId" | "protocol"> {
   const deviceId = (ctx?.machineCode ?? env.source) || null;
   return {
-    ts: envTime(env),
+    ...envTime(env),
     machineId: ctx?.machineId ?? undefined,
     deviceId,
     protocol: "other", // enum has no 'cfx' member; carried in meta.cfx instead

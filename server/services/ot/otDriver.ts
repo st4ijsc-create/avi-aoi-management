@@ -47,6 +47,11 @@ export interface OtSample {
    * kéo cả lô. Mẫu good không mang trường này (hình dạng cũ giữ nguyên).
    */
   statusCode?: string;
+  /**
+   * Đợt 1C Task 6 (R-1C-a) — nguồn mẫu khai giờ bằng chuỗi KHÔNG múi giờ (plugin sidecar). `timestamp`
+   * khi đó chỉ là giờ nhận; `sampleToCanonical` chuyển cờ này sang bus ⇒ loại `ts_no_timezone`.
+   */
+  tsReject?: "ts_no_timezone";
 }
 
 /** Sức khoẻ kết nối của driver. */

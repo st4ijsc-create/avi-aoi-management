@@ -50,6 +50,7 @@ import {
 } from "../../services/equipment/capabilityModel";
 import { equipmentRegistry, type EquipmentCommand } from "../../services/equipment/equipmentAdapter";
 import type { CanonicalSample, TelemetryProtocol, TelemetryQuality } from "../../services/telemetryBus";
+import { truongTsMau } from "../../utils/factoryTime";
 
 // ── helpers ───────────────────────────────────────────────────────────────────
 
@@ -151,7 +152,8 @@ const normQuality = (q: unknown): TelemetryQuality =>
 function toCanonicalSample(s: unknown): CanonicalSample {
   const o = (s ?? {}) as Record<string, unknown>;
   return {
-    ts: o.ts ? new Date(o.ts as string) : undefined,
+    // Đợt 1C Task 6 (R-1C-a) — cùng luật với /api/ot/ingest: chuỗi KHÔNG múi giờ ⇒ ts_no_timezone.
+    ...truongTsMau(o.ts),
     machineId: typeof o.machineId === "number" ? o.machineId : null,
     deviceId: typeof o.deviceId === "string" ? o.deviceId : null,
     protocol: normProtocol(o.protocol),
