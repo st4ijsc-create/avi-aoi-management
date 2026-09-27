@@ -38,6 +38,7 @@ import { SoftwareVersionsTab } from "./SoftwareVersionsTab";
 import { useAuth } from "@/_core/hooks/useAuth";
 import { usePermissions } from "@/_core/hooks/usePermissions";
 import { MqttMachineBindingCell, coTheGanMayMqtt } from "@/components/mqtt/MqttMachineBindingCell";
+import { MqttPasswordRotateCell } from "@/components/mqtt/MqttPasswordRotateCell";
 
 type ConnectionStatus = 'all' | 'ONLINE' | 'OFFLINE' | 'DISCONNECTED' | 'connected' | 'disconnected' | 'error' | 'pending';
 type ApprovalFilter = 'all' | 'PENDING' | 'APPROVED' | 'REJECTED';
@@ -728,6 +729,7 @@ export function MqttClientManagementContent() {
                       <TableHead>{t('mqtt.clientMgmt.connection')}</TableHead>
                       <TableHead>{t('mqtt.clientMgmt.approvalHeader')}</TableHead>
                       <TableHead>{t('mqtt.clientMgmt.workstationHeader')}</TableHead>
+                      {canBindMachine && <TableHead>{t('mqtt.clientMgmt.credentialHeader')}</TableHead>}
                       {canBindMachine && <TableHead>{t('mqtt.clientMgmt.boundMachineHeader')}</TableHead>}
                       <TableHead>{t('mqtt.clientMgmt.notifications')}</TableHead>
                       <TableHead>Last Seen</TableHead>
@@ -775,6 +777,11 @@ export function MqttClientManagementContent() {
                             <span className="text-muted-foreground">-</span>
                           )}
                         </TableCell>
+                        {canBindMachine && (
+                          <TableCell>
+                            <MqttPasswordRotateCell client={client} canEdit={canBindMachine} onChanged={() => refetchClients()} />
+                          </TableCell>
+                        )}
                         {canBindMachine && (
                           <TableCell>
                             <MqttMachineBindingCell client={client} machines={machines} canEdit={canBindMachine} onChanged={() => refetchClients()} />
@@ -914,7 +921,7 @@ export function MqttClientManagementContent() {
                     ))}
                     {filteredClients.length === 0 && (
                       <TableRow>
-                        <TableCell colSpan={canBindMachine ? 11 : 10} className="text-center py-8 text-muted-foreground">
+                        <TableCell colSpan={canBindMachine ? 12 : 10} className="text-center py-8 text-muted-foreground">
                           {clients.length === 0 ? t('mqtt.clientMgmt.noClients') : t('mqtt.clientMgmt.noMatchingClients')}
                         </TableCell>
                       </TableRow>

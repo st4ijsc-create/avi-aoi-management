@@ -111,6 +111,18 @@ function connect(dev: string): Promise<MqttClient> {
     c.on("close", () => { if (!done) { done = true; reject(new Error("closed before CONNACK")); } });
   }), 8000, `connect ${dev}`);
 }
+function tryConnect(dev: string, password: string): Promise<{ ok: boolean; code?: number; client?: MqttClient }> {
+  return withTimeout(new Promise((resolve) => {
+    const c = mqtt.connect(`mqtt://127.0.0.1:${port}`, {
+      username: `${dev}:T5B:M`, password, clientId: `${dev}-t-${Math.random().toString(16).slice(2, 10)}`,
+      reconnectPeriod: 0, connectTimeout: 5000,
+    });
+    let done = false;
+    c.on("connect", () => { if (!done) { done = true; openClients.push(c); resolve({ ok: true, client: c }); } });
+    c.on("error", (e: any) => { if (!done) { done = true; c.end(true); resolve({ ok: false, code: typeof e?.code === "number" ? e.code : -1 }); } });
+    c.on("close", () => { if (!done) { done = true; resolve({ ok: false, code: -2 }); } });
+  }), 8000, `tryConnect ${dev}`);
+}
 function closedWithin(c: MqttClient, ms: number): Promise<boolean> {
   return new Promise((resolve) => {
     if (!c.connected) return resolve(true);
@@ -147,11 +159,11 @@ describe.skipIf(!DB_URL)("doc 81 Đợt 1C Task 5b — mqttClient.bindMachine (D
     fx.mNgoai = await may(ngoai.s, "MNGOAI");
 
     const hash = await bcrypt.hash(PW, 10);
-    const tb = (k: string, st: number, o: { pw?: boolean; status?: string; machineId?: number | null } = {}) =>
+    const tb = (k: string, st: number, o: { pw?: boolean; status?: string; machineId?: number | null; active?: boolean; fcm?: string; plain?: string } = {}) =>
       one(sql`INSERT INTO mqtt_clients ("clientId", "deviceId", "deviceName", "deviceModel", "approvalStatus", "mappingType",
-                "connectionStatus", "isActive", "passwordHash", "machineId", "stationId")
-              VALUES (${DEV(k) + "-seed"}, ${DEV(k)}, 'T5B', 'T5B', ${o.status ?? "APPROVED"}, 'MANUAL', 'OFFLINE', true,
-                ${o.pw === false ? null : hash}, ${o.machineId ?? null}, ${st}) RETURNING id`);
+                "connectionStatus", "isActive", "passwordHash", "machineId", "stationId", "fcmToken", "password")
+              VALUES (${DEV(k) + "-seed"}, ${DEV(k)}, 'T5B', 'T5B', ${o.status ?? "APPROVED"}, 'MANUAL', 'OFFLINE', ${o.active ?? true},
+                ${o.pw === false || o.plain ? null : hash}, ${o.machineId ?? null}, ${st}, ${o.fcm ?? null}, ${o.plain ?? null}) RETURNING id`);
     fx.dev.ok = await tb("ok", trong.s);
     fx.dev.nopw = await tb("nopw", trong.s, { pw: false });
     fx.dev.nopwBound = await tb("nopwb", trong.s, { pw: false, machineId: fx.ma });
@@ -160,6 +172,19 @@ describe.skipIf(!DB_URL)("doc 81 Đợt 1C Task 5b — mqttClient.bindMachine (D
     fx.dev.boundNgoai = await tb("boundngoai", trong.s, { machineId: fx.mNgoai });
     fx.dev.conc = await tb("conc", trong.s);
     fx.dev.live = await tb("live", trong.s);
+    // ── fix round 1 ──
+    fx.dev.fcm = await tb("fcm", trong.s, { fcm: `FCM-SECRET-${RUN}` });
+    fx.dev.plain = await tb("plain", trong.s, { plain: `PLAIN-SECRET-${RUN}` });
+    fx.dev.rot = await tb("rot", trong.s, { pw: false });
+    fx.dev.rotRej = await tb("rotrej", trong.s, { status: "REJECTED" });
+    fx.dev.rotNgoai = await tb("rotngoai", ngoai.s);
+    fx.dev.rotDel = await tb("rotdel", trong.s, { active: false });
+    fx.dev.rotLive = await tb("rotlive", trong.s);
+    fx.dev.del1 = await tb("del1", trong.s);
+    fx.dev.del2 = await tb("del2", trong.s);
+    fx.dev.resurrect = await tb("resur", trong.s, { active: false, machineId: fx.ma });
+    fx.dev.cev = await tb("cev", trong.s, { machineId: fx.ma });
+    fx.dev.noEnforce = await tb("noenf", trong.s);
 
     const user = async (hau: string, role: string) =>
       one(sql`INSERT INTO users ("openId", username, name, role, "isActive")
@@ -257,7 +282,10 @@ describe.skipIf(!DB_URL)("doc 81 Đợt 1C Task 5b — mqttClient.bindMachine (D
   it("phạm vi phía THIẾT BỊ: engineer không gắn được thiết bị ở trạm ngoài phạm vi (NOT_FOUND), cũng không đổi/gỡ được thiết bị đang gắn máy ngoài phạm vi (FORBIDDEN); admin thì được", async () => {
     const eng = caller(fx.eng, "engineer");
     await expect(eng.bindMachine({ clientId: fx.dev.ngoai, machineId: fx.ma, reason: "T5B ngoai" })).rejects.toMatchObject({ code: "NOT_FOUND" });
-    await expect(eng.bindMachine({ clientId: fx.dev.boundNgoai, machineId: fx.ma, reason: "T5B doi" })).rejects.toMatchObject({ code: "FORBIDDEN" });
+    const eDoi = await eng.bindMachine({ clientId: fx.dev.boundNgoai, machineId: fx.ma, reason: "T5B doi" }).catch((x) => x);
+    // FR1 #6: một từ chối QUYỀN ⇒ mã PERMISSION_DENIED (action có khoá dịch), không phải INVALID_VALUE.
+    expect(eDoi).toMatchObject({ code: "FORBIDDEN" });
+    expect(eDoi.cause).toMatchObject({ appCode: "PERMISSION_DENIED", appParams: { action: "changeMqttDeviceOfOtherScope", reason: "mqttBoundMachineOutOfScope" } });
     await expect(eng.bindMachine({ clientId: fx.dev.boundNgoai, machineId: null, reason: "T5B go" })).rejects.toMatchObject({ code: "FORBIDDEN" });
     expect(await boundOf("ngoai")).toBeNull();
     expect(await boundOf("boundNgoai")).toBe(fx.mNgoai);
@@ -376,5 +404,193 @@ describe.skipIf(!DB_URL)("doc 81 Đợt 1C Task 5b — mqttClient.bindMachine (D
     await publishAcked(c3, topicB);
     expect(c3.connected).toBe(true);
     c3.end(true);
+  }, 30_000);
+  // ════════════════════════════════════════════════════════════════════════════════════════════════
+  // Fix round 1 (FIX_BASE 5877442d0)
+  // ════════════════════════════════════════════════════════════════════════════════════════════════
+  const SECRET_KEYS = ["passwordHash", "password", "fcmToken"];
+
+  it("FR1 #1 ★ list/getById KHÔNG trả passwordHash / password / fcmToken (mọi vai); chỉ hasCredential / hasPushToken", async () => {
+    for (const [uid, role] of [[fx.admin, "admin"], [fx.eng, "engineer"]] as const) {
+      const rows = await caller(uid, role).list({});
+      const mine = rows.filter((r: any) => String(r.deviceId).startsWith(RUN));
+      expect(mine.length).toBeGreaterThan(3);
+      for (const r of mine) for (const k of SECRET_KEYS) expect(Object.keys(r), `${role} list ${r.deviceId}`).not.toContain(k);
+      const json = JSON.stringify(mine);
+      expect(json).not.toContain(`FCM-SECRET-${RUN}`);
+      expect(json).not.toContain(`PLAIN-SECRET-${RUN}`);
+      expect(json).not.toMatch(/\$2[aby]\$/); // không một bcrypt hash nào
+      const by = (k: string) => mine.find((r: any) => r.id === fx.dev[k]) as any;
+      expect(by("ok").hasCredential).toBe(true);
+      expect(by("nopw").hasCredential).toBe(false);
+      expect(by("plain").hasCredential).toBe(true); // mật khẩu cũ dạng thô vẫn là một credential
+      expect(by("fcm").hasPushToken).toBe(true);
+      expect(by("ok").hasPushToken).toBe(false);
+      for (const k of ["fcm", "plain", "ok"]) {
+        const one = (await caller(uid, role).getById({ id: fx.dev[k] })) as any;
+        expect(one).toBeTruthy();
+        for (const s of SECRET_KEYS) expect(Object.keys(one), `${role} getById ${k}`).not.toContain(s);
+        expect(JSON.stringify(one)).not.toMatch(/\$2[aby]\$|FCM-SECRET|PLAIN-SECRET/);
+      }
+    }
+    const pend = await caller(fx.admin, "admin").pendingCount();
+    expect(typeof pend.count).toBe("number");
+  });
+
+  it("FR1 #2 cổng rotatePassword: supervisor / engineer không canEdit ⇒ FORBIDDEN; trạm ngoài phạm vi ⇒ NOT_FOUND; đã xoá mềm ⇒ NOT_FOUND; REJECTED ⇒ mqttDeviceRejected; không đổi gì", async () => {
+    const hashOf = async (k: string) => (await sql<{ h: string | null }[]>`SELECT "passwordHash" AS h FROM mqtt_clients WHERE id = ${fx.dev[k]}`)[0].h;
+    await expect(caller(fx.sup, "supervisor").rotatePassword({ clientId: fx.dev.rot, reason: "T5B sup" })).rejects.toMatchObject({ code: "FORBIDDEN" });
+    await expect(caller(fx.engKhongQuyen, "engineer").rotatePassword({ clientId: fx.dev.rot, reason: "T5B eng0" })).rejects.toMatchObject({ code: "FORBIDDEN" });
+    await expect(caller(fx.eng, "engineer").rotatePassword({ clientId: fx.dev.rotNgoai, reason: "T5B ngoai" })).rejects.toMatchObject({ code: "NOT_FOUND" });
+    await expect(caller(fx.admin, "admin").rotatePassword({ clientId: fx.dev.rotDel, reason: "T5B del" })).rejects.toMatchObject({ code: "NOT_FOUND" });
+    const e = await caller(fx.admin, "admin").rotatePassword({ clientId: fx.dev.rotRej, reason: "T5B rej" }).catch((x) => x);
+    expect(e).toMatchObject({ code: "BAD_REQUEST" });
+    expect(e.cause?.appParams).toMatchObject({ field: "clientId", reason: "mqttDeviceRejected" });
+    expect(await hashOf("rot")).toBeNull();
+    const rows = await sql`SELECT id FROM control_audit_log WHERE "entityType" = 'mqtt_client_machine_binding' AND action = 'mqtt_password_rotate'
+                           AND "entityId" = ANY(${[fx.dev.rot, fx.dev.rotNgoai, fx.dev.rotDel, fx.dev.rotRej].map(String)})`;
+    expect(rows).toHaveLength(0);
+  });
+
+  it("FR1 #2 ★ rotatePassword: bcrypt ở passwordHash, password = NULL; bản thô trả về ĐÚNG MỘT lần; KHÔNG ở console, audit, lượt gọi sau, list/getById", async () => {
+    const spies = (["log", "warn", "error", "info", "debug"] as const).map((m) => vi.spyOn(console, m));
+    let p1 = "";
+    let p2 = "";
+    let logged: string[] = [];
+    try {
+      const r1 = await caller(fx.eng, "engineer").rotatePassword({ clientId: fx.dev.rot, reason: "T5B cap mat khau" });
+      p1 = r1.password;
+      expect(r1).toMatchObject({ clientId: fx.dev.rot, deviceId: DEV("rot") });
+      expect(p1).toMatch(/^[A-Za-z0-9_-]{32}$/); // randomBytes(24) → base64url 32 ký tự
+      const r2 = await caller(fx.admin, "admin").rotatePassword({ clientId: fx.dev.rot, reason: "T5B xoay lai" });
+      p2 = r2.password;
+      expect(p2).not.toBe(p1);
+      expect(JSON.stringify(r2)).not.toContain(p1); // lượt gọi sau không trả lại bản cũ
+    } finally {
+      // ⚠ Đọc lời gọi TRƯỚC mockRestore — mockRestore xoá luôn mock.calls (bản đầu đọc SAU ⇒ khẳng định
+      // rỗng theo cấu tạo; đột biến R6 "console.log bản thô" đã sống sót vì thế).
+      logged = spies.flatMap((s) => s.mock.calls.map((c) => c.map((x) => (typeof x === "string" ? x : JSON.stringify(x))).join(" ")));
+      for (const s of spies) s.mockRestore();
+    }
+    expect(logged.length).toBeGreaterThan(0); // thước còn nhìn thấy: lượt xoay có in dòng "[MQTT] Binding changed …"
+    for (const pw of [p1, p2]) expect(logged.filter((l) => l.includes(pw))).toEqual([]);
+
+    const [row] = await sql<{ h: string | null; p: string | null }[]>`SELECT "passwordHash" AS h, password AS p FROM mqtt_clients WHERE id = ${fx.dev.rot}`;
+    expect(row.p).toBeNull();
+    expect(row.h).not.toBe(p2);
+    expect(await bcrypt.compare(p2, row.h!)).toBe(true);
+    expect(await bcrypt.compare(p1, row.h!)).toBe(false);
+
+    const audits = await sql<{ beforeJson: any; afterJson: any; reason: string; actorId: number; action: string }[]>`
+      SELECT "beforeJson", "afterJson", reason, "actorId", action FROM control_audit_log
+       WHERE "entityType" = 'mqtt_client_machine_binding' AND "entityId" = ${String(fx.dev.rot)} ORDER BY id`;
+    expect(audits.map((a) => a.action)).toEqual(["mqtt_password_rotate", "mqtt_password_rotate"]);
+    expect(audits[0]).toMatchObject({ actorId: fx.eng, reason: "T5B cap mat khau" });
+    expect(audits[0].beforeJson).toEqual({ deviceId: DEV("rot"), hadCredential: false });
+    expect(audits[0].afterJson).toEqual({ deviceId: DEV("rot"), hasCredential: true });
+    expect(audits[1].beforeJson).toEqual({ deviceId: DEV("rot"), hadCredential: true });
+    const logs = await sql<{ details: string }[]>`SELECT details FROM audit_logs
+       WHERE action = 'mqttClient.rotatePassword' AND "entityType" = 'mqtt_client' AND "entityId" = ${fx.dev.rot} ORDER BY id`;
+    expect(logs).toHaveLength(2);
+    // Không nơi nào của audit chứa bản thô hay hash (kể cả dòng trpc_mutation của middleware).
+    const allAudit = JSON.stringify(audits) + JSON.stringify(logs) + JSON.stringify(
+      await sql`SELECT details FROM audit_logs WHERE "userId" = ANY(${[fx.eng, fx.admin]}) AND action = 'mqttClient.rotatePassword'`);
+    for (const pw of [p1, p2]) expect(allAudit).not.toContain(pw);
+    expect(allAudit).not.toContain(row.h!);
+
+    const listed = JSON.stringify(await caller(fx.admin, "admin").list({})) + JSON.stringify(await caller(fx.admin, "admin").getById({ id: fx.dev.rot }));
+    for (const pw of [p1, p2]) expect(listed).not.toContain(pw);
+    expect(listed).not.toContain(row.h!);
+  });
+
+  it("FR1 #2 ★ broker thật: sau rotatePassword phiên cũ bị ngắt, mật khẩu CŨ bị từ chối (CONNACK 4), mật khẩu MỚI vào được", async () => {
+    const c1 = await connect(DEV("rotlive")); // mật khẩu cũ = PW
+    const closed = closedWithin(c1, 5000);
+    const r = await caller(fx.admin, "admin").rotatePassword({ clientId: fx.dev.rotLive, reason: "T5B xoay live" });
+    expect(r.sessionsClosed).toBeGreaterThanOrEqual(1);
+    expect(await closed).toBe(true);
+    const cu = await tryConnect(DEV("rotlive"), PW);
+    expect(cu.ok).toBe(false);
+    expect(cu.code).toBe(4);
+    const moi = await tryConnect(DEV("rotlive"), r.password);
+    expect(moi.ok).toBe(true);
+    moi.client!.end(true);
+  }, 30_000);
+
+  it("FR1 #3 MQTT_REQUIRE_PASSWORD=false ⇒ GẮN bị từ chối (mqttPasswordNotEnforced), GỠ vẫn được", async () => {
+    process.env.MQTT_REQUIRE_PASSWORD = "false";
+    try {
+      const e = await caller(fx.admin, "admin").bindMachine({ clientId: fx.dev.noEnforce, machineId: fx.ma, reason: "T5B noenf" }).catch((x) => x);
+      expect(e).toMatchObject({ code: "PRECONDITION_FAILED" });
+      expect(e.cause?.appParams).toMatchObject({ field: "clientId", reason: "mqttPasswordNotEnforced" });
+      expect(await boundOf("noEnforce")).toBeNull();
+    } finally {
+      delete process.env.MQTT_REQUIRE_PASSWORD;
+    }
+    await caller(fx.admin, "admin").bindMachine({ clientId: fx.dev.noEnforce, machineId: fx.ma, reason: "T5B noenf gan" });
+    process.env.MQTT_REQUIRE_PASSWORD = "false";
+    try {
+      await caller(fx.admin, "admin").bindMachine({ clientId: fx.dev.noEnforce, machineId: null, reason: "T5B noenf go" });
+      expect(await boundOf("noEnforce")).toBeNull();
+    } finally {
+      delete process.env.MQTT_REQUIRE_PASSWORD;
+    }
+  });
+
+  it("FR1 #4 ★ xoá mềm (delete) và updateSettings(isActive=false) GỠ ràng buộc máy trong cùng transaction + audit unbind; phiên sống bị ngắt", async () => {
+    const ad = caller(fx.admin, "admin");
+    await ad.bindMachine({ clientId: fx.dev.del1, machineId: fx.ma, reason: "T5B del1" });
+    await ad.bindMachine({ clientId: fx.dev.del2, machineId: fx.mb, reason: "T5B del2" });
+    const c = await connect(DEV("del1"));
+    const closed = closedWithin(c, 5000);
+    await ad.delete({ id: fx.dev.del1 });
+    expect(await closed).toBe(true);
+    await ad.updateSettings({ id: fx.dev.del2, isActive: false });
+    for (const [k, m] of [["del1", fx.ma], ["del2", fx.mb]] as const) {
+      const [r] = await sql<{ m: number | null; a: boolean }[]>`SELECT "machineId" AS m, "isActive" AS a FROM mqtt_clients WHERE id = ${fx.dev[k]}`;
+      expect(r).toEqual({ m: null, a: false });
+      const last = (await auditRows(k)).at(-1)!;
+      expect(last).toMatchObject({ action: "mqtt_machine_unbind", actorId: fx.admin });
+      expect(last.beforeJson.machineId).toBe(m);
+      expect(last.afterJson.machineId).toBeNull();
+      expect(last.reason).toMatch(/soft-deleted|deactivated/);
+    }
+  }, 30_000);
+
+  it("FR1 #4 ★ thiết bị đã xoá mềm (hàng cũ vẫn còn machineId) được tự đăng ký lại ⇒ phiên KHÔNG kế thừa ràng buộc cũ", async () => {
+    process.env.MQTT_AUTO_REGISTER_UNKNOWN = "true";
+    try {
+      const c = await connect(DEV("resur"));
+      c.publish(`factory/${fx.factory}/${RUN}-MA/state`, "x", { qos: 0 });
+      expect(await closedWithin(c, 5000)).toBe(true);
+    } finally {
+      delete process.env.MQTT_AUTO_REGISTER_UNKNOWN;
+    }
+  }, 30_000);
+
+  it("FR1 #5 ★ guard sự kiện 'client': phiên được đăng ký SAU đợt quét (thế hệ đã bị thay giữa xác thực và đăng ký) bị đóng NGAY, không cần publish/subscribe", async () => {
+    const broker = mqttSvc.aedes as any;
+    const goc = broker.authenticate;
+    broker.authenticate = (client: any, u: any, p: any, cb: any) =>
+      goc(client, u, p, (err: any, ok: any) => {
+        // Xác thực xong (thế hệ đã đóng dấu) — một lượt gắn lại commit + quét NGAY LÚC NÀY.
+        if (ok && String(u).startsWith(DEV("cev"))) mqttSvc.disconnectMqttDevice(DEV("cev"));
+        cb(err, ok);
+      });
+    try {
+      const r = await new Promise<boolean>((resolve) => {
+        const c = mqtt.connect(`mqtt://127.0.0.1:${port}`, { username: `${DEV("cev")}:T5B:M`, password: PW, clientId: `${DEV("cev")}-x`, reconnectPeriod: 0, connectTimeout: 5000 });
+        openClients.push(c);
+        const t = setTimeout(() => resolve(false), 4000);
+        c.on("close", () => { clearTimeout(t); resolve(true); });
+      });
+      expect(r).toBe(true);
+    } finally {
+      broker.authenticate = goc;
+    }
+    // Đối chứng: không có cuộc đua ⇒ phiên ở lại.
+    const c2 = await connect(DEV("cev"));
+    expect(await closedWithin(c2, 1500)).toBe(false);
+    c2.end(true);
   }, 30_000);
 });

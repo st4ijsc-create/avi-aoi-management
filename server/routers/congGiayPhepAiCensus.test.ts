@@ -247,6 +247,11 @@ const MIEN_TRU_VAN_HANH: readonly string[] = [
  *   `server/routers/mqttOeeRouters.ts`, sàn `protectedProcedure` + `requirePermission("settings_factory",
  *   "canEdit")`, `module = null`). Không phải bề mặt AI ⇒ `beMatAi`/`aiCoCong`/`aiMienTru`/`ngoaiAiCoCong`
  *   không đổi vì lượt này. `tong` 2288 trùng `phamViDocCensus.test.ts#GHIM.tong` (D +1).
+ *
+ * ★ 2026-09-28 doc 81 Đợt 1C Task 5b fix round 1 — **tong +1 nữa (2288→2289), KHÔNG ghim lại** (cùng lý
+ *   do): đúng MỘT thủ tục MỚI `mqttClient.rotatePassword` (mutation, cùng sàn `protectedProcedure` +
+ *   `requirePermission("settings_factory","canEdit")`, `module = null`, không phải bề mặt AI). `tong` 2289
+ *   trùng `phamViDocCensus.test.ts#GHIM.tong`.
  */
 const GHIM = { tong: 2223, beMatAi: 357, aiCoCong: 295, aiMienTru: 62, ngoaiAiCoCong: 0 } as const;
 

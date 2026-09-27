@@ -4130,6 +4130,7 @@
       "kbEvalRuns": "sổ lượt đánh giá Training Studio"
     },
     "action": {
+      "changeMqttDeviceOfOtherScope": "đổi thiết bị MQTT đang gắn với máy ngoài phạm vi của bạn",
       "selfApproveProgramDeploy": "tự duyệt yêu cầu deploy chương trình của chính mình",
       "viewOthersPermissions": "xem quyền của người khác",
       "editOrDeleteReport": "sửa hoặc xoá báo cáo",
@@ -4199,6 +4200,7 @@
       "selfApproveProgramVersion": "tự duyệt phiên bản chương trình của chính mình"
     },
     "reason": {
+      "mqttPasswordNotEnforced": "Broker đang TẮT kiểm mật khẩu (MQTT_REQUIRE_PASSWORD=false) — thiết bị vào chỉ bằng tên đăng nhập nên ràng buộc máy không có giá trị. Bật lại kiểm mật khẩu trước khi gắn máy.",
       "mqttMachineNotBindable": "Máy đích đã ngừng/xoá, đang ở trạng thái ngừng khai thác/loại bỏ, hoặc chưa gắn với trạm → nhà máy.",
       "mqttBoundMachineOutOfScope": "Thiết bị đang gắn với một máy ngoài phạm vi của bạn — không thể đổi hay gỡ ràng buộc này.",
       "mqttDeviceNoCredential": "Thiết bị chưa có mật khẩu MQTT nên vào broker chỉ bằng tên đăng nhập (đoán được) — không thể gắn với máy. Cấp mật khẩu cho thiết bị trước.",
@@ -5767,6 +5769,15 @@
       "stationLabel": "trạm"
     },
     "clientMgmt": {
+      "newPasswordWarning": "Sao chép và cấu hình mật khẩu này vào thiết bị ngay. Hệ thống không lưu bản rõ và không thể hiện lại. Thiết bị bị khoá ngoài broker cho tới khi được cấu hình mật khẩu mới.",
+      "newPasswordTitle": "Mật khẩu mới — chỉ hiện MỘT lần",
+      "rotatePasswordConfirm": "Sinh mật khẩu mới",
+      "rotatePasswordDesc": "Hệ thống sinh một mật khẩu ngẫu nhiên mới, chỉ lưu dạng băm. Mật khẩu cũ hết hiệu lực NGAY và phiên đang mở của thiết bị bị ngắt.",
+      "rotatePasswordTitle": "Cấp mật khẩu MQTT mới",
+      "rotatePassword": "Cấp / xoay mật khẩu",
+      "noCredential": "Chưa có",
+      "hasCredential": "Đã có",
+      "credentialHeader": "Mật khẩu MQTT",
       "bindNoChange": "Ràng buộc không đổi",
       "bindSaved": "Đã cập nhật ràng buộc máy",
       "confirmBind": "Xác nhận",

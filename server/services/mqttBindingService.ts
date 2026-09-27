@@ -152,45 +152,186 @@ export async function ganMayChoThietBi(input: {
       reason: input.reason,
     });
 
-    const details: Record<string, unknown> = {
-      operation: AUDIT_LOG_ACTION_MQTT_BIND,
+    await ghiAuditLogTx(tx, {
+      action: AUDIT_LOG_ACTION_MQTT_BIND,
+      nguoiSua: input.nguoiSua,
+      clientId: tb.id,
+      deviceId: tb.deviceId,
       before,
       after,
-      metadata: { reason: input.reason },
-      source: "web",
-      timestamp: new Date().toISOString(),
-    };
-    // Cùng khuôn logCrudOperation (hash nội dung khi SEC_PLATFORM), nhưng ghi bằng `tx` và KHÔNG nuốt lỗi.
-    if (secPlatformEnabled()) {
-      const hashTs = Date.now();
-      details.hashTs = hashTs;
-      details.contentHash = computeCrudContentHash(
-        {
-          userId: input.nguoiSua.id,
-          action: AUDIT_LOG_ACTION_MQTT_BIND,
-          entityType: "mqtt_client",
-          entityId: tb.id,
-          entityName: tb.deviceId,
-          details,
-        },
-        hashTs,
-      );
-    }
-    await tx.insert(auditLogs).values(
-      catTheoTranCot(auditLogs, {
-        userId: input.nguoiSua.id ?? null,
-        userName: input.nguoiSua.name ?? null,
-        action: AUDIT_LOG_ACTION_MQTT_BIND,
-        entityType: "mqtt_client",
-        entityId: tb.id,
-        entityName: tb.deviceId,
-        details: JSON.stringify(details),
-        ipAddress: input.nguoiSua.ipAddress ?? null,
-        userAgent: input.nguoiSua.userAgent ?? null,
-        status: "success" as const,
-      }),
-    );
+      reason: input.reason,
+    });
 
     return { clientId: tb.id, deviceId: tb.deviceId, truoc, sau, changed: true };
+  });
+}
+
+type Tx = Parameters<Parameters<NonNullable<Awaited<ReturnType<typeof getDb>>>["transaction"]>[0]>[0];
+
+/**
+ * Một dòng `audit_logs` (màn Nhật ký) ghi bằng CHÍNH `tx` và KHÔNG nuốt lỗi — cùng khuôn
+ * `logCrudOperation` (hash nội dung khi SEC_PLATFORM). Người gọi chịu trách nhiệm KHÔNG đưa bí mật
+ * nào vào `before`/`after`.
+ */
+async function ghiAuditLogTx(
+  tx: Tx,
+  e: { action: string; nguoiSua: NguoiSua; clientId: number; deviceId: string; before: unknown; after: unknown; reason: string },
+): Promise<void> {
+  const details: Record<string, unknown> = {
+    operation: e.action,
+    before: e.before,
+    after: e.after,
+    metadata: { reason: e.reason },
+    source: "web",
+    timestamp: new Date().toISOString(),
+  };
+  if (secPlatformEnabled()) {
+    const hashTs = Date.now();
+    details.hashTs = hashTs;
+    details.contentHash = computeCrudContentHash(
+      { userId: e.nguoiSua.id, action: e.action, entityType: "mqtt_client", entityId: e.clientId, entityName: e.deviceId, details },
+      hashTs,
+    );
+  }
+  await tx.insert(auditLogs).values(
+    catTheoTranCot(auditLogs, {
+      userId: e.nguoiSua.id ?? null,
+      userName: e.nguoiSua.name ?? null,
+      action: e.action,
+      entityType: "mqtt_client",
+      entityId: e.clientId,
+      entityName: e.deviceId,
+      details: JSON.stringify(details),
+      ipAddress: e.nguoiSua.ipAddress ?? null,
+      userAgent: e.nguoiSua.userAgent ?? null,
+      status: "success" as const,
+    }),
+  );
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════════════════════════
+// doc 81 Đợt 1C Task 5b fix round 1 — CẤP / XOAY mật khẩu MQTT của thiết bị.
+//
+// Trước bản này không có đường nào đặt `passwordHash` ⇒ luật "gắn máy cần passwordHash" làm KHÔNG thiết
+// bị nào gắn được. `xoayMatKhauThietBi` sinh một mật khẩu ngẫu nhiên (`randomBytes(24)` base64url, 192
+// bit), lưu bcrypt vào `passwordHash`, XOÁ cột `password` (dạng thô cũ), ghi audit {hadCredential} →
+// {hasCredential} — KHÔNG BAO GIỜ ghi bí mật — và trả bản thô DUY NHẤT một lần cho router (router trả
+// cho người gọi, không log, không cache). Thiết bị bị khoá ngoài cho tới khi được cấu hình mật khẩu mới.
+// ═══════════════════════════════════════════════════════════════════════════════════════════════════
+export const AUDIT_ACTION_MQTT_PASSWORD_ROTATE = "mqtt_password_rotate";
+export const AUDIT_LOG_ACTION_MQTT_ROTATE = "mqttClient.rotatePassword";
+/** Chi phí bcrypt — cùng mức `verifyMqttDevicePassword` dùng khi nâng cấp mật khẩu thô. */
+const BCRYPT_COST = 10;
+
+export async function xoayMatKhauThietBi(input: {
+  clientId: number;
+  reason: string;
+  nguoiSua: NguoiSua;
+  phamViTram: ReadonlyArray<number> | null;
+  phamViMay: ReadonlyArray<number> | null;
+}): Promise<{ clientId: number; deviceId: string; password: string }> {
+  const db = await getDb();
+  if (!db) throw new DbUnavailableError();
+  const tramOk = (id: number | null) => input.phamViTram === null || (id != null && input.phamViTram.includes(id));
+  const mayOk = (id: number) => input.phamViMay === null || input.phamViMay.includes(id);
+  const { randomBytes } = await import("node:crypto");
+  const bcrypt = (await import("bcryptjs")).default;
+  const matKhau = randomBytes(24).toString("base64url");
+  const bam = await bcrypt.hash(matKhau, BCRYPT_COST);
+
+  const kq = await db.transaction(async (tx) => {
+    const [tb] = await tx
+      .select({
+        id: mqttClients.id,
+        deviceId: mqttClients.deviceId,
+        stationId: mqttClients.stationId,
+        machineId: mqttClients.machineId,
+        approvalStatus: mqttClients.approvalStatus,
+        passwordHash: mqttClients.passwordHash,
+        password: mqttClients.password,
+        isActive: mqttClients.isActive,
+      })
+      .from(mqttClients)
+      .where(eq(mqttClients.id, input.clientId))
+      .for("update");
+    if (!tb || !tb.isActive || !tramOk(tb.stationId)) throw new GanMayLoi("device_not_found", { clientId: input.clientId });
+    // Thiết bị đang gắn máy NGOÀI phạm vi: đổi credential của nó là đổi đường dữ liệu của máy ấy.
+    if (tb.machineId != null && !mayOk(tb.machineId)) throw new GanMayLoi("bound_machine_out_of_scope", { clientId: tb.id });
+    if (tb.approvalStatus === "REJECTED") throw new GanMayLoi("device_rejected", { clientId: tb.id });
+
+    const hadCredential = Boolean(tb.passwordHash || tb.password);
+    await tx.update(mqttClients).set({ passwordHash: bam, password: null, updatedAt: new Date() }).where(eq(mqttClients.id, tb.id));
+    const before = { deviceId: tb.deviceId, hadCredential };
+    const after = { deviceId: tb.deviceId, hasCredential: true };
+    await recordAuditEvent(tx, {
+      entityType: AUDIT_ENTITY_MQTT_BINDING,
+      entityId: tb.id,
+      action: AUDIT_ACTION_MQTT_PASSWORD_ROTATE,
+      actorId: input.nguoiSua.id,
+      before,
+      after,
+      reason: input.reason,
+    });
+    await ghiAuditLogTx(tx, {
+      action: AUDIT_LOG_ACTION_MQTT_ROTATE,
+      nguoiSua: input.nguoiSua,
+      clientId: tb.id,
+      deviceId: tb.deviceId,
+      before,
+      after,
+      reason: input.reason,
+    });
+    return { clientId: tb.id, deviceId: tb.deviceId };
+  });
+  return { ...kq, password: matKhau };
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════════════════════════
+// doc 81 Đợt 1C Task 5b fix round 1 (#4) — NGỪNG thiết bị (xoá mềm / isActive=false) GỠ luôn ràng buộc máy.
+//
+// Chọn "gỡ khi ngừng" thay vì "cho phép gỡ thiết bị đã ngừng": một thiết bị đã xoá mềm nối lại sẽ được tự
+// đăng ký lại thành PENDING (khi MQTT_AUTO_REGISTER_UNKNOWN bật) — nếu hàng còn giữ `machineId` thì phiên
+// hồi sinh THỪA KẾ quyền ghi dữ liệu của máy mà không ai gắn lại. Gỡ ngay lúc ngừng (cùng transaction,
+// có audit) đóng đường đó; hàng CŨ đã ngừng từ trước bản này được chặn thêm ở `authenticate` (phiên của
+// hàng vừa được kích hoạt lại không nhận ràng buộc).
+// ═══════════════════════════════════════════════════════════════════════════════════════════════════
+export async function ngungThietBi(input: {
+  clientId: number;
+  nguoiSua: NguoiSua;
+  /** Lý do ghi audit (vd "device soft-deleted"). */
+  reason: string;
+}): Promise<{ deviceId: string | null; goMay: number | null }> {
+  const db = await getDb();
+  if (!db) throw new DbUnavailableError();
+  return db.transaction(async (tx) => {
+    const [tb] = await tx
+      .select({ id: mqttClients.id, deviceId: mqttClients.deviceId, machineId: mqttClients.machineId })
+      .from(mqttClients)
+      .where(eq(mqttClients.id, input.clientId))
+      .for("update");
+    if (!tb) return { deviceId: null, goMay: null };
+    await tx.update(mqttClients).set({ isActive: false, machineId: null, updatedAt: new Date() }).where(eq(mqttClients.id, tb.id));
+    if (tb.machineId == null) return { deviceId: tb.deviceId, goMay: null };
+    const before = { deviceId: tb.deviceId, machineId: tb.machineId };
+    const after = { deviceId: tb.deviceId, machineId: null, machineCode: null, factoryId: null };
+    await recordAuditEvent(tx, {
+      entityType: AUDIT_ENTITY_MQTT_BINDING,
+      entityId: tb.id,
+      action: AUDIT_ACTION_MQTT_UNBIND,
+      actorId: input.nguoiSua.id,
+      before,
+      after,
+      reason: input.reason,
+    });
+    await ghiAuditLogTx(tx, {
+      action: AUDIT_LOG_ACTION_MQTT_BIND,
+      nguoiSua: input.nguoiSua,
+      clientId: tb.id,
+      deviceId: tb.deviceId,
+      before,
+      after,
+      reason: input.reason,
+    });
+    return { deviceId: tb.deviceId, goMay: tb.machineId };
   });
 }

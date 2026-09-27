@@ -2139,7 +2139,11 @@ function setupEventHandlers() {
         // re-activated soft-deleted client is forced back to PENDING (see reactivateFields).
         (client as any)[MQTT_ACL_APPROVAL_PROP] = !mqttClient.isActive ? 'PENDING' : mqttClient.approvalStatus;
         // doc 81 Đợt 1C Task 5 — the device ↔ machine binding (mqtt_clients."machineId", mig 0292).
-        (client as any)[MQTT_ACL_MACHINE_PROP] = await resolveMqttBoundMachine(mqttClient.machineId, deviceId);
+        // Task 5b fix round 1 (#4) — a soft-deleted row being RE-ACTIVATED (self-registration) never
+        // inherits its old binding: the session is unbound until an admin binds it again.
+        (client as any)[MQTT_ACL_MACHINE_PROP] = mqttClient.isActive
+          ? await resolveMqttBoundMachine(mqttClient.machineId, deviceId)
+          : null;
 
         if (passwordless) warnPasswordlessOnce(deviceId);
         connectionLog.hit(

@@ -679,7 +679,7 @@ export function MqttDashboardContent() {
                             {formatDate(client.lastConnectedAt)}
                           </TableCell>
                           <TableCell>
-                            {client.fcmToken ? (
+                            {client.hasPushToken ? (
                               <Badge className="bg-info/20 text-info border-info/30">
                                 <Bell className="w-3 h-3 mr-1" /> {t('common.yes')}
                               </Badge>

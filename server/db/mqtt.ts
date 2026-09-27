@@ -45,6 +45,52 @@ async function congTramMqtt(
 
 // ============= MQTT Client Functions =============
 
+/**
+ * doc 81 Đợt 1C Task 5b fix round 1 — PHÉP CHIẾU CỘT TƯỜNG MINH cho mọi đường ĐỌC thiết bị MQTT trả
+ * ra ngoài (`mqttClient.list` / `getById` / `pendingCount` + nội bộ health/history). Trước bản này
+ * `db.select()` trả MỌI cột — gồm `passwordHash` (bcrypt), `password` (mật khẩu cũ dạng THÔ) và
+ * `fcmToken` — cho bất kỳ ai đăng nhập trong phạm vi. Khuôn giống hồ sơ broker (`hasPassword`,
+ * mqttClientManagementRouter): chỉ trả CỜ `hasCredential` / `hasPushToken`. Ba cột bí mật KHÔNG
+ * BAO GIỜ nằm trong phép chiếu này; thêm cột mới ⇒ phải thêm TƯỜNG MINH ở đây.
+ */
+const COT_THIET_BI_CONG_KHAI = {
+  id: mqttClients.id,
+  clientId: mqttClients.clientId,
+  deviceId: mqttClients.deviceId,
+  deviceName: mqttClients.deviceName,
+  deviceModel: mqttClients.deviceModel,
+  osVersion: mqttClients.osVersion,
+  appVersion: mqttClients.appVersion,
+  ipAddress: mqttClients.ipAddress,
+  brand: mqttClients.brand,
+  manufacturer: mqttClients.manufacturer,
+  screenResolution: mqttClients.screenResolution,
+  networkType: mqttClients.networkType,
+  stationId: mqttClients.stationId,
+  processId: mqttClients.processId,
+  machineId: mqttClients.machineId,
+  approvalStatus: mqttClients.approvalStatus,
+  approvedBy: mqttClients.approvedBy,
+  approvedAt: mqttClients.approvedAt,
+  rejectionReason: mqttClients.rejectionReason,
+  mappingType: mqttClients.mappingType,
+  autoReconnect: mqttClients.autoReconnect,
+  connectionStatus: mqttClients.connectionStatus,
+  lastConnectedAt: mqttClients.lastConnectedAt,
+  lastDisconnectedAt: mqttClients.lastDisconnectedAt,
+  lastHeartbeat: mqttClients.lastHeartbeat,
+  receiveNGAlerts: mqttClients.receiveNGAlerts,
+  receiveDailySummary: mqttClients.receiveDailySummary,
+  receiveWeeklySummary: mqttClients.receiveWeeklySummary,
+  isActive: mqttClients.isActive,
+  createdAt: mqttClients.createdAt,
+  updatedAt: mqttClients.updatedAt,
+  /** Thiết bị có credential MQTT (hash, hoặc mật khẩu cũ dạng thô chờ nâng cấp) — KHÔNG lộ giá trị. */
+  hasCredential: sql<boolean>`(${mqttClients.passwordHash} IS NOT NULL OR ${mqttClients.password} IS NOT NULL)`,
+  /** Có FCM token để đẩy thông báo — màn Dashboard chỉ cần CÓ/KHÔNG. */
+  hasPushToken: sql<boolean>`(${mqttClients.fcmToken} IS NOT NULL AND ${mqttClients.fcmToken} <> '')`,
+};
+
 export async function getMqttClients(filters?: {
   approvalStatus?: 'PENDING' | 'APPROVED' | 'REJECTED';
   connectionStatus?: 'ONLINE' | 'OFFLINE' | 'DISCONNECTED';
@@ -71,7 +117,7 @@ export async function getMqttClients(filters?: {
     conditions.push(eq(mqttClients.mappingType, filters.mappingType));
   }
   
-  return db.select()
+  return db.select(COT_THIET_BI_CONG_KHAI)
     .from(mqttClients)
     .where(and(...conditions))
     .orderBy(desc(mqttClients.createdAt));
@@ -85,7 +131,7 @@ export async function getMqttClientById(id: number, scope?: PhamViNguoiXem) {
   // ⚠ `id` đến từ `input`. Ngoài phạm vi ⇒ `null` (như không tồn tại), không phải một lỗi riêng.
   const cong = await congTramMqtt(mqttClients.stationId, scope);
   if (cong) conditions.push(cong);
-  const results = await db.select()
+  const results = await db.select(COT_THIET_BI_CONG_KHAI)
     .from(mqttClients)
     .where(and(...conditions))
     .limit(1);
