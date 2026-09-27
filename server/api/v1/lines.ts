@@ -175,10 +175,12 @@ export function registerLineRoutes(r: Router): void {
   );
 
   // ── POST /v1/lines/:id/recipe — nạp recipe set, khóa phiên bản (spec §13.2) ──
-  // W3-B1 (G3.3): distribute qua đường recipe_deployments sẵn có (GIỮ
-  // second-approver gate) + XÁC NHẬN NẠP mọi máy required → set
-  // line_states.recipe_set_ref + KHÓA set suốt lô. Chưa xác nhận đủ → 409
-  // recipe_not_confirmed kèm per-máy results + missing (honest partial).
+  // W3-B1 (G3.3): distribute qua đường recipe_deployments sẵn có — cổng phát
+  // hành CHẶT (doc 81 Đợt 1C Task 2: đã duyệt · không archived · đúng loại máy)
+  // — + XÁC NHẬN NẠP mọi máy required → set line_states.recipe_set_ref + KHÓA
+  // set suốt lô. Chưa xác nhận đủ → 409 recipe_not_confirmed kèm per-máy
+  // results + missing (honest partial); mục bị cổng từ chối mang reason, và
+  // hint updateSetToCurrentVersion + currentVersion khi phiên bản ghim đã bị thay.
   r.post(
     "/lines/:id/recipe",
     requireScope(LINES_WRITE_SCOPE),

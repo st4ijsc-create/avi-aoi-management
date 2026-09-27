@@ -1331,8 +1331,12 @@ export function buildV1OpenApiSpec(serverUrl = "/"): Record<string, unknown> {
           tags: ["Lines"],
           summary: "Nạp recipe set vào tuyến (distribute + xác nhận nạp + khóa phiên bản suốt lô)",
           description:
-            "Requires scope `lines:write`. Deploy per-máy qua recipe_deployments (giữ second-approver gate); " +
-            "đủ máy required đúng phiên bản → set recipe_set_ref + lock; thiếu → 409 recipe_not_confirmed kèm results+missing.",
+            "Requires scope `lines:write`. Deploy per-máy qua recipe_deployments, qua cổng phát hành CHẶT (doc 81 Đợt 1C): " +
+            "phiên bản ghim phải approved (second approver), không archived, đúng machine type nếu biết. " +
+            "Mục bị cổng từ chối ⇒ status 'failed' kèm `details.results[].reason` (recipeNotApproved | recipeArchived | " +
+            "recipeRetired | recipeMachineTypeMismatch); khi phiên bản ghim đã bị THAY bằng bản mới hơn thì thêm " +
+            "`hint: \"updateSetToCurrentVersion\"` + `currentVersion` (cập nhật set sang phiên bản hiện hành). Các mục khác vẫn phân phối. " +
+            "Đủ máy required đúng phiên bản → set recipe_set_ref + lock; thiếu → 409 recipe_not_confirmed kèm results+missing.",
           parameters: [{ name: "id", in: "path", required: true, schema: { type: "integer" } }],
           requestBody: {
             required: true,
@@ -1353,7 +1357,13 @@ export function buildV1OpenApiSpec(serverUrl = "/"): Record<string, unknown> {
             "200": { description: "Confirmed + locked", content: jsonOk() },
             ...errResponses({
               "404": { description: "Line/recipe set không tồn tại", content: jsonErr() },
-              "409": { description: "recipe_not_confirmed | recipe_set_locked | invalid_state", content: jsonErr() },
+              "409": {
+                description:
+                  "recipe_not_confirmed (details {results, missing}; gồm set ghim phiên bản đã bị thay/superseded ⇒ mục " +
+                  "`details.results[].reason` = recipeArchived + `hint` updateSetToCurrentVersion + `currentVersion`) | " +
+                  "recipe_set_locked | invalid_state",
+                content: jsonErr(),
+              },
             }),
           },
         },

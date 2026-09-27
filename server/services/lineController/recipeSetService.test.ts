@@ -389,6 +389,21 @@ describe("distributeRecipeSet — phân phối + xác nhận nạp + khóa", () 
     expect(h.recipes.get(32).status).toBe("active");
   });
 
+  it("Đợt 1C Task 2 fix 1 — set ghim v3 archived nhưng bản active là v2 CŨ HƠN (đã rollback) ⇒ reason recipeArchived, KHÔNG gợi ý 'đã bị thay'", async () => {
+    seedLine(1, "idle");
+    const set = await seedSet();
+    seedRecipe(50, { code: "GLUE-09", version: 3 });
+    await addRecipeSetItem({ recipeSetId: set.id, machineId: 3, machineRecipeId: 50 });
+    h.recipes.get(50).status = "archived"; // v3 bị lưu trữ / rollback về v2
+    seedRecipe(51, { code: "GLUE-09", version: 2, status: "active", machineId: 4 });
+
+    const res = await distributeRecipeSet(1, set.id, { actorId: 7 });
+    if (!res.ok) throw new Error("expected ok");
+    expect(res.results[0]).toMatchObject({ status: "failed", reason: "recipeArchived" });
+    expect(res.results[0].hint).toBeUndefined();
+    expect(res.results[0].currentVersion).toBeUndefined();
+  });
+
   it("Đợt 1C Task 2 — archived nhưng code KHÔNG có bản active ⇒ reason, KHÔNG hint; lỗi ngoài cổng (không PRECONDITION_FAILED) ⇒ chỉ error, không reason", async () => {
     seedLine(1, "idle");
     const set = await seedSet();

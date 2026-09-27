@@ -285,7 +285,7 @@ export interface DistributeItemResult {
    * recipeMachineTypeMismatch). Absent for failures that are not a gate refusal.
    */
   reason?: string;
-  /** Set when the pinned version was superseded: the code has a DIFFERENT active version now. */
+  /** Set when the pinned version was superseded: the code's active version is NEWER than the pin. */
   hint?: RecipeSetItemHint;
   /** Version number of that current active version (what the set should be updated to). */
   currentVersion?: number;
@@ -354,18 +354,23 @@ export async function distributeRecipeSetByCode(
 /**
  * doc 81 Đợt 1C Task 2 — per-item refusal detail from the strict release gate. Only a
  * PRECONDITION_FAILED carrying a `reason` counts; anything else (DB down, NOT_FOUND…) keeps just
- * `error`. When the pinned version is archived/retired and the code now has a DIFFERENT active
- * version (the one read by the fast-path above, before the deploy attempt), the hint tells the
- * operator to update the set to that version.
+ * `error`. When the pinned version is archived/retired and the code's active version (read by the
+ * fast-path above, before the deploy attempt) is NEWER than the pinned one, the pin was superseded:
+ * the hint tells the operator to update the set to that version. An OLDER active version (e.g. after
+ * a rollback) is not a replacement — reason only, no "update to current" hint (fix round 1).
  */
 function gateRefusal(
   err: unknown,
-  item: { machineRecipeId: number },
+  item: { machineRecipeId: number; recipeVersion: number },
   active: Awaited<ReturnType<typeof getActiveRecipe>>,
 ): Pick<DistributeItemResult, "reason" | "hint" | "currentVersion"> {
   const reason = readAppErrorMeta(err)?.appParams?.reason;
   if ((err as { code?: unknown })?.code !== "PRECONDITION_FAILED" || typeof reason !== "string") return {};
-  const superseded = (reason === "recipeArchived" || reason === "recipeRetired") && active != null && active.id !== item.machineRecipeId;
+  const superseded =
+    (reason === "recipeArchived" || reason === "recipeRetired") &&
+    active != null &&
+    active.id !== item.machineRecipeId &&
+    active.version > item.recipeVersion;
   return superseded ? { reason, hint: "updateSetToCurrentVersion", currentVersion: active.version } : { reason };
 }
 

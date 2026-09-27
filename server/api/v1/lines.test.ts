@@ -418,6 +418,40 @@ describe("POST /v1/lines/:id/recipe — nạp recipe set (distribute + xác nh�
     expect(body.error.details.missing[0].machineCode).toBe("M-5");
   });
 
+  it("Đợt 1C Task 2 — set ghim phiên bản đã bị THAY ⇒ 409 recipe_not_confirmed, details.results[] mang reason/hint/currentVersion nguyên trạng", async () => {
+    h.recipeResult = {
+      ...h.recipeResult,
+      confirmed: false,
+      locked: false,
+      results: [
+        { itemId: 1, machineId: 5, machineCode: "M-5", recipeCode: "SCREW-01", recipeVersion: 1, required: true, status: "failed",
+          error: "Recipe #9 (SCREW-01 v1) is archived", reason: "recipeArchived", hint: "updateSetToCurrentVersion", currentVersion: 3 },
+      ],
+      missing: [{ machineId: 5, machineCode: "M-5", recipeCode: "SCREW-01", expectedVersion: 1, reason: "không active" }],
+    };
+    const res = await fetch(`${base}/api/v1/lines/1/recipe`, {
+      method: "POST",
+      headers: { ...MASTER, "content-type": "application/json" },
+      body: JSON.stringify({ recipeSetCode: "MODEL-X@v3" }),
+    });
+    expect(res.status).toBe(409);
+    const body = await res.json();
+    expect(body.error.code).toBe("recipe_not_confirmed");
+    expect(body.error.details.results[0]).toMatchObject({ status: "failed", reason: "recipeArchived", hint: "updateSetToCurrentVersion", currentVersion: 3 });
+  });
+
+  it("Đợt 1C Task 2 — OpenAPI của POST /lines/{id}/recipe mô tả cổng CHẶT + trường per-mục + 409 cho set ghim bản đã bị thay (không còn hứa 'second-approver gate')", async () => {
+    const { buildV1OpenApiSpec } = await import("./openapi");
+    const op = (buildV1OpenApiSpec() as any).paths["/api/v1/lines/{id}/recipe"].post;
+    const doc = `${op.description}
+${op.responses["409"].description}`;
+    expect(doc).not.toMatch(/second-approver/i);
+    for (const s of ["approved", "archived", "machine type", "details.results[].reason", "hint", "updateSetToCurrentVersion", "currentVersion"]) {
+      expect(doc, s).toContain(s);
+    }
+    expect(op.responses["409"].description).toMatch(/superseded/i);
+  });
+
   it("map failure: NOT_FOUND→404 recipe_set_not_found; LOCKED→409 recipe_set_locked; INVALID_STATE→409; DB→503", async () => {
     h.recipeResult = { ok: false, code: "NOT_FOUND", message: "không thấy set" };
     let res = await fetch(`${base}/api/v1/lines/1/recipe`, {

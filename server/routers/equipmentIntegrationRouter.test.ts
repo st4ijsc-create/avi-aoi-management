@@ -32,7 +32,9 @@ vi.mock("drizzle-orm", async (orig) => {
 // `chanKhiPhaiDoiMatKhau`) on EVERY authenticated procedure call, ahead of RBAC — it must be
 // present on this mock (a bare `{ getDb }` mock makes Vitest throw "No 'phaiDoiMatKhau' export
 // is defined on the mock" the moment a non-exempt role calls any procedure).
-vi.mock("../db", () => ({ getDb: vi.fn(async () => fake), phaiDoiMatKhau: vi.fn(async () => false) }));
+// `createAuditLog` — the root audit middleware writes one row per mutation; without it every mutation
+// logged "[AuditTrail] Failed to log audit entry … No createAuditLog export" (233 lines of stderr).
+vi.mock("../db", () => ({ getDb: vi.fn(async () => fake), phaiDoiMatKhau: vi.fn(async () => false), createAuditLog: vi.fn(async () => undefined) }));
 
 // ── recipeVersioningService: mocked so router RBAC/SSRF is tested in ISOLATION from the
 // service's own approvedBy gate (covered separately in recipeVersioningService.test.ts).
@@ -206,7 +208,36 @@ describe("recordRecipeLoad — deploy:true needs the strict deploy floor (Đợt
     expect((await svc()).recordLoad).toHaveBeenCalledWith(expect.objectContaining({ recipeId: 7, machineId: 3, deploy: true, performedBy: 8 }));
   });
 
-  it("differential oracle: deploy:true allowed ⟺ releaseRecipeVersion (the real actuation chain) AND archiveRecipeVersion (old canCreate chain) allowed; deploy:false ⟺ archiveRecipeVersion", async () => {
+  /**
+   * Fix round 1 — run under BOTH deployment 2FA modes. `AUTH_2FA_BAT_BUOC` unset = mandatory (safe
+   * default); "0" = the owner's INTERNAL mode (2026-08-24): the enable-2FA demand is skipped, the role
+   * floor is not. Env save/restore follows `voiCo` in server/_core/cheDo2faTheoTrienKhai.test.ts.
+   */
+  async function voiCo<T>(gt: string | undefined, fn: () => Promise<T>): Promise<T> {
+    const cu = process.env.AUTH_2FA_BAT_BUOC;
+    if (gt === undefined) delete process.env.AUTH_2FA_BAT_BUOC;
+    else process.env.AUTH_2FA_BAT_BUOC = gt;
+    try {
+      return await fn();
+    } finally {
+      if (cu === undefined) delete process.env.AUTH_2FA_BAT_BUOC;
+      else process.env.AUTH_2FA_BAT_BUOC = cu;
+    }
+  }
+
+  it("internal mode (AUTH_2FA_BAT_BUOC=0): engineer + canCreate + canEdit WITHOUT 2FA ⇒ deploy:true allowed; operator still FORBIDDEN (role floor not relaxed)", async () => {
+    await voiCo("0", async () => {
+      granted.add("machine_control:canCreate");
+      granted.add("machine_control:canEdit");
+      await expect(callerAs({ id: 10, role: "engineer", twoFactorEnabled: false }).recordRecipeLoad({ ...load, deploy: true })).resolves.toBeDefined();
+      await expect(callerAs({ id: 11, role: "operator", twoFactorEnabled: false }).recordRecipeLoad({ ...load, deploy: true })).rejects.toMatchObject({ code: "FORBIDDEN" });
+    });
+  });
+
+  it.each([
+    ["mandatory (unset)", undefined],
+    ["internal (0)", "0"],
+  ] as const)("differential oracle [2FA %s]: deploy:true allowed ⟺ releaseRecipeVersion (the real actuation chain) AND archiveRecipeVersion (old canCreate chain) allowed; deploy:false ⟺ archiveRecipeVersion", async (_label, co) => voiCo(co, async () => {
     const roles = ["admin", "supervisor", "engineer", "quality_inspector", "maintenance", "operator", "viewer", "user"];
     const grantSets = [[], ["canCreate"], ["canEdit"], ["canCreate", "canEdit"]];
     const ok = (p: Promise<unknown>) => p.then(() => true, () => false);
@@ -229,7 +260,7 @@ describe("recordRecipeLoad — deploy:true needs the strict deploy floor (Đợt
       }
     }
     expect(rows).toBe(64);
-  });
+  }));
 });
 
 describe("INT-01 SSRF — euromapOpcuaSnapshot never accepts a client endpoint", () => {
