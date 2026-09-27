@@ -12043,7 +12043,20 @@
       "INTERNAL": "助手遇到系统错误。请重试；如仍出现，请联系管理员。",
       "devDetail": "技术细节（管理员）"
     },
-    "safetyNotCertified": "与安全相关的程序——此解释不构成认证。须由授权安全工程师验证。"
+    "safetyNotCertified": "与安全相关的程序——此解释不构成认证。须由授权安全工程师验证。",
+    "stream": {
+      "cancel": "取消",
+      "cancelled": "已取消 — 助手已停止，AI 服务器已释放。",
+      "progress": "进度",
+      "streaming": "正在编写…",
+      "stage": {
+        "gate": "安全检查",
+        "retrieve": "查阅手册",
+        "generate": "生成结果",
+        "validate": "校验代码",
+        "repair": "自动修复（第 {{attempt}} 轮）"
+      }
+    }
   },
   "technicianCopilot": {
     "title": "技术副驾",

@@ -7,6 +7,7 @@
 
 import type express from "express";
 import { thuXacThucRest, thanTuChoiRest } from "./_xacThucRest";
+import { xuLyCopilotStream } from "./programmingCopilotStream";
 import {
   generateTextStream,
   chatCompletionStream,
@@ -186,6 +187,9 @@ class OngPhatSSE {
  * Register SSE streaming routes on the Express app
  */
 export function registerAiStreamingRoutes(app: express.Express) {
+  // ─── SSE: Programming Copilot (doc 80 Đợt 1 Task 8 — stage/token/result/error + huỷ) ───
+  app.post("/api/ai/programming-copilot/stream", xuLyCopilotStream);
+
   // ─── SSE: Text Generation Stream ────────────────────
   app.post("/api/ai/stream/generate", async (req, res) => {
     let phat: OngPhatSSE | null = null;

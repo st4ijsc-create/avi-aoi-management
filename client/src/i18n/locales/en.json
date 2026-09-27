@@ -12260,7 +12260,20 @@
       "INTERNAL": "The assistant hit a system error. Try again; if it repeats, contact your administrator.",
       "devDetail": "Technical details (administrator)"
     },
-    "safetyNotCertified": "Safety-related program — this explanation is NOT a certification. An authorised safety engineer must verify it."
+    "safetyNotCertified": "Safety-related program — this explanation is NOT a certification. An authorised safety engineer must verify it.",
+    "stream": {
+      "cancel": "Cancel",
+      "cancelled": "Cancelled — the assistant stopped and the AI server was released.",
+      "progress": "Progress",
+      "streaming": "Writing…",
+      "stage": {
+        "gate": "Safety check",
+        "retrieve": "Looking up manuals",
+        "generate": "Generating",
+        "validate": "Validating code",
+        "repair": "Self-repair (round {{attempt}})"
+      }
+    }
   },
   "technicianCopilot": {
     "title": "Technician Copilot",

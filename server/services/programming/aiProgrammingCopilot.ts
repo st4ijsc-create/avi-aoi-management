@@ -49,6 +49,9 @@ import {
   type GateLang,
   type GateReasonCode,
 } from "./copilotSafetyGate";
+// Doc 80 · Đợt 1 · Task 8 — bộ cắt suy luận XUYÊN CHUNK cho mảnh `token` phát sống (module LÁ, nhập tĩnh:
+// mock engine bằng factory liệt kê tay không được biến nó thành `undefined`).
+import { StreamingThinkingStripper, thinkingStartsOpen } from "../ai/thinkingStrip";
 
 export type CopilotLang = "vi" | "en" | "zh";
 
@@ -242,6 +245,40 @@ export interface GenerateProgramResult {
   errorCode?: CopilotErrorCode;
   /** Doc 80 · AI-09 — chi tiết kỹ thuật nguyên văn (chỉ dành cho admin; router gỡ với vai khác). */
   devDetail?: string;
+}
+
+// ════════════════════════════════════════════════════════════════════════════════════════════
+// Doc 80 · Đợt 1 · Task 8 (AI-07, phụ lục A §8 D1) — THEO DÕI LƯỢT: stage · token · huỷ.
+//
+// `generateProgram` là pipeline DUY NHẤT (cổng → RAG → sinh → validate → tự sửa) cho CẢ thủ tục tRPC
+// `copilotGenerate` LẪN tuyến SSE `/api/ai/programming-copilot/stream`. Tuyến SSE KHÔNG có bản sao
+// logic nào: nó truyền `TheoDoiCopilot` vào đây. Vắng `theoDoi` ⇒ hành vi y hệt trước Task 8 (cùng
+// `chatCompletion` không-stream, cùng thứ tự, không một lời gọi thêm).
+//   • `onStage` — gate / retrieve / generate / validate / repair (attempt n).
+//   • `onToken` — chữ trả lời hiện dần (đã qua bộ cắt suy luận xuyên chunk; `reasoning_content`
+//     KHÔNG BAO GIỜ thành token).
+//   • `signal`  — huỷ ⇒ lượt gọi llama-server bị abort (kết nối HTTP đóng ⇒ slot rảnh) và pipeline
+//     dừng ở điểm kiểm kế tiếp: KHÔNG lượt tự sửa, KHÔNG lượt lùi free-text sau huỷ.
+// ════════════════════════════════════════════════════════════════════════════════════════════
+
+export type CopilotStage = "gate" | "retrieve" | "generate" | "validate" | "repair";
+
+export interface TheoDoiCopilot {
+  onStage?: (stage: CopilotStage, info?: { attempt?: number }) => void;
+  onToken?: (chunk: string) => void;
+  signal?: AbortSignal;
+}
+
+/** Lượt bị HUỶ theo ý người gọi — không phải lỗi hệ thống, không có câu cho người dùng. */
+export class LoiCopilotBiHuy extends Error {
+  constructor() {
+    super("copilot run aborted by caller");
+    this.name = "AbortError";
+  }
+}
+
+function kiemHuy(theoDoi?: TheoDoiCopilot): void {
+  if (theoDoi?.signal?.aborted) throw new LoiCopilotBiHuy();
 }
 
 /** ir-flow / iec61131-pou also COMPILE (safety-linter/transpile hard gate) before display. */
@@ -777,6 +814,49 @@ function ketQuaKhongCoMa(
   return { note: CAU_LOI[errorCode][lang], errorCode, devDetail: cauKhongCoMa(kc, viec) };
 }
 
+/** Task 8 — câu ngắn cho người dùng của một mã lỗi (cùng bảng `CAU_LOI`, không bản sao thứ hai). */
+export function cauLoiCopilot(code: CopilotErrorCode, lang: GateLang): string {
+  return CAU_LOI[code][lang];
+}
+
+/**
+ * Task 8 — một lượt STREAM tới model, gom về đúng hình dạng mà `chatCompletion` trả (text + token),
+ * để phần xử lý SAU lượt gọi trong `runCodeModel` là MỘT thân cho cả hai đường.
+ * `signal` đi xuống `chatCompletionStream` ⇒ `aiLlamaServerClient.streamChatCompletion` ⇒ `fetch`.
+ */
+async function goiModelStream(
+  options: Parameters<typeof import("../aiGgufEngine").chatCompletion>[0],
+  modelId: string | undefined,
+  theoDoi: TheoDoiCopilot,
+): Promise<{ text: string; tokensPrompt?: number; tokensGenerated?: number }> {
+  // Nhập TẠI ĐÂY, không destructure ở `runCodeModel`: mock engine bằng factory liệt kê tay (các lưới
+  // copilot cũ) NÉM khi đọc một export không khai — đường KHÔNG-stream không được chạm tới nó.
+  const { chatCompletionStream } = await import("../aiGgufEngine");
+  const catNghi = new StreamingThinkingStripper({ startInsideThinking: thinkingStartsOpen() });
+  let tho = "";
+  let text: string | undefined;
+  let tokensPrompt: number | undefined;
+  let tokensGenerated: number | undefined;
+  for await (const c of chatCompletionStream(options, modelId, theoDoi.signal)) {
+    if (c.type === "token" && typeof c.token === "string") {
+      tho += c.token;
+      const hien = catNghi.push(c.token);
+      if (hien) theoDoi.onToken?.(hien);
+    } else if (c.type === "error") {
+      // data-raw-ok: chuỗi lỗi của engine chỉ đi vào `devDetail` (admin) qua `cauKhongCoMa`.
+      throw new Error(c.error || "streaming chat completion failed");
+    } else if (c.type === "done") {
+      text = typeof c.fullText === "string" ? c.fullText : undefined;
+      tokensPrompt = c.tokensPrompt;
+      tokensGenerated = c.tokensGenerated;
+    }
+    // `reasoning` / `tool_call_delta`: không phải chữ trả lời ⇒ không phát, không gom.
+  }
+  const duoi = catNghi.flush();
+  if (duoi) theoDoi.onToken?.(duoi);
+  return { text: text ?? tho, tokensPrompt, tokensGenerated };
+}
+
 /**
  * Call the code-tier LLM. Routes via aiModelRouter task:"code" to pick the code tier +
  * token/temperature budget; strips any `<think>` block so reasoning never leaks. Everything
@@ -788,7 +868,13 @@ function ketQuaKhongCoMa(
  * LLAMA_SERVER_MODEL`) chỉ để lại một `console.warn` rồi trả `null`, và người dùng đọc "AI
  * offline". Nay lỗi được PHÂN LOẠI và mang lên tới câu trả lời.
  */
-async function runCodeModel(system: string, user: string, loai: LoaiLuotCopilot): Promise<KetCucModelMa> {
+async function runCodeModel(
+  system: string,
+  user: string,
+  loai: LoaiLuotCopilot,
+  /** Task 8 — có ⇒ lượt gọi đi đường STREAM (token hiện dần + huỷ được); vắng ⇒ y hệt trước. */
+  theoDoi?: TheoDoiCopilot,
+): Promise<KetCucModelMa> {
   const metricStart = Date.now();
   let metricPlan: Awaited<ReturnType<typeof planMetric>> = null;
   try {
@@ -817,20 +903,20 @@ async function runCodeModel(system: string, user: string, loai: LoaiLuotCopilot)
     // contextSize ở TRÊN — những giá trị đó vẫn đến từ route() cục bộ y hệt trước Task 2).
     metricPlan = await planMetric("code", user);
 
-    const res = await chatCompletion(
-      {
-        messages: [
-          { role: "system", content: system },
-          { role: "user", content: user },
-        ],
-        maxTokens: cs.maxTokens,
-        temperature,
-        contextSize,
-        ...(cs.disableThinking ? { disableThinking: true } : {}),
-        ...(cs.thinkingBudgetTokens ? { thinkingBudgetTokens: cs.thinkingBudgetTokens } : {}),
-      },
-      modelId,
-    );
+    const chatOpts: Parameters<typeof chatCompletion>[0] = {
+      messages: [
+        { role: "system", content: system },
+        { role: "user", content: user },
+      ],
+      maxTokens: cs.maxTokens,
+      temperature,
+      contextSize,
+      ...(cs.disableThinking ? { disableThinking: true } : {}),
+      ...(cs.thinkingBudgetTokens ? { thinkingBudgetTokens: cs.thinkingBudgetTokens } : {}),
+    };
+    const res = theoDoi
+      ? await goiModelStream(chatOpts, modelId, theoDoi)
+      : await chatCompletion(chatOpts, modelId);
     safeRecordMetric(metricPlan, {
       tokensIn: res?.tokensPrompt,
       tokensOut: res?.tokensGenerated,
@@ -860,6 +946,9 @@ async function runCodeModel(system: string, user: string, loai: LoaiLuotCopilot)
   } catch (e) {
     safeRecordMetric(metricPlan, { latencyMs: Date.now() - metricStart, outcome: "error" });
     const chiTiet = (e as Error)?.message ?? String(e);
+    // Task 8 — người gọi HUỶ: không phải hệ thống hỏng ⇒ không kêu lỗi; `generateProgram` dừng ở
+    // điểm kiểm `kiemHuy` ngay sau lượt gọi này.
+    if (theoDoi?.signal?.aborted) return { loai: "hong", lyDo: "aborted by caller" };
     // ⚠ `console.warn` MỘT MÌNH chính là chỗ lỗi bị nuốt: không ai đọc log máy chủ khi bấm nút
     // "sinh mã". Giữ log (cho người vận hành) VÀ mang lỗi lên câu trả lời (cho kỹ sư).
     console.error("[aiProgrammingCopilot] lượt gọi model sinh mã HỎNG (không nuốt, báo lên UI):", chiTiet);
@@ -884,6 +973,8 @@ async function runStructuredCodeModel(
   system: string,
   user: string,
   schema: object,
+  /** Task 8 — huỷ lượt JSON (grammar) giữa chừng; vắng ⇒ y hệt trước. */
+  signal?: AbortSignal,
 ): Promise<string | null> {
   const metricStart = Date.now();
   let metricPlan: Awaited<ReturnType<typeof planMetric>> = null;
@@ -915,7 +1006,7 @@ async function runStructuredCodeModel(
     const cs = chinhSachLuot("json", maxTokens, contextSize);
     const result = await generateJSON<unknown>(
       schema,
-      { systemPrompt: system, prompt: user, maxTokens: cs.maxTokens, temperature, contextSize, disableThinking: cs.disableThinking },
+      { systemPrompt: system, prompt: user, maxTokens: cs.maxTokens, temperature, contextSize, disableThinking: cs.disableThinking, ...(signal ? { signal } : {}) },
       modelId,
     );
     safeRecordMetric(metricPlan, {
@@ -930,6 +1021,7 @@ async function runStructuredCodeModel(
     return JSON.stringify(result.data, null, 2);
   } catch (e) {
     safeRecordMetric(metricPlan, { latencyMs: Date.now() - metricStart, outcome: "error" });
+    if (signal?.aborted) return null; // Task 8 — huỷ: người gọi dừng ở `kiemHuy`, không lùi free-text
     console.warn(
       "[aiProgrammingCopilot] structured JSON codegen failed (falling back to free-text):",
       (e as Error)?.message ?? e,
@@ -1068,7 +1160,14 @@ function buildRepairPrompt(
  *
  * @see module header for the safety invariants this upholds.
  */
-export async function generateProgram(input: GenerateProgramInput): Promise<GenerateProgramResult> {
+export async function generateProgram(
+  input: GenerateProgramInput,
+  /**
+   * Doc 80 · Đợt 1 · Task 8 — theo dõi lượt (stage · token · huỷ) cho tuyến SSE. Vắng ⇒ hành vi
+   * byte-identical với trước Task 8. Huỷ ⇒ ném `LoiCopilotBiHuy` ở điểm kiểm kế tiếp.
+   */
+  theoDoi?: TheoDoiCopilot,
+): Promise<GenerateProgramResult> {
   const kind = String(input?.kind ?? "").trim();
   const mode: CopilotMode = input?.mode ?? "generate";
   const request = String(input?.request ?? "").trim();
@@ -1081,6 +1180,8 @@ export async function generateProgram(input: GenerateProgramInput): Promise<Gene
   // 2) SAFETY GATE (Doc 80 · Task 10 · D4) — chạy TRƯỚC mọi thứ tốn kém (warm model, RAG, model)
   //    cho MỌI mode, kể cả review/explain: bị chặn ⇒ không tốn một lượt model nào. Kết quả thống
   //    nhất { refused, refusalSource:"gate", reasonCode, userMessage }; `reason` giữ cho client cũ.
+  theoDoi?.onStage?.("gate");
+  kiemHuy(theoDoi);
   const gate = checkCopilotSafety({
     mode,
     request,
@@ -1106,11 +1207,14 @@ export async function generateProgram(input: GenerateProgramInput): Promise<Gene
 
   // Load-order VRAM fix: warm the LARGE code model before the small RAG embedder loads
   // (see warmCodeModel). No-op once resident, so only the first request pays the load.
+  theoDoi?.onStage?.("retrieve");
   await warmCodeModel();
+  kiemHuy(theoDoi);
 
   // 3) Ground with cited RAG — attach citations to EVERY result (even when empty).
   const ragSeed = request || (input?.contextCode ? String(input.contextCode).slice(0, 400) : outKind);
   const { answerContext, citations } = await retrieveContext(`${outKind} ${ragSeed}`.trim(), input?.vendor);
+  kiemHuy(theoDoi);
 
   // G2-A — ngân sách ngữ cảnh của lượt này (xem khối NGAN_SACH_PHAN ở trên về thứ tự ưu tiên).
   const nganSach = await canNganSach(request, mode === "explain" || mode === "review" ? "giai-thich" : "sinh");
@@ -1142,7 +1246,10 @@ export async function generateProgram(input: GenerateProgramInput): Promise<Gene
       };
     }
     const user = buildExplainPrompt(mode, outKind, language, request, codeVua, vendorVua, repo);
-    const out = await runCodeModel(system, user, "giai-thich");
+    kiemHuy(theoDoi);
+    theoDoi?.onStage?.("generate");
+    const out = await runCodeModel(system, user, "giai-thich", theoDoi);
+    kiemHuy(theoDoi);
     if (out.loai !== "co-chu") {
       return { ok: false, refused: false, kind, citations, ...ketQuaKhongCoMa(out, "explanation", detectRequestLang(request)) };
     }
@@ -1180,12 +1287,16 @@ export async function generateProgram(input: GenerateProgramInput): Promise<Gene
   // Fail-safe: offline OR any grammar/generation error → fall through to the free-text path.
   const jsonSchema = getCodegenJsonSchema(outKind);
   let code = "";
+  kiemHuy(theoDoi);
+  theoDoi?.onStage?.("generate");
   if (jsonSchema) {
-    const json = await runStructuredCodeModel(system, user, jsonSchema);
+    const json = await runStructuredCodeModel(system, user, jsonSchema, theoDoi?.signal);
+    kiemHuy(theoDoi);
     if (json != null) code = json; // else falls through to free-text below
   }
   if (!code) {
-    const out = await runCodeModel(system, user, "sinh");
+    const out = await runCodeModel(system, user, "sinh", theoDoi);
+    kiemHuy(theoDoi);
     if (out.loai !== "co-chu") {
       return { ok: false, refused: false, kind: outKind, citations, ...ketQuaKhongCoMa(out, "suggestion", detectRequestLang(request)) };
     }
@@ -1201,6 +1312,7 @@ export async function generateProgram(input: GenerateProgramInput): Promise<Gene
   // the code is still returned with ok:false + diagnostics so the engineer sees what is wrong.
   // No deploy / upload / run — display only.
   const required = validateRequired();
+  theoDoi?.onStage?.("validate");
   let { validation, ran } = await runValidation(outKind, language, code);
 
   // Doc 34 P4c (#1) — SELF-REPAIR LOOP. The substrate validator (already run above) becomes a
@@ -1210,17 +1322,21 @@ export async function generateProgram(input: GenerateProgramInput): Promise<Gene
   let repairAttempts = 0;
   const maxRepair = repairEnabled() ? repairMax() : 0;
   while (ran && !validation.ok && repairAttempts < maxRepair) {
+    kiemHuy(theoDoi);
     repairAttempts++;
+    theoDoi?.onStage?.("repair", { attempt: repairAttempts });
     // G2-A — dùng bản manual ĐÃ CẮT (`vendorVua`), không phải `answerContext` nguyên bản: vòng tự
     // sửa gửi thêm cả mã hỏng + danh sách lỗi, nên đây là prompt DÀI NHẤT của cả lượt.
     const repairUser = buildRepairPrompt(outKind, request, code, validation.diagnostics, vendorVua);
     let fixed = "";
     if (jsonSchema) {
-      const j = await runStructuredCodeModel(system, repairUser, jsonSchema);
+      const j = await runStructuredCodeModel(system, repairUser, jsonSchema, theoDoi?.signal);
+      kiemHuy(theoDoi);
       if (j != null) fixed = j;
     }
     if (!fixed) {
-      const out = await runCodeModel(system, repairUser, "tu-sua");
+      const out = await runCodeModel(system, repairUser, "tu-sua", theoDoi);
+      kiemHuy(theoDoi);
       if (out.loai === "co-chu") fixed = extractCode(out.text);
       // ⚠ Vòng TỰ SỬA cố ý KHÔNG dựng câu lỗi ở đây: lượt trước đã có mã + chẩn đoán để trả về, và
       // thay nó bằng một câu lỗi là làm người dùng MẤT thứ đã có. Nhưng ca `hong` phải để lại dấu
@@ -1231,6 +1347,7 @@ export async function generateProgram(input: GenerateProgramInput): Promise<Gene
     }
     if (fixed) fixed = goVoJsonChoKindVanBan(goHeaderGoldenKhoiMa(fixed), !!jsonSchema); // D3 + Fix 4 — cùng hậu kiểm cho lượt tự sửa
     if (!fixed) break; // model returned nothing — keep the previous attempt + its diagnostics
+    theoDoi?.onStage?.("validate");
     const re = await runValidation(outKind, language, fixed);
     code = fixed;
     validation = re.validation;

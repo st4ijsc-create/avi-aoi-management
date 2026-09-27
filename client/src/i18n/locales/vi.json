@@ -12240,7 +12240,20 @@
       "INTERNAL": "Trợ lý gặp lỗi hệ thống. Thử lại; nếu lặp lại, báo quản trị viên.",
       "devDetail": "Chi tiết kỹ thuật (quản trị viên)"
     },
-    "safetyNotCertified": "Chương trình liên quan an toàn — phần giải thích này KHÔNG phải chứng nhận. Cần kỹ sư an toàn có thẩm quyền kiểm định."
+    "safetyNotCertified": "Chương trình liên quan an toàn — phần giải thích này KHÔNG phải chứng nhận. Cần kỹ sư an toàn có thẩm quyền kiểm định.",
+    "stream": {
+      "cancel": "Huỷ",
+      "cancelled": "Đã huỷ — trợ lý đã dừng và máy chủ AI đã được giải phóng.",
+      "progress": "Tiến độ",
+      "streaming": "Đang viết…",
+      "stage": {
+        "gate": "Kiểm tra an toàn",
+        "retrieve": "Tra sổ tay",
+        "generate": "Sinh kết quả",
+        "validate": "Kiểm tra mã",
+        "repair": "Tự sửa (lượt {{attempt}})"
+      }
+    }
   },
   "technicianCopilot": {
     "title": "Trợ lý Kỹ thuật",

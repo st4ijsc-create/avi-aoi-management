@@ -383,6 +383,15 @@ const SO_KHAI: readonly BeMat[] = [
     hienThi: true, noi: "tai_cho",
     ghiChu: "Copilot lập trình — bề mặt DUY NHẤT đã cắt TRƯỚC G5-C (di sản G5-B).",
   },
+  {
+    tep: "server/services/programming/aiProgrammingCopilot.ts", ham: "goiModelStream", goi: "chatCompletionStream",
+    hienThi: true, noi: "tai_cho",
+    ghiChu:
+      "Doc 80 Đợt 1 Task 8 — cùng lượt model của `runCodeModel` nhưng đi STREAM cho tuyến SSE " +
+      "`/api/ai/programming-copilot/stream` (mã hiện dần + huỷ). Mảnh `token` phát sống qua " +
+      "`StreamingThinkingStripper` (xuyên chunk) ngay trong hàm; mảnh `reasoning` không bao giờ thành " +
+      "`token`; văn bản cuối quay về `runCodeModel` và đi tiếp `stripThinking` + guard như đường cũ.",
+  },
 
   // ═══ doc 79 TRỤC 1 (C) — TÁC NHÂN LẬP TRÌNH gọi model (1) ═══
   {

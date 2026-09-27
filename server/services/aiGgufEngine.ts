@@ -133,6 +133,12 @@ export interface GgufGenerateOptions {
    * allocate a huge KV-cache. Ignored if the model is already resident (context is shared).
    */
   contextSize?: number;
+  /**
+   * Doc 80 · Đợt 1 · Task 8 — huỷ lượt KHÔNG-stream trên đường `llama-server` (hiện chỉ
+   * `generateJSON` → `serverGenerateJSON` đọc ô này). Vắng ⇒ hành vi cũ nguyên vẹn. Huỷ ⇒ lượt
+   * POST bị abort (slot rảnh) và KHÔNG lùi in-process (xem `thuDuongServer`).
+   */
+  signal?: AbortSignal;
 }
 
 export interface GgufChatMessage {
@@ -2075,7 +2081,7 @@ async function thuDuongServer<T>(
   // G5-D · P1 — kiểu thu hẹp về ĐÚNG thứ cổng (a) cần. Trước đó là `GgufGenerateOptions`, khiến
   // đường CHAT (không có trường `prompt`) không dùng lại được thân này và sẽ phải có bản sao thứ
   // tư. Thu hẹp kiểu, không nới cổng: `kiemNganSachNguCanh()` vẫn nhận đúng ba trường như cũ.
-  options: { systemPrompt?: string; prompt: string; maxTokens?: number },
+  options: { systemPrompt?: string; prompt: string; maxTokens?: number; signal?: AbortSignal },
   goi: (srv: typeof import("./aiLlamaServerClient")) => Promise<T>,
   ten: string,
 ): Promise<KetCucDuongServer<T>> {
@@ -2088,6 +2094,9 @@ async function thuDuongServer<T>(
   try {
     return { xong: true, ketQua: await goi(srv) };
   } catch (e) {
+    // Doc 80 · Task 8 — NGƯỜI GỌI huỷ: không phải "server hỏng" ⇒ không lùi in-process, không ghi
+    // sự kiện chặn nạp trùng (cổng c). Ném nguyên lỗi abort cho người gọi.
+    if (options.signal?.aborted) throw e;
     // cổng (c) — ném, hoặc trả về để lùi in-process. `daPhatChu:false`: đường không-streaming
     // không thể "đã trả một nửa", nên nó không có cổng đứt-giữa-chừng.
     quyetDinhSauLoiServer(srv, modelId, e, ten, false);
@@ -2224,6 +2233,8 @@ async function* thuDuongServerStream(
   nganSach: { systemPrompt?: string; prompt: string; maxTokens?: number },
   moLuong: (srv: typeof import("./aiLlamaServerClient")) => AsyncGenerator<GgufStreamChunk>,
   ten: string,
+  /** Doc 80 · Task 8 — signal của NGƯỜI GỌI: đã huỷ ⇒ lỗi đi thẳng lên, không qua cổng (c). */
+  signal?: AbortSignal,
 ): AsyncGenerator<GgufStreamChunk, boolean> {
   const srv = await import("./aiLlamaServerClient");
   if (!srv.shouldUseServerForText(modelId)) return false;
@@ -2243,6 +2254,9 @@ async function* thuDuongServerStream(
     }
     return true;
   } catch (e) {
+    // Doc 80 · Task 8 — huỷ theo ý người gọi ≠ server hỏng: không lùi in-process (một lượt model MỚI
+    // sau khi người dùng đã bấm Huỷ), không ghi sự kiện "stream đứt"/"lùi bị chặn" giả vào sổ G1-D.
+    if (signal?.aborted) throw e;
     // Ưu tiên cờ do CHÍNH client gắn (nó biết chính xác thời điểm hỏng); `daPhatChu` cục bộ là
     // lưới thứ hai cho lỗi đến từ nơi khác.
     quyetDinhSauLoiServer(srv, modelId, e, ten, daPhatChu || srv.daPhatChuTruocKhiHong(e)); // cổng (c)
@@ -3072,6 +3086,7 @@ export async function* chatCompletionStream(
       nganSach,
       (srv) => srv.serverChatCompletionStream(options, modelId, signal),
       "streaming chat completion",
+      signal,
     );
     if (daPhucVu) return;
   }

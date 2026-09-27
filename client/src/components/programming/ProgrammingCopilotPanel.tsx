@@ -14,6 +14,12 @@
  * review + simulate before running on real equipment; safety-function requests are hard-refused
  * server-side and surfaced as a prominent notice.
  *
+ * Doc 80 · Đợt 1 · Task 8 — lượt chạy đi `POST /api/ai/programming-copilot/stream` (SSE: stage · token ·
+ * result · error) với nút "Huỷ" thật (AbortController ⇒ server đóng kết nối tới llama-server). Kết quả
+ * cuối CÙNG hình dạng `copilotGenerate` nên phần vẽ kết quả không đổi. Thủ tục tRPC cũ vẫn giữ cho tool
+ * chat/khách khác, và là đường LÙI khi tuyến SSE không có (404) hoặc SKU không gồm MOD_AI (tuyến
+ * `/api/ai/**` đứng sau cổng giấy phép MOD_AI, `copilotGenerate` thì không).
+ *
  * Reusable in two homes:
  *   • variant="full"     — standalone /programming-copilot page.
  *   • variant="embedded" — a compact side/collapsible panel inside EngineeringWorkspace, seeded
@@ -26,6 +32,14 @@ import { useTranslation } from "react-i18next";
 import { trpc } from "@/lib/trpc";
 import { useAuth } from "@/_core/hooks/useAuth";
 import { copilotErrorView, copilotRefusalView } from "./copilotResultView";
+// Doc 80 · Đợt 1 · Task 8 (AI-07) — SSE: tiến độ theo stage, mã hiện dần, nút Huỷ (abort ⇒ server abort llama-server).
+import {
+  apDungSuKien,
+  chayCopilotStream,
+  trangThaiLuongMoi,
+  type CopilotStreamState,
+} from "./copilotStreamClient";
+import { thongDiepLoiRest } from "@/lib/restAuthError";
 import { cn } from "@/lib/utils";
 import { CodeEditor } from "@/components/engineering/CodeEditor";
 import { HunkDiffView } from "@/components/diff/HunkDiffView";
@@ -38,7 +52,7 @@ import {
 } from "@/components/ui/select";
 import {
   Sparkles, Copy, CornerDownLeft, ShieldAlert, ShieldCheck,
-  AlertTriangle, XCircle, CheckCircle2, Loader2, BookText, Info, RefreshCw,
+  AlertTriangle, XCircle, CheckCircle2, Loader2, BookText, Info, RefreshCw, Square, Ban,
 } from "lucide-react";
 import { toast } from "sonner";
 import { progDiagText } from "@/components/engineering/progDiagText";
@@ -185,10 +199,76 @@ export function ProgrammingCopilotPanel({
     },
   });
 
-  const result = (gen.data ?? null) as GenResult | null;
+  // ── Doc 80 · Đợt 1 · Task 8 — lượt SSE (stage · token · result · error) + Huỷ ──
+  const [luong, setLuong] = useState<CopilotStreamState | null>(null);
+  const [streamBusy, setStreamBusy] = useState(false);
+  const [daHuy, setDaHuy] = useState(false);
+  const [loiLuong, setLoiLuong] = useState(false);
+  const abortRef = useRef<AbortController | null>(null);
+  // Rời trang/đóng dock giữa lượt ⇒ huỷ luôn (không để slot llama-server bị giữ cho một người đã đi).
+  useEffect(() => () => abortRef.current?.abort(), []);
+
+  type CopilotPayload = {
+    kind: CopilotKind;
+    request: string;
+    mode: CopilotMode;
+    vendor?: string;
+    contextCode?: string;
+    targetKind?: CopilotKind;
+  };
+
+  const chayLuot = async (payload: CopilotPayload) => {
+    abortRef.current?.abort();
+    const ac = new AbortController();
+    abortRef.current = ac;
+    gen.reset();
+    setDaHuy(false);
+    setLoiLuong(false);
+    setResultCode("");
+    let s = trangThaiLuongMoi();
+    setLuong(s);
+    setStreamBusy(true);
+    const kq = await chayCopilotStream(payload, {
+      signal: ac.signal,
+      onEvent: (e) => {
+        s = apDungSuKien(s, e, payload.kind);
+        setLuong(s);
+      },
+    });
+    if (abortRef.current !== ac) return; // một lượt mới hơn đã thay lượt này
+    abortRef.current = null;
+    setStreamBusy(false);
+    if (kq.status === "ok") {
+      if (s.result) {
+        setResultCode(String((s.result as unknown as GenResult).code ?? ""));
+        setHunkBase(hostBufferRef.current);
+      } else {
+        setLoiLuong(true); // luồng đóng mà không có result/error — coi là hỏng, không im lặng
+      }
+      return;
+    }
+    if (kq.status === "aborted") {
+      setDaHuy(true);
+      return;
+    }
+    if (kq.status === "http") {
+      const ma = (kq.body as { code?: unknown } | null)?.code;
+      if (kq.httpStatus === 404 || (kq.httpStatus === 403 && ma === "MODULE_NOT_LICENSED")) {
+        setLuong(null);
+        gen.mutate(payload); // đường cũ (không stream) — cùng pipeline phía server
+        return;
+      }
+      toast.error(thongDiepLoiRest(kq.body as never, t("progCopilot.failed", "Code generation failed")));
+    }
+    setLoiLuong(true);
+  };
+
+  const huyLuot = () => abortRef.current?.abort();
+
+  const result = ((luong ? luong.result : null) ?? gen.data ?? null) as GenResult | null;
   const errorView = copilotErrorView(result, isAdmin);
   const refusalView = result?.refused ? copilotRefusalView(result) : null;
-  const busy = gen.isPending;
+  const busy = streamBusy || gen.isPending;
   const language = KIND_LANGUAGE[kind] ?? "text";
   const editorHeight = embedded ? "220px" : "340px";
   const ctxHeight = embedded ? "140px" : "180px";
@@ -217,7 +297,7 @@ export function ProgrammingCopilotPanel({
       toast.warning(t("progCopilot.needContext", "Paste the program to review / explain first."));
       return;
     }
-    gen.mutate({
+    void chayLuot({
       kind,
       request: req || defaultRequest(mode),
       mode,
@@ -239,7 +319,7 @@ export function ProgrammingCopilotPanel({
     if (seed.request != null) setRequest(seed.request);
     if (seed.autoRun && !busy) {
       const req = (seed.request ?? request).trim() || defaultRequest(m);
-      gen.mutate({
+      void chayLuot({
         kind,
         request: req,
         mode: m,
@@ -368,17 +448,67 @@ export function ProgrammingCopilotPanel({
           {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />}
           {busy ? t("progCopilot.generating", "Generating…") : t("progCopilot.generate", "Generate")}
         </Button>
+        {streamBusy && (
+          <Button type="button" variant="outline" onClick={huyLuot} className="gap-1.5" data-testid="copilot-cancel">
+            <Square className="h-3.5 w-3.5" /> {t("progCopilot.stream.cancel", "Cancel")}
+          </Button>
+        )}
       </div>
 
+      {/* ── Doc 80 · Task 8 — tiến độ theo stage + mã hiện dần ──────────────── */}
+      {luong && (streamBusy || daHuy) && (
+        <div className="space-y-2 rounded-md border bg-muted/40 p-3 text-sm" aria-busy={streamBusy}>
+          <ol className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs" aria-label={t("progCopilot.stream.progress", "Progress")}>
+            {luong.stages.map((m, i) => {
+              const dangChay = streamBusy && i === luong.stages.length - 1;
+              return (
+                <li key={i} className={cn("flex items-center gap-1", dangChay ? "text-primary" : "text-muted-foreground")}>
+                  {dangChay ? <Loader2 className="h-3 w-3 animate-spin" /> : <CheckCircle2 className="h-3 w-3" />}
+                  <span>{t(`progCopilot.stream.stage.${m.stage}`, { defaultValue: m.stage, attempt: m.attempt ?? 1 })}</span>
+                  <span className="tabular-nums opacity-70">{(m.elapsedMs / 1000).toFixed(1)}s</span>
+                </li>
+              );
+            })}
+            {streamBusy && luong.stages.length === 0 && (
+              <li className="flex items-center gap-1 text-primary">
+                <Loader2 className="h-3 w-3 animate-spin" /> {t("progCopilot.generating", "Generating…")}
+              </li>
+            )}
+          </ol>
+          <p className="sr-only" aria-live="polite">
+            {luong.stages.length > 0
+              ? t(`progCopilot.stream.stage.${luong.stages[luong.stages.length - 1].stage}`, {
+                  defaultValue: luong.stages[luong.stages.length - 1].stage,
+                  attempt: luong.stages[luong.stages.length - 1].attempt ?? 1,
+                })
+              : ""}
+          </p>
+          {luong.text && (
+            <pre
+              className="max-h-64 overflow-auto whitespace-pre-wrap break-words rounded border bg-background p-2 font-mono text-xs"
+              aria-label={t("progCopilot.stream.streaming", "Writing…")}
+            >
+              {luong.text}
+              {streamBusy && <span className="animate-pulse">▌</span>}
+            </pre>
+          )}
+          {daHuy && (
+            <p className="flex items-center gap-1.5 text-xs text-muted-foreground" role="status">
+              <Ban className="h-3.5 w-3.5" /> {t("progCopilot.stream.cancelled", "Cancelled — the assistant stopped and the AI server was released.")}
+            </p>
+          )}
+        </div>
+      )}
+
       {/* ── Result ───────────────────────────────────────────────────────── */}
-      {busy && (
+      {gen.isPending && (
         <div className="flex items-center gap-2 rounded-md border bg-muted/40 p-3 text-sm text-muted-foreground">
           <Loader2 className="h-4 w-4 animate-spin text-primary" />
           {t("progCopilot.generating", "Generating…")}
         </div>
       )}
 
-      {gen.isError && !busy && (
+      {(gen.isError || loiLuong) && !busy && (
         <div className="flex items-start gap-2 rounded-md border border-destructive/40 bg-destructive/10 p-3 text-sm text-destructive">
           <XCircle className="mt-0.5 h-4 w-4 shrink-0" />
           <span>{t("progCopilot.failed", "Code generation failed")}</span>
@@ -542,7 +672,7 @@ export function ProgrammingCopilotPanel({
       )}
 
       {/* Idle hint */}
-      {!busy && !result && !gen.isError && (
+      {!busy && !result && !gen.isError && !loiLuong && !daHuy && (
         <p className="text-xs text-muted-foreground">
           {t("progCopilot.idleHint", "Pick options and Generate to see AI-suggested code here.")}
         </p>
