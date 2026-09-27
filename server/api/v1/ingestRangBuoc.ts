@@ -14,8 +14,8 @@
  *   • khoá plaintext `machines.apiKey` (khi `MACHINE_SHARED_KEY_ALLOWED` cho phép) → máy đó.
  * Cả hai đều tra lại máy theo id (còn hoạt động không, mã HIỆN TẠI là gì); máy vắng/ngừng ⇒ 401.
  * Khoá KHÔNG gắn máy (MASTER_API_KEY, khoá chung `api_keys.machineId IS NULL`, token OAuth) giữ
- * nguyên hành vi cũ — repo KHÔNG có cơ chế "danh sách thiết bị được phép của gateway" nào (đã grep:
- * `api_keys`, `edge_nodes`, `apiKeyScope.ts` chỉ mang phạm vi TENANT), nên không bịa bảng mới.
+ * nguyên hành vi cũ. ★ Đợt 1C Task 4: khoá của máy `IOT_GATEWAY` KHÔNG đi luật "chỉ chính máy" mà
+ * đi luật ALLOWLIST (`gateway_device_allowlist`, mig 0361) — xem khối Task 4 bên dưới.
  *
  * Với khoá gắn máy M (id, code), một request bị 403 và KHÔNG GHI GÌ nếu:
  *   telemetry — ∃ mẫu có `machineId` ≠ M.id, hoặc ∃ mẫu có `deviceId` (có mặt) ≠ M.code — so KHỚP
@@ -38,7 +38,13 @@ import type { ApiPrincipal } from "./auth";
 export interface MayCuaKhoa {
   id: number;
   code: string;
+  /** Loại máy (Task 4 — `IOT_GATEWAY` đi luật allowlist thay vì luật "chỉ chính máy"). */
+  machineType?: string | null;
 }
+
+/** doc 81 Đợt 1C Task 4 — loại máy mà khoá của nó đi luật ALLOWLIST (chuyển tiếp nhiều thiết bị). */
+export const LOAI_MAY_GATEWAY = "IOT_GATEWAY";
+export const laMayGateway = (may: MayCuaKhoa): boolean => may.machineType === LOAI_MAY_GATEWAY;
 
 /**
  * Máy mà credential của request thuộc về; `null` = khoá không gắn máy (hành vi cũ, không ràng buộc).
@@ -48,7 +54,7 @@ export interface MayCuaKhoa {
 export async function mayCuaKhoa(p: ApiPrincipal | undefined): Promise<MayCuaKhoa | null> {
   if (!p || p.machineId == null) return null;
   const { getMachineById, getDb } = await import("../../db");
-  let m: { id: number; code: string; isActive?: boolean | null } | undefined;
+  let m: { id: number; code: string; machineType?: string | null; isActive?: boolean | null } | undefined;
   let dbVang = false;
   try {
     m = (await getMachineById(p.machineId)) as typeof m;
@@ -61,13 +67,14 @@ export async function mayCuaKhoa(p: ApiPrincipal | undefined): Promise<MayCuaKho
   if (!m || m.isActive === false) {
     throw new ApiHttpError(401, "unauthorized", "Invalid API key (its machine is missing or inactive).");
   }
-  return { id: m.id, code: m.code };
+  return { id: m.id, code: m.code, machineType: m.machineType ?? null };
 }
 
 export interface ViPhamRangBuoc {
   index: number;
   field: "machineId" | "deviceId" | "machineCode";
-  value: string | number;
+  /** `null` = mẫu không nêu thiết bị nào (khoá gateway không có "máy mặc định"). */
+  value: string | number | null;
 }
 
 /** Trần số vi phạm liệt kê trong phản hồi (một lô 20k mẫu sai không được thành 20k dòng JSON). */
@@ -105,6 +112,118 @@ export function kiemMauTelemetryThuocMay<T extends { machineId?: number | null; 
 export function kiemMachineCodeThuocMay(body: Record<string, unknown>, may: MayCuaKhoa): void {
   const khai = typeof body.machineCode === "string" ? body.machineCode.trim() : "";
   if (khai && khai !== may.code) nem403(may, [{ index: 0, field: "machineCode", value: khai }]);
+}
+
+// ── doc 81 Đợt 1C Task 4 — ALLOWLIST của khoá gateway (IOT_GATEWAY) ─────────────────────────────
+//
+// Quyết định chủ dự án 2026-09-27: khoá của máy IOT_GATEWAY chỉ GHI cho thiết bị trong allowlist
+// của CHÍNH gateway đó (`gateway_device_allowlist`, mig 0361), ở CẢ `/api/ot/ingest` lẫn
+// `/api/v1/ingest/*`. Allowlist rỗng ⇒ không ghi được gì (fail-closed). Gateway muốn ghi cho chính
+// nó phải tự có mặt trong list. Trước bản này: `/api/ot/ingest` MIỄN ràng buộc cho gateway (ghi cho
+// BẤT KỲ deviceId nào — lỗ R17), còn `/api/v1` trói gateway vào chính nó như một máy thường.
+//
+// Luật từng mẫu (so với tập thiết bị ĐANG HOẠT ĐỘNG trong list, tra MỚI mỗi request — không cache):
+//   • có `machineId`  ⇒ phải ∈ list; nếu có thêm `deviceId` thì phải = mã của CHÍNH thiết bị ấy;
+//   • chỉ `deviceId`  ⇒ phải là mã của một thiết bị ∈ list (mã chỉ duy nhất trong hàng sống, và
+//                        tập so đã lọc isActive ⇒ tombstone cùng mã không lọt);
+//   • không có cả hai ⇒ vi phạm (gateway không có "máy mặc định").
+// Một vi phạm ⇒ 403 `gateway_device_not_allowed` CẢ LÔ, không ghi dòng nào. Hợp lệ ⇒ GHIM
+// `machineId` của thiết bị đích lên từng mẫu (bus không tự quy máy — cùng lý do R16).
+
+/** Tập thiết bị gateway được ghi cho (đang hoạt động). Lỗi đọc ⇒ 503 (gửi lại được), không đoán. */
+export type DocThietBiDuocPhep = (gatewayId: number) => Promise<ReadonlyArray<MayCuaKhoa>>;
+
+export async function thietBiDuocPhepCuaGateway(gatewayId: number): Promise<ReadonlyArray<MayCuaKhoa>> {
+  const { docThietBiDuocPhep } = await import("../../services/gatewayAllowlistService");
+  return docThietBiDuocPhep(gatewayId);
+}
+
+async function docAllowlistHoac503(gw: MayCuaKhoa, doc: DocThietBiDuocPhep): Promise<ReadonlyArray<MayCuaKhoa>> {
+  try {
+    return await doc(gw.id);
+  } catch (err) {
+    log503(err);
+    throw new ApiHttpError(503, "db_unavailable", "Database unavailable — retry.");
+  }
+}
+
+function nem403Gateway(gw: MayCuaKhoa, allowlistSize: number, viPham: ViPhamRangBuoc[]): never {
+  throw new ApiHttpError(
+    403,
+    "gateway_device_not_allowed",
+    allowlistSize === 0
+      ? `Gateway ${gw.code} has an EMPTY device allowlist; it cannot write data for any device. Nothing was stored.`
+      : `Gateway ${gw.code} may only write for devices on its allowlist. Nothing was stored.`,
+    {
+      gateway: gw.code,
+      allowlistSize,
+      violationCount: viPham.length,
+      violations: viPham.slice(0, VI_PHAM_TOI_DA),
+    },
+  );
+}
+
+/**
+ * Telemetry của khoá gateway: mọi mẫu phải nhắm một thiết bị ∈ `duocPhep` (luật ở khối trên).
+ * Vi phạm ⇒ ném 403 (cả lô). Hợp lệ ⇒ MẢNG MỚI, mỗi mẫu mang `machineId` của thiết bị đích. Thuần.
+ */
+export function kiemMauTelemetryGateway<T extends { machineId?: number | null; deviceId?: string | null }>(
+  samples: ReadonlyArray<T>,
+  gw: MayCuaKhoa,
+  duocPhep: ReadonlyArray<MayCuaKhoa>,
+): T[] {
+  const theoId = new Map(duocPhep.map((d) => [d.id, d] as const));
+  const theoMa = new Map(duocPhep.map((d) => [d.code, d] as const));
+  const viPham: ViPhamRangBuoc[] = [];
+  const dich: number[] = [];
+  samples.forEach((s, index) => {
+    if (s.machineId != null) {
+      const d = theoId.get(s.machineId);
+      if (!d) viPham.push({ index, field: "machineId", value: s.machineId });
+      else if (s.deviceId != null && s.deviceId !== d.code) viPham.push({ index, field: "deviceId", value: s.deviceId });
+      else dich[index] = d.id;
+    } else if (s.deviceId != null) {
+      const d = theoMa.get(s.deviceId);
+      if (!d) viPham.push({ index, field: "deviceId", value: s.deviceId });
+      else dich[index] = d.id;
+    } else {
+      viPham.push({ index, field: "deviceId", value: null });
+    }
+  });
+  if (viPham.length > 0) nem403Gateway(gw, duocPhep.length, viPham);
+  return samples.map((s, i) => ({ ...s, machineId: dich[i] }));
+}
+
+/**
+ * ĐIỂM QUYẾT ĐỊNH DUY NHẤT cho telemetry của một khoá GẮN MÁY (cả `/api/ot/ingest` lẫn
+ * `/api/v1/ingest/telemetry`): gateway ⇒ allowlist; máy thường ⇒ "chỉ chính máy" (R16).
+ * `doc` tiêm được cho test; mặc định đọc `gateway_device_allowlist`.
+ */
+export async function rangBuocMauTheoKhoa<T extends { machineId?: number | null; deviceId?: string | null }>(
+  samples: ReadonlyArray<T>,
+  may: MayCuaKhoa,
+  doc: DocThietBiDuocPhep = thietBiDuocPhepCuaGateway,
+): Promise<T[]> {
+  if (!laMayGateway(may)) return kiemMauTelemetryThuocMay(samples, may);
+  return kiemMauTelemetryGateway(samples, may, await docAllowlistHoac503(may, doc));
+}
+
+/**
+ * inspection / process-result: bản ghi LUÔN thuộc máy của khoá (`authenticateMachine` theo header),
+ * nên gateway không chuyển tiếp được loại bản ghi này. `machineCode` lệch ⇒ 403 như máy thường; với
+ * gateway, CHÍNH nó còn phải có trong allowlist của mình (list rỗng ⇒ không ghi được gì).
+ */
+export async function rangBuocBanGhiTheoKhoa(
+  body: Record<string, unknown>,
+  may: MayCuaKhoa,
+  doc: DocThietBiDuocPhep = thietBiDuocPhepCuaGateway,
+): Promise<void> {
+  kiemMachineCodeThuocMay(body, may);
+  if (!laMayGateway(may)) return;
+  const duocPhep = await docAllowlistHoac503(may, doc);
+  if (!duocPhep.some((d) => d.id === may.id)) {
+    nem403Gateway(may, duocPhep.length, [{ index: 0, field: "machineCode", value: may.code }]);
+  }
 }
 
 // ── Mã HTTP đúng nghĩa cho lỗi từ caller tRPC (inspection / process-result) ─────────────────────

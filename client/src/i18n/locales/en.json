@@ -4070,7 +4070,9 @@
       "goldenSet": "golden set",
       "target": "target",
       "endpoint": "endpoint",
-      "reviewReason": "rejection reason"
+      "reviewReason": "rejection reason",
+      "gatewayId": "gateway",
+      "deviceIds": "allowed device list"
     },
     "feature": {
       "webIngest": "web content ingestion",
@@ -20229,7 +20231,17 @@
     "dayChuyen": "line"
   },
   "machinesTab": {
-    "may": "machine"
+    "may": "machine",
+    "gatewayAllowlist": "Allowed devices",
+    "gatewayAllowlistTitle": "Devices allowed to write — {{code}}",
+    "gatewayAllowlistDesc": "This gateway's key can only write data for the selected devices (both /api/ot/ingest and /api/v1/ingest). To let the gateway write its own data, select it as well.",
+    "gatewayAllowlistEmptyWarn": "Empty list: this gateway will NOT be able to write data for any device.",
+    "gatewayAllowlistSearch": "Search by machine code or name",
+    "gatewayAllowlistSelected": "{{count}} device(s) selected",
+    "gatewayAllowlistSelf": "this gateway",
+    "gatewayAllowlistInactiveNote": "Inactive devices in the current list will be dropped on save.",
+    "gatewayAllowlistReason": "Reason for change (recorded in the audit log)",
+    "gatewayAllowlistSaved": "Allowed device list saved"
   },
   "seedDataTab": {
     "daTaoDuLieuCo": "Sample base data created successfully!"

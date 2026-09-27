@@ -100,10 +100,12 @@ function errResponses(extra: Record<string, unknown> = {}) {
 /**
  * doc 81 Đợt 1B Task 8 — mã lỗi của ba tuyến ingest: khoá gắn máy ghi cho máy khác ⇒ 403
  * `machine_mismatch`; quá tần suất ⇒ 429 + Retry-After; DB/hạ tầng ⇒ 503 (gửi lại được).
+ * Đợt 1C Task 4: khoá của máy IOT_GATEWAY ghi cho thiết bị ngoài allowlist (hoặc list rỗng) ⇒ 403
+ * `gateway_device_not_allowed`.
  */
 function ingestErrResponses() {
   return errResponses({
-    "403": { description: "Forbidden — scope missing, or a machine-bound key (mk_) writing for another machine (machine_mismatch; nothing stored)", content: jsonErr() },
+    "403": { description: "Forbidden — scope missing, a machine-bound key (mk_) writing for another machine (machine_mismatch), or an IOT_GATEWAY key writing for a device outside its allowlist / with an empty allowlist (gateway_device_not_allowed). Nothing stored.", content: jsonErr() },
     "429": { description: "Rate limited — retry after the Retry-After header (seconds)", content: jsonErr() },
     "503": { description: "Database/infrastructure unavailable — retry (nothing lost by retrying: idempotent)", content: jsonErr() },
   });

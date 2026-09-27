@@ -532,7 +532,20 @@ const cua = (n: NhomPhamVi): ThuTuc[] => NHOM.get(n) ?? [];
  *   ⇒ D +1 · S +1 · tong +2, không dư một đơn vị.
  * ══════════════════════════════════════════════════════════════════════════════════════════════
  */
-const GHIM = { A: 341, B: 8, C: 480, D: 1124, S: 332, tong: 2285 } as const;
+/*
+ * ══════════════════════════════════════════════════════════════════════════════════════════════
+ * ★★★ 2026-09-27 (doc 81 Đợt 1C Task 4, allowlist khoá gateway) — **D 1124→1125 · S 332→333 ·
+ * tong 2285→2287 · A/B/C không đổi.** ĐO bằng chính bộ quét này sau lượt sửa; tra từng khoá bằng
+ * `nhomCua(khoaCua)` của bộ quét (chạy `quetPhamViDoc` rồi lọc tệp `gatewayAllowlistRouter.ts`):
+ *   • `gatewayAllowlistRouter.get` (query, MỚI): **S +1** — đọc `machines`/`gateway_device_allowlist`
+ *     sau khi gateway qua `db.getMachineById(id, phamViCua(ctx))` (ngoài phạm vi ⇒ NOT_FOUND).
+ *     KHÔNG thêm dòng nào vào `phamViDocBaseline.ts`.
+ *   • `gatewayAllowlistRouter.set` (mutation, MỚI): **D +1** — thay allowlist (gateway + từng thiết
+ *     bị cũng soát `phamViCua(ctx)`).
+ *   ⇒ D +1 · S +1 · tong +2, không dư một đơn vị.
+ * ══════════════════════════════════════════════════════════════════════════════════════════════
+ */
+const GHIM = { A: 341, B: 8, C: 480, D: 1125, S: 333, tong: 2287 } as const;
 
 describe("§1 — CẦU CHÌ: bộ suy có thật sự nhìn thấy gì không", () => {
   it("★ không có ô MÙ nào (mỗi ô mù là một chỗ KHÔNG AI CANH)", () => {

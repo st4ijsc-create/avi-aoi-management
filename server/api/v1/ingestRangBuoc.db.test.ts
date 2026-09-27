@@ -68,6 +68,9 @@ const CODE_GW = `${RUN}-GW`; // máy IOT_GATEWAY — lỗ đã biết của /api
 let keyA = "";
 let keyB = "";
 let keyGw = "";
+/** Task 4 — gateway allowlist rỗng (gw2) và gateway có list chỉ chứa thiết bị đã ngừng (gw3). */
+const gw2 = { id: 0, key: "" };
+const gw3 = { id: 0, key: "", chet: 0, song: 0 };
 
 async function post(p: string, key: string | null, body: unknown) {
   const headers: Record<string, string> = { "content-type": "application/json" };
@@ -374,11 +377,209 @@ describe.skipIf(!DB_URL)("doc 81 Đợt 1B Task 8 — /api/v1/ingest: khoá ↔ 
       expect(await demTelemetry(ids.a, m)).toBe(1);
     });
 
-    it("LỖ ĐÃ BIẾT (ghi rõ trong mã): khoá của máy IOT_GATEWAY KHÔNG bị ràng buộc — chuyển tiếp deviceId khác vẫn 200", async () => {
-      const m = `${METRIC}.ot.gw`;
-      const r = await postOt(keyGw, { samples: [{ deviceId: CODE_A, metric: m, value: 1 }] });
-      expect(r.status).toBe(200);
-      expect(await demTelemetry(ids.a, m)).toBe(1);
+  });
+
+  // ── 1c. doc 81 Đợt 1C Task 4 — ALLOWLIST của khoá IOT_GATEWAY, CẢ HAI route ─────────────────────
+  // Quyết định chủ dự án 2026-09-27: khoá gateway chỉ ghi cho thiết bị trong allowlist của CHÍNH nó.
+  // Allowlist dựng bằng INSERT thô (oracle độc lập với mã sản phẩm): GW → {A}. GW2 → {} (rỗng).
+  // GW3 → {TMB (đã ngừng)}. Ngoài list / list rỗng ⇒ 403 cả lô, 0 dòng; trong list ⇒ ghi, GHIM machineId.
+  describe("Task 4 — allowlist khoá gateway (IOT_GATEWAY)", () => {
+    const postOt = async (key: string, body: unknown) => {
+      const res = await fetch(`${base}/api/ot/ingest`, {
+        method: "POST",
+        headers: { "content-type": "application/json", "x-api-key": key },
+        body: JSON.stringify(body),
+      });
+      return { status: res.status, body: await res.json() };
+    };
+    const postV1 = (key: string, body: unknown) => post("/api/v1/ingest/telemetry", key, body);
+    const maLoi = (route: "ot" | "v1", r: { body: any }) => (route === "ot" ? r.body.code : r.body.error?.code);
+    const chiTiet = (route: "ot" | "v1", r: { body: any }) => (route === "ot" ? r.body : r.body.error?.details);
+    const goi = (route: "ot" | "v1", key: string, body: unknown) => (route === "ot" ? postOt(key, body) : postV1(key, body));
+    const OK: Record<"ot" | "v1", number> = { ot: 200, v1: 202 };
+
+    beforeAll(async () => {
+      const one = async (q: Promise<Array<{ id: number | string }>>) => Number((await q)[0].id);
+      gw2.id = await one(sql`
+        INSERT INTO machines ("stationId", code, name, "machineType", "isActive")
+        VALUES (${ids.station}, ${CODE_GW + "2"}, 'T4 gateway rong', 'IOT_GATEWAY', true) RETURNING id`);
+      idsThem.push(gw2.id);
+      gw3.id = await one(sql`
+        INSERT INTO machines ("stationId", code, name, "machineType", "isActive")
+        VALUES (${ids.station}, ${CODE_GW + "3"}, 'T4 gateway list chet', 'IOT_GATEWAY', true) RETURNING id`);
+      idsThem.push(gw3.id);
+      // Thiết bị đã NGỪNG trong list của GW3, và một máy SỐNG mới mang CÙNG mã (không có trong list).
+      gw3.chet = await one(sql`
+        INSERT INTO machines ("stationId", code, name, "machineType", "isActive")
+        VALUES (${ids.station}, ${CODE_GW + "-DEAD"}, 'T4 thiet bi da ngung', 'IOT_SENSOR', false) RETURNING id`);
+      idsThem.push(gw3.chet);
+      gw3.song = await one(sql`
+        INSERT INTO machines ("stationId", code, name, "machineType", "isActive")
+        VALUES (${ids.station}, ${CODE_GW + "-DEAD"}, 'T4 may moi cung ma', 'IOT_SENSOR', true) RETURNING id`);
+      idsThem.push(gw3.song);
+      await sql`INSERT INTO gateway_device_allowlist ("gatewayMachineId", "deviceMachineId") VALUES (${ids.gw}, ${ids.a})`;
+      await sql`INSERT INTO gateway_device_allowlist ("gatewayMachineId", "deviceMachineId") VALUES (${gw3.id}, ${gw3.chet})`;
+      const { issueMachineKey } = await import("../../services/machineAuthService");
+      gw2.key = (await issueMachineKey({ machineId: gw2.id, name: `${RUN}-GW2` })).plaintextKey;
+      gw3.key = (await issueMachineKey({ machineId: gw3.id, name: `${RUN}-GW3` })).plaintextKey;
+    }, 60_000);
+
+    for (const route of ["ot", "v1"] as const) {
+      describe(`route ${route === "ot" ? "/api/ot/ingest" : "/api/v1/ingest/telemetry"}`, () => {
+        it("★ thiết bị TRONG list (deviceId = mã A) ⇒ ghi được, dòng GHIM machineId = A", async () => {
+          const m = `${METRIC}.gw.${route}.in`;
+          const r = await goi(route, keyGw, { samples: [{ deviceId: CODE_A, metric: m, value: 1 }] });
+          expect(r.status, JSON.stringify(r.body)).toBe(OK[route]);
+          expect(await demTelemetry(ids.a, m)).toBe(1);
+          expect(await demTelemetryTatCa(m)).toBe(1);
+        });
+
+        it("thiết bị trong list khai bằng machineId = A (không deviceId) ⇒ ghi được, về A", async () => {
+          const m = `${METRIC}.gw.${route}.mid`;
+          const r = await goi(route, keyGw, { samples: [{ machineId: ids.a, metric: m, value: 1 }] });
+          expect(r.status, JSON.stringify(r.body)).toBe(OK[route]);
+          expect(await demTelemetry(ids.a, m)).toBe(1);
+        });
+
+        it("★ thiết bị NGOÀI list (deviceId = mã B) ⇒ 403 gateway_device_not_allowed, 0 dòng", async () => {
+          const m = `${METRIC}.gw.${route}.out`;
+          const r = await goi(route, keyGw, { samples: [{ deviceId: CODE_B, metric: m, value: 1 }] });
+          expect(r.status).toBe(403);
+          expect(maLoi(route, r)).toBe("gateway_device_not_allowed");
+          expect(chiTiet(route, r).violations).toEqual([{ index: 0, field: "deviceId", value: CODE_B }]);
+          expect(await demTelemetryTatCa(m)).toBe(0);
+        });
+
+        it("★ lô trộn (A trong list + B ngoài list) ⇒ 403 CẢ LÔ, 0 dòng (kể cả dòng của A)", async () => {
+          const m = `${METRIC}.gw.${route}.mix`;
+          const r = await goi(route, keyGw, {
+            samples: [
+              { deviceId: CODE_A, metric: m, value: 1 },
+              { deviceId: CODE_B, metric: m, value: 2 },
+            ],
+          });
+          expect(r.status).toBe(403);
+          expect(chiTiet(route, r).violations).toEqual([{ index: 1, field: "deviceId", value: CODE_B }]);
+          expect(await demTelemetryTatCa(m)).toBe(0);
+        });
+
+        it("machineId ngoài list (B) ⇒ 403; machineId = A nhưng deviceId = mã B ⇒ 403; 0 dòng", async () => {
+          const m = `${METRIC}.gw.${route}.midx`;
+          const r1 = await goi(route, keyGw, { samples: [{ machineId: ids.b, metric: m, value: 1 }] });
+          expect(r1.status).toBe(403);
+          expect(chiTiet(route, r1).violations).toEqual([{ index: 0, field: "machineId", value: ids.b }]);
+          const r2 = await goi(route, keyGw, { samples: [{ machineId: ids.a, deviceId: CODE_B, metric: m, value: 1 }] });
+          expect(r2.status).toBe(403);
+          expect(chiTiet(route, r2).violations).toEqual([{ index: 0, field: "deviceId", value: CODE_B }]);
+          expect(await demTelemetryTatCa(m)).toBe(0);
+        });
+
+        it("mẫu KHÔNG nêu thiết bị (không deviceId/machineId) ⇒ 403 — gateway không có 'máy mặc định'", async () => {
+          const m = `${METRIC}.gw.${route}.bare`;
+          const r = await goi(route, keyGw, { samples: [{ metric: m, value: 1 }] });
+          expect(r.status).toBe(403);
+          expect(chiTiet(route, r).violations).toEqual([{ index: 0, field: "deviceId", value: null }]);
+          expect(await demTelemetryTatCa(m)).toBe(0);
+        });
+
+        it("gateway ghi cho CHÍNH nó khi không tự có trong list ⇒ 403 (không miễn trừ ngầm)", async () => {
+          const m = `${METRIC}.gw.${route}.self`;
+          const r = await goi(route, keyGw, { samples: [{ deviceId: CODE_GW, metric: m, value: 1 }] });
+          expect(r.status).toBe(403);
+          expect(await demTelemetryTatCa(m)).toBe(0);
+        });
+
+        it("★ allowlist RỖNG (GW2) ⇒ 403 cho mọi thiết bị, kể cả chính nó; 0 dòng", async () => {
+          const m = `${METRIC}.gw.${route}.empty`;
+          for (const dev of [CODE_A, CODE_GW + "2"]) {
+            const r = await goi(route, gw2.key, { samples: [{ deviceId: dev, metric: m, value: 1 }] });
+            expect(r.status).toBe(403);
+            expect(maLoi(route, r)).toBe("gateway_device_not_allowed");
+            expect(chiTiet(route, r).allowlistSize).toBe(0);
+          }
+          expect(await demTelemetryTatCa(m)).toBe(0);
+        });
+
+        it("★ thiết bị trong list ĐÃ NGỪNG + máy sống mới CÙNG mã (ngoài list) ⇒ 403 theo mã lẫn theo id cũ; 0 dòng", async () => {
+          const m = `${METRIC}.gw.${route}.dead`;
+          const r1 = await goi(route, gw3.key, { samples: [{ deviceId: CODE_GW + "-DEAD", metric: m, value: 1 }] });
+          expect(r1.status).toBe(403);
+          const r2 = await goi(route, gw3.key, { samples: [{ machineId: gw3.chet, metric: m, value: 1 }] });
+          expect(r2.status).toBe(403);
+          expect(await demTelemetryTatCa(m)).toBe(0);
+        });
+      });
+    }
+
+    it("★ GHIM machineId (cả hai route): cache bus còn trỏ mã X về máy cũ R ⇒ dòng của thiết bị N (mã X, trong list) VẪN về N", async () => {
+      const code = `${RUN}-GWREN`;
+      const m = `${METRIC}.gw.rename`;
+      const one = async (q: Promise<Array<{ id: number | string }>>) => Number((await q)[0].id);
+      const idR = await one(sql`
+        INSERT INTO machines ("stationId", code, name, "machineType", "isActive")
+        VALUES (${ids.station}, ${code}, 'T4 rename old owner', 'IOT_SENSOR', true) RETURNING id`);
+      idsThem.push(idR);
+      const bus = await import("../../services/telemetryBus");
+      bus.clearMachineIdCache();
+      const seed = await bus.ingestTelemetryDetailed([
+        { deviceId: code, metric: `${m}.seed`, value: 1, protocol: "other", quality: "good" } as never,
+      ]);
+      expect(seed.accepted).toBe(1);
+      expect(await demTelemetry(idR, `${m}.seed`)).toBe(1); // cache bus: code → R (vĩnh viễn)
+      await sql`UPDATE machines SET code = ${code + "-old"} WHERE id = ${idR}`;
+      const idN = await one(sql`
+        INSERT INTO machines ("stationId", code, name, "machineType", "isActive")
+        VALUES (${ids.station}, ${code}, 'T4 rename new owner', 'IOT_SENSOR', true) RETURNING id`);
+      idsThem.push(idN);
+      await sql`INSERT INTO gateway_device_allowlist ("gatewayMachineId", "deviceMachineId") VALUES (${ids.gw}, ${idN})`;
+      try {
+        for (const route of ["ot", "v1"] as const) {
+          const r = await goi(route, keyGw, { samples: [{ deviceId: code, metric: `${m}.${route}`, value: 2 }] });
+          expect(r.status, JSON.stringify(r.body)).toBe(OK[route]);
+          expect(await demTelemetry(idN, `${m}.${route}`)).toBe(1);
+          expect(await demTelemetry(idR, `${m}.${route}`)).toBe(0);
+        }
+      } finally {
+        await sql`DELETE FROM gateway_device_allowlist WHERE "gatewayMachineId" = ${ids.gw} AND "deviceMachineId" = ${idN}`;
+      }
+    });
+
+    it("process-result bằng khoá gateway: gateway KHÔNG tự có trong list ⇒ 403, 0 dòng; tự thêm mình vào list ⇒ 201", async () => {
+      const serialX = `${RUN}-GWPR-X`;
+      const r1 = await post("/api/v1/ingest/process-result", keyGw, processBody(serialX));
+      expect(r1.status, JSON.stringify(r1.body)).toBe(403);
+      expect(r1.body.error.code).toBe("gateway_device_not_allowed");
+      expect(await demProcess(serialX)).toEqual([]);
+      await sql`INSERT INTO gateway_device_allowlist ("gatewayMachineId", "deviceMachineId") VALUES (${ids.gw}, ${ids.gw})`;
+      try {
+        const serialOk = `${RUN}-GWPR-OK`;
+        const r2 = await post("/api/v1/ingest/process-result", keyGw, processBody(serialOk));
+        expect(r2.status, JSON.stringify(r2.body)).toBe(201);
+        expect(await demProcess(serialOk)).toEqual([{ machineId: ids.gw }]);
+        // Khai machineCode của thiết bị khác (dù A trong list) ⇒ vẫn 403: bản ghi process-result
+        // luôn thuộc máy của khoá, gateway không chuyển tiếp được loại bản ghi này.
+        const serialA = `${RUN}-GWPR-A`;
+        const r3 = await post("/api/v1/ingest/process-result", keyGw, processBody(serialA, { machineCode: CODE_A }));
+        expect(r3.status).toBe(403);
+        expect(await demProcess(serialA)).toEqual([]);
+      } finally {
+        await sql`DELETE FROM gateway_device_allowlist WHERE "gatewayMachineId" = ${ids.gw} AND "deviceMachineId" = ${ids.gw}`;
+      }
+    });
+
+    it("inspection bằng khoá gateway RỖNG list ⇒ 403 gateway_device_not_allowed (không đụng submitInspection)", async () => {
+      const serial = `${RUN}-GWINS`;
+      // overallResult cố ý sai hợp đồng — product_inspections là WORM (xem ca inspection phía trên).
+      const r = await post("/api/v1/ingest/inspection", gw2.key, {
+        serialNumber: serial,
+        productModel: `${RUN}-PM`,
+        overallResult: "NOT-A-RESULT",
+        measurements: [],
+      });
+      expect(r.status).toBe(403);
+      expect(r.body.error.code).toBe("gateway_device_not_allowed");
+      const rows = await sql`SELECT 1 FROM product_inspections WHERE "serialNumber" = ${serial}`;
+      expect(rows.length).toBe(0);
     });
   });
 

@@ -38,10 +38,14 @@ beforeAll(async () => {
   app.post(
     "/api/ot/ingest",
     createOtIngestHandler({
-      // Task 8 (R17): máy thật luôn có id; "T7-GW" là GATEWAY ⇒ không bị ràng buộc khoá ↔ máy —
-      // các ca T7 ở đây đo sổ sách/WAL với nhiều deviceId, không đo ràng buộc (cùng otIngestRoute.test.ts).
+      // Task 8 (R17): máy thật luôn có id; "T7-GW" là GATEWAY. Đợt 1C Task 4: gateway chỉ ghi cho
+      // thiết bị trong allowlist ⇒ tiêm allowlist phủ đúng các deviceId mà ca T7 gửi (id giả — cột
+      // ot_telemetry."machineId" không có FK; dòng dọn theo deviceId). Các ca ở đây đo sổ sách/WAL,
+      // luật allowlist nghiệm thu riêng ở api/v1/ingestRangBuoc.db.test.ts (khối "Task 4").
       authenticateMachine: async () => ({ machine: { id: 7007, code: "T7-GW", machineType: "IOT_GATEWAY" } }),
       ingestTelemetryDetailed,
+      thietBiDuocPhepCuaGateway: async () =>
+        ["7000", "12000", "mix", "retry", "nul"].map((h, i) => ({ id: 990_700_001 + i, code: `${DAU}-${h}` })),
     }),
   );
   server = await new Promise<Server>((r) => {

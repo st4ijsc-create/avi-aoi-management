@@ -41,7 +41,7 @@ import { registerLineRoutes } from "./lines";
 import { registerOrdersLifecycleRoutes } from "./ordersLifecycle";
 import { registerErpOauthRoutes } from "./erpOauth";
 import { mtlsGuard } from "./erpMtls";
-import { mayCuaKhoa, kiemMauTelemetryThuocMay, kiemMachineCodeThuocMay, nemLoiIngest } from "./ingestRangBuoc";
+import { mayCuaKhoa, rangBuocMauTheoKhoa, rangBuocBanGhiTheoKhoa, nemLoiIngest } from "./ingestRangBuoc";
 import { otIngestHttpStatus } from "../../_core/otIngestRoute";
 import {
   getCapabilitiesForMachine,
@@ -345,7 +345,7 @@ export function createV1Router(): Router {
       const body = (req.body ?? {}) as Record<string, unknown>;
       // doc 81 Đợt 1B Task 8 — khoá gắn máy chỉ ghi cho CHÍNH máy đó (ingestRangBuoc.ts).
       const may = await mayCuaKhoa(req.apiPrincipal);
-      if (may) kiemMachineCodeThuocMay(body, may);
+      if (may) await rangBuocBanGhiTheoKhoa(body, may); // Task 4: gateway ⇒ chính nó phải có trong allowlist
       // Reuse the tRPC machineApi.submitInspection caller (same validation/side-effects).
       const { appRouter } = await import("../../routers");
       const { createContext } = await import("../../_core/context");
@@ -382,7 +382,7 @@ export function createV1Router(): Router {
       const body = (req.body ?? {}) as Record<string, unknown>;
       // doc 81 Đợt 1B Task 8 — khoá gắn máy chỉ ghi cho CHÍNH máy đó (ingestRangBuoc.ts).
       const may = await mayCuaKhoa(req.apiPrincipal);
-      if (may) kiemMachineCodeThuocMay(body, may);
+      if (may) await rangBuocBanGhiTheoKhoa(body, may); // Task 4: gateway ⇒ chính nó phải có trong allowlist
       const { appRouter } = await import("../../routers");
       const { createContext } = await import("../../_core/context");
       const ctx = await createContext({ req: req as never, res: res as never });
@@ -439,7 +439,7 @@ export function createV1Router(): Router {
       // KHỚP CHÍNH XÁC máy ấy, lệch ⇒ 403 cả lô, KHÔNG ghi dòng nào; hợp lệ ⇒ GHIM machineId của
       // khoá lên mọi mẫu để bus không tự quy máy (R16, luật đầy đủ: ingestRangBuoc.ts).
       const may = await mayCuaKhoa(req.apiPrincipal);
-      if (may) samples = kiemMauTelemetryThuocMay(samples, may);
+      if (may) samples = await rangBuocMauTheoKhoa(samples, may); // Task 4: gateway ⇒ allowlist
       // Sổ sách từng mẫu (T7) + hợp đồng trung thực của /api/ot/ingest: không bao giờ báo thành
       // công khi accepted < received. Thành công ĐỦ giữ nguyên 202 + thân cũ (máy pilot không đổi).
       const { ingestTelemetryDetailed } = await import("../../services/telemetryBus");

@@ -5,7 +5,7 @@
  * The copy-api-key button re-derives `trpc.useUtils()` locally (same provider, same
  * cache) exactly as the parent did with `trpcUtils`.
  */
-import type { Dispatch, SetStateAction } from "react";
+import { useState, type Dispatch, type SetStateAction } from "react";
 import { useTranslation } from "react-i18next";
 import { trpc } from "@/lib/trpc";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -17,13 +17,14 @@ import { DataTable } from "@/components/DataTable";
 import { EmptyState, StatusBadge } from "@/components/patterns";
 import { Badge } from "@/components/ui/badge";
 import { ExcelImportExport } from "@/components/ExcelImportExport";
-import { Cpu, Plus, Loader2, Pencil, Trash2, RotateCcw, Key } from "lucide-react";
+import { Cpu, Plus, Loader2, Pencil, Trash2, RotateCcw, Key, ListChecks } from "lucide-react";
 import { type MachineType } from "@/constants/machineTypes";
 import { machineTypeLabel } from "@/lib/machineTypeLabel";
 // doc 56 Đ0 việc 6 — dropdown loại máy (form) dùng MỘT nguồn machine.listTypes.
 // Dropdown LỌC bên dưới vẫn nhận prop `machineTypes` (loại đang có trong dữ liệu).
 import { MachineTypeSelectOptions } from "@/components/MachineTypeSelectOptions";
 import type { Factory, Workshop, Line, Station, Machine } from "./entityTypes";
+import { GatewayAllowlistDialog } from "./GatewayAllowlistDialog";
 
 type MachineForm = {
   factoryId: string; workshopId: string; lineId: string; stationId: string; code: string; name: string;
@@ -96,8 +97,15 @@ export function MachinesTab({
   // doc 54 P0-1 — read paths no longer return the plaintext apiKey. The only way to
   // obtain a key is the admin-only rotate (returns it once).
   const regenApiKey = trpc.machine.regenerateApiKey.useMutation();
+  // doc 81 Đợt 1C Task 4 — gateway đang mở hộp thoại allowlist (null = đóng).
+  const [gatewayDangSua, setGatewayDangSua] = useState<Machine | null>(null);
   return (
     <Card className="glass-card">
+            <GatewayAllowlistDialog
+              gateway={gatewayDangSua}
+              candidates={machines ?? []}
+              onOpenChange={(o) => { if (!o) setGatewayDangSua(null); }}
+            />
               <CardHeader>
                 <div className="flex items-center justify-between">
                   <div>
@@ -285,6 +293,18 @@ export function MachinesTab({
                     { id: "station", header: t("settings.sidebar.workstation"), cell: (m) => <span className="text-sm text-muted-foreground">{stations?.find(s => s.id === m.stationId)?.name || t("common.na")}</span>, sortValue: (m) => stations?.find(s => s.id === m.stationId)?.name || "", filterValue: (m) => stations?.find(s => s.id === m.stationId)?.name || "" },
                     { id: "actions", header: "", align: "right", width: "180px", cell: (m) => (
                       <div className="flex items-center justify-end gap-1">
+                        {m.machineType === "IOT_GATEWAY" && (
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            className="gap-1"
+                            title={t("machinesTab.gatewayAllowlist")}
+                            onClick={() => setGatewayDangSua(m)}
+                          >
+                            <ListChecks className="h-3 w-3" />
+                            {t("machinesTab.gatewayAllowlist")}
+                          </Button>
+                        )}
                         <Button
                           variant="outline"
                           size="sm"

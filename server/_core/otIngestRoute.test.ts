@@ -35,9 +35,16 @@ let authFail: "UNAUTHORIZED" | null = null;
 const authenticateMachine = async () => {
   authCalls += 1;
   if (authFail) throw Object.assign(new Error("Invalid API key"), { code: authFail });
-  // Task 8 fix round 1 (R17): máy thật luôn có id; "T7-GW" là GATEWAY (chuyển tiếp nhiều deviceId)
-  // ⇒ không bị ràng buộc khoá ↔ máy — các ca T7 ở đây đo sổ sách/mã HTTP, không đo ràng buộc.
+  // Task 8 fix round 1 (R17): máy thật luôn có id; "T7-GW" là GATEWAY (chuyển tiếp nhiều deviceId).
+  // Đợt 1C Task 4: gateway không còn được miễn — nó chỉ ghi cho thiết bị trong allowlist, nên ca T7
+  // tiêm allowlist {T7-DEV (id 7)} khớp đúng mẫu `sample()`. Các ca ở đây đo sổ sách/mã HTTP; luật
+  // allowlist có nghiệm thu riêng trên DB thật (api/v1/ingestRangBuoc.db.test.ts, khối "Task 4").
   return { machine: { id: 7007, code: "T7-GW", machineType: "IOT_GATEWAY" } };
+};
+let allowlistHong = false;
+const thietBiDuocPhepCuaGateway = async () => {
+  if (allowlistHong) throw Object.assign(new Error("connect ECONNREFUSED 127.0.0.1:5434"), { code: "ECONNREFUSED" });
+  return [{ id: 7, code: "T7-DEV" }];
 };
 
 let server: Server;
@@ -45,7 +52,7 @@ let base = "";
 beforeAll(async () => {
   const app = express();
   app.use(express.json({ limit: "25mb" })); // = DEFAULT_BODY_LIMIT của _core/index.ts
-  app.post("/api/ot/ingest", createOtIngestHandler({ authenticateMachine, ingestTelemetryDetailed }));
+  app.post("/api/ot/ingest", createOtIngestHandler({ authenticateMachine, ingestTelemetryDetailed, thietBiDuocPhepCuaGateway }));
   server = await new Promise<Server>((r) => {
     const s = app.listen(0, "127.0.0.1", () => r(s));
   });
@@ -59,6 +66,7 @@ beforeEach(() => {
   db.stored = 0;
   authCalls = 0;
   authFail = null;
+  allowlistHong = false;
   delete process.env.OT_INGEST_MAX_BATCH;
 });
 
@@ -151,6 +159,19 @@ describe("T7 — phản hồi trung thực", () => {
   it("xác thực hỏng vẫn 401 (không đổi)", async () => {
     authFail = "UNAUTHORIZED";
     expect((await post(many(1))).status).toBe(401);
+  });
+
+  it("★ Đợt 1C Task 4 — đọc allowlist gateway HỎNG ⇒ 503 db_unavailable (gửi lại được), KHÔNG ghi gì, không đoán cho qua", async () => {
+    allowlistHong = true;
+    const err = vi.spyOn(console, "error").mockImplementation(() => {});
+    try {
+      const r = await post(many(3));
+      expect(r.status).toBe(503);
+      expect(r.body).toMatchObject({ ok: false, code: "db_unavailable" });
+      expect(db.stored).toBe(0);
+    } finally {
+      err.mockRestore();
+    }
   });
 
   it("body rỗng vẫn 400 như cũ", async () => {

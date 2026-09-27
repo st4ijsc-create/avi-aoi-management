@@ -4062,7 +4062,9 @@
       "goldenSet": "黄金问题集",
       "target": "目标",
       "endpoint": "endpoint地址",
-      "reviewReason": "驳回原因"
+      "reviewReason": "驳回原因",
+      "gatewayId": "网关",
+      "deviceIds": "允许的设备列表"
     },
     "feature": {
       "webIngest": "网页内容导入",
@@ -20237,7 +20239,17 @@
     "dayChuyen": "产线"
   },
   "machinesTab": {
-    "may": "设备"
+    "may": "设备",
+    "gatewayAllowlist": "允许的设备",
+    "gatewayAllowlistTitle": "允许写入的设备 — {{code}}",
+    "gatewayAllowlistDesc": "此网关的密钥只能为所选设备写入数据（/api/ot/ingest 与 /api/v1/ingest 均适用）。若要网关写入自身数据，请同时选择它本身。",
+    "gatewayAllowlistEmptyWarn": "列表为空：此网关将无法为任何设备写入数据。",
+    "gatewayAllowlistSearch": "按设备编码或名称搜索",
+    "gatewayAllowlistSelected": "已选择 {{count}} 台设备",
+    "gatewayAllowlistSelf": "网关本身",
+    "gatewayAllowlistInactiveNote": "当前列表中已停用的设备将在保存时被移除。",
+    "gatewayAllowlistReason": "变更原因（记录到审计日志）",
+    "gatewayAllowlistSaved": "允许设备列表已保存"
   },
   "seedDataTab": {
     "daTaoDuLieuCo": "示例基础数据创建成功！"

@@ -4070,7 +4070,9 @@
       "goldenSet": "bộ câu hỏi vàng",
       "target": "đích tác động",
       "endpoint": "địa chỉ endpoint",
-      "reviewReason": "lý do từ chối"
+      "reviewReason": "lý do từ chối",
+      "gatewayId": "gateway",
+      "deviceIds": "danh sách thiết bị được phép"
     },
     "feature": {
       "webIngest": "nạp nội dung từ web",
@@ -20209,7 +20211,17 @@
     "dayChuyen": "dây chuyền"
   },
   "machinesTab": {
-    "may": "máy"
+    "may": "máy",
+    "gatewayAllowlist": "Thiết bị được phép",
+    "gatewayAllowlistTitle": "Thiết bị được phép ghi — {{code}}",
+    "gatewayAllowlistDesc": "Khoá của gateway này chỉ ghi được dữ liệu cho các thiết bị được chọn (cả /api/ot/ingest và /api/v1/ingest). Muốn gateway ghi dữ liệu của chính nó, hãy chọn cả nó.",
+    "gatewayAllowlistEmptyWarn": "Danh sách rỗng: gateway này sẽ KHÔNG ghi được dữ liệu cho thiết bị nào.",
+    "gatewayAllowlistSearch": "Tìm theo mã hoặc tên máy",
+    "gatewayAllowlistSelected": "Đã chọn {{count}} thiết bị",
+    "gatewayAllowlistSelf": "chính gateway",
+    "gatewayAllowlistInactiveNote": "Thiết bị đã ngừng hoạt động trong danh sách cũ sẽ bị bỏ khi lưu.",
+    "gatewayAllowlistReason": "Lý do thay đổi (ghi vào nhật ký)",
+    "gatewayAllowlistSaved": "Đã lưu danh sách thiết bị được phép"
   },
   "seedDataTab": {
     "daTaoDuLieuCo": "Đã tạo dữ liệu cơ sở mẫu thành công!"
