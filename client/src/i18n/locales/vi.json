@@ -4200,9 +4200,10 @@
       "selfApproveProgramVersion": "tự duyệt phiên bản chương trình của chính mình"
     },
     "reason": {
+      "mqttDeviceRejectedCredential": "Thiết bị này đã bị TỪ CHỐI — không cấp mật khẩu cho thiết bị bị từ chối. Duyệt lại thiết bị trước.",
       "mqttPasswordNotEnforced": "Broker đang TẮT kiểm mật khẩu (MQTT_REQUIRE_PASSWORD=false) — thiết bị vào chỉ bằng tên đăng nhập nên ràng buộc máy không có giá trị. Bật lại kiểm mật khẩu trước khi gắn máy.",
       "mqttMachineNotBindable": "Máy đích đã ngừng/xoá, đang ở trạng thái ngừng khai thác/loại bỏ, hoặc chưa gắn với trạm → nhà máy.",
-      "mqttBoundMachineOutOfScope": "Thiết bị đang gắn với một máy ngoài phạm vi của bạn — không thể đổi hay gỡ ràng buộc này.",
+      "mqttBoundMachineOutOfScope": "Thiết bị đang gắn với một máy ngoài phạm vi của bạn — bạn không thể thay đổi thiết bị này (ràng buộc hay mật khẩu).",
       "mqttDeviceNoCredential": "Thiết bị chưa có mật khẩu MQTT nên vào broker chỉ bằng tên đăng nhập (đoán được) — không thể gắn với máy. Cấp mật khẩu cho thiết bị trước.",
       "mqttDeviceRejected": "Thiết bị này đã bị TỪ CHỐI — không thể gắn với máy. Duyệt lại thiết bị trước.",
       "robotNotActive": "Robot này chưa được cổng robot của tiến trình nạp (đang tắt hoặc ROBOT_GATEWAY_ENABLED chưa bật) nên không có khoá chuyển động sống để gỡ.",
@@ -5769,10 +5770,17 @@
       "stationLabel": "trạm"
     },
     "clientMgmt": {
-      "newPasswordWarning": "Sao chép và cấu hình mật khẩu này vào thiết bị ngay. Hệ thống không lưu bản rõ và không thể hiện lại. Thiết bị bị khoá ngoài broker cho tới khi được cấu hình mật khẩu mới.",
+      "clearCredentialConfirm": "Xoá mật khẩu",
+      "clearCredentialDesc": "Thiết bị trở về trạng thái không mật khẩu (vào broker chỉ bằng tên đăng nhập, nếu cấu hình cho phép). Nếu thiết bị đang gắn với máy, ràng buộc máy cũng bị GỠ — thiết bị gắn máy phải có mật khẩu. Phiên đang mở bị ngắt.",
+      "clearCredentialTitle": "Xoá mật khẩu MQTT của thiết bị",
+      "clearCredential": "Xoá mật khẩu",
+      "legacyPlaintext": "Mật khẩu cũ (chưa băm)",
+      "rotateTypeDeviceId": "Gõ mã thiết bị để xác nhận",
+      "rotateAppDeviceWarning": "Thiết bị này báo phiên bản app nên CÓ THỂ là máy tính bảng chạy FactoryAlertSystem (suy đoán theo appVersion, không chắc chắn). App đó không gửi mật khẩu tới broker nhúng — cấp mật khẩu sẽ khoá nó ngoài. Gõ mã thiết bị để xác nhận bạn biết điều này.",
+      "newPasswordWarning": "Sao chép và cấu hình mật khẩu này vào thiết bị ngay — hệ thống không lưu bản rõ và không thể hiện lại. Thiết bị bị khoá ngoài broker cho tới khi được cấu hình mật khẩu mới. ⚠ Máy tính bảng chạy app FactoryAlertSystem KHÔNG gửi mật khẩu tới broker nhúng nên sẽ bị khoá ngoài VĨNH VIỄN — dùng \"Xoá mật khẩu\" để khôi phục.",
       "newPasswordTitle": "Mật khẩu mới — chỉ hiện MỘT lần",
       "rotatePasswordConfirm": "Sinh mật khẩu mới",
-      "rotatePasswordDesc": "Hệ thống sinh một mật khẩu ngẫu nhiên mới, chỉ lưu dạng băm. Mật khẩu cũ hết hiệu lực NGAY và phiên đang mở của thiết bị bị ngắt.",
+      "rotatePasswordDesc": "Hệ thống sinh một mật khẩu ngẫu nhiên mới, chỉ lưu dạng băm. Mật khẩu cũ hết hiệu lực NGAY và phiên đang mở của thiết bị bị ngắt. Chỉ dùng cho thiết bị cấu hình được mật khẩu MQTT — app FactoryAlertSystem trên broker nhúng KHÔNG gửi mật khẩu.",
       "rotatePasswordTitle": "Cấp mật khẩu MQTT mới",
       "rotatePassword": "Cấp / xoay mật khẩu",
       "noCredential": "Chưa có",

@@ -33,6 +33,8 @@ import { secPlatformEnabled } from "./security/policyGate";
 
 /** entityType / action của dòng control_audit_log (varchar 64 / 48). */
 export const AUDIT_ENTITY_MQTT_BINDING = "mqtt_client_machine_binding";
+/** Fix round 2 (#6): credential có entityType RIÊNG — xoay/xoá mật khẩu không phải thay đổi ràng buộc máy. */
+export const AUDIT_ENTITY_MQTT_CREDENTIAL = "mqtt_client_credential";
 export const AUDIT_ACTION_MQTT_BIND = "mqtt_machine_bind";
 export const AUDIT_ACTION_MQTT_UNBIND = "mqtt_machine_unbind";
 /** action của dòng audit_logs (màn Nhật ký). */
@@ -264,7 +266,7 @@ export async function xoayMatKhauThietBi(input: {
     const before = { deviceId: tb.deviceId, hadCredential };
     const after = { deviceId: tb.deviceId, hasCredential: true };
     await recordAuditEvent(tx, {
-      entityType: AUDIT_ENTITY_MQTT_BINDING,
+      entityType: AUDIT_ENTITY_MQTT_CREDENTIAL,
       entityId: tb.id,
       action: AUDIT_ACTION_MQTT_PASSWORD_ROTATE,
       actorId: input.nguoiSua.id,
@@ -300,6 +302,8 @@ export async function ngungThietBi(input: {
   nguoiSua: NguoiSua;
   /** Lý do ghi audit (vd "device soft-deleted"). */
   reason: string;
+  /** Nhãn dòng audit_logs = THỦ TỤC đã gây ra việc ngừng (fix round 2 #6: `mqttClient.delete` / `.updateSettings`). */
+  auditLogAction: string;
 }): Promise<{ deviceId: string | null; goMay: number | null }> {
   const db = await getDb();
   if (!db) throw new DbUnavailableError();
@@ -324,7 +328,7 @@ export async function ngungThietBi(input: {
       reason: input.reason,
     });
     await ghiAuditLogTx(tx, {
-      action: AUDIT_LOG_ACTION_MQTT_BIND,
+      action: input.auditLogAction,
       nguoiSua: input.nguoiSua,
       clientId: tb.id,
       deviceId: tb.deviceId,
@@ -333,5 +337,86 @@ export async function ngungThietBi(input: {
       reason: input.reason,
     });
     return { deviceId: tb.deviceId, goMay: tb.machineId };
+  });
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════════════════════════
+// doc 81 Đợt 1C Task 5b fix round 2 (#1b) — XOÁ credential MQTT (đảo của xoay mật khẩu).
+//
+// App FactoryAlertSystem trên broker nhúng CỐ Ý không gửi mật khẩu (FactoryAlertSystem/src/services/
+// mqttService.ts — nhánh `brokerType === 'local'`) ⇒ xoay mật khẩu cho một máy tính bảng là KHOÁ NGOÀI nó
+// vĩnh viễn. Đường này đưa thiết bị về "không credential" (vào lại bằng username khi
+// MQTT_ALLOW_PASSWORDLESS_REGISTERED cho phép). Một thiết bị ĐANG GẮN máy phải giữ mật khẩu (bindMachine
+// đòi passwordHash) ⇒ xoá credential cũng GỠ ràng buộc trong CÙNG transaction và audit cả hai.
+// ═══════════════════════════════════════════════════════════════════════════════════════════════════
+export const AUDIT_ACTION_MQTT_PASSWORD_CLEAR = "mqtt_password_clear";
+export const AUDIT_LOG_ACTION_MQTT_CLEAR = "mqttClient.clearCredential";
+
+export async function xoaCredentialThietBi(input: {
+  clientId: number;
+  reason: string;
+  nguoiSua: NguoiSua;
+  phamViTram: ReadonlyArray<number> | null;
+  phamViMay: ReadonlyArray<number> | null;
+}): Promise<{ clientId: number; deviceId: string; changed: boolean; unboundMachineId: number | null }> {
+  const db = await getDb();
+  if (!db) throw new DbUnavailableError();
+  const tramOk = (id: number | null) => input.phamViTram === null || (id != null && input.phamViTram.includes(id));
+  const mayOk = (id: number) => input.phamViMay === null || input.phamViMay.includes(id);
+  return db.transaction(async (tx) => {
+    const [tb] = await tx
+      .select({
+        id: mqttClients.id,
+        deviceId: mqttClients.deviceId,
+        stationId: mqttClients.stationId,
+        machineId: mqttClients.machineId,
+        passwordHash: mqttClients.passwordHash,
+        password: mqttClients.password,
+        isActive: mqttClients.isActive,
+      })
+      .from(mqttClients)
+      .where(eq(mqttClients.id, input.clientId))
+      .for("update");
+    if (!tb || !tb.isActive || !tramOk(tb.stationId)) throw new GanMayLoi("device_not_found", { clientId: input.clientId });
+    if (tb.machineId != null && !mayOk(tb.machineId)) throw new GanMayLoi("bound_machine_out_of_scope", { clientId: tb.id });
+
+    const hadCredential = Boolean(tb.passwordHash || tb.password);
+    const goMay = tb.machineId ?? null;
+    if (!hadCredential && goMay == null) return { clientId: tb.id, deviceId: tb.deviceId, changed: false, unboundMachineId: null };
+
+    await tx
+      .update(mqttClients)
+      .set({ passwordHash: null, password: null, machineId: null, updatedAt: new Date() })
+      .where(eq(mqttClients.id, tb.id));
+    await recordAuditEvent(tx, {
+      entityType: AUDIT_ENTITY_MQTT_CREDENTIAL,
+      entityId: tb.id,
+      action: AUDIT_ACTION_MQTT_PASSWORD_CLEAR,
+      actorId: input.nguoiSua.id,
+      before: { deviceId: tb.deviceId, hadCredential },
+      after: { deviceId: tb.deviceId, hasCredential: false },
+      reason: input.reason,
+    });
+    if (goMay != null) {
+      await recordAuditEvent(tx, {
+        entityType: AUDIT_ENTITY_MQTT_BINDING,
+        entityId: tb.id,
+        action: AUDIT_ACTION_MQTT_UNBIND,
+        actorId: input.nguoiSua.id,
+        before: { deviceId: tb.deviceId, machineId: goMay },
+        after: { deviceId: tb.deviceId, machineId: null, machineCode: null, factoryId: null },
+        reason: `credential cleared (a bound device must keep a password): ${input.reason}`,
+      });
+    }
+    await ghiAuditLogTx(tx, {
+      action: AUDIT_LOG_ACTION_MQTT_CLEAR,
+      nguoiSua: input.nguoiSua,
+      clientId: tb.id,
+      deviceId: tb.deviceId,
+      before: { deviceId: tb.deviceId, hadCredential, machineId: goMay },
+      after: { deviceId: tb.deviceId, hasCredential: false, machineId: null },
+      reason: input.reason,
+    });
+    return { clientId: tb.id, deviceId: tb.deviceId, changed: true, unboundMachineId: goMay };
   });
 }

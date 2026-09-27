@@ -252,6 +252,11 @@ const MIEN_TRU_VAN_HANH: readonly string[] = [
  *   do): đúng MỘT thủ tục MỚI `mqttClient.rotatePassword` (mutation, cùng sàn `protectedProcedure` +
  *   `requirePermission("settings_factory","canEdit")`, `module = null`, không phải bề mặt AI). `tong` 2289
  *   trùng `phamViDocCensus.test.ts#GHIM.tong`.
+ *
+ * ★ 2026-09-28 doc 81 Đợt 1C Task 5b fix round 2 — **tong +1 nữa (2289→2290), KHÔNG ghim lại** (cùng lý
+ *   do): đúng MỘT thủ tục MỚI `mqttClient.clearCredential` (mutation, cùng sàn `protectedProcedure` +
+ *   `requirePermission("settings_factory","canEdit")`, `module = null`, không phải bề mặt AI). `tong` 2290
+ *   trùng `phamViDocCensus.test.ts#GHIM.tong`.
  */
 const GHIM = { tong: 2223, beMatAi: 357, aiCoCong: 295, aiMienTru: 62, ngoaiAiCoCong: 0 } as const;
 

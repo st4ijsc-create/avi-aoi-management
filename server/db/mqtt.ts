@@ -85,8 +85,13 @@ const COT_THIET_BI_CONG_KHAI = {
   isActive: mqttClients.isActive,
   createdAt: mqttClients.createdAt,
   updatedAt: mqttClients.updatedAt,
-  /** Thiết bị có credential MQTT (hash, hoặc mật khẩu cũ dạng thô chờ nâng cấp) — KHÔNG lộ giá trị. */
-  hasCredential: sql<boolean>`(${mqttClients.passwordHash} IS NOT NULL OR ${mqttClients.password} IS NOT NULL)`,
+  /**
+   * Thiết bị có `passwordHash` — ĐÚNG điều kiện `bindMachine` đòi (fix round 2 #6: trước là "hash HOẶC thô",
+   * khiến UI báo "đã có" cho thiết bị mà máy chủ vẫn từ chối gắn). KHÔNG lộ giá trị.
+   */
+  hasCredential: sql<boolean>`(${mqttClients.passwordHash} IS NOT NULL)`,
+  /** Còn mật khẩu cũ dạng THÔ chờ nâng cấp lên hash ở lượt nối kế tiếp — báo RIÊNG, không lộ giá trị. */
+  hasLegacyPlaintext: sql<boolean>`(${mqttClients.password} IS NOT NULL)`,
   /** Có FCM token để đẩy thông báo — màn Dashboard chỉ cần CÓ/KHÔNG. */
   hasPushToken: sql<boolean>`(${mqttClients.fcmToken} IS NOT NULL AND ${mqttClients.fcmToken} <> '')`,
 };

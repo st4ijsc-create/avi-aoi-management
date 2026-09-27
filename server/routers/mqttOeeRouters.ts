@@ -73,18 +73,27 @@ function kiemVaiGanMay(role: unknown) {
 }
 
 /** Ngừng thiết bị (isActive=false) + gỡ ràng buộc máy trong một transaction; SAU commit đóng phiên sống. */
-async function ngungVaNgatPhien(clientId: number, ctx: Parameters<typeof createAuditContext>[0], reason: string) {
+async function ngungVaNgatPhien(
+  clientId: number,
+  ctx: Parameters<typeof createAuditContext>[0],
+  reason: string,
+  auditLogAction: "mqttClient.delete" | "mqttClient.updateSettings",
+) {
   const { ngungThietBi } = await import("../services/mqttBindingService");
-  const kq = await ngungThietBi({ clientId, nguoiSua: nguoiSuaTu(ctx), reason });
+  const kq = await ngungThietBi({ clientId, nguoiSua: nguoiSuaTu(ctx), reason, auditLogAction });
   if (kq.deviceId && kq.goMay != null) {
     const { disconnectMqttDevice } = await import("../services/mqttService");
     disconnectMqttDevice(kq.deviceId);
   }
 }
 
-/** Lỗi nghiệp vụ của mqttBindingService → appError có mã (khoá errors.reason.* ở vi/en/zh). */
+/**
+ * Lỗi nghiệp vụ của mqttBindingService → appError có mã (khoá errors.reason.* ở vi/en/zh).
+ * Fix round 2 (#6): câu từ chối theo ĐÚNG thao tác — xoay/xoá mật khẩu không nói "không thể gắn máy".
+ */
 function loiGanMay(
   loai: "device_not_found" | "device_rejected" | "device_no_credential" | "bound_machine_out_of_scope" | "machine_not_found" | "machine_not_bindable",
+  thaoTac: "bind" | "credential" = "bind",
 ) {
   switch (loai) {
     case "device_not_found":
@@ -92,7 +101,9 @@ function loiGanMay(
     case "machine_not_found":
       return appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "machine" }, "Machine not found");
     case "device_rejected":
-      return appError("BAD_REQUEST", "INVALID_VALUE", { field: "clientId", reason: "mqttDeviceRejected" }, "A REJECTED MQTT device cannot be bound to a machine");
+      return thaoTac === "bind"
+        ? appError("BAD_REQUEST", "INVALID_VALUE", { field: "clientId", reason: "mqttDeviceRejected" }, "A REJECTED MQTT device cannot be bound to a machine")
+        : appError("BAD_REQUEST", "INVALID_VALUE", { field: "clientId", reason: "mqttDeviceRejectedCredential" }, "A REJECTED MQTT device cannot be issued a password");
     case "device_no_credential":
       return appError("BAD_REQUEST", "INVALID_VALUE", { field: "clientId", reason: "mqttDeviceNoCredential" }, "An MQTT device without a stored password cannot be bound to a machine");
     case "bound_machine_out_of_scope":
@@ -100,6 +111,13 @@ function loiGanMay(
       return appError("FORBIDDEN", "PERMISSION_DENIED", { action: "changeMqttDeviceOfOtherScope", reason: "mqttBoundMachineOutOfScope" }, "The device is bound to a machine outside your scope");
     case "machine_not_bindable":
       return appError("BAD_REQUEST", "INVALID_VALUE", { field: "machineId", reason: "mqttMachineNotBindable" }, "Target machine is inactive, retired/decommissioned or has no station/factory chain");
+  }
+}
+
+/** Fix round 2 (#5): khi broker KHÔNG kiểm mật khẩu, cả gắn máy lẫn cấp mật khẩu đều vô nghĩa ⇒ từ chối. */
+function tuChoiKhiKhongKiemMatKhau(mqttRequirePassword: () => boolean, what: string) {
+  if (!mqttRequirePassword()) {
+    throw appError("PRECONDITION_FAILED", "INVALID_VALUE", { field: "clientId", reason: "mqttPasswordNotEnforced" }, `MQTT_REQUIRE_PASSWORD is off — ${what} would not be enforced`);
   }
 }
 
@@ -186,7 +204,7 @@ export const mqttClientRouter = router({
       // + audit trong một transaction, rồi đóng phiên sống nếu có ràng buộc bị gỡ).
       const cot = isActive === true ? { ...data, isActive } : data;
       if (Object.values(cot).some((v) => v !== undefined)) await db.updateMqttClientSettings(id, cot);
-      if (isActive === false) await ngungVaNgatPhien(id, ctx, "device deactivated (mqttClient.updateSettings isActive=false)");
+      if (isActive === false) await ngungVaNgatPhien(id, ctx, "device deactivated (mqttClient.updateSettings isActive=false)", "mqttClient.updateSettings");
       return { success: true };
     }),
 
@@ -195,7 +213,7 @@ export const mqttClientRouter = router({
     .input(z.object({ id: z.number() }))
     .mutation(async ({ input, ctx }) => {
       // Fix round 1 (#4) — xoá mềm GỠ luôn ràng buộc máy (audit cùng transaction), rồi đóng phiên sống.
-      await ngungVaNgatPhien(input.id, ctx, "device soft-deleted (mqttClient.delete)");
+      await ngungVaNgatPhien(input.id, ctx, "device soft-deleted (mqttClient.delete)", "mqttClient.delete");
       return { success: true };
     }),
 
@@ -224,9 +242,7 @@ export const mqttClientRouter = router({
       const mqttSvc = await import("../services/mqttService");
       // Fix round 1 (#3): khi broker KHÔNG kiểm mật khẩu (MQTT_REQUIRE_PASSWORD=false) thì username là đủ
       // để vào ⇒ một ràng buộc máy chẳng chứng minh được gì. GẮN bị từ chối; GỠ (thu hẹp) vẫn được.
-      if (input.machineId != null && !mqttSvc.mqttRequirePassword()) {
-        throw appError("PRECONDITION_FAILED", "INVALID_VALUE", { field: "clientId", reason: "mqttPasswordNotEnforced" }, "MQTT_REQUIRE_PASSWORD is off — a machine binding would not be enforced");
-      }
+      if (input.machineId != null) tuChoiKhiKhongKiemMatKhau(mqttSvc.mqttRequirePassword, "a machine binding");
       const phamVi = phamViCua(ctx);
       const [phamViTram, phamViMay] = await Promise.all([
         db.idsTrongPhamVi("station", phamVi),
@@ -264,6 +280,8 @@ export const mqttClientRouter = router({
     }))
     .mutation(async ({ input, ctx }) => {
       kiemVaiGanMay(ctx.user.role);
+      const { disconnectMqttDevice, mqttRequirePassword } = await import("../services/mqttService");
+      tuChoiKhiKhongKiemMatKhau(mqttRequirePassword, "a device password");
       const phamVi = phamViCua(ctx);
       const [phamViTram, phamViMay] = await Promise.all([
         db.idsTrongPhamVi("station", phamVi),
@@ -274,12 +292,43 @@ export const mqttClientRouter = router({
       try {
         kq = await xoayMatKhauThietBi({ clientId: input.clientId, reason: input.reason, nguoiSua: nguoiSuaTu(ctx), phamViTram, phamViMay });
       } catch (e) {
-        if (e instanceof GanMayLoi) throw loiGanMay(e.loai);
+        if (e instanceof GanMayLoi) throw loiGanMay(e.loai, "credential");
         throw e;
       }
-      const { disconnectMqttDevice } = await import("../services/mqttService");
       const sessionsClosed = disconnectMqttDevice(kq.deviceId);
       return { clientId: kq.clientId, deviceId: kq.deviceId, password: kq.password, sessionsClosed };
+    }),
+
+  // doc 81 Đợt 1C Task 5b fix round 2 (#1b) — XOÁ credential (đảo của rotatePassword): đường phục hồi cho
+  // thiết bị không gửi được mật khẩu (app FactoryAlertSystem trên broker nhúng). Cùng cổng. Thiết bị đang
+  // gắn máy ⇒ gỡ ràng buộc CÙNG transaction (gắn máy đòi mật khẩu). Sau commit: đóng phiên sống.
+  clearCredential: protectedProcedure
+    .use(requirePermission("settings_factory", "canEdit"))
+    .input(z.object({
+      clientId: z.number().int().positive(),
+      reason: z.string().trim().min(3).max(500),
+    }))
+    .mutation(async ({ input, ctx }) => {
+      kiemVaiGanMay(ctx.user.role);
+      const phamVi = phamViCua(ctx);
+      const [phamViTram, phamViMay] = await Promise.all([
+        db.idsTrongPhamVi("station", phamVi),
+        db.idsTrongPhamVi("machine", phamVi),
+      ]);
+      const { xoaCredentialThietBi, GanMayLoi } = await import("../services/mqttBindingService");
+      let kq;
+      try {
+        kq = await xoaCredentialThietBi({ clientId: input.clientId, reason: input.reason, nguoiSua: nguoiSuaTu(ctx), phamViTram, phamViMay });
+      } catch (e) {
+        if (e instanceof GanMayLoi) throw loiGanMay(e.loai, "credential");
+        throw e;
+      }
+      let sessionsClosed = 0;
+      if (kq.changed) {
+        const { disconnectMqttDevice } = await import("../services/mqttService");
+        sessionsClosed = disconnectMqttDevice(kq.deviceId);
+      }
+      return { clientId: kq.clientId, changed: kq.changed, unboundMachineId: kq.unboundMachineId, sessionsClosed };
     }),
 
   // Get MQTT status

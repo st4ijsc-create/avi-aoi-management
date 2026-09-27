@@ -566,7 +566,16 @@ const cua = (n: NhomPhamVi): ThuTuc[] => NHOM.get(n) ?? [];
  *     cùng thủ tục, KHÔNG đổi nhóm. KHÔNG thêm dòng nào vào `phamViDocBaseline.ts`.
  *   ⇒ D +1 · tong +1.
  */
-const GHIM = { A: 341, B: 8, C: 480, D: 1127, S: 333, tong: 2289 } as const;
+/*
+ * ★★★ 2026-09-28 (doc 81 Đợt 1C Task 5b fix round 2, xoá mật khẩu MQTT) — **D 1127→1128 · tong 2289→2290 ·
+ * A/B/C/S không đổi.** ĐO bằng chính bộ quét này (trước lượt sửa, HEAD `5d7ccf862` = D 1127):
+ *   • `mqttClientRouter.clearCredential` (mutation, MỚI): **D +1** — xoá `passwordHash`/`password` (+ gỡ
+ *     `machineId` nếu đang gắn); thiết bị soát trạm ∈ `idsTrongPhamVi("station", phamViCua(ctx))` + máy đang
+ *     gắn ∈ phạm vi, TRONG transaction (`services/mqttBindingService.ts#xoaCredentialThietBi`). KHÔNG thêm
+ *     dòng nào vào `phamViDocBaseline.ts`.
+ *   ⇒ D +1 · tong +1.
+ */
+const GHIM = { A: 341, B: 8, C: 480, D: 1128, S: 333, tong: 2290 } as const;
 
 describe("§1 — CẦU CHÌ: bộ suy có thật sự nhìn thấy gì không", () => {
   it("★ không có ô MÙ nào (mỗi ô mù là một chỗ KHÔNG AI CANH)", () => {

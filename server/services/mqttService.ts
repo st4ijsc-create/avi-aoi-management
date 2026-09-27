@@ -52,7 +52,7 @@ import {
   toSynapseExternalPrefix,
 } from './mqtt/topicRebrand';
 import { drizzle } from 'drizzle-orm/mysql2';
-import { eq, and, sql, lt } from 'drizzle-orm';
+import { eq, and, sql, lt, isNull } from 'drizzle-orm';
 import * as schema from '../../drizzle/schema';
 import mqtt, { MqttClient } from 'mqtt';
 // Doc 56 Đ2a Việc 9 — TYPE-ONLY (erased at compile → no runtime import / no cycle).
@@ -2069,9 +2069,17 @@ function setupEventHandlers() {
           }
           if (verdict.upgradeHash) {
             try {
+              // Task 5b fix round 2 (#3) — CONDITIONAL upgrade: only while the row still holds exactly
+              // the plaintext just verified and no hash. A rotatePassword/clearCredential that committed
+              // between our read and this write must win (an unconditional write would resurrect the old
+              // secret as the device credential).
               await db!.update(schema.mqttClients)
                 .set({ passwordHash: verdict.upgradeHash, password: null })
-                .where(eq(schema.mqttClients.id, mqttClient.id));
+                .where(and(
+                  eq(schema.mqttClients.id, mqttClient.id),
+                  isNull(schema.mqttClients.passwordHash),
+                  eq(schema.mqttClients.password, password?.toString() ?? ''),
+                ));
               console.log(`[MQTT] Upgraded device ${deviceId} password to hash-at-rest`);
             } catch (upErr) {
               // Non-fatal: plaintext stays until the next successful connect retries.
@@ -2128,6 +2136,9 @@ function setupEventHandlers() {
         if (!mqttClient.isActive) {
           reactivateFields.isActive = true;
           reactivateFields.approvalStatus = 'PENDING';
+          // Task 5b fix round 2 (#2) — a soft-deleted row is re-activated UNBOUND (persisted, so the NEXT
+          // connection — when the row is already active again — does not pick the old binding back up).
+          reactivateFields.machineId = null;
         }
 
         // Update client info
@@ -2139,8 +2150,9 @@ function setupEventHandlers() {
         // re-activated soft-deleted client is forced back to PENDING (see reactivateFields).
         (client as any)[MQTT_ACL_APPROVAL_PROP] = !mqttClient.isActive ? 'PENDING' : mqttClient.approvalStatus;
         // doc 81 Đợt 1C Task 5 — the device ↔ machine binding (mqtt_clients."machineId", mig 0292).
-        // Task 5b fix round 1 (#4) — a soft-deleted row being RE-ACTIVATED (self-registration) never
-        // inherits its old binding: the session is unbound until an admin binds it again.
+        // Task 5b fix round 1 (#4) + round 2 (#2) — a soft-deleted row being RE-ACTIVATED gets no binding
+        // on THIS session, and `reactivateFields.machineId = null` above clears the stored binding so later
+        // sessions stay unbound too, until an admin binds the device again.
         (client as any)[MQTT_ACL_MACHINE_PROP] = mqttClient.isActive
           ? await resolveMqttBoundMachine(mqttClient.machineId, deviceId)
           : null;
