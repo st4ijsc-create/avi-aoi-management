@@ -263,22 +263,97 @@ describe("connectionOptions.password is sealed at rest (Task 12)", () => {
     expect(JSON.stringify(upd.connectionOptions)).not.toMatch(/enc:v1:|Pw-1/);
   });
 
-  it("Fix round 1 #2 — update sending the redacted placeholder back KEEPS the stored secret", async () => {
+  it("Fix round 1 #2 — update sending the redacted placeholder back KEEPS the stored secret (when nothing about where/how it is sent changes)", async () => {
     const { decryptSecret } = await import("../services/security/secretBox");
     const a = await caller.create({
       code: "UA11", name: "n", protocol: "opcua", endpoint: "opc.tcp://h:4840",
-      connectionOptions: { userName: "op", password: "Keep-Me", ha: { secondaryEndpoint: "opc.tcp://h2:4840", secondaryOptions: { password: "Keep-2" } } },
+      connectionOptions: { userName: "op", password: "Keep-Me", securityMode: "SignAndEncrypt", ha: { secondaryEndpoint: "opc.tcp://h2:4840", secondaryOptions: { password: "Keep-2" } } },
     });
     const form = (await caller.get({ id: a.id })).connectionOptions as any; // có "[redacted]"
-    await caller.update({ id: a.id, connectionOptions: { ...form, securityMode: "SignAndEncrypt" } });
+    // final wave (item 5): đổi trường KHÔNG ràng buộc bí mật (tên đăng nhập, tên adapter) ⇒ giữ.
+    await caller.update({ id: a.id, name: "renamed", connectionOptions: { ...form, userName: "op2" } });
     const row = adapterRows().find((r) => r.id === a.id);
     expect(decryptSecret(row.connectionOptions.password)).toBe("Keep-Me");
     expect(decryptSecret(row.connectionOptions.ha.secondaryOptions.password)).toBe("Keep-2");
+    expect(row.connectionOptions.userName).toBe("op2");
     expect(row.connectionOptions.securityMode).toBe("SignAndEncrypt");
     // Placeholder khi TẠO (không có gì để giữ) ⇒ không lưu chuỗi placeholder làm mật khẩu.
     const b = await caller.create({ code: "UA12", name: "n", protocol: "opcua", endpoint: "opc.tcp://h:4840", connectionOptions: { userName: "x", password: "[redacted]" } });
     const rowB = adapterRows().find((r) => r.id === b.id);
     expect(rowB.connectionOptions.password).toBeUndefined();
+  });
+
+  // ── doc 81 Đợt 1B final wave (item 5, security) — placeholder + đổi endpoint/bảo mật ⇒ KHÔNG khôi phục bí mật ──
+  describe("final wave #5 — a canEdit user cannot re-point a stored secret by sending the placeholder", () => {
+    async function seed(code: string) {
+      const a = await caller.create({
+        code, name: "n", protocol: "opcua", endpoint: "opc.tcp://10.0.0.5:4840",
+        connectionOptions: {
+          userName: "op", password: "Stored-Pw", securityMode: "SignAndEncrypt", securityPolicy: "Basic256Sha256",
+          ha: { secondaryEndpoint: "opc.tcp://10.0.0.6:4840", secondaryOptions: { userName: "op", password: "Stored-2", securityMode: "SignAndEncrypt" } },
+        },
+      });
+      const form = (await caller.get({ id: a.id })).connectionOptions as any; // placeholders
+      const before = JSON.stringify(storedOpts(a.id));
+      return { a, form, before };
+    }
+
+    it("endpoint change + placeholder ⇒ BAD_REQUEST INVALID_VALUE/secretReentryRequired; stored row untouched (secret AND endpoint)", async () => {
+      const { a, form, before } = await seed("UA20");
+      await expect(caller.update({ id: a.id, endpoint: "opc.tcp://attacker.example:4840", connectionOptions: form })).rejects.toMatchObject({
+        code: "BAD_REQUEST",
+        message: expect.stringMatching(/secret|password|nhập lại|re-enter/i),
+      });
+      expect(JSON.stringify(storedOpts(a.id))).toBe(before);
+      expect(adapterRows().find((r) => r.id === a.id).endpoint).toBe("opc.tcp://10.0.0.5:4840");
+    });
+
+    it("securityMode → None + placeholder ⇒ refused (the stored password would go over the wire in clear); with a NEW secret ⇒ OK and sealed", async () => {
+      const { decryptSecret } = await import("../services/security/secretBox");
+      const { a, form, before } = await seed("UA21");
+      await expect(caller.update({ id: a.id, connectionOptions: { ...form, securityMode: "None", securityPolicy: "None" } })).rejects.toMatchObject({ code: "BAD_REQUEST" });
+      expect(JSON.stringify(storedOpts(a.id))).toBe(before);
+      const ha = { ...form.ha, secondaryOptions: { ...form.ha.secondaryOptions, password: "Second-New" } };
+      await caller.update({ id: a.id, connectionOptions: { ...form, securityMode: "None", securityPolicy: "None", password: "Typed-Again", ha } });
+      const co = storedOpts(a.id);
+      expect(co.securityMode).toBe("None");
+      expect(decryptSecret(co.password)).toBe("Typed-Again");
+      expect(JSON.stringify(co)).not.toContain("Typed-Again");
+    });
+
+    it("endpoint change WITHOUT connectionOptions in the request (stored row holds a secret) ⇒ refused; a row with no secret may change endpoint freely", async () => {
+      const { a, before } = await seed("UA22");
+      await expect(caller.update({ id: a.id, endpoint: "opc.tcp://other:4840" })).rejects.toMatchObject({ code: "BAD_REQUEST" });
+      expect(JSON.stringify(storedOpts(a.id))).toBe(before);
+      const plain = await caller.create({ code: "UA23", name: "n", protocol: "opcua", endpoint: "opc.tcp://a:4840", connectionOptions: { userName: "ro" } });
+      const upd = await caller.update({ id: plain.id, endpoint: "opc.tcp://b:4840" });
+      expect(upd.endpoint).toBe("opc.tcp://b:4840");
+    });
+
+    it("HA: secondaryEndpoint change + secondary placeholder ⇒ refused; same change with the secondary secret re-entered ⇒ OK, primary secret kept", async () => {
+      const { decryptSecret } = await import("../services/security/secretBox");
+      const { a, form, before } = await seed("UA24");
+      await expect(
+        caller.update({ id: a.id, connectionOptions: { ...form, ha: { ...form.ha, secondaryEndpoint: "opc.tcp://evil:4840" } } }),
+      ).rejects.toMatchObject({ code: "BAD_REQUEST" });
+      expect(JSON.stringify(storedOpts(a.id))).toBe(before);
+      await caller.update({
+        id: a.id,
+        connectionOptions: { ...form, ha: { ...form.ha, secondaryEndpoint: "opc.tcp://new:4840", secondaryOptions: { ...form.ha.secondaryOptions, password: "Second-Typed" } } },
+      });
+      const co = storedOpts(a.id);
+      expect(decryptSecret(co.password)).toBe("Stored-Pw"); // primary untouched (placeholder, no binding change)
+      expect(decryptSecret(co.ha.secondaryOptions.password)).toBe("Second-Typed");
+      expect(co.ha.secondaryEndpoint).toBe("opc.tcp://new:4840");
+    });
+
+    it("no change + placeholder ⇒ keeps the secret (the ordinary edit-form round-trip still works)", async () => {
+      const { decryptSecret } = await import("../services/security/secretBox");
+      const { a, form } = await seed("UA25");
+      await caller.update({ id: a.id, endpoint: "opc.tcp://10.0.0.5:4840", connectionOptions: form, pollIntervalMs: 2000 });
+      expect(decryptSecret(storedOpts(a.id).password)).toBe("Stored-Pw");
+      expect(decryptSecret(storedOpts(a.id).ha.secondaryOptions.password)).toBe("Stored-2");
+    });
   });
 
   it("Fix round 1 #6 — contradictory OPC UA security is refused at save time (create + update), other protocols untouched", async () => {

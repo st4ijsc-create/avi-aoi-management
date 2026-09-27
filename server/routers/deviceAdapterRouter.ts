@@ -36,6 +36,8 @@ import {
   sealConnectionOptionSecrets,
   redactAdapterRow,
   restoreRedactedSecrets,
+  secretReentryRequired,
+  REDACTED_SECRET,
 } from "../services/ot/connectionSecrets";
 import { parseOpcuaSecurityOptions } from "../services/ot/drivers/opcuaSecurity";
 
@@ -198,12 +200,29 @@ export const deviceAdapterRouter = router({
       const db = await getDb();
       const { id, ...rest } = input;
       const patch: Record<string, unknown> = { ...rest, updatedAt: new Date() };
-      if (rest.connectionOptions !== undefined || rest.protocol === "opcua") {
+      if (rest.connectionOptions !== undefined || rest.protocol === "opcua" || rest.endpoint !== undefined) {
         // Fix round 1 — cần dòng đã lưu để (a) giữ bí mật khi form gửi lại "[redacted]",
-        // (b) biết protocol thực khi kiểm bảo mật OPC UA lúc lưu.
+        // (b) biết protocol thực khi kiểm bảo mật OPC UA lúc lưu; final wave (item 5): (c) biết
+        // endpoint/bảo mật CÓ ĐỔI không — đổi thì placeholder KHÔNG được khôi phục.
         const [existing] = await db.select().from(deviceAdapters).where(eq(deviceAdapters.id, id)).limit(1);
         if (!existing) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "adapter" }, "Adapter không tồn tại.");
         const storedOptions = (existing.connectionOptions as Record<string, unknown> | null) ?? null;
+        // doc 81 Đợt 1B final wave (item 5, security) — một người có canEdit đổi endpoint (hoặc hạ
+        // securityMode xuống None / đổi policy / bật TOFU) mà gửi kèm "[redacted]" thì bí mật đã
+        // lưu KHÔNG được dùng lại (nó sẽ đi tới host họ chọn / đi trần trên dây): BAD_REQUEST, dòng
+        // giữ nguyên, phải nhập lại bí mật. Áp cho cả ha.secondaryEndpoint / ha.secondaryOptions.
+        const reentry = secretReentryRequired(
+          { endpoint: rest.endpoint, options: rest.connectionOptions },
+          { endpoint: existing.endpoint, options: storedOptions },
+        );
+        if (reentry) {
+          throw appError(
+            "BAD_REQUEST",
+            "INVALID_VALUE",
+            { field: reentry.field, reason: "secretReentryRequired" },
+            `Secret re-entry required: "${reentry.field}" changed (where or how the stored secret is sent) while the request still carries the "${REDACTED_SECRET}" placeholder — re-enter the password/secret to save.`,
+          );
+        }
         const nextOptions =
           rest.connectionOptions === undefined
             ? storedOptions
