@@ -1367,7 +1367,7 @@ export function MqttProfileManagementContent() {
                     ...formData, 
                     subscribeTopics: e.target.value.split("\n").filter(t => t.trim()) 
                   })}
-                  placeholder="factory/+/machine/+/inspection&#10;factory/+/machine/+/status"
+                  placeholder={t('mqtt.profileMgmt.subscribeTopicsPlaceholder')}
                   rows={3}
                 />
               </div>
@@ -1381,7 +1381,7 @@ export function MqttProfileManagementContent() {
                     ...formData, 
                     publishTopics: e.target.value.split("\n").filter(t => t.trim()) 
                   })}
-                  placeholder="factory/+/machine/+/command"
+                  placeholder={t('mqtt.profileMgmt.publishTopicsPlaceholder')}
                   rows={2}
                 />
               </div>

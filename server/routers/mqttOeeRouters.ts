@@ -156,11 +156,13 @@ export const mqttClientRouter = router({
 
   // Get MQTT status
   status: protectedProcedure.query(async () => {
-    const { isMqttRunning, getConnectedClientsCount, getExternalMqttInfo } = await import('../services/mqttService');
+    const { isMqttRunning, getConnectedClientsCount, getExternalMqttInfo, getMqttBindingDropStats } = await import('../services/mqttService');
     return {
       enabled: isMqttRunning(),
       connectedClients: getConnectedClientsCount(),
       external: getExternalMqttInfo(),
+      // doc 81 Đợt 1C Task 5 fix round 1 — data dropped by the device↔machine rule (L2) since start.
+      bindingDrops: getMqttBindingDropStats(),
     };
   }),
 

@@ -338,6 +338,37 @@ describe.skipIf(!DB_URL)("doc 81 Đợt 1C Task 5 — MQTT sensor/telemetry ché
     c.end(true); cun.end(true);
   }, 30_000);
 
+  // ── fix round 1 (ruling R-1C-e): publish đối xứng với subscribe — kênh LỆNH của máy khác ─────
+  it("fix round 1: A publish vào kênh LỆNH của B (syn/{B}/cmd, factory/{f}/{B}/cmd) ⇒ bị từ chối, subscriber của B KHÔNG nhận gì; nhánh của chính A ⇒ được", async () => {
+    const broker = mod.aedes!;
+    const cmdB = [`syn/${ISA.b}/cmd`, `factory/${ids.factory}/${CODE.b}/cmd`];
+    const cb = await connect(DEV.b);
+    for (const f of cmdB) expect(await trySubscribe(cb, f), `B own ${f}`).toBe(true);
+    const gotB: string[] = [];
+    cb.on("message", (topic, payload) => gotB.push(`${topic}|${payload.toString()}`));
+
+    for (const t of cmdB) {
+      const ca = await connect(DEV.a);
+      ca.publish(t, "FORGED", { qos: 0 });
+      expect(await closedWithin(ca, 5000), `A → ${t}`).toBe(true);
+    }
+    const cun = await connect(DEV.un);
+    cun.publish(cmdB[0], "FORGED", { qos: 0 });
+    expect(await closedWithin(cun, 5000), "unbound → syn cmd").toBe(true);
+
+    // Đối chứng dương: server (trong tiến trình) phát lên kênh lệnh của B ⇒ B NHẬN đúng một tin.
+    await withTimeout(new Promise<void>((r) => broker.publish({ topic: cmdB[0], payload: Buffer.from("SERVER"), qos: 0, retain: false, cmd: "publish", dup: false } as any, () => r())), 5000, "internal publish");
+    await waitFor(() => gotB.length >= 1, 5000, "B got the control message");
+    await sleep(300);
+    expect(gotB).toEqual([`${cmdB[0]}|SERVER`]);
+
+    // Nhánh CHÍNH của A (lệnh/trạng thái dưới factory/ và syn/) ⇒ PUBACK, kết nối giữ nguyên.
+    const ca = await connect(DEV.a);
+    for (const t of [`syn/${ISA.a}/cmd/ack`, `factory/${ids.factory}/${CODE.a}/state`]) await publishAcked(ca, t, "ok");
+    expect(ca.connected).toBe(true);
+    ca.end(true); cb.end(true);
+  }, 30_000);
+
   // ── client nội bộ của server ────────────────────────────────────────────────────────────────
   it("client NỘI BỘ không bị ảnh hưởng: aedes.subscribe('factory/#') trong tiến trình nhận publish của thiết bị; aedes.publish trong tiến trình tới thiết bị đã subscribe nhánh của nó", async () => {
     const broker = mod.aedes!;

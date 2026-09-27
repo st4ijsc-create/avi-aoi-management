@@ -1030,12 +1030,13 @@ export function derToPem(der: Buffer): string {
 //
 // SCOPE note (deliberate, QĐ#1 — do not kill machines mid-shift): topics NOT rooted at the
 // brand namespace are untouched, EXCEPT (doc 81 Đợt 1C Task 5, owner decision 2026-09-27):
-//   • PUBLISH `factory/{fId}/{machineCode}/sensor/…` — only by a device BOUND to exactly that
-//     machine AND that factory (mqtt_clients."machineId"); unbound device ⇒ denied.
+//   • PUBLISH under `factory/` or `syn/` — only inside the device's OWN machine branch
+//     `factory/{ownFactoryId}/{ownMachineCode}/…` / `syn/{own isa95_path}/…` (fix round 1,
+//     R-1C-e: incl. the `syn/{…}/cmd` command channel); unbound device ⇒ denied.
 //   • SUBSCRIBE under `factory/` or `syn/` (incl. a `+`/`#` root that reaches them) — only inside
 //     the device's OWN machine branch: `factory/{ownFactoryId}/{ownMachineCode}/…` and
 //     `syn/{own isa95_path}/…`. `factory/#`, `syn/#`, `factory/{f}/+/…` ⇒ SUBACK 0x80.
-// Other non-brand topics (e.g. PUBLISH on `syn/…`, `avi-aoi/…`) stay out of scope.
+// Other non-brand topics (e.g. `avi-aoi/…`, `aviator/…`) stay out of scope.
 //
 // SERVER identity is NEVER derived from a client-supplied clientId — that would be trivially
 // spoofable (a device could just connect as `avi-aoi-server-1` and gain full rights). The
@@ -1197,17 +1198,30 @@ function evaluatePublishPolicy(ctx: MqttAclContext, topic: string): MqttAclDecis
   if (topic.includes('+') || topic.includes('#')) return deny('wildcard not allowed in PUBLISH');
 
   const segs = topic.split('/');
-  // doc 81 Đợt 1C Task 5 — sensor data may be published only for the device's OWN bound machine,
-  // in that machine's factory. Unbound device ⇒ denied (it has no machine to write for).
-  if (isFactorySensorTopic(topic)) {
-    if (!ctx.machine) return deny('device is not bound to a machine — cannot publish factory/…/sensor');
-    if (!sensorTopicOwnedBy(topic, ctx.machine)) {
+  // doc 81 Đợt 1C Task 5 (+ fix round 1, ruling R-1C-e) — under `factory/` and `syn/` a device may
+  // publish ONLY inside its OWN machine branch: `factory/{ownF}/{ownCode}/…` (sensor data included)
+  // and `syn/{own isa95_path}/…`. Symmetric with the subscribe rule: before fix round 1 only
+  // `factory/…/sensor` was bound, so a device could still write into ANOTHER machine's command
+  // channel `syn/{B}/cmd` (policy-gated per the contract) or `factory/{f}/{B}/…`, which B's device
+  // receives. Unbound device ⇒ no branch ⇒ denied. Server/in-process publishes never reach here.
+  if (segs[0] === SENSOR_TOPIC_ROOT || segs[0] === SYN_TOPIC_ROOT) {
+    const root = segs[0];
+    const own = ownMachineBranch(root, ctx.machine);
+    if (!own) {
       return deny(
-        `device bound to machine ${ctx.machine.code} (factory ${ctx.machine.factoryId}) may not publish ` +
-          `sensor data for factory/${segs[1]}/${segs[2]}`,
+        ctx.machine
+          ? `device bound to machine ${ctx.machine.code} has no ${root}/ branch (no ISA-95 path)`
+          : `device is not bound to a machine — cannot publish under ${root}/`,
       );
     }
-    return allow('own machine sensor branch');
+    const inOwnBranch = own.every((v, i) => segs[i + 1] === v); // a shorter topic fails on undefined
+    if (!inOwnBranch) {
+      return deny(
+        `device bound to machine ${ctx.machine!.code} (factory ${ctx.machine!.factoryId}) may publish ` +
+          `only inside its own ${root}/ machine branch`,
+      );
+    }
+    return allow(`own machine ${root}/ branch`);
   }
   if (segs[0] !== LEGACY_TOPIC_ROOT) return allow('outside brand namespace (out of ACL scope)');
   if (segs[1] === 'test') return allow('test namespace');
