@@ -20,6 +20,8 @@
  *   • `getSafetyStatus` là READ-ONLY tuyệt đối: ủy quyền safetyPlcAdapter (đọc
  *     status từ safety-PLC độc lập, không ghi); không có nguồn → trả
  *     {state:'UNKNOWN', source:'none'} TRUNG THỰC — không bao giờ bịa 'OK'.
+ *     doc 81 Đợt 1C Task 1: với `{ forRealActuation: true }` (preflight OT/robot trước lệnh THẬT)
+ *     SIM / real_unmapped KHÔNG còn đủ cho 'OK' và tag an toàn chất lượng xấu ⇒ không sạch.
  *   • `describe` là metadata thuần (capabilityModel + device_tags), không I/O
  *     xuống thiết bị.
  * Khi driver ĐÃ implement method tương ứng → facade ủy quyền thẳng cho driver.
@@ -36,7 +38,14 @@ import type {
 } from "./otDriver";
 import { dispatch, type DispatchResult, type DispatchStatus } from "./commandDispatcher";
 import { getActiveDriver } from "./otManager";
+import {
+  actuationPreflightVerdict,
+  effectiveBackend,
+  type PlcPreflightReading,
+  type PlcReadOutcome,
+} from "./safetyPreflightPolicy";
 import type { MachineLike } from "../equipment/capabilityModel";
+import type { SafetyPlcStatusSnapshot } from "../../../drizzle/schema";
 
 /** Ngữ cảnh facade cho MỘT adapter đã cấu hình (device_adapters.id). */
 export interface AdapterFacadeContext {
@@ -53,8 +62,76 @@ export interface AdapterFacadeContext {
 /** Hợp đồng DeviceAdapter đầy đủ mà facade bảo đảm cho MỌI adapter. */
 export interface OtAdapterFacade {
   executeCommand(cmd: CanonicalCommand): Promise<CanonicalCommandAck>;
-  getSafetyStatus(): Promise<SafetyState>;
+  getSafetyStatus(opts?: SafetyStatusOptions): Promise<SafetyState>;
   describe(): Promise<AssetDescriptor>;
+}
+
+/**
+ * doc 81 Đợt 1C Task 1 (owner decision 2026-09-27) — what the safety reading is FOR.
+ *   forRealActuation: true — the caller is about to perform a REAL device write / robot motion
+ *     (the OT (5a-safety) and robot (4a-safety) preflights; both are reachable only on the real,
+ *     commissioned path). The safety-PLC branch then applies safetyPreflightPolicy
+ *     .actuationPreflightVerdict: only a `real` config (real endpoint + ≥1 mapped safety tag) that
+ *     reads clean with every mapped tag at good quality yields OK; SIM / real_unmapped alone ⇒
+ *     UNKNOWN with basis "sim_only" (SAFETY_SIM_ONLY); a bad-quality real tag ⇒ not clean.
+ *   absent/false — the legacy reading, unchanged (AI gate L-7 pre-check, which may precede a
+ *     SIMULATED dispatch; the dispatcher re-checks strictly if the write turns out real).
+ * A driver that implements getSafetyStatus itself is still delegated to in both modes (0 production
+ * drivers do today).
+ */
+export interface SafetyStatusOptions {
+  forRealActuation?: boolean;
+}
+
+type SafetyPlcModule = typeof import("../safety/plc/safetyPlcAdapter");
+type SafetyPlcConfigRow = Awaited<ReturnType<SafetyPlcModule["listPlcConfigs"]>>[number];
+
+/**
+ * doc 81 Đợt 1C Task 1 — the real-actuation reading over the enabled configs. Every config is
+ * classified with the ONE shared `effectiveBackend`; a `real` one must be read through
+ * `readChecked()` so a bad-quality safety tag is seen (absent ⇒ "incomplete", fail-closed). A
+ * config that reads BLOCKED ends the scan (BLOCKED wins, as before). The verdict is the ONE shared
+ * `actuationPreflightVerdict` (the Safety panel predicts with the same function).
+ */
+async function readForRealActuation(plc: SafetyPlcModule, configs: SafetyPlcConfigRow[]): Promise<SafetyState> {
+  const readings: PlcPreflightReading[] = [];
+  let blockedCode: string | null = null;
+  for (const cfg of configs) {
+    const kind = effectiveBackend(cfg);
+    let outcome: PlcReadOutcome;
+    try {
+      const backend = plc.backendForConfig(cfg);
+      let status: SafetyPlcStatusSnapshot;
+      let complete = true;
+      if (kind === "real") {
+        if (typeof backend.readChecked !== "function") {
+          readings.push({ kind, outcome: "incomplete" });
+          continue;
+        }
+        const checked = await backend.readChecked();
+        status = checked.status;
+        complete = checked.unreadable.length === 0;
+      } else {
+        status = await backend.read();
+      }
+      if (plc.statusToFindings(status).length > 0) {
+        outcome = "blocked";
+        blockedCode = cfg.code;
+      } else {
+        outcome = complete ? "clean" : "incomplete";
+      }
+    } catch {
+      outcome = "error"; // one config unreadable ⇒ that config vouches for nothing; never invented
+    }
+    readings.push({ kind, outcome });
+    if (outcome === "blocked") break;
+  }
+  const verdict = actuationPreflightVerdict(readings);
+  const now = new Date().toISOString();
+  if (verdict.state === "BLOCKED") return { state: "BLOCKED", source: `safety_plc:${blockedCode}`, ts: now };
+  if (verdict.state === "OK") return { state: "OK", source: "safety_plc", ts: now };
+  if (verdict.reason === "SAFETY_SIM_ONLY") return { state: "UNKNOWN", source: "safety_plc", ts: now, basis: "sim_only" };
+  return { state: "UNKNOWN", source: "none", ts: now };
 }
 
 /** Ack `rejected` chuẩn hóa (reason theo §13.3). PURE. */
@@ -137,8 +214,9 @@ export function createAdapterFacade(ctx: AdapterFacadeContext): OtAdapterFacade 
      * READ-ONLY safety status. Driver có getSafetyStatus → ủy quyền. Không →
      * ủy quyền safetyPlcAdapter (đọc status các safety-PLC config đang bật);
      * flag OFF / không config / lỗi đọc toàn bộ → UNKNOWN trung thực.
+     * `opts.forRealActuation` (Đợt 1C Task 1) → luật lệnh thật: readForRealActuation.
      */
-    async getSafetyStatus(): Promise<SafetyState> {
+    async getSafetyStatus(opts?: SafetyStatusOptions): Promise<SafetyState> {
       const driver = resolveDriver();
       if (driver?.getSafetyStatus) return driver.getSafetyStatus();
 
@@ -150,6 +228,9 @@ export function createAdapterFacade(ctx: AdapterFacadeContext): OtAdapterFacade 
         const configs = await plc.listPlcConfigs({ onlyEnabled: true });
         if (configs.length === 0) return unknown;
 
+        if (opts?.forRealActuation === true) return await readForRealActuation(plc, configs);
+
+        // Legacy reading (AI gate L-7, comparisons) — byte-identical to before Đợt 1C Task 1.
         let anyOk = false;
         for (const cfg of configs) {
           try {

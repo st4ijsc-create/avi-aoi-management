@@ -83,8 +83,13 @@ vi.mock("../interlock/interlockGate", () => ({
 // Nguồn đọc nền của facade an toàn THẬT: PLC sạch (OK) trong cả tệp này.
 vi.mock("../safety/plc/safetyPlcAdapter", () => ({
   safetyPlcAdapterEnabled: () => true,
-  listPlcConfigs: async () => [{ code: "SPLC-1" }],
-  backendForConfig: () => ({ read: async () => ({ estop: false }) }),
+  // Đợt 1C Task 1 (2026-09-27): preflight lệnh THẬT chỉ nhận PLC `real` (endpoint + tag an toàn gán) đọc qua
+  // readChecked — cấu hình giả mang hình dạng đó (endpoint TEST-NET-1, không bao giờ được nối: backend bị giả).
+  listPlcConfigs: async () => [{ code: "SPLC-1", backend: "modbus", endpoint: "tcp://192.0.2.1:502", statusMap: { estop: { address: "coil:1" } } }],
+  backendForConfig: () => ({
+    read: async () => ({ estop: false }),
+    readChecked: async () => ({ status: { estop: false }, unreadable: [] }),
+  }),
   statusToFindings: () => [],
 }));
 

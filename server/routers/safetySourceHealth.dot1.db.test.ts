@@ -86,6 +86,11 @@ describe.skipIf(!DB_URL)("Task 4 — safety.sourceHealth + listRuns DRY-RUN (CSD
   const safety = async (ctx: never) => (await import("./safetyRouter")).safetyRouter.createCaller(ctx);
   const facadeReading = async () =>
     (await import("../services/ot/adapterFacade")).createAdapterFacade({ adapterId: -1, machineId: null }).getSafetyStatus();
+  // Đợt 1C Task 1 — CHÍNH lượt đọc mà preflight OT/robot dùng trước lệnh THẬT.
+  const facadeRealActuation = async () =>
+    (await import("../services/ot/adapterFacade"))
+      .createAdapterFacade({ adapterId: -1, machineId: null })
+      .getSafetyStatus({ forRealActuation: true });
 
   it("adapter TẮT ⇒ báo 'blocked'/SAFETY_UNKNOWN — và facade THẬT cũng trả UNKNOWN", async () => {
     delete process.env.SAFETY_PLC_ADAPTER_ENABLED;
@@ -99,17 +104,31 @@ describe.skipIf(!DB_URL)("Task 4 — safety.sourceHealth + listRuns DRY-RUN (CSD
     expect((await facadeReading()).state).toBe("UNKNOWN");
   });
 
-  it("adapter BẬT + cấu hình SIM ⇒ báo preflight dựa vào GIẢ LẬP — và facade THẬT trả OK từ safety_plc (không UNKNOWN)", async () => {
+  // Đợt 1C Task 1 (quyết định chủ dự án 2026-09-27) — đổi kỳ vọng: trước đây bảng báo "sim_basis" /
+  // "sim_can_satisfy" (lệnh thật đi qua nhờ SIM). Nay SIM không thoả preflight lệnh THẬT ⇒ bảng báo
+  // blocked/SAFETY_SIM_ONLY, và lượt đọc THẬT của preflight (forRealActuation) nói ĐÚNG điều đó.
+  // Lượt đọc cũ (không tham số — cổng AI L-7) giữ nguyên: SIM sạch vẫn OK.
+  // ⚠ `_test` dùng chung: safetySimOnly.dot1c chạy song song có thể thêm một cấu hình `real` trong
+  //   đúng một ca của nó ⇒ nhánh realConfigs > 0 được chấp nhận (khi đó bảng phải nói real_basis).
+  it("adapter BẬT + cấu hình SIM ⇒ lệnh THẬT bị chặn SAFETY_SIM_ONLY — khớp lượt đọc forRealActuation của facade THẬT", async () => {
     process.env.SAFETY_PLC_ADAPTER_ENABLED = "true";
     process.env.OT_CONTROL_ENABLED = "true";
     process.env.ROBOT_CONTROL_ENABLED = "true";
     const h = await (await safety(ctxAdmin)).sourceHealth();
     expect(h.safetyPlc.simConfigs).toBeGreaterThanOrEqual(1);
     expect(["sim", "mixed"]).toContain(h.safetyPlc.basis);
-    expect(["sim_basis", "sim_can_satisfy"]).toContain(h.preflight.ot.realWrites);
-    expect(h.preflight.ot.refusalReason).toBeNull();
     const mine = h.safetyPlc.configs.find((c) => c.code === PLC_CODE);
     expect(mine).toMatchObject({ backend: "sim", effective: "sim_empty", provenance: "SIM" });
+    if (h.safetyPlc.realConfigs === 0) {
+      expect(h.preflight.ot.realWrites).toBe("blocked");
+      expect(h.preflight.ot.refusalReason).toBe("SAFETY_SIM_ONLY");
+      expect(h.preflight.robot.refusalReason).toBe("SAFETY_SIM_ONLY");
+      const strict = await facadeRealActuation();
+      expect(strict.state).toBe("UNKNOWN");
+      expect(strict.basis).toBe("sim_only");
+    } else {
+      expect(h.preflight.ot.realWrites).toBe("real_basis");
+    }
     const reading = await facadeReading();
     expect(reading.state).not.toBe("UNKNOWN");
     expect(reading.source).toMatch(/^safety_plc/);

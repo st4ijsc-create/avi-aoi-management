@@ -219,7 +219,8 @@ function health(over: Record<string, unknown> = {}) {
     },
     preflight: {
       expectedReading: "SIM",
-      ot: { flag: "OT_SAFETY_PREFLIGHT_ENABLED", preflightEnabled: true, controlEnabled: true, realWrites: "sim_basis", refusalReason: null },
+      // Đợt 1C Task 1 (2026-09-27) — chỉ SIM ⇒ lệnh thật bị chặn SAFETY_SIM_ONLY (trước đây "sim_basis").
+      ot: { flag: "OT_SAFETY_PREFLIGHT_ENABLED", preflightEnabled: true, controlEnabled: true, realWrites: "blocked", refusalReason: "SAFETY_SIM_ONLY" },
       robot: { flag: "ROBOT_SAFETY_PREFLIGHT_ENABLED", preflightEnabled: true, controlEnabled: false, realWrites: "dry_run", refusalReason: null },
     },
     vision: { enabled: false, calibrations: 0, onnxPersonModelWired: false },
@@ -231,14 +232,18 @@ function health(over: Record<string, unknown> = {}) {
 }
 
 describe("SafetyWorkforce — SAF-02 panel nguồn an toàn", () => {
-  it("PLC SIM ⇒ '⚠ SIM (preflight relies on a SIMULATION)' + OT 'allowed on a SIMULATED reading' + robot dry-run", () => {
+  // Đợt 1C Task 1 — đổi kỳ vọng: trước đây OT "allowed on a SIMULATED reading" (sim_basis); nay bị chặn
+  // SAFETY_SIM_ONLY và bảng nói rõ luật "đích đã commission cần safety-PLC THẬT có gán tag".
+  it("PLC SIM ⇒ '⚠ SIM only — does NOT satisfy…' + OT bị chặn SAFETY_SIM_ONLY + dòng luật + robot dry-run", () => {
     setQueryOverride("safety.sourceHealth", makeQuery({ data: health() }));
     render(<SafetyWorkforce />);
     const plc = screen.getByTestId("safety-source-plc");
     expect(plc).toHaveAttribute("data-basis", "sim");
-    expect(plc.textContent).toMatch(/SIM/);
-    expect(plc.textContent).toMatch(/preflight relies on a SIMULATION/);
-    expect(screen.getByTestId("safety-source-ot")).toHaveAttribute("data-verdict", "sim_basis");
+    expect(plc.textContent).toMatch(/SIM only — does NOT satisfy the preflight for real commands/);
+    expect(screen.getByTestId("safety-source-ot")).toHaveAttribute("data-verdict", "blocked");
+    expect(screen.getByTestId("safety-source-ot").textContent).toMatch(/SAFETY_SIM_ONLY/);
+    expect(screen.getByTestId("safety-source-ot").textContent).toMatch(/commissioned target needs a REAL safety PLC with mapped tags/);
+    expect(screen.getByTestId("safety-source-rule").textContent).toMatch(/commissioned target needs a REAL safety PLC with mapped safety tags/);
     expect(screen.getByTestId("safety-source-robot")).toHaveAttribute("data-verdict", "dry_run");
     expect(screen.getByTestId("safety-source-vision").textContent).toMatch(/off/i);
     expect(screen.getByTestId("safety-source-zone").textContent).toMatch(/off/i);
@@ -315,7 +320,7 @@ describe("SafetyWorkforce — Task 4 X-01: badge DEMO trên assignment", () => {
 
 // ── Fix round 1 (#1 real_unmapped · #4 sim script · #7 query tắt không phải lỗi) ────────────
 describe("SafetyWorkforce — Fix round 1 panel nguồn", () => {
-  it("#1 endpoint thật KHÔNG ánh xạ tag ⇒ nói rõ OK dựa trên việc không đọc gì", () => {
+  it("#1 endpoint thật KHÔNG ánh xạ tag ⇒ nói rõ KHÔNG thoả preflight, lệnh thật bị chặn SAFETY_SIM_ONLY (Đợt 1C Task 1)", () => {
     setQueryOverride(
       "safety.sourceHealth",
       makeQuery({
@@ -326,8 +331,9 @@ describe("SafetyWorkforce — Fix round 1 panel nguồn", () => {
           },
           preflight: {
             expectedReading: "UNMAPPED",
-            ot: { flag: "OT_SAFETY_PREFLIGHT_ENABLED", preflightEnabled: true, controlEnabled: true, realWrites: "unmapped_basis", refusalReason: null },
-            robot: { flag: "ROBOT_SAFETY_PREFLIGHT_ENABLED", preflightEnabled: true, controlEnabled: true, realWrites: "unmapped_basis", refusalReason: null },
+            // Đợt 1C Task 1 — trước đây "unmapped_basis" (cho qua); nay chặn SAFETY_SIM_ONLY.
+            ot: { flag: "OT_SAFETY_PREFLIGHT_ENABLED", preflightEnabled: true, controlEnabled: true, realWrites: "blocked", refusalReason: "SAFETY_SIM_ONLY" },
+            robot: { flag: "ROBOT_SAFETY_PREFLIGHT_ENABLED", preflightEnabled: true, controlEnabled: true, realWrites: "blocked", refusalReason: "SAFETY_SIM_ONLY" },
           },
         }),
       }),
@@ -336,9 +342,9 @@ describe("SafetyWorkforce — Fix round 1 panel nguồn", () => {
     const plc = screen.getByTestId("safety-source-plc");
     expect(plc).toHaveAttribute("data-basis", "real_unmapped");
     expect(plc.textContent).toMatch(/NO safety tag mapped/);
-    expect(plc.textContent).toMatch(/based on nothing read/);
-    expect(screen.getByTestId("safety-source-ot")).toHaveAttribute("data-verdict", "unmapped_basis");
-    expect(screen.getByTestId("safety-source-ot").textContent).toMatch(/no safety tag is read/);
+    expect(plc.textContent).toMatch(/does NOT satisfy the preflight for real commands/);
+    expect(screen.getByTestId("safety-source-ot")).toHaveAttribute("data-verdict", "blocked");
+    expect(screen.getByTestId("safety-source-ot").textContent).toMatch(/SAFETY_SIM_ONLY/);
   });
 
   it("#4 SIM kịch bản rỗng ⇒ 'empty script — always OK'; SIM có kịch bản ⇒ 'scripted'", () => {

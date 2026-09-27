@@ -47,7 +47,7 @@ import {
   RobotAbortUnsupportedError,
 } from "./robotDriver";
 import { withDeadline } from "../ot/drivers/boundedClose";
-import { isRobotSafetyPreflightEnabled, safetyPreflightReason } from "../ot/safetyPreflightPolicy"; // final wave (item 3)
+import { isRobotSafetyPreflightEnabled, safetyPreflightReason, type SafetyUnknownBasis } from "../ot/safetyPreflightPolicy"; // final wave (item 3)
 
 /**
  * CTL-02 (doc 40) — ROBOT COMMISSIONING / FAT LEDGER (bảng migration 0240). Định nghĩa
@@ -594,29 +594,36 @@ async function dispatchRobotJobCore(input: RobotDispatchInput): Promise<RobotDis
   //     "false" — and reasons SAFETY_BLOCKED / SAFETY_UNKNOWN (was SAFETY_PLC_BLOCKED /
   //     SAFETY_PLC_NOT_OK). The raw reading (incl. ERROR) stays in result.safety.
   //     A stop (abort) is never gated here.
+  //     doc 81 Đợt 1C Task 1 (owner decision 2026-09-27): the facade reads with
+  //     { forRealActuation: true } (this gate is reachable only on the real, commissioned path) —
+  //     SIM / real_unmapped alone ⇒ SAFETY_SIM_ONLY; a bad-quality real safety tag ⇒ SAFETY_UNKNOWN.
   if (motion && isRobotSafetyPreflightEnabled()) {
     let safetyState: string;
     let safetySource: string | undefined;
+    let safetyBasis: SafetyUnknownBasis | undefined; // Đợt 1C Task 1 — "sim_only" ⇒ SAFETY_SIM_ONLY
     try {
       const { createAdapterFacade } = await import("../ot/adapterFacade");
       const s = await withDeadline(
-        createAdapterFacade({ adapterId: ROBOT_NO_OT_ADAPTER_ID, machineId: null }).getSafetyStatus(),
+        createAdapterFacade({ adapterId: ROBOT_NO_OT_ADAPTER_ID, machineId: null }).getSafetyStatus({ forRealActuation: true }),
         SAFETY_PREFLIGHT_DEADLINE_MS,
         "safety-PLC preflight",
       );
       safetyState = s?.state ?? "UNKNOWN";
       safetySource = s?.source;
+      safetyBasis = s?.basis;
     } catch (err) {
       safetyState = "ERROR";
       safetySource = (err as Error)?.message ?? String(err);
     }
     if (safetyState !== "OK") {
-      const error = safetyPreflightReason(safetyState);
+      const error = safetyPreflightReason(safetyState, safetyBasis);
       const jobId = await record(
         input,
         "rejected",
-        { safety: safetyState, safetySource },
-        `${error}: safety-PLC preflight returned ${safetyState} — motion refused before any driver call`,
+        safetyBasis ? { safety: safetyState, safetySource, safetyBasis } : { safety: safetyState, safetySource },
+        error === "SAFETY_SIM_ONLY"
+          ? `${error}: safety-PLC preflight found no real safety PLC with a mapped safety tag (only SIM / unmapped) — a commissioned robot needs a REAL safety PLC; motion refused before any driver call`
+          : `${error}: safety-PLC preflight returned ${safetyState} — motion refused before any driver call`,
       );
       return { ok: false, status: "rejected", jobId, error };
     }

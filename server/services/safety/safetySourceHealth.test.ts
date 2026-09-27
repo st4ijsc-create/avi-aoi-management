@@ -80,15 +80,18 @@ describe("computeSafetySourceHealth — Safety PLC + preflight", () => {
     expect(h.preflight.robot.realWrites).toBe("blocked");
   });
 
-  it("CHỈ cấu hình SIM (dev hôm nay) ⇒ basis sim: preflight lấy OK từ GIẢ LẬP ⇒ ghi thật KHÔNG bị chặn bởi preflight", () => {
+  // Đợt 1C Task 1 (quyết định chủ dự án 2026-09-27) — đổi kỳ vọng: trước đây "sim_basis" (ghi thật đi qua
+  // dựa vào GIẢ LẬP); nay SIM không thoả preflight của lệnh thật ⇒ bị chặn SAFETY_SIM_ONLY.
+  it("CHỈ cấu hình SIM (dev hôm nay) ⇒ basis sim; lệnh THẬT bị chặn SAFETY_SIM_ONLY (Đợt 1C Task 1)", () => {
     const h = computeSafetySourceHealth(snap({ plcConfigsEnabled: [SIM_CFG] }));
     expect(h.safetyPlc.basis).toBe("sim");
     expect(h.safetyPlc.simConfigs).toBe(1);
     expect(h.safetyPlc.realConfigs).toBe(0);
     expect(h.preflight.expectedReading).toBe("SIM");
-    expect(h.preflight.ot.realWrites).toBe("sim_basis");
-    expect(h.preflight.robot.realWrites).toBe("sim_basis");
-    expect(h.preflight.ot.refusalReason).toBeNull();
+    expect(h.preflight.ot.realWrites).toBe("blocked");
+    expect(h.preflight.robot.realWrites).toBe("blocked");
+    expect(h.preflight.ot.refusalReason).toBe("SAFETY_SIM_ONLY");
+    expect(h.preflight.robot.refusalReason).toBe("SAFETY_SIM_ONLY");
   });
 
   it("modbus/opcua KHÔNG endpoint rơi về SIM kịch bản RỖNG (mirror backendForConfig)", () => {
@@ -103,16 +106,46 @@ describe("computeSafetySourceHealth — Safety PLC + preflight", () => {
     expect(h.preflight.ot.realWrites).toBe("real_basis");
   });
 
-  it("thật + SIM ⇒ mixed: một cấu hình SIM đủ cho OK (anyOk) dù PLC thật không đọc được", () => {
+  // Đợt 1C Task 1 — đổi kỳ vọng: trước đây "sim_can_satisfy" (SIM đủ cho OK khi PLC thật không đọc được);
+  // nay chỉ PLC thật quyết định ⇒ real_basis (PLC thật không đọc được ⇒ chặn SAFETY_UNKNOWN lúc chạy).
+  it("thật + SIM ⇒ mixed: SIM KHÔNG được tính, chỉ PLC thật quyết định ⇒ real_basis (Đợt 1C Task 1)", () => {
     const h = computeSafetySourceHealth(snap({ plcConfigsEnabled: [REAL_CFG, SIM_CFG] }));
     expect(h.safetyPlc.basis).toBe("mixed");
-    expect(h.preflight.ot.realWrites).toBe("sim_can_satisfy");
+    expect(h.preflight.ot.realWrites).toBe("real_basis");
+    expect(h.preflight.ot.refusalReason).toBeNull();
   });
 
   it("OT_CONTROL tắt ⇒ OT là dry_run (preflight không bao giờ được chạm); robot vẫn đánh giá riêng", () => {
     const h = computeSafetySourceHealth(snap({ flags: { ...snap().flags, otControl: false }, plcConfigsEnabled: [SIM_CFG] }));
     expect(h.preflight.ot.realWrites).toBe("dry_run");
-    expect(h.preflight.robot.realWrites).toBe("sim_basis");
+    expect(h.preflight.ot.refusalReason).toBeNull();
+    expect(h.preflight.robot.realWrites).toBe("blocked"); // Đợt 1C Task 1: trước đây sim_basis
+    expect(h.preflight.robot.refusalReason).toBe("SAFETY_SIM_ONLY");
+  });
+
+  it("Đợt 1C Task 1 — bảng kỳ vọng viết TAY theo quyết định chủ dự án (không suy từ mã sản phẩm)", () => {
+    const SCRIPTED_ONLY = [SIM_SCRIPTED];
+    const cases: Array<[string, PlcConfigLite[], string, string | null]> = [
+      ["0 cấu hình", [], "blocked", "SAFETY_UNKNOWN"],
+      ["SIM rỗng", [SIM_CFG], "blocked", "SAFETY_SIM_ONLY"],
+      ["SIM kịch bản", SCRIPTED_ONLY, "blocked", "SAFETY_SIM_ONLY"],
+      ["modbus không endpoint", [REAL_NO_EP], "blocked", "SAFETY_SIM_ONLY"],
+      ["endpoint thật chưa gán tag", [REAL_UNMAPPED], "blocked", "SAFETY_SIM_ONLY"],
+      ["SIM + chưa gán tag", [SIM_CFG, REAL_UNMAPPED], "blocked", "SAFETY_SIM_ONLY"],
+      ["thật có tag", [REAL_CFG], "real_basis", null],
+      ["thật có tag + SIM", [REAL_CFG, SIM_CFG], "real_basis", null],
+      ["thật có tag + chưa gán tag", [REAL_CFG, REAL_UNMAPPED], "real_basis", null],
+    ];
+    const lech: string[] = [];
+    for (const [ten, cfgs, verdict, reason] of cases) {
+      const h = computeSafetySourceHealth(snap({ plcConfigsEnabled: cfgs }));
+      for (const plane of [h.preflight.ot, h.preflight.robot]) {
+        if (plane.realWrites !== verdict || plane.refusalReason !== reason) {
+          lech.push(`${ten}: ${plane.flag} = ${plane.realWrites}/${plane.refusalReason}, kỳ vọng ${verdict}/${reason}`);
+        }
+      }
+    }
+    expect(lech).toEqual([]);
   });
 
   it("cờ preflight = tắt ⇒ unguarded (ghi thật không qua safety-PLC)", () => {
@@ -146,20 +179,22 @@ describe("Fix round 1 #1 — real_unmapped", () => {
     expect(effectiveBackend({ ...REAL_UNMAPPED, statusMap: { muting: { address: "10002" } } })).toBe("real");
   });
 
-  it("chỉ cấu hình unmapped ⇒ basis real_unmapped, verdict unmapped_basis (rủi ro, không chặn)", () => {
+  // Đợt 1C Task 1 — đổi kỳ vọng: trước đây "unmapped_basis" (rủi ro, không chặn); nay chặn SAFETY_SIM_ONLY.
+  it("chỉ cấu hình unmapped ⇒ basis real_unmapped; lệnh THẬT bị chặn SAFETY_SIM_ONLY (Đợt 1C Task 1)", () => {
     const h = computeSafetySourceHealth(snap({ plcConfigsEnabled: [REAL_UNMAPPED] }));
     expect(h.safetyPlc.basis).toBe("real_unmapped");
     expect(h.safetyPlc.realConfigs).toBe(0);
     expect(h.safetyPlc.realUnmappedConfigs).toBe(1);
     expect(h.preflight.expectedReading).toBe("UNMAPPED");
-    expect(h.preflight.ot.realWrites).toBe("unmapped_basis");
-    expect(h.preflight.ot.refusalReason).toBeNull();
+    expect(h.preflight.ot.realWrites).toBe("blocked");
+    expect(h.preflight.ot.refusalReason).toBe("SAFETY_SIM_ONLY");
   });
 
-  it("thật (có tag) + unmapped ⇒ mixed / sim_can_satisfy (cấu hình không đọc gì cũng đủ cho OK)", () => {
+  // Đợt 1C Task 1 — đổi kỳ vọng: trước đây "sim_can_satisfy"; nay cấu hình không đọc gì không được tính.
+  it("thật (có tag) + unmapped ⇒ mixed / real_basis (cấu hình không đọc gì KHÔNG còn đủ cho OK)", () => {
     const h = computeSafetySourceHealth(snap({ plcConfigsEnabled: [REAL_CFG, REAL_UNMAPPED] }));
     expect(h.safetyPlc.basis).toBe("mixed");
-    expect(h.preflight.robot.realWrites).toBe("sim_can_satisfy");
+    expect(h.preflight.robot.realWrites).toBe("real_basis");
   });
 
   describe("ORACLE: backendForConfig(cfg).read() THẬT với driver đếm connect", () => {

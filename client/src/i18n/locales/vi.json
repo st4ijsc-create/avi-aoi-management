@@ -17079,16 +17079,17 @@
       "loading": "Đang kiểm tra nguồn an toàn…",
       "error": "Không đọc được nguồn an toàn — hãy coi như chưa biết.",
       "plcLabel": "Safety PLC",
+      "rule": "Luật: đích đã commission cần safety-PLC THẬT có gán tag — cấu hình SIM hoặc chưa gán tag không bao giờ thoả preflight; tag an toàn chất lượng xấu tính là chưa biết.",
       "plc": {
-        "sim": "⚠ SIM (preflight dựa vào GIẢ LẬP)",
-        "mixed": "⚠ thật + SIM/chưa ánh xạ (một cấu hình không đọc tag an toàn nào đủ làm preflight qua)",
+        "sim": "⚠ chỉ SIM — KHÔNG thoả preflight cho lệnh thật",
+        "mixed": "● thật + SIM/chưa gán tag (chỉ PLC thật được tính)",
         "real": "● PLC thật",
         "adapterOff": "○ tắt — không có nguồn an toàn",
         "noConfig": "○ không có cấu hình nào bật",
         "readError": "⚠ không đọc được cấu hình",
         "simEmpty": "kịch bản rỗng — luôn OK",
         "simScripted": "theo kịch bản — OK/BLOCKED theo kịch bản, không theo PLC",
-        "realUnmapped": "⚠ endpoint thật nhưng KHÔNG ánh xạ tag an toàn nào — preflight OK dựa trên việc không đọc gì"
+        "realUnmapped": "⚠ endpoint thật nhưng KHÔNG gán tag an toàn nào — KHÔNG thoả preflight cho lệnh thật"
       },
       "hiddenConfigs": "ngoài phạm vi của bạn",
       "ot": "Ghi OT",
@@ -17097,10 +17098,8 @@
         "dry_run": "chỉ dry-run (điều khiển đang tắt — không ghi gì)",
         "unguarded": "⚠ preflight bị tắt — lệnh thật không được kiểm",
         "blocked": "lệnh thật bị chặn",
-        "sim_basis": "⚠ được phép dựa trên kết quả GIẢ LẬP",
-        "sim_can_satisfy": "⚠ một cấu hình SIM hoặc chưa ánh xạ đủ làm phép kiểm qua",
-        "real_basis": "kiểm với Safety PLC thật",
-        "unmapped_basis": "⚠ được phép dù không đọc tag an toàn nào"
+        "blockedSimOnly": "lệnh thật bị chặn — chỉ có SIM / chưa gán tag; đích đã commission cần safety-PLC THẬT có gán tag",
+        "real_basis": "kiểm với Safety PLC thật"
       },
       "on": "● bật",
       "off": "○ tắt",

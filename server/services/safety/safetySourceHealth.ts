@@ -16,6 +16,10 @@
  *       dry-run trả 'simulated' trước đó).
  *   Hệ quả trung thực cần hiện lên: với cấu hình SIM duy nhất (DB dev hôm nay), preflight trả OK
  *   từ một GIẢ LẬP ⇒ ghi thật KHÔNG bị preflight chặn dù chẳng có PLC an toàn nào được đọc.
+ *   ⇒ doc 81 Đợt 1C Task 1 (quyết định chủ dự án 2026-09-27) ĐÃ ĐÓNG lỗ đó: lệnh THẬT (đích đã
+ *   commission) chỉ qua khi có ≥1 cấu hình `real` (endpoint thật + có gán tag an toàn) đọc sạch; chỉ
+ *   có SIM / real_unmapped ⇒ SAFETY_SIM_ONLY. Bảng này dự đoán bằng CHÍNH hàm preflight dùng
+ *   (`actuationPreflightVerdict` + `effectiveBackend` của safetyPreflightPolicy) ⇒ hai bên không thể lệch.
  *
  * Phạm vi: số tổng của nền preflight là TOÀN HỆ (preflight đọc mọi cấu hình bật, không theo
  * tenant) nhưng chỉ là SỐ ĐẾM; mã cấu hình chỉ lộ cho người xem trong phạm vi nhà máy của nó.
@@ -30,8 +34,11 @@ import { safetyVisionEnabled, listCalibrations } from "./vision/humanDetectionPr
 import { safetyEstopAdapterEnabled, getSafetyPlcAdapter } from "./estop/safetyEstopAdapter";
 import {
   SAFETY_PREFLIGHT_FLAGS,
+  actuationPreflightVerdict,
+  effectiveBackend,
   isOtSafetyPreflightEnabled,
   isRobotSafetyPreflightEnabled,
+  type EffectivePlcBackend,
   type SafetyPreflightReason,
 } from "../ot/safetyPreflightPolicy";
 import { isOtControlEnabled } from "../ot/commandDispatcher";
@@ -87,26 +94,23 @@ export interface SourceHealthSnapshot {
 export type SafetyPlcBasis = "adapter_off" | "no_config" | "read_error" | "sim" | "real_unmapped" | "real" | "mixed";
 
 /**
- * What ONE enabled config actually gives getSafetyStatus (mirror of backendForConfig + read()):
- *   sim_empty     — SIM with no script (or modbus/opcua without endpoint): always all-clear ⇒ OK.
- *   sim_scripted  — SIM cycling a script: OK/BLOCKED follows a SCRIPT, not a PLC.
- *   real_unmapped — real endpoint but NO safety flag has a tag address: OtReadSafetyPlcBackend.read()
- *                   returns {} WITHOUT connecting ⇒ OK based on nothing read (Fix round 1 #1).
- *   real          — real endpoint + ≥1 of estop/zoneOccupied/resetRequired/muting mapped.
+ * Phân loại MỘT cấu hình (sim_empty / sim_scripted / real_unmapped / real) — định nghĩa DUY NHẤT nằm ở
+ * safetyPreflightPolicy (doc 81 Đợt 1C Task 1: preflight lệnh thật và bảng này dùng chung một hàm).
+ * Re-export để mọi chỗ đang import từ đây vẫn trỏ về CÙNG hàm đó.
  */
-export type EffectivePlcBackend = "sim_empty" | "sim_scripted" | "real_unmapped" | "real";
+export { effectiveBackend, type EffectivePlcBackend };
 
 /**
  * Hệ quả cho lệnh THẬT trên một mặt (OT ghi / robot chuyển động):
- *   dry_run          — *_CONTROL_ENABLED tắt: mọi lệnh là mô phỏng, preflight không được chạm.
- *   unguarded        — cờ preflight = "false": lệnh thật KHÔNG qua safety-PLC.
- *   blocked          — preflight đọc UNKNOWN ⇒ lệnh thật bị từ chối SAFETY_UNKNOWN.
- *   sim_basis        — preflight lấy OK từ GIẢ LẬP ⇒ lệnh thật đi qua dựa vào giả lập.
- *   unmapped_basis   — endpoint thật nhưng KHÔNG tag an toàn nào được ánh xạ ⇒ OK dựa trên KHÔNG GÌ.
- *   sim_can_satisfy  — có PLC thật nhưng một cấu hình SIM/unmapped (không đọc gì) cũng đủ cho OK.
- *   real_basis       — chỉ PLC thật có ánh xạ tag (OK/BLOCKED theo phần cứng; không đọc được ⇒ chặn).
+ *   dry_run     — *_CONTROL_ENABLED tắt: mọi lệnh là mô phỏng, preflight không được chạm.
+ *   unguarded   — cờ preflight = "false": lệnh thật KHÔNG qua safety-PLC.
+ *   blocked     — preflight không thể ra OK ⇒ lệnh thật bị từ chối (refusalReason: SAFETY_UNKNOWN khi
+ *                 không có nguồn; SAFETY_SIM_ONLY khi chỉ có SIM / real_unmapped — Đợt 1C Task 1).
+ *   real_basis  — có ≥1 PLC thật có gán tag: OK/BLOCKED theo phần cứng; PLC thật không đọc được hoặc
+ *                 tag chất lượng xấu ⇒ chặn SAFETY_UNKNOWN lúc chạy. SIM bên cạnh KHÔNG được tính.
+ * (Đợt 1C Task 1 bỏ sim_basis / unmapped_basis / sim_can_satisfy: SIM không còn thoả được preflight.)
  */
-export type RealCommandVerdict = "dry_run" | "unguarded" | "blocked" | "sim_basis" | "unmapped_basis" | "sim_can_satisfy" | "real_basis";
+export type RealCommandVerdict = "dry_run" | "unguarded" | "blocked" | "real_basis";
 
 export interface PlaneHealth {
   flag: string;
@@ -149,24 +153,6 @@ export interface SafetySourceHealth {
   socket: { serverUp: boolean };
 }
 
-const SAFETY_FLAGS = ["estop", "zoneOccupied", "resetRequired", "muting"] as const;
-
-/**
- * Mirror `backendForConfig` + the backend's `read()`:
- *   • modbus/opcua WITH endpoint ⇒ OtReadSafetyPlcBackend; its tagList() keeps only flags that have
- *     `statusMap[flag].address` — none ⇒ read() returns {} without connecting ⇒ real_unmapped.
- *   • modbus/opcua WITHOUT endpoint ⇒ SimSafetyPlcBackend([]) (script ignored) ⇒ sim_empty.
- *   • sim ⇒ SimSafetyPlcBackend(statusMap.simScript ?? []) ⇒ empty ⇒ sim_empty, else sim_scripted.
- */
-export function effectiveBackend(cfg: Pick<PlcConfigLite, "backend" | "endpoint" | "statusMap">): EffectivePlcBackend {
-  const map = cfg.statusMap ?? {};
-  if (cfg.backend === "modbus" || cfg.backend === "opcua") {
-    if (!cfg.endpoint) return "sim_empty";
-    return SAFETY_FLAGS.some((k) => !!map[k]?.address) ? "real" : "real_unmapped";
-  }
-  return (map.simScript?.length ?? 0) > 0 ? "sim_scripted" : "sim_empty";
-}
-
 /**
  * Fix round 1 #3 — an e-stop adapter label may carry the safety PLC endpoint (vendor skeletons:
  * "${vendor} skeleton (${protocol} @ ${endpoint})"). Strip URLs, IPv4[:port] and anything after '@'.
@@ -183,23 +169,24 @@ function visible(ids: number[] | null, factoryId: number | null): boolean {
   return factoryId != null && ids.includes(factoryId);
 }
 
-function planeVerdict(controlEnabled: boolean, preflightEnabled: boolean, basis: SafetyPlcBasis): RealCommandVerdict {
-  if (!controlEnabled) return "dry_run";
-  if (!preflightEnabled) return "unguarded";
-  switch (basis) {
-    case "adapter_off":
-    case "no_config":
-    case "read_error":
-      return "blocked";
-    case "sim":
-      return "sim_basis";
-    case "real_unmapped":
-      return "unmapped_basis";
-    case "mixed":
-      return "sim_can_satisfy";
-    case "real":
-      return "real_basis";
-  }
+/**
+ * doc 81 Đợt 1C Task 1 — dự đoán kết cục preflight của lệnh THẬT bằng CHÍNH `actuationPreflightVerdict`
+ * mà adapterFacade.getSafetyStatus({ forRealActuation: true }) dùng, trên giả định lạc quan "mọi cấu hình
+ * đọc sạch" (bảng không đọc PLC). Giả định đó chỉ có thể làm bảng báo "real_basis" khi thực tế chặn
+ * (PLC thật không đọc được) — không bao giờ báo "chặn" khi thực tế cho qua.
+ */
+function planeVerdict(
+  controlEnabled: boolean,
+  preflightEnabled: boolean,
+  basis: SafetyPlcBasis,
+  kinds: readonly EffectivePlcBackend[],
+): { realWrites: RealCommandVerdict; refusalReason: SafetyPreflightReason | null } {
+  if (!controlEnabled) return { realWrites: "dry_run", refusalReason: null };
+  if (!preflightEnabled) return { realWrites: "unguarded", refusalReason: null };
+  // Adapter tắt / không đọc được bảng cấu hình ⇒ facade trả UNKNOWN trước khi phân loại.
+  if (basis === "adapter_off" || basis === "read_error") return { realWrites: "blocked", refusalReason: "SAFETY_UNKNOWN" };
+  const v = actuationPreflightVerdict(kinds.map((kind) => ({ kind, outcome: "clean" as const })));
+  return v.state === "OK" ? { realWrites: "real_basis", refusalReason: null } : { realWrites: "blocked", refusalReason: v.reason };
 }
 
 export function computeSafetySourceHealth(s: SourceHealthSnapshot): SafetySourceHealth {
@@ -234,14 +221,8 @@ export function computeSafetySourceHealth(s: SourceHealthSnapshot): SafetySource
             : "UNKNOWN";
 
   const plane = (flag: string, controlEnabled: boolean, preflightEnabled: boolean): PlaneHealth => {
-    const realWrites = planeVerdict(controlEnabled, preflightEnabled, basis);
-    return {
-      flag,
-      preflightEnabled,
-      controlEnabled,
-      realWrites,
-      refusalReason: realWrites === "blocked" ? "SAFETY_UNKNOWN" : null,
-    };
+    const { realWrites, refusalReason } = planeVerdict(controlEnabled, preflightEnabled, basis, kinds);
+    return { flag, preflightEnabled, controlEnabled, realWrites, refusalReason };
   };
 
   const shown = configs.filter((c) => visible(s.visibleFactoryIds, c.factoryId));

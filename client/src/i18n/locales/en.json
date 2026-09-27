@@ -17099,16 +17099,17 @@
       "loading": "Checking safety sources…",
       "error": "Could not read safety sources — treat them as unknown.",
       "plcLabel": "Safety PLC",
+      "rule": "Rule: a commissioned target needs a REAL safety PLC with mapped safety tags — SIM or unmapped configs never satisfy the preflight; a bad-quality safety tag counts as unknown.",
       "plc": {
-        "sim": "⚠ SIM (preflight relies on a SIMULATION)",
-        "mixed": "⚠ real + SIM/unmapped (a config that reads no safety tag can satisfy the preflight)",
+        "sim": "⚠ SIM only — does NOT satisfy the preflight for real commands",
+        "mixed": "● real + SIM/unmapped (only the real PLC counts)",
         "real": "● real PLC",
         "adapterOff": "○ off — no safety source",
         "noConfig": "○ no enabled config",
         "readError": "⚠ configs could not be read",
         "simEmpty": "empty script — always OK",
         "simScripted": "scripted — OK/BLOCKED follows a script, not a PLC",
-        "realUnmapped": "⚠ real endpoint but NO safety tag mapped — preflight OK is based on nothing read"
+        "realUnmapped": "⚠ real endpoint but NO safety tag mapped — does NOT satisfy the preflight for real commands"
       },
       "hiddenConfigs": "outside your scope",
       "ot": "OT writes",
@@ -17117,10 +17118,8 @@
         "dry_run": "dry-run only (control disabled — nothing is written)",
         "unguarded": "⚠ preflight disabled — real commands are not checked",
         "blocked": "real commands blocked",
-        "sim_basis": "⚠ allowed on a SIMULATED reading",
-        "sim_can_satisfy": "⚠ a SIM or unmapped config can satisfy the check",
-        "real_basis": "checked against the real safety PLC",
-        "unmapped_basis": "⚠ allowed although no safety tag is read"
+        "blockedSimOnly": "real commands blocked — only SIM / unmapped; a commissioned target needs a REAL safety PLC with mapped tags",
+        "real_basis": "checked against the real safety PLC"
       },
       "on": "● on",
       "off": "○ off",

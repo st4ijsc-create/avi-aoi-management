@@ -115,14 +115,17 @@ vi.mock("../safety/plc/safetyPlcAdapter", () => ({
   safetyPlcAdapterEnabled: () => plc.mode !== "disabled",
   listPlcConfigs: async () => {
     if (plc.mode === "throw") throw new Error("safety module exploded");
-    return [{ code: "SPLC-1" }];
+    // Đợt 1C Task 1 (2026-09-27): preflight lệnh THẬT chỉ nhận PLC `real` (endpoint + tag an toàn gán) đọc qua
+    // readChecked — cấu hình giả mang hình dạng đó (endpoint TEST-NET-1, không bao giờ được nối: backend bị giả).
+    return [{ code: "SPLC-1", backend: "modbus", endpoint: "tcp://192.0.2.1:502", statusMap: { estop: { address: "coil:1" } } }];
   },
-  backendForConfig: () => ({
-    read: async () => {
+  backendForConfig: () => {
+    const read = async () => {
       if (plc.mode === "read_error") throw new Error("PLC unreachable");
       return { estop: plc.mode === "estop" };
-    },
-  }),
+    };
+    return { read, readChecked: async () => ({ status: await read(), unreadable: [] }) };
+  },
   statusToFindings: (s: any) => (s.estop ? ["estop"] : []),
 }));
 

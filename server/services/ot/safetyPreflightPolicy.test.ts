@@ -61,3 +61,39 @@ describe("safetyPreflightPolicy — hai cờ, một ngữ nghĩa", () => {
     expect(() => safetyPreflightReason("OK")).toThrow(/OK is not a refusal/);
   });
 });
+
+// ════════ doc 81 Đợt 1C Task 1 — luật lệnh THẬT (quyết định chủ dự án 2026-09-27) ════════
+// Bảng kỳ vọng viết TAY từ quyết định: "SIM safety-PLC KHÔNG được thoả preflight đối với đích đã
+// commission"; "tag an toàn đọc ra chất lượng xấu với backend real ⇒ UNKNOWN". Không suy từ mã.
+import { actuationPreflightVerdict, type PlcPreflightReading } from "./safetyPreflightPolicy";
+
+describe("Đợt 1C Task 1 — actuationPreflightVerdict", () => {
+  const R = (kind: PlcPreflightReading["kind"], outcome: PlcPreflightReading["outcome"]): PlcPreflightReading => ({ kind, outcome });
+  const cases: Array<[string, PlcPreflightReading[], string, string | null]> = [
+    ["0 cấu hình", [], "UNKNOWN", "SAFETY_UNKNOWN"],
+    ["SIM rỗng sạch", [R("sim_empty", "clean")], "UNKNOWN", "SAFETY_SIM_ONLY"],
+    ["SIM kịch bản sạch", [R("sim_scripted", "clean")], "UNKNOWN", "SAFETY_SIM_ONLY"],
+    ["endpoint thật chưa gán tag", [R("real_unmapped", "clean")], "UNKNOWN", "SAFETY_SIM_ONLY"],
+    ["SIM + chưa gán tag", [R("sim_empty", "clean"), R("real_unmapped", "clean")], "UNKNOWN", "SAFETY_SIM_ONLY"],
+    ["thật sạch", [R("real", "clean")], "OK", null],
+    ["thật sạch + SIM sạch", [R("sim_empty", "clean"), R("real", "clean")], "OK", null],
+    ["thật lỗi đọc + SIM sạch", [R("real", "error"), R("sim_empty", "clean")], "UNKNOWN", "SAFETY_UNKNOWN"],
+    ["thật tag chất lượng xấu", [R("real", "incomplete")], "UNKNOWN", "SAFETY_UNKNOWN"],
+    ["thật xấu + SIM sạch", [R("real", "incomplete"), R("sim_empty", "clean")], "UNKNOWN", "SAFETY_UNKNOWN"],
+    ["thật xấu + thật sạch", [R("real", "incomplete"), R("real", "clean")], "OK", null],
+    ["thật BLOCKED + thật sạch", [R("real", "clean"), R("real", "blocked")], "BLOCKED", "SAFETY_BLOCKED"],
+    ["SIM kịch bản BLOCKED + thật sạch", [R("real", "clean"), R("sim_scripted", "blocked")], "BLOCKED", "SAFETY_BLOCKED"],
+    ["chỉ lỗi đọc SIM", [R("sim_empty", "error")], "UNKNOWN", "SAFETY_SIM_ONLY"],
+  ];
+  it.each(cases)("%s", (_ten, readings, state, reason) => {
+    expect(actuationPreflightVerdict(readings)).toEqual({ state, reason });
+  });
+
+  it("safetyPreflightReason: UNKNOWN + basis sim_only ⇒ SAFETY_SIM_ONLY; basis không đổi BLOCKED; OK vẫn ném", () => {
+    expect(safetyPreflightReason("UNKNOWN", "sim_only")).toBe("SAFETY_SIM_ONLY");
+    expect(safetyPreflightReason("ERROR", "sim_only")).toBe("SAFETY_SIM_ONLY");
+    expect(safetyPreflightReason("BLOCKED", "sim_only")).toBe("SAFETY_BLOCKED");
+    expect(safetyPreflightReason("UNKNOWN", null)).toBe("SAFETY_UNKNOWN");
+    expect(() => safetyPreflightReason("OK", "sim_only")).toThrow(/OK is not a refusal/);
+  });
+});

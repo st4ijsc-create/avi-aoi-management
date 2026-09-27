@@ -118,6 +118,8 @@ vi.mock("../safety/plc/safetyPlcAdapter", () => ({
       if (cfg.__throw) throw new Error("unreachable");
       return cfg.__status ?? {};
     },
+    // Đợt 1C Task 1 — only rows that set __checked expose readChecked (the real backend's API).
+    ...(cfg.__checked ? { readChecked: async () => cfg.__checked } : {}),
     label: () => "sim",
   }),
   statusToFindings: (status: Record<string, unknown>) =>
@@ -378,5 +380,40 @@ describe("G1.1 — getSafetyStatus fallback (READ-ONLY, honest)", () => {
     const s = await facade.getSafetyStatus();
     expect(delegated).toHaveBeenCalledTimes(1);
     expect(s.source).toBe("driver");
+  });
+});
+
+// doc 81 Đợt 1C Task 1 — the real-actuation reading (owner decision 2026-09-27).
+describe("Đợt 1C Task 1 — getSafetyStatus({ forRealActuation: true })", () => {
+  const REAL = { code: "PLC-R", backend: "modbus", endpoint: "tcp://192.0.2.1:502", statusMap: { estop: { address: "coil:1" } } };
+  const SIMROW = { code: "SIM-1", backend: "sim", endpoint: null, statusMap: null, __status: {} };
+
+  it("chỉ SIM sạch ⇒ UNKNOWN basis sim_only; đường cũ (không tham số) vẫn OK như trước", async () => {
+    plcEnabled = true;
+    plcConfigs = [SIMROW];
+    const facade = createAdapterFacade({ adapterId: 10 });
+    expect(await facade.getSafetyStatus({ forRealActuation: true })).toMatchObject({ state: "UNKNOWN", basis: "sim_only" });
+    const legacy = await facade.getSafetyStatus();
+    expect(legacy).toMatchObject({ state: "OK", source: "safety_plc" });
+    expect(legacy).not.toHaveProperty("basis");
+  });
+
+  it("cấu hình real mà backend KHÔNG có readChecked ⇒ không được coi là sạch (fail-closed) ⇒ UNKNOWN, không basis", async () => {
+    plcEnabled = true;
+    plcConfigs = [{ ...REAL, __status: {} }];
+    const s = await createAdapterFacade({ adapterId: 10 }).getSafetyStatus({ forRealActuation: true });
+    expect(s.state).toBe("UNKNOWN");
+    expect(s.basis).toBeUndefined();
+  });
+
+  it("real readChecked sạch ⇒ OK; real có tag không đọc được ⇒ UNKNOWN; real có cờ active ⇒ BLOCKED", async () => {
+    plcEnabled = true;
+    const facade = createAdapterFacade({ adapterId: 10 });
+    plcConfigs = [{ ...REAL, __checked: { status: { estop: false }, unreadable: [] } }, SIMROW];
+    expect((await facade.getSafetyStatus({ forRealActuation: true })).state).toBe("OK");
+    plcConfigs = [{ ...REAL, __checked: { status: {}, unreadable: ["estop"] } }, SIMROW];
+    expect(await facade.getSafetyStatus({ forRealActuation: true })).toMatchObject({ state: "UNKNOWN", source: "none" });
+    plcConfigs = [{ ...REAL, __checked: { status: { estop: true }, unreadable: [] } }, SIMROW];
+    expect(await facade.getSafetyStatus({ forRealActuation: true })).toMatchObject({ state: "BLOCKED", source: "safety_plc:PLC-R" });
   });
 });

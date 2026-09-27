@@ -145,6 +145,12 @@ export interface SafetyState {
   source: string;
   ts: string;
   asset_id?: string;
+  /**
+   * doc 81 Đợt 1C Task 1 — set ONLY by the facade's real-actuation read, on an UNKNOWN that is
+   * unknown because no enabled safety-PLC config is a real PLC with a mapped tag (only SIM /
+   * real_unmapped) ⇒ dispatchers refuse with SAFETY_SIM_ONLY. Absent everywhere else.
+   */
+  basis?: "sim_only";
 }
 
 /** TagDescriptor (LDS-L1 §A.2) — một điểm dữ liệu trong AssetDescriptor. */

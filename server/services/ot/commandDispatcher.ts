@@ -110,7 +110,7 @@ import {
   type CommandLog,
 } from "../../../drizzle/schema";
 import { boundedKey, canonicalOtValue, otPayloadHash, readOtPayloadHash } from "./otActionBinding";
-import { isOtSafetyPreflightEnabled } from "./safetyPreflightPolicy"; // final wave (item 3): one policy, two dispatchers
+import { isOtSafetyPreflightEnabled, safetyPreflightReason, type SafetyUnknownBasis } from "./safetyPreflightPolicy"; // final wave (item 3): one policy, two dispatchers
 import { getActiveDriver } from "./otManager";
 import { AUDIT_ACTIONS, createAuditContext, logCrudOperation } from "../auditTrailService";
 import type { OtTagAddress } from "./otDriver";
@@ -187,21 +187,24 @@ export function isSafetyPreflightEnabled(): boolean {
  * dispatcher — mirrors the emitCmdAck/unsPublisher pattern). Belt-and-braces: any
  * unexpected throw maps to 'UNKNOWN' (never a fabricated 'BLOCKED' trip); since doc 81
  * Đợt 1B Task 6 the gate treats UNKNOWN as "not OK" and refuses the write (fail-closed).
+ * doc 81 Đợt 1C Task 1 — reads with `{ forRealActuation: true }` (this gate is reachable only on
+ * the real, commissioned path): a SIM / real_unmapped safety-PLC no longer yields OK (UNKNOWN,
+ * basis "sim_only" ⇒ SAFETY_SIM_ONLY) and a bad-quality real safety tag is not "clean".
  */
 async function readSafetyStateForPreflight(
   adapterId: number,
   machineId: number | null,
-): Promise<"OK" | "BLOCKED" | "UNKNOWN"> {
+): Promise<{ state: "OK" | "BLOCKED" | "UNKNOWN"; basis?: SafetyUnknownBasis }> {
   try {
     const { createAdapterFacade } = await import("./adapterFacade");
-    const state = await createAdapterFacade({ adapterId, machineId }).getSafetyStatus();
-    return state.state;
+    const state = await createAdapterFacade({ adapterId, machineId }).getSafetyStatus({ forRealActuation: true });
+    return { state: state.state, basis: state.basis };
   } catch (err) {
     console.warn(
       `[Dispatch] safety preflight read failed for adapter ${adapterId} (treated as UNKNOWN ⇒ write refused):`,
       (err as Error)?.message || err,
     );
-    return "UNKNOWN";
+    return { state: "UNKNOWN" };
   }
 }
 
@@ -696,8 +699,11 @@ async function dispatchCore(input: DispatchInput): Promise<DispatchResult> {
   //         policy + interlock gates): a kind='interlock' command IS a safety de-energization
   //         (block/stop/reduce) — blocking it here would self-lock the safety response. The
   //         dry-run/simulated path never reaches here (no real write to guard).
+  //         doc 81 Đợt 1C Task 1 (owner decision 2026-09-27): the reading is the REAL-actuation one —
+  //         only a real safety PLC with a mapped tag that reads clean is OK; SIM / real_unmapped
+  //         alone ⇒ REJECT SAFETY_SIM_ONLY; a bad-quality real safety tag ⇒ SAFETY_UNKNOWN.
   if (input.triggeredBy.kind === "hitl" && isSafetyPreflightEnabled()) {
-    const safety = await readSafetyStateForPreflight(input.adapterId, input.machineId ?? null);
+    const { state: safety, basis: safetyBasis } = await readSafetyStateForPreflight(input.adapterId, input.machineId ?? null);
     if (safety === "BLOCKED") {
       const ids = await writeRejected(
         db,
@@ -711,6 +717,25 @@ async function dispatchCore(input: DispatchInput): Promise<DispatchResult> {
         status: "rejected",
         reason: "SAFETY_BLOCKED",
         results: failedResults(input, "SAFETY_BLOCKED"),
+        commandLogIds: ids,
+      };
+    }
+    if (safety !== "OK" && safetyPreflightReason(safety, safetyBasis) === "SAFETY_SIM_ONLY") {
+      // doc 81 Đợt 1C Task 1 — only SIM / real_unmapped safety-PLC configs: nothing real vouches
+      // for a commissioned target ⇒ refused before any ledger intent or driver call (same reason
+      // on the robot side).
+      const ids = await writeRejected(
+        db,
+        input,
+        "SAFETY_SIM_ONLY",
+        "safety-PLC preflight: no real safety PLC with a mapped safety tag is configured (only SIM / unmapped) — a commissioned target needs a REAL safety PLC; actuation denied before write",
+      );
+      return {
+        ok: false,
+        simulated: false,
+        status: "rejected",
+        reason: "SAFETY_SIM_ONLY",
+        results: failedResults(input, "SAFETY_SIM_ONLY"),
         commandLogIds: ids,
       };
     }
