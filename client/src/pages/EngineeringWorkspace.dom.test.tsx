@@ -7,7 +7,7 @@
 // THẬT qua @testing-library/react; chỉ mock hạ tầng nặng (DashboardLayout/usePermissions/
 // trpc/sonner/socket/copilot context — không mock chính EngineeringWorkspace).
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { cleanup, render, screen } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import "@testing-library/jest-dom/vitest";
 
 vi.mock("@/components/DashboardLayout", () => ({
@@ -52,6 +52,9 @@ function makeQuery(overrides: Partial<QueryResult> = {}): QueryResult {
   };
 }
 const queryOverrides: Record<string, () => QueryResult> = {};
+// doc 80 Đợt 1 Task 5 — ghi lại đầu vào query + lời gọi mutate để đo luồng duyệt / xem trước deploy.
+const queryInputs: Record<string, unknown> = {};
+const mutateCalls: Record<string, unknown[]> = {};
 function setQueryOverride(key: string, result: QueryResult) {
   queryOverrides[key] = () => result;
 }
@@ -71,8 +74,16 @@ vi.mock("@/lib/trpc", () => ({
             get(_t2, procName: string) {
               const key = `${routerName}.${procName}`;
               return {
-                useQuery: () => (queryOverrides[key] ? queryOverrides[key]() : makeQuery()),
-                useMutation: () => ({ mutate: vi.fn(), mutateAsync: vi.fn(), isPending: false }),
+                useQuery: (input?: unknown) => {
+                  queryInputs[key] = input;
+                  return queryOverrides[key] ? queryOverrides[key]() : makeQuery();
+                },
+                useMutation: () => ({
+                  mutate: (...args: unknown[]) => { (mutateCalls[key] ??= []).push(args[0]); },
+                  // Promise thật: CodeEditor (inline copilot) gọi `.then` khi đã nạp một phiên bản.
+                  mutateAsync: vi.fn(() => Promise.resolve(undefined)),
+                  isPending: false,
+                }),
               };
             },
           },
@@ -100,6 +111,8 @@ const isExactNoProjectsLabel = (_content: string, element: Element | null) =>
 
 beforeEach(() => {
   for (const k of Object.keys(queryOverrides)) delete queryOverrides[k];
+  for (const k of Object.keys(queryInputs)) delete queryInputs[k];
+  for (const k of Object.keys(mutateCalls)) delete mutateCalls[k];
 });
 
 afterEach(() => {
@@ -164,5 +177,118 @@ describe("EngineeringWorkspace (/engineering) — trạng thái đang tải khô
     expect(screen.queryByTestId("feature-status-error")).not.toBeInTheDocument();
     expect(screen.getByTestId("engineering-deploy-badge")).toHaveTextContent("ON");
     expect(screen.queryByText(isExactNoProjectsLabel)).not.toBeInTheDocument();
+  });
+});
+
+// ════════════════════════════════════════════════════════════════════════════
+// doc 80 Đợt 1 Task 5 — WS-01 (duyệt phiên bản trong IDE) + bản xem trước deploy TRƯỚC OTP.
+// ════════════════════════════════════════════════════════════════════════════
+const ME = 8;
+const PROJECT = { id: 1, name: "Cell 1", code: "C1", kind: "stub", deviceId: null, defaultBranch: "main" };
+const artifactRow = (over: Record<string, unknown> = {}) => ({
+  id: 11, projectId: 1, branch: "main", version: 1, kind: "stub", language: "text", content: "A\nB",
+  status: "draft", reviewStatus: "pending_review", createdBy: 7, diagnosticsJson: null, ...over,
+});
+
+function seedWorkspace(o: { reviewOn: boolean; artifact?: Record<string, unknown>; preview?: unknown; builds?: unknown[] }) {
+  window.history.pushState({}, "", "/engineering?projectId=1");
+  setQueryOverride("auth.me", makeQuery({ data: { id: ME, role: "supervisor", name: "Sup", twoFactorEnabled: false } }));
+  setQueryOverride("programming.status", makeQuery({ data: { deployEnabled: true, versionReviewEnabled: o.reviewOn, adapters: [] } }));
+  setQueryOverride("programming.listProjects", makeQuery({ data: [PROJECT] }));
+  setQueryOverride("programming.listArtifacts", makeQuery({ data: [artifactRow(o.artifact)] }));
+  setQueryOverride("programming.listBuilds", makeQuery({ data: o.builds ?? [] }));
+  if (o.preview !== undefined) setQueryOverride("programming.deployPreview", makeQuery({ data: o.preview }));
+  render(<EngineeringWorkspace />);
+  fireEvent.click(screen.getByText(/^v1 · main/));
+}
+
+const buildBtn = () => screen.getByRole("button", { name: /^Build$/ });
+
+describe("WS-01 — duyệt phiên bản trong IDE (cờ versionReviewEnabled)", () => {
+  it("cờ TẮT ⇒ KHÔNG một phần tử review nào trong DOM, Build không bị khoá vì review", () => {
+    seedWorkspace({ reviewOn: false });
+    expect(document.querySelectorAll('[data-testid^="version-review"]').length).toBe(0);
+    expect(screen.queryByTestId("build-review-lock")).not.toBeInTheDocument();
+    expect(buildBtn()).not.toBeDisabled();
+  });
+
+  it("cờ BẬT + phiên bản chờ duyệt của NGƯỜI KHÁC ⇒ chip có trạng thái, nút Duyệt/Từ chối, Build bị khoá KÈM lý do", () => {
+    seedWorkspace({ reviewOn: true });
+    expect(screen.getAllByTestId("version-review-badge-11").length).toBeGreaterThan(0);
+    expect(screen.getByTestId("version-review-approve")).toBeInTheDocument();
+    expect(screen.getByTestId("version-review-reject")).toBeInTheDocument();
+    expect(screen.queryByTestId("version-review-request")).not.toBeInTheDocument();
+    expect(buildBtn()).toBeDisabled();
+    expect(screen.getByTestId("build-review-lock")).toBeInTheDocument();
+  });
+
+  it("cờ BẬT + tôi là TÁC GIẢ ⇒ chỉ 'Yêu cầu duyệt' (không có nút Duyệt — SoD), bấm ⇒ requestVersionReview", () => {
+    seedWorkspace({ reviewOn: true, artifact: { createdBy: ME } });
+    expect(screen.queryByTestId("version-review-approve")).not.toBeInTheDocument();
+    fireEvent.click(screen.getByTestId("version-review-request"));
+    expect(mutateCalls["programming.requestVersionReview"]).toEqual([{ artifactId: 11 }]);
+  });
+
+  it("Từ chối BẮT BUỘC lý do: nút xác nhận khoá khi trống; có lý do ⇒ reviewArtifact(rejected, reason)", () => {
+    seedWorkspace({ reviewOn: true });
+    fireEvent.click(screen.getByTestId("version-review-reject"));
+    const confirm = screen.getByTestId("version-review-reject-confirm");
+    expect(confirm).toBeDisabled();
+    fireEvent.change(screen.getByTestId("version-review-reject-reason"), { target: { value: "Thiếu interlock" } });
+    fireEvent.click(screen.getByTestId("version-review-reject-confirm"));
+    expect(mutateCalls["programming.reviewArtifact"]).toEqual([{ artifactId: 11, decision: "rejected", reason: "Thiếu interlock" }]);
+  });
+
+  it("Duyệt ⇒ reviewArtifact(approved); phiên bản ĐÃ duyệt ⇒ Build mở, không còn nút duyệt", () => {
+    seedWorkspace({ reviewOn: true });
+    fireEvent.click(screen.getByTestId("version-review-approve"));
+    expect(mutateCalls["programming.reviewArtifact"]).toEqual([{ artifactId: 11, decision: "approved" }]);
+    cleanup();
+    seedWorkspace({ reviewOn: true, artifact: { reviewStatus: "approved" } });
+    expect(buildBtn()).not.toBeDisabled();
+    expect(screen.queryByTestId("build-review-lock")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("version-review-approve")).not.toBeInTheDocument();
+  });
+
+  it("phiên bản bị từ chối ⇒ hiện lý do từ chối", () => {
+    seedWorkspace({
+      reviewOn: true,
+      artifact: { reviewStatus: "rejected", diagnosticsJson: { review: { decision: "rejected", reason: "Sai tốc độ trục" } } },
+    });
+    expect(screen.getByTestId("version-review-reason")).toHaveTextContent("Sai tốc độ trục");
+  });
+});
+
+describe("F2 — bản xem trước deploy hiện TRƯỚC khi hỏi OTP", () => {
+  const blocked = {
+    verdict: "blocked",
+    gates: [
+      { name: "buildOk", ok: true, reason: "buildOk" },
+      { name: "adapterPath", ok: false, effect: "block", reason: "techman_program_download_unsupported" },
+    ],
+    target: { adapterKind: "robot-tm", stage: "staging", deviceId: null, path: "direct", artifactVersion: 1 },
+  };
+
+  it("chọn build ⇒ gọi deployPreview với đúng buildId/stage; verdict + từng cổng hiện ngay; verdict 'blocked' ⇒ nút Deploy khoá (không mở hộp OTP)", () => {
+    seedWorkspace({ reviewOn: false, preview: blocked, builds: [{ id: 5, ok: true, status: "ok" }] });
+    fireEvent.click(screen.getByText("#5"));
+    expect(queryInputs["programming.deployPreview"]).toMatchObject({ buildId: 5, stage: "staging" });
+    const panel = screen.getByTestId("deploy-preview");
+    expect(panel).toHaveAttribute("data-verdict", "blocked");
+    expect(screen.getByTestId("deploy-preview-gate-adapterPath")).toHaveAttribute("data-ok", "0");
+    const deployBtn = screen.getByTestId("engineering-deploy-button");
+    expect(deployBtn).toBeDisabled();
+    fireEvent.click(deployBtn);
+    expect(mutateCalls["programming.deployBuild"]).toBeUndefined();
+  });
+
+  it("verdict 'real' ⇒ nút Deploy mở; tick ký duyệt ⇒ preview nhận confirmedBy = chính mình (khớp lượt deploy sắp gửi)", () => {
+    const real = { ...blocked, verdict: "real", gates: [{ name: "buildOk", ok: true, reason: "buildOk" }] };
+    seedWorkspace({ reviewOn: false, preview: real, builds: [{ id: 5, ok: true, status: "ok" }] });
+    fireEvent.click(screen.getByText("#5"));
+    expect(screen.getByTestId("deploy-preview")).toHaveAttribute("data-verdict", "real");
+    expect(screen.getByTestId("engineering-deploy-button")).not.toBeDisabled();
+    fireEvent.click(screen.getByTestId("engineering-deploy-signoff"));
+    expect(queryInputs["programming.deployPreview"]).toMatchObject({ buildId: 5, stage: "staging", confirmedBy: ME });
   });
 });

@@ -112,8 +112,17 @@ const SERVER = resolve(dirname(fileURLToPath(import.meta.url)), "..");
  *       (command + errorNo; message nguyên văn);
  *     · 1 "DB unavailable" → `DbUnavailableError` (đúng lớp của họ đã đóng, mang appCode).
  *   Message MỌI chỗ giữ nguyên văn (test khớp regex, kỹ sư đọc). 481 − 15 = **466**, không dư một đơn vị.
+ *
+ * 466 → **464** (2026-09-27, doc 80 Đợt 1 Task 5 / WS-01): ĐO trên cây làm việc sau vá ra **464**.
+ *   Trả **2** chỗ, cả hai ở `services/programming/programmingService.ts` (HEAD `8d51dc150`: 3 chỗ
+ *   `throw new Error` → nay 1), đúng luật (a) — lỗi nghiệp vụ người dùng GẶP qua tRPC nên phải có mã:
+ *     · `reviewArtifact` tự duyệt phiên bản → `appError FORBIDDEN PERMISSION_DENIED
+ *       {action:"selfApproveProgramVersion"}` (trước: Error trần ⇒ 500);
+ *     · `buildArtifact` phiên bản chưa duyệt → `appError PRECONDITION_FAILED OPERATION_FAILED
+ *       {operation:"buildArtifact", reason:"versionNotApproved"}` (trước: 500).
+ *   Khoá mới có đủ vi/en/zh. Message giữ nguyên văn. Không tệp nào khác đổi số. 466 − 2 = **464**.
  */
-const ALLOWED_RAW_THROWS_OUTSIDE_ROUTERS = 466;
+const ALLOWED_RAW_THROWS_OUTSIDE_ROUTERS = 464;
 
 /**
  * Họ "DB không sẵn sàng": `407 → 83 → 1 → **0**` — nay là BẤT BIẾN, không phải ngân sách.

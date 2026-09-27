@@ -518,7 +518,21 @@ const cua = (n: NhomPhamVi): ThuTuc[] => NHOM.get(n) ?? [];
  *   ⇒ S +1 · tong +1, không dư một đơn vị.
  * ══════════════════════════════════════════════════════════════════════════════════════════════
  */
-const GHIM = { A: 341, B: 8, C: 480, D: 1123, S: 331, tong: 2283 } as const;
+/*
+ * ══════════════════════════════════════════════════════════════════════════════════════════════
+ * ★★★ 2026-09-27 (doc 80 Đợt 1 Task 5, WS-01/WS-02) — **D 1123→1124 · S 331→332 · tong 2283→2285 ·
+ * A/B/C không đổi.** ĐO bằng chính bộ quét này sau lượt sửa (trước: xanh trên HEAD `8d51dc150`);
+ * tra từng khoá bằng `nhomCua(khoaCua)` của bộ quét:
+ *   • `programmingRouter.requestVersionReview` (mutation, MỚI): **D +1** — ghi dấu vết "yêu cầu
+ *     duyệt" của một phiên bản.
+ *   • `programmingRouter.deployPreview` (query, MỚI): **S +1** — đọc program_* (bảng tenant) và
+ *     danh tính RỜI TAY qua `previewDeploy(input, ctx.user)` (cổng vai/2FA/quyền của NGƯỜI GỌI).
+ *     KHÔNG thêm dòng nào vào `phamViDocBaseline.ts`.
+ *   • `programmingRouter.reviewArtifact` (đã có) thêm `reason` — VẪN ở **D**, không đổi nhóm.
+ *   ⇒ D +1 · S +1 · tong +2, không dư một đơn vị.
+ * ══════════════════════════════════════════════════════════════════════════════════════════════
+ */
+const GHIM = { A: 341, B: 8, C: 480, D: 1124, S: 332, tong: 2285 } as const;
 
 describe("§1 — CẦU CHÌ: bộ suy có thật sự nhìn thấy gì không", () => {
   it("★ không có ô MÙ nào (mỗi ô mù là một chỗ KHÔNG AI CANH)", () => {

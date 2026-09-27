@@ -63,6 +63,7 @@ import {
 import {
   validateArtifact,
   reviewArtifact,
+  requestVersionReview,
   buildArtifact,
   simulateBuild,
   deployBuild,
@@ -78,6 +79,8 @@ import {
   dpcDeployApprovalEnabled,
   type DpcUser,
 } from "../services/programming/programmingService";
+// ── doc 80 Đợt 1 Task 5 (WS-02 / F2) — chạy KHÔ mọi cổng deploy trước khi hỏi OTP ──
+import { previewDeploy } from "../services/programming/deployPreview";
 import {
   suggestProgram,
   explainProgram,
@@ -404,8 +407,32 @@ export const programmingRouter = router({
    */
   reviewArtifact: protectedProcedure
     .use(requirePermission("machine_control", "canCreate"))
-    .input(z.object({ artifactId: z.number().int().positive(), decision: z.enum(["approved", "rejected"]) }))
-    .mutation(async ({ input, ctx }) => reviewArtifact(input.artifactId, input.decision, toDpcUser(ctx.user))),
+    .input(
+      z
+        .object({
+          artifactId: z.number().int().positive(),
+          decision: z.enum(["approved", "rejected"]),
+          /** doc 80 Đợt 1 Task 5 (WS-01) — lý do; BẮT BUỘC khi từ chối (service tái kiểm). */
+          reason: z.string().max(2000).optional(),
+        })
+        .refine((v) => v.decision !== "rejected" || (v.reason ?? "").trim().length > 0, {
+          message: "Từ chối một phiên bản bắt buộc có lý do.",
+          path: ["reason"],
+        }),
+    )
+    .mutation(async ({ input, ctx }) =>
+      reviewArtifact(input.artifactId, input.decision, toDpcUser(ctx.user), input.reason),
+    ),
+
+  /**
+   * doc 80 Đợt 1 Task 5 (WS-01) — "Yêu cầu duyệt" một phiên bản đang pending_review: ghi người +
+   * lúc yêu cầu vào dấu vết duyệt (không đổi reviewStatus). Ghi ⇒ writeProcedure (sàn ghi) +
+   * machine_control/canCreate như createArtifact. Không chạm thiết bị.
+   */
+  requestVersionReview: writeProcedure
+    .use(requirePermission("machine_control", "canCreate"))
+    .input(z.object({ artifactId: z.number().int().positive() }))
+    .mutation(async ({ input, ctx }) => requestVersionReview(input.artifactId, toDpcUser(ctx.user))),
 
   // ── Builds ──
   listBuilds: protectedProcedure
@@ -444,6 +471,25 @@ export const programmingRouter = router({
         .where(eq(programDeployments.projectId, input.projectId))
         .orderBy(desc(programDeployments.id));
     }),
+
+  /**
+   * doc 80 Đợt 1 Task 5 (WS-02 / F2) — BẢN XEM TRƯỚC deploy: chạy KHÔ mọi cổng (vai/2FA/quyền
+   * của NGƯỜI GỌI, cờ, duyệt phiên bản, build ok, ký duyệt, SoD, Simulation Gate, checksum biên
+   * dịch lại, cấu hình adapter) ⇒ `{verdict: real|simulated|blocked, gates[], target}`. UI hiện
+   * nó TRƯỚC khi hỏi OTP. Query thuần: chỉ đọc DB, không ghi, không chạm thiết bị. Cùng đầu vào
+   * deployBuild (`confirmedBy` = người ký UI sẽ gửi) để verdict khớp đúng lượt deploy sắp chạy.
+   */
+  deployPreview: protectedProcedure
+    .use(requirePermission("machine_monitoring", "canView"))
+    .input(
+      z.object({
+        buildId: z.number().int().positive(),
+        stage: z.enum(["staging", "production"]).default("staging"),
+        deviceId: z.number().int().positive().optional(),
+        confirmedBy: z.number().int().positive().optional(),
+      }),
+    )
+    .query(async ({ input, ctx }) => previewDeploy(input, ctx.user)),
 
   deployBuild: deployProcedure
     .use(requirePermission("machine_control", "canCreate"))

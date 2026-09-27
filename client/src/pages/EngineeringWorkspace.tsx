@@ -73,6 +73,9 @@ import { useKeyboardShortcuts } from "@/hooks/useKeyboardShortcuts";
 import { useActuationReadiness } from "@/hooks/useActuationReadiness";
 import { useStepUpOtp } from "@/components/security/StepUpOtpDialog";
 import { deployOutcome, newDeployAttemptKey } from "./engineeringDeployOutcome";
+// doc 80 Đợt 1 Task 5 — duyệt phiên bản trong IDE (WS-01) + bản xem trước deploy trước OTP (F2).
+import { VersionReviewPanel, ReviewStatusBadge } from "@/components/engineering/VersionReviewPanel";
+import { DeployPreviewPanel, type DeployPreviewView } from "@/components/engineering/DeployPreviewPanel";
 import {
   deriveFeatureStatus,
   FeatureStatusGate,
@@ -204,6 +207,8 @@ export default function EngineeringWorkspace() {
   // doc 40 ENG-F2 — khi bật, deploy production đi qua Approval Inbox (request→approve).
   const deployApprovalEnabled = statusQ.data?.deployApprovalEnabled ?? false;
   const adapters = statusQ.data?.adapters ?? [];
+  // doc 80 Đợt 1 Task 5 (WS-01) — four-eyes-at-version: cờ TẮT ⇒ không một phần tử review nào.
+  const versionReviewEnabled = statusQ.data?.versionReviewEnabled === true;
   // doc 40 ENG-F13 — pre-flight: cảnh báo TRƯỚC nếu user thiếu 2FA / quyền để deploy (actuation).
   const readiness = useActuationReadiness();
 
@@ -379,6 +384,23 @@ export default function EngineeringWorkspace() {
     },
     onError: (e) => toastTrpcError(e),
   });
+  // doc 80 Đợt 1 Task 5 (WS-01) — duyệt / từ chối (bắt buộc lý do) / yêu cầu duyệt phiên bản.
+  const reviewM = trpc.programming.reviewArtifact.useMutation({
+    onSuccess: (row) => {
+      utils.programming.listArtifacts.invalidate();
+      utils.programming.deployPreview.invalidate();
+      if (row?.reviewStatus === "rejected") toast.warning(t("engineering.review.rejectedToast", "Đã từ chối phiên bản"));
+      else toast.success(t("engineering.review.approvedToast", "Đã duyệt phiên bản"));
+    },
+    onError: (e) => toastTrpcError(e),
+  });
+  const requestReviewM = trpc.programming.requestVersionReview.useMutation({
+    onSuccess: () => {
+      utils.programming.listArtifacts.invalidate();
+      toast.success(t("engineering.review.requestedToast", "Đã gửi yêu cầu duyệt"));
+    },
+    onError: (e) => toastTrpcError(e),
+  });
   const buildM = trpc.programming.buildArtifact.useMutation({
     onSuccess: (b) => {
       utils.programming.listBuilds.invalidate();
@@ -390,6 +412,7 @@ export default function EngineeringWorkspace() {
   const simulateM = trpc.programming.simulateBuild.useMutation({
     onSuccess: (r) => {
       setSimResult({ ok: r.ok, warnings: r.warnings as string[], timeline: r.timeline as any[] });
+      utils.programming.deployPreview.invalidate();
       toast.success(t("engineering.simDone", "Đã mô phỏng"));
     },
     onError: (e) => toastTrpcError(e),
@@ -415,6 +438,7 @@ export default function EngineeringWorkspace() {
   const deployM = trpc.programming.deployBuild.useMutation({
     onSuccess: (d) => {
       utils.programming.listDeployments.invalidate();
+      utils.programming.deployPreview.invalidate();
       showDeployOutcome(d, "deploy");
     },
     onError: (e) => toastTrpcError(e),
@@ -567,6 +591,16 @@ export default function EngineeringWorkspace() {
     : useApprovalFlow
       ? deployReason.trim().length > 0
       : approverId !== "" && deployReason.trim().length > 0;
+  // doc 80 Đợt 1 Task 5 (F2) — người ký mà lượt deploy SẮP gửi (y hệt đối số deployM.mutate bên
+  // dưới) ⇒ bản xem trước chạy khô ĐÚNG lượt ấy. Hộp duyệt: người ký là approver tương lai.
+  const pendingConfirmedBy = isProd
+    ? (useApprovalFlow ? undefined : approverId ? Number(approverId) : undefined)
+    : (signOff && user?.id ? user.id : undefined);
+  const deployPreviewQ = trpc.programming.deployPreview.useQuery(
+    { buildId: buildId!, stage: deployStage, confirmedBy: pendingConfirmedBy },
+    { enabled: canView && buildId != null },
+  );
+  const previewBlocked = deployPreviewQ.data?.verdict === "blocked";
 
   // ── doc 40 W5 §11 — Triển khai đội máy (fleet rollout canary) state ──
   const [fleetDeviceIds, setFleetDeviceIds] = useState<number[]>([]);
@@ -639,8 +673,11 @@ export default function EngineeringWorkspace() {
       content: code,
     });
   };
+  // doc 80 Đợt 1 Task 5 (WS-01) — cờ bật + phiên bản chưa duyệt ⇒ Build khoá KÈM lý do (server
+  // cũng trả PRECONDITION_FAILED có mã — đây chỉ là để không bắt người dùng bấm mới biết).
+  const buildLockedByReview = versionReviewEnabled && artifact != null && artifact.reviewStatus !== "approved";
   const buildVersionShortcut = () => {
-    if (!canCreate || !artifactId || buildM.isPending) return;
+    if (!canCreate || !artifactId || buildM.isPending || buildLockedByReview) return;
     if (requireSaved()) buildM.mutate({ artifactId });
   };
   useKeyboardShortcuts(
@@ -982,12 +1019,26 @@ export default function EngineeringWorkspace() {
                         >
                           v{a.version} · {a.branch}
                           <Badge variant="outline" className="ml-1 text-[9px]">{a.status}</Badge>
+                          {versionReviewEnabled && <ReviewStatusBadge status={a.reviewStatus} artifactId={a.id} />}
                         </button>
                       ))}
                       {(artifactsQ.data ?? []).length === 0 && (
                         <span className="text-sm text-muted-foreground">{t("engineering.noVersions", "Chưa có phiên bản — soạn rồi lưu bên dưới")}</span>
                       )}
                     </div>
+
+                    {/* doc 80 Đợt 1 Task 5 (WS-01) — duyệt phiên bản ngay trong IDE (chỉ khi cờ bật). */}
+                    {versionReviewEnabled && artifact && (
+                      <VersionReviewPanel
+                        artifact={artifact}
+                        userId={user?.id}
+                        canReview={canCreate}
+                        busy={reviewM.isPending || requestReviewM.isPending}
+                        onRequest={() => requestReviewM.mutate({ artifactId: artifact.id })}
+                        onApprove={() => reviewM.mutate({ artifactId: artifact.id, decision: "approved" })}
+                        onReject={(reason) => reviewM.mutate({ artifactId: artifact.id, decision: "rejected", reason })}
+                      />
+                    )}
 
                     {/* W3-11 — So sánh 2 phiên bản (diff dòng) */}
                     {(artifactsQ.data ?? []).length >= 2 && (
@@ -1103,13 +1154,24 @@ export default function EngineeringWorkspace() {
                       </Button>
                       <Button
                         size="sm" variant="outline"
-                        disabled={!canCreate || !artifactId || buildM.isPending}
+                        disabled={!canCreate || !artifactId || buildM.isPending || buildLockedByReview}
                         onClick={buildVersionShortcut}
-                        title={createReason ?? t("engineering.buildShortcut", "Build (Ctrl/Cmd+Enter)")}
+                        title={
+                          createReason ??
+                          (buildLockedByReview
+                            ? t("engineering.review.buildLocked", "Phiên bản chưa được DUYỆT — cần một người khác tác giả duyệt trước khi build.")
+                            : t("engineering.buildShortcut", "Build (Ctrl/Cmd+Enter)"))
+                        }
                       >
                         <Hammer className="mr-1 h-4 w-4" /> {t("engineering.build", "Build")}
                       </Button>
                     </div>
+                    {buildLockedByReview && (
+                      <p data-testid="build-review-lock" className="mt-2 flex items-center gap-1 text-xs text-warning">
+                        <ShieldAlert className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
+                        {t("engineering.review.buildLocked", "Phiên bản chưa được DUYỆT — cần một người khác tác giả duyệt trước khi build.")}
+                      </p>
+                    )}
 
                     {/* Diagnostics */}
                     {diagnostics && (
@@ -1244,7 +1306,7 @@ export default function EngineeringWorkspace() {
                       {/* Staging: tự ký (SoD chỉ áp dụng cho production). */}
                       {!isProd && (
                         <label className="flex items-center gap-2 text-xs">
-                          <Checkbox checked={signOff} onCheckedChange={(v) => setSignOff(Boolean(v))} />
+                          <Checkbox data-testid="engineering-deploy-signoff" checked={signOff} onCheckedChange={(v) => setSignOff(Boolean(v))} />
                           <ShieldCheck className="h-3 w-3" /> {t("engineering.signOff", "Tôi ký duyệt (HITL sign-off)")}
                         </label>
                       )}
@@ -1282,7 +1344,8 @@ export default function EngineeringWorkspace() {
                       {useApprovalFlow ? (
                         <Button
                           size="sm"
-                          disabled={!canCreate || !buildId || requestDeployApprovalM.isPending || !prodDeployReady}
+                          data-testid="engineering-request-deploy-button"
+                          disabled={!canCreate || !buildId || requestDeployApprovalM.isPending || !prodDeployReady || previewBlocked}
                           title={createReason}
                           onClick={() =>
                             buildId && requestDeployApprovalM.mutate({
@@ -1299,7 +1362,8 @@ export default function EngineeringWorkspace() {
                       ) : (
                         <Button
                           size="sm"
-                          disabled={!canCreate || !buildId || deployM.isPending || !prodDeployReady}
+                          data-testid="engineering-deploy-button"
+                          disabled={!canCreate || !buildId || deployM.isPending || !prodDeployReady || previewBlocked}
                           title={createReason}
                           onClick={() => {
                             if (!buildId) return;
@@ -1324,6 +1388,15 @@ export default function EngineeringWorkspace() {
                         </Button>
                       )}
                     </div>
+
+                    {/* doc 80 Đợt 1 Task 5 (F2) — verdict + từng cổng, chạy khô TRƯỚC khi hỏi OTP. */}
+                    {buildId != null && (
+                      <DeployPreviewPanel
+                        preview={deployPreviewQ.data as DeployPreviewView | undefined}
+                        isLoading={deployPreviewQ.isLoading}
+                        isError={deployPreviewQ.isError}
+                      />
+                    )}
 
                     {/* Production: ô lý do duyệt bắt buộc + ghi chú SoD. */}
                     {isProd && (
