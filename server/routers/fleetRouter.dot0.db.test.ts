@@ -455,6 +455,66 @@ describe.skipIf(!DB_URL)("fleetRouter Đợt 0 Task 6 — CAS đồng thời · 
   });
 
   // ════════════════════════════════════════════════════════════════════════
+  // doc 80 Đợt 1 Task 11 — 5 mutation G2 CHƯA có test âm cross-factory ở Đợt 0.
+  // Cùng shape đã kiểm ở G1 (assertZoneInScope/assertRobotInScope): createOperation/
+  // createResource/createCharger dùng `assertFactoryIdAllowed` (chặn LỜI TỰ KHAI
+  // factoryId khác của actor bị thu hẹp); mapOperationProgram/recordVariantOutcome
+  // dùng `assertOperationCodeInScope`/`assertProgramVariantInScope` (thực thể ĐÃ CÓ
+  // sẵn thuộc nhà máy khác). Nếu một trong năm KHÔNG chặn thật, test này ĐỎ và phải
+  // vá router theo đúng mẫu Đợt 0 trước khi báo cáo — không né bằng cách sửa test.
+  // ════════════════════════════════════════════════════════════════════════
+  describe("createOperation / mapOperationProgram / recordVariantOutcome / createResource / createCharger — FLT-03 cross-factory (Task 11)", () => {
+    it("★★★ engineer A createOperation với factoryId=B (LỜI TỰ KHAI ngoài phạm vi) ⇒ FORBIDDEN, KHÔNG tạo hàng", async () => {
+      const c = await caller(U_ENG_A, "engineer");
+      const code = `${RUN}_OP_FOREIGN_FAC`;
+      await expect(c.createOperation({ code, requiredCapability: "run_job", factoryId: ids.facB })).rejects.toMatchObject({ code: "FORBIDDEN" });
+      const rows = await sql`SELECT id FROM operation_codes WHERE code = ${code}`;
+      expect(rows).toHaveLength(0);
+    });
+
+    it("★★★ engineer A mapOperationProgram lên operationCodeId thuộc NHÀ MÁY B ⇒ FORBIDDEN, KHÔNG tạo hàng", async () => {
+      // Seed một operation code THẬT thuộc nhà máy B — ADMIN tạo (không đi qua phạm vi của A),
+      // giống cách zoneB/robotB được dựng ở `beforeAll` cho các ca G1 phía trên.
+      const cAdmin = await caller(U_ADMIN, "admin");
+      const op = await cAdmin.createOperation({ code: `${RUN}_OP_MAP_FACB`, requiredCapability: "run_job", factoryId: ids.facB });
+      g2Cleanup.operationCodeIds.push(op.id!);
+      const c = await caller(U_ENG_A, "engineer");
+      await expect(c.mapOperationProgram({ operationCodeId: op.id!, programProjectId: 900_000_101 })).rejects.toMatchObject({ code: "FORBIDDEN" });
+      const rows = await sql`SELECT id FROM operation_program_map WHERE "operationCodeId" = ${op.id!}`;
+      expect(rows).toHaveLength(0);
+    });
+
+    it("★★★ engineer A recordVariantOutcome lên variant thuộc NHÀ MÁY B ⇒ FORBIDDEN, metrics KHÔNG đổi", async () => {
+      // `createVariant` không nhận `factoryId` (row luôn factoryId=NULL qua router) — để dựng một
+      // variant THẬT thuộc nhà máy B, ghi thẳng bảng (cùng tiền lệ zoneA/zoneB/resourceA/resourceB
+      // ở `beforeAll`), rồi mới gọi mutation qua engineer A.
+      const [v] = await sql`INSERT INTO program_variants ("programProjectId", variant, "factoryId") VALUES (900000777, 'A', ${ids.facB}) RETURNING id`;
+      const variantId = Number((v as { id: number | string }).id);
+      g2Cleanup.programVariantIds.push(variantId);
+      const c = await caller(U_ENG_A, "engineer");
+      await expect(c.recordVariantOutcome({ variantId, success: true, cycleMs: 500 })).rejects.toMatchObject({ code: "FORBIDDEN" });
+      const rows = await sql`SELECT metrics FROM program_variants WHERE id = ${variantId}`;
+      expect((rows[0] as any).metrics).toBeNull();
+    });
+
+    it("★★★ engineer A createResource với factoryId=B (LỜI TỰ KHAI ngoài phạm vi) ⇒ FORBIDDEN, KHÔNG tạo hàng", async () => {
+      const c = await caller(U_ENG_A, "engineer");
+      const code = `${RUN}_RES_FOREIGN_FAC`;
+      await expect(c.createResource({ code, factoryId: ids.facB })).rejects.toMatchObject({ code: "FORBIDDEN" });
+      const rows = await sql`SELECT id FROM shared_resources WHERE code = ${code}`;
+      expect(rows).toHaveLength(0);
+    });
+
+    it("★★★ engineer A createCharger với factoryId=B (LỜI TỰ KHAI ngoài phạm vi) ⇒ FORBIDDEN, KHÔNG tạo hàng", async () => {
+      const c = await caller(U_ENG_A, "engineer");
+      const code = `${RUN}_CHG_FOREIGN_FAC`;
+      await expect(c.createCharger({ code, factoryId: ids.facB })).rejects.toMatchObject({ code: "FORBIDDEN" });
+      const rows = await sql`SELECT id FROM charger_stations WHERE code = ${code}`;
+      expect(rows).toHaveLength(0);
+    });
+  });
+
+  // ════════════════════════════════════════════════════════════════════════
   // Fix round 1 (Important #2, RULING) — table-driven: ALL 19 fleet mutations
   // (10 G1 core + 9 G2 resource/skill/charging) write EXACTLY one control_audit_log
   // row per call, with actorId = the caller. Uses ADMIN (ids===null) so the table
