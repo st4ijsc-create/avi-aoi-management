@@ -400,6 +400,16 @@ export class MqttSlidingWindowLimiter {
     return true;
   }
 
+  /** Would `tryTake(key)` succeed right now? Read-only — consumes nothing. */
+  canTake(key: string): boolean {
+    const t = this.now();
+    const arr = this.hits.get(key);
+    if (!arr) return true;
+    let live = 0;
+    for (const x of arr) if (t - x < this.windowMs) live += 1;
+    return live < this.limit;
+  }
+
   private prune(t: number): void {
     for (const [k, arr] of this.hits) {
       if (arr.every((x) => t - x >= this.windowMs)) this.hits.delete(k);
@@ -532,14 +542,25 @@ const autoRegisterGlobal = new MqttSlidingWindowLimiter(MQTT_AUTO_REGISTER_GLOBA
 const aclViolationLog = new MqttLogCoalescer({ label: '[MQTT ACL]', emit: (l) => console.warn(l) });
 const authRejectLog = new MqttLogCoalescer({ label: '[MQTT] auth', emit: (l) => console.warn(l) });
 const brokerErrorLog = new MqttLogCoalescer({ label: '[MQTT]', emit: (l) => console.error(l) });
+// Fix round 1 — per-connection ACCEPT-path lines (connected/reconnected/disconnected/registered).
+const connectionLog = new MqttLogCoalescer({ label: '[MQTT] connection', emit: (l) => console.log(l) });
 
-/** Test helper — clears the admission rate limiters and the log coalescers. */
+/** Test helper — clears the admission rate limiters, the log coalescers and the warn-once set. */
 export function _resetMqttAuthLimiters(): void {
   autoRegisterPerIp.reset();
   autoRegisterGlobal.reset();
   aclViolationLog.reset();
   authRejectLog.reset();
   brokerErrorLog.reset();
+  connectionLog.reset();
+  passwordlessWarned.clear();
+}
+
+/** Coalescing key for a connection: the AUTHENTICATED deviceId when stamped, else clientId. */
+function connectionKey(client: unknown): string {
+  const c = client as { id?: string; [k: string]: unknown } | null | undefined;
+  const dev = c?.[MQTT_ACL_DEVICE_ID_PROP];
+  return typeof dev === 'string' && dev.length > 0 ? `dev:${dev}` : `cid:${c?.id ?? ''}`;
 }
 
 /** Source IP of an aedes client (TCP socket, or the HTTP upgrade request for MQTT-over-WS). */
@@ -558,21 +579,78 @@ function logSafe(v: unknown, max = 64): string {
  * Gate for self-registration (brand-new deviceId, or a soft-deleted one coming back).
  * Flag off ⇒ reject with CONNACK 4 (indistinguishable from a bad credential). Flag on ⇒
  * per-IP then global sliding-window limits; over the limit ⇒ CONNACK 5 (not authorised).
+ * Fix round 1: BOTH limits are checked read-only first and a slot is consumed from each only
+ * when both admit — a global-cap reject never burns the IP's token (nor the reverse).
+ * `limiters` is injectable for tests (fake clock); production uses the module instances.
  */
 export function decideMqttSelfRegistration(
   ip: string,
   env: NodeJS.ProcessEnv = process.env,
+  limiters: { perIp: MqttSlidingWindowLimiter; global: MqttSlidingWindowLimiter } = {
+    perIp: autoRegisterPerIp,
+    global: autoRegisterGlobal,
+  },
 ): { ok: true } | { ok: false; returnCode: 4 | 5; reason: string } {
   if (!mqttAutoRegisterUnknown(env)) {
     return { ok: false, returnCode: 4, reason: 'unknown device (MQTT_AUTO_REGISTER_UNKNOWN off)' };
   }
-  if (!autoRegisterPerIp.tryTake(ip)) {
+  if (!limiters.perIp.canTake(ip)) {
     return { ok: false, returnCode: 5, reason: `auto-register rate limit (${MQTT_AUTO_REGISTER_PER_IP_PER_MIN}/min/IP)` };
   }
-  if (!autoRegisterGlobal.tryTake('*')) {
+  if (!limiters.global.canTake('*')) {
     return { ok: false, returnCode: 5, reason: `auto-register rate limit (${MQTT_AUTO_REGISTER_GLOBAL_PER_MIN}/min global)` };
   }
+  // Synchronous check-then-take (no await in between) ⇒ no interleaving can over-admit.
+  limiters.perIp.tryTake(ip);
+  limiters.global.tryTake('*');
   return { ok: true };
+}
+
+/**
+ * Fix round 1 (R19) — admit a REGISTERED, ACTIVE device that has NO stored credential on its
+ * username alone? DEFAULT TRUE (compatibility: no provisioning path sets MQTT passwords yet).
+ * Only an explicit false/0/off disables it (same style as MQTT_REQUIRE_PASSWORD).
+ */
+export function mqttAllowPasswordlessRegistered(env: NodeJS.ProcessEnv = process.env): boolean {
+  const v = String(env.MQTT_ALLOW_PASSWORDLESS_REGISTERED ?? '').trim().toLowerCase();
+  return !(v === 'false' || v === '0' || v === 'off');
+}
+
+/**
+ * R19 decision for a registered, active, credential-less device. Such a device is admitted
+ * ONLY while the topic ACL can confine it (ACL enabled AND not warn-only) — otherwise it would
+ * be an unconfined identity proven by a guessable username ⇒ rejected regardless of the flag.
+ */
+export function decidePasswordlessRegistered(
+  env: NodeJS.ProcessEnv = process.env,
+): { ok: true } | { ok: false; reason: string } {
+  if (!mqttTopicAclEnabled(env) || mqttTopicAclWarnOnly(env)) {
+    return { ok: false, reason: 'passwordless device cannot be confined (MQTT_TOPIC_ACL disabled or warn-only)' };
+  }
+  if (!mqttAllowPasswordlessRegistered(env)) {
+    return { ok: false, reason: 'passwordless device (MQTT_ALLOW_PASSWORDLESS_REGISTERED off)' };
+  }
+  return { ok: true };
+}
+
+/** deviceIds already warned about passwordless admission (bounded; oldest evicted). */
+const passwordlessWarned = new Set<string>();
+const PASSWORDLESS_WARNED_MAX = 10_000;
+
+/** WARN exactly once per deviceId the first time a passwordless registered device is admitted. */
+function warnPasswordlessOnce(deviceId: string): void {
+  if (passwordlessWarned.has(deviceId)) return;
+  passwordlessWarned.add(deviceId);
+  while (passwordlessWarned.size > PASSWORDLESS_WARNED_MAX) {
+    const first = passwordlessWarned.values().next().value as string | undefined;
+    if (first === undefined) break;
+    passwordlessWarned.delete(first);
+  }
+  console.warn(
+    `[MQTT] Admitted passwordless registered device ${logSafe(deviceId)} on username only — ` +
+      'provision it with an MQTT password (mqtt_clients.passwordHash); set ' +
+      'MQTT_ALLOW_PASSWORDLESS_REGISTERED=false to stop admitting such devices',
+  );
 }
 
 // ════════════════════════════════════════════════════════════════════════════
@@ -1594,13 +1672,20 @@ function setupEventHandlers() {
       // client certificate is rejected here; in "permissive" mode it is logged + allowed.
       if (mqttMtlsEnabled()) {
         const admission = await evaluateMqttPeerCert(client);
+        // Fix round 1 — coalesced per (source IP, reason): one line per window, not per connection.
         if (!admission.allow) {
-          console.warn(`[MQTT] mTLS admission denied for ${client.id}: ${admission.reason}`);
+          authRejectLog.hit(
+            `mtls-deny|${mqttClientIp(client)}|${admission.reason}`,
+            `[MQTT] mTLS admission denied for ${logSafe(client.id, 128)} from ${mqttClientIp(client)}: ${admission.reason}`,
+          );
           callback({ returnCode: 5 } as any, false);
           return;
         }
         if (admission.reason !== 'ok') {
-          console.warn(`[MQTT] mTLS admission (${mqttMtlsMode()}) for ${client.id}: ${admission.reason}`);
+          authRejectLog.hit(
+            `mtls-soft|${mqttClientIp(client)}|${admission.reason}`,
+            `[MQTT] mTLS admission (${mqttMtlsMode()}) for ${logSafe(client.id, 128)} from ${mqttClientIp(client)}: ${admission.reason}`,
+          );
         }
       }
 
@@ -1676,6 +1761,22 @@ function setupEventHandlers() {
           }
         }
 
+        // Fix round 1 (R19) — a REGISTERED, ACTIVE device with NO stored credential is proven
+        // by its (guessable) username alone. Admitted only while MQTT_ALLOW_PASSWORDLESS_REGISTERED
+        // (default true) AND the topic ACL can confine it; otherwise CONNACK 4.
+        const passwordless = mqttClient.isActive && !mqttClient.passwordHash && !mqttClient.password;
+        if (passwordless) {
+          const pl = decidePasswordlessRegistered();
+          if (!pl.ok) {
+            authRejectLog.hit(
+              `passwordless|${deviceId}|${pl.reason}`,
+              `[MQTT] Auth rejected (${pl.reason}) for device ${logSafe(deviceId)} from ${mqttClientIp(client)}`,
+            );
+            callback({ returnCode: 4 } as any, false);
+            return;
+          }
+        }
+
         // Re-activate soft-deleted client as PENDING so it reappears in the UI
         const reactivateFields: Record<string, any> = {
           clientId: client.id,
@@ -1699,7 +1800,11 @@ function setupEventHandlers() {
         // re-activated soft-deleted client is forced back to PENDING (see reactivateFields).
         (client as any)[MQTT_ACL_APPROVAL_PROP] = !mqttClient.isActive ? 'PENDING' : mqttClient.approvalStatus;
 
-        console.log(`[MQTT] Client reconnected${!mqttClient.isActive ? ' (re-activated)' : ''}: ${client.id} (${deviceId})`);
+        if (passwordless) warnPasswordlessOnce(deviceId);
+        connectionLog.hit(
+          `reconnected|${deviceId}`,
+          `[MQTT] Client reconnected${!mqttClient.isActive ? ' (re-activated)' : ''}: ${client.id} (${deviceId})`,
+        );
         callback(null, true);
       } else {
         // doc 81 dot 1B task 10 — unknown deviceId: rejected unless MQTT_AUTO_REGISTER_UNKNOWN
@@ -1732,7 +1837,7 @@ function setupEventHandlers() {
         // it to pairing scope (under MQTT_ADMISSION_ENFORCE; flag+log only by default).
         (client as any)[MQTT_ACL_APPROVAL_PROP] = 'PENDING';
 
-        console.log(`[MQTT] New client registered (pending approval): ${client.id} (${deviceId})`);
+        connectionLog.hit(`registered|${deviceId}`, `[MQTT] New client registered (pending approval): ${client.id} (${deviceId})`);
         callback(null, true);
       }
     } catch (error) {
@@ -1819,7 +1924,7 @@ function setupEventHandlers() {
 
   // Client connected
   aedes.on('client', async (client) => {
-    console.log(`[MQTT] Client connected: ${client.id}`);
+    connectionLog.hit(`connected|${connectionKey(client)}`, `[MQTT] Client connected: ${client.id}`); // fix round 1 — coalesced
     lastClientSeenAt = Date.now(); // doc 54 P2.3 — presence baseline for CLIENT_OFFLINE
 
     try {
@@ -1837,7 +1942,7 @@ function setupEventHandlers() {
 
   // Client disconnected
   aedes.on('clientDisconnect', async (client) => {
-    console.log(`[MQTT] Client disconnected: ${client.id}`);
+    connectionLog.hit(`disconnected|${connectionKey(client)}`, `[MQTT] Client disconnected: ${client.id}`); // fix round 1 — coalesced
     lastHeartbeatWriteAt.delete(client.id); // R-2a — release throttle bookkeeping
 
     try {

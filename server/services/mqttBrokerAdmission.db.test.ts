@@ -20,6 +20,7 @@ const DEV_OK = `${RUN}-ok`;
 const DEV_LEGACY = `${RUN}-legacy`;
 const DEV_PENDING = `${RUN}-pend`;
 const DEV_DELETED = `${RUN}-del`;
+const DEV_PWLESS2 = `${RUN}-pwless2`;
 const PW = "dung-mat-khau-T10";
 
 type Mod = typeof import("./mqttService");
@@ -87,6 +88,7 @@ function countMqttLines(spy: { mock: { calls: unknown[][] } }, needle = "[MQTT")
 const FLAG_KEYS = [
   "MQTT_AUTO_REGISTER_UNKNOWN", "MQTT_REQUIRE_PASSWORD", "MQTT_ADMISSION_ENFORCE",
   "MQTT_TOPIC_ACL_WARN_ONLY", "MQTT_TOPIC_ACL_ENABLED", "MQTT_MTLS_ENABLED", "MQTT_TLS_ENABLED",
+  "MQTT_ALLOW_PASSWORDLESS_REGISTERED", "MQTT_MTLS_MODE",
 ];
 const savedEnv: Record<string, string | undefined> = {};
 
@@ -115,6 +117,7 @@ beforeAll(async () => {
     { ...base, clientId: `${DEV_LEGACY}-seed`, deviceId: DEV_LEGACY, approvalStatus: "APPROVED" },
     { ...base, clientId: `${DEV_PENDING}-seed`, deviceId: DEV_PENDING, approvalStatus: "PENDING", passwordHash: hash },
     { ...base, clientId: `${DEV_DELETED}-seed`, deviceId: DEV_DELETED, approvalStatus: "APPROVED", isActive: false },
+    { ...base, clientId: `${DEV_PWLESS2}-seed`, deviceId: DEV_PWLESS2, approvalStatus: "APPROVED" },
   ]);
 
   mod = await import("./mqttService");
@@ -327,6 +330,150 @@ describe("task 10 — log 'publish ngoài phạm vi' được gộp", () => {
       mod.aedes?.removeListener("publish", onPub);
       warnSpy.mockRestore();
       c.end(true);
+    }
+  }, 60_000);
+});
+
+// ════════════════════════════════════════════════════════════════════════════════════════════
+// Fix round 1 (R19 + hai điểm nhỏ của review)
+// ════════════════════════════════════════════════════════════════════════════════════════════
+
+/** Connect, then close and wait until the broker has fully dropped this connection. */
+async function connectThenClose(username: string, password?: string): Promise<ConnectResult> {
+  const r = await tryConnect(username, password);
+  if (r.ok) {
+    r.client!.end(true);
+    await waitFor(() => mod.getConnectedClientsCount() === 0, 5000, "broker saw disconnect");
+  }
+  return r;
+}
+
+/** End every client this file opened and wait until the broker holds none. */
+async function closeAll(): Promise<void> {
+  for (const c of openClients.splice(0)) c.end(true);
+  await waitFor(() => mod.getConnectedClientsCount() === 0, 5000, "broker idle");
+}
+
+function linesWith(spy: { mock: { calls: unknown[][] } }, needle: string): number {
+  return spy.mock.calls.filter((a) => typeof a[0] === "string" && (a[0] as string).includes(needle)).length;
+}
+
+describe("fix round 1 — R19: thiết bị ĐÃ ĐĂNG KÝ không mật khẩu", () => {
+  it("MQTT_ALLOW_PASSWORDLESS_REGISTERED=false ⇒ CONNACK 4; thiết bị CÓ mật khẩu vẫn vào", async () => {
+    mod._resetMqttAuthLimiters();
+    process.env.MQTT_ALLOW_PASSWORDLESS_REGISTERED = "false";
+    try {
+      const r = await tryConnect(`${DEV_LEGACY}:Tablet:M1`);
+      expect(r.ok).toBe(false);
+      expect(r.code).toBe(4);
+      const ok = await tryConnect(`${DEV_OK}:Tablet:M1`, PW);
+      expect(ok.ok).toBe(true);
+      ok.client!.end(true);
+    } finally {
+      delete process.env.MQTT_ALLOW_PASSWORDLESS_REGISTERED;
+    }
+  });
+
+  it("mặc định ⇒ vẫn vào (tương thích) + ĐÚNG MỘT dòng WARN qua 5 lần nối lại, nêu thiết bị, không lộ bí mật", async () => {
+    await closeAll(); // trước reset: đóng kết nối cũ KHÔNG được chiếm dòng đầu của cửa sổ đo
+    mod._resetMqttAuthLimiters();
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const logSpy = vi.spyOn(console, "log").mockImplementation(() => {});
+    try {
+      for (let i = 0; i < 5; i++) {
+        const r = await connectThenClose(`${DEV_PWLESS2}:Tablet:M1`, i === 0 ? undefined : "bat-ky-gi-khong-luu");
+        expect(r.ok).toBe(true);
+      }
+      const lines = warnSpy.mock.calls
+        .map((a) => String(a[0]))
+        .filter((l) => l.includes("passwordless") && l.includes(DEV_PWLESS2));
+      expect(lines).toHaveLength(1);
+      expect(lines[0]).toMatch(/provision/i);
+      expect(lines[0]).not.toContain("bat-ky-gi-khong-luu");
+    } finally {
+      warnSpy.mockRestore(); logSpy.mockRestore();
+    }
+  }, 30_000);
+
+  it("ACL không giam được (WARN_ONLY=true hoặc ACL_ENABLED=false) ⇒ CONNACK 4 BẤT KỂ cờ; thiết bị có mật khẩu vẫn vào", async () => {
+    mod._resetMqttAuthLimiters();
+    process.env.MQTT_ALLOW_PASSWORDLESS_REGISTERED = "true";
+    try {
+      for (const [k, v] of [["MQTT_TOPIC_ACL_WARN_ONLY", "true"], ["MQTT_TOPIC_ACL_ENABLED", "false"]] as const) {
+        process.env[k] = v;
+        try {
+          const r = await tryConnect(`${DEV_LEGACY}:Tablet:M1`);
+          expect(r.ok, `${k}=${v}`).toBe(false);
+          expect(r.code).toBe(4);
+          const ok = await tryConnect(`${DEV_OK}:Tablet:M1`, PW);
+          expect(ok.ok, `${k}=${v} password device`).toBe(true);
+          ok.client!.end(true);
+        } finally {
+          delete process.env[k];
+        }
+      }
+    } finally {
+      delete process.env.MQTT_ALLOW_PASSWORDLESS_REGISTERED;
+    }
+  });
+});
+
+describe("fix round 1 — limiter: từ chối vì trần TOÀN CỤC không được tiêu token của IP", () => {
+  it("IP bị trần toàn cục chặn 12 lần, trần mở lại ⇒ IP đó vẫn còn đủ 10 lượt", () => {
+    let t = 9_000_000;
+    const perIp = new mod.MqttSlidingWindowLimiter(10, 60_000, () => t);
+    const global = new mod.MqttSlidingWindowLimiter(60, 1_000, () => t);
+    const env = { MQTT_AUTO_REGISTER_UNKNOWN: "true" };
+    for (let i = 0; i < 60; i++) expect(mod.decideMqttSelfRegistration(`10.7.0.${i}`, env, { perIp, global }).ok).toBe(true);
+    for (let i = 0; i < 12; i++) {
+      const d = mod.decideMqttSelfRegistration("10.7.9.9", env, { perIp, global });
+      expect(d.ok).toBe(false);
+    }
+    t += 1_000; // cửa sổ toàn cục hết, cửa sổ theo IP (60 s) CHƯA hết
+    let ok = 0;
+    for (let i = 0; i < 12; i++) if (mod.decideMqttSelfRegistration("10.7.9.9", env, { perIp, global }).ok) ok++;
+    expect(ok).toBe(10);
+  });
+});
+
+describe("fix round 1 — dòng log theo từng kết nối được gộp", () => {
+  it("5 lần nối lại cùng thiết bị ⇒ ≤ 1 dòng reconnected / connected / disconnected", async () => {
+    await closeAll(); // trước reset: đóng kết nối cũ KHÔNG được chiếm dòng đầu của cửa sổ đo
+    mod._resetMqttAuthLimiters();
+    const logSpy = vi.spyOn(console, "log").mockImplementation(() => {});
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    try {
+      for (let i = 0; i < 5; i++) expect((await connectThenClose(`${DEV_OK}:Tablet:M1`, PW)).ok).toBe(true);
+      await new Promise((r) => setTimeout(r, 200));
+      expect(linesWith(logSpy, "[MQTT] Client reconnected"), "reconnected").toBe(1);
+      expect(linesWith(logSpy, "[MQTT] Client connected"), "connected").toBe(1);
+      expect(linesWith(logSpy, "[MQTT] Client disconnected"), "disconnected").toBe(1);
+    } finally {
+      logSpy.mockRestore(); warnSpy.mockRestore();
+    }
+  }, 30_000);
+
+  it("mTLS strict từ chối 20 kết nối / permissive cho qua 5 kết nối ⇒ mỗi loại ≤ 1 dòng WARN", async () => {
+    mod._resetMqttAuthLimiters();
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const logSpy = vi.spyOn(console, "log").mockImplementation(() => {});
+    const errSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    process.env.MQTT_MTLS_ENABLED = "true";
+    try {
+      process.env.MQTT_MTLS_MODE = "strict";
+      for (let i = 0; i < 20; i++) {
+        const r = await tryConnect(`${DEV_OK}:Tablet:M1`, PW);
+        expect(r.ok).toBe(false);
+        expect(r.code).toBe(5);
+      }
+      expect(linesWith(warnSpy, "mTLS admission denied")).toBe(1);
+      process.env.MQTT_MTLS_MODE = "permissive";
+      for (let i = 0; i < 5; i++) expect((await connectThenClose(`${DEV_OK}:Tablet:M1`, PW)).ok).toBe(true);
+      expect(linesWith(warnSpy, "mTLS admission (permissive)")).toBe(1);
+    } finally {
+      delete process.env.MQTT_MTLS_ENABLED;
+      delete process.env.MQTT_MTLS_MODE;
+      warnSpy.mockRestore(); logSpy.mockRestore(); errSpy.mockRestore();
     }
   }, 60_000);
 });
