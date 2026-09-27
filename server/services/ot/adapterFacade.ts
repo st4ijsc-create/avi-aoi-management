@@ -76,8 +76,11 @@ export interface OtAdapterFacade {
  *     UNKNOWN with basis "sim_only" (SAFETY_SIM_ONLY); a bad-quality real tag ⇒ not clean.
  *   absent/false — the legacy reading, unchanged (AI gate L-7 pre-check, which may precede a
  *     SIMULATED dispatch; the dispatcher re-checks strictly if the write turns out real).
- * A driver that implements getSafetyStatus itself is still delegated to in both modes (0 production
- * drivers do today).
+ * Fix round 1 (review #3): with forRealActuation a driver's OWN getSafetyStatus is NOT delegated to —
+ * a self-report carries no basis (sim / real / mapped tags), so it would bypass the SIM rule. A
+ * future driver that wants to vouch for real actuation must report a basis the policy can classify
+ * (and be wired through actuationPreflightVerdict); until then only safety-PLC configs count. The
+ * legacy reading (no option) still delegates, unchanged.
  */
 export interface SafetyStatusOptions {
   forRealActuation?: boolean;
@@ -85,6 +88,23 @@ export interface SafetyStatusOptions {
 
 type SafetyPlcModule = typeof import("../safety/plc/safetyPlcAdapter");
 type SafetyPlcConfigRow = Awaited<ReturnType<SafetyPlcModule["listPlcConfigs"]>>[number];
+
+/**
+ * Fix round 1 (review #2) — a config that fails to read during the real-actuation preflight is
+ * logged, rate-limited to one line per config code per window. Only the config CODE is printed:
+ * the error message is not (a driver error can carry the endpoint).
+ */
+const PREFLIGHT_READ_WARN_WINDOW_MS = 60_000;
+const lastPreflightReadWarn = new Map<string, number>();
+function warnPreflightReadFailed(code: string): void {
+  const now = Date.now();
+  const last = lastPreflightReadWarn.get(code);
+  if (last !== undefined && now - last < PREFLIGHT_READ_WARN_WINDOW_MS) return;
+  lastPreflightReadWarn.set(code, now);
+  console.warn(
+    `[AdapterFacade] safety-PLC config "${code}" could not be read during the real-actuation preflight — counted as unreadable (SAFETY_UNKNOWN); further failures of this config are silenced for ${PREFLIGHT_READ_WARN_WINDOW_MS / 1000}s`,
+  );
+}
 
 /**
  * doc 81 Đợt 1C Task 1 — the real-actuation reading over the enabled configs. Every config is
@@ -122,6 +142,7 @@ async function readForRealActuation(plc: SafetyPlcModule, configs: SafetyPlcConf
       }
     } catch {
       outcome = "error"; // one config unreadable ⇒ that config vouches for nothing; never invented
+      warnPreflightReadFailed(cfg.code);
     }
     readings.push({ kind, outcome });
     if (outcome === "blocked") break;
@@ -218,7 +239,9 @@ export function createAdapterFacade(ctx: AdapterFacadeContext): OtAdapterFacade 
      */
     async getSafetyStatus(opts?: SafetyStatusOptions): Promise<SafetyState> {
       const driver = resolveDriver();
-      if (driver?.getSafetyStatus) return driver.getSafetyStatus();
+      // Fix round 1 (#3): never delegate the REAL-actuation reading to a driver self-report (no basis
+      // ⇒ it would bypass the SIM rule). A future driver must report a basis first (see SafetyStatusOptions).
+      if (driver?.getSafetyStatus && opts?.forRealActuation !== true) return driver.getSafetyStatus();
 
       const ts = new Date().toISOString();
       const unknown: SafetyState = { state: "UNKNOWN", source: "none", ts };

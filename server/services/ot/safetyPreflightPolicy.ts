@@ -147,9 +147,13 @@ export interface ActuationPreflightVerdict {
  * doc 81 Đợt 1C Task 1 — the REAL write / motion rule (owner decision 2026-09-27), in order:
  *   1. any config reads BLOCKED (sim or real)                       ⇒ BLOCKED  / SAFETY_BLOCKED
  *      (a tripped safety flag always denies — even a SIM script's, conservative as before);
- *   2. ≥1 config whose kind is `real` read CLEAN (every mapped tag good) ⇒ OK;
- *   3. a `real` config exists but none read clean (error / bad quality) ⇒ UNKNOWN / SAFETY_UNKNOWN
- *      (the real PLC is there but unreadable — a SIM reading next to it does not count);
+ *   2. ANY `real` config is incomplete (bad-quality / missing tag) or errored (unreadable)
+ *                                                                   ⇒ UNKNOWN / SAFETY_UNKNOWN
+ *      — fix round 1, ruling R-1C-b: safety-PLC configs are GLOBAL (not scoped to the target
+ *      machine/line), so a clean PLC-B must not mask an unreadable e-stop on PLC-A. Cost: one
+ *      real PLC offline blocks EVERY real write/motion. Scoping configs to the target is the
+ *      right long-term fix and is CÒN MỞ. A SIM reading next to it never counts;
+ *   3. ≥1 `real` config and every `real` config read CLEAN (every mapped tag good) ⇒ OK;
  *   4. configs exist but none is `real` (only sim_empty / sim_scripted / real_unmapped)
  *                                                                   ⇒ UNKNOWN / SAFETY_SIM_ONLY;
  *   5. no config at all                                             ⇒ UNKNOWN / SAFETY_UNKNOWN.
@@ -158,8 +162,8 @@ export interface ActuationPreflightVerdict {
 export function actuationPreflightVerdict(readings: readonly PlcPreflightReading[]): ActuationPreflightVerdict {
   if (readings.some((r) => r.outcome === "blocked")) return { state: "BLOCKED", reason: "SAFETY_BLOCKED" };
   const real = readings.filter((r) => r.kind === "real");
+  if (real.some((r) => r.outcome === "incomplete" || r.outcome === "error")) return { state: "UNKNOWN", reason: "SAFETY_UNKNOWN" };
   if (real.some((r) => r.outcome === "clean")) return { state: "OK", reason: null };
-  if (real.length > 0) return { state: "UNKNOWN", reason: "SAFETY_UNKNOWN" };
   if (readings.length > 0) return { state: "UNKNOWN", reason: "SAFETY_SIM_ONLY" };
   return { state: "UNKNOWN", reason: "SAFETY_UNKNOWN" };
 }

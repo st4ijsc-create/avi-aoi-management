@@ -119,7 +119,14 @@ vi.mock("../safety/plc/safetyPlcAdapter", () => ({
       return cfg.__status ?? {};
     },
     // Đợt 1C Task 1 — only rows that set __checked expose readChecked (the real backend's API).
-    ...(cfg.__checked ? { readChecked: async () => cfg.__checked } : {}),
+    ...(cfg.__checked || cfg.__throwChecked
+      ? {
+          readChecked: async () => {
+            if (cfg.__throwChecked) throw new Error("connect ECONNREFUSED 198.51.100.7:502 unreachable");
+            return cfg.__checked;
+          },
+        }
+      : {}),
     label: () => "sim",
   }),
   statusToFindings: (status: Record<string, unknown>) =>
@@ -415,5 +422,53 @@ describe("Đợt 1C Task 1 — getSafetyStatus({ forRealActuation: true })", () 
     expect(await facade.getSafetyStatus({ forRealActuation: true })).toMatchObject({ state: "UNKNOWN", source: "none" });
     plcConfigs = [{ ...REAL, __checked: { status: { estop: true }, unreadable: [] } }, SIMROW];
     expect(await facade.getSafetyStatus({ forRealActuation: true })).toMatchObject({ state: "BLOCKED", source: "safety_plc:PLC-R" });
+  });
+});
+
+// doc 81 Đợt 1C Task 1 — fix round 1 (review): R-1C-b, cảnh báo có giới hạn, không uỷ quyền driver.
+describe("Đợt 1C Task 1 fix round 1 — getSafetyStatus({ forRealActuation: true })", () => {
+  const real = (code: string, extra: Record<string, unknown>) => ({
+    code, backend: "modbus", endpoint: "tcp://198.51.100.7:502", statusMap: { estop: { address: "coil:1" } }, ...extra,
+  });
+  const SIMROW = { code: "SIM-1", backend: "sim", endpoint: null, statusMap: null, __status: {} };
+
+  it("R-1C-b: một PLC thật sạch KHÔNG che PLC thật khác có tag không đọc được / đọc lỗi ⇒ UNKNOWN", async () => {
+    plcEnabled = true;
+    const facade = createAdapterFacade({ adapterId: 10 });
+    plcConfigs = [real("PLC-A", { __checked: { status: {}, unreadable: ["estop"] } }), real("PLC-B", { __checked: { status: { estop: false }, unreadable: [] } })];
+    expect(await facade.getSafetyStatus({ forRealActuation: true })).toMatchObject({ state: "UNKNOWN", source: "none" });
+    plcConfigs = [real("PLC-B", { __checked: { status: { estop: false }, unreadable: [] } }), real("PLC-C", { __throwChecked: true })];
+    expect((await facade.getSafetyStatus({ forRealActuation: true })).state).toBe("UNKNOWN");
+  });
+
+  it("driver TỰ báo getSafetyStatus=OK nhưng chỉ có SIM ⇒ KHÔNG uỷ quyền driver ⇒ UNKNOWN sim_only; đường cũ vẫn uỷ quyền", async () => {
+    const selfReport = vi.fn(async () => ({ state: "OK" as const, source: "driver", ts: new Date().toISOString() }));
+    currentDriver = { ...currentDriver, getSafetyStatus: selfReport };
+    plcEnabled = true;
+    plcConfigs = [SIMROW];
+    const facade = createAdapterFacade({ adapterId: 10 });
+    expect(await facade.getSafetyStatus({ forRealActuation: true })).toMatchObject({ state: "UNKNOWN", basis: "sim_only" });
+    expect(selfReport).not.toHaveBeenCalled();
+    expect((await facade.getSafetyStatus()).source).toBe("driver"); // đường cũ: byte-identical
+    expect(selfReport).toHaveBeenCalledTimes(1);
+  });
+
+  it("cấu hình đọc lỗi ⇒ console.warn nêu MÃ cấu hình (không endpoint), có giới hạn tần suất (1 lần / mã / cửa sổ)", async () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    try {
+      plcEnabled = true;
+      plcConfigs = [real("PLC-WARN-1", { __throwChecked: true })];
+      const facade = createAdapterFacade({ adapterId: 10 });
+      for (let i = 0; i < 5; i++) await facade.getSafetyStatus({ forRealActuation: true });
+      const mine = warn.mock.calls.map((c) => c.map(String).join(" ")).filter((m) => m.includes("PLC-WARN-1"));
+      expect(mine).toHaveLength(1);
+      expect(mine[0]).not.toContain("198.51.100.7");
+      expect(mine[0]).not.toContain("unreachable"); // thông điệp lỗi gốc có thể chứa endpoint ⇒ không in
+      plcConfigs = [real("PLC-WARN-2", { __throwChecked: true })];
+      await facade.getSafetyStatus({ forRealActuation: true });
+      expect(warn.mock.calls.map((c) => c.map(String).join(" ")).filter((m) => m.includes("PLC-WARN-2"))).toHaveLength(1);
+    } finally {
+      warn.mockRestore();
+    }
   });
 });

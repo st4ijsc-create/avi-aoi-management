@@ -80,7 +80,12 @@ describe("Đợt 1C Task 1 — actuationPreflightVerdict", () => {
     ["thật lỗi đọc + SIM sạch", [R("real", "error"), R("sim_empty", "clean")], "UNKNOWN", "SAFETY_UNKNOWN"],
     ["thật tag chất lượng xấu", [R("real", "incomplete")], "UNKNOWN", "SAFETY_UNKNOWN"],
     ["thật xấu + SIM sạch", [R("real", "incomplete"), R("sim_empty", "clean")], "UNKNOWN", "SAFETY_UNKNOWN"],
-    ["thật xấu + thật sạch", [R("real", "incomplete"), R("real", "clean")], "OK", null],
+    // Fix round 1 (ruling R-1C-b, 2026-09-27): cấu hình KHÔNG theo máy đích ⇒ một PLC thật sạch không được
+    // che e-stop không đọc được của PLC thật khác ⇒ BẤT KỲ real nào incomplete/error ⇒ UNKNOWN.
+    ["thật xấu + thật sạch", [R("real", "incomplete"), R("real", "clean")], "UNKNOWN", "SAFETY_UNKNOWN"],
+    ["thật sạch + thật lỗi đọc", [R("real", "clean"), R("real", "error")], "UNKNOWN", "SAFETY_UNKNOWN"],
+    ["thật lỗi đọc + thật BLOCKED ⇒ BLOCKED vẫn thắng", [R("real", "error"), R("real", "blocked")], "BLOCKED", "SAFETY_BLOCKED"],
+    ["thật sạch + SIM lỗi đọc (SIM không tính)", [R("real", "clean"), R("sim_empty", "error")], "OK", null],
     ["thật BLOCKED + thật sạch", [R("real", "clean"), R("real", "blocked")], "BLOCKED", "SAFETY_BLOCKED"],
     ["SIM kịch bản BLOCKED + thật sạch", [R("real", "clean"), R("sim_scripted", "blocked")], "BLOCKED", "SAFETY_BLOCKED"],
     ["chỉ lỗi đọc SIM", [R("sim_empty", "error")], "UNKNOWN", "SAFETY_SIM_ONLY"],

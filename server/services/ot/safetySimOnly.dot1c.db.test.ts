@@ -49,7 +49,7 @@ vi.mock("../robot/robotManager", async (importOriginal) => {
 });
 
 import { getDb } from "../../db/connection";
-import { aiPendingActions, commandLog, deviceAdapters, deviceTags } from "../../../drizzle/schema";
+import { aiPendingActions, commandLog, deviceAdapters, deviceTags, interlockEvents, interlockRules } from "../../../drizzle/schema";
 import { dispatch, type DispatchInput } from "./commandDispatcher";
 import { dispatchRobotJob, type RobotDispatchInput } from "../robot/robotCommandDispatcher";
 import { otPayloadHash, robotPayloadHash, withOtPayloadHash } from "./otActionBinding";
@@ -70,6 +70,7 @@ const TOOL = "set_machine_param";
 // ── Thiết bị đích giả: ĐẾM số lần bị lệnh ──────────────────────────────────────
 let otWrites = 0;
 let robotRuns = 0;
+let robotJobTypes: string[] = [];
 const fakeOtDriver = {
   isConnected: () => true,
   async writeTags(writes: Array<{ tagKey: string; value: unknown }>) {
@@ -80,11 +81,21 @@ const fakeOtDriver = {
     return [];
   },
 };
+// fix round 1 #3 — driver TỰ báo an toàn OK (đếm số lần được hỏi): ở đường lệnh THẬT nó KHÔNG được thay safety-PLC.
+let selfReportCalls = 0;
+const fakeSelfReportDriver = {
+  ...fakeOtDriver,
+  async getSafetyStatus() {
+    selfReportCalls++;
+    return { state: "OK" as const, source: "self-report-driver", ts: new Date().toISOString() };
+  },
+};
 const fakeRobotDriver = {
   vendor: "sim",
   isConnected: () => true,
-  runJob: async () => {
+  runJob: async (job: { jobType: string }) => {
     robotRuns++;
+    robotJobTypes.push(job.jobType);
     return { ok: true, status: "done", detail: { fake: true } };
   },
   abort: async () => undefined,
@@ -125,6 +136,10 @@ const ZONE_COIL = "coil:2"; // coil 1
 let sql: ReturnType<typeof postgres>;
 let adapterCommissioned = 0;
 let adapterUncommissioned = 0;
+let adapterSelfReport = 0; // fix round 1 #3 — driver TỰ báo getSafetyStatus = OK
+let adapterInterlock = 0; // fix round 1 #4 — đích lệnh interlock stop_line (máy riêng, không đụng cổng interlock của ca HITL)
+const MACHINE_IL = MACHINE + 1;
+const APPROVER = OWNER;
 let seq = 0;
 const nextKey = (label: string) => `${DAU}-${label}-${++seq}`;
 
@@ -251,6 +266,7 @@ const ENV_KEYS = [
   "AI_OT_CONTROL_ENABLED",
   "PARAM_GUARDRAIL_ENABLED",
   "FIELD_V2_ENABLED",
+  "INTERLOCK_AUTO_BLOCK_ENABLED",
 ] as const;
 const savedEnv: Record<string, string | undefined> = {};
 
@@ -286,19 +302,26 @@ describe.skipIf(!DB_URL)("Đợt 1C Task 1 — SIM safety-PLC không thoả pref
     plc.close = () => new Promise<void>((resolve) => srv.close(() => resolve()));
 
     const x = await d();
-    const mk = async (suffix: string) => {
+    const mk = async (suffix: string, driver: unknown = fakeOtDriver, machineId = MACHINE) => {
       const [a] = await x
         .insert(deviceAdapters)
-        .values({ code: `${DAU}-${suffix}`, name: `${DAU} ${suffix}`, protocol: "stub", endpoint: `stub://${suffix}`, isEnabled: true, machineId: MACHINE })
+        .values({ code: `${DAU}-${suffix}`, name: `${DAU} ${suffix}`, protocol: "stub", endpoint: `stub://${suffix}`, isEnabled: true, machineId })
         .returning();
-      await x.insert(deviceTags).values([{ adapterId: a!.id, tagKey: "speed_sp", address: "D100", dataType: "int", writable: true }]);
-      fake.otDrivers.set(a!.id, fakeOtDriver);
+      await x.insert(deviceTags).values([
+        { adapterId: a!.id, tagKey: "speed_sp", address: "D100", dataType: "int", writable: true },
+        { adapterId: a!.id, tagKey: "cmd_run", address: "M10", dataType: "bool", writable: true },
+      ]);
+      fake.otDrivers.set(a!.id, driver);
       return a!.id;
     };
     adapterCommissioned = await mk("C");
     adapterUncommissioned = await mk("U");
-    await sql`INSERT INTO commissioning_records ("adapterId", status, "signedBy", "fatReference")
-              VALUES (${adapterCommissioned}, 'active', ${OWNER}, ${DAU})`;
+    adapterSelfReport = await mk("S", fakeSelfReportDriver);
+    adapterInterlock = await mk("I", fakeOtDriver, MACHINE_IL);
+    for (const id of [adapterCommissioned, adapterSelfReport, adapterInterlock]) {
+      await sql`INSERT INTO commissioning_records ("adapterId", status, "signedBy", "fatReference")
+                VALUES (${id}, 'active', ${OWNER}, ${DAU})`;
+    }
     await sql`INSERT INTO robot_commissioning_records ("robotId", status, "signedBy", "fatReference")
               VALUES (${ROBOT_OK}, 'active', ${OWNER}, ${DAU})`;
     fake.robots.set(ROBOT_OK, fakeRobotDriver);
@@ -316,7 +339,10 @@ describe.skipIf(!DB_URL)("Đợt 1C Task 1 — SIM safety-PLC không thoả pref
     if (sql) {
       await sql`DELETE FROM safety_plc_configs WHERE code LIKE ${DAU + "%"}`;
       await sql`DELETE FROM ai_pending_actions WHERE id LIKE ${DAU + "%"}`;
-      for (const id of [adapterCommissioned, adapterUncommissioned].filter(Boolean)) {
+      await sql`UPDATE interlock_rules SET enabled = false WHERE name LIKE ${DAU + "%"}`.catch(() => undefined);
+      await sql`DELETE FROM interlock_events WHERE "ruleId" IN (SELECT id FROM interlock_rules WHERE name LIKE ${DAU + "%"})`.catch(() => undefined);
+      await sql`DELETE FROM interlock_rules WHERE name LIKE ${DAU + "%"}`.catch(() => undefined);
+      for (const id of [adapterCommissioned, adapterUncommissioned, adapterSelfReport, adapterInterlock].filter(Boolean)) {
         await sql`DELETE FROM device_tags WHERE "adapterId" = ${id}`;
         await sql`DELETE FROM device_adapters WHERE id = ${id}`;
         await sql`DELETE FROM commissioning_records WHERE "adapterId" = ${id}`.catch(() => undefined);
@@ -334,6 +360,9 @@ describe.skipIf(!DB_URL)("Đợt 1C Task 1 — SIM safety-PLC không thoả pref
   beforeEach(() => {
     otWrites = 0;
     robotRuns = 0;
+    robotJobTypes = [];
+    selfReportCalls = 0;
+    delete process.env.INTERLOCK_AUTO_BLOCK_ENABLED;
     plc.coils.clear();
     plc.bad.clear();
     process.env.SAFETY_PLC_ADAPTER_ENABLED = "true";
@@ -512,6 +541,98 @@ describe.skipIf(!DB_URL)("Đợt 1C Task 1 — SIM safety-PLC không thoả pref
         expect(r.status).toBe("simulated");
         expect(r.ok).toBe(true);
         expect(robotRuns).toBe(0);
+      });
+    });
+  });
+
+  // ═════════ Fix round 1 (review 2026-09-27) ═════════
+  describe("fix round 1", () => {
+    const realMappedAt = (coil: string): PlcRow => ({ backend: "modbus", endpoint: `tcp://127.0.0.1:${plc.port}`, statusMap: { estop: { address: coil, dataType: "bool" } } });
+
+    it("R-1C-b (OT + robot): PLC thật A sạch + PLC thật B có e-stop chất lượng XẤU ⇒ SAFETY_UNKNOWN (A không che B), 0 lần lệnh", async () => {
+      plc.bad.add(2); // coil:3 của PLC B
+      await withPlcConfigs([realMappedAt("coil:1"), realMappedAt("coil:3")], async () => {
+        const { res } = await runOt(adapterCommissioned);
+        expect(res.reason).toBe("SAFETY_UNKNOWN");
+        const r = await runRobot(ROBOT_OK);
+        expect(r.error).toBe("SAFETY_UNKNOWN");
+        expect(otWrites).toBe(0);
+        expect(robotRuns).toBe(0);
+      });
+    });
+
+    it("R-1C-b (OT + robot): PLC thật A sạch + PLC thật B không kết nối được ⇒ SAFETY_UNKNOWN, 0 lần lệnh", async () => {
+      await withPlcConfigs([realMapped(), realDown()], async () => {
+        const { res } = await runOt(adapterCommissioned);
+        expect(res.reason).toBe("SAFETY_UNKNOWN");
+        const r = await runRobot(ROBOT_OK);
+        expect(r.error).toBe("SAFETY_UNKNOWN");
+        expect(otWrites).toBe(0);
+        expect(robotRuns).toBe(0);
+      });
+    });
+
+    it("#3: driver OT TỰ báo getSafetyStatus=OK, chỉ có SIM ⇒ SAFETY_SIM_ONLY; driver không được hỏi, 0 lần ghi", async () => {
+      await withPlcConfigs([SIM], async () => {
+        const { res } = await runOt(adapterSelfReport);
+        expect(res.status).toBe("rejected");
+        expect(res.reason).toBe("SAFETY_SIM_ONLY");
+        expect(selfReportCalls).toBe(0);
+        expect(otWrites).toBe(0);
+      });
+    });
+
+    it("#4: chỉ SIM — lệnh interlock stop_line (tự dừng, không qua preflight) VẪN ghi đúng 1 lần", async () => {
+      process.env.INTERLOCK_AUTO_BLOCK_ENABLED = "true";
+      const [rule] = await (await d())
+        .insert(interlockRules)
+        .values({
+          name: `${DAU} rule stop_line`,
+          scope: "machine",
+          machineId: MACHINE_IL,
+          sourceType: "ng_rate",
+          comparisonOperator: "gt",
+          threshold: "99999",
+          action: "stop_line",
+          targetMachineId: MACHINE_IL,
+          targetAdapterId: adapterInterlock,
+          commandTag: "cmd_run",
+          commandValue: null as never,
+          requiresHumanConfirm: false,
+          enabled: true,
+          approvedBy: APPROVER,
+          approvedAt: new Date(),
+        })
+        .returning();
+      const [ev] = await (await d()).insert(interlockEvents).values({ ruleId: rule!.id, action: "stop_line", status: "fired" }).returning();
+      await withPlcConfigs([SIM], async () => {
+        const res = await within(
+          dispatch({
+            adapterId: adapterInterlock,
+            machineId: MACHINE_IL,
+            commandType: "stop_line",
+            writes: [{ tagKey: "cmd_run", value: true }],
+            triggeredBy: { kind: "interlock", ruleId: rule!.id, eventId: ev!.id, approvedBy: APPROVER },
+            idempotencyKey: nextKey("il"),
+          }),
+          15_000,
+          "interlock dispatch",
+        );
+        expect(res.status).toBe("acked");
+        expect(otWrites).toBe(1);
+      });
+    });
+
+    it("#4: chỉ SIM — robot abort (DỪNG) vẫn tới driver đúng 1 lần", async () => {
+      await withPlcConfigs([SIM], async () => {
+        const r = await within(
+          dispatchRobotJob({ robotId: ROBOT_OK, job: { jobType: "abort" }, triggerKind: "manual", requestedBy: OWNER, idempotencyKey: nextKey("abort") }),
+          15_000,
+          "robot abort",
+        );
+        expect(r.status).toBe("done");
+        expect(robotRuns).toBe(1);
+        expect(robotJobTypes).toEqual(["abort"]);
       });
     });
   });

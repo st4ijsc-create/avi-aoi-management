@@ -106,8 +106,10 @@ export { effectiveBackend, type EffectivePlcBackend };
  *   unguarded   — cờ preflight = "false": lệnh thật KHÔNG qua safety-PLC.
  *   blocked     — preflight không thể ra OK ⇒ lệnh thật bị từ chối (refusalReason: SAFETY_UNKNOWN khi
  *                 không có nguồn; SAFETY_SIM_ONLY khi chỉ có SIM / real_unmapped — Đợt 1C Task 1).
- *   real_basis  — có ≥1 PLC thật có gán tag: OK/BLOCKED theo phần cứng; PLC thật không đọc được hoặc
- *                 tag chất lượng xấu ⇒ chặn SAFETY_UNKNOWN lúc chạy. SIM bên cạnh KHÔNG được tính.
+ *   real_basis  — có ≥1 PLC thật có gán tag: OK/BLOCKED theo phần cứng; BẤT KỲ PLC thật nào không đọc
+ *                 được hoặc có tag chất lượng xấu ⇒ chặn SAFETY_UNKNOWN lúc chạy (fix round 1, R-1C-b:
+ *                 cấu hình chưa theo máy đích ⇒ một PLC thật offline chặn MỌI lệnh thật — CÒN MỞ).
+ *                 SIM bên cạnh KHÔNG được tính.
  * (Đợt 1C Task 1 bỏ sim_basis / unmapped_basis / sim_can_satisfy: SIM không còn thoả được preflight.)
  */
 export type RealCommandVerdict = "dry_run" | "unguarded" | "blocked" | "real_basis";
