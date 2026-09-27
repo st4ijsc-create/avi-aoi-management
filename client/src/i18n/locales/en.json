@@ -3970,7 +3970,8 @@
       "runKbEval": "run the corpus evaluation",
       "resumeOrchestrationRun": "resume the orchestration run",
       "buildArtifact": "build a program version",
-      "requestVersionReview": "request a program version review"
+      "requestVersionReview": "request a program version review",
+      "reviewArtifact": "review a program version"
     },
     "field": {
       "changeReason": "change reason",
@@ -15839,7 +15840,9 @@
         "irSimGatePassed": "the flow's kinematic simulation gate passed",
         "hilRunsAtDeploy": "HIL on URSim runs at deploy",
         "adapterOutcomeAtDeploy": "outcome decided by the adapter at deploy",
-        "adapterNoDownloadPath": "the adapter has no program download path"
+        "adapterNoDownloadPath": "the adapter has no program download path",
+        "zmcFileWrittenAtDeploy": "the .bas file is written (atomically) when the deploy recompiles — the preview writes nothing",
+        "hilSimTargetUnavailable": "no valid URSim target (URSIM_HOST unset or pointing at a real device) — HIL cannot run so the deploy is blocked"
       }
     }
   },

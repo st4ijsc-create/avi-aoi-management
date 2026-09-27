@@ -169,7 +169,6 @@ import {
   deployBuild,
   validateArtifact,
   reviewArtifact,
-  requestVersionReview,
 } from "./programmingService";
 import { readAppErrorMeta } from "../../_core/appError";
 
@@ -418,42 +417,16 @@ describe("WS-01 — duyệt phiên bản (SoD + lý do từ chối + build bị 
     expect(rows("program_artifacts")[0].reviewStatus).toBe("pending_review");
   });
 
-  it("SoD: người KHÁC tác giả duyệt ⇒ approved + reviewedBy = người duyệt", async () => {
-    seedKind("stub", "basic", "A\nB");
-    const row = await reviewArtifact(1, "approved", REVIEWER);
-    expect(row.reviewStatus).toBe("approved");
-    expect(row.reviewedBy).toBe(8);
-  });
-
-  it("Từ chối BẮT BUỘC lý do: thiếu/trống ⇒ BAD_REQUEST FIELD_REQUIRED; có lý do ⇒ rejected + lý do lưu lại đọc được", async () => {
+  it("Từ chối BẮT BUỘC lý do: trống ⇒ BAD_REQUEST FIELD_REQUIRED, trạng thái KHÔNG đổi", async () => {
     seedKind("stub", "basic", "A\nB");
     const e = await loiCua(reviewArtifact(1, "rejected", REVIEWER, "   "));
     expect(e?.code).toBe("BAD_REQUEST");
     expect(readAppErrorMeta(e)).toEqual({ appCode: "FIELD_REQUIRED", appParams: { field: "reviewReason" } });
     expect(rows("program_artifacts")[0].reviewStatus).toBe("pending_review");
-
-    const row = await reviewArtifact(1, "rejected", REVIEWER, "Thiếu interlock cửa");
-    expect(row.reviewStatus).toBe("rejected");
-    expect((row.diagnosticsJson as any)?.review?.reason).toBe("Thiếu interlock cửa");
-    expect((row.diagnosticsJson as any)?.review?.decision).toBe("rejected");
   });
 
-  it("Yêu cầu duyệt: ghi người/lúc yêu cầu; phiên bản đã duyệt ⇒ PRECONDITION_FAILED có mã", async () => {
-    seedKind("stub", "basic", "A\nB");
-    const row = await requestVersionReview(1, AUTHOR);
-    expect((row.diagnosticsJson as any)?.review?.requestedBy).toBe(7);
-    await reviewArtifact(1, "approved", REVIEWER);
-    const e = await loiCua(requestVersionReview(1, AUTHOR));
-    expect(e?.code).toBe("PRECONDITION_FAILED");
-    expect(readAppErrorMeta(e)?.appParams).toEqual({ operation: "requestVersionReview", reason: "versionReviewNotPending" });
-  });
-
-  it("validateArtifact KHÔNG xoá dấu vết duyệt (review) đã lưu trong diagnosticsJson", async () => {
-    seedKind("stub", "basic", "A\nB");
-    await requestVersionReview(1, AUTHOR);
-    await validateArtifact(1);
-    expect((rows("program_artifacts")[0].diagnosticsJson as any)?.review?.requestedBy).toBe(7);
-  });
+  // Fix round 1 — ghi duyệt/yêu cầu/validate nay là UPDATE CÓ ĐIỀU KIỆN + gộp jsonb TRONG SQL; các
+  // ca ghi thành công + tranh chấp chạy trên Postgres THẬT: programmingReview.dot1.db.test.ts.
 
   it("Build bị khoá khi pending_review (cờ BẬT) ⇒ PRECONDITION_FAILED mã versionNotApproved, KHÔNG tạo build", async () => {
     process.env.DPC_VERSION_REVIEW_ENABLED = "true";
@@ -465,8 +438,8 @@ describe("WS-01 — duyệt phiên bản (SoD + lý do từ chối + build bị 
       appParams: { operation: "buildArtifact", reason: "versionNotApproved" },
     });
     expect(rows("program_builds").length).toBe(0);
-    // Sau khi người khác duyệt ⇒ build được.
-    await reviewArtifact(1, "approved", REVIEWER);
+    // Sau khi phiên bản được duyệt (ghi trực tiếp — đường duyệt thật đo ở *.dot1.db.test.ts) ⇒ build được.
+    rows("program_artifacts")[0].reviewStatus = "approved";
     const b = await buildArtifact(1, AUTHOR);
     expect(b.ok).toBe(true);
   });

@@ -103,6 +103,15 @@ export interface BuildResult {
   meta?: Record<string, unknown>;
 }
 
+/**
+ * doc 80 Đợt 1 Task 5 fix round 1 — tuỳ chọn biên dịch. `persist:false` = KHÔNG ghi tạo phẩm nào ra
+ * đĩa (bản xem trước deploy là một GET — không được đụng tệp mà một lượt nạp thật đang đọc).
+ * Adapter không ghi đĩa bỏ qua tuỳ chọn này; outputRef/checksum phải GIỐNG HỆT chế độ thường.
+ */
+export interface CompileOptions {
+  persist?: boolean;
+}
+
 /** A what-if scenario for simulate() (assumed inputs/duration overrides). */
 export interface ProgSimScenario {
   assumedInputs?: Record<string, unknown>;
@@ -157,7 +166,7 @@ export interface ProgrammingAdapter {
   /** Lint/parse the source. NEVER touches hardware. */
   validate(src: ProgramSource): Promise<Diagnostics>;
   /** Compile to a transferable output. NEVER touches hardware. */
-  compile(src: ProgramSource): Promise<BuildResult>;
+  compile(src: ProgramSource, opts?: CompileOptions): Promise<BuildResult>;
   /** Predict execution on a twin/emulator. NEVER touches hardware. */
   simulate?(build: BuildResult, scenario: ProgSimScenario): Promise<ProgSimResult>;
   /**

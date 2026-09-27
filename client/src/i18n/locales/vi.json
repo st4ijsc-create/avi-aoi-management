@@ -3970,7 +3970,8 @@
       "runKbEval": "chạy đánh giá corpus",
       "resumeOrchestrationRun": "tiếp tục lượt chạy điều phối",
       "buildArtifact": "build phiên bản chương trình",
-      "requestVersionReview": "yêu cầu duyệt phiên bản chương trình"
+      "requestVersionReview": "yêu cầu duyệt phiên bản chương trình",
+      "reviewArtifact": "duyệt phiên bản chương trình"
     },
     "field": {
       "changeReason": "lý do thay đổi",
@@ -15819,7 +15820,9 @@
         "irSimGatePassed": "cổng mô phỏng động học của flow ĐẠT",
         "hilRunsAtDeploy": "HIL trên URSim chạy lúc deploy",
         "adapterOutcomeAtDeploy": "kết quả do adapter quyết lúc deploy",
-        "adapterNoDownloadPath": "adapter không có đường nạp chương trình"
+        "adapterNoDownloadPath": "adapter không có đường nạp chương trình",
+        "zmcFileWrittenAtDeploy": "tệp .bas được ghi (nguyên tử) khi deploy biên dịch lại — bản xem trước không ghi gì",
+        "hilSimTargetUnavailable": "không có đích URSim hợp lệ (URSIM_HOST chưa cấu hình hoặc trỏ vào thiết bị thật) — HIL không chạy được nên deploy bị chặn"
       }
     }
   },

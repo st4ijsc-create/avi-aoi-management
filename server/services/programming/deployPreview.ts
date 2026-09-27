@@ -24,14 +24,24 @@
  *   Lưới khớp: `deployPreview.db.test.ts` chạy CẢ bản xem trước LẪN deploy thật (qua
  *   `programmingRouter.createCaller` sản xuất) trên cùng đầu vào và so kết quả.
  *
- * AN TOÀN: chỉ ĐỌC DB (không INSERT/UPDATE), không mở socket, không gọi adapter.deploy().
- * Biên dịch lại là thao tác "luôn an toàn" của adapter (Zmotion ghi file .bas theo checksum vào
- * thư mục build — cùng tác dụng phụ với buildArtifact/simulateBuild).
+ * AN TOÀN (đính chính fix round 1): không INSERT/UPDATE DB, không gọi adapter.deploy(), không mở
+ * socket tới thiết bị. Biên dịch lại chạy ở chế độ `{persist:false}` ⇒ KHÔNG ghi tạo phẩm nào ra
+ * đĩa (bản đầu từng ghi đè tệp .bas mà một lượt ZAux_BasDown thật có thể đang đọc). Nó CÓ đọc
+ * DB (program_*, quyền, sim run; MELSEC: device_adapters/device_tags/commissioning) và CÓ thể tra
+ * DNS của URSIM_HOST (kiểm đích HIL y như hilGate) — không gì trong số đó ghi hay chạm thiết bị.
+ * PHẠM VI (fix round 1): build và thiết bị đích phải nằm trong phạm vi nhà máy của NGƯỜI GỌI
+ * (`resolveTenantFactoryScope` — cùng bộ luật của mọi thủ tục đọc đã vá); ngoài phạm vi ⇒
+ * NOT_FOUND y như không tồn tại (không thành một oracle cấu hình thiết bị xuyên tenant).
  * Cổng `atDeploy: true` = chỉ biết được lúc deploy (reachability, nạp DLL, HIL, read-back).
  * ════════════════════════════════════════════════════════════════════════════
  */
 import { createRequire } from "node:module";
 import { and, eq } from "drizzle-orm";
+import { appError } from "../../_core/appError";
+import type { PhamViNguoiXem } from "../../db/hierarchy";
+import { machineIdsTrongPhamVi } from "../../db/hierarchy";
+import { resolveTenantFactoryScope } from "../../db/reportAggregators";
+import { resolveSimTarget, DEFAULT_SIM_TARGET_ID } from "../robot/ursim/simTargetRegistry";
 import { getDb } from "../../db/connection";
 import { deviceAdapters, deviceTags } from "../../../drizzle/schema";
 import { ACTUATION_ROLES, PRIVILEGED_ROLES, batBuoc2FA, actuationStepUp2faEnabled } from "../../_core/trpc";
@@ -184,10 +194,14 @@ async function zmotionGates(build: BuildResult): Promise<DeployGate[]> {
     // Cổng dò TCP chỉ chạy khi endpoint có :port — kết quả chỉ biết lúc deploy.
     if (Number(endpoint.split(":")[1]) > 0) gates.push(pass("adapterReachable", "reachabilityAtDeploy", true));
   }
+  // fix round 1 — bản xem trước biên dịch KHÔNG ghi (`persisted:false`): tệp .bas được ghi (nguyên
+  // tử) bởi lượt biên dịch lại của deploy thật ⇒ chỉ biết lúc deploy.
   gates.push(
     typeof build.meta?.filePath === "string"
       ? pass("adapterArtifact", "zmcFileReady")
-      : block("adapterArtifact", "zmcNoFilePath"),
+      : build.meta?.persisted === false
+        ? pass("adapterArtifact", "zmcFileWrittenAtDeploy", true)
+        : block("adapterArtifact", "zmcNoFilePath"),
   );
   if (!process.env.ZAUXDLL_PATH) gates.push(block("adapterDriver", "zauxDllPathMissing"));
   else if (!koffiInstalled()) gates.push(block("adapterDriver", "koffiMissing"));
@@ -196,6 +210,7 @@ async function zmotionGates(build: BuildResult): Promise<DeployGate[]> {
 }
 
 async function melsecGates(build: BuildResult, ctx: AdapterCtx): Promise<DeployGate[]> {
+  // (phạm vi của adapter OT đã được previewDeploy kiểm TRƯỚC khi tới đây — ngoài phạm vi ⇒ NOT_FOUND.)
   const gates: DeployGate[] = [];
   const adapterId = ctx.deviceId;
   if (!adapterId) return [block("adapterEndpoint", "melsecNoAdapter")];
@@ -250,7 +265,16 @@ async function irGates(build: BuildResult): Promise<DeployGate[]> {
   const gates: DeployGate[] = [pass("irSimGate", "irSimGatePassed")];
   const targetIsUr =
     String(build.meta?.target) === "urscript" || String(build.meta?.targetDeviceType) === "universal-robots";
-  if (targetIsUr) gates.push(pass("irHil", "hilRunsAtDeploy", true));
+  if (targetIsUr) {
+    // fix round 1 (#5) — kiểm KHÔ đích URSim đúng như hilGate.runHilStage: `resolveSimTarget`
+    // (URSIM_HOST có? không trỏ vào robot/adapter thật?) — không có ⇒ HIL fail-closed ⇒ chặn.
+    try {
+      await resolveSimTarget(DEFAULT_SIM_TARGET_ID);
+      gates.push(pass("irHil", "hilRunsAtDeploy", true));
+    } catch {
+      return [...gates, block("irHil", "hilSimTargetUnavailable")];
+    }
+  }
   gates.push(simulate("adapterPath", "irNoDevicePath"));
   return gates;
 }
@@ -281,13 +305,81 @@ async function adapterGates(adapter: ProgrammingAdapter, build: BuildResult, ctx
 }
 
 /**
+ * fix round 1 (#3) — PHẠM VI của bản xem trước. `null` phạm vi (admin / lối đi không danh tính) ⇒
+ * không lọc, y như mọi thủ tục đọc đã vá. Người bị thu hẹp:
+ *   • dự án phải chiếu được vào nhà máy của họ: `program_projects.factoryId` ∈ phạm vi, hoặc (dự án
+ *     chưa gắn nhà máy) thiết bị của dự án ∈ phạm vi; dự án không chiếu được ⇒ NGOÀI phạm vi
+ *     (fail-closed, cùng chiều `factoryIdGate`: hàng NULL không lọt qua cổng thu hẹp);
+ *   • thiết bị đích HIỆU LỰC (deviceId gửi lên — deploy thật NHẬN ghi đè này, fleet dùng nó — hoặc
+ *     thiết bị của dự án) phải ∈ phạm vi: máy (`machines`) cho mọi loại, riêng MELSEC id là
+ *     `device_adapters.id` (y như mitsubishiEngineeringAdapter dùng) ⇒ xét `machineId` của adapter.
+ * Ngoài phạm vi ⇒ NOT_FOUND giống hệt "không tồn tại" (không phân biệt được ⇒ không thành oracle).
+ */
+async function assertPreviewInScope(
+  scope: PhamViNguoiXem | undefined,
+  t: {
+    buildId: number;
+    kind: string;
+    projectFactoryId: number | null;
+    projectDeviceId: number | null;
+    projectExists: boolean;
+    deviceId: number | null;
+  },
+): Promise<void> {
+  const pv = await resolveTenantFactoryScope(scope);
+  if (pv.factoryIds === null) return;
+  const factoryIds = pv.factoryIds;
+  const machineIds = (await machineIdsTrongPhamVi(scope)) ?? [];
+
+  const deviceInScope = async (id: number): Promise<boolean> => {
+    if (t.kind !== "mitsubishi-engineering") return machineIds.includes(id);
+    const db = await getDb();
+    if (!db) return false;
+    const [ad] = await db
+      .select({ machineId: deviceAdapters.machineId })
+      .from(deviceAdapters)
+      .where(eq(deviceAdapters.id, id))
+      .limit(1);
+    return ad?.machineId != null && machineIds.includes(ad.machineId);
+  };
+
+  const projectInScope = !t.projectExists
+    ? false
+    : t.projectFactoryId != null
+      ? factoryIds.includes(t.projectFactoryId)
+      : t.projectDeviceId != null
+        ? await deviceInScope(t.projectDeviceId)
+        : false;
+  if (!projectInScope) {
+    throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "programBuild" }, `Build ${t.buildId} not found`);
+  }
+  if (t.deviceId != null && !(await deviceInScope(t.deviceId))) {
+    throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "machine" }, `Device ${t.deviceId} not found`);
+  }
+}
+
+/**
  * CHẠY KHÔ một deploy: cùng đầu vào với `deployBuild` (hoặc `requestDeployApproval` khi
  * production + Hộp duyệt bật), trả verdict + mọi cổng. Không ghi DB, không chạm thiết bị.
  */
-export async function previewDeploy(input: DeployPreviewInput, caller: DeployPreviewCaller): Promise<DeployPreview> {
-  const { b, art, projectDeviceId } = await loadDeployCtx(input.buildId);
+export async function previewDeploy(
+  input: DeployPreviewInput,
+  caller: DeployPreviewCaller,
+  scope?: PhamViNguoiXem,
+): Promise<DeployPreview> {
+  const { b, art, proj, projectDeviceId } = await loadDeployCtx(input.buildId);
   const path: DeployPath = input.stage === "production" && dpcDeployApprovalEnabled() ? "approvalInbox" : "direct";
   const deviceId = input.deviceId ?? projectDeviceId ?? null;
+
+  // fix round 1 (#3) — PHẠM VI NGƯỜI GỌI, TRƯỚC mọi cổng (không lộ gì về build/thiết bị ngoài phạm vi).
+  await assertPreviewInScope(scope, {
+    buildId: input.buildId,
+    kind: String(b.adapterKind),
+    projectFactoryId: proj?.factoryId ?? null,
+    projectDeviceId,
+    projectExists: proj != null,
+    deviceId,
+  });
 
   const gates: DeployGate[] = await callerGates(caller, path);
 
@@ -314,7 +406,7 @@ export async function previewDeploy(input: DeployPreviewInput, caller: DeployPre
     if (adapter) {
       let rebuilt: BuildResult | null = null;
       try {
-        rebuilt = await rebuildForDeploy(adapter, b, art);
+        rebuilt = await rebuildForDeploy(adapter, b, art, { persist: false });
         gates.push(pass("buildChecksum", "checksumMatches"));
       } catch (e) {
         if (readAppErrorMeta(e)?.appParams?.reason !== "buildChecksumMismatch") throw e;

@@ -3962,7 +3962,8 @@
       "runKbEval": "运行语料评估",
       "resumeOrchestrationRun": "继续编排运行",
       "buildArtifact": "构建程序版本",
-      "requestVersionReview": "请求审核程序版本"
+      "requestVersionReview": "请求审核程序版本",
+      "reviewArtifact": "审核程序版本"
     },
     "field": {
       "changeReason": "变更原因",
@@ -16401,7 +16402,9 @@
         "irSimGatePassed": "流程的运动学仿真关卡通过",
         "hilRunsAtDeploy": "部署时在 URSim 上运行 HIL",
         "adapterOutcomeAtDeploy": "结果由适配器在部署时决定",
-        "adapterNoDownloadPath": "适配器没有程序下载路径"
+        "adapterNoDownloadPath": "适配器没有程序下载路径",
+        "zmcFileWrittenAtDeploy": "部署重新编译时（原子地）写入 .bas 文件 — 预览不写入任何内容",
+        "hilSimTargetUnavailable": "没有有效的 URSim 目标（URSIM_HOST 未配置或指向真实设备）— HIL 无法运行，部署被阻止"
       }
     }
   },

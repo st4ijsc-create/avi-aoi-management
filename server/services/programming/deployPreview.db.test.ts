@@ -28,11 +28,16 @@ vi.hoisted(() => {
   process.env.LICENSE_MODULE_GATE_ENABLED = "false";
 });
 
+import { mkdtempSync, readdirSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { and, eq, inArray, like } from "drizzle-orm";
 import { getDb } from "../../db/connection";
 import {
   users,
   permissions,
+  factories,
+  userFactoryAssignments,
   programProjects,
   programArtifacts,
   programBuilds,
@@ -45,6 +50,7 @@ import { programmingRouter } from "../../routers/programmingRouter";
 import {
   StubProgrammingAdapter,
   registerProgrammingAdapter,
+  programmingRegistry,
   type BuildResult,
   type ProgDeployOpts,
   type ProgDeployResult,
@@ -76,6 +82,8 @@ const COS = [
   "ACTUATION_STEPUP_2FA",
   "ZMC_ENDPOINT",
   "OT_CONTROL_ENABLED",
+  "DPC_HIL_ENABLED",
+  "URSIM_HOST",
 ] as const;
 type Co = Partial<Record<(typeof COS)[number], string>>;
 const coTruoc: Record<string, string | undefined> = {};
@@ -92,6 +100,12 @@ function datCo(co: Co) {
 let idAdmin = 0; // admin, CHƯA bật 2FA
 let idAdmin2 = 0; // admin thứ hai — người duyệt ở Hộp duyệt / người ký production
 let idOper = 0; // operator — ngoài sàn vai deploy
+let idEngF1 = 0; // fix round 1 #3 — engineer bị THU HẸP về nhà máy F1
+let idEngRong = 0; // engineer KHÔNG được gán nhà máy nào (phạm vi rỗng)
+let factoryF1 = 0;
+let factoryF2 = 0;
+let zmcDir = ""; // fix round 1 #2 — ZMC_BUILD_DIR riêng của file này (đếm tệp .bas)
+const zmcDirTruoc = process.env.ZMC_BUILD_DIR;
 const projectIds: number[] = [];
 const artifactIds: number[] = [];
 const buildIds: number[] = [];
@@ -104,7 +118,7 @@ async function d() {
   return x;
 }
 
-async function mkUser(tag: string, role: "admin" | "operator"): Promise<number> {
+async function mkUser(tag: string, role: "admin" | "operator" | "engineer"): Promise<number> {
   const [u] = await (await d())
     .insert(users)
     .values({ openId: `${DAU}_${tag}`, username: `${DAU}_${tag}`, name: `T5 ${tag}`, role, loginMethod: "local", twoFactorEnabled: false })
@@ -128,11 +142,14 @@ async function seedBuild(o: {
   deviceId?: number | null;
   approve?: boolean;
   sim?: boolean;
+  factoryId?: number | null;
 }): Promise<{ buildId: number; artifactId: number }> {
   const x = await d();
   const [p] = await x
     .insert(programProjects)
-    .values({ code: `${DAU}-P${++demKhoa}`, name: `${DAU}`, kind: o.kind as never, deviceId: o.deviceId ?? null })
+    .values({
+      code: `${DAU}-P${++demKhoa}`, name: `${DAU}`, kind: o.kind as never, deviceId: o.deviceId ?? null, factoryId: o.factoryId ?? null,
+    })
     .returning();
   projectIds.push(p!.id);
   const [a] = await x
@@ -185,6 +202,16 @@ const ST_SRC = "VAR x : BOOL; END_VAR\nx := TRUE;";
 const ZMC_SRC = "MOVE(10)\nMOVE(20)";
 const TM_SRC = "POINT P1 = (0,0,0,0,0,0)\nHOME\nMOVE P1";
 const MELSEC_SRC = "D100 = 1234\nM0 = 1";
+// fix round 1 #5 — flow IR đích UR (khuôn hilGateTrungThuc.test.ts).
+const IR_UR_SRC = JSON.stringify({
+  flow_id: "t5_hil_parity",
+  target_device_type: "universal-robots",
+  version: 1,
+  blocks: [
+    { id: "b1", type: "move_joint", joints: [0, -0.5, 0.5, 0, 0.5, 0], speed_pct: 40 },
+    { id: "b2", type: "set_output", signal: "1", value: true },
+  ],
+});
 
 const NOI_BO: Co = { AUTH_2FA_BAT_BUOC: "0" }; // chế độ nội bộ — quyết định chủ dự án (2FA không bắt buộc)
 const BAT: Co = { ...NOI_BO, DPC_DEPLOY_ENABLED: "true" };
@@ -249,7 +276,8 @@ const CAC_CA: Ca[] = [
   {
     ten: "C12 vai operator ⇒ chặn (sàn vai deploy)",
     co: BAT, callerId: () => idOper, role: "operator", stage: "staging", ky: "self", phu: "blocked", lyDo: "roleNotAllowed",
-    seed: () => seedBuild({ kind: "gcode", language: "text", content: STUB_SRC, sim: true }),
+    // fix round 1 #3 — operator là tài khoản BỊ THU HẸP ⇒ build phải ở nhà máy của nó (F1) mới xem trước được.
+    seed: () => seedBuild({ kind: "gcode", language: "text", content: STUB_SRC, sim: true, factoryId: factoryF1 }),
   },
   {
     ten: "C13 stub thật, đường ghi thật ⇒ mô phỏng (stub không có đường thiết bị)",
@@ -281,6 +309,16 @@ const CAC_CA: Ca[] = [
     co: BAT, callerId: () => idAdmin, stage: "staging", ky: "self", phu: "blocked", lyDo: "otActionNotBound",
     seed: () => seedBuild({ kind: "mitsubishi-engineering", language: "device", content: MELSEC_SRC, sim: true, deviceId: 990_555_001 }),
   },
+  {
+    ten: "C22 ir-flow đích UR, HIL BẬT, KHÔNG có URSim (URSIM_HOST trống) ⇒ chặn (HIL fail-closed) — fix round 1 #5",
+    co: { ...BAT, DPC_HIL_ENABLED: "true" }, callerId: () => idAdmin, stage: "staging", ky: "self", phu: "blocked", lyDo: "hilSimTargetUnavailable",
+    seed: () => seedBuild({ kind: "ir-flow", language: "ir-json", content: IR_UR_SRC, sim: true }),
+  },
+  {
+    ten: "C23 ir-flow đích UR, HIL TẮT ⇒ mô phỏng (IR chưa có đường thiết bị) — đối chứng của C22",
+    co: BAT, callerId: () => idAdmin, stage: "staging", ky: "self", phu: "simulated", lyDo: "irNoDevicePath",
+    seed: () => seedBuild({ kind: "ir-flow", language: "ir-json", content: IR_UR_SRC, sim: true }),
+  },
 ];
 
 describe.skipIf(!DB_URL)("Task 5 — deployPreview khớp deploy THẬT (router sản xuất, CSDL thật)", () => {
@@ -296,6 +334,26 @@ describe.skipIf(!DB_URL)("Task 5 — deployPreview khớp deploy THẬT (router 
       { userId: idOper, category: "machine_monitoring", moduleName: "machine_status", canView: true },
       { userId: idOper, category: "machine_control", moduleName: "machine_control", canView: true, canCreate: true },
     ]);
+    // fix round 1 #3 — hai nhà máy + engineer thu hẹp về F1 + engineer phạm vi rỗng (đủ bit quyền).
+    const x = await d();
+    const [f1] = await x.insert(factories).values({ code: `${DAU}-F1`, name: `${DAU} F1` }).returning();
+    const [f2] = await x.insert(factories).values({ code: `${DAU}-F2`, name: `${DAU} F2` }).returning();
+    factoryF1 = f1!.id;
+    factoryF2 = f2!.id;
+    idEngF1 = await mkUser("engf1", "engineer");
+    idEngRong = await mkUser("engrong", "engineer");
+    await x.insert(userFactoryAssignments).values([
+      { userId: idEngF1, factoryCode: `${DAU}-F1` },
+      { userId: idOper, factoryCode: `${DAU}-F1` },
+    ]);
+    for (const uid of [idEngF1, idEngRong]) {
+      await x.insert(permissions).values([
+        { userId: uid, category: "machine_monitoring", moduleName: "machine_status", canView: true },
+        { userId: uid, category: "machine_control", moduleName: "machine_control", canView: true, canCreate: true },
+      ]);
+    }
+    zmcDir = mkdtempSync(join(tmpdir(), "t5prev-zmc-"));
+    process.env.ZMC_BUILD_DIR = zmcDir;
   }, 60_000);
 
   afterEach(() => datCo(NOI_BO));
@@ -327,8 +385,14 @@ describe.skipIf(!DB_URL)("Task 5 — deployPreview khớp deploy THẬT (router 
     } catch {
       /* command_log có thể là WORM với vai app — hàng 'rejected' của ca MELSEC mang khoá riêng DAU */
     }
-    if (idOper) await x.delete(permissions).where(eq(permissions.userId, idOper));
+    const uids = [idOper, idEngF1, idEngRong].filter((v) => v > 0);
+    if (uids.length) await x.delete(permissions).where(inArray(permissions.userId, uids));
+    if (uids.length) await x.delete(userFactoryAssignments).where(inArray(userFactoryAssignments.userId, uids));
+    await x.delete(factories).where(like(factories.code, `${DAU}%`));
     await x.delete(users).where(like(users.username, `${DAU}%`));
+    if (zmcDirTruoc === undefined) delete process.env.ZMC_BUILD_DIR;
+    else process.env.ZMC_BUILD_DIR = zmcDirTruoc;
+    if (zmcDir) rmSync(zmcDir, { recursive: true, force: true });
   }, 60_000);
 
   it("bộ ca phủ ĐỦ ba verdict và ≥4 tổ hợp cờ khác nhau", () => {
@@ -422,14 +486,84 @@ describe.skipIf(!DB_URL)("Task 5 — deployPreview khớp deploy THẬT (router 
     expect(preview.gates.map((g) => g.reason)).toContain("buildChecksumMismatch");
   });
 
-  it("deployPreview là query THUẦN: không tạo hàng deploy, không gọi adapter.deploy", async () => {
+  it("deployPreview là query THUẦN: không tạo hàng deploy, adapter.deploy được gọi 0 lần, không ghi tệp nào", async () => {
     datCo(NOI_BO);
     const { buildId } = await seedBuild({ kind: "gcode", language: "text", content: STUB_SRC, sim: true });
     datCo(BAT);
+    const adapter = programmingRegistry.getAdapter("gcode") as GhiThatAdapter;
+    adapter.deployCalls = 0;
+    const tepTruoc = readdirSync(zmcDir);
     const truoc = await (await d()).select().from(programDeployments).where(eq(programDeployments.buildId, buildId));
     const p = await caller(idAdmin, "admin").deployPreview({ buildId, stage: "staging", confirmedBy: idAdmin });
     expect(p.verdict).toBe("real");
     const sau = await (await d()).select().from(programDeployments).where(eq(programDeployments.buildId, buildId));
     expect(sau.length).toBe(truoc.length);
+    expect(adapter.deployCalls).toBe(0);
+    expect(readdirSync(zmcDir)).toEqual(tepTruoc);
+  });
+
+  it("★★ fix round 1 #2 — bản xem trước Zmotion KHÔNG ghi tệp .bas (thư mục build trước == sau); deploy thật thì có (đối chứng)", async () => {
+    datCo(NOI_BO);
+    const { buildId } = await seedBuild({ kind: "zmotion-basic", language: "basic", content: "MOVE(11)\nMOVE(22)", sim: true });
+    // buildArtifact/simulateBuild đã ghi tệp .bas ⇒ dọn sạch để đo đúng lượt xem trước.
+    for (const f of readdirSync(zmcDir)) rmSync(join(zmcDir, f), { force: true });
+    datCo({ ...BAT, ZMC_ENDPOINT: "127.0.0.1" });
+    const p = await caller(idAdmin, "admin").deployPreview({ buildId, stage: "staging", confirmedBy: idAdmin });
+    expect(p.gates.map((g) => g.reason)).toContain("zmcFileWrittenAtDeploy");
+    expect(readdirSync(zmcDir)).toEqual([]);
+    // Đối chứng dương: deploy thật biên dịch lại CÓ ghi (nguyên tử) — thiếu DLL nên vẫn chặn.
+    const that = await ketCucThat(
+      caller(idAdmin, "admin").deployBuild({
+        buildId, stage: "staging", idempotencyKey: `${DAU}-k${++demKhoa}`, actionId: "a", confirmedBy: idAdmin, totpCode: "",
+      }),
+    );
+    expect(that.verdict).toBe(p.verdict);
+    expect(readdirSync(zmcDir).filter((f) => f.endsWith(".bas")).length).toBe(1);
+    expect(readdirSync(zmcDir).filter((f) => f.endsWith(".tmp"))).toEqual([]);
+  });
+
+  describe("★★★ fix round 1 #3 — phạm vi người gọi (không còn là oracle cấu hình thiết bị xuyên tenant)", () => {
+    const laNotFound = (e: unknown, entity: string) =>
+      (e as { code?: string })?.code === "NOT_FOUND" &&
+      (e as { cause?: { appParams?: { entity?: string } } })?.cause?.appParams?.entity === entity;
+    const loiCua = (p: Promise<unknown>) => p.then(() => null, (e: unknown) => e);
+
+    it("build của nhà máy KHÁC ⇒ NOT_FOUND (giống hệt build không tồn tại); admin (không thu hẹp) vẫn xem được", async () => {
+      datCo(NOI_BO);
+      const { buildId } = await seedBuild({ kind: "stub", language: "text", content: STUB_SRC, factoryId: factoryF2 });
+      datCo(BAT);
+      const e = await loiCua(caller(idEngF1, "engineer").deployPreview({ buildId, stage: "staging" }));
+      expect(laNotFound(e, "programBuild")).toBe(true);
+      const khongTonTai = await loiCua(caller(idEngF1, "engineer").deployPreview({ buildId: 2_000_000_000, stage: "staging" }));
+      expect(laNotFound(khongTonTai, "programBuild")).toBe(true);
+      const admin = await caller(idAdmin, "admin").deployPreview({ buildId, stage: "staging" });
+      expect(admin.target.buildId).toBe(buildId);
+    });
+
+    it("build của CHÍNH nhà máy mình ⇒ xem được (đối chứng dương — không vá quá tay)", async () => {
+      datCo(NOI_BO);
+      const { buildId } = await seedBuild({ kind: "stub", language: "text", content: STUB_SRC, factoryId: factoryF1 });
+      datCo(BAT);
+      const p = await caller(idEngF1, "engineer").deployPreview({ buildId, stage: "staging" });
+      expect(p.target.buildId).toBe(buildId);
+    });
+
+    it("deviceId ghi đè NGOÀI phạm vi (kể cả trên build trong phạm vi) ⇒ NOT_FOUND machine — không tra adapter/tag/driver của nó", async () => {
+      datCo(NOI_BO);
+      const { buildId } = await seedBuild({ kind: "mitsubishi-engineering", language: "device", content: MELSEC_SRC, sim: true, factoryId: factoryF1 });
+      datCo({ ...BAT, DPC_DEPLOY_APPROVAL_ENABLED: "true" });
+      const e = await loiCua(caller(idEngF1, "engineer").deployPreview({ buildId, stage: "production", deviceId: 990_555_003 }));
+      expect(laNotFound(e, "machine")).toBe(true);
+      const e2 = await loiCua(caller(idEngF1, "engineer").deployPreview({ buildId, stage: "staging", deviceId: 990_555_003 }));
+      expect(laNotFound(e2, "machine")).toBe(true);
+    });
+
+    it("tài khoản CHƯA được gán nhà máy (phạm vi rỗng) ⇒ NOT_FOUND cả build F1", async () => {
+      datCo(NOI_BO);
+      const { buildId } = await seedBuild({ kind: "stub", language: "text", content: STUB_SRC, factoryId: factoryF1 });
+      datCo(BAT);
+      const e = await loiCua(caller(idEngRong, "engineer").deployPreview({ buildId, stage: "staging" }));
+      expect(laNotFound(e, "programBuild")).toBe(true);
+    });
   });
 });

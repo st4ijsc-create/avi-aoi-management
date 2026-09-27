@@ -81,6 +81,7 @@ import {
 } from "../services/programming/programmingService";
 // ── doc 80 Đợt 1 Task 5 (WS-02 / F2) — chạy KHÔ mọi cổng deploy trước khi hỏi OTP ──
 import { previewDeploy } from "../services/programming/deployPreview";
+import { phamViCua } from "./_phamViNguoiXem";
 import {
   suggestProgram,
   explainProgram,
@@ -489,7 +490,8 @@ export const programmingRouter = router({
         confirmedBy: z.number().int().positive().optional(),
       }),
     )
-    .query(async ({ input, ctx }) => previewDeploy(input, ctx.user)),
+    // fix round 1 (#3) — phạm vi người gọi LUÔN từ ctx (phamViCua), không từ input.
+    .query(async ({ input, ctx }) => previewDeploy(input, ctx.user, phamViCua(ctx))),
 
   deployBuild: deployProcedure
     .use(requirePermission("machine_control", "canCreate"))

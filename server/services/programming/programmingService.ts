@@ -39,6 +39,7 @@ import {
   type ProgSimScenario,
   type ProgDeployResult,
   type BuildResult,
+  type CompileOptions,
 } from "./programmingAdapter";
 
 export interface DpcUser {
@@ -168,13 +169,14 @@ export async function validateArtifact(artifactId: number) {
   const src: ProgramSource = { kind: art.kind as ProgrammingKind, language: art.language, content: art.content ?? "" };
   const result = await adapter.validate(src);
 
-  // doc 80 Đợt 1 Task 5 (WS-01) — dấu vết duyệt phiên bản (`review`) sống chung trong
-  // diagnosticsJson (không migration); kiểm tra lại mã KHÔNG được xoá nó.
-  const review = readReviewTrail(art.diagnosticsJson);
+  // doc 80 Đợt 1 Task 5 (WS-01) + fix round 1 — dấu vết duyệt (`review`) sống chung trong
+  // diagnosticsJson (không migration). validate CHỈ ghi khoá `diagnostics`, gộp TRONG SQL trên
+  // giá trị HIỆN TẠI của hàng (không phải bản đọc trước `await adapter.validate`) ⇒ một lượt
+  // duyệt/từ chối chen vào giữa KHÔNG bị ghi đè.
   await d
     .update(programArtifacts)
     .set({
-      diagnosticsJson: { diagnostics: result.diagnostics, ...(review ? { review } : {}) },
+      diagnosticsJson: mergeJsonKey("diagnostics", result.diagnostics),
       status: result.ok ? "validated" : "draft",
     })
     .where(eq(programArtifacts.id, artifactId));
@@ -203,16 +205,37 @@ export function readReviewTrail(diagnosticsJson: unknown): ReviewTrail | null {
   return r && typeof r === "object" ? (r as ReviewTrail) : null;
 }
 
-function withReviewTrail(diagnosticsJson: unknown, patch: ReviewTrail): Record<string, unknown> {
-  const base = diagnosticsJson && typeof diagnosticsJson === "object" ? (diagnosticsJson as Record<string, unknown>) : {};
-  return { ...base, review: { ...(readReviewTrail(base) ?? {}), ...patch } };
+/**
+ * fix round 1 — GỘP một khoá cấp một của diagnosticsJson TRONG SQL:
+ * `COALESCE(col,'{}') || jsonb_build_object(key, value)`. Biểu thức đọc giá trị của hàng TẠI LÚC
+ * UPDATE (sau khi Postgres khoá hàng) ⇒ không có cửa sổ đọc-sửa-ghi, không xoá khoá khác.
+ */
+function mergeJsonKey(key: "diagnostics", value: unknown) {
+  return sql`COALESCE(${programArtifacts.diagnosticsJson}, '{}'::jsonb) || jsonb_build_object(${key}::text, ${JSON.stringify(value)}::jsonb)`;
+}
+
+/** fix round 1 — gộp `patch` VÀO khoá `review` hiện có (giữ requestedBy khi ghi quyết định…), trong SQL. */
+function mergeReviewTrail(patch: ReviewTrail) {
+  return sql`COALESCE(${programArtifacts.diagnosticsJson}, '{}'::jsonb) || jsonb_build_object('review',
+    COALESCE(${programArtifacts.diagnosticsJson} -> 'review', '{}'::jsonb) || ${JSON.stringify(patch)}::jsonb)`;
+}
+
+/** fix round 1 — phiên bản không (còn) ở `pending_review` ⇒ PRECONDITION_FAILED có mã. */
+function versionReviewNotPending(artifactId: number, operation: "reviewArtifact" | "requestVersionReview") {
+  return appError(
+    "PRECONDITION_FAILED",
+    "OPERATION_FAILED",
+    { operation, reason: "versionReviewNotPending" },
+    `Phiên bản #${artifactId} không còn chờ duyệt (đã được duyệt/từ chối, có thể bởi một lượt song song).`,
+  );
 }
 
 /**
  * doc 38 T-2 — FOUR-EYES AT THE VERSION. Record a review DECISION on an artifact version.
  * SoD (segregation of duties): the reviewer must DIFFER from the author (createdBy) — the
  * same two-person control the deploy path enforces, moved UP to the version. Always safe
- * (no device I/O). Idempotent-friendly: re-approving an approved version is a no-op update.
+ * (no device I/O). fix round 1: a decision is taken EXACTLY ONCE — only a 'pending_review'
+ * version can be approved/rejected (re-deciding ⇒ PRECONDITION_FAILED versionReviewNotPending).
  *
  * Enforcement of "must be approved before build/deploy" is flag-gated
  * (DPC_VERSION_REVIEW_ENABLED); recording the decision itself is always allowed so an
@@ -252,6 +275,10 @@ export async function reviewArtifact(
     );
   }
 
+  // fix round 1 — QUYẾT ĐỊNH MỘT LẦN: UPDATE … WHERE reviewStatus='pending_review' RETURNING. Hai
+  // người duyệt song song ⇒ Postgres khoá hàng, lượt sau đánh giá lại WHERE sau khi lượt đầu
+  // commit ⇒ 0 hàng ⇒ PRECONDITION_FAILED. Một phiên bản đã duyệt/từ chối KHÔNG đổi quyết định
+  // được nữa (phiên bản bất biến — sửa thì lưu phiên bản mới). Dấu vết gộp trong SQL.
   const now = new Date();
   const [row] = await d
     .update(programArtifacts)
@@ -259,15 +286,16 @@ export async function reviewArtifact(
       reviewStatus: decision,
       reviewedBy: reviewer.id,
       reviewedAt: now,
-      diagnosticsJson: withReviewTrail(art.diagnosticsJson, {
+      diagnosticsJson: mergeReviewTrail({
         decision,
         reason: trimmedReason.length > 0 ? trimmedReason : null,
         reviewedBy: reviewer.id,
         reviewedAt: now.toISOString(),
       }),
     })
-    .where(eq(programArtifacts.id, artifactId))
+    .where(and(eq(programArtifacts.id, artifactId), eq(programArtifacts.reviewStatus, "pending_review")))
     .returning();
+  if (!row) throw versionReviewNotPending(artifactId, "reviewArtifact");
   return row;
 }
 
@@ -281,24 +309,18 @@ export async function requestVersionReview(artifactId: number, requester: DpcUse
   const d = await db();
   const [art] = await d.select().from(programArtifacts).where(eq(programArtifacts.id, artifactId)).limit(1);
   if (!art) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "programmingArtifact" }, `Artifact ${artifactId} not found`);
-  if (art.reviewStatus !== "pending_review") {
-    throw appError(
-      "PRECONDITION_FAILED",
-      "OPERATION_FAILED",
-      { operation: "requestVersionReview", reason: "versionReviewNotPending" },
-      `Phiên bản #${artifactId} không còn chờ duyệt (reviewStatus="${art.reviewStatus}").`,
-    );
-  }
+  // fix round 1 — cùng khuôn: có điều kiện + gộp trong SQL (không ghi đè một quyết định song song).
   const [row] = await d
     .update(programArtifacts)
     .set({
-      diagnosticsJson: withReviewTrail(art.diagnosticsJson, {
+      diagnosticsJson: mergeReviewTrail({
         requestedBy: requester.id,
         requestedAt: new Date().toISOString(),
       }),
     })
-    .where(eq(programArtifacts.id, artifactId))
+    .where(and(eq(programArtifacts.id, artifactId), eq(programArtifacts.reviewStatus, "pending_review")))
     .returning();
+  if (!row) throw versionReviewNotPending(artifactId, "requestVersionReview");
   return row;
 }
 
@@ -591,6 +613,8 @@ export async function rebuildForDeploy(
   adapter: ProgrammingAdapter,
   b: typeof programBuilds.$inferSelect,
   art: typeof programArtifacts.$inferSelect,
+  // fix round 1 — `{persist:false}` cho bản xem trước (GET): so checksum mà KHÔNG ghi tạo phẩm.
+  compileOpts?: CompileOptions,
 ): Promise<BuildResult> {
   const content = art.content ?? "";
   // Biên dịch lại NÉM (nguồn không còn biên dịch được) ⇒ không tái tạo được build đã lưu: cùng
@@ -598,7 +622,7 @@ export async function rebuildForDeploy(
   let fresh: BuildResult | null = null;
   let compileError: string | null = null;
   try {
-    fresh = await adapter.compile({ kind: art.kind as ProgrammingKind, language: art.language, content });
+    fresh = await adapter.compile({ kind: art.kind as ProgrammingKind, language: art.language, content }, compileOpts);
   } catch (e) {
     compileError = (e as Error)?.message ?? String(e);
   }
