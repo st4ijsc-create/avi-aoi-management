@@ -30,6 +30,8 @@ import {
 } from "./socketMachineAuth";
 // ── doc 81 Đợt 1B Task 9 fix round 1 (Ruling R18) — duyệt đăng ký qua socket cấp khoá mk_ (băm-lưu).
 import { issueMachineKey } from "../services/machineAuthService";
+// doc 81 Đợt 1B final wave (item 6) — cùng helper kiểm toán như tRPC machine.approve (hierarchyRouters).
+import { logCrudOperation, createAuditContext, ENTITY_TYPES } from "../services/auditTrailService";
 // ── doc 81 Đợt 1B Task 9 (BE3 §L4b Backpressure) — giới hạn tần suất `machine:*` theo socket + IP.
 import {
   choPhepSuKienMay,
@@ -892,11 +894,20 @@ export function initializeSocket(server: HttpServer): Server {
         socket.emit("admin:approve_error", { message: "Registration not found or expired" });
         return;
       }
+      // ★ doc 81 Đợt 1B final wave (item 6) — LẤY NGUYÊN TỬ: rút khỏi sổ chờ TRƯỚC await đầu tiên.
+      // Hai gói approve liền nhau (hoặc hai admin) từng cùng thấy đăng ký còn pending vì `delete` nằm
+      // sau mấy lượt await ⇒ đúc HAI khoá mk_ sống cho một máy. Thất bại ở bất kỳ bước nào ⇒ trả lại
+      // sổ chờ để admin duyệt lại (hành vi cũ khi lỗi).
+      pendingRegistrations.delete(data.socketId);
+      const traLaiSoCho = () => {
+        if (!pendingRegistrations.has(data.socketId)) pendingRegistrations.set(data.socketId, registration);
+      };
 
       try {
         // Step 2: Get or generate API Key
         const existingMachine = await db.getMachineById(data.machineId);
         if (!existingMachine) {
+          traLaiSoCho();
           socket.emit("admin:approve_error", { message: `Machine ID ${data.machineId} not found in database` });
           return;
         }
@@ -911,6 +922,7 @@ export function initializeSocket(server: HttpServer): Server {
         const cheDo = socketMachineAuthMode();
         let apiKey: string;
         let keyPrefix: string | null = null;
+        let keyId: number | null = null;
         if (cheDo === "off") {
           apiKey = data.apiKey || "";
           // Generate new API Key if machine doesn't have one
@@ -925,6 +937,7 @@ export function initializeSocket(server: HttpServer): Server {
           });
           apiKey = khoa.plaintextKey;
           keyPrefix = khoa.keyPrefix;
+          keyId = khoa.id;
         }
 
         // Update machine in DB: set registrationStatus, serialNumber, firmwareVersion (+ apiKey chỉ ở `off`)
@@ -937,6 +950,35 @@ export function initializeSocket(server: HttpServer): Server {
         });
 
         registration.status = "approved";
+
+        // ★ doc 81 Đợt 1B final wave (item 6) — CÙNG vết kiểm toán như tRPC machine.approve
+        // (hierarchyRouters.ts: action machine.approve, keyPrefix/keyId/credentialIssued). Actor = NGƯỜI
+        // DUYỆT của socket này (socket.data.user), không bao giờ là khoá; snapshot KHÔNG chứa khoá
+        // plaintext. logCrudOperation tự nuốt lỗi ghi (kiểm toán không được làm hỏng lượt duyệt đã commit).
+        try {
+          const nguoiDuyet = (socket.data as any)?.user as { id: number; name?: string | null } | undefined;
+          await logCrudOperation(createAuditContext({ user: nguoiDuyet ?? null, req: socket.request as any }), {
+            action: "machine.approve",
+            entityType: ENTITY_TYPES.MACHINE,
+            entityId: data.machineId,
+            entityName: existingMachine.code,
+            details: {
+              operation: "machine.approve",
+              before: { code: existingMachine.code, name: existingMachine.name, stationId: existingMachine.stationId, registrationStatus: existingMachine.registrationStatus },
+              after: { code: existingMachine.code, name: existingMachine.name, stationId: existingMachine.stationId, registrationStatus: "approved" },
+              metadata: {
+                via: "socket",
+                registrationCode: registration.machineInfo.code,
+                mkOnly: cheDo !== "off",
+                credentialIssued: true,
+                ...(keyPrefix ? { keyPrefix, keyId } : {}),
+              },
+            },
+            status: "success",
+          });
+        } catch (err) {
+          console.error("[Socket.io] approve audit failed (approval already committed):", (err as Error)?.message ?? err);
+        }
 
         // Step 3: Fetch machine config to send along with approval
         const machineConfig: Record<string, any> = {
@@ -968,8 +1010,7 @@ export function initializeSocket(server: HttpServer): Server {
           message: "Registration approved. You can now send inspection data.",
         });
 
-        // Remove from pending
-        pendingRegistrations.delete(data.socketId);
+        // (final wave item 6: đã rút khỏi sổ chờ NGUYÊN TỬ ở đầu handler — không xoá lại ở đây.)
 
         // Log status change (use 'online' since machine is now approved and connecting)
         db.createMachineStatusLog({
@@ -988,12 +1029,14 @@ export function initializeSocket(server: HttpServer): Server {
         });
 
         if (cheDo === "off") {
-          console.log(`[Socket.io] Registration approved for ${registration.machineInfo.code} -> Machine ID ${data.machineId} (API Key: ${apiKey.substring(0, 10)}...)`);
+          // final wave (item 6, ràng buộc chung 11): KHÔNG log bất kỳ phần nào của khoá (từng in 10 ký tự đầu).
+          console.log(`[Socket.io] Registration approved for ${registration.machineInfo.code} -> Machine ID ${data.machineId} (mode off: khoa mach_ giao qua socket, khong ghi log)`);
         } else {
           // Chỉ tiền tố công khai (cột keyPrefix) — không bao giờ log khoá.
           console.log(`[Socket.io] Registration approved for ${registration.machineInfo.code} -> Machine ID ${data.machineId} (khoa mk_ prefix ${keyPrefix})`);
         }
       } catch (error: any) {
+        traLaiSoCho(); // final wave (item 6): thất bại ⇒ đăng ký quay lại sổ chờ như trước
         console.error("[Socket.io] Error approving registration:", error);
         socket.emit("admin:approve_error", { message: `Failed to approve: ${error.message}` });
       }

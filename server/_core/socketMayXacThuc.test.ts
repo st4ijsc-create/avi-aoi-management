@@ -78,6 +78,8 @@ const dbKhoaGia = {
 };
 
 const createMachineStatusLog = vi.fn(async (_x: any) => undefined);
+/** final wave (item 6) — auditTrailService.logCrudOperation ghi qua db.createAuditLog: đếm + soi nội dung ở đây. */
+const createAuditLog = vi.fn(async (_x: any) => ({ id: 1 }));
 const updateMachine = vi.fn(async (..._a: any[]) => undefined);
 const getMachineById = vi.fn(async (id: number) => (MAY[id] ? { ...MAY[id] } : undefined));
 const getMachineByCode = vi.fn(async (code: string) => {
@@ -87,6 +89,7 @@ const getMachineByCode = vi.fn(async (code: string) => {
 vi.mock("../db", () => ({
   updateMachineHeartbeat: vi.fn(async () => undefined),
   createMachineStatusLog: (...a: any[]) => (createMachineStatusLog as any)(...a),
+  createAuditLog: (...a: any[]) => (createAuditLog as any)(...a),
   getMachineById: (...a: any[]) => (getMachineById as any)(...a),
   getMachineByCode: (...a: any[]) => (getMachineByCode as any)(...a),
   getMachineByApiKey: vi.fn(async (k: string) => Object.values(MAY).find((x: any) => x.apiKey === k)),
@@ -544,6 +547,13 @@ describe("★★★ Fix round 1 — danh tính phát đi, onboarding mk_, ma, l�
       // không log khoá
       const moiLog = [...logSpy.mock.calls, ...errSpy.mock.calls, ...warnSpy.mock.calls].flat().map(String).join("\n");
       expect(moiLog).not.toContain(khoa);
+      // final wave (item 6) — CÙNG vết kiểm toán như tRPC machine.approve (hierarchyRouters): action
+      // machine.approve, actor = NGƯỜI DUYỆT (phiên 1), keyPrefix + keyId + credentialIssued; KHÔNG khoá.
+      const vet = createAuditLog.mock.calls.map((c) => c[0]).filter((e) => e?.action === "machine.approve" && e?.entityId === 500);
+      expect(vet).toHaveLength(1);
+      expect(vet[0]).toMatchObject({ userId: 1, entityType: "machine", entityId: 500, status: "success" });
+      expect(vet[0].details?.metadata).toMatchObject({ via: "socket", credentialIssued: true, keyPrefix: hang!.keyPrefix, keyId: hang!.id });
+      expect(JSON.stringify(vet[0])).not.toContain(khoa);
 
       // Nối lại bằng khoá được giao, xác thực ở handshake, dưới enforce mặc định ⇒ online.
       const lai = await mayCoKhoa("M-500", khoa);
@@ -560,20 +570,57 @@ describe("★★★ Fix round 1 — danh tính phát đi, onboarding mk_, ma, l�
     }
   });
 
-  it("(F2b) mode off qua env ⇒ duyệt giữ hành vi cũ (khoá mach_ ghi vào machines.apiKey), không đúc mk_", async () => {
+  it("(F2b) mode off qua env ⇒ duyệt giữ hành vi cũ (khoá mach_ ghi vào machines.apiKey), không đúc mk_; log KHÔNG mang 10 ký tự đầu của khoá; vẫn có vết kiểm toán", async () => {
     process.env.SOCKET_MACHINE_AUTH_MODE = "off";
+    createAuditLog.mockClear();
+    const logSpy = vi.spyOn(console, "log");
+    try {
+      const soKhoaTruoc = BANG_KHOA.length;
+      const may = await mayVoDanh();
+      const ack = new Promise((r) => may.once("machine:register_ack", r));
+      may.emit("machine:register", { code: "OFF-500", name: "off", type: "AOI" });
+      await trongHan(ack, 2000, "register_ack");
+      const duyet = new Promise<any>((r) => may.once("machine:registration_approved", r));
+      const ad = await ketNoi({ phien: 1 });
+      ad.emit("admin:approve_registration", { socketId: may.id, machineId: 500 });
+      const goi = await trongHan(duyet, 3000, "approve off");
+      expect(goi.apiKey).toMatch(/^mach_/);
+      expect(updateMachine.mock.calls.find((c) => c[0] === 500)?.[1]).toMatchObject({ apiKey: goi.apiKey });
+      expect(BANG_KHOA.length).toBe(soKhoaTruoc);
+      // final wave (item 6, ràng buộc chung 11) — trước đây log `(API Key: ${apiKey.substring(0, 10)}...)`.
+      const moiLog = logSpy.mock.calls.flat().map(String).join("\n");
+      expect(moiLog).not.toContain(String(goi.apiKey).substring(0, 10));
+      const vet = createAuditLog.mock.calls.map((c) => c[0]).filter((e) => e?.action === "machine.approve" && e?.entityId === 500);
+      expect(vet).toHaveLength(1);
+      expect(vet[0].details?.metadata).toMatchObject({ via: "socket", mkOnly: false, credentialIssued: true });
+      expect(JSON.stringify(vet[0])).not.toContain(goi.apiKey);
+    } finally {
+      logSpy.mockRestore();
+    }
+  });
+
+  it("(F2c) ★ hai lượt duyệt ĐỒNG THỜI cùng một đăng ký ⇒ đúng MỘT khoá mk_ được đúc, MỘT registration_approved, lượt kia nhận approve_error, MỘT vết kiểm toán", async () => {
+    createAuditLog.mockClear();
     const soKhoaTruoc = BANG_KHOA.length;
     const may = await mayVoDanh();
     const ack = new Promise((r) => may.once("machine:register_ack", r));
-    may.emit("machine:register", { code: "OFF-500", name: "off", type: "AOI" });
+    may.emit("machine:register", { code: "DUP-500", name: "dup", type: "AOI" });
     await trongHan(ack, 2000, "register_ack");
-    const duyet = new Promise<any>((r) => may.once("machine:registration_approved", r));
+    const duyetGoi = ghiNhan(may, "machine:registration_approved");
     const ad = await ketNoi({ phien: 1 });
+    const okGoi = ghiNhan(ad, "admin:approve_success");
+    const loiGoi = ghiNhan(ad, "admin:approve_error");
+    // Hai gói liền nhau trên cùng socket admin: handler thứ hai bắt đầu khi handler thứ nhất còn
+    // đang await (getMachineById / issueMachineKey) — trước bản vá cả hai đều thấy đăng ký còn pending.
     ad.emit("admin:approve_registration", { socketId: may.id, machineId: 500 });
-    const goi = await trongHan(duyet, 3000, "approve off");
-    expect(goi.apiKey).toMatch(/^mach_/);
-    expect(updateMachine.mock.calls.find((c) => c[0] === 500)?.[1]).toMatchObject({ apiKey: goi.apiKey });
-    expect(BANG_KHOA.length).toBe(soKhoaTruoc);
+    ad.emit("admin:approve_registration", { socketId: may.id, machineId: 500 });
+    await vi.waitFor(() => expect(okGoi.length + loiGoi.length).toBe(2), { timeout: 3000 });
+    await cho(300); // không còn gói muộn
+    expect(okGoi).toHaveLength(1);
+    expect(loiGoi).toHaveLength(1);
+    expect(duyetGoi).toHaveLength(1);
+    expect(BANG_KHOA.length).toBe(soKhoaTruoc + 1);
+    expect(createAuditLog.mock.calls.map((c) => c[0]).filter((e) => e?.action === "machine.approve")).toHaveLength(1);
   });
 
   it("(F3) ★ sync_started từng-sự-kiện, socket NGẮT trong lúc chờ xác thực ⇒ không online ma, không updateMachine, không INSERT", async () => {
