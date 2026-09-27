@@ -17285,11 +17285,14 @@
       "plcLabel": "安全 PLC",
       "plc": {
         "sim": "⚠ SIM（预检依赖于模拟）",
-        "mixed": "⚠ 真实 + SIM（单个 SIM 配置即可使预检通过）",
+        "mixed": "⚠ 真实 + SIM/未映射（一个不读取任何安全标签的配置即可使预检通过）",
         "real": "● 真实 PLC",
         "adapterOff": "○ 关闭 — 无安全来源",
         "noConfig": "○ 没有已启用的配置",
-        "readError": "⚠ 无法读取配置"
+        "readError": "⚠ 无法读取配置",
+        "simEmpty": "空脚本 — 始终 OK",
+        "simScripted": "按脚本 — OK/BLOCKED 由脚本决定，而非 PLC",
+        "realUnmapped": "⚠ 真实端点但未映射任何安全标签 — 预检 OK 基于未读取任何内容"
       },
       "hiddenConfigs": "不在您的范围内",
       "ot": "OT 写入",
@@ -17299,8 +17302,9 @@
         "unguarded": "⚠ 预检已关闭 — 真实指令不受检查",
         "blocked": "真实指令被阻止",
         "sim_basis": "⚠ 基于模拟读数放行",
-        "sim_can_satisfy": "⚠ SIM 配置即可使检查通过",
-        "real_basis": "已对照真实安全 PLC 检查"
+        "sim_can_satisfy": "⚠ SIM 或未映射配置即可使检查通过",
+        "real_basis": "已对照真实安全 PLC 检查",
+        "unmapped_basis": "⚠ 未读取任何安全标签仍被放行"
       },
       "on": "● 开启",
       "off": "○ 关闭",
@@ -21020,12 +21024,15 @@
       "live": "真实",
       "simulatedTip": "本次运行的指令仅为模拟（dry-run）— 未向设备写入任何内容（{{simulated}} 步）。",
       "mixedTip": "{{simulated}} 步为模拟，{{live}} 步已发送至设备。",
-      "liveTip": "{{live}} 个指令步骤已发送至设备。"
+      "liveTip": "{{live}} 个指令步骤已发送至设备。",
+      "unconfirmed": "未确认",
+      "unconfirmedTip": "{{unconfirmed}} 个指令步骤失败或超时 — 可能已到达设备。"
     },
     "step": {
       "simulated": "模拟",
       "live": "已发送",
-      "other": "未发送"
+      "unconfirmed": "未确认 — 可能已到达设备",
+      "rejected": "未发送"
     }
   }
 }

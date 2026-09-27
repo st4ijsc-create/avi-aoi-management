@@ -214,8 +214,8 @@ function health(over: Record<string, unknown> = {}) {
   return {
     checkedAt: "2026-09-27T00:00:00.000Z",
     safetyPlc: {
-      adapterEnabled: true, enabledConfigs: 1, simConfigs: 1, realConfigs: 0, basis: "sim",
-      configs: [{ code: "SIM-SAFETY-PLC-1", backend: "sim", effective: "sim", provenance: "SIM" }], hiddenConfigs: 0,
+      adapterEnabled: true, enabledConfigs: 1, simConfigs: 1, simScriptedConfigs: 0, realConfigs: 0, realUnmappedConfigs: 0, basis: "sim",
+      configs: [{ code: "SIM-SAFETY-PLC-1", backend: "sim", effective: "sim_empty", provenance: "SIM" }], hiddenConfigs: 0,
     },
     preflight: {
       expectedReading: "SIM",
@@ -224,7 +224,7 @@ function health(over: Record<string, unknown> = {}) {
     },
     vision: { enabled: false, calibrations: 0, onnxPersonModelWired: false },
     zoneSw: { enabled: false, zones: 0 },
-    estop: { enabled: false, adapter: "null", label: "null (scaffold)", rated: false, reachable: false },
+    estop: { enabled: false, adapter: "null", label: "null (scaffold)", rated: false },
     socket: { serverUp: true },
     ...over,
   };
@@ -251,7 +251,7 @@ describe("SafetyWorkforce — SAF-02 panel nguồn an toàn", () => {
       "safety.sourceHealth",
       makeQuery({
         data: health({
-          safetyPlc: { adapterEnabled: false, enabledConfigs: 1, simConfigs: 1, realConfigs: 0, basis: "adapter_off", configs: [], hiddenConfigs: 0 },
+          safetyPlc: { adapterEnabled: false, enabledConfigs: 1, simConfigs: 1, simScriptedConfigs: 0, realConfigs: 0, realUnmappedConfigs: 0, basis: "adapter_off", configs: [], hiddenConfigs: 0 },
           preflight: {
             expectedReading: "UNKNOWN",
             ot: { flag: "OT_SAFETY_PREFLIGHT_ENABLED", preflightEnabled: true, controlEnabled: true, realWrites: "blocked", refusalReason: "SAFETY_UNKNOWN" },
@@ -310,5 +310,57 @@ describe("SafetyWorkforce — Task 4 X-01: badge DEMO trên assignment", () => {
         expect(badge, `assignment thật #${a.id} bị gắn nhầm`).toBeNull();
       }
     }
+  });
+});
+
+// ── Fix round 1 (#1 real_unmapped · #4 sim script · #7 query tắt không phải lỗi) ────────────
+describe("SafetyWorkforce — Fix round 1 panel nguồn", () => {
+  it("#1 endpoint thật KHÔNG ánh xạ tag ⇒ nói rõ OK dựa trên việc không đọc gì", () => {
+    setQueryOverride(
+      "safety.sourceHealth",
+      makeQuery({
+        data: health({
+          safetyPlc: {
+            adapterEnabled: true, enabledConfigs: 1, simConfigs: 0, simScriptedConfigs: 0, realConfigs: 0, realUnmappedConfigs: 1,
+            basis: "real_unmapped", configs: [{ code: "PLC-L3", backend: "modbus", effective: "real_unmapped", provenance: null }], hiddenConfigs: 0,
+          },
+          preflight: {
+            expectedReading: "UNMAPPED",
+            ot: { flag: "OT_SAFETY_PREFLIGHT_ENABLED", preflightEnabled: true, controlEnabled: true, realWrites: "unmapped_basis", refusalReason: null },
+            robot: { flag: "ROBOT_SAFETY_PREFLIGHT_ENABLED", preflightEnabled: true, controlEnabled: true, realWrites: "unmapped_basis", refusalReason: null },
+          },
+        }),
+      }),
+    );
+    render(<SafetyWorkforce />);
+    const plc = screen.getByTestId("safety-source-plc");
+    expect(plc).toHaveAttribute("data-basis", "real_unmapped");
+    expect(plc.textContent).toMatch(/NO safety tag mapped/);
+    expect(plc.textContent).toMatch(/based on nothing read/);
+    expect(screen.getByTestId("safety-source-ot")).toHaveAttribute("data-verdict", "unmapped_basis");
+    expect(screen.getByTestId("safety-source-ot").textContent).toMatch(/no safety tag is read/);
+  });
+
+  it("#4 SIM kịch bản rỗng ⇒ 'empty script — always OK'; SIM có kịch bản ⇒ 'scripted'", () => {
+    setQueryOverride("safety.sourceHealth", makeQuery({ data: health() }));
+    const { rerender } = render(<SafetyWorkforce />);
+    expect(screen.getByTestId("safety-source-plc").textContent).toMatch(/empty script — always OK/);
+    const h = health();
+    setQueryOverride(
+      "safety.sourceHealth",
+      makeQuery({ data: { ...h, safetyPlc: { ...h.safetyPlc, simScriptedConfigs: 1, configs: [{ code: "SIM-S", backend: "sim", effective: "sim_scripted", provenance: "SIM" }] } } }),
+    );
+    rerender(<SafetyWorkforce />);
+    const text = screen.getByTestId("safety-source-plc").textContent ?? "";
+    expect(text).toMatch(/scripted/);
+    expect(text).not.toMatch(/always OK/);
+  });
+
+  it("#7 query bị tắt / chưa chạy (không data, không lỗi, không isLoading) ⇒ KHÔNG hiện 'Could not read'", () => {
+    setQueryOverride("safety.sourceHealth", makeQuery({ isPending: true, isLoading: false }));
+    render(<SafetyWorkforce />);
+    const panel = screen.getByTestId("safety-source-panel");
+    expect(panel.textContent).not.toMatch(/Could not read safety sources/);
+    expect(screen.queryByTestId("safety-source-plc")).not.toBeInTheDocument();
   });
 });

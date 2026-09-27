@@ -20,7 +20,7 @@
  * Phạm vi: số tổng của nền preflight là TOÀN HỆ (preflight đọc mọi cấu hình bật, không theo
  * tenant) nhưng chỉ là SỐ ĐẾM; mã cấu hình chỉ lộ cho người xem trong phạm vi nhà máy của nó.
  */
-import { safetyPlcConfigs } from "../../../drizzle/schema";
+import { safetyPlcConfigs, type SafetyPlcStatusMap } from "../../../drizzle/schema";
 import { getDb } from "../../db/connection";
 import { idsTrongPhamVi, type PhamViNguoiXem } from "../../db/hierarchy";
 import { eq } from "drizzle-orm";
@@ -45,6 +45,8 @@ export interface PlcConfigLite {
   code: string;
   backend: string;
   endpoint: string | null;
+  /** Fix round 1 #1/#4 — which status flags carry a tag address (real) / the sim script (sim). */
+  statusMap: SafetyPlcStatusMap | null;
   factoryId: number | null;
   scope: string | null;
 }
@@ -69,14 +71,29 @@ export interface SourceHealthSnapshot {
   visibleFactoryIds: number[] | null;
   zones: Array<{ factoryId: number | null }>;
   calibrations: Array<{ factoryId: number | null }>;
-  estop: { kind: string; label: string; rated: boolean; reachable: boolean };
+  /**
+   * Fix round 1 #3 — ONLY kind + isRated() + the adapter's own label(). health() is never called
+   * here: once a vendor adapter is registered it does a real readBoolTag/driver connect, and this
+   * report is polled every 5 s. `reachable` is therefore not reported.
+   */
+  estop: { kind: string; label: string; rated: boolean };
   socketServerUp: boolean;
 }
 
 // ── Đầu ra ────────────────────────────────────────────────────────────────────────
 
 /** Nền của preflight = thứ getSafetyStatus thực sự đọc. */
-export type SafetyPlcBasis = "adapter_off" | "no_config" | "read_error" | "sim" | "real" | "mixed";
+export type SafetyPlcBasis = "adapter_off" | "no_config" | "read_error" | "sim" | "real_unmapped" | "real" | "mixed";
+
+/**
+ * What ONE enabled config actually gives getSafetyStatus (mirror of backendForConfig + read()):
+ *   sim_empty     — SIM with no script (or modbus/opcua without endpoint): always all-clear ⇒ OK.
+ *   sim_scripted  — SIM cycling a script: OK/BLOCKED follows a SCRIPT, not a PLC.
+ *   real_unmapped — real endpoint but NO safety flag has a tag address: OtReadSafetyPlcBackend.read()
+ *                   returns {} WITHOUT connecting ⇒ OK based on nothing read (Fix round 1 #1).
+ *   real          — real endpoint + ≥1 of estop/zoneOccupied/resetRequired/muting mapped.
+ */
+export type EffectivePlcBackend = "sim_empty" | "sim_scripted" | "real_unmapped" | "real";
 
 /**
  * Hệ quả cho lệnh THẬT trên một mặt (OT ghi / robot chuyển động):
@@ -84,10 +101,11 @@ export type SafetyPlcBasis = "adapter_off" | "no_config" | "read_error" | "sim" 
  *   unguarded        — cờ preflight = "false": lệnh thật KHÔNG qua safety-PLC.
  *   blocked          — preflight đọc UNKNOWN ⇒ lệnh thật bị từ chối SAFETY_UNKNOWN.
  *   sim_basis        — preflight lấy OK từ GIẢ LẬP ⇒ lệnh thật đi qua dựa vào giả lập.
- *   sim_can_satisfy  — có PLC thật nhưng một cấu hình SIM cũng đủ cho OK.
- *   real_basis       — chỉ PLC thật (OK/BLOCKED theo phần cứng; không đọc được ⇒ chặn).
+ *   unmapped_basis   — endpoint thật nhưng KHÔNG tag an toàn nào được ánh xạ ⇒ OK dựa trên KHÔNG GÌ.
+ *   sim_can_satisfy  — có PLC thật nhưng một cấu hình SIM/unmapped (không đọc gì) cũng đủ cho OK.
+ *   real_basis       — chỉ PLC thật có ánh xạ tag (OK/BLOCKED theo phần cứng; không đọc được ⇒ chặn).
  */
-export type RealCommandVerdict = "dry_run" | "unguarded" | "blocked" | "sim_basis" | "sim_can_satisfy" | "real_basis";
+export type RealCommandVerdict = "dry_run" | "unguarded" | "blocked" | "sim_basis" | "unmapped_basis" | "sim_can_satisfy" | "real_basis";
 
 export interface PlaneHealth {
   flag: string;
@@ -103,29 +121,60 @@ export interface SafetySourceHealth {
   safetyPlc: {
     adapterEnabled: boolean;
     enabledConfigs: number;
+    /** sim_empty + sim_scripted. */
     simConfigs: number;
+    /** SIM configs that cycle a script (Fix round 1 #4). */
+    simScriptedConfigs: number;
+    /** Real endpoint AND ≥1 safety tag mapped. */
     realConfigs: number;
+    /** Real endpoint but NO safety tag mapped (Fix round 1 #1). */
+    realUnmappedConfigs: number;
     basis: SafetyPlcBasis;
     /** Cấu hình TRONG phạm vi người xem (không có endpoint — chỉ loại backend). */
-    configs: Array<{ code: string; backend: string; effective: "sim" | "real"; provenance: ProvenanceLabel | null }>;
+    configs: Array<{ code: string; backend: string; effective: EffectivePlcBackend; provenance: ProvenanceLabel | null }>;
     /** Cấu hình bật NGOÀI phạm vi người xem — chỉ đếm. */
     hiddenConfigs: number;
   };
   preflight: {
-    /** getSafetyStatus sẽ đọc gì: UNKNOWN (không nguồn) / SIM / REAL / MIXED. */
-    expectedReading: "UNKNOWN" | "SIM" | "REAL" | "MIXED";
+    /** getSafetyStatus sẽ đọc gì: UNKNOWN (không nguồn) / SIM / UNMAPPED (không đọc gì) / REAL / MIXED. */
+    expectedReading: "UNKNOWN" | "SIM" | "UNMAPPED" | "REAL" | "MIXED";
     ot: PlaneHealth;
     robot: PlaneHealth;
   };
   vision: { enabled: boolean; calibrations: number; onnxPersonModelWired: false };
   zoneSw: { enabled: boolean; zones: number };
-  estop: { enabled: boolean; adapter: string; label: string; rated: boolean; reachable: boolean };
+  /** `label` has any endpoint stripped (Fix round 1 #3). */
+  estop: { enabled: boolean; adapter: string; label: string; rated: boolean };
   socket: { serverUp: boolean };
 }
 
-/** Mirror `backendForConfig`: modbus/opcua CÓ endpoint mới là đọc thật; còn lại là SIM. */
-export function effectiveBackend(cfg: Pick<PlcConfigLite, "backend" | "endpoint">): "sim" | "real" {
-  return (cfg.backend === "modbus" || cfg.backend === "opcua") && !!cfg.endpoint ? "real" : "sim";
+const SAFETY_FLAGS = ["estop", "zoneOccupied", "resetRequired", "muting"] as const;
+
+/**
+ * Mirror `backendForConfig` + the backend's `read()`:
+ *   • modbus/opcua WITH endpoint ⇒ OtReadSafetyPlcBackend; its tagList() keeps only flags that have
+ *     `statusMap[flag].address` — none ⇒ read() returns {} without connecting ⇒ real_unmapped.
+ *   • modbus/opcua WITHOUT endpoint ⇒ SimSafetyPlcBackend([]) (script ignored) ⇒ sim_empty.
+ *   • sim ⇒ SimSafetyPlcBackend(statusMap.simScript ?? []) ⇒ empty ⇒ sim_empty, else sim_scripted.
+ */
+export function effectiveBackend(cfg: Pick<PlcConfigLite, "backend" | "endpoint" | "statusMap">): EffectivePlcBackend {
+  const map = cfg.statusMap ?? {};
+  if (cfg.backend === "modbus" || cfg.backend === "opcua") {
+    if (!cfg.endpoint) return "sim_empty";
+    return SAFETY_FLAGS.some((k) => !!map[k]?.address) ? "real" : "real_unmapped";
+  }
+  return (map.simScript?.length ?? 0) > 0 ? "sim_scripted" : "sim_empty";
+}
+
+/**
+ * Fix round 1 #3 — an e-stop adapter label may carry the safety PLC endpoint (vendor skeletons:
+ * "${vendor} skeleton (${protocol} @ ${endpoint})"). Strip URLs, IPv4[:port] and anything after '@'.
+ */
+export function stripEndpoint(label: string): string {
+  return label
+    .replace(/@\s*[^\s)]+/g, "@ [endpoint]")
+    .replace(/\b[a-z][a-z0-9+.-]*:\/\/[^\s)]+/gi, "[endpoint]")
+    .replace(/\b\d{1,3}(?:\.\d{1,3}){3}(?::\d+)?\b/g, "[endpoint]");
 }
 
 function visible(ids: number[] | null, factoryId: number | null): boolean {
@@ -143,6 +192,8 @@ function planeVerdict(controlEnabled: boolean, preflightEnabled: boolean, basis:
       return "blocked";
     case "sim":
       return "sim_basis";
+    case "real_unmapped":
+      return "unmapped_basis";
     case "mixed":
       return "sim_can_satisfy";
     case "real":
@@ -152,19 +203,34 @@ function planeVerdict(controlEnabled: boolean, preflightEnabled: boolean, basis:
 
 export function computeSafetySourceHealth(s: SourceHealthSnapshot): SafetySourceHealth {
   const configs = s.plcRead === "ok" ? s.plcConfigsEnabled : [];
-  const simConfigs = configs.filter((c) => effectiveBackend(c) === "sim").length;
-  const realConfigs = configs.length - simConfigs;
+  const kinds = configs.map((c) => effectiveBackend(c));
+  const count = (k: EffectivePlcBackend) => kinds.filter((x) => x === k).length;
+  const simScriptedConfigs = count("sim_scripted");
+  const simConfigs = count("sim_empty") + simScriptedConfigs;
+  const realConfigs = count("real");
+  const realUnmappedConfigs = count("real_unmapped");
+  // Configs that can yield OK WITHOUT reading a real safety tag.
+  const nothingRead = simConfigs + realUnmappedConfigs;
 
   let basis: SafetyPlcBasis;
   if (!s.flags.safetyPlcAdapter) basis = "adapter_off";
   else if (s.plcRead === "error") basis = "read_error";
   else if (configs.length === 0) basis = "no_config";
-  else if (realConfigs === 0) basis = "sim";
-  else if (simConfigs === 0) basis = "real";
-  else basis = "mixed";
+  else if (realConfigs > 0 && nothingRead > 0) basis = "mixed";
+  else if (realConfigs > 0) basis = "real";
+  else if (simConfigs > 0) basis = "sim";
+  else basis = "real_unmapped";
 
   const expectedReading =
-    basis === "sim" ? "SIM" : basis === "real" ? "REAL" : basis === "mixed" ? "MIXED" : "UNKNOWN";
+    basis === "sim"
+      ? "SIM"
+      : basis === "real_unmapped"
+        ? "UNMAPPED"
+        : basis === "real"
+          ? "REAL"
+          : basis === "mixed"
+            ? "MIXED"
+            : "UNKNOWN";
 
   const plane = (flag: string, controlEnabled: boolean, preflightEnabled: boolean): PlaneHealth => {
     const realWrites = planeVerdict(controlEnabled, preflightEnabled, basis);
@@ -185,7 +251,9 @@ export function computeSafetySourceHealth(s: SourceHealthSnapshot): SafetySource
       adapterEnabled: s.flags.safetyPlcAdapter,
       enabledConfigs: configs.length,
       simConfigs,
+      simScriptedConfigs,
       realConfigs,
+      realUnmappedConfigs,
       basis,
       configs: shown.map((c) => ({
         code: c.code,
@@ -212,9 +280,8 @@ export function computeSafetySourceHealth(s: SourceHealthSnapshot): SafetySource
     estop: {
       enabled: s.flags.safetyEstopAdapter,
       adapter: s.estop.kind,
-      label: s.estop.label,
+      label: stripEndpoint(s.estop.label),
       rated: s.estop.rated,
-      reachable: s.estop.reachable,
     },
     socket: { serverUp: s.socketServerUp },
   };
@@ -241,6 +308,7 @@ export async function loadSafetySourceHealth(viewer: PhamViNguoiXem): Promise<Sa
           code: safetyPlcConfigs.code,
           backend: safetyPlcConfigs.backend,
           endpoint: safetyPlcConfigs.endpoint,
+          statusMap: safetyPlcConfigs.statusMap,
           factoryId: safetyPlcConfigs.factoryId,
           scope: safetyPlcConfigs.scope,
         })
@@ -262,8 +330,8 @@ export async function loadSafetySourceHealth(viewer: PhamViNguoiXem): Promise<Sa
   const zones = await listZones({ onlyEnabled: true }).catch(() => []);
   const calibrations = await listCalibrations({ onlyEnabled: true }).catch(() => []);
 
+  // Fix round 1 #3 — NEVER health() per request (a registered vendor adapter would read the PLC).
   const estopAdapter = getSafetyPlcAdapter();
-  const estopHealth = await estopAdapter.health().catch(() => ({ reachable: false, rated: false, label: estopAdapter.label() }));
 
   return computeSafetySourceHealth({
     checkedAt: new Date().toISOString(),
@@ -285,9 +353,8 @@ export async function loadSafetySourceHealth(viewer: PhamViNguoiXem): Promise<Sa
     calibrations: calibrations.map((c) => ({ factoryId: c.factoryId ?? null })),
     estop: {
       kind: estopAdapter.kind,
-      label: estopHealth.label ?? estopAdapter.label(),
-      rated: estopAdapter.isRated() && estopHealth.rated === true,
-      reachable: estopHealth.reachable === true,
+      label: estopAdapter.label(),
+      rated: estopAdapter.isRated(),
     },
     socketServerUp: getIO() != null,
   });

@@ -217,7 +217,11 @@ export const orchestrationRouter = router({
             .where(inArray(orchestrationRunSteps.runId, runs.map((r) => r.id)))
         : [];
       const byRun = new Map<number, unknown[]>();
-      for (const s of stepRows) byRun.set(s.runId, [...(byRun.get(s.runId) ?? []), s.resultJson]);
+      for (const s of stepRows) {
+        const list = byRun.get(s.runId);
+        if (list) list.push(s.resultJson);
+        else byRun.set(s.runId, [s.resultJson]);
+      }
       return runs.map((r) => ({ ...r, dispatch: summarizeRunDispatch(byRun.get(r.id) ?? []) }));
     }),
 

@@ -62,8 +62,8 @@ describe("classifyStepDispatch / summarizeRunDispatch — DRY-RUN hay thật (OR
     expect(classifyStepDispatch({ routedTo: "robot-dispatcher", status: "done" })).toBe("live");
     expect(classifyStepDispatch({ routedTo: "ot-dispatcher", status: "sent", simulated: false })).toBe("live");
   });
-  it("bị từ chối ⇒ other (không thật, không mô phỏng)", () => {
-    expect(classifyStepDispatch({ routedTo: "ot-dispatcher", status: "rejected", simulated: false })).toBe("other");
+  it("bị từ chối ⇒ rejected (không thật, không mô phỏng)", () => {
+    expect(classifyStepDispatch({ routedTo: "ot-dispatcher", status: "rejected", simulated: false })).toBe("rejected");
   });
   it("bước không phải lệnh (hitl_gate {ok:true}, seed) ⇒ null", () => {
     expect(classifyStepDispatch({ ok: true })).toBeNull();
@@ -73,10 +73,49 @@ describe("classifyStepDispatch / summarizeRunDispatch — DRY-RUN hay thật (OR
   it("gộp run", () => {
     const sim = { routedTo: "ot-dispatcher", status: "simulated", simulated: true };
     const live = { routedTo: "ot-dispatcher", status: "acked", simulated: false };
-    expect(summarizeRunDispatch([sim, { ok: true }, sim])).toEqual({ mode: "simulated", simulated: 2, live: 0 });
-    expect(summarizeRunDispatch([live])).toEqual({ mode: "live", simulated: 0, live: 1 });
-    expect(summarizeRunDispatch([live, sim])).toEqual({ mode: "mixed", simulated: 1, live: 1 });
-    expect(summarizeRunDispatch([{ ok: true }, { ok: true }])).toEqual({ mode: "none", simulated: 0, live: 0 });
-    expect(summarizeRunDispatch([])).toEqual({ mode: "none", simulated: 0, live: 0 });
+    expect(summarizeRunDispatch([sim, { ok: true }, sim])).toEqual({ mode: "simulated", simulated: 2, live: 0, unconfirmed: 0 });
+    expect(summarizeRunDispatch([live])).toEqual({ mode: "live", simulated: 0, live: 1, unconfirmed: 0 });
+    expect(summarizeRunDispatch([live, sim])).toEqual({ mode: "mixed", simulated: 1, live: 1, unconfirmed: 0 });
+    expect(summarizeRunDispatch([{ ok: true }, { ok: true }])).toEqual({ mode: "none", simulated: 0, live: 0, unconfirmed: 0 });
+    expect(summarizeRunDispatch([])).toEqual({ mode: "none", simulated: 0, live: 0, unconfirmed: 0 });
+  });
+});
+
+// ── Fix round 1 (review Important #2 · Minor #6) ─────────────────────────────────────────
+describe("Fix round 1 — failed/timeout là CHƯA XÁC NHẬN (có thể đã tới thiết bị), chỉ rejected là 'không gửi'", () => {
+  it("rejected ⇒ rejected (không gửi)", () => {
+    expect(classifyStepDispatch({ routedTo: "ot-dispatcher", status: "rejected", simulated: false })).toBe("rejected");
+    expect(classifyStepDispatch({ routedTo: "robot-dispatcher", status: "rejected" })).toBe("rejected");
+  });
+  it("failed / timeout (OT sau writeTags, robot sau driver) ⇒ unconfirmed", () => {
+    expect(classifyStepDispatch({ routedTo: "ot-dispatcher", status: "failed", simulated: false })).toBe("unconfirmed");
+    expect(classifyStepDispatch({ routedTo: "ot-dispatcher", status: "timeout", simulated: false })).toBe("unconfirmed");
+    expect(classifyStepDispatch({ routedTo: "robot-dispatcher", status: "failed" })).toBe("unconfirmed");
+  });
+  it("trạng thái lạ ⇒ unconfirmed (an toàn: không bao giờ tự nhận là không gửi)", () => {
+    expect(classifyStepDispatch({ routedTo: "ot-dispatcher", status: "weird" })).toBe("unconfirmed");
+  });
+  it("mọi trạng thái ack của enum commandstatusenum ⇒ live", () => {
+    for (const s of ["sent", "acked", "acked_verified", "acked_unverified", "done"]) {
+      expect(classifyStepDispatch({ routedTo: "ot-dispatcher", status: s, simulated: false }), s).toBe("live");
+    }
+  });
+  it("gộp: unconfirmed tính là CÓ THỂ thật, không bao giờ là dry-run", () => {
+    const sim = { routedTo: "ot-dispatcher", status: "simulated", simulated: true };
+    const unc = { routedTo: "ot-dispatcher", status: "timeout", simulated: false };
+    const rej = { routedTo: "ot-dispatcher", status: "rejected", simulated: false };
+    expect(summarizeRunDispatch([unc])).toEqual({ mode: "unconfirmed", simulated: 0, live: 0, unconfirmed: 1 });
+    expect(summarizeRunDispatch([sim, unc])).toEqual({ mode: "mixed", simulated: 1, live: 0, unconfirmed: 1 });
+    expect(summarizeRunDispatch([sim, rej])).toEqual({ mode: "simulated", simulated: 1, live: 0, unconfirmed: 0 });
+    expect(summarizeRunDispatch([{ routedTo: "ot-dispatcher", status: "acked" }, unc])).toEqual({ mode: "live", simulated: 0, live: 1, unconfirmed: 1 });
+  });
+});
+
+describe("Fix round 1 — routedTo chỉ khớp mô phỏng khi NEO đầu chuỗi (Minor #6)", () => {
+  it("'simatic-s7' KHÔNG phải mô phỏng; 'simulator' / 'sim-gate' / 'sim' là", () => {
+    expect(classifyStepDispatch({ routedTo: "simatic-s7", status: "acked" })).toBe("live");
+    expect(classifyStepDispatch({ routedTo: "simulator", status: "done" })).toBe("simulated");
+    expect(classifyStepDispatch({ routedTo: "sim-gate", status: "done" })).toBe("simulated");
+    expect(classifyStepDispatch({ routedTo: "sim", status: "done" })).toBe("simulated");
   });
 });

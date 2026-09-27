@@ -1989,18 +1989,21 @@ function StepDispatchTag({ result, t }: { result: Record<string, unknown> | null
   const kind = classifyStepDispatch(result);
   if (!kind) return null;
   const routedTo = typeof result?.routedTo === "string" ? result.routedTo : "";
+  // Fix round 1 — "not sent" ONLY for rejected; failed/timeout may have reached the device.
   const label =
     kind === "simulated"
       ? t("provenance.step.simulated", "simulated")
       : kind === "live"
         ? t("provenance.step.live", "sent")
-        : t("provenance.step.other", "not sent");
+        : kind === "unconfirmed"
+          ? t("provenance.step.unconfirmed", "unconfirmed — may have reached the device")
+          : t("provenance.step.rejected", "not sent");
   return (
     <Badge
       variant="outline"
       data-testid="step-dispatch"
       data-kind={kind}
-      className={`text-[10px] ${kind === "simulated" ? "border-violet-500/50 text-violet-700 dark:text-violet-300" : kind === "live" ? "border-emerald-500/50 text-emerald-700 dark:text-emerald-300" : "text-muted-foreground"}`}
+      className={`text-[10px] ${kind === "simulated" ? "border-violet-500/50 text-violet-700 dark:text-violet-300" : kind === "live" ? "border-emerald-500/50 text-emerald-700 dark:text-emerald-300" : kind === "unconfirmed" ? "border-amber-500/50 text-amber-700 dark:text-amber-300" : "text-muted-foreground"}`}
     >
       {routedTo ? `${routedTo} · ` : ""}{label}
     </Badge>

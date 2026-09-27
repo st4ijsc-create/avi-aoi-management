@@ -109,7 +109,7 @@ describe.skipIf(!DB_URL)("Task 4 — safety.sourceHealth + listRuns DRY-RUN (CSD
     expect(["sim_basis", "sim_can_satisfy"]).toContain(h.preflight.ot.realWrites);
     expect(h.preflight.ot.refusalReason).toBeNull();
     const mine = h.safetyPlc.configs.find((c) => c.code === PLC_CODE);
-    expect(mine).toMatchObject({ backend: "sim", effective: "sim", provenance: "SIM" });
+    expect(mine).toMatchObject({ backend: "sim", effective: "sim_empty", provenance: "SIM" });
     const reading = await facadeReading();
     expect(reading.state).not.toBe("UNKNOWN");
     expect(reading.source).toMatch(/^safety_plc/);
@@ -134,12 +134,43 @@ describe.skipIf(!DB_URL)("Task 4 — safety.sourceHealth + listRuns DRY-RUN (CSD
     expect(u.safetyPlc.enabledConfigs).toBe(a.safetyPlc.enabledConfigs);
   });
 
+  it("Fix round 1 #3: adapter e-stop VENDOR đã đăng ký ⇒ health() KHÔNG bị gọi mỗi request, endpoint KHÔNG lộ", async () => {
+    const estop = await import("../services/safety/estop/safetyEstopAdapter");
+    let healthCalls = 0;
+    const fake = {
+      kind: "pilz-pnozmulti",
+      isRated: () => false,
+      health: async () => {
+        healthCalls += 1; // một vendor adapter thật sẽ readBoolTag ⇒ connect driver tại đây
+        return { reachable: true, rated: false, label: "pilz skeleton (modbus @ tcp://10.9.9.9:502) — NOT safety-rated" };
+      },
+      triggerEmergencyStop: async () => ({ ok: false, rated: false, actuated: false, adapter: "fake" }),
+      label: () => "pilz skeleton (modbus @ tcp://10.9.9.9:502) — NOT safety-rated",
+    };
+    const prev = estop.registerSafetyPlcAdapter(fake);
+    try {
+      process.env.SAFETY_ESTOP_ADAPTER_ENABLED = "true";
+      const caller = await safety(ctxAdmin);
+      const h1 = await caller.sourceHealth();
+      const h2 = await caller.sourceHealth();
+      expect(healthCalls).toBe(0);
+      for (const h of [h1, h2]) {
+        expect(JSON.stringify(h)).not.toContain("10.9.9.9");
+        expect(h.estop).toMatchObject({ enabled: true, adapter: "pilz-pnozmulti", rated: false });
+        expect(h.estop.label).toContain("pilz skeleton");
+      }
+    } finally {
+      estop.registerSafetyPlcAdapter(prev);
+      delete process.env.SAFETY_ESTOP_ADAPTER_ENABLED;
+    }
+  });
+
   it("ORC-13: listRuns mang chế độ gửi lệnh — DRY-RUN / thật / seed không có lệnh", async () => {
     const orch = (await import("./orchestrationRouter")).orchestrationRouter.createCaller(ctxAdmin);
-    const rows = (await orch.listRuns({ workflowId: WF_ID, limit: 10 })) as Array<{ id: number; dispatch: { mode: string; simulated: number; live: number } }>;
+    const rows = (await orch.listRuns({ workflowId: WF_ID, limit: 10 })) as Array<{ id: number; dispatch: { mode: string; simulated: number; live: number; unconfirmed: number } }>;
     const by = new Map(rows.map((r) => [r.id, r]));
-    expect(by.get(ids.runSim)?.dispatch).toEqual({ mode: "simulated", simulated: 2, live: 0 });
-    expect(by.get(ids.runLive)?.dispatch).toEqual({ mode: "live", simulated: 0, live: 1 });
-    expect(by.get(ids.runSeed)?.dispatch).toEqual({ mode: "none", simulated: 0, live: 0 });
+    expect(by.get(ids.runSim)?.dispatch).toEqual({ mode: "simulated", simulated: 2, live: 0, unconfirmed: 0 });
+    expect(by.get(ids.runLive)?.dispatch).toEqual({ mode: "live", simulated: 0, live: 1, unconfirmed: 0 });
+    expect(by.get(ids.runSeed)?.dispatch).toEqual({ mode: "none", simulated: 0, live: 0, unconfirmed: 0 });
   });
 });

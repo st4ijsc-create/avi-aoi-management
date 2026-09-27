@@ -16891,11 +16891,14 @@
       "plcLabel": "Safety PLC",
       "plc": {
         "sim": "⚠ SIM (preflight dựa vào GIẢ LẬP)",
-        "mixed": "⚠ thật + SIM (một cấu hình SIM đủ làm preflight qua)",
+        "mixed": "⚠ thật + SIM/chưa ánh xạ (một cấu hình không đọc tag an toàn nào đủ làm preflight qua)",
         "real": "● PLC thật",
         "adapterOff": "○ tắt — không có nguồn an toàn",
         "noConfig": "○ không có cấu hình nào bật",
-        "readError": "⚠ không đọc được cấu hình"
+        "readError": "⚠ không đọc được cấu hình",
+        "simEmpty": "kịch bản rỗng — luôn OK",
+        "simScripted": "theo kịch bản — OK/BLOCKED theo kịch bản, không theo PLC",
+        "realUnmapped": "⚠ endpoint thật nhưng KHÔNG ánh xạ tag an toàn nào — preflight OK dựa trên việc không đọc gì"
       },
       "hiddenConfigs": "ngoài phạm vi của bạn",
       "ot": "Ghi OT",
@@ -16905,8 +16908,9 @@
         "unguarded": "⚠ preflight bị tắt — lệnh thật không được kiểm",
         "blocked": "lệnh thật bị chặn",
         "sim_basis": "⚠ được phép dựa trên kết quả GIẢ LẬP",
-        "sim_can_satisfy": "⚠ một cấu hình SIM đủ làm phép kiểm qua",
-        "real_basis": "kiểm với Safety PLC thật"
+        "sim_can_satisfy": "⚠ một cấu hình SIM hoặc chưa ánh xạ đủ làm phép kiểm qua",
+        "real_basis": "kiểm với Safety PLC thật",
+        "unmapped_basis": "⚠ được phép dù không đọc tag an toàn nào"
       },
       "on": "● bật",
       "off": "○ tắt",
@@ -20992,12 +20996,15 @@
       "live": "THẬT",
       "simulatedTip": "Lệnh trong lần chạy này chỉ được mô phỏng (dry-run) — không ghi gì xuống thiết bị ({{simulated}} bước).",
       "mixedTip": "{{simulated}} bước mô phỏng, {{live}} bước đã gửi xuống thiết bị.",
-      "liveTip": "{{live}} bước lệnh đã được gửi xuống thiết bị."
+      "liveTip": "{{live}} bước lệnh đã được gửi xuống thiết bị.",
+      "unconfirmed": "CHƯA XÁC NHẬN",
+      "unconfirmedTip": "{{unconfirmed}} bước lệnh lỗi hoặc quá hạn — có thể đã tới thiết bị."
     },
     "step": {
       "simulated": "mô phỏng",
       "live": "đã gửi",
-      "other": "không gửi"
+      "unconfirmed": "chưa xác nhận — có thể đã tới thiết bị",
+      "rejected": "không gửi"
     }
   }
 }

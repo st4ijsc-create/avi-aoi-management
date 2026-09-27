@@ -16911,11 +16911,14 @@
       "plcLabel": "Safety PLC",
       "plc": {
         "sim": "⚠ SIM (preflight relies on a SIMULATION)",
-        "mixed": "⚠ real + SIM (a SIM config alone can satisfy the preflight)",
+        "mixed": "⚠ real + SIM/unmapped (a config that reads no safety tag can satisfy the preflight)",
         "real": "● real PLC",
         "adapterOff": "○ off — no safety source",
         "noConfig": "○ no enabled config",
-        "readError": "⚠ configs could not be read"
+        "readError": "⚠ configs could not be read",
+        "simEmpty": "empty script — always OK",
+        "simScripted": "scripted — OK/BLOCKED follows a script, not a PLC",
+        "realUnmapped": "⚠ real endpoint but NO safety tag mapped — preflight OK is based on nothing read"
       },
       "hiddenConfigs": "outside your scope",
       "ot": "OT writes",
@@ -16925,8 +16928,9 @@
         "unguarded": "⚠ preflight disabled — real commands are not checked",
         "blocked": "real commands blocked",
         "sim_basis": "⚠ allowed on a SIMULATED reading",
-        "sim_can_satisfy": "⚠ a SIM config can satisfy the check",
-        "real_basis": "checked against the real safety PLC"
+        "sim_can_satisfy": "⚠ a SIM or unmapped config can satisfy the check",
+        "real_basis": "checked against the real safety PLC",
+        "unmapped_basis": "⚠ allowed although no safety tag is read"
       },
       "on": "● on",
       "off": "○ off",
@@ -21018,12 +21022,15 @@
       "live": "LIVE",
       "simulatedTip": "Commands in this run were simulated (dry-run) — nothing was written to equipment ({{simulated}} step(s)).",
       "mixedTip": "{{simulated}} step(s) simulated, {{live}} step(s) sent to equipment.",
-      "liveTip": "{{live}} command step(s) were sent to equipment."
+      "liveTip": "{{live}} command step(s) were sent to equipment.",
+      "unconfirmed": "UNCONFIRMED",
+      "unconfirmedTip": "{{unconfirmed}} command step(s) failed or timed out — they may have reached the device."
     },
     "step": {
       "simulated": "simulated",
       "live": "sent",
-      "other": "not sent"
+      "unconfirmed": "unconfirmed — may have reached the device",
+      "rejected": "not sent"
     }
   }
 }

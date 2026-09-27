@@ -973,8 +973,8 @@ export default function SafetyWorkforce() {
 // what the OT/robot safety preflight actually reads (real PLC / SIM / nothing) and what that
 // means for real commands. Never guesses while loading or on error.
 // ══════════════════════════════════════════════════════════════════════════════
-const RISKY_BASIS = new Set(["sim", "mixed", "read_error"]);
-const RISKY_VERDICT = new Set(["sim_basis", "sim_can_satisfy", "unguarded"]);
+const RISKY_BASIS = new Set(["sim", "real_unmapped", "mixed", "read_error"]);
+const RISKY_VERDICT = new Set(["sim_basis", "unmapped_basis", "sim_can_satisfy", "unguarded"]);
 
 function SafetySourcePanel({
   data, isLoading, isError, socketConnected,
@@ -986,15 +986,18 @@ function SafetySourcePanel({
 }) {
   const { t } = useTranslation();
   const title = <span className="font-semibold text-foreground">{t("safety.source.title", "Sources")}:</span>;
+  // Fix round 1 #7 — only a real query ERROR says "could not read"; a pending/disabled query
+  // with no data is neutral (never shown as an error, never as a known state).
   if (isError || !data) {
     return (
       <div
         data-testid="safety-source-panel"
+        data-loading={isLoading ? "true" : undefined}
         className={`flex items-center gap-2 rounded-md border px-3 py-2 text-xs text-muted-foreground ${isError ? "border-destructive/40 bg-destructive/5" : ""}`}
       >
         {title}
         <span>
-          {isError || !isLoading
+          {isError
             ? t("safety.source.error", "Could not read safety sources — treat them as unknown.")
             : t("safety.source.loading", "Checking safety sources…")}
         </span>
@@ -1005,8 +1008,15 @@ function SafetySourcePanel({
   const plc = data.safetyPlc;
   const plcText = (() => {
     switch (plc.basis) {
-      case "sim": return t("safety.source.plc.sim", "⚠ SIM (preflight relies on a SIMULATION)");
-      case "mixed": return t("safety.source.plc.mixed", "⚠ real + SIM (a SIM config alone can satisfy the preflight)");
+      case "sim": {
+        // Fix round 1 #4 — an empty script is always all-clear; a script follows a script, not a PLC.
+        const detail = plc.simScriptedConfigs > 0
+          ? t("safety.source.plc.simScripted", "scripted — OK/BLOCKED follows a script, not a PLC")
+          : t("safety.source.plc.simEmpty", "empty script — always OK");
+        return `${t("safety.source.plc.sim", "⚠ SIM (preflight relies on a SIMULATION)")} · ${detail}`;
+      }
+      case "real_unmapped": return t("safety.source.plc.realUnmapped", "⚠ real endpoint but NO safety tag mapped — preflight OK is based on nothing read");
+      case "mixed": return t("safety.source.plc.mixed", "⚠ real + SIM/unmapped (a config that reads no safety tag can satisfy the preflight)");
       case "real": return t("safety.source.plc.real", "● real PLC");
       case "adapter_off": return t("safety.source.plc.adapterOff", "○ off — no safety source");
       case "no_config": return t("safety.source.plc.noConfig", "○ no enabled config");
@@ -1019,7 +1029,8 @@ function SafetySourcePanel({
       case "unguarded": return `${t("safety.source.verdict.unguarded", "⚠ preflight disabled — real commands are not checked")} (${p.flag}=false)`;
       case "blocked": return `${t("safety.source.verdict.blocked", "real commands blocked")} (${p.refusalReason ?? "SAFETY_UNKNOWN"})`;
       case "sim_basis": return t("safety.source.verdict.sim_basis", "⚠ allowed on a SIMULATED reading");
-      case "sim_can_satisfy": return t("safety.source.verdict.sim_can_satisfy", "⚠ a SIM config can satisfy the check");
+      case "unmapped_basis": return t("safety.source.verdict.unmapped_basis", "⚠ allowed although no safety tag is read");
+      case "sim_can_satisfy": return t("safety.source.verdict.sim_can_satisfy", "⚠ a SIM or unmapped config can satisfy the check");
       case "real_basis": return t("safety.source.verdict.real_basis", "checked against the real safety PLC");
     }
   };
@@ -1051,7 +1062,13 @@ function SafetySourcePanel({
           {t("safety.source.plcLabel", "Safety PLC")} {plcText}
         </span>
         {plc.configs.map((c) => (
-          <Badge key={c.code} variant="outline" className="font-mono text-[10px]" title={`${c.backend} → ${c.effective}`}>
+          <Badge
+            key={c.code}
+            variant="outline"
+            data-effective={c.effective}
+            className={`font-mono text-[10px] ${c.effective === "real" ? "" : "border-amber-500/50 text-amber-700 dark:text-amber-400"}`}
+            title={`${c.backend} → ${c.effective}`}
+          >
             {c.code}
           </Badge>
         ))}

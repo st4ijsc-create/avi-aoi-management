@@ -49,16 +49,26 @@ describe("ProvenanceSummary — dải 'N/M hàng là dữ liệu demo'", () => {
 
 describe("DispatchModeBadge — ORC-13", () => {
   it("simulated ⇒ DRY-RUN; mixed ⇒ badge riêng; live ⇒ LIVE; none ⇒ không gì", () => {
-    const { rerender, container } = render(<DispatchModeBadge dispatch={{ mode: "simulated", simulated: 2, live: 0 }} />);
+    const { rerender, container } = render(<DispatchModeBadge dispatch={{ mode: "simulated", simulated: 2, live: 0, unconfirmed: 0 }} />);
     expect(screen.getByTestId("dispatch-mode")).toHaveAttribute("data-mode", "simulated");
     expect(screen.getByTestId("dispatch-mode")).toHaveTextContent(/DRY-RUN/);
-    rerender(<DispatchModeBadge dispatch={{ mode: "mixed", simulated: 1, live: 1 }} />);
+    rerender(<DispatchModeBadge dispatch={{ mode: "mixed", simulated: 1, live: 1, unconfirmed: 0 }} />);
     expect(screen.getByTestId("dispatch-mode")).toHaveAttribute("data-mode", "mixed");
-    rerender(<DispatchModeBadge dispatch={{ mode: "live", simulated: 0, live: 1 }} />);
+    rerender(<DispatchModeBadge dispatch={{ mode: "live", simulated: 0, live: 1, unconfirmed: 0 }} />);
     expect(screen.getByTestId("dispatch-mode")).toHaveTextContent(/LIVE/);
-    rerender(<DispatchModeBadge dispatch={{ mode: "none", simulated: 0, live: 0 }} />);
+    rerender(<DispatchModeBadge dispatch={{ mode: "none", simulated: 0, live: 0, unconfirmed: 0 }} />);
     expect(container).toBeEmptyDOMElement();
     rerender(<DispatchModeBadge dispatch={undefined} />);
     expect(container).toBeEmptyDOMElement();
+  });
+});
+
+describe("DispatchModeBadge — Fix round 1: run có bước failed/timeout", () => {
+  it("unconfirmed ⇒ badge riêng 'UNCONFIRMED', KHÔNG phải DRY-RUN", () => {
+    render(<DispatchModeBadge dispatch={{ mode: "unconfirmed", simulated: 0, live: 0, unconfirmed: 2 }} />);
+    const b = screen.getByTestId("dispatch-mode");
+    expect(b).toHaveAttribute("data-mode", "unconfirmed");
+    expect(b).toHaveTextContent(/UNCONFIRMED/);
+    expect(b).not.toHaveTextContent(/DRY-RUN/);
   });
 });

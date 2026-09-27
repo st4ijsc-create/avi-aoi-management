@@ -79,22 +79,33 @@ export function DispatchModeBadge({ dispatch, className }: { dispatch: RunDispat
   const { t } = useTranslation();
   if (!dispatch || dispatch.mode === "none") return null;
   const { mode, simulated, live } = dispatch;
+  // Fix round 1 — failed/timeout steps may have reached the device: never shown as dry-run.
+  const unconfirmed = dispatch.unconfirmed ?? 0;
   const text =
     mode === "simulated"
       ? t("provenance.dispatch.simulated", "DRY-RUN")
       : mode === "mixed"
         ? t("provenance.dispatch.mixed", "PARTLY SIMULATED")
-        : t("provenance.dispatch.live", "LIVE");
-  const tip =
+        : mode === "unconfirmed"
+          ? t("provenance.dispatch.unconfirmed", "UNCONFIRMED")
+          : t("provenance.dispatch.live", "LIVE");
+  const baseTip =
     mode === "simulated"
       ? t("provenance.dispatch.simulatedTip", "Commands in this run were simulated (dry-run) — nothing was written to equipment ({{simulated}} step(s)).", { simulated })
       : mode === "mixed"
         ? t("provenance.dispatch.mixedTip", "{{simulated}} step(s) simulated, {{live}} step(s) sent to equipment.", { simulated, live })
-        : t("provenance.dispatch.liveTip", "{{live}} command step(s) were sent to equipment.", { live });
+        : mode === "unconfirmed"
+          ? t("provenance.dispatch.unconfirmedTip", "{{unconfirmed}} command step(s) failed or timed out — they may have reached the device.", { unconfirmed })
+          : t("provenance.dispatch.liveTip", "{{live}} command step(s) were sent to equipment.", { live });
+  const tip = mode !== "unconfirmed" && unconfirmed > 0
+    ? `${baseTip} ${t("provenance.dispatch.unconfirmedTip", "{{unconfirmed}} command step(s) failed or timed out — they may have reached the device.", { unconfirmed })}`
+    : baseTip;
   const cls =
     mode === "live"
       ? "border-emerald-500/50 bg-emerald-500/15 text-emerald-700 dark:text-emerald-300"
-      : "border-violet-500/50 bg-violet-500/15 text-violet-700 dark:text-violet-300";
+      : mode === "unconfirmed"
+        ? "border-amber-500/50 bg-amber-500/15 text-amber-700 dark:text-amber-300"
+        : "border-violet-500/50 bg-violet-500/15 text-violet-700 dark:text-violet-300";
   return (
     <Badge
       variant="outline"

@@ -64,17 +64,34 @@ export function deriveProvenance(row: Record<string, unknown> | null | undefined
 
 // ── ORC-13 — chế độ gửi lệnh của run ───────────────────────────────────────────────
 
-export type StepDispatchKind = "simulated" | "live" | "other";
-export type RunDispatchMode = "simulated" | "live" | "mixed" | "none";
+/**
+ * Kết cục MỘT bước lệnh:
+ *   simulated   — dry-run, không ghi gì xuống thiết bị.
+ *   live        — thiết bị đã nhận/ack (sent · acked · acked_verified · acked_unverified · done).
+ *   unconfirmed — failed / timeout / trạng thái lạ: lệnh CÓ THỂ đã tới thiết bị (OT ghi `failed`/
+ *                 `timeout` SAU khi gọi writeTags; robot ghi `failed` sau khi gọi driver). Không bao
+ *                 giờ được coi là dry-run hay "không gửi" (Fix round 1, review Important #2).
+ *   rejected    — bị cổng từ chối TRƯỚC khi rời máy chủ: nhãn "không gửi" chỉ dành cho ô này.
+ */
+export type StepDispatchKind = "simulated" | "live" | "unconfirmed" | "rejected";
+export type RunDispatchMode = "simulated" | "live" | "mixed" | "unconfirmed" | "none";
 
 export interface RunDispatchSummary {
   mode: RunDispatchMode;
   simulated: number;
   live: number;
+  /** Bước failed/timeout — CÓ THỂ đã tới thiết bị. */
+  unconfirmed: number;
 }
 
-/** Trạng thái dispatcher nghĩa là lệnh ĐÃ rời máy chủ tới thiết bị thật. */
-const LIVE_STATUSES = new Set(["sent", "acked", "done"]);
+/** Trạng thái dispatcher nghĩa là thiết bị đã nhận lệnh (commandstatusenum + robot 'done'). */
+const LIVE_STATUSES = new Set(["sent", "acked", "acked_verified", "acked_unverified", "done"]);
+
+/**
+ * `routedTo` chỉ nói "mô phỏng" khi NEO ĐẦU chuỗi: `sim`, `simulator`, `simulated`, `simulation`,
+ * có thể kèm hậu tố sau `-`/`_`/`:`/`.`. `simatic-s7` KHÔNG khớp (Fix round 1, Minor #6).
+ */
+const SIM_ROUTE_RE = /^sim(ulator|ulated|ulation)?([-_:.]|$)/i;
 
 /**
  * Phân loại `resultJson` của MỘT bước run. `null` = bước không phải lệnh gửi qua dispatcher
@@ -88,23 +105,39 @@ export function classifyStepDispatch(result: unknown): StepDispatchKind | null {
   if (routedTo == null && !hasSimFlag) return null;
   const status = typeof result.status === "string" ? result.status : "";
   const detailSim = isObj(result.detail) && result.detail.simulated === true;
-  if (result.simulated === true || status === "simulated" || detailSim || (routedTo != null && /sim/i.test(routedTo))) {
+  if (result.simulated === true || status === "simulated" || detailSim || (routedTo != null && SIM_ROUTE_RE.test(routedTo))) {
     return "simulated";
   }
   if (LIVE_STATUSES.has(status)) return "live";
-  return "other";
+  if (status === "rejected") return "rejected";
+  return "unconfirmed";
 }
 
-/** Gộp các bước của MỘT run ⇒ DRY-RUN (simulated) / thật (live) / lẫn (mixed) / không có lệnh (none). */
+/**
+ * Gộp các bước của MỘT run. `unconfirmed` được tính là CÓ THỂ thật — không bao giờ làm run thành
+ * DRY-RUN: có mô phỏng + (thật hoặc chưa xác nhận) ⇒ mixed; có thật ⇒ live; chỉ chưa xác nhận ⇒
+ * unconfirmed; chỉ mô phỏng ⇒ simulated; không có lệnh ⇒ none.
+ */
 export function summarizeRunDispatch(stepResults: unknown[]): RunDispatchSummary {
   let simulated = 0;
   let live = 0;
+  let unconfirmed = 0;
   for (const r of stepResults) {
     const k = classifyStepDispatch(r);
     if (k === "simulated") simulated += 1;
     else if (k === "live") live += 1;
+    else if (k === "unconfirmed") unconfirmed += 1;
   }
+  const maybeLive = live + unconfirmed;
   const mode: RunDispatchMode =
-    simulated > 0 && live > 0 ? "mixed" : simulated > 0 ? "simulated" : live > 0 ? "live" : "none";
-  return { mode, simulated, live };
+    simulated > 0 && maybeLive > 0
+      ? "mixed"
+      : live > 0
+        ? "live"
+        : unconfirmed > 0
+          ? "unconfirmed"
+          : simulated > 0
+            ? "simulated"
+            : "none";
+  return { mode, simulated, live, unconfirmed };
 }

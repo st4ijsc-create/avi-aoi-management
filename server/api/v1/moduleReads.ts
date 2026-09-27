@@ -267,30 +267,16 @@ export function registerModuleReadRoutes(r: Router): void {
     wrap(async (_req, res) => {
       const { getDb } = await import("../../db/connection");
       const { deviceTypes } = await import("../../../drizzle/schema/equipmentStandards");
-      const { buildSeedTypes, buildTree } = await import("../../services/standards/deviceTypeRegistry");
+      const { buildSeedTypes, buildTree, nodeFromDeviceTypeRow } = await import("../../services/standards/deviceTypeRegistry");
       const seed = buildSeedTypes();
       const d = await getDb();
       let nodes: DeviceTypeNode[] = seed;
       if (d) {
         const rows = await d.select().from(deviceTypes);
         // SEED ∪ persisted rows — buildTree()/preferNode() pick published>draft + top SemVer.
-        nodes = [
-          ...seed,
-          ...rows.map((r): DeviceTypeNode => ({
-            typeKey: r.typeKey,
-            parentTypeKey: r.parentTypeKey ?? null,
-            version: r.version,
-            status: (r.status as DeviceTypeNode["status"]) ?? "draft",
-            label: r.label ?? undefined,
-            description: r.description ?? undefined,
-            attributesSchema: (r.attributesSchema ?? []) as DeviceTypeNode["attributesSchema"],
-            supportedCommands: (r.supportedCommands ?? []) as DeviceTypeNode["supportedCommands"],
-            supportedStates: (r.supportedStates ?? []) as DeviceTypeNode["supportedStates"],
-            extensionFields: (r.extensionFields ?? {}) as Record<string, unknown>,
-            mappedMachineTypes: (r.mappedMachineTypes ?? []) as string[],
-            adapterKind: r.adapterKind ?? undefined,
-          })),
-        ];
+        // doc 80 Đợt 1 Task 4 fix round 1 #5 — the SAME row converter as the tRPC router (keeps
+        // `origin`, so REST and tRPC report seed types identically).
+        nodes = [...seed, ...rows.map(nodeFromDeviceTypeRow)];
       }
       sendOk(res, { tree: buildTree(nodes), typeCount: new Set(nodes.map((n) => n.typeKey)).size });
     }),

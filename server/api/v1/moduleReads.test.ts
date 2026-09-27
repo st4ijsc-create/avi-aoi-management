@@ -35,6 +35,8 @@ const h = vi.hoisted(() => ({
   programProjectsRows: [{ id: 5, code: "PRJ-1" }],
   programDeploymentsRows: [{ id: 99, projectId: 5 }],
   anomalies: [{ id: 4, robotId: 1, status: "raised" }],
+  // doc 80 Đợt 1 Task 4 fix round 1 #5 — persisted device_types rows for /standards/device-types.
+  deviceTypeRows: [] as unknown[],
 }));
 
 // doc 81 Đợt 1B Task 8 — "MACHINE_KEY" là khoá plaintext `machines.apiKey`; resolvePrincipal nay tôn trọng
@@ -74,7 +76,7 @@ function makeDb() {
           programProjects: h.programProjectsRows,
           programDeployments: h.programDeploymentsRows,
           robotBehaviorAnomalies: h.anomalies,
-          deviceTypes: [],
+          deviceTypes: h.deviceTypeRows,
           alarmTaxonomy: [],
           deviceTypeChangeRequests: [],
           machines: [],
@@ -120,7 +122,11 @@ vi.mock("../../services/ecosystem/assetCockpitService", () => ({
   machineDetail: h.machineDetail,
   robotDetail: h.robotDetail,
 }));
-vi.mock("../../services/standards/deviceTypeRegistry", () => ({ buildSeedTypes: h.buildSeedTypes, buildTree: h.buildTree }));
+// fix round 1 #5 — keep the REAL nodeFromDeviceTypeRow (the converter the tRPC router uses).
+vi.mock("../../services/standards/deviceTypeRegistry", async (importOriginal) => {
+  const orig = await importOriginal<typeof import("../../services/standards/deviceTypeRegistry")>();
+  return { buildSeedTypes: h.buildSeedTypes, buildTree: h.buildTree, nodeFromDeviceTypeRow: orig.nodeFromDeviceTypeRow };
+});
 vi.mock("../../services/standards/alarmTaxonomy", () => ({
   SEED_ALARM_MAPPINGS: [{ vendor: "fanuc", nativeCode: "SRVO-050", standardCode: "COLLISION", severity: "high" }],
   listVendors: (e: Array<{ vendor: string }>) => [...new Set(e.map((x) => x.vendor))],
@@ -277,6 +283,24 @@ describe("U4a — reuse + shape per endpoint", () => {
     const body = await (await call("/api/v1/standards/device-types", "MASTER")).json();
     expect(h.buildTree).toHaveBeenCalledTimes(1);
     expect(body.data.typeCount).toBe(1);
+  });
+
+  it("fix round 1 #5 — device-types converts DB rows with the SAME nodeFromDeviceTypeRow as tRPC (origin kept)", async () => {
+    h.buildTree.mockClear();
+    h.deviceTypeRows = [{
+      id: 1, typeKey: "AOI", parentTypeKey: "Inspection", version: "1.0.0", status: "published", label: "AOI",
+      description: null, attributesSchema: [], supportedCommands: [], supportedStates: [], extensionFields: {},
+      mappedMachineTypes: ["AOI"], adapterKind: null, changelog: null, publishedAt: null, origin: "seed",
+      scope: null, corporateCode: null, factoryId: null, createdBy: null, createdAt: new Date(), updatedAt: new Date(),
+    }];
+    try {
+      const body = await (await call("/api/v1/standards/device-types", "MASTER")).json();
+      const passed = h.buildTree.mock.calls[0][0] as Array<{ typeKey: string; origin?: string }>;
+      expect(passed.find((n) => n.typeKey === "AOI")?.origin).toBe("seed");
+      expect((body.data.tree as Array<{ typeKey: string; origin?: string }>).find((n) => n.typeKey === "AOI")?.origin).toBe("seed");
+    } finally {
+      h.deviceTypeRows = [];
+    }
   });
 
   it("standards/alarm-taxonomy merges SEED + lists vendors", async () => {

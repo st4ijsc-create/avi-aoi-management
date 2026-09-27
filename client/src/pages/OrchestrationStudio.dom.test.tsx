@@ -79,7 +79,7 @@ vi.mock("@/lib/trpc", () => ({
 
 import OrchestrationStudio from "./OrchestrationStudio";
 
-function run(id: number, ref: string, contextJson: Record<string, unknown>, dispatch: { mode: string; simulated: number; live: number }) {
+function run(id: number, ref: string, contextJson: Record<string, unknown>, dispatch: { mode: string; simulated: number; live: number; unconfirmed: number }) {
   return {
     id, workflowId: 1, workflowRef: ref, status: "completed", paramsJson: {}, contextJson,
     currentStepId: null, edgeNodeId: null, startedBy: 1, startedAt: null, finishedAt: null, error: null,
@@ -87,11 +87,11 @@ function run(id: number, ref: string, contextJson: Record<string, unknown>, disp
   };
 }
 const RUNS = [
-  run(7, "Line-a-startup", { gate: "passed", seed: true }, { mode: "none", simulated: 0, live: 0 }),
-  run(8, "qt-1-order-production", { gate: "blocked", seed: true }, { mode: "none", simulated: 0, live: 0 }),
-  run(20, "line-b-changeover", {}, { mode: "simulated", simulated: 2, live: 0 }),
-  run(21, "line-c-startup", {}, { mode: "live", simulated: 0, live: 3 }),
-  run(22, "line-d-mixed", {}, { mode: "mixed", simulated: 1, live: 1 }),
+  run(7, "Line-a-startup", { gate: "passed", seed: true }, { mode: "none", simulated: 0, live: 0, unconfirmed: 0 }),
+  run(8, "qt-1-order-production", { gate: "blocked", seed: true }, { mode: "none", simulated: 0, live: 0, unconfirmed: 0 }),
+  run(20, "line-b-changeover", {}, { mode: "simulated", simulated: 2, live: 0, unconfirmed: 0 }),
+  run(21, "line-c-startup", {}, { mode: "live", simulated: 0, live: 3, unconfirmed: 0 }),
+  run(22, "line-d-mixed", {}, { mode: "mixed", simulated: 1, live: 1, unconfirmed: 0 }),
 ];
 const SEEDED_RUN_IDS = new Set([7, 8]);
 
@@ -159,5 +159,30 @@ describe("OrchestrationStudio — ORC-13: drawer bước hiện routedTo + mô p
     expect(Array.from(tags).map((t) => t.getAttribute("data-kind"))).toEqual(["simulated", "live"]);
     expect(tags[0].textContent).toMatch(/ot-dispatcher/);
     expect(tags[0].textContent).toMatch(/simulated/);
+  });
+});
+
+describe("OrchestrationStudio — Fix round 1: failed/timeout là 'chưa xác nhận', chỉ rejected là 'không gửi'", () => {
+  it("drawer: timeout ⇒ unconfirmed (có thể đã tới thiết bị), rejected ⇒ not sent", async () => {
+    setQueryOverride(
+      "orchestration.getRun",
+      makeQuery({
+        data: {
+          run: RUNS[2],
+          steps: [
+            { stepId: "s1", stepType: "command", status: "failed", attempt: 1, result: { routedTo: "ot-dispatcher", status: "timeout", accepted: false, simulated: false } },
+            { stepId: "s2", stepType: "command", status: "failed", attempt: 1, result: { routedTo: "ot-dispatcher", status: "rejected", accepted: false, simulated: false } },
+          ],
+        },
+      }),
+    );
+    render(<OrchestrationStudio />);
+    const { default: userEvent } = await import("@testing-library/user-event");
+    await userEvent.setup().click(screen.getByText(/run #20 ·/));
+    const tags = Array.from(rowOf(20).querySelectorAll('[data-testid="step-dispatch"]'));
+    expect(tags.map((t) => t.getAttribute("data-kind"))).toEqual(["unconfirmed", "rejected"]);
+    expect(tags[0].textContent).toMatch(/unconfirmed — may have reached the device/);
+    expect(tags[0].textContent).not.toMatch(/not sent/);
+    expect(tags[1].textContent).toMatch(/not sent/);
   });
 });
