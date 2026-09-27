@@ -97,11 +97,15 @@ function rule(id: number, over: Record<string, unknown>) {
 // ORACLE: token khai tay theo fixture — không suy bằng hàm nào của trang.
 const PENDING = rule(41, { versionToken: "v1:token-hang-41-dang-hien-thi" });
 const APPROVED = rule(42, { approvedBy: 9, approvedAt: new Date(), versionToken: "v1:token-hang-42-da-duyet" });
+// Task 11 — nhánh "đang BẬT" của điều kiện OR (`approvedBy != null || enabled`) độc lập với nhánh
+// "đã DUYỆT": approvedBy null nhưng enabled=true (hàng seed/ghi thẳng — không đại diện luồng
+// approve→enable bình thường, nhưng điều kiện cảnh báo ở component đọc ĐÚNG NHƯ VIẾT, cả hai vế).
+const ENABLED_ONLY = rule(43, { approvedBy: null, enabled: true, versionToken: "v1:token-hang-43-dang-bat" });
 
 beforeEach(() => {
   for (const k of Object.keys(mutations)) delete mutations[k];
   invalidated.length = 0;
-  queryData["interlock.list"] = [PENDING, APPROVED];
+  queryData["interlock.list"] = [PENDING, APPROVED, ENABLED_ONLY];
   queryData["interlock.events"] = [];
 });
 afterEach(() => cleanup());
@@ -130,5 +134,39 @@ describe("InterlockRuleManagement — Task 9: approve/enable gửi token của h
     invalidated.length = 0;
     mutations["interlock.enable"].opts.onError?.({ data: { code: "CONFLICT" } });
     expect(invalidated).toContain("interlock.list");
+  });
+});
+
+describe("InterlockRuleManagement — Task 11: cảnh báo TRƯỚC khi lưu rule đã duyệt/đang bật", () => {
+  const clickEdit = (rowName: string) =>
+    fireEvent.click(within(rowOf(rowName)).getByRole("button", { name: /interlockRules\.editRule|Sửa quy tắc|Edit rule/i }));
+
+  it("Sửa rule ĐÃ DUYỆT (rule-42) ⇒ dialog hiện cảnh báo trước khi Lưu", () => {
+    render(<InterlockRuleManagement />);
+    clickEdit("rule-42");
+    expect(screen.getByTestId("edit-approved-warning")).toBeInTheDocument();
+  });
+
+  it("Sửa rule ĐANG BẬT nhưng chưa duyệt (rule-43) ⇒ dialog vẫn hiện cảnh báo (nhánh OR thứ hai)", () => {
+    render(<InterlockRuleManagement />);
+    clickEdit("rule-43");
+    expect(screen.getByTestId("edit-approved-warning")).toBeInTheDocument();
+  });
+
+  it("Sửa rule CHƯA DUYỆT + CHƯA BẬT (rule-41) ⇒ KHÔNG hiện cảnh báo", () => {
+    render(<InterlockRuleManagement />);
+    clickEdit("rule-41");
+    expect(screen.queryByTestId("edit-approved-warning")).not.toBeInTheDocument();
+  });
+
+  it("Tạo rule MỚI (không phải sửa) ⇒ KHÔNG hiện cảnh báo dù dialog Sửa vừa mới đóng ở trạng thái cảnh báo", () => {
+    render(<InterlockRuleManagement />);
+    // Đóng dialog Sửa trước (Escape — Radix Dialog gọi onOpenChange(false), khớp cách người
+    // dùng thật đóng dialog): nút "Thêm quy tắc" ở NGOÀI dialog bị `aria-hidden` khi modal mở.
+    clickEdit("rule-42");
+    expect(screen.getByTestId("edit-approved-warning")).toBeInTheDocument();
+    fireEvent.keyDown(document, { key: "Escape", code: "Escape" });
+    fireEvent.click(screen.getByRole("button", { name: /interlockRules\.newRule|Thêm quy tắc|New rule/i }));
+    expect(screen.queryByTestId("edit-approved-warning")).not.toBeInTheDocument();
   });
 });

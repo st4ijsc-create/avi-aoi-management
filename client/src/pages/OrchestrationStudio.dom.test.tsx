@@ -49,6 +49,11 @@ function makeQuery(overrides: Partial<QueryResult> = {}): QueryResult {
 const queryOverrides: Record<string, () => QueryResult> = {};
 // doc 80 Đợt 1 Task 9 — một spy mutate CỐ ĐỊNH theo thủ tục (đọc được đối số người dùng gửi).
 const mutateSpies: Record<string, ReturnType<typeof vi.fn>> = {};
+// doc 80 Đợt 1 Task 11 — bắt `onSuccess`/`onError` của MỖI mutation (khuôn
+// InterlockRuleManagement.dom.test.tsx) để gọi lại thủ công, kiểm toast render bằng t()
+// thay vì message thô của server.
+interface MutationOpts { onSuccess?: (...a: unknown[]) => void; onError?: (e: unknown) => void }
+const mutationOpts: Record<string, MutationOpts> = {};
 function setQueryOverride(key: string, result: QueryResult) {
   queryOverrides[key] = () => result;
 }
@@ -69,7 +74,10 @@ vi.mock("@/lib/trpc", () => ({
               const key = `${routerName}.${procName}`;
               return {
                 useQuery: () => (queryOverrides[key] ? queryOverrides[key]() : makeQuery()),
-                useMutation: () => ({ mutate: (mutateSpies[key] ??= vi.fn()), mutateAsync: vi.fn(), isPending: false }),
+                useMutation: (opts: MutationOpts = {}) => {
+                  mutationOpts[key] = opts;
+                  return { mutate: (mutateSpies[key] ??= vi.fn()), mutateAsync: vi.fn(), isPending: false };
+                },
               };
             },
           },
@@ -100,6 +108,7 @@ const SEEDED_RUN_IDS = new Set([7, 8]);
 beforeEach(() => {
   for (const k of Object.keys(queryOverrides)) delete queryOverrides[k];
   for (const k of Object.keys(mutateSpies)) delete mutateSpies[k];
+  for (const k of Object.keys(mutationOpts)) delete mutationOpts[k];
   setQueryOverride("orchestration.listRuns", makeQuery({ data: RUNS }));
 });
 afterEach(() => cleanup());
@@ -229,5 +238,41 @@ describe("OrchestrationStudio — Task 9: duyệt/từ chối gửi GATE đang h
     const { default: userEvent } = await import("@testing-library/user-event");
     await userEvent.setup().click(within(rowOf(30)).getByRole("button", { name: /^(Approve|studio\.approve)$/i }));
     expect(mutateSpies["orchestration.resumeRun"]).toHaveBeenCalledWith({ runId: 30, approved: true, note: undefined, expectedStepId: "g-list" });
+  });
+});
+
+describe("OrchestrationStudio — Task 11: toast từ chối 'draft' dùng t() thay message thô của server", () => {
+  it("startRun ok:false + workflowStatus (ORC-06 draft/archived) ⇒ toast dịch, KHÔNG hiện nguyên văn message server", async () => {
+    const { toast } = await import("sonner");
+    render(<OrchestrationStudio />);
+    const rawServerMessage = 'Workflow "line-a-startup" is draft — deploy it before running.';
+    mutationOpts["orchestration.startRun"]!.onSuccess?.({
+      ok: false,
+      enabled: true,
+      runId: undefined,
+      workflowStatus: "draft",
+      message: rawServerMessage,
+    });
+    expect(toast.error).toHaveBeenCalledTimes(1);
+    const shown = (toast.error as ReturnType<typeof vi.fn>).mock.calls[0]![0] as string;
+    // KHÔNG được là message thô của server (mục tiêu của Task 11).
+    expect(shown).not.toBe(rawServerMessage);
+    // Phải là bản dịch qua t() — hoặc khoá i18n thô (môi trường test chưa nạp resource) hoặc
+    // default value đã nội suy {{status}} → chứa "draft" (cùng quy ước regex nới lỏng đã dùng
+    // ở các ca Task 9 phía trên: `/^(Approve|studio\.approve)$/i`).
+    expect(shown).toMatch(/studio\.runNotDeployed|draft/i);
+  });
+
+  it("startRun ok:false KHÔNG có workflowStatus (lỗi khác, vd not found) ⇒ vẫn hiện message của server (hành vi CŨ giữ nguyên)", async () => {
+    const { toast } = await import("sonner");
+    render(<OrchestrationStudio />);
+    const rawServerMessage = 'Workflow "line-a-startup" not found.';
+    mutationOpts["orchestration.startRun"]!.onSuccess?.({
+      ok: false,
+      enabled: true,
+      runId: undefined,
+      message: rawServerMessage,
+    });
+    expect(toast.error).toHaveBeenCalledWith(rawServerMessage);
   });
 });

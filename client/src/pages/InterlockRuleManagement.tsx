@@ -152,6 +152,11 @@ export default function InterlockRuleManagement() {
   // re-parsing — a rename can never alter the command payload. See
   // client/src/lib/interlockCommandValue.ts (resolveCommandValueForSubmit).
   const [initialCommandValue, setInitialCommandValue] = useState<{ raw: unknown; text: string }>({ raw: null, text: "" });
+  // doc 80 Đợt 1 Task 11 — rule ĐANG SỬA đã duyệt (approvedBy != null) hoặc ĐANG BẬT (enabled)
+  // khi dialog được mở: server (ILK-01, interlockRouter.ts `update`) reset approvedBy/approvedAt
+  // và ép enabled=false trong CÙNG transaction khi Lưu — cảnh báo TRƯỚC khi người dùng bấm Lưu,
+  // không phải sau khi đã mất hiệu lực duyệt.
+  const [editWillResetApproval, setEditWillResetApproval] = useState(false);
 
   const createRule = trpc.interlock.create.useMutation({
     onSuccess: () => { toast.success(t("interlockRules.toastCreated")); setRuleOpen(false); invalidateRules(); },
@@ -207,11 +212,14 @@ export default function InterlockRuleManagement() {
   const openCreate = () => {
     setForm(emptyRule);
     setInitialCommandValue({ raw: null, text: "" });
+    setEditWillResetApproval(false);
     setRuleOpen(true);
   };
   const openEdit = (r: any) => {
     const initialCommandText = serializeCommandValueForEdit(r.commandValue);
     setInitialCommandValue({ raw: r.commandValue ?? null, text: initialCommandText });
+    // Task 11 — cùng điều kiện server dùng ở ILK-01 (`existing.approvedBy != null || existing.enabled === true`).
+    setEditWillResetApproval(r.approvedBy != null || r.enabled === true);
     setForm({
       id: r.id,
       name: r.name ?? "",
@@ -509,7 +517,7 @@ export default function InterlockRuleManagement() {
                                 }}
                               />
                             )}
-                            <Button size="sm" variant="outline" disabled={!canEdit} title={editReason} onClick={() => openEdit(r)}>
+                            <Button size="sm" variant="outline" disabled={!canEdit} title={editReason} aria-label={t("interlockRules.editRule")} onClick={() => openEdit(r)}>
                               <Pencil className="h-4 w-4" />
                             </Button>
                             {/* doc 44 G5.4 / ILK-03 (doc 80) — hard-delete rule an toàn: rủi ro
@@ -631,6 +639,18 @@ export default function InterlockRuleManagement() {
             <DialogTitle>{form.id != null ? t("interlockRules.editRule") : t("interlockRules.newRule")}</DialogTitle>
             <DialogDescription>{t("interlockRules.ruleDialogDesc")}</DialogDescription>
           </DialogHeader>
+          {/* doc 80 Đợt 1 Task 11 — cảnh báo TRƯỚC khi lưu một rule đã duyệt/đang bật: Lưu sẽ
+              reset approvedBy/approvedAt=null + enabled=false (server ILK-01), không phải kết
+              quả bất ngờ SAU khi bấm Lưu. */}
+          {form.id != null && editWillResetApproval && (
+            <div
+              data-testid="edit-approved-warning"
+              className="flex items-start gap-2 rounded-md border border-amber-500/50 bg-amber-500/10 p-3 text-sm text-amber-700 dark:text-amber-400"
+            >
+              <ShieldAlert className="h-4 w-4 mt-0.5 shrink-0" />
+              <span>{t("interlockRules.editApprovedWarning", "Rule này đã DUYỆT hoặc đang BẬT — Lưu sẽ tắt rule và cần duyệt lại.")}</span>
+            </div>
+          )}
           <div className="space-y-3">
             <div>
               <Label>{t("interlockRules.name")}</Label>

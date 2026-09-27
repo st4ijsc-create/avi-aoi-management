@@ -206,6 +206,12 @@ export interface StartRunResult {
   status?: OrchestrationRun["status"];
   message?: string;
   errors?: ValidationError[];
+  /**
+   * Doc 80 Đợt 1 Task 11 — set ONLY when refused because the WORKFLOW (not the run) is not
+   * `active` (draft/archived — ORC-06). The Studio client uses this to render a translated
+   * (`t()`) toast instead of showing `message` (English, server-authored) verbatim.
+   */
+  workflowStatus?: string;
 }
 
 export interface RunView {
@@ -1333,6 +1339,7 @@ export async function startRun(
       return {
         ok: false,
         enabled: true,
+        workflowStatus: wf.status,
         message: `Workflow "${workflowRef}" is ${wf.status} — deploy it before running.`,
       };
     }

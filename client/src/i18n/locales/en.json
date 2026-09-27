@@ -11833,7 +11833,8 @@
     "continueRunDesc": "The run resumes from where it was interrupted and may send real commands to machines. Completed steps are skipped.",
     "continueRunConfirm": "Continue run",
     "rollbackImpact": "Requires an OTP code and a reason; the reason is recorded in the audit log.",
-    "runFail": "Could not start the run"
+    "runFail": "Could not start the run",
+    "runNotDeployed": "This workflow is currently \"{{status}}\" — Deploy it first, then run it."
   },
   "aiHub": {
     "subtitle": "AI-powered features for inspection intelligence",
@@ -13618,6 +13619,7 @@
     "newRule": "New rule",
     "editRule": "Edit rule",
     "ruleDialogDesc": "A new rule is always DISABLED + UNAPPROVED until an admin approves and enables it.",
+    "editApprovedWarning": "This rule is APPROVED or currently ENABLED — Saving will disable it and it will need approval again.",
     "tabRules": "Rules",
     "tabEvents": "Events",
     "rules": "Rules",

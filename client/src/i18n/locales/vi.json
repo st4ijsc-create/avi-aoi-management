@@ -11813,7 +11813,8 @@
     "continueRunDesc": "Lượt chạy sẽ đi tiếp từ điểm bị ngắt và có thể gửi lệnh thật tới máy. Các bước đã hoàn tất được bỏ qua.",
     "continueRunConfirm": "Tiếp tục chạy",
     "rollbackImpact": "Cần mã OTP và lý do; lý do được ghi vào nhật ký kiểm toán.",
-    "runFail": "Không bắt đầu được lượt chạy"
+    "runFail": "Không bắt đầu được lượt chạy",
+    "runNotDeployed": "Đây là workflow ở dạng \"{{status}}\" — hãy Triển khai (Deploy) trước, rồi mới chạy được."
   },
   "aiHub": {
     "subtitle": "Các tính năng AI cho trí tuệ kiểm tra",
@@ -13598,6 +13599,7 @@
     "newRule": "Thêm quy tắc",
     "editRule": "Sửa quy tắc",
     "ruleDialogDesc": "Quy tắc mới luôn ở trạng thái TẮT + CHƯA DUYỆT cho tới khi admin duyệt và bật.",
+    "editApprovedWarning": "Rule này đã DUYỆT hoặc đang BẬT — Lưu sẽ tắt rule và cần duyệt lại.",
     "tabRules": "Quy tắc",
     "tabEvents": "Sự kiện",
     "rules": "Quy tắc",

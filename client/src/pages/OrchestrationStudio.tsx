@@ -1173,8 +1173,21 @@ export default function OrchestrationStudio() {
   const startRunM = trpc.orchestration.startRun.useMutation({
     onSuccess: (r) => {
       // doc 80 ORC-06 — server từ chối run workflow chưa deploy (bản nháp) bằng ok:false + message.
-      if (r && !r.ok && r.runId == null) toast.error(r.message ?? t("studio.runFail", "Could not start the run"));
-      else toast.success(t("studio.runStarted", "Run started (run #{{id}})", { id: r?.runId ?? "?" }));
+      if (r && !r.ok && r.runId == null) {
+        // doc 80 Đợt 1 Task 11 — khi lý do là TRẠNG THÁI WORKFLOW (draft/archived), dùng t()
+        // thay vì hiện nguyên văn `message` tiếng Anh của server.
+        if (r.workflowStatus) {
+          toast.error(
+            t(
+              "studio.runNotDeployed",
+              'This workflow is currently "{{status}}" — Deploy it first, then run it.',
+              { status: r.workflowStatus },
+            ),
+          );
+        } else {
+          toast.error(r.message ?? t("studio.runFail", "Could not start the run"));
+        }
+      } else toast.success(t("studio.runStarted", "Run started (run #{{id}})", { id: r?.runId ?? "?" }));
       void runsQ.refetch();
     },
     onError: (e) => toastTrpcError(e),

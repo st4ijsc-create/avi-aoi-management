@@ -11616,7 +11616,8 @@
     "continueRunDesc": "运行将从中断处继续，并可能向设备发送真实指令。已完成的步骤将被跳过。",
     "continueRunConfirm": "继续运行",
     "rollbackImpact": "需要 OTP 验证码和原因；原因将记录在审计日志中。",
-    "runFail": "无法启动运行"
+    "runFail": "无法启动运行",
+    "runNotDeployed": "此工作流目前处于“{{status}}”状态 — 请先部署（Deploy），然后才能运行。"
   },
   "aiHub": {
     "subtitle": "AI驱动的检测智能功能",
@@ -13400,6 +13401,7 @@
     "newRule": "新建规则",
     "editRule": "编辑规则",
     "ruleDialogDesc": "新规则在管理员审批并启用前始终为停用 + 未审批状态。",
+    "editApprovedWarning": "该规则已批准或当前已启用 — 保存后将停用该规则，需要重新审批。",
     "tabRules": "规则",
     "tabEvents": "事件",
     "rules": "规则",
