@@ -31,7 +31,19 @@ import { and, eq } from "drizzle-orm";
 import { getDb } from "../../../db/connection";
 import { deviceAdapters, deviceTags } from "../../../../drizzle/schema";
 import { dispatch, type DispatchInput } from "../../ot/commandDispatcher";
-import type { OtWriteTarget } from "../../ot/otActionBinding"; // final wave (item 7): propose-time binding
+
+/**
+ * doc 81 Đợt 1B final wave (item 7) — the OT command a vision tool dispatches, built by ONE
+ * function per tool that BOTH execute() and otWriteBinding() call (same pattern as
+ * machineControl.OtPlan). Mutable `writes` so it feeds runDispatch/DispatchInput directly; it is
+ * assignable to otActionBinding.OtWriteTarget (readonly) for the propose-time binding.
+ */
+interface VisionPlan {
+  machineId: number;
+  adapterId: number;
+  commandType: string;
+  writes: Array<{ tagKey: string; value: unknown }>;
+}
 import {
   kiemCongAi,
   siriengChoAi,
@@ -217,7 +229,7 @@ const REJECT_DIVERT_DEFAULT_TAG = "cmd_reject_divert";
  * otWriteBinding() (propose-time HITL binding), so the hash stored on the pending action and the
  * command the dispatcher verifies cannot drift (same pattern as machineControl.ts).
  */
-async function planRejectDivert(p: RejectDivertParams): Promise<OtWriteTarget & { machineId: number }> {
+async function planRejectDivert(p: RejectDivertParams): Promise<VisionPlan> {
   const tagKey = p.tagKey ?? REJECT_DIVERT_DEFAULT_TAG;
   const adapterId = await adapterIdForMachine(p.machineId);
   return { adapterId, machineId: p.machineId, commandType: "reject_divert", writes: [{ tagKey, value: p.lane ?? true }] };
@@ -284,7 +296,7 @@ const SPI_OFFSET_X_TAG = "printer_offset_x";
 const SPI_OFFSET_Y_TAG = "printer_offset_y";
 
 /** final wave (item 7) — see planRejectDivert: one plan for execute() and otWriteBinding(). */
-async function planSpiPrinterOffset(p: SpiPrinterOffsetParams): Promise<OtWriteTarget & { machineId: number }> {
+async function planSpiPrinterOffset(p: SpiPrinterOffsetParams): Promise<VisionPlan> {
   const tagKeyX = p.tagKeyX ?? SPI_OFFSET_X_TAG;
   const tagKeyY = p.tagKeyY ?? SPI_OFFSET_Y_TAG;
   const adapterId = await adapterIdForMachine(p.machineId);
