@@ -7,7 +7,13 @@
  *   1. idempotency (per key, terminal job returned as-is — no blind re-run),
  *   2. HITL: triggerKind='hitl' requires a confirmedBy user AND — when an actionId is
  *      supplied — a re-verified ai_pending_actions row (confirmed/executed + owner match),
- *      symmetric to the OT commandDispatcher (doc 25 T1); fail-closed on any mismatch,
+ *      symmetric to the OT commandDispatcher (doc 25 T1); fail-closed on any mismatch.
+ *      doc 81 Đợt 1B final wave (item 2): that entry check is READ-ONLY and only guards the
+ *      dry-run path; the REAL path (step 5) re-verifies under SELECT … FOR UPDATE that the row
+ *      is 'confirmed', unexpired, owned by the confirmer AND bound to THIS robot/jobType/params
+ *      (otActionBinding.robotPayloadHash), then consumes it confirmed→executed by CAS in the
+ *      same transaction as the 'running' ledger row. Without an actionId step 2 is the whole
+ *      gate ('manual' keeps ruling R11: confirmedBy === requestedBy),
  *   3. active + connected driver,
  *   4. MODE GATE: ROBOT_CONTROL_ENABLED!=='true' → record status 'simulated',
  *      never call driver.runJob (default is dry-run),
@@ -30,7 +36,8 @@
 import { and, eq, lt } from "drizzle-orm";
 import { pgTable, serial, integer, varchar, timestamp, text } from "drizzle-orm/pg-core";
 import { getDb } from "../../db/connection";
-import { robotJobs, robots, aiPendingActions } from "../../../drizzle/schema";
+import { robotJobs, robots, aiPendingActions, type AiPendingAction } from "../../../drizzle/schema";
+import { readOtPayloadHash, robotPayloadHash } from "../ot/otActionBinding";
 import { getActiveRobot } from "./robotManager";
 import type { RobotJobSpec, RobotDriver } from "./robotDriver";
 import {
@@ -190,14 +197,20 @@ export class RobotLedgerWriteError extends Error {
  * missing DB an error too — used for the pre-motion row; the non-motion branches keep the
  * old "no DB ⇒ no row" behaviour (nothing moves on those branches).
  */
+type Db = NonNullable<Awaited<ReturnType<typeof getDb>>>;
+/** A drizzle handle or the `tx` of `db.transaction(...)` — same query API (idiom of controlAuditService). */
+type DbOrTx = Db | Parameters<Parameters<Db["transaction"]>[0]>[0];
+
 async function record(
   input: RobotDispatchInput,
   status: RobotDispatchResult["status"] | "running",
   result?: Record<string, unknown>,
   errorText?: string,
-  opts: { requireDb?: boolean } = {},
+  opts: { requireDb?: boolean; db?: DbOrTx } = {},
 ): Promise<number | undefined> {
-  const db = await getDb();
+  // final wave (item 2) — `opts.db` lets the real path write its 'running' row inside the same
+  // transaction that consumes the HITL action (a failed insert rolls the consume back).
+  const db = opts.db ?? (await getDb());
   if (!db) {
     if (opts.requireDb) throw new RobotLedgerWriteError("robot ledger unavailable (no DB)");
     return undefined;
@@ -654,6 +667,93 @@ async function dispatchRobotJobCore(input: RobotDispatchInput): Promise<RobotDis
   }
 }
 
+// ─── doc 81 Đợt 1B final wave (item 2) — HITL binding for robot jobs ─────────────────
+
+type RobotBindingVerdict =
+  | { ok: true; owner: number }
+  | { ok: false; reason: "NOT_CONFIRMED" | "ACTION_BINDING_MISMATCH"; detail: string };
+
+/**
+ * PURE — is `pending` a valid authorisation for EXACTLY this robot job? Mirrors the OT
+ * dispatcher's verifyActionBinding: status === 'confirmed' (an 'executed' row is spent), not
+ * expired, owned by the confirmer, and carrying the canonical hash of THIS robotId/jobType/params
+ * (otActionBinding.robotPayloadHash — the same function the producers use). Used under
+ * SELECT … FOR UPDATE right before the row is consumed.
+ */
+export function verifyRobotActionBinding(pending: AiPendingAction | undefined, input: RobotDispatchInput): RobotBindingVerdict {
+  if (!pending) return { ok: false, reason: "NOT_CONFIRMED", detail: "HITL action not found" };
+  if (pending.status !== "confirmed") {
+    return {
+      ok: false,
+      reason: "NOT_CONFIRMED",
+      detail: `HITL action status is '${pending.status}' — only a 'confirmed' action authorises a robot job, exactly once`,
+    };
+  }
+  if (new Date(pending.expiresAt).getTime() <= Date.now()) {
+    return { ok: false, reason: "NOT_CONFIRMED", detail: "HITL action expired" };
+  }
+  if (input.confirmedBy !== undefined && pending.userId !== input.confirmedBy) {
+    return { ok: false, reason: "NOT_CONFIRMED", detail: "HITL action owner mismatch" };
+  }
+  const stored = readOtPayloadHash(pending.previewJson);
+  if (!stored) {
+    return { ok: false, reason: "ACTION_BINDING_MISMATCH", detail: "HITL action carries no robot payload binding" };
+  }
+  const expected = robotPayloadHash({ robotId: input.robotId, jobType: input.job.jobType, params: input.job.params ?? null });
+  if (stored !== expected) {
+    return { ok: false, reason: "ACTION_BINDING_MISMATCH", detail: "HITL action was confirmed for a different robot/jobType/params" };
+  }
+  return { ok: true, owner: pending.userId };
+}
+
+type RobotReservation = { ok: true; jobId: number } | { ok: false; result: RobotDispatchResult };
+
+/**
+ * Real-path reservation, ONE transaction, committed BEFORE the driver is called (the robot twin
+ * of commandDispatcher.reserveRealWrite):
+ *   • with an actionId ('hitl' or 'manual'): SELECT … FOR UPDATE the row, verifyRobotActionBinding,
+ *     CAS confirmed→executed (0 rows ⇒ consumed concurrently ⇒ NOT_CONFIRMED), then the 'running'
+ *     ledger row — all in the same tx, so a failed insert un-consumes the action;
+ *   • without an actionId: just the 'running' row. Step 2 is the whole gate then (confirmedBy
+ *     required; 'manual' additionally confirmedBy === requestedBy, ruling R11). ⚠ The 'hitl'
+ *     label without an actionId keeps Task 5's contract on purpose (its vendor/policy tests pin
+ *     it); it is NOT bound to anything — reported CÒN MỞ in the final-wave report, not changed here.
+ * Any throw ⇒ LEDGER_WRITE_FAILED and nothing is sent (the tx rolled back).
+ */
+async function reserveRobotJob(input: RobotDispatchInput): Promise<RobotReservation> {
+  const rejected = (jobId: number | undefined, error: string): RobotReservation => ({
+    ok: false,
+    result: { ok: false, status: "rejected", jobId, error },
+  });
+  if (!input.actionId) {
+    const jobId = (await record(input, "running", undefined, undefined, { requireDb: true })) as number;
+    return { ok: true, jobId };
+  }
+  const actionId = input.actionId;
+  const db = await getDb();
+  if (!db) throw new RobotLedgerWriteError("robot ledger unavailable (no DB) at reservation");
+  return await db.transaction(async (tx): Promise<RobotReservation> => {
+    const [pending] = await tx.select().from(aiPendingActions).where(eq(aiPendingActions.id, actionId)).for("update");
+    let verdict: RobotBindingVerdict = verifyRobotActionBinding(pending, input);
+    if (verdict.ok) {
+      const consumed = await tx
+        .update(aiPendingActions)
+        .set({ status: "executed", executedAt: new Date() })
+        .where(and(eq(aiPendingActions.id, actionId), eq(aiPendingActions.status, "confirmed")))
+        .returning({ id: aiPendingActions.id });
+      if (consumed.length !== 1) {
+        verdict = { ok: false, reason: "NOT_CONFIRMED", detail: "HITL action was consumed concurrently" };
+      }
+    }
+    if (!verdict.ok) {
+      const jobId = await record(input, "rejected", { reasonCode: verdict.reason }, `${verdict.reason}: ${verdict.detail}`, { requireDb: true, db: tx });
+      return rejected(jobId, verdict.reason);
+    }
+    const jobId = (await record(input, "running", undefined, undefined, { requireDb: true, db: tx })) as number;
+    return { ok: true, jobId };
+  });
+}
+
 /**
  * Step 5 proper — the real run under timeout (see the comment block above the slot claim in
  * dispatchRobotJobCore). Split out so the R14 slot is released by ONE try/finally whatever path
@@ -667,10 +767,12 @@ async function runRealJob(
 ): Promise<RobotDispatchResult> {
   let jobId: number;
   try {
-    jobId = (await record(input, "running", undefined, undefined, { requireDb: true })) as number;
+    const reserved = await reserveRobotJob(input);
+    if (!reserved.ok) return reserved.result;
+    jobId = reserved.jobId;
   } catch (err) {
     const msg = (err as Error)?.message ?? String(err);
-    console.error(`[Robot] pre-motion ledger write failed — nothing sent to robot ${input.robotId}:`, msg);
+    console.error(`[Robot] pre-motion ledger write / HITL reservation failed — nothing sent to robot ${input.robotId}:`, msg);
     return { ok: false, status: "rejected", error: "LEDGER_WRITE_FAILED" };
   }
 

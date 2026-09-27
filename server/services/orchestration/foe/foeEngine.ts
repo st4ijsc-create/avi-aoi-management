@@ -61,7 +61,8 @@ import {
   type EquipmentCommandResult,
 } from "../../equipment/equipmentAdapter";
 import { asPackmlState } from "../../equipment/packml";
-import { otPayloadHash, withOtPayloadHash } from "../../ot/otActionBinding"; // doc 81 Đợt 1B Task 6
+import { otPayloadHash, robotPayloadHash, withOtPayloadHash } from "../../ot/otActionBinding"; // doc 81 Đợt 1B Task 6 + final wave (robot)
+import { toRobotJob } from "../../equipment/robotJobMapping"; // final wave (item 2) — same mapping the robot route uses
 
 // ── Flag ────────────────────────────────────────────────────────────────────────
 
@@ -510,18 +511,27 @@ export async function ensureOrchestrationAction(
       .limit(1);
     if (existing) return; // resume/retry → tái dùng bản ghi cũ
     const isOt = cmd != null && cmd.adapterId != null && cmd.robotId == null;
-    const previewJson = isOt
-      ? withOtPayloadHash(
-          null,
-          otPayloadHash({
-            tool: FOE_ACTION_TOOL,
-            adapterId: cmd.adapterId!,
-            machineId: cmd.machineId ?? null,
-            commandType: cmd.name,
-            writes: cmd.writes ?? [],
-          }),
-        )
-      : undefined;
+    // doc 81 Đợt 1B final wave (item 2, ruling R4) — a ROBOT command gets the same treatment as
+    // an OT one: a 'confirmed' row bound (robotPayloadHash) to EXACTLY the job the robot route
+    // will dispatch (toRobotJob — the same mapping RobotEquipmentAdapter.sendCommand uses), so the
+    // robot dispatcher can verify + consume it once. It used to be an unbound 'executed' row.
+    const isRobot = cmd != null && cmd.robotId != null;
+    let previewJson: Record<string, unknown> | undefined;
+    if (isOt) {
+      previewJson = withOtPayloadHash(
+        null,
+        otPayloadHash({
+          tool: FOE_ACTION_TOOL,
+          adapterId: cmd.adapterId!,
+          machineId: cmd.machineId ?? null,
+          commandType: cmd.name,
+          writes: cmd.writes ?? [],
+        }),
+      );
+    } else if (isRobot) {
+      const job = toRobotJob(cmd);
+      previewJson = withOtPayloadHash(null, robotPayloadHash({ robotId: cmd.robotId!, jobType: job.jobType, params: job.params ?? null }));
+    }
     await d.insert(aiPendingActions).values({
       id: actionId,
       tool: FOE_ACTION_TOOL,
@@ -529,7 +539,7 @@ export async function ensureOrchestrationAction(
       userId: user.id || 0,
       userRole: user.role || "system",
       summary: `FOE orchestration: step ${step.id}`,
-      ...(isOt
+      ...(isOt || isRobot
         ? { status: "confirmed" as const, previewJson }
         : { status: "executed" as const, executedAt: new Date() }),
       idempotencyKey: actionId,

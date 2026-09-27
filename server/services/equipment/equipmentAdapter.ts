@@ -28,7 +28,8 @@ import { dispatch as otDispatch } from "../ot/commandDispatcher";
 import { probeWithDeadline, PROBE_MARGIN_MS } from "../ot/probeConnection";
 import type { DispatchInput, DispatchTrigger } from "../ot/commandDispatcher";
 import { dispatchRobotJob } from "../robot/robotCommandDispatcher";
-import type { RobotJobSpec, RobotJobType } from "../robot/robotDriver";
+import type { RobotJobSpec } from "../robot/robotDriver";
+import { toRobotJob } from "./robotJobMapping";
 
 /** Which existing registry/manager a kind delegates to (for discovery/UI). */
 export type DelegateRegistry =
@@ -141,16 +142,8 @@ const OT_KIND_TO_PROTOCOL: Partial<Record<AdapterKind, OtProtocol>> = {
 };
 
 /** Map a robot job verb string onto the RobotDriver RobotJobType. */
-function toRobotJob(command: EquipmentCommand): RobotJobSpec {
-  if (command.job) return command.job;
-  const verbs: RobotJobType[] = ["move", "pick_place", "dispense", "screw", "home", "abort", "custom"];
-  const jobType = verbs.includes(command.name as RobotJobType)
-    ? (command.name as RobotJobType)
-    : command.name === "abort"
-      ? "abort"
-      : "custom";
-  return { jobType, params: {} };
-}
+// doc 81 Đợt 1B final wave (item 2) — `toRobotJob` moved to ./robotJobMapping so the FOE
+// producer of the robot authorisation row hashes EXACTLY the job this adapter dispatches.
 
 /**
  * An OT-family adapter (opcua/modbus/s7/mitsubishi-mc/ethernet-ip/stub). Delegates

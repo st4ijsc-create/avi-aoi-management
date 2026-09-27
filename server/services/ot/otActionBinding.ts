@@ -103,6 +103,41 @@ export function otPayloadHash(p: OtWriteBindingPayload): string {
   return `sha256:${createHash("sha256").update(canonicalOtPayload(p), "utf8").digest("hex")}`;
 }
 
+// ─── doc 81 Đợt 1B final wave (item 2) — the ROBOT twin of the OT binding ──────────
+/**
+ * One confirmed `ai_pending_actions` row authorises EXACTLY one robot job: robotId + jobType +
+ * params. Same `canonicalValue`, same previewJson field (`__otPayloadHash`), same `sha256:`
+ * prefix; the canonical shape carries `kind: "robot"` so an OT hash can never be replayed as a
+ * robot one (or vice versa). `tool` is NOT part of the robot hash: a RobotDispatchInput names no
+ * tool (the row's `tool` stays audit metadata). ONE DEFINITION, every call site — the producers
+ * (foeEngine.ensureOrchestrationAction via equipment/robotJobMapping.toRobotJob) and the
+ * consumer (robotCommandDispatcher, under FOR UPDATE) call THIS function; don't hand-roll one.
+ */
+export interface RobotJobBindingPayload {
+  robotId: number;
+  jobType: string;
+  /** The job's params exactly as the dispatcher receives them (undefined/null ⇒ null). */
+  params?: Record<string, unknown> | null;
+}
+
+/** Stable JSON of the robot payload (exported for tests / diagnostics only). */
+export function canonicalRobotPayload(p: RobotJobBindingPayload): string {
+  return JSON.stringify(
+    canonicalValue({
+      v: CANONICAL_VERSION,
+      kind: "robot",
+      robotId: p.robotId,
+      jobType: p.jobType,
+      params: p.params ?? null,
+    }),
+  );
+}
+
+/** `sha256:<hex>` of the canonical robot payload. */
+export function robotPayloadHash(p: RobotJobBindingPayload): string {
+  return `sha256:${createHash("sha256").update(canonicalRobotPayload(p), "utf8").digest("hex")}`;
+}
+
 /** Return a copy of previewJson carrying the payload hash. */
 export function withOtPayloadHash(
   preview: Record<string, unknown> | null | undefined,
