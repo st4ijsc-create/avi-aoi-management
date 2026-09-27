@@ -33,6 +33,7 @@ import {
   type CopilotStage,
   type GenerateProgramInput,
   type GenerateProgramResult,
+  type GenCitation,
 } from "./aiProgrammingCopilot";
 import { detectRequestLang, isSafetyRelevantText, stripPlatformDiagnostics } from "./copilotSafetyGate";
 
@@ -98,7 +99,15 @@ export type CopilotStreamEvent =
   | { type: "stage"; stage: CopilotStage; attempt?: number; elapsedMs: number }
   | { type: "token"; token: string }
   | { type: "result"; result: KetQuaCopilotHoanThien }
-  | { type: "error"; code: string; userMessage: string; reasonCode?: string; devDetail?: string };
+  | {
+      type: "error";
+      code: string;
+      userMessage: string;
+      reasonCode?: string;
+      devDetail?: string;
+      /** Fix round 1 #7 — nguồn đã truy hồi trước khi model hỏng (như `copilotGenerate` trả kèm lỗi hệ thống). */
+      citations?: GenCitation[];
+    };
 
 /**
  * Chạy MỘT lượt copilot, phát sự kiện theo thứ tự. Cầu nối callback (`TheoDoiCopilot`) → async
@@ -184,6 +193,7 @@ export async function* streamCopilot(
       code: r.errorCode,
       userMessage: r.note ?? cauLoiCopilot(r.errorCode, lang),
       ...(role === "admin" && r.devDetail ? { devDetail: r.devDetail } : {}),
+      ...(r.citations ? { citations: r.citations } : {}),
     };
     return;
   }

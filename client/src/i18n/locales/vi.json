@@ -12245,6 +12245,8 @@
       "cancel": "Huỷ",
       "cancelled": "Đã huỷ — trợ lý đã dừng và máy chủ AI đã được giải phóng.",
       "progress": "Tiến độ",
+      "notLicensed": "Giấy phép của hệ thống chưa gồm module Kỹ thuật (Engineering).",
+      "forbidden": "Bạn không có quyền dùng trợ lý lập trình.",
       "streaming": "Đang viết…",
       "stage": {
         "gate": "Kiểm tra an toàn",

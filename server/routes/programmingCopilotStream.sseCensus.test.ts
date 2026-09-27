@@ -70,3 +70,48 @@ describe("SSE census — CopilotStreamEvent (service) == case (tuyến) == case 
     }
   });
 });
+
+/** Literal của `export type CopilotStage = "a" | "b" …;` ở service. */
+function stageService(): string[] {
+  const src = doc("server/services/programming/aiProgrammingCopilot.ts");
+  const m = src.match(/export type CopilotStage\s*=([^;]+);/);
+  expect(m, "không tìm thấy `export type CopilotStage =`").toBeTruthy();
+  return [...m![1].matchAll(/"([a-z_]+)"/g)].map((x) => x[1]).sort();
+}
+
+/** Phần tử của `const STAGES … = new Set([...])` và của `type CopilotStreamStage` ở client. */
+function stageClient(): { set: string[]; kieu: string[] } {
+  const src = doc("client/src/components/programming/copilotStreamClient.ts");
+  const set = src.match(/const STAGES[^=]*=\s*new Set\(\[([^\]]*)\]\)/);
+  const kieu = src.match(/export type CopilotStreamStage\s*=([^;]+);/);
+  expect(set, "không tìm thấy `STAGES` ở client").toBeTruthy();
+  expect(kieu, "không tìm thấy `CopilotStreamStage` ở client").toBeTruthy();
+  const lay = (x: string) => [...x.matchAll(/"([a-z_]+)"/g)].map((y) => y[1]).sort();
+  return { set: lay(set![1]), kieu: lay(kieu![1]) };
+}
+
+describe("Fix round 1 #5 — CopilotStage (service) == STAGES (client)", () => {
+  it("★★ tập stage giống hệt hai bên — stage mới ở service mà client không biết ⇒ client BỎ QUA im lặng (apDungSuKien `return s`)", () => {
+    const sv = stageService();
+    expect(sv.length, "cầu chì chống tập rỗng").toBeGreaterThanOrEqual(5);
+    const cl = stageClient();
+    expect(cl.set).toEqual(sv);
+    expect(cl.kieu).toEqual(sv);
+  });
+});
+
+describe("Fix round 1 #1 — giấy phép tuyến SSE == giấy phép thủ tục copilotGenerate", () => {
+  it("★★★ `MODULE_COPILOT` của tuyến trùng `moduleProcedure(...)` của programmingRouter, và được kiểm TRƯỚC `streamCopilot(`", () => {
+    const router = doc("server/routers/programmingRouter.ts");
+    const mr = router.match(/const protectedProcedure\s*=\s*moduleProcedure\("([A-Z_]+)"\)/);
+    expect(mr, "programmingRouter không còn `protectedProcedure = moduleProcedure(...)` — đọc lại cổng giấy phép").toBeTruthy();
+    const tuyen = doc("server/routes/programmingCopilotStream.ts");
+    const mt = tuyen.match(/export const MODULE_COPILOT\s*=\s*"([A-Z_]+)"/);
+    expect(mt, "tuyến không khai `MODULE_COPILOT`").toBeTruthy();
+    expect(mt![1]).toBe(mr![1]);
+    const kiem = tuyen.indexOf("isModuleLicensed(MODULE_COPILOT)");
+    const chay = tuyen.indexOf("svc.streamCopilot(");
+    expect(kiem, "tuyến không gọi `isModuleLicensed(MODULE_COPILOT)`").toBeGreaterThan(0);
+    expect(kiem, "kiểm giấy phép phải đứng TRƯỚC lượt chạy pipeline").toBeLessThan(chay);
+  });
+});

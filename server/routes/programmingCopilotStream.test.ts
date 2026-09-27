@@ -18,6 +18,13 @@ const h = vi.hoisted(() => ({
   user: { id: 1, role: "admin", name: "Admin" } as { id: number; role: string; name: string } | null,
   choPhep: true,
   audit: [] as unknown[],
+  /** Fix round 1 #1 — quyết định giấy phép theo module (vắng ⇒ có phép). */
+  giayPhep: {} as Record<string, boolean>,
+  goiGiayPhep: [] as string[],
+  /** Fix round 1 #3 — chặn lượt kiểm quyền cho tới khi test nhả (mô phỏng await chậm). */
+  choQuyen: null as Promise<void> | null,
+  daGoiQuyen: false,
+  citations: [] as Array<{ vendor: string; docTitle: string; page: number | null }>,
 }));
 
 vi.mock("./_xacThucRest", async (goc) => {
@@ -32,9 +39,21 @@ vi.mock("../_core/accessControl", async (goc) => {
   const that = await goc<typeof import("../_core/accessControl")>();
   return {
     ...that,
-    checkPermission: vi.fn(async (_id: number, role: string, mod: string, act: string) =>
-      mod === "machine_monitoring" && act === "canView" ? role === "admin" || h.choPhep : false,
-    ),
+    checkPermission: vi.fn(async (_id: number, role: string, mod: string, act: string) => {
+      h.daGoiQuyen = true;
+      if (h.choQuyen) await h.choQuyen;
+      return mod === "machine_monitoring" && act === "canView" ? role === "admin" || h.choPhep : false;
+    }),
+  };
+});
+vi.mock("../_core/moduleGate", async (goc) => {
+  const that = await goc<typeof import("../_core/moduleGate")>();
+  return {
+    ...that,
+    isModuleLicensed: vi.fn(async (m: string) => {
+      h.goiGiayPhep.push(m);
+      return h.giayPhep[m] ?? true;
+    }),
   };
 });
 vi.mock("../services/aiGgufEngine", async (goc) => {
@@ -54,7 +73,7 @@ vi.mock("../services/aiModelRouter", async (goc) => {
   };
 });
 vi.mock("../services/aiProgrammingKnowledgeService", () => ({
-  searchProgrammingKb: vi.fn(async () => ({ query: "", enabled: false, semanticUsed: false, answerContext: "", citations: [], chunks: [] })),
+  searchProgrammingKb: vi.fn(async () => ({ query: "", enabled: h.citations.length > 0, semanticUsed: false, answerContext: "", citations: h.citations, chunks: [] })),
 }));
 vi.mock("../services/ai/repoContextService", async (goc) => {
   const that = await goc<typeof import("../services/ai/repoContextService")>();
@@ -83,7 +102,7 @@ interface LuotModel {
   tDong?: number;
 }
 const fake = {
-  mode: "nhanh" as "nhanh" | "treo",
+  mode: "nhanh" as "nhanh" | "treo" | "loi500",
   noiDung: ST_OK,
   luot: [] as LuotModel[],
   /** Thời điểm MỌI lượt thăm dò `/health` (preflight của engine trước mỗi lượt model). */
@@ -112,6 +131,11 @@ beforeAll(async () => {
         const body = JSON.parse(raw);
         const luot: LuotModel = { stream: !!body.stream, body, tMo: Date.now() };
         fake.luot.push(luot);
+        if (fake.mode === "loi500") {
+          res.writeHead(500, { "content-type": "application/json" });
+          res.end('{"error":{"code":500,"message":"slot crashed"}}');
+          return;
+        }
         // ⚠ `res.on("close")` + `!writableFinished` — KHÔNG `req.on("close")`: trên Node 24,
         //   `req` phát `close` ngay khi thân yêu cầu đã đọc xong (đo trong phiên này: 1 ms).
         res.on("close", () => {
@@ -180,6 +204,11 @@ beforeEach(() => {
   h.user = { id: 1, role: "admin", name: "Admin" };
   h.choPhep = true;
   h.audit = [];
+  h.giayPhep = {};
+  h.goiGiayPhep = [];
+  h.choQuyen = null;
+  h.daGoiQuyen = false;
+  h.citations = [];
   loiConsole = [];
   vi.spyOn(console, "error").mockImplementation((...a: unknown[]) => {
     loiConsole.push(a.map(String).join(" "));
@@ -257,6 +286,38 @@ describe("Task 8 — cổng & quyền TRƯỚC model", () => {
     expect(fake.luot).toHaveLength(0);
   });
 
+  it("★ Fix round 1 #1 — SKU có MOD_AI nhưng KHÔNG có MOD_ENGINEERING (cổng của copilotGenerate) ⇒ 403 MODULE_NOT_LICENSED, 0 lượt model", async () => {
+    h.giayPhep = { MOD_AI: true, MOD_ENGINEERING: false };
+    const res = await moLuong(YEU_CAU_ST);
+    expect(res.status).toBe(403);
+    expect(await res.json()).toMatchObject({ code: "MODULE_NOT_LICENSED", module: "MOD_ENGINEERING" });
+    expect(h.goiGiayPhep).toContain("MOD_ENGINEERING");
+    expect(fake.luot).toHaveLength(0);
+    expect(fake.health).toHaveLength(0);
+  });
+
+  it("Fix round 1 #1 — có MOD_ENGINEERING ⇒ đi tiếp (đối chứng dương: cổng không khoá nhầm)", async () => {
+    h.giayPhep = { MOD_ENGINEERING: true };
+    const res = await moLuong(YEU_CAU_ST);
+    expect(res.status).toBe(200);
+    expect((await docSuKien(res)).at(-1)!.type).toBe("result");
+  });
+
+  it("★ Fix round 1 #3 — client bỏ đi TRONG lúc các `await` trước khi gắn `res.on(close)` ⇒ vẫn huỷ, 0 lượt model", async () => {
+    let nha!: () => void;
+    h.choQuyen = new Promise<void>((r) => (nha = r));
+    const boHuy = new AbortController();
+    const p = moLuong(YEU_CAU_ST, boHuy.signal).catch(() => null);
+    expect(await cho(() => h.daGoiQuyen, 3000), "tuyến chưa tới bước kiểm quyền").toBe(true);
+    boHuy.abort();
+    await p;
+    await new Promise((r) => setTimeout(r, 200)); // server nhận ra socket đã đóng
+    nha();
+    await new Promise((r) => setTimeout(r, 600));
+    expect(fake.luot, "lượt model chạy cho một client đã bỏ đi").toHaveLength(0);
+    expect(fake.health).toHaveLength(0);
+  });
+
   it("thân sai lược đồ (cùng lược đồ copilotGenerate) ⇒ 400, KHÔNG lượt model", async () => {
     const res = await moLuong({ kind: "khong-co", request: "" });
     expect(res.status).toBe(400);
@@ -315,7 +376,7 @@ describe("Task 8 — luồng sinh mã: stage → token → result", () => {
     // Đúng MỘT lượt model, và nó là lượt STREAM có ngân sách nghĩ của chính sách D1 (lượt "sinh").
     expect(fake.luot).toHaveLength(1);
     expect(fake.luot[0].stream).toBe(true);
-    expect(fake.luot[0].body.thinking_budget_tokens ?? fake.luot[0].body.chat_template_kwargs).toBeTruthy();
+    expect(fake.luot[0].body.thinking_budget_tokens).toBe(6000);
   });
 
   it("★ CÙNG pipeline với copilotGenerate: cùng đầu ra model ⇒ result GIỐNG HỆT thủ tục tRPC", async () => {
@@ -326,6 +387,30 @@ describe("Task 8 — luồng sinh mã: stage → token → result", () => {
     const kqTrpc = await caller.copilotGenerate(YEU_CAU_ST as never);
     expect(kqStream).toEqual(JSON.parse(JSON.stringify(kqTrpc)));
     expect(fake.luot.map((l) => l.stream)).toEqual([true, false]);
+  });
+
+  it("★ Fix round 1 #7 — lỗi HỆ THỐNG: sự kiện error (qua bộ gộp client) == kết quả copilotGenerate, KỂ CẢ citations", async () => {
+    // llama-server trả HTTP 500 cho CẢ đường stream lẫn không-stream ⇒ cùng một lớp lỗi.
+    // (⚠ KHÔNG dùng ca "model trả rỗng": engine phân loại khác nhau giữa hai đường — stream ⇒
+    //  EMPTY_OUTPUT, không-stream ⇒ INTERNAL — hành vi có sẵn của `streamChatCompletion` ca (A); ghi ở báo cáo.)
+    fake.mode = "loi500";
+    h.citations = [{ vendor: "Mitsubishi", docTitle: "FX5 Programming Manual", page: 42 }];
+    const ev = await docSuKien(await moLuong(YEU_CAU_ST));
+    const loi = ev.at(-1)!;
+    expect(loi.type).toBe("error");
+    expect(loi.citations).toEqual(h.citations);
+    const { apDungSuKien, trangThaiLuongMoi } = await import("../../client/src/components/programming/copilotStreamClient");
+    const kqClient = apDungSuKien(trangThaiLuongMoi(), loi, YEU_CAU_ST.kind).result;
+    const { programmingRouter } = await import("../routers/programmingRouter");
+    const caller = programmingRouter.createCaller({ user: { id: 1, role: "admin" } } as never);
+    const kqTrpc = await caller.copilotGenerate(YEU_CAU_ST as never);
+    expect(kqTrpc.errorCode).toBe("MODEL_UNAVAILABLE");
+    // `devDetail` (chỉ admin) là chuỗi chẩn đoán NGUYÊN VĂN của từng đường (tên đường khác nhau) ⇒ so riêng.
+    const { devDetail: ddClient, ...client } = kqClient as Record<string, unknown>;
+    const { devDetail: ddTrpc, ...trpcKq } = JSON.parse(JSON.stringify(kqTrpc)) as Record<string, unknown>;
+    expect(typeof ddClient).toBe("string");
+    expect(typeof ddTrpc).toBe("string");
+    expect(client).toEqual(trpcKq);
   });
 
   it("validate hỏng ⇒ stage `repair` (attempt 1) rồi `validate` lại — cùng vòng tự sửa của copilotGenerate", async () => {

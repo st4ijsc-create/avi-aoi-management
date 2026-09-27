@@ -650,7 +650,15 @@ class HoToken {
   }
 }
 
-async function warmCodeModel(): Promise<void> {
+async function warmCodeModel(
+  /**
+   * Doc 80 · Task 8 fix round 1 #4 — huỷ khi model đang nạp nguội / lượt warm đang chạy. Signal đi
+   * xuống `warmModel` (abort được POST warm trên llama-server); lượt NẠP in-process dùng chung thì
+   * không giết được ⇒ pipeline thôi CHỜ nó (race với signal) và dừng ở `kiemHuy` kế tiếp. Vắng ⇒ như cũ.
+   */
+  signal?: AbortSignal,
+): Promise<void> {
+  if (signal?.aborted) return;
   try {
     const { warmModel } = await import("../aiGgufEngine");
     let modelId: string | undefined;
@@ -661,7 +669,21 @@ async function warmCodeModel(): Promise<void> {
       /* best-effort routing */
     }
     // Warm the deep code model FIRST (before RAG loads the small embedder) — see warmModel.
-    await warmModel(modelId, CODE_CTX);
+    const warm = signal ? warmModel(modelId, CODE_CTX, signal) : warmModel(modelId, CODE_CTX);
+    if (!signal) {
+      await warm;
+      return;
+    }
+    let goHuy = () => {};
+    await Promise.race([
+      warm,
+      new Promise<void>((r) => {
+        goHuy = () => signal.removeEventListener("abort", huy);
+        const huy = () => r();
+        signal.addEventListener("abort", huy, { once: true });
+      }),
+    ]).finally(() => goHuy());
+    void warm.catch(() => {}); // lượt nạp dùng chung chạy tiếp ở nền — không để lỗi của nó thành unhandled
   } catch {
     /* best-effort warm; codegen still tries and degrades gracefully on failure */
   }
@@ -1208,7 +1230,8 @@ export async function generateProgram(
   // Load-order VRAM fix: warm the LARGE code model before the small RAG embedder loads
   // (see warmCodeModel). No-op once resident, so only the first request pays the load.
   theoDoi?.onStage?.("retrieve");
-  await warmCodeModel();
+  kiemHuy(theoDoi);
+  await warmCodeModel(theoDoi?.signal);
   kiemHuy(theoDoi);
 
   // 3) Ground with cited RAG — attach citations to EVERY result (even when empty).

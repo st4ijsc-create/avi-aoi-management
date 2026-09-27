@@ -7,6 +7,9 @@
  *
  * ── Thứ tự cửa (mỗi cửa từ chối ⇒ KHÔNG một lượt model nào) ─────────────────────────────────────
  *   1. danh tính phiên — `thuXacThucRest` (cùng chủ với `/api/ai/local-kb/stream`, 401/403/500 đúng lớp);
+ *   1b. giấy phép `MOD_ENGINEERING` — `isModuleLicensed`, ĐÚNG module + đúng động cơ của
+ *      `moduleProcedure("MOD_ENGINEERING")` mà `copilotGenerate` đi qua (fix round 1 #1). `MOD_AI` vẫn do
+ *      middleware nhánh `/api/ai` chặn TRƯỚC ⇒ tuyến này đòi CẢ HAI;
  *   2. RBAC — `checkPermission(…, "machine_monitoring", "canView")`: ĐÚNG động cơ + đúng cặp mà
  *      `requirePermission` của `copilotGenerate` dùng;
  *   3. lược đồ — `copilotGenerateInput` (chung với `copilotGenerate`);
@@ -31,6 +34,8 @@ import type { Request, Response } from "express";
 import { thuXacThucRest, thanTuChoiRest } from "./_xacThucRest";
 
 export const DUONG_COPILOT_STREAM = "/api/ai/programming-copilot/stream";
+/** Module giấy phép của bề mặt lập trình — PHẢI trùng `moduleProcedure(...)` của `programmingRouter` (census canh). */
+export const MODULE_COPILOT = "MOD_ENGINEERING";
 
 export async function xuLyCopilotStream(req: Request, res: Response): Promise<void> {
   const xacThuc = await thuXacThucRest(req);
@@ -40,6 +45,22 @@ export async function xuLyCopilotStream(req: Request, res: Response): Promise<vo
   }
   const user = xacThuc.user;
   const role = String(user.role ?? "");
+
+  // Fix round 1 #1 — CÙNG quyết định giấy phép với `copilotGenerate`: `programmingRouter` dùng
+  // `protectedProcedure = moduleProcedure("MOD_ENGINEERING")` (auth → moduleGate → RBAC). Nhánh
+  // `/api/ai` đã chặn `MOD_AI` ở `_core/index.ts`; thiếu dòng này thì một SKU có AI mà KHÔNG có
+  // Engineering dùng được copilot qua SSE trong khi thủ tục tRPC từ chối. `isModuleLicensed` là ĐÚNG
+  // động cơ của `moduleGate` (cờ tắt / bypass / SKU chưa khai / lỗi phân giải ⇒ cho qua, như tRPC).
+  const { isModuleLicensed } = await import("../_core/moduleGate");
+  if (!(await isModuleLicensed(MODULE_COPILOT))) {
+    res.status(403).json({
+      success: false,
+      error: `Module "${MODULE_COPILOT}" chưa được cấp phép cho hệ thống này.`,
+      code: "MODULE_NOT_LICENSED",
+      module: MODULE_COPILOT,
+    });
+    return;
+  }
 
   let duocPhep = false;
   try {
@@ -65,6 +86,9 @@ export async function xuLyCopilotStream(req: Request, res: Response): Promise<vo
   res.on("close", () => {
     if (!res.writableFinished) boHuy.abort();
   });
+  // Fix round 1 #3 — `close` có thể đã phát TRONG các `await` phía trên (xác thực · giấy phép ·
+  // quyền · nạp module) ⇒ lắng nghe gắn muộn sẽ không bao giờ chạy. Socket đã chết ⇒ huỷ ngay.
+  if (res.destroyed || req.socket?.destroyed) boHuy.abort();
 
   res.status(200);
   res.setHeader("Content-Type", "text/event-stream; charset=utf-8");
@@ -106,6 +130,7 @@ export async function xuLyCopilotStream(req: Request, res: Response): Promise<vo
             userMessage: evt.userMessage,
             ...(evt.reasonCode ? { reasonCode: evt.reasonCode } : {}),
             ...(evt.devDetail ? { devDetail: evt.devDetail } : {}),
+            ...(evt.citations ? { citations: evt.citations } : {}),
           });
           break;
       }

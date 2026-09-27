@@ -17,8 +17,11 @@
  * Doc 80 · Đợt 1 · Task 8 — lượt chạy đi `POST /api/ai/programming-copilot/stream` (SSE: stage · token ·
  * result · error) với nút "Huỷ" thật (AbortController ⇒ server đóng kết nối tới llama-server). Kết quả
  * cuối CÙNG hình dạng `copilotGenerate` nên phần vẽ kết quả không đổi. Thủ tục tRPC cũ vẫn giữ cho tool
- * chat/khách khác, và là đường LÙI khi tuyến SSE không có (404) hoặc SKU không gồm MOD_AI (tuyến
- * `/api/ai/**` đứng sau cổng giấy phép MOD_AI, `copilotGenerate` thì không).
+ * chat/khách khác. Giấy phép (fix round 1): tuyến SSE đòi CẢ `MOD_AI` (middleware nhánh `/api/ai/**`)
+ * LẪN `MOD_ENGINEERING` (cùng module với `copilotGenerate` — `programmingRouter` dùng
+ * `moduleProcedure("MOD_ENGINEERING")`). Panel LÙI về `copilotGenerate` CHỈ khi tuyến SSE không có (404)
+ * hoặc bị từ chối vì `MOD_AI` — đúng hành vi trước Task 8 (panel khi ấy chỉ đi `copilotGenerate`, vốn
+ * không đòi `MOD_AI`). Bị từ chối vì `MOD_ENGINEERING` ⇒ KHÔNG lùi: thủ tục cũ bị chặn bởi đúng module ấy.
  *
  * Reusable in two homes:
  *   • variant="full"     — standalone /programming-copilot page.
@@ -231,11 +234,13 @@ export function ProgrammingCopilotPanel({
     const kq = await chayCopilotStream(payload, {
       signal: ac.signal,
       onEvent: (e) => {
+        // Lượt đã bị huỷ/thay thế: sự kiện muộn của luồng cũ (mạng tháo chậm) KHÔNG được ghi đè lượt mới.
+        if (abortRef.current !== ac) return;
         s = apDungSuKien(s, e, payload.kind);
         setLuong(s);
       },
     });
-    if (abortRef.current !== ac) return; // một lượt mới hơn đã thay lượt này
+    if (abortRef.current !== ac) return; // lượt đã bị huỷ (huyLuot đã dọn trạng thái) hoặc bị lượt mới thay
     abortRef.current = null;
     setStreamBusy(false);
     if (kq.status === "ok") {
@@ -252,18 +257,33 @@ export function ProgrammingCopilotPanel({
       return;
     }
     if (kq.status === "http") {
-      const ma = (kq.body as { code?: unknown } | null)?.code;
-      if (kq.httpStatus === 404 || (kq.httpStatus === 403 && ma === "MODULE_NOT_LICENSED")) {
+      const than = kq.body as { code?: unknown; module?: unknown } | null;
+      if (kq.httpStatus === 404 || (kq.httpStatus === 403 && than?.code === "MODULE_NOT_LICENSED" && than?.module === "MOD_AI")) {
         setLuong(null);
         gen.mutate(payload); // đường cũ (không stream) — cùng pipeline phía server
         return;
       }
-      toast.error(thongDiepLoiRest(kq.body as never, t("progCopilot.failed", "Code generation failed")));
+      toast.error(
+        kq.httpStatus === 403 && than?.code === "MODULE_NOT_LICENSED"
+          ? t("progCopilot.stream.notLicensed", "The Engineering module is not included in this system's licence.")
+          : kq.httpStatus === 403 && than?.code === "PERMISSION_DENIED"
+            ? t("progCopilot.stream.forbidden", "You do not have permission to use the programming assistant.")
+            : thongDiepLoiRest(kq.body as never, t("progCopilot.failed", "Code generation failed")),
+      );
     }
     setLoiLuong(true);
   };
 
-  const huyLuot = () => abortRef.current?.abort();
+  // Huỷ có hiệu lực NGAY trên UI (không chờ mạng tháo luồng): abort ⇒ server đóng kết nối llama-server;
+  // lượt này rời `abortRef` nên mọi sự kiện/kết cục muộn của nó bị bỏ qua (xem `onEvent`/`chayLuot`).
+  const huyLuot = () => {
+    const ac = abortRef.current;
+    if (!ac) return;
+    abortRef.current = null;
+    ac.abort();
+    setStreamBusy(false);
+    setDaHuy(true);
+  };
 
   const result = ((luong ? luong.result : null) ?? gen.data ?? null) as GenResult | null;
   const errorView = copilotErrorView(result, isAdmin);

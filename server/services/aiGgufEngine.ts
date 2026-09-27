@@ -134,8 +134,8 @@ export interface GgufGenerateOptions {
    */
   contextSize?: number;
   /**
-   * Doc 80 · Đợt 1 · Task 8 — huỷ lượt KHÔNG-stream trên đường `llama-server` (hiện chỉ
-   * `generateJSON` → `serverGenerateJSON` đọc ô này). Vắng ⇒ hành vi cũ nguyên vẹn. Huỷ ⇒ lượt
+   * Doc 80 · Đợt 1 · Task 8 — huỷ lượt KHÔNG-stream trên đường `llama-server` (`generateJSON` →
+   * `serverGenerateJSON`, và từ fix round 1 `generateText` → `serverGenerateText` cho lượt warm). Vắng ⇒ hành vi cũ nguyên vẹn. Huỷ ⇒ lượt
    * POST bị abort (slot rảnh) và KHÔNG lùi in-process (xem `thuDuongServer`).
    */
   signal?: AbortSignal;
@@ -1765,7 +1765,17 @@ async function getOrLoadModel(
  * Returns true if the model is now resident. Callers that do RAG-embed-THEN-deep (codegen, and
  * ideally the ops chat/RCA paths) should call this before the RAG step. See doc 34 §P4.
  */
-export async function warmModel(modelId?: string, contextSize?: number): Promise<boolean> {
+export async function warmModel(
+  modelId?: string,
+  contextSize?: number,
+  /**
+   * Doc 80 · Đợt 1 · Task 8 fix round 1 #4 — người gọi huỷ (copilot SSE). Chỉ abort được lượt warm
+   * trên đường `llama-server` (POST 1 token); lượt NẠP in-process dùng chung (`inFlightLoads`) KHÔNG
+   * bị giết — người chờ khác có thể đang đợi đúng lượt nạp đó. Vắng ⇒ hành vi cũ nguyên vẹn.
+   */
+  signal?: AbortSignal,
+): Promise<boolean> {
+  if (signal?.aborted) return false;
   let available = false;
   try {
     available = await isGgufAvailable();
@@ -1785,9 +1795,10 @@ export async function warmModel(modelId?: string, contextSize?: number): Promise
     // ★ B1 (2026-09-22) — lượt làm ấm là lượt PHỤ: `maxTokens: 1` trên model biết nghĩ ⇒ 1 token ấy rơi
     //   vào `<think>` ⇒ `content` rỗng ⇒ G5-D ⇒ warm trả FALSE + 2 dòng lỗi mỗi lần boot (đo trong
     //   `node-b1.err.log` với Qwen3.6-35B-A3B). Tắt nghĩ cho riêng lượt này; model không nghĩ bỏ qua cờ.
-    await generateText({ prompt: "ok", maxTokens: 1, contextSize, disableThinking: true }, modelId);
+    await generateText({ prompt: "ok", maxTokens: 1, contextSize, disableThinking: true, ...(signal ? { signal } : {}) }, modelId);
     return true;
   } catch (err) {
+    if (signal?.aborted) return false; // huỷ theo ý người gọi ≠ warm hỏng — không ghi sự kiện warm_failed
     noteWarmFailure(modelId, "generate-threw", err);
     return false;
   }

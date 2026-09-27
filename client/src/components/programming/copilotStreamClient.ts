@@ -103,6 +103,7 @@ export function apDungSuKien(s: CopilotStreamState, raw: unknown, kind: string):
           errorCode: code,
           note: userMessage,
           ...(typeof e.devDetail === "string" ? { devDetail: e.devDetail } : {}),
+          ...(Array.isArray(e.citations) ? { citations: e.citations } : {}),
         },
       };
     }

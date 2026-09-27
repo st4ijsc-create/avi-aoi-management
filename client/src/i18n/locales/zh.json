@@ -12048,6 +12048,8 @@
       "cancel": "取消",
       "cancelled": "已取消 — 助手已停止，AI 服务器已释放。",
       "progress": "进度",
+      "notLicensed": "本系统的许可证不包含工程（Engineering）模块。",
+      "forbidden": "您无权使用编程助手。",
       "streaming": "正在编写…",
       "stage": {
         "gate": "安全检查",

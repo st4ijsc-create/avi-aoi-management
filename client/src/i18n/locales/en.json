@@ -12265,6 +12265,8 @@
       "cancel": "Cancel",
       "cancelled": "Cancelled — the assistant stopped and the AI server was released.",
       "progress": "Progress",
+      "notLicensed": "The Engineering module is not included in this system's licence.",
+      "forbidden": "You do not have permission to use the programming assistant.",
       "streaming": "Writing…",
       "stage": {
         "gate": "Safety check",

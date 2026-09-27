@@ -667,7 +667,7 @@ export async function serverGenerateText(
   lapNganSachNghi(body, options.thinkingBudgetTokens, options.disableThinking);
   lapCoSampling(body, options); // ★ B2 — top_k / min_p / presence_penalty tường minh khi người gọi đặt
 
-  const { json, totalTimeMs } = await postChatCompletion(body);
+  const { json, totalTimeMs } = await postChatCompletion(body, options.signal); // Task 8 FR1 #4 — huỷ lượt warm
   const nua = docHaiNua(json?.choices?.[0]?.message);
   phanDinhCauTraLoiRong(nua, {
     maxTokens: body.max_tokens as number,
