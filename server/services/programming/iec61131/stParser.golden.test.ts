@@ -63,13 +63,46 @@ describe("ba mẫu thăm dò của phụ lục A (bắt buộc)", () => {
   });
 });
 
-describe("fix round 1 — chú thích lồng nhau nói ĐÚNG lý do", () => {
-  it("i35: gợi ý 'lồng nhau không được hỗ trợ' tại '(*' bên trong, KHÔNG có 'Undeclared identifier' hệ quả", async () => {
+describe("fix round 1/2 — chú thích lồng nhau: GỢI Ý (cảnh báo) + lỗi THẬT theo luật đóng ở '*)' đầu tiên", () => {
+  // Phán quyết R-T7a: matiec (không -n) đóng chú thích ở `*)` ĐẦU TIÊN. Gợi ý stNestedComment chỉ là
+  // CẢNH BÁO — tự nó không bao giờ đổi tính hợp lệ; lỗi (nếu có) là lỗi thật phía sau.
+  it("i35: cảnh báo stNestedComment tại '(*' bên trong (L7:4) + đúng MỘT lỗi thật: '*)' lạc ở L9", async () => {
     const v = await validate(read("invalid/i35-nested-comment.st"));
     expect(v.ok).toBe(false);
+    const warn = v.diagnostics.filter((d) => d.code === "stNestedComment");
+    expect(warn.map((d) => [d.severity, d.line, d.col])).toEqual([["warning", 7, 4]]);
     const errs = v.diagnostics.filter((d) => d.severity === "error");
-    expect(errs.map((d) => [d.code, d.line, d.col])).toEqual([["stNestedComment", 7, 4]]);
+    expect(errs.map((d) => [d.code, d.line, d.col])).toEqual([["stUnexpected", 9, 1]]);
   });
+  it("v34 (repro reviewer): chú thích đóng đúng nhắc '(*' + chuỗi chứa '*)' ⇒ 0 lỗi, mã thật KHÔNG bị nhảy qua", async () => {
+    const v = await validate(read("valid/v34-comment-mentions-marker-then-string-close.st"));
+    expect(v.diagnostics.filter((d) => d.severity === "error")).toEqual([]);
+    expect(v.ok).toBe(true);
+    // gợi ý vẫn hiện (cảnh báo) cho '(*' nằm trong chú thích dòng 1
+    expect(v.diagnostics.filter((d) => d.code === "stNestedComment").map((d) => [d.severity, d.line])).toEqual([["warning", 1]]);
+  });
+});
+
+describe("fix round 2 — tên chuyển đổi dựng từ tên kiểu IEC ở CẢ HAI vế", () => {
+  const call = (fn: string) =>
+    validate(`PROGRAM P\nVAR a : INT; r : REAL; END_VAR\nr := ${fn}(a);\nEND_PROGRAM`);
+  const ACCEPT = [
+    "DATE_AND_TIME_TO_TIME_OF_DAY", "DINT_TO_REAL", "INT_TO_REAL", "DT_TO_TOD", "LREAL_TO_REAL", "INT_TO_STRING",
+    "BCD_TO_INT", "INT_TO_BCD", "WORD_BCD_TO_INT", "INT_TO_BCD_WORD",
+    "TO_INT", "TO_LREAL", "TRUNC_DINT", "REAL_TRUNC_INT", "LREAL_TRUNC_LINT", "TO_BIG_ENDIAN", "FROM_LITTLE_ENDIAN",
+  ];
+  const REJECT = [
+    "FOO_BAR_TO_BAZ_QUX", "INT_TO_FOO", "FOO_TO_INT", "INT_TO_REAL_X", "TO_FOO", "FROM_INT", "FROM_FOO",
+    "TRUNC_REAL", "FOO_TRUNC_INT", "ANY_TO_INT", "INT_TO_BCD_FOO", "FOO_BCD_TO_INT",
+  ];
+  for (const fn of ACCEPT) it(`nhận ${fn}`, async () => expect((await call(fn)).ok).toBe(true));
+  for (const fn of REJECT) {
+    it(`từ chối ${fn} (stUndeclared)`, async () => {
+      const v = await call(fn);
+      expect(v.ok).toBe(false);
+      expect(v.diagnostics.find((d) => d.code === "stUndeclared")?.params?.name).toBe(fn);
+    });
+  }
 });
 
 describe("bộ vàng ST — TPR/TNR ≥ 95 %", () => {

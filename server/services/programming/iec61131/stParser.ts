@@ -159,31 +159,21 @@ function tokenize(src: string, diag: (d: StDiagnostic) => void): Tok[] {
         advanceTo(n);
         break;
       }
-      // Fix round 1 — `(* a (* b *) c *)`: matiec/OpenPLC KHÔNG lồng chú thích, nên chú thích đóng ở
-      // `*)` đầu tiên và phần đuôi thành "mã" ⇒ trước đây ra một tràng "Undeclared identifier" sai
-      // chỗ. Nếu có `(*` bên trong VÀ cách đọc lồng nhau khép được về 0 ở một `*)` SAU đó (tức tác giả
-      // ý định lồng), báo MỘT lỗi đúng lý do tại `(*` bên trong rồi bỏ qua cả khối lồng. `(*` bên trong
-      // mà cách đọc lồng không khép được (vd "(* viết (* để mở *)") là chữ thường ⇒ hợp lệ như cũ.
+      // Fix round 2 — phán quyết R-T7a: matiec (không -n) đóng chú thích ở `*)` ĐẦU TIÊN; giữ đúng luật
+      // đó, KHÔNG nhìn trước/nhảy qua (bản round 1 quét byte tới EOF, bỏ qua ranh giới chuỗi/chú thích
+      // ⇒ nhảy qua mã thật trên chương trình hợp lệ). `(*` nằm TRONG thân chú thích ⇒ chỉ một CẢNH BÁO
+      // gợi ý tại đó: tự nó không đổi tính hợp lệ; nếu tác giả thật sự định lồng, lỗi THẬT phía sau
+      // (phần đuôi thành mã) vẫn hiện, có gợi ý đứng trước giải thích.
       const inner = src.indexOf(two, i + 2);
       if (inner >= 0 && inner < end) {
-        let depth = 1;
-        let k = i + 2;
-        let nestedEnd = -1;
-        while (k < n - 1) {
-          const pair = src.slice(k, k + 2);
-          if (pair === two) { depth++; k += 2; continue; }
-          if (pair === close) { depth--; k += 2; if (depth === 0) { nestedEnd = k; break; } continue; }
-          k++;
-        }
-        if (nestedEnd > end + 2) {
-          const between = src.slice(i, inner);
-          const nl = between.lastIndexOf("\n");
-          const iLine = line + (between.match(/\n/g) ?? []).length;
-          const iCol = nl < 0 ? col(i) + (inner - i) : inner - (i + nl + 1) + 1;
-          err("stNestedComment", iLine, iCol, `Nested comment '${two}' inside a comment — nested comments are not supported by the target compiler (OpenPLC/matiec closes the comment at the first '${close}').`, { open: two, close });
-          advanceTo(nestedEnd);
-          continue;
-        }
+        const between = src.slice(i, inner);
+        const nl = between.lastIndexOf("\n");
+        const iLine = line + (between.match(/\n/g) ?? []).length;
+        const iCol = nl < 0 ? col(i) + (inner - i) : inner - (i + nl + 1) + 1;
+        diag({
+          severity: "warning", code: "stNestedComment", line: iLine, col: iCol, params: { open: two, close },
+          message: `Nested comment '${two}' inside a comment — nested comments are not supported by the target compiler (OpenPLC/matiec closes the comment at the first '${close}').`,
+        });
       }
       advanceTo(end + 2);
       continue;
@@ -1022,14 +1012,31 @@ const STD_FUNCTIONS = new Set([
   "SPLIT_DATE", "SPLIT_TOD", "SPLIT_LTOD", "SPLIT_DT", "SPLIT_LDT", "DAY_OF_WEEK",
   // chuyển đổi đặc biệt (bảng 22) — `*_TO_*` nhận theo mẫu bên dưới
   "TRUNC", "ROUND", "IS_VALID", "IS_VALID_BCD", "LOWER_BOUND", "UPPER_BOUND",
+  // đổi thứ tự byte (ed.3 bảng 22)
+  "TO_BIG_ENDIAN", "TO_LITTLE_ENDIAN", "FROM_BIG_ENDIAN", "FROM_LITTLE_ENDIAN",
   // không chuẩn nhưng có trong matiec/CODESYS
   "SIZEOF", "ADR", "REF",
 ]);
+
+// Fix round 2 — mẫu chuyển đổi dựng TỪ tên kiểu IEC ở CẢ HAI vế (mẫu round 1 `^[A-Z_]+_TO_[A-Z_]+$`
+// nhận cả tên bịa `FOO_BAR_TO_BAZ_QUX` ⇒ phá mục đích AI-02). Không có `ANY_*`: IEC không định nghĩa
+// hàm ANY_TO_* (đó là mở rộng CODESYS).
+const CONV_TYPES = [...ELEMENTARY_TYPES].sort((a, b) => b.length - a.length).join("|");
+const BIT_TYPES = "BYTE|WORD|DWORD|LWORD";
+const INT_TYPES = "SINT|INT|DINT|LINT|USINT|UINT|UDINT|ULINT";
+/** `<T1>_TO_<T2>`; BCD: `BCD_TO_INT`, `INT_TO_BCD` (ed.2), `WORD_BCD_TO_INT`, `INT_TO_BCD_WORD` (ed.3). */
+const RE_CONVERSION = new RegExp(
+  `^(?:${CONV_TYPES}|BCD|(?:${BIT_TYPES})_BCD)_TO_(?:${CONV_TYPES}|BCD|BCD_(?:${BIT_TYPES}))$`,
+);
+/** ed.3 chuyển đổi quá tải theo đích: `TO_INT`, `TO_REAL`… */
+const RE_TO_TYPE = new RegExp(`^TO_(?:${CONV_TYPES})$`);
+/** Cắt số thực → số nguyên: `TRUNC_INT`, `REAL_TRUNC_DINT`, `LREAL_TRUNC_LINT`… */
+const RE_TRUNC_TYPED = new RegExp(`^(?:(?:REAL|LREAL)_)?TRUNC_(?:${INT_TYPES})$`);
 const isStdFunction = (u: string) =>
   STD_FUNCTIONS.has(u) ||
-  /^[A-Z_]+_TO_[A-Z_]+$/.test(u) ||                 // INT_TO_REAL, DATE_AND_TIME_TO_TIME_OF_DAY, WORD_BCD_TO_INT
-  /^(?:TO|FROM)_[A-Z_]+$/.test(u) ||                // TO_INT, TO_BIG_ENDIAN, FROM_LITTLE_ENDIAN
-  /^(?:[A-Z]+_)?TRUNC_[A-Z]+$/.test(u) ||           // TRUNC_INT, REAL_TRUNC_DINT
+  RE_CONVERSION.test(u) ||
+  RE_TO_TYPE.test(u) ||
+  RE_TRUNC_TYPED.test(u) ||
   ELEMENTARY_TYPES.has(u);
 
 type Resolved =

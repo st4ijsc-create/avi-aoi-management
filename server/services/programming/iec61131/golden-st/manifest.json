@@ -34,6 +34,8 @@
     { "file": "valid/v31-operator-call-forms.st", "ok": true, "why": "Fix round 1: dang goi ham cua toan tu MOD(a,b)/AND/OR/XOR/NOT" },
     { "file": "valid/v32-r-edge-f-edge-inputs.st", "ok": true, "why": "Fix round 1: VAR_INPUT x : BOOL R_EDGE; / F_EDGE;" },
     { "file": "valid/v33-comment-mentions-open-marker.st", "ok": true, "why": "Fix round 1: chu thich KHONG long nhau chi nhac toi chuoi '(*' - phai hop le (chong bao gia cua goi y long nhau)" },
+    { "file": "valid/v34-comment-mentions-marker-then-string-close.st", "ok": true, "why": "Fix round 2: repro cua reviewer - chu thich DONG DUNG nhac '(*' + chuoi '...*)' ve sau; ban round 1 bao gia stNestedComment roi nhay qua ma that (4 loi thay vi 0)" },
+    { "file": "valid/v35-standard-conversion-names.st", "ok": true, "why": "Fix round 2: ten chuyen doi chuan DATE_AND_TIME_TO_TIME_OF_DAY, DINT_TO_REAL, WORD_BCD_TO_INT, INT_TO_BCD_WORD, LREAL_TRUNC_DINT, TO_INT, LREAL_TO_REAL" },
 
     { "file": "invalid/i01-probe-garbage.st", "ok": false, "errorLine": 2, "why": "Mau tham do garbage.st cua phu luc A: 'VAR a : BOOL END_VAR' thieu ';' (con: thieu ';' dong 3, 'b = FALSE' dong 4, 'FOO BAR BAZ (((' dong 5). Validator cu: ok:true" },
     { "file": "invalid/i02-missing-semicolon.st", "ok": false, "errorLine": 8, "why": "Thieu ';' sau 'Motor := Start'" },
@@ -69,9 +71,11 @@
     { "file": "invalid/i32-output-bound-to-undeclared.st", "ok": false, "errorLine": 7, "why": "Q => DoneFlag voi DoneFlag chua khai bao" },
     { "file": "invalid/i33-then-missing.st", "ok": false, "errorLine": 7, "why": "IF thieu THEN" },
     { "file": "invalid/i34-fb-member-not-declared.st", "ok": false, "errorLine": 17, "why": "M1.IsRunning - FB_Motor khong co IsRunning" },
-    { "file": "invalid/i35-nested-comment.st", "ok": false, "errorLine": 7, "why": "Fix round 1: chu thich long nhau - matiec/OpenPLC dong o '*)' dau tien; phai bao GOI Y o dong 7, khong phai 'Undeclared identifier'" },
+    { "file": "invalid/i35-nested-comment.st", "ok": false, "errorLine": 9, "why": "Fix round 1/2: chu thich long nhau - matiec/OpenPLC dong o '*)' DAU TIEN (phan quyet R-T7a), nen dong 8 la ma that va '*)' dong 9 la loi THAT; dong 7 co CANH BAO goi y stNestedComment (khong doi tinh hop le)" },
     { "file": "invalid/i36-r-edge-outside-var-input.st", "ok": false, "errorLine": 3, "why": "Fix round 1: R_EDGE chi hop le trong VAR_INPUT" },
     { "file": "invalid/i37-misspelled-time-function.st", "ok": false, "errorLine": 7, "why": "Fix round 1: ADD_TIMES khong ton tai - danh sach trang KHONG duoc nhan bua" },
-    { "file": "invalid/i38-misspelled-limit.st", "ok": false, "errorLine": 7, "why": "Fix round 1: LIMT viet sai LIMIT" }
+    { "file": "invalid/i38-misspelled-limit.st", "ok": false, "errorLine": 7, "why": "Fix round 1: LIMT viet sai LIMIT" },
+    { "file": "invalid/i39-hallucinated-conversion.st", "ok": false, "errorLine": 7, "why": "Fix round 2: FOO_BAR_TO_BAZ_QUX - ten chuyen doi bia, hai ve khong phai kieu IEC" },
+    { "file": "invalid/i40-conversion-to-unknown-type.st", "ok": false, "errorLine": 7, "why": "Fix round 2: INT_TO_FOO - dich FOO khong phai kieu IEC" }
   ]
 }
