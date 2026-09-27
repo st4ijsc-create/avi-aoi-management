@@ -30,6 +30,10 @@ const env = vi.hoisted(() => ({
   holdMotion: false,
   safetyReads: 0,
   interlockEvals: 0,
+  // Fix round 2 (b) — policy engine giả: bật SEC_PLATFORM và trả verdict cho từng action.
+  policyOn: false,
+  policyVerdict: {} as Record<string, "deny" | "require_approval">,
+  policyCalls: [] as string[],
 }));
 
 vi.mock("./robotManager", () => ({
@@ -82,6 +86,24 @@ vi.mock("../interlock/interlockGate", () => ({
   },
 }));
 
+// Fix round 2 (b) — seam policy: SEC_PLATFORM và verdict điều khiển được; tắt ⇒ bản THẬT (allow-all).
+vi.mock("../security/policyGate", async (importOriginal) => {
+  const orig = await importOriginal<typeof import("../security/policyGate")>();
+  return {
+    ...orig,
+    secPlatformEnabled: (...a: Parameters<typeof orig.secPlatformEnabled>) => (env.policyOn ? true : orig.secPlatformEnabled(...a)),
+    evaluateActionPolicy: (subject: string, action: string, resource: string | null, context?: Record<string, unknown>, opts?: any) => {
+      if (!env.policyOn) return orig.evaluateActionPolicy(subject, action, resource, context, opts);
+      env.policyCalls.push(action);
+      const v = env.policyVerdict[action];
+      if (v === "deny") return { allow: false, effect: "deny" as const, reason: "stop cấm theo policy P-T3", policyId: "p-t3-deny", reasonCode: "POLICY_DENIED", obligations: [] };
+      if (v === "require_approval")
+        return { allow: false, effect: "require_approval" as const, reason: "cần phê duyệt", policyId: "p-t3-approve", reasonCode: "APPROVAL_REQUIRED", obligations: ["require_approval"] };
+      return { allow: true, effect: "allow" as const, reason: "ok", policyId: null, reasonCode: "DEFAULT_ALLOW", obligations: [] };
+    },
+  };
+});
+
 // /api/v1: master key + một máy ROBOT (máy id riêng; robotId truyền qua args).
 vi.mock("../../_core/masterKey", () => ({
   isValidMasterKey: (k: string | undefined | null) => k === "MASTER",
@@ -99,7 +121,7 @@ vi.mock("../../db", async (importOriginal) => {
 });
 
 import { getDb } from "../../db/connection";
-import { aiPendingActions, robotJobs } from "../../../drizzle/schema";
+import { aiPendingActions, robotJobs, controlAuditLog } from "../../../drizzle/schema";
 import { dispatchRobotJob } from "./robotCommandDispatcher";
 import { toRobotJob } from "../equipment/robotJobMapping";
 import { createV1Router } from "../../api/v1/router";
@@ -186,6 +208,9 @@ describe.skipIf(!DB_URL)("Đợt 1C Task 3 fix round 1 — lệnh DỪNG không 
     env.releaseMotion = null;
     env.safetyReads = 0;
     env.interlockEvals = 0;
+    env.policyOn = false;
+    env.policyVerdict = {};
+    env.policyCalls.length = 0;
     process.env.ROBOT_CONTROL_ENABLED = "true";
     process.env.ROBOT_COMMISSIONING_REQUIRED = "false";
     process.env.ROBOT_CONTROL_TIMEOUT_MS = "5000";
@@ -254,6 +279,79 @@ describe.skipIf(!DB_URL)("Đợt 1C Task 3 fix round 1 — lệnh DỪNG không 
     const res = await foeStep("abort", { id: 0, role: "system" });
     expect(res.status).toBe("done");
     expect(env.jobs.map((j) => j.jobType)).toEqual(["abort"]);
+  });
+
+  // ─── Fix round 2 (ruling (b)) — policy DENY / REQUIRE_APPROVAL không chặn lệnh DỪNG ─────────────
+  it("★ fix round 2 (b) — SEC_PLATFORM bật + policy DENY `robot.command.abort` ⇒ STOP VẪN tới driver; sổ ghi + audit ghi override (R-1C-c)", async () => {
+    env.policyOn = true;
+    env.policyVerdict = { "robot.command.abort": "deny" };
+    const r = await dispatchRobotJob({ robotId: ROBOT, job: { jobType: "abort", params: {} }, triggerKind: "hitl", requestedBy: OWNER });
+    expect(env.policyCalls).toContain("robot.command.abort"); // policy THẬT SỰ được hỏi (không phải bị bỏ qua)
+    expect(r.status).toBe("done");
+    expect(env.jobs.map((j) => j.jobType)).toEqual(["abort"]);
+    const row = await jobRow(r.jobId);
+    const override = (row?.result as Record<string, any> | null)?.policyOverride;
+    expect(override).toMatchObject({ effect: "deny", policyRef: "p-t3-deny", reasonCode: "POLICY_DENIED", ruling: "R-1C-c" });
+    const audits = await (await d())
+      .select()
+      .from(controlAuditLog)
+      .where(and(eq(controlAuditLog.entityType, "robot_job"), eq(controlAuditLog.entityId, String(r.jobId))));
+    expect(audits).toHaveLength(1);
+    expect(audits[0].action).toBe("stop_policy_override");
+    expect(audits[0].reason).toMatch(/R-1C-c/);
+    expect(audits[0].afterJson).toMatchObject({ effect: "deny", policyRef: "p-t3-deny" });
+  });
+
+  it("fix round 2 (b) — REQUIRE_APPROVAL cho `robot.command.abort` (api/v1 e_stop) ⇒ STOP vẫn tới driver, override ghi effect require_approval", async () => {
+    env.policyOn = true;
+    env.policyVerdict = { "robot.command.abort": "require_approval" };
+    const { body } = await postCommand("e_stop", `${DAU}-api-estop-policy`);
+    expect(body.data.status).toBe("done");
+    expect(env.jobs.map((j) => j.jobType)).toEqual(["abort"]);
+    const row = await jobRow(body.data.detail?.jobId);
+    expect((row?.result as Record<string, any> | null)?.policyOverride).toMatchObject({ effect: "require_approval", ruling: "R-1C-c" });
+  });
+
+  it("fix round 2 (b) — policy DENY cho CHUYỂN ĐỘNG vẫn chặn (miễn trừ chỉ cho lệnh dừng): home ⇒ POLICY_DENIED, 0 job", async () => {
+    env.hostile = false;
+    env.policyOn = true;
+    env.policyVerdict = { "robot.command.home": "deny" };
+    const r = await dispatchRobotJob({ robotId: ROBOT, job: { jobType: "home", params: {} }, triggerKind: "manual", requestedBy: OWNER, confirmedBy: OWNER });
+    expect(r.status).toBe("rejected");
+    expect(r.error).toBe("POLICY_DENIED");
+    expect(env.jobs).toHaveLength(0);
+  });
+
+  // ─── Fix round 2 (ruling (e)) — khoá idempotency dài không làm hỏng sổ ghi ⇒ không từ chối STOP ────────
+  it("★ fix round 2 (e) — api/v1 abort với idempotencyKey 120 ký tự ⇒ tới driver; sổ ghi lưu khoá/actionId ĐÃ BĂM vừa cột; gửi lại cùng khoá ⇒ phát lại (d), không gửi lần hai", async () => {
+    const key = `${DAU}-`.padEnd(120, "x");
+    expect(key).toHaveLength(120);
+    const first = await postCommand("abort", key);
+    expect(first.body.data.status).toBe("done");
+    expect(env.jobs.map((j) => j.jobType)).toEqual(["abort"]);
+    const row = await jobRow(first.body.data.detail?.jobId);
+    // 120 ký tự VỪA cột idempotencyKey (128) ⇒ giữ nguyên từng byte; actionId `apiv1-<key>` (126) thì KHÔNG vừa
+    // cột actionId (64) — chính nó làm INSERT hỏng trước fix round 2 ⇒ nay được băm, ≤ 64.
+    expect(row?.idempotencyKey).toBe(key);
+    expect(row?.actionId?.length).toBeLessThanOrEqual(64);
+    expect(row?.actionId).toMatch(/^h-sha256-/);
+    // (d) giữ nguyên: cùng khoá = cùng lệnh ⇒ phát lại kết quả cũ, driver không nhận lần hai.
+    const again = await postCommand("abort", key);
+    expect(again.body.data.status).toBe("done");
+    expect(again.body.data.detail?.jobId).toBe(first.body.data.detail?.jobId);
+    expect(env.jobs).toHaveLength(1);
+  });
+
+  it("fix round 2 (e) — hai khoá dài chung 128 ký tự đầu KHÔNG va nhau trong sổ (băm, không cắt); chuyển động manual khoá 200 ký tự vẫn chạy", async () => {
+    env.hostile = false;
+    const stem = `${DAU}-`.padEnd(130, "y");
+    const a = await dispatchRobotJob({ robotId: ROBOT, job: { jobType: "abort", params: {} }, triggerKind: "hitl", requestedBy: OWNER, idempotencyKey: `${stem}A` });
+    const b = await dispatchRobotJob({ robotId: ROBOT, job: { jobType: "abort", params: {} }, triggerKind: "hitl", requestedBy: OWNER, idempotencyKey: `${stem}B` });
+    expect([a.status, b.status]).toEqual(["done", "done"]);
+    expect(a.jobId).not.toBe(b.jobId);
+    const m = await dispatchRobotJob({ robotId: ROBOT, job: { jobType: "home", params: {} }, triggerKind: "manual", requestedBy: OWNER, confirmedBy: OWNER, idempotencyKey: `${DAU}-`.padEnd(200, "z") });
+    expect(m.status).toBe("done");
+    expect(env.jobs.map((j) => j.jobType)).toEqual(["abort", "abort", "home"]);
   });
 
   it("slot R14: một chuyển động đang bay ⇒ api/v1 e_stop vẫn tới driver ngay (không chờ, không ROBOT_MOTION_IN_PROGRESS)", async () => {

@@ -39,6 +39,7 @@
  *   • record() no longer swallows insert errors; the pre-motion row is mandatory.
  *   • a motion whose outcome is unknown (deadline / driver reply timeout) is stopped.
  */
+import { createHash } from "node:crypto";
 import { and, eq, lt } from "drizzle-orm";
 import { pgTable, serial, integer, varchar, timestamp, text } from "drizzle-orm/pg-core";
 import { getDb } from "../../db/connection";
@@ -219,6 +220,21 @@ type Db = NonNullable<Awaited<ReturnType<typeof getDb>>>;
 /** A drizzle handle or the `tx` of `db.transaction(...)` — same query API (idiom of controlAuditService). */
 type DbOrTx = Db | Parameters<Parameters<Db["transaction"]>[0]>[0];
 
+/** robot_jobs.idempotencyKey is varchar(128), robot_jobs.actionId varchar(64). */
+export const ROBOT_LEDGER_IDEMPOTENCY_KEY_MAX = 128;
+export const ROBOT_LEDGER_ACTION_ID_MAX = 64;
+
+/**
+ * doc 81 Đợt 1C Task 3 fix round 2 (ruling (e)) — a caller-chosen key longer than its ledger column made the
+ * robot_jobs INSERT fail ⇒ LEDGER_WRITE_FAILED ⇒ the command (a STOP too: api/v1 builds `apiv1-<key>`) was
+ * refused. A key that does not fit is HASHED (never truncated — two long keys sharing a prefix must not
+ * collide); a key that fits is kept byte-identical. Applied on the ledger path for EVERY job type.
+ */
+export function fitLedgerKey(key: string | undefined, max: number): string | undefined {
+  if (key == null || key.length <= max) return key;
+  return `h-sha256-${createHash("sha256").update(key, "utf8").digest("hex")}`.slice(0, max);
+}
+
 async function record(
   input: RobotDispatchInput,
   status: RobotDispatchResult["status"] | "running",
@@ -241,7 +257,7 @@ async function record(
       params: input.job.params,
       status,
       triggerKind: input.triggerKind ?? "hitl",
-      actionId: input.actionId,
+      actionId: fitLedgerKey(input.actionId, ROBOT_LEDGER_ACTION_ID_MAX), // fix round 2 (e) — ledger copy only; verification uses the raw id
       requestedBy: input.requestedBy,
       confirmedBy: input.confirmedBy,
       idempotencyKey: input.idempotencyKey,
@@ -398,7 +414,13 @@ export async function reconcileOrphanedRobotJobs(olderThanMs: number = orphanedR
   }
 }
 
-export async function dispatchRobotJob(input: RobotDispatchInput): Promise<RobotDispatchResult> {
+export async function dispatchRobotJob(rawInput: RobotDispatchInput): Promise<RobotDispatchResult> {
+  // fix round 2 (e) — the idempotency key is fitted ONCE, here, so the replay lookup (step 1) and the
+  // ledger row use the same value (a hashed long key still replays).
+  const input: RobotDispatchInput =
+    rawInput.idempotencyKey != null && rawInput.idempotencyKey.length > ROBOT_LEDGER_IDEMPOTENCY_KEY_MAX
+      ? { ...rawInput, idempotencyKey: fitLedgerKey(rawInput.idempotencyKey, ROBOT_LEDGER_IDEMPOTENCY_KEY_MAX) }
+      : rawInput;
   try {
     return await dispatchRobotJobCore(input);
   } catch (err) {
@@ -577,6 +599,11 @@ async function dispatchRobotJobCore(input: RobotDispatchInput): Promise<RobotDis
   //     toàn (0 khác biệt hành vi, không thêm DB read nào). DENY → reject + ledger row
   //     POLICY_DENIED; obligations require_approval → dispatcher robot KHÔNG có kênh
   //     four-eyes riêng ⇒ reject honest POLICY_APPROVAL_REQUIRED (không giả vờ đã duyệt).
+  //     doc 81 Đợt 1C Task 3 fix round 2 (ruling (b), R-1C-c): a DENY / REQUIRE_APPROVAL verdict still refuses
+  //     a MOTION, but NOT a STOP (non-motion job): the verdict is recorded (ledger result.policyOverride + a
+  //     control_audit_log row "stop_policy_override") and the STOP is sent anyway. The policy engine's own
+  //     decision log (evaluatePolicy) keeps what the policy said.
+  let policyOverride: Record<string, unknown> | undefined;
   {
     const { evaluateActionPolicy, secPlatformEnabled } = await import("../security/policyGate");
     if (secPlatformEnabled()) {
@@ -604,13 +631,26 @@ async function dispatchRobotJobCore(input: RobotDispatchInput): Promise<RobotDis
       );
       if (!verdict.allow) {
         const reason = verdict.effect === "deny" ? "POLICY_DENIED" : "POLICY_APPROVAL_REQUIRED";
-        const jobId = await record(
-          input,
-          "rejected",
-          { policyRef: verdict.policyId, effect: verdict.effect, reasonCode: verdict.reasonCode },
-          `${reason}: ${verdict.reason}`,
-        );
-        return { ok: false, status: "rejected", jobId, error: reason };
+        if (!motion) {
+          policyOverride = {
+            decision: reason,
+            effect: verdict.effect,
+            policyRef: verdict.policyId,
+            reasonCode: verdict.reasonCode,
+            policyReason: verdict.reason,
+            ruling: "R-1C-c",
+            note: "STOP (non-motion job) is never blocked by policy — sent anyway",
+          };
+          console.warn(`[Robot] policy ${reason} (${verdict.policyId ?? "no policy id"}) for STOP on robot ${input.robotId} — overridden (R-1C-c), STOP sent`);
+        } else {
+          const jobId = await record(
+            input,
+            "rejected",
+            { policyRef: verdict.policyId, effect: verdict.effect, reasonCode: verdict.reasonCode },
+            `${reason}: ${verdict.reason}`,
+          );
+          return { ok: false, status: "rejected", jobId, error: reason };
+        }
       }
     }
   }
@@ -715,7 +755,7 @@ async function dispatchRobotJobCore(input: RobotDispatchInput): Promise<RobotDis
     motionInFlight.set(input.robotId, { jobType: input.job.jobType, since: new Date().toISOString() });
   }
   try {
-    return await runRealJob(input, robot.driver, motion, timeoutMs);
+    return await runRealJob(input, robot.driver, motion, timeoutMs, policyOverride);
   } finally {
     if (motion) motionInFlight.delete(input.robotId);
   }
@@ -777,13 +817,13 @@ type RobotReservation = { ok: true; jobId: number } | { ok: false; result: Robot
  *     bound abort row authorises nothing a STOP does not already get (it simply expires).
  * Any throw ⇒ LEDGER_WRITE_FAILED and nothing is sent (the tx rolled back).
  */
-async function reserveRobotJob(input: RobotDispatchInput): Promise<RobotReservation> {
+async function reserveRobotJob(input: RobotDispatchInput, runningResult?: Record<string, unknown>): Promise<RobotReservation> {
   const rejected = (jobId: number | undefined, error: string): RobotReservation => ({
     ok: false,
     result: { ok: false, status: "rejected", jobId, error },
   });
   if (!input.actionId || !isMotionJob(input.job)) {
-    const jobId = (await record(input, "running", undefined, undefined, { requireDb: true })) as number;
+    const jobId = (await record(input, "running", runningResult, undefined, { requireDb: true })) as number;
     return { ok: true, jobId };
   }
   const actionId = input.actionId;
@@ -821,10 +861,11 @@ async function runRealJob(
   driver: RobotDriver,
   motion: boolean,
   timeoutMs: number,
+  policyOverride?: Record<string, unknown>,
 ): Promise<RobotDispatchResult> {
   let jobId: number;
   try {
-    const reserved = await reserveRobotJob(input);
+    const reserved = await reserveRobotJob(input, policyOverride ? { policyOverride } : undefined);
     if (!reserved.ok) return reserved.result;
     jobId = reserved.jobId;
   } catch (err) {
@@ -878,6 +919,28 @@ async function runRealJob(
     const stop = await stopAfterUnknownOutcome(driver, timeoutMs);
     detail = { ...(detail ?? {}), ...stop };
     errorText = `${errorText ?? "motion outcome unknown"} — ${stop.abort}${"abortError" in stop ? `: ${stop.abortError}` : ""}`;
+  }
+
+  // fix round 2 (b) — a policy verdict overridden for this STOP stays on the terminal row and is audited.
+  // Written AFTER the driver call so the STOP is never delayed; an audit failure never fails the STOP.
+  if (policyOverride) {
+    detail = { ...(detail ?? {}), policyOverride };
+    try {
+      const db = await getDb();
+      if (db) {
+        const { recordAuditEvent } = await import("../audit/controlAuditService");
+        await recordAuditEvent(db, {
+          entityType: "robot_job",
+          entityId: jobId,
+          action: "stop_policy_override",
+          actorId: input.confirmedBy ?? input.requestedBy ?? null,
+          after: policyOverride,
+          reason: `R-1C-c: STOP sent despite policy ${String(policyOverride.decision)} (${String(policyOverride.policyRef ?? "no policy id")})`,
+        });
+      }
+    } catch (err) {
+      console.error(`[Robot] audit of the STOP policy override failed for job ${jobId} (STOP was sent):`, (err as Error)?.message ?? err);
+    }
   }
 
   try {
