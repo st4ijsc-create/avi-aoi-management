@@ -121,7 +121,10 @@ const ALWAYS_ALLOWED_PROCEDURES = new Set([
  *   - readonly: block POST mutations (except always-allowed)
  *   - locked/no_license: block everything except always-allowed procedures
  */
-export function licenseEnforcementMiddleware() {
+export function licenseEnforcementMiddleware(opts: {
+  /** Doc 80 Đợt 1 Task 6: loại thật của thủ tục tRPC (POST-query do methodOverride ≠ ghi). */
+  procedureType?: (proc: string) => string | undefined;
+} = {}) {
   return (req: Request, res: Response, next: NextFunction) => {
     if (ENV.licenseBypass) return next();
     const state = licenseGuard.getState() as LicenseState;
@@ -145,6 +148,7 @@ export function licenseEnforcementMiddleware() {
       method,
       state,
       alwaysAllowed: (proc) => ALWAYS_ALLOWED_PROCEDURES.has(proc),
+      procedureType: opts.procedureType,
     });
     if (decision.allow) return next();
 

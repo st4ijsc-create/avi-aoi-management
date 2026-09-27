@@ -114,6 +114,50 @@ describe("licensePolicy — never stop production (SYNAPSE §4.3)", () => {
       decideLicenseBatch({ procedures: ["inspection.record", "andon.raise"], method: "POST", state: "locked", alwaysAllowed }).allow,
     ).toBe(true);
   });
+
+  // Doc 80 Đợt 1 Task 6 (XC-01): query input lớn đi POST (tRPC methodOverride). License readonly
+  // không được coi POST-query là ghi — tra loại thủ tục THẬT; không biết loại ⇒ giữ POST (chặn).
+  describe("POST-query (methodOverride) dưới license readonly", () => {
+    const loai = (p: string) =>
+      ({ "ir.lint": "query", "programming.plcopenImport": "query", "settings.upsert": "mutation" } as Record<string, string>)[p];
+
+    it("batch POST chỉ gồm query ⇒ cho qua như GET", () => {
+      const d = decideLicenseBatch({
+        procedures: ["ir.lint", "programming.plcopenImport"],
+        method: "POST",
+        state: "readonly",
+        alwaysAllowed,
+        procedureType: loai,
+      });
+      expect(d.allow).toBe(true);
+      // never-stop mặc định hạ locked → readonly: cũng qua
+      expect(
+        decideLicenseBatch({ procedures: ["ir.lint"], method: "POST", state: "locked", alwaysAllowed, procedureType: loai, neverStop: true }).allow,
+      ).toBe(true);
+    });
+
+    it("POST mutation vẫn bị chặn; batch trộn query + mutation bị chặn", () => {
+      expect(
+        decideLicenseBatch({ procedures: ["settings.upsert"], method: "POST", state: "readonly", alwaysAllowed, procedureType: loai }).allow,
+      ).toBe(false);
+      expect(
+        decideLicenseBatch({ procedures: ["ir.lint", "settings.upsert"], method: "POST", state: "readonly", alwaysAllowed, procedureType: loai }).allow,
+      ).toBe(false);
+    });
+
+    it("không biết loại thủ tục ⇒ fail-closed (giữ POST ⇒ chặn); không truyền procedureType ⇒ hành vi cũ", () => {
+      expect(
+        decideLicenseBatch({ procedures: ["khong.tonTai"], method: "POST", state: "readonly", alwaysAllowed, procedureType: loai }).allow,
+      ).toBe(false);
+      expect(decideLicenseBatch({ procedures: ["ir.lint"], method: "POST", state: "readonly", alwaysAllowed }).allow).toBe(false);
+    });
+
+    it("strict locked (never-stop tắt) vẫn chặn cả GET lẫn POST-query không thiết yếu", () => {
+      expect(
+        decideLicenseBatch({ procedures: ["ir.lint"], method: "POST", state: "locked", alwaysAllowed, procedureType: loai, neverStop: false }).allow,
+      ).toBe(false);
+    });
+  });
 });
 
 describe("productCode — dual-accept (REBRAND R-2)", () => {

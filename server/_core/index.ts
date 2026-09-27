@@ -7,7 +7,7 @@ import net from "net";
 import path from "path";
 import { eq } from "drizzle-orm";
 import helmet from "helmet";
-import { createExpressMiddleware } from "@trpc/server/adapters/express";
+import { createTrpcMiddleware, trpcProcedureType } from "./trpcAdapter"; // doc 80 Đợt 1 Task 6 (XC-01): allowMethodOverride — query input lớn đi POST
 import { registerOAuthRoutes } from "./oauth";
 import { appRouter } from "../routers";
 import { getDb } from "../db";
@@ -5799,11 +5799,11 @@ async function startServer() {
   // I2-b model auto-rollback sweep + doc 22 P2 model perf snapshot producer:
   // MOVED to the W4-D background scheduler set (backgroundJobs.ts).
 
-  app.use("/api/trpc", licenseEnforcementMiddleware());
+  app.use("/api/trpc", licenseEnforcementMiddleware({ procedureType: (p) => trpcProcedureType(appRouter, p) }));
   // tRPC API
   app.use(
     "/api/trpc",
-    createExpressMiddleware({
+    createTrpcMiddleware({
       router: appRouter,
       createContext,
     })

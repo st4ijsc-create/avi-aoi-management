@@ -134,12 +134,20 @@ export function decideLicenseBatch(args: {
   state: LicenseState;
   alwaysAllowed: (proc: string) => boolean;
   neverStop?: boolean;
+  /**
+   * Doc 80 Đợt 1 Task 6 (XC-01): loại THẬT của thủ tục ("query"/"mutation"/…). Client gửi query
+   * có input lớn bằng POST (tRPC methodOverride) ⇒ POST không còn đồng nghĩa "ghi". Một thủ tục
+   * tra ra "query" được xét như GET; không biết loại ⇒ giữ nguyên method (fail-closed).
+   */
+  procedureType?: (proc: string) => string | undefined;
 }): BatchDecision {
-  const { procedures, method, state, alwaysAllowed } = args;
+  const { procedures, method, state, alwaysAllowed, procedureType } = args;
   const neverStop = args.neverStop ?? neverStopProduction();
-  const allow = procedures.every((procedure) =>
-    isProcedureAllowed({ procedure, method, state, alwaysAllowed, neverStop }),
-  );
+  const allow = procedures.every((procedure) => {
+    const effMethod =
+      method.toUpperCase() === "POST" && procedureType?.(procedure) === "query" ? "GET" : method;
+    return isProcedureAllowed({ procedure, method: effMethod, state, alwaysAllowed, neverStop });
+  });
   if (allow) return { allow: true, code: null };
   const eff: LicenseState = neverStop && state === "locked" ? "readonly" : state;
   const code =
