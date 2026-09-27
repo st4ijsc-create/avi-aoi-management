@@ -281,6 +281,23 @@ function kiemHuy(theoDoi?: TheoDoiCopilot): void {
   if (theoDoi?.signal?.aborted) throw new LoiCopilotBiHuy();
 }
 
+/**
+ * Doc 80 Đợt 1 final wave (item 1) — chunk `{type:"error"}` mà engine phát GIỮA một lượt STREAM.
+ * Lỗi CÓ MÃ (`reasonCode`), theo đúng khuôn `OpcuaConfigError`/`ConnectionSupervisorError` mà
+ * `rawErrorCensus` chấp nhận — KHÔNG phải `throw new Error` trần. `message` giữ NGUYÊN VĂN chuỗi
+ * của engine vì `runCodeModel` chỉ đọc `e.message` → `lyDo` → `maLoiCua` phân loại bằng regex
+ * (timeout/slot/HTTP 5xx ⇒ MODEL_UNAVAILABLE…) và đưa vào `devDetail` (chỉ admin). Đường huỷ
+ * KHÔNG đi qua đây: `runCodeModel` kiểm `signal.aborted` TRƯỚC khi đọc message, và `generateProgram`
+ * ném `LoiCopilotBiHuy` ở `kiemHuy` — hai lớp phân biệt được bằng `instanceof`.
+ */
+export class LoiLuongModelCopilot extends Error {
+  readonly reasonCode = "STREAM_ERROR_CHUNK" as const;
+  constructor(message: string) {
+    super(message);
+    this.name = "LoiLuongModelCopilot";
+  }
+}
+
 /** ir-flow / iec61131-pou also COMPILE (safety-linter/transpile hard gate) before display. */
 const COMPILE_ALSO: ReadonlySet<string> = new Set(["ir-flow", "iec61131-pou"]);
 
@@ -866,7 +883,7 @@ async function goiModelStream(
       if (hien) theoDoi.onToken?.(hien);
     } else if (c.type === "error") {
       // data-raw-ok: chuỗi lỗi của engine chỉ đi vào `devDetail` (admin) qua `cauKhongCoMa`.
-      throw new Error(c.error || "streaming chat completion failed");
+      throw new LoiLuongModelCopilot(c.error || "streaming chat completion failed");
     } else if (c.type === "done") {
       text = typeof c.fullText === "string" ? c.fullText : undefined;
       tokensPrompt = c.tokensPrompt;
