@@ -20,15 +20,15 @@
  *   • DB được hỏi bằng `SELECT 1` THẬT, hạn DB_PING_TIMEOUT_MS (1500 ms) — `getDb()` treo hay
  *     truy vấn treo đều bị cắt; lỗi / quá hạn / null ⇒ "down".
  *   • MỘT lượt ping bay tại một thời điểm (single-flight): 20 probe đồng thời khi DB treo ⇒ đúng
- *     1 truy vấn, không vét cạn pool. Lượt bay bị bỏ rơi sau INFLIGHT_BO_ROI_MS để khi DB hồi
- *     phục lượt sau hỏi lại được (rò tối đa 1 truy vấn treo mỗi 10 s).
+ *     1 truy vấn. Ping chạy trên client RIÊNG `max: 1` (không chạm pool request); quá hạn ⇒ lượt
+ *     treo bị HUỶ (đóng socket). Câu trả lời về sau hạn được ghi là QUÁ HẠN (không nhấp nháy).
  *   • `/readyz` (createReadyzHandler): kết quả SELECT 1 cũ tối đa READYZ_DB_CACHE_MS (1 s — chặn
  *     lũ probe vô danh thành lũ truy vấn); DB down ⇒ 503 `{db:"down"}`.
  *   • `/health` (createHealthHandler) là LIVENESS: luôn 200 khi tiến trình trả lời được (DB chập
  *     chờn KHÔNG được làm Docker/k8s giết pod); trạng thái DB trong thân lấy từ lần ping gần nhất
  *     ≤ HEALTH_DB_CACHE_MS (5 s) — cũ hơn thì ping lại (có hạn giờ) trước khi trả lời, nên không
  *     bao giờ báo `db:"connected"` khi chưa ping. `status:"ok"` ⇔ DB connected.
- * Test: healthMetricsNoiThat.test.ts (DB giả ném/treo + DB `_test` thật).
+ * Test: healthMetricsNoiThat.test.ts (DB giả ném/treo + DB `_test` thật), healthPingRieng.test.ts (pool riêng).
  * ══════════════════════════════════════════════════════════════════════════════════════
  */
 import type { Request, Response } from "express";
@@ -40,8 +40,12 @@ export const DB_PING_TIMEOUT_MS = 1500;
 export const HEALTH_DB_CACHE_MS = 5000;
 /** `/readyz`: ping cũ tối đa 1 s — mỗi câu trả lời vẫn đứng trên một SELECT 1 thật. */
 export const READYZ_DB_CACHE_MS = 1000;
-/** Sau bấy lâu một lượt ping chưa về bị bỏ rơi, lượt sau được phép hỏi lại. */
-const INFLIGHT_BO_ROI_MS = 10_000;
+/**
+ * Sau bấy lâu một lượt ping chưa về bị BỎ RƠI (và được HUỶ nếu nguồn có `huy()`), lượt sau được phép
+ * hỏi lại. Với client ping riêng (bên dưới) lượt treo đã bị huỷ ngay khi quá hạn — mốc này chỉ còn
+ * là lưới an toàn cho nguồn tiêm vào không huỷ được.
+ */
+export const INFLIGHT_BO_ROI_MS = 10_000;
 
 export type DbPingReason = "timeout" | "error" | "no_db";
 
@@ -55,8 +59,14 @@ export interface DbPingResult {
   at: number;
 }
 
+/** Nguồn ping: `execute(q)` chạy SELECT 1; `huy()` (tuỳ chọn) HUỶ lượt đang treo (đóng kết nối của nó). */
+export interface NguonPing {
+  execute: (q: unknown) => Promise<unknown>;
+  huy?: () => void;
+}
+
 export interface DbPingerDeps {
-  /** Mặc định: `getDb` thật của `../db/connection` (nạp lười). */
+  /** Mặc định: client ping RIÊNG (`layNguonPingRieng`) — không bao giờ lấy slot của pool request. */
   getDb?: () => Promise<unknown> | unknown;
   timeoutMs?: number;
   now?: () => number;
@@ -69,19 +79,71 @@ export interface DbPinger {
   last(): DbPingResult | null;
 }
 
-async function defaultGetDb(): Promise<unknown> {
-  const { getDb } = await import("../db/connection");
-  return getDb();
+// ─── Client ping RIÊNG (Fix round 1, mục 2) ───────────────────────────────────────────────────────
+// VÌ SAO không dùng `getDb()`: một lượt SELECT 1 treo (mạng hố đen) giữ MỘT slot của pool request
+// (25) cho tới khi TCP chết, và mỗi 10 s một lượt mới bị bỏ rơi lại giữ thêm một slot ⇒ probe tự vét
+// cạn pool phục vụ người dùng. Chọn client riêng thay vì nâng INFLIGHT_BO_ROI_MS ≥ statement_timeout
+// (30 s) vì: statement_timeout do SERVER thi hành — với hố đen mạng server không bao giờ nhận/hồi
+// đáp nên nó KHÔNG cứu được; còn client riêng `max: 1` thì (a) probe KHÔNG BAO GIỜ chạm pool request,
+// (b) quá hạn ⇒ `end({timeout:0})` huỷ socket ⇒ lượt treo bị HUỶ THẬT, không chỉ bị bỏ rơi.
+// Tạo lười; connect_timeout 2 s; idle 10 s; application_name để đếm được trong pg_stat_activity.
+export const PING_APPLICATION_NAME = "aoi-health-ping";
+type ClientPing = ((s: TemplateStringsArray) => Promise<unknown>) & {
+  end: (o?: { timeout?: number }) => Promise<void>;
+};
+let _clientPing: ClientPing | null = null;
+
+async function layClientPing(): Promise<ClientPing | null> {
+  const url = process.env.DATABASE_URL;
+  if (!url) return null;
+  if (!_clientPing) {
+    const { default: postgres } = await import("postgres");
+    _clientPing = postgres(url, {
+      max: 1,
+      connect_timeout: 2,
+      idle_timeout: 10,
+      max_lifetime: 60 * 10,
+      onnotice: () => {},
+      connection: { application_name: PING_APPLICATION_NAME, statement_timeout: DB_PING_TIMEOUT_MS * 2 },
+    }) as unknown as ClientPing;
+  }
+  return _clientPing;
+}
+
+/** Đóng client ping riêng (tắt máy / afterAll của test). An toàn gọi nhiều lần. */
+export async function dongClientPing(): Promise<void> {
+  const c = _clientPing;
+  _clientPing = null;
+  if (c) await c.end({ timeout: 0 }).catch(() => {});
+}
+
+/** Nguồn ping mặc định: client riêng; `huy()` đóng ĐÚNG client của lượt ấy (không giết client mới hơn). */
+export async function layNguonPingRieng(): Promise<NguonPing | null> {
+  const c = await layClientPing();
+  if (!c) return null;
+  return {
+    execute: () => c`select 1`,
+    huy: () => {
+      if (_clientPing === c) _clientPing = null;
+      void c.end({ timeout: 0 }).catch(() => {});
+    },
+  };
+}
+
+interface Luot {
+  p: Promise<DbPingResult>;
+  at: number;
+  huy?: () => void;
+  daHuy: boolean;
 }
 
 export function createDbPinger(deps: DbPingerDeps = {}): DbPinger {
-  const getDb = deps.getDb ?? defaultGetDb;
+  const getDb = deps.getDb ?? layNguonPingRieng;
   const timeoutMs = deps.timeoutMs ?? DB_PING_TIMEOUT_MS;
   const now = deps.now ?? Date.now;
 
   let last: DbPingResult | null = null;
-  let inflight: Promise<DbPingResult> | null = null;
-  let inflightAt = 0;
+  let inflight: Luot | null = null;
 
   const ghi = (r: DbPingResult): DbPingResult => {
     // Kết quả của một lượt CŨ hơn (vd lượt bị bỏ rơi về muộn) không đè kết quả mới hơn.
@@ -89,16 +151,37 @@ export function createDbPinger(deps: DbPingerDeps = {}): DbPinger {
     return r;
   };
 
-  const chayMotLuot = async (startedAt: number): Promise<DbPingResult> => {
+  const huyLuot = (l: Luot) => {
+    if (l.daHuy) return;
+    l.daHuy = true;
     try {
-      const db = (await getDb()) as { execute?: (q: unknown) => Promise<unknown> } | null | undefined;
-      if (!db || typeof db.execute !== "function") {
-        return { ok: false, reason: "no_db", ms: now() - startedAt, startedAt, at: now() };
+      l.huy?.();
+    } catch {
+      /* huỷ là nỗ lực tốt nhất */
+    }
+  };
+
+  const chayMotLuot = async (l: Luot): Promise<DbPingResult> => {
+    const startedAt = l.at;
+    const ketThuc = (ok: boolean, reason?: DbPingReason): DbPingResult => {
+      const ms = now() - startedAt;
+      // Fix round 1 mục 1: câu trả lời VỀ SAU hạn là QUÁ HẠN, kể cả khi nó "ok" — nếu không, một DB
+      // chậm 2,5 s làm readiness nhấp nháy 503 → 200 (kết quả muộn đè kết quả quá hạn cùng startedAt).
+      if (ms > timeoutMs) return { ok: false, reason: "timeout", ms, startedAt, at: now() };
+      return ok ? { ok: true, ms, startedAt, at: now() } : { ok: false, reason, ms, startedAt, at: now() };
+    };
+    try {
+      const db = (await getDb()) as Partial<NguonPing> | null | undefined;
+      if (!db || typeof db.execute !== "function") return ketThuc(false, "no_db");
+      if (typeof db.huy === "function") {
+        const h = db.huy.bind(db);
+        l.huy = h;
+        if (l.daHuy) h(); // quá hạn TRƯỚC khi getDb kịp trả nguồn ⇒ huỷ ngay khi có
       }
       await db.execute(sql`select 1`);
-      return { ok: true, ms: now() - startedAt, startedAt, at: now() };
+      return ketThuc(true);
     } catch {
-      return { ok: false, reason: "error", ms: now() - startedAt, startedAt, at: now() };
+      return ketThuc(false, "error");
     }
   };
 
@@ -106,25 +189,28 @@ export function createDbPinger(deps: DbPingerDeps = {}): DbPinger {
     const t = now();
     if (last && t - last.at <= maxAgeMs) return last;
 
-    if (!inflight || t - inflightAt > INFLIGHT_BO_ROI_MS) {
-      inflightAt = t;
-      const p: Promise<DbPingResult> = chayMotLuot(t).then((r) => {
-        if (inflight === p) inflight = null;
+    if (!inflight || t - inflight.at > INFLIGHT_BO_ROI_MS) {
+      if (inflight) huyLuot(inflight); // bỏ rơi ⇒ huỷ nếu huỷ được
+      const l: Luot = { p: Promise.resolve(null as never), at: t, daHuy: false };
+      l.p = chayMotLuot(l).then((r) => {
+        if (inflight === l) inflight = null;
         return ghi(r);
       });
-      inflight = p;
+      inflight = l;
     }
     const current = inflight;
-    const batDau = inflightAt;
-    const hetGio = (): DbPingResult =>
-      ghi({ ok: false, reason: "timeout", ms: now() - batDau, startedAt: batDau, at: now() });
+    const batDau = current.at;
+    const hetGio = (): DbPingResult => {
+      huyLuot(current);
+      return ghi({ ok: false, reason: "timeout", ms: now() - batDau, startedAt: batDau, at: now() });
+    };
     const conLai = timeoutMs - (t - batDau);
     if (conLai <= 0) return hetGio();
 
     let timer: NodeJS.Timeout | undefined;
     try {
       return await Promise.race([
-        current,
+        current.p,
         new Promise<DbPingResult>((resolve) => {
           timer = setTimeout(() => resolve(hetGio()), conLai);
           timer.unref?.();
@@ -252,11 +338,7 @@ export function createHealthHandler(deps: ProbeHandlerDeps = {}) {
   return async (_req: Request, res: Response): Promise<void> => {
     const startedAt = Date.now();
     const r = await pinger.ping({ maxAgeMs: HEALTH_DB_CACHE_MS });
-    const db: "connected" | "disconnected" | "error" = r.ok
-      ? "connected"
-      : r.reason === "error"
-        ? "error"
-        : "disconnected";
+    const db = trangThaiDb(r);
     const mem = process.memoryUsage();
     res.setHeader("Cache-Control", "no-store");
     res.status(200).json({
@@ -270,5 +352,54 @@ export function createHealthHandler(deps: ProbeHandlerDeps = {}) {
       checkMs: Date.now() - startedAt,
       timestamp: new Date().toISOString(),
     });
+  };
+}
+
+/** Kết quả ping ⇒ trạng thái DB kiểu cũ: `connected` · `error` (SELECT 1 ném) · `disconnected` (quá hạn / không có DB). */
+export function trangThaiDb(r: DbPingResult): "connected" | "disconnected" | "error" {
+  if (r.ok) return "connected";
+  return r.reason === "error" ? "error" : "disconnected";
+}
+
+export interface NetworkHealthDeps {
+  pinger?: DbPinger;
+  /** Mặc định: `../services/mqttService` (nạp lười). */
+  mqtt?: () => Promise<{ isMqttRunning: () => boolean; getConnectedClientsCount: () => number }>;
+}
+
+/**
+ * `GET /api/network/health` — chẩn đoán cho network monitor của FactoryAlertSystem (đọc
+ * `dbStatus === 'connected'`). Fix round 1 mục 4: tách khỏi index.ts để test HÀNH VI trên đúng
+ * handler đang chạy. `dbStatus` từ ping SELECT 1 thật (≤ 5 s, hạn 1500 ms): `connected` · `error`
+ * (truy vấn ném — nay đến được trung thực, trước là một `catch` chết) · `disconnected` (quá hạn /
+ * không DB). Hình dạng thân và mã 200/500 giữ như handler nội tuyến cũ.
+ */
+export function createNetworkHealthHandler(deps: NetworkHealthDeps = {}) {
+  const pinger = deps.pinger ?? pingerMacDinh;
+  const napMqtt = deps.mqtt ?? (() => import("../services/mqttService"));
+  return async (_req: Request, res: Response): Promise<void> => {
+    try {
+      const { isMqttRunning, getConnectedClientsCount } = await napMqtt();
+      const dbStatus = trangThaiDb(await pinger.ping({ maxAgeMs: HEALTH_DB_CACHE_MS }));
+
+      const mem = process.memoryUsage();
+      const memoryUsageMB = Math.round(mem.heapUsed / 1024 / 1024);
+      const uptimeSec = Math.floor(process.uptime());
+      const hours = Math.floor(uptimeSec / 3600);
+      const minutes = Math.floor((uptimeSec % 3600) / 60);
+      const uptime = `${hours}h ${minutes}m`;
+
+      res.json({
+        status: "ok",
+        timestamp: new Date().toISOString(),
+        mqttStatus: isMqttRunning() ? "running" : "stopped",
+        mqttClients: getConnectedClientsCount(),
+        dbStatus,
+        memoryUsageMB,
+        uptime,
+      });
+    } catch (error: any) {
+      res.status(500).json({ status: "error", message: error?.message });
+    }
   };
 }

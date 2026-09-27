@@ -42,8 +42,13 @@ export function laLoopback(req: Request): boolean {
   return ip === "127.0.0.1" || ip === "::1" || ip === "localhost";
 }
 
-/** Tiêu đề mà một reverse proxy gắn vào — có mặt mà app KHÔNG cấu hình `trust proxy` ⇒ nguồn thật không rõ. */
-const TIEU_DE_CHUYEN_TIEP = ["x-forwarded-for", "forwarded", "x-real-ip"] as const;
+/**
+ * Tiêu đề mà một reverse proxy gắn vào — có mặt mà app KHÔNG cấu hình `trust proxy` ⇒ nguồn thật
+ * không rõ. Fix round 1 mục 5: MỌI `x-forwarded-*` (Proto/Host/Port/… chứ không chỉ For), cộng
+ * `forwarded` (RFC 7239) và `x-real-ip` — một proxy chỉ gắn `X-Forwarded-Proto` vẫn là một proxy.
+ */
+const laTieuDeChuyenTiep = (k: string): boolean =>
+  k.startsWith("x-forwarded-") || k === "forwarded" || k === "x-real-ip";
 
 /**
  * doc 81 Đợt 1B Task 11 — biến thể **NGHIÊM** của `laLoopback` cho bề mặt metrics
@@ -55,7 +60,8 @@ const TIEU_DE_CHUYEN_TIEP = ["x-forwarded-for", "forwarded", "x-real-ip"] as con
  *     proxy cùng máy (nginx → 127.0.0.1) làm MỌI khách từ xa trông như loopback — Prometheus
  *     scrape thẳng không gửi XFF, nên đường hợp lệ không mất gì;
  *   • đã cấu hình `trust proxy` ⇒ `req.ip` (Express tự tách XFF theo đúng cấu hình ấy).
- * Chỉ `127.0.0.1` / `::1` (kể cả dạng `::ffff:127.0.0.1`). `laLoopback` gốc giữ NGUYÊN cho
+ * Chỉ `127.0.0.1` / `::1` (kể cả dạng `::ffff:127.0.0.1`); chuỗi `localhost` cố ý KHÔNG nhận (remoteAddress luôn là IP).
+ * `laLoopback` gốc giữ NGUYÊN cho
  * `POST /api/ai/local-kb/feedback` (ngoài phạm vi T11).
  */
 export function laLoopbackNghiem(req: Request): boolean {
@@ -66,7 +72,7 @@ export function laLoopbackNghiem(req: Request): boolean {
     raw = req.ip || "";
   } else {
     const h = (req.headers ?? {}) as Record<string, unknown>;
-    if (TIEU_DE_CHUYEN_TIEP.some((k) => h[k] !== undefined)) return false;
+    if (Object.keys(h).some((k) => laTieuDeChuyenTiep(k.toLowerCase()) && h[k] !== undefined)) return false;
     raw = req.socket?.remoteAddress || "";
   }
   const ip = raw.trim().replace(/^::ffff:/i, "");

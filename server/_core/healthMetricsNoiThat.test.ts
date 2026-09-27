@@ -18,6 +18,7 @@ import type { AddressInfo } from "node:net";
 import { readFileSync } from "node:fs";
 import path from "node:path";
 
+import * as probes from "./healthProbes";
 import {
   createDbPinger,
   createHealthHandler,
@@ -284,11 +285,13 @@ describe("T11 §3 — DB `_test` THẬT: handler mặc định (đúng cái inde
     expect(src).toMatch(/app\.get\('\/readyz', createReadyzHandler\(\)\);/);
     expect(src).toMatch(/app\.get\("\/metrics", metricsHandler\);/);
     // /api/network/health (FactoryAlertSystem) cũng không còn tin Boolean(getDb())
-    const i = src.indexOf("app.get('/api/network/health'");
-    expect(i).toBeGreaterThan(0);
-    const than = src.slice(i, i + 1500);
-    expect(than).toMatch(/pingDbCached\(/);
-    expect(than).not.toMatch(/if \(dbInstance\) dbStatus = 'connected'/);
+    // (Fix round 1: hành vi được đo ở §7 trên ĐÚNG handler này; ở đây chỉ ghim điểm gắn.)
+    expect(src).toMatch(/app\.get\('\/api\/network\/health', createNetworkHealthHandler\(\)\);/);
+    expect(src).not.toMatch(/if \(dbInstance\) dbStatus = 'connected'/);
+  });
+
+  afterAll(async () => {
+    await (probes as any).dongClientPing?.();
   });
 });
 
@@ -411,6 +414,8 @@ describe("T11 §5 — nhánh anh em /api/observability/metrics áp CÙNG quy t�
       (await goi(port, "/api/observability/metrics", { "x-test-remote": "10.1.2.3", "x-forwarded-for": "127.0.0.1" })).status,
     ).toBe(401);
     expect((await goi(port, "/api/observability/metrics", { "x-forwarded-for": "203.0.113.9" })).status).toBe(401);
+    // Fix round 1 mục 5: MỌI `x-forwarded-*` (không chỉ XFF) ⇒ nguồn không rõ
+    expect((await goi(port, "/api/observability/metrics", { "x-forwarded-host": "metrics.example" })).status).toBe(401);
   });
 
   it("CÓ token: đúng Bearer từ IP ngoài ⇒ 200; loopback KHÔNG token ⇒ 401; token sai ⇒ 401", async () => {
@@ -421,5 +426,180 @@ describe("T11 §5 — nhánh anh em /api/observability/metrics áp CÙNG quy t�
     ).toBe(200);
     expect((await goi(port, "/api/observability/metrics")).status).toBe(401);
     expect((await goi(port, "/api/observability/metrics", { authorization: "Bearer sai" })).status).toBe(401);
+  });
+});
+
+// ═════════════════════════════════════════════════════════════════════════════════════════════════
+// FIX ROUND 1 (review cc8518e24)
+// ═════════════════════════════════════════════════════════════════════════════════════════════════
+
+/** Lời hứa điều khiển tay (kết thúc lượt ping đúng lúc test muốn). */
+function hoan<T>() {
+  let resolve!: (v: T) => void;
+  const p = new Promise<T>((r) => (resolve = r));
+  return { p, resolve };
+}
+
+describe("T11 FR1 §6 — kết quả MUỘN không được lật readiness (DB chậm 2,5 s)", () => {
+  it("DB trả lời sau 2500 ms ⇒ /readyz 503 ở t≈1,5 s VÀ vẫn 503 ở t≈2,7 s (không nhấp nháy sang 200)", async () => {
+    let dem = 0;
+    const getDb = async () => ({
+      execute: () => {
+        dem++;
+        return new Promise((r) => setTimeout(() => r([{ x: 1 }]), 2500));
+      },
+    });
+    const port = await nghe(appProbe(getDb).app);
+    const t0 = Date.now();
+    const r1 = await withTimeout(goi(port, "/readyz"), 5000);
+    expect(r1.status).toBe(503);
+    await new Promise((r) => setTimeout(r, Math.max(0, 2700 - (Date.now() - t0))));
+    const r2 = await withTimeout(goi(port, "/readyz"), 5000);
+    expect(Date.now() - t0).toBeGreaterThanOrEqual(2600);
+    expect(r2.status, "câu trả lời về SAU hạn 1500 ms là quá hạn, không phải 'ok'").toBe(503);
+    expect(r2.json.db).toBe("down");
+    expect(dem).toBe(1);
+  });
+
+  it("pinger: câu trả lời 'ok' về sau hạn được ghi là {ok:false, reason:'timeout'}", async () => {
+    let t = 0;
+    const h = hoan<unknown>();
+    const pinger = createDbPinger({ getDb: async () => ({ execute: () => h.p }), timeoutMs: 50, now: () => t });
+    const r1 = await pinger.ping({ maxAgeMs: 0 });
+    expect(r1).toMatchObject({ ok: false, reason: "timeout" });
+    t = 2500; // đồng hồ giả: DB trả lời ở 2500 ms
+    h.resolve([]);
+    await new Promise((r) => setTimeout(r, 10));
+    expect(pinger.last()).toMatchObject({ ok: false, reason: "timeout" });
+  });
+});
+
+describe("T11 FR1 §7 — ping KHÔNG chiếm pool request; lượt treo bị HUỶ; bỏ rơi 10 s; thứ tự kết quả", () => {
+  it("quá hạn ⇒ nguồn ping bị HUỶ đúng một lần (đóng kết nối của lượt treo)", async () => {
+    let huy = 0;
+    const pinger = createDbPinger({
+      getDb: async () => ({ execute: () => new Promise(() => {}), huy: () => void huy++ }),
+      timeoutMs: 50,
+    });
+    const rs = await withTimeout(Promise.all([pinger.ping({ maxAgeMs: 0 }), pinger.ping({ maxAgeMs: 0 })]), 2000);
+    expect(rs.every((r) => r.reason === "timeout")).toBe(true);
+    expect(huy).toBe(1);
+  });
+
+  it("bỏ rơi sau INFLIGHT_BO_ROI_MS (10 s): trước mốc ⇒ nhập lượt cũ (1 truy vấn); sau mốc ⇒ lượt MỚI", async () => {
+    expect((probes as any).INFLIGHT_BO_ROI_MS ?? 10_000).toBe(10_000);
+    let t = 100_000;
+    let dem = 0;
+    const pinger = createDbPinger({
+      getDb: async () => ({
+        execute: () => {
+          dem++;
+          return new Promise(() => {});
+        },
+      }),
+      timeoutMs: 50,
+      now: () => t,
+    });
+    await withTimeout(pinger.ping({ maxAgeMs: 0 }), 2000);
+    expect(dem).toBe(1);
+    t += 9_999;
+    const r = await withTimeout(pinger.ping({ maxAgeMs: 0 }), 2000);
+    expect(r.reason).toBe("timeout");
+    expect(dem, "trước mốc 10 s không được mở truy vấn thứ hai").toBe(1);
+    t += 2; // 10 001 ms sau lượt đầu
+    await withTimeout(pinger.ping({ maxAgeMs: 0 }), 2000);
+    expect(dem, "sau mốc 10 s lượt treo bị bỏ rơi ⇒ hỏi lại").toBe(2);
+  });
+
+  it("thứ tự: kết quả MUỘN của lượt CŨ không đè kết quả của lượt MỚI hơn", async () => {
+    let t = 0;
+    const cu = hoan<unknown>();
+    let lan = 0;
+    const pinger = createDbPinger({
+      getDb: async () => ({ execute: () => (++lan === 1 ? cu.p : Promise.resolve([])) }),
+      timeoutMs: 50,
+      now: () => t,
+    });
+    await pinger.ping({ maxAgeMs: 0 }); // lượt A treo ⇒ quá hạn
+    t = 10_001;
+    const b = await pinger.ping({ maxAgeMs: 0 }); // A bị bỏ rơi, lượt B ok
+    expect(b.ok).toBe(true);
+    t = 10_002;
+    cu.resolve([]); // A về muộn
+    await new Promise((r) => setTimeout(r, 10));
+    expect(pinger.last()?.ok, "kết quả muộn của lượt A (startedAt 0) đè lên B (startedAt 10001)").toBe(true);
+    expect(pinger.last()?.startedAt).toBe(10_001);
+  });
+});
+
+describe("T11 FR1 §8 — /api/network/health: hành vi trên ĐÚNG handler index.ts gắn", () => {
+  const taoApp = (getDb: () => Promise<unknown>) => {
+    const tao = (probes as any).createNetworkHealthHandler;
+    const app = express();
+    app.get("/api/network/health", (req, res, next) =>
+      tao({
+        pinger: createDbPinger({ getDb, timeoutMs: 200 }),
+        mqtt: async () => ({ isMqttRunning: () => true, getConnectedClientsCount: () => 3 }),
+      })(req, res, next),
+    );
+    return app;
+  };
+
+  it("SELECT 1 NÉM ⇒ dbStatus 'error' (trạng thái 'error' đến được một cách trung thực)", async () => {
+    const port = await nghe(taoApp(async () => ({ execute: () => Promise.reject(new Error("x")) })));
+    const r = await withTimeout(goi(port, "/api/network/health"), 5000);
+    expect(r.status).toBe(200);
+    expect(r.json).toMatchObject({ status: "ok", dbStatus: "error", mqttStatus: "running", mqttClients: 3 });
+  });
+
+  it("SELECT 1 TREO ⇒ dbStatus 'disconnected' trong ≤ 2 s", async () => {
+    const port = await nghe(taoApp(async () => ({ execute: () => new Promise(() => {}) })));
+    const r = await withTimeout(goi(port, "/api/network/health"), 5000);
+    expect(r.json.dbStatus).toBe("disconnected");
+    expect(r.ms).toBeLessThanOrEqual(2000);
+  });
+
+  it("getDb trả đối tượng truthy nhưng DB sập ⇒ KHÔNG 'connected' (ca Boolean(getDb()))", async () => {
+    const port = await nghe(taoApp(async () => ({ execute: () => Promise.reject(new Error("ECONNREFUSED")) })));
+    expect((await goi(port, "/api/network/health")).json.dbStatus).not.toBe("connected");
+  });
+
+  it("đường HỢP LỆ: SELECT 1 trả lời ⇒ dbStatus 'connected' + đủ trường FactoryAlert đọc", async () => {
+    const port = await nghe(taoApp(async () => ({ execute: () => Promise.resolve([]) })));
+    const r = await goi(port, "/api/network/health");
+    expect(r.json.dbStatus).toBe("connected");
+    for (const k of ["status", "timestamp", "mqttStatus", "mqttClients", "memoryUsageMB", "uptime"]) {
+      expect(r.json).toHaveProperty(k);
+    }
+  });
+});
+
+describe("T11 FR1 §9 — MỌI `x-forwarded-*` làm mất tư cách loopback (không trust proxy)", () => {
+  let port = 0;
+  const envCu = { token: process.env.METRICS_TOKEN, enabled: process.env.METRICS_ENABLED };
+  beforeAll(async () => {
+    process.env.METRICS_ENABLED = "true";
+    await initMetrics();
+    const app = express();
+    app.get("/metrics", metricsHandler);
+    port = await nghe(app);
+  });
+  afterAll(() => {
+    if (envCu.token === undefined) delete process.env.METRICS_TOKEN;
+    else process.env.METRICS_TOKEN = envCu.token;
+    if (envCu.enabled === undefined) delete process.env.METRICS_ENABLED;
+    else process.env.METRICS_ENABLED = envCu.enabled;
+  });
+
+  it("X-Forwarded-Proto MỘT MÌNH từ socket loopback ⇒ 403", async () => {
+    delete process.env.METRICS_TOKEN;
+    expect((await goi(port, "/metrics", { "x-forwarded-proto": "https" })).status).toBe(403);
+  });
+
+  it("X-Forwarded-Host / X-Forwarded-Port một mình ⇒ 403; loopback trần ⇒ 200 (đối chứng)", async () => {
+    delete process.env.METRICS_TOKEN;
+    expect((await goi(port, "/metrics", { "x-forwarded-host": "a.example" })).status).toBe(403);
+    expect((await goi(port, "/metrics", { "x-forwarded-port": "443" })).status).toBe(403);
+    expect((await goi(port, "/metrics")).status).toBe(200);
   });
 });

@@ -54,7 +54,7 @@ import {
 import { uyQuyenDuongDanAnh } from "../routes/_uyQuyenAnh";
 import logger, { installConsoleBridge } from "../logger";
 import { correlationRequestMiddleware } from "./correlationMiddleware";
-import { livenessProbe, createHealthHandler, createReadyzHandler, pingDbCached } from "./healthProbes";
+import { livenessProbe, createHealthHandler, createReadyzHandler, createNetworkHealthHandler } from "./healthProbes";
 import { createApiLimiter, createAuthLimiter, createMachineIngestLimiter, createOtIngestLimiter, credentialConflictGuard, OT_INGEST_PATHS } from "./rateLimitConfig";
 import type { CanonicalSample, TelemetryProtocol, TelemetryQuality } from "../services/telemetryBus";
 import { assertVramEnforcementPolicy } from "../services/vram/vramBroker";
@@ -525,41 +525,41 @@ async function startServer() {
   // ============================================================
 
   // Comprehensive server health for network monitor
-  app.get('/api/network/health', async (_req, res) => {
-    try {
-      const { isMqttRunning, getConnectedClientsCount } = await import("../services/mqttService");
-      // doc 81 1B T11: DB = `SELECT 1` thật (hạn 1500 ms, cache ≤ 5 s), không còn Boolean(getDb())
-
-      // Check DB (FactoryAlertSystem đọc `dbStatus === 'connected'`)
-      let dbStatus = 'disconnected';
-      try {
-        const ping = await pingDbCached();
-        if (ping.ok) dbStatus = 'connected';
-      } catch { dbStatus = 'error'; }
-
-      // Memory usage
-      const mem = process.memoryUsage();
-      const memoryUsageMB = Math.round(mem.heapUsed / 1024 / 1024);
-
-      // Uptime
-      const uptimeSec = Math.floor(process.uptime());
-      const hours = Math.floor(uptimeSec / 3600);
-      const minutes = Math.floor((uptimeSec % 3600) / 60);
-      const uptime = `${hours}h ${minutes}m`;
-
-      res.json({
-        status: 'ok',
-        timestamp: new Date().toISOString(),
-        mqttStatus: isMqttRunning() ? 'running' : 'stopped',
-        mqttClients: getConnectedClientsCount(),
-        dbStatus,
-        memoryUsageMB,
-        uptime,
-      });
-    } catch (error: any) {
-      res.status(500).json({ status: 'error', message: error?.message });
-    }
-  });
+  // ══════════════════════════════════════════════════════════════════════════
+  // doc 81 Đợt 1B Task 11 (fix round 1 mục 4) — handler tách sang ./healthProbes
+  // (createNetworkHealthHandler) để test HÀNH VI trên đúng cái đang chạy
+  // (healthMetricsNoiThat.test.ts §8), không chỉ đọc mã nguồn.
+  //
+  // ĐO trước khi vá: `dbStatus` = `Boolean(getDb())` ⇒ luôn 'connected' cả khi
+  // Postgres sập (đối tượng drizzle cache, postgres.js nối lười).
+  //
+  // Nay `dbStatus` từ `SELECT 1` thật trên client ping RIÊNG (hạn 1500 ms, cache
+  // ≤ 5 s, không lấy slot của pool request):
+  //   'connected'    — SELECT 1 vừa trả lời trong hạn;
+  //   'error'        — SELECT 1 ném (trước đây là một `catch` chết: nay đến được);
+  //   'disconnected' — quá hạn / không có DATABASE_URL.
+  // FactoryAlertSystem (networkMonitorService.ts) đọc `dbStatus === 'connected'`.
+  // Hình dạng thân { status, timestamp, mqttStatus, mqttClients, dbStatus,
+  // memoryUsageMB, uptime } và mã 200 / 500 giữ như handler nội tuyến cũ.
+  //
+  // Cùng MỘT pinger với các probe anh em (một nguồn sự thật cho trạng thái DB):
+  //   GET /health              — liveness, luôn 200, thân mang trạng thái DB;
+  //   GET /readyz              — readiness, 503 {db:"down"} khi SELECT 1 hỏng;
+  //   GET /api/external/health — probe Federation, trường `db` up/down.
+  // Client ping riêng: postgres `max: 1`, connect_timeout 2 s, idle 10 s,
+  // application_name `aoi-health-ping`; quá hạn ⇒ đóng socket (HUỶ lượt treo).
+  // Một câu trả lời về SAU hạn được ghi là quá hạn (không lật trạng thái).
+  //
+  // 500 { status:'error', message } chỉ còn khi nạp mqttService / đọc bộ
+  // đếm MQTT hỏng — ping DB tự nó không bao giờ ném.
+  // Tuyến vẫn đi qua apiLimiter của `/api/` (mount ở trên) như trước; không
+  // xác thực (như trước) — thân không chứa dữ liệu tenant.
+  // Test HÀNH VI: ném ⇒ 'error' · treo ⇒ 'disconnected' ≤ 2 s · truthy-nhưng-sập
+  // ⇒ không 'connected' · hợp lệ ⇒ 'connected' + đủ trường FactoryAlert đọc.
+  //
+  // ⚠ Khối này giữ ĐÚNG số dòng cũ (census ghim theo số dòng phía dưới).
+  // ══════════════════════════════════════════════════════════════════════════
+  app.get('/api/network/health', createNetworkHealthHandler());
 
   // Speed test endpoint — returns random bytes of configurable size
   app.get('/api/network/speedtest', (req, res) => {
