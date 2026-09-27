@@ -213,3 +213,29 @@ HA nhiều node (Redis adapter + EMQX + Postgres replica), metric ingest/MQTT/WA
 
 ## 6. Phương pháp và giới hạn
 5 tác tử khảo sát song song (2 FE, 3 BE), chỉ đọc repo; DB dev chỉ SELECT; đo tải trên instance riêng :3017 với DB `_test`; driver chạy với giả lập giao thức cục bộ (node-opcua, modbus-serial ServerTCP, mock SLMP theo đặc tả, sim MTConnect/HSMS/VDA 5050 của repo, listener AMQP) và server TCP giả cho robot. **Chưa có:** thiết bị thật, giả lập của hãng (PLCSIM, URSim, ZDevelop, TMflow, OpenPLC), diễn tập DB sập, HA nhiều node, TLS, soak dài. Tác dụng phụ đã ghi ở từng phụ lục (NBIRTH/NDEATH trùng id trên EMQX dùng chung; 2 máy pilot trong `_test`; 722 hàng fixture `_test` ở Đợt 0).
+
+## 7. Kết quả Đợt 1B (2026-09-27)
+
+Plan `docs/superpowers/plans/2026-09-27-engineering-control-dot1b.md`. **43 commit** `0816faa7d..ec4c13247` (192 tệp, +24,5k/−1,6k). Mỗi task: test tái hiện với giả lập giao thức thật trong tiến trình (ĐỎ trước khi vá) → vá → xanh → đột biến từng lớp; review từng task + vòng sửa; review toàn nhánh + một đợt sửa cuối + re-review. Quét cuối: **88/88 tệp test chạm tới, 1.285/1.285 xanh; `tsc` sạch**; chỉ còn 4 đỏ có sẵn trước Đợt 1B (xacThucBeMatRest, congGiayPhepAiCensus, appErrorParamsCoverage twinCanhRouter, viStringCoverage twin3d).
+
+| # doc 81 §3.1 | Đã đóng | Task |
+|---|---|---|
+| 1 Driver treo/sập, boot treo | Modbus/Techman đóng có hạn + destroy; MC giữ listener `error` (0 uncaughtException/30 s); ghi ngoài miền ⇒ `ok:false`; OT khởi động nền SAU `listen`, hạn từng adapter (tôn trọng `timeoutMs`), song song có giới hạn, legacy tự nối lại | 1, 2 |
+| 2 Đường vòng URScript, HIL | `simTargets` chỉ nhận `targetId` của đích sim cấu hình, từ chối nếu trùng host robot/adapter thật (chuẩn hoá IP, fail-closed khi DNS lỗi, cấm 0.0.0.0/::, nối bằng IP đã kiểm); HIL chỉ đạt khi thấy `Program running: true` + safety NORMAL | 3 |
+| 3 Techman, TcpLineClient, robot timeout | checksum đúng tài liệu (`*08`); phản hồi phân loại, không bao giờ `done` khi lỗi; deploy không gửi `ScriptExit()`; danh sách trắng script; UR cấm `params.script/home`; start/reset/pause Techman bị từ chối tới FAT; TCP nối lại sau timeout; FANUC đối chiếu reply theo tên gói + SequenceID; timeout ⇒ gửi dừng TRƯỚC khi chốt; hàng rào epoch — không byte chuyển động sau STOP; **khoá chuyển động** sau mất kết nối (gỡ bằng STOP xác nhận hoặc `robot.clearMotionLock` có audit); mỗi robot một chuyển động | 4, 5, final |
+| 4 Dispatcher / HITL / ledger / Sparkplug / canary | HITL gắn đúng lệnh (hash chuẩn tắc) + tiêu thụ một lần (FOR UPDATE + CAS) cho **cả OT lẫn robot**; sổ ghi intent TRƯỚC thiết bị; safety `UNKNOWN` chặn (OT & robot, một vocabulary); Sparkplug DCMD không actionId ⇒ từ chối; interlock tự động ghim đúng rule; canary `simulated` không promote sang máy ghi thật | 3, 6, final |
+| 5 Ingest | chia khối ≤1000 (lô 7k/12k lưu đủ); 200 chỉ khi đủ, 207/400/503/413; `ts` hỏng/tương lai >24 h loại riêng; WAL nguyên tử (OT + edge UNS); khoá máy chỉ ghi cho chính máy (machineId ghim từ khoá, deviceId phải trùng mã); rate-limit v1 sang tầng OT theo khoá đã xác thực; process-result 400/429/503 đúng nghĩa | 7, 8 |
+| 6 Socket / MQTT vô danh | `SOCKET_MACHINE_AUTH_MODE` mặc định **enforce** (trong mã); bắt tay machineCode+apiKey; sự kiện dùng máy đã xác thực; giới hạn tần suất socket/IP; duyệt đăng ký cấp `mk_` + audit; MQTT từ chối username lạ/thiếu mật khẩu, tự đăng ký chỉ khi bật cờ, log gộp (10.000 dòng → 1) | 9, 10, final |
+| 7 health/metrics | `/readyz` = `SELECT 1` thật (client ping riêng, hạn 1,5 s, quá hạn = 503); `/health` liveness; `/metrics` token hoặc loopback nghiêm | 11 |
+| 8 OPC UA | SignAndEncrypt/Basic256Sha256, PKI + trust-list (TOFU gốc riêng, cần cờ vận hành); ghi đúng kiểu; lỗi theo tag; `nsu=`; mật khẩu qua secretBox, che khỏi trình duyệt, **đổi endpoint/bảo mật phải nhập lại** (giao dịch FOR UPDATE) | 12, final |
+
+**Mức sau Đợt 1B:** các P0 mã của §3.1 đã đóng ở mức M3 (chạy thật với giả lập qua mã sản phẩm). **Chưa có M4** — cần bàn thử (OpenPLC trước) + O1–O6 (giao Kỹ thuật).
+
+**Việc cần làm TRƯỚC lần restart :3000 tới (hành vi đổi khi chạy bản mới):**
+- Đặt `METRICS_TOKEN` + bỏ comment khối `authorization` trong `monitoring/prometheus/prometheus.yml` (nếu không, Prometheus qua `host.docker.internal` nhận 403).
+- Máy nối socket bằng khoá plaintext / không khoá sẽ không lên online (cần `mk_`, hoặc `SOCKET_MACHINE_AUTH_MODE=off` / `MACHINE_SHARED_KEY_ALLOWED=true`).
+- Tablet FactoryAlertSystem mới không tự đăng ký MQTT (admin tạo trước, hoặc bật `MQTT_AUTO_REGISTER_UNKNOWN=true` tạm).
+- Mọi chuyển động robot/AGV và mọi lệnh ghi OT thật bị chặn tới khi safety-PLC đọc OK.
+- Gateway dùng một khoá máy cho nhiều thiết bị nhận 403.
+
+**Còn mở (cần quyết định hoặc đợt sau):** robot `hitl` không kèm actionId vẫn chạy (vda5050Router/Adapter, ros2Bridge — đề xuất đóng); khoá `IOT_GATEWAY` chưa gắn danh sách thiết bị trên `/api/ot/ingest`; MQTT `factory/{fId}/{máy khác}/sensor/*` ghi được cho máy bất kỳ + cầu telemetry tin `asset_id` + subscribe `factory/#`; thiết bị MQTT đã đăng ký chưa có mật khẩu (cờ `MQTT_ALLOW_PASSWORDLESS_REGISTERED`, mặc định bật); Docker HEALTHCHECK dùng `/health` (luôn 200) hay `/readyz`; loại mẫu `ts` tương lai >24 h ở mọi nguồn; `new Date(ts)` không múi giờ ở 2 cửa ingest (BG-96/99); tài liệu `IoTTelemetrySection` + doc 61 §5.2 còn hướng dẫn `deviceId` kiểu cảm biến (nay 403); khoá chuyển động chỉ trong bộ nhớ; FOE tự cấp phê duyệt; giao thức thật (FANUC echo SequenceID, TM `OK;warnings`, MELFA `OPEN=`) phải xác nhận ở FAT. Chi tiết từng mục: ledger `.superpowers/sdd/2026-09-27-engineering-control-dot1b/progress.md`.
