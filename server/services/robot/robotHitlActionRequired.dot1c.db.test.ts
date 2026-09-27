@@ -19,7 +19,7 @@
  * ĐẾM publish (không nối broker nào). Facade an toàn THẬT, nguồn PLC nền giả trả OK (như binding test).
  */
 import { describe, it, expect, beforeAll, afterAll, beforeEach, vi } from "vitest";
-import { and, eq, like } from "drizzle-orm";
+import { and, eq, inArray, like } from "drizzle-orm";
 import { TRPCError } from "@trpc/server";
 
 const rt = vi.hoisted(() => ({ runJobCalls: 0, jobs: [] as Array<{ jobType: string; params?: Record<string, unknown> }> }));
@@ -70,10 +70,8 @@ vi.mock("./robotAutomationAction", async (importOriginal) => {
   };
 });
 
-// Router: quyền module/permission không phải đối tượng đo ở đây (sàn vai actuation THÌ LÀ — không mock).
-vi.mock("../../_core/accessControl", () => ({
-  requirePermission: () => async ({ ctx, next }: any) => next({ ctx }),
-}));
+// Fix round 1 (item 6): requirePermission KHÔNG còn bị mock — quyền machine_control đọc từ bảng `permissions`
+// THẬT (hàng seed trong beforeAll), sàn vai actuation và 2FA cũng thật.
 vi.mock("../../db", async (importOriginal) => {
   const orig = await importOriginal<Record<string, unknown>>();
   return { ...orig, phaiDoiMatKhau: async () => false };
@@ -84,7 +82,7 @@ vi.mock("../vda5050", async (importOriginal) => {
 });
 
 import { getDb } from "../../db/connection";
-import { aiPendingActions, robotJobs } from "../../../drizzle/schema";
+import { aiPendingActions, robotJobs, permissions } from "../../../drizzle/schema";
 import { dispatchRobotJob, type RobotDispatchInput } from "./robotCommandDispatcher";
 import { robotPayloadHash, withOtPayloadHash, readOtPayloadHash } from "../ot/otActionBinding";
 import { Vda5050Adapter } from "../vda5050/vda5050Adapter";
@@ -97,6 +95,8 @@ const DAU = `T3HITL-${Date.now()}`;
 const OWNER = 990_710_101;
 const OTHER = 990_710_102;
 const OPERATOR = 990_710_103;
+/** Fix round 1 (item 6) — có machine_control canCreate nhưng KHÔNG canEdit. */
+const OPERATOR_NO_EDIT = 990_710_104;
 let seq = 0;
 
 async function d() {
@@ -191,7 +191,7 @@ function makeRos2() {
 }
 const ROS_SPEC = { topic: "/cmd", type: "std_msgs/msg/String", msg: { data: "go" } };
 
-const ENV_KEYS = ["ROBOT_CONTROL_ENABLED", "ROBOT_COMMISSIONING_REQUIRED", "ROBOT_CONTROL_TIMEOUT_MS", "FIELD_V2_ENABLED", "SEC_PLATFORM", "ROBOT_SAFETY_PREFLIGHT_ENABLED"] as const;
+const ENV_KEYS = ["ROBOT_CONTROL_ENABLED", "ROBOT_COMMISSIONING_REQUIRED", "ROBOT_CONTROL_TIMEOUT_MS", "FIELD_V2_ENABLED", "SEC_PLATFORM", "ROBOT_SAFETY_PREFLIGHT_ENABLED", "AUTH_2FA_BAT_BUOC"] as const;
 const saved: Record<string, string | undefined> = {};
 
 describe.skipIf(!DB_URL)("Đợt 1C Task 3 — robot 'hitl' không actionId bị ĐÓNG (CSDL _test)", () => {
@@ -199,10 +199,18 @@ describe.skipIf(!DB_URL)("Đợt 1C Task 3 — robot 'hitl' không actionId bị
     expect(DB_URL).toMatch(/_test/); // cầu chì: không bao giờ chạy trên DB dev
     for (const k of ENV_KEYS) saved[k] = process.env[k];
     await import("../ot/adapterFacade");
+    // Fix round 1 (item 6) — quyền THẬT: OPERATOR có machine_control canCreate+canEdit; OPERATOR_NO_EDIT chỉ canCreate.
+    const db = await d();
+    await db.delete(permissions).where(inArray(permissions.userId, [OPERATOR, OPERATOR_NO_EDIT]));
+    await db.insert(permissions).values([
+      { userId: OPERATOR, category: "machine_control", moduleName: "machine_control", canView: true, canCreate: true, canEdit: true },
+      { userId: OPERATOR_NO_EDIT, category: "machine_control", moduleName: "machine_control", canView: true, canCreate: true, canEdit: false },
+    ]);
   }, 60_000);
 
   afterAll(async () => {
     const db = await d();
+    await db.delete(permissions).where(inArray(permissions.userId, [OPERATOR, OPERATOR_NO_EDIT]));
     await db.delete(aiPendingActions).where(like(aiPendingActions.id, `%${DAU}%`));
     for (const u of [OWNER, OTHER, OPERATOR]) {
       await db.delete(aiPendingActions).where(and(eq(aiPendingActions.userId, u), like(aiPendingActions.tool, "%.automation")));
@@ -229,6 +237,7 @@ describe.skipIf(!DB_URL)("Đợt 1C Task 3 — robot 'hitl' không actionId bị
     delete process.env.FIELD_V2_ENABLED;
     delete process.env.SEC_PLATFORM;
     delete process.env.ROBOT_SAFETY_PREFLIGHT_ENABLED;
+    delete process.env.AUTH_2FA_BAT_BUOC; // mặc định: 2FA BẮT BUỘC
   });
 
   // ─── L1 — dispatcher ─────────────────────────────────────────────────────────────────────
@@ -263,6 +272,12 @@ describe.skipIf(!DB_URL)("Đợt 1C Task 3 — robot 'hitl' không actionId bị
       process.env.ROBOT_CONTROL_ENABLED = "false";
       const r = await dispatchRobotJob(input({ actionId: undefined }));
       expect(r.status).toBe("rejected");
+      expect(r.error).toBe("HITL_ACTION_REQUIRED");
+      expect(rt.runJobCalls).toBe(0);
+    });
+
+    it("fix round 1 (item 3) — triggerKind LẠ (không phải 'manual') + chuyển động + không actionId ⇒ cũng HITL_ACTION_REQUIRED (fail-closed)", async () => {
+      const r = await dispatchRobotJob(input({ actionId: undefined, triggerKind: "auto" as unknown as "hitl" }));
       expect(r.error).toBe("HITL_ACTION_REQUIRED");
       expect(rt.runJobCalls).toBe(0);
     });
@@ -307,6 +322,71 @@ describe.skipIf(!DB_URL)("Đợt 1C Task 3 — robot 'hitl' không actionId bị
       expect(row?.requestedBy).toBe(OPERATOR);
       expect(row?.confirmedBy).toBe(OPERATOR);
       expect(row?.actionId).toBeNull();
+    });
+
+    it("fix round 1 (item 6) — có canCreate nhưng THIẾU canEdit (bảng permissions thật) ⇒ FORBIDDEN PERMISSION_DENIED{action:canEdit}, 0 lần", async () => {
+      const { adapter, published } = makeAgv();
+      agv.adapter = adapter;
+      const caller = vda5050Router.createCaller({ user: { id: OPERATOR_NO_EDIT, role: "engineer", name: "Op", twoFactorEnabled: true } } as any);
+      const err = await caller.sendOrder({ robotId: ROBOT, nodes }).then(
+        () => null,
+        (e) => e,
+      );
+      expect(err).toBeInstanceOf(TRPCError);
+      expect((err as TRPCError).code).toBe("FORBIDDEN");
+      expect((err as any).cause?.appCode).toBe("PERMISSION_DENIED");
+      expect((err as any).cause?.appParams).toEqual({ action: "canEdit" });
+      expect(rt.runJobCalls).toBe(0);
+      expect(published).toHaveLength(0);
+    });
+
+    it("fix round 1 (item 6) — 2FA BẮT BUỘC (mặc định): engineer CHƯA bật 2FA ⇒ FORBIDDEN TWO_FACTOR_NOT_SET_UP, 0 lần", async () => {
+      const { adapter, published } = makeAgv();
+      agv.adapter = adapter;
+      const caller = vda5050Router.createCaller({ user: { id: OPERATOR, role: "engineer", name: "Op", twoFactorEnabled: false } } as any);
+      const err = await caller.sendOrder({ robotId: ROBOT, nodes }).then(
+        () => null,
+        (e) => e,
+      );
+      expect((err as TRPCError).code).toBe("FORBIDDEN");
+      expect((err as any).cause?.appCode).toBe("TWO_FACTOR_NOT_SET_UP");
+      expect(rt.runJobCalls).toBe(0);
+      expect(published).toHaveLength(0);
+    });
+
+    it("fix round 1 (item 6) — chế độ NỘI BỘ (AUTH_2FA_BAT_BUOC=0): engineer chưa bật 2FA nhưng đủ quyền ⇒ chạy; thiếu canEdit ⇒ vẫn FORBIDDEN (nới 2FA không nới quyền)", async () => {
+      process.env.AUTH_2FA_BAT_BUOC = "0";
+      const { adapter, published } = makeAgv();
+      agv.adapter = adapter;
+      const ok = await vda5050Router
+        .createCaller({ user: { id: OPERATOR, role: "engineer", name: "Op", twoFactorEnabled: false } } as any)
+        .sendOrder({ robotId: ROBOT, nodes });
+      expect(ok.status).toBe("done");
+      expect(rt.runJobCalls).toBe(1);
+      const err = await vda5050Router
+        .createCaller({ user: { id: OPERATOR_NO_EDIT, role: "engineer", name: "Op", twoFactorEnabled: false } } as any)
+        .sendOrder({ robotId: ROBOT, nodes })
+        .then(
+          () => null,
+          (e) => e,
+        );
+      expect((err as any)?.cause?.appCode).toBe("PERMISSION_DENIED");
+      expect(rt.runJobCalls).toBe(1);
+      expect(published).toHaveLength(1);
+    });
+
+    it("fix round 1 (item 7) — dispatcher từ chối ⇒ router trả `error` (lý do) cho người vận hành, không nuốt", async () => {
+      // adapter trỏ tới một robot KHÔNG active ⇒ dispatcher từ chối "robot not active/connected".
+      const a = new Vda5050Adapter({ robotId: ROBOT + 1, code: `${DAU}-agv2`, manufacturer: "acme", serialNumber: `${DAU}-sn2`, interfaceName: "uagv", brokerUrl: "mqtt://127.0.0.1:1" });
+      const m = fakeMqtt();
+      (a as unknown as { client: unknown }).client = m.client;
+      agv.adapter = a;
+      const r = await vda5050Router
+        .createCaller({ user: { id: OPERATOR, role: "engineer", name: "Op", twoFactorEnabled: true } } as any)
+        .sendOrder({ robotId: ROBOT, nodes });
+      expect(r.status).toBe("rejected");
+      expect(r.error).toBe("robot not active/connected");
+      expect(m.published).toHaveLength(0);
     });
 
     it("vai ngoài sàn actuation (R11: actuation role floor) ⇒ FORBIDDEN, robot 0 lần, 0 publish", async () => {
@@ -424,6 +504,81 @@ describe.skipIf(!DB_URL)("Đợt 1C Task 3 — robot 'hitl' không actionId bị
       expect(no.published).toBe(false);
       expect(rt.runJobCalls).toBe(1);
       expect(published).toHaveLength(1);
+    });
+
+    it("fix round 1 (item 2) — Ros2Bridge 'hitl' ABORT ⇒ KHÔNG tạo bản ghi, tới driver kể cả khi key va chạm một hàng gắn job khác", async () => {
+      const key = `${DAU}-stopkey`;
+      // Hàng sẵn có ĐÚNG id mà bridge sẽ sinh cho key này, nhưng gắn job khác ⇒ trước đây STOP bị ACTION_BINDING_MISMATCH.
+      await (await d()).insert(aiPendingActions).values({
+        id: `ros2-${key}`,
+        tool: "ros2.automation",
+        argsJson: {},
+        userId: OWNER,
+        userRole: "automation",
+        summary: `${DAU} collide`,
+        previewJson: withOtPayloadHash(null, robotPayloadHash({ robotId: ROBOT, jobType: "move", params: { x: 9 } })),
+        status: "confirmed",
+        idempotencyKey: `ros2-${key}`,
+        expiresAt: new Date(Date.now() + 600_000),
+      });
+      const { bridge } = makeRos2();
+      const r = await bridge.dispatchToRos2({ robotId: ROBOT, job: { jobType: "abort", params: {} }, triggerKind: "hitl", requestedBy: OWNER, idempotencyKey: key }, ROS_SPEC);
+      expect(r.dispatch.status).toBe("done");
+      expect(mint.calls).toBe(0);
+      expect(rt.jobs.map((j) => j.jobType)).toEqual(["abort"]);
+    });
+
+    it("fix round 1 (item 2) — hàng sẵn có cùng id nhưng gắn job KHÁC ⇒ ensureBoundRobotAction trả null (không tái dùng mù) ⇒ chuyển động bị từ chối, 0 lần", async () => {
+      const key = `${DAU}-reuse-mismatch`;
+      await (await d()).insert(aiPendingActions).values({
+        id: `ros2-${key}`,
+        tool: "ros2.automation",
+        argsJson: {},
+        userId: OWNER,
+        userRole: "automation",
+        summary: `${DAU} collide`,
+        previewJson: withOtPayloadHash(null, robotPayloadHash({ robotId: ROBOT, jobType: "move", params: { x: 9 } })),
+        status: "confirmed",
+        idempotencyKey: `ros2-${key}`,
+        expiresAt: new Date(Date.now() + 600_000),
+      });
+      const { ensureBoundRobotAction } = await import("./robotAutomationAction");
+      const job = { jobType: "move" as const, params: { x: 1 } };
+      expect(await ensureBoundRobotAction({ tool: "ros2.automation", robotId: ROBOT, job, ownerUserId: OWNER, idempotencyKey: key })).toBeNull();
+      // Chủ khác cũng không được tái dùng.
+      expect(await ensureBoundRobotAction({ tool: "ros2.automation", robotId: ROBOT, job: { jobType: "move", params: { x: 9 } }, ownerUserId: OTHER, idempotencyKey: key })).toBeNull();
+      // Đúng job + đúng chủ ⇒ tái dùng hợp lệ.
+      expect(await ensureBoundRobotAction({ tool: "ros2.automation", robotId: ROBOT, job: { jobType: "move", params: { x: 9 } }, ownerUserId: OWNER, idempotencyKey: key })).toBe(`ros2-${key}`);
+      const { bridge } = makeRos2();
+      const r = await bridge.dispatchToRos2({ robotId: ROBOT, job, triggerKind: "hitl", requestedBy: OWNER, confirmedBy: OWNER, idempotencyKey: key }, ROS_SPEC);
+      expect(r.dispatch.error).toBe("HITL_ACTION_REQUIRED");
+      expect(rt.runJobCalls).toBe(0);
+    });
+
+    it("fix round 1 (item 2) — key dài chung 64 ký tự đầu KHÔNG còn va chạm: băm thay vì cắt, id ≤ 64", async () => {
+      const { ensureBoundRobotAction } = await import("./robotAutomationAction");
+      const stem = `${DAU}-` + "k".repeat(80);
+      const job = { jobType: "move" as const, params: { y: 1 } };
+      const a = await ensureBoundRobotAction({ tool: "vda5050.automation", robotId: ROBOT, job, ownerUserId: OWNER, idempotencyKey: `${stem}-A` });
+      const b = await ensureBoundRobotAction({ tool: "vda5050.automation", robotId: ROBOT, job: { jobType: "move", params: { y: 2 } }, ownerUserId: OWNER, idempotencyKey: `${stem}-B` });
+      expect(a).toBeTruthy();
+      expect(b).toBeTruthy();
+      expect(a).not.toBe(b);
+      expect(a!.length).toBeLessThanOrEqual(64);
+      expect(b!.length).toBeLessThanOrEqual(64);
+      await (await d()).delete(aiPendingActions).where(inArray(aiPendingActions.id, [a!, b!]));
+    });
+
+    it("fix round 1 (item 4) — năm lượt ensureBoundRobotAction SONG SONG cùng key ⇒ cả năm trả CÙNG id (không lượt nào null), đúng MỘT hàng", async () => {
+      const { ensureBoundRobotAction } = await import("./robotAutomationAction");
+      const key = `${DAU}-race`;
+      const job = { jobType: "move" as const, params: { z: 3 } };
+      const ids = await Promise.all(
+        Array.from({ length: 5 }, () => ensureBoundRobotAction({ tool: "ros2.automation", robotId: ROBOT, job, ownerUserId: OWNER, idempotencyKey: key })),
+      );
+      expect(ids).toEqual(Array(5).fill(`ros2-${key}`));
+      const rows = await (await d()).select().from(aiPendingActions).where(eq(aiPendingActions.id, `ros2-${key}`));
+      expect(rows).toHaveLength(1);
     });
 
     it("Ros2Bridge: 'manual' (người vận hành) và 'hitl' có actionId đi thẳng — KHÔNG tự cấp bản ghi", async () => {

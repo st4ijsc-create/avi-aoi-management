@@ -12,7 +12,8 @@
  *      dry-run path; the REAL path (step 5) re-verifies under SELECT … FOR UPDATE that the row
  *      is 'confirmed', unexpired, owned by the confirmer AND bound to THIS robot/jobType/params
  *      (otActionBinding.robotPayloadHash), then consumes it confirmed→executed by CAS in the
- *      same transaction as the 'running' ledger row. Without an actionId step 2 is the whole
+ *      same transaction as the 'running' ledger row. Fix round 1 of doc 81 Đợt 1C Task 3 (R-1C-c):
+ *      the whole of step 2 applies to MOTION only — a STOP is never refused on HITL grounds. Without an actionId step 2 is the whole
  *      gate ('manual' keeps ruling R11: confirmedBy === requestedBy).
  *      doc 81 Đợt 1C Task 3 (owner decision 2026-09-27 "Đóng"): 'hitl' + a MOTION job + NO actionId
  *      is refused outright (rejected, HITL_ACTION_REQUIRED, code PRECONDITION_FAILED) in every mode,
@@ -433,15 +434,19 @@ async function dispatchRobotJobCore(input: RobotDispatchInput): Promise<RobotDis
   //    server-side to the session user; no second person.
   //    Enforced here: a manual MOTION needs confirmedBy, and — when no actionId is given —
   //    confirmedBy === requestedBy (an internal caller cannot pass someone else's id as the
-  //    "confirmer"); an actionId, when given, is re-verified like 'hitl'. A manual `abort`
-  //    (stop) stays exempt so a stop is never locked out.
-  if (triggerKind === "hitl" || motion) {
-    // 2.0 doc 81 Đợt 1C Task 3 (owner decision 2026-09-27 "Đóng") — 'hitl' MOTION without an
+  //    "confirmer"); an actionId, when given, is re-verified like 'hitl'.
+  //    doc 81 Đợt 1C Task 3 fix round 1 (ruling R-1C-c, L-7 energy direction) — a NON-motion job (a
+  //    STOP: abort; `e_stop`/`stop` map to it in robotJobMapping) is exempt from this WHOLE block,
+  //    WHATEVER its triggerKind: no confirmedBy needed (api/v1 never sets one; FOE's system user is 0),
+  //    no actionId verification (an api-key STOP carries `apiv1-<key>`, a row that does not exist). It
+  //    still gets its ledger row. Before, a 'hitl' abort without confirmedBy was refused here.
+  if (motion) {
+    // 2.0 doc 81 Đợt 1C Task 3 (owner decision 2026-09-27 "Đóng") — a MOTION that is not 'manual'
+    //     (fix round 1: fail-closed on ANY other/unknown triggerKind, not just 'hitl') without an
     //     actionId: nothing was confirmed, so it is refused here, in every mode (dry-run too — a
     //     caller must not "pass" in simulation and break only at go-live), before any driver call.
-    //     Used to run on a bare confirmedBy (Task 5 contract, CÒN MỞ in the final-wave report). A
-    //     STOP (abort) is exempt: a stop is never blocked.
-    if (triggerKind === "hitl" && motion && !input.actionId) {
+    //     Used to run on a bare confirmedBy (Task 5 contract, CÒN MỞ in the final-wave report).
+    if (triggerKind !== "manual" && !input.actionId) {
       const jobId = await record(
         input,
         "rejected",
@@ -767,6 +772,9 @@ type RobotReservation = { ok: true; jobId: number } | { ok: false; result: Robot
  *     required; 'manual' additionally confirmedBy === requestedBy, ruling R11). Since doc 81 Đợt 1C
  *     Task 3 only a 'manual' motion or a STOP (abort) reaches here without an actionId — step 2.0
  *     refuses a 'hitl' motion without one (HITL_ACTION_REQUIRED).
+ *   • a STOP (non-motion job) — fix round 1 (R-1C-c): just the 'running' row, even WITH an actionId.
+ *     Its action is neither verified nor consumed: a STOP is never refused on HITL grounds, and a
+ *     bound abort row authorises nothing a STOP does not already get (it simply expires).
  * Any throw ⇒ LEDGER_WRITE_FAILED and nothing is sent (the tx rolled back).
  */
 async function reserveRobotJob(input: RobotDispatchInput): Promise<RobotReservation> {
@@ -774,7 +782,7 @@ async function reserveRobotJob(input: RobotDispatchInput): Promise<RobotReservat
     ok: false,
     result: { ok: false, status: "rejected", jobId, error },
   });
-  if (!input.actionId) {
+  if (!input.actionId || !isMotionJob(input.job)) {
     const jobId = (await record(input, "running", undefined, undefined, { requireDb: true })) as number;
     return { ok: true, jobId };
   }

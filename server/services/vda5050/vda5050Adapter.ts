@@ -321,6 +321,8 @@ export class Vda5050Adapter {
    * caller-supplied actionId pass through untouched; an automated 'hitl' call without one gets a
    * freshly created 'confirmed' row bound to exactly `job` (FOE pattern), owned by `confirmedBy`.
    * null from the helper ⇒ undefined here ⇒ the dispatcher refuses (HITL_ACTION_REQUIRED).
+   * Fix round 1 (item 2): only a MOTION job gets a row — a STOP needs none (dispatcher R-1C-c) and must
+   * never depend on one (a colliding key could otherwise turn a STOP into ACTION_BINDING_MISMATCH).
    */
   private async automationActionId(
     triggerKind: "hitl" | "manual",
@@ -328,6 +330,8 @@ export class Vda5050Adapter {
     job: RobotJobSpec,
   ): Promise<string | undefined> {
     if (triggerKind !== "hitl" || opts.actionId) return opts.actionId;
+    const { isMotionJob } = await import("../robot/robotCommandDispatcher");
+    if (!isMotionJob(job)) return undefined;
     const { ensureBoundRobotAction } = await import("../robot/robotAutomationAction");
     const id = await ensureBoundRobotAction({
       tool: "vda5050.automation",

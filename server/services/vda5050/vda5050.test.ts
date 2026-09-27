@@ -265,14 +265,18 @@ describe("VDA5050 Adapter command gating (DRY-RUN)", () => {
     expect(publishes.length).toBe(0); // NOTHING published to MQTT
   });
 
-  it("HITL gate: no confirmedBy → rejected, no publish", async () => {
+  // doc 81 Đợt 1C Task 3 fix round 1 (item 5) — ca này từng tên "HITL gate: no confirmedBy → rejected" và chỉ kiểm
+  // status. Từ Task 3, 'hitl' mặc định là đường TỰ ĐỘNG: không confirmedBy ⇒ không có chủ để gắn bản ghi ⇒ không có
+  // actionId ⇒ dispatcher từ chối HITL_ACTION_REQUIRED. Khẳng định đúng LÝ DO, không chỉ trạng thái.
+  it("automated 'hitl' without confirmedBy → no bound action → rejected HITL_ACTION_REQUIRED, no publish", async () => {
     const adapter = await makeStartedAdapter();
     const res = await adapter.sendOrder({
       nodes: [{ nodeId: "t", x: 1, y: 2, mapId: "m" }],
       requestedBy: 1,
-      // confirmedBy omitted → HITL gate rejects
+      // confirmedBy omitted → nobody to own the bound action
     });
     expect(res.status).toBe("rejected");
+    expect(res.error).toBe("HITL_ACTION_REQUIRED");
     expect(res.published).toBe(false);
     expect(publishes.length).toBe(0);
   });

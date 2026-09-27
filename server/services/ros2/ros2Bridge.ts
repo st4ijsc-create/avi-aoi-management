@@ -26,7 +26,7 @@
 import { RosbridgeClient, type RosbridgeOptions, type Ros2Message } from "./rosbridgeClient";
 import { normalizeRos2Message } from "./ros2Mapping";
 import { ingestTelemetry, type CanonicalSample } from "../telemetryBus";
-import { dispatchRobotJob, type RobotDispatchInput, type RobotDispatchResult } from "../robot/robotCommandDispatcher";
+import { dispatchRobotJob, isMotionJob, type RobotDispatchInput, type RobotDispatchResult } from "../robot/robotCommandDispatcher";
 import { ensureBoundRobotAction } from "../robot/robotAutomationAction"; // doc 81 Đợt 1C Task 3
 
 export function ros2BridgeEnabled(): boolean {
@@ -127,8 +127,10 @@ export class Ros2Bridge {
     // exactly input.job first (FOE pattern), owned by input.confirmedBy. Not created ⇒ no actionId
     // ⇒ the dispatcher refuses (HITL_ACTION_REQUIRED) and nothing is published. 'manual' (an
     // operator's own action, R11) and a caller-supplied actionId pass through untouched.
+    // Fix round 1 (item 2): a STOP (non-motion job) gets NO row — it needs none (dispatcher R-1C-c) and
+    // must never depend on one (a colliding key could turn it into ACTION_BINDING_MISMATCH).
     let dispatchInput = input;
-    if ((input.triggerKind ?? "hitl") === "hitl" && !input.actionId) {
+    if ((input.triggerKind ?? "hitl") === "hitl" && !input.actionId && isMotionJob(input.job)) {
       const actionId = await ensureBoundRobotAction({
         tool: "ros2.automation",
         robotId: input.robotId,

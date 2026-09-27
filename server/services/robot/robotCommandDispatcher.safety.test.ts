@@ -453,10 +453,12 @@ describe("safety-PLC preflight trước chuyển động (S9) — cùng facade v
     }
   });
 
-  it("lệnh dừng (abort) KHÔNG bị safety chặn — dừng không bao giờ bị khoá", async () => {
+  // doc 81 Đợt 1C Task 3 fix round 1 (R-1C-c, item 5) — STOP qua driver MELFA THẬT gửi dạng 'hitl' abort KHÔNG
+  // confirmedBy (hình dạng của khoá API / tự động): trước fix round 1 bước 2.a từ chối ⇒ robot không nhận STOP.
+  it("lệnh dừng (abort) KHÔNG bị safety chặn — dừng không bao giờ bị khoá ('hitl', không confirmedBy, không actionId)", async () => {
     await connectDriver(2000);
     plc.mode = "disabled";
-    const r = await within(dispatchRobotJob({ ...HOME, job: { jobType: "abort" as const } }), 10_000);
+    const r = await within(dispatchRobotJob({ robotId: 7, job: { jobType: "abort" as const }, triggerKind: "hitl", requestedBy: 0 }), 10_000);
     expect(r.status).toBe("done");
     expect(allCmds(fake)).toEqual(["STOP"]);
   });
@@ -536,10 +538,14 @@ describe("fix round 1 — interlock không bao giờ chặn lệnh DỪNG (M3)",
     expect(allCmds(fake)).toEqual([]);
   });
 
-  it("interlock đang vi phạm ⇒ abort VẪN đi: robot nhận STOP", async () => {
+  // Fix round 1 (item 5) — cùng hình dạng 'hitl' abort mang actionId KHÔNG tồn tại (đúng thứ api/v1 gửi: `apiv1-<key>`).
+  it("interlock đang vi phạm ⇒ abort VẪN đi: robot nhận STOP ('hitl', actionId không tồn tại, không confirmedBy)", async () => {
     await connectDriver(2000);
     interlock.blocked = true;
-    const r = await within(dispatchRobotJob({ ...HOME, job: { jobType: "abort" as const } }), 10_000);
+    const r = await within(
+      dispatchRobotJob({ robotId: 7, job: { jobType: "abort" as const }, triggerKind: "hitl", actionId: "apiv1-khong-ton-tai", requestedBy: 0 }),
+      10_000,
+    );
     expect(r.status).toBe("done");
     expect(allCmds(fake)).toEqual(["STOP"]);
   });
