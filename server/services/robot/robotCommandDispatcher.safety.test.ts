@@ -273,7 +273,10 @@ afterEach(async () => {
   if (driver) await driver.disconnect();
 });
 
-const HOME = { robotId: 7, job: { jobType: "home" as const }, triggerKind: "hitl" as const, requestedBy: 3, confirmedBy: 3 };
+// doc 81 Đợt 1C Task 3 (2026-09-27) — xe chở cho các ca safety/timeout/sổ ghi: trước là 'hitl' KHÔNG actionId (nay
+// bị từ chối HITL_ACTION_REQUIRED trước driver). Chuyển sang đường hợp lệ không cần bản ghi: 'manual' R11
+// (confirmedBy === requestedBy) — cùng các cổng phía sau (safety, interlock, slot, sổ ghi, dừng khi timeout).
+const HOME = { robotId: 7, job: { jobType: "home" as const }, triggerKind: "manual" as const, requestedBy: 3, confirmedBy: 3 };
 
 describe("đường hợp lệ vẫn chạy (không chặn oan)", () => {
   it("safety OK + sổ ghi được ⇒ done; robot nhận CNTLON/SRVON/EXEC; sổ: running → done", async () => {
@@ -513,10 +516,14 @@ describe("fix round 1 — manual: confirmedBy phải là chính người khởi 
     expect(allCmds(fake)).toEqual([]);
   });
 
-  it("hitl + confirmedBy ≠ requestedBy vẫn qua (quy tắc chỉ cho manual)", async () => {
+  // doc 81 Đợt 1C Task 3 (2026-09-27) — ca này từng khẳng định "hitl + confirmedBy ≠ requestedBy (không actionId)
+  // vẫn qua (done)". Đó chính là lỗ chủ dự án cho ĐÓNG: nay bị từ chối trước driver, 0 byte.
+  it("hitl + confirmedBy ≠ requestedBy + KHÔNG actionId ⇒ rejected HITL_ACTION_REQUIRED, 0 byte (Đợt 1C Task 3)", async () => {
     await connectDriver(2000);
-    const r = await within(dispatchRobotJob({ ...HOME, requestedBy: 3, confirmedBy: 99 }), 10_000);
-    expect(r.status).toBe("done");
+    const r = await within(dispatchRobotJob({ ...HOME, triggerKind: "hitl", requestedBy: 3, confirmedBy: 99 }), 10_000);
+    expect(r.status).toBe("rejected");
+    expect(r.error).toBe("HITL_ACTION_REQUIRED");
+    expect(allCmds(fake)).toEqual([]);
   });
 });
 

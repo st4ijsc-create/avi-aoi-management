@@ -7,6 +7,12 @@
  *   connection → robot.status online/offline
  *
  * WRITE direction (HITL + DRY-RUN by default):
+ *   doc 81 Đợt 1C Task 3 — trigger semantics: 'manual' = an operator's own click (vda5050Router,
+ *   ruling R11: confirmedBy = requestedBy = session user) and is passed through; 'hitl' (the
+ *   default) = the AUTOMATED path: with no actionId the adapter first creates a 'confirmed'
+ *   ai_pending_actions row bound (robotPayloadHash) to exactly the job it dispatches (FOE pattern,
+ *   robotAutomationAction.ensureBoundRobotAction); if that cannot be created the dispatcher refuses
+ *   the command (HITL_ACTION_REQUIRED) — nothing is published.
  *   sendOrder / sendInstantActions route through robotCommandDispatcher, which
  *   records an append-only robot_jobs row and ONLY allows a real MQTT publish
  *   when ROBOT_CONTROL_ENABLED==="true". In dry-run we BUILD the Order JSON and
@@ -25,6 +31,7 @@ import { robots, robotJobs } from "../../../drizzle/schema";
 import type { Robot } from "../../../drizzle/schema/robot";
 import { ingestRobotState } from "../robot/robotIngest";
 import type { RuntimeRobot } from "../robot/robotAdapter";
+import type { RobotJobSpec } from "../robot/robotDriver";
 import {
   buildVda5050Topic,
   VDA5050_DEFAULT_INTERFACE,
@@ -201,6 +208,8 @@ export class Vda5050Adapter {
     requestedBy: number;
     confirmedBy?: number;
     triggerKind?: "hitl" | "manual";
+    /** A confirmed, bound ai_pending_actions id the caller already holds ('hitl' only). */
+    actionId?: string;
     idempotencyKey?: string;
   }): Promise<SendOrderResult> {
     const order = buildOrder({
@@ -271,13 +280,16 @@ export class Vda5050Adapter {
 
     const { dispatchRobotJob } = await import("../robot/robotCommandDispatcher");
     let published = false;
+    const job: RobotJobSpec = {
+      jobType: "move",
+      params: { vda5050: "order", order: order as unknown as Record<string, unknown> },
+    };
+    const triggerKind = opts.triggerKind ?? "hitl";
     const res = await dispatchRobotJob({
       robotId: this.config.robotId,
-      job: {
-        jobType: "move",
-        params: { vda5050: "order", order: order as unknown as Record<string, unknown> },
-      },
-      triggerKind: opts.triggerKind ?? "hitl",
+      job,
+      triggerKind,
+      actionId: await this.automationActionId(triggerKind, opts, job),
       requestedBy: opts.requestedBy,
       confirmedBy: opts.confirmedBy,
       idempotencyKey: opts.idempotencyKey,
@@ -301,7 +313,30 @@ export class Vda5050Adapter {
       }
     }
 
-    return { ok: res.ok, status: res.status, jobId: res.jobId, order, published };
+    return { ok: res.ok, status: res.status, jobId: res.jobId, order, published, ...(res.error ? { error: res.error } : {}) };
+  }
+
+  /**
+   * doc 81 Đợt 1C Task 3 — the actionId this dispatch carries. 'manual' (operator, R11) and a
+   * caller-supplied actionId pass through untouched; an automated 'hitl' call without one gets a
+   * freshly created 'confirmed' row bound to exactly `job` (FOE pattern), owned by `confirmedBy`.
+   * null from the helper ⇒ undefined here ⇒ the dispatcher refuses (HITL_ACTION_REQUIRED).
+   */
+  private async automationActionId(
+    triggerKind: "hitl" | "manual",
+    opts: { actionId?: string; confirmedBy?: number; idempotencyKey?: string },
+    job: RobotJobSpec,
+  ): Promise<string | undefined> {
+    if (triggerKind !== "hitl" || opts.actionId) return opts.actionId;
+    const { ensureBoundRobotAction } = await import("../robot/robotAutomationAction");
+    const id = await ensureBoundRobotAction({
+      tool: "vda5050.automation",
+      robotId: this.config.robotId,
+      job,
+      ownerUserId: opts.confirmedBy,
+      idempotencyKey: opts.idempotencyKey,
+    });
+    return id ?? undefined;
   }
 
   /** Send an instantActions message (e.g. cancelOrder/stop) under the same gating. */
@@ -310,6 +345,8 @@ export class Vda5050Adapter {
     requestedBy: number;
     confirmedBy?: number;
     triggerKind?: "hitl" | "manual";
+    /** A confirmed, bound ai_pending_actions id the caller already holds ('hitl' only). */
+    actionId?: string;
     idempotencyKey?: string;
   }): Promise<SendOrderResult> {
     const msg: Vda5050InstantActions = {
@@ -322,10 +359,13 @@ export class Vda5050Adapter {
     };
     const { dispatchRobotJob } = await import("../robot/robotCommandDispatcher");
     let published = false;
+    const job: RobotJobSpec = { jobType: "custom", params: { vda5050: "instantActions", message: msg as unknown as Record<string, unknown> } };
+    const triggerKind = opts.triggerKind ?? "hitl";
     const res = await dispatchRobotJob({
       robotId: this.config.robotId,
-      job: { jobType: "custom", params: { vda5050: "instantActions", message: msg as unknown as Record<string, unknown> } },
-      triggerKind: opts.triggerKind ?? "hitl",
+      job,
+      triggerKind,
+      actionId: await this.automationActionId(triggerKind, opts, job),
       requestedBy: opts.requestedBy,
       confirmedBy: opts.confirmedBy,
       idempotencyKey: opts.idempotencyKey,
@@ -338,7 +378,7 @@ export class Vda5050Adapter {
         return { ok: false, status: "failed", jobId: res.jobId, published: false, error: (err as Error)?.message ?? String(err) };
       }
     }
-    return { ok: res.ok, status: res.status, jobId: res.jobId, published };
+    return { ok: res.ok, status: res.status, jobId: res.jobId, published, ...(res.error ? { error: res.error } : {}) };
   }
 
   async stop(): Promise<void> {

@@ -27,6 +27,7 @@ import { RosbridgeClient, type RosbridgeOptions, type Ros2Message } from "./rosb
 import { normalizeRos2Message } from "./ros2Mapping";
 import { ingestTelemetry, type CanonicalSample } from "../telemetryBus";
 import { dispatchRobotJob, type RobotDispatchInput, type RobotDispatchResult } from "../robot/robotCommandDispatcher";
+import { ensureBoundRobotAction } from "../robot/robotAutomationAction"; // doc 81 Đợt 1C Task 3
 
 export function ros2BridgeEnabled(): boolean {
   return process.env.ROS2_BRIDGE_ENABLED === "true" || process.env.ROS2_BRIDGE_ENABLED === "1";
@@ -121,7 +122,23 @@ export class Ros2Bridge {
     input: RobotDispatchInput,
     publishSpec: { topic: string; type: string; msg: Ros2Message },
   ): Promise<{ dispatch: RobotDispatchResult; published: boolean }> {
-    const dispatch = await dispatchRobotJob(input);
+    // doc 81 Đợt 1C Task 3 — the bridge is an AUTOMATED producer: a 'hitl' input (the default)
+    // without an actionId gets a 'confirmed' ai_pending_actions row bound (robotPayloadHash) to
+    // exactly input.job first (FOE pattern), owned by input.confirmedBy. Not created ⇒ no actionId
+    // ⇒ the dispatcher refuses (HITL_ACTION_REQUIRED) and nothing is published. 'manual' (an
+    // operator's own action, R11) and a caller-supplied actionId pass through untouched.
+    let dispatchInput = input;
+    if ((input.triggerKind ?? "hitl") === "hitl" && !input.actionId) {
+      const actionId = await ensureBoundRobotAction({
+        tool: "ros2.automation",
+        robotId: input.robotId,
+        job: input.job,
+        ownerUserId: input.confirmedBy,
+        idempotencyKey: input.idempotencyKey,
+      });
+      dispatchInput = { ...input, triggerKind: "hitl", ...(actionId ? { actionId } : {}) };
+    }
+    const dispatch = await dispatchRobotJob(dispatchInput);
     let published = false;
     // Only a real, successful dispatch (control enabled + HITL passed) may reach the wire.
     if (dispatch.ok && dispatch.status === "done") {

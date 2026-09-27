@@ -17,6 +17,8 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 type Row = Record<string, any>;
 
 const robotJobsRows: Row[] = [];
+// doc 81 Đợt 1C Task 3 — bản ghi ai_pending_actions cho ca 'hitl' (nay bắt buộc có actionId gắn đúng job).
+const pendingRows: Row[] = [];
 let seq = 1;
 
 vi.mock("drizzle-orm", () => ({
@@ -34,6 +36,8 @@ function tableFor(table: any): Row[] {
   switch (table?.__table) {
     case "robot_jobs":
       return robotJobsRows;
+    case "ai_pending_actions":
+      return pendingRows;
     default:
       return []; // robots / robot_commissioning_records / ai_pending_actions: rỗng
   }
@@ -46,6 +50,8 @@ function makeFakeDb() {
         return {
           where: (pred: any) => ({
             limit: async (_n?: number) => filtered(pred).slice(0, 1),
+            // doc 81 Đợt 1C Task 3 — reserveRobotJob đọc bản ghi HITL bằng SELECT … FOR UPDATE.
+            for: async (_mode: string) => filtered(pred),
             // isRobotCommissioned await-s .where(...) trực tiếp (không .limit)
             then: (res: any, rej: any) => Promise.resolve(filtered(pred)).then(res, rej),
           }),
@@ -65,11 +71,16 @@ function makeFakeDb() {
     // doc 81 Đợt 1B Task 5 — nhánh real ghi sổ 'running' TRƯỚC rồi UPDATE về trạng thái cuối.
     update: (table: any) => ({
       set: (vals: Row) => ({
-        where: async (pred: any) => {
-          for (const r of tableFor(table)) if (matches(r, pred)) Object.assign(r, vals);
+        // doc 81 Đợt 1C Task 3 — CAS confirmed→executed dùng .returning() (0/1 hàng).
+        where: (pred: any) => {
+          const hit = tableFor(table).filter((r) => matches(r, pred));
+          for (const r of hit) Object.assign(r, vals);
+          return Object.assign(Promise.resolve(), { returning: async () => hit.map((r) => ({ id: r.id })) });
         },
       }),
     }),
+    // doc 81 Đợt 1C Task 3 — reserveRobotJob chạy trong db.transaction (giả: cùng handle).
+    transaction: async (fn: (tx: any) => Promise<any>) => fn(makeFakeDb()),
   };
 }
 
@@ -136,6 +147,7 @@ const baseInput = (over: Record<string, any> = {}) => ({
 
 beforeEach(() => {
   robotJobsRows.length = 0;
+  pendingRows.length = 0;
   seq = 1;
   vi.clearAllMocks();
   policyMock.secPlatformEnabled.mockReturnValue(false);
@@ -219,7 +231,18 @@ describe("robotCommandDispatcher — policy seam 4a-policy (W3-B2 G3.14)", () =>
     policyMock.secPlatformEnabled.mockReturnValue(true);
     // doc 81 Đợt 1B Task 5 fix round 1 (R11) — manual đòi confirmedBy === requestedBy; ca này cần
     // actor ≠ requestedBy để chứng minh subject = confirmedBy ⇒ chạy đường 'hitl'.
-    const r = await dispatchRobotJob(baseInput({ confirmedBy: 9, triggerKind: "hitl" }));
+    // doc 81 Đợt 1C Task 3 (2026-09-27) — 'hitl' không actionId nay bị từ chối (HITL_ACTION_REQUIRED); ca này
+    // từng chạy KHÔNG actionId. Giờ mang một bản ghi confirmed của người xác nhận (9) gắn đúng robot/job/params —
+    // như FOE tạo — nên subject = confirmedBy vẫn được chứng minh trên đường hợp lệ.
+    const { robotPayloadHash, withOtPayloadHash } = await import("../ot/otActionBinding");
+    pendingRows.push({
+      id: "act-pol-1",
+      status: "confirmed",
+      userId: 9,
+      expiresAt: new Date(Date.now() + 600_000),
+      previewJson: withOtPayloadHash(null, robotPayloadHash({ robotId: 3, jobType: "home", params: { speed: 50 } })),
+    });
+    const r = await dispatchRobotJob(baseInput({ confirmedBy: 9, triggerKind: "hitl", actionId: "act-pol-1" }));
     expect(r.status).toBe("done");
     expect(runJobSpy).toHaveBeenCalledTimes(1);
 

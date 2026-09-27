@@ -4,7 +4,9 @@
  *
  * RBAC:
  *   listAgvs / status / testConnection → machine_monitoring (canView)
- *   sendOrder                          → machine_control     (canCreate)
+ *   sendOrder                          → actuationProcedure (role floor admin/supervisor/engineer
+ *                                        + 2FA) + machine_control canCreate AND canEdit
+ *                                        (doc 81 Đợt 1C Task 3 — was protectedProcedure + canCreate)
  *
  * SAFETY: sendOrder routes through the adapter, which routes through the robot
  * commandDispatcher. With ROBOT_CONTROL_ENABLED!=="true" (the default), the
@@ -16,10 +18,14 @@
  * NOTE: register in server/routers.ts as `vda5050: vda5050Router` (NOT edited here).
  */
 import { z } from "zod";
-import { router, moduleProcedure } from "../_core/trpc";
+import { router, moduleProcedure, moduleGate, actuationProcedure as actuationBase } from "../_core/trpc";
 // Doc 38 Đợt Q — license-gate this router behind MOD_OT_CONTROL (moduleGate = pass-through
 // until the deployment's SKU is configured — no-brick). Shadows `protectedProcedure`.
 const protectedProcedure = moduleProcedure("MOD_OT_CONTROL");
+// doc 81 Đợt 1C Task 3 — sendOrder is an operator-initiated MOTION dispatched as triggerKind
+// 'manual'; ruling R11 defines 'manual' as an authenticated session through the actuation role
+// floor (+2FA) with machine_control/canEdit — the same guard as robot.actuate. Same module gate.
+const actuationProcedure = actuationBase.use(moduleGate("MOD_OT_CONTROL"));
 import { requirePermission } from "../_core/accessControl";
 import { getDb } from "../db/connection";
 import { robots } from "../../drizzle/schema";
@@ -71,8 +77,9 @@ export const vda5050Router = router({
    * Order JSON is returned. A real publish requires ROBOT_CONTROL_ENABLED=true
    * AND an active adapter. machine_control (command).
    */
-  sendOrder: protectedProcedure
+  sendOrder: actuationProcedure
     .use(requirePermission("machine_control", "canCreate"))
+    .use(requirePermission("machine_control", "canEdit"))
     .input(
       z.object({
         robotId: z.number().int().positive(),
@@ -103,8 +110,11 @@ export const vda5050Router = router({
           mapId: n.mapId,
         })),
         orderId: input.orderId,
-        // The tRPC call IS the human action → treat as HITL-confirmed by this user.
-        triggerKind: "hitl",
+        // doc 81 Đợt 1C Task 3 — the tRPC call IS the operator's own action ⇒ 'manual' (ruling R11):
+        // requestedBy = confirmedBy = the SESSION user, bound here server-side (never from input).
+        // It used to be labelled 'hitl' with no actionId — a label the dispatcher now refuses
+        // (HITL_ACTION_REQUIRED): no confirmed ai_pending_actions row stands behind a click.
+        triggerKind: "manual",
         requestedBy: ctx.user.id,
         confirmedBy: ctx.user.id,
         idempotencyKey: input.idempotencyKey,

@@ -211,17 +211,20 @@ describe.skipIf(!DB_URL)("robot dispatcher — HITL binding + single-use consume
     expect(rt.runJobCalls).toBe(0);
   });
 
-  it("không actionId: manual với confirmedBy===requestedBy vẫn chạy (R11), manual với người xác nhận khác ⇒ MANUAL_CONFIRMER_MISMATCH; nhãn 'hitl' không actionId giữ hợp đồng Task 5 (chạy — CÒN MỞ, xem báo cáo)", async () => {
+  it("không actionId: manual với confirmedBy===requestedBy vẫn chạy (R11), manual với người xác nhận khác ⇒ MANUAL_CONFIRMER_MISMATCH; nhãn 'hitl' không actionId ⇒ HITL_ACTION_REQUIRED (Đợt 1C Task 3 — hợp đồng Task 5 đã ĐÓNG)", async () => {
     const m = await dispatchRobotJob(input({ actionId: undefined, triggerKind: "manual" }));
     expect(m.status).toBe("done");
     expect(rt.runJobCalls).toBe(1);
     const m2 = await dispatchRobotJob(input({ actionId: undefined, triggerKind: "manual", confirmedBy: OTHER }));
     expect(m2.error).toBe("MANUAL_CONFIRMER_MISMATCH");
     expect(rt.runJobCalls).toBe(1);
-    // Hợp đồng hiện hành (vendors/policy test của Task 5 ghim): 'hitl' + confirmedBy, không actionId ⇒ chạy.
+    // doc 81 Đợt 1C Task 3 (2026-09-27, chủ dự án "Đóng") — trước: 'hitl' + confirmedBy, không actionId ⇒
+    // chạy (done, runJob 2 lần). Nay: bị từ chối trước driver, robot vẫn chỉ 1 lần (lượt manual ở trên).
     const h = await dispatchRobotJob(input({ actionId: undefined }));
-    expect(h.status).toBe("done");
-    expect(rt.runJobCalls).toBe(2);
+    expect(h.status).toBe("rejected");
+    expect(h.error).toBe("HITL_ACTION_REQUIRED");
+    expect(h.code).toBe("PRECONDITION_FAILED");
+    expect(rt.runJobCalls).toBe(1);
   });
 
   it("★ hai lượt song song với CÙNG bản ghi confirmed ⇒ đúng MỘT lượt chạy nhờ LỚP CSDL (FOR UPDATE + CAS), bản ghi executed — dùng job `abort` (miễn slot R14 theo thiết kế) để cả hai lượt THẬT SỰ tới reserveRobotJob", async () => {

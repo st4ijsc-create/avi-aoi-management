@@ -247,10 +247,15 @@ describe("VDA5050 Adapter command gating (DRY-RUN)", () => {
     return adapter;
   }
 
+  // doc 81 Đợt 1C Task 3 (2026-09-27) — hai ca gating dưới đây từng gọi sendOrder với 'hitl' mặc định KHÔNG actionId.
+  // Nay 'hitl' = đường TỰ ĐỘNG (adapter tự tạo bản ghi gắn hash — cần CSDL thật, đo ở
+  // robot/robotHitlActionRequired.dot1c.db.test.ts); DB giả ở đây không giữ được bản ghi ⇒ dùng đường người vận hành
+  // 'manual' (đúng thứ vda5050Router gửi) — cái được đo (dry-run không publish / control bật thì publish) không đổi.
   it("dry-run: dispatcher records simulated, NO mqtt publish", async () => {
     const adapter = await makeStartedAdapter();
     const res = await adapter.sendOrder({
       nodes: [{ nodeId: "t", x: 1, y: 2, mapId: "m" }],
+      triggerKind: "manual",
       requestedBy: 1,
       confirmedBy: 1,
     });
@@ -277,6 +282,7 @@ describe("VDA5050 Adapter command gating (DRY-RUN)", () => {
     const adapter = await makeStartedAdapter();
     const res = await adapter.sendOrder({
       nodes: [{ nodeId: "t", x: 1, y: 2, mapId: "m" }],
+      triggerKind: "manual",
       requestedBy: 1,
       confirmedBy: 1,
     });

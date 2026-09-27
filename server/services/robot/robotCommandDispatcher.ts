@@ -13,7 +13,12 @@
  *      is 'confirmed', unexpired, owned by the confirmer AND bound to THIS robot/jobType/params
  *      (otActionBinding.robotPayloadHash), then consumes it confirmed→executed by CAS in the
  *      same transaction as the 'running' ledger row. Without an actionId step 2 is the whole
- *      gate ('manual' keeps ruling R11: confirmedBy === requestedBy),
+ *      gate ('manual' keeps ruling R11: confirmedBy === requestedBy).
+ *      doc 81 Đợt 1C Task 3 (owner decision 2026-09-27 "Đóng"): 'hitl' + a MOTION job + NO actionId
+ *      is refused outright (rejected, HITL_ACTION_REQUIRED, code PRECONDITION_FAILED) in every mode,
+ *      before any driver call — a 'hitl' label without a confirmed action behind it is not HITL. A
+ *      STOP (abort) is never refused on that ground. Automated producers mint a bound action first
+ *      (robotAutomationAction.ensureBoundRobotAction); operator clicks use 'manual' (R11),
  *   3. active + connected driver,
  *   4. MODE GATE: ROBOT_CONTROL_ENABLED!=='true' → record status 'simulated',
  *      never call driver.runJob (default is dry-run),
@@ -148,6 +153,8 @@ export interface RobotDispatchResult {
   status: "done" | "failed" | "simulated" | "rejected";
   jobId?: number;
   error?: string;
+  /** doc 81 Đợt 1C Task 3 — error class of a refusal (today only HITL_ACTION_REQUIRED sets it). */
+  code?: "PRECONDITION_FAILED";
   /** Set when the motion ran but its terminal ledger update failed (row stays 'running'). */
   ledgerError?: string;
 }
@@ -313,6 +320,13 @@ function idempotentReplay(prior: { id: number; status: string }): RobotDispatchR
   }
 }
 
+/**
+ * doc 81 Đợt 1C Task 3 — refusal reason: a MOTION job labelled triggerKind 'hitl' (the default)
+ * carries no actionId, i.e. no confirmed ai_pending_actions row stands behind it. Returned with
+ * code PRECONDITION_FAILED; never applied to a stop (abort).
+ */
+export const HITL_ACTION_REQUIRED = "HITL_ACTION_REQUIRED" as const;
+
 /** errorText written by the startup sweep on an orphaned `running` row. */
 export const PROCESS_RESTART_OUTCOME_UNKNOWN = "process_restart_outcome_unknown" as const;
 
@@ -422,6 +436,20 @@ async function dispatchRobotJobCore(input: RobotDispatchInput): Promise<RobotDis
   //    "confirmer"); an actionId, when given, is re-verified like 'hitl'. A manual `abort`
   //    (stop) stays exempt so a stop is never locked out.
   if (triggerKind === "hitl" || motion) {
+    // 2.0 doc 81 Đợt 1C Task 3 (owner decision 2026-09-27 "Đóng") — 'hitl' MOTION without an
+    //     actionId: nothing was confirmed, so it is refused here, in every mode (dry-run too — a
+    //     caller must not "pass" in simulation and break only at go-live), before any driver call.
+    //     Used to run on a bare confirmedBy (Task 5 contract, CÒN MỞ in the final-wave report). A
+    //     STOP (abort) is exempt: a stop is never blocked.
+    if (triggerKind === "hitl" && motion && !input.actionId) {
+      const jobId = await record(
+        input,
+        "rejected",
+        { reasonCode: HITL_ACTION_REQUIRED, code: "PRECONDITION_FAILED" },
+        `PRECONDITION_FAILED: ${HITL_ACTION_REQUIRED} — a 'hitl' motion needs the actionId of a confirmed, bound ai_pending_actions row (operator clicks use triggerKind 'manual'; automated producers create a bound action first) — nothing sent to the robot`,
+      );
+      return { ok: false, status: "rejected", jobId, error: HITL_ACTION_REQUIRED, code: "PRECONDITION_FAILED" };
+    }
     // 2.a Bắt buộc có người xác nhận.
     if (!input.confirmedBy) {
       const jobId = await record(input, "rejected", undefined, "HITL required: no confirmedBy");
@@ -736,9 +764,9 @@ type RobotReservation = { ok: true; jobId: number } | { ok: false; result: Robot
  *     CAS confirmed→executed (0 rows ⇒ consumed concurrently ⇒ NOT_CONFIRMED), then the 'running'
  *     ledger row — all in the same tx, so a failed insert un-consumes the action;
  *   • without an actionId: just the 'running' row. Step 2 is the whole gate then (confirmedBy
- *     required; 'manual' additionally confirmedBy === requestedBy, ruling R11). ⚠ The 'hitl'
- *     label without an actionId keeps Task 5's contract on purpose (its vendor/policy tests pin
- *     it); it is NOT bound to anything — reported CÒN MỞ in the final-wave report, not changed here.
+ *     required; 'manual' additionally confirmedBy === requestedBy, ruling R11). Since doc 81 Đợt 1C
+ *     Task 3 only a 'manual' motion or a STOP (abort) reaches here without an actionId — step 2.0
+ *     refuses a 'hitl' motion without one (HITL_ACTION_REQUIRED).
  * Any throw ⇒ LEDGER_WRITE_FAILED and nothing is sent (the tx rolled back).
  */
 async function reserveRobotJob(input: RobotDispatchInput): Promise<RobotReservation> {

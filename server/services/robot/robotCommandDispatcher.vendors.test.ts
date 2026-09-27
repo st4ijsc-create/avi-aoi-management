@@ -126,7 +126,9 @@ afterEach(async () => {
   while (closers.length) await closers.pop()!();
 });
 
-const HOME = { robotId: 7, job: { jobType: "home" as const }, triggerKind: "hitl" as const, requestedBy: 3, confirmedBy: 3 };
+// doc 81 Đợt 1C Task 3 (2026-09-27) — trước là 'hitl' KHÔNG actionId (nay bị từ chối HITL_ACTION_REQUIRED trước
+// driver). Các ca ở đây đo giao thức hãng, không đo HITL ⇒ dùng đường hợp lệ 'manual' R11 (confirmedBy === requestedBy).
+const HOME = { robotId: 7, job: { jobType: "home" as const }, triggerKind: "manual" as const, requestedBy: 3, confirmedBy: 3 };
 
 // ── FANUC RMI giả ─────────────────────────────────────────────────────────────
 type RmiPkt = Record<string, any>;

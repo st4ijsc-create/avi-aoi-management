@@ -9,7 +9,8 @@
  *   - actionId + sai owner → rejected.
  *   - actionId + status 'proposed' (chưa confirmed) → rejected.
  *   - thiếu confirmedBy → rejected (hành vi cũ, giữ nguyên).
- *   - KHÔNG có actionId (đường manual/legacy) → chỉ cần confirmedBy → qua (không regress).
+ *   - KHÔNG có actionId + 'hitl' + chuyển động → rejected HITL_ACTION_REQUIRED (doc 81 Đợt 1C Task 3,
+ *     2026-09-27 — trước đây chỉ cần confirmedBy ⇒ qua); 'hitl' abort không actionId vẫn qua.
  *   - triggerKind='manual' + chuyển động → CÙNG cổng HITL (doc 81 Đợt 1B Task 5); abort manual vẫn miễn.
  */
 import { describe, it, expect, vi, beforeEach } from "vitest";
@@ -132,10 +133,18 @@ describe("robotCommandDispatcher — HITL pending-action verify (doc 25 T1)", ()
     expect(r.error).toBe("HITL confirmation required");
   });
 
-  it("KHÔNG có actionId (đường manual/legacy) + có confirmedBy → qua (không regress)", async () => {
+  // doc 81 Đợt 1C Task 3 (2026-09-27, chủ dự án "Đóng") — ca này từng khẳng định "KHÔNG actionId + có
+  // confirmedBy → qua (simulated)". Nay 'hitl' chuyển động không actionId bị từ chối ở MỌI chế độ (kể cả
+  // dry-run); lệnh DỪNG (abort) không actionId vẫn qua.
+  it("KHÔNG có actionId + 'hitl' + chuyển động + có confirmedBy → rejected HITL_ACTION_REQUIRED (dry-run cũng vậy); abort vẫn qua", async () => {
     const r = await dispatchRobotJob(baseInput({ actionId: undefined }));
-    expect(r.status).toBe("simulated");
-    expect(r.ok).toBe(true);
+    expect(r.status).toBe("rejected");
+    expect(r.ok).toBe(false);
+    expect(r.error).toBe("HITL_ACTION_REQUIRED");
+    expect(r.code).toBe("PRECONDITION_FAILED");
+    expect(runJobSpy).not.toHaveBeenCalled();
+    const stop = await dispatchRobotJob(baseInput({ actionId: undefined, job: { jobType: "abort", params: {} } }));
+    expect(stop.status).toBe("simulated");
   });
 
   // doc 81 Đợt 1B Task 5 — manual KHÔNG còn bỏ qua HITL cho lệnh CHUYỂN ĐỘNG (trước đây ca này

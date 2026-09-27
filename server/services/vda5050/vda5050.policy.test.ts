@@ -131,9 +131,12 @@ const ORDER_OPTS = {
 };
 
 describe("VDA5050 sendOrder — fleet policy seam (W3-B2 G3.14)", () => {
+  // doc 81 Đợt 1C Task 3 (2026-09-27) — ca này và ca PERMIT cuối từng dùng 'hitl' mặc định KHÔNG actionId (nay adapter
+  // tự tạo bản ghi gắn hash — DB giả ở đây không giữ được ⇒ bị từ chối). Dùng đường người vận hành 'manual' (đúng thứ
+  // vda5050Router gửi); cái được đo (seam OFF không gọi policy / PERMIT chảy tới publish) không đổi.
   it("SEC_PLATFORM OFF → dry-run 'simulated' như cũ, evaluateActionPolicy KHÔNG được gọi (bit-compat)", async () => {
     const adapter = await makeStartedAdapter();
-    const res = await adapter.sendOrder(ORDER_OPTS);
+    const res = await adapter.sendOrder({ ...ORDER_OPTS, triggerKind: "manual" });
     expect(res.status).toBe("simulated");
     expect(res.published).toBe(false);
     expect(publishes.length).toBe(0);
@@ -206,7 +209,7 @@ describe("VDA5050 sendOrder — fleet policy seam (W3-B2 G3.14)", () => {
     policyMock.secPlatformEnabled.mockReturnValue(true);
     process.env.ROBOT_CONTROL_ENABLED = "true";
     const adapter = await makeStartedAdapter();
-    const res = await adapter.sendOrder(ORDER_OPTS);
+    const res = await adapter.sendOrder({ ...ORDER_OPTS, triggerKind: "manual" });
     expect(res.status).toBe("done");
     expect(res.published).toBe(true);
     expect(publishes.length).toBe(1);
