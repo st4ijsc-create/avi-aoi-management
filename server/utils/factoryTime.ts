@@ -325,8 +325,11 @@ export type KetQuaTsThietBi = { ok: true; ts: Date | undefined } | { ok: false; 
  * `toISOString`, sim-factory, mqtt_simulator.py `…Z`) đều gửi múi giờ ⇒ không đường hợp lệ nào bị chặn.
  *
  * ⚠ KHÁC `docGioMay` (chuỗi trần = UTC): hàm đó phục vụ hợp đồng KIỂM TRA AOI/AVI (`inspectionTime`/
- * `completedAt`/`startedAt`) — nơi quyết định QĐ#1 buộc giữ tương thích ngược sau cờ
- * `INGEST_REQUIRE_TIME_OFFSET` (chuỗi trần được nhận, gắn `timeSource=machine_naive`, lệch được đo).
+ * `completedAt`/`startedAt`). Với `inspectionTime` của `submitInspection`/`submitInspectionBatch`,
+ * cờ `INGEST_REQUIRE_TIME_OFFSET` MẶC ĐỊNH BẬT TRONG MÃ từ 2026-09-28 (chủ dự án quyết "có bật"):
+ * chuỗi trần bị từ chối TRƯỚC khi tới `docGioMay`; chỉ `=false/0/off/no` mới quay lại nhận chuỗi
+ * trần như UTC + gắn `timeSource=machine_naive`. `completedAt`/`startedAt` (gói ZIP/cây) KHÔNG đi
+ * qua cờ này — `docGioMay` ở đó vẫn nhận chuỗi trần như UTC.
  */
 export function docTsThietBi(raw: unknown): KetQuaTsThietBi {
   if (!raw) return { ok: true, ts: undefined };

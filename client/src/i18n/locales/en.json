@@ -3978,6 +3978,7 @@
       "rollbackRecipeVersion": "roll back recipe version"
     },
     "field": {
+      "inspectionTime": "inspection time (inspectionTime)",
       "clientId": "MQTT device",
       "changeReason": "change reason",
       "reason": "reason",
@@ -4208,6 +4209,7 @@
     "cannotDisplayChart": "Cannot display chart",
     "analyticsRenderError": "Analytics render error",
     "reason": {
+      "timeOffsetRequired": "The timestamp must carry an explicit time zone (Z or +07:00) — a timestamp without one is rejected because the server cannot tell which clock it refers to.",
       "mqttDeviceRejectedCredential": "This device was REJECTED — a rejected device cannot be issued a password. Approve the device first.",
       "mqttPasswordNotEnforced": "The broker is NOT checking passwords (MQTT_REQUIRE_PASSWORD=false) — devices connect by username only, so a machine binding would mean nothing. Re-enable password checks before binding.",
       "mqttMachineNotBindable": "The target machine is inactive/deleted, decommissioned/retired, or not linked to a station → factory.",
