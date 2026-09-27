@@ -60,6 +60,8 @@ interface MachinesTabProps {
   setMachineToDelete: Dispatch<SetStateAction<Machine | null>>;
   setDeleteMachineDialogOpen: Dispatch<SetStateAction<boolean>>;
   restoreMachineMutation: ReturnType<typeof trpc.machine.restore.useMutation>;
+  /** doc 81 Đợt 1C Task 4 fix #7 — admin/engineer có settings_factory canEdit (máy chủ vẫn tự kiểm). */
+  canEditGatewayAllowlist?: boolean;
 }
 
 export function MachinesTab({
@@ -91,6 +93,7 @@ export function MachinesTab({
   setMachineToDelete,
   setDeleteMachineDialogOpen,
   restoreMachineMutation,
+  canEditGatewayAllowlist = false,
 }: MachinesTabProps) {
   const { t } = useTranslation();
   const trpcUtils = trpc.useUtils();
@@ -293,7 +296,7 @@ export function MachinesTab({
                     { id: "station", header: t("settings.sidebar.workstation"), cell: (m) => <span className="text-sm text-muted-foreground">{stations?.find(s => s.id === m.stationId)?.name || t("common.na")}</span>, sortValue: (m) => stations?.find(s => s.id === m.stationId)?.name || "", filterValue: (m) => stations?.find(s => s.id === m.stationId)?.name || "" },
                     { id: "actions", header: "", align: "right", width: "180px", cell: (m) => (
                       <div className="flex items-center justify-end gap-1">
-                        {m.machineType === "IOT_GATEWAY" && (
+                        {canEditGatewayAllowlist && m.machineType === "IOT_GATEWAY" && (
                           <Button
                             variant="outline"
                             size="sm"

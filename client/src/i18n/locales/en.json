@@ -20241,7 +20241,11 @@
     "gatewayAllowlistSelf": "this gateway",
     "gatewayAllowlistInactiveNote": "Inactive devices in the current list will be dropped on save.",
     "gatewayAllowlistReason": "Reason for change (recorded in the audit log)",
-    "gatewayAllowlistSaved": "Allowed device list saved"
+    "gatewayAllowlistSaved": "Allowed device list saved",
+    "gatewayAllowlistLoadError": "Could not load the allowed device list. Close and try again — nothing was saved.",
+    "gatewayAllowlistNoMatch": "No machines match your search.",
+    "gatewayAllowlistTruncated": "Showing the first {{shown}} of {{total}} machines — refine your search to see others.",
+    "gatewayAllowlistOutOfScope": "{{count}} device(s) outside your scope are on this list; they are kept when you save."
   },
   "seedDataTab": {
     "daTaoDuLieuCo": "Sample base data created successfully!"

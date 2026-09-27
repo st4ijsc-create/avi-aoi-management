@@ -20249,7 +20249,11 @@
     "gatewayAllowlistSelf": "网关本身",
     "gatewayAllowlistInactiveNote": "当前列表中已停用的设备将在保存时被移除。",
     "gatewayAllowlistReason": "变更原因（记录到审计日志）",
-    "gatewayAllowlistSaved": "允许设备列表已保存"
+    "gatewayAllowlistSaved": "允许设备列表已保存",
+    "gatewayAllowlistLoadError": "无法加载允许设备列表。请关闭后重试——未保存任何内容。",
+    "gatewayAllowlistNoMatch": "没有与搜索匹配的设备。",
+    "gatewayAllowlistTruncated": "仅显示前 {{shown}}/{{total}} 台设备——请细化搜索以查看其他设备。",
+    "gatewayAllowlistOutOfScope": "列表中有 {{count}} 台设备不在您的权限范围内；保存时将保留它们。"
   },
   "seedDataTab": {
     "daTaoDuLieuCo": "示例基础数据创建成功！"

@@ -142,7 +142,8 @@ async function docAllowlistHoac503(gw: MayCuaKhoa, doc: DocThietBiDuocPhep): Pro
   try {
     return await doc(gw.id);
   } catch (err) {
-    log503(err);
+    // fix #3: nói rõ đây là lượt đọc allowlist + mã nguyên nhân (42P01 = DB chưa áp mig 0361).
+    log503(err, `gateway allowlist read failed (gateway ${gw.code})`);
     throw new ApiHttpError(503, "db_unavailable", "Database unavailable — retry.");
   }
 }
@@ -305,7 +306,20 @@ export function ingestLoiHttp(err: unknown): IngestLoiHttp {
 const LOG_503_MOI_MS = 10_000;
 let log503Luc = 0;
 let log503Nen = 0;
-function log503(err: unknown): void {
+/**
+ * Nguyên nhân gốc ở `err.cause` (vd `DrizzleQueryError` bọc lỗi Postgres): "[cause 42P01: relation … does
+ * not exist]". Lỗi không có cause ⇒ chuỗi rỗng (dòng log cũ giữ NGUYÊN từng byte). Task 4 fix #3.
+ */
+function moTaNguyenNhan(err: unknown): string {
+  const c = err && typeof err === "object" ? (err as { cause?: unknown }).cause : undefined;
+  if (!c || typeof c !== "object") return "";
+  const ma = (c as { code?: unknown }).code;
+  const tn = (c as { message?: unknown }).message;
+  const phan = [typeof ma === "string" || typeof ma === "number" ? String(ma) : "", typeof tn === "string" ? tn : ""].filter(Boolean);
+  return phan.length > 0 ? ` [cause ${phan.join(": ")}]` : "";
+}
+
+function log503(err: unknown, nguCanh = "transient failure"): void {
   const now = Date.now();
   if (now - log503Luc < LOG_503_MOI_MS) {
     log503Nen++;
@@ -316,8 +330,8 @@ function log503(err: unknown): void {
   log503Nen = 0;
   // Không in payload/khoá — chỉ thông điệp gốc, để vận hành thấy vì sao 503.
   console.error(
-    `[api/v1 ingest] transient failure → 503${nen > 0 ? ` (+${nen} lượt tương tự đã gộp)` : ""}:`,
-    err instanceof Error ? err.message : String(err),
+    `[api/v1 ingest] ${nguCanh} → 503${nen > 0 ? ` (+${nen} lượt tương tự đã gộp)` : ""}:`,
+    (err instanceof Error ? err.message : String(err)) + moTaNguyenNhan(err),
   );
 }
 

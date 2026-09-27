@@ -1196,6 +1196,7 @@ export default function DataSettings() {
           <TabsContent value="machines">
             <MachinesTab
               filteredMachines={filteredMachines}
+              canEditGatewayAllowlist={(user?.role === "admin" || user?.role === "engineer") && canManageFactory}
               machines={machines}
               machinesLoading={machinesLoading}
               deletedMachines={deletedMachines}

@@ -7,7 +7,8 @@
  * Phép đo sau DDL (vai avi_app, Đ-28 current_database):
  *   (a) bảng tồn tại với đúng 4 cột, khoá chính (gatewayMachineId, deviceMachineId), 2 FK → machines;
  *   (b) avi_app INSERT + SELECT + DELETE được một hàng dò (hai máy có sẵn); UPDATE bị TỪ CHỐI (42501);
- *       hàng dò do chính avi_app xoá (DELETE là quyền cần cho "thay allowlist");
+ *       ★ fix round 1: TOÀN BỘ phép dò chạy trong một giao dịch LUÔN hoàn tác — chạy lại script không
+ *       bao giờ xoá một mục allowlist thật trùng cặp dò, và cặp dò không bao giờ "sống" với kết nối khác;
  *   (c) `__applied_migrations` có đúng 1 hàng cho tệp này.
  *
  *   node scripts/apply-migration-0361.mjs --dev-only    # DB dev (chủ dự án/Kỹ thuật tự chạy)
@@ -105,21 +106,43 @@ async function applyTo(rawUrl, label) {
     if (fk.length !== 2 || !fk.every((f) => /REFERENCES machines\(id\) ON DELETE CASCADE/.test(f.def))) throw new Error(`(a) FK sai: ${JSON.stringify(fk)}`);
     console.log(`  ${TAG} ${label} (a) ${COT.length} cột · PK (gateway, device) · 2 FK → machines ON DELETE CASCADE: OK`);
 
-    // (b)
+    // (b) — ★ fix round 1: dò quyền TRONG MỘT GIAO DỊCH LUÔN HOÀN TÁC. Bản đầu upsert cặp (hai máy id
+    //   thấp nhất) rồi DELETE vô điều kiện ⇒ chạy lại trên DB đã có đúng cặp đó sẽ XOÁ một mục allowlist
+    //   thật (không audit), và trong lúc chạy cặp dò "sống" với mọi kết nối khác. Nay: mọi thao tác nằm
+    //   trong `appSql.begin` và kết thúc bằng một lỗi mốc ⇒ ROLLBACK — không gì của phép dò được commit,
+    //   không kết nối nào khác thấy nó, mục có sẵn (nếu có) không bao giờ mất.
     const may = await appSql`SELECT id FROM machines ORDER BY id LIMIT 2`;
     if (may.length < 2) {
       console.log(`  ${TAG} ${label} (b) BỎ QUA: DB có < 2 máy, không dựng được hàng dò`);
     } else {
       const [g, d] = [may[0].id, may[1].id];
-      await appSql`INSERT INTO ${appSql(BANG)} ("gatewayMachineId","deviceMachineId","addedBy") VALUES (${g}, ${d}, NULL)
-                   ON CONFLICT DO NOTHING`;
-      const doc = await appSql`SELECT 1 FROM ${appSql(BANG)} WHERE "gatewayMachineId" = ${g} AND "deviceMachineId" = ${d}`;
-      if (doc.length !== 1) throw new Error(`(b) SELECT lai hang do that bai`);
-      const upd = await tuChoi(() => appSql`UPDATE ${appSql(BANG)} SET "addedBy" = 1 WHERE "gatewayMachineId" = ${g}`);
-      if (!upd) throw new Error(`(b) avi_app phai bi tu choi UPDATE`);
-      const xoa = await appSql`DELETE FROM ${appSql(BANG)} WHERE "gatewayMachineId" = ${g} AND "deviceMachineId" = ${d} RETURNING 1`;
-      if (xoa.length !== 1) throw new Error(`(b) avi_app xoa hang do: ${xoa.length} (phai la 1)`);
-      console.log(`  ${TAG} ${label} (b) avi_app INSERT/SELECT/DELETE OK, UPDATE bị từ chối 42501: OK`);
+      const HOAN_TAC = new Error("probe-0361-rollback");
+      let kq = null;
+      try {
+        await appSql.begin(async (tx) => {
+          const coSan = (await tx`SELECT 1 FROM ${tx(BANG)} WHERE "gatewayMachineId" = ${g} AND "deviceMachineId" = ${d}`).length > 0;
+          if (!coSan) await tx`INSERT INTO ${tx(BANG)} ("gatewayMachineId","deviceMachineId","addedBy") VALUES (${g}, ${d}, NULL)`;
+          const doc = await tx`SELECT 1 FROM ${tx(BANG)} WHERE "gatewayMachineId" = ${g} AND "deviceMachineId" = ${d}`;
+          // UPDATE bị từ chối làm hỏng giao dịch ⇒ bọc trong SAVEPOINT để đi tiếp.
+          let updTuChoi = false;
+          try {
+            await tx.savepoint((sp) => sp`UPDATE ${sp(BANG)} SET "addedBy" = 1 WHERE "gatewayMachineId" = ${g} AND "deviceMachineId" = ${d}`);
+          } catch (e) {
+            updTuChoi = e?.code === "42501";
+          }
+          const xoa = await tx`DELETE FROM ${tx(BANG)} WHERE "gatewayMachineId" = ${g} AND "deviceMachineId" = ${d} RETURNING 1`;
+          kq = { coSan, doc: doc.length, updTuChoi, xoa: xoa.length };
+          throw HOAN_TAC; // LUÔN hoàn tác — kể cả khi cặp có sẵn (DELETE ở trên bị rollback)
+        });
+      } catch (e) {
+        if (e !== HOAN_TAC) throw e;
+      }
+      if (!kq || kq.doc !== 1) throw new Error(`(b) SELECT lai hang do that bai: ${JSON.stringify(kq)}`);
+      if (!kq.updTuChoi) throw new Error(`(b) avi_app phai bi tu choi UPDATE`);
+      if (kq.xoa !== 1) throw new Error(`(b) avi_app DELETE hang do: ${kq.xoa} (phai la 1)`);
+      const conLai = await appSql`SELECT 1 FROM ${appSql(BANG)} WHERE "gatewayMachineId" = ${g} AND "deviceMachineId" = ${d}`;
+      if (conLai.length !== (kq.coSan ? 1 : 0)) throw new Error(`(b) giao dich do KHONG hoan tac: con ${conLai.length} hang`);
+      console.log(`  ${TAG} ${label} (b) avi_app INSERT/SELECT/DELETE OK, UPDATE bị từ chối 42501 — trong giao dịch HOÀN TÁC (cặp có sẵn: ${kq.coSan ? "có, còn nguyên" : "không"}): OK`);
     }
 
     // (c)

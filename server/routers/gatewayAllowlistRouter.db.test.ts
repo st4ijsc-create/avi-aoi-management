@@ -228,4 +228,49 @@ describe.skipIf(!DB_URL)("doc 81 Đợt 1C Task 4 — machine.gatewayAllowlist (
     await caller(fx.admin, "admin").set({ gatewayId: fx.gw, deviceIds: [fx.a, fx.ngoai] });
     expect(await allowlist()).toEqual([fx.a, fx.ngoai].sort((x, y) => x - y));
   });
+
+  // ── fix round 1 #4 — mục NGOÀI phạm vi người xem: không lộ ở `get`, không bị `set` xoá lặng lẽ ──
+  // (nối tiếp ca trên: list hiện = {A, NGOAI}; NGOAI thuộc nhà máy engineer KHÔNG được gán.)
+  it("★ get của engineer: chỉ trả ĐẦY ĐỦ thiết bị trong phạm vi; mục ngoài phạm vi chỉ là SỐ ĐẾM (không mã/tên/loại)", async () => {
+    const r = await caller(fx.eng, "engineer").get({ gatewayId: fx.gw });
+    expect(r.devices.map((d) => d.id)).toEqual([fx.a]);
+    expect(r.outOfScopeCount).toBe(1);
+    const json = JSON.stringify(r);
+    expect(json).not.toContain(`${RUN}-NGOAI`);
+    expect(json).not.toContain(`T4 NGOAI`);
+    expect(json).not.toContain(String(fx.ngoai));
+    // admin (không lọc) thấy cả hai
+    const ad = await caller(fx.admin, "admin").get({ gatewayId: fx.gw });
+    expect(ad.devices.map((d) => d.id).sort((x, y) => x - y)).toEqual([fx.a, fx.ngoai].sort((x, y) => x - y));
+    expect(ad.outOfScopeCount).toBe(0);
+  });
+
+  it("★ set của engineer GIỮ mục ngoài phạm vi: lưu [] ⇒ bảng còn {NGOAI}; audit ghi keptOutOfScope; phản hồi không lộ id", async () => {
+    const r = await caller(fx.eng, "engineer").set({ gatewayId: fx.gw, deviceIds: [] });
+    expect(r.deviceIds).toEqual([]);
+    expect(r.outOfScopeCount).toBe(1);
+    expect(r.removed).toEqual([fx.a]);
+    expect(JSON.stringify(r)).not.toContain(String(fx.ngoai));
+    expect(await allowlist()).toEqual([fx.ngoai]);
+    const moi = (await auditRows()).at(-1)!;
+    expect(moi.actorId).toBe(fx.eng);
+    expect(moi.afterJson.deviceIds).toEqual([fx.ngoai]);
+    expect(moi.afterJson.keptOutOfScope).toEqual([fx.ngoai]);
+    // engineer thêm lại A ⇒ {A, NGOAI}
+    await caller(fx.eng, "engineer").set({ gatewayId: fx.gw, deviceIds: [fx.a] });
+    expect(await allowlist()).toEqual([fx.a, fx.ngoai].sort((x, y) => x - y));
+  });
+
+  it("lớp SERVICE (fix #5): phạm vi truyền vào được kiểm TRONG transaction — gateway ngoài phạm vi ⇒ gateway_not_found; thiết bị ngoài phạm vi ⇒ device_invalid; không đổi", async () => {
+    const { datAllowlist } = await import("../services/gatewayAllowlistService");
+    const truoc = await allowlist();
+    const soAudit = (await auditRows()).length;
+    await expect(datAllowlist({ gatewayId: fx.gw, deviceIds: [fx.a], actorId: fx.admin, phamViIds: [fx.a] })).rejects.toMatchObject({ loai: "gateway_not_found" });
+    await expect(datAllowlist({ gatewayId: fx.gw, deviceIds: [fx.b], actorId: fx.admin, phamViIds: [fx.gw, fx.a] })).rejects.toMatchObject({
+      loai: "device_invalid",
+      chiTiet: { deviceIds: [fx.b] },
+    });
+    expect(await allowlist()).toEqual(truoc);
+    expect((await auditRows()).length).toBe(soAudit);
+  });
 });

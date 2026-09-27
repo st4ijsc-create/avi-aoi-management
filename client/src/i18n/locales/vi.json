@@ -20221,7 +20221,11 @@
     "gatewayAllowlistSelf": "chính gateway",
     "gatewayAllowlistInactiveNote": "Thiết bị đã ngừng hoạt động trong danh sách cũ sẽ bị bỏ khi lưu.",
     "gatewayAllowlistReason": "Lý do thay đổi (ghi vào nhật ký)",
-    "gatewayAllowlistSaved": "Đã lưu danh sách thiết bị được phép"
+    "gatewayAllowlistSaved": "Đã lưu danh sách thiết bị được phép",
+    "gatewayAllowlistLoadError": "Không tải được danh sách thiết bị được phép. Đóng rồi thử lại — chưa lưu gì.",
+    "gatewayAllowlistNoMatch": "Không có máy nào khớp tìm kiếm.",
+    "gatewayAllowlistTruncated": "Chỉ hiện {{shown}}/{{total}} máy đầu tiên — hãy lọc thêm để thấy máy khác.",
+    "gatewayAllowlistOutOfScope": "Còn {{count}} thiết bị ngoài phạm vi của bạn trong danh sách; chúng được giữ nguyên khi lưu."
   },
   "seedDataTab": {
     "daTaoDuLieuCo": "Đã tạo dữ liệu cơ sở mẫu thành công!"

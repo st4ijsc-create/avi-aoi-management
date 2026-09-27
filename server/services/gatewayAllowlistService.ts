@@ -10,9 +10,13 @@
  *   • `docThietBiDuocPhep` — đường ingest (nóng): chỉ thiết bị ĐANG HOẠT ĐỘNG; lỗi DB ⇒ ném (nơi gọi
  *     đổi thành 503 — không bao giờ "đoán cho qua").
  *   • `docAllowlist`       — màn quản trị: mọi hàng, kể cả thiết bị đã ngừng (để người sửa thấy).
- *   • `datAllowlist`       — thay TOÀN BỘ list trong MỘT transaction: khoá hàng gateway (`FOR UPDATE`,
+ *   • `datAllowlist`       — thay list trong MỘT transaction: khoá hàng gateway (`FOR UPDATE`,
  *     tuần tự hoá hai người sửa cùng lúc để ảnh "trước" của audit đúng), xoá + chèn, rồi ghi
  *     `control_audit_log` bằng CHÍNH `tx` ⇒ audit hỏng thì thay đổi rollback (cùng khuôn ILK-10).
+ *     ★ fix round 1 (#4/#5): phạm vi người sửa (`phamViIds`, tập id máy — `null` = không lọc) được
+ *     tính MỘT lần ở router rồi kiểm TRONG transaction: gateway và mọi thiết bị gửi lên phải thuộc
+ *     phạm vi; mục có sẵn NGOÀI phạm vi người sửa được GIỮ NGUYÊN (người sửa không thấy nó thì không
+ *     được lặng lẽ xoá nó — vd engineer lưu không làm mất mục admin đã thêm).
  */
 import { and, asc, eq, inArray } from "drizzle-orm";
 import { getDb } from "../db/connection";
@@ -90,6 +94,8 @@ export interface KetQuaDatAllowlist {
   sau: number[];
   them: number[];
   bot: number[];
+  /** Mục có sẵn ngoài phạm vi người sửa — được giữ nguyên. */
+  giuNgoaiPhamVi: number[];
 }
 
 /**
@@ -102,10 +108,14 @@ export async function datAllowlist(input: {
   deviceIds: number[];
   actorId: number | null;
   reason?: string | null;
+  /** Tập id máy trong phạm vi người sửa (`idsTrongPhamVi("machine", …)`); `null`/vắng = không lọc. */
+  phamViIds?: ReadonlyArray<number> | null;
 }): Promise<KetQuaDatAllowlist> {
   const db = await getDb();
   if (!db) throw new DbUnavailableError();
-  const sau = Array.from(new Set(input.deviceIds)).sort((a, b) => a - b);
+  const guiLen = Array.from(new Set(input.deviceIds)).sort((a, b) => a - b);
+  const phamVi = input.phamViIds == null ? null : new Set(input.phamViIds);
+  const trongPhamVi = (id: number) => phamVi === null || phamVi.has(id);
 
   return db.transaction(async (tx) => {
     const [gw] = await tx
@@ -113,18 +123,20 @@ export async function datAllowlist(input: {
       .from(machines)
       .where(eq(machines.id, input.gatewayId))
       .for("update");
-    if (!gw || gw.isActive === false) throw new AllowlistLoi("gateway_not_found", { gatewayId: input.gatewayId });
+    if (!gw || gw.isActive === false || !trongPhamVi(gw.id)) {
+      throw new AllowlistLoi("gateway_not_found", { gatewayId: input.gatewayId });
+    }
     if (gw.machineType !== LOAI_MAY_GATEWAY) {
       throw new AllowlistLoi("not_a_gateway", { gatewayId: gw.id, machineType: gw.machineType });
     }
 
-    if (sau.length > 0) {
+    if (guiLen.length > 0) {
       const co = await tx
         .select({ id: machines.id })
         .from(machines)
-        .where(and(inArray(machines.id, sau), eq(machines.isActive, true)));
+        .where(and(inArray(machines.id, guiLen), eq(machines.isActive, true)));
       const coSet = new Set(co.map((r) => r.id));
-      const thieu = sau.filter((id) => !coSet.has(id));
+      const thieu = guiLen.filter((id) => !coSet.has(id) || !trongPhamVi(id));
       if (thieu.length > 0) throw new AllowlistLoi("device_invalid", { deviceIds: thieu });
     }
 
@@ -137,6 +149,9 @@ export async function datAllowlist(input: {
       .map((r) => r.id)
       .sort((a, b) => a - b);
 
+    // Mục có sẵn ngoài phạm vi người sửa: GIỮ (không hiện cho họ ⇒ không được xoá lặng lẽ).
+    const giuNgoaiPhamVi = truoc.filter((id) => !trongPhamVi(id));
+    const sau = Array.from(new Set([...guiLen, ...giuNgoaiPhamVi])).sort((a, b) => a - b);
     const sauSet = new Set(sau);
     const truocSet = new Set(truoc);
     const bot = truoc.filter((id) => !sauSet.has(id));
@@ -160,10 +175,10 @@ export async function datAllowlist(input: {
       action: AUDIT_ACTION_ALLOWLIST_SET,
       actorId: input.actorId,
       before: { gatewayCode: gw.code, deviceIds: truoc },
-      after: { gatewayCode: gw.code, deviceIds: sau, added: them, removed: bot },
+      after: { gatewayCode: gw.code, deviceIds: sau, added: them, removed: bot, keptOutOfScope: giuNgoaiPhamVi },
       reason: input.reason ?? null,
     });
 
-    return { gatewayId: gw.id, gatewayCode: gw.code, truoc, sau, them, bot };
+    return { gatewayId: gw.id, gatewayCode: gw.code, truoc, sau, them, bot, giuNgoaiPhamVi };
   });
 }

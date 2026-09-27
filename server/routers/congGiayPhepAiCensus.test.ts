@@ -231,6 +231,15 @@ const MIEN_TRU_VAN_HANH: readonly string[] = [
  *   đường dẫn), cùng sàn `adminProcedure.use(moduleGate("MOD_AI"))` ⇒ CÓ cổng từ lượt sinh ra:
  *   `aiMienTru` KHÔNG đổi (62), `ngoaiAiCoCong` vẫn **0**. `tong` 2223 trùng ĐÚNG
  *   `phamViDocCensus.test.ts#GHIM.tong` (nhóm C của nó +1 — query không chạm bảng tenant).
+ *
+ * ★ 2026-09-27 doc 81 Đợt 1C Task 4 (allowlist khoá gateway) — **tong +2, KHÔNG ghim lại.** Ô `tong`
+ *   đỏ TỪ TRƯỚC (ghim 2223; đo HEAD `97c44b96e` = 2285 — trôi của các lượt khác, không thuộc lượt
+ *   này). Lượt này đo bằng `quetCongGiayPhep` = **2287**: đúng hai thủ tục MỚI trong
+ *   `server/routers/gatewayAllowlistRouter.ts` — `machine.gatewayAllowlist.get` (query) và `.set`
+ *   (mutation), `module = null` (cùng sàn `protectedProcedure` như mọi thủ tục máy anh em của
+ *   `hierarchyRouters.ts`, không SKU nào). Không phải bề mặt AI ⇒ `beMatAi`/`aiCoCong`/`aiMienTru`/
+ *   `ngoaiAiCoCong` không đổi vì lượt này; `GHIM_MODULE_KHAC` không đổi. `tong` 2287 trùng
+ *   `phamViDocCensus.test.ts#GHIM.tong` (D +1 · S +1).
  */
 const GHIM = { tong: 2223, beMatAi: 357, aiCoCong: 295, aiMienTru: 62, ngoaiAiCoCong: 0 } as const;
 

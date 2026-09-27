@@ -4,10 +4,13 @@
  * `services/gatewayAllowlistService.ts` (mig 0361).
  *
  * Cổng:
- *   • `get` — `settings_factory` canView + gateway trong phạm vi người xem (`phamViCua(ctx)`).
+ *   • `get` — `settings_factory` canView + gateway trong phạm vi người xem (`phamViCua(ctx)`). Chỉ trả
+ *     ĐẦY ĐỦ các thiết bị trong phạm vi người xem; mục ngoài phạm vi chỉ hiện dưới dạng SỐ ĐẾM
+ *     (`outOfScopeCount`) — không mã, không tên, không loại (fix round 1 #4).
  *   • `set` — vai admin HOẶC engineer (quyết định chủ dự án 2026-09-27) VÀ `settings_factory` canEdit
- *     (cùng cổng `machine.update`); gateway lẫn MỌI thiết bị phải nằm trong phạm vi người sửa — không
- *     thêm được thiết bị của nhà máy mình không thấy. Audit: `control_audit_log` trong CÙNG transaction
+ *     (cùng cổng `machine.update`). Phạm vi người sửa tính MỘT lần (`idsTrongPhamVi`) rồi kiểm TRONG
+ *     transaction của `datAllowlist` (fix #5 — không còn N truy vấn/thiết bị, không TOCTOU): gateway lẫn
+ *     mọi thiết bị gửi lên phải trong phạm vi; mục có sẵn ngoài phạm vi được GIỮ (fix #4). Audit: `control_audit_log` trong CÙNG transaction
  *     (bắt buộc) + `audit_logs` (vết cho màn Nhật ký, best-effort như mọi mutation master-data).
  */
 import { z } from "zod";
@@ -51,8 +54,11 @@ export const gatewayAllowlistRouter = router({
     .input(z.object({ gatewayId: z.number().int().positive() }))
     .query(async ({ input, ctx }) => {
       const gw = await gatewayTrongPhamVi(input.gatewayId, ctx);
-      const devices = await docAllowlist(gw.id);
-      return { gatewayId: gw.id, gatewayCode: gw.code, devices };
+      const tatCa = await docAllowlist(gw.id);
+      const ids = await db.idsTrongPhamVi("machine", phamViCua(ctx));
+      const phamVi = ids === null ? null : new Set(ids);
+      const devices = phamVi === null ? tatCa : tatCa.filter((d) => phamVi.has(d.id));
+      return { gatewayId: gw.id, gatewayCode: gw.code, devices, outOfScopeCount: tatCa.length - devices.length };
     }),
 
   set: protectedProcedure
@@ -73,28 +79,17 @@ export const gatewayAllowlistRouter = router({
           "Required role: admin or engineer",
         );
       }
-      const gw = await gatewayTrongPhamVi(input.gatewayId, ctx);
-      // Mọi thiết bị phải nằm trong phạm vi người sửa (admin: không lọc).
-      const scope = phamViCua(ctx);
-      for (const id of new Set(input.deviceIds)) {
-        const d = await db.getMachineById(id, scope);
-        if (!d || d.isActive === false) {
-          throw appError(
-            "BAD_REQUEST",
-            "INVALID_VALUE",
-            { field: "deviceIds" },
-            `Device #${id} does not exist, is inactive, or is outside your scope.`,
-          );
-        }
-      }
+      // Phạm vi người sửa: MỘT lần; kiểm gateway + thiết bị TRONG transaction (datAllowlist).
+      const phamViIds = await db.idsTrongPhamVi("machine", phamViCua(ctx));
 
       let kq;
       try {
         kq = await datAllowlist({
-          gatewayId: gw.id,
+          gatewayId: input.gatewayId,
           deviceIds: input.deviceIds,
           actorId: ctx.user.id ?? null,
           reason: input.reason ?? null,
+          phamViIds,
         });
       } catch (e) {
         if (e instanceof AllowlistLoi) {
@@ -120,7 +115,7 @@ export const gatewayAllowlistRouter = router({
           operation: "machine.gatewayAllowlist.set",
           before: { deviceIds: kq.truoc },
           after: { deviceIds: kq.sau },
-          metadata: { added: kq.them, removed: kq.bot, reason: input.reason ?? null },
+          metadata: { added: kq.them, removed: kq.bot, keptOutOfScope: kq.giuNgoaiPhamVi.length, reason: input.reason ?? null },
         },
         status: "success",
       });
@@ -128,9 +123,11 @@ export const gatewayAllowlistRouter = router({
       return {
         gatewayId: kq.gatewayId,
         gatewayCode: kq.gatewayCode,
-        deviceIds: kq.sau,
+        // Chỉ id trong phạm vi người gọi; mục ngoài phạm vi được giữ và chỉ báo SỐ ĐẾM.
+        deviceIds: kq.sau.filter((id) => !kq.giuNgoaiPhamVi.includes(id)),
         added: kq.them,
         removed: kq.bot,
+        outOfScopeCount: kq.giuNgoaiPhamVi.length,
       };
     }),
 });
