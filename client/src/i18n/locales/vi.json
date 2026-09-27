@@ -15850,7 +15850,9 @@
       "stUnknownType": "Kiểu lạ '{{name}}' — không phải kiểu chuẩn, không khai báo trong mã này; thành viên của nó không được kiểm.",
       "stDuplicate": "'{{name}}' được khai báo nhiều lần.",
       "stAssignConstant": "Không thể gán vào hằng '{{name}}'.",
-      "stNoAssignment": "Không có lệnh gán (:=) nào."
+      "stNoAssignment": "Không có lệnh gán (:=) nào.",
+      "stNestedComment": "Chú thích lồng '{{open}}' bên trong một chú thích — trình biên dịch đích không hỗ trợ chú thích lồng nhau (nó đóng chú thích ở '{{close}}' đầu tiên).",
+      "stEdgeNotInput": "{{edge}} chỉ được dùng trong khai báo VAR_INPUT (đang ở {{section}})."
     }
   },
   "engineeringHome": {

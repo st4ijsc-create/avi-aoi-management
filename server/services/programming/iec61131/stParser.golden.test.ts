@@ -63,6 +63,15 @@ describe("ba mẫu thăm dò của phụ lục A (bắt buộc)", () => {
   });
 });
 
+describe("fix round 1 — chú thích lồng nhau nói ĐÚNG lý do", () => {
+  it("i35: gợi ý 'lồng nhau không được hỗ trợ' tại '(*' bên trong, KHÔNG có 'Undeclared identifier' hệ quả", async () => {
+    const v = await validate(read("invalid/i35-nested-comment.st"));
+    expect(v.ok).toBe(false);
+    const errs = v.diagnostics.filter((d) => d.severity === "error");
+    expect(errs.map((d) => [d.code, d.line, d.col])).toEqual([["stNestedComment", 7, 4]]);
+  });
+});
+
 describe("bộ vàng ST — TPR/TNR ≥ 95 %", () => {
   it("đo và in TPR / TPR@dòng / TNR", async () => {
     let tp = 0, tpLine = 0, tn = 0;

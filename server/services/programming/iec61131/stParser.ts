@@ -52,7 +52,9 @@ export type StDiagCode =
   | "stUnknownType"
   | "stDuplicate"
   | "stAssignConstant"
-  | "stNoAssignment";
+  | "stNoAssignment"
+  | "stNestedComment"
+  | "stEdgeNotInput";
 
 export interface StDiagnostic {
   severity: "error" | "warning";
@@ -156,6 +158,32 @@ function tokenize(src: string, diag: (d: StDiagnostic) => void): Tok[] {
         err("stUnterminatedComment", line, col(i), `Comment '${two}' opened here is never closed.`, { open: two });
         advanceTo(n);
         break;
+      }
+      // Fix round 1 — `(* a (* b *) c *)`: matiec/OpenPLC KHÔNG lồng chú thích, nên chú thích đóng ở
+      // `*)` đầu tiên và phần đuôi thành "mã" ⇒ trước đây ra một tràng "Undeclared identifier" sai
+      // chỗ. Nếu có `(*` bên trong VÀ cách đọc lồng nhau khép được về 0 ở một `*)` SAU đó (tức tác giả
+      // ý định lồng), báo MỘT lỗi đúng lý do tại `(*` bên trong rồi bỏ qua cả khối lồng. `(*` bên trong
+      // mà cách đọc lồng không khép được (vd "(* viết (* để mở *)") là chữ thường ⇒ hợp lệ như cũ.
+      const inner = src.indexOf(two, i + 2);
+      if (inner >= 0 && inner < end) {
+        let depth = 1;
+        let k = i + 2;
+        let nestedEnd = -1;
+        while (k < n - 1) {
+          const pair = src.slice(k, k + 2);
+          if (pair === two) { depth++; k += 2; continue; }
+          if (pair === close) { depth--; k += 2; if (depth === 0) { nestedEnd = k; break; } continue; }
+          k++;
+        }
+        if (nestedEnd > end + 2) {
+          const between = src.slice(i, inner);
+          const nl = between.lastIndexOf("\n");
+          const iLine = line + (between.match(/\n/g) ?? []).length;
+          const iCol = nl < 0 ? col(i) + (inner - i) : inner - (i + nl + 1) + 1;
+          err("stNestedComment", iLine, iCol, `Nested comment '${two}' inside a comment — nested comments are not supported by the target compiler (OpenPLC/matiec closes the comment at the first '${close}').`, { open: two, close });
+          advanceTo(nestedEnd);
+          continue;
+        }
       }
       advanceTo(end + 2);
       continue;
@@ -324,6 +352,8 @@ const LIST_STOP = new Set([
 const SYNC_STOP = new Set([...LIST_STOP, "IF", "CASE", "FOR", "WHILE", "REPEAT"]);
 
 const MAX_NESTING = 200;
+/** Toán tử dành riêng có dạng gọi hàm chuẩn (fix round 1). */
+const OPERATOR_FUNCS = new Set(["MOD", "AND", "OR", "XOR"]);
 const quote = (t: Tok) => (t.k === "eof" ? "end of file" : `'${t.t}'`);
 const qParam = (t: Tok) => (t.k === "eof" ? "EOF" : t.t);
 
@@ -523,6 +553,14 @@ class Parser {
     }
     this.expectOp(":");
     const type = this.parseTypeSpec();
+    // IEC 61131-3 bảng 16: `clk : BOOL R_EDGE;` / `F_EDGE` — CHỈ trong VAR_INPUT (fix round 1).
+    const edge = this.peek();
+    if (edge.k === "id" && (edge.u === "R_EDGE" || edge.u === "F_EDGE")) {
+      this.next();
+      if (section !== "VAR_INPUT") {
+        this.error(edge, "stEdgeNotInput", `${edge.u} is only allowed on a VAR_INPUT declaration (found in ${section}).`, { edge: edge.u, section });
+      }
+    }
     if (this.isOp(this.peek(), ":=")) { this.next(); this.parseInitializer(); }
     for (const nt of names) this.declare(into, { name: nt.u, tok: nt, type, section, constant });
     this.expectSemi();
@@ -921,6 +959,21 @@ class Parser {
     if (t.k === "int" || t.k === "real" || t.k === "str" || t.k === "typed") { this.next(); return; }
     if (this.isKw(t, "TRUE") || this.isKw(t, "FALSE")) { this.next(); return; }
     if (this.isOp(t, "(")) { this.next(); this.parseExpr(); this.expectOp(")"); return; }
+    // Dạng HÀM của toán tử dành riêng (IEC bảng 24/26): `MOD(a, b)`, `AND(a, b)`, `OR(…)`, `XOR(…)`.
+    // Chỉ ở vị trí toán hạng + ngay sau là '(' — `a AND (b)` đã được vòng nhị phân nuốt AND trước.
+    // (`NOT(x)` đã đúng qua nhánh một ngôi.)
+    if (t.k === "id" && OPERATOR_FUNCS.has(t.u) && this.isOp(this.peek(1), "(")) {
+      this.next();
+      this.next();
+      if (!this.isOp(this.peek(), ")")) {
+        do {
+          if (this.isIdent(this.peek()) && this.isOp(this.peek(1), ":=")) { this.next(); this.next(); }
+          this.parseExpr();
+        } while (this.isOp(this.peek(), ",") && this.next());
+      }
+      this.expectOp(")");
+      return;
+    }
     if (this.isIdent(t) || t.k === "addr") { this.parseDesignator(); return; }
     this.error(t, "stExpectedExpr", `Expected an expression, found ${quote(t)}.`, { found: qParam(t) });
     throw new StBail();
@@ -945,16 +998,39 @@ export const STD_FB: Record<string, StdFb> = {
   RS: { inputs: { S: "BOOL", R1: "BOOL" }, outputs: { Q1: "BOOL" } },
 };
 
-/** Hàm chuẩn IEC 61131-3 (+ vài hàm matiec/OpenPLC phổ biến). `*_TO_*` nhận theo mẫu. */
+/**
+ * Hàm chuẩn IEC 61131-3 (ed.2 bảng 22–36 + ed.3) và hàm matiec/OpenPLC ship sẵn. Danh sách THIẾU = lỗi
+ * cứng "Undeclared" trên chương trình hợp lệ (fix round 1: ADD_TIME…, DATE_AND_TIME_TO_TIME_OF_DAY) —
+ * thêm hàm chuẩn vào đây, đừng nới mẫu thành "mọi thứ".
+ */
 const STD_FUNCTIONS = new Set([
+  // số học / lượng giác (bảng 23–24) + dạng hàm của toán tử
   "ABS", "SQRT", "LN", "LOG", "EXP", "SIN", "COS", "TAN", "ASIN", "ACOS", "ATAN", "ATAN2", "EXPT",
-  "ADD", "SUB", "MUL", "DIV", "MOVE", "SHL", "SHR", "ROL", "ROR",
+  "ADD", "SUB", "MUL", "DIV", "MOD", "MOVE",
+  // bit (bảng 25–26): dịch/xoay + dạng hàm của toán tử logic
+  "SHL", "SHR", "ROL", "ROR", "AND", "OR", "XOR", "NOT",
+  // chọn (bảng 27) + so sánh (bảng 28)
   "SEL", "MAX", "MIN", "LIMIT", "MUX", "GT", "GE", "EQ", "LE", "LT", "NE",
+  // chuỗi (bảng 29)
   "LEN", "LEFT", "RIGHT", "MID", "CONCAT", "INSERT", "DELETE", "REPLACE", "FIND",
-  "TRUNC", "ROUND", "SIZEOF", "ADR", "REF", "ANY_TO_BOOL",
+  // thời gian (bảng 30) — tên ed.2 + ed.3 (L* = 64 bit)
+  "ADD_TIME", "ADD_LTIME", "SUB_TIME", "SUB_LTIME", "MULTIME", "DIVTIME", "MUL_TIME", "DIV_TIME", "MUL_LTIME", "DIV_LTIME",
+  "ADD_TOD_TIME", "ADD_LTOD_LTIME", "ADD_DT_TIME", "ADD_LDT_LTIME",
+  "SUB_DATE_DATE", "SUB_LDATE_LDATE", "SUB_TOD_TIME", "SUB_LTOD_LTIME", "SUB_TOD_TOD", "SUB_LTOD_LTOD",
+  "SUB_DT_TIME", "SUB_LDT_LTIME", "SUB_DT_DT", "SUB_LDT_LDT",
+  "CONCAT_DATE_TOD", "CONCAT_DATE_LTOD", "CONCAT_DATE", "CONCAT_TOD", "CONCAT_LTOD", "CONCAT_DT", "CONCAT_LDT",
+  "SPLIT_DATE", "SPLIT_TOD", "SPLIT_LTOD", "SPLIT_DT", "SPLIT_LDT", "DAY_OF_WEEK",
+  // chuyển đổi đặc biệt (bảng 22) — `*_TO_*` nhận theo mẫu bên dưới
+  "TRUNC", "ROUND", "IS_VALID", "IS_VALID_BCD", "LOWER_BOUND", "UPPER_BOUND",
+  // không chuẩn nhưng có trong matiec/CODESYS
+  "SIZEOF", "ADR", "REF",
 ]);
 const isStdFunction = (u: string) =>
-  STD_FUNCTIONS.has(u) || /^[A-Z]+_TO_[A-Z]+$/.test(u) || /^TO_[A-Z]+$/.test(u) || /^TRUNC_[A-Z]+$/.test(u) || ELEMENTARY_TYPES.has(u);
+  STD_FUNCTIONS.has(u) ||
+  /^[A-Z_]+_TO_[A-Z_]+$/.test(u) ||                 // INT_TO_REAL, DATE_AND_TIME_TO_TIME_OF_DAY, WORD_BCD_TO_INT
+  /^(?:TO|FROM)_[A-Z_]+$/.test(u) ||                // TO_INT, TO_BIG_ENDIAN, FROM_LITTLE_ENDIAN
+  /^(?:[A-Z]+_)?TRUNC_[A-Z]+$/.test(u) ||           // TRUNC_INT, REAL_TRUNC_DINT
+  ELEMENTARY_TYPES.has(u);
 
 type Resolved =
   | { kind: "stdfb"; name: string }

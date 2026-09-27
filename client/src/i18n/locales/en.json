@@ -15870,7 +15870,9 @@
       "stUnknownType": "Unknown type '{{name}}' — not standard and not declared here; its members are not checked.",
       "stDuplicate": "'{{name}}' is declared more than once.",
       "stAssignConstant": "Cannot assign to constant '{{name}}'.",
-      "stNoAssignment": "No assignment (:=) found."
+      "stNoAssignment": "No assignment (:=) found.",
+      "stNestedComment": "Nested comment '{{open}}' inside a comment — nested comments are not supported by the target compiler (it closes the comment at the first '{{close}}').",
+      "stEdgeNotInput": "{{edge}} is only allowed on a VAR_INPUT declaration (found in {{section}})."
     }
   },
   "engineeringHome": {

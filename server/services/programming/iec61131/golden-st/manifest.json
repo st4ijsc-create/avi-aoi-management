@@ -27,6 +27,13 @@
     { "file": "valid/v24-strings-bits-multidim.st", "ok": true, "why": "Truy cap bit Status.3, STRING(80), CONCAT/LEN, mang 2 chieu. (Ban viet dau dat bien Len : INT roi goi LEN(Msg) - IEC khong phan biet hoa thuong nen bien CHE ham chuan; da doi ten bien thanh MsgLen, ghi trong bao cao Task 7)" },
     { "file": "valid/v25-std-functions-conversions.st", "ok": true, "why": "LIMIT/TRUNC/REAL_TO_INT/INT_TO_REAL, FB tu dinh nghia goi voi => ra" },
     { "file": "valid/v26-unbounded-while-lint-only.st", "ok": true, "why": "Cu phap dung; vong WHILE TRUE la viec cua safety linter (canh bao), khong phai loi parser" },
+    { "file": "valid/v27-time-date-functions.st", "ok": true, "why": "Fix round 1: ham thoi gian IEC ADD_TIME/SUB_TIME/MULTIME/DIVTIME/ADD_TOD_TIME/ADD_DT_TIME/SUB_DATE_DATE/SUB_TOD_TIME/SUB_TOD_TOD/SUB_DT_TIME/SUB_DT_DT/CONCAT_DATE_TOD" },
+    { "file": "valid/v28-long-conversions-bcd.st", "ok": true, "why": "Fix round 1: chuyen doi dang dai DATE_AND_TIME_TO_TIME_OF_DAY, WORD_BCD_TO_INT, BCD_TO_INT, INT_TO_BCD, TRUNC" },
+    { "file": "valid/v29-numeric-selection-shift.st", "ok": true, "why": "Fix round 1: ham so hoc/luong giac, ADD/SUB/MUL/DIV/MOVE dang ham, SEL/MAX/MIN/LIMIT/MUX, SHL/SHR/ROL/ROR, GT..NE" },
+    { "file": "valid/v30-string-functions.st", "ok": true, "why": "Fix round 1: LEN/LEFT/RIGHT/MID/CONCAT/INSERT/DELETE/REPLACE/FIND" },
+    { "file": "valid/v31-operator-call-forms.st", "ok": true, "why": "Fix round 1: dang goi ham cua toan tu MOD(a,b)/AND/OR/XOR/NOT" },
+    { "file": "valid/v32-r-edge-f-edge-inputs.st", "ok": true, "why": "Fix round 1: VAR_INPUT x : BOOL R_EDGE; / F_EDGE;" },
+    { "file": "valid/v33-comment-mentions-open-marker.st", "ok": true, "why": "Fix round 1: chu thich KHONG long nhau chi nhac toi chuoi '(*' - phai hop le (chong bao gia cua goi y long nhau)" },
 
     { "file": "invalid/i01-probe-garbage.st", "ok": false, "errorLine": 2, "why": "Mau tham do garbage.st cua phu luc A: 'VAR a : BOOL END_VAR' thieu ';' (con: thieu ';' dong 3, 'b = FALSE' dong 4, 'FOO BAR BAZ (((' dong 5). Validator cu: ok:true" },
     { "file": "invalid/i02-missing-semicolon.st", "ok": false, "errorLine": 8, "why": "Thieu ';' sau 'Motor := Start'" },
@@ -61,6 +68,10 @@
     { "file": "invalid/i31-c-style-operators.st", "ok": false, "errorLine": 8, "why": "'&&' kieu C" },
     { "file": "invalid/i32-output-bound-to-undeclared.st", "ok": false, "errorLine": 7, "why": "Q => DoneFlag voi DoneFlag chua khai bao" },
     { "file": "invalid/i33-then-missing.st", "ok": false, "errorLine": 7, "why": "IF thieu THEN" },
-    { "file": "invalid/i34-fb-member-not-declared.st", "ok": false, "errorLine": 17, "why": "M1.IsRunning - FB_Motor khong co IsRunning" }
+    { "file": "invalid/i34-fb-member-not-declared.st", "ok": false, "errorLine": 17, "why": "M1.IsRunning - FB_Motor khong co IsRunning" },
+    { "file": "invalid/i35-nested-comment.st", "ok": false, "errorLine": 7, "why": "Fix round 1: chu thich long nhau - matiec/OpenPLC dong o '*)' dau tien; phai bao GOI Y o dong 7, khong phai 'Undeclared identifier'" },
+    { "file": "invalid/i36-r-edge-outside-var-input.st", "ok": false, "errorLine": 3, "why": "Fix round 1: R_EDGE chi hop le trong VAR_INPUT" },
+    { "file": "invalid/i37-misspelled-time-function.st", "ok": false, "errorLine": 7, "why": "Fix round 1: ADD_TIMES khong ton tai - danh sach trang KHONG duoc nhan bua" },
+    { "file": "invalid/i38-misspelled-limit.st", "ok": false, "errorLine": 7, "why": "Fix round 1: LIMT viet sai LIMIT" }
   ]
 }

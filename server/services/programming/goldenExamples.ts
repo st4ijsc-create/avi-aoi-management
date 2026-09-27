@@ -294,8 +294,26 @@ export function goHeaderGoldenKhoiMa(code: string): string {
   const header = dongHeaderGolden();
   const laHeader = (t: string) =>
     OUTPUT_HEADER_SIG.test(t) || t.split(/\r?\n/).some((l) => header.has(l.trim()));
-  const s = goKhoiChuThich(goKhoaGachDuoiJson(src), laHeader);
+  const s = goDongSafetyTran(goKhoiChuThich(goKhoaGachDuoiJson(src), laHeader));
   return s === src ? src : catDongTrongDauCuoi(s);
+}
+
+/**
+ * doc 80 Đợt 1 Task 7 fix round 1 — prompt CŨ bắt model đặt đúng câu này làm dòng cuối khối mã; model
+ * hay để nó TRẦN (không chú thích) sau END_PROGRAM ⇒ mã hỏng cú pháp. Chỉ gỡ dòng mà TOÀN BỘ nội dung
+ * (bỏ khoảng trắng hai đầu) đúng nguyên câu ấy — câu nằm trong chuỗi / câu SAFETY khác không đụng.
+ */
+const DONG_SAFETY_TRAN = /^[ \t]*SAFETY: simulate and test before running on a device\.[ \t]*$/;
+function goDongSafetyTran(code: string): string {
+  const lines = code.split(/(\r?\n)/);
+  if (!lines.some((l) => DONG_SAFETY_TRAN.test(l))) return code;
+  const out: string[] = [];
+  for (let i = 0; i < lines.length; i += 2) {
+    if (DONG_SAFETY_TRAN.test(lines[i])) continue; // bỏ cả dòng lẫn ký tự xuống dòng của nó
+    out.push(lines[i]);
+    if (i + 1 < lines.length) out.push(lines[i + 1]);
+  }
+  return out.join("");
 }
 
 /** Test/ops helper: clear the memoised cache (next call reloads from disk). */

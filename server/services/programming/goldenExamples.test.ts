@@ -89,6 +89,21 @@ describe("goHeaderGoldenKhoiMa — hậu kiểm gỡ header golden bị model ch
     expect(JSON.parse(goHeaderGoldenKhoiMa(json)).flow_id).toBe("f");
   });
 
+  it("doc 80 Đợt 1 Task 7 fix round 1 — gỡ dòng TRẦN (không chú thích) đúng nguyên câu SAFETY của prompt cũ", () => {
+    // Đầu ra thật của cánh B trong phụ lục A: câu nhắc nằm NGOÀI chú thích sau END_PROGRAM ⇒ phá ST.
+    const prog = "PROGRAM P\nVAR\n  Run : BOOL;\nEND_VAR\nRun := TRUE;\nEND_PROGRAM";
+    expect(goHeaderGoldenKhoiMa(`${prog}\nSAFETY: simulate and test before running on a device.`)).toBe(prog);
+    expect(goHeaderGoldenKhoiMa(`${prog}\r\n  SAFETY: simulate and test before running on a device.  \r\n`)).toBe(prog);
+    // Không có dấu vết ⇒ NGUYÊN VĂN từng byte (kể cả khoảng trắng cuối).
+    const clean = `${prog}\n\n  `;
+    expect(goHeaderGoldenKhoiMa(clean)).toBe(clean);
+    // Câu nằm TRONG mã (chuỗi) hoặc câu khác ⇒ KHÔNG đụng.
+    const inString = "Msg := 'SAFETY: simulate and test before running on a device.';";
+    expect(goHeaderGoldenKhoiMa(inString)).toBe(inString);
+    const other = `${prog}\nSAFETY: interlock reviewed by engineer.`;
+    expect(goHeaderGoldenKhoiMa(other)).toBe(other);
+  });
+
   it("gỡ khoá `_safety_note` khỏi JSON trả về (JSON vẫn hợp lệ)", () => {
     const j = JSON.stringify({ _safety_note: "AI-assisted golden example…", flow_id: "x", version: 1, blocks: [] }, null, 2);
     const out = goHeaderGoldenKhoiMa(j);

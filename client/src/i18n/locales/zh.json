@@ -16432,7 +16432,9 @@
       "stUnknownType": "未知类型 '{{name}}'——既非标准类型也未在此声明；不检查其成员。",
       "stDuplicate": "'{{name}}' 被重复声明。",
       "stAssignConstant": "不能给常量 '{{name}}' 赋值。",
-      "stNoAssignment": "未找到赋值 (:=)。"
+      "stNoAssignment": "未找到赋值 (:=)。",
+      "stNestedComment": "注释内嵌套了注释 '{{open}}'——目标编译器不支持嵌套注释（它在第一个 '{{close}}' 处结束注释）。",
+      "stEdgeNotInput": "{{edge}} 只能用于 VAR_INPUT 声明（当前位于 {{section}}）。"
     }
   },
   "engineeringHome": {
