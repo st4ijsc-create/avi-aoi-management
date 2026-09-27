@@ -32,6 +32,7 @@ import { createDriver } from "../services/ot/driverRegistry";
 import "../services/ot"; // side-effect: register all drivers (stub + 5 protocol scaffolds)
 import type { OtProtocol } from "../services/ot/otDriver";
 import { probeOtConnection } from "../services/ot/probeConnection";
+import { sealConnectionOptionSecrets } from "../services/ot/connectionSecrets";
 
 async function getDb() {
   const db = await getDbRaw();
@@ -136,7 +137,8 @@ export const deviceAdapterRouter = router({
             name: input.name,
             protocol: input.protocol,
             endpoint: input.endpoint,
-            connectionOptions: input.connectionOptions ?? null,
+            // doc 81 Đợt 1B Task 12 — mật khẩu (OPC UA UserName) lưu dạng secretBox enc:v1:.
+            connectionOptions: sealConnectionOptionSecrets(input.connectionOptions) ?? null,
             pollIntervalMs: input.pollIntervalMs,
             machineId: input.machineId ?? null,
             isEnabled: input.isEnabled,
@@ -159,6 +161,10 @@ export const deviceAdapterRouter = router({
       const db = await getDb();
       const { id, ...rest } = input;
       const patch: Record<string, unknown> = { ...rest, updatedAt: new Date() };
+      // doc 81 Đợt 1B Task 12 — cùng niêm phong mật khẩu như create (idempotent với enc:v1:).
+      if (rest.connectionOptions !== undefined) {
+        patch.connectionOptions = sealConnectionOptionSecrets(rest.connectionOptions);
+      }
       try {
         const [row] = await db.update(deviceAdapters).set(patch).where(eq(deviceAdapters.id, id)).returning();
         if (!row) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "adapter" }, "Adapter không tồn tại.");

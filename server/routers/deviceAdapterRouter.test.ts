@@ -198,3 +198,49 @@ describe("RBAC", () => {
     await expect(caller.list()).rejects.toThrow(/machine_control|FORBIDDEN/i);
   });
 });
+
+// doc 81 Đợt 1B Task 12 — mật khẩu OPC UA trong connectionOptions đi qua secretBox (không
+// lưu plaintext mới, không cột/migration mới). Oracle: dòng lưu KHÔNG chứa chuỗi gốc, mang
+// tiền tố enc:v1:, và giải mã (secretBox) ra đúng chuỗi gốc.
+describe("connectionOptions.password is sealed at rest (Task 12)", () => {
+  beforeEach(() => {
+    process.env.SECRET_ENCRYPTION_KEY = process.env.SECRET_ENCRYPTION_KEY || "task12-router-test-key";
+  });
+
+  it("create + update store enc:v1: ciphertext (also ha.secondaryOptions.password); other keys untouched", async () => {
+    const { decryptSecret } = await import("../services/security/secretBox");
+    const a = await caller.create({
+      code: "UA1", name: "S7-1500", protocol: "opcua", endpoint: "opc.tcp://10.0.0.5:4840",
+      connectionOptions: {
+        securityMode: "SignAndEncrypt", userName: "op", password: "Pl@in-Pw",
+        ha: { secondaryEndpoint: "opc.tcp://10.0.0.6:4840", secondaryOptions: { userName: "op", password: "Sec-Pw" } },
+      },
+    });
+    const stored = JSON.stringify(a.connectionOptions);
+    expect(stored).not.toContain("Pl@in-Pw");
+    expect(stored).not.toContain("Sec-Pw");
+    const co = a.connectionOptions as any;
+    expect(co.password).toMatch(/^enc:v1:/);
+    expect(decryptSecret(co.password)).toBe("Pl@in-Pw");
+    expect(decryptSecret(co.ha.secondaryOptions.password)).toBe("Sec-Pw");
+    expect(co.securityMode).toBe("SignAndEncrypt");
+    expect(co.userName).toBe("op");
+
+    // Sửa: gửi lại nguyên ciphertext (form edit round-trip) ⇒ KHÔNG mã hoá chồng.
+    const same = await caller.update({ id: a.id, connectionOptions: { ...co } });
+    expect((same.connectionOptions as any).password).toBe(co.password);
+    const changed = await caller.update({ id: a.id, connectionOptions: { ...co, password: "New-Pw" } });
+    expect(JSON.stringify(changed.connectionOptions)).not.toContain("New-Pw");
+    expect(decryptSecret((changed.connectionOptions as any).password)).toBe("New-Pw");
+  });
+
+  it("no password ⇒ connectionOptions stored unchanged; null stays null", async () => {
+    const a = await caller.create({
+      code: "UA2", name: "n", protocol: "opcua", endpoint: "opc.tcp://h:4840",
+      connectionOptions: { securityMode: "None" },
+    });
+    expect(a.connectionOptions).toEqual({ securityMode: "None" });
+    const b = await caller.create({ code: "UA3", name: "n", protocol: "stub", endpoint: "s://x" });
+    expect(b.connectionOptions).toBeNull();
+  });
+});

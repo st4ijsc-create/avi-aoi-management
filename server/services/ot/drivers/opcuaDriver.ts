@@ -8,6 +8,9 @@
  * - writeTags (F4b): session.write([{nodeId, attributeId:Value, value:{value:Variant}}]).
  *   ⚠️ GHI XUỐNG THIẾT BỊ THẬT — chỉ commandDispatcher được gọi (xem comment writeTags).
  * - Thiếu lib → connect() throw "node-opcua not installed" để otManager skip (không sập).
+ * - doc 81 Đợt 1B Task 12: securityMode/securityPolicy + PKI/trust-list (opcuaSecurity.ts,
+ *   mặc định None + cảnh báo một lần); ghi ép về DataType CỦA NODE + kiểm miền; đọc lô cô lập
+ *   lỗi theo tag (statusCode trên mẫu bad); địa chỉ `nsu=<uri>;…`; connect/disconnect có hạn.
  *
  * Giữ extends NotImplementedDriver, override các method, tái dùng loadPackage()/packageName.
  */
@@ -24,9 +27,53 @@ import type {
   OnOtSample,
 } from "../otDriver";
 import { NotImplementedDriver } from "./notImplementedDriver";
-import { parseOpcuaAddress, normalizeOpcuaValue } from "./opcuaAddress";
+import { parseOpcuaAddress, normalizeOpcuaValue, coerceOpcuaWriteValue } from "./opcuaAddress";
 import { inverseScale } from "./otScale";
 import { DeviceUnreachableError } from "../../../_core/deviceErrors";
+import { withDeadline } from "./boundedClose";
+import {
+  parseOpcuaSecurityOptions,
+  resolveOpcuaPkiDir,
+  resolveOpcuaPassword,
+  warnInsecureDefaultOnce,
+  getOpcuaClientCertificateManager,
+  explainOpcuaConnectError,
+} from "./opcuaSecurity";
+
+/**
+ * doc 81 Đợt 1B Task 12 — tên ứng dụng client cho đường BẢO MẬT (xuất hiện trong chứng chỉ
+ * `<OPCUA_PKI_DIR>/own/certs/client_certificate.pem` mà PLC phải tin). Đường None giữ mặc
+ * định của node-opcua như cũ.
+ */
+const OPCUA_CLIENT_APPLICATION_NAME = "AVI-AOI-OT-Client";
+
+/**
+ * Hạn cho TỪNG bước đóng (session.close, client.disconnect) — tổng ≤ 2 s, dưới hạn
+ * disconnect 2,5 s của connectionSupervisor (Task 1), để driver tự xong trước lưới ngoài.
+ */
+const OPCUA_CLOSE_STEP_MS = 1000;
+
+/** Mã trạng thái theo OPC UA Part 4 §7.34 (gõ tay — dùng khi lỗi phát hiện TRƯỚC khi gửi). */
+const STATUS_BAD_NODEID_INVALID = "BadNodeIdInvalid (0x80330000)";
+const STATUS_BAD_NODEID_UNKNOWN = "BadNodeIdUnknown (0x80340000)";
+
+type ResolvedAddress = { nodeId: string } | { error: string; statusCode: string };
+
+/** Đợi p nhưng không quá ms; mọi lỗi/quá hạn bị nuốt (dùng cho đường dọn dẹp). */
+async function settleWithin(p: () => Promise<unknown>, ms: number, label: string): Promise<void> {
+  try {
+    await withDeadline(Promise.resolve().then(p), ms, label);
+  } catch {
+    // dọn dẹp best-effort — không bao giờ ném, không bao giờ treo
+  }
+}
+
+/** "BadNodeIdUnknown (0x80340000)" từ một StatusCode node-opcua (hoặc object giả trong test). */
+function describeStatus(sc: any, scVal: number): string {
+  const hex = `0x${(scVal >>> 0).toString(16).padStart(8, "0")}`;
+  const name = typeof sc?.name === "string" && sc.name ? sc.name : undefined;
+  return name ? `${name} (${hex})` : hex;
+}
 
 /**
  * doc 22 P3 — flag for the REAL OPC-UA monitored-item PUSH path. Default OFF: when off,
@@ -54,16 +101,6 @@ function optionalExport(pkg: any, name: string): any {
   }
 }
 
-/** Chạy promise với timeout; quá hạn → reject. */
-function withTimeout<T>(p: Promise<T>, ms: number, label: string): Promise<T> {
-  return Promise.race([
-    p,
-    new Promise<T>((_, reject) =>
-      setTimeout(() => reject(new Error(`${label} timeout after ${ms}ms`)), ms),
-    ),
-  ]);
-}
-
 export class OpcuaDriver extends NotImplementedDriver {
   readonly protocol: OtProtocol = "opcua";
   protected readonly packageName = "node-opcua";
@@ -84,16 +121,34 @@ export class OpcuaDriver extends NotImplementedDriver {
   private lastOkAt: Date | undefined;
   private lastError: string | undefined;
   private lastLatencyMs: number | undefined;
+  // doc 81 Đợt 1B Task 12 — theo PHIÊN (xoá khi connect/disconnect: PLC tải lại project có
+  // thể đổi chỉ số namespace và kiểu biến).
+  private resolveNodeIdFn: ((s: string) => unknown) | null = null;
+  private namespaceArray: string[] | null = null;
+  private readonly dataTypeCache = new Map<string, number>();
+
+  private resetSessionCaches(): void {
+    this.namespaceArray = null;
+    this.dataTypeCache.clear();
+  }
 
   override async connect(cfg: OtConnectionConfig): Promise<void> {
     const pkg: any = await this.loadPackage();
     if (!pkg) {
       throw new Error("node-opcua not installed");
     }
+    // Task 12 — cấu hình bảo mật + mật khẩu kiểm TRƯỚC khi mở socket: sai cấu hình ⇒ lỗi rõ.
+    const security = parseOpcuaSecurityOptions(cfg.options);
+    const opts = cfg.options ?? {};
+    const userName = typeof opts.userName === "string" ? opts.userName : undefined;
+    const password = userName ? resolveOpcuaPassword(opts.password) : undefined;
+
     const { OPCUAClient, AttributeIds, DataType, Variant } = pkg;
     this.AttributeIds = AttributeIds;
     this.DataType = DataType;
     this.Variant = Variant;
+    this.resolveNodeIdFn = optionalExport(pkg, "resolveNodeId");
+    this.resetSessionCaches();
     // doc 22 P3 — capture subscription symbols if the package exposes them (real
     // node-opcua does; a minimal/mocked package may not → we fall back to poll).
     // optionalExport tolerates a strict ESM mock namespace that throws on access to
@@ -104,25 +159,44 @@ export class OpcuaDriver extends NotImplementedDriver {
     this.MonitoringMode = optionalExport(pkg, "MonitoringMode");
 
     const timeoutMs = cfg.timeoutMs ?? 5000;
-    const client = OPCUAClient.create({
+    const createOpts: Record<string, unknown> = {
       endpointMustExist: false,
       connectionStrategy: { maxRetry: 1 },
-    });
+    };
+    let pkiDir: string | null = null;
+    if (security.securityMode !== "None") {
+      const MessageSecurityMode = optionalExport(pkg, "MessageSecurityMode");
+      const SecurityPolicy = optionalExport(pkg, "SecurityPolicy");
+      if (!MessageSecurityMode || !SecurityPolicy) {
+        throw new Error("opcua: this node-opcua build has no MessageSecurityMode/SecurityPolicy (security unsupported)");
+      }
+      pkiDir = resolveOpcuaPkiDir();
+      createOpts.securityMode = MessageSecurityMode[security.securityMode];
+      createOpts.securityPolicy = SecurityPolicy[security.securityPolicy];
+      createOpts.applicationName = OPCUA_CLIENT_APPLICATION_NAME;
+      // Trust-list của app; trustOnFirstUse mặc định TẮT ⇒ chứng chỉ server lạ bị từ chối.
+      createOpts.clientCertificateManager = await withDeadline(
+        getOpcuaClientCertificateManager(pkg, pkiDir, security.trustOnFirstUse),
+        timeoutMs,
+        "opcua pki init",
+      );
+    } else if (!security.explicit) {
+      // Không ai cấu hình ⇒ giữ None như cũ, nhưng nói ra MỘT lần mỗi tiến trình.
+      warnInsecureDefaultOnce(cfg.endpoint);
+    }
+    const client = OPCUAClient.create(createOpts);
 
     try {
-      await withTimeout(client.connect(cfg.endpoint), timeoutMs, "opcua connect");
+      await withDeadline(client.connect(cfg.endpoint), timeoutMs, "opcua connect");
 
-      const opts = cfg.options ?? {};
-      const userName = typeof opts.userName === "string" ? opts.userName : undefined;
-      const password = typeof opts.password === "string" ? opts.password : undefined;
       const session =
         userName && password
-          ? await withTimeout(
+          ? await withDeadline(
               client.createSession({ userName, password }),
               timeoutMs,
               "opcua createSession",
             )
-          : await withTimeout(client.createSession(), timeoutMs, "opcua createSession");
+          : await withDeadline(client.createSession(), timeoutMs, "opcua createSession");
 
       this.client = client;
       this.session = session;
@@ -136,34 +210,98 @@ export class OpcuaDriver extends NotImplementedDriver {
       // isConnected()/health() nói thật; connectionSupervisor sẽ reconnect/failover.
       this.attachLinkLossHandlers(client);
     } catch (err) {
-      this.lastError = (err as Error)?.message || String(err);
-      try {
-        await client.disconnect();
-      } catch {
-        // ignore
-      }
-      throw err;
+      const explained = explainOpcuaConnectError(err, pkiDir);
+      this.lastError = explained.message;
+      // Task 12 — dọn client CÓ HẠN (trước đây `await client.disconnect()` trần có thể treo).
+      await settleWithin(() => client.disconnect(), OPCUA_CLOSE_STEP_MS, "opcua disconnect");
+      throw explained;
     }
   }
 
   override async disconnect(): Promise<void> {
-    if (this.session) {
-      try {
-        await this.session.close();
-      } catch {
-        // ignore
-      }
-    }
-    if (this.client) {
-      try {
-        await this.client.disconnect();
-      } catch {
-        // ignore
-      }
-    }
+    const session = this.session;
+    const client = this.client;
     this.session = null;
     this.client = null;
     this.connected = false;
+    this.resetSessionCaches();
+    // Task 12 — mỗi bước có hạn (tổng ≤ 2 s): session/secure channel treo không giữ stop().
+    if (session) {
+      await settleWithin(() => session.close(), OPCUA_CLOSE_STEP_MS, "opcua session.close");
+    }
+    if (client) {
+      await settleWithin(() => client.disconnect(), OPCUA_CLOSE_STEP_MS, "opcua disconnect");
+    }
+  }
+
+  /**
+   * Task 12 — phân giải địa chỉ của MỘT tag (không bao giờ ném): cú pháp sai ⇒
+   * BadNodeIdInvalid; `nsu=` không có trên server ⇒ BadNodeIdUnknown. Kiểm thêm bằng
+   * `resolveNodeId` của thư viện — một chuỗi nó không nhận (vd `ns=2;i=abc`) trước đây
+   * làm `session.read` ném và hỏng CẢ LÔ.
+   */
+  private async resolveAddress(address: string): Promise<ResolvedAddress> {
+    let parsed;
+    try {
+      parsed = parseOpcuaAddress(address);
+    } catch (e) {
+      return { error: (e as Error)?.message || String(e), statusCode: STATUS_BAD_NODEID_INVALID };
+    }
+    let nodeId = parsed.nodeId;
+    if (parsed.namespaceUri !== undefined) {
+      let arr: string[] | null;
+      try {
+        arr = await this.getNamespaceArray();
+      } catch (e) {
+        return {
+          error: `cannot read server NamespaceArray: ${(e as Error)?.message || String(e)}`,
+          statusCode: STATUS_BAD_NODEID_UNKNOWN,
+        };
+      }
+      const idx = arr ? arr.indexOf(parsed.namespaceUri) : -1;
+      if (idx < 0) {
+        return {
+          error: `namespace uri "${parsed.namespaceUri}" not found on server`,
+          statusCode: STATUS_BAD_NODEID_UNKNOWN,
+        };
+      }
+      nodeId = `ns=${idx};${parsed.identifier}`;
+    }
+    if (this.resolveNodeIdFn) {
+      try {
+        this.resolveNodeIdFn(nodeId);
+      } catch (e) {
+        return { error: (e as Error)?.message || String(e), statusCode: STATUS_BAD_NODEID_INVALID };
+      }
+    }
+    return { nodeId };
+  }
+
+  /** NamespaceArray của phiên (cache tới lần connect/disconnect sau). null ⇒ session không hỗ trợ. */
+  private async getNamespaceArray(): Promise<string[] | null> {
+    if (this.namespaceArray) return this.namespaceArray;
+    const session = this.session;
+    if (!session || typeof session.readNamespaceArray !== "function") return null;
+    const arr = await session.readNamespaceArray();
+    if (Array.isArray(arr) && this.session === session) this.namespaceArray = arr.map(String);
+    return Array.isArray(arr) ? arr.map(String) : null;
+  }
+
+  /**
+   * Task 12 — kiểu dựng sẵn của node (thuộc tính DataType, đi theo cây kiểu tới kiểu gốc),
+   * cache theo nodeId trong phiên. null ⇒ session không có `getBuiltInDataType` (gói tối
+   * giản/giả) ⇒ caller dùng đường ép cũ theo dataType khai báo. Node không đọc được ⇒ ném.
+   */
+  private async nodeBuiltinType(nodeId: string): Promise<number | null> {
+    const cached = this.dataTypeCache.get(nodeId);
+    if (cached !== undefined) return cached;
+    const session = this.session;
+    if (!session || typeof session.getBuiltInDataType !== "function") return null;
+    const dt = await session.getBuiltInDataType(nodeId);
+    const n = typeof dt === "number" ? dt : Number(dt);
+    if (!Number.isFinite(n)) throw new Error(`cannot determine DataType of ${nodeId}`);
+    if (this.session === session) this.dataTypeCache.set(nodeId, n);
+    return n;
   }
 
   override isConnected(): boolean {
@@ -204,20 +342,39 @@ export class OpcuaDriver extends NotImplementedDriver {
     }
     if (tags.length === 0) return [];
 
-    const nodesToRead = tags.map((t) => ({
-      nodeId: parseOpcuaAddress(t.address).nodeId,
-      attributeId: this.AttributeIds.Value,
-    }));
+    // Task 12 — cô lập lỗi theo tag: địa chỉ không phân giải được ⇒ CHỈ tag đó `bad` (kèm mã
+    // trạng thái), không gửi vào session.read (trước đây một địa chỉ sai làm ném cả lô).
+    const session = this.session;
+    const resolved = await Promise.all(tags.map((t) => this.resolveAddress(t.address)));
+    const nodesToRead: Array<{ nodeId: string; attributeId: unknown }> = [];
+    const slot: number[] = resolved.map((r) => {
+      if ("error" in r) return -1;
+      nodesToRead.push({ nodeId: r.nodeId, attributeId: this.AttributeIds.Value });
+      return nodesToRead.length - 1;
+    });
 
-    const t0 = Date.now();
-    const results = await this.session.read(nodesToRead);
-    this.lastLatencyMs = Date.now() - t0;
-    this.lastOkAt = new Date();
-
-    const arr: any[] = Array.isArray(results) ? results : [results];
+    let arr: any[] = [];
+    if (nodesToRead.length > 0) {
+      const t0 = Date.now();
+      const results = await session.read(nodesToRead);
+      this.lastLatencyMs = Date.now() - t0;
+      this.lastOkAt = new Date();
+      arr = Array.isArray(results) ? results : [results];
+    }
 
     return tags.map((tag, i) => {
-      const dv = arr[i];
+      const r = resolved[i];
+      if ("error" in r) {
+        return {
+          tagKey: tag.tagKey,
+          raw: undefined,
+          value: null,
+          quality: "bad",
+          timestamp: new Date(),
+          statusCode: r.statusCode,
+        } satisfies OtSample;
+      }
+      const dv = arr[slot[i]];
       const raw = dv?.value?.value;
       // statusCode: good nếu thiếu hoặc .value === 0 (StatusCodes.Good)
       const sc = dv?.statusCode;
@@ -229,13 +386,15 @@ export class OpcuaDriver extends NotImplementedDriver {
       const timestamp: Date =
         dv?.sourceTimestamp instanceof Date ? dv.sourceTimestamp : new Date();
 
-      return {
+      const sample: OtSample = {
         tagKey: tag.tagKey,
         raw,
         value: quality === "good" ? norm.value : null,
         quality,
         timestamp,
-      } satisfies OtSample;
+      };
+      if (!scGood) sample.statusCode = describeStatus(sc, scVal);
+      return sample;
     });
   }
 
@@ -332,17 +491,24 @@ export class OpcuaDriver extends NotImplementedDriver {
     const monitoredItems: any[] = [];
 
     for (const tag of tags) {
-      let nodeId: string;
-      try {
-        nodeId = parseOpcuaAddress(tag.address).nodeId;
-      } catch (e) {
+      // Task 12 — cùng bộ phân giải với readTags (nsu=, kiểm cú pháp bằng thư viện).
+      const r = await this.resolveAddress(tag.address);
+      if ("error" in r) {
         // Bad address → skip this tag (do NOT tear down the whole subscription).
-        console.error(`[OPCUA] monitored-item skip bad address "${tag.address}":`, (e as Error)?.message ?? e);
+        console.error(`[OPCUA] monitored-item skip bad address "${tag.address}": ${r.error} (${r.statusCode})`);
         continue;
       }
+      const nodeId = r.nodeId;
       const itemToMonitor = { nodeId, attributeId: this.AttributeIds.Value };
       const params = { samplingInterval: publishingInterval, discardOldest: true, queueSize: 10 };
-      const mi = await this.ClientMonitoredItem.create(subscription, itemToMonitor, params, tsToReturn);
+      let mi: any;
+      try {
+        mi = await this.ClientMonitoredItem.create(subscription, itemToMonitor, params, tsToReturn);
+      } catch (e) {
+        // Task 12 — một item hỏng không kéo sập các tag khác của subscription.
+        console.error(`[OPCUA] monitored-item create failed for "${tag.address}":`, (e as Error)?.message ?? e);
+        continue;
+      }
       mi.on("changed", (dataValue: any) => {
         try {
           const raw = dataValue?.value?.value;
@@ -354,15 +520,15 @@ export class OpcuaDriver extends NotImplementedDriver {
           const timestamp: Date =
             dataValue?.sourceTimestamp instanceof Date ? dataValue.sourceTimestamp : new Date();
           this.lastOkAt = new Date();
-          void Promise.resolve(
-            onSample({
-              tagKey: tag.tagKey,
-              raw,
-              value: quality === "good" ? norm.value : null,
-              quality,
-              timestamp,
-            } satisfies OtSample),
-          ).catch(() => {
+          const sample: OtSample = {
+            tagKey: tag.tagKey,
+            raw,
+            value: quality === "good" ? norm.value : null,
+            quality,
+            timestamp,
+          };
+          if (!scGood) sample.statusCode = describeStatus(sc, scVal);
+          void Promise.resolve(onSample(sample)).catch(() => {
             // swallow per-sample callback errors so one bad handler can't kill the push
           });
         } catch (e) {
@@ -405,23 +571,45 @@ export class OpcuaDriver extends NotImplementedDriver {
     if (writes.length === 0) return [];
 
     // Chuẩn bị nodesToWrite + nhớ map lỗi parse từng write (không kéo sập batch).
-    const prepared: Array<{ tagKey: string; node?: any; error?: string }> = writes.map((w) => {
-      try {
-        const dataType = w.dataType ?? "float";
-        // INVERSE scale/offset — chỉ int/float (bool/string giữ nguyên).
-        const raw = inverseScale(w.value, dataType, w.scale ?? 1, w.offset ?? 0);
-        const { nodeId } = parseOpcuaAddress(w.address);
-        const variantValue = this.coerce(raw, dataType);
-        const node = {
-          nodeId,
-          attributeId: this.AttributeIds.Value,
-          value: { value: variantValue },
-        };
-        return { tagKey: w.tagKey, node };
-      } catch (err) {
-        return { tagKey: w.tagKey, error: (err as Error)?.message || String(err) };
-      }
-    });
+    const prepared: Array<{ tagKey: string; node?: any; error?: string }> = await Promise.all(
+      writes.map(async (w) => {
+        try {
+          const dataType = w.dataType ?? "float";
+          // INVERSE scale/offset — chỉ int/float (bool/string giữ nguyên).
+          const raw = inverseScale(w.value, dataType, w.scale ?? 1, w.offset ?? 0);
+          const r = await this.resolveAddress(w.address);
+          if ("error" in r) return { tagKey: w.tagKey, error: `${r.error} (${r.statusCode})` };
+          const nodeId = r.nodeId;
+          // Task 12 — ép về kiểu dựng sẵn CỦA NODE (Float/Int16/UInt16/UInt32/Byte…) + kiểm
+          // miền; trước đây luôn Int32/Double ⇒ BadTypeMismatch. Không xác định được kiểu
+          // (gói tối giản) ⇒ đường cũ theo dataType khai báo.
+          let variantValue: any;
+          let builtin: number | null;
+          try {
+            builtin = await this.nodeBuiltinType(nodeId);
+          } catch (e) {
+            return { tagKey: w.tagKey, error: `cannot read DataType of ${nodeId}: ${(e as Error)?.message || String(e)}` };
+          }
+          if (builtin === null) {
+            variantValue = this.coerce(raw, dataType);
+          } else {
+            const c = coerceOpcuaWriteValue(raw, builtin);
+            if (!c.ok) return { tagKey: w.tagKey, error: c.error };
+            variantValue = this.Variant
+              ? new this.Variant({ dataType: c.dataType, value: c.value })
+              : { dataType: c.dataType, value: c.value };
+          }
+          const node = {
+            nodeId,
+            attributeId: this.AttributeIds.Value,
+            value: { value: variantValue },
+          };
+          return { tagKey: w.tagKey, node };
+        } catch (err) {
+          return { tagKey: w.tagKey, error: (err as Error)?.message || String(err) };
+        }
+      }),
+    );
 
     const toWrite = prepared.filter((p) => p.node).map((p) => p.node);
     let statusCodes: any[] = [];
@@ -449,6 +637,8 @@ export class OpcuaDriver extends NotImplementedDriver {
       const scVal = typeof sc?.value === "number" ? sc.value : 0;
       const good = scVal === 0; // StatusCodes.Good
       if (good) return { tagKey: p.tagKey, ok: true };
+      // Task 12 — kiểu biến đổi phía PLC (tải lại project) ⇒ bỏ cache để lần sau đọc lại.
+      if (sc?.name === "BadTypeMismatch" && p.node?.nodeId) this.dataTypeCache.delete(p.node.nodeId);
       const name = sc?.name ?? sc?.description ?? `status ${scVal}`;
       return { tagKey: p.tagKey, ok: false, error: `bad status: ${name}` };
     });
