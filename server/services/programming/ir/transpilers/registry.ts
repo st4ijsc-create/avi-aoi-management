@@ -86,6 +86,8 @@ export function transpileFlow(
     return {
       ok: false,
       target: resolvedTarget,
+      // data-raw-ok: chẩn đoán build cho KỸ SƯ lập trình IR — mã máy-đọc là `rule` (IrUnsafeTokenError.rule,
+      // client hiển thị theo rule), `message` giữ token/chuỗi vi phạm nguyên văn — dịch là mất bằng chứng.
       diagnostics: [...lint.diagnostics, { blockId: "?", severity: "error", rule: e.rule, message: e.message }],
     };
   }

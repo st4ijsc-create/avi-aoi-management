@@ -460,6 +460,16 @@ export const NO_PHAM_VI_DOC: readonly string[] = [
   // ── server/routers/shiftConfigRouter.ts (2) ────────────────────────────────────────────────
   "server/routers/shiftConfigRouter.ts#shiftConfigRouter.defaults",
   "server/routers/shiftConfigRouter.ts#shiftConfigRouter.list",
+  // ── server/routers/simTargetsRouter.ts (1) ─────────────────────────────────────────────────
+  // ★ 2026-09-27 (doc 81 Đợt 1B final wave, item 4) — `ursimPing` vào nhóm (A) vì Task 3 (R3/R9)
+  // cho `resolveSimTarget` đọc `robots` + `device_adapters` của MỌI tenant để TỪ CHỐI một sim
+  // target trỏ vào host của thiết bị thật (nhả phanh robot thật là điều cổng này ngăn). Thủ tục
+  // KHÔNG trả một hàng tenant nào (chỉ reachable:true/false của cổng dashboard URSim) và phép so
+  // CỐ Ý xuyên tenant — thu hẹp theo `ctx.user` sẽ làm YẾU chính cổng an toàn ấy. Cùng loại lời
+  // khai như `oversightRouter.posture` (số đếm gộp, không phải dữ liệu tenant). Sàn: URSIM_ENABLED
+  // + machine_control/canCreate. Bộ suy xếp (A) vì đúng hình dạng nó canh; giữ ở đây để không ai
+  // quên nó là một lượt đọc xuyên tenant có chủ đích.
+  "server/routers/simTargetsRouter.ts#simTargetsRouter.ursimPing",
   // ── server/routers/simulationRouter.ts (1) ─────────────────────────────────────────────────
   "server/routers/simulationRouter.ts#simulationRouter.fromScene",
   // ── server/routers/sitesRouter.ts (2) ──────────────────────────────────────────────────────

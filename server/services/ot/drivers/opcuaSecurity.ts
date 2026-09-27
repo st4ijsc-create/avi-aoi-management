@@ -47,6 +47,31 @@ import fs from "node:fs";
 import { createHash } from "node:crypto";
 import { decryptSecret, isEncrypted } from "../../security/secretBox";
 
+/**
+ * doc 81 Đợt 1B final wave (item 4, F3 census) — lỗi CẤU HÌNH bảo mật OPC UA có mã. Mọi chỗ ném
+ * trong tệp này (và nhánh "bản node-opcua không có MessageSecurityMode" của driver) đi qua lớp
+ * này thay vì `throw new Error`: người nhận là deviceAdapterRouter.assertOpcuaSecurityOnSave (bọc
+ * thành appError INVALID_VALUE/opcuaSecurityInvalid cho người dùng) và OpcuaDriver.connect
+ * (→ health().lastError cho kỹ sư). Message giữ nguyên văn (test khớp regex, kỹ sư đọc);
+ * `reasonCode` là phần máy-đọc.
+ */
+export type OpcuaConfigReason =
+  | "opcua_option_invalid"
+  | "opcua_security_combination"
+  | "opcua_security_unsupported"
+  | "opcua_password_undecryptable"
+  | "opcua_password_empty"
+  | "opcua_tofu_not_allowed";
+
+export class OpcuaConfigError extends Error {
+  readonly reasonCode: OpcuaConfigReason;
+  constructor(reasonCode: OpcuaConfigReason, message: string) {
+    super(message);
+    this.name = "OpcuaConfigError";
+    this.reasonCode = reasonCode;
+  }
+}
+
 export const OPCUA_SECURITY_MODES = ["None", "Sign", "SignAndEncrypt"] as const;
 export type OpcuaSecurityModeName = (typeof OPCUA_SECURITY_MODES)[number];
 
@@ -68,9 +93,11 @@ export interface OpcuaSecuritySettings {
 
 function pickCaseInsensitive<T extends string>(raw: unknown, allowed: readonly T[], key: string): T | undefined {
   if (raw === undefined || raw === null || raw === "") return undefined;
-  if (typeof raw !== "string") throw new Error(`opcua: connectionOptions.${key} must be a string`);
+  if (typeof raw !== "string") throw new OpcuaConfigError("opcua_option_invalid", `opcua: connectionOptions.${key} must be a string`);
   const hit = allowed.find((a) => a.toLowerCase() === raw.trim().toLowerCase());
-  if (!hit) throw new Error(`opcua: connectionOptions.${key} "${raw}" is not one of ${allowed.join(" | ")}`);
+  if (!hit) {
+    throw new OpcuaConfigError("opcua_option_invalid", `opcua: connectionOptions.${key} "${raw}" is not one of ${allowed.join(" | ")}`);
+  }
   return hit;
 }
 
@@ -103,10 +130,10 @@ export function parseOpcuaSecurityOptions(options: Record<string, unknown> | und
     securityPolicy = policy;
   }
   if (securityMode === "None" && securityPolicy !== "None") {
-    throw new Error(`opcua: securityMode None cannot be combined with securityPolicy ${securityPolicy}`);
+    throw new OpcuaConfigError("opcua_security_combination", `opcua: securityMode None cannot be combined with securityPolicy ${securityPolicy}`);
   }
   if (securityMode !== "None" && securityPolicy === "None") {
-    throw new Error(`opcua: securityMode ${securityMode} requires a securityPolicy other than None`);
+    throw new OpcuaConfigError("opcua_security_combination", `opcua: securityMode ${securityMode} requires a securityPolicy other than None`);
   }
   return {
     securityMode,
@@ -132,14 +159,18 @@ export function resolveOpcuaPassword(stored: unknown): string | undefined {
   try {
     plain = decryptSecret(stored);
   } catch (e) {
-    throw new Error(`opcua: cannot decrypt connectionOptions.password (${(e as Error)?.message ?? "secretBox error"})`);
+    throw new OpcuaConfigError(
+      "opcua_password_undecryptable",
+      `opcua: cannot decrypt connectionOptions.password (${(e as Error)?.message ?? "secretBox error"})`,
+    );
   }
   if (plain == null) {
-    throw new Error(
-      isEncrypted(stored)
-        ? "opcua: connectionOptions.password cannot be decrypted (SECRET_ENCRYPTION_KEY/JWT_SECRET changed or value tampered)"
-        : "opcua: connectionOptions.password is empty",
-    );
+    throw isEncrypted(stored)
+      ? new OpcuaConfigError(
+          "opcua_password_undecryptable",
+          "opcua: connectionOptions.password cannot be decrypted (SECRET_ENCRYPTION_KEY/JWT_SECRET changed or value tampered)",
+        )
+      : new OpcuaConfigError("opcua_password_empty", "opcua: connectionOptions.password is empty");
   }
   return plain;
 }
@@ -203,7 +234,8 @@ export function assertTrustOnFirstUseAllowed(trustOnFirstUse: boolean): void {
   if (!trustOnFirstUse) return;
   const v = process.env.OPCUA_ALLOW_TRUST_ON_FIRST_USE?.trim().toLowerCase();
   if (v === "true" || v === "1") return;
-  throw new Error(
+  throw new OpcuaConfigError(
+    "opcua_tofu_not_allowed",
     "opcua: connectionOptions.trustOnFirstUse is requested but the operator has not enabled " +
       "OPCUA_ALLOW_TRUST_ON_FIRST_USE=true — refusing to connect. Trust the server certificate in " +
       "<OPCUA_PKI_DIR>/trusted/certs instead (see opcuaSecurity.ts).",

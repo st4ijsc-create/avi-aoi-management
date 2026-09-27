@@ -68,6 +68,21 @@ export const DEFAULT_SUPERVISOR_CONNECT_TIMEOUT_MS = 10_000;
 export const SUPERVISOR_CONNECT_GRACE_MS = 1000;
 
 /** Lifecycle state of a supervised adapter connection. */
+/**
+ * doc 81 Đợt 1B final wave (item 4, F3 census) — lỗi nội bộ của supervisor có mã, thay cho
+ * `throw new Error`: `no_endpoints` là tiền điều kiện lập trình của constructor (otManager /
+ * test tự bắt); `connect_pending` là nhánh "lần connect trước còn treo" mà attemptCycle bắt để
+ * ghi lastError + backoff. Không chỗ nào tới người dùng cuối; message giữ nguyên văn cho kỹ sư.
+ */
+export class ConnectionSupervisorError extends Error {
+  readonly reasonCode: "no_endpoints" | "connect_pending";
+  constructor(reasonCode: "no_endpoints" | "connect_pending", message: string) {
+    super(message);
+    this.name = "ConnectionSupervisorError";
+    this.reasonCode = reasonCode;
+  }
+}
+
 export type SupervisorState =
   | "idle" // constructed, start() not called yet
   | "connecting" // initial connect attempt in progress (never connected yet)
@@ -288,7 +303,7 @@ export class ConnectionSupervisor {
         : DEFAULT_SUPERVISOR_CONNECT_TIMEOUT_MS;
 
     if (!opts.endpoints || opts.endpoints.length === 0) {
-      throw new Error(`ConnectionSupervisor "${opts.code}": at least one endpoint required`);
+      throw new ConnectionSupervisorError("no_endpoints", `ConnectionSupervisor "${opts.code}": at least one endpoint required`);
     }
     // ONE driver instance per endpoint, created up-front and REUSED across
     // reconnects (drivers create a fresh transport on each connect()).
@@ -610,7 +625,7 @@ export class ConnectionSupervisor {
     // không chồng connect thứ hai; tính lần này là thất bại, backoff sẽ thử lại sau.
     const deadlineMs = this.connectDeadlineFor(ep);
     if (ep.pendingConnect) {
-      throw new Error(`previous ${ep.label} connect still pending (timed out after ${deadlineMs}ms)`);
+      throw new ConnectionSupervisorError("connect_pending", `previous ${ep.label} connect still pending (timed out after ${deadlineMs}ms)`);
     }
     await this.closeActiveHandle();
     // Ensure a clean slate: a stale-but-"connected" driver is disconnected first.

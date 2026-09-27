@@ -97,8 +97,23 @@ const SERVER = resolve(dirname(fileURLToPath(import.meta.url)), "..");
  *   ⚠ Đây là **thu hẹp phép đo rồi SIẾT ngân sách xuống đúng số thật mới (476)** — không phải
  *     nới trần. Ngày nào một tệp sản phẩm import lại một trong chín module ấy, số đếm tăng
  *     lại và cổng ĐỎ — đúng như nó phải thế.
+ *
+ * 476 → **466** (2026-09-27, doc 81 Đợt 1B final wave item 4): ĐO trên HEAD `f1910fc4f` ra **481**
+ *   (cổng ĐỎ: Đợt 1B đã thêm 13 chỗ ném thô ở `ot/drivers/opcuaSecurity` ×7 · `opcuaDriver` ×2 ·
+ *   `opcuaAddress` ×1 · `ot/connectionSupervisor` ×1 · `robot/drivers/mitsubishiRobotDriver` ×1 ·
+ *   `robot/ursim/simTargetRegistry` ×1 — chỗ cuối còn thuộc họ "DB không sẵn sàng", bất biến 0).
+ *   Trả **15** chỗ theo đúng luật (a)+(b) ở trên — KHÔNG đẻ mã dùng-một-lần, KHÔNG mất thông tin:
+ *     · 8 lỗi cấu hình bảo mật OPC UA → `OpcuaConfigError` (reasonCode; deviceAdapterRouter bọc
+ *       thành appError INVALID_VALUE/opcuaSecurityInvalid cho người dùng, driver ghi lastError);
+ *     · 2 lỗi về một node (nodeId sai định dạng / không đọc được DataType) → `OpcuaNodeError`
+ *       (driver bắt, thành lý do "bad"/`error` của đúng tag);
+ *     · 2 lỗi nội bộ supervisor (thiếu endpoint / connect trước còn treo) → `ConnectionSupervisorError`;
+ *     · 2 trả lời `Qe…` của MELFA (cả nhánh OPEN khi nối lại, có sẵn từ trước) → `MelfaReplyError`
+ *       (command + errorNo; message nguyên văn);
+ *     · 1 "DB unavailable" → `DbUnavailableError` (đúng lớp của họ đã đóng, mang appCode).
+ *   Message MỌI chỗ giữ nguyên văn (test khớp regex, kỹ sư đọc). 481 − 15 = **466**, không dư một đơn vị.
  */
-const ALLOWED_RAW_THROWS_OUTSIDE_ROUTERS = 476;
+const ALLOWED_RAW_THROWS_OUTSIDE_ROUTERS = 466;
 
 /**
  * Họ "DB không sẵn sàng": `407 → 83 → 1 → **0**` — nay là BẤT BIẾN, không phải ngân sách.

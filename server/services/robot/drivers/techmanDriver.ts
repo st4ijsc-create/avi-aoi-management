@@ -500,6 +500,9 @@ export class TechmanDriver implements RobotDriver {
         return {
           ok: false,
           status: "failed",
+          // data-raw-ok: chi tiết KỸ THUẬT cho kỹ sư (tên script bị từ chối), ĐI KÈM mã máy-đọc
+          // detail.reasonCode (techman_script_refused) để lớp trên/client dịch; chuỗi gốc là
+          // bằng chứng truy nguyên trong robot_jobs.errorText, dịch đi là mất tên script.
           error: err.message,
           detail: { jobType: job.jobType, sent: false, reasonCode: err.reasonCode },
         };
@@ -588,6 +591,8 @@ export class TechmanDriver implements RobotDriver {
           guard();
         } catch (err) {
           if (err instanceof RobotJobFencedError) {
+            // data-raw-ok: verdict nội bộ của driver — mã máy-đọc là reasonCode (job_fenced_by_abort),
+            // message chỉ là chi tiết kỹ thuật kèm theo cho kỹ sư (đi vào robot_jobs.errorText).
             finish({ ok: false, reasonCode: "job_fenced_by_abort", message: err.message });
             return; // fenced by abort(): the frame is NEVER written
           }
@@ -606,6 +611,8 @@ export class TechmanDriver implements RobotDriver {
         finish(classifyTmsctReply(parsed, sentId));
       });
       socket.on("error", (e: Error) => {
+        // data-raw-ok: verdict nội bộ của driver — mã máy-đọc là reasonCode (tm_socket_error); message
+        // giữ mã lỗi socket (ECONNREFUSED host:port…) — thứ duy nhất nói được hỏng ở đâu cho kỹ sư.
         finish({ ok: false, reasonCode: "tm_socket_error", message: e?.message || String(e) });
       });
       socket.on("close", () => {

@@ -31,6 +31,7 @@
 import net from "node:net";
 import { lookup } from "node:dns/promises";
 import { appError } from "../../../_core/appError";
+import { DbUnavailableError } from "../../../_core/dbErrors"; // final wave (item 4): lớp mang appCode DB_UNAVAILABLE, không ném thô
 import { getDb } from "../../../db/connection";
 import { robots, deviceAdapters } from "../../../../drizzle/schema";
 import { ursimEndpointFromEnv } from "./ursimHarness";
@@ -150,7 +151,7 @@ function collectOptionHosts(opts: unknown, out: string[], depth = 0): void {
 /** Đọc-chỉ: mọi endpoint của robot + adapter thiết bị trong CSDL. Ném khi CSDL không sẵn sàng. */
 export async function listRealDeviceEndpointsFromDb(): Promise<string[]> {
   const d = await getDb();
-  if (!d) throw new Error("DB unavailable");
+  if (!d) throw new DbUnavailableError("DB unavailable");
   const [robotRows, adapterRows] = await Promise.all([
     d.select({ endpoint: robots.endpoint, connectionOptions: robots.connectionOptions }).from(robots),
     d.select({ endpoint: deviceAdapters.endpoint, connectionOptions: deviceAdapters.connectionOptions }).from(deviceAdapters),

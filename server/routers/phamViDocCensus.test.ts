@@ -481,8 +481,19 @@ const cua = (n: NhomPhamVi): ThuTuc[] => NHOM.get(n) ?? [];
  *       vào `phamViDocBaseline.ts`).
  *   C/D không đổi bởi Task 2 (0 thủ tục mới thuộc hai nhóm đó từ hai file đã sửa) — đúng như đo được.
  * ══════════════════════════════════════════════════════════════════════════════════════════════
+ * ★★★ 2026-09-27 (doc 81 Đợt 1B final wave, item 4) — **A 341→342 · C 481→480 · D 1122→1123 ·
+ * tong 2281→2282.** ĐO bằng chính bộ quét này trên cây HEAD `f1910fc4f` TRƯỚC khi sửa bất kỳ tệp
+ * nào của lượt này (`final-fix-logs/census-before.log`), rồi quy trách nhiệm theo TỪNG khoá:
+ *   • `simTargetsRouter.ursimPing` (query): **C → A**. Task 3 (`080eeeb76`…`947589e52`, R3/R9)
+ *     cho `resolveSimTarget` đọc `robots` + `device_adapters` để từ chối sim target trỏ vào thiết
+ *     bị thật ⇒ nay "chạm tenant" mà danh tính không rời tay. Đã THÊM vào `phamViDocBaseline.ts`
+ *     kèm lời khai (phép so cố ý xuyên tenant, không trả hàng tenant nào) — xem khối chú thích ở đó.
+ *   • `robotRouter.clearMotionLock` (mutation, MỚI): **D +1**. Task 5 fix round 4 (ruling R13):
+ *     người vận hành có quyền gỡ khoá chuyển động, có kiểm toán.
+ *   ⇒ A +1 · C −1 · D +1 · tong +1, không dư một đơn vị; B/S không đổi.
+ * ══════════════════════════════════════════════════════════════════════════════════════════════
  */
-const GHIM = { A: 341, B: 8, C: 481, D: 1122, S: 329, tong: 2281 } as const;
+const GHIM = { A: 342, B: 8, C: 480, D: 1123, S: 329, tong: 2282 } as const;
 
 describe("§1 — CẦU CHÌ: bộ suy có thật sự nhìn thấy gì không", () => {
   it("★ không có ô MÙ nào (mỗi ô mù là một chỗ KHÔNG AI CANH)", () => {

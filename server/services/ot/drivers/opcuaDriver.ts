@@ -27,7 +27,7 @@ import type {
   OnOtSample,
 } from "../otDriver";
 import { NotImplementedDriver } from "./notImplementedDriver";
-import { parseOpcuaAddress, normalizeOpcuaValue, coerceOpcuaWriteValue, opcuaBuiltinName } from "./opcuaAddress";
+import { parseOpcuaAddress, normalizeOpcuaValue, coerceOpcuaWriteValue, opcuaBuiltinName, OpcuaNodeError } from "./opcuaAddress";
 import { inverseScale } from "./otScale";
 import { DeviceUnreachableError } from "../../../_core/deviceErrors";
 import { withDeadline } from "./boundedClose";
@@ -41,6 +41,7 @@ import {
   assertTrustOnFirstUseAllowed,
   warnSecurityPostureOnce,
   opcuaPkiRoot,
+  OpcuaConfigError,
 } from "./opcuaSecurity";
 
 /**
@@ -195,7 +196,10 @@ export class OpcuaDriver extends NotImplementedDriver {
       const MessageSecurityMode = optionalExport(pkg, "MessageSecurityMode");
       const SecurityPolicy = optionalExport(pkg, "SecurityPolicy");
       if (!MessageSecurityMode || !SecurityPolicy) {
-        throw new Error("opcua: this node-opcua build has no MessageSecurityMode/SecurityPolicy (security unsupported)");
+        throw new OpcuaConfigError(
+          "opcua_security_unsupported",
+          "opcua: this node-opcua build has no MessageSecurityMode/SecurityPolicy (security unsupported)",
+        );
       }
       pkiDir = opcuaPkiRoot(resolveOpcuaPkiDir(), security.trustOnFirstUse);
       if (security.trustOnFirstUse) warnSecurityPostureOnce("tofu", cfg.endpoint);
@@ -347,7 +351,7 @@ export class OpcuaDriver extends NotImplementedDriver {
     if (!session || typeof session.getBuiltInDataType !== "function") return null;
     const dt = await session.getBuiltInDataType(nodeId);
     const n = typeof dt === "number" ? dt : Number(dt);
-    if (!Number.isFinite(n)) throw new Error(`cannot determine DataType of ${nodeId}`);
+    if (!Number.isFinite(n)) throw new OpcuaNodeError("opcua_datatype_unknown", `cannot determine DataType of ${nodeId}`);
     if (this.session === session) this.dataTypeCache.set(nodeId, n);
     return n;
   }

@@ -230,6 +230,25 @@ export function buildMelfaMotion(job: RobotJobSpec): string {
   return `${verb} (${x},${y},${z},${a},${b},${c})(${fl1},${fl2})`;
 }
 
+/**
+ * doc 81 Đợt 1B final wave (item 4, F3 census) — bộ điều khiển MELFA trả lời LỖI (`Qe…`) cho một
+ * lệnh: lớp có tên + `command` + `errorNo` thay cho `throw new Error`. Người nhận là runJob (→
+ * RobotJobResult.error cho sổ robot_jobs) và connect/getState (→ lastError). CỐ Ý KHÔNG mang
+ * `reasonCode`: nhánh catch của runJob đọc `err.reasonCode` để quyết định khoá chuyển động và
+ * hình dạng `detail` — một lỗi-trả-lời của robot không phải kết cục-chưa-biết, nên kết quả giữ
+ * đúng hình dạng cũ (byte-identical). Message giữ nguyên văn `MELFA <lệnh> failed: error <N>`.
+ */
+export class MelfaReplyError extends Error {
+  readonly command: string;
+  readonly errorNo: number | string | undefined;
+  constructor(command: string, errorNo: number | string | undefined, context?: string) {
+    super(`MELFA ${command} failed${context ? ` ${context}` : ""}: error ${errorNo ?? "?"}`);
+    this.name = "MelfaReplyError";
+    this.command = command;
+    this.errorNo = errorNo;
+  }
+}
+
 export class MitsubishiDriver implements RobotDriver {
   readonly vendor: RobotVendor = "mitsubishi";
 
@@ -274,7 +293,7 @@ export class MitsubishiDriver implements RobotDriver {
     const reply = parseMelfaResponse(
       await this.client.send(frameMelfaCommand(cmd, this.robotNo, this.slotNo), this.timeoutMs, { guard, allowAfterPeerDrop: privileged }),
     );
-    if (!reply.ok) throw new Error(`MELFA ${cmd.split(/[ (]/)[0]} failed: error ${reply.errorNo ?? "?"}`);
+    if (!reply.ok) throw new MelfaReplyError(cmd.split(/[ (]/)[0], reply.errorNo);
     return reply;
   }
 
@@ -298,7 +317,7 @@ export class MitsubishiDriver implements RobotDriver {
         const r = parseMelfaResponse(
           await c.send(frameMelfaCommand(`OPEN=${this.clientName}`, this.robotNo, this.slotNo), this.timeoutMs),
         );
-        if (!r.ok) throw new Error(`MELFA OPEN failed on reconnect: error ${r.errorNo ?? "?"}`);
+        if (!r.ok) throw new MelfaReplyError("OPEN", r.errorNo, "on reconnect");
       },
       // Fix round 4 (R13) — a peer drop (idle or under a command) locks motion until a STOP is
       // confirmed or an operator clears it; a later poll may bring the transport back regardless.

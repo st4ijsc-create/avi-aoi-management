@@ -235,6 +235,9 @@ export class MotionLock {
     return {
       ok: false,
       status: "failed",
+      // data-raw-ok: chi tiết KỸ THUẬT cho kỹ sư (vì sao/từ lúc nào khoá), ĐI KÈM mã máy-đọc
+      // detail.reasonCode (robot_motion_locked) + motionLock để client dịch/hiển thị; chuỗi gốc
+      // là bằng chứng truy nguyên trong robot_jobs.errorText.
       error: err.message,
       detail: { jobType: job.jobType, reasonCode: MOTION_LOCKED_REASON_CODE, motionLock: this.snapshot(), sent: false },
     };

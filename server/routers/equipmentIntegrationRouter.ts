@@ -281,6 +281,9 @@ export const equipmentIntegrationRouter = router({
       } catch (err) {
         return {
           ok: false as const,
+          // data-raw-ok: chi tiết KỸ THUẬT cho kỹ sư (ECONNREFUSED host:port, BadSecurityChecksFailed…),
+          // ĐI KÈM errorCode + errorParams ngay dưới để client dịch câu cho người vận hành
+          // (translateAppError) — cùng khuôn F14 như deviceAdapterRouter.testConnection.
           error: err instanceof Error ? err.message : String(err),
           errorCode: "DEVICE_UNREACHABLE" as const,
           errorParams: { entity: "opcua" },

@@ -249,6 +249,9 @@ export class UrsimBridgeDriver implements RobotDriver {
         return {
           ok: false,
           status: "failed",
+          // data-raw-ok: chi tiết KỸ THUẬT cho kỹ sư (tham số nào bị từ chối), ĐI KÈM mã máy-đọc
+          // detail.reasonCode (ur_script_forbidden / ur_home_param_forbidden…) để lớp trên/client
+          // dịch; chuỗi gốc là bằng chứng truy nguyên trong robot_jobs.errorText.
           error: err.message,
           detail: { jobType: job.jobType, sent: false, reasonCode: err.reasonCode },
         };

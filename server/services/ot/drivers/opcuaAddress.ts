@@ -25,6 +25,23 @@ export interface ParsedOpcuaAddress {
  * "nsu=http://www.siemens.com/simatic-s7-opcua;s=DB1.Temp" (Task 12).
  * Sai định dạng → throw.
  */
+/**
+ * doc 81 Đợt 1B final wave (item 4, F3 census) — lỗi về MỘT NODE có mã: địa chỉ nodeId sai
+ * định dạng, hoặc không đọc được DataType của node. Người nhận là OpcuaDriver (resolveAddress /
+ * writeTags bắt và đưa vào lý do "bad"/`error` của ĐÚNG tag đó, không kéo sập batch). Message giữ
+ * nguyên văn; `reasonCode` là phần máy-đọc.
+ */
+export type OpcuaNodeReason = "opcua_invalid_node_id" | "opcua_datatype_unknown";
+
+export class OpcuaNodeError extends Error {
+  readonly reasonCode: OpcuaNodeReason;
+  constructor(reasonCode: OpcuaNodeReason, message: string) {
+    super(message);
+    this.name = "OpcuaNodeError";
+    this.reasonCode = reasonCode;
+  }
+}
+
 export function parseOpcuaAddress(address: string): ParsedOpcuaAddress {
   const nodeId = String(address ?? "").trim();
   // ns=<digits>;<i|s|g|b>=<anything-non-empty>
@@ -36,7 +53,7 @@ export function parseOpcuaAddress(address: string): ParsedOpcuaAddress {
   if (m && m[1].trim()) {
     return { nodeId, namespaceUri: m[1], identifier: m[2] };
   }
-  throw new Error(`invalid OPC-UA nodeId: ${address}`);
+  throw new OpcuaNodeError("opcua_invalid_node_id", `invalid OPC-UA nodeId: ${address}`);
 }
 
 // ── doc 81 Đợt 1B Task 12 — ghi đúng kiểu dựng sẵn của node ───────────────────────
