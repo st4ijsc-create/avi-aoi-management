@@ -38,6 +38,8 @@ import {
   type ProgramSource,
   type ProgSimScenario,
   type ProgDeployResult,
+  type BuildResult,
+  type CompileOptions,
 } from "./programmingAdapter";
 
 export interface DpcUser {
@@ -167,10 +169,14 @@ export async function validateArtifact(artifactId: number) {
   const src: ProgramSource = { kind: art.kind as ProgrammingKind, language: art.language, content: art.content ?? "" };
   const result = await adapter.validate(src);
 
+  // doc 80 Đợt 1 Task 5 (WS-01) + fix round 1 — dấu vết duyệt (`review`) sống chung trong
+  // diagnosticsJson (không migration). validate CHỈ ghi khoá `diagnostics`, gộp TRONG SQL trên
+  // giá trị HIỆN TẠI của hàng (không phải bản đọc trước `await adapter.validate`) ⇒ một lượt
+  // duyệt/từ chối chen vào giữa KHÔNG bị ghi đè.
   await d
     .update(programArtifacts)
     .set({
-      diagnosticsJson: { diagnostics: result.diagnostics },
+      diagnosticsJson: mergeJsonKey("diagnostics", result.diagnostics),
       status: result.ok ? "validated" : "draft",
     })
     .where(eq(programArtifacts.id, artifactId));
@@ -179,19 +185,70 @@ export async function validateArtifact(artifactId: number) {
 }
 
 /**
+ * doc 80 Đợt 1 Task 5 (WS-01) — DẤU VẾT DUYỆT PHIÊN BẢN. Không migration: bảng chỉ có
+ * reviewStatus/reviewedBy/reviewedAt, nên lý do từ chối + người/lúc yêu cầu duyệt được giữ ở
+ * `program_artifacts.diagnosticsJson.review` (jsonb sẵn có). validateArtifact giữ nguyên khoá này.
+ */
+export interface ReviewTrail {
+  requestedBy?: number;
+  requestedAt?: string;
+  decision?: "approved" | "rejected";
+  reason?: string | null;
+  reviewedBy?: number;
+  reviewedAt?: string;
+}
+
+/** Đọc `review` từ diagnosticsJson (null nếu không có / sai hình). Pure. */
+export function readReviewTrail(diagnosticsJson: unknown): ReviewTrail | null {
+  if (!diagnosticsJson || typeof diagnosticsJson !== "object") return null;
+  const r = (diagnosticsJson as Record<string, unknown>).review;
+  return r && typeof r === "object" ? (r as ReviewTrail) : null;
+}
+
+/**
+ * fix round 1 — GỘP một khoá cấp một của diagnosticsJson TRONG SQL:
+ * `COALESCE(col,'{}') || jsonb_build_object(key, value)`. Biểu thức đọc giá trị của hàng TẠI LÚC
+ * UPDATE (sau khi Postgres khoá hàng) ⇒ không có cửa sổ đọc-sửa-ghi, không xoá khoá khác.
+ */
+function mergeJsonKey(key: "diagnostics", value: unknown) {
+  return sql`COALESCE(${programArtifacts.diagnosticsJson}, '{}'::jsonb) || jsonb_build_object(${key}::text, ${JSON.stringify(value)}::jsonb)`;
+}
+
+/** fix round 1 — gộp `patch` VÀO khoá `review` hiện có (giữ requestedBy khi ghi quyết định…), trong SQL. */
+function mergeReviewTrail(patch: ReviewTrail) {
+  return sql`COALESCE(${programArtifacts.diagnosticsJson}, '{}'::jsonb) || jsonb_build_object('review',
+    COALESCE(${programArtifacts.diagnosticsJson} -> 'review', '{}'::jsonb) || ${JSON.stringify(patch)}::jsonb)`;
+}
+
+/** fix round 1 — phiên bản không (còn) ở `pending_review` ⇒ PRECONDITION_FAILED có mã. */
+function versionReviewNotPending(artifactId: number, operation: "reviewArtifact" | "requestVersionReview") {
+  return appError(
+    "PRECONDITION_FAILED",
+    "OPERATION_FAILED",
+    { operation, reason: "versionReviewNotPending" },
+    `Phiên bản #${artifactId} không còn chờ duyệt (đã được duyệt/từ chối, có thể bởi một lượt song song).`,
+  );
+}
+
+/**
  * doc 38 T-2 — FOUR-EYES AT THE VERSION. Record a review DECISION on an artifact version.
  * SoD (segregation of duties): the reviewer must DIFFER from the author (createdBy) — the
  * same two-person control the deploy path enforces, moved UP to the version. Always safe
- * (no device I/O). Idempotent-friendly: re-approving an approved version is a no-op update.
+ * (no device I/O). fix round 1: a decision is taken EXACTLY ONCE — only a 'pending_review'
+ * version can be approved/rejected (re-deciding ⇒ PRECONDITION_FAILED versionReviewNotPending).
  *
  * Enforcement of "must be approved before build/deploy" is flag-gated
  * (DPC_VERSION_REVIEW_ENABLED); recording the decision itself is always allowed so an
  * operator can pre-populate approvals before flipping the flag on.
+ *
+ * doc 80 Đợt 1 Task 5 (WS-01) — tự duyệt ⇒ FORBIDDEN có mã (trước: Error trần ⇒ 500); TỪ CHỐI
+ * bắt buộc lý do (lưu vào dấu vết duyệt để tác giả đọc được vì sao).
  */
 export async function reviewArtifact(
   artifactId: number,
   decision: "approved" | "rejected",
   reviewer: DpcUser,
+  reason?: string,
 ) {
   const d = await db();
   const [art] = await d.select().from(programArtifacts).where(eq(programArtifacts.id, artifactId)).limit(1);
@@ -200,16 +257,70 @@ export async function reviewArtifact(
   // SoD — a version may NOT be self-approved: the reviewer must differ from the author.
   // (createdBy may be null on legacy rows; only enforce when we know the author.)
   if (art.createdBy != null && art.createdBy === reviewer.id) {
-    throw new Error(
+    throw appError(
+      "FORBIDDEN",
+      "PERMISSION_DENIED",
+      { action: "selfApproveProgramVersion" },
       "Segregation of duties — người duyệt phiên bản phải KHÁC tác giả (không được tự duyệt phiên bản của chính mình).",
     );
   }
 
+  const trimmedReason = reason?.trim() ?? "";
+  if (decision === "rejected" && trimmedReason.length === 0) {
+    throw appError(
+      "BAD_REQUEST",
+      "FIELD_REQUIRED",
+      { field: "reviewReason" },
+      "Từ chối một phiên bản bắt buộc có lý do.",
+    );
+  }
+
+  // fix round 1 — QUYẾT ĐỊNH MỘT LẦN: UPDATE … WHERE reviewStatus='pending_review' RETURNING. Hai
+  // người duyệt song song ⇒ Postgres khoá hàng, lượt sau đánh giá lại WHERE sau khi lượt đầu
+  // commit ⇒ 0 hàng ⇒ PRECONDITION_FAILED. Một phiên bản đã duyệt/từ chối KHÔNG đổi quyết định
+  // được nữa (phiên bản bất biến — sửa thì lưu phiên bản mới). Dấu vết gộp trong SQL.
+  const now = new Date();
   const [row] = await d
     .update(programArtifacts)
-    .set({ reviewStatus: decision, reviewedBy: reviewer.id, reviewedAt: new Date() })
-    .where(eq(programArtifacts.id, artifactId))
+    .set({
+      reviewStatus: decision,
+      reviewedBy: reviewer.id,
+      reviewedAt: now,
+      diagnosticsJson: mergeReviewTrail({
+        decision,
+        reason: trimmedReason.length > 0 ? trimmedReason : null,
+        reviewedBy: reviewer.id,
+        reviewedAt: now.toISOString(),
+      }),
+    })
+    .where(and(eq(programArtifacts.id, artifactId), eq(programArtifacts.reviewStatus, "pending_review")))
     .returning();
+  if (!row) throw versionReviewNotPending(artifactId, "reviewArtifact");
+  return row;
+}
+
+/**
+ * doc 80 Đợt 1 Task 5 (WS-01) — "YÊU CẦU DUYỆT" một phiên bản đang `pending_review`: ghi người +
+ * lúc yêu cầu vào dấu vết duyệt để người duyệt thấy phiên bản nào đang chờ họ. Không đổi
+ * reviewStatus (vẫn chờ). Phiên bản đã duyệt/từ chối ⇒ PRECONDITION_FAILED có mã (phiên bản bất
+ * biến — sửa thì lưu phiên bản mới). Always safe (no device I/O).
+ */
+export async function requestVersionReview(artifactId: number, requester: DpcUser) {
+  const d = await db();
+  const [art] = await d.select().from(programArtifacts).where(eq(programArtifacts.id, artifactId)).limit(1);
+  if (!art) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "programmingArtifact" }, `Artifact ${artifactId} not found`);
+  // fix round 1 — cùng khuôn: có điều kiện + gộp trong SQL (không ghi đè một quyết định song song).
+  const [row] = await d
+    .update(programArtifacts)
+    .set({
+      diagnosticsJson: mergeReviewTrail({
+        requestedBy: requester.id,
+        requestedAt: new Date().toISOString(),
+      }),
+    })
+    .where(and(eq(programArtifacts.id, artifactId), eq(programArtifacts.reviewStatus, "pending_review")))
+    .returning();
+  if (!row) throw versionReviewNotPending(artifactId, "requestVersionReview");
   return row;
 }
 
@@ -218,6 +329,7 @@ export async function reviewArtifact(
  *
  * doc 38 T-2 — with DPC_VERSION_REVIEW_ENABLED on, a version that is not 'approved'
  * (four-eyes) cannot be built. Off (default) → unchanged.
+ * doc 80 Đợt 1 Task 5 (WS-01) — lỗi "chưa duyệt" là PRECONDITION_FAILED có mã (trước: 500).
  */
 export async function buildArtifact(artifactId: number, user: DpcUser) {
   const d = await db();
@@ -225,7 +337,10 @@ export async function buildArtifact(artifactId: number, user: DpcUser) {
   if (!art) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "programmingArtifact" }, `Artifact ${artifactId} not found`);
 
   if (dpcVersionReviewEnabled() && art.reviewStatus !== "approved") {
-    throw new Error(
+    throw appError(
+      "PRECONDITION_FAILED",
+      "OPERATION_FAILED",
+      { operation: "buildArtifact", reason: "versionNotApproved" },
       `Four-eyes — phiên bản #${artifactId} chưa được DUYỆT (reviewStatus="${art.reviewStatus}"). ` +
         "Cần người thứ hai duyệt (reviewer ≠ tác giả) trước khi build/deploy.",
     );
@@ -312,7 +427,7 @@ interface DeployComputed {
 }
 
 /** Nạp build + artifact + project cho một deploy (ném lỗi nếu thiếu). deviceId gắn ở PROJECT. */
-async function loadDeployCtx(buildId: number) {
+export async function loadDeployCtx(buildId: number) {
   const d = await db();
   const [b] = await d.select().from(programBuilds).where(eq(programBuilds.id, buildId)).limit(1);
   if (!b) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "programBuild" }, `Build ${buildId} not found`);
@@ -330,61 +445,128 @@ async function loadDeployCtx(buildId: number) {
  * them (deployBuild inserts an append-only audit row; approveDeployment updates the queued
  * 'awaiting_approval' row in place). This keeps the two callers byte-identical on the gate.
  */
-async function computeDeploy(
-  req: DeployRequest,
+/**
+ * doc 80 Đợt 1 Task 5 — MỘT cổng trong danh sách cổng deploy (dùng chung bởi computeDeploy và
+ * deployPreview ⇒ bản xem trước KHÔNG thể trôi khỏi đường deploy thật).
+ *   • ok=true                        — cổng qua.
+ *   • ok=false, effect="block"       — deploy bị TỪ CHỐI / thất bại (verdict 'blocked').
+ *   • ok=false, effect="simulate"    — deploy chỉ được GHI NHẬN MÔ PHỎNG (verdict 'simulated').
+ *   • atDeploy=true                  — chỉ kiểm được lúc deploy thật (mạng/thiết bị), bản xem
+ *                                       trước KHÔNG khẳng định được.
+ * `reason` là MÃ (client dịch `engineering.deployPreview.reason.<mã>`), không phải câu.
+ */
+export interface DeployGate {
+  name: string;
+  ok: boolean;
+  reason: string;
+  effect?: "block" | "simulate";
+  atDeploy?: boolean;
+  params?: Record<string, string | number | boolean | null>;
+}
+
+/** Hàng 'rejected' mà computeDeploy ghi khi một cổng dịch vụ chặn (giữ nguyên câu lỗi cũ). */
+interface GateRejection {
+  error: string;
+  signedOffBy: number | null;
+  detailJson: Record<string, unknown> | null;
+}
+
+export interface ServiceGateEval {
+  gates: DeployGate[];
+  /** Cổng chặn ĐẦU TIÊN theo đúng thứ tự cũ của computeDeploy (null ⇒ không cổng nào chặn). */
+  rejection: GateRejection | null;
+  signedOff: boolean;
+  realDeploy: boolean;
+}
+
+/**
+ * doc 80 Đợt 1 Task 5 — CÁC CỔNG DỊCH VỤ của deploy, THEO ĐÚNG THỨ TỰ computeDeploy từng chạy:
+ * four-eyes-at-version → build ok → (cờ + ký duyệt ⇒ realDeploy) → SoD production → Simulation
+ * Gate. Trả MỌI cổng (để bản xem trước liệt kê đủ) + cổng chặn đầu tiên (để computeDeploy ghi
+ * đúng hàng 'rejected' như trước, câu lỗi byte-identical). Chỉ ĐỌC DB (sim run mới nhất, và chỉ
+ * khi realDeploy — y như trước). Không chạm thiết bị.
+ */
+export async function evaluateDeployGates(
+  req: Pick<DeployRequest, "buildId" | "stage" | "hitl">,
   b: typeof programBuilds.$inferSelect,
   art: typeof programArtifacts.$inferSelect,
-  projectDeviceId: number | null,
-): Promise<DeployComputed> {
-  const d = await db();
+): Promise<ServiceGateEval> {
+  const gates: DeployGate[] = [];
+  let rejection: GateRejection | null = null;
+  const reject = (r: GateRejection) => {
+    if (!rejection) rejection = r;
+  };
 
   // doc 38 T-2 — FOUR-EYES AT THE VERSION. With DPC_VERSION_REVIEW_ENABLED on, a version
   // that was not 'approved' by a second person (reviewer ≠ author) can NOT be deployed —
   // not even simulated. Off (default) → unchanged.
-  if (dpcVersionReviewEnabled() && art.reviewStatus !== "approved") {
-    return {
-      status: "rejected",
-      simulated: true,
+  if (!dpcVersionReviewEnabled()) {
+    gates.push({ name: "versionReview", ok: true, reason: "reviewNotRequired" });
+  } else if (art.reviewStatus === "approved") {
+    gates.push({ name: "versionReview", ok: true, reason: "versionApproved" });
+  } else {
+    gates.push({
+      name: "versionReview",
+      ok: false,
+      effect: "block",
+      reason: "versionNotApproved",
+      params: { reviewStatus: String(art.reviewStatus) },
+    });
+    reject({
       signedOffBy: null,
       error:
         `Four-eyes — phiên bản chưa được DUYỆT (reviewStatus="${art.reviewStatus}"). ` +
         "Cần người thứ hai duyệt (reviewer ≠ tác giả) trước khi deploy.",
       detailJson: null,
-    };
+    });
   }
 
   // A non-ok build can never be deployed (even simulated).
-  if (!b.ok) {
-    return {
-      status: "rejected",
-      simulated: true,
-      signedOffBy: null,
-      error: "Build is not ok — refusing to deploy.",
-      detailJson: null,
-    };
+  if (b.ok) {
+    gates.push({ name: "buildOk", ok: true, reason: "buildOk" });
+  } else {
+    gates.push({ name: "buildOk", ok: false, effect: "block", reason: "buildNotOk" });
+    reject({ signedOffBy: null, error: "Build is not ok — refusing to deploy.", detailJson: null });
   }
 
   const signedOff = req.hitl.confirmedBy != null;
-  const realDeploy = dpcDeployEnabled() && signedOff;
+  const deployOn = dpcDeployEnabled();
+  const realDeploy = deployOn && signedOff;
+  gates.push(
+    deployOn
+      ? { name: "deployFlag", ok: true, reason: "deployEnabled" }
+      : { name: "deployFlag", ok: false, effect: "simulate", reason: "deployDisabled" },
+  );
+  gates.push(
+    signedOff
+      ? { name: "signOff", ok: true, reason: "signedOff" }
+      : { name: "signOff", ok: false, effect: "simulate", reason: "noSignOff" },
+  );
 
   // W2-9 (doc 25 T6) — SEGREGATION OF DUTIES. A REAL production deploy may NOT be
   // self-approved: the human who signs off (confirmedBy) must differ from the requester.
   // Staging / simulated deploys are unaffected — two-person control applies to production
   // hardware writes only.
-  if (realDeploy && req.stage === "production" && req.hitl.confirmedBy === req.hitl.requestedBy) {
-    return {
-      status: "rejected",
-      simulated: true,
+  if (!(realDeploy && req.stage === "production")) {
+    gates.push({ name: "segregationOfDuties", ok: true, reason: "sodNotApplicable" });
+  } else if (req.hitl.confirmedBy === req.hitl.requestedBy) {
+    gates.push({ name: "segregationOfDuties", ok: false, effect: "block", reason: "selfSignOff" });
+    reject({
       signedOffBy: req.hitl.confirmedBy ?? null,
       error:
         "Segregation of duties — người ký duyệt deploy production phải KHÁC người yêu cầu (không được tự ký).",
       detailJson: req.hitl.reason ? { approvalReason: req.hitl.reason } : null,
-    };
+    });
+  } else {
+    gates.push({ name: "segregationOfDuties", ok: true, reason: "distinctSigner" });
   }
 
   // P0 — ENFORCE THE SIMULATION GATE. A real (hardware) deploy is refused unless the
   // most-recent simulation run for this build PASSED (program_sim_runs.ok === true).
-  if (realDeploy) {
+  if (!realDeploy) {
+    gates.push({ name: "simulationGate", ok: true, reason: "simNotRequired" });
+  } else {
+    const d = await db();
     const [latestSim] = await d
       .select()
       .from(programSimRuns)
@@ -392,23 +574,95 @@ async function computeDeploy(
       .orderBy(desc(programSimRuns.id))
       .limit(1);
     if (!latestSim || latestSim.ok !== true) {
-      return {
-        status: "rejected",
-        simulated: true,
+      gates.push({ name: "simulationGate", ok: false, effect: "block", reason: latestSim ? "simFailed" : "simRequired" });
+      reject({
         signedOffBy: req.hitl.confirmedBy ?? null,
         error: latestSim
           ? "Simulation Gate not passed (latest sim run failed) — refusing real deploy."
           : "Simulation Gate required — no simulation run recorded for this build. Refusing real deploy.",
         detailJson: null,
-      };
+      });
+    } else {
+      gates.push({ name: "simulationGate", ok: true, reason: "simPassed" });
     }
+  }
+
+  return { gates, rejection, signedOff, realDeploy };
+}
+
+/**
+ * doc 80 Đợt 1 Task 5 — lỗi bị từ chối TRƯỚC khi chạm thiết bị (vd checksum lệch). Đường bắt
+ * lỗi của deployBuild/approveDeployment đọc tập này để KHÔNG ghi "outcome unknown / có thể đã
+ * ghi thiết bị" cho một lượt chưa hề gọi adapter.
+ */
+const refusedBeforeDevice = new WeakSet<object>();
+function isRefusedBeforeDevice(e: unknown): boolean {
+  return typeof e === "object" && e !== null && refusedBeforeDevice.has(e);
+}
+
+/**
+ * doc 80 Đợt 1 Task 5 (WS-02) — DỰNG LẠI BuildResult CÓ META TRƯỚC KHI DEPLOY. program_builds
+ * không có cột meta (filePath của Zmotion, paramMap của MELSEC, stepList của robot, flow của
+ * IR…) nên trước đây adapter nhận `{ok, diagnostics:[], outputRef}` ⇒ Zmotion luôn "no file
+ * path", MELSEC luôn "empty recipe". Không migration: BIÊN DỊCH LẠI từ nguồn của artifact (như
+ * simulateBuild đã làm sau 300ab18) rồi KIỂM CHECKSUM khớp build đã lưu — outputRef của mọi
+ * adapter mang checksum nội dung; contentHash của artifact phải khớp nguồn. Lệch ⇒ bản sắp nạp
+ * KHÔNG phải bản đã build/mô phỏng ⇒ PRECONDITION_FAILED có mã, adapter không được gọi.
+ */
+export async function rebuildForDeploy(
+  adapter: ProgrammingAdapter,
+  b: typeof programBuilds.$inferSelect,
+  art: typeof programArtifacts.$inferSelect,
+  // fix round 1 — `{persist:false}` cho bản xem trước (GET): so checksum mà KHÔNG ghi tạo phẩm.
+  compileOpts?: CompileOptions,
+): Promise<BuildResult> {
+  const content = art.content ?? "";
+  // Biên dịch lại NÉM (nguồn không còn biên dịch được) ⇒ không tái tạo được build đã lưu: cùng
+  // một lời từ chối có mã, và chắc chắn CHƯA chạm thiết bị.
+  let fresh: BuildResult | null = null;
+  let compileError: string | null = null;
+  try {
+    fresh = await adapter.compile({ kind: art.kind as ProgrammingKind, language: art.language, content }, compileOpts);
+  } catch (e) {
+    compileError = (e as Error)?.message ?? String(e);
+  }
+  const contentIntact = art.contentHash == null || art.contentHash === hashContent(content);
+  const sameOutput = fresh != null && fresh.ok && fresh.outputRef != null && fresh.outputRef === (b.outputRef ?? null);
+  if (!fresh || !contentIntact || !sameOutput) {
+    const err = appError(
+      "PRECONDITION_FAILED",
+      "OPERATION_FAILED",
+      { operation: "deployBuild", reason: "buildChecksumMismatch" },
+      `Build #${b.id} không khớp nguồn của phiên bản #${art.id} khi biên dịch lại ` +
+        `(đã lưu ${b.outputRef ?? "∅"}, biên dịch lại ${compileError ? `LỖI: ${compileError}` : (fresh?.outputRef ?? "∅")}` +
+        `${contentIntact ? "" : ", contentHash lệch"}) — ` +
+        "từ chối deploy: bản sắp nạp không phải bản đã build/mô phỏng.",
+    );
+    refusedBeforeDevice.add(err);
+    throw err;
+  }
+  return fresh;
+}
+
+async function computeDeploy(
+  req: DeployRequest,
+  b: typeof programBuilds.$inferSelect,
+  art: typeof programArtifacts.$inferSelect,
+  projectDeviceId: number | null,
+): Promise<DeployComputed> {
+  const { rejection, signedOff, realDeploy } = await evaluateDeployGates(req, b, art);
+  if (rejection) {
+    const r: GateRejection = rejection;
+    return { status: "rejected", simulated: true, signedOffBy: r.signedOffBy, error: r.error, detailJson: r.detailJson };
   }
 
   let result: ProgDeployResult;
   if (realDeploy) {
     const adapter = programmingRegistry.getAdapter(b.adapterKind as ProgrammingKind);
+    // doc 80 Đợt 1 Task 5 (WS-02) — adapter nhận BuildResult ĐẦY ĐỦ meta (biên dịch lại + kiểm checksum).
+    const rebuilt = await rebuildForDeploy(adapter, b, art);
     result = await adapter.deploy(
-      { ok: b.ok, diagnostics: [], outputRef: b.outputRef ?? undefined },
+      rebuilt,
       {
         stage: req.stage,
         idempotencyKey: req.idempotencyKey,
@@ -527,7 +781,8 @@ export async function deployBuild(req: DeployRequest, user: DpcUser) {
     // trước. Final review fix #3a — TRUNG THỰC về thiết bị: nếu đây là lượt ghi THẬT (cùng điều
     // kiện computeDeploy: DPC_DEPLOY_ENABLED + có người ký) thì adapter có thể đã ghi một phần
     // ⇒ simulated=false + outcome 'unknown' (KHÔNG khẳng định "chưa chạm thiết bị").
-    const realAttempt = realDeployAttempted(req.hitl.confirmedBy);
+    // doc 80 Đợt 1 Task 5 — bị từ chối TRƯỚC adapter (vd checksum lệch) ⇒ chắc chắn chưa ghi thiết bị.
+    const realAttempt = realDeployAttempted(req.hitl.confirmedBy) && !isRefusedBeforeDevice(e);
     const [failedRow] = await d
       .update(programDeployments)
       .set({
@@ -871,7 +1126,7 @@ export async function approveDeployment(
     // Không để hàng kẹt 'pending': ghi 'failed' + lỗi thật, rồi để lỗi nổi lên.
     // Final review fix #3a — approver luôn là người ký (confirmedBy = approver.id) ⇒ lượt ghi thật
     // khi DPC_DEPLOY_ENABLED: thiết bị có thể đã bị ghi ⇒ simulated=false + outcome 'unknown'.
-    const realAttempt = realDeployAttempted(approver.id);
+    const realAttempt = realDeployAttempted(approver.id) && !isRefusedBeforeDevice(e);
     const [failedRow] = await d
       .update(programDeployments)
       .set({

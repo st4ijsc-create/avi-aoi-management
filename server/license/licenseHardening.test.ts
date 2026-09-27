@@ -9,6 +9,7 @@ import {
   neverStopProduction,
   isProcedureAllowed,
   decideLicenseBatch,
+  readTrpcPath,
   type LicenseState,
 } from "./licensePolicy";
 import {
@@ -113,6 +114,85 @@ describe("licensePolicy — never stop production (SYNAPSE §4.3)", () => {
     expect(
       decideLicenseBatch({ procedures: ["inspection.record", "andon.raise"], method: "POST", state: "locked", alwaysAllowed }).allow,
     ).toBe(true);
+  });
+
+  // Doc 80 Đợt 1 Task 6 (XC-01): query input lớn đi POST (tRPC methodOverride). License readonly
+  // không được coi POST-query là ghi — tra loại thủ tục THẬT; không biết loại ⇒ giữ POST (chặn).
+  describe("POST-query (methodOverride) dưới license readonly", () => {
+    const loai = (p: string) =>
+      ({ "ir.lint": "query", "programming.plcopenImport": "query", "settings.upsert": "mutation" } as Record<string, string>)[p];
+
+    it("batch POST chỉ gồm query ⇒ cho qua như GET", () => {
+      const d = decideLicenseBatch({
+        procedures: ["ir.lint", "programming.plcopenImport"],
+        method: "POST",
+        state: "readonly",
+        alwaysAllowed,
+        procedureType: loai,
+      });
+      expect(d.allow).toBe(true);
+      // never-stop mặc định hạ locked → readonly: cũng qua
+      expect(
+        decideLicenseBatch({ procedures: ["ir.lint"], method: "POST", state: "locked", alwaysAllowed, procedureType: loai, neverStop: true }).allow,
+      ).toBe(true);
+    });
+
+    it("POST mutation vẫn bị chặn; batch trộn query + mutation bị chặn", () => {
+      expect(
+        decideLicenseBatch({ procedures: ["settings.upsert"], method: "POST", state: "readonly", alwaysAllowed, procedureType: loai }).allow,
+      ).toBe(false);
+      expect(
+        decideLicenseBatch({ procedures: ["ir.lint", "settings.upsert"], method: "POST", state: "readonly", alwaysAllowed, procedureType: loai }).allow,
+      ).toBe(false);
+    });
+
+    it("không biết loại thủ tục ⇒ fail-closed (giữ POST ⇒ chặn); không truyền procedureType ⇒ hành vi cũ", () => {
+      expect(
+        decideLicenseBatch({ procedures: ["khong.tonTai"], method: "POST", state: "readonly", alwaysAllowed, procedureType: loai }).allow,
+      ).toBe(false);
+      expect(decideLicenseBatch({ procedures: ["ir.lint"], method: "POST", state: "readonly", alwaysAllowed }).allow).toBe(false);
+    });
+
+    it("strict locked (never-stop tắt) vẫn chặn cả GET lẫn POST-query không thiết yếu", () => {
+      expect(
+        decideLicenseBatch({ procedures: ["ir.lint"], method: "POST", state: "locked", alwaysAllowed, procedureType: loai, neverStop: false }).allow,
+      ).toBe(false);
+    });
+  });
+
+  // Doc 80 Đợt 1 final wave (item 3): đọc tên thủ tục ĐÚNG NHƯ tRPC 11 (đoạn cuối sau `/`, decode, tách `,`
+  // chỉ khi batch) + phòng thủ nhiều lớp cho đường thô đáng ngờ. Bản HTTP thật: licenseMiddleware.pathSpoof.test.ts.
+  describe("readTrpcPath — cùng phép đọc với adapter tRPC", () => {
+    it("đường thường: một thủ tục; batch hợp lệ: tách `,`; không đáng ngờ", () => {
+      expect(readTrpcPath("/settings.upsert", false)).toEqual({ procedures: ["settings.upsert"], suspicious: false });
+      expect(readTrpcPath("/settings.get", true)).toEqual({ procedures: ["settings.get"], suspicious: false });
+      expect(readTrpcPath("/ir.lint,programming.pouLint", true)).toEqual({ procedures: ["ir.lint", "programming.pouLint"], suspicious: false });
+    });
+
+    it("★★★ hai ví dụ giả mạo: thủ tục đọc ra là thủ tục tRPC SẼ chạy, và đường bị đánh dấu đáng ngờ", () => {
+      // `/` thừa: tRPC chạy đoạn CUỐI (`settings.upsert`), không phải `inspection.x`.
+      expect(readTrpcPath("/inspection.x/settings.upsert", true)).toEqual({ procedures: ["settings.upsert"], suspicious: true });
+      // `%2C`: tRPC decode rồi mới tách ⇒ CẢ HAI chạy; bản cũ thấy một tên `inspection.x%2Csettings.upsert`.
+      expect(readTrpcPath("/inspection.x%2Csettings.upsert", true)).toEqual({ procedures: ["inspection.x", "settings.upsert"], suspicious: true });
+    });
+
+    it("`,` khi KHÔNG batch là một tên duy nhất (tRPC không tách) và đáng ngờ; `%2F` đáng ngờ; không decode được đáng ngờ", () => {
+      expect(readTrpcPath("/inspection.x,settings.upsert", false)).toEqual({ procedures: ["inspection.x,settings.upsert"], suspicious: true });
+      expect(readTrpcPath("/ir.lint%2Fx", true)).toEqual({ procedures: ["ir.lint/x"], suspicious: true });
+      const hong = readTrpcPath("/%E0%A4%A", true);
+      expect(hong.suspicious).toBe(true);
+      expect(hong.procedures).toEqual(["%E0%A4%A"]);
+    });
+
+    it("đáng ngờ ⇒ xét như GHI: GET query không thiết yếu bị chặn, POST-query không được nới; ghi thiết yếu vẫn qua", () => {
+      const loai = (p: string) => ({ "settings.get": "query", "ir.lint": "query" } as Record<string, string>)[p];
+      expect(decideLicenseBatch({ procedures: ["settings.get"], method: "GET", state: "readonly", alwaysAllowed, procedureType: loai }).allow).toBe(true);
+      expect(decideLicenseBatch({ procedures: ["settings.get"], method: "GET", state: "readonly", alwaysAllowed, procedureType: loai, suspicious: true }).allow).toBe(false);
+      expect(decideLicenseBatch({ procedures: ["ir.lint"], method: "POST", state: "readonly", alwaysAllowed, procedureType: loai }).allow).toBe(true);
+      expect(decideLicenseBatch({ procedures: ["ir.lint"], method: "POST", state: "readonly", alwaysAllowed, procedureType: loai, suspicious: true }).allow).toBe(false);
+      expect(decideLicenseBatch({ procedures: ["inspection.record"], method: "POST", state: "readonly", alwaysAllowed, suspicious: true }).allow).toBe(true);
+      expect(decideLicenseBatch({ procedures: ["auth.me"], method: "GET", state: "locked", alwaysAllowed, suspicious: true }).allow).toBe(true);
+    });
   });
 });
 

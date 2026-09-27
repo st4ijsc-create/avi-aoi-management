@@ -213,8 +213,11 @@ export const NO_PHAM_VI_DOC: readonly string[] = [
   "server/routers/equipmentRouter.ts#equipmentRouter.getCapabilities",
   "server/routers/equipmentRouter.ts#equipmentRouter.getState",
   "server/routers/equipmentRouter.ts#equipmentRouter.listEquipment",
-  // ── server/routers/equipmentStandardsRouter.ts (9) ─────────────────────────────────────────
-  "server/routers/equipmentStandardsRouter.ts#equipmentStandardsRouter.alarmKpis",
+  // ── server/routers/equipmentStandardsRouter.ts (8) ─────────────────────────────────────────
+  // 2026-09-27 (doc 80 Đợt 1 Task 3, STD-04) — `alarmKpis` không còn tự đọc `andon_events`
+  // (toàn cục, bộ tính thứ hai): nó uỷ quyền `alarmKpiRouter.createCaller(ctx).summary(…)`,
+  // tức đi qua CÙNG cổng `resolveAlertScope(ctx.user)` với /alarm-kpi ⇒ danh tính RỜI TAY
+  // handler ⇒ nhóm S, XOÁ khỏi sổ này (GHIM.A 342→341, S 329→330).
   "server/routers/equipmentStandardsRouter.ts#equipmentStandardsRouter.complianceMetrics",
   "server/routers/equipmentStandardsRouter.ts#equipmentStandardsRouter.hierarchyTree",
   "server/routers/equipmentStandardsRouter.ts#equipmentStandardsRouter.listAlarmMappings",
@@ -364,7 +367,14 @@ export const NO_PHAM_VI_DOC: readonly string[] = [
   "server/routers/orderLifecycleRouter.ts#orderLifecycleRouter.list",
   "server/routers/orderLifecycleRouter.ts#orderLifecycleRouter.trace",
   // ── server/routers/oversightRouter.ts (1) ──────────────────────────────────────────────────
-  "server/routers/oversightRouter.ts#oversightRouter.pendingSummary",
+  // 2026-09-27 (doc 80 Đợt 1 Task 2, HUB-02) — `pendingSummary` giờ nhận `ctx` (để tính
+  // showNames qua `checkPermission(ctx.user.id, ctx.user.role, …)`) ⇒ danh tính RỜI TAY
+  // handler ⇒ chuyển sang nhóm S, XOÁ khỏi sổ này (GHIM.A không đổi: −1 pendingSummary,
+  // +1 posture dưới đây). `posture` (MỚI, ILK-06) đọc `interlock_rules` (đếm rule bật+có
+  // đích) để tính độ phủ interlock cho dải "Tư thế an toàn" — một chỉ số TOÀN NHÀ MÁY cho
+  // trưởng ca L3, cùng bản chất với `pendingSummary` cũ (đã ở sổ này từ 2026-08-18): không
+  // trả một HÀNG dữ liệu tenant nào, chỉ một SỐ ĐẾM gộp toàn hệ thống.
+  "server/routers/oversightRouter.ts#oversightRouter.posture",
   // ── server/routers/parameterGuardrailRouter.ts (5) ─────────────────────────────────────────
   "server/routers/parameterGuardrailRouter.ts#parameterGuardrailRouter.changeLog",
   "server/routers/parameterGuardrailRouter.ts#parameterGuardrailRouter.get",
@@ -453,6 +463,16 @@ export const NO_PHAM_VI_DOC: readonly string[] = [
   // ── server/routers/shiftConfigRouter.ts (2) ────────────────────────────────────────────────
   "server/routers/shiftConfigRouter.ts#shiftConfigRouter.defaults",
   "server/routers/shiftConfigRouter.ts#shiftConfigRouter.list",
+  // ── server/routers/simTargetsRouter.ts (1) ─────────────────────────────────────────────────
+  // ★ 2026-09-27 (doc 81 Đợt 1B final wave, item 4) — `ursimPing` vào nhóm (A) vì Task 3 (R3/R9)
+  // cho `resolveSimTarget` đọc `robots` + `device_adapters` của MỌI tenant để TỪ CHỐI một sim
+  // target trỏ vào host của thiết bị thật (nhả phanh robot thật là điều cổng này ngăn). Thủ tục
+  // KHÔNG trả một hàng tenant nào (chỉ reachable:true/false của cổng dashboard URSim) và phép so
+  // CỐ Ý xuyên tenant — thu hẹp theo `ctx.user` sẽ làm YẾU chính cổng an toàn ấy. Cùng loại lời
+  // khai như `oversightRouter.posture` (số đếm gộp, không phải dữ liệu tenant). Sàn: URSIM_ENABLED
+  // + machine_control/canCreate. Bộ suy xếp (A) vì đúng hình dạng nó canh; giữ ở đây để không ai
+  // quên nó là một lượt đọc xuyên tenant có chủ đích.
+  "server/routers/simTargetsRouter.ts#simTargetsRouter.ursimPing",
   // ── server/routers/simulationRouter.ts (1) ─────────────────────────────────────────────────
   "server/routers/simulationRouter.ts#simulationRouter.fromScene",
   // ── server/routers/sitesRouter.ts (2) ──────────────────────────────────────────────────────

@@ -88,6 +88,17 @@ vi.mock("../db", () => ({
   getDb: vi.fn(async () => null),
 }));
 
+// ── doc 81 Đợt 1B Task 9 fix round 1 (R18): ở mặc định enforce, admin:approve_registration đúc khoá mk_ qua
+// issueMachineKey (cần bảng api_keys). Tệp này đo CỔNG QUYỀN của approve, không đo khoá ⇒ chỉ thay đúng hàm
+// đúc bằng một khoá cố định; mọi thứ khác của machineAuthService giữ THẬT. Đường đúc thật + băm-lưu được đo
+// ở socketMayXacThuc.test.ts (F2).
+vi.mock("../services/machineAuthService", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../services/machineAuthService")>()),
+  issueMachineKey: vi.fn(async (o: { machineId: number }) => ({
+    id: 1, machineId: o.machineId, keyPrefix: "mk_abc123", plaintextKey: "mk_" + "ab".repeat(24),
+  })),
+}));
+
 // ── Mọi cạnh hạ tầng khác: rỗng/tắt (tệp này đo PHÂN QUYỀN PHÒNG). ──
 vi.mock("./socketRedisAdapter", () => ({ attachRedisAdapter: vi.fn(async () => false) }));
 vi.mock("./machinePresenceStore", () => ({
@@ -163,7 +174,10 @@ const tuChoiLog = () =>
 const cho = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
 beforeAll(async () => {
-  delete process.env.SOCKET_MACHINE_AUTH_MODE; // luồng máy ở chế độ mặc định `off` (hợp đồng doc 56 giữ nguyên)
+  // doc 81 Đợt 1B Task 9 (R6): mặc định trong mã nay là `enforce` — các ca phân quyền phòng (0)–(8) chạy
+  // ĐÚNG mặc định mới (socket máy vô danh vẫn nối được, vẫn bị chặn phòng như Đợt 0); (9)(10) đặt `off`
+  // TƯỜNG MINH (lối thoát qua env ⇒ hành vi cũ). Ca enforce của luồng máy: socketMayXacThuc.test.ts.
+  delete process.env.SOCKET_MACHINE_AUTH_MODE;
   delete process.env.RBAC_SCOPED_ADMIN;
   delete process.env.MACHINE_APPROVE_RBAC_OPEN_ENABLED; // Task 11 — mặc định TẮT (admin:* mirror role admin)
   socketMod = await import("./socket");
@@ -520,7 +534,14 @@ describe("★★★ PLT-01 — subscribe chung / admin / user room", () => {
   });
 });
 
-describe("★★★ PLT-01 — luồng máy hợp lệ KHÔNG đổi (SOCKET_MACHINE_AUTH_MODE=off mặc định)", () => {
+describe("★★★ PLT-01 — luồng máy cũ KHÔNG đổi khi đặt SOCKET_MACHINE_AUTH_MODE=off qua env (lối thoát, doc 81 Đợt 1B Task 9)", () => {
+  beforeAll(() => {
+    process.env.SOCKET_MACHINE_AUTH_MODE = "off";
+  });
+  afterAll(() => {
+    delete process.env.SOCKET_MACHINE_AUTH_MODE;
+  });
+
   it("(9) confirm_mapping ⇒ máy vào machine:<id> và NHẬN inspection:alert của mình; heartbeat ⇒ user trong global nhận machine:status_update; admin nhận machine:connected", async () => {
     // Task 11 — admin:join giờ đòi quyền quản trị đăng ký máy (mirror machine.listPending); dùng
     // socket admin (phien 1) làm người quan sát phòng admin/global — không đổi ý nghĩa của ca này

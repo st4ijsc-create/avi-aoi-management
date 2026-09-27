@@ -9,6 +9,11 @@ dashboard on top. Nothing here runs automatically.
 - `GET /metrics` (Prometheus format) — active only when `METRICS_ENABLED=true`
   **and** the optional `prom-client` package is installed (the metrics module
   dynamic-imports it and no-ops if missing).
+  **Authenticated** (doc 81 Đợt 1B Task 11): with `METRICS_TOKEN` set the scrape
+  must send `Authorization: Bearer <METRICS_TOKEN>` (else 401); without it only
+  loopback (`127.0.0.1`/`::1`) scrapes are accepted (else 403). A Prometheus
+  container reaching the app via `host.docker.internal` is usually NOT loopback — set
+  `METRICS_TOKEN` and enable the `authorization` block in `prometheus/prometheus.yml`.
 - Metric prefix: `avi_aoi_`. Includes Node default metrics (CPU, RSS, heap,
   event-loop lag) plus:
   - `avi_aoi_http_requests_total{method,route,status}`

@@ -22,7 +22,11 @@ function approve(id: number, approvedBy = 99): void {
   if (r) r.approvedBy = approvedBy;
 }
 
-vi.mock("../../db/machineRecipe", () => ({
+vi.mock("../../db/machineRecipe", async (importOriginal) => ({
+  // doc 80 Đợt 1 Task 9 — the ONE release gate + lock-and-read helper are REAL (they run on this
+  // file's fake tx); only the catalog helpers below are stubbed.
+  assertRecipeReleasable: (await importOriginal<typeof import("../../db/machineRecipe")>()).assertRecipeReleasable,
+  lockCodeAndReadTarget: (await importOriginal<typeof import("../../db/machineRecipe")>()).lockCodeAndReadTarget,
   createRecipe: vi.fn(async (input: any) => {
     const version = recipes.filter((r) => r.code === input.code).reduce((m, r) => Math.max(m, r.version), 0) + 1;
     const row: Rec = { id: recipeSeq++, code: input.code, name: input.name, version, status: input.status ?? "draft", checksum: "sum" + version, machineId: input.machineId ?? null, approvedBy: null };
@@ -51,7 +55,12 @@ vi.mock("drizzle-orm", () => ({
 
 vi.mock("../../../drizzle/schema", () => ({
   machineRecipes: { __table: "machine_recipes", id: { __c: "id" }, code: { __c: "code" }, status: { __c: "status" }, version: { __c: "version" } },
-  recipeLoadLog: { __table: "recipe_load_log", recipeCode: { __c: "recipeCode" }, machineId: { __c: "machineId" }, createdAt: { __c: "createdAt" } },
+  recipeLoadLog: {
+    __table: "recipe_load_log", recipeCode: { __c: "recipeCode" }, machineId: { __c: "machineId" }, createdAt: { __c: "createdAt" },
+    // doc 80 Đợt 1 Task 9 fix round 1 — rollback gate evidence columns.
+    recipeId: { __c: "recipeId" }, fromRecipeId: { __c: "fromRecipeId" }, action: { __c: "action" },
+  },
+  recipeDeployments: { __table: "recipe_deployments", previousRecipeId: { __c: "previousRecipeId" }, deployedAt: { __c: "deployedAt" } },
 }));
 
 function matches(row: any, pred: any): boolean {
@@ -64,7 +73,8 @@ function matches(row: any, pred: any): boolean {
 // Store-keyed fake so release/rollback (which now hit machine_recipes via `tx` directly)
 // AND the mocked machineRecipe helpers observe the SAME `recipes` array.
 function makeFakeDb() {
-  const arrOf = (t: any): any[] => (t?.__table === "machine_recipes" ? recipes : loadLog);
+  // recipe_deployments: this service never writes the ledger (deployRecipe is stubbed) ⇒ empty.
+  const arrOf = (t: any): any[] => (t?.__table === "machine_recipes" ? recipes : t?.__table === "recipe_deployments" ? [] : loadLog);
   const db: any = {
     select: (_cols?: any) => ({
       from: (t: any) => {

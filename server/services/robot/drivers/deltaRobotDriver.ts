@@ -84,6 +84,8 @@ import type {
   RobotDriver, RobotVendor, RobotConnectionConfig, RobotState, RobotStateHandle,
   OnRobotState, RobotJobSpec, RobotJobResult, RobotHealth, RobotPose,
 } from "../robotDriver";
+import type { MotionLockState } from "../robotDriver";
+import { abortThroughRunJob, AbortFence, MotionLock, MOTION_OUTCOME_UNKNOWN_REASON_CODES } from "../robotDriver";
 import type { RobotValidationStatus } from "../index";
 import { TcpLineClient } from "./tcpLineClient";
 import { DeviceUnreachableError } from "../../../_core/deviceErrors";
@@ -223,6 +225,9 @@ export class DeltaDriver implements RobotDriver {
   private port = DEFAULT_DELTA_PORT;
   private timeoutMs = 5000;
   private seq = 1;
+  private readonly fence = new AbortFence();
+  /** doc 81 Đợt 1B Task 5 fix round 4 (R13) — see MitsubishiDriver.motionLock. */
+  private readonly motionLock = new MotionLock();
 
   /** Parse "tcp://host:port" | "host:port" | "host" → {host,port}. */
   private parseEndpoint(endpoint: string, defaultPort: number): { host: string; port: number } {
@@ -236,11 +241,19 @@ export class DeltaDriver implements RobotDriver {
     return { host: s || "127.0.0.1", port: defaultPort };
   }
 
-  /** Send one command frame, await the reply, and throw if it is a Delta error. */
-  private async command(cmd: string, args: Array<string | number> = []): Promise<DeltaReply> {
+  /**
+   * Send one command frame, await the reply, and throw if it is a Delta error. `privileged` = may
+   * re-establish the transport after a peer drop (the STOP and the read-only polls; never motion).
+   */
+  private async command(
+    cmd: string,
+    args: Array<string | number> = [],
+    guard?: () => void,
+    privileged = false,
+  ): Promise<DeltaReply> {
     if (!this.client) throw new DeviceUnreachableError("deltaRobot");
     const frame = frameDeltaCommand(this.seq++, cmd, args);
-    const reply = parseDeltaResponse(await this.client.send(frame, this.timeoutMs));
+    const reply = parseDeltaResponse(await this.client.send(frame, this.timeoutMs, { guard, allowAfterPeerDrop: privileged }));
     if (!reply.ok) throw new Error(`Delta ${cmd} failed: error ${reply.errorCode ?? "?"}`);
     return reply;
   }
@@ -268,7 +281,10 @@ export class DeltaDriver implements RobotDriver {
     this.host = host;
     this.port = port;
 
-    const client = new TcpLineClient("Delta ASCII");
+    const client = new TcpLineClient("Delta ASCII", {
+      // Fix round 4 (R13) — a peer drop locks motion until a STOP is confirmed / an operator clears it.
+      onLinkLoss: (reasonCode, detail) => this.motionLock.lock(reasonCode, detail),
+    });
     try {
       await client.open(this.host, this.port, this.timeoutMs);
       this.client = client;
@@ -304,11 +320,13 @@ export class DeltaDriver implements RobotDriver {
   async getState(): Promise<RobotState> {
     if (!this.connected || !this.client) throw new DeviceUnreachableError("deltaRobot");
     try {
-      const status = decodeDeltaStatus((await this.command("RDSTS")).fields);
+      // Read-only polls are PRIVILEGED (fix round 4 / R13): they may re-open the transport after a
+      // peer drop so telemetry recovers on its own; motion stays behind the lock.
+      const status = decodeDeltaStatus((await this.command("RDSTS", [], undefined, true)).fields);
 
       let pose: RobotPose | undefined;
       try {
-        pose = decodeDeltaPosition((await this.command("RDPOS")).fields);
+        pose = decodeDeltaPosition((await this.command("RDPOS", [], undefined, true)).fields);
       } catch (err) {
         // Pose read is best-effort; never fail the whole poll on it.
         this.lastError = (err as Error)?.message || String(err);
@@ -353,6 +371,12 @@ export class DeltaDriver implements RobotDriver {
    */
   async runJob(job: RobotJobSpec): Promise<RobotJobResult> {
     if (!this.connected || !this.client) return { ok: false, status: "failed", error: "not connected" };
+    // Fix round 4 (R13) — MOTION LOCK: refused before the dry-run branch and before any byte.
+    const refused = this.motionLock.refusal(job);
+    if (refused) return refused;
+    // doc 81 Đợt 1B Task 5 fix round 1 — abort fence (see MitsubishiDriver.runJob).
+    // Fix round 5 (b) — the guard also re-checks the motion lock before every write.
+    const guard = this.motionLock.guard(job, this.fence.capture(job));
 
     const isAbort = job.jobType === "abort";
     const { cmd, args } = isAbort ? { cmd: "STOP", args: [] as Array<string | number> } : buildDeltaMotion(job);
@@ -371,25 +395,58 @@ export class DeltaDriver implements RobotDriver {
     try {
       // Abort halts a running move and needs no servo-on; motion needs servo power.
       if (!isAbort) {
-        await this.command("SERVO", [1]);
+        await this.command("SERVO", [1], guard);
       }
-      const reply = await this.command(cmd, args);
+      // Fix round 3/4 — the STOP is privileged (may reconnect after a peer drop); motion is not.
+      const reply = await this.command(cmd, args, guard, isAbort);
       this.lastOkAt = new Date();
+      // Fix round 4 (R13) — only a STOP delivered AND acknowledged clears the motion lock automatically.
+      if (isAbort) this.motionLock.clearByStop();
       return { ok: true, status: "done", detail: { jobType: job.jobType, command: cmd, sent: true, reply: reply.fields } };
     } catch (err) {
       const msg = (err as Error)?.message || String(err);
       this.lastError = msg;
-      return { ok: false, status: "failed", error: msg };
+      // doc 81 Đợt 1B Task 5 — keep the transport's reason code (e.g. line_reply_timeout ⇒
+      // the command may be executing; the dispatcher then sends a stop).
+      const reasonCode = (err as { reasonCode?: unknown })?.reasonCode;
+      // Fix round 4 (R13) — a MOTION with an unknown outcome locks further motion.
+      if (!isAbort && typeof reasonCode === "string" && MOTION_OUTCOME_UNKNOWN_REASON_CODES.has(reasonCode)) {
+        this.motionLock.lock(reasonCode, msg);
+      }
+      return {
+        ok: false,
+        status: "failed",
+        error: msg,
+        ...(typeof reasonCode === "string" ? { detail: { jobType: job.jobType, reasonCode } } : {}),
+      };
     }
   }
 
-  /** Best-effort abort routed through the gated runJob path (dry-run unless enabled). */
+  /**
+   * Abort routed through the gated runJob path (dry-run unless enabled). doc 81 Đợt 1B
+   * Task 5: an in-flight request is PREEMPTED first (connection renewed) so its late reply
+   * can never be taken as the STOP's ack, and a failed/unsent STOP is SURFACED (throws)
+   * instead of swallowed — the dispatcher records abort_failed.
+   */
   async abort(): Promise<void> {
-    try {
-      await this.runJob({ jobType: "abort" });
-    } catch {
-      /* ignore — abort is best-effort */
-    }
+    this.fence.bump(); // FIRST: any job started before this abort can write nothing more
+    if (this.client && this.client.inFlight() > 0) this.client.resetConnection("abort preempts in-flight request");
+    await abortThroughRunJob((job) => this.runJob(job), "Delta");
+  }
+
+  /** Fix round 4 (R13) — motion lock snapshot (dispatcher gate 3, robot.list `live`). */
+  getMotionLock(): MotionLockState {
+    return this.motionLock.snapshot();
+  }
+
+  /** Fix round 4/5 — operator compare-and-clear; the caller (robot.clearMotionLock) has already audited it. */
+  clearMotionLock(input: { reason: string; userId: number; expectedGeneration: number }): MotionLockState {
+    return this.motionLock.clearByOperator(input);
+  }
+
+  /** Fix round 5 (c) — the dispatcher locks here when ITS deadline made a motion's outcome unknown. */
+  lockMotion(reasonCode: string, detail?: string): void {
+    this.motionLock.lock(reasonCode, detail);
   }
 
   async health(): Promise<RobotHealth> {

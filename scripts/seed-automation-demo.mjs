@@ -299,16 +299,28 @@ async function main() {
       status: i === 0 ? "active" : "planned",
     }));
     for (const a of assignDefs) {
-      // No unique index on operator_assignments → existence check on the natural key.
-      const existing = await sql`
+      // doc80 QĐ4 — No unique index on operator_assignments, so idempotency is a
+      // natural-key existence check — but the key alone doesn't expire: a stale row
+      // from a seed run months ago was still being reported as the "current" shift
+      // window. Only treat a row as already-seeded when its window still COVERS now();
+      // an expired demo row for the same key is superseded (deleted), never reported
+      // as ongoing/active.
+      const current = await sql`
         SELECT id FROM operator_assignments
         WHERE "operatorId" = ${a.operatorId} AND "lineId" = ${LINE_ID}
           AND "stationId" IS NOT DISTINCT FROM ${STATION_ID}
-          AND "shiftConfigId" IS NOT DISTINCT FROM ${SHIFT_ID}`;
-      if (existing.length > 0) {
+          AND "shiftConfigId" IS NOT DISTINCT FROM ${SHIFT_ID}
+          AND scope = 'demo' AND "assignedEnd" > now()`;
+      if (current.length > 0) {
         bump("operator_assignments", false);
         continue;
       }
+      await sql`
+        DELETE FROM operator_assignments
+        WHERE "operatorId" = ${a.operatorId} AND "lineId" = ${LINE_ID}
+          AND "stationId" IS NOT DISTINCT FROM ${STATION_ID}
+          AND "shiftConfigId" IS NOT DISTINCT FROM ${SHIFT_ID}
+          AND scope = 'demo'`;
       await sql`
         INSERT INTO operator_assignments ("operatorId", "lineId", "stationId", "shiftConfigId", "skillLevel", role, status, "assignedStart", "assignedEnd", scope, "corporateCode", "factoryId")
         VALUES (${a.operatorId}, ${LINE_ID}, ${STATION_ID}, ${SHIFT_ID}, ${a.skillLevel}, ${"human"}, ${a.status}, ${now}, ${end}, ${"demo"}, ${CORP}, ${FACTORY_ID})`;

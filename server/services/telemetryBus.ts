@@ -29,6 +29,7 @@ import { createBusFanout } from "../_core/busFanout";
 // array reference immediately; zero added cost). No cycle: ingestValidation never imports
 // this module at runtime.
 import { filterTelemetrySamples } from "./contracts/ingestValidation";
+import { isPgDataError, MIN_PG_TS_MS, recordTsDrops, warnGop } from "./ot/otGuards";
 
 /** The canonical telemetry protocol set (mirrors telemetryProtocolEnum). */
 /**
@@ -499,16 +500,190 @@ async function persistRows(rows: InsertOtTelemetry[]): Promise<number> {
   return rows.length;
 }
 
+// ════════════════════════════════════════════════════════════════════════════
+// doc 81 Đợt 1B Task 7 — INGEST TRUNG THỰC: chia khối · `ts` hỏng bị loại riêng · đếm thật.
+//
+// ĐO (BE3 §L4): lô ≥7.000 mẫu ⇒ `200 {ok:true, accepted:0}`. Một câu INSERT mang 11 tham số
+// bind mỗi dòng, Postgres/postgres.js chặn ở 65535 ⇒ ~5957 dòng là trần; drizzle KHÔNG tự chia
+// ⇒ cả lô ném, bus nuốt lỗi, route vẫn nói ok. Và một `ts` hỏng (`new Date("rác")`) làm
+// `toBroadcast` ném RangeError ⇒ 500, còn trong WAL thì `entryToLine` ném ⇒ MỌI lần ghi WAL sau
+// đó đều hỏng. Sửa ở đây (một chỗ, mọi đầu đọc đều hưởng):
+//   • `checkSampleTs` — cổng `ts` ở LỐI VÀO của bus (trước kiểm hợp đồng, trước WAL);
+//   • `insertTelemetryChunked` — ghi theo khối ≤ TELEMETRY_INSERT_CHUNK_ROWS, đếm theo khối,
+//     lỗi DỮ LIỆU (SQLSTATE lớp 22/23) chỉ loại đúng dòng hỏng, lỗi KẾT NỐI dừng và báo phần còn lại;
+//   • `ingestTelemetryDetailed` — kết quả {received, accepted, rejected[{index, reason}]}.
+// ════════════════════════════════════════════════════════════════════════════
+
+/** Số dòng tối đa mỗi câu INSERT: 1000 × 11 cột = 11.000 tham số, xa trần 65535. */
+export const TELEMETRY_INSERT_CHUNK_ROWS = 1000;
+
+/** Lý do một mẫu bị loại (máy đọc được — client quyết định gửi lại hay bỏ). */
+export type TelemetryRejectReason =
+  | "invalid_ts" // ts không phải ngày hợp lệ ⇒ gửi lại vô ích
+  | "ts_too_far_future" // ts vượt now + OT_INGEST_MAX_FUTURE_SKEW_MS ⇒ đồng hồ thiết bị sai
+  | "contract_invalid" // CONTRACT_VALIDATE_INGEST_MODE=quarantine loại mẫu sai hợp đồng
+  | "invalid_value" // Postgres từ chối DỮ LIỆU của đúng dòng này (SQLSTATE lớp 22/23)
+  | "db_error"; // DB vắng / mất kết nối ⇒ gửi lại được (ghi lặp được ON CONFLICT chặn)
+
+export interface TelemetryRejection {
+  /** Chỉ số của mẫu trong mảng ĐẦU VÀO của lời gọi. */
+  index: number;
+  reason: TelemetryRejectReason;
+}
+
+export interface TelemetryIngestResult {
+  received: number;
+  /** Số dòng ĐÃ LƯU (hoặc đã có sẵn — ON CONFLICT DO NOTHING). Không bao giờ đếm dòng chưa lưu. */
+  accepted: number;
+  /** Tăng dần theo `index`. `accepted + rejected.length === received`. */
+  rejected: TelemetryRejection[];
+}
+
+/** Độ lệch tương lai tối đa của `ts` (ms). Mặc định 24 h. Đọc lúc gọi. */
+export function maxFutureSkewMs(): number {
+  return intEnv("OT_INGEST_MAX_FUTURE_SKEW_MS", 24 * 60 * 60 * 1000);
+}
+
 /**
- * C1 — wire the store-and-forward backfill to the SAME persistRows path. The insert fn
- * the buffer replays through is exactly the live write, so a backfilled row lands
- * identically to a live one. setInsertFn is an idempotent assignment (cheap), so we
- * (re)wire on each engaged ingest rather than latching — this keeps the wiring correct
- * even after a store-forward reset (tests / maintenance) with no stale-latch hazard.
+ * Pure: `ts` của một mẫu có ghi được không? `undefined`/`null` = "bây giờ" (hành vi cũ).
+ * Trả lý do loại, hoặc null nếu hợp lệ.
+ */
+export function checkSampleTs(ts: unknown, nowMs: number = Date.now()): TelemetryRejectReason | null {
+  if (ts == null) return null;
+  if (!(ts instanceof Date)) return "invalid_ts";
+  const t = ts.getTime();
+  if (!Number.isFinite(t) || t < MIN_PG_TS_MS) return "invalid_ts";
+  if (t > nowMs + maxFutureSkewMs()) return "ts_too_far_future";
+  return null;
+}
+
+/** Cổng `ts`: tách mẫu hợp lệ (giữ chỉ số gốc) khỏi mẫu bị loại. Log GỘP, không mỗi mẫu một dòng. */
+function gateSampleTs(samples: CanonicalSample[]): {
+  kept: CanonicalSample[];
+  keptIndex: number[];
+  rejected: TelemetryRejection[];
+} {
+  const now = Date.now();
+  const kept: CanonicalSample[] = [];
+  const keptIndex: number[] = [];
+  const rejected: TelemetryRejection[] = [];
+  for (let i = 0; i < samples.length; i++) {
+    const reason = checkSampleTs(samples[i]?.ts, now);
+    if (reason) rejected.push({ index: i, reason });
+    else {
+      kept.push(samples[i]);
+      keptIndex.push(i);
+    }
+  }
+  if (rejected.length > 0) {
+    const nInvalid = rejected.filter((r) => r.reason === "invalid_ts").length;
+    recordTsDrops(nInvalid, rejected.length - nInvalid); // bộ đếm TÍCH LUỸ (log thì bị gộp)
+    warnGop(
+      "telemetryBus:ts",
+      `[TelemetryBus] loại ${rejected.length}/${samples.length} mẫu vì ts (invalid_ts=${nInvalid}, ` +
+        `ts_too_far_future=${rejected.length - nInvalid}, trần tương lai ${maxFutureSkewMs()} ms)`,
+    );
+  }
+  return { kept, keptIndex, rejected };
+}
+
+/** Kết quả ghi một khối. `abort` = DB vắng/mất kết nối ở dòng `done` của khối ⇒ người gọi DỪNG. */
+interface ChunkOutcome {
+  persisted: number;
+  /** Chỉ số (trong khối) các dòng Postgres từ chối vì DỮ LIỆU. */
+  badData: number[];
+  abort?: { err: unknown; done: number };
+}
+
+/**
+ * Ghi một khối; nếu Postgres từ chối DỮ LIỆU thì phân xử TỪNG dòng để chỉ loại đúng dòng hỏng
+ * (chỉ tốn thêm câu lệnh khi thật sự có dòng hỏng). Không ném.
+ */
+async function persistChunkIsolating(chunk: InsertOtTelemetry[]): Promise<ChunkOutcome> {
+  try {
+    const n = await persistRows(chunk);
+    if (n >= chunk.length) return { persisted: n, badData: [] };
+    return { persisted: 0, badData: [], abort: { err: new Error("DB absent — chunk not persisted"), done: 0 } };
+  } catch (err) {
+    if (!isPgDataError(err)) return { persisted: 0, badData: [], abort: { err, done: 0 } };
+  }
+  let persisted = 0;
+  const badData: number[] = [];
+  for (let i = 0; i < chunk.length; i++) {
+    try {
+      const k = await persistRows([chunk[i]]);
+      if (k < 1) return { persisted, badData, abort: { err: new Error("DB absent — row not persisted"), done: i } };
+      persisted += 1;
+    } catch (e) {
+      if (isPgDataError(e)) badData.push(i);
+      else return { persisted, badData, abort: { err: e, done: i } };
+    }
+  }
+  return { persisted, badData };
+}
+
+/**
+ * ★ HÀM DÙNG LẠI (Task 8): ghi các dòng canonical theo khối ≤ TELEMETRY_INSERT_CHUNK_ROWS.
+ * `accepted` = số dòng thật sự đã lưu; `rejected[].index` là chỉ số trong `rows`.
+ *   • lỗi dữ liệu của một dòng ⇒ chỉ dòng đó `invalid_value`, các dòng khác vẫn ghi;
+ *   • DB vắng / mất kết nối ⇒ DỪNG (không đập tiếp DB đang sập), mọi dòng chưa lưu `db_error`.
+ * Không bao giờ ném. Không đụng store-forward (việc đệm là của người gọi).
+ */
+export async function insertTelemetryChunked(
+  rows: InsertOtTelemetry[],
+): Promise<{ accepted: number; rejected: TelemetryRejection[] }> {
+  const rejected: TelemetryRejection[] = [];
+  let accepted = 0;
+  for (let start = 0; start < rows.length; start += TELEMETRY_INSERT_CHUNK_ROWS) {
+    const chunk = rows.slice(start, start + TELEMETRY_INSERT_CHUNK_ROWS);
+    const r = await persistChunkIsolating(chunk);
+    accepted += r.persisted;
+    for (const i of r.badData) rejected.push({ index: start + i, reason: "invalid_value" });
+    if (r.abort) {
+      const bad = new Set(r.badData);
+      for (let i = start + r.abort.done; i < rows.length; i++) {
+        if (!bad.has(i - start)) rejected.push({ index: i, reason: "db_error" });
+      }
+      console.error(
+        `[TelemetryBus] insert failed — ${rows.length - start - r.abort.done}/${rows.length} dòng chưa lưu, dừng ở khối ${start / TELEMETRY_INSERT_CHUNK_ROWS + 1}:`,
+        gonLoi(r.abort.err),
+      );
+      break;
+    }
+  }
+  const nBad = rejected.filter((x) => x.reason === "invalid_value").length;
+  if (nBad > 0) {
+    warnGop("telemetryBus:data", `[TelemetryBus] Postgres từ chối dữ liệu của ${nBad}/${rows.length} dòng (invalid_value) — đã loại riêng`);
+  }
+  rejected.sort((a, b) => a.index - b.index);
+  return { accepted, rejected };
+}
+
+/**
+ * Ghi tất-cả-hoặc-ném cho backfill store-forward (hợp đồng InsertFn): chia khối như đường sống,
+ * ném NGUYÊN lỗi đầu tiên (giữ SQLSTATE để storeForward phân biệt dòng hỏng với DB sập).
+ */
+async function persistRowsChunkedOrThrow(rows: InsertOtTelemetry[]): Promise<number> {
+  let total = 0;
+  for (let start = 0; start < rows.length; start += TELEMETRY_INSERT_CHUNK_ROWS) {
+    const chunk = rows.slice(start, start + TELEMETRY_INSERT_CHUNK_ROWS);
+    const n = await persistRows(chunk);
+    if (n < chunk.length) return 0; // DB vắng ⇒ hợp đồng InsertFn: 0 = để nguyên trong WAL
+    total += n;
+  }
+  return total;
+}
+
+/**
+ * C1 — wire the store-and-forward backfill to the SAME persist path (now chunked — T7: a
+ * drain batch above ~5957 rows would otherwise exceed the bind-parameter ceiling and stall
+ * the WAL forever). setInsertFn is an idempotent assignment (cheap), so we (re)wire on each
+ * engaged ingest rather than latching — this keeps the wiring correct even after a
+ * store-forward reset (tests / maintenance) with no stale-latch hazard.
  */
 async function ensureStoreForwardWired(): Promise<typeof import("./ot/storeForward")> {
   const sf = await import("./ot/storeForward");
-  sf.setInsertFn((rows) => persistRows(rows));
+  sf.setInsertFn((rows) => persistRowsChunkedOrThrow(rows));
   return sf;
 }
 
@@ -624,9 +799,17 @@ export async function flushTelemetryBuffer(): Promise<number> {
  * appends to the coalescing ring buffer and returns fast; the buffer is drained by
  * the flush timer, by a size-threshold backpressure flush (awaited), or on exit.
  * The order of samples is preserved (FIFO). Never throws into the caller's loop.
+ *
+ * T7 (doc 81 Đợt 1B): samples whose `ts` is invalid / too far in the future are dropped
+ * HERE, before contract validation, before the coalescing buffer and before the WAL — one
+ * bad sample can no longer throw the whole batch (500) nor poison the store-forward file.
+ * Callers that need per-sample accounting use ingestTelemetryDetailed.
  */
 export async function ingestTelemetry(samples: CanonicalSample[]): Promise<number> {
   if (!samples || samples.length === 0) return 0;
+
+  samples = gateSampleTs(samples).kept;
+  if (samples.length === 0) return 0;
 
   // G2.6 (doc 44 W2-B2) — contract-validation seam BEFORE enqueue (covers both the
   // buffered and the direct path). Mode "off" (default) returns the same array reference —
@@ -652,18 +835,72 @@ export async function ingestTelemetry(samples: CanonicalSample[]): Promise<numbe
 }
 
 /**
+ * ★ T7 (doc 81 Đợt 1B) — ingest có SỔ SÁCH từng mẫu, cho các đường HTTP phải trả lời trung thực
+ * (POST /api/ot/ingest; Task 8 dùng lại cho /api/v1/ingest/*). Cùng cổng ts + kiểm hợp đồng +
+ * ghi + store-forward + phát như ingestTelemetry, nhưng:
+ *   • LUÔN ghi đồng bộ (bỏ qua bộ đệm gộp TELEMETRY_BATCH_ENABLED — "accepted" phải là số ĐÃ LƯU,
+ *     không phải số đã xếp hàng);
+ *   • trả {received, accepted, rejected[{index, reason}]} với index theo mảng ĐẦU VÀO.
+ * `accepted + rejected.length === received`. Không bao giờ ném.
+ */
+export async function ingestTelemetryDetailed(samples: CanonicalSample[]): Promise<TelemetryIngestResult> {
+  const received = samples?.length ?? 0;
+  if (received === 0) return { received: 0, accepted: 0, rejected: [] };
+
+  const gated = gateSampleTs(samples);
+  const rejected: TelemetryRejection[] = [...gated.rejected];
+  let kept = gated.kept;
+  let keptIndex = gated.keptIndex;
+
+  if (kept.length > 0) {
+    const filtered = filterTelemetrySamples(kept);
+    if (filtered !== kept) {
+      const pass = new Set(filtered);
+      const nextKept: CanonicalSample[] = [];
+      const nextIndex: number[] = [];
+      for (let i = 0; i < kept.length; i++) {
+        if (pass.has(kept[i])) {
+          nextKept.push(kept[i]);
+          nextIndex.push(keptIndex[i]);
+        } else rejected.push({ index: keptIndex[i], reason: "contract_invalid" });
+      }
+      kept = nextKept;
+      keptIndex = nextIndex;
+    }
+  }
+
+  let accepted = 0;
+  if (kept.length > 0) {
+    const r = await ingestNowDetailed(kept);
+    accepted = r.accepted;
+    for (const x of r.rejected) rejected.push({ index: keptIndex[x.index], reason: x.reason });
+  }
+  rejected.sort((a, b) => a.index - b.index);
+  return { received, accepted, rejected };
+}
+
+/** Legacy count-only core (coalescing flush + ingestTelemetry). */
+async function ingestNow(samples: CanonicalSample[]): Promise<number> {
+  return (await ingestNowDetailed(samples)).accepted;
+}
+
+/**
  * THE unified ingest core. Normalize → resolve machineId → bulk-insert into
- * ot_telemetry → broadcast on `telemetry:sample`. Fail-safe: returns the count
- * actually persisted; never throws into the caller's poll loop.
+ * ot_telemetry (chunked, T7) → broadcast on `telemetry:sample`. Fail-safe: returns the
+ * count actually persisted + the per-row rejections; never throws into the caller's loop.
+ * `samples` must already have passed the ts gate (gateSampleTs).
  *
  * C1 STORE-AND-FORWARD (additive, flag-gated by OT_STORE_FORWARD_ENABLED, default OFF):
- * when the flag is ON and the insert persists 0 rows for a NON-EMPTY batch (DB down),
- * the rows are BUFFERED to a durable WAL instead of being dropped; when the flag is ON
- * and a write SUCCEEDS, a bounded backfill opportunistically drains anything buffered
- * while offline. With the flag OFF the code path is byte-for-byte the prior behaviour.
+ * when the flag is ON, rows that did NOT persist because the DB is down/absent (reason
+ * db_error) are BUFFERED to a durable WAL instead of being dropped; when every row
+ * persisted, a bounded backfill opportunistically drains anything buffered while offline.
+ * Rows Postgres rejected for their DATA (invalid_value) are never buffered — replaying
+ * them could only fail again and would stall the WAL.
  */
-async function ingestNow(samples: CanonicalSample[]): Promise<number> {
-  if (!samples || samples.length === 0) return 0;
+async function ingestNowDetailed(
+  samples: CanonicalSample[],
+): Promise<{ accepted: number; rejected: TelemetryRejection[] }> {
+  if (!samples || samples.length === 0) return { accepted: 0, rejected: [] };
 
   // 1+2: normalize + resolve machineId for each sample. Bulk-resolve every
   // unmapped deviceId in ONE query (not N sequential awaits) so a firehose of
@@ -682,34 +919,22 @@ async function ingestNow(samples: CanonicalSample[]): Promise<number> {
     rows.push(toCanonicalRow(s, machineId));
   }
 
-  // 3: bulk insert via the shared persist path. Degrade-safe: an insert error never
-  // propagates into a protocol reader's poll loop.
-  let persisted = 0;
-  let insertThrew = false;
-  try {
-    persisted = await persistRows(rows);
-  } catch (err) {
-    insertThrew = true;
-    console.error("[TelemetryBus] insert failed:", gonLoi(err));
-  }
+  // 3: chunked insert via the shared persist path (T7). Never throws; logs once per batch.
+  const { accepted, rejected } = await insertTelemetryChunked(rows);
 
-  // 3b: C1 STORE-AND-FORWARD (additive; no-op unless OT_STORE_FORWARD_ENABLED). When
-  // the batch did NOT fully persist (DB down/degraded or the insert threw), buffer the
-  // rows to the durable WAL instead of dropping them. On a SUCCESSFUL write,
-  // opportunistically drain anything buffered while offline. Fault-isolated so the
-  // store-and-forward path can never break ingest/broadcast.
+  // 3b: C1 STORE-AND-FORWARD (additive; no-op unless OT_STORE_FORWARD_ENABLED). Buffer ONLY
+  // the rows that did not persist because of the DB (never rows that already persisted —
+  // a live write is not in the applied ledger, so re-buffering could double-insert; never
+  // invalid_value rows). On a fully healthy write, drain the offline backlog. Fault-isolated
+  // so the store-and-forward path can never break ingest/broadcast.
   try {
     const { storeForwardEnabled } = await import("./ot/storeForward");
     if (storeForwardEnabled()) {
       const sf = await ensureStoreForwardWired();
-      // The persist path is all-or-nothing per batch (one db.insert(values)): it either
-      // returns rows.length, returns 0 (DB absent/degraded), or throws. So "nothing
-      // landed" == (threw OR persisted 0). Buffer only then — never buffer rows that
-      // already persisted (that would risk a double-insert since a live write is not in
-      // the applied ledger). buffer() is itself idempotent by natural key.
-      if (insertThrew || persisted === 0) {
-        await sf.buffer(rows);
-      } else if (persisted === rows.length) {
+      const dbFailed = rejected.filter((r) => r.reason === "db_error").map((r) => rows[r.index]);
+      if (dbFailed.length > 0) {
+        await sf.buffer(dbFailed);
+      } else if (accepted === rows.length) {
         // A healthy write → the DB is back; drain the offline backlog (bounded).
         if (sf.bufferedCount() > 0) await sf.backfill();
       }
@@ -721,20 +946,23 @@ async function ingestNow(samples: CanonicalSample[]): Promise<number> {
   // 4: broadcast on the ONE unified channel (signal-only; no-op without io) AND
   //    fan out this locally-ingested batch to remote instances (U6-b; no-op unless
   //    EVENTBUS_REDIS_ENABLED + REDIS_URL). Loopback-safe (remote=false here).
-  await broadcastAndTap(rows.map(toBroadcast), /* remote */ false);
+  //    Rows Postgres rejected for their data are not broadcast (they do not exist).
+  const invalid = new Set(rejected.filter((r) => r.reason === "invalid_value").map((r) => r.index));
+  const live = invalid.size === 0 ? rows : rows.filter((_, i) => !invalid.has(i));
+  await broadcastAndTap(live.map(toBroadcast), /* remote */ false);
 
   // 5: fan out to any registered in-process taps (T1-c twin gateway). Fault-isolated.
   if (taps.size > 0) {
     for (const tap of taps) {
       try {
-        tap(rows);
+        tap(live);
       } catch (err) {
         console.error("[TelemetryBus] tap failed:", gonLoi(err));
       }
     }
   }
 
-  return persisted;
+  return { accepted, rejected };
 }
 
 // ── MON-F13 (doc 40 §11) — ENERGY auto-ingest tap ────────────────────────────

@@ -34,7 +34,7 @@ import {
   type EquipmentCapability,
 } from "../equipment/capabilityModel";
 import { type PackmlState } from "../equipment/packml";
-import type { DeviceTypeAttribute } from "../../../drizzle/schema/equipmentStandards";
+import type { DeviceType, DeviceTypeAttribute } from "../../../drizzle/schema/equipmentStandards";
 
 /** Flag — default OFF (mirrors fleetOrchEnabled / safetyAuditEnabled). */
 export function eqGovernEnabled(): boolean {
@@ -55,6 +55,35 @@ export interface DeviceTypeNode {
   extensionFields: Record<string, unknown>;
   mappedMachineTypes: string[];
   adapterKind?: string;
+  /**
+   * Where the node came from: 'seed' (capabilityModel constants / device_types.origin='seed')
+   * or the row's own origin ('manual'…). doc 80 Đợt 1 Task 4 (X-01) — carried to the tree so
+   * the page can badge seed types. Optional: absent = unknown (never guessed).
+   */
+  origin?: string;
+}
+
+/**
+ * Convert a persisted `device_types` row into an in-memory DeviceTypeNode. Shared by the
+ * router's node-set loader and the DB-backed compliance metrics (doc 80 Đợt 1 Task 3 —
+ * conformance must run on what is actually in device_types, not on the seed constants).
+ */
+export function nodeFromDeviceTypeRow(r: DeviceType): DeviceTypeNode {
+  return {
+    typeKey: r.typeKey,
+    parentTypeKey: r.parentTypeKey ?? null,
+    version: r.version,
+    status: (r.status as DeviceTypeNode["status"]) ?? "draft",
+    label: r.label ?? undefined,
+    description: r.description ?? undefined,
+    attributesSchema: (r.attributesSchema ?? []) as DeviceTypeNode["attributesSchema"],
+    supportedCommands: (r.supportedCommands ?? []) as DeviceTypeNode["supportedCommands"],
+    supportedStates: (r.supportedStates ?? []) as DeviceTypeNode["supportedStates"],
+    extensionFields: (r.extensionFields ?? {}) as Record<string, unknown>,
+    mappedMachineTypes: (r.mappedMachineTypes ?? []) as string[],
+    adapterKind: r.adapterKind ?? undefined,
+    origin: r.origin ?? undefined,
+  };
 }
 
 /** A fully-resolved device type (all ancestors merged in). */
@@ -80,6 +109,8 @@ export interface DeviceTypeTreeNode {
   status: string;
   label?: string;
   mappedMachineTypes: string[];
+  /** doc 80 Đợt 1 Task 4 — see DeviceTypeNode.origin. */
+  origin?: string;
   children: DeviceTypeTreeNode[];
 }
 
@@ -161,6 +192,7 @@ export function buildSeedTypes(): DeviceTypeNode[] {
     supportedStates: [],
     extensionFields: {},
     mappedMachineTypes: [],
+    origin: "seed",
     ...n,
   });
 
@@ -347,7 +379,7 @@ export function buildTree(nodes: DeviceTypeNode[]): DeviceTypeTreeNode[] {
   for (const n of byKey.values()) {
     tnodes.set(n.typeKey, {
       typeKey: n.typeKey, version: n.version, status: n.status, label: n.label,
-      mappedMachineTypes: n.mappedMachineTypes ?? [], children: [],
+      mappedMachineTypes: n.mappedMachineTypes ?? [], origin: n.origin, children: [],
     });
   }
   const roots: DeviceTypeTreeNode[] = [];

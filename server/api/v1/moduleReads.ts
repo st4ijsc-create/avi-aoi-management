@@ -267,30 +267,16 @@ export function registerModuleReadRoutes(r: Router): void {
     wrap(async (_req, res) => {
       const { getDb } = await import("../../db/connection");
       const { deviceTypes } = await import("../../../drizzle/schema/equipmentStandards");
-      const { buildSeedTypes, buildTree } = await import("../../services/standards/deviceTypeRegistry");
+      const { buildSeedTypes, buildTree, nodeFromDeviceTypeRow } = await import("../../services/standards/deviceTypeRegistry");
       const seed = buildSeedTypes();
       const d = await getDb();
       let nodes: DeviceTypeNode[] = seed;
       if (d) {
         const rows = await d.select().from(deviceTypes);
         // SEED ∪ persisted rows — buildTree()/preferNode() pick published>draft + top SemVer.
-        nodes = [
-          ...seed,
-          ...rows.map((r): DeviceTypeNode => ({
-            typeKey: r.typeKey,
-            parentTypeKey: r.parentTypeKey ?? null,
-            version: r.version,
-            status: (r.status as DeviceTypeNode["status"]) ?? "draft",
-            label: r.label ?? undefined,
-            description: r.description ?? undefined,
-            attributesSchema: (r.attributesSchema ?? []) as DeviceTypeNode["attributesSchema"],
-            supportedCommands: (r.supportedCommands ?? []) as DeviceTypeNode["supportedCommands"],
-            supportedStates: (r.supportedStates ?? []) as DeviceTypeNode["supportedStates"],
-            extensionFields: (r.extensionFields ?? {}) as Record<string, unknown>,
-            mappedMachineTypes: (r.mappedMachineTypes ?? []) as string[],
-            adapterKind: r.adapterKind ?? undefined,
-          })),
-        ];
+        // doc 80 Đợt 1 Task 4 fix round 1 #5 — the SAME row converter as the tRPC router (keeps
+        // `origin`, so REST and tRPC report seed types identically).
+        nodes = [...seed, ...rows.map(nodeFromDeviceTypeRow)];
       }
       sendOk(res, { tree: buildTree(nodes), typeCount: new Set(nodes.map((n) => n.typeKey)).size });
     }),
@@ -338,40 +324,11 @@ export function registerModuleReadRoutes(r: Router): void {
     requireScope(API_SCOPES.STANDARDS_READ),
     wrap(async (_req, res) => {
       const { getDb } = await import("../../db/connection");
-      const { machines } = await import("../../../drizzle/schema");
-      const { deviceTypes, alarmTaxonomy, deviceTypeChangeRequests } = await import(
-        "../../../drizzle/schema/equipmentStandards"
-      );
-      const { buildSeedTypes } = await import("../../services/standards/deviceTypeRegistry");
-      const { SEED_ALARM_MAPPINGS } = await import("../../services/standards/alarmTaxonomy");
-      const { computeCompliance } = await import("../../services/standards/complianceService");
-      // Assemble computeCompliance inputs EXACTLY as equipmentStandardsRouter.complianceMetrics does.
-      const machineTypes: string[] = [];
-      const publishedTypeKeys = new Set<string>();
-      const mappedVendors = new Set<string>();
-      const crStatuses: string[] = [];
-      for (const n of buildSeedTypes()) if (n.status === "published") publishedTypeKeys.add(n.typeKey);
-      for (const m of SEED_ALARM_MAPPINGS) mappedVendors.add(m.vendor.toLowerCase());
-      const d = await getDb();
-      if (d) {
-        const ms = await d.select({ machineType: machines.machineType }).from(machines);
-        for (const m of ms) machineTypes.push(m.machineType);
-        const dts = await d.select().from(deviceTypes).where(eq(deviceTypes.status, "published"));
-        for (const t of dts) publishedTypeKeys.add(t.typeKey);
-        const at = await d.select({ vendor: alarmTaxonomy.vendor }).from(alarmTaxonomy);
-        for (const a of at) mappedVendors.add(a.vendor.toLowerCase());
-        const crs = await d.select({ status: deviceTypeChangeRequests.status }).from(deviceTypeChangeRequests);
-        for (const c of crs) crStatuses.push(c.status);
-      }
-      sendOk(
-        res,
-        computeCompliance({
-          machineTypes,
-          publishedTypeKeys: Array.from(publishedTypeKeys),
-          crStatuses,
-          mappedVendors: Array.from(mappedVendors),
-        }),
-      );
+      const { loadComplianceMetrics } = await import("../../services/standards/complianceService");
+      // doc 80 Đợt 1 Task 3 (STD-01) — the SAME loader as equipmentStandardsRouter.complianceMetrics
+      // (machines.device_type_key ↔ published device_types; conformance over device_types), so the
+      // public read can never drift back to the seed-constant tautology the router used to share.
+      sendOk(res, await loadComplianceMetrics(await getDb()));
     }),
   );
 

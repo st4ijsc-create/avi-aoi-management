@@ -51,6 +51,7 @@ import { FeatureDisabledError } from "../../_core/deviceErrors";
 // Type-only imports: erased at runtime, so this module pulls in NO DB / dispatcher
 // value code. `DispatchInput` is the exact shape the gated OT dispatcher consumes.
 import type { DispatchInput } from "../ot/commandDispatcher";
+import type { OtWriteTarget } from "../ot/otActionBinding"; // final wave (item 7): bindable host-command input
 import type { RiskLevel } from "../equipment/capabilityModel";
 
 /**
@@ -914,10 +915,42 @@ export interface HitlDispatchContext {
   requestedBy: number;
   /** ai_pending_actions.id of the confirmed HITL action (defense-in-depth). */
   actionId?: string;
+  /**
+   * doc 81 Đợt 1B final wave (item 7, ruling R5) — the `ai_pending_actions.tool` the actionId was
+   * created for. REQUIRED: since Task 6 the dispatcher refuses a real write whose trigger names no
+   * tool (ACTION_BINDING_MISMATCH), and the pending row must carry otPayloadHash({tool, …
+   * gem300OtWriteBinding(proposal, ctx)}) — build the row with THAT function, never by hand.
+   * Use GEM300_HOST_COMMAND_TOOL unless a dedicated AI tool wraps this path.
+   */
+  tool: string;
   idempotencyKey?: string;
   lang?: "vi" | "en" | "zh";
   /** Override the OT tag written (defaults to the command's canonical tag). */
   tagKey?: string;
+}
+
+/** Default `tool` name for a host-command (S2F41) HITL row — the producer and the dispatcher must agree on it. */
+export const GEM300_HOST_COMMAND_TOOL = "gem300.host_command";
+
+/**
+ * doc 81 Đợt 1B final wave (item 7) — the EXACT OT write target a host command resolves to, in ONE
+ * function that both the pending-row producer (hash it with otActionBinding.otPayloadHash together
+ * with `ctx.tool`) and buildHitlDispatchInput use, so the confirmed hash and the dispatched command
+ * cannot drift (the same "one plan function" pattern as machineControl.ts). Throws (flag OFF /
+ * unmapped command) exactly where buildHitlDispatchInput used to.
+ */
+export function gem300OtWriteBinding(proposal: HostCommandProposal, ctx: Pick<HitlDispatchContext, "adapterId" | "machineId" | "tagKey">): OtWriteTarget {
+  if (!isGem300Enabled()) {
+    throw new FeatureDisabledError("gem300", "GEM300 is disabled (set GEM300_ENABLED=true). No host-command dispatch input can be built.");
+  }
+  if (!proposal.canonicalCommand) {
+    throw new Error(`Cannot dispatch an unmapped host command "${proposal.rcmd}"`);
+  }
+  const entry = HOST_COMMAND_MAP[normaliseRcmd(proposal.rcmd)];
+  const tagKey = ctx.tagKey ?? entry.defaultTag;
+  const value =
+    proposal.canonicalCommand === "select_recipe" ? (proposal.recipeCode ?? "") : true;
+  return { adapterId: ctx.adapterId, machineId: ctx.machineId ?? null, commandType: proposal.canonicalCommand, writes: [{ tagKey, value }] };
 }
 
 /**
@@ -930,30 +963,22 @@ export interface HitlDispatchContext {
  * command (there is no ungated fallback).
  */
 export function buildHitlDispatchInput(proposal: HostCommandProposal, ctx: HitlDispatchContext): DispatchInput {
-  if (!isGem300Enabled()) {
-    throw new FeatureDisabledError("gem300", "GEM300 is disabled (set GEM300_ENABLED=true). No host-command dispatch input can be built.");
-  }
-  if (!proposal.canonicalCommand) {
-    throw new Error(`Cannot dispatch an unmapped host command "${proposal.rcmd}"`);
-  }
-  const entry = HOST_COMMAND_MAP[normaliseRcmd(proposal.rcmd)];
-  const tagKey = ctx.tagKey ?? entry.defaultTag;
-  const value =
-    proposal.canonicalCommand === "select_recipe" ? (proposal.recipeCode ?? "") : true;
-
+  // final wave (item 7): ONE plan function for the producer's hash and this input (see gem300OtWriteBinding).
+  const target = gem300OtWriteBinding(proposal, ctx);
   return {
-    adapterId: ctx.adapterId,
-    machineId: ctx.machineId ?? null,
-    commandType: proposal.canonicalCommand,
-    writes: [{ tagKey, value }],
+    adapterId: target.adapterId,
+    machineId: target.machineId ?? null,
+    commandType: target.commandType,
+    writes: [...target.writes],
     triggeredBy: {
       kind: "hitl",
       actionId: ctx.actionId,
+      tool: ctx.tool,
       confirmedBy: ctx.confirmedBy,
       requestedBy: ctx.requestedBy,
     },
     lang: ctx.lang,
-    idempotencyKey: ctx.idempotencyKey ?? `gem300-s2f41-${proposal.canonicalCommand}-${Date.now()}`,
+    idempotencyKey: ctx.idempotencyKey ?? `gem300-s2f41-${target.commandType}-${Date.now()}`,
   };
 }
 

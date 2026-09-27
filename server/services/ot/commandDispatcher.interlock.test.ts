@@ -15,6 +15,7 @@
  *   - kind='hitl' regression (F4 still works)
  */
 import { describe, it, expect, vi, beforeEach } from "vitest";
+import { makeLedgerFakeDb, boundPending, resultRows, isIntentRow, TESTKIT_TOOL } from "./commandDispatcher.testkit";
 
 type Row = Record<string, any>;
 
@@ -36,10 +37,8 @@ function reset() {
   cmdSeq = 1;
 }
 
-vi.mock("drizzle-orm", () => ({
-  eq: (col: any, val: any) => ({ __k: col.__name, __v: val, __op: "eq" }),
-  and: (...ps: any[]) => ({ __and: ps }),
-}));
+// doc 81 Đợt 1B Task 6 — + inArray/sql for the write-ahead reservation (see commandDispatcher.testkit.ts).
+vi.mock("drizzle-orm", async () => (await import("./commandDispatcher.testkit")).fakeOrm);
 
 function matches(row: Row, pred: any): boolean {
   if (!pred) return true;
@@ -61,33 +60,24 @@ function tableFor(table: any): Row[] {
 }
 
 function makeFakeDb() {
-  return {
-    select: () => ({
-      from: (table: any) => ({
-        where: (pred: any) => ({
-          limit: async () => tableFor(table).filter((r) => matches(r, pred)).slice(0, 1),
-        }),
-      }),
-    }),
-    insert: (table: any) => ({
-      values: (vals: Row) => ({
-        returning: async (_sel?: any) => {
-          if (table.__table === "command_log") {
-            const row = { id: cmdSeq++, ...vals };
-            cmdLog.push(row);
-            return [{ id: row.id }];
-          }
-          return [{ id: cmdSeq++ }];
-        },
-      }),
-    }),
-  };
+  // doc 81 Đợt 1B Task 6 — transaction-capable fake (reservation tx); same insert bookkeeping.
+  return makeLedgerFakeDb({
+    tableFor,
+    onInsert: (table: any, vals: Row) => {
+      if (table.__table === "command_log") {
+        const row = { id: cmdSeq++, ...vals };
+        cmdLog.push(row);
+        return { id: row.id };
+      }
+      return { id: cmdSeq++ };
+    },
+  });
 }
 
 vi.mock("../../db/connection", () => ({ getDb: vi.fn(async () => makeFakeDb()) }));
 
 vi.mock("../../../drizzle/schema", () => ({
-  aiPendingActions: { __table: "ai_pending_actions", id: { __name: "id" }, status: { __name: "status" }, userId: { __name: "userId" } },
+  aiPendingActions: { __table: "ai_pending_actions", id: { __name: "id" }, status: { __name: "status" }, userId: { __name: "userId" }, tool: { __name: "tool" } },
   deviceAdapters: { __table: "device_adapters", id: { __name: "id" }, machineId: { __name: "machineId" }, isEnabled: { __name: "isEnabled" } },
   deviceTags: { __table: "device_tags", id: { __name: "id" }, adapterId: { __name: "adapterId" }, tagKey: { __name: "tagKey" }, dataType: { __name: "dataType" }, scale: { __name: "scale" }, offset: { __name: "offset" } },
   commandLog: { __table: "command_log", id: { __name: "id" }, idempotencyKey: { __name: "idempotencyKey" }, status: { __name: "status" } },
@@ -159,15 +149,15 @@ describe("commandDispatcher — F5b interlock auto-block (all gates pass)", () =
     expect(r.ok).toBe(true);
     expect(r.status).toBe("acked");
     expect(writeTagsSpy).toHaveBeenCalledTimes(1);
-    expect(cmdLog).toHaveLength(1);
-    expect(cmdLog[0].triggerKind).toBe("interlock");
-    expect(cmdLog[0].interlockRuleId).toBe(7);
-    expect(cmdLog[0].interlockEventId).toBe(70);
-    expect(cmdLog[0].approvedBy).toBe(42);
+    expect(resultRows(cmdLog)).toHaveLength(1);
+    expect(resultRows(cmdLog)[0].triggerKind).toBe("interlock");
+    expect(resultRows(cmdLog)[0].interlockRuleId).toBe(7);
+    expect(resultRows(cmdLog)[0].interlockEventId).toBe(70);
+    expect(resultRows(cmdLog)[0].approvedBy).toBe(42);
     // approver owns responsibility → requestedBy=confirmedBy=approvedBy
-    expect(cmdLog[0].requestedBy).toBe(42);
-    expect(cmdLog[0].confirmedBy).toBe(42);
-    expect(cmdLog[0].actionId).toBeNull();
+    expect(resultRows(cmdLog)[0].requestedBy).toBe(42);
+    expect(resultRows(cmdLog)[0].confirmedBy).toBe(42);
+    expect(resultRows(cmdLog)[0].actionId).toBeNull();
     // audit INTERLOCK_AUTO_BLOCK
     expect(auditSpy).toHaveBeenCalledTimes(1);
     expect(auditSpy.mock.calls[0][1]).toMatchObject({ action: "interlock_auto_block", entityId: 7 });
@@ -180,7 +170,7 @@ describe("commandDispatcher — F5b interlock auto-block (all gates pass)", () =
     expect(r.simulated).toBe(true);
     expect(r.status).toBe("simulated");
     expect(writeTagsSpy).not.toHaveBeenCalled();
-    expect(cmdLog[0].triggerKind).toBe("interlock");
+    expect(resultRows(cmdLog)[0].triggerKind).toBe("interlock");
     expect(auditSpy).toHaveBeenCalledTimes(1);
   });
 
@@ -188,11 +178,11 @@ describe("commandDispatcher — F5b interlock auto-block (all gates pass)", () =
     const r1 = await dispatch(interlockInput());
     expect(r1.status).toBe("acked");
     expect(writeTagsSpy).toHaveBeenCalledTimes(1);
-    expect(cmdLog).toHaveLength(1);
+    expect(resultRows(cmdLog)).toHaveLength(1);
     const r2 = await dispatch(interlockInput());
     expect(r2.status).toBe("acked");
     expect(writeTagsSpy).toHaveBeenCalledTimes(1);
-    expect(cmdLog).toHaveLength(1);
+    expect(resultRows(cmdLog)).toHaveLength(1);
     expect(auditSpy).toHaveBeenCalledTimes(1); // not re-audited on cache hit
   });
 });
@@ -281,20 +271,22 @@ describe("commandDispatcher — F5b interlock SAFETY rejections (writeTags 0×)"
 
 describe("commandDispatcher — F5b: kind='hitl' regression", () => {
   it("a HITL dispatch still works and records triggerKind='hitl'", async () => {
-    pending.set("act-9", { id: "act-9", status: "confirmed", userId: 3 });
-    const r = await dispatch({
+    const hitlInput = {
       adapterId: 10,
       machineId: 5,
       commandType: "stop",
       writes: [{ tagKey: "cmd_block", value: true }],
-      triggeredBy: { kind: "hitl", actionId: "act-9", confirmedBy: 3, requestedBy: 3 },
+      triggeredBy: { kind: "hitl" as const, actionId: "act-9", tool: TESTKIT_TOOL, confirmedBy: 3, requestedBy: 3 },
       idempotencyKey: "hitl-1",
-    });
+    };
+    // doc 81 Đợt 1B Task 6 — bound, confirmed action (the new real-write contract).
+    pending.set("act-9", boundPending("act-9", hitlInput, { userId: 3 }));
+    const r = await dispatch(hitlInput);
     expect(r.ok).toBe(true);
     expect(writeTagsSpy).toHaveBeenCalledTimes(1);
-    expect(cmdLog[0].triggerKind).toBe("hitl");
-    expect(cmdLog[0].interlockRuleId).toBeNull();
-    expect(cmdLog[0].confirmedBy).toBe(3);
+    expect(resultRows(cmdLog)[0].triggerKind).toBe("hitl");
+    expect(resultRows(cmdLog)[0].interlockRuleId).toBeNull();
+    expect(resultRows(cmdLog)[0].confirmedBy).toBe(3);
     expect(auditSpy).not.toHaveBeenCalled(); // no interlock audit for HITL
   });
 });

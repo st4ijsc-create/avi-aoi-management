@@ -24,6 +24,7 @@ import { isValidMasterKey } from "../../_core/masterKey";
 import { getMachineByApiKey } from "../../db";
 import { sendError } from "./envelope";
 import { ALL_SCOPES, scopeSatisfied, type ApiScope } from "./scopes";
+import { decideSharedMachineKey } from "../../services/machineAuthService";
 import {
   GLOBAL_TENANT_SCOPE,
   UNDECLARED_TENANT_SCOPE,
@@ -82,7 +83,7 @@ function extractKey(req: Request): string | null {
  * Resolve a plaintext credential to an ApiPrincipal, or null if unrecognised.
  * Tries: master key → api_keys table → per-machine apiKey. Never throws.
  */
-export async function resolvePrincipal(key: string): Promise<ApiPrincipal | null> {
+export async function resolvePrincipal(key: string, scope?: ApiScope): Promise<ApiPrincipal | null> {
   // 0) OAuth2 client-credentials token (K0+-a) — ADDITIVE, flag-gated.
   //    Only attempted when ERP_OAUTH_ENABLED is on AND the credential looks like a
   //    JWS (three dot-separated segments). verifyToken returns null for anything
@@ -134,6 +135,10 @@ export async function resolvePrincipal(key: string): Promise<ApiPrincipal | null
           name: row.name,
           scopes: Array.isArray(row.scopes) ? row.scopes : [],
           apiKeyId: row.id,
+          // doc 81 Đợt 1B Task 8 — khoá `mk_` (hàng `api_keys` có `machineId`) là khoá CỦA MỘT MÁY:
+          // mang máy ấy lên principal để các tuyến ingest ràng buộc body ↔ máy của khoá
+          // (router.ts `mayCuaKhoa`). Khoá chung (machineId NULL) giữ nguyên: không gắn máy.
+          ...(row.machineId != null ? { machineId: row.machineId } : {}),
           // mig 0325 — ba trạng thái đọc thẳng từ hàng. Hàng chưa khai (mặc định của
           // MỌI khoá có trước 0325) ⇒ `mode: null` ⇒ `bi:read`/`export:read` bị 403.
           tenantScope: tenantScopeFromRow(row),
@@ -148,6 +153,12 @@ export async function resolvePrincipal(key: string): Promise<ApiPrincipal | null
   try {
     const machine = await getMachineByApiKey(key);
     if (machine) {
+      // doc 81 Đợt 1B Task 8 — ĐO (BE3 §L4): bước này từng nhận khoá plaintext BẤT KỂ
+      // `MACHINE_SHARED_KEY_ALLOWED` (mặc định "deny" từ mig 0334). Nay hỏi CÙNG điểm quyết định
+      // với router máy (`decideSharedMachineKey`: tri-state + mk_-only + sổ weak-auth). Bị từ chối
+      // ⇒ null ⇒ requireScope trả 401, y như một khoá không nhận ra.
+      const { decision } = decideSharedMachineKey(machine, scope, `api/v1 ${scope ?? "unknown"}`);
+      if (decision !== "allowed") return null;
       // Phạm vi tenant CHƯA KHAI: khoá theo máy chỉ mang `ingest:write` (đường GHI), nên
       // nó không bao giờ thoả `bi:read`/`export:read` và không bao giờ chạm hai tuyến ĐỌC
       // đang được cưỡng chế. Điền 'global' ở đây để "cho tiện" sẽ là cấp sẵn quyền đọc
@@ -182,7 +193,7 @@ export function requireScope(scope: ApiScope) {
     }
     let principal: ApiPrincipal | null = null;
     try {
-      principal = await resolvePrincipal(key);
+      principal = await resolvePrincipal(key, scope);
     } catch {
       principal = null;
     }

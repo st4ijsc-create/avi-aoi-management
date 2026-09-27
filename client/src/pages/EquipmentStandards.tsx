@@ -75,6 +75,13 @@ import {
 import { toast } from "sonner";
 import { mapTrpcError } from "@/lib/trpcErrors";
 import { isFeatureDisabledError } from "@/lib/featureFlagError";
+import {
+  deriveFeatureStatus,
+  FeatureStatusGate,
+  isFeatureStatusUnsettled,
+} from "@/components/common/FeatureStatusGate";
+// doc 80 Đợt 1 Task 4 (X-01) — nhãn SEED trên cây device type + dải tóm tắt.
+import { ProvenanceBadge, ProvenanceSummary } from "@/components/common/ProvenanceBadge";
 
 // ── Typesafe shapes inferred from the equipmentStandardsRouter output ─────────
 type RouterOutputs = inferRouterOutputs<AppRouter>;
@@ -87,7 +94,8 @@ type MappedAlarm = RouterOutputs["equipmentStandards"]["mapAlarm"];
 type ChangeRequest = RouterOutputs["equipmentStandards"]["listChangeRequests"][number];
 type Conformance = RouterOutputs["equipmentStandards"]["runConformance"];
 type Compliance = RouterOutputs["equipmentStandards"]["complianceMetrics"];
-type AlarmKpis = RouterOutputs["equipmentStandards"]["alarmKpis"];
+// doc 80 Đợt 1 Task 3 (STD-04) — ONE KPI source: the same alarmKpi.summary as /alarm-kpi + Control Tower.
+type AlarmKpis = RouterOutputs["alarmKpi"]["summary"];
 type MasterAlarmRow = RouterOutputs["equipmentStandards"]["listMasterAlarms"][number];
 
 const CONSEQUENCES = ["none", "minor", "major", "severe"] as const;
@@ -179,13 +187,23 @@ export default function EquipmentStandards() {
     enabled: canView && runConfReq,
     retry: false,
   });
-  const kpisQ = trpc.equipmentStandards.alarmKpis.useQuery(
-    { windowDays: kpiWindow, operatorCount: 1 },
+  // doc 80 Đợt 1 Task 3 (STD-04) — trước đây gọi bộ tính THỨ HAI (equipmentStandards.alarmKpis,
+  // chỉ andon) với operatorCount: 1 CỨNG ⇒ số khác /alarm-kpi. Nay đọc CÙNG alarmKpi.summary và
+  // KHÔNG gửi operatorCount — server tự suy (số người vận hành đang hoạt động).
+  const kpisQ = trpc.alarmKpi.summary.useQuery(
+    { windowHours: kpiWindow * 24 },
     { enabled: canView },
   );
   const mastersQ = trpc.equipmentStandards.listMasterAlarms.useQuery(undefined, { enabled: canView });
 
   const tree = (treeQ.data?.tree ?? []) as TreeNode[];
+  // doc 80 Task 4 — every node of the tree (roots + descendants) for the "N/M are seed" strip.
+  const treeFlat = useMemo(() => {
+    const out: TreeNode[] = [];
+    const walk = (ns: TreeNode[]) => { for (const n of ns) { out.push(n); walk(n.children as TreeNode[]); } };
+    walk(tree);
+    return out;
+  }, [tree]);
   const resolved = resolveQ.data as ResolvedType | undefined;
   const alarms = (alarmsQ.data?.mappings ?? []) as AlarmMapping[];
   const vendors = (alarmsQ.data?.vendors ?? []) as string[];
@@ -196,7 +214,12 @@ export default function EquipmentStandards() {
   const kpis = kpisQ.data as AlarmKpis | undefined;
   const masters = (mastersQ.data ?? []) as MasterAlarmRow[];
 
-  const flagEnabled = statusQ.data?.enabled ?? true;
+  // Doc 80 Task 1 (PLT-02/G-07/X-07): pending/erroring status query is UNKNOWN, not "on".
+  const flagStatus = deriveFeatureStatus(statusQ, (d: { enabled?: boolean }) => d.enabled);
+  const flagUnsettled = isFeatureStatusUnsettled(flagStatus);
+  const flagControlReason = permReason
+    ?? (flagUnsettled ? t("common.gate.checkingStatus", "Checking feature status…") : undefined);
+  const flagCanControl = canControl && !flagUnsettled;
 
   const refetchAll = () => {
     void utils.equipmentStandards.status.invalidate();
@@ -206,7 +229,7 @@ export default function EquipmentStandards() {
     void utils.equipmentStandards.listChangeRequests.invalidate();
     void utils.equipmentStandards.complianceMetrics.invalidate();
     void utils.equipmentStandards.runConformance.invalidate();
-    void utils.equipmentStandards.alarmKpis.invalidate();
+    void utils.alarmKpi.summary.invalidate();
     void utils.equipmentStandards.listMasterAlarms.invalidate();
   };
 
@@ -313,18 +336,18 @@ export default function EquipmentStandards() {
           <span>{t("eqStandards.whenToUse", "When to use — govern device-type standards, the ISA-18.2 alarm taxonomy and the review board. Governance metadata only, no device commands.")}</span>
         </div>
 
-        {/* ── Flag-off preview banner (honest) ───────────────────────────────── */}
-        {!flagEnabled && (
-          <div className="flex items-start gap-2 rounded-md border border-amber-500/40 bg-amber-500/10 p-3 text-sm">
-            <Info className="mt-0.5 h-4 w-4 shrink-0 text-amber-600" />
-            <span>
-              {t(
-                "eqStandards.flagOffBanner",
-                "Preview mode: equipment governance is disabled (EQ_GOVERN_ENABLED is off). Reads work; actions (register type / map alarm / submit / review / publish) are blocked until the flag is enabled.",
-              )}
-            </span>
-          </div>
-        )}
+        {/* ── Flag status banner — honest 4-state (loading/off/on/error), doc 80 Task 1 ── */}
+        <FeatureStatusGate
+          status={flagStatus}
+          offMessage={t(
+            "eqStandards.flagOffBanner",
+            "Preview mode: equipment governance is disabled. Reads work; actions (register type / map alarm / submit / review / publish) are blocked until it is enabled.",
+          )}
+          errorMessage={t(
+            "eqStandards.flagStatusError",
+            "Could not check whether equipment governance is enabled — actions are disabled until this is confirmed.",
+          )}
+        />
 
         {/* Safety note — mirrors the router's NO-OP discipline */}
         <div className="flex items-start gap-2 rounded-md border border-border bg-muted/40 p-3 text-sm text-muted-foreground">
@@ -403,7 +426,7 @@ export default function EquipmentStandards() {
               title={t("eqStandards.hierarchyTitle", "Device type hierarchy")}
               className="lg:w-1/2"
               action={
-                <Button size="sm" variant="outline" className="h-8" disabled={!canControl} title={permReason} onClick={() => setRegisterOpen(true)}>
+                <Button size="sm" variant="outline" className="h-8" disabled={!flagCanControl} title={flagControlReason} onClick={() => setRegisterOpen(true)}>
                   <Plus className="mr-1 h-4 w-4" />{t("eqStandards.registerType", "Register type")}
                 </Button>
               }
@@ -412,6 +435,7 @@ export default function EquipmentStandards() {
               {!treeQ.isLoading && tree.length === 0 && (
                 <Text tone="muted" variant="body-sm">{t("eqStandards.treeEmpty", "No device types.")}</Text>
               )}
+              <ProvenanceSummary rows={treeFlat} className="mb-2" />
               <div className="space-y-0.5">
                 {tree.map((node) => (
                   <TreeRow
@@ -491,7 +515,7 @@ export default function EquipmentStandards() {
                       {vendors.map((v) => <SelectItem key={v} value={v}>{v}</SelectItem>)}
                     </SelectContent>
                   </Select>
-                  <Button size="sm" variant="outline" className="h-8" disabled={!canControl} title={permReason} onClick={() => setUpsertAlarmOpen(true)}>
+                  <Button size="sm" variant="outline" className="h-8" disabled={!flagCanControl} title={flagControlReason} onClick={() => setUpsertAlarmOpen(true)}>
                     <Plus className="mr-1 h-4 w-4" />{t("eqStandards.mapAlarm", "Map alarm")}
                   </Button>
                 </div>
@@ -555,18 +579,33 @@ export default function EquipmentStandards() {
               )}
               {kpis && !kpisQ.isLoading && (
                 <>
-                  <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
-                    <MetricCard icon={<Bell className="h-4 w-4" />} label={t("eqStandards.kpi.total", "Total alarms")} value={kpis.totalAlarms} />
+                  <p data-testid="alarm-kpi-source" className="mb-3 text-xs text-muted-foreground">
+                    {t(
+                      "eqStandards.kpiSourceNote",
+                      "Same source as the Alarm KPI dashboard and Control Tower (Andon + AI alerts). Operators: {{n}} — counted on the server.",
+                      { n: kpis.operatorCount },
+                    )}
+                  </p>
+                  <div className="grid grid-cols-2 gap-3 sm:grid-cols-4 lg:grid-cols-7">
+                    <div data-testid="alarm-kpi-total">
+                      <MetricCard icon={<Bell className="h-4 w-4" />} label={t("eqStandards.kpi.total", "Total alarms")} value={kpis.totalAlarms} />
+                    </div>
                     <MetricCard icon={<Activity className="h-4 w-4" />} label={t("eqStandards.kpi.perOpHour", "Alarms/op/hour")}
-                      value={kpis.alarmsPerOperatorHour.toFixed(1)}
-                      tone={kpis.alarmsPerOperatorHour > 12 ? "danger" : kpis.alarmsPerOperatorHour > 6 ? "warning" : "good"} />
+                      value={kpis.rate.alarmsPerHourPerOperator.toFixed(1)}
+                      tone={kpis.rate.status === "critical" ? "danger" : kpis.rate.status === "warning" ? "warning" : "good"} />
                     <MetricCard icon={<AlertTriangle className="h-4 w-4" />} label={t("eqStandards.kpi.flood", "Flood windows")}
-                      value={kpis.floodWindowCount} tone={kpis.floodWindowCount > 0 ? "danger" : "good"} />
-                    <MetricCard icon={<RefreshCw className="h-4 w-4" />} label={t("eqStandards.kpi.chattering", "Chattering")}
-                      value={kpis.chattering.length} tone={kpis.chattering.length > 0 ? "warning" : "good"} />
+                      value={kpis.flood.floodBucketCount} tone={kpis.flood.isFlooding ? "danger" : "good"} />
                     <MetricCard icon={<Lock className="h-4 w-4" />} label={t("eqStandards.kpi.standing", "Standing/stale")}
-                      value={kpis.standingCount} tone={kpis.standingCount > 0 ? "warning" : "good"} />
-                    <MetricCard icon={<Cpu className="h-4 w-4" />} label={t("eqStandards.kpi.peakWindow", "Peak/10min")} value={kpis.peakWindowCount} />
+                      value={kpis.standing.count} tone={kpis.standing.count > 0 ? "warning" : "good"} />
+                    <MetricCard icon={<Cpu className="h-4 w-4" />} label={t("eqStandards.kpi.peakWindow", "Peak/10min")} value={kpis.flood.maxInWindow} />
+                    {/* Task 3 Fix round 1 — nguồn KPI chung (alarmKpi.summary) CHƯA tính chattering: nói
+                        thẳng "chưa đo được" thay vì bỏ ô im lặng hay bịa một con số. */}
+                    <div data-testid="alarm-kpi-chattering"
+                      title={t("eqStandards.kpi.chatteringNotMeasuredTip", "The combined alarm KPI source (alarmKpi) does not compute chattering yet.")}>
+                      <MetricCard icon={<RefreshCw className="h-4 w-4" />} label={t("eqStandards.kpi.chattering", "Chattering")}
+                        value={t("eqStandards.kpi.notMeasured", "Not measured yet")} />
+                    </div>
+                    <MetricCard icon={<Wrench className="h-4 w-4" />} label={t("eqStandards.kpi.operators", "Operators (server)")} value={kpis.operatorCount} />
                   </div>
                   {/* Bad actors */}
                   <div className="mt-4">
@@ -576,12 +615,12 @@ export default function EquipmentStandards() {
                     ) : (
                       <div className="space-y-1">
                         {kpis.badActors.map((b) => (
-                          <div key={b.key} className="flex items-center gap-2 text-sm">
-                            <span className="w-40 shrink-0 truncate font-mono text-xs" title={b.key}>{b.key}</span>
+                          <div key={b.actorKey} className="flex items-center gap-2 text-sm">
+                            <span className="w-40 shrink-0 truncate font-mono text-xs" title={b.actorKey}>{b.actorLabel}</span>
                             <div className="h-2 flex-1 overflow-hidden rounded bg-muted">
-                              <div className="h-full bg-primary" style={{ width: `${Math.round(b.share * 100)}%` }} />
+                              <div className="h-full bg-primary" style={{ width: `${Math.round(b.percent)}%` }} />
                             </div>
-                            <span className="w-16 shrink-0 text-right text-xs text-muted-foreground">{b.count} ({pct(b.share)})</span>
+                            <span className="w-16 shrink-0 text-right text-xs text-muted-foreground">{b.count} ({Math.round(b.percent)}%)</span>
                           </div>
                         ))}
                       </div>
@@ -597,7 +636,7 @@ export default function EquipmentStandards() {
               title={t("eqStandards.masterTitle", "Master alarm database (rationalization)")}
               contentClassName="p-0"
               action={
-                <Button size="sm" variant="outline" className="h-8" disabled={!canControl} title={permReason} onClick={() => { setEditMaster(null); setMasterAlarmOpen(true); }}>
+                <Button size="sm" variant="outline" className="h-8" disabled={!flagCanControl} title={flagControlReason} onClick={() => { setEditMaster(null); setMasterAlarmOpen(true); }}>
                   <Plus className="mr-1 h-4 w-4" />{t("eqStandards.addMaster", "Add master alarm")}
                 </Button>
               }
@@ -636,7 +675,13 @@ export default function EquipmentStandards() {
                         {m.isSuppressed ? (
                           <Badge variant="outline" className="border-destructive/30 bg-destructive/10 text-destructive text-xs">{t("eqStandards.suppressed", "Suppressed")}</Badge>
                         ) : m.isShelvedNow ? (
-                          <Badge variant="outline" className="border-amber-500/30 bg-amber-500/10 text-amber-600 text-xs">{t("eqStandards.shelved", "Shelved")}</Badge>
+                          // Task 3 Fix round 1 (STD-02) — shelveMasterAlarm vẫn ghi được ở server nhưng đường
+                          // báo động chính chưa đọc shelvedUntil ⇒ badge trơn "Shelved" là ấn tượng SAI.
+                          <Badge data-testid={`master-shelved-${m.id}`} variant="outline"
+                            className="border-amber-500/30 bg-amber-500/10 text-amber-600 text-xs"
+                            title={t("eqStandards.shelveNotEnforced", "Not yet effective on the alarm path")}>
+                            {t("eqStandards.shelvedNotEnforced", "Shelved (not yet effective)")}
+                          </Badge>
                         ) : (
                           <span className="text-xs text-muted-foreground">—</span>
                         )}
@@ -653,9 +698,11 @@ export default function EquipmentStandards() {
                                 {t("eqStandards.unshelve", "Un-shelve")}
                               </Button>
                             ) : (
-                              <Button size="sm" variant="ghost" className="h-7" disabled={shelveMasterM.isPending}
-                                title={t("eqStandards.shelve8hTip", "Shelve for 8 hours")}
-                                onClick={() => shelveMasterM.mutate({ id: m.id, shelvedUntil: new Date(Date.now() + 8 * 3600_000).toISOString() })}>
+                              // doc 80 Đợt 1 Task 3 (STD-02) — KHOÁ cho tới khi có enforcement: đường
+                              // báo động chính (Andon/cảnh báo AI) chưa đọc shelvedUntil, bấm "Shelve"
+                              // khiến người vận hành tưởng đã shelve trong khi báo động vẫn nổ.
+                              <Button size="sm" variant="ghost" className="h-7" disabled
+                                title={t("eqStandards.shelveNotEnforced", "Not yet effective on the alarm path")}>
                                 {t("eqStandards.shelve8h", "Shelve 8h")}
                               </Button>
                             )}
@@ -835,6 +882,27 @@ export default function EquipmentStandards() {
                   {!compliance && <Text tone="muted" variant="body-sm">{t("eqStandards.loading", "Loading…")}</Text>}
                 </div>
               </div>
+              {/* doc 80 Đợt 1 Task 3 (STD-01) — nói rõ số đo trên CÁI GÌ (không còn 100 % giả từ hằng số seed). */}
+              {compliance && (
+                <div data-testid="compliance-basis" className="mt-4 space-y-1 text-xs text-muted-foreground">
+                  <p>
+                    {t(
+                      "eqStandards.complianceBasis",
+                      "Mapped = machines.device_type_key bound to a published device type: {{mapped}}/{{total}} machines ({{keyed}} have a key, {{unpublished}} point to an unpublished type). Conformance runs on the {{types}} published device types in the database.",
+                      {
+                        mapped: compliance.machinesMappedToPublished,
+                        total: compliance.machineCount,
+                        keyed: compliance.basis.machinesWithKey,
+                        unpublished: compliance.basis.machinesWithUnpublishedKey,
+                        types: compliance.basis.publishedTypeCount,
+                      },
+                    )}
+                  </p>
+                  {compliance.basis.warnings.map((w) => (
+                    <p key={w} className="text-warning">{t(`eqStandards.basisWarning.${w}`, w)}</p>
+                  ))}
+                </div>
+              )}
             </SectionCard>
 
             {/* Run conformance */}
@@ -910,6 +978,7 @@ function TreeRow({
   return (
     <>
       <div
+        data-testid={`type-row-${node.typeKey}`}
         className={`flex cursor-pointer items-center gap-1 rounded px-2 py-1 text-sm hover:bg-muted/60 ${isSel ? "bg-primary/10" : ""}`}
         style={{ paddingLeft: `${depth * 1.1 + 0.5}rem` }}
         onClick={() => onSelect(node.typeKey)}
@@ -928,6 +997,7 @@ function TreeRow({
         <Boxes className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
         <span className={`truncate ${isSel ? "font-medium" : ""}`}>{node.label ?? node.typeKey}</span>
         <span className="ml-auto flex shrink-0 items-center gap-1">
+          <ProvenanceBadge row={node} />
           <span className="font-mono text-[10px] text-muted-foreground">v{node.version}</span>
           <StatusBadge status={node.status} className="px-1 py-0 text-[10px]" />
         </span>

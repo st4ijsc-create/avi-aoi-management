@@ -12,9 +12,9 @@
  * via t(`actuationReadiness.${code}`, defaultMessage).
  */
 import { trpc } from "@/lib/trpc";
-
-/** Roles allowed to actuate (mirror of server ACTUATION_ROLES). */
-const ACTUATION_ROLES = ["admin", "supervisor", "engineer"] as const;
+// Fix round 5 (Task 5) — the roles constant moved to a React-free module so page-level gating
+// helpers (client/src/lib/robotMotionLock.ts) can share it and be unit-tested; same values.
+import { ACTUATION_ROLES } from "@/lib/actuationRoles";
 
 export interface ActuationBlocker {
   /** Stable code for i18n + testing: "role" | "2fa". */

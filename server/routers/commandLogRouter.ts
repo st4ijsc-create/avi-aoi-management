@@ -67,23 +67,51 @@ export const commandLogRouter = router({
       return row;
     }),
 
+  /**
+   * doc 81 Đợt 1B Task 6 fix round 1 — since the write-ahead ledger every REAL write is TWO rows
+   * (an INTENT `status='sent', ackValue.ledger='intent'` inserted before the device write, then
+   * its RESULT row). byStatus/byTrigger therefore count COMMANDS only (intent rows excluded —
+   * otherwise each real write counted twice); intents get their own category:
+   *   intents.total — write-ahead intents in the window;
+   *   intents.open  — intents with NO linked result row (in flight, or the process died between
+   *                   the device write and the result: outcome UNKNOWN — worth an operator look).
+   * `adapterId` (optional) narrows every count to one adapter.
+   */
   stats: protectedProcedure
     .use(requirePermission("machine_control", "canView"))
-    .input(z.object({ sinceHours: z.number().int().min(1).max(24 * 90).default(24) }).optional())
+    .input(z.object({
+      sinceHours: z.number().int().min(1).max(24 * 90).default(24),
+      adapterId: z.number().int().positive().optional(),
+    }).optional())
     .query(async ({ input }) => {
       const db = await getDb();
       const since = new Date(Date.now() - (input?.sinceHours ?? 24) * 3600 * 1000);
+      const inWindow = and(
+        gte(commandLog.createdAt, since),
+        input?.adapterId != null ? eq(commandLog.adapterId, input.adapterId) : undefined,
+      );
+      const isIntent = sql`coalesce(${commandLog.ackValue} ->> 'ledger', '') = 'intent'`;
+      const notIntent = sql`coalesce(${commandLog.ackValue} ->> 'ledger', '') <> 'intent'`;
       const byStatus = await db
         .select({ status: commandLog.status, count: sql<number>`count(*)::int` })
         .from(commandLog)
-        .where(gte(commandLog.createdAt, since))
+        .where(and(inWindow, notIntent))
         .groupBy(commandLog.status);
       const byTrigger = await db
         .select({ triggerKind: commandLog.triggerKind, count: sql<number>`count(*)::int` })
         .from(commandLog)
-        .where(gte(commandLog.createdAt, since))
+        .where(and(inWindow, notIntent))
         .groupBy(commandLog.triggerKind);
-      return { byStatus, byTrigger };
+      const [intentRow] = await db
+        .select({
+          total: sql<number>`count(*)::int`,
+          open: sql<number>`(count(*) filter (where not exists (
+            select 1 from command_log r where r."ackValue" ->> 'intentId' = "command_log"."id"::text
+          )))::int`,
+        })
+        .from(commandLog)
+        .where(and(inWindow, isIntent));
+      return { byStatus, byTrigger, intents: { total: intentRow?.total ?? 0, open: intentRow?.open ?? 0 } };
     }),
 
   /**

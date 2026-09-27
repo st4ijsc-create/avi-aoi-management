@@ -18,7 +18,7 @@
 
 import { licenseService } from './license-service';
 import { licenseGuard } from './license-guard';
-import { decideLicenseBatch, type LicenseState } from './licensePolicy'; // doc 33 F4 (SYNAPSE §4.3): never-stop-production
+import { decideLicenseBatch, readTrpcPath, type LicenseState } from './licensePolicy'; // doc 33 F4 (SYNAPSE §4.3): never-stop-production
 import { ENV } from '../_core/env';
 import type { Request, Response, NextFunction } from 'express';
 
@@ -121,7 +121,10 @@ const ALWAYS_ALLOWED_PROCEDURES = new Set([
  *   - readonly: block POST mutations (except always-allowed)
  *   - locked/no_license: block everything except always-allowed procedures
  */
-export function licenseEnforcementMiddleware() {
+export function licenseEnforcementMiddleware(opts: {
+  /** Doc 80 Đợt 1 Task 6: loại thật của thủ tục tRPC (POST-query do methodOverride ≠ ghi). */
+  procedureType?: (proc: string) => string | undefined;
+} = {}) {
   return (req: Request, res: Response, next: NextFunction) => {
     if (ENV.licenseBypass) return next();
     const state = licenseGuard.getState() as LicenseState;
@@ -131,8 +134,12 @@ export function licenseEnforcementMiddleware() {
       return next();
     }
 
-    // Extract procedure name(s) from tRPC URL (batch = comma-separated).
-    const procedures = req.path.replace(/^\//, '').split(',').filter(Boolean);
+    // Doc 80 Đợt 1 final wave (item 3) — đọc tên thủ tục ĐÚNG NHƯ tRPC 11 (đoạn cuối sau `/`, decode,
+    // tách `,` chỉ khi `?batch=1`), KHÔNG split cả đường thô: bản cũ xét `inspection.x/settings.upsert`
+    // như `inspection.*` (thiết yếu ⇒ qua) trong khi tRPC chạy `settings.upsert` dưới read-only.
+    // `req.url`/`req.path` ở đây đã bỏ tiền tố mount — cùng thứ adapter tRPC (mount cùng đường) nhìn thấy.
+    const isBatch = new URL(req.url, 'http://trpc.local').searchParams.get('batch') === '1';
+    const { procedures, suspicious } = readTrpcPath(req.path, isBatch);
     const method = req.method.toUpperCase();
 
     // doc 33 F4 (SYNAPSE §4.3 "không bao giờ dừng sản xuất vì license"):
@@ -145,6 +152,8 @@ export function licenseEnforcementMiddleware() {
       method,
       state,
       alwaysAllowed: (proc) => ALWAYS_ALLOWED_PROCEDURES.has(proc),
+      procedureType: opts.procedureType,
+      suspicious, // đường thô đáng ngờ ⇒ xét như ghi (không nới POST-query)
     });
     if (decision.allow) return next();
 

@@ -42,6 +42,43 @@ export function laLoopback(req: Request): boolean {
   return ip === "127.0.0.1" || ip === "::1" || ip === "localhost";
 }
 
+/**
+ * Tiêu đề mà một reverse proxy gắn vào — có mặt mà app KHÔNG cấu hình `trust proxy` ⇒ nguồn thật
+ * không rõ. Fix round 1 mục 5: MỌI `x-forwarded-*` (Proto/Host/Port/… chứ không chỉ For), cộng
+ * `forwarded` (RFC 7239) và `x-real-ip` — một proxy chỉ gắn `X-Forwarded-Proto` vẫn là một proxy.
+ */
+const laTieuDeChuyenTiep = (k: string): boolean =>
+  k.startsWith("x-forwarded-") || k === "forwarded" || k === "x-real-ip";
+
+/**
+ * doc 81 Đợt 1B Task 11 — biến thể **NGHIÊM** của `laLoopback` cho bề mặt metrics
+ * (`GET /metrics`, `GET /api/observability/metrics`) khi `METRICS_TOKEN` KHÔNG đặt.
+ *
+ * App KHÔNG đặt `trust proxy` ở đâu cả (đã grep `server/`), nên:
+ *   • chưa cấu hình `trust proxy` ⇒ đọc `req.socket.remoteAddress` (KHÔNG BAO GIỜ tin
+ *     `X-Forwarded-For`), và nếu request MANG tiêu đề chuyển tiếp thì trả **false**: một reverse
+ *     proxy cùng máy (nginx → 127.0.0.1) làm MỌI khách từ xa trông như loopback — Prometheus
+ *     scrape thẳng không gửi XFF, nên đường hợp lệ không mất gì;
+ *   • đã cấu hình `trust proxy` ⇒ `req.ip` (Express tự tách XFF theo đúng cấu hình ấy).
+ * Chỉ `127.0.0.1` / `::1` (kể cả dạng `::ffff:127.0.0.1`); chuỗi `localhost` cố ý KHÔNG nhận (remoteAddress luôn là IP).
+ * `laLoopback` gốc giữ NGUYÊN cho
+ * `POST /api/ai/local-kb/feedback` (ngoài phạm vi T11).
+ */
+export function laLoopbackNghiem(req: Request): boolean {
+  const tp = (req as { app?: { get?: (k: string) => unknown } }).app?.get?.("trust proxy");
+  const coTrustProxy = tp !== undefined && tp !== null && tp !== false && tp !== 0 && tp !== "false";
+  let raw: string;
+  if (coTrustProxy) {
+    raw = req.ip || "";
+  } else {
+    const h = (req.headers ?? {}) as Record<string, unknown>;
+    if (Object.keys(h).some((k) => laTieuDeChuyenTiep(k.toLowerCase()) && h[k] !== undefined)) return false;
+    raw = req.socket?.remoteAddress || "";
+  }
+  const ip = raw.trim().replace(/^::ffff:/i, "");
+  return ip === "127.0.0.1" || ip === "::1";
+}
+
 /** Phân giải phiên trình duyệt và đòi một **vai đặc quyền**. Fail-safe: mọi lỗi ⇒ từ chối. */
 export async function doiVaiDacQuyen(req: Request): Promise<KetQuaXacThuc> {
   try {

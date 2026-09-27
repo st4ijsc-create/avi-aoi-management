@@ -12,7 +12,10 @@ const deps = vi.hoisted(() => ({
   allocateTask: vi.fn(async (_id: number) => ({ ok: true, enabled: true, assignedDeviceId: 9 })),
   routeAlert: vi.fn(async () => ({ alertType: "PATTERN_ANOMALY", targets: [], consolidated: false, escalationLevel: "L1" })),
   publish: vi.fn(),
+  // doc 80 Đợt 1 Task 9 fix round 1 — watcher QT-3 giải gate qua resolveQtGate (import động).
+  resolveQtGate: vi.fn(async (..._a: unknown[]) => ({ ok: true, runId: 0, status: "completed", notes: [] })),
 }));
+vi.mock("./templates/qtRunner", () => ({ resolveQtGate: deps.resolveQtGate }));
 vi.mock("../../db/bom", () => ({ listFeedersBelowReorder: deps.listFeedersBelowReorder }));
 vi.mock("../fleet/taskAllocator", () => ({ allocateTask: deps.allocateTask }));
 vi.mock("../aiSmartAlertRouter", () => ({ routeAlert: deps.routeAlert }));
@@ -120,6 +123,7 @@ beforeEach(() => {
   deps.allocateTask.mockReset().mockResolvedValue({ ok: true, enabled: true, assignedDeviceId: 9 });
   deps.routeAlert.mockReset().mockResolvedValue({ alertType: "PATTERN_ANOMALY", targets: [], consolidated: false, escalationLevel: "L1" });
   deps.publish.mockReset();
+  deps.resolveQtGate.mockClear();
   _resetMaterialReplenishmentForTests();
   delete process.env.MATERIAL_REPLENISH_ENABLED;
 });
@@ -242,6 +246,18 @@ describe("sweepMaterialReplenishmentOnce — nguồn (a) feeder + (b) Andon + de
     const s2 = await sweepMaterialReplenishmentOnce();
     expect(s2.delivered).toBe(0); // đã thông báo — không lặp
     expect(deps.publish).not.toHaveBeenCalled();
+  });
+
+  it("doc 80 Đợt 1 Task 9: task gắn run QT-3 hoàn tất ⇒ resolveQtGate GHIM gate 'qt3-await-delivery' (không giải gate nào khác)", async () => {
+    await ensureTransportTask({ machineId: 5, componentCode: "R-0402-10K", qtRunId: 77 });
+    store.tasks[0].status = "completed";
+    store.tasks[0].updatedAt = new Date();
+    await sweepMaterialReplenishmentOnce();
+    expect(deps.resolveQtGate).toHaveBeenCalledTimes(1);
+    expect(deps.resolveQtGate).toHaveBeenCalledWith(
+      77,
+      expect.objectContaining({ approved: true, expectedStepId: "qt3-await-delivery" }),
+    );
   });
 });
 

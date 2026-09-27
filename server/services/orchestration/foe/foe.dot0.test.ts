@@ -385,6 +385,9 @@ describe("ORC-06 — workflow draft phải qua deploy mới chạy", () => {
     ]);
     const res = await startRun("dup-copy", {}, ENGINEER);
     expect(res.ok).toBe(false);
+    // doc 80 Đợt 1 Task 11 — the client renders a TRANSLATED toast for this refusal instead of
+    // `res.message` (English) verbatim; it needs the workflow's own status to do that.
+    expect(res.workflowStatus).toBe("draft");
     expect(runRows()).toHaveLength(0);
     expect(dispatched()).toEqual([]);
 

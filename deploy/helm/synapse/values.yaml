@@ -91,9 +91,12 @@ resources:
     cpu: "2"
     memory: 2Gi
 
-# Probes against the REAL endpoint: GET /health (200 when DB up, 503 degraded).
-# readiness gates traffic strictly; liveness is lenient (a DB blip must not restart
-# the pod); startup covers slow first boot. All three hit the same real endpoint.
+# Probes against REAL endpoints (doc 81 Đợt 1B Task 11):
+#   GET /health — LIVENESS: 200 whenever the process answers; body carries the DB state from
+#                 a real `SELECT 1` (≤ 5 s old): {"status":"ok","db":"connected"} or
+#                 {"status":"degraded",...}. Never 503 on a DB blip ⇒ no pod restart.
+#   GET /readyz — READINESS: real `SELECT 1` (1500 ms timeout) ⇒ 200, else 503 {"db":"down"}.
+# readiness gates traffic strictly; liveness is lenient; startup covers slow first boot.
 probes:
   liveness:
     enabled: true
@@ -104,7 +107,7 @@ probes:
     failureThreshold: 6
   readiness:
     enabled: true
-    path: /health
+    path: /readyz
     initialDelaySeconds: 10
     periodSeconds: 10
     timeoutSeconds: 5

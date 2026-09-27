@@ -18,6 +18,8 @@ import { PendingReviewStrip } from "@/components/PendingReviewStrip";
 import { buildBreadcrumbs } from "@/lib/breadcrumbs";
 import { getNavItemByHref } from "@/lib/navigation";
 import { usePermissions } from "@/_core/hooks/usePermissions";
+import { trpc } from "@/lib/trpc";
+import { cn } from "@/lib/utils";
 import {
   Code2,
   GitBranch,
@@ -38,6 +40,7 @@ import {
   GitMerge,
   Lock,
   Eye,
+  AlertTriangle,
   type LucideIcon,
 } from "lucide-react";
 
@@ -111,6 +114,77 @@ const GROUPS: HubGroup[] = [
 /** Perm coi là "điều khiển" — tile cần quyền này để làm việc, không chỉ để xem. */
 const CONTROL_PERMS = new Set(["machine_control", "interlock"]);
 
+/**
+ * Doc 80 Đợt 1 Task 2 (ILK-06) — một cờ tư thế: chấm màu + nhãn + BẬT/TẮT. `warn`
+ * tô vàng khi cờ này (dù bật hay tắt) là một phần của tình huống rủi ro (ILK-06:
+ * ghi lệnh thật BẬT trong khi engine interlock TẮT) — không suy diễn tốt/xấu từ
+ * riêng giá trị BẬT/TẮT của MỘT cờ.
+ */
+function PostureFlag({ label, on, warn }: { label: string; on: boolean; warn?: boolean }) {
+  const { t } = useTranslation();
+  return (
+    <span className="inline-flex items-center gap-1.5">
+      <span
+        className={cn("h-2 w-2 rounded-full", warn ? "bg-warning" : on ? "bg-success" : "bg-muted-foreground/40")}
+        aria-hidden="true"
+      />
+      <span className="text-muted-foreground">{label}</span>
+      <span className={cn("font-semibold", warn ? "text-warning" : "text-foreground")}>
+        {on ? t("oversight.posture.on", "ON") : t("oversight.posture.off", "OFF")}
+      </span>
+    </span>
+  );
+}
+
+/**
+ * Doc 80 Phụ lục D §6/§7.1 (ILK-06) — dải "Tư thế an toàn": trạng thái các cờ ghi
+ * lệnh thật (OT/robot/nạp chương trình) + engine interlock, và độ phủ interlock
+ * (số rule đang bật CÓ ĐÍCH). Nguồn: trpc.oversight.posture (READ-ONLY, đọc cờ ở
+ * SERVER — không lộ tên biến `.env` ra client). Khi ghi lệnh thật BẬT mà engine
+ * interlock TẮT ⇒ cảnh báo VÀNG rõ ràng (interlock không tự động chặn được gì).
+ */
+function SafetyPostureStrip() {
+  const { t } = useTranslation();
+  const query = trpc.oversight.posture.useQuery(undefined, { staleTime: 30_000 });
+  const data = query.data;
+
+  return (
+    <div className="rounded-xl border bg-card p-4 space-y-2">
+      <div className="flex flex-wrap items-center gap-x-4 gap-y-1.5 text-sm">
+        <span className="font-semibold uppercase tracking-wide text-muted-foreground text-xs">
+          {t("oversight.posture.title", "Safety posture")}
+        </span>
+        {query.isLoading && <span className="text-muted-foreground">{t("common.loading", "Đang tải…")}</span>}
+        {data != null && (
+          <>
+            <PostureFlag label={t("oversight.posture.otWrites", "Real OT writes")} on={data.otControlEnabled} warn={data.writesOnEngineOff && data.otControlEnabled} />
+            <PostureFlag label={t("oversight.posture.robotWrites", "Real robot writes")} on={data.robotControlEnabled} warn={data.writesOnEngineOff && data.robotControlEnabled} />
+            <PostureFlag label={t("oversight.posture.dpcDeploy", "Program deploy")} on={data.dpcDeployEnabled} />
+            <PostureFlag label={t("oversight.posture.interlockEngine", "Interlock engine")} on={data.interlockEngineEnabled} warn={data.writesOnEngineOff} />
+            <PostureFlag label={t("oversight.posture.interlockAutoBlock", "Interlock auto-block")} on={data.interlockAutoBlockEnabled} />
+            <span className="text-muted-foreground">
+              {data.interlockCoverageDegraded
+                ? t("oversight.posture.coverageUnavailable", "Rule coverage unavailable")
+                : t("oversight.posture.ruleCoverage", "Rules enabled with a target: {{count}}", { count: data.interlockRulesEnabledWithTarget })}
+            </span>
+          </>
+        )}
+      </div>
+      {data?.writesOnEngineOff && (
+        <div className="flex items-start gap-2 rounded-lg border border-warning/40 bg-warning/10 p-2 text-sm text-muted-foreground">
+          <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-warning" aria-hidden="true" />
+          <span>
+            {t(
+              "oversight.posture.writesOnEngineOffWarning",
+              "Real device writes are ON while the interlock engine is OFF — violations will not be auto-blocked.",
+            )}
+          </span>
+        </div>
+      )}
+    </div>
+  );
+}
+
 export default function EngineeringHub() {
   const { t } = useTranslation();
   const { hasPermission } = usePermissions();
@@ -165,6 +239,9 @@ export default function EngineeringHub() {
             )}
           </p>
         </div>
+
+        {/* Doc 80 Đợt 1 Task 2 (ILK-06) — dải "Tư thế an toàn". */}
+        <SafetyPostureStrip />
 
         {/* U5 (doc 26 §2.3) — dải "Đang chờ duyệt & cảnh báo" gộp toàn module. */}
         <PendingReviewStrip />

@@ -97,8 +97,32 @@ const SERVER = resolve(dirname(fileURLToPath(import.meta.url)), "..");
  *   ⚠ Đây là **thu hẹp phép đo rồi SIẾT ngân sách xuống đúng số thật mới (476)** — không phải
  *     nới trần. Ngày nào một tệp sản phẩm import lại một trong chín module ấy, số đếm tăng
  *     lại và cổng ĐỎ — đúng như nó phải thế.
+ *
+ * 476 → **466** (2026-09-27, doc 81 Đợt 1B final wave item 4): ĐO trên HEAD `f1910fc4f` ra **481**
+ *   (cổng ĐỎ: Đợt 1B đã thêm 13 chỗ ném thô ở `ot/drivers/opcuaSecurity` ×7 · `opcuaDriver` ×2 ·
+ *   `opcuaAddress` ×1 · `ot/connectionSupervisor` ×1 · `robot/drivers/mitsubishiRobotDriver` ×1 ·
+ *   `robot/ursim/simTargetRegistry` ×1 — chỗ cuối còn thuộc họ "DB không sẵn sàng", bất biến 0).
+ *   Trả **15** chỗ theo đúng luật (a)+(b) ở trên — KHÔNG đẻ mã dùng-một-lần, KHÔNG mất thông tin:
+ *     · 8 lỗi cấu hình bảo mật OPC UA → `OpcuaConfigError` (reasonCode; deviceAdapterRouter bọc
+ *       thành appError INVALID_VALUE/opcuaSecurityInvalid cho người dùng, driver ghi lastError);
+ *     · 2 lỗi về một node (nodeId sai định dạng / không đọc được DataType) → `OpcuaNodeError`
+ *       (driver bắt, thành lý do "bad"/`error` của đúng tag);
+ *     · 2 lỗi nội bộ supervisor (thiếu endpoint / connect trước còn treo) → `ConnectionSupervisorError`;
+ *     · 2 trả lời `Qe…` của MELFA (cả nhánh OPEN khi nối lại, có sẵn từ trước) → `MelfaReplyError`
+ *       (command + errorNo; message nguyên văn);
+ *     · 1 "DB unavailable" → `DbUnavailableError` (đúng lớp của họ đã đóng, mang appCode).
+ *   Message MỌI chỗ giữ nguyên văn (test khớp regex, kỹ sư đọc). 481 − 15 = **466**, không dư một đơn vị.
+ *
+ * 466 → **464** (2026-09-27, doc 80 Đợt 1 Task 5 / WS-01): ĐO trên cây làm việc sau vá ra **464**.
+ *   Trả **2** chỗ, cả hai ở `services/programming/programmingService.ts` (HEAD `8d51dc150`: 3 chỗ
+ *   `throw new Error` → nay 1), đúng luật (a) — lỗi nghiệp vụ người dùng GẶP qua tRPC nên phải có mã:
+ *     · `reviewArtifact` tự duyệt phiên bản → `appError FORBIDDEN PERMISSION_DENIED
+ *       {action:"selfApproveProgramVersion"}` (trước: Error trần ⇒ 500);
+ *     · `buildArtifact` phiên bản chưa duyệt → `appError PRECONDITION_FAILED OPERATION_FAILED
+ *       {operation:"buildArtifact", reason:"versionNotApproved"}` (trước: 500).
+ *   Khoá mới có đủ vi/en/zh. Message giữ nguyên văn. Không tệp nào khác đổi số. 466 − 2 = **464**.
  */
-const ALLOWED_RAW_THROWS_OUTSIDE_ROUTERS = 476;
+const ALLOWED_RAW_THROWS_OUTSIDE_ROUTERS = 464;
 
 /**
  * Họ "DB không sẵn sàng": `407 → 83 → 1 → **0**` — nay là BẤT BIẾN, không phải ngân sách.

@@ -30,7 +30,11 @@ function matches(row: Row, pred: any): boolean {
   return true;
 }
 
+// doc 80 Đợt 1 Task 9 fix round 1 — the rollback gate reads recipe_load_log (replacement /
+// deliberate-archive evidence); this fake keeps no genealogy ⇒ always empty.
+const loadLog: Row[] = [];
 function tableArr(t: any): Row[] {
+  if (t.__table === "recipe_load_log") return loadLog;
   return t.__table === "machine_recipes" ? recipes : deployments;
 }
 
@@ -113,6 +117,12 @@ vi.mock("../../drizzle/schema", () => ({
   recipeDeployments: {
     __table: "recipe_deployments",
     id: { __name: "id" }, machineId: { __name: "machineId" }, deployedAt: { __name: "deployedAt" },
+    previousRecipeId: { __name: "previousRecipeId" },
+  },
+  recipeLoadLog: {
+    __table: "recipe_load_log",
+    recipeId: { __name: "recipeId" }, fromRecipeId: { __name: "fromRecipeId" }, action: { __name: "action" },
+    createdAt: { __name: "createdAt" },
   },
   users: { __table: "users", id: { __name: "id" }, name: { __name: "name" } },
 }));
@@ -153,12 +163,12 @@ describe("machineRecipe", () => {
     await approveRecipe({ recipeId: v2.id, approvedBy: 9 });
 
     // Deploy v1 → active.
-    const d1 = await deployRecipe({ recipeId: v1.id, machineId: 5, deployedBy: 1 });
+    const d1 = await deployRecipe({ recipeId: v1.id, machineId: 5, deployedBy: 1 }, "strict");
     expect(d1.status).toBe("deployed");
     expect((await getActiveRecipe({ code: "R1" }))!.id).toBe(v1.id);
 
     // Deploy v2 → v2 active, v1 archived, previousRecipeId = v1.
-    const d2 = await deployRecipe({ recipeId: v2.id, machineId: 5, deployedBy: 1 });
+    const d2 = await deployRecipe({ recipeId: v2.id, machineId: 5, deployedBy: 1 }, "strict");
     expect(d2.previousRecipeId).toBe(v1.id);
     expect((await getActiveRecipe({ code: "R1" }))!.id).toBe(v2.id);
     expect(recipes.find((r) => r.id === v1.id)!.status).toBe("archived");
@@ -198,7 +208,7 @@ describe("machineRecipe — atomic promote (W2-6)", () => {
     const v1 = await createRecipe({ code: "R1", name: "v1", payload: { s: 1 } });
     await approveRecipe({ recipeId: v1.id, approvedBy: 9 }); // W2-9 — approve trước deploy
     txCount = 0;
-    await deployRecipe({ recipeId: v1.id, machineId: 5, deployedBy: 1 });
+    await deployRecipe({ recipeId: v1.id, machineId: 5, deployedBy: 1 }, "strict");
     expect(txCount).toBe(1); // wrapped in exactly one transaction
   });
 
@@ -211,8 +221,8 @@ describe("machineRecipe — atomic promote (W2-6)", () => {
     // Fire both deploys "at once" — the serialized transaction (models the row lock)
     // orders them, so they can NEVER both create an active version.
     await Promise.all([
-      deployRecipe({ recipeId: v1.id, machineId: 5, deployedBy: 1 }),
-      deployRecipe({ recipeId: v2.id, machineId: 5, deployedBy: 1 }),
+      deployRecipe({ recipeId: v1.id, machineId: 5, deployedBy: 1 }, "strict"),
+      deployRecipe({ recipeId: v2.id, machineId: 5, deployedBy: 1 }, "strict"),
     ]);
 
     const active = recipes.filter((r) => r.code === "R1" && r.status === "active");
@@ -224,8 +234,8 @@ describe("machineRecipe — atomic promote (W2-6)", () => {
     const v2 = await createRecipe({ code: "R1", name: "v2", payload: { s: 2 } });
     await approveRecipe({ recipeId: v1.id, approvedBy: 9 });
     await approveRecipe({ recipeId: v2.id, approvedBy: 9 });
-    await deployRecipe({ recipeId: v1.id, machineId: 5, deployedBy: 1 });
-    const d2 = await deployRecipe({ recipeId: v2.id, machineId: 5, deployedBy: 1 });
+    await deployRecipe({ recipeId: v1.id, machineId: 5, deployedBy: 1 }, "strict");
+    const d2 = await deployRecipe({ recipeId: v2.id, machineId: 5, deployedBy: 1 }, "strict");
 
     txCount = 0;
     const d3 = await rollbackRecipe({ machineId: 5, deployedBy: 1 });
@@ -259,7 +269,16 @@ describe("machineRecipe — second-approver (W2-9)", () => {
 
   it("deployRecipe refuses an UN-approved recipe", async () => {
     const v1 = await createRecipe({ code: "R1", name: "v1", payload: { s: 1 }, createdBy: 7 });
-    await expect(deployRecipe({ recipeId: v1.id, machineId: 5, deployedBy: 1 })).rejects.toThrow(/trình duyệt/);
+    // doc 80 Đợt 1 Task 9 — "strict" (recipes.deploy): refusal from the ONE release gate
+    // (PRECONDITION_FAILED + reason recipeNotApproved).
+    const err = await deployRecipe({ recipeId: v1.id, machineId: 5, deployedBy: 1 }, "strict").catch((e) => e);
+    expect(err?.code).toBe("PRECONDITION_FAILED");
+    expect(err?.cause?.appParams?.reason).toBe("recipeNotApproved");
+    // R-T9a — "legacyApprovedOnly" (recipe sets / recordLoad / changeover): the PRE-TASK refusal,
+    // byte-identical (plain Error, same text).
+    await expect(deployRecipe({ recipeId: v1.id, machineId: 5, deployedBy: 1 }, "legacyApprovedOnly")).rejects.toThrow(
+      "Recipe chưa được trình duyệt (second-approver) — cần một người khác duyệt trước khi deploy.",
+    );
     // Không có active version nào được tạo.
     expect(recipes.filter((r) => r.status === "active")).toHaveLength(0);
   });
@@ -267,7 +286,7 @@ describe("machineRecipe — second-approver (W2-9)", () => {
   it("deployRecipe proceeds once approved by a different person", async () => {
     const v1 = await createRecipe({ code: "R1", name: "v1", payload: { s: 1 }, createdBy: 7 });
     await approveRecipe({ recipeId: v1.id, approvedBy: 8 });
-    const d1 = await deployRecipe({ recipeId: v1.id, machineId: 5, deployedBy: 1 });
+    const d1 = await deployRecipe({ recipeId: v1.id, machineId: 5, deployedBy: 1 }, "strict");
     expect(d1.status).toBe("deployed");
     expect((await getActiveRecipe({ code: "R1" }))!.id).toBe(v1.id);
   });

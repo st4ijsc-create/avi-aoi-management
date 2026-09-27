@@ -26,9 +26,9 @@
  * safety remain on the certified controller/PLC and are never authored or deployed here.
  * ════════════════════════════════════════════════════════════════════════════
  */
-import { createHash } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { connect, type Socket } from "node:net";
-import { mkdir, writeFile } from "node:fs/promises";
+import { mkdir, writeFile, rename, rm, readFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { safetyLintDiagnostics } from "../safetyLinter";
@@ -39,6 +39,7 @@ import type {
   Diagnostics,
   ProgDiagnostic,
   BuildResult,
+  CompileOptions,
   ProgSimScenario,
   ProgSimResult,
   ProgSimStep,
@@ -153,6 +154,26 @@ async function loadZauxBinding(): Promise<ZauxLoader | null> {
     return typeof fn === "function" ? (fn as ZauxLoader) : null;
   } catch {
     return null; // FFI shim / koffi not installed — deploy() stays an honest dry-run
+  }
+}
+
+/**
+ * doc 80 Đợt 1 Task 5 fix round 1 — GHI NGUYÊN TỬ tệp .bas. Đường dẫn đặt theo checksum nội dung ⇒
+ * mọi lượt biên dịch cùng nguồn ghi CÙNG tệp; `writeFile` thẳng CẮT tệp về 0 rồi mới ghi, nên một
+ * lượt ZAux_BasDown đang đọc có thể nhận tệp rỗng/dở. Ghi tệp tạm (tên riêng mỗi lượt) rồi
+ * `rename` đè: người đọc chỉ thấy bản cũ ĐẦY ĐỦ hoặc bản mới ĐẦY ĐỦ. Windows có thể từ chối
+ * `rename` đè một tệp đang được mở (EPERM/EBUSY) — khi ấy tệp đích, vì đặt tên theo checksum, đã
+ * mang ĐÚNG nội dung này nếu đọc lại khớp ⇒ dùng tiếp; không khớp ⇒ ném (compile báo không có tệp).
+ */
+async function writeBasAtomically(filePath: string, content: string): Promise<void> {
+  const tmp = `${filePath}.${process.pid}.${randomUUID()}.tmp`;
+  await writeFile(tmp, content, "utf8");
+  try {
+    await rename(tmp, filePath);
+  } catch (e) {
+    await rm(tmp, { force: true });
+    const existing = await readFile(filePath, "utf8").catch(() => null);
+    if (existing !== content) throw e;
   }
 }
 
@@ -275,12 +296,24 @@ export class ZmotionBasicAdapter implements ProgrammingAdapter {
     return { ok: !diagnostics.some((d) => d.severity === "error"), diagnostics };
   }
 
-  async compile(src: ProgramSource): Promise<BuildResult> {
+  async compile(src: ProgramSource, opts: CompileOptions = {}): Promise<BuildResult> {
     const diagnostics = lint(src);
     const ok = !diagnostics.some((d) => d.severity === "error");
     const parsed = parseBasic(src.content);
     const moves = parsed.filter((p) => p.op && MOTION_OPS.includes(p.op)).length;
     const checksum = createHash("sha256").update(src.content, "utf8").digest("hex").slice(0, 16);
+
+    // doc 80 Đợt 1 Task 5 fix round 1 — `persist:false` (bản xem trước deploy, một GET): KHÔNG ghi
+    // tệp nào. outputRef/checksum y hệt nên phép so checksum vẫn đúng; meta báo `persisted:false`.
+    if (opts.persist === false) {
+      return {
+        ok,
+        diagnostics,
+        outputRef: ok ? `zmc://build/${checksum}` : undefined,
+        bytes: src.content.length,
+        meta: { moves, ops: parsed.length, checksum, persisted: false },
+      };
+    }
 
     // T-2 (doc 38) — PERSIST the program to a real on-disk .bas so a (gated) deploy can hand
     // the file path to ZAux_BasDown. Written under ZMC_BUILD_DIR (or the OS temp dir). This is
@@ -292,7 +325,7 @@ export class ZmotionBasicAdapter implements ProgrammingAdapter {
         const dir = process.env.ZMC_BUILD_DIR || join(tmpdir(), "zmc-builds");
         await mkdir(dir, { recursive: true });
         filePath = join(dir, `${checksum}.bas`);
-        await writeFile(filePath, src.content, "utf8");
+        await writeBasAtomically(filePath, src.content);
       } catch {
         filePath = undefined; // honest — deploy() surfaces the missing file path
       }

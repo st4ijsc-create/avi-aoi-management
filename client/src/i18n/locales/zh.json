@@ -648,6 +648,8 @@
   "ecn": {
     "title": "工程变更",
     "subtitle": "ECN / ECO 变更请求流程——影响分析、审批（maker-checker）与生效日期。",
+    "filteringPending": "正在筛选：仅显示待审批的工程变更（已提交/审查中）",
+    "showAll": "显示全部",
     "noPermission": "您没有查看工程变更的权限。",
     "new": "新建变更",
     "newTitle": "新建工程变更",
@@ -2602,8 +2604,10 @@
     "gate": {
       "needPerm": "需要 {{perm}} 权限",
       "flagOff": "功能已关闭 — 请启用标志 {{flag}}",
+      "checkingStatus": "正在检查功能状态…",
       "selectFactory": "请先选择工厂"
     },
+    "featureStatusError": "无法检查该功能的状态 — 暂时视为不可用。",
     "loadError": "加载失败",
     "action": "操作",
     "beta": "测试版",
@@ -3809,6 +3813,7 @@
       "kbGoldenSet": "黄金问题集"
     },
     "operation": {
+      "clearRobotMotionLock": "解除机器人的运动锁定",
       "deployBuild": "部署程序构建",
       "requestDeployApproval": "提交部署审批请求",
       "approveDeployment": "审批程序部署",
@@ -3939,6 +3944,7 @@
       "rollbackAiModel": "回滚AI模型",
       "setLatestSoftwareVersion": "设置最新软件版本",
       "connectRos2Bridge": "连接ROS2桥接",
+      "resolveSimTarget": "解析URSim仿真目标",
       "loginWithPassword": "使用密码登录",
       "setupAdmin": "设置首个管理员账户",
       "deleteMqttClientProfile": "删除MQTT客户端配置文件",
@@ -3954,7 +3960,13 @@
       "taiAnhNenTang": "上传楼层背景图",
       "dungNhaXuong": "搭建厂房布局",
       "runKbEval": "运行语料评估",
-      "resumeOrchestrationRun": "继续编排运行"
+      "resumeOrchestrationRun": "继续编排运行",
+      "buildArtifact": "构建程序版本",
+      "requestVersionReview": "请求审核程序版本",
+      "reviewArtifact": "审核程序版本",
+      "approveInterlockRule": "批准联锁规则",
+      "releaseRecipeVersion": "发布配方版本",
+      "rollbackRecipeVersion": "回滚配方版本"
     },
     "field": {
       "changeReason": "变更原因",
@@ -3964,6 +3976,7 @@
       "datasetId": "数据集ID",
       "modelCardGovernanceFields": "模型卡治理字段",
       "annotationIdOrImageUrl": "标注ID或图片URL",
+      "opcuaSecurity": "OPC UA 安全设置",
       "idOrPackageId": "ID或包ID",
       "decommissionReason": "停用原因",
       "licenseKey": "许可证密钥",
@@ -4048,7 +4061,8 @@
       "mimeType": "图像格式",
       "goldenSet": "黄金问题集",
       "target": "目标",
-      "endpoint": "endpoint地址"
+      "endpoint": "endpoint地址",
+      "reviewReason": "驳回原因"
     },
     "feature": {
       "webIngest": "网页内容导入",
@@ -4165,7 +4179,12 @@
       "viewAiTimeSeries": "查看 AI 时间序列",
       "approveOrchestrationGate": "批准此编排关卡",
       "selfApproveOrchestrationGate": "批准由您本人启动的运行中的四眼关卡",
-      "selfApproveInterlockRule": "自行审批自己提交的联锁规则"
+      "selfApproveInterlockRule": "自行审批自己提交的联锁规则",
+      "sendTechmanScript": "向 Techman 机器人发送脚本",
+      "sendTechmanConsoleVerb": "向 Techman 机器人发送 start/reset/pause 控制台指令",
+      "sendUrScript": "向 UR 机器人发送任意 URScript",
+      "overrideUrHome": "通过指令设置 UR 机器人的 home 位置",
+      "selfApproveProgramVersion": "批准自己的程序版本"
     },
     "chartRenderError": "图表渲染错误",
     "cannotLoadDataDescription": "加载数据时出错，请重试。",
@@ -4176,10 +4195,20 @@
     "cannotDisplayChart": "无法显示图表",
     "analyticsRenderError": "分析render错误",
     "reason": {
+      "robotNotActive": "本进程的机器人网关尚未加载该机器人（已禁用或 ROBOT_GATEWAY_ENABLED 未开启），因此没有可解除的实时运动锁定。",
+      "opcuaSecurityInvalid": "securityMode/securityPolicy 无效或相互矛盾（例如 None 搭配 Basic256Sha256，或 SignAndEncrypt 搭配 None）。请使用 None/None，或 Sign/SignAndEncrypt 搭配 Basic256Sha256 等策略。",
+      "secretReentryRequired": "您更改了 {{field}}（已保存密钥的发送位置或保护方式），因此不会复用已保存的密码/密钥。请重新输入密码/密钥后再保存；目前尚未更改任何内容。",
+      "motionLockUnsupported": "该厂商的驱动每条指令使用一次性连接，没有运动锁定；无可解除内容。",
+      "motionLockChanged": "您确认期间运动锁定已发生变化（出现了新的连接丢失）。未解除任何内容；请重新读取机器人状态后再确认。",
       "deploymentNotAwaitingApproval": "该请求已不再处于待审批状态（已被他人审批/拒绝或正在处理）。请刷新列表查看当前状态。",
       "deployApprovalRecordMissing": "未找到与此请求关联的审批记录——无法审批；请重新提交部署请求。",
       "deployApprovalRecordInvalid": "审批记录已失效（已执行、已取消或已过期）——无法再次审批。",
       "rollbackTargetNotDeployed": "只能回滚已执行的部署；该部署已被拒绝、正在等待审批或仍在运行。",
+      "simTargetUnknown": "该仿真目标不在服务器已登记的列表中（目前只有由URSIM_HOST配置的\"default\"目标）。",
+      "simTargetIsRealDevice": "仿真目标地址与已登记的真实机器人或设备适配器相同——系统拒绝向真实设备发送上电、松开制动和脚本。请将URSIM_HOST指向运行URSim的机器。",
+      "simTargetUnresolvable": "无法将URSIM_HOST解析为IP地址——无法证明仿真目标不是真实设备，因此系统拒绝。",
+      "simTargetUnspecified": "URSIM_HOST 是（或解析为）未指定地址 0.0.0.0/::，操作系统会将其路由到回环地址——被检查的地址并非实际连接的地址，因此系统拒绝。请将URSIM_HOST设置为URSim机器的具体IP。",
+      "deviceHostUnresolvable": "有机器人或设备适配器以无法解析的主机名登记，因此无法证明URSIM_HOST不是该设备——系统拒绝（仅本地回环URSim例外）。",
       "noPriorDeploymentToRollBack": "同一设备/阶段上没有更早的成功部署可回滚。",
       "idempotencyKeyUnreadable": "幂等键已被使用但无法读回其记录——请发起新的尝试重试。",
       "owner-not-in-local-ledger": "此持有者不在应答进程的本地台账中——它可能由另一个进程持有（参见 state.ledger.foreign.holders）。请在真正持有它的那个进程上执行 vram.preempt。",
@@ -4228,7 +4257,20 @@
       "releasedProgramRequiresApproval": "该产品已有已发布的检验程序——阈值变更须通过审批队列（Threshold Approvals）。",
       "productLifecycleRequiresApproval": "该产品处于生命周期状态 '{{lifecycleStatus}}'——阈值变更须通过审批队列（Threshold Approvals）。",
       "evalAlreadyRunning": "已有一轮评估在运行——请等待其完成。",
-      "runAlreadyClaimed": "该运行已被他人批准、拒绝或停止 — 请刷新列表。"
+      "runAlreadyClaimed": "该运行已被他人批准、拒绝或停止 — 请刷新列表。",
+      "techmanScriptNotAllowlisted": "仅接受 Techman 白名单中的指令（ScriptExit()、StopAndClearBuffer()）；其他脚本一律拒绝，不会向机器人发送任何内容。",
+      "techmanConsoleVerbUnvalidated": "Techman 机器人的 start/reset/pause 尚未经过验证（FAT）：它们会发送 ScriptExit()，TMflow 将继续执行流程，机器人可能运动。指令已拒绝，不会向机器人发送任何内容。",
+      "urScriptForbidden": "控制台不接受发往 UR 机器人的任意 URScript；指令已拒绝，不会向机器人发送任何内容。",
+      "urHomeParamForbidden": "UR 机器人的 home 位置只能来自其已保存的配置，不能来自指令；指令已拒绝，不会向机器人发送任何内容。",
+      "versionNotApproved": "此版本尚未批准。须由作者以外的人（版本卡片上的\"批准\"按钮）批准后才能构建/部署。",
+      "versionReviewNotPending": "此版本已不再待审核（已批准或已驳回）。如需修改请保存新版本。",
+      "buildChecksumMismatch": "重新编译该版本源码与已存构建不一致 — 将下载的不是已构建/仿真的版本。请重新构建并仿真后再部署。尚未向设备写入任何内容。",
+      "interlockRuleChanged": "您打开页面后该规则已被修改——列表已重新加载。请查看新内容后再批准/启用。",
+      "runGateChanged": "该运行已不在您查看的步骤等待（该步骤已由他人决定）。请刷新以查看当前等待的步骤。",
+      "recipeNotApproved": "此配方版本尚未经第二人批准——不能部署、发布或回滚到该版本。",
+      "recipeArchived": "此配方版本已归档——请创建新版本，而不是将已归档版本投入生产。",
+      "recipeMachineTypeMismatch": "此配方适用的机型与目标设备不同——不能部署到该设备。",
+      "recipeRetired": "此版本是被有意归档的（并非仅被新版本替换），或没有任何被替换的记录——不能回滚到该版本。请创建新版本。"
     },
     "client": {
       "generic": "系统错误，请重试",
@@ -11574,7 +11616,8 @@
     "continueRunDesc": "运行将从中断处继续，并可能向设备发送真实指令。已完成的步骤将被跳过。",
     "continueRunConfirm": "继续运行",
     "rollbackImpact": "需要 OTP 验证码和原因；原因将记录在审计日志中。",
-    "runFail": "无法启动运行"
+    "runFail": "无法启动运行",
+    "runNotDeployed": "此工作流目前处于“{{status}}”状态 — 请先部署（Deploy），然后才能运行。"
   },
   "aiHub": {
     "subtitle": "AI驱动的检测智能功能",
@@ -12010,7 +12053,22 @@
       "INTERNAL": "助手遇到系统错误。请重试；如仍出现，请联系管理员。",
       "devDetail": "技术细节（管理员）"
     },
-    "safetyNotCertified": "与安全相关的程序——此解释不构成认证。须由授权安全工程师验证。"
+    "safetyNotCertified": "与安全相关的程序——此解释不构成认证。须由授权安全工程师验证。",
+    "stream": {
+      "cancel": "取消",
+      "cancelled": "已取消 — 助手已停止，AI 服务器已释放。",
+      "progress": "进度",
+      "notLicensed": "本系统的许可证不包含工程（Engineering）模块。",
+      "forbidden": "您无权使用编程助手。",
+      "streaming": "正在编写…",
+      "stage": {
+        "gate": "安全检查",
+        "retrieve": "查阅手册",
+        "generate": "生成结果",
+        "validate": "校验代码",
+        "repair": "自动修复（第 {{attempt}} 轮）"
+      }
+    }
   },
   "technicianCopilot": {
     "title": "技术副驾",
@@ -13109,6 +13167,8 @@
   },
   "recipes": {
     "title": "设备配方管理",
+    "filteringPending": "正在筛选：仅显示有需要关注版本的配方",
+    "showAll": "显示全部",
     "newVersion": "保存新版本",
     "newVersionDesc": "创建新的配方版本（草稿状态）。部署将激活某个版本。",
     "saveNewVersion": "保存新版本",
@@ -13335,10 +13395,13 @@
   },
   "interlockRules": {
     "title": "联锁规则管理",
+    "filteringPending": "正在筛选：仅显示未批准的规则",
+    "showAll": "显示全部",
     "subtitle": "配置 + 审批 + 启用/停用联锁规则。本页绝不向设备写入命令；写入通过已审批的 HITL/联锁流程。",
     "newRule": "新建规则",
     "editRule": "编辑规则",
     "ruleDialogDesc": "新规则在管理员审批并启用前始终为停用 + 未审批状态。",
+    "editApprovedWarning": "该规则已批准或当前已启用 — 保存后将停用该规则，需要重新审批。",
     "tabRules": "规则",
     "tabEvents": "事件",
     "rules": "规则",
@@ -14259,7 +14322,24 @@
     "openConsoleTip": "打开指令控制台以发出带闸门的指令（人工确认 + 试运行）",
     "controlTip": "为此机器人打开指令控制台（带闸门的指令）",
     "control": "控制",
-    "adminRequired": "只有管理员可以启用/停用设备或测试其连接"
+    "adminRequired": "只有管理员可以启用/停用设备或测试其连接",
+    "live": {
+      "linkLost": "连接丢失",
+      "connected": "已连接"
+    },
+    "motionLock": {
+      "roleRequired": "需要 admin/supervisor/engineer 角色以及设备控制权限（machine_control）",
+      "badge": "运动已锁定",
+      "tip": "连接丢失/指令结果未知后运动已锁定（{{reason}}，自 {{since}}）。只有机器人确认的停止指令或受控解除才能重新启用。",
+      "clear": "解除锁定",
+      "clearTitle": "解除 {{code}} 的运动锁定？",
+      "clearDesc": "锁定原因：{{reason}}（自 {{since}}）。解除前请在现场确认机器人已停止且区域安全。此操作连同您的原因写入审计日志；不会向机器人发送任何字节。",
+      "reasonLabel": "原因（必填，至少 3 个字符）",
+      "reasonPlaceholder": "例如：已现场检查，机器人静止，区域无人",
+      "confirm": "确认解除",
+      "cleared": "已解除 {{code}} 的运动锁定",
+      "notLocked": "机器人 {{code}} 未被运动锁定"
+    }
   },
   "controlPlane": {
     "title": "工厂控制平面",
@@ -14715,8 +14795,11 @@
     "createRequired": "编码和名称为必填项。",
     "createTitle": "新建配方版本（草稿）",
     "createVersion": "新建版本",
-    "flagOffBanner": "预览模式：设备集成已禁用（EQ_INTEG_ENABLED 处于关闭状态）。读取可用；操作（创建 / 发布 / 归档 / 回滚版本、记录加载）在启用该标志前被阻止。",
+    "checking": "正在检查…",
+    "unknown": "未知",
+    "flagOffBanner": "预览模式：设备集成已禁用。读取可用；操作（创建 / 发布 / 归档 / 回滚版本、记录加载）在启用前被阻止。",
     "flagOffToast": "设备集成已禁用（预览）。设置 EQ_INTEG_ENABLED=true 以执行操作。",
+    "flagStatusError": "无法检查设备集成是否已启用 — 在确认前，操作将被禁用。",
     "frameworkNoDevice": "框架 — 未连接设备",
     "frameworkNote": "下方卡片为集成框架。它们建模真实 FOCAS/Euromap 连接器会映射到统一设备模型的只读字段，但实时数据需要已连接的设备/连接器。在此之前值保持“—”，快照来源为“无”。",
     "historyEmpty": "无谱系事件。",
@@ -16085,6 +16168,11 @@
     "buildOk": "构建成功",
     "deployBtn": "部署构建",
     "deployFlag": "部署",
+    "deployOn": "开",
+    "deployOff": "关",
+    "deployChecking": "…",
+    "deployUnknown": "？",
+    "deployStatusError": "无法检查部署状态 — 在确认前，暂将所有部署视为仅仿真。",
     "modeCode": "代码",
     "modeLadder": "梯形图",
     "modeTeach": "示教/点动",
@@ -16095,7 +16183,7 @@
     "code": "代码",
     "dataType": "类型",
     "deploy": "部署（受控）",
-    "deployOffBanner": "DPC_DEPLOY_ENABLED 处于关闭状态 — 每次部署都记录为“已仿真”，不会写入设备。安全（急停/联锁）始终驻留在经认证的 PLC 上。",
+    "deployOffBanner": "真实部署当前处于关闭状态 — 每次部署都仅为仿真，不会写入设备。安全（急停/联锁）始终驻留在经认证的 PLC 上。",
     "deployReal": "已部署",
     "deployVerified": "已部署并已验证（回读一致）",
     "deployedUnverified": "已部署但未回读验证（设备缺失 / 不支持回读）",
@@ -16117,6 +16205,7 @@
     "noDeploys": "尚无部署",
     "noDiag": "无警告",
     "noProjects": "尚无项目",
+    "projectsLoadError": "无法加载项目列表。",
     "searchProjects": "按名称或编码搜索…",
     "allKinds": "所有类型",
     "noProjectMatch": "无匹配过滤条件的项目",
@@ -16207,11 +16296,172 @@
     "fleetPromoted": "金丝雀通过——已推广至整个设备群",
     "fleetCanaryOk": "金丝雀运行完成",
     "fleetHaltedShort": "已停止——金丝雀未通过",
+    "fleetNeedsRealCanaryShort": "已停止——需要真实 canary",
+    "fleetNeedsRealCanary": "灰度发布已停止：canary 仅为仿真（未写入设备），在推广将写入真实机器时不计为通过。需要一个真实的 canary（deployed/verified）。",
     "fleetPromotedShort": "已推广至整个设备群",
     "fleetCanaryOkShort": "金丝雀已运行",
     "rolledBack": "已回滚",
     "fleetMatrix": "设备 × 版本矩阵",
-    "fleetMatrixEmpty": "尚无设备上报版本"
+    "fleetMatrixEmpty": "尚无设备上报版本",
+    "deployReason": {
+      "techman_program_download_unsupported": "Techman（robot-tm）暂不支持下载程序——尚未实现 TMflow 程序下载指令，因此没有向机器人发送任何内容。"
+    },
+    "review": {
+      "title": "版本审核",
+      "status": {
+        "pending_review": "待审核",
+        "approved": "已批准",
+        "rejected": "已驳回"
+      },
+      "requested": "已请求审核",
+      "rejectedReason": "驳回原因",
+      "request": "请求审核",
+      "authorHint": "您是作者 — 必须由其他人审核此版本。",
+      "approve": "批准",
+      "reject": "驳回",
+      "rejectTitle": "驳回版本",
+      "rejectDesc": "作者将根据此原因修改并保存新版本。",
+      "rejectReason": "驳回原因（必填）",
+      "rejectConfirm": "驳回",
+      "buildLocked": "此版本尚未批准 — 需由作者以外的人批准后才能构建。",
+      "rejectedToast": "已驳回版本",
+      "approvedToast": "已批准版本",
+      "requestedToast": "已发送审核请求"
+    },
+    "deployPreview": {
+      "title": "部署预览（在要求 OTP 之前空运行所有关卡）",
+      "unavailable": "无法读取部署预览 — 尚不清楚本次部署会真实写入设备还是仅模拟。",
+      "gatesLabel": "部署关卡",
+      "atDeploy": "仅在部署时可知",
+      "verdict": {
+        "real": "将真实写入设备",
+        "simulated": "仅记录为模拟 — 不写入设备",
+        "blocked": "将被阻止 — 部署前请修复标记 ✗ 的关卡"
+      },
+      "gate": {
+        "permission": "权限",
+        "approver": "审批人",
+        "role": "角色",
+        "twoFactor": "双因素认证",
+        "signer": "签署人",
+        "versionReview": "版本审核",
+        "buildOk": "构建",
+        "deployFlag": "部署开关",
+        "signOff": "签核",
+        "segregationOfDuties": "职责分离",
+        "simulationGate": "仿真关卡",
+        "buildChecksum": "构建校验和",
+        "adapterPath": "设备下载路径",
+        "adapterEndpoint": "设备端点",
+        "adapterReachable": "设备可达性",
+        "adapterArtifact": "下载文件",
+        "adapterDriver": "下载驱动",
+        "otAuthorization": "HITL 授权（OT）",
+        "otAdapter": "OT 适配器",
+        "otTags": "OT 标签",
+        "otMode": "OT 控制模式",
+        "otBinding": "一次性 OT 绑定",
+        "irSimGate": "IR 仿真关卡",
+        "irHil": "HIL（URSim）",
+        "verifyAfterDownload": "下载后校验"
+      },
+      "reason": {
+        "permissionGranted": "拥有 machine_control 权限",
+        "permissionMissing": "缺少 machine_control（创建）权限",
+        "approverSignsInInbox": "第二人在审批收件箱用其本人会话签署（届时检查角色/2FA）",
+        "roleAllowed": "角色允许部署",
+        "roleNotAllowed": "仅 admin / supervisor / engineer 可部署",
+        "twoFactorNotSetUp": "该账户未启用 2FA，而本部署要求 2FA",
+        "stepUpOff": "不要求 OTP（step-up 已关闭）",
+        "stepUpBypassedInternalMode": "已跳过（内部模式）— 未启用 2FA 故不要求 OTP；跳过记录在审计日志中",
+        "otpRequired": "点击部署时将要求 6 位 OTP",
+        "approverRequired": "生产部署需选择审批人（四眼原则）",
+        "reviewNotRequired": "不要求（开关关闭）",
+        "versionApproved": "版本已批准",
+        "versionNotApproved": "版本未批准（{{reviewStatus}}）",
+        "buildOk": "构建成功",
+        "buildNotOk": "构建失败 — 无法部署",
+        "deployEnabled": "真实部署已开启（服务器开关）",
+        "deployDisabled": "真实部署已关闭 — 仅记录为模拟",
+        "signedOff": "已签核",
+        "noSignOff": "未签核 — 仅记录为模拟",
+        "sodNotApplicable": "不适用",
+        "selfSignOff": "生产签署人必须与请求人不同",
+        "distinctSigner": "签署人与请求人不同",
+        "simNotRequired": "不需要（无真实写入）",
+        "simRequired": "此构建尚未仿真 — 需要一次通过的仿真",
+        "simFailed": "最近一次仿真未通过",
+        "simPassed": "最近一次仿真通过",
+        "adapterNotImplemented": "尚无此类型的适配器",
+        "checksumMatches": "重新编译与已存构建一致",
+        "buildChecksumMismatch": "重新编译与已存构建不一致 — 将下载的不是已构建/仿真的版本",
+        "readBackAtDeploy": "从设备回读程序以校验",
+        "noReadBack": "适配器无法回读 — 记录为已部署而非已校验",
+        "stubNoDevicePath": "stub 适配器没有设备路径",
+        "techman_program_download_unsupported": "Techman 机器人尚不支持程序下载 — 不会向机器人发送任何内容",
+        "openplcNotConfigured": "未配置经验证的 OpenPLC 主机 — 无法下载 IEC 61131",
+        "zmcEndpointMissing": "服务器未配置 ZMC 控制器连接端点",
+        "zmcEndpointConfigured": "已配置 ZMC 端点",
+        "reachabilityAtDeploy": "部署时探测 TCP 可达性",
+        "zmcFileReady": "已生成编译的 .bas 文件",
+        "zmcNoFilePath": "没有可下载的 .bas 文件",
+        "zauxDllPathMissing": "服务器未配置 Zmotion 驱动库（zauxdll.dll）路径",
+        "koffiMissing": "服务器未安装 koffi（FFI）",
+        "zauxLoadAtDeploy": "部署时加载 zauxdll.dll",
+        "melsecNoAdapter": "项目未绑定 OT 适配器（设备）",
+        "melsecEmptyRecipe": "配方为空 — 无可写参数",
+        "melsecRecipeReady": "参数表就绪",
+        "otActionNotBound": "直接部署不带已确认的 HITL 审批 — OT 调度器将拒绝；请使用审批收件箱",
+        "otActionBound": "来自审批收件箱的真实 HITL 审批",
+        "otDbUnavailable": "数据库不可用",
+        "otAdapterDisabled": "OT 适配器不存在或已禁用",
+        "otTagNotFound": "未找到标签 {{tagKey}}（或已禁用）",
+        "otTagNotWritable": "标签 {{tagKey}} 不可写",
+        "otTagsWritable": "所有标签存在且可写",
+        "otAdapterOffline": "OT 驱动未连接",
+        "otAdapterOnline": "OT 驱动已连接",
+        "otControlOff": "真实 OT 控制已关闭 — 调度器仅模拟",
+        "otNotCommissioned": "适配器未完成调试验收 — 记录为模拟",
+        "otBindingMissing": "真实 OT 写入需要绑定到具体命令的一次性审批；程序部署不包含 — 调度器将拒绝",
+        "irNoDevicePath": "IR 适配器没有设备路径 — 记录为模拟",
+        "irSimGateFailed": "流程的运动学仿真关卡未通过",
+        "irSimGatePassed": "流程的运动学仿真关卡通过",
+        "hilRunsAtDeploy": "部署时在 URSim 上运行 HIL",
+        "adapterOutcomeAtDeploy": "结果由适配器在部署时决定",
+        "adapterNoDownloadPath": "适配器没有程序下载路径",
+        "zmcFileWrittenAtDeploy": "部署重新编译时（原子地）写入 .bas 文件 — 预览不写入任何内容",
+        "hilSimTargetUnavailable": "没有有效的 URSim 目标（模拟器主机未配置或指向真实设备）— HIL 无法运行，部署被阻止"
+      }
+    },
+    "stDiag": {
+      "stEmpty": "未找到任何 POU 或语句。",
+      "stUnexpectedChar": "意外的字符 '{{ch}}'。",
+      "stUnterminatedComment": "此处开始的注释 '{{open}}' 从未关闭。",
+      "stUnterminatedString": "字符串在本行未关闭。",
+      "stBadLiteral": "无效的 {{kind}} 字面量 '{{text}}'。",
+      "stExpected": "应为 '{{expected}}'，实际为 '{{found}}'。",
+      "stExpectedExpr": "应为表达式，实际为 '{{found}}'。",
+      "stExpectedIdent": "应为标识符，实际为 '{{found}}'。",
+      "stExpectedType": "应为数据类型，实际为 '{{found}}'。",
+      "stMissingSemicolon": "语句后缺少 ';'（实际为 '{{found}}'）。",
+      "stUnexpected": "意外的 '{{found}}'。",
+      "stNotClosed": "第 {{openLine}} 行开始的 {{block}} 未关闭：应为 {{expected}}，实际为 '{{found}}'。",
+      "stOutsidePou": "语句位于 PROGRAM / FUNCTION_BLOCK / FUNCTION 之外。",
+      "stUnsupported": "OpenPLC（IEC 61131-3）目标不支持 {{construct}}。",
+      "stUnchecked": "{{construct}} 块未经检查。",
+      "stUndeclared": "未声明的标识符 '{{name}}'。",
+      "stNoMember": "'{{type}}' 没有成员 '{{member}}'（有效：{{valid}}）。",
+      "stBadInput": "'{{type}}' 没有输入参数 '{{param}}'（有效：{{valid}}）。",
+      "stBadOutput": "'{{type}}' 没有输出参数 '{{param}}'（有效：{{valid}}）。",
+      "stNotCallable": "'{{name}}' 不是函数或功能块实例。",
+      "stFbTypeCall": "'{{name}}' 是功能块类型——请声明实例并使用该实例。",
+      "stUnknownType": "未知类型 '{{name}}'——既非标准类型也未在此声明；不检查其成员。",
+      "stDuplicate": "'{{name}}' 被重复声明。",
+      "stAssignConstant": "不能给常量 '{{name}}' 赋值。",
+      "stNoAssignment": "未找到赋值 (:=)。",
+      "stNestedComment": "注释内嵌套了注释 '{{open}}'——目标编译器不支持嵌套注释（它在第一个 '{{close}}' 处结束注释）。",
+      "stEdgeNotInput": "{{edge}} 只能用于 VAR_INPUT 声明（当前位于 {{section}}）。"
+    }
   },
   "engineeringHome": {
     "needControl": "需要控制访问权限",
@@ -16225,12 +16475,30 @@
     "allClear": "当前没有等待审批的事项。",
     "error": "无法加载待审查摘要。将自动重试。",
     "degraded": "不可用",
+    "sourcesUnavailable": "无法读取：{{sources}}",
     "category": {
       "recipes": "待审批的配方",
+      "recipeActiveUnapproved": "运行中但未批准的配方",
       "interlock": "待审批的联锁",
+      "interlockEventsOpen": "未处理的联锁事件",
+      "ecn": "待审批的工程变更",
+      "changeover": "待审批的换型",
       "orchestration": "等待确认的运行",
       "safety": "未审计的安全事件",
       "deadlocks": "机群死锁"
+    },
+    "posture": {
+      "title": "安全姿态",
+      "otWrites": "OT真实写入",
+      "robotWrites": "机器人真实写入",
+      "dpcDeploy": "设备程序部署",
+      "interlockEngine": "联锁引擎",
+      "interlockAutoBlock": "联锁自动阻断",
+      "on": "开",
+      "off": "关",
+      "ruleCoverage": "已启用且有目标的规则：{{count}}",
+      "coverageUnavailable": "无法读取规则覆盖率",
+      "writesOnEngineOffWarning": "联锁引擎已关闭，但设备真实写入已开启——违规将不会被自动阻断。"
     }
   },
   "eqStandards": {
@@ -16294,16 +16562,20 @@
     "extension": "扩展字段",
     "fail": "失败",
     "failingTypesTitle": "未通过合规的类型",
-    "flagOffBanner": "预览模式：设备治理已禁用（EQ_GOVERN_ENABLED 处于关闭状态）。读取可用；操作（注册类型 / 映射告警 / 提交 / 审查 / 发布）在启用该标志前被阻止。",
+    "flagOffBanner": "预览模式：设备治理已禁用。读取可用；操作（注册类型 / 映射告警 / 提交 / 审查 / 发布）在启用前被阻止。",
     "flagOffToast": "设备治理已禁用（预览）。设置 EQ_GOVERN_ENABLED=true 以执行操作。",
+    "flagStatusError": "无法检查设备治理是否已启用 — 在确认前，操作将被禁用。",
     "hierarchyTitle": "设备类型层次结构",
     "inheritance": "继承链",
     "kind": "类别",
     "kpi": {
       "chattering": "抖动",
+      "chatteringNotMeasuredTip": "统一告警 KPI 源（alarmKpi）尚未计算振荡告警。",
       "conformance": "合规通过",
       "flood": "洪泛窗口",
       "mapped": "已映射机器",
+      "notMeasured": "尚未测量",
+      "operators": "操作员（服务器）",
       "peakWindow": "峰值/10 分钟",
       "pendingCrs": "待处理变更请求",
       "perOpHour": "告警/操作/小时",
@@ -16413,7 +16685,18 @@
       "minor": "轻微",
       "major": "重大",
       "severe": "严重"
-    }
+    },
+    "kpiSourceNote": "与告警 KPI 仪表板及控制塔同源（Andon + AI 告警）。操作员：{{n}} —— 由服务器统计。",
+    "shelveNotEnforced": "尚未在告警路径上生效",
+    "complianceBasis": "已映射 = machines.device_type_key 指向已发布的设备类型：{{mapped}}/{{total}} 台设备（{{keyed}} 台有键，{{unpublished}} 台指向未发布类型）。一致性测试基于数据库中 {{types}} 个已发布设备类型。",
+    "basisWarning": {
+      "db_unavailable": "数据库不可用 —— 以上数字为 0，因为未能读取任何数据。",
+      "no_machines": "数据库中尚无设备。",
+      "no_published_types": "数据库中尚无已发布的设备类型。",
+      "no_bound_machines": "尚无设备绑定设备类型（所有设备的 machines.device_type_key 均为空）。",
+      "no_conformance_subjects": "没有映射设备类型的已发布设备类型，一致性测试无可检查对象。"
+    },
+    "shelvedNotEnforced": "已搁置（尚未生效）"
   },
   "field": {
     "batteryNull": "无电池遥测（AGV 电量来自 VDA5050；无驱动上报时为 null）。",
@@ -16536,8 +16819,9 @@
     "deviceIdPlaceholder": "例如 1",
     "deviceIdRequired": "请输入有效的设备 ID。",
     "filterStatus": "状态",
-    "flagOffBanner": "预览模式：机群编排已禁用（FLEET_ORCH_ENABLED 处于关闭状态）。读取可用；操作（分配 / 重新分配 / 取消 / 预留 / 释放）在启用该标志前被阻止。",
+    "flagOffBanner": "预览模式：机群编排已禁用。读取可用；操作（分配 / 重新分配 / 取消 / 预留 / 释放）在启用前被阻止。",
     "flagOffToast": "机群编排已禁用（预览）。设置 FLEET_ORCH_ENABLED=true 以执行操作。",
+    "flagStatusError": "无法检查机群编排是否已启用 — 在确认前，操作将被禁用。",
     "kpi": {
       "activeRes": "活跃预留",
       "assigned": "已分配",
@@ -16656,8 +16940,9 @@
       "reserved": "已预留"
     },
     "resourceCreated": "资源已创建",
-    "resourceFlagOffBanner": "预览模式：机群资源层已禁用（FLEET_RESOURCE_ENABLED 处于关闭状态）。读取可用；操作（创建 / 映射 / 预留 / 释放 / 扫描）在启用该标志前被阻止。",
+    "resourceFlagOffBanner": "预览模式：机群资源层已禁用。读取可用；操作（创建 / 映射 / 预留 / 释放 / 扫描）在启用前被阻止。",
     "resourceFlagOffToast": "机群资源层已禁用（预览）。设置 FLEET_RESOURCE_ENABLED=true 以执行操作。",
+    "resourceFlagStatusError": "无法检查机群资源层是否已启用 — 在确认前，操作将被禁用。",
     "resourceReleased": "资源已释放",
     "resourceReserved": "资源已占用",
     "resourceQueued": "资源被占用 — 占用已排队",
@@ -17111,7 +17396,8 @@
     "auditConfirmBody": "在记录上盖上人工 PDCA 审查戳（谁审查、何时）。参考性 — 不改变任何设备。",
     "auditConfirmTitle": "审计此安全事件？",
     "audited": "事件已审计",
-    "auditFlagOffBanner": "预览模式：安全审计已禁用（SAFETY_AUDIT_ENABLED 处于关闭状态）。读取可用；记录、审计与接近度采集在启用该标志前被阻止。",
+    "auditFlagOffBanner": "预览模式：安全审计已禁用。读取可用；记录、审计与接近度采集在启用前被阻止。",
+    "auditFlagStatusError": "无法检查安全审计是否已启用 — 在确认前，记录、审计与接近度采集将被禁用。",
     "col": {
       "audit": "审计",
       "detectedBy": "检测者",
@@ -17181,7 +17467,49 @@
     "trendEmpty": "此窗口内无未遂事件记录。",
     "trendTitle": "未遂事件趋势（PDCA，最近 30 天）",
     "unaudited": "待处理",
-    "viewOnly": "仅查看"
+    "viewOnly": "仅查看",
+    "source": {
+      "title": "来源",
+      "loading": "正在检查安全来源…",
+      "error": "无法读取安全来源 — 请视为未知。",
+      "plcLabel": "安全 PLC",
+      "plc": {
+        "sim": "⚠ SIM（预检依赖于模拟）",
+        "mixed": "⚠ 真实 + SIM/未映射（一个不读取任何安全标签的配置即可使预检通过）",
+        "real": "● 真实 PLC",
+        "adapterOff": "○ 关闭 — 无安全来源",
+        "noConfig": "○ 没有已启用的配置",
+        "readError": "⚠ 无法读取配置",
+        "simEmpty": "空脚本 — 始终 OK",
+        "simScripted": "按脚本 — OK/BLOCKED 由脚本决定，而非 PLC",
+        "realUnmapped": "⚠ 真实端点但未映射任何安全标签 — 预检 OK 基于未读取任何内容"
+      },
+      "hiddenConfigs": "不在您的范围内",
+      "ot": "OT 写入",
+      "robot": "机器人运动",
+      "verdict": {
+        "dry_run": "仅 dry-run（控制已关闭 — 不写入任何内容）",
+        "unguarded": "⚠ 预检已关闭 — 真实指令不受检查",
+        "blocked": "真实指令被阻止",
+        "sim_basis": "⚠ 基于模拟读数放行",
+        "sim_can_satisfy": "⚠ SIM 或未映射配置即可使检查通过",
+        "real_basis": "已对照真实安全 PLC 检查",
+        "unmapped_basis": "⚠ 未读取任何安全标签仍被放行"
+      },
+      "on": "● 开启",
+      "off": "○ 关闭",
+      "vision": "视觉",
+      "cameras": "个摄像头",
+      "zone": "区域软件",
+      "zones": "个区域",
+      "estop": "急停",
+      "estopRated": "● 安全等级认证",
+      "estopNotRated": "⚠ 开启 — 非安全等级",
+      "socket": "Socket",
+      "socketServerDown": "○ 服务器 socket 未运行",
+      "socketConnected": "● 已连接",
+      "socketDisconnected": "○ 已断开"
+    }
   },
   "sites": {
     "colBaseUrl": "基础 URL",
@@ -17556,8 +17884,9 @@
     "confirmAbort": "中止",
     "confirmClose": "关闭分配",
     "confirmed": "分配已确认",
-    "flagOffBanner": "预览模式：工作队伍已禁用（WORKFORCE_ENABLED 处于关闭状态）。读取可用；分配与协作操作在启用该标志前被阻止。",
+    "flagOffBanner": "预览模式：工作队伍已禁用。读取可用；分配与协作操作在启用前被阻止。",
     "flagOffToast": "工作队伍已禁用（预览）。设置 WORKFORCE_ENABLED=true 以执行操作。",
+    "flagStatusError": "无法检查工作队伍是否已启用 — 在确认前，分配与协作操作将被禁用。",
     "handshakeSignalled": "已发出握手信号",
     "humanId": "人工操作员 ID",
     "line": "产线",
@@ -17761,7 +18090,11 @@
     "confirmed": "已确认",
     "approved": "已批准",
     "readBack": "回读",
-    "error": "错误"
+    "error": "错误",
+    "ledger": "账本",
+    "ledgerIntent": "预写意图",
+    "ledgerResult": "结果",
+    "ledgerResultOf": "#{{id}} 的结果"
   },
   "license": {
     "title": "许可管理",
@@ -20865,6 +21198,31 @@
     "daiHopNhat": {
       "an": "隐藏",
       "tomTat": "{{so}} 项需知"
+    }
+  },
+  "provenance": {
+    "label": {
+      "SIM": "SIM",
+      "DEMO": "DEMO",
+      "SEED": "SEED"
+    },
+    "tip": "非真实数据 — 来源标记",
+    "summary": "{{count}}/{{total}} 行为演示 / 种子 / 模拟数据 — 并非来自真实设备",
+    "dispatch": {
+      "simulated": "DRY-RUN",
+      "mixed": "部分模拟",
+      "live": "真实",
+      "simulatedTip": "本次运行的指令仅为模拟（dry-run）— 未向设备写入任何内容（{{simulated}} 步）。",
+      "mixedTip": "{{simulated}} 步为模拟，{{live}} 步已发送至设备。",
+      "liveTip": "{{live}} 个指令步骤已发送至设备。",
+      "unconfirmed": "未确认",
+      "unconfirmedTip": "{{unconfirmed}} 个指令步骤失败或超时 — 可能已到达设备。"
+    },
+    "step": {
+      "simulated": "模拟",
+      "live": "已发送",
+      "unconfirmed": "未确认 — 可能已到达设备",
+      "rejected": "未发送"
     }
   }
 }

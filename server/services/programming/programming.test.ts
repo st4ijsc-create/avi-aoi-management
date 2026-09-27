@@ -163,13 +163,22 @@ vi.mock("../../../drizzle/schema", () => {
 });
 
 import { StubProgrammingAdapter, programmingRegistry } from "./programmingAdapter";
-import { buildArtifact, simulateBuild, deployBuild, validateArtifact } from "./programmingService";
+import {
+  buildArtifact,
+  simulateBuild,
+  deployBuild,
+  validateArtifact,
+  reviewArtifact,
+} from "./programmingService";
+import { readAppErrorMeta } from "../../_core/appError";
 
 beforeEach(() => {
   store.clear();
   seqs.clear();
   delete process.env.DPC_DEPLOY_ENABLED;
+  delete process.env.DPC_VERSION_REVIEW_ENABLED;
   programmingRegistry._clear();
+  vi.restoreAllMocks();
 });
 
 describe("StubProgrammingAdapter", () => {
@@ -376,5 +385,167 @@ describe("programmingService", () => {
       USER,
     );
     expect(dep.status).not.toBe("rejected");
+  });
+});
+
+// ════════════════════════════════════════════════════════════════════════════
+// doc 80 Đợt 1 Task 5 — WS-01 (duyệt phiên bản trong IDE) + WS-02 (deploy giữ meta).
+// ════════════════════════════════════════════════════════════════════════════
+
+/** Lỗi của một promise (hoặc null nếu nó KHÔNG ném). */
+async function loiCua(p: Promise<unknown>): Promise<any> {
+  return p.then(() => null, (e: unknown) => e);
+}
+
+function seedKind(kind: string, language: string, content: string, extra: Row = {}) {
+  rows("program_projects").push({ id: 1, code: "P1", kind, deviceId: null });
+  rows("program_artifacts").push({
+    id: 1, projectId: 1, branch: "main", version: 1, kind, language, content,
+    createdBy: 7, reviewStatus: "pending_review", ...extra,
+  });
+}
+
+const AUTHOR = { id: 7, role: "engineer", name: "Tac gia" };
+const REVIEWER = { id: 8, role: "supervisor", name: "Nguoi duyet" };
+
+describe("WS-01 — duyệt phiên bản (SoD + lý do từ chối + build bị khoá có mã)", () => {
+  it("SoD: tác giả tự duyệt phiên bản của mình ⇒ FORBIDDEN có mã PERMISSION_DENIED (không phải Error trần ⇒ 500), trạng thái KHÔNG đổi", async () => {
+    seedKind("stub", "basic", "A\nB");
+    const e = await loiCua(reviewArtifact(1, "approved", AUTHOR));
+    expect(e?.code).toBe("FORBIDDEN");
+    expect(readAppErrorMeta(e)).toEqual({ appCode: "PERMISSION_DENIED", appParams: { action: "selfApproveProgramVersion" } });
+    expect(rows("program_artifacts")[0].reviewStatus).toBe("pending_review");
+  });
+
+  it("Từ chối BẮT BUỘC lý do: trống ⇒ BAD_REQUEST FIELD_REQUIRED, trạng thái KHÔNG đổi", async () => {
+    seedKind("stub", "basic", "A\nB");
+    const e = await loiCua(reviewArtifact(1, "rejected", REVIEWER, "   "));
+    expect(e?.code).toBe("BAD_REQUEST");
+    expect(readAppErrorMeta(e)).toEqual({ appCode: "FIELD_REQUIRED", appParams: { field: "reviewReason" } });
+    expect(rows("program_artifacts")[0].reviewStatus).toBe("pending_review");
+  });
+
+  // Fix round 1 — ghi duyệt/yêu cầu/validate nay là UPDATE CÓ ĐIỀU KIỆN + gộp jsonb TRONG SQL; các
+  // ca ghi thành công + tranh chấp chạy trên Postgres THẬT: programmingReview.dot1.db.test.ts.
+
+  it("Build bị khoá khi pending_review (cờ BẬT) ⇒ PRECONDITION_FAILED mã versionNotApproved, KHÔNG tạo build", async () => {
+    process.env.DPC_VERSION_REVIEW_ENABLED = "true";
+    seedKind("stub", "basic", "A\nB");
+    const e = await loiCua(buildArtifact(1, AUTHOR));
+    expect(e?.code).toBe("PRECONDITION_FAILED");
+    expect(readAppErrorMeta(e)).toEqual({
+      appCode: "OPERATION_FAILED",
+      appParams: { operation: "buildArtifact", reason: "versionNotApproved" },
+    });
+    expect(rows("program_builds").length).toBe(0);
+    // Sau khi phiên bản được duyệt (ghi trực tiếp — đường duyệt thật đo ở *.dot1.db.test.ts) ⇒ build được.
+    rows("program_artifacts")[0].reviewStatus = "approved";
+    const b = await buildArtifact(1, AUTHOR);
+    expect(b.ok).toBe(true);
+  });
+
+  it("Cờ TẮT ⇒ build pending_review vẫn chạy như cũ (hành vi mặc định không đổi)", async () => {
+    seedKind("stub", "basic", "A\nB");
+    const b = await buildArtifact(1, AUTHOR);
+    expect(b.ok).toBe(true);
+  });
+});
+
+describe("WS-02 — deploy thật đưa adapter BuildResult CÓ meta (biên dịch lại từ artifact + kiểm checksum)", () => {
+  const ZMC_SRC = "MOVE(10)\nMOVE(20)\nPRINT 1";
+  const TM_SRC = "POINT P1 = (0,0,0,0,0,0)\nHOME\nMOVE P1\nWAIT t=100";
+
+  async function realDeploy(kind: string, key: string) {
+    process.env.DPC_DEPLOY_ENABLED = "true";
+    const b = await buildArtifact(1, AUTHOR);
+    expect(b.ok).toBe(true);
+    rows("program_sim_runs").push({ id: 99, buildId: b.id, ok: true }); // Simulation Gate ĐẠT
+    const spy = vi
+      .spyOn(programmingRegistry.getAdapter(kind as any), "deploy")
+      .mockResolvedValue({ ok: false, status: "failed", simulated: false, error: "spy" });
+    const dep = await deployBuild(
+      { buildId: b.id, stage: "staging", idempotencyKey: key, hitl: { actionId: "a", requestedBy: 7, confirmedBy: 7 } },
+      AUTHOR,
+    );
+    return { b, spy, dep };
+  }
+
+  it("zmotion-basic: adapter.deploy nhận meta có filePath (.bas) + moves — trước đây meta rỗng ⇒ luôn failed", async () => {
+    seedKind("zmotion-basic", "basic", ZMC_SRC);
+    const { spy } = await realDeploy("zmotion-basic", "idem-zmc-meta");
+    expect(spy).toHaveBeenCalledTimes(1);
+    const build = spy.mock.calls[0][0];
+    expect(typeof build.meta?.filePath).toBe("string");
+    expect(build.meta?.moves).toBe(2);
+    expect(build.outputRef).toMatch(/^zmc:\/\/build\//);
+  });
+
+  it("robot-tm: adapter.deploy nhận meta.stepList khác rỗng", async () => {
+    seedKind("robot-tm", "tmscript", TM_SRC);
+    const { spy } = await realDeploy("robot-tm", "idem-tm-meta");
+    expect(spy).toHaveBeenCalledTimes(1);
+    const build = spy.mock.calls[0][0];
+    expect(Array.isArray(build.meta?.stepList)).toBe(true);
+    expect((build.meta?.stepList as unknown[]).length).toBeGreaterThan(0);
+  });
+
+  it("checksum LỆCH (build đã lưu ≠ biên dịch lại) ⇒ PRECONDITION_FAILED có mã, adapter KHÔNG được gọi, dòng failed + not_written", async () => {
+    process.env.DPC_DEPLOY_ENABLED = "true";
+    seedKind("zmotion-basic", "basic", ZMC_SRC);
+    const b = await buildArtifact(1, AUTHOR);
+    rows("program_sim_runs").push({ id: 99, buildId: b.id, ok: true });
+    // Mô phỏng build đã lưu KHÔNG còn khớp nguồn (artifact bị sửa tại chỗ / build của nguồn khác).
+    rows("program_builds")[0].outputRef = "zmc://build/deadbeefdeadbeef";
+    const spy = vi.spyOn(programmingRegistry.getAdapter("zmotion-basic"), "deploy");
+    const e = await loiCua(
+      deployBuild(
+        { buildId: b.id, stage: "staging", idempotencyKey: "idem-zmc-mismatch", hitl: { actionId: "a", requestedBy: 7, confirmedBy: 7 } },
+        AUTHOR,
+      ),
+    );
+    expect(e?.code).toBe("PRECONDITION_FAILED");
+    expect(readAppErrorMeta(e)).toEqual({
+      appCode: "OPERATION_FAILED",
+      appParams: { operation: "deployBuild", reason: "buildChecksumMismatch" },
+    });
+    expect(spy).not.toHaveBeenCalled();
+    const dep = rows("program_deployments")[0];
+    expect(dep.status).toBe("failed");
+    // Chưa chạm thiết bị ⇒ KHÔNG được nói "có thể đã ghi" (outcome unknown).
+    expect(dep.simulated).toBe(true);
+    expect((dep.detailJson as any)?.outcome).toBe("not_written");
+  });
+
+  it("biên dịch lại NÉM ⇒ cùng lời từ chối có mã, adapter KHÔNG được gọi, dòng failed + not_written (không phải 'unknown')", async () => {
+    process.env.DPC_DEPLOY_ENABLED = "true";
+    seedKind("zmotion-basic", "basic", ZMC_SRC);
+    const b = await buildArtifact(1, AUTHOR);
+    rows("program_sim_runs").push({ id: 99, buildId: b.id, ok: true });
+    const adapter = programmingRegistry.getAdapter("zmotion-basic");
+    vi.spyOn(adapter, "compile").mockRejectedValue(new Error("toolchain crashed"));
+    const spy = vi.spyOn(adapter, "deploy");
+    const e = await loiCua(
+      deployBuild(
+        { buildId: b.id, stage: "staging", idempotencyKey: "idem-zmc-throw", hitl: { actionId: "a", requestedBy: 7, confirmedBy: 7 } },
+        AUTHOR,
+      ),
+    );
+    expect(e?.code).toBe("PRECONDITION_FAILED");
+    expect(String(e?.message)).toMatch(/toolchain crashed/);
+    expect(spy).not.toHaveBeenCalled();
+    const dep = rows("program_deployments")[0];
+    expect(dep.simulated).toBe(true);
+    expect((dep.detailJson as any)?.outcome).toBe("not_written");
+  });
+
+  it("đường mô phỏng (cờ TẮT) không biên dịch lại, không kiểm checksum — hành vi cũ giữ nguyên", async () => {
+    seedKind("zmotion-basic", "basic", ZMC_SRC);
+    const b = await buildArtifact(1, AUTHOR);
+    rows("program_builds")[0].outputRef = "zmc://build/deadbeefdeadbeef";
+    const dep = await deployBuild(
+      { buildId: b.id, stage: "staging", idempotencyKey: "idem-zmc-off", hitl: { actionId: "a", requestedBy: 7, confirmedBy: 7 } },
+      AUTHOR,
+    );
+    expect(dep.status).toBe("simulated");
   });
 });

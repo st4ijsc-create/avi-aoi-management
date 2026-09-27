@@ -70,6 +70,13 @@ import {
 import { toast } from "sonner";
 import { mapTrpcError } from "@/lib/trpcErrors";
 import { isFeatureDisabledError } from "@/lib/featureFlagError";
+import {
+  deriveFeatureStatus,
+  FeatureStatusGate,
+  isFeatureStatusUnsettled,
+} from "@/components/common/FeatureStatusGate";
+// doc 80 Đợt 1 Task 4 (X-01 · SAF-02) — nhãn nguồn dữ liệu + panel sức khoẻ nguồn an toàn.
+import { ProvenanceBadge, ProvenanceSummary } from "@/components/common/ProvenanceBadge";
 
 // ── Typesafe shapes inferred from the safetyRouter output ─────────────────────
 type RouterOutputs = inferRouterOutputs<AppRouter>;
@@ -78,6 +85,7 @@ type TrendBucket = RouterOutputs["safety"]["nearMissTrend"][number];
 type BoardStation = RouterOutputs["safety"]["currentBoard"][number];
 type Assignment = RouterOutputs["safety"]["listAssignments"][number];
 type Collaboration = RouterOutputs["safety"]["listCollaborations"][number];
+type SourceHealth = RouterOutputs["safety"]["sourceHealth"];
 
 // Wire shape of the live `safety:event` socket broadcast (server emitSafetyEvent).
 type SafetyLiveEvent = {
@@ -196,6 +204,8 @@ export default function SafetyWorkforce() {
   const [proximityOpen, setProximityOpen] = useState(false);
   // Live events received over the socket (newest first), kept separate from the feed.
   const [liveEvents, setLiveEvents] = useState<SafetyLiveEvent[]>([]);
+  // doc 80 Task 4 (SAF-02/SAF-07) — this browser's socket connection, shown in the source panel.
+  const [socketConnected, setSocketConnected] = useState(false);
 
   // Assignment dialog state
   const [assignOpen, setAssignOpen] = useState(false);
@@ -221,6 +231,8 @@ export default function SafetyWorkforce() {
     { enabled: canView },
   );
   const collabsQ = trpc.safety.listCollaborations.useQuery({ limit: 100 }, { enabled: canView });
+  // doc 80 Task 4 (SAF-02) — read-only source health; design §6.3 "panel reflects reality ≤5 s".
+  const sourceHealthQ = trpc.safety.sourceHealth.useQuery(undefined, { enabled: canView, refetchInterval: 5000 });
 
   const feed = (feedQ.data ?? []) as SafetyEvent[];
   const trend = (trendQ.data ?? []) as TrendBucket[];
@@ -228,9 +240,19 @@ export default function SafetyWorkforce() {
   const assignments = (assignmentsQ.data ?? []) as Assignment[];
   const collabs = (collabsQ.data ?? []) as Collaboration[];
 
-  // Flag state — honest preview banners. The router only exposes two flags here.
-  const safetyAuditEnabled = statusQ.data?.safetyAudit ?? true;
-  const workforceEnabled = statusQ.data?.workforce ?? true;
+  // Flag state — honest preview banners. Doc 80 Task 1 (PLT-02/G-07/X-07): pending/erroring
+  // status query is UNKNOWN, not "on" — no more `?? true` optimistic default. The router
+  // exposes two independent flags here (safetyAudit / workforce) off the SAME statusQ.
+  const safetyAuditStatus = deriveFeatureStatus(statusQ, (d: { safetyAudit?: boolean }) => d.safetyAudit);
+  const safetyAuditUnsettled = isFeatureStatusUnsettled(safetyAuditStatus);
+  const workforceStatus = deriveFeatureStatus(statusQ, (d: { workforce?: boolean }) => d.workforce);
+  const workforceUnsettled = isFeatureStatusUnsettled(workforceStatus);
+  const safetyControlReason = permReason
+    ?? (safetyAuditUnsettled ? t("common.gate.checkingStatus", "Checking feature status…") : undefined);
+  const safetyCanControl = canControl && !safetyAuditUnsettled;
+  const workforceControlReason = permReason
+    ?? (workforceUnsettled ? t("common.gate.checkingStatus", "Checking feature status…") : undefined);
+  const workforceCanControl = canControl && !workforceUnsettled;
 
   const refetchAll = () => {
     void utils.safety.status.invalidate();
@@ -239,13 +261,15 @@ export default function SafetyWorkforce() {
     void utils.safety.currentBoard.invalidate();
     void utils.safety.listAssignments.invalidate();
     void utils.safety.listCollaborations.invalidate();
+    void utils.safety.sourceHealth.invalidate();
   };
 
   // ── LIVE socket: listen to `safety:event` advisory broadcasts ────────────────
   useEffect(() => {
     if (!canView) return;
     const socket = getSharedSocket();
-    const join = () => socket.emit("subscribe", {});
+    const join = () => { setSocketConnected(true); socket.emit("subscribe", {}); };
+    const onDisconnect = () => setSocketConnected(false);
     const onSafety = (event: SafetyLiveEvent) => {
       setLiveEvents((prev) => [event, ...prev].slice(0, 50));
       // Pull the canonical row into the feed/KPIs too.
@@ -253,10 +277,12 @@ export default function SafetyWorkforce() {
       void utils.safety.nearMissTrend.invalidate();
     };
     socket.on("connect", join);
+    socket.on("disconnect", onDisconnect);
     socket.on("safety:event", onSafety);
     if (socket.connected) join();
     return () => {
       socket.off("connect", join);
+      socket.off("disconnect", onDisconnect);
       socket.off("safety:event", onSafety);
       releaseSharedSocket();
     };
@@ -398,29 +424,37 @@ export default function SafetyWorkforce() {
           </div>
         </div>
 
-        {/* ── Flag-off preview banners (calm, honest) ────────────────────────── */}
-        {!safetyAuditEnabled && (
-          <div className="flex items-start gap-2 rounded-md border border-amber-500/40 bg-amber-500/10 p-3 text-sm">
-            <Info className="mt-0.5 h-4 w-4 shrink-0 text-amber-600" />
-            <span>
-              {t(
-                "safety.auditFlagOffBanner",
-                "Preview mode: safety audit is disabled (SAFETY_AUDIT_ENABLED is off). Reads work; recording, auditing and proximity ingest are blocked until the flag is enabled.",
-              )}
-            </span>
-          </div>
-        )}
-        {!workforceEnabled && (
-          <div className="flex items-start gap-2 rounded-md border border-amber-500/40 bg-amber-500/10 p-3 text-sm">
-            <Info className="mt-0.5 h-4 w-4 shrink-0 text-amber-600" />
-            <span>
-              {t(
-                "workforce.flagOffBanner",
-                "Preview mode: workforce is disabled (WORKFORCE_ENABLED is off). Reads work; assignment and collaboration actions are blocked until the flag is enabled.",
-              )}
-            </span>
-          </div>
-        )}
+        {/* ── Flag status banners — honest 4-state (loading/off/on/error), doc 80 Task 1 ── */}
+        <FeatureStatusGate
+          status={safetyAuditStatus}
+          offMessage={t(
+            "safety.auditFlagOffBanner",
+            "Preview mode: safety audit is disabled. Reads work; recording, auditing and proximity ingest are blocked until it is enabled.",
+          )}
+          errorMessage={t(
+            "safety.auditFlagStatusError",
+            "Could not check whether safety audit is enabled — recording, auditing and proximity ingest are disabled until this is confirmed.",
+          )}
+        />
+        <FeatureStatusGate
+          status={workforceStatus}
+          offMessage={t(
+            "workforce.flagOffBanner",
+            "Preview mode: workforce is disabled. Reads work; assignment and collaboration actions are blocked until it is enabled.",
+          )}
+          errorMessage={t(
+            "workforce.flagStatusError",
+            "Could not check whether workforce is enabled — assignment and collaboration actions are disabled until this is confirmed.",
+          )}
+        />
+
+        {/* ── doc 80 Task 4 (SAF-02) — safety SOURCE panel (read-only, safety.sourceHealth) ── */}
+        <SafetySourcePanel
+          data={sourceHealthQ.data as SourceHealth | undefined}
+          isLoading={sourceHealthQ.isLoading}
+          isError={sourceHealthQ.isError}
+          socketConnected={socketConnected}
+        />
 
         {/* ── KPI strip ──────────────────────────────────────────────────────── */}
         <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
@@ -477,7 +511,7 @@ export default function SafetyWorkforce() {
                     <Badge variant="secondary" className="ml-1 text-xs">{liveEvents.length}</Badge>
                   )}
                 </CardTitle>
-                <Button size="sm" variant="outline" className="h-8" disabled={!canControl} title={permReason} onClick={() => setProximityOpen(true)}>
+                <Button size="sm" variant="outline" className="h-8" disabled={!safetyCanControl} title={safetyControlReason} onClick={() => setProximityOpen(true)}>
                   <ScanLine className="mr-1 h-4 w-4" />{t("safety.reportProximity", "Report proximity (TEST ONLY — no alert raised)")}
                 </Button>
               </CardHeader>
@@ -663,12 +697,13 @@ export default function SafetyWorkforce() {
                       ))}
                     </SelectContent>
                   </Select>
-                  <Button size="sm" variant="outline" className="h-8" disabled={!canControl} title={permReason} onClick={() => setAssignOpen(true)}>
+                  <Button size="sm" variant="outline" className="h-8" disabled={!workforceCanControl} title={workforceControlReason} onClick={() => setAssignOpen(true)}>
                     <UserPlus className="mr-1 h-4 w-4" />{t("workforce.assign", "Assign")}
                   </Button>
                 </div>
               </CardHeader>
               <CardContent className="p-0">
+                <ProvenanceSummary rows={assignments} className="mx-3 mb-2" />
                 <Table>
                   <TableHeader>
                     <TableRow>
@@ -691,7 +726,12 @@ export default function SafetyWorkforce() {
                       const terminal = a.status === "completed" || a.status === "cancelled";
                       return (
                         <TableRow key={a.id}>
-                          <TableCell className="text-xs"><span className="inline-flex items-center gap-1"><User className="h-3 w-3" />#{a.operatorId}</span></TableCell>
+                          <TableCell className="text-xs">
+                            <span className="inline-flex items-center gap-1.5">
+                              <span className="inline-flex items-center gap-1"><User className="h-3 w-3" />#{a.operatorId}</span>
+                              <ProvenanceBadge row={a} />
+                            </span>
+                          </TableCell>
                           <TableCell className="text-xs">
                             {a.lineId != null ? `L${a.lineId}` : "—"}{" / "}{a.stationId != null ? `S${a.stationId}` : "—"}
                           </TableCell>
@@ -734,7 +774,7 @@ export default function SafetyWorkforce() {
                   <Handshake className="h-4 w-4" />
                   {t("workforce.collabTitle", "Human↔robot handover sessions")}
                 </CardTitle>
-                <Button size="sm" variant="outline" className="h-8" disabled={!canControl} title={permReason} onClick={() => setStartCollabOpen(true)}>
+                <Button size="sm" variant="outline" className="h-8" disabled={!workforceCanControl} title={workforceControlReason} onClick={() => setStartCollabOpen(true)}>
                   <HandMetal className="mr-1 h-4 w-4" />{t("workforce.startCollab", "Start collaboration")}
                 </Button>
               </CardHeader>
@@ -925,6 +965,147 @@ export default function SafetyWorkforce() {
         </AlertDialogContent>
       </AlertDialog>
     </DashboardLayout>
+  );
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+// doc 80 Đợt 1 Task 4 (SAF-02) — SAFETY SOURCE panel. Read-only mirror of safety.sourceHealth:
+// what the OT/robot safety preflight actually reads (real PLC / SIM / nothing) and what that
+// means for real commands. Never guesses while loading or on error.
+// ══════════════════════════════════════════════════════════════════════════════
+const RISKY_BASIS = new Set(["sim", "real_unmapped", "mixed", "read_error"]);
+const RISKY_VERDICT = new Set(["sim_basis", "unmapped_basis", "sim_can_satisfy", "unguarded"]);
+
+function SafetySourcePanel({
+  data, isLoading, isError, socketConnected,
+}: {
+  data: SourceHealth | undefined;
+  isLoading: boolean;
+  isError: boolean;
+  socketConnected: boolean;
+}) {
+  const { t } = useTranslation();
+  const title = <span className="font-semibold text-foreground">{t("safety.source.title", "Sources")}:</span>;
+  // Fix round 1 #7 — only a real query ERROR says "could not read"; a pending/disabled query
+  // with no data is neutral (never shown as an error, never as a known state).
+  if (isError || !data) {
+    return (
+      <div
+        data-testid="safety-source-panel"
+        data-loading={isLoading ? "true" : undefined}
+        className={`flex items-center gap-2 rounded-md border px-3 py-2 text-xs text-muted-foreground ${isError ? "border-destructive/40 bg-destructive/5" : ""}`}
+      >
+        {title}
+        <span>
+          {isError
+            ? t("safety.source.error", "Could not read safety sources — treat them as unknown.")
+            : t("safety.source.loading", "Checking safety sources…")}
+        </span>
+      </div>
+    );
+  }
+
+  const plc = data.safetyPlc;
+  const plcText = (() => {
+    switch (plc.basis) {
+      case "sim": {
+        // Fix round 1 #4 — an empty script is always all-clear; a script follows a script, not a PLC.
+        const detail = plc.simScriptedConfigs > 0
+          ? t("safety.source.plc.simScripted", "scripted — OK/BLOCKED follows a script, not a PLC")
+          : t("safety.source.plc.simEmpty", "empty script — always OK");
+        return `${t("safety.source.plc.sim", "⚠ SIM (preflight relies on a SIMULATION)")} · ${detail}`;
+      }
+      case "real_unmapped": return t("safety.source.plc.realUnmapped", "⚠ real endpoint but NO safety tag mapped — preflight OK is based on nothing read");
+      case "mixed": return t("safety.source.plc.mixed", "⚠ real + SIM/unmapped (a config that reads no safety tag can satisfy the preflight)");
+      case "real": return t("safety.source.plc.real", "● real PLC");
+      case "adapter_off": return t("safety.source.plc.adapterOff", "○ off — no safety source");
+      case "no_config": return t("safety.source.plc.noConfig", "○ no enabled config");
+      case "read_error": return t("safety.source.plc.readError", "⚠ configs could not be read");
+    }
+  })();
+  const verdictText = (p: SourceHealth["preflight"]["ot"]) => {
+    switch (p.realWrites) {
+      case "dry_run": return t("safety.source.verdict.dry_run", "dry-run only (control disabled — nothing is written)");
+      case "unguarded": return `${t("safety.source.verdict.unguarded", "⚠ preflight disabled — real commands are not checked")} (${p.flag}=false)`;
+      case "blocked": return `${t("safety.source.verdict.blocked", "real commands blocked")} (${p.refusalReason ?? "SAFETY_UNKNOWN"})`;
+      case "sim_basis": return t("safety.source.verdict.sim_basis", "⚠ allowed on a SIMULATED reading");
+      case "unmapped_basis": return t("safety.source.verdict.unmapped_basis", "⚠ allowed although no safety tag is read");
+      case "sim_can_satisfy": return t("safety.source.verdict.sim_can_satisfy", "⚠ a SIM or unmapped config can satisfy the check");
+      case "real_basis": return t("safety.source.verdict.real_basis", "checked against the real safety PLC");
+    }
+  };
+  const onOff = (on: boolean) => (on ? t("safety.source.on", "● on") : t("safety.source.off", "○ off"));
+  const estopText = !data.estop.enabled
+    ? t("safety.source.off", "○ off")
+    : data.estop.rated
+      ? t("safety.source.estopRated", "● safety-rated")
+      : t("safety.source.estopNotRated", "⚠ on — not safety-rated");
+  const socketText = !data.socket.serverUp
+    ? t("safety.source.socketServerDown", "○ server socket down")
+    : socketConnected
+      ? t("safety.source.socketConnected", "● connected")
+      : t("safety.source.socketDisconnected", "○ disconnected");
+  const plcRisky = RISKY_BASIS.has(plc.basis);
+
+  return (
+    <div
+      data-testid="safety-source-panel"
+      className={`space-y-1 rounded-md border px-3 py-2 text-xs ${plcRisky ? "border-amber-500/50 bg-amber-500/10" : "bg-muted/30"}`}
+    >
+      <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+        {title}
+        <span
+          data-testid="safety-source-plc"
+          data-basis={plc.basis}
+          className={plcRisky ? "font-medium text-amber-700 dark:text-amber-400" : undefined}
+        >
+          {t("safety.source.plcLabel", "Safety PLC")} {plcText}
+        </span>
+        {plc.configs.map((c) => (
+          <Badge
+            key={c.code}
+            variant="outline"
+            data-effective={c.effective}
+            className={`font-mono text-[10px] ${c.effective === "real" ? "" : "border-amber-500/50 text-amber-700 dark:text-amber-400"}`}
+            title={`${c.backend} → ${c.effective}`}
+          >
+            {c.code}
+          </Badge>
+        ))}
+        {plc.hiddenConfigs > 0 && (
+          <span className="text-muted-foreground">+{plc.hiddenConfigs} {t("safety.source.hiddenConfigs", "outside your scope")}</span>
+        )}
+      </div>
+      <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-muted-foreground">
+        {(["ot", "robot"] as const).map((k) => {
+          const p = data.preflight[k];
+          return (
+            <span
+              key={k}
+              data-testid={`safety-source-${k}`}
+              data-verdict={p.realWrites}
+              className={RISKY_VERDICT.has(p.realWrites) ? "text-amber-700 dark:text-amber-400" : undefined}
+            >
+              {k === "ot" ? t("safety.source.ot", "OT writes") : t("safety.source.robot", "Robot motion")}: {verdictText(p)}
+            </span>
+          );
+        })}
+      </div>
+      <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-muted-foreground">
+        <span data-testid="safety-source-vision">
+          {t("safety.source.vision", "Vision")} {onOff(data.vision.enabled)} · {data.vision.calibrations} {t("safety.source.cameras", "camera(s)")}
+        </span>
+        <span data-testid="safety-source-zone">
+          {t("safety.source.zone", "Zone SW")} {onOff(data.zoneSw.enabled)} · {data.zoneSw.zones} {t("safety.source.zones", "zone(s)")}
+        </span>
+        <span data-testid="safety-source-estop" title={data.estop.label}>
+          {t("safety.source.estop", "E-stop")} {estopText}
+        </span>
+        <span data-testid="safety-source-socket">
+          {t("safety.source.socket", "Socket")} {socketText}
+        </span>
+      </div>
+    </div>
   );
 }
 

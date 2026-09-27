@@ -604,13 +604,20 @@ export async function preflightHealthyForFim(): Promise<boolean> {
 }
 
 /** POST an OpenAI chat-completion to the server and return the raw JSON + timing. */
-async function postChatCompletion(body: Record<string, unknown>): Promise<{ json: any; totalTimeMs: number }> {
+async function postChatCompletion(
+  body: Record<string, unknown>,
+  /** Doc 80 · Task 8 — signal của người gọi (huỷ ⇒ đóng kết nối ⇒ slot rảnh). Vắng ⇒ như cũ. */
+  signal?: AbortSignal,
+): Promise<{ json: any; totalTimeMs: number }> {
   const url = baseUrl();
   if (!url) throw new Error("[llamaServer] LLAMA_SERVER_URL not set");
   const startTime = Date.now();
   const timeoutMs = Number(process.env.LLAMA_SERVER_TIMEOUT_MS ?? 120_000);
   const ctrl = new AbortController();
   const t = setTimeout(() => ctrl.abort(), timeoutMs);
+  const huyTheoNgoai = () => ctrl.abort();
+  if (signal?.aborted) ctrl.abort();
+  else signal?.addEventListener("abort", huyTheoNgoai, { once: true });
   try {
     const res = await fetch(`${url}/v1/chat/completions`, {
       method: "POST",
@@ -625,6 +632,7 @@ async function postChatCompletion(body: Record<string, unknown>): Promise<{ json
     return { json: await res.json(), totalTimeMs: Date.now() - startTime };
   } finally {
     clearTimeout(t);
+    signal?.removeEventListener("abort", huyTheoNgoai);
   }
 }
 
@@ -659,7 +667,7 @@ export async function serverGenerateText(
   lapNganSachNghi(body, options.thinkingBudgetTokens, options.disableThinking);
   lapCoSampling(body, options); // ★ B2 — top_k / min_p / presence_penalty tường minh khi người gọi đặt
 
-  const { json, totalTimeMs } = await postChatCompletion(body);
+  const { json, totalTimeMs } = await postChatCompletion(body, options.signal); // Task 8 FR1 #4 — huỷ lượt warm
   const nua = docHaiNua(json?.choices?.[0]?.message);
   phanDinhCauTraLoiRong(nua, {
     maxTokens: body.max_tokens as number,
@@ -792,7 +800,7 @@ export async function serverGenerateJSON<T = unknown>(
   lapNganSachNghi(body, options.thinkingBudgetTokens, options.disableThinking);
   lapCoSampling(body, options); // ★ B2 — top_k / min_p / presence_penalty tường minh khi người gọi đặt
 
-  const { json, totalTimeMs } = await postChatCompletion(body);
+  const { json, totalTimeMs } = await postChatCompletion(body, options.signal); // Task 8 — huỷ lượt JSON
   const nua = docHaiNua(json?.choices?.[0]?.message);
   phanDinhCauTraLoiRong(nua, {
     maxTokens: body.max_tokens as number,

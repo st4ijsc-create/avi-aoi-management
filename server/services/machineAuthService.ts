@@ -534,6 +534,37 @@ async function dbPositivelyDown(): Promise<boolean> {
 }
 
 /**
+ * ★ MỘT điểm quyết định cho khoá dùng chung plaintext `machines.apiKey` (doc 81 Đợt 1B Task 8).
+ *
+ * Trước đây chỉ `authenticateMachine` (router máy) hỏi chính sách này; `/api/v1` (`api/v1/auth.ts`
+ * `resolvePrincipal` bước 3) nhận khoá plaintext BẤT KỂ `MACHINE_SHARED_KEY_ALLOWED` — đo ở BE3 §L4.
+ * Nay cả hai đi qua đây: cùng luật mk_-only cho máy automation/iot, cùng tri-state allow/read-only/deny,
+ * cùng sổ weak-auth (đếm cả lượt bị từ chối — tín hiệu rotate/rollback của doc 52).
+ * `policy` truyền vào khi người gọi đã đọc cờ (tránh đọc hai lần trong một lượt); mặc định đọc lúc gọi.
+ */
+export function decideSharedMachineKey(
+  machine: { id: number; code: string; machineType?: string | null },
+  scope: ApiScope | undefined,
+  endpoint: string,
+  policy: WeakAuthPolicy = sharedMachineKeyPolicy(),
+): { decision: "allowed" | "denied"; mkOnlyRefuse: boolean } {
+  // Doc 56 Đ2a Việc 2 — an automation/iot machine is FORCED onto its per-device
+  // mk_ key when MACHINE_CRED_MK_ONLY_ENABLED is on: the shared-plaintext path is
+  // refused for it regardless of MACHINE_SHARED_KEY_ALLOWED (aoi_avi unchanged).
+  // Still recorded as a denied weak-auth attempt so rotation telemetry names it.
+  const mkOnlyRefuse = machineCredMkOnlyEnabled() && deviceClassOf(machine.machineType ?? "") !== "aoi_avi";
+  const decision = mkOnlyRefuse ? "denied" : weakAuthDecision(policy, scope);
+  recordWeakAuthUse({
+    machineId: machine.id,
+    machineCode: machine.code,
+    method: "shared-key",
+    endpoint,
+    outcome: decision,
+  });
+  return { decision, mkOnlyRefuse };
+}
+
+/**
  * Authenticate a machine request. Accepts (in priority order) a key from the
  * Authorization header, the legacy `apiKey` input field, or a `machineCode`.
  * Throws TRPCError UNAUTHORIZED/FORBIDDEN, or DbUnavailableError when the
@@ -631,19 +662,7 @@ export async function authenticateMachine(opts: {
       sharedMachine = undefined;
     }
     if (sharedMachine) {
-      // Doc 56 Đ2a Việc 2 — an automation/iot machine is FORCED onto its per-device
-      // mk_ key when MACHINE_CRED_MK_ONLY_ENABLED is on: the shared-plaintext path is
-      // refused for it regardless of MACHINE_SHARED_KEY_ALLOWED (aoi_avi unchanged).
-      // Still recorded as a denied weak-auth attempt so rotation telemetry names it.
-      const mkOnlyRefuse = machineCredMkOnlyEnabled() && deviceClassOf(sharedMachine.machineType) !== "aoi_avi";
-      const decision = mkOnlyRefuse ? "denied" : weakAuthDecision(sharedPolicy, opts.scope);
-      recordWeakAuthUse({
-        machineId: sharedMachine.id,
-        machineCode: sharedMachine.code,
-        method: "shared-key",
-        endpoint,
-        outcome: decision,
-      });
+      const { decision, mkOnlyRefuse } = decideSharedMachineKey(sharedMachine, opts.scope, endpoint, sharedPolicy);
       if (decision === "allowed") return { machine: sharedMachine, method: "shared-key" };
       // Explicit, diagnosable message. It does reveal "this key WAS a valid shared
       // key" to whoever already holds that key — accepted: they cannot use it for

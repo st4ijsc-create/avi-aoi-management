@@ -133,6 +133,12 @@ export interface GgufGenerateOptions {
    * allocate a huge KV-cache. Ignored if the model is already resident (context is shared).
    */
   contextSize?: number;
+  /**
+   * Doc 80 · Đợt 1 · Task 8 — huỷ lượt KHÔNG-stream trên đường `llama-server` (`generateJSON` →
+   * `serverGenerateJSON`, và từ fix round 1 `generateText` → `serverGenerateText` cho lượt warm). Vắng ⇒ hành vi cũ nguyên vẹn. Huỷ ⇒ lượt
+   * POST bị abort (slot rảnh) và KHÔNG lùi in-process (xem `thuDuongServer`).
+   */
+  signal?: AbortSignal;
 }
 
 export interface GgufChatMessage {
@@ -1759,7 +1765,17 @@ async function getOrLoadModel(
  * Returns true if the model is now resident. Callers that do RAG-embed-THEN-deep (codegen, and
  * ideally the ops chat/RCA paths) should call this before the RAG step. See doc 34 §P4.
  */
-export async function warmModel(modelId?: string, contextSize?: number): Promise<boolean> {
+export async function warmModel(
+  modelId?: string,
+  contextSize?: number,
+  /**
+   * Doc 80 · Đợt 1 · Task 8 fix round 1 #4 — người gọi huỷ (copilot SSE). Chỉ abort được lượt warm
+   * trên đường `llama-server` (POST 1 token); lượt NẠP in-process dùng chung (`inFlightLoads`) KHÔNG
+   * bị giết — người chờ khác có thể đang đợi đúng lượt nạp đó. Vắng ⇒ hành vi cũ nguyên vẹn.
+   */
+  signal?: AbortSignal,
+): Promise<boolean> {
+  if (signal?.aborted) return false;
   let available = false;
   try {
     available = await isGgufAvailable();
@@ -1779,9 +1795,10 @@ export async function warmModel(modelId?: string, contextSize?: number): Promise
     // ★ B1 (2026-09-22) — lượt làm ấm là lượt PHỤ: `maxTokens: 1` trên model biết nghĩ ⇒ 1 token ấy rơi
     //   vào `<think>` ⇒ `content` rỗng ⇒ G5-D ⇒ warm trả FALSE + 2 dòng lỗi mỗi lần boot (đo trong
     //   `node-b1.err.log` với Qwen3.6-35B-A3B). Tắt nghĩ cho riêng lượt này; model không nghĩ bỏ qua cờ.
-    await generateText({ prompt: "ok", maxTokens: 1, contextSize, disableThinking: true }, modelId);
+    await generateText({ prompt: "ok", maxTokens: 1, contextSize, disableThinking: true, ...(signal ? { signal } : {}) }, modelId);
     return true;
   } catch (err) {
+    if (signal?.aborted) return false; // huỷ theo ý người gọi ≠ warm hỏng — không ghi sự kiện warm_failed
     noteWarmFailure(modelId, "generate-threw", err);
     return false;
   }
@@ -2075,7 +2092,7 @@ async function thuDuongServer<T>(
   // G5-D · P1 — kiểu thu hẹp về ĐÚNG thứ cổng (a) cần. Trước đó là `GgufGenerateOptions`, khiến
   // đường CHAT (không có trường `prompt`) không dùng lại được thân này và sẽ phải có bản sao thứ
   // tư. Thu hẹp kiểu, không nới cổng: `kiemNganSachNguCanh()` vẫn nhận đúng ba trường như cũ.
-  options: { systemPrompt?: string; prompt: string; maxTokens?: number },
+  options: { systemPrompt?: string; prompt: string; maxTokens?: number; signal?: AbortSignal },
   goi: (srv: typeof import("./aiLlamaServerClient")) => Promise<T>,
   ten: string,
 ): Promise<KetCucDuongServer<T>> {
@@ -2088,6 +2105,9 @@ async function thuDuongServer<T>(
   try {
     return { xong: true, ketQua: await goi(srv) };
   } catch (e) {
+    // Doc 80 · Task 8 — NGƯỜI GỌI huỷ: không phải "server hỏng" ⇒ không lùi in-process, không ghi
+    // sự kiện chặn nạp trùng (cổng c). Ném nguyên lỗi abort cho người gọi.
+    if (options.signal?.aborted) throw e;
     // cổng (c) — ném, hoặc trả về để lùi in-process. `daPhatChu:false`: đường không-streaming
     // không thể "đã trả một nửa", nên nó không có cổng đứt-giữa-chừng.
     quyetDinhSauLoiServer(srv, modelId, e, ten, false);
@@ -2224,6 +2244,8 @@ async function* thuDuongServerStream(
   nganSach: { systemPrompt?: string; prompt: string; maxTokens?: number },
   moLuong: (srv: typeof import("./aiLlamaServerClient")) => AsyncGenerator<GgufStreamChunk>,
   ten: string,
+  /** Doc 80 · Task 8 — signal của NGƯỜI GỌI: đã huỷ ⇒ lỗi đi thẳng lên, không qua cổng (c). */
+  signal?: AbortSignal,
 ): AsyncGenerator<GgufStreamChunk, boolean> {
   const srv = await import("./aiLlamaServerClient");
   if (!srv.shouldUseServerForText(modelId)) return false;
@@ -2243,6 +2265,9 @@ async function* thuDuongServerStream(
     }
     return true;
   } catch (e) {
+    // Doc 80 · Task 8 — huỷ theo ý người gọi ≠ server hỏng: không lùi in-process (một lượt model MỚI
+    // sau khi người dùng đã bấm Huỷ), không ghi sự kiện "stream đứt"/"lùi bị chặn" giả vào sổ G1-D.
+    if (signal?.aborted) throw e;
     // Ưu tiên cờ do CHÍNH client gắn (nó biết chính xác thời điểm hỏng); `daPhatChu` cục bộ là
     // lưới thứ hai cho lỗi đến từ nơi khác.
     quyetDinhSauLoiServer(srv, modelId, e, ten, daPhatChu || srv.daPhatChuTruocKhiHong(e)); // cổng (c)
@@ -2925,6 +2950,11 @@ export async function* generateTextStream(
       options,
       (srv) => srv.serverGenerateTextStream(options, modelId, signal),
       "streaming generation",
+      // Doc 80 Đợt 1 final wave (item 2) — như `chatCompletionStream`: người gọi HUỶ ⇒ lỗi đi thẳng
+      // lên, KHÔNG qua cổng (c) (không lùi in-process = một lượt model MỚI sau khi người dùng bấm
+      // Dừng; không ghi sự kiện "lùi bị chặn" giả vào sổ G1-D). Trước đây thiếu ⇒ `/stream/generate`
+      // và `/stream/narrative` sau huỷ vẫn đi tiếp vào cổng (c).
+      signal,
     );
     if (daPhucVu) return;
   }
@@ -3072,6 +3102,7 @@ export async function* chatCompletionStream(
       nganSach,
       (srv) => srv.serverChatCompletionStream(options, modelId, signal),
       "streaming chat completion",
+      signal,
     );
     if (daPhucVu) return;
   }

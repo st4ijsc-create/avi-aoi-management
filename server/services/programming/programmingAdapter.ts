@@ -77,6 +77,12 @@ export interface ProgDiagnostic {
   line?: number;
   col?: number;
   symbol?: string;
+  /**
+   * doc 80 Đợt 1 Task 7 — mã chẩn đoán máy-đọc (vd `stUndeclared`) + tham số. UI dịch qua khoá
+   * i18n `engineering.stDiag.<code>`; `message` tiếng Anh giữ cho lượt tự sửa của model + nhật ký.
+   */
+  code?: string;
+  params?: Record<string, string | number>;
 }
 
 export interface Diagnostics {
@@ -101,6 +107,15 @@ export interface BuildResult {
   outputRef?: string;
   bytes?: number;
   meta?: Record<string, unknown>;
+}
+
+/**
+ * doc 80 Đợt 1 Task 5 fix round 1 — tuỳ chọn biên dịch. `persist:false` = KHÔNG ghi tạo phẩm nào ra
+ * đĩa (bản xem trước deploy là một GET — không được đụng tệp mà một lượt nạp thật đang đọc).
+ * Adapter không ghi đĩa bỏ qua tuỳ chọn này; outputRef/checksum phải GIỐNG HỆT chế độ thường.
+ */
+export interface CompileOptions {
+  persist?: boolean;
 }
 
 /** A what-if scenario for simulate() (assumed inputs/duration overrides). */
@@ -157,7 +172,7 @@ export interface ProgrammingAdapter {
   /** Lint/parse the source. NEVER touches hardware. */
   validate(src: ProgramSource): Promise<Diagnostics>;
   /** Compile to a transferable output. NEVER touches hardware. */
-  compile(src: ProgramSource): Promise<BuildResult>;
+  compile(src: ProgramSource, opts?: CompileOptions): Promise<BuildResult>;
   /** Predict execution on a twin/emulator. NEVER touches hardware. */
   simulate?(build: BuildResult, scenario: ProgSimScenario): Promise<ProgSimResult>;
   /**

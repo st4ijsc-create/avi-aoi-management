@@ -49,6 +49,16 @@ async function resolveUserId() {
   return any.length > 0 ? any[0].id : null;
 }
 
+/**
+ * doc80 QĐ4 — interlock_rules SoD (server/routers/interlockRouter.ts: "người tạo/sửa
+ * rule không được tự duyệt"). The rule's creator must differ from its approver; `approverId`
+ * is the admin resolved by resolveUserId() above. Prefer an engineer/supervisor as creator.
+ */
+async function resolveInterlockCreatorId(approverId) {
+  const eng = await sql`SELECT id FROM users WHERE role IN ('engineer','supervisor') AND "isActive" = true AND id <> ${approverId} ORDER BY id LIMIT 1`;
+  return eng.length > 0 ? eng[0].id : null;
+}
+
 async function main() {
   console.log("[sim/seed] bắt đầu — dựng nhà máy ảo (idempotent)\n");
   const topo = buildTopology();
@@ -201,10 +211,13 @@ async function main() {
     const r = INTERLOCK_RULE;
     const targetLine = topo.lines.find((l) => l.lineNo === r.lineNo);
     const targetMachineId = machineIdByCode[machineCode(targetLine.code, r.machineRole)];
-    if (targetMachineId) {
+    const creatorId = await resolveInterlockCreatorId(userId);
+    if (targetMachineId && creatorId) {
       await ensure(
         "interlock_rules",
         await sql`SELECT id FROM interlock_rules WHERE name = ${r.name}`,
+        // doc80 QĐ4 — createdBy (creatorId: engineer/supervisor) must differ from
+        // approvedBy (userId: admin) — self-approval is forbidden (SoD).
         () => sql`INSERT INTO interlock_rules
           (name, description, scope, "lineId", "machineId", "sourceType", "sourceKey",
            "comparisonOperator", threshold, "windowSeconds", action, "requiresHumanConfirm",
@@ -212,7 +225,11 @@ async function main() {
           VALUES (${r.name}, 'SIM interlock (alert-only) cho scenario ng-spike', ${r.scope},
                   ${targetLine._id}, ${targetMachineId}, ${r.sourceType}, ${r.sourceKey},
                   ${r.comparisonOperator}, ${r.threshold}, ${r.windowSeconds}, ${r.action},
-                  ${r.requiresHumanConfirm}, true, ${userId}, now(), ${r.cooldownSeconds}, ${userId}) RETURNING id`,
+                  ${r.requiresHumanConfirm}, true, ${userId}, now(), ${r.cooldownSeconds}, ${creatorId}) RETURNING id`,
+      );
+    } else if (targetMachineId && !creatorId) {
+      console.warn(
+        "[sim/seed] CẢNH BÁO: không có user engineer/supervisor KHÁC approver — bỏ qua interlock_rules (SoD, doc80 QĐ4).",
       );
     }
   }

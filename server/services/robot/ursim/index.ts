@@ -5,7 +5,9 @@
  * `universalrobots/ursim_e-series`) — see doc 20 §7 runbook. This module exposes:
  *   • UrsimClient          — net.Socket client for the UR primary/dashboard interfaces.
  *   • validateUrscriptOnUrsim — end-to-end IR→URScript→controller validation harness.
- *   • deployUrscriptToUrsim   — gated deploy target (reuses DPC_DEPLOY_ENABLED + HITL).
+ *   • deployUrscriptToUrsim   — gated deploy target (reuses DPC_DEPLOY_ENABLED + HITL); takes a
+ *                               registered sim `targetId`, never an endpoint (doc 81 Đợt 1B T3).
+ *   • resolveSimTarget        — the sim-target registry (only "default" = URSIM_HOST, verified virtual).
  * All flag-gated (URSIM_ENABLED, default OFF) and HONEST (unreachable → clear error).
  */
 export { UrsimClient, UR_PORTS, type UrsimEndpoint, type DashboardReply } from "./ursimClient";
@@ -16,6 +18,7 @@ export {
   type UrsimValidationResult,
   type UrsimValidationOptions,
 } from "./ursimHarness";
+export { resolveSimTarget, DEFAULT_SIM_TARGET_ID, type RegisteredSimTarget } from "./simTargetRegistry";
 export {
   deployUrscriptToUrsim,
   ursimRealDeployAllowed,

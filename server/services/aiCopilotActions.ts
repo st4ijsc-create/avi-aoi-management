@@ -30,6 +30,7 @@ import { randomUUID } from "node:crypto";
 import { and, eq, gt, lt } from "drizzle-orm";
 import { getDb } from "../db/connection";
 import { aiPendingActions } from "../../drizzle/schema";
+import { otPayloadHash, withOtPayloadHash } from "./ot/otActionBinding";
 import { checkPermission } from "../_core/accessControl";
 import { getTool, isWriteTool, assertExecutable, type ActionPreview, type Tool, type ToolExecContext, type ToolLang } from "./aiLocalTools/toolRegistry";
 // ★★★ ĐỢT 3 (2026-08-23) — DUYỆT THEO KHỐI THẬT: server import THẲNG bộ vị từ khối của client
@@ -318,6 +319,19 @@ export async function proposeAction(
   if (contract) previewForStore = { ...previewForStore, contract };
   if (typeof ctx.projectRoot === "string" && ctx.projectRoot !== "") {
     previewForStore = { ...previewForStore, __projectRoot: ctx.projectRoot };
+  }
+  // doc 81 Đợt 1B Task 6 — OT write tools: bind the row to EXACTLY the command execute() will
+  // dispatch (canonical payload hash, same helper the OT dispatcher verifies with). Server-owned
+  // in previewJson like __projectRoot. Resolution failure ⇒ no binding ⇒ the row can authorise
+  // no REAL OT write (the dispatcher refuses ACTION_BINDING_MISMATCH); propose itself goes on.
+  // Non-OT tools have no hook ⇒ previewJson unchanged, byte for byte.
+  if (typeof tool.otWriteBinding === "function") {
+    try {
+      const target = await tool.otWriteBinding(args, ctx);
+      if (target) previewForStore = withOtPayloadHash(previewForStore, otPayloadHash({ tool: tool.name, ...target }));
+    } catch {
+      /* no binding stored — fail-closed at dispatch time */
+    }
   }
 
   await db.insert(aiPendingActions).values({

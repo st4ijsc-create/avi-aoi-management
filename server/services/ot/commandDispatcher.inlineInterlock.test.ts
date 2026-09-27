@@ -10,6 +10,7 @@
  *   - dry-run (OT_CONTROL_ENABLED off) → simulated, gate KHÔNG được gọi (không real-write).
  */
 import { describe, it, expect, vi, beforeEach } from "vitest";
+import { makeLedgerFakeDb, boundPending, resultRows, isIntentRow, TESTKIT_TOOL } from "./commandDispatcher.testkit";
 
 type Row = Record<string, any>;
 
@@ -31,10 +32,8 @@ function reset() {
   cmdSeq = 1;
 }
 
-vi.mock("drizzle-orm", () => ({
-  eq: (col: any, val: any) => ({ __k: col.__name, __v: val, __op: "eq" }),
-  and: (...ps: any[]) => ({ __and: ps }),
-}));
+// doc 81 Đợt 1B Task 6 — + inArray/sql for the write-ahead reservation (see commandDispatcher.testkit.ts).
+vi.mock("drizzle-orm", async () => (await import("./commandDispatcher.testkit")).fakeOrm);
 
 function matches(row: Row, pred: any): boolean {
   if (!pred) return true;
@@ -56,33 +55,24 @@ function tableFor(table: any): Row[] {
 }
 
 function makeFakeDb() {
-  return {
-    select: () => ({
-      from: (table: any) => ({
-        where: (pred: any) => ({
-          limit: async () => tableFor(table).filter((r) => matches(r, pred)).slice(0, 1),
-        }),
-      }),
-    }),
-    insert: (table: any) => ({
-      values: (vals: Row) => ({
-        returning: async (_sel?: any) => {
-          if (table.__table === "command_log") {
-            const row = { id: cmdSeq++, ...vals };
-            cmdLog.push(row);
-            return [{ id: row.id }];
-          }
-          return [{ id: cmdSeq++ }];
-        },
-      }),
-    }),
-  };
+  // doc 81 Đợt 1B Task 6 — transaction-capable fake (reservation tx); same insert bookkeeping.
+  return makeLedgerFakeDb({
+    tableFor,
+    onInsert: (table: any, vals: Row) => {
+      if (table.__table === "command_log") {
+        const row = { id: cmdSeq++, ...vals };
+        cmdLog.push(row);
+        return { id: row.id };
+      }
+      return { id: cmdSeq++ };
+    },
+  });
 }
 
 vi.mock("../../db/connection", () => ({ getDb: vi.fn(async () => makeFakeDb()) }));
 
 vi.mock("../../../drizzle/schema", () => ({
-  aiPendingActions: { __table: "ai_pending_actions", id: { __name: "id" }, status: { __name: "status" }, userId: { __name: "userId" } },
+  aiPendingActions: { __table: "ai_pending_actions", id: { __name: "id" }, status: { __name: "status" }, userId: { __name: "userId" }, tool: { __name: "tool" } },
   deviceAdapters: { __table: "device_adapters", id: { __name: "id" }, machineId: { __name: "machineId" }, isEnabled: { __name: "isEnabled" } },
   deviceTags: { __table: "device_tags", id: { __name: "id" }, adapterId: { __name: "adapterId" }, tagKey: { __name: "tagKey" }, dataType: { __name: "dataType" }, scale: { __name: "scale" }, offset: { __name: "offset" } },
   commandLog: { __table: "command_log", id: { __name: "id" }, idempotencyKey: { __name: "idempotencyKey" }, status: { __name: "status" } },
@@ -115,7 +105,7 @@ const hitlInput = (over: Partial<Parameters<typeof dispatch>[0]> = {}) => ({
   machineId: 5,
   commandType: "start",
   writes: [{ tagKey: "cmd_start", value: true }],
-  triggeredBy: { kind: "hitl" as const, actionId: "act-1", confirmedBy: 1, requestedBy: 1 },
+  triggeredBy: { kind: "hitl" as const, actionId: "act-1", tool: TESTKIT_TOOL, confirmedBy: 1, requestedBy: 1 },
   lang: "vi" as const,
   idempotencyKey: "key-1",
   ...over,
@@ -131,7 +121,8 @@ beforeEach(() => {
   delete process.env.OT_READBACK_ENABLED;
   adapters.push({ id: 10, machineId: 5, code: "A10", isEnabled: true });
   tags.push({ id: 100, adapterId: 10, tagKey: "cmd_start", address: "ns=1;s=Start", dataType: "bool", scale: "1", offset: "0", writable: true, isEnabled: true });
-  pending.set("act-1", { id: "act-1", status: "confirmed", userId: 1 });
+  // doc 81 Đợt 1B Task 6 — a real write needs a confirmed action BOUND to the command.
+  pending.set("act-1", boundPending("act-1", hitlInput()));
 });
 
 describe("commandDispatcher — cổng interlock inline (HITL)", () => {
@@ -144,8 +135,8 @@ describe("commandDispatcher — cổng interlock inline (HITL)", () => {
     expect(gateSpy).toHaveBeenCalledTimes(1);
     expect(writeTagsSpy).not.toHaveBeenCalled();
     expect(cmdLog.every((c) => c.status === "rejected")).toBe(true);
-    expect(cmdLog[0].errorText).toMatch(/INTERLOCK_BLOCKED/);
-    expect(cmdLog[0].errorText).toMatch(/#7\(stop_line\)/);
+    expect(resultRows(cmdLog)[0].errorText).toMatch(/INTERLOCK_BLOCKED/);
+    expect(resultRows(cmdLog)[0].errorText).toMatch(/#7\(stop_line\)/);
   });
 
   it("gate fail-closed (lỗi đánh giá) → reject INTERLOCK_BLOCKED, writeTags 0×", async () => {
@@ -154,7 +145,7 @@ describe("commandDispatcher — cổng interlock inline (HITL)", () => {
     expect(r.status).toBe("rejected");
     expect(r.reason).toBe("INTERLOCK_BLOCKED");
     expect(writeTagsSpy).not.toHaveBeenCalled();
-    expect(cmdLog[0].errorText).toMatch(/fail-closed/);
+    expect(resultRows(cmdLog)[0].errorText).toMatch(/fail-closed/);
   });
 
   it("gate cho qua → real write acked, writeTags 1×, gate được gọi", async () => {

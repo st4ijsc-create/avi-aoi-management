@@ -82,3 +82,35 @@ describe("WS-05 — đổi / lưu phiên bản ⇒ reset buildId + mô phỏng +
     expect(body).toMatch(/setDiagnostics\(null\)/);
   });
 });
+
+describe("doc 81 Đợt 1B Task 4 — lý do deploy có mã ⇒ khoá i18n (vi/en/zh)", () => {
+  const LOCALES = ["vi", "en", "zh"] as const;
+  const load = (l: string) =>
+    JSON.parse(readFileSync(resolve(__dirname, "..", "i18n", "locales", `${l}.json`), "utf8")) as Record<string, any>;
+
+  it("robot-tm: detailJson.reasonCode techman_program_download_unsupported ⇒ detailKey riêng, level error", () => {
+    const o = deployOutcome(
+      {
+        status: "failed",
+        error: "techman_program_download_unsupported: ...",
+        detailJson: { reasonCode: "techman_program_download_unsupported" },
+      },
+      "deploy",
+    );
+    expect(o.level).toBe("error");
+    expect(o.detailKey).toBe("engineering.deployReason.techman_program_download_unsupported");
+    expect(o.detail).toBe("techman_program_download_unsupported: ...");
+  });
+
+  it("mã lạ / không có mã ⇒ không có detailKey (giữ nguyên hiển thị lỗi server như cũ)", () => {
+    expect(deployOutcome({ status: "failed", error: "x", detailJson: { reasonCode: "khong_biet" } }, "deploy").detailKey).toBeUndefined();
+    expect(deployOutcome({ status: "failed", error: "x" }, "deploy").detailKey).toBeUndefined();
+  });
+
+  it("khoá có đủ ở vi/en/zh", () => {
+    for (const l of LOCALES) {
+      const v = load(l)?.engineering?.deployReason?.techman_program_download_unsupported;
+      expect(typeof v === "string" && v.trim().length > 0, `${l}.json thiếu khoá`).toBe(true);
+    }
+  });
+});

@@ -31,6 +31,7 @@ import {
   type KetQuaDispatchToiThieu,
 } from "../../ot/aiControlGate";
 import { preflightSafetyChoAi } from "../../ot/aiControlGate.safety";
+import type { OtWriteTarget } from "../../ot/otActionBinding";
 import {
   registerTool,
   type ActionPreview,
@@ -132,6 +133,8 @@ async function runDispatch(
     triggeredBy: {
       kind: "hitl",
       actionId: ctx.actionId,
+      // doc 81 Đợt 1B Task 6 — the action was bound at propose time to (tool + payload hash).
+      tool: args.toolName,
       confirmedBy: ctx.user.id,
       requestedBy: ctx.user.id,
     },
@@ -164,6 +167,22 @@ async function adapterIdForMachine(machineId: number): Promise<number> {
   return adapter.id;
 }
 
+/**
+ * doc 81 Đợt 1B Task 6 — the OT command a tool dispatches, built by ONE function per tool
+ * that BOTH execute() and otWriteBinding() (propose-time HITL binding) call, so the hash
+ * stored on the pending action and the command the dispatcher verifies cannot drift.
+ */
+interface OtPlan {
+  machineId: number;
+  adapterId: number;
+  commandType: string;
+  writes: Array<{ tagKey: string; value: unknown }>;
+}
+
+function planToTarget(plan: OtPlan): OtWriteTarget {
+  return { adapterId: plan.adapterId, machineId: plan.machineId, commandType: plan.commandType, writes: plan.writes };
+}
+
 // ─── Simple lifecycle commands: start / stop / pause / reset ──────────────────
 // Each writes a single control tag (default tagKey 'cmd_<verb>'; overridable).
 
@@ -191,6 +210,13 @@ for (const cfg of lifecycle) {
     .strict();
   type P = z.infer<typeof params>;
 
+  const plan = async (p: P): Promise<OtPlan> => ({
+    machineId: p.machineId,
+    adapterId: await adapterIdForMachine(p.machineId),
+    commandType: cfg.verb,
+    writes: [{ tagKey: p.tagKey ?? cfg.defaultTag, value: true }],
+  });
+
   const summarize = (p: P, lang: ToolLang) =>
     w(lang, `Gửi lệnh ${cfg.descVi} máy #${p.machineId}.`, `Send ${cfg.verb} command to machine #${p.machineId}.`, `向机器 #${p.machineId} 发送 ${cfg.verb} 命令。`);
 
@@ -213,10 +239,9 @@ for (const cfg of lifecycle) {
         humanSummary: summarize(p, ctx.lang),
       };
     },
+    otWriteBinding: async (p) => planToTarget(await plan(p)),
     execute: async (p, ctx) => {
-      const tagKey = p.tagKey ?? cfg.defaultTag;
-      const adapterId = await adapterIdForMachine(p.machineId);
-      return runDispatch(ctx, { machineId: p.machineId, adapterId, commandType: cfg.verb, writes: [{ tagKey, value: true }], toolName: cfg.name });
+      return runDispatch(ctx, { ...(await plan(p)), toolName: cfg.name });
     },
   };
   registerTool(tool);
@@ -232,6 +257,17 @@ const selectRecipeParams = z
   })
   .strict();
 type SelectRecipeParams = z.infer<typeof selectRecipeParams>;
+
+async function planSelectRecipe(p: SelectRecipeParams): Promise<OtPlan> {
+  const adapterId = await adapterIdForMachine(p.machineId);
+  const recipe = await getActiveRecipe({ code: p.recipeCode });
+  return {
+    machineId: p.machineId,
+    adapterId,
+    commandType: "select_recipe",
+    writes: [{ tagKey: p.tagKey ?? "recipe_select", value: recipe?.version ?? p.recipeCode }],
+  };
+}
 
 const summarizeSelectRecipe = (p: SelectRecipeParams, lang: ToolLang) =>
   w(lang, `Chọn recipe "${p.recipeCode}" cho máy #${p.machineId}.`, `Select recipe "${p.recipeCode}" for machine #${p.machineId}.`, `为机器 #${p.machineId} 选择配方 "${p.recipeCode}"。`);
@@ -259,17 +295,9 @@ registerTool<SelectRecipeParams, unknown>({
       humanSummary: summarizeSelectRecipe(p, ctx.lang),
     };
   },
+  otWriteBinding: async (p) => planToTarget(await planSelectRecipe(p)),
   execute: async (p, ctx) => {
-    const tagKey = p.tagKey ?? "recipe_select";
-    const adapterId = await adapterIdForMachine(p.machineId);
-    const recipe = await getActiveRecipe({ code: p.recipeCode });
-    return runDispatch(ctx, {
-      machineId: p.machineId,
-      adapterId,
-      commandType: "select_recipe",
-      writes: [{ tagKey, value: recipe?.version ?? p.recipeCode }],
-      toolName: "select_recipe",
-    });
+    return runDispatch(ctx, { ...(await planSelectRecipe(p)), toolName: "select_recipe" });
   },
 });
 
@@ -283,6 +311,15 @@ const downloadJobParams = z
   })
   .strict();
 type DownloadJobParams = z.infer<typeof downloadJobParams>;
+
+async function planDownloadJob(p: DownloadJobParams): Promise<OtPlan> {
+  return {
+    machineId: p.machineId,
+    adapterId: await adapterIdForMachine(p.machineId),
+    commandType: "download_job",
+    writes: [{ tagKey: p.tagKey ?? "job_download", value: p.jobId }],
+  };
+}
 
 const summarizeDownloadJob = (p: DownloadJobParams, lang: ToolLang) =>
   w(lang, `Tải job "${p.jobId}" xuống máy #${p.machineId}.`, `Download job "${p.jobId}" to machine #${p.machineId}.`, `将作业 "${p.jobId}" 下载到机器 #${p.machineId}。`);
@@ -306,10 +343,9 @@ registerTool<DownloadJobParams, unknown>({
       humanSummary: summarizeDownloadJob(p, ctx.lang),
     };
   },
+  otWriteBinding: async (p) => planToTarget(await planDownloadJob(p)),
   execute: async (p, ctx) => {
-    const tagKey = p.tagKey ?? "job_download";
-    const adapterId = await adapterIdForMachine(p.machineId);
-    return runDispatch(ctx, { machineId: p.machineId, adapterId, commandType: "download_job", writes: [{ tagKey, value: p.jobId }], toolName: "download_job" });
+    return runDispatch(ctx, { ...(await planDownloadJob(p)), toolName: "download_job" });
   },
 });
 
@@ -323,6 +359,15 @@ const setParamParams = z
   })
   .strict();
 type SetParamParams = z.infer<typeof setParamParams>;
+
+async function planSetParam(p: SetParamParams): Promise<OtPlan> {
+  return {
+    machineId: p.machineId,
+    adapterId: await adapterIdForMachine(p.machineId),
+    commandType: "set_param",
+    writes: [{ tagKey: p.tagKey, value: p.value }],
+  };
+}
 
 const summarizeSetParam = (p: SetParamParams, lang: ToolLang) =>
   w(lang, `Đặt tham số "${p.tagKey}"=${String(p.value)} cho máy #${p.machineId}.`, `Set parameter "${p.tagKey}"=${String(p.value)} on machine #${p.machineId}.`, `将机器 #${p.machineId} 的参数 "${p.tagKey}" 设为 ${String(p.value)}。`);
@@ -379,15 +424,16 @@ registerTool<SetParamParams, unknown>({
       humanSummary: summarizeSetParam(p, ctx.lang),
     };
   },
+  otWriteBinding: async (p) => planToTarget(await planSetParam(p)),
   execute: async (p, ctx) => {
-    const adapterId = await adapterIdForMachine(p.machineId);
+    const planned = await planSetParam(p);
     // doc 44 W5-A2 (G4.18) — HARD guardrail enforcement (SYNAPSE §9.2/§18.1): a
     // value that violates the engineer min–max / max-step is REJECTED HONESTLY
     // (never silently clamped, never dispatched). Bit-compat: PARAM_GUARDRAIL_ENABLED
     // OFF (default) → identical to the pre-batch path (no check, no change-log write).
     const { paramGuardrailEnabled } = await import("../../ai/parameterGuardrailService");
     if (!paramGuardrailEnabled()) {
-      return runDispatch(ctx, { machineId: p.machineId, adapterId, commandType: "set_param", writes: [{ tagKey: p.tagKey, value: p.value }], toolName: "set_machine_param", tagKeyDoModelChon: p.tagKey });
+      return runDispatch(ctx, { ...planned, toolName: "set_machine_param", tagKeyDoModelChon: p.tagKey });
     }
     const { resolveGuardrail, checkAgainstGuardrail, paramGuardrailStrict, lastKnownValue, recordChange } = await import(
       "../../ai/parameterGuardrailService"
@@ -412,7 +458,7 @@ registerTool<SetParamParams, unknown>({
         note: check.detail,
       };
     }
-    const result = await runDispatch(ctx, { machineId: p.machineId, adapterId, commandType: "set_param", writes: [{ tagKey: p.tagKey, value: p.value }], toolName: "set_machine_param", tagKeyDoModelChon: p.tagKey });
+    const result = await runDispatch(ctx, { ...planned, toolName: "set_machine_param", tagKeyDoModelChon: p.tagKey });
     // Record the applied change (append-only) so the closed-loop verify sweep can
     // later judge whether it helped or hurt. Fail-safe (never affects the result).
     if ((result.data as { ok?: boolean } | undefined)?.ok !== false) {
@@ -440,6 +486,15 @@ const ackAlarmParams = z
   .strict();
 type AckAlarmParams = z.infer<typeof ackAlarmParams>;
 
+async function planAckAlarm(p: AckAlarmParams): Promise<OtPlan> {
+  return {
+    machineId: p.machineId,
+    adapterId: await adapterIdForMachine(p.machineId),
+    commandType: "ack_alarm",
+    writes: [{ tagKey: p.tagKey ?? "alarm_ack", value: true }],
+  };
+}
+
 const summarizeAckAlarm = (p: AckAlarmParams, lang: ToolLang) =>
   w(lang, `Xác nhận (ack) cảnh báo máy #${p.machineId}.`, `Acknowledge alarm on machine #${p.machineId}.`, `确认机器 #${p.machineId} 的报警。`);
 
@@ -462,9 +517,8 @@ registerTool<AckAlarmParams, unknown>({
       humanSummary: summarizeAckAlarm(p, ctx.lang),
     };
   },
+  otWriteBinding: async (p) => planToTarget(await planAckAlarm(p)),
   execute: async (p, ctx) => {
-    const tagKey = p.tagKey ?? "alarm_ack";
-    const adapterId = await adapterIdForMachine(p.machineId);
-    return runDispatch(ctx, { machineId: p.machineId, adapterId, commandType: "ack_alarm", writes: [{ tagKey, value: true }], toolName: "acknowledge_machine_alarm" });
+    return runDispatch(ctx, { ...(await planAckAlarm(p)), toolName: "acknowledge_machine_alarm" });
   },
 });

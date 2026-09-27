@@ -63,6 +63,13 @@ import {
 import { toast } from "sonner";
 import { mapTrpcError } from "@/lib/trpcErrors";
 import { isFeatureDisabledError, featureKeyOf } from "@/lib/featureFlagError";
+import {
+  deriveFeatureStatus,
+  FeatureStatusGate,
+  isFeatureStatusUnsettled,
+} from "@/components/common/FeatureStatusGate";
+// doc 80 Đợt 1 Task 4 (X-01) — nhãn DEMO/SEED/SIM + dải tóm tắt trên bảng task.
+import { ProvenanceBadge, ProvenanceSummary } from "@/components/common/ProvenanceBadge";
 
 // ── Typesafe shapes inferred from the fleetRouter output ──────────────────────
 type RouterOutputs = inferRouterOutputs<AppRouter>;
@@ -326,10 +333,21 @@ export default function FleetOrchestration() {
   const chargers = (chargersQ.data ?? []) as FleetCharger[];
   const chargingPlans = (chargingPlansQ.data ?? []) as FleetChargingPlan[];
 
-  // Flag state — honest preview banner. Prefer the explicit status query.
-  const flagEnabled = statusQ.data?.enabled ?? true;
+  // Flag state — honest preview banner. Doc 80 Task 1 (PLT-02/G-07/X-07): the query
+  // pending/erroring is UNKNOWN, not "on" — no more `?? true` optimistic default.
+  const flagStatus = deriveFeatureStatus(statusQ, (d: { enabled?: boolean }) => d.enabled);
+  const flagUnsettled = isFeatureStatusUnsettled(flagStatus);
   // G2 resource layer flag — independent of the G1 orchestration flag.
-  const resourceFlagEnabled = resourceStatusQ.data?.enabled ?? true;
+  const resourceFlagStatus = deriveFeatureStatus(resourceStatusQ, (d: { enabled?: boolean }) => d.enabled);
+  const resourceFlagUnsettled = isFeatureStatusUnsettled(resourceFlagStatus);
+  // G1 write gate: permission first, then "we don't know the flag status yet" (loading/error).
+  const g1ControlReason = permReason
+    ?? (flagUnsettled ? t("common.gate.checkingStatus", "Checking feature status…") : undefined);
+  const g1CanControl = canControl && !flagUnsettled;
+  // G2 write gate — same shape, driven by the resource-layer status query.
+  const g2ControlReason = permReason
+    ?? (resourceFlagUnsettled ? t("common.gate.checkingStatus", "Checking feature status…") : undefined);
+  const g2CanControl = canControl && !resourceFlagUnsettled;
 
   const refetchAll = () => {
     void utils.fleet.status.invalidate();
@@ -582,18 +600,18 @@ export default function FleetOrchestration() {
           <span>{t("fleet.whenToUse", "When to use — assign tasks across a robot/AGV fleet and manage zone traffic & reservations. Orchestration state only; real motion routes through the HITL dispatcher.")}</span>
         </div>
 
-        {/* ── Flag-off preview banner (honest) ───────────────────────────────── */}
-        {!flagEnabled && (
-          <div className="flex items-start gap-2 rounded-md border border-amber-500/40 bg-amber-500/10 p-3 text-sm">
-            <Info className="mt-0.5 h-4 w-4 shrink-0 text-amber-600" />
-            <span>
-              {t(
-                "fleet.flagOffBanner",
-                "Preview mode: fleet orchestration is disabled (FLEET_ORCH_ENABLED is off). Reads work; actions (allocate / reassign / cancel / reserve / release) are blocked until the flag is enabled.",
-              )}
-            </span>
-          </div>
-        )}
+        {/* ── Flag status banner — honest 4-state (loading/off/on/error), doc 80 Task 1 ── */}
+        <FeatureStatusGate
+          status={flagStatus}
+          offMessage={t(
+            "fleet.flagOffBanner",
+            "Preview mode: fleet orchestration is disabled. Reads work; actions (allocate / reassign / cancel / reserve / release) are blocked until it is enabled.",
+          )}
+          errorMessage={t(
+            "fleet.flagStatusError",
+            "Could not check whether fleet orchestration is enabled — actions are disabled until this is confirmed.",
+          )}
+        />
 
         {/* Safety note — mirrors RobotControl honesty */}
         <div className="flex items-start gap-2 rounded-md border border-border bg-muted/40 p-3 text-sm text-muted-foreground">
@@ -637,8 +655,8 @@ export default function FleetOrchestration() {
               {/* W4-18 (5) — advisory resolve: huỷ waiter ưu tiên thấp nhất để phá deadlock. */}
               <Button
                 size="sm" variant="destructive" className="mt-2 h-7"
-                disabled={!canControl || resolveDeadlockM.isPending}
-                title={permReason}
+                disabled={!g1CanControl || resolveDeadlockM.isPending}
+                title={g1ControlReason}
                 onClick={() => resolveDeadlockM.mutate()}
               >
                 <ShieldAlert className="mr-1 h-3.5 w-3.5" />{t("fleet.resolveDeadlock", "Resolve deadlock")}
@@ -647,17 +665,19 @@ export default function FleetOrchestration() {
           </div>
         )}
 
-        {/* ── G2 resource-flag preview banner (only on the G2 tabs) ──────────── */}
-        {!resourceFlagEnabled && tab !== "tasks" && (
-          <div className="flex items-start gap-2 rounded-md border border-amber-500/40 bg-amber-500/10 p-3 text-sm">
-            <Info className="mt-0.5 h-4 w-4 shrink-0 text-amber-600" />
-            <span>
-              {t(
-                "fleet.resourceFlagOffBanner",
-                "Preview mode: the fleet resource layer is disabled (FLEET_RESOURCE_ENABLED is off). Reads work; actions (create / map / reserve / release / sweep) are blocked until the flag is enabled.",
-              )}
-            </span>
-          </div>
+        {/* ── G2 resource-flag status banner (only on the G2 tabs), doc 80 Task 1 ─ */}
+        {tab !== "tasks" && (
+          <FeatureStatusGate
+            status={resourceFlagStatus}
+            offMessage={t(
+              "fleet.resourceFlagOffBanner",
+              "Preview mode: the fleet resource layer is disabled. Reads work; actions (create / map / reserve / release / sweep) are blocked until it is enabled.",
+            )}
+            errorMessage={t(
+              "fleet.resourceFlagStatusError",
+              "Could not check whether the fleet resource layer is enabled — actions are disabled until this is confirmed.",
+            )}
+          />
         )}
 
         {/* ── Tabbed surface (G1 tasks/zones + G2 operations/resources/charging) ─ */}
@@ -711,6 +731,7 @@ export default function FleetOrchestration() {
             </div>
           </CardHeader>
           <CardContent className="p-0">
+            <ProvenanceSummary rows={tasks} className="mx-3 mb-2" />
             <Table>
               <TableHeader>
                 <TableRow>
@@ -743,7 +764,12 @@ export default function FleetOrchestration() {
                   const terminal = TERMINAL.has(tk.status);
                   return (
                     <TableRow key={tk.id}>
-                      <TableCell className="font-mono text-xs">{tk.taskKey}</TableCell>
+                      <TableCell className="font-mono text-xs">
+                        <span className="inline-flex items-center gap-1.5">
+                          <span>{tk.taskKey}</span>
+                          <ProvenanceBadge row={tk} />
+                        </span>
+                      </TableCell>
                       <TableCell><Badge variant="outline">{tk.requiredCapability}</Badge></TableCell>
                       <TableCell>
                         <Badge variant={tk.priority <= 2 ? "destructive" : "outline"}>P{tk.priority}</Badge>
@@ -870,8 +896,8 @@ export default function FleetOrchestration() {
                       )}
                       <Button
                         size="sm" variant="outline" className="mt-1 h-7 w-full"
-                        disabled={!canControl}
-                        title={permReason}
+                        disabled={!g1CanControl}
+                        title={g1ControlReason}
                         onClick={() => setReserveZoneTarget(z)}
                       >
                         <MapPin className="mr-1 h-3.5 w-3.5" />{t("fleet.reserve", "Reserve")}
@@ -890,8 +916,8 @@ export default function FleetOrchestration() {
             <OperationsTab
               operations={operations}
               loading={operationsQ.isLoading}
-              canControl={canControl}
-              controlReason={permReason}
+              canControl={g2CanControl}
+              controlReason={g2ControlReason}
               resolveCode={resolveCode}
               setResolveCode={setResolveCode}
               resolved={resolved}
@@ -907,8 +933,8 @@ export default function FleetOrchestration() {
             <ResourcesTab
               resources={resources}
               loading={resourcesQ.isLoading}
-              canControl={canControl}
-              controlReason={permReason}
+              canControl={g2CanControl}
+              controlReason={g2ControlReason}
               reservationsByResource={resReservationsByResource}
               releasePending={releaseResourceM.isPending}
               onCreate={() => setCreateResourceOpen(true)}
@@ -924,8 +950,8 @@ export default function FleetOrchestration() {
               chargersLoading={chargersQ.isLoading}
               plans={chargingPlans}
               plansLoading={chargingPlansQ.isLoading}
-              canControl={canControl}
-              controlReason={permReason}
+              canControl={g2CanControl}
+              controlReason={g2ControlReason}
               sweepPending={sweepM.isPending}
               onCreateCharger={() => setCreateChargerOpen(true)}
               onSweep={() => sweepM.mutate()}

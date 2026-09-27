@@ -8,8 +8,8 @@
  *     called by the facade itself (mode gate OFF ⇒ simulated ⇒ zero writes).
  *   - dispatcher gates APPLY through the facade (tag not writable → ack rejected
  *     reason TAG_NOT_WRITABLE — impossible if the facade bypassed the dispatcher).
- *   - control ON → the write reaches the driver VIA the dispatcher (ledger row
- *     'acked'), ack maps to 'done'.
+ *   - control ON → the dispatcher's real-write gates apply: a CanonicalCommand has no HITL
+ *     actionId ⇒ PRECONDITION_FAILED, driver 0× (doc 81 Đợt 1B Task 6, Ruling R5).
  *   - verb ≠ 'tag.write' → ack rejected reason UNSUPPORTED, dispatcher untouched.
  *   - bad args / bad issued_by → INVALID_ARGS, dispatcher untouched.
  *   - idempotency: same idempotency_key twice → cached ack, ONE ledger row.
@@ -20,6 +20,7 @@
  *     clean read → OK; active safety flag → BLOCKED; all reads failing → UNKNOWN.
  */
 import { describe, it, expect, vi, beforeEach } from "vitest";
+import { makeLedgerFakeDb, boundPending, resultRows, isIntentRow, TESTKIT_TOOL } from "./commandDispatcher.testkit";
 
 type Row = Record<string, any>;
 
@@ -40,10 +41,8 @@ function reset() {
   cmdSeq = 1;
 }
 
-vi.mock("drizzle-orm", () => ({
-  eq: (col: any, val: any) => ({ __k: col.__name, __v: val, __op: "eq" }),
-  and: (...ps: any[]) => ({ __and: ps }),
-}));
+// doc 81 Đợt 1B Task 6 — + inArray/sql for the write-ahead reservation (see commandDispatcher.testkit.ts).
+vi.mock("drizzle-orm", async () => (await import("./commandDispatcher.testkit")).fakeOrm);
 
 function matches(row: Row, pred: any): boolean {
   if (!pred) return true;
@@ -64,39 +63,24 @@ function tableFor(table: any): Row[] {
 }
 
 function makeFakeDb() {
-  return {
-    select: () => ({
-      from: (table: any) => ({
-        // Thenable (await-able) AND .limit()-able — the facade awaits the bare
-        // where() for device_tags; the dispatcher always chains .limit(1).
-        where: (pred: any) => {
-          const rows = tableFor(table).filter((r) => matches(r, pred));
-          return {
-            limit: async (n?: number) => rows.slice(0, n ?? 1),
-            then: (onF: any, onR: any) => Promise.resolve(rows.slice()).then(onF, onR),
-          };
-        },
-      }),
-    }),
-    insert: (table: any) => ({
-      values: (vals: Row) => ({
-        returning: async (_sel?: any) => {
-          if (table.__table === "command_log") {
-            const row = { id: cmdSeq++, ...vals };
-            cmdLog.push(row);
-            return [{ id: row.id }];
-          }
-          return [{ id: cmdSeq++ }];
-        },
-      }),
-    }),
-  };
+  // doc 81 Đợt 1B Task 6 — transaction-capable fake (reservation tx); same insert bookkeeping.
+  return makeLedgerFakeDb({
+    tableFor,
+    onInsert: (table: any, vals: Row) => {
+      if (table.__table === "command_log") {
+        const row = { id: cmdSeq++, ...vals };
+        cmdLog.push(row);
+        return { id: row.id };
+      }
+      return { id: cmdSeq++ };
+    },
+  });
 }
 
 vi.mock("../../db/connection", () => ({ getDb: vi.fn(async () => makeFakeDb()) }));
 
 vi.mock("../../../drizzle/schema", () => ({
-  aiPendingActions: { __table: "ai_pending_actions", id: { __name: "id" }, status: { __name: "status" }, userId: { __name: "userId" } },
+  aiPendingActions: { __table: "ai_pending_actions", id: { __name: "id" }, status: { __name: "status" }, userId: { __name: "userId" }, tool: { __name: "tool" } },
   deviceAdapters: { __table: "device_adapters", id: { __name: "id" }, machineId: { __name: "machineId" }, isEnabled: { __name: "isEnabled" } },
   deviceTags: { __table: "device_tags", id: { __name: "id" }, adapterId: { __name: "adapterId" }, tagKey: { __name: "tagKey" }, dataType: { __name: "dataType" }, scale: { __name: "scale" }, offset: { __name: "offset" } },
   machines: { __table: "machines", id: { __name: "id" } },
@@ -188,10 +172,10 @@ describe("G1.1 — executeCommand fallback goes THROUGH the dispatcher (no backd
     expect(ack.command_id).toBe("cmd-1");
     expect(typeof ack.ts).toBe("string");
     // One-door proof: the dispatcher wrote its append-only ledger row…
-    expect(cmdLog).toHaveLength(1);
-    expect(cmdLog[0].status).toBe("simulated");
-    expect(cmdLog[0].commandType).toBe("tag.write");
-    expect(cmdLog[0].idempotencyKey).toContain("idem-1");
+    expect(resultRows(cmdLog)).toHaveLength(1);
+    expect(resultRows(cmdLog)[0].status).toBe("simulated");
+    expect(resultRows(cmdLog)[0].commandType).toBe("tag.write");
+    expect(resultRows(cmdLog)[0].idempotencyKey).toContain("idem-1");
     // …and the facade never touched the device directly.
     expect(writeTagsSpy).not.toHaveBeenCalled();
   });
@@ -203,20 +187,30 @@ describe("G1.1 — executeCommand fallback goes THROUGH the dispatcher (no backd
     expect(ack.status).toBe("rejected");
     expect(ack.reason).toBe("TAG_NOT_WRITABLE");
     expect(writeTagsSpy).not.toHaveBeenCalled();
-    expect(cmdLog[0].status).toBe("rejected");
+    expect(resultRows(cmdLog)[0].status).toBe("rejected");
   });
 
-  it("control ON → write reaches the driver VIA the dispatcher; ack 'done', ledger 'acked'", async () => {
+  it("control ON → the dispatcher's REAL-write gates apply to the facade: no HITL actionId ⇒ PRECONDITION_FAILED, driver 0× (doc 81 Đợt 1B Task 6, R5)", async () => {
+    // A CanonicalCommand carries no HITL actionId, so under Ruling R5 (every non-simulated OT
+    // write needs a bound, confirmed, single-use action) the facade's tag.write can no longer
+    // reach the device. The one-door property is unchanged: the refusal comes from dispatch().
     process.env.OT_CONTROL_ENABLED = "true";
+    // Safety preflight opted out HERE only so the HITL gate is what answers (with no safety-PLC
+    // configured the preflight would refuse first: SAFETY_UNKNOWN — see commandDispatcher.safety.test.ts).
+    process.env.OT_SAFETY_PREFLIGHT_ENABLED = "false";
     const facade = createAdapterFacade({ adapterId: 10, machineId: 5 });
-    const ack = await facade.executeCommand(baseCmd({ correlation_id: "corr-f1", deadline_ms: 2000 }));
-    expect(ack.status).toBe("done");
-    expect(writeTagsSpy).toHaveBeenCalledTimes(1);
-    expect(cmdLog).toHaveLength(1);
-    expect(cmdLog[0].status).toBe("acked");
+    const ack = await facade
+      .executeCommand(baseCmd({ correlation_id: "corr-f1", deadline_ms: 2000 }))
+      .finally(() => delete process.env.OT_SAFETY_PREFLIGHT_ENABLED);
+    expect(ack.status).toBe("rejected");
+    expect(ack.reason).toBe("PRECONDITION_FAILED");
+    expect(writeTagsSpy).not.toHaveBeenCalled();
+    expect(resultRows(cmdLog)).toHaveLength(1);
+    expect(resultRows(cmdLog)[0].status).toBe("rejected");
+    expect(cmdLog.filter(isIntentRow)).toHaveLength(0);
     // G1.7 context flows through the facade unchanged.
-    expect(cmdLog[0].correlationId).toBe("corr-f1");
-    expect(cmdLog[0].deadlineMs).toBe(2000);
+    expect(resultRows(cmdLog)[0].correlationId).toBe("corr-f1");
+    expect(resultRows(cmdLog)[0].deadlineMs).toBe(2000);
   });
 
   it("verb ≠ tag.write → rejected UNSUPPORTED; dispatcher untouched (no ledger row)", async () => {
@@ -224,7 +218,7 @@ describe("G1.1 — executeCommand fallback goes THROUGH the dispatcher (no backd
     const ack = await facade.executeCommand(baseCmd({ verb: "start" }));
     expect(ack.status).toBe("rejected");
     expect(ack.reason).toBe("UNSUPPORTED");
-    expect(cmdLog).toHaveLength(0);
+    expect(resultRows(cmdLog)).toHaveLength(0);
     expect(writeTagsSpy).not.toHaveBeenCalled();
   });
 
@@ -236,7 +230,7 @@ describe("G1.1 — executeCommand fallback goes THROUGH the dispatcher (no backd
     expect(a1.reason).toBe("INVALID_ARGS");
     expect(a2.status).toBe("rejected");
     expect(a2.reason).toBe("INVALID_ARGS");
-    expect(cmdLog).toHaveLength(0);
+    expect(resultRows(cmdLog)).toHaveLength(0);
   });
 
   it("bad issued_by (non-numeric / non-positive) → rejected INVALID_ARGS", async () => {
@@ -244,7 +238,7 @@ describe("G1.1 — executeCommand fallback goes THROUGH the dispatcher (no backd
     const ack = await facade.executeCommand(baseCmd({ issued_by: "operator-7" }));
     expect(ack.status).toBe("rejected");
     expect(ack.reason).toBe("INVALID_ARGS");
-    expect(cmdLog).toHaveLength(0);
+    expect(resultRows(cmdLog)).toHaveLength(0);
     expect(parseIssuedBy("42")).toBe(42);
     expect(parseIssuedBy(0)).toBeNull();
     expect(parseIssuedBy(-3)).toBeNull();
@@ -258,7 +252,7 @@ describe("G1.1 — executeCommand fallback goes THROUGH the dispatcher (no backd
     expect(a1.status).toBe("done");
     expect(a2.status).toBe("done");
     expect(a2.command_id).toBe("cmd-2");
-    expect(cmdLog).toHaveLength(1);
+    expect(resultRows(cmdLog)).toHaveLength(1);
   });
 
   it("driver implementing executeCommand → delegated (dispatcher untouched)", async () => {
@@ -270,7 +264,7 @@ describe("G1.1 — executeCommand fallback goes THROUGH the dispatcher (no backd
     const ack = await facade.executeCommand(baseCmd({ verb: "start" }));
     expect(delegated).toHaveBeenCalledTimes(1);
     expect(ack.status).toBe("done");
-    expect(cmdLog).toHaveLength(0);
+    expect(resultRows(cmdLog)).toHaveLength(0);
   });
 });
 

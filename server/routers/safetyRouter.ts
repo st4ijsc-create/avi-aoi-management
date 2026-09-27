@@ -64,6 +64,9 @@ import {
   readConfigById,
   SimSafetyPlcBackend,
 } from "../services/safety/plc/safetyPlcAdapter";
+// doc 80 Đợt 1 Task 4 (SAF-02) — read-only source-health report for the Safety page.
+import { loadSafetySourceHealth } from "../services/safety/safetySourceHealth";
+import { phamViCua } from "./_phamViNguoiXem";
 
 async function db() {
   const d = await getDb();
@@ -165,6 +168,17 @@ export const safetyRouter = router({
       safetyPlcAdapter: safetyPlcAdapterEnabled(), // S2b — read-only safety-PLC adapter
       advisory: true, // explicit: this subsystem is advisory, not safety-rated
     })),
+
+  /**
+   * doc 80 Đợt 1 Task 4 (SAF-02) — READ-ONLY health of every safety source the page relies on:
+   * Safety PLC (real vs SIM backend from safety_plc_configs, and what that means for the OT/robot
+   * safety preflight), vision, zone SW, e-stop adapter and the socket server. Never reads a PLC
+   * backend, never writes. PLC config codes are shown only inside the viewer's factory scope;
+   * the preflight basis counts are system-wide (the preflight reads every enabled config).
+   */
+  sourceHealth: protectedProcedure
+    .use(requirePermission("machine_monitoring", "canView"))
+    .query(({ ctx }) => loadSafetySourceHealth(phamViCua(ctx))),
 
   // ══════════════════════════════════════════════════════════════════════════
   // SAFETY EVENTS (S1-b) — feed/trend (read) + ingest/audit (mutations)

@@ -27,6 +27,8 @@ class FakeSocket {
   handshake = { auth: {}, headers: {} as Record<string, string> };
   handlers = new Map<string, Handler>();
   emit = vi.fn();
+  /** socket.use (doc 81 Đợt 1B Task 9: giới hạn tần suất machine:*) — tệp này không gửi gói machine:*. */
+  use = vi.fn();
   constructor(id: string, user: { id: number; role: string } | null, private server: FakeServer) {
     this.id = id;
     this.data = { user, clientType: user ? "browser" : "machine" };

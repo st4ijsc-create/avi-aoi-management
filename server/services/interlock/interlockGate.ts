@@ -144,8 +144,13 @@ export async function evaluateRuleCondition(rule: InterlockRule): Promise<boolea
   );
 }
 
-/** Các action interlock được coi là "chặn máy" (dùng làm allowlist cho cổng inline). */
-const INTERLOCK_GATE_ACTIONS: ReadonlySet<string> = new Set([
+/**
+ * Các action interlock được coi là "chặn máy" (dùng làm allowlist cho cổng inline).
+ * Export để nơi khác đo "độ phủ interlock" (ví dụ `oversightRouter.posture`, ILK-06) dùng
+ * ĐÚNG cùng tập — hai định nghĩa "rule nào thực sự chặn được lệnh" lệch nhau là chính hình
+ * dạng báo-xanh-giả mà ILK-06 tồn tại để bắt (Fix round 1 doc 80 Đợt 1 Task 2).
+ */
+export const INTERLOCK_GATE_ACTIONS: ReadonlySet<string> = new Set([
   "block_downstream",
   "stop_line",
   "reduce_speed",

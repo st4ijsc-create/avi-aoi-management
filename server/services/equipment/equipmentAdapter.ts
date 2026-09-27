@@ -25,9 +25,11 @@ import type { AdapterKind } from "./capabilityModel";
 import { listProtocols, createDriver } from "../ot/driverRegistry";
 import type { OtProtocol } from "../ot/otDriver";
 import { dispatch as otDispatch } from "../ot/commandDispatcher";
+import { probeWithDeadline, PROBE_MARGIN_MS } from "../ot/probeConnection";
 import type { DispatchInput, DispatchTrigger } from "../ot/commandDispatcher";
 import { dispatchRobotJob } from "../robot/robotCommandDispatcher";
-import type { RobotJobSpec, RobotJobType } from "../robot/robotDriver";
+import type { RobotJobSpec } from "../robot/robotDriver";
+import { toRobotJob } from "./robotJobMapping";
 
 /** Which existing registry/manager a kind delegates to (for discovery/UI). */
 export type DelegateRegistry =
@@ -83,7 +85,11 @@ export interface EquipmentCommand {
   job?: RobotJobSpec;
   idempotencyKey: string;
   /** HITL provenance — actionId + confirmedBy/requestedBy. */
-  hitl: { actionId: string; requestedBy: number; confirmedBy?: number };
+  /**
+   * doc 81 Đợt 1B Task 6 — `tool` = the ai_pending_actions.tool the actionId was created for;
+   * the OT dispatcher binds a real write to (tool + canonical payload hash) and consumes it.
+   */
+  hitl: { actionId: string; requestedBy: number; confirmedBy?: number; tool?: string };
   lang?: "vi" | "en" | "zh";
 }
 
@@ -114,6 +120,18 @@ export interface EquipmentAdapter {
   getState?(cfg: EquipmentConnConfig): Promise<{ state?: string; raw?: Record<string, unknown> }>;
 }
 
+/**
+ * doc 81 Đợt 1B Task 2 (R8) — hạn tổng cho một lần dò qua mặt tiền: timeoutMs của cấu hình
+ * (hoặc mặc định 5000 như các driver) cho connect, cộng thêm chừng ấy cho bước sau connect
+ * (health/readTags), cộng biên đóng có hạn PROBE_MARGIN_MS.
+ */
+const EQUIPMENT_PROBE_DEFAULT_TIMEOUT_MS = 5000;
+function equipmentProbeOverallMs(cfg: EquipmentConnConfig): number {
+  const t =
+    typeof cfg.timeoutMs === "number" && cfg.timeoutMs > 0 ? cfg.timeoutMs : EQUIPMENT_PROBE_DEFAULT_TIMEOUT_MS;
+  return 2 * t + PROBE_MARGIN_MS;
+}
+
 const OT_KIND_TO_PROTOCOL: Partial<Record<AdapterKind, OtProtocol>> = {
   "ot-opcua": "opcua",
   "ot-modbus": "modbus",
@@ -124,16 +142,8 @@ const OT_KIND_TO_PROTOCOL: Partial<Record<AdapterKind, OtProtocol>> = {
 };
 
 /** Map a robot job verb string onto the RobotDriver RobotJobType. */
-function toRobotJob(command: EquipmentCommand): RobotJobSpec {
-  if (command.job) return command.job;
-  const verbs: RobotJobType[] = ["move", "pick_place", "dispense", "screw", "home", "abort", "custom"];
-  const jobType = verbs.includes(command.name as RobotJobType)
-    ? (command.name as RobotJobType)
-    : command.name === "abort"
-      ? "abort"
-      : "custom";
-  return { jobType, params: {} };
-}
+// doc 81 Đợt 1B final wave (item 2) — `toRobotJob` moved to ./robotJobMapping so the FOE
+// producer of the robot authorisation row hashes EXACTLY the job this adapter dispatches.
 
 /**
  * An OT-family adapter (opcua/modbus/s7/mitsubishi-mc/ethernet-ip/stub). Delegates
@@ -147,11 +157,19 @@ class OtEquipmentAdapter implements EquipmentAdapter {
   async testConnection(cfg: EquipmentConnConfig): Promise<EquipmentTestResult> {
     try {
       const driver = createDriver(this.protocol);
-      const t0 = Date.now();
-      await driver.connect({ endpoint: cfg.endpoint ?? "", options: cfg.options, timeoutMs: cfg.timeoutMs });
-      const health = await driver.health();
-      await driver.disconnect().catch(() => undefined);
-      return { ok: health.connected, latencyMs: Date.now() - t0, detail: { protocol: this.protocol } };
+      // doc 81 Đợt 1B Task 2 (R8) — MỘT hạn tổng cho connect + health + disconnect (driver treo
+      // không giữ được lời gọi; kết nối xong muộn vẫn bị hạ).
+      const { latencyMs, value: health } = await probeWithDeadline(
+        {
+          label: this.protocol,
+          connect: () =>
+            driver.connect({ endpoint: cfg.endpoint ?? "", options: cfg.options, timeoutMs: cfg.timeoutMs }),
+          afterConnect: () => driver.health(),
+          disconnect: () => driver.disconnect(),
+        },
+        equipmentProbeOverallMs(cfg),
+      );
+      return { ok: health ? health.connected : false, latencyMs, detail: { protocol: this.protocol } };
     } catch (err) {
     // data-raw-ok: dò kết nối thiết bị ở tầng adapter. KHÁC `deviceAdapter.testConnection`
     // (đã có errorCode): hàm này là API NỘI BỘ cho `equipmentIntegrationRouter`, và chính
@@ -163,11 +181,19 @@ class OtEquipmentAdapter implements EquipmentAdapter {
   async readTelemetry(cfg: EquipmentConnConfig): Promise<EquipmentSample[]> {
     try {
       const driver = createDriver(this.protocol);
-      await driver.connect({ endpoint: cfg.endpoint ?? "", options: cfg.options, timeoutMs: cfg.timeoutMs });
       const tags = Array.isArray(cfg.tags) ? (cfg.tags as Parameters<typeof driver.readTags>[0]) : [];
-      const samples = await driver.readTags(tags);
-      await driver.disconnect().catch(() => undefined);
-      return samples.map((s) => ({ key: s.tagKey, value: s.value, timestamp: s.timestamp }));
+      // doc 81 Đợt 1B Task 2 (R8) — nhánh anh em của testConnection: cùng hạn tổng.
+      const { value: samples } = await probeWithDeadline(
+        {
+          label: this.protocol,
+          connect: () =>
+            driver.connect({ endpoint: cfg.endpoint ?? "", options: cfg.options, timeoutMs: cfg.timeoutMs }),
+          afterConnect: () => driver.readTags(tags),
+          disconnect: () => driver.disconnect(),
+        },
+        equipmentProbeOverallMs(cfg),
+      );
+      return (samples ?? []).map((s) => ({ key: s.tagKey, value: s.value, timestamp: s.timestamp }));
     } catch {
       return [];
     }
@@ -180,6 +206,7 @@ class OtEquipmentAdapter implements EquipmentAdapter {
     const triggeredBy: DispatchTrigger = {
       kind: "hitl",
       actionId: command.hitl.actionId,
+      ...(command.hitl.tool ? { tool: command.hitl.tool } : {}),
       requestedBy: command.hitl.requestedBy,
       confirmedBy: command.hitl.confirmedBy ?? command.hitl.requestedBy,
     };

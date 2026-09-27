@@ -17,6 +17,7 @@
  * ════════════════════════════════════════════════════════════════════════════
  */
 import { z } from "zod";
+import { createHash } from "node:crypto";
 import { TRPCError } from "@trpc/server";
 import { appError } from "../_core/appError";
 import { and, eq, desc, gt, inArray } from "drizzle-orm";
@@ -41,7 +42,7 @@ const protectedProcedure = moduleProcedure("MOD_OT_CONTROL");
 // replacing the old inline `role !== "admin"` check that BYPASSED 2FA).
 const actuationProcedure = actuationBase.use(moduleGate("MOD_OT_CONTROL"));
 const adminProcedure = adminBase.use(moduleGate("MOD_OT_CONTROL"));
-import { interlockRules, interlockEvents, controlAuditLog } from "../../drizzle/schema";
+import { interlockRules, interlockEvents, controlAuditLog, type InterlockRule } from "../../drizzle/schema";
 import { evaluateCondition, deriveObserved, type ComparisonOperator, type InterlockSourceType } from "../services/interlock/ruleEvaluator";
 import { recordAuditEvent } from "../services/audit/controlAuditService";
 
@@ -100,6 +101,57 @@ function assertTargetIfNotAlert(action: string, target: { targetMachineId?: numb
 }
 
 /**
+ * doc 80 Đợt 1 Task 9 (§12 "Còn mở") — VERSION TOKEN của một rule: sha256 trên dạng chuẩn hoá
+ * (khoá sắp xếp, Date → ISO) của MỌI cột định nghĩa + trạng thái duyệt/bật, TRỪ `lastFiredAt`
+ * (engine ghi mỗi lần rule nổ — không phải nội dung người duyệt xem). `approve`/`enable` đòi
+ * `expectedVersion` = token của bản người bấm đang nhìn, so DƯỚI `FOR UPDATE` (xem
+ * assertExpectedVersion). Chọn hash nội dung thay vì chỉ `updatedAt`: không phụ thuộc độ phân giải
+ * timestamp (hai lần sửa cùng mili-giây) và bắt cả hàng bị ghi thẳng bảng mà không đổi `updatedAt`.
+ */
+function stableJson(value: unknown): string {
+  if (value instanceof Date) return JSON.stringify(value.toISOString());
+  if (value === null || value === undefined || typeof value !== "object") return JSON.stringify(value ?? null);
+  if (Array.isArray(value)) return `[${value.map(stableJson).join(",")}]`;
+  const obj = value as Record<string, unknown>;
+  return `{${Object.keys(obj)
+    .sort()
+    .map((k) => `${JSON.stringify(k)}:${stableJson(obj[k])}`)
+    .join(",")}}`;
+}
+
+export function interlockRuleVersionToken(row: InterlockRule): string {
+  const { lastFiredAt: _volatile, ...content } = row;
+  return `v1:${createHash("sha256").update(stableJson(content)).digest("hex")}`;
+}
+
+/** Gắn `versionToken` vào hàng rule trả cho client (list/get/mọi mutation trả rule). */
+function withVersion<T extends InterlockRule>(row: T): T & { versionToken: string } {
+  return { ...row, versionToken: interlockRuleVersionToken(row) };
+}
+
+/**
+ * Task 9 — bản người bấm đã xem PHẢI là bản đang lưu (đọc dưới `FOR UPDATE` trong cùng
+ * transaction). Lệch ⇒ CONFLICT, không ghi gì: người duyệt/bật phải tải lại và xem nội dung mới.
+ */
+function assertExpectedVersion(
+  existing: InterlockRule,
+  expectedVersion: string,
+  operation: "approveInterlockRule" | "activateInterlockRule",
+): void {
+  if (interlockRuleVersionToken(existing) !== expectedVersion) {
+    throw appError(
+      "CONFLICT",
+      "OPERATION_FAILED",
+      { operation, reason: "interlockRuleChanged" },
+      "Rule đã bị sửa — tải lại để duyệt.",
+    );
+  }
+}
+
+/** Task 9 — token phiên bản mà màn hình đang hiển thị (bắt buộc ở approve/enable). */
+const expectedVersionInput = z.string().min(1).max(128);
+
+/**
  * Final review fix #5 — true khi `userId` là actor của một dòng control_audit_log `create`/`update`
  * cho rule này KỂ TỪ dòng `approve` gần nhất (chưa từng duyệt ⇒ toàn bộ lịch sử). Chạy trong
  * transaction của approve, SAU `SELECT … FOR UPDATE` trên rule — mọi update đồng thời đã commit
@@ -137,7 +189,8 @@ export const interlockRouter = router({
     .use(requirePermission("interlock", "canView"))
     .query(async () => {
       const db = await getDb();
-      return db.select().from(interlockRules).orderBy(desc(interlockRules.createdAt));
+      const rows = await db.select().from(interlockRules).orderBy(desc(interlockRules.createdAt));
+      return rows.map(withVersion);
     }),
 
   get: protectedProcedure
@@ -147,7 +200,7 @@ export const interlockRouter = router({
       const db = await getDb();
       const [row] = await db.select().from(interlockRules).where(eq(interlockRules.id, input.id)).limit(1);
       if (!row) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "interlockRule" }, "Rule không tồn tại.");
-      return row;
+      return withVersion(row);
     }),
 
   create: actuationProcedure
@@ -174,7 +227,7 @@ export const interlockRouter = router({
           .returning();
         // Audit bất biến: tạo rule an toàn.
         await recordAuditEvent(tx, { entityType: "interlock_rule", entityId: row.id, action: "create", actorId: ctx.user.id, before: null, after: row });
-        return row;
+        return withVersion(row);
       });
     }),
 
@@ -220,7 +273,7 @@ export const interlockRouter = router({
         const [row] = await tx.update(interlockRules).set(patch).where(eq(interlockRules.id, id)).returning();
         // Audit bất biến: sửa rule (before/after để truy vết cấu hình an toàn).
         await recordAuditEvent(tx, { entityType: "interlock_rule", entityId: id, action: "update", actorId: ctx.user.id, before: existing, after: row, reason });
-        return row;
+        return withVersion(row);
       });
     }),
 
@@ -242,7 +295,8 @@ export const interlockRouter = router({
     }),
 
   approve: adminProcedure
-    .input(z.object({ id: z.number().int().positive() }))
+    // Task 9 — `expectedVersion` = versionToken của bản người duyệt đang xem (bắt buộc).
+    .input(z.object({ id: z.number().int().positive(), expectedVersion: expectedVersionInput }))
     .mutation(async ({ input, ctx }) => {
       // ADMIN-ONLY + 2FA: approving a rule is a privileged safety decision.
       // adminProcedure enforces role==='admin' AND twoFactorEnabled (doc 54 Wave B),
@@ -274,6 +328,9 @@ export const interlockRouter = router({
             "Tách biệt trách nhiệm (SoD): người tạo/sửa rule không được tự duyệt.",
           );
         }
+        // Task 9 — duyệt ĐÚNG nội dung đã xem: bản đang lưu (dưới FOR UPDATE) phải trùng token client
+        // gửi. Đứng SAU SoD (người tự sửa rồi tự duyệt vẫn nhận PERMISSION_DENIED, không phải CONFLICT).
+        assertExpectedVersion(existing, input.expectedVersion, "approveInterlockRule");
         // Final review fix #7 — ILK-05 cả ở approve: hàng do AI tool (propose_interlock_rule) / seed
         // ghi thẳng bảng không đi qua create/update.
         assertTargetIfNotAlert(existing.action, existing);
@@ -284,13 +341,14 @@ export const interlockRouter = router({
           .returning();
         // Audit bất biến: duyệt rule (quyết định an toàn có đặc quyền).
         await recordAuditEvent(tx, { entityType: "interlock_rule", entityId: input.id, action: "approve", actorId: ctx.user.id, before: existing, after: row });
-        return row;
+        return withVersion(row);
       });
     }),
 
   enable: actuationProcedure
     .use(requirePermission("interlock", "canEdit"))
-    .input(z.object({ id: z.number().int().positive() }))
+    // Task 9 — bật ĐÚNG bản (đã duyệt) người bấm đang xem.
+    .input(z.object({ id: z.number().int().positive(), expectedVersion: expectedVersionInput }))
     .mutation(async ({ input, ctx }) => {
       const db = await getDb();
       // ILK-10 — SELECT/UPDATE/audit trong CÙNG transaction.
@@ -301,6 +359,8 @@ export const interlockRouter = router({
         if (existing.approvedBy == null) {
           throw appError("FORBIDDEN", "OPERATION_FAILED", { operation: "activateInterlockRule" }, "Rule chưa được duyệt (approvedBy=null) — không thể bật.");
         }
+        // Task 9 — bản đang lưu phải là bản người bật đã xem (sửa + duyệt lại ở giữa ⇒ CONFLICT).
+        assertExpectedVersion(existing, input.expectedVersion, "activateInterlockRule");
         // Final review fix #7 — ILK-05 cả ở enable (hàng seed có thể đã mang approvedBy sẵn).
         assertTargetIfNotAlert(existing.action, existing);
         const [row] = await tx
@@ -310,7 +370,7 @@ export const interlockRouter = router({
           .returning();
         // Audit bất biến: bật rule an toàn.
         await recordAuditEvent(tx, { entityType: "interlock_rule", entityId: input.id, action: "enable", actorId: ctx.user.id, before: existing, after: row });
-        return row;
+        return withVersion(row);
       });
     }),
 
@@ -331,7 +391,7 @@ export const interlockRouter = router({
           .returning();
         // Audit bất biến: tắt rule an toàn (reason bắt buộc — ILK-03).
         await recordAuditEvent(tx, { entityType: "interlock_rule", entityId: input.id, action: "disable", actorId: ctx.user.id, before: existing, after: row, reason: input.reason });
-        return row;
+        return withVersion(row);
       });
     }),
 

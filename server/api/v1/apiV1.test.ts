@@ -9,7 +9,7 @@
  * Runs against a real Express app on an ephemeral port using global `fetch`
  * (supertest is not a dependency here).
  */
-import { describe, it, expect, beforeAll, afterAll, vi } from "vitest";
+import { describe, it, expect, beforeAll, afterAll, afterEach, vi } from "vitest";
 import express from "express";
 import { createServer, type Server } from "node:http";
 import { type AddressInfo } from "node:net";
@@ -24,6 +24,11 @@ const h = vi.hoisted(() => ({
   })),
   submitInspectionMock: vi.fn(async () => ({ success: true, inspectionId: 123 })),
 }));
+
+// doc 81 Đợt 1B Task 8 — "MACHINE_KEY" là khoá plaintext `machines.apiKey`; /api/v1 nay tôn trọng
+// MACHINE_SHARED_KEY_ALLOWED (mặc định "deny"). Các ca scope dưới đo máy-principal nên mở cờ; ca
+// cờ đóng nằm ở describe riêng cuối nhóm auth.
+process.env.MACHINE_SHARED_KEY_ALLOWED = "true";
 
 // Master key validation: accept only "MASTER" in tests.
 vi.mock("../../_core/masterKey", () => ({
@@ -125,6 +130,40 @@ describe("/api/v1 auth", () => {
     const body = await res.json();
     expect(body.ok).toBe(false);
     expect(body.error.code).toBe("forbidden");
+  });
+});
+
+// doc 81 Đợt 1B Task 8 — ĐO (BE3 §L4): `resolvePrincipal` bước 3 nhận khoá plaintext
+// `machines.apiKey` BẤT KỂ MACHINE_SHARED_KEY_ALLOWED. Nay cùng điểm quyết định với router máy.
+describe("/api/v1 — khoá plaintext machines.apiKey theo MACHINE_SHARED_KEY_ALLOWED", () => {
+  const cu = process.env.MACHINE_SHARED_KEY_ALLOWED;
+  afterEach(() => {
+    process.env.MACHINE_SHARED_KEY_ALLOWED = cu;
+  });
+  const ingest = () =>
+    call("/api/v1/ingest/inspection", {
+      key: "MACHINE_KEY",
+      method: "POST",
+      body: JSON.stringify({ serialNumber: "SN-SK", overallResult: "OK", measurements: [] }),
+    });
+
+  it("★ cờ không đặt (mặc định deny trong mã) ⇒ 401", async () => {
+    delete process.env.MACHINE_SHARED_KEY_ALLOWED;
+    const res = await ingest();
+    expect(res.status).toBe(401);
+    expect((await res.json()).error.code).toBe("unauthorized");
+  });
+
+  it("cờ = false ⇒ 401; cờ = read-only ⇒ 401 cho ingest:write", async () => {
+    process.env.MACHINE_SHARED_KEY_ALLOWED = "false";
+    expect((await ingest()).status).toBe(401);
+    process.env.MACHINE_SHARED_KEY_ALLOWED = "read-only";
+    expect((await ingest()).status).toBe(401);
+  });
+
+  it("cờ = true ⇒ nhận như cũ (201)", async () => {
+    process.env.MACHINE_SHARED_KEY_ALLOWED = "true";
+    expect((await ingest()).status).toBe(201);
   });
 });
 

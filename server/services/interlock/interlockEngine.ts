@@ -49,8 +49,18 @@ import { fetchObservation } from "./interlockGate";
 let timer: ReturnType<typeof setInterval> | null = null;
 let polling = false;
 
-function flagEnabled(): boolean {
+/**
+ * Doc 80 Đợt 1 final wave (item 5) — vị từ DUY NHẤT "engine interlock đang bật". Bảng tư thế của Hub
+ * (thủ tục `oversight.posture`, ILK-06) đọc qua đây thay vì tự parse `process.env`: hai bản parse là hai
+ * bản sẽ trôi khỏi nhau (một bên nhận "1", bên kia không) — đúng cái xanh-giả mà dải tư thế sinh ra để bắt.
+ * (Chỉ vị từ này được nhập từ phía thủ tục; engine vẫn không nhận một import nào từ tầng thủ tục.)
+ */
+export function isInterlockEngineEnabled(): boolean {
   return process.env.INTERLOCK_ENGINE_ENABLED === "true";
+}
+
+function flagEnabled(): boolean {
+  return isInterlockEngineEnabled();
 }
 
 function pollMs(): number {

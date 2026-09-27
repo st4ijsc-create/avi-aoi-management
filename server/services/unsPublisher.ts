@@ -185,7 +185,7 @@ export function sparkplugMetricToWrite(
   return { tagKey: name, value: metric.value, commandType: SPARKPLUG_DCMD_COMMAND_TYPE };
 }
 
-/** System user id recorded as requestedBy/confirmedBy on the dispatch (env override). */
+/** System user id recorded as requestedBy on the dispatch (env override). Never the confirmer (doc 81 Đợt 1B Task 6). */
 function sparkplugSystemUserId(): number {
   const n = Number(process.env.SPARKPLUG_COMMAND_SYSTEM_USER_ID);
   return Number.isInteger(n) && n > 0 ? n : 0;

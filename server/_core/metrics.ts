@@ -199,10 +199,53 @@ export function incSecurityEvent(type: string, mode: string): void {
   }
 }
 
+// ─── doc 81 Đợt 1B Task 11 — xác thực bề mặt metrics ─────────────────────────────────────────
+// ĐO trước khi vá (BE3 §L7): `GET /metrics` không xác thực — 437 KB, có cả RUM, cho bất kỳ ai
+// với tới cổng. Quy tắc (dùng chung với `GET /api/observability/metrics`):
+//   • `METRICS_TOKEN` đặt (khác rỗng) ⇒ BẮT BUỘC `Authorization: Bearer <METRICS_TOKEN>` — kể cả
+//     từ loopback; thiếu / sai ⇒ 401. So sánh hằng-thời-gian trên băm SHA-256 (không lộ độ dài).
+//   • không đặt ⇒ chỉ loopback (`127.0.0.1`/`::1`) theo `laLoopbackNghiem` (socket, không tin
+//     `X-Forwarded-For` trừ khi `trust proxy` đã cấu hình) ⇒ ngoài ra 403.
+// Đọc env MỖI lượt (đổi token không cần khởi động lại). Không ghi log token.
+import { createHash, timingSafeEqual } from "node:crypto";
+import { laLoopbackNghiem } from "../routes/_congLoopback";
+
+export type QuyenMetrics = { ok: true; via: "token" | "loopback" } | { ok: false; status: 401 | 403 };
+
+function metricsToken(): string | null {
+  const t = (process.env.METRICS_TOKEN ?? "").trim();
+  return t ? t : null;
+}
+
+const bam = (s: string) => createHash("sha256").update(s, "utf8").digest();
+
+/** `Authorization: Bearer <METRICS_TOKEN>` khớp? (false khi token chưa đặt). */
+export function bearerMetricsKhop(req: any): boolean {
+  const token = metricsToken();
+  if (!token) return false;
+  const h = req?.headers?.authorization;
+  if (typeof h !== "string") return false;
+  const m = /^Bearer\s+(\S+)\s*$/i.exec(h);
+  if (!m) return false;
+  return timingSafeEqual(bam(m[1]!), bam(token));
+}
+
+/** Quyết định truy cập bề mặt metrics theo quy tắc T11 (xem khối chú thích trên). */
+export function kiemQuyenMetrics(req: any): QuyenMetrics {
+  if (metricsToken()) return bearerMetricsKhop(req) ? { ok: true, via: "token" } : { ok: false, status: 401 };
+  return laLoopbackNghiem(req) ? { ok: true, via: "loopback" } : { ok: false, status: 403 };
+}
+
 /**
- * Handler cho endpoint GET /metrics. Trả 404 khi metrics chưa bật.
+ * Handler cho endpoint GET /metrics. Kiểm quyền TRƯỚC (T11: 401/403), rồi 404 khi metrics chưa bật.
  */
-export async function metricsHandler(_req: any, res: any): Promise<void> {
+export async function metricsHandler(req: any, res: any): Promise<void> {
+  const quyen = kiemQuyenMetrics(req);
+  if (!quyen.ok) {
+    if (quyen.status === 401) res.setHeader("WWW-Authenticate", 'Bearer realm="metrics"');
+    res.status(quyen.status).type("text/plain").send(quyen.status === 401 ? "unauthorized\n" : "forbidden\n");
+    return;
+  }
   if (!registry) {
     res.status(404).type("text/plain").send("metrics disabled");
     return;

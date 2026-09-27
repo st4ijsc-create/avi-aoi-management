@@ -25,6 +25,23 @@ export interface DeployOutcome {
   fallback: string;
   /** Lỗi thật từ server (khi bị từ chối / thất bại), hiển thị kèm. */
   detail?: string;
+  /**
+   * doc 81 Đợt 1B Task 4 — khi hàng deploy mang `detailJson.reasonCode` đã biết: khoá i18n cho
+   * phần chi tiết (fallback = `detail`, tức lỗi thật từ server).
+   */
+  detailKey?: string;
+}
+
+/** Mã lý do deploy (server ghi ở `detailJson.reasonCode`) có câu dịch riêng `engineering.deployReason.<code>`. */
+export const DEPLOY_REASON_CODES = ["techman_program_download_unsupported"] as const;
+
+/** Khoá i18n cho lý do deploy có mã, hoặc undefined nếu hàng không mang mã đã biết. */
+export function deployReasonKey(row: { detailJson?: unknown }): string | undefined {
+  const dj = row.detailJson;
+  const code = dj && typeof dj === "object" ? (dj as { reasonCode?: unknown }).reasonCode : undefined;
+  return typeof code === "string" && (DEPLOY_REASON_CODES as readonly string[]).includes(code)
+    ? `engineering.deployReason.${code}`
+    : undefined;
 }
 
 /**
@@ -32,10 +49,11 @@ export interface DeployOutcome {
  * `kind`: deploy đơn · yêu cầu duyệt (production qua Hộp duyệt) · rollback.
  */
 export function deployOutcome(
-  row: { status: string; error?: string | null; targetRolledBack?: boolean },
+  row: { status: string; error?: string | null; targetRolledBack?: boolean; detailJson?: unknown },
   kind: "deploy" | "request" | "rollback",
 ): DeployOutcome {
   const detail = row.error ? row.error : undefined;
+  const detailKey = deployReasonKey(row);
 
   if (row.status === "rejected" || row.status === "failed") {
     if (kind === "rollback") {
@@ -44,12 +62,25 @@ export function deployOutcome(
         key: "engineering.rollbackFailed",
         fallback: "Khôi phục KHÔNG thành công — deployment đích giữ nguyên trạng thái",
         detail,
+        ...(detailKey ? { detailKey } : {}),
       };
     }
     if (kind === "request") {
-      return { level: "error", key: "engineering.deployRequestRejected", fallback: "Yêu cầu deploy bị từ chối", detail };
+      return {
+        level: "error",
+        key: "engineering.deployRequestRejected",
+        fallback: "Yêu cầu deploy bị từ chối",
+        detail,
+        ...(detailKey ? { detailKey } : {}),
+      };
     }
-    return { level: "error", key: "engineering.deployRejected", fallback: "Deploy bị từ chối", detail };
+    return {
+      level: "error",
+      key: "engineering.deployRejected",
+      fallback: "Deploy bị từ chối",
+      detail,
+      ...(detailKey ? { detailKey } : {}),
+    };
   }
 
   if (row.status === "pending") {

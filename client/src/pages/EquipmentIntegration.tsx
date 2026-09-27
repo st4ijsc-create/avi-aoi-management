@@ -69,6 +69,13 @@ import {
 import { toast } from "sonner";
 import { mapTrpcError, toastTrpcError } from "@/lib/trpcErrors";
 import { isFeatureDisabledError } from "@/lib/featureFlagError";
+import {
+  deriveFeatureStatus,
+  featureStatusLabel,
+  featureStatusTone,
+  FeatureStatusGate,
+  isFeatureStatusUnsettled,
+} from "@/components/common/FeatureStatusGate";
 
 // ── Typesafe shapes inferred from the equipmentIntegrationRouter output ───────
 type RouterOutputs = inferRouterOutputs<AppRouter>;
@@ -150,7 +157,9 @@ export default function EquipmentIntegration() {
     historyMode === "machine" ? loadHistoryQ.data : codeHistoryQ.data
   ) ?? [] as LoadLogRow[];
 
-  const flagEnabled = statusQ.data?.enabled ?? true;
+  // Doc 80 Task 1 (PLT-02/G-07/X-07): pending/erroring status query is UNKNOWN, not "on".
+  const flagStatus = deriveFeatureStatus(statusQ, (d: { enabled?: boolean }) => d.enabled);
+  const flagUnsettled = isFeatureStatusUnsettled(flagStatus);
 
   const machineName = useMemo(() => {
     const m = new Map<number, string>();
@@ -250,18 +259,18 @@ export default function EquipmentIntegration() {
           <span>{t("eqIntegration.whenToUse", "When to use — browse vendor integration frameworks (FOCAS/Euromap) and recipe version genealogy. Read-only metadata, no live device.")}</span>
         </div>
 
-        {/* ── Flag-off preview banner (honest, calm) ─────────────────────────── */}
-        {!flagEnabled && (
-          <div className="flex items-start gap-2 rounded-md border border-amber-500/40 bg-amber-500/10 p-3 text-sm">
-            <Info className="mt-0.5 h-4 w-4 shrink-0 text-amber-600" />
-            <span>
-              {t(
-                "eqIntegration.flagOffBanner",
-                "Preview mode: equipment integration is disabled (EQ_INTEG_ENABLED is off). Reads work; actions (create / release / archive / rollback version, record load) are blocked until the flag is enabled.",
-              )}
-            </span>
-          </div>
-        )}
+        {/* ── Flag status banner — honest 4-state (loading/off/on/error), doc 80 Task 1 ── */}
+        <FeatureStatusGate
+          status={flagStatus}
+          offMessage={t(
+            "eqIntegration.flagOffBanner",
+            "Preview mode: equipment integration is disabled. Reads work; actions (create / release / archive / rollback version, record load) are blocked until it is enabled.",
+          )}
+          errorMessage={t(
+            "eqIntegration.flagStatusError",
+            "Could not check whether equipment integration is enabled — actions are disabled until this is confirmed.",
+          )}
+        />
 
         {/* Safety / honesty note — mirrors the router discipline */}
         <div className="flex items-start gap-2 rounded-md border border-border bg-muted/40 p-3 text-sm text-muted-foreground">
@@ -295,8 +304,13 @@ export default function EquipmentIntegration() {
           <MetricCard
             icon={<Activity className="h-4 w-4" />}
             label={t("eqIntegration.kpi.flag", "Flag")}
-            value={flagEnabled ? t("eqIntegration.on", "On") : t("eqIntegration.off", "Off")}
-            tone={flagEnabled ? "good" : "warning"}
+            value={featureStatusLabel(flagStatus, {
+              on: t("eqIntegration.on", "On"),
+              off: t("eqIntegration.off", "Off"),
+              loading: t("eqIntegration.checking", "Checking…"),
+              error: t("eqIntegration.unknown", "Unknown"),
+            })}
+            tone={featureStatusTone(flagStatus)}
           />
         </div>
 
@@ -355,7 +369,12 @@ export default function EquipmentIntegration() {
               icon={<FlaskConical className="h-4 w-4" />}
               title={t("eqIntegration.pickRecipeTitle", "Recipe code")}
               action={canControl ? (
-                <Button size="sm" variant="outline" className="h-8" onClick={() => setCreateOpen(true)}>
+                <Button
+                  size="sm" variant="outline" className="h-8"
+                  disabled={flagUnsettled}
+                  title={flagUnsettled ? t("common.gate.checkingStatus", "Checking feature status…") : undefined}
+                  onClick={() => setCreateOpen(true)}
+                >
                   <Plus className="mr-1 h-4 w-4" />{t("eqIntegration.createVersion", "New version")}
                 </Button>
               ) : undefined}

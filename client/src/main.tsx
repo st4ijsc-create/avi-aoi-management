@@ -4,9 +4,9 @@ import { mapTrpcError } from "@/lib/trpcErrors";
 import { queryErrorToastKey, shouldToastQueryError } from "@/lib/queryErrorToast";
 import { toast } from "sonner";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { httpBatchLink, TRPCClientError } from "@trpc/client";
+import { TRPCClientError } from "@trpc/client";
+import { createAppTrpcLinks } from "./lib/trpcLinks";
 import { createRoot } from "react-dom/client";
-import superjson from "superjson";
 import App from "./App";
 import { getLoginUrl } from "./const";
 import { initRum } from "./lib/rum";
@@ -118,22 +118,22 @@ function newCorrelationId(): string {
 // createExpressMiddleware mặc định (không tắt batching) nên an toàn; batching
 // còn GIẢM số request tính vào rate-limit /api (300 req/phút). Giữ nguyên
 // transformer + credentials như httpLink cũ (mutation vẫn là POST).
+// Doc 80 Đợt 1 Task 6 (XC-01): query có input serialize > 2 KB đi POST (methodOverride,
+// server bật allowMethodOverride) — GET mang input trong URL từng gãy 431 ở 30 block IR /
+// 20 rung POU / XML 12 KB. Chi tiết + trần URL batch GET: `lib/trpcLinks.ts`.
 const trpcClient = trpc.createClient({
-  links: [
-    httpBatchLink({
-      url: "/api/trpc",
-      transformer: superjson,
-      headers() {
-        return { "x-correlation-id": newCorrelationId() };
-      },
-      fetch(input, init) {
-        return globalThis.fetch(input, {
-          ...(init ?? {}),
-          credentials: "include",
-        });
-      },
-    }),
-  ],
+  links: createAppTrpcLinks({
+    url: "/api/trpc",
+    headers() {
+      return { "x-correlation-id": newCorrelationId() };
+    },
+    fetch(input, init) {
+      return globalThis.fetch(input, {
+        ...(init ?? {}),
+        credentials: "include",
+      });
+    },
+  }),
 });
 
 // ★★★ Pha 7 Task 8b — DỌN dữ liệu người dùng ĐÃ nằm sẵn trên đĩa trình duyệt.

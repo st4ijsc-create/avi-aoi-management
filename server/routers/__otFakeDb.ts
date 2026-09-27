@@ -65,6 +65,9 @@ export class FakeDb {
       groupBy(..._cols: any[]) { return builder; },
       orderBy(...o: any[]) { if (o[0] && typeof o[0] === "object" && "dir" in o[0]) order = o[0]; return builder; },
       limit(n: number) { lim = n; return builder; },
+      // final wave 5b — `SELECT … FOR UPDATE` (deviceAdapterRouter.update reads the adapter row under
+      // the row lock inside one transaction). The fake is single-threaded: a no-op is the honest model.
+      for(_mode: string) { return builder; },
       then(resolve: (v: Row[]) => any, reject?: (e: any) => any) {
         return Promise.resolve(self.run(table, cond, order, lim)).then(resolve, reject);
       },

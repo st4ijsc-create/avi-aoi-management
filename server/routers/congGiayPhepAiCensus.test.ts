@@ -247,9 +247,20 @@ const GHIM_MODULE_KHAC = {
   // ★ 2026-09-26 doc 80 Đợt 0 Task 1 (ORC-11) — 68 → 73: 5 thủ tục `orchestrationGov.*` (trước là
   //   `protectedProcedure` trần, IDOR nhật ký run) nay đi qua `moduleProcedure("MOD_ENGINEERING")`
   //   như `orchestrationRouter`. Cố ý — lời khai ở `server/routers/orchestrationGovRouter.ts`.
-  MOD_ENGINEERING: 73,
+  // ★ 2026-09-27 doc 80 Đợt 1 Task 5 (WS-01/WS-02) — 73 → 75: hai thủ tục MỚI trong
+  //   `programmingRouter.ts` — `programming.requestVersionReview` (mutation, `writeProcedure` đã
+  //   che bằng MOD_ENGINEERING) và `programming.deployPreview` (query chỉ đọc, `protectedProcedure`
+  //   đã che bằng `moduleProcedure("MOD_ENGINEERING")`). Cố ý: cùng cổng giấy phép với mọi thủ tục
+  //   anh em trong router lập trình. Không thủ tục cũ nào đổi cổng. (Ô `tong` của §2 đỏ TỪ TRƯỚC —
+  //   đo HEAD `8d51dc150` = 2283; lượt này +2 → 2285, chính là hai thủ tục này.)
+  MOD_ENGINEERING: 75,
   MOD_FEDERATION: 8,
-  MOD_OT_CONTROL: 105,
+  // ★ 2026-09-27 doc 80 Đợt 1 Task 4 (SAF-02) — 105 → 106: thủ tục MỚI `safety.sourceHealth`
+  //   (query chỉ đọc) nằm trong `safetyRouter.ts`, nơi `protectedProcedure` đã bị che bằng
+  //   `moduleProcedure("MOD_OT_CONTROL")` cho MỌI thủ tục (Doc 38 Đợt Q). Cố ý: cùng cổng giấy phép
+  //   với các thủ tục an toàn anh em. Không thủ tục cũ nào đổi cổng. (Ô `tong` của §2 đỏ TỪ TRƯỚC —
+  //   ghim 2223, đo HEAD `290004e2c` = 2282; lượt này +1 → 2283, chính là thủ tục này.)
+  MOD_OT_CONTROL: 106,
 } as const;
 
 describe("§1 — CẦU CHÌ: bộ suy có thật sự nhìn thấy gì không", () => {

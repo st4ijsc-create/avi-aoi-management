@@ -93,6 +93,48 @@ export function neverStopProduction(env: NodeJS.ProcessEnv = process.env): boole
 
 export type LicenseState = "normal" | "warning" | "readonly" | "locked" | "no_license";
 
+// ─── Doc 80 Đợt 1 final wave (item 3) — đọc tên thủ tục ĐÚNG NHƯ tRPC 11 đọc ────────────────────
+//
+// tRPC express adapter: `path = req.path.slice(req.path.lastIndexOf("/") + 1)` (đoạn CUỐI sau `/`,
+// `express.mjs`); `resolveResponse`: `decodeURIComponent(path)` rồi `split(",")` CHỈ KHI `?batch=1`.
+// Middleware giấy phép cũ tách CẢ `req.path` thô theo `,` và `isProductionCritical` đọc namespace ở đoạn
+// ĐẦU ⇒ `POST /api/trpc/inspection.x/settings.upsert?batch=1` và `…/inspection.x%2Csettings.upsert?batch=1`
+// đều được xét như `inspection.*` (thiết yếu ⇒ qua) trong khi tRPC chạy `settings.upsert` dưới read-only
+// (đo trên HTTP thật: 200 và 207, thủ tục ghi ĐÃ chạy — `licenseMiddleware.pathSpoof.test.ts`).
+// Hai phép đọc cho một câu hỏi "thủ tục nào sẽ chạy" là cách chúng lệch nhau; bản lỏng hơn quyết định.
+
+/** Kết quả đọc đường dẫn tRPC theo đúng phép đọc của adapter. */
+export interface TrpcPathRead {
+  /** Tên thủ tục tRPC SẼ chạy: đoạn cuối sau `/`, đã decode, tách `,` chỉ khi batch. */
+  procedures: string[];
+  /**
+   * Phòng thủ nhiều lớp — đường thô có hình dạng không client hợp lệ nào gửi: thêm `/` sau `/api/trpc/`,
+   * `%2C`/`%2F`, `,` khi không batch, hoặc không decode được. Không phải lỗi — nhưng được xét như GHI
+   * (không nới POST-query; ghi thiết yếu vẫn qua vì thủ tục THẬT SỰ chạy là thủ tục thiết yếu).
+   */
+  suspicious: boolean;
+}
+
+/**
+ * @param reqPath  `req.path` như tRPC nhìn thấy (đã bỏ tiền tố mount `/api/trpc`), CHƯA decode.
+ * @param isBatch  `?batch=1` đọc từ `searchParams` (cùng nguồn với tRPC).
+ */
+export function readTrpcPath(reqPath: string, isBatch: boolean): TrpcPathRead {
+  const rel = reqPath.replace(/^\/+/, "");
+  const last = reqPath.slice(reqPath.lastIndexOf("/") + 1);
+  let decoded = last;
+  let decodeFailed = false;
+  try {
+    decoded = decodeURIComponent(last);
+  } catch {
+    decodeFailed = true;
+  }
+  const procedures = (isBatch ? decoded.split(",") : [decoded]).filter(Boolean);
+  const suspicious =
+    decodeFailed || rel.includes("/") || /%2[cf]/i.test(reqPath) || (!isBatch && decoded.includes(","));
+  return { procedures, suspicious };
+}
+
 /**
  * Decide whether ONE procedure is allowed under the current license state. Pure.
  * `alwaysAllowed` = the auth/license/health allowlist the middleware already maintains.
@@ -134,12 +176,27 @@ export function decideLicenseBatch(args: {
   state: LicenseState;
   alwaysAllowed: (proc: string) => boolean;
   neverStop?: boolean;
+  /**
+   * Doc 80 Đợt 1 Task 6 (XC-01): loại THẬT của thủ tục ("query"/"mutation"/…). Client gửi query
+   * có input lớn bằng POST (tRPC methodOverride) ⇒ POST không còn đồng nghĩa "ghi". Một thủ tục
+   * tra ra "query" được xét như GET; không biết loại ⇒ giữ nguyên method (fail-closed).
+   */
+  procedureType?: (proc: string) => string | undefined;
+  /**
+   * Doc 80 Đợt 1 final wave (item 3): đường thô đáng ngờ (`readTrpcPath().suspicious`) ⇒ xét như GHI —
+   * `method` coi là POST và KHÔNG tra loại thủ tục để nới cho query. Ghi thiết yếu / always-allowed vẫn qua.
+   */
+  suspicious?: boolean;
 }): BatchDecision {
-  const { procedures, method, state, alwaysAllowed } = args;
+  const { procedures, state, alwaysAllowed } = args;
+  const method = args.suspicious ? "POST" : args.method;
+  const procedureType = args.suspicious ? undefined : args.procedureType;
   const neverStop = args.neverStop ?? neverStopProduction();
-  const allow = procedures.every((procedure) =>
-    isProcedureAllowed({ procedure, method, state, alwaysAllowed, neverStop }),
-  );
+  const allow = procedures.every((procedure) => {
+    const effMethod =
+      method.toUpperCase() === "POST" && procedureType?.(procedure) === "query" ? "GET" : method;
+    return isProcedureAllowed({ procedure, method: effMethod, state, alwaysAllowed, neverStop });
+  });
   if (allow) return { allow: true, code: null };
   const eff: LicenseState = neverStop && state === "locked" ? "readonly" : state;
   const code =

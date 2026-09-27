@@ -238,3 +238,46 @@ describe("parseNodeMap — env parsing, fail-safe", () => {
     expect(parseNodeMap("not json {")).toBeNull();
   });
 });
+
+// doc 81 Đợt 1B Task 12 — Euromap 77 dùng lại opcuaDriver ⇒ cấu hình bảo mật qua env.
+describe("euromapOpcuaOptionsFromEnv (Task 12)", () => {
+  it("no env ⇒ undefined (driver keeps its legacy None default)", async () => {
+    const { euromapOpcuaOptionsFromEnv } = await import("./euromapOpcuaReader");
+    expect(euromapOpcuaOptionsFromEnv({})).toBeUndefined();
+  });
+  it("maps EUROMAP_OPCUA_SECURITY_* / USERNAME / PASSWORD / TRUST_ON_FIRST_USE to driver connectionOptions", async () => {
+    const { euromapOpcuaOptionsFromEnv } = await import("./euromapOpcuaReader");
+    expect(
+      euromapOpcuaOptionsFromEnv({
+        EUROMAP_OPCUA_SECURITY_MODE: " SignAndEncrypt ",
+        EUROMAP_OPCUA_SECURITY_POLICY: "Basic256Sha256",
+        EUROMAP_OPCUA_USERNAME: "imm",
+        EUROMAP_OPCUA_PASSWORD: "enc:v1:abc",
+      }),
+    ).toEqual({ securityMode: "SignAndEncrypt", securityPolicy: "Basic256Sha256", userName: "imm", password: "enc:v1:abc" });
+    expect(euromapOpcuaOptionsFromEnv({ EUROMAP_OPCUA_SECURITY_MODE: "Sign", EUROMAP_OPCUA_TRUST_ON_FIRST_USE: "true" })).toEqual({
+      securityMode: "Sign",
+      trustOnFirstUse: true,
+    });
+    expect(euromapOpcuaOptionsFromEnv({ EUROMAP_OPCUA_TRUST_ON_FIRST_USE: "false" })).toBeUndefined();
+  });
+  it("readEuromapOverOpcua forwards cfg.options to driver.connect", async () => {
+    const connect = vi.fn(async () => undefined);
+    const driver = {
+      protocol: "opcua",
+      connect,
+      disconnect: vi.fn(async () => undefined),
+      isConnected: () => true,
+      readTags: vi.fn(async () => []),
+      subscribe: vi.fn(),
+      writeTags: vi.fn(),
+      health: vi.fn(),
+    } as unknown as OtDriver;
+    await readEuromapOverOpcua(driver, {
+      endpoint: "opc.tcp://imm:4840",
+      nodeMap: { shotCounter: "ns=4;s=ShotCounter" },
+      options: { securityMode: "SignAndEncrypt" },
+    });
+    expect(connect).toHaveBeenCalledWith(expect.objectContaining({ options: { securityMode: "SignAndEncrypt" } }));
+  });
+});

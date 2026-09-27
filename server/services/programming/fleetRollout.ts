@@ -19,6 +19,14 @@
  * TRUNG THỰC (không phần cứng ở đây): với cờ deploy OFF (mặc định) mọi deploy được ghi
  * 'simulated' (KHÔNG ghi xuống HW). Rollout KHÔNG bao giờ tuyên bố "đã verified" khi
  * chưa đọc-lại được thiết bị — nó chỉ phản ánh đúng status mà deployBuild trả về.
+ *
+ * doc 81 Đợt 1B Task 3 (BE2 §L3 "Fleet canary"): trước đây 'simulated' được tính là ĐẠT ⇒ một
+ * canary chưa commission (adapter chỉ giả lập) "đạt" rồi promote GHI THẬT xuống các máy đã
+ * commission. Nay: khi promote CÓ THỂ ghi thật (cùng điều kiện `realDeploy` của deployBuild:
+ * DPC_DEPLOY_ENABLED + có người ký), canary 'simulated' KHÔNG đạt ⇒ rollout DỪNG với
+ * `haltCode = "canary_not_real"` ("cần canary thật"). Không thêm trạng thái deploy nào (R2):
+ * từng máy giữ status thật; mã lý do nằm ở kết quả rollout. Khi promote cũng chỉ giả lập
+ * (cờ OFF / không người ký) thì một canary giả lập vẫn đủ — không có ghi HW nào để chặn.
  * ════════════════════════════════════════════════════════════════════════════
  */
 import { and, desc, eq, inArray } from "drizzle-orm";
@@ -33,6 +41,7 @@ import {
   deployBuild as realDeployBuild,
   rollbackDeployment as realRollback,
   dpcDeployApprovalEnabled,
+  dpcDeployEnabled,
   type DpcUser,
   type DeployRequest,
 } from "./programmingService";
@@ -78,6 +87,13 @@ export interface FleetRolloutInput {
   reason?: string;
 }
 
+/**
+ * Mã lý do DỪNG rollout (máy-đọc-được; UI dịch qua i18n). Không phải trạng thái deploy mới.
+ *   • canary_failed   — ít nhất một canary bị từ chối / lỗi / chưa verify (logic cũ).
+ *   • canary_not_real — canary chỉ GIẢ LẬP trong khi promote sẽ ghi THẬT ⇒ cần canary thật.
+ */
+export type FleetHaltCode = "canary_failed" | "canary_not_real";
+
 /** Kết quả deploy THẬT của một máy trong rollout. */
 export interface FleetMachineResult {
   deviceId: number;
@@ -98,6 +114,8 @@ export interface FleetRolloutResult {
   strategy: FleetRolloutStrategy;
   canaryCount: number;
   halted: boolean;
+  /** doc 81 Đợt 1B Task 3 — mã lý do dừng (null khi không dừng). */
+  haltCode: FleetHaltCode | null;
   haltReason: string | null;
   promoted: boolean;
   results: FleetMachineResult[];
@@ -121,6 +139,11 @@ export interface FleetRolloutDeps {
     hitl: { actionId: string; requestedBy: number; confirmedBy?: number },
     idempotencyKey: string,
   ) => Promise<DeploymentRow & { rolledBackFromId?: number; targetRolledBack?: boolean }>;
+  /**
+   * doc 81 Đợt 1B Task 3 — promote có thể GHI THẬT xuống máy không? Mặc định: đúng điều kiện
+   * `realDeploy` của computeDeploy (DPC_DEPLOY_ENABLED + confirmedBy có mặt).
+   */
+  realWritePossible?: (input: FleetRolloutInput) => boolean;
 }
 
 /** Có phải một forward-write xuống HW (đã/ sẽ chạy trên máy) — để rollback. */
@@ -132,12 +155,23 @@ export function isForwardWrite(status: string): boolean {
  * Một kết quả canary có ĐẠT để promote không (đọc từ status THẬT).
  *   • rejected / failed        → KHÔNG đạt (cổng từ chối / verify mismatch).
  *   • promoteOnVerified + 'deployed' (ghi thật nhưng CHƯA verify) → KHÔNG đạt (thận trọng).
- *   • 'verified' / 'simulated' → đạt.
+ *   • 'verified' / 'deployed'  → đạt.
+ *   • 'simulated'              → doc 81 Đợt 1B Task 3: CHỈ đạt khi promote cũng không thể ghi
+ *                                thật (`promoteCanWriteHw=false`). Một canary không ghi HW không
+ *                                chứng minh gì cho máy sắp bị ghi thật.
+ *   • mọi status khác (pending / awaiting_approval / rolled_back …) → KHÔNG đạt (fail-closed:
+ *     không phải kết quả deploy đã xong).
  */
-export function canaryPasses(status: string, promoteOnVerified: boolean): boolean {
-  if (status === "rejected" || status === "failed") return false;
-  if (promoteOnVerified && status === "deployed") return false;
-  return true;
+export function canaryPasses(status: string, promoteOnVerified: boolean, promoteCanWriteHw: boolean): boolean {
+  if (status === "verified") return true;
+  if (status === "deployed") return !promoteOnVerified;
+  if (status === "simulated") return !promoteCanWriteHw;
+  return false;
+}
+
+/** Mặc định: promote ghi thật ⇔ cùng điều kiện `realDeploy` của programmingService.computeDeploy. */
+function defaultRealWritePossible(input: FleetRolloutInput): boolean {
+  return dpcDeployEnabled() && input.confirmedBy != null;
 }
 
 /** Deploy một máy qua ĐÚNG deployBuild (mọi cổng an toàn giữ nguyên). */
@@ -219,11 +253,13 @@ export async function deployToFleet(
 
   const results: FleetMachineResult[] = [];
   let halted = false;
+  let haltCode: FleetHaltCode | null = null;
   let haltReason: string | null = null;
   let promoted = false;
+  const promoteCanWriteHw = (deps.realWritePossible ?? defaultRealWritePossible)(input);
 
   if (devices.length === 0) {
-    return finalize(input, canaryCount, halted, haltReason, promoted, results);
+    return finalize(input, canaryCount, halted, haltCode, haltReason, promoted, results);
   }
 
   // ── PHA 1: CANARY (tuần tự) ──
@@ -231,15 +267,24 @@ export async function deployToFleet(
     results.push(await deployOne(input, deviceId, "canary", user, deployFn));
   }
 
-  const failing = results.filter((r) => !canaryPasses(r.status, input.strategy.promoteOnVerified));
+  const failing = results.filter((r) => !canaryPasses(r.status, input.strategy.promoteOnVerified, promoteCanWriteHw));
   if (failing.length > 0) {
     halted = true;
-    haltReason =
-      `Canary KHÔNG đạt trên ${failing.length}/${canaryDevices.length} máy ` +
-      `(${failing.map((f) => `#${f.deviceId}:${f.status}`).join(", ")}) — DỪNG rollout, không đẩy ${restDevices.length} máy còn lại.`;
+    // Chỉ-giả-lập ⇔ MỌI canary không đạt đều là 'simulated' (không có lỗi/từ chối thật nào).
+    const onlyNotReal = failing.every((f) => f.status === "simulated");
+    haltCode = onlyNotReal ? "canary_not_real" : "canary_failed";
+    const list = failing.map((f) => `#${f.deviceId}:${f.status}`).join(", ");
+    haltReason = onlyNotReal
+      ? `Canary chỉ GIẢ LẬP trên ${failing.length}/${canaryDevices.length} máy (${list}) — không ghi xuống thiết bị nên ` +
+        `KHÔNG được tính là đạt khi promote sẽ ghi thật. Cần một canary THẬT (deployed/verified) — DỪNG rollout, ` +
+        `không đẩy ${restDevices.length} máy còn lại.`
+      : `Canary KHÔNG đạt trên ${failing.length}/${canaryDevices.length} máy ` +
+        `(${list}) — DỪNG rollout, không đẩy ${restDevices.length} máy còn lại.`;
 
     // Rollback các máy đã GHI THẬT (best-effort, honest — có thể không có bản trước để lùi).
-    if (input.strategy.autoRollbackOnMismatch) {
+    // canary_not_real: không có bằng chứng chương trình SAI (không mismatch/lỗi) ⇒ không lùi
+    // canary thật đã ghi — chỉ dừng chờ canary thật.
+    if (input.strategy.autoRollbackOnMismatch && haltCode === "canary_failed") {
       for (const r of results) {
         if (!r.forwardWrite || r.deploymentId == null) continue;
         try {
@@ -264,7 +309,7 @@ export async function deployToFleet(
         }
       }
     }
-    return finalize(input, canaryCount, halted, haltReason, promoted, results);
+    return finalize(input, canaryCount, halted, haltCode, haltReason, promoted, results);
   }
 
   // ── PHA 2: PROMOTE phần còn lại (tuần tự) ──
@@ -273,13 +318,14 @@ export async function deployToFleet(
   }
   promoted = restDevices.length > 0;
 
-  return finalize(input, canaryCount, halted, haltReason, promoted, results);
+  return finalize(input, canaryCount, halted, haltCode, haltReason, promoted, results);
 }
 
 function finalize(
   input: FleetRolloutInput,
   canaryCount: number,
   halted: boolean,
+  haltCode: FleetHaltCode | null,
   haltReason: string | null,
   promoted: boolean,
   results: FleetMachineResult[],
@@ -291,6 +337,7 @@ function finalize(
     strategy: input.strategy,
     canaryCount,
     halted,
+    haltCode,
     haltReason,
     promoted,
     results,

@@ -27,7 +27,7 @@ import { createHash, createHmac, randomBytes, timingSafeEqual } from "node:crypt
 import { DbUnavailableError } from "../../../_core/dbErrors";
 import { TRPCError } from "@trpc/server";
 import { appError } from "../../../_core/appError";
-import { and, eq, inArray, ne, notInArray } from "drizzle-orm";
+import { and, eq, inArray, isNull, ne, notInArray } from "drizzle-orm";
 import { getDb } from "../../../db/connection";
 import { appendRunEvent } from "../runEventStore"; // doc 33 W4 (F8): durable RunEvent log (FOE_DURABLE)
 import {
@@ -61,6 +61,8 @@ import {
   type EquipmentCommandResult,
 } from "../../equipment/equipmentAdapter";
 import { asPackmlState } from "../../equipment/packml";
+import { otPayloadHash, robotPayloadHash, withOtPayloadHash } from "../../ot/otActionBinding"; // doc 81 Đợt 1B Task 6 + final wave (robot)
+import { toRobotJob } from "../../equipment/robotJobMapping"; // final wave (item 2) — same mapping the robot route uses
 
 // ── Flag ────────────────────────────────────────────────────────────────────────
 
@@ -204,6 +206,12 @@ export interface StartRunResult {
   status?: OrchestrationRun["status"];
   message?: string;
   errors?: ValidationError[];
+  /**
+   * Doc 80 Đợt 1 Task 11 — set ONLY when refused because the WORKFLOW (not the run) is not
+   * `active` (draft/archived — ORC-06). The Studio client uses this to render a translated
+   * (`t()`) toast instead of showing `message` (English, server-authored) verbatim.
+   */
+  workflowStatus?: string;
 }
 
 export interface RunView {
@@ -224,6 +232,25 @@ export interface RunView {
 export interface GateDecision {
   approved: boolean;
   note?: string;
+  /**
+   * doc 80 Đợt 1 Task 9 — the gate (`currentStepId`) the decider was LOOKING AT. When given, it
+   * must equal the run's current gate or the decision is refused with CONFLICT (a stale approver
+   * of g1 must never approve/reject g2). `null` = "the run had no current step" (interrupted
+   * 'held' run). Omitted ⇒ no caller-side pin (internal callers); the CAS still pins the gate
+   * read at the start of this call.
+   */
+  expectedStepId?: string | null;
+}
+
+/** doc 80 Đợt 1 Task 9 — optional hooks of `resumeRun`. */
+export interface ResumeHooks {
+  /**
+   * REJECT path only: side effects that undo completed work (QT saga compensation §18.2). They
+   * run ONLY after this call has WON the CAS on the paused run (status → 'compensating', gate
+   * pinned) — a decision that loses the race never compensates. Returns the final rejection note
+   * (e.g. the decider's note + compensation notes); undefined keeps `decision.note`.
+   */
+  compensate?: () => Promise<string | undefined>;
 }
 
 // ── Internal exec context (in-memory; mirrors run.contextJson) ──────────────────
@@ -474,16 +501,30 @@ function orchestrationActionId(idempotencyKey: string): string {
 /**
  * Tạo (idempotent, fail-safe) một bản ghi ai_pending_actions ĐÃ CONFIRMED cho một
  * bước lệnh của run — chủ sở hữu là user đã khởi động run. Đây là ủy quyền THẬT mà
- * dispatcher OT/robot tái-xác-minh (status confirmed/executed + đúng owner) trước khi
- * ghi. Dùng status 'executed' (terminal) nên KHÔNG lọt vào action inbox (inbox chỉ hiện
- * 'proposed'). Lỗi tạo bản ghi → nuốt: bản ghi không có ⇒ dispatcher fail-closed (từ chối),
- * an toàn hơn là để lệnh lọt.
+ * dispatcher OT/robot tái-xác-minh trước khi ghi. Bản ghi không hiện trong action inbox
+ * (inbox chỉ hiện 'proposed'). Lỗi tạo bản ghi → nuốt: bản ghi không có ⇒ dispatcher
+ * fail-closed (từ chối), an toàn hơn là để lệnh lọt.
  */
-async function ensureOrchestrationAction(
+/**
+ * doc 81 Đợt 1B Task 6 (Ruling R4) — the OT dispatcher now accepts a real write only for a
+ * 'confirmed' action BOUND to the exact command (tool + canonical payload hash) and consumes
+ * it (confirmed→executed). So for an OT step the row is created 'confirmed' and carries the
+ * hash of EXACTLY the command FOE is about to send (built from the same EquipmentCommand the
+ * OtEquipmentAdapter maps to DispatchInput). Final wave (item 2): robot/AGV steps get the SAME
+ * treatment — a 'confirmed' row bound with robotPayloadHash to the job toRobotJob(cmd) yields,
+ * which the robot dispatcher verifies under FOR UPDATE and consumes once. Only a step that is
+ * neither OT nor robot (no adapterId, no robotId) still gets the legacy unbound 'executed' row.
+ * ⚠ CÒN MỞ (doc 81 BE2 §L2): FOE still GRANTS ITSELF this approval — no human confirms the
+ * step; Task 6 / the final wave only bind the self-grant to the one command it was minted for.
+ */
+export const FOE_ACTION_TOOL = "foe.orchestration";
+
+export async function ensureOrchestrationAction(
   user: FoeUser,
   idempotencyKey: string,
   step: WorkflowStep,
   args: Record<string, unknown>,
+  cmd?: EquipmentCommand,
 ): Promise<void> {
   try {
     const d = await getDb();
@@ -495,24 +536,47 @@ async function ensureOrchestrationAction(
       .where(eq(aiPendingActions.id, actionId))
       .limit(1);
     if (existing) return; // resume/retry → tái dùng bản ghi cũ
+    const isOt = cmd != null && cmd.adapterId != null && cmd.robotId == null;
+    // doc 81 Đợt 1B final wave (item 2, ruling R4) — a ROBOT command gets the same treatment as
+    // an OT one: a 'confirmed' row bound (robotPayloadHash) to EXACTLY the job the robot route
+    // will dispatch (toRobotJob — the same mapping RobotEquipmentAdapter.sendCommand uses), so the
+    // robot dispatcher can verify + consume it once. It used to be an unbound 'executed' row.
+    const isRobot = cmd != null && cmd.robotId != null;
+    let previewJson: Record<string, unknown> | undefined;
+    if (isOt) {
+      previewJson = withOtPayloadHash(
+        null,
+        otPayloadHash({
+          tool: FOE_ACTION_TOOL,
+          adapterId: cmd.adapterId!,
+          machineId: cmd.machineId ?? null,
+          commandType: cmd.name,
+          writes: cmd.writes ?? [],
+        }),
+      );
+    } else if (isRobot) {
+      const job = toRobotJob(cmd);
+      previewJson = withOtPayloadHash(null, robotPayloadHash({ robotId: cmd.robotId!, jobType: job.jobType, params: job.params ?? null }));
+    }
     await d.insert(aiPendingActions).values({
       id: actionId,
-      tool: "foe.orchestration",
+      tool: FOE_ACTION_TOOL,
       argsJson: args ?? {},
       userId: user.id || 0,
       userRole: user.role || "system",
       summary: `FOE orchestration: step ${step.id}`,
-      status: "executed",
+      ...(isOt || isRobot
+        ? { status: "confirmed" as const, previewJson }
+        : { status: "executed" as const, executedAt: new Date() }),
       idempotencyKey: actionId,
       expiresAt: new Date(Date.now() + 3_600_000),
-      executedAt: new Date(),
     });
   } catch {
     // fail-safe: không tạo được ⇒ cổng dispatcher sẽ fail-closed (an toàn).
   }
 }
 
-function buildEquipmentCommand(
+export function buildEquipmentCommand(
   descriptor: CommandDescriptor,
   capability: EquipmentCapability,
   machineId: number,
@@ -530,6 +594,7 @@ function buildEquipmentCommand(
     // requestedBy/confirmedBy = user đã khởi động run (owner của bản ghi) → cổng OT/robot qua hợp lệ.
     hitl: {
       actionId: orchestrationActionId(idempotencyKey),
+      tool: FOE_ACTION_TOOL, // doc 81 Đợt 1B Task 6 — part of the OT binding
       requestedBy: user.id || 0,
       confirmedBy: user.id || 0,
     },
@@ -781,8 +846,9 @@ async function execCommand(rc: RunContext, step: Extract<WorkflowStep, { type: "
   // Doc 25 T1 — tạo ủy quyền ai_pending_actions confirmed THẬT trước khi dispatch để
   // cổng HITL của dispatcher (OT/robot) tái-xác-minh và cho qua HỢP LỆ (không còn phụ
   // thuộc mock). Fail-safe: nếu không tạo được, dispatcher fail-closed từ chối.
-  await ensureOrchestrationAction(rc.user, idempotencyKey, step, step.args ?? {});
+  // doc 81 Đợt 1B Task 6 — build the command FIRST so the authorisation row is bound to it.
   const cmd = buildEquipmentCommand(descriptor, cap, step.machineId, step.args ?? {}, idempotencyKey, rc.user);
+  await ensureOrchestrationAction(rc.user, idempotencyKey, step, step.args ?? {}, cmd);
 
   // doc 80 ORC-01 — last check before the command leaves the engine (the awaits above can span an abort).
   if (rc.aborting) return ABORTED_OUTCOME;
@@ -1273,6 +1339,7 @@ export async function startRun(
       return {
         ok: false,
         enabled: true,
+        workflowStatus: wf.status,
         message: `Workflow "${workflowRef}" is ${wf.status} — deploy it before running.`,
       };
     }
@@ -1364,6 +1431,7 @@ export async function resumeRun(
   runId: number,
   decision: GateDecision,
   user: FoeUser,
+  hooks: ResumeHooks = {},
 ): Promise<StartRunResult> {
   if (!foeEnabled()) {
     return { ok: false, enabled: false, message: "FOE is disabled (set FOE_ENABLED=true)." };
@@ -1376,15 +1444,46 @@ export async function resumeRun(
       return { ok: false, enabled: true, runId, status: run.status, message: `Run ${runId} is not resumable (status=${run.status}).` };
     }
     const gateStepId = run.currentStepId ?? undefined;
+    // doc 80 Đợt 1 Task 9 — the decider saw ANOTHER gate (run already moved on) ⇒ CONFLICT before
+    // any state change. The CAS below pins the gate read here too (closes read→CAS window).
+    if (decision.expectedStepId !== undefined && (decision.expectedStepId ?? null) !== (run.currentStepId ?? null)) {
+      throw runGateChangedError(runId);
+    }
+    const pinnedStepId = run.currentStepId ?? null;
 
     if (!decision.approved) {
       // U6 (doc 26) — kèm lý do từ chối (note) vào audit của run + bước để truy vết.
-      const reason = decision.note?.trim();
-      // doc 80 ORC-02 — CAS: only ONE decision (approve OR reject) may claim the paused run.
-      await claimPausedRun(runId, "aborted", {
-        finishedAt: new Date(),
-        error: `Gate "${gateStepId ?? "?"}" rejected by user ${user.id}.${reason ? ` Reason: ${reason}` : ""}`,
-      });
+      let reason = decision.note?.trim();
+      if (hooks.compensate) {
+        // doc 80 Đợt 1 Task 9 — CLAIM FIRST, compensate AFTER: CAS the paused run (gate pinned) to
+        // 'compensating'; only the winner runs the compensations, then finishes 'compensating' →
+        // 'aborted'. A restart mid-compensation leaves 'compensating' ⇒ rehydrate marks it failed
+        // (never auto-resumed). An abort landing meanwhile stays 'aborted' (the final CAS below
+        // only moves a run that is still 'compensating').
+        await claimPausedRun(runId, "compensating", {}, pinnedStepId);
+        let finalNote: string | undefined;
+        try {
+          finalNote = await hooks.compensate();
+        } catch (err) {
+          finalNote = [reason, `compensation threw: ${err instanceof Error ? err.message : String(err)}`].filter(Boolean).join(" · ");
+        }
+        reason = (finalNote ?? reason)?.trim() || reason;
+        await d
+          .update(orchestrationRuns)
+          .set({
+            status: "aborted",
+            updatedAt: new Date(),
+            finishedAt: new Date(),
+            error: `Gate "${gateStepId ?? "?"}" rejected by user ${user.id}.${reason ? ` Reason: ${reason}` : ""}`,
+          })
+          .where(and(eq(orchestrationRuns.id, runId), eq(orchestrationRuns.status, "compensating")));
+      } else {
+        // doc 80 ORC-02 — CAS: only ONE decision (approve OR reject) may claim the paused run.
+        await claimPausedRun(runId, "aborted", {
+          finishedAt: new Date(),
+          error: `Gate "${gateStepId ?? "?"}" rejected by user ${user.id}.${reason ? ` Reason: ${reason}` : ""}`,
+        }, pinnedStepId);
+      }
       void appendRunEvent(runId, "RUN_FAILED", { ts: Date.now(), data: { status: "aborted" } });
       if (gateStepId) {
         await upsertStep(runId, gateStepId, "hitl_gate", {
@@ -1410,8 +1509,9 @@ export async function resumeRun(
 
     // doc 80 ORC-02 — CAS `UPDATE … SET status='running' WHERE id=$1 AND status IN
     // ('awaiting_confirm','held') RETURNING *`: 0 rows ⇒ another resume already claimed it ⇒ CONFLICT.
-    // Exactly one caller proceeds to drive the run.
-    await claimPausedRun(runId, "running");
+    // Exactly one caller proceeds to drive the run. Task 9 — also pinned to the gate read above
+    // (the one the approver-role check ran against): a run that moved on to another gate ⇒ CONFLICT.
+    await claimPausedRun(runId, "running", {}, pinnedStepId);
 
     // mark the gate resolved (completed) so the re-walk skips it
     if (gateStepId) {
@@ -1450,22 +1550,40 @@ async function claimPausedRun(
   runId: number,
   status: OrchestrationRun["status"],
   patch: Partial<OrchestrationRun> = {},
+  /** doc 80 Đợt 1 Task 9 — the gate this decision was made for (`IS NOT DISTINCT FROM`). */
+  pinnedStepId: string | null,
 ): Promise<OrchestrationRun> {
   const d = await db();
   const claimed = await d
     .update(orchestrationRuns)
     .set({ status, updatedAt: new Date(), ...patch })
-    .where(and(eq(orchestrationRuns.id, runId), inArray(orchestrationRuns.status, RESUMABLE_STATUSES)))
+    .where(
+      and(
+        eq(orchestrationRuns.id, runId),
+        inArray(orchestrationRuns.status, RESUMABLE_STATUSES),
+        pinnedStepId != null ? eq(orchestrationRuns.currentStepId, pinnedStepId) : isNull(orchestrationRuns.currentStepId),
+      ),
+    )
     .returning();
   if (claimed.length === 0) {
     throw appError(
       "CONFLICT",
       "OPERATION_FAILED",
       { operation: "resumeOrchestrationRun", reason: "runAlreadyClaimed" },
-      `Run ${runId} was already resumed, rejected or aborted by another request.`,
+      `Run ${runId} was already resumed, rejected or aborted by another request (or moved to another gate).`,
     );
   }
   return claimed[0];
+}
+
+/** doc 80 Đợt 1 Task 9 — the decider was looking at a gate the run has already left. */
+function runGateChangedError(runId: number): TRPCError {
+  return appError(
+    "CONFLICT",
+    "OPERATION_FAILED",
+    { operation: "resumeOrchestrationRun", reason: "runGateChanged" },
+    `Run ${runId} is no longer waiting at the gate you reviewed — reload to see the current gate.`,
+  );
 }
 
 /**

@@ -174,6 +174,30 @@ export async function readEuromapOverOpcua(
 }
 
 /**
+ * doc 81 Đợt 1B Task 12 — tuỳ chọn bảo mật cho kết nối Euromap 77 (dùng lại opcuaDriver).
+ * Env (tất cả tuỳ chọn; vắng hết ⇒ undefined ⇒ driver giữ None mặc định + cảnh báo một lần):
+ *   EUROMAP_OPCUA_SECURITY_MODE / EUROMAP_OPCUA_SECURITY_POLICY / EUROMAP_OPCUA_USERNAME /
+ *   EUROMAP_OPCUA_PASSWORD (nên là ciphertext secretBox `enc:v1:…`) /
+ *   EUROMAP_OPCUA_TRUST_ON_FIRST_USE=true (chỉ chạy thử).
+ * Giá trị được driver kiểm (parseOpcuaSecurityOptions) — sai ⇒ lỗi rõ khi connect. PURE.
+ */
+export function euromapOpcuaOptionsFromEnv(
+  env: Record<string, string | undefined> = process.env,
+): Record<string, unknown> | undefined {
+  const o: Record<string, unknown> = {};
+  const mode = env.EUROMAP_OPCUA_SECURITY_MODE?.trim();
+  const policy = env.EUROMAP_OPCUA_SECURITY_POLICY?.trim();
+  const user = env.EUROMAP_OPCUA_USERNAME?.trim();
+  const password = env.EUROMAP_OPCUA_PASSWORD;
+  if (mode) o.securityMode = mode;
+  if (policy) o.securityPolicy = policy;
+  if (user) o.userName = user;
+  if (password) o.password = password;
+  if (env.EUROMAP_OPCUA_TRUST_ON_FIRST_USE?.trim().toLowerCase() === "true") o.trustOnFirstUse = true;
+  return Object.keys(o).length ? o : undefined;
+}
+
+/**
  * Parse a EUROMAP_OPCUA_NODEMAP env value (JSON object matching EuromapNodeMap). Pure,
  * fail-safe → null on any error (the caller reports "no node-map configured").
  */

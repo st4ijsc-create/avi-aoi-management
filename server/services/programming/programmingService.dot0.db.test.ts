@@ -120,13 +120,17 @@ describe.skipIf(!DB_URL)("Task 4 — deploy/rollback trung thực + khoá tranh 
       .values({ projectId, kind: "stub", language: "text", content: "A\nB", version: 1 })
       .returning();
     artifactId = a!.id;
+    // doc 80 Đợt 1 Task 5 (WS-02) — deploy thật BIÊN DỊCH LẠI artifact và đòi outputRef khớp build
+    // đã lưu; fixture phải mang outputRef THẬT của nguồn 2 dòng (stub ⇒ `stub://build/2-lines`),
+    // không phải nhãn bịa (`stub://b1`) — nhãn bịa nay bị từ chối đúng như một build lệch nguồn.
+    const STUB_REF = "stub://build/2-lines";
     const [b1] = await x
       .insert(programBuilds)
-      .values({ artifactId, adapterKind: "stub", status: "ok", ok: true, outputRef: "stub://b1" })
+      .values({ artifactId, adapterKind: "stub", status: "ok", ok: true, outputRef: STUB_REF })
       .returning();
     const [b2] = await x
       .insert(programBuilds)
-      .values({ artifactId, adapterKind: "stub", status: "ok", ok: true, outputRef: "stub://b2" })
+      .values({ artifactId, adapterKind: "stub", status: "ok", ok: true, outputRef: STUB_REF })
       .returning();
     build1 = b1!.id;
     build2 = b2!.id;

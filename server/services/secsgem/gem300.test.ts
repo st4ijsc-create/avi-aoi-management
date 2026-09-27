@@ -162,7 +162,7 @@ describe("GEM300 — S2F41 host command → gated HITL proposal (no ungated actu
   it("with the flag OFF, no actuation-intent dispatch input can even be constructed", () => {
     const proposal = mapHostCommandToProposal("START");
     expect(() =>
-      buildHitlDispatchInput(proposal, { adapterId: 1, confirmedBy: 7, requestedBy: 7 }),
+      buildHitlDispatchInput(proposal, { adapterId: 1, confirmedBy: 7, requestedBy: 7, tool: "gem300.host_command" }),
     ).toThrowError(/GEM300 is disabled/);
   });
 
@@ -175,6 +175,7 @@ describe("GEM300 — S2F41 host command → gated HITL proposal (no ungated actu
       confirmedBy: 7,
       requestedBy: 9,
       actionId: "act-1",
+      tool: "gem300.host_command",
     });
     expect(input.commandType).toBe("start");
     expect(input.triggeredBy.kind).toBe("hitl");
@@ -187,6 +188,25 @@ describe("GEM300 — S2F41 host command → gated HITL proposal (no ungated actu
     }
   });
 
+  // doc 81 Đợt 1B final wave (item 7, final review Minor #3 / R5) — the input must be BINDABLE: it
+  // names its `tool` and exposes the exact OtWriteTarget a proposer must hash (otActionBinding).
+  it("final wave: the HITL input carries `tool` and gem300OtWriteBinding() yields the SAME payload hash the dispatcher recomputes", async () => {
+    process.env.GEM300_ENABLED = "true";
+    const { gem300OtWriteBinding, GEM300_HOST_COMMAND_TOOL } = await import("./gem300");
+    const { otPayloadHash } = await import("../ot/otActionBinding");
+    const proposal = mapHostCommandToProposal("PP-SELECT", [cpText("PPID", "RCP-9")]);
+    const ctx = { adapterId: 5, machineId: 42, confirmedBy: 7, requestedBy: 9, actionId: "act-2", tool: GEM300_HOST_COMMAND_TOOL };
+    const input = buildHitlDispatchInput(proposal, ctx);
+    expect(input.triggeredBy.kind).toBe("hitl");
+    if (input.triggeredBy.kind === "hitl") expect(input.triggeredBy.tool).toBe("gem300.host_command");
+    const target = gem300OtWriteBinding(proposal, ctx);
+    expect(target).toEqual({ adapterId: 5, machineId: 42, commandType: "select_recipe", writes: [{ tagKey: "recipe_select", value: "RCP-9" }] });
+    // What the dispatcher verifies (verifyActionBinding) == what the proposer stores.
+    expect(otPayloadHash({ tool: GEM300_HOST_COMMAND_TOOL, ...target })).toBe(
+      otPayloadHash({ tool: GEM300_HOST_COMMAND_TOOL, adapterId: input.adapterId, machineId: input.machineId ?? null, commandType: input.commandType, writes: input.writes }),
+    );
+  });
+
   it("PP-SELECT extracts the recipe code from the PPID param and dispatches select_recipe", () => {
     process.env.GEM300_ENABLED = "true";
     const equip = new Gem300Equipment();
@@ -197,7 +217,7 @@ describe("GEM300 — S2F41 host command → gated HITL proposal (no ungated actu
     expect(proposal.recipeCode).toBe("RCP-7");
     expect(parseS2F42(reply.body)?.hcack).toBe(HCACK.ACK_FINISH_LATER);
 
-    const input = buildHitlDispatchInput(proposal, { adapterId: 1, confirmedBy: 1, requestedBy: 1 });
+    const input = buildHitlDispatchInput(proposal, { adapterId: 1, confirmedBy: 1, requestedBy: 1, tool: "gem300.host_command" });
     expect(input.commandType).toBe("select_recipe");
     expect(input.writes).toEqual([{ tagKey: "recipe_select", value: "RCP-7" }]);
   });
@@ -213,7 +233,7 @@ describe("GEM300 — S2F41 host command → gated HITL proposal (no ungated actu
     const proposal = mapHostCommandToProposal("SELF_DESTRUCT");
     expect(proposal.canonicalCommand).toBeNull();
     expect(proposal.hcack).toBe(HCACK.NO_SUCH_COMMAND);
-    expect(() => buildHitlDispatchInput(proposal, { adapterId: 1, confirmedBy: 1, requestedBy: 1 })).toThrowError(
+    expect(() => buildHitlDispatchInput(proposal, { adapterId: 1, confirmedBy: 1, requestedBy: 1, tool: "gem300.host_command" })).toThrowError(
       /unmapped host command/,
     );
   });

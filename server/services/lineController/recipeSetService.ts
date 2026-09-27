@@ -387,12 +387,18 @@ async function distributeResolved(
         results.push({ ...base, status: "already_active" });
         continue;
       }
-      const deployment = await deployRecipe({
-        recipeId: item.machineRecipeId,
-        machineId: item.machineId,
-        deployedBy: opts.actorId ?? 0,
-        notes: opts.notes ?? `recipe-set ${set.code} → line ${line.code} (distribute, actor=${actor})`,
-      });
+      // doc 80 Đợt 1 Task 9 R-T9a — recipe sets keep the pre-task deploy gate (approvedBy only):
+      // a set pinning a version that was later replaced (archived) still distributes. Strict gate
+      // for recipe sets = owner decision (task-9 report).
+      const deployment = await deployRecipe(
+        {
+          recipeId: item.machineRecipeId,
+          machineId: item.machineId,
+          deployedBy: opts.actorId ?? 0,
+          notes: opts.notes ?? `recipe-set ${set.code} → line ${line.code} (distribute, actor=${actor})`,
+        },
+        "legacyApprovedOnly",
+      );
       results.push({ ...base, status: "deployed", deploymentId: deployment.id });
       // Genealogy recipe_load_log — best-effort như machineRecipeRouter (fail-soft).
       try {

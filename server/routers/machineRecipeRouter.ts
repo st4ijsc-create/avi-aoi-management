@@ -41,6 +41,7 @@ import {
   deployRecipe,
   rollbackRecipe,
   setGoldenRecipe,
+  type RecipeDeployPolicy,
 } from "../db/machineRecipe";
 import { recordEvent as recordGenealogyEvent, listCodeHistory } from "../services/equipment/recipeVersioningService";
 // Doc 56 Đ4 — recipe governance: typed-schema (RECIPE_TYPED_SCHEMA_MODE) + guardrail
@@ -88,14 +89,20 @@ async function getDb() {
 async function performDeploy(
   args: { recipeId: number; machineId: number; adapterId?: number | null; notes?: string | null },
   userId: number,
+  // doc 80 Đợt 1 Task 9 R-T9a — recipes.deploy ⇒ "strict" (shared release gate);
+  // changeover.approve ⇒ "legacyApprovedOnly" (pre-task behaviour, outside the task).
+  policy: RecipeDeployPolicy,
 ) {
-  const deployment = await deployRecipe({
-    recipeId: args.recipeId,
-    machineId: args.machineId,
-    adapterId: args.adapterId ?? null,
-    deployedBy: userId,
-    notes: args.notes ?? null,
-  });
+  const deployment = await deployRecipe(
+    {
+      recipeId: args.recipeId,
+      machineId: args.machineId,
+      adapterId: args.adapterId ?? null,
+      deployedBy: userId,
+      notes: args.notes ?? null,
+    },
+    policy,
+  );
   // W5-22 — ghi vết genealogy: recipe được nạp (deploy) lên máy.
   const deployed = await getRecipeById(deployment.recipeId);
   if (deployed) {
@@ -238,7 +245,12 @@ async function assertRecipeWithinGuardrails(recipe: {
 
 export const machineRecipeRouter = router({
   recipes: router({
-    /** Distinct recipe codes with their currently-active version (if any). */
+    /**
+     * Distinct recipe codes with their currently-active version (if any).
+     * Doc 80 Đợt 1 Task 2 (HUB-03) — `pendingCount` thêm cho `/recipes?filter=pending`
+     * (từ Hub): số phiên bản của mã này ĐANG CẦN chú ý — draft chưa duyệt hoặc (RCP-06)
+     * ĐANG CHẠY (active) mà chưa qua second-approver. KHÔNG đổi hàng nào/cột nào cũ.
+     */
     listCodes: protectedProcedure
       .use(requirePermission("machine_control", "canView"))
       .query(async () => {
@@ -251,6 +263,7 @@ export const machineRecipeRouter = router({
             versions: sql<number>`count(*)::int`,
             maxVersion: sql<number>`max(${machineRecipes.version})::int`,
             activeVersion: sql<number | null>`max(${machineRecipes.version}) filter (where ${machineRecipes.status} = 'active')::int`,
+            pendingCount: sql<number>`count(*) filter (where ${machineRecipes.approvedBy} is null and ${machineRecipes.status} in ('draft', 'active'))::int`,
           })
           .from(machineRecipes)
           .groupBy(machineRecipes.code)
@@ -402,8 +415,11 @@ export const machineRecipeRouter = router({
         try {
           // doc 63 DEP-08 — body extracted to performDeploy() (pure move; shared with
           // changeover.approve). Behaviour identical.
-          return await performDeploy(input, ctx.user.id);
+          return await performDeploy(input, ctx.user.id, "strict");
         } catch (err) {
+          // doc 80 Đợt 1 Task 9 — pre-classified refusals (release gate PRECONDITION_FAILED,
+          // NOT_FOUND) surface unchanged instead of being downgraded to a generic BAD_REQUEST.
+          if (err instanceof TRPCError) throw err;
           throw appError("BAD_REQUEST", "OPERATION_FAILED", { operation: "deployRecipe" }, err instanceof Error ? err.message : String(err));
         }
       }),
@@ -427,6 +443,8 @@ export const machineRecipeRouter = router({
           }
           return deployment;
         } catch (err) {
+          // doc 80 Đợt 1 Task 9 — the release gate's PRECONDITION_FAILED surfaces unchanged.
+          if (err instanceof TRPCError) throw err;
           throw appError("BAD_REQUEST", "OPERATION_FAILED", { operation: "rollbackRecipeDeployment" }, err instanceof Error ? err.message : String(err));
         }
       }),
@@ -665,6 +683,7 @@ export const machineRecipeRouter = router({
           deployment = await performDeploy(
             { recipeId: row.recipeId, machineId: row.machineId, notes: input.note ?? row.requestNote ?? null },
             ctx.user.id,
+            "legacyApprovedOnly",
           );
         } catch (err) {
           throw appError("BAD_REQUEST", "OPERATION_FAILED", { operation: "approveChangeoverRequest" }, err instanceof Error ? err.message : String(err));

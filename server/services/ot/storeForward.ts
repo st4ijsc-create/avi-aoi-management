@@ -32,6 +32,7 @@
 import { promises as fs } from "node:fs";
 import path from "node:path";
 import type { InsertOtTelemetry } from "../../../drizzle/schema/ot";
+import { getTsDropStats, isPgDataError, MIN_PG_TS_MS, warnGop } from "./otGuards";
 
 // ── flag ───────────────────────────────────────────────────────────────────────
 
@@ -63,10 +64,19 @@ function maxAgeMs(): number {
   return Number.isFinite(n) && n > 0 ? n : 24 * 60 * 60 * 1000;
 }
 
-/** How many entries to drain per backfill batch (bounded work per attempt). */
+/**
+ * T7 fix r1 — trần CỨNG của một lô xả WAL: 1000 dòng = đúng MỘT câu INSERT của đường ghi
+ * (TELEMETRY_INSERT_CHUNK_ROWS). Lô lớn hơn thì đường ghi chia thành NHIỀU câu tự-commit: khối 1
+ * đã lưu mà khối 2 hỏng ⇒ cả lô vẫn nằm trong hàng đợi ⇒ lần xả sau (hoặc lượt phân xử từng dòng)
+ * ghi LẠI khối 1 ⇒ dòng `deviceId` NULL bị NHÂN ĐÔI (uq index NULLS DISTINCT). Kẹp ≤1000 thì mỗi
+ * lời gọi insertFn là một câu nguyên tử: lưu hết hoặc không lưu gì, và được gỡ khỏi hàng đợi ngay.
+ */
+export const BACKFILL_MAX_BATCH_ROWS = 1000;
+
+/** How many entries to drain per backfill batch (bounded work per attempt; clamped ≤ 1000). */
 function drainBatch(): number {
   const n = parseInt(process.env.OT_STORE_FORWARD_DRAIN_BATCH || "500", 10);
-  return Number.isFinite(n) && n > 0 ? n : 500;
+  return Math.min(Number.isFinite(n) && n > 0 ? n : 500, BACKFILL_MAX_BATCH_ROWS);
 }
 
 // ── the durable WAL (in-memory queue is source of truth; optional file mirror) ──
@@ -108,6 +118,13 @@ interface StoreForwardMetrics {
   droppedOverflow: number;
   /** Rows dropped due to age (max age) — counted, warned, NEVER silent. */
   droppedAge: number;
+  /** T7 — rows refused by buffer() because their `ts` is not a valid date (never enter the WAL). */
+  rejectedInvalid: number;
+  /** T7 — WAL lines skipped by restore() (unparsable / no row / invalid ts); copied to `<wal>.corrupt`. */
+  corruptLinesSkipped: number;
+  /** T7 — queued rows isolated because they can never persist (unserializable, or Postgres
+   *  rejected their DATA during backfill); copied to `<wal>.corrupt` when serializable. */
+  quarantined: number;
   /** Last successful backfill time (ISO), or null if never. */
   lastBackfillAt: string | null;
   /** Last time a row was buffered (ISO), or null. */
@@ -120,6 +137,9 @@ const metrics: StoreForwardMetrics = {
   deduped: 0,
   droppedOverflow: 0,
   droppedAge: 0,
+  rejectedInvalid: 0,
+  corruptLinesSkipped: 0,
+  quarantined: 0,
   lastBackfillAt: null,
   lastBufferedAt: null,
 };
@@ -157,30 +177,130 @@ export function naturalKey(row: InsertOtTelemetry): string {
   return `${adapterId}|${tag}|${tsMillis}`;
 }
 
-// ── file mirror (append-only JSONL; best-effort — memory is the truth) ──────────
+// ── file mirror (JSONL snapshot; memory is the truth) ───────────────────────────
+//
+// T7 (doc 81 Đợt 1B) — BE3 đo: tệp bị ghi ĐÈ tại chỗ bằng `fs.writeFile` — không tệp tạm, không
+// fsync, không rename ⇒ chết giữa lúc ghi để lại tệp CỤT (mất cả backlog cũ); một dòng `ts` hỏng
+// làm `entryToLine` ném ⇒ MỌI lần ghi sau đó hỏng. Nay:
+//   • ghi NGUYÊN TỬ: tệp tạm cùng thư mục → fsync → rename đè (POSIX + Windows MoveFileEx đều
+//     thay thế nguyên tử); tệp cũ hoặc còn nguyên, hoặc bị thay bằng bản ĐẦY ĐỦ mới;
+//   • các lượt ghi được TUẦN TỰ HOÁ (một chuỗi promise) — hai lượt không bao giờ đan nhau;
+//   • một dòng không tuần tự hoá được bị CÁCH LY (bỏ khỏi hàng đợi, đếm), không chặn các dòng khác;
+//   • restore() bỏ dòng hỏng, ĐẾM, log GỘP một dòng, chép nguyên văn sang `<wal>.corrupt`.
 
 let fileDirty = false;
 
-/** Serialize an entry to a JSONL line (ts → ISO so it round-trips). */
+/** `ts` của một dòng WAL có ghi được vào Postgres không (Date hợp lệ, năm ≥ 0001)? */
+function rowTsValid(row: InsertOtTelemetry): boolean {
+  const ts = row?.ts as unknown;
+  if (!(ts instanceof Date)) return false;
+  const t = ts.getTime();
+  return Number.isFinite(t) && t >= MIN_PG_TS_MS;
+}
+
+/** Serialize an entry to a JSONL line (ts → ISO so it round-trips). Throws on an unserializable row. */
 function entryToLine(e: WalEntry): string {
   const row = { ...e.row, ts: e.row.ts instanceof Date ? e.row.ts.toISOString() : e.row.ts };
   return JSON.stringify({ key: e.key, enqueuedAt: e.enqueuedAt, row });
 }
 
-/** Rewrite the whole WAL file from the in-memory queue (best-effort). */
-async function flushFile(): Promise<void> {
+/** Tệp cách ly: dòng hỏng / dòng không bao giờ ghi được, giữ nguyên văn để người vận hành xem. */
+function quarantineFile(): string {
+  return walFile() + ".corrupt";
+}
+
+/** Chép (append) các dòng vào tệp cách ly. Best-effort — không bao giờ ném. */
+async function appendQuarantine(lines: string[]): Promise<void> {
+  if (lines.length === 0) return;
+  try {
+    await fs.mkdir(path.dirname(quarantineFile()), { recursive: true });
+    await fs.appendFile(quarantineFile(), lines.map((l) => l.replace(/\r?\n/g, " ")).join("\n") + "\n", "utf8");
+  } catch (err) {
+    warnGop("storeForward:quarantine", `[StoreForward] không ghi được tệp cách ly: ${(err as Error)?.message || err}`);
+  }
+}
+
+let tmpSeq = 0;
+
+/**
+ * Ghi `data` vào `file` một cách NGUYÊN TỬ: tệp tạm cùng thư mục → ghi → fsync → đóng → rename đè
+ * → (POSIX) fsync thư mục để chính lượt rename bền qua mất điện. Lỗi ở BẤT KỲ bước nào trước
+ * rename ⇒ tệp đích KHÔNG bị đụng tới, tệp tạm bị dọn, lỗi được ném lại.
+ */
+export async function writeFileAtomic(file: string, data: string): Promise<void> {
+  const dir = path.dirname(file);
+  await fs.mkdir(dir, { recursive: true });
+  const tmp = `${file}.${process.pid}.${++tmpSeq}.tmp`;
+  let fh: Awaited<ReturnType<typeof fs.open>> | null = null;
+  try {
+    fh = await fs.open(tmp, "w");
+    await fh.writeFile(data, "utf8");
+    await fh.sync();
+    await fh.close();
+    fh = null;
+    await fs.rename(tmp, file);
+  } catch (err) {
+    if (fh) await fh.close().catch(() => {});
+    await fs.unlink(tmp).catch(() => {});
+    throw err;
+  }
+  if (process.platform !== "win32") {
+    // Windows không mở được thư mục để fsync; MoveFileEx đã ghi metadata qua NTFS journal.
+    try {
+      const d = await fs.open(dir, "r");
+      try {
+        await d.sync();
+      } finally {
+        await d.close();
+      }
+    } catch {
+      /* best-effort */
+    }
+  }
+}
+
+/** Rewrite the whole WAL file from the in-memory queue (atomic; best-effort — memory is the truth). */
+async function writeSnapshot(): Promise<void> {
   if (!fileDirty) return;
   fileDirty = false;
+  const lines: string[] = [];
+  const poisoned: WalEntry[] = [];
+  for (const e of queue) {
+    try {
+      lines.push(entryToLine(e));
+    } catch {
+      poisoned.push(e);
+    }
+  }
+  if (poisoned.length > 0) {
+    // Một dòng không tuần tự hoá được sẽ KHÔNG BAO GIỜ xuống đĩa ⇒ cách ly, không kéo cả WAL theo.
+    const bad = new Set(poisoned);
+    for (let i = queue.length - 1; i >= 0; i--) {
+      if (bad.has(queue[i])) {
+        queuedKeys.delete(queue[i].key);
+        queue.splice(i, 1);
+      }
+    }
+    metrics.quarantined += poisoned.length;
+    warnGop("storeForward:unserializable", `[StoreForward] cách ly ${poisoned.length} dòng không tuần tự hoá được (tổng cách ly=${metrics.quarantined})`);
+  }
   const file = walFile();
   try {
-    await fs.mkdir(path.dirname(file), { recursive: true });
-    const lines = queue.map(entryToLine).join("\n");
-    await fs.writeFile(file, lines.length ? lines + "\n" : "", "utf8");
+    await writeFileAtomic(file, lines.length ? lines.join("\n") + "\n" : "");
   } catch (err) {
     // File mirror is best-effort; the in-memory queue remains the source of truth.
     fileDirty = true; // retry on the next flush
-    console.warn("[StoreForward] WAL file flush failed:", (err as Error)?.message || err);
+    warnGop("storeForward:flush", `[StoreForward] WAL file flush failed (tệp cũ giữ nguyên): ${(err as Error)?.message || err}`);
   }
+}
+
+/** Chuỗi tuần tự hoá mọi lượt ghi WAL (buffer/backfill có thể chạy chồng nhau). */
+let flushChain: Promise<void> = Promise.resolve();
+
+function flushFile(): Promise<void> {
+  const run = flushChain.then(writeSnapshot, writeSnapshot);
+  flushChain = run.catch(() => {});
+  return run;
 }
 
 /** Restore the buffer from the WAL file mirror (call on process start). */
@@ -192,20 +312,40 @@ export async function restore(): Promise<number> {
   } catch {
     return queue.length; // no file yet → whatever is already in memory
   }
+  const corrupt: string[] = [];
   for (const line of raw.split("\n")) {
     const t = line.trim();
     if (!t) continue;
     try {
       const parsed = JSON.parse(t) as { key?: string; enqueuedAt?: number; row?: Record<string, unknown> };
-      if (!parsed.row) continue;
+      if (!parsed || typeof parsed !== "object" || !parsed.row || typeof parsed.row !== "object") {
+        corrupt.push(t);
+        continue;
+      }
       const row = { ...parsed.row, ts: new Date(String(parsed.row.ts)) } as InsertOtTelemetry;
+      if (!rowTsValid(row)) {
+        corrupt.push(t);
+        continue;
+      }
       const key = typeof parsed.key === "string" ? parsed.key : naturalKey(row);
       if (queuedKeys.has(key) || appliedKeys.has(key)) continue;
       queue.push({ key, enqueuedAt: parsed.enqueuedAt ?? Date.now(), row });
       queuedKeys.add(key);
     } catch {
-      /* skip a corrupt line */
+      corrupt.push(t); // unparsable (e.g. a line cut by a crash under the OLD non-atomic writer)
     }
+  }
+  if (corrupt.length > 0) {
+    metrics.corruptLinesSkipped += corrupt.length;
+    await appendQuarantine(corrupt);
+    console.warn(
+      `[StoreForward] restore: bỏ ${corrupt.length} dòng WAL hỏng (chép sang ${path.basename(quarantineFile())}); ` +
+        `nạp ${queue.length} dòng tốt`,
+    );
+    // Fix r1: viết lại WAL NGAY (không còn dòng hỏng) — nếu không, mỗi lần khởi động lại sẽ
+    // đọc lại đúng những dòng ấy và chép chúng vào .corrupt thêm một lần nữa.
+    fileDirty = true;
+    await flushFile();
   }
   return queue.length;
 }
@@ -266,12 +406,26 @@ export async function buffer(rows: InsertOtTelemetry[]): Promise<number> {
   if (!storeForwardEnabled() || !rows || rows.length === 0) return 0;
   evictAged();
   let added = 0;
+  let invalid = 0;
   for (const row of rows) {
+    // T7 — a row whose ts is not a valid date can never persist and (before T7) made every
+    // later WAL write throw. Refuse it at the door: counted + one merged warning, never queued.
+    if (!rowTsValid(row)) {
+      invalid += 1;
+      continue;
+    }
     const key = naturalKey(row);
     if (queuedKeys.has(key) || appliedKeys.has(key)) continue;
     queue.push({ key, enqueuedAt: Date.now(), row });
     queuedKeys.add(key);
     added += 1;
+  }
+  if (invalid > 0) {
+    metrics.rejectedInvalid += invalid;
+    warnGop(
+      "storeForward:invalidTs",
+      `[StoreForward] từ chối ${invalid} dòng có ts không hợp lệ — không đưa vào WAL (tổng=${metrics.rejectedInvalid})`,
+    );
   }
   if (added > 0) {
     metrics.buffered += added;
@@ -333,7 +487,7 @@ export async function backfill(): Promise<{
 
       if (fresh.length === 0) {
         // Whole batch already applied → safe to drop it and continue.
-        removeFront(batch.length);
+        removeBatch(batch);
         deduped += batchDeduped;
         continue;
       }
@@ -342,9 +496,23 @@ export async function backfill(): Promise<{
       try {
         persisted = await insertFn(fresh.map((e) => e.row));
       } catch (err) {
-        // DB still down → stop; leave the batch queued for the next attempt.
-        console.warn("[StoreForward] backfill insert failed; leaving buffered:", (err as Error)?.message || err);
-        break;
+        if (!isPgDataError(err)) {
+          // DB still down → stop; leave the batch queued for the next attempt.
+          warnGop("storeForward:backfill", `[StoreForward] backfill insert failed; leaving buffered: ${(err as Error)?.message || err}`);
+          break;
+        }
+        // T7 — Postgres refused the DATA of some row(s) in this batch (SQLSTATE class 22/23).
+        // Retrying the batch can only fail again and would stall every later row forever ⇒
+        // adjudicate row by row: persistable rows land, poisoned rows are QUARANTINED.
+        const iso = await isolatePoisonedRows(fresh);
+        drained += iso.applied;
+        if (iso.stopped) {
+          removeEntries(iso.processed);
+          break;
+        }
+        removeBatch(batch);
+        deduped += batchDeduped;
+        continue;
       }
 
       if (persisted <= 0) {
@@ -354,7 +522,7 @@ export async function backfill(): Promise<{
 
       // Confirmed persisted → mark applied, remove the whole batch from the front.
       for (const e of fresh) markApplied(e.key);
-      removeFront(batch.length);
+      removeBatch(batch);
       drained += fresh.length;
       deduped += batchDeduped;
     }
@@ -367,12 +535,88 @@ export async function backfill(): Promise<{
     metrics.lastBackfillAt = new Date().toISOString();
   }
   if (deduped > 0) metrics.deduped += deduped;
+  if (drained > 0 || deduped > 0) fileDirty = true;
+  // T7: also rewrite when only quarantined rows left the queue (removeEntries marks dirty).
+  if (fileDirty) await flushFile();
   if (drained > 0 || deduped > 0) {
-    fileDirty = true;
-    await flushFile();
     console.log(`[StoreForward] backfilled ${drained} row(s) (${deduped} deduped); queue=${queue.length}`);
   }
   return { enabled: true, drained, deduped, remaining: queue.length };
+}
+
+/**
+ * T7 — row-by-row adjudication of a batch Postgres refused for its DATA. Each row goes through
+ * the SAME injected insert fn alone: success ⇒ applied; data error ⇒ quarantined (removed,
+ * counted, copied to `<wal>.corrupt`); any other error / 0 persisted ⇒ the DB is down ⇒ STOP
+ * (unprocessed rows stay queued, in order).
+ */
+async function isolatePoisonedRows(
+  fresh: WalEntry[],
+): Promise<{ applied: number; processed: Set<WalEntry>; stopped: boolean }> {
+  const processed = new Set<WalEntry>();
+  const poisoned: WalEntry[] = [];
+  let applied = 0;
+  let stopped = false;
+  for (const e of fresh) {
+    try {
+      const k = await insertFn([e.row]);
+      if (k <= 0) {
+        stopped = true;
+        break;
+      }
+      markApplied(e.key);
+      applied += 1;
+    } catch (err) {
+      if (!isPgDataError(err)) {
+        stopped = true;
+        break;
+      }
+      poisoned.push(e);
+    }
+    processed.add(e);
+  }
+  if (poisoned.length > 0) {
+    metrics.quarantined += poisoned.length;
+    const lines: string[] = [];
+    for (const e of poisoned) {
+      try {
+        lines.push(entryToLine(e));
+      } catch {
+        /* unserializable — counted, cannot be copied */
+      }
+    }
+    await appendQuarantine(lines);
+    warnGop(
+      "storeForward:poison",
+      `[StoreForward] cách ly ${poisoned.length} dòng Postgres từ chối dữ liệu (tổng cách ly=${metrics.quarantined}); các dòng sau vẫn được xả`,
+    );
+  }
+  return { applied, processed, stopped };
+}
+
+/** Remove specific entries (by identity) from the queue + their key set. */
+function removeEntries(entries: Set<WalEntry>): void {
+  if (entries.size === 0) return;
+  for (let i = queue.length - 1; i >= 0; i--) {
+    if (entries.has(queue[i])) {
+      queuedKeys.delete(queue[i].key);
+      queue.splice(i, 1);
+    }
+  }
+  fileDirty = true;
+}
+
+/**
+ * Remove a drained batch. Fast path: the batch is still the queue's front (the normal case).
+ * T7: while backfill awaits the insert, a concurrent WAL flush may QUARANTINE an unserializable
+ * entry out of the queue — then a positional removeFront(batch.length) would drop one row that
+ * was never drained. Fall back to removal by identity in that case.
+ */
+function removeBatch(batch: WalEntry[]): void {
+  let front = batch.length <= queue.length;
+  for (let i = 0; front && i < batch.length; i++) if (queue[i] !== batch[i]) front = false;
+  if (front) removeFront(batch.length);
+  else removeEntries(new Set(batch));
 }
 
 /** Remove the first `n` entries from the queue + their key set. */
@@ -386,6 +630,9 @@ function removeFront(n: number): void {
 
 export interface StoreForwardStatus extends StoreForwardMetrics {
   enabled: boolean;
+  /** T7 fix r1 — mẫu bị cổng `ts` của telemetryBus loại (tích luỹ, mọi đầu đọc; KHÔNG vào DB/WAL). */
+  droppedInvalidTs: number;
+  droppedFutureSkew: number;
   /** Rows currently buffered (not yet backfilled). */
   bufferedCount: number;
   /** Configured bounds (for the health card). */
@@ -404,6 +651,7 @@ export function getStatus(): StoreForwardStatus {
     maxAgeMs: maxAgeMs(),
     walFile: walFile(),
     ...metrics,
+    ...getTsDropStats(),
   };
 }
 
@@ -425,6 +673,9 @@ export function _reset(): void {
   metrics.deduped = 0;
   metrics.droppedOverflow = 0;
   metrics.droppedAge = 0;
+  metrics.rejectedInvalid = 0;
+  metrics.corruptLinesSkipped = 0;
+  metrics.quarantined = 0;
   metrics.lastBackfillAt = null;
   metrics.lastBufferedAt = null;
   fileDirty = false;
@@ -471,6 +722,8 @@ export interface DurableBufferStatus {
   deduped: number;
   droppedOverflow: number;
   droppedAge: number;
+  /** T7 fix r1 — WAL lines skipped by restore() (unparsable / no item / rejected by fromWire); copied to `<file>.corrupt`. */
+  corruptLinesSkipped: number;
   lastBackfillAt: string | null;
   lastBufferedAt: string | null;
 }
@@ -522,6 +775,7 @@ class DurableBuffer<T> {
     deduped: 0,
     droppedOverflow: 0,
     droppedAge: 0,
+    corruptLinesSkipped: 0,
     lastBackfillAt: null as string | null,
     lastBufferedAt: null as string | null,
   };
@@ -550,17 +804,35 @@ class DurableBuffer<T> {
     return JSON.stringify({ key: e.key, enqueuedAt: e.enqueuedAt, item: this.cfg.toWire(e.item) });
   }
 
-  private async flushFile(): Promise<void> {
+  /**
+   * T7 fix r1 — cùng hợp đồng với WAL OT phía trên: ghi NGUYÊN TỬ (writeFileAtomic: tệp tạm →
+   * fsync → rename) và TUẦN TỰ HOÁ (một chuỗi promise mỗi buffer). Trước đây `fs.writeFile` đè
+   * tại chỗ, không fsync, không khoá ⇒ chết giữa lúc ghi là mất cả backlog UNS của edge.
+   */
+  private flushChain: Promise<void> = Promise.resolve();
+
+  private flushFile(): Promise<void> {
+    const run = this.flushChain.then(
+      () => this.writeSnapshot(),
+      () => this.writeSnapshot(),
+    );
+    this.flushChain = run.catch(() => {});
+    return run;
+  }
+
+  private async writeSnapshot(): Promise<void> {
     if (!this.fileDirty) return;
     this.fileDirty = false;
     const file = this.cfg.file();
     try {
-      await fs.mkdir(path.dirname(file), { recursive: true });
       const lines = this.queue.map((e) => this.entryToLine(e)).join("\n");
-      await fs.writeFile(file, lines.length ? lines + "\n" : "", "utf8");
+      await writeFileAtomic(file, lines.length ? lines + "\n" : "");
     } catch (err) {
       this.fileDirty = true; // retry next flush; the in-memory queue is the truth
-      console.warn(`[${this.cfg.name}] WAL file flush failed:`, (err as Error)?.message || err);
+      warnGop(
+        `${this.cfg.name}:flush`,
+        `[${this.cfg.name}] WAL file flush failed (tệp cũ giữ nguyên): ${(err as Error)?.message || err}`,
+      );
     }
   }
 
@@ -572,21 +844,45 @@ class DurableBuffer<T> {
     } catch {
       return this.queue.length;
     }
+    const corrupt: string[] = [];
     for (const line of raw.split("\n")) {
       const t = line.trim();
       if (!t) continue;
       try {
         const parsed = JSON.parse(t) as { key?: string; enqueuedAt?: number; item?: Record<string, unknown> };
-        if (!parsed.item) continue;
+        if (!parsed || typeof parsed !== "object" || !parsed.item || typeof parsed.item !== "object") {
+          corrupt.push(t);
+          continue;
+        }
         const item = this.cfg.fromWire(parsed.item);
-        if (item == null) continue;
+        if (item == null) {
+          corrupt.push(t);
+          continue;
+        }
         const key = typeof parsed.key === "string" ? parsed.key : this.cfg.keyOf(item);
         if (this.queuedKeys.has(key) || this.appliedKeys.has(key)) continue;
         this.queue.push({ key, enqueuedAt: parsed.enqueuedAt ?? Date.now(), item });
         this.queuedKeys.add(key);
       } catch {
-        /* skip a corrupt line */
+        corrupt.push(t); // unparsable (e.g. a line cut by a crash under the OLD in-place writer)
       }
+    }
+    if (corrupt.length > 0) {
+      // T7 fix r1 — như WAL OT: đếm, chép nguyên văn sang `<file>.corrupt`, log GỘP một dòng, rồi
+      // viết lại WAL ngay để lần khởi động sau không chép lại đúng những dòng ấy.
+      this.metrics.corruptLinesSkipped += corrupt.length;
+      try {
+        await fs.mkdir(path.dirname(file), { recursive: true });
+        await fs.appendFile(file + ".corrupt", corrupt.map((l) => l.replace(/\r?\n/g, " ")).join("\n") + "\n", "utf8");
+      } catch (err) {
+        warnGop(`${this.cfg.name}:quarantine`, `[${this.cfg.name}] không ghi được tệp cách ly: ${(err as Error)?.message || err}`);
+      }
+      console.warn(
+        `[${this.cfg.name}] restore: bỏ ${corrupt.length} dòng WAL hỏng (chép sang ${path.basename(file)}.corrupt); ` +
+          `nạp ${this.queue.length} dòng tốt`,
+      );
+      this.fileDirty = true;
+      await this.flushFile();
     }
     return this.queue.length;
   }
@@ -723,6 +1019,7 @@ class DurableBuffer<T> {
     this.metrics.deduped = 0;
     this.metrics.droppedOverflow = 0;
     this.metrics.droppedAge = 0;
+    this.metrics.corruptLinesSkipped = 0;
     this.metrics.lastBackfillAt = null;
     this.metrics.lastBufferedAt = null;
     this.fileDirty = false;

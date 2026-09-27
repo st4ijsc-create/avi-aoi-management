@@ -27,7 +27,7 @@
 import type { Flow, IrBlock, CompareOperator, NumericOrExpr, FunctionBlockDef } from "../irModel";
 import { assignIds } from "../irModel";
 import { isExpr, renderSlot } from "../irExpr";
-import { commentText, emitFlowId, emitIdent, emitIoRef, emitLabel, emitUnit, urStr } from "../irSafeTokens";
+import { commentText, emitFlowId, emitIdent, emitIoRef, emitLabel, emitUnit, isSafeIdent, urStr } from "../irSafeTokens";
 
 /** The IR↔source comment marker for one block (also surfaced in the irCommentMap). */
 export function irComment(block: IrBlock): string {
@@ -255,8 +255,18 @@ export function transpileToUrscript(flowIn: Flow): TranspileResult {
   return { code: lines.join("\n") + "\n", irCommentMap };
 }
 
-/** flow_id is free text (already whitelisted by emitFlowId) → a safe def name. */
+/**
+ * flow_id is free text (already whitelisted by emitFlowId) → a safe def name for the
+ * MAIN routine (`def <name>():`). Doc 80 Đợt 1 Task 11 — unlike function_block names
+ * (validated by `emitIdent` above), this name was only charset/leading-char sanitised: a
+ * flow_id that happens to sanitise to a URScript/Python builtin or reserved codegen name
+ * (e.g. flow_id "movel") would emit `def movel():`, SHADOWING the builtin motion
+ * primitive for the REST OF THE SCRIPT — every `movel(...)` call after that point invokes
+ * the flow's own (recursive, wrong-arity) routine instead of the real motion primitive.
+ * Prefix defensively with the SAME `flow_` prefix already used for the leading-digit case.
+ */
 function sanitizeName(id: string): string {
   const s = id.replace(/[^A-Za-z0-9_]/g, "_");
-  return /^[A-Za-z_]/.test(s) ? s : `flow_${s}`;
+  const named = /^[A-Za-z_]/.test(s) ? s : `flow_${s}`;
+  return isSafeIdent(named) ? named : `flow_${named}`;
 }

@@ -156,9 +156,12 @@ export class UrsimClient {
    * up to 79 bytes (or until the read timeout) before ending the socket.
    * Throws (honest) when the endpoint is unreachable.
    */
-  async sendScript(urscript: string): Promise<{ sent: boolean; bytes: number }> {
+  async sendScript(urscript: string, guard?: () => void): Promise<{ sent: boolean; bytes: number }> {
     const sock = await openSocket(this.ep.host, this.ep.scriptPort, this.ep.timeoutMs);
     try {
+      // doc 81 Đợt 1B Task 5 fix round 1 — the caller's abort fence is checked AFTER the
+      // connect phase, right before the write: a job fenced meanwhile writes nothing.
+      guard?.();
       const payload = urscript.endsWith("\n") ? urscript : urscript + "\n";
       await new Promise<void>((resolve, reject) => {
         sock.write(payload, "utf8", (err) => (err ? reject(err) : resolve()));
@@ -200,6 +203,22 @@ export class UrsimClient {
   async isProgramRunning(): Promise<boolean> {
     const reply = await this.dashboard("running");
     return /true/i.test(reply);
+  }
+
+  /**
+   * doc 81 Đợt 1B Task 3 — trạng thái AN TOÀN của bộ điều khiển (Dashboard Server):
+   * `safetystatus` → "Safetystatus: NORMAL" (e-series ≥ 5.4 / CB3 ≥ 3.11); bộ điều khiển
+   * đời cũ không hiểu lệnh này ⇒ thử `safetymode` → "Safetymode: NORMAL". Trả giá trị IN
+   * HOA (NORMAL, REDUCED, PROTECTIVE_STOP, SAFEGUARD_STOP, …) hoặc `null` khi KHÔNG đọc được
+   * — người gọi phải coi null là fail-closed, không phải "an toàn".
+   */
+  async safetyStatus(): Promise<string | null> {
+    const reply = await this.dashboard("safetystatus");
+    const m = /^Safetystatus:\s*([A-Z_]+)/i.exec(reply.trim());
+    if (m) return m[1].toUpperCase();
+    const legacy = await this.dashboard("safetymode");
+    const m2 = /^Safetymode:\s*([A-Z_]+)/i.exec(legacy.trim());
+    return m2 ? m2[1].toUpperCase() : null;
   }
 
   /** Power the arm on and release brakes (dashboard). */

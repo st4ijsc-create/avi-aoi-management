@@ -19,6 +19,7 @@
  *   - flag OFF (default) → publishCmdAck NEVER called
  */
 import { describe, it, expect, vi, beforeEach } from "vitest";
+import { makeLedgerFakeDb, boundPending, resultRows, isIntentRow, TESTKIT_TOOL } from "./commandDispatcher.testkit";
 
 type Row = Record<string, any>;
 
@@ -37,10 +38,8 @@ function reset() {
   cmdSeq = 1;
 }
 
-vi.mock("drizzle-orm", () => ({
-  eq: (col: any, val: any) => ({ __k: col.__name, __v: val, __op: "eq" }),
-  and: (...ps: any[]) => ({ __and: ps }),
-}));
+// doc 81 Đợt 1B Task 6 — + inArray/sql for the write-ahead reservation (see commandDispatcher.testkit.ts).
+vi.mock("drizzle-orm", async () => (await import("./commandDispatcher.testkit")).fakeOrm);
 
 function matches(row: Row, pred: any): boolean {
   if (!pred) return true;
@@ -60,33 +59,24 @@ function tableFor(table: any): Row[] {
 }
 
 function makeFakeDb() {
-  return {
-    select: () => ({
-      from: (table: any) => ({
-        where: (pred: any) => ({
-          limit: async () => tableFor(table).filter((r) => matches(r, pred)).slice(0, 1),
-        }),
-      }),
-    }),
-    insert: (table: any) => ({
-      values: (vals: Row) => ({
-        returning: async (_sel?: any) => {
-          if (table.__table === "command_log") {
-            const row = { id: cmdSeq++, ...vals };
-            cmdLog.push(row);
-            return [{ id: row.id }];
-          }
-          return [{ id: cmdSeq++ }];
-        },
-      }),
-    }),
-  };
+  // doc 81 Đợt 1B Task 6 — transaction-capable fake (reservation tx); same insert bookkeeping.
+  return makeLedgerFakeDb({
+    tableFor,
+    onInsert: (table: any, vals: Row) => {
+      if (table.__table === "command_log") {
+        const row = { id: cmdSeq++, ...vals };
+        cmdLog.push(row);
+        return { id: row.id };
+      }
+      return { id: cmdSeq++ };
+    },
+  });
 }
 
 vi.mock("../../db/connection", () => ({ getDb: vi.fn(async () => makeFakeDb()) }));
 
 vi.mock("../../../drizzle/schema", () => ({
-  aiPendingActions: { __table: "ai_pending_actions", id: { __name: "id" }, status: { __name: "status" }, userId: { __name: "userId" } },
+  aiPendingActions: { __table: "ai_pending_actions", id: { __name: "id" }, status: { __name: "status" }, userId: { __name: "userId" }, tool: { __name: "tool" } },
   deviceAdapters: { __table: "device_adapters", id: { __name: "id" }, machineId: { __name: "machineId" }, isEnabled: { __name: "isEnabled" } },
   deviceTags: { __table: "device_tags", id: { __name: "id" }, adapterId: { __name: "adapterId" }, tagKey: { __name: "tagKey" }, dataType: { __name: "dataType" }, scale: { __name: "scale" }, offset: { __name: "offset" } },
   commandLog: { __table: "command_log", id: { __name: "id" }, idempotencyKey: { __name: "idempotencyKey" }, status: { __name: "status" } },
@@ -127,7 +117,7 @@ const baseInput = (over: Partial<Parameters<typeof dispatch>[0]> = {}) => ({
   machineId: 5,
   commandType: "start",
   writes: [{ tagKey: "cmd_start", value: true }],
-  triggeredBy: { kind: "hitl" as const, actionId: "act-1", confirmedBy: 1, requestedBy: 1 },
+  triggeredBy: { kind: "hitl" as const, actionId: "act-1", tool: TESTKIT_TOOL, confirmedBy: 1, requestedBy: 1 },
   lang: "vi" as const,
   idempotencyKey: "key-1",
   ...over,
@@ -154,34 +144,35 @@ beforeEach(() => {
   publishCmdAckSpy.mockImplementation(() => true);
   adapters.push({ id: 10, machineId: 5, code: "A10", isEnabled: true });
   tags.push({ id: 100, adapterId: 10, tagKey: "cmd_start", address: "ns=1;s=Start", dataType: "bool", scale: "1", offset: "0", writable: true, isEnabled: true });
-  pending.set("act-1", { id: "act-1", status: "confirmed", userId: 1 });
+  // doc 81 Đợt 1B Task 6 — a real write needs a confirmed action BOUND to the command.
+  pending.set("act-1", boundPending("act-1", baseInput()));
 });
 
 describe("G1.7 — correlationId persistence", () => {
   it("explicit input.correlationId is persisted on the (simulated) commandLog row", async () => {
     const r = await dispatch(baseInput({ correlationId: "corr-explicit-1" }));
     expect(r.status).toBe("simulated");
-    expect(cmdLog).toHaveLength(1);
-    expect(cmdLog[0].correlationId).toBe("corr-explicit-1");
-    expect(cmdLog[0].deadlineMs).toBeNull();
+    expect(resultRows(cmdLog)).toHaveLength(1);
+    expect(resultRows(cmdLog)[0].correlationId).toBe("corr-explicit-1");
+    expect(resultRows(cmdLog)[0].deadlineMs).toBeNull();
   });
 
   it("absent → picked up from the AsyncLocalStorage correlation backbone", async () => {
     const r = await withCorrelation({ correlationId: "corr-als-1" }, () => dispatch(baseInput()));
     expect(r.status).toBe("simulated");
-    expect(cmdLog[0].correlationId).toBe("corr-als-1");
+    expect(resultRows(cmdLog)[0].correlationId).toBe("corr-als-1");
   });
 
   it("explicit correlationId WINS over the ALS context", async () => {
     await withCorrelation({ correlationId: "corr-als-2" }, () =>
       dispatch(baseInput({ correlationId: "corr-explicit-2" })),
     );
-    expect(cmdLog[0].correlationId).toBe("corr-explicit-2");
+    expect(resultRows(cmdLog)[0].correlationId).toBe("corr-explicit-2");
   });
 
   it("absent + no ALS context → correlationId null (behaviour unchanged)", async () => {
     await dispatch(baseInput());
-    expect(cmdLog[0].correlationId).toBeNull();
+    expect(resultRows(cmdLog)[0].correlationId).toBeNull();
   });
 
   it("rejected branch ALSO persists correlationId (ledger on every branch)", async () => {
@@ -189,14 +180,14 @@ describe("G1.7 — correlationId persistence", () => {
     const r = await dispatch(baseInput({ correlationId: "corr-rej-1" }));
     expect(r.status).toBe("rejected");
     expect(cmdLog.length).toBeGreaterThan(0);
-    expect(cmdLog[0].correlationId).toBe("corr-rej-1");
+    expect(resultRows(cmdLog)[0].correlationId).toBe("corr-rej-1");
   });
 
   it("real-write path (control ON) persists correlationId on the acked row", async () => {
     process.env.OT_CONTROL_ENABLED = "true";
     const r = await dispatch(baseInput({ correlationId: "corr-real-1" }));
     expect(r.status).toBe("acked");
-    expect(cmdLog[0].correlationId).toBe("corr-real-1");
+    expect(resultRows(cmdLog)[0].correlationId).toBe("corr-real-1");
   });
 });
 
@@ -208,7 +199,7 @@ describe("G1.7 — deadlineMs override", () => {
   it("deadlineMs is persisted on the commandLog row", async () => {
     const r = await dispatch(baseInput({ deadlineMs: 2000 }));
     expect(r.status).toBe("acked");
-    expect(cmdLog[0].deadlineMs).toBe(2000);
+    expect(resultRows(cmdLog)[0].deadlineMs).toBe(2000);
   });
 
   it("hanging write + deadlineMs=30 → 'timeout' using the DEADLINE, not the 5000ms env default", async () => {
@@ -218,9 +209,9 @@ describe("G1.7 — deadlineMs override", () => {
     const elapsed = Date.now() - t0;
     expect(r.status).toBe("timeout");
     expect(elapsed).toBeLessThan(3000); // would be ≥5000ms on the env default
-    expect(cmdLog[0].status).toBe("timeout");
-    expect(cmdLog[0].errorText).toMatch(/timeout after 30ms/);
-    expect(cmdLog[0].deadlineMs).toBe(30);
+    expect(resultRows(cmdLog)[0].status).toBe("timeout");
+    expect(resultRows(cmdLog)[0].errorText).toMatch(/timeout after 30ms/);
+    expect(resultRows(cmdLog)[0].deadlineMs).toBe(30);
   });
 
   it("OT_CONTROL_TIMEOUT_MAX_MS caps an oversized deadline (min(deadline, max))", async () => {
@@ -231,7 +222,7 @@ describe("G1.7 — deadlineMs override", () => {
     const elapsed = Date.now() - t0;
     expect(r.status).toBe("timeout");
     expect(elapsed).toBeLessThan(3000);
-    expect(cmdLog[0].errorText).toMatch(/timeout after 25ms/);
+    expect(resultRows(cmdLog)[0].errorText).toMatch(/timeout after 25ms/);
   });
 
   it("NO deadlineMs → env timeout behaviour unchanged (regression guard)", async () => {
@@ -239,8 +230,8 @@ describe("G1.7 — deadlineMs override", () => {
     writeTagsSpy.mockImplementationOnce(() => new Promise(() => { /* never resolves */ }));
     const r = await dispatch(baseInput());
     expect(r.status).toBe("timeout");
-    expect(cmdLog[0].errorText).toMatch(/timeout after 30ms/);
-    expect(cmdLog[0].deadlineMs).toBeNull();
+    expect(resultRows(cmdLog)[0].errorText).toMatch(/timeout after 30ms/);
+    expect(resultRows(cmdLog)[0].deadlineMs).toBeNull();
   });
 
   it("invalid deadlineMs (<=0 / NaN) is ignored → env default + null persisted", async () => {
@@ -248,8 +239,8 @@ describe("G1.7 — deadlineMs override", () => {
     writeTagsSpy.mockImplementationOnce(() => new Promise(() => { /* never resolves */ }));
     const r = await dispatch(baseInput({ deadlineMs: -5 }));
     expect(r.status).toBe("timeout");
-    expect(cmdLog[0].errorText).toMatch(/timeout after 30ms/);
-    expect(cmdLog[0].deadlineMs).toBeNull();
+    expect(resultRows(cmdLog)[0].errorText).toMatch(/timeout after 30ms/);
+    expect(resultRows(cmdLog)[0].deadlineMs).toBeNull();
   });
 });
 
@@ -289,7 +280,7 @@ describe("G1.6 — cmd_ack publish (fire-and-forget)", () => {
     expect(r.status).toBe("simulated");
     await until(() => publishCmdAckSpy.mock.calls.length >= 1);
     expect(publishCmdAckSpy).toHaveBeenCalledTimes(1); // attempted, swallowed
-    expect(cmdLog).toHaveLength(1); // ledger untouched by the publish failure
+    expect(resultRows(cmdLog)).toHaveLength(1); // ledger untouched by the publish failure
   });
 
   it("flag OFF (default) → publishCmdAck NEVER called", async () => {
@@ -306,6 +297,6 @@ describe("G1.6 — cmd_ack publish (fire-and-forget)", () => {
     await dispatch(baseInput()); // cached terminal → still a terminal result
     await until(() => publishCmdAckSpy.mock.calls.length >= 2);
     expect(publishCmdAckSpy).toHaveBeenCalledTimes(2);
-    expect(cmdLog).toHaveLength(1); // ledger still has exactly one row
+    expect(resultRows(cmdLog)).toHaveLength(1); // ledger still has exactly one row
   });
 });

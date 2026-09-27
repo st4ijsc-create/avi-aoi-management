@@ -18,6 +18,11 @@
  *
  * This opens NO new control path: the gate lives here (same flags), the transport is the
  * URSim client, and the audit trail is the same program_deployments ledger.
+ *
+ * doc 81 Đợt 1B Task 3 fix round 1: the request carries a `targetId` of a server-registered
+ * sim target — NEVER an endpoint. The gate-open path resolves it with `resolveSimTarget`
+ * (unknown target / unresolvable / a URSIM_HOST that is a real robot or adapter ⇒ 'rejected',
+ * no socket), so `power on` + `brake release` cannot be aimed at a real arm through here.
  * ════════════════════════════════════════════════════════════════════════════
  */
 import { eq } from "drizzle-orm";
@@ -25,12 +30,13 @@ import { getDb } from "../../../db/connection";
 import { programDeployments } from "../../../../drizzle/schema";
 import { dpcDeployEnabled } from "../../programming/programmingService";
 import { validateUrscriptOnUrsim, ursimEnabled, type UrsimValidationResult } from "./ursimHarness";
-import type { UrsimEndpoint } from "./ursimClient";
+import { resolveSimTarget } from "./simTargetRegistry";
 
 export interface UrsimDeployRequest {
   /** The URScript TEXT (as produced by the D1 transpiler / a build). */
   urscript: string;
-  endpoint: UrsimEndpoint;
+  /** A server-registered sim target (today only "default" = URSIM_HOST). Never a host/port. */
+  targetId: string;
   /** Ties the deploy to a build/project for the audit row (optional in ad-hoc validation). */
   buildId?: number;
   projectId?: number;
@@ -129,8 +135,17 @@ export async function deployUrscriptToUrsim(req: UrsimDeployRequest): Promise<Ur
     return { status: "simulated", simulated: true, deploymentId, reason };
   }
 
-  // GATE OPEN → send to the (virtual) controller + validate execution. Honest on failure.
-  const validation = await validateUrscriptOnUrsim(req.urscript, req.endpoint);
+  // GATE OPEN → resolve the REGISTERED sim target (refused ⇒ 'rejected', no socket), then send
+  // to that (virtual) controller + validate execution. Honest on failure.
+  let endpoint;
+  try {
+    endpoint = (await resolveSimTarget(req.targetId)).endpoint;
+  } catch (e) {
+    const reason = (e as Error)?.message ?? String(e);
+    const deploymentId = await record(req, "rejected", true, { reason, sent: false, targetId: req.targetId }, reason);
+    return { status: "rejected", simulated: true, deploymentId, reason };
+  }
+  const validation = await validateUrscriptOnUrsim(req.urscript, endpoint);
   let status: UrsimDeployResult["status"];
   if (validation.error) {
     status = "failed";
@@ -139,13 +154,13 @@ export async function deployUrscriptToUrsim(req: UrsimDeployRequest): Promise<Ur
   } else if (validation.accepted) {
     status = "deployed"; // controller accepted (running state not yet confirmed)
   } else {
-    status = "failed"; // sent but the controller did not accept/run — a broken transpile
+    status = "failed"; // sent but not accepted — see validation.reasonCode (e.g. not_observed_running)
   }
   const deploymentId = await record(
     req,
     status,
     false,
-    { validation },
+    { validation, ...(validation.reasonCode ? { reasonCode: validation.reasonCode } : {}) },
     validation.error,
   );
   return { status, simulated: false, deploymentId, validation, reason: validation.error };

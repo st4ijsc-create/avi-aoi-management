@@ -35,10 +35,18 @@
  */
 import { createConnection } from "node:net";
 import { DeviceUnreachableError } from "../../../_core/deviceErrors";
+import { closeModbusClient } from "../../ot/drivers/boundedClose";
+import {
+  isTechmanScriptAllowed,
+  isTechmanUnvalidatedConsoleVerb,
+  TECHMAN_CONSOLE_VERB_UNVALIDATED,
+  TECHMAN_SCRIPT_NOT_ALLOWLISTED,
+} from "./techmanScriptAllowlist";
 import type {
   RobotDriver, RobotVendor, RobotConnectionConfig, RobotState, RobotStateHandle,
   OnRobotState, RobotJobSpec, RobotJobResult, RobotHealth,
 } from "../robotDriver";
+import { abortThroughRunJob, AbortFence, RobotJobFencedError } from "../robotDriver";
 
 /**
  * ─── TMflow Modbus register map (ASSUMED — EDIT FOR YOUR DEPLOYMENT) ────────
@@ -102,31 +110,159 @@ function decodeMode(code: number): string {
 /**
  * Build a TMSCT command string for the TM Listen Node.
  *
- * ASSUMED TMSCT FRAME (verify against TMflow External Script docs):
+ * TMSCT FRAME (TM Expression Editor & Listen Node manual):
  *   $TMSCT,<len>,<id>,<script>,*<checksum>\r\n
- *   - <len>   : byte length of the "<id>,<script>" payload
- *   - <id>    : a transaction id (we use a monotonic counter)
- *   - <script>: TM script statement(s), e.g. "PTP(\"JPP\",j0,..,j5,vel,acc,0,false)"
- *   - <checksum>: XOR of the payload bytes, two-digit upper-hex
+ *   - <len>     : byte length of the "<id>,<script>" data
+ *   - <id>      : a transaction id (we use a monotonic counter); the reply echoes it
+ *   - <script>  : TM script statement, e.g. "PTP(\"JPP\",j0,..,j5,vel,acc,0,false)"
+ *   - <checksum>: XOR of EVERY byte BETWEEN `$` and `*` (neither included) — i.e. of
+ *                 "TMSCT,<len>,<id>,<script>," — two-digit upper-hex.
+ *   Manual example (the test oracle): $TMSCT,25,1,ChangeBase("RobotBase"),*08
  *
- * We translate the platform RobotJobSpec into a single script statement. This
- * mapping is deliberately conservative and MUST be aligned with the real
- * Listen Node project (the project decides which script commands it accepts).
+ * doc 81 Đợt 1B Task 4 — the checksum used to be computed over "<id>,<script>" only
+ * (BE2 measured `…*7E` for the manual example instead of `*08`).
+ *
+ * We translate the platform RobotJobSpec into a single script statement; a `custom` job's
+ * `params.script` must be in TECHMAN_SCRIPT_ALLOWLIST or this THROWS
+ * (`tm_script_not_allowlisted`) — no frame is built for it.
  *
  * Exported for unit testing of the exact wire format.
  */
 export function buildTmsct(job: RobotJobSpec, id: number): string {
-  const script = jobToScript(job);
-  const payload = `${id},${script}`;
-  const checksum = xorChecksum(payload);
-  return `$TMSCT,${payload.length},${payload},*${checksum}\r\n`;
+  return frameTmsct(id, jobToScript(job));
 }
 
-/** XOR-checksum of payload bytes, two-digit upper-hex (ASSUMED — verify). */
-export function xorChecksum(payload: string): string {
+/**
+ * Frame ONE already-vetted script statement as a TMSCT command. Callers inside this module
+ * only pass scripts produced by jobToScript (typed jobs or the allowlist); exported for the
+ * wire-format oracle test against the TM manual example.
+ */
+export function frameTmsct(id: number, script: string): string {
+  const data = `${id},${script}`;
+  const body = `TMSCT,${Buffer.byteLength(data, "utf8")},${data},`;
+  return `$${body}*${listenNodeChecksum(body)}\r\n`;
+}
+
+/**
+ * Listen Node checksum: XOR of every byte of `betweenDollarAndStar` — the caller passes the
+ * text strictly BETWEEN `$` and `*` (e.g. `TMSCT,25,1,ChangeBase("RobotBase"),`). Two-digit
+ * upper-hex.
+ */
+export function listenNodeChecksum(betweenDollarAndStar: string): string {
   let x = 0;
-  for (let i = 0; i < payload.length; i++) x ^= payload.charCodeAt(i);
+  for (const b of Buffer.from(betweenDollarAndStar, "utf8")) x ^= b;
   return x.toString(16).toUpperCase().padStart(2, "0");
+}
+
+/** Stable reason codes for a Listen Node exchange that did NOT end in an accepted OK. */
+export type TmReplyReasonCode =
+  | "tm_script_error"
+  | "tm_cperr"
+  | "tm_reply_bad_checksum"
+  | "tm_reply_id_mismatch"
+  | "tm_reply_unexpected"
+  | "tm_reply_malformed"
+  | "tm_connection_closed"
+  | "tm_reply_timeout"
+  | "tm_socket_error"
+  | "job_fenced_by_abort";
+
+export type TmReplyVerdict =
+  | { ok: true; reply: string; warnings?: number[] }
+  | { ok: false; reasonCode: TmReplyReasonCode; message: string; reply?: string; deviceErrorCode?: string };
+
+/** Longest data field we are willing to buffer for one reply (a reply is short: "<id>,OK"). */
+const MAX_REPLY_DATA_LEN = 4096;
+
+/**
+ * Length-framed parse of ONE Listen Node frame at the start of `buf` (latin1, so 1 char = 1
+ * byte): `$<HEADER>,<len>,<data>,*<CS>` with an optional trailing `\r\n`.
+ *   • "incomplete" — more bytes are needed;
+ *   • "malformed"  — the bytes can never become a valid frame;
+ *   • "frame"      — header/data/checksum (+ whether the checksum is right).
+ * Exported for unit tests.
+ */
+export function parseListenNodeFrame(
+  buf: string,
+):
+  | { kind: "incomplete" }
+  | { kind: "malformed"; text: string }
+  | { kind: "frame"; header: string; data: string; checksum: string; checksumOk: boolean; text: string } {
+  const s = buf.replace(/^[\r\n\s]+/, "");
+  if (s.length === 0) return { kind: "incomplete" };
+  const head = /^\$([A-Za-z]+),(\d+),/.exec(s);
+  if (!head) {
+    // Still a plausible prefix of "$HEADER,LEN," ⇒ wait for more bytes; otherwise junk.
+    return /^\$[A-Za-z]{0,16}(,\d{0,6})?$/.test(s) ? { kind: "incomplete" } : { kind: "malformed", text: s };
+  }
+  const len = Number(head[2]);
+  if (!Number.isFinite(len) || len > MAX_REPLY_DATA_LEN) return { kind: "malformed", text: s };
+  const dataStart = head[0].length;
+  const tailStart = dataStart + len;
+  if (s.length < tailStart + 4) return { kind: "incomplete" };
+  const tail = s.slice(tailStart, tailStart + 4);
+  if (!/^,\*[0-9A-Fa-f]{2}$/.test(tail)) return { kind: "malformed", text: s };
+  const checksum = tail.slice(2).toUpperCase();
+  let x = 0;
+  // Checksum over the bytes strictly between `$` (index 0) and `*` (index tailStart + 1).
+  for (let i = 1; i <= tailStart; i++) x ^= s.charCodeAt(i) & 0xff;
+  const text = s.slice(0, tailStart + 4);
+  return {
+    kind: "frame",
+    header: head[1].toUpperCase(),
+    data: s.slice(dataStart, tailStart),
+    checksum,
+    checksumOk: x.toString(16).toUpperCase().padStart(2, "0") === checksum,
+    text,
+  };
+}
+
+/**
+ * Classify ONE complete Listen Node frame against the id of the TMSCT we sent.
+ * Only `$TMSCT,<len>,<sentId>,OK[;<line>…],*CS` with a correct checksum is accepted; every
+ * other frame is a failure with a stable reason code (never `done`).
+ * Exported for unit tests.
+ */
+export function classifyTmsctReply(
+  frame: { header: string; data: string; checksumOk: boolean; text: string },
+  sentId: number,
+): TmReplyVerdict {
+  const reply = frame.text;
+  if (!frame.checksumOk) {
+    return { ok: false, reasonCode: "tm_reply_bad_checksum", message: "TM reply checksum mismatch", reply };
+  }
+  if (frame.header === "CPERR") {
+    return {
+      ok: false,
+      reasonCode: "tm_cperr",
+      message: `TM communication error $CPERR ${frame.data}`,
+      reply,
+      deviceErrorCode: frame.data,
+    };
+  }
+  if (frame.header !== "TMSCT") {
+    return { ok: false, reasonCode: "tm_reply_unexpected", message: `unexpected TM frame $${frame.header}`, reply };
+  }
+  const comma = frame.data.indexOf(",");
+  const id = comma >= 0 ? frame.data.slice(0, comma) : frame.data;
+  const result = comma >= 0 ? frame.data.slice(comma + 1) : "";
+  if (id !== String(sentId)) {
+    return {
+      ok: false,
+      reasonCode: "tm_reply_id_mismatch",
+      message: `TM reply id "${id}" does not match sent id ${sentId}`,
+      reply,
+    };
+  }
+  if (result === "OK") return { ok: true, reply };
+  const okWarn = /^OK((?:;\d+)+)$/.exec(result);
+  if (okWarn) {
+    return { ok: true, reply, warnings: okWarn[1].slice(1).split(";").map(Number) };
+  }
+  if (/^ERROR(;|$)/.test(result)) {
+    return { ok: false, reasonCode: "tm_script_error", message: `TM script rejected: ${result}`, reply };
+  }
+  return { ok: false, reasonCode: "tm_reply_unexpected", message: `unrecognised TMSCT result "${result}"`, reply };
 }
 
 /** Translate a RobotJobSpec → a single TM script statement (ASSUMED syntax). */
@@ -150,8 +286,37 @@ function jobToScript(job: RobotJobSpec): string {
       return `StopAndClearBuffer()`;
     case "custom":
     default:
-      // Pass an explicit TM script through if the caller provided one.
-      return typeof p.script === "string" ? p.script : `ScriptExit()`;
+      // doc 81 Đợt 1B Task 5 (R10a) — console start/reset/pause arrive as `custom` and would
+      // default to ScriptExit() (TMflow then continues the flow, possibly with motion).
+      // Refused until FAT validates them — even with an allowlisted script.
+      if (isTechmanUnvalidatedConsoleVerb(p.command)) {
+        throw new TechmanScriptRefusedError(TECHMAN_CONSOLE_VERB_UNVALIDATED);
+      }
+      // doc 81 Đợt 1B Task 4 — an explicit script passes ONLY if it is in the allowlist
+      // (BE2 T1-G: any string used to go straight to the Listen Node).
+      if (p.script !== undefined) {
+        if (!isTechmanScriptAllowed(p.script)) {
+          throw new TechmanScriptRefusedError();
+        }
+        return p.script;
+      }
+      return `ScriptExit()`;
+  }
+}
+
+/** Thrown by jobToScript/buildTmsct for a `params.script` outside TECHMAN_SCRIPT_ALLOWLIST. */
+export class TechmanScriptRefusedError extends Error {
+  constructor(
+    readonly reasonCode:
+      | typeof TECHMAN_SCRIPT_NOT_ALLOWLISTED
+      | typeof TECHMAN_CONSOLE_VERB_UNVALIDATED = TECHMAN_SCRIPT_NOT_ALLOWLISTED,
+  ) {
+    super(
+      reasonCode === TECHMAN_CONSOLE_VERB_UNVALIDATED
+        ? `${TECHMAN_CONSOLE_VERB_UNVALIDATED}: console start/reset/pause are not validated on Techman (would send ScriptExit())`
+        : `${TECHMAN_SCRIPT_NOT_ALLOWLISTED}: params.script is not in TECHMAN_SCRIPT_ALLOWLIST`,
+    );
+    this.name = "TechmanScriptRefusedError";
   }
 }
 
@@ -168,6 +333,7 @@ export class TechmanDriver implements RobotDriver {
   private timeoutMs = 5000;
   private unitId = DEFAULT_UNIT_ID;
   private tmsctSeq = 1;
+  private readonly fence = new AbortFence();
 
   /** Lazy-load modbus-serial (optional dep). Returns the ctor or null. */
   private async loadModbus(): Promise<any> {
@@ -213,6 +379,13 @@ export class TechmanDriver implements RobotDriver {
     this.listenHost = typeof opts.listenHost === "string" ? opts.listenHost : host;
     this.listenPort = typeof opts.listenPort === "number" ? opts.listenPort : DEFAULT_LISTEN_PORT;
 
+    // doc 81 Đợt 1B Task 1 — hạ client cũ (nếu có) trước khi thay, không rò socket.
+    if (this.mbClient) {
+      const prev = this.mbClient;
+      this.mbClient = null;
+      this.connected = false;
+      await closeModbusClient(prev);
+    }
     const client = new ModbusRTU();
     try {
       await this.withTimeout(client.connectTCP(host, { port }), this.timeoutMs, "TM modbus connectTCP");
@@ -229,23 +402,19 @@ export class TechmanDriver implements RobotDriver {
       this.lastError = undefined;
     } catch (err) {
       this.lastError = (err as Error)?.message || String(err);
-      try {
-        if (typeof client.close === "function") {
-          await new Promise<void>((resolve) => client.close(() => resolve()));
-        }
-      } catch { /* ignore */ }
+      // doc 81 Đợt 1B Task 1 — close(cb) của modbus-serial không gọi cb khi socket chưa
+      // từng mở/đã đứt (BE1 §1.3) ⇒ đóng CÓ HẠN rồi destroy socket nền.
+      await closeModbusClient(client);
       throw err;
     }
   }
 
   async disconnect(): Promise<void> {
-    if (this.mbClient && typeof this.mbClient.close === "function") {
-      try {
-        await new Promise<void>((resolve) => this.mbClient.close(() => resolve()));
-      } catch { /* ignore */ }
-    }
+    const client = this.mbClient;
     this.mbClient = null;
     this.connected = false;
+    // doc 81 Đợt 1B Task 1 — đóng có hạn (≤ DEFAULT_CLOSE_TIMEOUT_MS rồi destroy).
+    await closeModbusClient(client);
   }
 
   isConnected(): boolean {
@@ -315,9 +484,31 @@ export class TechmanDriver implements RobotDriver {
    */
   async runJob(job: RobotJobSpec): Promise<RobotJobResult> {
     if (!this.connected) return { ok: false, status: "failed", error: "not connected" };
+    // doc 81 Đợt 1B Task 5 fix round 1 — abort fence, checked in the socket's connect handler
+    // right before the frame is written (the connect phase is where a job can outlive abort()).
+    const guard = this.fence.capture(job);
 
     const id = this.tmsctSeq++;
-    const command = buildTmsct(job, id);
+    let command: string;
+    try {
+      command = buildTmsct(job, id);
+    } catch (err) {
+      // doc 81 Đợt 1B Task 4 — script outside the allowlist: refuse BEFORE any socket
+      // (both dry-run and live), with a stable reason code.
+      if (err instanceof TechmanScriptRefusedError) {
+        this.lastError = err.message;
+        return {
+          ok: false,
+          status: "failed",
+          // data-raw-ok: chi tiết KỸ THUẬT cho kỹ sư (tên script bị từ chối), ĐI KÈM mã máy-đọc
+          // detail.reasonCode (techman_script_refused) để lớp trên/client dịch; chuỗi gốc là
+          // bằng chứng truy nguyên trong robot_jobs.errorText, dịch đi là mất tên script.
+          error: err.message,
+          detail: { jobType: job.jobType, sent: false, reasonCode: err.reasonCode },
+        };
+      }
+      throw err;
+    }
 
     // Self-guard dry-run: never open the Listen Node socket unless enabled.
     if (process.env.ROBOT_CONTROL_ENABLED !== "true") {
@@ -328,65 +519,123 @@ export class TechmanDriver implements RobotDriver {
       };
     }
 
-    try {
-      const reply = await this.sendListenNode(command);
-      return { ok: true, status: "done", detail: { jobType: job.jobType, tmsct: command, sent: true, reply } };
-    } catch (err) {
-      const msg = (err as Error)?.message || String(err);
-      this.lastError = msg;
-      return { ok: false, status: "failed", error: msg };
+    // doc 81 Đợt 1B Task 4 — the reply is CLASSIFIED: only a checksum-valid
+    // `$TMSCT,…,<id>,OK,*CS` for THIS id is `done`; ERROR / $CPERR / bad checksum / wrong id /
+    // closed / silent ⇒ `failed` with a reason code (BE2 T1 B/C/D: all of them used to be `done`).
+    const verdict = await this.sendListenNode(command, id, guard);
+    if (verdict.ok) {
+      return {
+        ok: true,
+        status: "done",
+        detail: {
+          jobType: job.jobType,
+          tmsct: command,
+          sent: true,
+          reply: verdict.reply,
+          ...(verdict.warnings ? { warnings: verdict.warnings } : {}),
+        },
+      };
     }
+    const error = `${verdict.reasonCode}: ${verdict.message}`;
+    this.lastError = error;
+    return {
+      ok: false,
+      status: "failed",
+      error,
+      detail: {
+        jobType: job.jobType,
+        tmsct: command,
+        sent: verdict.reasonCode !== "job_fenced_by_abort",
+        reasonCode: verdict.reasonCode,
+        ...(verdict.reply !== undefined ? { reply: verdict.reply } : {}),
+        ...(verdict.deviceErrorCode !== undefined ? { deviceErrorCode: verdict.deviceErrorCode } : {}),
+      },
+    };
   }
 
   /**
-   * Open a short-lived TCP socket to the TM Listen Node, send one TMSCT frame,
-   * await the first reply line (TMSTA/$TMSCT ack), then close. Fail-safe: any
-   * socket/timeout error rejects (caller turns it into a failed job result).
+   * Open a short-lived TCP socket to the TM Listen Node, send one TMSCT frame, read until
+   * ONE complete length-framed reply arrives, classify it against `sentId`, then close.
+   * Never rejects: every outcome is a TmReplyVerdict. Closed/silent/socket error before a
+   * complete frame ⇒ failure verdict (never an implicit ack).
    *
    * NOTE: real Listen Node sessions are often long-lived and stream TMSTA
-   * status; this one-shot send/ack is sufficient to validate the live path and
-   * keeps the dispatcher's per-job model. Adapt for production as needed.
+   * status; this one-shot send/ack keeps the dispatcher's per-job model.
    */
-  private sendListenNode(command: string): Promise<string> {
-    return new Promise<string>((resolve, reject) => {
+  private sendListenNode(command: string, sentId: number, guard: () => void = () => undefined): Promise<TmReplyVerdict> {
+    return new Promise<TmReplyVerdict>((resolve) => {
       const socket = createConnection({ host: this.listenHost, port: this.listenPort });
       let settled = false;
-      const done = (fn: () => void) => {
+      let buf = "";
+      const finish = (v: TmReplyVerdict) => {
         if (settled) return;
         settled = true;
+        clearTimeout(timer);
         try { socket.destroy(); } catch { /* ignore */ }
-        fn();
+        resolve(v);
       };
       const timer = setTimeout(
-        () => done(() => reject(new Error(`TM Listen Node timeout after ${this.timeoutMs}ms`))),
+        () =>
+          finish({
+            ok: false,
+            reasonCode: "tm_reply_timeout",
+            message: `no complete TM Listen Node reply within ${this.timeoutMs}ms`,
+            ...(buf ? { reply: buf } : {}),
+          }),
         this.timeoutMs,
       );
       if (typeof timer.unref === "function") timer.unref();
 
-      socket.on("connect", () => socket.write(command));
-      socket.on("data", (buf) => {
-        clearTimeout(timer);
-        done(() => resolve(buf.toString("ascii").trim()));
+      socket.on("connect", () => {
+        try {
+          guard();
+        } catch (err) {
+          if (err instanceof RobotJobFencedError) {
+            // data-raw-ok: verdict nội bộ của driver — mã máy-đọc là reasonCode (job_fenced_by_abort),
+            // message chỉ là chi tiết kỹ thuật kèm theo cho kỹ sư (đi vào robot_jobs.errorText).
+            finish({ ok: false, reasonCode: "job_fenced_by_abort", message: err.message });
+            return; // fenced by abort(): the frame is NEVER written
+          }
+          throw err;
+        }
+        socket.write(command);
       });
-      socket.on("error", (e) => {
-        clearTimeout(timer);
-        done(() => reject(e));
+      socket.on("data", (chunk: Buffer) => {
+        buf += chunk.toString("latin1");
+        const parsed = parseListenNodeFrame(buf);
+        if (parsed.kind === "incomplete") return;
+        if (parsed.kind === "malformed") {
+          finish({ ok: false, reasonCode: "tm_reply_malformed", message: "malformed TM Listen Node reply", reply: parsed.text });
+          return;
+        }
+        finish(classifyTmsctReply(parsed, sentId));
+      });
+      socket.on("error", (e: Error) => {
+        // data-raw-ok: verdict nội bộ của driver — mã máy-đọc là reasonCode (tm_socket_error); message
+        // giữ mã lỗi socket (ECONNREFUSED host:port…) — thứ duy nhất nói được hỏng ở đâu cho kỹ sư.
+        finish({ ok: false, reasonCode: "tm_socket_error", message: e?.message || String(e) });
       });
       socket.on("close", () => {
-        clearTimeout(timer);
-        // Closed before any data → treat as acked-with-no-reply (best effort).
-        done(() => resolve(""));
+        // Closed before a complete reply ⇒ NOT an ack (this used to resolve "" ⇒ done).
+        finish({
+          ok: false,
+          reasonCode: "tm_connection_closed",
+          message: "TM Listen Node closed the connection before a complete reply",
+          ...(buf ? { reply: buf } : {}),
+        });
       });
     });
   }
 
-  /** Best-effort abort: send a stop script through the gated runJob path. */
+  /**
+   * Abort: send `StopAndClearBuffer()` through the gated runJob path. doc 81 Đợt 1B Task 5
+   * (R10c): the classified verdict is SURFACED — a `failed` reply (tm_reply_timeout,
+   * tm_connection_closed, ERROR, …) throws RobotAbortFailedError instead of being discarded,
+   * so the dispatcher's timeout path records abort_failed honestly.
+   */
   async abort(): Promise<void> {
-    try {
-      await this.runJob({ jobType: "abort" });
-    } catch {
-      /* ignore — abort is best-effort */
-    }
+    this.fence.bump(); // FIRST: any job started before this abort can write nothing more
+    await abortThroughRunJob((job) => this.runJob(job), "Techman");
   }
 
   async health(): Promise<RobotHealth> {

@@ -194,7 +194,7 @@ export const equipmentIntegrationRouter = router({
       }),
     )
     .query(async ({ input }) => {
-      const { parseNodeMap } = await import("../services/euromap/euromapOpcuaReader");
+      const { parseNodeMap, euromapOpcuaOptionsFromEnv } = await import("../services/euromap/euromapOpcuaReader");
       const endpoint = process.env.EUROMAP_OPCUA_ENDPOINT ?? "";
       const nodeMap = parseNodeMap(process.env.EUROMAP_OPCUA_NODEMAP);
       const vendor = process.env.EUROMAP_OPCUA_VENDOR;
@@ -213,6 +213,8 @@ export const equipmentIntegrationRouter = router({
           nodeMap,
           transport: "euromap77",
           vendor,
+          // doc 81 Đợt 1B Task 12 — bảo mật OPC UA qua env (vắng ⇒ undefined, hành vi cũ).
+          options: euromapOpcuaOptionsFromEnv(),
         });
         return { ...adapter.readSnapshot(), ...uem, connected: true, source: "live" as const };
       } catch (err) {
@@ -248,7 +250,7 @@ export const equipmentIntegrationRouter = router({
       }),
     )
     .mutation(async ({ input }) => {
-      const { parseNodeMap, readEuromapOverOpcua, isEndpointHostAllowlisted } = await import(
+      const { parseNodeMap, readEuromapOverOpcua, isEndpointHostAllowlisted, euromapOpcuaOptionsFromEnv } = await import(
         "../services/euromap/euromapOpcuaReader"
       );
       const nodeMap = parseNodeMap(input.nodeMapJson ?? process.env.EUROMAP_OPCUA_NODEMAP);
@@ -272,11 +274,16 @@ export const equipmentIntegrationRouter = router({
           nodeMap,
           transport: "euromap77",
           vendor: input.vendor ?? process.env.EUROMAP_OPCUA_VENDOR,
+          // doc 81 Đợt 1B Task 12 — cùng tuỳ chọn bảo mật như euromapOpcuaSnapshot.
+          options: euromapOpcuaOptionsFromEnv(),
         });
         return { ok: true as const, uem: mapEuromapToUem(readout), transport: readout.transport ?? null, at: readout.at ?? new Date() };
       } catch (err) {
         return {
           ok: false as const,
+          // data-raw-ok: chi tiết KỸ THUẬT cho kỹ sư (ECONNREFUSED host:port, BadSecurityChecksFailed…),
+          // ĐI KÈM errorCode + errorParams ngay dưới để client dịch câu cho người vận hành
+          // (translateAppError) — cùng khuôn F14 như deviceAdapterRouter.testConnection.
           error: err instanceof Error ? err.message : String(err),
           errorCode: "DEVICE_UNREACHABLE" as const,
           errorParams: { entity: "opcua" },

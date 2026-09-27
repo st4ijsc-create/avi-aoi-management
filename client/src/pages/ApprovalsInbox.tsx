@@ -54,6 +54,7 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 import { useStepUpOtp } from "@/components/security/StepUpOtpDialog";
+import { deployReasonKey } from "./engineeringDeployOutcome";
 
 const THRESHOLD_PENDING = "requested";
 
@@ -263,7 +264,16 @@ export default function ApprovalsInbox() {
           toast.success(t("approvalsInbox.deploy.simulated", "Đã duyệt (SIMULATED — flag deploy OFF)")); break;
         case "rejected":
         case "failed":
-          toast.error(row.error || t("approvalsInbox.deploy.rejected", "Deploy bị từ chối bởi cổng an toàn")); break;
+          {
+            // doc 81 Đợt 1B Task 4 — lý do có mã (vd robot-tm chưa hỗ trợ tải chương trình) ⇒ câu dịch.
+            const reasonKey = deployReasonKey(row);
+            toast.error(
+              reasonKey
+                ? t(reasonKey, row.error ?? "")
+                : row.error || t("approvalsInbox.deploy.rejected", "Deploy bị từ chối bởi cổng an toàn"),
+            );
+          }
+          break;
         default:
           toast.success(t("approvalsInbox.deploy.done", "Đã xử lý duyệt"));
       }

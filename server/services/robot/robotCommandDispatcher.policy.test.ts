@@ -62,6 +62,14 @@ function makeFakeDb() {
         },
       }),
     }),
+    // doc 81 Đợt 1B Task 5 — nhánh real ghi sổ 'running' TRƯỚC rồi UPDATE về trạng thái cuối.
+    update: (table: any) => ({
+      set: (vals: Row) => ({
+        where: async (pred: any) => {
+          for (const r of tableFor(table)) if (matches(r, pred)) Object.assign(r, vals);
+        },
+      }),
+    }),
   };
 }
 
@@ -95,6 +103,12 @@ vi.mock("../interlock/interlockGate", () => ({
   evaluateInterlockGate: vi.fn(async () => ({ blocked: false, failClosed: false, violations: [] })),
 }));
 
+// Cô lập gate 4a-safety (doc 81 Đợt 1B Task 5 — có test riêng robotCommandDispatcher.safety.test.ts):
+// safety-PLC OK để PERMIT chảy tới driver.
+vi.mock("../ot/adapterFacade", () => ({
+  createAdapterFacade: () => ({ getSafetyStatus: async () => ({ state: "OK", source: "test", ts: "" }) }),
+}));
+
 // Policy seam mock — điều khiển được từng test (pattern lineControllerService.test.ts).
 const policyMock = vi.hoisted(() => ({
   secPlatformEnabled: vi.fn((): boolean => false),
@@ -114,8 +128,9 @@ import { dispatchRobotJob } from "./robotCommandDispatcher";
 const baseInput = (over: Record<string, any> = {}) => ({
   robotId: 3,
   job: { jobType: "home" as const, params: { speed: 50 } },
-  triggerKind: "manual" as const, // đường manual: cô lập seam khỏi cổng HITL (đã có test riêng)
+  triggerKind: "manual" as const, // đường manual (HITL có test riêng)
   requestedBy: 7,
+  confirmedBy: 7, // doc 81 Đợt 1B Task 5 — manual + chuyển động cần người xác nhận
   ...over,
 });
 
@@ -202,7 +217,9 @@ describe("robotCommandDispatcher — policy seam 4a-policy (W3-B2 G3.14)", () =>
 
   it("ON + PERMIT → đi tiếp NGUYÊN VẸN (interlock → runJob → done) + action/resource/context đúng chuẩn", async () => {
     policyMock.secPlatformEnabled.mockReturnValue(true);
-    const r = await dispatchRobotJob(baseInput({ confirmedBy: 9 }));
+    // doc 81 Đợt 1B Task 5 fix round 1 (R11) — manual đòi confirmedBy === requestedBy; ca này cần
+    // actor ≠ requestedBy để chứng minh subject = confirmedBy ⇒ chạy đường 'hitl'.
+    const r = await dispatchRobotJob(baseInput({ confirmedBy: 9, triggerKind: "hitl" }));
     expect(r.status).toBe("done");
     expect(runJobSpy).toHaveBeenCalledTimes(1);
 
@@ -214,7 +231,7 @@ describe("robotCommandDispatcher — policy seam 4a-policy (W3-B2 G3.14)", () =>
     expect(context).toMatchObject({
       verb: "home",
       robotId: 3,
-      triggerKind: "manual",
+      triggerKind: "hitl",
       mode: "real",
       role: "engineer", // resolve qua db/auth (mocked)
       fat_passed: false, // không có bản ghi commissioning trong fake DB

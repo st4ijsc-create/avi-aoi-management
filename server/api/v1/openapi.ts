@@ -97,6 +97,17 @@ function errResponses(extra: Record<string, unknown> = {}) {
     ...extra,
   };
 }
+/**
+ * doc 81 Đợt 1B Task 8 — mã lỗi của ba tuyến ingest: khoá gắn máy ghi cho máy khác ⇒ 403
+ * `machine_mismatch`; quá tần suất ⇒ 429 + Retry-After; DB/hạ tầng ⇒ 503 (gửi lại được).
+ */
+function ingestErrResponses() {
+  return errResponses({
+    "403": { description: "Forbidden — scope missing, or a machine-bound key (mk_) writing for another machine (machine_mismatch; nothing stored)", content: jsonErr() },
+    "429": { description: "Rate limited — retry after the Retry-After header (seconds)", content: jsonErr() },
+    "503": { description: "Database/infrastructure unavailable — retry (nothing lost by retrying: idempotent)", content: jsonErr() },
+  });
+}
 function jsonOk() {
   return { "application/json": { schema: { $ref: "#/components/schemas/ApiEnvelope" } } };
 }
@@ -386,7 +397,7 @@ export function buildV1OpenApiSpec(serverUrl = "/"): Record<string, unknown> {
             "(v1.0/v1.1, current default) or the v2.0 tree `surfaces[]`. Dispatch is by payload SHAPE " +
             "(array `surfaces` present ⇒ tree), not a declared `schemaVersion`.",
           requestBody: { required: true, content: { "application/json": { schema: { $ref: "#/components/schemas/InspectionIngest" } } } },
-          responses: { "201": { description: "Committed", content: jsonOk() }, "400": { description: "Bad request", content: jsonErr() }, ...errResponses() },
+          responses: { "201": { description: "Committed", content: jsonOk() }, "400": { description: "Invalid data (permanent — do not retry)", content: jsonErr() }, ...ingestErrResponses() },
         },
       },
       "/api/v1/ingest/process-result": {
@@ -398,7 +409,7 @@ export function buildV1OpenApiSpec(serverUrl = "/"): Record<string, unknown> {
             "per-step outcome of ANY machine type (telemetry-of-record, NOT a control command; nothing is actuated). " +
             "`ts` must carry an explicit UTC offset. A machine-credential caller may omit machineCode (adopted from the key).",
           requestBody: { required: true, content: { "application/json": { schema: { $ref: "#/components/schemas/ProcessResultIngest" } } } },
-          responses: { "201": { description: "Committed", content: jsonOk() }, "400": { description: "Validation / auth error", content: jsonErr() }, ...errResponses() },
+          responses: { "201": { description: "Committed", content: jsonOk() }, "400": { description: "Invalid data (permanent — do not retry)", content: jsonErr() }, ...ingestErrResponses() },
         },
       },
       "/api/v1/ingest/telemetry": {
@@ -411,9 +422,10 @@ export function buildV1OpenApiSpec(serverUrl = "/"): Record<string, unknown> {
             "envelope so the TELEMETRY path is visible in this contract. Body: `{ samples: CanonicalSample[] }` (or a bare array).",
           requestBody: { required: true, content: { "application/json": { schema: { $ref: "#/components/schemas/TelemetryIngest" } } } },
           responses: {
-            "202": { description: "Accepted {accepted, received, machine?}", content: jsonOk() },
-            "400": { description: "Empty/invalid samples", content: jsonErr() },
-            ...errResponses(),
+            "202": { description: "Every sample stored {accepted, received, machine?}", content: jsonOk() },
+            "207": { description: "Partially stored — error.details.rejected[{index, reason}] (db_error ⇒ retry those)", content: jsonErr() },
+            "400": { description: "Empty body, or every sample rejected for its data (all_rejected)", content: jsonErr() },
+            ...ingestErrResponses(),
           },
         },
       },
@@ -1431,7 +1443,7 @@ export function buildV1OpenApiSpec(serverUrl = "/"): Record<string, unknown> {
         get: {
           tags: ["Standards"],
           summary: "Equipment governance compliance metrics",
-          description: "Requires scope `standards:read`. Read-only. Reuses complianceService.computeCompliance (same inputs as equipmentStandardsRouter.complianceMetrics).",
+          description: "Requires scope `standards:read`. Read-only. Reuses complianceService.loadComplianceMetrics (the same loader as equipmentStandardsRouter.complianceMetrics). **Semantics changed 2026-09-27 (doc 80 Đợt 1 Task 3, STD-01) — intentional correction, same field names:** `machinesMappedToPublished`/`mappedRate`/`unmappedMachineTypes` are now computed from `machines.device_type_key` → a PUBLISHED `device_types` row (previously `machines.machineType` was matched against the in-code seed type keys, a tautology that always reported 100 %); `conformanceTypeCount`/`conformancePassCount`/`conformancePassRate`/`failingTypes` now run over the published `device_types` rows in the database (previously over the seed constants). New fields: `basis` (what the numbers were computed from — `mapping`, `publishedTypesFrom`, `conformanceFrom`, `dbAvailable`, `publishedTypeCount`, `machinesWithKey`, `machinesWithUnpublishedKey`, `warnings[]`), `unmappedMachineCount`, `usageByTypeKey` (published typeKey → number of machines bound to it).",
           responses: { "200": { description: "OK", content: jsonOk() }, ...errResponses() },
         },
       },

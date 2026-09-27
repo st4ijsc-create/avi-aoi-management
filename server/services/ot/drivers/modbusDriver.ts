@@ -36,14 +36,23 @@ import {
   type DecodeModbusOpts,
 } from "./modbusDecode";
 import { inverseScale } from "./otScale";
+import { closeModbusClient, withDeadline } from "./boundedClose";
 
-function withTimeout<T>(p: Promise<T>, ms: number, label: string): Promise<T> {
-  return Promise.race([
-    p,
-    new Promise<T>((_, reject) =>
-      setTimeout(() => reject(new Error(`${label} timeout after ${ms}ms`)), ms),
-    ),
-  ]);
+/**
+ * doc 81 Đợt 1B Task 1 — miền giá trị RAW của thanh ghi 1-word theo kiểu khai báo.
+ * `encodeModbus` cắt `& 0xffff` im lặng (70000 ⇒ 4464): phải chặn TRƯỚC khi ghi và báo
+ * lý do, không ghi giá trị khác với giá trị được yêu cầu rồi báo ok:true (BE1 §1.1).
+ * Trả chuỗi lý do khi ngoài miền, null khi hợp lệ.
+ */
+function modbusRangeError(raw: number, dataType: string, signed: boolean): string | null {
+  if (!Number.isFinite(raw)) return `value ${raw} is not a finite number`;
+  if (dataType === "float") {
+    const FLOAT32_MAX = 3.4028234663852886e38;
+    return Math.abs(raw) > FLOAT32_MAX ? `value ${raw} out of range for float32` : null;
+  }
+  const [lo, hi, name] = signed ? [-32768, 32767, "int16"] : [0, 65535, "uint16"];
+  if (raw < lo || raw > hi) return `value ${raw} out of range for ${name} [${lo}..${hi}]`;
+  return null;
 }
 
 /** Parse host/port từ endpoint. "tcp://host:port" | "host:port" | "host". */
@@ -77,6 +86,14 @@ export class ModbusDriver extends NotImplementedDriver {
       throw new Error("modbus-serial not installed");
     }
     const ModbusRTU = mod.default ?? mod;
+    // doc 81 Đợt 1B Task 1 — client cũ (vd đã đứt giữa phiên, supervisor gọi connect lại mà
+    // không disconnect vì isConnected()=false) phải được hạ trước khi thay, không rò socket.
+    if (this.client) {
+      const prev = this.client;
+      this.client = null;
+      this.connected = false;
+      await closeModbusClient(prev);
+    }
     const client = new ModbusRTU();
 
     const opts = cfg.options ?? {};
@@ -92,7 +109,7 @@ export class ModbusDriver extends NotImplementedDriver {
     };
 
     try {
-      await withTimeout(client.connectTCP(host, { port }), timeoutMs, "modbus connectTCP");
+      await withDeadline(client.connectTCP(host, { port }), timeoutMs, "modbus connectTCP");
       const unitId = typeof opts.unitId === "number" ? opts.unitId : 1;
       client.setID(unitId);
       if (typeof client.setTimeout === "function") client.setTimeout(timeoutMs);
@@ -108,27 +125,19 @@ export class ModbusDriver extends NotImplementedDriver {
       this.attachLinkLossHandlers(client);
     } catch (err) {
       this.lastError = (err as Error)?.message || String(err);
-      try {
-        if (typeof client.close === "function") {
-          await new Promise<void>((resolve) => client.close(() => resolve()));
-        }
-      } catch {
-        // ignore
-      }
+      // doc 81 Đợt 1B Task 1 — close(cb) của modbus-serial không gọi cb khi socket chưa
+      // từng mở/đã đứt ⇒ đóng CÓ HẠN (destroy socket nền), connect trả lỗi đúng hạn.
+      await closeModbusClient(client);
       throw err;
     }
   }
 
   override async disconnect(): Promise<void> {
-    if (this.client && typeof this.client.close === "function") {
-      try {
-        await new Promise<void>((resolve) => this.client.close(() => resolve()));
-      } catch {
-        // ignore
-      }
-    }
+    const client = this.client;
     this.client = null;
     this.connected = false;
+    // doc 81 Đợt 1B Task 1 — đóng có hạn (≤ DEFAULT_CLOSE_TIMEOUT_MS rồi destroy).
+    await closeModbusClient(client);
   }
 
   override isConnected(): boolean {
@@ -288,6 +297,13 @@ export class ModbusDriver extends NotImplementedDriver {
       const dataType = w.dataType ?? "int";
       // INVERSE scale/offset (int/float); bool không tới đây với holding.
       const raw = inverseScale(w.value, dataType, w.scale ?? 1, w.offset ?? 0) as number;
+      if (dataType === "int" || dataType === "float") {
+        const rangeErr = modbusRangeError(Number(raw), dataType, this.decodeOpts.signed !== false);
+        if (rangeErr) {
+          this.lastError = rangeErr;
+          return { tagKey: w.tagKey, ok: false, error: rangeErr };
+        }
+      }
       const words = encodeModbus(raw, dataType, this.decodeOpts);
 
       if (wordCountFor(dataType) > 1 || words.length > 1) {

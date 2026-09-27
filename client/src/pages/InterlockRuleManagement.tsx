@@ -28,7 +28,7 @@ import { ViewOnlyBadge } from "@/components/PermissionGate";
 import { PollFreshness } from "@/components/PollFreshness";
 import { ConfirmWithReason, PageContainer, PageHeader } from "@/components/patterns";
 import { buildBreadcrumbs } from "@/lib/breadcrumbs";
-import { useLocation } from "wouter";
+import { useLocation, useSearch } from "wouter";
 import { navItems } from "@/lib/navigation";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -152,6 +152,11 @@ export default function InterlockRuleManagement() {
   // re-parsing — a rename can never alter the command payload. See
   // client/src/lib/interlockCommandValue.ts (resolveCommandValueForSubmit).
   const [initialCommandValue, setInitialCommandValue] = useState<{ raw: unknown; text: string }>({ raw: null, text: "" });
+  // doc 80 Đợt 1 Task 11 — rule ĐANG SỬA đã duyệt (approvedBy != null) hoặc ĐANG BẬT (enabled)
+  // khi dialog được mở: server (ILK-01, interlockRouter.ts `update`) reset approvedBy/approvedAt
+  // và ép enabled=false trong CÙNG transaction khi Lưu — cảnh báo TRƯỚC khi người dùng bấm Lưu,
+  // không phải sau khi đã mất hiệu lực duyệt.
+  const [editWillResetApproval, setEditWillResetApproval] = useState(false);
 
   const createRule = trpc.interlock.create.useMutation({
     onSuccess: () => { toast.success(t("interlockRules.toastCreated")); setRuleOpen(false); invalidateRules(); },
@@ -165,13 +170,16 @@ export default function InterlockRuleManagement() {
     onSuccess: () => { toast.success(t("interlockRules.toastDeleted")); invalidateRules(); },
     onError: (e) => toastTrpcError(e),
   });
+  // doc 80 Đợt 1 Task 9 — approve/enable gửi `expectedVersion` = versionToken của HÀNG đang hiển
+  // thị. Server trả CONFLICT khi rule đã bị sửa từ lúc tải trang ⇒ toast lý do ("tải lại để
+  // duyệt") VÀ tải lại danh sách ngay, để người duyệt thấy nội dung mới trước khi bấm lại.
   const approveRule = trpc.interlock.approve.useMutation({
     onSuccess: () => { toast.success(t("interlockRules.toastApproved")); invalidateRules(); },
-    onError: (e) => toastTrpcError(e),
+    onError: (e) => { toastTrpcError(e); if (e.data?.code === "CONFLICT") invalidateRules(); },
   });
   const enableRule = trpc.interlock.enable.useMutation({
     onSuccess: () => { toast.success(t("interlockRules.toastEnabled")); invalidateRules(); },
-    onError: (e) => toastTrpcError(e),
+    onError: (e) => { toastTrpcError(e); if (e.data?.code === "CONFLICT") invalidateRules(); },
   });
   const disableRule = trpc.interlock.disable.useMutation({
     onSuccess: () => { toast.success(t("interlockRules.toastDisabled")); invalidateRules(); },
@@ -204,11 +212,14 @@ export default function InterlockRuleManagement() {
   const openCreate = () => {
     setForm(emptyRule);
     setInitialCommandValue({ raw: null, text: "" });
+    setEditWillResetApproval(false);
     setRuleOpen(true);
   };
   const openEdit = (r: any) => {
     const initialCommandText = serializeCommandValueForEdit(r.commandValue);
     setInitialCommandValue({ raw: r.commandValue ?? null, text: initialCommandText });
+    // Task 11 — cùng điều kiện server dùng ở ILK-01 (`existing.approvedBy != null || existing.enabled === true`).
+    setEditWillResetApproval(r.approvedBy != null || r.enabled === true);
     setForm({
       id: r.id,
       name: r.name ?? "",
@@ -296,8 +307,22 @@ export default function InterlockRuleManagement() {
     return m;
   }, [rules]);
 
+  // Doc 80 Đợt 1 Task 2 (HUB-03) — deep-link `?filter=pending` từ Engineering Hub
+  // (trước bản vá: BỊ BỎ QUA hoàn toàn — trang không đọc query nào).
+  const search = useSearch();
+  const filterPending = useMemo(() => new URLSearchParams(search).get("filter") === "pending", [search]);
+  const [showPendingOnly, setShowPendingOnly] = useState(false);
+
   // U13 (doc 26 §2.2) — lọc sự kiện open/resolved + đếm chưa xử lý cho badge tab.
   const [eventFilter, setEventFilter] = useState<"all" | "open" | "resolved">("all");
+
+  // HUB-03 — filter=pending ⇒ rule chưa duyệt + tab Sự kiện mặc định "Đang mở".
+  useEffect(() => {
+    if (filterPending) {
+      setShowPendingOnly(true);
+      setEventFilter("open");
+    }
+  }, [filterPending]);
   const unresolvedCount = useMemo(
     () => events.filter((e) => e.status !== "resolved").length,
     [events],
@@ -307,6 +332,11 @@ export default function InterlockRuleManagement() {
     if (eventFilter === "resolved") return events.filter((e) => e.status === "resolved");
     return events;
   }, [events, eventFilter]);
+  // HUB-03 — rule CHƯA DUYỆT (approvedBy null) khi đến từ deep-link `?filter=pending`.
+  const visibleRules = useMemo(
+    () => (showPendingOnly ? rules.filter((r) => r.approvedBy == null) : rules),
+    [rules, showPendingOnly],
+  );
   // "Dòng mới" = sự kiện vừa fire trong 2 phút gần đây & chưa xử lý → tô nổi để KTV chú ý.
   const isRecentEvent = (firedAt: unknown, status: string) => {
     if (status === "resolved" || !firedAt) return false;
@@ -384,8 +414,17 @@ export default function InterlockRuleManagement() {
         {/* ── Rules tab ── */}
         <TabsContent value="rules">
           <Card>
-            <CardHeader><CardTitle>{t("interlockRules.rules")} ({rules.length})</CardTitle></CardHeader>
-            <CardContent>
+            <CardHeader><CardTitle>{t("interlockRules.rules")} ({visibleRules.length})</CardTitle></CardHeader>
+            <CardContent className="space-y-3">
+              {/* Doc 80 Đợt 1 Task 2 (HUB-03) — deep-link `?filter=pending` từ Hub. */}
+              {showPendingOnly && (
+                <div className="flex items-center justify-between gap-2 rounded-md border border-warning/40 bg-warning/10 px-3 py-2 text-xs text-muted-foreground">
+                  <span>{t("interlockRules.filteringPending", "Đang lọc: chỉ hiện quy tắc chưa duyệt")}</span>
+                  <Button size="sm" variant="ghost" className="h-6 px-2 text-xs" onClick={() => setShowPendingOnly(false)}>
+                    {t("interlockRules.showAll", "Xem tất cả")}
+                  </Button>
+                </div>
+              )}
               <TooltipProvider>
                 <Table>
                   <TableHeader>
@@ -401,10 +440,10 @@ export default function InterlockRuleManagement() {
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {rules.length === 0 && (
+                    {visibleRules.length === 0 && (
                       <TableRow><TableCell colSpan={8} className="text-center text-muted-foreground">{t("interlockRules.empty")}</TableCell></TableRow>
                     )}
-                    {rules.map((r) => {
+                    {visibleRules.map((r) => {
                       const approved = r.approvedBy != null;
                       return (
                         <TableRow key={r.id}>
@@ -430,7 +469,7 @@ export default function InterlockRuleManagement() {
                             {!approved && (
                               <Button size="sm" variant="outline" disabled={!isAdmin || approveRule.isPending}
                                 title={approveReason}
-                                onClick={() => approveRule.mutate({ id: r.id })}>
+                                onClick={() => approveRule.mutate({ id: r.id, expectedVersion: r.versionToken })}>
                                 <CheckCircle2 className="h-4 w-4 mr-1" /> {t("interlockRules.approve")}
                               </Button>
                             )}
@@ -438,7 +477,7 @@ export default function InterlockRuleManagement() {
                               approved ? (
                                 <Button size="sm" variant="outline" disabled={!canEdit || enableRule.isPending}
                                   title={editReason}
-                                  onClick={() => enableRule.mutate({ id: r.id })}>
+                                  onClick={() => enableRule.mutate({ id: r.id, expectedVersion: r.versionToken })}>
                                   <Play className="h-4 w-4 mr-1" /> {t("interlockRules.enable")}
                                 </Button>
                               ) : (
@@ -478,7 +517,7 @@ export default function InterlockRuleManagement() {
                                 }}
                               />
                             )}
-                            <Button size="sm" variant="outline" disabled={!canEdit} title={editReason} onClick={() => openEdit(r)}>
+                            <Button size="sm" variant="outline" disabled={!canEdit} title={editReason} aria-label={t("interlockRules.editRule")} onClick={() => openEdit(r)}>
                               <Pencil className="h-4 w-4" />
                             </Button>
                             {/* doc 44 G5.4 / ILK-03 (doc 80) — hard-delete rule an toàn: rủi ro
@@ -600,6 +639,18 @@ export default function InterlockRuleManagement() {
             <DialogTitle>{form.id != null ? t("interlockRules.editRule") : t("interlockRules.newRule")}</DialogTitle>
             <DialogDescription>{t("interlockRules.ruleDialogDesc")}</DialogDescription>
           </DialogHeader>
+          {/* doc 80 Đợt 1 Task 11 — cảnh báo TRƯỚC khi lưu một rule đã duyệt/đang bật: Lưu sẽ
+              reset approvedBy/approvedAt=null + enabled=false (server ILK-01), không phải kết
+              quả bất ngờ SAU khi bấm Lưu. */}
+          {form.id != null && editWillResetApproval && (
+            <div
+              data-testid="edit-approved-warning"
+              className="flex items-start gap-2 rounded-md border border-amber-500/50 bg-amber-500/10 p-3 text-sm text-amber-700 dark:text-amber-400"
+            >
+              <ShieldAlert className="h-4 w-4 mt-0.5 shrink-0" />
+              <span>{t("interlockRules.editApprovedWarning", "Rule này đã DUYỆT hoặc đang BẬT — Lưu sẽ tắt rule và cần duyệt lại.")}</span>
+            </div>
+          )}
           <div className="space-y-3">
             <div>
               <Label>{t("interlockRules.name")}</Label>

@@ -46,8 +46,43 @@ import type {
   OnOtSample,
   OtProtocol,
 } from "./otDriver";
+import { withDeadline } from "./drivers/boundedClose";
+
+/**
+ * doc 81 Đợt 1B Task 1 — hạn cho MỖI lời gọi hạ kết nối của driver (disconnect /
+ * subscription.close) và cho TOÀN BỘ stop(). Supervisor không được phụ thuộc vào việc
+ * mọi driver đều trả về: một driver treo không được kẹt vòng nối lại hay stop().
+ */
+export const DEFAULT_SUPERVISOR_DISCONNECT_TIMEOUT_MS = 2500;
+
+/**
+ * doc 81 Đợt 1B Task 2 — hạn (ms) cho MỘT lần nối endpoint (connect + subscribe). Khớp
+ * mặc định OT_ADAPTER_START_TIMEOUT_MS của otManager: một thiết bị im lặng không được giữ
+ * vòng nối (và start()) lâu hơn hạn khởi động một adapter.
+ */
+export const DEFAULT_SUPERVISOR_CONNECT_TIMEOUT_MS = 10_000;
+/**
+ * doc 81 Đợt 1B Task 2 (Fix round 1) — biên cộng vào timeoutMs của endpoint: hạn một lần nối
+ * endpoint = max(connectTimeoutMs, endpoint.timeoutMs + biên) — thiết bị chậm hợp lệ vẫn nối được.
+ */
+export const SUPERVISOR_CONNECT_GRACE_MS = 1000;
 
 /** Lifecycle state of a supervised adapter connection. */
+/**
+ * doc 81 Đợt 1B final wave (item 4, F3 census) — lỗi nội bộ của supervisor có mã, thay cho
+ * `throw new Error`: `no_endpoints` là tiền điều kiện lập trình của constructor (otManager /
+ * test tự bắt); `connect_pending` là nhánh "lần connect trước còn treo" mà attemptCycle bắt để
+ * ghi lastError + backoff. Không chỗ nào tới người dùng cuối; message giữ nguyên văn cho kỹ sư.
+ */
+export class ConnectionSupervisorError extends Error {
+  readonly reasonCode: "no_endpoints" | "connect_pending";
+  constructor(reasonCode: "no_endpoints" | "connect_pending", message: string) {
+    super(message);
+    this.name = "ConnectionSupervisorError";
+    this.reasonCode = reasonCode;
+  }
+}
+
 export type SupervisorState =
   | "idle" // constructed, start() not called yet
   | "connecting" // initial connect attempt in progress (never connected yet)
@@ -112,6 +147,18 @@ export interface SupervisorOptions {
    * MACHINE_PRESENCE_ENABLED). Không truyền ⇒ chỉ nhánh sweep-telemetry ghi presence.
    */
   machineId?: number;
+  /**
+   * doc 81 Đợt 1B Task 1 — hạn (ms) cho mỗi driver.disconnect()/handle.close() và cho cả
+   * stop(). Mặc định {@link DEFAULT_SUPERVISOR_DISCONNECT_TIMEOUT_MS}. Hết hạn ⇒ bỏ đợi
+   * (driver tự dọn transport của nó), supervisor đi tiếp.
+   */
+  disconnectTimeoutMs?: number;
+  /**
+   * doc 81 Đợt 1B Task 2 — hạn (ms) cho một lần connect + subscribe một endpoint. Mặc định
+   * {@link DEFAULT_SUPERVISOR_CONNECT_TIMEOUT_MS}. Hết hạn ⇒ lần thử đó tính là thất bại
+   * (đi endpoint kế / backoff); nếu connect rốt cuộc xong MUỘN, kết nối muộn bị hạ ngay.
+   */
+  connectTimeoutMs?: number;
 }
 
 /** Snapshot of a supervisor for an internal health getter (future health endpoint). */
@@ -151,6 +198,12 @@ interface RuntimeEndpoint {
   label: "primary" | "secondary";
   connection: OtConnectionConfig;
   driver: OtDriver;
+  /**
+   * doc 81 Đợt 1B Task 2 — lần connect+subscribe đã quá hạn nhưng CHƯA settle. Khi còn khác
+   * null, endpoint này không được connect lại (một driver không chịu hai connect chồng nhau);
+   * lúc settle, kết nối muộn (nếu có) bị hạ rồi trường này về null.
+   */
+  pendingConnect: Promise<unknown> | null;
 }
 
 function errMsg(err: unknown): string {
@@ -185,6 +238,10 @@ export class ConnectionSupervisor {
   private readonly linkLossThreshold: number;
   /** doc 40 MON-F1 — machineId (nếu có) để đẩy presence online/offline. */
   private readonly machineId: number | null;
+  /** doc 81 Đợt 1B Task 1 — hạn cho mỗi lời gọi hạ kết nối + cho stop(). */
+  private readonly disconnectTimeoutMs: number;
+  /** doc 81 Đợt 1B Task 2 — hạn cho một lần connect + subscribe một endpoint. */
+  private readonly connectTimeoutMs: number;
 
   private readonly endpoints: RuntimeEndpoint[];
 
@@ -236,9 +293,17 @@ export class ConnectionSupervisor {
       Math.floor(opts.linkLossFailThreshold ?? linkLossThresholdFromEnv()),
     );
     this.machineId = opts.machineId ?? null;
+    this.disconnectTimeoutMs =
+      typeof opts.disconnectTimeoutMs === "number" && opts.disconnectTimeoutMs > 0
+        ? opts.disconnectTimeoutMs
+        : DEFAULT_SUPERVISOR_DISCONNECT_TIMEOUT_MS;
+    this.connectTimeoutMs =
+      typeof opts.connectTimeoutMs === "number" && opts.connectTimeoutMs > 0
+        ? opts.connectTimeoutMs
+        : DEFAULT_SUPERVISOR_CONNECT_TIMEOUT_MS;
 
     if (!opts.endpoints || opts.endpoints.length === 0) {
-      throw new Error(`ConnectionSupervisor "${opts.code}": at least one endpoint required`);
+      throw new ConnectionSupervisorError("no_endpoints", `ConnectionSupervisor "${opts.code}": at least one endpoint required`);
     }
     // ONE driver instance per endpoint, created up-front and REUSED across
     // reconnects (drivers create a fresh transport on each connect()).
@@ -246,6 +311,7 @@ export class ConnectionSupervisor {
       label: e.label,
       connection: e.connection,
       driver: opts.createDriver(),
+      pendingConnect: null,
     }));
   }
 
@@ -328,9 +394,25 @@ export class ConnectionSupervisor {
       clearTimeout(this.retryTimer);
       this.retryTimer = null;
     }
-    await this.closeActiveHandle();
-    for (const ep of this.endpoints) await this.safeDisconnect(ep);
+    // doc 81 Đợt 1B Task 1 — cả stop() có MỘT hạn: đóng subscription + hạ mọi endpoint
+    // SONG SONG, mỗi lời gọi tự có hạn; driver treo không giữ được stop().
+    await this.bounded(
+      (async () => {
+        await this.closeActiveHandle();
+        await Promise.all(this.endpoints.map((ep) => this.safeDisconnect(ep)));
+      })(),
+      "stop",
+    );
     this.activeIndex = -1;
+  }
+
+  /** doc 81 Đợt 1B Task 1 — chờ p tối đa disconnectTimeoutMs; không bao giờ ném. */
+  private async bounded(p: Promise<unknown>, what: string): Promise<void> {
+    try {
+      await withDeadline(p, this.disconnectTimeoutMs, `supervisor ${this.code} ${what}`);
+    } catch (err) {
+      this.lastError = errMsg(err);
+    }
   }
 
   // ── internals ──────────────────────────────────────────────────────────────
@@ -486,6 +568,13 @@ export class ConnectionSupervisor {
       this.attempts += 1;
       try {
         await this.connectAndSubscribe(ep);
+        // doc 81 Đợt 1B Task 1 — stop() đã chạy trong lúc connect: KHÔNG sống lại; hạ ngay
+        // kết nối muộn này (không để poll/socket rò sau khi tiến trình đã yêu cầu dừng).
+        if (this.stopped) {
+          await this.closeActiveHandle();
+          await this.safeDisconnect(ep);
+          return false;
+        }
         // ── success ──
         this.activeIndex = idx;
         this.consecutiveFailures = 0;
@@ -532,22 +621,76 @@ export class ConnectionSupervisor {
    * connect/subscribe failure so attemptCycle can move to the next endpoint.
    */
   private async connectAndSubscribe(ep: RuntimeEndpoint): Promise<void> {
+    // doc 81 Đợt 1B Task 2 — lần connect trước (đã quá hạn) còn treo trên CHÍNH driver này:
+    // không chồng connect thứ hai; tính lần này là thất bại, backoff sẽ thử lại sau.
+    const deadlineMs = this.connectDeadlineFor(ep);
+    if (ep.pendingConnect) {
+      throw new ConnectionSupervisorError("connect_pending", `previous ${ep.label} connect still pending (timed out after ${deadlineMs}ms)`);
+    }
     await this.closeActiveHandle();
     // Ensure a clean slate: a stale-but-"connected" driver is disconnected first.
+    // doc 81 Đợt 1B Task 2 — có hạn (bounded không ném), không để disconnect treo giữ vòng nối.
+    let staleConnected = false;
     try {
-      if (ep.driver.isConnected()) await ep.driver.disconnect();
+      staleConnected = ep.driver.isConnected();
     } catch {
       // ignore — connect() below establishes a fresh transport
     }
-    await ep.driver.connect(ep.connection);
-    let handle: OtSubscriptionHandle;
+    if (staleConnected) await this.safeDisconnect(ep);
+
+    const work = (async (): Promise<OtSubscriptionHandle> => {
+      await ep.driver.connect(ep.connection);
+      try {
+        return await ep.driver.subscribe(this.tags, this.wrappedOnSample, this.pollIntervalMs);
+      } catch (err) {
+        await this.safeDisconnect(ep);
+        throw err;
+      }
+    })();
+
+    // Cờ settle gắn TRƯỚC withDeadline ⇒ khi work reject đúng hạn, cờ đã bật lúc finally chạy.
+    let workSettled = false;
+    work.then(
+      () => (workSettled = true),
+      () => (workSettled = true),
+    );
+    let inTime = false;
     try {
-      handle = await ep.driver.subscribe(this.tags, this.wrappedOnSample, this.pollIntervalMs);
-    } catch (err) {
-      await this.safeDisconnect(ep);
-      throw err;
+      const handle = await withDeadline(work, deadlineMs, `supervisor ${this.code} ${ep.label} connect`);
+      inTime = true;
+      this.activeHandle = handle;
+    } finally {
+      if (!inTime && !workSettled) this.reapLateConnect(ep, work);
     }
-    this.activeHandle = handle;
+  }
+
+  /** Fix round 1 — hạn một lần nối endpoint: không ngắn hơn timeoutMs của chính endpoint + biên. */
+  private connectDeadlineFor(ep: RuntimeEndpoint): number {
+    const t = ep.connection.timeoutMs;
+    return typeof t === "number" && Number.isFinite(t) && t > 0
+      ? Math.max(this.connectTimeoutMs, t + SUPERVISOR_CONNECT_GRACE_MS)
+      : this.connectTimeoutMs;
+  }
+
+  /**
+   * doc 81 Đợt 1B Task 2 — connect+subscribe quá hạn và CÒN TREO. Đánh dấu endpoint bận; khi
+   * rốt cuộc settle: kết nối muộn KHÔNG bao giờ thành kết nối hoạt động (mọi lần thử mới trên
+   * endpoint này bị chặn trong lúc chờ) ⇒ đóng subscription + hạ driver, rồi giải phóng
+   * endpoint. Không ném.
+   */
+  private reapLateConnect(ep: RuntimeEndpoint, work: Promise<OtSubscriptionHandle>): void {
+    const tracker: Promise<void> = work
+      .then(
+        async (handle) => {
+          await this.bounded(Promise.resolve().then(() => handle.close()), "late subscription close");
+          await this.safeDisconnect(ep);
+        },
+        () => undefined, // connect muộn lỗi: driver tự dọn transport của nó
+      )
+      .finally(() => {
+        if (ep.pendingConnect === tracker) ep.pendingConnect = null;
+      });
+    ep.pendingConnect = tracker;
   }
 
   /** Forward one sample to ingest; a callback fault never breaks the poll loop. */
@@ -564,20 +707,14 @@ export class ConnectionSupervisor {
     if (this.activeHandle) {
       const h = this.activeHandle;
       this.activeHandle = null;
-      try {
-        await h.close();
-      } catch {
-        // ignore
-      }
+      // doc 81 Đợt 1B Task 1 — có hạn: subscription treo không kẹt vòng nối lại/stop().
+      await this.bounded(Promise.resolve().then(() => h.close()), "subscription close");
     }
   }
 
   private async safeDisconnect(ep: RuntimeEndpoint): Promise<void> {
-    try {
-      await ep.driver.disconnect();
-    } catch {
-      // ignore
-    }
+    // doc 81 Đợt 1B Task 1 — có hạn: driver.disconnect() treo không kẹt supervisor.
+    await this.bounded(Promise.resolve().then(() => ep.driver.disconnect()), "disconnect");
   }
 
   private scheduleRetry(delayMs: number): void {

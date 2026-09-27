@@ -2,8 +2,15 @@
  * Sprint F1.2 — opcuaDriver tests với package GIẢ (vi.doMock + vi.resetModules).
  * Không cần lib/thiết bị thật.
  */
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { describe, it, expect, vi, beforeEach, afterEach, afterAll } from "vitest";
 import type { OtTagAddress } from "../otDriver";
+import os from "node:os";
+import path from "node:path";
+import { existsSync, rmSync } from "node:fs";
+
+// Fix round 1 — manager nay tạo thư mục PKI (0700) ⇒ test giả cũng chỉ trỏ vào os.tmpdir().
+const MOCK_PKI_BASE = path.join(os.tmpdir(), `opcua-t12-mock-${process.pid}`);
+const MOCK_PKI = (name: string) => path.join(MOCK_PKI_BASE, name);
 
 const tags: OtTagAddress[] = [
   { tagKey: "temp", address: "ns=2;s=Temp", dataType: "float", scale: 10, offset: 1 },
@@ -271,5 +278,423 @@ describe("OpcuaDriver (mocked node-opcua)", () => {
     const { OpcuaDriver } = await import("./opcuaDriver");
     const d = new OpcuaDriver();
     await expect(d.connect({ endpoint: "opc.tcp://x" })).rejects.toThrow(/node-opcua not installed/);
+  });
+});
+
+// ── doc 81 Đợt 1B Task 12 — bảo mật / ép kiểu / cô lập theo tag / hạn đóng (gói GIẢ) ──
+describe("OpcuaDriver Task 12 (mocked node-opcua)", () => {
+  // final wave (item 7) — the PRODUCT code creates the PKI root (0700) on any secured connect, so a
+  // mock test that does not pin OPCUA_PKI_DIR leaves an empty ./data/opcua-pki in the repo. Pin the
+  // whole describe to os.tmpdir() and remove the tree afterwards; the afterAll assertion below turns
+  // a future un-pinned test into a red, not a stray directory.
+  const savedPkiDir = process.env.OPCUA_PKI_DIR;
+  const REPO_PKI = path.join(process.cwd(), "data", "opcua-pki");
+  const repoPkiExistedBefore = existsSync(REPO_PKI);
+  beforeEach(() => {
+    vi.resetModules();
+    delete process.env.OT_OPCUA_MONITORED_ITEMS;
+    process.env.OPCUA_PKI_DIR = MOCK_PKI("default");
+  });
+  afterEach(() => {
+    if (savedPkiDir === undefined) delete process.env.OPCUA_PKI_DIR;
+    else process.env.OPCUA_PKI_DIR = savedPkiDir;
+  });
+  afterAll(() => {
+    rmSync(MOCK_PKI_BASE, { recursive: true, force: true });
+    if (!repoPkiExistedBefore) {
+      expect(existsSync(REPO_PKI), "a test in this file created ./data/opcua-pki — pin OPCUA_PKI_DIR").toBe(false);
+    }
+  });
+
+  function withDeadline<T>(p: Promise<T>, ms: number, label: string): Promise<T> {
+    return new Promise<T>((resolve, reject) => {
+      const t = setTimeout(() => reject(new Error(`${label}: test deadline ${ms}ms exceeded`)), ms);
+      p.then((v) => { clearTimeout(t); resolve(v); }, (e) => { clearTimeout(t); reject(e); });
+    });
+  }
+
+  function mockPkg(over: { session?: Record<string, any>; client?: Record<string, any> } = {}) {
+    const session: Record<string, any> = {
+      read: vi.fn(async (nodes: any[]) => nodes.map(() => ({ statusCode: { value: 0 }, value: { value: 1 } }))),
+      write: vi.fn(async (nodes: any[]) => nodes.map(() => ({ value: 0 }))),
+      close: vi.fn(async () => {}),
+      ...over.session,
+    };
+    const client: Record<string, any> = {
+      connect: vi.fn(async () => {}),
+      createSession: vi.fn(async () => session),
+      disconnect: vi.fn(async () => {}),
+      ...over.client,
+    };
+    const cmInstances: any[] = [];
+    class OPCUACertificateManager {
+      opts: any;
+      referenceCounter = 0;
+      constructor(o: any) {
+        this.opts = o;
+        cmInstances.push(this);
+      }
+      async initialize() {}
+      async dispose() {}
+    }
+    class Variant {
+      dataType: any;
+      value: any;
+      constructor(o: any) {
+        this.dataType = o.dataType;
+        this.value = o.value;
+      }
+    }
+    const create = vi.fn((_opts: any) => client);
+    vi.doMock("node-opcua", () => ({
+      OPCUAClient: { create },
+      AttributeIds: { Value: 13 },
+      DataType: { Boolean: 1, Int32: 6, Double: 11, String: 12 },
+      Variant,
+      MessageSecurityMode: { None: 1, Sign: 2, SignAndEncrypt: 3 },
+      SecurityPolicy: {
+        None: "http://opcfoundation.org/UA/SecurityPolicy#None",
+        Basic256Sha256: "http://opcfoundation.org/UA/SecurityPolicy#Basic256Sha256",
+        Aes128_Sha256_RsaOaep: "http://opcfoundation.org/UA/SecurityPolicy#Aes128_Sha256_RsaOaep",
+        Aes256_Sha256_RsaPss: "http://opcfoundation.org/UA/SecurityPolicy#Aes256_Sha256_RsaPss",
+      },
+      OPCUACertificateManager,
+    }));
+    return { client, session, create, cmInstances };
+  }
+
+  it("unconfigured ⇒ OPCUAClient.create gets the LEGACY options only (SecurityMode None, no PKI) and warns once", async () => {
+    const { create } = mockPkg();
+    const sec = await import("./opcuaSecurity");
+    sec.__resetOpcuaSecurityWarningForTest();
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    try {
+      const { OpcuaDriver } = await import("./opcuaDriver");
+      const d = new OpcuaDriver();
+      await d.connect({ endpoint: "opc.tcp://10.1.2.3:4840" });
+      await d.disconnect();
+      await d.connect({ endpoint: "opc.tcp://10.1.2.3:4840" });
+      expect(create.mock.calls[0][0]).toEqual({ endpointMustExist: false, connectionStrategy: { maxRetry: 1 } });
+      expect(warn.mock.calls.filter((c) => /securityMode not configured/.test(String(c[0])))).toHaveLength(1);
+    } finally {
+      warn.mockRestore();
+    }
+  });
+
+  it("securityMode=SignAndEncrypt ⇒ client created with mode/policy + a strict (non-TOFU) certificate manager rooted at OPCUA_PKI_DIR", async () => {
+    const { create, cmInstances } = mockPkg();
+    const saved = process.env.OPCUA_PKI_DIR;
+    process.env.OPCUA_PKI_DIR = MOCK_PKI("t12-pki-mock");
+    try {
+      const { OpcuaDriver } = await import("./opcuaDriver");
+      const d = new OpcuaDriver();
+      await d.connect({ endpoint: "opc.tcp://x", options: { securityMode: "SignAndEncrypt", securityPolicy: "Basic256Sha256" } });
+      const o = create.mock.calls[0][0];
+      expect(o.securityMode).toBe(3);
+      expect(o.securityPolicy).toBe("http://opcfoundation.org/UA/SecurityPolicy#Basic256Sha256");
+      expect(o.clientCertificateManager).toBe(cmInstances[0]);
+      expect(cmInstances[0].opts.automaticallyAcceptUnknownCertificate).toBe(false);
+      expect(String(cmInstances[0].opts.rootFolder).replace(/\\/g, "/")).toBe(MOCK_PKI("t12-pki-mock").replace(/\\/g, "/"));
+      // Một tham chiếu giữ sẵn ⇒ client.disconnect() (cm.dispose) không huỷ manager dùng chung.
+      expect(cmInstances[0].referenceCounter).toBe(1);
+    } finally {
+      if (saved === undefined) delete process.env.OPCUA_PKI_DIR;
+      else process.env.OPCUA_PKI_DIR = saved;
+    }
+  });
+
+  it("contradictory security config ⇒ connect rejects with a reason BEFORE opening a client", async () => {
+    const { create } = mockPkg();
+    const { OpcuaDriver } = await import("./opcuaDriver");
+    const d = new OpcuaDriver();
+    await expect(
+      d.connect({ endpoint: "opc.tcp://x", options: { securityMode: "SignAndEncrypt", securityPolicy: "None" } }),
+    ).rejects.toThrow(/requires a securityPolicy/);
+    expect(create).not.toHaveBeenCalled();
+  });
+
+  it("readTags: one unparseable address ⇒ only that tag bad (BadNodeIdInvalid); session.read gets the valid nodes only", async () => {
+    const { session } = mockPkg();
+    const { OpcuaDriver } = await import("./opcuaDriver");
+    const d = new OpcuaDriver();
+    await d.connect({ endpoint: "opc.tcp://x" });
+    const out = await d.readTags([
+      { tagKey: "a", address: "ns=2;s=A", dataType: "int" },
+      { tagKey: "bad", address: "DB1.DBW0", dataType: "int" },
+      { tagKey: "c", address: "ns=2;s=C", dataType: "int" },
+    ]);
+    expect(out.map((s) => s.quality)).toEqual(["good", "bad", "good"]);
+    expect(out[1].statusCode).toMatch(/BadNodeIdInvalid/);
+    expect(out[0].statusCode).toBeUndefined();
+    expect(session.read.mock.calls[0][0].map((n: any) => n.nodeId)).toEqual(["ns=2;s=A", "ns=2;s=C"]);
+  });
+
+  it("writeTags: Variant built with the NODE's builtin type (Float=10), not the legacy Double", async () => {
+    const getBuiltInDataType = vi.fn(async () => 10);
+    const { session } = mockPkg({ session: { getBuiltInDataType } });
+    const { OpcuaDriver } = await import("./opcuaDriver");
+    const d = new OpcuaDriver();
+    await d.connect({ endpoint: "opc.tcp://x" });
+    const res = await d.writeTags([{ tagKey: "t", address: "ns=2;s=T", value: 3.5, dataType: "float" }]);
+    expect(res[0]).toEqual({ tagKey: "t", ok: true });
+    expect(session.write.mock.calls[0][0][0].value.value).toMatchObject({ dataType: 10, value: 3.5 });
+    // cache theo nodeId
+    await d.writeTags([{ tagKey: "t", address: "ns=2;s=T", value: 4, dataType: "float" }]);
+    expect(getBuiltInDataType).toHaveBeenCalledTimes(1);
+  });
+
+  it("writeTags: out of range for the node type ⇒ ok:false, nothing sent; DataType read failure isolates that write", async () => {
+    const getBuiltInDataType = vi.fn(async (n: string) => {
+      if (n === "ns=2;s=Gone") throw new Error("cannot read DataType Attribute BadNodeIdUnknown (0x80340000)");
+      return 3; // Byte
+    });
+    const { session } = mockPkg({ session: { getBuiltInDataType } });
+    const { OpcuaDriver } = await import("./opcuaDriver");
+    const d = new OpcuaDriver();
+    await d.connect({ endpoint: "opc.tcp://x" });
+    const res = await d.writeTags([
+      { tagKey: "big", address: "ns=2;s=B", value: 300, dataType: "int" },
+      { tagKey: "gone", address: "ns=2;s=Gone", value: 1, dataType: "int" },
+      { tagKey: "okk", address: "ns=2;s=B2", value: 7, dataType: "int" },
+    ]);
+    expect(res.map((r) => r.ok)).toEqual([false, false, true]);
+    expect(res[0].error).toMatch(/out of range for Byte/);
+    expect(res[1].error).toMatch(/BadNodeIdUnknown/);
+    expect(session.write.mock.calls[0][0].map((n: any) => n.nodeId)).toEqual(["ns=2;s=B2"]);
+  });
+
+  it("writeTags: BadTypeMismatch drops the cached DataType so the next write re-reads it", async () => {
+    const getBuiltInDataType = vi.fn(async () => 4);
+    const write = vi.fn(async (nodes: any[]) => nodes.map(() => ({ value: 0x80740000, name: "BadTypeMismatch" })));
+    mockPkg({ session: { getBuiltInDataType, write } });
+    const { OpcuaDriver } = await import("./opcuaDriver");
+    const d = new OpcuaDriver();
+    await d.connect({ endpoint: "opc.tcp://x" });
+    const r1 = await d.writeTags([{ tagKey: "t", address: "ns=2;s=T", value: 1, dataType: "int" }]);
+    expect(r1[0].ok).toBe(false);
+    await d.writeTags([{ tagKey: "t", address: "ns=2;s=T", value: 1, dataType: "int" }]);
+    expect(getBuiltInDataType).toHaveBeenCalledTimes(2);
+  });
+
+  it("disconnect() is bounded even when session.close / client.disconnect never settle", async () => {
+    mockPkg({
+      session: { close: vi.fn(() => new Promise(() => {})) },
+      client: { disconnect: vi.fn(() => new Promise(() => {})) },
+    });
+    const { OpcuaDriver } = await import("./opcuaDriver");
+    const d = new OpcuaDriver();
+    await d.connect({ endpoint: "opc.tcp://x" });
+    const t0 = Date.now();
+    await withDeadline(d.disconnect(), 4000, "disconnect");
+    expect(Date.now() - t0).toBeLessThan(2600);
+    expect(d.isConnected()).toBe(false);
+  });
+
+  it("failed connect cleans up with a bounded client.disconnect (never hangs)", async () => {
+    mockPkg({
+      client: {
+        connect: vi.fn(async () => {
+          throw new Error("ECONNREFUSED");
+        }),
+        disconnect: vi.fn(() => new Promise(() => {})),
+      },
+    });
+    const { OpcuaDriver } = await import("./opcuaDriver");
+    const d = new OpcuaDriver();
+    const t0 = Date.now();
+    await expect(withDeadline(d.connect({ endpoint: "opc.tcp://x" }), 4000, "connect")).rejects.toThrow(/ECONNREFUSED/);
+    expect(Date.now() - t0).toBeLessThan(2600);
+  });
+
+  // ── Fix round 1 ──────────────────────────────────────────────────────────────
+  it("R20: trustOnFirstUse without OPCUA_ALLOW_TRUST_ON_FIRST_USE ⇒ refused before any client/PKI; lastError set", async () => {
+    const saved = process.env.OPCUA_ALLOW_TRUST_ON_FIRST_USE;
+    delete process.env.OPCUA_ALLOW_TRUST_ON_FIRST_USE;
+    try {
+      const { create, cmInstances } = mockPkg();
+      const { OpcuaDriver } = await import("./opcuaDriver");
+      const d = new OpcuaDriver();
+      await expect(
+        d.connect({ endpoint: "opc.tcp://x", options: { securityMode: "SignAndEncrypt", trustOnFirstUse: true } }),
+      ).rejects.toThrow(/OPCUA_ALLOW_TRUST_ON_FIRST_USE/);
+      expect(create).not.toHaveBeenCalled();
+      expect(cmInstances).toHaveLength(0);
+      expect((await d.health()).lastError).toMatch(/OPCUA_ALLOW_TRUST_ON_FIRST_USE/);
+    } finally {
+      if (saved === undefined) delete process.env.OPCUA_ALLOW_TRUST_ON_FIRST_USE;
+      else process.env.OPCUA_ALLOW_TRUST_ON_FIRST_USE = saved;
+    }
+  });
+
+  it("R20: TOFU (flag on) uses an isolated <pki>/tofu root with auto-accept; strict keeps <pki> without auto-accept", async () => {
+    const savedFlag = process.env.OPCUA_ALLOW_TRUST_ON_FIRST_USE;
+    const savedDir = process.env.OPCUA_PKI_DIR;
+    process.env.OPCUA_ALLOW_TRUST_ON_FIRST_USE = "true";
+    process.env.OPCUA_PKI_DIR = MOCK_PKI("t12-r20-mock");
+    try {
+      const { cmInstances } = mockPkg();
+      const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+      try {
+        const { OpcuaDriver } = await import("./opcuaDriver");
+        await new OpcuaDriver().connect({ endpoint: "opc.tcp://x", options: { securityMode: "SignAndEncrypt", trustOnFirstUse: true } });
+        await new OpcuaDriver().connect({ endpoint: "opc.tcp://x", options: { securityMode: "SignAndEncrypt" } });
+      } finally {
+        warn.mockRestore();
+      }
+      const norm = (p: string) => String(p).replace(/\\/g, "/");
+      const tofu = cmInstances.find((c) => c.opts.automaticallyAcceptUnknownCertificate === true);
+      const strict = cmInstances.find((c) => c.opts.automaticallyAcceptUnknownCertificate === false);
+      expect(norm(tofu.opts.rootFolder)).toBe(norm(MOCK_PKI("t12-r20-mock")) + "/tofu");
+      expect(norm(strict.opts.rootFolder)).toBe(norm(MOCK_PKI("t12-r20-mock")));
+    } finally {
+      if (savedFlag === undefined) delete process.env.OPCUA_ALLOW_TRUST_ON_FIRST_USE;
+      else process.env.OPCUA_ALLOW_TRUST_ON_FIRST_USE = savedFlag;
+      if (savedDir === undefined) delete process.env.OPCUA_PKI_DIR;
+      else process.env.OPCUA_PKI_DIR = savedDir;
+    }
+  });
+
+  it("#6 contradictory security config ⇒ lastError carries the reason", async () => {
+    mockPkg();
+    const { OpcuaDriver } = await import("./opcuaDriver");
+    const d = new OpcuaDriver();
+    await expect(d.connect({ endpoint: "opc.tcp://x", options: { securityMode: "None", securityPolicy: "Basic256Sha256" } })).rejects.toThrow();
+    expect((await d.health()).lastError).toMatch(/cannot be combined/);
+  });
+
+  it("#7 nsu= NamespaceArray read is single-flight per session (concurrent reads ⇒ one readNamespaceArray)", async () => {
+    let release!: (v: string[]) => void;
+    const readNamespaceArray = vi.fn(
+      () => new Promise<string[]>((r) => { release = r; }),
+    );
+    mockPkg({ session: { readNamespaceArray } });
+    const { OpcuaDriver } = await import("./opcuaDriver");
+    const d = new OpcuaDriver();
+    await d.connect({ endpoint: "opc.tcp://x" });
+    const t = (k: string) => ({ tagKey: k, address: `nsu=urn:plc;s=${k}`, dataType: "int" as const });
+    const p1 = d.readTags([t("a"), t("b"), t("c")]);
+    const p2 = d.readTags([t("d")]);
+    await new Promise((r) => setTimeout(r, 20));
+    release(["http://opcfoundation.org/UA/", "urn:plc"]);
+    const [r1, r2] = await withDeadline(Promise.all([p1, p2]), 3000, "reads");
+    expect(readNamespaceArray).toHaveBeenCalledTimes(1);
+    expect([...r1, ...r2].every((s) => s.quality === "good")).toBe(true);
+  });
+
+  it("#9/#3 one shared certificate manager per PKI root (no second watcher set on the same dir)", async () => {
+    const saved = process.env.OPCUA_PKI_DIR;
+    process.env.OPCUA_PKI_DIR = MOCK_PKI("t12-one-cm");
+    try {
+      const { cmInstances } = mockPkg();
+      const { OpcuaDriver } = await import("./opcuaDriver");
+      const opts = { securityMode: "SignAndEncrypt" };
+      await Promise.all([
+        new OpcuaDriver().connect({ endpoint: "opc.tcp://a", options: opts }),
+        new OpcuaDriver().connect({ endpoint: "opc.tcp://b", options: opts }),
+      ]);
+      await new OpcuaDriver().connect({ endpoint: "opc.tcp://c", options: opts });
+      expect(cmInstances).toHaveLength(1);
+    } finally {
+      if (saved === undefined) delete process.env.OPCUA_PKI_DIR;
+      else process.env.OPCUA_PKI_DIR = saved;
+    }
+  });
+
+  describe("#5 monitored-item err/terminated (gói giả, mỗi sự kiện tách riêng)", () => {
+    function mockWithItems() {
+      const { session } = mockPkg();
+      const subscription = { terminate: vi.fn(async () => {}) };
+      (session as any).createSubscription2 = vi.fn(async () => subscription);
+      const items: Array<{ fire: (evt: string, arg?: unknown) => void }> = [];
+      const ClientMonitoredItem = {
+        create: vi.fn(async () => {
+          const handlers: Record<string, (a?: unknown) => void> = {};
+          const item = {
+            on: (evt: string, cb: (a?: unknown) => void) => { handlers[evt] = cb; },
+            fire: (evt: string, arg?: unknown) => handlers[evt]?.(arg),
+          };
+          items.push(item);
+          return item;
+        }),
+      };
+      vi.doMock("node-opcua", () => ({
+        OPCUAClient: { create: vi.fn(() => ({ connect: async () => {}, createSession: async () => session, disconnect: async () => {} })) },
+        AttributeIds: { Value: 13 },
+        DataType: { Boolean: 1, Int32: 6, Double: 11, String: 12 },
+        Variant: class { constructor(o: any) { Object.assign(this, o); } },
+        ClientMonitoredItem,
+        TimestampsToReturn: { Both: 2 },
+      }));
+      return { items };
+    }
+    const T = [{ tagKey: "x", address: "ns=2;s=X", dataType: "float" as const }];
+
+    it("err alone ⇒ one bad sample with the status", async () => {
+      process.env.OT_OPCUA_MONITORED_ITEMS = "true";
+      const { items } = mockWithItems();
+      const { OpcuaDriver } = await import("./opcuaDriver");
+      const d = new OpcuaDriver();
+      await d.connect({ endpoint: "opc.tcp://x" });
+      const got: any[] = [];
+      await d.subscribe(T, (s) => { got.push(s); }, 500);
+      items[0].fire("err", "BadNodeIdUnknown (0x80340000)");
+      await new Promise((r) => setTimeout(r, 10));
+      expect(got).toHaveLength(1);
+      expect(got[0]).toMatchObject({ tagKey: "x", quality: "bad", statusCode: "BadNodeIdUnknown (0x80340000)" });
+    });
+
+    it("terminated(Error) alone ⇒ one bad sample; terminated(undefined) (normal end) ⇒ none", async () => {
+      process.env.OT_OPCUA_MONITORED_ITEMS = "true";
+      const { items } = mockWithItems();
+      const { OpcuaDriver } = await import("./opcuaDriver");
+      const d = new OpcuaDriver();
+      await d.connect({ endpoint: "opc.tcp://x" });
+      const got: any[] = [];
+      await d.subscribe(T, (s) => { got.push(s); }, 500);
+      items[0].fire("terminated", undefined);
+      await new Promise((r) => setTimeout(r, 10));
+      expect(got).toHaveLength(0);
+      items[0].fire("terminated", new Error("BadNodeIdUnknown (0x80340000)"));
+      await new Promise((r) => setTimeout(r, 10));
+      expect(got).toHaveLength(1);
+      expect(got[0].statusCode).toMatch(/BadNodeIdUnknown/);
+    });
+
+    it("after handle.close() an err/terminated does NOT emit a bad sample", async () => {
+      process.env.OT_OPCUA_MONITORED_ITEMS = "true";
+      const { items } = mockWithItems();
+      const { OpcuaDriver } = await import("./opcuaDriver");
+      const d = new OpcuaDriver();
+      await d.connect({ endpoint: "opc.tcp://x" });
+      const got: any[] = [];
+      const h = await d.subscribe(T, (s) => { got.push(s); }, 500);
+      await h.close();
+      items[0].fire("err", "BadSubscriptionIdInvalid (0x80280000)");
+      items[0].fire("terminated", new Error("BadSubscriptionIdInvalid"));
+      await new Promise((r) => setTimeout(r, 10));
+      expect(got).toHaveLength(0);
+    });
+  });
+
+  it("#4 a Variant constructor error (empty message) becomes a clear per-write reason", async () => {
+    const getBuiltInDataType = vi.fn(async () => 8); // Int64
+    const { session } = mockPkg({ session: { getBuiltInDataType } });
+    vi.doMock("node-opcua", () => ({
+      OPCUAClient: { create: vi.fn(() => ({ connect: async () => {}, createSession: async () => session, disconnect: async () => {} })) },
+      AttributeIds: { Value: 13 },
+      DataType: { Boolean: 1, Int32: 6, Double: 11, String: 12 },
+      Variant: class {
+        constructor() {
+          throw new Error("");
+        }
+      },
+    }));
+    const { OpcuaDriver } = await import("./opcuaDriver");
+    const d = new OpcuaDriver();
+    await d.connect({ endpoint: "opc.tcp://x" });
+    const res = await d.writeTags([{ tagKey: "t", address: "ns=2;s=T", value: 5, dataType: "int" }]);
+    expect(res[0].ok).toBe(false);
+    // final wave (item 7): Int64 is handed to the Variant as the decimal string "5".
+    expect(res[0].error).toMatch(/cannot encode "5" as Int64/);
   });
 });

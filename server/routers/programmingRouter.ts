@@ -63,6 +63,7 @@ import {
 import {
   validateArtifact,
   reviewArtifact,
+  requestVersionReview,
   buildArtifact,
   simulateBuild,
   deployBuild,
@@ -78,6 +79,9 @@ import {
   dpcDeployApprovalEnabled,
   type DpcUser,
 } from "../services/programming/programmingService";
+// ── doc 80 Đợt 1 Task 5 (WS-02 / F2) — chạy KHÔ mọi cổng deploy trước khi hỏi OTP ──
+import { previewDeploy } from "../services/programming/deployPreview";
+import { phamViCua } from "./_phamViNguoiXem";
 import {
   suggestProgram,
   explainProgram,
@@ -86,7 +90,13 @@ import {
   completeInline,
 } from "../services/programming/aiProgrammingCopilot";
 // ── Doc 80 · Task 10 (D4) — MỘT module cổng an toàn cho copilot (thay hai regex trùng) ──
-import { isSafetyRelevantText, stripPlatformDiagnostics } from "../services/programming/copilotSafetyGate";
+import { isSafetyRelevantText } from "../services/programming/copilotSafetyGate";
+// ── Doc 80 · Đợt 1 · Task 8 — lược đồ + hậu xử lý DÙNG CHUNG với tuyến SSE copilot ──
+import {
+  anChiTietKyThuat,
+  copilotGenerateInput,
+  hoanThienKetQuaCopilot,
+} from "../services/programming/copilotStream";
 // ── doc 40 W5 §11 — fleet program rollout (canary) + machine×version matrix ──
 import { deployToFleet, fleetVersionMatrix } from "../services/programming/fleetRollout";
 // ── D6 (doc 25 T4) — Online Monitor: watch-session manager bound to the socket room ──
@@ -178,14 +188,11 @@ export function isSafetyRelevantProgram(...texts: (string | undefined | null)[])
 }
 
 /**
- * Doc 80 · Task 10 · AI-09 — chi tiết kỹ thuật (`devDetail`: chuỗi chẩn đoán G1-D/G5-D, trích suy
- * luận của model) CHỈ trả cho admin. Kỹ sư nhận câu ngắn trong `note` + `errorCode`. Pure/testable.
+ * Doc 80 · Task 10 · AI-09 — `anChiTietKyThuat` (devDetail CHỈ tới admin). Doc 80 · Đợt 1 · Task 8:
+ * thân hàm chuyển sang `copilotStream.ts` để thủ tục này VÀ tuyến SSE dùng CÙNG một bản; re-export
+ * giữ nguyên chỗ nhập cũ.
  */
-export function anChiTietKyThuat<T extends { devDetail?: string }>(result: T, role: string | undefined | null): T {
-  if (role === "admin" || !("devDetail" in result)) return result;
-  const { devDetail: _bo, ...conLai } = result;
-  return conLai as T;
-}
+export { anChiTietKyThuat };
 
 export const programmingRouter = router({
   /** DPC flag/capability snapshot (UI gating hint). */
@@ -404,8 +411,32 @@ export const programmingRouter = router({
    */
   reviewArtifact: protectedProcedure
     .use(requirePermission("machine_control", "canCreate"))
-    .input(z.object({ artifactId: z.number().int().positive(), decision: z.enum(["approved", "rejected"]) }))
-    .mutation(async ({ input, ctx }) => reviewArtifact(input.artifactId, input.decision, toDpcUser(ctx.user))),
+    .input(
+      z
+        .object({
+          artifactId: z.number().int().positive(),
+          decision: z.enum(["approved", "rejected"]),
+          /** doc 80 Đợt 1 Task 5 (WS-01) — lý do; BẮT BUỘC khi từ chối (service tái kiểm). */
+          reason: z.string().max(2000).optional(),
+        })
+        .refine((v) => v.decision !== "rejected" || (v.reason ?? "").trim().length > 0, {
+          message: "Từ chối một phiên bản bắt buộc có lý do.",
+          path: ["reason"],
+        }),
+    )
+    .mutation(async ({ input, ctx }) =>
+      reviewArtifact(input.artifactId, input.decision, toDpcUser(ctx.user), input.reason),
+    ),
+
+  /**
+   * doc 80 Đợt 1 Task 5 (WS-01) — "Yêu cầu duyệt" một phiên bản đang pending_review: ghi người +
+   * lúc yêu cầu vào dấu vết duyệt (không đổi reviewStatus). Ghi ⇒ writeProcedure (sàn ghi) +
+   * machine_control/canCreate như createArtifact. Không chạm thiết bị.
+   */
+  requestVersionReview: writeProcedure
+    .use(requirePermission("machine_control", "canCreate"))
+    .input(z.object({ artifactId: z.number().int().positive() }))
+    .mutation(async ({ input, ctx }) => requestVersionReview(input.artifactId, toDpcUser(ctx.user))),
 
   // ── Builds ──
   listBuilds: protectedProcedure
@@ -444,6 +475,26 @@ export const programmingRouter = router({
         .where(eq(programDeployments.projectId, input.projectId))
         .orderBy(desc(programDeployments.id));
     }),
+
+  /**
+   * doc 80 Đợt 1 Task 5 (WS-02 / F2) — BẢN XEM TRƯỚC deploy: chạy KHÔ mọi cổng (vai/2FA/quyền
+   * của NGƯỜI GỌI, cờ, duyệt phiên bản, build ok, ký duyệt, SoD, Simulation Gate, checksum biên
+   * dịch lại, cấu hình adapter) ⇒ `{verdict: real|simulated|blocked, gates[], target}`. UI hiện
+   * nó TRƯỚC khi hỏi OTP. Query thuần: chỉ đọc DB, không ghi, không chạm thiết bị. Cùng đầu vào
+   * deployBuild (`confirmedBy` = người ký UI sẽ gửi) để verdict khớp đúng lượt deploy sắp chạy.
+   */
+  deployPreview: protectedProcedure
+    .use(requirePermission("machine_monitoring", "canView"))
+    .input(
+      z.object({
+        buildId: z.number().int().positive(),
+        stage: z.enum(["staging", "production"]).default("staging"),
+        deviceId: z.number().int().positive().optional(),
+        confirmedBy: z.number().int().positive().optional(),
+      }),
+    )
+    // fix round 1 (#3) — phạm vi người gọi LUÔN từ ctx (phamViCua), không từ input.
+    .query(async ({ input, ctx }) => previewDeploy(input, ctx.user, phamViCua(ctx))),
 
   deployBuild: deployProcedure
     .use(requirePermission("machine_control", "canCreate"))
@@ -890,43 +941,20 @@ export const programmingRouter = router({
    */
   copilotGenerate: protectedProcedure
     .use(requirePermission("machine_monitoring", "canView"))
-    .input(
-      z.object({
-        kind: KIND,
-        request: z.string().min(1).max(4000),
-        mode: z.enum(["generate", "complete", "translate", "review", "explain"]).optional(),
-        vendor: z.string().max(64).optional(),
-        contextCode: z.string().max(2_000_000).optional(),
-        targetKind: KIND.optional(),
-      }),
-    )
+    // Doc 80 · Đợt 1 · Task 8 — lược đồ DÙNG CHUNG với `POST /api/ai/programming-copilot/stream`.
+    .input(copilotGenerateInput)
     .mutation(async ({ input, ctx }) => {
       // G2-A — `callerRole` được điền TỪ PHIÊN ĐÃ XÁC THỰC, KHÔNG từ thân request (schema zod ở
       // trên cố tình KHÔNG khai trường này, nên client không thể tự đặt vai). Nó chỉ đi tới cổng
       // corpus Training Studio của `retrieveKnowledge` khi copilot truy hồi chỉ mục repo.
-      const result = anChiTietKyThuat(
+      // Doc 80 · Task 10 (D4) — cổng an toàn đã chạy TRƯỚC model bên trong generateProgram cho MỌI
+      // mode. `hoanThienKetQuaCopilot` (chung với tuyến SSE): gỡ devDetail theo vai + nhãn "không
+      // phải chứng nhận" cho explain chạm chủ đề an toàn (AI-13: loại chẩn đoán `[safety-lint:…]`).
+      return hoanThienKetQuaCopilot(
+        input,
         await generateProgram({ ...input, callerRole: String(ctx.user?.role ?? "") }),
         ctx.user?.role,
       );
-      // Doc 80 · Task 10 (D4) — cổng an toàn đã chạy TRƯỚC model bên trong generateProgram cho MỌI
-      // mode (review mã an toàn ⇒ refusalSource:"gate", không tốn lượt model). Ở đây chỉ còn việc
-      // GẮN NHÃN: explain (được phép) trên mã/yêu cầu chạm chủ đề an toàn ⇒ "không phải chứng nhận".
-      // AI-13 — chẩn đoán `[safety-lint:…]` của CHÍNH nền tảng bị loại trước khi xét nhãn.
-      if (
-        input.mode === "explain" &&
-        !result.refused &&
-        isSafetyRelevantProgram(stripPlatformDiagnostics(input.request), input.contextCode)
-      ) {
-        return {
-          ...result,
-          safetyReviewRequired: true as const,
-          certified: false as const,
-          safetyNote:
-            "Chương trình chứa logic liên quan AN TOÀN — phần giải thích này KHÔNG phải chứng nhận. " +
-            "Yêu cầu KỸ SƯ AN TOÀN có thẩm quyền kiểm định trên bộ điều khiển đã được chứng nhận.",
-        };
-      }
-      return result;
     }),
 
   /**

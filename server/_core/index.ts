@@ -7,7 +7,7 @@ import net from "net";
 import path from "path";
 import { eq } from "drizzle-orm";
 import helmet from "helmet";
-import { createExpressMiddleware } from "@trpc/server/adapters/express";
+import { createTrpcMiddleware, trpcProcedureType } from "./trpcAdapter"; // doc 80 Đợt 1 Task 6 (XC-01): allowMethodOverride — query input lớn đi POST
 import { registerOAuthRoutes } from "./oauth";
 import { appRouter } from "../routers";
 import { getDb } from "../db";
@@ -43,8 +43,7 @@ import { registerAiLocalKnowledgeRoutes } from "../routes/aiLocalKnowledgeApi";
 import { registerEdgeDownloadRoute } from "../routes/edgeDownload";
 import { kyAnhTrongThan, kyNeuLaDuongDanNoiBo } from "./anhKyUrl";
 import {
-  congAnhMo,
-  machineIdsChoLoiVao,
+  congAnhMo, machineIdsChoLoiVao,
   mayTrongPhamViAnh,
   phamViDaApAnh,
   sanPhamTrongPhamViAnh,
@@ -55,10 +54,11 @@ import {
 import { uyQuyenDuongDanAnh } from "../routes/_uyQuyenAnh";
 import logger, { installConsoleBridge } from "../logger";
 import { correlationRequestMiddleware } from "./correlationMiddleware";
-import { livenessProbe, readinessProbe } from "./healthProbes";
-import { createApiLimiter, createAuthLimiter, createMachineIngestLimiter, createOtIngestLimiter, OT_INGEST_PATHS } from "./rateLimitConfig";
+import { livenessProbe, createHealthHandler, createReadyzHandler, createNetworkHealthHandler } from "./healthProbes";
+import { createApiLimiter, createAuthLimiter, createMachineIngestLimiter, createOtIngestLimiter, credentialConflictGuard, OT_INGEST_PATHS } from "./rateLimitConfig";
 import type { CanonicalSample, TelemetryProtocol, TelemetryQuality } from "../services/telemetryBus";
 import { assertVramEnforcementPolicy } from "../services/vram/vramBroker";
+import { listenThenStartOt } from "../services/ot/backgroundStart";
 
 // Chuẩn hoá log sang structured khi LOG_JSON=1 / LOG_BRIDGE_CONSOLE=1 (no-op nếu tắt).
 installConsoleBridge();
@@ -319,14 +319,6 @@ async function startServer() {
 
   // Rate limiting for API endpoints
   const apiLimiter = createApiLimiter();
-  // doc 48 R3 — DEDICATED high-throughput OT telemetry ingest tier. Machine→server
-  // telemetry (POST /api/ot/ingest) is authenticated by a per-machine key, not a
-  // browser session, so it must NOT share the 300/60 browser bucket (a real benchmark
-  // hit that ceiling at ~2541 pts/s). Mount its own per-machine high limiter BEFORE
-  // the general /api limiter; the general limiter `skip`s these exact paths
-  // (OT_INGEST_PATHS) so the two never double-count. Tune via OT_INGEST_RATE_MAX.
-  const otIngestLimiter = createOtIngestLimiter();
-  app.use([...OT_INGEST_PATHS], otIngestLimiter);
   // doc 51 R6 — DEDICATED machine data-plane tier (CASE #2/#9 mất dữ liệu). AVI/AOI
   // machines submit inspections via /api/trpc/machineApi.* and /api/machine/*, which
   // both rode the 300/60 BROWSER bucket; worse, a machine sending its key in the tRPC
@@ -336,10 +328,18 @@ async function startServer() {
   // inspections LOST. This limiter keys per machine credential (header/body/query) and
   // raises the ceiling for credentialed machines only; keyless callers keep 300/min.
   // Mounted BEFORE the general limiter, which `skip`s these exact requests (no
-  // double-counting). Tune via MACHINE_INGEST_RATE_MAX; RATE_LIMIT_BODY_KEY=false
-  // restores pre-R6 header-only keying.
+  // double-counting); it also `skip`s OT_INGEST_PATHS (not isMachineIngestRequest), so
+  // mounting it ahead of the OT tier below changes nothing for OT requests. Tune via
+  // MACHINE_INGEST_RATE_MAX; RATE_LIMIT_BODY_KEY=false restores pre-R6 header-only keying.
   const machineIngestLimiter = createMachineIngestLimiter();
-  app.use('/api/', machineIngestLimiter);
+  app.use('/api/', credentialConflictGuard, machineIngestLimiter); // doc 81 1B T8 + final wave: guard MỘT lần, trước CẢ HAI limiter máy (từng gắn hai lần); 2 credential khác nhau ⇒ 400 (chỉ mặt phẳng máy, xem rateLimitConfig)
+  // doc 48 R3 — DEDICATED high-throughput OT telemetry ingest tier. Machine→server
+  // telemetry (POST /api/ot/ingest) is authenticated by a per-machine key, not a
+  // browser session, so it must NOT share the 300/60 browser bucket (a real benchmark
+  // hit that ceiling at ~2541 pts/s). Its own per-machine high limiter sits BEFORE the
+  // general /api limiter, which `skip`s these exact paths (OT_INGEST_PATHS). Tune via OT_INGEST_RATE_MAX.
+  const otIngestLimiter = createOtIngestLimiter();
+  app.use([...OT_INGEST_PATHS], otIngestLimiter);
   app.use('/api/', apiLimiter);
   app.use('/trpc/', apiLimiter);
 
@@ -372,100 +372,100 @@ async function startServer() {
   //   NOT weakened to raise throughput. Rate limit: the dedicated high tier mounted
   //   above (createOtIngestLimiter), NOT the 300/60 browser /api limiter (which skips
   //   this path). Samples funnel straight into the ONE unified telemetry bus
-  //   (ingestTelemetry) → one bulk insert per batch. Module resolved ONCE at boot.
+  //   (ingestTelemetryDetailed) → chunked inserts (≤1000 rows). Module resolved ONCE at boot.
   // ────────────────────────────────────────────────────────────────────────────
   {
     const { authenticateMachine } = await import("../services/machineAuthService");
-    const { ingestTelemetry } = await import("../services/telemetryBus");
-    const OT_PROTOCOLS = new Set<string>([
-      "mqtt", "opcua", "modbus", "s7", "ethernet_ip", "mtconnect", "sparkplug", "inspection", "other",
-    ]);
-    const OT_QUALITY = new Set<string>(["good", "bad", "uncertain"]);
-    const normProtocol = (p: unknown): TelemetryProtocol =>
-      typeof p === "string" && OT_PROTOCOLS.has(p) ? (p as TelemetryProtocol) : "other";
-    const normQuality = (q: unknown): TelemetryQuality =>
-      typeof q === "string" && OT_QUALITY.has(q) ? (q as TelemetryQuality) : "good";
-
-    app.post("/api/ot/ingest", async (req, res) => {
-      try {
-        const body = (req.body ?? {}) as any;
-        const rawSamples = Array.isArray(body) ? body : body.samples;
-        if (!Array.isArray(rawSamples) || rawSamples.length === 0) {
-          return res
-            .status(400)
-            .json({ ok: false, error: "Body must be { samples: [ ... ] } with at least one sample" });
-        }
-
-        // Auth (per-machine key) — preserved, NOT weakened. Throws TRPCError on failure.
-        const auth = await authenticateMachine({
-          headerKey: req.header("x-api-key") || null,
-          apiKey: typeof body.apiKey === "string" ? body.apiKey : null,
-          machineCode:
-            typeof body.machineCode === "string" ? body.machineCode : req.header("x-machine-code") || null,
-          scope: "ingest:write",
-        });
-
-        // Map → CanonicalSample[]. deviceId is preserved so the bus resolves the soft
-        // machineId itself (one gateway credential forwards many devices).
-        const samples: CanonicalSample[] = rawSamples.map((s: any): CanonicalSample => ({
-          ts: s?.ts ? new Date(s.ts) : undefined,
-          machineId: typeof s?.machineId === "number" ? s.machineId : null,
-          deviceId: typeof s?.deviceId === "string" ? s.deviceId : null,
-          protocol: normProtocol(s?.protocol),
-          metric: String(s?.metric ?? ""),
-          value:
-            typeof s?.value === "number" || typeof s?.value === "string" || typeof s?.value === "boolean"
-              ? s.value
-              : null,
-          unit: typeof s?.unit === "string" ? s.unit : null,
-          quality: normQuality(s?.quality),
-          meta: s?.meta && typeof s.meta === "object" ? s.meta : null,
-        }));
-
-        const accepted = await ingestTelemetry(samples);
-        res.json({ ok: true, accepted, received: samples.length, machine: auth.machine.code });
-      } catch (error: any) {
-        // Auth failures (TRPCError) → 401/403; DB down → 503; everything else → 500.
-        const code = error?.code;
-        if (code === "UNAUTHORIZED")
-          return res.status(401).json({ ok: false, error: error?.message || "Unauthorized" });
-        if (code === "FORBIDDEN")
-          return res.status(403).json({ ok: false, error: error?.message || "Forbidden" });
-        if (error?.name === "DbUnavailableError")
-          return res.status(503).json({ ok: false, error: "Database unavailable — retry" });
-        console.error("[OT ingest] error:", error?.message || error);
-        res.status(500).json({ ok: false, error: error?.message || "Ingest failed" });
-      }
-    });
+    const { ingestTelemetryDetailed } = await import("../services/telemetryBus");
+    const { createOtIngestHandler } = await import("./otIngestRoute");
+    // ══════════════════════════════════════════════════════════════════════════
+    // doc 81 Đợt 1B Task 7 — handler tách sang ./otIngestRoute (createOtIngestHandler)
+    // để test mount được ĐÚNG handler đang chạy; điểm gắn tuyến vẫn DUY NHẤT ở đây.
+    //
+    // ĐO trước khi vá (BE3 §L4, instance riêng :3017, DB _test):
+    //   • lô 7.000 / 8.000 / 12.000 mẫu ⇒ `200 {ok:true, accepted:0}` và KHÔNG lưu gì —
+    //     một câu INSERT mang 11 tham số bind mỗi dòng, trần Postgres 65535 ⇒ ~5957
+    //     dòng; drizzle không tự chia khối, bus nuốt lỗi, route vẫn nói ok;
+    //   • một mẫu `ts` hỏng ⇒ 500 cho cả lô (RangeError ở telemetryBus.toBroadcast)
+    //     và làm hỏng WAL store-forward (entryToLine ném ⇒ mọi lần ghi sau đều hỏng).
+    //
+    // Hợp đồng HTTP mới — phản hồi phản ánh ĐÚNG số đã lưu:
+    //   200 — accepted === received (thân y như cũ {ok, accepted, received, machine});
+    //   207 — lưu một phần, kèm rejected[{index, reason}];
+    //   400 — không mẫu nào nhận và không do DB (vd cả lô ts hỏng);
+    //   503 — không mẫu nào lưu và có lỗi DB (db_error) ⇒ gửi lại được;
+    //   413 — lô vượt OT_INGEST_MAX_BATCH (mặc định 20000), kiểm trước xác thực.
+    // Không bao giờ trả 200 ok:true khi accepted < received.
+    //
+    // Mẫu `ts` không hợp lệ hoặc vượt now + OT_INGEST_MAX_FUTURE_SKEW_MS (mặc định
+    // 24 h) bị loại RIÊNG ở lối vào bus (mọi đầu đọc khác cũng hưởng), không vào WAL.
+    // Lỗi DỮ LIỆU của một dòng (SQLSTATE lớp 22/23) chỉ loại dòng đó (invalid_value).
+    // Test: _core/otIngestRoute.test.ts (HTTP + DB giả), otIngestRoute.db.test.ts
+    // (CSDL _test thật: 7.000 / 12.000 mẫu ⇒ đúng bấy nhiêu dòng), và
+    // services/telemetryBus.honestIngest.test.ts, services/ot/storeForward.wal.test.ts.
+    //
+    // ⚠ Khối này giữ ĐÚNG số dòng cũ để các census ghim theo số dòng phía dưới
+    //   (vd bề mặt tĩnh `/uploads` ghim ở dòng 650) không trôi vì một lượt tách handler.
+    // ══════════════════════════════════════════════════════════════════════════
+    // Lý do loại (`reason`, máy đọc được — client quyết định gửi lại hay bỏ):
+    //   invalid_ts        — ts không phải ngày hợp lệ (gửi lại vô ích);
+    //   ts_too_far_future — ts vượt now + trần lệch (đồng hồ thiết bị sai);
+    //   contract_invalid  — CONTRACT_VALIDATE_INGEST_MODE=quarantine loại mẫu sai
+    //                       hợp đồng telemetry (chế độ off/log không loại gì);
+    //   invalid_value     — Postgres từ chối DỮ LIỆU của đúng dòng đó;
+    //   db_error          — DB vắng / mất kết nối ⇒ gửi lại được (ON CONFLICT
+    //                       DO NOTHING trên (deviceId, metric, ts) chặn ghi lặp).
+    // Ghi theo khối: khối đầu tiên hỏng vì DB ⇒ DỪNG (không đập tiếp một DB đang
+    // sập), mọi dòng chưa lưu = db_error; các khối trước đó đã lưu được ĐẾM đúng.
+    //
+    // Store-and-forward (OT_STORE_FORWARD_ENABLED): CHỈ dòng db_error được đệm
+    // vào WAL; WAL ghi NGUYÊN TỬ (tệp tạm → fsync → rename), dòng hỏng khi đọc
+    // lại bị bỏ + đếm + chép sang `<wal>.corrupt`, lượt xả WAL cũng chia khối
+    // và cách ly dòng Postgres từ chối dữ liệu (không chặn các dòng sau).
+    //
+    // TELEMETRY_BATCH_ENABLED (bộ đệm gộp) KHÔNG áp cho route này nữa: "accepted"
+    // phải là số ĐÃ LƯU, nên ingestTelemetryDetailed luôn ghi đồng bộ. Các đầu
+    // đọc nội bộ (OT adapters, MQTT bridge, MTConnect…) vẫn đi ingestTelemetry
+    // như cũ (vẫn hưởng cổng ts + chia khối).
+    //
+    // Nhánh anh em (Task 8, đã làm): /api/v1/ingest/telemetry (api/v1/router.ts) dùng
+    // ingestTelemetryDetailed + otIngestHttpStatus (202 khi đủ · 207 · 400 · 503), ràng buộc
+    // khoá ↔ máy (api/v1/ingestRangBuoc.ts) và đi CÙNG tầng rate-limit này (OT_INGEST_PATHS).
+    //
+    // Xác thực máy (x-api-key / body.apiKey / machineCode, scope ingest:write)
+    // giữ NGUYÊN, không nới; tầng rate-limit OT riêng (createOtIngestLimiter) giữ
+    // nguyên. Một lô vượt trần bị 413 TRƯỚC xác thực: rẻ, không đụng DB, chỉ lộ
+    // con số trần (không phải bí mật).
+    app.post("/api/ot/ingest", createOtIngestHandler({ authenticateMachine, ingestTelemetryDetailed }));
     console.log("[OT] high-throughput ingest route ready: POST /api/ot/ingest (dedicated rate tier)");
   }
 
   // Health check endpoint (rich diagnostics for Docker HEALTHCHECK / orchestrators)
-  app.get('/health', async (_req, res) => {
-    const startedAt = Date.now();
-    let dbStatus: 'connected' | 'disconnected' | 'error' = 'disconnected';
-    try {
-      const { getDb } = await import("../db/connection");
-      const dbInstance = await getDb();
-      if (dbInstance) dbStatus = 'connected';
-    } catch { dbStatus = 'error'; }
-
-    const mem = process.memoryUsage();
-    const memoryMB = Math.round(mem.heapUsed / 1024 / 1024);
-    const uptimeSec = Math.floor(process.uptime());
-    const version = process.env.npm_package_version || 'unknown';
-    const status = dbStatus === 'connected' ? 'ok' : 'degraded';
-
-    res.status(dbStatus === 'connected' ? 200 : 503).json({
-      status,
-      db: dbStatus,
-      memoryMB,
-      uptimeSec,
-      version,
-      checkMs: Date.now() - startedAt,
-      timestamp: new Date().toISOString(),
-    });
-  });
+  // ══════════════════════════════════════════════════════════════════════════
+  // doc 81 Đợt 1B Task 11 — `/health` NÓI THẬT (BE3 §L7). Handler ở
+  // ./healthProbes (createHealthHandler) để test mount ĐÚNG cái đang chạy.
+  //
+  // ĐO trước khi vá: handler nội tuyến cũ chỉ kiểm `Boolean(getDb())` — đối
+  // tượng drizzle đã cache, truthy mọi lúc có DATABASE_URL ⇒ `{status:"ok",
+  // db:"connected"}` cả khi Postgres đã sập.
+  //
+  // Nay `/health` là LIVENESS: luôn 200 khi tiến trình trả lời được (DB chập
+  // chờn không được làm Docker HEALTHCHECK / k8s liveness giết tiến trình);
+  // trạng thái DB trong thân lấy từ `SELECT 1` thật, hạn 1500 ms, cache ≤ 5 s
+  // ⇒ `status:"ok"` + `db:"connected"` CHỈ khi ping vừa thành công, ngược lại
+  // `status:"degraded"`. Cổng TRAFFIC là `/readyz` (503 `{db:"down"}`).
+  //
+  // Người gọi (đã rà): Dockerfile HEALTHCHECK, docker-compose*.yml healthcheck,
+  // Helm liveness/startup, k3s liveness/startup, edition-smoke CI (chờ
+  // `"status":"ok"`), e2e/api-health.spec.ts. Readiness của Helm/k3s đã chuyển
+  // sang `/readyz`. Thân giữ đủ các trường cũ (status, db, memoryMB, uptimeSec,
+  // version, checkMs, timestamp).
+  // Test: _core/healthMetricsNoiThat.test.ts (DB giả ném/treo + DB `_test` thật).
+  //
+  // ⚠ Khối này giữ ĐÚNG số dòng cũ để các census ghim theo số dòng phía dưới
+  //   (vd bề mặt tĩnh `/uploads` ghim ở dòng 650) không trôi vì lượt tách handler.
+  // ══════════════════════════════════════════════════════════════════════════
+  app.get('/health', createHealthHandler());
 
   // doc 44 W6-4 (G5.25) — split liveness/readiness for shadow→canary rollout gating.
   //   /livez  — process alive (never dependency-checked → no restart on a DB blip)
@@ -473,14 +473,14 @@ async function startServer() {
   app.get('/livez', (_req, res) => {
     res.status(200).json(livenessProbe());
   });
-  app.get('/readyz', async (_req, res) => {
-    try {
-      const result = await readinessProbe();
-      res.status(result.ready ? 200 : 503).json(result);
-    } catch {
-      res.status(503).json({ status: 'not_ready', ready: false, ts: new Date().toISOString() });
-    }
-  });
+  // doc 81 Đợt 1B Task 11: readiness = `SELECT 1` THẬT, hạn 1500 ms (single-flight,
+  //   kết quả cũ tối đa 1 s); lỗi / quá hạn / getDb treo ⇒ 503 `{db:"down"}` trong ≤ 2 s.
+  //   Trước đây `Boolean(getDb())` ⇒ luôn ready. Handler: ./healthProbes createReadyzHandler.
+  //   Helm `probes.readiness.path` + k3s readinessProbe trỏ về đây (không còn `/health`).
+  //   `/livez` ở trên vẫn KHÔNG chạm DB. Broker chỉ để tham khảo, không phải cổng.
+  //   Test: _core/healthMetricsNoiThat.test.ts.
+  //   (Giữ đúng 8 dòng như khối cũ — xem ghi chú số dòng ở `/health`.)
+  app.get('/readyz', createReadyzHandler());
 
   // ── G1-E (2026-08-16) — SẴN SÀNG THẬT CỦA HẠ TẦNG AI ────────────────────────────────────────
   // VÌ SAO THÊM MỚI CHỨ KHÔNG SỬA `/health`: `/health` + `/livez` + `/readyz` ở trên đang là cổng
@@ -525,41 +525,41 @@ async function startServer() {
   // ============================================================
 
   // Comprehensive server health for network monitor
-  app.get('/api/network/health', async (_req, res) => {
-    try {
-      const { isMqttRunning, getConnectedClientsCount } = await import("../services/mqttService");
-      const { getDb } = await import("../db/connection");
-
-      // Check DB
-      let dbStatus = 'disconnected';
-      try {
-        const dbInstance = await getDb();
-        if (dbInstance) dbStatus = 'connected';
-      } catch { dbStatus = 'error'; }
-
-      // Memory usage
-      const mem = process.memoryUsage();
-      const memoryUsageMB = Math.round(mem.heapUsed / 1024 / 1024);
-
-      // Uptime
-      const uptimeSec = Math.floor(process.uptime());
-      const hours = Math.floor(uptimeSec / 3600);
-      const minutes = Math.floor((uptimeSec % 3600) / 60);
-      const uptime = `${hours}h ${minutes}m`;
-
-      res.json({
-        status: 'ok',
-        timestamp: new Date().toISOString(),
-        mqttStatus: isMqttRunning() ? 'running' : 'stopped',
-        mqttClients: getConnectedClientsCount(),
-        dbStatus,
-        memoryUsageMB,
-        uptime,
-      });
-    } catch (error: any) {
-      res.status(500).json({ status: 'error', message: error?.message });
-    }
-  });
+  // ══════════════════════════════════════════════════════════════════════════
+  // doc 81 Đợt 1B Task 11 (fix round 1 mục 4) — handler tách sang ./healthProbes
+  // (createNetworkHealthHandler) để test HÀNH VI trên đúng cái đang chạy
+  // (healthMetricsNoiThat.test.ts §8), không chỉ đọc mã nguồn.
+  //
+  // ĐO trước khi vá: `dbStatus` = `Boolean(getDb())` ⇒ luôn 'connected' cả khi
+  // Postgres sập (đối tượng drizzle cache, postgres.js nối lười).
+  //
+  // Nay `dbStatus` từ `SELECT 1` thật trên client ping RIÊNG (hạn 1500 ms, cache
+  // ≤ 5 s, không lấy slot của pool request):
+  //   'connected'    — SELECT 1 vừa trả lời trong hạn;
+  //   'error'        — SELECT 1 ném (trước đây là một `catch` chết: nay đến được);
+  //   'disconnected' — quá hạn / không có DATABASE_URL.
+  // FactoryAlertSystem (networkMonitorService.ts) đọc `dbStatus === 'connected'`.
+  // Hình dạng thân { status, timestamp, mqttStatus, mqttClients, dbStatus,
+  // memoryUsageMB, uptime } và mã 200 / 500 giữ như handler nội tuyến cũ.
+  //
+  // Cùng MỘT pinger với các probe anh em (một nguồn sự thật cho trạng thái DB):
+  //   GET /health              — liveness, luôn 200, thân mang trạng thái DB;
+  //   GET /readyz              — readiness, 503 {db:"down"} khi SELECT 1 hỏng;
+  //   GET /api/external/health — probe Federation, trường `db` up/down.
+  // Client ping riêng: postgres `max: 1`, connect_timeout 2 s, idle 10 s,
+  // application_name `aoi-health-ping`; quá hạn ⇒ đóng socket (HUỶ lượt treo).
+  // Một câu trả lời về SAU hạn được ghi là quá hạn (không lật trạng thái).
+  //
+  // 500 { status:'error', message } chỉ còn khi nạp mqttService / đọc bộ
+  // đếm MQTT hỏng — ping DB tự nó không bao giờ ném.
+  // Tuyến vẫn đi qua apiLimiter của `/api/` (mount ở trên) như trước; không
+  // xác thực (như trước) — thân không chứa dữ liệu tenant.
+  // Test HÀNH VI: ném ⇒ 'error' · treo ⇒ 'disconnected' ≤ 2 s · truthy-nhưng-sập
+  // ⇒ không 'connected' · hợp lệ ⇒ 'connected' + đủ trường FactoryAlert đọc.
+  //
+  // ⚠ Khối này giữ ĐÚNG số dòng cũ (census ghim theo số dòng phía dưới).
+  // ══════════════════════════════════════════════════════════════════════════
+  app.get('/api/network/health', createNetworkHealthHandler());
 
   // Speed test endpoint — returns random bytes of configurable size
   app.get('/api/network/speedtest', (req, res) => {
@@ -5799,11 +5799,11 @@ async function startServer() {
   // I2-b model auto-rollback sweep + doc 22 P2 model perf snapshot producer:
   // MOVED to the W4-D background scheduler set (backgroundJobs.ts).
 
-  app.use("/api/trpc", licenseEnforcementMiddleware());
+  app.use("/api/trpc", licenseEnforcementMiddleware({ procedureType: (p) => trpcProcedureType(appRouter, p) }));
   // tRPC API
   app.use(
     "/api/trpc",
-    createExpressMiddleware({
+    createTrpcMiddleware({
       router: appRouter,
       createContext,
     })
@@ -6293,14 +6293,8 @@ async function startServer() {
     console.error("[OpcuaGateway] init failed:", (err as any)?.message || err);
   }
 
-  // F1.1 — OT Connectivity Framework (parallel to OPC-UA scaffold above).
-  // Disabled by default; opt in via OT_GATEWAY_ENABLED=true.
-  try {
-    const { startOt } = await import("../services/ot");
-    await startOt();
-  } catch (err) {
-    console.error("[OT] init failed:", (err as any)?.message || err);
-  }
+  // F1.1 — OT Connectivity Framework: khởi động NỀN ngay sau `server.listen` (bên dưới) —
+  // doc 81 Đợt 1B Task 2 (BE1 §0 (3)): chờ startOt ở đây từng chặn listen vô hạn.
 
   // MTConnect ingestion — poll MTConnect Agents (CNC / machine tools) → telemetry.
   // Additive + parallel to OT framework. No-op unless MTCONNECT_ENABLED=true.
@@ -6417,7 +6411,7 @@ async function startServer() {
       : 65_000;
   server.keepAliveTimeout = 61_000;
 
-  server.listen(port, () => {
+  const onListening = () => {
     logger.info({ port, protocol }, `Server running on ${protocol}://localhost:${port}/`);
 
     // doc 33 F1 (SYNAPSE ADR-007): report the resolved edition + infra profile (advisory).
@@ -6431,7 +6425,23 @@ async function startServer() {
     cacheWarmingService.initialize().catch(err => {
       logger.error({ err }, '[CacheWarming] Failed to initialize');
     });
-  });
+  };
+
+  // F1.1 — OT Connectivity Framework (parallel to OPC-UA scaffold above).
+  // Disabled by default; opt in via OT_GATEWAY_ENABLED=true.
+  // doc 81 Đợt 1B Task 2 — listen (port, onListening) TRƯỚC, rồi OT chạy NỀN, không
+  // await: một thiết bị treo không còn giữ được boot; lỗi chỉ được log (không bao giờ reject).
+  // Mỗi adapter tự có hạn khởi động OT_ADAPTER_START_TIMEOUT_MS (otManager).
+  void listenThenStartOt(
+    server,
+    port,
+    onListening,
+    async () => {
+      const { startOt } = await import("../services/ot");
+      await startOt();
+    },
+    (message, detail) => console.error(message, detail),
+  );
   
   // Graceful shutdown
   let isShuttingDown = false;

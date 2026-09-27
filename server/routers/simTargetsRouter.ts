@@ -11,6 +11,14 @@
  * URSim deploy service (same DPC_DEPLOY_ENABLED + HITL gate; URSim is a safe VIRTUAL
  * device). The bridge connect/disconnect only manage the transport — ROS2 COMMANDS still
  * route through robotCommandDispatcher. ctx.user is the source of truth for HITL.
+ *
+ * doc 81 Đợt 1B Task 3 (BE2 §L3b, §3 S2): `validateUrscript` / `ursimPing` NO LONGER take a
+ * caller-supplied host/port — that let anyone with machine_control point `power on` +
+ * `brake release` + an arbitrary script at a REAL UR arm. Input is only a `targetId` of a
+ * server-registered sim target (`resolveSimTarget`: today only "default" = URSIM_HOST,
+ * refused when that host is a robot / device adapter in the DB). Unknown / unverifiable
+ * target ⇒ PRECONDITION_FAILED. Extra input keys (host, endpoint, ports) ⇒ Zod rejects.
+ * `ursimPing` is gated exactly like `validateUrscript` (URSIM_ENABLED + machine_control/canCreate).
  * ════════════════════════════════════════════════════════════════════════════
  */
 import { z } from "zod";
@@ -23,8 +31,8 @@ import {
   validateUrscriptOnUrsim,
   ursimEnabled,
   ursimEndpointFromEnv,
-  type UrsimEndpoint,
 } from "../services/robot/ursim";
+import { resolveSimTarget } from "../services/robot/ursim/simTargetRegistry";
 import {
   ros2BridgeEnabled,
   rosbridgeUrlFromEnv,
@@ -36,16 +44,16 @@ import {
 // In-process cache of the last URSim validation result (read-back for the UI). Best-effort.
 let lastUrsimValidation: { at: string; result: unknown } | null = null;
 
-const endpointInput = z.object({
-  host: z.string().min(1),
-  scriptPort: z.number().int().min(1).max(65535).optional(),
-  dashboardPort: z.number().int().min(1).max(65535).optional(),
-  timeoutMs: z.number().int().min(500).max(60000).optional(),
-});
+/**
+ * A registered sim target id (today only "default"). `.strict()` on the enclosing objects ⇒
+ * any caller-supplied host / endpoint / port key is a Zod error, never silently ignored.
+ */
+const targetIdInput = z.string().min(1).max(64);
 
-function resolveEndpoint(input?: z.infer<typeof endpointInput>): UrsimEndpoint | null {
-  if (input) return input;
-  return ursimEndpointFromEnv();
+function assertUrsimEnabled(): void {
+  if (!ursimEnabled()) {
+    throw appError("CONFLICT", "FEATURE_DISABLED", { feature: "ursimHarness" }, "URSim harness disabled (set URSIM_ENABLED=true)");
+  }
 }
 
 export const simTargetsRouter = router({
@@ -65,14 +73,18 @@ export const simTargetsRouter = router({
       },
     })),
 
-  /** Cheap URSim reachability probe (dashboard port). Honest — never fabricates reachable. */
+  /**
+   * Cheap URSim reachability probe (dashboard port) of a REGISTERED sim target. Honest —
+   * never fabricates reachable. Same gate as validateUrscript (URSIM_ENABLED +
+   * machine_control/canCreate): it opens a TCP socket, so a view-only role may not aim it.
+   */
   ursimPing: protectedProcedure
-    .use(requirePermission("machine_monitoring", "canView"))
-    .input(z.object({ endpoint: endpointInput.optional() }).optional())
+    .use(requirePermission("machine_control", "canCreate"))
+    .input(z.object({ targetId: targetIdInput }).strict())
     .query(async ({ input }) => {
-      const ep = resolveEndpoint(input?.endpoint);
-      if (!ep) return { reachable: false, error: "No URSim endpoint (set URSIM_HOST or pass endpoint)" };
-      return new UrsimClient(ep).ping();
+      assertUrsimEnabled();
+      const target = await resolveSimTarget(input.targetId);
+      return new UrsimClient(target.endpoint).ping();
     }),
 
   /** ROS2 bridge status read-back. */
@@ -93,18 +105,14 @@ export const simTargetsRouter = router({
     .use(requirePermission("machine_control", "canCreate"))
     .input(z.object({
       urscript: z.string().min(1).max(200_000),
-      endpoint: endpointInput.optional(),
+      targetId: targetIdInput,
       powerOn: z.boolean().optional(),
-    }))
+    }).strict())
     .mutation(async ({ input }) => {
-      if (!ursimEnabled()) {
-        throw appError("CONFLICT", "FEATURE_DISABLED", { feature: "ursimHarness" }, "URSim harness disabled (set URSIM_ENABLED=true)");
-      }
-      const ep = resolveEndpoint(input.endpoint);
-      if (!ep) {
-        throw appError("BAD_REQUEST", "FIELD_REQUIRED", { field: "ursimEndpoint" }, "No URSim endpoint (set URSIM_HOST or pass endpoint)");
-      }
-      const result = await validateUrscriptOnUrsim(input.urscript, ep, { powerOn: input.powerOn });
+      assertUrsimEnabled();
+      // power on / brake release / script go ONLY to the registered, verified-virtual target.
+      const target = await resolveSimTarget(input.targetId);
+      const result = await validateUrscriptOnUrsim(input.urscript, target.endpoint, { powerOn: input.powerOn });
       lastUrsimValidation = { at: new Date().toISOString(), result };
       return result;
     }),

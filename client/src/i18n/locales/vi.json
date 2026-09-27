@@ -648,6 +648,8 @@
   "ecn": {
     "title": "Thay đổi kỹ thuật",
     "subtitle": "Quy trình yêu cầu thay đổi ECN / ECO — phân tích tác động, phê duyệt maker-checker và ngày hiệu lực.",
+    "filteringPending": "Đang lọc: chỉ hiện ECN chờ duyệt (đang gửi / đang xem xét)",
+    "showAll": "Xem tất cả",
     "noPermission": "Bạn không có quyền xem thay đổi kỹ thuật.",
     "new": "Thay đổi mới",
     "newTitle": "Thay đổi kỹ thuật mới",
@@ -2417,8 +2419,10 @@
     "gate": {
       "needPerm": "Cần quyền {{perm}}",
       "flagOff": "Tính năng đang TẮT — bật cờ {{flag}}",
+      "checkingStatus": "Đang kiểm tra trạng thái tính năng…",
       "selectFactory": "Chọn nhà máy trước"
     },
+    "featureStatusError": "Không kiểm tra được trạng thái tính năng — tạm coi là chưa dùng được.",
     "dismiss": "Bỏ qua",
     "pleaseEnterSerialNumber": "Please enter Số seri Số",
     "imageCompareDescription": "So sánh hai hình ảnh cạnh nhau",
@@ -3817,6 +3821,7 @@
       "kbGoldenSet": "bộ câu hỏi vàng"
     },
     "operation": {
+      "clearRobotMotionLock": "gỡ khoá chuyển động của robot",
       "deployBuild": "deploy build chương trình",
       "requestDeployApproval": "gửi yêu cầu duyệt deploy",
       "approveDeployment": "duyệt deploy chương trình",
@@ -3947,6 +3952,7 @@
       "rollbackAiModel": "rollback model AI",
       "setLatestSoftwareVersion": "đặt phiên bản phần mềm mới nhất",
       "connectRos2Bridge": "kết nối cầu nối ROS2",
+      "resolveSimTarget": "xác định đích giả lập URSim",
       "loginWithPassword": "đăng nhập bằng mật khẩu",
       "setupAdmin": "khởi tạo tài khoản admin đầu tiên",
       "deleteMqttClientProfile": "xoá hồ sơ client MQTT",
@@ -3962,7 +3968,13 @@
       "taiAnhNenTang": "tải ảnh nền của tầng lên",
       "dungNhaXuong": "dựng nhà xưởng",
       "runKbEval": "chạy đánh giá corpus",
-      "resumeOrchestrationRun": "tiếp tục lượt chạy điều phối"
+      "resumeOrchestrationRun": "tiếp tục lượt chạy điều phối",
+      "buildArtifact": "build phiên bản chương trình",
+      "requestVersionReview": "yêu cầu duyệt phiên bản chương trình",
+      "reviewArtifact": "duyệt phiên bản chương trình",
+      "approveInterlockRule": "duyệt quy tắc khoá liên động",
+      "releaseRecipeVersion": "phát hành phiên bản công thức",
+      "rollbackRecipeVersion": "quay lui phiên bản công thức"
     },
     "field": {
       "changeReason": "lý do thay đổi",
@@ -3972,6 +3984,7 @@
       "datasetId": "mã tập dữ liệu",
       "modelCardGovernanceFields": "trường quản trị của model card",
       "annotationIdOrImageUrl": "mã chú thích hoặc URL ảnh",
+      "opcuaSecurity": "cấu hình bảo mật OPC UA",
       "idOrPackageId": "mã hoặc mã gói",
       "decommissionReason": "lý do ngừng hoạt động",
       "licenseKey": "khoá giấy phép",
@@ -4056,7 +4069,8 @@
       "mimeType": "định dạng ảnh",
       "goldenSet": "bộ câu hỏi vàng",
       "target": "đích tác động",
-      "endpoint": "địa chỉ endpoint"
+      "endpoint": "địa chỉ endpoint",
+      "reviewReason": "lý do từ chối"
     },
     "feature": {
       "webIngest": "nạp nội dung từ web",
@@ -4173,13 +4187,28 @@
       "viewAiTimeSeries": "xem chuỗi thời gian AI",
       "approveOrchestrationGate": "duyệt cổng này của quy trình điều phối",
       "selfApproveOrchestrationGate": "tự duyệt cổng 4 mắt của lượt chạy do chính mình khởi động",
-      "selfApproveInterlockRule": "tự duyệt quy tắc khoá liên động của chính mình"
+      "selfApproveInterlockRule": "tự duyệt quy tắc khoá liên động của chính mình",
+      "sendTechmanScript": "gửi script tới robot Techman",
+      "sendTechmanConsoleVerb": "gửi lệnh console start/reset/pause tới robot Techman",
+      "sendUrScript": "gửi URScript tuỳ ý tới robot UR",
+      "overrideUrHome": "tự đặt vị trí home cho robot UR",
+      "selfApproveProgramVersion": "tự duyệt phiên bản chương trình của chính mình"
     },
     "reason": {
+      "robotNotActive": "Robot này chưa được cổng robot của tiến trình nạp (đang tắt hoặc ROBOT_GATEWAY_ENABLED chưa bật) nên không có khoá chuyển động sống để gỡ.",
+      "opcuaSecurityInvalid": "securityMode/securityPolicy không hợp lệ hoặc mâu thuẫn (vd None đi với Basic256Sha256, hoặc SignAndEncrypt đi với None). Chọn None/None, hoặc Sign/SignAndEncrypt với một chính sách như Basic256Sha256.",
+      "secretReentryRequired": "Bạn vừa đổi {{field}} — tức nơi gửi hoặc cách bảo vệ mật khẩu đã lưu — nên hệ thống không dùng lại mật khẩu cũ. Hãy nhập lại mật khẩu/bí mật rồi lưu; chưa có gì được thay đổi.",
+      "motionLockUnsupported": "Driver của hãng này dùng kết nối một lần cho mỗi lệnh nên không có khoá chuyển động; không có gì để gỡ.",
+      "motionLockChanged": "Khoá chuyển động đã thay đổi trong lúc bạn xác nhận (có lần mất kết nối mới). Không gỡ gì cả; hãy đọc lại trạng thái robot rồi xác nhận lại.",
       "deploymentNotAwaitingApproval": "Yêu cầu này không còn ở trạng thái chờ duyệt (đã được người khác duyệt/từ chối hoặc đang xử lý). Tải lại danh sách để xem trạng thái hiện tại.",
       "deployApprovalRecordMissing": "Không tìm thấy bản ghi phê duyệt gắn với yêu cầu này — không thể duyệt; hãy gửi lại yêu cầu deploy.",
       "deployApprovalRecordInvalid": "Bản ghi phê duyệt đã hết hiệu lực (đã thực thi, bị huỷ hoặc hết hạn) — không thể duyệt lại.",
       "rollbackTargetNotDeployed": "Chỉ khôi phục được một lần deploy đã thực hiện; deployment này bị từ chối, đang chờ duyệt hoặc đang chạy.",
+      "simTargetUnknown": "Đích giả lập này không có trong danh sách máy chủ đã đăng ký (hiện chỉ có đích \"default\" cấu hình bằng URSIM_HOST).",
+      "simTargetIsRealDevice": "Địa chỉ đích giả lập trùng với một robot hoặc adapter thiết bị thật đã đăng ký — hệ thống từ chối gửi lệnh bật nguồn, nhả phanh và script tới thiết bị thật. Hãy trỏ URSIM_HOST tới máy chạy URSim.",
+      "simTargetUnresolvable": "Không phân giải được URSIM_HOST ra địa chỉ IP — không thể chứng minh đích giả lập không phải thiết bị thật nên hệ thống từ chối.",
+      "simTargetUnspecified": "URSIM_HOST là (hoặc phân giải ra) địa chỉ không xác định 0.0.0.0/::, mà hệ điều hành sẽ nối về loopback — địa chỉ được kiểm không phải địa chỉ thật sự nối tới nên hệ thống từ chối. Hãy đặt URSIM_HOST là IP cụ thể của máy URSim.",
+      "deviceHostUnresolvable": "Có robot hoặc adapter thiết bị đăng ký bằng tên máy không phân giải được, nên không thể chứng minh URSIM_HOST không phải thiết bị đó — hệ thống từ chối (chỉ URSim loopback cục bộ được miễn).",
       "noPriorDeploymentToRollBack": "Không có lần deploy thành công nào trước đó trên cùng thiết bị/giai đoạn để khôi phục về.",
       "idempotencyKeyUnreadable": "Khoá idempotency đã được dùng nhưng không đọc lại được bản ghi — thử lại với một lượt mới.",
       "owner-not-in-local-ledger": "Hộ này không có trong SỔ CỤC BỘ của tiến trình đang trả lời; nó có thể do một tiến trình khác giữ (xem state.ledger.foreign.holders) — hãy ra lệnh vram.preempt ở ĐÚNG tiến trình đang giữ hộ đó.",
@@ -4228,7 +4257,20 @@
       "releasedProgramRequiresApproval": "Sản phẩm đã có chương trình kiểm tra được phát hành — thay đổi ngưỡng phải qua hàng đợi duyệt (Threshold Approvals).",
       "productLifecycleRequiresApproval": "Sản phẩm đang ở trạng thái vòng đời '{{lifecycleStatus}}' — thay đổi ngưỡng phải qua hàng đợi duyệt (Threshold Approvals).",
       "evalAlreadyRunning": "Đang có một lượt đánh giá chạy — chờ lượt đó xong.",
-      "runAlreadyClaimed": "Lượt chạy đã được người khác duyệt, từ chối hoặc dừng — hãy tải lại danh sách."
+      "runAlreadyClaimed": "Lượt chạy đã được người khác duyệt, từ chối hoặc dừng — hãy tải lại danh sách.",
+      "techmanScriptNotAllowlisted": "Chỉ nhận các lệnh trong danh sách trắng Techman (ScriptExit(), StopAndClearBuffer()); script khác bị từ chối và không có gì được gửi tới robot.",
+      "techmanConsoleVerbUnvalidated": "Lệnh start/reset/pause trên robot Techman chưa được kiểm chứng (FAT): chúng sẽ gửi ScriptExit() và TMflow chạy tiếp flow, có thể làm robot chuyển động. Lệnh bị từ chối, không có gì được gửi tới robot.",
+      "urScriptForbidden": "Không nhận URScript tuỳ ý từ console cho robot UR; lệnh bị từ chối, không có gì được gửi tới robot.",
+      "urHomeParamForbidden": "Vị trí home của robot UR chỉ lấy từ cấu hình đã lưu của robot, không nhận từ lệnh; lệnh bị từ chối, không có gì được gửi tới robot.",
+      "versionNotApproved": "Phiên bản này chưa được DUYỆT. Một người khác tác giả phải duyệt nó (nút \"Duyệt\" trên thẻ phiên bản) trước khi build/deploy.",
+      "versionReviewNotPending": "Phiên bản này không còn chờ duyệt (đã duyệt hoặc bị từ chối). Muốn sửa thì lưu một phiên bản mới.",
+      "buildChecksumMismatch": "Biên dịch lại nguồn của phiên bản không khớp build đã lưu — bản sắp nạp không phải bản đã build/mô phỏng. Hãy build và mô phỏng lại rồi deploy. Chưa có gì được ghi xuống thiết bị.",
+      "interlockRuleChanged": "Quy tắc đã bị sửa kể từ lúc bạn mở trang — danh sách đã được tải lại. Xem nội dung mới rồi duyệt/bật lại.",
+      "runGateChanged": "Lượt chạy không còn chờ ở bước bạn đang xem (bước đó đã được người khác quyết định). Tải lại để xem bước đang chờ hiện tại.",
+      "recipeNotApproved": "Phiên bản công thức này chưa được người thứ hai duyệt — không thể triển khai/phát hành/quay lui về nó.",
+      "recipeArchived": "Phiên bản công thức này đã lưu trữ — hãy tạo phiên bản mới thay vì đưa bản đã lưu trữ vào chạy.",
+      "recipeMachineTypeMismatch": "Công thức này dành cho loại máy khác với máy đích — không thể triển khai lên máy này.",
+      "recipeRetired": "Phiên bản này đã bị CỐ Ý lưu trữ (không phải chỉ bị thay bằng bản mới), hoặc không có dấu vết từng bị thay — không thể quay lui về nó. Hãy tạo phiên bản mới."
     },
     "client": {
       "generic": "Lỗi hệ thống, vui lòng thử lại",
@@ -11771,7 +11813,8 @@
     "continueRunDesc": "Lượt chạy sẽ đi tiếp từ điểm bị ngắt và có thể gửi lệnh thật tới máy. Các bước đã hoàn tất được bỏ qua.",
     "continueRunConfirm": "Tiếp tục chạy",
     "rollbackImpact": "Cần mã OTP và lý do; lý do được ghi vào nhật ký kiểm toán.",
-    "runFail": "Không bắt đầu được lượt chạy"
+    "runFail": "Không bắt đầu được lượt chạy",
+    "runNotDeployed": "Đây là workflow ở dạng \"{{status}}\" — hãy Triển khai (Deploy) trước, rồi mới chạy được."
   },
   "aiHub": {
     "subtitle": "Các tính năng AI cho trí tuệ kiểm tra",
@@ -12207,7 +12250,22 @@
       "INTERNAL": "Trợ lý gặp lỗi hệ thống. Thử lại; nếu lặp lại, báo quản trị viên.",
       "devDetail": "Chi tiết kỹ thuật (quản trị viên)"
     },
-    "safetyNotCertified": "Chương trình liên quan an toàn — phần giải thích này KHÔNG phải chứng nhận. Cần kỹ sư an toàn có thẩm quyền kiểm định."
+    "safetyNotCertified": "Chương trình liên quan an toàn — phần giải thích này KHÔNG phải chứng nhận. Cần kỹ sư an toàn có thẩm quyền kiểm định.",
+    "stream": {
+      "cancel": "Huỷ",
+      "cancelled": "Đã huỷ — trợ lý đã dừng và máy chủ AI đã được giải phóng.",
+      "progress": "Tiến độ",
+      "notLicensed": "Giấy phép của hệ thống chưa gồm module Kỹ thuật (Engineering).",
+      "forbidden": "Bạn không có quyền dùng trợ lý lập trình.",
+      "streaming": "Đang viết…",
+      "stage": {
+        "gate": "Kiểm tra an toàn",
+        "retrieve": "Tra sổ tay",
+        "generate": "Sinh kết quả",
+        "validate": "Kiểm tra mã",
+        "repair": "Tự sửa (lượt {{attempt}})"
+      }
+    }
   },
   "technicianCopilot": {
     "title": "Trợ lý Kỹ thuật",
@@ -13306,6 +13364,8 @@
   },
   "recipes": {
     "title": "Quản lý Recipe máy",
+    "filteringPending": "Đang lọc: chỉ hiện mã có phiên bản cần chú ý",
+    "showAll": "Xem tất cả",
     "toastApproved": "Đã duyệt công thức",
     "approvalStatus": "Duyệt",
     "approved": "Đã duyệt",
@@ -13532,11 +13592,14 @@
   },
   "interlockRules": {
     "whenToUse": "Khi nào dùng — định nghĩa quy tắc an toàn tự động dừng/giảm tốc máy khi vượt giới hạn, và xem lại các sự kiện đã kích hoạt.",
+    "filteringPending": "Đang lọc: chỉ hiện quy tắc chưa duyệt",
+    "showAll": "Xem tất cả",
     "title": "Quản lý quy tắc Interlock",
     "subtitle": "Cấu hình + duyệt + bật/tắt quy tắc interlock. Trang KHÔNG ghi lệnh xuống máy; lệnh ghi đi qua HITL/interlock đã duyệt.",
     "newRule": "Thêm quy tắc",
     "editRule": "Sửa quy tắc",
     "ruleDialogDesc": "Quy tắc mới luôn ở trạng thái TẮT + CHƯA DUYỆT cho tới khi admin duyệt và bật.",
+    "editApprovedWarning": "Rule này đã DUYỆT hoặc đang BẬT — Lưu sẽ tắt rule và cần duyệt lại.",
     "tabRules": "Quy tắc",
     "tabEvents": "Sự kiện",
     "rules": "Quy tắc",
@@ -14456,7 +14519,24 @@
     "openConsoleTip": "Mở Command Console để phát lệnh có gate (HITL + dry-run)",
     "controlTip": "Mở Command Console cho robot này (phát lệnh có gate)",
     "control": "Điều khiển",
-    "adminRequired": "Chỉ quản trị viên (admin) mới bật/tắt hoặc kiểm tra kết nối thiết bị"
+    "adminRequired": "Chỉ quản trị viên (admin) mới bật/tắt hoặc kiểm tra kết nối thiết bị",
+    "live": {
+      "linkLost": "Mất kết nối",
+      "connected": "Đang kết nối"
+    },
+    "motionLock": {
+      "roleRequired": "Cần vai admin/supervisor/engineer và quyền điều khiển máy (machine_control)",
+      "badge": "Khoá chuyển động",
+      "tip": "Chuyển động bị khoá sau khi mất kết nối / kết cục lệnh không rõ ({{reason}}, từ {{since}}). Chỉ một lệnh DỪNG được robot xác nhận hoặc thao tác gỡ khoá có kiểm soát mới mở lại.",
+      "clear": "Gỡ khoá",
+      "clearTitle": "Gỡ khoá chuyển động cho {{code}}?",
+      "clearDesc": "Khoá được đặt vì {{reason}} (từ {{since}}). Trước khi gỡ, hãy xác nhận tại chỗ rằng robot đã dừng và khu vực an toàn. Thao tác này được ghi vào nhật ký kiểm toán kèm lý do của bạn; không có byte nào được gửi tới robot.",
+      "reasonLabel": "Lý do (bắt buộc, ít nhất 3 ký tự)",
+      "reasonPlaceholder": "Ví dụ: đã kiểm tra tại chỗ, robot đứng yên, khu vực trống",
+      "confirm": "Xác nhận gỡ khoá",
+      "cleared": "Đã gỡ khoá chuyển động cho {{code}}",
+      "notLocked": "Robot {{code}} không bị khoá chuyển động"
+    }
   },
   "controlPlane": {
     "title": "Factory Control Plane",
@@ -15506,6 +15586,11 @@
     "buildOk": "Build OK",
     "deployBtn": "Triển khai build",
     "deployFlag": "Triển khai",
+    "deployOn": "BẬT",
+    "deployOff": "TẮT",
+    "deployChecking": "…",
+    "deployUnknown": "?",
+    "deployStatusError": "Không kiểm tra được trạng thái triển khai — tạm coi mọi deploy chỉ mô phỏng cho tới khi xác nhận lại.",
     "modeCode": "Code",
     "modeLadder": "Ladder",
     "modeTeach": "Dạy/Jog",
@@ -15516,7 +15601,7 @@
     "code": "Mã",
     "dataType": "Kiểu",
     "deploy": "Deploy (có kiểm soát)",
-    "deployOffBanner": "DPC_DEPLOY_ENABLED đang TẮT — mọi deploy được ghi nhận là SIMULATED, không ghi xuống thiết bị. An toàn (E-stop/interlock) luôn nằm trên PLC chứng nhận.",
+    "deployOffBanner": "Triển khai thật đang tắt — mọi deploy chỉ mô phỏng, không ghi xuống thiết bị. An toàn (E-stop/interlock) luôn nằm trên PLC chứng nhận.",
     "deployReal": "Đã deploy",
     "deployVerified": "Đã deploy & xác minh (read-back khớp)",
     "deployedUnverified": "Đã deploy nhưng CHƯA xác minh read-back (thiết bị vắng / không hỗ trợ đọc lại)",
@@ -15538,6 +15623,7 @@
     "noDeploys": "Chưa có deploy",
     "noDiag": "Không có cảnh báo",
     "noProjects": "Chưa có dự án",
+    "projectsLoadError": "Không tải được danh sách dự án.",
     "searchProjects": "Tìm theo tên hoặc mã…",
     "allKinds": "Tất cả loại",
     "noProjectMatch": "Không có dự án khớp bộ lọc",
@@ -15628,11 +15714,172 @@
     "fleetPromoted": "Canary đạt — đã promote toàn đội máy",
     "fleetCanaryOk": "Canary đã chạy xong",
     "fleetHaltedShort": "DỪNG — canary không đạt",
+    "fleetNeedsRealCanaryShort": "DỪNG — cần canary thật",
+    "fleetNeedsRealCanary": "Rollout đã DỪNG: canary chỉ giả lập (không ghi xuống thiết bị) nên không được tính là đạt khi promote sẽ ghi thật. Cần một canary thật (deployed/verified).",
     "fleetPromotedShort": "Đã promote toàn đội máy",
     "fleetCanaryOkShort": "Canary đã chạy",
     "rolledBack": "Đã khôi phục",
     "fleetMatrix": "Ma trận máy × version",
-    "fleetMatrixEmpty": "Chưa có máy nào ghi nhận phiên bản"
+    "fleetMatrixEmpty": "Chưa có máy nào ghi nhận phiên bản",
+    "deployReason": {
+      "techman_program_download_unsupported": "Robot Techman (robot-tm) chưa hỗ trợ tải chương trình — không có lệnh tải chương trình TMflow nào được cài đặt, nên KHÔNG có gì được gửi xuống robot."
+    },
+    "review": {
+      "title": "Duyệt phiên bản",
+      "status": {
+        "pending_review": "Chờ duyệt",
+        "approved": "Đã duyệt",
+        "rejected": "Bị từ chối"
+      },
+      "requested": "Đã yêu cầu duyệt",
+      "rejectedReason": "Lý do từ chối",
+      "request": "Yêu cầu duyệt",
+      "authorHint": "Bạn là tác giả — một người KHÁC phải duyệt phiên bản này.",
+      "approve": "Duyệt",
+      "reject": "Từ chối",
+      "rejectTitle": "Từ chối phiên bản",
+      "rejectDesc": "Tác giả sẽ đọc lý do này để sửa và lưu phiên bản mới.",
+      "rejectReason": "Lý do từ chối (bắt buộc)",
+      "rejectConfirm": "Từ chối",
+      "buildLocked": "Phiên bản chưa được DUYỆT — cần một người khác tác giả duyệt trước khi build.",
+      "rejectedToast": "Đã từ chối phiên bản",
+      "approvedToast": "Đã duyệt phiên bản",
+      "requestedToast": "Đã gửi yêu cầu duyệt"
+    },
+    "deployPreview": {
+      "title": "Xem trước deploy (kiểm khô mọi cổng, trước khi hỏi OTP)",
+      "unavailable": "Không đọc được bản xem trước deploy — chưa biết lượt deploy này sẽ ghi thật hay chỉ mô phỏng.",
+      "gatesLabel": "Các cổng deploy",
+      "atDeploy": "chỉ biết khi deploy",
+      "verdict": {
+        "real": "Sẽ GHI THẬT xuống thiết bị",
+        "simulated": "Chỉ ghi nhận MÔ PHỎNG — không ghi thiết bị",
+        "blocked": "Sẽ BỊ CHẶN — sửa các cổng ✗ trước khi deploy"
+      },
+      "gate": {
+        "permission": "Quyền",
+        "approver": "Người duyệt",
+        "role": "Vai trò",
+        "twoFactor": "Xác thực 2 bước",
+        "signer": "Người ký",
+        "versionReview": "Duyệt phiên bản",
+        "buildOk": "Build",
+        "deployFlag": "Cờ deploy",
+        "signOff": "Ký duyệt",
+        "segregationOfDuties": "Phân tách nhiệm vụ",
+        "simulationGate": "Cổng mô phỏng",
+        "buildChecksum": "Checksum build",
+        "adapterPath": "Đường nạp thiết bị",
+        "adapterEndpoint": "Đích thiết bị",
+        "adapterReachable": "Kết nối thiết bị",
+        "adapterArtifact": "Tệp nạp",
+        "adapterDriver": "Driver nạp",
+        "otAuthorization": "Xác thực HITL (OT)",
+        "otAdapter": "Adapter OT",
+        "otTags": "Tag OT",
+        "otMode": "Chế độ điều khiển OT",
+        "otBinding": "Gắn lệnh OT một-lần",
+        "irSimGate": "Cổng mô phỏng IR",
+        "irHil": "HIL (URSim)",
+        "verifyAfterDownload": "Kiểm tra sau nạp"
+      },
+      "reason": {
+        "permissionGranted": "có quyền machine_control",
+        "permissionMissing": "thiếu quyền machine_control (tạo)",
+        "approverSignsInInbox": "người thứ hai ký ở Hộp duyệt bằng phiên của họ (vai/2FA kiểm lúc duyệt)",
+        "roleAllowed": "vai được phép deploy",
+        "roleNotAllowed": "chỉ admin / supervisor / engineer được deploy",
+        "twoFactorNotSetUp": "tài khoản chưa bật 2FA trong khi triển khai này bắt buộc 2FA",
+        "stepUpOff": "không hỏi OTP (step-up đang tắt)",
+        "stepUpBypassedInternalMode": "bỏ qua (chế độ nội bộ) — chưa bật 2FA nên không hỏi OTP; lượt bỏ qua được ghi sổ audit",
+        "otpRequired": "sẽ hỏi OTP 6 số khi bấm Deploy",
+        "approverRequired": "deploy production cần chọn người ký duyệt (four-eyes)",
+        "reviewNotRequired": "không bắt buộc (cờ tắt)",
+        "versionApproved": "phiên bản đã được duyệt",
+        "versionNotApproved": "phiên bản chưa được duyệt ({{reviewStatus}})",
+        "buildOk": "build đạt",
+        "buildNotOk": "build lỗi — không thể deploy",
+        "deployEnabled": "triển khai thật đang bật (cờ máy chủ)",
+        "deployDisabled": "deploy thật đang tắt — chỉ ghi nhận mô phỏng",
+        "signedOff": "đã có người ký duyệt",
+        "noSignOff": "chưa ký duyệt — chỉ ghi nhận mô phỏng",
+        "sodNotApplicable": "không áp dụng",
+        "selfSignOff": "người ký production phải KHÁC người yêu cầu",
+        "distinctSigner": "người ký khác người yêu cầu",
+        "simNotRequired": "không cần (không ghi thật)",
+        "simRequired": "build này chưa được mô phỏng — cần một lượt mô phỏng ĐẠT",
+        "simFailed": "lượt mô phỏng gần nhất KHÔNG ĐẠT",
+        "simPassed": "lượt mô phỏng gần nhất ĐẠT",
+        "adapterNotImplemented": "adapter cho loại này chưa có",
+        "checksumMatches": "biên dịch lại khớp build đã lưu",
+        "buildChecksumMismatch": "biên dịch lại KHÔNG khớp build đã lưu — bản sắp nạp không phải bản đã build/mô phỏng",
+        "readBackAtDeploy": "đọc lại chương trình từ thiết bị để xác minh",
+        "noReadBack": "adapter không đọc lại được — deploy ghi 'deployed', không 'verified'",
+        "stubNoDevicePath": "adapter stub không có đường thiết bị",
+        "techman_program_download_unsupported": "robot Techman chưa hỗ trợ tải chương trình — không gửi gì tới robot",
+        "openplcNotConfigured": "chưa cấu hình host OpenPLC đã kiểm chứng — IEC 61131 không nạp được",
+        "zmcEndpointMissing": "chưa cấu hình điểm kết nối bộ điều khiển ZMC trên máy chủ",
+        "zmcEndpointConfigured": "đã cấu hình đích ZMC",
+        "reachabilityAtDeploy": "dò kết nối TCP lúc deploy",
+        "zmcFileReady": "đã có tệp .bas biên dịch",
+        "zmcNoFilePath": "không có tệp .bas để nạp",
+        "zauxDllPathMissing": "chưa cấu hình đường dẫn thư viện trình điều khiển Zmotion (zauxdll.dll) trên máy chủ",
+        "koffiMissing": "chưa cài koffi (FFI) trên máy chủ",
+        "zauxLoadAtDeploy": "nạp zauxdll.dll lúc deploy",
+        "melsecNoAdapter": "dự án chưa gắn adapter OT (thiết bị)",
+        "melsecEmptyRecipe": "công thức rỗng — không có tham số để ghi",
+        "melsecRecipeReady": "đã có bảng tham số",
+        "otActionNotBound": "deploy trực tiếp không mang phê duyệt HITL đã xác nhận — dispatcher OT sẽ từ chối; hãy dùng Hộp duyệt",
+        "otActionBound": "phê duyệt HITL thật từ Hộp duyệt",
+        "otDbUnavailable": "CSDL không sẵn sàng",
+        "otAdapterDisabled": "adapter OT không tồn tại hoặc đang tắt",
+        "otTagNotFound": "không có tag {{tagKey}} (hoặc đang tắt)",
+        "otTagNotWritable": "tag {{tagKey}} không cho ghi",
+        "otTagsWritable": "mọi tag có và cho ghi",
+        "otAdapterOffline": "driver OT chưa kết nối",
+        "otAdapterOnline": "driver OT đang kết nối",
+        "otControlOff": "điều khiển OT thật đang tắt — dispatcher chỉ ghi mô phỏng",
+        "otNotCommissioned": "adapter chưa nghiệm thu (commissioning) — ghi mô phỏng",
+        "otBindingMissing": "ghi OT thật cần phê duyệt gắn đúng lệnh một-lần; yêu cầu deploy chương trình không mang — dispatcher sẽ từ chối",
+        "irNoDevicePath": "adapter IR chưa có đường thiết bị — ghi nhận mô phỏng",
+        "irSimGateFailed": "cổng mô phỏng động học của flow KHÔNG ĐẠT",
+        "irSimGatePassed": "cổng mô phỏng động học của flow ĐẠT",
+        "hilRunsAtDeploy": "HIL trên URSim chạy lúc deploy",
+        "adapterOutcomeAtDeploy": "kết quả do adapter quyết lúc deploy",
+        "adapterNoDownloadPath": "adapter không có đường nạp chương trình",
+        "zmcFileWrittenAtDeploy": "tệp .bas được ghi (nguyên tử) khi deploy biên dịch lại — bản xem trước không ghi gì",
+        "hilSimTargetUnavailable": "không có đích URSim hợp lệ (máy chủ giả lập chưa cấu hình hoặc trỏ vào thiết bị thật) — HIL không chạy được nên deploy bị chặn"
+      }
+    },
+    "stDiag": {
+      "stEmpty": "Không có POU hay câu lệnh nào.",
+      "stUnexpectedChar": "Ký tự không hợp lệ '{{ch}}'.",
+      "stUnterminatedComment": "Chú thích '{{open}}' mở ở đây nhưng không bao giờ đóng.",
+      "stUnterminatedString": "Chuỗi ký tự không được đóng trên dòng này.",
+      "stBadLiteral": "Hằng {{kind}} không hợp lệ '{{text}}'.",
+      "stExpected": "Cần '{{expected}}', gặp '{{found}}'.",
+      "stExpectedExpr": "Cần một biểu thức, gặp '{{found}}'.",
+      "stExpectedIdent": "Cần một định danh, gặp '{{found}}'.",
+      "stExpectedType": "Cần một kiểu dữ liệu, gặp '{{found}}'.",
+      "stMissingSemicolon": "Thiếu ';' sau câu lệnh (gặp '{{found}}').",
+      "stUnexpected": "Không mong đợi '{{found}}'.",
+      "stNotClosed": "{{block}} mở ở dòng {{openLine}} chưa được đóng: cần {{expected}}, gặp '{{found}}'.",
+      "stOutsidePou": "Câu lệnh nằm ngoài PROGRAM / FUNCTION_BLOCK / FUNCTION.",
+      "stUnsupported": "{{construct}} không được đích OpenPLC (IEC 61131-3) hỗ trợ.",
+      "stUnchecked": "Khối {{construct}} không được kiểm tra.",
+      "stUndeclared": "Định danh chưa khai báo '{{name}}'.",
+      "stNoMember": "'{{type}}' không có thành viên '{{member}}' (hợp lệ: {{valid}}).",
+      "stBadInput": "'{{type}}' không có tham số vào '{{param}}' (hợp lệ: {{valid}}).",
+      "stBadOutput": "'{{type}}' không có tham số ra '{{param}}' (hợp lệ: {{valid}}).",
+      "stNotCallable": "'{{name}}' không phải hàm hay instance khối chức năng.",
+      "stFbTypeCall": "'{{name}}' là KIỂU khối chức năng — hãy khai báo một instance và dùng instance đó.",
+      "stUnknownType": "Kiểu lạ '{{name}}' — không phải kiểu chuẩn, không khai báo trong mã này; thành viên của nó không được kiểm.",
+      "stDuplicate": "'{{name}}' được khai báo nhiều lần.",
+      "stAssignConstant": "Không thể gán vào hằng '{{name}}'.",
+      "stNoAssignment": "Không có lệnh gán (:=) nào.",
+      "stNestedComment": "Chú thích lồng '{{open}}' bên trong một chú thích — trình biên dịch đích không hỗ trợ chú thích lồng nhau (nó đóng chú thích ở '{{close}}' đầu tiên).",
+      "stEdgeNotInput": "{{edge}} chỉ được dùng trong khai báo VAR_INPUT (đang ở {{section}})."
+    }
   },
   "engineeringHome": {
     "needControl": "Cần quyền điều khiển",
@@ -15646,12 +15893,30 @@
     "allClear": "Hiện không có việc nào chờ duyệt.",
     "error": "Không tải được tổng hợp việc chờ duyệt. Hệ thống sẽ tự thử lại.",
     "degraded": "không khả dụng",
+    "sourcesUnavailable": "Không đọc được: {{sources}}",
     "category": {
       "recipes": "Recipe chờ duyệt",
+      "recipeActiveUnapproved": "Recipe đang chạy CHƯA duyệt",
       "interlock": "Interlock chờ duyệt",
+      "interlockEventsOpen": "Sự kiện interlock đang mở",
+      "ecn": "ECN chờ duyệt",
+      "changeover": "Đổi model chờ duyệt",
       "orchestration": "Run chờ xác nhận",
       "safety": "Sự cố an toàn chưa soát",
       "deadlocks": "Kẹt đội xe"
+    },
+    "posture": {
+      "title": "Tư thế an toàn",
+      "otWrites": "Ghi lệnh OT thật",
+      "robotWrites": "Ghi lệnh robot thật",
+      "dpcDeploy": "Nạp chương trình thiết bị",
+      "interlockEngine": "Engine interlock",
+      "interlockAutoBlock": "Tự động chặn interlock",
+      "on": "BẬT",
+      "off": "TẮT",
+      "ruleCoverage": "Rule chặn có đích: {{count}}",
+      "coverageUnavailable": "Không đọc được độ phủ rule",
+      "writesOnEngineOffWarning": "Đang ghi lệnh thật xuống thiết bị trong khi engine interlock đang TẮT — vi phạm sẽ KHÔNG được tự động chặn."
     }
   },
   "eqIntegration": {
@@ -15738,8 +16003,11 @@
     "createRequired": "Mã và tên là bắt buộc.",
     "createTitle": "Phiên bản recipe mới (bản nháp)",
     "createVersion": "Phiên bản mới",
-    "flagOffBanner": "Chế độ xem trước: tích hợp thiết bị đang tắt (EQ_INTEG_ENABLED tắt). Đọc vẫn hoạt động; các thao tác (tạo / phát hành / lưu trữ / rollback phiên bản, ghi nhận nạp) bị chặn cho đến khi bật cờ.",
+    "checking": "Đang kiểm tra…",
+    "unknown": "Chưa rõ",
+    "flagOffBanner": "Chế độ xem trước: tích hợp thiết bị đang tắt. Đọc vẫn hoạt động; các thao tác (tạo / phát hành / lưu trữ / rollback phiên bản, ghi nhận nạp) bị chặn cho đến khi bật.",
     "flagOffToast": "Tích hợp thiết bị đang tắt (xem trước). Đặt EQ_INTEG_ENABLED=true để thao tác.",
+    "flagStatusError": "Không kiểm tra được trạng thái tích hợp thiết bị — các thao tác bị khoá cho đến khi xác nhận lại.",
     "frameworkNoDevice": "Framework — chưa có thiết bị kết nối",
     "frameworkNote": "Các thẻ bên dưới là FRAMEWORK tích hợp. Chúng mô hình hóa các trường chỉ đọc mà một connector FOCAS/Euromap thực sẽ ánh xạ vào Unified Equipment Model, nhưng dữ liệu trực tiếp cần một thiết bị/connector đã kết nối. Cho đến lúc đó, giá trị vẫn là \"—\" và nguồn snapshot là \"none\".",
     "historyEmpty": "Không có sự kiện truy xuất nguồn gốc.",
@@ -15875,16 +16143,20 @@
     "extension": "Trường mở rộng",
     "fail": "Không đạt",
     "failingTypesTitle": "Các loại không đạt kiểm định",
-    "flagOffBanner": "Chế độ xem trước: quản trị thiết bị đang tắt (EQ_GOVERN_ENABLED tắt). Đọc vẫn hoạt động; các thao tác (đăng ký loại / ánh xạ cảnh báo / gửi / duyệt / xuất bản) bị chặn cho đến khi bật cờ.",
+    "flagOffBanner": "Chế độ xem trước: quản trị thiết bị đang tắt. Đọc vẫn hoạt động; các thao tác (đăng ký loại / ánh xạ cảnh báo / gửi / duyệt / xuất bản) bị chặn cho đến khi bật.",
     "flagOffToast": "Quản trị thiết bị đang tắt (xem trước). Đặt EQ_GOVERN_ENABLED=true để thao tác.",
+    "flagStatusError": "Không kiểm tra được trạng thái quản trị thiết bị — các thao tác bị khoá cho đến khi xác nhận lại.",
     "hierarchyTitle": "Phân cấp loại thiết bị",
     "inheritance": "Chuỗi kế thừa",
     "kind": "Loại",
     "kpi": {
       "chattering": "Rung (chattering)",
+      "chatteringNotMeasuredTip": "Nguồn KPI báo động chung (alarmKpi) chưa tính chattering.",
       "conformance": "Đạt kiểm định",
       "flood": "Cửa sổ tràn",
       "mapped": "Máy đã ánh xạ",
+      "notMeasured": "Chưa đo được",
+      "operators": "Người vận hành (server)",
       "peakWindow": "Đỉnh/10 phút",
       "pendingCrs": "CR đang chờ",
       "perOpHour": "Cảnh báo/vận hành/giờ",
@@ -15994,7 +16266,18 @@
       "minor": "Nhẹ",
       "major": "Nặng",
       "severe": "Nghiêm trọng"
-    }
+    },
+    "kpiSourceNote": "Cùng nguồn với bảng KPI báo động và Control Tower (Andon + cảnh báo AI). Người vận hành: {{n}} — đếm ở server.",
+    "shelveNotEnforced": "Chưa có hiệu lực trên đường báo động",
+    "complianceBasis": "Đã ánh xạ = máy có machines.device_type_key trỏ tới kiểu thiết bị đã publish: {{mapped}}/{{total}} máy ({{keyed}} máy có khoá, {{unpublished}} máy trỏ tới kiểu chưa publish). Conformance chạy trên {{types}} kiểu thiết bị đã publish trong CSDL.",
+    "basisWarning": {
+      "db_unavailable": "Không kết nối được CSDL — các số trên là 0 vì chưa đọc được gì.",
+      "no_machines": "CSDL chưa có máy nào.",
+      "no_published_types": "CSDL chưa có kiểu thiết bị nào ở trạng thái published.",
+      "no_bound_machines": "Chưa máy nào được gắn kiểu thiết bị (machines.device_type_key trống ở mọi máy).",
+      "no_conformance_subjects": "Không có kiểu thiết bị published nào ánh xạ máy để chạy conformance."
+    },
+    "shelvedNotEnforced": "Đã tạm ẩn (chưa có hiệu lực)"
   },
   "field": {
     "batteryNull": "Không có telemetry pin (pin AGV đến từ VDA5050; null khi không có driver nào báo cáo).",
@@ -16117,8 +16400,9 @@
     "deviceIdPlaceholder": "vd. 1",
     "deviceIdRequired": "Nhập mã thiết bị hợp lệ.",
     "filterStatus": "Trạng thái",
-    "flagOffBanner": "Chế độ xem trước: điều phối đội xe đang tắt (FLEET_ORCH_ENABLED tắt). Đọc vẫn hoạt động; các thao tác (phân bổ / gán lại / hủy / đặt trước / giải phóng) bị chặn cho đến khi bật cờ.",
+    "flagOffBanner": "Chế độ xem trước: điều phối đội xe đang tắt. Đọc vẫn hoạt động; các thao tác (phân bổ / gán lại / hủy / đặt trước / giải phóng) bị chặn cho đến khi bật.",
     "flagOffToast": "Điều phối đội xe đang tắt (xem trước). Đặt FLEET_ORCH_ENABLED=true để thao tác.",
+    "flagStatusError": "Không kiểm tra được trạng thái điều phối đội xe — các thao tác bị khoá cho đến khi xác nhận lại.",
     "kpi": {
       "activeRes": "Đặt trước đang hoạt động",
       "assigned": "Đã gán",
@@ -16237,8 +16521,9 @@
       "reserved": "Đã đặt trước"
     },
     "resourceCreated": "Đã tạo tài nguyên",
-    "resourceFlagOffBanner": "Chế độ xem trước: lớp tài nguyên đội xe đang tắt (FLEET_RESOURCE_ENABLED tắt). Đọc vẫn hoạt động; các thao tác (tạo / ánh xạ / đặt trước / giải phóng / quét) bị chặn cho đến khi bật cờ.",
+    "resourceFlagOffBanner": "Chế độ xem trước: lớp tài nguyên đội xe đang tắt. Đọc vẫn hoạt động; các thao tác (tạo / ánh xạ / đặt trước / giải phóng / quét) bị chặn cho đến khi bật.",
     "resourceFlagOffToast": "Lớp tài nguyên đội xe đang tắt (xem trước). Đặt FLEET_RESOURCE_ENABLED=true để thao tác.",
+    "resourceFlagStatusError": "Không kiểm tra được trạng thái lớp tài nguyên đội xe — các thao tác bị khoá cho đến khi xác nhận lại.",
     "resourceReleased": "Đã giải phóng tài nguyên",
     "resourceReserved": "Đã chiếm tài nguyên",
     "resourceQueued": "Tài nguyên đang dùng — yêu cầu đã xếp hàng",
@@ -16717,7 +17002,8 @@
     "auditConfirmBody": "Ghi dấu một lượt rà soát PDCA của con người lên bản ghi (ai đã rà soát, khi nào). Tư vấn — không thay đổi thiết bị nào.",
     "auditConfirmTitle": "Kiểm định sự kiện an toàn này?",
     "audited": "Đã kiểm định sự kiện",
-    "auditFlagOffBanner": "Chế độ xem trước: kiểm định an toàn đang tắt (SAFETY_AUDIT_ENABLED tắt). Đọc vẫn hoạt động; ghi nhận, kiểm định và nạp dữ liệu tiệm cận bị chặn cho đến khi bật cờ.",
+    "auditFlagOffBanner": "Chế độ xem trước: kiểm định an toàn đang tắt. Đọc vẫn hoạt động; ghi nhận, kiểm định và nạp dữ liệu tiệm cận bị chặn cho đến khi bật.",
+    "auditFlagStatusError": "Không kiểm tra được trạng thái kiểm định an toàn — ghi nhận, kiểm định và nạp dữ liệu tiệm cận bị khoá cho đến khi xác nhận lại.",
     "col": {
       "audit": "Kiểm định",
       "detectedBy": "Phát hiện bởi",
@@ -16787,7 +17073,49 @@
     "trendEmpty": "Không ghi nhận suýt sự cố nào trong khoảng thời gian.",
     "trendTitle": "Xu hướng suýt sự cố (PDCA, 30 ngày qua)",
     "unaudited": "Đang chờ",
-    "viewOnly": "Chỉ xem"
+    "viewOnly": "Chỉ xem",
+    "source": {
+      "title": "Nguồn",
+      "loading": "Đang kiểm tra nguồn an toàn…",
+      "error": "Không đọc được nguồn an toàn — hãy coi như chưa biết.",
+      "plcLabel": "Safety PLC",
+      "plc": {
+        "sim": "⚠ SIM (preflight dựa vào GIẢ LẬP)",
+        "mixed": "⚠ thật + SIM/chưa ánh xạ (một cấu hình không đọc tag an toàn nào đủ làm preflight qua)",
+        "real": "● PLC thật",
+        "adapterOff": "○ tắt — không có nguồn an toàn",
+        "noConfig": "○ không có cấu hình nào bật",
+        "readError": "⚠ không đọc được cấu hình",
+        "simEmpty": "kịch bản rỗng — luôn OK",
+        "simScripted": "theo kịch bản — OK/BLOCKED theo kịch bản, không theo PLC",
+        "realUnmapped": "⚠ endpoint thật nhưng KHÔNG ánh xạ tag an toàn nào — preflight OK dựa trên việc không đọc gì"
+      },
+      "hiddenConfigs": "ngoài phạm vi của bạn",
+      "ot": "Ghi OT",
+      "robot": "Chuyển động robot",
+      "verdict": {
+        "dry_run": "chỉ dry-run (điều khiển đang tắt — không ghi gì)",
+        "unguarded": "⚠ preflight bị tắt — lệnh thật không được kiểm",
+        "blocked": "lệnh thật bị chặn",
+        "sim_basis": "⚠ được phép dựa trên kết quả GIẢ LẬP",
+        "sim_can_satisfy": "⚠ một cấu hình SIM hoặc chưa ánh xạ đủ làm phép kiểm qua",
+        "real_basis": "kiểm với Safety PLC thật",
+        "unmapped_basis": "⚠ được phép dù không đọc tag an toàn nào"
+      },
+      "on": "● bật",
+      "off": "○ tắt",
+      "vision": "Vision",
+      "cameras": "camera",
+      "zone": "Zone SW",
+      "zones": "vùng",
+      "estop": "E-stop",
+      "estopRated": "● safety-rated",
+      "estopNotRated": "⚠ bật — không safety-rated",
+      "socket": "Socket",
+      "socketServerDown": "○ socket máy chủ không chạy",
+      "socketConnected": "● đã kết nối",
+      "socketDisconnected": "○ mất kết nối"
+    }
   },
   "sessionSignoff": {
     "shift": "Ca",
@@ -17220,8 +17548,9 @@
     "confirmAbort": "Hủy bỏ",
     "confirmClose": "Đóng phân công",
     "confirmed": "Đã xác nhận phân công",
-    "flagOffBanner": "Chế độ xem trước: nhân lực đang tắt (WORKFORCE_ENABLED tắt). Đọc vẫn hoạt động; các thao tác phân công và phối hợp bị chặn cho đến khi bật cờ.",
+    "flagOffBanner": "Chế độ xem trước: nhân lực đang tắt. Đọc vẫn hoạt động; các thao tác phân công và phối hợp bị chặn cho đến khi bật.",
     "flagOffToast": "Nhân lực đang tắt (xem trước). Đặt WORKFORCE_ENABLED=true để thao tác.",
+    "flagStatusError": "Không kiểm tra được trạng thái nhân lực — các thao tác phân công và phối hợp bị khoá cho đến khi xác nhận lại.",
     "handshakeSignalled": "Đã báo hiệu bắt tay",
     "humanId": "Mã người vận hành",
     "line": "Chuyền",
@@ -17425,7 +17754,11 @@
     "confirmed": "Đã xác nhận",
     "approved": "Đã phê duyệt",
     "readBack": "Đọc lại (read-back)",
-    "error": "Lỗi"
+    "error": "Lỗi",
+    "ledger": "Sổ ghi",
+    "ledgerIntent": "Ghi trước (ý định)",
+    "ledgerResult": "Kết quả",
+    "ledgerResultOf": "Kết quả của #{{id}}"
   },
   "license": {
     "title": "Quản lý giấy phép",
@@ -20837,6 +21170,31 @@
     "daiHopNhat": {
       "an": "ẩn",
       "tomTat": "{{so}} việc cần biết"
+    }
+  },
+  "provenance": {
+    "label": {
+      "SIM": "SIM",
+      "DEMO": "DEMO",
+      "SEED": "SEED"
+    },
+    "tip": "Không phải dữ liệu thật — dấu hiệu nguồn",
+    "summary": "{{count}}/{{total}} hàng là dữ liệu demo / seed / giả lập — không đến từ thiết bị thật",
+    "dispatch": {
+      "simulated": "DRY-RUN",
+      "mixed": "MỘT PHẦN GIẢ LẬP",
+      "live": "THẬT",
+      "simulatedTip": "Lệnh trong lần chạy này chỉ được mô phỏng (dry-run) — không ghi gì xuống thiết bị ({{simulated}} bước).",
+      "mixedTip": "{{simulated}} bước mô phỏng, {{live}} bước đã gửi xuống thiết bị.",
+      "liveTip": "{{live}} bước lệnh đã được gửi xuống thiết bị.",
+      "unconfirmed": "CHƯA XÁC NHẬN",
+      "unconfirmedTip": "{{unconfirmed}} bước lệnh lỗi hoặc quá hạn — có thể đã tới thiết bị."
+    },
+    "step": {
+      "simulated": "mô phỏng",
+      "live": "đã gửi",
+      "unconfirmed": "chưa xác nhận — có thể đã tới thiết bị",
+      "rejected": "không gửi"
     }
   }
 }

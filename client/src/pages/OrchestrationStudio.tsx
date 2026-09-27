@@ -102,6 +102,9 @@ import {
 import { WorkflowGraphCanvas } from "@/components/orchestration/WorkflowGraphCanvas";
 import { useStepUpOtp } from "@/components/security/StepUpOtpDialog";
 import { ConfirmWithReason } from "@/components/patterns/ConfirmWithReason";
+// doc 80 Đợt 1 Task 4 (X-01 · ORC-13) — nhãn SEED/DEMO/SIM + DRY-RUN trên run.
+import { ProvenanceBadge, ProvenanceSummary, DispatchModeBadge } from "@/components/common/ProvenanceBadge";
+import { classifyStepDispatch, type RunDispatchSummary } from "@shared/provenance";
 
 // ════════════════════════════════════════════════════════════════════════════
 // STEP-TREE CANVAS (left) — nested visual blocks per step type
@@ -1170,15 +1173,32 @@ export default function OrchestrationStudio() {
   const startRunM = trpc.orchestration.startRun.useMutation({
     onSuccess: (r) => {
       // doc 80 ORC-06 — server từ chối run workflow chưa deploy (bản nháp) bằng ok:false + message.
-      if (r && !r.ok && r.runId == null) toast.error(r.message ?? t("studio.runFail", "Could not start the run"));
-      else toast.success(t("studio.runStarted", "Run started (run #{{id}})", { id: r?.runId ?? "?" }));
+      if (r && !r.ok && r.runId == null) {
+        // doc 80 Đợt 1 Task 11 — khi lý do là TRẠNG THÁI WORKFLOW (draft/archived), dùng t()
+        // thay vì hiện nguyên văn `message` tiếng Anh của server.
+        if (r.workflowStatus) {
+          toast.error(
+            t(
+              "studio.runNotDeployed",
+              'This workflow is currently "{{status}}" — Deploy it first, then run it.',
+              { status: r.workflowStatus },
+            ),
+          );
+        } else {
+          toast.error(r.message ?? t("studio.runFail", "Could not start the run"));
+        }
+      } else toast.success(t("studio.runStarted", "Run started (run #{{id}})", { id: r?.runId ?? "?" }));
       void runsQ.refetch();
     },
     onError: (e) => toastTrpcError(e),
   });
   const resumeM = trpc.orchestration.resumeRun.useMutation({
     onSuccess: () => { void runsQ.refetch(); void utils.orchestration.getRun.invalidate(); },
-    onError: (e) => toastTrpcError(e),
+    // doc 80 Đợt 1 Task 9 — CONFLICT (gate đã đổi / lượt khác đã quyết định) ⇒ tải lại để thấy gate thật.
+    onError: (e) => {
+      toastTrpcError(e);
+      if (e.data?.code === "CONFLICT") { void runsQ.refetch(); void utils.orchestration.getRun.invalidate(); }
+    },
   });
   const abortM = trpc.orchestration.abortRun.useMutation({
     onSuccess: () => { void runsQ.refetch(); },
@@ -1745,6 +1765,7 @@ export default function OrchestrationStudio() {
                   </SelectContent>
                 </Select>
               )}
+              <ProvenanceSummary rows={allRuns} />
               {allRuns.length === 0 && (
                 <p className="py-4 text-center text-sm text-muted-foreground">{t("studio.noRuns", "No runs yet.")}</p>
               )}
@@ -1764,7 +1785,7 @@ export default function OrchestrationStudio() {
                       key={String(r.id)}
                       run={r}
                       canControl={canControl}
-                      onResume={(approved, note) => resumeM.mutate({ runId: Number(r.id), approved, note })}
+                      onResume={(approved, note, expectedStepId) => resumeM.mutate({ runId: Number(r.id), approved, note, expectedStepId })}
                       onAbort={() => abortM.mutate({ runId: Number(r.id) })}
                       t={t}
                     />
@@ -1785,7 +1806,7 @@ export default function OrchestrationStudio() {
                       run={r}
                       interrupted
                       canControl={canControl}
-                      onResume={(approved, note) => resumeM.mutate({ runId: Number(r.id), approved, note })}
+                      onResume={(approved, note, expectedStepId) => resumeM.mutate({ runId: Number(r.id), approved, note, expectedStepId })}
                       onAbort={() => abortM.mutate({ runId: Number(r.id) })}
                       t={t}
                     />
@@ -1805,7 +1826,7 @@ export default function OrchestrationStudio() {
                       key={String(r.id)}
                       run={r}
                       canControl={canControl}
-                      onResume={(approved, note) => resumeM.mutate({ runId: Number(r.id), approved, note })}
+                      onResume={(approved, note, expectedStepId) => resumeM.mutate({ runId: Number(r.id), approved, note, expectedStepId })}
                       onAbort={() => abortM.mutate({ runId: Number(r.id) })}
                       t={t}
                     />
@@ -1980,6 +2001,32 @@ type RunStepView = {
   result?: Record<string, unknown> | null;
 };
 
+/** doc 80 Task 4 (ORC-13) — per-step dispatch marker in the run drawer (routedTo + simulated/sent). */
+function StepDispatchTag({ result, t }: { result: Record<string, unknown> | null | undefined; t: TFunction }) {
+  const kind = classifyStepDispatch(result);
+  if (!kind) return null;
+  const routedTo = typeof result?.routedTo === "string" ? result.routedTo : "";
+  // Fix round 1 — "not sent" ONLY for rejected; failed/timeout may have reached the device.
+  const label =
+    kind === "simulated"
+      ? t("provenance.step.simulated", "simulated")
+      : kind === "live"
+        ? t("provenance.step.live", "sent")
+        : kind === "unconfirmed"
+          ? t("provenance.step.unconfirmed", "unconfirmed — may have reached the device")
+          : t("provenance.step.rejected", "not sent");
+  return (
+    <Badge
+      variant="outline"
+      data-testid="step-dispatch"
+      data-kind={kind}
+      className={`text-[10px] ${kind === "simulated" ? "border-violet-500/50 text-violet-700 dark:text-violet-300" : kind === "live" ? "border-emerald-500/50 text-emerald-700 dark:text-emerald-300" : kind === "unconfirmed" ? "border-amber-500/50 text-amber-700 dark:text-amber-300" : "text-muted-foreground"}`}
+    >
+      {routedTo ? `${routedTo} · ` : ""}{label}
+    </Badge>
+  );
+}
+
 function RunRow({
   run,
   interrupted = false,
@@ -1992,7 +2039,8 @@ function RunRow({
   /** doc 80 ORC-04 — run 'held' do server khởi động lại (không phải cổng chờ duyệt). */
   interrupted?: boolean;
   canControl: boolean;
-  onResume: (approved: boolean, note?: string) => void;
+  /** doc 80 Đợt 1 Task 9 — `expectedStepId` = gate đang HIỂN THỊ (server từ chối nếu run đã sang gate khác). */
+  onResume: (approved: boolean, note: string | undefined, expectedStepId: string | null) => void;
   onAbort: () => void;
   t: TFunction;
 }) {
@@ -2020,6 +2068,11 @@ function RunRow({
     },
   );
   const currentStepId = detailQ.data?.run?.currentStepId ?? null;
+  // doc 80 Đợt 1 Task 9 — gate người duyệt đang NHÌN: bước của chi tiết đã nạp (khối ngữ cảnh
+  // "Bước đang chờ"), chưa nạp thì bước trên hàng danh sách. Gửi kèm approve/reject/continue.
+  const shownStepId: string | null = detailQ.data?.run
+    ? (detailQ.data.run.currentStepId ?? null)
+    : typeof run.currentStepId === "string" ? run.currentStepId : null;
   const steps = (detailQ.data?.steps ?? []) as RunStepView[];
   // U6 — bước đang chờ + prompt tác giả soạn + roles người duyệt (từ result của gate).
   const currentStep = currentStepId != null ? steps.find((s) => s.stepId === currentStepId) : undefined;
@@ -2031,11 +2084,14 @@ function RunRow({
   const closeReject = () => { setRejecting(false); setRejectNote(""); };
 
   return (
-    <div className="rounded border text-sm">
+    <div className="rounded border text-sm" data-run-row={runId}>
       <div className="flex items-center justify-between px-2 py-1.5">
         <button className="flex min-w-0 items-center gap-2" onClick={() => setOpen((o) => !o)}>
           <Badge className={`${RUN_STATUS_COLOR[status] ?? "bg-slate-400"} text-white`}>{status}</Badge>
           <span className="truncate font-mono text-[11px] text-muted-foreground">run #{runId} · {String(run.workflowRef ?? run.workflowId ?? "")}</span>
+          {/* doc 80 Task 4 — X-01 source label + ORC-13 dry-run/live marker. */}
+          <ProvenanceBadge row={run} />
+          <DispatchModeBadge dispatch={run.dispatch as RunDispatchSummary | undefined} />
         </button>
         {interrupted && canControl && (
           <div className="flex gap-1">
@@ -2054,7 +2110,7 @@ function RunRow({
         )}
         {awaiting && canControl && (
           <div className="flex gap-1">
-            <Button size="sm" className="h-7 bg-emerald-600 hover:bg-emerald-700" onClick={() => onResume(true)}>
+            <Button size="sm" className="h-7 bg-emerald-600 hover:bg-emerald-700" onClick={() => onResume(true, undefined, shownStepId)}>
               {t("studio.approve", "Approve")}
             </Button>
             <Button size="sm" variant="outline" className="h-7" onClick={() => setRejecting((r) => !r)}>
@@ -2082,7 +2138,7 @@ function RunRow({
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel>{t("common.cancel", "Cancel")}</AlertDialogCancel>
-            <AlertDialogAction onClick={() => { setConfirmContinue(false); onResume(true); }}>
+            <AlertDialogAction onClick={() => { setConfirmContinue(false); onResume(true, undefined, shownStepId); }}>
               {t("studio.continueRunConfirm", "Continue run")}
             </AlertDialogAction>
           </AlertDialogFooter>
@@ -2133,7 +2189,7 @@ function RunRow({
                 </Button>
                 <Button
                   size="sm" variant="destructive" className="h-7"
-                  onClick={() => { onResume(false, rejectNote.trim() || undefined); closeReject(); }}
+                  onClick={() => { onResume(false, rejectNote.trim() || undefined, shownStepId); closeReject(); }}
                 >
                   {t("studio.confirmReject", "Xác nhận từ chối")}
                 </Button>
@@ -2155,7 +2211,11 @@ function RunRow({
                   {isCurrent && <span className="mr-1 text-primary">▶</span>}
                   {s.stepId} <span className="text-muted-foreground">({s.stepType})</span>
                 </span>
-                <Badge variant="outline" className="text-[10px]">{s.status}</Badge>
+                <span className="flex items-center gap-1">
+                  {/* doc 80 Task 4 (ORC-13) — where the command went and whether it was simulated. */}
+                  <StepDispatchTag result={s.result} t={t} />
+                  <Badge variant="outline" className="text-[10px]">{s.status}</Badge>
+                </span>
               </div>
             );
           })}

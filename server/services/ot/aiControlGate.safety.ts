@@ -14,9 +14,9 @@
  *   đều trả `"UNKNOWN"`. Và `kiemCongAi` coi `"UNKNOWN"` là TỪ CHỐI. Nên một
  *   lỗi ở tệp này KHÔNG BAO GIỜ biến thành một lệnh lọt xuống máy.
  *
- *   (So sánh: `commandDispatcher.preflightSafety` cũng trả `"UNKNOWN"` khi lỗi,
- *   nhưng ở đó `"UNKNOWN"` nghĩa là CHO QUA. Cùng một giá trị, hai số phận
- *   ngược nhau — khác biệt nằm ở người tiêu thụ, không ở người đo.)
+ *   (So sánh: `commandDispatcher.preflightSafety` cũng trả `"UNKNOWN"` khi lỗi; từ
+ *   doc 81 Đợt 1B Task 6 dispatcher cũng CHẶN `"UNKNOWN"` (SAFETY_UNKNOWN) — trước
+ *   đó ở đó `"UNKNOWN"` nghĩa là CHO QUA.)
  */
 
 import type { TrangThaiSafety } from "./aiControlGate";

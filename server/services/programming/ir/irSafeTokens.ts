@@ -73,6 +73,16 @@ const RESERVED = new Set<string>([
   "set_io", "set_analog", "read_io", "wait_signal", "wait_until", "pid_control",
   // generated temporaries
   "wu_elapsed", "pid_sp", "pid_pv", "pid_err", "pid_out",
+  // Doc 80 Đợt 1 Task 11 — the ROS2 transpiler's own BOUND helper methods
+  // (irToRos2.ts HELPER_ORDER/HELPER_BODIES: `_plan_and_execute` drives plan()→execute(),
+  // `_gripper`/`_io_pub` drive the real gripper/IO publishers). These are emitted BEFORE a
+  // flow's own function_block methods (irToRos2.ts: helpers loop, then function_blocks
+  // loop), so a user FB named e.g. `_gripper` would define a SECOND Python method with the
+  // same name — the LATER (user) definition silently SHADOWS the real bound helper for
+  // every `grip`/`release`/`move_linear`/`move_joint` block that calls it. Not an injection
+  // (the FB body is still whitelisted), but the same "author-chosen name overrides
+  // generated code" class IR-01 already blocks for `ir_`/`pid_i_`/`pid_prev_`/`__`.
+  "_plan_and_execute", "_gripper", "_io_pub",
 ]);
 const RESERVED_PREFIX = /^(?:ir_|pid_i_|pid_prev_|__)/;
 

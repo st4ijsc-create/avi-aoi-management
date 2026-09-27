@@ -28,6 +28,10 @@ const h = vi.hoisted(() => ({
   expectedOverride: null as number | null,
 }));
 
+// doc 81 Đợt 1B Task 8 — "MACHINE_KEY" là khoá plaintext `machines.apiKey`; resolvePrincipal nay tôn trọng
+// MACHINE_SHARED_KEY_ALLOWED (mặc định "deny" ⇒ 401). Tệp này đo SCOPE của máy-principal nên mở cờ.
+process.env.MACHINE_SHARED_KEY_ALLOWED = "true";
+
 // Master key: only "MASTER" is valid in this test.
 vi.mock("../../_core/masterKey", () => ({
   isValidMasterKey: (k: string | undefined | null) => k === "MASTER",
@@ -205,6 +209,14 @@ describe("auth", () => {
     expect(res.status).toBe(403);
     const body = await res.json();
     expect(body.error).toContain("export:read");
+  });
+
+  it("doc 81 Đợt 1B Task 8 fix round 1 — resolvePrincipal nhận ĐÚNG scope yêu cầu (sổ weak-auth ghi 'api/v1 export:read')", async () => {
+    const { getWeakAuthUsage, _resetMachineAuthState } = await import("../../services/machineAuthService");
+    _resetMachineAuthState();
+    await fetch(`${baseUrl}/api/export/inspections.csv?${WINDOW}`, { headers: { "x-api-key": "MACHINE_KEY" } });
+    const endpoints = getWeakAuthUsage().map((r) => r.endpoint);
+    expect(endpoints).toContain("api/v1 export:read");
   });
 
   it("unknown key → 401", async () => {

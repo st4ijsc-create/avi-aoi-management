@@ -78,6 +78,7 @@ import { NotImplementedDriver } from "./notImplementedDriver";
 import { parseMcAddress, coerceMcValue } from "./mcAddress";
 import { inverseScale } from "./otScale";
 import { DeviceUnreachableError } from "../../../_core/deviceErrors";
+import { boundedClose, withDeadline } from "./boundedClose";
 
 /** Ép raw (đã inverse scale) sang kiểu mcprotocol chấp nhận theo dataType. */
 function coerceMcWrite(raw: unknown, dataType: string): number | boolean | string {
@@ -95,13 +96,127 @@ function coerceMcWrite(raw: unknown, dataType: string): number | boolean | strin
   }
 }
 
-function withTimeout<T>(p: Promise<T>, ms: number, label: string): Promise<T> {
-  return Promise.race([
-    p,
-    new Promise<T>((_, reject) =>
-      setTimeout(() => reject(new Error(`${label} timeout after ${ms}ms`)), ms),
-    ),
-  ]);
+const withTimeout = withDeadline;
+
+/**
+ * doc 81 Đợt 1B Task 1 — GIA CỐ `mcprotocol` 0.1.2 TỪ BÊN NGOÀI (không sửa node_modules).
+ *
+ * Lỗi của thư viện (BE1 §0 (2), mcprotocol.js):
+ *   • `connectionCleanup()` (dòng 1211-1219) và `onTCPConnect()` (dòng 198-199) gọi
+ *     `isoclient.removeAllListeners('error')` trên socket CÒN SỐNG. `dropConnection()` chỉ
+ *     `end()` rồi cleanup ⇒ lỗi đến sau (ETIMEDOUT ~21 s khi SYN không ai trả lời, ECONNRESET
+ *     khi PLC reset) không còn ai nghe ⇒ `uncaughtException` ⇒ `process.exit(1)`.
+ *   • `connectNow()` bỏ socket cũ mà không destroy; `sendReadPacket/sendWritePacket` tự gọi
+ *     `connectNow()` khi thấy mất kết nối — kể cả SAU khi ta đã ngắt.
+ *
+ * Cách gia cố (chỉ trên INSTANCE — thuộc tính riêng che prototype; lib gọi mọi hàm này qua
+ * `self.x()` nên luôn đi qua lớp bọc):
+ *   1. Listener `error` của driver luôn có mặt trên MỌI socket lib tạo: gắn lại ngay sau mỗi
+ *      chỗ lib gỡ (`connectNow`, `connectionCleanup`, `onTCPConnect`). Chỉ hai chỗ trong lib
+ *      gỡ listener `error` (dòng 199, 1217) và cả hai đều đã được bọc.
+ *   2. Socket bị lib bỏ lại khi `connectNow()` thay socket ⇒ destroy.
+ *   3. Sau khi driver ngắt (`dropped`) ⇒ `connectNow/readAllItems/writeItems` thành no-op:
+ *      lib không tự mở lại socket tới PLC sau khi ta đã ngắt.
+ * Mock (test đơn vị) không có các hàm nội bộ này ⇒ bỏ qua, hành vi như cũ.
+ */
+interface McHardening {
+  dropped: boolean;
+  guard: (sock: any) => void;
+}
+
+function hardenMcInstance(conn: any, onSocketError: (err: unknown) => void): McHardening {
+  const state: McHardening = {
+    dropped: false,
+    guard: () => undefined,
+  };
+  const onError = (err: unknown) => {
+    try {
+      onSocketError(err);
+    } catch {
+      // listener cuối cùng — không bao giờ ném
+    }
+  };
+  state.guard = (sock: any) => {
+    if (!sock || typeof sock.on !== "function" || typeof sock.listeners !== "function") return;
+    if (!sock.listeners("error").includes(onError)) sock.on("error", onError);
+  };
+  if (!conn || typeof conn.connectNow !== "function" || typeof conn.connectionCleanup !== "function") {
+    return state; // không phải mcprotocol thật (mock) — không có gì để gia cố
+  }
+
+  const origConnectNow = conn.connectNow;
+  conn.connectNow = function (this: any, ...args: unknown[]) {
+    if (state.dropped) return undefined; // (3) không tự nối lại sau khi driver đã ngắt
+    const prev = this.isoclient;
+    const r = origConnectNow.apply(this, args);
+    if (prev && this.isoclient !== prev) {
+      state.guard(prev);
+      try {
+        prev.destroy(); // (2) socket bị bỏ lại
+      } catch {
+        // ignore
+      }
+    }
+    state.guard(this.isoclient); // (1)
+    return r;
+  };
+
+  const origCleanup = conn.connectionCleanup;
+  conn.connectionCleanup = function (this: any, ...args: unknown[]) {
+    const r = origCleanup.apply(this, args);
+    state.guard(this.isoclient); // (1) lib vừa removeAllListeners('error')
+    return r;
+  };
+
+  if (typeof conn.onTCPConnect === "function") {
+    const origOnConnect = conn.onTCPConnect;
+    conn.onTCPConnect = function (this: any, ...args: unknown[]) {
+      const r = origOnConnect.apply(this, args);
+      state.guard(this.isoclient); // (1) lib vừa removeAllListeners('error')
+      return r;
+    };
+  }
+
+  for (const name of ["readAllItems", "writeItems"]) {
+    if (typeof conn[name] !== "function") continue;
+    const orig = conn[name];
+    conn[name] = function (this: any, ...args: unknown[]) {
+      if (state.dropped) return undefined; // (3) vòng thử lại 100 ms của lib dừng ở đây
+      return orig.apply(this, args);
+    };
+  }
+  return state;
+}
+
+/**
+ * doc 81 Đợt 1B Task 1 — ngắt `mcprotocol` CÓ HẠN: `dropConnection()` (không có callback)
+ * + đợi socket `close` tối đa DEFAULT_CLOSE_TIMEOUT_MS, quá hạn ⇒ `destroy()`. Socket đang
+ * dở connect (IP không định tuyến) ⇒ destroy ngay (không có gì để đóng êm).
+ */
+function dropMcBounded(conn: any, hardening: McHardening | null): Promise<unknown> {
+  if (!conn) return Promise.resolve();
+  if (hardening) hardening.dropped = true;
+  const sock: any = conn.isoclient;
+  if (hardening && sock) hardening.guard(sock);
+  return boundedClose({
+    close: (done) => {
+      if (sock && typeof sock.once === "function" && !sock.destroyed) sock.once("close", () => done());
+      if (typeof conn.dropConnection === "function") {
+        // lib thật bỏ qua đối số; mock (test đơn vị) gọi cb như trước.
+        conn.dropConnection(() => done());
+      }
+      if (hardening && sock) hardening.guard(sock);
+      if (!sock || sock.destroyed) {
+        done();
+      } else if (sock.connecting) {
+        sock.destroy();
+        done();
+      }
+    },
+    destroy: () => {
+      if (sock && typeof sock.destroy === "function" && !sock.destroyed) sock.destroy();
+    },
+  });
 }
 
 function parseEndpoint(endpoint: string, defaultPort: number): { host: string; port: number } {
@@ -121,6 +236,9 @@ export class MitsubishiMcDriver extends NotImplementedDriver {
   protected readonly packageName = "mcprotocol";
 
   private conn: any = null;
+  /** doc 81 Đợt 1B Task 1 — trạng thái gia cố của `conn` hiện tại (null với mock). */
+  private hardening: McHardening | null = null;
+  private timeoutMs = 5000;
   private connected = false;
   private connectedAt: Date | null = null;
   private lastOkAt: Date | undefined;
@@ -133,12 +251,25 @@ export class MitsubishiMcDriver extends NotImplementedDriver {
       throw new Error("mcprotocol not installed");
     }
     const MC = mod.default ?? mod;
+    // doc 81 Đợt 1B Task 1 — hạ kết nối cũ (nếu có) trước khi thay.
+    if (this.conn) {
+      const prev = this.conn;
+      const prevHardening = this.hardening;
+      this.conn = null;
+      this.hardening = null;
+      this.connected = false;
+      await dropMcBounded(prev, prevHardening);
+    }
     const conn = new MC();
+    const hardening = hardenMcInstance(conn, (err) => {
+      if (this.conn === conn) this.markLinkLost("error", err);
+    });
 
     const opts = cfg.options ?? {};
     const defaultPort = typeof opts.port === "number" ? opts.port : 1281;
     const { host, port } = parseEndpoint(cfg.endpoint, defaultPort);
     const timeoutMs = cfg.timeoutMs ?? 5000;
+    this.timeoutMs = timeoutMs;
     const ascii = opts.ascii === true; // mặc định binary (false)
 
     try {
@@ -154,6 +285,7 @@ export class MitsubishiMcDriver extends NotImplementedDriver {
       );
 
       this.conn = conn;
+      this.hardening = hardening;
       this.connected = true;
       this.connectedAt = new Date();
       this.lastError = undefined;
@@ -163,27 +295,21 @@ export class MitsubishiMcDriver extends NotImplementedDriver {
       this.attachLinkLossHandlers(conn);
     } catch (err) {
       this.lastError = (err as Error)?.message || String(err);
-      try {
-        if (typeof conn.dropConnection === "function") {
-          await new Promise<void>((resolve) => conn.dropConnection(() => resolve()));
-        }
-      } catch {
-        // ignore
-      }
+      // doc 81 Đợt 1B Task 1 — dropConnection() không có callback + gỡ listener 'error':
+      // ngắt CÓ HẠN, destroy socket (kể cả socket đang dở SYN tới IP không định tuyến).
+      await dropMcBounded(conn, hardening);
       throw err;
     }
   }
 
   override async disconnect(): Promise<void> {
-    if (this.conn && typeof this.conn.dropConnection === "function") {
-      try {
-        await new Promise<void>((resolve) => this.conn.dropConnection(() => resolve()));
-      } catch {
-        // ignore
-      }
-    }
+    const conn = this.conn;
+    const hardening = this.hardening;
     this.conn = null;
+    this.hardening = null;
     this.connected = false;
+    // doc 81 Đợt 1B Task 1 — ngắt có hạn (≤ DEFAULT_CLOSE_TIMEOUT_MS rồi destroy).
+    await dropMcBounded(conn, hardening);
   }
 
   /**
@@ -238,12 +364,18 @@ export class MitsubishiMcDriver extends NotImplementedDriver {
     this.conn.addItems(keys);
 
     const t0 = Date.now();
-    const values: Record<string, unknown> = await new Promise((resolve, reject) => {
-      this.conn.readAllItems((_anythingBad: boolean, vals: Record<string, unknown>) => {
-        if (vals && typeof vals === "object") resolve(vals);
-        else reject(new Error("MitsubishiMcDriver: readAllItems returned no values"));
-      });
-    });
+    // doc 81 Đợt 1B Task 1 — readAllItems có thể không bao giờ gọi lại (lib tự thử lại mỗi
+    // 100 ms khi còn gói chưa xong) ⇒ đọc CÓ HẠN; lib tự timeout gói sau globalTimeout 4500 ms.
+    const values: Record<string, unknown> = await withDeadline(
+      new Promise<Record<string, unknown>>((resolve, reject) => {
+        this.conn.readAllItems((_anythingBad: boolean, vals: Record<string, unknown>) => {
+          if (vals && typeof vals === "object") resolve(vals);
+          else reject(new Error("MitsubishiMcDriver: readAllItems returned no values"));
+        });
+      }),
+      Math.max(this.timeoutMs, 4500) + 1000,
+      "mc readAllItems",
+    );
     this.lastLatencyMs = Date.now() - t0;
     this.lastOkAt = new Date();
 

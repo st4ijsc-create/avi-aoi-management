@@ -39,6 +39,13 @@ vi.mock("../robot/robotManager", () => ({
   ),
 }));
 
+// doc 81 Đợt 1B Task 5 — dispatcher robot đọc safety-PLC (facade OT) trước chuyển động; ở đây
+// không có safety-PLC thật ⇒ giả OK để nhánh control-enabled chảy tới publish (safety có test riêng
+// ở robot/robotCommandDispatcher.safety.test.ts).
+vi.mock("../ot/adapterFacade", () => ({
+  createAdapterFacade: () => ({ getSafetyStatus: async () => ({ state: "OK", source: "test", ts: "" }) }),
+}));
+
 // ── fake mqtt client (bắt publish) ───────────────────────────────────────────
 const publishes: Array<{ topic: string; payload: string }> = [];
 function makeFakeClient() {

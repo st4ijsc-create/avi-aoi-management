@@ -14,14 +14,20 @@
  *                   shows why.
  *
  * PURE (no React) so it is unit-tested directly.
+ *
+ * Doc 80 Đợt 1 final wave (item 1) — `errorMessage` is the query error run through the repo's
+ * client error translator (`mapTrpcError`: appCode → vi/en/zh, zod issues, leak guard), never the
+ * raw `error.message` — that raw string is exactly what `rawErrorMessageCensus` counts as debt.
  */
+import { mapTrpcError } from "@/lib/trpcErrors";
 
 export type IrLintStatus = "ok" | "errors" | "unreadable";
 export type IrLintUnreadableReason = "error" | "loading";
 
 export interface IrLintQueryLike {
   data: { ok: boolean } | undefined;
-  error: { message: string } | null | undefined;
+  /** The query's error (TRPCClientError / Error / null) — translated here, never shown raw. */
+  error: unknown;
   isFetching: boolean;
 }
 
@@ -29,7 +35,7 @@ export interface IrLintView {
   status: IrLintStatus;
   /** Why the result is unreadable (null when readable). */
   reason: IrLintUnreadableReason | null;
-  /** The query's error message when reason === "error". */
+  /** The TRANSLATED query error when reason === "error" (see `mapTrpcError`). */
   errorMessage?: string;
   /** Save / Build are allowed only when the lint result is readable. */
   canSaveOrBuild: boolean;
@@ -41,7 +47,7 @@ export interface IrLintView {
  */
 export function deriveIrLintState(q: IrLintQueryLike, inputIsCurrent: boolean): IrLintView {
   if (q.error) {
-    return { status: "unreadable", reason: "error", errorMessage: q.error.message, canSaveOrBuild: false };
+    return { status: "unreadable", reason: "error", errorMessage: mapTrpcError(q.error), canSaveOrBuild: false };
   }
   if (q.isFetching || !inputIsCurrent || q.data === undefined) {
     return { status: "unreadable", reason: "loading", canSaveOrBuild: false };

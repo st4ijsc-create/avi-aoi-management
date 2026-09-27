@@ -405,7 +405,7 @@ type UserRole = 'admin' | 'supervisor' | 'quality_inspector' | 'operator' | 'mai
 //    người dùng đăng nhập và đăng xuất nhiều lần trong ngày, hãy linh động để xử lý theo từng case
 //    thay vì quá bảo mật cũng không tốt."
 // Cách nới (từng tầng, không gộp) + cái KHÔNG được nới: xem docblock `batBuoc2FA()` ở trên.
-const PRIVILEGED_ROLES: UserRole[] = ['admin', 'supervisor', 'quality_inspector', 'engineer'];
+export const PRIVILEGED_ROLES: readonly UserRole[] = ['admin', 'supervisor', 'quality_inspector', 'engineer'];
 
 // Exported so routers whose privileged-role set doesn't match one of the
 // pre-built supervisorProcedure/qualityProcedure/actuationProcedure combos can
@@ -767,7 +767,9 @@ export const writeProcedure = protectedProcedure.use(requireWrite);
 // Actuation / deploy role-floor: ONLY these roles may issue a device-control or a
 // deploy command, regardless of any per-user permission bit. All three are in
 // PRIVILEGED_ROLES → 2FA is mandatory (enforced by require2FA below).
-const ACTUATION_ROLES: UserRole[] = ['admin', 'supervisor', 'engineer'];
+// doc 80 Đợt 1 Task 5 — export (chỉ đọc) để `programming.deployPreview` soi ĐÚNG sàn vai này thay vì
+// chép một danh sách thứ hai (hai bản sao của một vị từ là chỗ luật trôi đi).
+export const ACTUATION_ROLES: readonly UserRole[] = ['admin', 'supervisor', 'engineer'];
 
 /**
  * `actuationProcedure` — role-floor (admin/supervisor/engineer) + 2FA. Use for EVERY

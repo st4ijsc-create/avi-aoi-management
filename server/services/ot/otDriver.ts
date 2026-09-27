@@ -41,6 +41,12 @@ export interface OtSample {
   value: number | string | boolean | null;
   quality: OtQuality;
   timestamp: Date;
+  /**
+   * doc 81 Đợt 1B Task 12 — TUỲ CHỌN: mã trạng thái của giao thức khi mẫu `bad`
+   * (vd OPC UA "BadNodeIdUnknown (0x80340000)"), để một tag hỏng nói được vì sao mà không
+   * kéo cả lô. Mẫu good không mang trường này (hình dạng cũ giữ nguyên).
+   */
+  statusCode?: string;
 }
 
 /** Sức khoẻ kết nối của driver. */

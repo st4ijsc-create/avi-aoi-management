@@ -14,8 +14,17 @@ global:
     system: avi-aoi
 
 scrape_configs:
+  # doc 81 Đợt 1B Task 11 — /metrics nay CÓ xác thực:
+  #   • METRICS_TOKEN đặt trong .env của app ⇒ BẮT BUỘC `Authorization: Bearer <token>`
+  #     (thiếu/sai ⇒ 401). Ghi token vào một tệp rồi bỏ comment `authorization` bên dưới
+  #     (mount tệp vào container prometheus, vd ./prometheus/metrics_token:/etc/prometheus/metrics_token:ro).
+  #   • METRICS_TOKEN KHÔNG đặt ⇒ chỉ nhận scrape từ loopback 127.0.0.1/::1 của máy app.
+  #     host.docker.internal từ container thường KHÔNG là loopback ⇒ 403 — hãy dùng token.
   - job_name: avi-aoi-app
     metrics_path: /metrics
+    # authorization:
+    #   type: Bearer
+    #   credentials_file: /etc/prometheus/metrics_token
     static_configs:
       - targets:
           - host.docker.internal:3000   # app /metrics (change to app:3000 if same network)

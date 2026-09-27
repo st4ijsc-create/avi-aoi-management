@@ -4,6 +4,7 @@ import { locCheDoNghi } from "../services/ai/loaiLuot";
 import fs from "node:fs";
 import path from "node:path";
 import { thuXacThucRest, thanTuChoiRest } from "./_xacThucRest";
+import { huyKhiClientBoDi } from "./_huyKhiClientBoDi"; // final wave item 2 — huỷ khi client bỏ đi (res.on("close"))
 // ★★★★ Review TOÀN NHÁNH Pha 9 · I-6 — chủ DUY NHẤT của cặp cổng "loopback HOẶC vai đặc quyền".
 import { laLoopback, doiVaiDacQuyen as requirePrivileged } from "./_congLoopback";
 import {
@@ -523,7 +524,7 @@ export function registerAiLocalKnowledgeRoutes(app: express.Express) {
     const userRole = parseUserRole(req.body?.userRole);
     const context = parseContext(req.body?.context);
     // ★★★ 2026-08-23 — cờ huỷ của LƯỢT, dựng TRƯỚC `buildExecCtx` để nó đi cùng ngữ cảnh xuống tận
-    //   `ggufStream`. Lý lẽ đầy đủ ở khối ⚠ tại chỗ đăng ký `req.on("close")` ngay dưới.
+    //   `ggufStream`. Lý lẽ đầy đủ ở khối ⚠ tại chỗ gọi `huyKhiClientBoDi` ngay dưới.
     const boHuy = new AbortController();
     const execCtx = buildExecCtx(user as any, req, question, context);
     execCtx.signal = boHuy.signal;
@@ -549,18 +550,23 @@ export function registerAiLocalKnowledgeRoutes(app: express.Express) {
      * chờ model nói thêm một chữ nữa mới biết mình nên im. Với một lượt suy luận 30B đang bí, mảnh
      * kế tiếp có thể không bao giờ tới, và khe llama-server bị giữ tới idle-timeout **120.000 ms**.
      *
-     * `AbortController` + `req.on("close") → abort()` là ĐÚNG mẫu mà mọi tuyến stream khác của repo
-     * đã dùng từ lâu (`aiStreamingApi` /stream/generate và /stream/chat · `openaiGateway`). Tuyến
-     * này là **ngoại lệ DUY NHẤT** cho tới bản vá này. Signal đi xuống qua `ToolExecContext.signal`
-     * → `streamCodingModel` → `ggufStream(options, modelId, signal)` (đối số THỨ BA).
+     * ★★★ 2026-09-27 (doc 80 Đợt 1 final wave item 2) — **`res.on("close")`, KHÔNG `req.on("close")`.**
+     * Bản 2026-08-23 gắn `req.on("close")` và gọi đó là *"ĐÚNG mẫu mà mọi tuyến stream khác đã dùng"*
+     * — SAI, và sai ở cả bốn tuyến kia (`/api/ai/stream/*`, `openaiGateway`): trên Node 24.18 `req`
+     * phát `close` ~1 ms sau khi thân JSON đã đọc xong, tức TRƯỚC dòng này (đứng sau `await
+     * thuXacThucRest`) ⇒ lắng nghe không bao giờ chạy ⇒ nút Dừng không tới llama-server, khe bị giữ
+     * tới idle-timeout. `res` phát `close` đúng lúc socket đóng. Xem `_huyKhiClientBoDi.ts` và lưới
+     * `aiStreamCancel.dot1FinalWave.test.ts` (llama-server GIẢ thấy kết nối đóng ≤ 1 s).
+     * Signal đi xuống qua `ToolExecContext.signal` → nhánh lập trình `streamCodingModel` →
+     * `ggufStream(options, modelId, signal)` (đối số THỨ BA), và — từ final wave — nhánh vận hành
+     * `generateWithOllamaStream(…, execCtx.signal)` → `ggufStream` (trước đó nhánh này KHÔNG truyền).
      *
      * ⚠ Giữ NGUYÊN `closed`: nó canh một việc KHÁC — *"còn được phép `res.write` không"*. Gỡ nó ra
      *   là mời `ERR_STREAM_WRITE_AFTER_END` quay lại. Hai cờ, hai câu hỏi, không thay nhau được.
      */
     let closed = false;
-    req.on("close", () => {
+    huyKhiClientBoDi(req, res, boHuy, () => {
       closed = true;
-      boHuy.abort();
     });
 
     try {

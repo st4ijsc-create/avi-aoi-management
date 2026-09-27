@@ -20,18 +20,282 @@ import type { RuntimeAdapter } from "./deviceAdapter";
 import { createDriver } from "./driverRegistry";
 import {
   ConnectionSupervisor,
+  DEFAULT_SUPERVISOR_DISCONNECT_TIMEOUT_MS,
   type EndpointConfig,
   type BackoffConfig,
   type SupervisorStatus,
 } from "./connectionSupervisor";
+import { withDeadline } from "./drivers/boundedClose";
 
 let running = false;
-const active: Array<{ adapter: RuntimeAdapter; handle: OtSubscriptionHandle }> = [];
+/**
+ * Adapter legacy ĐÃ TỪNG khởi động được (thứ tự khởi động). doc 81 Đợt 1B Task 2: `handle`
+ * là null trong lúc adapter mất kết nối và đang được nối lại (xem LegacyEntry).
+ */
+const active: Array<{ adapter: RuntimeAdapter; handle: OtSubscriptionHandle | null }> = [];
 /** C3: one supervisor per adapter, populated ONLY when OT_CONN_HA_ENABLED. */
 const supervisors = new Map<number, { supervisor: ConnectionSupervisor; adapter: RuntimeAdapter }>();
 
 function flagEnabled(): boolean {
   return process.env.OT_GATEWAY_ENABLED === "true";
+}
+
+// ─── doc 81 Đợt 1B Task 2 — khởi động KHÔNG BAO GIỜ treo boot ────────────────────
+//
+// BE1 §0 (3): `await startOt()` chạy trước `server.listen`; vòng khởi động adapter tuần tự,
+// một Modbus trỏ cổng không ai nghe treo vô hạn ⇒ HTTP server không bao giờ listen. Nay:
+//   • index.ts gọi startOt NỀN sau listen (backgroundStart.ts);
+//   • mỗi adapter có hạn khởi động riêng OT_ADAPTER_START_TIMEOUT_MS (connect+subscribe),
+//     quá hạn ⇒ 'error' và đi tiếp; kết nối muộn (nếu có) bị hạ, không rò;
+//   • adapter khởi động SONG SONG có giới hạn (OT_ADAPTER_START_CONCURRENCY) — adapter chết
+//     không chặn adapter khác;
+//   • nhánh legacy có vòng NỐI LẠI (OT_LEGACY_RECONNECT_MS, backoff lũy thừa ≤ 60 s): adapter
+//     mất kết nối hoặc khởi động lỗi được thử lại — BE1 đo "legacy 0 mẫu sau khi bật lại".
+
+/** Hạn mặc định (ms) cho khởi động MỘT adapter (connect + subscribe). */
+export const DEFAULT_OT_ADAPTER_START_TIMEOUT_MS = 10_000;
+/** Biên (ms) cho dọn dẹp sau khi khởi động một adapter thất bại (disconnect có hạn). */
+export const OT_ADAPTER_START_CLEANUP_GRACE_MS = 1_000;
+/** Số adapter khởi động đồng thời tối đa (mặc định). */
+export const DEFAULT_OT_ADAPTER_START_CONCURRENCY = 4;
+/** Chu kỳ kiểm/nối lại mặc định của nhánh legacy (ms) — cũng là bước backoff đầu. */
+export const DEFAULT_OT_LEGACY_RECONNECT_MS = 5_000;
+/** Trần backoff nối lại của nhánh legacy (ms). */
+export const OT_LEGACY_RECONNECT_MAX_MS = 60_000;
+
+/** Hạn khởi động một adapter (env OT_ADAPTER_START_TIMEOUT_MS, đọc lúc gọi). */
+export function adapterStartTimeoutMs(): number {
+  return intEnv(process.env.OT_ADAPTER_START_TIMEOUT_MS, DEFAULT_OT_ADAPTER_START_TIMEOUT_MS);
+}
+/**
+ * doc 81 Đợt 1B Task 2 (Fix round 1) — hạn HIỆU LỰC cho một adapter/endpoint: không bao giờ
+ * ngắn hơn timeoutMs mà chính adapter cấu hình (+ biên), nếu không một thiết bị chậm hợp lệ
+ * (timeoutMs > hạn env) sẽ không bao giờ nối được — mọi lần nối xong muộn đều bị hạ.
+ */
+export function effectiveAdapterStartTimeoutMs(...conns: Array<{ timeoutMs?: number } | undefined>): number {
+  let ms = adapterStartTimeoutMs();
+  for (const c of conns) {
+    const t = c?.timeoutMs;
+    if (typeof t === "number" && Number.isFinite(t) && t > 0) {
+      ms = Math.max(ms, t + OT_ADAPTER_START_CLEANUP_GRACE_MS);
+    }
+  }
+  return ms;
+}
+function adapterStartConcurrency(): number {
+  return intEnv(process.env.OT_ADAPTER_START_CONCURRENCY, DEFAULT_OT_ADAPTER_START_CONCURRENCY);
+}
+function legacyReconnectMs(): number {
+  return intEnv(process.env.OT_LEGACY_RECONNECT_MS, DEFAULT_OT_LEGACY_RECONNECT_MS);
+}
+
+/** Trạng thái vận hành của một adapter (cả hai nhánh). */
+export type OtAdapterRunState = "starting" | "active" | "reconnecting" | "error";
+
+export interface OtAdapterStatus {
+  adapterId: number;
+  code: string;
+  protocol: string;
+  mode: "legacy" | "ha";
+  state: OtAdapterRunState;
+  lastError: string | null;
+  /** Số lần thử khởi động/nối (legacy) hoặc số lần connect (HA). */
+  attempts: number;
+}
+
+/** Bản ghi runtime một adapter nhánh legacy. */
+interface LegacyEntry {
+  adapter: RuntimeAdapter;
+  handle: OtSubscriptionHandle | null;
+  state: OtAdapterRunState;
+  lastError: string | null;
+  attempts: number;
+  /** Số lần khởi động/nối lại thất bại liên tiếp (lũy thừa backoff). */
+  failures: number;
+  nextRetryAt: number;
+  /** Một lần khởi động đang chạy (kể cả đã quá hạn mà driver chưa settle) ⇒ không thử chồng. */
+  inflight: boolean;
+  /** Đã có mặt trong `active` chưa. */
+  listed: boolean;
+}
+
+const legacy = new Map<number, LegacyEntry>();
+let legacyTimer: ReturnType<typeof setInterval> | null = null;
+/** Tăng mỗi lần stopOt: mọi công việc khởi động/nối lại của thế hệ cũ tự huỷ khi xong. */
+let epoch = 0;
+/** startOt đơn chuyến: gọi chồng trong lúc đang khởi động ⇒ nhận cùng promise. */
+let startInFlight: Promise<boolean> | null = null;
+
+function errText(err: unknown): string {
+  return (err as Error)?.message || String(err);
+}
+
+/** Chờ fn() tối đa ms; không bao giờ ném. */
+async function boundedQuiet(fn: () => unknown, ms: number, label: string): Promise<void> {
+  try {
+    await withDeadline(Promise.resolve().then(fn), ms, label);
+  } catch {
+    // hết hạn hoặc lỗi dọn dẹp — bỏ qua, không giữ vòng khởi động
+  }
+}
+
+/** Chạy fn cho từng phần tử, tối đa `limit` cái đồng thời. fn không được ném. */
+async function runWithConcurrency<T>(items: T[], limit: number, fn: (item: T) => Promise<void>): Promise<void> {
+  let next = 0;
+  const workers = Array.from({ length: Math.max(1, Math.min(limit, items.length)) }, async () => {
+    while (next < items.length) {
+      const item = items[next++];
+      await fn(item);
+    }
+  });
+  await Promise.all(workers);
+}
+
+/**
+ * Một lần khởi động CÓ HẠN của adapter legacy: connect + subscribe trong adapterStartTimeoutMs,
+ * dọn dẹp (disconnect) trong OT_ADAPTER_START_CLEANUP_GRACE_MS. Không bao giờ ném; không bao
+ * giờ chờ quá hạn + biên. Kết nối xong MUỘN sau hạn ⇒ bị hạ (đóng subscription + disconnect);
+ * entry.inflight giữ tới lúc đó để vòng nối lại không connect chồng lên cùng driver.
+ */
+async function attemptLegacyStart(entry: LegacyEntry, myEpoch: number): Promise<boolean> {
+  const { adapter } = entry;
+  const timeoutMs = effectiveAdapterStartTimeoutMs(adapter.connection);
+  entry.attempts += 1;
+  entry.inflight = true;
+  const work = (async (): Promise<OtSubscriptionHandle> => {
+    await adapter.driver.connect(adapter.connection);
+    const sink = await makeIngestSink(adapter);
+    return adapter.driver.subscribe(adapter.tags, sink, adapter.pollIntervalMs);
+  })();
+  // Cờ settle gắn TRƯỚC withDeadline ⇒ khi work reject đúng hạn, cờ đã bật lúc catch chạy.
+  let workSettled = false;
+  work.then(
+    () => (workSettled = true),
+    () => (workSettled = true),
+  );
+
+  let handle: OtSubscriptionHandle;
+  try {
+    handle = await withDeadline(work, timeoutMs, `adapter "${adapter.code}" start`);
+  } catch (err) {
+    entry.lastError = errText(err);
+    if (workSettled) {
+      // Lỗi thường (vd ECONNREFUSED, protocol chưa triển khai): dọn như cũ nhưng có hạn.
+      await boundedQuiet(() => adapter.driver.disconnect(), OT_ADAPTER_START_CLEANUP_GRACE_MS, "disconnect");
+      entry.inflight = false;
+    } else {
+      // Quá hạn: hạ transport ngay (best-effort, không đợi) và hạ nốt kết nối muộn khi settle.
+      void boundedQuiet(() => adapter.driver.disconnect(), DEFAULT_SUPERVISOR_DISCONNECT_TIMEOUT_MS, "disconnect");
+      void work
+        .then(
+          async (late) => {
+            await boundedQuiet(() => late.close(), DEFAULT_SUPERVISOR_DISCONNECT_TIMEOUT_MS, "late close");
+            await boundedQuiet(
+              () => adapter.driver.disconnect(),
+              DEFAULT_SUPERVISOR_DISCONNECT_TIMEOUT_MS,
+              "late disconnect",
+            );
+          },
+          () => undefined, // connect muộn lỗi: driver tự dọn transport của nó
+        )
+        .finally(() => {
+          entry.inflight = false;
+        });
+    }
+    return false;
+  }
+
+  entry.inflight = false;
+  if (myEpoch !== epoch) {
+    // stopOt đã chạy trong lúc khởi động: không sống lại, hạ ngay kết nối vừa có.
+    await boundedQuiet(() => handle.close(), OT_ADAPTER_START_CLEANUP_GRACE_MS, "close");
+    await boundedQuiet(() => adapter.driver.disconnect(), OT_ADAPTER_START_CLEANUP_GRACE_MS, "disconnect");
+    return false;
+  }
+  entry.handle = handle;
+  entry.state = "active";
+  entry.lastError = null;
+  entry.failures = 0;
+  return true;
+}
+
+function listLegacyEntryIfNeeded(entry: LegacyEntry): void {
+  if (!entry.listed) {
+    entry.listed = true;
+    active.push(entry);
+  }
+}
+
+function legacyRetryDelay(failures: number): number {
+  const base = legacyReconnectMs();
+  return Math.min(OT_LEGACY_RECONNECT_MAX_MS, base * Math.pow(2, Math.max(0, failures - 1)));
+}
+
+/**
+ * Một vòng kiểm của nhánh legacy: adapter 'active' mà driver báo mất kết nối ⇒ 'reconnecting'
+ * (đóng poll cũ, hạ driver, có hạn); adapter 'error'/'reconnecting' tới hạn thử ⇒ thử khởi động
+ * lại có hạn (không chờ trong tick). Log CHỈ ở chuyển trạng thái (mất kết nối / hồi phục),
+ * không log mỗi lần thử lại thất bại.
+ */
+async function legacyTick(myEpoch: number): Promise<void> {
+  for (const entry of legacy.values()) {
+    if (myEpoch !== epoch) return;
+    if (entry.inflight) continue;
+    if (entry.state === "active") {
+      let up = false;
+      try {
+        up = entry.adapter.driver.isConnected();
+      } catch {
+        up = false;
+      }
+      if (up) continue;
+      entry.state = "reconnecting";
+      entry.lastError = "driver reported disconnected";
+      entry.failures = 0;
+      entry.nextRetryAt = 0;
+      console.warn(`[OT] adapter "${entry.adapter.code}" (${entry.adapter.protocol}) link lost — reconnecting`);
+      const h = entry.handle;
+      entry.handle = null;
+      entry.inflight = true;
+      if (h) await boundedQuiet(() => h.close(), OT_ADAPTER_START_CLEANUP_GRACE_MS, "close");
+      await boundedQuiet(() => entry.adapter.driver.disconnect(), OT_ADAPTER_START_CLEANUP_GRACE_MS, "disconnect");
+      entry.inflight = false;
+      if (myEpoch !== epoch) return;
+    }
+    if (entry.state === "starting" || Date.now() < entry.nextRetryAt) continue;
+    const prevState = entry.state;
+    void attemptLegacyStart(entry, myEpoch).then((ok) => {
+      if (myEpoch !== epoch) return;
+      if (ok) {
+        listLegacyEntryIfNeeded(entry);
+        console.log(
+          `[OT] adapter "${entry.adapter.code}" (${entry.adapter.protocol}) ${prevState === "error" ? "started" : "reconnected"}, ${entry.adapter.tags.length} tag(s)`,
+        );
+        return;
+      }
+      entry.state = prevState;
+      entry.failures += 1;
+      entry.nextRetryAt = Date.now() + legacyRetryDelay(entry.failures);
+    });
+  }
+}
+
+function startLegacyWatchdog(myEpoch: number): void {
+  if (legacyTimer) clearInterval(legacyTimer);
+  let ticking = false;
+  const timer = setInterval(() => {
+    if (ticking) return;
+    ticking = true;
+    void legacyTick(myEpoch)
+      .catch(() => undefined)
+      .finally(() => {
+        ticking = false;
+      });
+  }, legacyReconnectMs());
+  if (typeof (timer as { unref?: () => void }).unref === "function") {
+    (timer as { unref: () => void }).unref();
+  }
+  legacyTimer = timer;
 }
 
 /** C3 master flag — read at call time so tests/operators can toggle it. Default OFF. */
@@ -232,8 +496,24 @@ export function makeDeadbandSink(adapter: RuntimeAdapter, next: OnOtSample): OnO
  * a pending setImmediate still fires and drains the final buffer. When batching is
  * OFF the sink is the exact legacy per-sample `ingestSample` call.
  */
+/**
+ * doc 81 Đợt 1B Task 2 — adapter nay khởi động SONG SONG nên nhiều makeIngestSink gọi cùng lúc:
+ * dùng MỘT promise import chung (đo được: dưới vite-node, các import động chồng nhau của cùng
+ * module có thể nhận bản khác nhau). Import lỗi ⇒ bỏ nhớ để lần sau thử lại.
+ */
+let ingestModule: Promise<typeof import("./ingest")> | null = null;
+function loadIngest(): Promise<typeof import("./ingest")> {
+  if (!ingestModule) {
+    ingestModule = import("./ingest");
+    ingestModule.catch(() => {
+      ingestModule = null;
+    });
+  }
+  return ingestModule;
+}
+
 async function makeIngestSink(adapter: RuntimeAdapter): Promise<OnOtSample> {
-  const mod = await import("./ingest");
+  const mod = await loadIngest();
   if (!batchPollEnabled()) {
     // Default path — per-sample ingest. Only `ingestSample` is touched (keeps strict
     // test mocks that stub only `ingestSample` working; `ingestSamples` is never read).
@@ -285,18 +565,38 @@ async function buildSupervisor(adapter: RuntimeAdapter): Promise<ConnectionSuper
     onSample,
     healthIntervalMs: haHealthIntervalMs(adapter.pollIntervalMs),
     backoff: haBackoffFromEnv(),
+    // doc 81 Đợt 1B Task 2 (R8) — một lần connect+subscribe không giữ quá hạn khởi động.
+    // Fix round 1 — supervisor tự nâng hạn theo timeoutMs của từng endpoint (connectDeadlineFor).
+    connectTimeoutMs: adapterStartTimeoutMs(),
   });
 }
 
 /**
  * Khởi động OT framework. Trả false nếu flag tắt hoặc không có adapter.
+ *
+ * doc 81 Đợt 1B Task 2 — mỗi adapter có hạn khởi động riêng (OT_ADAPTER_START_TIMEOUT_MS,
+ * mặc định 10000) và các adapter khởi động song song có giới hạn, nên startOt trả về trong
+ * khoảng ⌈n / concurrency⌉ × (hạn + biên dọn dẹp) — không bao giờ treo vì một thiết bị.
+ * Gọi chồng trong lúc đang khởi động ⇒ nhận cùng promise (không khởi động hai lần).
  */
 export async function startOt(): Promise<boolean> {
   if (running) return true;
+  if (startInFlight) return startInFlight;
+  const p = startOtOnce();
+  startInFlight = p;
+  try {
+    return await p;
+  } finally {
+    if (startInFlight === p) startInFlight = null;
+  }
+}
+
+async function startOtOnce(): Promise<boolean> {
   if (!flagEnabled()) {
     console.log("[OT] disabled (set OT_GATEWAY_ENABLED=true to enable)");
     return false;
   }
+  const myEpoch = epoch;
 
   const { loadEnabledAdapters } = await import("./deviceAdapter");
 
@@ -307,20 +607,44 @@ export async function startOt(): Promise<boolean> {
     console.error("[OT] loadEnabledAdapters failed:", (err as Error)?.message || err);
     return false;
   }
+  // Fix round 1 — stopOt (+ startOt mới) chạy trong lúc nạp: lượt cũ dừng NGAY, không ghi đè
+  // entry/supervisor của thế hệ mới.
+  if (myEpoch !== epoch) return false;
 
   if (adapters.length === 0) {
     console.log("[OT] no enabled adapters — nothing to start");
     return false;
   }
 
+  const concurrency = adapterStartConcurrency();
+
   // ── C3 HA PATH — supervised connections (reconnect + failover). ─────────────
   if (isConnHaEnabled()) {
-    for (const adapter of adapters) {
+    await runWithConcurrency(adapters, concurrency, async (adapter) => {
       try {
         const supervisor = await buildSupervisor(adapter);
         // start() never throws: a failed initial connect schedules a backoff retry
         // rather than crashing the host (preserves the fail-safe behaviour).
-        await supervisor.start();
+        // doc 81 Đợt 1B Task 2 — lớp NGOÀI có hạn: supervisor đã tự giới hạn connect (R8),
+        // nhưng otManager không phụ thuộc điều đó; quá hạn ⇒ supervisor tiếp tục thử NỀN.
+        try {
+          await withDeadline(
+            supervisor.start(),
+            effectiveAdapterStartTimeoutMs(adapter.connection, adapter.backupConnection) +
+              OT_ADAPTER_START_CLEANUP_GRACE_MS,
+            `adapter "${adapter.code}" supervisor start`,
+          );
+        } catch (err) {
+          console.warn(
+            `[OT] adapter "${adapter.code}" (${adapter.protocol}) start: ${errText(err)} — supervisor keeps retrying in background`,
+          );
+        }
+        if (myEpoch !== epoch) {
+          // stopOt chạy trong lúc khởi động: không đăng ký, hạ supervisor vừa dựng.
+          await supervisor.stop().catch(() => undefined);
+          return;
+        }
+        // Đăng ký NGAY (dispatcher thấy adapter đã nối trong lúc adapter khác còn khởi động).
         supervisors.set(adapter.adapterId, { supervisor, adapter });
         const eps = adapter.backupConnection ? 2 : 1;
         console.log(
@@ -329,36 +653,61 @@ export async function startOt(): Promise<boolean> {
       } catch (err) {
         console.warn(`[OT] adapter "${adapter.code}" (${adapter.protocol}) supervisor skipped: ${(err as Error)?.message || err}`);
       }
+    });
+    if (myEpoch !== epoch) return false;
+    // Giữ thứ tự đăng ký theo thứ tự adapter (như vòng tuần tự cũ).
+    for (const a of adapters) {
+      const e = supervisors.get(a.adapterId);
+      if (e) {
+        supervisors.delete(a.adapterId);
+        supervisors.set(a.adapterId, e);
+      }
     }
     running = true;
     console.log(`[OT] started (HA) — ${supervisors.size}/${adapters.length} adapter(s) supervised`);
     return true;
   }
 
-  // ── LEGACY PATH (OT_CONN_HA_ENABLED off) — single endpoint, exactly as before.
+  // ── LEGACY PATH (OT_CONN_HA_ENABLED off) — single endpoint, no supervisor.
   // R-2a: the ingest sink coalesces each poll tick into ONE multi-row insert when
   // OT_POLL_BATCH_ENABLED (default OFF) is on, while keeping driver.subscribe() intact.
-  for (const adapter of adapters) {
-    try {
-      await adapter.driver.connect(adapter.connection);
-      const sink = await makeIngestSink(adapter);
-      const handle = await adapter.driver.subscribe(
-        adapter.tags,
-        sink,
-        adapter.pollIntervalMs,
-      );
-      active.push({ adapter, handle });
+  // doc 81 Đợt 1B Task 2 — mỗi adapter có hạn, song song có giới hạn; adapter lỗi ⇒ 'error'
+  // và vòng nối lại legacy thử lại (backoff) thay vì bỏ vĩnh viễn.
+  const entries: LegacyEntry[] = adapters.map((adapter) => ({
+    adapter,
+    handle: null,
+    state: "starting",
+    lastError: null,
+    attempts: 0,
+    failures: 0,
+    nextRetryAt: 0,
+    inflight: false,
+    listed: false,
+  }));
+  for (const e of entries) legacy.set(e.adapter.adapterId, e);
+
+  await runWithConcurrency(entries, concurrency, async (entry) => {
+    const { adapter } = entry;
+    const ok = await attemptLegacyStart(entry, myEpoch);
+    if (myEpoch !== epoch) return;
+    if (ok) {
+      // Đăng ký NGAY (dispatcher thấy adapter đã nối trong lúc adapter khác còn khởi động).
+      listLegacyEntryIfNeeded(entry);
       console.log(`[OT] adapter "${adapter.code}" (${adapter.protocol}) started, ${adapter.tags.length} tag(s)`);
-    } catch (err) {
-      // Protocol chưa triển khai hoặc kết nối lỗi → bỏ qua adapter này, không sập.
-      console.warn(`[OT] adapter "${adapter.code}" (${adapter.protocol}) skipped: ${(err as Error)?.message || err}`);
-      try {
-        await adapter.driver.disconnect();
-      } catch {
-        // ignore
-      }
+      return;
     }
-  }
+    // Protocol chưa triển khai hoặc kết nối lỗi/quá hạn → adapter này 'error', không sập.
+    entry.state = "error";
+    entry.failures = 1;
+    entry.nextRetryAt = Date.now() + legacyRetryDelay(1);
+    console.warn(`[OT] adapter "${adapter.code}" (${adapter.protocol}) skipped: ${entry.lastError}`);
+  });
+
+  if (myEpoch !== epoch) return false;
+  // Giữ thứ tự `active` theo thứ tự adapter (như vòng tuần tự cũ).
+  const order = new Map(entries.map((e, i) => [e.adapter.adapterId, i]));
+  active.sort((a, b) => (order.get(a.adapter.adapterId) ?? 0) - (order.get(b.adapter.adapterId) ?? 0));
+  startLegacyWatchdog(myEpoch);
 
   running = true;
   console.log(`[OT] started — ${active.length}/${adapters.length} adapter(s) active`);
@@ -367,8 +716,16 @@ export async function startOt(): Promise<boolean> {
 
 /**
  * Dừng OT framework: đóng mọi subscription + disconnect. An toàn gọi nhiều lần.
+ * doc 81 Đợt 1B Task 2 — mỗi lời gọi hạ kết nối có hạn; khởi động/nối lại đang chạy của thế
+ * hệ cũ tự huỷ khi xong (epoch).
  */
 export async function stopOt(): Promise<void> {
+  epoch += 1;
+  startInFlight = null;
+  if (legacyTimer) {
+    clearInterval(legacyTimer);
+    legacyTimer = null;
+  }
   // C3 supervisors first (each stop() is idempotent + non-throwing).
   for (const { supervisor } of supervisors.values()) {
     try {
@@ -381,17 +738,12 @@ export async function stopOt(): Promise<void> {
 
   while (active.length > 0) {
     const entry = active.pop()!;
-    try {
-      await entry.handle.close();
-    } catch {
-      // ignore
-    }
-    try {
-      await entry.adapter.driver.disconnect();
-    } catch {
-      // ignore
-    }
+    const h = entry.handle;
+    entry.handle = null;
+    if (h) await boundedQuiet(() => h.close(), DEFAULT_SUPERVISOR_DISCONNECT_TIMEOUT_MS, "close");
+    await boundedQuiet(() => entry.adapter.driver.disconnect(), DEFAULT_SUPERVISOR_DISCONNECT_TIMEOUT_MS, "disconnect");
   }
+  legacy.clear();
   running = false;
 }
 
@@ -446,4 +798,54 @@ export function getSupervisorStatus(adapterId: number): SupervisorStatus | undef
 /** Status snapshots for all supervised adapters (empty when HA off / none). */
 export function listSupervisorStatuses(): SupervisorStatus[] {
   return [...supervisors.values()].map((e) => e.supervisor.status());
+}
+
+// ─── doc 81 Đợt 1B Task 2 — trạng thái từng adapter (cả legacy lẫn HA) ─────────
+
+function haRunState(st: SupervisorStatus): OtAdapterRunState {
+  switch (st.state) {
+    case "connected":
+      return "active";
+    case "reconnecting":
+      return "reconnecting";
+    case "idle":
+    case "connecting":
+      return "starting";
+    default:
+      return "error"; // failed | stopped
+  }
+}
+
+/** Trạng thái một adapter (undefined nếu OT không quản adapter này). */
+export function getOtAdapterStatus(adapterId: number): OtAdapterStatus | undefined {
+  const sup = supervisors.get(adapterId);
+  if (sup) {
+    const st = sup.supervisor.status();
+    return {
+      adapterId,
+      code: st.code,
+      protocol: st.protocol,
+      mode: "ha",
+      state: haRunState(st),
+      lastError: st.lastError,
+      attempts: st.attempts,
+    };
+  }
+  const e = legacy.get(adapterId);
+  if (!e) return undefined;
+  return {
+    adapterId,
+    code: e.adapter.code,
+    protocol: e.adapter.protocol,
+    mode: "legacy",
+    state: e.state,
+    lastError: e.lastError,
+    attempts: e.attempts,
+  };
+}
+
+/** Trạng thái mọi adapter OT đang quản. */
+export function listOtAdapterStatuses(): OtAdapterStatus[] {
+  const ids = [...supervisors.keys(), ...legacy.keys()];
+  return ids.map((id) => getOtAdapterStatus(id)).filter((x): x is OtAdapterStatus => !!x);
 }

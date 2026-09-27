@@ -15,7 +15,9 @@ vi.mock("drizzle-orm", async (orig) => {
   const actual = await orig<typeof import("drizzle-orm")>();
   return { ...actual, eq: makeEq, and: makeAnd, gte: makeGte, desc: makeDesc };
 });
-vi.mock("../db", () => ({ getDb: vi.fn(async () => fake) }));
+// `phaiDoiMatKhau` is read by the GLOBAL root middleware (server/_core/trpc.ts) — a bare `{ getDb }`
+// mock made every call throw "No 'phaiDoiMatKhau' export" (same fix as deviceAdapterRouter.test.ts).
+vi.mock("../db", () => ({ getDb: vi.fn(async () => fake), phaiDoiMatKhau: vi.fn(async () => false) }));
 
 const perm = { allow: true };
 vi.mock("../_core/accessControl", () => ({

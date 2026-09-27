@@ -453,7 +453,86 @@ const cua = (n: NhomPhamVi): ThuTuc[] => NHOM.get(n) ?? [];
 //   rò MỚI ⇒ nhóm A + không trong sổ nợ" — vẫn XANH ở cùng lượt chạy.
 // ★ Thủ tục này cũng có ca hai chiều trên CSDL thật ở `twinBonManApiVaiPhamVi.db.test.ts` (CA_DOC,
 //   `chan: laRong` + đối chứng dương ghim mã toà), nên con số ở đây không phải chỗ duy nhất canh nó.
-const GHIM = { A: 341, B: 8, C: 474, D: 1120, S: 328, tong: 2271 } as const;
+/**
+ * ══════════════════════════════════════════════════════════════════════════════════════════════
+ * ★★★ 2026-09-27 (doc 80 Đợt 1 Task 2, Hub trung thực) — **C: 474→481 · D: 1120→1122 · S: 328→329 ·
+ * tong: 2271→2281.** Lời khai kèm số liệu — TÁCH hai nguồn, đo ĐÚNG khuôn "trước-khi-sửa" của các
+ * lượt trước (branch dùng chung, nhiều phiên Claude khác cùng sửa — xem dispatch-common.md):
+ * ══════════════════════════════════════════════════════════════════════════════════════════════
+ *   ĐO TRƯỚC KHI CHẠM BẤT KỲ TỆP NÀO của lượt này (HEAD lúc bắt đầu Task 2):
+ *     `A 341 · B 8 · C 481 · D 1122 · S 328 · tong 2280`
+ *   ⇒ Ghim cũ (474/1120/2271) đã SAI TRƯỚC lượt này — độ trôi `C +7 · D +2 · tong +9` là của các
+ *     phiên khác đang chạy song song trên CÙNG nhánh (không phải của Task 2; không đụng tới, không
+ *     ký hộ — xem G139/G152 trong MEMORY.md: đo, đừng suy).
+ *
+ *   ĐO SAU lượt này (chỉ hai tệp `server/routers/oversightRouter.ts` +
+ *   `server/routers/machineRecipeRouter.ts` đổi trong `server/**`):
+ *     `A 341 · B 8 · C 481 · D 1122 · S 329 · tong 2281`
+ *
+ *   ⇒ Delta CỦA TASK 2, đầy đủ, không dư một đơn vị: **tong +1, S +1, A ±0** (không phải "không
+ *   đổi" theo nghĩa không có gì xảy ra — HAI thủ tục đổi nhóm bù trừ nhau):
+ *     • `oversightRouter.pendingSummary` — HUB-02 đòi "người chỉ có `machine_status` chỉ nhận SỐ
+ *       ĐẾM, không nhận TÊN mục"; để phân biệt được ai đang gọi, handler giờ nhận `ctx` và gọi
+ *       `checkPermission(ctx.user.id, ctx.user.role, …)` — danh tính RỜI TAY handler ⇒ nhóm A → **S**
+ *       (đã XOÁ khỏi `phamViDocBaseline.ts`, xem khối chú thích ở đó).
+ *     • `oversightRouter.posture` (MỚI, ILK-06) — đọc `interlock_rules` (đếm rule bật + có đích)
+ *       để tính độ phủ interlock cho dải "Tư thế an toàn"; như `pendingSummary` cũ, đây là một SỐ
+ *       ĐẾM gộp toàn nhà máy cho trưởng ca L3, không phải một hàng dữ liệu tenant — **A** (đã THÊM
+ *       vào `phamViDocBaseline.ts`).
+ *   C/D không đổi bởi Task 2 (0 thủ tục mới thuộc hai nhóm đó từ hai file đã sửa) — đúng như đo được.
+ * ══════════════════════════════════════════════════════════════════════════════════════════════
+ * ★★★ 2026-09-27 (doc 81 Đợt 1B final wave, item 4) — **A 341→342 · C 481→480 · D 1122→1123 ·
+ * tong 2281→2282.** ĐO bằng chính bộ quét này trên cây HEAD `f1910fc4f` TRƯỚC khi sửa bất kỳ tệp
+ * nào của lượt này (`final-fix-logs/census-before.log`), rồi quy trách nhiệm theo TỪNG khoá:
+ *   • `simTargetsRouter.ursimPing` (query): **C → A**. Task 3 (`080eeeb76`…`947589e52`, R3/R9)
+ *     cho `resolveSimTarget` đọc `robots` + `device_adapters` để từ chối sim target trỏ vào thiết
+ *     bị thật ⇒ nay "chạm tenant" mà danh tính không rời tay. Đã THÊM vào `phamViDocBaseline.ts`
+ *     kèm lời khai (phép so cố ý xuyên tenant, không trả hàng tenant nào) — xem khối chú thích ở đó.
+ *   • `robotRouter.clearMotionLock` (mutation, MỚI): **D +1**. Task 5 fix round 4 (ruling R13):
+ *     người vận hành có quyền gỡ khoá chuyển động, có kiểm toán.
+ *   ⇒ A +1 · C −1 · D +1 · tong +1, không dư một đơn vị; B/S không đổi.
+ * ══════════════════════════════════════════════════════════════════════════════════════════════
+ */
+/*
+ * ══════════════════════════════════════════════════════════════════════════════════════════════
+ * ★★★ 2026-09-27 (doc 80 Đợt 1 Task 3, STD-04) — **A 342→341 · S 329→330 · tong không đổi.**
+ * ĐO bằng chính bộ quét này sau lượt sửa, lúc `git status server/` CHỈ có tệp của Task 3: bộ quét
+ * cho `A 341 · S 330` (B/C/D/tong trùng ghim cũ) và §5 chỉ đích danh MỘT khoá đổi nhóm:
+ *   • `equipmentStandardsRouter.alarmKpis` (query): **A → S**. Trước: bộ tính KPI thứ hai tự đọc
+ *     `andon_events` toàn cục. Nay uỷ quyền `alarmKpiRouter.createCaller(ctx).summary(…)` ⇒ cùng
+ *     cổng `resolveAlertScope(ctx.user)` với /alarm-kpi; đã XOÁ khỏi `phamViDocBaseline.ts`.
+ *   • `complianceMetrics` VẪN ở A (đọc `machines` toàn cục, không đổi phạm vi) — vẫn trong sổ nợ.
+ * ══════════════════════════════════════════════════════════════════════════════════════════════
+ */
+/*
+ * ══════════════════════════════════════════════════════════════════════════════════════════════
+ * ★★★ 2026-09-27 (doc 80 Đợt 1 Task 4, SAF-02) — **S 330→331 · tong 2282→2283 · A/B/C/D không đổi.**
+ * ĐO bằng chính bộ quét này trên HEAD `290004e2c` TRƯỚC khi sửa (xanh: A 341 · S 330 · tong 2282)
+ * rồi SAU lượt sửa; tra từng khoá bằng `nhomCua(khoaCua)` của bộ quét:
+ *   • `safetyRouter.sourceHealth` (query, MỚI): **S +1**. Đọc `safety_plc_configs` (bảng tenant)
+ *     và danh tính RỜI TAY qua `loadSafetySourceHealth(phamViCua(ctx))` ⇒ mã cấu hình chỉ lộ trong
+ *     phạm vi nhà máy của người xem; số tổng (nền của preflight, toàn hệ) chỉ là số đếm. KHÔNG
+ *     thêm dòng nào vào `phamViDocBaseline.ts`.
+ *   • `orchestrationRouter.listRuns` (đã có) thêm một truy vấn `orchestration_run_steps` cho ô
+ *     `dispatch` (ORC-13) — VẪN ở **C** (bộ quét xác nhận), không đổi nhóm.
+ *   ⇒ S +1 · tong +1, không dư một đơn vị.
+ * ══════════════════════════════════════════════════════════════════════════════════════════════
+ */
+/*
+ * ══════════════════════════════════════════════════════════════════════════════════════════════
+ * ★★★ 2026-09-27 (doc 80 Đợt 1 Task 5, WS-01/WS-02) — **D 1123→1124 · S 331→332 · tong 2283→2285 ·
+ * A/B/C không đổi.** ĐO bằng chính bộ quét này sau lượt sửa (trước: xanh trên HEAD `8d51dc150`);
+ * tra từng khoá bằng `nhomCua(khoaCua)` của bộ quét:
+ *   • `programmingRouter.requestVersionReview` (mutation, MỚI): **D +1** — ghi dấu vết "yêu cầu
+ *     duyệt" của một phiên bản.
+ *   • `programmingRouter.deployPreview` (query, MỚI): **S +1** — đọc program_* (bảng tenant) và
+ *     danh tính RỜI TAY qua `previewDeploy(input, ctx.user)` (cổng vai/2FA/quyền của NGƯỜI GỌI).
+ *     KHÔNG thêm dòng nào vào `phamViDocBaseline.ts`.
+ *   • `programmingRouter.reviewArtifact` (đã có) thêm `reason` — VẪN ở **D**, không đổi nhóm.
+ *   ⇒ D +1 · S +1 · tong +2, không dư một đơn vị.
+ * ══════════════════════════════════════════════════════════════════════════════════════════════
+ */
+const GHIM = { A: 341, B: 8, C: 480, D: 1124, S: 332, tong: 2285 } as const;
 
 describe("§1 — CẦU CHÌ: bộ suy có thật sự nhìn thấy gì không", () => {
   it("★ không có ô MÙ nào (mỗi ô mù là một chỗ KHÔNG AI CANH)", () => {

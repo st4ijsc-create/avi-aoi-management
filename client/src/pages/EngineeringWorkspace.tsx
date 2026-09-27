@@ -44,6 +44,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
+import { Skeleton } from "@/components/ui/skeleton";
 import { Textarea } from "@/components/ui/textarea";
 import { Checkbox } from "@/components/ui/checkbox";
 import {
@@ -72,6 +73,15 @@ import { useKeyboardShortcuts } from "@/hooks/useKeyboardShortcuts";
 import { useActuationReadiness } from "@/hooks/useActuationReadiness";
 import { useStepUpOtp } from "@/components/security/StepUpOtpDialog";
 import { deployOutcome, newDeployAttemptKey } from "./engineeringDeployOutcome";
+// doc 80 Đợt 1 Task 5 — duyệt phiên bản trong IDE (WS-01) + bản xem trước deploy trước OTP (F2).
+import { VersionReviewPanel, ReviewStatusBadge } from "@/components/engineering/VersionReviewPanel";
+import { DeployPreviewPanel, type DeployPreviewView } from "@/components/engineering/DeployPreviewPanel";
+import { progDiagText } from "@/components/engineering/progDiagText";
+import {
+  deriveFeatureStatus,
+  FeatureStatusGate,
+  featureStatusLabel,
+} from "@/components/common/FeatureStatusGate";
 
 /** All target classes (mirrors server programmingKindEnum / PROGRAMMING_KINDS). */
 const KINDS = [
@@ -111,7 +121,7 @@ const KIND_LANGUAGES: Record<Kind, readonly string[]> = {
   "iec61131-ld": ["ld"],
 };
 
-type Diagnostic = { severity: string; message: string; line?: number; symbol?: string };
+type Diagnostic = { severity: string; message: string; line?: number; col?: number; symbol?: string; code?: string; params?: Record<string, string | number> };
 
 /**
  * U14 (doc 26 §3.2) — STEPPER luồng vàng: Soạn → Kiểm tra → Build → Mô phỏng →
@@ -188,11 +198,18 @@ export default function EngineeringWorkspace() {
 
   const utils = trpc.useUtils();
   const statusQ = trpc.programming.status.useQuery(undefined, { enabled: canView });
-  const deployEnabled = statusQ.data?.deployEnabled ?? false;
+  // Doc 80 Task 1 (PLT-02/G-07/X-07) — live evidence 2026-09-25: while `statusQ` was still
+  // loading, the old `?? false` default made the badge/banner assert "Triển khai: OFF" +
+  // name the env var, as if that were a known fact, then flip to ON seconds later. A
+  // pending/erroring query is UNKNOWN, not "off".
+  const deployStatus = deriveFeatureStatus(statusQ, (d: { deployEnabled?: boolean }) => d.deployEnabled);
+  const deployEnabled = deployStatus === "on";
   const streamingEnabled = statusQ.data?.streamingEnabled ?? false;
   // doc 40 ENG-F2 — khi bật, deploy production đi qua Approval Inbox (request→approve).
   const deployApprovalEnabled = statusQ.data?.deployApprovalEnabled ?? false;
   const adapters = statusQ.data?.adapters ?? [];
+  // doc 80 Đợt 1 Task 5 (WS-01) — four-eyes-at-version: cờ TẮT ⇒ không một phần tử review nào.
+  const versionReviewEnabled = statusQ.data?.versionReviewEnabled === true;
   // doc 40 ENG-F13 — pre-flight: cảnh báo TRƯỚC nếu user thiếu 2FA / quyền để deploy (actuation).
   const readiness = useActuationReadiness();
 
@@ -368,6 +385,23 @@ export default function EngineeringWorkspace() {
     },
     onError: (e) => toastTrpcError(e),
   });
+  // doc 80 Đợt 1 Task 5 (WS-01) — duyệt / từ chối (bắt buộc lý do) / yêu cầu duyệt phiên bản.
+  const reviewM = trpc.programming.reviewArtifact.useMutation({
+    onSuccess: (row) => {
+      utils.programming.listArtifacts.invalidate();
+      utils.programming.deployPreview.invalidate();
+      if (row?.reviewStatus === "rejected") toast.warning(t("engineering.review.rejectedToast", "Đã từ chối phiên bản"));
+      else toast.success(t("engineering.review.approvedToast", "Đã duyệt phiên bản"));
+    },
+    onError: (e) => toastTrpcError(e),
+  });
+  const requestReviewM = trpc.programming.requestVersionReview.useMutation({
+    onSuccess: () => {
+      utils.programming.listArtifacts.invalidate();
+      toast.success(t("engineering.review.requestedToast", "Đã gửi yêu cầu duyệt"));
+    },
+    onError: (e) => toastTrpcError(e),
+  });
   const buildM = trpc.programming.buildArtifact.useMutation({
     onSuccess: (b) => {
       utils.programming.listBuilds.invalidate();
@@ -379,6 +413,7 @@ export default function EngineeringWorkspace() {
   const simulateM = trpc.programming.simulateBuild.useMutation({
     onSuccess: (r) => {
       setSimResult({ ok: r.ok, warnings: r.warnings as string[], timeline: r.timeline as any[] });
+      utils.programming.deployPreview.invalidate();
       toast.success(t("engineering.simDone", "Đã mô phỏng"));
     },
     onError: (e) => toastTrpcError(e),
@@ -388,12 +423,14 @@ export default function EngineeringWorkspace() {
   // doc 40 (Minh ui-fix) + doc 80 WS-04 — báo toast THEO trạng thái THẬT (status) của hàng
   // server trả về, không chỉ theo cờ `simulated` / không luôn "thành công".
   const showDeployOutcome = (
-    row: { status: string; error?: string | null; targetRolledBack?: boolean },
+    row: { status: string; error?: string | null; targetRolledBack?: boolean; detailJson?: unknown },
     kind: "deploy" | "request" | "rollback",
   ) => {
     const o = deployOutcome(row, kind);
     const msg = t(o.key, o.fallback);
-    const text = o.detail ? `${msg}: ${o.detail}` : msg;
+    // doc 81 Đợt 1B Task 4 — lý do có mã (vd robot-tm chưa hỗ trợ tải chương trình) ⇒ câu dịch.
+    const detailText = o.detailKey ? t(o.detailKey, o.detail ?? "") : o.detail;
+    const text = detailText ? `${msg}: ${detailText}` : msg;
     if (o.level === "error") toast.error(text);
     else if (o.level === "warning") toast.warning(text);
     else if (o.level === "info") toast.info(text);
@@ -402,6 +439,7 @@ export default function EngineeringWorkspace() {
   const deployM = trpc.programming.deployBuild.useMutation({
     onSuccess: (d) => {
       utils.programming.listDeployments.invalidate();
+      utils.programming.deployPreview.invalidate();
       showDeployOutcome(d, "deploy");
     },
     onError: (e) => toastTrpcError(e),
@@ -430,7 +468,10 @@ export default function EngineeringWorkspace() {
     onSuccess: (r) => {
       utils.programming.listDeployments.invalidate();
       utils.programming.fleetVersionMatrix.invalidate();
-      if (r.halted) {
+      if (r.halted && r.haltCode === "canary_not_real") {
+        // doc 81 Đợt 1B Task 3 — canary chỉ giả lập không được promote sang máy ghi thật.
+        toast.error(t("engineering.fleetNeedsRealCanary", "Rollout đã DỪNG: canary chỉ giả lập (không ghi xuống thiết bị) nên không được tính là đạt khi promote sẽ ghi thật. Cần một canary thật (deployed/verified)."));
+      } else if (r.halted) {
         toast.error(r.haltReason || t("engineering.fleetHalted", "Rollout đã DỪNG do canary không đạt"));
       } else if (r.promoted) {
         toast.success(t("engineering.fleetPromoted", "Canary đạt — đã promote toàn đội máy"));
@@ -551,6 +592,16 @@ export default function EngineeringWorkspace() {
     : useApprovalFlow
       ? deployReason.trim().length > 0
       : approverId !== "" && deployReason.trim().length > 0;
+  // doc 80 Đợt 1 Task 5 (F2) — người ký mà lượt deploy SẮP gửi (y hệt đối số deployM.mutate bên
+  // dưới) ⇒ bản xem trước chạy khô ĐÚNG lượt ấy. Hộp duyệt: người ký là approver tương lai.
+  const pendingConfirmedBy = isProd
+    ? (useApprovalFlow ? undefined : approverId ? Number(approverId) : undefined)
+    : (signOff && user?.id ? user.id : undefined);
+  const deployPreviewQ = trpc.programming.deployPreview.useQuery(
+    { buildId: buildId!, stage: deployStage, confirmedBy: pendingConfirmedBy },
+    { enabled: canView && buildId != null },
+  );
+  const previewBlocked = deployPreviewQ.data?.verdict === "blocked";
 
   // ── doc 40 W5 §11 — Triển khai đội máy (fleet rollout canary) state ──
   const [fleetDeviceIds, setFleetDeviceIds] = useState<number[]>([]);
@@ -623,8 +674,11 @@ export default function EngineeringWorkspace() {
       content: code,
     });
   };
+  // doc 80 Đợt 1 Task 5 (WS-01) — cờ bật + phiên bản chưa duyệt ⇒ Build khoá KÈM lý do (server
+  // cũng trả PRECONDITION_FAILED có mã — đây chỉ là để không bắt người dùng bấm mới biết).
+  const buildLockedByReview = versionReviewEnabled && artifact != null && artifact.reviewStatus !== "approved";
   const buildVersionShortcut = () => {
-    if (!canCreate || !artifactId || buildM.isPending) return;
+    if (!canCreate || !artifactId || buildM.isPending || buildLockedByReview) return;
     if (requireSaved()) buildM.mutate({ artifactId });
   };
   useKeyboardShortcuts(
@@ -685,8 +739,16 @@ export default function EngineeringWorkspace() {
           description={t("engineering.subtitle", "Soạn → kiểm tra → build → mô phỏng → (sign-off) deploy cho PLC / Robot / Zmotion")}
           actions={
             <>
-              <Badge variant={deployEnabled ? "default" : "secondary"}>
-                {t("engineering.deployFlag", "Deploy")}: {deployEnabled ? "ON" : "OFF"}
+              <Badge
+                variant={deployStatus === "on" ? "default" : deployStatus === "error" ? "destructive" : "secondary"}
+                data-testid="engineering-deploy-badge"
+              >
+                {t("engineering.deployFlag", "Deploy")}: {featureStatusLabel(deployStatus, {
+                  on: t("engineering.deployOn", "ON"),
+                  off: t("engineering.deployOff", "OFF"),
+                  loading: t("engineering.deployChecking", "…"),
+                  error: t("engineering.deployUnknown", "?"),
+                })}
               </Badge>
               <Button variant="outline" size="sm" onClick={() => { statusQ.refetch(); projectsQ.refetch(); }}>
                 <RefreshCw className="mr-1 h-4 w-4" /> {t("common.refresh", "Làm mới")}
@@ -713,14 +775,20 @@ export default function EngineeringWorkspace() {
           </span>
         </div>
 
-        {!deployEnabled && (
-          <div className="flex items-start gap-2 rounded-md border border-warning/40 bg-warning/10 p-3 text-sm text-warning">
-            <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
-            <span>
-              {t("engineering.deployOffBanner", "DPC_DEPLOY_ENABLED đang TẮT — mọi deploy được ghi nhận là SIMULATED, không ghi xuống thiết bị. An toàn (E-stop/interlock) luôn nằm trên PLC chứng nhận.")}
-            </span>
-          </div>
-        )}
+        {/* Doc 80 Task 1 (PLT-02/G-07): honest 4-state (loading/off/on/error) — the banner
+            no longer names the env var, and no longer shows during loading (skeleton instead). */}
+        <FeatureStatusGate
+          status={deployStatus}
+          className="border-warning/40 bg-warning/10 text-warning"
+          offMessage={t(
+            "engineering.deployOffBanner",
+            "Triển khai thật đang tắt — mọi deploy chỉ mô phỏng, không ghi xuống thiết bị. An toàn (E-stop/interlock) luôn nằm trên PLC chứng nhận.",
+          )}
+          errorMessage={t(
+            "engineering.deployStatusError",
+            "Không kiểm tra được trạng thái triển khai — tạm coi mọi deploy chỉ mô phỏng cho tới khi xác nhận lại.",
+          )}
+        />
 
         <div className="grid grid-cols-1 gap-4 lg:grid-cols-[280px_1fr]">
           {/* ── Project Explorer ── */}
@@ -824,7 +892,24 @@ export default function EngineeringWorkspace() {
                   </Select>
                 </div>
               )}
-              {(projectsQ.data ?? []).length === 0 && (
+              {/* Doc 80 Task 1 (PLT-02/G-07) — live evidence 2026-09-25: this used to check
+                  ONLY `.length === 0`, so while `projectsQ` was still loading (data undefined
+                  ⇒ `[].length === 0`) it showed "Chưa có dự án" as if that were the known,
+                  settled truth — then flipped to the real project list seconds later. A
+                  pending/erroring query says nothing about whether projects exist. */}
+              {projectsQ.isLoading && (
+                <div className="space-y-1.5 py-1" data-testid="engineering-projects-loading">
+                  <Skeleton className="h-7 w-full rounded-md" />
+                  <Skeleton className="h-7 w-full rounded-md" />
+                  <Skeleton className="h-7 w-3/4 rounded-md" />
+                </div>
+              )}
+              {!projectsQ.isLoading && projectsQ.isError && (
+                <p className="py-4 text-center text-sm text-destructive">
+                  {t("engineering.projectsLoadError", "Không tải được danh sách dự án.")}
+                </p>
+              )}
+              {!projectsQ.isLoading && !projectsQ.isError && (projectsQ.data ?? []).length === 0 && (
                 <p className="py-4 text-center text-sm text-muted-foreground">{t("engineering.noProjects", "Chưa có dự án")}</p>
               )}
               {(projectsQ.data ?? []).length > 0 && filteredProjects.length === 0 && (
@@ -935,12 +1020,26 @@ export default function EngineeringWorkspace() {
                         >
                           v{a.version} · {a.branch}
                           <Badge variant="outline" className="ml-1 text-[9px]">{a.status}</Badge>
+                          {versionReviewEnabled && <ReviewStatusBadge status={a.reviewStatus} artifactId={a.id} />}
                         </button>
                       ))}
                       {(artifactsQ.data ?? []).length === 0 && (
                         <span className="text-sm text-muted-foreground">{t("engineering.noVersions", "Chưa có phiên bản — soạn rồi lưu bên dưới")}</span>
                       )}
                     </div>
+
+                    {/* doc 80 Đợt 1 Task 5 (WS-01) — duyệt phiên bản ngay trong IDE (chỉ khi cờ bật). */}
+                    {versionReviewEnabled && artifact && (
+                      <VersionReviewPanel
+                        artifact={artifact}
+                        userId={user?.id}
+                        canReview={canCreate}
+                        busy={reviewM.isPending || requestReviewM.isPending}
+                        onRequest={() => requestReviewM.mutate({ artifactId: artifact.id })}
+                        onApprove={() => reviewM.mutate({ artifactId: artifact.id, decision: "approved" })}
+                        onReject={(reason) => reviewM.mutate({ artifactId: artifact.id, decision: "rejected", reason })}
+                      />
+                    )}
 
                     {/* W3-11 — So sánh 2 phiên bản (diff dòng) */}
                     {(artifactsQ.data ?? []).length >= 2 && (
@@ -1056,13 +1155,24 @@ export default function EngineeringWorkspace() {
                       </Button>
                       <Button
                         size="sm" variant="outline"
-                        disabled={!canCreate || !artifactId || buildM.isPending}
+                        disabled={!canCreate || !artifactId || buildM.isPending || buildLockedByReview}
                         onClick={buildVersionShortcut}
-                        title={createReason ?? t("engineering.buildShortcut", "Build (Ctrl/Cmd+Enter)")}
+                        title={
+                          createReason ??
+                          (buildLockedByReview
+                            ? t("engineering.review.buildLocked", "Phiên bản chưa được DUYỆT — cần một người khác tác giả duyệt trước khi build.")
+                            : t("engineering.buildShortcut", "Build (Ctrl/Cmd+Enter)"))
+                        }
                       >
                         <Hammer className="mr-1 h-4 w-4" /> {t("engineering.build", "Build")}
                       </Button>
                     </div>
+                    {buildLockedByReview && (
+                      <p data-testid="build-review-lock" className="mt-2 flex items-center gap-1 text-xs text-warning">
+                        <ShieldAlert className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
+                        {t("engineering.review.buildLocked", "Phiên bản chưa được DUYỆT — cần một người khác tác giả duyệt trước khi build.")}
+                      </p>
+                    )}
 
                     {/* Diagnostics */}
                     {diagnostics && (
@@ -1073,7 +1183,7 @@ export default function EngineeringWorkspace() {
                           diagnostics.map((d, i) => (
                             <div key={i} className="flex items-center gap-1">
                               {d.severity === "error" ? <XCircle className="h-3 w-3 text-destructive" /> : <AlertTriangle className="h-3 w-3 text-warning" />}
-                              <span>{d.line ? `L${d.line}: ` : ""}{d.message}</span>
+                              <span>{progDiagText(t, d)}</span>
                             </div>
                           ))
                         )}
@@ -1197,7 +1307,7 @@ export default function EngineeringWorkspace() {
                       {/* Staging: tự ký (SoD chỉ áp dụng cho production). */}
                       {!isProd && (
                         <label className="flex items-center gap-2 text-xs">
-                          <Checkbox checked={signOff} onCheckedChange={(v) => setSignOff(Boolean(v))} />
+                          <Checkbox data-testid="engineering-deploy-signoff" checked={signOff} onCheckedChange={(v) => setSignOff(Boolean(v))} />
                           <ShieldCheck className="h-3 w-3" /> {t("engineering.signOff", "Tôi ký duyệt (HITL sign-off)")}
                         </label>
                       )}
@@ -1235,7 +1345,8 @@ export default function EngineeringWorkspace() {
                       {useApprovalFlow ? (
                         <Button
                           size="sm"
-                          disabled={!canCreate || !buildId || requestDeployApprovalM.isPending || !prodDeployReady}
+                          data-testid="engineering-request-deploy-button"
+                          disabled={!canCreate || !buildId || requestDeployApprovalM.isPending || !prodDeployReady || previewBlocked}
                           title={createReason}
                           onClick={() =>
                             buildId && requestDeployApprovalM.mutate({
@@ -1252,7 +1363,8 @@ export default function EngineeringWorkspace() {
                       ) : (
                         <Button
                           size="sm"
-                          disabled={!canCreate || !buildId || deployM.isPending || !prodDeployReady}
+                          data-testid="engineering-deploy-button"
+                          disabled={!canCreate || !buildId || deployM.isPending || !prodDeployReady || previewBlocked}
                           title={createReason}
                           onClick={() => {
                             if (!buildId) return;
@@ -1277,6 +1389,15 @@ export default function EngineeringWorkspace() {
                         </Button>
                       )}
                     </div>
+
+                    {/* doc 80 Đợt 1 Task 5 (F2) — verdict + từng cổng, chạy khô TRƯỚC khi hỏi OTP. */}
+                    {buildId != null && (
+                      <DeployPreviewPanel
+                        preview={deployPreviewQ.data as DeployPreviewView | undefined}
+                        isLoading={deployPreviewQ.isLoading}
+                        isError={deployPreviewQ.isError}
+                      />
+                    )}
 
                     {/* Production: ô lý do duyệt bắt buộc + ghi chú SoD. */}
                     {isProd && (
@@ -1501,12 +1622,18 @@ export default function EngineeringWorkspace() {
                         }`}>
                           {fleetResult.halted ? <XCircle className="h-4 w-4 shrink-0" /> : <CheckCircle2 className="h-4 w-4 shrink-0" />}
                           {fleetResult.halted
-                            ? t("engineering.fleetHaltedShort", "DỪNG — canary không đạt")
+                            ? fleetResult.haltCode === "canary_not_real"
+                              ? t("engineering.fleetNeedsRealCanaryShort", "DỪNG — cần canary thật")
+                              : t("engineering.fleetHaltedShort", "DỪNG — canary không đạt")
                             : fleetResult.promoted
                               ? t("engineering.fleetPromotedShort", "Đã promote toàn đội máy")
                               : t("engineering.fleetCanaryOkShort", "Canary đã chạy")}
                         </div>
-                        {fleetResult.haltReason && (
+                        {fleetResult.halted && fleetResult.haltCode === "canary_not_real" ? (
+                          <p className="text-xs text-destructive">
+                            {t("engineering.fleetNeedsRealCanary", "Rollout đã DỪNG: canary chỉ giả lập (không ghi xuống thiết bị) nên không được tính là đạt khi promote sẽ ghi thật. Cần một canary thật (deployed/verified).")}
+                          </p>
+                        ) : fleetResult.haltReason && (
                           <p className="text-xs text-destructive">{fleetResult.haltReason}</p>
                         )}
                         <Table>

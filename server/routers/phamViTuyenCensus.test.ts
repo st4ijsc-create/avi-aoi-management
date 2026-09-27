@@ -88,7 +88,19 @@ const cua = (n: NhomTuyen): TuyenExpress[] => NHOM.get(n) ?? [];
 // dưới nó. Đây là bề mặt SONG SINH của thủ tục tRPC `commandCenter.hierarchy`: cùng một hàm tổng
 // hợp, cùng một lỗ "phạm vi lấy từ lời tự khai của người gọi" — vá một bề mặt mà bỏ bề mặt kia
 // thì lỗ vẫn mở, chỉ đổi cổng vào. Đó là toàn bộ delta của lượt này: **A −1, S +1, tổng KHÔNG đổi.**
-const GHIM = { A: 80, C: 38, D: 72, S: 18, U: 16, tong: 224 } as const;
+// ★★★ 2026-09-27 (doc 80 Đợt 1 Task 8, khai ở final wave item 1) — **D: 72 → 73 · tong: 224 → 225.**
+// Tuyến MỚI duy nhất không-GET của cả hai dải Đợt 1 (`a0f1d50fe..773ee78fc`, `d40237783..HEAD`):
+// `POST /api/ai/programming-copilot/stream` (`server/routes/aiStreamingApi.ts`, thân ở
+// `programmingCopilotStream.ts`) — bản SSE của thủ tục tRPC `programming.copilotGenerate`.
+// Nhóm D là "mọi tuyến không-GET" (`phamViDocScan.nhomTuyenCua`), nên số này ĐO ĐƯỢC, không cộng tay.
+// Vì sao tuyến ấy không phải một lỗ phạm vi mới: (1) danh tính PHIÊN qua `thuXacThucRest` (401 khi vắng);
+// (2) giấy phép — nhánh `/api/ai` chặn `MOD_AI` ở `_core/index.ts`, và tuyến tự đòi thêm `MOD_ENGINEERING`
+// bằng `isModuleLicensed` (đúng động cơ của `moduleProcedure` mà `copilotGenerate` đi qua); (3) RBAC
+// `checkPermission(machine_monitoring/canView)` — cùng cặp với `copilotGenerate`; (4) dữ liệu tenant chỉ
+// tới qua `retrieveContext` của CHÍNH pipeline `generateProgram` dùng chung với thủ tục tRPC (đã đếm
+// trong census thủ tục), tuyến không đọc bảng nào khác. Lưới hành vi: `programmingCopilotStream.test.ts`.
+// (Đợt 1B `/api/ot/ingest` chỉ thay một tuyến inline có sẵn ⇒ 0 delta — đo ở `773ee78fc` và `d40237783`.)
+const GHIM = { A: 80, C: 38, D: 73, S: 18, U: 16, tong: 225 } as const;
 
 describe("§1 — CẦU CHÌ: bộ suy có thật sự nhìn thấy tuyến không", () => {
   it("★ không có ô MÙ nào (mỗi ô mù là một tuyến KHÔNG AI CANH)", () => {
