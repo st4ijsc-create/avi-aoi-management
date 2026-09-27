@@ -1891,6 +1891,14 @@ export async function* generateWithOllamaStream(
   userId?: number,
   // ★★★ VIỆC 6 — xem docblock lớn cạnh `pickNumPredict` (cùng lý lẽ với `generateWithOllama` ở trên).
   route?: string,
+  /**
+   * Doc 80 Đợt 1 final wave (item 2) — signal huỷ của LƯỢT (`ToolExecContext.signal`, do tuyến
+   * `/api/ai/local-kb/stream` dựng). Đi xuống `ggufStream` ở ĐỐI SỐ THỨ BA ⇒ `fetch` tới llama-server
+   * bị abort, khe rảnh. Trước final wave nhánh vận hành này KHÔNG truyền signal (chỉ nhánh lập trình
+   * `streamCodingModel` truyền) — bình luận ở tuyến khai "signal đi xuống tận ggufStream" là SAI cho
+   * nhánh này. Vắng ⇒ hành vi cũ y nguyên.
+   */
+  signal?: AbortSignal,
 ): AsyncGenerator<string> {
   // doc69 G2-3 — AI Gateway (see the identical comment on generateWithOllama above; same
   // {task:"chat", text: question} input preserves the pinned-model decision byte-for-byte).
@@ -1980,7 +1988,7 @@ export async function* generateWithOllamaStream(
           // ★ B1 — KB-QA là lớp `kb-qa` (ai/loaiLuot.ts): KHÔNG nghĩ. Trần 220/900 token với model
           //   biết nghĩ mặc định ⇒ chuỗi suy luận nuốt hết trần, câu trả lời rỗng (đo sống 2026-09-22).
           disableThinking: !luotDuocNghi("kb-qa"),
-        }, await modelTraLoiKb(plan.decision.modelId))) {
+        }, await modelTraLoiKb(plan.decision.modelId), signal)) {
           // GGUF engine yields { type: "token" | "done" | "error", token?, ... }
           // We must extract the string token, not yield the whole object
           // (which would stringify to "[object Object]" downstream).
@@ -3794,7 +3802,7 @@ export async function* streamAnswer(
   if (quyTacTaiLieu) {
     try {
       let dem = "";
-      for await (const piece of generateWithOllamaStream(question, retrieve, history, userLevel, undefined, execCtx?.user?.id, kbContext?.route)) {
+      for await (const piece of generateWithOllamaStream(question, retrieve, history, userLevel, undefined, execCtx?.user?.id, kbContext?.route, execCtx?.signal)) {
         if (piece) dem += piece;
       }
       const g = guardGeneratedText(dem);
@@ -3826,6 +3834,7 @@ export async function* streamAnswer(
         toolPromptBlock,
         execCtx?.user?.id,
         kbContext?.route,
+        execCtx?.signal, // final wave item 2 — huỷ của tuyến SSE đi tới tận fetch llama-server
       );
       // FE-W0.3 (doc 46 §2.3) — incremental degenerate-loop guard: re-check the
       // accumulated text every STREAM_GUARD_STEP_CHARS once past the min, and BREAK

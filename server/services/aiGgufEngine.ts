@@ -2950,6 +2950,11 @@ export async function* generateTextStream(
       options,
       (srv) => srv.serverGenerateTextStream(options, modelId, signal),
       "streaming generation",
+      // Doc 80 Đợt 1 final wave (item 2) — như `chatCompletionStream`: người gọi HUỶ ⇒ lỗi đi thẳng
+      // lên, KHÔNG qua cổng (c) (không lùi in-process = một lượt model MỚI sau khi người dùng bấm
+      // Dừng; không ghi sự kiện "lùi bị chặn" giả vào sổ G1-D). Trước đây thiếu ⇒ `/stream/generate`
+      // và `/stream/narrative` sau huỷ vẫn đi tiếp vào cổng (c).
+      signal,
     );
     if (daPhucVu) return;
   }

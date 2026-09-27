@@ -8,6 +8,8 @@
 import type express from "express";
 import { thuXacThucRest, thanTuChoiRest } from "./_xacThucRest";
 import { xuLyCopilotStream } from "./programmingCopilotStream";
+// Doc 80 Đợt 1 final wave (item 2) — `res.on("close")`, KHÔNG `req.on("close")`: xem docblock ở tệp này.
+import { huyKhiClientBoDi } from "./_huyKhiClientBoDi";
 import {
   generateTextStream,
   chatCompletionStream,
@@ -228,9 +230,10 @@ export function registerAiStreamingRoutes(app: express.Express) {
 
       phat = new OngPhatSSE(res);
 
-      // Abort GGUF generation when client disconnects
+      // Abort GGUF generation when client disconnects — final wave item 2: gắn trên `res` (xem
+      // `_huyKhiClientBoDi.ts`; bản `req.on("close")` cũ đứng sau `await` nên không bao giờ chạy).
       const abortController = new AbortController();
-      req.on("close", () => abortController.abort());
+      huyKhiClientBoDi(req, res, abortController);
 
       const stream = generateTextStream(
         {
@@ -296,9 +299,10 @@ export function registerAiStreamingRoutes(app: express.Express) {
 
       phat = new OngPhatSSE(res);
 
-      // Abort GGUF generation when client disconnects
+      // Abort GGUF generation when client disconnects — final wave item 2: gắn trên `res` (xem
+      // `_huyKhiClientBoDi.ts`; bản `req.on("close")` cũ đứng sau `await` nên không bao giờ chạy).
       const abortController = new AbortController();
-      req.on("close", () => abortController.abort());
+      huyKhiClientBoDi(req, res, abortController);
 
       const stream = chatCompletionStream(
         {
@@ -354,8 +358,9 @@ export function registerAiStreamingRoutes(app: express.Express) {
 
       phat = new OngPhatSSE(res);
 
+      // Final wave item 2 — cùng mẫu với hai tuyến trên (`res.on("close")` + socket đã chết ⇒ huỷ ngay).
       const abortController = new AbortController();
-      req.on("close", () => abortController.abort());
+      huyKhiClientBoDi(req, res, abortController);
 
       const stream = generateNarrativeStream(
         {

@@ -33,6 +33,7 @@ import express, {
 } from "express";
 import { timingSafeEqual } from "node:crypto";
 import { requireServiceIdentity } from "../services/security/requireServiceIdentity";
+import { huyKhiClientBoDi } from "./_huyKhiClientBoDi"; // final wave item 2 — huỷ khi client bỏ đi (res.on("close"))
 import {
   chatCompletion,
   chatCompletionStream,
@@ -616,8 +617,10 @@ export function createOpenAiGatewayRouter(config: OpenAiGatewayConfig): Router {
           "X-Accel-Buffering": "no",
         });
 
+        // Final wave item 2 — `res.on("close")` + socket đã chết ⇒ huỷ ngay. Bản `req.on("close")` cũ
+        // đứng sau `await ensureEngine`/`planGatewayFailOpen` nên trên Node 24 không bao giờ chạy.
         const abort = new AbortController();
-        req.on("close", () => abort.abort());
+        huyKhiClientBoDi(req, res, abort);
 
         // First chunk announces the assistant role.
         const roleChunk = {
