@@ -6,7 +6,7 @@
 // ORACLE ĐỘC LẬP: SEEDED_RUN_IDS khai tay cùng fixture (contextJson.seed=true — như 6/6 run
 // trên DB dev), không suy bằng hàm gắn nhãn đang bị kiểm.
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { cleanup, render, screen } from "@testing-library/react";
+import { cleanup, render, screen, within } from "@testing-library/react";
 import "@testing-library/jest-dom/vitest";
 
 vi.mock("@/components/DashboardLayout", () => ({
@@ -47,6 +47,8 @@ function makeQuery(overrides: Partial<QueryResult> = {}): QueryResult {
   };
 }
 const queryOverrides: Record<string, () => QueryResult> = {};
+// doc 80 Đợt 1 Task 9 — một spy mutate CỐ ĐỊNH theo thủ tục (đọc được đối số người dùng gửi).
+const mutateSpies: Record<string, ReturnType<typeof vi.fn>> = {};
 function setQueryOverride(key: string, result: QueryResult) {
   queryOverrides[key] = () => result;
 }
@@ -67,7 +69,7 @@ vi.mock("@/lib/trpc", () => ({
               const key = `${routerName}.${procName}`;
               return {
                 useQuery: () => (queryOverrides[key] ? queryOverrides[key]() : makeQuery()),
-                useMutation: () => ({ mutate: vi.fn(), mutateAsync: vi.fn(), isPending: false }),
+                useMutation: () => ({ mutate: (mutateSpies[key] ??= vi.fn()), mutateAsync: vi.fn(), isPending: false }),
               };
             },
           },
@@ -97,6 +99,7 @@ const SEEDED_RUN_IDS = new Set([7, 8]);
 
 beforeEach(() => {
   for (const k of Object.keys(queryOverrides)) delete queryOverrides[k];
+  for (const k of Object.keys(mutateSpies)) delete mutateSpies[k];
   setQueryOverride("orchestration.listRuns", makeQuery({ data: RUNS }));
 });
 afterEach(() => cleanup());
@@ -184,5 +187,47 @@ describe("OrchestrationStudio — Fix round 1: failed/timeout là 'chưa xác nh
     expect(tags[0].textContent).toMatch(/unconfirmed — may have reached the device/);
     expect(tags[0].textContent).not.toMatch(/not sent/);
     expect(tags[1].textContent).toMatch(/not sent/);
+  });
+});
+
+describe("OrchestrationStudio — Task 9: duyệt/từ chối gửi GATE đang hiển thị (expectedStepId)", () => {
+  // ORACLE khai tay: hàng danh sách còn ghi gate cũ, chi tiết (khối "Bước đang chờ") ghi gate mới —
+  // thứ người duyệt NHÌN THẤY là khối chi tiết ⇒ đó là gate phải được gửi.
+  const AWAITING = { ...run(30, "gate-flow", {}, { mode: "none", simulated: 0, live: 0, unconfirmed: 0 }), status: "awaiting_confirm", currentStepId: "g-list" };
+
+  it("Approve ⇒ resumeRun.mutate({ runId, approved:true, expectedStepId: gate của khối 'Bước đang chờ' })", async () => {
+    setQueryOverride("orchestration.listRuns", makeQuery({ data: [AWAITING] }));
+    setQueryOverride(
+      "orchestration.getRun",
+      makeQuery({ data: { run: { ...AWAITING, currentStepId: "g-detail" }, steps: [{ stepId: "g-detail", stepType: "hitl_gate", status: "awaiting_confirm", attempt: 0, result: { prompt: "Duyệt?" } }] } }),
+    );
+    render(<OrchestrationStudio />);
+    const { default: userEvent } = await import("@testing-library/user-event");
+    await userEvent.setup().click(within(rowOf(30)).getByRole("button", { name: /^(Approve|studio\.approve)$/i }));
+    expect(mutateSpies["orchestration.resumeRun"]).toHaveBeenCalledWith({ runId: 30, approved: true, note: undefined, expectedStepId: "g-detail" });
+  });
+
+  it("Reject (kèm lý do) ⇒ gửi cùng gate đang hiển thị", async () => {
+    setQueryOverride("orchestration.listRuns", makeQuery({ data: [AWAITING] }));
+    setQueryOverride(
+      "orchestration.getRun",
+      makeQuery({ data: { run: { ...AWAITING, currentStepId: "g-detail" }, steps: [] } }),
+    );
+    render(<OrchestrationStudio />);
+    const { default: userEvent } = await import("@testing-library/user-event");
+    const user = userEvent.setup();
+    await user.click(within(rowOf(30)).getByRole("button", { name: /^(Reject|studio\.reject)$/i }));
+    await user.type(within(rowOf(30)).getByRole("textbox"), "sai");
+    await user.click(within(rowOf(30)).getByRole("button", { name: /Xác nhận từ chối|confirm reject|studio\.confirmReject/i }));
+    expect(mutateSpies["orchestration.resumeRun"]).toHaveBeenCalledWith({ runId: 30, approved: false, note: "sai", expectedStepId: "g-detail" });
+  });
+
+  it("chi tiết chưa nạp ⇒ dùng gate trên hàng danh sách (không bao giờ gửi thiếu)", async () => {
+    setQueryOverride("orchestration.listRuns", makeQuery({ data: [AWAITING] }));
+    setQueryOverride("orchestration.getRun", makeQuery({ data: undefined }));
+    render(<OrchestrationStudio />);
+    const { default: userEvent } = await import("@testing-library/user-event");
+    await userEvent.setup().click(within(rowOf(30)).getByRole("button", { name: /^(Approve|studio\.approve)$/i }));
+    expect(mutateSpies["orchestration.resumeRun"]).toHaveBeenCalledWith({ runId: 30, approved: true, note: undefined, expectedStepId: "g-list" });
   });
 });

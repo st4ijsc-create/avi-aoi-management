@@ -1181,7 +1181,11 @@ export default function OrchestrationStudio() {
   });
   const resumeM = trpc.orchestration.resumeRun.useMutation({
     onSuccess: () => { void runsQ.refetch(); void utils.orchestration.getRun.invalidate(); },
-    onError: (e) => toastTrpcError(e),
+    // doc 80 Đợt 1 Task 9 — CONFLICT (gate đã đổi / lượt khác đã quyết định) ⇒ tải lại để thấy gate thật.
+    onError: (e) => {
+      toastTrpcError(e);
+      if (e.data?.code === "CONFLICT") { void runsQ.refetch(); void utils.orchestration.getRun.invalidate(); }
+    },
   });
   const abortM = trpc.orchestration.abortRun.useMutation({
     onSuccess: () => { void runsQ.refetch(); },
@@ -1768,7 +1772,7 @@ export default function OrchestrationStudio() {
                       key={String(r.id)}
                       run={r}
                       canControl={canControl}
-                      onResume={(approved, note) => resumeM.mutate({ runId: Number(r.id), approved, note })}
+                      onResume={(approved, note, expectedStepId) => resumeM.mutate({ runId: Number(r.id), approved, note, expectedStepId })}
                       onAbort={() => abortM.mutate({ runId: Number(r.id) })}
                       t={t}
                     />
@@ -1789,7 +1793,7 @@ export default function OrchestrationStudio() {
                       run={r}
                       interrupted
                       canControl={canControl}
-                      onResume={(approved, note) => resumeM.mutate({ runId: Number(r.id), approved, note })}
+                      onResume={(approved, note, expectedStepId) => resumeM.mutate({ runId: Number(r.id), approved, note, expectedStepId })}
                       onAbort={() => abortM.mutate({ runId: Number(r.id) })}
                       t={t}
                     />
@@ -1809,7 +1813,7 @@ export default function OrchestrationStudio() {
                       key={String(r.id)}
                       run={r}
                       canControl={canControl}
-                      onResume={(approved, note) => resumeM.mutate({ runId: Number(r.id), approved, note })}
+                      onResume={(approved, note, expectedStepId) => resumeM.mutate({ runId: Number(r.id), approved, note, expectedStepId })}
                       onAbort={() => abortM.mutate({ runId: Number(r.id) })}
                       t={t}
                     />
@@ -2022,7 +2026,8 @@ function RunRow({
   /** doc 80 ORC-04 — run 'held' do server khởi động lại (không phải cổng chờ duyệt). */
   interrupted?: boolean;
   canControl: boolean;
-  onResume: (approved: boolean, note?: string) => void;
+  /** doc 80 Đợt 1 Task 9 — `expectedStepId` = gate đang HIỂN THỊ (server từ chối nếu run đã sang gate khác). */
+  onResume: (approved: boolean, note: string | undefined, expectedStepId: string | null) => void;
   onAbort: () => void;
   t: TFunction;
 }) {
@@ -2050,6 +2055,11 @@ function RunRow({
     },
   );
   const currentStepId = detailQ.data?.run?.currentStepId ?? null;
+  // doc 80 Đợt 1 Task 9 — gate người duyệt đang NHÌN: bước của chi tiết đã nạp (khối ngữ cảnh
+  // "Bước đang chờ"), chưa nạp thì bước trên hàng danh sách. Gửi kèm approve/reject/continue.
+  const shownStepId: string | null = detailQ.data?.run
+    ? (detailQ.data.run.currentStepId ?? null)
+    : typeof run.currentStepId === "string" ? run.currentStepId : null;
   const steps = (detailQ.data?.steps ?? []) as RunStepView[];
   // U6 — bước đang chờ + prompt tác giả soạn + roles người duyệt (từ result của gate).
   const currentStep = currentStepId != null ? steps.find((s) => s.stepId === currentStepId) : undefined;
@@ -2087,7 +2097,7 @@ function RunRow({
         )}
         {awaiting && canControl && (
           <div className="flex gap-1">
-            <Button size="sm" className="h-7 bg-emerald-600 hover:bg-emerald-700" onClick={() => onResume(true)}>
+            <Button size="sm" className="h-7 bg-emerald-600 hover:bg-emerald-700" onClick={() => onResume(true, undefined, shownStepId)}>
               {t("studio.approve", "Approve")}
             </Button>
             <Button size="sm" variant="outline" className="h-7" onClick={() => setRejecting((r) => !r)}>
@@ -2115,7 +2125,7 @@ function RunRow({
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel>{t("common.cancel", "Cancel")}</AlertDialogCancel>
-            <AlertDialogAction onClick={() => { setConfirmContinue(false); onResume(true); }}>
+            <AlertDialogAction onClick={() => { setConfirmContinue(false); onResume(true, undefined, shownStepId); }}>
               {t("studio.continueRunConfirm", "Continue run")}
             </AlertDialogAction>
           </AlertDialogFooter>
@@ -2166,7 +2176,7 @@ function RunRow({
                 </Button>
                 <Button
                   size="sm" variant="destructive" className="h-7"
-                  onClick={() => { onResume(false, rejectNote.trim() || undefined); closeReject(); }}
+                  onClick={() => { onResume(false, rejectNote.trim() || undefined, shownStepId); closeReject(); }}
                 >
                   {t("studio.confirmReject", "Xác nhận từ chối")}
                 </Button>

@@ -11,9 +11,11 @@
  *     → pumpQtRun: lặp {getRun → gate hiện tại → handler registry}:
  *         • mode "auto"     → chạy handler nghiệp vụ:
  *              ok   → resumeRun(approved, note)  → engine đi tiếp (resume idempotent)
- *              fail → chạy BÙ TRỪ §18.2 cho các business-step ĐÃ completed (đảo thứ
- *                     tự k-1..1, theo compensate() khai trong qtStepHandlers) rồi
- *                     resumeRun(rejected, note)  → run 'aborted' + gate ghi lý do.
+ *              fail → resumeRun(rejected, note, { compensate }) — engine GIÀNH quyền từ chối
+ *                     (CAS → 'compensating', ghim bước) RỒI mới gọi compensate(): BÙ TRỪ §18.2
+ *                     cho các business-step ĐÃ completed (đảo thứ tự k-1..1, theo compensate()
+ *                     khai trong qtStepHandlers) → run 'aborted' + gate ghi lý do.
+ *                     (doc 80 Đợt 1 Task 9: thua CAS ⇒ KHÔNG bù trừ.)
  *         • mode "external" → DỪNG pump: run đứng ở 'awaiting_confirm' (bền trong
  *              orchestration_runs) chờ tín hiệu ngoài — resolveQtGate() (watcher
  *              QT-3 / API / người) resume rồi pump tiếp.
@@ -25,7 +27,7 @@
  * ở phía engine (đường resumeRun(rejected) đã có sẵn).
  * ════════════════════════════════════════════════════════════════════════════
  */
-import { startRun, resumeRun, getRun, foeEnabled, type FoeUser } from "../foe/foeEngine";
+import { startRun, resumeRun, getRun, foeEnabled, type FoeUser, type GateDecision, type ResumeHooks } from "../foe/foeEngine";
 import { getQtBusinessSteps, findQtBusinessStep, type QtStepContext } from "./qtStepHandlers";
 
 /**
@@ -36,11 +38,12 @@ import { getQtBusinessSteps, findQtBusinessStep, type QtStepContext } from "./qt
  */
 async function resumeUnlessClaimed(
   runId: number,
-  decision: { approved: boolean; note?: string },
+  decision: GateDecision,
   user: FoeUser,
+  hooks?: ResumeHooks,
 ): Promise<Awaited<ReturnType<typeof resumeRun>> | null> {
   try {
-    return await resumeRun(runId, decision, user);
+    return await resumeRun(runId, decision, user, hooks);
   } catch (err) {
     if ((err as { code?: unknown } | null)?.code === "CONFLICT") {
       console.log(`[QtRunner] run ${runId}: gate đã được lượt khác quyết định (CONFLICT) — đọc lại trạng thái`);
@@ -122,6 +125,33 @@ export async function runQtCompensations(
 }
 
 /**
+ * doc 80 Đợt 1 Task 9 — hook bù trừ cho nhánh TỪ CHỐI: engine CHỈ gọi nó sau khi đã giành quyền
+ * từ chối (CAS 'awaiting_confirm|held' → 'compensating', ghim đúng gate). Ghi chú bù trừ được đẩy
+ * vào `notes` (kết quả pump) và trả về làm lý do cuối của run (persist ở run.error + bước gate).
+ */
+function compensationHook(
+  workflowRef: string,
+  runId: number,
+  params: Record<string, unknown>,
+  failedStepId: string,
+  headline: string,
+  notes: string[],
+): ResumeHooks {
+  return {
+    compensate: async () => {
+      const compNotes = await runQtCompensations(workflowRef, runId, params, failedStepId);
+      for (const c of compNotes) note(notes, `bù trừ: ${c}`);
+      return [
+        headline,
+        compNotes.length > 0 ? `Bù trừ §18.2: ${compNotes.join("; ")}` : "Bù trừ §18.2: không có bước cần bù",
+      ]
+        .join(" · ")
+        .slice(0, 1900);
+    },
+  };
+}
+
+/**
  * Pump một run QT: tự resolve các gate nghiệp vụ (mode "auto") cho tới khi run
  * đạt terminal hoặc đứng ở gate chờ ngoài. Idempotent: gọi lại trên run đang chờ
  * ngoài chỉ trả về trạng thái hiện tại (không side-effect).
@@ -163,23 +193,29 @@ export async function pumpQtRun(runId: number, user: FoeUser = QT_SYSTEM_USER): 
 
     if (result.ok) {
       note(notes, `${stepId}: ${result.skipped ? "SKIP" : "OK"}${result.note ? ` — ${result.note}` : ""}`);
-      const resumed = await resumeUnlessClaimed(runId, { approved: true, note: result.note ?? (result.skipped ? "honest skip" : "ok") }, user);
+      // Task 9 — ghim ĐÚNG gate mà handler vừa chạy: nếu trong lúc handler chạy, lượt khác đã duyệt
+      // gate này và run đã dừng ở gate kế, lượt duyệt này KHÔNG được rơi vào gate kế (handler của
+      // gate kế chưa từng chạy) ⇒ CONFLICT ⇒ null ⇒ vòng sau đọc lại và chạy đúng handler kế.
+      const resumed = await resumeUnlessClaimed(
+        runId,
+        { approved: true, note: result.note ?? (result.skipped ? "honest skip" : "ok"), expectedStepId: stepId },
+        user,
+      );
       // null = CONFLICT: gate đã được lượt khác duyệt/từ chối ⇒ vòng sau đọc lại trạng thái thật.
       if (resumed && !resumed.enabled) return { ok: false, runId, status: "disabled", notes, message: "FOE tắt giữa chừng" };
       continue; // engine đã drive tới gate kế / terminal — vòng sau đọc lại.
     }
 
-    // Handler FAIL → bù trừ §18.2 (k-1..1) rồi reject gate → run 'aborted'.
+    // Handler FAIL → reject gate: engine giành quyền từ chối (CAS, ghim bước) RỒI mới chạy bù trừ
+    // §18.2 (k-1..1) → run 'aborted'. Thua CAS ⇒ không bù trừ (doc 80 Đợt 1 Task 9).
     note(notes, `${stepId}: FAIL — ${result.note ?? "(không rõ)"}`);
-    const compNotes = await runQtCompensations(view.run.workflowRef ?? "", runId, params, stepId);
-    for (const c of compNotes) note(notes, `bù trừ: ${c}`);
-    const rejectNote = [
-      `QT saga fail tại '${stepId}': ${result.note ?? "(không rõ)"}`,
-      compNotes.length > 0 ? `Bù trừ §18.2: ${compNotes.join("; ")}` : "Bù trừ §18.2: không có bước cần bù",
-    ]
-      .join(" · ")
-      .slice(0, 1900);
-    const rejected = await resumeUnlessClaimed(runId, { approved: false, note: rejectNote }, user);
+    const headline = `QT saga fail tại '${stepId}': ${result.note ?? "(không rõ)"}`;
+    const rejected = await resumeUnlessClaimed(
+      runId,
+      { approved: false, note: headline.slice(0, 1900), expectedStepId: stepId },
+      user,
+      compensationHook(view.run.workflowRef ?? "", runId, params, stepId, headline, notes),
+    );
     if (!rejected) {
       const status = await currentStatus(runId);
       return { ok: false, runId, status, pausedStepId: stepId, notes, message: "gate đã được lượt khác quyết định (CONFLICT)" };
@@ -216,13 +252,16 @@ export async function startQtRun(
 /**
  * Resolve một gate CHỜ NGOÀI (monitor / await-delivery / await-resolution):
  *   • approved=true  → resumeRun rồi pump tiếp các bước auto còn lại.
- *   • approved=false → chạy bù trừ §18.2 trước (quyết định hủy saga từ bên ngoài)
- *                      rồi resumeRun(rejected) → run 'aborted'.
- * Chỉ tác động khi run đang pause đúng ở một gate của template QT.
+ *   • approved=false → resumeRun(rejected, { compensate }): GIÀNH quyền từ chối (CAS) trước, RỒI
+ *                      mới bù trừ §18.2 (quyết định hủy saga từ bên ngoài) → run 'aborted'. Thua
+ *                      CAS ⇒ không bù trừ, trả trạng thái thật (doc 80 Đợt 1 Task 9).
+ * Chỉ tác động khi run đang pause đúng ở một gate của template QT. Quyết định GHIM gate đọc được
+ * ở đây (hoặc `decision.expectedStepId` khi caller biết gate mình nhắm tới) — run đã sang gate
+ * khác ⇒ không quyết định gì (CONFLICT được nuốt thành kết quả trung thực, không ném).
  */
 export async function resolveQtGate(
   runId: number,
-  decision: { approved: boolean; note?: string },
+  decision: { approved: boolean; note?: string; expectedStepId?: string },
   user: FoeUser = QT_SYSTEM_USER,
 ): Promise<QtPumpResult> {
   const notes: string[] = [];
@@ -235,17 +274,20 @@ export async function resolveQtGate(
   }
   const stepId = view.run.currentStepId ?? "?";
   const params = (view.run.paramsJson as Record<string, unknown>) ?? {};
+  // Task 9 — gate mà quyết định này nhắm tới: của caller (nếu biết) hoặc gate vừa đọc.
+  const expectedStepId = decision.expectedStepId ?? view.run.currentStepId ?? null;
+  if (decision.expectedStepId !== undefined && decision.expectedStepId !== view.run.currentStepId) {
+    return { ok: false, runId, status, pausedStepId: stepId, notes, message: `run đang chờ ở '${stepId}', không phải '${decision.expectedStepId}' — không quyết định` };
+  }
 
   if (!decision.approved) {
-    const compNotes = await runQtCompensations(view.run.workflowRef ?? "", runId, params, stepId);
-    for (const c of compNotes) note(notes, `bù trừ: ${c}`);
-    const rejectNote = [
-      decision.note ?? `gate '${stepId}' bị từ chối`,
-      compNotes.length > 0 ? `Bù trừ §18.2: ${compNotes.join("; ")}` : "Bù trừ §18.2: không có bước cần bù",
-    ]
-      .join(" · ")
-      .slice(0, 1900);
-    const rejected = await resumeUnlessClaimed(runId, { approved: false, note: rejectNote }, user);
+    const headline = decision.note ?? `gate '${stepId}' bị từ chối`;
+    const rejected = await resumeUnlessClaimed(
+      runId,
+      { approved: false, note: headline.slice(0, 1900), expectedStepId },
+      user,
+      compensationHook(view.run.workflowRef ?? "", runId, params, stepId, headline, notes),
+    );
     if (!rejected) {
       const current = await currentStatus(runId);
       return { ok: false, runId, status: current, pausedStepId: stepId, notes, message: "gate đã được lượt khác quyết định (CONFLICT)" };
@@ -253,7 +295,7 @@ export async function resolveQtGate(
     return { ok: false, runId, status: "aborted", pausedStepId: stepId, notes };
   }
 
-  const resumed = await resumeUnlessClaimed(runId, { approved: true, note: decision.note ?? "external signal resolved" }, user);
+  const resumed = await resumeUnlessClaimed(runId, { approved: true, note: decision.note ?? "external signal resolved", expectedStepId }, user);
   // null = CONFLICT: lượt khác đã nhận gate ⇒ pump đọc lại trạng thái thật (không ném).
   if (resumed && !resumed.ok && resumed.status !== "awaiting_confirm") {
     return { ok: false, runId, status: String(resumed.status ?? "failed"), notes, message: resumed.message };

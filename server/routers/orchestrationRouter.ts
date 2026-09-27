@@ -248,7 +248,12 @@ export const orchestrationRouter = router({
       return startRun(input.workflowRef, input.params, toFoeUser(ctx.user));
     }),
 
-  /** Resume a run paused at a hitl_gate (approve/reject). Flag-gated. */
+  /**
+   * Resume a run paused at a hitl_gate (approve/reject). Flag-gated.
+   * doc 80 Đợt 1 Task 9 — `expectedStepId` (BẮT BUỘC) = gate màn hình đang hiện cho người duyệt
+   * (`null` khi run không có bước hiện tại — run 'held' gián đoạn trước bước đầu). Run đã sang
+   * gate khác ⇒ CONFLICT (reason runGateChanged): người duyệt cũ không duyệt/từ chối được gate kế.
+   */
   resumeRun: actuationProcedure
     .use(requirePermission("machine_control", "canCreate"))
     .input(
@@ -256,10 +261,15 @@ export const orchestrationRouter = router({
         runId: z.number().int().positive(),
         approved: z.boolean(),
         note: z.string().max(1000).optional(),
+        expectedStepId: z.string().max(128).nullable(),
       }),
     )
     .mutation(async ({ input, ctx }) => {
-      return resumeRun(input.runId, { approved: input.approved, note: input.note }, toFoeUser(ctx.user));
+      return resumeRun(
+        input.runId,
+        { approved: input.approved, note: input.note, expectedStepId: input.expectedStepId },
+        toFoeUser(ctx.user),
+      );
     }),
 
   /**

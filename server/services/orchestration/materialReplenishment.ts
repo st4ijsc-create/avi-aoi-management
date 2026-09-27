@@ -387,6 +387,9 @@ export async function sweepMaterialReplenishmentOnce(): Promise<MaterialReplenis
             await resolveQtGate(p.qtRunId, {
               approved: true,
               note: `watcher: task ${t.id} completed — vật tư đã giao (${p.replenishKey})`,
+              // doc 80 Đợt 1 Task 9 — tín hiệu "đã giao" CHỈ giải gate chờ giao; run đang dừng ở gate
+              // khác ⇒ không quyết định gì (trước đây lượt resolve rơi vào bất kỳ gate nào đang chờ).
+              expectedStepId: "qt3-await-delivery",
             });
           } catch (err) {
             console.error(`[MaterialReplenish] resolveQtGate(run ${p.qtRunId}) failed:`, (err as Error)?.message ?? err);

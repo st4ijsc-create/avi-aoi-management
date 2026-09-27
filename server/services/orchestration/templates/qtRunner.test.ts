@@ -395,16 +395,34 @@ describe("QT-1 end-to-end trên engine thật (in-memory)", () => {
     }
   });
 
+  it("Task 9: resolveQtGate với expectedStepId KHÁC gate đang chờ ⇒ không quyết định (không duyệt, không bù trừ)", async () => {
+    await register();
+    const res = await startQtRun(QT1_REF, { orderId: ORDER_ID, lineId: LINE_ID });
+    expect(res.pausedStepId).toBe("qt1-monitor");
+    const approve = await resolveQtGate(res.runId, { approved: true, expectedStepId: "qt3-await-delivery" });
+    expect(approve.ok).toBe(false);
+    const reject = await resolveQtGate(res.runId, { approved: false, note: "x", expectedStepId: "qt1-allocate" });
+    expect(reject.ok).toBe(false);
+    const view = await getRun(res.runId);
+    expect(view?.run.status).toBe("awaiting_confirm");
+    expect(view?.run.currentStepId).toBe("qt1-monitor");
+    expect(svc.cancelOrder).not.toHaveBeenCalled();
+  });
+
   it("fix #6: resolveQtGate(rejected) thua CAS ⇒ KHÔNG ném, báo trạng thái thật (không nói 'aborted')", async () => {
     await register();
     const res = await startQtRun(QT1_REF, { orderId: ORDER_ID, lineId: LINE_ID });
     expect(res.status).toBe("waiting_external");
-    const h = hijackNextClaim("aborted");
+    // doc 80 Đợt 1 Task 9 — từ chối có bù trừ nay CLAIM trước ('compensating'), bù trừ SAU.
+    const h = hijackNextClaim("compensating");
     try {
       const r = await resolveQtGate(res.runId, { approved: false, note: "huy" });
       expect(h.fired()).toBe(true);
       expect(r.ok).toBe(false);
       expect(r.status).toBe("running");
+      // thua CAS ⇒ KHÔNG bù trừ (không nhả giữ chỗ đơn / không đưa tuyến về held trên run đang chạy)
+      expect(svc.cancelOrder).not.toHaveBeenCalled();
+      expect(svc.transitionLine).not.toHaveBeenCalled();
     } finally {
       h.restore();
     }

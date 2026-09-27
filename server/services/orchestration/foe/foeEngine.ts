@@ -27,7 +27,7 @@ import { createHash, createHmac, randomBytes, timingSafeEqual } from "node:crypt
 import { DbUnavailableError } from "../../../_core/dbErrors";
 import { TRPCError } from "@trpc/server";
 import { appError } from "../../../_core/appError";
-import { and, eq, inArray, ne, notInArray } from "drizzle-orm";
+import { and, eq, inArray, isNull, ne, notInArray } from "drizzle-orm";
 import { getDb } from "../../../db/connection";
 import { appendRunEvent } from "../runEventStore"; // doc 33 W4 (F8): durable RunEvent log (FOE_DURABLE)
 import {
@@ -226,6 +226,25 @@ export interface RunView {
 export interface GateDecision {
   approved: boolean;
   note?: string;
+  /**
+   * doc 80 Đợt 1 Task 9 — the gate (`currentStepId`) the decider was LOOKING AT. When given, it
+   * must equal the run's current gate or the decision is refused with CONFLICT (a stale approver
+   * of g1 must never approve/reject g2). `null` = "the run had no current step" (interrupted
+   * 'held' run). Omitted ⇒ no caller-side pin (internal callers); the CAS still pins the gate
+   * read at the start of this call.
+   */
+  expectedStepId?: string | null;
+}
+
+/** doc 80 Đợt 1 Task 9 — optional hooks of `resumeRun`. */
+export interface ResumeHooks {
+  /**
+   * REJECT path only: side effects that undo completed work (QT saga compensation §18.2). They
+   * run ONLY after this call has WON the CAS on the paused run (status → 'compensating', gate
+   * pinned) — a decision that loses the race never compensates. Returns the final rejection note
+   * (e.g. the decider's note + compensation notes); undefined keeps `decision.note`.
+   */
+  compensate?: () => Promise<string | undefined>;
 }
 
 // ── Internal exec context (in-memory; mirrors run.contextJson) ──────────────────
@@ -1405,6 +1424,7 @@ export async function resumeRun(
   runId: number,
   decision: GateDecision,
   user: FoeUser,
+  hooks: ResumeHooks = {},
 ): Promise<StartRunResult> {
   if (!foeEnabled()) {
     return { ok: false, enabled: false, message: "FOE is disabled (set FOE_ENABLED=true)." };
@@ -1417,15 +1437,46 @@ export async function resumeRun(
       return { ok: false, enabled: true, runId, status: run.status, message: `Run ${runId} is not resumable (status=${run.status}).` };
     }
     const gateStepId = run.currentStepId ?? undefined;
+    // doc 80 Đợt 1 Task 9 — the decider saw ANOTHER gate (run already moved on) ⇒ CONFLICT before
+    // any state change. The CAS below pins the gate read here too (closes read→CAS window).
+    if (decision.expectedStepId !== undefined && (decision.expectedStepId ?? null) !== (run.currentStepId ?? null)) {
+      throw runGateChangedError(runId);
+    }
+    const pinnedStepId = run.currentStepId ?? null;
 
     if (!decision.approved) {
       // U6 (doc 26) — kèm lý do từ chối (note) vào audit của run + bước để truy vết.
-      const reason = decision.note?.trim();
-      // doc 80 ORC-02 — CAS: only ONE decision (approve OR reject) may claim the paused run.
-      await claimPausedRun(runId, "aborted", {
-        finishedAt: new Date(),
-        error: `Gate "${gateStepId ?? "?"}" rejected by user ${user.id}.${reason ? ` Reason: ${reason}` : ""}`,
-      });
+      let reason = decision.note?.trim();
+      if (hooks.compensate) {
+        // doc 80 Đợt 1 Task 9 — CLAIM FIRST, compensate AFTER: CAS the paused run (gate pinned) to
+        // 'compensating'; only the winner runs the compensations, then finishes 'compensating' →
+        // 'aborted'. A restart mid-compensation leaves 'compensating' ⇒ rehydrate marks it failed
+        // (never auto-resumed). An abort landing meanwhile stays 'aborted' (the final CAS below
+        // only moves a run that is still 'compensating').
+        await claimPausedRun(runId, "compensating", {}, pinnedStepId);
+        let finalNote: string | undefined;
+        try {
+          finalNote = await hooks.compensate();
+        } catch (err) {
+          finalNote = [reason, `compensation threw: ${err instanceof Error ? err.message : String(err)}`].filter(Boolean).join(" · ");
+        }
+        reason = (finalNote ?? reason)?.trim() || reason;
+        await d
+          .update(orchestrationRuns)
+          .set({
+            status: "aborted",
+            updatedAt: new Date(),
+            finishedAt: new Date(),
+            error: `Gate "${gateStepId ?? "?"}" rejected by user ${user.id}.${reason ? ` Reason: ${reason}` : ""}`,
+          })
+          .where(and(eq(orchestrationRuns.id, runId), eq(orchestrationRuns.status, "compensating")));
+      } else {
+        // doc 80 ORC-02 — CAS: only ONE decision (approve OR reject) may claim the paused run.
+        await claimPausedRun(runId, "aborted", {
+          finishedAt: new Date(),
+          error: `Gate "${gateStepId ?? "?"}" rejected by user ${user.id}.${reason ? ` Reason: ${reason}` : ""}`,
+        }, pinnedStepId);
+      }
       void appendRunEvent(runId, "RUN_FAILED", { ts: Date.now(), data: { status: "aborted" } });
       if (gateStepId) {
         await upsertStep(runId, gateStepId, "hitl_gate", {
@@ -1451,8 +1502,9 @@ export async function resumeRun(
 
     // doc 80 ORC-02 — CAS `UPDATE … SET status='running' WHERE id=$1 AND status IN
     // ('awaiting_confirm','held') RETURNING *`: 0 rows ⇒ another resume already claimed it ⇒ CONFLICT.
-    // Exactly one caller proceeds to drive the run.
-    await claimPausedRun(runId, "running");
+    // Exactly one caller proceeds to drive the run. Task 9 — also pinned to the gate read above
+    // (the one the approver-role check ran against): a run that moved on to another gate ⇒ CONFLICT.
+    await claimPausedRun(runId, "running", {}, pinnedStepId);
 
     // mark the gate resolved (completed) so the re-walk skips it
     if (gateStepId) {
@@ -1491,22 +1543,40 @@ async function claimPausedRun(
   runId: number,
   status: OrchestrationRun["status"],
   patch: Partial<OrchestrationRun> = {},
+  /** doc 80 Đợt 1 Task 9 — the gate this decision was made for (`IS NOT DISTINCT FROM`). */
+  pinnedStepId: string | null,
 ): Promise<OrchestrationRun> {
   const d = await db();
   const claimed = await d
     .update(orchestrationRuns)
     .set({ status, updatedAt: new Date(), ...patch })
-    .where(and(eq(orchestrationRuns.id, runId), inArray(orchestrationRuns.status, RESUMABLE_STATUSES)))
+    .where(
+      and(
+        eq(orchestrationRuns.id, runId),
+        inArray(orchestrationRuns.status, RESUMABLE_STATUSES),
+        pinnedStepId != null ? eq(orchestrationRuns.currentStepId, pinnedStepId) : isNull(orchestrationRuns.currentStepId),
+      ),
+    )
     .returning();
   if (claimed.length === 0) {
     throw appError(
       "CONFLICT",
       "OPERATION_FAILED",
       { operation: "resumeOrchestrationRun", reason: "runAlreadyClaimed" },
-      `Run ${runId} was already resumed, rejected or aborted by another request.`,
+      `Run ${runId} was already resumed, rejected or aborted by another request (or moved to another gate).`,
     );
   }
   return claimed[0];
+}
+
+/** doc 80 Đợt 1 Task 9 — the decider was looking at a gate the run has already left. */
+function runGateChangedError(runId: number): TRPCError {
+  return appError(
+    "CONFLICT",
+    "OPERATION_FAILED",
+    { operation: "resumeOrchestrationRun", reason: "runGateChanged" },
+    `Run ${runId} is no longer waiting at the gate you reviewed — reload to see the current gate.`,
+  );
 }
 
 /**
