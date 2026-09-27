@@ -1,0 +1,11 @@
+PROGRAM WhileNoDo
+VAR
+    N : INT;
+END_VAR
+
+N := 10;
+WHILE N > 0
+    N := N - 1;
+END_WHILE;
+
+END_PROGRAM

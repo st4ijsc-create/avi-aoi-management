@@ -1,0 +1,10 @@
+PROGRAM RepeatNoUntil
+VAR
+    K : INT;
+END_VAR
+
+REPEAT
+    K := K + 1;
+END_REPEAT;
+
+END_PROGRAM

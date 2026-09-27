@@ -15824,6 +15824,33 @@
         "zmcFileWrittenAtDeploy": "tệp .bas được ghi (nguyên tử) khi deploy biên dịch lại — bản xem trước không ghi gì",
         "hilSimTargetUnavailable": "không có đích URSim hợp lệ (URSIM_HOST chưa cấu hình hoặc trỏ vào thiết bị thật) — HIL không chạy được nên deploy bị chặn"
       }
+    },
+    "stDiag": {
+      "stEmpty": "Không có POU hay câu lệnh nào.",
+      "stUnexpectedChar": "Ký tự không hợp lệ '{{ch}}'.",
+      "stUnterminatedComment": "Chú thích '{{open}}' mở ở đây nhưng không bao giờ đóng.",
+      "stUnterminatedString": "Chuỗi ký tự không được đóng trên dòng này.",
+      "stBadLiteral": "Hằng {{kind}} không hợp lệ '{{text}}'.",
+      "stExpected": "Cần '{{expected}}', gặp '{{found}}'.",
+      "stExpectedExpr": "Cần một biểu thức, gặp '{{found}}'.",
+      "stExpectedIdent": "Cần một định danh, gặp '{{found}}'.",
+      "stExpectedType": "Cần một kiểu dữ liệu, gặp '{{found}}'.",
+      "stMissingSemicolon": "Thiếu ';' sau câu lệnh (gặp '{{found}}').",
+      "stUnexpected": "Không mong đợi '{{found}}'.",
+      "stNotClosed": "{{block}} mở ở dòng {{openLine}} chưa được đóng: cần {{expected}}, gặp '{{found}}'.",
+      "stOutsidePou": "Câu lệnh nằm ngoài PROGRAM / FUNCTION_BLOCK / FUNCTION.",
+      "stUnsupported": "{{construct}} không được đích OpenPLC (IEC 61131-3) hỗ trợ.",
+      "stUnchecked": "Khối {{construct}} không được kiểm tra.",
+      "stUndeclared": "Định danh chưa khai báo '{{name}}'.",
+      "stNoMember": "'{{type}}' không có thành viên '{{member}}' (hợp lệ: {{valid}}).",
+      "stBadInput": "'{{type}}' không có tham số vào '{{param}}' (hợp lệ: {{valid}}).",
+      "stBadOutput": "'{{type}}' không có tham số ra '{{param}}' (hợp lệ: {{valid}}).",
+      "stNotCallable": "'{{name}}' không phải hàm hay instance khối chức năng.",
+      "stFbTypeCall": "'{{name}}' là KIỂU khối chức năng — hãy khai báo một instance và dùng instance đó.",
+      "stUnknownType": "Kiểu lạ '{{name}}' — không phải kiểu chuẩn, không khai báo trong mã này; thành viên của nó không được kiểm.",
+      "stDuplicate": "'{{name}}' được khai báo nhiều lần.",
+      "stAssignConstant": "Không thể gán vào hằng '{{name}}'.",
+      "stNoAssignment": "Không có lệnh gán (:=) nào."
     }
   },
   "engineeringHome": {

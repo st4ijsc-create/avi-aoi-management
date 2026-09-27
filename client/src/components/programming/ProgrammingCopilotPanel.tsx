@@ -41,6 +41,7 @@ import {
   AlertTriangle, XCircle, CheckCircle2, Loader2, BookText, Info, RefreshCw,
 } from "lucide-react";
 import { toast } from "sonner";
+import { progDiagText } from "@/components/engineering/progDiagText";
 
 /** The 8 programming kinds the copilot supports (a subset of the server programmingKindEnum). */
 export const COPILOT_KINDS = [
@@ -84,7 +85,7 @@ const KIND_LANGUAGE: Record<CopilotKind, string> = {
 };
 
 // ── Mirror of the server GenerateProgramResult (read-only; optional-chained on use) ──
-interface GenDiagnostic { severity: string; message: string; line?: number }
+interface GenDiagnostic { severity: string; message: string; line?: number; col?: number; code?: string; params?: Record<string, string | number> }
 interface GenValidation { ok: boolean; diagnostics: GenDiagnostic[] }
 interface GenCitation { vendor: string; docTitle: string; page: number | null }
 interface GenResult {
@@ -466,7 +467,7 @@ export function ProgrammingCopilotPanel({
                           {d.severity === "error"
                             ? <XCircle className="mt-0.5 h-3 w-3 shrink-0 text-destructive" />
                             : <AlertTriangle className="mt-0.5 h-3 w-3 shrink-0 text-warning" />}
-                          <span>{d.line ? `L${d.line}: ` : ""}{d.message}</span>
+                          <span>{progDiagText(t, d)}</span>
                         </div>
                       ))}
                     </div>

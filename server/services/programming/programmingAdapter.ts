@@ -77,6 +77,12 @@ export interface ProgDiagnostic {
   line?: number;
   col?: number;
   symbol?: string;
+  /**
+   * doc 80 Đợt 1 Task 7 — mã chẩn đoán máy-đọc (vd `stUndeclared`) + tham số. UI dịch qua khoá
+   * i18n `engineering.stDiag.<code>`; `message` tiếng Anh giữ cho lượt tự sửa của model + nhật ký.
+   */
+  code?: string;
+  params?: Record<string, string | number>;
 }
 
 export interface Diagnostics {

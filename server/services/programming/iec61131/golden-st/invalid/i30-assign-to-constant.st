@@ -1,0 +1,11 @@
+PROGRAM WriteConstant
+VAR CONSTANT
+    MAX_SPEED : INT := 1500;
+END_VAR
+VAR
+    Speed : INT;
+END_VAR
+
+MAX_SPEED := Speed;
+
+END_PROGRAM

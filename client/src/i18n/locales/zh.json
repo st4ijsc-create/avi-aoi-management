@@ -16406,6 +16406,33 @@
         "zmcFileWrittenAtDeploy": "部署重新编译时（原子地）写入 .bas 文件 — 预览不写入任何内容",
         "hilSimTargetUnavailable": "没有有效的 URSim 目标（URSIM_HOST 未配置或指向真实设备）— HIL 无法运行，部署被阻止"
       }
+    },
+    "stDiag": {
+      "stEmpty": "未找到任何 POU 或语句。",
+      "stUnexpectedChar": "意外的字符 '{{ch}}'。",
+      "stUnterminatedComment": "此处开始的注释 '{{open}}' 从未关闭。",
+      "stUnterminatedString": "字符串在本行未关闭。",
+      "stBadLiteral": "无效的 {{kind}} 字面量 '{{text}}'。",
+      "stExpected": "应为 '{{expected}}'，实际为 '{{found}}'。",
+      "stExpectedExpr": "应为表达式，实际为 '{{found}}'。",
+      "stExpectedIdent": "应为标识符，实际为 '{{found}}'。",
+      "stExpectedType": "应为数据类型，实际为 '{{found}}'。",
+      "stMissingSemicolon": "语句后缺少 ';'（实际为 '{{found}}'）。",
+      "stUnexpected": "意外的 '{{found}}'。",
+      "stNotClosed": "第 {{openLine}} 行开始的 {{block}} 未关闭：应为 {{expected}}，实际为 '{{found}}'。",
+      "stOutsidePou": "语句位于 PROGRAM / FUNCTION_BLOCK / FUNCTION 之外。",
+      "stUnsupported": "OpenPLC（IEC 61131-3）目标不支持 {{construct}}。",
+      "stUnchecked": "{{construct}} 块未经检查。",
+      "stUndeclared": "未声明的标识符 '{{name}}'。",
+      "stNoMember": "'{{type}}' 没有成员 '{{member}}'（有效：{{valid}}）。",
+      "stBadInput": "'{{type}}' 没有输入参数 '{{param}}'（有效：{{valid}}）。",
+      "stBadOutput": "'{{type}}' 没有输出参数 '{{param}}'（有效：{{valid}}）。",
+      "stNotCallable": "'{{name}}' 不是函数或功能块实例。",
+      "stFbTypeCall": "'{{name}}' 是功能块类型——请声明实例并使用该实例。",
+      "stUnknownType": "未知类型 '{{name}}'——既非标准类型也未在此声明；不检查其成员。",
+      "stDuplicate": "'{{name}}' 被重复声明。",
+      "stAssignConstant": "不能给常量 '{{name}}' 赋值。",
+      "stNoAssignment": "未找到赋值 (:=)。"
     }
   },
   "engineeringHome": {

@@ -486,8 +486,13 @@ describe("registry + existing IEC adapters unchanged", () => {
 
   it("the existing ST/LD adapters still validate + compile as before (goldens intact)", async () => {
     const st = new Iec61131StAdapter();
-    const stB = await st.compile({ kind: "iec61131-st", language: "st", content: "x := TRUE;\ny := FALSE;" });
+    // doc 80 Đợt 1 Task 7 (AI-02) — mẫu cũ `x := TRUE;\ny := FALSE;` chỉ qua được validator đếm
+    // từ khoá: `x`, `y` KHÔNG được khai báo ⇒ nay bị từ chối đúng (stUndeclared). Khai báo đủ.
+    const stB = await st.compile({ kind: "iec61131-st", language: "st", content: "VAR x : BOOL; y : BOOL; END_VAR\nx := TRUE;\ny := FALSE;" });
     expect(stB.outputRef).toContain("openplc://st/");
+    const stBad = await st.compile({ kind: "iec61131-st", language: "st", content: "x := TRUE;\ny := FALSE;" });
+    expect(stBad.ok).toBe(false);
+    expect(stBad.outputRef).toBeUndefined();
 
     const ld = new Iec61131LdAdapter();
     const ldB = await ld.compile({ kind: "iec61131-ld", language: "ld", content: "Y0 := X0 AND NOT X1\nY1 := Y0 OR X2" });

@@ -208,7 +208,8 @@ export interface GenerateProgramInput {
 
 export interface GenValidation {
   ok: boolean;
-  diagnostics: { severity: string; message: string; line?: number }[];
+  /** doc 80 Đợt 1 Task 7 — `col`/`code`/`params` từ parser ST thật (UI dịch qua `engineering.stDiag.<code>`). */
+  diagnostics: { severity: string; message: string; line?: number; col?: number; code?: string; params?: Record<string, string | number> }[];
 }
 
 export interface GenCitation {
@@ -1003,13 +1004,13 @@ async function runValidation(
   try {
     const adapter = programmingRegistry.getAdapter(kind as ProgrammingKind);
     const v = await adapter.validate({ kind: kind as ProgrammingKind, language, content });
-    for (const d of v.diagnostics) diagnostics.push({ severity: d.severity, message: d.message, line: d.line });
+    for (const d of v.diagnostics) diagnostics.push({ severity: d.severity, message: d.message, line: d.line, col: d.col, code: d.code, params: d.params });
     let ok = v.ok;
     if (ok && COMPILE_ALSO.has(kind)) {
       const b = await adapter.compile({ kind: kind as ProgrammingKind, language, content });
       for (const d of b.diagnostics) {
         if (!diagnostics.some((x) => x.message === d.message)) {
-          diagnostics.push({ severity: d.severity, message: d.message, line: d.line });
+          diagnostics.push({ severity: d.severity, message: d.message, line: d.line, col: d.col, code: d.code, params: d.params });
         }
       }
       ok = ok && b.ok;
@@ -1042,7 +1043,7 @@ function buildRepairPrompt(
 ): string {
   const diagText = (diagnostics ?? [])
     .slice(0, 8)
-    .map((d) => `- [${d.severity}] ${d.message}${d.line ? ` (line ${d.line})` : ""}`)
+    .map((d) => `- [${d.severity}] ${d.message}${d.line ? ` (line ${d.line}${d.col ? `, col ${d.col}` : ""})` : ""}`)
     .join("\n");
   return [
     `The ${outKind} program below FAILED validation. Fix EVERY listed error and return ONLY the`,

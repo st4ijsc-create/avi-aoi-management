@@ -76,6 +76,7 @@ import { deployOutcome, newDeployAttemptKey } from "./engineeringDeployOutcome";
 // doc 80 Đợt 1 Task 5 — duyệt phiên bản trong IDE (WS-01) + bản xem trước deploy trước OTP (F2).
 import { VersionReviewPanel, ReviewStatusBadge } from "@/components/engineering/VersionReviewPanel";
 import { DeployPreviewPanel, type DeployPreviewView } from "@/components/engineering/DeployPreviewPanel";
+import { progDiagText } from "@/components/engineering/progDiagText";
 import {
   deriveFeatureStatus,
   FeatureStatusGate,
@@ -120,7 +121,7 @@ const KIND_LANGUAGES: Record<Kind, readonly string[]> = {
   "iec61131-ld": ["ld"],
 };
 
-type Diagnostic = { severity: string; message: string; line?: number; symbol?: string };
+type Diagnostic = { severity: string; message: string; line?: number; col?: number; symbol?: string; code?: string; params?: Record<string, string | number> };
 
 /**
  * U14 (doc 26 §3.2) — STEPPER luồng vàng: Soạn → Kiểm tra → Build → Mô phỏng →
@@ -1182,7 +1183,7 @@ export default function EngineeringWorkspace() {
                           diagnostics.map((d, i) => (
                             <div key={i} className="flex items-center gap-1">
                               {d.severity === "error" ? <XCircle className="h-3 w-3 text-destructive" /> : <AlertTriangle className="h-3 w-3 text-warning" />}
-                              <span>{d.line ? `L${d.line}: ` : ""}{d.message}</span>
+                              <span>{progDiagText(t, d)}</span>
                             </div>
                           ))
                         )}

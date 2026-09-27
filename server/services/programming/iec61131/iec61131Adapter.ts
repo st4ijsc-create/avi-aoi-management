@@ -13,7 +13,7 @@
  * OpenPLC host it returns a clear 'failed', never a fake success.
  *
  * WHAT IS REAL HERE (no hardware):
- *   • ST: validate (VAR/END_VAR + IF/END_IF balance, `:=` assignments), compile (normalise
+ *   • ST: validate (real tokenizer + parser + minimal semantics — stParser.ts), compile (normalise
  *     → openplc://st/<checksum>, a matiec-compatible ST body), simulate (honest preview —
  *     ST is not fully executed; we surface structure, not a fake run).
  *   • LD: validate (each rung `OUT := <bool expr>`; expr parses), compile (transpile rungs
@@ -27,6 +27,7 @@ import { parsePouProjectJson, countNetworks, type PouProject } from "./pouModel"
 import { lintPouProject, type PouLintDiagnostic } from "./pouLinter";
 import { transpilePouProject } from "./pouToSt";
 import { safetyLintDiagnostics } from "../safetyLinter";
+import { checkStructuredText } from "./stParser";
 import type {
   ProgrammingAdapter,
   ProgrammingCapability,
@@ -72,20 +73,22 @@ export class Iec61131StAdapter implements ProgrammingAdapter {
   readonly capabilities: ProgrammingCapability = { ...OPENPLC_CAPS, languages: ["st"] };
 
   async validate(src: ProgramSource): Promise<Diagnostics> {
-    const diags: ProgDiagnostic[] = [];
     const c = src.content ?? "";
-    if (!c.trim()) return { ok: false, diagnostics: [{ severity: "error", message: "Empty ST program." }] };
-    const count = (re: RegExp) => (c.match(re) ?? []).length;
-    const pairs: Array<[RegExp, RegExp, string]> = [
-      [/\bVAR\b/gi, /\bEND_VAR\b/gi, "VAR/END_VAR"],
-      [/\bIF\b/gi, /\bEND_IF\b/gi, "IF/END_IF"],
-      [/\bFOR\b/gi, /\bEND_FOR\b/gi, "FOR/END_FOR"],
-      [/\bWHILE\b/gi, /\bEND_WHILE\b/gi, "WHILE/END_WHILE"],
-    ];
-    for (const [o, cl, name] of pairs) {
-      if (count(o) !== count(cl)) diags.push({ severity: "error", message: `Unbalanced ${name}.` });
+    if (!c.trim()) return { ok: false, diagnostics: [{ severity: "error", message: "Empty ST program.", code: "stEmpty" }] };
+    // doc 80 Đợt 1 Task 7 (AI-02) — tokenizer + parser + ngữ nghĩa tối thiểu THẬT (stParser.ts),
+    // thay đếm từ khoá `/gi` (rác ⇒ ok:true; FB có VAR_INPUT / chú thích chứa "if" ⇒ ok:false).
+    const r = checkStructuredText(c, { symbols: src.symbols?.map((s) => s.name) });
+    const diags: ProgDiagnostic[] = r.diagnostics.map((d) => ({
+      severity: d.severity,
+      message: d.message,
+      line: d.line,
+      col: d.col,
+      code: d.code,
+      ...(d.params ? { params: d.params } : {}),
+    }));
+    if (r.ok && r.assignments === 0) {
+      diags.push({ severity: "warning", message: "No assignment (`:=`) found.", code: "stNoAssignment" });
     }
-    if (!/:=/.test(c)) diags.push({ severity: "warning", message: "No assignment (`:=`) found." });
     // C4 (doc 69 Wave-4) — SEMANTIC safety-linter pass: structural checks (unbounded loop /
     // motion envelope / missing interlock) that fire even with no "safety" keyword present.
     // Always WARNING severity (advisory) — never affects `ok`, never blocks codegen.

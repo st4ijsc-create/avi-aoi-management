@@ -15844,6 +15844,33 @@
         "zmcFileWrittenAtDeploy": "the .bas file is written (atomically) when the deploy recompiles — the preview writes nothing",
         "hilSimTargetUnavailable": "no valid URSim target (URSIM_HOST unset or pointing at a real device) — HIL cannot run so the deploy is blocked"
       }
+    },
+    "stDiag": {
+      "stEmpty": "No POU or statement found.",
+      "stUnexpectedChar": "Unexpected character '{{ch}}'.",
+      "stUnterminatedComment": "Comment '{{open}}' opened here is never closed.",
+      "stUnterminatedString": "String literal is not closed on this line.",
+      "stBadLiteral": "Invalid {{kind}} literal '{{text}}'.",
+      "stExpected": "Expected '{{expected}}', found '{{found}}'.",
+      "stExpectedExpr": "Expected an expression, found '{{found}}'.",
+      "stExpectedIdent": "Expected an identifier, found '{{found}}'.",
+      "stExpectedType": "Expected a type, found '{{found}}'.",
+      "stMissingSemicolon": "Missing ';' after the statement (found '{{found}}').",
+      "stUnexpected": "Unexpected '{{found}}'.",
+      "stNotClosed": "{{block}} opened at line {{openLine}} is not closed: expected {{expected}}, found '{{found}}'.",
+      "stOutsidePou": "Statement outside of a PROGRAM / FUNCTION_BLOCK / FUNCTION.",
+      "stUnsupported": "{{construct}} is not supported by the OpenPLC (IEC 61131-3) target.",
+      "stUnchecked": "{{construct}} block is not checked.",
+      "stUndeclared": "Undeclared identifier '{{name}}'.",
+      "stNoMember": "'{{type}}' has no member '{{member}}' (valid: {{valid}}).",
+      "stBadInput": "'{{type}}' has no input parameter '{{param}}' (valid: {{valid}}).",
+      "stBadOutput": "'{{type}}' has no output parameter '{{param}}' (valid: {{valid}}).",
+      "stNotCallable": "'{{name}}' is not a function or function block instance.",
+      "stFbTypeCall": "'{{name}}' is a function block type — declare an instance and use that.",
+      "stUnknownType": "Unknown type '{{name}}' — not standard and not declared here; its members are not checked.",
+      "stDuplicate": "'{{name}}' is declared more than once.",
+      "stAssignConstant": "Cannot assign to constant '{{name}}'.",
+      "stNoAssignment": "No assignment (:=) found."
     }
   },
   "engineeringHome": {
