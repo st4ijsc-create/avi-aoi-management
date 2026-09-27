@@ -15961,9 +15961,11 @@
     "kind": "Loại",
     "kpi": {
       "chattering": "Rung (chattering)",
+      "chatteringNotMeasuredTip": "Nguồn KPI báo động chung (alarmKpi) chưa tính chattering.",
       "conformance": "Đạt kiểm định",
       "flood": "Cửa sổ tràn",
       "mapped": "Máy đã ánh xạ",
+      "notMeasured": "Chưa đo được",
       "operators": "Người vận hành (server)",
       "peakWindow": "Đỉnh/10 phút",
       "pendingCrs": "CR đang chờ",
@@ -16084,7 +16086,8 @@
       "no_published_types": "CSDL chưa có kiểu thiết bị nào ở trạng thái published.",
       "no_bound_machines": "Chưa máy nào được gắn kiểu thiết bị (machines.device_type_key trống ở mọi máy).",
       "no_conformance_subjects": "Không có kiểu thiết bị published nào ánh xạ máy để chạy conformance."
-    }
+    },
+    "shelvedNotEnforced": "Đã tạm ẩn (chưa có hiệu lực)"
   },
   "field": {
     "batteryNull": "Không có telemetry pin (pin AGV đến từ VDA5050; null khi không có driver nào báo cáo).",

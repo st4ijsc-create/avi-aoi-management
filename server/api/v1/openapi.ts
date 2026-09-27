@@ -1443,7 +1443,7 @@ export function buildV1OpenApiSpec(serverUrl = "/"): Record<string, unknown> {
         get: {
           tags: ["Standards"],
           summary: "Equipment governance compliance metrics",
-          description: "Requires scope `standards:read`. Read-only. Reuses complianceService.loadComplianceMetrics (the same loader as equipmentStandardsRouter.complianceMetrics): mapped = machines.device_type_key bound to a published device_types row; conformance over published device_types; `basis` describes the inputs.",
+          description: "Requires scope `standards:read`. Read-only. Reuses complianceService.loadComplianceMetrics (the same loader as equipmentStandardsRouter.complianceMetrics). **Semantics changed 2026-09-27 (doc 80 Đợt 1 Task 3, STD-01) — intentional correction, same field names:** `machinesMappedToPublished`/`mappedRate`/`unmappedMachineTypes` are now computed from `machines.device_type_key` → a PUBLISHED `device_types` row (previously `machines.machineType` was matched against the in-code seed type keys, a tautology that always reported 100 %); `conformanceTypeCount`/`conformancePassCount`/`conformancePassRate`/`failingTypes` now run over the published `device_types` rows in the database (previously over the seed constants). New fields: `basis` (what the numbers were computed from — `mapping`, `publishedTypesFrom`, `conformanceFrom`, `dbAvailable`, `publishedTypeCount`, `machinesWithKey`, `machinesWithUnpublishedKey`, `warnings[]`), `unmappedMachineCount`, `usageByTypeKey` (published typeKey → number of machines bound to it).",
           responses: { "200": { description: "OK", content: jsonOk() }, ...errResponses() },
         },
       },

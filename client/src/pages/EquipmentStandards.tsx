@@ -576,7 +576,7 @@ export default function EquipmentStandards() {
                       { n: kpis.operatorCount },
                     )}
                   </p>
-                  <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
+                  <div className="grid grid-cols-2 gap-3 sm:grid-cols-4 lg:grid-cols-7">
                     <div data-testid="alarm-kpi-total">
                       <MetricCard icon={<Bell className="h-4 w-4" />} label={t("eqStandards.kpi.total", "Total alarms")} value={kpis.totalAlarms} />
                     </div>
@@ -588,6 +588,13 @@ export default function EquipmentStandards() {
                     <MetricCard icon={<Lock className="h-4 w-4" />} label={t("eqStandards.kpi.standing", "Standing/stale")}
                       value={kpis.standing.count} tone={kpis.standing.count > 0 ? "warning" : "good"} />
                     <MetricCard icon={<Cpu className="h-4 w-4" />} label={t("eqStandards.kpi.peakWindow", "Peak/10min")} value={kpis.flood.maxInWindow} />
+                    {/* Task 3 Fix round 1 — nguồn KPI chung (alarmKpi.summary) CHƯA tính chattering: nói
+                        thẳng "chưa đo được" thay vì bỏ ô im lặng hay bịa một con số. */}
+                    <div data-testid="alarm-kpi-chattering"
+                      title={t("eqStandards.kpi.chatteringNotMeasuredTip", "The combined alarm KPI source (alarmKpi) does not compute chattering yet.")}>
+                      <MetricCard icon={<RefreshCw className="h-4 w-4" />} label={t("eqStandards.kpi.chattering", "Chattering")}
+                        value={t("eqStandards.kpi.notMeasured", "Not measured yet")} />
+                    </div>
                     <MetricCard icon={<Wrench className="h-4 w-4" />} label={t("eqStandards.kpi.operators", "Operators (server)")} value={kpis.operatorCount} />
                   </div>
                   {/* Bad actors */}
@@ -658,7 +665,13 @@ export default function EquipmentStandards() {
                         {m.isSuppressed ? (
                           <Badge variant="outline" className="border-destructive/30 bg-destructive/10 text-destructive text-xs">{t("eqStandards.suppressed", "Suppressed")}</Badge>
                         ) : m.isShelvedNow ? (
-                          <Badge variant="outline" className="border-amber-500/30 bg-amber-500/10 text-amber-600 text-xs">{t("eqStandards.shelved", "Shelved")}</Badge>
+                          // Task 3 Fix round 1 (STD-02) — shelveMasterAlarm vẫn ghi được ở server nhưng đường
+                          // báo động chính chưa đọc shelvedUntil ⇒ badge trơn "Shelved" là ấn tượng SAI.
+                          <Badge data-testid={`master-shelved-${m.id}`} variant="outline"
+                            className="border-amber-500/30 bg-amber-500/10 text-amber-600 text-xs"
+                            title={t("eqStandards.shelveNotEnforced", "Not yet effective on the alarm path")}>
+                            {t("eqStandards.shelvedNotEnforced", "Shelved (not yet effective)")}
+                          </Badge>
                         ) : (
                           <span className="text-xs text-muted-foreground">—</span>
                         )}

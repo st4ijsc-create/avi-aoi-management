@@ -15981,9 +15981,11 @@
     "kind": "Kind",
     "kpi": {
       "chattering": "Chattering",
+      "chatteringNotMeasuredTip": "The combined alarm KPI source (alarmKpi) does not compute chattering yet.",
       "conformance": "Conformance pass",
       "flood": "Flood windows",
       "mapped": "Machines mapped",
+      "notMeasured": "Not measured yet",
       "operators": "Operators (server)",
       "peakWindow": "Peak/10min",
       "pendingCrs": "Pending CRs",
@@ -16104,7 +16106,8 @@
       "no_published_types": "The database has no published device types yet.",
       "no_bound_machines": "No machine is bound to a device type yet (machines.device_type_key is empty everywhere).",
       "no_conformance_subjects": "No published device type maps a machine type, so conformance had nothing to check."
-    }
+    },
+    "shelvedNotEnforced": "Shelved (not yet effective)"
   },
   "field": {
     "batteryNull": "No battery telemetry (AGV battery flows from VDA5050; null when no driver reports it).",

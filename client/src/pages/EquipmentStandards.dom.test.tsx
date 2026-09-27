@@ -258,3 +258,34 @@ describe("EquipmentStandards — Shelve chưa có hiệu lực trên đường b
     expect(mutateSpies["equipmentStandards.shelveMasterAlarm"] ?? vi.fn()).not.toHaveBeenCalled();
   });
 });
+
+// ════════════════════════════════════════════════════════════════════════════════════════════
+// Task 3 Fix round 1 — (1) badge "Shelved" của hàng đang shelve cũng phải NÓI RÕ chưa có hiệu lực
+// (shelveMasterAlarm vẫn ghi được ở server; badge trơn = đúng ấn tượng sai mà STD-02 chặn);
+// (3) ô Chattering không bị bỏ im lặng: hiện "chưa đo được" + tooltip nêu lý do.
+// ════════════════════════════════════════════════════════════════════════════════════════════
+describe("EquipmentStandards — Fix round 1 (badge Shelved + ô Chattering)", () => {
+  it("hàng isShelvedNow ⇒ badge ghi rõ 'chưa có hiệu lực' + tooltip i18n", async () => {
+    setQueryOverride("equipmentStandards.listMasterAlarms", makeQuery({
+      data: [{
+        id: 9, alarmKey: "OVERPRESS", assetType: null, priority: "high", consequence: "major",
+        timeToRespond: 10, setpoint: null, deadband: null, isSuppressed: false, isShelvedNow: true,
+      }],
+    }));
+    render(<EquipmentStandards />);
+    await clickTab("Alarm performance");
+    const badge = screen.getByTestId("master-shelved-9");
+    expect(badge.textContent).toMatch(/not yet effective/i);
+    expect(badge).toHaveAttribute("title", "Not yet effective on the alarm path");
+  });
+
+  it("ô Chattering hiện 'Not measured yet' + tooltip nêu lý do (nguồn chung chưa tính)", async () => {
+    setQueryOverride("alarmKpi.summary", makeQuery({ data: SUMMARY }));
+    render(<EquipmentStandards />);
+    await clickTab("Alarm performance");
+    const tile = screen.getByTestId("alarm-kpi-chattering");
+    expect(tile.textContent).toMatch(/Chattering/);
+    expect(tile.textContent).toMatch(/Not measured yet/);
+    expect(tile.getAttribute("title") ?? "").toMatch(/does not compute chattering/i);
+  });
+});

@@ -16380,9 +16380,11 @@
     "kind": "类别",
     "kpi": {
       "chattering": "抖动",
+      "chatteringNotMeasuredTip": "统一告警 KPI 源（alarmKpi）尚未计算振荡告警。",
       "conformance": "合规通过",
       "flood": "洪泛窗口",
       "mapped": "已映射机器",
+      "notMeasured": "尚未测量",
       "operators": "操作员（服务器）",
       "peakWindow": "峰值/10 分钟",
       "pendingCrs": "待处理变更请求",
@@ -16503,7 +16505,8 @@
       "no_published_types": "数据库中尚无已发布的设备类型。",
       "no_bound_machines": "尚无设备绑定设备类型（所有设备的 machines.device_type_key 均为空）。",
       "no_conformance_subjects": "没有映射设备类型的已发布设备类型，一致性测试无可检查对象。"
-    }
+    },
+    "shelvedNotEnforced": "已搁置（尚未生效）"
   },
   "field": {
     "batteryNull": "无电池遥测（AGV 电量来自 VDA5050；无驱动上报时为 null）。",
