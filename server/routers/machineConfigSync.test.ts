@@ -58,6 +58,9 @@ vi.mock("drizzle-orm", async (orig) => {
 vi.mock("../db/connection", () => ({ getDb: vi.fn(async () => fake) }));
 vi.mock("../db", () => ({
   getDb: vi.fn(async () => fake),
+  // root middleware (server/_core/trpc.ts, Pha 7) reads it — missing ⇒ every call threw (red at
+  // HEAD before doc 80 Đợt 1 Task 9).
+  phaiDoiMatKhau: vi.fn(async () => false),
   getMachineByApiKey: vi.fn(),
   getMachineByCode: vi.fn(),
   getMachineById: vi.fn(),

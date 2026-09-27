@@ -410,6 +410,9 @@ export const machineRecipeRouter = router({
           // changeover.approve). Behaviour identical.
           return await performDeploy(input, ctx.user.id);
         } catch (err) {
+          // doc 80 Đợt 1 Task 9 — pre-classified refusals (release gate PRECONDITION_FAILED,
+          // NOT_FOUND) surface unchanged instead of being downgraded to a generic BAD_REQUEST.
+          if (err instanceof TRPCError) throw err;
           throw appError("BAD_REQUEST", "OPERATION_FAILED", { operation: "deployRecipe" }, err instanceof Error ? err.message : String(err));
         }
       }),
@@ -433,6 +436,8 @@ export const machineRecipeRouter = router({
           }
           return deployment;
         } catch (err) {
+          // doc 80 Đợt 1 Task 9 — the release gate's PRECONDITION_FAILED surfaces unchanged.
+          if (err instanceof TRPCError) throw err;
           throw appError("BAD_REQUEST", "OPERATION_FAILED", { operation: "rollbackRecipeDeployment" }, err instanceof Error ? err.message : String(err));
         }
       }),

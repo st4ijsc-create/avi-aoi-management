@@ -22,7 +22,11 @@ function approve(id: number, approvedBy = 99): void {
   if (r) r.approvedBy = approvedBy;
 }
 
-vi.mock("../../db/machineRecipe", () => ({
+vi.mock("../../db/machineRecipe", async (importOriginal) => ({
+  // doc 80 Đợt 1 Task 9 — the ONE release gate + lock-and-read helper are REAL (they run on this
+  // file's fake tx); only the catalog helpers below are stubbed.
+  assertRecipeReleasable: (await importOriginal<typeof import("../../db/machineRecipe")>()).assertRecipeReleasable,
+  lockCodeAndReadTarget: (await importOriginal<typeof import("../../db/machineRecipe")>()).lockCodeAndReadTarget,
   createRecipe: vi.fn(async (input: any) => {
     const version = recipes.filter((r) => r.code === input.code).reduce((m, r) => Math.max(m, r.version), 0) + 1;
     const row: Rec = { id: recipeSeq++, code: input.code, name: input.name, version, status: input.status ?? "draft", checksum: "sum" + version, machineId: input.machineId ?? null, approvedBy: null };

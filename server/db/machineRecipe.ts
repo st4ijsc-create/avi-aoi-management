@@ -20,6 +20,7 @@ import { and, desc, eq, getTableColumns } from "drizzle-orm";
 import { getDb } from "./connection";
 import {
   machineRecipes,
+  machines,
   recipeDeployments,
   users,
   type MachineRecipe,
@@ -36,7 +37,87 @@ async function db() {
 // from the db's own transaction callback so the query-builder surface (.for("update"))
 // stays fully typed.
 type Db = NonNullable<Awaited<ReturnType<typeof getDb>>>;
-type DbOrTx = Parameters<Parameters<Db["transaction"]>[0]>[0];
+export type DbOrTx = Parameters<Parameters<Db["transaction"]>[0]>[0];
+
+/** Operation names the single release gate reports (keys of `errors.operation.*`). */
+export type RecipeReleaseOperation =
+  | "deployRecipe"
+  | "rollbackRecipeDeployment"
+  | "releaseRecipeVersion"
+  | "rollbackRecipeVersion";
+
+/**
+ * doc 80 Đợt 1 Task 9 (§12 "Còn mở" — T3) — THE one release gate for every path that makes a
+ * recipe version `active` on the shop floor: `/recipes` deploy + rollback (deployWithinTx) and
+ * equipmentIntegration release + rollback (recipeVersioningService). Before this, the two
+ * surfaces had separate, drifting checks (/recipes rollback checked nothing; deploy/release let an
+ * archived version or a recipe of another machine type through).
+ *
+ * MUST be called on the row read UNDER the code's `SELECT … FOR UPDATE` (same transaction), so a
+ * concurrent archive/edit that committed while the promoter waited for the lock is seen.
+ * Refuses with PRECONDITION_FAILED + OPERATION_FAILED(reason):
+ *   • `recipeNotApproved`         — no second-approver sign-off (approvedBy null);
+ *   • `recipeArchived`            — archived version on a FORWARD promotion (deploy/release). A
+ *     ROLLBACK (`allowArchived`) targets the version it replaces back — superseded versions are
+ *     stored as 'archived' (the status enum has no separate "superseded"), so it stays allowed;
+ *   • `recipeMachineTypeMismatch` — both the recipe's `machineType` and the target machine's
+ *     type are known and differ ("đúng loại máy nếu biết"). Target machine = `opts.machineId`
+ *     (deploy/rollback onto a machine) else the recipe's own bound `machineId`.
+ */
+export async function assertRecipeReleasable(
+  tx: DbOrTx,
+  recipe: MachineRecipe,
+  opts: { operation: RecipeReleaseOperation; machineId?: number | null; allowArchived?: boolean },
+): Promise<void> {
+  const label = `Recipe #${recipe.id} (${recipe.code} v${recipe.version})`;
+  if (recipe.approvedBy == null) {
+    throw appError(
+      "PRECONDITION_FAILED",
+      "OPERATION_FAILED",
+      { operation: opts.operation, reason: "recipeNotApproved" },
+      `${label} has not been approved — a second approver must sign off before it can be deployed/released/rolled back to.`,
+    );
+  }
+  if (recipe.status === "archived" && !opts.allowArchived) {
+    throw appError(
+      "PRECONDITION_FAILED",
+      "OPERATION_FAILED",
+      { operation: opts.operation, reason: "recipeArchived" },
+      `${label} is archived — create a new version instead of promoting an archived one.`,
+    );
+  }
+  const targetMachineId = opts.machineId ?? recipe.machineId ?? null;
+  if (recipe.machineType != null && targetMachineId != null) {
+    const [m] = await tx
+      .select({ machineType: machines.machineType })
+      .from(machines)
+      .where(eq(machines.id, targetMachineId))
+      .limit(1);
+    if (m?.machineType != null && m.machineType !== recipe.machineType) {
+      throw appError(
+        "PRECONDITION_FAILED",
+        "OPERATION_FAILED",
+        { operation: opts.operation, reason: "recipeMachineTypeMismatch" },
+        `${label} is a ${recipe.machineType} recipe — machine #${targetMachineId} is ${m.machineType}.`,
+      );
+    }
+  }
+}
+
+/**
+ * Lock every version of `code` (FOR UPDATE) and return the target row as read UNDER that lock
+ * (Task 9 — the release gate must judge the row a concurrent writer may just have changed).
+ * Shared by /recipes (deployWithinTx) and equipmentIntegration (releaseVersion/rollbackToVersion).
+ */
+export async function lockCodeAndReadTarget(tx: DbOrTx, recipeId: number): Promise<MachineRecipe> {
+  const [unlocked] = await tx.select().from(machineRecipes).where(eq(machineRecipes.id, recipeId)).limit(1);
+  if (!unlocked) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "recipe" }, `Recipe #${recipeId} not found`);
+  // Row-lock ALL versions sharing this code → serialize concurrent promoters.
+  const locked = await tx.select().from(machineRecipes).where(eq(machineRecipes.code, unlocked.code)).for("update");
+  const target = locked.find((r) => r.id === recipeId);
+  if (!target) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "recipe" }, `Recipe #${recipeId} not found`);
+  return target;
+}
 
 /** Deterministic sha256 of a recipe payload (stable key order). */
 export function computeChecksum(payload: Record<string, unknown>): string {
@@ -212,12 +293,15 @@ export interface DeployRecipeInput {
  * archive → set-active → ledger steps are now indivisible; a crash mid-way rolls the
  * whole thing back, never leaving the code with zero or two active versions).
  */
-async function deployWithinTx(tx: DbOrTx, input: DeployRecipeInput): Promise<RecipeDeployment> {
-  const [target] = await tx.select().from(machineRecipes).where(eq(machineRecipes.id, input.recipeId)).limit(1);
-  if (!target) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "recipe" }, `Recipe #${input.recipeId} not found`);
-
-  // Row-lock ALL versions sharing this code → serialize concurrent promoters.
-  await tx.select().from(machineRecipes).where(eq(machineRecipes.code, target.code)).for("update");
+async function deployWithinTx(
+  tx: DbOrTx,
+  input: DeployRecipeInput,
+  gate: { operation: "deployRecipe" | "rollbackRecipeDeployment"; allowArchived: boolean },
+): Promise<RecipeDeployment> {
+  // Row-lock ALL versions sharing this code → serialize concurrent promoters; target read UNDER it.
+  const target = await lockCodeAndReadTarget(tx, input.recipeId);
+  // doc 80 Đợt 1 Task 9 — the ONE release gate (approved · not archived on deploy · machine type).
+  await assertRecipeReleasable(tx, target, { operation: gate.operation, machineId: input.machineId, allowArchived: gate.allowArchived });
 
   // Current active version for the SAME code (the one being superseded) — read UNDER the lock.
   const [previous] = await tx
@@ -268,16 +352,9 @@ async function deployWithinTx(tx: DbOrTx, input: DeployRecipeInput): Promise<Rec
 export async function deployRecipe(input: DeployRecipeInput): Promise<RecipeDeployment> {
   const d = await db();
   return d.transaction(async (tx) => {
-    // W2-9 (doc 25 T6) — SoD gate: only an APPROVED recipe (approved by someone other
-    // than its creator, enforced at approveRecipe) may be deployed. Blocks the deploy of
-    // a self-authored, un-reviewed recipe. Rollback re-deploys a PREVIOUSLY-active recipe
-    // (already approved) and goes through deployWithinTx directly, so it is unaffected.
-    const [target] = await tx.select().from(machineRecipes).where(eq(machineRecipes.id, input.recipeId)).limit(1);
-    if (!target) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "recipe" }, `Recipe #${input.recipeId} not found`);
-    if (target.approvedBy == null) {
-      throw new Error("Recipe chưa được trình duyệt (second-approver) — cần một người khác duyệt trước khi deploy.");
-    }
-    return deployWithinTx(tx, input);
+    // W2-9 (doc 25 T6) SoD gate — now the shared release gate inside deployWithinTx (doc 80 Đợt 1
+    // Task 9): approved, NOT archived, machine type matches; evaluated under the code lock.
+    return deployWithinTx(tx, input, { operation: "deployRecipe", allowArchived: false });
   });
 }
 
@@ -304,13 +381,20 @@ export async function rollbackRecipe(input: { machineId: number; deployedBy: num
     if (last.previousRecipeId == null) throw new Error(`Latest deployment for machine #${input.machineId} has no previous recipe to roll back to`);
 
     // Re-deploy the previous recipe within the SAME transaction; mark the rolled-back-from deployment.
-    const deployment = await deployWithinTx(tx, {
-      recipeId: last.previousRecipeId,
-      machineId: input.machineId,
-      adapterId: last.adapterId,
-      deployedBy: input.deployedBy,
-      notes: `Rollback of deployment #${last.id}`,
-    });
+    // doc 80 Đợt 1 Task 9 — the target passes the SAME release gate (before: none — an unapproved
+    // previous version became active again). allowArchived: the version being rolled back TO was
+    // archived when it got superseded.
+    const deployment = await deployWithinTx(
+      tx,
+      {
+        recipeId: last.previousRecipeId,
+        machineId: input.machineId,
+        adapterId: last.adapterId,
+        deployedBy: input.deployedBy,
+        notes: `Rollback of deployment #${last.id}`,
+      },
+      { operation: "rollbackRecipeDeployment", allowArchived: true },
+    );
 
     await tx
       .update(recipeDeployments)

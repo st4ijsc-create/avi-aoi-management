@@ -16,7 +16,10 @@ vi.mock("drizzle-orm", async (orig) => {
   const actual = await orig<typeof import("drizzle-orm")>();
   return { ...actual, eq: makeEq, and: makeAnd, desc: makeDesc };
 });
-vi.mock("../db", () => ({ getDb: vi.fn(async () => fake) }));
+// `phaiDoiMatKhau` is read by the GLOBAL root middleware (server/_core/trpc.ts, Pha 7) — a bare
+// `{ getDb }` mock made EVERY call throw "No 'phaiDoiMatKhau' export" (red at HEAD before doc 80
+// Đợt 1 Task 9; same fix as commandLogRouter.test.ts / deviceAdapterRouter.test.ts).
+vi.mock("../db", () => ({ getDb: vi.fn(async () => fake), phaiDoiMatKhau: vi.fn(async () => false) }));
 
 // In-memory recipe catalog backing the mocked db layer.
 const catalog: any[] = [];

@@ -29,6 +29,8 @@ import {
   archiveRecipe as dbArchiveRecipe,
   listRecipeVersions,
   deployRecipe,
+  assertRecipeReleasable,
+  lockCodeAndReadTarget,
   type CreateRecipeInput,
 } from "../../db/machineRecipe";
 import { machineRecipes, recipeLoadLog, type MachineRecipe, type RecipeLoadLog } from "../../../drizzle/schema";
@@ -170,25 +172,11 @@ export async function releaseVersion(
   // the code lock (they cannot both create a released version), and a crash mid-way rolls
   // back cleanly (never leaves the code with two released or zero released versions).
   return d.transaction(async (tx) => {
-    const [target] = await tx.select().from(machineRecipes).where(eq(machineRecipes.id, recipeId)).limit(1);
-    if (!target) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "recipe" }, `Recipe #${recipeId} not found`);
-
-    // FLOW-01/INT-02 (doc 80 Task 3) — same guarantee as /recipes' deployRecipe
-    // (server/db/machineRecipe.ts:277-279): refuse to release a version that has not
-    // been signed off by a second approver (approvedBy is null). Before this check,
-    // equipmentIntegration could promote a never-reviewed recipe straight to `active`
-    // while /recipes enforced SoD on the SAME table.
-    if (target.approvedBy == null) {
-      throw appError(
-        "PRECONDITION_FAILED",
-        "OPERATION_FAILED",
-        { operation: "releaseRecipeVersion" },
-        `Recipe #${recipeId} (${target.code} v${target.version}) has not been approved — a second approver must sign off before it can be released.`,
-      );
-    }
-
-    // Row-lock ALL versions sharing this code → serialize concurrent promoters.
-    await tx.select().from(machineRecipes).where(eq(machineRecipes.code, target.code)).for("update");
+    const target = await lockCodeAndReadTarget(tx, recipeId);
+    // FLOW-01/INT-02 (doc 80 Task 3) → doc 80 Đợt 1 Task 9: the SAME release gate as /recipes
+    // (server/db/machineRecipe.ts assertRecipeReleasable) — approved, not archived, machine type —
+    // on the row read UNDER the code lock.
+    await assertRecipeReleasable(tx, target, { operation: "releaseRecipeVersion" });
 
     const [previouslyReleased] = await tx
       .select()
@@ -249,22 +237,10 @@ export async function rollbackToVersion(
   // the current released version UNDER the lock, archive it, promote the target, log the
   // rollback. Serialized + crash-safe.
   return d.transaction(async (tx) => {
-    const [target] = await tx.select().from(machineRecipes).where(eq(machineRecipes.id, toRecipeId)).limit(1);
-    if (!target) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "recipe" }, `Recipe #${toRecipeId} not found`);
-
-    // FLOW-01/INT-02 (doc 80 Task 3) — rollback also PROMOTES `target` to active, so it
-    // needs the SAME approvedBy gate as release (see releaseVersion above).
-    if (target.approvedBy == null) {
-      throw appError(
-        "PRECONDITION_FAILED",
-        "OPERATION_FAILED",
-        { operation: "rollbackRecipeVersion" },
-        `Recipe #${toRecipeId} (${target.code} v${target.version}) has not been approved — a second approver must sign off before it can be rolled back to.`,
-      );
-    }
-
-    // Row-lock ALL versions sharing this code → serialize concurrent promoters.
-    await tx.select().from(machineRecipes).where(eq(machineRecipes.code, target.code)).for("update");
+    const target = await lockCodeAndReadTarget(tx, toRecipeId);
+    // FLOW-01/INT-02 (doc 80 Task 3) → doc 80 Đợt 1 Task 9: rollback also PROMOTES `target`, so it
+    // passes the SAME release gate; a superseded (archived) prior version is a legal rollback target.
+    await assertRecipeReleasable(tx, target, { operation: "rollbackRecipeVersion", allowArchived: true });
 
     const [current] = await tx
       .select()

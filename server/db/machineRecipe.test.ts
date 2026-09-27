@@ -259,7 +259,11 @@ describe("machineRecipe — second-approver (W2-9)", () => {
 
   it("deployRecipe refuses an UN-approved recipe", async () => {
     const v1 = await createRecipe({ code: "R1", name: "v1", payload: { s: 1 }, createdBy: 7 });
-    await expect(deployRecipe({ recipeId: v1.id, machineId: 5, deployedBy: 1 })).rejects.toThrow(/trình duyệt/);
+    // doc 80 Đợt 1 Task 9 — refusal now comes from the ONE release gate (assertRecipeReleasable):
+    // PRECONDITION_FAILED + reason recipeNotApproved (was a plain Error with a Vietnamese text).
+    const err = await deployRecipe({ recipeId: v1.id, machineId: 5, deployedBy: 1 }).catch((e) => e);
+    expect(err?.code).toBe("PRECONDITION_FAILED");
+    expect(err?.cause?.appParams?.reason).toBe("recipeNotApproved");
     // Không có active version nào được tạo.
     expect(recipes.filter((r) => r.status === "active")).toHaveLength(0);
   });
