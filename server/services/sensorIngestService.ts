@@ -7,7 +7,9 @@
  *
  * ── TOPIC CONVENTION ─────────────────────────────────────────────────────────
  *   factory/{factoryId}/{machineCode}/sensor/{sensorType}
- *     factoryId   — numeric factory id (informational; machine resolved by code)
+ *     factoryId   — numeric factory id (informational here; the MQTT broker path checks it —
+ *                   doc 81 Đợt 1C Task 5: only the device BOUND to that machine in that factory
+ *                   may publish, and mqttService passes the bound machineId as `opts.machineId`)
  *     machineCode — matches machines.code (resolved → machineId, cached)
  *     sensorType  — vibration | current | temperature | pressure | ...
  *
@@ -209,6 +211,7 @@ export async function flushSensorReadings(): Promise<number> {
 export async function handleSensorMessage(
   topic: string,
   payload: Buffer | string | unknown,
+  opts: { machineId?: number } = {},
 ): Promise<boolean> {
   if (!isSensorIngestEnabled()) return false;
 
@@ -222,7 +225,10 @@ export async function handleSensorMessage(
   if (!reading) return false;
 
   try {
-    const machineId = await resolveMachineId(reading.machineCode);
+    // doc 81 Đợt 1C Task 5 — the MQTT path passes the machine the authenticated device is BOUND to
+    // (already checked against the topic's factory + code). Pin it: re-resolving the code could
+    // land on a tombstone that shares it (machines.code is unique only among active rows).
+    const machineId = opts.machineId ?? (await resolveMachineId(reading.machineCode));
     if (machineId == null) {
       // Unknown machine → log + skip (no throw), per R0-1 requirement.
       logger.warn(

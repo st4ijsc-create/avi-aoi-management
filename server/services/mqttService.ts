@@ -201,6 +201,100 @@ export function mqttTelemetryBridgeEnabled(): boolean {
 /** Canonical telemetry topic on the rebrand namespace (synapse/, per QĐ2). */
 const SYNAPSE_TELEMETRY_TOPIC = /^synapse\/.+\/telemetry$/;
 
+// ════════════════════════════════════════════════════════════════════════════
+// doc 81 Đợt 1C Task 5 — DEVICE ↔ MACHINE BINDING for MQTT data paths.
+//
+// Owner decision 2026-09-27 (4c): CLOSE the MQTT paths that let any admitted device write
+// sensor/telemetry data for OTHER machines. MEASURED before this change: the topic ACL only
+// covered the `avi/` brand namespace, so `factory/{fId}/{anyMachine}/sensor/*` was "out of ACL
+// scope" (any device ⇒ machine_sensor_readings of any machine, live in dev with
+// PDM_SENSOR_INGEST_ENABLED=true), the telemetry bridge took the machine from the PAYLOAD's
+// `asset_id`, and `factory/#` / `syn/#` subscriptions were open to every device.
+//
+// The binding is the EXISTING soft link `mqtt_clients."machineId"` (mig 0292, doc 56 Đ2a Việc 4 —
+// the same link machine lifecycle revoke uses). It is resolved ONCE at authenticate (active
+// machine only, + its factory via station → line → workshop, + its ISA-95 path) and stamped on
+// the connection, like the approval status. Staleness (accepted): re-binding a device takes
+// effect on its next connect. No binding / lookup failure ⇒ `null` ⇒ fail-closed.
+//
+// Two independent layers:
+//   L1 broker ACL (canPublish / canSubscribe) — refuses the PUBLISH / SUBACK 0x80; honours the
+//      existing MQTT_TOPIC_ACL_ENABLED / MQTT_TOPIC_ACL_WARN_ONLY rollout switches.
+//   L2 ingest (processAedesPublish) — whatever the broker let through, a sensor message is written
+//      ONLY for the bound machine (machineId PINNED, never re-resolved from the topic code), and a
+//      bridged telemetry frame ONLY when `asset_id` names the bound machine. Otherwise the sample
+//      is dropped and counted (getMqttBindingDropStats). L2 is unconditional (data integrity, same
+//      rule as REST R16) — warn-only/disabled ACL does not make cross-machine rows possible.
+// ════════════════════════════════════════════════════════════════════════════
+
+/** The machine an authenticated MQTT device is bound to (mqtt_clients."machineId"). */
+export interface MqttBoundMachine {
+  id: number;
+  code: string;
+  factoryId: number;
+  /** machines.isa95_path `{site}/{area}/{line}/{cell}/{equipment}` — the device's `syn/` branch. */
+  isa95Path: string | null;
+}
+
+/** Where an inbound PUBLISH came from: the authenticated device and its bound machine (or none). */
+export interface MqttPublishOrigin {
+  deviceId?: string;
+  machine: MqttBoundMachine | null;
+}
+
+/** Root of the PdM sensor topic convention `factory/{fId}/{machineCode}/sensor/{type}`. */
+const SENSOR_TOPIC_ROOT = 'factory';
+/** Root of the canonical contract topics `syn/{site}/{area}/{line}/{cell}/{equipment}/…`. */
+const SYN_TOPIC_ROOT = 'syn';
+
+/** Is this (publish) topic a sensor topic `factory/{fId}/{code}/sensor[/…]`? */
+export function isFactorySensorTopic(topic: string): boolean {
+  const segs = topic.split('/');
+  return segs[0] === SENSOR_TOPIC_ROOT && segs.length >= 4 && segs[3] === 'sensor';
+}
+
+/** Does `factory/{fId}/{code}/sensor/…` name EXACTLY the bound machine (its code AND its factory)? */
+function sensorTopicOwnedBy(topic: string, machine: MqttBoundMachine | null | undefined): boolean {
+  if (!machine) return false;
+  const segs = topic.split('/');
+  return segs[1] === String(machine.factoryId) && segs[2] === machine.code;
+}
+
+/** Does a telemetry sample's identity (from `asset_id`) name the bound machine? */
+function sampleBelongsTo(s: CanonicalSample, machine: MqttBoundMachine): boolean {
+  if (s.machineId != null) return s.machineId === machine.id && s.deviceId == null;
+  return s.deviceId != null && s.deviceId === machine.code;
+}
+
+const bindingDropStats = { sensorMessages: 0, telemetryFrames: 0, telemetrySamples: 0 };
+
+/** L2 drop: count it and log ONE coalesced line per (kind, device, reason) per window. */
+function recordBindingDrop(
+  kind: 'sensor' | 'telemetry',
+  origin: MqttPublishOrigin | undefined,
+  topic: string,
+  reason: string,
+  samples = 0,
+): void {
+  if (kind === 'sensor') bindingDropStats.sensorMessages += 1;
+  else {
+    bindingDropStats.telemetryFrames += 1;
+    bindingDropStats.telemetrySamples += samples;
+  }
+  const dev = origin?.deviceId ?? '<none>';
+  bindingDropLog.hit(
+    `${kind}|${dev}|${reason}`,
+    `[MQTT binding] DROP ${kind}${kind === 'telemetry' ? ` (${samples} sample(s))` : ''} ` +
+      `device=${logSafe(dev)} machine=${origin?.machine ? `${origin.machine.id}/${logSafe(origin.machine.code)}` : '<unbound>'} ` +
+      `topic="${logSafe(topic, 256)}" reason=${reason}`,
+  );
+}
+
+/** Counters of data dropped by the device↔machine rule (L2) since process start. */
+export function getMqttBindingDropStats(): { sensorMessages: number; telemetryFrames: number; telemetrySamples: number } {
+  return { ...bindingDropStats };
+}
+
 /**
  * Parse ONE canonical telemetry message (telemetry.schema.json: asset_id/ts/metrics[])
  * into CanonicalSample[]. `asset_id` of the form "machine:<n>" resolves to machineId;
@@ -256,10 +350,30 @@ export function parseCanonicalTelemetry(topic: string, payload: Buffer | string 
  * import keeps the bus off this module's static graph; fire-and-forget + fail-safe
  * so a bad frame never throws into the aedes publish handler.
  */
-export function handleTelemetryBridge(topic: string, payload: Buffer | string | unknown): void {
+export function handleTelemetryBridge(
+  topic: string,
+  payload: Buffer | string | unknown,
+  origin?: MqttPublishOrigin,
+): void {
   if (!mqttTelemetryBridgeEnabled()) return;
   if (!SYNAPSE_TELEMETRY_TOPIC.test(topic)) return;
-  const samples = parseCanonicalTelemetry(topic, payload);
+  const parsed = parseCanonicalTelemetry(topic, payload);
+  if (parsed.length === 0) return;
+  // doc 81 Đợt 1C Task 5 (L2) — `asset_id` is a CLAIM in the payload; it must name the machine the
+  // authenticated device is bound to. No origin / unbound device / mismatch ⇒ drop + count.
+  // Accepted samples are PINNED to the bound machine id (the bus never re-resolves the code).
+  const machine = origin?.machine ?? null;
+  if (!machine) {
+    recordBindingDrop('telemetry', origin, topic, 'device not bound to a machine', parsed.length);
+    return;
+  }
+  const samples: CanonicalSample[] = [];
+  let mismatched = 0;
+  for (const s of parsed) {
+    if (sampleBelongsTo(s, machine)) samples.push({ ...s, machineId: machine.id });
+    else mismatched += 1;
+  }
+  if (mismatched > 0) recordBindingDrop('telemetry', origin, topic, 'asset_id does not match the bound machine', mismatched);
   if (samples.length === 0) return;
   void import('./telemetryBus')
     .then(({ ingestTelemetry }) => ingestTelemetry(samples))
@@ -274,7 +388,11 @@ export function handleTelemetryBridge(topic: string, payload: Buffer | string | 
  * Sparkplug, no-op khi cờ tắt). Tách ra hàm thuần để regression-guard test được rằng
  * publishNormalized không phụ thuộc cờ Sparkplug và luôn chạy trước nhánh bridge.
  */
-export function processAedesPublish(topic: string, payload: Buffer | string | unknown): void {
+export function processAedesPublish(
+  topic: string,
+  payload: Buffer | string | unknown,
+  origin?: MqttPublishOrigin,
+): void {
   // G2.6 (doc 44 W2-B2) — enforce message contracts at the ONE inbound seam. Default OFF
   // (CONTRACT_VALIDATE_INGEST_MODE=off → immediate return, zero added cost). Only topics
   // under a canonical contract (syn/…/telemetry|state|events|health|cmd[/ack]) are checked;
@@ -295,14 +413,29 @@ export function processAedesPublish(topic: string, payload: Buffer | string | un
   // Topic: factory/{factoryId}/{machineCode}/sensor/{sensorType}. No-op khi cờ
   // PDM_SENSOR_INGEST_ENABLED tắt hoặc topic không khớp. Fire-and-forget: lỗi
   // nội bộ tự nuốt (handleSensorMessage không bao giờ throw), KHÔNG chặn broker.
-  void import('./sensorIngestService')
-    .then(({ handleSensorMessage }) => handleSensorMessage(topic, payload))
-    .catch((err) => console.error('[MQTT] sensor ingest failed:', (err as Error)?.message || err));
+  // doc 81 Đợt 1C Task 5 (L2) — chỉ ghi cho ĐÚNG máy mà thiết bị được gắn (mã + nhà máy khớp
+  // topic); machineId được GHIM theo ràng buộc, không tra lại theo mã (tombstone cùng mã).
+  // Lệch / chưa gắn máy / thiếu origin ⇒ loại + đếm. Topic không phải sensor ⇒ không có gì để ghi.
+  if (isFactorySensorTopic(topic)) {
+    const bound = origin?.machine ?? null;
+    if (bound && sensorTopicOwnedBy(topic, bound)) {
+      void import('./sensorIngestService')
+        .then(({ handleSensorMessage }) => handleSensorMessage(topic, payload, { machineId: bound.id }))
+        .catch((err) => console.error('[MQTT] sensor ingest failed:', (err as Error)?.message || err));
+    } else {
+      recordBindingDrop(
+        'sensor',
+        origin,
+        topic,
+        bound ? 'topic factory/machine is not the bound machine' : 'device not bound to a machine',
+      );
+    }
+  }
 
   // Doc 56 Đ2a Việc 9 — bridge synapse/…/telemetry frames into the unified
   // telemetry bus. No-op unless MQTT_TELEMETRY_BRIDGE_ENABLED=true and the topic
   // matches (fire-and-forget + fail-safe inside).
-  handleTelemetryBridge(topic, payload);
+  handleTelemetryBridge(topic, payload, origin);
 }
 
 /**
@@ -544,6 +677,8 @@ const authRejectLog = new MqttLogCoalescer({ label: '[MQTT] auth', emit: (l) => 
 const brokerErrorLog = new MqttLogCoalescer({ label: '[MQTT]', emit: (l) => console.error(l) });
 // Fix round 1 — per-connection ACCEPT-path lines (connected/reconnected/disconnected/registered).
 const connectionLog = new MqttLogCoalescer({ label: '[MQTT] connection', emit: (l) => console.log(l) });
+// doc 81 Đợt 1C Task 5 — L2 device↔machine drops (sensor / telemetry bridge) and binding lookups.
+const bindingDropLog = new MqttLogCoalescer({ label: '[MQTT binding]', emit: (l) => console.warn(l) });
 
 /** Test helper — clears the admission rate limiters, the log coalescers and the warn-once set. */
 export function _resetMqttAuthLimiters(): void {
@@ -553,6 +688,7 @@ export function _resetMqttAuthLimiters(): void {
   authRejectLog.reset();
   brokerErrorLog.reset();
   connectionLog.reset();
+  bindingDropLog.reset();
   passwordlessWarned.clear();
 }
 
@@ -893,9 +1029,13 @@ export function derToPem(der: Buffer): string {
 //     `avi/client/B/#` and `avi/#` are denied because they span foreign devices.
 //
 // SCOPE note (deliberate, QĐ#1 — do not kill machines mid-shift): topics NOT rooted at the
-// brand namespace are untouched. That keeps the sensor-ingest path
-// (`factory/{fId}/{machineCode}/sensor/{type}`) and the `syn/…` contract topics working.
-// Tightening those is a separate, later step.
+// brand namespace are untouched, EXCEPT (doc 81 Đợt 1C Task 5, owner decision 2026-09-27):
+//   • PUBLISH `factory/{fId}/{machineCode}/sensor/…` — only by a device BOUND to exactly that
+//     machine AND that factory (mqtt_clients."machineId"); unbound device ⇒ denied.
+//   • SUBSCRIBE under `factory/` or `syn/` (incl. a `+`/`#` root that reaches them) — only inside
+//     the device's OWN machine branch: `factory/{ownFactoryId}/{ownMachineCode}/…` and
+//     `syn/{own isa95_path}/…`. `factory/#`, `syn/#`, `factory/{f}/+/…` ⇒ SUBACK 0x80.
+// Other non-brand topics (e.g. PUBLISH on `syn/…`, `avi-aoi/…`) stay out of scope.
 //
 // SERVER identity is NEVER derived from a client-supplied clientId — that would be trivially
 // spoofable (a device could just connect as `avi-aoi-server-1` and gain full rights). The
@@ -915,6 +1055,11 @@ export const MQTT_ACL_DEVICE_ID_PROP = '__aviAclDeviceId';
  * a DB round-trip per message (per-connection cache; see staleness note on the gate below).
  */
 export const MQTT_ACL_APPROVAL_PROP = '__aviAclApprovalStatus';
+/**
+ * doc 81 Đợt 1C Task 5 — the machine the device is BOUND to (MqttBoundMachine | null), resolved from
+ * mqtt_clients."machineId" at authenticate and stamped on the aedes client (per-connection cache).
+ */
+export const MQTT_ACL_MACHINE_PROP = '__aviAclBoundMachine';
 
 /** Who is asking. `deviceId` is the value proven at authenticate, NOT a client-supplied id. */
 export interface MqttAclContext {
@@ -929,6 +1074,11 @@ export interface MqttAclContext {
    * gate does not apply (backward-compatible: server callers and legacy contexts are untouched).
    */
   approvalStatus?: string;
+  /**
+   * doc 81 Đợt 1C Task 5 — the machine this device is bound to. ABSENT/null ⇒ unbound ⇒ no
+   * `factory/…/sensor` publish and no `factory/…` / `syn/…` machine-branch subscription.
+   */
+  machine?: MqttBoundMachine | null;
 }
 
 export interface MqttAclDecision {
@@ -1047,6 +1197,18 @@ function evaluatePublishPolicy(ctx: MqttAclContext, topic: string): MqttAclDecis
   if (topic.includes('+') || topic.includes('#')) return deny('wildcard not allowed in PUBLISH');
 
   const segs = topic.split('/');
+  // doc 81 Đợt 1C Task 5 — sensor data may be published only for the device's OWN bound machine,
+  // in that machine's factory. Unbound device ⇒ denied (it has no machine to write for).
+  if (isFactorySensorTopic(topic)) {
+    if (!ctx.machine) return deny('device is not bound to a machine — cannot publish factory/…/sensor');
+    if (!sensorTopicOwnedBy(topic, ctx.machine)) {
+      return deny(
+        `device bound to machine ${ctx.machine.code} (factory ${ctx.machine.factoryId}) may not publish ` +
+          `sensor data for factory/${segs[1]}/${segs[2]}`,
+      );
+    }
+    return allow('own machine sensor branch');
+  }
   if (segs[0] !== LEGACY_TOPIC_ROOT) return allow('outside brand namespace (out of ACL scope)');
   if (segs[1] === 'test') return allow('test namespace');
 
@@ -1137,6 +1299,49 @@ function reachesForeignPrivateBranch(filter: string, own: string | undefined): b
 }
 
 /**
+ * doc 81 Đợt 1C Task 5 — the literal segments under `root` that make up the device's OWN machine
+ * branch: `factory/{factoryId}/{code}` and `syn/{site}/{area}/{line}/{cell}/{equipment}`
+ * (machines.isa95_path). null ⇒ the device owns no branch there (unbound / no ISA-95 path).
+ */
+function ownMachineBranch(root: string, machine: MqttBoundMachine | null | undefined): string[] | null {
+  if (!machine) return null;
+  if (root === SENSOR_TOPIC_ROOT) return [String(machine.factoryId), machine.code];
+  if (root === SYN_TOPIC_ROOT) {
+    const p = (machine.isa95Path ?? '').split('/');
+    return p.length === 5 && p.every((s) => s.length > 0 && s !== '+' && s !== '#') ? p : null;
+  }
+  return null;
+}
+
+/**
+ * doc 81 Đợt 1C Task 5 — can this SUBSCRIBE filter reach a `factory/…` or `syn/…` topic OUTSIDE the
+ * device's own machine branch? Returns the offending root, or null.
+ *
+ * A filter reaches a root when its first level is that literal, `+` (spans every root — so a
+ * `+`-rooted filter must be confined under BOTH roots at once, which never happens in practice) or
+ * `#`. It then stays inside the own branch only if every branch level it has is the LITERAL own
+ * value: `+`, `#` or another literal spans/impersonates a foreign machine or factory. A filter that
+ * ends ABOVE the branch (`factory`, `factory/{ownF}`) matches only that exact node topic — no
+ * machine data — and is allowed.
+ */
+function reachesForeignMachineBranch(filter: string, machine: MqttBoundMachine | null | undefined): string | null {
+  const segs = filter.split('/');
+  for (const root of [SENSOR_TOPIC_ROOT, SYN_TOPIC_ROOT]) {
+    if (segs[0] === '#') return root;
+    if (segs[0] !== root && segs[0] !== '+') continue;
+    if (segs.length === 1) continue; // matches only the bare root topic
+    const own = ownMachineBranch(root, machine);
+    if (!own) return root;
+    for (let i = 0; i < own.length; i++) {
+      const s = segs[i + 1];
+      if (s === undefined) break; // the filter stops above the machine branch
+      if (s !== own[i]) return root; // '+', '#' or a foreign literal
+    }
+  }
+  return null;
+}
+
+/**
  * Apply the rollout flags to a raw policy decision. A non-violation passes through untouched.
  * A violation is softened to `allow:true` (while KEEPING `violation:true` so the caller still
  * logs it) when the relevant warn switch is on:
@@ -1223,6 +1428,22 @@ export function canSubscribe(
     );
   }
 
+  // doc 81 Đợt 1C Task 5 — `factory/…` / `syn/…` only inside the device's own machine branch.
+  const foreignRoot = reachesForeignMachineBranch(canonical, ctx.machine);
+  if (foreignRoot) {
+    return finalizeAclDecision(
+      {
+        allow: false,
+        violation: true,
+        reason: ctx.machine
+          ? `device bound to machine ${ctx.machine.code} may subscribe only its own ${foreignRoot}/ machine branch`
+          : `device is not bound to a machine — cannot subscribe under ${foreignRoot}/`,
+      },
+      false,
+      env,
+    );
+  }
+
   // doc 51 P1 — admission gate on subscribe: an un-APPROVED device is confined to its own
   // pairing scope; every business/broadcast filter is an admission violation.
   if (isUnapproved(ctx.approvalStatus) && !isPairingScope(ctx.deviceId, canonical)) {
@@ -1250,11 +1471,66 @@ export function aclContextFromClient(client: unknown): MqttAclContext {
   const c = client as { id?: string; [k: string]: unknown };
   const deviceId = c[MQTT_ACL_DEVICE_ID_PROP];
   const approval = c[MQTT_ACL_APPROVAL_PROP];
+  const machine = boundMachineOf(client);
   return {
     clientId: c.id ?? '<unknown>',
     deviceId: typeof deviceId === 'string' && deviceId.length > 0 ? deviceId : undefined,
     approvalStatus: typeof approval === 'string' && approval.length > 0 ? approval : undefined,
+    // Absent (not `null`) when unbound — both read as "no machine" in the policy.
+    ...(machine ? { machine } : {}),
   };
+}
+
+/** doc 81 Đợt 1C Task 5 — the stamped bound machine of an aedes client (shape-checked; else null). */
+function boundMachineOf(client: unknown): MqttBoundMachine | null {
+  const m = (client as { [k: string]: unknown } | null | undefined)?.[MQTT_ACL_MACHINE_PROP] as
+    | Partial<MqttBoundMachine>
+    | null
+    | undefined;
+  if (!m || typeof m !== 'object') return null;
+  if (typeof m.id !== 'number' || typeof m.code !== 'string' || m.code.length === 0) return null;
+  if (typeof m.factoryId !== 'number') return null;
+  return { id: m.id, code: m.code, factoryId: m.factoryId, isa95Path: typeof m.isa95Path === 'string' ? m.isa95Path : null };
+}
+
+/** doc 81 Đợt 1C Task 5 — origin of a device PUBLISH for the L2 ingest rule. */
+function publishOriginFromClient(client: unknown): MqttPublishOrigin {
+  const dev = (client as { [k: string]: unknown } | null | undefined)?.[MQTT_ACL_DEVICE_ID_PROP];
+  return { deviceId: typeof dev === 'string' && dev.length > 0 ? dev : undefined, machine: boundMachineOf(client) };
+}
+
+/**
+ * doc 81 Đợt 1C Task 5 — resolve mqtt_clients."machineId" to the bound machine: ACTIVE machine only,
+ * with its factory (station → line → workshop) and ISA-95 path. No link / inactive / any error ⇒
+ * null (fail-closed: the device simply owns no machine branch). Never throws.
+ */
+async function resolveMqttBoundMachine(machineId: number | null | undefined, deviceId: string): Promise<MqttBoundMachine | null> {
+  if (machineId == null || !db) return null;
+  try {
+    const rows = await db
+      .select({
+        id: schema.machines.id,
+        code: schema.machines.code,
+        isa95Path: schema.machines.isa95Path,
+        factoryId: schema.workshops.factoryId,
+      })
+      .from(schema.machines)
+      .innerJoin(schema.stations, eq(schema.stations.id, schema.machines.stationId))
+      .innerJoin(schema.productionLines, eq(schema.productionLines.id, schema.stations.lineId))
+      .innerJoin(schema.workshops, eq(schema.workshops.id, schema.productionLines.workshopId))
+      .where(and(eq(schema.machines.id, machineId), eq(schema.machines.isActive, true)))
+      .limit(1);
+    const r = rows[0];
+    if (!r) return null;
+    return { id: Number(r.id), code: String(r.code), factoryId: Number(r.factoryId), isa95Path: r.isa95Path ?? null };
+  } catch (err) {
+    bindingDropLog.hit(
+      `lookup|${(err as Error)?.message ?? ''}`,
+      `[MQTT binding] machine lookup failed for device ${logSafe(deviceId)} — treated as unbound: ` +
+        logSafe((err as Error)?.message ?? err, 300),
+    );
+    return null;
+  }
 }
 
 /** One-line structured warning for an ACL violation (device, topic, action). */
@@ -1799,6 +2075,8 @@ function setupEventHandlers() {
         // doc 51 P1 (§5.3) — stamp the effective approval status for the admission gate. A
         // re-activated soft-deleted client is forced back to PENDING (see reactivateFields).
         (client as any)[MQTT_ACL_APPROVAL_PROP] = !mqttClient.isActive ? 'PENDING' : mqttClient.approvalStatus;
+        // doc 81 Đợt 1C Task 5 — the device ↔ machine binding (mqtt_clients."machineId", mig 0292).
+        (client as any)[MQTT_ACL_MACHINE_PROP] = await resolveMqttBoundMachine(mqttClient.machineId, deviceId);
 
         if (passwordless) warnPasswordlessOnce(deviceId);
         connectionLog.hit(
@@ -2014,7 +2292,7 @@ function setupEventHandlers() {
 
     // G1/F3b — Mirror UNS (publishNormalized, vô điều kiện) RỒI bridge AOI→Sparkplug
     // (handleAoiPublish, no-op khi cờ tắt). Tách thành processAedesPublish để test.
-    processAedesPublish(packet.topic, packet.payload);
+    processAedesPublish(packet.topic, packet.payload, publishOriginFromClient(client));
 
     try {
       // doc 44 §11 R-3 — DUAL-SUBSCRIBE: canonicalise `synapse/…` inbound back to `avi/…` so
