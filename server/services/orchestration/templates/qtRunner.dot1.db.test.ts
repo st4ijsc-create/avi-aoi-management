@@ -49,6 +49,7 @@ vi.mock("../../lineController/lineReadiness", () => ({
 import { registerQtTemplates } from "./registerQtTemplates";
 import { QT1_REF } from "./qtTemplates";
 import { startQtRun, resolveQtGate } from "./qtRunner";
+import { waitForLockWaiters, backendPid } from "../../../db/lockWait.testkit";
 
 const DB_URL = process.env.DATABASE_URL;
 const ORDER_ID = 990_811;
@@ -110,7 +111,9 @@ describe.skipIf(!DB_URL)("qtRunner Task 9 — bù trừ sau CAS + pump ghim bư�
       const gate = new Promise<void>((r) => (release = r));
       let locked!: () => void;
       const lockedP = new Promise<void>((r) => (locked = r));
+      let holderPid = 0;
       const holder = ext.begin(async (tx) => {
+        holderPid = await backendPid(tx);
         await tx`SELECT id FROM orchestration_runs WHERE id = ${res.runId} FOR UPDATE`;
         // "người khác" đã duyệt gate monitor và đang drive run
         await tx`UPDATE orchestration_runs SET status = 'running', "updatedAt" = now() WHERE id = ${res.runId}`;
@@ -119,11 +122,13 @@ describe.skipIf(!DB_URL)("qtRunner Task 9 — bù trừ sau CAS + pump ghim bư�
       });
       await lockedP;
       const p = resolveQtGate(res.runId, { approved: false, note: "huy don (test race)" });
-      await new Promise((r) => setTimeout(r, 400)); // lượt từ chối đã tới CAS và đang chờ khoá
+      // fix round 1 — chờ tới khi lượt từ chối THẬT SỰ xếp hàng ở CAS sau khoá (không ngủ cố định).
+      const queued = await waitForLockWaiters(sql, { holderPid });
       const compensatedBeforeClaim = svc.cancelOrder.mock.calls.length;
       release();
       await holder;
       const r = await p;
+      expect(queued).toBeGreaterThanOrEqual(1);
       expect(compensatedBeforeClaim, "bù trừ chạy TRƯỚC khi giành quyền từ chối").toBe(0);
       expect(r.ok).toBe(false);
       expect(r.status).toBe("running");

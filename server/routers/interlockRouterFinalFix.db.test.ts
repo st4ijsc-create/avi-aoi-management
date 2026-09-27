@@ -40,6 +40,7 @@ vi.mock("../services/audit/controlAuditService", async (importOriginal) => {
 });
 
 import { interlockRouter } from "./interlockRouter";
+import { waitForLockWaiters } from "../db/lockWait.testkit";
 
 const DB_URL = process.env.DATABASE_URL;
 const DAU = `ILKFIN-${Date.now()}`;
@@ -153,28 +154,54 @@ describe.skipIf(!DB_URL)("interlock — final review fix wave (#2 khoá hàng, #
       expect(row.updatedBy).toBe(B);
     }, 60_000);
 
-    it("update (giữ hàng) ∥ approve của người KHÁC ⇒ nếu rule kết thúc ĐÃ duyệt thì dòng audit 'approve' ghi ĐÚNG nội dung đang lưu", async () => {
-      const created = await caller(A).create(baseInput(`${DAU}-race3`));
+    // doc 80 Đợt 1 Task 9 fix round 1 (item 3) — ca "race3" cũ thành RỖNG khi approve cần token:
+    // token đọc TRƯỚC update ⇒ approve luôn CONFLICT ⇒ nhánh `if (row.approvedBy != null)` không bao
+    // giờ chạy. Tách hai ca TƯỜNG MINH: (a) token lấy SAU khi update commit ⇒ duyệt ⇒ audit
+    // 'approve' PHẢI ghi đúng nội dung đang lưu (không điều kiện); (b) token lấy TRƯỚC ⇒ CONFLICT.
+    it("race3a: update (giữ hàng) rồi commit; người KHÁC duyệt bằng token của bản SAU update ⇒ duyệt, audit 'approve' ghi ĐÚNG nội dung đang lưu", async () => {
+      const created = await caller(A).create(baseInput(`${DAU}-race3a`));
       ruleIds.push(created.id);
-      const newName = `${DAU}-race3-SUA`;
+      const newName = `${DAU}-race3a-SUA`;
 
       const h = armHold("update");
       const pUpdate = caller(B).update({ id: created.id, name: newName });
       await h.reached;
-      const pApprove = caller(C).approve({ id: created.id, expectedVersion: await ver(created.id) });
-      await new Promise((r) => setTimeout(r, 400));
       h.release();
-      await Promise.allSettled([pUpdate, pApprove]);
+      await pUpdate;
+      const row0 = await caller(C).approve({ id: created.id, expectedVersion: await ver(created.id) });
+      expect(row0.approvedBy).toBe(C);
 
       const row = await ruleRow(created.id);
-      if (row.approvedBy != null) {
-        const audit = await sql`
-          SELECT "beforeJson" FROM control_audit_log
-           WHERE "entityType" = 'interlock_rule' AND "entityId" = ${String(created.id)} AND action = 'approve'
-           ORDER BY id DESC LIMIT 1`;
-        // Sổ audit nói người duyệt đã duyệt nội dung NÀO — phải đúng nội dung đang lưu.
-        expect((audit[0] as any).beforeJson.name).toBe(row.name);
-      }
+      expect(row.approvedBy).toBe(C);
+      expect(row.name).toBe(newName);
+      const audit = await sql`
+        SELECT "beforeJson" FROM control_audit_log
+         WHERE "entityType" = 'interlock_rule' AND "entityId" = ${String(created.id)} AND action = 'approve'
+         ORDER BY id DESC LIMIT 1`;
+      // Sổ audit nói người duyệt đã duyệt nội dung NÀO — phải đúng nội dung đang lưu.
+      expect((audit[0] as any).beforeJson.name).toBe(row.name);
+    }, 60_000);
+
+    it("★★★ race3b: update (giữ hàng) ∥ approve của người KHÁC mang token đọc TRƯỚC update ⇒ approve xếp hàng sau khoá rồi CONFLICT (interlockRuleChanged), KHÔNG duyệt nội dung mới", async () => {
+      const created = await caller(A).create(baseInput(`${DAU}-race3b`));
+      ruleIds.push(created.id);
+      const newName = `${DAU}-race3b-SUA`;
+      const staleToken = await ver(created.id);
+
+      const h = armHold("update");
+      const pUpdate = caller(B).update({ id: created.id, name: newName });
+      await h.reached; // update đã UPDATE (giữ khoá hàng), transaction còn mở
+      const pApprove = caller(C).approve({ id: created.id, expectedVersion: staleToken }).catch((e) => e);
+      // approve THẬT SỰ đang chờ khoá hàng interlock_rules (không ngủ cố định)
+      expect(await waitForLockWaiters(sql, { queryLike: "%interlock_rules%for update%" })).toBeGreaterThanOrEqual(1);
+      h.release();
+      const [ru, res] = await Promise.all([pUpdate, pApprove]);
+      expect(ru.name).toBe(newName);
+      expect(res?.code, `approve lọt: approvedBy=${res?.approvedBy}`).toBe("CONFLICT");
+      expect(res?.cause?.appParams?.reason).toBe("interlockRuleChanged");
+      const row = await ruleRow(created.id);
+      expect(row.approvedBy).toBeNull();
+      expect(row.name).toBe(newName);
     }, 60_000);
   });
 

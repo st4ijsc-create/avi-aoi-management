@@ -20,6 +20,7 @@ import postgres from "postgres";
 vi.setConfig({ testTimeout: 60_000, hookTimeout: 90_000 });
 
 import { deployWorkflow, startRun, resumeRun, getRun } from "./foeEngine";
+import { waitForLockWaiters, backendPid } from "../../../db/lockWait.testkit";
 import type { WorkflowDefinition } from "./workflowModel";
 
 const DB_URL = process.env.DATABASE_URL;
@@ -69,7 +70,9 @@ async function holdRunRow(runId: number, mutate: (tx: postgres.TransactionSql) =
   const gate = new Promise<void>((r) => (release = r));
   let locked!: () => void;
   const lockedP = new Promise<void>((r) => (locked = r));
+  let holderPid = 0;
   const holder = ext.begin(async (tx) => {
+    holderPid = await backendPid(tx);
     await tx`SELECT id FROM orchestration_runs WHERE id = ${runId} FOR UPDATE`;
     await mutate(tx);
     locked();
@@ -77,6 +80,10 @@ async function holdRunRow(runId: number, mutate: (tx: postgres.TransactionSql) =
   });
   await lockedP;
   return {
+    /** fix round 1 — số lượt THẬT SỰ đang chờ khoá của giao dịch ngoài (thay cho ngủ cố định). */
+    async queued(): Promise<number> {
+      return waitForLockWaiters(sql, { holderPid });
+    },
     async releaseAndEnd() {
       release();
       await holder;
@@ -142,10 +149,13 @@ describe.skipIf(!DB_URL)("FOE Task 9 — gate ghim bước + từ chối có bù
     const h = await holdRunRow(runId, (tx) => tx`UPDATE orchestration_runs SET "currentStepId" = 'g2', "updatedAt" = now() WHERE id = ${runId}`);
     // Lượt resume đọc hàng (MVCC: vẫn thấy g1, không bị khoá chặn), kiểm quyền cho g1, rồi CAS chờ khoá.
     const p = resumeRun(runId, { approved: true, expectedStepId: "g1" }, SUP_B).catch((e) => e);
-    await new Promise((r) => setTimeout(r, 400));
+    expect(await h.queued()).toBeGreaterThanOrEqual(1); // CAS đang chờ khoá (không ngủ cố định)
     await h.releaseAndEnd();
     const res = await p;
     expect(codeOf(res), `CAS lọt: ${JSON.stringify(res)}`).toBe("CONFLICT");
+    // fix round 1 — đúng đường CAS ghim bước (không phải kiểm expectedStepId trước CAS: lượt resume
+    // đọc g1 ⇒ phép kiểm ấy qua; chỉ mệnh đề currentStepId của CAS mới bắt được).
+    expect(reasonOf(res)).toBe("runAlreadyClaimed");
     const row = await runRow(runId);
     expect(row.status).toBe("awaiting_confirm");
     expect(row.currentStepId).toBe("g2");
@@ -158,9 +168,11 @@ describe.skipIf(!DB_URL)("FOE Task 9 — gate ghim bước + từ chối có bù
     const compensate = vi.fn(async () => "bù trừ đã chạy");
     const h = await holdRunRow(runId, (tx) => tx`UPDATE orchestration_runs SET status = 'running', "updatedAt" = now() WHERE id = ${runId}`);
     const p = resumeRun(runId, { approved: false, note: "huy", expectedStepId: "g1" }, SUP_B, { compensate }).catch((e) => e);
-    await new Promise((r) => setTimeout(r, 400));
-    expect(compensate).not.toHaveBeenCalled(); // chưa giành được quyền ⇒ chưa được bù
+    const queued = await h.queued(); // lượt từ chối đang chờ khoá ở CAS
+    const calledWhileQueued = compensate.mock.calls.length; // chưa giành được quyền ⇒ chưa được bù
     await h.releaseAndEnd();
+    expect(queued).toBeGreaterThanOrEqual(1);
+    expect(calledWhileQueued).toBe(0);
     const res = await p;
     expect(codeOf(res)).toBe("CONFLICT");
     expect(compensate).not.toHaveBeenCalled();
