@@ -16381,7 +16381,7 @@
         "versionNotApproved": "版本未批准（{{reviewStatus}}）",
         "buildOk": "构建成功",
         "buildNotOk": "构建失败 — 无法部署",
-        "deployEnabled": "DPC_DEPLOY_ENABLED 已开启",
+        "deployEnabled": "真实部署已开启（服务器开关）",
         "deployDisabled": "真实部署已关闭 — 仅记录为模拟",
         "signedOff": "已签核",
         "noSignOff": "未签核 — 仅记录为模拟",
@@ -16400,12 +16400,12 @@
         "stubNoDevicePath": "stub 适配器没有设备路径",
         "techman_program_download_unsupported": "Techman 机器人尚不支持程序下载 — 不会向机器人发送任何内容",
         "openplcNotConfigured": "未配置经验证的 OpenPLC 主机 — 无法下载 IEC 61131",
-        "zmcEndpointMissing": "未配置 ZMC_ENDPOINT",
+        "zmcEndpointMissing": "服务器未配置 ZMC 控制器连接端点",
         "zmcEndpointConfigured": "已配置 ZMC 端点",
         "reachabilityAtDeploy": "部署时探测 TCP 可达性",
         "zmcFileReady": "已生成编译的 .bas 文件",
         "zmcNoFilePath": "没有可下载的 .bas 文件",
-        "zauxDllPathMissing": "未配置 ZAUXDLL_PATH（zauxdll.dll）",
+        "zauxDllPathMissing": "服务器未配置 Zmotion 驱动库（zauxdll.dll）路径",
         "koffiMissing": "服务器未安装 koffi（FFI）",
         "zauxLoadAtDeploy": "部署时加载 zauxdll.dll",
         "melsecNoAdapter": "项目未绑定 OT 适配器（设备）",
@@ -16420,7 +16420,7 @@
         "otTagsWritable": "所有标签存在且可写",
         "otAdapterOffline": "OT 驱动未连接",
         "otAdapterOnline": "OT 驱动已连接",
-        "otControlOff": "OT_CONTROL_ENABLED 已关闭 — 调度器仅模拟",
+        "otControlOff": "真实 OT 控制已关闭 — 调度器仅模拟",
         "otNotCommissioned": "适配器未完成调试验收 — 记录为模拟",
         "otBindingMissing": "真实 OT 写入需要绑定到具体命令的一次性审批；程序部署不包含 — 调度器将拒绝",
         "irNoDevicePath": "IR 适配器没有设备路径 — 记录为模拟",
@@ -16430,7 +16430,7 @@
         "adapterOutcomeAtDeploy": "结果由适配器在部署时决定",
         "adapterNoDownloadPath": "适配器没有程序下载路径",
         "zmcFileWrittenAtDeploy": "部署重新编译时（原子地）写入 .bas 文件 — 预览不写入任何内容",
-        "hilSimTargetUnavailable": "没有有效的 URSim 目标（URSIM_HOST 未配置或指向真实设备）— HIL 无法运行，部署被阻止"
+        "hilSimTargetUnavailable": "没有有效的 URSim 目标（模拟器主机未配置或指向真实设备）— HIL 无法运行，部署被阻止"
       }
     },
     "stDiag": {

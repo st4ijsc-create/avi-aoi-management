@@ -15799,7 +15799,7 @@
         "versionNotApproved": "phiên bản chưa được duyệt ({{reviewStatus}})",
         "buildOk": "build đạt",
         "buildNotOk": "build lỗi — không thể deploy",
-        "deployEnabled": "DPC_DEPLOY_ENABLED đang bật",
+        "deployEnabled": "triển khai thật đang bật (cờ máy chủ)",
         "deployDisabled": "deploy thật đang tắt — chỉ ghi nhận mô phỏng",
         "signedOff": "đã có người ký duyệt",
         "noSignOff": "chưa ký duyệt — chỉ ghi nhận mô phỏng",
@@ -15818,12 +15818,12 @@
         "stubNoDevicePath": "adapter stub không có đường thiết bị",
         "techman_program_download_unsupported": "robot Techman chưa hỗ trợ tải chương trình — không gửi gì tới robot",
         "openplcNotConfigured": "chưa cấu hình host OpenPLC đã kiểm chứng — IEC 61131 không nạp được",
-        "zmcEndpointMissing": "chưa cấu hình ZMC_ENDPOINT",
+        "zmcEndpointMissing": "chưa cấu hình điểm kết nối bộ điều khiển ZMC trên máy chủ",
         "zmcEndpointConfigured": "đã cấu hình đích ZMC",
         "reachabilityAtDeploy": "dò kết nối TCP lúc deploy",
         "zmcFileReady": "đã có tệp .bas biên dịch",
         "zmcNoFilePath": "không có tệp .bas để nạp",
-        "zauxDllPathMissing": "chưa cấu hình ZAUXDLL_PATH (zauxdll.dll)",
+        "zauxDllPathMissing": "chưa cấu hình đường dẫn thư viện trình điều khiển Zmotion (zauxdll.dll) trên máy chủ",
         "koffiMissing": "chưa cài koffi (FFI) trên máy chủ",
         "zauxLoadAtDeploy": "nạp zauxdll.dll lúc deploy",
         "melsecNoAdapter": "dự án chưa gắn adapter OT (thiết bị)",
@@ -15838,7 +15838,7 @@
         "otTagsWritable": "mọi tag có và cho ghi",
         "otAdapterOffline": "driver OT chưa kết nối",
         "otAdapterOnline": "driver OT đang kết nối",
-        "otControlOff": "OT_CONTROL_ENABLED tắt — dispatcher chỉ ghi mô phỏng",
+        "otControlOff": "điều khiển OT thật đang tắt — dispatcher chỉ ghi mô phỏng",
         "otNotCommissioned": "adapter chưa nghiệm thu (commissioning) — ghi mô phỏng",
         "otBindingMissing": "ghi OT thật cần phê duyệt gắn đúng lệnh một-lần; yêu cầu deploy chương trình không mang — dispatcher sẽ từ chối",
         "irNoDevicePath": "adapter IR chưa có đường thiết bị — ghi nhận mô phỏng",
@@ -15848,7 +15848,7 @@
         "adapterOutcomeAtDeploy": "kết quả do adapter quyết lúc deploy",
         "adapterNoDownloadPath": "adapter không có đường nạp chương trình",
         "zmcFileWrittenAtDeploy": "tệp .bas được ghi (nguyên tử) khi deploy biên dịch lại — bản xem trước không ghi gì",
-        "hilSimTargetUnavailable": "không có đích URSim hợp lệ (URSIM_HOST chưa cấu hình hoặc trỏ vào thiết bị thật) — HIL không chạy được nên deploy bị chặn"
+        "hilSimTargetUnavailable": "không có đích URSim hợp lệ (máy chủ giả lập chưa cấu hình hoặc trỏ vào thiết bị thật) — HIL không chạy được nên deploy bị chặn"
       }
     },
     "stDiag": {

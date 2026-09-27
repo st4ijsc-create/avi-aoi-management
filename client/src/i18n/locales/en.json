@@ -15819,7 +15819,7 @@
         "versionNotApproved": "version not approved ({{reviewStatus}})",
         "buildOk": "build ok",
         "buildNotOk": "build failed — cannot deploy",
-        "deployEnabled": "DPC_DEPLOY_ENABLED is on",
+        "deployEnabled": "real deploy is on (server flag)",
         "deployDisabled": "real deploy is off — recorded as simulated only",
         "signedOff": "signed off",
         "noSignOff": "no sign-off — recorded as simulated only",
@@ -15838,12 +15838,12 @@
         "stubNoDevicePath": "the stub adapter has no device path",
         "techman_program_download_unsupported": "Techman robot program download is not supported — nothing is sent to the robot",
         "openplcNotConfigured": "no validated OpenPLC host configured — IEC 61131 cannot be downloaded",
-        "zmcEndpointMissing": "ZMC_ENDPOINT is not configured",
+        "zmcEndpointMissing": "the ZMC controller endpoint is not configured on the server",
         "zmcEndpointConfigured": "ZMC endpoint configured",
         "reachabilityAtDeploy": "TCP reachability probed at deploy",
         "zmcFileReady": "compiled .bas file ready",
         "zmcNoFilePath": "no .bas file to download",
-        "zauxDllPathMissing": "ZAUXDLL_PATH (zauxdll.dll) is not configured",
+        "zauxDllPathMissing": "the Zmotion driver library (zauxdll.dll) path is not configured on the server",
         "koffiMissing": "koffi (FFI) is not installed on the server",
         "zauxLoadAtDeploy": "zauxdll.dll loaded at deploy",
         "melsecNoAdapter": "the project has no OT adapter (device) bound",
@@ -15858,7 +15858,7 @@
         "otTagsWritable": "all tags exist and are writable",
         "otAdapterOffline": "the OT driver is not connected",
         "otAdapterOnline": "the OT driver is connected",
-        "otControlOff": "OT_CONTROL_ENABLED is off — the dispatcher only simulates",
+        "otControlOff": "real OT control is off — the dispatcher only simulates",
         "otNotCommissioned": "adapter not commissioned — recorded as simulated",
         "otBindingMissing": "a real OT write needs a single-use approval bound to the exact command; a program deploy carries none — the dispatcher will refuse",
         "irNoDevicePath": "the IR adapter has no device path — recorded as simulated",
@@ -15868,7 +15868,7 @@
         "adapterOutcomeAtDeploy": "outcome decided by the adapter at deploy",
         "adapterNoDownloadPath": "the adapter has no program download path",
         "zmcFileWrittenAtDeploy": "the .bas file is written (atomically) when the deploy recompiles — the preview writes nothing",
-        "hilSimTargetUnavailable": "no valid URSim target (URSIM_HOST unset or pointing at a real device) — HIL cannot run so the deploy is blocked"
+        "hilSimTargetUnavailable": "no valid URSim target (simulator host not configured or pointing at a real device) — HIL cannot run so the deploy is blocked"
       }
     },
     "stDiag": {
