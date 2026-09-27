@@ -13483,6 +13483,10 @@
     "confirm": "Xác nhận thực hiện"
   },
   "lineView": {
+    "recipeSet": {
+      "itemRefused": "{{machine}} · {{recipe}} v{{version}}: bị từ chối — {{reason}}",
+      "hintUpdateToCurrent": "Phiên bản ghim trong set đã bị thay — hãy cập nhật set sang phiên bản hiện hành v{{version}}."
+    },
     "title": "Sơ đồ chuyền",
     "navDesc": "Sơ đồ tuyến · trạng thái vận hành · nhịp/nút cổ chai · sẵn sàng · lệnh tuyến",
     "subtitle": "Sơ đồ tuyến: trạng thái vận hành, nhịp sản xuất, nút cổ chai, trạm nghẽn/đói liệu và lệnh tuyến.",

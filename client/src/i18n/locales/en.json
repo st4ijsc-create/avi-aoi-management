@@ -13503,6 +13503,10 @@
     "confirm": "Confirm and proceed"
   },
   "lineView": {
+    "recipeSet": {
+      "itemRefused": "{{machine}} · {{recipe}} v{{version}}: refused — {{reason}}",
+      "hintUpdateToCurrent": "The version pinned in the set has been replaced — update the set to the current version v{{version}}."
+    },
     "title": "Line View",
     "navDesc": "Line flow diagram · 7-state FSM · takt/bottleneck · readiness · line commands",
     "subtitle": "Line flow: FSM state, takt, bottleneck, blocked/starved stations and line commands.",

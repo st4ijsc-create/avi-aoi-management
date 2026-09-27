@@ -8,8 +8,9 @@
  *     ("MODEL-X@v3"); mỗi item trỏ MỘT phiên bản machine_recipes cụ thể —
  *     KHÔNG nhân đôi payload, catalog versioned sẵn có là nguồn sự thật.
  *   • distributeRecipeSet — phân phối tới từng máy qua ĐƯỜNG DEPLOY SẴN CÓ
- *     (db/machineRecipe.deployRecipe: FOR UPDATE theo code + second-approver
- *     gate + ledger recipe_deployments — mọi gate hiện có được GIỮ NGUYÊN).
+ *     (db/machineRecipe.deployRecipe "strict": FOR UPDATE theo code + cổng phát
+ *     hành chặt — đã duyệt · không archived · đúng loại máy (Đợt 1C Task 2) —
+ *     + ledger recipe_deployments).
  *     Sau deploy: XÁC NHẬN NẠP (spec §6.1 "kiểm mọi trạm đã nạp đúng recipe")
  *     — query lại machineRecipes active per code, đúng id + đúng máy. Đủ →
  *     line_states.recipe_set_ref = code + KHÓA set (locked, suốt lô).
@@ -25,6 +26,7 @@
  * ════════════════════════════════════════════════════════════════════════════
  */
 import * as repo from "./lineStateRepo";
+import { readAppErrorMeta } from "../../_core/appError";
 import { deployRecipe, getActiveRecipe, getRecipeById } from "../../db/machineRecipe";
 import { recordEvent as recordGenealogyEvent } from "../equipment/recipeVersioningService";
 import type { LineControllerState, RecipeSetRow, RecipeSetStatus } from "../../../drizzle/schema";
@@ -277,7 +279,20 @@ export interface DistributeItemResult {
   status: "already_active" | "deployed" | "failed";
   deploymentId?: number;
   error?: string;
+  /**
+   * doc 81 Đợt 1C Task 2 — why the release gate refused this item (status 'failed'): the gate's
+   * `errors.reason.*` key (recipeNotApproved · recipeArchived · recipeRetired ·
+   * recipeMachineTypeMismatch). Absent for failures that are not a gate refusal.
+   */
+  reason?: string;
+  /** Set when the pinned version was superseded: the code has a DIFFERENT active version now. */
+  hint?: RecipeSetItemHint;
+  /** Version number of that current active version (what the set should be updated to). */
+  currentVersion?: number;
 }
+
+/** doc 81 Đợt 1C Task 2 — "cập nhật set sang phiên bản hiện hành" (client i18n lineView.recipeSet.hintUpdateToCurrent). */
+export type RecipeSetItemHint = "updateSetToCurrentVersion";
 
 export interface DistributeResult {
   ok: true;
@@ -305,8 +320,9 @@ export interface DistributeOptions {
  *   1. Gate: set tồn tại + chưa khóa + chưa retired; tuyến tồn tại và đang
  *      idle/ready/changeover (không đè recipe khi tuyến producing/held).
  *   2. Từng item: nếu active đã ĐÚNG (id + máy) → 'already_active'; ngược lại
- *      deployRecipe (đường recipe_deployments sẵn có — GIỮ second-approver
- *      gate + FOR UPDATE + ledger). Lỗi per-máy KHÔNG chặn máy khác.
+ *      deployRecipe (đường recipe_deployments sẵn có — cổng phát hành chặt
+ *      + FOR UPDATE + ledger). Lỗi per-máy KHÔNG chặn máy khác; mục bị cổng
+ *      từ chối mang reason (+ hint cập nhật set khi phiên bản ghim đã bị thay).
  *   3. Xác nhận: verify lại mọi item required → đủ thì set
  *      line_states.recipe_set_ref = code + KHÓA set (locked — suốt lô).
  * Thiếu máy → confirmed=false, KHÔNG set ref, KHÔNG khóa (honest partial report).
@@ -333,6 +349,24 @@ export async function distributeRecipeSetByCode(
   const set = await repo.getRecipeSetByCode(code.trim());
   if (!set) return { ok: false, code: "NOT_FOUND", message: `Không tìm thấy recipe set code='${code}'.` };
   return distributeResolved(lineId, set, opts);
+}
+
+/**
+ * doc 81 Đợt 1C Task 2 — per-item refusal detail from the strict release gate. Only a
+ * PRECONDITION_FAILED carrying a `reason` counts; anything else (DB down, NOT_FOUND…) keeps just
+ * `error`. When the pinned version is archived/retired and the code now has a DIFFERENT active
+ * version (the one read by the fast-path above, before the deploy attempt), the hint tells the
+ * operator to update the set to that version.
+ */
+function gateRefusal(
+  err: unknown,
+  item: { machineRecipeId: number },
+  active: Awaited<ReturnType<typeof getActiveRecipe>>,
+): Pick<DistributeItemResult, "reason" | "hint" | "currentVersion"> {
+  const reason = readAppErrorMeta(err)?.appParams?.reason;
+  if ((err as { code?: unknown })?.code !== "PRECONDITION_FAILED" || typeof reason !== "string") return {};
+  const superseded = (reason === "recipeArchived" || reason === "recipeRetired") && active != null && active.id !== item.machineRecipeId;
+  return superseded ? { reason, hint: "updateSetToCurrentVersion", currentVersion: active.version } : { reason };
 }
 
 async function distributeResolved(
@@ -381,15 +415,17 @@ async function distributeResolved(
       recipeVersion: item.recipeVersion,
       required: item.required,
     };
+    let active: Awaited<ReturnType<typeof getActiveRecipe>>;
     try {
-      const active = await getActiveRecipe({ code: item.recipeCode });
+      active = await getActiveRecipe({ code: item.recipeCode });
       if (active && active.id === item.machineRecipeId && active.machineId === item.machineId) {
         results.push({ ...base, status: "already_active" });
         continue;
       }
-      // doc 80 Đợt 1 Task 9 R-T9a — recipe sets keep the pre-task deploy gate (approvedBy only):
-      // a set pinning a version that was later replaced (archived) still distributes. Strict gate
-      // for recipe sets = owner decision (task-9 report).
+      // doc 81 Đợt 1C Task 2 (owner decision 2026-09-27) — the SAME strict release gate as
+      // /recipes deploy (was "legacyApprovedOnly", Task 9 R-T9a): a set pinning a version that was
+      // later replaced (archived), an unapproved one, or one for another machine type is refused
+      // per item (reason + hint below); the other items still distribute.
       const deployment = await deployRecipe(
         {
           recipeId: item.machineRecipeId,
@@ -397,7 +433,7 @@ async function distributeResolved(
           deployedBy: opts.actorId ?? 0,
           notes: opts.notes ?? `recipe-set ${set.code} → line ${line.code} (distribute, actor=${actor})`,
         },
-        "legacyApprovedOnly",
+        "strict",
       );
       results.push({ ...base, status: "deployed", deploymentId: deployment.id });
       // Genealogy recipe_load_log — best-effort như machineRecipeRouter (fail-soft).
@@ -415,9 +451,9 @@ async function distributeResolved(
         console.error("[RecipeSet] genealogy record failed:", (err as Error)?.message ?? err);
       }
     } catch (err) {
-      // Giữ nguyên mọi gate hiện có: recipe chưa second-approve → deployRecipe
-      // THROW → per-máy 'failed' (không nuốt gate, không chặn máy khác).
-      results.push({ ...base, status: "failed", error: (err as Error)?.message ?? String(err) });
+      // Giữ nguyên mọi gate hiện có: cổng phát hành chặt từ chối → deployRecipe
+      // THROW → per-máy 'failed' kèm reason/hint (không nuốt gate, không chặn máy khác).
+      results.push({ ...base, status: "failed", error: (err as Error)?.message ?? String(err), ...gateRefusal(err, item, active) });
     }
   }
 

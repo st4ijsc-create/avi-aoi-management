@@ -13286,6 +13286,10 @@
     "confirm": "确认执行"
   },
   "lineView": {
+    "recipeSet": {
+      "itemRefused": "{{machine}} · {{recipe}} v{{version}}：被拒绝——{{reason}}",
+      "hintUpdateToCurrent": "集合中固定的版本已被替换——请将集合更新为当前版本 v{{version}}。"
+    },
     "title": "产线视图",
     "navDesc": "产线流程图 · 7 状态 FSM · 节拍/瓶颈 · 就绪检查 · 产线命令",
     "subtitle": "产线流程：FSM 状态、节拍、瓶颈、堵塞/待料工位与产线命令。",

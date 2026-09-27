@@ -121,8 +121,14 @@ const SERVER = resolve(dirname(fileURLToPath(import.meta.url)), "..");
  *     · `buildArtifact` phiên bản chưa duyệt → `appError PRECONDITION_FAILED OPERATION_FAILED
  *       {operation:"buildArtifact", reason:"versionNotApproved"}` (trước: 500).
  *   Khoá mới có đủ vi/en/zh. Message giữ nguyên văn. Không tệp nào khác đổi số. 466 − 2 = **464**.
+ *
+ * 464 → **463** (2026-09-27, doc 81 Đợt 1C Task 2): ĐO trên cây làm việc sau vá ra **463**. Trả **1**
+ *   chỗ ở `db/machineRecipe.ts`: nhánh `deployRecipe(…, "legacyApprovedOnly")` (Đợt 1 Task 9 R-T9a,
+ *   `throw new Error("Recipe chưa được trình duyệt (second-approver) …")`) bị GỠ theo quyết định chủ
+ *   dự án — ba caller của nó nay đi cổng chặt `assertRecipeReleasable` (appError PRECONDITION_FAILED
+ *   có reason). Không thêm chỗ ném thô nào; không tệp nào khác đổi số. 464 − 1 = **463**.
  */
-const ALLOWED_RAW_THROWS_OUTSIDE_ROUTERS = 464;
+const ALLOWED_RAW_THROWS_OUTSIDE_ROUTERS = 463;
 
 /**
  * Họ "DB không sẵn sàng": `407 → 83 → 1 → **0**` — nay là BẤT BIẾN, không phải ngân sách.

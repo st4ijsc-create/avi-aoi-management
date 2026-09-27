@@ -3,7 +3,7 @@
  *
  * Covers: CRUD draft (create + duplicate CONFLICT, addItem validate/locked/
  * duplicate, removeItem), distribute qua đường deploy sẵn có (already_active
- * fast-path, deploy gate second-approver GIỮ NGUYÊN → per-máy failed), XÁC
+ * fast-path, cổng phát hành chặt (Đợt 1C Task 2) → per-máy failed + reason/hint), XÁC
  * NHẬN NẠP (đủ → set line.recipe_set_ref + KHÓA set; thiếu máy required →
  * confirmed=false, KHÔNG ref/khóa; máy optional fail không chặn), gates
  * (locked/retired/line-state/empty/not-found/db), verifyRecipeSetRef (legacy
@@ -18,6 +18,7 @@ import { describe, it, expect, beforeEach, vi } from "vitest";
 // ── hoisted fixture ───────────────────────────────────────────────────────────
 const h = vi.hoisted(() => ({
   dbAvailable: true,
+  deployThrowsPlain: false,
   sets: new Map<number, any>(),
   itemsBySet: new Map<number, any[]>(),
   lines: new Map<number, any>(),
@@ -143,10 +144,17 @@ vi.mock("../../db/machineRecipe", () => ({
   deployRecipe: vi.fn(async (input: any) => {
     const target = h.recipes.get(input.recipeId);
     if (!target) throw new Error(`Recipe #${input.recipeId} not found`);
-    // Semantics THẬT của db/machineRecipe.deployRecipe (second-approver gate).
+    // Semantics THẬT của db/machineRecipe.deployRecipe "strict" (Đợt 1C Task 2): cổng phát hành
+    // chặt ném appError PRECONDITION_FAILED + OPERATION_FAILED{reason} (cổng thật chạy trên CSDL
+    // thật ở server/db/machineRecipe.legacyCallers.dot1.db.test.ts).
+    const { appError } = await import("../../_core/appError");
     if (target.approvedBy == null) {
-      throw new Error("Recipe chưa được trình duyệt (second-approver) — cần một người khác duyệt trước khi deploy.");
+      throw appError("PRECONDITION_FAILED", "OPERATION_FAILED", { operation: "deployRecipe", reason: "recipeNotApproved" }, `Recipe #${target.id} has not been approved`);
     }
+    if (target.status === "archived") {
+      throw appError("PRECONDITION_FAILED", "OPERATION_FAILED", { operation: "deployRecipe", reason: "recipeArchived" }, `Recipe #${target.id} is archived`);
+    }
+    if (h.deployThrowsPlain) throw new Error("connection reset");
     const previous = [...h.recipes.values()].find((r) => r.code === target.code && r.status === "active");
     if (previous && previous.id !== target.id) previous.status = "archived";
     target.status = "active";
@@ -209,6 +217,7 @@ async function seedSet(code = "MODEL-X@v3"): Promise<any> {
 
 beforeEach(() => {
   h.dbAvailable = true;
+  h.deployThrowsPlain = false;
   h.sets.clear();
   h.itemsBySet.clear();
   h.lines.clear();
@@ -323,8 +332,8 @@ describe("distributeRecipeSet — phân phối + xác nhận nạp + khóa", () 
     expect(vi.mocked(deployRecipe)).toHaveBeenCalledTimes(1);
     expect(vi.mocked(deployRecipe)).toHaveBeenCalledWith(
       expect.objectContaining({ recipeId: 20, machineId: 2, deployedBy: 7 }),
-      // doc 80 Đợt 1 Task 9 R-T9a — recipe sets keep the pre-task gate.
-      "legacyApprovedOnly",
+      // doc 81 Đợt 1C Task 2 — recipe sets get the strict release gate (was "legacyApprovedOnly").
+      "strict",
     );
     // Xác nhận nạp đủ → recipe_set_ref + KHÓA suốt lô + status active.
     expect(h.lineStates.get(1).recipeSetRef).toBe("MODEL-X@v3");
@@ -337,7 +346,7 @@ describe("distributeRecipeSet — phân phối + xác nhận nạp + khóa", () 
     );
   });
 
-  it("máy required chưa nạp được (gate second-approver GIỮ NGUYÊN) → confirmed=false, KHÔNG ref, KHÔNG khóa", async () => {
+  it("máy required chưa nạp được (cổng chặt: chưa duyệt ⇒ reason recipeNotApproved) → confirmed=false, KHÔNG ref, KHÔNG khóa", async () => {
     seedLine(1, "idle");
     const set = await seedSet();
     seedRecipe(20, { code: "GLUE-01", approvedBy: null }); // CHƯA duyệt → deploy throw
@@ -348,11 +357,58 @@ describe("distributeRecipeSet — phân phối + xác nhận nạp + khóa", () 
     if (!res.ok) return;
     expect(res.confirmed).toBe(false);
     expect(res.locked).toBe(false);
-    expect(res.results[0]).toMatchObject({ status: "failed", machineId: 2 });
-    expect(res.results[0].error).toContain("second-approver");
+    expect(res.results[0]).toMatchObject({ status: "failed", machineId: 2, reason: "recipeNotApproved" });
+    expect(res.results[0].error).toContain("has not been approved");
+    // Không phải phiên bản bị thay ⇒ không gợi ý cập nhật set.
+    expect(res.results[0].hint).toBeUndefined();
     expect(res.missing).toHaveLength(1);
     expect(h.lineStates.get(1).recipeSetRef).toBeNull();
     expect(h.sets.get(set.id).locked).toBe(false);
+  });
+
+  it("Đợt 1C Task 2 — set ghim phiên bản đã bị THAY (archived, code có bản active khác) ⇒ mục failed + reason recipeArchived + hint cập nhật sang phiên bản hiện hành", async () => {
+    seedLine(1, "idle");
+    const set = await seedSet();
+    seedRecipe(30, { code: "PASTE-01", version: 1 }); // ghim v1 lúc còn draft
+    await addRecipeSetItem({ recipeSetId: set.id, machineId: 3, machineRecipeId: 30 });
+    h.recipes.get(30).status = "archived"; // sau đó v1 bị thay bởi v3
+    seedRecipe(32, { code: "PASTE-01", version: 3, status: "active", machineId: 4 });
+
+    const res = await distributeRecipeSet(1, set.id, { actorId: 7 });
+    expect(res.ok).toBe(true);
+    if (!res.ok) return;
+    expect(res.results[0]).toMatchObject({
+      status: "failed",
+      machineId: 3,
+      reason: "recipeArchived",
+      hint: "updateSetToCurrentVersion",
+      currentVersion: 3,
+    });
+    expect(res.confirmed).toBe(false);
+    expect(res.locked).toBe(false);
+    expect(h.recipes.get(32).status).toBe("active");
+  });
+
+  it("Đợt 1C Task 2 — archived nhưng code KHÔNG có bản active ⇒ reason, KHÔNG hint; lỗi ngoài cổng (không PRECONDITION_FAILED) ⇒ chỉ error, không reason", async () => {
+    seedLine(1, "idle");
+    const set = await seedSet();
+    seedRecipe(40, { code: "FLUX-01", status: "archived" });
+    await addRecipeSetItem({ recipeSetId: set.id, machineId: 5, machineRecipeId: 40 });
+    const res = await distributeRecipeSet(1, set.id, { actorId: 7 });
+    if (!res.ok) throw new Error("expected ok");
+    expect(res.results[0]).toMatchObject({ status: "failed", reason: "recipeArchived" });
+    expect(res.results[0].hint).toBeUndefined();
+    expect(res.results[0].currentVersion).toBeUndefined();
+
+    const set2 = await seedSet("MODEL-Z@v1");
+    seedRecipe(41, { code: "FLUX-02" });
+    await addRecipeSetItem({ recipeSetId: set2.id, machineId: 6, machineRecipeId: 41 });
+    h.deployThrowsPlain = true;
+    const res2 = await distributeRecipeSet(1, set2.id, { actorId: 7 });
+    if (!res2.ok) throw new Error("expected ok");
+    expect(res2.results[0]).toMatchObject({ status: "failed", error: "connection reset" });
+    expect(res2.results[0].reason).toBeUndefined();
+    expect(res2.results[0].hint).toBeUndefined();
   });
 
   it("máy OPTIONAL (required=false) fail không chặn xác nhận; máy required vẫn phải đúng", async () => {
