@@ -145,8 +145,9 @@ describe.skipIf(!DB_URL)("doc 81 Đợt 1B Task 8 — /api/v1/ingest: khoá ↔ 
     await import("../../routers");
     const app = express();
     app.use(express.json({ limit: "25mb" }));
-    app.use([...rl.OT_INGEST_PATHS], rl.credentialConflictGuard, rl.createOtIngestLimiter());
+    // final wave (item 7): như _core/index.ts — guard MỘT lần, trước cả hai limiter máy.
     app.use("/api/", rl.credentialConflictGuard, rl.createMachineIngestLimiter());
+    app.use([...rl.OT_INGEST_PATHS], rl.createOtIngestLimiter());
     const apiLimiter = rl.createApiLimiter();
     app.use("/api/", apiLimiter);
     app.use("/trpc/", apiLimiter);
@@ -503,14 +504,24 @@ describe.skipIf(!DB_URL)("doc 81 Đợt 1B Task 8 — /api/v1/ingest: khoá ↔ 
       expect(await demTelemetry(ids.a, m)).toBe(N);
     }, 120_000);
 
-    it("_core/index.ts gắn limiter OT trên OT_INGEST_PATHS TRƯỚC limiter trình duyệt, và /api/v1 SAU cả hai", () => {
+    it("_core/index.ts gắn limiter OT trên OT_INGEST_PATHS TRƯỚC limiter trình duyệt, và /api/v1 SAU cả hai; credentialConflictGuard gắn ĐÚNG MỘT LẦN, trước cả hai limiter máy", () => {
       const src = readFileSync(path.resolve(__dirname, "../../_core/index.ts"), "utf8");
-      const iOt = src.indexOf("app.use([...OT_INGEST_PATHS], credentialConflictGuard, otIngestLimiter)");
+      // final wave (item 7, final review Minor #5): guard từng gắn HAI lần (OT mount + '/api/' mount) ⇒
+      // chạy hai lượt mỗi request; nay MỘT mount '/api/' đứng trước cả hai limiter (bao OT_INGEST_PATHS
+      // lẫn /api/machine/*). Đếm từ nguồn: 1 dòng import + 1 mount = 2 lần xuất hiện.
+      // Hai statement `app.use(` như cũ (xacThucBeMatRest đếm `app.use(` theo văn bản — không thêm dòng):
+      // mount máy ('/api/', guard + machineIngestLimiter) đứng TRƯỚC mount OT; machineIngestLimiter
+      // `skip` mọi request không phải mặt phẳng máy (OT_INGEST_PATHS không thuộc isMachineIngestRequest)
+      // nên thứ tự hai limiter không đổi kết quả, còn guard chạy trước cả hai.
+      const iGuard = src.indexOf("app.use('/api/', credentialConflictGuard, machineIngestLimiter)");
+      const iOt = src.indexOf("app.use([...OT_INGEST_PATHS], otIngestLimiter)");
       const iApi = src.indexOf("app.use('/api/', apiLimiter)");
       const iV1 = src.indexOf('app.use("/api/v1", createV1Router())');
-      expect(iOt).toBeGreaterThan(0);
+      expect(iGuard).toBeGreaterThan(0);
+      expect(iOt).toBeGreaterThan(iGuard);
       expect(iApi).toBeGreaterThan(iOt);
       expect(iV1).toBeGreaterThan(iApi);
+      expect(src.match(/credentialConflictGuard/g)?.length, "guard phải xuất hiện đúng 2 lần: import + MỘT mount").toBe(2);
     });
   });
 });

@@ -2,10 +2,11 @@
  * Sprint F1.2 — opcuaDriver tests với package GIẢ (vi.doMock + vi.resetModules).
  * Không cần lib/thiết bị thật.
  */
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { describe, it, expect, vi, beforeEach, afterEach, afterAll } from "vitest";
 import type { OtTagAddress } from "../otDriver";
 import os from "node:os";
 import path from "node:path";
+import { existsSync, rmSync } from "node:fs";
 
 // Fix round 1 — manager nay tạo thư mục PKI (0700) ⇒ test giả cũng chỉ trỏ vào os.tmpdir().
 const MOCK_PKI_BASE = path.join(os.tmpdir(), `opcua-t12-mock-${process.pid}`);
@@ -282,9 +283,27 @@ describe("OpcuaDriver (mocked node-opcua)", () => {
 
 // ── doc 81 Đợt 1B Task 12 — bảo mật / ép kiểu / cô lập theo tag / hạn đóng (gói GIẢ) ──
 describe("OpcuaDriver Task 12 (mocked node-opcua)", () => {
+  // final wave (item 7) — the PRODUCT code creates the PKI root (0700) on any secured connect, so a
+  // mock test that does not pin OPCUA_PKI_DIR leaves an empty ./data/opcua-pki in the repo. Pin the
+  // whole describe to os.tmpdir() and remove the tree afterwards; the afterAll assertion below turns
+  // a future un-pinned test into a red, not a stray directory.
+  const savedPkiDir = process.env.OPCUA_PKI_DIR;
+  const REPO_PKI = path.join(process.cwd(), "data", "opcua-pki");
+  const repoPkiExistedBefore = existsSync(REPO_PKI);
   beforeEach(() => {
     vi.resetModules();
     delete process.env.OT_OPCUA_MONITORED_ITEMS;
+    process.env.OPCUA_PKI_DIR = MOCK_PKI("default");
+  });
+  afterEach(() => {
+    if (savedPkiDir === undefined) delete process.env.OPCUA_PKI_DIR;
+    else process.env.OPCUA_PKI_DIR = savedPkiDir;
+  });
+  afterAll(() => {
+    rmSync(MOCK_PKI_BASE, { recursive: true, force: true });
+    if (!repoPkiExistedBefore) {
+      expect(existsSync(REPO_PKI), "a test in this file created ./data/opcua-pki — pin OPCUA_PKI_DIR").toBe(false);
+    }
   });
 
   function withDeadline<T>(p: Promise<T>, ms: number, label: string): Promise<T> {
@@ -675,6 +694,7 @@ describe("OpcuaDriver Task 12 (mocked node-opcua)", () => {
     await d.connect({ endpoint: "opc.tcp://x" });
     const res = await d.writeTags([{ tagKey: "t", address: "ns=2;s=T", value: 5, dataType: "int" }]);
     expect(res[0].ok).toBe(false);
-    expect(res[0].error).toMatch(/cannot encode 5 as Int64/);
+    // final wave (item 7): Int64 is handed to the Variant as the decimal string "5".
+    expect(res[0].error).toMatch(/cannot encode "5" as Int64/);
   });
 });

@@ -486,14 +486,15 @@ describe("OPC UA SignAndEncrypt/Basic256Sha256 against a real in-process server 
     }
   }, 40_000);
 
-  it("#4 Int64 beyond what node-opcua can encode ⇒ ok:false with a clear reason; in-range negative lands as two's complement", async () => {
+  it("#4 (final wave item 7) Int64: beyond the safe-integer range ⇒ ok:false with a clear reason; −5 AND −5 000 000 000 (below −2^32, once refused) land on the real server as two's complement", async () => {
     const d = await newDriver();
     await withTimeout(d.connect({ endpoint: secure.url, options: SEC_OPTS, timeoutMs: 8000 }), 10_000, "connect");
     const ns = secure.nsIndex;
     const res = await withTimeout(
       d.writeTags([
-        { tagKey: "far", address: `ns=${ns};s=I64`, value: -5_000_000_000, dataType: "int" },
+        { tagKey: "far", address: `ns=${ns};s=I64`, value: -(2 ** 60), dataType: "int" },
         { tagKey: "near", address: `ns=${ns};s=I64`, value: -5, dataType: "int" },
+        { tagKey: "deep", address: `ns=${ns};s=I64`, value: -5_000_000_000, dataType: "int" },
       ]),
       8000,
       "write",
@@ -501,8 +502,10 @@ describe("OPC UA SignAndEncrypt/Basic256Sha256 against a real in-process server 
     expect(res[0].ok).toBe(false);
     expect(res[0].error).toMatch(/out of range for Int64/);
     expect(res[1]).toMatchObject({ ok: true });
-    // Oracle: bù hai 64 bit tính bằng BigInt, [high, low] như node-opcua lưu Int64.
-    const b = BigInt.asUintN(64, -5n);
+    expect(res[2]).toMatchObject({ ok: true });
+    // Oracle: bù hai 64 bit tính bằng BigInt, [high, low] như node-opcua lưu Int64 — giá trị cuối cùng
+    // được ghi (thứ tự batch) là −5 000 000 000, thứ fix round 1 từng từ chối oan.
+    const b = BigInt.asUintN(64, -5_000_000_000n);
     expect(secure.store.I64.value).toEqual([Number(b >> 32n), Number(b & 0xffffffffn)]);
   }, 30_000);
 

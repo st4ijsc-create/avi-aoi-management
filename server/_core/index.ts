@@ -319,14 +319,6 @@ async function startServer() {
 
   // Rate limiting for API endpoints
   const apiLimiter = createApiLimiter();
-  // doc 48 R3 — DEDICATED high-throughput OT telemetry ingest tier. Machine→server
-  // telemetry (POST /api/ot/ingest) is authenticated by a per-machine key, not a
-  // browser session, so it must NOT share the 300/60 browser bucket (a real benchmark
-  // hit that ceiling at ~2541 pts/s). Mount its own per-machine high limiter BEFORE
-  // the general /api limiter; the general limiter `skip`s these exact paths
-  // (OT_INGEST_PATHS) so the two never double-count. Tune via OT_INGEST_RATE_MAX.
-  const otIngestLimiter = createOtIngestLimiter();
-  app.use([...OT_INGEST_PATHS], credentialConflictGuard, otIngestLimiter); // doc 81 1B T8: 2 credential khác nhau ⇒ 400 (chỉ mặt phẳng máy, xem rateLimitConfig)
   // doc 51 R6 — DEDICATED machine data-plane tier (CASE #2/#9 mất dữ liệu). AVI/AOI
   // machines submit inspections via /api/trpc/machineApi.* and /api/machine/*, which
   // both rode the 300/60 BROWSER bucket; worse, a machine sending its key in the tRPC
@@ -336,10 +328,18 @@ async function startServer() {
   // inspections LOST. This limiter keys per machine credential (header/body/query) and
   // raises the ceiling for credentialed machines only; keyless callers keep 300/min.
   // Mounted BEFORE the general limiter, which `skip`s these exact requests (no
-  // double-counting). Tune via MACHINE_INGEST_RATE_MAX; RATE_LIMIT_BODY_KEY=false
-  // restores pre-R6 header-only keying.
+  // double-counting); it also `skip`s OT_INGEST_PATHS (not isMachineIngestRequest), so
+  // mounting it ahead of the OT tier below changes nothing for OT requests. Tune via
+  // MACHINE_INGEST_RATE_MAX; RATE_LIMIT_BODY_KEY=false restores pre-R6 header-only keying.
   const machineIngestLimiter = createMachineIngestLimiter();
-  app.use('/api/', credentialConflictGuard, machineIngestLimiter);
+  app.use('/api/', credentialConflictGuard, machineIngestLimiter); // doc 81 1B T8 + final wave: guard MỘT lần, trước CẢ HAI limiter máy (từng gắn hai lần); 2 credential khác nhau ⇒ 400 (chỉ mặt phẳng máy, xem rateLimitConfig)
+  // doc 48 R3 — DEDICATED high-throughput OT telemetry ingest tier. Machine→server
+  // telemetry (POST /api/ot/ingest) is authenticated by a per-machine key, not a
+  // browser session, so it must NOT share the 300/60 browser bucket (a real benchmark
+  // hit that ceiling at ~2541 pts/s). Its own per-machine high limiter sits BEFORE the
+  // general /api limiter, which `skip`s these exact paths (OT_INGEST_PATHS). Tune via OT_INGEST_RATE_MAX.
+  const otIngestLimiter = createOtIngestLimiter();
+  app.use([...OT_INGEST_PATHS], otIngestLimiter);
   app.use('/api/', apiLimiter);
   app.use('/trpc/', apiLimiter);
 

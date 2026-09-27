@@ -30,8 +30,9 @@ let handled = 0;
 beforeAll(async () => {
   const app = express();
   app.use(express.json());
-  app.use([...rl.OT_INGEST_PATHS], rl.credentialConflictGuard, rl.createOtIngestLimiter());
+  // final wave (item 7): như _core/index.ts — guard MỘT lần, trước cả hai limiter máy.
   app.use("/api/", rl.credentialConflictGuard, rl.createMachineIngestLimiter());
+  app.use([...rl.OT_INGEST_PATHS], rl.createOtIngestLimiter());
   app.use("/api/", rl.createApiLimiter());
   const ok = (_req: express.Request, res: express.Response) => {
     handled += 1;

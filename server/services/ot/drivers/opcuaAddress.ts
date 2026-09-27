@@ -78,9 +78,14 @@ const BUILTIN_NAME: Record<number, string> = Object.fromEntries(
 );
 
 /**
- * Miền số nguyên theo Part 3. Int64/UInt64 kẹp vào miền mà Variant của node-opcua 2.174 MÃ
- * HOÁ ĐƯỢC từ một number (đo: Int64 −4294967297 ⇒ Variant ném Error("") rỗng; ≥ −2^32 và
- * ≤ 2^53−1 thì đúng) — fix round 1 #4.
+ * Miền số nguyên theo Part 3. Int64/UInt64: MIỀN SỐ NGUYÊN AN TOÀN của JS (±(2^53−1); 0..2^53−1),
+ * và giá trị được đưa cho Variant dưới dạng CHUỖI THẬP PHÂN (xem coerceOpcuaWriteValue).
+ * ⚠ Fix round 1 #4 từng kẹp Int64 xuống −2^32 vì đo thấy Variant({Int64, value: −4294967297})
+ * (NUMBER) ném Error("") — nhưng nguyên nhân là CÁCH TRUYỀN, không phải miền: node-opcua 2.174 mã
+ * hoá đúng cả dải từ một chuỗi thập phân (đo lại ở final wave: "-4294967297" ⇒ [4294967294,
+ * 4294967295], "-9007199254740991" ⇒ [4292870144, 1], "18446744073709551615" ⇒ [2^32−1, 2^32−1]).
+ * Vì Variant KHÔNG tự kiểm miền cho chuỗi (UInt64 nhận cả chuỗi âm), phép kiểm miền ở đây là lớp
+ * duy nhất — giữ ở số nguyên an toàn để giá trị người dùng gõ không bị làm tròn im lặng trước đó.
  */
 const INT_RANGE: Record<number, [number, number]> = {
   [OPCUA_BUILTIN.SByte]: [-128, 127],
@@ -89,9 +94,12 @@ const INT_RANGE: Record<number, [number, number]> = {
   [OPCUA_BUILTIN.UInt16]: [0, 65535],
   [OPCUA_BUILTIN.Int32]: [-2147483648, 2147483647],
   [OPCUA_BUILTIN.UInt32]: [0, 4294967295],
-  [OPCUA_BUILTIN.Int64]: [-4294967296, Number.MAX_SAFE_INTEGER],
+  [OPCUA_BUILTIN.Int64]: [Number.MIN_SAFE_INTEGER, Number.MAX_SAFE_INTEGER],
   [OPCUA_BUILTIN.UInt64]: [0, Number.MAX_SAFE_INTEGER],
 };
+
+/** Int64/UInt64 đi vào Variant dưới dạng chuỗi thập phân (node-opcua mã hoá được cả dải, number thì không). */
+const WIDE_INT_AS_STRING: ReadonlySet<number> = new Set([OPCUA_BUILTIN.Int64, OPCUA_BUILTIN.UInt64]);
 
 /**
  * Trần Float: FLT_MAX như thường viết (3.4028235e38 — làm tròn về float32 vẫn ra FLT_MAX
@@ -156,7 +164,8 @@ export function coerceOpcuaWriteValue(raw: unknown, builtinType: number): Coerce
   if (r < range[0] || r > range[1]) {
     return { ok: false, error: `value ${r} out of range for ${name} [${range[0]}..${range[1]}]` };
   }
-  return { ok: true, dataType: builtinType, value: r };
+  // final wave (item 7): Int64/UInt64 as a decimal string — the full safe-integer range encodes.
+  return { ok: true, dataType: builtinType, value: WIDE_INT_AS_STRING.has(builtinType) ? String(r) : r };
 }
 
 /** Kết quả chuẩn hoá: giá trị + chất lượng good/bad. */

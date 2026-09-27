@@ -31,6 +31,7 @@ import { and, eq } from "drizzle-orm";
 import { getDb } from "../../../db/connection";
 import { deviceAdapters, deviceTags } from "../../../../drizzle/schema";
 import { dispatch, type DispatchInput } from "../../ot/commandDispatcher";
+import type { OtWriteTarget } from "../../ot/otActionBinding"; // final wave (item 7): propose-time binding
 import {
   kiemCongAi,
   siriengChoAi,
@@ -167,6 +168,10 @@ async function runDispatch(
     triggeredBy: {
       kind: "hitl",
       actionId: ctx.actionId,
+      // doc 81 Đợt 1B final wave (item 7, ruling R5) — the dispatcher binds a real write to
+      // (tool + canonical payload hash); without `tool` every confirmed row of these tools was
+      // ACTION_BINDING_MISMATCH. The row's hash comes from the tool's otWriteBinding (same plan).
+      tool: args.toolName,
       confirmedBy: ctx.user.id,
       requestedBy: ctx.user.id,
     },
@@ -207,6 +212,17 @@ type RejectDivertParams = z.infer<typeof rejectDivertParams>;
 
 const REJECT_DIVERT_DEFAULT_TAG = "cmd_reject_divert";
 
+/**
+ * doc 81 Đợt 1B final wave (item 7) — ONE plan per tool, called by BOTH execute() and
+ * otWriteBinding() (propose-time HITL binding), so the hash stored on the pending action and the
+ * command the dispatcher verifies cannot drift (same pattern as machineControl.ts).
+ */
+async function planRejectDivert(p: RejectDivertParams): Promise<OtWriteTarget & { machineId: number }> {
+  const tagKey = p.tagKey ?? REJECT_DIVERT_DEFAULT_TAG;
+  const adapterId = await adapterIdForMachine(p.machineId);
+  return { adapterId, machineId: p.machineId, commandType: "reject_divert", writes: [{ tagKey, value: p.lane ?? true }] };
+}
+
 function summarizeRejectDivert(p: RejectDivertParams, lang: ToolLang): string {
   const unit = p.unitRef ? ` (${p.unitRef})` : "";
   return w(
@@ -242,16 +258,9 @@ registerTool<RejectDivertParams, unknown>({
       humanSummary: summarizeRejectDivert(p, ctx.lang),
     };
   },
+  otWriteBinding: async (p) => planRejectDivert(p),
   execute: async (p, ctx) => {
-    const tagKey = p.tagKey ?? REJECT_DIVERT_DEFAULT_TAG;
-    const adapterId = await adapterIdForMachine(p.machineId);
-    return runDispatch(ctx, {
-      machineId: p.machineId,
-      adapterId,
-      commandType: "reject_divert",
-      writes: [{ tagKey, value: p.lane ?? true }],
-      toolName: "reject_divert",
-    });
+    return runDispatch(ctx, { ...(await planRejectDivert(p)), toolName: "reject_divert" });
   },
 });
 
@@ -273,6 +282,22 @@ type SpiPrinterOffsetParams = z.infer<typeof spiPrinterOffsetParams>;
 
 const SPI_OFFSET_X_TAG = "printer_offset_x";
 const SPI_OFFSET_Y_TAG = "printer_offset_y";
+
+/** final wave (item 7) — see planRejectDivert: one plan for execute() and otWriteBinding(). */
+async function planSpiPrinterOffset(p: SpiPrinterOffsetParams): Promise<OtWriteTarget & { machineId: number }> {
+  const tagKeyX = p.tagKeyX ?? SPI_OFFSET_X_TAG;
+  const tagKeyY = p.tagKeyY ?? SPI_OFFSET_Y_TAG;
+  const adapterId = await adapterIdForMachine(p.machineId);
+  return {
+    adapterId,
+    machineId: p.machineId,
+    commandType: "spi_printer_offset",
+    writes: [
+      { tagKey: tagKeyX, value: p.offsetXUm },
+      { tagKey: tagKeyY, value: p.offsetYUm },
+    ],
+  };
+}
 
 function summarizeSpiOffset(p: SpiPrinterOffsetParams, lang: ToolLang): string {
   return w(
@@ -310,19 +335,8 @@ registerTool<SpiPrinterOffsetParams, unknown>({
       humanSummary: summarizeSpiOffset(p, ctx.lang),
     };
   },
+  otWriteBinding: async (p) => planSpiPrinterOffset(p),
   execute: async (p, ctx) => {
-    const tagKeyX = p.tagKeyX ?? SPI_OFFSET_X_TAG;
-    const tagKeyY = p.tagKeyY ?? SPI_OFFSET_Y_TAG;
-    const adapterId = await adapterIdForMachine(p.machineId);
-    return runDispatch(ctx, {
-      machineId: p.machineId,
-      adapterId,
-      commandType: "spi_printer_offset",
-      writes: [
-        { tagKey: tagKeyX, value: p.offsetXUm },
-        { tagKey: tagKeyY, value: p.offsetYUm },
-      ],
-      toolName: "spi_printer_offset",
-    });
+    return runDispatch(ctx, { ...(await planSpiPrinterOffset(p)), toolName: "spi_printer_offset" });
   },
 });

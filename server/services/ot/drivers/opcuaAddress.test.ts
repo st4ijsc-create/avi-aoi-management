@@ -126,13 +126,25 @@ describe("coerceOpcuaWriteValue — typed write per node DataType (Task 12)", ()
     bad(2 ** 60, SPEC.Int64); bad(-1, SPEC.UInt64); ok(9007199254740991, SPEC.UInt64);
   });
 
-  it("Fix round 1 #4 — Int64 limited to what node-opcua's Variant can encode: [-2^32 .. 2^53-1]", () => {
-    // Đo: new Variant({dataType:Int64, value:-4294967297}) ném Error("") — xem báo cáo fix round 1.
-    ok(-4294967296, SPEC.Int64);
-    ok(9007199254740991, SPEC.Int64);
-    const r = bad(-4294967297, SPEC.Int64);
+  it("final wave (item 7) — Int64/UInt64 span the FULL safe-integer range and are handed to the Variant as a DECIMAL STRING", () => {
+    // Đo trên node-opcua 2.174 (final review + Task 12 re-review): Variant({Int64, value: "-4294967297"})
+    // mã hoá đúng [4294967294, 4294967295]; cùng giá trị dạng NUMBER thì ném Error("") — nên fix round 1
+    // đã kẹp nhầm miền xuống −2^32 thay vì đổi cách truyền. Nay: miền = số nguyên an toàn của JS,
+    // giá trị truyền là chuỗi thập phân (node-opcua nhận chuỗi cho Int64/UInt64).
+    expect(ok(-4294967297, SPEC.Int64).value).toBe("-4294967297");
+    expect(ok(-4294967296, SPEC.Int64).value).toBe("-4294967296");
+    expect(ok(5, SPEC.Int64).value).toBe("5");
+    expect(ok(Number.MIN_SAFE_INTEGER, SPEC.Int64).value).toBe(String(Number.MIN_SAFE_INTEGER));
+    expect(ok(Number.MAX_SAFE_INTEGER, SPEC.Int64).value).toBe(String(Number.MAX_SAFE_INTEGER));
+    expect(ok(9007199254740991, SPEC.UInt64).value).toBe("9007199254740991");
+    expect(ok(0, SPEC.UInt64).value).toBe("0");
+    const r = bad(-9007199254740992, SPEC.Int64);
     expect(r.ok === false && r.error).toMatch(/out of range for Int64/);
-    bad(-9007199254740991, SPEC.Int64);
+    bad(9007199254740992, SPEC.Int64);
+    bad(-1, SPEC.UInt64);
+    bad(9007199254740992, SPEC.UInt64);
+    // Các kiểu nguyên ≤ 32 bit vẫn là NUMBER (không đổi).
+    expect(ok(5, SPEC.Int32).value).toBe(5);
   });
 
   it("Fix round 1 #4 — Float accepts 3.4028235e38 (FLT_MAX as usually written), rejects 3.5e38; Double rejects NaN/Infinity", () => {

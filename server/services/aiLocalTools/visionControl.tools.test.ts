@@ -221,6 +221,42 @@ describe("registration + RBAC surface", () => {
   });
 });
 
+// doc 81 Đợt 1B final wave (item 7, final review Minor #3 / ruling R5) — the two vision tools had no
+// otWriteBinding, so proposeAction stored NO payload hash and the dispatcher would refuse every
+// confirmed row with ACTION_BINDING_MISMATCH once the L-7 gate ever lets one through. Now they
+// produce a bound action like machineControl.ts: the row's hash == hash of the exact command
+// execute() dispatches (one plan function per tool), and the trigger names its `tool`.
+describe("final wave #7 — vision tools produce BOUND actions (otWriteBinding + tool)", () => {
+  it("reject_divert: otWriteBinding resolves adapter/tag/value; proposeAction stores THAT hash on the pending row", async () => {
+    const { otPayloadHash, readOtPayloadHash } = await import("../ot/otActionBinding");
+    const t = tool("reject_divert");
+    expect(typeof t.otWriteBinding).toBe("function");
+    const target = await t.otWriteBinding!({ machineId: 5, lane: 2, unitRef: "u1" } as any, ctx() as any);
+    expect(target).toMatchObject({ adapterId: 10, machineId: 5, commandType: "reject_divert", writes: [{ tagKey: "cmd_reject_divert", value: 2 }] });
+    const p = await proposeAction(t, { machineId: 5, lane: 2, unitRef: "u1" }, ctx());
+    expect(p.ok).toBe(true);
+    const row = pending.find((r) => r.id === p.pendingAction!.actionId);
+    expect(readOtPayloadHash(row?.previewJson)).toBe(otPayloadHash({ tool: "reject_divert", ...target! }));
+  });
+
+  it("spi_printer_offset: two writes, same guarantee; tag overrides flow into the binding", async () => {
+    const { otPayloadHash, readOtPayloadHash } = await import("../ot/otActionBinding");
+    const t = tool("spi_printer_offset");
+    const params = { machineId: 5, offsetXUm: -6, offsetYUm: 2.5, tagKeyX: "printer_offset_x" };
+    const target = await t.otWriteBinding!(params as any, ctx() as any);
+    expect(target).toMatchObject({
+      adapterId: 10,
+      machineId: 5,
+      commandType: "spi_printer_offset",
+      writes: [{ tagKey: "printer_offset_x", value: -6 }, { tagKey: "printer_offset_y", value: 2.5 }],
+    });
+    const p = await proposeAction(t, params, ctx());
+    expect(p.ok).toBe(true);
+    const row = pending.find((r) => r.id === p.pendingAction!.actionId);
+    expect(readOtPayloadHash(row?.previewJson)).toBe(otPayloadHash({ tool: "spi_printer_offset", ...target! }));
+  });
+});
+
 describe("(c) confirmed proposal routes through dispatch — SIMULATED on uncommissioned adapter (composes with C2)", () => {
   it("★★★ L-7 ÂM TÍNH: reject_divert (Mức 5) KHÔNG tới dispatcher, KHÔNG có dòng command_log", async () => {
     // TRƯỚC L-7 ca này khẳng định lệnh ĐI TỚI dispatcher và ghi một dòng
