@@ -47,6 +47,7 @@ import {
   RobotAbortUnsupportedError,
 } from "./robotDriver";
 import { withDeadline } from "../ot/drivers/boundedClose";
+import { isRobotSafetyPreflightEnabled, safetyPreflightReason } from "../ot/safetyPreflightPolicy"; // final wave (item 3)
 
 /**
  * CTL-02 (doc 40) — ROBOT COMMISSIONING / FAT LEDGER (bảng migration 0240). Định nghĩa
@@ -576,11 +577,15 @@ async function dispatchRobotJobCore(input: RobotDispatchInput): Promise<RobotDis
   //     Reads the SAME source as the OT dispatcher's (5a-safety) preflight: the OT adapter
   //     facade's READ-ONLY getSafetyStatus (driver.getSafetyStatus → else the safety-PLC
   //     status adapter). A robot has no OT adapter ⇒ ROBOT_NO_OT_ADAPTER_ID, so the facade
-  //     resolves no driver and reads the safety-PLC adapter. UNLIKE the OT path (which lets
-  //     UNKNOWN pass — Task 6 owns that side) the robot BLOCKS on anything but OK:
-  //     BLOCKED, UNKNOWN (no safety-PLC configured/readable), a read error or a hung read.
+  //     resolves no driver and reads the safety-PLC adapter. SAME RULE AS THE OT PATH (since
+  //     Task 6 both sides block UNKNOWN): anything but OK refuses — BLOCKED, UNKNOWN (no
+  //     safety-PLC configured/readable), a read error or a hung read.
+  //     doc 81 Đợt 1B final wave (item 3): same escape hatch and same vocabulary as OT, from ONE
+  //     module (safetyPreflightPolicy): ROBOT_SAFETY_PREFLIGHT_ENABLED — ON unless exactly
+  //     "false" — and reasons SAFETY_BLOCKED / SAFETY_UNKNOWN (was SAFETY_PLC_BLOCKED /
+  //     SAFETY_PLC_NOT_OK). The raw reading (incl. ERROR) stays in result.safety.
   //     A stop (abort) is never gated here.
-  if (motion) {
+  if (motion && isRobotSafetyPreflightEnabled()) {
     let safetyState: string;
     let safetySource: string | undefined;
     try {
@@ -597,7 +602,7 @@ async function dispatchRobotJobCore(input: RobotDispatchInput): Promise<RobotDis
       safetySource = (err as Error)?.message ?? String(err);
     }
     if (safetyState !== "OK") {
-      const error = safetyState === "BLOCKED" ? "SAFETY_PLC_BLOCKED" : "SAFETY_PLC_NOT_OK";
+      const error = safetyPreflightReason(safetyState);
       const jobId = await record(
         input,
         "rejected",

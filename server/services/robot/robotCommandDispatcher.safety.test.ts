@@ -401,11 +401,13 @@ describe("sổ ghi fail-closed: record lỗi ⇒ không gửi chuyển động",
 });
 
 describe("safety-PLC preflight trước chuyển động (S9) — cùng facade với đường OT", () => {
+  // final wave (item 3) — MỘT từ vựng với đường OT: SAFETY_BLOCKED / SAFETY_UNKNOWN (trước là
+  // SAFETY_PLC_BLOCKED / SAFETY_PLC_NOT_OK); trạng thái đọc được vẫn nằm trong result.safety.
   it.each([
-    ["disabled", "SAFETY_PLC_NOT_OK", "UNKNOWN"],
-    ["read_error", "SAFETY_PLC_NOT_OK", "UNKNOWN"],
-    ["throw", "SAFETY_PLC_NOT_OK", "UNKNOWN"],
-    ["estop", "SAFETY_PLC_BLOCKED", "BLOCKED"],
+    ["disabled", "SAFETY_UNKNOWN", "UNKNOWN"],
+    ["read_error", "SAFETY_UNKNOWN", "UNKNOWN"],
+    ["throw", "SAFETY_UNKNOWN", "UNKNOWN"],
+    ["estop", "SAFETY_BLOCKED", "BLOCKED"],
   ] as const)("safety %s ⇒ chặn (%s), 0 byte tới robot", async (mode, error, state) => {
     await connectDriver(2000);
     plc.mode = mode;
@@ -415,6 +417,34 @@ describe("safety-PLC preflight trước chuyển động (S9) — cùng facade v
     expect(allCmds(fake)).toEqual([]);
     expect(ledger.rows[0]).toMatchObject({ status: "rejected" });
     expect(ledger.rows[0].result).toMatchObject({ safety: state });
+  });
+
+  // final wave (item 3, final review Important #1) — cùng cờ/cùng mặc định như OT_SAFETY_PREFLIGHT_ENABLED.
+  it("ROBOT_SAFETY_PREFLIGHT_ENABLED=false ⇒ bỏ qua preflight: PLC tắt (UNKNOWN) mà chuyển động vẫn chạy, giống OT khi tắt cờ", async () => {
+    await connectDriver(2000);
+    plc.mode = "disabled";
+    process.env.ROBOT_SAFETY_PREFLIGHT_ENABLED = "false";
+    try {
+      const r = await within(dispatchRobotJob(HOME), 10_000);
+      expect(r.status).toBe("done");
+      expect(allCmds(fake)).toEqual(["CNTLON", "SRVON", expect.stringMatching(/^EXEC/)]);
+    } finally {
+      delete process.env.ROBOT_SAFETY_PREFLIGHT_ENABLED;
+    }
+  });
+
+  it.each(["0", "off", "no", "FALSE", ""])("chỉ đúng chuỗi \"false\" mới tắt — giá trị %j vẫn BẬT (fail-closed, cùng ngữ nghĩa OT)", async (v) => {
+    await connectDriver(2000);
+    plc.mode = "disabled";
+    process.env.ROBOT_SAFETY_PREFLIGHT_ENABLED = v;
+    try {
+      const r = await within(dispatchRobotJob(HOME), 10_000);
+      expect(r.status).toBe("rejected");
+      expect(r.error).toBe("SAFETY_UNKNOWN");
+      expect(allCmds(fake)).toEqual([]);
+    } finally {
+      delete process.env.ROBOT_SAFETY_PREFLIGHT_ENABLED;
+    }
   });
 
   it("lệnh dừng (abort) KHÔNG bị safety chặn — dừng không bao giờ bị khoá", async () => {

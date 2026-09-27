@@ -110,6 +110,7 @@ import {
   type CommandLog,
 } from "../../../drizzle/schema";
 import { boundedKey, canonicalOtValue, otPayloadHash, readOtPayloadHash } from "./otActionBinding";
+import { isOtSafetyPreflightEnabled } from "./safetyPreflightPolicy"; // final wave (item 3): one policy, two dispatchers
 import { getActiveDriver } from "./otManager";
 import { AUDIT_ACTIONS, createAuditContext, logCrudOperation } from "../auditTrailService";
 import type { OtTagAddress } from "./otDriver";
@@ -167,9 +168,12 @@ const INTERLOCK_AUTO_ACTIONS: ReadonlySet<string> = new Set([
  * (=== "false"). doc 81 Đợt 1B Task 6: an UNKNOWN safety status (no safety-PLC
  * configured/enabled, or a read error) now BLOCKS a real HITL write (SAFETY_UNKNOWN) —
  * only an OK read lets it through. See readSafetyStateForPreflight + the (5a-safety) gate.
+ * doc 81 Đợt 1B final wave (item 3): the read-site lives in safetyPreflightPolicy.ts, shared
+ * with the robot dispatcher (ROBOT_SAFETY_PREFLIGHT_ENABLED, same default/semantics); this
+ * export is kept for existing callers/tests and delegates — no second read-site.
  */
 export function isSafetyPreflightEnabled(): boolean {
-  return process.env.OT_SAFETY_PREFLIGHT_ENABLED !== "false";
+  return isOtSafetyPreflightEnabled();
 }
 
 /**
