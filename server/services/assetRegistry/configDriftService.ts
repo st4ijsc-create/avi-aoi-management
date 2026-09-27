@@ -49,7 +49,7 @@ export function configDriftIntervalMs(): number {
 // ── secret redaction + stable hashing (PURE — unit-tested) ───────────────────
 
 /** Key-name patterns whose values must never enter the hash/summary. */
-const SENSITIVE_KEY_RE = /(pass(word)?|secret|token|credential|passphrase|private|api[-_]?key)/i;
+export const SENSITIVE_KEY_RE = /(pass(word)?|secret|token|credential|passphrase|private|api[-_]?key)/i;
 
 /** Recursively drop sensitive keys from a JSON-ish value (arrays preserved). */
 export function redactSecrets(value: unknown): unknown {

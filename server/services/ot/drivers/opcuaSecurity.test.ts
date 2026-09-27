@@ -93,6 +93,42 @@ describe("resolveOpcuaPassword (secretBox)", () => {
   });
 });
 
+describe("Fix round 1 — R20 posture warnings + TOFU gate", () => {
+  it("warnSecurityPostureOnce: once per (kind, endpoint)", async () => {
+    const { warnSecurityPostureOnce, __resetOpcuaSecurityWarningForTest } = await import("./opcuaSecurity");
+    __resetOpcuaSecurityWarningForTest();
+    const spy = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    try {
+      expect(warnSecurityPostureOnce("tofu", "opc.tcp://a:4840")).toBe(true);
+      expect(warnSecurityPostureOnce("tofu", "opc.tcp://a:4840")).toBe(false);
+      expect(warnSecurityPostureOnce("tofu", "opc.tcp://b:4840")).toBe(true);
+      expect(warnSecurityPostureOnce("none", "opc.tcp://a:4840")).toBe(true);
+      expect(spy).toHaveBeenCalledTimes(3);
+      expect(String(spy.mock.calls[0][0])).toMatch(/trustOnFirstUse is ON/);
+      expect(String(spy.mock.calls[2][0])).toMatch(/securityMode None set explicitly/);
+    } finally {
+      spy.mockRestore();
+    }
+  });
+
+  it("assertTrustOnFirstUseAllowed: only OPCUA_ALLOW_TRUST_ON_FIRST_USE=true|1 permits TOFU", async () => {
+    const { assertTrustOnFirstUseAllowed } = await import("./opcuaSecurity");
+    const saved = process.env.OPCUA_ALLOW_TRUST_ON_FIRST_USE;
+    try {
+      delete process.env.OPCUA_ALLOW_TRUST_ON_FIRST_USE;
+      expect(() => assertTrustOnFirstUseAllowed(true)).toThrow(/OPCUA_ALLOW_TRUST_ON_FIRST_USE/);
+      expect(() => assertTrustOnFirstUseAllowed(false)).not.toThrow();
+      process.env.OPCUA_ALLOW_TRUST_ON_FIRST_USE = "yes";
+      expect(() => assertTrustOnFirstUseAllowed(true)).toThrow();
+      process.env.OPCUA_ALLOW_TRUST_ON_FIRST_USE = "true";
+      expect(() => assertTrustOnFirstUseAllowed(true)).not.toThrow();
+    } finally {
+      if (saved === undefined) delete process.env.OPCUA_ALLOW_TRUST_ON_FIRST_USE;
+      else process.env.OPCUA_ALLOW_TRUST_ON_FIRST_USE = saved;
+    }
+  });
+});
+
 describe("warnInsecureDefaultOnce", () => {
   it("logs exactly once per process", async () => {
     const { warnInsecureDefaultOnce, __resetOpcuaSecurityWarningForTest } = await import("./opcuaSecurity");

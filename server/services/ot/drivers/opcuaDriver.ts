@@ -27,7 +27,7 @@ import type {
   OnOtSample,
 } from "../otDriver";
 import { NotImplementedDriver } from "./notImplementedDriver";
-import { parseOpcuaAddress, normalizeOpcuaValue, coerceOpcuaWriteValue } from "./opcuaAddress";
+import { parseOpcuaAddress, normalizeOpcuaValue, coerceOpcuaWriteValue, opcuaBuiltinName } from "./opcuaAddress";
 import { inverseScale } from "./otScale";
 import { DeviceUnreachableError } from "../../../_core/deviceErrors";
 import { withDeadline } from "./boundedClose";
@@ -38,6 +38,9 @@ import {
   warnInsecureDefaultOnce,
   getOpcuaClientCertificateManager,
   explainOpcuaConnectError,
+  assertTrustOnFirstUseAllowed,
+  warnSecurityPostureOnce,
+  opcuaPkiRoot,
 } from "./opcuaSecurity";
 
 /**
@@ -66,6 +69,16 @@ async function settleWithin(p: () => Promise<unknown>, ms: number, label: string
   } catch {
     // dọn dẹp best-effort — không bao giờ ném, không bao giờ treo
   }
+}
+
+/** Fix round 1 #5 — khoảng tối thiểu giữa hai mẫu bad "item hỏng" của CÙNG một tag (push). */
+const OPCUA_MONITORED_BAD_MIN_INTERVAL_MS = 10_000;
+
+/** Mã trạng thái từ sự kiện err/terminated của ClientMonitoredItem (chuỗi hoặc Error). */
+function monitoredStatus(e: unknown): string {
+  const s = typeof e === "string" ? e : (e as Error)?.message ?? String(e);
+  const m = /Bad[A-Za-z]+(?: \(0x[0-9a-fA-F]{8}\))?/.exec(s);
+  return m ? m[0] : `BadMonitoredItemFailed (${s || "unknown"})`;
 }
 
 /** "BadNodeIdUnknown (0x80340000)" từ một StatusCode node-opcua (hoặc object giả trong test). */
@@ -125,10 +138,14 @@ export class OpcuaDriver extends NotImplementedDriver {
   // thể đổi chỉ số namespace và kiểu biến).
   private resolveNodeIdFn: ((s: string) => unknown) | null = null;
   private namespaceArray: string[] | null = null;
+  private namespaceArrayInflight: Promise<string[] | null> | null = null;
+  private namespaceArrayInflightSession: any = null;
   private readonly dataTypeCache = new Map<string, number>();
 
   private resetSessionCaches(): void {
     this.namespaceArray = null;
+    this.namespaceArrayInflight = null;
+    this.namespaceArrayInflightSession = null;
     this.dataTypeCache.clear();
   }
 
@@ -138,10 +155,20 @@ export class OpcuaDriver extends NotImplementedDriver {
       throw new Error("node-opcua not installed");
     }
     // Task 12 — cấu hình bảo mật + mật khẩu kiểm TRƯỚC khi mở socket: sai cấu hình ⇒ lỗi rõ.
-    const security = parseOpcuaSecurityOptions(cfg.options);
+    // Fix round 1 — lỗi cấu hình cũng vào lastError (health() nói thật); R20: TOFU chỉ khi
+    // người vận hành bật OPCUA_ALLOW_TRUST_ON_FIRST_USE.
     const opts = cfg.options ?? {};
     const userName = typeof opts.userName === "string" ? opts.userName : undefined;
-    const password = userName ? resolveOpcuaPassword(opts.password) : undefined;
+    let security: ReturnType<typeof parseOpcuaSecurityOptions>;
+    let password: string | undefined;
+    try {
+      security = parseOpcuaSecurityOptions(cfg.options);
+      assertTrustOnFirstUseAllowed(security.trustOnFirstUse);
+      password = userName ? resolveOpcuaPassword(opts.password) : undefined;
+    } catch (e) {
+      this.lastError = (e as Error)?.message || String(e);
+      throw e;
+    }
 
     const { OPCUAClient, AttributeIds, DataType, Variant } = pkg;
     this.AttributeIds = AttributeIds;
@@ -170,19 +197,23 @@ export class OpcuaDriver extends NotImplementedDriver {
       if (!MessageSecurityMode || !SecurityPolicy) {
         throw new Error("opcua: this node-opcua build has no MessageSecurityMode/SecurityPolicy (security unsupported)");
       }
-      pkiDir = resolveOpcuaPkiDir();
+      pkiDir = opcuaPkiRoot(resolveOpcuaPkiDir(), security.trustOnFirstUse);
+      if (security.trustOnFirstUse) warnSecurityPostureOnce("tofu", cfg.endpoint);
       createOpts.securityMode = MessageSecurityMode[security.securityMode];
       createOpts.securityPolicy = SecurityPolicy[security.securityPolicy];
       createOpts.applicationName = OPCUA_CLIENT_APPLICATION_NAME;
       // Trust-list của app; trustOnFirstUse mặc định TẮT ⇒ chứng chỉ server lạ bị từ chối.
       createOpts.clientCertificateManager = await withDeadline(
-        getOpcuaClientCertificateManager(pkg, pkiDir, security.trustOnFirstUse),
+        getOpcuaClientCertificateManager(pkg, resolveOpcuaPkiDir(), security.trustOnFirstUse),
         timeoutMs,
         "opcua pki init",
       );
     } else if (!security.explicit) {
       // Không ai cấu hình ⇒ giữ None như cũ, nhưng nói ra MỘT lần mỗi tiến trình.
       warnInsecureDefaultOnce(cfg.endpoint);
+    } else {
+      // R20 — None ĐẶT TƯỜNG MINH: WARN một lần cho endpoint này.
+      warnSecurityPostureOnce("none", cfg.endpoint);
     }
     const client = OPCUAClient.create(createOpts);
 
@@ -210,7 +241,7 @@ export class OpcuaDriver extends NotImplementedDriver {
       // isConnected()/health() nói thật; connectionSupervisor sẽ reconnect/failover.
       this.attachLinkLossHandlers(client);
     } catch (err) {
-      const explained = explainOpcuaConnectError(err, pkiDir);
+      const explained = explainOpcuaConnectError(err, pkiDir, security.securityMode);
       this.lastError = explained.message;
       // Task 12 — dọn client CÓ HẠN (trước đây `await client.disconnect()` trần có thể treo).
       await settleWithin(() => client.disconnect(), OPCUA_CLOSE_STEP_MS, "opcua disconnect");
@@ -282,9 +313,26 @@ export class OpcuaDriver extends NotImplementedDriver {
     if (this.namespaceArray) return this.namespaceArray;
     const session = this.session;
     if (!session || typeof session.readNamespaceArray !== "function") return null;
-    const arr = await session.readNamespaceArray();
-    if (Array.isArray(arr) && this.session === session) this.namespaceArray = arr.map(String);
-    return Array.isArray(arr) ? arr.map(String) : null;
+    // Fix round 1 #7 — single-flight theo phiên: N tag nsu= đọc song song ⇒ MỘT lần đọc.
+    if (this.namespaceArrayInflight && this.namespaceArrayInflightSession === session) {
+      return this.namespaceArrayInflight;
+    }
+    const p = (async () => {
+      const arr = await session.readNamespaceArray();
+      const out = Array.isArray(arr) ? arr.map(String) : null;
+      if (out && this.session === session) this.namespaceArray = out;
+      return out;
+    })();
+    this.namespaceArrayInflight = p;
+    this.namespaceArrayInflightSession = session;
+    const clear = () => {
+      if (this.namespaceArrayInflight === p) {
+        this.namespaceArrayInflight = null;
+        this.namespaceArrayInflightSession = null;
+      }
+    };
+    p.then(clear, clear);
+    return p;
   }
 
   /**
@@ -490,12 +538,29 @@ export class OpcuaDriver extends NotImplementedDriver {
     const tsToReturn = this.TimestampsToReturn?.Both ?? 2; // Both = 2 by spec
     const monitoredItems: any[] = [];
 
+    // Fix round 1 #5 — item bị server từ chối phát "err"/"terminated" rồi im: phát MỘT mẫu
+    // bad (kèm statusCode) cho tag đó, giới hạn tần suất theo tag. Đóng êm (close) ⇒ không phát.
+    let closing = false;
+    const lastBadAt = new Map<string, number>();
+    const emitBad = (tag: OtTagAddress, statusCode: string) => {
+      if (closing) return;
+      const now = Date.now();
+      const prev = lastBadAt.get(tag.tagKey);
+      if (prev !== undefined && now - prev < OPCUA_MONITORED_BAD_MIN_INTERVAL_MS) return;
+      lastBadAt.set(tag.tagKey, now);
+      void Promise.resolve(
+        onSample({ tagKey: tag.tagKey, raw: undefined, value: null, quality: "bad", timestamp: new Date(), statusCode }),
+      ).catch(() => undefined);
+    };
+    const deferredBad: Array<[OtTagAddress, string]> = [];
+
     for (const tag of tags) {
       // Task 12 — cùng bộ phân giải với readTags (nsu=, kiểm cú pháp bằng thư viện).
       const r = await this.resolveAddress(tag.address);
       if ("error" in r) {
         // Bad address → skip this tag (do NOT tear down the whole subscription).
         console.error(`[OPCUA] monitored-item skip bad address "${tag.address}": ${r.error} (${r.statusCode})`);
+        deferredBad.push([tag, r.statusCode]);
         continue;
       }
       const nodeId = r.nodeId;
@@ -507,8 +572,14 @@ export class OpcuaDriver extends NotImplementedDriver {
       } catch (e) {
         // Task 12 — một item hỏng không kéo sập các tag khác của subscription.
         console.error(`[OPCUA] monitored-item create failed for "${tag.address}":`, (e as Error)?.message ?? e);
+        deferredBad.push([tag, monitoredStatus(e)]);
         continue;
       }
+      mi.on("err", (e: unknown) => emitBad(tag, monitoredStatus(e)));
+      mi.on("terminated", (e: unknown) => {
+        // terminated(undefined) = subscription kết thúc bình thường; chỉ có lỗi mới là tag hỏng.
+        if (e) emitBad(tag, monitoredStatus(e));
+      });
       mi.on("changed", (dataValue: any) => {
         try {
           const raw = dataValue?.value?.value;
@@ -544,9 +615,12 @@ export class OpcuaDriver extends NotImplementedDriver {
       try { await subscription.terminate(); } catch { /* ignore */ }
       return null;
     }
+    // Có đường push ⇒ tag không tạo được item vẫn phải nói "bad" (đường poll không chạy).
+    for (const [tag, sc] of deferredBad) emitBad(tag, sc);
 
     return {
       close: async () => {
+        closing = true;
         try {
           await subscription.terminate();
         } catch {
@@ -595,9 +669,16 @@ export class OpcuaDriver extends NotImplementedDriver {
           } else {
             const c = coerceOpcuaWriteValue(raw, builtin);
             if (!c.ok) return { tagKey: w.tagKey, error: c.error };
-            variantValue = this.Variant
-              ? new this.Variant({ dataType: c.dataType, value: c.value })
-              : { dataType: c.dataType, value: c.value };
+            try {
+              variantValue = this.Variant
+                ? new this.Variant({ dataType: c.dataType, value: c.value })
+                : { dataType: c.dataType, value: c.value };
+            } catch (e) {
+              // Fix round 1 #4 — Variant của node-opcua có thể ném với message RỖNG (vd Int64
+              // âm dưới −2^32) ⇒ trả lý do rõ thay vì chuỗi trống.
+              const why = (e as Error)?.message || "rejected by node-opcua Variant";
+              return { tagKey: w.tagKey, error: `cannot encode ${JSON.stringify(c.value)} as ${opcuaBuiltinName(c.dataType)}: ${why}` };
+            }
           }
           const node = {
             nodeId,

@@ -123,7 +123,24 @@ describe("coerceOpcuaWriteValue — typed write per node DataType (Task 12)", ()
     ok(0, SPEC.UInt16); ok(65535, SPEC.UInt16); bad(65536, SPEC.UInt16); bad(-1, SPEC.UInt16);
     ok(-2147483648, SPEC.Int32); ok(2147483647, SPEC.Int32); bad(2147483648, SPEC.Int32); bad(-2147483649, SPEC.Int32);
     ok(0, SPEC.UInt32); ok(4294967295, SPEC.UInt32); bad(4294967296, SPEC.UInt32); bad(-1, SPEC.UInt32);
-    ok(-9007199254740991, SPEC.Int64); bad(2 ** 60, SPEC.Int64); bad(-1, SPEC.UInt64); ok(9007199254740991, SPEC.UInt64);
+    bad(2 ** 60, SPEC.Int64); bad(-1, SPEC.UInt64); ok(9007199254740991, SPEC.UInt64);
+  });
+
+  it("Fix round 1 #4 — Int64 limited to what node-opcua's Variant can encode: [-2^32 .. 2^53-1]", () => {
+    // Đo: new Variant({dataType:Int64, value:-4294967297}) ném Error("") — xem báo cáo fix round 1.
+    ok(-4294967296, SPEC.Int64);
+    ok(9007199254740991, SPEC.Int64);
+    const r = bad(-4294967297, SPEC.Int64);
+    expect(r.ok === false && r.error).toMatch(/out of range for Int64/);
+    bad(-9007199254740991, SPEC.Int64);
+  });
+
+  it("Fix round 1 #4 — Float accepts 3.4028235e38 (FLT_MAX as usually written), rejects 3.5e38; Double rejects NaN/Infinity", () => {
+    ok(3.4028235e38, SPEC.Float);
+    ok(-3.4028235e38, SPEC.Float);
+    bad(3.5e38, SPEC.Float);
+    bad(Number.NaN, SPEC.Double);
+    bad(Number.NEGATIVE_INFINITY, SPEC.Double);
   });
 
   it("integer target: non-integer rejected, float noise within 1e-9 rounded", () => {

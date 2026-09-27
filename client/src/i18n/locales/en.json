@@ -3978,6 +3978,7 @@
       "datasetId": "dataset ID",
       "modelCardGovernanceFields": "model card governance fields",
       "annotationIdOrImageUrl": "annotation ID or image URL",
+      "opcuaSecurity": "OPC UA security settings",
       "idOrPackageId": "id or package ID",
       "decommissionReason": "decommission reason",
       "licenseKey": "license key",
@@ -4195,6 +4196,7 @@
     "analyticsRenderError": "Analytics render error",
     "reason": {
       "robotNotActive": "This robot is not loaded by this process's robot gateway (disabled, or ROBOT_GATEWAY_ENABLED is off), so there is no live motion lock to clear.",
+      "opcuaSecurityInvalid": "securityMode/securityPolicy is unknown or contradictory (e.g. None with Basic256Sha256, or SignAndEncrypt with None). Use None/None, or Sign/SignAndEncrypt with a policy such as Basic256Sha256.",
       "motionLockUnsupported": "This vendor's driver opens one connection per command and has no motion lock; there is nothing to clear.",
       "motionLockChanged": "The motion lock changed while you were confirming (a new link loss). Nothing was cleared; re-read the robot state and confirm again.",
       "deploymentNotAwaitingApproval": "This request is no longer awaiting approval (someone else approved/rejected it or it is being processed). Reload the list to see its current status.",

@@ -10,18 +10,21 @@
  * Cô lập: 127.0.0.1, cổng trống do OS cấp; mọi PKI (server, client, PKI mặc định của
  * node-opcua qua APPDATA/XDG_CONFIG_HOME) nằm dưới os.tmpdir(); tắt hết trong afterAll.
  */
-import { describe, it, expect, beforeAll, afterAll, vi } from "vitest";
+import { describe, it, expect, beforeAll, afterAll, afterEach, vi } from "vitest";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import net from "node:net";
 import { createRequire } from "node:module";
+import { createHash } from "node:crypto";
 
 const req = createRequire(import.meta.url);
 
 const TMP = fs.mkdtempSync(path.join(os.tmpdir(), "opcua-t12-"));
 const SAVED_ENV: Record<string, string | undefined> = {};
-for (const k of ["APPDATA", "LOCALAPPDATA", "XDG_CONFIG_HOME", "OPCUA_PKI_DIR", "SECRET_ENCRYPTION_KEY"]) SAVED_ENV[k] = process.env[k];
+for (const k of ["APPDATA", "LOCALAPPDATA", "XDG_CONFIG_HOME", "OPCUA_PKI_DIR", "SECRET_ENCRYPTION_KEY", "OPCUA_ALLOW_TRUST_ON_FIRST_USE", "OT_OPCUA_MONITORED_ITEMS"]) SAVED_ENV[k] = process.env[k];
+delete process.env.OPCUA_ALLOW_TRUST_ON_FIRST_USE;
+delete process.env.OT_OPCUA_MONITORED_ITEMS;
 // PKI mặc định của node-opcua (dùng khi SecurityMode None) → thư mục tạm, không đụng %APPDATA% thật.
 process.env.APPDATA = path.join(TMP, "appdata");
 process.env.LOCALAPPDATA = path.join(TMP, "localappdata");
@@ -92,6 +95,7 @@ async function startServer(opts: { secure: boolean; pkiName: string }): Promise<
     ["S", "String", "init"],
     ["D", "Double", 0.5],
     ["I32", "Int32", 7],
+    ["I64", "Int64", 0],
   ];
   for (const [name, dt, init] of vars) {
     store[name] = new o.Variant({ dataType: o.DataType[dt], value: init });
@@ -160,14 +164,24 @@ afterAll(async () => {
   }
 }, 60_000);
 
+// Fix round 1 — đóng driver của MỖI test (server node-opcua giới hạn số secure channel;
+// để dồn tới afterAll làm test sau bị "premature disconnection").
+afterEach(async () => {
+  const list = drivers.splice(0);
+  for (const d of list) {
+    await withTimeout(d.disconnect(), 5000, "driver disconnect").catch(() => undefined);
+  }
+});
+
 const clientPki = () => path.join(TMP, "client-pki");
 
 describe("OPC UA SignAndEncrypt/Basic256Sha256 against a real in-process server (Task 12)", () => {
   it("default (no securityMode) cannot use a SignAndEncrypt-only server, with a reason; stays bounded", async () => {
     const d = await newDriver();
     const t0 = Date.now();
+    // Fix round 1 (#8) — lý do CỤ THỂ, không chỉ "có lỗi".
     await expect(withTimeout(d.connect({ endpoint: secure.url, timeoutMs: 5000 }), 12_000, "None→secure connect")).rejects.toThrow(
-      /./,
+      /no endpoint for SecurityMode None/,
     );
     expect(Date.now() - t0).toBeLessThan(12_000);
     expect(d.isConnected()).toBe(false);
@@ -380,20 +394,155 @@ describe("OPC UA SignAndEncrypt/Basic256Sha256 against a real in-process server 
     expect(d2.isConnected()).toBe(false);
   }, 30_000);
 
-  it("trustOnFirstUse:true (explicit) accepts an unknown server certificate into a fresh trust-list", async () => {
-    const fresh = path.join(TMP, "client-pki-tofu");
+  it("trustOnFirstUse:true is REFUSED before any socket when OPCUA_ALLOW_TRUST_ON_FIRST_USE is not set (R20)", async () => {
+    delete process.env.OPCUA_ALLOW_TRUST_ON_FIRST_USE;
+    const fresh = path.join(TMP, "client-pki-tofu-refused");
     process.env.OPCUA_PKI_DIR = fresh;
     try {
       const d = await newDriver();
+      await expect(
+        withTimeout(d.connect({ endpoint: secure.url, options: { ...SEC_OPTS, trustOnFirstUse: true }, timeoutMs: 8000 }), 10_000, "tofu refused"),
+      ).rejects.toThrow(/OPCUA_ALLOW_TRUST_ON_FIRST_USE/);
+      expect(d.isConnected()).toBe(false);
+      // Không PKI nào được tạo ⇒ không bước nối nào đã chạy.
+      expect(fs.existsSync(fresh)).toBe(false);
+    } finally {
+      process.env.OPCUA_PKI_DIR = clientPki();
+    }
+  }, 30_000);
+
+  it("R20: a TOFU accept lives in an ISOLATED <pki>/tofu root — a strict adapter on the same dir is STILL refused; accept WARNs with the thumbprint", async () => {
+    const shared = path.join(TMP, "client-pki-shared");
+    process.env.OPCUA_PKI_DIR = shared;
+    process.env.OPCUA_ALLOW_TRUST_ON_FIRST_USE = "true";
+    const warn = vi.spyOn(console, "warn");
+    try {
+      const tofu = await newDriver();
       await withTimeout(
-        d.connect({ endpoint: secure.url, options: { ...SEC_OPTS, trustOnFirstUse: true }, timeoutMs: 8000 }),
+        tofu.connect({ endpoint: secure.url, options: { ...SEC_OPTS, trustOnFirstUse: true }, timeoutMs: 8000 }),
         10_000,
         "tofu connect",
       );
-      expect(d.isConnected()).toBe(true);
-      expect(fs.readdirSync(path.join(fresh, "trusted", "certs")).length).toBeGreaterThan(0);
+      expect(tofu.isConnected()).toBe(true);
+      expect(fs.readdirSync(path.join(shared, "tofu", "trusted", "certs")).length).toBeGreaterThan(0);
+
+      // Oracle độc lập: thumbprint = SHA-1 của DER chứng chỉ server (tính từ tệp PEM của server).
+      const pem = fs.readFileSync(secure.server.certificateFile, "utf8");
+      const der = Buffer.from(pem.replace(/-----[^-]+-----/g, "").replace(/\s+/g, ""), "base64");
+      const thumb = createHash("sha1").update(der).digest("hex");
+      const acceptWarns = warn.mock.calls.filter((c) => /trustOnFirstUse ACCEPTED/.test(String(c[0])));
+      expect(acceptWarns).toHaveLength(1);
+      expect(String(acceptWarns[0][0]).toLowerCase()).toContain(thumb);
+      expect(warn.mock.calls.filter((c) => /trustOnFirstUse is ON/.test(String(c[0])))).toHaveLength(1);
+
+      const strict = await newDriver();
+      await expect(
+        withTimeout(strict.connect({ endpoint: secure.url, options: SEC_OPTS, timeoutMs: 8000 }), 10_000, "strict after tofu"),
+      ).rejects.toThrow(/BadCertificateUntrusted/);
+      expect(strict.isConnected()).toBe(false);
+      const strictTrusted = path.join(shared, "trusted", "certs");
+      expect(fs.existsSync(strictTrusted) ? fs.readdirSync(strictTrusted) : []).toEqual([]);
+
+      // TOFU lần hai (đã tin trong gốc tofu) ⇒ không WARN "ACCEPTED" nữa, không WARN tư thế lần 2.
+      await tofu.disconnect();
+      await withTimeout(
+        tofu.connect({ endpoint: secure.url, options: { ...SEC_OPTS, trustOnFirstUse: true }, timeoutMs: 8000 }),
+        10_000,
+        "tofu reconnect",
+      );
+      expect(warn.mock.calls.filter((c) => /trustOnFirstUse ACCEPTED/.test(String(c[0])))).toHaveLength(1);
+      expect(warn.mock.calls.filter((c) => /trustOnFirstUse is ON/.test(String(c[0])))).toHaveLength(1);
+    } finally {
+      warn.mockRestore();
+      delete process.env.OPCUA_ALLOW_TRUST_ON_FIRST_USE;
+      process.env.OPCUA_PKI_DIR = clientPki();
+    }
+  }, 40_000);
+
+  it("#9 two adapters doing their FIRST secure connect in parallel on a fresh, empty PKI dir ⇒ both connect, one client certificate", async () => {
+    const fresh = path.join(TMP, "client-pki-race");
+    // Cách vận hành thứ hai (tài liệu): chép chứng chỉ server vào trusted/certs TRƯỚC lần nối đầu.
+    fs.mkdirSync(path.join(fresh, "trusted", "certs"), { recursive: true });
+    fs.copyFileSync(secure.server.certificateFile, path.join(fresh, "trusted", "certs", "plc.pem"));
+    process.env.OPCUA_PKI_DIR = fresh;
+    try {
+      const a = await newDriver();
+      const b = await newDriver();
+      const res = await withTimeout(
+        Promise.allSettled([
+          a.connect({ endpoint: secure.url, options: SEC_OPTS, timeoutMs: 10_000 }),
+          b.connect({ endpoint: secure.url, options: SEC_OPTS, timeoutMs: 10_000 }),
+        ]),
+        20_000,
+        "parallel first connect",
+      );
+      expect(res.map((r) => r.status), JSON.stringify(res.map((r: any) => r.reason?.message))).toEqual(["fulfilled", "fulfilled"]);
+      expect(fs.readdirSync(path.join(fresh, "own", "certs")).filter((f) => f.endsWith(".pem"))).toEqual(["client_certificate.pem"]);
+      if (process.platform !== "win32") {
+        expect(fs.statSync(path.join(fresh, "own", "private", "private_key.pem")).mode & 0o777).toBe(0o600);
+      }
     } finally {
       process.env.OPCUA_PKI_DIR = clientPki();
+    }
+  }, 40_000);
+
+  it("#4 Int64 beyond what node-opcua can encode ⇒ ok:false with a clear reason; in-range negative lands as two's complement", async () => {
+    const d = await newDriver();
+    await withTimeout(d.connect({ endpoint: secure.url, options: SEC_OPTS, timeoutMs: 8000 }), 10_000, "connect");
+    const ns = secure.nsIndex;
+    const res = await withTimeout(
+      d.writeTags([
+        { tagKey: "far", address: `ns=${ns};s=I64`, value: -5_000_000_000, dataType: "int" },
+        { tagKey: "near", address: `ns=${ns};s=I64`, value: -5, dataType: "int" },
+      ]),
+      8000,
+      "write",
+    );
+    expect(res[0].ok).toBe(false);
+    expect(res[0].error).toMatch(/out of range for Int64/);
+    expect(res[1]).toMatchObject({ ok: true });
+    // Oracle: bù hai 64 bit tính bằng BigInt, [high, low] như node-opcua lưu Int64.
+    const b = BigInt.asUintN(64, -5n);
+    expect(secure.store.I64.value).toEqual([Number(b >> 32n), Number(b & 0xffffffffn)]);
+  }, 30_000);
+
+  it("#5 monitored item the server rejects ⇒ ONE rate-limited bad sample with its statusCode; good tag keeps flowing", async () => {
+    process.env.OT_OPCUA_MONITORED_ITEMS = "true";
+    try {
+      const d = await newDriver();
+      await withTimeout(d.connect({ endpoint: secure.url, options: SEC_OPTS, timeoutMs: 8000 }), 10_000, "connect");
+      const got: any[] = [];
+      const handle = await withTimeout(
+        d.subscribe(
+          [
+            { tagKey: "D", address: `ns=${secure.nsIndex};s=D`, dataType: "float" },
+            { tagKey: "gone", address: `ns=${secure.nsIndex};s=NotThere`, dataType: "float" },
+          ],
+          (s: any) => {
+            got.push(s);
+          },
+          200,
+        ),
+        8000,
+        "subscribe",
+      );
+      const deadline = Date.now() + 8000;
+      while (Date.now() < deadline && !(got.some((s) => s.tagKey === "gone") && got.some((s) => s.tagKey === "D"))) {
+        await new Promise((r) => setTimeout(r, 100));
+      }
+      await new Promise((r) => setTimeout(r, 1000)); // cửa sổ để err + terminated cùng đến
+      const bad = got.filter((s) => s.tagKey === "gone");
+      expect(bad).toHaveLength(1);
+      expect(bad[0]).toMatchObject({ quality: "bad", value: null });
+      expect(bad[0].statusCode).toMatch(/BadNodeIdUnknown/);
+      expect(got.some((s) => s.tagKey === "D" && s.quality === "good")).toBe(true);
+      const before = got.length;
+      await withTimeout(handle.close(), 5000, "close");
+      await new Promise((r) => setTimeout(r, 300));
+      // Đóng êm không sinh mẫu bad giả.
+      expect(got.slice(before).filter((s) => s.quality === "bad")).toEqual([]);
+    } finally {
+      delete process.env.OT_OPCUA_MONITORED_ITEMS;
     }
   }, 30_000);
 
@@ -432,6 +581,12 @@ describe("legacy default (no securityMode) against a None server keeps working (
       await withTimeout(d.connect({ endpoint: plain.url, timeoutMs: 8000 }), 10_000, "plain reconnect");
       const ours = warn.mock.calls.filter((c) => /securityMode not configured/.test(String(c[0])));
       expect(ours).toHaveLength(1);
+      // R20 — securityMode "None" ĐẶT TƯỜNG MINH ⇒ WARN một lần cho endpoint này (hai lần nối ⇒ 1 dòng).
+      const e = await newDriver();
+      await withTimeout(e.connect({ endpoint: plain.url, options: { securityMode: "None" }, timeoutMs: 8000 }), 10_000, "explicit None");
+      await e.disconnect();
+      await withTimeout(e.connect({ endpoint: plain.url, options: { securityMode: "None" }, timeoutMs: 8000 }), 10_000, "explicit None 2");
+      expect(warn.mock.calls.filter((c) => /securityMode None set explicitly/.test(String(c[0])))).toHaveLength(1);
     } finally {
       warn.mockRestore();
     }

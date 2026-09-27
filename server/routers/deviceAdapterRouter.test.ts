@@ -202,6 +202,12 @@ describe("RBAC", () => {
 // doc 81 Đợt 1B Task 12 — mật khẩu OPC UA trong connectionOptions đi qua secretBox (không
 // lưu plaintext mới, không cột/migration mới). Oracle: dòng lưu KHÔNG chứa chuỗi gốc, mang
 // tiền tố enc:v1:, và giải mã (secretBox) ra đúng chuỗi gốc.
+/** Dòng THẬT trong kho giả (router nay che mật khẩu ở mọi phản hồi — Task 12 fix round 1). */
+function adapterRows(): any[] {
+  return fake.store.get((deviceAdapters as any)[Symbol.for("drizzle:Name")]) ?? [];
+}
+const storedOpts = (id: number) => adapterRows().find((r) => r.id === id)?.connectionOptions as any;
+
 describe("connectionOptions.password is sealed at rest (Task 12)", () => {
   beforeEach(() => {
     process.env.SECRET_ENCRYPTION_KEY = process.env.SECRET_ENCRYPTION_KEY || "task12-router-test-key";
@@ -216,10 +222,10 @@ describe("connectionOptions.password is sealed at rest (Task 12)", () => {
         ha: { secondaryEndpoint: "opc.tcp://10.0.0.6:4840", secondaryOptions: { userName: "op", password: "Sec-Pw" } },
       },
     });
-    const stored = JSON.stringify(a.connectionOptions);
+    const co = storedOpts(a.id);
+    const stored = JSON.stringify(co);
     expect(stored).not.toContain("Pl@in-Pw");
     expect(stored).not.toContain("Sec-Pw");
-    const co = a.connectionOptions as any;
     expect(co.password).toMatch(/^enc:v1:/);
     expect(decryptSecret(co.password)).toBe("Pl@in-Pw");
     expect(decryptSecret(co.ha.secondaryOptions.password)).toBe("Sec-Pw");
@@ -227,11 +233,68 @@ describe("connectionOptions.password is sealed at rest (Task 12)", () => {
     expect(co.userName).toBe("op");
 
     // Sửa: gửi lại nguyên ciphertext (form edit round-trip) ⇒ KHÔNG mã hoá chồng.
-    const same = await caller.update({ id: a.id, connectionOptions: { ...co } });
-    expect((same.connectionOptions as any).password).toBe(co.password);
-    const changed = await caller.update({ id: a.id, connectionOptions: { ...co, password: "New-Pw" } });
-    expect(JSON.stringify(changed.connectionOptions)).not.toContain("New-Pw");
-    expect(decryptSecret((changed.connectionOptions as any).password)).toBe("New-Pw");
+    await caller.update({ id: a.id, connectionOptions: { ...co } });
+    expect(storedOpts(a.id).password).toBe(co.password);
+    await caller.update({ id: a.id, connectionOptions: { ...co, password: "New-Pw" } });
+    expect(JSON.stringify(storedOpts(a.id))).not.toContain("New-Pw");
+    expect(decryptSecret(storedOpts(a.id).password)).toBe("New-Pw");
+  });
+
+  it("Fix round 1 #2 — list/get/create/update never return password values (ciphertext OR legacy plaintext)", async () => {
+    const a = await caller.create({
+      code: "UA9", name: "n", protocol: "opcua", endpoint: "opc.tcp://h:4840",
+      connectionOptions: { userName: "op", password: "Pw-1", ha: { secondaryEndpoint: "opc.tcp://h2:4840", secondaryOptions: { password: "Pw-2" } } },
+    });
+    // Dòng cũ còn plaintext (trước Task 12) ghi thẳng vào kho giả.
+    const legacy = await caller.create({ code: "UA10", name: "n", protocol: "opcua", endpoint: "opc.tcp://h:4840" });
+    const rows = adapterRows();
+    rows.find((r) => r.id === legacy.id).connectionOptions = { userName: "old", password: "legacy-plain", apiKey: "k-123" };
+
+    const outs = [a, await caller.get({ id: a.id }), await caller.get({ id: legacy.id }), ...(await caller.list())];
+    for (const o of outs) {
+      const j = JSON.stringify(o.connectionOptions);
+      expect(j).not.toMatch(/enc:v1:|Pw-1|Pw-2|legacy-plain|k-123/);
+    }
+    const got = (await caller.get({ id: a.id })).connectionOptions as any;
+    expect(got.password).toBe("[redacted]");
+    expect(got.ha.secondaryOptions.password).toBe("[redacted]");
+    expect(got.userName).toBe("op");
+    const upd = await caller.update({ id: a.id, name: "renamed" });
+    expect(JSON.stringify(upd.connectionOptions)).not.toMatch(/enc:v1:|Pw-1/);
+  });
+
+  it("Fix round 1 #2 — update sending the redacted placeholder back KEEPS the stored secret", async () => {
+    const { decryptSecret } = await import("../services/security/secretBox");
+    const a = await caller.create({
+      code: "UA11", name: "n", protocol: "opcua", endpoint: "opc.tcp://h:4840",
+      connectionOptions: { userName: "op", password: "Keep-Me", ha: { secondaryEndpoint: "opc.tcp://h2:4840", secondaryOptions: { password: "Keep-2" } } },
+    });
+    const form = (await caller.get({ id: a.id })).connectionOptions as any; // có "[redacted]"
+    await caller.update({ id: a.id, connectionOptions: { ...form, securityMode: "SignAndEncrypt" } });
+    const row = adapterRows().find((r) => r.id === a.id);
+    expect(decryptSecret(row.connectionOptions.password)).toBe("Keep-Me");
+    expect(decryptSecret(row.connectionOptions.ha.secondaryOptions.password)).toBe("Keep-2");
+    expect(row.connectionOptions.securityMode).toBe("SignAndEncrypt");
+    // Placeholder khi TẠO (không có gì để giữ) ⇒ không lưu chuỗi placeholder làm mật khẩu.
+    const b = await caller.create({ code: "UA12", name: "n", protocol: "opcua", endpoint: "opc.tcp://h:4840", connectionOptions: { userName: "x", password: "[redacted]" } });
+    const rowB = adapterRows().find((r) => r.id === b.id);
+    expect(rowB.connectionOptions.password).toBeUndefined();
+  });
+
+  it("Fix round 1 #6 — contradictory OPC UA security is refused at save time (create + update), other protocols untouched", async () => {
+    await expect(
+      caller.create({ code: "UA13", name: "n", protocol: "opcua", endpoint: "opc.tcp://h:4840", connectionOptions: { securityMode: "None", securityPolicy: "Basic256Sha256" } }),
+    ).rejects.toMatchObject({ code: "BAD_REQUEST" });
+    const ok = await caller.create({ code: "UA14", name: "n", protocol: "opcua", endpoint: "opc.tcp://h:4840" });
+    await expect(caller.update({ id: ok.id, connectionOptions: { securityMode: "SignAndEncrypt", securityPolicy: "None" } })).rejects.toThrow(
+      /requires a securityPolicy/,
+    );
+    await expect(
+      caller.update({ id: ok.id, connectionOptions: { ha: { secondaryEndpoint: "opc.tcp://h2", secondaryOptions: { securityMode: "Bogus" } } } }),
+    ).rejects.toMatchObject({ code: "BAD_REQUEST" });
+    // Modbus không có khái niệm securityMode của OPC UA ⇒ không kiểm.
+    const mb = await caller.create({ code: "MB1", name: "n", protocol: "modbus", endpoint: "tcp://h:502", connectionOptions: { securityMode: "whatever" } });
+    expect((mb.connectionOptions as any).securityMode).toBe("whatever");
   });
 
   it("no password ⇒ connectionOptions stored unchanged; null stays null", async () => {

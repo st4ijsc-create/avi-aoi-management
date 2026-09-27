@@ -32,7 +32,35 @@ import { createDriver } from "../services/ot/driverRegistry";
 import "../services/ot"; // side-effect: register all drivers (stub + 5 protocol scaffolds)
 import type { OtProtocol } from "../services/ot/otDriver";
 import { probeOtConnection } from "../services/ot/probeConnection";
-import { sealConnectionOptionSecrets } from "../services/ot/connectionSecrets";
+import {
+  sealConnectionOptionSecrets,
+  redactAdapterRow,
+  restoreRedactedSecrets,
+} from "../services/ot/connectionSecrets";
+import { parseOpcuaSecurityOptions } from "../services/ot/drivers/opcuaSecurity";
+
+/**
+ * doc 81 Đợt 1B Task 12 fix round 1 (#6) — kiểm securityMode/securityPolicy của OPC UA LÚC
+ * LƯU (cả endpoint dự phòng ha.secondaryOptions), để tổ hợp mâu thuẫn không nằm im trong DB
+ * tới lần nối đầu. Chi tiết kỹ thuật đi trong message (fallback), câu dịch qua reason.
+ */
+function assertOpcuaSecurityOnSave(options: Record<string, unknown> | null | undefined): void {
+  const check = (o: unknown) => {
+    if (o && typeof o === "object" && !Array.isArray(o)) parseOpcuaSecurityOptions(o as Record<string, unknown>);
+  };
+  try {
+    check(options);
+    const ha = options?.ha as Record<string, unknown> | undefined;
+    if (ha && typeof ha === "object") check(ha.secondaryOptions);
+  } catch (e) {
+    throw appError(
+      "BAD_REQUEST",
+      "INVALID_VALUE",
+      { field: "opcuaSecurity", reason: "opcuaSecurityInvalid" },
+      (e as Error)?.message || "invalid OPC UA security configuration",
+    );
+  }
+}
 
 async function getDb() {
   const db = await getDbRaw();
@@ -102,11 +130,13 @@ export const deviceAdapterRouter = router({
       if (input?.machineId != null) conds.push(eq(deviceAdapters.machineId, input.machineId));
       if (input?.protocol != null) conds.push(eq(deviceAdapters.protocol, input.protocol));
       if (input?.isEnabled != null) conds.push(eq(deviceAdapters.isEnabled, input.isEnabled));
-      return db
+      const rows = await db
         .select()
         .from(deviceAdapters)
         .where(conds.length ? and(...conds) : undefined)
         .orderBy(desc(deviceAdapters.createdAt));
+      // doc 81 Đợt 1B Task 12 fix round 1 — bí mật (ciphertext lẫn plaintext cũ) không rời server.
+      return rows.map(redactAdapterRow);
     }),
 
   get: protectedProcedure
@@ -121,7 +151,7 @@ export const deviceAdapterRouter = router({
         .from(deviceTags)
         .where(eq(deviceTags.adapterId, input.id))
         .orderBy(deviceTags.tagKey);
-      return { ...adapter, tags };
+      return { ...redactAdapterRow(adapter), tags };
     }),
 
   create: protectedProcedure
@@ -129,6 +159,13 @@ export const deviceAdapterRouter = router({
     .input(adapterCreateInput)
     .mutation(async ({ input, ctx }) => {
       const db = await getDb();
+      // Fix round 1 — placeholder "[redacted]" khi TẠO không có gì để giữ ⇒ bỏ khoá; bảo mật
+      // OPC UA kiểm ngay lúc lưu (tổ hợp mâu thuẫn ⇒ BAD_REQUEST có lý do).
+      const createOptions =
+        input.connectionOptions == null
+          ? input.connectionOptions
+          : (restoreRedactedSecrets(input.connectionOptions, undefined) as Record<string, unknown>);
+      if (input.protocol === "opcua") assertOpcuaSecurityOnSave(createOptions);
       try {
         const [row] = await db
           .insert(deviceAdapters)
@@ -138,14 +175,14 @@ export const deviceAdapterRouter = router({
             protocol: input.protocol,
             endpoint: input.endpoint,
             // doc 81 Đợt 1B Task 12 — mật khẩu (OPC UA UserName) lưu dạng secretBox enc:v1:.
-            connectionOptions: sealConnectionOptionSecrets(input.connectionOptions) ?? null,
+            connectionOptions: sealConnectionOptionSecrets(createOptions) ?? null,
             pollIntervalMs: input.pollIntervalMs,
             machineId: input.machineId ?? null,
             isEnabled: input.isEnabled,
             createdBy: ctx.user.id,
           })
           .returning();
-        return row;
+        return redactAdapterRow(row);
       } catch (err) {
         if (isUniqueViolation(err)) {
           throw appError("CONFLICT", "ENTITY_DUPLICATE", { entity: "adapter" }, `Mã adapter "${input.code}" đã tồn tại.`);
@@ -161,14 +198,28 @@ export const deviceAdapterRouter = router({
       const db = await getDb();
       const { id, ...rest } = input;
       const patch: Record<string, unknown> = { ...rest, updatedAt: new Date() };
-      // doc 81 Đợt 1B Task 12 — cùng niêm phong mật khẩu như create (idempotent với enc:v1:).
-      if (rest.connectionOptions !== undefined) {
-        patch.connectionOptions = sealConnectionOptionSecrets(rest.connectionOptions);
+      if (rest.connectionOptions !== undefined || rest.protocol === "opcua") {
+        // Fix round 1 — cần dòng đã lưu để (a) giữ bí mật khi form gửi lại "[redacted]",
+        // (b) biết protocol thực khi kiểm bảo mật OPC UA lúc lưu.
+        const [existing] = await db.select().from(deviceAdapters).where(eq(deviceAdapters.id, id)).limit(1);
+        if (!existing) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "adapter" }, "Adapter không tồn tại.");
+        const storedOptions = (existing.connectionOptions as Record<string, unknown> | null) ?? null;
+        const nextOptions =
+          rest.connectionOptions === undefined
+            ? storedOptions
+            : rest.connectionOptions === null
+              ? null
+              : (restoreRedactedSecrets(rest.connectionOptions, storedOptions) as Record<string, unknown>);
+        if ((rest.protocol ?? existing.protocol) === "opcua") assertOpcuaSecurityOnSave(nextOptions);
+        // doc 81 Đợt 1B Task 12 — cùng niêm phong mật khẩu như create (idempotent với enc:v1:).
+        if (rest.connectionOptions !== undefined) {
+          patch.connectionOptions = sealConnectionOptionSecrets(nextOptions);
+        }
       }
       try {
         const [row] = await db.update(deviceAdapters).set(patch).where(eq(deviceAdapters.id, id)).returning();
         if (!row) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "adapter" }, "Adapter không tồn tại.");
-        return row;
+        return redactAdapterRow(row);
       } catch (err) {
         if (err instanceof TRPCError) throw err;
         if (isUniqueViolation(err)) {

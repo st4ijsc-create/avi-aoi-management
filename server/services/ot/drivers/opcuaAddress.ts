@@ -60,7 +60,11 @@ const BUILTIN_NAME: Record<number, string> = Object.fromEntries(
   Object.entries(OPCUA_BUILTIN).map(([k, v]) => [v, k]),
 );
 
-/** Miền số nguyên theo Part 3 (Int64/UInt64 kẹp vào miền số nguyên an toàn của JS). */
+/**
+ * Miền số nguyên theo Part 3. Int64/UInt64 kẹp vào miền mà Variant của node-opcua 2.174 MÃ
+ * HOÁ ĐƯỢC từ một number (đo: Int64 −4294967297 ⇒ Variant ném Error("") rỗng; ≥ −2^32 và
+ * ≤ 2^53−1 thì đúng) — fix round 1 #4.
+ */
 const INT_RANGE: Record<number, [number, number]> = {
   [OPCUA_BUILTIN.SByte]: [-128, 127],
   [OPCUA_BUILTIN.Byte]: [0, 255],
@@ -68,12 +72,21 @@ const INT_RANGE: Record<number, [number, number]> = {
   [OPCUA_BUILTIN.UInt16]: [0, 65535],
   [OPCUA_BUILTIN.Int32]: [-2147483648, 2147483647],
   [OPCUA_BUILTIN.UInt32]: [0, 4294967295],
-  [OPCUA_BUILTIN.Int64]: [-Number.MAX_SAFE_INTEGER, Number.MAX_SAFE_INTEGER],
+  [OPCUA_BUILTIN.Int64]: [-4294967296, Number.MAX_SAFE_INTEGER],
   [OPCUA_BUILTIN.UInt64]: [0, Number.MAX_SAFE_INTEGER],
 };
 
-/** Float IEEE-754 32 bit lớn nhất. */
-const FLOAT32_MAX = 3.4028234663852886e38;
+/**
+ * Trần Float: FLT_MAX như thường viết (3.4028235e38 — làm tròn về float32 vẫn ra FLT_MAX
+ * 3.4028234663852886e38). Fix round 1 #4. Double: mọi số HỮU HẠN; NaN/±Infinity bị từ chối
+ * (toFiniteNumber) — không ghi NaN/Inf xuống PLC.
+ */
+const FLOAT32_MAX = 3.4028235e38;
+
+/** Tên kiểu dựng sẵn (cho thông điệp lỗi). */
+export function opcuaBuiltinName(builtinType: number): string {
+  return BUILTIN_NAME[builtinType] ?? `builtin#${builtinType}`;
+}
 
 export type CoercedOpcuaWrite =
   | { ok: true; dataType: number; value: number | boolean | string }
