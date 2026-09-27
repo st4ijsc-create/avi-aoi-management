@@ -55,7 +55,12 @@ vi.mock("drizzle-orm", () => ({
 
 vi.mock("../../../drizzle/schema", () => ({
   machineRecipes: { __table: "machine_recipes", id: { __c: "id" }, code: { __c: "code" }, status: { __c: "status" }, version: { __c: "version" } },
-  recipeLoadLog: { __table: "recipe_load_log", recipeCode: { __c: "recipeCode" }, machineId: { __c: "machineId" }, createdAt: { __c: "createdAt" } },
+  recipeLoadLog: {
+    __table: "recipe_load_log", recipeCode: { __c: "recipeCode" }, machineId: { __c: "machineId" }, createdAt: { __c: "createdAt" },
+    // doc 80 Đợt 1 Task 9 fix round 1 — rollback gate evidence columns.
+    recipeId: { __c: "recipeId" }, fromRecipeId: { __c: "fromRecipeId" }, action: { __c: "action" },
+  },
+  recipeDeployments: { __table: "recipe_deployments", previousRecipeId: { __c: "previousRecipeId" }, deployedAt: { __c: "deployedAt" } },
 }));
 
 function matches(row: any, pred: any): boolean {
@@ -68,7 +73,8 @@ function matches(row: any, pred: any): boolean {
 // Store-keyed fake so release/rollback (which now hit machine_recipes via `tx` directly)
 // AND the mocked machineRecipe helpers observe the SAME `recipes` array.
 function makeFakeDb() {
-  const arrOf = (t: any): any[] => (t?.__table === "machine_recipes" ? recipes : loadLog);
+  // recipe_deployments: this service never writes the ledger (deployRecipe is stubbed) ⇒ empty.
+  const arrOf = (t: any): any[] => (t?.__table === "machine_recipes" ? recipes : t?.__table === "recipe_deployments" ? [] : loadLog);
   const db: any = {
     select: (_cols?: any) => ({
       from: (t: any) => {

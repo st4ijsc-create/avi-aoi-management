@@ -15,6 +15,7 @@
  */
 import { describe, it, expect, beforeAll, afterAll } from "vitest";
 import postgres from "postgres";
+import { waitForLockWaiters, backendPid } from "./lockWait.testkit";
 
 const DB_URL = process.env.DATABASE_URL;
 const RUN = `t9rcp${Date.now().toString(36)}`;
@@ -162,7 +163,9 @@ describe.skipIf(!DB_URL)("Task 9 — MỘT cổng phát hành recipe cho /recipe
       const gate = new Promise<void>((r) => (release = r));
       let locked!: () => void;
       const lockedP = new Promise<void>((r) => (locked = r));
+      let holderPid = 0;
       const holder = ext.begin(async (tx) => {
+        holderPid = await backendPid(tx);
         await tx`SELECT id FROM machine_recipes WHERE id = ${v1} FOR UPDATE`;
         await tx`UPDATE machine_recipes SET status = 'archived', "updatedAt" = now() WHERE id = ${v1}`;
         locked();
@@ -170,7 +173,9 @@ describe.skipIf(!DB_URL)("Task 9 — MỘT cổng phát hành recipe cho /recipe
       });
       await lockedP;
       const p = caller.recipes.deploy({ recipeId: v1, machineId: ids.mAoi }).catch((e) => e);
-      await new Promise((r) => setTimeout(r, 400)); // deploy đã đọc (MVCC: còn draft) và đang chờ khoá mã
+      // fix round 1 — không ngủ cố định: chờ tới khi lượt deploy THẬT SỰ xếp hàng sau khoá của
+      // giao dịch ngoài (nó đã đọc hàng không khoá — MVCC: còn 'draft' — và đang ở FOR UPDATE).
+      expect(await waitForLockWaiters(sql, { holderPid })).toBeGreaterThanOrEqual(1);
       release();
       await holder;
       const res = await p;
@@ -214,5 +219,81 @@ describe.skipIf(!DB_URL)("Task 9 — MỘT cổng phát hành recipe cho /recipe
     const err = await svc.releaseVersion(v1, U_DEPLOYER).catch((e) => e);
     expect(codeOf(err)).toBe("PRECONDITION_FAILED");
     expect(reasonOf(err)).toBe("recipeMachineTypeMismatch");
+  });
+
+  // ── fix round 1 — rollback: "đã bị THAY" (hợp lệ) vs "cố ý LƯU TRỮ" (recipeRetired) ────────────
+  it("★★★ EI: lưu trữ TAY rồi rollbackToVersion ⇒ PRECONDITION_FAILED (recipeRetired) — chưa từng bị thay", async () => {
+    const code = newCode();
+    const v1 = await mkRecipe(code, 1, { approved: true });
+    await svc.releaseVersion(v1, U_DEPLOYER);
+    await svc.archiveVersion(v1, U_DEPLOYER); // cố ý nghỉ hưu bản đang chạy
+    const v2 = await mkRecipe(code, 2, { approved: true });
+    await svc.releaseVersion(v2, U_DEPLOYER);
+    const err = await svc.rollbackToVersion(v1, U_DEPLOYER).catch((e) => e);
+    expect(codeOf(err)).toBe("PRECONDITION_FAILED");
+    expect(reasonOf(err)).toBe("recipeRetired");
+    expect(await statusOf(v1)).toBe("archived");
+    expect(await statusOf(v2)).toBe("active");
+  });
+
+  it("★★★ EI: bị THAY rồi SAU ĐÓ lưu trữ tay ⇒ PRECONDITION_FAILED (recipeRetired)", async () => {
+    const code = newCode();
+    const v1 = await mkRecipe(code, 1, { approved: true });
+    const v2 = await mkRecipe(code, 2, { approved: true });
+    await svc.releaseVersion(v1, U_DEPLOYER);
+    await svc.releaseVersion(v2, U_DEPLOYER); // v1 bị thay (fromRecipeId = v1)
+    await new Promise((r) => setTimeout(r, 20));
+    await svc.archiveVersion(v1, U_DEPLOYER); // rồi cố ý nghỉ hưu
+    const err = await svc.rollbackToVersion(v1, U_DEPLOYER).catch((e) => e);
+    expect(codeOf(err)).toBe("PRECONDITION_FAILED");
+    expect(reasonOf(err)).toBe("recipeRetired");
+    expect(await statusOf(v2)).toBe("active");
+  });
+
+  it("EI: bản 'archived' KHÔNG có dấu vết nào (không bị thay, không lưu trữ tay) ⇒ recipeRetired (fail-closed)", async () => {
+    const code = newCode();
+    const v1 = await mkRecipe(code, 1, { status: "archived", approved: true });
+    const err = await svc.rollbackToVersion(v1, U_DEPLOYER).catch((e) => e);
+    expect(codeOf(err)).toBe("PRECONDITION_FAILED");
+    expect(reasonOf(err)).toBe("recipeRetired");
+  });
+
+  it("★★★ /recipes: deploy v1, deploy v2 (v1 bị thay), rồi lưu trữ TAY v1 ⇒ rollback PRECONDITION_FAILED (recipeRetired)", async () => {
+    const code = newCode();
+    const v1 = await mkRecipe(code, 1, { approved: true });
+    const v2 = await mkRecipe(code, 2, { approved: true });
+    await caller.recipes.deploy({ recipeId: v1, machineId: ids.mSpi });
+    await caller.recipes.deploy({ recipeId: v2, machineId: ids.mSpi });
+    await new Promise((r) => setTimeout(r, 20));
+    await caller.recipes.archive({ id: v1 }); // ghi genealogy action='archive' cho v1
+    const err = await caller.recipes.rollback({ machineId: ids.mSpi }).catch((e) => e);
+    expect(codeOf(err)).toBe("PRECONDITION_FAILED");
+    expect(reasonOf(err)).toBe("recipeRetired");
+    expect(await statusOf(v2)).toBe("active");
+  });
+
+  // ── fix round 1 (item 5) — rollbackToVersion: sai loại máy, chưa duyệt ─────────────────────
+  it("EI rollbackToVersion tới bản đã bị THAY nhưng recipe AOI gắn máy SPI ⇒ recipeMachineTypeMismatch", async () => {
+    const code = newCode();
+    const v1 = await mkRecipe(code, 1, { status: "archived", approved: true, machineType: "AOI", machineId: ids.mSpi });
+    const v2 = await mkRecipe(code, 2, { status: "active", approved: true });
+    // bằng chứng "bị thay" (đúng hình release ghi: fromRecipeId = bản bị thay)
+    await sql`INSERT INTO recipe_load_log (action, "recipeId", "recipeCode", "recipeVersion", "fromRecipeId", "fromVersion", status)
+              VALUES ('release', ${v2}, ${code}, 2, ${v1}, 1, 'released')`;
+    const err = await svc.rollbackToVersion(v1, U_DEPLOYER).catch((e) => e);
+    expect(codeOf(err)).toBe("PRECONDITION_FAILED");
+    expect(reasonOf(err)).toBe("recipeMachineTypeMismatch");
+    expect(await statusOf(v2)).toBe("active");
+  });
+
+  it("EI rollbackToVersion tới bản CHƯA duyệt ⇒ recipeNotApproved", async () => {
+    const code = newCode();
+    const v1 = await mkRecipe(code, 1, { approved: true });
+    await svc.releaseVersion(v1, U_DEPLOYER);
+    const draft = await mkRecipe(code, 2, { approved: false });
+    const err = await svc.rollbackToVersion(draft, U_DEPLOYER).catch((e) => e);
+    expect(codeOf(err)).toBe("PRECONDITION_FAILED");
+    expect(reasonOf(err)).toBe("recipeNotApproved");
+    expect(await statusOf(v1)).toBe("active");
   });
 });

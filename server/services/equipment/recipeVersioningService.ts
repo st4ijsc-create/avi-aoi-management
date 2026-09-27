@@ -239,8 +239,9 @@ export async function rollbackToVersion(
   return d.transaction(async (tx) => {
     const target = await lockCodeAndReadTarget(tx, toRecipeId);
     // FLOW-01/INT-02 (doc 80 Task 3) → doc 80 Đợt 1 Task 9: rollback also PROMOTES `target`, so it
-    // passes the SAME release gate; a superseded (archived) prior version is a legal rollback target.
-    await assertRecipeReleasable(tx, target, { operation: "rollbackRecipeVersion", allowArchived: true });
+    // passes the SAME release gate. An archived target is legal only when it was REPLACED and not
+    // deliberately archived afterwards (fix round 1 — else recipeRetired).
+    await assertRecipeReleasable(tx, target, { operation: "rollbackRecipeVersion", rollbackTarget: true });
 
     const [current] = await tx
       .select()
@@ -288,12 +289,16 @@ export async function recordLoad(
 
   let deploymentId: number | null = null;
   if (input.deploy) {
-    const dep = await deployRecipe({
-      recipeId: input.recipeId,
-      machineId: input.machineId,
-      deployedBy: input.performedBy,
-      notes: input.notes ?? null,
-    });
+    // R-T9a — outside Task 9: keep the pre-task deploy gate (approvedBy only) byte-identical.
+    const dep = await deployRecipe(
+      {
+        recipeId: input.recipeId,
+        machineId: input.machineId,
+        deployedBy: input.performedBy,
+        notes: input.notes ?? null,
+      },
+      "legacyApprovedOnly",
+    );
     deploymentId = dep.id;
   }
 

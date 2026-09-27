@@ -4269,7 +4269,8 @@
       "runGateChanged": "Lượt chạy không còn chờ ở bước bạn đang xem (bước đó đã được người khác quyết định). Tải lại để xem bước đang chờ hiện tại.",
       "recipeNotApproved": "Phiên bản công thức này chưa được người thứ hai duyệt — không thể triển khai/phát hành/quay lui về nó.",
       "recipeArchived": "Phiên bản công thức này đã lưu trữ — hãy tạo phiên bản mới thay vì đưa bản đã lưu trữ vào chạy.",
-      "recipeMachineTypeMismatch": "Công thức này dành cho loại máy khác với máy đích — không thể triển khai lên máy này."
+      "recipeMachineTypeMismatch": "Công thức này dành cho loại máy khác với máy đích — không thể triển khai lên máy này.",
+      "recipeRetired": "Phiên bản này đã bị CỐ Ý lưu trữ (không phải chỉ bị thay bằng bản mới), hoặc không có dấu vết từng bị thay — không thể quay lui về nó. Hãy tạo phiên bản mới."
     },
     "client": {
       "generic": "Lỗi hệ thống, vui lòng thử lại",

@@ -22,6 +22,7 @@ import {
   machineRecipes,
   machines,
   recipeDeployments,
+  recipeLoadLog,
   users,
   type MachineRecipe,
   type RecipeDeployment,
@@ -47,19 +48,22 @@ export type RecipeReleaseOperation =
   | "rollbackRecipeVersion";
 
 /**
- * doc 80 Đợt 1 Task 9 (§12 "Còn mở" — T3) — THE one release gate for every path that makes a
- * recipe version `active` on the shop floor: `/recipes` deploy + rollback (deployWithinTx) and
- * equipmentIntegration release + rollback (recipeVersioningService). Before this, the two
- * surfaces had separate, drifting checks (/recipes rollback checked nothing; deploy/release let an
- * archived version or a recipe of another machine type through).
+ * doc 80 Đợt 1 Task 9 (§12 "Còn mở" — T3) — THE one release gate for the release paths the task
+ * owns: `/recipes` deploy + rollback (deployWithinTx) and equipmentIntegration release + rollback
+ * (recipeVersioningService). Before this, the two surfaces had separate, drifting checks
+ * (/recipes rollback checked nothing; deploy/release let an archived version or a recipe of
+ * another machine type through). Callers OUTSIDE the task (recipe-set distribute, recordLoad with
+ * deploy, changeover.approve) keep their pre-task behaviour through `deployRecipe(…,
+ * "legacyApprovedOnly")` — fix round 1, ruling R-T9a.
  *
  * MUST be called on the row read UNDER the code's `SELECT … FOR UPDATE` (same transaction), so a
  * concurrent archive/edit that committed while the promoter waited for the lock is seen.
  * Refuses with PRECONDITION_FAILED + OPERATION_FAILED(reason):
  *   • `recipeNotApproved`         — no second-approver sign-off (approvedBy null);
- *   • `recipeArchived`            — archived version on a FORWARD promotion (deploy/release). A
- *     ROLLBACK (`allowArchived`) targets the version it replaces back — superseded versions are
- *     stored as 'archived' (the status enum has no separate "superseded"), so it stays allowed;
+ *   • `recipeArchived`            — archived version on a FORWARD promotion (deploy/release);
+ *   • `recipeRetired`             — ROLLBACK (`rollbackTarget`) to an archived version WITHOUT
+ *     positive evidence that it was REPLACED (superseded versions are stored 'archived' too), or
+ *     one that was DELIBERATELY archived after its last replacement — see readRollbackEvidence;
  *   • `recipeMachineTypeMismatch` — both the recipe's `machineType` and the target machine's
  *     type are known and differ ("đúng loại máy nếu biết"). Target machine = `opts.machineId`
  *     (deploy/rollback onto a machine) else the recipe's own bound `machineId`.
@@ -67,7 +71,7 @@ export type RecipeReleaseOperation =
 export async function assertRecipeReleasable(
   tx: DbOrTx,
   recipe: MachineRecipe,
-  opts: { operation: RecipeReleaseOperation; machineId?: number | null; allowArchived?: boolean },
+  opts: { operation: RecipeReleaseOperation; machineId?: number | null; rollbackTarget?: boolean },
 ): Promise<void> {
   const label = `Recipe #${recipe.id} (${recipe.code} v${recipe.version})`;
   if (recipe.approvedBy == null) {
@@ -78,13 +82,26 @@ export async function assertRecipeReleasable(
       `${label} has not been approved — a second approver must sign off before it can be deployed/released/rolled back to.`,
     );
   }
-  if (recipe.status === "archived" && !opts.allowArchived) {
-    throw appError(
-      "PRECONDITION_FAILED",
-      "OPERATION_FAILED",
-      { operation: opts.operation, reason: "recipeArchived" },
-      `${label} is archived — create a new version instead of promoting an archived one.`,
-    );
+  if (recipe.status === "archived") {
+    if (!opts.rollbackTarget) {
+      throw appError(
+        "PRECONDITION_FAILED",
+        "OPERATION_FAILED",
+        { operation: opts.operation, reason: "recipeArchived" },
+        `${label} is archived — create a new version instead of promoting an archived one.`,
+      );
+    }
+    const ev = await readRollbackEvidence(tx, recipe.id);
+    if (!ev.replacedAt || (ev.archivedAt && ev.archivedAt.getTime() >= ev.replacedAt.getTime())) {
+      throw appError(
+        "PRECONDITION_FAILED",
+        "OPERATION_FAILED",
+        { operation: opts.operation, reason: "recipeRetired" },
+        ev.replacedAt
+          ? `${label} was deliberately archived after it was last replaced — it cannot be rolled back to.`
+          : `${label} is archived with no record of having been replaced — treated as retired; it cannot be rolled back to.`,
+      );
+    }
   }
   const targetMachineId = opts.machineId ?? recipe.machineId ?? null;
   if (recipe.machineType != null && targetMachineId != null) {
@@ -102,6 +119,49 @@ export async function assertRecipeReleasable(
       );
     }
   }
+}
+
+/**
+ * Fix round 1 (Task 9) — why is an archived version archived? No migration: the evidence already
+ * exists in two append-only trails.
+ *   • REPLACED (superseded): the latest of
+ *       - recipe_load_log.createdAt where fromRecipeId = id (release/rollback wrote "from" = the
+ *         version it displaced; /recipes rollback genealogy too), and
+ *       - recipe_deployments.deployedAt where previousRecipeId = id (/recipes deploy ledger).
+ *   • DELIBERATELY ARCHIVED: the latest recipe_load_log.createdAt where action='archive' AND
+ *     recipeId = id (equipmentIntegration archiveVersion and the /recipes archive route both write
+ *     it).
+ * Rollback to an archived version is legal only when it was replaced AND not archived again at or
+ * after that replacement. Both timestamps are naive `timestamp` columns read through the same
+ * driver, so they compare consistently. ⚠ recipe_load_log has tenant RLS (inert unless
+ * app.tenant_rls_active='on', which these transactions never set) and the /recipes genealogy
+ * write is fail-soft: a lost 'archive' row weakens the "retired" signal (see report).
+ */
+async function readRollbackEvidence(
+  tx: DbOrTx,
+  recipeId: number,
+): Promise<{ replacedAt: Date | null; archivedAt: Date | null }> {
+  const [fromLog] = await tx
+    .select()
+    .from(recipeLoadLog)
+    .where(eq(recipeLoadLog.fromRecipeId, recipeId))
+    .orderBy(desc(recipeLoadLog.createdAt))
+    .limit(1);
+  const [fromLedger] = await tx
+    .select()
+    .from(recipeDeployments)
+    .where(eq(recipeDeployments.previousRecipeId, recipeId))
+    .orderBy(desc(recipeDeployments.deployedAt))
+    .limit(1);
+  const [archived] = await tx
+    .select()
+    .from(recipeLoadLog)
+    .where(and(eq(recipeLoadLog.recipeId, recipeId), eq(recipeLoadLog.action, "archive")))
+    .orderBy(desc(recipeLoadLog.createdAt))
+    .limit(1);
+  const candidates = [fromLog?.createdAt, fromLedger?.deployedAt].filter((d): d is Date => d instanceof Date);
+  const replacedAt = candidates.length ? new Date(Math.max(...candidates.map((d) => d.getTime()))) : null;
+  return { replacedAt, archivedAt: archived?.createdAt instanceof Date ? archived.createdAt : null };
 }
 
 /**
@@ -296,12 +356,16 @@ export interface DeployRecipeInput {
 async function deployWithinTx(
   tx: DbOrTx,
   input: DeployRecipeInput,
-  gate: { operation: "deployRecipe" | "rollbackRecipeDeployment"; allowArchived: boolean },
+  gate: { operation: "deployRecipe" | "rollbackRecipeDeployment"; rollbackTarget: boolean } | null,
 ): Promise<RecipeDeployment> {
   // Row-lock ALL versions sharing this code → serialize concurrent promoters; target read UNDER it.
   const target = await lockCodeAndReadTarget(tx, input.recipeId);
-  // doc 80 Đợt 1 Task 9 — the ONE release gate (approved · not archived on deploy · machine type).
-  await assertRecipeReleasable(tx, target, { operation: gate.operation, machineId: input.machineId, allowArchived: gate.allowArchived });
+  // doc 80 Đợt 1 Task 9 — the ONE release gate (approved · not archived on deploy · rollback only
+  // to a REPLACED version · machine type). `null` = legacy callers (R-T9a): no gate here, their
+  // pre-task approvedBy check ran in deployRecipe exactly as at 4fb1ec1e7.
+  if (gate) {
+    await assertRecipeReleasable(tx, target, { operation: gate.operation, machineId: input.machineId, rollbackTarget: gate.rollbackTarget });
+  }
 
   // Current active version for the SAME code (the one being superseded) — read UNDER the lock.
   const [previous] = await tx
@@ -349,12 +413,36 @@ async function deployWithinTx(
  * single transaction with a FOR UPDATE lock on the code (W2-6 — closes the TOCTOU that
  * let two concurrent deploys both create an active version).
  */
-export async function deployRecipe(input: DeployRecipeInput): Promise<RecipeDeployment> {
+/**
+ * Fix round 1 (Task 9, ruling R-T9a) — WHICH gate a deploy caller gets, explicitly:
+ *   • "strict"             — the shared release gate (assertRecipeReleasable) under the code lock.
+ *                            Only `/recipes` recipes.deploy uses it.
+ *   • "legacyApprovedOnly" — EXACTLY what deployRecipe enforced at 4fb1ec1e7: an unlocked read,
+ *                            NOT_FOUND, then `approvedBy == null` ⇒ plain Error (same Vietnamese
+ *                            text). Archived versions and other machine types still go through.
+ *                            Used by callers outside Task 9 (constraint 6: byte-identical):
+ *                            recipeSetService distribute, recipeVersioningService.recordLoad
+ *                            (deploy:true) and changeover.approve. Whether recipe sets should get
+ *                            the strict gate is an OWNER decision (task-9 report).
+ */
+export type RecipeDeployPolicy = "strict" | "legacyApprovedOnly";
+
+export async function deployRecipe(input: DeployRecipeInput, policy: RecipeDeployPolicy): Promise<RecipeDeployment> {
   const d = await db();
   return d.transaction(async (tx) => {
-    // W2-9 (doc 25 T6) SoD gate — now the shared release gate inside deployWithinTx (doc 80 Đợt 1
-    // Task 9): approved, NOT archived, machine type matches; evaluated under the code lock.
-    return deployWithinTx(tx, input, { operation: "deployRecipe", allowArchived: false });
+    if (policy === "strict") {
+      // doc 80 Đợt 1 Task 9 — shared release gate inside deployWithinTx, under the code lock.
+      return deployWithinTx(tx, input, { operation: "deployRecipe", rollbackTarget: false });
+    }
+    // W2-9 (doc 25 T6) — SoD gate as it was before Task 9 (legacy callers, R-T9a): only an
+    // APPROVED recipe (approved by someone other than its creator, enforced at approveRecipe) may
+    // be deployed.
+    const [target] = await tx.select().from(machineRecipes).where(eq(machineRecipes.id, input.recipeId)).limit(1);
+    if (!target) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "recipe" }, `Recipe #${input.recipeId} not found`);
+    if (target.approvedBy == null) {
+      throw new Error("Recipe chưa được trình duyệt (second-approver) — cần một người khác duyệt trước khi deploy.");
+    }
+    return deployWithinTx(tx, input, null);
   });
 }
 
@@ -382,8 +470,9 @@ export async function rollbackRecipe(input: { machineId: number; deployedBy: num
 
     // Re-deploy the previous recipe within the SAME transaction; mark the rolled-back-from deployment.
     // doc 80 Đợt 1 Task 9 — the target passes the SAME release gate (before: none — an unapproved
-    // previous version became active again). allowArchived: the version being rolled back TO was
-    // archived when it got superseded.
+    // previous version became active again). rollbackTarget: the version being rolled back TO was
+    // archived when it got superseded — allowed only with replacement evidence and no later
+    // deliberate archive (fix round 1, reason recipeRetired).
     const deployment = await deployWithinTx(
       tx,
       {
@@ -393,7 +482,7 @@ export async function rollbackRecipe(input: { machineId: number; deployedBy: num
         deployedBy: input.deployedBy,
         notes: `Rollback of deployment #${last.id}`,
       },
-      { operation: "rollbackRecipeDeployment", allowArchived: true },
+      { operation: "rollbackRecipeDeployment", rollbackTarget: true },
     );
 
     await tx

@@ -323,6 +323,8 @@ describe("distributeRecipeSet — phân phối + xác nhận nạp + khóa", () 
     expect(vi.mocked(deployRecipe)).toHaveBeenCalledTimes(1);
     expect(vi.mocked(deployRecipe)).toHaveBeenCalledWith(
       expect.objectContaining({ recipeId: 20, machineId: 2, deployedBy: 7 }),
+      // doc 80 Đợt 1 Task 9 R-T9a — recipe sets keep the pre-task gate.
+      "legacyApprovedOnly",
     );
     // Xác nhận nạp đủ → recipe_set_ref + KHÓA suốt lô + status active.
     expect(h.lineStates.get(1).recipeSetRef).toBe("MODEL-X@v3");

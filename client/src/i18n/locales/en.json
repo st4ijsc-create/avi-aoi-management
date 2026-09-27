@@ -4277,7 +4277,8 @@
       "runGateChanged": "The run is no longer waiting at the step you were viewing (someone else already decided it). Reload to see the step it is waiting at now.",
       "recipeNotApproved": "This recipe version has not been approved by a second person — it cannot be deployed, released or rolled back to.",
       "recipeArchived": "This recipe version is archived — create a new version instead of putting an archived one into production.",
-      "recipeMachineTypeMismatch": "This recipe is for a different machine type than the target machine — it cannot be deployed there."
+      "recipeMachineTypeMismatch": "This recipe is for a different machine type than the target machine — it cannot be deployed there.",
+      "recipeRetired": "This version was deliberately archived (not just replaced by a newer one), or there is no record of it ever being replaced — it cannot be rolled back to. Create a new version instead."
     },
     "client": {
       "generic": "System error, please try again",
