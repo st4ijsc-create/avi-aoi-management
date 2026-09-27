@@ -15984,6 +15984,7 @@
       "conformance": "Conformance pass",
       "flood": "Flood windows",
       "mapped": "Machines mapped",
+      "operators": "Operators (server)",
       "peakWindow": "Peak/10min",
       "pendingCrs": "Pending CRs",
       "perOpHour": "Alarms/op/hour",
@@ -16093,6 +16094,16 @@
       "minor": "Minor",
       "major": "Major",
       "severe": "Severe"
+    },
+    "kpiSourceNote": "Same source as the Alarm KPI dashboard and Control Tower (Andon + AI alerts). Operators: {{n}} — counted on the server.",
+    "shelveNotEnforced": "Not yet effective on the alarm path",
+    "complianceBasis": "Mapped = machines.device_type_key bound to a published device type: {{mapped}}/{{total}} machines ({{keyed}} have a key, {{unpublished}} point to an unpublished type). Conformance runs on the {{types}} published device types in the database.",
+    "basisWarning": {
+      "db_unavailable": "Database unavailable — the numbers above are 0 because nothing could be read.",
+      "no_machines": "The database has no machines yet.",
+      "no_published_types": "The database has no published device types yet.",
+      "no_bound_machines": "No machine is bound to a device type yet (machines.device_type_key is empty everywhere).",
+      "no_conformance_subjects": "No published device type maps a machine type, so conformance had nothing to check."
     }
   },
   "field": {

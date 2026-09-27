@@ -28,7 +28,8 @@ const h = vi.hoisted(() => ({
   robotDetail: vi.fn(async (id: number) => (id === 1 ? { robotId: 1, code: "RB-01", gatedActions: [] } : null)),
   buildSeedTypes: vi.fn(() => [{ typeKey: "aoi", parentTypeKey: null, version: "1.0.0", status: "published" }]),
   buildTree: vi.fn((nodes: unknown[]) => nodes),
-  computeCompliance: vi.fn(() => ({ coverage: 1, publishedTypes: 1 })),
+  // doc 80 Đợt 1 Task 3 — the route now delegates to the shared DB loader (same as the tRPC router).
+  loadComplianceMetrics: vi.fn(async (_d: unknown) => ({ coverage: 1, publishedTypes: 1 })),
   // Fake drizzle db: table-aware select() chains that resolve to fixed rows.
   fleetTasks: [{ id: 10, status: "pending", priority: 3 }],
   programProjectsRows: [{ id: 5, code: "PRJ-1" }],
@@ -125,7 +126,7 @@ vi.mock("../../services/standards/alarmTaxonomy", () => ({
   listVendors: (e: Array<{ vendor: string }>) => [...new Set(e.map((x) => x.vendor))],
   asSeverity: (s: unknown) => String(s ?? "medium"),
 }));
-vi.mock("../../services/standards/complianceService", () => ({ computeCompliance: h.computeCompliance }));
+vi.mock("../../services/standards/complianceService", () => ({ loadComplianceMetrics: h.loadComplianceMetrics }));
 
 import { createV1Router } from "./router";
 
@@ -284,10 +285,10 @@ describe("U4a — reuse + shape per endpoint", () => {
     expect(body.data.mappings.length).toBe(1);
   });
 
-  it("standards/compliance reuses computeCompliance", async () => {
-    h.computeCompliance.mockClear();
+  it("standards/compliance reuses loadComplianceMetrics (same loader as the tRPC router)", async () => {
+    h.loadComplianceMetrics.mockClear();
     const body = await (await call("/api/v1/standards/compliance", "MASTER")).json();
-    expect(h.computeCompliance).toHaveBeenCalledTimes(1);
+    expect(h.loadComplianceMetrics).toHaveBeenCalledTimes(1);
     expect(body.data.coverage).toBe(1);
   });
 

@@ -16383,6 +16383,7 @@
       "conformance": "合规通过",
       "flood": "洪泛窗口",
       "mapped": "已映射机器",
+      "operators": "操作员（服务器）",
       "peakWindow": "峰值/10 分钟",
       "pendingCrs": "待处理变更请求",
       "perOpHour": "告警/操作/小时",
@@ -16492,6 +16493,16 @@
       "minor": "轻微",
       "major": "重大",
       "severe": "严重"
+    },
+    "kpiSourceNote": "与告警 KPI 仪表板及控制塔同源（Andon + AI 告警）。操作员：{{n}} —— 由服务器统计。",
+    "shelveNotEnforced": "尚未在告警路径上生效",
+    "complianceBasis": "已映射 = machines.device_type_key 指向已发布的设备类型：{{mapped}}/{{total}} 台设备（{{keyed}} 台有键，{{unpublished}} 台指向未发布类型）。一致性测试基于数据库中 {{types}} 个已发布设备类型。",
+    "basisWarning": {
+      "db_unavailable": "数据库不可用 —— 以上数字为 0，因为未能读取任何数据。",
+      "no_machines": "数据库中尚无设备。",
+      "no_published_types": "数据库中尚无已发布的设备类型。",
+      "no_bound_machines": "尚无设备绑定设备类型（所有设备的 machines.device_type_key 均为空）。",
+      "no_conformance_subjects": "没有映射设备类型的已发布设备类型，一致性测试无可检查对象。"
     }
   },
   "field": {

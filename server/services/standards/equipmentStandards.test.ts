@@ -366,9 +366,16 @@ describe("conformanceTest", () => {
 // E1-e — Compliance metrics
 // ════════════════════════════════════════════════════════════════════════════
 describe("complianceService.computeCompliance", () => {
-  it("computes mapped rate + unmapped types", () => {
+  // doc 80 Đợt 1 Task 3 (STD-01) — "mapped" is decided by machines.device_type_key bound to a
+  // PUBLISHED type, never by machineType (the old tautology: machineType ∈ seed typeKeys).
+  it("computes mapped rate from device_type_key + unmapped types + usage", () => {
     const m = computeCompliance({
-      machineTypes: ["AOI", "AOI", "ROBOT", "WEIRD"],
+      machines: [
+        { machineType: "AOI", deviceTypeKey: "AOI" },
+        { machineType: "AOI", deviceTypeKey: "AOI" },
+        { machineType: "ROBOT", deviceTypeKey: "ROBOT" },
+        { machineType: "WEIRD", deviceTypeKey: null },
+      ],
       publishedTypeKeys: ["AOI", "ROBOT"],
       conformanceResults: [{ typeKey: "AOI", pass: true }, { typeKey: "ROBOT", pass: false }],
       crStatuses: ["pending", "approved", "in_review"],
@@ -377,16 +384,66 @@ describe("complianceService.computeCompliance", () => {
     expect(m.machineCount).toBe(4);
     expect(m.machinesMappedToPublished).toBe(3);
     expect(m.mappedRate).toBeCloseTo(0.75);
+    expect(m.unmappedMachineCount).toBe(1);
     expect(m.unmappedMachineTypes).toEqual(["WEIRD"]);
+    expect(m.usageByTypeKey).toEqual({ AOI: 2, ROBOT: 1 });
     expect(m.conformancePassCount).toBe(1);
     expect(m.failingTypes).toEqual(["ROBOT"]);
     expect(m.crPendingCount).toBe(2); // pending + in_review
     expect(m.alarmVendorCoverage).toBe(2);
+    expect(m.basis.mapping).toBe("machines.device_type_key");
+    expect(m.basis.machinesWithKey).toBe(3);
+  });
+  it("máy CHƯA gắn kiểu (key NULL) hoặc gắn kiểu CHƯA publish ⇒ < 100 %, dù machineType trùng typeKey đã publish", () => {
+    const m = computeCompliance({
+      machines: [
+        { machineType: "AOI", deviceTypeKey: null },
+        { machineType: "AOI", deviceTypeKey: "AOI_DRAFT" },
+        { machineType: "AOI", deviceTypeKey: "AOI" },
+      ],
+      publishedTypeKeys: ["AOI"],
+      conformanceResults: [{ typeKey: "AOI", pass: true }],
+    });
+    expect(m.machinesMappedToPublished).toBe(1);
+    expect(m.mappedRate).toBeCloseTo(1 / 3);
+    expect(m.mappedRate).toBeLessThan(1);
+    expect(m.unmappedMachineTypes).toEqual(["AOI"]);
+    expect(m.basis.machinesWithUnpublishedKey).toBe(1);
+  });
+  it("không máy nào gắn kiểu ⇒ 0 % + cảnh báo no_bound_machines (không bao giờ 100 % giả)", () => {
+    const m = computeCompliance({
+      machines: [{ machineType: "AOI", deviceTypeKey: null }, { machineType: "SPI", deviceTypeKey: null }],
+      publishedTypeKeys: ["AOI", "SPI"],
+      conformanceResults: [],
+    });
+    expect(m.mappedRate).toBe(0);
+    expect(m.basis.warnings).toContain("no_bound_machines");
+    expect(m.basis.warnings).toContain("no_conformance_subjects");
   });
   it("fail-safe on empty input (no div-by-zero)", () => {
-    const m = computeCompliance({ machineTypes: [], publishedTypeKeys: [], conformanceResults: [], crStatuses: [], mappedVendors: [] });
+    const m = computeCompliance({ machines: [], publishedTypeKeys: [], conformanceResults: [], crStatuses: [], mappedVendors: [] });
     expect(m.mappedRate).toBe(0);
     expect(m.conformancePassRate).toBe(0);
+    expect(m.basis.warnings).toEqual(expect.arrayContaining(["no_machines", "no_published_types"]));
+  });
+});
+
+describe("conformanceTest.runConformanceAcrossNodes (STD-01 — conformance trên device_types)", () => {
+  it("chạy trên node set được đưa vào, không phải seed: kiểu thiếu 'state' trượt", async () => {
+    const { runConformanceAcrossNodes } = await import("./conformanceTest");
+    const r = runConformanceAcrossNodes([
+      {
+        typeKey: "X_BAD", parentTypeKey: null, version: "1.0.0", status: "published",
+        attributesSchema: [{ name: "cycle_time", type: "number" }] as never,
+        supportedCommands: [], supportedStates: ["Stopped"], extensionFields: {}, mappedMachineTypes: ["AOI"],
+      },
+      {
+        typeKey: "X_ABSTRACT", parentTypeKey: null, version: "1.0.0", status: "published",
+        attributesSchema: [], supportedCommands: [], supportedStates: [], extensionFields: {}, mappedMachineTypes: [],
+      },
+    ]);
+    expect(r.map((x) => x.typeKey)).toEqual(["X_BAD"]); // X_ABSTRACT không map máy ⇒ không phải leaf
+    expect(r[0].pass).toBe(false);
   });
 });
 

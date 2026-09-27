@@ -92,7 +92,8 @@ type MappedAlarm = RouterOutputs["equipmentStandards"]["mapAlarm"];
 type ChangeRequest = RouterOutputs["equipmentStandards"]["listChangeRequests"][number];
 type Conformance = RouterOutputs["equipmentStandards"]["runConformance"];
 type Compliance = RouterOutputs["equipmentStandards"]["complianceMetrics"];
-type AlarmKpis = RouterOutputs["equipmentStandards"]["alarmKpis"];
+// doc 80 Đợt 1 Task 3 (STD-04) — ONE KPI source: the same alarmKpi.summary as /alarm-kpi + Control Tower.
+type AlarmKpis = RouterOutputs["alarmKpi"]["summary"];
 type MasterAlarmRow = RouterOutputs["equipmentStandards"]["listMasterAlarms"][number];
 
 const CONSEQUENCES = ["none", "minor", "major", "severe"] as const;
@@ -184,8 +185,11 @@ export default function EquipmentStandards() {
     enabled: canView && runConfReq,
     retry: false,
   });
-  const kpisQ = trpc.equipmentStandards.alarmKpis.useQuery(
-    { windowDays: kpiWindow, operatorCount: 1 },
+  // doc 80 Đợt 1 Task 3 (STD-04) — trước đây gọi bộ tính THỨ HAI (equipmentStandards.alarmKpis,
+  // chỉ andon) với operatorCount: 1 CỨNG ⇒ số khác /alarm-kpi. Nay đọc CÙNG alarmKpi.summary và
+  // KHÔNG gửi operatorCount — server tự suy (số người vận hành đang hoạt động).
+  const kpisQ = trpc.alarmKpi.summary.useQuery(
+    { windowHours: kpiWindow * 24 },
     { enabled: canView },
   );
   const mastersQ = trpc.equipmentStandards.listMasterAlarms.useQuery(undefined, { enabled: canView });
@@ -216,7 +220,7 @@ export default function EquipmentStandards() {
     void utils.equipmentStandards.listChangeRequests.invalidate();
     void utils.equipmentStandards.complianceMetrics.invalidate();
     void utils.equipmentStandards.runConformance.invalidate();
-    void utils.equipmentStandards.alarmKpis.invalidate();
+    void utils.alarmKpi.summary.invalidate();
     void utils.equipmentStandards.listMasterAlarms.invalidate();
   };
 
@@ -565,18 +569,26 @@ export default function EquipmentStandards() {
               )}
               {kpis && !kpisQ.isLoading && (
                 <>
+                  <p data-testid="alarm-kpi-source" className="mb-3 text-xs text-muted-foreground">
+                    {t(
+                      "eqStandards.kpiSourceNote",
+                      "Same source as the Alarm KPI dashboard and Control Tower (Andon + AI alerts). Operators: {{n}} — counted on the server.",
+                      { n: kpis.operatorCount },
+                    )}
+                  </p>
                   <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
-                    <MetricCard icon={<Bell className="h-4 w-4" />} label={t("eqStandards.kpi.total", "Total alarms")} value={kpis.totalAlarms} />
+                    <div data-testid="alarm-kpi-total">
+                      <MetricCard icon={<Bell className="h-4 w-4" />} label={t("eqStandards.kpi.total", "Total alarms")} value={kpis.totalAlarms} />
+                    </div>
                     <MetricCard icon={<Activity className="h-4 w-4" />} label={t("eqStandards.kpi.perOpHour", "Alarms/op/hour")}
-                      value={kpis.alarmsPerOperatorHour.toFixed(1)}
-                      tone={kpis.alarmsPerOperatorHour > 12 ? "danger" : kpis.alarmsPerOperatorHour > 6 ? "warning" : "good"} />
+                      value={kpis.rate.alarmsPerHourPerOperator.toFixed(1)}
+                      tone={kpis.rate.status === "critical" ? "danger" : kpis.rate.status === "warning" ? "warning" : "good"} />
                     <MetricCard icon={<AlertTriangle className="h-4 w-4" />} label={t("eqStandards.kpi.flood", "Flood windows")}
-                      value={kpis.floodWindowCount} tone={kpis.floodWindowCount > 0 ? "danger" : "good"} />
-                    <MetricCard icon={<RefreshCw className="h-4 w-4" />} label={t("eqStandards.kpi.chattering", "Chattering")}
-                      value={kpis.chattering.length} tone={kpis.chattering.length > 0 ? "warning" : "good"} />
+                      value={kpis.flood.floodBucketCount} tone={kpis.flood.isFlooding ? "danger" : "good"} />
                     <MetricCard icon={<Lock className="h-4 w-4" />} label={t("eqStandards.kpi.standing", "Standing/stale")}
-                      value={kpis.standingCount} tone={kpis.standingCount > 0 ? "warning" : "good"} />
-                    <MetricCard icon={<Cpu className="h-4 w-4" />} label={t("eqStandards.kpi.peakWindow", "Peak/10min")} value={kpis.peakWindowCount} />
+                      value={kpis.standing.count} tone={kpis.standing.count > 0 ? "warning" : "good"} />
+                    <MetricCard icon={<Cpu className="h-4 w-4" />} label={t("eqStandards.kpi.peakWindow", "Peak/10min")} value={kpis.flood.maxInWindow} />
+                    <MetricCard icon={<Wrench className="h-4 w-4" />} label={t("eqStandards.kpi.operators", "Operators (server)")} value={kpis.operatorCount} />
                   </div>
                   {/* Bad actors */}
                   <div className="mt-4">
@@ -586,12 +598,12 @@ export default function EquipmentStandards() {
                     ) : (
                       <div className="space-y-1">
                         {kpis.badActors.map((b) => (
-                          <div key={b.key} className="flex items-center gap-2 text-sm">
-                            <span className="w-40 shrink-0 truncate font-mono text-xs" title={b.key}>{b.key}</span>
+                          <div key={b.actorKey} className="flex items-center gap-2 text-sm">
+                            <span className="w-40 shrink-0 truncate font-mono text-xs" title={b.actorKey}>{b.actorLabel}</span>
                             <div className="h-2 flex-1 overflow-hidden rounded bg-muted">
-                              <div className="h-full bg-primary" style={{ width: `${Math.round(b.share * 100)}%` }} />
+                              <div className="h-full bg-primary" style={{ width: `${Math.round(b.percent)}%` }} />
                             </div>
-                            <span className="w-16 shrink-0 text-right text-xs text-muted-foreground">{b.count} ({pct(b.share)})</span>
+                            <span className="w-16 shrink-0 text-right text-xs text-muted-foreground">{b.count} ({Math.round(b.percent)}%)</span>
                           </div>
                         ))}
                       </div>
@@ -663,9 +675,11 @@ export default function EquipmentStandards() {
                                 {t("eqStandards.unshelve", "Un-shelve")}
                               </Button>
                             ) : (
-                              <Button size="sm" variant="ghost" className="h-7" disabled={shelveMasterM.isPending}
-                                title={t("eqStandards.shelve8hTip", "Shelve for 8 hours")}
-                                onClick={() => shelveMasterM.mutate({ id: m.id, shelvedUntil: new Date(Date.now() + 8 * 3600_000).toISOString() })}>
+                              // doc 80 Đợt 1 Task 3 (STD-02) — KHOÁ cho tới khi có enforcement: đường
+                              // báo động chính (Andon/cảnh báo AI) chưa đọc shelvedUntil, bấm "Shelve"
+                              // khiến người vận hành tưởng đã shelve trong khi báo động vẫn nổ.
+                              <Button size="sm" variant="ghost" className="h-7" disabled
+                                title={t("eqStandards.shelveNotEnforced", "Not yet effective on the alarm path")}>
                                 {t("eqStandards.shelve8h", "Shelve 8h")}
                               </Button>
                             )}
@@ -845,6 +859,27 @@ export default function EquipmentStandards() {
                   {!compliance && <Text tone="muted" variant="body-sm">{t("eqStandards.loading", "Loading…")}</Text>}
                 </div>
               </div>
+              {/* doc 80 Đợt 1 Task 3 (STD-01) — nói rõ số đo trên CÁI GÌ (không còn 100 % giả từ hằng số seed). */}
+              {compliance && (
+                <div data-testid="compliance-basis" className="mt-4 space-y-1 text-xs text-muted-foreground">
+                  <p>
+                    {t(
+                      "eqStandards.complianceBasis",
+                      "Mapped = machines.device_type_key bound to a published device type: {{mapped}}/{{total}} machines ({{keyed}} have a key, {{unpublished}} point to an unpublished type). Conformance runs on the {{types}} published device types in the database.",
+                      {
+                        mapped: compliance.machinesMappedToPublished,
+                        total: compliance.machineCount,
+                        keyed: compliance.basis.machinesWithKey,
+                        unpublished: compliance.basis.machinesWithUnpublishedKey,
+                        types: compliance.basis.publishedTypeCount,
+                      },
+                    )}
+                  </p>
+                  {compliance.basis.warnings.map((w) => (
+                    <p key={w} className="text-warning">{t(`eqStandards.basisWarning.${w}`, w)}</p>
+                  ))}
+                </div>
+              )}
             </SectionCard>
 
             {/* Run conformance */}

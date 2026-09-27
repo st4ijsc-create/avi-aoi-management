@@ -34,7 +34,7 @@ import {
   type EquipmentCapability,
 } from "../equipment/capabilityModel";
 import { type PackmlState } from "../equipment/packml";
-import type { DeviceTypeAttribute } from "../../../drizzle/schema/equipmentStandards";
+import type { DeviceType, DeviceTypeAttribute } from "../../../drizzle/schema/equipmentStandards";
 
 /** Flag — default OFF (mirrors fleetOrchEnabled / safetyAuditEnabled). */
 export function eqGovernEnabled(): boolean {
@@ -55,6 +55,28 @@ export interface DeviceTypeNode {
   extensionFields: Record<string, unknown>;
   mappedMachineTypes: string[];
   adapterKind?: string;
+}
+
+/**
+ * Convert a persisted `device_types` row into an in-memory DeviceTypeNode. Shared by the
+ * router's node-set loader and the DB-backed compliance metrics (doc 80 Đợt 1 Task 3 —
+ * conformance must run on what is actually in device_types, not on the seed constants).
+ */
+export function nodeFromDeviceTypeRow(r: DeviceType): DeviceTypeNode {
+  return {
+    typeKey: r.typeKey,
+    parentTypeKey: r.parentTypeKey ?? null,
+    version: r.version,
+    status: (r.status as DeviceTypeNode["status"]) ?? "draft",
+    label: r.label ?? undefined,
+    description: r.description ?? undefined,
+    attributesSchema: (r.attributesSchema ?? []) as DeviceTypeNode["attributesSchema"],
+    supportedCommands: (r.supportedCommands ?? []) as DeviceTypeNode["supportedCommands"],
+    supportedStates: (r.supportedStates ?? []) as DeviceTypeNode["supportedStates"],
+    extensionFields: (r.extensionFields ?? {}) as Record<string, unknown>,
+    mappedMachineTypes: (r.mappedMachineTypes ?? []) as string[],
+    adapterKind: r.adapterKind ?? undefined,
+  };
 }
 
 /** A fully-resolved device type (all ancestors merged in). */

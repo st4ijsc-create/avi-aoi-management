@@ -15964,6 +15964,7 @@
       "conformance": "Đạt kiểm định",
       "flood": "Cửa sổ tràn",
       "mapped": "Máy đã ánh xạ",
+      "operators": "Người vận hành (server)",
       "peakWindow": "Đỉnh/10 phút",
       "pendingCrs": "CR đang chờ",
       "perOpHour": "Cảnh báo/vận hành/giờ",
@@ -16073,6 +16074,16 @@
       "minor": "Nhẹ",
       "major": "Nặng",
       "severe": "Nghiêm trọng"
+    },
+    "kpiSourceNote": "Cùng nguồn với bảng KPI báo động và Control Tower (Andon + cảnh báo AI). Người vận hành: {{n}} — đếm ở server.",
+    "shelveNotEnforced": "Chưa có hiệu lực trên đường báo động",
+    "complianceBasis": "Đã ánh xạ = máy có machines.device_type_key trỏ tới kiểu thiết bị đã publish: {{mapped}}/{{total}} máy ({{keyed}} máy có khoá, {{unpublished}} máy trỏ tới kiểu chưa publish). Conformance chạy trên {{types}} kiểu thiết bị đã publish trong CSDL.",
+    "basisWarning": {
+      "db_unavailable": "Không kết nối được CSDL — các số trên là 0 vì chưa đọc được gì.",
+      "no_machines": "CSDL chưa có máy nào.",
+      "no_published_types": "CSDL chưa có kiểu thiết bị nào ở trạng thái published.",
+      "no_bound_machines": "Chưa máy nào được gắn kiểu thiết bị (machines.device_type_key trống ở mọi máy).",
+      "no_conformance_subjects": "Không có kiểu thiết bị published nào ánh xạ máy để chạy conformance."
     }
   },
   "field": {

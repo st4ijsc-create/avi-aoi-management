@@ -25,27 +25,23 @@
  * ════════════════════════════════════════════════════════════════════════════
  */
 import { z } from "zod";
-import { and, desc, eq, gte, isNull } from "drizzle-orm";
+import { and, desc, eq, isNull } from "drizzle-orm";
 import { TRPCError } from "@trpc/server";
 import { appError } from "../_core/appError";
 import { router, protectedProcedure } from "../_core/trpc";
 import { requirePermission } from "../_core/accessControl";
 import { getDb } from "../db/connection";
-import { machines, andonEvents } from "../../drizzle/schema";
 import {
   deviceTypes,
   alarmTaxonomy,
   deviceTypeChangeRequests,
   masterAlarms,
-  type DeviceType,
 } from "../../drizzle/schema/equipmentStandards";
 import {
   loadAlarmMappings,
   loadMasterAlarms,
-  computeAlarmKpis,
   derivePriority,
   ALARM_CONSEQUENCES,
-  type AlarmKpiEvent,
 } from "../services/standards/alarmMasterService";
 import {
   eqGovernEnabled,
@@ -53,12 +49,12 @@ import {
   buildTree,
   resolveType,
   resolveForMachineType,
+  nodeFromDeviceTypeRow,
   type DeviceTypeNode,
 } from "../services/standards/deviceTypeRegistry";
 import {
   mapAlarm,
   listVendors,
-  SEED_ALARM_MAPPINGS,
   ALARM_SEVERITIES,
 } from "../services/standards/alarmTaxonomy";
 import {
@@ -76,7 +72,8 @@ import {
   type CrStatus,
   type SemverBump,
 } from "../services/standards/governanceService";
-import { computeCompliance } from "../services/standards/complianceService";
+import { loadComplianceMetrics } from "../services/standards/complianceService";
+import { alarmKpiRouter } from "./alarmKpiRouter";
 import { recordAuditEvent } from "../services/audit/controlAuditService";
 
 async function db() {
@@ -92,24 +89,6 @@ function requireFlag() {
   }
 }
 
-/** Convert a persisted device_types row into an in-memory DeviceTypeNode. */
-function rowToNode(r: DeviceType): DeviceTypeNode {
-  return {
-    typeKey: r.typeKey,
-    parentTypeKey: r.parentTypeKey ?? null,
-    version: r.version,
-    status: (r.status as DeviceTypeNode["status"]) ?? "draft",
-    label: r.label ?? undefined,
-    description: r.description ?? undefined,
-    attributesSchema: (r.attributesSchema ?? []) as DeviceTypeNode["attributesSchema"],
-    supportedCommands: (r.supportedCommands ?? []) as DeviceTypeNode["supportedCommands"],
-    supportedStates: (r.supportedStates ?? []) as DeviceTypeNode["supportedStates"],
-    extensionFields: (r.extensionFields ?? {}) as Record<string, unknown>,
-    mappedMachineTypes: (r.mappedMachineTypes ?? []) as string[],
-    adapterKind: r.adapterKind ?? undefined,
-  };
-}
-
 /**
  * Load the full node set = SEED ∪ persisted rows. Persisted rows are appended; the
  * registry's preferNode() picks published>draft and the highest SemVer per typeKey, so
@@ -120,7 +99,7 @@ async function loadNodeSet(): Promise<DeviceTypeNode[]> {
   const d = await getDb();
   if (!d) return seed;
   const rows = await d.select().from(deviceTypes);
-  return [...seed, ...rows.map(rowToNode)];
+  return [...seed, ...rows.map(nodeFromDeviceTypeRow)];
 }
 
 /**
@@ -350,45 +329,34 @@ export const equipmentStandardsRouter = router({
     }),
 
   /**
-   * Alarm performance KPIs (EEMUA-191) computed from the Andon history over a window:
-   * alarms/operator/hour, flood windows, chattering, standing/stale, top bad-actors.
+   * Alarm performance KPIs (ISA-18.2) — DEPRECATED alias kept for API compatibility.
+   *
+   * ★ doc 80 Đợt 1 Task 3 (STD-04) — this used to be a SECOND KPI engine
+   *   (alarmMasterService.computeAlarmKpis: Andon only, span first→last raise, and an
+   *   `operatorCount` defaulting to 1 — hard-coded to 1 by the page), so /equipment-standards
+   *   showed different numbers from /alarm-kpi and Control Tower for the same window. It now
+   *   DELEGATES to `alarmKpi.summary` (same scope gate, same sources Andon + predictive, same
+   *   math, operatorCount derived on the SERVER unless explicitly given). The page calls
+   *   `alarmKpi.summary` directly; `alarmKpiRouter`'s own RBAC (protectedProcedure) is
+   *   narrower-or-equal to this one's, so delegating never widens access.
    */
   alarmKpis: protectedProcedure
     .use(requirePermission("machine_monitoring", "canView"))
     .input(z.object({
-      windowDays: z.number().int().min(1).max(90).default(7),
-      operatorCount: z.number().int().min(1).max(500).default(1),
+      windowDays: z.number().int().min(1).max(30).default(7),
+      operatorCount: z.number().int().min(1).max(500).optional(),
+      lineId: z.number().int().positive().nullable().optional(),
+      machineId: z.number().int().positive().nullable().optional(),
     }).optional())
-    .query(async ({ input }) => {
+    .query(async ({ input, ctx }) => {
       const windowDays = input?.windowDays ?? 7;
-      const operatorCount = input?.operatorCount ?? 1;
-      const since = new Date(Date.now() - windowDays * 24 * 60 * 60 * 1000);
-      const d = await getDb();
-      const events: AlarmKpiEvent[] = [];
-      if (d) {
-        try {
-          const rows = await d
-            .select({
-              reason: andonEvents.reason, title: andonEvents.title, machineId: andonEvents.machineId,
-              raisedAt: andonEvents.raisedAt, resolvedAt: andonEvents.resolvedAt,
-            })
-            .from(andonEvents)
-            .where(gte(andonEvents.raisedAt, since))
-            .orderBy(desc(andonEvents.raisedAt))
-            .limit(20000);
-          for (const r of rows) {
-            const raised = r.raisedAt instanceof Date ? r.raisedAt.getTime() : new Date(r.raisedAt as never).getTime();
-            events.push({
-              key: (r.title || r.reason || "UNKNOWN").toString(),
-              machineId: r.machineId ?? null,
-              raisedAt: raised,
-              resolvedAt: r.resolvedAt ? new Date(r.resolvedAt).getTime() : null,
-            });
-          }
-        } catch { /* andon table absent → empty KPIs */ }
-      }
-      const kpis = computeAlarmKpis(events, { operatorCount });
-      return { windowDays, since: since.getTime(), ...kpis };
+      const summary = await alarmKpiRouter.createCaller(ctx).summary({
+        windowHours: windowDays * 24,
+        operatorCount: input?.operatorCount,
+        lineId: input?.lineId,
+        machineId: input?.machineId,
+      });
+      return { windowDays, since: summary.now - windowDays * 24 * 3600_000, ...summary };
     }),
 
   // ── E1-a — register a device type (draft) ────────────────────────────────────
@@ -606,32 +574,13 @@ export const equipmentStandardsRouter = router({
     }),
 
   // ── E1-e — compliance metrics ─────────────────────────────────────────────────
+  /**
+   * ★ doc 80 Đợt 1 Task 3 (STD-01) — "mapped" = machines.device_type_key bound to a
+   * PUBLISHED device_types row; conformance over the published device_types rows. Seed
+   * constants are no longer counted (they made this a 100 % tautology). Shared with the
+   * v1 `/standards/compliance` read via loadComplianceMetrics.
+   */
   complianceMetrics: protectedProcedure
     .use(requirePermission("machine_monitoring", "canView"))
-    .query(async () => {
-      const d = await getDb();
-      const machineTypes: string[] = [];
-      const publishedTypeKeys = new Set<string>();
-      const mappedVendors = new Set<string>();
-      const crStatuses: string[] = [];
-      // seed types count as published (origin seed, status published)
-      for (const n of buildSeedTypes()) if (n.status === "published") publishedTypeKeys.add(n.typeKey);
-      for (const m of SEED_ALARM_MAPPINGS) mappedVendors.add(m.vendor.toLowerCase());
-      if (d) {
-        const ms = await d.select({ machineType: machines.machineType }).from(machines);
-        for (const m of ms) machineTypes.push(m.machineType);
-        const dts = await d.select().from(deviceTypes).where(eq(deviceTypes.status, "published"));
-        for (const t of dts) publishedTypeKeys.add(t.typeKey);
-        const at = await d.select({ vendor: alarmTaxonomy.vendor }).from(alarmTaxonomy);
-        for (const a of at) mappedVendors.add(a.vendor.toLowerCase());
-        const crs = await d.select({ status: deviceTypeChangeRequests.status }).from(deviceTypeChangeRequests);
-        for (const c of crs) crStatuses.push(c.status);
-      }
-      return computeCompliance({
-        machineTypes,
-        publishedTypeKeys: Array.from(publishedTypeKeys),
-        crStatuses,
-        mappedVendors: Array.from(mappedVendors),
-      });
-    }),
+    .query(async () => loadComplianceMetrics(await getDb())),
 });

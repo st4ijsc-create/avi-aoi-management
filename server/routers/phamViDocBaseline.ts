@@ -213,8 +213,11 @@ export const NO_PHAM_VI_DOC: readonly string[] = [
   "server/routers/equipmentRouter.ts#equipmentRouter.getCapabilities",
   "server/routers/equipmentRouter.ts#equipmentRouter.getState",
   "server/routers/equipmentRouter.ts#equipmentRouter.listEquipment",
-  // ── server/routers/equipmentStandardsRouter.ts (9) ─────────────────────────────────────────
-  "server/routers/equipmentStandardsRouter.ts#equipmentStandardsRouter.alarmKpis",
+  // ── server/routers/equipmentStandardsRouter.ts (8) ─────────────────────────────────────────
+  // 2026-09-27 (doc 80 Đợt 1 Task 3, STD-04) — `alarmKpis` không còn tự đọc `andon_events`
+  // (toàn cục, bộ tính thứ hai): nó uỷ quyền `alarmKpiRouter.createCaller(ctx).summary(…)`,
+  // tức đi qua CÙNG cổng `resolveAlertScope(ctx.user)` với /alarm-kpi ⇒ danh tính RỜI TAY
+  // handler ⇒ nhóm S, XOÁ khỏi sổ này (GHIM.A 342→341, S 329→330).
   "server/routers/equipmentStandardsRouter.ts#equipmentStandardsRouter.complianceMetrics",
   "server/routers/equipmentStandardsRouter.ts#equipmentStandardsRouter.hierarchyTree",
   "server/routers/equipmentStandardsRouter.ts#equipmentStandardsRouter.listAlarmMappings",

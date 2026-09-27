@@ -16,7 +16,7 @@
  */
 import { listDefaultProfiles, type EquipmentCapability } from "../equipment/capabilityModel";
 import type { PackmlState } from "../equipment/packml";
-import { resolveType, buildSeedTypes, type ResolvedDeviceType } from "./deviceTypeRegistry";
+import { resolveType, buildSeedTypes, type DeviceTypeNode, type ResolvedDeviceType } from "./deviceTypeRegistry";
 
 export interface ConformanceViolation {
   rule: string;
@@ -137,6 +137,24 @@ export function runConformanceAcrossSeed(): ConformanceResult[] {
     if (!resolved) continue;
     const isLeaf = resolved.mappedMachineTypes.length > 0;
     if (!isLeaf) continue;
+    out.push(runConformance(subjectFromResolved(resolved)));
+  }
+  return out;
+}
+
+/**
+ * doc 80 Đợt 1 Task 3 (STD-01) — run conformance across an ARBITRARY node set (e.g. the
+ * PUBLISHED rows actually persisted in device_types), with the same leaf rule as the seed
+ * sweep: one result per distinct typeKey whose resolved type maps ≥1 machine type. The
+ * compliance KPI uses this instead of the seed sweep so it measures the DB, not constants.
+ */
+export function runConformanceAcrossNodes(nodes: DeviceTypeNode[]): ConformanceResult[] {
+  const out: ConformanceResult[] = [];
+  const keys = Array.from(new Set(nodes.map((n) => n.typeKey))).sort();
+  for (const key of keys) {
+    const resolved = resolveType(key, nodes);
+    if (!resolved) continue;
+    if (resolved.mappedMachineTypes.length === 0) continue;
     out.push(runConformance(subjectFromResolved(resolved)));
   }
   return out;

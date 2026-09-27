@@ -1443,7 +1443,7 @@ export function buildV1OpenApiSpec(serverUrl = "/"): Record<string, unknown> {
         get: {
           tags: ["Standards"],
           summary: "Equipment governance compliance metrics",
-          description: "Requires scope `standards:read`. Read-only. Reuses complianceService.computeCompliance (same inputs as equipmentStandardsRouter.complianceMetrics).",
+          description: "Requires scope `standards:read`. Read-only. Reuses complianceService.loadComplianceMetrics (the same loader as equipmentStandardsRouter.complianceMetrics): mapped = machines.device_type_key bound to a published device_types row; conformance over published device_types; `basis` describes the inputs.",
           responses: { "200": { description: "OK", content: jsonOk() }, ...errResponses() },
         },
       },

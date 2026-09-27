@@ -493,7 +493,18 @@ const cua = (n: NhomPhamVi): ThuTuc[] => NHOM.get(n) ?? [];
  *   ⇒ A +1 · C −1 · D +1 · tong +1, không dư một đơn vị; B/S không đổi.
  * ══════════════════════════════════════════════════════════════════════════════════════════════
  */
-const GHIM = { A: 342, B: 8, C: 480, D: 1123, S: 329, tong: 2282 } as const;
+/*
+ * ══════════════════════════════════════════════════════════════════════════════════════════════
+ * ★★★ 2026-09-27 (doc 80 Đợt 1 Task 3, STD-04) — **A 342→341 · S 329→330 · tong không đổi.**
+ * ĐO bằng chính bộ quét này sau lượt sửa, lúc `git status server/` CHỈ có tệp của Task 3: bộ quét
+ * cho `A 341 · S 330` (B/C/D/tong trùng ghim cũ) và §5 chỉ đích danh MỘT khoá đổi nhóm:
+ *   • `equipmentStandardsRouter.alarmKpis` (query): **A → S**. Trước: bộ tính KPI thứ hai tự đọc
+ *     `andon_events` toàn cục. Nay uỷ quyền `alarmKpiRouter.createCaller(ctx).summary(…)` ⇒ cùng
+ *     cổng `resolveAlertScope(ctx.user)` với /alarm-kpi; đã XOÁ khỏi `phamViDocBaseline.ts`.
+ *   • `complianceMetrics` VẪN ở A (đọc `machines` toàn cục, không đổi phạm vi) — vẫn trong sổ nợ.
+ * ══════════════════════════════════════════════════════════════════════════════════════════════
+ */
+const GHIM = { A: 341, B: 8, C: 480, D: 1123, S: 330, tong: 2282 } as const;
 
 describe("§1 — CẦU CHÌ: bộ suy có thật sự nhìn thấy gì không", () => {
   it("★ không có ô MÙ nào (mỗi ô mù là một chỗ KHÔNG AI CANH)", () => {
