@@ -54,7 +54,7 @@ import {
 import { uyQuyenDuongDanAnh } from "../routes/_uyQuyenAnh";
 import logger, { installConsoleBridge } from "../logger";
 import { correlationRequestMiddleware } from "./correlationMiddleware";
-import { livenessProbe, readinessProbe } from "./healthProbes";
+import { livenessProbe, createHealthHandler, createReadyzHandler, pingDbCached } from "./healthProbes";
 import { createApiLimiter, createAuthLimiter, createMachineIngestLimiter, createOtIngestLimiter, credentialConflictGuard, OT_INGEST_PATHS } from "./rateLimitConfig";
 import type { CanonicalSample, TelemetryProtocol, TelemetryQuality } from "../services/telemetryBus";
 import { assertVramEnforcementPolicy } from "../services/vram/vramBroker";
@@ -441,31 +441,31 @@ async function startServer() {
   }
 
   // Health check endpoint (rich diagnostics for Docker HEALTHCHECK / orchestrators)
-  app.get('/health', async (_req, res) => {
-    const startedAt = Date.now();
-    let dbStatus: 'connected' | 'disconnected' | 'error' = 'disconnected';
-    try {
-      const { getDb } = await import("../db/connection");
-      const dbInstance = await getDb();
-      if (dbInstance) dbStatus = 'connected';
-    } catch { dbStatus = 'error'; }
-
-    const mem = process.memoryUsage();
-    const memoryMB = Math.round(mem.heapUsed / 1024 / 1024);
-    const uptimeSec = Math.floor(process.uptime());
-    const version = process.env.npm_package_version || 'unknown';
-    const status = dbStatus === 'connected' ? 'ok' : 'degraded';
-
-    res.status(dbStatus === 'connected' ? 200 : 503).json({
-      status,
-      db: dbStatus,
-      memoryMB,
-      uptimeSec,
-      version,
-      checkMs: Date.now() - startedAt,
-      timestamp: new Date().toISOString(),
-    });
-  });
+  // ══════════════════════════════════════════════════════════════════════════
+  // doc 81 Đợt 1B Task 11 — `/health` NÓI THẬT (BE3 §L7). Handler ở
+  // ./healthProbes (createHealthHandler) để test mount ĐÚNG cái đang chạy.
+  //
+  // ĐO trước khi vá: handler nội tuyến cũ chỉ kiểm `Boolean(getDb())` — đối
+  // tượng drizzle đã cache, truthy mọi lúc có DATABASE_URL ⇒ `{status:"ok",
+  // db:"connected"}` cả khi Postgres đã sập.
+  //
+  // Nay `/health` là LIVENESS: luôn 200 khi tiến trình trả lời được (DB chập
+  // chờn không được làm Docker HEALTHCHECK / k8s liveness giết tiến trình);
+  // trạng thái DB trong thân lấy từ `SELECT 1` thật, hạn 1500 ms, cache ≤ 5 s
+  // ⇒ `status:"ok"` + `db:"connected"` CHỈ khi ping vừa thành công, ngược lại
+  // `status:"degraded"`. Cổng TRAFFIC là `/readyz` (503 `{db:"down"}`).
+  //
+  // Người gọi (đã rà): Dockerfile HEALTHCHECK, docker-compose*.yml healthcheck,
+  // Helm liveness/startup, k3s liveness/startup, edition-smoke CI (chờ
+  // `"status":"ok"`), e2e/api-health.spec.ts. Readiness của Helm/k3s đã chuyển
+  // sang `/readyz`. Thân giữ đủ các trường cũ (status, db, memoryMB, uptimeSec,
+  // version, checkMs, timestamp).
+  // Test: _core/healthMetricsNoiThat.test.ts (DB giả ném/treo + DB `_test` thật).
+  //
+  // ⚠ Khối này giữ ĐÚNG số dòng cũ để các census ghim theo số dòng phía dưới
+  //   (vd bề mặt tĩnh `/uploads` ghim ở dòng 650) không trôi vì lượt tách handler.
+  // ══════════════════════════════════════════════════════════════════════════
+  app.get('/health', createHealthHandler());
 
   // doc 44 W6-4 (G5.25) — split liveness/readiness for shadow→canary rollout gating.
   //   /livez  — process alive (never dependency-checked → no restart on a DB blip)
@@ -473,14 +473,14 @@ async function startServer() {
   app.get('/livez', (_req, res) => {
     res.status(200).json(livenessProbe());
   });
-  app.get('/readyz', async (_req, res) => {
-    try {
-      const result = await readinessProbe();
-      res.status(result.ready ? 200 : 503).json(result);
-    } catch {
-      res.status(503).json({ status: 'not_ready', ready: false, ts: new Date().toISOString() });
-    }
-  });
+  // doc 81 Đợt 1B Task 11: readiness = `SELECT 1` THẬT, hạn 1500 ms (single-flight,
+  //   kết quả cũ tối đa 1 s); lỗi / quá hạn / getDb treo ⇒ 503 `{db:"down"}` trong ≤ 2 s.
+  //   Trước đây `Boolean(getDb())` ⇒ luôn ready. Handler: ./healthProbes createReadyzHandler.
+  //   Helm `probes.readiness.path` + k3s readinessProbe trỏ về đây (không còn `/health`).
+  //   `/livez` ở trên vẫn KHÔNG chạm DB. Broker chỉ để tham khảo, không phải cổng.
+  //   Test: _core/healthMetricsNoiThat.test.ts.
+  //   (Giữ đúng 8 dòng như khối cũ — xem ghi chú số dòng ở `/health`.)
+  app.get('/readyz', createReadyzHandler());
 
   // ── G1-E (2026-08-16) — SẴN SÀNG THẬT CỦA HẠ TẦNG AI ────────────────────────────────────────
   // VÌ SAO THÊM MỚI CHỨ KHÔNG SỬA `/health`: `/health` + `/livez` + `/readyz` ở trên đang là cổng
@@ -528,13 +528,13 @@ async function startServer() {
   app.get('/api/network/health', async (_req, res) => {
     try {
       const { isMqttRunning, getConnectedClientsCount } = await import("../services/mqttService");
-      const { getDb } = await import("../db/connection");
+      // doc 81 1B T11: DB = `SELECT 1` thật (hạn 1500 ms, cache ≤ 5 s), không còn Boolean(getDb())
 
-      // Check DB
+      // Check DB (FactoryAlertSystem đọc `dbStatus === 'connected'`)
       let dbStatus = 'disconnected';
       try {
-        const dbInstance = await getDb();
-        if (dbInstance) dbStatus = 'connected';
+        const ping = await pingDbCached();
+        if (ping.ok) dbStatus = 'connected';
       } catch { dbStatus = 'error'; }
 
       // Memory usage

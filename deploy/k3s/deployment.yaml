@@ -2,7 +2,9 @@
 # SYNAPSE — Line/edge APP deployment. doc 33 §11 / ADR-007.
 # Single-node K3s, EDITION=line, embedded infra. One replica (edge appliance). An init
 # container runs the schema migration (waits for Postgres → migrate-standalone → verify
-# core tables) before the app container starts. Probes hit the REAL GET /health on 3000.
+# core tables) before the app container starts. Probes hit the REAL endpoints on 3000:
+# startup/liveness GET /health (200 while the process answers), readiness GET /readyz
+# (real `SELECT 1`, 503 {"db":"down"} when the DB is unreachable — doc 81 Đợt 1B Task 11).
 #
 # Image `synapse:1.0.0` is expected to be present in the node's containerd (pullPolicy
 # IfNotPresent) — build & import it first (see install-edge.sh / README). install-edge.sh
@@ -90,7 +92,7 @@ spec:
             failureThreshold: 6
           readinessProbe:
             httpGet:
-              path: /health
+              path: /readyz
               port: http
             initialDelaySeconds: 10
             periodSeconds: 10

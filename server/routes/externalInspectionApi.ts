@@ -85,9 +85,11 @@ export function registerExternalInspectionRoutes(
   // ================================================================
   app.get("/api/external/health", validateExternalAuth, async (_req, res) => {
     try {
-      const { getDb } = await import("../db");
-      const db = await getDb();
-      const dbOk = !!db;
+      // doc 81 Đợt 1B Task 11: "DB is reachable" phải là `SELECT 1` THẬT (hạn 1500 ms, cache ≤ 5 s,
+      // pinger dùng chung với /health, /readyz) — trước đây `!!getDb()` ⇒ luôn "up" cả khi DB sập.
+      // Mã HTTP giữ 200 (probe reachability của Federation/FactoryAlert: 200 = site + token OK).
+      const { pingDbCached } = await import("../_core/healthProbes");
+      const dbOk = (await pingDbCached()).ok;
       res.json({
         success: true,
         status: "ok",

@@ -25,7 +25,13 @@ import type { Request } from "express";
  * (`server/routes/_congLoopback.ts`) vì bề mặt thứ hai cần đúng cặp ấy:
  * `POST /api/ai/local-kb/feedback`. Giữ hai bản sao ⇒ bản yếu hơn quyết định lưới nào đỏ.
  */
-import { laLoopback as isLoopback, doiVaiDacQuyen as requirePrivileged } from "./_congLoopback";
+import { doiVaiDacQuyen as requirePrivileged } from "./_congLoopback";
+/**
+ * doc 81 Đợt 1B Task 11 — nhánh anh em của `GET /metrics`: CÙNG quy tắc `kiemQuyenMetrics`
+ * (`METRICS_TOKEN` đặt ⇒ Bearer đúng; không đặt ⇒ loopback NGHIÊM, không tin XFF). Phiên
+ * admin/supervisor vẫn là lối vào thứ hai như trước.
+ */
+import { kiemQuyenMetrics } from "../_core/metrics";
 
 export function registerObservabilityRoutes(app: express.Express): void {
   // ── GET /api/observability/health — aggregated platform health ──────────────
@@ -127,8 +133,8 @@ export function registerObservabilityRoutes(app: express.Express): void {
 
   // ── GET /api/observability/metrics — Prometheus text (SLO + decision-trace) ─
   app.get("/api/observability/metrics", async (req, res) => {
-    // Allow a loopback scrape (Prometheus beside the app); otherwise require a privileged session.
-    if (!isLoopback(req)) {
+    // Scrape hợp lệ theo quy tắc metrics (token / loopback nghiêm); ngoài ra đòi phiên đặc quyền.
+    if (!kiemQuyenMetrics(req).ok) {
       const auth = await requirePrivileged(req);
       if (!auth.ok) return res.status(auth.status).type("text/plain").send("# unauthorized\n");
     }

@@ -11,7 +11,9 @@ SYNAPSE — {{ .Values.edition.code | upper }} edition installed as release "{{ 
 1. Wait for the server to become Ready:
      kubectl -n {{ .Release.Namespace }} rollout status deploy/{{ include "synapse.fullname" . }}
 
-2. Liveness / readiness endpoint (real): GET /health on port {{ .Values.service.port }}
+2. Liveness endpoint (real): GET /health on port {{ .Values.service.port }} — always 200 while the
+   process answers; body "status":"ok" only when a real SELECT 1 just succeeded.
+   Readiness endpoint: GET /readyz — 200 when SELECT 1 answers within 1500 ms, else 503 {"db":"down"}.
 {{- if .Values.ingress.enabled }}
    Reachable via Ingress:
    {{- range .Values.ingress.hosts }}
