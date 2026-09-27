@@ -309,3 +309,23 @@ Chủ dự án duyệt §9 ("đồng ý, tiếp tục"). Kế hoạch: `docs/sup
 **Quyết định còn chờ chủ dự án:** (1) four-eyes cho gate orchestration: đang **opt-in** theo từng gate (plan viết "mặc định" — bật mặc định sẽ làm vỡ các gate mà người chạy tự duyệt); (2) QĐ4 danh sách xoá & seed lại (§9) — đã lập, CHƯA xoá; (3) QĐ7 bắt 2FA cho engineer — cần sửa `.env` + restart.
 
 **Còn mở (chuyển Đợt 1+):** handshake socket máy bắt apiKey; version token khi duyệt interlock (duyệt đúng nội dung đã xem); qtRunner bù trừ chạy trước khi giành quyền từ chối + gate chưa ghim bước; T3 hai cổng duyệt recipe trùng; validator ST thật (D2), stream/huỷ (D1 đầy đủ); XC-01 (preview IR/POU qua POST — flow lớn hiện bị khoá Lưu/Build do lint không đọc được); 9 mutation fleet G2 thiếu test âm cross-factory. Test đỏ có sẵn ngoài phạm vi: `appErrorParamsCoverage` (chỉ twinCanhRouter), `congGiayPhepAiCensus` (pin 2223 vs 2280), `viStringCoverage` (twin3d), `phamViDocCensus`.
+
+## 13. Kết quả thực thi Đợt 1 "Trung thực" (2026-09-27)
+
+Plan `docs/superpowers/plans/2026-09-27-engineering-control-dot1.md`. Hai đoạn commit (Đợt 1B chạy xen giữa, xem doc 81 §7): `a0f1d50fe..773ee78fc` (Task 1–2) và `d40237783..878c4c282` (Task 3–11 + đợt sửa cuối). Task 10 (socket máy bắt tay apiKey) gộp vào Đợt 1B Task 9. Mỗi task: TDD + đột biến, review từng task + vòng sửa; review toàn bộ + một đợt sửa cuối + re-review. Kiểm kiểu sạch; test đã chạm xanh trừ các census đỏ có sẵn không thuộc Đợt 1.
+
+| Task | Mã | Kết quả |
+|---|---|---|
+| 1 | PLT-02, G-07, X-07 | trạng thái đang tải / cờ tắt không còn hiện như sự thật (bỏ `?? true`) |
+| 2 | HUB-01/02/03, ILK-06 | hộp việc đủ nguồn, không xanh giả khi một nhánh lỗi; dải "Tư thế an toàn"; độ phủ interlock chỉ đếm rule cổng thật thi hành |
+| 3 | STD-01/02/04 | tỉ lệ ánh xạ đo thật (dev: 587/1700 = 34,5 %, trước hiện 100 %); một nguồn KPI ISA-18.2; Shelve khoá + badge "chưa có hiệu lực"; Chattering "chưa đo được" |
+| 4 | X-01, ORC-13, SAF-02 | nhãn DEMO/SEED/SIM một hàm dùng chung; run DRY-RUN; `failed/timeout` = "chưa xác nhận"; panel nguồn an toàn (phát hiện: preflight dev dựa trên `SIM-SAFETY-PLC-1` OK giả lập; `real_unmapped` khi PLC thật chưa gán tag) |
+| 5 | WS-01, WS-02, F1/F2 | duyệt phiên bản trong IDE (ghi có điều kiện, SoD); deploy biên dịch lại từ artifact + kiểm checksum; `deployPreview` khớp deploy thật trên 18 ca / 9 tổ hợp cờ, không ghi tệp, theo phạm vi người gọi |
+| 6 | XC-01 | query input lớn đi POST (splitLink): IR 1000 block / POU 1000 rung / PLCopen 2 MB = 200 (trước 431) |
+| 7 | AI-02 | validator ST thật (tokenizer + parser + ngữ nghĩa tối thiểu); bộ vàng TPR 40/40, TNR 35/35 (cũ 17,6 % / 65,4 %); Copilot không tụt (post-D3 0/7 trailer, 3 kết quả lật sang ĐẠT) |
+| 8 | AI-07, D1 | Copilot SSE + huỷ: sự kiện đầu 27 ms, huỷ trả slot 47 ms (đo trên :3016); khoá `MOD_ENGINEERING` như `copilotGenerate` |
+| 9 | §12 còn mở | interlock version token (băm nội dung, FOR UPDATE); qtRunner bù trừ sau khi giành quyền + gate ghim bước; một cổng recipe cho `/recipes` + equipmentIntegration; rollback về bản archived chỉ khi có bằng chứng bị THAY THẾ và không bị archive tay |
+| 11 | Đợt 0 minor | test âm cross-factory 5 mutation fleet; IR tên dành riêng; toast i18n; cảnh báo sửa rule đã duyệt |
+| Sửa cuối | — | huỷ SSE tới llama-server trên 5 route cũ (req.on("close") trên Node 24 bắn ngay); chặn vượt license read-only bằng đường dẫn giả (đã tái hiện: `settings.upsert` chạy dưới read-only); panel tư thế đọc cờ bằng CHÍNH hàm của cổng; census do Đợt 1 làm đỏ về xanh |
+
+**Còn mở (cần quyết định chủ dự án):** SIM safety-PLC có được thoả preflight không (khuyến nghị: không, với đích đã commission); `recordRecipeLoad` (quyền canCreate) / `changeover.approve` / phân phối recipe set vẫn đưa được bản đã rút hoặc sai loại máy lên active (khuyến nghị: áp cổng chặt); `copilotGenerate` chưa khoá `MOD_AI`. **Nợ kỹ thuật:** module programming chưa giới hạn tenant ở deploy/duyệt/đọc (baseline phạm vi); `ProgramSource.symbols` chưa được nạp (fragment dùng tag nhà máy báo "chưa khai báo"); validator chưa kiểm kiểu (matiec vẫn mở); `ROBOT_CONTROL_ENABLED` còn parse trực tiếp ở vda5050Router + driver robot; chuỗi `flagOffToast` Task 1 còn tên biến môi trường; `rawErrorMessageCensus` đỏ 4 mục ngoài Đợt 1. Chi tiết: ledger `.superpowers/sdd/2026-09-27-engineering-control-dot1/progress.md`.
