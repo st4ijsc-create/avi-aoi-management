@@ -514,6 +514,27 @@ export function mqttRequirePassword(env: NodeJS.ProcessEnv = process.env): boole
   return !(v === 'false' || v === '0' || v === 'off');
 }
 
+/**
+ * doc 81 Đợt 1C final wave 5 (final review M6) — with MQTT_REQUIRE_PASSWORD off no device IDENTITY exists:
+ * bindMachine / rotatePassword refuse (mqttOeeRouters), so no device can be bound to a machine, and the L2
+ * device↔machine pin (handleTelemetryBridge / sensor ingest) is unconditional ⇒ EVERY MQTT sensor and
+ * telemetry sample is refused. Owner decisions (Đợt 1C T5/T5b); this states it ONCE at broker start-up so an
+ * operator who turned passwords off is not left guessing why nothing arrives. Returns true when it warned.
+ */
+let warnedNoMqttDeviceIdentity = false;
+export function warnIfNoMqttDeviceIdentity(env: NodeJS.ProcessEnv = process.env): boolean {
+  if (mqttRequirePassword(env) || warnedNoMqttDeviceIdentity) return false;
+  warnedNoMqttDeviceIdentity = true;
+  console.warn(
+    '[MQTT] MQTT_REQUIRE_PASSWORD=false — no device identity: device passwords are not checked, so no MQTT device can be bound to a machine, and ALL MQTT sensor (factory/…/sensor) and telemetry (synapse/…/telemetry) ingest is refused. Re-enable password checks and bind each device to its machine to ingest over MQTT.',
+  );
+  return true;
+}
+/** Test hook — re-arms the one-time warning. */
+export function _resetNoMqttDeviceIdentityWarning(): void {
+  warnedNoMqttDeviceIdentity = false;
+}
+
 export const MQTT_AUTO_REGISTER_PER_IP_PER_MIN = 10;
 export const MQTT_AUTO_REGISTER_GLOBAL_PER_MIN = 60;
 const MQTT_LIMITER_WINDOW_MS = 60_000;
@@ -1696,6 +1717,7 @@ export function initMqttBroker(listen: MqttListenOptions = {}) {
     console.log('[MQTT] MQTT is disabled. Set MQTT_ENABLED=true to enable.');
     return;
   }
+  warnIfNoMqttDeviceIdentity(); // final wave 5 (M6) — one line, once per process
 
   // Get db instance
   import('../db').then(async module => {
