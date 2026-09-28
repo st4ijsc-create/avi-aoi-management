@@ -65,6 +65,18 @@ const PARAM_DICTIONARY_SPACE: Record<string, string> = {
   // không phải dữ liệu tự do — tra `errors.vramRowKind.*`/`errors.vramDurability.*`.
   rowKind: "vramRowKind",
   durability: "vramDurability",
+  // doc 81 Đợt 1D Task 3 (Ruling R-1D-i) — không gian MỚI `errors.stopPinReason.*`.
+  // `appParams.stopPinReason` (server/services/ot/commandDispatcher.ts,
+  // StopPinRefusalReason) đứng CẠNH `reason` (KHÔNG thay nó): một OT stop bị từ
+  // chối luôn mang `reason: "softwareStopRefusedUseHardwareEstop"` (câu TĨNH,
+  // dùng chung mọi trường hợp — khuôn `_WITH_REASON` đã có ở trên) CỘNG THÊM
+  // `stopPinReason`, một trong 7 giá trị ĐỘNG tuỳ vì sao lệnh dừng không được
+  // miễn preflight an toàn (no_pins/empty_writes/unpinned_tag/value_mismatch/
+  // duplicate_tag/pin_load_failed/pin_tag_changed). Khoá enum cố định giống 6
+  // không gian đầu file, không phải câu tự do — xem `withStopPinReasonSuffix()`
+  // bên dưới cho cách nó được NỐI vào câu chính (không sửa khuôn `_WITH_REASON`
+  // dùng chung, tránh đổi hành vi của mọi appError() khác không đặt tham số này).
+  stopPinReason: "stopPinReason",
 };
 
 /**
@@ -222,6 +234,35 @@ function localizeParams(
   return out;
 }
 
+/**
+ * doc 81 Đợt 1D Task 3 (Ruling R-1D-i) — nối câu `errors.stopPinReason.*` (đã dịch
+ * qua ĐÚNG `localizeParams`/PARAM_DICTIONARY_SPACE ở trên, không phải một cơ chế
+ * dịch thứ hai) vào SAU câu chính, chỉ khi `params.stopPinReason` CÓ MẶT.
+ *
+ * ⚠ VÌ SAO NỐI THÊM Ở NGOÀI, KHÔNG SỬA KHUÔN `errors.${appCode}_WITH_REASON`:
+ * khuôn đó dùng CHUNG cho mọi appCode/appError() có `reason` (hàng trăm call site
+ * hôm nay không đặt `stopPinReason`). Thêm thẳng `{{stopPinReason}}` vào đó sẽ đổi
+ * câu hiển thị của MỌI lỗi khác dùng chung khuôn — vi phạm bất biến "giữ nguyên
+ * hành vi ngoài phạm vi task" (Global Constraints #8). Nối thêm ở NGOÀI thì chỉ
+ * đúng những lỗi tự đặt `stopPinReason` (hôm nay: chỉ một chỗ,
+ * SOFTWARE_STOP_REFUSED_APP_ERROR) mới đổi câu; mọi appError() khác byte-identical.
+ *
+ * Không có khoá dịch cho giá trị đó ⇒ `localizeParams` đã tự trả về NGUYÊN VĂN raw
+ * (cùng bất biến "thiếu khoá ⇒ hiện thô" của cả file) — không phải một khoá i18n
+ * trần bị bỏ sót.
+ */
+function withStopPinReasonSuffix(
+  text: string,
+  params: Record<string, string | number> | undefined,
+  localizedParams: Record<string, string | number> | undefined,
+): string {
+  const raw = params?.stopPinReason;
+  if (typeof raw !== "string" || raw.trim().length === 0) return text;
+  const localized = localizedParams?.stopPinReason;
+  const shown = typeof localized === "string" && localized.trim().length > 0 ? localized : raw;
+  return `${text} ${shown}`;
+}
+
 export function translateAppError(
   appCode: string,
   params: Record<string, string | number> | undefined,
@@ -304,7 +345,7 @@ export function translateAppError(
       defaultValue: SENTINEL,
     });
     if (typeof withReasonTranslated === "string" && withReasonTranslated !== SENTINEL) {
-      return withReasonTranslated;
+      return withStopPinReasonSuffix(withReasonTranslated, params, localizedParams);
     }
   }
 
@@ -315,7 +356,7 @@ export function translateAppError(
     defaultValue: SENTINEL,
   });
   if (typeof translated !== "string" || translated === SENTINEL) return fallback;
-  return translated;
+  return withStopPinReasonSuffix(translated, params, localizedParams);
 }
 
 /**

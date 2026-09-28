@@ -9,7 +9,7 @@
  * RBAC: module 'machine_control' — create/edit/delete buttons are hidden unless the
  * user has the matching grant. View requires canView.
  */
-import { useState } from "react";
+import { Fragment, useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { trpc } from "@/lib/trpc";
 import { usePermissions } from "@/_core/hooks/usePermissions";
@@ -105,6 +105,180 @@ const emptyTag: TagForm = {
   tagKey: "", address: "", dataType: "float", unit: "", scale: "", offset: "", writable: false, isEnabled: true,
 };
 
+/**
+ * doc 81 Đợt 1D Task 3 — pure value <-> input-string conversions for the stop-pin editor,
+ * typed by the tag's `dataType` (server-side rule in `services/ot/stopPin.ts`: bool
+ * accepts true/false or 1/0 canonicalised to boolean; int/float are numbers; string is
+ * text ≤255 chars; json/unknown are refused). Exported for direct unit testing.
+ */
+export function stopPinValueToInput(dataType: DataType, value: unknown): string {
+  if (value === undefined || value === null) return dataType === "bool" ? "true" : "";
+  if (dataType === "bool") return value === true || value === 1 || value === "1" || value === "true" ? "true" : "false";
+  return String(value);
+}
+export function parseStopPinInput(dataType: DataType, raw: string): unknown {
+  const trimmed = raw.trim();
+  switch (dataType) {
+    case "bool":
+      return trimmed === "true" || trimmed === "1";
+    case "int":
+      return Math.trunc(Number(trimmed));
+    case "float":
+      return Number(trimmed);
+    default:
+      return trimmed;
+  }
+}
+
+/** Row shape the stop-pin UI needs (subset of `tags.listByAdapter` output). */
+export interface StopPinTagRow {
+  id: number;
+  tagKey: string;
+  dataType: DataType;
+  writable: boolean;
+  stopValue?: unknown;
+}
+
+/** doc 81 Đợt 1D Task 3 — "Tag dừng" chip: rendered in the tag table for a PINNED tag. */
+export function StopPinChip({ stopValue }: { stopValue?: unknown }) {
+  const { t } = useTranslation();
+  if (stopValue === undefined || stopValue === null) return null;
+  return (
+    <Badge variant="secondary" className="ml-2 align-middle">
+      {t("deviceAdapter.stopPin.chip", "Tag dừng: {{value}}", { value: String(stopValue) })}
+    </Badge>
+  );
+}
+
+/**
+ * doc 81 Đợt 1D Task 3 — "Tag dừng phần mềm" section (writable tags only): a switch, a
+ * value input typed by `dataType`, a required reason, and a warning line. Saving calls
+ * `setStopPin` SEPARATELY from the tag update (`tags.update`) — this section never
+ * touches `tagForm`/`submitTag`. Hidden for a non-writable tag (and for `json`, which
+ * the server always refuses — `stopPinTypeMismatch`).
+ */
+export function TagStopPinEditor({
+  tag,
+  adapterId,
+  canEdit,
+  onSaved,
+}: {
+  tag: StopPinTagRow;
+  adapterId: number;
+  canEdit: boolean;
+  onSaved?: () => void;
+}) {
+  const { t } = useTranslation();
+  const [enabled, setEnabled] = useState(tag.stopValue !== undefined && tag.stopValue !== null);
+  const [value, setValue] = useState(() => stopPinValueToInput(tag.dataType, tag.stopValue));
+  const [reason, setReason] = useState("");
+
+  // Re-seed the draft only when the EDITED TAG ITSELF changes (not on every refetch of the
+  // same tag) — a mid-edit keystroke must not be clobbered by an unrelated invalidation.
+  useEffect(() => {
+    setEnabled(tag.stopValue !== undefined && tag.stopValue !== null);
+    setValue(stopPinValueToInput(tag.dataType, tag.stopValue));
+    setReason("");
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tag.id]);
+
+  const setStopPin = trpc.deviceAdapter.tags.setStopPin.useMutation({
+    onSuccess: (res) => {
+      toast.success(t("deviceAdapter.stopPin.toast.saved", "Đã lưu ghim tag dừng"));
+      // doc 81 Đợt 1D Task 1 — adapter đã commissioning: bản ký KHÔNG bị thu hồi tự động,
+      // nhưng người sửa phải được nhắc soát lại (xem "Sổ ký" ở trang Sức khỏe hệ thống).
+      if (res.commissioningRecheckRequired) {
+        toast.warning(
+          t(
+            "deviceAdapter.stopPin.toast.recheckCommissioning",
+            "Adapter đã commissioning — hãy soát lại commissioning sau khi đổi ghim (mục Sổ ký ở Sức khỏe hệ thống).",
+          ),
+        );
+      }
+      setReason("");
+      onSaved?.();
+    },
+    onError: (e) => toastTrpcError(e),
+  });
+
+  if (!tag.writable || tag.dataType === "json") {
+    return (
+      <div className="mt-1 rounded-md border border-dashed p-2 text-xs text-muted-foreground">
+        {t("deviceAdapter.stopPin.writableOnly", "Chỉ tag GHI ĐƯỢC (writable) và không phải kiểu json mới ghim được giá trị dừng.")}
+      </div>
+    );
+  }
+
+  const reasonOk = reason.trim().length >= 5;
+  const valueOk = !enabled || value.trim().length > 0;
+  const canSave = canEdit && reasonOk && valueOk && !setStopPin.isPending;
+
+  const handleSave = () => {
+    if (!canSave) return;
+    setStopPin.mutate({
+      adapterId,
+      tagKey: tag.tagKey,
+      stopValue: enabled ? parseStopPinInput(tag.dataType, value) : null,
+      reason: reason.trim(),
+    });
+  };
+
+  return (
+    <div className="mt-1 space-y-2 rounded-md border bg-muted/10 p-3">
+      <div className="text-sm font-medium">{t("deviceAdapter.stopPin.title", "Tag dừng phần mềm")}</div>
+      <div className="flex items-start gap-2 rounded-md border border-warning/30 bg-warning/10 p-2 text-xs text-warning">
+        <AlertTriangle className="h-4 w-4 mt-0.5 shrink-0" />
+        <span>
+          {t(
+            "deviceAdapter.stopPin.warning",
+            "Giá trị này sẽ được ghi khi có lệnh DỪNG, kể cả khi PLC an toàn không đọc được. Sai giá trị = lệnh dừng có thể khởi động máy.",
+          )}
+        </span>
+      </div>
+      <div className="flex items-center gap-2">
+        <Switch checked={enabled} disabled={!canEdit} onCheckedChange={setEnabled} />
+        <Label>{t("deviceAdapter.stopPin.enable", "Ghim giá trị dừng")}</Label>
+      </div>
+      {enabled && (
+        <div>
+          <Label htmlFor={`stop-pin-value-${tag.id}`}>{t("deviceAdapter.stopPin.value", "Giá trị khi DỪNG")}</Label>
+          {tag.dataType === "bool" ? (
+            <Select value={value} onValueChange={setValue}>
+              <SelectTrigger id={`stop-pin-value-${tag.id}`} aria-label={t("deviceAdapter.stopPin.value", "Giá trị khi DỪNG")}>
+                <SelectValue placeholder={t("deviceAdapter.stopPin.selectValue", "Chọn giá trị…")} />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="true">true</SelectItem>
+                <SelectItem value="false">false</SelectItem>
+              </SelectContent>
+            </Select>
+          ) : (
+            <Input
+              id={`stop-pin-value-${tag.id}`}
+              type={tag.dataType === "int" || tag.dataType === "float" ? "number" : "text"}
+              value={value}
+              disabled={!canEdit}
+              onChange={(e) => setValue(e.target.value)}
+            />
+          )}
+        </div>
+      )}
+      <div>
+        <Label htmlFor={`stop-pin-reason-${tag.id}`}>{t("deviceAdapter.stopPin.reason", "Lý do (tối thiểu 5 ký tự)")}</Label>
+        <Input
+          id={`stop-pin-reason-${tag.id}`}
+          value={reason}
+          disabled={!canEdit}
+          onChange={(e) => setReason(e.target.value)}
+        />
+      </div>
+      <Button size="sm" disabled={!canSave} onClick={handleSave}>
+        {t("deviceAdapter.stopPin.save", "Lưu ghim")}
+      </Button>
+    </div>
+  );
+}
+
 export default function DeviceAdapterManagement() {
   const { t } = useTranslation();
   const { hasPermission } = usePermissions();
@@ -136,6 +310,8 @@ export default function DeviceAdapterManagement() {
   // ── Tag drawer state ──
   const [tagSheetAdapterId, setTagSheetAdapterId] = useState<number | null>(null);
   const [tagForm, setTagForm] = useState<TagForm>(emptyTag);
+  // doc 81 Đợt 1D Task 3 — which tag's "Tag dừng phần mềm" section is expanded (one at a time).
+  const [editingTagId, setEditingTagId] = useState<number | null>(null);
   const tagsQuery = trpc.deviceAdapter.tags.listByAdapter.useQuery(
     { adapterId: tagSheetAdapterId ?? 0 },
     { enabled: tagSheetAdapterId != null },
@@ -430,7 +606,7 @@ export default function DeviceAdapterManagement() {
       </Dialog>
 
       {/* ── Tag drawer ── */}
-      <Sheet open={tagSheetAdapterId != null} onOpenChange={(o) => { if (!o) { setTagSheetAdapterId(null); setTagForm(emptyTag); } }}>
+      <Sheet open={tagSheetAdapterId != null} onOpenChange={(o) => { if (!o) { setTagSheetAdapterId(null); setTagForm(emptyTag); setEditingTagId(null); } }}>
         <SheetContent className="w-[480px] sm:max-w-[480px] overflow-y-auto">
           <SheetHeader>
             <SheetTitle>{t("deviceAdapter.tagsTitle", "Tag của adapter")}</SheetTitle>
@@ -459,27 +635,51 @@ export default function DeviceAdapterManagement() {
                   <TableRow><TableCell colSpan={6} className="text-center text-muted-foreground">{t("deviceAdapter.tag.empty", "Chưa có tag.")}</TableCell></TableRow>
                 )}
                 {tags.map((tg) => (
-                  <TableRow key={tg.id}>
-                    <TableCell className="font-medium">{tg.tagKey}</TableCell>
-                    <TableCell>{tg.address}</TableCell>
-                    <TableCell><Badge variant="outline">{tg.dataType}</Badge></TableCell>
-                    <TableCell>
-                      <Switch checked={tg.writable} disabled={!canEdit || updateTag.isPending}
-                        onCheckedChange={(v) => updateTag.mutate({ id: tg.id, writable: v })} />
-                    </TableCell>
-                    <TableCell>
-                      <Switch checked={tg.isEnabled} disabled={!canEdit || updateTag.isPending}
-                        onCheckedChange={(v) => updateTag.mutate({ id: tg.id, isEnabled: v })} />
-                    </TableCell>
-                    <TableCell>
-                      {canDelete && (
-                        <Button size="sm" variant="destructive" disabled={deleteTag.isPending}
-                          onClick={() => setTagToDelete({ id: tg.id, tagKey: tg.tagKey })}>
-                          <Trash2 className="h-4 w-4" />
-                        </Button>
-                      )}
-                    </TableCell>
-                  </TableRow>
+                  <Fragment key={tg.id}>
+                    <TableRow>
+                      <TableCell className="font-medium">
+                        {tg.tagKey}
+                        <StopPinChip stopValue={tg.stopValue} />
+                      </TableCell>
+                      <TableCell>{tg.address}</TableCell>
+                      <TableCell><Badge variant="outline">{tg.dataType}</Badge></TableCell>
+                      <TableCell>
+                        <Switch checked={tg.writable} disabled={!canEdit || updateTag.isPending}
+                          onCheckedChange={(v) => updateTag.mutate({ id: tg.id, writable: v })} />
+                      </TableCell>
+                      <TableCell>
+                        <Switch checked={tg.isEnabled} disabled={!canEdit || updateTag.isPending}
+                          onCheckedChange={(v) => updateTag.mutate({ id: tg.id, isEnabled: v })} />
+                      </TableCell>
+                      <TableCell className="text-right space-x-1">
+                        {canEdit && (
+                          <Button size="sm" variant="outline"
+                            aria-label={t("deviceAdapter.stopPin.editTag", "Sửa ghim tag dừng")}
+                            onClick={() => setEditingTagId((cur) => (cur === tg.id ? null : tg.id))}>
+                            <Pencil className="h-4 w-4" />
+                          </Button>
+                        )}
+                        {canDelete && (
+                          <Button size="sm" variant="destructive" disabled={deleteTag.isPending}
+                            onClick={() => setTagToDelete({ id: tg.id, tagKey: tg.tagKey })}>
+                            <Trash2 className="h-4 w-4" />
+                          </Button>
+                        )}
+                      </TableCell>
+                    </TableRow>
+                    {editingTagId === tg.id && tagSheetAdapterId != null && (
+                      <TableRow>
+                        <TableCell colSpan={6} className="bg-muted/5">
+                          <TagStopPinEditor
+                            tag={tg}
+                            adapterId={tagSheetAdapterId}
+                            canEdit={canEdit}
+                            onSaved={invalidateTags}
+                          />
+                        </TableCell>
+                      </TableRow>
+                    )}
+                  </Fragment>
                 ))}
               </TableBody>
             </Table>

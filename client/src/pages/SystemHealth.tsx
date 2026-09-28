@@ -775,6 +775,12 @@ function CommissioningRecordsDialog({
   const utils = trpc.useUtils();
   const recordsQuery = trpc.commissioning.list.useQuery({ adapterId: adapter.id });
   const records = recordsQuery.data ?? [];
+  // doc 81 Đợt 1D Task 3 (controller addition) — người ký commissioning phải THẤY các tag
+  // DỪNG đã ghim của adapter TRƯỚC khi ký/thu hồi: lệnh DỪNG ghi đúng các cặp này được
+  // MIỄN preflight an toàn (server/services/ot/commandDispatcher.ts), nên đây là đúng thứ
+  // "còn phải soát" khi commissioningRecheckRequired đã báo ở màn Device Adapter (Task 3).
+  const pinStatusQuery = trpc.commissioning.status.useQuery({ adapterId: adapter.id });
+  const pinnedStopTags = pinStatusQuery.data?.pinnedStopTags ?? [];
 
   const [fatReference, setFatReference] = useState("");
   const [expiresAt, setExpiresAt] = useState("");
@@ -828,6 +834,21 @@ function CommissioningRecordsDialog({
             {t("systemHealth.comm.dialogDesc", "Ký duyệt FAT (tạo bản ghi active) hoặc thu hồi. Ghi thật chỉ được phép khi có bản ghi active còn hạn.")}
           </DialogDescription>
         </DialogHeader>
+
+        {pinnedStopTags.length > 0 && (
+          <div className="rounded-md border bg-muted/20 p-2 text-xs">
+            <div className="mb-1 font-medium">
+              {t("systemHealth.comm.pin.title", "Tag DỪNG đã ghim ({{count}})", { count: pinnedStopTags.length })}
+            </div>
+            <ul className="space-y-0.5">
+              {pinnedStopTags.map((p) => (
+                <li key={p.tagKey} className="font-mono">
+                  {t("systemHealth.comm.pin.row", "{{tagKey}} = {{value}}", { tagKey: p.tagKey, value: String(p.value) })}
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
 
         <div className="max-h-[300px] overflow-y-auto rounded-md border">
           <Table>

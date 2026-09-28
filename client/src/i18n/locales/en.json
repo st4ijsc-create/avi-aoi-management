@@ -4319,6 +4319,15 @@
       "recipeMachineTypeMismatch": "This recipe is for a different machine type than the target machine — it cannot be deployed there.",
       "recipeRetired": "This version was deliberately archived (not just replaced by a newer one), or there is no record of it ever being replaced — it cannot be rolled back to. Create a new version instead."
     },
+    "stopPinReason": {
+      "no_pins": "No stop tag is pinned for this machine — use the hardware E-STOP.",
+      "empty_writes": "The stop command carried no tag writes — use the hardware E-STOP.",
+      "unpinned_tag": "The stop command writes a tag that is not a pinned stop tag — use the hardware E-STOP.",
+      "value_mismatch": "The stop command writes a value different from the pinned stop value — use the hardware E-STOP.",
+      "duplicate_tag": "The stop command writes the same tag more than once — use the hardware E-STOP.",
+      "pin_load_failed": "The pinned stop tag configuration could not be read — use the hardware E-STOP.",
+      "pin_tag_changed": "The pinned stop tag changed while the command was being checked — use the hardware E-STOP."
+    },
     "client": {
       "generic": "System error, please try again",
       "forbidden": "You do not have permission to perform this action",
@@ -15628,6 +15637,22 @@
     "tagsTitle": "Adapter tags",
     "test": "Test",
     "testConn": "Test connection",
+    "stopPin": {
+      "chip": "Stop tag: {{value}}",
+      "editTag": "Edit stop pin",
+      "writableOnly": "Only a WRITABLE tag (and not the json type) can have a pinned stop value.",
+      "title": "Software stop tag",
+      "warning": "This value will be written when a STOP command is issued, even if the safety PLC cannot be read. A wrong value = a stop command could START the machine.",
+      "enable": "Pin a stop value",
+      "value": "Value on STOP",
+      "selectValue": "Choose a value…",
+      "reason": "Reason (at least 5 characters)",
+      "save": "Save pin",
+      "toast": {
+        "saved": "Stop pin saved",
+        "recheckCommissioning": "This adapter is commissioned — recheck its commissioning after changing a pin (see the sign-off log under System Health)."
+      }
+    },
     "toast": {
       "connFail": "Connection failed: {{err}}",
       "connOk": "Connection OK ({{ms}}ms)",
@@ -18071,6 +18096,10 @@
       "manage": "Ledger",
       "noExpiry": "no expiry",
       "noRecords": "No commissioning records yet.",
+      "pin": {
+        "title": "Pinned STOP tags ({{count}})",
+        "row": "{{tagKey}} = {{value}}"
+      },
       "rec": {
         "active": "active",
         "expired": "expired",

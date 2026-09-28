@@ -4311,6 +4311,15 @@
       "recipeMachineTypeMismatch": "此配方适用的机型与目标设备不同——不能部署到该设备。",
       "recipeRetired": "此版本是被有意归档的（并非仅被新版本替换），或没有任何被替换的记录——不能回滚到该版本。请创建新版本。"
     },
+    "stopPinReason": {
+      "no_pins": "该设备尚未固定任何停止标签——请使用硬件急停（E-STOP）。",
+      "empty_writes": "停止命令未携带任何标签写入——请使用硬件急停（E-STOP）。",
+      "unpinned_tag": "停止命令写入的标签不是已固定的停止标签——请使用硬件急停（E-STOP）。",
+      "value_mismatch": "停止命令写入的值与已固定的停止值不同——请使用硬件急停（E-STOP）。",
+      "duplicate_tag": "停止命令多次写入同一个标签——请使用硬件急停（E-STOP）。",
+      "pin_load_failed": "无法读取已固定的停止标签配置——请使用硬件急停（E-STOP）。",
+      "pin_tag_changed": "在检查该命令期间，已固定的停止标签发生了变化——请使用硬件急停（E-STOP）。"
+    },
     "client": {
       "generic": "系统错误，请重试",
       "forbidden": "您没有权限执行此操作",
@@ -14534,6 +14543,10 @@
       "manage": "台账",
       "noExpiry": "无到期",
       "noRecords": "尚无调试记录。",
+      "pin": {
+        "title": "已固定的停止标签（{{count}}）",
+        "row": "{{tagKey}} = {{value}}"
+      },
       "rec": {
         "active": "有效",
         "expired": "已过期",
@@ -16190,6 +16203,22 @@
     "tagsTitle": "适配器标签",
     "test": "测试",
     "testConn": "测试连接",
+    "stopPin": {
+      "chip": "停止标签：{{value}}",
+      "editTag": "编辑停止固定值",
+      "writableOnly": "只有可写标签（且非 json 类型）才能固定停止值。",
+      "title": "软件停止标签",
+      "warning": "下发 STOP（停止）命令时将写入此值，即使无法读取安全 PLC 也是如此。值设置错误 = 停止命令可能反而启动机器。",
+      "enable": "固定停止值",
+      "value": "停止时的值",
+      "selectValue": "选择一个值…",
+      "reason": "原因（至少 5 个字符）",
+      "save": "保存固定值",
+      "toast": {
+        "saved": "已保存停止固定值",
+        "recheckCommissioning": "该适配器已调试签收——更改固定值后请到“系统健康”下的签收台账重新核查调试状态。"
+      }
+    },
     "toast": {
       "connFail": "连接失败：{{err}}",
       "connOk": "连接正常（{{ms}} 毫秒）",

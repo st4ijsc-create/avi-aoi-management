@@ -4311,6 +4311,15 @@
       "recipeMachineTypeMismatch": "Công thức này dành cho loại máy khác với máy đích — không thể triển khai lên máy này.",
       "recipeRetired": "Phiên bản này đã bị CỐ Ý lưu trữ (không phải chỉ bị thay bằng bản mới), hoặc không có dấu vết từng bị thay — không thể quay lui về nó. Hãy tạo phiên bản mới."
     },
+    "stopPinReason": {
+      "no_pins": "Máy chưa ghim tag DỪNG nào — dùng E-STOP phần cứng.",
+      "empty_writes": "Lệnh dừng không mang tag nào để ghi — dùng E-STOP phần cứng.",
+      "unpinned_tag": "Lệnh dừng ghi một tag KHÔNG phải tag đã ghim DỪNG — dùng E-STOP phần cứng.",
+      "value_mismatch": "Giá trị của lệnh dừng khác với giá trị đã ghim — dùng E-STOP phần cứng.",
+      "duplicate_tag": "Lệnh dừng ghi trùng cùng một tag nhiều lần — dùng E-STOP phần cứng.",
+      "pin_load_failed": "Không đọc được cấu hình tag dừng đã ghim — dùng E-STOP phần cứng.",
+      "pin_tag_changed": "Tag dừng đã ghim vừa bị đổi trong lúc kiểm tra lệnh — dùng E-STOP phần cứng."
+    },
     "client": {
       "generic": "Lỗi hệ thống, vui lòng thử lại",
       "forbidden": "Bạn không có quyền thực hiện thao tác này",
@@ -15608,6 +15617,22 @@
     "tagsTitle": "Tag của adapter",
     "test": "Kiểm tra",
     "testConn": "Kiểm tra kết nối",
+    "stopPin": {
+      "chip": "Tag dừng: {{value}}",
+      "editTag": "Sửa ghim tag dừng",
+      "writableOnly": "Chỉ tag GHI ĐƯỢC (writable) và không phải kiểu json mới ghim được giá trị dừng.",
+      "title": "Tag dừng phần mềm",
+      "warning": "Giá trị này sẽ được ghi khi có lệnh DỪNG, kể cả khi PLC an toàn không đọc được. Sai giá trị = lệnh dừng có thể khởi động máy.",
+      "enable": "Ghim giá trị dừng",
+      "value": "Giá trị khi DỪNG",
+      "selectValue": "Chọn giá trị…",
+      "reason": "Lý do (tối thiểu 5 ký tự)",
+      "save": "Lưu ghim",
+      "toast": {
+        "saved": "Đã lưu ghim tag dừng",
+        "recheckCommissioning": "Adapter đã commissioning — hãy soát lại commissioning sau khi đổi ghim (mục Sổ ký ở Sức khỏe hệ thống)."
+      }
+    },
     "toast": {
       "connFail": "Kết nối thất bại: {{err}}",
       "connOk": "Kết nối OK ({{ms}}ms)",
@@ -18051,6 +18076,10 @@
       "manage": "Sổ ký",
       "noExpiry": "không hạn",
       "noRecords": "Chưa có bản ghi commissioning.",
+      "pin": {
+        "title": "Tag DỪNG đã ghim ({{count}})",
+        "row": "{{tagKey}} = {{value}}"
+      },
       "rec": {
         "active": "active",
         "expired": "expired",
