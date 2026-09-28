@@ -126,6 +126,8 @@ import { evaluateCommandPolicy, secPlatformEnabled } from "../security/policyGat
 // G1.7 (doc 44 W0-D) — correlation backbone (AsyncLocalStorage, opt-in): when the
 // caller did not pass an explicit correlationId we read the ambient one (if any).
 import { getCorrelationId } from "../observability/correlation";
+// doc 81 Đợt 1D Task 2 — per-tag pinned STOP values (mig 0362, Task 1).
+import { loadStopPins, matchPinnedStop, type MatchPinnedStopResult, type StopPin } from "./stopPin";
 
 /** True when the operator has explicitly enabled real OT control (F4b). */
 export function isOtControlEnabled(): boolean {
@@ -465,17 +467,59 @@ export interface DispatchResult {
   appError?: { appCode: AppErrorCode; appParams: AppErrorParams };
   /** Plain-English sentence for API callers/logs, paired with `appError`. */
   message?: string;
+  /**
+   * doc 81 Đợt 1D Task 2 — set ONLY for a stop-typed HITL command that reached the real-write gates: true ⇔ it
+   * wrote exactly pinned stop values and was exempted from the safety preflight (see classifyOtStop). Absent for
+   * every other command (byte-identical).
+   */
+  pinnedStop?: boolean;
 }
 
 /**
- * doc 81 Đợt 1C final wave 4 (ruling R-1C-g, final review I1) — an OT command whose TYPE is a stop. It is NOT
- * exempted from the safety preflight by that name (an OT "stop" is caller-chosen tag writes; no pinned
- * stop-tag metadata exists — L-7: unfilled data ⇒ fail-closed). The name is used ONLY to word the refusal.
+ * doc 81 Đợt 1C final wave 4 (ruling R-1C-g, final review I1) — an OT command whose TYPE is a stop. The name
+ * alone NEVER exempts it from the safety preflight (an OT "stop" is caller-chosen tag writes). doc 81 Đợt 1D
+ * Task 2: the exemption is decided by DATA — classifyOtStop — and only for a stop that writes exactly the
+ * pinned (tagKey, value) pairs of the target adapter; the name only selects which commands are looked at.
  */
 export function isStopCommandType(commandType: string): boolean {
   const t = String(commandType ?? "").trim().toLowerCase();
   return t === "stop" || t === "e_stop";
 }
+
+/** Why a stop-typed command was NOT treated as a pinned stop (match reasons + the pin read failing). */
+export type StopPinRefusalReason = Extract<MatchPinnedStopResult, { ok: false }>["reason"] | "pin_load_failed";
+
+export type OtStopClassification =
+  | { isStop: false; pinnedStop: false }
+  | { isStop: true; pinnedStop: true; writes: StopPin[] }
+  | { isStop: true; pinnedStop: false; stopPinReason: StopPinRefusalReason };
+
+/**
+ * doc 81 Đợt 1D Task 2 — PURE. Is this command a PINNED stop?
+ *   • not stop-typed ⇒ `isStop: false` (pins are not consulted — R-1C-g: the name selects, data decides);
+ *   • `pins === null` (the pin read failed) ⇒ NOT pinned (`pin_load_failed`): the pins ARE the safety data, so a
+ *     read error never becomes an exemption (fail-closed; overrides the robot R-1C-h DB-outage rule here);
+ *   • otherwise `matchPinnedStop` decides: every write must be a pinned tag with its pinned value, no duplicates.
+ *     On a match the returned `writes` are the PINNED values (canonical, e.g. caller `1` ⇒ pin `true`) — the
+ *     dispatcher sends these, never the caller's values.
+ */
+export function classifyOtStop(commandType: string, writes: DispatchWrite[], pins: StopPin[] | null): OtStopClassification {
+  if (!isStopCommandType(commandType)) return { isStop: false, pinnedStop: false };
+  if (pins === null) return { isStop: true, pinnedStop: false, stopPinReason: "pin_load_failed" };
+  const m = matchPinnedStop(pins, writes);
+  if (!m.ok) return { isStop: true, pinnedStop: false, stopPinReason: m.reason };
+  return { isStop: true, pinnedStop: true, writes: m.writes };
+}
+
+/** Plain-English "why this stop was not a pinned stop" (API callers / ledger; no codes, no env vars). */
+const STOP_PIN_REASON_TEXT: Record<StopPinRefusalReason, string> = {
+  no_pins: "no stop tag is pinned for this machine",
+  empty_writes: "the stop carried no tag writes",
+  unpinned_tag: "the stop writes a tag that is not a pinned stop tag",
+  value_mismatch: "the stop writes a value that differs from the pinned stop value",
+  duplicate_tag: "the stop writes the same tag more than once",
+  pin_load_failed: "the pinned stop tags could not be read",
+};
 
 /** R-1C-g — existing code OPERATION_FAILED + a NEW reason key (vi/en/zh), not a new enum value. */
 export const SOFTWARE_STOP_REFUSED_APP_ERROR = {
@@ -484,20 +528,45 @@ export const SOFTWARE_STOP_REFUSED_APP_ERROR = {
 } as const satisfies { appCode: AppErrorCode; appParams: AppErrorParams };
 
 /** The refusal code stays in `reason` / the ledger reason column; the sentence itself names no code or env var. */
-function softwareStopRefusedMessage(_code: string): string {
-  return "The software stop was REFUSED by the safety check: the platform could not confirm the safety PLC (unreadable, simulation only, or tripped), so it did NOT send this stop. Use the hardware E-STOP on the machine now.";
+function softwareStopRefusedMessage(_code: string, stopPinReason?: StopPinRefusalReason): string {
+  const base = "The software stop was REFUSED by the safety check: the platform could not confirm the safety PLC (unreadable, simulation only, or tripped), so it did NOT send this stop. Use the hardware E-STOP on the machine now.";
+  return stopPinReason ? `${base} It was not a pinned stop: ${STOP_PIN_REASON_TEXT[stopPinReason]}.` : base;
 }
 
-/** The stop-typed refusal extras (appError + message + ledger prefix), or nothing for any other command. */
-function stopRefusalExtras(input: DispatchInput, code: string): { appError?: DispatchResult["appError"]; message?: string } {
+/** The stop pin reason of a stop-typed command, when it was classified and is not pinned. */
+function stopPinReasonOf(cls: OtStopClassification | undefined): StopPinRefusalReason | undefined {
+  return cls && cls.isStop && !cls.pinnedStop ? cls.stopPinReason : undefined;
+}
+
+/**
+ * The stop-typed refusal extras (appError + message + pinnedStop), or nothing for any other command.
+ * doc 81 Đợt 1D Task 2: `appParams.stopPinReason` + `pinnedStop: false` say WHY the stop was not exempt.
+ */
+function stopRefusalExtras(
+  input: DispatchInput,
+  code: string,
+  cls?: OtStopClassification,
+): { appError?: DispatchResult["appError"]; message?: string; pinnedStop?: boolean } {
   if (!isStopCommandType(input.commandType)) return {};
+  const why = stopPinReasonOf(cls);
   return {
-    appError: { appCode: SOFTWARE_STOP_REFUSED_APP_ERROR.appCode, appParams: { ...SOFTWARE_STOP_REFUSED_APP_ERROR.appParams } },
-    message: softwareStopRefusedMessage(code),
+    appError: {
+      appCode: SOFTWARE_STOP_REFUSED_APP_ERROR.appCode,
+      appParams: { ...SOFTWARE_STOP_REFUSED_APP_ERROR.appParams, ...(why ? { stopPinReason: why } : {}) },
+    },
+    message: softwareStopRefusedMessage(code, why),
+    ...(cls?.isStop ? { pinnedStop: false } : {}),
   };
 }
-function withStopRefusalText(input: DispatchInput, code: string, detail: string): string {
-  return isStopCommandType(input.commandType) ? `${softwareStopRefusedMessage(code)} — ${detail}` : detail;
+function withStopRefusalText(input: DispatchInput, code: string, detail: string, cls?: OtStopClassification): string {
+  if (!isStopCommandType(input.commandType)) return detail;
+  const why = stopPinReasonOf(cls);
+  return `${softwareStopRefusedMessage(code)} — ${detail}${why ? ` [stop pin: ${why}]` : ""}`;
+}
+/** Ledger metadata (command_log.ackValue) of a refused stop-typed command: pinnedStop false + why. */
+function stopRefusalLedgerLink(cls: OtStopClassification): LedgerLink | undefined {
+  const why = stopPinReasonOf(cls);
+  return why ? { ackExtra: { pinnedStop: false, stopPinReason: why } } : undefined;
 }
 
 const TERMINAL_STATUSES: ReadonlySet<DispatchStatus> = new Set([
@@ -698,6 +767,51 @@ async function dispatchCore(input: DispatchInput): Promise<DispatchResult> {
     );
   }
 
+  // ── (5a-stop) doc 81 Đợt 1D Task 2 — PINNED OT STOP (owner decision 2026-09-28, doc 81 §8 QĐ1). Reachable ONLY
+  //         on the real, commissioned HITL path (steps 5 / 5a returned 'simulated' otherwise). A stop-typed command
+  //         whose writes are EXACTLY pinned (tagKey, value) pairs of THIS adapter (device_tags.stop_value, read
+  //         fresh here) is a proven energy-reducing command:
+  //           • its writes are CANONICALISED to the pinned values (the caller's values never reach the wire);
+  //           • it skips the safety-PLC preflight (BLOCKED / SIM_ONLY / UNKNOWN alike);
+  //           • a policy DENY / REQUIRE_APPROVAL or an interlock block does not stop it — the verdict is recorded
+  //             as an override (ledger ackValue + control_audit_log), ruling R-1D-c (mirrors robot R-1C-c/d).
+  //         Every other gate is unchanged and already ran or still runs: authN/authZ (step 1), idempotency (2),
+  //         adapter/tag enabled + writable (3), driver (4), mode + commissioning (5/5a), and the HITL binding +
+  //         single-use consume in the write-ahead reservation — verified against the CALLER's writes (what the
+  //         human confirmed), which are value-equal to the pins by construction.
+  //         Not a pinned stop (or the pin read failed ⇒ NO exemption, the pins are the safety data) ⇒ today's
+  //         full path; a refusal carries `stopPinReason`.
+  const callerInput = input;
+  let stopCls: OtStopClassification = { isStop: false, pinnedStop: false };
+  if (input.triggeredBy.kind === "hitl" && isStopCommandType(input.commandType)) {
+    let pins: StopPin[] | null;
+    try {
+      pins = await loadStopPins(db, input.adapterId);
+    } catch (err) {
+      console.warn(
+        `[Dispatch] pinned-stop read failed for adapter ${input.adapterId} — stop NOT exempted from the safety preflight:`,
+        (err as Error)?.message || err,
+      );
+      pins = null;
+    }
+    stopCls = classifyOtStop(input.commandType, input.writes, pins);
+    if (stopCls.pinnedStop) {
+      const pinned = new Map(stopCls.writes.map((w) => [w.tagKey, w] as const));
+      if (resolved.every((r) => pinned.has(r.write.tagKey))) {
+        input = { ...input, writes: stopCls.writes.map((w) => ({ tagKey: w.tagKey, value: w.value })) };
+        for (const r of resolved) {
+          const p = pinned.get(r.write.tagKey)!;
+          r.write = { tagKey: p.tagKey, value: p.value };
+        }
+      } else {
+        // Unreachable (matchPinnedStop covers every caller write) — fail-closed: no exemption, full preflight.
+        stopCls = { isStop: true, pinnedStop: false, stopPinReason: "unpinned_tag" };
+      }
+    }
+  }
+  /** Gate verdicts a pinned stop overrode (R-1D-c) — ledgered on its intent/result rows + audited after the write. */
+  const stopOverrides: Record<string, Record<string, unknown>> = {};
+
   // ── (5a-bis) INLINE INTERLOCK GATE (doc 25 T1) — fail-closed, ĐỒNG BỘ, TRƯỚC
   //         mọi real-write cho lệnh HITL. Reachable ONLY khi OT_CONTROL_ENABLED==="true"
   //         VÀ adapter đã commissioned (bước 5/5a đã trả simulated nếu không). Đánh giá
@@ -729,8 +843,21 @@ async function dispatchCore(input: DispatchInput): Promise<DispatchResult> {
     );
     if (!verdict.allow) {
       const reason = verdict.effect === "deny" ? "POLICY_DENIED" : "POLICY_APPROVAL_REQUIRED";
-      const ids = await writeRejected(db, input, reason, verdict.reason);
-      return { ok: false, simulated: false, status: "rejected", reason, results: failedResults(input, reason), commandLogIds: ids };
+      if (stopCls.pinnedStop) {
+        // R-1D-c — a PINNED stop is never blocked by policy; the verdict is recorded and the stop is sent.
+        stopOverrides.policyOverride = {
+          decision: reason,
+          effect: verdict.effect,
+          policyRef: verdict.policyId,
+          policyReason: verdict.reason,
+          ruling: "R-1D-c",
+          note: "pinned OT stop is never blocked by policy — sent anyway",
+        };
+        console.warn(`[Dispatch] policy ${reason} (${verdict.policyId ?? "no policy id"}) for a PINNED stop on adapter ${input.adapterId} — overridden (R-1D-c), stop sent`);
+      } else {
+        const ids = await writeRejected(db, input, reason, verdict.reason);
+        return { ok: false, simulated: false, status: "rejected", reason, results: failedResults(input, reason), commandLogIds: ids };
+      }
     }
   }
 
@@ -755,7 +882,9 @@ async function dispatchCore(input: DispatchInput): Promise<DispatchResult> {
   //         doc 81 Đợt 1C Task 1 (owner decision 2026-09-27): the reading is the REAL-actuation one —
   //         only a real safety PLC with a mapped tag that reads clean is OK; SIM / real_unmapped
   //         alone ⇒ REJECT SAFETY_SIM_ONLY; a bad-quality real safety tag ⇒ SAFETY_UNKNOWN.
-  if (input.triggeredBy.kind === "hitl" && isSafetyPreflightEnabled()) {
+  //         doc 81 Đợt 1D Task 2 — a PINNED stop (5a-stop) skips this preflight entirely (energy-reducing, proven by
+  //         data); any other stop-typed command still goes through it and its refusal carries `stopPinReason`.
+  if (input.triggeredBy.kind === "hitl" && isSafetyPreflightEnabled() && !stopCls.pinnedStop) {
     const { state: safety, basis: safetyBasis } = await readSafetyStateForPreflight(input.adapterId, input.machineId ?? null);
     if (safety === "BLOCKED") {
       // final wave 4 (R-1C-g) — a stop/e_stop stays gated; its refusal says to use the hardware E-STOP.
@@ -763,7 +892,10 @@ async function dispatchCore(input: DispatchInput): Promise<DispatchResult> {
         db,
         input,
         "SAFETY_BLOCKED",
-        withStopRefusalText(input, "SAFETY_BLOCKED", "safety-PLC reports BLOCKED/tripped — actuation denied before write (read-only preflight, spec invariant #1)"),
+        withStopRefusalText(input, "SAFETY_BLOCKED", "safety-PLC reports BLOCKED/tripped — actuation denied before write (read-only preflight, spec invariant #1)", stopCls),
+        undefined,
+        undefined,
+        stopRefusalLedgerLink(stopCls),
       );
       return {
         ok: false,
@@ -772,7 +904,7 @@ async function dispatchCore(input: DispatchInput): Promise<DispatchResult> {
         reason: "SAFETY_BLOCKED",
         results: failedResults(input, "SAFETY_BLOCKED"),
         commandLogIds: ids,
-        ...stopRefusalExtras(input, "SAFETY_BLOCKED"),
+        ...stopRefusalExtras(input, "SAFETY_BLOCKED", stopCls),
       };
     }
     if (safety !== "OK" && safetyPreflightReason(safety, safetyBasis) === "SAFETY_SIM_ONLY") {
@@ -783,7 +915,10 @@ async function dispatchCore(input: DispatchInput): Promise<DispatchResult> {
         db,
         input,
         "SAFETY_SIM_ONLY",
-        withStopRefusalText(input, "SAFETY_SIM_ONLY", "safety-PLC preflight: no real safety PLC with a mapped safety tag is configured (only SIM / unmapped) — a commissioned target needs a REAL safety PLC; actuation denied before write"),
+        withStopRefusalText(input, "SAFETY_SIM_ONLY", "safety-PLC preflight: no real safety PLC with a mapped safety tag is configured (only SIM / unmapped) — a commissioned target needs a REAL safety PLC; actuation denied before write", stopCls),
+        undefined,
+        undefined,
+        stopRefusalLedgerLink(stopCls),
       );
       return {
         ok: false,
@@ -792,7 +927,7 @@ async function dispatchCore(input: DispatchInput): Promise<DispatchResult> {
         reason: "SAFETY_SIM_ONLY",
         results: failedResults(input, "SAFETY_SIM_ONLY"),
         commandLogIds: ids,
-        ...stopRefusalExtras(input, "SAFETY_SIM_ONLY"),
+        ...stopRefusalExtras(input, "SAFETY_SIM_ONLY", stopCls),
       };
     }
     if (safety !== "OK") {
@@ -803,7 +938,10 @@ async function dispatchCore(input: DispatchInput): Promise<DispatchResult> {
         db,
         input,
         "SAFETY_UNKNOWN",
-        withStopRefusalText(input, "SAFETY_UNKNOWN", `safety-PLC preflight returned ${safety} (no configured/readable safety-PLC reports OK) — actuation denied before write`),
+        withStopRefusalText(input, "SAFETY_UNKNOWN", `safety-PLC preflight returned ${safety} (no configured/readable safety-PLC reports OK) — actuation denied before write`, stopCls),
+        undefined,
+        undefined,
+        stopRefusalLedgerLink(stopCls),
       );
       return {
         ok: false,
@@ -812,7 +950,7 @@ async function dispatchCore(input: DispatchInput): Promise<DispatchResult> {
         reason: "SAFETY_UNKNOWN",
         results: failedResults(input, "SAFETY_UNKNOWN"),
         commandLogIds: ids,
-        ...stopRefusalExtras(input, "SAFETY_UNKNOWN"),
+        ...stopRefusalExtras(input, "SAFETY_UNKNOWN", stopCls),
       };
     }
   }
@@ -829,17 +967,35 @@ async function dispatchCore(input: DispatchInput): Promise<DispatchResult> {
         : `blocked by active interlock rule(s): ${gate.violations
             .map((v) => `#${v.ruleId}(${v.action})`)
             .join(", ")}`;
-      const ids = await writeRejected(db, input, "INTERLOCK_BLOCKED", detail);
-      return {
-        ok: false,
-        simulated: false,
-        status: "rejected",
-        reason: "INTERLOCK_BLOCKED",
-        results: failedResults(input, "INTERLOCK_BLOCKED"),
-        commandLogIds: ids,
-      };
+      if (stopCls.pinnedStop) {
+        // R-1D-c — an active interlock wants the machine STOPPED; blocking a pinned stop would defeat it. An
+        // evaluation error (failClosed) is overridden too: the stop is proven energy-reducing by the pins.
+        stopOverrides.interlockOverride = {
+          decision: "INTERLOCK_BLOCKED",
+          failClosed: gate.failClosed,
+          violations: gate.violations.map((v) => ({ ruleId: v.ruleId, action: v.action })),
+          detail,
+          ruling: "R-1D-c",
+          note: "pinned OT stop is never blocked by the interlock gate — sent anyway",
+        };
+        console.warn(`[Dispatch] interlock gate blocked a PINNED stop on adapter ${input.adapterId} (${detail}) — overridden (R-1D-c), stop sent`);
+      } else {
+        const ids = await writeRejected(db, input, "INTERLOCK_BLOCKED", detail);
+        return {
+          ok: false,
+          simulated: false,
+          status: "rejected",
+          reason: "INTERLOCK_BLOCKED",
+          results: failedResults(input, "INTERLOCK_BLOCKED"),
+          commandLogIds: ids,
+        };
+      }
     }
   }
+
+  // doc 81 Đợt 1D Task 2 — ledger metadata of a pinned stop (intent + result rows' ackValue). Empty otherwise ⇒
+  // every other command's rows are byte-identical.
+  const ledgerExtra: Record<string, unknown> = stopCls.pinnedStop ? { pinnedStop: true, ...stopOverrides } : {};
 
   // ── (5b) F4b — REAL WRITE PATH. Reachable ONLY when OT_CONTROL_ENABLED==="true"
   //         AND the adapter is commissioned (C2) AND only after every F4a gate above
@@ -853,7 +1009,7 @@ async function dispatchCore(input: DispatchInput): Promise<DispatchResult> {
   // ── (5b-0) doc 81 Đợt 1B Task 6 — WRITE-AHEAD RESERVATION (advisory lock → re-probe →
   //         bind + consume the HITL action → INSERT intent rows), committed BEFORE the
   //         driver is called. Refused / failed ⇒ return; driver.writeTags is never reached.
-  const reservation = await reserveRealWrite(db, input, resolved);
+  const reservation = await reserveRealWrite(db, input, resolved, { bindingInput: callerInput, ledgerExtra });
   if (!reservation.ok) return reservation.result;
   const { intentIds } = reservation;
   const ledgerConfirmer = reservation.boundConfirmer ?? who.confirmedBy;
@@ -1001,9 +1157,9 @@ async function dispatchCore(input: DispatchInput): Promise<DispatchResult> {
         `adapter command queue full (depth ${enq.depth} >= max ${enq.max}) — command rejected, retry later`,
         undefined,
         undefined,
-        { intentIds, confirmedBy: ledgerConfirmer }, // Task 6 — the RESULT row of the intent
+        { intentIds, confirmedBy: ledgerConfirmer, ackExtra: ledgerExtra }, // Task 6 — the RESULT row of the intent
       );
-      return { ok: false, simulated: false, status: "rejected", reason: "BUSY", results: failedResults(input, "BUSY"), commandLogIds: ids };
+      return { ok: false, simulated: false, status: "rejected", reason: "BUSY", results: failedResults(input, "BUSY"), commandLogIds: ids, ...(stopCls.pinnedStop ? { pinnedStop: true } : {}) };
     }
     executed = await enq.result;
   } else {
@@ -1035,7 +1191,7 @@ async function dispatchCore(input: DispatchInput): Promise<DispatchResult> {
         errorText: o.errorText,
         // Task 6 — RESULT row linked to its write-ahead intent (by id; the key pair
         // '<k>' / 'intent:<k>' links them too).
-        ackValue: { ledger: "result", intentId: intentIds[o.idx] } as any,
+        ackValue: { ledger: "result", intentId: intentIds[o.idx], ...ledgerExtra } as any,
         idempotencyKey: perWriteKey(input.idempotencyKey, r.write.tagKey, o.idx),
         sentAt,
         ackedAt: o.ok ? new Date() : null,
@@ -1060,7 +1216,44 @@ async function dispatchCore(input: DispatchInput): Promise<DispatchResult> {
     overall = "acked";
   }
   if (input.triggeredBy.kind === "interlock") await auditInterlockAutoBlock(input, commandLogIds);
+  if (stopCls.pinnedStop) {
+    for (const [kind, override] of Object.entries(stopOverrides)) auditPinnedStopOverride(input, commandLogIds[0], kind, override);
+    return { ok: allOk, simulated: false, status: overall, results, commandLogIds, pinnedStop: true };
+  }
   return { ok: allOk, simulated: false, status: overall, results, commandLogIds };
+}
+
+/** Upper bound after which a still-pending pinned-stop override audit is logged as stuck (never awaited by the stop). */
+export const OT_STOP_OVERRIDE_AUDIT_DEADLINE_MS = 10_000;
+
+/**
+ * doc 81 Đợt 1D Task 2 (R-1D-c) — control_audit_log row "stop_policy_override" / "stop_interlock_override" for a
+ * pinned stop that a gate would have refused. Written AFTER the result row, FIRE-AND-FORGET under a deadline (same
+ * reason as the robot M1 fix: under SEC_PLATFORM the hash-chain lock has no timeout and must not hold the stop's
+ * answer). Its failure is logged (no secrets), never surfaced as a stop failure; the ledger row already carries
+ * the override.
+ */
+function auditPinnedStopOverride(input: DispatchInput, resultId: number | undefined, kind: string, override: Record<string, unknown>): void {
+  const action = kind === "policyOverride" ? "stop_policy_override" : "stop_interlock_override";
+  const work = (async () => {
+    const db = await getDb();
+    if (!db) {
+      console.error(`[Dispatch] audit ${action} skipped for command_log #${resultId ?? "?"} — no DB (the pinned stop was sent)`);
+      return;
+    }
+    const { recordAuditEvent } = await import("../audit/controlAuditService");
+    await recordAuditEvent(db, {
+      entityType: "ot_command",
+      entityId: resultId ?? "unrecorded",
+      action,
+      actorId: actors(input).confirmedBy,
+      after: { adapterId: input.adapterId, machineId: input.machineId ?? null, commandType: input.commandType, ...override },
+      reason: `R-1D-c: pinned OT stop sent despite ${String(override.decision)}`,
+    });
+  })();
+  void withDeadline(work, OT_STOP_OVERRIDE_AUDIT_DEADLINE_MS, `pinned-stop ${action} audit`).catch((err) => {
+    console.error(`[Dispatch] audit ${action} failed or is stuck for command_log #${resultId ?? "?"} (the pinned stop was sent):`, (err as Error)?.message || err);
+  });
 }
 
 /** The cached (idempotent replay) result of a prior terminal ledger row for this key. */
@@ -1172,6 +1365,13 @@ async function reserveRealWrite(
   db: NonNullable<Awaited<ReturnType<typeof getDb>>>,
   input: DispatchInput,
   resolved: Array<{ write: DispatchWrite; address: string }>,
+  opts: {
+    /** doc 81 Đợt 1D Task 2 — the command the HITL action is verified against (the CALLER's writes; `input` may
+     *  carry the canonicalised pinned-stop writes). Absent ⇒ `input`. */
+    bindingInput?: DispatchInput;
+    /** Extra ackValue fields on the intent rows (pinned stop metadata). */
+    ledgerExtra?: Record<string, unknown>;
+  } = {},
 ): Promise<Reservation> {
   const resultKeys = resolved.map((r, i) => perWriteKey(input.idempotencyKey, r.write.tagKey, i));
   const intentKeys = resultKeys.map(intentKeyFor);
@@ -1211,7 +1411,7 @@ async function reserveRealWrite(
             .from(aiPendingActions)
             .where(eq(aiPendingActions.id, t.actionId))
             .for("update");
-          verdict = verifyActionBinding(pending, input, t);
+          verdict = verifyActionBinding(pending, opts.bindingInput ?? input, t);
           if (verdict.ok) {
             const consumed = await tx
               .update(aiPendingActions)
@@ -1255,7 +1455,7 @@ async function reserveRealWrite(
             status: "sent",
             ...trig,
             ...ctx,
-            ackValue: { ledger: "intent" } as any,
+            ackValue: { ledger: "intent", ...(opts.ledgerExtra ?? {}) } as any,
             idempotencyKey: intentKeys[i],
             sentAt,
           })
@@ -1484,6 +1684,8 @@ interface LedgerLink {
   intentIds?: number[];
   nullKey?: boolean;
   confirmedBy?: number | null;
+  /** doc 81 Đợt 1D Task 2 — extra ackValue fields (pinnedStop / stopPinReason). Empty/absent ⇒ unchanged row. */
+  ackExtra?: Record<string, unknown>;
 }
 
 /** The db handle OR a transaction handle (ledger writes inside the reservation tx). */
@@ -1527,8 +1729,10 @@ async function writeAll(
         ...ctx,
         errorText: `${reason}: ${detail}`,
         ...(link?.intentIds && link.intentIds.length > 0
-          ? { ackValue: { ledger: link.nullKey ? "refused_duplicate" : "result", intentId: link.intentIds[Math.min(i, link.intentIds.length - 1)] } as any }
-          : {}),
+          ? { ackValue: { ledger: link.nullKey ? "refused_duplicate" : "result", intentId: link.intentIds[Math.min(i, link.intentIds.length - 1)], ...(link.ackExtra ?? {}) } as any }
+          : link?.ackExtra && Object.keys(link.ackExtra).length > 0
+            ? { ackValue: { ...link.ackExtra } as any }
+            : {}),
         idempotencyKey: link?.nullKey ? null : perWriteKey(input.idempotencyKey, w.tagKey ?? "_", i),
       })
       .returning({ id: commandLog.id });
