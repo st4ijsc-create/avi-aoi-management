@@ -1148,26 +1148,9 @@ async function runRealJob(
   }
 
   // fix round 2 (b) — a policy verdict overridden for this STOP stays on the terminal row and is audited.
-  // Written AFTER the driver call so the STOP is never delayed; an audit failure never fails the STOP.
-  if (policyOverride) {
-    detail = { ...(detail ?? {}), policyOverride };
-    try {
-      const db = await getDb();
-      if (db) {
-        const { recordAuditEvent } = await import("../audit/controlAuditService");
-        await recordAuditEvent(db, {
-          entityType: "robot_job",
-          entityId: jobId ?? "unrecorded",
-          action: "stop_policy_override",
-          actorId: input.confirmedBy ?? input.requestedBy ?? null,
-          after: policyOverride,
-          reason: `R-1C-c: STOP sent despite policy ${String(policyOverride.decision)} (${String(policyOverride.policyRef ?? "no policy id")})`,
-        });
-      }
-    } catch (err) {
-      console.error(`[Robot] audit of the STOP policy override failed for job ${jobId} (STOP was sent):`, (err as Error)?.message ?? err);
-    }
-  }
+  // doc 81 Đợt 1C final wave 5 (M1): the audit runs AFTER finalize and is NOT awaited on the STOP's response
+  // path (recordAuditEvent takes the global hash-chain advisory lock, no timeout) — see auditStopPolicyOverride.
+  if (policyOverride) detail = { ...(detail ?? {}), policyOverride };
 
   if (!motion && stopDb) {
     // R-1C-h / R-1C-i — what the STOP path had to assume stays on the TERMINAL row too (finalize replaces result).
@@ -1177,6 +1160,7 @@ async function runRealJob(
   if (!motion && stopDb && jobId == null) {
     // R-1C-h — the STOP went out without a pre-written row: settle the ledger best-effort now.
     const ledger = await stopLedgerAfterSend(input, prewrite, status, { ...(detail ?? {}) }, errorText);
+    if (policyOverride) auditStopPolicyOverride(input, ledger.jobId, policyOverride);
     return { ok: status === "done", status, jobId: ledger.jobId, error: errorText, ...(ledger.ledgerError ? { ledgerError: ledger.ledgerError } : {}) };
   }
   if (jobId == null) {
@@ -1191,7 +1175,38 @@ async function runRealJob(
     // The driver WAS called; the row stays 'running' (honest: terminal state not recorded).
     const msg = (err as Error)?.message ?? String(err);
     console.error(`[Robot] ledger finalize failed for job ${jobId} (robot ${input.robotId}):`, msg);
+    if (policyOverride) auditStopPolicyOverride(input, jobId, policyOverride);
     return { ok: status === "done", status, jobId, error: errorText, ledgerError: "LEDGER_FINALIZE_FAILED" };
   }
+  if (policyOverride) auditStopPolicyOverride(input, jobId, policyOverride);
   return { ok: status === "done", status, jobId, error: errorText };
+}
+
+/** Upper bound after which a still-pending STOP-override audit is logged as stuck (it is never awaited by the STOP). */
+export const STOP_POLICY_AUDIT_DEADLINE_MS = 10_000;
+
+/**
+ * doc 81 Đợt 1C final wave 5 (final review M1) — control_audit_log row "stop_policy_override" (R-1C-c), written
+ * AFTER the ledger row is final and FIRE-AND-FORGET: under SEC_PLATFORM recordAuditEvent waits on the global
+ * hash-chain advisory lock with no timeout, which used to (a) hold the STOP's response and (b) leave its row
+ * 'running' meanwhile (a restart then reconciled a delivered STOP as outcome-unknown). A failure or a stuck
+ * audit is logged (no secrets), never surfaced as a STOP failure.
+ */
+function auditStopPolicyOverride(input: RobotDispatchInput, jobId: number | undefined, policyOverride: Record<string, unknown>): void {
+  const work = (async () => {
+    const db = await getDb();
+    if (!db) throw new Error("no DB");
+    const { recordAuditEvent } = await import("../audit/controlAuditService");
+    await recordAuditEvent(db, {
+      entityType: "robot_job",
+      entityId: jobId ?? "unrecorded",
+      action: "stop_policy_override",
+      actorId: input.confirmedBy ?? input.requestedBy ?? null,
+      after: policyOverride,
+      reason: `R-1C-c: STOP sent despite policy ${String(policyOverride.decision)} (${String(policyOverride.policyRef ?? "no policy id")})`,
+    });
+  })();
+  void withDeadline(work, STOP_POLICY_AUDIT_DEADLINE_MS, "STOP policy-override audit").catch((err) => {
+    console.error(`[Robot] audit of the STOP policy override failed or is stuck for job ${jobId ?? "unrecorded"} (the STOP was sent): ${safeDbError(err)}`);
+  });
 }

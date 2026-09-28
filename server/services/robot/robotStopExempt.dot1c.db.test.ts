@@ -292,10 +292,15 @@ describe.skipIf(!DB_URL)("Đợt 1C Task 3 fix round 1 — lệnh DỪNG không 
     const row = await jobRow(r.jobId);
     const override = (row?.result as Record<string, any> | null)?.policyOverride;
     expect(override).toMatchObject({ effect: "deny", policyRef: "p-t3-deny", reasonCode: "POLICY_DENIED", ruling: "R-1C-c" });
-    const audits = await (await d())
-      .select()
-      .from(controlAuditLog)
-      .where(and(eq(controlAuditLog.entityType, "robot_job"), eq(controlAuditLog.entityId, String(r.jobId))));
+    // final wave 5 (M1): the audit is written AFTER finalize, fire-and-forget — poll for it (bounded).
+    let audits: Array<typeof controlAuditLog.$inferSelect> = [];
+    for (let i = 0; i < 100 && audits.length === 0; i++) {
+      audits = await (await d())
+        .select()
+        .from(controlAuditLog)
+        .where(and(eq(controlAuditLog.entityType, "robot_job"), eq(controlAuditLog.entityId, String(r.jobId))));
+      if (audits.length === 0) await new Promise((res) => setTimeout(res, 50));
+    }
     expect(audits).toHaveLength(1);
     expect(audits[0].action).toBe("stop_policy_override");
     expect(audits[0].reason).toMatch(/R-1C-c/);
