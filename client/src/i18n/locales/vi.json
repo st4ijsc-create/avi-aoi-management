@@ -3981,6 +3981,8 @@
     "field": {
       "stopValue": "giá trị dừng ghim (stopValue)",
       "inspectionTime": "thời điểm kiểm tra (inspectionTime)",
+      "completedAt": "thời điểm hoàn tất (completedAt)",
+      "startedAt": "thời điểm bắt đầu (startedAt)",
       "clientId": "thiết bị MQTT",
       "changeReason": "lý do thay đổi",
       "reason": "lý do",

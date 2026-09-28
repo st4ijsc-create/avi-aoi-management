@@ -115,6 +115,14 @@ Gửi kết quả kiểm tra từ máy AOI/AVI.
   từng mục của `submitInspectionBatch` (một mục thiếu múi giờ ⇒ cả lô bị từ chối).
 - Đặt `INGEST_REQUIRE_TIME_OFFSET=false` (hoặc `0`/`off`/`no`) để TẮT: chuỗi không múi giờ được nhận,
   hiểu là UTC, và gắn cờ `timeSource='machine_naive'`.
+- **`completedAt`/`startedAt`** (payload cây v2.0 `submitInspection` và `meta.json` của gói ZIP, ở MỌI cấp
+  bo/position/capture/component) theo cờ RIÊNG `INGEST_REQUIRE_PACKAGE_TIME_OFFSET` — **tắt theo mặc định;
+  bật khi phần mềm máy đã gửi `Z`/`±hh:mm`** (`true`/`1`/`yes`/`on`). Tắt: chuỗi không múi giờ được nhận và
+  hiểu là UTC như cũ. Bật: cùng luật "có múi giờ" như trên; thiếu múi giờ → `BAD_REQUEST`,
+  `data.appCode = "INVALID_VALUE"`, `data.appParams = { field: "completedAt" | "startedAt", reason:
+  "timeOffsetRequired" }`, `message` bắt đầu bằng `time_offset_required:` — cả bo bị từ chối; gói ZIP bị từ
+  chối TRƯỚC khi commit (0 bo, gói ở `failed`, commit lại được sau khi sửa). Trường vắng/rỗng ⇒ server tự
+  đóng dấu giờ nhận như cũ. `inspectionTime` không đọc cờ này.
 - Server đo độ lệch đồng hồ (skew) so với giờ nhận; lệch quá `INGEST_CLOCK_SKEW_WARN_SECONDS`
   (mặc định 300s) → gắn cờ `clockSkewFlagged` + cảnh báo ops (board KHÔNG bị từ chối — QĐ#3).
 

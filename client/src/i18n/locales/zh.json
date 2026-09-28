@@ -3973,6 +3973,8 @@
     "field": {
       "stopValue": "固定停止值（stopValue）",
       "inspectionTime": "检测时间（inspectionTime）",
+      "completedAt": "完成时间（completedAt）",
+      "startedAt": "开始时间（startedAt）",
       "clientId": "MQTT设备",
       "changeReason": "变更原因",
       "reason": "原因",

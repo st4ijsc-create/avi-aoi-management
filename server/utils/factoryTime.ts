@@ -346,8 +346,10 @@ export type KetQuaTsThietBi = { ok: true; ts: Date | undefined } | { ok: false; 
  * `completedAt`/`startedAt`). Với `inspectionTime` của `submitInspection`/`submitInspectionBatch`,
  * cờ `INGEST_REQUIRE_TIME_OFFSET` MẶC ĐỊNH BẬT TRONG MÃ từ 2026-09-28 (chủ dự án quyết "có bật"):
  * chuỗi trần bị từ chối TRƯỚC khi tới `docGioMay`; chỉ `=false/0/off/no` mới quay lại nhận chuỗi
- * trần như UTC + gắn `timeSource=machine_naive`. `completedAt`/`startedAt` (gói ZIP/cây) KHÔNG đi
- * qua cờ này — `docGioMay` ở đó vẫn nhận chuỗi trần như UTC.
+ * trần như UTC + gắn `timeSource=machine_naive`. `completedAt`/`startedAt` (gói ZIP/cây v2.0, mọi
+ * cấp) theo cờ RIÊNG `INGEST_REQUIRE_PACKAGE_TIME_OFFSET` (doc 81 Đợt 1D Task 4, ruling R-1D-j) —
+ * MẶC ĐỊNH TẮT vì mẫu máy thật gửi chuỗi trần: tắt ⇒ `docGioMay` nhận chuỗi trần như UTC (như cũ);
+ * bật ⇒ hợp đồng `machineDataContractV2` (`mocThoiGianMay`) từ chối TRƯỚC khi tới `docGioMay`.
  */
 export function docTsThietBi(raw: unknown): KetQuaTsThietBi {
   if (!raw) return { ok: true, ts: undefined };

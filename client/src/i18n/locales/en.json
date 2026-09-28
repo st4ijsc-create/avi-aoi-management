@@ -3981,6 +3981,8 @@
     "field": {
       "stopValue": "pinned stop value (stopValue)",
       "inspectionTime": "inspection time (inspectionTime)",
+      "completedAt": "completion time (completedAt)",
+      "startedAt": "start time (startedAt)",
       "clientId": "MQTT device",
       "changeReason": "change reason",
       "reason": "reason",
