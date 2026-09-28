@@ -4201,6 +4201,27 @@
       "overrideUrHome": "tự đặt vị trí home cho robot UR",
       "selfApproveProgramVersion": "tự duyệt phiên bản chương trình của chính mình"
     },
+    "robotRefusal": {
+      "hitlActionRequired": "Lệnh chuyển động bị từ chối: không có thao tác xác nhận (HITL) nào đã được duyệt đứng sau lệnh này. Hãy gửi từ Bảng lệnh hoặc xác nhận thao tác trước.",
+      "hitlConfirmationRequired": "Lệnh chuyển động cần người xác nhận — chưa có ai xác nhận.",
+      "hitlVerifyUnavailable": "Không kiểm tra được thao tác xác nhận (cơ sở dữ liệu không sẵn sàng) — lệnh chuyển động bị từ chối để an toàn.",
+      "notConfirmed": "Thao tác xác nhận không hợp lệ: chưa được duyệt, đã hết hạn, đã dùng, hoặc thuộc người khác.",
+      "actionBindingMismatch": "Thao tác xác nhận được duyệt cho một lệnh KHÁC (robot, loại lệnh hoặc tham số khác) — không dùng cho lệnh này được.",
+      "manualConfirmerMismatch": "Lệnh thủ công phải do chính người đang đăng nhập xác nhận.",
+      "robotNotActive": "Robot không hoạt động hoặc chưa kết nối — không gửi được lệnh.",
+      "motionLocked": "Chuyển động đang bị KHOÁ (mất liên lạc hoặc kết quả chuyển động trước không rõ). Gửi lệnh DỪNG thành công hoặc nhờ người có quyền gỡ khoá.",
+      "safetyBlocked": "PLC an toàn đang báo DỪNG/sự cố — chuyển động bị từ chối trước khi gửi.",
+      "safetyUnknown": "Không xác nhận được PLC an toàn (không cấu hình, không đọc được, hoặc tag chất lượng xấu) — chuyển động bị từ chối.",
+      "safetySimOnly": "Chỉ có PLC an toàn MÔ PHỎNG hoặc chưa gán tag — lệnh thật cần một PLC an toàn THẬT có tag an toàn đã gán.",
+      "interlockBlocked": "Một luật khoá liên động đang vi phạm (hoặc không đánh giá được) — chuyển động bị từ chối.",
+      "policyDenied": "Chính sách vận hành không cho phép lệnh này.",
+      "policyApprovalRequired": "Chính sách yêu cầu phê duyệt thêm cho lệnh này — lệnh chưa được gửi.",
+      "motionInProgress": "Robot đang thực hiện một chuyển động khác — lệnh này bị từ chối (không xếp hàng). Đợi xong rồi gửi lại.",
+      "ledgerWriteFailed": "Không ghi được sổ lệnh robot — lệnh chuyển động bị từ chối, robot không nhận gì.",
+      "idempotentJobInProgress": "Lệnh cùng mã chống trùng đang chạy — không chạy lần hai.",
+      "idempotencyKeyReused": "Mã chống trùng này đã được dùng cho robot hoặc lệnh khác — lệnh chuyển động bị từ chối. Dùng mã mới.",
+      "ros2JobMessageRequired": "Lệnh ROS2 không mang thông điệp của chính nó — không có gì được phát."
+    },
     "reason": {
       "softwareStopRefusedUseHardwareEstop": "Lệnh dừng phần mềm đã bị TỪ CHỐI: kiểm tra an toàn không xác nhận được PLC an toàn (không đọc được, chỉ có mô phỏng, hoặc đang báo dừng) nên nền tảng KHÔNG gửi lệnh dừng này. Hãy nhấn nút E-STOP cứng trên máy ngay.",
       "timeOffsetRequired": "Thời điểm phải kèm múi giờ tường minh (Z hoặc +07:00) — chuỗi không múi giờ bị từ chối vì máy chủ không thể biết đó là giờ nào.",

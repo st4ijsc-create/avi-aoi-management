@@ -616,3 +616,40 @@ export function translateVramRetryDeferredCommand(r: VramRetryDeferredCommandFor
   // ★ I-2 — fallback làm sạch tại điểm dựng.
   return translateAppError(appCode, params, `${r.outcome}: ${stripInterpolationSyntax(r.owner)}`);
 }
+
+// ══════════════════════════════════════════════════════════════════════════════════════════════
+// doc 81 Đợt 1C final wave 5 (final review M8) — mã từ chối lệnh ROBOT
+// ══════════════════════════════════════════════════════════════════════════════════════════════
+/**
+ * `robot.actuate` / `vda5050.sendOrder` trả KẾT QUẢ (không ném) với `error` là MÃ trần của dispatcher
+ * (`HITL_ACTION_REQUIRED`, `SAFETY_SIM_ONLY`, `robot_motion_in_progress`, …; vài mã cũ là câu tiếng Anh ngắn).
+ * Bảng dưới ánh xạ mã → khoá `errors.robotRefusal.*` (vi/en/zh). Tra theo bảng (không ghép chuỗi tuỳ ý thành
+ * khoá) — mã lạ, mã mới chưa dịch hoặc khoá thiếu ở ngôn ngữ đang chọn ⇒ trả `fallback` NGUYÊN VĂN (bất biến đầu
+ * file: không bao giờ tệ hơn hôm nay). Đi qua ĐÚNG `translateClientKey` — không đường gọi i18n thứ hai.
+ */
+const ROBOT_REFUSAL_KEYS: Readonly<Record<string, string>> = Object.freeze({
+  "HITL_ACTION_REQUIRED": "hitlActionRequired",
+  "HITL confirmation required": "hitlConfirmationRequired",
+  "HITL verify unavailable": "hitlVerifyUnavailable",
+  "NOT_CONFIRMED": "notConfirmed",
+  "ACTION_BINDING_MISMATCH": "actionBindingMismatch",
+  "MANUAL_CONFIRMER_MISMATCH": "manualConfirmerMismatch",
+  "robot not active/connected": "robotNotActive",
+  "MOTION_LOCKED": "motionLocked",
+  "SAFETY_BLOCKED": "safetyBlocked",
+  "SAFETY_UNKNOWN": "safetyUnknown",
+  "SAFETY_SIM_ONLY": "safetySimOnly",
+  "INTERLOCK_BLOCKED": "interlockBlocked",
+  "POLICY_DENIED": "policyDenied",
+  "POLICY_APPROVAL_REQUIRED": "policyApprovalRequired",
+  "robot_motion_in_progress": "motionInProgress",
+  "LEDGER_WRITE_FAILED": "ledgerWriteFailed",
+  "IDEMPOTENT_JOB_IN_PROGRESS": "idempotentJobInProgress",
+  "IDEMPOTENCY_KEY_REUSED": "idempotencyKeyReused",
+  "ROS2_JOB_MESSAGE_REQUIRED": "ros2JobMessageRequired"
+});
+
+export function translateRobotRefusal(code: string | null | undefined, fallback: string): string {
+  if (typeof code !== "string" || !Object.prototype.hasOwnProperty.call(ROBOT_REFUSAL_KEYS, code)) return fallback;
+  return translateClientKey(`errors.robotRefusal.${ROBOT_REFUSAL_KEYS[code]}`, fallback);
+}
