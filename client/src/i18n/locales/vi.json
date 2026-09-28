@@ -4320,7 +4320,8 @@
       "value_mismatch": "Giá trị của lệnh dừng khác với giá trị đã ghim — dùng E-STOP phần cứng.",
       "duplicate_tag": "Lệnh dừng ghi trùng cùng một tag nhiều lần — dùng E-STOP phần cứng.",
       "pin_load_failed": "Không đọc được cấu hình tag dừng đã ghim — dùng E-STOP phần cứng.",
-      "pin_tag_changed": "Tag dừng đã ghim vừa bị đổi trong lúc kiểm tra lệnh — dùng E-STOP phần cứng."
+      "pin_tag_changed": "Tag dừng đã ghim vừa bị đổi trong lúc kiểm tra lệnh — dùng E-STOP phần cứng.",
+      "adapter_connection_stale": "Kết nối đang chạy được mở cho thiết bị khác với cấu hình adapter hiện tại (adapter đã sửa nhưng chưa nối lại) — dùng E-STOP phần cứng."
     },
     "client": {
       "generic": "Lỗi hệ thống, vui lòng thử lại",

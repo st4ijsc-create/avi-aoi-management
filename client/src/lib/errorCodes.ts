@@ -70,9 +70,9 @@ const PARAM_DICTIONARY_SPACE: Record<string, string> = {
   // StopPinRefusalReason) đứng CẠNH `reason` (KHÔNG thay nó): một OT stop bị từ
   // chối luôn mang `reason: "softwareStopRefusedUseHardwareEstop"` (câu TĨNH,
   // dùng chung mọi trường hợp — khuôn `_WITH_REASON` đã có ở trên) CỘNG THÊM
-  // `stopPinReason`, một trong 7 giá trị ĐỘNG tuỳ vì sao lệnh dừng không được
+  // `stopPinReason`, một trong 8 giá trị ĐỘNG tuỳ vì sao lệnh dừng không được
   // miễn preflight an toàn (no_pins/empty_writes/unpinned_tag/value_mismatch/
-  // duplicate_tag/pin_load_failed/pin_tag_changed). Khoá enum cố định giống 6
+  // duplicate_tag/pin_load_failed/pin_tag_changed/adapter_connection_stale). Khoá enum cố định giống 6
   // không gian đầu file, không phải câu tự do — xem `withStopPinReasonSuffix()`
   // bên dưới cho cách nó được NỐI vào câu chính (không sửa khuôn `_WITH_REASON`
   // dùng chung, tránh đổi hành vi của mọi appError() khác không đặt tham số này).

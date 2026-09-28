@@ -34,7 +34,7 @@ afterAll(async () => {
   await i18n.changeLanguage("vi");
 });
 
-/** Verbatim từ `StopPinRefusalReason` (commandDispatcher.ts) — 7 giá trị, không phải 6 mà
+/** Verbatim từ `StopPinRefusalReason` (commandDispatcher.ts) — 8 giá trị (final wave 1 + adapter_connection_stale), không phải 6 mà
  *  bản tóm tắt của brief liệt kê (brief bỏ sót `pin_load_failed`, xem stopPinReasonOf()). */
 const STOP_PIN_REASONS = [
   "no_pins",
@@ -44,6 +44,8 @@ const STOP_PIN_REASONS = [
   "duplicate_tag",
   "pin_load_failed",
   "pin_tag_changed",
+  // doc 81 Đợt 1D final wave 1 (R-1D-k) — kết nối đang chạy là của thiết bị cũ (adapter sửa, chưa nối lại).
+  "adapter_connection_stale",
 ] as const;
 
 /** Đúng shape `appParams` của `SOFTWARE_STOP_REFUSED_APP_ERROR` (commandDispatcher.ts)

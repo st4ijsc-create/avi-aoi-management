@@ -4320,7 +4320,8 @@
       "value_mismatch": "停止命令写入的值与已固定的停止值不同——请使用硬件急停（E-STOP）。",
       "duplicate_tag": "停止命令多次写入同一个标签——请使用硬件急停（E-STOP）。",
       "pin_load_failed": "无法读取已固定的停止标签配置——请使用硬件急停（E-STOP）。",
-      "pin_tag_changed": "在检查该命令期间，已固定的停止标签发生了变化——请使用硬件急停（E-STOP）。"
+      "pin_tag_changed": "在检查该命令期间，已固定的停止标签发生了变化——请使用硬件急停（E-STOP）。",
+      "adapter_connection_stale": "当前运行的连接是为与适配器现有配置不同的设备建立的（适配器已修改但尚未重新连接）——请使用硬件急停（E-STOP）。"
     },
     "client": {
       "generic": "系统错误，请重试",

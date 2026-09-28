@@ -89,9 +89,17 @@ vi.mock("../auditTrailService", () => ({
 }));
 
 const writeTagsSpy = vi.fn(async (writes: any[]) => writes.map((w) => ({ tagKey: w.tagKey, ok: true })));
-vi.mock("./otManager", () => ({
-  getActiveDriver: vi.fn((_id: number) => ({ isConnected: () => true, writeTags: (...a: any[]) => (writeTagsSpy as any)(...a) })),
-}));
+vi.mock("./otManager", async () => {
+  const { adapterTargetFingerprint } = await import("./adapterTarget");
+  return {
+    getActiveDriver: vi.fn((_id: number) => ({ isConnected: () => true, writeTags: (...a: any[]) => (writeTagsSpy as any)(...a) })),
+    // doc 81 Đợt 1D final wave 1 (R-1D-k) — the running connection was made for the adapter row as it stands (no re-point).
+    getActiveConnectionFingerprint: vi.fn((id: number) => {
+      const a = adapters.find((x) => x.id === id);
+      return a ? adapterTargetFingerprint(a as any) : undefined;
+    }),
+  };
+});
 
 // Interlock gate always passes → isolates the safety preflight behaviour.
 vi.mock("../interlock/interlockGate", () => ({

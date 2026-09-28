@@ -111,7 +111,8 @@ import {
 } from "../../../drizzle/schema";
 import { boundedKey, canonicalOtValue, otPayloadHash, readOtPayloadHash } from "./otActionBinding";
 import { isOtSafetyPreflightEnabled, safetyPreflightReason, type SafetyUnknownBasis } from "./safetyPreflightPolicy"; // final wave (item 3): one policy, two dispatchers
-import { getActiveDriver } from "./otManager";
+import { getActiveConnectionFingerprint, getActiveDriver } from "./otManager";
+import { adapterTargetFingerprint } from "./adapterTarget";
 import type { AppErrorCode, AppErrorParams } from "../../_core/appErrorCodes";
 import { AUDIT_ACTIONS, createAuditContext, logCrudOperation } from "../auditTrailService";
 import type { OtTagAddress } from "./otDriver";
@@ -491,7 +492,12 @@ export type StopPinRefusalReason =
   | Extract<MatchPinnedStopResult, { ok: false }>["reason"]
   | "pin_load_failed"
   /** fix round 1 (R-1D-h) — the pin no longer fits the tag row step 3 resolved (re-pinned / redefined in between). */
-  | "pin_tag_changed";
+  | "pin_tag_changed"
+  /**
+   * final wave 1 (R-1D-k) — the RUNNING driver connection was made for a different device than the current adapter
+   * row (adapter re-pointed without a reconnect), or that could not be confirmed.
+   */
+  | "adapter_connection_stale";
 
 export type OtStopClassification =
   | { isStop: false; pinnedStop: false }
@@ -524,7 +530,40 @@ const STOP_PIN_REASON_TEXT: Record<StopPinRefusalReason, string> = {
   duplicate_tag: "the stop writes the same tag more than once",
   pin_load_failed: "the pinned stop tags could not be read",
   pin_tag_changed: "the pinned stop tag changed while the stop was being checked",
+  adapter_connection_stale: "the running connection was made for a different device than the adapter's current settings (not reconnected since the adapter was changed)",
 };
+
+/**
+ * doc 81 Đợt 1D final wave 1 (Ruling R-1D-k, final review I1) — does the RUNNING connection of `adapterId` talk to
+ * the device the CURRENT adapter row names? Editing an adapter clears its pins (R-1D-a) but does not reconnect its
+ * driver, so a pin chosen for the NEW device would otherwise be written through the OLD connection, exempt from the
+ * safety preflight. The row is re-read HERE (after the step-3 tag rows): a pin visible in step 3 that was set after
+ * a re-point implies the re-point committed before this read (the re-point clears pins in the same tx), so this read
+ * sees the new target. true ⇔ both fingerprints (adapterTarget.ts — the same definition the R-1D-a clear uses) are
+ * known and equal. Any error / missing value ⇒ false (no exemption, fail-closed).
+ */
+async function runningConnectionMatchesAdapterRow(db: NonNullable<Awaited<ReturnType<typeof getDb>>>, adapterId: number): Promise<boolean> {
+  try {
+    const running = getActiveConnectionFingerprint(adapterId);
+    if (!running) return false;
+    const [row] = await db.select().from(deviceAdapters).where(eq(deviceAdapters.id, adapterId)).limit(1);
+    if (!row) return false;
+    return (
+      adapterTargetFingerprint({
+        protocol: row.protocol,
+        endpoint: row.endpoint,
+        machineId: row.machineId ?? null,
+        connectionOptions: row.connectionOptions ?? null,
+      }) === running
+    );
+  } catch (err) {
+    console.warn(
+      `[Dispatch] pinned-stop connection check failed for adapter ${adapterId} — stop NOT exempted from the safety preflight:`,
+      (err as Error)?.message || err,
+    );
+    return false;
+  }
+}
 
 /**
  * doc 81 Đợt 1D Task 2 fix round 1 (Ruling R-1D-h) — PURE. The SECOND layer of the pinned-stop exemption: map the
@@ -831,13 +870,17 @@ async function dispatchCore(input: DispatchInput): Promise<DispatchResult> {
       // fix round 1 (R-1D-h) — second layer: the pins must fit the tag rows step 3 resolved (same snapshot the
       // driver writes with). Mismatch ⇒ no exemption.
       const canon = canonicalisePinnedStop(resolved, stopCls.writes);
-      if (canon.ok) {
+      if (!canon.ok) {
+        stopCls = { isStop: true, pinnedStop: false, stopPinReason: canon.reason };
+      } else if (!(await runningConnectionMatchesAdapterRow(db, input.adapterId))) {
+        // final wave 1 (R-1D-k) — the driver still talks to the device the adapter pointed at when it connected;
+        // the pins were chosen for the adapter's CURRENT target ⇒ no exemption, full preflight.
+        stopCls = { isStop: true, pinnedStop: false, stopPinReason: "adapter_connection_stale" };
+      } else {
         input = { ...input, writes: canon.writes.map((w) => ({ ...w })) };
         resolved.forEach((r, i) => {
           r.write = { ...canon.writes[i] };
         });
-      } else {
-        stopCls = { isStop: true, pinnedStop: false, stopPinReason: canon.reason };
       }
     }
   }

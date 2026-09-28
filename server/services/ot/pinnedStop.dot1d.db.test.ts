@@ -25,6 +25,8 @@ vi.setConfig({ testTimeout: 60_000, hookTimeout: 60_000 });
 
 const fake = vi.hoisted(() => ({
   otDrivers: new Map<number, unknown>(),
+  /** final wave 1 (R-1D-k) — dấu vân tay kết nối mà otManager "ghi lúc nối" cho từng adapter (test giữ). */
+  otFingerprints: new Map<number, string>(),
   pinLoadThrows: false,
   pinLoadCalls: 0,
   policyOn: false,
@@ -49,6 +51,7 @@ vi.mock("./otManager", async (importOriginal) => {
   return {
     ...orig,
     getActiveDriver: (adapterId: number) => fake.otDrivers.get(adapterId) as ReturnType<typeof orig.getActiveDriver>,
+    getActiveConnectionFingerprint: (adapterId: number) => fake.otFingerprints.get(adapterId),
   };
 });
 vi.mock("./stopPin", async (importOriginal) => {
@@ -97,6 +100,7 @@ import { canonicalisePinnedStop, classifyOtStop, dispatch, type DispatchInput } 
 import { otPayloadHash, withOtPayloadHash } from "./otActionBinding";
 import { createModbusDriver } from "./drivers/modbusDriver";
 import { registerDriver } from "./driverRegistry";
+import { adapterTargetFingerprint } from "./adapterTarget";
 
 const ServerTCP: any = (ModbusSerialNs as any).ServerTCP ?? (ModbusSerialNs as any).default?.ServerTCP;
 
@@ -106,6 +110,7 @@ const OWNER = 990_820_101;
 const STRANGER = 990_820_102;
 const MACHINE = 990_820_001;
 const MACHINE_NOPIN = 990_820_002;
+const MACHINE_REPOINT = 990_820_003;
 const TOOL = "machine_stop";
 
 // ── Thiết bị đích giả: GHI LẠI từng lô writeTags ──────────────────────────────
@@ -160,6 +165,14 @@ let seq = 0;
 const nextKey = (label: string) => `${DAU}-${label}-${++seq}`;
 let adapterPinned = 0;
 let adapterNoPin = 0;
+let adapterRepoint = 0;
+
+/** "Nối" adapter như otManager làm lúc khởi động: ghi dấu vân tay của cấu hình hàng ĐANG có ở thời điểm nối. */
+async function connectFake(adapterId: number, driver: unknown): Promise<void> {
+  const [row] = await (await d()).select().from(deviceAdapters).where(eq(deviceAdapters.id, adapterId));
+  fake.otDrivers.set(adapterId, driver);
+  fake.otFingerprints.set(adapterId, adapterTargetFingerprint(row!));
+}
 
 async function d() {
   const x = await getDb();
@@ -294,12 +307,13 @@ describe.skipIf(!DB_URL)("Đợt 1D Task 2 — DỪNG OT ghim qua preflight an t
         { adapterId: a!.id, tagKey: "speed_sp", address: "D100", dataType: "int", writable: true },
         { adapterId: a!.id, tagKey: "cmd_run", address: "M10", dataType: "bool", writable: true },
       ]);
-      fake.otDrivers.set(a!.id, fakeOtDriver);
+      await connectFake(a!.id, fakeOtDriver);
       await sql`INSERT INTO commissioning_records ("adapterId", status, "signedBy", "fatReference") VALUES (${a!.id}, 'active', ${OWNER}, ${DAU})`;
       return a!.id;
     };
     adapterPinned = await mk("P", MACHINE);
     adapterNoPin = await mk("N", MACHINE_NOPIN);
+    adapterRepoint = await mk("R", MACHINE_REPOINT);
     // Ghim bằng UPDATE thô: cmd_stop ⇒ true (bool), speed_sp ⇒ 0 (int). cmd_run KHÔNG ghim.
     await sql`UPDATE device_tags SET stop_value = ${sql.json(true)}, stop_pinned_by = ${String(OWNER)}, stop_pinned_at = now()
                WHERE "adapterId" = ${adapterPinned} AND "tagKey" = 'cmd_stop'`;
@@ -309,6 +323,7 @@ describe.skipIf(!DB_URL)("Đợt 1D Task 2 — DỪNG OT ghim qua preflight an t
 
   afterAll(async () => {
     fake.otDrivers.clear();
+    fake.otFingerprints.clear();
     try {
       await plc.close();
     } catch {
@@ -316,7 +331,7 @@ describe.skipIf(!DB_URL)("Đợt 1D Task 2 — DỪNG OT ghim qua preflight an t
     }
     if (sql) {
       await sql`DELETE FROM ai_pending_actions WHERE id LIKE ${DAU + "%"}`;
-      for (const id of [adapterPinned, adapterNoPin].filter(Boolean)) {
+      for (const id of [adapterPinned, adapterNoPin, adapterRepoint].filter(Boolean)) {
         await sql`DELETE FROM device_tags WHERE "adapterId" = ${id}`;
         await sql`DELETE FROM device_adapters WHERE id = ${id}`;
         await sql`DELETE FROM commissioning_records WHERE "adapterId" = ${id}`.catch(() => undefined);
@@ -665,6 +680,81 @@ describe.skipIf(!DB_URL)("Đợt 1D Task 2 — DỪNG OT ghim qua preflight an t
       });
     } finally {
       await sql`UPDATE device_tags SET "isEnabled" = true WHERE "adapterId" = ${adapterPinned} AND "tagKey" = 'speed_sp'`;
+    }
+  });
+
+  // ═════════ final wave 1 (R-1D-k, I1) — adapter trỏ sang thiết bị MỚI, driver chưa nối lại ═════════
+  it("★ I1: sửa adapter sang thiết bị MỚI + ghim lại + stop TRƯỚC khi nối lại ⇒ KHÔNG miễn (adapter_connection_stale), thiết bị CŨ không nhận gì; nối lại ⇒ miễn tới thiết bị MỚI", async () => {
+    // Thiết bị CŨ (driver đang chạy, nối lúc adapter còn trỏ stub://R) và thiết bị MỚI — mỗi cái GHI LẠI lô nhận.
+    const oldDev: W[][] = [];
+    const newDev: W[][] = [];
+    const devFor = (sink: W[][]) => ({
+      isConnected: () => true,
+      async writeTags(writes: W[]) {
+        sink.push(writes.map((w) => ({ tagKey: w.tagKey, value: w.value })));
+        return writes.map((w) => ({ tagKey: w.tagKey, ok: true }));
+      },
+      async readTags() {
+        return [];
+      },
+    });
+    await connectFake(adapterRepoint, devFor(oldDev));
+    // Kỹ sư trỏ adapter sang thiết bị khác (luật R-1D-a gỡ ghim trong cùng tx — ở đây UPDATE thô gỡ tay), rồi GHIM LẠI
+    // cho thiết bị mới: cmd_stop ⇒ true. Driver KHÔNG được nối lại (otManager chỉ khởi động lại toàn khung).
+    await sql`UPDATE device_adapters SET endpoint = 'stub://R-moi' WHERE id = ${adapterRepoint}`;
+    await sql`UPDATE device_tags SET stop_value = ${sql.json(true)}, stop_pinned_by = ${String(OWNER)}, stop_pinned_at = now()
+               WHERE "adapterId" = ${adapterRepoint} AND "tagKey" = 'cmd_stop'`;
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    try {
+      await withPlcConfigs([SIM], async () => {
+        const inp = await stopInput([{ tagKey: "cmd_stop", value: true }], { adapterId: adapterRepoint, machineId: MACHINE_REPOINT });
+        const res = await run(inp);
+        expect(res.status).toBe("rejected");
+        expect(res.reason).toBe("SAFETY_SIM_ONLY");
+        expect(res.pinnedStop).toBe(false);
+        expect(res.appError?.appParams.stopPinReason).toBe("adapter_connection_stale");
+        expect(res.message).toMatch(/running connection was made for a different device/);
+        expect(res.message).not.toMatch(/[A-Z][A-Z0-9]*(?:_[A-Z0-9]+){1,}/); // không lộ tên cờ .env
+        expect(oldDev).toHaveLength(0);
+        expect(newDev).toHaveLength(0);
+        const rows = await ledger(inp.idempotencyKey);
+        expect(rows.every((r) => (r.ackValue as any)?.stopPinReason === "adapter_connection_stale")).toBe(true);
+      });
+      // "Nối lại" (khởi động lại khung OT ⇒ otManager ghi dấu của cấu hình MỚI) ⇒ miễn, thiết bị MỚI nhận giá trị ghim.
+      await connectFake(adapterRepoint, devFor(newDev));
+      await withPlcConfigs([SIM], async () => {
+        const res = await run(await stopInput([{ tagKey: "cmd_stop", value: 1 }], { adapterId: adapterRepoint, machineId: MACHINE_REPOINT }));
+        expect(res.status).toBe("acked");
+        expect(res.pinnedStop).toBe(true);
+        expect(newDev).toEqual([[{ tagKey: "cmd_stop", value: true }]]);
+        expect(oldDev).toHaveLength(0);
+      });
+    } finally {
+      warn.mockRestore();
+    }
+  });
+
+  it("I1 đối chứng: đổi thứ KHÔNG phải đích (tên, pollIntervalMs) ⇒ vẫn miễn; không biết dấu kết nối ⇒ KHÔNG miễn", async () => {
+    await sql`UPDATE device_adapters SET name = ${DAU + " P doi ten"}, "pollIntervalMs" = 777 WHERE id = ${adapterPinned}`;
+    await withPlcConfigs([SIM], async () => {
+      const res = await run(await stopInput([{ tagKey: "cmd_stop", value: true }]));
+      expect(res.status).toBe("acked");
+      expect(received).toEqual([[{ tagKey: "cmd_stop", value: true }]]);
+    });
+    received = [];
+    const fp = fake.otFingerprints.get(adapterPinned)!;
+    fake.otFingerprints.delete(adapterPinned);
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    try {
+      await withPlcConfigs([SIM], async () => {
+        const res = await run(await stopInput([{ tagKey: "cmd_stop", value: true }]));
+        expect(res.reason).toBe("SAFETY_SIM_ONLY");
+        expect(res.appError?.appParams.stopPinReason).toBe("adapter_connection_stale");
+        expect(received).toHaveLength(0);
+      });
+    } finally {
+      fake.otFingerprints.set(adapterPinned, fp);
+      warn.mockRestore();
     }
   });
 });

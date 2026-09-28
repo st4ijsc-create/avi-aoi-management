@@ -4328,7 +4328,8 @@
       "value_mismatch": "The stop command writes a value different from the pinned stop value — use the hardware E-STOP.",
       "duplicate_tag": "The stop command writes the same tag more than once — use the hardware E-STOP.",
       "pin_load_failed": "The pinned stop tag configuration could not be read — use the hardware E-STOP.",
-      "pin_tag_changed": "The pinned stop tag changed while the command was being checked — use the hardware E-STOP."
+      "pin_tag_changed": "The pinned stop tag changed while the command was being checked — use the hardware E-STOP.",
+      "adapter_connection_stale": "The running connection was opened for a different device than the adapter's current settings (the adapter was changed but not reconnected) — use the hardware E-STOP."
     },
     "client": {
       "generic": "System error, please try again",

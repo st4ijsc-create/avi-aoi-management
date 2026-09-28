@@ -33,8 +33,7 @@ import { recordAuditEvent } from "../audit/controlAuditService";
 import { computeCrudContentHash } from "../auditTrailService";
 import { secPlatformEnabled } from "../security/policyGate";
 import { isCommissioned } from "./commissioningService";
-import { canonicalize } from "../security/auditChain";
-import { SENSITIVE_KEY_RE } from "../assetRegistry/configDriftService";
+import { adapterTargetCanonical, type AdapterTarget } from "./adapterTarget";
 
 type Db = NonNullable<Awaited<ReturnType<typeof getDb>>>;
 type Tx = Parameters<Parameters<Db["transaction"]>[0]>[0];
@@ -417,24 +416,6 @@ export async function ghiAuditGoStopPinTx(
 
 type DongAdapter = typeof deviceAdapters.$inferSelect;
 
-/** Khoá cấu hình KHÔNG xác định "thiết bị nào": bí mật (SENSITIVE_KEY_RE), tài khoản, ràng buộc bảo mật. */
-const KHOA_KHONG_DINH_DANH = new Set(["userName", "username", "user", "securityMode", "securityPolicy", "trustOnFirstUse"]);
-
-/** connectionOptions bỏ bí mật / tài khoản / bảo mật (đệ quy), để so "đích kết nối". */
-function dichKetNoi(v: unknown): unknown {
-  if (Array.isArray(v)) return v.map(dichKetNoi);
-  if (v !== null && typeof v === "object") {
-    const out: Record<string, unknown> = {};
-    for (const [k, x] of Object.entries(v as Record<string, unknown>)) {
-      if (SENSITIVE_KEY_RE.test(k) || KHOA_KHONG_DINH_DANH.has(k)) continue;
-      if (x === undefined) continue;
-      out[k] = dichKetNoi(x);
-    }
-    return out;
-  }
-  return v;
-}
-
 /**
  * Ruling R-1D-a — sửa adapter có đổi "THANH GHI NÀY Ở THIẾT BỊ NÀY CỦA MÁY NÀY" không:
  * endpoint, protocol, machineId, hoặc connectionOptions (trừ bí mật / tài khoản / chế độ bảo mật — các khoá
@@ -443,15 +424,21 @@ function dichKetNoi(v: unknown): unknown {
  * đổi đích — chiều AN TOÀN; giá: kỹ sư ghim lại.
  */
 export function adapterDoiDich(existing: DongAdapter, patch: Record<string, unknown>): boolean {
-  if (patch.endpoint !== undefined && String(patch.endpoint) !== existing.endpoint) return true;
-  if (patch.protocol !== undefined && patch.protocol !== existing.protocol) return true;
-  if (patch.machineId !== undefined && (patch.machineId ?? null) !== (existing.machineId ?? null)) return true;
-  if (patch.connectionOptions !== undefined) {
-    const cu = canonicalize(dichKetNoi(existing.connectionOptions ?? null) ?? null);
-    const moi = canonicalize(dichKetNoi(patch.connectionOptions ?? null) ?? null);
-    if (cu !== moi) return true;
-  }
-  return false;
+  // final wave 1 (R-1D-k) — MỘT định nghĩa "đích" (adapterTarget.ts), dùng chung với dấu vân tay kết nối của
+  // otManager / commandDispatcher: trường vắng trong patch = giữ giá trị hàng hiện tại.
+  const cu: AdapterTarget = {
+    protocol: existing.protocol,
+    endpoint: existing.endpoint,
+    machineId: existing.machineId ?? null,
+    connectionOptions: existing.connectionOptions ?? null,
+  };
+  const moi: AdapterTarget = {
+    protocol: patch.protocol !== undefined ? String(patch.protocol) : cu.protocol,
+    endpoint: patch.endpoint !== undefined ? String(patch.endpoint) : cu.endpoint,
+    machineId: patch.machineId !== undefined ? ((patch.machineId as number | null) ?? null) : cu.machineId,
+    connectionOptions: patch.connectionOptions !== undefined ? (patch.connectionOptions ?? null) : cu.connectionOptions,
+  };
+  return adapterTargetCanonical(cu) !== adapterTargetCanonical(moi);
 }
 
 /**

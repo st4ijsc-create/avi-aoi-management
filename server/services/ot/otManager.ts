@@ -26,15 +26,30 @@ import {
   type SupervisorStatus,
 } from "./connectionSupervisor";
 import { withDeadline } from "./drivers/boundedClose";
+import { adapterTargetFingerprint, runtimeAdapterTarget } from "./adapterTarget";
 
 let running = false;
 /**
  * Adapter legacy ĐÃ TỪNG khởi động được (thứ tự khởi động). doc 81 Đợt 1B Task 2: `handle`
  * là null trong lúc adapter mất kết nối và đang được nối lại (xem LegacyEntry).
  */
-const active: Array<{ adapter: RuntimeAdapter; handle: OtSubscriptionHandle | null }> = [];
+const active: Array<{ adapter: RuntimeAdapter; handle: OtSubscriptionHandle | null; fingerprint?: string | null }> = [];
 /** C3: one supervisor per adapter, populated ONLY when OT_CONN_HA_ENABLED. */
-const supervisors = new Map<number, { supervisor: ConnectionSupervisor; adapter: RuntimeAdapter }>();
+const supervisors = new Map<number, { supervisor: ConnectionSupervisor; adapter: RuntimeAdapter; fingerprint: string }>();
+
+/**
+ * doc 81 Đợt 1D final wave 1 (Ruling R-1D-k) — dấu vân tay "thiết bị nào" (adapterTarget.ts, cùng định nghĩa
+ * với luật gỡ ghim R-1D-a) của cấu hình mà driver ĐANG CHẠY được nối bằng. Tính từ bản chụp RuntimeAdapter
+ * TRƯỚC khi driver chạm vào nó; ghi lại khi nối thành công. Không bao giờ ném: cấu hình lạ ⇒ null (dispatcher
+ * coi là "không khớp" — fail-closed).
+ */
+function connectionFingerprintOf(adapter: RuntimeAdapter): string | null {
+  try {
+    return adapterTargetFingerprint(runtimeAdapterTarget(adapter));
+  } catch {
+    return null;
+  }
+}
 
 function flagEnabled(): boolean {
   return process.env.OT_GATEWAY_ENABLED === "true";
@@ -117,6 +132,8 @@ interface LegacyEntry {
   inflight: boolean;
   /** Đã có mặt trong `active` chưa. */
   listed: boolean;
+  /** final wave 1 (R-1D-k) — dấu vân tay kết nối ghi lại ở lần nối thành công gần nhất (null = chưa nối). */
+  fingerprint?: string | null;
 }
 
 const legacy = new Map<number, LegacyEntry>();
@@ -160,6 +177,8 @@ async function runWithConcurrency<T>(items: T[], limit: number, fn: (item: T) =>
 async function attemptLegacyStart(entry: LegacyEntry, myEpoch: number): Promise<boolean> {
   const { adapter } = entry;
   const timeoutMs = effectiveAdapterStartTimeoutMs(adapter.connection);
+  // final wave 1 (R-1D-k) — chụp dấu vân tay TRƯỚC connect (cấu hình driver sắp nối tới).
+  const fingerprint = connectionFingerprintOf(adapter);
   entry.attempts += 1;
   entry.inflight = true;
   const work = (async (): Promise<OtSubscriptionHandle> => {
@@ -213,6 +232,7 @@ async function attemptLegacyStart(entry: LegacyEntry, myEpoch: number): Promise<
     return false;
   }
   entry.handle = handle;
+  entry.fingerprint = fingerprint;
   entry.state = "active";
   entry.lastError = null;
   entry.failures = 0;
@@ -622,6 +642,8 @@ async function startOtOnce(): Promise<boolean> {
   if (isConnHaEnabled()) {
     await runWithConcurrency(adapters, concurrency, async (adapter) => {
       try {
+        // final wave 1 (R-1D-k) — dấu vân tay chụp TRƯỚC khi supervisor nối (cả hai endpoint nằm trong đích).
+        const fingerprint = connectionFingerprintOf(adapter);
         const supervisor = await buildSupervisor(adapter);
         // start() never throws: a failed initial connect schedules a backoff retry
         // rather than crashing the host (preserves the fail-safe behaviour).
@@ -645,7 +667,7 @@ async function startOtOnce(): Promise<boolean> {
           return;
         }
         // Đăng ký NGAY (dispatcher thấy adapter đã nối trong lúc adapter khác còn khởi động).
-        supervisors.set(adapter.adapterId, { supervisor, adapter });
+        supervisors.set(adapter.adapterId, { supervisor, adapter, fingerprint: fingerprint ?? "" });
         const eps = adapter.backupConnection ? 2 : 1;
         console.log(
           `[OT] adapter "${adapter.code}" (${adapter.protocol}) supervised, ${adapter.tags.length} tag(s), ${eps} endpoint(s) — state=${supervisor.status().state}`,
@@ -778,6 +800,20 @@ export function getActiveDriver(adapterId: number): OtDriver | undefined {
   if (!entry) return undefined;
   const driver = entry.adapter.driver;
   return driver.isConnected() ? driver : undefined;
+}
+
+/**
+ * doc 81 Đợt 1D final wave 1 (Ruling R-1D-k) — dấu vân tay kết nối (adapterTarget.ts) của adapter ĐANG CHẠY,
+ * ghi lại lúc nối; undefined khi adapter không chạy / chưa nối / dấu không tính được. Sửa adapter KHÔNG nối lại
+ * driver (không có đường khởi động lại TỪNG adapter — chỉ stopOt+startOt toàn khung), nên dấu này vẫn là của
+ * thiết bị CŨ tới lần khởi động lại; commandDispatcher so nó với hàng adapter HIỆN TẠI trước khi miễn preflight
+ * cho lệnh DỪNG ghim.
+ */
+export function getActiveConnectionFingerprint(adapterId: number): string | undefined {
+  const sup = supervisors.get(adapterId);
+  if (sup) return sup.fingerprint || undefined;
+  const entry = active.find((e) => e.adapter.adapterId === adapterId);
+  return entry?.fingerprint || undefined;
 }
 
 /** Snapshot of the currently-active runtime adapters (shallow copy). */
