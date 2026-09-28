@@ -45,6 +45,7 @@ import {
   type PlcReadOutcome,
 } from "./safetyPreflightPolicy";
 import type { MachineLike } from "../equipment/capabilityModel";
+import { withDeadline } from "./drivers/boundedClose"; // final wave 5 (M4)
 import type { SafetyPlcStatusSnapshot } from "../../../drizzle/schema";
 
 /** Ngữ cảnh facade cho MỘT adapter đã cấu hình (device_adapters.id). */
@@ -107,46 +108,58 @@ function warnPreflightReadFailed(code: string): void {
 }
 
 /**
+ * doc 81 Đợt 1C final wave 5 (final review M4) — deadline of ONE safety-PLC read in the real-actuation
+ * preflight. Below the robot's outer SAFETY_PREFLIGHT_DEADLINE_MS (5000) and the OT dispatcher's
+ * OT_SAFETY_PREFLIGHT_DEADLINE_MS, so a slow/hung PLC turns into its own "error" (⇒ UNKNOWN, fail-closed for
+ * motion/writes) instead of eating the whole budget.
+ */
+export const SAFETY_PLC_READ_DEADLINE_MS = 4000;
+
+/** One config's reading (classification + outcome). Throws on a read error; the caller maps that to "error". */
+async function readOneForRealActuation(plc: SafetyPlcModule, cfg: SafetyPlcConfigRow): Promise<PlcPreflightReading> {
+  const kind = effectiveBackend(cfg);
+  const backend = plc.backendForConfig(cfg);
+  let status: SafetyPlcStatusSnapshot;
+  let complete = true;
+  if (kind === "real") {
+    if (typeof backend.readChecked !== "function") return { kind, outcome: "incomplete" };
+    const checked = await backend.readChecked();
+    status = checked.status;
+    complete = checked.unreadable.length === 0;
+  } else {
+    status = await backend.read();
+  }
+  if (plc.statusToFindings(status).length > 0) return { kind, outcome: "blocked" };
+  return { kind, outcome: complete ? "clean" : "incomplete" };
+}
+
+/**
  * doc 81 Đợt 1C Task 1 — the real-actuation reading over the enabled configs. Every config is
  * classified with the ONE shared `effectiveBackend`; a `real` one must be read through
- * `readChecked()` so a bad-quality safety tag is seen (absent ⇒ "incomplete", fail-closed). A
- * config that reads BLOCKED ends the scan (BLOCKED wins, as before). The verdict is the ONE shared
- * `actuationPreflightVerdict` (the Safety panel predicts with the same function).
+ * `readChecked()` so a bad-quality safety tag is seen (absent ⇒ "incomplete", fail-closed). The
+ * verdict is the ONE shared `actuationPreflightVerdict` (the Safety panel predicts with the same
+ * function); BLOCKED wins over everything.
+ * doc 81 Đợt 1C final wave 5 (final review M4): the configs are read IN PARALLEL, each under its own
+ * SAFETY_PLC_READ_DEADLINE_MS. Before, they were read one after another with no per-read bound: since
+ * R-1C-b requires EVERY real PLC, two slow-but-healthy PLCs could exceed the robot's 5 s preflight
+ * (⇒ SAFETY_UNKNOWN) while OT waited, and a hung `disconnect()` inside one read could hang an OT dispatch.
+ * A timed-out read counts as "error" for that config (UNKNOWN unless another reads BLOCKED).
  */
 async function readForRealActuation(plc: SafetyPlcModule, configs: SafetyPlcConfigRow[]): Promise<SafetyState> {
-  const readings: PlcPreflightReading[] = [];
-  let blockedCode: string | null = null;
-  for (const cfg of configs) {
-    const kind = effectiveBackend(cfg);
-    let outcome: PlcReadOutcome;
-    try {
-      const backend = plc.backendForConfig(cfg);
-      let status: SafetyPlcStatusSnapshot;
-      let complete = true;
-      if (kind === "real") {
-        if (typeof backend.readChecked !== "function") {
-          readings.push({ kind, outcome: "incomplete" });
-          continue;
-        }
-        const checked = await backend.readChecked();
-        status = checked.status;
-        complete = checked.unreadable.length === 0;
-      } else {
-        status = await backend.read();
-      }
-      if (plc.statusToFindings(status).length > 0) {
-        outcome = "blocked";
-        blockedCode = cfg.code;
-      } else {
-        outcome = complete ? "clean" : "incomplete";
-      }
-    } catch {
-      outcome = "error"; // one config unreadable ⇒ that config vouches for nothing; never invented
-      warnPreflightReadFailed(cfg.code);
-    }
-    readings.push({ kind, outcome });
-    if (outcome === "blocked") break;
-  }
+  const readings: PlcPreflightReading[] = await Promise.all(
+    configs.map((cfg) =>
+      withDeadline(
+        Promise.resolve().then(() => readOneForRealActuation(plc, cfg)),
+        SAFETY_PLC_READ_DEADLINE_MS,
+        `safety-PLC "${cfg.code}" preflight read`,
+      ).catch((): PlcPreflightReading => {
+        warnPreflightReadFailed(cfg.code); // one config unreadable / too slow ⇒ it vouches for nothing; never invented
+        return { kind: effectiveBackend(cfg), outcome: "error" };
+      }),
+    ),
+  );
+  const blockedIdx = readings.findIndex((r) => r.outcome === "blocked");
+  const blockedCode = blockedIdx >= 0 ? configs[blockedIdx].code : null;
   const verdict = actuationPreflightVerdict(readings);
   const now = new Date().toISOString();
   if (verdict.state === "BLOCKED") return { state: "BLOCKED", source: `safety_plc:${blockedCode}`, ts: now };

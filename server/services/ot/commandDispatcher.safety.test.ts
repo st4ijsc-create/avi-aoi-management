@@ -281,3 +281,27 @@ describe("R-1C-g — OT stop/e_stop bị preflight từ chối ⇒ nói thẳng 
     expect(op).not.toMatch(TEN_BIEN_MOI_TRUONG);
   });
 });
+
+// ── doc 81 Đợt 1C final wave 5 (final review M4) — preflight OT có HẠN TỔNG (trước: không có ⇒ treo theo PLC) ──
+describe("M4 — preflight OT treo ⇒ SAFETY_UNKNOWN trong hạn tổng, 0 write", () => {
+  it("getSafetyStatus không bao giờ trả về ⇒ rejected SAFETY_UNKNOWN trong OT_SAFETY_PREFLIGHT_DEADLINE_MS + 1,5 s", async () => {
+    const { OT_SAFETY_PREFLIGHT_DEADLINE_MS } = await import("./commandDispatcher");
+    getSafetyStatusSpy.mockImplementation(() => new Promise(() => undefined) as any);
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    const t0 = Date.now();
+    let t: NodeJS.Timeout | undefined;
+    try {
+      const r = await Promise.race([
+        dispatch(baseInput()),
+        new Promise<never>((_, rej) => (t = setTimeout(() => rej(new Error("dispatch still pending")), OT_SAFETY_PREFLIGHT_DEADLINE_MS + 1500))),
+      ]);
+      expect(r.status).toBe("rejected");
+      expect(r.reason).toBe("SAFETY_UNKNOWN");
+      expect(writeTagsSpy).not.toHaveBeenCalled();
+      expect(Date.now() - t0).toBeLessThan(OT_SAFETY_PREFLIGHT_DEADLINE_MS + 1500);
+    } finally {
+      clearTimeout(t);
+      warn.mockRestore();
+    }
+  }, 30_000);
+});

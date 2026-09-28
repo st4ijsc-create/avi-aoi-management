@@ -116,6 +116,7 @@ import type { AppErrorCode, AppErrorParams } from "../../_core/appErrorCodes";
 import { AUDIT_ACTIONS, createAuditContext, logCrudOperation } from "../auditTrailService";
 import type { OtTagAddress } from "./otDriver";
 import { readbackMatches } from "./drivers/readbackCompare";
+import { withDeadline } from "./drivers/boundedClose"; // final wave 5 (M4)
 import { isCommissioned, isCommissioningRequired } from "./commissioningService";
 // Doc 25 T1 — cổng interlock ĐỒNG BỘ, fail-closed chạy TRƯỚC mọi real-write HITL.
 // Import từ interlockGate (module chỉ đọc DB, KHÔNG import ngược commandDispatcher →
@@ -192,13 +193,23 @@ export function isSafetyPreflightEnabled(): boolean {
  * the real, commissioned path): a SIM / real_unmapped safety-PLC no longer yields OK (UNKNOWN,
  * basis "sim_only" ⇒ SAFETY_SIM_ONLY) and a bad-quality real safety tag is not "clean".
  */
+/**
+ * doc 81 Đợt 1C final wave 5 (final review M4) — overall bound of the OT safety preflight read (the robot
+ * side already had SAFETY_PREFLIGHT_DEADLINE_MS = 5000; OT had none). Timeout ⇒ UNKNOWN ⇒ refused (fail-closed).
+ */
+export const OT_SAFETY_PREFLIGHT_DEADLINE_MS = 5000;
+
 async function readSafetyStateForPreflight(
   adapterId: number,
   machineId: number | null,
 ): Promise<{ state: "OK" | "BLOCKED" | "UNKNOWN"; basis?: SafetyUnknownBasis }> {
   try {
     const { createAdapterFacade } = await import("./adapterFacade");
-    const state = await createAdapterFacade({ adapterId, machineId }).getSafetyStatus({ forRealActuation: true });
+    const state = await withDeadline(
+      createAdapterFacade({ adapterId, machineId }).getSafetyStatus({ forRealActuation: true }),
+      OT_SAFETY_PREFLIGHT_DEADLINE_MS,
+      "OT safety preflight",
+    );
     return { state: state.state, basis: state.basis };
   } catch (err) {
     console.warn(

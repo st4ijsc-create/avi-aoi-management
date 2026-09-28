@@ -123,6 +123,9 @@ vi.mock("../safety/plc/safetyPlcAdapter", () => ({
       ? {
           readChecked: async () => {
             if (cfg.__throwChecked) throw new Error("connect ECONNREFUSED 198.51.100.7:502 unreachable");
+            // final wave 5 (M4) — PLC chậm (__delayMs) hoặc treo vĩnh viễn (__hang, vd disconnect() không trả về).
+            if (cfg.__hang) return new Promise(() => undefined);
+            if (cfg.__delayMs) await new Promise((r) => setTimeout(r, cfg.__delayMs));
             return cfg.__checked;
           },
         }
@@ -471,4 +474,56 @@ describe("Đợt 1C Task 1 fix round 1 — getSafetyStatus({ forRealActuation: t
       warn.mockRestore();
     }
   });
+});
+
+// ── doc 81 Đợt 1C final wave 5 (final review M4) — đọc các safety-PLC SONG SONG, mỗi PLC một hạn riêng ─────
+describe("M4 — preflight lệnh thật: đọc PLC song song, hạn riêng từng PLC, hết hạn ⇒ UNKNOWN", () => {
+  const real = (code: string, extra: Record<string, unknown>) => ({
+    code, backend: "modbus", endpoint: "tcp://198.51.100.7:502", statusMap: { estop: { address: "coil:1" } }, ...extra,
+  });
+  const CLEAN = { status: { estop: false }, unreadable: [] };
+  const within = async <T,>(p: Promise<T>, ms: number): Promise<T> => {
+    let t: NodeJS.Timeout | undefined;
+    try {
+      return await Promise.race([p, new Promise<never>((_, rej) => (t = setTimeout(() => rej(new Error(`still pending after ${ms}ms`)), ms)))]);
+    } finally {
+      clearTimeout(t);
+    }
+  };
+
+  it("★ hai PLC thật khoẻ nhưng chậm (1,5 s mỗi cái) ⇒ OK trong < 2,5 s (tuần tự sẽ ≥ 3 s và vượt hạn robot)", async () => {
+    plcEnabled = true;
+    plcConfigs = [real("PLC-S1", { __checked: CLEAN, __delayMs: 1500 }), real("PLC-S2", { __checked: CLEAN, __delayMs: 1500 })];
+    const t0 = Date.now();
+    const s = await within(createAdapterFacade({ adapterId: 10 }).getSafetyStatus({ forRealActuation: true }), 10_000);
+    expect(s.state).toBe("OK");
+    expect(Date.now() - t0).toBeLessThan(2500);
+  });
+
+  it("★ một PLC TREO (vd disconnect không trả về) ⇒ UNKNOWN trong hạn riêng của PLC đó (fail-closed), không treo lệnh", async () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    try {
+      const { SAFETY_PLC_READ_DEADLINE_MS } = await import("./adapterFacade");
+      plcEnabled = true;
+      plcConfigs = [real("PLC-H1", { __checked: CLEAN, __hang: true }), real("PLC-OK", { __checked: CLEAN })];
+      const t0 = Date.now();
+      const s = await within(createAdapterFacade({ adapterId: 10 }).getSafetyStatus({ forRealActuation: true }), SAFETY_PLC_READ_DEADLINE_MS + 2000);
+      expect(s.state).toBe("UNKNOWN");
+      expect(Date.now() - t0).toBeLessThan(SAFETY_PLC_READ_DEADLINE_MS + 1000);
+    } finally {
+      warn.mockRestore();
+    }
+  }, 30_000);
+
+  it("PLC treo + PLC khác báo E-STOP ⇒ BLOCKED (BLOCKED vẫn thắng)", async () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    try {
+      plcEnabled = true;
+      plcConfigs = [real("PLC-H2", { __checked: CLEAN, __hang: true }), real("PLC-E", { __checked: { status: { estop: true }, unreadable: [] } })];
+      const s = await within(createAdapterFacade({ adapterId: 10 }).getSafetyStatus({ forRealActuation: true }), 15_000);
+      expect(s).toMatchObject({ state: "BLOCKED", source: "safety_plc:PLC-E" });
+    } finally {
+      warn.mockRestore();
+    }
+  }, 30_000);
 });
