@@ -202,6 +202,55 @@ export function robotInterlockTarget(robotId: number): { adapterId: number; mach
 /** Upper bound for the safety-PLC preflight read (a hung read must not hang the command). */
 const SAFETY_PREFLIGHT_DEADLINE_MS = 5000;
 
+/**
+ * doc 81 Đợt 1C final wave 1 (ruling R-1C-h, final review I2) — deadline of ONE DB step on the STOP
+ * (non-motion) path. Four DB steps stood before `driver.runJob` of a STOP: the idempotency lookup, the
+ * commissioning check (gate 4a), the commissioning re-read inside the policy block and the 'running'
+ * ledger pre-write. Any of them throwing refused the STOP; any of them hanging hung it. Now each is
+ * bounded (≤ 1.5 s per the ruling) and a failure/timeout NEVER stops the STOP: it is sent, and its ledger
+ * row is written best-effort afterwards. MOTION keeps its fail-closed behaviour (no deadline added there).
+ */
+export const ROBOT_STOP_DB_STEP_DEADLINE_MS = 1000;
+
+export type StopDbStep =
+  | "idempotency_lookup"
+  | "commissioning_check"
+  | "authz_check"
+  | "policy_role_lookup"
+  | "policy_commissioning_check"
+  | "ledger_prewrite";
+
+/** An error text safe for logs and the ledger: credentials in a connection string are masked, length capped. */
+function safeDbError(err: unknown): string {
+  const raw = err instanceof Error ? `${err.name}: ${err.message}` : String(err);
+  return raw
+    .replace(/([a-z][a-z0-9+.-]*:\/\/)[^\s/@]*@/gi, "$1***@")
+    .replace(/(password|pwd|secret|token)\s*[=:]\s*\S+/gi, "$1=***")
+    .slice(0, 240);
+}
+
+/**
+ * R-1C-h — the DB budget of ONE STOP dispatch. Each step runs under ROBOT_STOP_DB_STEP_DEADLINE_MS; the
+ * first failure marks the DB "degraded" and every later step is SKIPPED (a hung DB costs the STOP one
+ * deadline in total, not one per step). A skipped/failed step returns `{ ok: false }` and the caller
+ * takes the energy-reducing default (no replay, "commissioned", no pre-write). Never throws.
+ */
+class StopDbBudget {
+  degraded: { step: StopDbStep; error: string } | null = null;
+  constructor(private readonly robotId: number) {}
+  async run<T>(step: StopDbStep, fn: () => Promise<T>): Promise<{ ok: true; value: T } | { ok: false; error: string }> {
+    if (this.degraded) return { ok: false, error: `skipped: DB degraded at ${this.degraded.step}` };
+    try {
+      return { ok: true, value: await withDeadline(Promise.resolve().then(fn), ROBOT_STOP_DB_STEP_DEADLINE_MS, `STOP ${step}`) };
+    } catch (err) {
+      const error = safeDbError(err);
+      this.degraded = { step, error };
+      console.error(`[Robot] STOP on robot ${this.robotId}: DB step '${step}' failed or timed out — the STOP is still sent (R-1C-h): ${error}`);
+      return { ok: false, error };
+    }
+  }
+}
+
 /** A robot_jobs write failed — never swallowed (doc 81 Đợt 1B Task 5). */
 export class RobotLedgerWriteError extends Error {
   constructor(message: string) {
@@ -437,15 +486,30 @@ export async function dispatchRobotJob(rawInput: RobotDispatchInput): Promise<Ro
 async function dispatchRobotJobCore(input: RobotDispatchInput): Promise<RobotDispatchResult> {
   const triggerKind = input.triggerKind ?? "hitl";
   const motion = isMotionJob(input.job);
+  // final wave 1 (R-1C-h) — a STOP's DB steps are bounded and best-effort; motion gets none (fail-closed).
+  const stopDb = motion ? undefined : new StopDbBudget(input.robotId);
+  /** What the STOP path had to assume because the DB did not answer — kept on its ledger row. */
+  const stopNotes: Record<string, unknown> = {};
 
   // 1) Idempotency — return a prior terminal job for the same key.
   if (input.idempotencyKey) {
-    const db = await getDb();
-    if (db) {
-      const [prior] = await db.select().from(robotJobs)
-        .where(eq(robotJobs.idempotencyKey, input.idempotencyKey)).limit(1);
-      if (prior) return idempotentReplay(prior);
+    const key = input.idempotencyKey;
+    const lookup = async () => {
+      const db = await getDb();
+      if (!db) return undefined;
+      const [prior] = await db.select().from(robotJobs).where(eq(robotJobs.idempotencyKey, key)).limit(1);
+      return prior;
+    };
+    let prior: Awaited<ReturnType<typeof lookup>>;
+    if (stopDb) {
+      // R-1C-h — lookup failed/timed out ⇒ no replay: the STOP is sent (a duplicate STOP is harmless).
+      const r = await stopDb.run("idempotency_lookup", lookup);
+      prior = r.ok ? r.value : undefined;
+      if (!r.ok) stopNotes.idempotencyLookup = "skipped_db_unavailable";
+    } else {
+      prior = await lookup();
     }
+    if (prior) return idempotentReplay(prior);
   }
 
   // 2) HITL gate — ĐỐI XỨNG với OT commandDispatcher (doc 25 T1).
@@ -528,12 +592,28 @@ async function dispatchRobotJobCore(input: RobotDispatchInput): Promise<RobotDis
     const { authorizeCommand, fieldV2Enabled } = await import("../field/commandAuthz");
     if (fieldV2Enabled()) {
       const actorId = input.confirmedBy ?? input.requestedBy;
-      const { equipmentClass, userRole } = await resolveRobotAuthzContext(input.robotId, actorId);
       const verb = input.job.jobType === "abort" ? "abort" : "run_job";
-      const authz = await authorizeCommand({ equipmentClass, verb, userId: actorId, userRole });
+      const check = async () => {
+        const { equipmentClass, userRole } = await resolveRobotAuthzContext(input.robotId, actorId);
+        return authorizeCommand({ equipmentClass, verb, userId: actorId, userRole });
+      };
+      // final wave 1 (R-1C-h) — for a STOP this DB work is bounded (it used to be able to hang the STOP).
+      // Authorization itself stays (R-1C-d): an unverifiable permission is still a refusal (fail-closed),
+      // and the refusal's ledger row is best-effort under the same deadline.
+      let authz: Awaited<ReturnType<typeof authorizeCommand>>;
+      if (stopDb) {
+        const r = await stopDb.run("authz_check", check);
+        authz = r.ok ? r.value : { ok: false, skipped: false, reason: "command authorization could not be verified (DB unavailable) — fail-closed" };
+      } else {
+        authz = await check();
+      }
       if (!authz.ok) {
-        const jobId = await record(input, "rejected", { requiredPermission: authz.requiredPermission }, authz.reason ?? "command authorization denied");
-        return { ok: false, status: "rejected", jobId, error: authz.reason ?? "command authorization denied" };
+        const reason = authz.reason ?? "command authorization denied";
+        const write = record(input, "rejected", { requiredPermission: authz.requiredPermission }, reason);
+        const jobId = stopDb
+          ? await withDeadline(write, ROBOT_STOP_DB_STEP_DEADLINE_MS, "STOP refusal ledger").catch(() => undefined)
+          : await write;
+        return { ok: false, status: "rejected", jobId, error: reason };
       }
     }
   }
@@ -581,7 +661,20 @@ async function dispatchRobotJobCore(input: RobotDispatchInput): Promise<RobotDis
   //     commissioning active/chưa hết hạn/đã ký → ÉP xuống nhánh 'simulated' (y như OT).
   //     Chỉ HẠ một would-be real-write xuống simulated; KHÔNG bao giờ mở một write nên
   //     không thể nới lỏng bất kỳ gate nào ở trên. PRECEDENCE: chưa-commissioned ⇒ simulated.
-  if (isRobotCommissioningRequired() && !(await isRobotCommissioned(input.robotId))) {
+  //     final wave 1 (R-1C-h) — for a STOP the check is bounded; when the DB cannot answer the robot is
+  //     taken as commissioned and the STOP is SENT (a STOP to an uncommissioned robot only removes energy).
+  //     A STOP to a robot KNOWN to be uncommissioned stays 'simulated' (R-1C-d).
+  let commissioned: boolean | undefined;
+  if (isRobotCommissioningRequired()) {
+    if (stopDb) {
+      const r = await stopDb.run("commissioning_check", () => isRobotCommissioned(input.robotId));
+      commissioned = r.ok ? r.value : true;
+      if (!r.ok) stopNotes.commissioning = "unknown_db_unavailable_assumed_for_stop";
+    } else {
+      commissioned = await isRobotCommissioned(input.robotId);
+    }
+  }
+  if (isRobotCommissioningRequired() && !commissioned) {
     const jobId = await record(
       input,
       "simulated",
@@ -610,8 +703,19 @@ async function dispatchRobotJobCore(input: RobotDispatchInput): Promise<RobotDis
       const actorId = input.confirmedBy ?? input.requestedBy;
       // Best-effort role (fail-safe "user" → policy role-floor không match ⇒ hướng DENY an toàn
       // dưới default-deny). fat = có bản ghi commissioning active (cùng nguồn với gate 4a).
-      const { userRole } = await resolveRobotAuthzContext(input.robotId, actorId);
-      const fatPassed = await isRobotCommissioned(input.robotId);
+      // final wave 1 (R-1C-h) — a STOP's two DB reads here are bounded; the verdict cannot block a STOP
+      // anyway (R-1C-c), so on a DB failure they fall back to the conservative context (role "user", fat false).
+      let userRole: string;
+      let fatPassed: boolean;
+      if (stopDb) {
+        const role = await stopDb.run("policy_role_lookup", () => resolveRobotAuthzContext(input.robotId, actorId));
+        userRole = role.ok ? role.value.userRole : "user";
+        const fat = await stopDb.run("policy_commissioning_check", () => isRobotCommissioned(input.robotId));
+        fatPassed = fat.ok ? fat.value : false;
+      } else {
+        ({ userRole } = await resolveRobotAuthzContext(input.robotId, actorId));
+        fatPassed = await isRobotCommissioned(input.robotId);
+      }
       const verb = input.job.jobType;
       const verdict = evaluateActionPolicy(
         `user:${actorId}`,
@@ -755,7 +859,7 @@ async function dispatchRobotJobCore(input: RobotDispatchInput): Promise<RobotDis
     motionInFlight.set(input.robotId, { jobType: input.job.jobType, since: new Date().toISOString() });
   }
   try {
-    return await runRealJob(input, robot.driver, motion, timeoutMs, policyOverride);
+    return await runRealJob(input, robot.driver, motion, timeoutMs, policyOverride, stopDb, stopNotes);
   } finally {
     if (motion) motionInFlight.delete(input.robotId);
   }
@@ -852,6 +956,62 @@ async function reserveRobotJob(input: RobotDispatchInput, runningResult?: Record
 }
 
 /**
+ * doc 81 Đợt 1C final wave 1 (R-1C-h) — ledger of a STOP that was SENT without a pre-written row
+ * (the pre-write failed, timed out, or was skipped because the DB was already degraded). Best-effort,
+ * bounded, never throws, at most ONE row per STOP:
+ *   • the pre-write landed late ⇒ that row is finalised;
+ *   • it failed (or was never attempted) ⇒ one terminal row is inserted (result.ledgerDeferred);
+ *   • it is still pending ⇒ it is settled when it lands (finalise / insert on failure), logged either way.
+ * A row that cannot be written is logged loudly (no secrets) and reported as `ledgerError`.
+ */
+async function stopLedgerAfterSend(
+  input: RobotDispatchInput,
+  prewrite: Promise<number> | undefined,
+  status: "done" | "failed",
+  detail: Record<string, unknown>,
+  errorText: string | undefined,
+): Promise<{ jobId?: number; ledgerError?: string }> {
+  const terminal = { ...detail, ledgerDeferred: true };
+  const insertTerminal = async (): Promise<number> =>
+    (await record(input, status, terminal, errorText, { requireDb: true })) as number;
+  const lost = (err: unknown) =>
+    console.error(`[Robot] STOP on robot ${input.robotId} was SENT (${status}) but its ledger row could not be written (R-1C-h): ${safeDbError(err)}`);
+
+  let state: { s: "ok"; id: number } | { s: "err" } | { s: "pending" } = { s: "err" };
+  if (prewrite) {
+    state = await Promise.race([
+      prewrite.then(
+        (id) => ({ s: "ok" as const, id }),
+        () => ({ s: "err" as const }),
+      ),
+      new Promise<{ s: "pending" }>((r) => setImmediate(() => r({ s: "pending" }))),
+    ]);
+  }
+  if (state.s === "pending") {
+    // Still hanging: settle it when (if) it lands, without holding the STOP's response.
+    prewrite!
+      .then(
+        (id) => finalize(id, status, terminal, errorText),
+        () => insertTerminal().then(() => undefined),
+      )
+      .catch(lost);
+    console.error(`[Robot] STOP on robot ${input.robotId} was SENT (${status}); its ledger pre-write is still pending — the row is settled when the DB answers (R-1C-h)`);
+    return { ledgerError: "LEDGER_DEFERRED" };
+  }
+  try {
+    if (state.s === "ok") {
+      await withDeadline(finalize(state.id, status, terminal, errorText), ROBOT_STOP_DB_STEP_DEADLINE_MS, "STOP ledger finalize");
+      return { jobId: state.id };
+    }
+    const id = await withDeadline(insertTerminal(), ROBOT_STOP_DB_STEP_DEADLINE_MS, "STOP ledger write");
+    return { jobId: id };
+  } catch (err) {
+    lost(err);
+    return { ledgerError: "LEDGER_WRITE_FAILED_AFTER_STOP" };
+  }
+}
+
+/**
  * Step 5 proper — the real run under timeout (see the comment block above the slot claim in
  * dispatchRobotJobCore). Split out so the R14 slot is released by ONE try/finally whatever path
  * this takes (ledger failure, driver result, deadline + stop, finalize failure).
@@ -862,16 +1022,39 @@ async function runRealJob(
   motion: boolean,
   timeoutMs: number,
   policyOverride?: Record<string, unknown>,
+  stopDb?: StopDbBudget,
+  stopNotes: Record<string, unknown> = {},
 ): Promise<RobotDispatchResult> {
-  let jobId: number;
-  try {
-    const reserved = await reserveRobotJob(input, policyOverride ? { policyOverride } : undefined);
-    if (!reserved.ok) return reserved.result;
-    jobId = reserved.jobId;
-  } catch (err) {
-    const msg = (err as Error)?.message ?? String(err);
-    console.error(`[Robot] pre-motion ledger write / HITL reservation failed — nothing sent to robot ${input.robotId}:`, msg);
-    return { ok: false, status: "rejected", error: "LEDGER_WRITE_FAILED" };
+  let jobId: number | undefined;
+  /** R-1C-h — a STOP's pre-write that failed or has not landed within its deadline (settled after the send). */
+  let prewrite: Promise<number> | undefined;
+  if (motion || !stopDb) {
+    try {
+      const reserved = await reserveRobotJob(input, policyOverride ? { policyOverride } : undefined);
+      if (!reserved.ok) return reserved.result;
+      jobId = reserved.jobId;
+    } catch (err) {
+      const msg = (err as Error)?.message ?? String(err);
+      console.error(`[Robot] pre-motion ledger write / HITL reservation failed — nothing sent to robot ${input.robotId}:`, msg);
+      return { ok: false, status: "rejected", error: "LEDGER_WRITE_FAILED" };
+    }
+  } else {
+    // final wave 1 (R-1C-h) — STOP: the 'running' row is written first as before, but under a deadline;
+    // a failure/timeout does NOT refuse the STOP (it used to: LEDGER_WRITE_FAILED). The row is settled
+    // best-effort once the STOP has been sent (stopLedgerAfterSend).
+    const notes = stopDb.degraded ? { ...stopNotes, dbDegraded: stopDb.degraded } : stopNotes;
+    const runningResult =
+      policyOverride || Object.keys(notes).length > 0
+        ? { ...(policyOverride ? { policyOverride } : {}), ...(Object.keys(notes).length > 0 ? { stopDb: notes } : {}) }
+        : undefined;
+    const pre = await stopDb.run("ledger_prewrite", () => {
+      prewrite = record(input, "running", runningResult, undefined, { requireDb: true }) as Promise<number>;
+      return prewrite;
+    });
+    if (pre.ok) {
+      jobId = pre.value;
+      prewrite = undefined;
+    }
   }
 
   let timer: NodeJS.Timeout | undefined;
@@ -931,7 +1114,7 @@ async function runRealJob(
         const { recordAuditEvent } = await import("../audit/controlAuditService");
         await recordAuditEvent(db, {
           entityType: "robot_job",
-          entityId: jobId,
+          entityId: jobId ?? "unrecorded",
           action: "stop_policy_override",
           actorId: input.confirmedBy ?? input.requestedBy ?? null,
           after: policyOverride,
@@ -943,8 +1126,20 @@ async function runRealJob(
     }
   }
 
+  if (!motion && stopDb && jobId == null) {
+    // R-1C-h — the STOP went out without a pre-written row: settle the ledger best-effort now.
+    const notes = stopDb.degraded ? { ...stopNotes, dbDegraded: stopDb.degraded } : stopNotes;
+    const ledger = await stopLedgerAfterSend(input, prewrite, status, { ...(detail ?? {}), ...(Object.keys(notes).length > 0 ? { stopDb: notes } : {}) }, errorText);
+    return { ok: status === "done", status, jobId: ledger.jobId, error: errorText, ...(ledger.ledgerError ? { ledgerError: ledger.ledgerError } : {}) };
+  }
+  if (jobId == null) {
+    // Unreachable: every other path reserved a row before the driver call.
+    return { ok: status === "done", status, error: errorText, ledgerError: "LEDGER_FINALIZE_FAILED" };
+  }
   try {
-    await finalize(jobId, status, detail, errorText);
+    const fin = finalize(jobId, status, detail, errorText);
+    // R-1C-h — the STOP was sent; its terminal update must not hang the caller on a sick DB.
+    await (motion ? fin : withDeadline(fin, ROBOT_STOP_DB_STEP_DEADLINE_MS, "STOP ledger finalize"));
   } catch (err) {
     // The driver WAS called; the row stays 'running' (honest: terminal state not recorded).
     const msg = (err as Error)?.message ?? String(err);
