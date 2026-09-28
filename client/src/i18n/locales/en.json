@@ -15653,11 +15653,18 @@
       "save": "Save pin",
       "toast": {
         "saved": "Stop pin saved",
-        "recheckCommissioning": "This adapter is commissioned — recheck its commissioning after changing a pin (see the sign-off log under System Health)."
+        "recheckCommissioning": "This adapter is commissioned — recheck its commissioning after changing a pin (see the sign-off log under System Health).",
+        "autoCleared": "The STOP pin of this tag was removed."
       },
       "error": {
         "intRequired": "An int tag needs a WHOLE number — the value is never rounded.",
-        "numberRequired": "A valid number is required."
+        "numberRequired": "A valid number is required.",
+        "stringWhitespace": "The value has leading/trailing spaces — a pin is saved EXACTLY as typed, so remove the extra spaces."
+      },
+      "confirmOff": {
+        "title": "Remove the STOP pin?",
+        "body": "This tag has a pinned STOP value; turning this off removes the pin.",
+        "confirm": "Turn off and remove pin"
       }
     },
     "toast": {

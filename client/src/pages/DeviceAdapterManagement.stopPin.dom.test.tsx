@@ -49,8 +49,10 @@ import "../i18n";
 import i18n from "i18next";
 import {
   StopPinChip,
+  TagFlagSwitch,
   TagStopPinEditor,
   checkStopPinInput,
+  notifyStopPinAutoClear,
   parseStopPinInput,
   stopPinValueToInput,
 } from "./DeviceAdapterManagement";
@@ -95,10 +97,10 @@ describe("parseStopPinInput / stopPinValueToInput — thuần, quy đổi theo d
     expect(parseStopPinInput("bool", "false")).toBe(false);
     expect(parseStopPinInput("bool", "0")).toBe(false);
   });
-  it("int/float → number (trim trước); string → nguyên văn đã trim", () => {
+  it("int/float → number (trim trước); string → NGUYÊN VĂN (final wave 3 M3: không trim âm thầm)", () => {
     expect(parseStopPinInput("int", "  42 ")).toBe(42);
     expect(parseStopPinInput("float", "3.5")).toBe(3.5);
-    expect(parseStopPinInput("string", "  abc  ")).toBe("abc");
+    expect(parseStopPinInput("string", "  abc  ")).toBe("  abc  ");
   });
   it("stopPinValueToInput là nghịch đảo hợp lý cho bool/số/rỗng", () => {
     expect(stopPinValueToInput("bool", true)).toBe("true");
@@ -121,6 +123,93 @@ describe("final wave 2 (I2) — checkStopPinInput: KHÔNG làm tròn giá trị 
     expect(checkStopPinInput("float", "2.25")).toEqual({ ok: true, value: 2.25 });
     expect(checkStopPinInput("float", "abc")).toEqual({ ok: false, error: "numberRequired" });
     expect(checkStopPinInput("float", "  ")).toEqual({ ok: false, error: "valueRequired" });
+  });
+});
+
+describe("final wave 3 (M3) — bool KHÔNG chọn sẵn; string không trim âm thầm", () => {
+  it("thuần: tag chưa ghim ⇒ ô giá trị RỖNG kể cả bool; bool chỉ nhận lựa chọn tường minh", () => {
+    expect(stopPinValueToInput("bool", undefined)).toBe("");
+    expect(stopPinValueToInput("bool", null)).toBe("");
+    expect(checkStopPinInput("bool", "")).toEqual({ ok: false, error: "valueRequired" });
+    expect(checkStopPinInput("bool", "true")).toEqual({ ok: true, value: true });
+    expect(checkStopPinInput("bool", "false")).toEqual({ ok: true, value: false });
+  });
+  it("thuần: string có khoảng trắng đầu/cuối ⇒ stringWhitespace; không có ⇒ giữ NGUYÊN (kể cả khoảng trắng giữa)", () => {
+    expect(checkStopPinInput("string", "  STOP")).toEqual({ ok: false, error: "stringWhitespace" });
+    expect(checkStopPinInput("string", "STOP ")).toEqual({ ok: false, error: "stringWhitespace" });
+    expect(checkStopPinInput("string", "   ")).toEqual({ ok: false, error: "stringWhitespace" });
+    expect(checkStopPinInput("string", "")).toEqual({ ok: false, error: "valueRequired" });
+    expect(checkStopPinInput("string", "E STOP")).toEqual({ ok: true, value: "E STOP" });
+  });
+  it("★ DOM: tag bool chưa ghim, bật ghim + lý do đủ ⇒ Select hiện placeholder, nút Lưu KHOÁ (phải chọn true/false)", () => {
+    render(<TagStopPinEditor tag={{ id: 3, tagKey: "cmd_stop", dataType: "bool", writable: true, stopValue: undefined }} adapterId={9} canEdit />);
+    fireEvent.click(screen.getByRole("switch"));
+    fireEvent.change(screen.getByLabelText(/Lý do/), { target: { value: "vi du ly do that day du" } });
+    expect(screen.getByRole("combobox")).toHaveTextContent("Chọn giá trị");
+    const save = screen.getByRole("button", { name: "Lưu ghim" });
+    expect(save).toBeDisabled();
+    fireEvent.click(save);
+    expect(mutate).not.toHaveBeenCalled();
+  });
+  it("★ DOM: tag string gõ '  STOP' ⇒ lỗi trên màn, Lưu khoá; gõ 'STOP' ⇒ gửi ĐÚNG 'STOP'", () => {
+    render(<TagStopPinEditor tag={{ id: 4, tagKey: "mode", dataType: "string", writable: true, stopValue: undefined }} adapterId={9} canEdit />);
+    fireEvent.click(screen.getByRole("switch"));
+    fireEvent.change(screen.getByLabelText("Giá trị khi DỪNG"), { target: { value: "  STOP" } });
+    fireEvent.change(screen.getByLabelText(/Lý do/), { target: { value: "vi du ly do that day du" } });
+    expect(screen.getByRole("alert")).toHaveTextContent("khoảng trắng");
+    expect(screen.getByRole("button", { name: "Lưu ghim" })).toBeDisabled();
+    fireEvent.change(screen.getByLabelText("Giá trị khi DỪNG"), { target: { value: "STOP" } });
+    fireEvent.click(screen.getByRole("button", { name: "Lưu ghim" }));
+    expect(mutate).toHaveBeenCalledTimes(1);
+    expect(mutate.mock.calls[0][0].stopValue).toBe("STOP");
+  });
+});
+
+describe("final wave 3 (M4) — tắt Writable/Enabled trên tag ĐANG ghim phải xác nhận; báo sau khi gỡ", () => {
+  const pinned = { id: 7, tagKey: "cmd_stop", stopValue: true };
+  it("★ tag ĐANG ghim: tắt ⇒ hỏi 'Tag này đang được ghim DỪNG; tắt sẽ gỡ ghim', CHƯA gửi; Huỷ ⇒ không gửi; xác nhận ⇒ gửi false", async () => {
+    const onChange = vi.fn();
+    render(<TagFlagSwitch tag={pinned} field="writable" checked disabled={false} onChange={onChange} />);
+    fireEvent.click(screen.getByRole("switch"));
+    expect(await screen.findByText("Tag này đang được ghim DỪNG; tắt sẽ gỡ ghim.")).toBeInTheDocument();
+    expect(onChange).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole("button", { name: "Hủy" }));
+    expect(onChange).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole("switch"));
+    fireEvent.click(await screen.findByRole("button", { name: "Tắt và gỡ ghim" }));
+    expect(onChange).toHaveBeenCalledTimes(1);
+    expect(onChange).toHaveBeenCalledWith(false);
+  });
+  it("cột Enabled cũng hỏi; tag KHÔNG ghim ⇒ tắt ngay (như cũ); bật tag đang ghim ⇒ không hỏi", async () => {
+    const onChange = vi.fn();
+    render(<TagFlagSwitch tag={pinned} field="isEnabled" checked disabled={false} onChange={onChange} />);
+    fireEvent.click(screen.getByRole("switch"));
+    expect(await screen.findByText("Tag này đang được ghim DỪNG; tắt sẽ gỡ ghim.")).toBeInTheDocument();
+    expect(onChange).not.toHaveBeenCalled();
+    cleanup();
+    const onChange2 = vi.fn();
+    render(<TagFlagSwitch tag={{ id: 8, tagKey: "cmd_run", stopValue: null }} field="writable" checked disabled={false} onChange={onChange2} />);
+    fireEvent.click(screen.getByRole("switch"));
+    expect(onChange2).toHaveBeenCalledWith(false);
+    expect(screen.queryByText("Tag này đang được ghim DỪNG; tắt sẽ gỡ ghim.")).toBeNull();
+    cleanup();
+    const onChange3 = vi.fn();
+    render(<TagFlagSwitch tag={pinned} field="isEnabled" checked={false} disabled={false} onChange={onChange3} />);
+    fireEvent.click(screen.getByRole("switch"));
+    expect(onChange3).toHaveBeenCalledWith(true);
+  });
+  it("sau khi server gỡ ghim: báo 'đã gỡ'; adapter ĐÃ commissioning ⇒ thêm nhắc soát lại; không gỡ ⇒ im", () => {
+    const t = (k: string) => i18n.t(k);
+    notifyStopPinAutoClear({ id: 7, stopPinAutoCleared: true, commissioningRecheckRequired: true }, t);
+    expect(toastWarning).toHaveBeenCalledTimes(2);
+    expect(String(toastWarning.mock.calls[0][0])).toContain("Đã gỡ ghim DỪNG");
+    expect(String(toastWarning.mock.calls[1][0])).toContain("commissioning");
+    toastWarning.mockReset();
+    notifyStopPinAutoClear({ id: 7, stopPinAutoCleared: true, commissioningRecheckRequired: false }, t);
+    expect(toastWarning).toHaveBeenCalledTimes(1);
+    toastWarning.mockReset();
+    notifyStopPinAutoClear({ id: 7, writable: false }, t);
+    expect(toastWarning).not.toHaveBeenCalled();
   });
 });
 

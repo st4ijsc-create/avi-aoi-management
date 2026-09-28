@@ -503,7 +503,10 @@ export const deviceAdapterRouter = router({
             const [row] = await tx.update(deviceTags).set(patch).where(eq(deviceTags.id, id)).returning();
             if (!row) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "deviceTag" }, "Tag không tồn tại.");
             if (nguonGo) {
-              await ghiAuditGoStopPinTx(tx, { tag: existing, nguon: nguonGo, nguoiSua: nguoiSuaTu(ctx), thaoTac: "deviceAdapter.tags.update" });
+              const { commissioningRecheckRequired } = await ghiAuditGoStopPinTx(tx, { tag: existing, nguon: nguonGo, nguoiSua: nguoiSuaTu(ctx), thaoTac: "deviceAdapter.tags.update" });
+              // final wave 3 (M4) — UI được BÁO là ghim vừa bị gỡ (và có phải soát lại commissioning không). Chỉ gắn
+              // khi thật sự gỡ ⇒ mọi lượt sửa khác trả đúng hàng như cũ.
+              return { ...row, stopPinAutoCleared: true as const, commissioningRecheckRequired };
             }
             return row;
           });

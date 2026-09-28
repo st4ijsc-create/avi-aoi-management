@@ -411,7 +411,7 @@ export const GO_STOP_PIN_PATCH = { stopValue: null, stopPinnedBy: null, stopPinn
 export async function ghiAuditGoStopPinTx(
   tx: Tx,
   e: { tag: DongTag; nguon: Exclude<NguonGo, "manual">; nguoiSua: NguoiSuaStopPin; thaoTac: string },
-): Promise<void> {
+): Promise<{ commissioningRecheckRequired: boolean }> {
   const commissioningRecheckRequired = await isCommissioned(e.tag.adapterId, tx);
   await ghiAuditStopPinTx(tx, {
     tag: e.tag,
@@ -422,6 +422,8 @@ export async function ghiAuditGoStopPinTx(
     commissioningRecheckRequired,
     nguon: e.nguon,
   });
+  // final wave 3 (M4) — nơi gọi (tags.update) báo lại cho UI: đã gỡ ghim trên adapter ĐÃ commissioning ⇒ nhắc soát lại.
+  return { commissioningRecheckRequired };
 }
 
 // ─── Gỡ MỌI ghim của adapter khi adapter đổi "thiết bị nào" (Ruling R-1D-a) ─────────────────────────

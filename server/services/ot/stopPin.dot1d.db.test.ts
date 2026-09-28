@@ -398,6 +398,27 @@ describe.skipIf(!DB_URL || !/_test\b/.test(DB_URL ?? ""))("doc 81 Đợt 1D Task
     expect(a[a.length - 1].beforeJson.stopValue).toBe(true);
   });
 
+  it("★ M4: tags.update gỡ ghim ⇒ trả stopPinAutoCleared + commissioningRecheckRequired (adapter ĐÃ commissioning ⇒ true, khớp audit); không gỡ ⇒ hàng như cũ (không cờ)", async () => {
+    // Chưa commissioning ⇒ gỡ ghim, cờ nhắc = false.
+    await ghim("stop_cmd", true);
+    const u1 = (await eng().tags.update({ id: fx.tStop, isEnabled: false })) as Record<string, unknown>;
+    expect(u1).toMatchObject({ stopPinAutoCleared: true, commissioningRecheckRequired: false, stopValue: null });
+    expect((await auditCuoi(fx.tStop)).afterJson).toMatchObject({ autoClearedBy: "tag_disabled", commissioningRecheckRequired: false });
+    // ĐÃ commissioning ⇒ cờ nhắc = true, audit (control_audit_log + audit_logs) ghi đúng cờ đó.
+    await sql`UPDATE device_tags SET "isEnabled" = true WHERE id = ${fx.tStop}`;
+    await sql`INSERT INTO commissioning_records ("adapterId", status, "signedBy", "fatReference") VALUES (${fx.aA}, 'active', ${fx.admin}, ${RUN})`;
+    await ghim("stop_cmd", true);
+    const u2 = (await eng().tags.update({ id: fx.tStop, writable: false })) as Record<string, unknown>;
+    expect(u2).toMatchObject({ stopPinAutoCleared: true, commissioningRecheckRequired: true, writable: false, stopValue: null });
+    expect((await auditCuoi(fx.tStop)).afterJson).toMatchObject({ autoClearedBy: "tag_not_writable", commissioningRecheckRequired: true });
+    const l = await auditLogRows(fx.tStop);
+    expect(JSON.parse(l[l.length - 1].details).metadata.commissioningRecheckRequired).toBe(true);
+    // Sửa không gỡ ghim ⇒ không có trường mới.
+    const u3 = (await eng().tags.update({ id: fx.tStop, unit: "-" })) as Record<string, unknown>;
+    expect("stopPinAutoCleared" in u3).toBe(false);
+    expect("commissioningRecheckRequired" in u3).toBe(false);
+  });
+
   it("tags.update isEnabled=false ⇒ gỡ (tag_disabled); đổi unit ⇒ GIỮ ghim", async () => {
     await ghim("mode", "STOP");
     await eng().tags.update({ id: fx.tMode, unit: "-" });

@@ -16220,11 +16220,18 @@
       "save": "保存固定值",
       "toast": {
         "saved": "已保存停止固定值",
-        "recheckCommissioning": "该适配器已调试签收——更改固定值后请到“系统健康”下的签收台账重新核查调试状态。"
+        "recheckCommissioning": "该适配器已调试签收——更改固定值后请到“系统健康”下的签收台账重新核查调试状态。",
+        "autoCleared": "已移除该标签的停止固定值。"
       },
       "error": {
         "intRequired": "int 类型标签需要一个整数——数值不会被取整。",
-        "numberRequired": "需要一个有效的数字。"
+        "numberRequired": "需要一个有效的数字。",
+        "stringWhitespace": "该值首尾含有空格——固定值会按输入原样保存，请删除多余的空格。"
+      },
+      "confirmOff": {
+        "title": "移除停止固定值？",
+        "body": "该标签已固定停止值；关闭后将移除该固定值。",
+        "confirm": "关闭并移除固定值"
       }
     },
     "toast": {

@@ -15633,11 +15633,18 @@
       "save": "Lưu ghim",
       "toast": {
         "saved": "Đã lưu ghim tag dừng",
-        "recheckCommissioning": "Adapter đã commissioning — hãy soát lại commissioning sau khi đổi ghim (mục Sổ ký ở Sức khỏe hệ thống)."
+        "recheckCommissioning": "Adapter đã commissioning — hãy soát lại commissioning sau khi đổi ghim (mục Sổ ký ở Sức khỏe hệ thống).",
+        "autoCleared": "Đã gỡ ghim DỪNG của tag này."
       },
       "error": {
         "intRequired": "Tag kiểu int cần một số NGUYÊN — giá trị không được làm tròn.",
-        "numberRequired": "Cần một số hợp lệ."
+        "numberRequired": "Cần một số hợp lệ.",
+        "stringWhitespace": "Giá trị có khoảng trắng ở đầu/cuối — giá trị ghim được lưu ĐÚNG như gõ, hãy xoá khoảng trắng thừa."
+      },
+      "confirmOff": {
+        "title": "Gỡ ghim DỪNG?",
+        "body": "Tag này đang được ghim DỪNG; tắt sẽ gỡ ghim.",
+        "confirm": "Tắt và gỡ ghim"
       }
     },
     "toast": {
