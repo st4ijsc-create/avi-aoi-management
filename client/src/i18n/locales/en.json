@@ -3979,6 +3979,7 @@
       "rollbackRecipeVersion": "roll back recipe version"
     },
     "field": {
+      "stopValue": "pinned stop value (stopValue)",
       "inspectionTime": "inspection time (inspectionTime)",
       "clientId": "MQTT device",
       "changeReason": "change reason",
@@ -4231,6 +4232,8 @@
       "ros2JobMessageRequired": "The ROS2 command carries no message of its own — nothing was published."
     },
     "reason": {
+      "stopPinTagNotWritable": "A stop value can only be pinned on a tag that is ENABLED and WRITABLE. Make the tag writable and enabled first, then pin it again.",
+      "stopPinTypeMismatch": "The stop value does not match the tag data type: a bool tag needs true/false (or 1/0), an int tag a whole number, a float tag a number, a string tag text; json tags cannot be pinned.",
       "softwareStopRefusedUseHardwareEstop": "The software stop was REFUSED: the safety check could not confirm the safety PLC (unreadable, simulation only, or tripped), so the platform did NOT send this stop. Use the hardware E-STOP on the machine now.",
       "timeOffsetRequired": "The timestamp must carry an explicit time zone (Z or +07:00) — a timestamp without one is rejected because the server cannot tell which clock it refers to.",
       "mqttDeviceRejectedCredential": "This device was REJECTED — a rejected device cannot be issued a password. Approve the device first.",

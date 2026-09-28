@@ -3979,6 +3979,7 @@
       "rollbackRecipeVersion": "quay lui phiên bản công thức"
     },
     "field": {
+      "stopValue": "giá trị dừng ghim (stopValue)",
       "inspectionTime": "thời điểm kiểm tra (inspectionTime)",
       "clientId": "thiết bị MQTT",
       "changeReason": "lý do thay đổi",
@@ -4223,6 +4224,8 @@
       "ros2JobMessageRequired": "Lệnh ROS2 không mang thông điệp của chính nó — không có gì được phát."
     },
     "reason": {
+      "stopPinTagNotWritable": "Chỉ ghim giá trị dừng cho tag đang BẬT và cho phép GHI. Bật ghi (writable) và bật tag trước, rồi ghim lại.",
+      "stopPinTypeMismatch": "Giá trị dừng không đúng kiểu dữ liệu của tag: tag bool cần true/false (hoặc 1/0), tag int cần số nguyên, tag float cần số, tag string cần chuỗi; tag json không ghim được.",
       "softwareStopRefusedUseHardwareEstop": "Lệnh dừng phần mềm đã bị TỪ CHỐI: kiểm tra an toàn không xác nhận được PLC an toàn (không đọc được, chỉ có mô phỏng, hoặc đang báo dừng) nên nền tảng KHÔNG gửi lệnh dừng này. Hãy nhấn nút E-STOP cứng trên máy ngay.",
       "timeOffsetRequired": "Thời điểm phải kèm múi giờ tường minh (Z hoặc +07:00) — chuỗi không múi giờ bị từ chối vì máy chủ không thể biết đó là giờ nào.",
       "mqttDeviceRejectedCredential": "Thiết bị này đã bị TỪ CHỐI — không cấp mật khẩu cho thiết bị bị từ chối. Duyệt lại thiết bị trước.",

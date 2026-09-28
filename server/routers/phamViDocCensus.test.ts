@@ -575,7 +575,18 @@ const cua = (n: NhomPhamVi): ThuTuc[] => NHOM.get(n) ?? [];
  *     dòng nào vào `phamViDocBaseline.ts`.
  *   ⇒ D +1 · tong +1.
  */
-const GHIM = { A: 341, B: 8, C: 480, D: 1128, S: 333, tong: 2290 } as const;
+/*
+ * ★★★ 2026-09-28 (doc 81 Đợt 1D Task 1, ghim tag/giá trị DỪNG theo tag OT) — **D 1128→1129 · tong 2290→2291 ·
+ * A/B/C/S không đổi.** ĐO bằng chính bộ quét này (trước lượt sửa, HEAD `55d1ff0ca` = D 1128 · tong 2290 —
+ * khớp ghim cũ):
+ *   • `deviceAdapterRouter.tags.setStopPin` (mutation, MỚI): **D +1** — adapter soát máy ∈
+ *     `idsTrongPhamVi("machine", phamViCua(ctx))` TRONG transaction (`services/ot/stopPin.ts#datStopPin`;
+ *     adapter chưa gắn máy chỉ người không bị lọc phạm vi mới sửa được). `tags.update`/`tags.delete`/
+ *     `delete` giờ gỡ ghim + audit trong transaction — cùng thủ tục, KHÔNG đổi nhóm. KHÔNG thêm dòng nào
+ *     vào `phamViDocBaseline.ts`.
+ *   ⇒ D +1 · tong +1.
+ */
+const GHIM = { A: 341, B: 8, C: 480, D: 1129, S: 333, tong: 2291 } as const;
 
 describe("§1 — CẦU CHÌ: bộ suy có thật sự nhìn thấy gì không", () => {
   it("★ không có ô MÙ nào (mỗi ô mù là một chỗ KHÔNG AI CANH)", () => {

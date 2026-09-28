@@ -27,6 +27,9 @@ import { DbUnavailableError } from "../../_core/dbErrors";
 import { getDb } from "../../db/connection";
 import { commissioningRecords, type CommissioningRecord } from "../../../drizzle/schema";
 
+type Db = NonNullable<Awaited<ReturnType<typeof getDb>>>;
+type DbOrTx = Db | Parameters<Parameters<Db["transaction"]>[0]>[0];
+
 /** Commissioning record lifecycle status (plain string; no pg enum). */
 export type CommissioningStatus = "active" | "revoked" | "expired";
 
@@ -54,8 +57,9 @@ export function isCommissioningRequired(): boolean {
  * a real write; it degrades to simulated). This can only ever be STRICTER than the
  * pre-C2 behaviour — it never authorizes a write that wasn't already authorized.
  */
-export async function isCommissioned(adapterId: number): Promise<boolean> {
-  const db = await getDb();
+export async function isCommissioned(adapterId: number, dbOrTx?: DbOrTx): Promise<boolean> {
+  // doc 81 Đợt 1D Task 1 — `dbOrTx` (tuỳ chọn): đọc TRONG transaction của nơi gọi (stopPin).
+  const db = dbOrTx ?? (await getDb());
   if (!db) return false; // fail-safe: no DB ⇒ treat as NOT commissioned.
 
   const rows = await db

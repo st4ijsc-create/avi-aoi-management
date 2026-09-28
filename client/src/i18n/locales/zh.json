@@ -3971,6 +3971,7 @@
       "rollbackRecipeVersion": "回滚配方版本"
     },
     "field": {
+      "stopValue": "固定停止值（stopValue）",
       "inspectionTime": "检测时间（inspectionTime）",
       "clientId": "MQTT设备",
       "changeReason": "变更原因",
@@ -4223,6 +4224,8 @@
       "ros2JobMessageRequired": "ROS2 指令未携带自身消息——未发布任何内容。"
     },
     "reason": {
+      "stopPinTagNotWritable": "只能为已启用且可写的标签固定停止值。请先启用该标签并设为可写，然后重新固定。",
+      "stopPinTypeMismatch": "停止值与标签数据类型不符：bool 标签需要 true/false（或 1/0），int 标签需要整数，float 标签需要数字，string 标签需要文本；json 标签不能固定停止值。",
       "softwareStopRefusedUseHardwareEstop": "软件停止命令被拒绝：安全检查无法确认安全 PLC（无法读取、仅有仿真或已触发），平台未发送此停止命令。请立即按下设备上的硬件急停按钮（E-STOP）。",
       "timeOffsetRequired": "时间戳必须带明确的时区（Z 或 +07:00）——不带时区的时间会被拒绝，因为服务器无法判断其对应的时钟。",
       "mqttDeviceRejectedCredential": "该设备已被拒绝——不能为被拒绝的设备签发密码。请先批准该设备。",

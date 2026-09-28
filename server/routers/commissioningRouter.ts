@@ -31,6 +31,7 @@ import {
   isCommissioned,
   isCommissioningRequired,
 } from "../services/ot/commissioningService";
+import { loadStopPins } from "../services/ot/stopPin";
 
 async function db() {
   const d = await getDb();
@@ -64,12 +65,17 @@ export const commissioningRouter = router({
     .input(z.object({ adapterId: z.number().int().positive() }))
     .query(async ({ input }) => {
       const commissioned = await isCommissioned(input.adapterId);
+      // doc 81 Đợt 1D Task 1 (Ruling commissioning) — người ký commissioning phải THẤY các tag DỪNG đã
+      // ghim của adapter (lệnh DỪNG ghi đúng các cặp này được miễn preflight an toàn). Đổi ghim sau khi
+      // ký KHÔNG thu hồi bản ký; audit của lượt đổi gắn cờ commissioningRecheckRequired.
+      const pinnedStopTags = await loadStopPins(await db(), input.adapterId);
       return {
         adapterId: input.adapterId,
         required: isCommissioningRequired(),
         commissioned,
         // The effective outcome of the C2 gate for a would-be REAL write.
         wouldForceSimulated: isCommissioningRequired() && !commissioned,
+        pinnedStopTags,
       };
     }),
 

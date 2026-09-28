@@ -40,6 +40,47 @@ import {
   REDACTED_SECRET,
 } from "../services/ot/connectionSecrets";
 import { parseOpcuaSecurityOptions } from "../services/ot/drivers/opcuaSecurity";
+import { idsTrongPhamVi } from "../db/hierarchy";
+import { phamViCua } from "./_phamViNguoiXem";
+import { createAuditContext } from "../services/auditTrailService";
+import {
+  datStopPin,
+  StopPinLoi,
+  lyDoGoStopPinKhiSuaTag,
+  ghiAuditGoStopPinTx,
+  GO_STOP_PIN_PATCH,
+  type NguoiSuaStopPin,
+} from "../services/ot/stopPin";
+
+/** doc 81 Đợt 1D Task 1 — người sửa (id/tên/IP/UA) lấy từ ctx, KHÔNG từ input (khuôn mqttOeeRouters). */
+function nguoiSuaTu(ctx: Parameters<typeof createAuditContext>[0]): NguoiSuaStopPin {
+  const ac = createAuditContext(ctx);
+  return { id: ac.userId ?? null, name: ac.userName ?? null, ipAddress: ac.ipAddress ?? null, userAgent: ac.userAgent ?? null };
+}
+
+/** Lỗi nghiệp vụ của stopPin → appError có mã (khoá errors.field/reason.* ở vi/en/zh). */
+function loiStopPin(e: StopPinLoi): never {
+  switch (e.loai) {
+    case "adapter_not_found":
+      throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "adapter" }, "Adapter không tồn tại.");
+    case "tag_not_found":
+      throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "deviceTag" }, "Tag không tồn tại.");
+    case "tag_not_writable":
+      throw appError(
+        "BAD_REQUEST",
+        "INVALID_VALUE",
+        { field: "stopValue", reason: "stopPinTagNotWritable" },
+        "Stop pin refused: the tag must be writable and enabled.",
+      );
+    case "type_mismatch":
+      throw appError(
+        "BAD_REQUEST",
+        "INVALID_VALUE",
+        { field: "stopValue", reason: "stopPinTypeMismatch" },
+        `Stop pin refused: value does not match the tag dataType (${String(e.chiTiet.detail ?? "")}).`,
+      );
+  }
+}
 
 /**
  * doc 81 Đợt 1B Task 12 fix round 1 (#6) — kiểm securityMode/securityPolicy của OPC UA LÚC
@@ -261,7 +302,7 @@ export const deviceAdapterRouter = router({
   delete: protectedProcedure
     .use(requirePermission("machine_control", "canDelete"))
     .input(z.object({ id: z.number().int().positive() }))
-    .mutation(async ({ input }) => {
+    .mutation(async ({ input, ctx }) => {
       const db = await getDb();
       const [existing] = await db.select().from(deviceAdapters).where(eq(deviceAdapters.id, input.id)).limit(1);
       if (!existing) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "adapter" }, "Adapter không tồn tại.");
@@ -279,6 +320,13 @@ export const deviceAdapterRouter = router({
       }
       // Cascade delete tags + adapter atomically.
       await db.transaction(async (tx) => {
+        // doc 81 Đợt 1D Task 1 — tag đang GHIM DỪNG bị xoá theo adapter ⇒ audit gỡ ghim cùng transaction.
+        const tags = await tx.select().from(deviceTags).where(eq(deviceTags.adapterId, input.id)).for("update");
+        for (const t of tags) {
+          if (t.stopValue != null) {
+            await ghiAuditGoStopPinTx(tx, { tag: t, nguon: "adapter_deleted", nguoiSua: nguoiSuaTu(ctx), thaoTac: "deviceAdapter.delete" });
+          }
+        }
         await tx.delete(deviceTags).where(eq(deviceTags.adapterId, input.id));
         await tx.delete(deviceAdapters).where(eq(deviceAdapters.id, input.id));
       });
@@ -411,16 +459,27 @@ export const deviceAdapterRouter = router({
     update: protectedProcedure
       .use(requirePermission("machine_control", "canEdit"))
       .input(tagCreateInput.partial().extend({ id: z.number().int().positive() }))
-      .mutation(async ({ input }) => {
+      .mutation(async ({ input, ctx }) => {
         const db = await getDb();
         const { id, scale, offset, ...rest } = input;
         const patch: Record<string, unknown> = { ...rest, updatedAt: new Date() };
         if (scale !== undefined) patch.scale = scale != null ? String(scale) : null;
         if (offset !== undefined) patch.offset = offset != null ? String(offset) : null;
         try {
-          const [row] = await db.update(deviceTags).set(patch).where(eq(deviceTags.id, id)).returning();
-          if (!row) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "deviceTag" }, "Tag không tồn tại.");
-          return row;
+          // doc 81 Đợt 1D Task 1 — tag khoá FOR UPDATE; tag đang GHIM DỪNG mà thành không-ghi-được /
+          // bị tắt / đổi định nghĩa dây ⇒ ghim bị gỡ trong CÙNG transaction, cùng audit.
+          return await db.transaction(async (tx) => {
+            const [existing] = await tx.select().from(deviceTags).where(eq(deviceTags.id, id)).for("update");
+            if (!existing) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "deviceTag" }, "Tag không tồn tại.");
+            const nguonGo = lyDoGoStopPinKhiSuaTag(existing, patch);
+            if (nguonGo) Object.assign(patch, GO_STOP_PIN_PATCH);
+            const [row] = await tx.update(deviceTags).set(patch).where(eq(deviceTags.id, id)).returning();
+            if (!row) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "deviceTag" }, "Tag không tồn tại.");
+            if (nguonGo) {
+              await ghiAuditGoStopPinTx(tx, { tag: existing, nguon: nguonGo, nguoiSua: nguoiSuaTu(ctx), thaoTac: "deviceAdapter.tags.update" });
+            }
+            return row;
+          });
         } catch (err) {
           if (err instanceof TRPCError) throw err;
           if (isUniqueViolation(err)) {
@@ -433,11 +492,51 @@ export const deviceAdapterRouter = router({
     delete: protectedProcedure
       .use(requirePermission("machine_control", "canDelete"))
       .input(z.object({ id: z.number().int().positive() }))
-      .mutation(async ({ input }) => {
+      .mutation(async ({ input, ctx }) => {
         const db = await getDb();
-        const [row] = await db.delete(deviceTags).where(eq(deviceTags.id, input.id)).returning();
-        if (!row) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "deviceTag" }, "Tag không tồn tại.");
+        // doc 81 Đợt 1D Task 1 — xoá tag đang GHIM DỪNG ⇒ audit gỡ ghim trong CÙNG transaction.
+        await db.transaction(async (tx) => {
+          const [existing] = await tx.select().from(deviceTags).where(eq(deviceTags.id, input.id)).for("update");
+          if (!existing) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "deviceTag" }, "Tag không tồn tại.");
+          await tx.delete(deviceTags).where(eq(deviceTags.id, input.id));
+          if (existing.stopValue != null) {
+            await ghiAuditGoStopPinTx(tx, { tag: existing, nguon: "tag_deleted", nguoiSua: nguoiSuaTu(ctx), thaoTac: "deviceAdapter.tags.delete" });
+          }
+        });
         return { success: true };
+      }),
+
+    /**
+     * doc 81 Đợt 1D Task 1 — GHIM / GỠ giá trị DỪNG của một tag (doc 81 §8 QĐ1). Cấu hình AN TOÀN:
+     * cùng quyền sửa tag (machine_control canEdit) + adapter trong phạm vi người sửa + lý do bắt buộc.
+     * Chỉ tag writable + enabled; giá trị đúng dataType. `stopValue: null` = gỡ. Một transaction, tag
+     * khoá FOR UPDATE, audit control_audit_log + audit_logs (trước/sau/lý do). Adapter đã commissioning
+     * ⇒ vẫn cho đổi, audit gắn `commissioningRecheckRequired: true`.
+     */
+    setStopPin: protectedProcedure
+      .use(requirePermission("machine_control", "canEdit"))
+      .input(z.object({
+        adapterId: z.number().int().positive(),
+        tagKey: z.string().min(1).max(128),
+        stopValue: z.unknown(),
+        reason: z.string().trim().min(5).max(500),
+      }))
+      .mutation(async ({ input, ctx }) => {
+        const phamViMay = await idsTrongPhamVi("machine", phamViCua(ctx));
+        try {
+          return await datStopPin({
+            adapterId: input.adapterId,
+            tagKey: input.tagKey,
+            // Vắng (undefined) KHÔNG phải "gỡ" — chỉ null TƯỜNG MINH mới gỡ; vắng ⇒ sai kiểu (validateStopValue).
+            stopValue: input.stopValue === undefined ? Symbol.for("stopValue.missing") : input.stopValue,
+            reason: input.reason,
+            nguoiSua: nguoiSuaTu(ctx),
+            phamViMay,
+          });
+        } catch (e) {
+          if (e instanceof StopPinLoi) loiStopPin(e);
+          throw e;
+        }
       }),
   }),
 });
