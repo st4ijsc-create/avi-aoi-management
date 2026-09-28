@@ -48,6 +48,8 @@ import {
   StopPinLoi,
   lyDoGoStopPinKhiSuaTag,
   ghiAuditGoStopPinTx,
+  adapterDoiDich,
+  goMoiStopPinCuaAdapterTx,
   GO_STOP_PIN_PATCH,
   type NguoiSuaStopPin,
 } from "../services/ot/stopPin";
@@ -117,18 +119,27 @@ async function getDb() {
 const protocolEnum = z.enum(["opcua", "modbus", "s7", "mitsubishi-mc", "ethernet-ip", "slmp", "stub"]);
 const dataTypeEnum = z.enum(["bool", "int", "float", "string", "json"]);
 
-const adapterCreateInput = z.object({
+// doc 81 Đợt 1D Task 1 fix round 1 (Ruling R-1D-b) — trường KHÔNG mang `.default()`: zod 4 giữ default
+// qua `.partial()`, nên update THIẾU một cờ từng bị ĐIỀN mặc định (tags.update chỉ gửi isEnabled ⇒
+// writable=false; adapter.update chỉ gửi isEnabled ⇒ pollIntervalMs=5000). Default chỉ gắn ở schema TẠO;
+// schema SỬA dựng từ bản không default ⇒ trường vắng = GIỮ NGUYÊN.
+const adapterFields = z.object({
   code: z.string().min(1).max(64),
   name: z.string().min(1).max(255),
   protocol: protocolEnum,
   endpoint: z.string().min(1).max(500),
   connectionOptions: z.record(z.string(), z.unknown()).nullable().optional(),
-  pollIntervalMs: z.number().int().min(100).max(3_600_000).default(5000),
+  pollIntervalMs: z.number().int().min(100).max(3_600_000),
   machineId: z.number().int().positive().nullable().optional(),
-  isEnabled: z.boolean().default(false),
+  isEnabled: z.boolean(),
 });
+const adapterCreateInput = adapterFields.extend({
+  pollIntervalMs: adapterFields.shape.pollIntervalMs.default(5000),
+  isEnabled: adapterFields.shape.isEnabled.default(false),
+});
+const adapterUpdateInput = adapterFields.partial().extend({ id: z.number().int().positive() });
 
-const tagCreateInput = z.object({
+const tagFields = z.object({
   adapterId: z.number().int().positive(),
   tagKey: z.string().min(1).max(128),
   address: z.string().min(1).max(255),
@@ -136,13 +147,18 @@ const tagCreateInput = z.object({
   unit: z.string().max(50).nullable().optional(),
   scale: z.number().nullable().optional(),
   offset: z.number().nullable().optional(),
-  writable: z.boolean().default(false),
-  isEnabled: z.boolean().default(true),
+  writable: z.boolean(),
+  isEnabled: z.boolean(),
   // G1.4 (doc 44 W2-A3, mig 0253) — report-by-exception per tag, OPTIONAL (client
   // cũ không gửi → NULL, hành vi cũ). Chỉ có tác dụng khi OT_TAG_DEADBAND_ENABLED.
   deadband: z.number().positive().nullable().optional(),
   samplingMs: z.number().int().min(1).max(86_400_000).nullable().optional(),
 });
+const tagCreateInput = tagFields.extend({
+  writable: tagFields.shape.writable.default(false),
+  isEnabled: tagFields.shape.isEnabled.default(true),
+});
+const tagUpdateInput = tagFields.partial().extend({ id: z.number().int().positive() });
 
 /**
  * timeoutMs truyền cho driver.connect. doc 81 Đợt 1B Task 1 — hạn TỔNG của cả lượt dò
@@ -236,8 +252,8 @@ export const deviceAdapterRouter = router({
 
   update: protectedProcedure
     .use(requirePermission("machine_control", "canEdit"))
-    .input(adapterCreateInput.partial().extend({ id: z.number().int().positive() }))
-    .mutation(async ({ input }) => {
+    .input(adapterUpdateInput)
+    .mutation(async ({ input, ctx }) => {
       const db = await getDb();
       const { id, ...rest } = input;
       try {
@@ -250,6 +266,14 @@ export const deviceAdapterRouter = router({
         // của A (A tự cung cấp), còn form cũ mang endpoint E0 ≠ hàng của A ⇒ bị từ chối.
         const row = await db.transaction(async (tx) => {
           const patch: Record<string, unknown> = { ...rest, updatedAt: new Date() };
+          // doc 81 Đợt 1D Task 1 fix round 1 (Ruling R-1D-a) — adapter đổi "thiết bị nào" (endpoint /
+          // protocol / đích trong connectionOptions / machineId) ⇒ gỡ MỌI ghim DỪNG của nó trong CÙNG tx.
+          let goGhim = false;
+          if (rest.endpoint !== undefined || rest.protocol !== undefined || rest.connectionOptions !== undefined || rest.machineId !== undefined) {
+            const [cu] = await tx.select().from(deviceAdapters).where(eq(deviceAdapters.id, id)).for("update");
+            if (!cu) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "adapter" }, "Adapter không tồn tại.");
+            goGhim = adapterDoiDich(cu, rest);
+          }
           if (rest.connectionOptions !== undefined || rest.protocol === "opcua" || rest.endpoint !== undefined) {
             // Fix round 1 — cần dòng đã lưu để (a) giữ bí mật khi form gửi lại "[redacted]",
             // (b) biết protocol thực khi kiểm bảo mật OPC UA lúc lưu; final wave (item 5): (c) biết
@@ -287,6 +311,9 @@ export const deviceAdapterRouter = router({
           }
           const [updated] = await tx.update(deviceAdapters).set(patch).where(eq(deviceAdapters.id, id)).returning();
           if (!updated) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "adapter" }, "Adapter không tồn tại.");
+          if (goGhim) {
+            await goMoiStopPinCuaAdapterTx(tx, { adapterId: id, nguon: "adapter_redefined", nguoiSua: nguoiSuaTu(ctx), thaoTac: "deviceAdapter.update" });
+          }
           return updated;
         });
         return redactAdapterRow(row);
@@ -458,7 +485,7 @@ export const deviceAdapterRouter = router({
 
     update: protectedProcedure
       .use(requirePermission("machine_control", "canEdit"))
-      .input(tagCreateInput.partial().extend({ id: z.number().int().positive() }))
+      .input(tagUpdateInput)
       .mutation(async ({ input, ctx }) => {
         const db = await getDb();
         const { id, scale, offset, ...rest } = input;

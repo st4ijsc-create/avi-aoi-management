@@ -86,8 +86,24 @@ async function applyTo(rawUrl, label) {
     console.log(`  ${TAG} ${label} TRƯỚC: ${truoc.length}/${COT.length} cột ghim đã có`);
 
     const content = fs.readFileSync(MIGRATION_PATH, "utf-8");
-    await sql.unsafe(content);
-    console.log(`${TAG} ${label}: DDL applied (owner aoi)`);
+    // Fix round 1 (#6) — ALTER TABLE lấy ACCESS EXCLUSIVE trên device_tags. Với :3000 đang đọc tag, câu
+    // ALTER xếp hàng sau giao dịch đang mở VÀ chặn mọi lượt đọc tag xếp sau nó (DB dev từng treo
+    // 2026-09-28). Giới hạn chờ khoá 5 s (+ trần 60 s cho cả câu) trên CHÍNH kết nối chạy DDL (max: 1):
+    // không lấy được khoá ⇒ DỪNG, báo rõ, không đổi gì — chạy lại lúc vắng tải.
+    await sql`SET lock_timeout = '5s'`;
+    await sql`SET statement_timeout = '60s'`;
+    try {
+      await sql.unsafe(content);
+    } catch (e) {
+      if (e?.code === "55P03" || e?.code === "57014") {
+        throw new Error(
+          `KHONG lay duoc khoa ${BANG} trong 5 s (${e.code}: ${e.message}) — co giao dich khac dang giu bang. ` +
+            `Chua doi gi ca. Chay lai khi vang tai (vd dung :3000 hoac ngoai gio chay may).`,
+        );
+      }
+      throw e;
+    }
+    console.log(`${TAG} ${label}: DDL applied (owner aoi, lock_timeout 5s)`);
 
     // (a)
     const cot = await appSql`

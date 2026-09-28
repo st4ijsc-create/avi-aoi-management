@@ -49,6 +49,7 @@ import { and, asc, eq } from "drizzle-orm";
 import { deviceAdapters, deviceTags, unsTagMappings, configSnapshots, machines } from "../../../drizzle/schema";
 import type { ConfigSnapshotEntityType } from "../../../drizzle/schema/assetRegistry";
 import type { UnsTagTransform } from "../../../drizzle/schema/ot";
+import { lyDoGoStopPinKhiSuaTag, ghiAuditGoStopPinTx, GO_STOP_PIN_PATCH, type NguoiSuaStopPin } from "./stopPin";
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -709,7 +710,18 @@ export async function importMapping(yamlText: string, opts: ImportOptions = {}):
     unsDeletes: prune ? diff.unsMappings.deletes.length : 0,
   };
 
+  // doc 81 Đợt 1D Task 1 fix round 1 — đường GHI device_tags thứ hai (ngoài deviceAdapter.tags.*): cùng
+  // luật ghim DỪNG. Người import (audit của lượt gỡ ghim tự động).
+  const nguoiSua: NguoiSuaStopPin = { id: opts.actorId ?? null, name: opts.actorName ?? null };
+
   await d.transaction(async (tx) => {
+    // doc 81 Đợt 1D Task 1 fix round 1 — KHOÁ mọi tag của adapter (FOR UPDATE) trước khi upsert/xoá:
+    // tag đang GHIM DỪNG mà file đổi nghĩa (address/dataType/scale/offset), thôi writable, tắt, hoặc bị
+    // prune ⇒ ghim bị gỡ trong CÙNG tx + audit (lyDoGoStopPinKhiSuaTag / ghiAuditGoStopPinTx). Upsert
+    // KHÔNG bao giờ ghi cột ghim ngoài việc gỡ ⇒ một lượt import sau bật lại tag cũng không hồi sinh ghim.
+    const tagHienCo = new Map(
+      (await tx.select().from(deviceTags).where(eq(deviceTags.adapterId, adapter.id)).for("update")).map((r) => [r.tagKey, r]),
+    );
     // device_tags: upsert theo (adapterId, tagKey) — chỉ những tag có thay đổi.
     const tagNamesToWrite = [...diff.tags.creates, ...diff.tags.updates.map((u) => u.name)];
     for (const name of tagNamesToWrite) {
@@ -727,14 +739,24 @@ export async function importMapping(yamlText: string, opts: ImportOptions = {}):
         samplingMs: t.sampling_ms ?? null,
         updatedAt: now,
       };
+      const cu = tagHienCo.get(t.name);
+      const nguonGo = cu ? lyDoGoStopPinKhiSuaTag(cu, record) : null;
+      const set = nguonGo ? { ...record, ...GO_STOP_PIN_PATCH } : record;
       await tx
         .insert(deviceTags)
         .values({ adapterId: adapter.id, tagKey: t.name, ...record })
-        .onConflictDoUpdate({ target: [deviceTags.adapterId, deviceTags.tagKey], set: record });
+        .onConflictDoUpdate({ target: [deviceTags.adapterId, deviceTags.tagKey], set });
+      if (cu && nguonGo) {
+        await ghiAuditGoStopPinTx(tx, { tag: cu, nguon: nguonGo, nguoiSua, thaoTac: "mappingAsCode.import" });
+      }
     }
     if (prune) {
       for (const name of diff.tags.deletes) {
         await tx.delete(deviceTags).where(and(eq(deviceTags.adapterId, adapter.id), eq(deviceTags.tagKey, name)));
+        const cu = tagHienCo.get(name);
+        if (cu && cu.stopValue != null) {
+          await ghiAuditGoStopPinTx(tx, { tag: cu, nguon: "tag_deleted", nguoiSua, thaoTac: "mappingAsCode.import(prune)" });
+        }
       }
     }
 

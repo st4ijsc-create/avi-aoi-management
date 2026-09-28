@@ -33,6 +33,8 @@ import { recordAuditEvent } from "../audit/controlAuditService";
 import { computeCrudContentHash } from "../auditTrailService";
 import { secPlatformEnabled } from "../security/policyGate";
 import { isCommissioned } from "./commissioningService";
+import { canonicalize } from "../security/auditChain";
+import { SENSITIVE_KEY_RE } from "../assetRegistry/configDriftService";
 
 type Db = NonNullable<Awaited<ReturnType<typeof getDb>>>;
 type Tx = Parameters<Parameters<Db["transaction"]>[0]>[0];
@@ -178,11 +180,21 @@ export interface KetQuaStopPin {
   stopPinnedBy: string | null;
   stopPinnedAt: Date | null;
   changed: boolean;
+  /** true ⇔ lượt này ĐỔI ghim trên adapter đang có bản ký commissioning hiệu lực. */
   commissioningRecheckRequired: boolean;
+  /** Adapter có bản ký commissioning hiệu lực không (kể cả khi lượt này là no-op). */
+  adapterCommissioned: boolean;
 }
 
 type DongTag = typeof deviceTags.$inferSelect;
-type NguonGo = "manual" | "tag_not_writable" | "tag_disabled" | "tag_redefined" | "tag_deleted" | "adapter_deleted";
+type NguonGo =
+  | "manual"
+  | "tag_not_writable"
+  | "tag_disabled"
+  | "tag_redefined"
+  | "tag_deleted"
+  | "adapter_deleted"
+  | "adapter_redefined";
 
 function cungGiaTri(a: unknown, b: unknown): boolean {
   return (a ?? null) === (b ?? null);
@@ -305,10 +317,14 @@ export async function datStopPin(input: {
 
     const truoc = tag.stopValue ?? null;
     if (cungGiaTri(truoc, sau)) {
+      // Fix round 1 (#5) — no-op thật: KHÔNG ghi, KHÔNG audit (không có thay đổi nào để kiểm lại), và
+      // `commissioningRecheckRequired` = false CÓ CHỦ Ý: tập ghim không đổi ⇒ bản ký commissioning
+      // (nếu có) vẫn khớp đúng thứ đã ký. `adapterCommissioned` báo trạng thái ký thật cho UI.
       return {
         tagId: tag.id, adapterId: tag.adapterId, tagKey: tag.tagKey, stopValue: truoc,
         stopPinnedBy: tag.stopPinnedBy ?? null, stopPinnedAt: tag.stopPinnedAt ?? null,
         changed: false, commissioningRecheckRequired: false,
+        adapterCommissioned: await isCommissioned(adapter.id, tx),
       };
     }
 
@@ -327,6 +343,7 @@ export async function datStopPin(input: {
     return {
       tagId: tag.id, adapterId: tag.adapterId, tagKey: tag.tagKey, stopValue: sau,
       stopPinnedBy: pinnedBy, stopPinnedAt: pinnedAt, changed: true, commissioningRecheckRequired,
+      adapterCommissioned: commissioningRecheckRequired,
     };
   });
 }
@@ -337,6 +354,19 @@ function soHoacNull(v: unknown): number | null {
   if (v === null || v === undefined || v === "") return null;
   const n = Number(v);
   return Number.isFinite(n) ? n : null;
+}
+
+/**
+ * scale/offset HIỆU LỰC trên dây — cùng quy ước `inverseScale` (drivers/otScale.ts): scale null/0 ⇒ 1,
+ * offset null ⇒ 0. So theo hiệu lực để form gửi ô trống (null) cho tag đang 1/0 không gỡ oan.
+ */
+function scaleHieuLuc(v: unknown): number | null {
+  const n = soHoacNull(v);
+  return n === null || n === 0 ? 1 : n;
+}
+function offsetHieuLuc(v: unknown): number | null {
+  const n = soHoacNull(v);
+  return n === null ? 0 : n;
 }
 
 /**
@@ -355,8 +385,8 @@ export function lyDoGoStopPinKhiSuaTag(existing: DongTag, patch: Record<string, 
   if (moi("address") !== existing.address) return "tag_redefined";
   if (moi("dataType") !== existing.dataType) return "tag_redefined";
   if (moi("adapterId") !== existing.adapterId) return "tag_redefined";
-  if (soHoacNull(moi("scale")) !== soHoacNull(existing.scale)) return "tag_redefined";
-  if (soHoacNull(moi("offset")) !== soHoacNull(existing.offset)) return "tag_redefined";
+  if (scaleHieuLuc(moi("scale")) !== scaleHieuLuc(existing.scale)) return "tag_redefined";
+  if (offsetHieuLuc(moi("offset")) !== offsetHieuLuc(existing.offset)) return "tag_redefined";
   return null;
 }
 
@@ -381,4 +411,63 @@ export async function ghiAuditGoStopPinTx(
     commissioningRecheckRequired,
     nguon: e.nguon,
   });
+}
+
+// ─── Gỡ MỌI ghim của adapter khi adapter đổi "thiết bị nào" (Ruling R-1D-a) ─────────────────────────
+
+type DongAdapter = typeof deviceAdapters.$inferSelect;
+
+/** Khoá cấu hình KHÔNG xác định "thiết bị nào": bí mật (SENSITIVE_KEY_RE), tài khoản, ràng buộc bảo mật. */
+const KHOA_KHONG_DINH_DANH = new Set(["userName", "username", "user", "securityMode", "securityPolicy", "trustOnFirstUse"]);
+
+/** connectionOptions bỏ bí mật / tài khoản / bảo mật (đệ quy), để so "đích kết nối". */
+function dichKetNoi(v: unknown): unknown {
+  if (Array.isArray(v)) return v.map(dichKetNoi);
+  if (v !== null && typeof v === "object") {
+    const out: Record<string, unknown> = {};
+    for (const [k, x] of Object.entries(v as Record<string, unknown>)) {
+      if (SENSITIVE_KEY_RE.test(k) || KHOA_KHONG_DINH_DANH.has(k)) continue;
+      if (x === undefined) continue;
+      out[k] = dichKetNoi(x);
+    }
+    return out;
+  }
+  return v;
+}
+
+/**
+ * Ruling R-1D-a — sửa adapter có đổi "THANH GHI NÀY Ở THIẾT BỊ NÀY CỦA MÁY NÀY" không:
+ * endpoint, protocol, machineId, hoặc connectionOptions (trừ bí mật / tài khoản / chế độ bảo mật — các khoá
+ * đó đổi CÁCH nói chuyện, không đổi thiết bị). So theo GIÁ TRỊ (form gửi lại nguyên giá trị cũ ⇒ không gỡ).
+ * Mọi khoá khác trong connectionOptions (unitId, rack/slot, ha.secondaryEndpoint, timeouts…) đều bị coi là
+ * đổi đích — chiều AN TOÀN; giá: kỹ sư ghim lại.
+ */
+export function adapterDoiDich(existing: DongAdapter, patch: Record<string, unknown>): boolean {
+  if (patch.endpoint !== undefined && String(patch.endpoint) !== existing.endpoint) return true;
+  if (patch.protocol !== undefined && patch.protocol !== existing.protocol) return true;
+  if (patch.machineId !== undefined && (patch.machineId ?? null) !== (existing.machineId ?? null)) return true;
+  if (patch.connectionOptions !== undefined) {
+    const cu = canonicalize(dichKetNoi(existing.connectionOptions ?? null) ?? null);
+    const moi = canonicalize(dichKetNoi(patch.connectionOptions ?? null) ?? null);
+    if (cu !== moi) return true;
+  }
+  return false;
+}
+
+/**
+ * Gỡ MỌI ghim của `adapterId` trong `tx` (khoá hàng tag FOR UPDATE), audit từng tag. Trả số ghim đã gỡ.
+ */
+export async function goMoiStopPinCuaAdapterTx(
+  tx: Tx,
+  e: { adapterId: number; nguon: Exclude<NguonGo, "manual">; nguoiSua: NguoiSuaStopPin; thaoTac: string },
+): Promise<number> {
+  const tags = await tx.select().from(deviceTags).where(eq(deviceTags.adapterId, e.adapterId)).for("update");
+  let n = 0;
+  for (const t of tags) {
+    if (t.stopValue === null || t.stopValue === undefined) continue;
+    await tx.update(deviceTags).set({ ...GO_STOP_PIN_PATCH, updatedAt: new Date() }).where(eq(deviceTags.id, t.id));
+    await ghiAuditGoStopPinTx(tx, { tag: t, nguon: e.nguon, nguoiSua: e.nguoiSua, thaoTac: e.thaoTac });
+    n++;
+  }
+  return n;
 }
