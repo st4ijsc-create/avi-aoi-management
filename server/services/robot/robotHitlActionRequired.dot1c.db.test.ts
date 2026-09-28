@@ -489,20 +489,23 @@ describe.skipIf(!DB_URL)("Đợt 1C Task 3 — robot 'hitl' không actionId bị
 
     it("★ Ros2Bridge.dispatchToRos2 'hitl' không actionId ⇒ tạo bản ghi gắn hash ⇒ chạy + publish ĐÚNG MỘT lần; tạo không được ⇒ từ chối, 0 publish", async () => {
       const { bridge, published } = makeRos2();
-      const job = { jobType: "move" as const, params: { target: [1, 2, 3] } };
-      const ok = await bridge.dispatchToRos2({ robotId: ROBOT, job, triggerKind: "hitl", requestedBy: OWNER, confirmedBy: OWNER }, ROS_SPEC);
+      // final wave 3 (R-1C-j): thông điệp dây nằm TRONG params của job (được băm/gắn), cầu là kênh DUY NHẤT —
+      // driver.runJob không chạy cho chuyển động qua cầu (trước: driver chạy VÀ cầu phát ⇒ hai kênh).
+      const job = { jobType: "move" as const, params: { target: [1, 2, 3], ros2: ROS_SPEC } };
+      const ok = await bridge.dispatchToRos2({ robotId: ROBOT, job, triggerKind: "hitl", requestedBy: OWNER, confirmedBy: OWNER });
       expect(ok.dispatch.status).toBe("done");
       expect(ok.published).toBe(true);
-      expect(rt.runJobCalls).toBe(1);
+      expect(rt.runJobCalls).toBe(0);
+      expect(published).toEqual(["/cmd"]);
       const row = await jobRow(ok.dispatch.jobId);
       expect(row?.actionId).toMatch(/^ros2-/);
       expect((await pendingRow(row!.actionId!))?.status).toBe("executed");
       mint.fail = true;
-      const no = await bridge.dispatchToRos2({ robotId: ROBOT, job, triggerKind: "hitl", requestedBy: OWNER, confirmedBy: OWNER }, ROS_SPEC);
+      const no = await bridge.dispatchToRos2({ robotId: ROBOT, job, triggerKind: "hitl", requestedBy: OWNER, confirmedBy: OWNER });
       expect(no.dispatch.status).toBe("rejected");
       expect(no.dispatch.error).toBe("HITL_ACTION_REQUIRED");
       expect(no.published).toBe(false);
-      expect(rt.runJobCalls).toBe(1);
+      expect(rt.runJobCalls).toBe(0);
       expect(published).toHaveLength(1);
     });
 
@@ -543,14 +546,14 @@ describe.skipIf(!DB_URL)("Đợt 1C Task 3 — robot 'hitl' không actionId bị
         expiresAt: new Date(Date.now() + 600_000),
       });
       const { ensureBoundRobotAction } = await import("./robotAutomationAction");
-      const job = { jobType: "move" as const, params: { x: 1 } };
+      const job = { jobType: "move" as const, params: { x: 1, ros2: ROS_SPEC } }; // final wave 3: thông điệp trong params
       expect(await ensureBoundRobotAction({ tool: "ros2.automation", robotId: ROBOT, job, ownerUserId: OWNER, idempotencyKey: key })).toBeNull();
       // Chủ khác cũng không được tái dùng.
       expect(await ensureBoundRobotAction({ tool: "ros2.automation", robotId: ROBOT, job: { jobType: "move", params: { x: 9 } }, ownerUserId: OTHER, idempotencyKey: key })).toBeNull();
       // Đúng job + đúng chủ ⇒ tái dùng hợp lệ.
       expect(await ensureBoundRobotAction({ tool: "ros2.automation", robotId: ROBOT, job: { jobType: "move", params: { x: 9 } }, ownerUserId: OWNER, idempotencyKey: key })).toBe(`ros2-${key}`);
       const { bridge } = makeRos2();
-      const r = await bridge.dispatchToRos2({ robotId: ROBOT, job, triggerKind: "hitl", requestedBy: OWNER, confirmedBy: OWNER, idempotencyKey: key }, ROS_SPEC);
+      const r = await bridge.dispatchToRos2({ robotId: ROBOT, job, triggerKind: "hitl", requestedBy: OWNER, confirmedBy: OWNER, idempotencyKey: key });
       expect(r.dispatch.error).toBe("HITL_ACTION_REQUIRED");
       expect(rt.runJobCalls).toBe(0);
     });
@@ -582,14 +585,16 @@ describe.skipIf(!DB_URL)("Đợt 1C Task 3 — robot 'hitl' không actionId bị
     });
 
     it("Ros2Bridge: 'manual' (người vận hành) và 'hitl' có actionId đi thẳng — KHÔNG tự cấp bản ghi", async () => {
-      const { bridge } = makeRos2();
-      const m = await bridge.dispatchToRos2({ robotId: ROBOT, job: { jobType: "home", params: {} }, triggerKind: "manual", requestedBy: OWNER, confirmedBy: OWNER }, ROS_SPEC);
+      const { bridge, published } = makeRos2();
+      const params = { ros2: ROS_SPEC }; // final wave 3 (R-1C-j): thông điệp dây lấy từ job, cầu là kênh duy nhất
+      const m = await bridge.dispatchToRos2({ robotId: ROBOT, job: { jobType: "home", params }, triggerKind: "manual", requestedBy: OWNER, confirmedBy: OWNER });
       expect(m.dispatch.status).toBe("done");
-      const actionId = await makeBoundAction({ jobType: "home", params: {} });
-      const h = await bridge.dispatchToRos2({ robotId: ROBOT, job: { jobType: "home", params: {} }, triggerKind: "hitl", actionId, requestedBy: OWNER, confirmedBy: OWNER }, ROS_SPEC);
+      const actionId = await makeBoundAction({ jobType: "home", params });
+      const h = await bridge.dispatchToRos2({ robotId: ROBOT, job: { jobType: "home", params }, triggerKind: "hitl", actionId, requestedBy: OWNER, confirmedBy: OWNER });
       expect(h.dispatch.status).toBe("done");
       expect(mint.calls).toBe(0);
-      expect(rt.runJobCalls).toBe(2);
+      expect(rt.runJobCalls).toBe(0);
+      expect(published).toEqual(["/cmd", "/cmd"]);
     });
   });
 });

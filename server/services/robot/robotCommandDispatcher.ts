@@ -46,7 +46,7 @@ import { getDb } from "../../db/connection";
 import { robotJobs, robots, aiPendingActions, type AiPendingAction } from "../../../drizzle/schema";
 import { readOtPayloadHash, robotPayloadHash } from "../ot/otActionBinding";
 import { getActiveRobot } from "./robotManager";
-import type { RobotJobSpec, RobotDriver } from "./robotDriver";
+import type { RobotJobSpec, RobotDriver, RobotJobResult } from "./robotDriver";
 import {
   MOTION_OUTCOME_UNKNOWN_REASON_CODES,
   MOTION_LOCKED_REASON_CODE,
@@ -473,13 +473,25 @@ export async function reconcileOrphanedRobotJobs(olderThanMs: number = orphanedR
   }
 }
 
-export async function dispatchRobotJob(rawInput: RobotDispatchInput): Promise<RobotDispatchResult> {
+/**
+ * doc 81 Đợt 1C final wave 3 (ruling R-1C-j, final review I4) — dispatch options.
+ *   motionActuator: the ONE channel that carries a MOTION job instead of `driver.runJob` (the ROS2 bridge
+ *     publishes the message built from the bound job here). Called at exactly the point runJob would be —
+ *     after every gate, the 'running' ledger row and the HITL consume, under the same deadline (stop on an
+ *     unknown outcome still goes to the driver). The driver's runJob is then NOT called: one job, one
+ *     actuation channel. Never used for a STOP — a STOP always goes to the driver.
+ */
+export interface RobotDispatchOptions {
+  motionActuator?: (job: RobotJobSpec) => Promise<RobotJobResult>;
+}
+
+export async function dispatchRobotJob(rawInput: RobotDispatchInput, opts: RobotDispatchOptions = {}): Promise<RobotDispatchResult> {
   // fix round 2 (e) — the idempotency key is fitted ONCE, here, so the replay lookup (step 1) and the
   // ledger row use the same value (a hashed long key still replays).
   const fitted = fitLedgerKey(rawInput.idempotencyKey, ROBOT_LEDGER_IDEMPOTENCY_KEY_MAX);
   const input: RobotDispatchInput = fitted !== rawInput.idempotencyKey ? { ...rawInput, idempotencyKey: fitted } : rawInput;
   try {
-    return await dispatchRobotJobCore(input);
+    return await dispatchRobotJobCore(input, opts);
   } catch (err) {
     if (err instanceof RobotLedgerWriteError) {
       // Every branch that can reach here is BEFORE any driver call (the post-motion finalize
@@ -491,7 +503,7 @@ export async function dispatchRobotJob(rawInput: RobotDispatchInput): Promise<Ro
   }
 }
 
-async function dispatchRobotJobCore(input: RobotDispatchInput): Promise<RobotDispatchResult> {
+async function dispatchRobotJobCore(input: RobotDispatchInput, opts: RobotDispatchOptions = {}): Promise<RobotDispatchResult> {
   const triggerKind = input.triggerKind ?? "hitl";
   const motion = isMotionJob(input.job);
   // final wave 1 (R-1C-h) — a STOP's DB steps are bounded and best-effort; motion gets none (fail-closed).
@@ -887,7 +899,7 @@ async function dispatchRobotJobCore(input: RobotDispatchInput): Promise<RobotDis
     motionInFlight.set(input.robotId, { jobType: input.job.jobType, since: new Date().toISOString() });
   }
   try {
-    return await runRealJob(input, robot.driver, motion, timeoutMs, policyOverride, stopDb, stopNotes);
+    return await runRealJob(input, robot.driver, motion, timeoutMs, policyOverride, stopDb, stopNotes, motion ? opts.motionActuator : undefined);
   } finally {
     if (motion) motionInFlight.delete(input.robotId);
   }
@@ -1052,6 +1064,7 @@ async function runRealJob(
   policyOverride?: Record<string, unknown>,
   stopDb?: StopDbBudget,
   stopNotes: Record<string, unknown> = {},
+  motionActuator?: (job: RobotJobSpec) => Promise<RobotJobResult>,
 ): Promise<RobotDispatchResult> {
   let jobId: number | undefined;
   /** R-1C-h — a STOP's pre-write that failed or has not landed within its deadline (settled after the send). */
@@ -1090,7 +1103,9 @@ async function runRealJob(
     timer = setTimeout(() => resolve({ kind: "timeout" }), timeoutMs);
   });
   const outcome = await Promise.race([
-    driver.runJob(input.job).then(
+    // R-1C-j — exactly ONE channel per job: the motion actuator (ROS2 bridge) OR the driver, never both;
+    // a STOP always takes the driver (the actuator is only ever passed for motion).
+    (motion && motionActuator ? motionActuator(input.job) : driver.runJob(input.job)).then(
       (r) => ({ kind: "result" as const, r }),
       (e: unknown) => ({ kind: "error" as const, e }),
     ),
