@@ -82,7 +82,11 @@ vi.mock("../services/aiSmartAlertRouter", () => ({
   })),
 }));
 
-import { machineApiRouter, _resetClockSkewAlertCooldown } from "./machineApiRouters";
+import { machineApiRouter, _resetClockSkewAlertCooldown, requireTimeOffset } from "./machineApiRouters";
+import { readAppErrorMeta } from "../_core/appError";
+import { readFileSync } from "node:fs";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 import * as db from "../db";
 import { routeAlert } from "../services/aiSmartAlertRouter";
 import type { CreateInspectionOutcome } from "../db/inspection";
@@ -366,8 +370,9 @@ describe("CASE #3 — clock skew", () => {
 });
 
 // ════════════════════════════════════════════════════════════════════════════
-describe("CASE #3 — timestamp naive (QĐ#1: cờ + mặc định tương thích ngược)", () => {
-  it("★ cờ TẮT (mặc định) → naive timestamp VẪN được nhận, chỉ GẮN CỜ timeSource='machine_naive'", async () => {
+describe("CASE #3 — timestamp naive (2026-09-28: chủ dự án quyết BẬT — mặc định TỪ CHỐI, tắt TƯỜNG MINH mới nhận)", () => {
+  it("★ cờ TẮT TƯỜNG MINH (false) → naive timestamp VẪN được nhận, chỉ GẮN CỜ timeSource='machine_naive' (hành vi cũ)", async () => {
+    process.env.INGEST_REQUIRE_TIME_OFFSET = "false";
     const fake = installIdempotentInsertFake();
     const caller = machineApiRouter.createCaller(ctx());
 
@@ -404,7 +409,88 @@ describe("CASE #3 — timestamp naive (QĐ#1: cờ + mặc định tương thíc
     expect(persisted(1).timeSource).toBe("machine_utc");
   });
 
+  it("★★ MẶC ĐỊNH (env VẮNG) → naive bị TỪ CHỐI BAD_REQUEST, mang appCode INVALID_VALUE {field: inspectionTime, reason: timeOffsetRequired}, không chạm DB", async () => {
+    installIdempotentInsertFake();
+    const caller = machineApiRouter.createCaller(ctx());
+    const err = await caller.submitInspection(payload({ inspectionTime: "2026-07-15T08:00:00" })).then(
+      () => null,
+      (e: unknown) => e,
+    );
+    expect(err).toMatchObject({ code: "BAD_REQUEST" });
+    // ĐÚNG đường errorFormatter đọc (`readAppErrorMeta` — một cấp `cause`), không phải một thuộc tính tự chế.
+    expect(readAppErrorMeta(err)).toEqual({
+      appCode: "INVALID_VALUE",
+      appParams: { field: "inspectionTime", reason: "timeOffsetRequired" },
+    });
+    // Cửa REST máy chỉ trả câu chữ ⇒ mã máy-đọc-được phải nằm TRONG câu.
+    expect(String((err as Error).message)).toContain("time_offset_required");
+    expect(db.createProductInspection).not.toHaveBeenCalled();
+  });
+
+  it("★ fix round 1 — MẶC ĐỊNH, dạng BG-72 'Sun Aug 30 2026 14:26:51 GMT+0700 (Indochina Time)' ⇒ NHẬN, instant 07:26:51Z, machine_utc", async () => {
+    const fake = installIdempotentInsertFake();
+    const caller = machineApiRouter.createCaller(ctx());
+    const res = await caller.submitInspection(
+      payload({ serialNumber: "SN-BG72", inspectionTime: "Sun Aug 30 2026 14:26:51 GMT+0700 (Indochina Time)" }),
+    );
+    expect(res.success).toBe(true);
+    expect(fake.realInserts).toBe(1);
+    expect((persisted(0).inspectionTime as Date).getTime()).toBe(Date.UTC(2026, 7, 30, 7, 26, 51));
+    expect(persisted(0).timeSource).toBe("machine_utc");
+  });
+
+  it("★ MẶC ĐỊNH (env VẮNG) → 'Z' lẫn '+07:00' vẫn qua, timeSource='machine_utc'", async () => {
+    const fake = installIdempotentInsertFake();
+    const caller = machineApiRouter.createCaller(ctx());
+    await caller.submitInspection(payload({ serialNumber: "SN-DZ", inspectionTime: "2026-07-15T08:00:00.000Z" }));
+    await caller.submitInspection(payload({ serialNumber: "SN-DO", inspectionTime: "2026-07-15T15:00:00+07:00" }));
+    expect(fake.realInserts).toBe(2);
+    expect(persisted(0).timeSource).toBe("machine_utc");
+    expect(persisted(1).timeSource).toBe("machine_utc");
+  });
+
+  it("★ MẶC ĐỊNH (env VẮNG) → lô (submitInspectionBatch) có MỘT mục naive bị từ chối cả lô, cùng appCode", async () => {
+    installIdempotentInsertFake();
+    const caller = machineApiRouter.createCaller(ctx());
+    const err = await caller
+      .submitInspectionBatch({
+        apiKey: "SHARED-KEY",
+        inspections: [
+          { serialNumber: "SN-B1", overallResult: "OK", measurements: [], inspectionTime: "2026-07-15T08:00:00Z" },
+          { serialNumber: "SN-B2", overallResult: "OK", measurements: [], inspectionTime: "2026-07-15T08:00:01" },
+        ],
+      })
+      .then(
+        () => null,
+        (e: unknown) => e,
+      );
+    expect(err).toMatchObject({ code: "BAD_REQUEST" });
+    expect(readAppErrorMeta(err)?.appParams).toEqual({ field: "inspectionTime", reason: "timeOffsetRequired" });
+    expect(db.createProductInspection).not.toHaveBeenCalled();
+  });
+
+  it("requireTimeOffset: vắng/rỗng/rác/true ⇒ BẬT; chỉ false/0/off/no (mọi hoa-thường, có khoảng trắng) ⇒ TẮT", () => {
+    for (const v of [undefined, "", "true", "1", "on", "yes", "bat", " TRUE "]) {
+      expect(requireTimeOffset({ INGEST_REQUIRE_TIME_OFFSET: v } as NodeJS.ProcessEnv), String(v)).toBe(true);
+    }
+    for (const v of ["false", "0", "off", "no", " False ", "OFF"]) {
+      expect(requireTimeOffset({ INGEST_REQUIRE_TIME_OFFSET: v } as NodeJS.ProcessEnv), v).toBe(false);
+    }
+  });
+
+  it("i18n: errors.field.inspectionTime + errors.reason.timeOffsetRequired có ở vi/en/zh (khung INVALID_VALUE_WITH_REASON)", () => {
+    for (const lng of ["vi", "en", "zh"]) {
+      const loc = JSON.parse(
+        readFileSync(join(dirname(fileURLToPath(import.meta.url)), "..", "..", "client", "src", "i18n", "locales", `${lng}.json`), "utf8"),
+      ) as { errors: { field: Record<string, string>; reason: Record<string, string>; INVALID_VALUE_WITH_REASON: string } };
+      expect(loc.errors.INVALID_VALUE_WITH_REASON, lng).toContain("{{reason}}");
+      expect(loc.errors.field.inspectionTime, lng).toBeTruthy();
+      expect(loc.errors.reason.timeOffsetRequired, lng).toBeTruthy();
+    }
+  });
+
   it("timestamp KHÔNG parse được → BAD_REQUEST kể cả khi cờ TẮT (không để payload độc kẹt WAL retry vĩnh viễn)", async () => {
+    process.env.INGEST_REQUIRE_TIME_OFFSET = "false";
     installIdempotentInsertFake();
     const caller = machineApiRouter.createCaller(ctx());
     await expect(

@@ -274,6 +274,27 @@ describe("TechmanDriver", () => {
     expect(sock.written[0]).toMatch(/^\$TMSCT,/);
   });
 
+  // doc 81 Đợt 1C residual round 2 (R-1C-m, lớp b ĐỘC LẬP) — gọi thẳng runJob với mọi chính tả của dừng + params
+  // chuyển động/script ⇒ khung gửi đi là StopAndClearBuffer(), không PTP / script nào (trước: "stop"/"e_stop"/"ABORT"
+  // rơi vào nhánh default = script/ScriptExit).
+  it.each(["stop", "e_stop", "ABORT"])("runJob live '%s' + joints/script ⇒ CHỈ StopAndClearBuffer(), 0 PTP/script", async (jt) => {
+    mockModbus();
+    process.env.ROBOT_CONTROL_ENABLED = "true";
+    const { TechmanDriver } = await import("./techmanDriver");
+    const d = new TechmanDriver();
+    await d.connect({ endpoint: "127.0.0.1", options: { listenPort: 5890 } });
+    const p = d.runJob({ jobType: jt as never, params: { joints: [90, 90, 90, 0, 0, 0], script: "PTP(\"JPP\",90,90,90,0,0,0,100,200,0,false)" } });
+    expect(sockets.length).toBe(1);
+    const sock = sockets[0];
+    sock._emit("connect");
+    sock._emit("data", Buffer.from("$TMSCT,4,1,OK,*5C\r\n", "ascii"));
+    const res = await p;
+    expect(res.ok).toBe(true);
+    expect(sock.written).toHaveLength(1);
+    expect(sock.written[0]).toMatch(/StopAndClearBuffer\(\)/);
+    expect(sock.written[0]).not.toMatch(/PTP|ScriptExit/);
+  });
+
   it("runJob live: socket error → fail-safe failed result (no throw)", async () => {
     mockModbus();
     process.env.ROBOT_CONTROL_ENABLED = "true";

@@ -3646,6 +3646,7 @@
       "queued-for-shared-ledger": "The read replica was cleaned IMMEDIATELY (headroom reflects it right away), but the row only actually LEAVES the database at the NEXT shared-ledger sync — see unsyncedWritesAfter for how many writes are still pending."
     },
     "entity": {
+      "mqttClient": "MQTT device",
       "abTestExperiment": "A/B test experiment",
       "adapter": "device adapter",
       "agentSession": "agent session",
@@ -3821,6 +3822,7 @@
       "kbGoldenSet": "golden question set"
     },
     "operation": {
+      "softwareStop": "send the software stop",
       "clearRobotMotionLock": "clear the robot's motion lock",
       "deployBuild": "deploy the program build",
       "requestDeployApproval": "request deploy approval",
@@ -3977,6 +3979,8 @@
       "rollbackRecipeVersion": "roll back recipe version"
     },
     "field": {
+      "inspectionTime": "inspection time (inspectionTime)",
+      "clientId": "MQTT device",
       "changeReason": "change reason",
       "reason": "reason",
       "comment": "comment",
@@ -4070,7 +4074,9 @@
       "goldenSet": "golden set",
       "target": "target",
       "endpoint": "endpoint",
-      "reviewReason": "rejection reason"
+      "reviewReason": "rejection reason",
+      "gatewayId": "gateway",
+      "deviceIds": "allowed device list"
     },
     "feature": {
       "webIngest": "web content ingestion",
@@ -4126,6 +4132,7 @@
       "kbEvalRuns": "Training Studio evaluation log"
     },
     "action": {
+      "changeMqttDeviceOfOtherScope": "change an MQTT device bound to a machine outside your scope",
       "selfApproveProgramDeploy": "approve your own program deploy request",
       "viewOthersPermissions": "view another user's permissions",
       "editOrDeleteReport": "edit or delete report",
@@ -4202,7 +4209,36 @@
     "cannotDisplayContent": "Cannot display content",
     "cannotDisplayChart": "Cannot display chart",
     "analyticsRenderError": "Analytics render error",
+    "robotRefusal": {
+      "hitlActionRequired": "Motion refused: no confirmed (human-in-the-loop) action stands behind this command. Send it from the Command Console or confirm the action first.",
+      "hitlConfirmationRequired": "Motion needs a confirming person — nobody has confirmed it.",
+      "hitlVerifyUnavailable": "The confirmation could not be verified (database unavailable) — the motion was refused to stay safe.",
+      "notConfirmed": "The confirmation is not valid: not approved, expired, already used, or owned by someone else.",
+      "actionBindingMismatch": "The confirmation was approved for a DIFFERENT command (another robot, job type or parameters) — it cannot authorise this one.",
+      "manualConfirmerMismatch": "A manual command must be confirmed by the signed-in user who sends it.",
+      "robotNotActive": "The robot is not active or not connected — the command could not be sent.",
+      "motionLocked": "Motion is LOCKED (link loss or an earlier motion with an unknown outcome). A confirmed STOP or an authorised unlock clears it.",
+      "safetyBlocked": "The safety PLC reports a trip / emergency stop — motion refused before anything was sent.",
+      "safetyUnknown": "The safety PLC could not be confirmed (not configured, unreadable, or a bad-quality tag) — motion refused.",
+      "safetySimOnly": "Only SIMULATED or unmapped safety PLCs exist — a real command needs a REAL safety PLC with mapped safety tags.",
+      "interlockBlocked": "An interlock rule is violated (or could not be evaluated) — motion refused.",
+      "policyDenied": "The operating policy does not allow this command.",
+      "policyApprovalRequired": "The policy requires an extra approval for this command — it was not sent.",
+      "motionInProgress": "The robot is already executing another motion — this one was refused (not queued). Wait and send again.",
+      "ledgerWriteFailed": "The robot command ledger could not be written — the motion was refused and nothing was sent.",
+      "idempotentJobInProgress": "A command with the same idempotency key is still running — it is not run twice.",
+      "idempotencyKeyReused": "This idempotency key was already used for another robot or command — the motion was refused. Use a new key.",
+      "ros2JobMessageRequired": "The ROS2 command carries no message of its own — nothing was published."
+    },
     "reason": {
+      "softwareStopRefusedUseHardwareEstop": "The software stop was REFUSED: the safety check could not confirm the safety PLC (unreadable, simulation only, or tripped), so the platform did NOT send this stop. Use the hardware E-STOP on the machine now.",
+      "timeOffsetRequired": "The timestamp must carry an explicit time zone (Z or +07:00) — a timestamp without one is rejected because the server cannot tell which clock it refers to.",
+      "mqttDeviceRejectedCredential": "This device was REJECTED — a rejected device cannot be issued a password. Approve the device first.",
+      "mqttPasswordNotEnforced": "The broker is NOT checking passwords (MQTT_REQUIRE_PASSWORD=false) — devices connect by username only, so a machine binding would mean nothing. Re-enable password checks before binding.",
+      "mqttMachineNotBindable": "The target machine is inactive/deleted, decommissioned/retired, or not linked to a station → factory.",
+      "mqttBoundMachineOutOfScope": "The device is bound to a machine outside your scope; you cannot change this device (its binding or its password).",
+      "mqttDeviceNoCredential": "This device has no MQTT password, so it connects by username only (guessable) and cannot be bound to a machine. Provision a password first.",
+      "mqttDeviceRejected": "This device was REJECTED and cannot be bound to a machine. Approve the device first.",
       "robotNotActive": "This robot is not loaded by this process's robot gateway (disabled, or ROBOT_GATEWAY_ENABLED is off), so there is no live motion lock to clear.",
       "opcuaSecurityInvalid": "securityMode/securityPolicy is unknown or contradictory (e.g. None with Basic256Sha256, or SignAndEncrypt with None). Use None/None, or Sign/SignAndEncrypt with a policy such as Basic256Sha256.",
       "secretReentryRequired": "You changed {{field}} — where or how the stored secret is sent — so the saved password/secret is not reused. Re-enter the password/secret and save again; nothing has been changed yet.",
@@ -5637,6 +5673,7 @@
       "title": "MQTT Profile Management",
       "targetType": "Target Type",
       "subscribeTopics": "Subscribe Topics (one per line)",
+      "subscribeTopicsPlaceholder": "Only the device's OWN machine branch (device bound to a machine):\nfactory/{factoryId}/{machineCode}/#\nsyn/{site}/{area}/{line}/{cell}/{equipment}/#",
       "skipDuplicates": "Skip duplicate profiles",
       "selectTargets": "Select Targets",
       "selectTargetDesc": "Select target type and specific targets to assign profile",
@@ -5649,6 +5686,7 @@
       "reconnectFailedDesc": "Alert when reconnect fails consecutively",
       "reconnectFailedCount": "Reconnect Failed (count)",
       "publishTopics": "Publish Topics (one per line)",
+      "publishTopicsPlaceholder": "factory/{factoryId}/{machineCode}/sensor/{sensorType}",
       "profileUpdated": "Profile updated",
       "profileNameRequired": "Profile Name *",
       "profileDuplicated": "Profile duplicated",
@@ -5772,6 +5810,33 @@
       "latencyAvg": "Latency (Avg)"
     },
     "clientMgmt": {
+      "clearCredentialConfirm": "Clear password",
+      "clearCredentialDesc": "The device goes back to having no password (it connects by username only, if the configuration allows). If the device is bound to a machine, that binding is also REMOVED — a bound device must have a password. Open sessions are disconnected.",
+      "clearCredentialTitle": "Clear the device's MQTT password",
+      "clearCredential": "Clear password",
+      "legacyPlaintext": "Legacy password (not hashed)",
+      "rotateTypeDeviceId": "Type the device ID to confirm",
+      "rotateAppDeviceWarning": "This device reports an app version, so it MAY be a tablet running FactoryAlertSystem (a guess from appVersion, not certain). That app sends no password to the built-in broker — issuing one will lock it out. Type the device ID to confirm you understand.",
+      "newPasswordWarning": "Copy this password and configure it on the device now — the plaintext is not stored and cannot be shown again. The device is locked out of the broker until it is reconfigured. ⚠ Tablets running the FactoryAlertSystem app do NOT send a password to the built-in broker and will stay locked out PERMANENTLY — use \"Clear password\" to recover them.",
+      "newPasswordTitle": "New password — shown ONCE",
+      "rotatePasswordConfirm": "Generate new password",
+      "rotatePasswordDesc": "A new random password is generated and only its hash is stored. The old password stops working IMMEDIATELY and the device's open sessions are disconnected. Only for devices that can be configured with an MQTT password — the FactoryAlertSystem app does NOT send a password on the built-in broker.",
+      "rotatePasswordTitle": "Issue a new MQTT password",
+      "rotatePassword": "Issue / rotate password",
+      "noCredential": "None",
+      "hasCredential": "Set",
+      "credentialHeader": "MQTT password",
+      "bindNoChange": "Binding unchanged",
+      "bindSaved": "Machine binding updated",
+      "confirmBind": "Confirm",
+      "bindReasonPlaceholder": "Why bind/unbind this device?",
+      "bindReason": "Reason (required)",
+      "unbind": "Unbind",
+      "bindMachineDesc": "The device may only write and read factory/… and syn/… data of this machine. Its open MQTT sessions are disconnected so the new binding takes effect immediately.",
+      "bindMachineTitle": "Bind device to a machine",
+      "bindMachine": "Bind machine",
+      "notBound": "Not bound",
+      "boundMachineHeader": "Bound to machine",
       "workstationOptional": "Workstation (optional)",
       "workstationHeader": "Workstation",
       "workstation": "Workstation",
@@ -13503,6 +13568,10 @@
     "confirm": "Confirm and proceed"
   },
   "lineView": {
+    "recipeSet": {
+      "itemRefused": "{{machine}} · {{recipe}} v{{version}}: refused — {{reason}}",
+      "hintUpdateToCurrent": "The version pinned in the set has been replaced — update the set to the current version v{{version}}."
+    },
     "title": "Line View",
     "navDesc": "Line flow diagram · 7-state FSM · takt/bottleneck · readiness · line commands",
     "subtitle": "Line flow: FSM state, takt, bottleneck, blocked/starved stations and line commands.",
@@ -17099,16 +17168,17 @@
       "loading": "Checking safety sources…",
       "error": "Could not read safety sources — treat them as unknown.",
       "plcLabel": "Safety PLC",
+      "rule": "Rule: a commissioned target needs a REAL safety PLC with mapped safety tags — SIM or unmapped configs never satisfy the preflight; a bad-quality safety tag counts as unknown.",
       "plc": {
-        "sim": "⚠ SIM (preflight relies on a SIMULATION)",
-        "mixed": "⚠ real + SIM/unmapped (a config that reads no safety tag can satisfy the preflight)",
+        "sim": "⚠ SIM only — does NOT satisfy the preflight for real commands",
+        "mixed": "● real + SIM/unmapped (only the real PLC counts)",
         "real": "● real PLC",
         "adapterOff": "○ off — no safety source",
         "noConfig": "○ no enabled config",
         "readError": "⚠ configs could not be read",
         "simEmpty": "empty script — always OK",
         "simScripted": "scripted — OK/BLOCKED follows a script, not a PLC",
-        "realUnmapped": "⚠ real endpoint but NO safety tag mapped — preflight OK is based on nothing read"
+        "realUnmapped": "⚠ real endpoint but NO safety tag mapped — does NOT satisfy the preflight for real commands"
       },
       "hiddenConfigs": "outside your scope",
       "ot": "OT writes",
@@ -17117,10 +17187,8 @@
         "dry_run": "dry-run only (control disabled — nothing is written)",
         "unguarded": "⚠ preflight disabled — real commands are not checked",
         "blocked": "real commands blocked",
-        "sim_basis": "⚠ allowed on a SIMULATED reading",
-        "sim_can_satisfy": "⚠ a SIM or unmapped config can satisfy the check",
-        "real_basis": "checked against the real safety PLC",
-        "unmapped_basis": "⚠ allowed although no safety tag is read"
+        "blockedSimOnly": "real commands blocked — only SIM / unmapped; a commissioned target needs a REAL safety PLC with mapped tags",
+        "real_basis": "checked against the real safety PLC"
       },
       "on": "● on",
       "off": "○ off",
@@ -20226,7 +20294,21 @@
     "dayChuyen": "line"
   },
   "machinesTab": {
-    "may": "machine"
+    "may": "machine",
+    "gatewayAllowlist": "Allowed devices",
+    "gatewayAllowlistTitle": "Devices allowed to write — {{code}}",
+    "gatewayAllowlistDesc": "This gateway's key can only write data for the selected devices (both /api/ot/ingest and /api/v1/ingest). To let the gateway write its own data, select it as well.",
+    "gatewayAllowlistEmptyWarn": "Empty list: this gateway will NOT be able to write data for any device.",
+    "gatewayAllowlistSearch": "Search by machine code or name",
+    "gatewayAllowlistSelected": "{{count}} device(s) selected",
+    "gatewayAllowlistSelf": "this gateway",
+    "gatewayAllowlistInactiveNote": "Inactive devices in the current list will be dropped on save.",
+    "gatewayAllowlistReason": "Reason for change (recorded in the audit log)",
+    "gatewayAllowlistSaved": "Allowed device list saved",
+    "gatewayAllowlistLoadError": "Could not load the allowed device list. Close and try again — nothing was saved.",
+    "gatewayAllowlistNoMatch": "No machines match your search.",
+    "gatewayAllowlistTruncated": "Showing the first {{shown}} of {{total}} machines — refine your search to see others.",
+    "gatewayAllowlistOutOfScope": "{{count}} device(s) outside your scope are on this list; they are kept when you save."
   },
   "seedDataTab": {
     "daTaoDuLieuCo": "Sample base data created successfully!"

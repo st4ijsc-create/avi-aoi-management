@@ -17,13 +17,21 @@ export interface RobotCommandLike {
 
 const ROBOT_VERBS: readonly RobotJobType[] = ["move", "pick_place", "dispense", "screw", "home", "abort", "custom"];
 
-/** A command's explicit job wins; otherwise a known verb maps 1:1, anything else is `custom` with empty params. */
+/**
+ * doc 81 Đợt 1C Task 3 fix round 1 (ruling R-1C-c) — the STOP verbs. `e_stop` (CMD_ESTOP, whose docblock
+ * already says "maps to the robot 'abort' job at the dispatcher boundary") and `stop` used to fall through
+ * to `custom`, i.e. a MOTION job ⇒ HITL/confirmation, safety preflight, interlock, motion lock and the R14
+ * slot all applied to an emergency stop. They are energy-REDUCING commands (L-7) and map to `abort`.
+ */
+const STOP_VERBS: ReadonlySet<string> = new Set(["abort", "e_stop", "stop"]);
+
+/** A command's explicit job wins; a STOP verb is `abort`; a known verb maps 1:1; anything else is `custom` with empty params. */
 export function toRobotJob(command: RobotCommandLike): RobotJobSpec {
   if (command.job) return command.job;
-  const jobType = ROBOT_VERBS.includes(command.name as RobotJobType)
-    ? (command.name as RobotJobType)
-    : command.name === "abort"
-      ? "abort"
+  const jobType: RobotJobType = STOP_VERBS.has(command.name)
+    ? "abort"
+    : ROBOT_VERBS.includes(command.name as RobotJobType)
+      ? (command.name as RobotJobType)
       : "custom";
   return { jobType, params: {} };
 }

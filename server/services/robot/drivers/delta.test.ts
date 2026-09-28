@@ -242,6 +242,18 @@ describe("DeltaDriver — motion gate + fail-safe", () => {
     expect(res.detail?.reasonCode).toBe("line_reply_timeout");
   });
 
+  // doc 81 Đợt 1C residual round 2 (R-1C-m, lớp b ĐỘC LẬP) — gọi thẳng runJob (bỏ qua lớp a của dispatcher) với mọi
+  // chính tả của dừng + params chuyển động ⇒ chỉ khung STOP, 0 SERVO/MOVJ/MOVL.
+  it.each(["stop", "e_stop", "ABORT"])("runJob live '%s' + joints/x,y,z ⇒ CHỈ STOP, 0 byte chuyển động", async (jt) => {
+    process.env.ROBOT_CONTROL_ENABLED = "true";
+    const { d, sock } = await connectedDriver();
+    const before = sock.written.length;
+    const res = await d.runJob({ jobType: jt as never, params: { joints: [90, 90, 90, 0, 0, 0], x: 500, y: 500, z: 500 } });
+    expect(res.ok).toBe(true);
+    const sent = sock.written.slice(before).map(cmdOf);
+    expect(sent).toEqual(["STOP"]);
+  });
+
   // doc 81 Đợt 1B Task 5 — abort() NÊU thất bại thay vì nuốt.
   it("abort(): STOP bị từ chối (ERR) ⇒ reject 'Delta abort failed'", async () => {
     process.env.ROBOT_CONTROL_ENABLED = "true";

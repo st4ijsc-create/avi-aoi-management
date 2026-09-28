@@ -1,6 +1,6 @@
 // Schema domain: Hierarchy tables (Corporate > Factory > Workshop > Line > Station > Machine)
 import { sql } from "drizzle-orm";
-import { pgTable, serial, integer, text, timestamp, varchar, decimal, boolean, jsonb, index, uniqueIndex } from "drizzle-orm/pg-core";
+import { pgTable, serial, integer, text, timestamp, varchar, decimal, boolean, jsonb, index, uniqueIndex, primaryKey } from "drizzle-orm/pg-core";
 import { machineTypeEnum, statusEnum_1, operationStatusEnum, processTypeEnum } from "./enums";
 
 /**
@@ -347,6 +347,26 @@ export const machines = pgTable("machines", {
 
 export type Machine = typeof machines.$inferSelect;
 export type InsertMachine = typeof machines.$inferInsert;
+
+/**
+ * doc 81 Đợt 1C Task 4 (mig 0361) — ALLOWLIST THIẾT BỊ của một khoá gateway (`IOT_GATEWAY`).
+ * Một hàng = gateway `gatewayMachineId` được ghi (ingest) cho thiết bị `deviceMachineId`. Gateway
+ * không có hàng nào ⇒ allowlist rỗng ⇒ KHÔNG ghi được gì (fail-closed). Chỉ sửa qua
+ * `machine.gatewayAllowlist.set` (một transaction + control_audit_log). Lý do bảng riêng thay vì
+ * `machines.capabilities`: xem đầu tệp `drizzle/0361_gateway_device_allowlist.sql`.
+ */
+export const gatewayDeviceAllowlist = pgTable("gateway_device_allowlist", {
+  gatewayMachineId: integer("gatewayMachineId").notNull()
+    .references(() => machines.id, { onDelete: "cascade" }),
+  deviceMachineId: integer("deviceMachineId").notNull()
+    .references(() => machines.id, { onDelete: "cascade" }),
+  addedBy: integer("addedBy"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+}, (table) => [
+  primaryKey({ name: "pk_gateway_device_allowlist", columns: [table.gatewayMachineId, table.deviceMachineId] }),
+  index("idx_gateway_device_allowlist_device").on(table.deviceMachineId),
+]);
+export type GatewayDeviceAllowlistRow = typeof gatewayDeviceAllowlist.$inferSelect;
 
 /**
  * Workstations - Công trạm sản xuất

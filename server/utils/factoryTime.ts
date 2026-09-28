@@ -288,8 +288,96 @@ export function docGioTuongNhaMay(dateStr: string, endOfDay = false): Date | und
   return new Date(utc.getTime() + ms);
 }
 
-/** Chuỗi thời gian có mang múi giờ (`Z`, `+07:00`, `-0500`) hay không — dùng bởi `docGioMay`. */
-const CO_MUI_GIO_MAY = /(?:Z|[+-]\d{2}:?\d{2})$/i;
+/**
+ * Chuỗi thời gian có mang múi giờ ở CUỐI (sau khi bỏ tên múi giờ trong ngoặc): `Z`, `±hh:mm`/`±hhmm`
+ * (kể cả dạng `GMT+0700`/`UTC+07:00` — phần `±hhmm` nằm ở cuối), hoặc `GMT`/`UTC` trần (= `Z`).
+ * doc 81 Đợt 1C final wave 5 (final review M2): múi giờ phải đứng NGAY SAU một thành phần GIỜ
+ * (`h:mm[:ss[.fff]]`, tuỳ chọn `AM`/`PM`). Trước đó đuôi `-dddd` bất kỳ bị coi là offset ⇒ ngày trần kiểu
+ * Mỹ `"09-28-2026"` (năm 2026, không có giờ) được coi là "có múi giờ" và V8 đọc nó theo nửa đêm TZ tiến
+ * trình — đúng sự lệ thuộc TZ mà R-1C-a muốn diệt. Ngày trần / ngày + offset không giờ ⇒ chuỗi TRẦN.
+ */
+const CO_MUI_GIO_MAY = /\d{1,2}:\d{2}(?::\d{2}(?:[.,]\d+)?)?\s*(?:[AP]M\s*)?(?:Z|(?:(?:GMT|UTC)\s*)?[+-]\d{2}:?\d{2}|GMT|UTC)$/i;
+/** Tên múi giờ trong ngoặc ở cuối chuỗi (`Date.prototype.toString()`: "… GMT+0700 (Indochina Time)"). */
+const TEN_MUI_GIO_TRONG_NGOAC = /\s*\([^()]*\)\s*$/;
+
+/**
+ * Chuỗi thời gian có mang múi giờ TƯỜNG MINH hay không — MỘT định nghĩa dùng chung cho
+ * `docGioMay`, `docTsThietBi` và `hasExplicitUtcOffset` (luồng process-result, `inspectionTime`).
+ *
+ * Nhận: `…Z`, `…+07:00`, `…-0500`, `… GMT+07:00`, `… UTC+0700`, `… GMT`/`… UTC` (= Z), và dạng
+ * `Date.prototype.toString()` của C#/JS `"Sun Aug 30 2026 14:26:51 GMT+0700 (Indochina Time)"` —
+ * BG-72 ghi nhận dạng này ĐANG CHẠY SẢN XUẤT (`machineApiRouters.ts`, khối `inspectionTime`). Doc 81
+ * Đợt 1C Task 6 fix round 1: trước bản vá, phần `(Indochina Time)` ở cuối làm luật trả `false` ⇒ bị
+ * từ chối `time_offset_required`/`ts_no_timezone` dù chuỗi CÓ offset, và `docGioMay` (khi cờ tắt) nối
+ * thêm `Z` ⇒ V8 bỏ qua `GMT+0700` ⇒ lệch +7 h.
+ * KHÔNG nhận: tên trong ngoặc mà KHÔNG có `GMT±hhmm` (`"… 14:26:51 (Indochina Time)"`) — tên múi giờ
+ * không phải offset, `new Date` sẽ đọc theo TZ tiến trình ⇒ vẫn là chuỗi TRẦN.
+ */
+export function coMuiGioTuongMinh(s: string): boolean {
+  return CO_MUI_GIO_MAY.test(s.trim().replace(TEN_MUI_GIO_TRONG_NGOAC, ""));
+}
+
+/** Lý do một `ts` thiết bị không dùng được (trùng tên `TelemetryRejectReason` của telemetryBus). */
+export type LyDoTsThietBi = "ts_no_timezone" | "invalid_ts";
+
+/** Kết quả đọc `ts` thiết bị: `ts: undefined` = thiết bị KHÔNG gửi ⇒ bus đóng dấu giờ server. */
+export type KetQuaTsThietBi = { ok: true; ts: Date | undefined } | { ok: false; reason: LyDoTsThietBi };
+
+/**
+ * ★★★ doc 81 Đợt 1C Task 6 — ruling R-1C-a, lựa chọn (a): LUẬT DUY NHẤT cho `ts` do THIẾT BỊ
+ * khai trên MỌI cửa ingest telemetry/sensor (`/api/ot/ingest`, `/api/v1/ingest/telemetry`, cầu MQTT
+ * `synapse/…/telemetry`, cảm biến MQTT `factory/…/sensor`, MTConnect, CFX, plugin driver).
+ *
+ *   · vắng (`undefined`/`null`/chuỗi rỗng/falsy)  ⇒ `{ok, ts: undefined}` — giữ hành vi cũ (giờ server);
+ *   · `Date` hợp lệ / số epoch-ms hữu hạn         ⇒ nhận nguyên (một instant tuyệt đối, không mơ hồ);
+ *   · chuỗi CÓ múi giờ (`Z`/`±hh:mm`/`±hhmm`)     ⇒ `new Date(chuỗi)`, hỏng ⇒ `invalid_ts`;
+ *   · chuỗi KHÔNG múi giờ mà vẫn đọc được          ⇒ TỪ CHỐI `ts_no_timezone`;
+ *   · còn lại (rác, kiểu lạ)                       ⇒ `invalid_ts`.
+ *
+ * VÌ SAO TỪ CHỐI chứ không diễn giải theo `FACTORY_TZ` (lựa chọn b): trước bản vá `new Date(naive)`
+ * đọc theo TZ của TIẾN TRÌNH Node — máy dev (Asia/Bangkok, +07) cho kết quả đúng TÌNH CỜ, còn container
+ * Docker (TZ=UTC) đặt cùng chuỗi lệch +7 h về tương lai; (b) sẽ gắn thêm một giả định im lặng nữa (thiết
+ * bị cấu hình sai múi giờ ⇒ lệch 0 đo được mà vẫn sai giờ — "nửa im lặng của CASE #3"). Từ chối có
+ * reason + bộ đếm theo thiết bị làm lộ nguyên nhân ngay ở cửa. Luồng process-result (API-10) đã áp đúng
+ * luật này từ trước (`refineProcessTime`); mọi bộ phát trong repo (simulator C# `zzz`, FactoryAlertSystem
+ * `toISOString`, sim-factory, mqtt_simulator.py `…Z`) đều gửi múi giờ ⇒ không đường hợp lệ nào bị chặn.
+ *
+ * ⚠ KHÁC `docGioMay` (chuỗi trần = UTC): hàm đó phục vụ hợp đồng KIỂM TRA AOI/AVI (`inspectionTime`/
+ * `completedAt`/`startedAt`). Với `inspectionTime` của `submitInspection`/`submitInspectionBatch`,
+ * cờ `INGEST_REQUIRE_TIME_OFFSET` MẶC ĐỊNH BẬT TRONG MÃ từ 2026-09-28 (chủ dự án quyết "có bật"):
+ * chuỗi trần bị từ chối TRƯỚC khi tới `docGioMay`; chỉ `=false/0/off/no` mới quay lại nhận chuỗi
+ * trần như UTC + gắn `timeSource=machine_naive`. `completedAt`/`startedAt` (gói ZIP/cây) KHÔNG đi
+ * qua cờ này — `docGioMay` ở đó vẫn nhận chuỗi trần như UTC.
+ */
+export function docTsThietBi(raw: unknown): KetQuaTsThietBi {
+  if (!raw) return { ok: true, ts: undefined };
+  if (raw instanceof Date) {
+    return Number.isFinite(raw.getTime()) ? { ok: true, ts: raw } : { ok: false, reason: "invalid_ts" };
+  }
+  if (typeof raw === "number") {
+    const d = new Date(raw);
+    return Number.isFinite(d.getTime()) ? { ok: true, ts: d } : { ok: false, reason: "invalid_ts" };
+  }
+  if (typeof raw !== "string") return { ok: false, reason: "invalid_ts" };
+  const t = raw.trim();
+  if (t.length === 0) return { ok: true, ts: undefined };
+  const d = new Date(t);
+  if (!Number.isFinite(d.getTime())) return { ok: false, reason: "invalid_ts" };
+  if (!coMuiGioTuongMinh(t)) return { ok: false, reason: "ts_no_timezone" };
+  return { ok: true, ts: d };
+}
+
+/**
+ * Trường `ts` (+ `tsReject`) cho một mẫu telemetry từ `ts` thô của thiết bị — dùng ở MỌI cửa dựng
+ * `CanonicalSample`. `invalid_ts` giữ HÌNH DẠNG cũ (`Invalid Date` ⇒ cổng bus loại `invalid_ts`);
+ * `ts_no_timezone` gắn `tsReject` ⇒ cổng bus loại với đúng lý do đó (và đếm theo thiết bị).
+ */
+export function truongTsMau(raw: unknown): { ts: Date | undefined; tsReject?: "ts_no_timezone" } {
+  const k = docTsThietBi(raw);
+  if (k.ok) return { ts: k.ts };
+  if (k.reason === "invalid_ts") return { ts: new Date(NaN) };
+  return { ts: undefined, tsReject: "ts_no_timezone" };
+}
 
 /**
  * ★★★ BG-99 (Khối C, ruling controller 2026-09-03, Task 5) — đọc một chuỗi thời gian
@@ -324,6 +412,6 @@ const CO_MUI_GIO_MAY = /(?:Z|[+-]\d{2}:?\d{2})$/i;
 export function docGioMay(s: string | null | undefined): Date | null {
   const t = typeof s === "string" ? s.trim() : "";
   if (t.length === 0) return null;
-  const d = new Date(CO_MUI_GIO_MAY.test(t) ? t : `${t}Z`);
+  const d = new Date(coMuiGioTuongMinh(t) ? t : `${t}Z`);
   return Number.isFinite(d.getTime()) ? d : null;
 }

@@ -378,8 +378,8 @@ async function computeShiftCompare(
     // Availability over the shift window (fleet, factory-scoped).
     const durRows = executeRows(await db.execute(sql`
       WITH ordered AS (
-        SELECT sl."machineId" AS machine_id, sl.status AS status, sl."timestamp" AS ts,
-               LEAD(sl."timestamp") OVER (PARTITION BY sl."machineId" ORDER BY sl."timestamp") AS next_ts
+        SELECT sl."machineId" AS machine_id, sl.status AS status, sl."timestamp" AT TIME ZONE 'UTC' AS ts, -- doc 81 Dot 1C T6: AT TIME ZONE UTC - cot naive luu UTC; khong de TimeZone PHIEN quyet dinh phep tru voi NOW()/moc
+               LEAD(sl."timestamp" AT TIME ZONE 'UTC') OVER (PARTITION BY sl."machineId" ORDER BY sl."timestamp") AS next_ts
         FROM machine_status_logs sl
         JOIN machines m ON m."id" = sl."machineId"
         JOIN stations s ON s."id" = m."stationId"

@@ -39,6 +39,7 @@ import {
 } from "@/components/ui/dialog";
 import { toast } from "sonner";
 import { toastTrpcError } from "@/lib/trpcErrors";
+import { translateRobotRefusal } from "@/lib/errorCodes";
 import {
   Terminal, Bot, ShieldAlert, ShieldCheck, Lock, Send, RefreshCw, AlertTriangle,
   Play, Square, Home, RotateCcw, Pause, OctagonAlert, Info,
@@ -156,7 +157,14 @@ export default function CommandConsole() {
       } else if (res.ok) {
         toast.success(t("console.sent", "Command accepted: {{status}}").replace("{{status}}", status));
       } else {
-        toast.error(t("console.rejected", "Command not executed: {{status}}").replace("{{status}}", `${status}${res.error ? ` — ${res.error}` : ""}`));
+        // doc 81 Đợt 1C final wave 5 (M8) — the refusal code is shown through the client error helper (vi/en/zh),
+        // never as a bare code; an unknown code falls back to the raw text exactly as before.
+        toast.error(
+          t("console.rejected", "Command not executed: {{status}}").replace(
+            "{{status}}",
+            `${status}${res.error ? ` — ${translateRobotRefusal(res.error, res.error)}` : ""}`,
+          ),
+        );
       }
       void utils.robot.jobs.invalidate();
     },

@@ -3646,6 +3646,7 @@
       "queued-for-shared-ledger": "Bản sao đọc đã sạch NGAY (dư địa thấy đúng ngay lập tức), nhưng hàng chỉ thật sự RỜI DATABASE ở lượt đồng bộ sổ chung KẾ TIẾP — xem unsyncedWritesAfter để biết còn bao nhiêu ý định ghi chưa gửi."
     },
     "entity": {
+      "mqttClient": "thiết bị MQTT",
       "abTestExperiment": "thử nghiệm A/B",
       "adapter": "bộ chuyển đổi thiết bị",
       "agentSession": "phiên agent",
@@ -3821,6 +3822,7 @@
       "kbGoldenSet": "bộ câu hỏi vàng"
     },
     "operation": {
+      "softwareStop": "gửi lệnh dừng phần mềm",
       "clearRobotMotionLock": "gỡ khoá chuyển động của robot",
       "deployBuild": "deploy build chương trình",
       "requestDeployApproval": "gửi yêu cầu duyệt deploy",
@@ -3977,6 +3979,8 @@
       "rollbackRecipeVersion": "quay lui phiên bản công thức"
     },
     "field": {
+      "inspectionTime": "thời điểm kiểm tra (inspectionTime)",
+      "clientId": "thiết bị MQTT",
       "changeReason": "lý do thay đổi",
       "reason": "lý do",
       "comment": "bình luận",
@@ -4070,7 +4074,9 @@
       "goldenSet": "bộ câu hỏi vàng",
       "target": "đích tác động",
       "endpoint": "địa chỉ endpoint",
-      "reviewReason": "lý do từ chối"
+      "reviewReason": "lý do từ chối",
+      "gatewayId": "gateway",
+      "deviceIds": "danh sách thiết bị được phép"
     },
     "feature": {
       "webIngest": "nạp nội dung từ web",
@@ -4126,6 +4132,7 @@
       "kbEvalRuns": "sổ lượt đánh giá Training Studio"
     },
     "action": {
+      "changeMqttDeviceOfOtherScope": "đổi thiết bị MQTT đang gắn với máy ngoài phạm vi của bạn",
       "selfApproveProgramDeploy": "tự duyệt yêu cầu deploy chương trình của chính mình",
       "viewOthersPermissions": "xem quyền của người khác",
       "editOrDeleteReport": "sửa hoặc xoá báo cáo",
@@ -4194,7 +4201,36 @@
       "overrideUrHome": "tự đặt vị trí home cho robot UR",
       "selfApproveProgramVersion": "tự duyệt phiên bản chương trình của chính mình"
     },
+    "robotRefusal": {
+      "hitlActionRequired": "Lệnh chuyển động bị từ chối: không có thao tác xác nhận (HITL) nào đã được duyệt đứng sau lệnh này. Hãy gửi từ Bảng lệnh hoặc xác nhận thao tác trước.",
+      "hitlConfirmationRequired": "Lệnh chuyển động cần người xác nhận — chưa có ai xác nhận.",
+      "hitlVerifyUnavailable": "Không kiểm tra được thao tác xác nhận (cơ sở dữ liệu không sẵn sàng) — lệnh chuyển động bị từ chối để an toàn.",
+      "notConfirmed": "Thao tác xác nhận không hợp lệ: chưa được duyệt, đã hết hạn, đã dùng, hoặc thuộc người khác.",
+      "actionBindingMismatch": "Thao tác xác nhận được duyệt cho một lệnh KHÁC (robot, loại lệnh hoặc tham số khác) — không dùng cho lệnh này được.",
+      "manualConfirmerMismatch": "Lệnh thủ công phải do chính người đang đăng nhập xác nhận.",
+      "robotNotActive": "Robot không hoạt động hoặc chưa kết nối — không gửi được lệnh.",
+      "motionLocked": "Chuyển động đang bị KHOÁ (mất liên lạc hoặc kết quả chuyển động trước không rõ). Gửi lệnh DỪNG thành công hoặc nhờ người có quyền gỡ khoá.",
+      "safetyBlocked": "PLC an toàn đang báo DỪNG/sự cố — chuyển động bị từ chối trước khi gửi.",
+      "safetyUnknown": "Không xác nhận được PLC an toàn (không cấu hình, không đọc được, hoặc tag chất lượng xấu) — chuyển động bị từ chối.",
+      "safetySimOnly": "Chỉ có PLC an toàn MÔ PHỎNG hoặc chưa gán tag — lệnh thật cần một PLC an toàn THẬT có tag an toàn đã gán.",
+      "interlockBlocked": "Một luật khoá liên động đang vi phạm (hoặc không đánh giá được) — chuyển động bị từ chối.",
+      "policyDenied": "Chính sách vận hành không cho phép lệnh này.",
+      "policyApprovalRequired": "Chính sách yêu cầu phê duyệt thêm cho lệnh này — lệnh chưa được gửi.",
+      "motionInProgress": "Robot đang thực hiện một chuyển động khác — lệnh này bị từ chối (không xếp hàng). Đợi xong rồi gửi lại.",
+      "ledgerWriteFailed": "Không ghi được sổ lệnh robot — lệnh chuyển động bị từ chối, robot không nhận gì.",
+      "idempotentJobInProgress": "Lệnh cùng mã chống trùng đang chạy — không chạy lần hai.",
+      "idempotencyKeyReused": "Mã chống trùng này đã được dùng cho robot hoặc lệnh khác — lệnh chuyển động bị từ chối. Dùng mã mới.",
+      "ros2JobMessageRequired": "Lệnh ROS2 không mang thông điệp của chính nó — không có gì được phát."
+    },
     "reason": {
+      "softwareStopRefusedUseHardwareEstop": "Lệnh dừng phần mềm đã bị TỪ CHỐI: kiểm tra an toàn không xác nhận được PLC an toàn (không đọc được, chỉ có mô phỏng, hoặc đang báo dừng) nên nền tảng KHÔNG gửi lệnh dừng này. Hãy nhấn nút E-STOP cứng trên máy ngay.",
+      "timeOffsetRequired": "Thời điểm phải kèm múi giờ tường minh (Z hoặc +07:00) — chuỗi không múi giờ bị từ chối vì máy chủ không thể biết đó là giờ nào.",
+      "mqttDeviceRejectedCredential": "Thiết bị này đã bị TỪ CHỐI — không cấp mật khẩu cho thiết bị bị từ chối. Duyệt lại thiết bị trước.",
+      "mqttPasswordNotEnforced": "Broker đang TẮT kiểm mật khẩu (MQTT_REQUIRE_PASSWORD=false) — thiết bị vào chỉ bằng tên đăng nhập nên ràng buộc máy không có giá trị. Bật lại kiểm mật khẩu trước khi gắn máy.",
+      "mqttMachineNotBindable": "Máy đích đã ngừng/xoá, đang ở trạng thái ngừng khai thác/loại bỏ, hoặc chưa gắn với trạm → nhà máy.",
+      "mqttBoundMachineOutOfScope": "Thiết bị đang gắn với một máy ngoài phạm vi của bạn — bạn không thể thay đổi thiết bị này (ràng buộc hay mật khẩu).",
+      "mqttDeviceNoCredential": "Thiết bị chưa có mật khẩu MQTT nên vào broker chỉ bằng tên đăng nhập (đoán được) — không thể gắn với máy. Cấp mật khẩu cho thiết bị trước.",
+      "mqttDeviceRejected": "Thiết bị này đã bị TỪ CHỐI — không thể gắn với máy. Duyệt lại thiết bị trước.",
       "robotNotActive": "Robot này chưa được cổng robot của tiến trình nạp (đang tắt hoặc ROBOT_GATEWAY_ENABLED chưa bật) nên không có khoá chuyển động sống để gỡ.",
       "opcuaSecurityInvalid": "securityMode/securityPolicy không hợp lệ hoặc mâu thuẫn (vd None đi với Basic256Sha256, hoặc SignAndEncrypt đi với None). Chọn None/None, hoặc Sign/SignAndEncrypt với một chính sách như Basic256Sha256.",
       "secretReentryRequired": "Bạn vừa đổi {{field}} — tức nơi gửi hoặc cách bảo vệ mật khẩu đã lưu — nên hệ thống không dùng lại mật khẩu cũ. Hãy nhập lại mật khẩu/bí mật rồi lưu; chưa có gì được thay đổi.",
@@ -5612,6 +5648,7 @@
       "connectionDetail": "Chi tiết kết nối",
       "configMqttBroker": "Cấu hình thông số kết nối MQTT broker",
       "subscribeTopics": "Subscribe Topics (mỗi dòng 1 topic)",
+      "subscribeTopicsPlaceholder": "Chỉ nhánh của CHÍNH máy (thiết bị đã gắn máy):\nfactory/{factoryId}/{machineCode}/#\nsyn/{site}/{area}/{line}/{cell}/{equipment}/#",
       "replaceExisting": "Thay thế assignments hiện có",
       "profileAssigned": "Đã gán profile",
       "noReconnectData": "Chưa có dữ liệu reconnect",
@@ -5628,6 +5665,7 @@
       "assignMultiple": "Gán cho nhiều targets",
       "selectTargets": "Chọn Targets",
       "publishTopics": "Publish Topics (mỗi dòng 1 topic)",
+      "publishTopicsPlaceholder": "factory/{factoryId}/{machineCode}/sensor/{sensorType}",
       "noHeatmapData": "Chưa có dữ liệu heatmap",
       "noAssignments": "Chưa có assignment nào",
       "createProfile": "Tạo Profile mới",
@@ -5757,6 +5795,33 @@
       "stationLabel": "trạm"
     },
     "clientMgmt": {
+      "clearCredentialConfirm": "Xoá mật khẩu",
+      "clearCredentialDesc": "Thiết bị trở về trạng thái không mật khẩu (vào broker chỉ bằng tên đăng nhập, nếu cấu hình cho phép). Nếu thiết bị đang gắn với máy, ràng buộc máy cũng bị GỠ — thiết bị gắn máy phải có mật khẩu. Phiên đang mở bị ngắt.",
+      "clearCredentialTitle": "Xoá mật khẩu MQTT của thiết bị",
+      "clearCredential": "Xoá mật khẩu",
+      "legacyPlaintext": "Mật khẩu cũ (chưa băm)",
+      "rotateTypeDeviceId": "Gõ mã thiết bị để xác nhận",
+      "rotateAppDeviceWarning": "Thiết bị này báo phiên bản app nên CÓ THỂ là máy tính bảng chạy FactoryAlertSystem (suy đoán theo appVersion, không chắc chắn). App đó không gửi mật khẩu tới broker nhúng — cấp mật khẩu sẽ khoá nó ngoài. Gõ mã thiết bị để xác nhận bạn biết điều này.",
+      "newPasswordWarning": "Sao chép và cấu hình mật khẩu này vào thiết bị ngay — hệ thống không lưu bản rõ và không thể hiện lại. Thiết bị bị khoá ngoài broker cho tới khi được cấu hình mật khẩu mới. ⚠ Máy tính bảng chạy app FactoryAlertSystem KHÔNG gửi mật khẩu tới broker nhúng nên sẽ bị khoá ngoài VĨNH VIỄN — dùng \"Xoá mật khẩu\" để khôi phục.",
+      "newPasswordTitle": "Mật khẩu mới — chỉ hiện MỘT lần",
+      "rotatePasswordConfirm": "Sinh mật khẩu mới",
+      "rotatePasswordDesc": "Hệ thống sinh một mật khẩu ngẫu nhiên mới, chỉ lưu dạng băm. Mật khẩu cũ hết hiệu lực NGAY và phiên đang mở của thiết bị bị ngắt. Chỉ dùng cho thiết bị cấu hình được mật khẩu MQTT — app FactoryAlertSystem trên broker nhúng KHÔNG gửi mật khẩu.",
+      "rotatePasswordTitle": "Cấp mật khẩu MQTT mới",
+      "rotatePassword": "Cấp / xoay mật khẩu",
+      "noCredential": "Chưa có",
+      "hasCredential": "Đã có",
+      "credentialHeader": "Mật khẩu MQTT",
+      "bindNoChange": "Ràng buộc không đổi",
+      "bindSaved": "Đã cập nhật ràng buộc máy",
+      "confirmBind": "Xác nhận",
+      "bindReasonPlaceholder": "Vì sao gắn/gỡ thiết bị này?",
+      "bindReason": "Lý do (bắt buộc)",
+      "unbind": "Gỡ ràng buộc",
+      "bindMachineDesc": "Thiết bị chỉ được ghi và đọc dữ liệu factory/… và syn/… của đúng máy này. Phiên MQTT đang mở của thiết bị sẽ bị ngắt để ràng buộc mới có hiệu lực ngay.",
+      "bindMachineTitle": "Gắn thiết bị với máy",
+      "bindMachine": "Gắn máy",
+      "notBound": "Chưa gắn",
+      "boundMachineHeader": "Gắn với máy",
       "manualConnectionCreated": "Đã tạo kết nối thủ công",
       "selectClientForHistory": "Chọn client để xem lịch sử",
       "manualConnectionsDesc": "Kết nối trực tiếp tới máy qua MQTT",
@@ -13483,6 +13548,10 @@
     "confirm": "Xác nhận thực hiện"
   },
   "lineView": {
+    "recipeSet": {
+      "itemRefused": "{{machine}} · {{recipe}} v{{version}}: bị từ chối — {{reason}}",
+      "hintUpdateToCurrent": "Phiên bản ghim trong set đã bị thay — hãy cập nhật set sang phiên bản hiện hành v{{version}}."
+    },
     "title": "Sơ đồ chuyền",
     "navDesc": "Sơ đồ tuyến · trạng thái vận hành · nhịp/nút cổ chai · sẵn sàng · lệnh tuyến",
     "subtitle": "Sơ đồ tuyến: trạng thái vận hành, nhịp sản xuất, nút cổ chai, trạm nghẽn/đói liệu và lệnh tuyến.",
@@ -17079,16 +17148,17 @@
       "loading": "Đang kiểm tra nguồn an toàn…",
       "error": "Không đọc được nguồn an toàn — hãy coi như chưa biết.",
       "plcLabel": "Safety PLC",
+      "rule": "Luật: đích đã commission cần safety-PLC THẬT có gán tag — cấu hình SIM hoặc chưa gán tag không bao giờ thoả preflight; tag an toàn chất lượng xấu tính là chưa biết.",
       "plc": {
-        "sim": "⚠ SIM (preflight dựa vào GIẢ LẬP)",
-        "mixed": "⚠ thật + SIM/chưa ánh xạ (một cấu hình không đọc tag an toàn nào đủ làm preflight qua)",
+        "sim": "⚠ chỉ SIM — KHÔNG thoả preflight cho lệnh thật",
+        "mixed": "● thật + SIM/chưa gán tag (chỉ PLC thật được tính)",
         "real": "● PLC thật",
         "adapterOff": "○ tắt — không có nguồn an toàn",
         "noConfig": "○ không có cấu hình nào bật",
         "readError": "⚠ không đọc được cấu hình",
         "simEmpty": "kịch bản rỗng — luôn OK",
         "simScripted": "theo kịch bản — OK/BLOCKED theo kịch bản, không theo PLC",
-        "realUnmapped": "⚠ endpoint thật nhưng KHÔNG ánh xạ tag an toàn nào — preflight OK dựa trên việc không đọc gì"
+        "realUnmapped": "⚠ endpoint thật nhưng KHÔNG gán tag an toàn nào — KHÔNG thoả preflight cho lệnh thật"
       },
       "hiddenConfigs": "ngoài phạm vi của bạn",
       "ot": "Ghi OT",
@@ -17097,10 +17167,8 @@
         "dry_run": "chỉ dry-run (điều khiển đang tắt — không ghi gì)",
         "unguarded": "⚠ preflight bị tắt — lệnh thật không được kiểm",
         "blocked": "lệnh thật bị chặn",
-        "sim_basis": "⚠ được phép dựa trên kết quả GIẢ LẬP",
-        "sim_can_satisfy": "⚠ một cấu hình SIM hoặc chưa ánh xạ đủ làm phép kiểm qua",
-        "real_basis": "kiểm với Safety PLC thật",
-        "unmapped_basis": "⚠ được phép dù không đọc tag an toàn nào"
+        "blockedSimOnly": "lệnh thật bị chặn — chỉ có SIM / chưa gán tag; đích đã commission cần safety-PLC THẬT có gán tag",
+        "real_basis": "kiểm với Safety PLC thật"
       },
       "on": "● bật",
       "off": "○ tắt",
@@ -20206,7 +20274,21 @@
     "dayChuyen": "dây chuyền"
   },
   "machinesTab": {
-    "may": "máy"
+    "may": "máy",
+    "gatewayAllowlist": "Thiết bị được phép",
+    "gatewayAllowlistTitle": "Thiết bị được phép ghi — {{code}}",
+    "gatewayAllowlistDesc": "Khoá của gateway này chỉ ghi được dữ liệu cho các thiết bị được chọn (cả /api/ot/ingest và /api/v1/ingest). Muốn gateway ghi dữ liệu của chính nó, hãy chọn cả nó.",
+    "gatewayAllowlistEmptyWarn": "Danh sách rỗng: gateway này sẽ KHÔNG ghi được dữ liệu cho thiết bị nào.",
+    "gatewayAllowlistSearch": "Tìm theo mã hoặc tên máy",
+    "gatewayAllowlistSelected": "Đã chọn {{count}} thiết bị",
+    "gatewayAllowlistSelf": "chính gateway",
+    "gatewayAllowlistInactiveNote": "Thiết bị đã ngừng hoạt động trong danh sách cũ sẽ bị bỏ khi lưu.",
+    "gatewayAllowlistReason": "Lý do thay đổi (ghi vào nhật ký)",
+    "gatewayAllowlistSaved": "Đã lưu danh sách thiết bị được phép",
+    "gatewayAllowlistLoadError": "Không tải được danh sách thiết bị được phép. Đóng rồi thử lại — chưa lưu gì.",
+    "gatewayAllowlistNoMatch": "Không có máy nào khớp tìm kiếm.",
+    "gatewayAllowlistTruncated": "Chỉ hiện {{shown}}/{{total}} máy đầu tiên — hãy lọc thêm để thấy máy khác.",
+    "gatewayAllowlistOutOfScope": "Còn {{count}} thiết bị ngoài phạm vi của bạn trong danh sách; chúng được giữ nguyên khi lưu."
   },
   "seedDataTab": {
     "daTaoDuLieuCo": "Đã tạo dữ liệu cơ sở mẫu thành công!"

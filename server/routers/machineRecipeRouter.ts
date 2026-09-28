@@ -18,7 +18,7 @@
  */
 import { z } from "zod";
 import { TRPCError } from "@trpc/server";
-import { appError } from "../_core/appError";
+import { appError, readAppErrorMeta } from "../_core/appError";
 import { and, desc, eq, sql } from "drizzle-orm";
 import { router, moduleProcedure, moduleGate, actuationProcedure as actuationBase } from "../_core/trpc";
 import { requirePermission } from "../_core/accessControl";
@@ -89,8 +89,8 @@ async function getDb() {
 async function performDeploy(
   args: { recipeId: number; machineId: number; adapterId?: number | null; notes?: string | null },
   userId: number,
-  // doc 80 Đợt 1 Task 9 R-T9a — recipes.deploy ⇒ "strict" (shared release gate);
-  // changeover.approve ⇒ "legacyApprovedOnly" (pre-task behaviour, outside the task).
+  // doc 80 Đợt 1 Task 9 — recipes.deploy ⇒ "strict" (shared release gate); doc 81 Đợt 1C Task 2
+  // (owner decision 2026-09-27) — changeover.approve ⇒ "strict" too (was "legacyApprovedOnly").
   policy: RecipeDeployPolicy,
 ) {
   const deployment = await deployRecipe(
@@ -658,7 +658,8 @@ export const machineRecipeRouter = router({
     /**
      * DUYỆT + THI HÀNH: SoD approver ≠ requester (403), row phải pending, rồi chạy
      * performDeploy (đúng đường recipes.deploy — ledger flip + genealogy + config-sync;
-     * deployRecipe từ chối recipe chưa được second-approve). Ghi lại deploymentId.
+     * cổng phát hành CHẶT: chưa duyệt / đã archived / sai loại máy ⇒ PRECONDITION_FAILED kèm
+     * reason — Đợt 1C Task 2). Ghi lại deploymentId.
      */
     approve: actuationProcedure
       .use(requirePermission("machine_control", "canEdit"))
@@ -680,12 +681,22 @@ export const machineRecipeRouter = router({
         }
         let deployment;
         try {
+          // doc 81 Đợt 1C Task 2 — the SAME strict release gate as recipes.deploy (approved · not
+          // archived · machine type) — was "legacyApprovedOnly" (Task 9 R-T9a).
           deployment = await performDeploy(
             { recipeId: row.recipeId, machineId: row.machineId, notes: input.note ?? row.requestNote ?? null },
             ctx.user.id,
-            "legacyApprovedOnly",
+            "strict",
           );
         } catch (err) {
+          // doc 81 Đợt 1C Task 2 — a release-gate refusal keeps its PRECONDITION_FAILED + reason
+          // (re-labelled with this operation) instead of being flattened into BAD_REQUEST; other
+          // pre-classified errors (NOT_FOUND…) pass through unchanged, like recipes.deploy.
+          const reason = readAppErrorMeta(err)?.appParams?.reason;
+          if (err instanceof TRPCError && err.code === "PRECONDITION_FAILED" && typeof reason === "string") {
+            throw appError("PRECONDITION_FAILED", "OPERATION_FAILED", { operation: "approveChangeoverRequest", reason }, err.message);
+          }
+          if (err instanceof TRPCError) throw err;
           throw appError("BAD_REQUEST", "OPERATION_FAILED", { operation: "approveChangeoverRequest" }, err instanceof Error ? err.message : String(err));
         }
         const [updated] = await db.update(changeoverRequests).set({

@@ -77,14 +77,48 @@ describe("Việc 9 — handleTelemetryBridge gate", () => {
     expect(ingestTelemetry).not.toHaveBeenCalled();
   });
 
-  it("flag ON + synapse/…/telemetry: bridges into ingestTelemetry", async () => {
+  // ★ 2026-09-27 (doc 81 Đợt 1C Task 5): the bridge no longer trusts `asset_id` on its own — the
+  // frame must come from a device BOUND to the machine it names. This case used to call the
+  // bridge with no origin and expect ingest; it now passes the bound machine (code DEV1, id 7).
+  const BOUND = { deviceId: "esp-1", machine: { id: 7, code: "DEV1", factoryId: 1, isa95Path: null } };
+
+  it("flag ON + synapse/…/telemetry from the BOUND device: bridges into ingestTelemetry, machineId pinned", async () => {
     process.env.MQTT_TELEMETRY_BRIDGE_ENABLED = "true";
     const { handleTelemetryBridge } = await load();
-    handleTelemetryBridge("synapse/f/1/DEV1/telemetry", frame());
+    handleTelemetryBridge("synapse/f/1/DEV1/telemetry", frame(), BOUND);
     await tick();
     expect(ingestTelemetry).toHaveBeenCalledTimes(1);
     const passed = ingestTelemetry.mock.calls[0][0] as any[];
-    expect(passed[0]).toMatchObject({ deviceId: "DEV1", protocol: "mqtt", metric: "temperature" });
+    expect(passed[0]).toMatchObject({ deviceId: "DEV1", machineId: 7, protocol: "mqtt", metric: "temperature" });
+  });
+
+  it('flag ON: asset_id "machine:<bound id>" is accepted too', async () => {
+    process.env.MQTT_TELEMETRY_BRIDGE_ENABLED = "true";
+    const { handleTelemetryBridge } = await load();
+    handleTelemetryBridge("synapse/f/1/DEV1/telemetry", frame({ asset_id: "machine:7" }), BOUND);
+    await tick();
+    expect(ingestTelemetry).toHaveBeenCalledTimes(1);
+    expect((ingestTelemetry.mock.calls[0][0] as any[])[0]).toMatchObject({ machineId: 7, deviceId: null });
+  });
+
+  it("flag ON: no origin / unbound device / asset_id of another machine ⇒ dropped and COUNTED, nothing ingested", async () => {
+    process.env.MQTT_TELEMETRY_BRIDGE_ENABLED = "true";
+    const { handleTelemetryBridge, getMqttBindingDropStats } = await load();
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    try {
+      const before = getMqttBindingDropStats();
+      handleTelemetryBridge("synapse/f/1/DEV1/telemetry", frame());
+      handleTelemetryBridge("synapse/f/1/DEV1/telemetry", frame(), { deviceId: "esp-2", machine: null });
+      handleTelemetryBridge("synapse/f/1/DEV1/telemetry", frame({ asset_id: "OTHER" }), BOUND);
+      handleTelemetryBridge("synapse/f/1/DEV1/telemetry", frame({ asset_id: "machine:8" }), BOUND);
+      await tick();
+      expect(ingestTelemetry).not.toHaveBeenCalled();
+      const after = getMqttBindingDropStats();
+      expect(after.telemetryFrames - before.telemetryFrames).toBe(4);
+      expect(after.telemetrySamples - before.telemetrySamples).toBe(4);
+    } finally {
+      warn.mockRestore();
+    }
   });
 
   it("flag ON but a non-telemetry topic: NO-OP", async () => {

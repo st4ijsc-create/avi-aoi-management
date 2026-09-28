@@ -119,8 +119,8 @@ export async function trangThaiTapMay(machineIds: readonly number[]): Promise<Tr
   const startTime = new Date(Date.now() - 24 * 60 * 60 * 1000);
   const durationRows = executeRows(await db.execute(sql`
     WITH ordered AS (
-      SELECT "machineId" AS machine_id, status, "timestamp" AS ts,
-             LEAD("timestamp") OVER (PARTITION BY "machineId" ORDER BY "timestamp") AS next_ts
+      SELECT "machineId" AS machine_id, status, "timestamp" AT TIME ZONE 'UTC' AS ts, -- doc 81 Dot 1C T6: AT TIME ZONE UTC - cot naive luu UTC; khong de TimeZone PHIEN quyet dinh phep tru voi NOW()/moc
+             LEAD("timestamp" AT TIME ZONE 'UTC') OVER (PARTITION BY "machineId" ORDER BY "timestamp") AS next_ts
       FROM machine_status_logs
       WHERE "timestamp" >= ${startTime.toISOString()} AND "machineId" IN (${idList})
     )

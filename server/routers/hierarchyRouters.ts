@@ -34,6 +34,7 @@ import {
   ENTITY_TYPES,
 } from "../services/auditTrailService";
 import { recordAuditEvent } from "../services/audit/controlAuditService";
+import { gatewayAllowlistRouter } from "./gatewayAllowlistRouter";
 import { withDbErrors, rethrowDbError } from "../_core/dbErrors";
 import { logger } from "../logger";
 import { MACHINE_LIFECYCLE_STATUSES, MACHINE_LIFECYCLE_TRANSITIONS } from "../../drizzle/schema";
@@ -1628,6 +1629,9 @@ export const machineRouter = router({
         rethrowDbError(e, { conflictMessage: `Mã máy '${input.code}' đã tồn tại` });
       }
     }),
+
+  // doc 81 Đợt 1C Task 4 — allowlist thiết bị của khoá gateway (IOT_GATEWAY): get / set (+ audit).
+  gatewayAllowlist: gatewayAllowlistRouter,
 
   regenerateApiKey: adminProcedure
     .input(z.object({ id: z.number() }))

@@ -62,7 +62,7 @@ import { taoDemMayTuMauThuan } from "../services/mayTuMauThuan";
 // BG-99 (Task 5) — chuỗi thời gian TRẦN máy khai đọc bằng ĐÚNG MỘT luật (trần = UTC)
 // ở mọi điểm ingest. `mocDoTuChuoi` (BG-97, chỗ ở CŨ của luật này) đã XOÁ — hết caller
 // sản xuất sau khi Task 5 đổi neo spec-gate sang mốc-nhận-server (xem `submitInspectionTreeV2`).
-import { docGioMay } from "../utils/factoryTime";
+import { coMuiGioTuongMinh, docGioMay } from "../utils/factoryTime";
 // Doc 27 W2-C (C7/M4): per-machine credential auth + ingest rate limit.
 import {
   authenticateMachine,
@@ -314,9 +314,13 @@ const measurementPointSyncSchema = z.object({
 // backward-compatible default, and telemetry BEFORE enforcement):
 //   1. ALWAYS: stamp serverReceivedAt + measure signed skew + flag outliers.
 //      Costs nothing, breaks nothing, and makes the blind spot measurable today.
-//   2. FLAGGED: INGEST_REQUIRE_TIME_OFFSET=true rejects naive timestamps. Default
-//      FALSE — flipping this on before the fleet emits offsets would stop the line.
-//      Run stage 1 first, read the telemetry, then enforce.
+//   2. ENFORCED: a naive inspectionTime (no Z / ±hh:mm) is REJECTED — appError
+//      INVALID_VALUE {field:"inspectionTime", reason:"timeOffsetRequired"}, message
+//      carries `time_offset_required` for REST clients. DEFAULT ON IN CODE since
+//      2026-09-28 (owner decision "có bật", doc 81 Đợt 1C Task 6 follow-up; same
+//      style as MQTT_REQUIRE_PASSWORD). INGEST_REQUIRE_TIME_OFFSET=false/0/off/no is
+//      the explicit escape hatch back to stage-1 behaviour (accept + tag
+//      timeSource='machine_naive').
 // ════════════════════════════════════════════════════════════════════════════
 
 function envTrue(v: string | undefined): boolean {
@@ -337,11 +341,36 @@ function clockSkewWarnSeconds(): number {
 }
 
 /**
- * ENFORCEMENT flag (default OFF). ON ⇒ an inspectionTime without an explicit UTC
- * offset is a BAD_REQUEST. OFF ⇒ accepted and TAGGED timeSource='machine_naive'.
+ * ENFORCEMENT flag — DEFAULT TRUE in code (2026-09-28). ON ⇒ an inspectionTime
+ * without an explicit UTC offset is a BAD_REQUEST carrying appError INVALID_VALUE
+ * {field:"inspectionTime", reason:"timeOffsetRequired"}. Only an explicit
+ * false/0/off/no turns it OFF ⇒ accepted and TAGGED timeSource='machine_naive'.
  */
-function requireTimeOffset(): boolean {
-  return envTrue(process.env.INGEST_REQUIRE_TIME_OFFSET);
+export function requireTimeOffset(env: NodeJS.ProcessEnv = process.env): boolean {
+  const v = String(env.INGEST_REQUIRE_TIME_OFFSET ?? "").trim().toLowerCase();
+  return !(v === "false" || v === "0" || v === "off" || v === "no");
+}
+
+/**
+ * Lỗi "inspectionTime thiếu múi giờ" MANG MÃ. Ném (không `ctx.addIssue`) từ trong
+ * `refineInspectionTime`: zod không nuốt exception của refinement, `createInputMiddleware`
+ * của tRPC bọc nó ĐÚNG MỘT cấp thành TRPCError BAD_REQUEST với `cause` = lỗi này ⇒
+ * `readAppErrorMeta(err)` (đọc `err.cause.appCode`) thấy mã — cùng khuôn `DbUnavailableError`
+ * (`_core/dbErrors.ts`). Một `appError()` (TRPCError) ném ở đây sẽ bị bọc thành HAI cấp và
+ * mất mã (xem ghi chú ở `operatorBadgeRouter.ts`). Câu chữ mang `time_offset_required` vì
+ * cửa REST máy chỉ trả `message`, không trả `shape.data.appCode`.
+ */
+class InspectionTimeOffsetRequiredError extends Error {
+  readonly appCode = "INVALID_VALUE" as const;
+  readonly appParams = { field: "inspectionTime", reason: "timeOffsetRequired" } as const;
+  constructor(value: string) {
+    super(
+      `time_offset_required: inspectionTime must carry an explicit UTC offset ` +
+        `(e.g. 2026-07-15T08:00:00+07:00 or ...Z) — got "${value}", which the server can only ` +
+        `interpret in its OWN timezone. (INGEST_REQUIRE_TIME_OFFSET is on by default.)`,
+    );
+    this.name = "InspectionTimeOffsetRequiredError";
+  }
 }
 
 // ════════════════════════════════════════════════════════════════════════════
@@ -644,7 +673,8 @@ async function resolvePointsConfigForSync(
  * being completely wrong. Naive stamps are the silent half of CASE #3.
  */
 export function hasExplicitUtcOffset(value: string): boolean {
-  return /(?:Z|[+-]\d{2}:?\d{2})$/i.test(value.trim());
+  // Đợt 1C Task 6 — MỘT định nghĩa "có múi giờ" cho mọi cửa ingest (docTsThietBi/docGioMay dùng chung).
+  return coMuiGioTuongMinh(value);
 }
 
 export type InspectionTimeSource = "machine_utc" | "machine_naive" | "server";
@@ -812,10 +842,10 @@ export const submitInspectionCoreObject = z.object({
       overallResult: z.enum(["OK", "NG", "NTF"]), // Kết quả tổng thể
       // Thời gian kiểm tra (ISO-8601). Doc 51 P1 / CASE #3 — validated by the
       // superRefine on the object below (parseability ALWAYS; explicit UTC offset
-      // only under INGEST_REQUIRE_TIME_OFFSET). Left as a bare string here on
-      // purpose: z.string().datetime({offset:true}) would be a HARD tightening
-      // applied at import time, killing every machine that sends naive stamps —
-      // QĐ#1 requires the flag + a backward-compatible default.
+      // under INGEST_REQUIRE_TIME_OFFSET — DEFAULT ON since 2026-09-28). Left as a
+      // bare string here on purpose: z.string().datetime({offset:true}) would be a
+      // HARD tightening with no escape hatch; the flag keeps `=false` as the
+      // explicit way back to accept-and-tag 'machine_naive'.
       // ★★★ BG-72 (Pha 1F Task 2 ⛔) — Pha 1E Task 3 đặt `.max(40)` ở đây và
       // khẳng định "không siết hơn HÀNH VI hôm nay" — SAI SỰ THẬT, đo LIVE bằng
       // `new Date()`/zod THẬT (không suy đoán): một Agent C# dùng
@@ -992,19 +1022,12 @@ function refineInspectionTime(
     });
     return;
   }
-  // (2) EXPLICIT UTC OFFSET — flagged, default OFF (accept + tag as
-  //     'machine_naive'). Turning this ON before every machine emits an offset
-  //     would reject real production boards, so it stays opt-in until the
-  //     timeSource telemetry says the fleet is ready.
+  // (2) EXPLICIT UTC OFFSET — DEFAULT ON since 2026-09-28 (owner decision; explicit
+  //     INGEST_REQUIRE_TIME_OFFSET=false restores accept + tag 'machine_naive').
+  //     THROWN, not addIssue: see InspectionTimeOffsetRequiredError — this is what
+  //     makes the rejection carry an appError code the client can translate.
   if (requireTimeOffset() && !hasExplicitUtcOffset(data.inspectionTime)) {
-    ctx.addIssue({
-      code: z.ZodIssueCode.custom,
-      path: ["inspectionTime"],
-      message:
-        `inspectionTime must carry an explicit UTC offset (e.g. 2026-07-15T08:00:00+07:00 ` +
-        `or ...Z) when INGEST_REQUIRE_TIME_OFFSET is on — got "${data.inspectionTime}", ` +
-        `which the server can only interpret in its OWN timezone.`,
-    });
+    throw new InspectionTimeOffsetRequiredError(data.inspectionTime);
   }
 }
 
@@ -3158,7 +3181,7 @@ export const submitMachineTemplateCoreObject = z.object({
  */
 function refineProcessTime(data: { ts?: string }, ctx: z.RefinementCtx): void {
   if (data.ts === undefined) return;
-  if (Number.isNaN(new Date(data.ts).getTime())) {
+  if (Number.isNaN(new Date(data.ts).getTime())) { // bg99-ok: chi kiem parse; ngay duoi tu choi ts KHONG mui gio (hasExplicitUtcOffset)
     ctx.addIssue({
       code: z.ZodIssueCode.custom,
       path: ["ts"],
@@ -3298,7 +3321,7 @@ export async function processProcessResultSubmission(
   // stamps now(); timeSource honours an already-stamped value (WAL replay) else
   // derives 'device' when a ts was sent, 'server' otherwise. serverReceivedAt is
   // the ORIGINAL receive time carried through the WAL (else now()).
-  const measuredAt = input.ts ? new Date(input.ts) : undefined;
+  const measuredAt = input.ts ? new Date(input.ts) : undefined; // bg99-ok: input.ts da qua refineProcessTime (bat buoc Z/offset)
   const serverReceivedAt = input.serverReceivedAt ? new Date(input.serverReceivedAt) : new Date();
   const timeSource: "device" | "server" = input.timeSource ?? (input.ts ? "device" : "server");
   const recipeRef = input.recipe

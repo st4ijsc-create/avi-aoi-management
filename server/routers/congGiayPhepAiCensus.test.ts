@@ -231,8 +231,66 @@ const MIEN_TRU_VAN_HANH: readonly string[] = [
  *   đường dẫn), cùng sàn `adminProcedure.use(moduleGate("MOD_AI"))` ⇒ CÓ cổng từ lượt sinh ra:
  *   `aiMienTru` KHÔNG đổi (62), `ngoaiAiCoCong` vẫn **0**. `tong` 2223 trùng ĐÚNG
  *   `phamViDocCensus.test.ts#GHIM.tong` (nhóm C của nó +1 — query không chạm bảng tenant).
+ *
+ * ★ 2026-09-27 doc 81 Đợt 1C Task 4 (allowlist khoá gateway) — **tong +2, KHÔNG ghim lại.** Ô `tong`
+ *   đỏ TỪ TRƯỚC (ghim 2223; đo HEAD `97c44b96e` = 2285 — trôi của các lượt khác, không thuộc lượt
+ *   này). Lượt này đo bằng `quetCongGiayPhep` = **2287**: đúng hai thủ tục MỚI trong
+ *   `server/routers/gatewayAllowlistRouter.ts` — `machine.gatewayAllowlist.get` (query) và `.set`
+ *   (mutation), `module = null` (cùng sàn `protectedProcedure` như mọi thủ tục máy anh em của
+ *   `hierarchyRouters.ts`, không SKU nào). Không phải bề mặt AI ⇒ `beMatAi`/`aiCoCong`/`aiMienTru`/
+ *   `ngoaiAiCoCong` không đổi vì lượt này; `GHIM_MODULE_KHAC` không đổi. `tong` 2287 trùng
+ *   `phamViDocCensus.test.ts#GHIM.tong` (D +1 · S +1).
+ *
+ * ★ 2026-09-28 doc 81 Đợt 1C Task 5b (gắn thiết bị MQTT ↔ máy) — **tong +1, KHÔNG ghim lại** (cùng lý do
+ *   Task 4: ô `tong` đỏ từ trước do trôi của lượt khác). Đo `quetCongGiayPhep` trên HEAD `551551fb6` =
+ *   **2287**, sau lượt này = **2288**: đúng MỘT thủ tục MỚI `mqttClient.bindMachine` (mutation,
+ *   `server/routers/mqttOeeRouters.ts`, sàn `protectedProcedure` + `requirePermission("settings_factory",
+ *   "canEdit")`, `module = null`). Không phải bề mặt AI ⇒ `beMatAi`/`aiCoCong`/`aiMienTru`/`ngoaiAiCoCong`
+ *   không đổi vì lượt này. `tong` 2288 trùng `phamViDocCensus.test.ts#GHIM.tong` (D +1).
+ *
+ * ★ 2026-09-28 doc 81 Đợt 1C Task 5b fix round 1 — **tong +1 nữa (2288→2289), KHÔNG ghim lại** (cùng lý
+ *   do): đúng MỘT thủ tục MỚI `mqttClient.rotatePassword` (mutation, cùng sàn `protectedProcedure` +
+ *   `requirePermission("settings_factory","canEdit")`, `module = null`, không phải bề mặt AI). `tong` 2289
+ *   trùng `phamViDocCensus.test.ts#GHIM.tong`.
+ *
+ * ★ 2026-09-28 doc 81 Đợt 1C Task 5b fix round 2 — **tong +1 nữa (2289→2290), KHÔNG ghim lại** (cùng lý
+ *   do): đúng MỘT thủ tục MỚI `mqttClient.clearCredential` (mutation, cùng sàn `protectedProcedure` +
+ *   `requirePermission("settings_factory","canEdit")`, `module = null`, không phải bề mặt AI). `tong` 2290
+ *   trùng `phamViDocCensus.test.ts#GHIM.tong`.
+ *
+ * ★★★ 2026-09-28 doc 81 Đợt 1C final wave 5 (final review M5) — **GHIM LẠI TOÀN BỘ, CÓ SỔ TỪNG MỤC:
+ *   tong 2223 → 2290 · beMatAi 357 → 367 · aiCoCong 295 → 305 · aiMienTru 62 (KHÔNG đổi) · ngoaiAiCoCong 0.**
+ *   Ô `tong` đỏ từ 2026-08-23 đến nay (mỗi lượt chỉ thêm một ghi chú) ⇒ census KHÔNG còn bắt được gì. Lượt
+ *   này đo ĐÚNG khuôn của chính nó: `quetCongGiayPhep` chạy trên cây `server/` của commit ghim cũ `f9be9fd68`
+ *   (git archive, ra ĐÚNG 2223 — đối chứng bộ suy) và trên HEAD `d57f03060` (2290; không đổi ở `7377eea22`), đối chiếu từng khoá
+ *   `file::router.thủTục`; chạy một mình (không có §7 của suite chen vào). Chênh lệch = +69 −2 = +67:
+ *   • BỀ MẶT AI +10, CẢ MƯỜI đứng sau `MOD_AI` (⇒ aiCoCong +10, aiMienTru KHÔNG đổi, sổ ký tên không phình):
+ *       aiCopilotRouter.{batDauApDungOClient, chotApDungOClient} (mutation);
+ *       repoWorkspaceRouter.{tokenLuotCuoi, nganSachHopCat, modelDangDung, danhSachLenhChoPhep, trangThaiAiLocal,
+ *       dauRaSong} (query), {deXuatThayTheLo, deXuatSuaTay} (mutation).
+ *   • NGOÀI AI, CÓ cổng SKU (đã khai ở GHIM_MODULE_KHAC): programmingRouter.{requestVersionReview, deployPreview}
+ *       → MOD_ENGINEERING; safetyRouter.sourceHealth → MOD_OT_CONTROL.
+ *   • NGOÀI AI, KHÔNG cổng SKU (`module = null` — tính năng lõi, mọi khách): andonRouter.{ghiChu, danhSachGhiChu};
+ *       aoiPackageRouter.{listDeadLetters, getDeadLetterDetail}; cayDayRouter.{listMachinesForProduct, getTree,
+ *       listComponents, thongKeGioiHan}; equipmentIntegrationRouter.testEuromapOpcuaConnection (admin);
+ *       gatewayAllowlistRouter.{get, set} (Đợt 1C T4); machineApiRouter.{submitMachineTemplate,
+ *       presignTemplateImage, commitTemplateImage} (cửa máy, publicProcedure + khoá máy); mqttClientRouter.{bindMachine,
+ *       rotatePassword, clearCredential} (Đợt 1C T5b); oversightRouter.posture; measurementPointRouter.setLimitsBatch;
+ *       robotRouter.clearMotionLock (actuationProcedure); userRouter.assignableTechnicians; twinCanhRouter × 29
+ *       (danhSachToaNha, toaNhaTangNhieuNhaMay, chiTietToaNha, luuToaNha, xoaToaNha, luuTang, xoaTang, taiAnhNen,
+ *       danhSachModel, taiModelMay, dungNhaXuong, sinhTuongBao, demVatThe, canhThietKe, trangThaiHangLoat, anToanRobot,
+ *       noiCuaThucThe, sucKhoeMay, anhLichSu, luuHangLoat, goKhoiMatBang, luuVungAnToan, xoaVungAnToan, danhSachBanGhi,
+ *       chiTietBanGhi, luuBanGhi, xuatBanBanGhi, xoaBanGhi, xemTruocSinh; sinhTuDong là admin);
+ *       kbStudioRouter.{listGoldenSets, evalCorpus, listEvalRuns, getEvalRun, hoSoModel} (sàn kbStudioProcedure).
+ *       ⚠ CÂU HỎI cho chủ dự án (KHÔNG tự đổi ở đây — đổi cổng là đổi hành vi): năm thủ tục kbStudio đánh giá
+ *       corpus/model KB — nếu chúng thuộc SKU AI thì file phải vào `FILE_AI_TUONG_MINH` và có cổng `MOD_AI`.
+ *   • BỚT 2: seedDataRouter.{seedInspections, seedWorkstationAnalytics} (đã gỡ khỏi dashboardStatsRouters.ts).
+ *   • ĐỔI CỔNG 5 (tong không đổi): orchestrationGovRouter.{validateDag, orderQueue, fourEyesCheck, runEvents,
+ *       replayRun} null → MOD_ENGINEERING (doc 80 Đợt 0 ORC-11, đã khai ở GHIM_MODULE_KHAC).
+ *   Không thủ tục nào bị gỡ khỏi `MIEN_TRU_VAN_HANH` — không mục nào phân loại sai. `tong` 2290 trùng ĐÚNG
+ *   `phamViDocCensus.test.ts#GHIM.tong` (2290) — hai bộ suy độc lập vẫn đếm cùng một dân số.
  */
-const GHIM = { tong: 2223, beMatAi: 357, aiCoCong: 295, aiMienTru: 62, ngoaiAiCoCong: 0 } as const;
+const GHIM = { tong: 2290, beMatAi: 367, aiCoCong: 305, aiMienTru: 62, ngoaiAiCoCong: 0 } as const;
 
 /**
  * ★★ Dân số cổng của **các module KHÁC** — chiều thứ hai của "không hồi quy".

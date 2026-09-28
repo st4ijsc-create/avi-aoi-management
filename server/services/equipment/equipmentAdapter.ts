@@ -224,7 +224,10 @@ class OtEquipmentAdapter implements EquipmentAdapter {
       ok: res.ok,
       status: res.status,
       routedTo: "ot-dispatcher",
-      detail: { simulated: res.simulated, commandLogIds: res.commandLogIds, reason: res.reason },
+      // doc 81 Đợt 1C final wave 4 (R-1C-g) — a refused stop/e_stop carries a plain sentence (use the hardware
+      // E-STOP) + its localisable appError; absent for every other result (byte-identical).
+      detail: { simulated: res.simulated, commandLogIds: res.commandLogIds, reason: res.reason, ...(res.appError ? { appError: res.appError } : {}) },
+      ...(res.message ? { error: res.message } : {}),
     };
   }
 }

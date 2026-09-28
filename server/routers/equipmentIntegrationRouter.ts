@@ -10,7 +10,8 @@
  *
  * RBAC (mirrors equipmentStandardsRouter / fleetRouter):
  *   • reads                           → machine_monitoring / canView
- *   • createRecipeVersion/archive/load → machine_control   / canCreate (+ requireFlag)
+ *   • createRecipeVersion/archive/load → machine_control   / canCreate (+ requireFlag);
+ *     load with deploy=true ALSO → actuation role floor + 2FA + canEdit (doc 81 Đợt 1C Task 2)
  *   • release/rollback                → doc 80 Task 3 (FLOW-01/INT-02): SAME guarantee as
  *     /recipes — `actuationProcedure` (role-floor admin/supervisor/engineer + 2FA) +
  *     machine_control/canEdit (was a bare canCreate with no role floor). The service layer
@@ -36,7 +37,7 @@
 import { z } from "zod";
 import { TRPCError } from "@trpc/server";
 import { eq } from "drizzle-orm";
-import { router, protectedProcedure, actuationProcedure, adminProcedure } from "../_core/trpc";
+import { router, protectedProcedure, actuationProcedure, adminProcedure, ACTUATION_ROLES, PRIVILEGED_ROLES, batBuoc2FA } from "../_core/trpc";
 import { requirePermission } from "../_core/accessControl";
 import { appError } from "../_core/appError";
 import { getDb } from "../db";
@@ -78,6 +79,30 @@ function toTrpc(err: unknown): TRPCError {
   // recordRecipeLoad) — KHÔNG thủ tục Euromap/FOCAS nào dùng mapper này (các adapter đó
   // chỉ đọc, không throw qua đây). operation:"euromapIntegration" nói sai hẳn thao tác.
   return appError("BAD_REQUEST", "OPERATION_FAILED", { operation: "manageRecipeVersion" }, msg);
+}
+
+/**
+ * doc 81 Đợt 1C Task 2 — `recordRecipeLoad` with `deploy:true` writes a recipe_deployments row and
+ * flips the active version, i.e. it IS a deploy. It must clear the same floor as the strict deploy
+ * paths (releaseRecipeVersion/rollbackRecipeVersion here, /recipes recipes.deploy):
+ * `actuationProcedure` (role floor ACTUATION_ROLES, then 2FA for privileged roles) +
+ * machine_control/canEdit — checked in that order, with the same error shapes as `roleProcedure`,
+ * `require2FA` and `requirePermission`. The role list / 2FA predicate are the ones exported by
+ * `_core/trpc` (no second copy of the rule). `deploy:false` (genealogy only) is untouched.
+ */
+async function assertStrictDeployFloor(ctx: { user: { id: number; role: string; twoFactorEnabled?: boolean | null } }): Promise<void> {
+  if (!(ACTUATION_ROLES as readonly string[]).includes(ctx.user.role)) {
+    throw appError("FORBIDDEN", "PERMISSION_DENIED", { action: "insufficientRole" }, `Required role: ${ACTUATION_ROLES.join(" or ")}`);
+  }
+  if (batBuoc2FA() && (PRIVILEGED_ROLES as readonly string[]).includes(ctx.user.role) && !ctx.user.twoFactorEnabled) {
+    throw appError(
+      "FORBIDDEN",
+      "TWO_FACTOR_NOT_SET_UP",
+      { reason: "setUpInSecuritySettings" },
+      "Tài khoản đặc quyền phải bật xác thực 2 bước (2FA). Vào Cài đặt > Bảo mật để thiết lập.",
+    );
+  }
+  await requirePermission("machine_control", "canEdit")({ ctx: ctx as never, next: async () => undefined });
 }
 
 /**
@@ -418,6 +443,9 @@ export const equipmentIntegrationRouter = router({
   /**
    * Record that a recipe version was LOADED onto a machine (genealogy). Optionally also
    * writes a recipe_deployments ledger row (deploy=true). Opens NO device path.
+   * RBAC: machine_control/canCreate; deploy=true ALSO needs the strict deploy floor
+   * (actuation role + 2FA + machine_control/canEdit — doc 81 Đợt 1C Task 2, assertStrictDeployFloor)
+   * and the service runs the strict release gate (approved · not archived · machine type).
    */
   recordRecipeLoad: protectedProcedure
     .use(requirePermission("machine_control", "canCreate"))
@@ -430,6 +458,10 @@ export const equipmentIntegrationRouter = router({
       corporateCode: z.string().max(50).optional(),
       factoryId: z.number().int().positive().optional(),
     }))
+    .use(async ({ ctx, input, next }) => {
+      if (input.deploy) await assertStrictDeployFloor(ctx);
+      return next();
+    })
     .mutation(async ({ input, ctx }) => {
       requireFlag();
       try {

@@ -174,6 +174,24 @@ describe("UrsimBridgeDriver", () => {
     await d.disconnect();
   });
 
+  // doc 81 Đợt 1C residual round 2 (R-1C-m, lớp b ĐỘC LẬP) — gọi thẳng runJob với mọi chính tả của dừng + params
+  // chuyển động/script ⇒ chỉ dashboard `stop`, 0 byte tới cổng script (trước: "stop"/"e_stop"/"ABORT" ⇒ script
+  // `# no-op` gửi lên cổng script, và abort mang params.script bị TỪ CHỐI ur_script_forbidden — STOP không tới).
+  it.each(["stop", "e_stop", "ABORT"])("CONTROL BẬT: '%s' + joints/script ⇒ dashboard nhận `stop`, cổng script 0 byte", async (jt) => {
+    process.env.ROBOT_CONTROL_ENABLED = "true";
+    const dash = await startDashboardServer(defaultReplies);
+    const script = await startScriptServer();
+    cleanups.push(dash.close); cleanups.push(script.close);
+    const d = new UrsimBridgeDriver();
+    await d.connect({ endpoint: "127.0.0.1", options: { dashboardPort: dash.port, scriptPort: script.port, home: HOME_CFG } });
+    const res = await d.runJob({ jobType: jt as never, params: { joints: [1, 1, 1, 1, 1, 1], script: "def x():\n  movej([1,1,1,1,1,1])\nend\n" } });
+    expect(res.ok).toBe(true);
+    expect(dash.received).toContain("stop");
+    await new Promise((r) => setTimeout(r, 50));
+    expect(script.getReceived()).toBe("");
+    await d.disconnect();
+  });
+
   it.each([
     ["custom + params.script", { jobType: "custom" as const, params: { script: "def x():\n  movej([1,1,1,1,1,1])\nend\n" } }, "ur_script_forbidden"],
     ["home + params.home", { jobType: "home" as const, params: { home: [1, 1, 1, 1, 1, 1] } }, "ur_home_param_forbidden"],

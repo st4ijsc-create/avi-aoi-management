@@ -17,6 +17,8 @@
  * Flag-gating lives in the poller; the client itself is inert until called.
  */
 
+import { docTsThietBi } from "../../utils/factoryTime";
+
 export type MtcCategory = "SAMPLE" | "EVENT" | "CONDITION";
 
 /** A normalized reading lifted out of an MTConnect /current or /sample response. */
@@ -39,6 +41,11 @@ export interface MtcReading {
   numericValue: number | null;
   /** Observation timestamp from the XML, parsed; falls back to now() if absent/bad. */
   timestamp: Date;
+  /**
+   * Đợt 1C Task 6 (R-1C-a) — `timestamp` XML là chuỗi KHÔNG múi giờ (MTConnect bắt buộc UTC `…Z`).
+   * `timestamp` khi đó chỉ là giờ nhận (giữ kiểu), người dùng reading PHẢI bỏ qua quan sát này.
+   */
+  tsReject?: "ts_no_timezone";
   /** For CONDITION observations the element name is the state (Normal/Warning/Fault/Unavailable). */
   conditionState?: string;
   /** Vendor's native alarm code (the `nativeCode` attribute, present on CONDITION/EVENT). */
@@ -101,12 +108,12 @@ function toCategory(raw: string | undefined): MtcCategory {
   return u === "SAMPLE" || u === "EVENT" || u === "CONDITION" ? u : "EVENT";
 }
 
-function parseTimestamp(ts: string | undefined): Date {
-  if (ts) {
-    const d = new Date(ts);
-    if (!Number.isNaN(d.getTime())) return d;
-  }
-  return new Date();
+function parseTimestamp(ts: string | undefined): { timestamp: Date; tsReject?: "ts_no_timezone" } {
+  // Đợt 1C Task 6 — luật chung `docTsThietBi`; chuỗi hỏng/vắng giữ hành vi cũ (giờ nhận).
+  const k = docTsThietBi(ts);
+  if (k.ok && k.ts) return { timestamp: k.ts };
+  if (!k.ok && k.reason === "ts_no_timezone") return { timestamp: new Date(), tsReject: "ts_no_timezone" };
+  return { timestamp: new Date() };
 }
 
 /**
@@ -240,7 +247,7 @@ export function parseStreamsXml(xml: string): MtcReading[] {
         category,
         value,
         numericValue: numeric,
-        timestamp: parseTimestamp(a.timestamp),
+        ...parseTimestamp(a.timestamp),
         conditionState: isCondition ? rawName : undefined,
         nativeCode: a.nativeCode || undefined,
         nativeSeverity: a.nativeSeverity || undefined,

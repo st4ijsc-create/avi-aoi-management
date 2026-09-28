@@ -7,6 +7,7 @@
  * SDK/protocol library + hardware are wired. Motion commands (runJob) are gated
  * by robotCommandDispatcher (dry-run by default).
  */
+import { isStopJob } from "./stopJob"; // doc 81 Đợt 1C residual round 2
 // "vda5050" (AGV/AMR over the open VDA 5050 MQTT standard) is a first-class vendor
 // as of doc 24 C4 (DB enum widened by migration 0161). Its driver lives under
 // server/services/vda5050 and is registered into the driver registry on import.
@@ -224,13 +225,13 @@ export class MotionLock {
   guard(job: RobotJobSpec, inner: () => void): () => void {
     return () => {
       inner();
-      if (this.state.locked && job.jobType !== "abort") throw new RobotMotionLockedError(this.snapshot());
+      if (this.state.locked && !isStopJob(job)) throw new RobotMotionLockedError(this.snapshot());
     };
   }
 
   /** The RobotJobResult a driver returns for a MOTION job while locked; null when the job may proceed. */
   refusal(job: RobotJobSpec): RobotJobResult | null {
-    if (!this.state.locked || job.jobType === "abort") return null;
+    if (!this.state.locked || isStopJob(job)) return null; // residual round 2 — shared classifier
     const err = new RobotMotionLockedError(this.snapshot());
     return {
       ok: false,
@@ -325,7 +326,7 @@ export class AbortFence {
     this.epoch++;
   }
   capture(job: RobotJobSpec): () => void {
-    if (job.jobType === "abort") return () => undefined;
+    if (isStopJob(job)) return () => undefined; // residual round 2 — shared classifier
     const at = this.epoch;
     return () => {
       if (this.epoch !== at) throw new RobotJobFencedError();

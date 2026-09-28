@@ -20,15 +20,17 @@
  * credential đã xác thực là khoá CỦA MỘT MÁY (mk_, plaintext `machines.apiKey`, hoặc machineCode khi
  * cờ cho phép) ⇒ `machineId`/`deviceId` (nếu có) phải khớp CHÍNH XÁC máy ấy, lệch ⇒ 403 cả lô, không
  * ghi dòng nào; hợp lệ ⇒ GHIM `machineId` của khoá lên mọi mẫu (bus không tự quy máy từ deviceId).
- * ⚠ LỖ ĐÃ BIẾT (cố ý để ngỏ, cần quyết định chủ dự án): máy loại `IOT_GATEWAY` KHÔNG bị ràng buộc —
- * đây là đường "một credential gateway chuyển tiếp nhiều thiết bị" mà route này được thiết kế cho;
- * repo chưa có danh sách thiết bị được phép theo gateway, nên một khoá gateway VẪN ghi được cho bất kỳ
- * deviceId nào (bus quy máy theo `machines.code`). Khoá ak_/master không vào được route này
- * (`authenticateMachine` chỉ nhận credential máy).
+ * ★ doc 81 Đợt 1C Task 4 — lỗ R17 ĐÃ ĐÓNG (quyết định chủ dự án 2026-09-27): máy loại `IOT_GATEWAY`
+ * (một credential chuyển tiếp nhiều thiết bị) KHÔNG còn được miễn — nó chỉ ghi cho thiết bị trong
+ * allowlist của CHÍNH nó (`gateway_device_allowlist`, mig 0361); ngoài list / list rỗng ⇒ 403
+ * `gateway_device_not_allowed` cả lô, không ghi dòng nào; hợp lệ ⇒ ghim `machineId` của thiết bị đích.
+ * Cùng điểm quyết định với `/api/v1/ingest/telemetry` (`rangBuocMauTheoKhoa`). Khoá ak_/master không
+ * vào được route này (`authenticateMachine` chỉ nhận credential máy).
  */
 import type { Request, Response } from "express";
 import { ApiHttpError } from "../api/v1/envelope";
-import { kiemMauTelemetryThuocMay } from "../api/v1/ingestRangBuoc";
+import { rangBuocMauTheoKhoa, type DocThietBiDuocPhep } from "../api/v1/ingestRangBuoc";
+import { truongTsMau } from "../utils/factoryTime";
 import type {
   CanonicalSample,
   TelemetryIngestResult,
@@ -55,10 +57,12 @@ const normQuality = (q: unknown): TelemetryQuality =>
  * Map one raw JSON sample → CanonicalSample (y như route cũ). deviceId is preserved so the bus
  * resolves the soft machineId itself (one gateway credential forwards many devices). Một `ts`
  * không đọc được thành `Invalid Date` — bus loại RIÊNG mẫu đó (invalid_ts), không ném cả lô.
+ * Đợt 1C Task 6 (R-1C-a) — `ts` chuỗi KHÔNG múi giờ ⇒ `tsReject: ts_no_timezone` (luật chung
+ * `truongTsMau`), không còn `new Date(naive)` đọc theo TZ của tiến trình Node.
  */
 export function toOtCanonicalSample(s: any): CanonicalSample {
   return {
-    ts: s?.ts ? new Date(s.ts) : undefined,
+    ...truongTsMau(s?.ts),
     machineId: typeof s?.machineId === "number" ? s.machineId : null,
     deviceId: typeof s?.deviceId === "string" ? s.deviceId : null,
     protocol: normProtocol(s?.protocol),
@@ -83,9 +87,6 @@ export function otIngestHttpStatus(r: TelemetryIngestResult): 200 | 207 | 400 | 
   return r.rejected.some((x) => x.reason === "db_error") ? 503 : 400;
 }
 
-/** Loại máy được coi là GATEWAY (chuyển tiếp nhiều thiết bị) — KHÔNG bị ràng buộc (lỗ đã biết, R17). */
-const MAY_GATEWAY: ReadonlySet<string> = new Set(["IOT_GATEWAY"]);
-
 export interface OtIngestDeps {
   authenticateMachine: (opts: {
     headerKey: string | null;
@@ -94,6 +95,11 @@ export interface OtIngestDeps {
     scope: "ingest:write";
   }) => Promise<{ machine: { id: number; code: string; machineType?: string | null } }>;
   ingestTelemetryDetailed: (samples: CanonicalSample[]) => Promise<TelemetryIngestResult>;
+  /**
+   * Task 4 — allowlist của khoá gateway. Vắng ⇒ đọc `gateway_device_allowlist` (import động, không
+   * kéo DB lúc nạp module). `_core/index.ts` không truyền ⇒ dùng mặc định.
+   */
+  thietBiDuocPhepCuaGateway?: DocThietBiDuocPhep;
 }
 
 /** Express handler cho POST /api/ot/ingest. */
@@ -127,11 +133,13 @@ export function createOtIngestHandler(deps: OtIngestDeps) {
         scope: "ingest:write",
       });
 
-      let samples = rawSamples.map(toOtCanonicalSample);
-      // R17 — khoá của MỘT máy chỉ ghi cho chính máy đó (xem docblock; IOT_GATEWAY = lỗ đã biết).
-      if (!MAY_GATEWAY.has(String(auth.machine.machineType ?? ""))) {
-        samples = kiemMauTelemetryThuocMay(samples, { id: auth.machine.id, code: auth.machine.code });
-      }
+      // R17 + Task 4 — khoá máy thường chỉ ghi cho chính máy đó; khoá IOT_GATEWAY chỉ ghi cho thiết bị
+      // trong allowlist của nó (list rỗng ⇒ không gì). Cùng điểm quyết định với /api/v1 (docblock).
+      const samples = await rangBuocMauTheoKhoa(
+        rawSamples.map(toOtCanonicalSample),
+        { id: auth.machine.id, code: auth.machine.code, machineType: auth.machine.machineType ?? null },
+        deps.thietBiDuocPhepCuaGateway,
+      );
       const result = await deps.ingestTelemetryDetailed(samples);
       const status = otIngestHttpStatus(result);
       const machine = auth.machine.code;

@@ -289,7 +289,9 @@ export async function recordLoad(
 
   let deploymentId: number | null = null;
   if (input.deploy) {
-    // R-T9a — outside Task 9: keep the pre-task deploy gate (approvedBy only) byte-identical.
+    // doc 81 Đợt 1C Task 2 (owner decision 2026-09-27) — the SAME strict release gate as /recipes
+    // deploy (approved · not archived · machine type), was "legacyApprovedOnly" (Task 9 R-T9a). A
+    // refusal throws PRECONDITION_FAILED before the load event is written.
     const dep = await deployRecipe(
       {
         recipeId: input.recipeId,
@@ -297,7 +299,7 @@ export async function recordLoad(
         deployedBy: input.performedBy,
         notes: input.notes ?? null,
       },
-      "legacyApprovedOnly",
+      "strict",
     );
     deploymentId = dep.id;
   }

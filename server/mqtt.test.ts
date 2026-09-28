@@ -43,6 +43,12 @@ describe("mqttClient router", () => {
       expect(result).toHaveProperty("external");
       expect(result.external).toHaveProperty("enabled");
       expect(result.external).toHaveProperty("connected");
+      // doc 81 Đợt 1C Task 5 fix round 1 — device↔machine drop counters are observable here.
+      expect(result.bindingDrops).toEqual({
+        sensorMessages: expect.any(Number),
+        telemetryFrames: expect.any(Number),
+        telemetrySamples: expect.any(Number),
+      });
     });
   });
 

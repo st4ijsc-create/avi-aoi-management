@@ -20,6 +20,8 @@
  *   • `getSafetyStatus` là READ-ONLY tuyệt đối: ủy quyền safetyPlcAdapter (đọc
  *     status từ safety-PLC độc lập, không ghi); không có nguồn → trả
  *     {state:'UNKNOWN', source:'none'} TRUNG THỰC — không bao giờ bịa 'OK'.
+ *     doc 81 Đợt 1C Task 1: với `{ forRealActuation: true }` (preflight OT/robot trước lệnh THẬT)
+ *     SIM / real_unmapped KHÔNG còn đủ cho 'OK' và tag an toàn chất lượng xấu ⇒ không sạch.
  *   • `describe` là metadata thuần (capabilityModel + device_tags), không I/O
  *     xuống thiết bị.
  * Khi driver ĐÃ implement method tương ứng → facade ủy quyền thẳng cho driver.
@@ -36,7 +38,15 @@ import type {
 } from "./otDriver";
 import { dispatch, type DispatchResult, type DispatchStatus } from "./commandDispatcher";
 import { getActiveDriver } from "./otManager";
+import {
+  actuationPreflightVerdict,
+  effectiveBackend,
+  type PlcPreflightReading,
+  type PlcReadOutcome,
+} from "./safetyPreflightPolicy";
 import type { MachineLike } from "../equipment/capabilityModel";
+import { withDeadline } from "./drivers/boundedClose"; // final wave 5 (M4)
+import type { SafetyPlcStatusSnapshot } from "../../../drizzle/schema";
 
 /** Ngữ cảnh facade cho MỘT adapter đã cấu hình (device_adapters.id). */
 export interface AdapterFacadeContext {
@@ -53,8 +63,109 @@ export interface AdapterFacadeContext {
 /** Hợp đồng DeviceAdapter đầy đủ mà facade bảo đảm cho MỌI adapter. */
 export interface OtAdapterFacade {
   executeCommand(cmd: CanonicalCommand): Promise<CanonicalCommandAck>;
-  getSafetyStatus(): Promise<SafetyState>;
+  getSafetyStatus(opts?: SafetyStatusOptions): Promise<SafetyState>;
   describe(): Promise<AssetDescriptor>;
+}
+
+/**
+ * doc 81 Đợt 1C Task 1 (owner decision 2026-09-27) — what the safety reading is FOR.
+ *   forRealActuation: true — the caller is about to perform a REAL device write / robot motion
+ *     (the OT (5a-safety) and robot (4a-safety) preflights; both are reachable only on the real,
+ *     commissioned path). The safety-PLC branch then applies safetyPreflightPolicy
+ *     .actuationPreflightVerdict: only a `real` config (real endpoint + ≥1 mapped safety tag) that
+ *     reads clean with every mapped tag at good quality yields OK; SIM / real_unmapped alone ⇒
+ *     UNKNOWN with basis "sim_only" (SAFETY_SIM_ONLY); a bad-quality real tag ⇒ not clean.
+ *   absent/false — the legacy reading, unchanged (AI gate L-7 pre-check, which may precede a
+ *     SIMULATED dispatch; the dispatcher re-checks strictly if the write turns out real).
+ * Fix round 1 (review #3): with forRealActuation a driver's OWN getSafetyStatus is NOT delegated to —
+ * a self-report carries no basis (sim / real / mapped tags), so it would bypass the SIM rule. A
+ * future driver that wants to vouch for real actuation must report a basis the policy can classify
+ * (and be wired through actuationPreflightVerdict); until then only safety-PLC configs count. The
+ * legacy reading (no option) still delegates, unchanged.
+ */
+export interface SafetyStatusOptions {
+  forRealActuation?: boolean;
+}
+
+type SafetyPlcModule = typeof import("../safety/plc/safetyPlcAdapter");
+type SafetyPlcConfigRow = Awaited<ReturnType<SafetyPlcModule["listPlcConfigs"]>>[number];
+
+/**
+ * Fix round 1 (review #2) — a config that fails to read during the real-actuation preflight is
+ * logged, rate-limited to one line per config code per window. Only the config CODE is printed:
+ * the error message is not (a driver error can carry the endpoint).
+ */
+const PREFLIGHT_READ_WARN_WINDOW_MS = 60_000;
+const lastPreflightReadWarn = new Map<string, number>();
+function warnPreflightReadFailed(code: string): void {
+  const now = Date.now();
+  const last = lastPreflightReadWarn.get(code);
+  if (last !== undefined && now - last < PREFLIGHT_READ_WARN_WINDOW_MS) return;
+  lastPreflightReadWarn.set(code, now);
+  console.warn(
+    `[AdapterFacade] safety-PLC config "${code}" could not be read during the real-actuation preflight — counted as unreadable (SAFETY_UNKNOWN); further failures of this config are silenced for ${PREFLIGHT_READ_WARN_WINDOW_MS / 1000}s`,
+  );
+}
+
+/**
+ * doc 81 Đợt 1C final wave 5 (final review M4) — deadline of ONE safety-PLC read in the real-actuation
+ * preflight. Below the robot's outer SAFETY_PREFLIGHT_DEADLINE_MS (5000) and the OT dispatcher's
+ * OT_SAFETY_PREFLIGHT_DEADLINE_MS, so a slow/hung PLC turns into its own "error" (⇒ UNKNOWN, fail-closed for
+ * motion/writes) instead of eating the whole budget.
+ */
+export const SAFETY_PLC_READ_DEADLINE_MS = 4000;
+
+/** One config's reading (classification + outcome). Throws on a read error; the caller maps that to "error". */
+async function readOneForRealActuation(plc: SafetyPlcModule, cfg: SafetyPlcConfigRow): Promise<PlcPreflightReading> {
+  const kind = effectiveBackend(cfg);
+  const backend = plc.backendForConfig(cfg);
+  let status: SafetyPlcStatusSnapshot;
+  let complete = true;
+  if (kind === "real") {
+    if (typeof backend.readChecked !== "function") return { kind, outcome: "incomplete" };
+    const checked = await backend.readChecked();
+    status = checked.status;
+    complete = checked.unreadable.length === 0;
+  } else {
+    status = await backend.read();
+  }
+  if (plc.statusToFindings(status).length > 0) return { kind, outcome: "blocked" };
+  return { kind, outcome: complete ? "clean" : "incomplete" };
+}
+
+/**
+ * doc 81 Đợt 1C Task 1 — the real-actuation reading over the enabled configs. Every config is
+ * classified with the ONE shared `effectiveBackend`; a `real` one must be read through
+ * `readChecked()` so a bad-quality safety tag is seen (absent ⇒ "incomplete", fail-closed). The
+ * verdict is the ONE shared `actuationPreflightVerdict` (the Safety panel predicts with the same
+ * function); BLOCKED wins over everything.
+ * doc 81 Đợt 1C final wave 5 (final review M4): the configs are read IN PARALLEL, each under its own
+ * SAFETY_PLC_READ_DEADLINE_MS. Before, they were read one after another with no per-read bound: since
+ * R-1C-b requires EVERY real PLC, two slow-but-healthy PLCs could exceed the robot's 5 s preflight
+ * (⇒ SAFETY_UNKNOWN) while OT waited, and a hung `disconnect()` inside one read could hang an OT dispatch.
+ * A timed-out read counts as "error" for that config (UNKNOWN unless another reads BLOCKED).
+ */
+async function readForRealActuation(plc: SafetyPlcModule, configs: SafetyPlcConfigRow[]): Promise<SafetyState> {
+  const readings: PlcPreflightReading[] = await Promise.all(
+    configs.map((cfg) =>
+      withDeadline(
+        Promise.resolve().then(() => readOneForRealActuation(plc, cfg)),
+        SAFETY_PLC_READ_DEADLINE_MS,
+        `safety-PLC "${cfg.code}" preflight read`,
+      ).catch((): PlcPreflightReading => {
+        warnPreflightReadFailed(cfg.code); // one config unreadable / too slow ⇒ it vouches for nothing; never invented
+        return { kind: effectiveBackend(cfg), outcome: "error" };
+      }),
+    ),
+  );
+  const blockedIdx = readings.findIndex((r) => r.outcome === "blocked");
+  const blockedCode = blockedIdx >= 0 ? configs[blockedIdx].code : null;
+  const verdict = actuationPreflightVerdict(readings);
+  const now = new Date().toISOString();
+  if (verdict.state === "BLOCKED") return { state: "BLOCKED", source: `safety_plc:${blockedCode}`, ts: now };
+  if (verdict.state === "OK") return { state: "OK", source: "safety_plc", ts: now };
+  if (verdict.reason === "SAFETY_SIM_ONLY") return { state: "UNKNOWN", source: "safety_plc", ts: now, basis: "sim_only" };
+  return { state: "UNKNOWN", source: "none", ts: now };
 }
 
 /** Ack `rejected` chuẩn hóa (reason theo §13.3). PURE. */
@@ -137,10 +248,13 @@ export function createAdapterFacade(ctx: AdapterFacadeContext): OtAdapterFacade 
      * READ-ONLY safety status. Driver có getSafetyStatus → ủy quyền. Không →
      * ủy quyền safetyPlcAdapter (đọc status các safety-PLC config đang bật);
      * flag OFF / không config / lỗi đọc toàn bộ → UNKNOWN trung thực.
+     * `opts.forRealActuation` (Đợt 1C Task 1) → luật lệnh thật: readForRealActuation.
      */
-    async getSafetyStatus(): Promise<SafetyState> {
+    async getSafetyStatus(opts?: SafetyStatusOptions): Promise<SafetyState> {
       const driver = resolveDriver();
-      if (driver?.getSafetyStatus) return driver.getSafetyStatus();
+      // Fix round 1 (#3): never delegate the REAL-actuation reading to a driver self-report (no basis
+      // ⇒ it would bypass the SIM rule). A future driver must report a basis first (see SafetyStatusOptions).
+      if (driver?.getSafetyStatus && opts?.forRealActuation !== true) return driver.getSafetyStatus();
 
       const ts = new Date().toISOString();
       const unknown: SafetyState = { state: "UNKNOWN", source: "none", ts };
@@ -150,6 +264,9 @@ export function createAdapterFacade(ctx: AdapterFacadeContext): OtAdapterFacade 
         const configs = await plc.listPlcConfigs({ onlyEnabled: true });
         if (configs.length === 0) return unknown;
 
+        if (opts?.forRealActuation === true) return await readForRealActuation(plc, configs);
+
+        // Legacy reading (AI gate L-7, comparisons) — byte-identical to before Đợt 1C Task 1.
         let anyOk = false;
         for (const cfg of configs) {
           try {

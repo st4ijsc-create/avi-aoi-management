@@ -103,11 +103,24 @@ export function statusToFindings(status: SafetyPlcStatusSnapshot): PlcAdvisoryFi
 // BACKENDS — sim (scripted) + real (OT driver read)
 // ════════════════════════════════════════════════════════════════════════════
 
+/** doc 81 Đợt 1C Task 1 — a status read that also names the mapped flags it could NOT observe. */
+export interface SafetyPlcCheckedRead {
+  status: SafetyPlcStatusSnapshot;
+  /** Mapped safety flags whose tag came back missing or with quality ≠ "good" (unknown, not clear). */
+  unreadable: Array<keyof SafetyPlcStatusSnapshot>;
+}
+
 /** A pluggable status source. Returns the CURRENT observed status snapshot. */
 export interface SafetyPlcBackendReader {
   readonly kind: "sim" | "modbus" | "opcua";
   /** Read one status snapshot. Real backends open/read/close via the OT driver. */
   read(): Promise<SafetyPlcStatusSnapshot>;
+  /**
+   * doc 81 Đợt 1C Task 1 — real backends only: the snapshot plus the mapped flags whose tag could
+   * not be read with good quality. The real-actuation preflight REQUIRES it for a `real` config
+   * (absent ⇒ that config cannot vouch "clean").
+   */
+  readChecked?(): Promise<SafetyPlcCheckedRead>;
   /** Human-readable label — always states whether this is sim or a real endpoint. */
   label(): string;
 }
@@ -170,22 +183,36 @@ export class OtReadSafetyPlcBackend implements SafetyPlcBackendReader {
   }
 
   async read(): Promise<SafetyPlcStatusSnapshot> {
+    return (await this.readChecked()).status;
+  }
+
+  /**
+   * doc 81 Đợt 1C Task 1 — the same single read as `read()`, plus WHICH mapped safety flags could
+   * not be observed (sample missing or quality ≠ "good"). `read()` keeps leaving those flags unset
+   * (advisory path unchanged); the real-actuation preflight uses `unreadable` so a bad-quality
+   * safety tag makes this config UNKNOWN instead of "clean" (it used to count as OK).
+   */
+  async readChecked(): Promise<SafetyPlcCheckedRead> {
     const tags = this.tagList();
-    if (tags.length === 0) return {}; // nothing mapped → nothing to observe
+    if (tags.length === 0) return { status: {}, unreadable: [] }; // nothing mapped → nothing to observe
     const driver = createDriver(this.kind as OtProtocol);
     await driver.connect({ endpoint: this.endpoint, timeoutMs: this.timeoutMs });
     try {
       const samples = await driver.readTags(tags.map((t) => t.tag));
       const byKey = new Map(samples.map((s) => [s.tagKey, s]));
       const snap: SafetyPlcStatusSnapshot = {};
+      const unreadable: Array<keyof SafetyPlcStatusSnapshot> = [];
       for (const { flag } of tags) {
         const s = byKey.get(flag);
-        if (!s || s.quality !== "good") continue; // bad quality → leave unknown (honest)
+        if (!s || s.quality !== "good") {
+          unreadable.push(flag); // bad quality → leave unknown (honest), and SAY it is unknown
+          continue;
+        }
         const ref = this.statusMap[flag];
         const truthy = coerceBool(s.value);
         snap[flag] = ref?.activeWhen === "falsy" ? !truthy : truthy;
       }
-      return snap;
+      return { status: snap, unreadable };
     } finally {
       await driver.disconnect().catch(() => undefined);
     }

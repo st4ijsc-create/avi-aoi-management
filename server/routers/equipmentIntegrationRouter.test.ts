@@ -32,7 +32,9 @@ vi.mock("drizzle-orm", async (orig) => {
 // `chanKhiPhaiDoiMatKhau`) on EVERY authenticated procedure call, ahead of RBAC — it must be
 // present on this mock (a bare `{ getDb }` mock makes Vitest throw "No 'phaiDoiMatKhau' export
 // is defined on the mock" the moment a non-exempt role calls any procedure).
-vi.mock("../db", () => ({ getDb: vi.fn(async () => fake), phaiDoiMatKhau: vi.fn(async () => false) }));
+// `createAuditLog` — the root audit middleware writes one row per mutation; without it every mutation
+// logged "[AuditTrail] Failed to log audit entry … No createAuditLog export" (233 lines of stderr).
+vi.mock("../db", () => ({ getDb: vi.fn(async () => fake), phaiDoiMatKhau: vi.fn(async () => false), createAuditLog: vi.fn(async () => undefined) }));
 
 // ── recipeVersioningService: mocked so router RBAC/SSRF is tested in ISOLATION from the
 // service's own approvedBy gate (covered separately in recipeVersioningService.test.ts).
@@ -161,6 +163,104 @@ describe("release/rollback — same gate as /recipes (actuationProcedure + canEd
     const caller = callerAs({ id: 1, role: "engineer", twoFactorEnabled: true });
     await expect(caller.releaseRecipeVersion({ recipeId: 9 })).rejects.toMatchObject({ code: "PRECONDITION_FAILED" });
   });
+});
+
+// ── doc 81 Đợt 1C Task 2 — recordRecipeLoad(deploy:true) writes a recipe_deployments row and flips
+// the active version = a DEPLOY. Old gate: protectedProcedure + machine_control/canCreate for BOTH
+// deploy:false and deploy:true. New gate: deploy:false unchanged; deploy:true additionally needs the
+// strict deploy floor — actuation role (admin/supervisor/engineer) + 2FA + machine_control/canEdit.
+describe("recordRecipeLoad — deploy:true needs the strict deploy floor (Đợt 1C Task 2)", () => {
+  const svc = () => import("../services/equipment/recipeVersioningService");
+  const load = { recipeId: 7, machineId: 3 };
+
+  it("operator with canCreate: deploy:false still OK (old gate); deploy:true FORBIDDEN (role floor), service never called", async () => {
+    granted.add("machine_control:canCreate");
+    const caller = callerAs({ id: 5, role: "operator", twoFactorEnabled: true });
+    await expect(caller.recordRecipeLoad({ ...load, deploy: false })).resolves.toBeDefined();
+    expect((await svc()).recordLoad).toHaveBeenCalledTimes(1);
+    await expect(caller.recordRecipeLoad({ ...load, deploy: true })).rejects.toMatchObject({ code: "FORBIDDEN" });
+    expect((await svc()).recordLoad).toHaveBeenCalledTimes(1);
+  });
+
+  it("engineer with canCreate ONLY (the old gate) + 2FA: deploy:true FORBIDDEN — canEdit is required, service never called", async () => {
+    granted.add("machine_control:canCreate");
+    const caller = callerAs({ id: 6, role: "engineer", twoFactorEnabled: true });
+    await expect(caller.recordRecipeLoad({ ...load, deploy: true })).rejects.toMatchObject({ code: "FORBIDDEN" });
+    expect((await svc()).recordLoad).not.toHaveBeenCalled();
+  });
+
+  it("engineer with canCreate + canEdit but 2FA NOT enabled: deploy:true FORBIDDEN (TWO_FACTOR_NOT_SET_UP); deploy:false still OK", async () => {
+    granted.add("machine_control:canCreate");
+    granted.add("machine_control:canEdit");
+    const caller = callerAs({ id: 7, role: "engineer", twoFactorEnabled: false });
+    const err = await caller.recordRecipeLoad({ ...load, deploy: true }).catch((e) => e);
+    expect(err).toMatchObject({ code: "FORBIDDEN" });
+    expect((err as any).cause?.appCode).toBe("TWO_FACTOR_NOT_SET_UP");
+    expect((await svc()).recordLoad).not.toHaveBeenCalled();
+    await expect(caller.recordRecipeLoad({ ...load, deploy: false })).resolves.toBeDefined();
+  });
+
+  it("engineer with canCreate + canEdit + 2FA: deploy:true reaches the service with deploy:true and ctx.user as performer", async () => {
+    granted.add("machine_control:canCreate");
+    granted.add("machine_control:canEdit");
+    const caller = callerAs({ id: 8, role: "engineer", twoFactorEnabled: true });
+    await caller.recordRecipeLoad({ ...load, deploy: true });
+    expect((await svc()).recordLoad).toHaveBeenCalledWith(expect.objectContaining({ recipeId: 7, machineId: 3, deploy: true, performedBy: 8 }));
+  });
+
+  /**
+   * Fix round 1 — run under BOTH deployment 2FA modes. `AUTH_2FA_BAT_BUOC` unset = mandatory (safe
+   * default); "0" = the owner's INTERNAL mode (2026-08-24): the enable-2FA demand is skipped, the role
+   * floor is not. Env save/restore follows `voiCo` in server/_core/cheDo2faTheoTrienKhai.test.ts.
+   */
+  async function voiCo<T>(gt: string | undefined, fn: () => Promise<T>): Promise<T> {
+    const cu = process.env.AUTH_2FA_BAT_BUOC;
+    if (gt === undefined) delete process.env.AUTH_2FA_BAT_BUOC;
+    else process.env.AUTH_2FA_BAT_BUOC = gt;
+    try {
+      return await fn();
+    } finally {
+      if (cu === undefined) delete process.env.AUTH_2FA_BAT_BUOC;
+      else process.env.AUTH_2FA_BAT_BUOC = cu;
+    }
+  }
+
+  it("internal mode (AUTH_2FA_BAT_BUOC=0): engineer + canCreate + canEdit WITHOUT 2FA ⇒ deploy:true allowed; operator still FORBIDDEN (role floor not relaxed)", async () => {
+    await voiCo("0", async () => {
+      granted.add("machine_control:canCreate");
+      granted.add("machine_control:canEdit");
+      await expect(callerAs({ id: 10, role: "engineer", twoFactorEnabled: false }).recordRecipeLoad({ ...load, deploy: true })).resolves.toBeDefined();
+      await expect(callerAs({ id: 11, role: "operator", twoFactorEnabled: false }).recordRecipeLoad({ ...load, deploy: true })).rejects.toMatchObject({ code: "FORBIDDEN" });
+    });
+  });
+
+  it.each([
+    ["mandatory (unset)", undefined],
+    ["internal (0)", "0"],
+  ] as const)("differential oracle [2FA %s]: deploy:true allowed ⟺ releaseRecipeVersion (the real actuation chain) AND archiveRecipeVersion (old canCreate chain) allowed; deploy:false ⟺ archiveRecipeVersion", async (_label, co) => voiCo(co, async () => {
+    const roles = ["admin", "supervisor", "engineer", "quality_inspector", "maintenance", "operator", "viewer", "user"];
+    const grantSets = [[], ["canCreate"], ["canEdit"], ["canCreate", "canEdit"]];
+    const ok = (p: Promise<unknown>) => p.then(() => true, () => false);
+    let rows = 0;
+    for (const role of roles) {
+      for (const twoFactorEnabled of [true, false]) {
+        for (const gs of grantSets) {
+          granted.clear();
+          for (const g of gs) granted.add(`machine_control:${g}`);
+          const caller = callerAs({ id: 9, role, twoFactorEnabled });
+          const releaseOk = await ok(caller.releaseRecipeVersion({ recipeId: 5 }));
+          const archiveOk = await ok(caller.archiveRecipeVersion({ recipeId: 5 }));
+          const loadDeploy = await ok(caller.recordRecipeLoad({ ...load, deploy: true }));
+          const loadPlain = await ok(caller.recordRecipeLoad({ ...load, deploy: false }));
+          const tag = `${role}/2fa=${twoFactorEnabled}/[${gs.join(",")}]`;
+          expect(loadDeploy, `deploy:true ${tag}`).toBe(releaseOk && archiveOk);
+          expect(loadPlain, `deploy:false ${tag}`).toBe(archiveOk);
+          rows++;
+        }
+      }
+    }
+    expect(rows).toBe(64);
+  }));
 });
 
 describe("INT-01 SSRF — euromapOpcuaSnapshot never accepts a client endpoint", () => {

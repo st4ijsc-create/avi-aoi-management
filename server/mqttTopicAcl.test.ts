@@ -22,6 +22,7 @@ import {
   mqttAdmissionEnforce,
   MQTT_ACL_DEVICE_ID_PROP,
   MQTT_ACL_APPROVAL_PROP,
+  MQTT_ACL_MACHINE_PROP,
   type MqttAclContext,
 } from './services/mqttService';
 
@@ -173,11 +174,16 @@ describe('canPublish — command/broadcast topics are SERVER-ONLY', () => {
 });
 
 describe('canPublish — scope + hardening', () => {
-  it('allows topics outside the brand namespace (sensor ingest / syn contracts stay working)', () => {
-    // Deliberate scope call (QĐ#1): tightening these is a separate step.
-    expect(canPublish(deviceA, 'factory/1/MC-01/sensor/temp', ENFORCE).allow).toBe(true);
-    expect(canPublish(deviceA, 'syn/l1/dev0/telemetry', ENFORCE).allow).toBe(true);
+  it('allows topics outside the brand namespace, EXCEPT factory/ and syn/ (bound to the device machine)', () => {
+    // Deliberate scope call (QĐ#1). ★ 2026-09-27 (doc 81 Đợt 1C Task 5): `factory/…/sensor/…` is NO
+    // LONGER out of scope. ★ 2026-09-28 (Task 5 fix round 1, ruling R-1C-e): neither is ANY publish
+    // under `factory/` or `syn/` — `syn/{…}/cmd` is the policy-gated command channel and B's device
+    // receives what is published there, so an unbound device A (no machine) may publish on neither.
+    // These two lines used to pin those gaps as "allowed". See the Task 5 block at the end.
+    expect(canPublish(deviceA, 'factory/1/MC-01/sensor/temp', ENFORCE).allow).toBe(false);
+    expect(canPublish(deviceA, 'syn/l1/dev0/telemetry', ENFORCE).allow).toBe(false);
     expect(canPublish(deviceA, 'avi-aoi/factory/1/x', ENFORCE).allow).toBe(true);
+    expect(canPublish(deviceA, 'factoryX/1/MC-01/cmd', ENFORCE).allow).toBe(true); // not the factory/ root
   });
 
   it('allows the explicit test namespace', () => {
@@ -509,5 +515,109 @@ describe('admission gate — backward compatibility (QĐ#1)', () => {
       reason: 'acl-disabled',
     });
     expect(canSubscribe(pendingA, 'avi/factory/+/workshop/+/station/+/errors', DISABLED).allow).toBe(true);
+  });
+});
+
+// ════════════════════════════════════════════════════════════════════════════
+// doc 81 Đợt 1C Task 5 (owner decision 2026-09-27, 4c) — device ↔ machine binding.
+// `factory/{fId}/{code}/sensor/…` publish only for the BOUND machine in its factory; `factory/…`
+// and `syn/…` subscriptions only inside the own machine branch. Pure decision functions; the
+// broker/DB acceptance lives in services/mqttSensorBinding.db.test.ts.
+// ════════════════════════════════════════════════════════════════════════════
+describe('doc 81 Đợt 1C Task 5 — sensor publish + factory/syn subscribe are bound to the device machine', () => {
+  const MA = { id: 11, code: 'MC-01', factoryId: 1, isa95Path: 'hn/smt/l1/c2/aoi01' };
+  const boundA: MqttAclContext = { clientId: 'esp-a', deviceId: 'A', machine: MA };
+  const noIsa: MqttAclContext = { clientId: 'esp-a', deviceId: 'A', machine: { ...MA, isa95Path: null } };
+
+  it('publish: own machine + own factory ⇒ allowed; other machine / other factory / unbound ⇒ denied', () => {
+    expect(canPublish(boundA, 'factory/1/MC-01/sensor/temp', ENFORCE)).toMatchObject({ allow: true, violation: false });
+    expect(canPublish(boundA, 'factory/1/MC-02/sensor/temp', ENFORCE)).toMatchObject({ allow: false, violation: true });
+    expect(canPublish(boundA, 'factory/2/MC-01/sensor/temp', ENFORCE)).toMatchObject({ allow: false, violation: true });
+    expect(canPublish(boundA, 'factory/01/MC-01/sensor/temp', ENFORCE).allow).toBe(false); // exact factory id
+    expect(canPublish(deviceA, 'factory/1/MC-01/sensor/temp', ENFORCE).allow).toBe(false);
+    expect(canPublish(deviceA, 'factory/1/MC-01/sensor', ENFORCE).allow).toBe(false); // 4-level form
+    // Fix round 1 (R-1C-e): non-sensor factory/ topics are bound too (they reach B's subscribers).
+    expect(canPublish(deviceA, 'factory/1/MC-01/state', ENFORCE).allow).toBe(false);
+  });
+
+  it('fix round 1 (R-1C-e): publish under factory/ and syn/ ONLY inside the own machine branch — incl. the cmd channel', () => {
+    for (const t of [
+      'factory/1/MC-01/cmd', 'factory/1/MC-01/state', 'factory/1/MC-01', 'factory/1/MC-01/sensor/vib/raw',
+      'syn/hn/smt/l1/c2/aoi01/telemetry', 'syn/hn/smt/l1/c2/aoi01/cmd/ack', 'syn/hn/smt/l1/c2/aoi01',
+    ]) {
+      expect(canPublish(boundA, t, ENFORCE), `must allow ${t}`).toMatchObject({ allow: true, violation: false });
+    }
+    for (const t of [
+      'factory/1/MC-02/cmd', 'factory/2/MC-01/cmd', 'factory/1', 'factory',
+      'syn/hn/smt/l1/c2/aoi02/cmd', 'syn/hn/smt/l1/c2', 'syn/hn/smt/l1/c2/aoi01x/cmd', 'syn/hn/smt/l1/c3/aoi01/cmd', 'syn',
+    ]) {
+      expect(canPublish(boundA, t, ENFORCE), `must deny ${t}`).toMatchObject({ allow: false, violation: true });
+    }
+    // Machine without an ISA-95 path owns no syn/ branch; unbound device owns neither.
+    expect(canPublish(noIsa, 'syn/hn/smt/l1/c2/aoi01/telemetry', ENFORCE).allow).toBe(false);
+    expect(canPublish(noIsa, 'factory/1/MC-01/cmd', ENFORCE).allow).toBe(true);
+    expect(canPublish(deviceA, 'syn/hn/smt/l1/c2/aoi01/cmd', ENFORCE).allow).toBe(false);
+    expect(canPublish(deviceA, 'factory/1/MC-01/cmd', ENFORCE).allow).toBe(false);
+    // Server context (in-process) is untouched.
+    expect(canPublish(server, 'syn/hn/smt/l1/c2/aoi02/cmd', ENFORCE).allow).toBe(true);
+  });
+
+  it('publish: warn-only / disabled soften the broker verdict exactly like the rest of the ACL', () => {
+    expect(canPublish(deviceA, 'factory/1/MC-01/sensor/t', WARN_ONLY)).toMatchObject({ allow: true, violation: true });
+    expect(canPublish(deviceA, 'factory/1/MC-01/sensor/t', DISABLED)).toMatchObject({ allow: true, violation: false });
+  });
+
+  it('subscribe: broad / foreign factory/ and syn/ filters ⇒ denied (bound device)', () => {
+    for (const f of [
+      'factory/#', 'factory/+/#', 'factory/1/#', 'factory/1/+/sensor/+', 'factory/1/MC-02/sensor/+',
+      'factory/+/MC-01/sensor/+', 'factory/2/MC-01/#', 'syn/#', 'syn/hn/#', 'syn/+/+/+/+/+/telemetry',
+      'syn/hn/smt/l1/c2/aoi02/#', '+/1/MC-01/sensor/+', '+/#', '#',
+    ]) {
+      expect(canSubscribe(boundA, f, ENFORCE), `must deny ${f}`).toMatchObject({ allow: false, violation: true });
+    }
+  });
+
+  it('subscribe: own machine branch ⇒ allowed; node topics above it match no machine data ⇒ allowed', () => {
+    for (const f of [
+      'factory/1/MC-01/sensor/+', 'factory/1/MC-01/#', 'factory/1/MC-01', 'factory/1', 'factory',
+      'syn/hn/smt/l1/c2/aoi01/#', 'syn/hn/smt/l1/c2/aoi01/telemetry', 'syn/hn/smt/l1/c2/aoi01/cmd/ack',
+    ]) {
+      expect(canSubscribe(boundA, f, ENFORCE), `must allow ${f}`).toMatchObject({ allow: true, violation: false });
+    }
+  });
+
+  it('subscribe: unbound device / machine without ISA-95 path own no branch there', () => {
+    expect(canSubscribe(deviceA, 'factory/1/MC-01/#', ENFORCE).allow).toBe(false);
+    expect(canSubscribe(deviceA, 'syn/hn/smt/l1/c2/aoi01/#', ENFORCE).allow).toBe(false);
+    expect(canSubscribe(noIsa, 'syn/hn/smt/l1/c2/aoi01/#', ENFORCE).allow).toBe(false);
+    expect(canSubscribe(noIsa, 'factory/1/MC-01/#', ENFORCE).allow).toBe(true);
+  });
+
+  it('does not touch the brand namespace or other roots (APK filters keep working)', () => {
+    for (const f of ['avi/factory/+/workshop/+/station/+/errors', 'avi-aoi/#', 'avi/test/#', 'factoryX/#', 'synapse/factory/+/workshop/+/station/+/errors']) {
+      expect(canSubscribe(deviceA, f, ENFORCE), `filter ${f}`).toMatchObject({ allow: true, violation: false });
+    }
+  });
+
+  it('fix round 1: ACL DISABLED ⇒ the factory/ and syn/ subscribe + publish rules are off entirely', () => {
+    for (const f of ['factory/#', 'syn/#', 'factory/1/MC-02/#', '#']) {
+      expect(canSubscribe(boundA, f, DISABLED), `filter ${f}`).toMatchObject({ allow: true, violation: false, reason: 'acl-disabled' });
+      expect(canSubscribe(deviceA, f, DISABLED).allow).toBe(true);
+    }
+    expect(canPublish(deviceA, 'syn/hn/smt/l1/c2/aoi02/cmd', DISABLED)).toMatchObject({ allow: true, violation: false });
+  });
+
+  it('server context keeps full rights; warn-only softens a device subscribe violation', () => {
+    expect(canSubscribe(server, 'factory/#', ENFORCE).allow).toBe(true);
+    expect(canSubscribe(server, 'syn/#', ENFORCE).allow).toBe(true);
+    expect(canPublish(server, 'factory/9/ANY/sensor/t', ENFORCE).allow).toBe(true);
+    expect(canSubscribe(boundA, 'factory/#', WARN_ONLY)).toMatchObject({ allow: true, violation: true });
+  });
+
+  it('aclContextFromClient reads the stamped machine only when well-formed', () => {
+    expect(aclContextFromClient({ id: 'c', [MQTT_ACL_DEVICE_ID_PROP]: 'A', [MQTT_ACL_MACHINE_PROP]: MA }).machine).toEqual(MA);
+    for (const bad of [null, {}, { ...MA, id: '11' }, { ...MA, code: '' }, { ...MA, factoryId: null }]) {
+      expect(aclContextFromClient({ id: 'c', [MQTT_ACL_DEVICE_ID_PROP]: 'A', [MQTT_ACL_MACHINE_PROP]: bad }).machine).toBeUndefined();
+    }
   });
 });

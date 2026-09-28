@@ -115,14 +115,17 @@ vi.mock("../safety/plc/safetyPlcAdapter", () => ({
   safetyPlcAdapterEnabled: () => plc.mode !== "disabled",
   listPlcConfigs: async () => {
     if (plc.mode === "throw") throw new Error("safety module exploded");
-    return [{ code: "SPLC-1" }];
+    // Đợt 1C Task 1 (2026-09-27): preflight lệnh THẬT chỉ nhận PLC `real` (endpoint + tag an toàn gán) đọc qua
+    // readChecked — cấu hình giả mang hình dạng đó (endpoint TEST-NET-1, không bao giờ được nối: backend bị giả).
+    return [{ code: "SPLC-1", backend: "modbus", endpoint: "tcp://192.0.2.1:502", statusMap: { estop: { address: "coil:1" } } }];
   },
-  backendForConfig: () => ({
-    read: async () => {
+  backendForConfig: () => {
+    const read = async () => {
       if (plc.mode === "read_error") throw new Error("PLC unreachable");
       return { estop: plc.mode === "estop" };
-    },
-  }),
+    };
+    return { read, readChecked: async () => ({ status: await read(), unreadable: [] }) };
+  },
   statusToFindings: (s: any) => (s.estop ? ["estop"] : []),
 }));
 
@@ -270,7 +273,10 @@ afterEach(async () => {
   if (driver) await driver.disconnect();
 });
 
-const HOME = { robotId: 7, job: { jobType: "home" as const }, triggerKind: "hitl" as const, requestedBy: 3, confirmedBy: 3 };
+// doc 81 Đợt 1C Task 3 (2026-09-27) — xe chở cho các ca safety/timeout/sổ ghi: trước là 'hitl' KHÔNG actionId (nay
+// bị từ chối HITL_ACTION_REQUIRED trước driver). Chuyển sang đường hợp lệ không cần bản ghi: 'manual' R11
+// (confirmedBy === requestedBy) — cùng các cổng phía sau (safety, interlock, slot, sổ ghi, dừng khi timeout).
+const HOME = { robotId: 7, job: { jobType: "home" as const }, triggerKind: "manual" as const, requestedBy: 3, confirmedBy: 3 };
 
 describe("đường hợp lệ vẫn chạy (không chặn oan)", () => {
   it("safety OK + sổ ghi được ⇒ done; robot nhận CNTLON/SRVON/EXEC; sổ: running → done", async () => {
@@ -447,10 +453,12 @@ describe("safety-PLC preflight trước chuyển động (S9) — cùng facade v
     }
   });
 
-  it("lệnh dừng (abort) KHÔNG bị safety chặn — dừng không bao giờ bị khoá", async () => {
+  // doc 81 Đợt 1C Task 3 fix round 1 (R-1C-c, item 5) — STOP qua driver MELFA THẬT gửi dạng 'hitl' abort KHÔNG
+  // confirmedBy (hình dạng của khoá API / tự động): trước fix round 1 bước 2.a từ chối ⇒ robot không nhận STOP.
+  it("lệnh dừng (abort) KHÔNG bị safety chặn — dừng không bao giờ bị khoá ('hitl', không confirmedBy, không actionId)", async () => {
     await connectDriver(2000);
     plc.mode = "disabled";
-    const r = await within(dispatchRobotJob({ ...HOME, job: { jobType: "abort" as const } }), 10_000);
+    const r = await within(dispatchRobotJob({ robotId: 7, job: { jobType: "abort" as const }, triggerKind: "hitl", requestedBy: 0 }), 10_000);
     expect(r.status).toBe("done");
     expect(allCmds(fake)).toEqual(["STOP"]);
   });
@@ -510,10 +518,14 @@ describe("fix round 1 — manual: confirmedBy phải là chính người khởi 
     expect(allCmds(fake)).toEqual([]);
   });
 
-  it("hitl + confirmedBy ≠ requestedBy vẫn qua (quy tắc chỉ cho manual)", async () => {
+  // doc 81 Đợt 1C Task 3 (2026-09-27) — ca này từng khẳng định "hitl + confirmedBy ≠ requestedBy (không actionId)
+  // vẫn qua (done)". Đó chính là lỗ chủ dự án cho ĐÓNG: nay bị từ chối trước driver, 0 byte.
+  it("hitl + confirmedBy ≠ requestedBy + KHÔNG actionId ⇒ rejected HITL_ACTION_REQUIRED, 0 byte (Đợt 1C Task 3)", async () => {
     await connectDriver(2000);
-    const r = await within(dispatchRobotJob({ ...HOME, requestedBy: 3, confirmedBy: 99 }), 10_000);
-    expect(r.status).toBe("done");
+    const r = await within(dispatchRobotJob({ ...HOME, triggerKind: "hitl", requestedBy: 3, confirmedBy: 99 }), 10_000);
+    expect(r.status).toBe("rejected");
+    expect(r.error).toBe("HITL_ACTION_REQUIRED");
+    expect(allCmds(fake)).toEqual([]);
   });
 });
 
@@ -526,11 +538,44 @@ describe("fix round 1 — interlock không bao giờ chặn lệnh DỪNG (M3)",
     expect(allCmds(fake)).toEqual([]);
   });
 
-  it("interlock đang vi phạm ⇒ abort VẪN đi: robot nhận STOP", async () => {
+  // Fix round 1 (item 5) — cùng hình dạng 'hitl' abort mang actionId KHÔNG tồn tại (đúng thứ api/v1 gửi: `apiv1-<key>`).
+  it("interlock đang vi phạm ⇒ abort VẪN đi: robot nhận STOP ('hitl', actionId không tồn tại, không confirmedBy)", async () => {
     await connectDriver(2000);
     interlock.blocked = true;
-    const r = await within(dispatchRobotJob({ ...HOME, job: { jobType: "abort" as const } }), 10_000);
+    const r = await within(
+      dispatchRobotJob({ robotId: 7, job: { jobType: "abort" as const }, triggerKind: "hitl", actionId: "apiv1-khong-ton-tai", requestedBy: 0 }),
+      10_000,
+    );
     expect(r.status).toBe("done");
+    expect(allCmds(fake)).toEqual(["STOP"]);
+  });
+});
+
+// doc 81 Đợt 1C residual 1 (R-1C-m) — MELFA THẬT × bộ điều khiển giả: "abort" mang params chuyển động KHÔNG BAO GIỜ
+// sinh byte chuyển động. Hai lớp riêng: (a) qua dispatcher (params bị bỏ), (b) gọi thẳng driver (lệnh dừng cố định).
+describe("R-1C-m — abort mang params chuyển động ⇒ chỉ STOP tới bộ điều khiển MELFA", () => {
+  const EVIL = { joints: [90, 90, 90, 0, 0, 0], script: "EXECMOV J=(90,90,90,0,0,0)" };
+  it("qua dispatcher (lớp a): server giả nhận ĐÚNG ['STOP'], 0 CNTLON/SRVON/EXEC", async () => {
+    await connectDriver(2000);
+    const r = await within(dispatchRobotJob({ robotId: 7, job: { jobType: "abort", params: EVIL }, triggerKind: "hitl", requestedBy: 3 }), 10_000);
+    expect(r.status).toBe("done");
+    expect(allCmds(fake)).toEqual(["STOP"]);
+    expect(motionCmds(fake)).toEqual([]);
+  });
+  // residual round 2 — lớp (b) phải ĐỘC LẬP: gọi thẳng driver (bỏ qua lớp a) với MỌI chính tả của dừng.
+  it.each(["stop", "e_stop", "ABORT"])("gọi thẳng driver, jobType '%s' + joints ⇒ ĐÚNG ['STOP'], 0 byte chuyển động", async (jt) => {
+    process.env.ROBOT_CONTROL_ENABLED = "true";
+    await connectDriver(2000);
+    const r = await within(driver.runJob({ jobType: jt as never, params: EVIL }), 10_000);
+    expect(r.ok).toBe(true);
+    expect(motionCmds(fake)).toEqual([]);
+    expect(allCmds(fake)).toEqual(["STOP"]);
+  });
+  it("gọi thẳng driver (lớp b, không có dispatcher): runJob abort + params ⇒ ĐÚNG ['STOP']", async () => {
+    process.env.ROBOT_CONTROL_ENABLED = "true";
+    await connectDriver(2000);
+    const r = await within(driver.runJob({ jobType: "abort", params: EVIL }), 10_000);
+    expect(r.ok).toBe(true);
     expect(allCmds(fake)).toEqual(["STOP"]);
   });
 });
@@ -538,7 +583,7 @@ describe("fix round 1 — interlock không bao giờ chặn lệnh DỪNG (M3)",
 describe("fix round 1 — idempotency không ép 'running' vào union kết quả (M1)", () => {
   it("khoá đã có hàng 'running' ⇒ rejected IDEMPOTENT_JOB_IN_PROGRESS, không chạy lại, 0 byte", async () => {
     await connectDriver(2000);
-    ledger.rows.push({ id: 500, idempotencyKey: "k-running", status: "running" });
+    ledger.rows.push({ id: 500, robotId: 7, jobType: "home", idempotencyKey: "k-running", status: "running" }); // final wave 2 (R-1C-i): phát lại chỉ khi CÙNG robot + CÙNG loại job ⇒ hàng mang robotId/jobType như hàng thật
     const r = await within(dispatchRobotJob({ ...HOME, idempotencyKey: "k-running" }), 10_000);
     expect(r).toEqual({ ok: false, status: "rejected", jobId: 500, error: "IDEMPOTENT_JOB_IN_PROGRESS" });
     expect(allCmds(fake)).toEqual([]);
@@ -551,7 +596,7 @@ describe("fix round 1 — idempotency không ép 'running' vào union kết qu�
     ["rejected", false],
   ] as const)("khoá đã có hàng '%s' ⇒ trả lại đúng trạng thái đó (ok=%s)", async (status, ok) => {
     await connectDriver(2000);
-    ledger.rows.push({ id: 501, idempotencyKey: `k-${status}`, status });
+    ledger.rows.push({ id: 501, robotId: 7, jobType: "home", idempotencyKey: `k-${status}`, status });
     const r = await within(dispatchRobotJob({ ...HOME, idempotencyKey: `k-${status}` }), 10_000);
     expect(r).toEqual({ ok, status, jobId: 501 });
   });

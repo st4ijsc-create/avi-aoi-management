@@ -972,9 +972,12 @@ export default function SafetyWorkforce() {
 // doc 80 Đợt 1 Task 4 (SAF-02) — SAFETY SOURCE panel. Read-only mirror of safety.sourceHealth:
 // what the OT/robot safety preflight actually reads (real PLC / SIM / nothing) and what that
 // means for real commands. Never guesses while loading or on error.
+// doc 81 Đợt 1C Task 1 (owner decision 2026-09-27): a SIM / unmapped safety PLC never satisfies the
+// preflight of a real (commissioned) command — the panel states that rule and shows SAFETY_SIM_ONLY;
+// "mixed" is no longer risky (only the real PLC counts) and the three "allowed on SIM" verdicts are gone.
 // ══════════════════════════════════════════════════════════════════════════════
-const RISKY_BASIS = new Set(["sim", "real_unmapped", "mixed", "read_error"]);
-const RISKY_VERDICT = new Set(["sim_basis", "unmapped_basis", "sim_can_satisfy", "unguarded"]);
+const RISKY_BASIS = new Set(["sim", "real_unmapped", "read_error"]);
+const RISKY_VERDICT = new Set(["unguarded"]);
 
 function SafetySourcePanel({
   data, isLoading, isError, socketConnected,
@@ -1013,10 +1016,10 @@ function SafetySourcePanel({
         const detail = plc.simScriptedConfigs > 0
           ? t("safety.source.plc.simScripted", "scripted — OK/BLOCKED follows a script, not a PLC")
           : t("safety.source.plc.simEmpty", "empty script — always OK");
-        return `${t("safety.source.plc.sim", "⚠ SIM (preflight relies on a SIMULATION)")} · ${detail}`;
+        return `${t("safety.source.plc.sim", "⚠ SIM only — does NOT satisfy the preflight for real commands")} · ${detail}`;
       }
-      case "real_unmapped": return t("safety.source.plc.realUnmapped", "⚠ real endpoint but NO safety tag mapped — preflight OK is based on nothing read");
-      case "mixed": return t("safety.source.plc.mixed", "⚠ real + SIM/unmapped (a config that reads no safety tag can satisfy the preflight)");
+      case "real_unmapped": return t("safety.source.plc.realUnmapped", "⚠ real endpoint but NO safety tag mapped — does NOT satisfy the preflight for real commands");
+      case "mixed": return t("safety.source.plc.mixed", "● real + SIM/unmapped (only the real PLC counts)");
       case "real": return t("safety.source.plc.real", "● real PLC");
       case "adapter_off": return t("safety.source.plc.adapterOff", "○ off — no safety source");
       case "no_config": return t("safety.source.plc.noConfig", "○ no enabled config");
@@ -1027,10 +1030,10 @@ function SafetySourcePanel({
     switch (p.realWrites) {
       case "dry_run": return t("safety.source.verdict.dry_run", "dry-run only (control disabled — nothing is written)");
       case "unguarded": return `${t("safety.source.verdict.unguarded", "⚠ preflight disabled — real commands are not checked")} (${p.flag}=false)`;
-      case "blocked": return `${t("safety.source.verdict.blocked", "real commands blocked")} (${p.refusalReason ?? "SAFETY_UNKNOWN"})`;
-      case "sim_basis": return t("safety.source.verdict.sim_basis", "⚠ allowed on a SIMULATED reading");
-      case "unmapped_basis": return t("safety.source.verdict.unmapped_basis", "⚠ allowed although no safety tag is read");
-      case "sim_can_satisfy": return t("safety.source.verdict.sim_can_satisfy", "⚠ a SIM or unmapped config can satisfy the check");
+      case "blocked":
+        return p.refusalReason === "SAFETY_SIM_ONLY"
+          ? `${t("safety.source.verdict.blockedSimOnly", "real commands blocked — only SIM / unmapped; a commissioned target needs a REAL safety PLC with mapped tags")} (SAFETY_SIM_ONLY)`
+          : `${t("safety.source.verdict.blocked", "real commands blocked")} (${p.refusalReason ?? "SAFETY_UNKNOWN"})`;
       case "real_basis": return t("safety.source.verdict.real_basis", "checked against the real safety PLC");
     }
   };
@@ -1075,6 +1078,9 @@ function SafetySourcePanel({
         {plc.hiddenConfigs > 0 && (
           <span className="text-muted-foreground">+{plc.hiddenConfigs} {t("safety.source.hiddenConfigs", "outside your scope")}</span>
         )}
+      </div>
+      <div data-testid="safety-source-rule" className="text-muted-foreground">
+        {t("safety.source.rule", "Rule: a commissioned target needs a REAL safety PLC with mapped safety tags — SIM or unmapped configs never satisfy the preflight; a bad-quality safety tag counts as unknown.")}
       </div>
       <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-muted-foreground">
         {(["ot", "robot"] as const).map((k) => {

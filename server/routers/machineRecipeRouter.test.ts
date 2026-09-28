@@ -19,7 +19,9 @@ vi.mock("drizzle-orm", async (orig) => {
 // `phaiDoiMatKhau` is read by the GLOBAL root middleware (server/_core/trpc.ts, Pha 7) — a bare
 // `{ getDb }` mock made EVERY call throw "No 'phaiDoiMatKhau' export" (red at HEAD before doc 80
 // Đợt 1 Task 9; same fix as commandLogRouter.test.ts / deviceAdapterRouter.test.ts).
-vi.mock("../db", () => ({ getDb: vi.fn(async () => fake), phaiDoiMatKhau: vi.fn(async () => false) }));
+// `createAuditLog` — root audit middleware writes one row per mutation (Đợt 1C Task 2 fix 1: stops the
+// "[AuditTrail] Failed to log audit entry" stderr flood).
+vi.mock("../db", () => ({ getDb: vi.fn(async () => fake), phaiDoiMatKhau: vi.fn(async () => false), createAuditLog: vi.fn(async () => undefined) }));
 
 // In-memory recipe catalog backing the mocked db layer.
 const catalog: any[] = [];
@@ -157,6 +159,49 @@ describe("deploy / rollback", () => {
     const { deployRecipe } = await import("../db/machineRecipe");
     (deployRecipe as any).mockRejectedValueOnce(new Error("Recipe #999 not found"));
     await expect(caller.recipes.deploy({ recipeId: 999, machineId: 1 })).rejects.toThrow(/not found/);
+  });
+});
+
+// doc 81 Đợt 1C Task 2 fix round 1 — changeover.approve error mapping: a strict-gate refusal keeps
+// PRECONDITION_FAILED + reason (re-labelled approveChangeoverRequest); every OTHER TRPCError now
+// passes through unchanged (was: every error flattened to BAD_REQUEST); a plain Error stays
+// BAD_REQUEST. The request stays pending in all three cases.
+describe("changeover.approve — error mapping (Đợt 1C Task 2)", () => {
+  const approver = machineRecipeRouter.createCaller({ user: { id: 8, role: "supervisor", name: "Sup2", twoFactorEnabled: true } } as any);
+  async function seedRequest() {
+    const { changeoverRequests } = await import("../../drizzle/schema");
+    const r = await caller.recipes.create({ code: "CO", name: "r", payload: {} });
+    fake.seed(changeoverRequests, [{ id: 41, machineId: 3, recipeId: r.id, requestedBy: 7, requestNote: null, status: "pending" }]);
+    return changeoverRequests;
+  }
+  const statusOf = (t: any) => (fake.store.get(t[Symbol.for("drizzle:Name")]) ?? [])[0]?.status;
+
+  it("NOT_FOUND from the deploy path passes through as NOT_FOUND (not BAD_REQUEST)", async () => {
+    const t = await seedRequest();
+    const { deployRecipe } = await import("../db/machineRecipe");
+    const { appError } = await import("../_core/appError");
+    (deployRecipe as any).mockRejectedValueOnce(appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "recipe" }, "Recipe #999 not found"));
+    const err = await approver.changeover.approve({ id: 41 }).catch((e) => e);
+    expect(err?.code).toBe("NOT_FOUND");
+    expect(err?.cause?.appCode).toBe("ENTITY_NOT_FOUND");
+    expect(statusOf(t)).toBe("pending");
+  });
+
+  it("strict-gate refusal ⇒ PRECONDITION_FAILED {operation: approveChangeoverRequest, reason}; plain Error ⇒ BAD_REQUEST", async () => {
+    const t = await seedRequest();
+    const { deployRecipe } = await import("../db/machineRecipe");
+    const { appError } = await import("../_core/appError");
+    (deployRecipe as any).mockRejectedValueOnce(
+      appError("PRECONDITION_FAILED", "OPERATION_FAILED", { operation: "deployRecipe", reason: "recipeArchived" }, "archived"),
+    );
+    const err = await approver.changeover.approve({ id: 41 }).catch((e) => e);
+    expect(err?.code).toBe("PRECONDITION_FAILED");
+    expect(err?.cause?.appParams).toEqual({ operation: "approveChangeoverRequest", reason: "recipeArchived" });
+
+    (deployRecipe as any).mockRejectedValueOnce(new Error("boom"));
+    const err2 = await approver.changeover.approve({ id: 41 }).catch((e) => e);
+    expect(err2?.code).toBe("BAD_REQUEST");
+    expect(statusOf(t)).toBe("pending");
   });
 });
 

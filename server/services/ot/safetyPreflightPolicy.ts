@@ -17,6 +17,11 @@
  *     write / motion through.
  * Both dispatchers import these functions; a third read-site with a different default is the
  * defect this file exists to prevent.
+ *
+ * doc 81 Đợt 1C Task 1 (owner decision 2026-09-27): on a REAL write/motion a SIM safety PLC (or a
+ * real endpoint with no safety tag mapped) can no longer satisfy the preflight, and a mapped safety
+ * tag read with bad quality makes that config unable to vouch "clean". The rule and the one config
+ * classification it uses live at the bottom of this file (actuationPreflightVerdict / effectiveBackend).
  */
 
 /** The env flag each side reads (documented in .env.example under the OT control block). */
@@ -40,15 +45,125 @@ export function isRobotSafetyPreflightEnabled(): boolean {
   return flagEnabled(SAFETY_PREFLIGHT_FLAGS.robot);
 }
 
-/** The one refusal vocabulary both ledgers / UIs / alerts key on. */
-export type SafetyPreflightReason = "SAFETY_BLOCKED" | "SAFETY_UNKNOWN";
+/**
+ * The one refusal vocabulary both ledgers / UIs / alerts key on.
+ * doc 81 Đợt 1C Task 1 (owner decision 2026-09-27) adds SAFETY_SIM_ONLY: on a REAL write/motion
+ * the only configs that read clean were SIM / real-endpoint-without-safety-tags — i.e. no real
+ * safety PLC with a mapped tag is configured, so nothing real vouches for the target.
+ */
+export type SafetyPreflightReason = "SAFETY_BLOCKED" | "SAFETY_UNKNOWN" | "SAFETY_SIM_ONLY";
+
+/**
+ * Why an UNKNOWN reading is unknown, when the facade can say (set only by the real-actuation
+ * read, see adapterFacade.getSafetyStatus({ forRealActuation: true })). "sim_only" ⇒ no enabled
+ * config is a real safety PLC with a mapped tag (SAFETY_SIM_ONLY).
+ */
+export type SafetyUnknownBasis = "sim_only";
 
 /**
  * Map a preflight reading that is NOT "OK" onto the refusal reason. BLOCKED (a tripped safety
- * PLC) ⇒ SAFETY_BLOCKED; everything else (UNKNOWN: no configured/readable safety PLC; ERROR: the
- * read threw or hung) ⇒ SAFETY_UNKNOWN. Calling it with "OK" is a programming error.
+ * PLC) ⇒ SAFETY_BLOCKED; UNKNOWN with basis "sim_only" ⇒ SAFETY_SIM_ONLY (Đợt 1C Task 1);
+ * everything else (UNKNOWN: no configured/readable safety PLC; ERROR: the read threw or hung)
+ * ⇒ SAFETY_UNKNOWN. Calling it with "OK" is a programming error.
  */
-export function safetyPreflightReason(state: string): SafetyPreflightReason {
+export function safetyPreflightReason(state: string, basis?: SafetyUnknownBasis | null): SafetyPreflightReason {
   if (state === "OK") throw new RangeError("safetyPreflightReason: OK is not a refusal");
-  return state === "BLOCKED" ? "SAFETY_BLOCKED" : "SAFETY_UNKNOWN";
+  if (state === "BLOCKED") return "SAFETY_BLOCKED";
+  return basis === "sim_only" ? "SAFETY_SIM_ONLY" : "SAFETY_UNKNOWN";
+}
+
+// ════════════════════════════════════════════════════════════════════════════════════════
+// doc 81 Đợt 1C Task 1 — ONE classification of a safety-PLC config, shared by the real-actuation
+// preflight (adapterFacade.getSafetyStatus({ forRealActuation: true })) and the Safety panel
+// (safetySourceHealth, which re-exports effectiveBackend). Moved here from safetySourceHealth.ts
+// (definition unchanged) so the preflight path does not import the panel's DB/socket loaders and
+// the two can never disagree on what "real" means.
+// ════════════════════════════════════════════════════════════════════════════════════════
+
+/** The four safety status flags a config can map to a PLC tag (mirror OtReadSafetyPlcBackend.tagList). */
+export const SAFETY_STATUS_FLAGS = ["estop", "zoneOccupied", "resetRequired", "muting"] as const;
+
+/**
+ * What ONE enabled config actually gives getSafetyStatus (mirror of backendForConfig + read()):
+ *   sim_empty     — SIM with no script (or modbus/opcua without endpoint): always all-clear ⇒ OK.
+ *   sim_scripted  — SIM cycling a script: OK/BLOCKED follows a SCRIPT, not a PLC.
+ *   real_unmapped — real endpoint but NO safety flag has a tag address: OtReadSafetyPlcBackend.read()
+ *                   returns {} WITHOUT connecting ⇒ OK based on nothing read (Fix round 1 #1).
+ *   real          — real endpoint + ≥1 of estop/zoneOccupied/resetRequired/muting mapped.
+ */
+export type EffectivePlcBackend = "sim_empty" | "sim_scripted" | "real_unmapped" | "real";
+
+/** The config fields the classification reads (structural — a DB row or the panel's lite row). */
+export interface PlcConfigShape {
+  backend: string;
+  endpoint: string | null;
+  statusMap: {
+    estop?: { address?: string | null } | null;
+    zoneOccupied?: { address?: string | null } | null;
+    resetRequired?: { address?: string | null } | null;
+    muting?: { address?: string | null } | null;
+    simScript?: unknown[] | null;
+  } | null;
+}
+
+/**
+ * Mirror `backendForConfig` + the backend's `read()`:
+ *   • modbus/opcua WITH endpoint ⇒ OtReadSafetyPlcBackend; its tagList() keeps only flags that have
+ *     `statusMap[flag].address` — none ⇒ read() returns {} without connecting ⇒ real_unmapped.
+ *   • modbus/opcua WITHOUT endpoint ⇒ SimSafetyPlcBackend([]) (script ignored) ⇒ sim_empty.
+ *   • sim ⇒ SimSafetyPlcBackend(statusMap.simScript ?? []) ⇒ empty ⇒ sim_empty, else sim_scripted.
+ */
+export function effectiveBackend(cfg: PlcConfigShape): EffectivePlcBackend {
+  const map = cfg.statusMap ?? {};
+  if (cfg.backend === "modbus" || cfg.backend === "opcua") {
+    if (!cfg.endpoint) return "sim_empty";
+    return SAFETY_STATUS_FLAGS.some((k) => !!map[k]?.address) ? "real" : "real_unmapped";
+  }
+  return (map.simScript?.length ?? 0) > 0 ? "sim_scripted" : "sim_empty";
+}
+
+/**
+ * One config's contribution to a REAL-actuation preflight:
+ *   clean      — read OK and no active safety flag;
+ *   blocked    — ≥1 safety flag ACTIVE (estop / zone / reset-required / muting);
+ *   incomplete — read OK but ≥1 mapped safety tag came back with BAD quality (or missing):
+ *                that flag is unknown, so the config cannot vouch "clean" (Đợt 1C Task 1);
+ *   error      — the read threw (unreachable endpoint, driver error).
+ */
+export type PlcReadOutcome = "clean" | "blocked" | "incomplete" | "error";
+
+export interface PlcPreflightReading {
+  kind: EffectivePlcBackend;
+  outcome: PlcReadOutcome;
+}
+
+export interface ActuationPreflightVerdict {
+  state: "OK" | "BLOCKED" | "UNKNOWN";
+  /** Refusal reason when state ≠ OK (null when OK). */
+  reason: SafetyPreflightReason | null;
+}
+
+/**
+ * doc 81 Đợt 1C Task 1 — the REAL write / motion rule (owner decision 2026-09-27), in order:
+ *   1. any config reads BLOCKED (sim or real)                       ⇒ BLOCKED  / SAFETY_BLOCKED
+ *      (a tripped safety flag always denies — even a SIM script's, conservative as before);
+ *   2. ANY `real` config is incomplete (bad-quality / missing tag) or errored (unreadable)
+ *                                                                   ⇒ UNKNOWN / SAFETY_UNKNOWN
+ *      — fix round 1, ruling R-1C-b: safety-PLC configs are GLOBAL (not scoped to the target
+ *      machine/line), so a clean PLC-B must not mask an unreadable e-stop on PLC-A. Cost: one
+ *      real PLC offline blocks EVERY real write/motion. Scoping configs to the target is the
+ *      right long-term fix and is CÒN MỞ. A SIM reading next to it never counts;
+ *   3. ≥1 `real` config and every `real` config read CLEAN (every mapped tag good) ⇒ OK;
+ *   4. configs exist but none is `real` (only sim_empty / sim_scripted / real_unmapped)
+ *                                                                   ⇒ UNKNOWN / SAFETY_SIM_ONLY;
+ *   5. no config at all                                             ⇒ UNKNOWN / SAFETY_UNKNOWN.
+ * PURE. The panel evaluates the same function on "every config reads clean" to predict the verdict.
+ */
+export function actuationPreflightVerdict(readings: readonly PlcPreflightReading[]): ActuationPreflightVerdict {
+  if (readings.some((r) => r.outcome === "blocked")) return { state: "BLOCKED", reason: "SAFETY_BLOCKED" };
+  const real = readings.filter((r) => r.kind === "real");
+  if (real.some((r) => r.outcome === "incomplete" || r.outcome === "error")) return { state: "UNKNOWN", reason: "SAFETY_UNKNOWN" };
+  if (real.some((r) => r.outcome === "clean")) return { state: "OK", reason: null };
+  if (readings.length > 0) return { state: "UNKNOWN", reason: "SAFETY_SIM_ONLY" };
+  return { state: "UNKNOWN", reason: "SAFETY_UNKNOWN" };
 }

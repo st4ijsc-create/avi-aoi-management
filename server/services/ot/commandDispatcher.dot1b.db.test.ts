@@ -19,6 +19,28 @@ const fake = vi.hoisted(() => ({
   drivers: new Map<number, unknown>(),
 }));
 
+// doc 81 Đợt 1C Task 1 fix round 1 (review #3): preflight lệnh THẬT không còn nghe driver TỰ báo an toàn
+// (getSafetyStatus của driver) — chỉ safety-PLC `real` có gán tag. Nguồn safety-PLC nền của facade THẬT
+// được giả ở đây, lái bởi CÙNG biến `safetyState` của tệp: OK ⇒ PLC thật đọc sạch; BLOCKED ⇒ e-stop
+// active; UNKNOWN ⇒ adapter safety-PLC tắt. (Cấu hình giả mang endpoint TEST-NET-1, không bao giờ nối.)
+const safetyRef = vi.hoisted(() => ({ get: (): string => "OK" }));
+vi.mock("../safety/plc/safetyPlcAdapter", async (importOriginal) => {
+  const orig = await importOriginal<typeof import("../safety/plc/safetyPlcAdapter")>();
+  return {
+    ...orig,
+    safetyPlcAdapterEnabled: () => safetyRef.get() !== "UNKNOWN",
+    listPlcConfigs: async () => [
+      { code: "T6-SPLC", backend: "modbus", endpoint: "tcp://192.0.2.1:502", statusMap: { estop: { address: "coil:1" } } },
+    ],
+    backendForConfig: () => ({
+      kind: "modbus" as const,
+      label: () => "fake real PLC",
+      read: async () => ({ estop: safetyRef.get() === "BLOCKED" }),
+      readChecked: async () => ({ status: { estop: safetyRef.get() === "BLOCKED" }, unreadable: [] }),
+    }),
+  };
+});
+
 vi.mock("./otManager", async (importOriginal) => {
   const orig = await importOriginal<typeof import("./otManager")>();
   return {
@@ -45,6 +67,7 @@ const TOOL = "set_machine_param";
 let writeCalls = 0;
 let writtenBatches: Array<Array<{ tagKey: string; value: unknown }>> = [];
 let safetyState: "OK" | "BLOCKED" | "UNKNOWN" = "OK";
+safetyRef.get = () => safetyState;
 const fakeDriver = {
   isConnected: () => true,
   async writeTags(writes: Array<{ tagKey: string; value: unknown }>) {
@@ -56,6 +79,7 @@ const fakeDriver = {
   async readTags() {
     return [];
   },
+  // Giữ lại: đường ĐỌC CŨ (không tham số) vẫn uỷ quyền; preflight lệnh thật thì KHÔNG (fix round 1 #3).
   async getSafetyStatus() {
     return { state: safetyState, source: "fake-driver", ts: new Date().toISOString() };
   },

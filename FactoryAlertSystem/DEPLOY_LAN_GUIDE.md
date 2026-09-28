@@ -144,7 +144,15 @@ export const DEFAULT_MQTT_CONFIG: MqttConfig = {
   useSSL: false,
   username: 'factory_user',         // Nếu có authentication
   password: 'FactoryAlert@2026',    // Nếu có authentication
-  topics: ['factory/alerts/#', 'factory/+/alerts'],
+  // ⚠ 2026-09-28 (doc 81 Đợt 1C Task 5): broker TỪ CHỐI subscribe `factory/#`, `factory/+/…`, `syn/#`
+  // (SUBACK 0x80) — thiết bị chỉ được nhánh máy của CHÍNH nó. Dùng các topic cảnh báo `avi/…`
+  // như mặc định trong src/utils/constants.ts:
+  topics: [
+    'avi/factory/+/workshop/+/station/+/errors',
+    'avi/factory/+/workshop/+/station/+/alerts',
+    'avi/factory/+/workshop/+/station/+/bulletin/periodic',
+    'avi/escalations/#',
+  ],
   keepAlive: 60,
   reconnectPeriod: 5000,
   connectTimeout: 30000,

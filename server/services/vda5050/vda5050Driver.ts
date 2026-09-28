@@ -28,7 +28,7 @@ import type {
   RobotJobResult,
   RobotHealth,
 } from "../robot/robotDriver";
-import { RobotAbortUnsupportedError } from "../robot/robotDriver";
+import { abortThroughRunJob } from "../robot/robotDriver";
 import {
   buildVda5050Topic,
   VDA5050_DEFAULT_INTERFACE,
@@ -36,7 +36,14 @@ import {
   type Vda5050Connection,
   type Vda5050Order,
 } from "./vda5050Messages";
-import { mapStateToRobotTelemetry, mapConnectionToOnline, buildOrder, jobToOrderNodes } from "./vda5050Mapping";
+import {
+  mapStateToRobotTelemetry,
+  mapConnectionToOnline,
+  buildOrder,
+  jobToOrderNodes,
+  buildVda5050StopInstantActions,
+} from "./vda5050Mapping";
+import { isStopJob } from "../robot/stopJob"; // residual round 2 — the ONE shared classifier
 
 type MqttLikeClient = {
   on(ev: string, cb: (...a: any[]) => void): void;
@@ -99,6 +106,15 @@ export class Vda5050RobotDriver implements RobotDriver {
       client.on("message", (topic: string, payload: Buffer) => this.onMessage(topic, payload));
       // Safety net so connect never hangs forever in tests / bad brokers.
       setTimeout(done, (cfg.timeoutMs ?? 30_000) + 100).unref?.();
+    });
+  }
+
+  private publish(t: "order" | "instantActions", body: unknown): Promise<void> {
+    return new Promise<void>((resolve, reject) => {
+      this.client!.publish(this.topic(t), JSON.stringify(body), { qos: 1, retain: false }, (err) => {
+        if (err) reject(err);
+        else resolve();
+      });
     });
   }
 
@@ -167,6 +183,18 @@ export class Vda5050RobotDriver implements RobotDriver {
     if (!this.connected || !this.client) {
       return { ok: false, status: "failed", error: "vda5050: not connected" };
     }
+    // doc 81 Đợt 1C residual 1 (ruling R-1C-m, LAYER b) — a STOP job is ALWAYS the fixed, server-built stop
+    // instantActions (cancelOrder, startPause) and NEVER an order, whatever its params carry. This used to fall
+    // through to the order path: `abort` + params.order / x,y was published as an ORDER — an "abort" that drove.
+    if (isStopJob(job)) {
+      try {
+        const stop = buildVda5050StopInstantActions(this.manufacturer, this.serialNumber);
+        await this.publish("instantActions", stop);
+        return { ok: true, status: "done", detail: { published: true, jobType: "abort", instantActions: stop.actions.map((a) => a.actionType) } };
+      } catch (err) {
+        return { ok: false, status: "failed", error: (err as Error)?.message ?? String(err), detail: { jobType: "abort", sent: false } };
+      }
+    }
     try {
       const params = job.params ?? {};
       // A pre-built order may be passed straight through; else build from nodes.
@@ -183,12 +211,7 @@ export class Vda5050RobotDriver implements RobotDriver {
           nodes,
         });
       }
-      await new Promise<void>((resolve, reject) => {
-        this.client!.publish(this.topic("order"), JSON.stringify(order), { qos: 1, retain: false }, (err) => {
-          if (err) reject(err);
-          else resolve();
-        });
-      });
+      await this.publish("order", order);
       return { ok: true, status: "done", detail: { published: true, orderId: order.orderId } };
     } catch (err) {
       return { ok: false, status: "failed", error: (err as Error)?.message ?? String(err) };
@@ -196,10 +219,10 @@ export class Vda5050RobotDriver implements RobotDriver {
   }
 
   async abort(): Promise<void> {
-    // A real abort publishes an instantActions cancelOrder — not implemented in this
-    // scaffold. doc 81 Đợt 1B Task 5: say so (the dispatcher records abort_unsupported)
-    // instead of a silent no-op that looked like a successful stop.
-    throw new RobotAbortUnsupportedError(this.vendor);
+    // doc 81 Đợt 1C residual 1 (R-1C-m) — the stop now exists (server-built cancelOrder + startPause), so abort()
+    // sends it through the same runJob path (was: RobotAbortUnsupportedError). Resolves only when it was
+    // published; not connected / publish error ⇒ RobotAbortFailedError (abort_failed), never a silent no-op.
+    await abortThroughRunJob((job) => this.runJob(job), "VDA5050");
   }
 
   async health(): Promise<RobotHealth> {

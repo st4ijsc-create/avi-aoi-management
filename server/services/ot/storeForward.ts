@@ -32,7 +32,7 @@
 import { promises as fs } from "node:fs";
 import path from "node:path";
 import type { InsertOtTelemetry } from "../../../drizzle/schema/ot";
-import { getTsDropStats, isPgDataError, MIN_PG_TS_MS, warnGop } from "./otGuards";
+import { getTsDropStats, getTsSkewByDevice, isPgDataError, MIN_PG_TS_MS, warnGop, type TsSkewThietBi } from "./otGuards";
 
 // ── flag ───────────────────────────────────────────────────────────────────────
 
@@ -633,6 +633,13 @@ export interface StoreForwardStatus extends StoreForwardMetrics {
   /** T7 fix r1 — mẫu bị cổng `ts` của telemetryBus loại (tích luỹ, mọi đầu đọc; KHÔNG vào DB/WAL). */
   droppedInvalidTs: number;
   droppedFutureSkew: number;
+  /** Đợt 1C T6 — mẫu mang `ts` chuỗi KHÔNG múi giờ bị từ chối (`ts_no_timezone`, ruling R-1C-a). */
+  droppedNoTimezone: number;
+  /**
+   * Đợt 1C T6 — lệch giờ THEO THIẾT BỊ (ts thiết bị − giờ server, ms): trung vị/lớn nhất/nhỏ nhất trên
+   * cửa sổ trượt + số mẫu bị loại, thiết bị lệch nhiều nhất xếp đầu (tối đa 100 hàng).
+   */
+  skewByDevice: TsSkewThietBi[];
   /** Rows currently buffered (not yet backfilled). */
   bufferedCount: number;
   /** Configured bounds (for the health card). */
@@ -652,6 +659,7 @@ export function getStatus(): StoreForwardStatus {
     walFile: walFile(),
     ...metrics,
     ...getTsDropStats(),
+    skewByDevice: getTsSkewByDevice(),
   };
 }
 

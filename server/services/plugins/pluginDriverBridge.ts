@@ -51,6 +51,7 @@ import type { StdioTransport } from "./sidecar/stdioTransport";
 import { transition, canRun, type PluginPhase, type TransitionResult } from "./sidecar/pluginLifecycle";
 import { verifyPluginSignature, type SignedPlugin } from "./sidecar/pluginSignature";
 import { createBucket, tryConsume, withTimeout, type RateLimiterConfig, type RateLimiterState } from "./sidecar/pluginQuota";
+import { docTsThietBi } from "../../utils/factoryTime";
 
 /** Master flag — default OFF. When off, registerPluginDrivers is a no-op (built-ins untouched). */
 export function pluginDriversEnabled(env: NodeJS.ProcessEnv = process.env): boolean {
@@ -126,12 +127,26 @@ const RPC = {
 } as const;
 
 /** Raw sample shape a sidecar returns (timestamp is an ISO string on the wire). */
-interface WireSample {
+export interface WireSample {
   tagKey: string;
   raw?: unknown;
   value: number | string | boolean | null;
   quality?: OtSample["quality"];
   timestamp?: string | number;
+}
+
+/**
+ * Một mẫu wire của sidecar ⇒ OtSample (thuần, test được). Đợt 1C Task 6 (R-1C-a): `timestamp` qua luật
+ * chung `docTsThietBi` — chuỗi KHÔNG múi giờ ⇒ `tsReject` (bus loại `ts_no_timezone`); chuỗi/số hỏng giữ
+ * hình dạng cũ (`Invalid Date` ⇒ bus loại `invalid_ts`).
+ */
+export function wireSampleToOtSample(s: WireSample): OtSample {
+  const base = { tagKey: s.tagKey, raw: s.raw ?? s.value, value: s.value ?? null, quality: s.quality ?? "good" };
+  if (s.timestamp == null) return { ...base, timestamp: new Date() };
+  const k = docTsThietBi(s.timestamp);
+  if (k.ok) return { ...base, timestamp: k.ts ?? new Date(s.timestamp) }; // bg99-ok: nhanh falsy (0/"") giu hinh dang cu
+  if (k.reason === "ts_no_timezone") return { ...base, timestamp: new Date(), tsReject: "ts_no_timezone" };
+  return { ...base, timestamp: new Date(NaN) };
 }
 
 /**
@@ -281,13 +296,7 @@ class PluginSidecarDriver implements OtDriver {
     if (!this.isConnected()) throw new Error(`plugin "${this.manifest.id}" offline — readTags refused`);
     const raw = await this.call<WireSample[]>(RPC.readTags, tags);
     const arr = Array.isArray(raw) ? raw : [];
-    return arr.map((s) => ({
-      tagKey: s.tagKey,
-      raw: s.raw ?? s.value,
-      value: s.value ?? null,
-      quality: s.quality ?? "good",
-      timestamp: s.timestamp != null ? new Date(s.timestamp) : new Date(),
-    }));
+    return arr.map(wireSampleToOtSample);
   }
 
   /**

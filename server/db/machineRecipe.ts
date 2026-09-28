@@ -52,9 +52,9 @@ export type RecipeReleaseOperation =
  * owns: `/recipes` deploy + rollback (deployWithinTx) and equipmentIntegration release + rollback
  * (recipeVersioningService). Before this, the two surfaces had separate, drifting checks
  * (/recipes rollback checked nothing; deploy/release let an archived version or a recipe of
- * another machine type through). Callers OUTSIDE the task (recipe-set distribute, recordLoad with
- * deploy, changeover.approve) keep their pre-task behaviour through `deployRecipe(…,
- * "legacyApprovedOnly")` — fix round 1, ruling R-T9a.
+ * another machine type through). doc 81 Đợt 1C Task 2 (owner decision 2026-09-27): the three
+ * callers Task 9 had left on the pre-task gate (recipe-set distribute, recordLoad with deploy,
+ * changeover.approve) now go through it too — `deployRecipe` has no weaker policy any more.
  *
  * MUST be called on the row read UNDER the code's `SELECT … FOR UPDATE` (same transaction), so a
  * concurrent archive/edit that committed while the promoter waited for the lock is seen.
@@ -356,16 +356,13 @@ export interface DeployRecipeInput {
 async function deployWithinTx(
   tx: DbOrTx,
   input: DeployRecipeInput,
-  gate: { operation: "deployRecipe" | "rollbackRecipeDeployment"; rollbackTarget: boolean } | null,
+  gate: { operation: "deployRecipe" | "rollbackRecipeDeployment"; rollbackTarget: boolean },
 ): Promise<RecipeDeployment> {
   // Row-lock ALL versions sharing this code → serialize concurrent promoters; target read UNDER it.
   const target = await lockCodeAndReadTarget(tx, input.recipeId);
   // doc 80 Đợt 1 Task 9 — the ONE release gate (approved · not archived on deploy · rollback only
-  // to a REPLACED version · machine type). `null` = legacy callers (R-T9a): no gate here, their
-  // pre-task approvedBy check ran in deployRecipe exactly as at 4fb1ec1e7.
-  if (gate) {
-    await assertRecipeReleasable(tx, target, { operation: gate.operation, machineId: input.machineId, rollbackTarget: gate.rollbackTarget });
-  }
+  // to a REPLACED version · machine type). doc 81 Đợt 1C Task 2 — no caller skips it any more.
+  await assertRecipeReleasable(tx, target, { operation: gate.operation, machineId: input.machineId, rollbackTarget: gate.rollbackTarget });
 
   // Current active version for the SAME code (the one being superseded) — read UNDER the lock.
   const [previous] = await tx
@@ -414,36 +411,21 @@ async function deployWithinTx(
  * let two concurrent deploys both create an active version).
  */
 /**
- * Fix round 1 (Task 9, ruling R-T9a) — WHICH gate a deploy caller gets, explicitly:
- *   • "strict"             — the shared release gate (assertRecipeReleasable) under the code lock.
- *                            Only `/recipes` recipes.deploy uses it.
- *   • "legacyApprovedOnly" — EXACTLY what deployRecipe enforced at 4fb1ec1e7: an unlocked read,
- *                            NOT_FOUND, then `approvedBy == null` ⇒ plain Error (same Vietnamese
- *                            text). Archived versions and other machine types still go through.
- *                            Used by callers outside Task 9 (constraint 6: byte-identical):
- *                            recipeSetService distribute, recipeVersioningService.recordLoad
- *                            (deploy:true) and changeover.approve. Whether recipe sets should get
- *                            the strict gate is an OWNER decision (task-9 report).
+ * Which gate a deploy caller gets, named explicitly at every call site:
+ *   • "strict" — the shared release gate (assertRecipeReleasable) under the code lock.
+ * doc 81 Đợt 1C Task 2 (owner decision 2026-09-27) REMOVED "legacyApprovedOnly" (Task 9 ruling
+ * R-T9a: unlocked read + approvedBy-only, archived versions and other machine types went through).
+ * Its three callers (recipeSetService distribute, recipeVersioningService.recordLoad(deploy:true),
+ * changeover.approve) now pass "strict", like /recipes recipes.deploy. The parameter stays so a
+ * future weaker policy would be a visible, reviewed addition to this union.
  */
-export type RecipeDeployPolicy = "strict" | "legacyApprovedOnly";
+export type RecipeDeployPolicy = "strict";
 
 export async function deployRecipe(input: DeployRecipeInput, policy: RecipeDeployPolicy): Promise<RecipeDeployment> {
+  void policy; // single member today — kept so every call site names its gate (see above)
   const d = await db();
-  return d.transaction(async (tx) => {
-    if (policy === "strict") {
-      // doc 80 Đợt 1 Task 9 — shared release gate inside deployWithinTx, under the code lock.
-      return deployWithinTx(tx, input, { operation: "deployRecipe", rollbackTarget: false });
-    }
-    // W2-9 (doc 25 T6) — SoD gate as it was before Task 9 (legacy callers, R-T9a): only an
-    // APPROVED recipe (approved by someone other than its creator, enforced at approveRecipe) may
-    // be deployed.
-    const [target] = await tx.select().from(machineRecipes).where(eq(machineRecipes.id, input.recipeId)).limit(1);
-    if (!target) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "recipe" }, `Recipe #${input.recipeId} not found`);
-    if (target.approvedBy == null) {
-      throw new Error("Recipe chưa được trình duyệt (second-approver) — cần một người khác duyệt trước khi deploy.");
-    }
-    return deployWithinTx(tx, input, null);
-  });
+  // doc 80 Đợt 1 Task 9 — shared release gate inside deployWithinTx, under the code lock.
+  return d.transaction(async (tx) => deployWithinTx(tx, input, { operation: "deployRecipe", rollbackTarget: false }));
 }
 
 /**

@@ -13,6 +13,21 @@ import postgres from "postgres";
 
 vi.setConfig({ testTimeout: 60_000, hookTimeout: 90_000 });
 
+// Đợt 1C Task 1 fix round 1 (review #5) — `safety_plc_configs` của `_test` dùng chung với tệp chạy song
+// song. Khi `onlyMine.code` được đặt, facade THẬT chỉ thấy đúng cấu hình của tệp này (listPlcConfigs thật,
+// lọc theo mã) ⇒ phép đối chiếu bảng ↔ facade LUÔN chạy, không phụ thuộc hàng của tệp khác.
+const onlyMine = vi.hoisted(() => ({ code: null as string | null }));
+vi.mock("../services/safety/plc/safetyPlcAdapter", async (importOriginal) => {
+  const orig = await importOriginal<typeof import("../services/safety/plc/safetyPlcAdapter")>();
+  return {
+    ...orig,
+    listPlcConfigs: async (f?: Parameters<typeof orig.listPlcConfigs>[0]) => {
+      const rows = await orig.listPlcConfigs(f);
+      return onlyMine.code == null ? rows : rows.filter((r) => r.code === onlyMine.code);
+    },
+  };
+});
+
 const DB_URL = process.env.DATABASE_URL;
 const RUN = `t4s${Date.now().toString(36)}${Math.floor(Math.random() * 1e4)}`;
 const PLC_CODE = `SIM-T4-${RUN}`.slice(0, 64);
@@ -86,6 +101,11 @@ describe.skipIf(!DB_URL)("Task 4 — safety.sourceHealth + listRuns DRY-RUN (CSD
   const safety = async (ctx: never) => (await import("./safetyRouter")).safetyRouter.createCaller(ctx);
   const facadeReading = async () =>
     (await import("../services/ot/adapterFacade")).createAdapterFacade({ adapterId: -1, machineId: null }).getSafetyStatus();
+  // Đợt 1C Task 1 — CHÍNH lượt đọc mà preflight OT/robot dùng trước lệnh THẬT.
+  const facadeRealActuation = async () =>
+    (await import("../services/ot/adapterFacade"))
+      .createAdapterFacade({ adapterId: -1, machineId: null })
+      .getSafetyStatus({ forRealActuation: true });
 
   it("adapter TẮT ⇒ báo 'blocked'/SAFETY_UNKNOWN — và facade THẬT cũng trả UNKNOWN", async () => {
     delete process.env.SAFETY_PLC_ADAPTER_ENABLED;
@@ -99,20 +119,48 @@ describe.skipIf(!DB_URL)("Task 4 — safety.sourceHealth + listRuns DRY-RUN (CSD
     expect((await facadeReading()).state).toBe("UNKNOWN");
   });
 
-  it("adapter BẬT + cấu hình SIM ⇒ báo preflight dựa vào GIẢ LẬP — và facade THẬT trả OK từ safety_plc (không UNKNOWN)", async () => {
+  // Đợt 1C Task 1 (quyết định chủ dự án 2026-09-27) — đổi kỳ vọng: trước đây bảng báo "sim_basis" /
+  // "sim_can_satisfy" (lệnh thật đi qua nhờ SIM). Nay SIM không thoả preflight lệnh THẬT ⇒ bảng báo
+  // blocked/SAFETY_SIM_ONLY, và lượt đọc THẬT của preflight (forRealActuation) nói ĐÚNG điều đó.
+  // Lượt đọc cũ (không tham số — cổng AI L-7) giữ nguyên: SIM sạch vẫn OK.
+  // Fix round 1 (review #5): đối chiếu trên ĐÚNG cấu hình của tệp này (cả hai phía cùng một đầu vào) —
+  //   bảng: computeSafetySourceHealth THẬT với hàng của tệp đọc từ CSDL; facade: listPlcConfigs lọc theo mã.
+  it("adapter BẬT + cấu hình SIM ⇒ lệnh THẬT bị chặn SAFETY_SIM_ONLY — khớp lượt đọc forRealActuation của facade THẬT", async () => {
     process.env.SAFETY_PLC_ADAPTER_ENABLED = "true";
     process.env.OT_CONTROL_ENABLED = "true";
     process.env.ROBOT_CONTROL_ENABLED = "true";
     const h = await (await safety(ctxAdmin)).sourceHealth();
     expect(h.safetyPlc.simConfigs).toBeGreaterThanOrEqual(1);
     expect(["sim", "mixed"]).toContain(h.safetyPlc.basis);
-    expect(["sim_basis", "sim_can_satisfy"]).toContain(h.preflight.ot.realWrites);
-    expect(h.preflight.ot.refusalReason).toBeNull();
     const mine = h.safetyPlc.configs.find((c) => c.code === PLC_CODE);
     expect(mine).toMatchObject({ backend: "sim", effective: "sim_empty", provenance: "SIM" });
-    const reading = await facadeReading();
-    expect(reading.state).not.toBe("UNKNOWN");
-    expect(reading.source).toMatch(/^safety_plc/);
+
+    const { computeSafetySourceHealth, docCoDangBat } = await import("../services/safety/safetySourceHealth");
+    const own = await sql<Array<{ id: number; code: string; backend: string; endpoint: string | null; statusMap: null; factoryId: number | null; scope: string | null }>>`
+      SELECT id, code, backend, endpoint, "statusMap", "factoryId", scope FROM safety_plc_configs WHERE id = ${ids.plc}`;
+    expect(own).toHaveLength(1);
+    const panelMine = computeSafetySourceHealth({
+      checkedAt: new Date().toISOString(),
+      flags: docCoDangBat(),
+      plcConfigsEnabled: own,
+      plcRead: "ok",
+      visibleFactoryIds: null,
+      zones: [],
+      calibrations: [],
+      estop: { kind: "null", label: "null", rated: false },
+      socketServerUp: true,
+    });
+    onlyMine.code = PLC_CODE;
+    try {
+      const strict = await facadeRealActuation();
+      expect(panelMine.preflight.ot).toMatchObject({ realWrites: "blocked", refusalReason: "SAFETY_SIM_ONLY" });
+      expect(panelMine.preflight.robot).toMatchObject({ realWrites: "blocked", refusalReason: "SAFETY_SIM_ONLY" });
+      expect(strict).toMatchObject({ state: "UNKNOWN", basis: "sim_only" });
+      const reading = await facadeReading(); // đường cũ (cổng AI L-7) giữ nguyên: SIM sạch vẫn OK
+      expect(reading).toMatchObject({ state: "OK", source: "safety_plc" });
+    } finally {
+      onlyMine.code = null;
+    }
   });
 
   it("OT_CONTROL tắt ⇒ dry_run (lệnh chỉ mô phỏng); cờ ROBOT preflight='false' ⇒ unguarded", async () => {
@@ -127,11 +175,20 @@ describe.skipIf(!DB_URL)("Task 4 — safety.sourceHealth + listRuns DRY-RUN (CSD
 
   it("phạm vi: người dùng không được gán nhà máy KHÔNG thấy mã cấu hình, nhưng số tổng (nền preflight) giống admin", async () => {
     process.env.SAFETY_PLC_ADAPTER_ENABLED = "true";
-    const a = await (await safety(ctxAdmin)).sourceHealth();
-    const u = await (await safety(ctxScoped)).sourceHealth();
+    // Đợt 1C Task 1 fix round 1 — safetySimOnly.dot1c chạy SONG SONG chèn/xoá cấu hình trong từng ca của nó
+    // ⇒ đo admin TRƯỚC và SAU lượt người dùng; chỉ so khi bảng đứng yên trong khoảng đó (tối đa 5 lần thử).
+    let stable: { a: number; u: Awaited<ReturnType<Awaited<ReturnType<typeof safety>>["sourceHealth"]>> } | null = null;
+    for (let i = 0; i < 5 && !stable; i++) {
+      const a1 = await (await safety(ctxAdmin)).sourceHealth();
+      const u = await (await safety(ctxScoped)).sourceHealth();
+      const a2 = await (await safety(ctxAdmin)).sourceHealth();
+      if (a1.safetyPlc.enabledConfigs === a2.safetyPlc.enabledConfigs) stable = { a: a1.safetyPlc.enabledConfigs, u };
+    }
+    expect(stable, "bảng cấu hình không đứng yên trong 5 lần đo").not.toBeNull();
+    const { a, u } = stable!;
     expect(u.safetyPlc.configs.find((c) => c.code === PLC_CODE)).toBeUndefined();
     expect(u.safetyPlc.hiddenConfigs).toBeGreaterThanOrEqual(1);
-    expect(u.safetyPlc.enabledConfigs).toBe(a.safetyPlc.enabledConfigs);
+    expect(u.safetyPlc.enabledConfigs).toBe(a);
   });
 
   it("Fix round 1 #3: adapter e-stop VENDOR đã đăng ký ⇒ health() KHÔNG bị gọi mỗi request, endpoint KHÔNG lộ", async () => {

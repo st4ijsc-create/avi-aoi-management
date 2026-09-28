@@ -47,6 +47,11 @@ export interface OtSample {
    * kéo cả lô. Mẫu good không mang trường này (hình dạng cũ giữ nguyên).
    */
   statusCode?: string;
+  /**
+   * Đợt 1C Task 6 (R-1C-a) — nguồn mẫu khai giờ bằng chuỗi KHÔNG múi giờ (plugin sidecar). `timestamp`
+   * khi đó chỉ là giờ nhận; `sampleToCanonical` chuyển cờ này sang bus ⇒ loại `ts_no_timezone`.
+   */
+  tsReject?: "ts_no_timezone";
 }
 
 /** Sức khoẻ kết nối của driver. */
@@ -145,6 +150,12 @@ export interface SafetyState {
   source: string;
   ts: string;
   asset_id?: string;
+  /**
+   * doc 81 Đợt 1C Task 1 — set ONLY by the facade's real-actuation read, on an UNKNOWN that is
+   * unknown because no enabled safety-PLC config is a real PLC with a mapped tag (only SIM /
+   * real_unmapped) ⇒ dispatchers refuse with SAFETY_SIM_ONLY. Absent everywhere else.
+   */
+  basis?: "sim_only";
 }
 
 /** TagDescriptor (LDS-L1 §A.2) — một điểm dữ liệu trong AssetDescriptor. */

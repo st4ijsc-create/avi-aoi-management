@@ -41,8 +41,13 @@ const ROBOT_ID_HOISTED = vi.hoisted(() => ({ id: 990_700_000 + (Date.now() % 9_0
 // Nguồn đọc nền của facade an toàn THẬT: PLC sạch ⇒ OK.
 vi.mock("../safety/plc/safetyPlcAdapter", () => ({
   safetyPlcAdapterEnabled: () => true,
-  listPlcConfigs: async () => [{ code: "SPLC-1" }],
-  backendForConfig: () => ({ read: async () => ({ estop: false }) }),
+  // Đợt 1C Task 1 (2026-09-27): preflight lệnh THẬT chỉ nhận PLC `real` (endpoint + tag an toàn gán) đọc qua
+  // readChecked — cấu hình giả mang hình dạng đó (endpoint TEST-NET-1, không bao giờ được nối: backend bị giả).
+  listPlcConfigs: async () => [{ code: "SPLC-1", backend: "modbus", endpoint: "tcp://192.0.2.1:502", statusMap: { estop: { address: "coil:1" } } }],
+  backendForConfig: () => ({
+    read: async () => ({ estop: false }),
+    readChecked: async () => ({ status: { estop: false }, unreadable: [] }),
+  }),
   statusToFindings: () => [],
 }));
 
@@ -206,32 +211,54 @@ describe.skipIf(!DB_URL)("robot dispatcher — HITL binding + single-use consume
     expect(rt.runJobCalls).toBe(0);
   });
 
-  it("không actionId: manual với confirmedBy===requestedBy vẫn chạy (R11), manual với người xác nhận khác ⇒ MANUAL_CONFIRMER_MISMATCH; nhãn 'hitl' không actionId giữ hợp đồng Task 5 (chạy — CÒN MỞ, xem báo cáo)", async () => {
+  it("không actionId: manual với confirmedBy===requestedBy vẫn chạy (R11), manual với người xác nhận khác ⇒ MANUAL_CONFIRMER_MISMATCH; nhãn 'hitl' không actionId ⇒ HITL_ACTION_REQUIRED (Đợt 1C Task 3 — hợp đồng Task 5 đã ĐÓNG)", async () => {
     const m = await dispatchRobotJob(input({ actionId: undefined, triggerKind: "manual" }));
     expect(m.status).toBe("done");
     expect(rt.runJobCalls).toBe(1);
     const m2 = await dispatchRobotJob(input({ actionId: undefined, triggerKind: "manual", confirmedBy: OTHER }));
     expect(m2.error).toBe("MANUAL_CONFIRMER_MISMATCH");
     expect(rt.runJobCalls).toBe(1);
-    // Hợp đồng hiện hành (vendors/policy test của Task 5 ghim): 'hitl' + confirmedBy, không actionId ⇒ chạy.
+    // doc 81 Đợt 1C Task 3 (2026-09-27, chủ dự án "Đóng") — trước: 'hitl' + confirmedBy, không actionId ⇒
+    // chạy (done, runJob 2 lần). Nay: bị từ chối trước driver, robot vẫn chỉ 1 lần (lượt manual ở trên).
     const h = await dispatchRobotJob(input({ actionId: undefined }));
-    expect(h.status).toBe("done");
-    expect(rt.runJobCalls).toBe(2);
+    expect(h.status).toBe("rejected");
+    expect(h.error).toBe("HITL_ACTION_REQUIRED");
+    expect(h.code).toBe("PRECONDITION_FAILED");
+    expect(rt.runJobCalls).toBe(1);
   });
 
-  it("★ hai lượt song song với CÙNG bản ghi confirmed ⇒ đúng MỘT lượt chạy nhờ LỚP CSDL (FOR UPDATE + CAS), bản ghi executed — dùng job `abort` (miễn slot R14 theo thiết kế) để cả hai lượt THẬT SỰ tới reserveRobotJob", async () => {
+  it("★ hai lượt song song với CÙNG bản ghi confirmed ⇒ đúng MỘT lượt chạy nhờ LỚP CSDL (FOR UPDATE + CAS), bản ghi executed — hai BẢN dispatcher (như hai tiến trình: mỗi bản một slot R14 riêng) để cả hai lượt THẬT SỰ tới reserveRobotJob", async () => {
     // final wave 5b — bản trước dùng job chuyển động nên slot R14 (trong tiến trình) chặn lượt hai
     // TRƯỚC khi nó chạm CSDL, tức lớp tiêu thụ một lần (FOR UPDATE + CAS) không được đo: bỏ CAS mà
-    // ca vẫn xanh. `abort` là job duy nhất KHÔNG qua slot (một lệnh dừng không bao giờ bị chặn) nhưng
-    // VẪN đi qua reserveRobotJob khi có actionId ⇒ hai giao dịch đua nhau đúng trên hàng ai_pending_actions.
-    const job = { jobType: "abort" as const, params: {} };
-    const actionId = await makeAction({ bind: { jobType: "abort" } });
-    const [a, b] = await Promise.all([dispatchRobotJob(input({ actionId, job })), dispatchRobotJob(input({ actionId, job }))]);
+    // ca vẫn xanh. Bản 5b dùng job `abort` (không qua slot).
+    // doc 81 Đợt 1C Task 3 fix round 1 (R-1C-c, 2026-09-27): một lệnh DỪNG nay miễn TOÀN BỘ khối HITL —
+    // bản ghi của nó không còn được tái xác minh / tiêu thụ ⇒ `abort` không đo được lớp CSDL nữa. Thay bằng
+    // hai BẢN module dispatcher (vi.resetModules ⇒ hai Map slot R14 độc lập, cùng CSDL — đúng hình dạng hai
+    // tiến trình) chạy cùng một chuyển động gắn cùng bản ghi: slot không chặn được, chỉ FOR UPDATE + CAS.
+    const actionId = await makeAction({});
+    vi.resetModules();
+    const other = await import("./robotCommandDispatcher");
+    // Nạp trước facade an toàn của registry MỚI (như beforeAll làm cho bản đầu): lần import động đầu tiên
+    // nặng tới mức chạm hạn preflight 5 s ⇒ SAFETY_UNKNOWN giả — không phải thứ ca này đo.
+    await import("../ot/adapterFacade");
+    expect(other.dispatchRobotJob).not.toBe(dispatchRobotJob); // cầu chì: đúng là bản module THỨ HAI
+    const [a, b] = await Promise.all([dispatchRobotJob(input({ actionId })), other.dispatchRobotJob(input({ actionId }))]);
     expect([a.status, b.status].sort()).toEqual(["done", "rejected"]);
     const rejected = a.status === "rejected" ? a : b;
     expect(rejected.error).toBe("NOT_CONFIRMED"); // KHÔNG phải robot_motion_in_progress: slot không tham gia
     expect(rt.runJobCalls).toBe(1);
     expect(await pendingStatus(actionId)).toBe("executed");
+  });
+
+  it("fix round 1 (R-1C-c) — lệnh DỪNG mang bản ghi đã TIÊU THỤ / sai hash ⇒ vẫn tới robot, bản ghi KHÔNG bị chạm", async () => {
+    const spent = await makeAction({ status: "executed", bind: { jobType: "abort" } });
+    const wrong = await makeAction({ bind: { jobType: "home" } });
+    const job = { jobType: "abort" as const, params: {} };
+    const a = await dispatchRobotJob(input({ actionId: spent, job }));
+    const b = await dispatchRobotJob(input({ actionId: wrong, job }));
+    expect([a.status, b.status]).toEqual(["done", "done"]);
+    expect(rt.runJobCalls).toBe(2);
+    expect(await pendingStatus(wrong)).toBe("confirmed");
   });
 
   it("chuyển động song song cùng bản ghi: lớp slot R14 chặn lượt hai TRƯỚC CSDL (robot_motion_in_progress) — bản ghi vẫn chỉ tiêu thụ một lần", async () => {
@@ -283,10 +310,12 @@ describe.skipIf(!DB_URL)("robot dispatcher — HITL binding + single-use consume
   it("sổ robot_jobs: mỗi lượt bị từ chối vì binding có hàng rejected mang mã lý do", async () => {
     const before = (await jobsOf("rejected")).length;
     const actionId = await makeAction({ bind: null });
-    await dispatchRobotJob(input({ actionId }));
+    const r = await dispatchRobotJob(input({ actionId }));
     const after = await jobsOf("rejected");
     expect(after.length).toBe(before + 1);
-    const last = after[after.length - 1];
-    expect(last.errorText).toMatch(/^ACTION_BINDING_MISMATCH/);
+    // doc 81 Đợt 1C Task 3 fix round 1 — đọc ĐÚNG hàng của lượt này (r.jobId); "hàng cuối" của một SELECT không
+    // ORDER BY không có thứ tự bảo đảm (ca từng xanh nhờ may, đỏ khi tập hàng rejected của file đổi).
+    const mine = after.find((row) => row.id === r.jobId);
+    expect(mine?.errorText).toMatch(/^ACTION_BINDING_MISMATCH/);
   });
 });

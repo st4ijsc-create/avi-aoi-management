@@ -131,7 +131,8 @@ services:
       - appuploads:/app/uploads
       - appbackups:/app/backups
     healthcheck:
-      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:3000/health || exit 1"]
+      # doc 81 Đợt 1C Task 6 — /readyz: SELECT 1 thật, 503 khi DB mất (liveness k8s vẫn /health).
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:3000/readyz || exit 1"]
       interval: 30s
       timeout: 5s
       retries: 3

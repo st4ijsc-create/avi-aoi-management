@@ -106,8 +106,15 @@ Gửi kết quả kiểm tra từ máy AOI/AVI.
 ### Quy tắc `inspectionTime` (CASE #3)
 
 - **Luôn** bị kiểm tra parse được — chuỗi không parse được → `BAD_REQUEST`.
-- **Nên** kèm offset UTC. Không có offset → vẫn nhận nhưng gắn cờ `timeSource='machine_naive'`; khi bật
-  `INGEST_REQUIRE_TIME_OFFSET=true` (mặc định TẮT) thì thiếu offset → `BAD_REQUEST`.
+- **PHẢI** kèm múi giờ tường minh: `Z`, `±hh:mm`/`±hhmm`, hoặc `GMT±hhmm`/`UTC±hhmm` (dạng
+  `Date.toString()` như `"Sun Aug 30 2026 14:26:51 GMT+0700 (Indochina Time)"` được nhận — tên trong
+  ngoặc bị bỏ qua; `GMT`/`UTC` trần = `Z`). `INGEST_REQUIRE_TIME_OFFSET` **MẶC ĐỊNH BẬT** (từ 2026-09-28):
+  thiếu múi giờ → `BAD_REQUEST`, `data.appCode = "INVALID_VALUE"`,
+  `data.appParams = { field: "inspectionTime", reason: "timeOffsetRequired" }`; câu `message` bắt đầu bằng
+  `time_offset_required:` (cửa REST `/api/machine/**` chỉ trả `message`). Áp cho `submitInspection` và
+  từng mục của `submitInspectionBatch` (một mục thiếu múi giờ ⇒ cả lô bị từ chối).
+- Đặt `INGEST_REQUIRE_TIME_OFFSET=false` (hoặc `0`/`off`/`no`) để TẮT: chuỗi không múi giờ được nhận,
+  hiểu là UTC, và gắn cờ `timeSource='machine_naive'`.
 - Server đo độ lệch đồng hồ (skew) so với giờ nhận; lệch quá `INGEST_CLOCK_SKEW_WARN_SECONDS`
   (mặc định 300s) → gắn cờ `clockSkewFlagged` + cảnh báo ops (board KHÔNG bị từ chối — QĐ#3).
 

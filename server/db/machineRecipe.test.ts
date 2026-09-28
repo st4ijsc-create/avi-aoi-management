@@ -274,11 +274,9 @@ describe("machineRecipe — second-approver (W2-9)", () => {
     const err = await deployRecipe({ recipeId: v1.id, machineId: 5, deployedBy: 1 }, "strict").catch((e) => e);
     expect(err?.code).toBe("PRECONDITION_FAILED");
     expect(err?.cause?.appParams?.reason).toBe("recipeNotApproved");
-    // R-T9a — "legacyApprovedOnly" (recipe sets / recordLoad / changeover): the PRE-TASK refusal,
-    // byte-identical (plain Error, same text).
-    await expect(deployRecipe({ recipeId: v1.id, machineId: 5, deployedBy: 1 }, "legacyApprovedOnly")).rejects.toThrow(
-      "Recipe chưa được trình duyệt (second-approver) — cần một người khác duyệt trước khi deploy.",
-    );
+    // doc 81 Đợt 1C Task 2 — "legacyApprovedOnly" (Task 9 R-T9a: plain Error, approvedBy only) was
+    // REMOVED; recipe sets / recordLoad / changeover now get this same strict refusal (covered on
+    // the real DB in machineRecipe.legacyCallers.dot1.db.test.ts).
     // Không có active version nào được tạo.
     expect(recipes.filter((r) => r.status === "active")).toHaveLength(0);
   });

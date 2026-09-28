@@ -239,3 +239,42 @@ Plan `docs/superpowers/plans/2026-09-27-engineering-control-dot1b.md`. **43 comm
 - Gateway dùng một khoá máy cho nhiều thiết bị nhận 403.
 
 **Còn mở (cần quyết định hoặc đợt sau):** robot `hitl` không kèm actionId vẫn chạy (vda5050Router/Adapter, ros2Bridge — đề xuất đóng); khoá `IOT_GATEWAY` chưa gắn danh sách thiết bị trên `/api/ot/ingest`; MQTT `factory/{fId}/{máy khác}/sensor/*` ghi được cho máy bất kỳ + cầu telemetry tin `asset_id` + subscribe `factory/#`; thiết bị MQTT đã đăng ký chưa có mật khẩu (cờ `MQTT_ALLOW_PASSWORDLESS_REGISTERED`, mặc định bật); Docker HEALTHCHECK dùng `/health` (luôn 200) hay `/readyz`; loại mẫu `ts` tương lai >24 h ở mọi nguồn; `new Date(ts)` không múi giờ ở 2 cửa ingest (BG-96/99); tài liệu `IoTTelemetrySection` + doc 61 §5.2 còn hướng dẫn `deviceId` kiểu cảm biến (nay 403); khoá chuyển động chỉ trong bộ nhớ; FOE tự cấp phê duyệt; giao thức thật (FANUC echo SequenceID, TM `OK;warnings`, MELFA `OPEN=`) phải xác nhận ở FAT. Chi tiết từng mục: ledger `.superpowers/sdd/2026-09-27-engineering-control-dot1b/progress.md`.
+
+## 8. Kết quả Đợt 1C (2026-09-28)
+
+Plan `docs/superpowers/plans/2026-09-27-engineering-control-dot1c.md` — thực thi các quyết định chủ dự án 2026-09-27 (§7 "Còn mở"). **36 commit** `a001fdc25..d314232c7` (không tính plan Đợt 2 `f5f1c0ec8`), ~142 tệp. Quy trình như Đợt 1B: ĐỎ → vá → xanh → đột biến từng lớp; review từng task; review toàn nhánh (0 Critical, 4 Important) → một đợt sửa cuối → re-review phát hiện thêm 1 lỗ Important có từ trước ⇒ sửa 2 vòng → re-review sạch. Quét cuối nhóm robot/api-v1/FOE/VDA5050: **985/986** (1 = test `binding.db` nhạy tải, chạy riêng 13/13 ×2); `tsc` sạch.
+
+| Quyết định chủ dự án | Đã làm | Task |
+|---|---|---|
+| (1) SIM safety-PLC KHÔNG thoả preflight cho đích đã commission | `SAFETY_SIM_ONLY`; PLC thật không đọc được ⇒ `UNKNOWN` (không bị SIM che); đọc PLC song song, hạn từng PLC 4 s, tổng OT 5 s | 1, final M4 |
+| (2) Cổng recipe CHẶT | phân phối recipe set, `recordRecipeLoad`, changeover đi qua cổng chặt; gợi ý "cập nhật set" chỉ khi bản active mới hơn | 2 |
+| (3) Đóng robot `hitl` không actionId | dispatcher từ chối `HITL_ACTION_REQUIRED`; **lệnh DỪNG không bao giờ bị chặn** bởi HITL/policy DENY (ghi override) | 3 |
+| (4b) Allowlist thiết bị cho gateway | bảng `gateway_device_allowlist` (mig **0361**, chủ dự án đã áp lên dev); khoá `IOT_GATEWAY` chỉ ghi cho thiết bị trong danh sách, ở cả `/api/ot/ingest` và v1 | 4 |
+| (4c) Đóng MQTT ghi chéo máy | thiết bị chỉ publish/subscribe dưới nhánh của chính máy (`factory/{f}/{mã}/…`, `syn/{đường của mình}/…`); gắn thiết bị↔máy (`mqttClient.bindMachine`), đổi/xoá mật khẩu (`rotatePassword`/`clearCredential`, hiện một lần, audit không chứa bí mật, ngắt phiên) | 5, 5b |
+| (4d) Lệch ts — tìm gốc & sửa | **gốc:** `new Date(chuỗi không múi giờ)` đọc theo TZ tiến trình Node (+07 dev đúng tình cờ, container UTC lệch 7 h) + 5 câu SQL thô ép naive theo TZ phiên. Sửa: ts không múi giờ bị từ chối `ts_no_timezone` ở **mọi cửa ingest**; 5 câu `AT TIME ZONE 'UTC'` (test chạy dưới 2 TZ phiên, ĐỎ đúng 2 ca trên mã cũ); bảng lệch giờ theo thiết bị trong `storeForward.getStatus().skewByDevice`; định dạng `… GMT+0700 (Indochina Time)` (BG-72) được nhận đúng 07:26:51Z | 6 |
+| QĐ 2026-09-28 "có bật" | `INGEST_REQUIRE_TIME_OFFSET` **mặc định BẬT trong mã** (chỉ tắt khi `false/0/off/no`); lỗi mang mã `INVALID_VALUE`/`timeOffsetRequired` + vi/en/zh | 6 |
+| Docker HEALTHCHECK | Dockerfile + compose → `/readyz`; Helm liveness giữ `/health` | 6 |
+
+**Sửa từ review toàn nhánh (an toàn DỪNG):**
+- Robot STOP khi DB sập/treo/không cấu hình: mỗi bước DB trên đường dừng có hạn 1 s; lỗi ⇒ **STOP vẫn gửi**, sổ ghi sau (best-effort). Chuyển động vẫn fail-closed.
+- Idempotency: phát lại chỉ khi cùng (robot, khoá, loại lệnh) và lần trước `done`; STOP thất bại/bị từ chối ⇒ gửi lại.
+- ros2Bridge không publish thông điệp do người gọi đưa; một job một kênh.
+- **Lỗ có từ trước, lộ ra sau Task 3:** `run_job {jobType:"abort", params:{order}}` qua api/v1/FOE bỏ qua mọi cổng chuyển động và driver VDA5050 publish thành LỆNH CHẠY ⇒ "abort" làm AGV chạy. Đóng bằng **ba lớp độc lập** (dispatcher tước params; mọi driver dùng MỘT bộ phân loại `server/services/robot/stopJob.ts` và chỉ gửi lệnh dừng cố định của hãng; adapter VDA5050 tự dựng instantActions). Đột biến từng lớp: gỡ một lớp, robot vẫn không chạy.
+
+**Việc cần làm TRƯỚC lần restart :3000 tới (thêm vào danh sách §7):**
+- Máy AOI gửi `inspectionTime` **không múi giờ** (mẫu thật `2026-08-18T09:30:00.150`) sẽ bị **từ chối** — cần máy gửi `Z`/`+07:00`, hoặc đặt `INGEST_REQUIRE_TIME_OFFSET=false` tạm. Mục WAL cũ phát lại vẫn được lưu (gắn `machine_naive`).
+- Thiết bị telemetry/cảm biến gửi ts không múi giờ bị loại `ts_no_timezone` (đếm theo thiết bị trong `skewByDevice`).
+- Thiết bị MQTT phải được gắn máy (Cấu hình → MQTT) mới ghi được sensor/telemetry; với `MQTT_REQUIRE_PASSWORD=false` không có danh tính thiết bị ⇒ ingest MQTT bị từ chối (log cảnh báo một lần khi khởi động).
+- Gateway: điền `gateway_device_allowlist` cho từng khoá `IOT_GATEWAY`.
+- AGV sau STOP ở trạng thái tạm dừng (`startPause`) tới khi có lệnh tiếp tục (`stopPause`, đi qua cổng chuyển động).
+- Chưa đo "sau" trên runtime: cần build + restart :3000 (chủ dự án quyết).
+
+**Cần chủ dự án quyết:**
+1. **OT soft-stop khi safety-PLC chỉ SIM / không đọc được:** hiện bị từ chối (thông báo nói rõ "dùng E-STOP phần cứng"). Lý do: "stop" OT là ghi tag do người gọi chọn, chưa có metadata ghim tag dừng ⇒ miễn theo tên là lỗ. Muốn cho đi an toàn cần **ghim tag/giá trị dừng theo máy** — làm thành task?
+2. **STOP khi DB sập + `FIELD_V2` bật:** kiểm quyền (ai được ra lệnh) cần DB ⇒ STOP phần mềm bị từ chối trong ~1 s (trước: treo). Giữ như vậy (E-STOP phần cứng không ảnh hưởng)?
+3. Đường ZIP/tree v2: `completedAt`/`startedAt` không múi giờ vẫn đọc là UTC (ngoài phạm vi Task 6) — có áp luật từ chối như `inspectionTime`?
+4. 5 thủ tục `kbStudio` có thuộc SKU AI không (census giấy phép AI)?
+
+**Còn mở:** `safety_plc_configs` chưa theo đích (một PLC thật offline chặn mọi lệnh ghi thật); VDA5050 publish order hai lần (driver + adapter, chưa có caller); `docGioTuongNhaMay` còn regex ngày cùng lỗi M2; ghi sổ STOP dry-run chưa có hạn; bảng skew gồm cả mẫu do server đóng dấu; `revokeLinkedMqttClientsTx` không ngắt phiên; audit_logs đọc không theo phạm vi (enhancedAuditRouter); app FactoryAlertSystem không gửi mật khẩu MQTT (đổi mật khẩu tablet = khoá ngoài, UI đã cảnh báo); nhiều đỏ có sẵn không thuộc đợt (AOIPackages clientErrorCoverage/rawErrorMessageCensus, viStringCoverage F12, i18n-check kbStudio/repoWs, `server/mqtt.test.ts` testNGAlert ×2 từ `d467c6b56`). Ledger: `.superpowers/sdd/2026-09-27-engineering-control-dot1c/progress.md`.
+
+**Sự cố vận hành 2026-09-28:** DB dev :5434 không trả lời (cổng TCP vẫn mở) — gốc: ổ C: đầy (0,5 GB; đĩa ảo Docker 195 GB), trùng lúc một truy vấn tổng hợp 14 ngày nặng. Chủ dự án dọn C:; khởi động lại Docker cần **`wsl --shutdown`** (VM WSL "up 4 days", restart Docker Desktop đơn thuần không đủ). Bài học: không chạy tổng hợp nặng trên DB dev; nên dời đĩa Docker sang D:.

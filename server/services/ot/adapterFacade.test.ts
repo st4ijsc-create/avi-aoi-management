@@ -118,6 +118,18 @@ vi.mock("../safety/plc/safetyPlcAdapter", () => ({
       if (cfg.__throw) throw new Error("unreachable");
       return cfg.__status ?? {};
     },
+    // Đợt 1C Task 1 — only rows that set __checked expose readChecked (the real backend's API).
+    ...(cfg.__checked || cfg.__throwChecked
+      ? {
+          readChecked: async () => {
+            if (cfg.__throwChecked) throw new Error("connect ECONNREFUSED 198.51.100.7:502 unreachable");
+            // final wave 5 (M4) — PLC chậm (__delayMs) hoặc treo vĩnh viễn (__hang, vd disconnect() không trả về).
+            if (cfg.__hang) return new Promise(() => undefined);
+            if (cfg.__delayMs) await new Promise((r) => setTimeout(r, cfg.__delayMs));
+            return cfg.__checked;
+          },
+        }
+      : {}),
     label: () => "sim",
   }),
   statusToFindings: (status: Record<string, unknown>) =>
@@ -379,4 +391,139 @@ describe("G1.1 — getSafetyStatus fallback (READ-ONLY, honest)", () => {
     expect(delegated).toHaveBeenCalledTimes(1);
     expect(s.source).toBe("driver");
   });
+});
+
+// doc 81 Đợt 1C Task 1 — the real-actuation reading (owner decision 2026-09-27).
+describe("Đợt 1C Task 1 — getSafetyStatus({ forRealActuation: true })", () => {
+  const REAL = { code: "PLC-R", backend: "modbus", endpoint: "tcp://192.0.2.1:502", statusMap: { estop: { address: "coil:1" } } };
+  const SIMROW = { code: "SIM-1", backend: "sim", endpoint: null, statusMap: null, __status: {} };
+
+  it("chỉ SIM sạch ⇒ UNKNOWN basis sim_only; đường cũ (không tham số) vẫn OK như trước", async () => {
+    plcEnabled = true;
+    plcConfigs = [SIMROW];
+    const facade = createAdapterFacade({ adapterId: 10 });
+    expect(await facade.getSafetyStatus({ forRealActuation: true })).toMatchObject({ state: "UNKNOWN", basis: "sim_only" });
+    const legacy = await facade.getSafetyStatus();
+    expect(legacy).toMatchObject({ state: "OK", source: "safety_plc" });
+    expect(legacy).not.toHaveProperty("basis");
+  });
+
+  it("cấu hình real mà backend KHÔNG có readChecked ⇒ không được coi là sạch (fail-closed) ⇒ UNKNOWN, không basis", async () => {
+    plcEnabled = true;
+    plcConfigs = [{ ...REAL, __status: {} }];
+    const s = await createAdapterFacade({ adapterId: 10 }).getSafetyStatus({ forRealActuation: true });
+    expect(s.state).toBe("UNKNOWN");
+    expect(s.basis).toBeUndefined();
+  });
+
+  it("real readChecked sạch ⇒ OK; real có tag không đọc được ⇒ UNKNOWN; real có cờ active ⇒ BLOCKED", async () => {
+    plcEnabled = true;
+    const facade = createAdapterFacade({ adapterId: 10 });
+    plcConfigs = [{ ...REAL, __checked: { status: { estop: false }, unreadable: [] } }, SIMROW];
+    expect((await facade.getSafetyStatus({ forRealActuation: true })).state).toBe("OK");
+    plcConfigs = [{ ...REAL, __checked: { status: {}, unreadable: ["estop"] } }, SIMROW];
+    expect(await facade.getSafetyStatus({ forRealActuation: true })).toMatchObject({ state: "UNKNOWN", source: "none" });
+    plcConfigs = [{ ...REAL, __checked: { status: { estop: true }, unreadable: [] } }, SIMROW];
+    expect(await facade.getSafetyStatus({ forRealActuation: true })).toMatchObject({ state: "BLOCKED", source: "safety_plc:PLC-R" });
+  });
+});
+
+// doc 81 Đợt 1C Task 1 — fix round 1 (review): R-1C-b, cảnh báo có giới hạn, không uỷ quyền driver.
+describe("Đợt 1C Task 1 fix round 1 — getSafetyStatus({ forRealActuation: true })", () => {
+  const real = (code: string, extra: Record<string, unknown>) => ({
+    code, backend: "modbus", endpoint: "tcp://198.51.100.7:502", statusMap: { estop: { address: "coil:1" } }, ...extra,
+  });
+  const SIMROW = { code: "SIM-1", backend: "sim", endpoint: null, statusMap: null, __status: {} };
+
+  it("R-1C-b: một PLC thật sạch KHÔNG che PLC thật khác có tag không đọc được / đọc lỗi ⇒ UNKNOWN", async () => {
+    plcEnabled = true;
+    const facade = createAdapterFacade({ adapterId: 10 });
+    plcConfigs = [real("PLC-A", { __checked: { status: {}, unreadable: ["estop"] } }), real("PLC-B", { __checked: { status: { estop: false }, unreadable: [] } })];
+    expect(await facade.getSafetyStatus({ forRealActuation: true })).toMatchObject({ state: "UNKNOWN", source: "none" });
+    plcConfigs = [real("PLC-B", { __checked: { status: { estop: false }, unreadable: [] } }), real("PLC-C", { __throwChecked: true })];
+    expect((await facade.getSafetyStatus({ forRealActuation: true })).state).toBe("UNKNOWN");
+  });
+
+  it("driver TỰ báo getSafetyStatus=OK nhưng chỉ có SIM ⇒ KHÔNG uỷ quyền driver ⇒ UNKNOWN sim_only; đường cũ vẫn uỷ quyền", async () => {
+    const selfReport = vi.fn(async () => ({ state: "OK" as const, source: "driver", ts: new Date().toISOString() }));
+    currentDriver = { ...currentDriver, getSafetyStatus: selfReport };
+    plcEnabled = true;
+    plcConfigs = [SIMROW];
+    const facade = createAdapterFacade({ adapterId: 10 });
+    expect(await facade.getSafetyStatus({ forRealActuation: true })).toMatchObject({ state: "UNKNOWN", basis: "sim_only" });
+    expect(selfReport).not.toHaveBeenCalled();
+    expect((await facade.getSafetyStatus()).source).toBe("driver"); // đường cũ: byte-identical
+    expect(selfReport).toHaveBeenCalledTimes(1);
+  });
+
+  it("cấu hình đọc lỗi ⇒ console.warn nêu MÃ cấu hình (không endpoint), có giới hạn tần suất (1 lần / mã / cửa sổ)", async () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    try {
+      plcEnabled = true;
+      plcConfigs = [real("PLC-WARN-1", { __throwChecked: true })];
+      const facade = createAdapterFacade({ adapterId: 10 });
+      for (let i = 0; i < 5; i++) await facade.getSafetyStatus({ forRealActuation: true });
+      const mine = warn.mock.calls.map((c) => c.map(String).join(" ")).filter((m) => m.includes("PLC-WARN-1"));
+      expect(mine).toHaveLength(1);
+      expect(mine[0]).not.toContain("198.51.100.7");
+      expect(mine[0]).not.toContain("unreachable"); // thông điệp lỗi gốc có thể chứa endpoint ⇒ không in
+      plcConfigs = [real("PLC-WARN-2", { __throwChecked: true })];
+      await facade.getSafetyStatus({ forRealActuation: true });
+      expect(warn.mock.calls.map((c) => c.map(String).join(" ")).filter((m) => m.includes("PLC-WARN-2"))).toHaveLength(1);
+    } finally {
+      warn.mockRestore();
+    }
+  });
+});
+
+// ── doc 81 Đợt 1C final wave 5 (final review M4) — đọc các safety-PLC SONG SONG, mỗi PLC một hạn riêng ─────
+describe("M4 — preflight lệnh thật: đọc PLC song song, hạn riêng từng PLC, hết hạn ⇒ UNKNOWN", () => {
+  const real = (code: string, extra: Record<string, unknown>) => ({
+    code, backend: "modbus", endpoint: "tcp://198.51.100.7:502", statusMap: { estop: { address: "coil:1" } }, ...extra,
+  });
+  const CLEAN = { status: { estop: false }, unreadable: [] };
+  const within = async <T,>(p: Promise<T>, ms: number): Promise<T> => {
+    let t: NodeJS.Timeout | undefined;
+    try {
+      return await Promise.race([p, new Promise<never>((_, rej) => (t = setTimeout(() => rej(new Error(`still pending after ${ms}ms`)), ms)))]);
+    } finally {
+      clearTimeout(t);
+    }
+  };
+
+  it("★ hai PLC thật khoẻ nhưng chậm (1,5 s mỗi cái) ⇒ OK trong < 2,5 s (tuần tự sẽ ≥ 3 s và vượt hạn robot)", async () => {
+    plcEnabled = true;
+    plcConfigs = [real("PLC-S1", { __checked: CLEAN, __delayMs: 1500 }), real("PLC-S2", { __checked: CLEAN, __delayMs: 1500 })];
+    const t0 = Date.now();
+    const s = await within(createAdapterFacade({ adapterId: 10 }).getSafetyStatus({ forRealActuation: true }), 10_000);
+    expect(s.state).toBe("OK");
+    expect(Date.now() - t0).toBeLessThan(2500);
+  });
+
+  it("★ một PLC TREO (vd disconnect không trả về) ⇒ UNKNOWN trong hạn riêng của PLC đó (fail-closed), không treo lệnh", async () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    try {
+      const { SAFETY_PLC_READ_DEADLINE_MS } = await import("./adapterFacade");
+      plcEnabled = true;
+      plcConfigs = [real("PLC-H1", { __checked: CLEAN, __hang: true }), real("PLC-OK", { __checked: CLEAN })];
+      const t0 = Date.now();
+      const s = await within(createAdapterFacade({ adapterId: 10 }).getSafetyStatus({ forRealActuation: true }), SAFETY_PLC_READ_DEADLINE_MS + 2000);
+      expect(s.state).toBe("UNKNOWN");
+      expect(Date.now() - t0).toBeLessThan(SAFETY_PLC_READ_DEADLINE_MS + 1000);
+    } finally {
+      warn.mockRestore();
+    }
+  }, 30_000);
+
+  it("PLC treo + PLC khác báo E-STOP ⇒ BLOCKED (BLOCKED vẫn thắng)", async () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    try {
+      plcEnabled = true;
+      plcConfigs = [real("PLC-H2", { __checked: CLEAN, __hang: true }), real("PLC-E", { __checked: { status: { estop: true }, unreadable: [] } })];
+      const s = await within(createAdapterFacade({ adapterId: 10 }).getSafetyStatus({ forRealActuation: true }), 15_000);
+      expect(s).toMatchObject({ state: "BLOCKED", source: "safety_plc:PLC-E" });
+    } finally {
+      warn.mockRestore();
+    }
+  }, 30_000);
 });

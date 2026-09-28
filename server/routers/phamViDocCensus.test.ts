@@ -532,7 +532,50 @@ const cua = (n: NhomPhamVi): ThuTuc[] => NHOM.get(n) ?? [];
  *   ⇒ D +1 · S +1 · tong +2, không dư một đơn vị.
  * ══════════════════════════════════════════════════════════════════════════════════════════════
  */
-const GHIM = { A: 341, B: 8, C: 480, D: 1124, S: 332, tong: 2285 } as const;
+/*
+ * ══════════════════════════════════════════════════════════════════════════════════════════════
+ * ★★★ 2026-09-27 (doc 81 Đợt 1C Task 4, allowlist khoá gateway) — **D 1124→1125 · S 332→333 ·
+ * tong 2285→2287 · A/B/C không đổi.** ĐO bằng chính bộ quét này sau lượt sửa; tra từng khoá bằng
+ * `nhomCua(khoaCua)` của bộ quét (chạy `quetPhamViDoc` rồi lọc tệp `gatewayAllowlistRouter.ts`):
+ *   • `gatewayAllowlistRouter.get` (query, MỚI): **S +1** — đọc `machines`/`gateway_device_allowlist`
+ *     sau khi gateway qua `db.getMachineById(id, phamViCua(ctx))` (ngoài phạm vi ⇒ NOT_FOUND).
+ *     KHÔNG thêm dòng nào vào `phamViDocBaseline.ts`.
+ *   • `gatewayAllowlistRouter.set` (mutation, MỚI): **D +1** — thay allowlist (gateway + từng thiết
+ *     bị cũng soát `phamViCua(ctx)`).
+ *   ⇒ D +1 · S +1 · tong +2, không dư một đơn vị.
+ * ══════════════════════════════════════════════════════════════════════════════════════════════
+ */
+/*
+ * ★★★ 2026-09-28 (doc 81 Đợt 1C Task 5b, gắn thiết bị MQTT ↔ máy) — **D 1125→1126 · tong 2287→2288 ·
+ * A/B/C/S không đổi.** ĐO bằng chính bộ quét này sau lượt sửa (trước lượt sửa, cùng bộ quét trên HEAD
+ * `551551fb6` = D 1125 · tong 2287 — khớp ghim cũ):
+ *   • `mqttClientRouter.bindMachine` (mutation, MỚI, `server/routers/mqttOeeRouters.ts`): **D +1** — ghi
+ *     `mqtt_clients."machineId"`; thiết bị soát theo trạm ∈ `idsTrongPhamVi("station", phamViCua(ctx))`,
+ *     máy đích + máy đang gắn soát theo `idsTrongPhamVi("machine", …)`, TRONG transaction
+ *     (`services/mqttBindingService.ts`). KHÔNG thêm dòng nào vào `phamViDocBaseline.ts`.
+ *   ⇒ D +1 · tong +1, không dư một đơn vị.
+ */
+/*
+ * ★★★ 2026-09-28 (doc 81 Đợt 1C Task 5b fix round 1, cấp/xoay mật khẩu MQTT) — **D 1126→1127 · tong
+ * 2288→2289 · A/B/C/S không đổi.** ĐO bằng chính bộ quét này (trước lượt sửa, HEAD `5877442d0` = D 1126):
+ *   • `mqttClientRouter.rotatePassword` (mutation, MỚI): **D +1** — ghi `mqtt_clients."passwordHash"`;
+ *     thiết bị soát trạm ∈ `idsTrongPhamVi("station", phamViCua(ctx))` + máy đang gắn ∈ phạm vi, TRONG
+ *     transaction (`services/mqttBindingService.ts#xoayMatKhauThietBi`).
+ *   • `list`/`getById` đổi sang phép chiếu cột tường minh (bỏ passwordHash/password/fcmToken) — cùng cổng
+ *     `congTramMqtt`, KHÔNG đổi nhóm. `delete`/`updateSettings` giờ gỡ ràng buộc máy qua `ngungThietBi` —
+ *     cùng thủ tục, KHÔNG đổi nhóm. KHÔNG thêm dòng nào vào `phamViDocBaseline.ts`.
+ *   ⇒ D +1 · tong +1.
+ */
+/*
+ * ★★★ 2026-09-28 (doc 81 Đợt 1C Task 5b fix round 2, xoá mật khẩu MQTT) — **D 1127→1128 · tong 2289→2290 ·
+ * A/B/C/S không đổi.** ĐO bằng chính bộ quét này (trước lượt sửa, HEAD `5d7ccf862` = D 1127):
+ *   • `mqttClientRouter.clearCredential` (mutation, MỚI): **D +1** — xoá `passwordHash`/`password` (+ gỡ
+ *     `machineId` nếu đang gắn); thiết bị soát trạm ∈ `idsTrongPhamVi("station", phamViCua(ctx))` + máy đang
+ *     gắn ∈ phạm vi, TRONG transaction (`services/mqttBindingService.ts#xoaCredentialThietBi`). KHÔNG thêm
+ *     dòng nào vào `phamViDocBaseline.ts`.
+ *   ⇒ D +1 · tong +1.
+ */
+const GHIM = { A: 341, B: 8, C: 480, D: 1128, S: 333, tong: 2290 } as const;
 
 describe("§1 — CẦU CHÌ: bộ suy có thật sự nhìn thấy gì không", () => {
   it("★ không có ô MÙ nào (mỗi ô mù là một chỗ KHÔNG AI CANH)", () => {

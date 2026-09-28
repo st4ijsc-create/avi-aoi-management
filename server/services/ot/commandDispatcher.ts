@@ -110,11 +110,13 @@ import {
   type CommandLog,
 } from "../../../drizzle/schema";
 import { boundedKey, canonicalOtValue, otPayloadHash, readOtPayloadHash } from "./otActionBinding";
-import { isOtSafetyPreflightEnabled } from "./safetyPreflightPolicy"; // final wave (item 3): one policy, two dispatchers
+import { isOtSafetyPreflightEnabled, safetyPreflightReason, type SafetyUnknownBasis } from "./safetyPreflightPolicy"; // final wave (item 3): one policy, two dispatchers
 import { getActiveDriver } from "./otManager";
+import type { AppErrorCode, AppErrorParams } from "../../_core/appErrorCodes";
 import { AUDIT_ACTIONS, createAuditContext, logCrudOperation } from "../auditTrailService";
 import type { OtTagAddress } from "./otDriver";
 import { readbackMatches } from "./drivers/readbackCompare";
+import { withDeadline } from "./drivers/boundedClose"; // final wave 5 (M4)
 import { isCommissioned, isCommissioningRequired } from "./commissioningService";
 // Doc 25 T1 — cổng interlock ĐỒNG BỘ, fail-closed chạy TRƯỚC mọi real-write HITL.
 // Import từ interlockGate (module chỉ đọc DB, KHÔNG import ngược commandDispatcher →
@@ -187,21 +189,34 @@ export function isSafetyPreflightEnabled(): boolean {
  * dispatcher — mirrors the emitCmdAck/unsPublisher pattern). Belt-and-braces: any
  * unexpected throw maps to 'UNKNOWN' (never a fabricated 'BLOCKED' trip); since doc 81
  * Đợt 1B Task 6 the gate treats UNKNOWN as "not OK" and refuses the write (fail-closed).
+ * doc 81 Đợt 1C Task 1 — reads with `{ forRealActuation: true }` (this gate is reachable only on
+ * the real, commissioned path): a SIM / real_unmapped safety-PLC no longer yields OK (UNKNOWN,
+ * basis "sim_only" ⇒ SAFETY_SIM_ONLY) and a bad-quality real safety tag is not "clean".
  */
+/**
+ * doc 81 Đợt 1C final wave 5 (final review M4) — overall bound of the OT safety preflight read (the robot
+ * side already had SAFETY_PREFLIGHT_DEADLINE_MS = 5000; OT had none). Timeout ⇒ UNKNOWN ⇒ refused (fail-closed).
+ */
+export const OT_SAFETY_PREFLIGHT_DEADLINE_MS = 5000;
+
 async function readSafetyStateForPreflight(
   adapterId: number,
   machineId: number | null,
-): Promise<"OK" | "BLOCKED" | "UNKNOWN"> {
+): Promise<{ state: "OK" | "BLOCKED" | "UNKNOWN"; basis?: SafetyUnknownBasis }> {
   try {
     const { createAdapterFacade } = await import("./adapterFacade");
-    const state = await createAdapterFacade({ adapterId, machineId }).getSafetyStatus();
-    return state.state;
+    const state = await withDeadline(
+      createAdapterFacade({ adapterId, machineId }).getSafetyStatus({ forRealActuation: true }),
+      OT_SAFETY_PREFLIGHT_DEADLINE_MS,
+      "OT safety preflight",
+    );
+    return { state: state.state, basis: state.basis };
   } catch (err) {
     console.warn(
       `[Dispatch] safety preflight read failed for adapter ${adapterId} (treated as UNKNOWN ⇒ write refused):`,
       (err as Error)?.message || err,
     );
-    return "UNKNOWN";
+    return { state: "UNKNOWN" };
   }
 }
 
@@ -442,6 +457,47 @@ export interface DispatchResult {
   reason?: string;
   results: DispatchPerWrite[];
   commandLogIds: number[];
+  /**
+   * doc 81 Đợt 1C final wave 4 (R-1C-g) — machine-readable, localisable refusal (existing appError code +
+   * `errors.reason.*` key) when the refusal needs words beyond `reason`. Today: a stop/e_stop refused by the
+   * safety preflight. Absent everywhere else (byte-identical).
+   */
+  appError?: { appCode: AppErrorCode; appParams: AppErrorParams };
+  /** Plain-English sentence for API callers/logs, paired with `appError`. */
+  message?: string;
+}
+
+/**
+ * doc 81 Đợt 1C final wave 4 (ruling R-1C-g, final review I1) — an OT command whose TYPE is a stop. It is NOT
+ * exempted from the safety preflight by that name (an OT "stop" is caller-chosen tag writes; no pinned
+ * stop-tag metadata exists — L-7: unfilled data ⇒ fail-closed). The name is used ONLY to word the refusal.
+ */
+export function isStopCommandType(commandType: string): boolean {
+  const t = String(commandType ?? "").trim().toLowerCase();
+  return t === "stop" || t === "e_stop";
+}
+
+/** R-1C-g — existing code OPERATION_FAILED + a NEW reason key (vi/en/zh), not a new enum value. */
+export const SOFTWARE_STOP_REFUSED_APP_ERROR = {
+  appCode: "OPERATION_FAILED",
+  appParams: { operation: "softwareStop", reason: "softwareStopRefusedUseHardwareEstop" },
+} as const satisfies { appCode: AppErrorCode; appParams: AppErrorParams };
+
+/** The refusal code stays in `reason` / the ledger reason column; the sentence itself names no code or env var. */
+function softwareStopRefusedMessage(_code: string): string {
+  return "The software stop was REFUSED by the safety check: the platform could not confirm the safety PLC (unreadable, simulation only, or tripped), so it did NOT send this stop. Use the hardware E-STOP on the machine now.";
+}
+
+/** The stop-typed refusal extras (appError + message + ledger prefix), or nothing for any other command. */
+function stopRefusalExtras(input: DispatchInput, code: string): { appError?: DispatchResult["appError"]; message?: string } {
+  if (!isStopCommandType(input.commandType)) return {};
+  return {
+    appError: { appCode: SOFTWARE_STOP_REFUSED_APP_ERROR.appCode, appParams: { ...SOFTWARE_STOP_REFUSED_APP_ERROR.appParams } },
+    message: softwareStopRefusedMessage(code),
+  };
+}
+function withStopRefusalText(input: DispatchInput, code: string, detail: string): string {
+  return isStopCommandType(input.commandType) ? `${softwareStopRefusedMessage(code)} — ${detail}` : detail;
 }
 
 const TERMINAL_STATUSES: ReadonlySet<DispatchStatus> = new Set([
@@ -696,14 +752,18 @@ async function dispatchCore(input: DispatchInput): Promise<DispatchResult> {
   //         policy + interlock gates): a kind='interlock' command IS a safety de-energization
   //         (block/stop/reduce) — blocking it here would self-lock the safety response. The
   //         dry-run/simulated path never reaches here (no real write to guard).
+  //         doc 81 Đợt 1C Task 1 (owner decision 2026-09-27): the reading is the REAL-actuation one —
+  //         only a real safety PLC with a mapped tag that reads clean is OK; SIM / real_unmapped
+  //         alone ⇒ REJECT SAFETY_SIM_ONLY; a bad-quality real safety tag ⇒ SAFETY_UNKNOWN.
   if (input.triggeredBy.kind === "hitl" && isSafetyPreflightEnabled()) {
-    const safety = await readSafetyStateForPreflight(input.adapterId, input.machineId ?? null);
+    const { state: safety, basis: safetyBasis } = await readSafetyStateForPreflight(input.adapterId, input.machineId ?? null);
     if (safety === "BLOCKED") {
+      // final wave 4 (R-1C-g) — a stop/e_stop stays gated; its refusal says to use the hardware E-STOP.
       const ids = await writeRejected(
         db,
         input,
         "SAFETY_BLOCKED",
-        "safety-PLC reports BLOCKED/tripped — actuation denied before write (read-only preflight, spec invariant #1)",
+        withStopRefusalText(input, "SAFETY_BLOCKED", "safety-PLC reports BLOCKED/tripped — actuation denied before write (read-only preflight, spec invariant #1)"),
       );
       return {
         ok: false,
@@ -712,6 +772,27 @@ async function dispatchCore(input: DispatchInput): Promise<DispatchResult> {
         reason: "SAFETY_BLOCKED",
         results: failedResults(input, "SAFETY_BLOCKED"),
         commandLogIds: ids,
+        ...stopRefusalExtras(input, "SAFETY_BLOCKED"),
+      };
+    }
+    if (safety !== "OK" && safetyPreflightReason(safety, safetyBasis) === "SAFETY_SIM_ONLY") {
+      // doc 81 Đợt 1C Task 1 — only SIM / real_unmapped safety-PLC configs: nothing real vouches
+      // for a commissioned target ⇒ refused before any ledger intent or driver call (same reason
+      // on the robot side).
+      const ids = await writeRejected(
+        db,
+        input,
+        "SAFETY_SIM_ONLY",
+        withStopRefusalText(input, "SAFETY_SIM_ONLY", "safety-PLC preflight: no real safety PLC with a mapped safety tag is configured (only SIM / unmapped) — a commissioned target needs a REAL safety PLC; actuation denied before write"),
+      );
+      return {
+        ok: false,
+        simulated: false,
+        status: "rejected",
+        reason: "SAFETY_SIM_ONLY",
+        results: failedResults(input, "SAFETY_SIM_ONLY"),
+        commandLogIds: ids,
+        ...stopRefusalExtras(input, "SAFETY_SIM_ONLY"),
       };
     }
     if (safety !== "OK") {
@@ -722,7 +803,7 @@ async function dispatchCore(input: DispatchInput): Promise<DispatchResult> {
         db,
         input,
         "SAFETY_UNKNOWN",
-        `safety-PLC preflight returned ${safety} (no configured/readable safety-PLC reports OK) — actuation denied before write`,
+        withStopRefusalText(input, "SAFETY_UNKNOWN", `safety-PLC preflight returned ${safety} (no configured/readable safety-PLC reports OK) — actuation denied before write`),
       );
       return {
         ok: false,
@@ -731,6 +812,7 @@ async function dispatchCore(input: DispatchInput): Promise<DispatchResult> {
         reason: "SAFETY_UNKNOWN",
         results: failedResults(input, "SAFETY_UNKNOWN"),
         commandLogIds: ids,
+        ...stopRefusalExtras(input, "SAFETY_UNKNOWN"),
       };
     }
   }
