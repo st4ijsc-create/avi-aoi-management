@@ -245,9 +245,16 @@ export type StopDbStep =
  * a DB error: thrown here so StopDbBudget marks the DB degraded, logs it, and the STOP takes the energy-reducing
  * default (sent to the registered driver; ledger best-effort). Motion never calls this (it stays fail-closed).
  */
+export class StopDbUnavailableError extends Error {
+  readonly reasonCode = "stop_db_unavailable" as const;
+  constructor() {
+    super("DB unavailable (getDb returned null)");
+    this.name = "StopDbUnavailableError";
+  }
+}
 async function requireDbForStop(): Promise<Db> {
   const db = await getDb();
-  if (!db) throw new Error("DB unavailable (getDb returned null)");
+  if (!db) throw new StopDbUnavailableError();
   return db;
 }
 
