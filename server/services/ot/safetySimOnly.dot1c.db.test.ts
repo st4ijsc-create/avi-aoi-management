@@ -274,6 +274,11 @@ describe.skipIf(!DB_URL)("Đợt 1C Task 1 — SIM safety-PLC không thoả pref
   beforeAll(async () => {
     expect(DB_URL).toMatch(/_test/); // cầu chì: không bao giờ chạy trên DB dev
     for (const k of ENV_KEYS) savedEnv[k] = process.env[k];
+    // Đợt 1D Task 2 fix round 1 (R-1D-h) — nạp NÓNG facade + nguồn safety-PLC: dispatcher nạp chúng bằng import
+    // động BÊN TRONG hạn preflight 5 s; chạy gộp ~150 tệp thì lượt nạp nguội đầu tiên vượt hạn ⇒ UNKNOWN (ĐO: ~5,2 s).
+    // Hạn sản xuất KHÔNG đổi.
+    await import("./adapterFacade");
+    await import("../safety/plc/safetyPlcAdapter");
     sql = postgres(DB_URL!, { max: 1, connect_timeout: 30, onnotice: () => {} });
 
     // Đăng ký driver modbus THẬT đúng như server/services/ot/index.ts làm lúc boot (tệp đó còn khởi

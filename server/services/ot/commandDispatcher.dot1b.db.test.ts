@@ -178,6 +178,11 @@ describe.skipIf(!DB_URL)("Task 6 — OT dispatcher HITL binding + write-ahead + 
   beforeAll(async () => {
     expect(DB_URL).toMatch(/_test/); // cầu chì: không bao giờ chạy trên DB dev
     for (const k of ENV_KEYS) savedEnv[k] = process.env[k];
+    // Đợt 1D Task 2 fix round 1 (R-1D-h) — nạp NÓNG facade + nguồn safety-PLC: dispatcher nạp chúng bằng import
+    // động BÊN TRONG hạn preflight 5 s; chạy gộp ~150 tệp thì lượt nạp nguội đầu tiên vượt hạn ⇒ UNKNOWN (ĐO: ~5,2 s).
+    // Hạn sản xuất KHÔNG đổi.
+    await import("./adapterFacade");
+    await import("../safety/plc/safetyPlcAdapter");
     const x = await d();
     const [a] = await x
       .insert(deviceAdapters)

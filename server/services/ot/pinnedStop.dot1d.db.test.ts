@@ -30,6 +30,8 @@ const fake = vi.hoisted(() => ({
   policyOn: false,
   policyVerdict: {} as Record<string, "deny" | "require_approval">,
   interlockBlocked: false,
+  interlockFailClosed: false,
+  pinOverride: null as null | Array<{ tagKey: string; value: unknown }>,
   plcRows: [] as Array<Record<string, unknown>>,
 }));
 
@@ -56,6 +58,8 @@ vi.mock("./stopPin", async (importOriginal) => {
     loadStopPins: async (...a: Parameters<typeof orig.loadStopPins>) => {
       fake.pinLoadCalls++;
       if (fake.pinLoadThrows) throw new Error("D1T2-forced pin load failure (connection terminated)");
+      // fix round 1 — pins read AFTER step 3 but changed in between (re-pinned under a new dataType).
+      if (fake.pinOverride) return fake.pinOverride;
       return orig.loadStopPins(...a);
     },
   };
@@ -79,15 +83,17 @@ vi.mock("../interlock/interlockGate", async (importOriginal) => {
   return {
     ...orig,
     evaluateInterlockGate: async (...a: Parameters<typeof orig.evaluateInterlockGate>) =>
-      fake.interlockBlocked
-        ? { blocked: true, failClosed: false, violations: [{ ruleId: 424242, ruleName: "D1T2 rule", action: "stop_line" }] }
-        : orig.evaluateInterlockGate(...a),
+      fake.interlockFailClosed
+        ? { blocked: true, failClosed: true, violations: [] }
+        : fake.interlockBlocked
+          ? { blocked: true, failClosed: false, violations: [{ ruleId: 424242, ruleName: "D1T2 rule", action: "stop_line" }] }
+          : orig.evaluateInterlockGate(...a),
   };
 });
 
 import { getDb } from "../../db/connection";
 import { aiPendingActions, commandLog, controlAuditLog, deviceAdapters, deviceTags } from "../../../drizzle/schema";
-import { classifyOtStop, dispatch, type DispatchInput } from "./commandDispatcher";
+import { canonicalisePinnedStop, classifyOtStop, dispatch, type DispatchInput } from "./commandDispatcher";
 import { otPayloadHash, withOtPayloadHash } from "./otActionBinding";
 import { createModbusDriver } from "./drivers/modbusDriver";
 import { registerDriver } from "./driverRegistry";
@@ -331,6 +337,8 @@ describe.skipIf(!DB_URL)("Đợt 1D Task 2 — DỪNG OT ghim qua preflight an t
     fake.policyOn = false;
     fake.policyVerdict = {};
     fake.interlockBlocked = false;
+    fake.interlockFailClosed = false;
+    fake.pinOverride = null;
     process.env.SAFETY_PLC_ADAPTER_ENABLED = "true";
     process.env.OT_CONTROL_ENABLED = "true";
     delete process.env.OT_COMMISSIONING_REQUIRED; // mặc định BẬT
@@ -516,6 +524,7 @@ describe.skipIf(!DB_URL)("Đợt 1D Task 2 — DỪNG OT ghim qua preflight an t
       const r2 = await run(inp);
       expect(r1.status).toBe("acked");
       expect(r2.status).toBe("acked");
+      expect(r2.pinnedStop).toBe(true); // fix round 1 — the replay still says it was a pinned stop
       expect(received).toHaveLength(1);
     });
   });
@@ -605,6 +614,47 @@ describe.skipIf(!DB_URL)("Đợt 1D Task 2 — DỪNG OT ghim qua preflight an t
     });
   });
 
+  // ═════════ fix round 1 (R-1D-h) ═════════
+  it("fix1 #2: ghim đọc SAU bước 3 không còn hợp dataType của hàng tag đã resolve (ghim lại bool trên tag int) ⇒ KHÔNG miễn, pin_tag_changed, 0 lần ghi", async () => {
+    fake.pinOverride = [{ tagKey: "speed_sp", value: true }];
+    await withPlcConfigs([SIM], async () => {
+      const res = await run(await stopInput([{ tagKey: "speed_sp", value: true }]));
+      expect(res.status).toBe("rejected");
+      expect(res.reason).toBe("SAFETY_SIM_ONLY");
+      expect(res.appError?.appParams.stopPinReason).toBe("pin_tag_changed");
+      expect(res.pinnedStop).toBe(false);
+      expect(received).toHaveLength(0);
+    });
+  });
+
+  it("fix1 #3: cổng interlock LỖI ĐÁNH GIÁ (failClosed) + stop ghim ⇒ vẫn acked; sổ interlockOverride.failClosed:true", async () => {
+    fake.interlockFailClosed = true;
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    try {
+      await withPlcConfigs([SIM], async () => {
+        const inp = await stopInput([{ tagKey: "cmd_stop", value: true }]);
+        const res = await run(inp);
+        expect(res.status).toBe("acked");
+        expect(received).toEqual([[{ tagKey: "cmd_stop", value: true }]]);
+        const rows = await ledger(inp.idempotencyKey);
+        const result = rows.find((r) => (r.ackValue as any)?.ledger === "result");
+        expect((result?.ackValue as any)?.interlockOverride).toMatchObject({ decision: "INTERLOCK_BLOCKED", failClosed: true, ruling: "R-1D-c" });
+      });
+    } finally {
+      warn.mockRestore();
+    }
+  });
+
+  it("fix1 #3 đối chứng: interlock failClosed + stop KHÔNG khớp ghim (preflight tắt để tới cổng interlock) ⇒ INTERLOCK_BLOCKED, 0 lần ghi", async () => {
+    fake.interlockFailClosed = true;
+    process.env.OT_SAFETY_PREFLIGHT_ENABLED = "false";
+    await withPlcConfigs([SIM], async () => {
+      const res = await run(await stopInput([{ tagKey: "cmd_run", value: false }]));
+      expect(res.reason).toBe("INTERLOCK_BLOCKED");
+      expect(received).toHaveLength(0);
+    });
+  });
+
   it("tag ghim bị TẮT sau khi ghim (loadStopPins bỏ qua) ⇒ không miễn — (sau đó bật lại)", async () => {
     await sql`UPDATE device_tags SET "isEnabled" = false WHERE "adapterId" = ${adapterPinned} AND "tagKey" = 'speed_sp'`;
     try {
@@ -616,6 +666,29 @@ describe.skipIf(!DB_URL)("Đợt 1D Task 2 — DỪNG OT ghim qua preflight an t
     } finally {
       await sql`UPDATE device_tags SET "isEnabled" = true WHERE "adapterId" = ${adapterPinned} AND "tagKey" = 'speed_sp'`;
     }
+  });
+});
+
+// ═════════ canonicalisePinnedStop — THUẦN (lớp thứ hai, fix round 1) ═════════
+describe("canonicalisePinnedStop (thuần, lớp thứ hai)", () => {
+  const row = (tagKey: string, value: unknown, dataType: string) => ({ write: { tagKey, value }, dataType });
+  it("khớp ⇒ writes là giá trị GHIM theo thứ tự hàng resolved", () => {
+    expect(canonicalisePinnedStop([row("speed_sp", 0, "int"), row("cmd_stop", 1, "bool")], [{ tagKey: "cmd_stop", value: true }, { tagKey: "speed_sp", value: 0 }])).toEqual({
+      ok: true,
+      writes: [{ tagKey: "speed_sp", value: 0 }, { tagKey: "cmd_stop", value: true }],
+    });
+  });
+  it("hàng resolved KHÔNG có ghim (lớp matchPinnedStop bị hỏng/bỏ qua) ⇒ unpinned_tag — lớp này không tin lớp trước", () => {
+    expect(canonicalisePinnedStop([row("cmd_stop", true, "bool"), row("cmd_run", true, "bool")], [{ tagKey: "cmd_stop", value: true }])).toEqual({ ok: false, reason: "unpinned_tag" });
+  });
+  it.each([
+    ["int", true],
+    ["bool", 0],
+    ["float", "0"],
+    ["string", 0],
+    ["json", true],
+  ] as const)("hàng dataType %s + ghim %j ⇒ pin_tag_changed", (dataType, value) => {
+    expect(canonicalisePinnedStop([row("t", value, dataType)], [{ tagKey: "t", value }])).toEqual({ ok: false, reason: "pin_tag_changed" });
   });
 });
 

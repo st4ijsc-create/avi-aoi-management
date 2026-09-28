@@ -127,7 +127,7 @@ import { evaluateCommandPolicy, secPlatformEnabled } from "../security/policyGat
 // caller did not pass an explicit correlationId we read the ambient one (if any).
 import { getCorrelationId } from "../observability/correlation";
 // doc 81 Đợt 1D Task 2 — per-tag pinned STOP values (mig 0362, Task 1).
-import { loadStopPins, matchPinnedStop, type MatchPinnedStopResult, type StopPin } from "./stopPin";
+import { loadStopPins, matchPinnedStop, validateStopValue, type MatchPinnedStopResult, type StopPin } from "./stopPin";
 
 /** True when the operator has explicitly enabled real OT control (F4b). */
 export function isOtControlEnabled(): boolean {
@@ -487,7 +487,11 @@ export function isStopCommandType(commandType: string): boolean {
 }
 
 /** Why a stop-typed command was NOT treated as a pinned stop (match reasons + the pin read failing). */
-export type StopPinRefusalReason = Extract<MatchPinnedStopResult, { ok: false }>["reason"] | "pin_load_failed";
+export type StopPinRefusalReason =
+  | Extract<MatchPinnedStopResult, { ok: false }>["reason"]
+  | "pin_load_failed"
+  /** fix round 1 (R-1D-h) — the pin no longer fits the tag row step 3 resolved (re-pinned / redefined in between). */
+  | "pin_tag_changed";
 
 export type OtStopClassification =
   | { isStop: false; pinnedStop: false }
@@ -519,7 +523,35 @@ const STOP_PIN_REASON_TEXT: Record<StopPinRefusalReason, string> = {
   value_mismatch: "the stop writes a value that differs from the pinned stop value",
   duplicate_tag: "the stop writes the same tag more than once",
   pin_load_failed: "the pinned stop tags could not be read",
+  pin_tag_changed: "the pinned stop tag changed while the stop was being checked",
 };
+
+/**
+ * doc 81 Đợt 1D Task 2 fix round 1 (Ruling R-1D-h) — PURE. The SECOND layer of the pinned-stop exemption: map the
+ * tag rows step 3 resolved (address/dataType the driver will actually use, enabled + writable at that read) onto
+ * the matched pin values. The pins are read in a SEPARATE query, so a clear/re-pin/redefinition in between could
+ * pair a pin validated against a NEW dataType with the OLD address/dataType. Every resolved row must:
+ *   • have a matched pin (else `unpinned_tag` — cannot happen while matchPinnedStop is intact; this layer does not
+ *     trust it), and
+ *   • accept the pin value under ITS OWN dataType (`validateStopValue`, the same rule that admitted the pin), with
+ *     the value unchanged by that validation (else `pin_tag_changed`).
+ * `ok` ⇒ the canonical writes, in resolved (= caller) order. Anything else ⇒ no exemption (full preflight).
+ */
+export function canonicalisePinnedStop(
+  resolved: ReadonlyArray<{ write: DispatchWrite; dataType?: string }>,
+  pinnedWrites: ReadonlyArray<StopPin>,
+): { ok: true; writes: DispatchWrite[] } | { ok: false; reason: "unpinned_tag" | "pin_tag_changed" } {
+  const byTag = new Map(pinnedWrites.map((w) => [w.tagKey, w] as const));
+  const writes: DispatchWrite[] = [];
+  for (const r of resolved) {
+    const pin = byTag.get(r.write.tagKey);
+    if (!pin) return { ok: false, reason: "unpinned_tag" };
+    const v = validateStopValue(String(r.dataType ?? ""), pin.value);
+    if (!v.ok || v.value !== pin.value) return { ok: false, reason: "pin_tag_changed" };
+    writes.push({ tagKey: pin.tagKey, value: pin.value });
+  }
+  return { ok: true, writes };
+}
 
 /** R-1C-g — existing code OPERATION_FAILED + a NEW reason key (vi/en/zh), not a new enum value. */
 export const SOFTWARE_STOP_REFUSED_APP_ERROR = {
@@ -796,16 +828,16 @@ async function dispatchCore(input: DispatchInput): Promise<DispatchResult> {
     }
     stopCls = classifyOtStop(input.commandType, input.writes, pins);
     if (stopCls.pinnedStop) {
-      const pinned = new Map(stopCls.writes.map((w) => [w.tagKey, w] as const));
-      if (resolved.every((r) => pinned.has(r.write.tagKey))) {
-        input = { ...input, writes: stopCls.writes.map((w) => ({ tagKey: w.tagKey, value: w.value })) };
-        for (const r of resolved) {
-          const p = pinned.get(r.write.tagKey)!;
-          r.write = { tagKey: p.tagKey, value: p.value };
-        }
+      // fix round 1 (R-1D-h) — second layer: the pins must fit the tag rows step 3 resolved (same snapshot the
+      // driver writes with). Mismatch ⇒ no exemption.
+      const canon = canonicalisePinnedStop(resolved, stopCls.writes);
+      if (canon.ok) {
+        input = { ...input, writes: canon.writes.map((w) => ({ ...w })) };
+        resolved.forEach((r, i) => {
+          r.write = { ...canon.writes[i] };
+        });
       } else {
-        // Unreachable (matchPinnedStop covers every caller write) — fail-closed: no exemption, full preflight.
-        stopCls = { isStop: true, pinnedStop: false, stopPinReason: "unpinned_tag" };
+        stopCls = { isStop: true, pinnedStop: false, stopPinReason: canon.reason };
       }
     }
   }
@@ -1258,6 +1290,8 @@ function auditPinnedStopOverride(input: DispatchInput, resultId: number | undefi
 
 /** The cached (idempotent replay) result of a prior terminal ledger row for this key. */
 function cachedResult(input: DispatchInput, existing: CommandLog): DispatchResult {
+  // fix round 1 (R-1D-h) — a replayed PINNED stop still says so (its ledger row carries ackValue.pinnedStop).
+  const replayedPinnedStop = (existing.ackValue as { pinnedStop?: unknown } | null | undefined)?.pinnedStop === true;
   const cachedOk =
     existing.status === "simulated" ||
     existing.status === "acked" ||
@@ -1271,6 +1305,7 @@ function cachedResult(input: DispatchInput, existing: CommandLog): DispatchResul
     reason: existing.errorText ?? undefined,
     results: input.writes.map((w) => ({ tagKey: w.tagKey, address: existing.address ?? undefined, ok: cachedOk, status: existing.status, error: existing.errorText ?? undefined })),
     commandLogIds: [existing.id],
+    ...(replayedPinnedStop ? { pinnedStop: true } : {}),
   };
 }
 
