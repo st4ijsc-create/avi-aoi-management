@@ -279,9 +279,13 @@ export const ROBOT_LEDGER_ACTION_ID_MAX = 64;
  * refused. A key that does not fit is HASHED (never truncated — two long keys sharing a prefix must not
  * collide); a key that fits is kept byte-identical. Applied on the ledger path for EVERY job type.
  */
+export const LEDGER_KEY_HASH_PREFIX = "h-sha256-";
 export function fitLedgerKey(key: string | undefined, max: number): string | undefined {
-  if (key == null || key.length <= max) return key;
-  return `h-sha256-${createHash("sha256").update(key, "utf8").digest("hex")}`.slice(0, max);
+  // doc 81 Đợt 1C final wave 2 (R-1C-i) — the hashed form's prefix is RESERVED: a literal key that already
+  // starts with it is hashed too, so no literal key can ever equal the hashed form of another key (before,
+  // a caller could pick the exact `h-sha256-…` string of a long key and share its ledger row / replay).
+  if (key == null || (key.length <= max && !key.startsWith(LEDGER_KEY_HASH_PREFIX))) return key;
+  return `${LEDGER_KEY_HASH_PREFIX}${createHash("sha256").update(key, "utf8").digest("hex")}`.slice(0, max);
 }
 
 async function record(
@@ -393,6 +397,12 @@ function idempotentReplay(prior: { id: number; status: string }): RobotDispatchR
  */
 export const HITL_ACTION_REQUIRED = "HITL_ACTION_REQUIRED" as const;
 
+/**
+ * doc 81 Đợt 1C final wave 2 (R-1C-i) — refusal reason: a MOTION carries an idempotency key that already
+ * belongs to a job of another robot / another job type. Never applied to a STOP (that is sent).
+ */
+export const IDEMPOTENCY_KEY_REUSED = "IDEMPOTENCY_KEY_REUSED" as const;
+
 /** errorText written by the startup sweep on an orphaned `running` row. */
 export const PROCESS_RESTART_OUTCOME_UNKNOWN = "process_restart_outcome_unknown" as const;
 
@@ -466,10 +476,8 @@ export async function reconcileOrphanedRobotJobs(olderThanMs: number = orphanedR
 export async function dispatchRobotJob(rawInput: RobotDispatchInput): Promise<RobotDispatchResult> {
   // fix round 2 (e) — the idempotency key is fitted ONCE, here, so the replay lookup (step 1) and the
   // ledger row use the same value (a hashed long key still replays).
-  const input: RobotDispatchInput =
-    rawInput.idempotencyKey != null && rawInput.idempotencyKey.length > ROBOT_LEDGER_IDEMPOTENCY_KEY_MAX
-      ? { ...rawInput, idempotencyKey: fitLedgerKey(rawInput.idempotencyKey, ROBOT_LEDGER_IDEMPOTENCY_KEY_MAX) }
-      : rawInput;
+  const fitted = fitLedgerKey(rawInput.idempotencyKey, ROBOT_LEDGER_IDEMPOTENCY_KEY_MAX);
+  const input: RobotDispatchInput = fitted !== rawInput.idempotencyKey ? { ...rawInput, idempotencyKey: fitted } : rawInput;
   try {
     return await dispatchRobotJobCore(input);
   } catch (err) {
@@ -509,7 +517,27 @@ async function dispatchRobotJobCore(input: RobotDispatchInput): Promise<RobotDis
     } else {
       prior = await lookup();
     }
-    if (prior) return idempotentReplay(prior);
+    if (prior) {
+      // doc 81 Đợt 1C final wave 2 (R-1C-i, final review I3) — replay ONLY the same command: same robot
+      // AND same job type. robot_jobs.idempotencyKey is globally unique and api/v1 / VDA5050 / ROS2 pass
+      // caller-chosen keys, so a key already used for ANOTHER robot (or another job on this robot) used to
+      // return that job's result — a STOP for robot B could come back "done" with nothing sent to B.
+      if (prior.robotId === input.robotId && prior.jobType === input.job.jobType) return idempotentReplay(prior);
+      if (motion) {
+        // Never a false success: the motion is refused (its row cannot carry the key — UNIQUE).
+        const jobId = await record(
+          { ...input, idempotencyKey: undefined },
+          "rejected",
+          { reasonCode: IDEMPOTENCY_KEY_REUSED, priorJobId: prior.id },
+          `${IDEMPOTENCY_KEY_REUSED}: idempotency key already used by robot_jobs #${prior.id} for a different robot/job — motion refused before any driver call`,
+        );
+        return { ok: false, status: "rejected", jobId, error: IDEMPOTENCY_KEY_REUSED };
+      }
+      // A STOP is sent; its ledger row drops the key (it belongs to the other job — UNIQUE).
+      console.warn(`[Robot] STOP on robot ${input.robotId}: idempotency key already used by robot_jobs #${prior.id} (another robot/job) — not a replay, STOP sent (R-1C-i)`);
+      stopNotes.idempotencyKeyReused = { priorJobId: prior.id };
+      input = { ...input, idempotencyKey: undefined };
+    }
   }
 
   // 2) HITL gate — ĐỐI XỨNG với OT commandDispatcher (doc 25 T1).
@@ -1126,10 +1154,14 @@ async function runRealJob(
     }
   }
 
+  if (!motion && stopDb) {
+    // R-1C-h / R-1C-i — what the STOP path had to assume stays on the TERMINAL row too (finalize replaces result).
+    const notes = stopDb.degraded ? { ...stopNotes, dbDegraded: stopDb.degraded } : stopNotes;
+    if (Object.keys(notes).length > 0) detail = { ...(detail ?? {}), stopDb: notes };
+  }
   if (!motion && stopDb && jobId == null) {
     // R-1C-h — the STOP went out without a pre-written row: settle the ledger best-effort now.
-    const notes = stopDb.degraded ? { ...stopNotes, dbDegraded: stopDb.degraded } : stopNotes;
-    const ledger = await stopLedgerAfterSend(input, prewrite, status, { ...(detail ?? {}), ...(Object.keys(notes).length > 0 ? { stopDb: notes } : {}) }, errorText);
+    const ledger = await stopLedgerAfterSend(input, prewrite, status, { ...(detail ?? {}) }, errorText);
     return { ok: status === "done", status, jobId: ledger.jobId, error: errorText, ...(ledger.ledgerError ? { ledgerError: ledger.ledgerError } : {}) };
   }
   if (jobId == null) {

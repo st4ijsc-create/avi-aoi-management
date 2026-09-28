@@ -554,7 +554,7 @@ describe("fix round 1 — interlock không bao giờ chặn lệnh DỪNG (M3)",
 describe("fix round 1 — idempotency không ép 'running' vào union kết quả (M1)", () => {
   it("khoá đã có hàng 'running' ⇒ rejected IDEMPOTENT_JOB_IN_PROGRESS, không chạy lại, 0 byte", async () => {
     await connectDriver(2000);
-    ledger.rows.push({ id: 500, idempotencyKey: "k-running", status: "running" });
+    ledger.rows.push({ id: 500, robotId: 7, jobType: "home", idempotencyKey: "k-running", status: "running" }); // final wave 2 (R-1C-i): phát lại chỉ khi CÙNG robot + CÙNG loại job ⇒ hàng mang robotId/jobType như hàng thật
     const r = await within(dispatchRobotJob({ ...HOME, idempotencyKey: "k-running" }), 10_000);
     expect(r).toEqual({ ok: false, status: "rejected", jobId: 500, error: "IDEMPOTENT_JOB_IN_PROGRESS" });
     expect(allCmds(fake)).toEqual([]);
@@ -567,7 +567,7 @@ describe("fix round 1 — idempotency không ép 'running' vào union kết qu�
     ["rejected", false],
   ] as const)("khoá đã có hàng '%s' ⇒ trả lại đúng trạng thái đó (ok=%s)", async (status, ok) => {
     await connectDriver(2000);
-    ledger.rows.push({ id: 501, idempotencyKey: `k-${status}`, status });
+    ledger.rows.push({ id: 501, robotId: 7, jobType: "home", idempotencyKey: `k-${status}`, status });
     const r = await within(dispatchRobotJob({ ...HOME, idempotencyKey: `k-${status}` }), 10_000);
     expect(r).toEqual({ ok, status, jobId: 501 });
   });
