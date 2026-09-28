@@ -245,6 +245,18 @@ describe("FanucDriver — motion gate + fail-safe", () => {
     expect(res.error).toMatch(/ErrorID 5/);
   });
 
+  // doc 81 Đợt 1C residual round 2 (R-1C-m, lớp b ĐỘC LẬP) — gọi thẳng runJob (bỏ qua lớp a của dispatcher) với mọi
+  // chính tả của dừng + params chuyển động ⇒ chỉ FRC_Abort, không FRC_Initialize / lệnh chuyển động nào.
+  it.each(["stop", "e_stop", "ABORT"])("runJob live '%s' + joints/x,y,z ⇒ CHỈ FRC_Abort, 0 Initialize/Motion", async (jt) => {
+    process.env.ROBOT_CONTROL_ENABLED = "true";
+    const { d, sock } = await connectedDriver();
+    const before = sock.written.length;
+    const res = await d.runJob({ jobType: jt as never, params: { joints: [90, 90, 90, 0, 0, 0], x: 500, y: 500, z: 500 } });
+    expect(res.ok).toBe(true);
+    const sent = sock.written.slice(before).map((w) => JSON.parse(w.trim())).map((p) => p.Command ?? p.Instruction);
+    expect(sent).toEqual(["FRC_Abort"]);
+  });
+
   // doc 81 Đợt 1B Task 5 — abort() NÊU thất bại thay vì nuốt.
   it("abort(): FRC_Abort ErrorID != 0 ⇒ reject 'FANUC RMI abort failed'", async () => {
     process.env.ROBOT_CONTROL_ENABLED = "true";

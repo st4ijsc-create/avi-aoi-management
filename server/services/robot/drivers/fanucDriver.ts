@@ -70,6 +70,7 @@ import type {
 } from "../robotDriver";
 import type { MotionLockState } from "../robotDriver";
 import { abortThroughRunJob, AbortFence, MotionLock, MOTION_OUTCOME_UNKNOWN_REASON_CODES } from "../robotDriver";
+import { driverJob, isStopJob } from "../stopJob"; // doc 81 Đợt 1C residual round 2
 
 /** Stable reason code: no RMI reply packet within the request timeout (outcome unknown). */
 export const RMI_REPLY_TIMEOUT = "rmi_reply_timeout" as const;
@@ -810,6 +811,10 @@ export class FanucDriver implements RobotDriver {
    * RMI_MOVE program) before sending the motion instruction. [RMI §2.3.1 p.9]
    */
   async runJob(job: RobotJobSpec): Promise<RobotJobResult> {
+    // doc 81 Đợt 1C residual round 2 (R-1C-m, layer b) — ONE shared classifier: a STOP in ANY spelling
+    // (abort / stop / e_stop, any case) becomes the canonical abort with NO params, so this driver sends only its
+    // fixed stop primitive — even when a caller bypasses the dispatcher's own canonicalisation.
+    job = driverJob(job);
     if (!this.connected || (!this.client && !this.reopening)) {
       return { ok: false, status: "failed", error: "not connected", detail: { jobType: job.jobType, reasonCode: RMI_NOT_CONNECTED, sent: false } };
     }
@@ -825,7 +830,7 @@ export class FanucDriver implements RobotDriver {
     // Initialize is in flight stops the next packet even though the entry check above passed.
     const guard = this.motionLock.guard(job, this.fence.capture(job));
     let sequenceId = this.seq++;
-    let packet = job.jobType === "abort"
+    let packet = isStopJob(job)
       ? buildAbortPacket()
       : buildFanucInstruction(job, sequenceId);
 
@@ -846,13 +851,13 @@ export class FanucDriver implements RobotDriver {
       //    opened after a drop/reset it did not see (isConnected() is false ⇒ dispatcher gate 3
       //    refuses new motion; a motion job already in flight is refused here).
       if (this.reopening || this.rmi().wasDropped()) {
-        if (job.jobType !== "abort") {
+        if (!isStopJob(job)) {
           throw new FanucRmiNotConnectedError("FANUC RMI: session dropped/reset — only a stop may re-open it");
         }
         await this.reopenSession();
       }
       // FRC_Abort is a Command that needs no Initialize; motion instructions do.
-      if (job.jobType !== "abort") {
+      if (!isStopJob(job)) {
         // Final wave (R14) — never FRC_Initialize while an earlier Instruction on this session is
         // unanswered (pending OR timed out): Initialize restarts SequenceIDs, so its late reply
         // could be matched to the new motion. Refused before any byte (no GetStatus either);
@@ -902,7 +907,7 @@ export class FanucDriver implements RobotDriver {
         return { ok: false, status: "failed", error: `RMI ErrorID ${errId}`, detail: { sequenceId, sent: true } };
       }
       this.lastOkAt = new Date();
-      if (job.jobType === "abort") {
+      if (isStopJob(job)) {
         // Fix round 4 (R13) — FRC_Abort delivered AND acknowledged (ErrorID 0): the only automatic
         // way out of the motion lock. Fix round 5 (a): if this socket still carries ANY unanswered
         // Instruction — pending or timed out — tear the session down NOW (its late reply must never
@@ -924,7 +929,7 @@ export class FanucDriver implements RobotDriver {
       const reasonCode = (err as { reasonCode?: unknown })?.reasonCode;
       // Fix round 4 (R13) — a MOTION whose outcome is unknown locks further motion until the stop
       // that follows is confirmed (or an operator clears the lock).
-      if (job.jobType !== "abort" && typeof reasonCode === "string" && MOTION_OUTCOME_UNKNOWN_REASON_CODES.has(reasonCode)) {
+      if (!isStopJob(job) && typeof reasonCode === "string" && MOTION_OUTCOME_UNKNOWN_REASON_CODES.has(reasonCode)) {
         this.motionLock.lock(reasonCode, msg);
       }
       return {

@@ -168,9 +168,6 @@ export function buildVda5050StopInstantActions(manufacturer: string, serialNumbe
   };
 }
 
-/** Job types a VDA 5050 driver treats as a STOP (same set as the dispatcher's non-motion classifier). */
-export const VDA5050_STOP_JOB_TYPES: ReadonlySet<string> = new Set(["abort", "stop", "e_stop"]);
-
 export interface BuildOrderInput {
   manufacturer: string;
   serialNumber: string;

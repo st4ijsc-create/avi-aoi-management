@@ -47,6 +47,7 @@ import type {
   OnRobotState, RobotJobSpec, RobotJobResult, RobotHealth,
 } from "../robotDriver";
 import { abortThroughRunJob, AbortFence, RobotJobFencedError } from "../robotDriver";
+import { driverJob } from "../stopJob"; // doc 81 Đợt 1C residual round 2
 
 /**
  * ─── TMflow Modbus register map (ASSUMED — EDIT FOR YOUR DEPLOYMENT) ────────
@@ -483,6 +484,10 @@ export class TechmanDriver implements RobotDriver {
    * build the TMSCT string and return it as intent WITHOUT opening any socket.
    */
   async runJob(job: RobotJobSpec): Promise<RobotJobResult> {
+    // doc 81 Đợt 1C residual round 2 (R-1C-m, layer b) — ONE shared classifier: a STOP in ANY spelling
+    // (abort / stop / e_stop, any case) becomes the canonical abort with NO params, so this driver sends only its
+    // fixed stop primitive — even when a caller bypasses the dispatcher's own canonicalisation.
+    job = driverJob(job);
     if (!this.connected) return { ok: false, status: "failed", error: "not connected" };
     // doc 81 Đợt 1B Task 5 fix round 1 — abort fence, checked in the socket's connect handler
     // right before the frame is written (the connect phase is where a job can outlive abort()).

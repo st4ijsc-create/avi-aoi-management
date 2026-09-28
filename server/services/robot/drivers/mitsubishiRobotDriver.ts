@@ -98,6 +98,7 @@ import type {
 } from "../robotDriver";
 import type { MotionLockState } from "../robotDriver";
 import { abortThroughRunJob, AbortFence, MotionLock, MOTION_OUTCOME_UNKNOWN_REASON_CODES } from "../robotDriver";
+import { driverJob, isStopJob } from "../stopJob"; // doc 81 Đợt 1C residual round 2
 import { TcpLineClient } from "./tcpLineClient";
 import { DeviceUnreachableError } from "../../../_core/deviceErrors";
 
@@ -417,6 +418,10 @@ export class MitsubishiDriver implements RobotDriver {
    * (CNTLON), energise servos (SRVON), then send the EXEC motion statement.
    */
   async runJob(job: RobotJobSpec): Promise<RobotJobResult> {
+    // doc 81 Đợt 1C residual round 2 (R-1C-m, layer b) — ONE shared classifier: a STOP in ANY spelling
+    // (abort / stop / e_stop, any case) becomes the canonical abort with NO params, so this driver sends only its
+    // fixed stop primitive — even when a caller bypasses the dispatcher's own canonicalisation.
+    job = driverJob(job);
     if (!this.connected || !this.client) return { ok: false, status: "failed", error: "not connected" };
     // Fix round 4 (R13) — MOTION LOCK: a motion job is refused here, before the dry-run branch and
     // before any byte, while the lock is set (peer drop / outcome-unknown motion). A STOP passes.
@@ -428,7 +433,7 @@ export class MitsubishiDriver implements RobotDriver {
     // next write (SRVON / EXEC) even though the entry check above already passed.
     const guard = this.motionLock.guard(job, this.fence.capture(job));
 
-    const isAbort = job.jobType === "abort";
+    const isAbort = isStopJob(job);
     const motionCmd = isAbort ? "STOP" : buildMelfaMotion(job);
     const framed = frameMelfaCommand(motionCmd, this.robotNo, this.slotNo);
 

@@ -42,8 +42,8 @@ import {
   buildOrder,
   jobToOrderNodes,
   buildVda5050StopInstantActions,
-  VDA5050_STOP_JOB_TYPES,
 } from "./vda5050Mapping";
+import { isStopJob } from "../robot/stopJob"; // residual round 2 — the ONE shared classifier
 
 type MqttLikeClient = {
   on(ev: string, cb: (...a: any[]) => void): void;
@@ -186,7 +186,7 @@ export class Vda5050RobotDriver implements RobotDriver {
     // doc 81 Đợt 1C residual 1 (ruling R-1C-m, LAYER b) — a STOP job is ALWAYS the fixed, server-built stop
     // instantActions (cancelOrder, startPause) and NEVER an order, whatever its params carry. This used to fall
     // through to the order path: `abort` + params.order / x,y was published as an ORDER — an "abort" that drove.
-    if (VDA5050_STOP_JOB_TYPES.has(String(job.jobType ?? "").trim().toLowerCase())) {
+    if (isStopJob(job)) {
       try {
         const stop = buildVda5050StopInstantActions(this.manufacturer, this.serialNumber);
         await this.publish("instantActions", stop);

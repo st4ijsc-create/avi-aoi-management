@@ -562,6 +562,15 @@ describe("R-1C-m — abort mang params chuyển động ⇒ chỉ STOP tới b�
     expect(allCmds(fake)).toEqual(["STOP"]);
     expect(motionCmds(fake)).toEqual([]);
   });
+  // residual round 2 — lớp (b) phải ĐỘC LẬP: gọi thẳng driver (bỏ qua lớp a) với MỌI chính tả của dừng.
+  it.each(["stop", "e_stop", "ABORT"])("gọi thẳng driver, jobType '%s' + joints ⇒ ĐÚNG ['STOP'], 0 byte chuyển động", async (jt) => {
+    process.env.ROBOT_CONTROL_ENABLED = "true";
+    await connectDriver(2000);
+    const r = await within(driver.runJob({ jobType: jt as never, params: EVIL }), 10_000);
+    expect(r.ok).toBe(true);
+    expect(motionCmds(fake)).toEqual([]);
+    expect(allCmds(fake)).toEqual(["STOP"]);
+  });
   it("gọi thẳng driver (lớp b, không có dispatcher): runJob abort + params ⇒ ĐÚNG ['STOP']", async () => {
     process.env.ROBOT_CONTROL_ENABLED = "true";
     await connectDriver(2000);

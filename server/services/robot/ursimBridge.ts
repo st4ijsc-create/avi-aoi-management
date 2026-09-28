@@ -30,6 +30,7 @@ import type {
   OnRobotState, RobotJobSpec, RobotJobResult, RobotHealth,
 } from "./robotDriver";
 import { abortThroughRunJob, AbortFence } from "./robotDriver";
+import { driverJob, isStopJob } from "./stopJob"; // doc 81 Đợt 1C residual round 2
 
 /**
  * doc 81 Đợt 1B Task 5 fix round 1 (M5) — the UR Dashboard Server answers `stop` with the
@@ -234,6 +235,10 @@ export class UrsimBridgeDriver implements RobotDriver {
    * ROBOT_CONTROL_ENABLED=true we return the URScript as intent WITHOUT sending it.
    */
   async runJob(job: RobotJobSpec): Promise<RobotJobResult> {
+    // doc 81 Đợt 1C residual round 2 (R-1C-m, layer b) — ONE shared classifier: a STOP in ANY spelling
+    // (abort / stop / e_stop, any case) becomes the canonical abort with NO params, so this driver sends only its
+    // fixed stop primitive — even when a caller bypasses the dispatcher's own canonicalisation.
+    job = driverJob(job);
     if (!this.connected || !this.client) return { ok: false, status: "failed", error: "not connected" };
     // doc 81 Đợt 1B Task 5 fix round 1 — abort fence, checked inside sendScript after connect.
     const guard = this.fence.capture(job);
@@ -268,7 +273,7 @@ export class UrsimBridgeDriver implements RobotDriver {
     }
 
     try {
-      if (job.jobType === "abort") {
+      if (isStopJob(job)) {
         const reply = await this.client.stop();
         if (!isUrStopConfirmed(reply)) {
           const msg = `ur_stop_not_confirmed: dashboard replied "${reply}"`;

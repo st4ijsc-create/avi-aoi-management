@@ -54,6 +54,7 @@ import {
   RobotAbortUnsupportedError,
 } from "./robotDriver";
 import { withDeadline } from "../ot/drivers/boundedClose";
+import { isStopJob } from "./stopJob"; // residual round 2 — one classifier for dispatcher, drivers, motion lock
 import { isRobotSafetyPreflightEnabled, safetyPreflightReason, type SafetyUnknownBasis } from "../ot/safetyPreflightPolicy"; // final wave (item 3)
 
 /**
@@ -188,11 +189,9 @@ export function isMotionJob(job: RobotJobSpec): boolean {
   // doc 81 Đợt 1C residual 1 (R-1C-m) — `stop` / `e_stop` arriving as a run_job jobType are STOPs too (the verb
   // mapping already sends them as `abort`); they are canonicalised to `abort` before any driver sees them.
   // Anything else — including an unknown type — stays MOTION (fail-closed: fully gated).
-  return !STOP_JOB_TYPES.has(String(job.jobType ?? "").trim().toLowerCase());
+  // residual round 2 — the ONE shared classifier (stopJob.ts), also used by every driver and the motion lock.
+  return !isStopJob(job);
 }
-
-/** doc 81 Đợt 1C residual 1 — job types that are a STOP (energy-reducing). */
-const STOP_JOB_TYPES: ReadonlySet<string> = new Set(["abort", "stop", "e_stop"]);
 
 /**
  * doc 81 Đợt 1C residual 1 (ruling R-1C-m, LAYER a) — the ONLY job a driver ever receives for a STOP. A non-motion

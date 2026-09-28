@@ -86,6 +86,7 @@ import type {
 } from "../robotDriver";
 import type { MotionLockState } from "../robotDriver";
 import { abortThroughRunJob, AbortFence, MotionLock, MOTION_OUTCOME_UNKNOWN_REASON_CODES } from "../robotDriver";
+import { driverJob, isStopJob } from "../stopJob"; // doc 81 Đợt 1C residual round 2
 import type { RobotValidationStatus } from "../index";
 import { TcpLineClient } from "./tcpLineClient";
 import { DeviceUnreachableError } from "../../../_core/deviceErrors";
@@ -370,6 +371,10 @@ export class DeltaDriver implements RobotDriver {
    * send the MOVL/MOVJ instruction.
    */
   async runJob(job: RobotJobSpec): Promise<RobotJobResult> {
+    // doc 81 Đợt 1C residual round 2 (R-1C-m, layer b) — ONE shared classifier: a STOP in ANY spelling
+    // (abort / stop / e_stop, any case) becomes the canonical abort with NO params, so this driver sends only its
+    // fixed stop primitive — even when a caller bypasses the dispatcher's own canonicalisation.
+    job = driverJob(job);
     if (!this.connected || !this.client) return { ok: false, status: "failed", error: "not connected" };
     // Fix round 4 (R13) — MOTION LOCK: refused before the dry-run branch and before any byte.
     const refused = this.motionLock.refusal(job);
@@ -378,7 +383,7 @@ export class DeltaDriver implements RobotDriver {
     // Fix round 5 (b) — the guard also re-checks the motion lock before every write.
     const guard = this.motionLock.guard(job, this.fence.capture(job));
 
-    const isAbort = job.jobType === "abort";
+    const isAbort = isStopJob(job);
     const { cmd, args } = isAbort ? { cmd: "STOP", args: [] as Array<string | number> } : buildDeltaMotion(job);
     // Preview the exact bytes without consuming a live seq id (dry-run must not write).
     const framedPreview = frameDeltaCommand(this.seq, cmd, args);
