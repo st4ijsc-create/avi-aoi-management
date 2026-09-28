@@ -26,6 +26,7 @@ const S = vi.hoisted(() => ({
   rows: [] as Record<string, any>[],
   seq: 1,
   prewriteAttempts: 0,
+  nullDb: false,
 }));
 
 const NEVER = () => new Promise<never>(() => undefined);
@@ -113,7 +114,13 @@ function makeFakeDb() {
 }
 
 vi.mock("../../db/connection", () => ({
-  getDb: vi.fn(() => (S.fault?.step === "all" && S.fault.mode === "hang" ? new Promise(() => undefined) : Promise.resolve(makeFakeDb()))),
+  getDb: vi.fn(() =>
+    S.nullDb
+      ? Promise.resolve(null) // residual 2 — getDb() trả null (không cấu hình / pool chưa sẵn)
+      : S.fault?.step === "all" && S.fault.mode === "hang"
+        ? new Promise(() => undefined)
+        : Promise.resolve(makeFakeDb()),
+  ),
 }));
 vi.mock("../../../drizzle/schema", async (importOriginal) => ({
   ...(await importOriginal<Record<string, unknown>>()),
@@ -200,6 +207,7 @@ beforeEach(() => {
   S.rows.length = 0;
   S.seq = 1;
   S.prewriteAttempts = 0;
+  S.nullDb = false;
   process.env.ROBOT_CONTROL_ENABLED = "true";
   delete process.env.ROBOT_COMMISSIONING_REQUIRED; // mặc định BẬT ⇒ bước (2) được đi tới
   process.env.ROBOT_CONTROL_TIMEOUT_MS = "5000";
@@ -312,6 +320,39 @@ describe("CSDL treo TOÀN BỘ (getDb không bao giờ trả về)", () => {
       5000,
     );
     expect(m.ok).toBe(false);
+    expect(S.jobs).toHaveLength(0);
+  });
+});
+
+// doc 81 Đợt 1C residual 2 — getDb() trả NULL (không phải ném/treo): isRobotCommissioned ⇒ false ⇒ STOP bị ghi
+// 'simulated' và KHÔNG gửi. Null trên đường dừng = lỗi CSDL: STOP tới driver thật, sổ best-effort, có log.
+describe("residual 2 — getDb() trả null", () => {
+  it("★ STOP (commissioning bắt buộc — mặc định) ⇒ VẪN tới driver, status done, ledgerError nói thật, có log", async () => {
+    S.nullDb = true;
+    const r = await within(dispatchRobotJob(STOP("null-db-stop")), 5000);
+    expect(r.status).toBe("done");
+    expect(S.jobs.map((j) => j.jobType)).toEqual(["abort"]);
+    expect(r.ledgerError).toBeTruthy();
+    const logged = errSpy.mock.calls.map((c) => c.map(String).join(" ")).join(" | ");
+    expect(logged).toMatch(/DB unavailable|no DB/i);
+  });
+  it("★ STOP KHÔNG idempotencyKey (chỉ cổng commissioning chạm CSDL) ⇒ vẫn tới driver", async () => {
+    S.nullDb = true;
+    const { idempotencyKey: _k, ...noKey } = STOP("unused");
+    const r = await within(dispatchRobotJob(noKey), 5000);
+    expect(r.status).toBe("done");
+    expect(S.jobs.map((j) => j.jobType)).toEqual(["abort"]);
+  });
+  it("chuyển động với getDb() null ⇒ vẫn fail-closed: không tới driver", async () => {
+    S.nullDb = true;
+    const r = await within(
+      dispatchRobotJob(MOTION("null-db-motion")).then(
+        (x) => x,
+        (e) => ({ ok: false, status: "thrown", e }) as any,
+      ),
+      5000,
+    );
+    expect(r.ok === true && r.status === "done").toBe(false);
     expect(S.jobs).toHaveLength(0);
   });
 });

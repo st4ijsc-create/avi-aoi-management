@@ -240,6 +240,17 @@ export type StopDbStep =
   | "policy_commissioning_check"
   | "ledger_prewrite";
 
+/**
+ * doc 81 Đợt 1C residual 2 — on the STOP path a null `getDb()` (DB not configured / pool not ready) is treated like
+ * a DB error: thrown here so StopDbBudget marks the DB degraded, logs it, and the STOP takes the energy-reducing
+ * default (sent to the registered driver; ledger best-effort). Motion never calls this (it stays fail-closed).
+ */
+async function requireDbForStop(): Promise<Db> {
+  const db = await getDb();
+  if (!db) throw new Error("DB unavailable (getDb returned null)");
+  return db;
+}
+
 /** An error text safe for logs and the ledger: credentials in a connection string are masked, length capped. */
 function safeDbError(err: unknown): string {
   const raw = err instanceof Error ? `${err.name}: ${err.message}` : String(err);
@@ -550,7 +561,7 @@ async function dispatchRobotJobCore(input: RobotDispatchInput, opts: RobotDispat
   if (input.idempotencyKey) {
     const key = input.idempotencyKey;
     const lookup = async () => {
-      const db = await getDb();
+      const db = stopDb ? await requireDbForStop() : await getDb(); // residual 2 — null on the STOP path = DB failure
       if (!db) return undefined;
       const [prior] = await db.select().from(robotJobs).where(eq(robotJobs.idempotencyKey, key)).limit(1);
       return prior;
@@ -742,7 +753,12 @@ async function dispatchRobotJobCore(input: RobotDispatchInput, opts: RobotDispat
   let commissioned: boolean | undefined;
   if (isRobotCommissioningRequired()) {
     if (stopDb) {
-      const r = await stopDb.run("commissioning_check", () => isRobotCommissioned(input.robotId));
+      // residual 2 — a NULL DB is a DB failure here, not "not commissioned": isRobotCommissioned returns false for
+      // it (fail-safe for motion), which recorded the STOP 'simulated' and never sent it.
+      const r = await stopDb.run("commissioning_check", async () => {
+        await requireDbForStop();
+        return isRobotCommissioned(input.robotId);
+      });
       commissioned = r.ok ? r.value : true;
       if (!r.ok) stopNotes.commissioning = "unknown_db_unavailable_assumed_for_stop";
     } else {
