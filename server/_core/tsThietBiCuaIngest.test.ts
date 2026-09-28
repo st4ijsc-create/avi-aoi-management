@@ -59,20 +59,27 @@ vi.mock("../services/unsPublisher", () => ({
   shutdownUnsPublisher: vi.fn(),
 }));
 vi.mock("../services/uns/aoiBridge", () => ({ mapAoiTopicToSparkplug: vi.fn(() => null) }));
+// Fix round 1 — bề mặt Andon mà raiseConditionAlarms gọi (dynamic import trong poller).
+const andon = vi.hoisted(() => ({ calls: [] as Array<Record<string, unknown>> }));
+vi.mock("../services/equipment/adapterAlarmBridge", () => ({
+  raiseFromMtconnectCondition: vi.fn(async (a: Record<string, unknown>) => {
+    andon.calls.push(a);
+  }),
+}));
 
 import { createOtIngestHandler } from "./otIngestRoute";
 import { createV1Router } from "../api/v1/router";
 import { ingestTelemetryDetailed, type CanonicalSample } from "../services/telemetryBus";
 import { parseCanonicalTelemetry } from "../services/mqttService";
 import { parseStreamsXml } from "../services/mtconnect/mtconnectClient";
-import { mapReadings } from "../services/mtconnect/mtconnectPoller";
+import { mapReadings, raiseConditionAlarms } from "../services/mtconnect/mtconnectPoller";
 import { parseAndMapCfx } from "../services/cfx/cfxMessages";
 import { wireSampleToOtSample } from "../services/plugins/pluginDriverBridge";
 import { sampleToCanonical } from "../services/ot/ingest";
 import { handleSensorMessage } from "../services/sensorIngestService";
 import { getStatus } from "../services/ot/storeForward";
 import { _resetLogGop, _resetTsDropStats } from "../services/ot/otGuards";
-import { docTsThietBi } from "../utils/factoryTime";
+import { docTsThietBi, docGioMay, coMuiGioTuongMinh } from "../utils/factoryTime";
 
 /** ORACLE — instant cố định, tính bằng Date.UTC (không phải mã sản phẩm). */
 const T = Date.UTC(2026, 8, 27, 3, 0, 0);
@@ -80,6 +87,12 @@ const TS_Z = "2026-09-27T03:00:00.000Z";
 const TS_P7 = "2026-09-27T10:00:00+07:00";
 const TS_M5 = "2026-09-26T22:00:00-0500";
 const TS_NAIVE = "2026-09-27T10:00:00";
+/**
+ * Fix round 1 — dạng `Date.prototype.toString()` BG-72 ghi nhận ĐANG CHẠY SẢN XUẤT (C# Agent,
+ * `machineApiRouters.ts` khối `inspectionTime`). Oracle: 14:26:51 giờ +07 = 07:26:51Z (Date.UTC).
+ */
+const TS_BG72 = "Sun Aug 30 2026 14:26:51 GMT+0700 (Indochina Time)";
+const T_BG72 = Date.UTC(2026, 7, 30, 7, 26, 51);
 
 let server: Server;
 let base = "";
@@ -126,6 +139,14 @@ describe("docTsThietBi — bảng luật (oracle Date.UTC)", () => {
     [TS_P7, { ok: true, t: T }],
     [TS_M5, { ok: true, t: T }],
     ["2026-09-27T03:00:00z", { ok: true, t: T }],
+    // Fix round 1 — offset NHÚNG (GMT±hhmm/UTC±hhmm), tên trong ngoặc bị bỏ qua; GMT/UTC trần = Z.
+    [TS_BG72, { ok: true, t: T_BG72 }],
+    ["Sunday, August 30, 2026 2:26:51 PM GMT+07:00", { ok: true, t: T_BG72 }],
+    ["Sun Aug 30 2026 14:26:51 UTC+0700", { ok: true, t: T_BG72 }],
+    ["Sun Aug 30 2026 07:26:51 GMT", { ok: true, t: T_BG72 }],
+    ["Sun Aug 30 2026 07:26:51 UTC", { ok: true, t: T_BG72 }],
+    // tên múi giờ trong ngoặc mà KHÔNG có GMT±hhmm ⇒ vẫn là chuỗi TRẦN.
+    ["Sun Aug 30 2026 14:26:51 (Indochina Time)", { ok: false, reason: "ts_no_timezone" }],
     [TS_NAIVE, { ok: false, reason: "ts_no_timezone" }],
     ["2026-09-27 10:00:00", { ok: false, reason: "ts_no_timezone" }],
     ["2026-09-27", { ok: false, reason: "ts_no_timezone" }],
@@ -135,6 +156,11 @@ describe("docTsThietBi — bảng luật (oracle Date.UTC)", () => {
     const k = docTsThietBi(raw);
     if (ky.ok) expect(k.ok && k.ts?.getTime()).toBe(ky.t);
     else expect(k).toEqual({ ok: false, reason: ky.reason });
+  });
+  it("★ MỘT định nghĩa: docGioMay (inspectionTime) đọc dạng BG-72 ĐÚNG instant, không nối Z vào sau tên ngoặc", () => {
+    expect(coMuiGioTuongMinh(TS_BG72)).toBe(true);
+    expect(docGioMay(TS_BG72)?.getTime()).toBe(T_BG72);
+    expect(coMuiGioTuongMinh("Sun Aug 30 2026 14:26:51 (Indochina Time)")).toBe(false);
   });
   it("vắng/rỗng ⇒ ts undefined (giờ server, hành vi cũ); epoch-ms và Date nhận nguyên", () => {
     expect(docTsThietBi(undefined)).toEqual({ ok: true, ts: undefined });
@@ -150,6 +176,13 @@ describe("cửa 1 — POST /api/ot/ingest", () => {
     expect(r.status).toBe(207);
     expect(r.body.rejected).toEqual([{ index: 3, reason: "ts_no_timezone" }]);
     expect(tsCuaDongDaGhi()).toEqual([T, T, T]);
+  });
+  it("★ fix round 1 — dạng BG-72 'GMT+0700 (Indochina Time)' ⇒ 202, ghi ĐÚNG 07:26:51Z (không ts_no_timezone)", async () => {
+    const tsGanNay = new Date(Date.now() - 60_000).toString(); // cùng dạng, trong cửa sổ trần tương lai
+    const r = await post("/api/ot/ingest", { samples: [mau(TS_BG72, "a"), mau(tsGanNay, "b")] }, { "x-api-key": "mk_x" });
+    expect(r.body.rejected ?? []).toEqual([]);
+    expect(tsCuaDongDaGhi()[0]).toBe(T_BG72);
+    expect(db.stored).toHaveLength(2);
   });
   it("★ cả lô naive ⇒ 400 all_rejected, 0 dòng, bộ đếm droppedNoTimezone tăng", async () => {
     const r = await post("/api/ot/ingest", { samples: [mau(TS_NAIVE, "a"), mau("2026-09-27 10:00:00", "b")] }, { "x-api-key": "mk_x" });
@@ -300,5 +333,36 @@ describe("số đo lệch giờ theo thiết bị (storeForward.getStatus().skew
     expect(b.samples).toBe(2);
     expect(Math.abs(b.medianSkewMs! - 2_000)).toBeLessThan(5_000);
     expect(b.droppedNoTimezone).toBe(1);
+  });
+});
+
+describe("cửa 4 — MTConnect, fix round 1: sự kiện naive bị loại thì LOG gộp và KHÔNG sang Andon", () => {
+  const xmlCond = (ts: string, code: string) =>
+    `<MTConnectStreams><Streams><DeviceStream name="M1" uuid="M1"><ComponentStream component="Controller">` +
+    `<Condition><Fault dataItemId="sys_${code}" type="SYSTEM" nativeCode="${code}" timestamp="${ts}">Spindle overload</Fault></Condition>` +
+    `</ComponentStream></DeviceStream></Streams></MTConnectStreams>`;
+  const ctx = { adapterId: 1, machineId: 7, machineCode: "T6-MTC" };
+
+  it("★ hai sự kiện naive liên tiếp ⇒ đúng MỘT dòng console.warn (gộp), mang mã máy + dataItemId, không mang giá trị", () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    try {
+      mapReadings(parseStreamsXml(xmlCond(TS_NAIVE, "E1")), ctx);
+      mapReadings(parseStreamsXml(xmlCond(TS_NAIVE, "E2")), ctx);
+      const dong = warn.mock.calls.map((c) => String(c[0])).filter((m) => m.includes("[MTConnect]"));
+      expect(dong).toHaveLength(1);
+      expect(dong[0]).toContain("T6-MTC");
+      expect(dong[0]).toContain("sys_E1");
+      expect(dong[0]).not.toContain("Spindle overload");
+    } finally {
+      warn.mockRestore();
+    }
+  });
+
+  it("★ raiseConditionAlarms: FAULT có múi giờ ⇒ tới Andon; FAULT naive ⇒ KHÔNG", async () => {
+    andon.calls.length = 0;
+    const readings = [...parseStreamsXml(xmlCond(TS_Z, "OK1")), ...parseStreamsXml(xmlCond(TS_NAIVE, "NV1"))];
+    expect(readings.map((r) => Boolean(r.tsReject))).toEqual([false, true]); // cầu chì: đầu vào đúng hình
+    await raiseConditionAlarms(readings, 7, "mtconnect");
+    expect(andon.calls.map((a) => a.nativeCode)).toEqual(["OK1"]);
   });
 });

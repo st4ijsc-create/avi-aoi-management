@@ -288,15 +288,29 @@ export function docGioTuongNhaMay(dateStr: string, endOfDay = false): Date | und
   return new Date(utc.getTime() + ms);
 }
 
-/** Chuỗi thời gian có mang múi giờ (`Z`, `+07:00`, `-0500`) hay không — dùng bởi `docGioMay`. */
-const CO_MUI_GIO_MAY = /(?:Z|[+-]\d{2}:?\d{2})$/i;
+/**
+ * Chuỗi thời gian có mang múi giờ ở CUỐI (sau khi bỏ tên múi giờ trong ngoặc): `Z`, `±hh:mm`/`±hhmm`
+ * (kể cả dạng `GMT+0700`/`UTC+07:00` — phần `±hhmm` nằm ở cuối), hoặc `GMT`/`UTC` trần (= `Z`).
+ */
+const CO_MUI_GIO_MAY = /(?:Z|[+-]\d{2}:?\d{2}|\b(?:GMT|UTC))$/i;
+/** Tên múi giờ trong ngoặc ở cuối chuỗi (`Date.prototype.toString()`: "… GMT+0700 (Indochina Time)"). */
+const TEN_MUI_GIO_TRONG_NGOAC = /\s*\([^()]*\)\s*$/;
 
 /**
- * Chuỗi thời gian có mang múi giờ TƯỜNG MINH (`Z`, `+07:00`, `-0500`) hay không — MỘT định nghĩa
- * dùng chung cho `docGioMay`, `docTsThietBi` và `hasExplicitUtcOffset` (luồng process-result).
+ * Chuỗi thời gian có mang múi giờ TƯỜNG MINH hay không — MỘT định nghĩa dùng chung cho
+ * `docGioMay`, `docTsThietBi` và `hasExplicitUtcOffset` (luồng process-result, `inspectionTime`).
+ *
+ * Nhận: `…Z`, `…+07:00`, `…-0500`, `… GMT+07:00`, `… UTC+0700`, `… GMT`/`… UTC` (= Z), và dạng
+ * `Date.prototype.toString()` của C#/JS `"Sun Aug 30 2026 14:26:51 GMT+0700 (Indochina Time)"` —
+ * BG-72 ghi nhận dạng này ĐANG CHẠY SẢN XUẤT (`machineApiRouters.ts`, khối `inspectionTime`). Doc 81
+ * Đợt 1C Task 6 fix round 1: trước bản vá, phần `(Indochina Time)` ở cuối làm luật trả `false` ⇒ bị
+ * từ chối `time_offset_required`/`ts_no_timezone` dù chuỗi CÓ offset, và `docGioMay` (khi cờ tắt) nối
+ * thêm `Z` ⇒ V8 bỏ qua `GMT+0700` ⇒ lệch +7 h.
+ * KHÔNG nhận: tên trong ngoặc mà KHÔNG có `GMT±hhmm` (`"… 14:26:51 (Indochina Time)"`) — tên múi giờ
+ * không phải offset, `new Date` sẽ đọc theo TZ tiến trình ⇒ vẫn là chuỗi TRẦN.
  */
 export function coMuiGioTuongMinh(s: string): boolean {
-  return CO_MUI_GIO_MAY.test(s.trim());
+  return CO_MUI_GIO_MAY.test(s.trim().replace(TEN_MUI_GIO_TRONG_NGOAC, ""));
 }
 
 /** Lý do một `ts` thiết bị không dùng được (trùng tên `TelemetryRejectReason` của telemetryBus). */
@@ -394,6 +408,6 @@ export function truongTsMau(raw: unknown): { ts: Date | undefined; tsReject?: "t
 export function docGioMay(s: string | null | undefined): Date | null {
   const t = typeof s === "string" ? s.trim() : "";
   if (t.length === 0) return null;
-  const d = new Date(CO_MUI_GIO_MAY.test(t) ? t : `${t}Z`);
+  const d = new Date(coMuiGioTuongMinh(t) ? t : `${t}Z`);
   return Number.isFinite(d.getTime()) ? d : null;
 }

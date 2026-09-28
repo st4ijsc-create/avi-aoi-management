@@ -427,6 +427,18 @@ describe("CASE #3 — timestamp naive (2026-09-28: chủ dự án quyết BẬT 
     expect(db.createProductInspection).not.toHaveBeenCalled();
   });
 
+  it("★ fix round 1 — MẶC ĐỊNH, dạng BG-72 'Sun Aug 30 2026 14:26:51 GMT+0700 (Indochina Time)' ⇒ NHẬN, instant 07:26:51Z, machine_utc", async () => {
+    const fake = installIdempotentInsertFake();
+    const caller = machineApiRouter.createCaller(ctx());
+    const res = await caller.submitInspection(
+      payload({ serialNumber: "SN-BG72", inspectionTime: "Sun Aug 30 2026 14:26:51 GMT+0700 (Indochina Time)" }),
+    );
+    expect(res.success).toBe(true);
+    expect(fake.realInserts).toBe(1);
+    expect((persisted(0).inspectionTime as Date).getTime()).toBe(Date.UTC(2026, 7, 30, 7, 26, 51));
+    expect(persisted(0).timeSource).toBe("machine_utc");
+  });
+
   it("★ MẶC ĐỊNH (env VẮNG) → 'Z' lẫn '+07:00' vẫn qua, timeSource='machine_utc'", async () => {
     const fake = installIdempotentInsertFake();
     const caller = machineApiRouter.createCaller(ctx());

@@ -23,7 +23,7 @@ import { fetchCurrent } from "./mtconnectClient";
 import type { MtcReading } from "./mtconnectClient";
 import type { InsertProcessResult } from "../../../drizzle/schema";
 import { ingestTelemetry, type CanonicalSample } from "../telemetryBus";
-import { recordTsDrops, recordTsObservation } from "../ot/otGuards";
+import { recordTsDrops, recordTsObservation, warnGop } from "../ot/otGuards";
 
 export interface MtcSource {
   agentUrl: string;
@@ -146,14 +146,17 @@ export function stateToResult(reading: MtcReading): "pass" | "fail" | "warn" | "
  * @param vendor per-device manufacturer key (from probe / source config); defaults to
  *   'mtconnect' inside the bridge.
  */
-async function raiseConditionAlarms(
+export async function raiseConditionAlarms(
   readings: MtcReading[],
   machineId: number | null,
   vendor?: string,
 ): Promise<void> {
   try {
     const { extractConditionAlarms } = await import("./mtconnectFieldMap");
-    const alarms = extractConditionAlarms(readings);
+    // Đợt 1C Task 6 fix round 1 — reading có timestamp KHÔNG múi giờ đã bị loại khỏi process_results
+    // (mapReadings) ⇒ cũng KHÔNG đẩy sang Andon: một cảnh báo mà thời điểm không xác định được thì
+    // không có mốc để đối chiếu, và giữ hai đường nhất quán (một reading bị loại là bị loại ở mọi nơi).
+    const alarms = extractConditionAlarms(readings.filter((r) => !r.tsReject));
     if (alarms.length === 0) return;
     const { raiseFromMtconnectCondition } = await import("../equipment/adapterAlarmBridge");
     for (const a of alarms) {
@@ -206,6 +209,12 @@ export function mapReadings(
     if (r.tsReject) {
       recordTsObservation({ deviceId: ctx.machineCode, machineId: ctx.machineId }, null, r.tsReject);
       recordTsDrops(0, 0, 1);
+      // Cùng khuôn đường cảm biến: log GỘP theo máy (không bão log), chỉ mã máy + dataItemId —
+      // không in giá trị/payload.
+      warnGop(
+        `mtconnect:ts:${ctx.machineCode}`,
+        `[MTConnect] loại sự kiện vì timestamp không múi giờ (máy ${ctx.machineCode}, dataItem ${r.dataItemId})`,
+      );
       continue;
     }
 

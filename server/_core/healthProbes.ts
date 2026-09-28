@@ -25,7 +25,7 @@
  *   • `/readyz` (createReadyzHandler): kết quả SELECT 1 cũ tối đa READYZ_DB_CACHE_MS (1 s — chặn
  *     lũ probe vô danh thành lũ truy vấn); DB down ⇒ 503 `{db:"down"}`.
  *   • `/health` (createHealthHandler) là LIVENESS: luôn 200 khi tiến trình trả lời được (DB chập
- *     chờn KHÔNG được làm Docker/k8s giết pod); trạng thái DB trong thân lấy từ lần ping gần nhất
+ *     chờn KHÔNG được làm k8s giết pod — vì thế Helm liveness ở lại `/health`); trạng thái DB trong thân lấy từ lần ping gần nhất
  *     ≤ HEALTH_DB_CACHE_MS (5 s) — cũ hơn thì ping lại (có hạn giờ) trước khi trả lời, nên không
  *     bao giờ báo `db:"connected"` khi chưa ping. `status:"ok"` ⇔ DB connected.
  * Test: healthMetricsNoiThat.test.ts (DB giả ném/treo + DB `_test` thật), healthPingRieng.test.ts (pool riêng).
@@ -312,7 +312,10 @@ export interface ProbeHandlerDeps {
   checkBroker?: ReadinessDeps["checkBroker"];
 }
 
-/** `GET /readyz` — 200 khi SELECT 1 trả lời trong hạn; ngược lại 503 `{db:"down"}`. */
+/**
+ * `GET /readyz` — 200 khi SELECT 1 trả lời trong hạn; ngược lại 503 `{db:"down"}`. Người dùng: Helm
+ * readiness, Docker HEALTHCHECK + healthcheck `docker-compose*.yml` (doc 81 Đợt 1C Task 6).
+ */
 export function createReadyzHandler(deps: ProbeHandlerDeps = {}) {
   const pinger = deps.pinger ?? pingerMacDinh;
   const checkDb = async () => (await pinger.ping({ maxAgeMs: READYZ_DB_CACHE_MS })).ok;
@@ -328,8 +331,9 @@ export function createReadyzHandler(deps: ProbeHandlerDeps = {}) {
 }
 
 /**
- * `GET /health` — LIVENESS có chẩn đoán (Docker HEALTHCHECK, compose, Helm liveness/startup,
- * k3s, edition-smoke CI, e2e). Luôn 200 khi tiến trình trả lời được; thân mang trạng thái DB từ
+ * `GET /health` — LIVENESS có chẩn đoán (Helm liveness/startup, k3s, edition-smoke CI, e2e).
+ * Docker HEALTHCHECK (`Dockerfile`) và healthcheck của `docker-compose*.yml` dùng `/readyz` từ
+ * doc 81 Đợt 1C Task 6 (canh bằng `dockerHealthcheckReadyz.test.ts`). Luôn 200 khi tiến trình trả lời được; thân mang trạng thái DB từ
  * ping ≤ 5 s: `status:"ok"` + `db:"connected"` chỉ khi SELECT 1 vừa thành công; DB sập/treo ⇒
  * `status:"degraded"`, `db:"disconnected"|"error"` + `dbReason` (vẫn 200 — cổng traffic là `/readyz`).
  */
