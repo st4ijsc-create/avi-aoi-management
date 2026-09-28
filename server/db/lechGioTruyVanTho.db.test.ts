@@ -47,10 +47,15 @@ const ids = { factory: 0, workshop: 0, line: 0, station: 0, machine: 0, shift: 0
 let T0 = 0;
 let nuaDemCucBo = 0;
 
-/** Chèn một dòng trạng thái tại INSTANT `at` — ghi giờ tường UTC vào cột naive (đúng như drizzle typed ghi). */
+/**
+ * Chèn một dòng trạng thái tại INSTANT `at` — ghi giờ tường UTC vào cột naive (đúng như drizzle typed ghi).
+ * ⚠ Truyền `Date`, KHÔNG truyền chuỗi naive: tham số kiểu `timestamp` được postgres.js chạy qua
+ * `new Date(x).toISOString()`, nên một chuỗi "yyyy-mm-dd hh:mm:ss" bị đọc theo TZ của TIẾN TRÌNH (+07)
+ * và lệch −7 h — chính lớp lỗi file này canh (lượt chạy DB đầu tiên 2026-09-28 đỏ vì đúng lỗi này
+ * trong THIẾT BỊ ĐO, không phải trong mã sản phẩm).
+ */
 async function chenTrangThai(at: number, status: "online" | "offline"): Promise<void> {
-  const naiveUtc = new Date(at).toISOString().replace("T", " ").replace("Z", "");
-  await sql`INSERT INTO machine_status_logs ("machineId", status, "timestamp") VALUES (${ids.machine}, ${status}, ${naiveUtc}::timestamp)`;
+  await sql`INSERT INTO machine_status_logs ("machineId", status, "timestamp") VALUES (${ids.machine}, ${status}, ${new Date(at)})`;
 }
 
 async function voiPhien<T>(p: "UTC" | "VN", fn: () => Promise<T>): Promise<T> {
@@ -149,10 +154,10 @@ describe.skipIf(!DB_URL)("Task 6 — năm truy vấn thô trên machine_status_l
     await chenTrangThai(tOn, "online");
     await chenTrangThai(tOff, "offline");
     // P = 1 (ideal·total ≫ online), Q = 1 ⇒ oee = A × 100, A = online/(online+offline).
-    const bucket = new Date(nuaDemCucBo).toISOString().replace("T", " ").replace("Z", "");
+    const bucket = new Date(nuaDemCucBo); // Date, không chuỗi naive — xem `chenTrangThai`
     const shiftCode = "C" + RUN.slice(-8);
     await sql`INSERT INTO fact_inspection_hourly ("bucketHour", "factoryId", "machineId", "shiftCode", "totalCount", "okCount")
-              VALUES (${bucket}::timestamp, ${ids.factory}, ${ids.machine}, ${shiftCode}, 1, 1)`;
+              VALUES (${bucket}, ${ids.factory}, ${ids.machine}, ${shiftCode}, 1, 1)`;
     await sql`INSERT INTO oee_metrics ("machineId", "machineCode", "timestamp", availability, performance, quality, oee,
                 "plannedTime", "runTime", "idealCycleTime", "totalCount", "goodCount", "rejectCount")
               VALUES (${ids.machine}, ${"M-" + RUN}, now() AT TIME ZONE 'UTC', 0, 0, 0, 0, 0, 0, 100000000, 0, 0, 0)`;
