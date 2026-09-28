@@ -57,13 +57,12 @@ export class TimeOffsetRequiredError extends Error {
   readonly appParams: { readonly field: TruongThoiGianMay; readonly reason: "timeOffsetRequired" };
   readonly field: TruongThoiGianMay;
   constructor(field: TruongThoiGianMay, value: string) {
+    // doc 81 Đợt 1D final wave 3 (M7) — câu này tới MÁY (REST `message`) và làm fallback appError: KHÔNG tên cờ .env
+    // (plan GC6). Token máy đọc `time_offset_required` giữ nguyên ở đầu câu.
     super(
       `time_offset_required: ${field} must carry an explicit UTC offset ` +
         `(e.g. 2026-07-15T08:00:00+07:00 or ...Z) — got "${value}", which the server can only ` +
-        `interpret in its OWN timezone. ` +
-        (field === "inspectionTime"
-          ? `(INGEST_REQUIRE_TIME_OFFSET is on by default.)`
-          : `(INGEST_REQUIRE_PACKAGE_TIME_OFFSET is on.)`),
+        `interpret in its OWN timezone.`,
     );
     this.field = field;
     this.appParams = { field, reason: "timeOffsetRequired" };
