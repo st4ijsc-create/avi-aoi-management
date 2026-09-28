@@ -3822,6 +3822,7 @@
       "kbGoldenSet": "golden question set"
     },
     "operation": {
+      "softwareStop": "send the software stop",
       "clearRobotMotionLock": "clear the robot's motion lock",
       "deployBuild": "deploy the program build",
       "requestDeployApproval": "request deploy approval",
@@ -4209,6 +4210,7 @@
     "cannotDisplayChart": "Cannot display chart",
     "analyticsRenderError": "Analytics render error",
     "reason": {
+      "softwareStopRefusedUseHardwareEstop": "The software stop was REFUSED: the safety check could not confirm the safety PLC (unreadable, simulation only, or tripped), so the platform did NOT send this stop. Use the hardware E-STOP on the machine now.",
       "timeOffsetRequired": "The timestamp must carry an explicit time zone (Z or +07:00) — a timestamp without one is rejected because the server cannot tell which clock it refers to.",
       "mqttDeviceRejectedCredential": "This device was REJECTED — a rejected device cannot be issued a password. Approve the device first.",
       "mqttPasswordNotEnforced": "The broker is NOT checking passwords (MQTT_REQUIRE_PASSWORD=false) — devices connect by username only, so a machine binding would mean nothing. Re-enable password checks before binding.",

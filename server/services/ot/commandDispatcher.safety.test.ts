@@ -220,3 +220,64 @@ describe("commandDispatcher — safety-PLC preflight non-breaking gates", () => 
     expect(writeTagsSpy).not.toHaveBeenCalled();
   });
 });
+
+// ── doc 81 Đợt 1C final wave 4 (ruling R-1C-g, final review I1) ───────────────────────────────────────
+// Lệnh OT kiểu stop/e_stop VẪN chịu preflight (không miễn theo TÊN — một "stop" OT là các lệnh ghi tag do người gọi
+// chọn, không có siêu dữ liệu tag dừng được ghim). Nhưng khi preflight từ chối nó, lời từ chối phải nói THẲNG: lệnh dừng
+// phần mềm đã bị từ chối ⇒ dùng nút E-STOP cứng. Mã giữ nguyên (SAFETY_*), thêm LÝ DO mới (không thêm giá trị enum).
+describe("R-1C-g — OT stop/e_stop bị preflight từ chối ⇒ nói thẳng 'dùng E-STOP cứng'", () => {
+  const LOCALES = ["vi", "en", "zh"] as const;
+  const TEN_BIEN_MOI_TRUONG = /[A-Z][A-Z0-9]+_[A-Z0-9_]+/;
+  const stopInput = (commandType: string) => {
+    const input = baseInput({ commandType, idempotencyKey: `key-${commandType}` });
+    pending.set("act-1", boundPending("act-1", input));
+    return input;
+  };
+
+  it.each([
+    ["e_stop", "BLOCKED", undefined, "SAFETY_BLOCKED"],
+    ["stop", "UNKNOWN", undefined, "SAFETY_UNKNOWN"],
+    ["e_stop", "UNKNOWN", "sim_only", "SAFETY_SIM_ONLY"],
+    ["E_STOP", "UNKNOWN", undefined, "SAFETY_UNKNOWN"],
+  ] as const)("%s + safety %s(%s) ⇒ vẫn rejected %s (không miễn), 0 write; lý do nói rõ lệnh dừng phần mềm bị từ chối + E-STOP cứng", async (cmd, state, basis, code) => {
+    getSafetyStatusSpy.mockImplementation(async () => ({ state, source: "test", ts: new Date().toISOString(), ...(basis ? { basis } : {}) }) as any);
+    const r = await dispatch(stopInput(cmd));
+    expect(r.status).toBe("rejected");
+    expect(r.reason).toBe(code); // mã cũ, không enum mới
+    expect(writeTagsSpy).not.toHaveBeenCalled();
+    expect(r.appError).toEqual({ appCode: "OPERATION_FAILED", appParams: { operation: "softwareStop", reason: "softwareStopRefusedUseHardwareEstop" } });
+    expect(r.message).toMatch(/software stop was REFUSED/i);
+    expect(r.message).toMatch(/hardware E-STOP/);
+    expect(r.message).not.toMatch(TEN_BIEN_MOI_TRUONG);
+    // Sổ commandLog mang cùng câu nói thẳng.
+    expect(cmdLog.some((row) => /hardware E-STOP/.test(String(row.errorText ?? row.error ?? row.detail ?? JSON.stringify(row))))).toBe(true);
+  });
+
+  it("lệnh KHÔNG phải stop bị preflight từ chối ⇒ không kèm lý do E-STOP (chỉ lệnh dừng mới được bảo dùng E-STOP)", async () => {
+    safetyState = "UNKNOWN";
+    const r = await dispatch(baseInput());
+    expect(r.reason).toBe("SAFETY_UNKNOWN");
+    expect(r.appError).toBeUndefined();
+    expect(r.message).toBeUndefined();
+  });
+
+  it("stop khi safety OK ⇒ đi qua như mọi lệnh (không bị chặn oan)", async () => {
+    safetyState = "OK";
+    const r = await dispatch(stopInput("stop"));
+    expect(r.status).toBe("acked");
+    expect(writeTagsSpy).toHaveBeenCalledTimes(1);
+  });
+
+  it.each(LOCALES)("%s.json: errors.reason.softwareStopRefusedUseHardwareEstop + errors.operation.softwareStop có, nhắc E-STOP, không tên biến môi trường", async (lng) => {
+    const { readFileSync } = await import("node:fs");
+    const { resolve } = await import("node:path");
+    const json = JSON.parse(readFileSync(resolve(__dirname, "../../../client/src/i18n/locales", `${lng}.json`), "utf8"));
+    const reason = json.errors?.reason?.softwareStopRefusedUseHardwareEstop;
+    const op = json.errors?.operation?.softwareStop;
+    expect(typeof reason).toBe("string");
+    expect(typeof op).toBe("string");
+    expect(reason).toMatch(/E-STOP/);
+    expect(reason).not.toMatch(TEN_BIEN_MOI_TRUONG);
+    expect(op).not.toMatch(TEN_BIEN_MOI_TRUONG);
+  });
+});

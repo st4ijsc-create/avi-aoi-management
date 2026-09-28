@@ -3822,6 +3822,7 @@
       "kbGoldenSet": "bộ câu hỏi vàng"
     },
     "operation": {
+      "softwareStop": "gửi lệnh dừng phần mềm",
       "clearRobotMotionLock": "gỡ khoá chuyển động của robot",
       "deployBuild": "deploy build chương trình",
       "requestDeployApproval": "gửi yêu cầu duyệt deploy",
@@ -4201,6 +4202,7 @@
       "selfApproveProgramVersion": "tự duyệt phiên bản chương trình của chính mình"
     },
     "reason": {
+      "softwareStopRefusedUseHardwareEstop": "Lệnh dừng phần mềm đã bị TỪ CHỐI: kiểm tra an toàn không xác nhận được PLC an toàn (không đọc được, chỉ có mô phỏng, hoặc đang báo dừng) nên nền tảng KHÔNG gửi lệnh dừng này. Hãy nhấn nút E-STOP cứng trên máy ngay.",
       "timeOffsetRequired": "Thời điểm phải kèm múi giờ tường minh (Z hoặc +07:00) — chuỗi không múi giờ bị từ chối vì máy chủ không thể biết đó là giờ nào.",
       "mqttDeviceRejectedCredential": "Thiết bị này đã bị TỪ CHỐI — không cấp mật khẩu cho thiết bị bị từ chối. Duyệt lại thiết bị trước.",
       "mqttPasswordNotEnforced": "Broker đang TẮT kiểm mật khẩu (MQTT_REQUIRE_PASSWORD=false) — thiết bị vào chỉ bằng tên đăng nhập nên ràng buộc máy không có giá trị. Bật lại kiểm mật khẩu trước khi gắn máy.",
