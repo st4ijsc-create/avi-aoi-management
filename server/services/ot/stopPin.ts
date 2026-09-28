@@ -123,6 +123,26 @@ export function matchPinnedStop(
   return { ok: true, writes: ra };
 }
 
+/** Những cột của một hàng device_tags mà luật "tag này có ghim DỪNG hợp lệ" cần. */
+export type StopPinTagRow = { tagKey: string; dataType: string | null; stopValue: unknown; writable: boolean | null; isEnabled: boolean | null };
+
+/**
+ * THUẦN — ghim DỪNG hợp lệ trong một tập hàng tag: tag enabled + writable + stop_value khác NULL, giá trị còn hợp lệ
+ * với dataType HIỆN TẠI (chuẩn hoá). doc 81 Đợt 1D final wave 3 (M1): MỘT luật, dùng chung bởi `loadStopPins` và
+ * dispatcher (bước 5a-stop lấy ghim từ CHÍNH các hàng tag bước 3 — một bản chụp với lệnh ghi).
+ */
+export function stopPinsFromTagRows(rows: ReadonlyArray<StopPinTagRow>): StopPin[] {
+  const out: StopPin[] = [];
+  for (const r of rows) {
+    // Lớp thứ hai ở JS: điều kiện SQL bị gỡ/giả lập sai vẫn không lọt tag tắt / không ghi được.
+    if (r.isEnabled !== true || r.writable !== true || r.stopValue === null || r.stopValue === undefined) continue;
+    const v = validateStopValue(String(r.dataType), r.stopValue);
+    if (!v.ok) continue;
+    out.push({ tagKey: r.tagKey, value: v.value });
+  }
+  return out;
+}
+
 /**
  * Ghim DỪNG của một adapter: tag enabled + writable + stop_value khác NULL, giá trị còn hợp lệ với
  * dataType hiện tại. Lỗi DB ⇒ NÉM (nơi gọi không được coi như "không ghim" rồi đoán cho qua — Task 2
@@ -140,15 +160,7 @@ export async function loadStopPins(db: StopPinDb, adapterId: number): Promise<St
     .from(deviceTags)
     .where(and(eq(deviceTags.adapterId, adapterId), eq(deviceTags.isEnabled, true), eq(deviceTags.writable, true)))
     .orderBy(deviceTags.tagKey);
-  const out: StopPin[] = [];
-  for (const r of rows) {
-    // Lớp thứ hai ở JS: điều kiện SQL bị gỡ/giả lập sai vẫn không lọt tag tắt / không ghi được.
-    if (r.isEnabled !== true || r.writable !== true || r.stopValue === null || r.stopValue === undefined) continue;
-    const v = validateStopValue(String(r.dataType), r.stopValue);
-    if (!v.ok) continue;
-    out.push({ tagKey: r.tagKey, value: v.value });
-  }
-  return out;
+  return stopPinsFromTagRows(rows);
 }
 
 // ─── Đặt / gỡ ghim (router deviceAdapter.tags.setStopPin) ──────────────────────────────────────────

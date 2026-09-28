@@ -484,14 +484,31 @@ describe.skipIf(!DB_URL)("Đợt 1D Task 2 — DỪNG OT ghim qua preflight an t
     });
   });
 
-  // ═════════ (g) đọc ghim lỗi ⇒ không miễn (fail-closed) ═════════
-  it("(g) đọc ghim NÉM (lỗi DB) + stop khớp ghim ⇒ SAFETY_SIM_ONLY, stopPinReason pin_load_failed, 0 lần ghi", async () => {
+  // ═════════ (g) final wave 3 (M1) — ghim lấy từ HÀNG TAG BƯỚC 3 (một bản chụp với lệnh ghi) ═════════
+  it("★ (g) M1: stop khớp ghim ⇒ quyết định từ hàng tag bước 3, KHÔNG đọc ghim riêng (đọc riêng có NÉM cũng không ảnh hưởng) ⇒ acked", async () => {
+    fake.pinLoadThrows = true;
+    await withPlcConfigs([SIM], async () => {
+      const res = await run(await stopInput([{ tagKey: "cmd_stop", value: true }]));
+      expect(fake.pinLoadCalls).toBe(0);
+      expect(res.status).toBe("acked");
+      expect(res.pinnedStop).toBe(true);
+      expect(received).toEqual([[{ tagKey: "cmd_stop", value: true }]]);
+    });
+  });
+
+  it("(g2) stop CHỈ ghi tag KHÔNG ghim trên adapter CÓ ghim ⇒ nhãn unpinned_tag (như trước M1); đọc nhãn NÉM ⇒ pin_load_failed; 0 lần ghi", async () => {
+    await withPlcConfigs([SIM], async () => {
+      const res = await run(await stopInput([{ tagKey: "cmd_run", value: false }]));
+      expect(res.reason).toBe("SAFETY_SIM_ONLY");
+      expect(res.appError?.appParams.stopPinReason).toBe("unpinned_tag");
+      expect(received).toHaveLength(0);
+    });
     fake.pinLoadThrows = true;
     const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
     try {
       await withPlcConfigs([SIM], async () => {
-        const res = await run(await stopInput([{ tagKey: "cmd_stop", value: true }]));
-        expect(fake.pinLoadCalls).toBe(1);
+        const res = await run(await stopInput([{ tagKey: "cmd_run", value: false }]));
+        expect(fake.pinLoadCalls).toBe(2);
         expect(res.status).toBe("rejected");
         expect(res.reason).toBe("SAFETY_SIM_ONLY");
         expect(res.appError?.appParams.stopPinReason).toBe("pin_load_failed");
@@ -619,6 +636,35 @@ describe.skipIf(!DB_URL)("Đợt 1D Task 2 — DỪNG OT ghim qua preflight an t
     }
   });
 
+  it("★ M6: stop ghim đường ràng buộc chặt (requireBoundAction, KHÔNG gửi confirmedBy) + interlock CHẶN ⇒ audit stop_interlock_override mang NGƯỜI XÁC NHẬN của sổ (chủ action), không phải -1", async () => {
+    fake.interlockBlocked = true;
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    try {
+      await withPlcConfigs([SIM], async () => {
+        const base = await stopInput([{ tagKey: "cmd_stop", value: true }]);
+        const t = base.triggeredBy as any;
+        const inp: DispatchInput = { ...base, triggeredBy: { kind: "hitl", actionId: t.actionId, tool: t.tool, requestedBy: OWNER, requireBoundAction: true } as any };
+        const res = await run(inp);
+        expect(res.status).toBe("acked");
+        const rows = await ledger(inp.idempotencyKey);
+        const result = rows.find((r) => (r.ackValue as any)?.ledger === "result");
+        expect(result?.confirmedBy).toBe(OWNER); // sổ ghi người xác nhận đã ràng buộc
+        let audits: Array<typeof controlAuditLog.$inferSelect> = [];
+        for (let i = 0; i < 100 && audits.length === 0; i++) {
+          audits = await (await d())
+            .select()
+            .from(controlAuditLog)
+            .where(and(eq(controlAuditLog.entityType, "ot_command"), eq(controlAuditLog.entityId, String(result!.id)), eq(controlAuditLog.action, "stop_interlock_override")));
+          if (audits.length === 0) await new Promise((r) => setTimeout(r, 50));
+        }
+        expect(audits).toHaveLength(1);
+        expect(audits[0].actorId).toBe(OWNER);
+      });
+    } finally {
+      warn.mockRestore();
+    }
+  });
+
   it("R-1D-c đối chứng: interlock CHẶN + lệnh không phải dừng (safety OK giả lập bằng tắt preflight) ⇒ INTERLOCK_BLOCKED như cũ", async () => {
     fake.interlockBlocked = true;
     process.env.OT_SAFETY_PREFLIGHT_ENABLED = "false";
@@ -630,15 +676,18 @@ describe.skipIf(!DB_URL)("Đợt 1D Task 2 — DỪNG OT ghim qua preflight an t
   });
 
   // ═════════ fix round 1 (R-1D-h) ═════════
-  it("fix1 #2: ghim đọc SAU bước 3 không còn hợp dataType của hàng tag đã resolve (ghim lại bool trên tag int) ⇒ KHÔNG miễn, pin_tag_changed, 0 lần ghi", async () => {
+  it("★ fix1 #2 → M1: một lần đọc ghim RIÊNG thấy ghim khác (bool true trên tag int) KHÔNG còn chen được vào quyết định — hàng bước 3 (ghim 0) quyết: stop true ⇒ value_mismatch 0 lần ghi; stop 0 ⇒ acked", async () => {
     fake.pinOverride = [{ tagKey: "speed_sp", value: true }];
     await withPlcConfigs([SIM], async () => {
       const res = await run(await stopInput([{ tagKey: "speed_sp", value: true }]));
       expect(res.status).toBe("rejected");
       expect(res.reason).toBe("SAFETY_SIM_ONLY");
-      expect(res.appError?.appParams.stopPinReason).toBe("pin_tag_changed");
+      expect(res.appError?.appParams.stopPinReason).toBe("value_mismatch");
       expect(res.pinnedStop).toBe(false);
       expect(received).toHaveLength(0);
+      const ok = await run(await stopInput([{ tagKey: "speed_sp", value: 0 }]));
+      expect(ok.status).toBe("acked");
+      expect(received).toEqual([[{ tagKey: "speed_sp", value: 0 }]]);
     });
   });
 
