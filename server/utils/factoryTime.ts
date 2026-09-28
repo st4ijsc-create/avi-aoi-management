@@ -291,8 +291,12 @@ export function docGioTuongNhaMay(dateStr: string, endOfDay = false): Date | und
 /**
  * Chuỗi thời gian có mang múi giờ ở CUỐI (sau khi bỏ tên múi giờ trong ngoặc): `Z`, `±hh:mm`/`±hhmm`
  * (kể cả dạng `GMT+0700`/`UTC+07:00` — phần `±hhmm` nằm ở cuối), hoặc `GMT`/`UTC` trần (= `Z`).
+ * doc 81 Đợt 1C final wave 5 (final review M2): múi giờ phải đứng NGAY SAU một thành phần GIỜ
+ * (`h:mm[:ss[.fff]]`, tuỳ chọn `AM`/`PM`). Trước đó đuôi `-dddd` bất kỳ bị coi là offset ⇒ ngày trần kiểu
+ * Mỹ `"09-28-2026"` (năm 2026, không có giờ) được coi là "có múi giờ" và V8 đọc nó theo nửa đêm TZ tiến
+ * trình — đúng sự lệ thuộc TZ mà R-1C-a muốn diệt. Ngày trần / ngày + offset không giờ ⇒ chuỗi TRẦN.
  */
-const CO_MUI_GIO_MAY = /(?:Z|[+-]\d{2}:?\d{2}|\b(?:GMT|UTC))$/i;
+const CO_MUI_GIO_MAY = /\d{1,2}:\d{2}(?::\d{2}(?:[.,]\d+)?)?\s*(?:[AP]M\s*)?(?:Z|(?:(?:GMT|UTC)\s*)?[+-]\d{2}:?\d{2}|GMT|UTC)$/i;
 /** Tên múi giờ trong ngoặc ở cuối chuỗi (`Date.prototype.toString()`: "… GMT+0700 (Indochina Time)"). */
 const TEN_MUI_GIO_TRONG_NGOAC = /\s*\([^()]*\)\s*$/;
 

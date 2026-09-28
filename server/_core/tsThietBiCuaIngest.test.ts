@@ -150,6 +150,14 @@ describe("docTsThietBi — bảng luật (oracle Date.UTC)", () => {
     [TS_NAIVE, { ok: false, reason: "ts_no_timezone" }],
     ["2026-09-27 10:00:00", { ok: false, reason: "ts_no_timezone" }],
     ["2026-09-27", { ok: false, reason: "ts_no_timezone" }],
+    // final wave 5 (M2) — ngày KHÔNG có giờ / dạng không-ISO: đuôi `-dddd` là NĂM, không phải offset
+    // (V8 đọc "09-28-2026" theo nửa đêm TZ tiến trình ⇒ lệ thuộc TZ đúng thứ R-1C-a muốn diệt).
+    ["09-28-2026", { ok: false, reason: "ts_no_timezone" }],
+    ["9-28-2026", { ok: false, reason: "ts_no_timezone" }],
+    ["Sep 28 2026", { ok: false, reason: "ts_no_timezone" }],
+    ["2026-09-28-0700", { ok: false, reason: "invalid_ts" }],
+    ["2026-09-27T10:00:00.250+07:00", { ok: true, t: T + 250 }],
+    ["2026-09-27T03:00Z", { ok: true, t: T }],
     ["rác", { ok: false, reason: "invalid_ts" }],
     ["2026-02-30T25:61:00Z", { ok: false, reason: "invalid_ts" }],
   ])("%s", (raw, ky) => {
@@ -161,6 +169,10 @@ describe("docTsThietBi — bảng luật (oracle Date.UTC)", () => {
     expect(coMuiGioTuongMinh(TS_BG72)).toBe(true);
     expect(docGioMay(TS_BG72)?.getTime()).toBe(T_BG72);
     expect(coMuiGioTuongMinh("Sun Aug 30 2026 14:26:51 (Indochina Time)")).toBe(false);
+    // final wave 5 (M2) — offset phải đứng SAU một thành phần GIỜ; ngày trần không bao giờ "có múi giờ".
+    expect(coMuiGioTuongMinh("09-28-2026")).toBe(false);
+    expect(coMuiGioTuongMinh("2026-09-28")).toBe(false);
+    expect(coMuiGioTuongMinh("2026-09-28+07:00")).toBe(false);
   });
   it("vắng/rỗng ⇒ ts undefined (giờ server, hành vi cũ); epoch-ms và Date nhận nguyên", () => {
     expect(docTsThietBi(undefined)).toEqual({ ok: true, ts: undefined });
