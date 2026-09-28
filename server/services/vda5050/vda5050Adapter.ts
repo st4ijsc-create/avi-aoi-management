@@ -47,6 +47,7 @@ import {
   buildOrder,
   jobToOrderNodes,
   nextHeaderId,
+  buildVda5050StopInstantActions,
   type BuildOrderInput,
 } from "./vda5050Mapping";
 
@@ -369,24 +370,28 @@ export class Vda5050Adapter {
     actionId?: string;
     idempotencyKey?: string;
   }): Promise<SendOrderResult> {
-    const msg: Vda5050InstantActions = {
-      headerId: nextHeaderId(),
-      timestamp: new Date().toISOString(),
-      version: "2.0.0",
-      manufacturer: this.config.manufacturer,
-      serialNumber: this.config.serialNumber,
-      actions: opts.actions,
-    };
-    const { dispatchRobotJob } = await import("../robot/robotCommandDispatcher");
-    let published = false;
     // final wave 5 (M7) — a cancelOrder / startPause message is a STOP: job `abort` ⇒ exempt from the motion
     // gates (safety preflight, interlock, motion lock, R14 slot, HITL) like every robot STOP (R-1C-c). Anything
     // else (incl. stopPause = resume, and mixed messages) stays `custom` = motion, fully gated.
     const stop = isVda5050StopInstantActions(opts.actions);
-    const job: RobotJobSpec = {
-      jobType: stop ? "abort" : "custom",
-      params: { vda5050: "instantActions", message: msg as unknown as Record<string, unknown> },
-    };
+    // residual 1 (R-1C-m, LAYER c) — a STOP publishes the SERVER-BUILT stop message (cancelOrder, startPause);
+    // the caller's actions / actionIds / actionParameters are never published, and the dispatcher gets the
+    // canonical abort job (no params). A motion message is built from the caller's actions as before.
+    const msg: Vda5050InstantActions = stop
+      ? buildVda5050StopInstantActions(this.config.manufacturer, this.config.serialNumber)
+      : {
+          headerId: nextHeaderId(),
+          timestamp: new Date().toISOString(),
+          version: "2.0.0",
+          manufacturer: this.config.manufacturer,
+          serialNumber: this.config.serialNumber,
+          actions: opts.actions,
+        };
+    const { dispatchRobotJob } = await import("../robot/robotCommandDispatcher");
+    let published = false;
+    const job: RobotJobSpec = stop
+      ? { jobType: "abort", params: {} }
+      : { jobType: "custom", params: { vda5050: "instantActions", message: msg as unknown as Record<string, unknown> } };
     const triggerKind = opts.triggerKind ?? "hitl";
     const res = await dispatchRobotJob({
       robotId: this.config.robotId,

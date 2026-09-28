@@ -139,7 +139,8 @@ describe("M7 — VDA 5050 instantActions dừng = không chuyển động (khôn
     expect(S.interlockEvals).toBe(0);
     expect(published).toHaveLength(1);
     expect(published[0].topic).toMatch(/\/instantActions$/);
-    expect(published[0].payload.actions.map((a: any) => a.actionType)).toEqual([type]);
+    // residual 1 (R-1C-m, lớp c): tin dừng nay dựng PHÍA SERVER — luôn [cancelOrder, startPause], không lấy của người gọi.
+    expect(published[0].payload.actions.map((a: any) => a.actionType)).toEqual(["cancelOrder", "startPause"]);
     expect(S.rows[0]).toMatchObject({ jobType: "abort", status: "done" });
   });
 

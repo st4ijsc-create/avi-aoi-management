@@ -13,6 +13,7 @@ import type { RobotState } from "../robot/robotDriver";
 import type {
   Vda5050State,
   Vda5050Connection,
+  Vda5050InstantActions,
   Vda5050Order,
   Vda5050Node,
   Vda5050Edge,
@@ -143,6 +144,32 @@ export function nextHeaderId(): number {
   headerCounter += 1;
   return headerCounter;
 }
+
+/**
+ * doc 81 Đợt 1C residual 1 (ruling R-1C-m) — the ONE stop message for a VDA 5050 AGV, built SERVER-SIDE
+ * (the driver's runJob/abort for a STOP job and the adapter's STOP instantActions both use it). VDA 5050 2.0:
+ *   1. `cancelOrder` — cancel the running order; the AGV stops driving it;
+ *   2. `startPause`  — activate pause mode: no further driving movements (the stop semantics M7 already uses).
+ * No caller-supplied action, id or actionParameters ever reaches it; blockingType HARD (nothing runs alongside).
+ */
+export function buildVda5050StopInstantActions(manufacturer: string, serialNumber: string): Vda5050InstantActions {
+  const headerId = nextHeaderId();
+  const tag = `${Date.now()}-${headerId}`;
+  return {
+    headerId,
+    timestamp: new Date().toISOString(),
+    version: VDA5050_VERSION,
+    manufacturer,
+    serialNumber,
+    actions: [
+      { actionType: "cancelOrder", actionId: `platform-stop-cancel-${tag}`, blockingType: "HARD" },
+      { actionType: "startPause", actionId: `platform-stop-pause-${tag}`, blockingType: "HARD" },
+    ],
+  };
+}
+
+/** Job types a VDA 5050 driver treats as a STOP (same set as the dispatcher's non-motion classifier). */
+export const VDA5050_STOP_JOB_TYPES: ReadonlySet<string> = new Set(["abort", "stop", "e_stop"]);
 
 export interface BuildOrderInput {
   manufacturer: string;

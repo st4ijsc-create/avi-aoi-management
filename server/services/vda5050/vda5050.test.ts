@@ -362,14 +362,16 @@ describe("VDA5050 manager flag gating", () => {
   });
 });
 
-// doc 81 Đợt 1B Task 5 — driver VDA 5050 chưa có cancelOrder ⇒ abort() nói THẬT là không hỗ trợ
-// (dispatcher ghi abort_unsupported), không còn no-op trông như đã dừng.
+// doc 81 Đợt 1B Task 5 — abort() không bao giờ là no-op trông như đã dừng.
+// doc 81 Đợt 1C residual 1 (R-1C-m): driver nay CÓ lệnh dừng (instantActions cancelOrder + startPause dựng phía
+// server — xem vda5050StopNeverOrder.dot1c.test.ts); chưa kết nối ⇒ abort() reject abort_failed (trước:
+// abort_unsupported), vẫn nói thật là KHÔNG dừng được.
 describe("VDA5050 driver abort", () => {
-  it("abort() reject RobotAbortUnsupportedError (abort_unsupported)", async () => {
+  it("abort() khi chưa kết nối ⇒ reject RobotAbortFailedError (abort_failed), không im lặng", async () => {
     const { createVda5050Driver } = await import("./vda5050Driver");
-    const { RobotAbortUnsupportedError } = await import("../robot/robotDriver");
+    const { RobotAbortFailedError } = await import("../robot/robotDriver");
     const err = await createVda5050Driver().abort().then(() => null, (e) => e);
-    expect(err).toBeInstanceOf(RobotAbortUnsupportedError);
-    expect((err as InstanceType<typeof RobotAbortUnsupportedError>).reasonCode).toBe("abort_unsupported");
+    expect(err).toBeInstanceOf(RobotAbortFailedError);
+    expect((err as InstanceType<typeof RobotAbortFailedError>).reasonCode).toBe("abort_failed");
   });
 });

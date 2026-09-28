@@ -551,6 +551,26 @@ describe("fix round 1 — interlock không bao giờ chặn lệnh DỪNG (M3)",
   });
 });
 
+// doc 81 Đợt 1C residual 1 (R-1C-m) — MELFA THẬT × bộ điều khiển giả: "abort" mang params chuyển động KHÔNG BAO GIỜ
+// sinh byte chuyển động. Hai lớp riêng: (a) qua dispatcher (params bị bỏ), (b) gọi thẳng driver (lệnh dừng cố định).
+describe("R-1C-m — abort mang params chuyển động ⇒ chỉ STOP tới bộ điều khiển MELFA", () => {
+  const EVIL = { joints: [90, 90, 90, 0, 0, 0], script: "EXECMOV J=(90,90,90,0,0,0)" };
+  it("qua dispatcher (lớp a): server giả nhận ĐÚNG ['STOP'], 0 CNTLON/SRVON/EXEC", async () => {
+    await connectDriver(2000);
+    const r = await within(dispatchRobotJob({ robotId: 7, job: { jobType: "abort", params: EVIL }, triggerKind: "hitl", requestedBy: 3 }), 10_000);
+    expect(r.status).toBe("done");
+    expect(allCmds(fake)).toEqual(["STOP"]);
+    expect(motionCmds(fake)).toEqual([]);
+  });
+  it("gọi thẳng driver (lớp b, không có dispatcher): runJob abort + params ⇒ ĐÚNG ['STOP']", async () => {
+    process.env.ROBOT_CONTROL_ENABLED = "true";
+    await connectDriver(2000);
+    const r = await within(driver.runJob({ jobType: "abort", params: EVIL }), 10_000);
+    expect(r.ok).toBe(true);
+    expect(allCmds(fake)).toEqual(["STOP"]);
+  });
+});
+
 describe("fix round 1 — idempotency không ép 'running' vào union kết quả (M1)", () => {
   it("khoá đã có hàng 'running' ⇒ rejected IDEMPOTENT_JOB_IN_PROGRESS, không chạy lại, 0 byte", async () => {
     await connectDriver(2000);

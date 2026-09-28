@@ -148,6 +148,11 @@ export interface RobotDispatchInput {
   requestedBy: number;
   confirmedBy?: number;
   idempotencyKey?: string;
+  /**
+   * doc 81 Đợt 1C residual 1 (R-1C-m) — SET BY THE DISPATCHER ONLY (a caller's value is overwritten): true when a
+   * STOP's caller-supplied params were dropped. Recorded on its ledger rows as `ignoredParams: true`.
+   */
+  ignoredParams?: boolean;
 }
 
 export interface RobotDispatchResult {
@@ -180,8 +185,23 @@ function controlEnabled(): boolean {
  * be locked out by the very conditions that call for it.
  */
 export function isMotionJob(job: RobotJobSpec): boolean {
-  return job.jobType !== "abort";
+  // doc 81 Đợt 1C residual 1 (R-1C-m) — `stop` / `e_stop` arriving as a run_job jobType are STOPs too (the verb
+  // mapping already sends them as `abort`); they are canonicalised to `abort` before any driver sees them.
+  // Anything else — including an unknown type — stays MOTION (fail-closed: fully gated).
+  return !STOP_JOB_TYPES.has(String(job.jobType ?? "").trim().toLowerCase());
 }
+
+/** doc 81 Đợt 1C residual 1 — job types that are a STOP (energy-reducing). */
+const STOP_JOB_TYPES: ReadonlySet<string> = new Set(["abort", "stop", "e_stop"]);
+
+/**
+ * doc 81 Đợt 1C residual 1 (ruling R-1C-m, LAYER a) — the ONLY job a driver ever receives for a STOP. A non-motion
+ * job skips every motion gate, so it must not be able to carry anything a driver could turn into motion:
+ * `api/v1` / FOE `run_job {jobType:"abort", params:{order:{…}}}` used to reach the VDA 5050 driver, which ignored
+ * the job type and published `params.order` as an ORDER. The caller's params are dropped; the ledger records
+ * only `ignoredParams: true` (never their values). Frozen: nothing downstream can add to it.
+ */
+export const CANONICAL_STOP_JOB: Readonly<RobotJobSpec> = Object.freeze({ jobType: "abort", params: Object.freeze({}) as Record<string, unknown> });
 
 /**
  * doc 81 Đợt 1B Task 5 — the key the robot's interlock gate (and the console's
@@ -291,7 +311,7 @@ export function fitLedgerKey(key: string | undefined, max: number): string | und
 async function record(
   input: RobotDispatchInput,
   status: RobotDispatchResult["status"] | "running",
-  result?: Record<string, unknown>,
+  result: Record<string, unknown> | undefined,
   errorText?: string,
   opts: { requireDb?: boolean; db?: DbOrTx } = {},
 ): Promise<number | undefined> {
@@ -302,6 +322,8 @@ async function record(
     if (opts.requireDb) throw new RobotLedgerWriteError("robot ledger unavailable (no DB)");
     return undefined;
   }
+  // residual 1 (R-1C-m) — a STOP whose caller params were dropped says so on EVERY row it writes (never the values).
+  if (input.ignoredParams) result = { ...(result ?? {}), ignoredParams: true };
   try {
     const now = new Date();
     const [row] = await db.insert(robotJobs).values({
@@ -489,7 +511,20 @@ export async function dispatchRobotJob(rawInput: RobotDispatchInput, opts: Robot
   // fix round 2 (e) — the idempotency key is fitted ONCE, here, so the replay lookup (step 1) and the
   // ledger row use the same value (a hashed long key still replays).
   const fitted = fitLedgerKey(rawInput.idempotencyKey, ROBOT_LEDGER_IDEMPOTENCY_KEY_MAX);
-  const input: RobotDispatchInput = fitted !== rawInput.idempotencyKey ? { ...rawInput, idempotencyKey: fitted } : rawInput;
+  // residual 1 (R-1C-m, layer a) — a STOP becomes the canonical abort job HERE, before any gate, ledger row or
+  // driver: the caller's params never travel with a non-motion job. `ignoredParams` is always recomputed.
+  const stop = !isMotionJob(rawInput.job);
+  const callerParams = rawInput.job?.params;
+  const ignoredParams = stop && (rawInput.job.jobType !== "abort" || (callerParams != null && Object.keys(callerParams).length > 0));
+  const input: RobotDispatchInput = {
+    ...rawInput,
+    idempotencyKey: fitted,
+    job: stop ? { jobType: CANONICAL_STOP_JOB.jobType, params: {} } : rawInput.job,
+    ignoredParams: stop && ignoredParams ? true : undefined,
+  };
+  if (input.ignoredParams) {
+    console.warn(`[Robot] STOP on robot ${input.robotId}: caller-supplied job params/type ignored — sent as the canonical abort (R-1C-m)`);
+  }
   try {
     return await dispatchRobotJobCore(input, opts);
   } catch (err) {
@@ -1157,6 +1192,8 @@ async function runRealJob(
     const notes = stopDb.degraded ? { ...stopNotes, dbDegraded: stopDb.degraded } : stopNotes;
     if (Object.keys(notes).length > 0) detail = { ...(detail ?? {}), stopDb: notes };
   }
+  // residual 1 (R-1C-m) — finalize replaces `result`; keep the flag on the terminal row too.
+  if (input.ignoredParams) detail = { ...(detail ?? {}), ignoredParams: true };
   if (!motion && stopDb && jobId == null) {
     // R-1C-h — the STOP went out without a pre-written row: settle the ledger best-effort now.
     const ledger = await stopLedgerAfterSend(input, prewrite, status, { ...(detail ?? {}) }, errorText);
