@@ -18105,7 +18105,8 @@
       "noRecords": "No commissioning records yet.",
       "pin": {
         "title": "Pinned STOP tags ({{count}})",
-        "row": "{{tagKey}} = {{value}}"
+        "row": "{{tagKey}} = {{value}}",
+        "unreadable": "Pinned STOP tags: could not be read — check them on the Device Adapter screen before signing."
       },
       "rec": {
         "active": "active",

@@ -68,7 +68,16 @@ export const commissioningRouter = router({
       // doc 81 Đợt 1D Task 1 (Ruling commissioning) — người ký commissioning phải THẤY các tag DỪNG đã
       // ghim của adapter (lệnh DỪNG ghi đúng các cặp này được miễn preflight an toàn). Đổi ghim sau khi
       // ký KHÔNG thu hồi bản ký; audit của lượt đổi gắn cờ commissioningRecheckRequired.
-      const pinnedStopTags = await loadStopPins(await db(), input.adapterId);
+      // doc 81 Đợt 1D final wave 3 (M8) — đọc ghim hỏng KHÔNG làm hỏng status (trước Đợt 1D status chỉ cần
+      // commissioning_records): trả `pinnedStopTags: null` + `pinnedStopTagsUnreadable: true`, UI hiện "không đọc được".
+      let pinnedStopTags: Awaited<ReturnType<typeof loadStopPins>> | null = null;
+      let pinnedStopTagsUnreadable = false;
+      try {
+        pinnedStopTags = await loadStopPins(await db(), input.adapterId);
+      } catch (err) {
+        pinnedStopTagsUnreadable = true;
+        console.warn(`[commissioning.status] pinned stop tags unreadable for adapter ${input.adapterId}:`, (err as Error)?.message || err);
+      }
       return {
         adapterId: input.adapterId,
         required: isCommissioningRequired(),
@@ -76,6 +85,7 @@ export const commissioningRouter = router({
         // The effective outcome of the C2 gate for a would-be REAL write.
         wouldForceSimulated: isCommissioningRequired() && !commissioned,
         pinnedStopTags,
+        pinnedStopTagsUnreadable,
       };
     }),
 

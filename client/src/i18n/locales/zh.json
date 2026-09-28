@@ -14548,7 +14548,8 @@
       "noRecords": "尚无调试记录。",
       "pin": {
         "title": "已固定的停止标签（{{count}}）",
-        "row": "{{tagKey}} = {{value}}"
+        "row": "{{tagKey}} = {{value}}",
+        "unreadable": "已固定的停止标签：无法读取——签署前请在设备适配器页面核对。"
       },
       "rec": {
         "active": "有效",

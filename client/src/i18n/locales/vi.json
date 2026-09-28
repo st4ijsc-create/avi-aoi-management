@@ -18085,7 +18085,8 @@
       "noRecords": "Chưa có bản ghi commissioning.",
       "pin": {
         "title": "Tag DỪNG đã ghim ({{count}})",
-        "row": "{{tagKey}} = {{value}}"
+        "row": "{{tagKey}} = {{value}}",
+        "unreadable": "Tag DỪNG đã ghim: không đọc được — soát lại ở màn Device Adapter trước khi ký."
       },
       "rec": {
         "active": "active",
