@@ -82,6 +82,22 @@ export interface SendOrderResult {
   error?: string;
 }
 
+/**
+ * doc 81 Đợt 1C final wave 5 (final review M7) — VDA 5050 2.0 instant actions that only REMOVE energy:
+ *   cancelOrder — cancel the running order; the AGV stops (no further driving on that order);
+ *   startPause  — activate pause mode: no more AGV driving movements.
+ * NOT stopPause: it DEACTIVATES pause mode — movement resumes — so it stays a motion.
+ */
+export const VDA5050_STOP_INSTANT_ACTION_TYPES: ReadonlySet<string> = new Set(["cancelOrder", "startPause"]);
+
+/**
+ * A STOP (non-motion) iff the message is non-empty and EVERY action is energy-reducing. A mixed message is a
+ * motion (fail-closed: a stop label cannot carry a resume past the motion gates).
+ */
+export function isVda5050StopInstantActions(actions: ReadonlyArray<Pick<Vda5050Action, "actionType">>): boolean {
+  return actions.length > 0 && actions.every((a) => VDA5050_STOP_INSTANT_ACTION_TYPES.has(a.actionType));
+}
+
 /** A live adapter bound to one AGV. */
 export class Vda5050Adapter {
   private client: MqttLikeClient | null = null;
@@ -363,7 +379,14 @@ export class Vda5050Adapter {
     };
     const { dispatchRobotJob } = await import("../robot/robotCommandDispatcher");
     let published = false;
-    const job: RobotJobSpec = { jobType: "custom", params: { vda5050: "instantActions", message: msg as unknown as Record<string, unknown> } };
+    // final wave 5 (M7) — a cancelOrder / startPause message is a STOP: job `abort` ⇒ exempt from the motion
+    // gates (safety preflight, interlock, motion lock, R14 slot, HITL) like every robot STOP (R-1C-c). Anything
+    // else (incl. stopPause = resume, and mixed messages) stays `custom` = motion, fully gated.
+    const stop = isVda5050StopInstantActions(opts.actions);
+    const job: RobotJobSpec = {
+      jobType: stop ? "abort" : "custom",
+      params: { vda5050: "instantActions", message: msg as unknown as Record<string, unknown> },
+    };
     const triggerKind = opts.triggerKind ?? "hitl";
     const res = await dispatchRobotJob({
       robotId: this.config.robotId,
@@ -374,7 +397,9 @@ export class Vda5050Adapter {
       confirmedBy: opts.confirmedBy,
       idempotencyKey: opts.idempotencyKey,
     });
-    if (res.status === "done") {
+    // A STOP is also published when the real path was reached but the robot driver reported failure — the
+    // AGV's own instantActions topic is a second stop channel (energy-reducing). Dry-run / rejected: nothing.
+    if (res.status === "done" || (stop && res.status === "failed")) {
       try {
         await this.publishInstantActions(msg);
         published = true;

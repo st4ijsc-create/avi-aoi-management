@@ -475,12 +475,13 @@ describe.skipIf(!DB_URL)("Đợt 1C Task 3 — robot 'hitl' không actionId bị
 
     it("sendInstantActions (nhánh anh em) 'hitl' không actionId ⇒ cũng tạo bản ghi gắn hash ⇒ chạy một lần; tạo không được ⇒ từ chối", async () => {
       const { adapter, published } = makeAgv();
-      const ok = await adapter.sendInstantActions({ actions: [{ actionId: "x1", actionType: "startPause", blockingType: "HARD" } as any], requestedBy: OWNER, confirmedBy: OWNER });
+      // final wave 5 (M7): startPause/cancelOrder nay là LỆNH DỪNG (không cần bản ghi); ca này đo nhánh CHUYỂN ĐỘNG ⇒ stopPause (kết thúc tạm dừng = chạy lại).
+      const ok = await adapter.sendInstantActions({ actions: [{ actionId: "x1", actionType: "stopPause", blockingType: "HARD" } as any], requestedBy: OWNER, confirmedBy: OWNER });
       expect(ok.status).toBe("done");
       expect(ok.published).toBe(true);
       expect(rt.runJobCalls).toBe(1);
       mint.fail = true;
-      const no = await adapter.sendInstantActions({ actions: [{ actionId: "x2", actionType: "startPause", blockingType: "HARD" } as any], requestedBy: OWNER, confirmedBy: OWNER });
+      const no = await adapter.sendInstantActions({ actions: [{ actionId: "x2", actionType: "stopPause", blockingType: "HARD" } as any], requestedBy: OWNER, confirmedBy: OWNER });
       expect(no.status).toBe("rejected");
       expect(no.error).toBe("HITL_ACTION_REQUIRED");
       expect(rt.runJobCalls).toBe(1);
