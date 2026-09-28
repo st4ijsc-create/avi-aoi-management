@@ -15634,6 +15634,10 @@
       "toast": {
         "saved": "Đã lưu ghim tag dừng",
         "recheckCommissioning": "Adapter đã commissioning — hãy soát lại commissioning sau khi đổi ghim (mục Sổ ký ở Sức khỏe hệ thống)."
+      },
+      "error": {
+        "intRequired": "Tag kiểu int cần một số NGUYÊN — giá trị không được làm tròn.",
+        "numberRequired": "Cần một số hợp lệ."
       }
     },
     "toast": {

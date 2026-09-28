@@ -50,6 +50,7 @@ import i18n from "i18next";
 import {
   StopPinChip,
   TagStopPinEditor,
+  checkStopPinInput,
   parseStopPinInput,
   stopPinValueToInput,
 } from "./DeviceAdapterManagement";
@@ -107,6 +108,22 @@ describe("parseStopPinInput / stopPinValueToInput — thuần, quy đổi theo d
   });
 });
 
+describe("final wave 2 (I2) — checkStopPinInput: KHÔNG làm tròn giá trị ghim", () => {
+  it("int: số nguyên ⇒ ok đúng giá trị; số lẻ ⇒ lỗi intRequired (không phải 1)", () => {
+    expect(checkStopPinInput("int", "7")).toEqual({ ok: true, value: 7 });
+    expect(checkStopPinInput("int", "-3")).toEqual({ ok: true, value: -3 });
+    expect(checkStopPinInput("int", "1.9")).toEqual({ ok: false, error: "intRequired" });
+    expect(checkStopPinInput("int", "1.5")).toEqual({ ok: false, error: "intRequired" });
+    expect(checkStopPinInput("int", "9007199254740993")).toEqual({ ok: false, error: "intRequired" });
+    expect(parseStopPinInput("int", "1.9")).toBe(1.9); // không còn Math.trunc
+  });
+  it("float: số hữu hạn ⇒ ok; rác ⇒ numberRequired; rỗng ⇒ valueRequired", () => {
+    expect(checkStopPinInput("float", "2.25")).toEqual({ ok: true, value: 2.25 });
+    expect(checkStopPinInput("float", "abc")).toEqual({ ok: false, error: "numberRequired" });
+    expect(checkStopPinInput("float", "  ")).toEqual({ ok: false, error: "valueRequired" });
+  });
+});
+
 describe("StopPinChip", () => {
   it("KHÔNG ghim (stopValue null/undefined) ⇒ không render gì", () => {
     const { container: c1 } = render(<StopPinChip stopValue={null} />);
@@ -160,6 +177,23 @@ describe("TagStopPinEditor", () => {
       stopValue: 7, // number, không phải chuỗi "7"
       reason: "vi du ly do that day du",
     });
+  });
+
+  it("★ I2: tag int nhập 1.5 ⇒ lỗi hiện trên màn, nút Lưu khoá, KHÔNG gửi 1; sửa thành 2 ⇒ gửi đúng 2", () => {
+    render(<TagStopPinEditor tag={baseTag} adapterId={9} canEdit />);
+    fireEvent.click(screen.getByRole("switch"));
+    fireEvent.change(screen.getByLabelText("Giá trị khi DỪNG"), { target: { value: "1.5" } });
+    fireEvent.change(screen.getByLabelText(/Lý do/), { target: { value: "vi du ly do that day du" } });
+    expect(screen.getByRole("alert")).toHaveTextContent("Tag kiểu int cần một số NGUYÊN");
+    const save = screen.getByRole("button", { name: "Lưu ghim" });
+    expect(save).toBeDisabled();
+    fireEvent.click(save);
+    expect(mutate).not.toHaveBeenCalled();
+    fireEvent.change(screen.getByLabelText("Giá trị khi DỪNG"), { target: { value: "2" } });
+    expect(screen.queryByRole("alert")).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "Lưu ghim" }));
+    expect(mutate).toHaveBeenCalledTimes(1);
+    expect(mutate.mock.calls[0][0].stopValue).toBe(2);
   });
 
   it("lý do < 5 ký tự ⇒ nút Lưu bị khoá (không gọi setStopPin)", () => {

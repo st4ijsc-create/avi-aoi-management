@@ -122,11 +122,36 @@ export function parseStopPinInput(dataType: DataType, raw: string): unknown {
     case "bool":
       return trimmed === "true" || trimmed === "1";
     case "int":
-      return Math.trunc(Number(trimmed));
+      // final wave 2 (I2) — NEVER truncate: 1.9 must not become 1 (checkStopPinInput refuses it on screen).
+      return Number(trimmed);
     case "float":
       return Number(trimmed);
     default:
       return trimmed;
+  }
+}
+
+/**
+ * doc 81 Đợt 1D final wave 2 (final review I2) — on-screen validation of the typed stop value. The pin is a SAFETY
+ * value: what is saved must be exactly what the engineer typed. A non-integer for an `int` tag (or a non-finite
+ * number for `float`) is an error shown next to the input and blocks Save — never silently truncated/rounded.
+ * `error` is an i18n key suffix under `deviceAdapter.stopPin.error.*`.
+ */
+export type StopPinInputCheck = { ok: true; value: unknown } | { ok: false; error: "valueRequired" | "intRequired" | "numberRequired" };
+export function checkStopPinInput(dataType: DataType, raw: string): StopPinInputCheck {
+  const trimmed = raw.trim();
+  if (trimmed.length === 0) return { ok: false, error: "valueRequired" };
+  switch (dataType) {
+    case "int": {
+      const n = Number(trimmed);
+      return Number.isSafeInteger(n) ? { ok: true, value: n } : { ok: false, error: "intRequired" };
+    }
+    case "float": {
+      const n = Number(trimmed);
+      return Number.isFinite(n) ? { ok: true, value: n } : { ok: false, error: "numberRequired" };
+    }
+    default:
+      return { ok: true, value: parseStopPinInput(dataType, raw) };
   }
 }
 
@@ -210,15 +235,19 @@ export function TagStopPinEditor({
   }
 
   const reasonOk = reason.trim().length >= 5;
-  const valueOk = !enabled || value.trim().length > 0;
+  // final wave 2 (I2) — the value that is SENT is the value that was validated (no truncation on the way).
+  const valueCheck = enabled ? checkStopPinInput(tag.dataType, value) : null;
+  const valueOk = !enabled || valueCheck?.ok === true;
+  const valueError = valueCheck && !valueCheck.ok && valueCheck.error !== "valueRequired" ? valueCheck.error : null;
   const canSave = canEdit && reasonOk && valueOk && !setStopPin.isPending;
 
   const handleSave = () => {
     if (!canSave) return;
+    if (enabled && valueCheck?.ok !== true) return;
     setStopPin.mutate({
       adapterId,
       tagKey: tag.tagKey,
-      stopValue: enabled ? parseStopPinInput(tag.dataType, value) : null,
+      stopValue: enabled && valueCheck?.ok ? valueCheck.value : null,
       reason: reason.trim(),
     });
   };
@@ -258,8 +287,16 @@ export function TagStopPinEditor({
               type={tag.dataType === "int" || tag.dataType === "float" ? "number" : "text"}
               value={value}
               disabled={!canEdit}
+              aria-invalid={valueError ? true : undefined}
               onChange={(e) => setValue(e.target.value)}
             />
+          )}
+          {valueError && (
+            <p role="alert" className="mt-1 text-xs text-destructive">
+              {valueError === "intRequired"
+                ? t("deviceAdapter.stopPin.error.intRequired", "Tag kiểu int cần một số NGUYÊN — giá trị không được làm tròn.")
+                : t("deviceAdapter.stopPin.error.numberRequired", "Cần một số hợp lệ.")}
+            </p>
           )}
         </div>
       )}

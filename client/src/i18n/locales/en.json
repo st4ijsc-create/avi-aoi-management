@@ -15654,6 +15654,10 @@
       "toast": {
         "saved": "Stop pin saved",
         "recheckCommissioning": "This adapter is commissioned — recheck its commissioning after changing a pin (see the sign-off log under System Health)."
+      },
+      "error": {
+        "intRequired": "An int tag needs a WHOLE number — the value is never rounded.",
+        "numberRequired": "A valid number is required."
       }
     },
     "toast": {

@@ -16220,6 +16220,10 @@
       "toast": {
         "saved": "已保存停止固定值",
         "recheckCommissioning": "该适配器已调试签收——更改固定值后请到“系统健康”下的签收台账重新核查调试状态。"
+      },
+      "error": {
+        "intRequired": "int 类型标签需要一个整数——数值不会被取整。",
+        "numberRequired": "需要一个有效的数字。"
       }
     },
     "toast": {
