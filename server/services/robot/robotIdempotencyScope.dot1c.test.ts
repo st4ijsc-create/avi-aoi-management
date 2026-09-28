@@ -182,3 +182,32 @@ describe("R-1C-i — fitLedgerKey: dạng băm có tiền tố không khoá nguy
     expect(S.jobs[7]).toEqual(["abort", "abort"]);
   });
 });
+
+// doc 81 Đợt 1C residual 3 — thử lại một STOP cùng khoá sau lần HỎNG / BỊ TỪ CHỐI / CÒN CHẠY ⇒ GỬI LẠI (dừng giảm năng
+// lượng, idempotent tại thiết bị); chỉ STOP đã 'done' mới được phát lại. Trước: phát lại kết quả cũ, robot không nhận gì.
+describe("residual 3 — thử lại STOP cùng khoá", () => {
+  it.each(["failed", "rejected", "running", "simulated"])("★ lần trước '%s' ⇒ STOP được GỬI LẠI tới driver, hàng sổ mới (không va UNIQUE), ghi lại lần trước", async (prior) => {
+    S.rows.push({ id: 900, robotId: 7, jobType: "abort", idempotencyKey: `R3-${prior}`, status: prior });
+    S.seq = 901;
+    const r = await dispatchRobotJob(stop(7, `R3-${prior}`));
+    expect(r.status).toBe("done");
+    expect(r.jobId).not.toBe(900);
+    expect(S.jobs[7]).toEqual(["abort"]);
+    const row = S.rows.find((x) => x.id === r.jobId)!;
+    expect(row.idempotencyKey ?? null).toBeNull();
+    expect(row.result).toMatchObject({ stopDb: { stopRetryOf: { priorJobId: 900, priorStatus: prior } } });
+    expect(row.result.stopDb.idempotencyKeyReused).toBeUndefined();
+  });
+  it("lần trước 'done' ⇒ vẫn PHÁT LẠI (không gửi lần hai)", async () => {
+    S.rows.push({ id: 910, robotId: 7, jobType: "abort", idempotencyKey: "R3-done", status: "done" });
+    const r = await dispatchRobotJob(stop(7, "R3-done"));
+    expect(r).toEqual({ ok: true, status: "done", jobId: 910 });
+    expect(S.jobs[7]).toEqual([]);
+  });
+  it("CHUYỂN ĐỘNG cùng khoá sau lần 'failed' ⇒ vẫn phát lại (không chạy lại mù) — chỉ STOP được gửi lại", async () => {
+    S.rows.push({ id: 920, robotId: 7, jobType: "home", idempotencyKey: "R3-m", status: "failed" });
+    const r = await dispatchRobotJob(home(7, "R3-m"));
+    expect(r).toEqual({ ok: false, status: "failed", jobId: 920 });
+    expect(S.jobs[7]).toEqual([]);
+  });
+});

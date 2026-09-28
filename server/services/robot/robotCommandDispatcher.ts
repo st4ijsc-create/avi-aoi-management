@@ -580,8 +580,17 @@ async function dispatchRobotJobCore(input: RobotDispatchInput, opts: RobotDispat
       // AND same job type. robot_jobs.idempotencyKey is globally unique and api/v1 / VDA5050 / ROS2 pass
       // caller-chosen keys, so a key already used for ANOTHER robot (or another job on this robot) used to
       // return that job's result — a STOP for robot B could come back "done" with nothing sent to B.
-      if (prior.robotId === input.robotId && prior.jobType === input.job.jobType) return idempotentReplay(prior);
-      if (motion) {
+      const sameCommand = prior.robotId === input.robotId && prior.jobType === input.job.jobType;
+      // doc 81 Đợt 1C residual 3 — a STOP replays ONLY an earlier attempt that is 'done'. A same-key retry after a
+      // failed / rejected / still-running (or dry-run 'simulated') STOP is SENT again: a stop is energy-reducing and
+      // idempotent at the device, and replaying the old result left the robot with nothing sent. Its new row drops
+      // the key (UNIQUE) and names the earlier attempt. Motion replay is unchanged (never re-run blindly).
+      if (sameCommand && !motion && prior.status !== "done") {
+        console.warn(`[Robot] STOP on robot ${input.robotId}: same-key retry after a '${prior.status}' attempt (robot_jobs #${prior.id}) — sent again`);
+        stopNotes.stopRetryOf = { priorJobId: prior.id, priorStatus: prior.status };
+        input = { ...input, idempotencyKey: undefined };
+      } else if (sameCommand) return idempotentReplay(prior);
+      else if (motion) {
         // Never a false success: the motion is refused (its row cannot carry the key — UNIQUE).
         const jobId = await record(
           { ...input, idempotencyKey: undefined },
@@ -590,11 +599,12 @@ async function dispatchRobotJobCore(input: RobotDispatchInput, opts: RobotDispat
           `${IDEMPOTENCY_KEY_REUSED}: idempotency key already used by robot_jobs #${prior.id} for a different robot/job — motion refused before any driver call`,
         );
         return { ok: false, status: "rejected", jobId, error: IDEMPOTENCY_KEY_REUSED };
+      } else {
+        // A STOP is sent; its ledger row drops the key (it belongs to the other job — UNIQUE).
+        console.warn(`[Robot] STOP on robot ${input.robotId}: idempotency key already used by robot_jobs #${prior.id} (another robot/job) — not a replay, STOP sent (R-1C-i)`);
+        stopNotes.idempotencyKeyReused = { priorJobId: prior.id };
+        input = { ...input, idempotencyKey: undefined };
       }
-      // A STOP is sent; its ledger row drops the key (it belongs to the other job — UNIQUE).
-      console.warn(`[Robot] STOP on robot ${input.robotId}: idempotency key already used by robot_jobs #${prior.id} (another robot/job) — not a replay, STOP sent (R-1C-i)`);
-      stopNotes.idempotencyKeyReused = { priorJobId: prior.id };
-      input = { ...input, idempotencyKey: undefined };
     }
   }
 
