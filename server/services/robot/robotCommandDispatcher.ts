@@ -1195,7 +1195,10 @@ export const STOP_POLICY_AUDIT_DEADLINE_MS = 10_000;
 function auditStopPolicyOverride(input: RobotDispatchInput, jobId: number | undefined, policyOverride: Record<string, unknown>): void {
   const work = (async () => {
     const db = await getDb();
-    if (!db) throw new Error("no DB");
+    if (!db) {
+      console.error(`[Robot] audit of the STOP policy override skipped for job ${jobId ?? "unrecorded"} — no DB (the STOP was sent)`);
+      return;
+    }
     const { recordAuditEvent } = await import("../audit/controlAuditService");
     await recordAuditEvent(db, {
       entityType: "robot_job",
