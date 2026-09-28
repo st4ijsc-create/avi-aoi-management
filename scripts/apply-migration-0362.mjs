@@ -95,10 +95,16 @@ async function applyTo(rawUrl, label) {
     try {
       await sql.unsafe(content);
     } catch (e) {
-      if (e?.code === "55P03" || e?.code === "57014") {
+      if (e?.code === "55P03") {
         throw new Error(
-          `KHONG lay duoc khoa ${BANG} trong 5 s (${e.code}: ${e.message}) — co giao dich khac dang giu bang. ` +
+          `KHONG lay duoc khoa ${BANG} trong 5 s (lock_timeout, ${e.code}: ${e.message}) — co giao dich khac dang giu bang. ` +
             `Chua doi gi ca. Chay lai khi vang tai (vd dung :3000 hoac ngoai gio chay may).`,
+        );
+      }
+      if (e?.code === "57014") {
+        throw new Error(
+          `DDL ${MIGRATION_FILE} vuot qua 60 s (statement_timeout, ${e.code}: ${e.message}) — bi huy, giao dich hoan tac. ` +
+            `Chua doi gi ca. Kiem tra tai DB roi chay lai.`,
         );
       }
       throw e;

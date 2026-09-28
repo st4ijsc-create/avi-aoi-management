@@ -73,7 +73,9 @@ describe.skipIf(!DB_URL || !/_test\b/.test(DB_URL ?? ""))("doc 81 Đợt 1D Task
   afterAll(async () => {
     if (!sql) return;
     await sql`DELETE FROM uns_tag_mappings WHERE "adapterId" = ${adapterId}`;
-    await sql`DELETE FROM config_snapshots WHERE "entityType" = 'mapping_file' AND "entityId" = ${adapterId}`;
+    // Cột snake_case (drizzle/schema/assetRegistry.ts: entity_type / entity_id) — fix round 2: bản trước
+    // dùng "entityType" ⇒ afterAll ném 42703, adapter/tag/snapshot của mỗi lượt chạy bị bỏ lại trong _test.
+    await sql`DELETE FROM config_snapshots WHERE entity_type = 'mapping_file' AND entity_id = ${adapterId}`;
     await sql`DELETE FROM device_tags WHERE "adapterId" = ${adapterId}`;
     await sql`DELETE FROM device_adapters WHERE id = ${adapterId}`;
     await sql.end({ timeout: 5 });
