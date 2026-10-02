@@ -407,7 +407,7 @@ export default function InterlockRuleManagement() {
         </TabsList>
 
         {/* ── Rules tab ── */}
-        <TabsContent value="rules">
+        <TabsContent value="rules" data-layout-main="interlock-rules">
           <Card>
             <CardHeader><CardTitle>{t("interlockRules.rules")} ({visibleRules.length})</CardTitle></CardHeader>
             <CardContent className="space-y-3">

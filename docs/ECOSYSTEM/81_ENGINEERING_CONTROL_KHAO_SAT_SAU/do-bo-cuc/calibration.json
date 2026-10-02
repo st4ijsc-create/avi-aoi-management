@@ -48,6 +48,52 @@
     "attrSel": "div[data-layout-main=\"ecn-list\"]@EngineeringChanges.tsx",
     "gitHead": "567ae0f39"
    }
+  },
+  "interlock-rules|1600|n/a": {
+   "screen": "interlock-rules",
+   "vw": 1600,
+   "variant": "n/a",
+   "mainTop": 266,
+   "rects": [
+    {
+     "x": 288,
+     "y": 266,
+     "w": 1288,
+     "h": 1050
+    }
+   ],
+   "areaPx": 1352400,
+   "attrSel": "div[data-layout-main=\"interlock-rules\"]@InterlockRuleManagement.tsx",
+   "gitHead": "ee72a7ef5",
+   "at": "2026-10-02T22:11:26.027Z",
+   "fromReference": {
+    "dTop": 0,
+    "dLeft": 0,
+    "dAreaPct": 0
+   }
+  },
+  "interlock-rules|1366|n/a": {
+   "screen": "interlock-rules",
+   "vw": 1366,
+   "variant": "n/a",
+   "mainTop": 266,
+   "rects": [
+    {
+     "x": 288,
+     "y": 266,
+     "w": 1054,
+     "h": 1050
+    }
+   ],
+   "areaPx": 1106700,
+   "attrSel": "div[data-layout-main=\"interlock-rules\"]@InterlockRuleManagement.tsx",
+   "gitHead": "ee72a7ef5",
+   "at": "2026-10-02T22:11:26.027Z",
+   "fromReference": {
+    "dTop": 0,
+    "dLeft": 0,
+    "dAreaPct": 0
+   }
   }
  }
 }
