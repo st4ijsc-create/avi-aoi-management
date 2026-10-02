@@ -94,6 +94,9 @@
  *     Bounded: queue depth ≥ OT_CMD_QUEUE_MAX (default 10) → immediate 'rejected'
  *     reason 'BUSY' (spec §13.3). The lock wraps ONLY the write+verify section;
  *     every gate above (and the simulated path) is unchanged.
+ *     doc 81 Đợt 1E (R-1E-a): a PINNED stop is never BUSY — it runs right after
+ *     the in-flight write and cancels the non-stop commands still waiting ahead
+ *     of it (reason 'SUPERSEDED_BY_STOP').
  * ════════════════════════════════════════════════════════════════════════════
  */
 
@@ -345,8 +348,8 @@ function effectiveTimeoutMs(deadlineMs?: number): number {
 //
 // "Lệnh tới cùng asset xử lý tuần tự (hoặc theo hàng đợi có khóa) để tránh tranh
 // chấp." Khi OT_CMD_SERIALIZE_ENABLED === "true" (default OFF) các REAL-WRITE tới
-// CÙNG adapterId được tuần tự hóa bằng một promise-chain in-process per adapter
-// (mutex kiểu tail-promise). Hàng đợi BOUNDED: khi depth (kể cả lệnh đang chạy)
+// CÙNG adapterId được tuần tự hóa bằng một hàng đợi in-process per adapter (một
+// lệnh đang bay + danh sách lệnh chờ; Đợt 1E thay chuỗi tail-promise). Hàng đợi BOUNDED: khi depth (kể cả lệnh đang chạy)
 // đã ≥ OT_CMD_QUEUE_MAX (default 10) → lệnh mới bị REJECT NGAY reason 'BUSY'
 // (spec §13.3 — không chờ, không âm thầm treo).
 //
@@ -366,10 +369,44 @@ function cmdQueueMax(): number {
   return Number.isFinite(n) && n > 0 ? n : 10;
 }
 
+// doc 81 Đợt 1E Task 1 (ruling R-1E-a, chủ dự án 2026-10-02 "DỪNG ghim chen hàng đợi: Có") — hàng đợi TƯỜNG
+// MINH (một lệnh đang bay + mảng lệnh chờ) thay cho chuỗi tail-promise, để một lệnh DỪNG GHIM (`pinnedStop`
+// của Đợt 1D) có thể:
+//   • KHÔNG BAO GIỜ bị BUSY (giới hạn OT_CMD_QUEUE_MAX chỉ áp cho lệnh không ưu tiên);
+//   • chạy NGAY SAU lệnh đang bay (lệnh đang bay KHÔNG bị ngắt — byte đã lên dây thì không rút lại được);
+//   • HUỶ mọi lệnh KHÔNG phải DỪNG ghim còn đang CHỜ trước nó (chạy chúng sau DỪNG có thể cấp năng lượng lại cho
+//     máy) — người gọi của lệnh bị huỷ nhận `Superseded` (không treo, không ném), ghi sổ SUPERSEDED_BY_STOP;
+//   • KHÔNG huỷ một DỪNG ghim khác đang chờ (các DỪNG chạy theo thứ tự tới) và KHÔNG đụng lệnh tới SAU nó (ý
+//     định mới của người vận hành ⇒ FIFO phía sau DỪNG).
+// Mọi lệnh khác (kể cả "stop" KHÔNG ghim) giữ đúng ngữ nghĩa cũ: FIFO, BUSY khi depth ≥ OT_CMD_QUEUE_MAX.
+
+/** Kết quả của một lệnh bị huỷ khi đang CHỜ vì một DỪNG ghim xếp sau nó (R-1E-a). */
+export type Superseded = {
+  superseded: true;
+  byStop: true;
+  /** Danh tính lệnh DỪNG đã huỷ nó (do người xếp DỪNG cung cấp qua `opts.stopRef`); vắng nếu không cung cấp. */
+  stop?: Record<string, unknown>;
+};
+
+/** true ⇔ `x` là kết quả `Superseded` của hàng đợi. */
+export function isSuperseded(x: unknown): x is Superseded {
+  return typeof x === "object" && x !== null && (x as Superseded).superseded === true && (x as Superseded).byStop === true;
+}
+
+interface PendingAdapterCommand {
+  /** Bắt đầu chạy lệnh (chỉ khi không có lệnh nào đang bay). */
+  run: () => void;
+  /** Huỷ lệnh đang CHỜ: người gọi nhận `Superseded` (mang danh tính DỪNG `byStop`); `fn` không bao giờ được gọi. */
+  cancel: (byStop?: Record<string, unknown>) => void;
+  priorityStop: boolean;
+}
+
 interface AdapterCommandQueue {
-  /** Promise của lệnh cuối trong chuỗi — đã "sanitize" (không bao giờ reject). */
-  tail: Promise<void>;
-  /** Số lệnh trong hàng (kể cả lệnh đang thực thi). */
+  /** Có một lệnh đang thực thi (write+verify) hay không. */
+  inFlight: boolean;
+  /** Lệnh đang chờ, theo thứ tự sẽ chạy. */
+  pending: PendingAdapterCommand[];
+  /** Số lệnh trong hàng = lệnh đang bay (0/1) + lệnh đang chờ. */
   depth: number;
 }
 
@@ -380,37 +417,109 @@ export function _resetAdapterCommandQueuesForTests(): void {
   adapterCommandQueues.clear();
 }
 
-type EnqueueOutcome<T> =
-  | { accepted: true; result: Promise<T> }
+/** Chỉ dùng trong test — số adapter đang có entry hàng đợi (0 ⇔ mọi hàng đã được dọn). */
+export function _adapterCommandQueueCountForTests(): number {
+  return adapterCommandQueues.size;
+}
+
+/** Chỉ dùng trong test — độ sâu hiện tại của hàng đợi một adapter (0 khi không có entry). */
+export function _adapterCommandQueueDepthForTests(adapterId: number): number {
+  return adapterCommandQueues.get(adapterId)?.depth ?? 0;
+}
+
+export type EnqueueOutcome<T> =
+  | { accepted: true; result: Promise<T | Superseded> }
   | { accepted: false; depth: number; max: number };
 
+/** Chạy lệnh chờ kế tiếp nếu không có lệnh nào đang bay; hàng cạn ⇒ xoá entry khỏi map. */
+function pumpAdapterQueue(adapterId: number, queue: AdapterCommandQueue): void {
+  if (queue.inFlight) return;
+  const next = queue.pending.shift();
+  if (next) {
+    next.run();
+    return;
+  }
+  if (queue.depth === 0 && adapterCommandQueues.get(adapterId) === queue) {
+    adapterCommandQueues.delete(adapterId);
+  }
+}
+
 /**
- * Xếp `fn` vào hàng đợi tuần tự của adapter. Trả {accepted:false} NGAY (không
- * side-effect) khi hàng đã đầy. `fn` chỉ chạy sau khi mọi lệnh xếp trước nó đã
- * kết thúc (kể cả khi lệnh trước lỗi — tail được sanitize). Entry của adapter
- * được dọn khỏi map khi hàng cạn (không rò rỉ theo số adapter đã từng dùng).
+ * Xếp `fn` vào hàng đợi tuần tự của adapter. Lệnh thường: trả {accepted:false} NGAY (không side-effect) khi hàng
+ * đã đầy; `fn` chỉ chạy sau khi mọi lệnh xếp trước nó đã kết thúc (kể cả khi lệnh trước lỗi). Lệnh
+ * `priorityStop` (DỪNG ghim, R-1E-a): không bao giờ bị từ chối; huỷ mọi lệnh không-ưu-tiên đang CHỜ (chúng trả
+ * `Superseded`), rồi đứng sau DỪNG ghim cuối cùng đang chờ (hoặc đầu hàng). Entry của adapter được dọn khỏi map
+ * khi hàng cạn (không rò rỉ theo số adapter đã từng dùng).
  */
-function tryEnqueueAdapterCommand<T>(adapterId: number, fn: () => Promise<T>): EnqueueOutcome<T> {
+export function tryEnqueueAdapterCommand<T>(
+  adapterId: number,
+  fn: () => Promise<T>,
+  opts?: { priorityStop?: boolean; stopRef?: Record<string, unknown> },
+): EnqueueOutcome<T> {
   const max = cmdQueueMax();
+  const priorityStop = opts?.priorityStop === true;
   let q = adapterCommandQueues.get(adapterId);
+  if (!priorityStop && q && q.depth >= max) return { accepted: false, depth: q.depth, max };
   if (!q) {
-    q = { tail: Promise.resolve(), depth: 0 };
+    q = { inFlight: false, pending: [], depth: 0 };
     adapterCommandQueues.set(adapterId, q);
   }
-  if (q.depth >= max) return { accepted: false, depth: q.depth, max };
-  q.depth += 1;
   const queue = q;
-  const run = queue.tail.then(fn);
-  queue.tail = run.then(
-    () => undefined,
-    () => undefined,
-  );
-  const result = run.finally(() => {
-    queue.depth -= 1;
-    if (queue.depth === 0 && adapterCommandQueues.get(adapterId) === queue) {
-      adapterCommandQueues.delete(adapterId);
-    }
+
+  let settle!: { resolve: (v: T | Superseded) => void; reject: (e: unknown) => void };
+  const result = new Promise<T | Superseded>((resolve, reject) => {
+    settle = { resolve, reject };
   });
+  const job: PendingAdapterCommand = {
+    priorityStop,
+    run: () => {
+      queue.inFlight = true;
+      let p: Promise<T>;
+      try {
+        p = Promise.resolve(fn());
+      } catch (err) {
+        p = Promise.reject(err);
+      }
+      // Lệnh đang bay kết thúc (thành công HAY lỗi) ⇒ nhả hàng, chạy lệnh kế, rồi trả kết quả cho người gọi.
+      const done = (): void => {
+        queue.inFlight = false;
+        queue.depth -= 1;
+        pumpAdapterQueue(adapterId, queue);
+      };
+      p.then(
+        (v) => {
+          done();
+          settle.resolve(v);
+        },
+        (err) => {
+          done();
+          settle.reject(err);
+        },
+      );
+    },
+    cancel: (byStop) => {
+      queue.depth -= 1;
+      settle.resolve(byStop ? { superseded: true, byStop: true, stop: byStop } : { superseded: true, byStop: true });
+    },
+  };
+
+  if (priorityStop) {
+    // R-1E-a — huỷ mọi lệnh KHÔNG phải DỪNG ghim còn đang CHỜ (lệnh đang bay không nằm trong `pending`).
+    const kept: PendingAdapterCommand[] = [];
+    for (const j of queue.pending) {
+      if (j.priorityStop) kept.push(j);
+      else j.cancel(opts?.stopRef);
+    }
+    queue.pending = kept;
+    // Đứng sau DỪNG ghim cuối cùng đang chờ (DỪNG chạy theo thứ tự tới), hoặc đầu hàng.
+    let at = 0;
+    for (let i = 0; i < queue.pending.length; i++) if (queue.pending[i].priorityStop) at = i + 1;
+    queue.pending.splice(at, 0, job);
+  } else {
+    queue.pending.push(job);
+  }
+  queue.depth += 1;
+  pumpAdapterQueue(adapterId, queue);
   return { accepted: true, result };
 }
 
@@ -1246,9 +1355,18 @@ async function dispatchCore(input: DispatchInput): Promise<DispatchResult> {
   //    to the SAME adapter run one-at-a-time; a full queue (depth ≥ OT_CMD_QUEUE_MAX)
   //    rejects THIS command immediately with reason 'BUSY' (spec §13.3) — the
   //    ledger records the rejection like every other rejected branch.
+  //    doc 81 Đợt 1E Task 1 (R-1E-a) — a PINNED stop (stopCls.pinnedStop, Đợt 1D: exact pin match + step-3 row +
+  //    connection fingerprint) is never BUSY: it runs right after the in-flight write and cancels the non-stop
+  //    commands still WAITING ahead of it; each cancelled caller ledgers SUPERSEDED_BY_STOP naming the stop.
   let executed: { sentAt: Date; timedOut: boolean; outcomes: Outcome[] };
   if (isCmdSerializeEnabled()) {
-    const enq = tryEnqueueAdapterCommand(input.adapterId, executeWriteAndVerify);
+    const enq = tryEnqueueAdapterCommand(
+      input.adapterId,
+      executeWriteAndVerify,
+      stopCls.pinnedStop === true
+        ? { priorityStop: true, stopRef: { idempotencyKey: input.idempotencyKey, commandType: input.commandType, intentIds } }
+        : { priorityStop: false },
+    );
     if (!enq.accepted) {
       const ids = await writeRejected(
         db,
@@ -1261,7 +1379,22 @@ async function dispatchCore(input: DispatchInput): Promise<DispatchResult> {
       );
       return { ok: false, simulated: false, status: "rejected", reason: "BUSY", results: failedResults(input, "BUSY"), commandLogIds: ids, ...(stopCls.pinnedStop ? { pinnedStop: true } : {}) };
     }
-    executed = await enq.result;
+    const queued = await enq.result;
+    if (isSuperseded(queued)) {
+      // R-1E-a — cancelled while WAITING: never reached driver.writeTags. RESULT row of the intent, like BUSY.
+      const stopKey = typeof queued.stop?.idempotencyKey === "string" ? queued.stop.idempotencyKey : "unknown";
+      const ids = await writeRejected(
+        db,
+        input,
+        "SUPERSEDED_BY_STOP",
+        `cancelled while waiting in the adapter command queue: pinned STOP ${stopKey} was queued after it — not sent to the device, resend if still needed`,
+        undefined,
+        undefined,
+        { intentIds, confirmedBy: ledgerConfirmer, ackExtra: { ...ledgerExtra, supersededByStop: queued.stop ?? null } },
+      );
+      return { ok: false, simulated: false, status: "rejected", reason: "SUPERSEDED_BY_STOP", results: failedResults(input, "SUPERSEDED_BY_STOP"), commandLogIds: ids };
+    }
+    executed = queued;
   } else {
     executed = await executeWriteAndVerify();
   }
