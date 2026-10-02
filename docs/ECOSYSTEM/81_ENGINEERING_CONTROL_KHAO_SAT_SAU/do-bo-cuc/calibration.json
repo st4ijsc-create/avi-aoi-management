@@ -1,0 +1,51 @@
+{
+ "note": "Ghi bởi --calibrate, KHÔNG sửa tay. Khoá = màn|vw|biến thể. Bản ghi MỚI chỉ được ghi khi attribute khớp MAIN tham chiếu FE1 (bố cục chưa đổi); ghi ĐÈ bản ghi cũ (sau khi đổi bố cục) giữ `previous` để diff git cho thấy.",
+ "pages": {
+  "engineering-changes|1600|n/a": {
+   "screen": "engineering-changes",
+   "vw": 1600,
+   "variant": "n/a",
+   "mainTop": 262,
+   "rects": [
+    {
+     "x": 288,
+     "y": 262,
+     "w": 1288,
+     "h": 660
+    }
+   ],
+   "areaPx": 850080,
+   "attrSel": "div[data-layout-main=\"ecn-list\"]@EngineeringChanges.tsx",
+   "gitHead": "567ae0f39",
+   "at": "2026-10-02T21:14:19.265Z",
+   "fromReference": {
+    "dTop": 0,
+    "dLeft": 0,
+    "dAreaPct": 0
+   }
+  },
+  "engineering-changes|1366|n/a": {
+   "screen": "engineering-changes",
+   "vw": 1366,
+   "variant": "n/a",
+   "mainTop": 262,
+   "rects": [
+    {
+     "x": 288,
+     "y": 262,
+     "w": 1054,
+     "h": 660
+    }
+   ],
+   "areaPx": 695640,
+   "attrSel": "div[data-layout-main=\"ecn-list\"]@EngineeringChanges.tsx",
+   "gitHead": "567ae0f39",
+   "at": "2026-10-02T21:14:19.265Z",
+   "fromReference": {
+    "dTop": 0,
+    "dLeft": 0,
+    "dAreaPct": 0
+   }
+  }
+ }
+}

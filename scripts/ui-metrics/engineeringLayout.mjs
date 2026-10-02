@@ -1132,7 +1132,11 @@ async function selfTest(page, base, s, only = null) {
   const checks = [];
   const want = (name) => !only || only.includes(name);
   const check = (name, pass, detail) => checks.push({ name, pass: !!pass, ...detail });
-  const fresh = async () => { await page.goto(base + s.route); await settle(page); await page.evaluate(() => window.scrollTo(0, 0)); };
+  // Task 4 (doc 81 Đợt 2): các ca được thiết kế trên ECN CHƯA gắn attribute (MAIN theo selector FE1). Khi chính trang ECN
+  // đã gắn `data-layout-main` (Task 4 là trang đầu tiên), attribute có sẵn làm MAIN lồng ⇒ ca T06 "attribute đặt lên tbody"
+  // bị nuốt (phần tử lồng trong MAIN khác không tính) và tự kiểm đỏ OAN. Nên mỗi lần nạp lại sạch thì gỡ attribute của trang:
+  // tự kiểm luôn chạy trên đúng điều kiện nó được thiết kế (đo thật của trang KHÔNG đi qua hàm này).
+  const fresh = async () => { await page.goto(base + s.route); await settle(page); await page.evaluate(() => { for (const e of document.querySelectorAll('[data-layout-main]')) e.removeAttribute('data-layout-main'); window.scrollTo(0, 0); }); };
   // fix4: phép đo trong tự kiểm phải THẤY MAIN. Nếu selector FE1 không thấy MAIN đúng lúc đo (trang đang vẽ lại bảng ⇒
   // che = 0, không thấy cả bong bóng AI — r9-A 2026-10-02 13:01Z, T02 after=0, ca đỏ oan) thì chờ settle rồi đo lại, tối đa
   // 3 lần; số lần ghi ở `retries` (0 là bình thường). CHỈ xét "không thấy MAIN": MAIN bị cắt còn rect 0 (T15) là trạng thái hợp lệ.

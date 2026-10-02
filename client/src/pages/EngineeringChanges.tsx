@@ -382,7 +382,7 @@ export default function EngineeringChanges() {
         <FilterBar filters={filterDefs} />
 
         {/* ── ECN list ─────────────────────────────────────────────────── */}
-        <Card>
+        <Card data-layout-main="ecn-list">
           <CardContent className="p-0">
             <Table>
               <TableHeader>

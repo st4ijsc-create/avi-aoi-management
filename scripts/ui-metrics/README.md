@@ -222,7 +222,10 @@ Chạy `--spawn` hai lần liên tiếp, mỗi lần một instance mới, rồi
 2. Đối chứng dương `selfTest.pass` ở **cả hai** lần chạy. Có 31 ca trên ECN @1600, đi qua đúng đường đo thật
    (`measurePage` / `runActions` / `dataErrors`); mỗi ca chèn một cách lách vào trang vừa nạp lại sạch. Phép đo
    trong tự kiểm đo lại (≤3 lần, chờ settle) nếu MAIN tạm vắng vì trang đang vẽ lại; số lần đo lại ghi ở
-   `meta.selfTest.retries` (0 là bình thường):
+   `meta.selfTest.retries` (0 là bình thường). "Nạp lại sạch" gồm cả **gỡ `data-layout-main` có sẵn của trang**
+   (Task 4: ECN là trang đầu tiên gắn attribute; attribute sẵn có làm ca T06 "attribute trên `tbody`" thành MAIN lồng,
+   bị bỏ qua ⇒ đỏ oan). Ca tự kiểm dựa vào selector FE1 của ECN (card `EngineeringChanges.tsx` chứa bảng, depth 0),
+   nên trang ECN phải giữ card đó quanh danh sách:
 
    | Ca | Cách lách | Phải thấy |
    |---|---|---|
