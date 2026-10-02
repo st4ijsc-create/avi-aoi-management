@@ -153,19 +153,32 @@ tự kiểm trượt, `1` khi lỗi hạ tầng.
      Banner trong MAIN là **LỖI**, trừ ba ngoại lệ (R-2-f):
      - đúng **một** `[data-layout-toolbar]` cao ≤ **56 px**. Hai toolbar, hoặc toolbar > 56 px, là LỖI;
      - tiêu đề thuần `h2–h6`/`[role=heading]`/`[data-slot=card-title]` cao ≤ 40 px;
-     - **khối chữ thuần ≤ 40 px**, tức thoả cả ba điều kiện:
-       - bản thân khối không có nền màu, không có viền, không có lớp notice;
+     - **khối chữ thuần ≤ 40 px**, tức thoả cả ba điều kiện (fix round 4: xét **cả cây con**, không chỉ kiểu của
+       chính khối):
+       - khối **và mọi hậu duệ nhìn thấy** không có nền màu, không có viền, không có lớp notice, không có
+         badge/chip (`data-slot=badge`, tệp `*Badge*`/`*Chip*`), không `role=alert|status`;
        - không chứa icon `svg`/`img`, nút, ô nhập, `role=alert`;
-       - chữ không chứa từ khoá notice (Khi nào dùng/Beta/xem trước/Chỉ xem/Lưu ý/Cảnh báo/Chế độ/TẮT…).
+       - chữ (kể cả chữ của hậu duệ) không chứa từ khoá notice (Khi nào dùng/Beta/xem trước/Chỉ xem/Lưu ý/Cảnh
+         báo/Chế độ/TẮT…).
 
-       Badge đếm nhỏ nằm **trong** khối chữ không làm khối mất miễn trừ.
+       Badge đếm nằm **trong** khối chữ nay làm khối **mất** miễn trừ (badge có nền) — cần badge đếm thì dùng hàng
+       tiêu đề `h2–h6` (mục dưới). Wrapper trong suốt bọc chip màu hay hộp notice màu không còn là nhãn.
+     - **Hàng chip / dải KPI được phân loại TRƯỚC miễn trừ nhãn** (fix round 4): khối trên W cao <120 px, rộng
+       ≥60 % mà chứa MetricCard/`[data-layout-kpi]` hoặc là hàng ≥3 chip (quy tắc 3) là `kpi-strip` ngay cả khi
+       ≤40 px và không màu — một hàng chip 32 px trong wrapper trong suốt không thể là "label".
      - **hàng tiêu đề ≤ 40 px**: chứa `h2–h6`/`[role=heading]`/`card-title` chiếm ≥50 % chữ của khối; icon
        (nếu có) chỉ trang trí (`aria-hidden`); không nút/ô nhập/alert; bản thân khối không nền/viền. Ví dụ
        "📥 ĐANG CHỜ DUYỆT & CẢNH BÁO 12" ở Hub. Từ khoá notice nằm trong chữ tiêu đề không tính.
   5. **Trạng thái trống là W**: `EmptyState` (component), hoặc trạng thái trống tự viết. Trạng thái trống tự
      viết là `p`/`div` ≥32 px cao, chữ <160 ký tự mở đầu bằng "Chưa có / Không có / Hiện không có / Trống /
-     Chọn … để|ở / No / Nothing / Select … to / 暂无 / 没有", không nút/ô nhập/bảng/alert, không nền/viền. Ví dụ
-     Orchestration: "Chưa có bước nào…", "Chọn một bước trên cây để cấu hình."
+     Chọn … để|ở / No / Nothing / Select … to / 暂无 / 没有", không nút/ô nhập/bảng/alert, không nền/viền, **chữ
+     không chứa từ khoá notice**, và **không nằm trong hộp notice** (fix round 4): không tổ tiên nào (từ cha tới
+     MAIN, không gồm MAIN) có `role=alert|status`/`data-slot=alert`, lớp notice (regex FE1), lớp Tailwind mang
+     token màu `bg-`/`border-(amber|red|sky|green|warning|info|destructive|success|primary…)`, hay nền/viền đã
+     tính có **chroma OKLab > 0,05** (trung tính của theme — card/border/muted/secondary/accent — có C ≤ 0,03;
+     Chrome trả `oklch()`/`oklab()`, công cụ tự quy đổi). Card/SectionCard bọc ngoài vẫn hợp lệ; "Chưa có dữ
+     liệu" trong hộp vàng ⇒ hộp là banner và W là bảng. Ví dụ Orchestration: "Chưa có bước nào…", "Chọn một bước
+     trên cây để cấu hình."
      `insideMain[].workspace.kind` = `native` / `empty-state` / `chart` / `fallback-block`.
   4. Khối cao ≥120 px hoặc hẹp hơn 60 % không phải banner, nhưng vẫn cộng vào `aboveWorkspacePx` và đẩy
      `workspacePct` xuống.
@@ -206,8 +219,10 @@ Chạy `--spawn` hai lần liên tiếp, mỗi lần một instance mới, rồi
 
 1. Độ lệch tương đối `|a−b| / max(|a|,|b|)` < 2 %, xét trên mọi màn × kích thước × biến thể × chỉ số.
    Chữ ký hành động và trạng thái hiệu chuẩn phải trùng khớp tuyệt đối.
-2. Đối chứng dương `selfTest.pass` ở **cả hai** lần chạy. Có 28 ca trên ECN @1600, đi qua đúng đường đo thật
-   (`measurePage` / `runActions` / `dataErrors`); mỗi ca chèn một cách lách vào trang vừa nạp lại sạch:
+2. Đối chứng dương `selfTest.pass` ở **cả hai** lần chạy. Có 31 ca trên ECN @1600, đi qua đúng đường đo thật
+   (`measurePage` / `runActions` / `dataErrors`); mỗi ca chèn một cách lách vào trang vừa nạp lại sạch. Phép đo
+   trong tự kiểm đo lại (≤3 lần, chờ settle) nếu MAIN tạm vắng vì trang đang vẽ lại; số lần đo lại ghi ở
+   `meta.selfTest.retries` (0 là bình thường):
 
    | Ca | Cách lách | Phải thấy |
    |---|---|---|
@@ -239,6 +254,9 @@ Chạy `--spawn` hai lần liên tiếp, mỗi lần một instance mới, rồi
    | T23 | một `[data-layout-toolbar]` 52 px | không lỗi |
    | T24 | hàng 4 chip cao 20 px | `banner`, không phải `kpi-strip` |
    | T25 | `EmptyState` 200 px đứng trước bảng | W = EmptyState, `aboveWorkspacePx` < 50 |
+   | T26 | wrapper trong suốt 32 px bọc 4 chip 32 px (chip có màu, rồi chip không màu) | `kpi-strip`, LỖI — không phải `label` |
+   | T27 | wrapper trong suốt 36 px bọc hộp notice màu (không icon, không từ khoá) | `banner`, LỖI |
+   | T28 | "Chưa có dữ liệu" trong hộp vàng (style oklch / lớp `px-5 py-4` lọt regex FE1) · chữ trống không màu có từ khoá notice | hộp là `banner`, LỖI; W = bảng |
 3. Không lỗi băm, không trôi dữ liệu trong từng lần chạy.
 4. Dữ liệu giống nhau giữa hai lần chạy.
 5. Cùng hồ sơ cờ.
@@ -246,7 +264,8 @@ Chạy `--spawn` hai lần liên tiếp, mỗi lần một instance mới, rồi
 **Gác phải biết ĐỎ.** `--mutation` lần lượt gỡ từng gác (`GUARDS` trong script: `geoBand`, `hitTest`,
 `kpiBoth`, `attrConstraint`, `actionNotFound`, `calib`, `insideMain`, `headerBanner`, `noDialog`, `clip`,
 `aiInside`, `overlayBand`, `dialogsAtLoad`, `errHash`, `scrollAncestors`, `siblingReport`, `wsEscape`, `h1Gate`,
-`aboveH1Banner`, `fixedInMain`, `textLabel`, `aiText`, `toolbar56`, `chipMin`, `emptyStateW`). Với mỗi gác bị gỡ, (các) ca của nó
+`aboveH1Banner`, `fixedInMain`, `textLabel`, `aiText`, `toolbar56`, `chipMin`, `emptyStateW`, `kpiFirst`, `labelDeep`,
+`emptyNotice`). Với mỗi gác bị gỡ, (các) ca của nó
 **phải đỏ**; kết quả ghi ở `meta.selfTest.mutation[]`, và `pass` của lần chạy có `--mutation` đòi mọi gác
 đều đỏ khi gỡ.
 

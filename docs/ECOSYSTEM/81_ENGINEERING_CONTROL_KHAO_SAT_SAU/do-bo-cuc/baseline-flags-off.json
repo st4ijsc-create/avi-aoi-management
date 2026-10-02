@@ -1,13 +1,13 @@
 {
  "meta": {
   "tool": "scripts/ui-metrics/engineeringLayout.mjs",
-  "startedAt": "2026-10-02T12:11:08.824Z",
+  "startedAt": "2026-10-02T15:01:10.531Z",
   "argv": [
    "--spawn",
    "--flags",
    "off",
    "--out",
-   ".playwright-mcp/do-bo-cuc/r8-off.json"
+   ".playwright-mcp/do-bo-cuc/r11-off.json"
   ],
   "sizes": [
    [
@@ -20,7 +20,7 @@
    ]
   ],
   "flags": "off",
-  "gitHead": "1a27c7ef9",
+  "gitHead": "1271d6e49",
   "data": {
    "tables": 57,
    "before": {
@@ -193,8 +193,8 @@
     "perms": 22,
     "factory": "SIM-FAC"
    },
-   "serverBootMs": 6027,
-   "serverPid": 5332
+   "serverBootMs": 6053,
+   "serverPid": 33108
   },
   "base": "http://127.0.0.1:5176",
   "reference": {
@@ -206,8 +206,8 @@
    {
     "label": "sau khi khởi động",
     "pids": [
-     5332,
-     34240
+     33108,
+     17748
     ],
     "tcp": {
      "Listen :::3016": 1,
@@ -220,8 +220,8 @@
    {
     "label": "sau biến thể closed",
     "pids": [
-     5332,
-     34240
+     33108,
+     17748
     ],
     "tcp": {
      "Listen :::3016": 1,
@@ -235,8 +235,8 @@
    {
     "label": "sau biến thể open",
     "pids": [
-     5332,
-     34240
+     33108,
+     17748
     ],
     "tcp": {
      "Listen :::3016": 1,
@@ -254,6 +254,7 @@
    "vw": 1600,
    "off": [],
    "pass": true,
+   "retries": 0,
    "checks": [
     {
      "name": "T01-banner-long-sau",
@@ -277,7 +278,17 @@
      "name": "T02-lop-phu-fixed",
      "pass": true,
      "before": 1152,
-     "after": 41152
+     "after": 41152,
+     "mainFound": true,
+     "mainRects": [
+      {
+       "x": 312,
+       "y": 347,
+       "w": 1240,
+       "h": 660
+      }
+     ],
+     "errors": []
     },
     {
      "name": "T03-kpi-hai-nguon",
@@ -532,6 +543,48 @@
      }
     },
     {
+     "name": "T26-chip-trong-wrapper",
+     "pass": true,
+     "colored": [
+      "kpi-strip"
+     ],
+     "plain": [
+      "kpi-strip"
+     ]
+    },
+    {
+     "name": "T27-wrapper-notice-mau",
+     "pass": true,
+     "kinds": [
+      "banner"
+     ],
+     "errors": [
+      "BANNER/DẢI KPI TRONG MAIN ×1 (khối trên phần tử làm việc, <120 px, ≥60 % bề rộng MAIN): [{\"kind\":\"banner\",\"h\":36,\"loc\":null,\"label\":\"Dữ liệu đang được đồng bộ từ máy chủ, bảng có thể \"}]"
+     ]
+    },
+    {
+     "name": "T28-trong-trong-notice",
+     "pass": true,
+     "inline": {
+      "ws": "native:table",
+      "kinds": [
+       "banner"
+      ]
+     },
+     "byClass": {
+      "ws": "native:table",
+      "kinds": [
+       "banner"
+      ]
+     },
+     "keyword": {
+      "ws": "native:table",
+      "kinds": [
+       "banner"
+      ]
+     }
+    },
+    {
      "name": "T16-bam-loi",
      "pass": true,
      "errors": [
@@ -540,7 +593,7 @@
     }
    ]
   },
-  "finishedAt": "2026-10-02T12:23:17.115Z",
+  "finishedAt": "2026-10-02T15:14:25.456Z",
   "probeUserRemoved": {
    "deleted": 1,
    "deactivated": 0
@@ -10081,8 +10134,8 @@
       "top": 735
      },
      "aboveWorkspacePx": 0,
-     "banners": 1,
-     "bannerPx": 40,
+     "banners": 2,
+     "bannerPx": 62,
      "toolbars": [],
      "blocks": [
       {
@@ -10103,7 +10156,7 @@
        "y": 824,
        "w": 1238,
        "h": 22,
-       "kind": "label",
+       "kind": "banner",
        "tag": "div",
        "testid": null,
        "loc": "SectionCard.tsx:60",
@@ -10393,7 +10446,7 @@
    "spinnersAtMeasure": 2,
    "errors": [],
    "warnings": [
-    "BANNER/DẢI KPI TRONG MAIN ×1 (khối trên phần tử làm việc, <120 px, ≥60 % bề rộng MAIN): [{\"kind\":\"banner\",\"h\":40,\"loc\":\"SectionCard.tsx:46\",\"label\":\"Giao thức adapter đã kết nối\"}]",
+    "BANNER/DẢI KPI TRONG MAIN ×2 (khối trên phần tử làm việc, <120 px, ≥60 % bề rộng MAIN): [{\"kind\":\"banner\",\"h\":40,\"loc\":\"SectionCard.tsx:46\",\"label\":\"Giao thức adapter đã kết nối\"},{\"kind\":\"banner\",\"h\":22,\"loc\":\"SectionCard.tsx:60\",\"label\":\"ot-opcua ot-modbus ot-s7 ot-mitsubishi-mc ot-ether\"}]",
     "CHƯA có [data-layout-main] — đo bằng selector FE1"
    ],
    "legacyRef": {

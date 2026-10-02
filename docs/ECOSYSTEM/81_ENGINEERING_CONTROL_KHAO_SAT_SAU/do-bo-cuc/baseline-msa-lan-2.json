@@ -1,11 +1,11 @@
 {
  "meta": {
   "tool": "scripts/ui-metrics/engineeringLayout.mjs",
-  "startedAt": "2026-10-02T11:58:31.206Z",
+  "startedAt": "2026-10-02T14:47:54.420Z",
   "argv": [
    "--spawn",
    "--out",
-   ".playwright-mcp/do-bo-cuc/r8-B.json"
+   ".playwright-mcp/do-bo-cuc/r11-B.json"
   ],
   "sizes": [
    [
@@ -18,7 +18,7 @@
    ]
   ],
   "flags": "dev",
-  "gitHead": "1a27c7ef9",
+  "gitHead": "1271d6e49",
   "data": {
    "tables": 57,
    "before": {
@@ -200,8 +200,8 @@
     "perms": 22,
     "factory": "SIM-FAC"
    },
-   "serverBootMs": 28228,
-   "serverPid": 3224
+   "serverBootMs": 6044,
+   "serverPid": 14704
   },
   "base": "http://127.0.0.1:5176",
   "reference": {
@@ -213,13 +213,13 @@
    {
     "label": "sau khi khởi động",
     "pids": [
-     3224,
-     19164
+     14704,
+     29908
     ],
     "tcp": {
      "Listen :::3016": 1,
-     "Bound → -": 3,
-     "Established → 127.0.0.1:5434": 3
+     "Bound → -": 4,
+     "Established → 127.0.0.1:5434": 4
     },
     "udp": [],
     "violations": []
@@ -227,13 +227,13 @@
    {
     "label": "sau biến thể closed",
     "pids": [
-     3224,
-     19164
+     14704,
+     29908
     ],
     "tcp": {
      "Listen :::3016": 1,
-     "Bound → -": 11,
-     "Established → 127.0.0.1:5434": 11,
+     "Bound → -": 17,
+     "Established → 127.0.0.1:5434": 17,
      "Established → vào :3016 từ 127.0.0.1": 1
     },
     "udp": [],
@@ -242,8 +242,8 @@
    {
     "label": "sau biến thể open",
     "pids": [
-     3224,
-     19164
+     14704,
+     29908
     ],
     "tcp": {
      "Listen :::3016": 1,
@@ -261,6 +261,7 @@
    "vw": 1600,
    "off": [],
    "pass": true,
+   "retries": 0,
    "checks": [
     {
      "name": "T01-banner-long-sau",
@@ -284,7 +285,17 @@
      "name": "T02-lop-phu-fixed",
      "pass": true,
      "before": 1152,
-     "after": 41152
+     "after": 41152,
+     "mainFound": true,
+     "mainRects": [
+      {
+       "x": 312,
+       "y": 347,
+       "w": 1240,
+       "h": 660
+      }
+     ],
+     "errors": []
     },
     {
      "name": "T03-kpi-hai-nguon",
@@ -539,6 +550,48 @@
      }
     },
     {
+     "name": "T26-chip-trong-wrapper",
+     "pass": true,
+     "colored": [
+      "kpi-strip"
+     ],
+     "plain": [
+      "kpi-strip"
+     ]
+    },
+    {
+     "name": "T27-wrapper-notice-mau",
+     "pass": true,
+     "kinds": [
+      "banner"
+     ],
+     "errors": [
+      "BANNER/DẢI KPI TRONG MAIN ×1 (khối trên phần tử làm việc, <120 px, ≥60 % bề rộng MAIN): [{\"kind\":\"banner\",\"h\":36,\"loc\":null,\"label\":\"Dữ liệu đang được đồng bộ từ máy chủ, bảng có thể \"}]"
+     ]
+    },
+    {
+     "name": "T28-trong-trong-notice",
+     "pass": true,
+     "inline": {
+      "ws": "native:table",
+      "kinds": [
+       "banner"
+      ]
+     },
+     "byClass": {
+      "ws": "native:table",
+      "kinds": [
+       "banner"
+      ]
+     },
+     "keyword": {
+      "ws": "native:table",
+      "kinds": [
+       "banner"
+      ]
+     }
+    },
+    {
      "name": "T16-bam-loi",
      "pass": true,
      "errors": [
@@ -547,7 +600,7 @@
     }
    ]
   },
-  "finishedAt": "2026-10-02T12:11:07.078Z",
+  "finishedAt": "2026-10-02T15:01:08.801Z",
   "probeUserRemoved": {
    "deleted": 1,
    "deactivated": 0
@@ -9941,8 +9994,8 @@
       "top": 673
      },
      "aboveWorkspacePx": 0,
-     "banners": 1,
-     "bannerPx": 40,
+     "banners": 2,
+     "bannerPx": 62,
      "toolbars": [],
      "blocks": [
       {
@@ -9963,7 +10016,7 @@
        "y": 762,
        "w": 1238,
        "h": 22,
-       "kind": "label",
+       "kind": "banner",
        "tag": "div",
        "testid": null,
        "loc": "SectionCard.tsx:60",
@@ -10233,7 +10286,7 @@
    "spinnersAtMeasure": 2,
    "errors": [],
    "warnings": [
-    "BANNER/DẢI KPI TRONG MAIN ×1 (khối trên phần tử làm việc, <120 px, ≥60 % bề rộng MAIN): [{\"kind\":\"banner\",\"h\":40,\"loc\":\"SectionCard.tsx:46\",\"label\":\"Giao thức adapter đã kết nối\"}]",
+    "BANNER/DẢI KPI TRONG MAIN ×2 (khối trên phần tử làm việc, <120 px, ≥60 % bề rộng MAIN): [{\"kind\":\"banner\",\"h\":40,\"loc\":\"SectionCard.tsx:46\",\"label\":\"Giao thức adapter đã kết nối\"},{\"kind\":\"banner\",\"h\":22,\"loc\":\"SectionCard.tsx:60\",\"label\":\"ot-opcua ot-modbus ot-s7 ot-mitsubishi-mc ot-ether\"}]",
     "CHƯA có [data-layout-main] — đo bằng selector FE1"
    ],
    "legacyRef": {

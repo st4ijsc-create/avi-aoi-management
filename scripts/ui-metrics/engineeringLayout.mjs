@@ -25,8 +25,12 @@
  *                       chối); pageHeightRatio chỉ gác tài liệu + tổ tiên (anh em: siblingScrollExtra, chỉ báo);
  *                       hiệu chuẩn theo màn|vw|biến thể + bộ chọn attribute, so lại MỖI lần chạy; mất h1 = LỖI;
  *                       notice trên h1 tính banner; AI theo nhãn i18n; fixed TRONG MAIN vẫn là che.
- *   · selfTest        — 28 ca đối chứng DƯƠNG mỗi lần chạy, qua đúng measurePage/runActions; `--mutation` gỡ
- *                       từng gác (25 gác) và chứng minh ca của nó ĐỎ.
+ *   · fix4            — miễn trừ "nhãn chữ ≤40 px" xét CẢ CÂY CON (hậu duệ có nền/viền, badge/chip, alert/status, icon,
+ *                       từ khoá ⇒ mất miễn trừ); hàng chip/KPI phân loại TRƯỚC miễn trừ nhãn; trạng thái trống tự viết
+ *                       KHÔNG được nằm trong hộp notice (tổ tiên tới MAIN có role alert/status, lớp notice, lớp màu
+ *                       bg-/border-, hay màu đã tính chroma OKLab > 0,05) và chữ không có từ khoá notice.
+ *   · selfTest        — 31 ca đối chứng DƯƠNG mỗi lần chạy, qua đúng measurePage/runActions; `--mutation` gỡ
+ *                       từng gác (28 gác) và chứng minh ca của nó ĐỎ.
  *
  * Instance: KHÔNG dùng :3000 (chạy dist cũ). `--spawn` tự dựng server TỪ MÃ NGUỒN (tsx) ở :3016
  * + Vite dev (in-process) ở :5176, DB `aoi_management_test`. Server KHÔNG nạp .env (DOTENV_CONFIG_PATH
@@ -387,9 +391,19 @@ function PHASE2(arg) {
   // tử gốc đầu tiên và luật banner áp cho khối phía trên phần tử đó (kể cả bên trong wrapper). W === MAIN chỉ hợp lệ
   // khi chính MAIN là phần tử gốc. EmptyState là W (trang trống).
   const hasColor = (e) => { const s = getComputedStyle(e); const bg = s.backgroundColor; return (bg && bg !== 'rgba(0, 0, 0, 0)' && bg !== 'transparent') || ['Top', 'Right', 'Bottom', 'Left'].some((k) => parseFloat(s['border' + k + 'Width']) > 0) || isNoticeCls(e); };
+  // fix4 #1: màu/notice xét CẢ CÂY CON — wrapper trong suốt bọc chip màu / hộp notice màu / badge không được là "nhãn chữ".
+  // Hậu duệ nhìn thấy có nền hay viền (kể cả badge đếm), hoặc là badge/chip/alert/status ⇒ khối MẤT miễn trừ nhãn.
+  const BADGE_SEL = '[data-slot=badge],[data-loc*="Badge" i],[data-loc*="Chip" i],[role=alert],[role=status],[data-slot=alert]';
+  const hasColorDeep = (e) => {
+    if (hasColor(e)) return true;
+    if (OFF.has('labelDeep')) return false;
+    if (e.querySelector(BADGE_SEL)) return true;
+    for (const d of e.querySelectorAll('*')) if (vis(d) && hasColor(d)) return true;
+    return false;
+  };
   const isPlainText = (e) => {
     if (e.querySelector('svg,img,button,input,select,textarea,[role=button],[role=alert]') || e.matches('[role=alert],[data-slot=alert]')) return false;
-    if (hasColor(e)) return false;
+    if (hasColorDeep(e)) return false;
     return !NOTICE_TXT.test((e.innerText || '').slice(0, 300));
   };
   // hàng tiêu đề: chứa h2–h6/role=heading/card-title chiếm ≥50 % chữ của khối, icon (nếu có) chỉ trang trí
@@ -400,9 +414,38 @@ function PHASE2(arg) {
     if ([...e.querySelectorAll('svg,img')].some((x) => x.getAttribute('aria-hidden') !== 'true')) return false;
     const tt = (e.innerText || '').trim().length; return tt > 0 && (h.innerText || '').trim().length >= 0.5 * tt;
   };
-  // trạng thái trống tự viết (không qua EmptyState): p/div ngắn, chữ mở đầu kiểu "Chưa có… / Chọn … để …", không màu, không tương tác
+  // fix4 #2: TỔ TIÊN có kiểu notice. Chrome trả màu đã tính dạng oklch()/oklab() (theme Tailwind v4) hoặc rgb()/#hex;
+  // canvas KHÔNG chuẩn hoá về rgb (đo 2026-10-02) ⇒ tự đổi về chroma OKLab. Trung tính của theme (card/border/muted/
+  // secondary/accent/input) có C ≤ 0,03; màu notice (info/primary/warning/success/destructive, amber-500/10…) C ≥ 0,13.
+  // Ngưỡng 0,05. Lớp Tailwind mang token màu (bg-/border-amber|red|sky|…) được nhận THẲNG theo tên lớp, không cần
+  // viền+rounded+padding như regex FE1 (shade nhạt -100 có C ≈ 0,03–0,06, không tách được bằng chroma).
+  const okChroma = (str) => {
+    if (!str || str === 'transparent') return 0;
+    let m;
+    const num = (v, pct, scale) => (pct ? +v / 100 * scale : +v);
+    if ((m = /^oklch\(\s*([\d.]+)%?\s+([\d.]+)(%?)\s+(?:[\d.]+(?:deg)?|none)\s*(?:\/\s*([\d.]+)(%?))?\s*\)$/.exec(str))) { const a = m[4] == null ? 1 : num(m[4], m[5], 1); return a <= 0 ? 0 : num(m[2], m[3], 0.4); }
+    if ((m = /^oklab\(\s*[\d.]+%?\s+(-?[\d.]+)(%?)\s+(-?[\d.]+)(%?)\s*(?:\/\s*([\d.]+)(%?))?\s*\)$/.exec(str))) { const a = m[5] == null ? 1 : num(m[5], m[6], 1); return a <= 0 ? 0 : Math.hypot(num(m[1], m[2], 0.4), num(m[3], m[4], 0.4)); }
+    let rgb = null, alpha = 1;
+    if ((m = /^rgba?\(\s*([\d.]+)\s*[, ]\s*([\d.]+)\s*[, ]\s*([\d.]+)\s*(?:[,/]\s*([\d.]+)(%?))?\s*\)$/.exec(str))) { rgb = [+m[1], +m[2], +m[3]]; if (m[4] != null) alpha = num(m[4], m[5], 1); }
+    else if ((m = /^#([0-9a-f]{3,8})$/i.exec(str))) { let h = m[1]; if (h.length <= 4) h = [...h].map((c) => c + c).join(''); rgb = [0, 2, 4].map((i) => parseInt(h.slice(i, i + 2), 16)); if (h.length === 8) alpha = parseInt(h.slice(6, 8), 16) / 255; }
+    else if ((m = /^color\(srgb\s+([\d.]+)\s+([\d.]+)\s+([\d.]+)\s*(?:\/\s*([\d.]+))?\s*\)$/.exec(str))) { rgb = [+m[1] * 255, +m[2] * 255, +m[3] * 255]; if (m[4] != null) alpha = +m[4]; }
+    if (!rgb) return null; // định dạng lạ ⇒ không kết luận (các lớp nhận diện khác vẫn áp)
+    if (alpha <= 0) return 0;
+    const lin = (c) => { c = Math.min(255, Math.max(0, c)) / 255; return c <= 0.04045 ? c / 12.92 : Math.pow((c + 0.055) / 1.055, 2.4); };
+    const [R, G, B] = rgb.map(lin);
+    const l = Math.cbrt(0.4122214708 * R + 0.5363325363 * G + 0.0514459929 * B), mm = Math.cbrt(0.2119034982 * R + 0.6806995451 * G + 0.1073969566 * B), s = Math.cbrt(0.0883024619 * R + 0.2817188376 * G + 0.6299787005 * B);
+    return Math.hypot(1.9779984951 * l - 2.4285922050 * mm + 0.4505937099 * s, 0.0259040371 * l + 0.7827717662 * mm - 0.8086757660 * s);
+  };
+  const TINT_C = 0.05;
+  const tinted = (e) => { const s = getComputedStyle(e); if ((okChroma(s.backgroundColor) ?? 0) > TINT_C) return true; return ['Top', 'Right', 'Bottom', 'Left'].some((k) => parseFloat(s['border' + k + 'Width']) > 0 && (okChroma(s['border' + k + 'Color']) ?? 0) > TINT_C); };
+  const COLOR_CLS = /(^|\s)(bg|border(?:-[trblxyse])?)-(amber|yellow|orange|red|rose|pink|fuchsia|purple|violet|indigo|blue|sky|cyan|teal|emerald|green|lime|warning|info|destructive|success|primary)(-|\/|\s|$)/;
+  const noticeStyled = (a) => a.matches('[role=alert],[role=status],[data-slot=alert]') || isNoticeCls(a) || COLOR_CLS.test(cls(a)) || tinted(a);
+  // tổ tiên từ cha của e tới (không gồm) MAIN m: hộp notice bọc ngoài ⇒ e không phải trạng thái trống
+  const noticeAncestor = (e, m) => { for (let a = e.parentElement; a && a !== m && a !== main && a !== document.body; a = a.parentElement) if (noticeStyled(a)) return a; return null; };
+  // trạng thái trống tự viết (không qua EmptyState): p/div ngắn, chữ mở đầu kiểu "Chưa có… / Chọn … để …", không màu, không tương tác;
+  // fix4: KHÔNG có từ khoá notice trong chữ và KHÔNG nằm trong hộp notice (tổ tiên tới MAIN) — "Chưa có dữ liệu" trong hộp vàng là banner
   const EMPTY_TXT = /^(Chưa có|Không có|Hiện không có|Trống|Chọn [^\n]{0,60}(để|ở)|No |Nothing|Select [^\n]{0,60} to|暂无|没有)/i;
-  const emptyLike = (e) => { const t = (e.innerText || '').trim(); return t.length > 0 && t.length < 160 && e.children.length <= 3 && EMPTY_TXT.test(t) && !e.querySelector('button,input,select,textarea,table,[role=alert]') && !e.matches('[role=alert],[data-slot=alert]') && !hasColor(e); };
+  const emptyLike = (e, m) => { const t = (e.innerText || '').trim(); return t.length > 0 && t.length < 160 && e.children.length <= 3 && EMPTY_TXT.test(t) && !e.querySelector('button,input,select,textarea,table,[role=alert]') && !e.matches('[role=alert],[data-slot=alert]') && !hasColor(e) && (OFF.has('emptyNotice') || (!NOTICE_TXT.test(t) && !noticeAncestor(e, m))); };
   const NATIVE_SEL = 'table,[role=grid],[role=treegrid],[role=tree],[role=listbox],canvas,.cm-editor,.monaco-editor,.react-flow,textarea,[contenteditable="true"]' + (OFF.has('emptyStateW') ? '' : ',[data-loc*="EmptyState.tsx"],[data-layout-empty]');
   const WS_SEL = OFF.has('wsEscape') ? '[data-layout-workspace],' + NATIVE_SEL : NATIVE_SEL;
   // chip KPI: ≥3 con hẹp (<50 %), cao 28–140 px, KHÔNG chứa ô nhập/chọn/nút (hàng điều khiển form không phải KPI)
@@ -413,7 +456,7 @@ function PHASE2(arg) {
     const mr = m.getBoundingClientRect();
     if (!OFF.has('wsEscape') && m.hasAttribute('data-layout-workspace') && !m.matches(NATIVE_SEL)) push(errors, 'MAIN tự khai [data-layout-workspace] nhưng KHÔNG phải phần tử làm việc gốc (table/canvas/editor/EmptyState…) — W === MAIN bị từ chối');
     const svgs = [...m.querySelectorAll('svg')].filter((s) => { const r = s.getBoundingClientRect(); return r.width >= 200 && r.height >= 120 && (OFF.has('wsEscape') || !inKpiRow(s, m)); });
-    const empties = OFF.has('emptyStateW') ? [] : [...m.querySelectorAll('p,div')].filter((e) => vis(e) && e.getBoundingClientRect().height >= 32 && emptyLike(e)).filter((e, _i, a) => !a.some((o) => o !== e && e.contains(o)));
+    const empties = OFF.has('emptyStateW') ? [] : [...m.querySelectorAll('p,div')].filter((e) => vis(e) && e.getBoundingClientRect().height >= 32 && emptyLike(e, m)).filter((e, _i, a) => !a.some((o) => o !== e && e.contains(o)));
     const cand = [...(m.matches(WS_SEL) ? [m] : []), ...m.querySelectorAll(WS_SEL), ...svgs, ...empties].filter((e) => vis(e) && !isAiEl(e));
     let W = null; for (const e of cand) if (!W || e.getBoundingClientRect().top < W.getBoundingClientRect().top - 0.5) W = e;
     const blocks = []; let stop = false;
@@ -433,13 +476,17 @@ function PHASE2(arg) {
         else if (r.height >= 120) { W = ch; stop = true; return; }
         // tiêu đề thuần (h2–h6 / role=heading / card-title) ≤40 px không phải banner
         if (r.height <= 40 && ch.matches('h2,h3,h4,h5,h6,[role=heading],[data-slot=card-title]')) { blocks.push({ ...R(ch), kind: 'heading', ...desc(ch) }); continue; }
-        // R-2-f: khối CHỮ THUẦN ≤40 px không kiểu notice (khối không có nền màu / viền / icon svg|img, không có
-        // nút/ô nhập, chữ không chứa từ khoá notice) ⇒ nhãn, không phải banner
-        if (!OFF.has('textLabel') && r.height <= 40 && isPlainText(ch)) { blocks.push({ ...R(ch), kind: 'label', ...desc(ch) }); continue; }
-        if (!OFF.has('textLabel') && r.height <= 40 && isHeadingRow(ch)) { blocks.push({ ...R(ch), kind: 'heading', ...desc(ch) }); continue; }
         const tb = ch.hasAttribute('data-layout-toolbar');
         const kpi = ch.matches(KPI_SEL) || !!ch.querySelector(KPI_SEL) || chipRow(ch);
-        const kind = tb ? 'toolbar' : (r.height < 120 && r.width >= 0.6 * mr.width) ? (kpi ? 'kpi-strip' : 'banner') : 'other';
+        const stripGeo = r.height < 120 && r.width >= 0.6 * mr.width;
+        // fix4 #1: dải KPI / hàng chip được phân loại TRƯỚC miễn trừ nhãn — hàng 32 px chip trong wrapper trong suốt
+        // (kể cả chip không màu) là kpi-strip, không bao giờ là "label"
+        if (!OFF.has('kpiFirst') && !tb && kpi && stripGeo) { blocks.push({ ...R(ch), kind: 'kpi-strip', ...desc(ch) }); continue; }
+        // R-2-f: khối CHỮ THUẦN ≤40 px không kiểu notice (cả CÂY CON không có nền màu / viền / badge / icon svg|img,
+        // không có nút/ô nhập, chữ không chứa từ khoá notice) ⇒ nhãn, không phải banner
+        if (!OFF.has('textLabel') && r.height <= 40 && isPlainText(ch)) { blocks.push({ ...R(ch), kind: 'label', ...desc(ch) }); continue; }
+        if (!OFF.has('textLabel') && r.height <= 40 && isHeadingRow(ch)) { blocks.push({ ...R(ch), kind: 'heading', ...desc(ch) }); continue; }
+        const kind = tb ? 'toolbar' : stripGeo ? (kpi ? 'kpi-strip' : 'banner') : 'other';
         blocks.push({ ...R(ch), kind, ...desc(ch) });
       }
     };
@@ -653,6 +700,8 @@ export const GUARDS = {
   scrollAncestors: ["T15-to-tien-an"], siblingReport: ["T15b-anh-em-chi-bao"], wsEscape: ["T17-wrapper-workspace", "T17b-main-la-workspace"], h1Gate: ["T18-mat-h1"],
   aboveH1Banner: ["T19-banner-tren-h1"], fixedInMain: ["T20-fixed-trong-main"], textLabel: ["T21-nhan-chu-thuan"], aiText: ["T22-ai-theo-nhan-i18n"],
   toolbar56: ["T23-toolbar-56"], chipMin: ["T24-chip-thap"], emptyStateW: ["T25-emptystate-la-W"],
+  // fix round 4
+  kpiFirst: ["T26-chip-trong-wrapper"], labelDeep: ["T27-wrapper-notice-mau"], emptyNotice: ["T28-trong-trong-notice"],
 };
 /** Dung sai hiệu chuẩn (fix2 #1): MAIN theo attribute so với MAIN tham chiếu (selector FE1, lưu trong baseline). */
 export const CALIB_TOL = { px: 4, areaPct: 3 };
@@ -1084,6 +1133,11 @@ async function selfTest(page, base, s, only = null) {
   const want = (name) => !only || only.includes(name);
   const check = (name, pass, detail) => checks.push({ name, pass: !!pass, ...detail });
   const fresh = async () => { await page.goto(base + s.route); await settle(page); await page.evaluate(() => window.scrollTo(0, 0)); };
+  // fix4: phép đo trong tự kiểm phải THẤY MAIN. Nếu selector FE1 không thấy MAIN đúng lúc đo (trang đang vẽ lại bảng ⇒
+  // che = 0, không thấy cả bong bóng AI — r9-A 2026-10-02 13:01Z, T02 after=0, ca đỏ oan) thì chờ settle rồi đo lại, tối đa
+  // 3 lần; số lần ghi ở `retries` (0 là bình thường). CHỈ xét "không thấy MAIN": MAIN bị cắt còn rect 0 (T15) là trạng thái hợp lệ.
+  let retries = 0;
+  const mp = async (pg, sc, variant, opts) => { let b; for (let i = 0; i < 3; i++) { b = await measurePage(pg, sc, variant, opts); if (b.mainFound) return b; retries++; await settle(pg); } return b; };
   // chạy mã trong trang với T = phần tử MAIN cũ (selector FE1), A = nhánh tổ tiên cao nhất của T không chứa h1
   const inPage = async (body) => {
     const p1 = await page.evaluate(PHASE1);
@@ -1096,31 +1150,31 @@ async function selfTest(page, base, s, only = null) {
       ${body} })()`);
   };
   await fresh();
-  const b0 = await measurePage(page, s, "selftest");
+  const b0 = await mp(page, s, "selftest");
   const ref0 = b0.legacyRef;
   const NOTICE = "rounded-lg border border-amber-500/40 bg-amber-500/10 px-5 py-4";
   if (want("T01-banner-long-sau")) {
     await inPage(`const w = document.createElement('div'), w2 = document.createElement('div'); w2.appendChild(mk('${NOTICE}', 100, 'Lưu ý: UIM tự kiểm')); w.appendChild(w2); A.parentElement.insertBefore(w, A);`);
-    const b = await measurePage(page, s, "selftest");
+    const b = await mp(page, s, "selftest");
     check("T01-banner-long-sau", b.bannersBeforeMain.count === b0.bannersBeforeMain.count + 1 && b.bannersBeforeMain.px >= b0.bannersBeforeMain.px + 100 && b.chromeAboveMain >= b0.chromeAboveMain + 100, { before: [b0.bannersBeforeMain.count, b0.bannersBeforeMain.px, b0.chromeAboveMain], after: [b.bannersBeforeMain.count, b.bannersBeforeMain.px, b.chromeAboveMain], fe1Class: [b0.bannersFe1Class.count, b.bannersFe1Class.count] });
     await fresh();
   }
   if (want("T02-lop-phu-fixed")) {
     const r = b0.mainRects[0];
     await page.evaluate((rc) => { const d = document.createElement('div'); d.setAttribute('data-testid', 'uim-overlay'); d.style.cssText = `position:fixed;z-index:9999;left:${rc.x + 40}px;top:${Math.min(rc.y + 40, innerHeight - 220)}px;width:200px;height:200px;background:rgba(255,0,0,.3)`; document.body.appendChild(d); }, r);
-    const b = await measurePage(page, s, "selftest");
-    check("T02-lop-phu-fixed", b.coverMain.px >= b0.coverMain.px + 0.9 * 40000 && b.coverMain.items.some((i) => i.testid === "uim-overlay"), { before: b0.coverMain.px, after: b.coverMain.px });
+    const b = await mp(page, s, "selftest");
+    check("T02-lop-phu-fixed", b.coverMain.px >= b0.coverMain.px + 0.9 * 40000 && b.coverMain.items.some((i) => i.testid === "uim-overlay"), { before: b0.coverMain.px, after: b.coverMain.px, mainFound: b.mainFound, mainRects: b.mainRects, errors: b.errors.slice(0, 2) });
     await fresh();
   }
   if (want("T03-kpi-hai-nguon")) {
     await inPage(`const d = mk('', 32, 'KPI'); d.setAttribute('data-layout-kpi', ''); d.style.width = '120px'; A.parentElement.insertBefore(d, A);`);
-    const b = await measurePage(page, s, "selftest");
+    const b = await mp(page, s, "selftest");
     check("T03-kpi-hai-nguon", b.kpi.official.count === b0.kpi.official.count + 1 && b.kpi.legacy.count === b0.kpi.legacy.count, { before: b0.kpi.official.count, after: b.kpi.official.count });
     await fresh();
   }
   if (want("T04-attribute-vi-pham")) {
     await page.evaluate(() => { const h1 = document.querySelector('main h1'); let a = h1; while (a.parentElement && a.parentElement !== document.querySelector('main')) a = a.parentElement; a.setAttribute('data-layout-main', 'uim-test'); const o = document.createElement('div'); o.setAttribute('data-layout-main', 'ngoai'); o.style.cssText = 'height:20px;width:20px'; document.body.appendChild(o); });
-    const b = await measurePage(page, s, "selftest", { ref: ref0, calibrations: {} });
+    const b = await mp(page, s, "selftest", { ref: ref0, calibrations: {} });
     check("T04-attribute-vi-pham", b.errors.some((e) => /chứa h1/.test(e)) && b.errors.some((e) => /NGOÀI <main>/.test(e)), { errors: b.errors.slice(0, 3) });
     await fresh();
   }
@@ -1131,18 +1185,18 @@ async function selfTest(page, base, s, only = null) {
   }
   if (want("T06-hieu-chuan")) {
     await inPage(`T.setAttribute('data-layout-main', 'dung');`);
-    const ok = await measurePage(page, s, "selftest", { ref: ref0, calibrations: {} });
+    const ok = await mp(page, s, "selftest", { ref: ref0, calibrations: {} });
     await fresh();
     await inPage(`(T.querySelector('tbody') || T.firstElementChild).setAttribute('data-layout-main', 'lech');`);
-    const bad = await measurePage(page, s, "selftest", { ref: ref0, calibrations: {} });
+    const bad = await mp(page, s, "selftest", { ref: ref0, calibrations: {} });
     await fresh();
     // bản ghi theo khoá (màn|vw|biến thể): khớp ⇒ recorded-match; cùng hình học nhưng attribute ở phần tử KHÁC ⇒ LỖI
     const key = `${s.id}|1600|selftest`;
     const rec = { mainTop: ok.mainTop, rects: ok.mainRects, areaPx: unionArea(ok.mainRects, 1e6, 1e6, -1e6), attrSel: ok.attrSel };
     await inPage(`T.setAttribute('data-layout-main', 'dung');`);
-    const okRec = await measurePage(page, s, "selftest", { ref: ref0, calibrations: { [key]: rec } });
-    const movedSel = await measurePage(page, s, "selftest", { ref: ref0, calibrations: { [key]: { ...rec, attrSel: "div[data-layout-main=\"khac\"]@Khac.tsx" } } });
-    const movedGeo = await measurePage(page, s, "selftest", { ref: ref0, calibrations: { [key]: { ...rec, mainTop: rec.mainTop - 40 } } });
+    const okRec = await mp(page, s, "selftest", { ref: ref0, calibrations: { [key]: rec } });
+    const movedSel = await mp(page, s, "selftest", { ref: ref0, calibrations: { [key]: { ...rec, attrSel: "div[data-layout-main=\"khac\"]@Khac.tsx" } } });
+    const movedGeo = await mp(page, s, "selftest", { ref: ref0, calibrations: { [key]: { ...rec, mainTop: rec.mainTop - 40 } } });
     check("T06-hieu-chuan", ok.calibration?.status === "matches-reference" && ok.errors.length === 0 && bad.errors.some((e) => /HIỆU CHUẨN TRƯỢT/.test(e))
       && okRec.calibration?.status === "recorded-match" && okRec.errors.length === 0 && movedSel.errors.some((e) => /LỆCH BẢN GHI/.test(e)) && movedGeo.errors.some((e) => /LỆCH BẢN GHI/.test(e)),
       { control: { status: ok.calibration?.status, errors: ok.errors }, attack: bad.calibration, record: okRec.calibration?.status, movedSel: movedSel.calibration?.status, movedGeo: movedGeo.calibration?.status });
@@ -1150,72 +1204,72 @@ async function selfTest(page, base, s, only = null) {
   }
   if (want("T07-banner-trong-main")) {
     await inPage(`T.setAttribute('data-layout-main', 'x'); T.insertBefore(mk('${NOTICE}', 80, 'Chế độ xem trước — banner không đánh dấu'), T.firstChild);`);
-    const b = await measurePage(page, s, "selftest", { ref: ref0, calibrations: {} });
+    const b = await mp(page, s, "selftest", { ref: ref0, calibrations: {} });
     check("T07-banner-trong-main", b.errors.some((e) => /BANNER\/DẢI KPI TRONG MAIN/.test(e)), { errors: b.errors.slice(0, 2), inside: b.insideMain[0] && { banners: b.insideMain[0].banners, above: b.insideMain[0].aboveWorkspacePx } });
     await fresh();
   }
   if (want("T08-kpi-trong-main")) {
     await inPage(`T.setAttribute('data-layout-main', 'x'); const row = document.createElement('div'); row.style.cssText = 'display:flex;gap:8px;padding:8px'; for (let i = 0; i < 4; i++) { const c = mk('rounded-md border px-3', 32, (i * 7) + ' việc'); c.style.width = '140px'; row.appendChild(c); } T.insertBefore(row, T.firstChild);`);
-    const b = await measurePage(page, s, "selftest", { ref: ref0, calibrations: {} });
+    const b = await mp(page, s, "selftest", { ref: ref0, calibrations: {} });
     check("T08-kpi-trong-main", b.errors.some((e) => /BANNER\/DẢI KPI TRONG MAIN/.test(e) && /kpi-strip/.test(e)), { errors: b.errors.slice(0, 2) });
     await fresh();
   }
   if (want("T09-banner-trong-header")) {
     await inPage(`(H || h1.parentElement).appendChild(mk('${NOTICE}', 40, 'Lưu ý trong header'));`);
-    const b = await measurePage(page, s, "selftest");
+    const b = await mp(page, s, "selftest");
     check("T09-banner-trong-header", b.bannersBeforeMain.count === b0.bannersBeforeMain.count + 1 && b.bannersBeforeMain.px >= b0.bannersBeforeMain.px + 40, { before: [b0.bannersBeforeMain.count, b0.bannersBeforeMain.px], after: [b.bannersBeforeMain.count, b.bannersBeforeMain.px] });
     await fresh();
   }
   if (want("T10-nut-chet")) {
     await inPage(`const b = document.createElement('button'); b.textContent = 'UIM nút chết'; h1.parentElement.appendChild(b);`);
-    const before = await measurePage(page, s, "selftest");
+    const before = await mp(page, s, "selftest");
     const acts = await runActions(page, [{ id: "uim-chet", label: /UIM nút chết/ }], { s, variant: "selftest", before });
     check("T10-nut-chet", acts[0].status === "no-effect" && !!acts[0].error, { got: acts[0] });
     await fresh();
   }
   if (want("T10b-panel-inline")) {
     await inPage(`const b = document.createElement('button'); b.textContent = 'UIM mở panel'; b.onclick = () => { A.parentElement.insertBefore(mk('border', 150, 'panel inline'), A); }; h1.parentElement.appendChild(b);`);
-    const before = await measurePage(page, s, "selftest");
+    const before = await mp(page, s, "selftest");
     const acts = await runActions(page, [{ id: "uim-inline", label: /UIM mở panel/ }], { s, variant: "selftest", before });
     check("T10b-panel-inline", acts[0].status === "inline" && acts[0].inlineHeight >= 150 && acts[0].pushesMainPx >= 150, { got: acts[0] });
     await fresh();
   }
   if (want("T11-cat-overflow")) {
     await inPage(`const P = T.parentElement; const top = T.getBoundingClientRect().top - P.getBoundingClientRect().top; P.style.overflow = 'hidden'; P.style.height = (top + 100) + 'px';`);
-    const b = await measurePage(page, s, "selftest");
+    const b = await mp(page, s, "selftest");
     const maxPct = (100 * b0.mainRects[0].w) / (1600 * 950) * 100 + 0.2;
     check("T11-cat-overflow", b.mainPct <= maxPct && b.mainPct < b0.mainPct && b.clippedBy.length > 0, { before: b0.mainPct, after: b.mainPct, maxPct: +maxPct.toFixed(1) });
     await fresh();
   }
   if (want("T12-ai-trong-main")) {
     await inPage(`T.style.position = 'relative'; const a1 = document.createElement('aside'); a1.setAttribute('role', 'complementary'); a1.style.cssText = 'position:absolute;right:0;top:60px;width:300px;height:300px;background:#123'; const a2 = document.createElement('div'); a2.setAttribute('data-testid', 'copilot-panel'); a2.style.cssText = 'position:absolute;right:320px;top:60px;width:200px;height:200px;background:#321'; T.appendChild(a1); T.appendChild(a2);`);
-    const b = await measurePage(page, s, "selftest");
+    const b = await mp(page, s, "selftest");
     check("T12-ai-trong-main", b.aiInsideMain.px >= 0.9 * 130000 && b.aiInsideMain.items.length === 2 && b.workspacePct <= b0.workspacePct - 0.9 * 130000 / (1600 * 950) * 100, { before: { ws: b0.workspacePct, ai: b0.aiInsideMain.px }, after: { ws: b.workspacePct, ai: b.aiInsideMain.px, items: b.aiInsideMain.items.map((i) => i.testid || i.role) } });
     await fresh();
   }
   if (want("T13-portal-dai-dau")) {
     await page.evaluate(() => { const m = document.querySelector('main').getBoundingClientRect(); const d = document.createElement('div'); d.setAttribute('role', 'status'); d.style.cssText = `position:fixed;z-index:60;left:${m.left + 40}px;top:70px;width:400px;height:40px;background:#fe0`; d.textContent = 'popover mở sẵn'; document.body.appendChild(d); });
-    const b = await measurePage(page, s, "selftest");
+    const b = await mp(page, s, "selftest");
     check("T13-portal-dai-dau", b.bannersBeforeMain.count === b0.bannersBeforeMain.count + 1 && (b.bannersBeforeMain.byKind.overlay || 0) === 1, { before: b0.bannersBeforeMain.count, after: b.bannersBeforeMain.count, byKind: b.bannersBeforeMain.byKind });
     await fresh();
   }
   if (want("T14-dialog-luc-nap")) {
     await page.evaluate(() => { const d = document.createElement('div'); d.setAttribute('role', 'dialog'); d.setAttribute('data-slot', 'dialog-content'); d.style.cssText = 'position:fixed;z-index:70;left:600px;top:500px;width:300px;height:200px;background:#fff'; document.body.appendChild(d); });
-    const b = await measurePage(page, s, "selftest");
+    const b = await mp(page, s, "selftest");
     check("T14-dialog-luc-nap", b.errors.some((e) => /MỞ SẴN lúc nạp/.test(e)), { errors: b.errors.slice(0, 2) });
     await fresh();
   }
   if (want("T15-to-tien-an")) {
     // tổ tiên của MAIN bị ép cao 200 px + overflow:hidden ⇒ phần bị giấu PHẢI vẫn tính vào chiều cao trang
     await inPage(`const P = T.parentElement; P.style.height = '200px'; P.style.overflow = 'hidden';`);
-    const b = await measurePage(page, s, "selftest");
+    const b = await mp(page, s, "selftest");
     check("T15-to-tien-an", b.pageHeightRatio >= b0.pageHeightRatio - 0.05 && b.scroll.scrollers.some((x) => x.rel === "ancestor"), { before: b0.pageHeightRatio, after: b.pageHeightRatio, docH: b.scroll.docH, extra: b.scroll.extra });
     await fresh();
   }
   if (want("T15b-anh-em-chi-bao")) {
     // panel anh em tự cuộn (explorer/inspector) ⇒ BÁO siblingScrollExtra, KHÔNG cộng vào pageHeightRatio
     await inPage(`const box = document.createElement('div'); box.style.cssText = 'height:100px;overflow:hidden'; box.appendChild(mk('', 2000, 'nội dung ẩn')); A.parentElement.insertBefore(box, A);`);
-    const b = await measurePage(page, s, "selftest");
+    const b = await mp(page, s, "selftest");
     check("T15b-anh-em-chi-bao", b.scroll.siblingScrollExtra >= 1900 && b.pageHeightRatio <= b0.pageHeightRatio + 0.2, { before: b0.pageHeightRatio, after: b.pageHeightRatio, siblingScrollExtra: b.scroll.siblingScrollExtra });
     await fresh();
   }
@@ -1223,64 +1277,64 @@ async function selfTest(page, base, s, only = null) {
   if (want("T17-wrapper-workspace")) {
     // bọc CardHeader + notice + bảng trong một wrapper khai [data-layout-workspace] ⇒ banner VẪN bị đếm
     await inPage(`T.setAttribute('data-layout-main', 'x'); const w = document.createElement('div'); w.setAttribute('data-layout-workspace', ''); while (T.firstChild) w.appendChild(T.firstChild); const hd = document.createElement('h3'); hd.textContent = 'Danh sách ECN'; w.insertBefore(mk('${NOTICE}', 80, 'Chế độ xem trước — banner trong wrapper'), w.firstChild); w.insertBefore(hd, w.firstChild); T.appendChild(w);`);
-    const b = await measurePage(page, s, "selftest", { ref: ref0, calibrations: {} });
+    const b = await mp(page, s, "selftest", { ref: ref0, calibrations: {} });
     check("T17-wrapper-workspace", insideErr(b), { errors: b.errors.filter((e) => /BANNER/.test(e)).slice(0, 1), workspace: b.insideMain[0]?.workspace?.tag });
     await fresh();
   }
   if (want("T17b-main-la-workspace")) {
     await inPage(`T.setAttribute('data-layout-main', 'x'); T.setAttribute('data-layout-workspace', '');`);
-    const b = await measurePage(page, s, "selftest", { ref: ref0, calibrations: {} });
+    const b = await mp(page, s, "selftest", { ref: ref0, calibrations: {} });
     check("T17b-main-la-workspace", b.errors.some((e) => /W === MAIN bị từ chối/.test(e)), { errors: b.errors.slice(0, 2) });
     await fresh();
   }
   if (want("T18-mat-h1")) {
     await page.evaluate(() => { const h = document.querySelector('main h1'); if (h) h.remove(); });
-    const b = await measurePage(page, s, "selftest", { ref: ref0 });
+    const b = await mp(page, s, "selftest", { ref: ref0 });
     check("T18-mat-h1", b.errors.some((e) => /MẤT h1/.test(e)), { errors: b.errors.slice(0, 2), refHadH1: ref0?.hadH1 });
     await fresh();
   }
   if (want("T19-banner-tren-h1")) {
     await inPage(`const top = H || h1.parentElement; top.parentElement.insertBefore(mk('${NOTICE}', 44, 'Đây là tính năng xem trước'), top);`);
-    const b = await measurePage(page, s, "selftest");
+    const b = await mp(page, s, "selftest");
     check("T19-banner-tren-h1", b.bannersBeforeMain.count === b0.bannersBeforeMain.count + 1 && b.bannersBeforeMain.px >= b0.bannersBeforeMain.px + 44, { before: [b0.bannersBeforeMain.count, b0.bannersBeforeMain.px], after: [b.bannersBeforeMain.count, b.bannersBeforeMain.px] });
     await fresh();
   }
   if (want("T20-fixed-trong-main")) {
     await inPage(`const r = T.getBoundingClientRect(); const d = document.createElement('div'); d.setAttribute('data-testid', 'uim-fixed-in-main'); d.style.cssText = 'position:fixed;z-index:50;left:' + (r.left + 60) + 'px;top:' + Math.min(r.top + 40, innerHeight - 220) + 'px;width:200px;height:200px;background:#0a0'; T.appendChild(d);`);
-    const b = await measurePage(page, s, "selftest");
+    const b = await mp(page, s, "selftest");
     check("T20-fixed-trong-main", b.coverMain.px >= b0.coverMain.px + 0.9 * 40000 && b.coverMain.items.some((i) => i.testid === "uim-fixed-in-main"), { before: b0.coverMain.px, after: b.coverMain.px });
     await fresh();
   }
   if (want("T21-nhan-chu-thuan")) {
     // nhãn chữ thuần 20 px (không nền/viền/icon, không từ khoá notice) ⇒ MIỄN; cùng cỡ nhưng có nền màu ⇒ banner
     await inPage(`T.setAttribute('data-layout-main', 'x'); const l = document.createElement('div'); l.style.cssText = 'height:20px'; l.textContent = 'Danh sách thay đổi'; T.insertBefore(l, T.firstChild);`);
-    const plain = await measurePage(page, s, "selftest", { ref: ref0, calibrations: {} });
+    const plain = await mp(page, s, "selftest", { ref: ref0, calibrations: {} });
     await fresh();
     await inPage(`T.setAttribute('data-layout-main', 'x'); const l = document.createElement('div'); l.style.cssText = 'height:20px;background:#fde68a'; l.textContent = 'Danh sách thay đổi'; T.insertBefore(l, T.firstChild);`);
-    const colored = await measurePage(page, s, "selftest", { ref: ref0, calibrations: {} });
+    const colored = await mp(page, s, "selftest", { ref: ref0, calibrations: {} });
     await fresh();
     await inPage(`T.setAttribute('data-layout-main', 'x'); const row = document.createElement('div'); row.style.cssText = 'display:flex;gap:8px;height:20px'; row.innerHTML = '<svg aria-hidden="true" width="16" height="16"></svg><h2 style="margin:0;font-size:14px">Cảnh báo chờ duyệt</h2><span>12</span>'; T.insertBefore(row, T.firstChild);`);
-    const headRow = await measurePage(page, s, "selftest", { ref: ref0, calibrations: {} });
+    const headRow = await mp(page, s, "selftest", { ref: ref0, calibrations: {} });
     check("T21-nhan-chu-thuan", !insideErr(plain) && insideErr(colored) && !insideErr(headRow), { plain: plain.insideMain[0]?.blocks?.map((x) => x.kind), colored: colored.insideMain[0]?.blocks?.map((x) => x.kind), headingRow: headRow.insideMain[0]?.blocks?.map((x) => x.kind) });
     await fresh();
   }
   if (want("T22-ai-theo-nhan-i18n")) {
     // khối KHÔNG có role/testid/data-loc AI, chỉ có tiêu đề là nhãn i18n "Trợ lý Lập trình AI" ⇒ vẫn là bề mặt AI
     await inPage(`T.style.position = 'relative'; const a = document.createElement('div'); a.style.cssText = 'position:absolute;right:0;top:60px;width:300px;height:300px;background:#123'; const h = document.createElement('h3'); h.textContent = 'Trợ lý Lập trình AI'; a.appendChild(h); T.appendChild(a);`);
-    const b = await measurePage(page, s, "selftest");
+    const b = await mp(page, s, "selftest");
     check("T22-ai-theo-nhan-i18n", b.aiInsideMain.px >= 0.9 * 90000 && b.aiInsideMain.items.some((i) => i.via === "i18n-label"), { after: b.aiInsideMain.px, items: b.aiInsideMain.items.map((i) => i.via) });
     await fresh();
   }
   if (want("T23-toolbar-56")) {
     await inPage(`T.setAttribute('data-layout-main', 'x'); const t = document.createElement('div'); t.setAttribute('data-layout-toolbar', ''); t.style.cssText = 'height:52px;display:flex;gap:8px'; const b1 = document.createElement('button'); b1.textContent = 'Lọc'; t.appendChild(b1); T.insertBefore(t, T.firstChild);`);
-    const b = await measurePage(page, s, "selftest", { ref: ref0, calibrations: {} });
+    const b = await mp(page, s, "selftest", { ref: ref0, calibrations: {} });
     check("T23-toolbar-56", !b.errors.some((e) => /data-layout-toolbar\] cao/.test(e)) && !insideErr(b), { toolbars: b.insideMain[0]?.toolbars, errors: b.errors.filter((e) => /toolbar|BANNER/.test(e)) });
     await fresh();
   }
   if (want("T24-chip-thap")) {
     // hàng 4 "chip" cao 20 px (<28) ⇒ KHÔNG phải dải KPI (là banner thường); chip ≥28 px mới là kpi-strip (T08)
     await inPage(`T.setAttribute('data-layout-main', 'x'); const row = document.createElement('div'); row.style.cssText = 'display:flex;gap:8px;background:#eee'; for (let i = 0; i < 4; i++) { const c = mk('', 20, 'mục ' + i); c.style.width = '140px'; row.appendChild(c); } T.insertBefore(row, T.firstChild);`);
-    const b = await measurePage(page, s, "selftest", { ref: ref0, calibrations: {} });
+    const b = await mp(page, s, "selftest", { ref: ref0, calibrations: {} });
     const kinds = (b.insideMain[0]?.blocks || []).map((x) => x.kind);
     check("T24-chip-thap", kinds.includes("banner") && !kinds.includes("kpi-strip"), { kinds });
     await fresh();
@@ -1288,20 +1342,58 @@ async function selfTest(page, base, s, only = null) {
   if (want("T25-emptystate-la-W")) {
     // EmptyState đứng TRƯỚC bảng ⇒ EmptyState là W (aboveWorkspacePx không tính khối 200 px của nó)
     await inPage(`const e = mk('', 200, 'Chưa có dữ liệu'); e.setAttribute('data-loc', 'client\\src\\components\\EmptyState.tsx:1'); T.insertBefore(e, T.firstChild);`);
-    const b = await measurePage(page, s, "selftest");
+    const b = await mp(page, s, "selftest");
     const ins = b.insideMain[0] || {};
     await fresh();
     await inPage(`const e = document.createElement('p'); e.style.cssText = 'padding:24px 0;text-align:center'; e.textContent = 'Chưa có bước nào. Thêm bước đầu tiên bên dưới.'; T.insertBefore(e, T.firstChild);`);
-    const b2 = await measurePage(page, s, "selftest");
+    const b2 = await mp(page, s, "selftest");
     const ins2 = b2.insideMain[0] || {};
     check("T25-emptystate-la-W", /EmptyState/.test(ins.workspace?.loc || "") && ins.aboveWorkspacePx < 50 && ins2.workspace?.kind === "empty-state" && ins2.aboveWorkspacePx < 50, { component: { workspace: ins.workspace?.loc || ins.workspace?.tag, above: ins.aboveWorkspacePx }, custom: { kind: ins2.workspace?.kind, above: ins2.aboveWorkspacePx } });
+    await fresh();
+  }
+  const kindsOf = (b) => (b.insideMain[0]?.blocks || []).map((x) => x.kind);
+  const wsOf = (b) => `${b.insideMain[0]?.workspace?.kind}:${b.insideMain[0]?.workspace?.tag}`;
+  if (want("T26-chip-trong-wrapper")) {
+    // fix4 (a): wrapper TRONG SUỐT không đánh dấu, cao 32 px, bọc 4 chip 32 px đầu MAIN (chip có màu, rồi chip không màu)
+    // ⇒ phải là kpi-strip (LỖI), không được lọt miễn trừ "nhãn chữ ≤40 px"
+    const row = (chipCss) => `T.setAttribute('data-layout-main', 'x'); const w = document.createElement('div'); w.style.cssText = 'display:flex;gap:8px;height:32px'; for (let i = 0; i < 4; i++) { const c = mk('', 32, (i * 7) + ' việc'); c.style.cssText += 'width:120px;border-radius:6px;line-height:32px;text-align:center;${chipCss}'; w.appendChild(c); } T.insertBefore(w, T.firstChild);`;
+    await inPage(row('background:#dcfce7'));
+    const colored = await mp(page, s, "selftest", { ref: ref0, calibrations: {} });
+    await fresh();
+    await inPage(row(''));
+    const plain = await mp(page, s, "selftest", { ref: ref0, calibrations: {} });
+    check("T26-chip-trong-wrapper", insideErr(colored) && kindsOf(colored).includes("kpi-strip") && insideErr(plain) && kindsOf(plain).includes("kpi-strip"), { colored: kindsOf(colored), plain: kindsOf(plain) });
+    await fresh();
+  }
+  if (want("T27-wrapper-notice-mau")) {
+    // fix4 (b): wrapper trong suốt 36 px bọc hộp notice CÓ MÀU (không icon, không từ khoá notice) ⇒ banner (LỖI)
+    await inPage(`T.setAttribute('data-layout-main', 'x'); const w = document.createElement('div'); w.style.height = '36px'; const n = mk('', 36, 'Dữ liệu đang được đồng bộ từ máy chủ, bảng có thể chưa đầy đủ.'); n.style.cssText += 'background:#fef3c7;border:1px solid #f59e0b;border-radius:6px;line-height:34px;padding:0 12px'; w.appendChild(n); T.insertBefore(w, T.firstChild);`);
+    const b = await mp(page, s, "selftest", { ref: ref0, calibrations: {} });
+    check("T27-wrapper-notice-mau", insideErr(b) && kindsOf(b).includes("banner"), { kinds: kindsOf(b), errors: b.errors.filter((e) => /BANNER/.test(e)).slice(0, 1) });
+    await fresh();
+  }
+  if (want("T28-trong-trong-notice")) {
+    // fix4 (c): "Chưa có dữ liệu" NẰM TRONG hộp notice vàng đứng trước bảng ⇒ hộp là banner (LỖI) và W là BẢNG, không phải p.
+    // (1) hộp màu bằng style oklch (như Tailwind v4 tính ra), không lớp; (2) hộp bằng lớp Tailwind `px-5 py-4` lọt regex FE1;
+    // (3) chữ trống KHÔNG màu nhưng có từ khoá notice ⇒ cũng không là W
+    const P = `const p = document.createElement('p'); p.style.cssText = 'margin:0;line-height:32px'; p.textContent = 'Chưa có dữ liệu để hiển thị.';`;
+    await inPage(`T.setAttribute('data-layout-main', 'x'); const box = mk('', 64, ''); box.style.cssText += 'background:oklch(0.769 0.188 70.08 / 0.1);border:1px solid oklch(0.769 0.188 70.08 / 0.4);border-radius:8px;padding:16px 20px'; ${P} box.appendChild(p); T.insertBefore(box, T.firstChild);`);
+    const inline = await mp(page, s, "selftest", { ref: ref0, calibrations: {} });
+    await fresh();
+    await inPage(`T.setAttribute('data-layout-main', 'x'); const box = mk('${NOTICE}', 64, ''); ${P} box.appendChild(p); T.insertBefore(box, T.firstChild);`);
+    const byClass = await mp(page, s, "selftest", { ref: ref0, calibrations: {} });
+    await fresh();
+    await inPage(`T.setAttribute('data-layout-main', 'x'); const p = document.createElement('p'); p.style.cssText = 'margin:0;height:48px;line-height:48px;text-align:center'; p.textContent = 'Chưa có dữ liệu — Chế độ xem trước.'; T.insertBefore(p, T.firstChild);`);
+    const keyword = await mp(page, s, "selftest", { ref: ref0, calibrations: {} });
+    const ok = (b) => insideErr(b) && b.insideMain[0]?.workspace?.tag === "table" && kindsOf(b).includes("banner");
+    check("T28-trong-trong-notice", ok(inline) && ok(byClass) && ok(keyword), { inline: { ws: wsOf(inline), kinds: kindsOf(inline) }, byClass: { ws: wsOf(byClass), kinds: kindsOf(byClass) }, keyword: { ws: wsOf(keyword), kinds: kindsOf(keyword) } });
     await fresh();
   }
   if (want("T16-bam-loi")) {
     const errs = dataErrors({ bang_that: "12:abcdef", bang_hong: "ERR:relation does not exist" });
     check("T16-bam-loi", errs.length === 1, { errors: errs });
   }
-  return { screen: s.id, vw: (await page.viewportSize()).width, off: [...OFF], pass: checks.every((c) => c.pass), checks };
+  return { screen: s.id, vw: (await page.viewportSize()).width, off: [...OFF], pass: checks.every((c) => c.pass), retries, checks };
 }
 
 async function measureAll({ base, username, password, screens, sizes, shots, shotDir, listButtons, serverPid, serverPort, discover, doSelfTest, refs = {}, calibrations = {}, mutation = false }) {
