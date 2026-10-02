@@ -13795,7 +13795,7 @@
     "toastDisabled": "Đã tắt quy tắc",
     "toastResolved": "Đã giải quyết sự kiện",
     "newEventToast": "Interlock vừa kích hoạt",
-    "newEventDesc": "Có sự kiện interlock mới vừa phát sinh — mở tab Sự kiện để xem xét.",
+    "newEventDesc": "Có sự kiện interlock mới vừa phát sinh — xem panel Sự kiện bên dưới.",
     "delete": "Xóa",
     "deleteConfirmTitle": "Xóa quy tắc interlock?",
     "disableConfirmTitle": "Tắt rule \"{{name}}\"?",
@@ -13805,7 +13805,32 @@
     "deleteImpact": "Định nghĩa rule và lớp bảo vệ tự động tương ứng biến mất khỏi hệ thống.",
     "resolveConfirmTitle": "Đánh dấu đã xử lý sự kiện này?",
     "resolveConfirmDescription": "Sự kiện sẽ chuyển sang trạng thái Đã xử lý và không còn hiện ở tab \"Chưa xử lý\".",
-    "resolveImpact": "Lý do sẽ được lưu làm ghi chú của sự kiện và ghi vào sổ audit."
+    "resolveImpact": "Lý do sẽ được lưu làm ghi chú của sự kiện và ghi vào sổ audit.",
+    "view": {
+      "list": "Danh sách",
+      "matrix": "Ma trận Cause×Effect"
+    },
+    "filterPendingChip": "Chỉ quy tắc chưa duyệt",
+    "ruleCount": "{{count}} quy tắc",
+    "ruleNotFound": "Không tìm thấy quy tắc #{{id}}.",
+    "eventsForRule": "Quy tắc: {{name}}",
+    "clearRuleFilter": "Bỏ lọc theo quy tắc",
+    "selectRuleHint": "Chọn một quy tắc để chỉ xem sự kiện của nó",
+    "posture": {
+      "engine": "Engine",
+      "ot": "OT ghi",
+      "coverage": "Độ phủ",
+      "ariaLabel": "Tư thế an toàn interlock",
+      "source": "oversight.posture — cờ của chính các cổng trên server",
+      "coverageSource": "oversight.posture — số rule đang bật, đã duyệt, chặn được và có đích",
+      "writesOnEngineOffChip": "Ghi thật khi engine TẮT"
+    },
+    "matrix": {
+      "corner": "Nguyên nhân  Hệ quả",
+      "targetMachine": "máy #{{id}}",
+      "targetAdapter": "adapter #{{id}}",
+      "noTarget": "không đích"
+    }
   },
   "quickIssue": {
     "button": "Báo sự cố",

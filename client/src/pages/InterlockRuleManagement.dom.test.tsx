@@ -107,6 +107,9 @@ beforeEach(() => {
   invalidated.length = 0;
   queryData["interlock.list"] = [PENDING, APPROVED, ENABLED_ONLY];
   queryData["interlock.events"] = [];
+  // Doc 81 Đợt 2 Task 5 — sheet sửa giờ là flyout có URL (`?flyout=rule&flyoutId=`, URL là nguồn sự thật):
+  // trả URL về trang trống trước mỗi ca để sheet của ca trước không mở lại như một deep-link.
+  window.history.replaceState(null, "", "/interlock-rules");
 });
 afterEach(() => cleanup());
 
@@ -159,14 +162,15 @@ describe("InterlockRuleManagement — Task 11: cảnh báo TRƯỚC khi lưu rul
     expect(screen.queryByTestId("edit-approved-warning")).not.toBeInTheDocument();
   });
 
-  it("Tạo rule MỚI (không phải sửa) ⇒ KHÔNG hiện cảnh báo dù dialog Sửa vừa mới đóng ở trạng thái cảnh báo", () => {
+  it("Tạo rule MỚI (không phải sửa) ⇒ KHÔNG hiện cảnh báo dù dialog Sửa vừa mới đóng ở trạng thái cảnh báo", async () => {
     render(<InterlockRuleManagement />);
     // Đóng dialog Sửa trước (Escape — Radix Dialog gọi onOpenChange(false), khớp cách người
     // dùng thật đóng dialog): nút "Thêm quy tắc" ở NGOÀI dialog bị `aria-hidden` khi modal mở.
     clickEdit("rule-42");
     expect(screen.getByTestId("edit-approved-warning")).toBeInTheDocument();
     fireEvent.keyDown(document, { key: "Escape", code: "Escape" });
-    fireEvent.click(screen.getByRole("button", { name: /interlockRules\.newRule|Thêm quy tắc|New rule/i }));
+    // Doc 81 Đợt 2 Task 5 — sheet đóng bằng lùi lịch sử (popstate bất đồng bộ) ⇒ chờ nút hết `aria-hidden`.
+    fireEvent.click(await screen.findByRole("button", { name: /interlockRules\.newRule|Thêm quy tắc|New rule/i }));
     expect(screen.queryByTestId("edit-approved-warning")).not.toBeInTheDocument();
   });
 });

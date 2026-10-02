@@ -13815,7 +13815,7 @@
     "toastDisabled": "Rule disabled",
     "toastResolved": "Event resolved",
     "newEventToast": "Interlock triggered",
-    "newEventDesc": "A new interlock event fired — open the Events tab to review.",
+    "newEventDesc": "A new interlock event fired — review it in the Events panel below.",
     "delete": "Delete",
     "deleteConfirmTitle": "Delete interlock rule?",
     "disableConfirmTitle": "Disable rule \"{{name}}\"?",
@@ -13825,7 +13825,32 @@
     "deleteImpact": "The rule definition and its automatic protection layer disappear from the system.",
     "resolveConfirmTitle": "Mark this event as resolved?",
     "resolveConfirmDescription": "The event moves to Resolved and no longer shows under the \"Open\" tab.",
-    "resolveImpact": "The reason is saved as the event's note and written to the audit log."
+    "resolveImpact": "The reason is saved as the event's note and written to the audit log.",
+    "view": {
+      "list": "List",
+      "matrix": "Cause×Effect matrix"
+    },
+    "filterPendingChip": "Unapproved rules only",
+    "ruleCount": "{{count}} rules",
+    "ruleNotFound": "Rule #{{id}} not found.",
+    "eventsForRule": "Rule: {{name}}",
+    "clearRuleFilter": "Clear rule filter",
+    "selectRuleHint": "Select a rule to see only its events",
+    "posture": {
+      "engine": "Engine",
+      "ot": "OT writes",
+      "coverage": "Coverage",
+      "ariaLabel": "Interlock safety posture",
+      "source": "oversight.posture — the server gates' own flags",
+      "coverageSource": "oversight.posture — rules enabled, approved, blocking and targeted",
+      "writesOnEngineOffChip": "Real writes with engine OFF"
+    },
+    "matrix": {
+      "corner": "Cause  Effect",
+      "targetMachine": "machine #{{id}}",
+      "targetAdapter": "adapter #{{id}}",
+      "noTarget": "no target"
+    }
   },
   "quickIssue": {
     "button": "Report issue",

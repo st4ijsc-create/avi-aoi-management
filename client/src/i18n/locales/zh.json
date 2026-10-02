@@ -13598,7 +13598,7 @@
     "filterOpen": "开放",
     "filterResolved": "已解决",
     "newEventToast": "联锁已触发",
-    "newEventDesc": "触发了新的联锁事件 — 打开事件标签页查看。",
+    "newEventDesc": "触发了新的联锁事件 — 请在下方事件面板查看。",
     "delete": "删除",
     "deleteConfirmTitle": "删除联锁规则？",
     "disableConfirmTitle": "停用规则 \"{{name}}\"？",
@@ -13608,7 +13608,32 @@
     "deleteImpact": "规则定义及其自动保护层将从系统中消失。",
     "resolveConfirmTitle": "将此事件标记为已处理？",
     "resolveConfirmDescription": "事件将变为已处理状态，不再显示在“未处理”标签页中。",
-    "resolveImpact": "理由将保存为该事件的备注，并写入审计日志。"
+    "resolveImpact": "理由将保存为该事件的备注，并写入审计日志。",
+    "view": {
+      "list": "列表",
+      "matrix": "因果矩阵"
+    },
+    "filterPendingChip": "仅未审批规则",
+    "ruleCount": "{{count}} 条规则",
+    "ruleNotFound": "未找到规则 #{{id}}。",
+    "eventsForRule": "规则：{{name}}",
+    "clearRuleFilter": "清除规则筛选",
+    "selectRuleHint": "选择一条规则以仅查看其事件",
+    "posture": {
+      "engine": "引擎",
+      "ot": "OT写入",
+      "coverage": "覆盖",
+      "ariaLabel": "联锁安全姿态",
+      "source": "oversight.posture — 服务器各闸门自身的开关",
+      "coverageSource": "oversight.posture — 已启用、已审批、可阻断且有目标的规则数",
+      "writesOnEngineOffChip": "引擎关闭时真实写入"
+    },
+    "matrix": {
+      "corner": "原因  结果",
+      "targetMachine": "设备 #{{id}}",
+      "targetAdapter": "适配器 #{{id}}",
+      "noTarget": "无目标"
+    }
   },
   "quickIssue": {
     "button": "报告异常",
