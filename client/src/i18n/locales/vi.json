@@ -21450,7 +21450,10 @@
       "permExpiry": "Quyền sắp hết hạn",
       "licenseWarning": "License sắp hết hạn",
       "licenseReadonly": "License: chỉ đọc",
-      "licenseLocked": "License bị khoá"
+      "licenseLocked": "License bị khoá",
+      "licenseMissing": "Chưa có license",
+      "licenseDetails": "Chi tiết license",
+      "licenseServerDown": "License: mất kết nối"
     },
     "nav": {
       "simpleFallback": "Menu đơn giản không có mục ở đây — đang hiện menu đầy đủ."

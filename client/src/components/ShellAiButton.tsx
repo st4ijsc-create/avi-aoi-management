@@ -16,7 +16,7 @@ import { cn } from "@/lib/utils";
 import { useProgrammingCopilot } from "@/contexts/ProgrammingCopilotContext";
 import { useLicenseModules } from "@/hooks/useLicenseModules";
 import { anBongBongTrenTuyen } from "@/lib/bongBongTheoTuyen";
-import { registerAiHeaderEntry, toggleAiChat, useAiEntry } from "@/lib/aiEntryStore";
+import { registerAiHeaderEntry, setAiChatOpen, toggleAiChat, useAiEntry } from "@/lib/aiEntryStore";
 
 export function ShellAiButton({ className }: { className?: string }) {
   const { t } = useTranslation();
@@ -33,6 +33,15 @@ export function ShellAiButton({ className }: { className?: string }) {
     if (!visible) return;
     return registerAiHeaderEntry();
   }, [visible]);
+
+  // R-2-j — sheet chat và dock Copilot KHÔNG BAO GIỜ chồng nhau. Ở màn lập trình (có binding) dock là
+  // lối vào AI: chat đang mở (vd mở ở /recipes rồi điều hướng sang IDE) ⇒ đóng chat và TRAO cho dock.
+  useEffect(() => {
+    if (copilotMode && chatOpen) {
+      setAiChatOpen(false);
+      if (!dockOpen) setDockOpen(true);
+    }
+  }, [copilotMode, chatOpen, dockOpen, setDockOpen]);
 
   if (!visible) return null;
 

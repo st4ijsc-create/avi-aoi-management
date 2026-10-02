@@ -110,6 +110,8 @@ export interface NoticeItem {
   kind: NoticeKind;
   label?: React.ReactNode;
   content: React.ReactNode;
+  /** `data-testid` của chip (và của mục trong popover "+N" khi bị gộp) — Task 2 shell. */
+  testId?: string;
 }
 
 export interface NoticeStackProps {
@@ -140,7 +142,7 @@ export function NoticeStack({ items, maxVisible = 3, className }: NoticeStackPro
       className={cn("flex min-w-0 flex-nowrap items-center gap-1 overflow-hidden", className)}
     >
       {visible.map((n) => (
-        <NoticeChip key={n.id} kind={n.kind} label={n.label}>
+        <NoticeChip key={n.id} kind={n.kind} label={n.label} data-testid={n.testId}>
           {n.content}
         </NoticeChip>
       ))}
@@ -160,7 +162,7 @@ export function NoticeStack({ items, maxVisible = 3, className }: NoticeStackPro
             {hidden.map((n) => {
               const [labelKey, labelFallback] = KIND_LABEL_KEY[n.kind];
               return (
-                <section key={n.id} data-notice-kind={n.kind} className="space-y-1">
+                <section key={n.id} data-notice-kind={n.kind} data-testid={n.testId} className="space-y-1">
                   <h3 className="text-xs font-semibold text-muted-foreground">{n.label ?? t(labelKey, labelFallback)}</h3>
                   <div>{n.content}</div>
                 </section>

@@ -58,11 +58,12 @@ import { useNavMode } from "@/hooks/useNavMode";
 import { useAppLauncherMode } from "@/hooks/useAppLauncherMode";
 import { useActiveApp } from "@/hooks/useActiveApp";
 import { scopeGroupsToApp, listApps, type AppDescriptor } from "@/lib/apps";
-import { BetaNoticeChip } from "./BetaBadge";
+import { betaNoticeItem } from "./BetaBadge";
 import { usePermissions } from "@/_core/hooks/usePermissions";
 import { useLicenseModules } from "@/hooks/useLicenseModules";
-import { LicenseEnforcementBanner } from "./LicenseEnforcementBanner";
-import { PermissionExpiryBanner } from "./PermissionExpiryBanner";
+import { LicenseCriticalBar, LicenseCriticalChip, licenseWarningNoticeItem, useLicenseNotice } from "./LicenseEnforcementBanner";
+import { permissionExpiryNoticeItem, usePermissionExpiryNotice } from "./PermissionExpiryBanner";
+import { NoticeStack } from "@/components/patterns/NoticeChip";
 import { cn } from "@/lib/utils";
 import { useTranslation } from "react-i18next";
 import { useSpcAlertToast } from "@/hooks/useSpcAlertToast";
@@ -73,6 +74,36 @@ import { readSidebarOpen, writeSidebarOpen } from "@/lib/sidebarPref";
 import { resolveSidebarGroups } from "@/lib/sidebarGroups";
 import { ShellAiButton } from "./ShellAiButton";
 import type { Breadcrumb as Crumb } from "@/lib/breadcrumbs";
+
+/** doc 81 Đợt 2 Task 2 (M2) — viewport < 1920 px (đo: top bar 1102 px @1366 rail mở, 1552 px @1600 rail
+ *  thu gọn): chip thông báo thường gộp vào "+N" để breadcrumb giữ ≥160 px. matchMedia (theo dõi đổi). */
+const HEADER_NARROW_QUERY = "(max-width: 1919px)";
+function useHeaderNarrow(): boolean {
+  const [narrow, setNarrow] = useState<boolean>(() => {
+    try { return window.matchMedia(HEADER_NARROW_QUERY).matches; } catch { return false; }
+  });
+  useEffect(() => {
+    let mql: MediaQueryList;
+    try { mql = window.matchMedia(HEADER_NARROW_QUERY); } catch { return; }
+    const on = () => setNarrow(mql.matches);
+    mql.addEventListener("change", on);
+    on();
+    return () => mql.removeEventListener("change", on);
+  }, []);
+  return narrow;
+}
+
+/** Viewport hẹp hơn `px` (theo `innerWidth`, cập nhật khi resize) — cùng cách đọc với `useIsTablet`. */
+function useViewportBelow(px: number): boolean {
+  const [below, setBelow] = useState<boolean>(() => typeof window !== "undefined" && window.innerWidth < px);
+  useEffect(() => {
+    const on = () => setBelow(window.innerWidth < px);
+    window.addEventListener("resize", on);
+    on();
+    return () => window.removeEventListener("resize", on);
+  }, [px]);
+  return below;
+}
 
 type DashboardLayoutProps = {
   children: ReactNode;
@@ -245,7 +276,7 @@ function ShellBreadcrumb({ crumbs, inHeader }: { crumbs: Crumb[]; inHeader: bool
       <BreadcrumbList className={cn(inHeader && "flex-nowrap gap-1 sm:gap-1.5")}>
         {crumbs.map((crumb, i) => {
           const isLast = i === crumbs.length - 1;
-          // Trong top bar ở < 2xl: mục giữa (section, chữ thuần — không phải link) ẩn để nhường chỗ
+          // Trong top bar hẹp (< 100rem bề rộng TOP BAR, container query `topbar`): mục giữa (section, chữ thuần — không phải link) ẩn để nhường chỗ
           // cho mục cha có link (module) và trang hiện tại; trang hiện tại co ít nhất.
           const middleText = inHeader && !isLast && i > 0 && crumb.href == null;
           return (
@@ -254,7 +285,7 @@ function ShellBreadcrumb({ crumbs, inHeader }: { crumbs: Crumb[]; inHeader: bool
                 className={cn(
                   inHeader && "min-w-0",
                   inHeader && (isLast ? "shrink-[0.3]" : "max-w-[9rem] shrink"),
-                  middleText && "hidden 2xl:inline-flex",
+                  middleText && "hidden @min-[100rem]/topbar:inline-flex",
                 )}
               >
                 {isLast || crumb.href == null ? (
@@ -265,7 +296,7 @@ function ShellBreadcrumb({ crumbs, inHeader }: { crumbs: Crumb[]; inHeader: bool
                   </BreadcrumbLink>
                 )}
               </BreadcrumbItem>
-              {!isLast && <BreadcrumbSeparator className={cn(middleText && "hidden 2xl:list-item")} />}
+              {!isLast && <BreadcrumbSeparator className={cn(middleText && "hidden @min-[100rem]/topbar:list-item")} />}
             </Fragment>
           );
         })}
@@ -297,6 +328,16 @@ function DashboardLayoutContent({
 
   // Sprint 2c — global SPC violation toasts (works on every authenticated page)
   useSpcAlertToast();
+
+  // doc 81 Đợt 2 Task 2 — thông báo shell: điều kiện cũ ở hook của từng banner (một đường).
+  // R-2-i: license nghiêm trọng KHÔNG vào NoticeStack (không bao giờ gộp/cắt) — chip đỏ đặc / thanh.
+  const permNotice = usePermissionExpiryNotice();
+  const licNotice = useLicenseNotice();
+  const headerNarrow = useHeaderNarrow();
+  // Dưới xl (1280 px: điện thoại, tablet, và 1024–1279 với rail mở ⇒ top bar chỉ 760 px — đo fix 1 ở
+  // 375/414/800/1024) top bar không đủ chỗ cho chip đỏ đặc ⇒ mọi trạng thái nghiêm trọng thành THANH.
+  const compactLicense = useViewportBelow(1280);
+  const licCritical = !compactLicense && (licNotice.mode === "readonly" || licNotice.mode === "serverDown");
 
   // Command palette (⌘/Ctrl+K) — the single omni-search across all apps.
   // (doc 39 menu-audit M2: the hidden ⌘\ Mega Menu was removed — it was undiscoverable,
@@ -344,6 +385,8 @@ function DashboardLayoutContent({
     "/command-center",
   ]);
   const showBreadcrumbs = breadcrumbs.length > 1 && !BREADCRUMB_HIDDEN_ROUTES.has(activePath);
+  // doc 81 Đợt 2 Task 2 — breadcrumb nằm trong top bar từ 768 px; điện thoại: một hàng dưới top bar.
+  const crumbInHeader = showBreadcrumbs && !isMobile;
 
   // Navigate helper — on mobile, also close the Sheet drawer after picking a page.
   const handleNavigate = (href: string) => {
@@ -487,6 +530,12 @@ function DashboardLayoutContent({
               // for non-admins / single-site.
               <div className="px-3 pb-2">
                 <SiteSwitcher variant="drawer" />
+                {/* doc 81 Đợt 2 Task 2 (fix 1, đo 375/414 px) — top bar điện thoại không đủ chỗ: giao
+                    diện sáng/tối + ngôn ngữ dời vào ngăn menu (trước đây bị đẩy ra ngoài mép phải). */}
+                <div className="mt-2 flex items-center gap-2" data-shell-mobile-prefs="">
+                  <ThemeToggle />
+                  <LanguageSwitcher />
+                </div>
               </div>
             )}
             {/* doc 60 B — Favorites + Recent pinned above the nav (1-click to frequent pages). */}
@@ -637,7 +686,7 @@ function DashboardLayoutContent({
             mode hides the whole bar via [data-app-chrome="header"]. */}
         {/* doc 67 W4 [P1] — <header> landmark thay div (vùng chrome đầu trang); giữ nguyên
             data-app-chrome="header" nên CSS kiosk-mode không đổi. min-w-0 để hàng co thật. */}
-        <header data-app-chrome="header" className="flex border-b border-border h-14 min-w-0 items-center gap-2 sm:gap-3 bg-card/95 px-2 sm:px-3 backdrop-blur supports-backdrop-filter:backdrop-blur sticky top-0 z-40">
+        <header data-app-chrome="header" className="@container/topbar flex border-b border-border h-14 min-w-0 items-center gap-1 sm:gap-2 lg:gap-3 bg-card/95 px-2 sm:px-3 backdrop-blur supports-backdrop-filter:backdrop-blur sticky top-0 z-40">
           {/* Left — sidebar toggle + site/scope switcher. The toggle opens the mobile
               sheet / re-opens the collapsed desktop rail. */}
           <SidebarTrigger className="h-10 w-10 rounded-lg shrink-0" />
@@ -645,7 +694,8 @@ function DashboardLayoutContent({
               (app list + that app's pages) so a cross-app jump is 2 clicks with no landing
               detour. Mobile falls back to the full-screen overlay. "All apps ⊞" inside the
               dropdown still opens the overlay (first-run / full catalog). */}
-          {launcherOn && (
+          {/* Điện thoại: BottomNav "Menu" đã mở App Launcher ⇒ không lặp nút lưới trong top bar. */}
+          {launcherOn && !isMobile && (
             // doc 40 fix — the waffle opens the full-screen app grid (app-SWITCHER).
             // The reverted two-column dropdown was replacing the LEFT sidebar's role;
             // the left menu is the primary within-app nav (see CascadingNav inline expand).
@@ -662,31 +712,46 @@ function DashboardLayoutContent({
           {/* doc 81 Đợt 2 Task 2 — breadcrumb DUY NHẤT + chip thông báo shell nằm TRONG top bar
               (trước đây: hàng breadcrumb riêng + dải banner quyền/license/Beta đẩy tiêu đề trang
               xuống 205–259 px). Cụm này co giãn (flex-1); breadcrumb tự cắt chữ. */}
-          <div className="flex min-w-[8rem] flex-1 items-center gap-2" data-shell-context="">
-            {showBreadcrumbs && !isMobile && <ShellBreadcrumb crumbs={breadcrumbs} inHeader />}
-            <div className="flex shrink-0 items-center gap-1" data-shell-notices="">
-              <PermissionExpiryBanner variant="chip" />
-              <LicenseEnforcementBanner variant="chip" />
-              {/* doc 22 P4 — "Beta / needs setup" trên route có cờ beta, nay là chip + popover. */}
-              {isBetaRoute(currentPath || location) && <BetaNoticeChip />}
-            </div>
+          <div
+            data-shell-context=""
+            data-shell-crumb={crumbInHeader ? "" : undefined}
+            className={cn("flex min-w-0 flex-1 items-center", crumbInHeader && !licCritical && "xl:min-w-40")}
+          >
+            {/* M2: breadcrumb giữ ≥160 px từ lg (chip thường gộp "+N" trước); chỉ khi có chip license
+                nghiêm trọng (R-2-i, không bao giờ cắt) thì breadcrumb nhường trước. */}
+            {crumbInHeader && <ShellBreadcrumb crumbs={breadcrumbs} inHeader />}
+          </div>
+          {/* Chip thông báo + chip license nghiêm trọng + chip phạm vi: nhóm KHÔNG co (không bị đè
+              hay cắt); breadcrumb bên trái là phần co trước. */}
+          <div className="flex shrink-0 items-center gap-1" data-shell-notices="">
+            <NoticeStack
+              className="shrink-0"
+              maxVisible={headerNarrow ? 0 : 3}
+              items={[
+                permissionExpiryNoticeItem(permNotice, t),
+                licenseWarningNoticeItem(licNotice, t),
+                // doc 22 P4 — "Beta / needs setup" trên route có cờ beta, nay là chip + popover.
+                isBetaRoute(currentPath || location) && betaNoticeItem(t),
+              ]}
+            />
+            {!compactLicense && <LicenseCriticalChip notice={licNotice} />}
             {/* doc 64 IA-10 S0.4/S3 — bất biến trung thực: chip phạm vi khi có breadcrumb, hoặc khi
                 route ẩn breadcrumb mà trục có selection (điều kiện cũ của hai hàng gộp lại). */}
             {isIsa101V2() && (showBreadcrumbs || hasAssetAxis) && <ScopeStatusChip className="shrink-0" />}
           </div>
 
           {/* Global search that opens the command palette (⌘K) — the breadcrumb now owns the
-              flexible middle of the bar, so search is an icon below 2xl (1536 px) and a 14rem
-              field above (đo Task 1: ở 1366/1600 top bar không đủ chỗ cho cả hai). */}
+              flexible middle of the bar, so search is an icon until the TOP BAR itself is ≥100rem
+              (container query `topbar`; đo fix 1: ở 1600 px viewport top bar chỉ 1552 px). */}
           <button
             type="button"
             onClick={() => setPaletteOpen(true)}
             aria-label={t("nav.searchPlaceholder")}
-            className="flex h-10 w-10 shrink-0 items-center gap-2 overflow-hidden rounded-lg border border-border bg-muted/40 px-3 text-muted-foreground transition-colors hover:bg-muted focus:outline-none focus-visible:ring-2 focus-visible:ring-ring 2xl:w-56"
+            className="flex h-10 w-10 shrink-0 items-center gap-2 overflow-hidden rounded-lg border border-border bg-muted/40 px-3 text-muted-foreground transition-colors hover:bg-muted focus:outline-none focus-visible:ring-2 focus-visible:ring-ring @min-[100rem]/topbar:w-56"
           >
             <Search className="h-4 w-4 shrink-0" />
-            <span className="hidden min-w-0 flex-1 truncate text-left text-sm 2xl:inline">{t("nav.searchPlaceholder")}</span>
-            <kbd className="hidden 2xl:inline-flex items-center gap-0.5 rounded border border-border bg-background px-1.5 font-mono text-[10px] text-muted-foreground">
+            <span className="hidden min-w-0 flex-1 truncate text-left text-sm @min-[100rem]/topbar:inline">{t("nav.searchPlaceholder")}</span>
+            <kbd className="hidden @min-[100rem]/topbar:inline-flex items-center gap-0.5 rounded border border-border bg-background px-1.5 font-mono text-[10px] text-muted-foreground">
               ⌘K
             </kbd>
           </button>
@@ -705,14 +770,19 @@ function DashboardLayoutContent({
             {isIsa101V2() && <ShellAlertChip />}
             {/* doc 63 (AUD-01/G8) — flag-gated shell FreshnessStrip: socket-truth connection
                 state, never claims live when the socket is down. Byte-identical when off. */}
-            {isIsa101V2() && <FreshnessStrip className="hidden shrink-0 sm:inline-flex" />}
+            {/* doc 81 Đợt 2 Task 2 (fix 1, đo 800 px): top bar 800/1024 px tràn 2–15 px ⇒ dải tươi mới từ xl. */}
+            {isIsa101V2() && <FreshnessStrip className="hidden shrink-0 xl:inline-flex" />}
             <SiteHealthDot />
             {/* doc 81 Đợt 2 Task 2 — MỘT lối vào AI: chat (sheet phải) hoặc dock Copilot ở màn lập trình. */}
             <ShellAiButton />
-            <ThemeToggle />
-            <LanguageSwitcher />
+            {!isMobile && <ThemeToggle />}
+            {!isMobile && <LanguageSwitcher />}
           </div>
         </header>
+        {/* R-2-i — license bị khoá / chưa có license: THANH đỏ ≤32 px ngay dưới top bar (ngoại lệ
+            có chủ đích của "0 banner"; chỉ hiện khi license ở trạng thái nghiêm trọng). */}
+        {/* < lg: chỉ-đọc / server offline cũng thành thanh (chip đỏ đặc không vừa top bar 375–1023 px). */}
+        <LicenseCriticalBar notice={licNotice} includeChipStates={compactLicense} />
         {/* Mobile (<768): top bar quá hẹp ⇒ breadcrumb (vẫn MỘT cái) là một hàng mảnh dưới top bar. */}
         {showBreadcrumbs && isMobile && (
           <div className="flex min-w-0 items-center border-b border-border bg-card/60 px-3 py-1">

@@ -21478,7 +21478,10 @@
       "permExpiry": "权限即将到期",
       "licenseWarning": "许可证即将到期",
       "licenseReadonly": "许可证：只读",
-      "licenseLocked": "许可证已锁定"
+      "licenseLocked": "许可证已锁定",
+      "licenseMissing": "无许可证",
+      "licenseDetails": "许可证详情",
+      "licenseServerDown": "许可证：服务器离线"
     },
     "nav": {
       "simpleFallback": "简洁菜单在此没有条目 — 正在显示完整菜单。"

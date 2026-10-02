@@ -89,7 +89,7 @@ import { PageHeader } from "@/components/patterns/PageHeader";
 import { PageContainer } from "@/components/patterns/PageContainer";
 import { ProgrammingCopilotProvider, useCopilotBinding, useProgrammingCopilot } from "@/contexts/ProgrammingCopilotContext";
 import { useShellPageVariant } from "@/lib/shellPage";
-import { getAiEntryState, resetAiEntryForTest } from "@/lib/aiEntryStore";
+import { getAiEntryState, resetAiEntryForTest, setAiChatOpen } from "@/lib/aiEntryStore";
 import { buildBreadcrumbs } from "@/lib/breadcrumbs";
 import { getNavItemByHref, navGroups } from "@/lib/navigation";
 
@@ -106,6 +106,8 @@ beforeAll(async () => {
   presetNarrow(false);
 });
 beforeEach(() => {
+  // Bề rộng desktop mặc định của bộ test (jsdom mặc định 1024): ≥1280 ⇒ license nghiêm trọng là chip.
+  Object.defineProperty(window, "innerWidth", { configurable: true, value: 1366 });
   S.user = { id: 7, role: "engineer", name: "Eng", email: "e@x" };
   S.permissions = [];
   S.launcher = true;
@@ -296,6 +298,27 @@ describe("Rail thu gọn — flyout submenu kiểu VS Code", () => {
     expect(document.activeElement).toBe(icon);
   });
 
+  it("M1 Tab trong menu ⇒ đóng và sang icon KẾ; Shift+Tab ⇒ về icon đã mở; nhãn nhóm aria-hidden", () => {
+    localStorage.setItem("sidebar_open", "false");
+    renderShell("/recipes");
+    const icons = railIcons();
+    expect(icons.length).toBeGreaterThan(1);
+    act(() => icons[0].focus());
+    fireEvent.keyDown(icons[0], { key: "Enter" });
+    const menu = screen.getByRole("menu");
+    expect(menu.firstElementChild).toHaveAttribute("aria-hidden", "true");
+    const first = within(menu).getAllByRole("menuitem")[0];
+    fireEvent.keyDown(first, { key: "Tab" });
+    expect(screen.queryByRole("menu")).toBeNull();
+    expect(document.activeElement).toBe(icons[1]);
+    act(() => icons[0].focus());
+    fireEvent.keyDown(icons[0], { key: "Enter" });
+    const first2 = within(screen.getByRole("menu")).getAllByRole("menuitem")[0];
+    fireEvent.keyDown(first2, { key: "Tab", shiftKey: true });
+    expect(screen.queryByRole("menu")).toBeNull();
+    expect(document.activeElement).toBe(icons[0]);
+  });
+
   it("chọn một mục trong flyout ⇒ điều hướng và đóng menu", () => {
     localStorage.setItem("sidebar_open", "false");
     const loc = memoryLocation({ path: "/recipes", record: true });
@@ -435,14 +458,127 @@ describe("Banner shell ⇒ chip 1 dòng trong top bar, CÙNG điều kiện", ()
     expect(header().querySelector('[data-testid="shell-notice-license"]')).toBeNull();
   });
 
-  it("license chỉ đọc (error) ⇒ chip kiểu lỗi, KHÔNG có nút đóng", () => {
-    S.lic = { ...LIC_NORMAL, showBanner: true, isNormal: false, bannerSeverity: "error", message: "Chỉ đọc" };
+  // ── R-2-i: trạng thái license NGHIÊM TRỌNG — đỏ đặc, luôn hiện, role=status, nút admin NGAY trên đó ──
+  const crit = () => header().querySelector('[data-testid="shell-license-critical"]') as HTMLElement | null;
+  const bar = () => document.querySelector('[data-testid="shell-license-bar"]') as HTMLElement | null;
+
+  it("R-2-i chỉ đọc (error) ⇒ chip ĐỎ ĐẶC luôn hiện trong header, role=status, CTA admin không cần bấm, không nút đóng, không bị gộp", () => {
+    S.user = { id: 1, role: "admin", name: "Adm", email: "a@x" };
+    S.lic = { ...LIC_NORMAL, showBanner: true, isNormal: false, bannerSeverity: "error", message: "Chỉ đọc từ 01/10" };
+    presetNarrow(true); // header hẹp: chip thường gộp vào "+N", chip nghiêm trọng thì KHÔNG
     renderShell("/recipes");
-    const chip = header().querySelector('[data-testid="shell-notice-license"]') as HTMLElement;
-    expect(chip).toHaveAttribute("data-notice-kind", "error");
-    fireEvent.click(chip);
-    expect(screen.getByText("Chỉ đọc")).toBeInTheDocument();
+    const c = crit()!;
+    expect(c).not.toBeNull();
+    expect(c).toHaveAttribute("role", "status");
+    expect(c).toHaveAttribute("aria-live", "polite");
+    expect(c).toHaveAttribute("data-state", "readonly");
+    expect(c.className).toMatch(/(^|\s)bg-destructive(\s|$)/);
+    expect(c.className).toMatch(/(^|\s)shrink-0(\s|$)/);
+    expect(c.className).toMatch(/whitespace-nowrap/);
+    expect(c).toHaveTextContent("License: chỉ đọc");
+    expect(c).toHaveTextContent("Chỉ đọc từ 01/10"); // câu đầy đủ cho trình đọc màn hình
+    expect(within(c).getByRole("link", { name: "Gia hạn License" })).toHaveAttribute("href", "/license");
     expect(screen.queryByRole("button", { name: "Đóng cảnh báo" })).toBeNull();
+    expect(bar()).toBeNull();
+    expect(header().querySelector('[data-testid="shell-notice-license"]')).toBeNull();
+    presetNarrow(false);
+  });
+
+  it("R-2-i server offline ⇒ chip đỏ đặc, role=status; chi tiết cũ trong popover", () => {
+    S.lic = { ...LIC_NORMAL, showBanner: true, serverReachable: false, consecutiveOfflineChecks: 2 };
+    renderShell("/recipes");
+    const c = crit()!;
+    expect(c).not.toBeNull();
+    expect(c).toHaveAttribute("data-state", "serverDown");
+    expect(c).toHaveAttribute("role", "status");
+    expect(c.className).toMatch(/(^|\s)bg-destructive(\s|$)/);
+    expect(c).toHaveTextContent("License Server không khả dụng");
+    fireEvent.click(within(c).getByRole("button", { name: "Chi tiết license" }));
+    expect(screen.getByText(/Hệ thống vẫn hoạt động bình thường/)).toBeInTheDocument();
+    expect(bar()).toBeNull();
+  });
+
+  it("R-2-i bị khoá ⇒ THANH đầy bề rộng ≤32 px ngay dưới top bar, role=status, CTA Kích hoạt; khác chỉ-đọc", () => {
+    S.user = { id: 1, role: "admin", name: "Adm", email: "a@x" };
+    S.lic = { ...LIC_NORMAL, showBanner: true, isNormal: false, isLocked: true, bannerSeverity: "critical", message: "Đã khoá" };
+    renderShell("/recipes");
+    const b = bar()!;
+    expect(b).not.toBeNull();
+    expect(header().nextElementSibling).toBe(b);
+    expect(b).toHaveAttribute("role", "status");
+    expect(b).toHaveAttribute("data-state", "locked");
+    expect(b.className).toMatch(/(^|\s)h-8(\s|$)/);
+    expect(b).toHaveTextContent("License bị khoá");
+    expect(b).toHaveTextContent("Đã khoá");
+    expect(within(b).getByRole("link", { name: "Kích hoạt License" })).toBeInTheDocument();
+    expect(crit()).toBeNull(); // chỉ-đọc là CHIP, khoá là THANH — hai hình dạng khác nhau
+  });
+
+  it("R-2-i chưa có license ⇒ thanh dưới top bar, nhãn riêng", () => {
+    S.lic = { ...LIC_NORMAL, showBanner: true, isNormal: false, noLicense: true, bannerSeverity: "critical", message: "Không tìm thấy license" };
+    renderShell("/recipes");
+    const b = bar()!;
+    expect(b).not.toBeNull();
+    expect(b).toHaveAttribute("data-state", "noLicense");
+    expect(b).toHaveTextContent("Chưa có license");
+    expect(b).toHaveTextContent("Không tìm thấy license");
+    expect(within(b).queryByRole("link")).toBeNull(); // không phải admin ⇒ không CTA (như cũ)
+  });
+
+  it("điện thoại (<768): chỉ-đọc thành THANH đỏ dưới top bar (không chip tràn top bar); nút AI còn trong header; theme/ngôn ngữ/lưới app rời top bar", () => {
+    const w = window.innerWidth;
+    Object.defineProperty(window, "innerWidth", { configurable: true, value: 375 });
+    try {
+      S.user = { id: 1, role: "admin", name: "Adm", email: "a@x" };
+      S.lic = { ...LIC_NORMAL, showBanner: true, isNormal: false, bannerSeverity: "error", message: "Chỉ đọc từ 01/10" };
+      renderShell("/recipes");
+      expect(crit()).toBeNull();
+      const b = bar()!;
+      expect(b).not.toBeNull();
+      expect(header().nextElementSibling).toBe(b);
+      expect(b).toHaveAttribute("data-state", "readonly");
+      expect(b.className).toMatch(/(^|\s)bg-destructive(\s|$)/); // khác thanh "bị khoá" (bg-red-700)
+      expect(b).toHaveTextContent("License: chỉ đọc");
+      expect(within(b).getByRole("link", { name: "Gia hạn License" })).toBeInTheDocument();
+      expect(header().querySelector("[data-shell-ai]")).not.toBeNull();
+      expect(header().querySelector('[data-stub="theme"]')).toBeNull();
+      expect(header().querySelector('[data-stub="lang"]')).toBeNull();
+      expect(header().querySelector('[data-stub="launcher"]')).toBeNull();
+    } finally {
+      Object.defineProperty(window, "innerWidth", { configurable: true, value: w });
+    }
+  });
+
+  it.each([800, 1100])("%i px (< 1280): server offline cũng thành THANH (chip đỏ đặc không vừa top bar)", (px) => {
+    const w = window.innerWidth;
+    Object.defineProperty(window, "innerWidth", { configurable: true, value: px });
+    try {
+      S.lic = { ...LIC_NORMAL, showBanner: true, serverReachable: false, consecutiveOfflineChecks: 2 };
+      renderShell("/recipes");
+      expect(crit()).toBeNull();
+      expect(bar()).toHaveAttribute("data-state", "serverDown");
+      expect(bar()).toHaveAttribute("role", "status");
+    } finally {
+      Object.defineProperty(window, "innerWidth", { configurable: true, value: w });
+    }
+  });
+
+  it("M2 header hẹp (<1920): chip thường gộp thành \"+N\"; breadcrumb giữ bề rộng tối thiểu 160 px", () => {
+    S.permissions = [{ moduleName: "Recipes", expiresAt: new Date(Date.now() + 2 * DAY).toISOString() }];
+    presetNarrow(true);
+    const beta = ENGINEERING_ROUTES.find((r) => getNavItemByHref(r)?.beta === true)!;
+    renderShell(beta);
+    const more = header().querySelector("[data-notice-more]") as HTMLElement;
+    expect(more).not.toBeNull();
+    expect(more.getAttribute("data-notice-more")).toBe("2");
+    expect(header().querySelector('button[data-testid="shell-notice-beta"]')).toBeNull();
+    const crumbBox = crumbNavs()[0].closest("[data-shell-crumb]") as HTMLElement;
+    expect(crumbBox.className).toMatch(/(^|\s)xl:min-w-40(\s|$)/);
+    presetNarrow(false);
+    cleanup();
+    renderShell(beta);
+    expect(header().querySelector("[data-notice-more]")).toBeNull();
+    expect(header().querySelector('button[data-testid="shell-notice-beta"]')).not.toBeNull();
   });
 
   it("license bình thường / đang tải ⇒ không chip", () => {
@@ -499,6 +635,35 @@ describe("Một lối vào AI trên top bar", () => {
     expect(b).toHaveAccessibleName("Mở Trợ lý Lập trình");
     fireEvent.click(b);
     expect(dockOpen).toBe(true);
+    expect(getAiEntryState().chatOpen).toBe(false);
+  });
+
+  it("R-2-j chat đang mở rồi vào màn lập trình (IDE/IR/POU) ⇒ chat đóng, trao cho dock; không bao giờ chồng", () => {
+    let dockOpen = false;
+    function Bound() {
+      useCopilotBinding(() => ({ surfaceLabel: "IDE" }), []);
+      return null;
+    }
+    function Probe() {
+      dockOpen = useProgrammingCopilot().open;
+      const [ide, setIde] = React.useState(false);
+      return (
+        <>
+          <Page />
+          {ide && <Bound />}
+          <button type="button" onClick={() => setIde(true)}>go-ide</button>
+        </>
+      );
+    }
+    renderShell("/recipes", <Probe />);
+    fireEvent.click(aiBtn()!);
+    expect(getAiEntryState().chatOpen).toBe(true);
+    expect(dockOpen).toBe(false);
+    fireEvent.click(screen.getByRole("button", { name: "go-ide" }));
+    expect(getAiEntryState().chatOpen).toBe(false);
+    expect(dockOpen).toBe(true);
+    // ở màn lập trình, mở chat từ nơi khác cũng bị đóng ngay (một panel phải tại một thời điểm)
+    act(() => setAiChatOpen(true));
     expect(getAiEntryState().chatOpen).toBe(false);
   });
 

@@ -21476,7 +21476,10 @@
       "permExpiry": "Access expiring",
       "licenseWarning": "License expiring",
       "licenseReadonly": "License: read-only",
-      "licenseLocked": "License locked"
+      "licenseLocked": "License locked",
+      "licenseMissing": "No license",
+      "licenseDetails": "License details",
+      "licenseServerDown": "License: server offline"
     },
     "nav": {
       "simpleFallback": "The simple menu has no items here — showing the full menu."

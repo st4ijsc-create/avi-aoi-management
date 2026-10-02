@@ -295,11 +295,20 @@ function CollapsedRail({ groups, currentPath, onNavigate }: CascadingNavProps) {
     setOpenId(null);
     if (id) iconRefs.current[id]?.focus();
   }, [cancelClose]);
-  /** Focus rời menu (Tab, bấm chỗ khác): đóng, không kéo focus về. */
+  /** Focus rời menu (bấm chỗ khác): đóng, không kéo focus về. */
   const dismiss = useCallback(() => {
     cancelClose();
     setOpenId(null);
   }, [cancelClose]);
+  /** Tab ra khỏi menu (menu portal ở cuối <body>): đóng và đặt focus đúng chỗ trong rail —
+   *  Tab ⇒ icon KẾ (icon cuối thì ở lại icon đó), Shift+Tab ⇒ icon đã mở menu. */
+  const tabOut = useCallback((id: string, back: boolean) => {
+    cancelClose();
+    setOpenId(null);
+    const idx = groups.findIndex(g => g.id === id);
+    const target = back ? groups[idx] : groups[Math.min(idx + 1, groups.length - 1)];
+    if (target) iconRefs.current[target.id]?.focus();
+  }, [cancelClose, groups]);
 
   const handleNavigate = useCallback((href: string) => {
     onNavigate(href);
@@ -363,6 +372,7 @@ function CollapsedRail({ groups, currentPath, onNavigate }: CascadingNavProps) {
           focusFirst={focusFirst}
           onClose={() => closeToIcon(openGroup.id)}
           onDismiss={dismiss}
+          onTabOut={back => tabOut(openGroup.id, back)}
         />
       )}
     </div>
@@ -380,11 +390,13 @@ interface CollapsedFlyoutProps {
   focusFirst?: boolean;
   /** Esc/← : đóng và trả focus về icon. */
   onClose?: () => void;
-  /** Focus rời menu (Tab, bấm chỗ khác): đóng. */
+  /** Focus rời menu (bấm chỗ khác): đóng. */
   onDismiss?: () => void;
+  /** Tab / Shift+Tab trong menu. */
+  onTabOut?: (back: boolean) => void;
 }
 
-function CollapsedFlyout({ anchorEl, group, currentPath, onNavigate, onEnter, onLeave, focusFirst, onClose, onDismiss }: CollapsedFlyoutProps) {
+function CollapsedFlyout({ anchorEl, group, currentPath, onNavigate, onEnter, onLeave, focusFirst, onClose, onDismiss, onTabOut }: CollapsedFlyoutProps) {
   const { t } = useTranslation();
   const pos = useAnchoredPosition(anchorEl, PANEL_WIDTH);
   const l2 = useMemo(() => buildModuleL2(group), [group]);
@@ -415,7 +427,8 @@ function CollapsedFlyout({ anchorEl, group, currentPath, onNavigate, onEnter, on
       e.stopPropagation();
       onClose?.();
     } else if (e.key === "Tab") {
-      onDismiss?.();
+      e.preventDefault();
+      onTabOut?.(e.shiftKey);
     }
   };
 
@@ -435,7 +448,7 @@ function CollapsedFlyout({ anchorEl, group, currentPath, onNavigate, onEnter, on
         if (to && !menuRef.current?.contains(to) && to !== anchorEl) onDismiss?.();
       }}
     >
-      <div className="px-2 pb-1 pt-0.5 text-xs font-semibold text-popover-foreground">{t(group.label)}</div>
+      <div aria-hidden="true" className="px-2 pb-1 pt-0.5 text-xs font-semibold text-popover-foreground">{t(group.label)}</div>
       <div className="space-y-0.5">
         {l2.map(entry =>
           entry.kind === "link" ? (

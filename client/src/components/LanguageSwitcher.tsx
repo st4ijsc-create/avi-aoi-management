@@ -26,9 +26,9 @@ export function LanguageSwitcher() {
       <DropdownMenuTrigger asChild>
         <Button variant="ghost" size="sm" className="gap-2" aria-label={currentLanguage.name} title={currentLanguage.name}>
           <Globe className="h-4 w-4" />
-          {/* doc 81 Đợt 2 Task 2 — top bar giờ chứa breadcrumb: tên ngôn ngữ chỉ hiện từ 2xl. */}
-          <span className="hidden 2xl:inline">{currentLanguage.flag} {currentLanguage.name}</span>
-          <span className="2xl:hidden">{currentLanguage.flag}</span>
+          {/* doc 81 Đợt 2 Task 2 — top bar giờ chứa breadcrumb: tên ngôn ngữ chỉ hiện khi top bar ≥100rem (container `topbar`). */}
+          <span className="hidden @min-[100rem]/topbar:inline">{currentLanguage.flag} {currentLanguage.name}</span>
+          <span className="@min-[100rem]/topbar:hidden">{currentLanguage.flag}</span>
         </Button>
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end">

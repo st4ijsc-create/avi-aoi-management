@@ -7,7 +7,7 @@
 //  · Dock Copilot (giữ trên IDE/IR/POU theo R-2-b): khi shell có nút AI thì bỏ tab dọc nổi (lối vào thứ
 //    hai, che MAIN); dock mở ở chế độ chiếm màn (< 900 px) không đè top bar.
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
-import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import "@testing-library/jest-dom/vitest";
 import * as React from "react";
 import { initLayoutKitTestI18n } from "@/components/patterns/layoutKitTestI18n";
@@ -50,6 +50,27 @@ describe("AiChatFrame — khung bong bóng chat", () => {
     expect(dlg).toHaveAttribute("data-ai-sheet");
     fireEvent.keyDown(dlg, { key: "Escape" });
     expect(onOpenChange).toHaveBeenCalledWith(false);
+  });
+
+  it("M4 đóng bằng Esc ⇒ focus TRỞ VỀ nút AI của top bar", async () => {
+    function Harness() {
+      const [open, setOpen] = React.useState(false);
+      return (
+        <>
+          <button type="button" data-shell-ai="chat" onClick={() => setOpen(true)}>AI</button>
+          <AiChatFrame headerEntry open={open} onOpenChange={setOpen} panel={<input aria-label="hỏi" />} fab={null} minimizedBar={null} />
+        </>
+      );
+    }
+    render(<Harness />);
+    const ai = screen.getByRole("button", { name: "AI" });
+    fireEvent.click(ai);
+    const dlg = screen.getByRole("dialog");
+    act(() => (screen.getByRole("textbox", { name: "hỏi" }) as HTMLElement).focus());
+    expect(document.activeElement).not.toBe(ai);
+    fireEvent.keyDown(dlg, { key: "Escape" });
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+    expect(document.activeElement).toBe(ai);
   });
 
   it("không có shell: giữ nút nổi cũ và panel nổi", () => {
