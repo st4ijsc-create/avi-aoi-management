@@ -669,6 +669,26 @@
     "approvePlaceholder": "VD: Đã kiểm tra tài liệu đính kèm, đạt yêu cầu…",
     "emptyFiltered": "Không có thay đổi nào khớp bộ lọc.",
     "userFallback": "Người dùng #{{id}}",
+    "aboutChip": "Quy trình ECN",
+    "filterPendingChip": "Chỉ ECN chờ duyệt",
+    "listLabel": "Danh sách ECN",
+    "tab": {
+      "overview": "Tổng quan",
+      "objects": "Đối tượng",
+      "approval": "Duyệt",
+      "tasks": "Nhiệm vụ",
+      "history": "Lịch sử"
+    },
+    "item": {
+      "entity": "Đối tượng",
+      "action": "Thao tác",
+      "description": "Mô tả"
+    },
+    "itemAction": {
+      "add": "Thêm",
+      "modify": "Sửa",
+      "remove": "Gỡ"
+    },
     "field": {
       "title": "Tiêu đề",
       "type": "Loại thay đổi",
@@ -740,7 +760,16 @@
       "closedBy": "Người đóng",
       "decisionComment": "Ghi chú quyết định",
       "timeline": "Dòng thời gian",
-      "noTimeline": "Chưa có mốc thời gian."
+      "noTimeline": "Chưa có mốc thời gian.",
+      "flyoutTitle": "Chi tiết thay đổi kỹ thuật",
+      "notFound": "Không tìm thấy ECN #{{id}}.",
+      "target": "Đối tượng đích",
+      "noTarget": "Chưa ghi đối tượng đích.",
+      "items": "Đối tượng chi tiết",
+      "noItems": "Chưa có đối tượng chi tiết nào.",
+      "approvalHelp": "Người yêu cầu không được tự xem xét hay phê duyệt; người đã xem xét không được đồng thời phê duyệt.",
+      "tasksHelp": "Sau khi phê duyệt: đánh dấu triển khai khi thay đổi đã được áp dụng, rồi đóng ECN.",
+      "notYet": "Chưa"
     },
     "backfill": {
       "title": "Bổ sung componentCode từ BOM",
@@ -755,7 +784,10 @@
       "updated": "Đã cập nhật",
       "skipped": "Đã liên kết",
       "unmatched": "Chưa khớp",
-      "dryRunTag": "(dry-run — chưa ghi gì)"
+      "dryRunTag": "(dry-run — chưa ghi gì)",
+      "done": "Đã bổ sung — khớp {{matched}}, đã cập nhật {{updated}}",
+      "doneDryRun": "Xem trước (dry-run) — khớp {{matched}}, sẽ cập nhật {{updated}}",
+      "unavailable": "Chức năng bổ sung hiện không khả dụng"
     }
   },
   "related": {

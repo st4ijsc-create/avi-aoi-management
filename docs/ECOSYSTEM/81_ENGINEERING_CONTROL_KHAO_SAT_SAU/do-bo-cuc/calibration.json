@@ -5,46 +5,48 @@
    "screen": "engineering-changes",
    "vw": 1600,
    "variant": "n/a",
-   "mainTop": 262,
+   "mainTop": 124,
    "rects": [
     {
      "x": 288,
-     "y": 262,
+     "y": 124,
      "w": 1288,
-     "h": 660
+     "h": 704
     }
    ],
-   "areaPx": 850080,
+   "areaPx": 906752,
    "attrSel": "div[data-layout-main=\"ecn-list\"]@EngineeringChanges.tsx",
-   "gitHead": "567ae0f39",
-   "at": "2026-10-02T21:14:19.265Z",
-   "fromReference": {
-    "dTop": 0,
-    "dLeft": 0,
-    "dAreaPct": 0
+   "gitHead": "891337f1c",
+   "at": "2026-10-02T21:27:55.354Z",
+   "previous": {
+    "mainTop": 262,
+    "areaPx": 850080,
+    "attrSel": "div[data-layout-main=\"ecn-list\"]@EngineeringChanges.tsx",
+    "gitHead": "567ae0f39"
    }
   },
   "engineering-changes|1366|n/a": {
    "screen": "engineering-changes",
    "vw": 1366,
    "variant": "n/a",
-   "mainTop": 262,
+   "mainTop": 124,
    "rects": [
     {
      "x": 288,
-     "y": 262,
+     "y": 124,
      "w": 1054,
-     "h": 660
+     "h": 704
     }
    ],
-   "areaPx": 695640,
+   "areaPx": 742016,
    "attrSel": "div[data-layout-main=\"ecn-list\"]@EngineeringChanges.tsx",
-   "gitHead": "567ae0f39",
-   "at": "2026-10-02T21:14:19.265Z",
-   "fromReference": {
-    "dTop": 0,
-    "dLeft": 0,
-    "dAreaPct": 0
+   "gitHead": "891337f1c",
+   "at": "2026-10-02T21:27:55.354Z",
+   "previous": {
+    "mainTop": 262,
+    "areaPx": 695640,
+    "attrSel": "div[data-layout-main=\"ecn-list\"]@EngineeringChanges.tsx",
+    "gitHead": "567ae0f39"
    }
   }
  }

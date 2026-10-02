@@ -669,6 +669,26 @@
     "approvePlaceholder": "e.g. Reviewed attached documents, meets requirements…",
     "emptyFiltered": "No changes match the filter.",
     "userFallback": "User #{{id}}",
+    "aboutChip": "ECN workflow",
+    "filterPendingChip": "Pending ECNs only",
+    "listLabel": "ECN list",
+    "tab": {
+      "overview": "Overview",
+      "objects": "Objects",
+      "approval": "Approval",
+      "tasks": "Tasks",
+      "history": "History"
+    },
+    "item": {
+      "entity": "Object",
+      "action": "Action",
+      "description": "Description"
+    },
+    "itemAction": {
+      "add": "Add",
+      "modify": "Modify",
+      "remove": "Remove"
+    },
     "field": {
       "title": "Title",
       "type": "Change type",
@@ -740,7 +760,16 @@
       "closedBy": "Closed by",
       "decisionComment": "Decision comment",
       "timeline": "Timeline",
-      "noTimeline": "No timeline events yet."
+      "noTimeline": "No timeline events yet.",
+      "flyoutTitle": "Engineering change details",
+      "notFound": "ECN #{{id}} not found.",
+      "target": "Target",
+      "noTarget": "No target recorded.",
+      "items": "Itemised objects",
+      "noItems": "No itemised objects yet.",
+      "approvalHelp": "The requester cannot review or approve their own change; the reviewer cannot also approve it.",
+      "tasksHelp": "After approval: mark it implemented once the change is applied, then close the ECN.",
+      "notYet": "Not yet"
     },
     "backfill": {
       "title": "Backfill componentCode from BOM",
@@ -755,7 +784,10 @@
       "updated": "Updated",
       "skipped": "Already linked",
       "unmatched": "Unmatched",
-      "dryRunTag": "(dry-run — nothing written)"
+      "dryRunTag": "(dry-run — nothing written)",
+      "done": "Backfill done — matched {{matched}}, updated {{updated}}",
+      "doneDryRun": "Dry-run preview — matched {{matched}}, would update {{updated}}",
+      "unavailable": "The backfill procedure is not available"
     }
   },
   "related": {

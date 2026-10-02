@@ -67,14 +67,18 @@ describe("★★★ doc 80 Task 8 (ECN-03, ECN-05) — EngineeringChanges.tsx (q
   });
 
   it("ECN-05 — hộp xác nhận PHÊ DUYỆT tồn tại, gọi confirmApprove, ý kiến TÙY CHỌN (không ép buộc như reject)", () => {
-    const dialogStart = src.indexOf("<AlertDialog open={approveTarget != null}");
-    expect(dialogStart, "thiếu hộp thoại xác nhận phê duyệt (<AlertDialog open={approveTarget != null}>)").toBeGreaterThan(-1);
+    // doc 81 Đợt 2 Task 4 — ĐỔI SELECTOR (khẳng định giữ nguyên): hộp xác nhận chuyển từ AlertDialog giữa màn
+    // sang TransitionDialog (sheet phải, ApprovalQueue.tsx); nút xác nhận gọi qua `onConfirm` thay `onClick`;
+    // "ý kiến không bắt buộc" nay khai bằng `reasonRequired={false}` (trước: nút không disable theo approveComment).
+    const dialogStart = src.indexOf("<TransitionDialog open={approveTarget != null}");
+    expect(dialogStart, "thiếu hộp thoại xác nhận phê duyệt (<TransitionDialog open={approveTarget != null}>)").toBeGreaterThan(-1);
     const dialogSrc = src.slice(dialogStart, dialogStart + 1500);
     expect(dialogSrc).toContain("approveTarget != null");
-    expect(dialogSrc).toContain("onClick={confirmApprove}");
-    // Nút xác nhận approve KHÔNG được disable theo độ dài approveComment (chỉ theo isPending) —
+    expect(dialogSrc).toContain("onConfirm={confirmApprove}");
+    // Nút xác nhận approve KHÔNG được disable theo độ dài ý kiến (chỉ theo isPending) —
     // khác hẳn nút reject (disabled khi !rejectReason.trim()).
     expect(dialogSrc).not.toContain("!approveComment.trim()");
+    expect(dialogSrc).toContain("reasonRequired={false}");
   });
 
   it("ECN-05 — hộp TỪ CHỐI vẫn giữ ý kiến BẮT BUỘC (hành vi CŨ — không hồi quy)", () => {

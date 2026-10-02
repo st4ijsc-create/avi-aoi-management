@@ -669,6 +669,26 @@
     "approvePlaceholder": "例如：已检查附件文档，符合要求…",
     "emptyFiltered": "没有符合筛选条件的变更。",
     "userFallback": "用户 #{{id}}",
+    "aboutChip": "ECN 流程",
+    "filterPendingChip": "仅待审批 ECN",
+    "listLabel": "ECN 列表",
+    "tab": {
+      "overview": "概览",
+      "objects": "对象",
+      "approval": "审批",
+      "tasks": "任务",
+      "history": "历史"
+    },
+    "item": {
+      "entity": "对象",
+      "action": "操作",
+      "description": "说明"
+    },
+    "itemAction": {
+      "add": "新增",
+      "modify": "修改",
+      "remove": "移除"
+    },
     "field": {
       "title": "标题",
       "type": "变更类型",
@@ -740,7 +760,16 @@
       "closedBy": "关闭人",
       "decisionComment": "决策备注",
       "timeline": "时间线",
-      "noTimeline": "暂无时间线事件。"
+      "noTimeline": "暂无时间线事件。",
+      "flyoutTitle": "工程变更详情",
+      "notFound": "未找到 ECN #{{id}}。",
+      "target": "目标",
+      "noTarget": "尚未记录目标。",
+      "items": "明细对象",
+      "noItems": "尚无明细对象。",
+      "approvalHelp": "申请人不得审查或批准自己的变更；审查人不得同时批准。",
+      "tasksHelp": "批准后：变更实施完成时标记为已实施，然后关闭 ECN。",
+      "notYet": "尚未"
     },
     "backfill": {
       "title": "从BOM回填componentCode",
@@ -755,7 +784,10 @@
       "updated": "已更新",
       "skipped": "已链接",
       "unmatched": "未匹配",
-      "dryRunTag": "（dry-run——未写入）"
+      "dryRunTag": "（dry-run——未写入）",
+      "done": "补全完成——匹配 {{matched}}，已更新 {{updated}}",
+      "doneDryRun": "预演（dry-run）——匹配 {{matched}}，将更新 {{updated}}",
+      "unavailable": "补全功能当前不可用"
     }
   },
   "related": {
