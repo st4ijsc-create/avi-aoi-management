@@ -16,8 +16,13 @@
  *   · actions         — hành động khai báo không tìm thấy = LỖI (không phải 0); dialog phân theo LOẠI.
  *   · pageHeightRatio — tính cả phần cuộn của container cuộn tổ tiên của MAIN.
  *   · drift           — băm nội dung các bảng 14 màn đọc, TRƯỚC và SAU mỗi lần chạy; trôi ⇒ pass=false.
- *   · selfTest        — đối chứng DƯƠNG trong mỗi lần chạy: chèn banner lồng sâu, lớp phủ fixed, KPI,
- *                       attribute vi phạm, hành động ma ⇒ thiết bị PHẢI bắt được cả năm.
+ *   · calibration     — trang LẦN ĐẦU gắn attribute phải khớp MAIN FE1 (legacyRef trong baseline) ±4 px/3 %,
+ *                       hoặc đã có bản ghi `--calibrate` trong do-bo-cuc/calibration.json; lệch ⇒ LỖI.
+ *   · insideMain      — banner / dải KPI KHÔNG đánh dấu ở ĐẦU MAIN (trên phần tử làm việc, <120 px, ≥60 % bề
+ *                       rộng) ⇒ LỖI, trừ một [data-layout-toolbar] ≤48 px. MAIN được CẮT theo tổ tiên overflow.
+ *   · aiInsideMain    — bề mặt AI/Copilot bên trong MAIN bị trừ khỏi `workspacePct` và báo riêng.
+ *   · selfTest        — 17 ca đối chứng DƯƠNG mỗi lần chạy, qua đúng measurePage/runActions; `--mutation` gỡ
+ *                       từng gác và chứng minh ca của nó ĐỎ.
  *
  * Instance: KHÔNG dùng :3000 (chạy dist cũ). `--spawn` tự dựng server TỪ MÃ NGUỒN (tsx) ở :3016
  * + Vite dev (in-process) ở :5176, DB `aoi_management_test`. Server KHÔNG nạp .env (DOTENV_CONFIG_PATH
@@ -30,6 +35,8 @@
  *   node scripts/ui-metrics/engineeringLayout.mjs --fe1 run.json [--threshold 5]
  *   node scripts/ui-metrics/engineeringLayout.mjs --spawn --discover-tables --out tables.json
  *   node scripts/ui-metrics/engineeringLayout.mjs --spawn --list-buttons --out buttons.json
+ *   node scripts/ui-metrics/engineeringLayout.mjs --spawn --screens engineering-changes --sizes 1600x950 --mutation --out m.json
+ *   node scripts/ui-metrics/engineeringLayout.mjs --spawn --calibrate --screens <màn> --out c.json
  */
 import { spawn, execFileSync } from "node:child_process";
 import crypto from "node:crypto";
@@ -86,7 +93,8 @@ export const SCREENS = [
   { n: 9, id: "pou-studio", route: "/pou-studio", copilot: true,
     legacyMain: { desc: "card 'Trình soạn POU'", fn: (r) => r.kind === "card" && /Trình soạn POU/.test(r.head) },
     actions: [{ id: "luu-vao-project", label: /Lưu vào project/ }] },
-  { n: 10, id: "programming-copilot", route: "/programming-copilot",
+  // Copilot: MAIN CHÍNH LÀ bề mặt AI ⇒ không trừ "AI trong MAIN" (aiIsWorkspace)
+  { n: 10, id: "programming-copilot", route: "/programming-copilot", aiIsWorkspace: true,
     legacyMain: { desc: "ProgrammingCopilot card đầu (form sinh mã)", pick: (rs) => rs.filter((r) => /ProgrammingCopilot\.tsx/.test(r.loc || "") && r.kind === "card" && r.depth === 0).slice(0, 1) },
     actions: [] },
   { n: 11, id: "fleet-orchestration", route: "/fleet-orchestration",
@@ -130,8 +138,10 @@ export const FE1 = {
 // ───────────────────────────────────────────────────────────────────────────────────────────
 /**
  * `PAGE_TABLES` — bảng mà 14 màn (kể cả vỏ: top bar, andon, hộp AI…) ĐỌC khi nạp, rút bằng
- * `--discover-tables` (delta `pg_stat_user_tables.seq_scan+idx_scan` quanh từng lần nạp màn, chạy 2
- * lần, lấy GIAO để bỏ nhiễu của phiên khác). Mỗi bảng được băm NỘI DUNG (md5 từng hàng, sắp theo md5)
+ * `--discover-tables` (delta `pg_stat_user_tables.seq_scan+idx_scan` quanh từng lần nạp màn; chunk
+ * TimescaleDB quy về hypertable). Rút 2026-10-02: lấy HỢP của 2 lần chạy (disc2 ∪ disc3 — hai lần khớp
+ * nhau trừ ±2 bảng nhiễu ở Safety/Fleet) + `collaboration_sessions` (Safety, thấy ở lần 2) — HỢP để
+ * KHÔNG sót bảng; nhiễu thừa chỉ làm canh trôi nhạy hơn. Mỗi bảng được băm NỘI DUNG (md5 từng hàng, sắp theo md5)
  * trước và sau mỗi lần đo. `cols` giới hạn cột khi chính instance đo ghi vào cột khác của bảng
  * (vd `users.lastSignedIn` khi đăng nhập). Xem `SELF_WRITTEN` cho bảng loại trừ có lý do.
  */
@@ -284,6 +294,7 @@ function PHASE1() {
 // ───────────────────────────────────────────────────────────────────────────────────────────
 function PHASE2(arg) {
   const vw = innerWidth, vh = innerHeight;
+  const OFF = new Set(arg.off || []); // gác bị TẮT có chủ đích (chỉ dùng trong --mutation để chứng minh ca tự kiểm biết ĐỎ)
   const errors = [], warnings = [];
   const vis = (e) => { const r = e.getBoundingClientRect(); if (r.width < 4 || r.height < 4) return false; const s = getComputedStyle(e); return s.visibility !== 'hidden' && s.display !== 'none' && s.opacity !== '0'; };
   const R = (e) => { const r = e.getBoundingClientRect(); return { x: Math.round(r.left), y: Math.round(r.top + scrollY), w: Math.round(r.width), h: Math.round(r.height) }; };
@@ -291,6 +302,10 @@ function PHASE2(arg) {
   const desc = (e) => { if (!e) return null; const loc = e.getAttribute('data-loc'); return { tag: e.tagName.toLowerCase(), testid: e.getAttribute('data-testid'), loc: loc ? loc.replace(/^.*[\\/]/, '') : null, role: e.getAttribute('role'), slot: e.getAttribute('data-slot'), label: (e.getAttribute('aria-label') || e.innerText || '').replace(/\s+/g, ' ').trim().slice(0, 50) }; };
   const isNoticeCls = (e) => { const c = cls(e); return /(border|bg)-(amber|yellow|warning|info|blue|orange|destructive|red|sky|primary\/|success\/|muted)/.test(c) && /(border)/.test(c) && /(rounded)/.test(c) && /(p-2|p-3|p-4|px-3|px-4|py-2|py-3)/.test(c); };
   const NOTICE_TXT = /(Khi nào dùng|Beta|xem trước|Chỉ xem|chỉ đọc|advisory|TẮT|SIMULATED|không được phép|Bạn không có quyền|Chế độ|Lưu ý|Cảnh báo|Luồng vàng|thử nghiệm|preview)/i;
+  const KPI_SEL = '[data-loc*="MetricCard.tsx"],[data-layout-kpi]';
+  // Bề mặt AI/Copilot (rộng có chủ đích; xem README): vai trò, thuộc tính, testid, tệp nguồn, nhãn
+  const AI_SEL = '[role=complementary],[data-ai],[data-layout-ai],[data-testid*="copilot" i],[data-testid*="assistant" i],[data-testid*="ai-panel" i],[data-testid*="ai-chat" i],[data-loc*="Copilot" i],[data-loc*="AILocal" i],[data-loc*="Assistant" i],[aria-label*="copilot" i],[aria-label*="assistant" i],[aria-label*="trợ lý" i]';
+  const unionY = (list, lo, hi) => { const iv = list.map((b) => [Math.max(b.y, lo), Math.min(b.y + b.h, hi)]).filter(([a, b]) => b > a).sort((p, q) => p[0] - q[0]); let s = 0, cs = -1, ce = -1; for (const [a, b] of iv) { if (a > ce) { if (ce > cs) s += ce - cs; cs = a; ce = b; } else ce = Math.max(ce, b); } if (ce > cs) s += ce - cs; return Math.round(s); };
   const main = document.querySelector('main');
   if (!main) errors.push('không có phần tử <main>');
 
@@ -298,7 +313,7 @@ function PHASE2(arg) {
   let mainEls = [];
   if (arg.mode === 'attr') {
     const all = [...document.querySelectorAll('[data-layout-main]')];
-    for (const e of all) if (!main || !main.contains(e)) errors.push(`[data-layout-main] NẰM NGOÀI <main>: ${JSON.stringify(desc(e))}`);
+    for (const e of all) if ((!main || !main.contains(e)) && !OFF.has('attrConstraint')) errors.push(`[data-layout-main] NẰM NGOÀI <main>: ${JSON.stringify(desc(e))}`);
     const inMain = all.filter((e) => main && main.contains(e) && vis(e));
     mainEls = inMain.filter((e) => !inMain.some((o) => o !== e && o.contains(e)));
     if (all.length && !mainEls.length) errors.push('[data-layout-main] có nhưng không phần tử nào nhìn thấy trong <main>');
@@ -307,41 +322,108 @@ function PHASE2(arg) {
     mainEls = mainEls.filter((e) => !mainEls.some((o) => o !== e && o.contains(e)));
   }
   if (!mainEls.length) errors.push('KHÔNG THẤY MAIN');
+  const push = (list, msg) => (arg.mode === 'attr' ? errors : warnings).push(msg);
 
-  // ── Ràng buộc MAIN (R-2-e a): không chứa h1 / page header / banner / KPI ──
+  // ── Cắt theo tổ tiên có overflow ≠ visible (R-2 fix2 #5) ──
+  const clipInfo = (el) => {
+    const r0 = el.getBoundingClientRect();
+    let l = r0.left, t = r0.top, rr = r0.right, b = r0.bottom; const by = [];
+    if (!OFF.has('clip')) for (let a = el.parentElement; a && a !== document.body && a !== document.documentElement; a = a.parentElement) {
+      const s = getComputedStyle(a);
+      if (s.overflowX === 'visible' && s.overflowY === 'visible') continue;
+      const ar = a.getBoundingClientRect();
+      const cl = ar.left + a.clientLeft, ct = ar.top + a.clientTop, cr = cl + a.clientWidth, cb = ct + a.clientHeight;
+      if (cl > l || ct > t || cr < rr || cb < b) by.push({ ...desc(a), overflow: `${s.overflowX}/${s.overflowY}` });
+      l = Math.max(l, cl); t = Math.max(t, ct); rr = Math.min(rr, cr); b = Math.min(b, cb);
+    }
+    const w = Math.max(0, rr - l), h = Math.max(0, b - t);
+    return { vr: { left: l, top: t, right: l + w, bottom: t + h, width: w, height: h }, rect: { x: Math.round(l), y: Math.round(t + scrollY), w: Math.round(w), h: Math.round(h) }, by };
+  };
+  const clips = mainEls.map(clipInfo);
+  const mainRectsRaw = mainEls.map(R);
+  const mainRects = clips.map((c) => c.rect);
+  const nonEmpty = mainRects.filter((r) => r.w > 0 && r.h > 0);
+  const mainTop = nonEmpty.length ? Math.min(...nonEmpty.map((r) => r.y)) : (mainRectsRaw.length ? Math.min(...mainRectsRaw.map((r) => r.y)) : null);
+  const clippedBy = clips.flatMap((c) => c.by);
+
+  // ── Ràng buộc MAIN theo MARKUP (R-2-e a) ──
   const FORBID = [
     ['h1', 'h1,[role=heading][aria-level="1"]'],
     ['page-header', '[data-loc*="PageHeader.tsx"],[data-layout-header]'],
     ['banner', '[role=alert],[data-slot=alert],[data-loc*="FeatureStatusGate.tsx"],[data-loc*="BetaBadge.tsx"],[data-layout-banner]'],
-    ['kpi', '[data-loc*="MetricCard.tsx"],[data-layout-kpi]'],
+    ['kpi', KPI_SEL],
   ];
-  const violations = [];
-  for (const m of mainEls) {
+  if (!OFF.has('attrConstraint')) for (const m of mainEls) {
     for (const [kind, sel] of FORBID) {
-      // banner = KHUNG (≥200×24), không phải chip/nhãn nhỏ (vd chip "Beta" trong ô công cụ) và không phải nút/liên kết
       const isBannerBox = (e) => { const r = e.getBoundingClientRect(); return r.width >= 200 && r.height >= 24 && !e.matches('button,a,[role=button]'); };
       const hits = [...(m.matches(sel) ? [m] : []), ...m.querySelectorAll(sel)].filter(vis).filter((e) => kind !== 'banner' || isBannerBox(e));
-      if (hits.length) violations.push({ kind, n: hits.length, first: desc(hits[0]) });
+      if (hits.length) push(errors, `MAIN chứa ${kind} ×${hits.length}: ${JSON.stringify(desc(hits[0]))}`);
     }
-    const heur = [...m.querySelectorAll('*')].filter((e) => isNoticeCls(e) && vis(e) && !e.matches('button,a,[role=button]') && !e.closest('button,a,[role=button]') && e.getBoundingClientRect().width >= 200 && e.getBoundingClientRect().height < 260 && NOTICE_TXT.test((e.innerText || '').slice(0, 300)));
-    if (heur.length) violations.push({ kind: 'banner-heuristic', n: heur.length, first: desc(heur[0]) });
   }
-  for (const v of violations) (arg.mode === 'attr' ? errors : warnings).push(`MAIN chứa ${v.kind} ×${v.n}: ${JSON.stringify(v.first)}`);
 
-  const mainRects = mainEls.map(R);
-  const mainTop = mainRects.length ? Math.min(...mainRects.map((r) => r.y)) : null;
+  // ── Bề mặt AI bên TRONG MAIN (R-2 fix2 #6) ──
+  const aiInside = [];
+  if (!arg.aiIsWorkspace && !OFF.has('aiInside')) for (const m of mainEls) {
+    const c = [...m.querySelectorAll(AI_SEL)].filter((e) => vis(e) && e.getBoundingClientRect().width >= 120 && e.getBoundingClientRect().height >= 120);
+    for (const e of c) if (!c.some((o) => o !== e && o.contains(e))) aiInside.push({ el: e, ...desc(e), rect: clipInfo(e).rect });
+  }
+  const isAiEl = (e) => aiInside.some((a) => a.el === e || a.el.contains(e));
 
-  // ── h1 ──
+  // ── Banner / dải KPI bên TRONG MAIN, theo HÌNH HỌC (R-2 fix2 #2) ──
+  // W = phần tử làm việc đầu tiên (đỉnh nhỏ nhất) trong MAIN: [data-layout-workspace], table, grid/treegrid/tree/listbox,
+  // canvas, CodeMirror/Monaco, react-flow, textarea, contenteditable, svg ≥200×120 (không nằm trong bề mặt AI).
+  // Khối "trên W" = con (đi xuống qua tổ tiên của W) nằm HẲN trên W. Khối trên W cao <120 px và rộng ≥60 % MAIN là
+  // BANNER TRONG MAIN, trừ đúng MỘT [data-layout-toolbar] ≤48 px. Không có W ⇒ W = khối đầu tiên cao ≥120 px.
+  const WS_SEL = '[data-layout-workspace],table,[role=grid],[role=treegrid],[role=tree],[role=listbox],canvas,.cm-editor,.monaco-editor,.react-flow,textarea,[contenteditable="true"]';
+  const inside = [];
+  for (const m of mainEls) {
+    const mr = m.getBoundingClientRect();
+    const cand = [...(m.matches(WS_SEL) ? [m] : []), ...m.querySelectorAll(WS_SEL), ...[...m.querySelectorAll('svg')].filter((s) => { const r = s.getBoundingClientRect(); return r.width >= 200 && r.height >= 120; })].filter((e) => vis(e) && !isAiEl(e));
+    let W = null; for (const e of cand) if (!W || e.getBoundingClientRect().top < W.getBoundingClientRect().top - 0.5) W = e;
+    const blocks = []; let stop = false;
+    const Wtop = () => W.getBoundingClientRect().top;
+    const walkIn = (el) => {
+      for (const ch of el.children) {
+        if (stop) return;
+        if (ch === W) { stop = true; return; }
+        const st = getComputedStyle(ch);
+        if (st.display === 'none' || st.position === 'fixed') continue;
+        if (W && ch.contains(W)) { walkIn(ch); continue; }
+        if (isAiEl(ch)) continue;
+        const r = ch.getBoundingClientRect();
+        if (r.width < 4 || r.height < 4) { if (st.display === 'contents' || ch.children.length) walkIn(ch); continue; }
+        if (!vis(ch)) continue;
+        if (W) { if (r.bottom > Wtop() + 1) continue; } // không nằm HẲN trên W (bên cạnh / dưới)
+        else if (r.height >= 120) { W = ch; stop = true; return; }
+        // tiêu đề thuần (h2–h6 / role=heading / card-title) ≤40 px không phải banner
+        if (r.height <= 40 && ch.matches('h2,h3,h4,h5,h6,[role=heading],[data-slot=card-title]')) { blocks.push({ ...R(ch), kind: 'heading', ...desc(ch) }); continue; }
+        const tb = ch.hasAttribute('data-layout-toolbar');
+        const kpi = ch.matches(KPI_SEL) || !!ch.querySelector(KPI_SEL) || (ch.children.length >= 3 && [...ch.children].every((k) => k.getBoundingClientRect().height <= 140 && k.getBoundingClientRect().width < mr.width * 0.5));
+        const kind = tb ? 'toolbar' : (r.height < 120 && r.width >= 0.6 * mr.width) ? (kpi ? 'kpi-strip' : 'banner') : 'other';
+        blocks.push({ ...R(ch), kind, ...desc(ch) });
+      }
+    };
+    walkIn(m);
+    const top0 = mr.top;
+    const banners = blocks.filter((b) => b.kind === 'banner' || b.kind === 'kpi-strip');
+    const toolbars = blocks.filter((b) => b.kind === 'toolbar');
+    const aboveW = W ? Math.max(0, Math.round(W.getBoundingClientRect().top - top0)) : unionY(blocks, -1e9, 1e9);
+    inside.push({ workspace: W ? { ...desc(W), top: Math.round(W.getBoundingClientRect().top + scrollY) } : null, aboveWorkspacePx: aboveW, banners: banners.length, bannerPx: unionY(banners, -1e9, 1e9), toolbars: toolbars.map((t) => t.h), blocks, wsTopAbs: W ? W.getBoundingClientRect().top + scrollY : null });
+    if (!OFF.has('insideMain')) {
+      if (banners.length) push(errors, `BANNER/DẢI KPI TRONG MAIN ×${banners.length} (khối trên phần tử làm việc, <120 px, ≥60 % bề rộng MAIN): ${JSON.stringify(banners.map((b) => ({ kind: b.kind, h: b.h, loc: b.loc, label: b.label })))}`);
+      if (toolbars.length > 1) push(errors, `MAIN có ${toolbars.length} [data-layout-toolbar] (tối đa 1)`);
+      for (const t of toolbars) if (t.h > 48) push(errors, `[data-layout-toolbar] cao ${t.h} px (> 48)`);
+    }
+  }
+
+  // ── h1 + page header ──
   const h1s = [...document.querySelectorAll('main h1')].filter(vis);
   const h1 = h1s[0] || [...document.querySelectorAll('h1')].filter(vis)[0] || null;
   const h1r = h1 ? R(h1) : null;
   if (!h1) warnings.push('trang KHÔNG có h1 nhìn thấy — dải "trước MAIN" tính từ đỉnh <main>');
-  // page header = tổ tiên NGOÀI CÙNG của h1 mang data-loc PageHeader.tsx / [data-layout-header] / <header>, nếu nó không chứa MAIN
   let h1Header = null;
   if (h1) {
-    for (let n = h1; n && n !== main && n !== document.body; n = n.parentElement) {
-      if (n.matches('[data-loc*="PageHeader.tsx"],[data-layout-header],header')) h1Header = n;
-    }
+    for (let n = h1; n && n !== main && n !== document.body; n = n.parentElement) if (n.matches('[data-loc*="PageHeader.tsx"],[data-layout-header],header')) h1Header = n;
     if (h1Header && mainEls.some((m) => h1Header.contains(m))) { errors.push('page header của h1 CHỨA MAIN'); h1Header = null; }
   }
 
@@ -356,42 +438,60 @@ function PHASE2(arg) {
       if (ch === h1 || mainEls.includes(ch)) continue;
       if (holdsKey(ch)) { walk(ch); continue; }
       const st = getComputedStyle(ch);
-      if (st.position === 'fixed') continue; // lớp phủ — đo ở coverMain
+      if (st.position === 'fixed') continue; // lớp phủ — xem overlay dưới và coverMain
       const r = ch.getBoundingClientRect();
       if (!vis(ch)) { if (ch.children.length && st.display !== 'none') walk(ch); continue; }
       const top = r.top + scrollY, bot = r.bottom + scrollY;
-      if (mainTop == null || bot > mainTop + 1) continue; // không nằm HẲN trên MAIN (cột bên cạnh…)
-      // không giao NGANG với MAIN ⇒ cột bên cạnh, không phải "trước" MAIN (vẫn hiện trong bandBlocks)
+      if (mainTop == null || bot > mainTop + 1) continue;
       const xOverlap = r.left < mainX1 && r.right > mainX0;
       const pos = !xOverlap ? 'besideMain' : (!h1r ? 'belowH1' : (bot <= h1r.y + 1 ? 'aboveH1' : (top >= h1r.y + h1r.h - 1 ? 'belowH1' : 'besideH1')));
       const txt = (ch.innerText || '').trim();
       const fe1Notice = ch.getAttribute('role') === 'alert' || ch.getAttribute('data-slot') === 'alert' || isNoticeCls(ch) || NOTICE_TXT.test(txt.slice(0, 300));
-      const isKpi = ch.matches('[data-loc*="MetricCard.tsx"],[data-layout-kpi]') || !!ch.querySelector('[data-loc*="MetricCard.tsx"],[data-layout-kpi]');
+      const inHeader = !!(h1Header && h1Header.contains(ch));
+      const isKpi = ch.matches(KPI_SEL) || !!ch.querySelector(KPI_SEL);
       const isTabs = r.height <= 64 && (ch.matches('[role=tablist]') || !!ch.querySelector('[role=tablist]'));
-      const kind = isKpi ? 'kpi' : isTabs ? 'tabs' : fe1Notice ? 'notice' : 'other';
-      blocks.push({ ...R(ch), pos, kind, inHeader: !!(h1Header && h1Header.contains(ch)), ...desc(ch), fe1Notice });
+      const kind = isKpi ? 'kpi' : isTabs ? 'tabs' : fe1Notice ? 'notice' : (inHeader && ch.tagName === 'P') ? 'subtitle' : 'other';
+      blocks.push({ ...R(ch), pos, kind, inHeader, ...desc(ch), fe1Notice });
     }
   };
   if (main) walk(main);
-  const unionY = (list, lo, hi) => { const iv = list.map((b) => [Math.max(b.y, lo), Math.min(b.y + b.h, hi)]).filter(([a, b]) => b > a).sort((p, q) => p[0] - q[0]); let s = 0, cs = -1, ce = -1; for (const [a, b] of iv) { if (a > ce) { if (ce > cs) s += ce - cs; cs = a; ce = b; } else ce = Math.max(ce, b); } if (ce > cs) s += ce - cs; return Math.round(s); };
+  // Popover/portal mở sẵn đè lên dải đầu trang (ngoài <main>, fixed/absolute, không phải vỏ, không phải AI) ⇒ banner
+  if (main && mainTop != null && !OFF.has('overlayBand')) {
+    const mr = main.getBoundingClientRect();
+    const bandTop = arg.clipTop || 0, bandBot = mainTop - scrollY;
+    const shellOf = (e) => e.closest('[data-sidebar],[data-slot=sidebar],aside') || (e.closest('header') && e.closest('header').getBoundingClientRect().top <= 0);
+    const ov = [];
+    for (const e of document.body.querySelectorAll('*')) {
+      if (main.contains(e) || e.contains(main)) continue;
+      const s = getComputedStyle(e); if (s.position !== 'fixed' && s.position !== 'absolute') continue;
+      if (!vis(e) || shellOf(e) || e.matches(AI_SEL) || e.closest(AI_SEL)) continue;
+      const r = e.getBoundingClientRect();
+      const ix = Math.min(r.right, mr.right) - Math.max(r.left, mr.left), iy = Math.min(r.bottom, bandBot) - Math.max(r.top, bandTop);
+      if (ix < 8 || iy < 8) continue;
+      if (ov.some((o) => o.el.contains(e))) continue;
+      ov.push({ el: e });
+    }
+    for (const o of ov) blocks.push({ ...R(o.el), pos: 'overlay', kind: 'overlay', inHeader: false, ...desc(o.el), fe1Notice: false });
+  }
   const bandLo = h1r ? h1r.y + h1r.h : contentTop;
-  const before = blocks.filter((b) => b.pos === 'belowH1' && !b.inHeader);
+  // fix2 #3: khối trong page header nằm dưới đáy h1 CŨNG là banner (không còn miễn trừ header)
+  const before = blocks.filter((b) => b.pos === 'overlay' || (b.pos === 'belowH1' && (OFF.has('headerBanner') ? !b.inHeader : true)));
   const aboveH1 = blocks.filter((b) => b.pos === 'aboveH1' && !b.inHeader);
   const headerParts = blocks.filter((b) => b.inHeader);
 
   // ── KPI (R-2-e c): cả hai nguồn, luôn luôn ──
   const top = (els) => els.filter(vis).filter((e, _i, a) => !a.some((o) => o !== e && o.contains(e)));
   const kpiLegacyEls = top([...document.querySelectorAll('main [data-loc*="MetricCard.tsx"]')]);
-  const kpiOfficialEls = top([...document.querySelectorAll('main [data-layout-kpi]')]);
+  const kpiOfficialEls = OFF.has('kpiBoth') ? [] : top([...document.querySelectorAll('main [data-layout-kpi]')]);
   const kpiAll = top([...kpiLegacyEls, ...kpiOfficialEls]);
   const strip = (els) => els.length ? unionY(els.map(R), -1e9, 1e9) : 0;
 
-  // ── Che MAIN (R-2-e d): hit-test lưới ──
+  // ── Che MAIN (R-2-e d): hit-test lưới trên phần ĐÃ CẮT của MAIN ──
   const STEP = 8;
   const clipTop = arg.clipTop || 0;
-  const vr = mainEls.map((m) => m.getBoundingClientRect());
+  const vr = clips.map((c) => c.vr).filter((r) => r.width > 0 && r.height > 0);
   let pts = 0, cov = 0; const culprits = new Map();
-  if (vr.length) {
+  if (vr.length && !OFF.has('hitTest')) {
     const x0 = Math.max(0, Math.min(...vr.map((r) => r.left))), x1 = Math.min(vw, Math.max(...vr.map((r) => r.right)));
     const y0 = Math.max(clipTop, Math.min(...vr.map((r) => r.top))), y1 = Math.min(vh, Math.max(...vr.map((r) => r.bottom)));
     for (let y = Math.floor(y0 / STEP) * STEP + STEP / 2; y < y1; y += STEP) {
@@ -409,7 +509,6 @@ function PHASE2(arg) {
       }
     }
   }
-  // phụ: phần tử định vị cắt MAIN nhưng hit-test không thấy (pointer-events:none…) — chỉ báo
   const positioned = [];
   if (vr.length) {
     for (const e of document.querySelectorAll('body *')) {
@@ -423,25 +522,39 @@ function PHASE2(arg) {
     }
   }
 
-  // ── Chiều cao trang (cả container cuộn tổ tiên của MAIN) ──
+  // ── Chiều cao trang: tài liệu + phần cuộn/ẩn của tổ tiên MAIN + container cuộn/ẩn ANH EM (fix2 #7) ──
+  const SCROLLY = OFF.has('scrollSiblings') ? /(auto|scroll|overlay)/ : /(auto|scroll|overlay|hidden|clip)/;
   const docH = Math.max(document.scrollingElement.scrollHeight, main ? (main.scrollHeight + R(main).y) : 0);
   const scrollers = []; let extra = 0;
+  const ancestors = new Set();
   if (mainEls[0]) for (let a = mainEls[0].parentElement; a && a !== main && a !== document.body && a !== document.documentElement; a = a.parentElement) {
+    ancestors.add(a);
     const s = getComputedStyle(a);
-    if (/(auto|scroll|overlay)/.test(s.overflowY) && a.scrollHeight > a.clientHeight + 1) { extra += a.scrollHeight - a.clientHeight; scrollers.push({ ...desc(a), scrollH: a.scrollHeight, clientH: a.clientHeight }); }
+    if (SCROLLY.test(s.overflowY) && a.scrollHeight > a.clientHeight + 24) { extra += a.scrollHeight - a.clientHeight; scrollers.push({ ...desc(a), rel: 'ancestor', overflowY: s.overflowY, scrollH: a.scrollHeight, clientH: a.clientHeight }); }
   }
+  let sib = 0;
+  if (main && !OFF.has('scrollSiblings')) for (const d of main.querySelectorAll('*')) {
+    if (ancestors.has(d) || mainEls.some((m) => m.contains(d) || d.contains(m))) continue;
+    if (scrollers.some((x) => x.el && x.el.contains(d))) continue;
+    const s = getComputedStyle(d);
+    if (!/(auto|scroll|overlay|hidden|clip)/.test(s.overflowY) || d.clientHeight <= 40 || d.scrollHeight <= d.clientHeight + 24 || !vis(d)) continue;
+    const ex = d.scrollHeight - d.clientHeight; sib = Math.max(sib, ex);
+    scrollers.push({ el: d, ...desc(d), rel: 'sibling', overflowY: s.overflowY, scrollH: d.scrollHeight, clientH: d.clientHeight });
+  }
+  extra += sib;
   const inner = [];
-  for (const m of mainEls) for (const d of [m, ...m.querySelectorAll('*')]) { const s = getComputedStyle(d); if (/(auto|scroll|overlay)/.test(s.overflowY) && d.scrollHeight > d.clientHeight + 1 && d.clientHeight > 40) inner.push({ ...desc(d), scrollH: d.scrollHeight, clientH: d.clientHeight, ratio: +(d.scrollHeight / d.clientHeight).toFixed(2) }); }
+  for (const m of mainEls) for (const d of [m, ...m.querySelectorAll('*')]) { const s = getComputedStyle(d); if (/(auto|scroll|overlay|hidden|clip)/.test(s.overflowY) && d.scrollHeight > d.clientHeight + 24 && d.clientHeight > 40) inner.push({ ...desc(d), overflowY: s.overflowY, scrollH: d.scrollHeight, clientH: d.clientHeight, ratio: +(d.scrollHeight / d.clientHeight).toFixed(2) }); }
   inner.sort((a, b) => b.ratio - a.ratio);
 
   const dialogs = [...document.querySelectorAll('[role=dialog],[role=alertdialog]')].filter(vis).map((e) => ({ role: e.getAttribute('role'), slot: e.getAttribute('data-slot'), ...R(e) }));
   return {
-    errors, warnings, mainCount: mainEls.length, mainRects, mainTop,
+    errors, warnings, mainCount: mainEls.length, mainRects, mainRectsRaw, clippedBy, mainTop,
+    inside, aiInside: aiInside.map(({ el, ...rest }) => rest),
     h1: h1 ? { top: Math.round(h1.getBoundingClientRect().top), bottom: Math.round(h1.getBoundingClientRect().bottom), text: h1.innerText.replace(/\s+/g, ' ').slice(0, 60), inPageHeader: !!h1Header } : null, h1Count: h1s.length,
     band: { lo: Math.round(bandLo), before: { count: before.length, unionPx: unionY(before, bandLo, mainTop ?? 0), byKind: before.reduce((o, b) => { o[b.kind] = (o[b.kind] || 0) + 1; return o; }, {}) }, aboveH1: { count: aboveH1.length, unionPx: unionY(aboveH1, contentTop, h1r ? h1r.y : contentTop) }, headerParts: headerParts.length, blocks },
     kpi: { legacy: { count: kpiLegacyEls.length, stripPx: strip(kpiLegacyEls) }, official: { count: kpiOfficialEls.length, stripPx: strip(kpiOfficialEls) }, all: { count: kpiAll.length, stripPx: strip(kpiAll) } },
     cover: { step: STEP, points: pts, coveredPoints: cov, px: cov * STEP * STEP, items: [...culprits.values()].sort((a, b) => b.px - a.px), positionedIntersecting: positioned.map(({ el, ...rest }) => rest) },
-    scroll: { docH, extra, scrollers, inner: inner.slice(0, 3) },
+    scroll: { docH, extra, siblingExtra: sib, scrollers: scrollers.map(({ el, ...rest }) => rest), inner: inner.slice(0, 3) },
     dialogs,
   };
 }
@@ -470,30 +583,51 @@ function legacyIds(screen, regions) {
   const L = screen.legacyMain;
   return (L.pick ? L.pick(regions) : regions.filter(L.fn)).map((r) => r.id);
 }
+const interRect = (a, b) => { const x = Math.max(a.x, b.x), y = Math.max(a.y, b.y), r = Math.min(a.x + a.w, b.x + b.w), btm = Math.min(a.y + a.h, b.y + b.h); return r > x && btm > y ? { x, y, w: r - x, h: btm - y } : null; };
+/** Gác tắt có chủ đích (chỉ --mutation): tên gác → ca tự kiểm phải ĐỎ khi gác bị gỡ. */
+const OFF = new Set();
+export const GUARDS = {
+  geoBand: ["T01-banner-long-sau"], hitTest: ["T02-lop-phu-fixed"], kpiBoth: ["T03-kpi-hai-nguon"], attrConstraint: ["T04-attribute-vi-pham"], actionNotFound: ["T05-hanh-dong-ma"],
+  calib: ["T06-hieu-chuan"], insideMain: ["T07-banner-trong-main", "T08-kpi-trong-main"], headerBanner: ["T09-banner-trong-header"], noDialog: ["T10-nut-chet", "T10b-panel-inline"],
+  clip: ["T11-cat-overflow"], aiInside: ["T12-ai-trong-main"], overlayBand: ["T13-portal-dai-dau"], dialogsAtLoad: ["T14-dialog-luc-nap"], scrollSiblings: ["T15-cuon-anh-em"], errHash: ["T16-bam-loi"],
+};
+/** Dung sai hiệu chuẩn (fix2 #1): MAIN theo attribute so với MAIN tham chiếu (selector FE1, lưu trong baseline). */
+export const CALIB_TOL = { px: 4, areaPct: 3 };
 
-export function summarize(screen, variant, p1, p2, legacyP2) {
+export function summarize(screen, variant, p1, p2, legacyP2, opts = {}) {
   const { vw, vh } = p1;
   const mode = p1.hasLayoutMainAttr ? "data-layout-main" : "fe1-legacy";
   const clipTop = p1.shell.topbarPos === "sticky" || p1.shell.topbarPos === "fixed" ? (p1.shell.topbarBottom ?? 0) : 0;
   const mainArea = unionArea(p2.mainRects, vw, vh, clipTop);
-  // FE1: nhãn lớp CSS (phụ) — định nghĩa FE1 + loại trừ nút (*-trigger)
+  // vùng LÀM VIỆC = MAIN (đã cắt) từ đỉnh phần tử làm việc trở xuống, TRỪ bề mặt AI bên trong MAIN
+  const wsRects = p2.mainRects.map((r, i) => { const ins = p2.inside[i]; if (!ins || ins.wsTopAbs == null) return r; const y = Math.max(r.y, Math.round(ins.wsTopAbs)); return { x: r.x, y, w: r.w, h: Math.max(0, r.y + r.h - y) }; });
+  const aiRects = p2.aiInside.map((a) => a.rect);
+  const aiInWs = [], aiInMain = []; for (const a of aiRects) { for (const w of wsRects) { const i = interRect(a, w); if (i) aiInWs.push(i); } for (const m of p2.mainRects) { const i = interRect(a, m); if (i) aiInMain.push(i); } }
+  const aiPx = unionArea(aiInWs, vw, vh, clipTop);
+  const aiMainPx = unionArea(aiInMain, vw, vh, clipTop);
+  const wsArea = Math.max(0, unionArea(wsRects, vw, vh, clipTop) - aiPx);
   const fe1Notices = p1.regions.filter((r) => r.notice && !BAD_NOTICE_KINDS.includes(r.kind) && !/-trigger$/.test(r.kind) && r.tag !== "BUTTON" && r.tag !== "A" && r.depth === 0 && !/PageHeader/.test(r.loc || ""));
   const fe1Before = p2.mainTop == null ? fe1Notices : fe1Notices.filter((n) => n.y < p2.mainTop);
   const errors = [...p2.errors], warnings = [...p2.warnings];
   if (mode === "fe1-legacy") warnings.push("CHƯA có [data-layout-main] — đo bằng selector FE1");
+  const geo = !OFF.has("geoBand");
+  const banners = geo ? { count: p2.band.before.count, px: p2.band.before.unionPx, byKind: p2.band.before.byKind } : { count: fe1Before.length, px: fe1Before.reduce((s, n) => s + n.h, 0), byKind: {} };
   const rec = {
     screen: screen.id, route: screen.route, vw, vh, variant,
     mainSource: mode, missingDataLayoutMain: mode !== "data-layout-main",
     mainSelector: mode === "data-layout-main" ? "[data-layout-main]" : screen.legacyMain.desc,
-    mainFound: p2.mainCount > 0, mainRects: p2.mainRects, mainTop: p2.mainTop,
+    mainFound: p2.mainCount > 0, mainRects: p2.mainRects, mainRectsRaw: p2.mainRectsRaw, clippedBy: p2.clippedBy, mainTop: p2.mainTop,
     chromeAboveMain: p2.mainTop,
     mainPct: +(mainArea / (vw * vh) * 100).toFixed(1),
+    workspacePct: +(wsArea / (vw * vh) * 100).toFixed(1),
     mainPctFe1: +(unionArea(p2.mainRects, vw, vh, 109) / (vw * vh) * 100).toFixed(1),
     mainPctUncovered: +(Math.max(0, mainArea - p2.cover.px) / (vw * vh) * 100).toFixed(1),
+    insideMain: p2.inside.map(({ wsTopAbs, ...rest }) => rest),
+    aiInsideMain: { px: aiMainPx, inWorkspacePx: aiPx, pctOfViewport: +(aiMainPx / (vw * vh) * 100).toFixed(1), items: p2.aiInside },
     h1Top: p2.h1 ? p2.h1.top : null, h1Bottom: p2.h1 ? p2.h1.bottom : null, h1Text: p2.h1 ? p2.h1.text : null, h1Missing: !p2.h1, h1Count: p2.h1Count,
     gapH1ToMain: p2.h1 && p2.mainTop != null ? p2.mainTop - p2.h1.bottom : null,
     breadcrumbs: p1.shell.crumbs.length,
-    bannersBeforeMain: { count: p2.band.before.count, px: p2.band.before.unionPx, byKind: p2.band.before.byKind, method: p2.h1 ? "geometric: khối giữa đáy h1 và đỉnh MAIN, ngoài page header" : "geometric: khối giữa đỉnh <main> và đỉnh MAIN (không có h1)" },
+    bannersBeforeMain: { ...banners, method: geo ? (p2.h1 ? "geometric: khối giữa đáy h1 và đỉnh MAIN (kể cả trong page header) + popover/portal đè dải đầu" : "geometric: khối giữa đỉnh <main> và đỉnh MAIN (không có h1)") : "FE1-class (gác geoBand TẮT)" },
     blocksAboveH1: p2.band.aboveH1, headerParts: p2.band.headerParts,
     bandBlocks: p2.band.blocks.map((b) => ({ pos: b.pos, kind: b.kind, inHeader: b.inHeader, y: b.y, h: b.h, x: b.x, w: b.w, loc: b.loc, tag: b.tag, testid: b.testid, label: b.label, fe1Notice: b.fe1Notice })),
     bannersFe1Class: { count: fe1Before.length, px: fe1Before.reduce((s, n) => s + n.h, 0), items: fe1Before.map((n) => ({ loc: (n.loc || "").replace(/^.*[\\/]/, ""), y: n.y, h: n.h, head: n.head.slice(0, 50) })) },
@@ -505,7 +639,25 @@ export function summarize(screen, variant, p1, p2, legacyP2) {
     spinnersAtMeasure: p1.spinners,
     errors, warnings,
   };
-  if (legacyP2) rec.calibration = { legacyMainTop: legacyP2.mainTop, legacyMainPct: +(unionArea(legacyP2.mainRects, vw, vh, clipTop) / (vw * vh) * 100).toFixed(1), legacyMainRects: legacyP2.mainRects };
+  // fix2 #7: dialog/sheet mở sẵn lúc nạp = LỖI
+  if (p2.dialogs.length && !OFF.has("dialogsAtLoad")) errors.push(`${p2.dialogs.length} dialog/sheet MỞ SẴN lúc nạp: ${JSON.stringify(rec.dialogsAtLoad.kinds)}`);
+  // Tham chiếu MAIN theo selector FE1 (luôn ghi khi selector FE1 còn tìm thấy) — lưu trong baseline cho cổng hiệu chuẩn
+  const lp = legacyP2 || (mode === "fe1-legacy" ? p2 : null);
+  if (lp && lp.mainCount) rec.legacyRef = { mainTop: lp.mainTop, rects: lp.mainRects, areaPx: unionArea(lp.mainRects, 1e6, 1e6, -1e6) };
+  // fix2 #1: CỔNG HIỆU CHUẨN khi trang có data-layout-main
+  if (mode === "data-layout-main" && !OFF.has("calib")) {
+    const ref = opts.ref; const cal = opts.calibrations && opts.calibrations[screen.id];
+    const area = unionArea(p2.mainRects, 1e6, 1e6, -1e6);
+    if (cal) rec.calibration = { status: "recorded", entry: cal };
+    else if (!ref) { rec.calibration = { status: "no-reference" }; errors.push(`HIỆU CHUẨN: trang có [data-layout-main] nhưng không có tham chiếu FE1 trong baseline cho ${screen.id}@${vw}/${variant}`); }
+    else {
+      const dTop = Math.abs(p2.mainTop - ref.mainTop), dArea = ref.areaPx ? Math.abs(area - ref.areaPx) / ref.areaPx * 100 : 100;
+      const dLeft = Math.abs(Math.min(...p2.mainRects.map((r) => r.x)) - Math.min(...ref.rects.map((r) => r.x)));
+      const ok = dTop <= CALIB_TOL.px && dLeft <= CALIB_TOL.px && dArea <= CALIB_TOL.areaPct;
+      rec.calibration = { status: ok ? "matches-reference" : "MISMATCH", dTop, dLeft, dAreaPct: +dArea.toFixed(2), ref: { mainTop: ref.mainTop, areaPx: ref.areaPx } };
+      if (!ok) errors.push(`HIỆU CHUẨN TRƯỢT: [data-layout-main] lệch MAIN tham chiếu FE1 (Δtop ${dTop} px, Δleft ${dLeft} px, Δdiện tích ${dArea.toFixed(1)} %; dung sai ${CALIB_TOL.px} px / ${CALIB_TOL.areaPct} %) và chưa có bản ghi trong calibration.json — gắn attribute trên bố cục CHƯA đổi rồi chạy --calibrate`);
+    }
+  }
   return rec;
 }
 function dialogKind(d) {
@@ -515,6 +667,7 @@ function dialogKind(d) {
   if (/alert-dialog/.test(s) || d.role === "alertdialog") return "alert-dialog";
   if (/popover/.test(s)) return "popover";
   if (/dialog/.test(s)) return "dialog";
+  if (d.role === "menu" || d.role === "listbox") return d.role;
   return `unknown(${d.role})`;
 }
 
@@ -766,36 +919,55 @@ async function settle(page) {
 async function countDialogs(page) {
   return page.evaluate(() => {
     const vis = (e) => { const r = e.getBoundingClientRect(); const s = getComputedStyle(e); return r.width >= 4 && r.height >= 4 && s.visibility !== 'hidden' && s.display !== 'none'; };
-    return [...document.querySelectorAll('[role=dialog],[role=alertdialog]')].filter(vis).map((e) => { const r = e.getBoundingClientRect(); return { role: e.getAttribute('role'), slot: e.getAttribute('data-slot'), x: Math.round(r.left), y: Math.round(r.top), w: Math.round(r.width), h: Math.round(r.height) }; });
+    return [...document.querySelectorAll('[role=dialog],[role=alertdialog],[role=menu],[role=listbox]')].filter(vis).filter((e) => e.getAttribute('role') === 'dialog' || e.getAttribute('role') === 'alertdialog' || !e.closest('main')).map((e) => { const r = e.getBoundingClientRect(); return { role: e.getAttribute('role'), slot: e.getAttribute('data-slot'), x: Math.round(r.left), y: Math.round(r.top), w: Math.round(r.width), h: Math.round(r.height) }; });
   });
 }
-/** Hành động KHAI BÁO: không tìm thấy = LỖI; disabled = cảnh báo; mở được ⇒ ghi LOẠI dialog. */
-async function runActions(page, actions) {
+const geomSig = (r) => JSON.stringify([r.mainTop, r.mainRects, r.scroll.docH, r.scroll.extra, r.bandBlocks.map((b) => [b.y, b.h]), r.insideMain.map((i) => [i.aboveWorkspacePx, i.blocks.length]), r.pageHeightRatio]);
+/**
+ * Hành động KHAI BÁO: không tìm thấy = LỖI; disabled = cảnh báo; có dialog/sheet ⇒ ghi LOẠI; KHÔNG có dialog
+ * ⇒ đo lại: không đổi hình học = LỖI (nút chết / đổi tên lén), đổi hình học = panel `inline` (cao bao nhiêu,
+ * đẩy MAIN bao nhiêu). `ctx.before` = bản đo trang ngay trước khi bấm.
+ */
+async function runActions(page, actions, ctx = {}) {
   const out = [];
   for (const a of actions || []) {
     const btn = page.locator("main").getByRole("button", { name: a.label }).first();
     const rec = { id: a.id, label: String(a.label) };
-    if (!(await btn.count())) { out.push({ ...rec, status: "not-found", error: `hành động khai báo "${a.id}" KHÔNG TÌM THẤY` }); continue; }
+    if (!(await btn.count())) { out.push(OFF.has("actionNotFound") ? { ...rec, status: "skipped" } : { ...rec, status: "not-found", error: `hành động khai báo "${a.id}" KHÔNG TÌM THẤY` }); continue; }
     if (!(await btn.isEnabled())) { out.push({ ...rec, status: "disabled" }); continue; }
+    const url = page.url();
     await btn.click();
     await page.waitForTimeout(700);
     const ds = await countDialogs(page);
-    rec.status = "opened"; rec.dialogs = ds.length; rec.kinds = ds.map(dialogKind); rec.rects = ds;
-    await page.keyboard.press("Escape");
-    await page.waitForTimeout(500);
-    rec.closedByEsc = (await countDialogs(page)).length === 0;
-    if (!rec.closedByEsc) { await page.reload(); await settle(page); }
-    out.push(rec);
+    if (ds.length || OFF.has("noDialog")) {
+      rec.status = "opened"; rec.dialogs = ds.length; rec.kinds = ds.map(dialogKind); rec.rects = ds;
+      await page.keyboard.press("Escape");
+      await page.waitForTimeout(500);
+      rec.closedByEsc = (await countDialogs(page)).length === 0;
+      if (!rec.closedByEsc) { await page.goto(url); await settle(page); }
+      out.push(rec); continue;
+    }
+    const after = ctx.before && ctx.s ? await measurePage(page, ctx.s, ctx.variant, ctx.opts) : null;
+    if (!after || geomSig(after) === geomSig(ctx.before)) {
+      out.push({ ...rec, status: "no-effect", dialogs: 0, kinds: [], error: `hành động "${a.id}": bấm xong KHÔNG có dialog/sheet và KHÔNG đổi hình học` });
+    } else {
+      const old = new Set(ctx.before.bandBlocks.map((b) => `${b.loc}|${b.h}`));
+      const fresh = after.bandBlocks.filter((b) => !old.has(`${b.loc}|${b.h}`));
+      const panelH = Math.max(0, after.scroll.docH - ctx.before.scroll.docH, ...fresh.map((b) => b.h));
+      out.push({ ...rec, status: "inline", dialogs: 0, kinds: ["inline"], inlineHeight: panelH, pushesMainPx: Math.max(0, (after.mainTop ?? 0) - (ctx.before.mainTop ?? 0)), newBlocks: fresh.slice(0, 3).map((b) => ({ loc: b.loc, h: b.h, label: b.label })) });
+    }
+    await page.goto(url); await settle(page); await page.evaluate(() => window.scrollTo(0, 0));
   }
   return out;
 }
-async function measurePage(page, s, variant) {
+async function measurePage(page, s, variant, opts = {}) {
   const p1 = await page.evaluate(PHASE1);
   const clipTop = p1.shell.topbarPos === "sticky" || p1.shell.topbarPos === "fixed" ? (p1.shell.topbarBottom ?? 0) : 0;
   const ids = legacyIds(s, p1.regions);
-  const p2 = await page.evaluate(PHASE2, p1.hasLayoutMainAttr ? { mode: "attr", clipTop } : { mode: "legacy", ids, clipTop });
-  const legacyP2 = p1.hasLayoutMainAttr && ids.length ? await page.evaluate(PHASE2, { mode: "legacy", ids, clipTop }) : null;
-  return summarize(s, variant, p1, p2, legacyP2);
+  const common = { clipTop, off: [...OFF], aiIsWorkspace: !!s.aiIsWorkspace };
+  const p2 = await page.evaluate(PHASE2, p1.hasLayoutMainAttr ? { mode: "attr", ...common } : { mode: "legacy", ids, ...common });
+  const legacyP2 = p1.hasLayoutMainAttr && ids.length ? await page.evaluate(PHASE2, { mode: "legacy", ids, ...common }) : null;
+  return summarize(s, variant, p1, p2, legacyP2, opts);
 }
 async function resolveRoute(ctx, base, s) {
   if (s.deepLink !== "firstProject") return s.route;
@@ -806,74 +978,147 @@ async function resolveRoute(ctx, base, s) {
   if (!first) { console.log(`[uim] ${s.id}: không có dự án nào ⇒ đo không chọn dự án (editor sẽ không hiện)`); return s.route; }
   return `${s.route}?projectId=${first.id}`;
 }
-
-/**
- * ĐỐI CHỨNG DƯƠNG trong mỗi lần chạy (MSA): trên ECN @1600, chèn từng nhiễu vào DOM thật rồi đo lại
- * ⇒ thiết bị PHẢI thấy. Mỗi phép chèn làm trên trang nạp lại sạch.
- */
-async function selfTest(page, base, s) {
-  const checks = [];
-  const check = (name, pass, detail) => checks.push({ name, pass: !!pass, ...detail });
-  const fresh = async () => { await page.goto(base + s.route); await settle(page); await page.evaluate(() => window.scrollTo(0, 0)); };
-  await fresh();
-  const b0 = await measurePage(page, s, "selftest");
-  // T1: banner lồng 2 tầng, lớp px-5 py-4 (lọt regex FE1), cao 100 px, chèn ngay trước nhánh chứa MAIN
-  {
-    const p1 = await page.evaluate(PHASE1);
-    const id = legacyIds(s, p1.regions)[0];
-    await page.evaluate((rid) => {
-      const main = document.querySelector('main');
-      const h1 = document.querySelector('main h1');
-      const target = document.querySelector('main [data-layout-main]') || document.querySelector(`[data-uim-r="${rid}"]`);
-      let a = target; while (a.parentElement && a.parentElement !== main && !(h1 && a.parentElement.contains(h1))) a = a.parentElement;
-      const w = document.createElement('div');
-      const w2 = document.createElement('div');
-      const bn = document.createElement('div');
-      bn.className = 'rounded-lg border border-amber-500/40 bg-amber-500/10 px-5 py-4';
-      bn.style.height = '100px';
-      bn.textContent = 'UIM tự kiểm — banner chèn';
-      w2.appendChild(bn); w.appendChild(w2);
-      a.parentElement.insertBefore(w, a);
-    }, id);
-  }
-  const b1 = await measurePage(page, s, "selftest");
-  check("banner-long-sau-px5-py4", b1.bannersBeforeMain.count === b0.bannersBeforeMain.count + 1 && b1.bannersBeforeMain.px >= b0.bannersBeforeMain.px + 100 && b1.chromeAboveMain >= b0.chromeAboveMain + 100,
-    { before: { n: b0.bannersBeforeMain.count, px: b0.bannersBeforeMain.px, top: b0.chromeAboveMain, fe1: b0.bannersFe1Class.count }, after: { n: b1.bannersBeforeMain.count, px: b1.bannersBeforeMain.px, top: b1.chromeAboveMain, fe1: b1.bannersFe1Class.count } });
-  // T2: lớp phủ fixed 200×200 không data-loc, z 9999, giữa MAIN
-  await fresh();
-  const r = b0.mainRects[0];
-  await page.evaluate((rc) => { const d = document.createElement('div'); d.setAttribute('data-testid', 'uim-overlay'); d.style.cssText = `position:fixed;z-index:9999;left:${rc.x + 40}px;top:${Math.min(rc.y + 40, innerHeight - 220)}px;width:200px;height:200px;background:rgba(255,0,0,.3)`; document.body.appendChild(d); }, r);
-  const b2 = await measurePage(page, s, "selftest");
-  check("lop-phu-fixed-200x200", b2.coverMain.px >= b0.coverMain.px + 0.9 * 40000 && b2.coverMain.items.some((i) => i.testid === "uim-overlay"), { before: b0.coverMain.px, after: b2.coverMain.px, culprit: b2.coverMain.items[0] });
-  // T3: thêm một chip [data-layout-kpi] — MetricCard cũ vẫn phải được đếm song song
-  await fresh();
-  {
-    const p1 = await page.evaluate(PHASE1);
-    const id = legacyIds(s, p1.regions)[0];
-    await page.evaluate((rid) => {
-      const main = document.querySelector('main');
-      const h1 = document.querySelector('main h1');
-      const target = document.querySelector('main [data-layout-main]') || document.querySelector(`[data-uim-r="${rid}"]`);
-      let a = target; while (a.parentElement && a.parentElement !== main && !(h1 && a.parentElement.contains(h1))) a = a.parentElement;
-      const d = document.createElement('div'); d.setAttribute('data-layout-kpi', ''); d.style.cssText = 'display:block;height:32px;width:120px'; d.textContent = 'KPI';
-      a.parentElement.insertBefore(d, a);
-    }, id);
-  }
-  const b3 = await measurePage(page, s, "selftest");
-  check("kpi-chinh-thuc-va-cu", b3.kpi.official.count === b0.kpi.official.count + 1 && b3.kpi.legacy.count === b0.kpi.legacy.count, { before: b0.kpi, after: b3.kpi });
-  // T4: attribute vi phạm — MAIN bọc h1, và một attribute ngoài <main>
-  await fresh();
-  await page.evaluate(() => { const h1 = document.querySelector('main h1'); let a = h1; while (a.parentElement && a.parentElement !== document.querySelector('main')) a = a.parentElement; a.setAttribute('data-layout-main', 'uim-test'); const o = document.createElement('div'); o.setAttribute('data-layout-main', 'ngoai'); o.style.cssText = 'height:20px;width:20px'; document.body.appendChild(o); });
-  const b4 = await measurePage(page, s, "selftest");
-  check("attribute-vi-pham", b4.errors.some((e) => /chứa h1/.test(e)) && b4.errors.some((e) => /NGOÀI <main>/.test(e)), { errors: b4.errors.slice(0, 4) });
-  // T5: hành động khai báo không tồn tại
-  await fresh();
-  const acts = await runActions(page, [{ id: "uim-ma", label: /__khong_ton_tai_uim__/ }]);
-  check("hanh-dong-khong-thay-la-loi", acts[0].status === "not-found" && !!acts[0].error, { got: acts[0] });
-  return { screen: s.id, vw: (await page.viewportSize()).width, pass: checks.every((c) => c.pass), checks };
+/** Lỗi băm dữ liệu (`ERR:`) ⇒ lần chạy trượt (fix2 #7). */
+function dataErrors(snap) {
+  if (OFF.has("errHash")) return [];
+  return Object.entries(snap || {}).filter(([, v]) => String(v).startsWith("ERR")).map(([t, v]) => `băm bảng ${t} lỗi: ${v}`);
 }
 
-async function measureAll({ base, username, password, screens, sizes, shots, shotDir, listButtons, serverPid, serverPort, discover, doSelfTest }) {
+/**
+ * ĐỐI CHỨNG DƯƠNG (MSA), đi qua ĐÚNG đường đo thật (measurePage / runActions / dataErrors): trên ECN @1600,
+ * mỗi ca chèn một cách lách vào DOM của trang nạp lại sạch ⇒ thiết bị PHẢI bắt. `--mutation` gỡ từng gác
+ * (GUARDS) và chứng minh ca tương ứng ĐỎ.
+ */
+async function selfTest(page, base, s, only = null) {
+  const checks = [];
+  const want = (name) => !only || only.includes(name);
+  const check = (name, pass, detail) => checks.push({ name, pass: !!pass, ...detail });
+  const fresh = async () => { await page.goto(base + s.route); await settle(page); await page.evaluate(() => window.scrollTo(0, 0)); };
+  // chạy mã trong trang với T = phần tử MAIN cũ (selector FE1), A = nhánh tổ tiên cao nhất của T không chứa h1
+  const inPage = async (body) => {
+    const p1 = await page.evaluate(PHASE1);
+    const rid = legacyIds(s, p1.regions)[0];
+    return page.evaluate(`(() => { const main = document.querySelector('main'); const h1 = document.querySelector('main h1');
+      const T = document.querySelector('[data-uim-r="${rid}"]');
+      let A = T; while (A.parentElement && A.parentElement !== main && !(h1 && A.parentElement.contains(h1))) A = A.parentElement;
+      let H = null; for (let n = h1; n && n !== main; n = n.parentElement) if (n.matches('[data-loc*="PageHeader.tsx"],[data-layout-header],header')) H = n;
+      const mk = (cls, h, txt) => { const d = document.createElement('div'); if (cls) d.className = cls; d.style.height = h + 'px'; d.textContent = txt || ''; return d; };
+      ${body} })()`);
+  };
+  await fresh();
+  const b0 = await measurePage(page, s, "selftest");
+  const ref0 = b0.legacyRef;
+  const NOTICE = "rounded-lg border border-amber-500/40 bg-amber-500/10 px-5 py-4";
+  if (want("T01-banner-long-sau")) {
+    await inPage(`const w = document.createElement('div'), w2 = document.createElement('div'); w2.appendChild(mk('${NOTICE}', 100, 'Lưu ý: UIM tự kiểm')); w.appendChild(w2); A.parentElement.insertBefore(w, A);`);
+    const b = await measurePage(page, s, "selftest");
+    check("T01-banner-long-sau", b.bannersBeforeMain.count === b0.bannersBeforeMain.count + 1 && b.bannersBeforeMain.px >= b0.bannersBeforeMain.px + 100 && b.chromeAboveMain >= b0.chromeAboveMain + 100, { before: [b0.bannersBeforeMain.count, b0.bannersBeforeMain.px, b0.chromeAboveMain], after: [b.bannersBeforeMain.count, b.bannersBeforeMain.px, b.chromeAboveMain], fe1Class: [b0.bannersFe1Class.count, b.bannersFe1Class.count] });
+    await fresh();
+  }
+  if (want("T02-lop-phu-fixed")) {
+    const r = b0.mainRects[0];
+    await page.evaluate((rc) => { const d = document.createElement('div'); d.setAttribute('data-testid', 'uim-overlay'); d.style.cssText = `position:fixed;z-index:9999;left:${rc.x + 40}px;top:${Math.min(rc.y + 40, innerHeight - 220)}px;width:200px;height:200px;background:rgba(255,0,0,.3)`; document.body.appendChild(d); }, r);
+    const b = await measurePage(page, s, "selftest");
+    check("T02-lop-phu-fixed", b.coverMain.px >= b0.coverMain.px + 0.9 * 40000 && b.coverMain.items.some((i) => i.testid === "uim-overlay"), { before: b0.coverMain.px, after: b.coverMain.px });
+    await fresh();
+  }
+  if (want("T03-kpi-hai-nguon")) {
+    await inPage(`const d = mk('', 32, 'KPI'); d.setAttribute('data-layout-kpi', ''); d.style.width = '120px'; A.parentElement.insertBefore(d, A);`);
+    const b = await measurePage(page, s, "selftest");
+    check("T03-kpi-hai-nguon", b.kpi.official.count === b0.kpi.official.count + 1 && b.kpi.legacy.count === b0.kpi.legacy.count, { before: b0.kpi.official.count, after: b.kpi.official.count });
+    await fresh();
+  }
+  if (want("T04-attribute-vi-pham")) {
+    await page.evaluate(() => { const h1 = document.querySelector('main h1'); let a = h1; while (a.parentElement && a.parentElement !== document.querySelector('main')) a = a.parentElement; a.setAttribute('data-layout-main', 'uim-test'); const o = document.createElement('div'); o.setAttribute('data-layout-main', 'ngoai'); o.style.cssText = 'height:20px;width:20px'; document.body.appendChild(o); });
+    const b = await measurePage(page, s, "selftest", { ref: ref0, calibrations: {} });
+    check("T04-attribute-vi-pham", b.errors.some((e) => /chứa h1/.test(e)) && b.errors.some((e) => /NGOÀI <main>/.test(e)), { errors: b.errors.slice(0, 3) });
+    await fresh();
+  }
+  if (want("T05-hanh-dong-ma")) {
+    const acts = await runActions(page, [{ id: "uim-ma", label: /__khong_ton_tai_uim__/ }], { s, variant: "selftest", before: b0 });
+    check("T05-hanh-dong-ma", acts[0].status === "not-found" && !!acts[0].error, { got: acts[0].status });
+    await fresh();
+  }
+  if (want("T06-hieu-chuan")) {
+    await inPage(`T.setAttribute('data-layout-main', 'dung');`);
+    const ok = await measurePage(page, s, "selftest", { ref: ref0, calibrations: {} });
+    await fresh();
+    await inPage(`(T.querySelector('tbody') || T.firstElementChild).setAttribute('data-layout-main', 'lech');`);
+    const bad = await measurePage(page, s, "selftest", { ref: ref0, calibrations: {} });
+    check("T06-hieu-chuan", ok.calibration?.status === "matches-reference" && ok.errors.length === 0 && bad.errors.some((e) => /HIỆU CHUẨN TRƯỢT/.test(e)), { control: { status: ok.calibration?.status, errors: ok.errors }, attack: bad.calibration });
+    await fresh();
+  }
+  if (want("T07-banner-trong-main")) {
+    await inPage(`T.setAttribute('data-layout-main', 'x'); T.insertBefore(mk('${NOTICE}', 80, 'Chế độ xem trước — banner không đánh dấu'), T.firstChild);`);
+    const b = await measurePage(page, s, "selftest", { ref: ref0, calibrations: { [s.id]: { note: "selftest" } } });
+    check("T07-banner-trong-main", b.errors.some((e) => /BANNER\/DẢI KPI TRONG MAIN/.test(e)), { errors: b.errors.slice(0, 2), inside: b.insideMain[0] && { banners: b.insideMain[0].banners, above: b.insideMain[0].aboveWorkspacePx } });
+    await fresh();
+  }
+  if (want("T08-kpi-trong-main")) {
+    await inPage(`T.setAttribute('data-layout-main', 'x'); const row = document.createElement('div'); row.style.cssText = 'display:flex;gap:8px;padding:8px'; for (let i = 0; i < 4; i++) { const c = mk('rounded-md border px-3', 32, (i * 7) + ' việc'); c.style.width = '140px'; row.appendChild(c); } T.insertBefore(row, T.firstChild);`);
+    const b = await measurePage(page, s, "selftest", { ref: ref0, calibrations: { [s.id]: { note: "selftest" } } });
+    check("T08-kpi-trong-main", b.errors.some((e) => /BANNER\/DẢI KPI TRONG MAIN/.test(e) && /kpi-strip/.test(e)), { errors: b.errors.slice(0, 2) });
+    await fresh();
+  }
+  if (want("T09-banner-trong-header")) {
+    await inPage(`(H || h1.parentElement).appendChild(mk('${NOTICE}', 40, 'Lưu ý trong header'));`);
+    const b = await measurePage(page, s, "selftest");
+    check("T09-banner-trong-header", b.bannersBeforeMain.count === b0.bannersBeforeMain.count + 1 && b.bannersBeforeMain.px >= b0.bannersBeforeMain.px + 40, { before: [b0.bannersBeforeMain.count, b0.bannersBeforeMain.px], after: [b.bannersBeforeMain.count, b.bannersBeforeMain.px] });
+    await fresh();
+  }
+  if (want("T10-nut-chet")) {
+    await inPage(`const b = document.createElement('button'); b.textContent = 'UIM nút chết'; h1.parentElement.appendChild(b);`);
+    const before = await measurePage(page, s, "selftest");
+    const acts = await runActions(page, [{ id: "uim-chet", label: /UIM nút chết/ }], { s, variant: "selftest", before });
+    check("T10-nut-chet", acts[0].status === "no-effect" && !!acts[0].error, { got: acts[0] });
+    await fresh();
+  }
+  if (want("T10b-panel-inline")) {
+    await inPage(`const b = document.createElement('button'); b.textContent = 'UIM mở panel'; b.onclick = () => { A.parentElement.insertBefore(mk('border', 150, 'panel inline'), A); }; h1.parentElement.appendChild(b);`);
+    const before = await measurePage(page, s, "selftest");
+    const acts = await runActions(page, [{ id: "uim-inline", label: /UIM mở panel/ }], { s, variant: "selftest", before });
+    check("T10b-panel-inline", acts[0].status === "inline" && acts[0].inlineHeight >= 150 && acts[0].pushesMainPx >= 150, { got: acts[0] });
+    await fresh();
+  }
+  if (want("T11-cat-overflow")) {
+    await inPage(`const P = T.parentElement; const top = T.getBoundingClientRect().top - P.getBoundingClientRect().top; P.style.overflow = 'hidden'; P.style.height = (top + 100) + 'px';`);
+    const b = await measurePage(page, s, "selftest");
+    const maxPct = (100 * b0.mainRects[0].w) / (1600 * 950) * 100 + 0.2;
+    check("T11-cat-overflow", b.mainPct <= maxPct && b.mainPct < b0.mainPct && b.clippedBy.length > 0, { before: b0.mainPct, after: b.mainPct, maxPct: +maxPct.toFixed(1) });
+    await fresh();
+  }
+  if (want("T12-ai-trong-main")) {
+    await inPage(`T.style.position = 'relative'; const a1 = document.createElement('aside'); a1.setAttribute('role', 'complementary'); a1.style.cssText = 'position:absolute;right:0;top:60px;width:300px;height:300px;background:#123'; const a2 = document.createElement('div'); a2.setAttribute('data-testid', 'copilot-panel'); a2.style.cssText = 'position:absolute;right:320px;top:60px;width:200px;height:200px;background:#321'; T.appendChild(a1); T.appendChild(a2);`);
+    const b = await measurePage(page, s, "selftest");
+    check("T12-ai-trong-main", b.aiInsideMain.px >= 0.9 * 130000 && b.aiInsideMain.items.length === 2 && b.workspacePct <= b0.workspacePct - 0.9 * 130000 / (1600 * 950) * 100, { before: { ws: b0.workspacePct, ai: b0.aiInsideMain.px }, after: { ws: b.workspacePct, ai: b.aiInsideMain.px, items: b.aiInsideMain.items.map((i) => i.testid || i.role) } });
+    await fresh();
+  }
+  if (want("T13-portal-dai-dau")) {
+    await page.evaluate(() => { const m = document.querySelector('main').getBoundingClientRect(); const d = document.createElement('div'); d.setAttribute('role', 'status'); d.style.cssText = `position:fixed;z-index:60;left:${m.left + 40}px;top:70px;width:400px;height:40px;background:#fe0`; d.textContent = 'popover mở sẵn'; document.body.appendChild(d); });
+    const b = await measurePage(page, s, "selftest");
+    check("T13-portal-dai-dau", b.bannersBeforeMain.count === b0.bannersBeforeMain.count + 1 && (b.bannersBeforeMain.byKind.overlay || 0) === 1, { before: b0.bannersBeforeMain.count, after: b.bannersBeforeMain.count, byKind: b.bannersBeforeMain.byKind });
+    await fresh();
+  }
+  if (want("T14-dialog-luc-nap")) {
+    await page.evaluate(() => { const d = document.createElement('div'); d.setAttribute('role', 'dialog'); d.setAttribute('data-slot', 'dialog-content'); d.style.cssText = 'position:fixed;z-index:70;left:600px;top:500px;width:300px;height:200px;background:#fff'; document.body.appendChild(d); });
+    const b = await measurePage(page, s, "selftest");
+    check("T14-dialog-luc-nap", b.errors.some((e) => /MỞ SẴN lúc nạp/.test(e)), { errors: b.errors.slice(0, 2) });
+    await fresh();
+  }
+  if (want("T15-cuon-anh-em")) {
+    await inPage(`const box = document.createElement('div'); box.style.cssText = 'height:100px;overflow:hidden'; box.appendChild(mk('', 2000, 'nội dung ẩn')); A.parentElement.insertBefore(box, A);`);
+    const b = await measurePage(page, s, "selftest");
+    check("T15-cuon-anh-em", b.pageHeightRatio >= b0.pageHeightRatio + 1900 / 950 - 0.05, { before: b0.pageHeightRatio, after: b.pageHeightRatio });
+    await fresh();
+  }
+  if (want("T16-bam-loi")) {
+    const errs = dataErrors({ bang_that: "12:abcdef", bang_hong: "ERR:relation does not exist" });
+    check("T16-bam-loi", errs.length === 1, { errors: errs });
+  }
+  return { screen: s.id, vw: (await page.viewportSize()).width, off: [...OFF], pass: checks.every((c) => c.pass), checks };
+}
+
+async function measureAll({ base, username, password, screens, sizes, shots, shotDir, listButtons, serverPid, serverPort, discover, doSelfTest, refs = {}, calibrations = {}, mutation = false }) {
   const { chromium } = require("playwright");
   const browser = await chromium.launch({ headless: true });
   const results = [], buttons = {}, connections = [], discovered = {};
@@ -907,9 +1152,11 @@ async function measureAll({ base, username, password, screens, sizes, shots, sho
             for (const [t, n] of Object.entries(st1)) if (n > (st0[t] ?? 0)) discovered[key].add(t);
           }
           if (shots) await page.screenshot({ path: path.join(shotDir, `${String(s.n).padStart(2, "0")}-${s.id}-${variant}-${w}.png`) });
-          const rec = await measurePage(page, s, s.copilot ? variant : "n/a");
-          rec.actions = await runActions(page, s.actions);
-          for (const a of rec.actions) { if (a.status === "not-found") rec.errors.push(a.error); if (a.status === "disabled") rec.warnings.push(`hành động "${a.id}" disabled cho role đo`); if (a.status === "opened" && !a.closedByEsc) rec.warnings.push(`hành động "${a.id}": Esc không đóng`); }
+          const v = s.copilot ? variant : "n/a";
+          const opts = { ref: refs[`${s.id}|${w}|${v}`], calibrations };
+          const rec = await measurePage(page, s, v, opts);
+          rec.actions = await runActions(page, s.actions, { s, variant: v, before: rec, opts });
+          for (const a of rec.actions) { if (a.error) rec.errors.push(a.error); if (a.status === "disabled") rec.warnings.push(`hành động "${a.id}" disabled cho role đo`); if (a.status === "opened" && !a.closedByEsc) rec.warnings.push(`hành động "${a.id}": Esc không đóng`); }
           rec.trpc = [...procs].sort();
           const known = KNOWN_PROCS[s.id];
           if (known) { const unk = rec.trpc.filter((p) => !known.includes(p)); if (unk.length) rec.warnings.push(`thủ tục tRPC chưa có trong KNOWN_PROCS (canh trôi có thể thiếu bảng — chạy --discover-tables): ${unk.join(", ")}`); }
@@ -923,8 +1170,23 @@ async function measureAll({ base, username, password, screens, sizes, shots, sho
       if (doSelfTest && variant === "closed") {
         const ecn = SCREENS.find((x) => x.id === "engineering-changes");
         await page.setViewportSize({ width: 1600, height: 950 });
+        OFF.clear();
         selfTestResult = await selfTest(page, base, ecn);
         console.log(`[uim] tự kiểm (đối chứng dương): ${selfTestResult.pass ? "ĐẠT" : "TRƯỢT"} — ${selfTestResult.checks.map((c) => `${c.name}:${c.pass ? "✓" : "✗"}`).join(" ")}`);
+        if (mutation) {
+          // gỡ TỪNG gác ⇒ (các) ca của nó PHẢI đỏ; các gác khác vẫn bật
+          selfTestResult.mutation = [];
+          for (const [g, cases] of Object.entries(GUARDS)) {
+            OFF.clear(); OFF.add(g);
+            const r = await selfTest(page, base, ecn, cases);
+            OFF.clear();
+            const red = r.checks.filter((c) => !c.pass).map((c) => c.name);
+            const ok = cases.every((c) => red.includes(c));
+            selfTestResult.mutation.push({ guard: g, cases, red, guardProven: ok });
+            console.log(`[uim] gỡ gác ${g.padEnd(15)} ⇒ ${cases.map((c) => `${c}:${red.includes(c) ? "ĐỎ" : "xanh(!)"}`).join(" ")}`);
+          }
+          selfTestResult.mutationPass = selfTestResult.mutation.every((m) => m.guardProven);
+        }
       }
       await ctx.close();
     }
@@ -940,7 +1202,9 @@ const MSA_METRICS = [
   ["banners.count", (r) => r.bannersBeforeMain.count], ["banners.px", (r) => r.bannersBeforeMain.px], ["aboveH1.px", (r) => r.blocksAboveH1.unionPx],
   ["kpi.legacy", (r) => r.kpi.legacy.count], ["kpi.official", (r) => r.kpi.official.count], ["kpi.stripPx", (r) => r.kpi.all.stripPx],
   ["cover.px", (r) => r.coverMain.px], ["pageHeightRatio", (r) => r.pageHeightRatio],
-  ["dialogsAtLoad", (r) => r.dialogsAtLoad.count], ["actions.sig", (r) => (r.actions || []).map((a) => `${a.id}:${a.status}:${(a.kinds || []).join("+")}`).join(";")],
+  ["dialogsAtLoad", (r) => r.dialogsAtLoad.count], ["actions.sig", (r) => (r.actions || []).map((a) => `${a.id}:${a.status}:${(a.kinds || []).join("+")}:${a.inlineHeight ?? ""}`).join(";")],
+  ["workspacePct", (r) => r.workspacePct], ["aiInsideMain.px", (r) => r.aiInsideMain.px], ["insideMain.banners", (r) => r.insideMain.reduce((n, i) => n + i.banners, 0)], ["insideMain.abovePx", (r) => r.insideMain.reduce((n, i) => n + i.aboveWorkspacePx, 0)],
+  ["calibration", (r) => r.calibration ? r.calibration.status : "n/a"],
   ["errors", (r) => r.errors.length],
 ];
 const keyOf = (r) => `${r.screen}|${r.vw}|${r.variant}`;
@@ -956,6 +1220,7 @@ export function compareRuns(A, B, threshold = 2) {
   const gates = {
     deviationUnderThreshold: worst < threshold,
     selfTestA: !!A.meta?.selfTest?.pass, selfTestB: !!B.meta?.selfTest?.pass,
+    noDataErrA: !!A.meta?.data?.errors && A.meta.data.errors.length === 0, noDataErrB: !!B.meta?.data?.errors && B.meta.data.errors.length === 0,
     noDriftWithinA: A.meta?.data ? Object.keys(A.meta.data.drift || {}).length === 0 : false,
     noDriftWithinB: B.meta?.data ? Object.keys(B.meta.data.drift || {}).length === 0 : false,
     sameDataAcrossRuns: Object.keys(dataDiff).length === 0,
@@ -989,7 +1254,7 @@ export function reconcileFe1(run, threshold = 5) {
 // ───────────────────────────────────────────────────────────────────────────────────────────
 function parseArgs(argv) {
   const o = { _: [] };
-  const FLAGS = ["spawn", "shots", "list-buttons", "keep", "discover-tables", "no-selftest"];
+  const FLAGS = ["spawn", "shots", "list-buttons", "keep", "discover-tables", "no-selftest", "mutation", "calibrate"];
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
     if (a.startsWith("--")) { const k = a.slice(2); const nx = argv[i + 1]; if (nx != null && !nx.startsWith("--") && !FLAGS.includes(k)) { o[k] = nx; i++; } else o[k] = true; }
@@ -1000,6 +1265,8 @@ function parseArgs(argv) {
 async function portsReport(ports) {
   const r = {}; for (const p of ports) r[p] = (await portBusy(p)) ? "BẬN" : "trống"; return r;
 }
+const BASELINE_REL = "docs/ECOSYSTEM/81_ENGINEERING_CONTROL_KHAO_SAT_SAU/do-bo-cuc/baseline.json";
+const CALIBRATION_REL = "docs/ECOSYSTEM/81_ENGINEERING_CONTROL_KHAO_SAT_SAU/do-bo-cuc/calibration.json";
 const allTables = () => [...new Set(Object.values(PAGE_TABLES).flat())].filter((t) => !SELF_WRITTEN[t]).sort();
 
 async function main() {
@@ -1047,11 +1314,27 @@ async function main() {
     const conn0 = sampleConnections(s.child.pid, serverPort, "sau khi khởi động");
     if (args.keep) { console.log(`[uim] --keep: giữ instance; user ${probe.username} / ${probe.password}. Ctrl-C để tắt.`); await new Promise(() => {}); }
     meta.base = base;
-    const r = await measureAll({ base, username: probe.username, password: probe.password, screens, sizes, shots: !!args.shots, shotDir, listButtons: !!args["list-buttons"], serverPid: s.child.pid, serverPort, discover: !!args["discover-tables"], doSelfTest: !args["no-selftest"] && !args["discover-tables"] && screens.some((x) => x.id === "engineering-changes") });
+    // tham chiếu MAIN theo selector FE1 (cổng hiệu chuẩn) + bản ghi hiệu chuẩn đã có
+    const refFile = path.resolve(args.reference || path.join(REPO, BASELINE_REL));
+    const refs = {};
+    if (fs.existsSync(refFile)) for (const x of JSON.parse(fs.readFileSync(refFile, "utf8")).results || []) {
+      const lr = x.legacyRef || (x.mainSource === "fe1-legacy" && x.mainRects ? { mainTop: x.mainTop, rects: x.mainRects, areaPx: unionArea(x.mainRects, 1e6, 1e6, -1e6) } : null);
+      if (lr) refs[`${x.screen}|${x.vw}|${x.variant}`] = lr;
+    }
+    const calFile = path.join(REPO, CALIBRATION_REL);
+    const calibrations = fs.existsSync(calFile) ? JSON.parse(fs.readFileSync(calFile, "utf8")).pages || {} : {};
+    meta.reference = { file: path.relative(REPO, refFile).replace(/\\/g, "/"), pages: Object.keys(refs).length, calibrations: Object.keys(calibrations) };
+    const r = await measureAll({ base, username: probe.username, password: probe.password, screens, sizes, shots: !!args.shots, shotDir, listButtons: !!args["list-buttons"], serverPid: s.child.pid, serverPort, discover: !!args["discover-tables"], doSelfTest: !args["no-selftest"] && !args["discover-tables"] && screens.some((x) => x.id === "engineering-changes"), refs, calibrations, mutation: !!args.mutation });
+    if (args.calibrate) {
+      const cal = fs.existsSync(calFile) ? JSON.parse(fs.readFileSync(calFile, "utf8")) : { note: "Ghi bởi --calibrate: trang gắn [data-layout-main] trên bố cục CHƯA đổi, khớp MAIN tham chiếu FE1 trong dung sai. KHÔNG sửa tay.", pages: {} };
+      for (const x of r.results) if (x.calibration && x.calibration.status === "matches-reference" && !cal.pages[x.screen]) cal.pages[x.screen] = { vw: x.vw, variant: x.variant, mainTop: x.mainTop, ...x.calibration, gitHead: meta.gitHead, at: new Date().toISOString() };
+      fs.writeFileSync(calFile, JSON.stringify(cal, null, 1));
+      meta.calibrated = Object.keys(cal.pages);
+    }
     meta.connections = [conn0, ...r.connections];
     meta.outboundViolations = meta.connections.flatMap((c) => c.violations || []);
     meta.selfTest = r.selfTest;
-    if (!args["discover-tables"]) { meta.data.after = await dataSnapshot(tables); meta.data.drift = diffSnap(meta.data.before, meta.data.after); }
+    if (!args["discover-tables"]) { meta.data.after = await dataSnapshot(tables); meta.data.drift = diffSnap(meta.data.before, meta.data.after); meta.data.errors = [...new Set([...dataErrors(meta.data.before), ...dataErrors(meta.data.after)])]; }
     const missing = [...new Set(r.results.filter((x) => x.missingDataLayoutMain).map((x) => x.screen))];
     const errors = r.results.flatMap((x) => x.errors.map((e) => `${x.screen}@${x.vw}/${x.variant}: ${e}`));
     meta.finishedAt = new Date().toISOString();
@@ -1060,11 +1343,11 @@ async function main() {
     if (args["discover-tables"]) out.discovered = r.discovered;
     await cleanup();
     await sleep(1500); out.meta.portsAfter = await portsReport([serverPort, vitePort]);
-    out.pass = errors.length === 0 && meta.outboundViolations.length === 0 && (args["discover-tables"] || (Object.keys(meta.data.drift).length === 0 && (args["no-selftest"] || !!meta.selfTest?.pass)));
+    out.pass = errors.length === 0 && meta.outboundViolations.length === 0 && (args["discover-tables"] || (Object.keys(meta.data.drift).length === 0 && meta.data.errors.length === 0 && (args["no-selftest"] || !!meta.selfTest?.pass) && (!args.mutation || !!meta.selfTest?.mutationPass)));
     fs.writeFileSync(outFile, JSON.stringify(out, null, 1));
     if (missing.length) console.log(`\n⚠ ${missing.length}/${screens.length} màn CHƯA có [data-layout-main] — đang đo bằng selector FE1: ${missing.join(", ")}`);
     if (errors.length) console.log(`✗ ${errors.length} LỖI:\n  ${errors.join("\n  ")}`);
-    console.log(`[uim] kết nối ngoài danh sách: ${meta.outboundViolations.length} · trôi dữ liệu trong lần chạy: ${meta.data.drift ? Object.keys(meta.data.drift).length : "n/a"} (${meta.data.tables} bảng) · tự kiểm: ${meta.selfTest ? (meta.selfTest.pass ? "ĐẠT" : "TRƯỢT") : "n/a"}`);
+    console.log(`[uim] kết nối ngoài danh sách: ${meta.outboundViolations.length} · trôi dữ liệu trong lần chạy: ${meta.data.drift ? Object.keys(meta.data.drift).length : "n/a"} (${meta.data.tables} bảng) · lỗi băm: ${meta.data.errors ? meta.data.errors.length : "n/a"} · tự kiểm: ${meta.selfTest ? (meta.selfTest.pass ? "ĐẠT" : "TRƯỢT") : "n/a"}${args.mutation ? ` · đột biến gác: ${meta.selfTest?.mutationPass ? "mọi gác ĐỎ khi gỡ" : "CÓ gác không đỏ"}` : ""}`);
     console.log(`[uim] cổng sau khi tắt: ${JSON.stringify(out.meta.portsAfter)} · user đo: ${JSON.stringify(out.meta.probeUserRemoved)}`);
     console.log(`[uim] ghi ${outFile} · pass=${out.pass}`);
     process.exitCode = out.pass ? 0 : 2;
