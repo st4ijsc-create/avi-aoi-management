@@ -4339,7 +4339,8 @@
       "zodMore": " (và {{count}} lỗi khác)"
     },
     "DEVICE_UNREACHABLE": "Không kết nối được tới thiết bị {{entity}}. Hãy kiểm tra nguồn, dây mạng và địa chỉ IP.",
-    "DEVICE_PROTOCOL_UNSUPPORTED": "Bản dựng này chưa hỗ trợ giao thức {{entity}}."
+    "DEVICE_PROTOCOL_UNSUPPORTED": "Bản dựng này chưa hỗ trợ giao thức {{entity}}.",
+    "OT_COMMAND_SUPERSEDED_BY_STOP": "Lệnh đang chờ đã bị huỷ vì có lệnh DỪNG — gửi lại nếu cần."
   },
   "export": {
     "reportMenu": {

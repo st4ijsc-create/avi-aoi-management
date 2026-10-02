@@ -337,3 +337,7 @@ Thực thi các quyết định chủ dự án 2026-09-27: SIM không thoả pre
 ## 15. Đợt 1D (2026-09-28 → 10-02) — xem doc 81 §9
 
 OT soft-stop qua được preflight an toàn **chỉ khi** ghi đúng tag/giá trị DỪNG đã ghim theo tag (mig 0362; ghim tự gỡ khi nghĩa tag/đích adapter đổi, ở cả router, import và CLI; kết nối đang chạy phải khớp cấu hình). `completedAt/startedAt` ZIP/tree v2 theo cờ riêng `INGEST_REQUIRE_PACKAGE_TIME_OFFSET` (mặc định tắt). **Áp mig 0362 lên dev trước khi restart :3000.** Chi tiết + 2 quyết định chờ chủ dự án: doc 81 §9.
+
+## 16. Đợt 1E (2026-10-02) — xem doc 81 §10
+
+DỪNG OT đã ghim chen hàng đợi adapter (không còn BUSY) và huỷ các lệnh đang chờ trước nó (mã `OT_COMMAND_SUPERSEDED_BY_STOP`); trợ lý AI KHÔNG được dùng DỪNG ghim khi an toàn không OK (rào L-7 giữ).

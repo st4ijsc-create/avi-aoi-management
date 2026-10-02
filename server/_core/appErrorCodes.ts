@@ -148,6 +148,15 @@ export const APP_ERROR_CODES = [
                           // gỡ NGƯỢC nhau: một cái đi kiểm dây, cái kia phải đổi cấu hình
                           // hoặc nâng cấp — bảo người vận hành đi ngắt cầu dao vì lý do
                           // thứ hai là làm mất thời gian của họ.
+
+  // ── doc 81 Đợt 1E Task 1 fix round 1 (review I-1, plan Global Constraint 3) ──
+  "OT_COMMAND_SUPERSEDED_BY_STOP", // params: { stopKey } — KHÔNG ném: `DispatchResult.appError`
+                          // của một lệnh OT đang CHỜ trong hàng đợi per-adapter bị HUỶ vì một lệnh
+                          // DỪNG ghim xếp sau nó (ruling R-1E-a; reason `SUPERSEDED_BY_STOP`).
+                          // KHÁC BUSY (không làm gì, thử lại sau) và KHÁC OPERATION_FAILED (thiết bị
+                          // không hỏng): hệ thống ĐÃ BỎ lệnh của người vận hành, họ phải GỬI LẠI nếu
+                          // còn cần — đúng điều mà dòng "cost if wrong" của ruling dựa vào. `stopKey`
+                          // = khoá idempotency của lệnh DỪNG (truy vết; câu i18n không nội suy nó).
 ] as const;
 
 export type AppErrorCode = (typeof APP_ERROR_CODES)[number];

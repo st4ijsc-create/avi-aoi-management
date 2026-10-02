@@ -96,7 +96,14 @@ vi.mock("../interlock/interlockGate", async (importOriginal) => {
 
 import { getDb } from "../../db/connection";
 import { aiPendingActions, commandLog, controlAuditLog, deviceAdapters, deviceTags } from "../../../drizzle/schema";
-import { canonicalisePinnedStop, classifyOtStop, dispatch, type DispatchInput } from "./commandDispatcher";
+import {
+  canonicalisePinnedStop,
+  classifyOtStop,
+  dispatch,
+  type DispatchInput,
+  _adapterCommandQueueDepthForTests,
+  _resetAdapterCommandQueuesForTests,
+} from "./commandDispatcher";
 import { otPayloadHash, withOtPayloadHash } from "./otActionBinding";
 import { createModbusDriver } from "./drivers/modbusDriver";
 import { registerDriver } from "./driverRegistry";
@@ -258,6 +265,8 @@ const ENV_KEYS = [
   "OT_SAFETY_PREFLIGHT_ENABLED",
   "OT_READBACK_ENABLED",
   "OT_CMD_SERIALIZE_ENABLED",
+  "OT_CMD_QUEUE_MAX",
+  "OT_CONTROL_TIMEOUT_MS",
   "SEC_PLATFORM",
   "UNS_CMD_ACK_ENABLED",
   "INTERLOCK_AUTO_BLOCK_ENABLED",
@@ -358,7 +367,7 @@ describe.skipIf(!DB_URL)("Đợt 1D Task 2 — DỪNG OT ghim qua preflight an t
     process.env.OT_CONTROL_ENABLED = "true";
     delete process.env.OT_COMMISSIONING_REQUIRED; // mặc định BẬT
     delete process.env.OT_SAFETY_PREFLIGHT_ENABLED; // mặc định BẬT
-    for (const k of ["OT_READBACK_ENABLED", "OT_CMD_SERIALIZE_ENABLED", "SEC_PLATFORM", "UNS_CMD_ACK_ENABLED", "INTERLOCK_AUTO_BLOCK_ENABLED"]) {
+    for (const k of ["OT_READBACK_ENABLED", "OT_CMD_SERIALIZE_ENABLED", "OT_CMD_QUEUE_MAX", "OT_CONTROL_TIMEOUT_MS", "SEC_PLATFORM", "UNS_CMD_ACK_ENABLED", "INTERLOCK_AUTO_BLOCK_ENABLED"]) {
       delete process.env[k];
     }
   });
@@ -804,6 +813,203 @@ describe.skipIf(!DB_URL)("Đợt 1D Task 2 — DỪNG OT ghim qua preflight an t
     } finally {
       fake.otFingerprints.set(adapterPinned, fp);
       warn.mockRestore();
+    }
+  });
+
+  // ═════════ doc 81 Đợt 1E Task 1 (R-1E-a) — DỪNG ghim chen hàng đợi lệnh per-adapter ═════════
+  // Thiết bị đích giả GIỮ lần ghi đầu (W1 đang bay) tới khi test nhả. Safety-PLC thật có gán tag, đọc SẠCH ⇒ lệnh
+  // ghi thường qua preflight (OK); DỪNG ghim bỏ qua preflight như Đợt 1D. Oracle: thiết bị nhận gì, theo thứ tự nào.
+  function deferred<T>() {
+    let resolve!: (v: T) => void;
+    const promise = new Promise<T>((res) => {
+      resolve = res;
+    });
+    return { promise, resolve };
+  }
+  async function until(cond: () => boolean, ms: number, what: string): Promise<void> {
+    const t0 = Date.now();
+    while (!cond()) {
+      if (Date.now() - t0 > ms) throw new Error(`${what}: không đạt trong ${ms} ms`);
+      await new Promise((r) => setTimeout(r, 10));
+    }
+  }
+  /** Driver giả: ghi lại từng lô; lô ĐẦU TIÊN bị giữ tới khi `release()`. */
+  function heldFirstWriteDriver() {
+    const gate = deferred<void>();
+    const firstStarted = deferred<void>();
+    let calls = 0;
+    const driver = {
+      isConnected: () => true,
+      async writeTags(writes: Array<{ tagKey: string; value: unknown }>) {
+        received.push(writes.map((w) => ({ tagKey: w.tagKey, value: w.value })));
+        if (++calls === 1) {
+          firstStarted.resolve();
+          await gate.promise;
+        }
+        return writes.map((w) => ({ tagKey: w.tagKey, ok: true }));
+      },
+      async readTags() {
+        return [];
+      },
+    };
+    return { driver, firstStarted: firstStarted.promise, release: () => gate.resolve() };
+  }
+  const writeCmd = (value: number) => stopInput([{ tagKey: "speed_sp", value }], { commandType: "tag.write" });
+
+  it("★ 1E: hàng đợi BẬT, W1 đang bay — max=1: W2 thường ⇒ BUSY như cũ; max=2: W2 chờ + DỪNG ghim ⇒ W2 SUPERSEDED_BY_STOP (sổ nêu DỪNG, thiết bị KHÔNG nhận 333), DỪNG ghi giá trị ghim NGAY sau khi W1 nhả", async () => {
+    process.env.OT_CMD_SERIALIZE_ENABLED = "true";
+    process.env.OT_CMD_QUEUE_MAX = "1";
+    process.env.OT_CONTROL_TIMEOUT_MS = "30000"; // W1 bị giữ: không để hạn ghi 5 s tự nhả hàng
+    _resetAdapterCommandQueuesForTests();
+    const h = heldFirstWriteDriver();
+    fake.otDrivers.set(adapterPinned, h.driver);
+    try {
+      await withPlcConfigs([realMapped()], async () => {
+        const w1 = await writeCmd(111);
+        const p1 = dispatch(w1);
+        await within(h.firstStarted, 15_000, "W1 tới thiết bị");
+
+        // max=1 ⇒ lệnh thường thứ hai BUSY, như cũ.
+        const rBusy = await run(await writeCmd(222));
+        expect(rBusy).toMatchObject({ ok: false, status: "rejected", reason: "BUSY" });
+
+        // max=2 ⇒ W2 vào hàng CHỜ sau W1.
+        process.env.OT_CMD_QUEUE_MAX = "2";
+        const w2 = await writeCmd(333);
+        const p2 = dispatch(w2);
+        await until(() => _adapterCommandQueueDepthForTests(adapterPinned) === 2, 15_000, "W2 vào hàng chờ");
+
+        // DỪNG ghim tới khi hàng ĐẦY (depth 2 = max) ⇒ không BUSY; W2 bị huỷ NGAY (W1 vẫn đang bay).
+        const s = await stopInput([{ tagKey: "cmd_stop", value: 1 }]);
+        const pS = dispatch(s);
+        const r2 = await within(p2, 15_000, "W2 bị huỷ (không treo)");
+        expect(r2).toEqual({
+          ok: false,
+          simulated: false,
+          status: "rejected",
+          reason: "SUPERSEDED_BY_STOP",
+          results: [{ tagKey: "speed_sp", ok: false, status: "rejected", error: "SUPERSEDED_BY_STOP" }],
+          commandLogIds: expect.any(Array),
+          // fix round 1 (I-1) — tới người dùng qua appError (vi/en/zh), câu tiếng Anh không tên cờ
+          appError: { appCode: "OT_COMMAND_SUPERSEDED_BY_STOP", appParams: { stopKey: s.idempotencyKey } },
+          message: expect.stringMatching(/cancelled.*STOP.*resend/i),
+        });
+        expect(r2.message).not.toMatch(/OT_CMD_|OT_CONTROL_|SUPERSEDED_BY_STOP/);
+        expect(r2.commandLogIds).toHaveLength(1);
+        const rows2 = await ledger(w2.idempotencyKey);
+        const intent2 = rows2.filter((r) => (r.ackValue as any)?.ledger === "intent");
+        const result2 = rows2.filter((r) => (r.ackValue as any)?.ledger === "result");
+        expect(intent2).toHaveLength(1);
+        expect(result2).toHaveLength(1);
+        expect(result2[0].id).toBe(r2.commandLogIds[0]);
+        expect(result2[0].status).toBe("rejected");
+        expect(String(result2[0].errorText)).toMatch(/^SUPERSEDED_BY_STOP: /);
+        expect(String(result2[0].errorText)).toContain(s.idempotencyKey); // nêu ĐÚNG lệnh DỪNG
+        expect(String(result2[0].errorText)).not.toMatch(/OT_CMD_|OT_CONTROL_/); // không tên cờ
+        expect((result2[0].ackValue as any).intentId).toBe(intent2[0].id);
+        expect((result2[0].ackValue as any).supersededByStop).toMatchObject({ idempotencyKey: s.idempotencyKey, commandType: "stop" });
+        expect((result2[0].ackValue as any).pinnedStop).toBeUndefined(); // W2 không phải DỪNG
+        expect(received).toEqual([[{ tagKey: "speed_sp", value: 111 }]]); // DỪNG chưa chạy: W1 KHÔNG bị ngắt
+
+        h.release();
+        const r1 = await within(p1, 15_000, "W1");
+        expect(r1.status).toBe("acked");
+        const rS = await within(pS, 15_000, "DỪNG");
+        expect(rS.status).toBe("acked");
+        expect(rS.pinnedStop).toBe(true);
+        // Thiết bị: W1 rồi NGAY giá trị ghim (boolean true, không phải số 1 của người gọi); 333 KHÔNG BAO GIỜ tới.
+        expect(received).toEqual([[{ tagKey: "speed_sp", value: 111 }], [{ tagKey: "cmd_stop", value: true }]]);
+        const rowsS = await ledger(s.idempotencyKey);
+        expect(rowsS.find((r) => (r.ackValue as any)?.ledger === "result")?.status).toBe("acked");
+        await until(() => _adapterCommandQueueDepthForTests(adapterPinned) === 0, 5_000, "hàng cạn");
+      });
+    } finally {
+      h.release();
+      fake.otDrivers.set(adapterPinned, fakeOtDriver);
+      _resetAdapterCommandQueuesForTests();
+    }
+  });
+
+  it("1E M-1 (R-1E-b): stop KHÔNG ghim đang CHỜ + DỪNG ghim tới ⇒ stop không ghim bị huỷ SUPERSEDED_BY_STOP (thiết bị không nhận false), DỪNG ghim chạy ngay sau W1", async () => {
+    process.env.OT_CMD_SERIALIZE_ENABLED = "true";
+    process.env.OT_CMD_QUEUE_MAX = "2";
+    process.env.OT_CONTROL_TIMEOUT_MS = "30000";
+    _resetAdapterCommandQueuesForTests();
+    const h = heldFirstWriteDriver();
+    fake.otDrivers.set(adapterPinned, h.driver);
+    try {
+      await withPlcConfigs([realMapped()], async () => {
+        const p1 = dispatch(await writeCmd(111));
+        await within(h.firstStarted, 15_000, "W1 tới thiết bị");
+        const u = await stopInput([{ tagKey: "cmd_stop", value: false }]); // stop KHÔNG ghim (value_mismatch)
+        const pU = dispatch(u);
+        await until(() => _adapterCommandQueueDepthForTests(adapterPinned) === 2, 15_000, "stop không ghim vào hàng chờ");
+        const s = await stopInput([{ tagKey: "cmd_stop", value: true }]);
+        const pS = dispatch(s);
+        const rU = await within(pU, 15_000, "stop không ghim bị huỷ");
+        expect(rU).toMatchObject({
+          ok: false,
+          status: "rejected",
+          reason: "SUPERSEDED_BY_STOP",
+          appError: { appCode: "OT_COMMAND_SUPERSEDED_BY_STOP", appParams: { stopKey: s.idempotencyKey } },
+        });
+        expect(rU.pinnedStop).toBeUndefined();
+        const resU = (await ledger(u.idempotencyKey)).filter((r) => (r.ackValue as any)?.ledger === "result");
+        expect(resU).toHaveLength(1);
+        expect(resU[0].status).toBe("rejected");
+        expect((resU[0].ackValue as any).supersededByStop).toMatchObject({ idempotencyKey: s.idempotencyKey });
+        h.release();
+        expect((await within(p1, 15_000, "W1")).status).toBe("acked");
+        const rS = await within(pS, 15_000, "DỪNG");
+        expect(rS.status).toBe("acked");
+        expect(rS.pinnedStop).toBe(true);
+        expect(received).toEqual([[{ tagKey: "speed_sp", value: 111 }], [{ tagKey: "cmd_stop", value: true }]]);
+      });
+    } finally {
+      h.release();
+      fake.otDrivers.set(adapterPinned, fakeOtDriver);
+      _resetAdapterCommandQueuesForTests();
+    }
+  });
+
+  it("1E đối chứng: stop KHÔNG ghim (giá trị khác ghim) cùng thiết lập ⇒ max=1 BUSY; max=3 xếp FIFO sau W2, KHÔNG huỷ W2 (thiết bị nhận W1, W2, stop)", async () => {
+    process.env.OT_CMD_SERIALIZE_ENABLED = "true";
+    process.env.OT_CMD_QUEUE_MAX = "1";
+    process.env.OT_CONTROL_TIMEOUT_MS = "30000";
+    _resetAdapterCommandQueuesForTests();
+    const h = heldFirstWriteDriver();
+    fake.otDrivers.set(adapterPinned, h.driver);
+    try {
+      await withPlcConfigs([realMapped()], async () => {
+        const p1 = dispatch(await writeCmd(111));
+        await within(h.firstStarted, 15_000, "W1 tới thiết bị");
+
+        const rBusy = await run(await stopInput([{ tagKey: "cmd_stop", value: false }]));
+        expect(rBusy).toMatchObject({ ok: false, status: "rejected", reason: "BUSY" });
+        expect(rBusy.pinnedStop).toBeUndefined(); // không phải DỪNG ghim
+
+        process.env.OT_CMD_QUEUE_MAX = "3";
+        const p2 = dispatch(await writeCmd(333));
+        await until(() => _adapterCommandQueueDepthForTests(adapterPinned) === 2, 15_000, "W2 vào hàng chờ");
+        const pU = dispatch(await stopInput([{ tagKey: "cmd_stop", value: false }]));
+        await until(() => _adapterCommandQueueDepthForTests(adapterPinned) === 3, 15_000, "stop không ghim vào hàng chờ");
+        expect(received).toEqual([[{ tagKey: "speed_sp", value: 111 }]]);
+
+        h.release();
+        const [r1, r2, rU] = await within(Promise.all([p1, p2, pU]), 15_000, "W1/W2/stop");
+        expect(r1.status).toBe("acked");
+        expect(r2.status).toBe("acked"); // KHÔNG bị huỷ
+        expect(rU.status).toBe("acked");
+        expect(received).toEqual([
+          [{ tagKey: "speed_sp", value: 111 }],
+          [{ tagKey: "speed_sp", value: 333 }],
+          [{ tagKey: "cmd_stop", value: false }],
+        ]);
+      });
+    } finally {
+      h.release();
+      fake.otDrivers.set(adapterPinned, fakeOtDriver);
+      _resetAdapterCommandQueuesForTests();
     }
   });
 });

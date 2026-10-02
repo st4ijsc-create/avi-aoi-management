@@ -303,3 +303,14 @@ Plan `docs/superpowers/plans/2026-09-28-engineering-control-dot1d.md` — thực
 2. Rào AI (L-7) vẫn từ chối `machine_stop` qua trợ lý AI khi an toàn BLOCKED/UNKNOWN (và khi `AI_OT_CONTROL_ENABLED` tắt — mặc định) — có cho AI dùng DỪNG ghim không? (Ruling R-1D-g: hiện KHÔNG.)
 
 **Còn mở:** chưa trang nào gửi lệnh DỪNG OT nên câu lý do từ chối mới chỉ chứng minh ở mức unit; form sửa tag gỡ ghim không hỏi trước (có báo sau); `adapter.update` gỡ mọi ghim không báo trên UI; CLI import không ghi được người thực hiện; test dấu vân kết nối dùng bản chép ánh xạ adapter (nên thêm một test qua `loadEnabledAdapters` thật); `validateMachinePayload` mất vị trí lỗi lồng nhau; chưa có test tranh chấp FOR UPDATE khi hai người ghim cùng lúc; `commissioningRecheckRequired` chưa có màn nào đọc. Ledger: `.superpowers/sdd/2026-09-28-engineering-control-dot1d/progress.md`.
+
+## 10. Kết quả Đợt 1E (2026-10-02)
+
+Plan `docs/superpowers/plans/2026-10-02-engineering-control-dot1e.md` — chủ dự án chốt 2026-10-02: (1) **DỪNG ghim chen hàng đợi: Có**; (2) **trợ lý AI dùng DỪNG ghim khi an toàn BLOCKED/UNKNOWN: KHÔNG** (rào L-7 giữ nguyên, R-1D-g). **2 commit** `62369982a..3b72dac49`, không migration, không cờ mới.
+
+- Khi `OT_CMD_SERIALIZE_ENABLED` bật và hàng đợi lệnh của adapter đầy, lệnh DỪNG **đã ghim đúng** (Đợt 1D) không còn bị `BUSY`: chạy ngay sau lệnh ghi đang gửi dở (không cắt được byte đang trên dây — chờ tối đa hạn ghi ~5 s, ~10 s khi bật đọc lại).
+- **Lệnh đang CHỜ trước DỪNG bị huỷ** (ruling R-1E-a, khuôn hàng rào abort robot): chạy chúng sau DỪNG có thể khởi động lại máy. Lệnh gửi SAU DỪNG vẫn chạy theo thứ tự. Lệnh bị huỷ không bao giờ tới thiết bị, có dòng sổ `SUPERSEDED_BY_STOP` và mã lỗi `OT_COMMAND_SUPERSEDED_BY_STOP` ("Lệnh đang chờ đã bị huỷ vì có lệnh DỪNG — gửi lại nếu cần", vi/en/zh); gửi lại cần khoá idempotency mới. Một DỪNG chưa ghim đang chờ cũng bị huỷ (DỪNG ghim thay nó, R-1E-b).
+- Cờ tắt (mặc định): không hàng đợi, DỪNG chạy ngay — y như trước.
+- Kiểm: OT + equipment **831/831**; 11 đột biến đều đỏ; `tsc` sạch; census không đỏ mới.
+
+**Còn mở:** lệnh ghi quá hạn thì hàng đợi đi tiếp trong khi driver có thể vẫn đang ghi ⇒ DỪNG có thể tới driver chồng với lệnh quá hạn (có từ trước Đợt 1E); câu dịch không hiện khoá lệnh DỪNG (có trong params + sổ).
