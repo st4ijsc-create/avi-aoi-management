@@ -100,7 +100,7 @@ tự kiểm trượt, `1` khi lỗi hạ tầng.
 | `bannersFe1Class` | bộ phân loại lớp CSS của FE1. **Chỉ là nhãn phụ** để đối chiếu FE1 |
 | `breadcrumbs` | số breadcrumb nhìn thấy (shell + trang), theo selector `nav[data-slot=breadcrumb]`/aria-label như FE1 |
 | `kpi` | `legacy` (MetricCard) **và** `official` (`[data-layout-kpi]`), **luôn cả hai**; `all.stripPx` = chiều cao hợp của dải |
-| `coverMain` | **Hit-test** lưới 8 px trên phần **đã cắt** của MAIN. Điểm nào có phần tử trên cùng không thuộc MAIN là bị che, bất kể tệp nguồn. Phần tử `position:fixed` nằm **bên trong** MAIN vẫn bị tính là che (`insideMain: true`). Gồm `px`, `pctOfMain`, `items[]` (phần tử fixed/absolute/sticky ngoài cùng: tag/testid/loc/zIndex). `positionedIntersecting[]` liệt kê thêm phần tử định vị cắt MAIN mà hit-test không thấy (vd `pointer-events:none`) — chỉ báo |
+| `coverMain` | **Hit-test** lưới 8 px trên phần **đã cắt** của MAIN. Điểm nào có phần tử trên cùng không thuộc MAIN là bị che, bất kể tệp nguồn. Phần tử `position:fixed` nằm **bên trong** MAIN vẫn bị tính là che (`insideMain: true`). Gồm `px`, `pctOfMain`, `items[]` (phần tử fixed/absolute/sticky ngoài cùng: tag/testid/loc/zIndex). `positionedIntersecting[]` liệt kê thêm phần tử định vị cắt MAIN mà hit-test không thấy (vd `pointer-events:none`) — chỉ báo. **Miễn hẹp (R-2-m, Task 5)**: điểm mà phần tử trúng CHÍNH LÀ separator co giãn (`[data-panel-resize-handle-id][role=separator]`, không leo tổ tiên), trong luồng (`static`/`relative`), hộp riêng ≤2 px, là anh em của MAIN (cha chứa MAIN) và điểm cách hộp ≤4 px ⇒ không tính che, đếm riêng ở `separatorHitPx` (chỉ báo). Lý do: dải `::after` của đường kéo panel dưới (`ui/resizable.tsx`) lấn 2 px vào MAIN và trúng đúng một hàng lưới ở 1366 (8448 px² giả) |
 | `pageHeightRatio` | **Chỉ số được gác** (R-2-f): (chiều cao tài liệu + phần cuộn/ẩn của mọi **tổ tiên** của MAIN có `overflow-y` auto/scroll/overlay/**hidden/clip**) / vh; mỗi phần chỉ tính khi vượt ≥ 24 px. Phần cuộn/ẩn LỚN NHẤT của các panel **anh em** trong `<main>` (explorer/inspector tự cuộn — bình thường trong vỏ workbench) chỉ BÁO ở `scroll.siblingScrollExtra`, KHÔNG gác. `pageHeightRatioDoc` = cách tính của FE1. `scroll.inner[]` = container cuộn bên trong MAIN (vd bảng tự cuộn — kiểm khi chấm Standards ≤1,5×) |
 | `dialogsAtLoad` | dialog/sheet mở sẵn lúc nạp. **Phải là 0** — khác 0 là LỖI |
 | `actions[]` | sau từng hành động khai báo: `status` `opened` (có dialog/sheet/popover/menu; `kinds`, `closedByEsc`) / `inline` (không dialog nhưng hình học đổi: `inlineHeight`, `pushesMainPx`, `newBlocks`) / `no-effect` (**LỖI**: không dialog VÀ không đổi hình học) / `not-found` (**LỖI**) / `disabled` (cảnh báo) |
@@ -219,7 +219,7 @@ Chạy `--spawn` hai lần liên tiếp, mỗi lần một instance mới, rồi
 
 1. Độ lệch tương đối `|a−b| / max(|a|,|b|)` < 2 %, xét trên mọi màn × kích thước × biến thể × chỉ số.
    Chữ ký hành động và trạng thái hiệu chuẩn phải trùng khớp tuyệt đối.
-2. Đối chứng dương `selfTest.pass` ở **cả hai** lần chạy. Có 31 ca trên ECN @1600, đi qua đúng đường đo thật
+2. Đối chứng dương `selfTest.pass` ở **cả hai** lần chạy. Có 34 ca trên ECN @1600, đi qua đúng đường đo thật
    (`measurePage` / `runActions` / `dataErrors`); mỗi ca chèn một cách lách vào trang vừa nạp lại sạch. Phép đo
    trong tự kiểm đo lại (≤3 lần, chờ settle) nếu MAIN tạm vắng vì trang đang vẽ lại; số lần đo lại ghi ở
    `meta.selfTest.retries` (0 là bình thường). "Nạp lại sạch" gồm cả **gỡ `data-layout-main` có sẵn của trang**
@@ -260,6 +260,9 @@ Chạy `--spawn` hai lần liên tiếp, mỗi lần một instance mới, rồi
    | T26 | wrapper trong suốt 32 px bọc 4 chip 32 px (chip có màu, rồi chip không màu) | `kpi-strip`, LỖI — không phải `label` |
    | T27 | wrapper trong suốt 36 px bọc hộp notice màu (không icon, không từ khoá) | `banner`, LỖI |
    | T28 | "Chưa có dữ liệu" trong hộp vàng (style oklch / lớp `px-5 py-4` lọt regex FE1) · chữ trống không màu có từ khoá notice | hộp là `banner`, LỖI; W = bảng |
+   | T29a | separator anh em MAIN, trong luồng, 1 px, dải `::after` 8 px lấn vào MAIN, đặt đúng một hàng lưới (R-2-m) | `coverMain` KHÔNG đổi, `separatorHitPx` > 0 (gỡ gác `separatorExempt` ⇒ ĐỎ) |
+   | T29b | CÙNG attribute separator trên lớp phủ `absolute` 40 px anh em MAIN (absolute TRONG MAIN vốn không tính che) | `coverMain` ≥ +0,9×40×rộng, đúng thủ phạm |
+   | T29c | separator 1 px `position:fixed` ngang giữa MAIN | `coverMain` ≥ +0,9×8×rộng, `separatorHitPx` không đổi |
 3. Không lỗi băm, không trôi dữ liệu trong từng lần chạy.
 4. Dữ liệu giống nhau giữa hai lần chạy.
 5. Cùng hồ sơ cờ.
@@ -268,7 +271,7 @@ Chạy `--spawn` hai lần liên tiếp, mỗi lần một instance mới, rồi
 `kpiBoth`, `attrConstraint`, `actionNotFound`, `calib`, `insideMain`, `headerBanner`, `noDialog`, `clip`,
 `aiInside`, `overlayBand`, `dialogsAtLoad`, `errHash`, `scrollAncestors`, `siblingReport`, `wsEscape`, `h1Gate`,
 `aboveH1Banner`, `fixedInMain`, `textLabel`, `aiText`, `toolbar56`, `chipMin`, `emptyStateW`, `kpiFirst`, `labelDeep`,
-`emptyNotice`). Với mỗi gác bị gỡ, (các) ca của nó
+`emptyNotice`, `separatorExempt`). Với mỗi gác bị gỡ, (các) ca của nó
 **phải đỏ**; kết quả ghi ở `meta.selfTest.mutation[]`, và `pass` của lần chạy có `--mutation` đòi mọi gác
 đều đỏ khi gỡ.
 

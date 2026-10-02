@@ -29,7 +29,7 @@
  *                       từ khoá ⇒ mất miễn trừ); hàng chip/KPI phân loại TRƯỚC miễn trừ nhãn; trạng thái trống tự viết
  *                       KHÔNG được nằm trong hộp notice (tổ tiên tới MAIN có role alert/status, lớp notice, lớp màu
  *                       bg-/border-, hay màu đã tính chroma OKLab > 0,05) và chữ không có từ khoá notice.
- *   · selfTest        — 31 ca đối chứng DƯƠNG mỗi lần chạy, qua đúng measurePage/runActions; `--mutation` gỡ
+ *   · selfTest        — 34 ca đối chứng DƯƠNG mỗi lần chạy, qua đúng measurePage/runActions; `--mutation` gỡ
  *                       từng gác (28 gác) và chứng minh ca của nó ĐỎ.
  *
  * Instance: KHÔNG dùng :3000 (chạy dist cũ). `--spawn` tự dựng server TỪ MÃ NGUỒN (tsx) ở :3016
@@ -588,7 +588,22 @@ function PHASE2(arg) {
   const STEP = 8;
   const clipTop = arg.clipTop || 0;
   const vr = clips.map((c) => c.vr).filter((r) => r.width > 0 && r.height > 0);
-  let pts = 0, cov = 0; const culprits = new Map();
+  let pts = 0, cov = 0, sepPts = 0; const culprits = new Map();
+  // R-2-m (Task 5 fix 1): separator co giãn của chính bố cục (vd đường kéo panel dưới của WorkbenchShell) có dải
+  // "hit" (::after) lấn 1–2 px vào MAIN — không phải lớp phủ. CHỈ miễn điểm khi phần tử trúng LÀ separator (không leo
+  // tổ tiên), nằm trong luồng (static/relative), hộp riêng mỏng ≤2 px, là anh em của MAIN (cha chứa MAIN), và điểm cách
+  // hộp ≤4 px. Điểm miễn báo riêng ở `separatorHitPx` (không gác). `--mutation` tắt được (gác `separatorExempt`).
+  const sepExempt = (el, x, y) => {
+    if (OFF.has('separatorExempt')) return false;
+    if (!el.matches('[data-panel-resize-handle-id][role=separator]')) return false;
+    const pos = getComputedStyle(el).position;
+    if (pos !== 'static' && pos !== 'relative') return false;
+    const r = el.getBoundingClientRect();
+    if (Math.min(r.width, r.height) > 2) return false;
+    if (!el.parentElement || !mainEls.some((m) => el.parentElement.contains(m))) return false;
+    const dx = Math.max(r.left - x, 0, x - r.right), dy = Math.max(r.top - y, 0, y - r.bottom);
+    return Math.hypot(dx, dy) <= 4;
+  };
   if (vr.length && !OFF.has('hitTest')) {
     const x0 = Math.max(0, Math.min(...vr.map((r) => r.left))), x1 = Math.min(vw, Math.max(...vr.map((r) => r.right)));
     const y0 = Math.max(clipTop, Math.min(...vr.map((r) => r.top))), y1 = Math.min(vh, Math.max(...vr.map((r) => r.bottom)));
@@ -607,6 +622,7 @@ function PHASE2(arg) {
           const k = culprits.get(fx) || { ...desc(fx), position: 'fixed', zIndex: getComputedStyle(fx).zIndex, rect: R(fx), px: 0, insideMain: true };
           k.px += STEP * STEP; culprits.set(fx, k); continue;
         }
+        if (sepExempt(el, x, y)) { sepPts++; continue; }
         cov++;
         let n = el, outer = el, posEl = null;
         while (n && n !== document.body && !mainEls.some((m) => n.contains(m))) { const p = getComputedStyle(n).position; if (p === 'fixed' || p === 'absolute' || p === 'sticky') posEl = n; outer = n; n = n.parentElement; }
@@ -661,7 +677,7 @@ function PHASE2(arg) {
     h1: h1 ? { top: Math.round(h1.getBoundingClientRect().top), bottom: Math.round(h1.getBoundingClientRect().bottom), text: h1.innerText.replace(/\s+/g, ' ').slice(0, 60), inPageHeader: !!h1Header } : null, h1Count: h1s.length,
     band: { lo: Math.round(bandLo), before: { count: before.length, unionPx: unionY(before, -1e9, mainTop ?? 0), byKind: before.reduce((o, b) => { o[b.kind] = (o[b.kind] || 0) + 1; return o; }, {}) }, aboveH1: { count: aboveH1.length, unionPx: unionY(aboveH1, contentTop, h1r ? h1r.y : contentTop) }, headerParts: headerParts.length, blocks },
     kpi: { legacy: { count: kpiLegacyEls.length, stripPx: strip(kpiLegacyEls) }, official: { count: kpiOfficialEls.length, stripPx: strip(kpiOfficialEls) }, all: { count: kpiAll.length, stripPx: strip(kpiAll) } },
-    cover: { step: STEP, points: pts, coveredPoints: cov, px: cov * STEP * STEP, items: [...culprits.values()].sort((a, b) => b.px - a.px), positionedIntersecting: positioned.map(({ el, ...rest }) => rest) },
+    cover: { step: STEP, points: pts, coveredPoints: cov, px: cov * STEP * STEP, separatorHitPx: sepPts * STEP * STEP, items: [...culprits.values()].sort((a, b) => b.px - a.px), positionedIntersecting: positioned.map(({ el, ...rest }) => rest) },
     scroll: { docH, extra, siblingScrollExtra: sib, scrollers: scrollers.map(({ el, ...rest }) => rest), inner: inner.slice(0, 3) },
     dialogs,
   };
@@ -704,6 +720,8 @@ export const GUARDS = {
   toolbar56: ["T23-toolbar-56"], chipMin: ["T24-chip-thap"], emptyStateW: ["T25-emptystate-la-W"],
   // fix round 4
   kpiFirst: ["T26-chip-trong-wrapper"], labelDeep: ["T27-wrapper-notice-mau"], emptyNotice: ["T28-trong-trong-notice"],
+  // Task 5 fix round 1 (R-2-m)
+  separatorExempt: ["T29a-separator-anh-em-mien"],
 };
 /** Dung sai hiệu chuẩn (fix2 #1): MAIN theo attribute so với MAIN tham chiếu (selector FE1, lưu trong baseline). */
 export const CALIB_TOL = { px: 4, areaPct: 3 };
@@ -746,7 +764,7 @@ export function summarize(screen, variant, p1, p2, legacyP2, opts = {}) {
     bandBlocks: p2.band.blocks.map((b) => ({ pos: b.pos, kind: b.kind, inHeader: b.inHeader, y: b.y, h: b.h, x: b.x, w: b.w, loc: b.loc, tag: b.tag, testid: b.testid, label: b.label, fe1Notice: b.fe1Notice })),
     bannersFe1Class: { count: fe1Before.length, px: fe1Before.reduce((s, n) => s + n.h, 0), items: fe1Before.map((n) => ({ loc: (n.loc || "").replace(/^.*[\\/]/, ""), y: n.y, h: n.h, head: n.head.slice(0, 50) })) },
     kpi: p2.kpi,
-    coverMain: { px: p2.cover.px, pctOfMain: mainArea ? +(p2.cover.px / mainArea * 100).toFixed(1) : 0, pctOfViewport: +(p2.cover.px / (vw * vh) * 100).toFixed(1), items: p2.cover.items, positionedIntersecting: p2.cover.positionedIntersecting },
+    coverMain: { px: p2.cover.px, separatorHitPx: p2.cover.separatorHitPx ?? 0, pctOfMain: mainArea ? +(p2.cover.px / mainArea * 100).toFixed(1) : 0, pctOfViewport: +(p2.cover.px / (vw * vh) * 100).toFixed(1), items: p2.cover.items, positionedIntersecting: p2.cover.positionedIntersecting },
     pageHeightRatio: +((p2.scroll.docH + p2.scroll.extra) / vh).toFixed(2), pageHeightRatioDoc: p1.scrollRatio, scroll: p2.scroll,
     shell: { sidebarW: p1.shell.sidebarW, topbarH: p1.shell.topbarH, mainTop: p1.shell.mainTop, mainW: p1.shell.mainW, mainPad: p1.shell.mainPad, breadcrumbLocs: p1.shell.crumbs.map((c) => (c.loc || "").replace(/^.*[\\/]/, "")) },
     dialogsAtLoad: { count: p2.dialogs.length, kinds: p2.dialogs.map(dialogKind) },
@@ -1396,6 +1414,37 @@ async function selfTest(page, base, s, only = null) {
     const keyword = await mp(page, s, "selftest", { ref: ref0, calibrations: {} });
     const ok = (b) => insideErr(b) && b.insideMain[0]?.workspace?.tag === "table" && kindsOf(b).includes("banner");
     check("T28-trong-trong-notice", ok(inline) && ok(byClass) && ok(keyword), { inline: { ws: wsOf(inline), kinds: kindsOf(inline) }, byClass: { ws: wsOf(byClass), kinds: kindsOf(byClass) }, keyword: { ws: wsOf(keyword), kinds: kindsOf(keyword) } });
+    await fresh();
+  }
+  // R-2-m — miễn che cho separator co giãn: (a) separator anh em MAIN, trong luồng, 1 px, dải ::after 8 px lấn vào MAIN ⇒
+  // KHÔNG tính che, `separatorHitPx` > 0 (ĐỎ khi gỡ gác separatorExempt); (b) CÙNG attribute trên lớp phủ absolute 40 px
+  // (anh em MAIN — trong MAIN thì absolute vốn không là che) ⇒ VẪN tính ≥0,9 diện tích; (c) separator 1 px position:fixed
+  // ngang giữa MAIN ⇒ VẪN tính. Hàng lấy mẫu (lưới 8 px, +4) được tính trong trang để separator nằm ĐÚNG trên một hàng.
+  const SEP_CSS = `.uim-sep::after{content:"";position:absolute;left:0;right:0;top:-4px;height:8px;z-index:20}`;
+  const sepInject = (mode) => inPage(`const st = document.createElement('style'); st.textContent = ${JSON.stringify(SEP_CSS)}; document.head.appendChild(st);
+      const r = T.getBoundingClientRect(); const row = (yy) => { let v = Math.floor(yy / 8) * 8 + 4; if (v < yy) v += 8; return v; };
+      const d = document.createElement('div'); d.setAttribute('data-panel-resize-handle-id', 'uim-sep'); d.setAttribute('role', 'separator'); d.setAttribute('data-testid', 'uim-sep-' + ${JSON.stringify(mode)});
+      if (${JSON.stringify(mode)} === 'a') { d.className = 'uim-sep'; d.style.cssText = 'position:relative;z-index:20;height:1px;margin-bottom:-1px;width:' + r.width + 'px'; T.parentElement.insertBefore(d, T);
+        const top0 = d.getBoundingClientRect().top; d.style.top = (row(r.top) - top0) + 'px'; }
+      if (${JSON.stringify(mode)} === 'b') { d.style.cssText = 'position:absolute;z-index:20;background:rgba(0,0,255,.3);height:40px;width:' + r.width + 'px;left:' + (r.left + scrollX) + 'px;top:' + (row(r.top + 24) - 4 + scrollY) + 'px'; T.parentElement.insertBefore(d, T); }
+      if (${JSON.stringify(mode)} === 'c') { d.style.cssText = 'position:fixed;z-index:20;background:#f00;height:1px;width:' + r.width + 'px;left:' + r.left + 'px;top:' + row(r.top + Math.min(r.height, innerHeight - r.top) / 2) + 'px'; T.parentElement.insertBefore(d, T); }
+      return r.width;`);
+  if (want("T29a-separator-anh-em-mien")) {
+    await sepInject("a");
+    const b = await mp(page, s, "selftest");
+    check("T29a-separator-anh-em-mien", b.coverMain.px === b0.coverMain.px && b.coverMain.separatorHitPx > 0, { before: b0.coverMain.px, after: b.coverMain.px, separatorHitPx: b.coverMain.separatorHitPx });
+    await fresh();
+  }
+  if (want("T29b-overlay-cung-attr-van-che")) {
+    const w = await sepInject("b");
+    const b = await mp(page, s, "selftest");
+    check("T29b-overlay-cung-attr-van-che", b.coverMain.px >= b0.coverMain.px + 0.9 * 40 * w && b.coverMain.items.some((i) => i.testid === "uim-sep-b"), { before: b0.coverMain.px, after: b.coverMain.px, need: Math.round(0.9 * 40 * w), separatorHitPx: b.coverMain.separatorHitPx });
+    await fresh();
+  }
+  if (want("T29c-separator-fixed-van-che")) {
+    const w = await sepInject("c");
+    const b = await mp(page, s, "selftest");
+    check("T29c-separator-fixed-van-che", b.coverMain.px >= b0.coverMain.px + 0.9 * 8 * w && b.coverMain.separatorHitPx === b0.coverMain.separatorHitPx, { before: b0.coverMain.px, after: b.coverMain.px, need: Math.round(0.9 * 8 * w), separatorHitPx: b.coverMain.separatorHitPx });
     await fresh();
   }
   if (want("T16-bam-loi")) {
