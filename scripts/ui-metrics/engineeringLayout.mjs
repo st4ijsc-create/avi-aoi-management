@@ -91,7 +91,9 @@ export const SCREENS = [
     actions: [{ id: "luu-phien-ban-moi", label: /Lưu phiên bản mới/ }] },
   { n: 6, id: "interlock-rules", route: "/interlock-rules",
     legacyMain: { desc: "InterlockRuleManagement tabs-content đang mở", fn: (r) => /InterlockRuleManagement\.tsx/.test(r.loc || "") && r.kind === "tabs-content" },
-    actions: [{ id: "them-quy-tac", label: /Thêm quy tắc/ }] },
+    // Task 5: "Thêm quy tắc" KHOÁ với role đo (engineer: DEFAULT_ROLE_PERMISSIONS interlock chỉ canView) ⇒ cảnh báo
+    // "disabled" là trạng thái THẬT, giữ khai báo. Thêm nút MỞ công cụ Test (dry-run) trên hàng đầu (flyout, chỉ đọc).
+    actions: [{ id: "them-quy-tac", label: /Thêm quy tắc/ }, { id: "test-dry-run", label: /^Test \(dry-run\)$/ }] },
   { n: 7, id: "orchestration-studio", route: "/orchestration-studio",
     legacyMain: { desc: "OrchestrationStudio card Cây/Sơ đồ + Cấu hình bước", fn: (r) => /OrchestrationStudio\.tsx/.test(r.loc || "") && r.kind === "card" && /^(Cây quy trình|Sơ đồ|Cấu hình bước)/.test(r.head) },
     actions: [{ id: "phien-ban", label: /^Phiên bản$/ }, { id: "nhan-ban", label: /^Nhân bản$/ }] },
@@ -198,7 +200,7 @@ export const KNOWN_PROCS = {
   "engineering": ["aiInbox.count","aiProgrammingKb.search","andon.active","auth.me","commandCenter.hierarchy","license.getAllowedModules","license.systemState","machine.list","permissions.getMyPermissions","programming.fleetVersionMatrix","programming.listApprovers","programming.listArtifacts","programming.listDeployments","programming.listProjects","programming.listSymbols","programming.status"],
   "engineering-changes": ["aiInbox.count","andon.active","auth.me","commandCenter.hierarchy","ecn.list","license.getAllowedModules","license.systemState","permissions.getMyPermissions","productModel.list"],
   "recipes": ["aiInbox.count","andon.active","auth.me","commandCenter.hierarchy","license.getAllowedModules","license.systemState","machineRecipe.deployments.list","machineRecipe.machines.list","machineRecipe.recipes.listCodes","permissions.getMyPermissions"],
-  "interlock-rules": ["aiInbox.count","andon.active","auth.me","commandCenter.hierarchy","interlock.events","interlock.list","license.getAllowedModules","license.systemState","permissions.getMyPermissions"],
+  "interlock-rules": ["aiInbox.count","andon.active","auth.me","commandCenter.hierarchy","interlock.events","interlock.list","license.getAllowedModules","license.systemState","oversight.posture","permissions.getMyPermissions"],
   "orchestration-studio": ["aiInbox.count","aiOrchestration.status","andon.active","auth.me","commandCenter.hierarchy","equipment.listEquipment","license.getAllowedModules","license.systemState","orchestration.listRuns","orchestration.listVersions","orchestration.listWorkflows","orchestration.status","permissions.getMyPermissions"],
   "ir-editor": ["aiInbox.count","andon.active","auth.me","commandCenter.hierarchy","ir.lint","ir.listFlows","ir.status","license.getAllowedModules","license.systemState","permissions.getMyPermissions","programming.listProjects"],
   "pou-studio": ["aiInbox.count","andon.active","auth.me","commandCenter.hierarchy","license.getAllowedModules","license.systemState","permissions.getMyPermissions","programming.listProjects","programming.pouLint","programming.pouTranspilePreview"],
