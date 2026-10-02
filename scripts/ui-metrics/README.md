@@ -273,3 +273,6 @@ Chạy `--spawn` hai lần liên tiếp, mỗi lần một instance mới, rồi
 đều đỏ khi gỡ.
 
 Kết quả của Task 1 nằm trong `.superpowers/sdd/2026-09-27-engineering-control-dot2-bo-cuc/task-1-report.md`.
+
+## Đường cơ sở SAU SHELL (Task 2) — dùng cho các task chuyển trang (Task 4+)
+`docs/ECOSYSTEM/81_ENGINEERING_CONTROL_KHAO_SAT_SAU/do-bo-cuc/baseline-sau-shell.json` = lần đo sau Task 2 (gitHead a74e59d80; fix round 2 chỉ đổi FreshnessStrip). `baseline.json` (trước Task 2) giữ làm mốc gốc của Đợt 2. Mỗi task chuyển trang: so TRƯỚC/SAU bằng `--compare` với `baseline-sau-shell.json` và hiệu chuẩn `data-layout-main` lần đầu theo hình học của tệp này (ruling R-2-k, 2026-10-03).
