@@ -890,7 +890,11 @@ describe.skipIf(!DB_URL)("Đợt 1D Task 2 — DỪNG OT ghim qua preflight an t
           reason: "SUPERSEDED_BY_STOP",
           results: [{ tagKey: "speed_sp", ok: false, status: "rejected", error: "SUPERSEDED_BY_STOP" }],
           commandLogIds: expect.any(Array),
+          // fix round 1 (I-1) — tới người dùng qua appError (vi/en/zh), câu tiếng Anh không tên cờ
+          appError: { appCode: "OT_COMMAND_SUPERSEDED_BY_STOP", appParams: { stopKey: s.idempotencyKey } },
+          message: expect.stringMatching(/cancelled.*STOP.*resend/i),
         });
+        expect(r2.message).not.toMatch(/OT_CMD_|OT_CONTROL_|SUPERSEDED_BY_STOP/);
         expect(r2.commandLogIds).toHaveLength(1);
         const rows2 = await ledger(w2.idempotencyKey);
         const intent2 = rows2.filter((r) => (r.ackValue as any)?.ledger === "intent");
@@ -918,6 +922,48 @@ describe.skipIf(!DB_URL)("Đợt 1D Task 2 — DỪNG OT ghim qua preflight an t
         const rowsS = await ledger(s.idempotencyKey);
         expect(rowsS.find((r) => (r.ackValue as any)?.ledger === "result")?.status).toBe("acked");
         await until(() => _adapterCommandQueueDepthForTests(adapterPinned) === 0, 5_000, "hàng cạn");
+      });
+    } finally {
+      h.release();
+      fake.otDrivers.set(adapterPinned, fakeOtDriver);
+      _resetAdapterCommandQueuesForTests();
+    }
+  });
+
+  it("1E M-1 (R-1E-b): stop KHÔNG ghim đang CHỜ + DỪNG ghim tới ⇒ stop không ghim bị huỷ SUPERSEDED_BY_STOP (thiết bị không nhận false), DỪNG ghim chạy ngay sau W1", async () => {
+    process.env.OT_CMD_SERIALIZE_ENABLED = "true";
+    process.env.OT_CMD_QUEUE_MAX = "2";
+    process.env.OT_CONTROL_TIMEOUT_MS = "30000";
+    _resetAdapterCommandQueuesForTests();
+    const h = heldFirstWriteDriver();
+    fake.otDrivers.set(adapterPinned, h.driver);
+    try {
+      await withPlcConfigs([realMapped()], async () => {
+        const p1 = dispatch(await writeCmd(111));
+        await within(h.firstStarted, 15_000, "W1 tới thiết bị");
+        const u = await stopInput([{ tagKey: "cmd_stop", value: false }]); // stop KHÔNG ghim (value_mismatch)
+        const pU = dispatch(u);
+        await until(() => _adapterCommandQueueDepthForTests(adapterPinned) === 2, 15_000, "stop không ghim vào hàng chờ");
+        const s = await stopInput([{ tagKey: "cmd_stop", value: true }]);
+        const pS = dispatch(s);
+        const rU = await within(pU, 15_000, "stop không ghim bị huỷ");
+        expect(rU).toMatchObject({
+          ok: false,
+          status: "rejected",
+          reason: "SUPERSEDED_BY_STOP",
+          appError: { appCode: "OT_COMMAND_SUPERSEDED_BY_STOP", appParams: { stopKey: s.idempotencyKey } },
+        });
+        expect(rU.pinnedStop).toBeUndefined();
+        const resU = (await ledger(u.idempotencyKey)).filter((r) => (r.ackValue as any)?.ledger === "result");
+        expect(resU).toHaveLength(1);
+        expect(resU[0].status).toBe("rejected");
+        expect((resU[0].ackValue as any).supersededByStop).toMatchObject({ idempotencyKey: s.idempotencyKey });
+        h.release();
+        expect((await within(p1, 15_000, "W1")).status).toBe("acked");
+        const rS = await within(pS, 15_000, "DỪNG");
+        expect(rS.status).toBe("acked");
+        expect(rS.pinnedStop).toBe(true);
+        expect(received).toEqual([[{ tagKey: "speed_sp", value: 111 }], [{ tagKey: "cmd_stop", value: true }]]);
       });
     } finally {
       h.release();

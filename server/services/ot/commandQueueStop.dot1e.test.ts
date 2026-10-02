@@ -207,4 +207,61 @@ describe("Đợt 1E T1 — DỪNG ghim trong hàng đợi lệnh per-adapter (R-
     ctl.get("D")!.resolve("d");
     await expect(within(rD, 2000, "D")).resolves.toBe("d"); // KHÔNG Superseded
   });
+
+  // ═════════ fix round 1 (review M-2) — các chuỗi xen kẽ còn thiếu ═════════
+  it("(g) S1, S2, D, S3 (hàng rỗng) ⇒ D bị huỷ; thứ tự chạy ĐÚNG [S1, S2, S3]", async () => {
+    process.env.OT_CMD_QUEUE_MAX = "10";
+    const { log, ctl, job } = makeJobs();
+    const rS1 = accepted(tryEnqueueAdapterCommand(ADAPTER, job("S1"), { priorityStop: true })); // chạy ngay
+    const rS2 = accepted(tryEnqueueAdapterCommand(ADAPTER, job("S2"), { priorityStop: true }));
+    const rD = accepted(tryEnqueueAdapterCommand(ADAPTER, job("D")));
+    const rS3 = accepted(tryEnqueueAdapterCommand(ADAPTER, job("S3"), { priorityStop: true }));
+    await expect(within(rD, 2000, "D bị huỷ")).resolves.toEqual(SUPERSEDED);
+    expect(_adapterCommandQueueDepthForTests(ADAPTER)).toBe(3); // S1 bay + S2, S3 chờ
+    for (const [name, r] of [["S1", rS1], ["S2", rS2], ["S3", rS3]] as const) {
+      await flush();
+      ctl.get(name)!.resolve(name);
+      await expect(within(r, 2000, name)).resolves.toBe(name);
+    }
+    await flush();
+    expect(log).toEqual(["S1", "S2", "S3"]);
+    expect(_adapterCommandQueueCountForTests()).toBe(0);
+  });
+
+  it("(h) DỪNG tới khi một DỪNG khác ĐANG BAY (có lệnh thường chờ) ⇒ lệnh thường bị huỷ, DỪNG mới chạy KẾ TIẾP; DỪNG đang bay không bị đụng", async () => {
+    const { log, ctl, job } = makeJobs();
+    const rS1 = accepted(tryEnqueueAdapterCommand(ADAPTER, job("S1"), { priorityStop: true }));
+    const rB = accepted(tryEnqueueAdapterCommand(ADAPTER, job("B")));
+    await flush();
+    const rS2 = accepted(tryEnqueueAdapterCommand(ADAPTER, job("S2"), { priorityStop: true }));
+    await expect(within(rB, 2000, "B bị huỷ")).resolves.toEqual(SUPERSEDED);
+    expect(log).toEqual(["S1"]);
+    ctl.get("S1")!.resolve("s1");
+    await expect(within(rS1, 2000, "S1")).resolves.toBe("s1"); // không Superseded
+    await flush();
+    expect(log).toEqual(["S1", "S2"]);
+    ctl.get("S2")!.resolve("s2");
+    await expect(within(rS2, 2000, "S2")).resolves.toBe("s2");
+  });
+
+  it("(i) BUSY tính ĐÚNG ngay sau khi huỷ: max=2, A bay, B chờ, S huỷ B ⇒ depth 2; C thường ⇒ BUSY; A xong (S bay, depth 1) ⇒ C được nhận", async () => {
+    const { log, ctl, job } = makeJobs();
+    const rA = accepted(tryEnqueueAdapterCommand(ADAPTER, job("A")));
+    const rB = accepted(tryEnqueueAdapterCommand(ADAPTER, job("B")));
+    const rS = accepted(tryEnqueueAdapterCommand(ADAPTER, job("S"), { priorityStop: true }));
+    await expect(within(rB, 2000, "B bị huỷ")).resolves.toEqual(SUPERSEDED);
+    expect(_adapterCommandQueueDepthForTests(ADAPTER)).toBe(2);
+    expect(tryEnqueueAdapterCommand(ADAPTER, job("C"))).toEqual({ accepted: false, depth: 2, max: 2 });
+    ctl.get("A")!.resolve("a");
+    await expect(within(rA, 2000, "A")).resolves.toBe("a");
+    await flush();
+    expect(_adapterCommandQueueDepthForTests(ADAPTER)).toBe(1); // S đang bay
+    const rC = accepted(tryEnqueueAdapterCommand(ADAPTER, job("C2")));
+    ctl.get("S")!.resolve("s");
+    await expect(within(rS, 2000, "S")).resolves.toBe("s");
+    await flush();
+    ctl.get("C2")!.resolve("c2");
+    await expect(within(rC, 2000, "C2")).resolves.toBe("c2");
+    expect(log).toEqual(["A", "S", "C2"]);
+  });
 });

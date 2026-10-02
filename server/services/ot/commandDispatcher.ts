@@ -505,6 +505,10 @@ export function tryEnqueueAdapterCommand<T>(
 
   if (priorityStop) {
     // R-1E-a — huỷ mọi lệnh KHÔNG phải DỪNG ghim còn đang CHỜ (lệnh đang bay không nằm trong `pending`).
+    // R-1E-b (review M-1) — CỐ Ý gồm cả một lệnh "stop" KHÔNG ghim đang chờ (commandType stop/e_stop nhưng giá trị
+    // không khớp ghim ⇒ priorityStop false): DỪNG ghim thay thế nó, chiều năng lượng không đổi (vẫn là dừng, bằng
+    // ĐÚNG giá trị đã ghim), còn giữ nó lại thì sau DỪNG ghim sẽ ghi một giá trị chưa được chứng minh là an toàn.
+    // Lệnh bị huỷ nhận SUPERSEDED_BY_STOP như mọi lệnh khác (test pinnedStop.dot1d "1E M-1").
     const kept: PendingAdapterCommand[] = [];
     for (const j of queue.pending) {
       if (j.priorityStop) kept.push(j);
@@ -572,7 +576,8 @@ export interface DispatchResult {
   /**
    * doc 81 Đợt 1C final wave 4 (R-1C-g) — machine-readable, localisable refusal (existing appError code +
    * `errors.reason.*` key) when the refusal needs words beyond `reason`. Today: a stop/e_stop refused by the
-   * safety preflight. Absent everywhere else (byte-identical).
+   * safety preflight; doc 81 Đợt 1E (I-1): a waiting command cancelled by a pinned STOP
+   * (`OT_COMMAND_SUPERSEDED_BY_STOP`, params { stopKey }). Absent everywhere else (byte-identical).
    */
   appError?: { appCode: AppErrorCode; appParams: AppErrorParams };
   /** Plain-English sentence for API callers/logs, paired with `appError`. */
@@ -1392,7 +1397,18 @@ async function dispatchCore(input: DispatchInput): Promise<DispatchResult> {
         undefined,
         { intentIds, confirmedBy: ledgerConfirmer, ackExtra: { ...ledgerExtra, supersededByStop: queued.stop ?? null } },
       );
-      return { ok: false, simulated: false, status: "rejected", reason: "SUPERSEDED_BY_STOP", results: failedResults(input, "SUPERSEDED_BY_STOP"), commandLogIds: ids };
+      // fix round 1 (review I-1, plan Global Constraint 3) — the operator must learn the command was DROPPED and must
+      // be resent: coded appError (vi/en/zh `errors.OT_COMMAND_SUPERSEDED_BY_STOP`) + a plain sentence (no env vars).
+      return {
+        ok: false,
+        simulated: false,
+        status: "rejected",
+        reason: "SUPERSEDED_BY_STOP",
+        results: failedResults(input, "SUPERSEDED_BY_STOP"),
+        commandLogIds: ids,
+        appError: { appCode: "OT_COMMAND_SUPERSEDED_BY_STOP", appParams: { stopKey } },
+        message: "This waiting command was cancelled because a STOP command was queued after it — it was not sent to the device; resend it if still needed.",
+      };
     }
     executed = queued;
   } else {

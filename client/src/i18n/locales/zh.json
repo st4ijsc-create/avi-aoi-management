@@ -4339,7 +4339,8 @@
       "zodMore": "（另有 {{count}} 处错误）"
     },
     "DEVICE_UNREACHABLE": "无法连接到 {{entity}} 设备。请检查电源、网线和 IP 地址。",
-    "DEVICE_PROTOCOL_UNSUPPORTED": "此版本不支持 {{entity}} 协议。"
+    "DEVICE_PROTOCOL_UNSUPPORTED": "此版本不支持 {{entity}} 协议。",
+    "OT_COMMAND_SUPERSEDED_BY_STOP": "等待中的命令已因停止（STOP）命令而被取消——如仍需要，请重新发送。"
   },
   "export": {
     "reportMenu": {
