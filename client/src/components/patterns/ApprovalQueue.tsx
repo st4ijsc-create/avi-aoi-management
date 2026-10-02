@@ -12,11 +12,18 @@
  *    - KHÔNG biết người dùng hiện tại ⇒ chặn mọi quyết định (approve/reject) và mọi hành động có
  *      tách vai — không đoán.
  *    Client chặn sớm và NÓI lý do; server vẫn là cổng thật.
- * 2. TỪ CHỐI BẮT BUỘC LÝ DO: chuỗi trắng không tính; tối thiểu `max(1, minReasonLength)` ký tự.
+ * 2. TỪ CHỐI BẮT BUỘC LÝ DO (mặc định): chuỗi trắng không tính; tối thiểu `max(1, minReasonLength)`.
  *
- * Quyết định (approve/reject) mở `TransitionDialog` là SHEET phải (flyout, không phải dialog giữa
- * màn — plan "Dialog tạo/sửa/duyệt → flyout"). `advance` (submit/review/implement/close) gọi thẳng
- * như trang cũ, trừ khi khai `confirm: true`. `onTransition` reject ⇒ sheet GIỮ mở và giữ lý do.
+ * ── CẤU HÌNH THEO HỢP ĐỒNG HIỆN TẠI CỦA TRANG (Ruling R-2-g) ─────────────────────────────────────
+ * - `confirmStep` (mặc định true): approve/reject mở `TransitionDialog` (SHEET phải — flyout, không
+ *   phải dialog giữa màn). false ⇒ gọi thẳng `onTransition` như Standards CR hôm nay.
+ *   `advance` (submit/review/implement/close) mặc định gọi thẳng; `action.confirmStep` ghi đè.
+ * - `rejectReasonRequired` (mặc định true). false ⇒ ý kiến từ chối không bắt buộc (CR hôm nay).
+ *   Khi lý do còn bắt buộc, từ chối LUÔN mở sheet dù `confirmStep=false`.
+ * - Maker-checker KHÔNG có công tắc: mọi đường (sheet hay gọi thẳng) đều qua `checkSegregation`.
+ *
+ * Lỗi của `onTransition` (promise reject) hiện qua `toastTrpcError`; ở đường sheet, sheet GIỮ mở và
+ * giữ chữ. Trang đã tự toast trong `onError` thì gọi `mutate` (không trả promise) để khỏi báo đôi.
  */
 import * as React from "react";
 import { useTranslation } from "react-i18next";
@@ -28,6 +35,7 @@ import { Sheet, SheetContent, SheetDescription, SheetFooter, SheetHeader, SheetT
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { EmptyState } from "@/components/EmptyState";
 import { cn } from "@/lib/utils";
+import { toastTrpcError } from "@/lib/trpcErrors";
 
 export type TransitionKind = "approve" | "reject" | "advance";
 export type SegregationRole = "author" | "reviewer";
@@ -42,8 +50,8 @@ export interface TransitionAction {
   segregateFrom?: readonly SegregationRole[];
   /** Lý do tối thiểu khi từ chối (mặc định 1 = không rỗng). */
   minReasonLength?: number;
-  /** advance cũng mở sheet xác nhận. */
-  confirm?: boolean;
+  /** Ghi đè `confirmStep` của hàng đợi cho riêng hành động này (advance mặc định false). */
+  confirmStep?: boolean;
 }
 
 export interface ApprovalItem {
@@ -101,9 +109,11 @@ export interface TransitionDialogProps {
   /** Gọi mutation; reject ⇒ dialog giữ mở. `comment` đã trim, undefined khi rỗng. */
   onConfirm: (comment: string | undefined) => void | Promise<void>;
   pending?: boolean;
+  /** Lý do bắt buộc. Mặc định: true khi `action.kind === "reject"`. */
+  reasonRequired?: boolean;
 }
 
-export function TransitionDialog({ open, onOpenChange, action, subject, description, segregation, onConfirm, pending = false }: TransitionDialogProps) {
+export function TransitionDialog({ open, onOpenChange, action, subject, description, segregation, onConfirm, pending = false, reasonRequired }: TransitionDialogProps) {
   const { t } = useTranslation();
   const sodMessage = useSegregationMessage()(segregation);
   const fieldId = React.useId();
@@ -114,9 +124,10 @@ export function TransitionDialog({ open, onOpenChange, action, subject, descript
   }, [open]);
 
   const isReject = action.kind === "reject";
+  const needsReason = reasonRequired ?? isReject;
   const min = Math.max(1, action.minReasonLength ?? 1);
   const trimmed = text.trim();
-  const reasonOk = !isReject || trimmed.length >= min;
+  const reasonOk = !needsReason || trimmed.length >= min;
   const canConfirm = segregation.allowed && reasonOk && !busy && !pending;
 
   const submit = async () => {
@@ -125,8 +136,9 @@ export function TransitionDialog({ open, onOpenChange, action, subject, descript
     try {
       await onConfirm(trimmed === "" ? undefined : trimmed);
       onOpenChange(false);
-    } catch {
-      // Giữ sheet mở và giữ chữ đã gõ; trang tự báo lỗi (toastTrpcError) như cũ.
+    } catch (e) {
+      // Giữ sheet mở và giữ chữ đã gõ; lỗi không bị nuốt.
+      toastTrpcError(e);
     } finally {
       setBusy(false);
     }
@@ -156,7 +168,7 @@ export function TransitionDialog({ open, onOpenChange, action, subject, descript
           )}
           <div className="space-y-1">
             <Label htmlFor={fieldId}>
-              {isReject
+              {needsReason
                 ? t("layoutKit.approval.reasonLabel", "Reason (required)")
                 : t("layoutKit.approval.commentLabel", "Comment (optional)")}
             </Label>
@@ -164,15 +176,15 @@ export function TransitionDialog({ open, onOpenChange, action, subject, descript
               id={fieldId}
               rows={4}
               value={text}
-              required={isReject}
-              aria-invalid={isReject && trimmed.length > 0 && !reasonOk ? true : undefined}
+              required={needsReason}
+              aria-invalid={needsReason && trimmed.length > 0 && !reasonOk ? true : undefined}
               onChange={(e) => setText(e.target.value)}
               autoFocus
             />
-            {isReject && trimmed.length > 0 && !reasonOk && (
+            {needsReason && trimmed.length > 0 && !reasonOk && (
               <p className="text-xs text-destructive">{t("layoutKit.approval.reasonTooShort", "The reason needs at least {{min}} characters.", { min })}</p>
             )}
-            {isReject && trimmed.length === 0 && (
+            {needsReason && trimmed.length === 0 && (
               <p className="text-xs text-muted-foreground">{t("layoutKit.approval.reasonRequired", "A reason is required.")}</p>
             )}
           </div>
@@ -199,11 +211,31 @@ export interface ApprovalQueueProps {
   onTransition: (item: ApprovalItem, action: TransitionAction, comment: string | undefined) => void | Promise<void>;
   /** Mutation đang chạy ⇒ khoá mọi nút. */
   pending?: boolean;
+  /** approve/reject qua sheet xác nhận (mặc định true). false = gọi thẳng như Standards CR hôm nay. */
+  confirmStep?: boolean;
+  /** Lý do từ chối bắt buộc (mặc định true). */
+  rejectReasonRequired?: boolean;
   ariaLabel?: string;
   className?: string;
 }
 
-export function ApprovalQueue({ items, status, currentUserId, onTransition, pending = false, ariaLabel, className }: ApprovalQueueProps) {
+/** Hành động này có mở sheet xác nhận không (lý do bắt buộc ⇒ luôn mở). */
+export function needsConfirmSheet(action: TransitionAction, opts: { confirmStep: boolean; rejectReasonRequired: boolean }): boolean {
+  if (action.kind === "reject" && opts.rejectReasonRequired) return true;
+  return action.confirmStep ?? (action.kind === "advance" ? false : opts.confirmStep);
+}
+
+export function ApprovalQueue({
+  items,
+  status,
+  currentUserId,
+  onTransition,
+  pending = false,
+  confirmStep = true,
+  rejectReasonRequired = true,
+  ariaLabel,
+  className,
+}: ApprovalQueueProps) {
   const { t } = useTranslation();
   const sodMessageOf = useSegregationMessage();
   const baseId = React.useId();
@@ -261,8 +293,23 @@ export function ApprovalQueue({ items, status, currentUserId, onTransition, pend
                           aria-describedby={msg ? descId : undefined}
                           title={msg ?? undefined}
                           onClick={() => {
-                            if (a.kind === "advance" && !a.confirm) void onTransition(it, a, undefined);
-                            else setTarget({ item: it, action: a });
+                            // Maker-checker kiểm lại ở mọi đường, kể cả gọi thẳng.
+                            if (!checkSegregation(a, ctxOf(it)).allowed) return;
+                            if (needsConfirmSheet(a, { confirmStep, rejectReasonRequired })) {
+                              setTarget({ item: it, action: a });
+                              return;
+                            }
+                            // Gọi ĐỒNG BỘ (như trang cũ); lỗi đồng bộ hay promise reject đều được báo.
+                            try {
+                              const r = onTransition(it, a, undefined);
+                              if (r && typeof (r as Promise<void>).then === "function") {
+                                (r as Promise<void>).catch((e: unknown) => {
+                                  toastTrpcError(e);
+                                });
+                              }
+                            } catch (e) {
+                              toastTrpcError(e);
+                            }
                           }}
                         >
                           {a.label}
@@ -291,6 +338,7 @@ export function ApprovalQueue({ items, status, currentUserId, onTransition, pend
           subject={target.item.key}
           segregation={checkSegregation(target.action, ctxOf(target.item))}
           pending={pending}
+          reasonRequired={target.action.kind === "reject" ? rejectReasonRequired : false}
           onConfirm={(comment) => onTransition(target.item, target.action, comment)}
         />
       )}

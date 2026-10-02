@@ -8,10 +8,10 @@
 //      người xem xét không được phê duyệt khi trang khai `segregateFrom: ["reviewer"]` (ECN-05).
 //   2. từ chối BẮT BUỘC có lý do (chuỗi trắng không tính), lý do đi vào `onTransition`.
 // Không biết người dùng hiện tại ⇒ không cho quyết định (không đoán).
-import { afterEach, beforeAll, describe, expect, it, vi as vitestVi } from "vitest";
+import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import "@testing-library/jest-dom/vitest";
-import vi from "@/i18n/locales/vi.json";
+import VI from "@/i18n/locales/vi.json";
 import { initLayoutKitTestI18n } from "./layoutKitTestI18n";
 import {
   ApprovalQueue,
@@ -20,6 +20,9 @@ import {
   type ApprovalItem,
   type TransitionAction,
 } from "./ApprovalQueue";
+
+const toastSpy = vi.hoisted(() => vi.fn());
+vi.mock("@/lib/trpcErrors", () => ({ toastTrpcError: (e: unknown) => { toastSpy(e); return "x"; } }));
 
 beforeAll(async () => {
   (globalThis as { ResizeObserver?: unknown }).ResizeObserver ??= class {
@@ -80,7 +83,7 @@ describe("ApprovalQueue — maker-checker", () => {
     const row = rowOf("ECN-0003");
     const approve = within(row).getByRole("button", { name: "Phê duyệt" });
     expect(approve).toBeDisabled();
-    expect(approve).toHaveAccessibleDescription(vi.layoutKit.approval.sodAuthor);
+    expect(approve).toHaveAccessibleDescription(VI.layoutKit.approval.sodAuthor);
     expect(within(row).getByRole("button", { name: "Từ chối" })).toBeEnabled();
   });
 
@@ -88,7 +91,7 @@ describe("ApprovalQueue — maker-checker", () => {
     render(<ApprovalQueue items={[item()]} status="ready" currentUserId={7} onTransition={() => {}} />);
     const approve = within(rowOf("ECN-0003")).getByRole("button", { name: "Phê duyệt" });
     expect(approve).toBeDisabled();
-    expect(approve).toHaveAccessibleDescription(vi.layoutKit.approval.sodReviewer);
+    expect(approve).toHaveAccessibleDescription(VI.layoutKit.approval.sodReviewer);
   });
 
   it("chưa biết người dùng ⇒ mọi quyết định bị khoá", () => {
@@ -100,12 +103,12 @@ describe("ApprovalQueue — maker-checker", () => {
   });
 
   it("người khác: Phê duyệt mở sheet, xác nhận ⇒ onTransition(item, action, ý kiến)", async () => {
-    const onTransition = vitestVi.fn().mockResolvedValue(undefined);
+    const onTransition = vi.fn().mockResolvedValue(undefined);
     render(<ApprovalQueue items={[item()]} status="ready" currentUserId={9} onTransition={onTransition} />);
     fireEvent.click(within(rowOf("ECN-0003")).getByRole("button", { name: "Phê duyệt" }));
     const sheet = await screen.findByRole("dialog");
     expect(sheet).toHaveAttribute("data-slot", "sheet-content");
-    fireEvent.change(within(sheet).getByLabelText(vi.layoutKit.approval.commentLabel), { target: { value: "  đạt  " } });
+    fireEvent.change(within(sheet).getByLabelText(VI.layoutKit.approval.commentLabel), { target: { value: "  đạt  " } });
     fireEvent.click(within(sheet).getByRole("button", { name: "Phê duyệt" }));
     await waitFor(() => expect(onTransition).toHaveBeenCalledTimes(1));
     expect(onTransition.mock.calls[0][1]).toBe(APPROVE);
@@ -114,7 +117,7 @@ describe("ApprovalQueue — maker-checker", () => {
   });
 
   it("hành động advance có tách vai: tác giả bị khoá; người khác gọi thẳng, không mở sheet", async () => {
-    const onTransition = vitestVi.fn();
+    const onTransition = vi.fn();
     const it1 = item({ actions: [REVIEW] });
     const { unmount } = render(<ApprovalQueue items={[it1]} status="ready" currentUserId={5} onTransition={onTransition} />);
     expect(within(rowOf("ECN-0003")).getByRole("button", { name: "Bắt đầu xem xét" })).toBeDisabled();
@@ -128,13 +131,13 @@ describe("ApprovalQueue — maker-checker", () => {
 
 describe("ApprovalQueue — từ chối bắt buộc lý do", () => {
   it("lý do trống/chỉ khoảng trắng ⇒ nút Từ chối trong sheet bị khoá; có lý do ⇒ gửi lý do đã trim", async () => {
-    const onTransition = vitestVi.fn().mockResolvedValue(undefined);
+    const onTransition = vi.fn().mockResolvedValue(undefined);
     render(<ApprovalQueue items={[item()]} status="ready" currentUserId={9} onTransition={onTransition} />);
     fireEvent.click(within(rowOf("ECN-0003")).getByRole("button", { name: "Từ chối" }));
     const sheet = await screen.findByRole("dialog");
     const confirm = within(sheet).getByRole("button", { name: "Từ chối" });
     expect(confirm).toBeDisabled();
-    const box = within(sheet).getByLabelText(vi.layoutKit.approval.reasonLabel);
+    const box = within(sheet).getByLabelText(VI.layoutKit.approval.reasonLabel);
     expect(box).toBeRequired();
     fireEvent.change(box, { target: { value: "    " } });
     expect(confirm).toBeDisabled();
@@ -155,21 +158,21 @@ describe("ApprovalQueue — từ chối bắt buộc lý do", () => {
     );
     fireEvent.click(within(rowOf("ECN-0003")).getByRole("button", { name: "Từ chối" }));
     const sheet = await screen.findByRole("dialog");
-    fireEvent.change(within(sheet).getByLabelText(vi.layoutKit.approval.reasonLabel), { target: { value: "ngắn" } });
+    fireEvent.change(within(sheet).getByLabelText(VI.layoutKit.approval.reasonLabel), { target: { value: "ngắn" } });
     expect(within(sheet).getByRole("button", { name: "Từ chối" })).toBeDisabled();
     expect(within(sheet).getByText("Lý do cần tối thiểu 10 ký tự.")).toBeInTheDocument();
   });
 
   it("onTransition lỗi ⇒ sheet GIỮ mở (người dùng không mất lý do vừa gõ)", async () => {
-    const onTransition = vitestVi.fn().mockRejectedValue(new Error("SOD"));
+    const onTransition = vi.fn().mockRejectedValue(new Error("SOD"));
     render(<ApprovalQueue items={[item()]} status="ready" currentUserId={9} onTransition={onTransition} />);
     fireEvent.click(within(rowOf("ECN-0003")).getByRole("button", { name: "Từ chối" }));
     const sheet = await screen.findByRole("dialog");
-    fireEvent.change(within(sheet).getByLabelText(vi.layoutKit.approval.reasonLabel), { target: { value: "lý do" } });
+    fireEvent.change(within(sheet).getByLabelText(VI.layoutKit.approval.reasonLabel), { target: { value: "lý do" } });
     fireEvent.click(within(sheet).getByRole("button", { name: "Từ chối" }));
     await waitFor(() => expect(onTransition).toHaveBeenCalled());
     expect(screen.getByRole("dialog")).toBeInTheDocument();
-    expect(within(screen.getByRole("dialog")).getByLabelText(vi.layoutKit.approval.reasonLabel)).toHaveValue("lý do");
+    expect(within(screen.getByRole("dialog")).getByLabelText(VI.layoutKit.approval.reasonLabel)).toHaveValue("lý do");
   });
 });
 
@@ -186,7 +189,7 @@ describe("TransitionDialog — tự kiểm tách vai (phòng khi trang mở th�
       />,
     );
     const sheet = screen.getByRole("dialog");
-    expect(within(sheet).getByRole("alert")).toHaveTextContent(vi.layoutKit.approval.sodAuthor);
+    expect(within(sheet).getByRole("alert")).toHaveTextContent(VI.layoutKit.approval.sodAuthor);
     expect(within(sheet).getByRole("button", { name: "Phê duyệt" })).toBeDisabled();
   });
 });
@@ -194,11 +197,86 @@ describe("TransitionDialog — tự kiểm tách vai (phòng khi trang mở th�
 describe("ApprovalQueue — trạng thái danh sách", () => {
   it("đang tải / lỗi / trống — ba câu riêng, lỗi là role=alert", () => {
     const { rerender } = render(<ApprovalQueue items={undefined} status="loading" currentUserId={1} onTransition={() => {}} />);
-    expect(screen.getByText(vi.layoutKit.approval.loading)).toBeInTheDocument();
+    expect(screen.getByText(VI.layoutKit.approval.loading)).toBeInTheDocument();
     rerender(<ApprovalQueue items={[]} status="error" currentUserId={1} onTransition={() => {}} />);
-    expect(screen.getByRole("alert")).toHaveTextContent(vi.layoutKit.approval.error);
-    expect(screen.queryByText(vi.layoutKit.approval.empty)).toBeNull();
+    expect(screen.getByRole("alert")).toHaveTextContent(VI.layoutKit.approval.error);
+    expect(screen.queryByText(VI.layoutKit.approval.empty)).toBeNull();
     rerender(<ApprovalQueue items={[]} status="ready" currentUserId={1} onTransition={() => {}} />);
-    expect(screen.getByText(vi.layoutKit.approval.empty)).toBeInTheDocument();
+    expect(screen.getByText(VI.layoutKit.approval.empty)).toBeInTheDocument();
+  });
+});
+
+// ── Fix round 1 (Ruling R-2-g) — Standards CR giữ luồng hiện tại; maker-checker KHÔNG cấu hình được ──
+describe("ApprovalQueue — confirmStep / rejectReasonRequired", () => {
+  it("confirmStep=false ⇒ Phê duyệt gọi thẳng onTransition, không mở sheet (CR hôm nay)", () => {
+    const onTransition = vi.fn();
+    render(<ApprovalQueue items={[item()]} status="ready" currentUserId={9} confirmStep={false} rejectReasonRequired={false} onTransition={onTransition} />);
+    fireEvent.click(within(rowOf("ECN-0003")).getByRole("button", { name: "Phê duyệt" }));
+    expect(onTransition).toHaveBeenCalledWith(expect.objectContaining({ id: 1 }), APPROVE, undefined);
+    expect(screen.queryByRole("dialog")).toBeNull();
+  });
+
+  it("confirmStep=false + rejectReasonRequired=false ⇒ Từ chối gọi thẳng, không lý do", () => {
+    const onTransition = vi.fn();
+    render(<ApprovalQueue items={[item()]} status="ready" currentUserId={9} confirmStep={false} rejectReasonRequired={false} onTransition={onTransition} />);
+    fireEvent.click(within(rowOf("ECN-0003")).getByRole("button", { name: "Từ chối" }));
+    expect(onTransition).toHaveBeenCalledWith(expect.objectContaining({ id: 1 }), REJECT, undefined);
+    expect(screen.queryByRole("dialog")).toBeNull();
+  });
+
+  it("confirmStep=false nhưng lý do vẫn bắt buộc ⇒ Từ chối VẪN mở sheet (không bỏ qua được lý do)", async () => {
+    const onTransition = vi.fn();
+    render(<ApprovalQueue items={[item()]} status="ready" currentUserId={9} confirmStep={false} onTransition={onTransition} />);
+    fireEvent.click(within(rowOf("ECN-0003")).getByRole("button", { name: "Từ chối" }));
+    const sheet = await screen.findByRole("dialog");
+    expect(within(sheet).getByLabelText(VI.layoutKit.approval.reasonLabel)).toBeRequired();
+    expect(onTransition).not.toHaveBeenCalled();
+  });
+
+  it("rejectReasonRequired=false + có bước xác nhận ⇒ sheet với ý kiến KHÔNG bắt buộc, xác nhận được khi trống", async () => {
+    const onTransition = vi.fn().mockResolvedValue(undefined);
+    render(<ApprovalQueue items={[item()]} status="ready" currentUserId={9} rejectReasonRequired={false} onTransition={onTransition} />);
+    fireEvent.click(within(rowOf("ECN-0003")).getByRole("button", { name: "Từ chối" }));
+    const sheet = await screen.findByRole("dialog");
+    const box = within(sheet).getByLabelText(VI.layoutKit.approval.commentLabel);
+    expect(box).not.toBeRequired();
+    fireEvent.click(within(sheet).getByRole("button", { name: "Từ chối" }));
+    await waitFor(() => expect(onTransition).toHaveBeenCalledWith(expect.objectContaining({ id: 1 }), REJECT, undefined));
+  });
+
+  it("maker-checker KHÔNG tắt được: confirmStep=false vẫn khoá Phê duyệt cho tác giả", () => {
+    const onTransition = vi.fn();
+    render(<ApprovalQueue items={[item()]} status="ready" currentUserId={5} confirmStep={false} rejectReasonRequired={false} onTransition={onTransition} />);
+    const approve = within(rowOf("ECN-0003")).getByRole("button", { name: "Phê duyệt" });
+    expect(approve).toBeDisabled();
+    fireEvent.click(approve);
+    expect(onTransition).not.toHaveBeenCalled();
+  });
+
+  it("action.confirmStep ghi đè mặc định của hàng đợi (advance có xác nhận)", async () => {
+    const onTransition = vi.fn();
+    render(<ApprovalQueue items={[item({ actions: [{ ...REVIEW, confirmStep: true }] })]} status="ready" currentUserId={9} onTransition={onTransition} />);
+    fireEvent.click(within(rowOf("ECN-0003")).getByRole("button", { name: "Bắt đầu xem xét" }));
+    expect(await screen.findByRole("dialog")).toBeInTheDocument();
+    expect(onTransition).not.toHaveBeenCalled();
+  });
+
+  it("đường gọi thẳng: onTransition reject ⇒ toastTrpcError (không nuốt lỗi)", async () => {
+    toastSpy.mockClear();
+    const err = new Error("SOD");
+    render(<ApprovalQueue items={[item()]} status="ready" currentUserId={9} confirmStep={false} rejectReasonRequired={false} onTransition={vi.fn().mockRejectedValue(err)} />);
+    fireEvent.click(within(rowOf("ECN-0003")).getByRole("button", { name: "Phê duyệt" }));
+    await waitFor(() => expect(toastSpy).toHaveBeenCalledWith(err));
+  });
+
+  it("đường sheet: onTransition reject ⇒ toastTrpcError VÀ sheet giữ mở", async () => {
+    toastSpy.mockClear();
+    const err = new Error("SOD");
+    render(<ApprovalQueue items={[item()]} status="ready" currentUserId={9} onTransition={vi.fn().mockRejectedValue(err)} />);
+    fireEvent.click(within(rowOf("ECN-0003")).getByRole("button", { name: "Phê duyệt" }));
+    const sheet = await screen.findByRole("dialog");
+    fireEvent.click(within(sheet).getByRole("button", { name: "Phê duyệt" }));
+    await waitFor(() => expect(toastSpy).toHaveBeenCalledWith(err));
+    expect(screen.getByRole("dialog")).toBeInTheDocument();
   });
 });
