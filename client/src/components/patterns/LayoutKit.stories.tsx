@@ -21,7 +21,7 @@ import { CockpitLayout } from "./CockpitLayout";
  * Dấu đo `data-layout-*` xem `layoutMarkers.ts`.
  */
 const meta: Meta = {
-  title: "Patterns/LayoutKit (doc 81 Đợt 2)",
+  title: "Patterns/LayoutKit (doc 81 wave 2)",
   parameters: { layout: "fullscreen" },
 };
 export default meta;
@@ -30,10 +30,10 @@ type Story = StoryObj;
 const chips = (
   <StatusChipStrip
     items={[
-      { id: "ok", label: "Đang chạy", value: 12, state: "ok", source: "fleet.tasks (DB)" },
-      { id: "loading", label: "Chờ sạc", value: null, state: "loading", source: "fleet.chargers" },
-      { id: "error", label: "Cảnh báo", value: 0, state: "error", source: "safety.events" },
-      { id: "degraded", label: "Chờ duyệt", value: 3, state: "degraded", source: "oversight.pendingSummary" },
+      { id: "ok", label: "Running", value: 12, state: "ok", source: "fleet.tasks (DB)" },
+      { id: "loading", label: "Charging", value: null, state: "loading", source: "fleet.chargers" },
+      { id: "error", label: "Alarms", value: 0, state: "error", source: "safety.events" },
+      { id: "degraded", label: "Pending", value: 3, state: "degraded", source: "oversight.pendingSummary" },
     ]}
   />
 );
@@ -43,20 +43,20 @@ export const HeaderVoiChipVaNotice: Story = {
     <main className="p-4">
       <PageHeaderCompact
         icon={<Truck />}
-        title="Điều phối đội xe"
+        title="Fleet orchestration"
         chips={
           <>
             <NoticeStack
               items={[
-                { id: "beta", kind: "beta", content: <p>Tính năng xem trước.</p> },
-                { id: "sim", kind: "simGate", content: <p>Lệnh chỉ chạy mô phỏng.</p> },
+                { id: "beta", kind: "beta", content: <p>Preview feature.</p> },
+                { id: "sim", kind: "simGate", content: <p>Commands run in simulation only.</p> },
               ]}
             />
             <WhenToUseHint i18nKey="fleet.whenToUse" fallback="When to use — assign tasks across a robot/AGV fleet." />
             {chips}
           </>
         }
-        actions={<Button size="sm">Tạo tác vụ</Button>}
+        actions={<Button size="sm">New task</Button>}
       />
     </main>
   ),
@@ -67,9 +67,9 @@ function FlyoutDemoBody() {
   const f = useFlyout();
   return (
     <div className="space-y-2">
-      <input className="w-full rounded border px-2 py-1" placeholder="Gõ để đánh dấu chưa lưu" onChange={(e) => layer.setDirty(e.target.value !== "")} />
+      <input className="w-full rounded border px-2 py-1" placeholder="Type to mark unsaved" onChange={(e) => layer.setDirty(e.target.value !== "")} />
       <Button size="sm" onClick={() => f.push("history", { id: layer.id })}>
-        Mở lịch sử (push)
+        Open history (push)
       </Button>
     </div>
   );
@@ -79,7 +79,7 @@ function FlyoutDemoOpener() {
   const f = useFlyout();
   return (
     <Button onClick={() => f.open("detail", { id: 42 })} className="m-4">
-      Mở chi tiết ECN-42
+      Open ECN-42
     </Button>
   );
 }
@@ -90,7 +90,7 @@ export const FlyoutStack: Story = {
       flyouts={{
         detail: { title: (id) => `ECN-${id}`, render: () => <FlyoutDemoBody /> },
         history: {
-          title: "Lịch sử phiên bản",
+          title: "Version history",
           size: "lg",
           render: () => (
             <VersionHistoryPanel
@@ -105,7 +105,7 @@ export const FlyoutStack: Story = {
                   requireOtp
                   minReasonLength={3}
                   onRollback={() => undefined}
-                  trigger={<Button size="sm" variant="outline">Khôi phục</Button>}
+                  trigger={<Button size="sm" variant="outline">Roll back</Button>}
                 />
               )}
             />
@@ -124,22 +124,22 @@ function ChiTietVaWizardDemo() {
     <div className="h-[480px] p-4">
       <DetailSheet
         title="ECN-0003"
-        subtitle="Đổi keo SMT"
+        subtitle="Change SMT paste"
         tabs={[
-          { value: "overview", label: "Tổng quan", content: <p>Tổng quan</p> },
-          { value: "approval", label: "Duyệt", content: <p>Duyệt</p> },
+          { value: "overview", label: "Overview", content: <p>Overview</p> },
+          { value: "approval", label: "Approval", content: <p>Approval</p> },
         ]}
-        actions={<Button size="sm" onClick={() => setOpen(true)}>Triển khai…</Button>}
+        actions={<Button size="sm" onClick={() => setOpen(true)}>Deploy…</Button>}
       />
       <WizardDialog
         open={open}
         onOpenChange={setOpen}
-        title="Triển khai"
+        title="Deploy"
         onFinish={() => setOpen(false)}
         steps={[
-          { id: "a", title: "Chọn máy", content: <p>Máy</p> },
+          { id: "a", title: "Pick machines", content: <p>Machines</p> },
           { id: "b", title: "Canary", content: <p>Canary</p> },
-          { id: "c", title: "Xem lại", content: <p>Xem lại</p> },
+          { id: "c", title: "Review", content: <p>Review</p> },
         ]}
       />
     </div>
@@ -158,25 +158,25 @@ export const HangDoiDuyet: Story = {
           {
             id: 1,
             key: "ECN-0003",
-            title: "Đổi keo",
-            status: "Đang xem xét",
+            title: "Change paste",
+            status: "In review",
             authorId: 5,
-            authorName: "Bạn",
+            authorName: "You",
             actions: [
-              { key: "approve", label: "Phê duyệt", kind: "approve" },
-              { key: "reject", label: "Từ chối", kind: "reject" },
+              { key: "approve", label: "Approve", kind: "approve" },
+              { key: "reject", label: "Reject", kind: "reject" },
             ],
           },
           {
             id: 2,
             key: "ECN-0004",
-            title: "Đổi nhiệt",
-            status: "Đang xem xét",
+            title: "Change temperature",
+            status: "In review",
             authorId: 9,
-            authorName: "Kỹ sư B",
+            authorName: "Engineer B",
             actions: [
-              { key: "approve", label: "Phê duyệt", kind: "approve" },
-              { key: "reject", label: "Từ chối", kind: "reject" },
+              { key: "approve", label: "Approve", kind: "approve" },
+              { key: "reject", label: "Reject", kind: "reject" },
             ],
           },
         ]}
@@ -193,9 +193,9 @@ export const DanhSachChiTiet: Story = {
         userId={1}
         heightClass="h-[420px]"
         hasSelection
-        listToolbar={<input className="w-full rounded border px-2 py-1 text-sm" placeholder="Tìm ECN" />}
+        listToolbar={<input className="w-full rounded border px-2 py-1 text-sm" placeholder="Search ECN" />}
         list={<table className="w-full text-sm"><tbody><tr><td className="p-2">ECN-0003</td></tr></tbody></table>}
-        detail={<p className="p-2">Chi tiết ECN-0003</p>}
+        detail={<p className="p-2">ECN-0003 details</p>}
       />
     </main>
   ),
@@ -205,11 +205,11 @@ export const Cockpit: Story = {
   render: () => (
     <main className="p-4">
       <CockpitLayout
-        title="An toàn"
+        title="Safety"
         chips={chips}
-        main={<table className="w-full text-sm"><tbody><tr><td className="p-2">Sự kiện</td></tr></tbody></table>}
-        side={<p>Xu hướng</p>}
-        sideLabel="Xu hướng"
+        main={<table className="w-full text-sm"><tbody><tr><td className="p-2">Events</td></tr></tbody></table>}
+        side={<p>Trends</p>}
+        sideLabel="Trends"
       />
     </main>
   ),
@@ -225,13 +225,13 @@ function WorkbenchDemo() {
         userId={1}
         heightClass="h-[640px]"
         activityItems={[
-          { id: "projects", label: "Dự án", icon: <FolderTree /> },
-          { id: "versions", label: "Phiên bản", icon: <GitBranch /> },
-          { id: "deploy", label: "Triển khai", icon: <Rocket /> },
+          { id: "projects", label: "Projects", icon: <FolderTree /> },
+          { id: "versions", label: "Versions", icon: <GitBranch /> },
+          { id: "deploy", label: "Deploy", icon: <Rocket /> },
         ]}
         activeActivity={act}
         onActivityChange={setAct}
-        explorer={<p className="p-2 text-sm">Cây {act}</p>}
+        explorer={<p className="p-2 text-sm">Tree {act}</p>}
         editorTabs={[
           { id: "main", label: "Main.bas", dirty: true, closable: true },
           { id: "tags", label: "Tags" },
@@ -242,7 +242,7 @@ function WorkbenchDemo() {
         inspector={<p className="p-2 text-sm">Copilot</p>}
         inspectorLabel="Copilot"
         inspectorIsAi
-        bottomPanel={<p className="p-2 text-sm">Vấn đề</p>}
+        bottomPanel={<p className="p-2 text-sm">Problems</p>}
         statusBar={<span>Ln 1, Col 1</span>}
       />
     </main>
