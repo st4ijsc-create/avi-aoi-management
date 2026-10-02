@@ -20,6 +20,12 @@ export interface TabbedHubTab {
   fallback?: string;
   icon?: ReactNode;
   Content: ComponentType;
+  /**
+   * doc 81 Đợt 2 Task 3 — giữ tab MOUNT khi không được chọn (ẩn bằng `hidden`) để tiến trình
+   * đang sống (worker, state-machine, stream) không bị huỷ khi người dùng xem tab khác.
+   * Mặc định false ⇒ hành vi cũ (Radix unmount tab không chọn).
+   */
+  keepMounted?: boolean;
 }
 
 export interface TabbedHubProps {
@@ -31,9 +37,18 @@ export interface TabbedHubProps {
   className?: string;
   /** Optional extra content rendered above the tab strip (e.g. a scope filter). */
   header?: ReactNode;
+  /**
+   * doc 81 Đợt 2 Task 3 — nội dung đặt CÙNG HÀNG với dải tab (bên phải), vd bộ lọc/hành động.
+   * Khi có `listEnd` hoặc `listRowAttrs`, dải tab được bọc trong một hàng flex; không có ⇒ markup cũ.
+   */
+  listEnd?: ReactNode;
+  /** Thuộc tính data-* cho hàng dải tab (vd `{ "data-layout-toolbar": "" }` của CockpitLayout). */
+  listRowAttrs?: Record<`data-${string}`, string>;
+  /** Ghi đè lớp của TabsList (mặc định "flex min-h-12 flex-wrap"). */
+  listClassName?: string;
 }
 
-export function TabbedHub({ tabs, basePath, defaultTab, className, header }: TabbedHubProps) {
+export function TabbedHub({ tabs, basePath, defaultTab, className, header, listEnd, listRowAttrs, listClassName }: TabbedHubProps) {
   const { t } = useTranslation();
   const search = useSearch();
   const [, setLocation] = useLocation();
@@ -56,19 +71,36 @@ export function TabbedHub({ tabs, basePath, defaultTab, className, header }: Tab
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [search]);
 
+  const list = (
+    <TabsList className={listClassName ?? "flex min-h-12 flex-wrap"}>
+      {tabs.map((tab) => (
+        <TabsTrigger key={tab.value} value={tab.value} className="min-h-10 gap-1.5 text-xs">
+          {tab.icon}
+          {t(tab.labelKey, tab.fallback ?? tab.value)}
+        </TabsTrigger>
+      ))}
+    </TabsList>
+  );
+
   return (
     <Tabs value={activeTab} onValueChange={handleChange} className={className ?? "space-y-2"}>
       {header}
-      <TabsList className="flex min-h-12 flex-wrap">
-        {tabs.map((tab) => (
-          <TabsTrigger key={tab.value} value={tab.value} className="min-h-10 gap-1.5 text-xs">
-            {tab.icon}
-            {t(tab.labelKey, tab.fallback ?? tab.value)}
-          </TabsTrigger>
-        ))}
-      </TabsList>
+      {listEnd != null || listRowAttrs != null ? (
+        <div {...listRowAttrs} className="flex min-w-0 items-center gap-2">
+          {list}
+          {listEnd != null && <div className="ml-auto flex shrink-0 items-center gap-2">{listEnd}</div>}
+        </div>
+      ) : (
+        list
+      )}
       {tabs.map((tab) => (
-        <TabsContent key={tab.value} value={tab.value} className="mt-2">
+        <TabsContent
+          key={tab.value}
+          value={tab.value}
+          className="mt-2"
+          forceMount={tab.keepMounted ? true : undefined}
+          hidden={tab.keepMounted ? activeTab !== tab.value : undefined}
+        >
           <tab.Content />
         </TabsContent>
       ))}

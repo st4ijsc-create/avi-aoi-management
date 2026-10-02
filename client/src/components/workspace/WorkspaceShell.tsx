@@ -26,6 +26,12 @@ export interface WorkspaceShellProps {
   /** Override the viewport-relative height (default leaves room for the app header). */
   heightClass?: string;
   className?: string;
+  /** doc 81 Đợt 2 Task 3 — trần bề rộng rail (%), mặc định không trần. */
+  railMaxSize?: number;
+  /** doc 81 Đợt 2 Task 3 — lưu bề rộng đã kéo (react-resizable-panels autoSaveId); null/undefined ⇒ không lưu. */
+  autoSaveId?: string | null;
+  /** doc 81 Đợt 2 Task 3 — nhãn cho separator (trình đọc màn hình / kéo bằng bàn phím). */
+  handleLabel?: string;
 }
 
 export function WorkspaceShell({
@@ -37,15 +43,18 @@ export function WorkspaceShell({
   railMinSize = 16,
   heightClass = "h-[calc(100vh-8.5rem)]",
   className,
+  railMaxSize,
+  autoSaveId,
+  handleLabel,
 }: WorkspaceShellProps) {
   return (
     <div className={cn("flex flex-col", heightClass, className)}>
       {header && <div className="shrink-0 pb-2">{header}</div>}
-      <ResizablePanelGroup direction="horizontal" className="flex-1 overflow-hidden rounded-lg border">
-        <ResizablePanel defaultSize={railDefaultSize} minSize={railMinSize} className="min-w-0">
+      <ResizablePanelGroup direction="horizontal" autoSaveId={autoSaveId ?? undefined} className="flex-1 overflow-hidden rounded-lg border">
+        <ResizablePanel defaultSize={railDefaultSize} minSize={railMinSize} maxSize={railMaxSize} className="min-w-0">
           <div className="h-full overflow-y-auto bg-muted/20">{rail}</div>
         </ResizablePanel>
-        <ResizableHandle withHandle />
+        <ResizableHandle withHandle aria-label={handleLabel} />
         <ResizablePanel defaultSize={100 - railDefaultSize} className="min-w-0">
           <div className="h-full overflow-y-auto p-3">{main}</div>
         </ResizablePanel>

@@ -140,3 +140,46 @@ export type {
   MasterDataColumn,
   MasterDataFormat,
 } from "./ImportExportBar";
+
+// ── doc 81 Đợt 2 Task 3 — bộ layout dùng chung cho 14 màn Kỹ thuật & Điều khiển ─────────────────
+// Dấu đo (data-layout-main / -toolbar / -kpi / -ai / -header) và luật đặt chúng: layoutMarkers.ts.
+export { LAYOUT_MAIN, LAYOUT_TOOLBAR, LAYOUT_KPI, LAYOUT_AI, LAYOUT_HEADER, layoutMainProps } from "./layoutMarkers";
+export { PageHeaderCompact } from "./PageHeaderCompact";
+export type { PageHeaderCompactProps } from "./PageHeaderCompact";
+export { NoticeChip, NoticeStack, WhenToUseHint, whenToUseNotice, FeatureStatusNoticeChip } from "./NoticeChip";
+export type { NoticeKind, NoticeChipProps, NoticeItem, NoticeStackProps, WhenToUseHintProps, FeatureStatusNoticeChipProps } from "./NoticeChip";
+export { StatusChipStrip, chipStateFromQuery, effectiveChipState } from "./StatusChipStrip";
+export type { ChipState, StatusChipItem, StatusChipStripProps } from "./StatusChipStrip";
+export { FlyoutHost, useFlyout, useFlyoutLayer, parseFlyoutStack, buildFlyoutSearch, FLYOUT_PARAM, FLYOUT_ID_PARAM } from "./FlyoutHost";
+export type { FlyoutApi, FlyoutDefinition, FlyoutEntry, FlyoutHostProps, FlyoutLayerApi, FlyoutOpenOptions } from "./FlyoutHost";
+export { UnsavedChangesConfirm } from "./UnsavedChangesConfirm";
+export type { UnsavedChangesConfirmProps } from "./UnsavedChangesConfirm";
+export { DetailSheet } from "./DetailSheet";
+export type { DetailSheetProps, DetailSheetTab } from "./DetailSheet";
+export { WizardDialog, WizardFrame, wizardStepStatus } from "./WizardDialog";
+export type { WizardDialogProps, WizardFrameProps, WizardStep, WizardStepStatus } from "./WizardDialog";
+export { JsonDiffView } from "./JsonDiffView";
+export type { JsonDiffViewProps } from "./JsonDiffView";
+export { VersionHistoryPanel } from "./VersionHistoryPanel";
+export type { VersionHistoryPanelProps, VersionRow } from "./VersionHistoryPanel";
+export { RollbackConfirm } from "./RollbackConfirm";
+export type { RollbackConfirmProps, RollbackPayload } from "./RollbackConfirm";
+export { ApprovalQueue, TransitionDialog, checkSegregation } from "./ApprovalQueue";
+export type {
+  ApprovalItem,
+  ApprovalQueueProps,
+  SegregationContext,
+  SegregationResult,
+  SegregationRole,
+  TransitionAction,
+  TransitionDialogProps,
+  TransitionKind,
+} from "./ApprovalQueue";
+export { SplitListDetail } from "./SplitListDetail";
+export type { SplitListDetailProps } from "./SplitListDetail";
+export { CockpitLayout } from "./CockpitLayout";
+export type { CockpitLayoutProps } from "./CockpitLayout";
+export { WorkbenchShell } from "./WorkbenchShell";
+export type { WorkbenchShellProps, WorkbenchSidePanel, WorkbenchRightPanel, WorkbenchBottomPanel } from "./WorkbenchShell";
+export { useNarrowViewport, useElementSize, pxRangeToPct, userLayoutKey, NARROW_BREAKPOINT_PX } from "./layoutKitHooks";
+export type { PxRange, PctRange } from "./layoutKitHooks";
