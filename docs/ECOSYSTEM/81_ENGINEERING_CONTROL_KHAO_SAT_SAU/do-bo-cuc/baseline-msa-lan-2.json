@@ -1,0 +1,4025 @@
+{
+ "meta": {
+  "tool": "scripts/ui-metrics/engineeringLayout.mjs",
+  "startedAt": "2026-10-02T06:52:34.629Z",
+  "argv": [
+   "--spawn",
+   "--out",
+   ".playwright-mcp/do-bo-cuc/lan-4.json"
+  ],
+  "sizes": [
+   [
+    1600,
+    950
+   ],
+   [
+    1366,
+    768
+   ]
+  ],
+  "gitHead": "130f000ce",
+  "dataSnapshot": {
+   "program_projects": 1,
+   "program_artifacts": 1,
+   "program_builds": 0,
+   "program_deployments": 3103,
+   "engineering_changes": 10,
+   "machine_recipes": 0,
+   "recipe_deployments": 0,
+   "interlock_rules": 16,
+   "interlock_events": 1,
+   "orchestration_workflows": 7,
+   "orchestration_runs": 0,
+   "alarm_taxonomy": 175,
+   "master_alarms": 9,
+   "device_adapters": 15,
+   "safety_plc_configs": 1
+  },
+  "instance": {
+   "server": "tsx server/_core/index.ts :3016 (env tách, không nạp .env)",
+   "vite": "vite dev in-process :5176 (proxy /api,/uploads → :3016)",
+   "db": "aoi_management_test",
+   "user": {
+    "username": "uim_engineer",
+    "role": "engineer",
+    "perms": 22,
+    "factory": "SIM-FAC"
+   },
+   "serverBootMs": 6076,
+   "serverPid": 29364
+  },
+  "base": "http://127.0.0.1:5176",
+  "finishedAt": "2026-10-02T07:00:00.206Z",
+  "probeUserRemoved": {
+   "deleted": 1,
+   "deactivated": 0
+  },
+  "portsAfter": {
+   "3016": "trống",
+   "5176": "trống"
+  }
+ },
+ "pagesMissingDataLayoutMain": [
+  "engineering-home",
+  "engineering-studio",
+  "engineering",
+  "engineering-changes",
+  "recipes",
+  "interlock-rules",
+  "orchestration-studio",
+  "ir-editor",
+  "pou-studio",
+  "programming-copilot",
+  "fleet-orchestration",
+  "safety-workforce",
+  "equipment-standards",
+  "equipment-integration"
+ ],
+ "mainNotFound": [],
+ "results": [
+  {
+   "screen": "engineering-home",
+   "route": "/engineering-home",
+   "vw": 1600,
+   "vh": 950,
+   "variant": "n/a",
+   "mainSource": "fe1-legacy",
+   "missingDataLayoutMain": true,
+   "mainSelector": "PendingReviewStrip + EngineeringHub section (depth 0)",
+   "mainFound": true,
+   "mainRects": [
+    {
+     "x": 312,
+     "y": 444,
+     "w": 1240,
+     "h": 243
+    },
+    {
+     "x": 312,
+     "y": 711,
+     "w": 1240,
+     "h": 238
+    },
+    {
+     "x": 312,
+     "y": 981,
+     "w": 1240,
+     "h": 205
+    },
+    {
+     "x": 312,
+     "y": 1218,
+     "w": 1240,
+     "h": 205
+    },
+    {
+     "x": 312,
+     "y": 1455,
+     "w": 1240,
+     "h": 205
+    },
+    {
+     "x": 312,
+     "y": 1692,
+     "w": 1240,
+     "h": 222
+    },
+    {
+     "x": 312,
+     "y": 1945,
+     "w": 1240,
+     "h": 175
+    }
+   ],
+   "mainTop": 444,
+   "mainPct": 39.2,
+   "mainPctFe1": 39.2,
+   "mainPctUnoccluded": 39.2,
+   "h1Top": 205,
+   "h1Text": "Trung tâm Kỹ thuật",
+   "h1Count": 1,
+   "breadcrumbs": 2,
+   "breadcrumbLocs": [
+    "DashboardLayout.tsx:620",
+    "PageHeader.tsx:69"
+   ],
+   "bannersBeforeMain": {
+    "count": 2,
+    "px": 111,
+    "items": [
+     {
+      "loc": "EngineeringHub.tsx:233",
+      "kind": "div",
+      "reason": "notice-style",
+      "y": 285,
+      "h": 57,
+      "head": "Luồng vàng: soạn → mô phỏng → deploy → giám sát. C"
+     },
+     {
+      "loc": "EngineeringHub.tsx:152",
+      "kind": "block",
+      "reason": "notice-text",
+      "y": 366,
+      "h": 54,
+      "head": "TƯ THẾ AN TOÀN"
+     }
+    ]
+   },
+   "kpi": {
+    "source": "MetricCard",
+    "count": 0,
+    "stripHeight": 0,
+    "stripY": null
+   },
+   "aiOcclusion": {
+    "overlapMainPx": 1152,
+    "overlapMainPctOfMain": 0.2,
+    "overlapMainPctOfViewport": 0.1,
+    "items": [
+     {
+      "name": "ai-bubble",
+      "pos": "fixed",
+      "rect": {
+       "x": 1528,
+       "y": 878,
+       "w": 48,
+       "h": 48
+      },
+      "overlapMainPx": 1152
+     }
+    ]
+   },
+   "pageHeightRatio": 2.28,
+   "scrollH": 2168,
+   "shell": {
+    "sidebarW": 264,
+    "topbarH": 56,
+    "mainTop": 109,
+    "mainW": 1336,
+    "mainPad": "24px"
+   },
+   "dialogsAtLoad": 0,
+   "spinnersAtMeasure": 2,
+   "actions": []
+  },
+  {
+   "screen": "engineering-home",
+   "route": "/engineering-home",
+   "vw": 1366,
+   "vh": 768,
+   "variant": "n/a",
+   "mainSource": "fe1-legacy",
+   "missingDataLayoutMain": true,
+   "mainSelector": "PendingReviewStrip + EngineeringHub section (depth 0)",
+   "mainFound": true,
+   "mainRects": [
+    {
+     "x": 312,
+     "y": 470,
+     "w": 1006,
+     "h": 243
+    },
+    {
+     "x": 312,
+     "y": 737,
+     "w": 1006,
+     "h": 255
+    },
+    {
+     "x": 312,
+     "y": 1023,
+     "w": 1006,
+     "h": 222
+    },
+    {
+     "x": 312,
+     "y": 1277,
+     "w": 1006,
+     "h": 205
+    },
+    {
+     "x": 312,
+     "y": 1514,
+     "w": 1006,
+     "h": 205
+    },
+    {
+     "x": 312,
+     "y": 1751,
+     "w": 1006,
+     "h": 222
+    },
+    {
+     "x": 312,
+     "y": 2004,
+     "w": 1006,
+     "h": 192
+    }
+   ],
+   "mainTop": 470,
+   "mainPct": 26.3,
+   "mainPctFe1": 26.3,
+   "mainPctUnoccluded": 26.2,
+   "h1Top": 205,
+   "h1Text": "Trung tâm Kỹ thuật",
+   "h1Count": 1,
+   "breadcrumbs": 2,
+   "breadcrumbLocs": [
+    "DashboardLayout.tsx:620",
+    "PageHeader.tsx:69"
+   ],
+   "bannersBeforeMain": {
+    "count": 2,
+    "px": 137,
+    "items": [
+     {
+      "loc": "EngineeringHub.tsx:233",
+      "kind": "div",
+      "reason": "notice-style",
+      "y": 285,
+      "h": 57,
+      "head": "Luồng vàng: soạn → mô phỏng → deploy → giám sát. C"
+     },
+     {
+      "loc": "EngineeringHub.tsx:152",
+      "kind": "block",
+      "reason": "notice-text",
+      "y": 366,
+      "h": 80,
+      "head": "TƯ THẾ AN TOÀN"
+     }
+    ]
+   },
+   "kpi": {
+    "source": "MetricCard",
+    "count": 0,
+    "stripHeight": 0,
+    "stripY": null
+   },
+   "aiOcclusion": {
+    "overlapMainPx": 576,
+    "overlapMainPctOfMain": 0.2,
+    "overlapMainPctOfViewport": 0.1,
+    "items": [
+     {
+      "name": "ai-bubble",
+      "pos": "fixed",
+      "rect": {
+       "x": 1294,
+       "y": 696,
+       "w": 48,
+       "h": 48
+      },
+      "overlapMainPx": 576
+     }
+    ]
+   },
+   "pageHeightRatio": 2.92,
+   "scrollH": 2244,
+   "shell": {
+    "sidebarW": 264,
+    "topbarH": 56,
+    "mainTop": 109,
+    "mainW": 1102,
+    "mainPad": "24px"
+   },
+   "dialogsAtLoad": 0,
+   "spinnersAtMeasure": 2,
+   "actions": []
+  },
+  {
+   "screen": "engineering-studio",
+   "route": "/engineering-studio",
+   "vw": 1600,
+   "vh": 950,
+   "variant": "n/a",
+   "mainSource": "fe1-legacy",
+   "missingDataLayoutMain": true,
+   "mainSelector": "WorkspaceShell resizable-panel bên phải (panel nội dung)",
+   "mainFound": true,
+   "mainRects": [
+    {
+     "x": 573,
+     "y": 134,
+     "w": 1002,
+     "h": 812
+    }
+   ],
+   "mainTop": 134,
+   "mainPct": 53.5,
+   "mainPctFe1": 53.5,
+   "mainPctUnoccluded": 53.4,
+   "h1Top": null,
+   "h1Text": null,
+   "h1Count": 0,
+   "breadcrumbs": 1,
+   "breadcrumbLocs": [
+    "DashboardLayout.tsx:620"
+   ],
+   "bannersBeforeMain": {
+    "count": 0,
+    "px": 0,
+    "items": []
+   },
+   "kpi": {
+    "source": "MetricCard",
+    "count": 0,
+    "stripHeight": 0,
+    "stripY": null
+   },
+   "aiOcclusion": {
+    "overlapMainPx": 2256,
+    "overlapMainPctOfMain": 0.3,
+    "overlapMainPctOfViewport": 0.1,
+    "items": [
+     {
+      "name": "ai-bubble",
+      "pos": "fixed",
+      "rect": {
+       "x": 1528,
+       "y": 878,
+       "w": 48,
+       "h": 48
+      },
+      "overlapMainPx": 2256
+     }
+    ]
+   },
+   "pageHeightRatio": 1.02,
+   "scrollH": 971,
+   "shell": {
+    "sidebarW": 264,
+    "topbarH": 56,
+    "mainTop": 109,
+    "mainW": 1336,
+    "mainPad": "24px"
+   },
+   "dialogsAtLoad": 0,
+   "spinnersAtMeasure": 2,
+   "actions": []
+  },
+  {
+   "screen": "engineering-studio",
+   "route": "/engineering-studio",
+   "vw": 1366,
+   "vh": 768,
+   "variant": "n/a",
+   "mainSource": "fe1-legacy",
+   "missingDataLayoutMain": true,
+   "mainSelector": "WorkspaceShell resizable-panel bên phải (panel nội dung)",
+   "mainFound": true,
+   "mainRects": [
+    {
+     "x": 521,
+     "y": 134,
+     "w": 820,
+     "h": 630
+    }
+   ],
+   "mainTop": 134,
+   "mainPct": 49.2,
+   "mainPctFe1": 49.2,
+   "mainPctUnoccluded": 49,
+   "h1Top": null,
+   "h1Text": null,
+   "h1Count": 0,
+   "breadcrumbs": 1,
+   "breadcrumbLocs": [
+    "DashboardLayout.tsx:620"
+   ],
+   "bannersBeforeMain": {
+    "count": 0,
+    "px": 0,
+    "items": []
+   },
+   "kpi": {
+    "source": "MetricCard",
+    "count": 0,
+    "stripHeight": 0,
+    "stripY": null
+   },
+   "aiOcclusion": {
+    "overlapMainPx": 2256,
+    "overlapMainPctOfMain": 0.4,
+    "overlapMainPctOfViewport": 0.2,
+    "items": [
+     {
+      "name": "ai-bubble",
+      "pos": "fixed",
+      "rect": {
+       "x": 1294,
+       "y": 696,
+       "w": 48,
+       "h": 48
+      },
+      "overlapMainPx": 2256
+     }
+    ]
+   },
+   "pageHeightRatio": 1.03,
+   "scrollH": 789,
+   "shell": {
+    "sidebarW": 264,
+    "topbarH": 56,
+    "mainTop": 109,
+    "mainW": 1102,
+    "mainPad": "24px"
+   },
+   "dialogsAtLoad": 0,
+   "spinnersAtMeasure": 2,
+   "actions": []
+  },
+  {
+   "screen": "engineering",
+   "route": "/engineering",
+   "vw": 1600,
+   "vh": 950,
+   "variant": "closed",
+   "mainSource": "fe1-legacy",
+   "missingDataLayoutMain": true,
+   "mainSelector": "khung CodeMirror (vùng không data-loc, có input, cao ≥200)",
+   "mainFound": true,
+   "mainRects": [
+    {
+     "x": 634,
+     "y": 649,
+     "w": 892,
+     "h": 360
+    }
+   ],
+   "mainTop": 649,
+   "mainPct": 17.7,
+   "mainPctFe1": 17.7,
+   "mainPctUnoccluded": 17.7,
+   "h1Top": 205,
+   "h1Text": "Xưởng lập trình thiết bị",
+   "h1Count": 1,
+   "breadcrumbs": 2,
+   "breadcrumbLocs": [
+    "DashboardLayout.tsx:620",
+    "PageHeader.tsx:69"
+   ],
+   "bannersBeforeMain": {
+    "count": 2,
+    "px": 100,
+    "items": [
+     {
+      "loc": "EngineeringWorkspace.tsx:761",
+      "kind": "div",
+      "reason": "notice-style",
+      "y": 277,
+      "h": 54,
+      "head": "Khi nào dùng — pipeline IDE đầy đủ: build, mô phỏn"
+     },
+     {
+      "loc": "FeatureStatusGate.tsx:117",
+      "kind": "div",
+      "reason": "notice-style",
+      "y": 347,
+      "h": 46,
+      "head": "Triển khai thật đang tắt — mọi deploy chỉ mô phỏng"
+     }
+    ]
+   },
+   "kpi": {
+    "source": "MetricCard",
+    "count": 0,
+    "stripHeight": 0,
+    "stripY": null
+   },
+   "aiOcclusion": {
+    "overlapMainPx": 0,
+    "overlapMainPctOfMain": 0,
+    "overlapMainPctOfViewport": 0,
+    "items": [
+     {
+      "name": "ai-bubble",
+      "pos": "fixed",
+      "rect": {
+       "x": 1528,
+       "y": 878,
+       "w": 48,
+       "h": 48
+      },
+      "overlapMainPx": 0
+     },
+     {
+      "name": "copilot-dock",
+      "pos": "fixed",
+      "rect": {
+       "x": 1545,
+       "y": 443,
+       "w": 56,
+       "h": 63
+      },
+      "overlapMainPx": 0
+     }
+    ]
+   },
+   "pageHeightRatio": 2.92,
+   "scrollH": 2773,
+   "shell": {
+    "sidebarW": 264,
+    "topbarH": 56,
+    "mainTop": 109,
+    "mainW": 1336,
+    "mainPad": "24px"
+   },
+   "dialogsAtLoad": 0,
+   "spinnersAtMeasure": 2,
+   "actions": [
+    {
+     "id": "so-tay",
+     "label": "/sổ tay/i",
+     "found": true,
+     "enabled": true,
+     "dialogs": 1,
+     "kinds": [
+      "popover-content"
+     ],
+     "rects": [
+      {
+       "role": "dialog",
+       "slot": "popover-content",
+       "x": 531,
+       "y": 644,
+       "w": 384,
+       "h": 117
+      }
+     ],
+     "closedByEsc": true
+    }
+   ]
+  },
+  {
+   "screen": "engineering",
+   "route": "/engineering",
+   "vw": 1366,
+   "vh": 768,
+   "variant": "closed",
+   "mainSource": "fe1-legacy",
+   "missingDataLayoutMain": true,
+   "mainSelector": "khung CodeMirror (vùng không data-loc, có input, cao ≥200)",
+   "mainFound": true,
+   "mainRects": [
+    {
+     "x": 634,
+     "y": 665,
+     "w": 663,
+     "h": 360
+    }
+   ],
+   "mainTop": 665,
+   "mainPct": 6.5,
+   "mainPctFe1": 6.5,
+   "mainPctUnoccluded": 6.5,
+   "h1Top": 205,
+   "h1Text": "Xưởng lập trình thiết bị",
+   "h1Count": 1,
+   "breadcrumbs": 2,
+   "breadcrumbLocs": [
+    "DashboardLayout.tsx:620",
+    "PageHeader.tsx:69"
+   ],
+   "bannersBeforeMain": {
+    "count": 2,
+    "px": 116,
+    "items": [
+     {
+      "loc": "EngineeringWorkspace.tsx:761",
+      "kind": "div",
+      "reason": "notice-style",
+      "y": 277,
+      "h": 70,
+      "head": "Khi nào dùng — pipeline IDE đầy đủ: build, mô phỏn"
+     },
+     {
+      "loc": "FeatureStatusGate.tsx:117",
+      "kind": "div",
+      "reason": "notice-style",
+      "y": 363,
+      "h": 46,
+      "head": "Triển khai thật đang tắt — mọi deploy chỉ mô phỏng"
+     }
+    ]
+   },
+   "kpi": {
+    "source": "MetricCard",
+    "count": 0,
+    "stripHeight": 0,
+    "stripY": null
+   },
+   "aiOcclusion": {
+    "overlapMainPx": 144,
+    "overlapMainPctOfMain": 0.2,
+    "overlapMainPctOfViewport": 0,
+    "items": [
+     {
+      "name": "ai-bubble",
+      "pos": "fixed",
+      "rect": {
+       "x": 1294,
+       "y": 696,
+       "w": 48,
+       "h": 48
+      },
+      "overlapMainPx": 144
+     },
+     {
+      "name": "copilot-dock",
+      "pos": "fixed",
+      "rect": {
+       "x": 1311,
+       "y": 352,
+       "w": 56,
+       "h": 63
+      },
+      "overlapMainPx": 0
+     }
+    ]
+   },
+   "pageHeightRatio": 3.79,
+   "scrollH": 2913,
+   "shell": {
+    "sidebarW": 264,
+    "topbarH": 56,
+    "mainTop": 109,
+    "mainW": 1102,
+    "mainPad": "24px"
+   },
+   "dialogsAtLoad": 0,
+   "spinnersAtMeasure": 2,
+   "actions": [
+    {
+     "id": "so-tay",
+     "label": "/sổ tay/i",
+     "found": true,
+     "enabled": true,
+     "dialogs": 1,
+     "kinds": [
+      "popover-content"
+     ],
+     "rects": [
+      {
+       "role": "dialog",
+       "slot": "popover-content",
+       "x": 531,
+       "y": 495,
+       "w": 384,
+       "h": 117
+      }
+     ],
+     "closedByEsc": true
+    }
+   ]
+  },
+  {
+   "screen": "engineering-changes",
+   "route": "/engineering-changes",
+   "vw": 1600,
+   "vh": 950,
+   "variant": "n/a",
+   "mainSource": "fe1-legacy",
+   "missingDataLayoutMain": true,
+   "mainSelector": "EngineeringChanges card chứa bảng",
+   "mainFound": true,
+   "mainRects": [
+    {
+     "x": 312,
+     "y": 347,
+     "w": 1240,
+     "h": 660
+    }
+   ],
+   "mainTop": 347,
+   "mainPct": 49.2,
+   "mainPctFe1": 49.2,
+   "mainPctUnoccluded": 49.1,
+   "h1Top": 157,
+   "h1Text": "Thay đổi kỹ thuật",
+   "h1Count": 1,
+   "breadcrumbs": 1,
+   "breadcrumbLocs": [
+    "DashboardLayout.tsx:620"
+   ],
+   "bannersBeforeMain": {
+    "count": 0,
+    "px": 0,
+    "items": []
+   },
+   "kpi": {
+    "source": "MetricCard",
+    "count": 0,
+    "stripHeight": 0,
+    "stripY": null
+   },
+   "aiOcclusion": {
+    "overlapMainPx": 1152,
+    "overlapMainPctOfMain": 0.2,
+    "overlapMainPctOfViewport": 0.1,
+    "items": [
+     {
+      "name": "ai-bubble",
+      "pos": "fixed",
+      "rect": {
+       "x": 1528,
+       "y": 878,
+       "w": 48,
+       "h": 48
+      },
+      "overlapMainPx": 1152
+     }
+    ]
+   },
+   "pageHeightRatio": 1.11,
+   "scrollH": 1054,
+   "shell": {
+    "sidebarW": 264,
+    "topbarH": 56,
+    "mainTop": 109,
+    "mainW": 1336,
+    "mainPad": "24px"
+   },
+   "dialogsAtLoad": 0,
+   "spinnersAtMeasure": 2,
+   "actions": [
+    {
+     "id": "thay-doi-moi",
+     "label": "/Thay đổi mới/",
+     "found": true,
+     "enabled": true,
+     "dialogs": 1,
+     "kinds": [
+      "dialog-content"
+     ],
+     "rects": [
+      {
+       "role": "dialog",
+       "slot": "dialog-content",
+       "x": 544,
+       "y": 177,
+       "w": 512,
+       "h": 596
+      }
+     ],
+     "closedByEsc": true
+    }
+   ]
+  },
+  {
+   "screen": "engineering-changes",
+   "route": "/engineering-changes",
+   "vw": 1366,
+   "vh": 768,
+   "variant": "n/a",
+   "mainSource": "fe1-legacy",
+   "missingDataLayoutMain": true,
+   "mainSelector": "EngineeringChanges card chứa bảng",
+   "mainFound": true,
+   "mainRects": [
+    {
+     "x": 312,
+     "y": 347,
+     "w": 1006,
+     "h": 660
+    }
+   ],
+   "mainTop": 347,
+   "mainPct": 40.4,
+   "mainPctFe1": 40.4,
+   "mainPctUnoccluded": 40.3,
+   "h1Top": 157,
+   "h1Text": "Thay đổi kỹ thuật",
+   "h1Count": 1,
+   "breadcrumbs": 1,
+   "breadcrumbLocs": [
+    "DashboardLayout.tsx:620"
+   ],
+   "bannersBeforeMain": {
+    "count": 0,
+    "px": 0,
+    "items": []
+   },
+   "kpi": {
+    "source": "MetricCard",
+    "count": 0,
+    "stripHeight": 0,
+    "stripY": null
+   },
+   "aiOcclusion": {
+    "overlapMainPx": 1152,
+    "overlapMainPctOfMain": 0.3,
+    "overlapMainPctOfViewport": 0.1,
+    "items": [
+     {
+      "name": "ai-bubble",
+      "pos": "fixed",
+      "rect": {
+       "x": 1294,
+       "y": 696,
+       "w": 48,
+       "h": 48
+      },
+      "overlapMainPx": 1152
+     }
+    ]
+   },
+   "pageHeightRatio": 1.37,
+   "scrollH": 1054,
+   "shell": {
+    "sidebarW": 264,
+    "topbarH": 56,
+    "mainTop": 109,
+    "mainW": 1102,
+    "mainPad": "24px"
+   },
+   "dialogsAtLoad": 0,
+   "spinnersAtMeasure": 2,
+   "actions": [
+    {
+     "id": "thay-doi-moi",
+     "label": "/Thay đổi mới/",
+     "found": true,
+     "enabled": true,
+     "dialogs": 1,
+     "kinds": [
+      "dialog-content"
+     ],
+     "rects": [
+      {
+       "role": "dialog",
+       "slot": "dialog-content",
+       "x": 427,
+       "y": 86,
+       "w": 512,
+       "h": 596
+      }
+     ],
+     "closedByEsc": true
+    }
+   ]
+  },
+  {
+   "screen": "recipes",
+   "route": "/recipes",
+   "vw": 1600,
+   "vh": 950,
+   "variant": "n/a",
+   "mainSource": "fe1-legacy",
+   "missingDataLayoutMain": true,
+   "mainSelector": "RecipeManagement: card 'Mã recipe' + card cùng hàng (phiên bản)",
+   "mainFound": true,
+   "mainRects": [
+    {
+     "x": 312,
+     "y": 511,
+     "w": 397,
+     "h": 175
+    },
+    {
+     "x": 733,
+     "y": 511,
+     "w": 819,
+     "h": 175
+    }
+   ],
+   "mainTop": 511,
+   "mainPct": 14,
+   "mainPctFe1": 14,
+   "mainPctUnoccluded": 14,
+   "h1Top": 207,
+   "h1Text": "Quản lý Recipe máy",
+   "h1Count": 1,
+   "breadcrumbs": 2,
+   "breadcrumbLocs": [
+    "DashboardLayout.tsx:620",
+    "PageHeader.tsx:69"
+   ],
+   "bannersBeforeMain": {
+    "count": 1,
+    "px": 48,
+    "items": [
+     {
+      "loc": "RecipeManagement.tsx:340",
+      "kind": "div",
+      "reason": "notice-style",
+      "y": 269,
+      "h": 48,
+      "head": "Triển khai chỉ cập nhật catalog (kích hoạt phiên b"
+     }
+    ]
+   },
+   "kpi": {
+    "source": "MetricCard",
+    "count": 0,
+    "stripHeight": 0,
+    "stripY": null
+   },
+   "aiOcclusion": {
+    "overlapMainPx": 0,
+    "overlapMainPctOfMain": 0,
+    "overlapMainPctOfViewport": 0,
+    "items": [
+     {
+      "name": "ai-bubble",
+      "pos": "fixed",
+      "rect": {
+       "x": 1528,
+       "y": 878,
+       "w": 48,
+       "h": 48
+      },
+      "overlapMainPx": 0
+     }
+    ]
+   },
+   "pageHeightRatio": 1,
+   "scrollH": 950,
+   "shell": {
+    "sidebarW": 264,
+    "topbarH": 56,
+    "mainTop": 109,
+    "mainW": 1336,
+    "mainPad": "24px"
+   },
+   "dialogsAtLoad": 0,
+   "spinnersAtMeasure": 2,
+   "actions": [
+    {
+     "id": "luu-phien-ban-moi",
+     "label": "/Lưu phiên bản mới/",
+     "found": true,
+     "enabled": true,
+     "dialogs": 1,
+     "kinds": [
+      "dialog-content"
+     ],
+     "rects": [
+      {
+       "role": "dialog",
+       "slot": "dialog-content",
+       "x": 544,
+       "y": 195,
+       "w": 512,
+       "h": 560
+      }
+     ],
+     "closedByEsc": true
+    }
+   ]
+  },
+  {
+   "screen": "recipes",
+   "route": "/recipes",
+   "vw": 1366,
+   "vh": 768,
+   "variant": "n/a",
+   "mainSource": "fe1-legacy",
+   "missingDataLayoutMain": true,
+   "mainSelector": "RecipeManagement: card 'Mã recipe' + card cùng hàng (phiên bản)",
+   "mainFound": true,
+   "mainRects": [
+    {
+     "x": 312,
+     "y": 511,
+     "w": 319,
+     "h": 175
+    },
+    {
+     "x": 655,
+     "y": 511,
+     "w": 663,
+     "h": 175
+    }
+   ],
+   "mainTop": 511,
+   "mainPct": 16.4,
+   "mainPctFe1": 16.4,
+   "mainPctUnoccluded": 16.4,
+   "h1Top": 207,
+   "h1Text": "Quản lý Recipe máy",
+   "h1Count": 1,
+   "breadcrumbs": 2,
+   "breadcrumbLocs": [
+    "DashboardLayout.tsx:620",
+    "PageHeader.tsx:69"
+   ],
+   "bannersBeforeMain": {
+    "count": 1,
+    "px": 48,
+    "items": [
+     {
+      "loc": "RecipeManagement.tsx:340",
+      "kind": "div",
+      "reason": "notice-style",
+      "y": 269,
+      "h": 48,
+      "head": "Triển khai chỉ cập nhật catalog (kích hoạt phiên b"
+     }
+    ]
+   },
+   "kpi": {
+    "source": "MetricCard",
+    "count": 0,
+    "stripHeight": 0,
+    "stripY": null
+   },
+   "aiOcclusion": {
+    "overlapMainPx": 0,
+    "overlapMainPctOfMain": 0,
+    "overlapMainPctOfViewport": 0,
+    "items": [
+     {
+      "name": "ai-bubble",
+      "pos": "fixed",
+      "rect": {
+       "x": 1294,
+       "y": 696,
+       "w": 48,
+       "h": 48
+      },
+      "overlapMainPx": 0
+     }
+    ]
+   },
+   "pageHeightRatio": 1.21,
+   "scrollH": 932,
+   "shell": {
+    "sidebarW": 264,
+    "topbarH": 56,
+    "mainTop": 109,
+    "mainW": 1102,
+    "mainPad": "24px"
+   },
+   "dialogsAtLoad": 0,
+   "spinnersAtMeasure": 2,
+   "actions": [
+    {
+     "id": "luu-phien-ban-moi",
+     "label": "/Lưu phiên bản mới/",
+     "found": true,
+     "enabled": true,
+     "dialogs": 1,
+     "kinds": [
+      "dialog-content"
+     ],
+     "rects": [
+      {
+       "role": "dialog",
+       "slot": "dialog-content",
+       "x": 427,
+       "y": 104,
+       "w": 512,
+       "h": 560
+      }
+     ],
+     "closedByEsc": true
+    }
+   ]
+  },
+  {
+   "screen": "interlock-rules",
+   "route": "/interlock-rules",
+   "vw": 1600,
+   "vh": 950,
+   "variant": "n/a",
+   "mainSource": "fe1-legacy",
+   "missingDataLayoutMain": true,
+   "mainSelector": "InterlockRuleManagement tabs-content đang mở",
+   "mainFound": true,
+   "mainRects": [
+    {
+     "x": 312,
+     "y": 399,
+     "w": 1240,
+     "h": 1050
+    }
+   ],
+   "mainTop": 399,
+   "mainPct": 45,
+   "mainPctFe1": 45,
+   "mainPctUnoccluded": 44.9,
+   "h1Top": 205,
+   "h1Text": "Quản lý quy tắc Interlock Chỉ xem",
+   "h1Count": 1,
+   "breadcrumbs": 2,
+   "breadcrumbLocs": [
+    "DashboardLayout.tsx:620",
+    "PageHeader.tsx:69"
+   ],
+   "bannersBeforeMain": {
+    "count": 1,
+    "px": 34,
+    "items": [
+     {
+      "loc": "InterlockRuleManagement.tsx:397",
+      "kind": "div",
+      "reason": "notice-style",
+      "y": 285,
+      "h": 34,
+      "head": "Khi nào dùng — định nghĩa quy tắc an toàn tự động "
+     }
+    ]
+   },
+   "kpi": {
+    "source": "MetricCard",
+    "count": 0,
+    "stripHeight": 0,
+    "stripY": null
+   },
+   "aiOcclusion": {
+    "overlapMainPx": 1152,
+    "overlapMainPctOfMain": 0.2,
+    "overlapMainPctOfViewport": 0.1,
+    "items": [
+     {
+      "name": "ai-bubble",
+      "pos": "fixed",
+      "rect": {
+       "x": 1528,
+       "y": 878,
+       "w": 48,
+       "h": 48
+      },
+      "overlapMainPx": 1152
+     }
+    ]
+   },
+   "pageHeightRatio": 1.58,
+   "scrollH": 1497,
+   "shell": {
+    "sidebarW": 264,
+    "topbarH": 56,
+    "mainTop": 109,
+    "mainW": 1336,
+    "mainPad": "24px"
+   },
+   "dialogsAtLoad": 0,
+   "spinnersAtMeasure": 2,
+   "actions": [
+    {
+     "id": "them-quy-tac",
+     "label": "/Thêm quy tắc/",
+     "found": true,
+     "enabled": false
+    }
+   ]
+  },
+  {
+   "screen": "interlock-rules",
+   "route": "/interlock-rules",
+   "vw": 1366,
+   "vh": 768,
+   "variant": "n/a",
+   "mainSource": "fe1-legacy",
+   "missingDataLayoutMain": true,
+   "mainSelector": "InterlockRuleManagement tabs-content đang mở",
+   "mainFound": true,
+   "mainRects": [
+    {
+     "x": 312,
+     "y": 399,
+     "w": 1006,
+     "h": 1050
+    }
+   ],
+   "mainTop": 399,
+   "mainPct": 35.4,
+   "mainPctFe1": 35.4,
+   "mainPctUnoccluded": 35.3,
+   "h1Top": 205,
+   "h1Text": "Quản lý quy tắc Interlock Chỉ xem",
+   "h1Count": 1,
+   "breadcrumbs": 2,
+   "breadcrumbLocs": [
+    "DashboardLayout.tsx:620",
+    "PageHeader.tsx:69"
+   ],
+   "bannersBeforeMain": {
+    "count": 1,
+    "px": 34,
+    "items": [
+     {
+      "loc": "InterlockRuleManagement.tsx:397",
+      "kind": "div",
+      "reason": "notice-style",
+      "y": 285,
+      "h": 34,
+      "head": "Khi nào dùng — định nghĩa quy tắc an toàn tự động "
+     }
+    ]
+   },
+   "kpi": {
+    "source": "MetricCard",
+    "count": 0,
+    "stripHeight": 0,
+    "stripY": null
+   },
+   "aiOcclusion": {
+    "overlapMainPx": 1152,
+    "overlapMainPctOfMain": 0.3,
+    "overlapMainPctOfViewport": 0.1,
+    "items": [
+     {
+      "name": "ai-bubble",
+      "pos": "fixed",
+      "rect": {
+       "x": 1294,
+       "y": 696,
+       "w": 48,
+       "h": 48
+      },
+      "overlapMainPx": 1152
+     }
+    ]
+   },
+   "pageHeightRatio": 1.95,
+   "scrollH": 1497,
+   "shell": {
+    "sidebarW": 264,
+    "topbarH": 56,
+    "mainTop": 109,
+    "mainW": 1102,
+    "mainPad": "24px"
+   },
+   "dialogsAtLoad": 0,
+   "spinnersAtMeasure": 2,
+   "actions": [
+    {
+     "id": "them-quy-tac",
+     "label": "/Thêm quy tắc/",
+     "found": true,
+     "enabled": false
+    }
+   ]
+  },
+  {
+   "screen": "orchestration-studio",
+   "route": "/orchestration-studio",
+   "vw": 1600,
+   "vh": 950,
+   "variant": "n/a",
+   "mainSource": "fe1-legacy",
+   "missingDataLayoutMain": true,
+   "mainSelector": "OrchestrationStudio card Cây/Sơ đồ + Cấu hình bước",
+   "mainFound": true,
+   "mainRects": [
+    {
+     "x": 312,
+     "y": 852,
+     "w": 821,
+     "h": 222
+    },
+    {
+     "x": 1149,
+     "y": 852,
+     "w": 403,
+     "h": 222
+    }
+   ],
+   "mainTop": 852,
+   "mainPct": 7.9,
+   "mainPctFe1": 7.9,
+   "mainPctUnoccluded": 7.8,
+   "h1Top": 259,
+   "h1Text": "Studio Quy trình",
+   "h1Count": 1,
+   "breadcrumbs": 2,
+   "breadcrumbLocs": [
+    "DashboardLayout.tsx:620",
+    "PageHeader.tsx:69"
+   ],
+   "bannersBeforeMain": {
+    "count": 3,
+    "px": 118,
+    "items": [
+     {
+      "loc": "BetaBadge.tsx:44",
+      "kind": "note",
+      "reason": "notice-style",
+      "y": 133,
+      "h": 38,
+      "head": "Đây là tính năng xem trước. Có thể cần thiết lập h"
+     },
+     {
+      "loc": "OrchestrationStudio.tsx:1427",
+      "kind": "div",
+      "reason": "notice-style",
+      "y": 331,
+      "h": 34,
+      "head": "Khi nào dùng — thiết kế quy trình phối hợp NHIỀU m"
+     },
+     {
+      "loc": "OrchestrationStudio.tsx:1434",
+      "kind": "div",
+      "reason": "notice-style",
+      "y": 381,
+      "h": 46,
+      "head": "FOE chưa bật (FOE_ENABLED) — vẫn soạn & mô phỏng đ"
+     }
+    ]
+   },
+   "kpi": {
+    "source": "MetricCard",
+    "count": 0,
+    "stripHeight": 0,
+    "stripY": null
+   },
+   "aiOcclusion": {
+    "overlapMainPx": 1152,
+    "overlapMainPctOfMain": 1,
+    "overlapMainPctOfViewport": 0.1,
+    "items": [
+     {
+      "name": "ai-bubble",
+      "pos": "fixed",
+      "rect": {
+       "x": 1528,
+       "y": 878,
+       "w": 48,
+       "h": 48
+      },
+      "overlapMainPx": 1152
+     }
+    ]
+   },
+   "pageHeightRatio": 1.82,
+   "scrollH": 1732,
+   "shell": {
+    "sidebarW": 264,
+    "topbarH": 56,
+    "mainTop": 109,
+    "mainW": 1336,
+    "mainPad": "24px"
+   },
+   "dialogsAtLoad": 0,
+   "spinnersAtMeasure": 2,
+   "actions": [
+    {
+     "id": "phien-ban",
+     "label": "/^Phiên bản$/",
+     "found": true,
+     "enabled": true,
+     "dialogs": 1,
+     "kinds": [
+      "dialog-content"
+     ],
+     "rects": [
+      {
+       "role": "dialog",
+       "slot": "dialog-content",
+       "x": 544,
+       "y": 346,
+       "w": 512,
+       "h": 258
+      }
+     ],
+     "closedByEsc": true
+    },
+    {
+     "id": "nhan-ban",
+     "label": "/^Nhân bản$/",
+     "found": true,
+     "enabled": true,
+     "dialogs": 1,
+     "kinds": [
+      "dialog-content"
+     ],
+     "rects": [
+      {
+       "role": "dialog",
+       "slot": "dialog-content",
+       "x": 544,
+       "y": 350,
+       "w": 512,
+       "h": 250
+      }
+     ],
+     "closedByEsc": true
+    }
+   ]
+  },
+  {
+   "screen": "orchestration-studio",
+   "route": "/orchestration-studio",
+   "vw": 1366,
+   "vh": 768,
+   "variant": "n/a",
+   "mainSource": "fe1-legacy",
+   "missingDataLayoutMain": true,
+   "mainSelector": "OrchestrationStudio card Cây/Sơ đồ + Cấu hình bước",
+   "mainFound": true,
+   "mainRects": [
+    {
+     "x": 312,
+     "y": 872,
+     "w": 665,
+     "h": 222
+    },
+    {
+     "x": 993,
+     "y": 872,
+     "w": 325,
+     "h": 222
+    }
+   ],
+   "mainTop": 872,
+   "mainPct": 0,
+   "mainPctFe1": 0,
+   "mainPctUnoccluded": 0,
+   "h1Top": 259,
+   "h1Text": "Studio Quy trình",
+   "h1Count": 1,
+   "breadcrumbs": 2,
+   "breadcrumbLocs": [
+    "DashboardLayout.tsx:620",
+    "PageHeader.tsx:69"
+   ],
+   "bannersBeforeMain": {
+    "count": 3,
+    "px": 118,
+    "items": [
+     {
+      "loc": "BetaBadge.tsx:44",
+      "kind": "note",
+      "reason": "notice-style",
+      "y": 133,
+      "h": 38,
+      "head": "Đây là tính năng xem trước. Có thể cần thiết lập h"
+     },
+     {
+      "loc": "OrchestrationStudio.tsx:1427",
+      "kind": "div",
+      "reason": "notice-style",
+      "y": 351,
+      "h": 34,
+      "head": "Khi nào dùng — thiết kế quy trình phối hợp NHIỀU m"
+     },
+     {
+      "loc": "OrchestrationStudio.tsx:1434",
+      "kind": "div",
+      "reason": "notice-style",
+      "y": 401,
+      "h": 46,
+      "head": "FOE chưa bật (FOE_ENABLED) — vẫn soạn & mô phỏng đ"
+     }
+    ]
+   },
+   "kpi": {
+    "source": "MetricCard",
+    "count": 0,
+    "stripHeight": 0,
+    "stripY": null
+   },
+   "aiOcclusion": {
+    "overlapMainPx": 0,
+    "overlapMainPctOfMain": 0,
+    "overlapMainPctOfViewport": 0,
+    "items": [
+     {
+      "name": "ai-bubble",
+      "pos": "fixed",
+      "rect": {
+       "x": 1294,
+       "y": 696,
+       "w": 48,
+       "h": 48
+      },
+      "overlapMainPx": 0
+     }
+    ]
+   },
+   "pageHeightRatio": 2.28,
+   "scrollH": 1752,
+   "shell": {
+    "sidebarW": 264,
+    "topbarH": 56,
+    "mainTop": 109,
+    "mainW": 1102,
+    "mainPad": "24px"
+   },
+   "dialogsAtLoad": 0,
+   "spinnersAtMeasure": 2,
+   "actions": [
+    {
+     "id": "phien-ban",
+     "label": "/^Phiên bản$/",
+     "found": true,
+     "enabled": true,
+     "dialogs": 1,
+     "kinds": [
+      "dialog-content"
+     ],
+     "rects": [
+      {
+       "role": "dialog",
+       "slot": "dialog-content",
+       "x": 427,
+       "y": 255,
+       "w": 512,
+       "h": 258
+      }
+     ],
+     "closedByEsc": true
+    },
+    {
+     "id": "nhan-ban",
+     "label": "/^Nhân bản$/",
+     "found": true,
+     "enabled": true,
+     "dialogs": 1,
+     "kinds": [
+      "dialog-content"
+     ],
+     "rects": [
+      {
+       "role": "dialog",
+       "slot": "dialog-content",
+       "x": 427,
+       "y": 259,
+       "w": 512,
+       "h": 250
+      }
+     ],
+     "closedByEsc": true
+    }
+   ]
+  },
+  {
+   "screen": "ir-editor",
+   "route": "/ir-editor",
+   "vw": 1600,
+   "vh": 950,
+   "variant": "closed",
+   "mainSource": "fe1-legacy",
+   "missingDataLayoutMain": true,
+   "mainSelector": "card 'Vùng vẽ luồng'",
+   "mainFound": true,
+   "mainRects": [
+    {
+     "x": 626,
+     "y": 766,
+     "w": 507,
+     "h": 895
+    }
+   ],
+   "mainTop": 766,
+   "mainPct": 6.1,
+   "mainPctFe1": 6.1,
+   "mainPctUnoccluded": 6.1,
+   "h1Top": 259,
+   "h1Text": "Trình soạn IR trực quan",
+   "h1Count": 1,
+   "breadcrumbs": 2,
+   "breadcrumbLocs": [
+    "DashboardLayout.tsx:620",
+    "PageHeader.tsx:69"
+   ],
+   "bannersBeforeMain": {
+    "count": 4,
+    "px": 184,
+    "items": [
+     {
+      "loc": "BetaBadge.tsx:44",
+      "kind": "note",
+      "reason": "notice-style",
+      "y": 133,
+      "h": 38,
+      "head": "Đây là tính năng xem trước. Có thể cần thiết lập h"
+     },
+     {
+      "loc": "IrEditor.tsx:1236",
+      "kind": "div",
+      "reason": "notice-style",
+      "y": 331,
+      "h": 34,
+      "head": "Khi nào dùng — khối motion & I/O cấp thấp (IR). Cầ"
+     },
+     {
+      "loc": "IrEditor.tsx:1250",
+      "kind": "div",
+      "reason": "notice-style",
+      "y": 381,
+      "h": 46,
+      "head": "Chế độ xem trước: lập trình IR đang tắt (DPC_IR_V2"
+     },
+     {
+      "loc": "IrEditor.tsx:1257",
+      "kind": "div",
+      "reason": "notice-style",
+      "y": 443,
+      "h": 66,
+      "head": "Chỉ xem trước cấu trúc + lint + transpile — mô phỏ"
+     }
+    ]
+   },
+   "kpi": {
+    "source": "MetricCard",
+    "count": 4,
+    "stripHeight": 130,
+    "stripY": 1935
+   },
+   "aiOcclusion": {
+    "overlapMainPx": 0,
+    "overlapMainPctOfMain": 0,
+    "overlapMainPctOfViewport": 0,
+    "items": [
+     {
+      "name": "ai-bubble",
+      "pos": "fixed",
+      "rect": {
+       "x": 1528,
+       "y": 878,
+       "w": 48,
+       "h": 48
+      },
+      "overlapMainPx": 0
+     },
+     {
+      "name": "copilot-dock",
+      "pos": "fixed",
+      "rect": {
+       "x": 1545,
+       "y": 443,
+       "w": 56,
+       "h": 63
+      },
+      "overlapMainPx": 0
+     }
+    ]
+   },
+   "pageHeightRatio": 2.82,
+   "scrollH": 2679,
+   "shell": {
+    "sidebarW": 264,
+    "topbarH": 56,
+    "mainTop": 109,
+    "mainW": 1336,
+    "mainPad": "24px"
+   },
+   "dialogsAtLoad": 0,
+   "spinnersAtMeasure": 2,
+   "actions": [
+    {
+     "id": "project-ir-flow-moi",
+     "label": "/Project ir-flow mới/",
+     "found": true,
+     "enabled": true,
+     "dialogs": 1,
+     "kinds": [
+      "dialog-content"
+     ],
+     "rects": [
+      {
+       "role": "dialog",
+       "slot": "dialog-content",
+       "x": 544,
+       "y": 342,
+       "w": 512,
+       "h": 266
+      }
+     ],
+     "closedByEsc": true
+    }
+   ]
+  },
+  {
+   "screen": "ir-editor",
+   "route": "/ir-editor",
+   "vw": 1366,
+   "vh": 768,
+   "variant": "closed",
+   "mainSource": "fe1-legacy",
+   "missingDataLayoutMain": true,
+   "mainSelector": "card 'Vùng vẽ luồng'",
+   "mainFound": true,
+   "mainRects": [
+    {
+     "x": 568,
+     "y": 822,
+     "w": 410,
+     "h": 895
+    }
+   ],
+   "mainTop": 822,
+   "mainPct": 0,
+   "mainPctFe1": 0,
+   "mainPctUnoccluded": 0,
+   "h1Top": 259,
+   "h1Text": "Trình soạn IR trực quan",
+   "h1Count": 1,
+   "breadcrumbs": 2,
+   "breadcrumbLocs": [
+    "DashboardLayout.tsx:620",
+    "PageHeader.tsx:69"
+   ],
+   "bannersBeforeMain": {
+    "count": 4,
+    "px": 224,
+    "items": [
+     {
+      "loc": "BetaBadge.tsx:44",
+      "kind": "note",
+      "reason": "notice-style",
+      "y": 133,
+      "h": 38,
+      "head": "Đây là tính năng xem trước. Có thể cần thiết lập h"
+     },
+     {
+      "loc": "IrEditor.tsx:1236",
+      "kind": "div",
+      "reason": "notice-style",
+      "y": 331,
+      "h": 54,
+      "head": "Khi nào dùng — khối motion & I/O cấp thấp (IR). Cầ"
+     },
+     {
+      "loc": "IrEditor.tsx:1250",
+      "kind": "div",
+      "reason": "notice-style",
+      "y": 401,
+      "h": 66,
+      "head": "Chế độ xem trước: lập trình IR đang tắt (DPC_IR_V2"
+     },
+     {
+      "loc": "IrEditor.tsx:1257",
+      "kind": "div",
+      "reason": "notice-style",
+      "y": 483,
+      "h": 66,
+      "head": "Chỉ xem trước cấu trúc + lint + transpile — mô phỏ"
+     }
+    ]
+   },
+   "kpi": {
+    "source": "MetricCard",
+    "count": 4,
+    "stripHeight": 130,
+    "stripY": 2011
+   },
+   "aiOcclusion": {
+    "overlapMainPx": 0,
+    "overlapMainPctOfMain": 0,
+    "overlapMainPctOfViewport": 0,
+    "items": [
+     {
+      "name": "ai-bubble",
+      "pos": "fixed",
+      "rect": {
+       "x": 1294,
+       "y": 696,
+       "w": 48,
+       "h": 48
+      },
+      "overlapMainPx": 0
+     },
+     {
+      "name": "copilot-dock",
+      "pos": "fixed",
+      "rect": {
+       "x": 1311,
+       "y": 352,
+       "w": 56,
+       "h": 63
+      },
+      "overlapMainPx": 0
+     }
+    ]
+   },
+   "pageHeightRatio": 3.59,
+   "scrollH": 2755,
+   "shell": {
+    "sidebarW": 264,
+    "topbarH": 56,
+    "mainTop": 109,
+    "mainW": 1102,
+    "mainPad": "24px"
+   },
+   "dialogsAtLoad": 0,
+   "spinnersAtMeasure": 2,
+   "actions": [
+    {
+     "id": "project-ir-flow-moi",
+     "label": "/Project ir-flow mới/",
+     "found": true,
+     "enabled": true,
+     "dialogs": 1,
+     "kinds": [
+      "dialog-content"
+     ],
+     "rects": [
+      {
+       "role": "dialog",
+       "slot": "dialog-content",
+       "x": 427,
+       "y": 251,
+       "w": 512,
+       "h": 266
+      }
+     ],
+     "closedByEsc": true
+    }
+   ]
+  },
+  {
+   "screen": "pou-studio",
+   "route": "/pou-studio",
+   "vw": 1600,
+   "vh": 950,
+   "variant": "closed",
+   "mainSource": "fe1-legacy",
+   "missingDataLayoutMain": true,
+   "mainSelector": "card 'Trình soạn POU'",
+   "mainFound": true,
+   "mainRects": [
+    {
+     "x": 312,
+     "y": 629,
+     "w": 612,
+     "h": 720
+    }
+   ],
+   "mainTop": 629,
+   "mainPct": 12.9,
+   "mainPctFe1": 12.9,
+   "mainPctUnoccluded": 12.9,
+   "h1Top": 259,
+   "h1Text": "IEC 61131 POU Studio",
+   "h1Count": 1,
+   "breadcrumbs": 2,
+   "breadcrumbLocs": [
+    "DashboardLayout.tsx:620",
+    "PageHeader.tsx:69"
+   ],
+   "bannersBeforeMain": {
+    "count": 3,
+    "px": 138,
+    "items": [
+     {
+      "loc": "BetaBadge.tsx:44",
+      "kind": "note",
+      "reason": "notice-style",
+      "y": 133,
+      "h": 38,
+      "head": "Đây là tính năng xem trước. Có thể cần thiết lập h"
+     },
+     {
+      "loc": "PouStudio.tsx:362",
+      "kind": "div",
+      "reason": "notice-style",
+      "y": 351,
+      "h": 34,
+      "head": "Khi nào dùng — POU IEC 61131 LAD/FBD/SFC. Cần moti"
+     },
+     {
+      "loc": "PouStudio.tsx:375",
+      "kind": "div",
+      "reason": "notice-style",
+      "y": 401,
+      "h": 66,
+      "head": "Chỉ mô hình + lint + round-trip PLCopen XML + chuy"
+     }
+    ]
+   },
+   "kpi": {
+    "source": "MetricCard",
+    "count": 4,
+    "stripHeight": 130,
+    "stripY": 483
+   },
+   "aiOcclusion": {
+    "overlapMainPx": 0,
+    "overlapMainPctOfMain": 0,
+    "overlapMainPctOfViewport": 0,
+    "items": [
+     {
+      "name": "ai-bubble",
+      "pos": "fixed",
+      "rect": {
+       "x": 1528,
+       "y": 878,
+       "w": 48,
+       "h": 48
+      },
+      "overlapMainPx": 0
+     },
+     {
+      "name": "copilot-dock",
+      "pos": "fixed",
+      "rect": {
+       "x": 1545,
+       "y": 443,
+       "w": 56,
+       "h": 63
+      },
+      "overlapMainPx": 0
+     }
+    ]
+   },
+   "pageHeightRatio": 1.47,
+   "scrollH": 1397,
+   "shell": {
+    "sidebarW": 264,
+    "topbarH": 56,
+    "mainTop": 109,
+    "mainW": 1336,
+    "mainPad": "24px"
+   },
+   "dialogsAtLoad": 0,
+   "spinnersAtMeasure": 2,
+   "actions": [
+    {
+     "id": "luu-vao-project",
+     "label": "/Lưu vào project/",
+     "found": true,
+     "enabled": true,
+     "dialogs": 1,
+     "kinds": [
+      "dialog-content"
+     ],
+     "rects": [
+      {
+       "role": "dialog",
+       "slot": "dialog-content",
+       "x": 544,
+       "y": 299,
+       "w": 512,
+       "h": 353
+      }
+     ],
+     "closedByEsc": true
+    }
+   ]
+  },
+  {
+   "screen": "pou-studio",
+   "route": "/pou-studio",
+   "vw": 1366,
+   "vh": 768,
+   "variant": "closed",
+   "mainSource": "fe1-legacy",
+   "missingDataLayoutMain": true,
+   "mainSelector": "card 'Trình soạn POU'",
+   "mainFound": true,
+   "mainRects": [
+    {
+     "x": 312,
+     "y": 649,
+     "w": 495,
+     "h": 744
+    }
+   ],
+   "mainTop": 649,
+   "mainPct": 5.6,
+   "mainPctFe1": 5.6,
+   "mainPctUnoccluded": 5.6,
+   "h1Top": 259,
+   "h1Text": "IEC 61131 POU Studio",
+   "h1Count": 1,
+   "breadcrumbs": 2,
+   "breadcrumbLocs": [
+    "DashboardLayout.tsx:620",
+    "PageHeader.tsx:69"
+   ],
+   "bannersBeforeMain": {
+    "count": 3,
+    "px": 158,
+    "items": [
+     {
+      "loc": "BetaBadge.tsx:44",
+      "kind": "note",
+      "reason": "notice-style",
+      "y": 133,
+      "h": 38,
+      "head": "Đây là tính năng xem trước. Có thể cần thiết lập h"
+     },
+     {
+      "loc": "PouStudio.tsx:362",
+      "kind": "div",
+      "reason": "notice-style",
+      "y": 351,
+      "h": 34,
+      "head": "Khi nào dùng — POU IEC 61131 LAD/FBD/SFC. Cần moti"
+     },
+     {
+      "loc": "PouStudio.tsx:375",
+      "kind": "div",
+      "reason": "notice-style",
+      "y": 401,
+      "h": 86,
+      "head": "Chỉ mô hình + lint + round-trip PLCopen XML + chuy"
+     }
+    ]
+   },
+   "kpi": {
+    "source": "MetricCard",
+    "count": 4,
+    "stripHeight": 130,
+    "stripY": 503
+   },
+   "aiOcclusion": {
+    "overlapMainPx": 0,
+    "overlapMainPctOfMain": 0,
+    "overlapMainPctOfViewport": 0,
+    "items": [
+     {
+      "name": "ai-bubble",
+      "pos": "fixed",
+      "rect": {
+       "x": 1294,
+       "y": 696,
+       "w": 48,
+       "h": 48
+      },
+      "overlapMainPx": 0
+     },
+     {
+      "name": "copilot-dock",
+      "pos": "fixed",
+      "rect": {
+       "x": 1311,
+       "y": 352,
+       "w": 56,
+       "h": 63
+      },
+      "overlapMainPx": 0
+     }
+    ]
+   },
+   "pageHeightRatio": 1.88,
+   "scrollH": 1441,
+   "shell": {
+    "sidebarW": 264,
+    "topbarH": 56,
+    "mainTop": 109,
+    "mainW": 1102,
+    "mainPad": "24px"
+   },
+   "dialogsAtLoad": 0,
+   "spinnersAtMeasure": 2,
+   "actions": [
+    {
+     "id": "luu-vao-project",
+     "label": "/Lưu vào project/",
+     "found": true,
+     "enabled": true,
+     "dialogs": 1,
+     "kinds": [
+      "dialog-content"
+     ],
+     "rects": [
+      {
+       "role": "dialog",
+       "slot": "dialog-content",
+       "x": 427,
+       "y": 208,
+       "w": 512,
+       "h": 353
+      }
+     ],
+     "closedByEsc": true
+    }
+   ]
+  },
+  {
+   "screen": "programming-copilot",
+   "route": "/programming-copilot",
+   "vw": 1600,
+   "vh": 950,
+   "variant": "n/a",
+   "mainSource": "fe1-legacy",
+   "missingDataLayoutMain": true,
+   "mainSelector": "ProgrammingCopilot card đầu (form sinh mã)",
+   "mainFound": true,
+   "mainRects": [
+    {
+     "x": 312,
+     "y": 315,
+     "w": 848,
+     "h": 428
+    }
+   ],
+   "mainTop": 315,
+   "mainPct": 23.9,
+   "mainPctFe1": 23.9,
+   "mainPctUnoccluded": 23.9,
+   "h1Top": 157,
+   "h1Text": "Trợ lý Lập trình",
+   "h1Count": 1,
+   "breadcrumbs": 1,
+   "breadcrumbLocs": [
+    "DashboardLayout.tsx:620"
+   ],
+   "bannersBeforeMain": {
+    "count": 1,
+    "px": 34,
+    "items": [
+     {
+      "loc": "ProgrammingCopilot.tsx:37",
+      "kind": "div",
+      "reason": "notice-style",
+      "y": 257,
+      "h": 34,
+      "head": "Soạn hoặc hiểu nhanh mã thiết bị. Để build, mô phỏ"
+     }
+    ]
+   },
+   "kpi": {
+    "source": "MetricCard",
+    "count": 0,
+    "stripHeight": 0,
+    "stripY": null
+   },
+   "aiOcclusion": {
+    "overlapMainPx": 0,
+    "overlapMainPctOfMain": 0,
+    "overlapMainPctOfViewport": 0,
+    "items": [
+     {
+      "name": "ai-bubble",
+      "pos": "fixed",
+      "rect": {
+       "x": 1528,
+       "y": 878,
+       "w": 48,
+       "h": 48
+      },
+      "overlapMainPx": 0
+     }
+    ]
+   },
+   "pageHeightRatio": 1,
+   "scrollH": 950,
+   "shell": {
+    "sidebarW": 264,
+    "topbarH": 56,
+    "mainTop": 109,
+    "mainW": 1336,
+    "mainPad": "24px"
+   },
+   "dialogsAtLoad": 0,
+   "spinnersAtMeasure": 2,
+   "actions": []
+  },
+  {
+   "screen": "programming-copilot",
+   "route": "/programming-copilot",
+   "vw": 1366,
+   "vh": 768,
+   "variant": "n/a",
+   "mainSource": "fe1-legacy",
+   "missingDataLayoutMain": true,
+   "mainSelector": "ProgrammingCopilot card đầu (form sinh mã)",
+   "mainFound": true,
+   "mainRects": [
+    {
+     "x": 312,
+     "y": 315,
+     "w": 848,
+     "h": 428
+    }
+   ],
+   "mainTop": 315,
+   "mainPct": 34.6,
+   "mainPctFe1": 34.6,
+   "mainPctUnoccluded": 34.6,
+   "h1Top": 157,
+   "h1Text": "Trợ lý Lập trình",
+   "h1Count": 1,
+   "breadcrumbs": 1,
+   "breadcrumbLocs": [
+    "DashboardLayout.tsx:620"
+   ],
+   "bannersBeforeMain": {
+    "count": 1,
+    "px": 34,
+    "items": [
+     {
+      "loc": "ProgrammingCopilot.tsx:37",
+      "kind": "div",
+      "reason": "notice-style",
+      "y": 257,
+      "h": 34,
+      "head": "Soạn hoặc hiểu nhanh mã thiết bị. Để build, mô phỏ"
+     }
+    ]
+   },
+   "kpi": {
+    "source": "MetricCard",
+    "count": 0,
+    "stripHeight": 0,
+    "stripY": null
+   },
+   "aiOcclusion": {
+    "overlapMainPx": 0,
+    "overlapMainPctOfMain": 0,
+    "overlapMainPctOfViewport": 0,
+    "items": [
+     {
+      "name": "ai-bubble",
+      "pos": "fixed",
+      "rect": {
+       "x": 1294,
+       "y": 696,
+       "w": 48,
+       "h": 48
+      },
+      "overlapMainPx": 0
+     }
+    ]
+   },
+   "pageHeightRatio": 1.03,
+   "scrollH": 791,
+   "shell": {
+    "sidebarW": 264,
+    "topbarH": 56,
+    "mainTop": 109,
+    "mainW": 1102,
+    "mainPad": "24px"
+   },
+   "dialogsAtLoad": 0,
+   "spinnersAtMeasure": 2,
+   "actions": []
+  },
+  {
+   "screen": "fleet-orchestration",
+   "route": "/fleet-orchestration",
+   "vw": 1600,
+   "vh": 950,
+   "variant": "n/a",
+   "mainSource": "fe1-legacy",
+   "missingDataLayoutMain": true,
+   "mainSelector": "FleetOrchestration tabs-content đang mở",
+   "mainFound": true,
+   "mainRects": [
+    {
+     "x": 312,
+     "y": 715,
+     "w": 1240,
+     "h": 441
+    }
+   ],
+   "mainTop": 715,
+   "mainPct": 19.2,
+   "mainPctFe1": 19.2,
+   "mainPctUnoccluded": 19.1,
+   "h1Top": 259,
+   "h1Text": "Điều phối Đội xe & Tác vụ",
+   "h1Count": 1,
+   "breadcrumbs": 2,
+   "breadcrumbLocs": [
+    "DashboardLayout.tsx:620",
+    "PageHeader.tsx:69"
+   ],
+   "bannersBeforeMain": {
+    "count": 4,
+    "px": 164,
+    "items": [
+     {
+      "loc": "BetaBadge.tsx:44",
+      "kind": "note",
+      "reason": "notice-style",
+      "y": 133,
+      "h": 38,
+      "head": "Đây là tính năng xem trước. Có thể cần thiết lập h"
+     },
+     {
+      "loc": "FleetOrchestration.tsx:598",
+      "kind": "div",
+      "reason": "notice-style",
+      "y": 331,
+      "h": 34,
+      "head": "Khi nào dùng — phân bổ nhiệm vụ cho ĐỘI robot/AGV "
+     },
+     {
+      "loc": "FeatureStatusGate.tsx:117",
+      "kind": "div",
+      "reason": "notice-style",
+      "y": 381,
+      "h": 46,
+      "head": "Chế độ xem trước: điều phối đội xe đang tắt. Đọc v"
+     },
+     {
+      "loc": "FleetOrchestration.tsx:617",
+      "kind": "div",
+      "reason": "notice-style",
+      "y": 443,
+      "h": 46,
+      "head": "Trang này chỉ ghi trạng thái điều phối (tác vụ / v"
+     }
+    ]
+   },
+   "kpi": {
+    "source": "MetricCard",
+    "count": 9,
+    "stripHeight": 130,
+    "stripY": 505
+   },
+   "aiOcclusion": {
+    "overlapMainPx": 1152,
+    "overlapMainPctOfMain": 0.4,
+    "overlapMainPctOfViewport": 0.1,
+    "items": [
+     {
+      "name": "ai-bubble",
+      "pos": "fixed",
+      "rect": {
+       "x": 1528,
+       "y": 878,
+       "w": 48,
+       "h": 48
+      },
+      "overlapMainPx": 1152
+     }
+    ]
+   },
+   "pageHeightRatio": 1.27,
+   "scrollH": 1204,
+   "shell": {
+    "sidebarW": 264,
+    "topbarH": 56,
+    "mainTop": 109,
+    "mainW": 1336,
+    "mainPad": "24px"
+   },
+   "dialogsAtLoad": 0,
+   "spinnersAtMeasure": 2,
+   "actions": []
+  },
+  {
+   "screen": "fleet-orchestration",
+   "route": "/fleet-orchestration",
+   "vw": 1366,
+   "vh": 768,
+   "variant": "n/a",
+   "mainSource": "fe1-legacy",
+   "missingDataLayoutMain": true,
+   "mainSelector": "FleetOrchestration tabs-content đang mở",
+   "mainFound": true,
+   "mainRects": [
+    {
+     "x": 312,
+     "y": 755,
+     "w": 1006,
+     "h": 441
+    }
+   ],
+   "mainTop": 755,
+   "mainPct": 1.2,
+   "mainPctFe1": 1.2,
+   "mainPctUnoccluded": 1.2,
+   "h1Top": 259,
+   "h1Text": "Điều phối Đội xe & Tác vụ",
+   "h1Count": 1,
+   "breadcrumbs": 2,
+   "breadcrumbLocs": [
+    "DashboardLayout.tsx:620",
+    "PageHeader.tsx:69"
+   ],
+   "bannersBeforeMain": {
+    "count": 4,
+    "px": 204,
+    "items": [
+     {
+      "loc": "BetaBadge.tsx:44",
+      "kind": "note",
+      "reason": "notice-style",
+      "y": 133,
+      "h": 38,
+      "head": "Đây là tính năng xem trước. Có thể cần thiết lập h"
+     },
+     {
+      "loc": "FleetOrchestration.tsx:598",
+      "kind": "div",
+      "reason": "notice-style",
+      "y": 331,
+      "h": 34,
+      "head": "Khi nào dùng — phân bổ nhiệm vụ cho ĐỘI robot/AGV "
+     },
+     {
+      "loc": "FeatureStatusGate.tsx:117",
+      "kind": "div",
+      "reason": "notice-style",
+      "y": 381,
+      "h": 66,
+      "head": "Chế độ xem trước: điều phối đội xe đang tắt. Đọc v"
+     },
+     {
+      "loc": "FleetOrchestration.tsx:617",
+      "kind": "div",
+      "reason": "notice-style",
+      "y": 463,
+      "h": 66,
+      "head": "Trang này chỉ ghi trạng thái điều phối (tác vụ / v"
+     }
+    ]
+   },
+   "kpi": {
+    "source": "MetricCard",
+    "count": 9,
+    "stripHeight": 130,
+    "stripY": 545
+   },
+   "aiOcclusion": {
+    "overlapMainPx": 0,
+    "overlapMainPctOfMain": 0,
+    "overlapMainPctOfViewport": 0,
+    "items": [
+     {
+      "name": "ai-bubble",
+      "pos": "fixed",
+      "rect": {
+       "x": 1294,
+       "y": 696,
+       "w": 48,
+       "h": 48
+      },
+      "overlapMainPx": 0
+     }
+    ]
+   },
+   "pageHeightRatio": 1.62,
+   "scrollH": 1244,
+   "shell": {
+    "sidebarW": 264,
+    "topbarH": 56,
+    "mainTop": 109,
+    "mainW": 1102,
+    "mainPad": "24px"
+   },
+   "dialogsAtLoad": 0,
+   "spinnersAtMeasure": 2,
+   "actions": []
+  },
+  {
+   "screen": "safety-workforce",
+   "route": "/safety-workforce",
+   "vw": 1600,
+   "vh": 950,
+   "variant": "n/a",
+   "mainSource": "fe1-legacy",
+   "missingDataLayoutMain": true,
+   "mainSelector": "SafetyWorkforce tabs-content đang mở",
+   "mainFound": true,
+   "mainRects": [
+    {
+     "x": 312,
+     "y": 929,
+     "w": 1240,
+     "h": 795
+    }
+   ],
+   "mainTop": 929,
+   "mainPct": 1.7,
+   "mainPctFe1": 1.7,
+   "mainPctUnoccluded": 1.7,
+   "h1Top": 259,
+   "h1Text": "An toàn & Nhân lực",
+   "h1Count": 1,
+   "breadcrumbs": 2,
+   "breadcrumbLocs": [
+    "DashboardLayout.tsx:620",
+    "PageHeader.tsx:69"
+   ],
+   "bannersBeforeMain": {
+    "count": 6,
+    "px": 346,
+    "items": [
+     {
+      "loc": "BetaBadge.tsx:44",
+      "kind": "note",
+      "reason": "notice-style",
+      "y": 133,
+      "h": 38,
+      "head": "Đây là tính năng xem trước. Có thể cần thiết lập h"
+     },
+     {
+      "loc": "SafetyWorkforce.tsx:406",
+      "kind": "div",
+      "reason": "notice-style",
+      "y": 331,
+      "h": 34,
+      "head": "Khi nào dùng — theo dõi sự kiện liên quan an toàn "
+     },
+     {
+      "loc": "SafetyWorkforce.tsx:412",
+      "kind": "div",
+      "reason": "notice-style",
+      "y": 381,
+      "h": 88,
+      "head": "Chỉ giám sát tư vấn — không phải hệ thống đạt chuẩ"
+     },
+     {
+      "loc": "FeatureStatusGate.tsx:117",
+      "kind": "div",
+      "reason": "notice-style",
+      "y": 485,
+      "h": 46,
+      "head": "Chế độ xem trước: kiểm định an toàn đang tắt. Đọc "
+     },
+     {
+      "loc": "FeatureStatusGate.tsx:117",
+      "kind": "div",
+      "reason": "notice-style",
+      "y": 547,
+      "h": 46,
+      "head": "Chế độ xem trước: nhân lực đang tắt. Đọc vẫn hoạt "
+     },
+     {
+      "loc": "SafetyWorkforce.tsx:1054",
+      "kind": "div",
+      "reason": "notice-style",
+      "y": 609,
+      "h": 94,
+      "head": "Nguồn:"
+     }
+    ]
+   },
+   "kpi": {
+    "source": "MetricCard",
+    "count": 4,
+    "stripHeight": 130,
+    "stripY": 719
+   },
+   "aiOcclusion": {
+    "overlapMainPx": 0,
+    "overlapMainPctOfMain": 0,
+    "overlapMainPctOfViewport": 0,
+    "items": [
+     {
+      "name": "ai-bubble",
+      "pos": "fixed",
+      "rect": {
+       "x": 1528,
+       "y": 878,
+       "w": 48,
+       "h": 48
+      },
+      "overlapMainPx": 0
+     }
+    ]
+   },
+   "pageHeightRatio": 1.93,
+   "scrollH": 1832,
+   "shell": {
+    "sidebarW": 264,
+    "topbarH": 56,
+    "mainTop": 109,
+    "mainW": 1336,
+    "mainPad": "24px"
+   },
+   "dialogsAtLoad": 0,
+   "spinnersAtMeasure": 2,
+   "actions": [
+    {
+     "id": "bao-cao-tiem-can",
+     "label": "/Báo cáo tiệm cận/",
+     "found": true,
+     "enabled": true,
+     "dialogs": 1,
+     "kinds": [
+      "dialog-content"
+     ],
+     "rects": [
+      {
+       "role": "dialog",
+       "slot": "dialog-content",
+       "x": 544,
+       "y": 285,
+       "w": 512,
+       "h": 380
+      }
+     ],
+     "closedByEsc": true
+    }
+   ]
+  },
+  {
+   "screen": "safety-workforce",
+   "route": "/safety-workforce",
+   "vw": 1366,
+   "vh": 768,
+   "variant": "n/a",
+   "mainSource": "fe1-legacy",
+   "missingDataLayoutMain": true,
+   "mainSelector": "SafetyWorkforce tabs-content đang mở",
+   "mainFound": true,
+   "mainRects": [
+    {
+     "x": 312,
+     "y": 949,
+     "w": 1006,
+     "h": 795
+    }
+   ],
+   "mainTop": 949,
+   "mainPct": 0,
+   "mainPctFe1": 0,
+   "mainPctUnoccluded": 0,
+   "h1Top": 259,
+   "h1Text": "An toàn & Nhân lực",
+   "h1Count": 1,
+   "breadcrumbs": 2,
+   "breadcrumbLocs": [
+    "DashboardLayout.tsx:620",
+    "PageHeader.tsx:69"
+   ],
+   "bannersBeforeMain": {
+    "count": 6,
+    "px": 366,
+    "items": [
+     {
+      "loc": "BetaBadge.tsx:44",
+      "kind": "note",
+      "reason": "notice-style",
+      "y": 133,
+      "h": 38,
+      "head": "Đây là tính năng xem trước. Có thể cần thiết lập h"
+     },
+     {
+      "loc": "SafetyWorkforce.tsx:406",
+      "kind": "div",
+      "reason": "notice-style",
+      "y": 331,
+      "h": 34,
+      "head": "Khi nào dùng — theo dõi sự kiện liên quan an toàn "
+     },
+     {
+      "loc": "SafetyWorkforce.tsx:412",
+      "kind": "div",
+      "reason": "notice-style",
+      "y": 381,
+      "h": 108,
+      "head": "Chỉ giám sát tư vấn — không phải hệ thống đạt chuẩ"
+     },
+     {
+      "loc": "FeatureStatusGate.tsx:117",
+      "kind": "div",
+      "reason": "notice-style",
+      "y": 505,
+      "h": 46,
+      "head": "Chế độ xem trước: kiểm định an toàn đang tắt. Đọc "
+     },
+     {
+      "loc": "FeatureStatusGate.tsx:117",
+      "kind": "div",
+      "reason": "notice-style",
+      "y": 567,
+      "h": 46,
+      "head": "Chế độ xem trước: nhân lực đang tắt. Đọc vẫn hoạt "
+     },
+     {
+      "loc": "SafetyWorkforce.tsx:1054",
+      "kind": "div",
+      "reason": "notice-style",
+      "y": 629,
+      "h": 94,
+      "head": "Nguồn:"
+     }
+    ]
+   },
+   "kpi": {
+    "source": "MetricCard",
+    "count": 4,
+    "stripHeight": 130,
+    "stripY": 739
+   },
+   "aiOcclusion": {
+    "overlapMainPx": 0,
+    "overlapMainPctOfMain": 0,
+    "overlapMainPctOfViewport": 0,
+    "items": [
+     {
+      "name": "ai-bubble",
+      "pos": "fixed",
+      "rect": {
+       "x": 1294,
+       "y": 696,
+       "w": 48,
+       "h": 48
+      },
+      "overlapMainPx": 0
+     }
+    ]
+   },
+   "pageHeightRatio": 2.43,
+   "scrollH": 1866,
+   "shell": {
+    "sidebarW": 264,
+    "topbarH": 56,
+    "mainTop": 109,
+    "mainW": 1102,
+    "mainPad": "24px"
+   },
+   "dialogsAtLoad": 0,
+   "spinnersAtMeasure": 2,
+   "actions": [
+    {
+     "id": "bao-cao-tiem-can",
+     "label": "/Báo cáo tiệm cận/",
+     "found": true,
+     "enabled": true,
+     "dialogs": 1,
+     "kinds": [
+      "dialog-content"
+     ],
+     "rects": [
+      {
+       "role": "dialog",
+       "slot": "dialog-content",
+       "x": 427,
+       "y": 194,
+       "w": 512,
+       "h": 380
+      }
+     ],
+     "closedByEsc": true
+    }
+   ]
+  },
+  {
+   "screen": "equipment-standards",
+   "route": "/equipment-standards",
+   "vw": 1600,
+   "vh": 950,
+   "variant": "n/a",
+   "mainSource": "fe1-legacy",
+   "missingDataLayoutMain": true,
+   "mainSelector": "EquipmentStandards tabs-content đang mở",
+   "mainFound": true,
+   "mainRects": [
+    {
+     "x": 312,
+     "y": 731,
+     "w": 1240,
+     "h": 1080
+    }
+   ],
+   "mainTop": 731,
+   "mainPct": 17.9,
+   "mainPctFe1": 17.9,
+   "mainPctUnoccluded": 17.8,
+   "h1Top": 259,
+   "h1Text": "Tiêu chuẩn & Quản trị Thiết bị",
+   "h1Count": 1,
+   "breadcrumbs": 2,
+   "breadcrumbLocs": [
+    "DashboardLayout.tsx:620",
+    "PageHeader.tsx:69"
+   ],
+   "bannersBeforeMain": {
+    "count": 4,
+    "px": 164,
+    "items": [
+     {
+      "loc": "BetaBadge.tsx:44",
+      "kind": "note",
+      "reason": "notice-style",
+      "y": 133,
+      "h": 38,
+      "head": "Đây là tính năng xem trước. Có thể cần thiết lập h"
+     },
+     {
+      "loc": "EquipmentStandards.tsx:334",
+      "kind": "div",
+      "reason": "notice-style",
+      "y": 331,
+      "h": 34,
+      "head": "Khi nào dùng — quản trị chuẩn loại thiết bị, phân "
+     },
+     {
+      "loc": "FeatureStatusGate.tsx:117",
+      "kind": "div",
+      "reason": "notice-style",
+      "y": 381,
+      "h": 46,
+      "head": "Chế độ xem trước: quản trị thiết bị đang tắt. Đọc "
+     },
+     {
+      "loc": "EquipmentStandards.tsx:353",
+      "kind": "div",
+      "reason": "notice-style",
+      "y": 443,
+      "h": 46,
+      "head": "Trang này chỉ ghi metadata quản trị (phiên bản loạ"
+     }
+    ]
+   },
+   "kpi": {
+    "source": "MetricCard",
+    "count": 5,
+    "stripHeight": 146,
+    "stripY": 505
+   },
+   "aiOcclusion": {
+    "overlapMainPx": 1152,
+    "overlapMainPctOfMain": 0.4,
+    "overlapMainPctOfViewport": 0.1,
+    "items": [
+     {
+      "name": "ai-bubble",
+      "pos": "fixed",
+      "rect": {
+       "x": 1528,
+       "y": 878,
+       "w": 48,
+       "h": 48
+      },
+      "overlapMainPx": 1152
+     }
+    ]
+   },
+   "pageHeightRatio": 1.96,
+   "scrollH": 1859,
+   "shell": {
+    "sidebarW": 264,
+    "topbarH": 56,
+    "mainTop": 109,
+    "mainW": 1336,
+    "mainPad": "24px"
+   },
+   "dialogsAtLoad": 0,
+   "spinnersAtMeasure": 2,
+   "actions": [
+    {
+     "id": "dang-ky-loai",
+     "label": "/Đăng ký loại/",
+     "found": true,
+     "enabled": true,
+     "dialogs": 1,
+     "kinds": [
+      "dialog-content"
+     ],
+     "rects": [
+      {
+       "role": "dialog",
+       "slot": "dialog-content",
+       "x": 544,
+       "y": 263,
+       "w": 512,
+       "h": 424
+      }
+     ],
+     "closedByEsc": true
+    }
+   ]
+  },
+  {
+   "screen": "equipment-standards",
+   "route": "/equipment-standards",
+   "vw": 1366,
+   "vh": 768,
+   "variant": "n/a",
+   "mainSource": "fe1-legacy",
+   "missingDataLayoutMain": true,
+   "mainSelector": "EquipmentStandards tabs-content đang mở",
+   "mainFound": true,
+   "mainRects": [
+    {
+     "x": 312,
+     "y": 771,
+     "w": 1006,
+     "h": 1080
+    }
+   ],
+   "mainTop": 771,
+   "mainPct": 0,
+   "mainPctFe1": 0,
+   "mainPctUnoccluded": 0,
+   "h1Top": 259,
+   "h1Text": "Tiêu chuẩn & Quản trị Thiết bị",
+   "h1Count": 1,
+   "breadcrumbs": 2,
+   "breadcrumbLocs": [
+    "DashboardLayout.tsx:620",
+    "PageHeader.tsx:69"
+   ],
+   "bannersBeforeMain": {
+    "count": 4,
+    "px": 184,
+    "items": [
+     {
+      "loc": "BetaBadge.tsx:44",
+      "kind": "note",
+      "reason": "notice-style",
+      "y": 133,
+      "h": 38,
+      "head": "Đây là tính năng xem trước. Có thể cần thiết lập h"
+     },
+     {
+      "loc": "EquipmentStandards.tsx:334",
+      "kind": "div",
+      "reason": "notice-style",
+      "y": 351,
+      "h": 34,
+      "head": "Khi nào dùng — quản trị chuẩn loại thiết bị, phân "
+     },
+     {
+      "loc": "FeatureStatusGate.tsx:117",
+      "kind": "div",
+      "reason": "notice-style",
+      "y": 401,
+      "h": 66,
+      "head": "Chế độ xem trước: quản trị thiết bị đang tắt. Đọc "
+     },
+     {
+      "loc": "EquipmentStandards.tsx:353",
+      "kind": "div",
+      "reason": "notice-style",
+      "y": 483,
+      "h": 46,
+      "head": "Trang này chỉ ghi metadata quản trị (phiên bản loạ"
+     }
+    ]
+   },
+   "kpi": {
+    "source": "MetricCard",
+    "count": 5,
+    "stripHeight": 146,
+    "stripY": 545
+   },
+   "aiOcclusion": {
+    "overlapMainPx": 0,
+    "overlapMainPctOfMain": 0,
+    "overlapMainPctOfViewport": 0,
+    "items": [
+     {
+      "name": "ai-bubble",
+      "pos": "fixed",
+      "rect": {
+       "x": 1294,
+       "y": 696,
+       "w": 48,
+       "h": 48
+      },
+      "overlapMainPx": 0
+     }
+    ]
+   },
+   "pageHeightRatio": 2.47,
+   "scrollH": 1899,
+   "shell": {
+    "sidebarW": 264,
+    "topbarH": 56,
+    "mainTop": 109,
+    "mainW": 1102,
+    "mainPad": "24px"
+   },
+   "dialogsAtLoad": 0,
+   "spinnersAtMeasure": 2,
+   "actions": [
+    {
+     "id": "dang-ky-loai",
+     "label": "/Đăng ký loại/",
+     "found": true,
+     "enabled": true,
+     "dialogs": 1,
+     "kinds": [
+      "dialog-content"
+     ],
+     "rects": [
+      {
+       "role": "dialog",
+       "slot": "dialog-content",
+       "x": 427,
+       "y": 172,
+       "w": 512,
+       "h": 424
+      }
+     ],
+     "closedByEsc": true
+    }
+   ]
+  },
+  {
+   "screen": "equipment-integration",
+   "route": "/equipment-integration",
+   "vw": 1600,
+   "vh": 950,
+   "variant": "n/a",
+   "mainSource": "fe1-legacy",
+   "missingDataLayoutMain": true,
+   "mainSelector": "EquipmentIntegration tabs-content đang mở",
+   "mainFound": true,
+   "mainRects": [
+    {
+     "x": 312,
+     "y": 735,
+     "w": 1240,
+     "h": 520
+    }
+   ],
+   "mainTop": 735,
+   "mainPct": 17.5,
+   "mainPctFe1": 17.5,
+   "mainPctUnoccluded": 17.5,
+   "h1Top": 259,
+   "h1Text": "Tích hợp thiết bị",
+   "h1Count": 1,
+   "breadcrumbs": 2,
+   "breadcrumbLocs": [
+    "DashboardLayout.tsx:620",
+    "PageHeader.tsx:69"
+   ],
+   "bannersBeforeMain": {
+    "count": 4,
+    "px": 184,
+    "items": [
+     {
+      "loc": "BetaBadge.tsx:44",
+      "kind": "note",
+      "reason": "notice-style",
+      "y": 133,
+      "h": 38,
+      "head": "Đây là tính năng xem trước. Có thể cần thiết lập h"
+     },
+     {
+      "loc": "EquipmentIntegration.tsx:257",
+      "kind": "div",
+      "reason": "notice-style",
+      "y": 331,
+      "h": 34,
+      "head": "Khi nào dùng — xem khung tích hợp theo hãng (FOCAS"
+     },
+     {
+      "loc": "FeatureStatusGate.tsx:117",
+      "kind": "div",
+      "reason": "notice-style",
+      "y": 381,
+      "h": 46,
+      "head": "Chế độ xem trước: tích hợp thiết bị đang tắt. Đọc "
+     },
+     {
+      "loc": "EquipmentIntegration.tsx:276",
+      "kind": "div",
+      "reason": "notice-style",
+      "y": 443,
+      "h": 66,
+      "head": "FOCAS/Euromap là các framework tích hợp chỉ đọc — "
+     }
+    ]
+   },
+   "kpi": {
+    "source": "MetricCard",
+    "count": 4,
+    "stripHeight": 130,
+    "stripY": 525
+   },
+   "aiOcclusion": {
+    "overlapMainPx": 1152,
+    "overlapMainPctOfMain": 0.4,
+    "overlapMainPctOfViewport": 0.1,
+    "items": [
+     {
+      "name": "ai-bubble",
+      "pos": "fixed",
+      "rect": {
+       "x": 1528,
+       "y": 878,
+       "w": 48,
+       "h": 48
+      },
+      "overlapMainPx": 1152
+     }
+    ]
+   },
+   "pageHeightRatio": 1.37,
+   "scrollH": 1303,
+   "shell": {
+    "sidebarW": 264,
+    "topbarH": 56,
+    "mainTop": 109,
+    "mainW": 1336,
+    "mainPad": "24px"
+   },
+   "dialogsAtLoad": 0,
+   "spinnersAtMeasure": 2,
+   "actions": []
+  },
+  {
+   "screen": "equipment-integration",
+   "route": "/equipment-integration",
+   "vw": 1366,
+   "vh": 768,
+   "variant": "n/a",
+   "mainSource": "fe1-legacy",
+   "missingDataLayoutMain": true,
+   "mainSelector": "EquipmentIntegration tabs-content đang mở",
+   "mainFound": true,
+   "mainRects": [
+    {
+     "x": 312,
+     "y": 775,
+     "w": 1006,
+     "h": 562
+    }
+   ],
+   "mainTop": 775,
+   "mainPct": 0,
+   "mainPctFe1": 0,
+   "mainPctUnoccluded": 0,
+   "h1Top": 259,
+   "h1Text": "Tích hợp thiết bị",
+   "h1Count": 1,
+   "breadcrumbs": 2,
+   "breadcrumbLocs": [
+    "DashboardLayout.tsx:620",
+    "PageHeader.tsx:69"
+   ],
+   "bannersBeforeMain": {
+    "count": 4,
+    "px": 204,
+    "items": [
+     {
+      "loc": "BetaBadge.tsx:44",
+      "kind": "note",
+      "reason": "notice-style",
+      "y": 133,
+      "h": 38,
+      "head": "Đây là tính năng xem trước. Có thể cần thiết lập h"
+     },
+     {
+      "loc": "EquipmentIntegration.tsx:257",
+      "kind": "div",
+      "reason": "notice-style",
+      "y": 351,
+      "h": 34,
+      "head": "Khi nào dùng — xem khung tích hợp theo hãng (FOCAS"
+     },
+     {
+      "loc": "FeatureStatusGate.tsx:117",
+      "kind": "div",
+      "reason": "notice-style",
+      "y": 401,
+      "h": 66,
+      "head": "Chế độ xem trước: tích hợp thiết bị đang tắt. Đọc "
+     },
+     {
+      "loc": "EquipmentIntegration.tsx:276",
+      "kind": "div",
+      "reason": "notice-style",
+      "y": 483,
+      "h": 66,
+      "head": "FOCAS/Euromap là các framework tích hợp chỉ đọc — "
+     }
+    ]
+   },
+   "kpi": {
+    "source": "MetricCard",
+    "count": 4,
+    "stripHeight": 130,
+    "stripY": 565
+   },
+   "aiOcclusion": {
+    "overlapMainPx": 0,
+    "overlapMainPctOfMain": 0,
+    "overlapMainPctOfViewport": 0,
+    "items": [
+     {
+      "name": "ai-bubble",
+      "pos": "fixed",
+      "rect": {
+       "x": 1294,
+       "y": 696,
+       "w": 48,
+       "h": 48
+      },
+      "overlapMainPx": 0
+     }
+    ]
+   },
+   "pageHeightRatio": 1.8,
+   "scrollH": 1385,
+   "shell": {
+    "sidebarW": 264,
+    "topbarH": 56,
+    "mainTop": 109,
+    "mainW": 1102,
+    "mainPad": "24px"
+   },
+   "dialogsAtLoad": 0,
+   "spinnersAtMeasure": 2,
+   "actions": []
+  },
+  {
+   "screen": "engineering",
+   "route": "/engineering",
+   "vw": 1600,
+   "vh": 950,
+   "variant": "open",
+   "mainSource": "fe1-legacy",
+   "missingDataLayoutMain": true,
+   "mainSelector": "khung CodeMirror (vùng không data-loc, có input, cao ≥200)",
+   "mainFound": true,
+   "mainRects": [
+    {
+     "x": 634,
+     "y": 685,
+     "w": 663,
+     "h": 360
+    }
+   ],
+   "mainTop": 685,
+   "mainPct": 11.6,
+   "mainPctFe1": 11.6,
+   "mainPctUnoccluded": 9.5,
+   "h1Top": 205,
+   "h1Text": "Xưởng lập trình thiết bị",
+   "h1Count": 1,
+   "breadcrumbs": 2,
+   "breadcrumbLocs": [
+    "DashboardLayout.tsx:620",
+    "PageHeader.tsx:69"
+   ],
+   "bannersBeforeMain": {
+    "count": 2,
+    "px": 136,
+    "items": [
+     {
+      "loc": "EngineeringWorkspace.tsx:761",
+      "kind": "div",
+      "reason": "notice-style",
+      "y": 277,
+      "h": 70,
+      "head": "Khi nào dùng — pipeline IDE đầy đủ: build, mô phỏn"
+     },
+     {
+      "loc": "FeatureStatusGate.tsx:117",
+      "kind": "div",
+      "reason": "notice-style",
+      "y": 363,
+      "h": 66,
+      "head": "Triển khai thật đang tắt — mọi deploy chỉ mô phỏng"
+     }
+    ]
+   },
+   "kpi": {
+    "source": "MetricCard",
+    "count": 0,
+    "stripHeight": 0,
+    "stripY": null
+   },
+   "aiOcclusion": {
+    "overlapMainPx": 31005,
+    "overlapMainPctOfMain": 17.6,
+    "overlapMainPctOfViewport": 2,
+    "items": [
+     {
+      "name": "ai-bubble",
+      "pos": "fixed",
+      "rect": {
+       "x": 1528,
+       "y": 878,
+       "w": 48,
+       "h": 48
+      },
+      "overlapMainPx": 0
+     },
+     {
+      "name": "copilot-dock",
+      "pos": "fixed",
+      "rect": {
+       "x": 1180,
+       "y": 0,
+       "w": 420,
+       "h": 950
+      },
+      "overlapMainPx": 31005
+     }
+    ]
+   },
+   "pageHeightRatio": 3.09,
+   "scrollH": 2933,
+   "shell": {
+    "sidebarW": 264,
+    "topbarH": 56,
+    "mainTop": 109,
+    "mainW": 916,
+    "mainPad": "24px"
+   },
+   "dialogsAtLoad": 0,
+   "spinnersAtMeasure": 2,
+   "actions": [
+    {
+     "id": "so-tay",
+     "label": "/sổ tay/i",
+     "found": true,
+     "enabled": true,
+     "dialogs": 1,
+     "kinds": [
+      "popover-content"
+     ],
+     "rects": [
+      {
+       "role": "dialog",
+       "slot": "popover-content",
+       "x": 531,
+       "y": 680,
+       "w": 384,
+       "h": 117
+      }
+     ],
+     "closedByEsc": true
+    }
+   ]
+  },
+  {
+   "screen": "engineering",
+   "route": "/engineering",
+   "vw": 1366,
+   "vh": 768,
+   "variant": "open",
+   "mainSource": "fe1-legacy",
+   "missingDataLayoutMain": true,
+   "mainSelector": "khung CodeMirror (vùng không data-loc, có input, cao ≥200)",
+   "mainFound": true,
+   "mainRects": [
+    {
+     "x": 634,
+     "y": 741,
+     "w": 663,
+     "h": 360
+    }
+   ],
+   "mainTop": 741,
+   "mainPct": 1.7,
+   "mainPctFe1": 1.7,
+   "mainPctUnoccluded": 0.8,
+   "h1Top": 205,
+   "h1Text": "Xưởng lập trình thiết bị",
+   "h1Count": 1,
+   "breadcrumbs": 2,
+   "breadcrumbLocs": [
+    "DashboardLayout.tsx:620",
+    "PageHeader.tsx:69"
+   ],
+   "bannersBeforeMain": {
+    "count": 2,
+    "px": 136,
+    "items": [
+     {
+      "loc": "EngineeringWorkspace.tsx:761",
+      "kind": "div",
+      "reason": "notice-style",
+      "y": 333,
+      "h": 70,
+      "head": "Khi nào dùng — pipeline IDE đầy đủ: build, mô phỏn"
+     },
+     {
+      "loc": "FeatureStatusGate.tsx:117",
+      "kind": "div",
+      "reason": "notice-style",
+      "y": 419,
+      "h": 66,
+      "head": "Triển khai thật đang tắt — mọi deploy chỉ mô phỏng"
+     }
+    ]
+   },
+   "kpi": {
+    "source": "MetricCard",
+    "count": 0,
+    "stripHeight": 0,
+    "stripY": null
+   },
+   "aiOcclusion": {
+    "overlapMainPx": 9486,
+    "overlapMainPctOfMain": 53,
+    "overlapMainPctOfViewport": 0.9,
+    "items": [
+     {
+      "name": "ai-bubble",
+      "pos": "fixed",
+      "rect": {
+       "x": 1294,
+       "y": 696,
+       "w": 48,
+       "h": 48
+      },
+      "overlapMainPx": 9
+     },
+     {
+      "name": "copilot-dock",
+      "pos": "fixed",
+      "rect": {
+       "x": 946,
+       "y": 0,
+       "w": 420,
+       "h": 768
+      },
+      "overlapMainPx": 9477
+     }
+    ]
+   },
+   "pageHeightRatio": 3.89,
+   "scrollH": 2989,
+   "shell": {
+    "sidebarW": 264,
+    "topbarH": 56,
+    "mainTop": 109,
+    "mainW": 682,
+    "mainPad": "24px"
+   },
+   "dialogsAtLoad": 0,
+   "spinnersAtMeasure": 2,
+   "actions": [
+    {
+     "id": "so-tay",
+     "label": "/sổ tay/i",
+     "found": true,
+     "enabled": true,
+     "dialogs": 1,
+     "kinds": [
+      "popover-content"
+     ],
+     "rects": [
+      {
+       "role": "dialog",
+       "slot": "popover-content",
+       "x": 531,
+       "y": 571,
+       "w": 384,
+       "h": 117
+      }
+     ],
+     "closedByEsc": true
+    }
+   ]
+  },
+  {
+   "screen": "ir-editor",
+   "route": "/ir-editor",
+   "vw": 1600,
+   "vh": 950,
+   "variant": "open",
+   "mainSource": "fe1-legacy",
+   "missingDataLayoutMain": true,
+   "mainSelector": "card 'Vùng vẽ luồng'",
+   "mainFound": true,
+   "mainRects": [
+    {
+     "x": 521,
+     "y": 904,
+     "w": 332,
+     "h": 910
+    }
+   ],
+   "mainTop": 904,
+   "mainPct": 1,
+   "mainPctFe1": 1,
+   "mainPctUnoccluded": 1,
+   "h1Top": 259,
+   "h1Text": "Trình soạn IR trực quan",
+   "h1Count": 1,
+   "breadcrumbs": 2,
+   "breadcrumbLocs": [
+    "DashboardLayout.tsx:620",
+    "PageHeader.tsx:69"
+   ],
+   "bannersBeforeMain": {
+    "count": 4,
+    "px": 240,
+    "items": [
+     {
+      "loc": "BetaBadge.tsx:44",
+      "kind": "note",
+      "reason": "notice-style",
+      "y": 133,
+      "h": 38,
+      "head": "Đây là tính năng xem trước. Có thể cần thiết lập h"
+     },
+     {
+      "loc": "IrEditor.tsx:1236",
+      "kind": "div",
+      "reason": "notice-style",
+      "y": 351,
+      "h": 70,
+      "head": "Khi nào dùng — khối motion & I/O cấp thấp (IR). Cầ"
+     },
+     {
+      "loc": "IrEditor.tsx:1250",
+      "kind": "div",
+      "reason": "notice-style",
+      "y": 437,
+      "h": 66,
+      "head": "Chế độ xem trước: lập trình IR đang tắt (DPC_IR_V2"
+     },
+     {
+      "loc": "IrEditor.tsx:1257",
+      "kind": "div",
+      "reason": "notice-style",
+      "y": 519,
+      "h": 66,
+      "head": "Chỉ xem trước cấu trúc + lint + transpile — mô phỏ"
+     }
+    ]
+   },
+   "kpi": {
+    "source": "MetricCard",
+    "count": 4,
+    "stripHeight": 130,
+    "stripY": 2108
+   },
+   "aiOcclusion": {
+    "overlapMainPx": 0,
+    "overlapMainPctOfMain": 0,
+    "overlapMainPctOfViewport": 0,
+    "items": [
+     {
+      "name": "ai-bubble",
+      "pos": "fixed",
+      "rect": {
+       "x": 1528,
+       "y": 878,
+       "w": 48,
+       "h": 48
+      },
+      "overlapMainPx": 0
+     },
+     {
+      "name": "copilot-dock",
+      "pos": "fixed",
+      "rect": {
+       "x": 1180,
+       "y": 0,
+       "w": 420,
+       "h": 950
+      },
+      "overlapMainPx": 0
+     }
+    ]
+   },
+   "pageHeightRatio": 3.02,
+   "scrollH": 2872,
+   "shell": {
+    "sidebarW": 264,
+    "topbarH": 56,
+    "mainTop": 109,
+    "mainW": 916,
+    "mainPad": "24px"
+   },
+   "dialogsAtLoad": 0,
+   "spinnersAtMeasure": 2,
+   "actions": [
+    {
+     "id": "project-ir-flow-moi",
+     "label": "/Project ir-flow mới/",
+     "found": true,
+     "enabled": true,
+     "dialogs": 1,
+     "kinds": [
+      "dialog-content"
+     ],
+     "rects": [
+      {
+       "role": "dialog",
+       "slot": "dialog-content",
+       "x": 544,
+       "y": 342,
+       "w": 512,
+       "h": 266
+      }
+     ],
+     "closedByEsc": true
+    }
+   ]
+  },
+  {
+   "screen": "ir-editor",
+   "route": "/ir-editor",
+   "vw": 1366,
+   "vh": 768,
+   "variant": "open",
+   "mainSource": "fe1-legacy",
+   "missingDataLayoutMain": true,
+   "mainSelector": "card 'Vùng vẽ luồng'",
+   "mainFound": true,
+   "mainRects": [
+    {
+     "x": 463,
+     "y": 997,
+     "w": 235,
+     "h": 1018
+    }
+   ],
+   "mainTop": 997,
+   "mainPct": 0,
+   "mainPctFe1": 0,
+   "mainPctUnoccluded": 0,
+   "h1Top": 279,
+   "h1Text": "Trình soạn IR trực quan",
+   "h1Count": 1,
+   "breadcrumbs": 2,
+   "breadcrumbLocs": [
+    "DashboardLayout.tsx:620",
+    "PageHeader.tsx:69"
+   ],
+   "bannersBeforeMain": {
+    "count": 4,
+    "px": 300,
+    "items": [
+     {
+      "loc": "BetaBadge.tsx:44",
+      "kind": "note",
+      "reason": "notice-style",
+      "y": 133,
+      "h": 58,
+      "head": "Đây là tính năng xem trước. Có thể cần thiết lập h"
+     },
+     {
+      "loc": "IrEditor.tsx:1236",
+      "kind": "div",
+      "reason": "notice-style",
+      "y": 371,
+      "h": 70,
+      "head": "Khi nào dùng — khối motion & I/O cấp thấp (IR). Cầ"
+     },
+     {
+      "loc": "IrEditor.tsx:1250",
+      "kind": "div",
+      "reason": "notice-style",
+      "y": 457,
+      "h": 86,
+      "head": "Chế độ xem trước: lập trình IR đang tắt (DPC_IR_V2"
+     },
+     {
+      "loc": "IrEditor.tsx:1257",
+      "kind": "div",
+      "reason": "notice-style",
+      "y": 559,
+      "h": 86,
+      "head": "Chỉ xem trước cấu trúc + lint + transpile — mô phỏ"
+     }
+    ]
+   },
+   "kpi": {
+    "source": "MetricCard",
+    "count": 4,
+    "stripHeight": 130,
+    "stripY": 2309
+   },
+   "aiOcclusion": {
+    "overlapMainPx": 0,
+    "overlapMainPctOfMain": 0,
+    "overlapMainPctOfViewport": 0,
+    "items": [
+     {
+      "name": "ai-bubble",
+      "pos": "fixed",
+      "rect": {
+       "x": 1294,
+       "y": 696,
+       "w": 48,
+       "h": 48
+      },
+      "overlapMainPx": 0
+     },
+     {
+      "name": "copilot-dock",
+      "pos": "fixed",
+      "rect": {
+       "x": 946,
+       "y": 0,
+       "w": 420,
+       "h": 768
+      },
+      "overlapMainPx": 0
+     }
+    ]
+   },
+   "pageHeightRatio": 4,
+   "scrollH": 3073,
+   "shell": {
+    "sidebarW": 264,
+    "topbarH": 56,
+    "mainTop": 109,
+    "mainW": 682,
+    "mainPad": "24px"
+   },
+   "dialogsAtLoad": 0,
+   "spinnersAtMeasure": 2,
+   "actions": [
+    {
+     "id": "project-ir-flow-moi",
+     "label": "/Project ir-flow mới/",
+     "found": true,
+     "enabled": true,
+     "dialogs": 1,
+     "kinds": [
+      "dialog-content"
+     ],
+     "rects": [
+      {
+       "role": "dialog",
+       "slot": "dialog-content",
+       "x": 427,
+       "y": 251,
+       "w": 512,
+       "h": 266
+      }
+     ],
+     "closedByEsc": true
+    }
+   ]
+  },
+  {
+   "screen": "pou-studio",
+   "route": "/pou-studio",
+   "vw": 1600,
+   "vh": 950,
+   "variant": "open",
+   "mainSource": "fe1-legacy",
+   "missingDataLayoutMain": true,
+   "mainSelector": "card 'Trình soạn POU'",
+   "mainFound": true,
+   "mainRects": [
+    {
+     "x": 312,
+     "y": 689,
+     "w": 402,
+     "h": 744
+    }
+   ],
+   "mainTop": 689,
+   "mainPct": 6.9,
+   "mainPctFe1": 6.9,
+   "mainPctUnoccluded": 6.9,
+   "h1Top": 259,
+   "h1Text": "IEC 61131 POU Studio",
+   "h1Count": 1,
+   "breadcrumbs": 2,
+   "breadcrumbLocs": [
+    "DashboardLayout.tsx:620",
+    "PageHeader.tsx:69"
+   ],
+   "bannersBeforeMain": {
+    "count": 3,
+    "px": 178,
+    "items": [
+     {
+      "loc": "BetaBadge.tsx:44",
+      "kind": "note",
+      "reason": "notice-style",
+      "y": 133,
+      "h": 38,
+      "head": "Đây là tính năng xem trước. Có thể cần thiết lập h"
+     },
+     {
+      "loc": "PouStudio.tsx:362",
+      "kind": "div",
+      "reason": "notice-style",
+      "y": 371,
+      "h": 54,
+      "head": "Khi nào dùng — POU IEC 61131 LAD/FBD/SFC. Cần moti"
+     },
+     {
+      "loc": "PouStudio.tsx:375",
+      "kind": "div",
+      "reason": "notice-style",
+      "y": 441,
+      "h": 86,
+      "head": "Chỉ mô hình + lint + round-trip PLCopen XML + chuy"
+     }
+    ]
+   },
+   "kpi": {
+    "source": "MetricCard",
+    "count": 4,
+    "stripHeight": 130,
+    "stripY": 543
+   },
+   "aiOcclusion": {
+    "overlapMainPx": 0,
+    "overlapMainPctOfMain": 0,
+    "overlapMainPctOfViewport": 0,
+    "items": [
+     {
+      "name": "ai-bubble",
+      "pos": "fixed",
+      "rect": {
+       "x": 1528,
+       "y": 878,
+       "w": 48,
+       "h": 48
+      },
+      "overlapMainPx": 0
+     },
+     {
+      "name": "copilot-dock",
+      "pos": "fixed",
+      "rect": {
+       "x": 1180,
+       "y": 0,
+       "w": 420,
+       "h": 950
+      },
+      "overlapMainPx": 0
+     }
+    ]
+   },
+   "pageHeightRatio": 1.56,
+   "scrollH": 1481,
+   "shell": {
+    "sidebarW": 264,
+    "topbarH": 56,
+    "mainTop": 109,
+    "mainW": 916,
+    "mainPad": "24px"
+   },
+   "dialogsAtLoad": 0,
+   "spinnersAtMeasure": 2,
+   "actions": [
+    {
+     "id": "luu-vao-project",
+     "label": "/Lưu vào project/",
+     "found": true,
+     "enabled": true,
+     "dialogs": 1,
+     "kinds": [
+      "dialog-content"
+     ],
+     "rects": [
+      {
+       "role": "dialog",
+       "slot": "dialog-content",
+       "x": 544,
+       "y": 299,
+       "w": 512,
+       "h": 353
+      }
+     ],
+     "closedByEsc": true
+    }
+   ]
+  },
+  {
+   "screen": "pou-studio",
+   "route": "/pou-studio",
+   "vw": 1366,
+   "vh": 768,
+   "variant": "open",
+   "mainSource": "fe1-legacy",
+   "missingDataLayoutMain": true,
+   "mainSelector": "card 'Trình soạn POU'",
+   "mainFound": true,
+   "mainRects": [
+    {
+     "x": 312,
+     "y": 817,
+     "w": 285,
+     "h": 788
+    }
+   ],
+   "mainTop": 817,
+   "mainPct": 0,
+   "mainPctFe1": 0,
+   "mainPctUnoccluded": 0,
+   "h1Top": 279,
+   "h1Text": "IEC 61131 POU Studio",
+   "h1Count": 1,
+   "breadcrumbs": 2,
+   "breadcrumbLocs": [
+    "DashboardLayout.tsx:620",
+    "PageHeader.tsx:69"
+   ],
+   "bannersBeforeMain": {
+    "count": 3,
+    "px": 254,
+    "items": [
+     {
+      "loc": "BetaBadge.tsx:44",
+      "kind": "note",
+      "reason": "notice-style",
+      "y": 133,
+      "h": 58,
+      "head": "Đây là tính năng xem trước. Có thể cần thiết lập h"
+     },
+     {
+      "loc": "PouStudio.tsx:362",
+      "kind": "div",
+      "reason": "notice-style",
+      "y": 443,
+      "h": 70,
+      "head": "Khi nào dùng — POU IEC 61131 LAD/FBD/SFC. Cần moti"
+     },
+     {
+      "loc": "PouStudio.tsx:375",
+      "kind": "div",
+      "reason": "notice-style",
+      "y": 529,
+      "h": 126,
+      "head": "Chỉ mô hình + lint + round-trip PLCopen XML + chuy"
+     }
+    ]
+   },
+   "kpi": {
+    "source": "MetricCard",
+    "count": 4,
+    "stripHeight": 130,
+    "stripY": 671
+   },
+   "aiOcclusion": {
+    "overlapMainPx": 0,
+    "overlapMainPctOfMain": 0,
+    "overlapMainPctOfViewport": 0,
+    "items": [
+     {
+      "name": "ai-bubble",
+      "pos": "fixed",
+      "rect": {
+       "x": 1294,
+       "y": 696,
+       "w": 48,
+       "h": 48
+      },
+      "overlapMainPx": 0
+     },
+     {
+      "name": "copilot-dock",
+      "pos": "fixed",
+      "rect": {
+       "x": 946,
+       "y": 0,
+       "w": 420,
+       "h": 768
+      },
+      "overlapMainPx": 0
+     }
+    ]
+   },
+   "pageHeightRatio": 2.15,
+   "scrollH": 1653,
+   "shell": {
+    "sidebarW": 264,
+    "topbarH": 56,
+    "mainTop": 109,
+    "mainW": 682,
+    "mainPad": "24px"
+   },
+   "dialogsAtLoad": 0,
+   "spinnersAtMeasure": 2,
+   "actions": [
+    {
+     "id": "luu-vao-project",
+     "label": "/Lưu vào project/",
+     "found": true,
+     "enabled": true,
+     "dialogs": 1,
+     "kinds": [
+      "dialog-content"
+     ],
+     "rects": [
+      {
+       "role": "dialog",
+       "slot": "dialog-content",
+       "x": 427,
+       "y": 208,
+       "w": 512,
+       "h": 353
+      }
+     ],
+     "closedByEsc": true
+    }
+   ]
+  }
+ ]
+}
