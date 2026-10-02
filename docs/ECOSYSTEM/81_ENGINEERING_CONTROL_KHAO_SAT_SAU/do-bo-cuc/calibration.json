@@ -59,18 +59,18 @@
      "x": 289,
      "y": 125,
      "w": 1286,
-     "h": 581
+     "h": 775
     }
    ],
-   "areaPx": 747166,
+   "areaPx": 996650,
    "attrSel": "div[data-layout-main=\"interlock-rules\"]@WorkbenchShell.tsx",
-   "gitHead": "29fa77e5d",
-   "at": "2026-10-02T22:33:48.427Z",
+   "gitHead": "3d7a95ae8",
+   "at": "2026-10-02T23:31:00.948Z",
    "previous": {
-    "mainTop": 266,
-    "areaPx": 1352400,
-    "attrSel": "div[data-layout-main=\"interlock-rules\"]@InterlockRuleManagement.tsx",
-    "gitHead": "ee72a7ef5"
+    "mainTop": 125,
+    "areaPx": 747166,
+    "attrSel": "div[data-layout-main=\"interlock-rules\"]@WorkbenchShell.tsx",
+    "gitHead": "29fa77e5d"
    }
   },
   "interlock-rules|1366|n/a": {
@@ -83,18 +83,18 @@
      "x": 289,
      "y": 125,
      "w": 1052,
-     "h": 433
+     "h": 593
     }
    ],
-   "areaPx": 455516,
+   "areaPx": 623836,
    "attrSel": "div[data-layout-main=\"interlock-rules\"]@WorkbenchShell.tsx",
-   "gitHead": "29fa77e5d",
-   "at": "2026-10-02T22:33:48.427Z",
+   "gitHead": "3d7a95ae8",
+   "at": "2026-10-02T23:31:00.948Z",
    "previous": {
-    "mainTop": 266,
-    "areaPx": 1106700,
-    "attrSel": "div[data-layout-main=\"interlock-rules\"]@InterlockRuleManagement.tsx",
-    "gitHead": "ee72a7ef5"
+    "mainTop": 125,
+    "areaPx": 455516,
+    "attrSel": "div[data-layout-main=\"interlock-rules\"]@WorkbenchShell.tsx",
+    "gitHead": "29fa77e5d"
    }
   }
  }
