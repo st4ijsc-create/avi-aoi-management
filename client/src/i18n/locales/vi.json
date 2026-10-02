@@ -21326,5 +21326,124 @@
       "unconfirmed": "chưa xác nhận — có thể đã tới thiết bị",
       "rejected": "không gửi"
     }
+  },
+  "layoutKit": {
+    "notice": {
+      "kind": {
+        "hint": "Gợi ý",
+        "flagOff": "Đang tắt",
+        "honesty": "Lưu ý số liệu",
+        "simGate": "Chỉ mô phỏng",
+        "beta": "Beta",
+        "whenToUse": "Khi nào dùng",
+        "loading": "Đang kiểm tra",
+        "error": "Không kiểm được"
+      },
+      "more": "+{{count}}",
+      "moreLabel": "Xem thêm {{count}} ghi chú",
+      "stackLabel": "Ghi chú của trang",
+      "flagLoading": "Đang kiểm tra trạng thái tính năng…"
+    },
+    "chip": {
+      "stripLabel": "Chỉ số",
+      "loading": "Đang tải",
+      "error": "Lỗi",
+      "errorHint": "Không đọc được nguồn — không hiển thị số.",
+      "degradedHint": "Nguồn chỉ đọc được một phần — số có thể thiếu.",
+      "source": "Nguồn: {{source}}"
+    },
+    "flyout": {
+      "close": "Đóng",
+      "unsavedTitle": "Bỏ thay đổi chưa lưu?",
+      "unsavedDesc": "Biểu mẫu này còn dữ liệu chưa lưu. Đóng lại sẽ mất các thay đổi đó.",
+      "keepEditing": "Tiếp tục sửa",
+      "discard": "Bỏ thay đổi"
+    },
+    "wizard": {
+      "back": "Quay lại",
+      "next": "Tiếp",
+      "finish": "Hoàn tất",
+      "stepOf": "Bước {{current}}/{{total}}",
+      "stepsLabel": "Các bước",
+      "status": {
+        "complete": "đã xong",
+        "current": "đang làm",
+        "upcoming": "chưa tới",
+        "error": "có lỗi"
+      }
+    },
+    "versions": {
+      "title": "Lịch sử phiên bản",
+      "loading": "Đang tải phiên bản…",
+      "error": "Không tải được lịch sử phiên bản.",
+      "empty": "Chưa có phiên bản nào.",
+      "colVersion": "Phiên bản",
+      "colCreated": "Thời điểm",
+      "colAuthor": "Người tạo",
+      "colNote": "Ghi chú",
+      "colBase": "Gốc",
+      "colCompare": "So với",
+      "colActions": "Thao tác",
+      "current": "đang dùng",
+      "pickBase": "Chọn {{version}} làm bản gốc",
+      "pickCompare": "So sánh với {{version}}",
+      "pickTwo": "Chọn 2 phiên bản để xem khác biệt.",
+      "sameVersion": "Đang chọn cùng một phiên bản ở cả hai cột."
+    },
+    "diff": {
+      "label": "Khác biệt giữa {{base}} và {{compare}}"
+    },
+    "rollback": {
+      "action": "Khôi phục",
+      "title": "Khôi phục về {{version}}?",
+      "impactOtp": "Cần lý do và một mã OTP mới cho lượt này; lý do được ghi vào nhật ký kiểm toán.",
+      "impactNoOtp": "Cần lý do; lý do được ghi vào nhật ký kiểm toán."
+    },
+    "approval": {
+      "label": "Hàng đợi duyệt",
+      "empty": "Không có mục nào chờ quyết định.",
+      "loading": "Đang tải hàng đợi…",
+      "error": "Không tải được hàng đợi duyệt.",
+      "colItem": "Mục",
+      "colAuthor": "Người tạo",
+      "colStatus": "Trạng thái",
+      "colActions": "Quyết định",
+      "sodAuthor": "Bạn là người tạo mục này — cần một người khác quyết định (maker-checker).",
+      "sodReviewer": "Bạn đã xem xét mục này — người phê duyệt phải là người khác.",
+      "userUnknown": "Chưa xác định được người dùng hiện tại — chưa thể quyết định.",
+      "reasonLabel": "Lý do (bắt buộc)",
+      "commentLabel": "Ý kiến (không bắt buộc)",
+      "reasonRequired": "Bắt buộc nhập lý do.",
+      "reasonTooShort": "Lý do cần tối thiểu {{min}} ký tự.",
+      "cancel": "Huỷ"
+    },
+    "shell": {
+      "activityBar": "Thanh hoạt động",
+      "explorer": "Trình duyệt dự án",
+      "inspector": "Thuộc tính",
+      "bottomPanel": "Panel dưới",
+      "toggleBottom": "Ẩn/hiện panel dưới",
+      "editor": "Soạn thảo",
+      "editorTabs": "Tab soạn thảo",
+      "closeTab": "Đóng tab {{label}}",
+      "unsavedTab": "chưa lưu",
+      "statusBar": "Thanh trạng thái",
+      "narrowLabel": "Vùng làm việc",
+      "resizeLeft": "Đổi độ rộng panel trái",
+      "resizeRight": "Đổi độ rộng panel phải",
+      "resizeBottom": "Đổi chiều cao panel dưới"
+    },
+    "split": {
+      "list": "Danh sách",
+      "detail": "Chi tiết",
+      "back": "Quay lại danh sách",
+      "resize": "Đổi độ rộng danh sách"
+    },
+    "cockpit": {
+      "side": "Panel phụ"
+    },
+    "detail": {
+      "tabs": "Các mục chi tiết"
+    }
   }
 }

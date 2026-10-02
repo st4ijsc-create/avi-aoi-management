@@ -21352,5 +21352,124 @@
       "unconfirmed": "unconfirmed — may have reached the device",
       "rejected": "not sent"
     }
+  },
+  "layoutKit": {
+    "notice": {
+      "kind": {
+        "hint": "Hint",
+        "flagOff": "Turned off",
+        "honesty": "Data note",
+        "simGate": "Simulation only",
+        "beta": "Beta",
+        "whenToUse": "When to use",
+        "loading": "Checking",
+        "error": "Status unknown"
+      },
+      "more": "+{{count}}",
+      "moreLabel": "Show {{count}} more notes",
+      "stackLabel": "Page notes",
+      "flagLoading": "Checking feature status…"
+    },
+    "chip": {
+      "stripLabel": "Indicators",
+      "loading": "Loading",
+      "error": "Error",
+      "errorHint": "The source could not be read — no number is shown.",
+      "degradedHint": "The source is only partly readable — the number may be incomplete.",
+      "source": "Source: {{source}}"
+    },
+    "flyout": {
+      "close": "Close",
+      "unsavedTitle": "Discard unsaved changes?",
+      "unsavedDesc": "This form has unsaved data. Closing it will lose those changes.",
+      "keepEditing": "Keep editing",
+      "discard": "Discard changes"
+    },
+    "wizard": {
+      "back": "Back",
+      "next": "Next",
+      "finish": "Finish",
+      "stepOf": "Step {{current}} of {{total}}",
+      "stepsLabel": "Steps",
+      "status": {
+        "complete": "done",
+        "current": "current",
+        "upcoming": "upcoming",
+        "error": "has errors"
+      }
+    },
+    "versions": {
+      "title": "Version history",
+      "loading": "Loading versions…",
+      "error": "Could not load the version history.",
+      "empty": "No versions yet.",
+      "colVersion": "Version",
+      "colCreated": "Created",
+      "colAuthor": "Author",
+      "colNote": "Note",
+      "colBase": "Base",
+      "colCompare": "Compare",
+      "colActions": "Actions",
+      "current": "current",
+      "pickBase": "Use {{version}} as the base",
+      "pickCompare": "Compare with {{version}}",
+      "pickTwo": "Pick two versions to see the differences.",
+      "sameVersion": "The same version is selected in both columns."
+    },
+    "diff": {
+      "label": "Differences between {{base}} and {{compare}}"
+    },
+    "rollback": {
+      "action": "Roll back",
+      "title": "Roll back to {{version}}?",
+      "impactOtp": "Requires a reason and a fresh OTP code for this action; the reason is recorded in the audit log.",
+      "impactNoOtp": "Requires a reason; the reason is recorded in the audit log."
+    },
+    "approval": {
+      "label": "Approval queue",
+      "empty": "Nothing is waiting for a decision.",
+      "loading": "Loading the queue…",
+      "error": "Could not load the approval queue.",
+      "colItem": "Item",
+      "colAuthor": "Author",
+      "colStatus": "Status",
+      "colActions": "Decision",
+      "sodAuthor": "You created this item — someone else must decide (maker-checker).",
+      "sodReviewer": "You reviewed this item — the approver must be someone else.",
+      "userUnknown": "The current user is not known yet — decisions are disabled.",
+      "reasonLabel": "Reason (required)",
+      "commentLabel": "Comment (optional)",
+      "reasonRequired": "A reason is required.",
+      "reasonTooShort": "The reason needs at least {{min}} characters.",
+      "cancel": "Cancel"
+    },
+    "shell": {
+      "activityBar": "Activity bar",
+      "explorer": "Explorer",
+      "inspector": "Inspector",
+      "bottomPanel": "Bottom panel",
+      "toggleBottom": "Toggle the bottom panel",
+      "editor": "Editor",
+      "editorTabs": "Editor tabs",
+      "closeTab": "Close tab {{label}}",
+      "unsavedTab": "unsaved",
+      "statusBar": "Status bar",
+      "narrowLabel": "Workspace areas",
+      "resizeLeft": "Resize the left panel",
+      "resizeRight": "Resize the right panel",
+      "resizeBottom": "Resize the bottom panel"
+    },
+    "split": {
+      "list": "List",
+      "detail": "Details",
+      "back": "Back to the list",
+      "resize": "Resize the list"
+    },
+    "cockpit": {
+      "side": "Side panel"
+    },
+    "detail": {
+      "tabs": "Detail sections"
+    }
   }
 }
