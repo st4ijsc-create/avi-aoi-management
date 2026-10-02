@@ -1,30 +1,34 @@
 #!/usr/bin/env node
 /**
  * scripts/ui-metrics/engineeringLayout.mjs — THIẾT BỊ ĐO BỐ CỤC 14 màn "Kỹ thuật & Điều khiển"
- * (doc 81 Đợt 2 Task 1). Mọi task chuyển trang của Đợt 2 được nghiệm thu bằng số của script này.
+ * (doc 81 Đợt 2 Task 1). Mọi task chuyển trang của Đợt 2 được nghiệm thu bằng số của script này,
+ * nên mọi chỉ số phải KHÔNG LÁCH ĐƯỢC bằng chính mã nó chấm (ruling R-2-e):
  *
- * Đo cái gì (mỗi màn × mỗi kích thước × mỗi biến thể Copilot):
- *   · mainPct           — % khung đầu (vw×vh) mà vùng MAIN chiếm (phần nhìn thấy, cắt dưới top bar sticky)
- *   · mainSource        — "data-layout-main" (attribute chính thức) hoặc "fe1-legacy" (selector đo của FE1)
- *   · h1Top             — khoảng từ đỉnh viewport tới mép trên h1 đầu tiên nhìn thấy (px, scrollY=0)
- *   · breadcrumbs       — số breadcrumb nhìn thấy (shell + trang)
- *   · bannersBeforeMain — số/px banner (notice) nằm phía trên MAIN (định nghĩa notice của FE1)
- *   · kpi               — số thẻ KPI và chiều cao dải KPI (hộp bao các thẻ)
- *   · dialogs           — số role=dialog đang render lúc nạp + sau khi mở TỪNG hành động khai báo
- *   · aiOcclusion       — diện tích MAIN bị dock Copilot / bong bóng AI đè (px² và %)
- *   · pageHeightRatio   — chiều cao trang / chiều cao viewport
+ *   · MAIN            — `[data-layout-main]` trong `<main>`, KHÔNG được chứa h1 / page header / banner /
+ *                       KPI (vi phạm = LỖI của trang). Trước khi có attribute: selector FE1 + cảnh báo.
+ *                       Diện tích = HỢP các hình chữ nhật (không cộng trùng).
+ *   · chromeAboveMain — = mainTop (px từ đỉnh trang). Không phụ thuộc lớp CSS, không lách được.
+ *   · bannersBeforeMain — HÌNH HỌC: mọi khối nhìn thấy nằm giữa đáy h1 và đỉnh MAIN (không thuộc
+ *                       page header), số + chiều cao hợp. Bộ phân loại lớp CSS của FE1 chỉ còn là NHÃN.
+ *   · kpi             — LUÔN đếm cả MetricCard cũ lẫn `[data-layout-kpi]`.
+ *   · coverMain       — hit-test lưới 8 px trên MAIN: điểm nào phần tử trên cùng KHÔNG thuộc MAIN là
+ *                       bị che, bất kể tệp nguồn; quy về phần tử fixed/absolute/sticky ngoài cùng.
+ *   · actions         — hành động khai báo không tìm thấy = LỖI (không phải 0); dialog phân theo LOẠI.
+ *   · pageHeightRatio — tính cả phần cuộn của container cuộn tổ tiên của MAIN.
+ *   · drift           — băm nội dung các bảng 14 màn đọc, TRƯỚC và SAU mỗi lần chạy; trôi ⇒ pass=false.
+ *   · selfTest        — đối chứng DƯƠNG trong mỗi lần chạy: chèn banner lồng sâu, lớp phủ fixed, KPI,
+ *                       attribute vi phạm, hành động ma ⇒ thiết bị PHẢI bắt được cả năm.
  *
  * Instance: KHÔNG dùng :3000 (chạy dist cũ). `--spawn` tự dựng server TỪ MÃ NGUỒN (tsx) ở :3016
- * + Vite dev (in-process) ở :5176, DB `aoi_management_test`, KHÔNG nạp .env (DOTENV_CONFIG_PATH trỏ
- * tệp không tồn tại), mọi tích hợp ra ngoài tắt bằng env của tiến trình con; tạo user đo tạm
- * (role engineer, quyền mẫu DEFAULT_ROLE_PERMISSIONS.engineer, gán SIM-FAC như engineer1) rồi
- * xoá; tắt hết và chứng minh cổng đã trả. Xem README.md cùng thư mục.
+ * + Vite dev (in-process) ở :5176, DB `aoi_management_test`. Server KHÔNG nạp .env (DOTENV_CONFIG_PATH
+ * trỏ tệp không tồn tại); hồ sơ cờ `dev` (mặc định, ruling R-2-d) BẬT cờ giao diện như dev, TẮT mọi
+ * actuation/ra ngoài; kết nối mạng của server được lấy mẫu và kiểm (chỉ Postgres). Xem README.md.
  *
  * Dùng:
- *   node scripts/ui-metrics/engineeringLayout.mjs --spawn --out <file.json> [--shots] [--screens a,b] [--sizes 1600x950,1366x768]
- *   node scripts/ui-metrics/engineeringLayout.mjs --base http://127.0.0.1:5176 --user U --password P --out f.json
+ *   node scripts/ui-metrics/engineeringLayout.mjs --spawn --out <file.json> [--flags dev|off] [--shots] [--screens a,b] [--sizes 1600x950,1366x768]
  *   node scripts/ui-metrics/engineeringLayout.mjs --compare a.json b.json [--threshold 2]
  *   node scripts/ui-metrics/engineeringLayout.mjs --fe1 run.json [--threshold 5]
+ *   node scripts/ui-metrics/engineeringLayout.mjs --spawn --discover-tables --out tables.json
  *   node scripts/ui-metrics/engineeringLayout.mjs --spawn --list-buttons --out buttons.json
  */
 import { spawn, execFileSync } from "node:child_process";
@@ -120,15 +124,82 @@ export const FE1 = {
   "equipment-integration": { mainTop: 673, ws1600: 22.6, ws1366: 7.1, notices: 3, noticePx: 138, ratio1600: 1.31, ratio1366: 1.70, crumbs: 2, kpi: 4 },
 };
 
+
+// ───────────────────────────────────────────────────────────────────────────────────────────
+// 1b. Bảng dữ liệu mỗi màn đọc (canh trôi dữ liệu) + thủ tục tRPC đã biết
+// ───────────────────────────────────────────────────────────────────────────────────────────
+/**
+ * `PAGE_TABLES` — bảng mà 14 màn (kể cả vỏ: top bar, andon, hộp AI…) ĐỌC khi nạp, rút bằng
+ * `--discover-tables` (delta `pg_stat_user_tables.seq_scan+idx_scan` quanh từng lần nạp màn, chạy 2
+ * lần, lấy GIAO để bỏ nhiễu của phiên khác). Mỗi bảng được băm NỘI DUNG (md5 từng hàng, sắp theo md5)
+ * trước và sau mỗi lần đo. `cols` giới hạn cột khi chính instance đo ghi vào cột khác của bảng
+ * (vd `users.lastSignedIn` khi đăng nhập). Xem `SELF_WRITTEN` cho bảng loại trừ có lý do.
+ */
+export const PAGE_TABLES = {
+  "engineering-home": ["ai_insights","ai_pending_actions","andon_events","changeover_requests","daily_statistics","engineering_changes","equipment_3d_models","factories","interlock_events","interlock_rules","machine_recipes","machine_status_logs","machines","oee_metrics","orchestration_runs","permissions","product_inspections","product_machine_mappings","production_lines","robot_telemetry","robots","safety_events","sites","stations","tasks","user_corporate_assignments","user_factory_assignments","users","vram_leases","workshops","zone_reservations","zones"],
+  "engineering-studio": ["ai_insights","ai_pending_actions","andon_events","equipment_3d_models","factories","machines","permissions","product_inspections","production_lines","robot_telemetry","robots","sites","stations","tasks","user_corporate_assignments","user_factory_assignments","users","workshops","zones"],
+  "engineering": ["ai_insights","ai_pending_actions","andon_events","daily_statistics","equipment_3d_models","factories","machine_status_logs","machines","oee_metrics","permissions","predictive_alerts","product_inspections","product_machine_mappings","production_lines","program_artifacts","program_deployments","program_projects","program_symbols","robot_jobs","robot_telemetry","robots","sites","stations","tasks","user_corporate_assignments","user_factory_assignments","users","vram_leases","workshops","zones"],
+  "engineering-changes": ["ai_insights","ai_pending_actions","andon_events","engineering_changes","equipment_3d_models","factories","machines","permissions","product_inspections","product_models","production_lines","robot_telemetry","robots","sites","stations","tasks","user_factory_assignments","users","workshops","zones"],
+  "recipes": ["ai_insights","ai_pending_actions","andon_events","daily_statistics","equipment_3d_models","factories","machine_recipes","machine_status_logs","machines","oee_metrics","permissions","predictive_alerts","product_inspections","product_machine_mappings","production_lines","recipe_deployments","robot_telemetry","robots","sites","stations","tasks","user_corporate_assignments","user_factory_assignments","users","vram_leases","workshops","zones"],
+  "interlock-rules": ["ai_insights","ai_pending_actions","andon_events","daily_statistics","equipment_3d_models","factories","interlock_events","interlock_rules","machine_status_logs","machines","oee_metrics","permissions","predictive_alerts","product_inspections","product_machine_mappings","production_lines","robot_telemetry","robots","sites","stations","tasks","user_corporate_assignments","user_factory_assignments","users","vram_leases","workshops","zones"],
+  "orchestration-studio": ["ai_insights","ai_pending_actions","andon_events","equipment_3d_models","factories","machines","orchestration_runs","orchestration_workflows","permissions","product_inspections","production_lines","robot_telemetry","robots","sites","stations","tasks","user_corporate_assignments","user_factory_assignments","users","workshops","zones"],
+  "ir-editor": ["ai_insights","ai_pending_actions","andon_events","daily_statistics","equipment_3d_models","factories","machine_status_logs","machines","oee_metrics","permissions","predictive_alerts","product_inspections","product_machine_mappings","production_lines","program_artifacts","program_projects","robot_telemetry","robots","sites","stations","tasks","user_corporate_assignments","user_factory_assignments","users","vram_leases","workshops","zones"],
+  "pou-studio": ["ai_insights","ai_pending_actions","andon_events","daily_statistics","equipment_3d_models","factories","machine_status_logs","machines","oee_metrics","permissions","predictive_alerts","product_inspections","product_machine_mappings","production_lines","program_projects","robot_telemetry","robots","sites","stations","tasks","user_corporate_assignments","user_factory_assignments","users","vram_leases","workshops","zones"],
+  "programming-copilot": ["ai_insights","ai_pending_actions","andon_events","equipment_3d_models","factories","machines","permissions","product_inspections","production_lines","robot_telemetry","robots","sites","stations","tasks","user_corporate_assignments","user_factory_assignments","users","workshops","zones"],
+  "fleet-orchestration": ["ai_insights","ai_pending_actions","andon_events","battery_charging_plans","charger_stations","daily_statistics","equipment_3d_models","factories","machine_status_logs","machines","oee_metrics","operation_codes","permissions","predictive_alerts","product_inspections","product_machine_mappings","production_lines","resource_reservations","robot_telemetry","robots","shared_resources","sites","stations","tasks","user_corporate_assignments","user_factory_assignments","users","vram_leases","workshops","zone_reservations","zones"],
+  "safety-workforce": ["ai_insights","ai_pending_actions","andon_events","battery_charging_plans","camera_calibrations","charger_stations","collaboration_sessions","daily_statistics","equipment_3d_models","factories","machines","operation_codes","operator_assignments","permissions","predictive_alerts","production_lines","resource_reservations","robot_telemetry","robots","safety_events","safety_plc_configs","safety_zones","shared_resources","sites","stations","tasks","user_corporate_assignments","user_factory_assignments","users","workshops","zone_reservations","zones"],
+  "equipment-standards": ["ai_insights","ai_pending_actions","alarm_taxonomy","alert_settings","andon_events","camera_calibrations","daily_statistics","device_type_change_requests","device_types","equipment_3d_models","factories","machine_status_logs","machines","master_alarms","oee_metrics","permissions","predictive_alert_occurrences","predictive_alerts","product_inspections","product_machine_mappings","production_lines","robot_telemetry","robots","safety_events","safety_zones","sites","stations","tasks","user_factory_assignments","users","workshops","zones"],
+  "equipment-integration": ["ai_insights","ai_pending_actions","andon_events","equipment_3d_models","factories","machines","permissions","product_inspections","production_lines","robot_telemetry","robots","sites","stations","tasks","user_corporate_assignments","user_factory_assignments","users","workshops","zones"],
+};
+/** Bảng do CHÍNH instance đo ghi khi đăng nhập / xem trang (không phải dữ liệu màn hiển thị). */
+export const SELF_WRITTEN = {
+  user_sessions: "mỗi lượt đăng nhập (của instance đo và của vitest phiên khác) ghi một hàng; nội dung không hiển thị trên 14 màn",
+  user_secrets: "bí mật của user đo tạm; không hiển thị",
+};
+/** Cột được băm cho bảng mà instance đo ghi một phần (đăng nhập cập nhật lastSignedIn…). */
+const TABLE_COLS = { users: ["id", "username", "name", "role", "isActive"] };
+/**
+ * Cột do CHÍNH instance đo ghi, loại khỏi phép băm (kèm lý do). `predictive_alerts`: bộ máy leo thang
+ * cảnh báo LUÔN BẬT (`startEscalationScheduler(60_000)`, server/_core/index.ts — không có cờ tắt) chạy
+ * ngay khi server đo khởi động và nâng `escalationLevel`/`lastEscalatedAt`/`updatedAt`. Phát hiện bởi
+ * chính canh trôi (lần đo 2026-10-02 07:55Z: cùng 813 hàng, băm đổi; mọi lastEscalatedAt = giờ khởi động).
+ */
+const TABLE_EXCLUDE_COLS = { predictive_alerts: ["escalationLevel", "lastEscalatedAt", "updatedAt"] };
+/** Bỏ hàng của USER ĐO TẠM (tạo trước ảnh TRƯỚC, xoá sau ảnh SAU, id mới mỗi lần) khỏi phép băm. */
+const PROBE_FILTER = `(select id from users where "openId" = 'ui-metrics-engineer')`;
+const TABLE_WHERE = {
+  users: `t."openId" is distinct from 'ui-metrics-engineer'`,
+  permissions: `t."userId" not in ${PROBE_FILTER}`,
+  user_factory_assignments: `t."userId" not in ${PROBE_FILTER}`,
+  user_corporate_assignments: `t."userId" not in ${PROBE_FILTER}`,
+};
+/** Thủ tục tRPC mỗi màn gọi lúc rút `PAGE_TABLES`. Gọi thủ tục MỚI ⇒ cảnh báo: chạy lại --discover-tables. */
+export const KNOWN_PROCS = {
+  "engineering-home": ["aiInbox.count","andon.active","auth.me","commandCenter.hierarchy","license.getAllowedModules","license.systemState","oversight.pendingSummary","oversight.posture","permissions.getMyPermissions"],
+  "engineering-studio": ["aiInbox.count","andon.active","auth.me","commandCenter.hierarchy","license.getAllowedModules","license.systemState","permissions.getMyPermissions"],
+  "engineering": ["aiInbox.count","aiProgrammingKb.search","andon.active","auth.me","commandCenter.hierarchy","license.getAllowedModules","license.systemState","machine.list","permissions.getMyPermissions","programming.fleetVersionMatrix","programming.listApprovers","programming.listArtifacts","programming.listDeployments","programming.listProjects","programming.listSymbols","programming.status"],
+  "engineering-changes": ["aiInbox.count","andon.active","auth.me","commandCenter.hierarchy","ecn.list","license.getAllowedModules","license.systemState","permissions.getMyPermissions","productModel.list"],
+  "recipes": ["aiInbox.count","andon.active","auth.me","commandCenter.hierarchy","license.getAllowedModules","license.systemState","machineRecipe.deployments.list","machineRecipe.machines.list","machineRecipe.recipes.listCodes","permissions.getMyPermissions"],
+  "interlock-rules": ["aiInbox.count","andon.active","auth.me","commandCenter.hierarchy","interlock.events","interlock.list","license.getAllowedModules","license.systemState","permissions.getMyPermissions"],
+  "orchestration-studio": ["aiInbox.count","aiOrchestration.status","andon.active","auth.me","commandCenter.hierarchy","equipment.listEquipment","license.getAllowedModules","license.systemState","orchestration.listRuns","orchestration.listVersions","orchestration.listWorkflows","orchestration.status","permissions.getMyPermissions"],
+  "ir-editor": ["aiInbox.count","andon.active","auth.me","commandCenter.hierarchy","ir.lint","ir.listFlows","ir.status","license.getAllowedModules","license.systemState","permissions.getMyPermissions","programming.listProjects"],
+  "pou-studio": ["aiInbox.count","andon.active","auth.me","commandCenter.hierarchy","license.getAllowedModules","license.systemState","permissions.getMyPermissions","programming.listProjects","programming.pouLint","programming.pouTranspilePreview"],
+  "programming-copilot": ["aiInbox.count","andon.active","auth.me","commandCenter.hierarchy","license.getAllowedModules","license.systemState","permissions.getMyPermissions"],
+  "fleet-orchestration": ["aiInbox.count","andon.active","auth.me","commandCenter.hierarchy","fleet.deadlocks","fleet.listChargers","fleet.listChargingPlans","fleet.listOperations","fleet.listReservations","fleet.listResourceReservations","fleet.listResources","fleet.listTasks","fleet.listZones","fleet.resourceStatus","fleet.status","license.getAllowedModules","license.systemState","permissions.getMyPermissions"],
+  "safety-workforce": ["aiInbox.count","andon.active","auth.me","commandCenter.hierarchy","license.getAllowedModules","license.systemState","permissions.getMyPermissions","safety.currentBoard","safety.feed","safety.listAssignments","safety.listCollaborations","safety.nearMissTrend","safety.sourceHealth","safety.status"],
+  "equipment-standards": ["aiInbox.count","alarmKpi.summary","andon.active","auth.me","commandCenter.hierarchy","equipmentStandards.complianceMetrics","equipmentStandards.hierarchyTree","equipmentStandards.listAlarmMappings","equipmentStandards.listChangeRequests","equipmentStandards.listMasterAlarms","equipmentStandards.status","license.getAllowedModules","license.systemState","permissions.getMyPermissions"],
+  "equipment-integration": ["aiInbox.count","andon.active","auth.me","commandCenter.hierarchy","equipmentIntegration.integrationStatus","equipmentIntegration.status","license.getAllowedModules","license.systemState","machine.list","permissions.getMyPermissions"],
+};
+
 const DEFAULT_SIZES = [[1600, 950], [1366, 768]];
 
 // ───────────────────────────────────────────────────────────────────────────────────────────
-// 2. Hàm đo chạy TRONG trình duyệt. Phần walk/notice/crumbs/floats/scrollH là NGUYÊN VĂN
-//    MEASURE của FE1 (`.playwright-mcp/survey81/_driver.js`) để số đối chiếu được; phần cuối
-//    (mainRects, h1, KPI, AI che, dialog) là bổ sung của Task 1.
+// 2. Pha 1 (trong trình duyệt): walk vùng của FE1 — NGUYÊN VĂN `.playwright-mcp/survey81/_driver.js`
+//    để đối chiếu được; gắn `data-uim-r` lên từng vùng để pha 2 lấy lại phần tử của MAIN cũ.
 // ───────────────────────────────────────────────────────────────────────────────────────────
-function MEASURE_IN_PAGE() {
+function PHASE1() {
   const vw = innerWidth, vh = innerHeight;
+  for (const e of document.querySelectorAll('[data-uim-r]')) e.removeAttribute('data-uim-r');
   const vis = (e) => { const r = e.getBoundingClientRect(); if (r.width < 4 || r.height < 4) return false; const s = getComputedStyle(e); return s.visibility !== 'hidden' && s.display !== 'none'; };
   const main = document.querySelector('main');
   const BOUND_SLOT = new Set(['card','alert','tabs','table-container','resizable-panel-group','resizable-panel','scroll-area','sheet-content','dialog-content','accordion','collapsible']);
@@ -153,12 +224,8 @@ function MEASURE_IN_PAGE() {
     return {
       btn: q('button,[role=button],a[data-slot=button]'),
       inp: q('input:not([type=checkbox]):not([type=radio]):not([type=hidden]),textarea,[contenteditable=true],.cm-content'),
-      sel: q('select,[role=combobox],[data-slot=select-trigger]'),
-      chk: q('input[type=checkbox],[role=checkbox],[role=switch],input[type=radio],[role=radio]'),
-      tbl: q('table'), rows: q('tbody tr'),
+      tbl: q('table'),
       cnv: q('canvas,.react-flow,.reactflow') + [...e.querySelectorAll('svg')].filter(s => { const r = s.getBoundingClientRect(); return r.width > 200 && r.height > 120; }).length,
-      chart: q('.recharts-wrapper'), code: q('.cm-editor,.monaco-editor'),
-      tabs: q('[role=tab]'), links: q('a[href]'),
     };
   };
   const head = (e) => {
@@ -175,6 +242,7 @@ function MEASURE_IN_PAGE() {
     const noticeReason = (e.getAttribute('role') === 'alert' || e.getAttribute('data-slot') === 'alert') ? 'alert' : (isNoticeCls(e) && r.height < 260 && c.tbl === 0 && c.inp === 0 && c.btn <= 3 ? 'notice-style' : ((kind === 'block' && r.height < 160 && c.inp === 0 && c.tbl === 0 && NOTICE_TXT.test(txt.slice(0, 300)) && txt.length > 25) ? 'notice-text' : null));
     const o = { id: id++, parent, depth, tag: e.tagName, loc: e.getAttribute('data-loc'), kind: kind || (e.getAttribute('data-slot') || e.getAttribute('role') || e.tagName.toLowerCase()), head: head(e),
       x: Math.round(r.left), y: Math.round(y), w: Math.round(r.width), h: Math.round(r.height), ...c, notice: noticeReason };
+    e.setAttribute('data-uim-r', String(o.id));
     regions.push(o); return o.id;
   };
   const walk = (el, depth, parent) => {
@@ -201,104 +269,257 @@ function MEASURE_IN_PAGE() {
   const mr = main ? main.getBoundingClientRect() : null;
   const scrollH = Math.max(document.scrollingElement.scrollHeight, main ? (main.scrollHeight + mr.top + scrollY) : 0);
   const spinners = [...document.querySelectorAll('.animate-spin,[data-slot=skeleton],.animate-pulse')].filter(vis).length;
-
-  // ── bổ sung Task 1 ──────────────────────────────────────────────────────────────────────
-  const rectOf = (e) => { const r = e.getBoundingClientRect(); return { x: Math.round(r.left), y: Math.round(r.top + scrollY), w: Math.round(r.width), h: Math.round(r.height) }; };
-  // MAIN chính thức: [data-layout-main] nhìn thấy, bỏ phần tử lồng trong một phần tử khác cùng attribute.
-  const dlm = [...document.querySelectorAll('[data-layout-main]')].filter(vis);
-  const dlmTop = dlm.filter(e => !dlm.some(o => o !== e && o.contains(e)));
-  // h1
-  const h1s = [...document.querySelectorAll('h1')].filter(vis);
-  const h1 = h1s.length ? h1s[0] : null;
-  // KPI: [data-layout-kpi] (chính thức, các task sau) hoặc MetricCard (data-loc) — FE1 đếm MetricCard.
-  const kpiOfficial = [...document.querySelectorAll('main [data-layout-kpi]')].filter(vis);
-  const kpiLegacy = [...document.querySelectorAll('main [data-loc*="MetricCard.tsx"]')].filter(vis).filter((e, _i, a) => !a.some(o => o !== e && o.contains(e)));
-  const kpiEls = kpiOfficial.length ? kpiOfficial : kpiLegacy;
-  let kpiStrip = null;
-  if (kpiEls.length) { const rs = kpiEls.map(e => e.getBoundingClientRect()); const top = Math.min(...rs.map(r => r.top)), bot = Math.max(...rs.map(r => r.bottom)); kpiStrip = { y: Math.round(top + scrollY), h: Math.round(bot - top) }; }
-  // AI che: dock Copilot + bong bóng AI (phần tử ngoài cùng mang data-loc của hai tệp) + [data-layout-ai].
-  const aiCand = [...document.querySelectorAll('[data-loc*="AILocalChatBubble.tsx"],[data-loc*="ProgrammingCopilotDock.tsx"],[data-layout-ai]')].filter(vis);
-  const aiTop = aiCand.filter(e => !aiCand.some(o => o !== e && o.contains(e)));
-  const ai = aiTop.map(e => ({ name: e.hasAttribute('data-layout-ai') ? (e.getAttribute('data-layout-ai') || 'ai') : (/ProgrammingCopilotDock/.test(e.getAttribute('data-loc')) ? 'copilot-dock' : 'ai-bubble'), loc: e.getAttribute('data-loc'), pos: getComputedStyle(e).position, ...rectOf(e) }));
-  // Dialog lúc nạp
-  const dialogs = [...document.querySelectorAll('[role=dialog],[role=alertdialog]')].filter(vis).map(e => ({ role: e.getAttribute('role'), slot: e.getAttribute('data-slot'), ...rectOf(e) }));
+  const topbarPos = topbar ? getComputedStyle(topbar).position : null;
   return {
     url: location.pathname + location.search, vw, vh, spinners,
-    shell: { sidebarW: sbW, topbarH: topbar ? Math.round(topbar.getBoundingClientRect().height) : null, topbarBottom: topbar ? Math.round(topbar.getBoundingClientRect().bottom) : null, topbarPos: topbar ? getComputedStyle(topbar).position : null, mainTop: mr ? Math.round(mr.top + scrollY) : null, mainW: mr ? Math.round(mr.width) : null, mainPad: main ? getComputedStyle(main).padding : null, crumbs },
+    shell: { sidebarW: sbW, topbarH: topbar ? Math.round(topbar.getBoundingClientRect().height) : null, topbarBottom: topbar ? Math.round(topbar.getBoundingClientRect().bottom) : null, topbarPos, mainTop: mr ? Math.round(mr.top + scrollY) : null, mainW: mr ? Math.round(mr.width) : null, mainPad: main ? getComputedStyle(main).padding : null, crumbs },
     scrollH, scrollRatio: +(scrollH / vh).toFixed(2),
     regions,
-    dlm: dlmTop.map(e => ({ value: e.getAttribute('data-layout-main'), ...rectOf(e) })),
-    h1: h1 ? { top: Math.round(h1.getBoundingClientRect().top), text: h1.innerText.replace(/\s+/g, ' ').slice(0, 60) } : null, h1Count: h1s.length,
-    kpi: { source: kpiOfficial.length ? 'data-layout-kpi' : 'MetricCard', count: kpiEls.length, strip: kpiStrip },
-    ai, dialogs,
-  };
-}
-
-/** Diện tích phần nhìn thấy của các hình chữ nhật (toạ độ trang, scrollY=0) trong [0,vw]×[clipTop,vh]. */
-function visibleArea(rects, vw, vh, clipTop) {
-  let a = 0;
-  for (const r of rects) {
-    const t = Math.max(r.y, clipTop), b = Math.min(r.y + r.h, vh);
-    const w = Math.max(0, Math.min(r.x + r.w, vw) - Math.max(r.x, 0));
-    if (b > t) a += (b - t) * w;
-  }
-  return a;
-}
-function intersectArea(a, b, vw, vh, clipTop) {
-  const x0 = Math.max(a.x, b.x, 0), x1 = Math.min(a.x + a.w, b.x + b.w, vw);
-  const y0 = Math.max(a.y, b.y, clipTop), y1 = Math.min(a.y + a.h, b.y + b.h, vh);
-  return x1 > x0 && y1 > y0 ? (x1 - x0) * (y1 - y0) : 0;
-}
-const BAD_NOTICE_KINDS = ["button", "a", "select-trigger", "input", "popover-trigger", "textarea", "combobox"];
-
-/** Rút gọn số đo thô thành bản ghi chỉ số (cái được commit và so sánh). */
-export function summarize(screen, variant, raw) {
-  const { vw, vh } = raw;
-  let mainSource, mainRects;
-  if (raw.dlm.length) { mainSource = "data-layout-main"; mainRects = raw.dlm.map(({ x, y, w, h }) => ({ x, y, w, h })); }
-  else {
-    mainSource = "fe1-legacy";
-    const L = screen.legacyMain;
-    const picked = L.pick ? L.pick(raw.regions) : raw.regions.filter(L.fn);
-    mainRects = picked.map(({ x, y, w, h }) => ({ x, y, w, h }));
-  }
-  // Cắt trên tại mép dưới top bar sticky (56 px hiện nay). FE1 cắt ở 109 (top bar + breadcrumb shell);
-  // ở đường cơ sở mọi MAIN bắt đầu dưới 109 nên hai cách cho cùng số — giữ cả `mainPctFe1` để chứng minh.
-  const clipTop = raw.shell.topbarPos === "sticky" || raw.shell.topbarPos === "fixed" ? (raw.shell.topbarBottom ?? 0) : 0;
-  const mainArea = visibleArea(mainRects, vw, vh, clipTop);
-  const mainTop = mainRects.length ? Math.min(...mainRects.map((r) => r.y)) : null;
-  // Định nghĩa notice của FE1 + loại trừ NÚT: `DialogTrigger asChild` ghi đè data-slot của Button thành
-  // "dialog-trigger" nên nút chính (vd "Thay đổi mới" của ECN, bg-primary + border) lọt bộ lọc kind của FE1.
-  const notices = raw.regions.filter((r) => r.notice && !BAD_NOTICE_KINDS.includes(r.kind) && !/-trigger$/.test(r.kind) && r.tag !== "BUTTON" && r.tag !== "A" && r.depth === 0 && !/PageHeader/.test(r.loc || ""));
-  const before = mainTop == null ? notices : notices.filter((n) => n.y < mainTop);
-  const aiItems = raw.ai.map((a) => {
-    const overlapMain = mainRects.reduce((s, m) => s + intersectArea(a, m, vw, vh, clipTop), 0);
-    return { name: a.name, pos: a.pos, rect: { x: a.x, y: a.y, w: a.w, h: a.h }, overlapMainPx: overlapMain };
-  });
-  const overlapMainPx = aiItems.reduce((s, a) => s + a.overlapMainPx, 0);
-  return {
-    screen: screen.id, route: screen.route, vw, vh, variant,
-    mainSource, missingDataLayoutMain: mainSource !== "data-layout-main",
-    mainSelector: mainSource === "data-layout-main" ? "[data-layout-main]" : screen.legacyMain.desc,
-    mainFound: mainRects.length > 0,
-    mainRects, mainTop,
-    mainPct: +(mainArea / (vw * vh) * 100).toFixed(1),
-    mainPctFe1: +(visibleArea(mainRects, vw, vh, 109) / (vw * vh) * 100).toFixed(1),
-    mainPctUnoccluded: +(Math.max(0, mainArea - overlapMainPx) / (vw * vh) * 100).toFixed(1),
-    h1Top: raw.h1 ? raw.h1.top : null, h1Text: raw.h1 ? raw.h1.text : null, h1Count: raw.h1Count,
-    breadcrumbs: raw.shell.crumbs.length, breadcrumbLocs: raw.shell.crumbs.map((c) => (c.loc || "").replace(/^.*[\\/]/, "")),
-    bannersBeforeMain: { count: before.length, px: before.reduce((s, n) => s + n.h, 0), items: before.map((n) => ({ loc: (n.loc || "").replace(/^.*[\\/]/, ""), kind: n.kind, reason: n.notice, y: n.y, h: n.h, head: n.head.slice(0, 50) })) },
-    kpi: { source: raw.kpi.source, count: raw.kpi.count, stripHeight: raw.kpi.strip ? raw.kpi.strip.h : 0, stripY: raw.kpi.strip ? raw.kpi.strip.y : null },
-    aiOcclusion: { overlapMainPx, overlapMainPctOfMain: mainArea ? +(overlapMainPx / mainArea * 100).toFixed(1) : 0, overlapMainPctOfViewport: +(overlapMainPx / (vw * vh) * 100).toFixed(1), items: aiItems },
-    pageHeightRatio: raw.scrollRatio, scrollH: raw.scrollH,
-    shell: { sidebarW: raw.shell.sidebarW, topbarH: raw.shell.topbarH, mainTop: raw.shell.mainTop, mainW: raw.shell.mainW, mainPad: raw.shell.mainPad },
-    dialogsAtLoad: raw.dialogs.length,
-    spinnersAtMeasure: raw.spinners,
+    hasLayoutMainAttr: document.querySelectorAll('[data-layout-main]').length > 0,
   };
 }
 
 // ───────────────────────────────────────────────────────────────────────────────────────────
-// 3. Instance tự dựng: _test DB, server tsx :3016, Vite dev :5176
+// 3. Pha 2 (trong trình duyệt): đo HÌNH HỌC quanh các phần tử MAIN đã chọn.
+// ───────────────────────────────────────────────────────────────────────────────────────────
+function PHASE2(arg) {
+  const vw = innerWidth, vh = innerHeight;
+  const errors = [], warnings = [];
+  const vis = (e) => { const r = e.getBoundingClientRect(); if (r.width < 4 || r.height < 4) return false; const s = getComputedStyle(e); return s.visibility !== 'hidden' && s.display !== 'none' && s.opacity !== '0'; };
+  const R = (e) => { const r = e.getBoundingClientRect(); return { x: Math.round(r.left), y: Math.round(r.top + scrollY), w: Math.round(r.width), h: Math.round(r.height) }; };
+  const cls = (e) => (typeof e.className === 'string' ? e.className : (e.getAttribute('class') || ''));
+  const desc = (e) => { if (!e) return null; const loc = e.getAttribute('data-loc'); return { tag: e.tagName.toLowerCase(), testid: e.getAttribute('data-testid'), loc: loc ? loc.replace(/^.*[\\/]/, '') : null, role: e.getAttribute('role'), slot: e.getAttribute('data-slot'), label: (e.getAttribute('aria-label') || e.innerText || '').replace(/\s+/g, ' ').trim().slice(0, 50) }; };
+  const isNoticeCls = (e) => { const c = cls(e); return /(border|bg)-(amber|yellow|warning|info|blue|orange|destructive|red|sky|primary\/|success\/|muted)/.test(c) && /(border)/.test(c) && /(rounded)/.test(c) && /(p-2|p-3|p-4|px-3|px-4|py-2|py-3)/.test(c); };
+  const NOTICE_TXT = /(Khi nào dùng|Beta|xem trước|Chỉ xem|chỉ đọc|advisory|TẮT|SIMULATED|không được phép|Bạn không có quyền|Chế độ|Lưu ý|Cảnh báo|Luồng vàng|thử nghiệm|preview)/i;
+  const main = document.querySelector('main');
+  if (!main) errors.push('không có phần tử <main>');
+
+  // ── MAIN ──
+  let mainEls = [];
+  if (arg.mode === 'attr') {
+    const all = [...document.querySelectorAll('[data-layout-main]')];
+    for (const e of all) if (!main || !main.contains(e)) errors.push(`[data-layout-main] NẰM NGOÀI <main>: ${JSON.stringify(desc(e))}`);
+    const inMain = all.filter((e) => main && main.contains(e) && vis(e));
+    mainEls = inMain.filter((e) => !inMain.some((o) => o !== e && o.contains(e)));
+    if (all.length && !mainEls.length) errors.push('[data-layout-main] có nhưng không phần tử nào nhìn thấy trong <main>');
+  } else {
+    mainEls = (arg.ids || []).map((id) => document.querySelector(`[data-uim-r="${id}"]`)).filter(Boolean);
+    mainEls = mainEls.filter((e) => !mainEls.some((o) => o !== e && o.contains(e)));
+  }
+  if (!mainEls.length) errors.push('KHÔNG THẤY MAIN');
+
+  // ── Ràng buộc MAIN (R-2-e a): không chứa h1 / page header / banner / KPI ──
+  const FORBID = [
+    ['h1', 'h1,[role=heading][aria-level="1"]'],
+    ['page-header', '[data-loc*="PageHeader.tsx"],[data-layout-header]'],
+    ['banner', '[role=alert],[data-slot=alert],[data-loc*="FeatureStatusGate.tsx"],[data-loc*="BetaBadge.tsx"],[data-layout-banner]'],
+    ['kpi', '[data-loc*="MetricCard.tsx"],[data-layout-kpi]'],
+  ];
+  const violations = [];
+  for (const m of mainEls) {
+    for (const [kind, sel] of FORBID) {
+      // banner = KHUNG (≥200×24), không phải chip/nhãn nhỏ (vd chip "Beta" trong ô công cụ) và không phải nút/liên kết
+      const isBannerBox = (e) => { const r = e.getBoundingClientRect(); return r.width >= 200 && r.height >= 24 && !e.matches('button,a,[role=button]'); };
+      const hits = [...(m.matches(sel) ? [m] : []), ...m.querySelectorAll(sel)].filter(vis).filter((e) => kind !== 'banner' || isBannerBox(e));
+      if (hits.length) violations.push({ kind, n: hits.length, first: desc(hits[0]) });
+    }
+    const heur = [...m.querySelectorAll('*')].filter((e) => isNoticeCls(e) && vis(e) && !e.matches('button,a,[role=button]') && !e.closest('button,a,[role=button]') && e.getBoundingClientRect().width >= 200 && e.getBoundingClientRect().height < 260 && NOTICE_TXT.test((e.innerText || '').slice(0, 300)));
+    if (heur.length) violations.push({ kind: 'banner-heuristic', n: heur.length, first: desc(heur[0]) });
+  }
+  for (const v of violations) (arg.mode === 'attr' ? errors : warnings).push(`MAIN chứa ${v.kind} ×${v.n}: ${JSON.stringify(v.first)}`);
+
+  const mainRects = mainEls.map(R);
+  const mainTop = mainRects.length ? Math.min(...mainRects.map((r) => r.y)) : null;
+
+  // ── h1 ──
+  const h1s = [...document.querySelectorAll('main h1')].filter(vis);
+  const h1 = h1s[0] || [...document.querySelectorAll('h1')].filter(vis)[0] || null;
+  const h1r = h1 ? R(h1) : null;
+  if (!h1) warnings.push('trang KHÔNG có h1 nhìn thấy — dải "trước MAIN" tính từ đỉnh <main>');
+  // page header = tổ tiên NGOÀI CÙNG của h1 mang data-loc PageHeader.tsx / [data-layout-header] / <header>, nếu nó không chứa MAIN
+  let h1Header = null;
+  if (h1) {
+    for (let n = h1; n && n !== main && n !== document.body; n = n.parentElement) {
+      if (n.matches('[data-loc*="PageHeader.tsx"],[data-layout-header],header')) h1Header = n;
+    }
+    if (h1Header && mainEls.some((m) => h1Header.contains(m))) { errors.push('page header của h1 CHỨA MAIN'); h1Header = null; }
+  }
+
+  // ── Khối phía trên MAIN (R-2-e b) ──
+  const contentTop = main ? R(main).y : 0;
+  const holdsKey = (e) => mainEls.some((m) => e.contains(m)) || (h1 && e.contains(h1));
+  const blocks = [];
+  const mainX0 = mainEls.length ? Math.min(...mainEls.map((m) => m.getBoundingClientRect().left)) : 0;
+  const mainX1 = mainEls.length ? Math.max(...mainEls.map((m) => m.getBoundingClientRect().right)) : vw;
+  const walk = (el) => {
+    for (const ch of el.children) {
+      if (ch === h1 || mainEls.includes(ch)) continue;
+      if (holdsKey(ch)) { walk(ch); continue; }
+      const st = getComputedStyle(ch);
+      if (st.position === 'fixed') continue; // lớp phủ — đo ở coverMain
+      const r = ch.getBoundingClientRect();
+      if (!vis(ch)) { if (ch.children.length && st.display !== 'none') walk(ch); continue; }
+      const top = r.top + scrollY, bot = r.bottom + scrollY;
+      if (mainTop == null || bot > mainTop + 1) continue; // không nằm HẲN trên MAIN (cột bên cạnh…)
+      // không giao NGANG với MAIN ⇒ cột bên cạnh, không phải "trước" MAIN (vẫn hiện trong bandBlocks)
+      const xOverlap = r.left < mainX1 && r.right > mainX0;
+      const pos = !xOverlap ? 'besideMain' : (!h1r ? 'belowH1' : (bot <= h1r.y + 1 ? 'aboveH1' : (top >= h1r.y + h1r.h - 1 ? 'belowH1' : 'besideH1')));
+      const txt = (ch.innerText || '').trim();
+      const fe1Notice = ch.getAttribute('role') === 'alert' || ch.getAttribute('data-slot') === 'alert' || isNoticeCls(ch) || NOTICE_TXT.test(txt.slice(0, 300));
+      const isKpi = ch.matches('[data-loc*="MetricCard.tsx"],[data-layout-kpi]') || !!ch.querySelector('[data-loc*="MetricCard.tsx"],[data-layout-kpi]');
+      const isTabs = r.height <= 64 && (ch.matches('[role=tablist]') || !!ch.querySelector('[role=tablist]'));
+      const kind = isKpi ? 'kpi' : isTabs ? 'tabs' : fe1Notice ? 'notice' : 'other';
+      blocks.push({ ...R(ch), pos, kind, inHeader: !!(h1Header && h1Header.contains(ch)), ...desc(ch), fe1Notice });
+    }
+  };
+  if (main) walk(main);
+  const unionY = (list, lo, hi) => { const iv = list.map((b) => [Math.max(b.y, lo), Math.min(b.y + b.h, hi)]).filter(([a, b]) => b > a).sort((p, q) => p[0] - q[0]); let s = 0, cs = -1, ce = -1; for (const [a, b] of iv) { if (a > ce) { if (ce > cs) s += ce - cs; cs = a; ce = b; } else ce = Math.max(ce, b); } if (ce > cs) s += ce - cs; return Math.round(s); };
+  const bandLo = h1r ? h1r.y + h1r.h : contentTop;
+  const before = blocks.filter((b) => b.pos === 'belowH1' && !b.inHeader);
+  const aboveH1 = blocks.filter((b) => b.pos === 'aboveH1' && !b.inHeader);
+  const headerParts = blocks.filter((b) => b.inHeader);
+
+  // ── KPI (R-2-e c): cả hai nguồn, luôn luôn ──
+  const top = (els) => els.filter(vis).filter((e, _i, a) => !a.some((o) => o !== e && o.contains(e)));
+  const kpiLegacyEls = top([...document.querySelectorAll('main [data-loc*="MetricCard.tsx"]')]);
+  const kpiOfficialEls = top([...document.querySelectorAll('main [data-layout-kpi]')]);
+  const kpiAll = top([...kpiLegacyEls, ...kpiOfficialEls]);
+  const strip = (els) => els.length ? unionY(els.map(R), -1e9, 1e9) : 0;
+
+  // ── Che MAIN (R-2-e d): hit-test lưới ──
+  const STEP = 8;
+  const clipTop = arg.clipTop || 0;
+  const vr = mainEls.map((m) => m.getBoundingClientRect());
+  let pts = 0, cov = 0; const culprits = new Map();
+  if (vr.length) {
+    const x0 = Math.max(0, Math.min(...vr.map((r) => r.left))), x1 = Math.min(vw, Math.max(...vr.map((r) => r.right)));
+    const y0 = Math.max(clipTop, Math.min(...vr.map((r) => r.top))), y1 = Math.min(vh, Math.max(...vr.map((r) => r.bottom)));
+    for (let y = Math.floor(y0 / STEP) * STEP + STEP / 2; y < y1; y += STEP) {
+      for (let x = Math.floor(x0 / STEP) * STEP + STEP / 2; x < x1; x += STEP) {
+        if (y < clipTop || !vr.some((r) => x >= r.left && x < r.right && y >= r.top && y < r.bottom)) continue;
+        pts++;
+        const el = document.elementFromPoint(x, y);
+        if (!el || mainEls.some((m) => m.contains(el)) || mainEls.some((m) => el.contains(m))) continue;
+        cov++;
+        let n = el, outer = el, posEl = null;
+        while (n && n !== document.body && !mainEls.some((m) => n.contains(m))) { const p = getComputedStyle(n).position; if (p === 'fixed' || p === 'absolute' || p === 'sticky') posEl = n; outer = n; n = n.parentElement; }
+        const c = posEl || outer;
+        const k = culprits.get(c) || { ...desc(c), position: getComputedStyle(c).position, zIndex: getComputedStyle(c).zIndex, rect: R(c), px: 0 };
+        k.px += STEP * STEP; culprits.set(c, k);
+      }
+    }
+  }
+  // phụ: phần tử định vị cắt MAIN nhưng hit-test không thấy (pointer-events:none…) — chỉ báo
+  const positioned = [];
+  if (vr.length) {
+    for (const e of document.querySelectorAll('body *')) {
+      const s = getComputedStyle(e);
+      if (s.position !== 'fixed' && s.position !== 'absolute' && s.position !== 'sticky') continue;
+      if (mainEls.some((m) => m.contains(e) || e.contains(m)) || !vis(e)) continue;
+      if (positioned.some((p) => p.el.contains(e))) continue;
+      const r = e.getBoundingClientRect();
+      let a = 0; for (const m of vr) { const ix = Math.min(r.right, m.right, vw) - Math.max(r.left, m.left, 0), iy = Math.min(r.bottom, m.bottom, vh) - Math.max(r.top, m.top, clipTop); if (ix > 0 && iy > 0) a += ix * iy; }
+      if (a > 0) positioned.push({ el: e, ...desc(e), position: s.position, zIndex: s.zIndex, pointerEvents: s.pointerEvents, intersectPx: Math.round(a) });
+    }
+  }
+
+  // ── Chiều cao trang (cả container cuộn tổ tiên của MAIN) ──
+  const docH = Math.max(document.scrollingElement.scrollHeight, main ? (main.scrollHeight + R(main).y) : 0);
+  const scrollers = []; let extra = 0;
+  if (mainEls[0]) for (let a = mainEls[0].parentElement; a && a !== main && a !== document.body && a !== document.documentElement; a = a.parentElement) {
+    const s = getComputedStyle(a);
+    if (/(auto|scroll|overlay)/.test(s.overflowY) && a.scrollHeight > a.clientHeight + 1) { extra += a.scrollHeight - a.clientHeight; scrollers.push({ ...desc(a), scrollH: a.scrollHeight, clientH: a.clientHeight }); }
+  }
+  const inner = [];
+  for (const m of mainEls) for (const d of [m, ...m.querySelectorAll('*')]) { const s = getComputedStyle(d); if (/(auto|scroll|overlay)/.test(s.overflowY) && d.scrollHeight > d.clientHeight + 1 && d.clientHeight > 40) inner.push({ ...desc(d), scrollH: d.scrollHeight, clientH: d.clientHeight, ratio: +(d.scrollHeight / d.clientHeight).toFixed(2) }); }
+  inner.sort((a, b) => b.ratio - a.ratio);
+
+  const dialogs = [...document.querySelectorAll('[role=dialog],[role=alertdialog]')].filter(vis).map((e) => ({ role: e.getAttribute('role'), slot: e.getAttribute('data-slot'), ...R(e) }));
+  return {
+    errors, warnings, mainCount: mainEls.length, mainRects, mainTop,
+    h1: h1 ? { top: Math.round(h1.getBoundingClientRect().top), bottom: Math.round(h1.getBoundingClientRect().bottom), text: h1.innerText.replace(/\s+/g, ' ').slice(0, 60), inPageHeader: !!h1Header } : null, h1Count: h1s.length,
+    band: { lo: Math.round(bandLo), before: { count: before.length, unionPx: unionY(before, bandLo, mainTop ?? 0), byKind: before.reduce((o, b) => { o[b.kind] = (o[b.kind] || 0) + 1; return o; }, {}) }, aboveH1: { count: aboveH1.length, unionPx: unionY(aboveH1, contentTop, h1r ? h1r.y : contentTop) }, headerParts: headerParts.length, blocks },
+    kpi: { legacy: { count: kpiLegacyEls.length, stripPx: strip(kpiLegacyEls) }, official: { count: kpiOfficialEls.length, stripPx: strip(kpiOfficialEls) }, all: { count: kpiAll.length, stripPx: strip(kpiAll) } },
+    cover: { step: STEP, points: pts, coveredPoints: cov, px: cov * STEP * STEP, items: [...culprits.values()].sort((a, b) => b.px - a.px), positionedIntersecting: positioned.map(({ el, ...rest }) => rest) },
+    scroll: { docH, extra, scrollers, inner: inner.slice(0, 3) },
+    dialogs,
+  };
+}
+
+// ───────────────────────────────────────────────────────────────────────────────────────────
+// 4. Rút gọn (node)
+// ───────────────────────────────────────────────────────────────────────────────────────────
+/** Diện tích HỢP các hình chữ nhật trong [0,vw]×[clipTop,vh] (nén toạ độ — không cộng trùng). */
+export function unionArea(rects, vw, vh, clipTop) {
+  const rs = rects.map((r) => [Math.max(r.x, 0), Math.max(r.y, clipTop), Math.min(r.x + r.w, vw), Math.min(r.y + r.h, vh)]).filter(([a, b, c, d]) => c > a && d > b);
+  if (!rs.length) return 0;
+  const xs = [...new Set(rs.flatMap((r) => [r[0], r[2]]))].sort((a, b) => a - b);
+  let s = 0;
+  for (let i = 0; i < xs.length - 1; i++) {
+    const xa = xs[i], xb = xs[i + 1];
+    const iv = rs.filter((r) => r[0] <= xa && r[2] >= xb).map((r) => [r[1], r[3]]).sort((p, q) => p[0] - q[0]);
+    let len = 0, cs = -1, ce = -1;
+    for (const [a, b] of iv) { if (a > ce) { if (ce > cs) len += ce - cs; cs = a; ce = b; } else ce = Math.max(ce, b); }
+    if (ce > cs) len += ce - cs;
+    s += len * (xb - xa);
+  }
+  return s;
+}
+const BAD_NOTICE_KINDS = ["button", "a", "select-trigger", "input", "popover-trigger", "textarea", "combobox"];
+function legacyIds(screen, regions) {
+  const L = screen.legacyMain;
+  return (L.pick ? L.pick(regions) : regions.filter(L.fn)).map((r) => r.id);
+}
+
+export function summarize(screen, variant, p1, p2, legacyP2) {
+  const { vw, vh } = p1;
+  const mode = p1.hasLayoutMainAttr ? "data-layout-main" : "fe1-legacy";
+  const clipTop = p1.shell.topbarPos === "sticky" || p1.shell.topbarPos === "fixed" ? (p1.shell.topbarBottom ?? 0) : 0;
+  const mainArea = unionArea(p2.mainRects, vw, vh, clipTop);
+  // FE1: nhãn lớp CSS (phụ) — định nghĩa FE1 + loại trừ nút (*-trigger)
+  const fe1Notices = p1.regions.filter((r) => r.notice && !BAD_NOTICE_KINDS.includes(r.kind) && !/-trigger$/.test(r.kind) && r.tag !== "BUTTON" && r.tag !== "A" && r.depth === 0 && !/PageHeader/.test(r.loc || ""));
+  const fe1Before = p2.mainTop == null ? fe1Notices : fe1Notices.filter((n) => n.y < p2.mainTop);
+  const errors = [...p2.errors], warnings = [...p2.warnings];
+  if (mode === "fe1-legacy") warnings.push("CHƯA có [data-layout-main] — đo bằng selector FE1");
+  const rec = {
+    screen: screen.id, route: screen.route, vw, vh, variant,
+    mainSource: mode, missingDataLayoutMain: mode !== "data-layout-main",
+    mainSelector: mode === "data-layout-main" ? "[data-layout-main]" : screen.legacyMain.desc,
+    mainFound: p2.mainCount > 0, mainRects: p2.mainRects, mainTop: p2.mainTop,
+    chromeAboveMain: p2.mainTop,
+    mainPct: +(mainArea / (vw * vh) * 100).toFixed(1),
+    mainPctFe1: +(unionArea(p2.mainRects, vw, vh, 109) / (vw * vh) * 100).toFixed(1),
+    mainPctUncovered: +(Math.max(0, mainArea - p2.cover.px) / (vw * vh) * 100).toFixed(1),
+    h1Top: p2.h1 ? p2.h1.top : null, h1Bottom: p2.h1 ? p2.h1.bottom : null, h1Text: p2.h1 ? p2.h1.text : null, h1Missing: !p2.h1, h1Count: p2.h1Count,
+    gapH1ToMain: p2.h1 && p2.mainTop != null ? p2.mainTop - p2.h1.bottom : null,
+    breadcrumbs: p1.shell.crumbs.length,
+    bannersBeforeMain: { count: p2.band.before.count, px: p2.band.before.unionPx, byKind: p2.band.before.byKind, method: p2.h1 ? "geometric: khối giữa đáy h1 và đỉnh MAIN, ngoài page header" : "geometric: khối giữa đỉnh <main> và đỉnh MAIN (không có h1)" },
+    blocksAboveH1: p2.band.aboveH1, headerParts: p2.band.headerParts,
+    bandBlocks: p2.band.blocks.map((b) => ({ pos: b.pos, kind: b.kind, inHeader: b.inHeader, y: b.y, h: b.h, x: b.x, w: b.w, loc: b.loc, tag: b.tag, testid: b.testid, label: b.label, fe1Notice: b.fe1Notice })),
+    bannersFe1Class: { count: fe1Before.length, px: fe1Before.reduce((s, n) => s + n.h, 0), items: fe1Before.map((n) => ({ loc: (n.loc || "").replace(/^.*[\\/]/, ""), y: n.y, h: n.h, head: n.head.slice(0, 50) })) },
+    kpi: p2.kpi,
+    coverMain: { px: p2.cover.px, pctOfMain: mainArea ? +(p2.cover.px / mainArea * 100).toFixed(1) : 0, pctOfViewport: +(p2.cover.px / (vw * vh) * 100).toFixed(1), items: p2.cover.items, positionedIntersecting: p2.cover.positionedIntersecting },
+    pageHeightRatio: +((p2.scroll.docH + p2.scroll.extra) / vh).toFixed(2), pageHeightRatioDoc: p1.scrollRatio, scroll: p2.scroll,
+    shell: { sidebarW: p1.shell.sidebarW, topbarH: p1.shell.topbarH, mainTop: p1.shell.mainTop, mainW: p1.shell.mainW, mainPad: p1.shell.mainPad, breadcrumbLocs: p1.shell.crumbs.map((c) => (c.loc || "").replace(/^.*[\\/]/, "")) },
+    dialogsAtLoad: { count: p2.dialogs.length, kinds: p2.dialogs.map(dialogKind) },
+    spinnersAtMeasure: p1.spinners,
+    errors, warnings,
+  };
+  if (legacyP2) rec.calibration = { legacyMainTop: legacyP2.mainTop, legacyMainPct: +(unionArea(legacyP2.mainRects, vw, vh, clipTop) / (vw * vh) * 100).toFixed(1), legacyMainRects: legacyP2.mainRects };
+  return rec;
+}
+function dialogKind(d) {
+  const s = d.slot || "";
+  if (/sheet/.test(s)) return "sheet";
+  if (/drawer/.test(s)) return "drawer";
+  if (/alert-dialog/.test(s) || d.role === "alertdialog") return "alert-dialog";
+  if (/popover/.test(s)) return "popover";
+  if (/dialog/.test(s)) return "dialog";
+  return `unknown(${d.role})`;
+}
+
+// ───────────────────────────────────────────────────────────────────────────────────────────
+// 5. Instance tự dựng: _test DB, server tsx :3016, Vite dev :5176
 // ───────────────────────────────────────────────────────────────────────────────────────────
 const TEST_DB = "aoi_management_test";
 const PROBE_OPENID = "ui-metrics-engineer";
@@ -314,7 +535,7 @@ function readEnvKey(key) {
   }
   return undefined;
 }
-/** URL DB _test: UIM_TEST_DATABASE_URL, hoặc DATABASE_URL của .env đổi tên DB thành aoi_management_test. Tên khác ⇒ từ chối. */
+/** URL DB _test: UIM_TEST_DATABASE_URL, hoặc DATABASE_URL của .env (chỉ ĐỌC chuỗi) đổi tên DB thành aoi_management_test. Tên khác ⇒ từ chối. */
 export function testDatabaseUrl() {
   let u;
   if (process.env.UIM_TEST_DATABASE_URL) u = new URL(process.env.UIM_TEST_DATABASE_URL);
@@ -360,28 +581,55 @@ async function createProbeUser() {
   const perms = engineerTemplatePerms();
   return withTestDb(async (sql) => {
     const stale = await deleteProbeUser(sql);
-    const [u] = await sql`insert into users ("openId", username, name, "loginMethod", role, "isActive", two_factor_enabled, "passwordChangedAt")
-      values (${PROBE_OPENID}, ${PROBE_USER}, 'UI metrics engineer', 'password', 'engineer', true, false, now()) returning id`;
-    await sql`insert into user_secrets ("userId", "passwordHash", "updatedAt") values (${u.id}, ${hash}, now())`;
-    for (const p of perms) {
-      await sql`insert into permissions ("userId", category, "moduleName", "canView", "canCreate", "canEdit", "canDelete", "canExport")
-        values (${u.id}, ${p.category}, ${p.moduleName}, ${!!p.canView}, ${!!p.canCreate}, ${!!p.canEdit}, ${!!p.canDelete}, ${!!p.canExport})`;
-    }
-    const fac = await sql`select code from factories where code = 'SIM-FAC' limit 1`;
-    if (fac.length) await sql`insert into user_factory_assignments ("userId", "factoryCode") values (${u.id}, 'SIM-FAC')`;
-    return { userId: u.id, username: PROBE_USER, password, perms: perms.length, factory: fac.length ? "SIM-FAC" : null, staleRemoved: stale };
+    return sql.begin(async (tx) => {
+      const [u] = await tx`insert into users ("openId", username, name, "loginMethod", role, "isActive", two_factor_enabled, "passwordChangedAt")
+        values (${PROBE_OPENID}, ${PROBE_USER}, 'UI metrics engineer', 'password', 'engineer', true, false, now()) returning id`;
+      await tx`insert into user_secrets ("userId", "passwordHash", "updatedAt") values (${u.id}, ${hash}, now())`;
+      for (const p of perms) {
+        await tx`insert into permissions ("userId", category, "moduleName", "canView", "canCreate", "canEdit", "canDelete", "canExport")
+          values (${u.id}, ${p.category}, ${p.moduleName}, ${!!p.canView}, ${!!p.canCreate}, ${!!p.canEdit}, ${!!p.canDelete}, ${!!p.canExport})`;
+      }
+      const fac = await tx`select code from factories where code = 'SIM-FAC' limit 1`;
+      if (fac.length) await tx`insert into user_factory_assignments ("userId", "factoryCode") values (${u.id}, 'SIM-FAC')`;
+      return { userId: u.id, username: PROBE_USER, password, perms: perms.length, factory: fac.length ? "SIM-FAC" : null, staleRemoved: stale };
+    });
   });
 }
 
-/**
- * Ảnh chụp số hàng các bảng nuôi 14 màn. `_test` là DB DÙNG CHUNG với vitest của mọi phiên: chiều cao
- * bảng/danh sách phụ thuộc số hàng ⇒ hai lần đo chỉ so được khi snapshot này khớp (so ở `--compare`).
- */
-export const DATA_TABLES = ["program_projects", "program_artifacts", "program_builds", "program_deployments", "engineering_changes", "machine_recipes", "recipe_deployments", "interlock_rules", "interlock_events", "orchestration_workflows", "orchestration_runs", "alarm_taxonomy", "master_alarms", "device_adapters", "safety_plc_configs"];
-async function dataSnapshot() {
+/** Băm nội dung bảng: md5 từng hàng (hoặc các cột chỉ định), sắp theo md5 — không cần khoá chính. */
+async function dataSnapshot(tables) {
   return withTestDb(async (sql) => {
     const o = {};
-    for (const t of DATA_TABLES) { try { o[t] = (await sql.unsafe(`select count(*)::int n from "${t}"`))[0].n; } catch { o[t] = null; } }
+    for (const t of tables) {
+      const cols = TABLE_COLS[t];
+      const ex = TABLE_EXCLUDE_COLS[t];
+      const rowExpr = cols ? `md5(row(${cols.map((c) => `t."${c}"`).join(",")})::text)` : ex ? `md5((to_jsonb(t) ${ex.map((c) => `- '${c}'`).join(" ")})::text)` : "md5(t::text)";
+      try {
+        const where = TABLE_WHERE[t] ? ` where ${TABLE_WHERE[t]}` : "";
+        const [r] = await sql.unsafe(`select count(*)::int n, md5(coalesce(string_agg(${rowExpr}, ',' order by ${rowExpr}), '')) h from "${t}" t${where}`);
+        o[t] = `${r.n}:${r.h.slice(0, 12)}`;
+      } catch (e) { o[t] = `ERR:${e.message.slice(0, 60)}`; }
+    }
+    return o;
+  });
+}
+function diffSnap(a = {}, b = {}) {
+  const d = {};
+  for (const t of new Set([...Object.keys(a), ...Object.keys(b)])) if (a[t] !== b[t]) d[t] = [a[t] ?? null, b[t] ?? null];
+  return d;
+}
+/** Bộ đếm lượt quét theo BẢNG public; chunk TimescaleDB quy về hypertable của nó; bỏ catalog nội bộ. */
+async function scanStats() {
+  return withTestDb(async (sql) => {
+    const chunkOf = new Map();
+    try { for (const r of await sql`select chunk_schema || '.' || chunk_name k, hypertable_name h from timescaledb_information.chunks`) chunkOf.set(r.k, r.h); } catch { /* không có timescale */ }
+    try { for (const r of await sql`select c.schema_name || '.' || c.table_name k, h.table_name h from _timescaledb_catalog.chunk c join _timescaledb_catalog.hypertable ch on ch.id = c.hypertable_id join _timescaledb_catalog.hypertable h on h.compressed_hypertable_id = ch.id`) chunkOf.set(r.k, r.h); } catch { /* chunk nén */ }
+    const o = {};
+    for (const r of await sql`select schemaname, relname, (seq_scan + coalesce(idx_scan, 0))::bigint s from pg_stat_user_tables`) {
+      const k = r.schemaname === "public" ? r.relname : chunkOf.get(`${r.schemaname}.${r.relname}`);
+      if (!k) continue;
+      o[k] = (o[k] || 0) + Number(r.s);
+    }
     return o;
   });
 }
@@ -401,8 +649,23 @@ function portBusy(port) {
 }
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
+/**
+ * Hồ sơ cờ (R-2-d). `dev` (mặc định, hồ sơ NGHIỆM THU): cờ GIAO DIỆN bật như `.env` dev; mọi actuation /
+ * ra ngoài TẮT. `off`: mọi thứ tắt (ca phụ — trang khi cờ tắt). Không cờ nào ở đây khởi tác vụ nền khi
+ * ROLE=api (sweeper fleet/sạc nằm ở backgroundJobs, chỉ chạy khi ROLE ≠ api).
+ */
+export const UI_FLAGS_DEV = ["FOE_ENABLED", "DPC_IR_V2_ENABLED", "WORKFORCE_ENABLED", "SAFETY_AUDIT_ENABLED", "EQ_GOVERN_ENABLED", "EQ_INTEG_ENABLED", "FLEET_ORCH_ENABLED", "FLEET_RESOURCE_ENABLED"];
+const ALWAYS_OFF = {
+  DPC_DEPLOY_ENABLED: "false", SAFETY_PLC_ADAPTER_ENABLED: "false", ALERT_EVALUATOR_ENABLED: "false", AI_ORCHESTRATION_ENABLED: "false", AI_ORCHESTRATION_ADVISOR_ENABLED: "false",
+  MQTT_ENABLED: "false", MQTT_PORT: "51883", MQTT_WS_PORT: "51884", EXTERNAL_MQTT_ENABLED: "false",
+  UNS_BRIDGE_ENABLED: "false", UNS_SPARKPLUG_ENABLED: "false", UNS_BROKER_URL: "mqtt://127.0.0.1:9", SPARKPLUG_COMMAND_ENABLED: "false", UNS_TOPIC_V2_ENABLED: "false",
+  OT_CONTROL_ENABLED: "false", OT_STORE_FORWARD_ENABLED: "false", OT_CONN_HA_ENABLED: "false", ROBOT_GATEWAY_ENABLED: "false", ROBOT_CONTROL_ENABLED: "false", OPCUA_GATEWAY_ENABLED: "false", ROS2_BRIDGE_ENABLED: "false",
+  SIM_OT_TELEMETRY_ENABLED: "false", SIM_KINEMATIC_ENABLED: "false", EDGE_RUNTIME_ENABLED: "false", SECS_GEM_ENABLED: "false", MTCONNECT_ENABLED: "false", VDA5050_ENABLED: "false",
+  LLAMA_SERVER_ENABLED: "false", ENABLE_GPU: "false", GGUF_WARM_DEEP_MODEL_ON_BOOT: "false", PROG_KB_ENABLED: "false", KB_AUTOSYNC_ENABLED: "false", HOT_FOLDER_INGEST_ENABLED: "false",
+  WEBHOOKS_ENABLED: "false", OTEL_ENABLED: "false", TWIN_LIVE_ENABLED: "false", TWIN_STREAM_ENABLED: "false", STREAM_TELEMETRY_TAP_ENABLED: "false", OPENAI_GATEWAY_ENABLED: "false",
+};
 /** Env của tiến trình server đo: KHÔNG kế thừa env cha (ngoài biến hệ thống), KHÔNG nạp .env. */
-function serverEnv(port, logDir) {
+function serverEnv(port, logDir, flags) {
   const keep = ["PATH", "Path", "SYSTEMROOT", "SystemRoot", "WINDIR", "TEMP", "TMP", "USERPROFILE", "APPDATA", "LOCALAPPDATA", "HOMEDRIVE", "HOMEPATH", "COMSPEC", "PATHEXT", "NUMBER_OF_PROCESSORS", "PROCESSOR_ARCHITECTURE", "OS", "HOME"];
   const env = {};
   for (const k of keep) if (process.env[k] != null) env[k] = process.env[k];
@@ -412,20 +675,15 @@ function serverEnv(port, logDir) {
     PORT: String(port), ROLE: "api",
     JWT_SECRET: "uim-" + crypto.randomBytes(32).toString("hex"),
     LICENSE_BYPASS: "true", AUTH_2FA_BAT_BUOC: "0", VITE_APP_ID: "ui-metrics",
-    MQTT_ENABLED: "false", MQTT_PORT: "51883", MQTT_WS_PORT: "51884", EXTERNAL_MQTT_ENABLED: "false",
-    UNS_BRIDGE_ENABLED: "false", UNS_SPARKPLUG_ENABLED: "false", UNS_BROKER_URL: "mqtt://127.0.0.1:9", SPARKPLUG_COMMAND_ENABLED: "false", UNS_TOPIC_V2_ENABLED: "false",
-    OT_CONTROL_ENABLED: "false", ROBOT_GATEWAY_ENABLED: "false", ROBOT_CONTROL_ENABLED: "false", OPCUA_GATEWAY_ENABLED: "false", ROS2_BRIDGE_ENABLED: "false",
-    SIM_OT_TELEMETRY_ENABLED: "false", SIM_KINEMATIC_ENABLED: "false", EDGE_RUNTIME_ENABLED: "false", SECS_GEM_ENABLED: "false", MTCONNECT_ENABLED: "false", VDA5050_ENABLED: "false",
-    LLAMA_SERVER_ENABLED: "false", ENABLE_GPU: "false", GGUF_WARM_DEEP_MODEL_ON_BOOT: "false", PROG_KB_ENABLED: "false", KB_AUTOSYNC_ENABLED: "false", HOT_FOLDER_INGEST_ENABLED: "false",
-    WEBHOOKS_ENABLED: "false", OTEL_ENABLED: "false", TWIN_LIVE_ENABLED: "false", TWIN_STREAM_ENABLED: "false", STREAM_TELEMETRY_TAP_ENABLED: "false", OPENAI_GATEWAY_ENABLED: "false",
-  });
+  }, ALWAYS_OFF);
+  for (const f of UI_FLAGS_DEV) env[f] = flags === "dev" ? "true" : "false";
   return env;
 }
 
-async function startServer(port, logDir) {
+async function startServer(port, logDir, flags) {
   if (await portBusy(port)) throw new Error(`Cổng ${port} đang bận — không đo (server sẽ tự nhảy cổng khác).`);
   const log = fs.openSync(path.join(logDir, "server.log"), "w");
-  const child = spawn(process.execPath, [path.join(REPO, "node_modules/tsx/dist/cli.mjs"), "server/_core/index.ts"], { cwd: REPO, env: serverEnv(port, logDir), stdio: ["ignore", log, log], windowsHide: true });
+  const child = spawn(process.execPath, [path.join(REPO, "node_modules/tsx/dist/cli.mjs"), "server/_core/index.ts"], { cwd: REPO, env: serverEnv(port, logDir, flags), stdio: ["ignore", log, log], windowsHide: true });
   const t0 = Date.now();
   while (Date.now() - t0 < 240_000) {
     if (child.exitCode != null) throw new Error(`Server thoát sớm (mã ${child.exitCode}) — xem ${path.join(logDir, "server.log")}`);
@@ -447,6 +705,35 @@ function killTree(pid) {
     else process.kill(-pid, "SIGKILL");
   } catch { /* đã chết */ }
 }
+/**
+ * Lấy mẫu kết nối mạng của CẢ cây tiến trình server (Windows: Get-NetTCPConnection/UDP). Cho phép: nghe
+ * :serverPort; TCP tới 127.0.0.1:5434 (Postgres _test); TCP vào :serverPort từ loopback (Vite proxy).
+ * Mọi thứ khác ⇒ vi phạm.
+ */
+function sampleConnections(rootPid, serverPort, label) {
+  if (process.platform !== "win32") return { label, skipped: "chỉ hỗ trợ Windows" };
+  const ps = `$root=${Number(rootPid)}; $all=Get-CimInstance Win32_Process | Select-Object ProcessId,ParentProcessId; $ids=@($root); $added=$true; while($added){ $added=$false; foreach($p in $all){ if(($ids -contains $p.ParentProcessId) -and -not ($ids -contains $p.ProcessId)){ $ids+=$p.ProcessId; $added=$true } } }; $t=@(Get-NetTCPConnection -ErrorAction SilentlyContinue | Where-Object { $ids -contains $_.OwningProcess } | Select-Object LocalAddress,LocalPort,RemoteAddress,RemotePort,State,OwningProcess); $u=@(Get-NetUDPEndpoint -ErrorAction SilentlyContinue | Where-Object { $ids -contains $_.OwningProcess } | Select-Object LocalAddress,LocalPort,OwningProcess); @{ids=$ids; tcp=$t; udp=$u} | ConvertTo-Json -Depth 4 -Compress`;
+  try {
+    const raw = execFileSync("powershell.exe", ["-NoProfile", "-NonInteractive", "-Command", ps], { encoding: "utf8", timeout: 60_000 });
+    const j = JSON.parse(raw);
+    const tcp = [].concat(j.tcp || []).map((c) => ({ l: `${c.LocalAddress}:${c.LocalPort}`, r: `${c.RemoteAddress}:${c.RemotePort}`, s: String(c.State), lp: c.LocalPort, rp: c.RemotePort, ra: c.RemoteAddress }));
+    const loop = (a) => a === "127.0.0.1" || a === "::1" || a === "::ffff:127.0.0.1";
+    const stateName = (s) => ({ 2: "Listen", 5: "Established", 3: "SynSent", 11: "TimeWait", 8: "CloseWait", 6: "FinWait1", 7: "FinWait2", 1: "Closed", 9: "Closing", 10: "LastAck", 4: "SynReceived", 100: "Bound" })[s] || s;
+    const viol = [];
+    for (const c of tcp) {
+      const st = stateName(c.s);
+      if (st === "Listen") { if (c.lp !== serverPort) viol.push({ ...c, st, why: "nghe cổng lạ" }); continue; }
+      if (st === "Bound" || st === "TimeWait") continue;
+      if (c.rp === 5434 && loop(c.ra)) continue;
+      if (c.lp === serverPort && loop(c.ra)) continue;
+      viol.push({ ...c, st, why: "kết nối ngoài danh sách cho phép" });
+    }
+    const udp = [].concat(j.udp || []).map((u) => `${u.LocalAddress}:${u.LocalPort}`);
+    const summary = {};
+    for (const c of tcp) { const st = stateName(c.s); const k = st === "Listen" ? `Listen ${c.l}` : `${st} → ${c.r === `0.0.0.0:0` ? "-" : (c.lp === serverPort ? `vào :${serverPort} từ ${c.ra}` : c.r)}`; summary[k] = (summary[k] || 0) + 1; }
+    return { label, pids: [].concat(j.ids || []), tcp: summary, udp, violations: viol };
+  } catch (e) { return { label, error: e.message.slice(0, 200) }; }
+}
 async function startVite(vitePort, serverPort) {
   if (await portBusy(vitePort)) throw new Error(`Cổng ${vitePort} đang bận`);
   const { createServer } = await import("vite");
@@ -464,7 +751,7 @@ async function startVite(vitePort, serverPort) {
 }
 
 // ───────────────────────────────────────────────────────────────────────────────────────────
-// 4. Đo bằng Playwright
+// 6. Đo bằng Playwright
 // ───────────────────────────────────────────────────────────────────────────────────────────
 async function settle(page) {
   await page.waitForLoadState("networkidle", { timeout: 8000 }).catch(() => {});
@@ -482,19 +769,18 @@ async function countDialogs(page) {
     return [...document.querySelectorAll('[role=dialog],[role=alertdialog]')].filter(vis).map((e) => { const r = e.getBoundingClientRect(); return { role: e.getAttribute('role'), slot: e.getAttribute('data-slot'), x: Math.round(r.left), y: Math.round(r.top), w: Math.round(r.width), h: Math.round(r.height) }; });
   });
 }
-async function runActions(page, screen) {
+/** Hành động KHAI BÁO: không tìm thấy = LỖI; disabled = cảnh báo; mở được ⇒ ghi LOẠI dialog. */
+async function runActions(page, actions) {
   const out = [];
-  for (const a of screen.actions || []) {
+  for (const a of actions || []) {
     const btn = page.locator("main").getByRole("button", { name: a.label }).first();
     const rec = { id: a.id, label: String(a.label) };
-    if (!(await btn.count())) { out.push({ ...rec, found: false }); continue; }
-    rec.found = true;
-    rec.enabled = await btn.isEnabled();
-    if (!rec.enabled) { out.push(rec); continue; }
+    if (!(await btn.count())) { out.push({ ...rec, status: "not-found", error: `hành động khai báo "${a.id}" KHÔNG TÌM THẤY` }); continue; }
+    if (!(await btn.isEnabled())) { out.push({ ...rec, status: "disabled" }); continue; }
     await btn.click();
     await page.waitForTimeout(700);
     const ds = await countDialogs(page);
-    rec.dialogs = ds.length; rec.kinds = ds.map((d) => d.slot || d.role); rec.rects = ds;
+    rec.status = "opened"; rec.dialogs = ds.length; rec.kinds = ds.map(dialogKind); rec.rects = ds;
     await page.keyboard.press("Escape");
     await page.waitForTimeout(500);
     rec.closedByEsc = (await countDialogs(page)).length === 0;
@@ -503,7 +789,14 @@ async function runActions(page, screen) {
   }
   return out;
 }
-
+async function measurePage(page, s, variant) {
+  const p1 = await page.evaluate(PHASE1);
+  const clipTop = p1.shell.topbarPos === "sticky" || p1.shell.topbarPos === "fixed" ? (p1.shell.topbarBottom ?? 0) : 0;
+  const ids = legacyIds(s, p1.regions);
+  const p2 = await page.evaluate(PHASE2, p1.hasLayoutMainAttr ? { mode: "attr", clipTop } : { mode: "legacy", ids, clipTop });
+  const legacyP2 = p1.hasLayoutMainAttr && ids.length ? await page.evaluate(PHASE2, { mode: "legacy", ids, clipTop }) : null;
+  return summarize(s, variant, p1, p2, legacyP2);
+}
 async function resolveRoute(ctx, base, s) {
   if (s.deepLink !== "firstProject") return s.route;
   const res = await ctx.request.get(base + "/api/trpc/programming.listProjects");
@@ -514,11 +807,77 @@ async function resolveRoute(ctx, base, s) {
   return `${s.route}?projectId=${first.id}`;
 }
 
-async function measureAll({ base, username, password, screens, sizes, shots, shotDir, listButtons }) {
+/**
+ * ĐỐI CHỨNG DƯƠNG trong mỗi lần chạy (MSA): trên ECN @1600, chèn từng nhiễu vào DOM thật rồi đo lại
+ * ⇒ thiết bị PHẢI thấy. Mỗi phép chèn làm trên trang nạp lại sạch.
+ */
+async function selfTest(page, base, s) {
+  const checks = [];
+  const check = (name, pass, detail) => checks.push({ name, pass: !!pass, ...detail });
+  const fresh = async () => { await page.goto(base + s.route); await settle(page); await page.evaluate(() => window.scrollTo(0, 0)); };
+  await fresh();
+  const b0 = await measurePage(page, s, "selftest");
+  // T1: banner lồng 2 tầng, lớp px-5 py-4 (lọt regex FE1), cao 100 px, chèn ngay trước nhánh chứa MAIN
+  {
+    const p1 = await page.evaluate(PHASE1);
+    const id = legacyIds(s, p1.regions)[0];
+    await page.evaluate((rid) => {
+      const main = document.querySelector('main');
+      const h1 = document.querySelector('main h1');
+      const target = document.querySelector('main [data-layout-main]') || document.querySelector(`[data-uim-r="${rid}"]`);
+      let a = target; while (a.parentElement && a.parentElement !== main && !(h1 && a.parentElement.contains(h1))) a = a.parentElement;
+      const w = document.createElement('div');
+      const w2 = document.createElement('div');
+      const bn = document.createElement('div');
+      bn.className = 'rounded-lg border border-amber-500/40 bg-amber-500/10 px-5 py-4';
+      bn.style.height = '100px';
+      bn.textContent = 'UIM tự kiểm — banner chèn';
+      w2.appendChild(bn); w.appendChild(w2);
+      a.parentElement.insertBefore(w, a);
+    }, id);
+  }
+  const b1 = await measurePage(page, s, "selftest");
+  check("banner-long-sau-px5-py4", b1.bannersBeforeMain.count === b0.bannersBeforeMain.count + 1 && b1.bannersBeforeMain.px >= b0.bannersBeforeMain.px + 100 && b1.chromeAboveMain >= b0.chromeAboveMain + 100,
+    { before: { n: b0.bannersBeforeMain.count, px: b0.bannersBeforeMain.px, top: b0.chromeAboveMain, fe1: b0.bannersFe1Class.count }, after: { n: b1.bannersBeforeMain.count, px: b1.bannersBeforeMain.px, top: b1.chromeAboveMain, fe1: b1.bannersFe1Class.count } });
+  // T2: lớp phủ fixed 200×200 không data-loc, z 9999, giữa MAIN
+  await fresh();
+  const r = b0.mainRects[0];
+  await page.evaluate((rc) => { const d = document.createElement('div'); d.setAttribute('data-testid', 'uim-overlay'); d.style.cssText = `position:fixed;z-index:9999;left:${rc.x + 40}px;top:${Math.min(rc.y + 40, innerHeight - 220)}px;width:200px;height:200px;background:rgba(255,0,0,.3)`; document.body.appendChild(d); }, r);
+  const b2 = await measurePage(page, s, "selftest");
+  check("lop-phu-fixed-200x200", b2.coverMain.px >= b0.coverMain.px + 0.9 * 40000 && b2.coverMain.items.some((i) => i.testid === "uim-overlay"), { before: b0.coverMain.px, after: b2.coverMain.px, culprit: b2.coverMain.items[0] });
+  // T3: thêm một chip [data-layout-kpi] — MetricCard cũ vẫn phải được đếm song song
+  await fresh();
+  {
+    const p1 = await page.evaluate(PHASE1);
+    const id = legacyIds(s, p1.regions)[0];
+    await page.evaluate((rid) => {
+      const main = document.querySelector('main');
+      const h1 = document.querySelector('main h1');
+      const target = document.querySelector('main [data-layout-main]') || document.querySelector(`[data-uim-r="${rid}"]`);
+      let a = target; while (a.parentElement && a.parentElement !== main && !(h1 && a.parentElement.contains(h1))) a = a.parentElement;
+      const d = document.createElement('div'); d.setAttribute('data-layout-kpi', ''); d.style.cssText = 'display:block;height:32px;width:120px'; d.textContent = 'KPI';
+      a.parentElement.insertBefore(d, a);
+    }, id);
+  }
+  const b3 = await measurePage(page, s, "selftest");
+  check("kpi-chinh-thuc-va-cu", b3.kpi.official.count === b0.kpi.official.count + 1 && b3.kpi.legacy.count === b0.kpi.legacy.count, { before: b0.kpi, after: b3.kpi });
+  // T4: attribute vi phạm — MAIN bọc h1, và một attribute ngoài <main>
+  await fresh();
+  await page.evaluate(() => { const h1 = document.querySelector('main h1'); let a = h1; while (a.parentElement && a.parentElement !== document.querySelector('main')) a = a.parentElement; a.setAttribute('data-layout-main', 'uim-test'); const o = document.createElement('div'); o.setAttribute('data-layout-main', 'ngoai'); o.style.cssText = 'height:20px;width:20px'; document.body.appendChild(o); });
+  const b4 = await measurePage(page, s, "selftest");
+  check("attribute-vi-pham", b4.errors.some((e) => /chứa h1/.test(e)) && b4.errors.some((e) => /NGOÀI <main>/.test(e)), { errors: b4.errors.slice(0, 4) });
+  // T5: hành động khai báo không tồn tại
+  await fresh();
+  const acts = await runActions(page, [{ id: "uim-ma", label: /__khong_ton_tai_uim__/ }]);
+  check("hanh-dong-khong-thay-la-loi", acts[0].status === "not-found" && !!acts[0].error, { got: acts[0] });
+  return { screen: s.id, vw: (await page.viewportSize()).width, pass: checks.every((c) => c.pass), checks };
+}
+
+async function measureAll({ base, username, password, screens, sizes, shots, shotDir, listButtons, serverPid, serverPort, discover, doSelfTest }) {
   const { chromium } = require("playwright");
   const browser = await chromium.launch({ headless: true });
-  const results = [];
-  const buttons = {};
+  const results = [], buttons = {}, connections = [], discovered = {};
+  let selfTestResult = null;
   try {
     for (const variant of ["closed", "open"]) {
       const list = screens.filter((s) => variant === "closed" || s.copilot);
@@ -528,42 +887,64 @@ async function measureAll({ base, username, password, screens, sizes, shots, sho
       const login = await ctx.request.post(base + "/api/auth/login", { data: { username, password } });
       if (!login.ok()) throw new Error(`Đăng nhập thất bại ${login.status()} ${await login.text()}`);
       const page = await ctx.newPage();
+      let procs = new Set();
+      page.on("request", (rq) => { const m = /\/api\/trpc\/([^?]+)/.exec(rq.url()); if (m) for (const p of decodeURIComponent(m[1]).split(",")) procs.add(p); });
       for (const s of list) {
         const route = await resolveRoute(ctx, base, s);
         for (const [w, h] of sizes) {
           await page.setViewportSize({ width: w, height: h });
+          procs = new Set();
+          const st0 = discover ? await scanStats() : null;
           await page.goto(base + route);
           await settle(page);
           await page.evaluate(() => window.scrollTo(0, 0));
           await page.waitForTimeout(200);
+          if (discover) {
+            await sleep(1500);
+            const st1 = await scanStats();
+            const key = `${s.id}`;
+            discovered[key] = discovered[key] || new Set();
+            for (const [t, n] of Object.entries(st1)) if (n > (st0[t] ?? 0)) discovered[key].add(t);
+          }
           if (shots) await page.screenshot({ path: path.join(shotDir, `${String(s.n).padStart(2, "0")}-${s.id}-${variant}-${w}.png`) });
-          const raw = await page.evaluate(MEASURE_IN_PAGE);
-          const rec = summarize(s, s.copilot ? variant : "n/a", raw);
-          rec.actions = await runActions(page, s);
+          const rec = await measurePage(page, s, s.copilot ? variant : "n/a");
+          rec.actions = await runActions(page, s.actions);
+          for (const a of rec.actions) { if (a.status === "not-found") rec.errors.push(a.error); if (a.status === "disabled") rec.warnings.push(`hành động "${a.id}" disabled cho role đo`); if (a.status === "opened" && !a.closedByEsc) rec.warnings.push(`hành động "${a.id}": Esc không đóng`); }
+          rec.trpc = [...procs].sort();
+          const known = KNOWN_PROCS[s.id];
+          if (known) { const unk = rec.trpc.filter((p) => !known.includes(p)); if (unk.length) rec.warnings.push(`thủ tục tRPC chưa có trong KNOWN_PROCS (canh trôi có thể thiếu bảng — chạy --discover-tables): ${unk.join(", ")}`); }
           if (listButtons) buttons[`${s.id}-${variant}-${w}`] = await page.evaluate(() => [...document.querySelectorAll('main button,main [role=button]')].filter((b) => { const r = b.getBoundingClientRect(); return r.width > 0 && r.height > 0; }).map((b) => ({ name: (b.innerText.trim() || b.getAttribute('aria-label') || b.getAttribute('title') || '?').replace(/\s+/g, ' ').slice(0, 40), disabled: b.disabled || b.getAttribute('aria-disabled') === 'true', haspopup: b.getAttribute('aria-haspopup') })));
           results.push(rec);
-          const flag = rec.missingDataLayoutMain ? "  ⚠ CHƯA có [data-layout-main] → selector FE1" : "";
-          console.log(`${s.id.padEnd(22)} ${String(w).padStart(4)} ${rec.variant.padEnd(6)} main=${String(rec.mainPct).padStart(5)}% h1=${rec.h1Top} crumbs=${rec.breadcrumbs} banners=${rec.bannersBeforeMain.count}/${rec.bannersBeforeMain.px}px kpi=${rec.kpi.count}/${rec.kpi.stripHeight}px ai=${rec.aiOcclusion.overlapMainPx}px² ratio=${rec.pageHeightRatio}${rec.mainFound ? "" : "  ✗ KHÔNG THẤY MAIN"}${flag}`);
+          const flag = rec.errors.length ? `  ✗ LỖI: ${rec.errors.join(" | ")}` : (rec.missingDataLayoutMain ? "  ⚠ CHƯA có [data-layout-main] → selector FE1" : "");
+          console.log(`${s.id.padEnd(22)} ${String(w).padStart(4)} ${rec.variant.padEnd(6)} main=${String(rec.mainPct).padStart(5)}% top=${rec.chromeAboveMain} h1=${rec.h1Top} gap=${rec.gapH1ToMain} crumbs=${rec.breadcrumbs} truoc=${rec.bannersBeforeMain.count}/${rec.bannersBeforeMain.px}px kpi=${rec.kpi.all.count}/${rec.kpi.all.stripPx}px che=${rec.coverMain.px}px² ratio=${rec.pageHeightRatio}${flag}`);
         }
+      }
+      if (serverPid) connections.push(sampleConnections(serverPid, serverPort, `sau biến thể ${variant}`));
+      if (doSelfTest && variant === "closed") {
+        const ecn = SCREENS.find((x) => x.id === "engineering-changes");
+        await page.setViewportSize({ width: 1600, height: 950 });
+        selfTestResult = await selfTest(page, base, ecn);
+        console.log(`[uim] tự kiểm (đối chứng dương): ${selfTestResult.pass ? "ĐẠT" : "TRƯỢT"} — ${selfTestResult.checks.map((c) => `${c.name}:${c.pass ? "✓" : "✗"}`).join(" ")}`);
       }
       await ctx.close();
     }
   } finally { await browser.close(); }
-  return { results, buttons };
+  return { results, buttons, connections, selfTest: selfTestResult, discovered: Object.fromEntries(Object.entries(discovered).map(([k, v]) => [k, [...v].sort()])) };
 }
 
 // ───────────────────────────────────────────────────────────────────────────────────────────
-// 5. MSA (so 2 lần chạy) và đối chiếu FE1
+// 7. MSA (so 2 lần chạy) và đối chiếu FE1
 // ───────────────────────────────────────────────────────────────────────────────────────────
 const MSA_METRICS = [
-  ["mainPct", (r) => r.mainPct], ["mainTop", (r) => r.mainTop], ["h1Top", (r) => r.h1Top], ["breadcrumbs", (r) => r.breadcrumbs],
-  ["banners.count", (r) => r.bannersBeforeMain.count], ["banners.px", (r) => r.bannersBeforeMain.px],
-  ["kpi.count", (r) => r.kpi.count], ["kpi.stripHeight", (r) => r.kpi.stripHeight],
-  ["ai.overlapMainPx", (r) => r.aiOcclusion.overlapMainPx], ["pageHeightRatio", (r) => r.pageHeightRatio],
-  ["dialogsAtLoad", (r) => r.dialogsAtLoad], ["actionDialogs", (r) => (r.actions || []).reduce((s, a) => s + (a.dialogs || 0), 0)],
+  ["mainPct", (r) => r.mainPct], ["chromeAboveMain", (r) => r.chromeAboveMain], ["h1Top", (r) => r.h1Top], ["gapH1ToMain", (r) => r.gapH1ToMain], ["breadcrumbs", (r) => r.breadcrumbs],
+  ["banners.count", (r) => r.bannersBeforeMain.count], ["banners.px", (r) => r.bannersBeforeMain.px], ["aboveH1.px", (r) => r.blocksAboveH1.unionPx],
+  ["kpi.legacy", (r) => r.kpi.legacy.count], ["kpi.official", (r) => r.kpi.official.count], ["kpi.stripPx", (r) => r.kpi.all.stripPx],
+  ["cover.px", (r) => r.coverMain.px], ["pageHeightRatio", (r) => r.pageHeightRatio],
+  ["dialogsAtLoad", (r) => r.dialogsAtLoad.count], ["actions.sig", (r) => (r.actions || []).map((a) => `${a.id}:${a.status}:${(a.kinds || []).join("+")}`).join(";")],
+  ["errors", (r) => r.errors.length],
 ];
 const keyOf = (r) => `${r.screen}|${r.vw}|${r.variant}`;
-const relDev = (a, b) => (a == null && b == null) ? 0 : (a == null || b == null) ? 100 : (a === b ? 0 : Math.abs(a - b) / Math.max(Math.abs(a), Math.abs(b)) * 100);
+const relDev = (a, b) => (a == null && b == null) ? 0 : (a == null || b == null) ? 100 : (a === b ? 0 : (typeof a === "number" && typeof b === "number" ? Math.abs(a - b) / Math.max(Math.abs(a), Math.abs(b)) * 100 : 100));
 export function compareRuns(A, B, threshold = 2) {
   const mb = new Map(B.results.map((r) => [keyOf(r), r]));
   const rows = []; let worst = 0, n = 0;
@@ -571,11 +952,16 @@ export function compareRuns(A, B, threshold = 2) {
     const b = mb.get(keyOf(a)); if (!b) { rows.push({ key: keyOf(a), metric: "*", a: "có", b: "THIẾU", dev: 100 }); worst = 100; continue; }
     for (const [name, get] of MSA_METRICS) { const d = relDev(get(a), get(b)); n++; worst = Math.max(worst, d); if (d > 0) rows.push({ key: keyOf(a), metric: name, a: get(a), b: get(b), dev: +d.toFixed(2) }); }
   }
-  const dataDiff = {};
-  for (const t of new Set([...Object.keys(A.meta?.dataSnapshot || {}), ...Object.keys(B.meta?.dataSnapshot || {})])) {
-    const x = A.meta?.dataSnapshot?.[t], y = B.meta?.dataSnapshot?.[t]; if (x !== y) dataDiff[t] = [x, y];
-  }
-  return { comparisons: n, nonZero: rows.length, worstDevPct: +worst.toFixed(2), pass: worst < threshold, threshold, dataSnapshotDiff: dataDiff, rows };
+  const dataDiff = diffSnap(A.meta?.data?.before, B.meta?.data?.before);
+  const gates = {
+    deviationUnderThreshold: worst < threshold,
+    selfTestA: !!A.meta?.selfTest?.pass, selfTestB: !!B.meta?.selfTest?.pass,
+    noDriftWithinA: A.meta?.data ? Object.keys(A.meta.data.drift || {}).length === 0 : false,
+    noDriftWithinB: B.meta?.data ? Object.keys(B.meta.data.drift || {}).length === 0 : false,
+    sameDataAcrossRuns: Object.keys(dataDiff).length === 0,
+    sameFlags: A.meta?.flags === B.meta?.flags,
+  };
+  return { comparisons: n, nonZero: rows.length, worstDevPct: +worst.toFixed(2), threshold, gates, pass: Object.values(gates).every(Boolean), dataSnapshotDiff: dataDiff, rows };
 }
 export function reconcileFe1(run, threshold = 5) {
   const rows = [];
@@ -588,24 +974,25 @@ export function reconcileFe1(run, threshold = 5) {
     add("mainTop@1600", f.mainTop, r16.mainTop);
     add("ws%@1600", f.ws1600, r16.mainPctFe1);
     add("ws%@1366", f.ws1366, r13.mainPctFe1);
-    add("notices@1600", f.notices, r16.bannersBeforeMain.count);
-    add("noticePx@1600", f.noticePx, r16.bannersBeforeMain.px);
-    add("ratio@1600", f.ratio1600, r16.pageHeightRatio);
-    add("ratio@1366", f.ratio1366, r13.pageHeightRatio);
+    add("notices@1600", f.notices, r16.bannersFe1Class.count);
+    add("noticePx@1600", f.noticePx, r16.bannersFe1Class.px);
+    add("ratio@1600", f.ratio1600, r16.pageHeightRatioDoc);
+    add("ratio@1366", f.ratio1366, r13.pageHeightRatioDoc);
     add("crumbs@1600", f.crumbs, r16.breadcrumbs);
-    add("kpiCards@1600", f.kpi, r16.kpi.count);
+    add("kpiCards@1600", f.kpi, r16.kpi.legacy.count);
   }
   return { threshold, total: rows.length, within: rows.filter((r) => r.ok).length, rows };
 }
 
 // ───────────────────────────────────────────────────────────────────────────────────────────
-// 6. CLI
+// 8. CLI
 // ───────────────────────────────────────────────────────────────────────────────────────────
 function parseArgs(argv) {
   const o = { _: [] };
+  const FLAGS = ["spawn", "shots", "list-buttons", "keep", "discover-tables", "no-selftest"];
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
-    if (a.startsWith("--")) { const k = a.slice(2); const nx = argv[i + 1]; if (nx != null && !nx.startsWith("--") && !["spawn", "shots", "list-buttons", "keep"].includes(k)) { o[k] = nx; i++; } else o[k] = true; }
+    if (a.startsWith("--")) { const k = a.slice(2); const nx = argv[i + 1]; if (nx != null && !nx.startsWith("--") && !FLAGS.includes(k)) { o[k] = nx; i++; } else o[k] = true; }
     else o._.push(a);
   }
   return o;
@@ -613,6 +1000,7 @@ function parseArgs(argv) {
 async function portsReport(ports) {
   const r = {}; for (const p of ports) r[p] = (await portBusy(p)) ? "BẬN" : "trống"; return r;
 }
+const allTables = () => [...new Set(Object.values(PAGE_TABLES).flat())].filter((t) => !SELF_WRITTEN[t]).sort();
 
 async function main() {
   const args = parseArgs(process.argv.slice(2));
@@ -624,10 +1012,10 @@ async function main() {
   }
   if (args.fe1) {
     const run = JSON.parse(fs.readFileSync(args.fe1, "utf8"));
-    const c = reconcileFe1(run, Number(args.threshold ?? 5));
-    console.log(JSON.stringify(c, null, 1));
+    console.log(JSON.stringify(reconcileFe1(run, Number(args.threshold ?? 5)), null, 1));
     return;
   }
+  const flags = args.flags === "off" ? "off" : "dev";
   const serverPort = Number(args["server-port"] ?? 3016), vitePort = Number(args["vite-port"] ?? 5176);
   const sizes = args.sizes ? String(args.sizes).split(",").map((s) => s.split("x").map(Number)) : DEFAULT_SIZES;
   const screens = args.screens ? SCREENS.filter((s) => String(args.screens).split(",").includes(s.id)) : SCREENS;
@@ -635,42 +1023,51 @@ async function main() {
   const shotDir = path.join(REPO, ".playwright-mcp/do-bo-cuc/anh");
   fs.mkdirSync(path.dirname(outFile), { recursive: true });
   if (args.shots) fs.mkdirSync(shotDir, { recursive: true });
-  const meta = { tool: "scripts/ui-metrics/engineeringLayout.mjs", startedAt: new Date().toISOString(), argv: process.argv.slice(2), sizes, gitHead: (() => { try { return execFileSync("git", ["rev-parse", "--short", "HEAD"], { cwd: REPO }).toString().trim(); } catch { return null; } })() };
+  const meta = { tool: "scripts/ui-metrics/engineeringLayout.mjs", startedAt: new Date().toISOString(), argv: process.argv.slice(2), sizes, flags, gitHead: (() => { try { return execFileSync("git", ["rev-parse", "--short", "HEAD"], { cwd: REPO }).toString().trim(); } catch { return null; } })() };
+  if (!args.spawn) throw new Error("Chỉ hỗ trợ --spawn (instance tự dựng, có canh dữ liệu + kết nối). Đo instance khác không được nghiệm thu.");
 
-  let base = args.base, username = args.user, password = args.password;
-  let serverChild = null, vite = null, probe = null;
+  let serverChild = null, vite = null, probeMade = false;
   const logDir = fs.mkdtempSync(path.join(os.tmpdir(), "uim-"));
   const cleanup = async () => {
     if (vite) { await vite.close().catch(() => {}); vite = null; }
     if (serverChild) { killTree(serverChild.pid); serverChild = null; }
-    if (probe) { meta.probeUserRemoved = await withTestDb(deleteProbeUser).catch((e) => ({ error: e.message })); probe = null; }
+    if (probeMade) { meta.probeUserRemoved = await withTestDb(deleteProbeUser).catch((e) => ({ error: e.message })); probeMade = false; }
   };
   process.on("SIGINT", async () => { await cleanup(); process.exit(130); });
   try {
-    if (args.spawn) {
-      probe = await createProbeUser();
-      meta.dataSnapshot = await dataSnapshot();
-      meta.instance = { server: `tsx server/_core/index.ts :${serverPort} (env tách, không nạp .env)`, vite: `vite dev in-process :${vitePort} (proxy /api,/uploads → :${serverPort})`, db: TEST_DB, user: { username: probe.username, role: "engineer", perms: probe.perms, factory: probe.factory } };
-      const s = await startServer(serverPort, logDir); serverChild = s.child; meta.instance.serverBootMs = s.bootMs; meta.instance.serverPid = s.child.pid;
-      vite = await startVite(vitePort, serverPort);
-      base = `http://127.0.0.1:${vitePort}`; username = probe.username; password = probe.password;
-      console.log(`[uim] instance: server :${serverPort} (pid ${s.child.pid}, boot ${s.bootMs} ms) · vite :${vitePort} · DB ${TEST_DB} · log ${logDir}`);
-      if (args.keep) { console.log(`[uim] --keep: giữ instance; user ${username} / ${password}. Ctrl-C để tắt.`); await new Promise(() => {}); }
-    }
-    if (!base || !username || !password) throw new Error("Cần --spawn, hoặc --base + --user + --password");
+    probeMade = true; // kể cả khi tạo hỏng giữa chừng ⇒ cleanup vẫn xoá
+    const probe = await createProbeUser();
+    const tables = allTables();
+    meta.data = { tables: tables.length, before: args["discover-tables"] ? null : await dataSnapshot(tables) };
+    meta.instance = { server: `tsx server/_core/index.ts :${serverPort} (env tách, không nạp .env; ROLE=api)`, vite: `vite dev in-process :${vitePort} (proxy /api,/uploads → :${serverPort}; envDir của vite.config nạp VITE_* từ .env vào client)`, db: TEST_DB, flagsOn: flags === "dev" ? UI_FLAGS_DEV : [], alwaysOff: Object.keys(ALWAYS_OFF).filter((k) => ALWAYS_OFF[k] === "false"), user: { username: probe.username, role: "engineer", perms: probe.perms, factory: probe.factory } };
+    const s = await startServer(serverPort, logDir, flags); serverChild = s.child; meta.instance.serverBootMs = s.bootMs; meta.instance.serverPid = s.child.pid;
+    vite = await startVite(vitePort, serverPort);
+    const base = `http://127.0.0.1:${vitePort}`;
+    console.log(`[uim] instance: server :${serverPort} (pid ${s.child.pid}, boot ${s.bootMs} ms, cờ ${flags}) · vite :${vitePort} · DB ${TEST_DB} · log ${logDir}`);
+    const conn0 = sampleConnections(s.child.pid, serverPort, "sau khi khởi động");
+    if (args.keep) { console.log(`[uim] --keep: giữ instance; user ${probe.username} / ${probe.password}. Ctrl-C để tắt.`); await new Promise(() => {}); }
     meta.base = base;
-    const { results, buttons } = await measureAll({ base, username, password, screens, sizes, shots: !!args.shots, shotDir, listButtons: !!args["list-buttons"] });
-    const missing = [...new Set(results.filter((r) => r.missingDataLayoutMain).map((r) => r.screen))];
-    const notFound = results.filter((r) => !r.mainFound).map((r) => `${r.screen}@${r.vw}/${r.variant}`);
+    const r = await measureAll({ base, username: probe.username, password: probe.password, screens, sizes, shots: !!args.shots, shotDir, listButtons: !!args["list-buttons"], serverPid: s.child.pid, serverPort, discover: !!args["discover-tables"], doSelfTest: !args["no-selftest"] && !args["discover-tables"] && screens.some((x) => x.id === "engineering-changes") });
+    meta.connections = [conn0, ...r.connections];
+    meta.outboundViolations = meta.connections.flatMap((c) => c.violations || []);
+    meta.selfTest = r.selfTest;
+    if (!args["discover-tables"]) { meta.data.after = await dataSnapshot(tables); meta.data.drift = diffSnap(meta.data.before, meta.data.after); }
+    const missing = [...new Set(r.results.filter((x) => x.missingDataLayoutMain).map((x) => x.screen))];
+    const errors = r.results.flatMap((x) => x.errors.map((e) => `${x.screen}@${x.vw}/${x.variant}: ${e}`));
     meta.finishedAt = new Date().toISOString();
-    const out = { meta, pagesMissingDataLayoutMain: missing, mainNotFound: notFound, results };
-    if (args["list-buttons"]) out.buttons = buttons;
-    if (missing.length) console.log(`\n⚠ ${missing.length}/${screens.length} màn CHƯA có [data-layout-main] — đang đo bằng selector FE1: ${missing.join(", ")}`);
-    if (notFound.length) console.log(`✗ KHÔNG THẤY MAIN: ${notFound.join(", ")}`);
+    const out = { meta, pagesMissingDataLayoutMain: missing, errors, results: r.results };
+    if (args["list-buttons"]) out.buttons = r.buttons;
+    if (args["discover-tables"]) out.discovered = r.discovered;
     await cleanup();
-    if (args.spawn) { await sleep(1500); out.meta.portsAfter = await portsReport([serverPort, vitePort]); console.log(`[uim] cổng sau khi tắt: ${JSON.stringify(out.meta.portsAfter)} · user đo: ${JSON.stringify(out.meta.probeUserRemoved)}`); }
+    await sleep(1500); out.meta.portsAfter = await portsReport([serverPort, vitePort]);
+    out.pass = errors.length === 0 && meta.outboundViolations.length === 0 && (args["discover-tables"] || (Object.keys(meta.data.drift).length === 0 && (args["no-selftest"] || !!meta.selfTest?.pass)));
     fs.writeFileSync(outFile, JSON.stringify(out, null, 1));
-    console.log(`[uim] ghi ${outFile}`);
+    if (missing.length) console.log(`\n⚠ ${missing.length}/${screens.length} màn CHƯA có [data-layout-main] — đang đo bằng selector FE1: ${missing.join(", ")}`);
+    if (errors.length) console.log(`✗ ${errors.length} LỖI:\n  ${errors.join("\n  ")}`);
+    console.log(`[uim] kết nối ngoài danh sách: ${meta.outboundViolations.length} · trôi dữ liệu trong lần chạy: ${meta.data.drift ? Object.keys(meta.data.drift).length : "n/a"} (${meta.data.tables} bảng) · tự kiểm: ${meta.selfTest ? (meta.selfTest.pass ? "ĐẠT" : "TRƯỢT") : "n/a"}`);
+    console.log(`[uim] cổng sau khi tắt: ${JSON.stringify(out.meta.portsAfter)} · user đo: ${JSON.stringify(out.meta.probeUserRemoved)}`);
+    console.log(`[uim] ghi ${outFile} · pass=${out.pass}`);
+    process.exitCode = out.pass ? 0 : 2;
   } catch (e) {
     await cleanup();
     console.error("[uim] LỖI:", e.message, `(log: ${logDir})`);

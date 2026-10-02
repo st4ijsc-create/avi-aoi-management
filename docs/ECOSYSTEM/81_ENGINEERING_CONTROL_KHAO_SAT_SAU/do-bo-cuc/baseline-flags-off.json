@@ -1,12 +1,13 @@
 {
  "meta": {
   "tool": "scripts/ui-metrics/engineeringLayout.mjs",
-  "startedAt": "2026-10-02T08:40:08.204Z",
+  "startedAt": "2026-10-02T08:55:54.612Z",
   "argv": [
    "--spawn",
-   "--shots",
+   "--flags",
+   "off",
    "--out",
-   ".playwright-mcp/do-bo-cuc/r4-A.json"
+   ".playwright-mcp/do-bo-cuc/r4-off.json"
   ],
   "sizes": [
    [
@@ -18,7 +19,7 @@
     768
    ]
   ],
-  "flags": "dev",
+  "flags": "off",
   "gitHead": "02e3991ae",
   "data": {
    "tables": 57,
@@ -146,16 +147,7 @@
    "server": "tsx server/_core/index.ts :3016 (env tách, không nạp .env; ROLE=api)",
    "vite": "vite dev in-process :5176 (proxy /api,/uploads → :3016; envDir của vite.config nạp VITE_* từ .env vào client)",
    "db": "aoi_management_test",
-   "flagsOn": [
-    "FOE_ENABLED",
-    "DPC_IR_V2_ENABLED",
-    "WORKFORCE_ENABLED",
-    "SAFETY_AUDIT_ENABLED",
-    "EQ_GOVERN_ENABLED",
-    "EQ_INTEG_ENABLED",
-    "FLEET_ORCH_ENABLED",
-    "FLEET_RESOURCE_ENABLED"
-   ],
+   "flagsOn": [],
    "alwaysOff": [
     "DPC_DEPLOY_ENABLED",
     "SAFETY_PLC_ADAPTER_ENABLED",
@@ -200,16 +192,16 @@
     "perms": 22,
     "factory": "SIM-FAC"
    },
-   "serverBootMs": 7056,
-   "serverPid": 7044
+   "serverBootMs": 6068,
+   "serverPid": 34444
   },
   "base": "http://127.0.0.1:5176",
   "connections": [
    {
     "label": "sau khi khởi động",
     "pids": [
-     7044,
-     6024
+     34444,
+     29252
     ],
     "tcp": {
      "Listen :::3016": 1,
@@ -222,8 +214,8 @@
    {
     "label": "sau biến thể closed",
     "pids": [
-     7044,
-     6024
+     34444,
+     29252
     ],
     "tcp": {
      "Listen :::3016": 1,
@@ -237,8 +229,8 @@
    {
     "label": "sau biến thể open",
     "pids": [
-     7044,
-     6024
+     34444,
+     29252
     ],
     "tcp": {
      "Listen :::3016": 1,
@@ -348,7 +340,7 @@
     }
    ]
   },
-  "finishedAt": "2026-10-02T08:48:00.356Z",
+  "finishedAt": "2026-10-02T09:03:41.803Z",
   "probeUserRemoved": {
    "deleted": 1,
    "deactivated": 0
@@ -3176,34 +3168,34 @@
    "mainRects": [
     {
      "x": 312,
-     "y": 790,
+     "y": 852,
      "w": 821,
      "h": 222
     },
     {
      "x": 1149,
-     "y": 790,
+     "y": 852,
      "w": 403,
      "h": 222
     }
    ],
-   "mainTop": 790,
-   "chromeAboveMain": 790,
-   "mainPct": 12.9,
-   "mainPctFe1": 12.9,
-   "mainPctUncovered": 12.8,
+   "mainTop": 852,
+   "chromeAboveMain": 852,
+   "mainPct": 7.9,
+   "mainPctFe1": 7.9,
+   "mainPctUncovered": 7.8,
    "h1Top": 259,
    "h1Bottom": 295,
    "h1Text": "Studio Quy trình",
    "h1Missing": false,
    "h1Count": 1,
-   "gapH1ToMain": 495,
+   "gapH1ToMain": 557,
    "breadcrumbs": 2,
    "bannersBeforeMain": {
-    "count": 3,
-    "px": 411,
+    "count": 4,
+    "px": 457,
     "byKind": {
-     "notice": 2,
+     "notice": 3,
      "other": 1
     },
     "method": "geometric: khối giữa đáy h1 và đỉnh MAIN, ngoài page header"
@@ -3303,6 +3295,20 @@
      "kind": "notice",
      "inHeader": false,
      "y": 381,
+     "h": 46,
+     "x": 312,
+     "w": 1240,
+     "loc": "OrchestrationStudio.tsx:1434",
+     "tag": "div",
+     "testid": null,
+     "label": "FOE chưa bật (FOE_ENABLED) — vẫn soạn & mô phỏng đ",
+     "fe1Notice": true
+    },
+    {
+     "pos": "belowH1",
+     "kind": "notice",
+     "inHeader": false,
+     "y": 443,
      "h": 233,
      "x": 312,
      "w": 1240,
@@ -3316,7 +3322,7 @@
      "pos": "belowH1",
      "kind": "other",
      "inHeader": false,
-     "y": 630,
+     "y": 692,
      "h": 144,
      "x": 312,
      "w": 1240,
@@ -3328,8 +3334,8 @@
     }
    ],
    "bannersFe1Class": {
-    "count": 2,
-    "px": 72,
+    "count": 3,
+    "px": 118,
     "items": [
      {
       "loc": "BetaBadge.tsx:44",
@@ -3342,6 +3348,12 @@
       "y": 331,
       "h": 34,
       "head": "Khi nào dùng — thiết kế quy trình phối hợp NHIỀU m"
+     },
+     {
+      "loc": "OrchestrationStudio.tsx:1434",
+      "y": 381,
+      "h": 46,
+      "head": "FOE chưa bật (FOE_ENABLED) — vẫn soạn & mô phỏng đ"
      }
     ]
    },
@@ -3361,7 +3373,7 @@
    },
    "coverMain": {
     "px": 1152,
-    "pctOfMain": 0.6,
+    "pctOfMain": 1,
     "pctOfViewport": 0.1,
     "items": [
      {
@@ -3397,10 +3409,10 @@
      }
     ]
    },
-   "pageHeightRatio": 1.76,
-   "pageHeightRatioDoc": 1.76,
+   "pageHeightRatio": 1.82,
+   "pageHeightRatioDoc": 1.82,
    "scroll": {
-    "docH": 1670,
+    "docH": 1732,
     "extra": 0,
     "scrollers": [],
     "inner": []
@@ -3496,19 +3508,19 @@
    "mainRects": [
     {
      "x": 312,
-     "y": 810,
+     "y": 872,
      "w": 665,
      "h": 222
     },
     {
      "x": 993,
-     "y": 810,
+     "y": 872,
      "w": 325,
      "h": 222
     }
    ],
-   "mainTop": 810,
-   "chromeAboveMain": 810,
+   "mainTop": 872,
+   "chromeAboveMain": 872,
    "mainPct": 0,
    "mainPctFe1": 0,
    "mainPctUncovered": 0,
@@ -3517,13 +3529,13 @@
    "h1Text": "Studio Quy trình",
    "h1Missing": false,
    "h1Count": 1,
-   "gapH1ToMain": 515,
+   "gapH1ToMain": 577,
    "breadcrumbs": 2,
    "bannersBeforeMain": {
-    "count": 3,
-    "px": 411,
+    "count": 4,
+    "px": 457,
     "byKind": {
-     "notice": 2,
+     "notice": 3,
      "other": 1
     },
     "method": "geometric: khối giữa đáy h1 và đỉnh MAIN, ngoài page header"
@@ -3623,6 +3635,20 @@
      "kind": "notice",
      "inHeader": false,
      "y": 401,
+     "h": 46,
+     "x": 312,
+     "w": 1006,
+     "loc": "OrchestrationStudio.tsx:1434",
+     "tag": "div",
+     "testid": null,
+     "label": "FOE chưa bật (FOE_ENABLED) — vẫn soạn & mô phỏng đ",
+     "fe1Notice": true
+    },
+    {
+     "pos": "belowH1",
+     "kind": "notice",
+     "inHeader": false,
+     "y": 463,
      "h": 233,
      "x": 312,
      "w": 1006,
@@ -3636,7 +3662,7 @@
      "pos": "belowH1",
      "kind": "other",
      "inHeader": false,
-     "y": 650,
+     "y": 712,
      "h": 144,
      "x": 312,
      "w": 1006,
@@ -3648,8 +3674,8 @@
     }
    ],
    "bannersFe1Class": {
-    "count": 2,
-    "px": 72,
+    "count": 3,
+    "px": 118,
     "items": [
      {
       "loc": "BetaBadge.tsx:44",
@@ -3662,6 +3688,12 @@
       "y": 351,
       "h": 34,
       "head": "Khi nào dùng — thiết kế quy trình phối hợp NHIỀU m"
+     },
+     {
+      "loc": "OrchestrationStudio.tsx:1434",
+      "y": 401,
+      "h": 46,
+      "head": "FOE chưa bật (FOE_ENABLED) — vẫn soạn & mô phỏng đ"
      }
     ]
    },
@@ -3686,10 +3718,10 @@
     "items": [],
     "positionedIntersecting": []
    },
-   "pageHeightRatio": 2.2,
-   "pageHeightRatioDoc": 2.2,
+   "pageHeightRatio": 2.28,
+   "pageHeightRatioDoc": 2.28,
    "scroll": {
-    "docH": 1690,
+    "docH": 1752,
     "extra": 0,
     "scrollers": [],
     "inner": []
@@ -3785,28 +3817,28 @@
    "mainRects": [
     {
      "x": 626,
-     "y": 704,
+     "y": 766,
      "w": 507,
      "h": 895
     }
    ],
-   "mainTop": 704,
-   "chromeAboveMain": 704,
-   "mainPct": 8.2,
-   "mainPctFe1": 8.2,
-   "mainPctUncovered": 8.2,
+   "mainTop": 766,
+   "chromeAboveMain": 766,
+   "mainPct": 6.1,
+   "mainPctFe1": 6.1,
+   "mainPctUncovered": 6.1,
    "h1Top": 259,
    "h1Bottom": 295,
    "h1Text": "Trình soạn IR trực quan",
    "h1Missing": false,
    "h1Count": 1,
-   "gapH1ToMain": 409,
+   "gapH1ToMain": 471,
    "breadcrumbs": 2,
    "bannersBeforeMain": {
-    "count": 3,
-    "px": 325,
+    "count": 4,
+    "px": 371,
     "byKind": {
-     "notice": 2,
+     "notice": 3,
      "other": 1
     },
     "method": "geometric: khối giữa đáy h1 và đỉnh MAIN, ngoài page header"
@@ -3906,6 +3938,20 @@
      "kind": "notice",
      "inHeader": false,
      "y": 381,
+     "h": 46,
+     "x": 312,
+     "w": 1240,
+     "loc": "IrEditor.tsx:1250",
+     "tag": "div",
+     "testid": null,
+     "label": "Chế độ xem trước: lập trình IR đang tắt (DPC_IR_V2",
+     "fe1Notice": true
+    },
+    {
+     "pos": "belowH1",
+     "kind": "notice",
+     "inHeader": false,
+     "y": 443,
      "h": 66,
      "x": 312,
      "w": 1240,
@@ -3919,7 +3965,7 @@
      "pos": "belowH1",
      "kind": "other",
      "inHeader": false,
-     "y": 463,
+     "y": 525,
      "h": 225,
      "x": 312,
      "w": 1240,
@@ -3931,8 +3977,8 @@
     }
    ],
    "bannersFe1Class": {
-    "count": 3,
-    "px": 138,
+    "count": 4,
+    "px": 184,
     "items": [
      {
       "loc": "BetaBadge.tsx:44",
@@ -3947,8 +3993,14 @@
       "head": "Khi nào dùng — khối motion & I/O cấp thấp (IR). Cầ"
      },
      {
-      "loc": "IrEditor.tsx:1257",
+      "loc": "IrEditor.tsx:1250",
       "y": 381,
+      "h": 46,
+      "head": "Chế độ xem trước: lập trình IR đang tắt (DPC_IR_V2"
+     },
+     {
+      "loc": "IrEditor.tsx:1257",
+      "y": 443,
       "h": 66,
       "head": "Chỉ xem trước cấu trúc + lint + transpile — mô phỏ"
      }
@@ -3975,10 +4027,10 @@
     "items": [],
     "positionedIntersecting": []
    },
-   "pageHeightRatio": 2.75,
-   "pageHeightRatioDoc": 2.75,
+   "pageHeightRatio": 2.82,
+   "pageHeightRatioDoc": 2.82,
    "scroll": {
-    "docH": 2617,
+    "docH": 2679,
     "extra": 0,
     "scrollers": [],
     "inner": []
@@ -4052,28 +4104,28 @@
    "mainRects": [
     {
      "x": 568,
-     "y": 740,
+     "y": 822,
      "w": 410,
      "h": 895
     }
    ],
-   "mainTop": 740,
-   "chromeAboveMain": 740,
-   "mainPct": 1.1,
-   "mainPctFe1": 1.1,
-   "mainPctUncovered": 1.1,
+   "mainTop": 822,
+   "chromeAboveMain": 822,
+   "mainPct": 0,
+   "mainPctFe1": 0,
+   "mainPctUncovered": 0,
    "h1Top": 259,
    "h1Bottom": 295,
    "h1Text": "Trình soạn IR trực quan",
    "h1Missing": false,
    "h1Count": 1,
-   "gapH1ToMain": 445,
+   "gapH1ToMain": 527,
    "breadcrumbs": 2,
    "bannersBeforeMain": {
-    "count": 3,
-    "px": 361,
+    "count": 4,
+    "px": 427,
     "byKind": {
-     "notice": 2,
+     "notice": 3,
      "other": 1
     },
     "method": "geometric: khối giữa đáy h1 và đỉnh MAIN, ngoài page header"
@@ -4176,6 +4228,20 @@
      "h": 66,
      "x": 312,
      "w": 1006,
+     "loc": "IrEditor.tsx:1250",
+     "tag": "div",
+     "testid": null,
+     "label": "Chế độ xem trước: lập trình IR đang tắt (DPC_IR_V2",
+     "fe1Notice": true
+    },
+    {
+     "pos": "belowH1",
+     "kind": "notice",
+     "inHeader": false,
+     "y": 483,
+     "h": 66,
+     "x": 312,
+     "w": 1006,
      "loc": "IrEditor.tsx:1257",
      "tag": "div",
      "testid": null,
@@ -4186,7 +4252,7 @@
      "pos": "belowH1",
      "kind": "other",
      "inHeader": false,
-     "y": 483,
+     "y": 565,
      "h": 241,
      "x": 312,
      "w": 1006,
@@ -4198,8 +4264,8 @@
     }
    ],
    "bannersFe1Class": {
-    "count": 3,
-    "px": 158,
+    "count": 4,
+    "px": 224,
     "items": [
      {
       "loc": "BetaBadge.tsx:44",
@@ -4214,8 +4280,14 @@
       "head": "Khi nào dùng — khối motion & I/O cấp thấp (IR). Cầ"
      },
      {
-      "loc": "IrEditor.tsx:1257",
+      "loc": "IrEditor.tsx:1250",
       "y": 401,
+      "h": 66,
+      "head": "Chế độ xem trước: lập trình IR đang tắt (DPC_IR_V2"
+     },
+     {
+      "loc": "IrEditor.tsx:1257",
+      "y": 483,
       "h": 66,
       "head": "Chỉ xem trước cấu trúc + lint + transpile — mô phỏ"
      }
@@ -4242,10 +4314,10 @@
     "items": [],
     "positionedIntersecting": []
    },
-   "pageHeightRatio": 3.48,
-   "pageHeightRatioDoc": 3.48,
+   "pageHeightRatio": 3.59,
+   "pageHeightRatioDoc": 3.59,
    "scroll": {
-    "docH": 2673,
+    "docH": 2755,
     "extra": 0,
     "scrollers": [],
     "inner": []
@@ -5167,28 +5239,28 @@
    "mainRects": [
     {
      "x": 312,
-     "y": 653,
+     "y": 715,
      "w": 1240,
      "h": 441
     }
    ],
-   "mainTop": 653,
-   "chromeAboveMain": 653,
-   "mainPct": 24.2,
-   "mainPctFe1": 24.2,
-   "mainPctUncovered": 24.2,
+   "mainTop": 715,
+   "chromeAboveMain": 715,
+   "mainPct": 19.2,
+   "mainPctFe1": 19.2,
+   "mainPctUncovered": 19.1,
    "h1Top": 259,
    "h1Bottom": 295,
    "h1Text": "Điều phối Đội xe & Tác vụ",
    "h1Missing": false,
    "h1Count": 1,
-   "gapH1ToMain": 358,
+   "gapH1ToMain": 420,
    "breadcrumbs": 2,
    "bannersBeforeMain": {
-    "count": 4,
-    "px": 258,
+    "count": 5,
+    "px": 304,
     "byKind": {
-     "notice": 2,
+     "notice": 3,
      "kpi": 1,
      "tabs": 1
     },
@@ -5292,6 +5364,20 @@
      "h": 46,
      "x": 312,
      "w": 1240,
+     "loc": "FeatureStatusGate.tsx:117",
+     "tag": "div",
+     "testid": "feature-status-off",
+     "label": "Chế độ xem trước: điều phối đội xe đang tắt. Đọc v",
+     "fe1Notice": true
+    },
+    {
+     "pos": "belowH1",
+     "kind": "notice",
+     "inHeader": false,
+     "y": 443,
+     "h": 46,
+     "x": 312,
+     "w": 1240,
      "loc": "FleetOrchestration.tsx:617",
      "tag": "div",
      "testid": null,
@@ -5302,7 +5388,7 @@
      "pos": "belowH1",
      "kind": "kpi",
      "inHeader": false,
-     "y": 443,
+     "y": 505,
      "h": 130,
      "x": 312,
      "w": 1240,
@@ -5316,7 +5402,7 @@
      "pos": "belowH1",
      "kind": "tabs",
      "inHeader": false,
-     "y": 589,
+     "y": 651,
      "h": 48,
      "x": 312,
      "w": 515,
@@ -5328,8 +5414,8 @@
     }
    ],
    "bannersFe1Class": {
-    "count": 3,
-    "px": 118,
+    "count": 4,
+    "px": 164,
     "items": [
      {
       "loc": "BetaBadge.tsx:44",
@@ -5344,8 +5430,14 @@
       "head": "Khi nào dùng — phân bổ nhiệm vụ cho ĐỘI robot/AGV "
      },
      {
-      "loc": "FleetOrchestration.tsx:617",
+      "loc": "FeatureStatusGate.tsx:117",
       "y": 381,
+      "h": 46,
+      "head": "Chế độ xem trước: điều phối đội xe đang tắt. Đọc v"
+     },
+     {
+      "loc": "FleetOrchestration.tsx:617",
+      "y": 443,
       "h": 46,
       "head": "Trang này chỉ ghi trạng thái điều phối (tác vụ / v"
      }
@@ -5367,7 +5459,7 @@
    },
    "coverMain": {
     "px": 1152,
-    "pctOfMain": 0.3,
+    "pctOfMain": 0.4,
     "pctOfViewport": 0.1,
     "items": [
      {
@@ -5403,10 +5495,10 @@
      }
     ]
    },
-   "pageHeightRatio": 1.2,
-   "pageHeightRatioDoc": 1.2,
+   "pageHeightRatio": 1.27,
+   "pageHeightRatioDoc": 1.27,
    "scroll": {
-    "docH": 1142,
+    "docH": 1204,
     "extra": 0,
     "scrollers": [],
     "inner": []
@@ -5466,28 +5558,28 @@
    "mainRects": [
     {
      "x": 312,
-     "y": 673,
+     "y": 755,
      "w": 1006,
      "h": 441
     }
    ],
-   "mainTop": 673,
-   "chromeAboveMain": 673,
-   "mainPct": 9.1,
-   "mainPctFe1": 9.1,
-   "mainPctUncovered": 9,
+   "mainTop": 755,
+   "chromeAboveMain": 755,
+   "mainPct": 1.2,
+   "mainPctFe1": 1.2,
+   "mainPctUncovered": 1.2,
    "h1Top": 259,
    "h1Bottom": 295,
    "h1Text": "Điều phối Đội xe & Tác vụ",
    "h1Missing": false,
    "h1Count": 1,
-   "gapH1ToMain": 378,
+   "gapH1ToMain": 460,
    "breadcrumbs": 2,
    "bannersBeforeMain": {
-    "count": 4,
-    "px": 278,
+    "count": 5,
+    "px": 344,
     "byKind": {
-     "notice": 2,
+     "notice": 3,
      "kpi": 1,
      "tabs": 1
     },
@@ -5591,6 +5683,20 @@
      "h": 66,
      "x": 312,
      "w": 1006,
+     "loc": "FeatureStatusGate.tsx:117",
+     "tag": "div",
+     "testid": "feature-status-off",
+     "label": "Chế độ xem trước: điều phối đội xe đang tắt. Đọc v",
+     "fe1Notice": true
+    },
+    {
+     "pos": "belowH1",
+     "kind": "notice",
+     "inHeader": false,
+     "y": 463,
+     "h": 66,
+     "x": 312,
+     "w": 1006,
      "loc": "FleetOrchestration.tsx:617",
      "tag": "div",
      "testid": null,
@@ -5601,7 +5707,7 @@
      "pos": "belowH1",
      "kind": "kpi",
      "inHeader": false,
-     "y": 463,
+     "y": 545,
      "h": 130,
      "x": 312,
      "w": 1006,
@@ -5615,7 +5721,7 @@
      "pos": "belowH1",
      "kind": "tabs",
      "inHeader": false,
-     "y": 609,
+     "y": 691,
      "h": 48,
      "x": 312,
      "w": 515,
@@ -5627,8 +5733,8 @@
     }
    ],
    "bannersFe1Class": {
-    "count": 3,
-    "px": 138,
+    "count": 4,
+    "px": 204,
     "items": [
      {
       "loc": "BetaBadge.tsx:44",
@@ -5643,8 +5749,14 @@
       "head": "Khi nào dùng — phân bổ nhiệm vụ cho ĐỘI robot/AGV "
      },
      {
-      "loc": "FleetOrchestration.tsx:617",
+      "loc": "FeatureStatusGate.tsx:117",
       "y": 381,
+      "h": 66,
+      "head": "Chế độ xem trước: điều phối đội xe đang tắt. Đọc v"
+     },
+     {
+      "loc": "FleetOrchestration.tsx:617",
+      "y": 463,
       "h": 66,
       "head": "Trang này chỉ ghi trạng thái điều phối (tác vụ / v"
      }
@@ -5665,47 +5777,16 @@
     }
    },
    "coverMain": {
-    "px": 1152,
-    "pctOfMain": 1.2,
-    "pctOfViewport": 0.1,
-    "items": [
-     {
-      "tag": "div",
-      "testid": null,
-      "loc": "AILocalChatBubble.tsx:1118",
-      "role": null,
-      "slot": null,
-      "label": "",
-      "position": "fixed",
-      "zIndex": "50",
-      "rect": {
-       "x": 1294,
-       "y": 696,
-       "w": 48,
-       "h": 48
-      },
-      "px": 1152
-     }
-    ],
-    "positionedIntersecting": [
-     {
-      "tag": "div",
-      "testid": null,
-      "loc": "AILocalChatBubble.tsx:1118",
-      "role": null,
-      "slot": null,
-      "label": "",
-      "position": "fixed",
-      "zIndex": "50",
-      "pointerEvents": "auto",
-      "intersectPx": 1152
-     }
-    ]
+    "px": 0,
+    "pctOfMain": 0,
+    "pctOfViewport": 0,
+    "items": [],
+    "positionedIntersecting": []
    },
-   "pageHeightRatio": 1.51,
-   "pageHeightRatioDoc": 1.51,
+   "pageHeightRatio": 1.62,
+   "pageHeightRatioDoc": 1.62,
    "scroll": {
-    "docH": 1162,
+    "docH": 1244,
     "extra": 0,
     "scrollers": [],
     "inner": []
@@ -5765,28 +5846,28 @@
    "mainRects": [
     {
      "x": 312,
-     "y": 805,
+     "y": 929,
      "w": 1240,
      "h": 795
     }
    ],
-   "mainTop": 805,
-   "chromeAboveMain": 805,
-   "mainPct": 11.8,
-   "mainPctFe1": 11.8,
-   "mainPctUncovered": 11.8,
+   "mainTop": 929,
+   "chromeAboveMain": 929,
+   "mainPct": 1.7,
+   "mainPctFe1": 1.7,
+   "mainPctUncovered": 1.7,
    "h1Top": 259,
    "h1Bottom": 295,
    "h1Text": "An toàn & Nhân lực",
    "h1Missing": false,
    "h1Count": 1,
-   "gapH1ToMain": 510,
+   "gapH1ToMain": 634,
    "breadcrumbs": 2,
    "bannersBeforeMain": {
-    "count": 5,
-    "px": 394,
+    "count": 7,
+    "px": 486,
     "byKind": {
-     "notice": 3,
+     "notice": 5,
      "kpi": 1,
      "tabs": 1
     },
@@ -5901,6 +5982,34 @@
      "kind": "notice",
      "inHeader": false,
      "y": 485,
+     "h": 46,
+     "x": 312,
+     "w": 1240,
+     "loc": "FeatureStatusGate.tsx:117",
+     "tag": "div",
+     "testid": "feature-status-off",
+     "label": "Chế độ xem trước: kiểm định an toàn đang tắt. Đọc ",
+     "fe1Notice": true
+    },
+    {
+     "pos": "belowH1",
+     "kind": "notice",
+     "inHeader": false,
+     "y": 547,
+     "h": 46,
+     "x": 312,
+     "w": 1240,
+     "loc": "FeatureStatusGate.tsx:117",
+     "tag": "div",
+     "testid": "feature-status-off",
+     "label": "Chế độ xem trước: nhân lực đang tắt. Đọc vẫn hoạt ",
+     "fe1Notice": true
+    },
+    {
+     "pos": "belowH1",
+     "kind": "notice",
+     "inHeader": false,
+     "y": 609,
      "h": 94,
      "x": 312,
      "w": 1240,
@@ -5914,7 +6023,7 @@
      "pos": "belowH1",
      "kind": "kpi",
      "inHeader": false,
-     "y": 595,
+     "y": 719,
      "h": 130,
      "x": 312,
      "w": 1240,
@@ -5928,7 +6037,7 @@
      "pos": "belowH1",
      "kind": "tabs",
      "inHeader": false,
-     "y": 741,
+     "y": 865,
      "h": 48,
      "x": 312,
      "w": 393,
@@ -5940,8 +6049,8 @@
     }
    ],
    "bannersFe1Class": {
-    "count": 4,
-    "px": 254,
+    "count": 6,
+    "px": 346,
     "items": [
      {
       "loc": "BetaBadge.tsx:44",
@@ -5962,8 +6071,20 @@
       "head": "Chỉ giám sát tư vấn — không phải hệ thống đạt chuẩ"
      },
      {
-      "loc": "SafetyWorkforce.tsx:1054",
+      "loc": "FeatureStatusGate.tsx:117",
       "y": 485,
+      "h": 46,
+      "head": "Chế độ xem trước: kiểm định an toàn đang tắt. Đọc "
+     },
+     {
+      "loc": "FeatureStatusGate.tsx:117",
+      "y": 547,
+      "h": 46,
+      "head": "Chế độ xem trước: nhân lực đang tắt. Đọc vẫn hoạt "
+     },
+     {
+      "loc": "SafetyWorkforce.tsx:1054",
+      "y": 609,
       "h": 94,
       "head": "Nguồn:"
      }
@@ -5984,47 +6105,16 @@
     }
    },
    "coverMain": {
-    "px": 1152,
-    "pctOfMain": 0.6,
-    "pctOfViewport": 0.1,
-    "items": [
-     {
-      "tag": "div",
-      "testid": null,
-      "loc": "AILocalChatBubble.tsx:1118",
-      "role": null,
-      "slot": null,
-      "label": "",
-      "position": "fixed",
-      "zIndex": "50",
-      "rect": {
-       "x": 1528,
-       "y": 878,
-       "w": 48,
-       "h": 48
-      },
-      "px": 1152
-     }
-    ],
-    "positionedIntersecting": [
-     {
-      "tag": "div",
-      "testid": null,
-      "loc": "AILocalChatBubble.tsx:1118",
-      "role": null,
-      "slot": null,
-      "label": "",
-      "position": "fixed",
-      "zIndex": "50",
-      "pointerEvents": "auto",
-      "intersectPx": 1152
-     }
-    ]
+    "px": 0,
+    "pctOfMain": 0,
+    "pctOfViewport": 0,
+    "items": [],
+    "positionedIntersecting": []
    },
-   "pageHeightRatio": 1.8,
-   "pageHeightRatioDoc": 1.8,
+   "pageHeightRatio": 1.93,
+   "pageHeightRatioDoc": 1.93,
    "scroll": {
-    "docH": 1708,
+    "docH": 1832,
     "extra": 0,
     "scrollers": [],
     "inner": []
@@ -6101,13 +6191,13 @@
    "mainRects": [
     {
      "x": 312,
-     "y": 825,
+     "y": 949,
      "w": 1006,
      "h": 795
     }
    ],
-   "mainTop": 825,
-   "chromeAboveMain": 825,
+   "mainTop": 949,
+   "chromeAboveMain": 949,
    "mainPct": 0,
    "mainPctFe1": 0,
    "mainPctUncovered": 0,
@@ -6116,13 +6206,13 @@
    "h1Text": "An toàn & Nhân lực",
    "h1Missing": false,
    "h1Count": 1,
-   "gapH1ToMain": 530,
+   "gapH1ToMain": 654,
    "breadcrumbs": 2,
    "bannersBeforeMain": {
-    "count": 5,
-    "px": 414,
+    "count": 7,
+    "px": 506,
     "byKind": {
-     "notice": 3,
+     "notice": 5,
      "kpi": 1,
      "tabs": 1
     },
@@ -6237,6 +6327,34 @@
      "kind": "notice",
      "inHeader": false,
      "y": 505,
+     "h": 46,
+     "x": 312,
+     "w": 1006,
+     "loc": "FeatureStatusGate.tsx:117",
+     "tag": "div",
+     "testid": "feature-status-off",
+     "label": "Chế độ xem trước: kiểm định an toàn đang tắt. Đọc ",
+     "fe1Notice": true
+    },
+    {
+     "pos": "belowH1",
+     "kind": "notice",
+     "inHeader": false,
+     "y": 567,
+     "h": 46,
+     "x": 312,
+     "w": 1006,
+     "loc": "FeatureStatusGate.tsx:117",
+     "tag": "div",
+     "testid": "feature-status-off",
+     "label": "Chế độ xem trước: nhân lực đang tắt. Đọc vẫn hoạt ",
+     "fe1Notice": true
+    },
+    {
+     "pos": "belowH1",
+     "kind": "notice",
+     "inHeader": false,
+     "y": 629,
      "h": 94,
      "x": 312,
      "w": 1006,
@@ -6250,7 +6368,7 @@
      "pos": "belowH1",
      "kind": "kpi",
      "inHeader": false,
-     "y": 615,
+     "y": 739,
      "h": 130,
      "x": 312,
      "w": 1006,
@@ -6264,7 +6382,7 @@
      "pos": "belowH1",
      "kind": "tabs",
      "inHeader": false,
-     "y": 761,
+     "y": 885,
      "h": 48,
      "x": 312,
      "w": 393,
@@ -6276,8 +6394,8 @@
     }
    ],
    "bannersFe1Class": {
-    "count": 4,
-    "px": 274,
+    "count": 6,
+    "px": 366,
     "items": [
      {
       "loc": "BetaBadge.tsx:44",
@@ -6298,8 +6416,20 @@
       "head": "Chỉ giám sát tư vấn — không phải hệ thống đạt chuẩ"
      },
      {
-      "loc": "SafetyWorkforce.tsx:1054",
+      "loc": "FeatureStatusGate.tsx:117",
       "y": 505,
+      "h": 46,
+      "head": "Chế độ xem trước: kiểm định an toàn đang tắt. Đọc "
+     },
+     {
+      "loc": "FeatureStatusGate.tsx:117",
+      "y": 567,
+      "h": 46,
+      "head": "Chế độ xem trước: nhân lực đang tắt. Đọc vẫn hoạt "
+     },
+     {
+      "loc": "SafetyWorkforce.tsx:1054",
+      "y": 629,
       "h": 94,
       "head": "Nguồn:"
      }
@@ -6326,10 +6456,10 @@
     "items": [],
     "positionedIntersecting": []
    },
-   "pageHeightRatio": 2.27,
-   "pageHeightRatioDoc": 2.27,
+   "pageHeightRatio": 2.43,
+   "pageHeightRatioDoc": 2.43,
    "scroll": {
-    "docH": 1742,
+    "docH": 1866,
     "extra": 0,
     "scrollers": [],
     "inner": []
@@ -6406,28 +6536,28 @@
    "mainRects": [
     {
      "x": 312,
-     "y": 669,
+     "y": 731,
      "w": 1240,
      "h": 1080
     }
    ],
-   "mainTop": 669,
-   "chromeAboveMain": 669,
-   "mainPct": 22.9,
-   "mainPctFe1": 22.9,
-   "mainPctUncovered": 22.8,
+   "mainTop": 731,
+   "chromeAboveMain": 731,
+   "mainPct": 17.9,
+   "mainPctFe1": 17.9,
+   "mainPctUncovered": 17.8,
    "h1Top": 259,
    "h1Bottom": 295,
    "h1Text": "Tiêu chuẩn & Quản trị Thiết bị",
    "h1Missing": false,
    "h1Count": 1,
-   "gapH1ToMain": 374,
+   "gapH1ToMain": 436,
    "breadcrumbs": 2,
    "bannersBeforeMain": {
-    "count": 4,
-    "px": 274,
+    "count": 5,
+    "px": 320,
     "byKind": {
-     "notice": 2,
+     "notice": 3,
      "kpi": 1,
      "tabs": 1
     },
@@ -6531,6 +6661,20 @@
      "h": 46,
      "x": 312,
      "w": 1240,
+     "loc": "FeatureStatusGate.tsx:117",
+     "tag": "div",
+     "testid": "feature-status-off",
+     "label": "Chế độ xem trước: quản trị thiết bị đang tắt. Đọc ",
+     "fe1Notice": true
+    },
+    {
+     "pos": "belowH1",
+     "kind": "notice",
+     "inHeader": false,
+     "y": 443,
+     "h": 46,
+     "x": 312,
+     "w": 1240,
      "loc": "EquipmentStandards.tsx:353",
      "tag": "div",
      "testid": null,
@@ -6541,7 +6685,7 @@
      "pos": "belowH1",
      "kind": "kpi",
      "inHeader": false,
-     "y": 443,
+     "y": 505,
      "h": 146,
      "x": 312,
      "w": 1240,
@@ -6555,7 +6699,7 @@
      "pos": "belowH1",
      "kind": "tabs",
      "inHeader": false,
-     "y": 605,
+     "y": 667,
      "h": 48,
      "x": 312,
      "w": 704,
@@ -6567,8 +6711,8 @@
     }
    ],
    "bannersFe1Class": {
-    "count": 3,
-    "px": 118,
+    "count": 4,
+    "px": 164,
     "items": [
      {
       "loc": "BetaBadge.tsx:44",
@@ -6583,8 +6727,14 @@
       "head": "Khi nào dùng — quản trị chuẩn loại thiết bị, phân "
      },
      {
-      "loc": "EquipmentStandards.tsx:353",
+      "loc": "FeatureStatusGate.tsx:117",
       "y": 381,
+      "h": 46,
+      "head": "Chế độ xem trước: quản trị thiết bị đang tắt. Đọc "
+     },
+     {
+      "loc": "EquipmentStandards.tsx:353",
+      "y": 443,
       "h": 46,
       "head": "Trang này chỉ ghi metadata quản trị (phiên bản loạ"
      }
@@ -6606,7 +6756,7 @@
    },
    "coverMain": {
     "px": 1152,
-    "pctOfMain": 0.3,
+    "pctOfMain": 0.4,
     "pctOfViewport": 0.1,
     "items": [
      {
@@ -6642,10 +6792,10 @@
      }
     ]
    },
-   "pageHeightRatio": 1.89,
-   "pageHeightRatioDoc": 1.89,
+   "pageHeightRatio": 1.96,
+   "pageHeightRatioDoc": 1.96,
    "scroll": {
-    "docH": 1797,
+    "docH": 1859,
     "extra": 0,
     "scrollers": [],
     "inner": []
@@ -6722,28 +6872,28 @@
    "mainRects": [
     {
      "x": 312,
-     "y": 689,
+     "y": 771,
      "w": 1006,
      "h": 1080
     }
    ],
-   "mainTop": 689,
-   "chromeAboveMain": 689,
-   "mainPct": 7.6,
-   "mainPctFe1": 7.6,
-   "mainPctUncovered": 7.5,
+   "mainTop": 771,
+   "chromeAboveMain": 771,
+   "mainPct": 0,
+   "mainPctFe1": 0,
+   "mainPctUncovered": 0,
    "h1Top": 259,
    "h1Bottom": 295,
    "h1Text": "Tiêu chuẩn & Quản trị Thiết bị",
    "h1Missing": false,
    "h1Count": 1,
-   "gapH1ToMain": 394,
+   "gapH1ToMain": 476,
    "breadcrumbs": 2,
    "bannersBeforeMain": {
-    "count": 4,
-    "px": 274,
+    "count": 5,
+    "px": 340,
     "byKind": {
-     "notice": 2,
+     "notice": 3,
      "kpi": 1,
      "tabs": 1
     },
@@ -6844,6 +6994,20 @@
      "kind": "notice",
      "inHeader": false,
      "y": 401,
+     "h": 66,
+     "x": 312,
+     "w": 1006,
+     "loc": "FeatureStatusGate.tsx:117",
+     "tag": "div",
+     "testid": "feature-status-off",
+     "label": "Chế độ xem trước: quản trị thiết bị đang tắt. Đọc ",
+     "fe1Notice": true
+    },
+    {
+     "pos": "belowH1",
+     "kind": "notice",
+     "inHeader": false,
+     "y": 483,
      "h": 46,
      "x": 312,
      "w": 1006,
@@ -6857,7 +7021,7 @@
      "pos": "belowH1",
      "kind": "kpi",
      "inHeader": false,
-     "y": 463,
+     "y": 545,
      "h": 146,
      "x": 312,
      "w": 1006,
@@ -6871,7 +7035,7 @@
      "pos": "belowH1",
      "kind": "tabs",
      "inHeader": false,
-     "y": 625,
+     "y": 707,
      "h": 48,
      "x": 312,
      "w": 704,
@@ -6883,8 +7047,8 @@
     }
    ],
    "bannersFe1Class": {
-    "count": 3,
-    "px": 118,
+    "count": 4,
+    "px": 184,
     "items": [
      {
       "loc": "BetaBadge.tsx:44",
@@ -6899,8 +7063,14 @@
       "head": "Khi nào dùng — quản trị chuẩn loại thiết bị, phân "
      },
      {
-      "loc": "EquipmentStandards.tsx:353",
+      "loc": "FeatureStatusGate.tsx:117",
       "y": 401,
+      "h": 66,
+      "head": "Chế độ xem trước: quản trị thiết bị đang tắt. Đọc "
+     },
+     {
+      "loc": "EquipmentStandards.tsx:353",
+      "y": 483,
       "h": 46,
       "head": "Trang này chỉ ghi metadata quản trị (phiên bản loạ"
      }
@@ -6921,47 +7091,16 @@
     }
    },
    "coverMain": {
-    "px": 1152,
-    "pctOfMain": 1.4,
-    "pctOfViewport": 0.1,
-    "items": [
-     {
-      "tag": "div",
-      "testid": null,
-      "loc": "AILocalChatBubble.tsx:1118",
-      "role": null,
-      "slot": null,
-      "label": "",
-      "position": "fixed",
-      "zIndex": "50",
-      "rect": {
-       "x": 1294,
-       "y": 696,
-       "w": 48,
-       "h": 48
-      },
-      "px": 1152
-     }
-    ],
-    "positionedIntersecting": [
-     {
-      "tag": "div",
-      "testid": null,
-      "loc": "AILocalChatBubble.tsx:1118",
-      "role": null,
-      "slot": null,
-      "label": "",
-      "position": "fixed",
-      "zIndex": "50",
-      "pointerEvents": "auto",
-      "intersectPx": 1152
-     }
-    ]
+    "px": 0,
+    "pctOfMain": 0,
+    "pctOfViewport": 0,
+    "items": [],
+    "positionedIntersecting": []
    },
-   "pageHeightRatio": 2.37,
-   "pageHeightRatioDoc": 2.37,
+   "pageHeightRatio": 2.47,
+   "pageHeightRatioDoc": 2.47,
    "scroll": {
-    "docH": 1817,
+    "docH": 1899,
     "extra": 0,
     "scrollers": [],
     "inner": []
@@ -7038,28 +7177,28 @@
    "mainRects": [
     {
      "x": 312,
-     "y": 673,
+     "y": 735,
      "w": 1240,
      "h": 520
     }
    ],
-   "mainTop": 673,
-   "chromeAboveMain": 673,
-   "mainPct": 22.6,
-   "mainPctFe1": 22.6,
-   "mainPctUncovered": 22.5,
+   "mainTop": 735,
+   "chromeAboveMain": 735,
+   "mainPct": 17.5,
+   "mainPctFe1": 17.5,
+   "mainPctUncovered": 17.5,
    "h1Top": 259,
    "h1Bottom": 295,
    "h1Text": "Tích hợp thiết bị",
    "h1Missing": false,
    "h1Count": 1,
-   "gapH1ToMain": 378,
+   "gapH1ToMain": 440,
    "breadcrumbs": 2,
    "bannersBeforeMain": {
-    "count": 4,
-    "px": 278,
+    "count": 5,
+    "px": 324,
     "byKind": {
-     "notice": 2,
+     "notice": 3,
      "kpi": 1,
      "tabs": 1
     },
@@ -7160,6 +7299,20 @@
      "kind": "notice",
      "inHeader": false,
      "y": 381,
+     "h": 46,
+     "x": 312,
+     "w": 1240,
+     "loc": "FeatureStatusGate.tsx:117",
+     "tag": "div",
+     "testid": "feature-status-off",
+     "label": "Chế độ xem trước: tích hợp thiết bị đang tắt. Đọc ",
+     "fe1Notice": true
+    },
+    {
+     "pos": "belowH1",
+     "kind": "notice",
+     "inHeader": false,
+     "y": 443,
      "h": 66,
      "x": 312,
      "w": 1240,
@@ -7173,7 +7326,7 @@
      "pos": "belowH1",
      "kind": "kpi",
      "inHeader": false,
-     "y": 463,
+     "y": 525,
      "h": 130,
      "x": 312,
      "w": 1240,
@@ -7181,13 +7334,13 @@
      "tag": "div",
      "testid": null,
      "label": "13 Adapter đã kết nối 2 Framework 0 Thiết bị đã kế",
-     "fe1Notice": false
+     "fe1Notice": true
     },
     {
      "pos": "belowH1",
      "kind": "tabs",
      "inHeader": false,
-     "y": 609,
+     "y": 671,
      "h": 48,
      "x": 312,
      "w": 589,
@@ -7199,8 +7352,8 @@
     }
    ],
    "bannersFe1Class": {
-    "count": 3,
-    "px": 138,
+    "count": 4,
+    "px": 184,
     "items": [
      {
       "loc": "BetaBadge.tsx:44",
@@ -7215,8 +7368,14 @@
       "head": "Khi nào dùng — xem khung tích hợp theo hãng (FOCAS"
      },
      {
-      "loc": "EquipmentIntegration.tsx:276",
+      "loc": "FeatureStatusGate.tsx:117",
       "y": 381,
+      "h": 46,
+      "head": "Chế độ xem trước: tích hợp thiết bị đang tắt. Đọc "
+     },
+     {
+      "loc": "EquipmentIntegration.tsx:276",
+      "y": 443,
       "h": 66,
       "head": "FOCAS/Euromap là các framework tích hợp chỉ đọc — "
      }
@@ -7238,7 +7397,7 @@
    },
    "coverMain": {
     "px": 1152,
-    "pctOfMain": 0.3,
+    "pctOfMain": 0.4,
     "pctOfViewport": 0.1,
     "items": [
      {
@@ -7274,10 +7433,10 @@
      }
     ]
    },
-   "pageHeightRatio": 1.31,
-   "pageHeightRatioDoc": 1.31,
+   "pageHeightRatio": 1.37,
+   "pageHeightRatioDoc": 1.37,
    "scroll": {
-    "docH": 1241,
+    "docH": 1303,
     "extra": 0,
     "scrollers": [],
     "inner": []
@@ -7330,28 +7489,28 @@
    "mainRects": [
     {
      "x": 312,
-     "y": 693,
+     "y": 775,
      "w": 1006,
      "h": 562
     }
    ],
-   "mainTop": 693,
-   "chromeAboveMain": 693,
-   "mainPct": 7.2,
-   "mainPctFe1": 7.2,
-   "mainPctUncovered": 7.1,
+   "mainTop": 775,
+   "chromeAboveMain": 775,
+   "mainPct": 0,
+   "mainPctFe1": 0,
+   "mainPctUncovered": 0,
    "h1Top": 259,
    "h1Bottom": 295,
    "h1Text": "Tích hợp thiết bị",
    "h1Missing": false,
    "h1Count": 1,
-   "gapH1ToMain": 398,
+   "gapH1ToMain": 480,
    "breadcrumbs": 2,
    "bannersBeforeMain": {
-    "count": 4,
-    "px": 278,
+    "count": 5,
+    "px": 344,
     "byKind": {
-     "notice": 2,
+     "notice": 3,
      "kpi": 1,
      "tabs": 1
     },
@@ -7455,6 +7614,20 @@
      "h": 66,
      "x": 312,
      "w": 1006,
+     "loc": "FeatureStatusGate.tsx:117",
+     "tag": "div",
+     "testid": "feature-status-off",
+     "label": "Chế độ xem trước: tích hợp thiết bị đang tắt. Đọc ",
+     "fe1Notice": true
+    },
+    {
+     "pos": "belowH1",
+     "kind": "notice",
+     "inHeader": false,
+     "y": 483,
+     "h": 66,
+     "x": 312,
+     "w": 1006,
      "loc": "EquipmentIntegration.tsx:276",
      "tag": "div",
      "testid": null,
@@ -7465,7 +7638,7 @@
      "pos": "belowH1",
      "kind": "kpi",
      "inHeader": false,
-     "y": 483,
+     "y": 565,
      "h": 130,
      "x": 312,
      "w": 1006,
@@ -7473,13 +7646,13 @@
      "tag": "div",
      "testid": null,
      "label": "13 Adapter đã kết nối 2 Framework 0 Thiết bị đã kế",
-     "fe1Notice": false
+     "fe1Notice": true
     },
     {
      "pos": "belowH1",
      "kind": "tabs",
      "inHeader": false,
-     "y": 629,
+     "y": 711,
      "h": 48,
      "x": 312,
      "w": 589,
@@ -7491,8 +7664,8 @@
     }
    ],
    "bannersFe1Class": {
-    "count": 3,
-    "px": 138,
+    "count": 4,
+    "px": 204,
     "items": [
      {
       "loc": "BetaBadge.tsx:44",
@@ -7507,8 +7680,14 @@
       "head": "Khi nào dùng — xem khung tích hợp theo hãng (FOCAS"
      },
      {
-      "loc": "EquipmentIntegration.tsx:276",
+      "loc": "FeatureStatusGate.tsx:117",
       "y": 401,
+      "h": 66,
+      "head": "Chế độ xem trước: tích hợp thiết bị đang tắt. Đọc "
+     },
+     {
+      "loc": "EquipmentIntegration.tsx:276",
+      "y": 483,
       "h": 66,
       "head": "FOCAS/Euromap là các framework tích hợp chỉ đọc — "
      }
@@ -7529,47 +7708,16 @@
     }
    },
    "coverMain": {
-    "px": 1152,
-    "pctOfMain": 1.5,
-    "pctOfViewport": 0.1,
-    "items": [
-     {
-      "tag": "div",
-      "testid": null,
-      "loc": "AILocalChatBubble.tsx:1118",
-      "role": null,
-      "slot": null,
-      "label": "",
-      "position": "fixed",
-      "zIndex": "50",
-      "rect": {
-       "x": 1294,
-       "y": 696,
-       "w": 48,
-       "h": 48
-      },
-      "px": 1152
-     }
-    ],
-    "positionedIntersecting": [
-     {
-      "tag": "div",
-      "testid": null,
-      "loc": "AILocalChatBubble.tsx:1118",
-      "role": null,
-      "slot": null,
-      "label": "",
-      "position": "fixed",
-      "zIndex": "50",
-      "pointerEvents": "auto",
-      "intersectPx": 1152
-     }
-    ]
+    "px": 0,
+    "pctOfMain": 0,
+    "pctOfViewport": 0,
+    "items": [],
+    "positionedIntersecting": []
    },
-   "pageHeightRatio": 1.7,
-   "pageHeightRatioDoc": 1.7,
+   "pageHeightRatio": 1.8,
+   "pageHeightRatioDoc": 1.8,
    "scroll": {
-    "docH": 1303,
+    "docH": 1385,
     "extra": 0,
     "scrollers": [],
     "inner": []
@@ -8312,28 +8460,28 @@
    "mainRects": [
     {
      "x": 521,
-     "y": 822,
+     "y": 904,
      "w": 332,
      "h": 910
     }
    ],
-   "mainTop": 822,
-   "chromeAboveMain": 822,
-   "mainPct": 2.8,
-   "mainPctFe1": 2.8,
-   "mainPctUncovered": 2.8,
+   "mainTop": 904,
+   "chromeAboveMain": 904,
+   "mainPct": 1,
+   "mainPctFe1": 1,
+   "mainPctUncovered": 1,
    "h1Top": 259,
    "h1Bottom": 295,
    "h1Text": "Trình soạn IR trực quan",
    "h1Missing": false,
    "h1Count": 1,
-   "gapH1ToMain": 527,
+   "gapH1ToMain": 609,
    "breadcrumbs": 2,
    "bannersBeforeMain": {
-    "count": 3,
-    "px": 423,
+    "count": 4,
+    "px": 489,
     "byKind": {
-     "notice": 2,
+     "notice": 3,
      "other": 1
     },
     "method": "geometric: khối giữa đáy h1 và đỉnh MAIN, ngoài page header"
@@ -8436,6 +8584,20 @@
      "h": 66,
      "x": 312,
      "w": 820,
+     "loc": "IrEditor.tsx:1250",
+     "tag": "div",
+     "testid": null,
+     "label": "Chế độ xem trước: lập trình IR đang tắt (DPC_IR_V2",
+     "fe1Notice": true
+    },
+    {
+     "pos": "belowH1",
+     "kind": "notice",
+     "inHeader": false,
+     "y": 519,
+     "h": 66,
+     "x": 312,
+     "w": 820,
      "loc": "IrEditor.tsx:1257",
      "tag": "div",
      "testid": null,
@@ -8446,7 +8608,7 @@
      "pos": "belowH1",
      "kind": "other",
      "inHeader": false,
-     "y": 519,
+     "y": 601,
      "h": 287,
      "x": 312,
      "w": 820,
@@ -8458,8 +8620,8 @@
     }
    ],
    "bannersFe1Class": {
-    "count": 3,
-    "px": 174,
+    "count": 4,
+    "px": 240,
     "items": [
      {
       "loc": "BetaBadge.tsx:44",
@@ -8474,8 +8636,14 @@
       "head": "Khi nào dùng — khối motion & I/O cấp thấp (IR). Cầ"
      },
      {
-      "loc": "IrEditor.tsx:1257",
+      "loc": "IrEditor.tsx:1250",
       "y": 437,
+      "h": 66,
+      "head": "Chế độ xem trước: lập trình IR đang tắt (DPC_IR_V2"
+     },
+     {
+      "loc": "IrEditor.tsx:1257",
+      "y": 519,
       "h": 66,
       "head": "Chỉ xem trước cấu trúc + lint + transpile — mô phỏ"
      }
@@ -8496,8 +8664,8 @@
     }
    },
    "coverMain": {
-    "px": 640,
-    "pctOfMain": 1.5,
+    "px": 64,
+    "pctOfMain": 0.4,
     "pctOfViewport": 0,
     "items": [
      {
@@ -8511,19 +8679,19 @@
       "zIndex": "auto",
       "rect": {
        "x": 869,
-       "y": 822,
+       "y": 904,
        "w": 263,
        "h": 910
       },
-      "px": 640
+      "px": 64
      }
     ],
     "positionedIntersecting": []
    },
-   "pageHeightRatio": 2.94,
-   "pageHeightRatioDoc": 2.94,
+   "pageHeightRatio": 3.02,
+   "pageHeightRatioDoc": 3.02,
    "scroll": {
-    "docH": 2790,
+    "docH": 2872,
     "extra": 0,
     "scrollers": [],
     "inner": []
@@ -8597,13 +8765,13 @@
    "mainRects": [
     {
      "x": 463,
-     "y": 895,
+     "y": 997,
      "w": 235,
      "h": 1018
     }
    ],
-   "mainTop": 895,
-   "chromeAboveMain": 895,
+   "mainTop": 997,
+   "chromeAboveMain": 997,
    "mainPct": 0,
    "mainPctFe1": 0,
    "mainPctUncovered": 0,
@@ -8612,13 +8780,13 @@
    "h1Text": "Trình soạn IR trực quan",
    "h1Missing": false,
    "h1Count": 1,
-   "gapH1ToMain": 580,
+   "gapH1ToMain": 682,
    "breadcrumbs": 2,
    "bannersBeforeMain": {
-    "count": 3,
-    "px": 476,
+    "count": 4,
+    "px": 562,
     "byKind": {
-     "notice": 2,
+     "notice": 3,
      "other": 1
     },
     "method": "geometric: khối giữa đáy h1 và đỉnh MAIN, ngoài page header"
@@ -8721,6 +8889,20 @@
      "h": 86,
      "x": 312,
      "w": 586,
+     "loc": "IrEditor.tsx:1250",
+     "tag": "div",
+     "testid": null,
+     "label": "Chế độ xem trước: lập trình IR đang tắt (DPC_IR_V2",
+     "fe1Notice": true
+    },
+    {
+     "pos": "belowH1",
+     "kind": "notice",
+     "inHeader": false,
+     "y": 559,
+     "h": 86,
+     "x": 312,
+     "w": 586,
      "loc": "IrEditor.tsx:1257",
      "tag": "div",
      "testid": null,
@@ -8731,7 +8913,7 @@
      "pos": "belowH1",
      "kind": "other",
      "inHeader": false,
-     "y": 559,
+     "y": 661,
      "h": 320,
      "x": 312,
      "w": 586,
@@ -8743,8 +8925,8 @@
     }
    ],
    "bannersFe1Class": {
-    "count": 3,
-    "px": 214,
+    "count": 4,
+    "px": 300,
     "items": [
      {
       "loc": "BetaBadge.tsx:44",
@@ -8759,8 +8941,14 @@
       "head": "Khi nào dùng — khối motion & I/O cấp thấp (IR). Cầ"
      },
      {
-      "loc": "IrEditor.tsx:1257",
+      "loc": "IrEditor.tsx:1250",
       "y": 457,
+      "h": 86,
+      "head": "Chế độ xem trước: lập trình IR đang tắt (DPC_IR_V2"
+     },
+     {
+      "loc": "IrEditor.tsx:1257",
+      "y": 559,
       "h": 86,
       "head": "Chỉ xem trước cấu trúc + lint + transpile — mô phỏ"
      }
@@ -8787,10 +8975,10 @@
     "items": [],
     "positionedIntersecting": []
    },
-   "pageHeightRatio": 3.87,
-   "pageHeightRatioDoc": 3.87,
+   "pageHeightRatio": 4,
+   "pageHeightRatioDoc": 4,
    "scroll": {
-    "docH": 2971,
+    "docH": 3073,
     "extra": 0,
     "scrollers": [],
     "inner": []
