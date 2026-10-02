@@ -108,10 +108,8 @@ export function WorkbenchShell({
 }: WorkbenchShellProps): React.JSX.Element {
   const { t } = useTranslation();
   const narrow = useNarrowViewport();
-  const hRef = React.useRef<HTMLDivElement | null>(null);
-  const vRef = React.useRef<HTMLDivElement | null>(null);
-  const width = useElementSize(hRef, "width");
-  const height = useElementSize(vRef, "height");
+  const [hRef, width] = useElementSize("width");
+  const [vRef, height] = useElementSize("height");
   const leftRef = React.useRef<ImperativePanelHandle | null>(null);
   const bottomRef = React.useRef<ImperativePanelHandle | null>(null);
   const bottomId = React.useId();

@@ -3,35 +3,42 @@
  *
  * Thay các Dialog tạo/sửa/duyệt giữa màn (32 Dialog trong 14 màn Engineering) bằng sheet phải
  * trên `ui/sheet` (Radix Dialog): bẫy focus, Esc đóng TỪNG lớp (chỉ lớp trên cùng nhận Esc), trả
- * focus về phần tử đã mở khi lớp đóng.
+ * focus về phần tử đã mở khi lớp đóng (lớp dựng từ F5: về lớp dưới, hoặc h1/`<main>` của trang).
  *
  * ── URL LÀ NGUỒN SỰ THẬT (Review Focus 4) ─────────────────────────────────────────────────────
  *   `?flyout=detail&flyoutId=42&flyout=edit&flyoutId=42` — mỗi lớp một cặp, theo thứ tự đáy→đỉnh.
- *   Các tham số khác (`?tab=`, `?filter=pending`…) được GIỮ NGUYÊN.
- *   - open(key, {id}): stack rỗng ⇒ PUSH một mục lịch sử (back đóng nó); đang có lớp ⇒ REPLACE
- *     (bấm hàng khác trong danh sách không chất đống lịch sử).
- *   - push(key, {id}): thêm lớp, PUSH lịch sử.
- *   - close(): đóng lớp trên cùng. Lớp do chính phiên này push ⇒ `history.back()` (để back sau đó
- *     không mở lại nó); lớp dựng từ URL lúc F5 ⇒ REPLACE.
- *   - F5 dựng lại đủ stack từ URL. Khoá CHƯA có trong `flyouts` (định nghĩa đến muộn vì quyền/dữ
- *     liệu) được GIỮ trong URL `unknownKeyGraceMs` (mặc định 5 s) và mở ngay khi được đăng ký; hết
- *     ân hạn mà vẫn không có thì mới dọn khỏi URL.
+ *   Các tham số khác (`?tab=`, `?filter=pending`…) được GIỮ NGUYÊN. F5 dựng lại đủ stack.
  *
- * ── SỔ SÁCH LỊCH SỬ (fix round 1, review I5) ──────────────────────────────────────────────────
- *   Các lớp có mục lịch sử riêng (`viaPush`) luôn là PHẦN ĐUÔI của stack. Mọi thao tác gỡ nhiều lớp
- *   (open() trên stack đã push, closeAll) trước hết LÙI đúng số mục host đã push (`history.go(-k)`),
- *   rồi mới replace — nên không còn mục lịch sử mồ côi nào khiến back/close hồi sinh lớp đã đóng.
- *   Lớp dựng từ F5 (không có trigger) đóng thì trả focus về lớp dưới, hoặc h1/`<main>` của trang.
+ * ── SỔ SÁCH LỊCH SỬ THEO DẤU (Ruling R-2-h, fix round 2) ──────────────────────────────────────
+ *   Mỗi mục lịch sử DO HOST TẠO (pushState) mang dấu trong `history.state`:
+ *     `{ flyoutHost: <id của host>, depth, stackSig, chain }`
+ *   - `stackSig` = `<path>?<flyout params>` của chính mục đó; `chain[j]` = stackSig của mục ở độ sâu
+ *     j bên dưới (chain[0] = mục GỐC — mục của trang hoặc mục F5, KHÔNG mang dấu); `depth = chain.length`.
+ *   - Mọi thao tác (close, closeAll, open trên stack, Back khi còn dữ liệu, gỡ đăng ký) tính đích
+ *     bằng `goTo(T)` CHỈ từ dấu của mục HIỆN TẠI và stack đích T: lùi qua các mục mang dấu cho tới
+ *     mục đầu tiên có stack là TIỀN TỐ của T (không bao giờ lùi qua mục khác path), rồi: bằng T ⇒
+ *     xong; là tiền tố và thao tác mở ⇒ push phần còn lại; còn lại ⇒ replace (giữ dấu nếu mục có dấu).
+ *     Mục KHÔNG có dấu (của trang, hoặc F5) không bao giờ bị lùi qua — chỉ bị replace.
+ *   - Không còn bộ đếm hay cờ `viaPush` theo lớp.
+ *   - Mọi kỳ vọng do host đặt (đích sẽ tới, việc làm sau khi lùi, focus trả về) được TIÊU THỤ ở lần
+ *     đổi location kế tiếp, hoặc tự xoá sau `EXPECT_TTL_MS` — không ref nào kẹt được. Chỉ coi một
+ *     lần đổi location là "của host" khi stackSig tới KHỚP đích đã đặt.
  *
  * ── DỮ LIỆU CHƯA LƯU ────────────────────────────────────────────────────────────────────────
- *   Nội dung lớp gọi `useFlyoutLayer().setDirty(true)`. Khi một lớp dirty sắp bị gỡ — bằng close(),
- *   Esc, open() lớp khác, hay NÚT BACK của trình duyệt — host hỏi "Bỏ thay đổi chưa lưu?". Với
- *   back: host giữ nguyên instance của form (dữ liệu không mất), đẩy URL cũ trở lại rồi hỏi; chọn
- *   "Bỏ thay đổi" thì lùi lại đúng một mục. Giới hạn: rời HẲN trang (đổi route) thì host bị gỡ
- *   cùng trang — không chặn được ở đây.
+ *   `useFlyoutLayer().setDirty(true)`. Gỡ một lớp dirty — close(), Esc, open() lớp khác, Back của
+ *   trình duyệt, hay định nghĩa của lớp bị GỠ ĐĂNG KÝ — đều hỏi "Bỏ thay đổi chưa lưu?". Back: host
+ *   giữ instance của form, PUSH lại đúng URL vừa rời (mục mới mang dấu nối tiếp mục vừa tới), rồi hỏi;
+ *   Bỏ ⇒ lùi đúng mục đó. Gỡ đăng ký: URL không đổi, không push gì; Giữ ⇒ lớp vẫn dựng bằng định
+ *   nghĩa đã lưu; Bỏ ⇒ goTo(tiền tố còn đăng ký). Rời HẲN trang (đổi route) thì không chặn được ở đây.
  *
- * Lớp đầu tiên là phần tử `[data-flyout-key]` (role=dialog, data-slot=sheet-content) — thiết bị
- * đo Task 1 chấm "dialog → sheet" bằng `kinds`.
+ * ── DEEP LINK TỚI KHOÁ CHƯA ĐĂNG KÝ ──────────────────────────────────────────────────────────
+ *   Chỉ URL LÚC NẠP TRANG được ân hạn `unknownKeyGraceMs` (định nghĩa đến muộn vì quyền/dữ liệu):
+ *   khoá được giữ trong URL và mở ngay khi đăng ký. Ân hạn bị HUỶ bởi bất kỳ lần đổi location nào
+ *   hay open()/push(). Hết/huỷ ân hạn ⇒ dọn mọi lớp TỪ khoá lạ đầu tiên trở lên (không để lớp con mồ
+ *   côi cha).
+ *
+ * Lớp là phần tử `[data-flyout-key]` (role=dialog, data-slot=sheet-content) — thiết bị đo Task 1
+ * chấm "dialog → sheet" bằng `kinds`.
  */
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { useLocation, useSearch } from "wouter";
@@ -114,15 +121,67 @@ function commonPrefix(a: readonly FlyoutEntry[], b: readonly FlyoutEntry[]): num
   return i;
 }
 
-interface LayerState extends FlyoutEntry {
-  uid: number;
-  /** Lớp này có một mục lịch sử riêng do phiên này push (back đóng nó). */
-  viaPush: boolean;
-  /** Phần tử đang có focus lúc mở lớp — nhận lại focus khi lớp đóng. */
-  returnFocus: HTMLElement | null;
+function sameStack(a: readonly FlyoutEntry[], b: readonly FlyoutEntry[]): boolean {
+  return a.length === b.length && commonPrefix(a, b) === a.length;
+}
+function isPrefixStack(a: readonly FlyoutEntry[], b: readonly FlyoutEntry[]): boolean {
+  return a.length <= b.length && commonPrefix(a, b) === a.length;
 }
 
-type Pending = { kind: "close" } | { kind: "closeAll" } | { kind: "open"; next: FlyoutEntry[] } | { kind: "external" };
+/** Chữ ký một mục lịch sử: path + chỉ các cặp flyout (tham số khác không tính). */
+export function flyoutStackSig(path: string, stack: readonly FlyoutEntry[]): string {
+  return `${path}?${buildFlyoutSearch("", stack)}`;
+}
+function parseSig(sig: string): { path: string; stack: FlyoutEntry[] } {
+  const i = sig.indexOf("?");
+  return i < 0 ? { path: sig, stack: [] } : { path: sig.slice(0, i), stack: parseFlyoutStack(sig.slice(i + 1)) };
+}
+
+/** Dấu trong `history.state` của mục do host tạo. */
+export interface FlyoutHistoryMarker {
+  flyoutHost: string;
+  depth: number;
+  stackSig: string;
+  chain: string[];
+}
+
+function readMarker(hostId: string): FlyoutHistoryMarker | null {
+  if (typeof window === "undefined") return null;
+  const st = window.history.state as Partial<FlyoutHistoryMarker> | null;
+  if (!st || typeof st !== "object" || st.flyoutHost !== hostId) return null;
+  if (!Array.isArray(st.chain) || st.chain.length !== st.depth || typeof st.stackSig !== "string") return null;
+  return st as FlyoutHistoryMarker;
+}
+
+/** Kỳ vọng sống tối đa bao lâu nếu location không đổi như dự tính (ms). */
+export const EXPECT_TTL_MS = 1500;
+
+interface LayerState extends FlyoutEntry {
+  uid: number;
+  /** Phần tử đang có focus lúc mở lớp — nhận lại focus khi lớp đóng. */
+  returnFocus: HTMLElement | null;
+  /** Định nghĩa đã dùng khi dựng lớp (để "Giữ" một lớp dirty khi khoá bị gỡ đăng ký). */
+  def: FlyoutDefinition | null;
+  /** Người dùng chọn GIỮ lớp này dù khoá đã bị gỡ đăng ký. */
+  kept: boolean;
+}
+
+interface Expectation {
+  /** stackSig mà lần đổi location kế tiếp phải tới thì mới coi là của host. */
+  sig: string;
+  /** Chạy sau khi tới đúng đích (vd bước "land" sau khi lùi lịch sử). */
+  after?: () => void;
+  /** Focus trả về cho lớp MỚI xuất hiện ở lần đổi này. */
+  returnFocus?: HTMLElement | null;
+  timer: number;
+}
+
+type Pending =
+  | { kind: "close" }
+  | { kind: "closeAll" }
+  | { kind: "open"; next: FlyoutEntry[] }
+  | { kind: "external"; targetSig: string }
+  | { kind: "unregister"; target: FlyoutEntry[] };
 
 const FlyoutContext = createContext<FlyoutApi | null>(null);
 const FlyoutLayerContext = createContext<FlyoutLayerApi | null>(null);
@@ -148,21 +207,8 @@ const SIZE_CLASS: Record<NonNullable<FlyoutDefinition["size"]>, string> = {
 export interface FlyoutHostProps {
   flyouts: Record<string, FlyoutDefinition>;
   children: ReactNode;
-  /** Giữ khoá chưa đăng ký trong URL bao lâu trước khi dọn (ms). Mặc định 5000. */
+  /** Ân hạn cho khoá chưa đăng ký trong URL LÚC NẠP TRANG (ms). Mặc định 5000. */
   unknownKeyGraceMs?: number;
-}
-
-/** Số lớp ở ĐUÔI stack có mục lịch sử riêng do host push. */
-function trailingPushed(S: readonly LayerState[]): number {
-  let k = 0;
-  for (let i = S.length - 1; i >= 0 && S[i].viaPush; i--) k++;
-  return k;
-}
-
-/** Tiền tố đã đăng ký của stack trong URL (dừng ở khoá lạ đầu tiên — lớp trên nó chưa dựng được). */
-function knownPrefix(raw: FlyoutEntry[], known: (e: FlyoutEntry) => boolean): FlyoutEntry[] {
-  const i = raw.findIndex((e) => !known(e));
-  return i < 0 ? raw : raw.slice(0, i);
 }
 
 /** Lớp F5 không có phần tử mở: trả focus về lớp dưới, hoặc h1 / <main> của trang. */
@@ -175,18 +221,33 @@ function fallbackFocus(depth: number): void {
   target.focus();
 }
 
+let hostSeq = 0;
+
 export function FlyoutHost({ flyouts, children, unknownKeyGraceMs = 5000 }: FlyoutHostProps) {
   const [location, navigate] = useLocation();
   const search = useSearch();
+  const [hostId] = useState(() => `fh${++hostSeq}-${Math.random().toString(36).slice(2, 8)}`);
 
   const flyoutsRef = useRef(flyouts);
   flyoutsRef.current = flyouts;
-  const known = (e: FlyoutEntry) => Object.prototype.hasOwnProperty.call(flyoutsRef.current, e.key);
+  const knownSig = Object.keys(flyouts).sort().join("|");
+  const registered = (key: string) => Object.prototype.hasOwnProperty.call(flyoutsRef.current, key);
 
   const uidRef = useRef(0);
-  const knownSig = Object.keys(flyouts).sort().join("|");
+  /** Tiền tố dựng được của stack trong URL: dừng ở khoá lạ đầu tiên (trừ lớp người dùng đã "Giữ"). */
+  const knownPrefixOf = (raw: FlyoutEntry[], S: readonly LayerState[]): FlyoutEntry[] => {
+    const i = raw.findIndex((e, idx) => !registered(e.key) && !(S[idx]?.kept && sameEntry(S[idx], e)));
+    return i < 0 ? raw : raw.slice(0, i);
+  };
+
   const [layers, setLayers] = useState<LayerState[]>(() =>
-    knownPrefix(parseFlyoutStack(search), known).map((e) => ({ ...e, uid: ++uidRef.current, viaPush: false, returnFocus: null })),
+    knownPrefixOf(parseFlyoutStack(search), []).map((e) => ({
+      ...e,
+      uid: ++uidRef.current,
+      returnFocus: null,
+      def: flyouts[e.key] ?? null,
+      kept: false,
+    })),
   );
   /**
    * Radix gắn `aria-hidden` cho mọi thứ ngoài dialog VỪA mount. Khi F5 dựng nhiều lớp CÙNG LÚC,
@@ -198,6 +259,7 @@ export function FlyoutHost({ flyouts, children, unknownKeyGraceMs = 5000 }: Flyo
     if (mountedDepth < layers.length) setMountedDepth(mountedDepth + 1);
     else if (mountedDepth > layers.length) setMountedDepth(layers.length);
   }, [mountedDepth, layers.length]);
+
   const layersRef = useRef(layers);
   layersRef.current = layers;
   const searchRef = useRef(search);
@@ -205,169 +267,220 @@ export function FlyoutHost({ flyouts, children, unknownKeyGraceMs = 5000 }: Flyo
   const locationRef = useRef(location);
   locationRef.current = location;
 
+  const hrefOf = (path: string, s: string) => `${path}${s ? `?${s}` : ""}`;
+  const prevHrefRef = useRef(hrefOf(location, search));
+  /** Ân hạn chỉ cho URL lúc nạp trang; huỷ bởi mọi lần đổi location và open()/push(). */
+  const graceRef = useRef<{ active: boolean; timer: number | null }>({ active: true, timer: null });
+
   const dirtyRef = useRef(new Map<number, boolean>());
-  /** Lần đổi URL kế tiếp là do chính host (đã hỏi/không cần hỏi) — không chặn. */
-  const allowRef = useRef(false);
-  /** viaPush cho các lớp MỚI ở lần đổi URL kế tiếp. */
-  const newViaPushRef = useRef(false);
-  /** Phần tử có focus lúc gọi open/push — gán cho lớp MỚI ở lần đổi URL kế tiếp. */
-  const newReturnFocusRef = useRef<HTMLElement | null>(null);
-  const captureFocus = () => {
-    const el = typeof document !== "undefined" ? document.activeElement : null;
-    newReturnFocusRef.current = el instanceof HTMLElement && el !== document.body ? el : null;
+  const isDirty = (l: LayerState) => dirtyRef.current.get(l.uid) === true;
+
+  const expectRef = useRef<Expectation | null>(null);
+  const clearExpect = () => {
+    const e = expectRef.current;
+    if (e) window.clearTimeout(e.timer);
+    expectRef.current = null;
   };
-  /** Việc cần làm SAU khi một lần lùi lịch sử do host khởi xướng đã về tới (xem `unwind`). */
-  const afterPopRef = useRef<(() => void) | null>(null);
-  const graceTimerRef = useRef<number | null>(null);
+  const expect = (sig: string, extra: Omit<Expectation, "sig" | "timer"> = {}) => {
+    clearExpect();
+    const ex: Expectation = { sig, ...extra, timer: 0 };
+    ex.timer = window.setTimeout(() => {
+      if (expectRef.current === ex) expectRef.current = null;
+    }, EXPECT_TTL_MS);
+    expectRef.current = ex;
+  };
   useEffect(
     () => () => {
-      if (graceTimerRef.current != null) window.clearTimeout(graceTimerRef.current);
+      clearExpect();
+      if (graceRef.current.timer != null) window.clearTimeout(graceRef.current.timer);
     },
+    // eslint-disable-next-line react-hooks/exhaustive-deps
     [],
   );
+
   const [pending, setPending] = useState<Pending | null>(null);
 
-  const isDirty = (l: LayerState) => dirtyRef.current.get(l.uid) === true;
+  const captureFocus = (): HTMLElement | null => {
+    const el = typeof document !== "undefined" ? document.activeElement : null;
+    return el instanceof HTMLElement && el !== document.body ? el : null;
+  };
 
   const hrefFor = useCallback((stack: readonly FlyoutEntry[]) => {
     const qs = buildFlyoutSearch(searchRef.current, stack);
-    return `${locationRef.current}${qs ? `?${qs}` : ""}`;
+    return hrefOf(locationRef.current, qs);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const currentQs = () => new URLSearchParams(searchRef.current).toString();
+  /** Chữ ký của mục HIỆN TẠI theo URL thật. */
+  const currentSig = () => flyoutStackSig(locationRef.current, parseFlyoutStack(searchRef.current));
 
-  // ── URL → stack ────────────────────────────────────────────────────────────────────────────
-  const runAfterPop = () => {
-    const after = afterPopRef.current;
-    if (!after) return;
-    afterPopRef.current = null;
-    after();
+  /**
+   * Đưa lịch sử tới stack đích T, chỉ dựa vào dấu của mục hiện tại (xem docblock).
+   * `open`: được push phần còn thiếu khi mục tới là tiền tố của T.
+   */
+  const goTo = useCallback(
+    (T: FlyoutEntry[], opts: { open: boolean; returnFocus?: HTMLElement | null }) => {
+      const path = locationRef.current;
+      const m = readMarker(hostId);
+      const chain = m ? m.chain : [];
+      const d = chain.length;
+      const cur = currentSig();
+      const sigAt = (j: number) => (j === d ? cur : chain[j]);
+      let j = d;
+      while (j >= 1) {
+        const here = parseSig(sigAt(j));
+        if (here.path === path && isPrefixStack(here.stack, T)) break;
+        if (parseSig(sigAt(j - 1)).path !== path) break;
+        j--;
+      }
+      const landedSig = sigAt(j);
+      const land = () => {
+        const L = parseSig(landedSig);
+        const targetSig = flyoutStackSig(path, T);
+        if (L.path === path && sameStack(L.stack, T)) return;
+        const href = hrefFor(T);
+        if (opts.open && L.path === path && isPrefixStack(L.stack, T)) {
+          const nextChain = [...chain.slice(0, j), landedSig];
+          expect(targetSig, { returnFocus: opts.returnFocus ?? null });
+          navigate(href, { state: { flyoutHost: hostId, depth: nextChain.length, stackSig: targetSig, chain: nextChain } satisfies FlyoutHistoryMarker });
+          return;
+        }
+        // Thay mục đang đứng: mục có dấu ⇒ giữ dấu (cập nhật stackSig); mục gốc ⇒ giữ state của trang.
+        const state =
+          j >= 1
+            ? ({ flyoutHost: hostId, depth: j, stackSig: targetSig, chain: chain.slice(0, j) } satisfies FlyoutHistoryMarker)
+            : (window.history.state as unknown);
+        expect(targetSig, { returnFocus: opts.returnFocus ?? null });
+        navigate(href, { replace: true, state });
+      };
+      const steps = d - j;
+      if (steps === 0) {
+        land();
+        return;
+      }
+      expect(landedSig, { after: land });
+      window.history.go(-steps);
+    },
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [hostId, hrefFor, navigate],
+  );
+
+  const cancelGrace = () => {
+    const g = graceRef.current;
+    g.active = false;
+    if (g.timer != null) {
+      window.clearTimeout(g.timer);
+      g.timer = null;
+    }
   };
 
+  /** Dọn khoá lạ: bỏ mọi lớp TỪ khoá lạ đầu tiên trở lên (replace, giữ dấu của mục). */
+  const cleanUnknown = () => {
+    const raw = parseFlyoutStack(searchRef.current);
+    const keep = knownPrefixOf(raw, layersRef.current);
+    if (keep.length === raw.length) return;
+    const m = readMarker(hostId);
+    const sig = flyoutStackSig(locationRef.current, keep);
+    const state = m ? { ...m, stackSig: sig } : (window.history.state as unknown);
+    expect(sig);
+    navigate(hrefFor(keep), { replace: true, state });
+  };
+
+  // ── URL / đăng ký → stack ──────────────────────────────────────────────────────────────────
   useEffect(() => {
-    const raw = parseFlyoutStack(search);
-    const urlStack = knownPrefix(raw, known);
-    if (urlStack.length !== raw.length) {
-      // Khoá chưa đăng ký: giữ trong URL một thời gian ân hạn, chờ định nghĩa đến muộn.
-      if (graceTimerRef.current == null) {
-        graceTimerRef.current = window.setTimeout(() => {
-          graceTimerRef.current = null;
-          const r = parseFlyoutStack(searchRef.current);
-          if (r.some((e) => !known(e))) {
-            allowRef.current = true;
-            navigate(hrefFor(r.filter(known)), { replace: true });
-          }
-        }, unknownKeyGraceMs);
-      }
-    } else if (graceTimerRef.current != null) {
-      window.clearTimeout(graceTimerRef.current);
-      graceTimerRef.current = null;
+    const href = hrefOf(location, search);
+    const locChanged = href !== prevHrefRef.current;
+    const leftHref = prevHrefRef.current;
+    prevHrefRef.current = href;
+
+    // Kỳ vọng chỉ được tiêu thụ ở lần ĐỔI LOCATION kế tiếp (đổi đăng ký thì không).
+    let exp: Expectation | null = null;
+    if (locChanged) {
+      exp = expectRef.current;
+      clearExpect();
+      if (graceRef.current.active) cancelGrace();
     }
+    const raw = parseFlyoutStack(search);
+    const sigNow = flyoutStackSig(location, raw);
+    const byHost = exp != null && exp.sig === sigNow;
+
     const S = layersRef.current;
+    const urlStack = knownPrefixOf(raw, S);
+    const handleUnknown = () => {
+      if (urlStack.length !== raw.length) {
+        const g = graceRef.current;
+        if (g.active) {
+          if (g.timer == null) {
+            g.timer = window.setTimeout(() => {
+              g.timer = null;
+              g.active = false;
+              cleanUnknown();
+            }, unknownKeyGraceMs);
+          }
+        } else {
+          cleanUnknown();
+        }
+      } else if (graceRef.current.active && graceRef.current.timer != null) {
+        cancelGrace();
+      }
+    };
     const common = commonPrefix(S, urlStack);
     if (common === S.length && common === urlStack.length) {
-      allowRef.current = false;
-      runAfterPop();
+      handleUnknown();
+      if (byHost) exp?.after?.();
       return;
     }
     const removed = S.slice(common);
-    const allow = allowRef.current;
-    const viaPush = newViaPushRef.current;
-    const returnFocus = newReturnFocusRef.current;
-    allowRef.current = false;
-    newViaPushRef.current = false;
-    newReturnFocusRef.current = null;
-
-    if (!allow && removed.some(isDirty)) {
-      // Đổi URL từ BÊN NGOÀI (back/forward) sẽ gỡ một form còn dữ liệu: giữ instance, đẩy URL cũ
-      // trở lại (một mục lịch sử mới đè lên mục đích), rồi hỏi.
-      setLayers(S.map((l, i) => (i >= common ? { ...l, viaPush: true } : l)));
-      allowRef.current = true;
-      navigate(hrefFor(S));
-      setPending({ kind: "external" });
+    if (!byHost && removed.some(isDirty)) {
+      if (locChanged) {
+        // Back/forward từ BÊN NGOÀI sắp gỡ form còn dữ liệu: giữ instance, push lại đúng URL vừa rời
+        // (mục mới mang dấu nối tiếp mục vừa tới), rồi hỏi.
+        const m = readMarker(hostId);
+        const nextChain = [...(m ? m.chain : []), sigNow];
+        const qAt = leftHref.indexOf("?");
+        const restoreSig = flyoutStackSig(qAt < 0 ? leftHref : leftHref.slice(0, qAt), parseFlyoutStack(qAt < 0 ? "" : leftHref.slice(qAt + 1)));
+        expect(restoreSig);
+        navigate(leftHref, { state: { flyoutHost: hostId, depth: nextChain.length, stackSig: restoreSig, chain: nextChain } satisfies FlyoutHistoryMarker });
+        setPending({ kind: "external", targetSig: sigNow });
+      } else {
+        // Định nghĩa của lớp dirty bị gỡ đăng ký: URL KHÔNG đổi, không push gì — chỉ hỏi.
+        setPending({ kind: "unregister", target: urlStack });
+      }
       return;
     }
+    // Không có lớp dirty nào bị gỡ ⇒ mới xử lý khoá lạ (ân hạn hoặc dọn). Khi đang hỏi (gỡ đăng ký
+    // một lớp dirty) thì KHÔNG dọn URL — URL giữ nguyên cho tới khi người dùng chọn.
+    handleUnknown();
     for (const l of removed) dirtyRef.current.delete(l.uid);
     const added = urlStack.slice(common).map((e, i) => ({
       ...e,
       uid: ++uidRef.current,
-      viaPush,
-      returnFocus: i === 0 ? returnFocus : null,
+      returnFocus: i === 0 && byHost ? (exp?.returnFocus ?? null) : null,
+      def: flyoutsRef.current[e.key] ?? null,
+      kept: false,
     }));
     const nextLayers = [...S.slice(0, common), ...added];
     layersRef.current = nextLayers;
     setLayers(nextLayers);
-    runAfterPop();
+    if (byHost) exp?.after?.();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [search, knownSig]);
-
-  /** Lùi `n` mục lịch sử do host push, rồi chạy `then` khi URL đã về tới (n=0 ⇒ chạy ngay). */
-  const unwind = useCallback((n: number, then: () => void) => {
-    if (n <= 0) {
-      then();
-      return;
-    }
-    allowRef.current = true;
-    afterPopRef.current = then;
-    window.history.go(-n);
-  }, []);
+  }, [location, search, knownSig]);
 
   // ── thao tác ───────────────────────────────────────────────────────────────────────────────
   const performOpen = useCallback(
     (next: FlyoutEntry[]) => {
-      if (buildFlyoutSearch(searchRef.current, next) === currentQs()) return;
       const S = layersRef.current;
-      captureFocus();
+      const captured = captureFocus();
       // Mở từ BÊN TRONG một lớp sắp bị thay ⇒ khi lớp mới đóng, trả focus về phần tử đã mở stack cũ.
-      const captured = newReturnFocusRef.current;
       const focus = captured && captured.closest("[data-flyout-key]") ? (S[0]?.returnFocus ?? null) : captured;
-      if (S.length === 0) {
-        allowRef.current = true;
-        newViaPushRef.current = true;
-        newReturnFocusRef.current = focus;
-        navigate(hrefFor(next));
-        return;
-      }
-      const k = trailingPushed(S);
-      // Cả stack là mục đã push ⇒ lùi về mục của lớp đáy rồi thay nó (lớp mới kế thừa mục đó).
-      // Có lớp F5 ở đáy ⇒ lùi hết phần đã push rồi thay mục F5 (lớp mới không có mục riêng).
-      const all = k === S.length;
-      unwind(all ? k - 1 : k, () => {
-        allowRef.current = true;
-        newViaPushRef.current = all;
-        newReturnFocusRef.current = focus;
-        navigate(hrefFor(next), { replace: true });
-      });
+      goTo(next, { open: true, returnFocus: focus });
     },
-    [hrefFor, navigate, unwind],
+    [goTo],
   );
-
-  const performClose = useCallback(() => {
-    const S = layersRef.current;
-    const top = S[S.length - 1];
-    if (!top) return;
-    allowRef.current = true;
-    if (top.viaPush) window.history.back();
-    else navigate(hrefFor(S.slice(0, -1)), { replace: true });
-  }, [hrefFor, navigate]);
-
-  const performCloseAll = useCallback(() => {
-    const S = layersRef.current;
-    if (S.length === 0) return;
-    const k = trailingPushed(S);
-    if (k === S.length) {
-      unwind(k, () => undefined);
-      return;
-    }
-    // Trộn F5 + push: lùi hết phần đã push, rồi thay mục F5 bằng URL sạch — back sau đó về trang trước.
-    unwind(k, () => {
-      allowRef.current = true;
-      navigate(hrefFor([]), { replace: true });
-    });
-  }, [hrefFor, navigate, unwind]);
 
   const open = useCallback(
     (key: string, opts?: FlyoutOpenOptions) => {
+      cancelGrace();
       const next = [{ key, id: normId(opts?.id) }];
       const S = layersRef.current;
       if (S.slice(commonPrefix(S, next)).some(isDirty)) {
@@ -376,19 +489,31 @@ export function FlyoutHost({ flyouts, children, unknownKeyGraceMs = 5000 }: Flyo
       }
       performOpen(next);
     },
+    // eslint-disable-next-line react-hooks/exhaustive-deps
     [performOpen],
   );
 
   const push = useCallback(
     (key: string, opts?: FlyoutOpenOptions) => {
+      cancelGrace();
       const next = [...layersRef.current.map(({ key: k, id }) => ({ key: k, id })), { key, id: normId(opts?.id) }];
-      allowRef.current = true;
-      newViaPushRef.current = true;
-      captureFocus();
-      navigate(hrefFor(next));
+      goTo(next, { open: true, returnFocus: captureFocus() });
     },
-    [hrefFor, navigate],
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [goTo],
   );
+
+  const stackOf = (S: readonly LayerState[]) => S.map(({ key, id }) => ({ key, id }));
+  const performClose = useCallback(() => {
+    const S = layersRef.current;
+    if (S.length === 0) return;
+    goTo(stackOf(S.slice(0, -1)), { open: false });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [goTo]);
+  const performCloseAll = useCallback(() => {
+    if (layersRef.current.length === 0) return;
+    goTo([], { open: false });
+  }, [goTo]);
 
   const close = useCallback(() => {
     const S = layersRef.current;
@@ -399,6 +524,7 @@ export function FlyoutHost({ flyouts, children, unknownKeyGraceMs = 5000 }: Flyo
       return;
     }
     performClose();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [performClose]);
 
   const closeAll = useCallback(() => {
@@ -407,6 +533,7 @@ export function FlyoutHost({ flyouts, children, unknownKeyGraceMs = 5000 }: Flyo
       return;
     }
     performCloseAll();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [performCloseAll]);
 
   const stack = useMemo(() => layers.map(({ key, id }) => ({ key, id })), [layers]);
@@ -415,6 +542,19 @@ export function FlyoutHost({ flyouts, children, unknownKeyGraceMs = 5000 }: Flyo
     [stack, open, push, close, closeAll],
   );
 
+  const onKeep = () => {
+    const p = pending;
+    setPending(null);
+    if (p?.kind === "unregister") {
+      // Giữ: lớp vẫn dựng bằng định nghĩa đã lưu; URL không đổi.
+      const S = layersRef.current;
+      const keepFrom = commonPrefix(S, p.target);
+      const next = S.map((l, i) => (i >= keepFrom ? { ...l, kept: true } : l));
+      layersRef.current = next;
+      setLayers(next);
+    }
+  };
+
   const onDiscard = () => {
     const p = pending;
     setPending(null);
@@ -422,9 +562,20 @@ export function FlyoutHost({ flyouts, children, unknownKeyGraceMs = 5000 }: Flyo
     if (p.kind === "close") performClose();
     else if (p.kind === "closeAll") performCloseAll();
     else if (p.kind === "open") performOpen(p.next);
-    else {
-      allowRef.current = true;
-      window.history.back();
+    else if (p.kind === "unregister") {
+      const S = layersRef.current;
+      const from = commonPrefix(S, p.target);
+      for (const l of S.slice(from)) dirtyRef.current.delete(l.uid);
+      goTo(p.target, { open: false });
+    } else {
+      // Back bị chặn: mục hiện tại là mục host vừa push lại (mang dấu) ⇒ lùi đúng một mục về đích
+      // người dùng đã chọn. Không có dấu (không thể xảy ra trừ khi trang tự ghi đè) ⇒ không lùi.
+      const m = readMarker(hostId);
+      for (const l of layersRef.current) dirtyRef.current.delete(l.uid);
+      if (m && m.chain[m.depth - 1] === p.targetSig) {
+        expect(p.targetSig);
+        window.history.go(-1);
+      }
     }
   };
 
@@ -432,7 +583,9 @@ export function FlyoutHost({ flyouts, children, unknownKeyGraceMs = 5000 }: Flyo
     <FlyoutContext.Provider value={api}>
       {children}
       {layers.map((l, i) => {
-        const def = flyouts[l.key];
+        // Lớp còn trong stack mà khoá vừa bị gỡ đăng ký (đang hỏi, hoặc người dùng chọn Giữ) ⇒ dựng
+        // bằng định nghĩa đã lưu để form không mất dữ liệu.
+        const def = flyouts[l.key] ?? l.def;
         if (!def || i >= mountedDepth) return null;
         const isTop = i === layers.length - 1;
         const layerApi: FlyoutLayerApi = {
@@ -458,7 +611,6 @@ export function FlyoutHost({ flyouts, children, unknownKeyGraceMs = 5000 }: Flyo
                 side="right"
                 data-flyout-key={l.key}
                 data-flyout-depth={i}
-                aria-describedby={description ? undefined : undefined}
                 onCloseAutoFocus={(e) => {
                   // Radix trả focus về DialogTrigger — ở đây không có trigger, nên tự trả về
                   // phần tử đã mở lớp (nếu nó còn trong tài liệu).
@@ -478,7 +630,7 @@ export function FlyoutHost({ flyouts, children, unknownKeyGraceMs = 5000 }: Flyo
           </FlyoutLayerContext.Provider>
         );
       })}
-      <UnsavedChangesConfirm open={pending != null} onKeep={() => setPending(null)} onDiscard={onDiscard} />
+      <UnsavedChangesConfirm open={pending != null} onKeep={onKeep} onDiscard={onDiscard} />
     </FlyoutContext.Provider>
   );
 }

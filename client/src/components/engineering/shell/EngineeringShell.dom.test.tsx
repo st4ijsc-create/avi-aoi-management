@@ -191,3 +191,20 @@ describe("EngineeringShell — màn hẹp", () => {
     expect(mainEl()).toHaveTextContent("mã nguồn");
   });
 });
+
+// ── Fix round 2 (re-review) — ở màn hẹp, bấm mục đang chọn KHÔNG gập explorer của màn rộng ──────
+describe("EngineeringShell — màn hẹp không đụng trạng thái gập của màn rộng", () => {
+  it("hẹp: bấm lại 'Dự án' (đang chọn) ⇒ sang rộng explorer VẪN mở", () => {
+    presetNarrow(true);
+    renderShell();
+    const bar = screen.getByRole("toolbar", { name: VI.layoutKit.shell.activityBar });
+    fireEvent.click(within(bar).getByRole("button", { name: "Dự án" }));
+    fireEvent.click(within(bar).getByRole("button", { name: "Dự án" }));
+    fireEvent.click(within(bar).getByRole("button", { name: "Dự án" }));
+    expect(screen.getByRole("tab", { name: VI.layoutKit.shell.explorer })).toHaveAttribute("aria-selected", "true");
+    setNarrow(false);
+    const leftPanel = document.querySelector("[data-workbench-left]")!.closest("[data-panel]") as HTMLElement;
+    expect(Number(leftPanel.getAttribute("data-panel-size"))).toBeGreaterThan(0);
+    expect(screen.getByRole("button", { name: "Dự án" })).toHaveAttribute("aria-expanded", "true");
+  });
+});

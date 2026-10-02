@@ -1,7 +1,7 @@
 /**
  * Doc 81 Đợt 2 Task 3 — hook dùng chung của các layout (WorkbenchShell, SplitListDetail, CockpitLayout).
  */
-import { useEffect, useState, type RefObject } from "react";
+import { useEffect, useState } from "react";
 
 /** Mốc chuyển layout cạnh-nhau ⇒ tab/stack (plan Global Constraint 10: dưới 1024 px). */
 export const NARROW_BREAKPOINT_PX = 1024;
@@ -23,11 +23,17 @@ export function useNarrowViewport(breakpoint: number = NARROW_BREAKPOINT_PX): bo
   return narrow;
 }
 
-/** Kích thước px (rộng hoặc cao) của phần tử, theo ResizeObserver. 0 khi chưa đo được. */
-export function useElementSize(ref: RefObject<HTMLElement | null>, axis: "width" | "height"): number {
+/**
+ * Kích thước px (rộng hoặc cao) của một phần tử, theo ResizeObserver. 0 khi chưa đo được.
+ *
+ * Trả về `[ref, size]` với `ref` là CALLBACK ref: mỗi khi phần tử được đo đổi (layout rộng/hẹp
+ * dựng lại cây, hoặc trang nạp ở màn hẹp nên phần tử chưa tồn tại) thì hook đo lại và quan sát
+ * phần tử MỚI (fix round 2 — bản cũ dùng ref object nên không bao giờ quan sát lại).
+ */
+export function useElementSize(axis: "width" | "height"): [(el: HTMLElement | null) => void, number] {
+  const [el, setEl] = useState<HTMLElement | null>(null);
   const [size, setSize] = useState(0);
   useEffect(() => {
-    const el = ref.current;
     if (!el) return;
     const measure = () => {
       const r = el.getBoundingClientRect();
@@ -38,8 +44,8 @@ export function useElementSize(ref: RefObject<HTMLElement | null>, axis: "width"
     const ro = new ResizeObserver(measure);
     ro.observe(el);
     return () => ro.disconnect();
-  }, [ref, axis]);
-  return size;
+  }, [el, axis]);
+  return [setEl, size];
 }
 
 export interface PxRange {

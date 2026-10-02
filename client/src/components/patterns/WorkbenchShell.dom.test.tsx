@@ -259,3 +259,51 @@ describe("WorkbenchShell — leftRail (activity bar) còn ở màn hẹp", () =>
     expect(screen.getByText("cây")).toBeVisible();
   });
 });
+
+// ── Fix round 2 (re-review) — giới hạn px còn hiệu lực sau khi đổi mốc / khi nạp ở màn hẹp ──────────
+describe("WorkbenchShell — giới hạn px (useElementSize đo lại phần tử mới)", () => {
+  function stubRect() {
+    return vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockImplementation(
+      () => ({ x: 0, y: 0, top: 0, left: 0, right: 1200, bottom: 800, width: 1200, height: 800, toJSON: () => ({}) }) as DOMRect,
+    );
+  }
+  const rightSizeAfterHome = () => {
+    const h = screen.getByRole("separator", { name: VI.layoutKit.shell.resizeRight });
+    fireEvent.keyDown(h, { key: "Home" });
+    return (document.querySelector('[data-panel-id="right"]') as HTMLElement).getAttribute("data-panel-size");
+  };
+
+  it("đối chứng: nạp ở màn rộng, nhóm 1200 px ⇒ panel phải tối đa 420 px = 35 %", () => {
+    const spy = stubRect();
+    try {
+      renderShell({ userId: null });
+      expect(rightSizeAfterHome()).toBe("35.0");
+    } finally {
+      spy.mockRestore();
+    }
+  });
+
+  it("nạp ở màn HẸP rồi sang rộng ⇒ giới hạn px vẫn áp (35 %, không rơi về % dự phòng 30)", () => {
+    const spy = stubRect();
+    try {
+      presetNarrow(true);
+      renderShell({ userId: null });
+      setNarrow(false);
+      expect(rightSizeAfterHome()).toBe("35.0");
+    } finally {
+      spy.mockRestore();
+    }
+  });
+
+  it("rộng → hẹp → rộng ⇒ vẫn 35 %", () => {
+    const spy = stubRect();
+    try {
+      renderShell({ userId: null });
+      setNarrow(true);
+      setNarrow(false);
+      expect(rightSizeAfterHome()).toBe("35.0");
+    } finally {
+      spy.mockRestore();
+    }
+  });
+});

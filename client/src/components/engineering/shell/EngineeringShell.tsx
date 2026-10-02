@@ -21,6 +21,7 @@ import { useTranslation } from "react-i18next";
 import { X as XIcon } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { WorkbenchShell } from "@/components/patterns/WorkbenchShell";
+import { useNarrowViewport } from "@/components/patterns/layoutKitHooks";
 
 export interface ActivityItem {
   id: string;
@@ -245,9 +246,12 @@ export function EngineeringShell({
   /** Mỗi lần chọn mục ⇒ tăng; ở màn hẹp WorkbenchShell chuyển sang tab explorer. */
   const [revealToken, setRevealToken] = React.useState(0);
 
+  const narrow = useNarrowViewport();
   const onSelectActivity = (id: string) => {
     setRevealToken((n) => n + 1);
     if (id === activeActivity) {
+      // Màn hẹp: explorer là một tab — bấm lại chỉ mở tab đó, KHÔNG đổi trạng thái gập của màn rộng.
+      if (narrow) return;
       setExplorerCollapsed((c) => !c);
       return;
     }
