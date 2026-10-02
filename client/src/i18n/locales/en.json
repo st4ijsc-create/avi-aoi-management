@@ -21379,7 +21379,6 @@
       "source": "Source: {{source}}"
     },
     "flyout": {
-      "close": "Close",
       "unsavedTitle": "Discard unsaved changes?",
       "unsavedDesc": "This form has unsaved data. Closing it will lose those changes.",
       "keepEditing": "Keep editing",
@@ -21399,7 +21398,6 @@
       }
     },
     "versions": {
-      "title": "Version history",
       "loading": "Loading versions…",
       "error": "Could not load the version history.",
       "empty": "No versions yet.",

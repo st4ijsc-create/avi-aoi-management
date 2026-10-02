@@ -103,6 +103,11 @@ describe("CockpitLayout — dấu đo", () => {
     expect(mainEl()).not.toContainElement(side);
   });
 
+  it("panel phụ không khai nhãn ⇒ nhãn mặc định 'Panel phụ' (landmark luôn có tên)", () => {
+    renderCockpit({ sideLabel: undefined });
+    expect(screen.getByRole("complementary", { name: VI.layoutKit.cockpit.side })).toBeInTheDocument();
+  });
+
   it("không có tab ⇒ MAIN = toolbar (tuỳ chọn) + main", () => {
     renderCockpit({ tabs: undefined, main: <table aria-label="bảng" />, toolbar: <span>tb</span> });
     expect(mainEl()).toContainElement(screen.getByRole("table", { name: "bảng" }));

@@ -15,6 +15,7 @@
  *   Integration acquisition).
  */
 import * as React from "react";
+import { useTranslation } from "react-i18next";
 import { TabbedHub, type TabbedHubTab } from "@/components/workspace/TabbedHub";
 import { cn } from "@/lib/utils";
 import { PageHeaderCompact } from "./PageHeaderCompact";
@@ -67,6 +68,7 @@ export function CockpitLayout({
   mainName = "cockpit",
   className,
 }: CockpitLayoutProps): React.JSX.Element {
+  const { t } = useTranslation();
   const narrow = useNarrowViewport();
   const headerChips =
     notices != null || chips != null ? (
@@ -106,7 +108,7 @@ export function CockpitLayout({
         </div>
         {side != null && (
           <aside
-            aria-label={sideLabel}
+            aria-label={sideLabel ?? t("layoutKit.cockpit.side", "Side panel")}
             style={narrow ? undefined : { width: sideWidth }}
             className={cn("min-h-0 shrink-0 overflow-auto rounded-md border bg-card p-3", narrow && "w-full")}
           >

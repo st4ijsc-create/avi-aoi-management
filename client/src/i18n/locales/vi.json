@@ -21353,7 +21353,6 @@
       "source": "Nguồn: {{source}}"
     },
     "flyout": {
-      "close": "Đóng",
       "unsavedTitle": "Bỏ thay đổi chưa lưu?",
       "unsavedDesc": "Biểu mẫu này còn dữ liệu chưa lưu. Đóng lại sẽ mất các thay đổi đó.",
       "keepEditing": "Tiếp tục sửa",
@@ -21373,7 +21372,6 @@
       }
     },
     "versions": {
-      "title": "Lịch sử phiên bản",
       "loading": "Đang tải phiên bản…",
       "error": "Không tải được lịch sử phiên bản.",
       "empty": "Chưa có phiên bản nào.",

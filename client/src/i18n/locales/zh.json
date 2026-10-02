@@ -21381,7 +21381,6 @@
       "source": "来源：{{source}}"
     },
     "flyout": {
-      "close": "关闭",
       "unsavedTitle": "放弃未保存的更改？",
       "unsavedDesc": "此表单有未保存的数据。关闭将丢失这些更改。",
       "keepEditing": "继续编辑",
@@ -21401,7 +21400,6 @@
       }
     },
     "versions": {
-      "title": "版本历史",
       "loading": "正在加载版本…",
       "error": "无法加载版本历史。",
       "empty": "暂无版本。",
