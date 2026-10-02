@@ -325,6 +325,16 @@ export default function InterlockRuleManagement() {
   const [ruleParam, setRuleParam] = useUrlParam("rule");
   const selectedRuleId = ruleParam != null && /^\d+$/.test(ruleParam) ? Number(ruleParam) : null;
 
+  // Fix round 1 — Ruling R-2-l: panel Sự kiện GẬP ở lần đầu (MAIN chiếm phần lớn khung đầu); mở theo Ý ĐỊNH
+  // rõ ràng — chọn rule (hàng/ô ma trận), deep-link `?rule=`/`?filter=pending`, bấm nút đếm sự kiện, hành
+  // động "Mở panel Sự kiện" của toast. Lựa chọn gập/mở do chính người dùng làm được WorkbenchShell nhớ.
+  const [eventsOpenRequest, setEventsOpenRequest] = useState(0);
+  const openEventsPanel = () => setEventsOpenRequest((n) => n + 1);
+  // Deep-link: chỉ URL LÚC NẠP trang (F5 / link từ Hub); các lần chọn sau đi qua `selectRule`.
+  useEffect(() => {
+    if (ruleParam != null || filterPending) openEventsPanel();
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
   const unresolvedCount = useMemo(
     () => events.filter((e) => e.status !== "resolved").length,
     [events],
@@ -360,7 +370,11 @@ export default function InterlockRuleManagement() {
       toast.warning(
         t("interlockRules.newEventToast", "Interlock triggered") +
           (fresh.length > 1 ? ` (${fresh.length})` : ""),
-        { description: t("interlockRules.newEventDesc", "A new interlock event fired — open the Events tab to review.") },
+        {
+          description: t("interlockRules.newEventDesc", "A new interlock event fired — open the Events tab to review."),
+          // R-2-l — panel có thể đang gập: toast mở thẳng panel.
+          action: { label: t("interlockRules.openEventsPanel", "Mở panel Sự kiện"), onClick: () => setEventsOpenRequest((n) => n + 1) },
+        },
       );
     }
   }, [events, eventsQuery.isLoading, eventsQuery.isError, t]);
@@ -420,7 +434,10 @@ export default function InterlockRuleManagement() {
     rules,
     visibleRules,
     selectedRuleId,
-    selectRule: (id) => setRuleParam(String(id)),
+    selectRule: (id) => {
+      setRuleParam(String(id));
+      openEventsPanel();
+    },
     canEdit,
     canDelete,
     isAdmin,
@@ -480,6 +497,23 @@ export default function InterlockRuleManagement() {
                             </Button>
                           </div>
                         )}
+                        {/* R-2-l — đếm sự kiện chưa xử lý LUÔN thấy (kể cả khi panel gập); bấm = mở panel. */}
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          className="h-8 gap-1.5 text-xs"
+                          data-testid="events-open-button"
+                          aria-label={unresolvedCount > 0
+                            ? `${t("interlockRules.openEventsPanel", "Mở panel Sự kiện")} — ${t("interlockRules.unresolvedCount", "{{count}} chưa xử lý", { count: unresolvedCount })}`
+                            : t("interlockRules.openEventsPanel", "Mở panel Sự kiện")}
+                          title={t("interlockRules.openEventsPanel", "Mở panel Sự kiện")}
+                          onClick={openEventsPanel}
+                        >
+                          {t("interlockRules.eventsButton", "Sự kiện")}
+                          {unresolvedCount > 0 && (
+                            <Badge variant="destructive" className="h-4 min-w-4 px-1 text-[10px]">{unresolvedCount}</Badge>
+                          )}
+                        </Button>
                         <span className="text-xs text-muted-foreground">
                           {t("interlockRules.ruleCount", "{{count}} quy tắc", { count: visibleRules.length })}
                         </span>
@@ -493,6 +527,8 @@ export default function InterlockRuleManagement() {
                 minPx: 160,
                 defaultPx: 240,
                 maxPx: 480,
+                defaultCollapsed: true,
+                openRequest: eventsOpenRequest,
                 content: (
                   <EventsPanel
                     events={filteredEvents}
@@ -643,7 +679,7 @@ function RulesListView() {
               <TableRow
                 key={r.id}
                 tabIndex={0}
-                aria-selected={selected}
+                aria-current={selected ? "true" : undefined}
                 data-state={selected ? "selected" : undefined}
                 onClick={() => c.selectRule(r.id)}
                 onKeyDown={(e) => {
@@ -812,7 +848,7 @@ function CauseEffectMatrixView() {
     <Table aria-label={t("interlockRules.view.matrix", "Ma trận Cause×Effect")}>
       <TableHeader>
         <TableRow>
-          <TableHead className="min-w-48 align-bottom">{t("interlockRules.matrix.corner", "Nguyên nhân \\ Hệ quả")}</TableHead>
+          <TableHead className="min-w-48 align-bottom">{t("interlockRules.matrix.corner", "Nguyên nhân ↓ · Hệ quả →")}</TableHead>
           {m.effects.map((e) => (
             <TableHead key={e.key} className="align-bottom">
               <Badge variant={actionVariant(e.label)}>{e.label}</Badge>
@@ -1018,7 +1054,20 @@ function RuleEditForm({ rule, onSaved }: { rule: RuleRow | null; onSaved: () => 
   // Báo FlyoutHost còn dữ liệu chưa lưu (Esc/Back/đóng ⇒ hỏi trước khi bỏ).
   useEffect(() => { layer.setDirty(dirty); }, [dirty]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  // Review M3 — `layer.close` đóng lớp TRÊN CÙNG của host: nếu người dùng đã bỏ sheet này (Esc → Bỏ) và mở
+  // lớp khác trong lúc chờ server, onSuccess KHÔNG được đóng lớp kia. Chỉ đóng khi sheet này còn mount và
+  // vẫn là lớp trên cùng.
+  const flyoutApi = useFlyout();
+  const stackRef = useRef(flyoutApi.stack);
+  stackRef.current = flyoutApi.stack;
+  const mountedRef = useRef(true);
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => { mountedRef.current = false; };
+  }, []);
   const done = () => {
+    const top = stackRef.current[stackRef.current.length - 1];
+    if (!mountedRef.current || !top || top.key !== layer.key || top.id !== layer.id) return;
     layer.setDirty(false);
     layer.close();
   };

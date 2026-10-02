@@ -20,6 +20,7 @@ import userEvent from "@testing-library/user-event";
 import "@testing-library/jest-dom/vitest";
 import * as React from "react";
 import { initLayoutKitTestI18n } from "@/components/patterns/layoutKitTestI18n";
+import { installResizeHandleHitAreaShim } from "@/components/patterns/layoutKitTestPanels";
 
 vi.mock("react-resizable-panels", async () => (await import("@/components/patterns/layoutKitTestPanels")).browserPanels());
 vi.mock("@/components/DashboardLayout", () => ({
@@ -52,6 +53,7 @@ const srv = vi.hoisted(() => ({
   nextId: 100,
   calls: { create: [] as unknown[], update: [] as unknown[], approve: [] as unknown[], enable: [] as unknown[], testEvaluate: [] as unknown[] },
   invalidated: [] as string[],
+  holdUpdate: null as null | Promise<void>,
 }));
 function bump() {
   srv.version++;
@@ -116,7 +118,8 @@ vi.mock("@/lib/trpc", () => {
         }
         if (router === "interlock" && name === "update") {
           srv.calls.update.push(input);
-          later(() => {
+          const run = (fn: () => void) => (srv.holdUpdate ? void srv.holdUpdate.then(fn) : later(fn));
+          run(() => {
             const cur = srv.db.find((r) => r.id === input.id);
             if (!cur) return hookOpts.onError?.({ data: { code: "NOT_FOUND" } });
             Object.assign(cur, input, { approvedBy: null, enabled: false });
@@ -184,15 +187,8 @@ const POSTURE = {
 };
 
 beforeAll(async () => {
-  // jsdom: mọi getBoundingClientRect = 0×0 tại (0,0) và userEvent bấm tại (0,0) ⇒ bộ nghe pointerdown TOÀN CỤC
-  // của react-resizable-panels coi MỌI cú bấm là "trúng vùng kéo" của separator (lề hit-area) và gọi
-  // preventDefault ⇒ không có mousedown ⇒ focus không chuyển, tab Radix không đổi. Trên trình duyệt thật
-  // separator nằm ở toạ độ thật. Shim: đặt riêng separator ra xa điểm bấm — không đổi hành vi nào của trang.
-  const rect = HTMLElement.prototype.getBoundingClientRect;
-  HTMLElement.prototype.getBoundingClientRect = function (this: HTMLElement) {
-    if (this.hasAttribute("data-panel-resize-handle-id")) return DOMRect.fromRect({ x: -10_000, y: -10_000, width: 4, height: 4 });
-    return rect.call(this);
-  };
+  // Separator của react-resizable-panels nuốt cú bấm trong jsdom — xem layoutKitTestPanels.ts.
+  installResizeHandleHitAreaShim();
   (globalThis as { ResizeObserver?: unknown }).ResizeObserver ??= class {
     observe() {}
     unobserve() {}
@@ -208,6 +204,8 @@ beforeEach(() => {
   srv.calls = { create: [], update: [], approve: [], enable: [], testEvaluate: [] };
   srv.invalidated = [];
   srv.nextId = 100;
+  srv.holdUpdate = null;
+  toastSpy.warning.mockClear();
   perm.isAdmin = false;
   perm.canCreate = true;
   perm.canEdit = true;
@@ -223,6 +221,7 @@ afterEach(() => cleanup());
 const mainEl = () => document.querySelector("[data-layout-main]") as HTMLElement;
 const rowOf = (name: string) => within(mainEl()).getByText(name).closest("tr") as HTMLElement;
 const params = () => new URLSearchParams(window.location.search);
+const VI_TOGGLE = "Ẩn/hiện panel dưới";
 const eventsPanel = () => screen.getByRole("region", { name: "Sự kiện" });
 const layer = (key: string) => document.querySelector(`[data-flyout-key="${key}"]`) as HTMLElement | null;
 const waitLayer = (key: string) =>
@@ -327,8 +326,8 @@ describe("Interlock P3 — panel dưới Sự kiện lọc theo rule đang chọ
     render(<InterlockRuleManagement />);
     await userEvent.click(within(rowOf("rule-42")).getByText("rule-42"));
     expect(params().get("rule")).toBe("42");
-    expect(rowOf("rule-42")).toHaveAttribute("aria-selected", "true");
-    expect(rowOf("rule-41")).toHaveAttribute("aria-selected", "false");
+    expect(rowOf("rule-42")).toHaveAttribute("aria-current", "true");
+    expect(rowOf("rule-41")).not.toHaveAttribute("aria-current");
     expect(shownEvents()).toEqual(["22.2", "33.3"]);
     await userEvent.click(within(eventsPanel()).getByRole("button", { name: /Bỏ lọc theo quy tắc/ }));
     expect(params().get("rule")).toBeNull();
@@ -372,6 +371,80 @@ describe("Interlock P3 — panel dưới Sự kiện lọc theo rule đang chọ
   });
 });
 
+// ── Fix round 1 — Ruling R-2-l: panel Sự kiện gập lần đầu, mở theo ý định; đếm chưa xử lý luôn thấy ──
+describe("Interlock P3 — R-2-l: panel Sự kiện gập lần đầu, mở theo ý định", () => {
+  const toggle = () => screen.getByRole("button", { name: VI_TOGGLE });
+  const isOpen = () => toggle().getAttribute("aria-expanded") === "true";
+  const openBtn = () => screen.getByTestId("events-open-button");
+
+  it("lần đầu: panel GẬP; nút 'Sự kiện' + số chưa xử lý (3) nằm trong thanh công cụ của MAIN, ngoài panel", () => {
+    render(<InterlockRuleManagement />);
+    expect(isOpen()).toBe(false);
+    const toolbar = mainEl().querySelector("[data-layout-toolbar]") as HTMLElement;
+    expect(toolbar).toContainElement(openBtn());
+    expect(openBtn()).toHaveTextContent("3");
+    expect(openBtn()).toHaveAccessibleName("Mở panel Sự kiện — 3 chưa xử lý");
+    expect(eventsPanel()).not.toContainElement(openBtn());
+  });
+
+  it("bấm nút đếm ⇒ panel mở (không đổi bộ lọc rule)", async () => {
+    render(<InterlockRuleManagement />);
+    await userEvent.click(openBtn());
+    expect(isOpen()).toBe(true);
+    expect(params().get("rule")).toBeNull();
+  });
+
+  it("chọn một rule (hàng) ⇒ panel mở; chọn trong ma trận cũng mở", async () => {
+    render(<InterlockRuleManagement />);
+    await userEvent.click(within(rowOf("rule-42")).getByText("rule-42"));
+    expect(isOpen()).toBe(true);
+    // người dùng gập lại rồi chọn rule KHÁC ⇒ lại mở (ý định mới)
+    await userEvent.click(toggle());
+    expect(isOpen()).toBe(false);
+    await userEvent.click(within(rowOf("rule-41")).getByText("rule-41"));
+    expect(isOpen()).toBe(true);
+    cleanup();
+    localStorage.clear();
+    window.history.replaceState(null, "", "/interlock-rules?tab=matrix");
+    render(<InterlockRuleManagement />);
+    expect(isOpen()).toBe(false);
+    await userEvent.click(within(mainEl()).getByRole("button", { name: "rule-43" }));
+    expect(isOpen()).toBe(true);
+  });
+
+  it("deep-link ?rule=42 hoặc ?filter=pending ⇒ panel mở ngay khi nạp", () => {
+    window.history.replaceState(null, "", "/interlock-rules?rule=42");
+    render(<InterlockRuleManagement />);
+    expect(isOpen()).toBe(true);
+    cleanup();
+    localStorage.clear();
+    window.history.replaceState(null, "", "/interlock-rules?filter=pending");
+    render(<InterlockRuleManagement />);
+    expect(isOpen()).toBe(true);
+  });
+
+  it("lựa chọn của người dùng được nhớ: tự mở bằng nút gập ⇒ lần nạp sau mở sẵn", async () => {
+    const r = render(<InterlockRuleManagement />);
+    await userEvent.click(toggle());
+    expect(isOpen()).toBe(true);
+    r.unmount();
+    render(<InterlockRuleManagement />);
+    expect(isOpen()).toBe(true);
+  });
+
+  it("toast sự kiện mới có hành động 'Mở panel Sự kiện' — bấm ⇒ panel mở", async () => {
+    render(<InterlockRuleManagement />);
+    expect(isOpen()).toBe(false);
+    srv.events = [...srv.events, ev(9, 41, "open", "99.9")];
+    React.act(() => bump());
+    await waitFor(() => expect(toastSpy.warning).toHaveBeenCalled());
+    const opts = toastSpy.warning.mock.calls.at(-1)?.[1] as { action?: { label: string; onClick: () => void } };
+    expect(opts.action?.label).toBe("Mở panel Sự kiện");
+    React.act(() => opts.action?.onClick());
+    expect(isOpen()).toBe(true);
+  });
+});
+
 describe("Interlock P3 — TabbedHub: Danh sách / Ma trận Cause×Effect (?tab=)", () => {
   it("bấm tab Ma trận ⇒ ?tab=matrix; ma trận: hàng = nguyên nhân, cột = hệ quả, rule nằm đúng ô", async () => {
     render(<InterlockRuleManagement />);
@@ -382,6 +455,7 @@ describe("Interlock P3 — TabbedHub: Danh sách / Ma trận Cause×Effect (?tab
     expect(rows).toHaveLength(3); // tiêu đề + 2 nguyên nhân (41 và 43 chung nguyên nhân)
     const head = [...rows[0].querySelectorAll("th")].map((c) => c.textContent ?? "");
     expect(head).toHaveLength(4); // góc + 3 hệ quả
+    expect(head[0]).toBe("Nguyên nhân ↓ · Hệ quả →");
     const cellOf = (name: string) => within(table).getByRole("button", { name }).closest("td") as HTMLTableCellElement;
     const causeOf = (name: string) => (cellOf(name).closest("tr") as HTMLTableRowElement).querySelector("th")?.textContent ?? "";
     const effectOf = (name: string) => head[cellOf(name).cellIndex];
@@ -484,6 +558,29 @@ describe("Interlock P3 — sheet sửa rule (luồng đầy đủ)", () => {
     await userEvent.type(within(l).getByLabelText("Tên"), "x");
     await userEvent.keyboard("{Escape}");
     expect(await screen.findByText("Bỏ thay đổi chưa lưu?")).toBeTruthy();
+  });
+
+  it("review M3: Lưu đang chờ, người dùng Bỏ sheet rồi mở công cụ Test ⇒ khi Lưu xong KHÔNG đóng lớp Test", async () => {
+    let release = () => {};
+    srv.holdUpdate = new Promise<void>((r) => {
+      release = r;
+    });
+    render(<InterlockRuleManagement />);
+    await userEvent.click(within(rowOf("rule-41")).getByRole("button", { name: "Sửa quy tắc" }));
+    const l = await waitLayer("rule");
+    await userEvent.type(within(l).getByLabelText("Tên"), "x");
+    await userEvent.click(within(l).getByRole("button", { name: "Lưu" }));
+    expect(srv.calls.update).toHaveLength(1);
+    await userEvent.keyboard("{Escape}");
+    await userEvent.click(await screen.findByRole("button", { name: "Bỏ thay đổi" }));
+    await waitFor(() => expect(layer("rule")).toBeNull());
+    await userEvent.click(within(rowOf("rule-42")).getByRole("button", { name: "Test (dry-run)" }));
+    await waitLayer("rule-test");
+    release();
+    await waitFor(() => expect(srv.invalidated).toContain("interlock.list"));
+    await new Promise((r) => setTimeout(r, 50));
+    expect(layer("rule-test")).toBeTruthy();
+    expect(params().get("flyout")).toBe("rule-test");
   });
 
   it("thiếu quyền sửa ⇒ deep-link ?flyout=rule&flyoutId=41 không mở form", async () => {

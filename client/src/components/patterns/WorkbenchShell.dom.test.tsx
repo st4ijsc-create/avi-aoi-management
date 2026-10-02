@@ -161,6 +161,97 @@ describe("WorkbenchShell — panel dưới gập được, không mất state", 
   });
 });
 
+// ── Doc 81 Đợt 2 Task 5 fix round 1 — Ruling R-2-l: gập lần đầu, nhớ lựa chọn của người dùng, mở theo ý định ──
+describe("WorkbenchShell — panel dưới: lần đầu gập, lựa chọn người dùng được nhớ, mở theo ý định (R-2-l)", () => {
+  const KEY = "layoutKit:test-ide:u5:bottomCollapsed";
+  const toggle = () => screen.getByRole("button", { name: VI.layoutKit.shell.toggleBottom });
+  const bottomSize = () =>
+    Number((document.querySelector("[data-workbench-bottom]")?.closest("[data-panel]") as HTMLElement).getAttribute("data-panel-size"));
+  const bottomOf = (over: Partial<NonNullable<WorkbenchShellProps["bottom"]>> = {}) => ({
+    bottom: { label: "Vấn đề", content: <Counter name="bottom" />, defaultCollapsed: true, ...over },
+  });
+
+  it("lần đầu (chưa nhớ gì) + defaultCollapsed ⇒ gập (kích thước 0), nội dung VẪN mount; không ghi gì vào bộ nhớ", () => {
+    renderShell(bottomOf());
+    expect(toggle()).toHaveAttribute("aria-expanded", "false");
+    expect(bottomSize()).toBe(0);
+    expect(screen.getByRole("button", { name: "bottom 0", hidden: true })).toBeInTheDocument();
+    expect(localStorage.getItem(KEY)).toBeNull();
+  });
+
+  it("người dùng MỞ bằng nút ⇒ nhớ '0'; lần sau (mount lại) KHÔNG bị gập lại dù defaultCollapsed", async () => {
+    const user = userEvent.setup();
+    const r = renderShell(bottomOf());
+    await user.click(toggle());
+    expect(localStorage.getItem(KEY)).toBe("0");
+    r.unmount();
+    renderShell(bottomOf());
+    expect(toggle()).toHaveAttribute("aria-expanded", "true");
+    expect(bottomSize()).toBeGreaterThan(0);
+  });
+
+  it("người dùng GẬP (mặc định mở) ⇒ nhớ '1'; lần sau gập; người dùng KHÁC vẫn theo mặc định", async () => {
+    const user = userEvent.setup();
+    const r = renderShell(bottomOf({ defaultCollapsed: false }));
+    expect(toggle()).toHaveAttribute("aria-expanded", "true");
+    await user.click(toggle());
+    expect(localStorage.getItem(KEY)).toBe("1");
+    r.unmount();
+    const r2 = renderShell(bottomOf({ defaultCollapsed: false }));
+    expect(toggle()).toHaveAttribute("aria-expanded", "false");
+    expect(bottomSize()).toBe(0);
+    r2.unmount();
+    renderShell({ userId: 6, ...bottomOf({ defaultCollapsed: false }) });
+    expect(toggle()).toHaveAttribute("aria-expanded", "true");
+  });
+
+  it("gập bằng BÀN PHÍM trên separator (End — kéo hết xuống) cũng là lựa chọn của người dùng ⇒ nhớ", () => {
+    renderShell(bottomOf({ defaultCollapsed: false }));
+    fireEvent.keyDown(screen.getByRole("separator", { name: VI.layoutKit.shell.resizeBottom }), { key: "End" });
+    expect(bottomSize()).toBe(0);
+    expect(toggle()).toHaveAttribute("aria-expanded", "false");
+    expect(localStorage.getItem(KEY)).toBe("1");
+  });
+
+  it("ý định mở (openRequest đổi) ⇒ panel mở, báo onCollapsedChange(false), KHÔNG ghi đè bộ nhớ; giá trị ban đầu không mở", () => {
+    const seen: boolean[] = [];
+    const ui = (req: number) => (
+      <main>
+        <WorkbenchShell layoutId="test-ide" userId={5} main={<p>m</p>}
+          bottom={{ label: "Vấn đề", content: <Counter name="bottom" />, defaultCollapsed: true, openRequest: req, onCollapsedChange: (c) => seen.push(c) }} />
+      </main>
+    );
+    const r = render(ui(3));
+    expect(toggle()).toHaveAttribute("aria-expanded", "false");
+    expect(seen.at(-1)).toBe(true);
+    r.rerender(ui(4));
+    expect(toggle()).toHaveAttribute("aria-expanded", "true");
+    expect(bottomSize()).toBeGreaterThan(0);
+    expect(seen.at(-1)).toBe(false);
+    expect(localStorage.getItem(KEY)).toBeNull();
+  });
+
+  it("người dùng chưa biết lúc mount (auth đang tải) ⇒ khi biết, áp lựa chọn đã nhớ của người đó", () => {
+    localStorage.setItem(KEY, "0");
+    const ui = (uid: number | null) => (
+      <main>
+        <WorkbenchShell layoutId="test-ide" userId={uid} main={<p>m</p>} bottom={{ label: "Vấn đề", content: <p>b</p>, defaultCollapsed: true }} />
+      </main>
+    );
+    const r = render(ui(null));
+    expect(toggle()).toHaveAttribute("aria-expanded", "false");
+    r.rerender(ui(5));
+    expect(toggle()).toHaveAttribute("aria-expanded", "true");
+  });
+
+  it("không biết người dùng ⇒ gập/mở không ghi bộ nhớ", async () => {
+    const user = userEvent.setup();
+    renderShell({ userId: null, ...bottomOf() });
+    await user.click(toggle());
+    expect(Object.keys(localStorage).filter((k) => k.includes("bottomCollapsed"))).toEqual([]);
+  });
+});
+
 describe("WorkbenchShell — dưới 1024 px chuyển sang tab", () => {
   it("không còn separator; có tablist; MAIN vẫn đánh dấu; panel phụ mở bằng tab, MAIN không unmount", async () => {
     presetNarrow(true);

@@ -13629,11 +13629,14 @@
       "writesOnEngineOffChip": "引擎关闭时真实写入"
     },
     "matrix": {
-      "corner": "原因  结果",
+      "corner": "原因 ↓ · 结果 →",
       "targetMachine": "设备 #{{id}}",
       "targetAdapter": "适配器 #{{id}}",
       "noTarget": "无目标"
-    }
+    },
+    "openEventsPanel": "打开事件面板",
+    "eventsButton": "事件",
+    "unresolvedCount": "{{count}} 未处理"
   },
   "quickIssue": {
     "button": "报告异常",

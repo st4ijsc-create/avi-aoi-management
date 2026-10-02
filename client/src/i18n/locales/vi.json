@@ -13826,11 +13826,14 @@
       "writesOnEngineOffChip": "Ghi thật khi engine TẮT"
     },
     "matrix": {
-      "corner": "Nguyên nhân  Hệ quả",
+      "corner": "Nguyên nhân ↓ · Hệ quả →",
       "targetMachine": "máy #{{id}}",
       "targetAdapter": "adapter #{{id}}",
       "noTarget": "không đích"
-    }
+    },
+    "openEventsPanel": "Mở panel Sự kiện",
+    "eventsButton": "Sự kiện",
+    "unresolvedCount": "{{count}} chưa xử lý"
   },
   "quickIssue": {
     "button": "Báo sự cố",

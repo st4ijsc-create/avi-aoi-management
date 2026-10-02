@@ -13846,11 +13846,14 @@
       "writesOnEngineOffChip": "Real writes with engine OFF"
     },
     "matrix": {
-      "corner": "Cause  Effect",
+      "corner": "Cause ↓ · Effect →",
       "targetMachine": "machine #{{id}}",
       "targetAdapter": "adapter #{{id}}",
       "noTarget": "no target"
-    }
+    },
+    "openEventsPanel": "Open Events panel",
+    "eventsButton": "Events",
+    "unresolvedCount": "{{count}} open"
   },
   "quickIssue": {
     "button": "Report issue",

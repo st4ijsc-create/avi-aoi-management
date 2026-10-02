@@ -47,7 +47,19 @@ export interface WorkbenchRightPanel extends WorkbenchSidePanel {
   ai?: boolean;
 }
 export interface WorkbenchBottomPanel extends WorkbenchSidePanel {
+  /**
+   * Trạng thái của LẦN ĐẦU (người dùng chưa từng tự gập/mở panel này). Ruling R-2-l: lựa chọn gập/mở
+   * do NGƯỜI DÙNG tự làm (nút gập, kéo separator) được nhớ theo người dùng (`userLayoutKey(…,
+   * "bottomCollapsed")`) và THẮNG mặc định này ở các lần sau; không biết người dùng ⇒ không lưu.
+   */
   defaultCollapsed?: boolean;
+  /**
+   * Ý định mở panel do trang phát ra (chọn một dòng, deep-link, bấm badge…): mỗi lần giá trị ĐỔI ⇒
+   * mở panel (màn rộng). Lần render đầu không tính. Mở theo ý định KHÔNG ghi đè lựa chọn đã nhớ.
+   */
+  openRequest?: number;
+  /** Báo trạng thái gập hiện tại (để trang hiện badge/đếm NGOÀI panel khi gập). */
+  onCollapsedChange?: (collapsed: boolean) => void;
 }
 
 export interface WorkbenchShellProps {
@@ -113,7 +125,54 @@ export function WorkbenchShell({
   const leftRef = React.useRef<ImperativePanelHandle | null>(null);
   const bottomRef = React.useRef<ImperativePanelHandle | null>(null);
   const bottomId = React.useId();
-  const [bottomCollapsed, setBottomCollapsed] = React.useState<boolean>(bottom?.defaultCollapsed ?? false);
+  // R-2-l — gập/mở panel dưới: lựa chọn người dùng đã nhớ (theo người dùng) thắng `defaultCollapsed`.
+  const bottomKey = userLayoutKey(layoutId, userId, "bottomCollapsed");
+  const readStoredBottom = (key: string | null): boolean | null => {
+    if (!key) return null;
+    try {
+      const v = localStorage.getItem(key);
+      return v === "1" ? true : v === "0" ? false : null;
+    } catch {
+      return null;
+    }
+  };
+  const [bottomCollapsed, setBottomCollapsedState] = React.useState<boolean>(
+    () => readStoredBottom(bottomKey) ?? bottom?.defaultCollapsed ?? false,
+  );
+  // Trạng thái mà MÃ đã yêu cầu thư viện (collapse/expand) — callback trùng giá trị này là của mã, khác là
+  // người dùng kéo separator. Trước khi đồng bộ lần đầu, callback của thư viện (mount) bị bỏ qua.
+  const desiredBottomRef = React.useRef(bottomCollapsed);
+  const bottomSyncedRef = React.useRef(false);
+  const userTouchedBottomRef = React.useRef(false);
+  const onBottomCollapsedChange = bottom?.onCollapsedChange;
+  const setBottomCollapsed = React.useCallback(
+    (c: boolean) => {
+      setBottomCollapsedState(c);
+      onBottomCollapsedChange?.(c);
+    },
+    [onBottomCollapsedChange],
+  );
+  // Lệnh tới panel dưới qua thư viện. Panel chưa đăng ký vào layout (lượt render đầu, hoặc bản "node" của
+  // thư viện nơi layout effect rỗng) ⇒ thư viện ném "Panel size not found" — bỏ qua, trạng thái vẫn đúng.
+  const bottomCmd = (c: boolean) => {
+    const p = bottomRef.current;
+    if (!p) return;
+    try {
+      if (c && !p.isCollapsed()) p.collapse();
+      if (!c && p.isCollapsed()) p.expand();
+    } catch {
+      /* chưa có layout */
+    }
+  };
+  const persistBottom = (c: boolean) => {
+    userTouchedBottomRef.current = true;
+    if (!bottomKey) return;
+    try {
+      localStorage.setItem(bottomKey, c ? "1" : "0");
+    } catch {
+      /* bộ nhớ trình duyệt bị chặn ⇒ chỉ không nhớ */
+    }
+  };
   const [narrowTab, setNarrowTab] = React.useState("main");
 
   // Một host DOM ổn định cho mỗi slot — nội dung không remount khi đổi layout (slotPortal.tsx).
@@ -135,12 +194,40 @@ export function WorkbenchShell({
     if (!leftCollapsed && p.isCollapsed()) p.expand();
   }, [leftCollapsed, narrow]);
 
+  // Cây rộng vừa dựng ⇒ áp trạng thái hiện tại (đã tính lựa chọn đã nhớ) theo CẢ HAI chiều — không gập lại
+  // một panel người dùng đã chọn mở (autoSaveId của thư viện có thể khôi phục kích thước khác).
   React.useEffect(() => {
     if (narrow) return;
-    if (bottomCollapsed) bottomRef.current?.collapse();
-    // chỉ khi cây rộng vừa dựng; nút gập tự gọi collapse/expand
+    desiredBottomRef.current = bottomCollapsed;
+    bottomCmd(bottomCollapsed);
+    bottomSyncedRef.current = true;
+    onBottomCollapsedChange?.(bottomCollapsed);
+    // chỉ khi cây rộng vừa dựng; nút gập / ý định mở tự gọi collapse/expand
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [narrow]);
+
+  // Người dùng chưa biết lúc mount (auth đang tải) ⇒ khi biết, áp lựa chọn đã nhớ (nếu chưa tự thao tác).
+  React.useEffect(() => {
+    if (narrow || userTouchedBottomRef.current) return;
+    const stored = readStoredBottom(bottomKey);
+    if (stored == null || stored === desiredBottomRef.current) return;
+    desiredBottomRef.current = stored;
+    setBottomCollapsed(stored);
+    bottomCmd(stored);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [bottomKey]);
+
+  // Ý định mở panel do trang phát (bỏ lần render đầu) — không ghi nhớ.
+  const lastOpenRequest = React.useRef(bottom?.openRequest);
+  React.useEffect(() => {
+    const req = bottom?.openRequest;
+    if (req === lastOpenRequest.current) return;
+    lastOpenRequest.current = req;
+    if (narrow) return;
+    desiredBottomRef.current = false;
+    bottomCmd(false);
+    setBottomCollapsed(false);
+  }, [bottom?.openRequest, narrow, setBottomCollapsed]);
 
   // Màn hẹp: chọn mục trên activity bar ⇒ chuyển sang tab panel trái (bỏ lần render đầu).
   const lastReveal = React.useRef(leftRevealToken);
@@ -223,15 +310,23 @@ export function WorkbenchShell({
     const vKey = userLayoutKey(layoutId, userId, "v");
 
     const toggleBottom = () => {
-      const p = bottomRef.current;
-      if (!p) return;
-      if (p.isCollapsed()) {
-        p.expand();
-        setBottomCollapsed(false);
-      } else {
-        p.collapse();
-        setBottomCollapsed(true);
+      if (!bottomRef.current) return;
+      const next = !bottomCollapsed;
+      desiredBottomRef.current = next;
+      bottomCmd(next);
+      setBottomCollapsed(next);
+      persistBottom(next);
+    };
+    // Callback của thư viện: trùng trạng thái mã yêu cầu ⇒ của mã; khác ⇒ người dùng kéo/bàn phím ⇒ nhớ.
+    const onBottomLib = (c: boolean) => {
+      if (!bottomSyncedRef.current) return;
+      if (c === desiredBottomRef.current) {
+        setBottomCollapsed(c);
+        return;
       }
+      desiredBottomRef.current = c;
+      setBottomCollapsed(c);
+      persistBottom(c);
     };
     const bottomToggle = bottom ? (
       <button
@@ -273,10 +368,10 @@ export function WorkbenchShell({
                   <ResizableHandle aria-label={t("layoutKit.shell.resizeLeft", "Resize the left panel")} />
                 </>
               )}
-              <ResizablePanel id="center" order={2} minSize={30}>
+              <ResizablePanel id="center" order={2} minSize={30} defaultSize={100 - (l?.defaultSize ?? 0) - (r?.defaultSize ?? 0)}>
                 <div ref={vRef} className="h-full">
                   <ResizablePanelGroup direction="vertical" autoSaveId={vKey} className="h-full">
-                    <ResizablePanel id="main" order={1} minSize={30}>
+                    <ResizablePanel id="main" order={1} minSize={30} defaultSize={bottom && b ? 100 - b.defaultSize : 100}>
                       {mainOutlet}
                     </ResizablePanel>
                     {bottom && b && (
@@ -291,8 +386,8 @@ export function WorkbenchShell({
                           minSize={b.minSize}
                           maxSize={b.maxSize}
                           defaultSize={b.defaultSize}
-                          onCollapse={() => setBottomCollapsed(true)}
-                          onExpand={() => setBottomCollapsed(false)}
+                          onCollapse={() => onBottomLib(true)}
+                          onExpand={() => onBottomLib(false)}
                         >
                           <SlotOutlet
                             host={hBottom}
