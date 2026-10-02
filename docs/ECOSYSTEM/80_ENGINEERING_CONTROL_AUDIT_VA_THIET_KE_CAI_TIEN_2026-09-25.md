@@ -333,3 +333,7 @@ Plan `docs/superpowers/plans/2026-09-27-engineering-control-dot1.md`. Hai đoạ
 ## 14. Đợt 1C (2026-09-28) — xem doc 81 §8
 
 Thực thi các quyết định chủ dự án 2026-09-27: SIM không thoả preflight, cổng recipe chặt, đóng robot `hitl` không actionId (DỪNG không bao giờ bị chặn), allowlist gateway (mig 0361), đóng MQTT chéo máy + gắn thiết bị↔máy, gốc lệch ts (TZ tiến trình + SQL naive) và `INGEST_REQUIRE_TIME_OFFSET` mặc định bật. Review toàn nhánh lộ và đóng một lỗ an toàn có từ trước: "abort" kèm params làm AGV chạy — nay ba lớp độc lập. Chi tiết, việc cần làm trước restart :3000 và 4 quyết định chờ chủ dự án: doc 81 §8.
+
+## 15. Đợt 1D (2026-09-28 → 10-02) — xem doc 81 §9
+
+OT soft-stop qua được preflight an toàn **chỉ khi** ghi đúng tag/giá trị DỪNG đã ghim theo tag (mig 0362; ghim tự gỡ khi nghĩa tag/đích adapter đổi, ở cả router, import và CLI; kết nối đang chạy phải khớp cấu hình). `completedAt/startedAt` ZIP/tree v2 theo cờ riêng `INGEST_REQUIRE_PACKAGE_TIME_OFFSET` (mặc định tắt). **Áp mig 0362 lên dev trước khi restart :3000.** Chi tiết + 2 quyết định chờ chủ dự án: doc 81 §9.

@@ -278,3 +278,28 @@ Plan `docs/superpowers/plans/2026-09-27-engineering-control-dot1c.md` — thực
 **Còn mở:** `safety_plc_configs` chưa theo đích (một PLC thật offline chặn mọi lệnh ghi thật); VDA5050 publish order hai lần (driver + adapter, chưa có caller); `docGioTuongNhaMay` còn regex ngày cùng lỗi M2; ghi sổ STOP dry-run chưa có hạn; bảng skew gồm cả mẫu do server đóng dấu; `revokeLinkedMqttClientsTx` không ngắt phiên; audit_logs đọc không theo phạm vi (enhancedAuditRouter); app FactoryAlertSystem không gửi mật khẩu MQTT (đổi mật khẩu tablet = khoá ngoài, UI đã cảnh báo); nhiều đỏ có sẵn không thuộc đợt (AOIPackages clientErrorCoverage/rawErrorMessageCensus, viStringCoverage F12, i18n-check kbStudio/repoWs, `server/mqtt.test.ts` testNGAlert ×2 từ `d467c6b56`). Ledger: `.superpowers/sdd/2026-09-27-engineering-control-dot1c/progress.md`.
 
 **Sự cố vận hành 2026-09-28:** DB dev :5434 không trả lời (cổng TCP vẫn mở) — gốc: ổ C: đầy (0,5 GB; đĩa ảo Docker 195 GB), trùng lúc một truy vấn tổng hợp 14 ngày nặng. Chủ dự án dọn C:; khởi động lại Docker cần **`wsl --shutdown`** (VM WSL "up 4 days", restart Docker Desktop đơn thuần không đủ). Bài học: không chạy tổng hợp nặng trên DB dev; nên dời đĩa Docker sang D:.
+
+## 9. Kết quả Đợt 1D (2026-09-28 → 10-02)
+
+Plan `docs/superpowers/plans/2026-09-28-engineering-control-dot1d.md` — thực thi quyết định chủ dự án ở §8: (1) OT soft-stop "làm ngay" bằng ghim tag/giá trị DỪNG; (3) `completedAt`/`startedAt` ZIP/tree v2. **13 commit** `5e17b0929..ee1150a33` (52 tệp, +5,8k/−0,1k), migration **0362**. Quy trình: ĐỎ → vá → xanh → đột biến từng lớp; review từng task + vòng sửa; review toàn nhánh (0 Critical, 2 Important) → đợt sửa cuối → re-review sạch. Quét cuối: 22 tệp test chạm tới **321/321**; vùng lân cận 702/704 (2 robot/vda5050 không chạm, chạy riêng xanh); `tsc` sạch; census không đỏ mới.
+
+| Hạng mục | Đã làm | Task |
+|---|---|---|
+| Ghim tag DỪNG theo tag | `device_tags.stop_value/stop_pinned_by/stop_pinned_at` (mig 0362); `deviceAdapter.tags.setStopPin` — quyền sửa + lý do ≥5 ký tự + audit trước/sau (control_audit_log + audit_logs, cùng giao dịch FOR UPDATE); chỉ tag writable + enabled, giá trị đúng kiểu | 1 |
+| Ghim tự gỡ khi nghĩa tag đổi | đổi address/dataType/scale/offset/adapter, tắt writable/enabled, xoá tag; **sửa adapter đổi đích** (endpoint/protocol/machine/tuỳ chọn kết nối) gỡ MỌI ghim; áp ở **cả ba đường ghi**: router, import mapping-as-code, CLI `scripts/mappings-import.mjs`; bật lại tag KHÔNG hồi sinh ghim | 1 |
+| Sửa lỗi có sẵn | `tags.update`/`adapter.update` trước đây ĐẶT LẠI cờ không gửi (bật/tắt "enabled" ⇒ tag thành chỉ đọc) — nay giữ nguyên | 1 |
+| Dispatcher | lệnh `stop/e_stop` OT được miễn preflight an toàn (SIM_ONLY/UNKNOWN/BLOCKED) **chỉ khi** mọi lệnh ghi khớp đúng ghim của adapter đích; thiết bị nhận **giá trị ghim**, không bao giờ giá trị người gọi; kiểm lại với hàng tag bước 3 (kiểu, writable, enabled) và **kết nối đang chạy phải khớp cấu hình adapter hiện tại**; đọc ghim lỗi ⇒ không miễn; `machine_stop` gửi đúng ghim; bị từ chối ⇒ `stopPinReason` (no_pins, unpinned_tag, value_mismatch, pin_tag_changed, adapter_connection_stale…) | 2, final |
+| UI | màn adapter: mục "Tag dừng phần mềm" (giá trị theo kiểu, lý do bắt buộc, cảnh báo), chip "Tag dừng"; tắt Writable/Enabled trên tag đang ghim phải xác nhận; nhắc soát lại commissioning; lý do từ chối dịch vi/en/zh; danh sách tag DỪNG trong hộp "Sổ ký" (System Health) | 3, final |
+| ZIP/tree v2 ts | cờ **riêng** `INGEST_REQUIRE_PACKAGE_TIME_OFFSET` (mặc định **TẮT** — chủ dự án chốt vì mẫu máy AOI thật gửi giờ không múi giờ ở mọi cấp); bật ⇒ mọi `completedAt/startedAt` (board/position/capture/component) không múi giờ bị từ chối `INVALID_VALUE`/`timeOffsetRequired`, ZIP bị từ chối TRƯỚC khi ghi; `inspectionTime` giữ `INGEST_REQUIRE_TIME_OFFSET` (mặc định bật) | 4 |
+
+**Việc cần làm TRƯỚC lần restart :3000 tới (thêm vào §7, §8):**
+- **Áp migration 0362 lên DB dev TRƯỚC khi restart** `node scripts/apply-migration-0362.mjs --dev-only` (đã kiểm 2026-10-02: dev CHƯA có cột). Bản mới thiếu cột ⇒ mọi đọc `device_tags` hỏng (dispatcher, CRUD tag, commissioning, khởi động OT); bản cũ chạy được với cột mới ⇒ áp trước là an toàn. Script tự bỏ cuộc sau 5 s nếu không lấy được khoá bảng.
+- Sau khi **trỏ lại adapter** sang thiết bị khác, phải **khởi động lại khung OT** (hệ thống chưa có reconnect từng adapter) trước khi lệnh DỪNG ghim được miễn preflight; trong lúc chờ, DỪNG đi preflight đầy đủ (`adapter_connection_stale`).
+- Ghim tag DỪNG là cấu hình an toàn: giá trị sai = lệnh "dừng" có thể khởi động máy. Kỹ thuật ghim theo tài liệu PLC của từng máy, soát ở commissioning.
+- Bật `INGEST_REQUIRE_PACKAGE_TIME_OFFSET=true` chỉ khi phần mềm máy AOI đã gửi `Z`/`+07:00`.
+
+**Cần chủ dự án quyết:**
+1. Lệnh DỪNG ghim bị từ chối `BUSY` khi hàng đợi adapter đầy — cho DỪNG chen hàng đợi?
+2. Rào AI (L-7) vẫn từ chối `machine_stop` qua trợ lý AI khi an toàn BLOCKED/UNKNOWN (và khi `AI_OT_CONTROL_ENABLED` tắt — mặc định) — có cho AI dùng DỪNG ghim không? (Ruling R-1D-g: hiện KHÔNG.)
+
+**Còn mở:** chưa trang nào gửi lệnh DỪNG OT nên câu lý do từ chối mới chỉ chứng minh ở mức unit; form sửa tag gỡ ghim không hỏi trước (có báo sau); `adapter.update` gỡ mọi ghim không báo trên UI; CLI import không ghi được người thực hiện; test dấu vân kết nối dùng bản chép ánh xạ adapter (nên thêm một test qua `loadEnabledAdapters` thật); `validateMachinePayload` mất vị trí lỗi lồng nhau; chưa có test tranh chấp FOR UPDATE khi hai người ghim cùng lúc; `commissioningRecheckRequired` chưa có màn nào đọc. Ledger: `.superpowers/sdd/2026-09-28-engineering-control-dot1d/progress.md`.
