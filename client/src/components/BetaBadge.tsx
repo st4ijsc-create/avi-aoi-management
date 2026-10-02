@@ -11,6 +11,7 @@
 import { FlaskConical } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { cn } from "@/lib/utils";
+import { NoticeChip } from "@/components/patterns/NoticeChip";
 
 /** Tiny inline chip for nav rows / flyouts. */
 export function BetaBadge({ className }: { className?: string }) {
@@ -56,6 +57,23 @@ export function BetaBanner({
         )}
       </span>
     </div>
+  );
+}
+
+/**
+ * Doc 81 Đợt 2 Task 2 — biến thể CHIP của `BetaBanner` cho top bar của shell: cùng câu (`nav.betaBanner`),
+ * cùng điều kiện (shell vẫn gọi `isBetaRoute`), nhưng là chip 1 dòng mở popover thay vì dải banner
+ * 40–54 px chen giữa top bar và tiêu đề trang.
+ */
+export function BetaNoticeChip({ messageKey = "nav.betaBanner" }: { messageKey?: string }) {
+  const { t } = useTranslation();
+  return (
+    <NoticeChip kind="beta" label={t("nav.beta", "Beta")} data-testid="shell-notice-beta">
+      {t(
+        messageKey,
+        "This is a preview feature. It may require setup or an enabled flag before it shows live data.",
+      )}
+    </NoticeChip>
   );
 }
 

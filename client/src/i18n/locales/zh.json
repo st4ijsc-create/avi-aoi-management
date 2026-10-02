@@ -21472,5 +21472,16 @@
     "detail": {
       "tabs": "详情分区"
     }
+  },
+  "shell": {
+    "notice": {
+      "permExpiry": "权限即将到期",
+      "licenseWarning": "许可证即将到期",
+      "licenseReadonly": "许可证：只读",
+      "licenseLocked": "许可证已锁定"
+    },
+    "nav": {
+      "simpleFallback": "简洁菜单在此没有条目 — 正在显示完整菜单。"
+    }
   }
 }

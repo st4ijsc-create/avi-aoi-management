@@ -21444,5 +21444,16 @@
     "detail": {
       "tabs": "Các mục chi tiết"
     }
+  },
+  "shell": {
+    "notice": {
+      "permExpiry": "Quyền sắp hết hạn",
+      "licenseWarning": "License sắp hết hạn",
+      "licenseReadonly": "License: chỉ đọc",
+      "licenseLocked": "License bị khoá"
+    },
+    "nav": {
+      "simpleFallback": "Menu đơn giản không có mục ở đây — đang hiện menu đầy đủ."
+    }
   }
 }

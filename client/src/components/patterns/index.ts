@@ -6,7 +6,7 @@
  * pages are not required to migrate (see doc 17 §rollout).
  */
 export { PageHeader } from "./PageHeader";
-export type { PageHeaderProps, BreadcrumbCrumb } from "./PageHeader";
+export type { PageHeaderProps } from "./PageHeader";
 
 export { PageContainer } from "./PageContainer";
 export type { PageContainerProps } from "./PageContainer";

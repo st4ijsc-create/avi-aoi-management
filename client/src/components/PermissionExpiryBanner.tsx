@@ -5,15 +5,19 @@
  * past expiresAt), but the user got no warning. This banner surfaces any grant expiring
  * within the next N days (default 7) so the user can ask an admin to renew before losing
  * access. Dismissible per-session. Admins (no expiring grants) never see it.
+ *
+ * Doc 81 Đợt 2 Task 2 — `variant="chip"`: shell vẽ nó thành CHIP 1 dòng trong top bar (NoticeChip),
+ * popover giữ NGUYÊN câu và nút bỏ qua; điều kiện hiện (`expiring`, `dismissed`) dùng chung một đường.
  */
 import { useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { usePermissions } from "@/_core/hooks/usePermissions";
 import { AlertTriangle, X } from "lucide-react";
+import { NoticeChip } from "@/components/patterns/NoticeChip";
 
 const WARN_WITHIN_DAYS = 7;
 
-export function PermissionExpiryBanner() {
+export function PermissionExpiryBanner({ variant = "banner" }: { variant?: "banner" | "chip" } = {}) {
   const { t } = useTranslation();
   const { permissions } = usePermissions();
   const [dismissed, setDismissed] = useState(false);
@@ -36,14 +40,31 @@ export function PermissionExpiryBanner() {
 
   const soonest = expiring.reduce((m, e) => (e.days < m.days ? e : m), expiring[0]);
 
+  const message =
+    expiring.length === 1
+      ? t("permExpiry.one", { defaultValue: 'Quyền "{{module}}" sẽ hết hạn sau {{days}} ngày — liên hệ quản trị để gia hạn.', module: soonest.module, days: soonest.days })
+      : t("permExpiry.many", { defaultValue: "{{count}} quyền sắp hết hạn (sớm nhất sau {{days}} ngày) — liên hệ quản trị để gia hạn.", count: expiring.length, days: soonest.days });
+
+  if (variant === "chip") {
+    return (
+      <NoticeChip kind="honesty" label={t("shell.notice.permExpiry", "Quyền sắp hết hạn")} data-testid="shell-notice-permission-expiry">
+        <div className="flex items-start gap-2">
+          <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-amber-600" aria-hidden="true" />
+          <p className="flex-1">{message}</p>
+        </div>
+        <div className="mt-2 flex justify-end">
+          <button type="button" onClick={() => setDismissed(true)} className="rounded border px-2 py-1 text-xs hover:bg-muted">
+            {t("common.dismiss", "Bỏ qua")}
+          </button>
+        </div>
+      </NoticeChip>
+    );
+  }
+
   return (
     <div className="flex items-start gap-2 border-b border-amber-300 bg-amber-50 px-4 py-2 text-sm text-amber-900 dark:border-amber-700 dark:bg-amber-950/40 dark:text-amber-200">
       <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
-      <span className="flex-1">
-        {expiring.length === 1
-          ? t("permExpiry.one", { defaultValue: 'Quyền "{{module}}" sẽ hết hạn sau {{days}} ngày — liên hệ quản trị để gia hạn.', module: soonest.module, days: soonest.days })
-          : t("permExpiry.many", { defaultValue: "{{count}} quyền sắp hết hạn (sớm nhất sau {{days}} ngày) — liên hệ quản trị để gia hạn.", count: expiring.length, days: soonest.days })}
-      </span>
+      <span className="flex-1">{message}</span>
       <button type="button" onClick={() => setDismissed(true)} aria-label={t("common.dismiss", "Bỏ qua")} className="shrink-0 rounded p-0.5 hover:bg-amber-100 dark:hover:bg-amber-900/40">
         <X className="h-4 w-4" />
       </button>

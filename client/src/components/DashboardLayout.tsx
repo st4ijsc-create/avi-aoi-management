@@ -40,11 +40,11 @@ import { ShellAlertChip } from "./ShellAlertChip";
 import { AssetScopeBar, ScopeStatusChip } from "./AssetScopeBar";
 import { useAssetScope } from "@/contexts/AssetScopeContext";
 import { isIsa101V2 } from "@/lib/hmiFlags";
-import { CSSProperties, Fragment, ReactNode, createContext, useContext, useEffect, useMemo, useState } from "react";
+import { CSSProperties, Fragment, ReactNode, createContext, useCallback, useContext, useEffect, useMemo, useState } from "react";
 import { useLocation, useSearch, Link } from "wouter";
 import { DashboardLayoutSkeleton } from './DashboardLayoutSkeleton';
 import { Button } from "./ui/button";
-import { NavGroup, NavItem, getFilteredNavGroups, getSearchNavGroups, filterNavGroupsByMode, hasAdvancedContent, isBetaRoute } from "@/lib/navigation";
+import { NavGroup, NavItem, getFilteredNavGroups, getSearchNavGroups, hasAdvancedContent, isBetaRoute } from "@/lib/navigation";
 import { buildBreadcrumbs } from "@/lib/breadcrumbs";
 import {
   Breadcrumb,
@@ -58,7 +58,7 @@ import { useNavMode } from "@/hooks/useNavMode";
 import { useAppLauncherMode } from "@/hooks/useAppLauncherMode";
 import { useActiveApp } from "@/hooks/useActiveApp";
 import { scopeGroupsToApp, listApps, type AppDescriptor } from "@/lib/apps";
-import { BetaBanner } from "./BetaBadge";
+import { BetaNoticeChip } from "./BetaBadge";
 import { usePermissions } from "@/_core/hooks/usePermissions";
 import { useLicenseModules } from "@/hooks/useLicenseModules";
 import { LicenseEnforcementBanner } from "./LicenseEnforcementBanner";
@@ -66,6 +66,13 @@ import { PermissionExpiryBanner } from "./PermissionExpiryBanner";
 import { cn } from "@/lib/utils";
 import { useTranslation } from "react-i18next";
 import { useSpcAlertToast } from "@/hooks/useSpcAlertToast";
+// doc 81 Đợt 2 Task 2 — shell: một breadcrumb trong top bar, một chỗ đệm, biến thể full-bleed,
+// rail workbench nhớ theo người dùng, Đơn giản không trống, banner → chip, một lối vào AI.
+import { ShellPageContext, type ShellPageContextValue, type ShellPageVariant } from "@/lib/shellPage";
+import { readSidebarOpen, writeSidebarOpen } from "@/lib/sidebarPref";
+import { resolveSidebarGroups } from "@/lib/sidebarGroups";
+import { ShellAiButton } from "./ShellAiButton";
+import type { Breadcrumb as Crumb } from "@/lib/breadcrumbs";
 
 type DashboardLayoutProps = {
   children: ReactNode;
@@ -117,9 +124,22 @@ export default function DashboardLayout({
   // shadcn only seeds from `defaultOpen` (never reads its cookie back), which reset the
   // rail to expanded on each page change. We control `open` from localStorage instead so
   // a collapsed rail stays collapsed when you switch pages.
-  const [desktopOpen, setDesktopOpen] = useState<boolean>(() => {
-    try { return localStorage.getItem("sidebar_open") !== "false"; } catch { return true; }
-  });
+  const [desktopOpen, setDesktopOpen] = useState<boolean>(() => readSidebarOpen({ workbench: false, userId: user?.id }));
+
+  // doc 81 Đợt 2 Task 2 — biến thể trang do TRANG khai (`useShellPageVariant`). "workbench" và
+  // "full-bleed" = màn soạn thảo: rail mặc định THU GỌN; lựa chọn mở rộng nhớ theo NGƯỜI DÙNG ở khoá
+  // riêng (không đè `sidebar_open` của màn thường). "full-bleed" thêm: <main> không đệm.
+  const [pageVariant, setPageVariant] = useState<ShellPageVariant>("default");
+  const registerVariant = useCallback((v: ShellPageVariant) => {
+    setPageVariant(v);
+    return () => setPageVariant("default");
+  }, []);
+  const shellPage = useMemo<ShellPageContextValue>(() => ({ inShellMain: true, registerVariant }), [registerVariant]);
+  const workbench = pageVariant !== "default";
+  const [workbenchOpen, setWorkbenchOpen] = useState<boolean>(() => readSidebarOpen({ workbench: true, userId: user?.id }));
+  useEffect(() => {
+    setWorkbenchOpen(readSidebarOpen({ workbench: true, userId: user?.id }));
+  }, [user?.id]);
 
   // B10 (doc 46 FE-W1) — on the tablet band (768–1023px) the full 264px rail would
   // overflow the viewport and clip page content, so the rail auto-collapses to the icon
@@ -127,13 +147,16 @@ export default function DashboardLayout({
   // the persisted DESKTOP preference — resizing back to ≥1024px restores what you last set.
   const isTablet = useIsTablet();
   const [tabletOpen, setTabletOpen] = useState<boolean>(false);
-  const sidebarOpen = isTablet ? tabletOpen : desktopOpen;
+  const sidebarOpen = isTablet ? tabletOpen : workbench ? workbenchOpen : desktopOpen;
   const handleSidebarOpenChange = (o: boolean) => {
     if (isTablet) {
       setTabletOpen(o);
+    } else if (workbench) {
+      setWorkbenchOpen(o);
+      writeSidebarOpen(o, { workbench: true, userId: user?.id });
     } else {
       setDesktopOpen(o);
-      try { localStorage.setItem("sidebar_open", String(o)); } catch { /* storage unavailable */ }
+      writeSidebarOpen(o, { workbench: false, userId: user?.id });
     }
   };
 
@@ -185,6 +208,8 @@ export default function DashboardLayout({
         title={title}
         navItems={navItems}
         currentPath={currentPath}
+        pageVariant={pageVariant}
+        shellPage={shellPage}
       >
         {children}
       </DashboardLayoutContent>
@@ -205,13 +230,57 @@ type DashboardLayoutContentProps = {
   title: string;
   navItems: NavItem[];
   currentPath?: string;
+  pageVariant: ShellPageVariant;
+  shellPage: ShellPageContextValue;
 };
+
+/**
+ * doc 81 Đợt 2 Task 2 — breadcrumb DUY NHẤT của app, nằm trong top bar (trước đây là một hàng riêng
+ * ~33 px dưới top bar, cộng thêm hàng thứ hai trong PageHeader của 16 trang). Một dòng, không xuống
+ * dòng; nhãn dài bị cắt (title giữ đủ chữ).
+ */
+function ShellBreadcrumb({ crumbs, inHeader }: { crumbs: Crumb[]; inHeader: boolean }) {
+  return (
+    <Breadcrumb className={cn("min-w-0", inHeader && "overflow-hidden")}>
+      <BreadcrumbList className={cn(inHeader && "flex-nowrap gap-1 sm:gap-1.5")}>
+        {crumbs.map((crumb, i) => {
+          const isLast = i === crumbs.length - 1;
+          // Trong top bar ở < 2xl: mục giữa (section, chữ thuần — không phải link) ẩn để nhường chỗ
+          // cho mục cha có link (module) và trang hiện tại; trang hiện tại co ít nhất.
+          const middleText = inHeader && !isLast && i > 0 && crumb.href == null;
+          return (
+            <Fragment key={`${crumb.label}-${i}`}>
+              <BreadcrumbItem
+                className={cn(
+                  inHeader && "min-w-0",
+                  inHeader && (isLast ? "shrink-[0.3]" : "max-w-[9rem] shrink"),
+                  middleText && "hidden 2xl:inline-flex",
+                )}
+              >
+                {isLast || crumb.href == null ? (
+                  <BreadcrumbPage className={cn(inHeader && "block truncate leading-10")} title={crumb.label}>{crumb.label}</BreadcrumbPage>
+                ) : (
+                  <BreadcrumbLink asChild>
+                    <Link href={crumb.href} className={cn(inHeader && "block truncate leading-10")} title={crumb.label}>{crumb.label}</Link>
+                  </BreadcrumbLink>
+                )}
+              </BreadcrumbItem>
+              {!isLast && <BreadcrumbSeparator className={cn(middleText && "hidden 2xl:list-item")} />}
+            </Fragment>
+          );
+        })}
+      </BreadcrumbList>
+    </Breadcrumb>
+  );
+}
 
 function DashboardLayoutContent({
   children,
   title,
   navItems,
   currentPath,
+  pageVariant,
+  shellPage,
 }: DashboardLayoutContentProps) {
   const { user, logout } = useAuth();
   const { t } = useTranslation();
@@ -309,12 +378,18 @@ function DashboardLayoutContent({
 
   // Only offer the Advanced toggle when the user actually has advanced surface to reveal.
   const showModeToggle = hasAdvancedContent(accessibleGroups);
-  const visibleGroups = filterNavGroupsByMode(accessibleGroups, navMode);
 
   // doc 36 W1 — in launcher mode the SIDEBAR shows only the active app's items (items follow
   // their owning module's app, reorganising across the old groups). Search (⌘K) still spans
   // ALL accessible apps. When the flag is OFF, everything behaves exactly as before.
-  const sidebarGroups = launcherOn ? scopeGroupsToApp(visibleGroups, activeApp.appId) : visibleGroups;
+  // doc 81 Đợt 2 Task 2 — chế độ Đơn giản KHÔNG được để thanh bên trống (supervisor ở app Kỹ thuật):
+  // rỗng ⇒ hiện danh sách đầy đủ của cùng phạm vi (đã lọc vai/quyền/giấy phép) + ghi chú.
+  const { visible: visibleGroups, sidebar: sidebarGroups, simpleFallback } = resolveSidebarGroups({
+    accessible: accessibleGroups,
+    mode: navMode,
+    launcherOn,
+    appId: activeApp.appId,
+  });
   // doc 63 (AUD-05 / IA-09) — ⌘K searches the UNCOLLAPSED accessible set (incl. the 28
   // rows folded into hubs), so a page hidden from the rail is still findable by name.
   // Same license/nav-group filtering as the sidebar, minus the hub-collapse step.
@@ -420,6 +495,14 @@ function DashboardLayoutContent({
             <nav aria-label={t("nav.quickLinksLabel", "Liên kết nhanh")}>
               <SidebarQuickAccess onNavigate={handleNavigate} />
             </nav>
+            {simpleFallback && (
+              <p
+                data-nav-simple-fallback=""
+                className="px-3 pb-1 pt-1 text-[11px] leading-snug text-muted-foreground group-data-[collapsible=icon]:hidden"
+              >
+                {t("shell.nav.simpleFallback", "Menu đơn giản không có mục ở đây — đang hiện menu đầy đủ.")}
+              </p>
+            )}
             <nav aria-label={t("nav.primaryNavLabel", "Điều hướng chính")}>
               {isMobile ? (
                 // Mobile (R1): tap-drill nav inside the Sheet drawer (hover unavailable).
@@ -576,17 +659,34 @@ function DashboardLayoutContent({
             <SiteSwitcher variant="header" />
           </div>
 
-          {/* Center — primary/wide global search that opens the command palette (⌘K).
-              This is the widest element in the bar. */}
+          {/* doc 81 Đợt 2 Task 2 — breadcrumb DUY NHẤT + chip thông báo shell nằm TRONG top bar
+              (trước đây: hàng breadcrumb riêng + dải banner quyền/license/Beta đẩy tiêu đề trang
+              xuống 205–259 px). Cụm này co giãn (flex-1); breadcrumb tự cắt chữ. */}
+          <div className="flex min-w-[8rem] flex-1 items-center gap-2" data-shell-context="">
+            {showBreadcrumbs && !isMobile && <ShellBreadcrumb crumbs={breadcrumbs} inHeader />}
+            <div className="flex shrink-0 items-center gap-1" data-shell-notices="">
+              <PermissionExpiryBanner variant="chip" />
+              <LicenseEnforcementBanner variant="chip" />
+              {/* doc 22 P4 — "Beta / needs setup" trên route có cờ beta, nay là chip + popover. */}
+              {isBetaRoute(currentPath || location) && <BetaNoticeChip />}
+            </div>
+            {/* doc 64 IA-10 S0.4/S3 — bất biến trung thực: chip phạm vi khi có breadcrumb, hoặc khi
+                route ẩn breadcrumb mà trục có selection (điều kiện cũ của hai hàng gộp lại). */}
+            {isIsa101V2() && (showBreadcrumbs || hasAssetAxis) && <ScopeStatusChip className="shrink-0" />}
+          </div>
+
+          {/* Global search that opens the command palette (⌘K) — the breadcrumb now owns the
+              flexible middle of the bar, so search is an icon below 2xl (1536 px) and a 14rem
+              field above (đo Task 1: ở 1366/1600 top bar không đủ chỗ cho cả hai). */}
           <button
             type="button"
             onClick={() => setPaletteOpen(true)}
             aria-label={t("nav.searchPlaceholder")}
-            className="flex h-10 min-w-10 flex-1 items-center gap-2 overflow-hidden rounded-lg border border-border bg-muted/40 px-3 text-muted-foreground transition-colors hover:bg-muted focus:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            className="flex h-10 w-10 shrink-0 items-center gap-2 overflow-hidden rounded-lg border border-border bg-muted/40 px-3 text-muted-foreground transition-colors hover:bg-muted focus:outline-none focus-visible:ring-2 focus-visible:ring-ring 2xl:w-56"
           >
             <Search className="h-4 w-4 shrink-0" />
-            <span className="min-w-0 flex-1 truncate text-left text-sm">{t("nav.searchPlaceholder")}</span>
-            <kbd className="hidden sm:inline-flex items-center gap-0.5 rounded border border-border bg-background px-1.5 font-mono text-[10px] text-muted-foreground">
+            <span className="hidden min-w-0 flex-1 truncate text-left text-sm 2xl:inline">{t("nav.searchPlaceholder")}</span>
+            <kbd className="hidden 2xl:inline-flex items-center gap-0.5 rounded border border-border bg-background px-1.5 font-mono text-[10px] text-muted-foreground">
               ⌘K
             </kbd>
           </button>
@@ -607,59 +707,33 @@ function DashboardLayoutContent({
                 state, never claims live when the socket is down. Byte-identical when off. */}
             {isIsa101V2() && <FreshnessStrip className="hidden shrink-0 sm:inline-flex" />}
             <SiteHealthDot />
+            {/* doc 81 Đợt 2 Task 2 — MỘT lối vào AI: chat (sheet phải) hoặc dock Copilot ở màn lập trình. */}
+            <ShellAiButton />
             <ThemeToggle />
             <LanguageSwitcher />
           </div>
         </header>
-        {showBreadcrumbs && (
-          // F2 — slim global breadcrumb row rendered ONCE from the shell (covers all
-          // pages without editing each PageHeader). Query strings are stripped.
-          // doc 67 W4 [P0] — min-w-0 cả hàng lẫn <Breadcrumb>: trail dài wrap/co trong
-          // viewport 1280 thay vì banh ngang (BreadcrumbList sẵn flex-wrap).
-          <div className="flex min-w-0 items-center justify-between gap-2 border-b border-border bg-card/60 px-3 py-1.5 sm:px-4">
-            <Breadcrumb className="min-w-0">
-              <BreadcrumbList>
-                {breadcrumbs.map((crumb, i) => {
-                  const isLast = i === breadcrumbs.length - 1;
-                  return (
-                    <Fragment key={`${crumb.label}-${i}`}>
-                      <BreadcrumbItem>
-                        {isLast || crumb.href == null ? (
-                          <BreadcrumbPage>{crumb.label}</BreadcrumbPage>
-                        ) : (
-                          <BreadcrumbLink asChild>
-                            <Link href={crumb.href}>{crumb.label}</Link>
-                          </BreadcrumbLink>
-                        )}
-                      </BreadcrumbItem>
-                      {!isLast && <BreadcrumbSeparator />}
-                    </Fragment>
-                  );
-                })}
-              </BreadcrumbList>
-            </Breadcrumb>
-            {/* doc 64 IA-10 S0.4 — bất biến trung thực: trang chưa wire scope hiện rõ
-                "chưa lọc theo phạm vi" khi trục có selection (không ngầm-toàn-cục). */}
-            {isIsa101V2() && <ScopeStatusChip className="shrink-0" />}
+        {/* Mobile (<768): top bar quá hẹp ⇒ breadcrumb (vẫn MỘT cái) là một hàng mảnh dưới top bar. */}
+        {showBreadcrumbs && isMobile && (
+          <div className="flex min-w-0 items-center border-b border-border bg-card/60 px-3 py-1">
+            <ShellBreadcrumb crumbs={breadcrumbs} inHeader={false} />
           </div>
         )}
-        {/* doc 64 IA-10 S3 — route mồ côi/ẩn-breadcrumb (vd /alarm-kpi) vẫn phải có chip
-            (bất biến không được phụ thuộc chỗ đứng breadcrumb). Hàng mảnh, chỉ hiện khi
-            trục có selection. */}
-        {!showBreadcrumbs && isIsa101V2() && hasAssetAxis && (
-          <div className="flex justify-end border-b border-border bg-card/60 px-3 py-1 sm:px-4">
-            <ScopeStatusChip className="shrink-0" />
-          </div>
-        )}
-        <PermissionExpiryBanner />
-        <LicenseEnforcementBanner />
         {/* E: pad the bottom on mobile so content clears the fixed Bottom Navigation bar. */}
-        {/* doc65 V3: pb-24 desktop — chừa chỗ cho FAB chat góc phải-dưới, không đè nội dung cuối trang */}
-        <main id="main-content" tabIndex={-1} className={cn("flex-1 p-3 sm:p-4 md:p-6 pb-24 overflow-auto focus:outline-none", isMobile && "pb-20")}>
-          {/* doc 22 P4 — one-line "Beta / needs setup" banner on framework/flag-gated
-              routes so first-time users don't expect live data. Driven by the nav flag. */}
-          {isBetaRoute(currentPath || location) && <BetaBanner />}
-          {children}
+        {/* doc 81 Đợt 2 Task 2 — MỘT chỗ đệm: <main> đệm 12/16 px (PageContainer bên trong không đệm
+            nữa — trước đây 24 + 24 px). Không còn nút chat nổi trong shell (lối vào AI ở top bar) ⇒ bỏ
+            pb-24 chừa chỗ cho nó. Trang workbench khai "full-bleed" ⇒ không đệm. */}
+        <main
+          id="main-content"
+          tabIndex={-1}
+          data-shell-variant={pageVariant}
+          className={cn(
+            "flex-1 overflow-auto focus:outline-none",
+            pageVariant === "full-bleed" ? "p-0" : "px-3 pt-3 pb-6 sm:px-4 sm:pt-4 md:px-6 md:pt-4",
+            isMobile && "pb-20",
+          )}
+        >
+          <ShellPageContext.Provider value={shellPage}>{children}</ShellPageContext.Provider>
         </main>
       </div>
       {/* E — Material 3 Bottom Navigation (phones only). "Menu" opens the full drawer. */}

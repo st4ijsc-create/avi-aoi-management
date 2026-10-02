@@ -6,6 +6,10 @@
  * - License expired, system read-only (error - orange)
  * - License locked after 15 days (critical - red)
  * - No license found (critical - red)
+ *
+ * Doc 81 Đợt 2 Task 2 — `variant="chip"`: shell vẽ nó thành CHIP 1 dòng trong top bar (NoticeChip);
+ * popover chứa đúng phần thân cũ (thông điệp, số ngày, offline, nút admin, nút đóng chỉ khi warning).
+ * Điều kiện hiện và luật đóng KHÔNG đổi — hai biến thể đi qua cùng một nhánh quyết định.
  */
 
 import { useLicenseEnforcement } from "@/hooks/useLicenseEnforcement";
@@ -14,8 +18,9 @@ import { AlertTriangle, Lock, ShieldAlert, ShieldX, WifiOff, X } from "lucide-re
 import { useState } from "react";
 import { Link } from "wouter";
 import { useAuth } from "@/_core/hooks/useAuth";
+import { NoticeChip, type NoticeKind } from "@/components/patterns/NoticeChip";
 
-export function LicenseEnforcementBanner() {
+export function LicenseEnforcementBanner({ variant = "banner" }: { variant?: "banner" | "chip" } = {}) {
   const { t } = useTranslation();
   const { user } = useAuth();
   const enforcement = useLicenseEnforcement();
@@ -37,8 +42,8 @@ export function LicenseEnforcementBanner() {
   const serverDownOnly = enforcement.isNormal && !enforcement.serverReachable && enforcement.consecutiveOfflineChecks > 0;
 
   if (serverDownOnly) {
-    return (
-      <div className="bg-blue-50 dark:bg-blue-950/30 border-blue-300 dark:border-blue-700 border-b px-4 py-2 flex items-center gap-3">
+    const downBody = (
+      <>
         <WifiOff className="h-4 w-4 text-blue-500 dark:text-blue-400 shrink-0" />
         <div className="flex-1 text-sm text-blue-700 dark:text-blue-300">
           <span className="font-medium">{t("licBanner.licenseServerKhongKhaDung", "License Server không khả dụng")}</span>
@@ -49,6 +54,9 @@ export function LicenseEnforcementBanner() {
             )}
           </span>
         </div>
+      </>
+    );
+    const downDismiss = (
         <button
           onClick={() => setDismissed(true)}
           className="shrink-0 p-1 rounded hover:bg-blue-200 dark:hover:bg-blue-800 transition-colors text-blue-700 dark:text-blue-300"
@@ -56,6 +64,19 @@ export function LicenseEnforcementBanner() {
         >
           <X className="h-3.5 w-3.5" />
         </button>
+    );
+    if (variant === "chip") {
+      return (
+        <NoticeChip kind="hint" label={t("licBanner.licenseServerKhongKhaDung", "License Server không khả dụng")} data-testid="shell-notice-license">
+          <div className="flex items-start gap-2">{downBody}</div>
+          <div className="mt-2 flex justify-end">{downDismiss}</div>
+        </NoticeChip>
+      );
+    }
+    return (
+      <div className="bg-blue-50 dark:bg-blue-950/30 border-blue-300 dark:border-blue-700 border-b px-4 py-2 flex items-center gap-3">
+        {downBody}
+        {downDismiss}
       </div>
     );
   }
@@ -91,9 +112,7 @@ export function LicenseEnforcementBanner() {
       return null;
   }
 
-  return (
-    <div className={`${bgClass} ${borderClass} border-b px-4 py-2.5 flex items-center gap-3`}>
-      {icon}
+  const body = (
       <div className={`flex-1 text-sm ${textClass}`}>
         <span className="font-medium">{enforcement.message}</span>
         {enforcement.daysUntilExpiry !== null && enforcement.daysUntilExpiry > 0 && (
@@ -109,6 +128,9 @@ export function LicenseEnforcementBanner() {
         )}
       </div>
 
+  );
+  const adminAction = (
+    <>
       {/* Action button for admin */}
       {isAdmin && (
         <Link
@@ -127,6 +149,10 @@ export function LicenseEnforcementBanner() {
         </Link>
       )}
 
+    </>
+  );
+  const dismissAction = (
+    <>
       {/* Dismiss button (only for warnings) */}
       {enforcement.isWarning && (
         <button
@@ -137,6 +163,37 @@ export function LicenseEnforcementBanner() {
           <X className="h-3.5 w-3.5" />
         </button>
       )}
+    </>
+  );
+
+  if (variant === "chip") {
+    const kind: NoticeKind = enforcement.bannerSeverity === "warning" ? "honesty" : "error";
+    const label =
+      enforcement.bannerSeverity === "warning"
+        ? t("shell.notice.licenseWarning", "License sắp hết hạn")
+        : enforcement.isLocked || enforcement.noLicense
+          ? t("shell.notice.licenseLocked", "License bị khoá")
+          : t("shell.notice.licenseReadonly", "License: chỉ đọc");
+    return (
+      <NoticeChip kind={kind} label={label} data-testid="shell-notice-license">
+        <div className="flex items-start gap-2">
+          {icon}
+          {body}
+        </div>
+        <div className="mt-2 flex items-center justify-end gap-2">
+          {adminAction}
+          {dismissAction}
+        </div>
+      </NoticeChip>
+    );
+  }
+
+  return (
+    <div className={`${bgClass} ${borderClass} border-b px-4 py-2.5 flex items-center gap-3`}>
+      {icon}
+      {body}
+      {adminAction}
+      {dismissAction}
     </div>
   );
 }

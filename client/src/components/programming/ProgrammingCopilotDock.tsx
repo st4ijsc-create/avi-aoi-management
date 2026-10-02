@@ -18,6 +18,11 @@
  *   • STRUCTURED editors (IR / POU): no onApply (you can't inject text into a block/LAD flow)
  *     → the dock is ADVISORY: explain the transpiled preview, generate reference snippets, and
  *     reason over the lint diagnostics. Honest about being copy-only there.
+ *
+ * Doc 81 Đợt 2 Task 2 (ruling R-2-b) — dock GIỮ trên IDE/IR/POU cho tới khi Task 13/14 đặt panel
+ * Copilot trong layout. Một lối vào AI: khi shell có nút AI trên top bar (`aiEntryStore`), nút đó mở/đóng
+ * dock ⇒ tab dọc nổi (lối vào thứ hai, che MAIN) không vẽ nữa; ở chế độ chiếm màn (< 900 px, không đẩy
+ * trang) dock bắt đầu DƯỚI top bar thay vì đè lên nó. Chế độ đẩy trang (paddingRight) giữ nguyên.
  */
 import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
@@ -34,11 +39,15 @@ const ProgrammingCopilotPanel = lazy(() =>
   import("@/components/programming/ProgrammingCopilotPanel").then((m) => ({ default: m.ProgrammingCopilotPanel })),
 );
 import { useProgrammingCopilot } from "@/contexts/ProgrammingCopilotContext";
+import { useAiEntry } from "@/lib/aiEntryStore";
+
+const PUSH_MIN_WIDTH = 900;
 
 export function ProgrammingCopilotDock() {
   const { t } = useTranslation();
   const { open, setOpen, binding } = useProgrammingCopilot();
   const [seed, setSeed] = useState<CopilotSeed | undefined>();
+  const viaHeader = useAiEntry().headerEntries > 0;
 
   // Escape closes the rail.
   useEffect(() => {
@@ -54,7 +63,7 @@ export function ProgrammingCopilotDock() {
   // programming surface, reserve its width on the right so the editor/inspector isn't
   // hidden underneath. On narrow viewports (rail is 92vw) we don't push (it's a takeover).
   useEffect(() => {
-    const canPush = open && !!binding && typeof window !== "undefined" && window.innerWidth >= 900;
+    const canPush = open && !!binding && typeof window !== "undefined" && window.innerWidth >= PUSH_MIN_WIDTH;
     document.body.style.transition = "padding-right 0.2s ease";
     document.body.style.paddingRight = canPush ? "min(420px, 92vw)" : "";
     return () => { document.body.style.paddingRight = ""; };
@@ -84,6 +93,8 @@ export function ProgrammingCopilotDock() {
 
   // ── Collapsed: a vertical toggle tab pinned to the right edge ────────────────
   if (!open) {
+    // Shell có nút AI trên top bar ⇒ đó là lối vào duy nhất (nó mở dock); không vẽ tab nổi thứ hai.
+    if (viaHeader) return null;
     return (
       <button
         type="button"
@@ -105,11 +116,17 @@ export function ProgrammingCopilotDock() {
   }
 
   // ── Expanded: fixed right rail ──────────────────────────────────────────────
+  // Chế độ chiếm màn (không đẩy trang) mà có top bar ⇒ bắt đầu dưới top bar (h-14), không đè nó.
+  const takeover = typeof window !== "undefined" && window.innerWidth < PUSH_MIN_WIDTH;
+  const belowTopBar = viaHeader && takeover;
   return (
     <aside
       role="complementary"
       aria-label={t("progCopilot.dock.title", "Trợ lý Lập trình")}
-      className="fixed right-0 top-0 z-40 flex h-screen w-[min(420px,92vw)] flex-col border-l bg-background shadow-2xl"
+      className={cn(
+        "fixed right-0 z-40 flex w-[min(420px,92vw)] flex-col border-l bg-background shadow-2xl",
+        belowTopBar ? "top-14 h-[calc(100dvh-3.5rem)]" : "top-0 h-screen",
+      )}
     >
       {/* Header */}
       <div className="flex items-center gap-2 border-b px-3 py-2.5">

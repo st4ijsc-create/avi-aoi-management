@@ -8,6 +8,9 @@ import { useLocation } from "wouter";
 import { useTranslation } from "react-i18next";
 import { trpc } from "@/lib/trpc";
 import { useAuth } from "@/_core/hooks/useAuth";
+// doc 81 Đợt 2 Task 2 — một lối vào AI: trạng thái mở dùng chung với nút AI trên top bar của shell.
+import { setAiChatOpen, useAiEntry } from "@/lib/aiEntryStore";
+import { AiChatFrame } from "./AiChatFrame";
 import { mapAppRoleToAiRole } from "@/lib/aiRole";
 import { useAiCopilotContext } from "@/contexts/AiCopilotContext";
 import { Button } from "@/components/ui/button";
@@ -295,8 +298,14 @@ function buildConversationHistory(messages: ChatMessage[]): ConversationTurn[] {
 // ─── Component ────────────────────────────────────────────────────────────────
 
 export function AILocalChatBubble() {
-  const [open, setOpen] = useState(false);
-  const [minimized, setMinimized] = useState(false);
+  // doc 81 Đợt 2 Task 2 — `open` sống trong `aiEntryStore` (nút AI của top bar đọc/ghi cùng chỗ).
+  // Có top bar (`headerEntry`) ⇒ khung là sheet phải dưới top bar, không thu nhỏ, không nút nổi.
+  const aiEntry = useAiEntry();
+  const headerEntry = aiEntry.headerEntries > 0;
+  const open = aiEntry.chatOpen;
+  const setOpen = setAiChatOpen;
+  const [minimizedState, setMinimized] = useState(false);
+  const minimized = headerEntry ? false : minimizedState;
 
   const [question, setQuestion] = useState("");
   const [messages, setMessages] = useState<ChatMessage[]>(() => loadStoredMessages());
@@ -1114,11 +1123,16 @@ export function AILocalChatBubble() {
   //   Danh sách + vị từ ở MỘT chỗ (`bongBongTheoTuyen.ts`, có lưới), không rải `startsWith`.
   if (anBongBongTrenTuyen(location)) return null;
 
-  return (
-    <div className="fixed bottom-6 right-6 z-50 flex flex-col items-end gap-3">
-      {/* ── Chat Panel ─────────────────────────────────────────────────────────── */}
-      {open && !minimized && (
-        <div className="w-96 flex flex-col rounded-2xl border bg-card shadow-2xl overflow-hidden animate-in slide-in-from-bottom-4 fade-in duration-200" style={{ height: "600px" }}>
+  // ── Chat Panel ───────────────────────────────────────────────────────────
+  const panel = (
+        <div
+          className={
+            headerEntry
+              ? "flex h-full w-full flex-col overflow-hidden bg-card"
+              : "w-96 flex flex-col rounded-2xl border bg-card shadow-2xl overflow-hidden animate-in slide-in-from-bottom-4 fade-in duration-200"
+          }
+          style={headerEntry ? undefined : { height: "600px" }}
+        >
           {/* Header */}
           <div className="flex items-center justify-between px-4 py-3 border-b bg-card shrink-0">
             <div className="flex items-center gap-2.5 min-w-0">
@@ -1256,9 +1270,11 @@ export function AILocalChatBubble() {
               >
                 <RefreshCw className={cn("size-3.5", reloadMutation.isPending && "animate-spin")} />
               </Button>
+              {!headerEntry && (
               <Button size="icon" variant="ghost" className="h-7 w-7 text-muted-foreground hover:text-foreground" onClick={() => setMinimized(true)} title={t("aiChat.minimizeTip", "Thu nhỏ")}>
                 <Minus className="size-3.5" />
               </Button>
+              )}
               <Button size="icon" variant="ghost" className="h-7 w-7 text-muted-foreground hover:text-foreground" onClick={() => setOpen(false)} title={t("common.close", "Đóng")}>
                 <X className="size-3.5" />
               </Button>
@@ -1748,10 +1764,10 @@ export function AILocalChatBubble() {
             </div>
           </div>
         </div>
-      )}
+  );
 
-      {/* ── Minimized bar ─────────────────────────────────────────────────────── */}
-      {open && minimized && (
+  // ── Minimized bar (chỉ khung nổi cũ) ──────────────────────────────────────
+  const minimizedBar = open && minimized ? (
         <button
           className="flex items-center gap-2 bg-primary text-primary-foreground px-4 py-2.5 rounded-full shadow-lg hover:shadow-xl transition-all animate-in slide-in-from-bottom-2 fade-in duration-150"
           onClick={() => setMinimized(false)}
@@ -1760,9 +1776,10 @@ export function AILocalChatBubble() {
           <span className="text-sm font-medium">{t("aiChat.assistantTitle", "Trợ lý thông minh")}</span>
           {isStreaming && <Loader2 className="size-3.5 animate-spin" />}
         </button>
-      )}
+  ) : null;
 
-      {/* ── FAB Button ────────────────────────────────────────────────────────── */}
+  // ── FAB Button (chỉ khung nổi cũ — trang không có top bar của shell) ───────
+  const fab = (
       <Button
         size="icon"
         className={cn(
@@ -1797,6 +1814,17 @@ export function AILocalChatBubble() {
           </>
         )}
       </Button>
-    </div>
+  );
+
+  return (
+    <AiChatFrame
+      headerEntry={headerEntry}
+      open={open}
+      onOpenChange={setOpen}
+      panel={panel}
+      minimizedBar={minimizedBar}
+      fab={fab}
+      legacyPanelVisible={open && !minimized}
+    />
   );
 }
