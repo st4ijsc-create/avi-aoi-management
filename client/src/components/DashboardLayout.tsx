@@ -531,10 +531,11 @@ function DashboardLayoutContent({
               <div className="px-3 pb-2">
                 <SiteSwitcher variant="drawer" />
                 {/* doc 81 Đợt 2 Task 2 (fix 1, đo 375/414 px) — top bar điện thoại không đủ chỗ: giao
-                    diện sáng/tối + ngôn ngữ dời vào ngăn menu (trước đây bị đẩy ra ngoài mép phải). */}
-                <div className="mt-2 flex items-center gap-2" data-shell-mobile-prefs="">
+                    diện sáng/tối + ngôn ngữ (+ fix 2: trạng thái tươi dữ liệu) dời vào ngăn menu. */}
+                <div className="mt-2 flex flex-wrap items-center gap-2" data-shell-mobile-prefs="">
                   <ThemeToggle />
                   <LanguageSwitcher />
+                  {isIsa101V2() && <FreshnessStrip className="sm:hidden" />}
                 </div>
               </div>
             )}
@@ -686,7 +687,7 @@ function DashboardLayoutContent({
             mode hides the whole bar via [data-app-chrome="header"]. */}
         {/* doc 67 W4 [P1] — <header> landmark thay div (vùng chrome đầu trang); giữ nguyên
             data-app-chrome="header" nên CSS kiosk-mode không đổi. min-w-0 để hàng co thật. */}
-        <header data-app-chrome="header" className="@container/topbar flex border-b border-border h-14 min-w-0 items-center gap-1 sm:gap-2 lg:gap-3 bg-card/95 px-2 sm:px-3 backdrop-blur supports-backdrop-filter:backdrop-blur sticky top-0 z-40">
+        <header data-app-chrome="header" className="@container/topbar flex border-b border-border h-14 min-w-0 items-center gap-1 lg:gap-3 bg-card/95 px-2 sm:px-3 backdrop-blur supports-backdrop-filter:backdrop-blur sticky top-0 z-40">
           {/* Left — sidebar toggle + site/scope switcher. The toggle opens the mobile
               sheet / re-opens the collapsed desktop rail. */}
           <SidebarTrigger className="h-10 w-10 rounded-lg shrink-0" />
@@ -760,7 +761,7 @@ function DashboardLayoutContent({
           {/* doc 67 W4 [P0] — bỏ shrink-0, thêm min-w-0: cụm phải co được khi 1280px chật;
               phần co dồn vào AssetScopeBar (min-w-0, selector tự truncate), các nút icon
               giữ kích thước cố định của chúng. */}
-          <div className="flex min-w-0 items-center gap-1 sm:gap-2">
+          <div className="flex min-w-0 items-center gap-1 lg:gap-2">
             {/* doc 64 IA-10 S0.3 — trục phạm vi ISA-95 (Xưởng›Chuyền›Máy), bền qua điều hướng. */}
             {isIsa101V2() && <AssetScopeBar className="hidden min-w-0 xl:flex" />}
             <AIActionInboxLauncher />
@@ -770,8 +771,9 @@ function DashboardLayoutContent({
             {isIsa101V2() && <ShellAlertChip />}
             {/* doc 63 (AUD-01/G8) — flag-gated shell FreshnessStrip: socket-truth connection
                 state, never claims live when the socket is down. Byte-identical when off. */}
-            {/* doc 81 Đợt 2 Task 2 (fix 1, đo 800 px): top bar 800/1024 px tràn 2–15 px ⇒ dải tươi mới từ xl. */}
-            {isIsa101V2() && <FreshnessStrip className="hidden shrink-0 xl:inline-flex" />}
+            {/* doc 81 Đợt 2 Task 2 (fix 2): vẫn hiện từ sm như trước; dưới xl chỉ còn icon có màu + tooltip
+                (nhãn sr-only) để top bar 800/1024 px không tràn. Dưới sm: trong ngăn menu điện thoại. */}
+            {isIsa101V2() && <FreshnessStrip compactUntilXl className="hidden shrink-0 sm:inline-flex" />}
             <SiteHealthDot />
             {/* doc 81 Đợt 2 Task 2 — MỘT lối vào AI: chat (sheet phải) hoặc dock Copilot ở màn lập trình. */}
             <ShellAiButton />

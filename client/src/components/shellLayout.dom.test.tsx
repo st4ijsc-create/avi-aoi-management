@@ -27,12 +27,14 @@ const S: {
   launcher: boolean;
   lic: Lic;
   aiBlocked: boolean;
+  isa: boolean;
 } = {
   user: { id: 7, role: "engineer", name: "Eng", email: "e@x" },
   permissions: [],
   launcher: true,
   lic: {},
   aiBlocked: false,
+  isa: false,
 };
 
 const LIC_NORMAL: Lic = {
@@ -65,7 +67,7 @@ vi.mock("@/hooks/useSpcAlertToast", () => ({ useSpcAlertToast: () => undefined }
 vi.mock("@/hooks/useAppLauncherMode", () => ({
   useAppLauncherMode: () => ({ launcherOn: S.launcher, toggleLauncher: vi.fn() }),
 }));
-vi.mock("@/lib/hmiFlags", () => ({ isIsa101V2: () => false }));
+vi.mock("@/lib/hmiFlags", () => ({ isIsa101V2: () => S.isa }));
 const { stub } = vi.hoisted(() => ({
   stub: (name: string) => () => React.createElement("span", { "data-stub": name }),
 }));
@@ -73,7 +75,10 @@ vi.mock("@/components/NotificationCenter", () => ({ NotificationCenter: stub("no
 vi.mock("@/components/AIActionInbox", () => ({ AIActionInboxLauncher: stub("inbox") }));
 vi.mock("@/components/SiteSwitcher", () => ({ SiteSwitcher: stub("site") }));
 vi.mock("@/components/SiteHealthDot", () => ({ SiteHealthDot: stub("health") }));
-vi.mock("@/components/FreshnessStrip", () => ({ FreshnessStrip: stub("fresh") }));
+vi.mock("@/components/FreshnessStrip", () => ({
+  FreshnessStrip: (p: { className?: string; compactUntilXl?: boolean }) =>
+    React.createElement("span", { "data-stub": "fresh", "data-compact": String(!!p.compactUntilXl), className: p.className }),
+}));
 vi.mock("@/components/ShellAlertChip", () => ({ ShellAlertChip: stub("alert") }));
 vi.mock("@/components/AssetScopeBar", () => ({ AssetScopeBar: stub("scope"), ScopeStatusChip: stub("scopechip") }));
 vi.mock("@/components/CommandPalette", () => ({ CommandPalette: () => null }));
@@ -113,6 +118,7 @@ beforeEach(() => {
   S.launcher = true;
   S.lic = { ...LIC_NORMAL };
   S.aiBlocked = false;
+  S.isa = false;
   localStorage.clear();
   resetAiEntryForTest();
 });
@@ -558,6 +564,32 @@ describe("Banner shell ⇒ chip 1 dòng trong top bar, CÙNG điều kiện", ()
       expect(crit()).toBeNull();
       expect(bar()).toHaveAttribute("data-state", "serverDown");
       expect(bar()).toHaveAttribute("role", "status");
+    } finally {
+      Object.defineProperty(window, "innerWidth", { configurable: true, value: w });
+    }
+  });
+
+  it("fix 2 — trạng thái tươi dữ liệu (ISA-101) còn hiện ở MỌI bề rộng nó từng hiện (≥640): một bản trong top bar, gọn dưới xl", () => {
+    S.isa = true;
+    renderShell("/recipes");
+    const f = header().querySelectorAll('[data-stub="fresh"]');
+    expect(f).toHaveLength(1);
+    const c = (f[0].getAttribute("class") ?? "").split(/\s+/);
+    expect(c).toContain("sm:inline-flex");
+    expect(c.some((x) => /^(md|lg|xl|2xl):inline-flex$/.test(x))).toBe(false);
+    expect(f[0]).toHaveAttribute("data-compact", "true");
+  });
+
+  it("fix 2 — điện thoại (<640): trạng thái tươi dữ liệu nằm trong ngăn menu (như theme/ngôn ngữ)", () => {
+    const w = window.innerWidth;
+    Object.defineProperty(window, "innerWidth", { configurable: true, value: 375 });
+    try {
+      S.isa = true;
+      renderShell("/recipes");
+      fireEvent.click(header().querySelector('[data-sidebar="trigger"]') as HTMLElement);
+      const prefs = document.querySelector("[data-shell-mobile-prefs]") as HTMLElement;
+      expect(prefs).not.toBeNull();
+      expect(prefs.querySelector('[data-stub="fresh"]')).not.toBeNull();
     } finally {
       Object.defineProperty(window, "innerWidth", { configurable: true, value: w });
     }
