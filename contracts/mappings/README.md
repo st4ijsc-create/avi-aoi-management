@@ -88,6 +88,11 @@ Tương đương trong app (tRPC, RBAC `machine_control`): `mappingAsCode.list` 
   `config_snapshots` (`entity_type='mapping_file'`, `entity_id=adapter id`).
 - Apply qua app còn: ghi audit `mapping_as_code.import`, clear UNS mapping
   cache, và **refresh baseline config-drift** (import = bản approved mới, G1.11).
+- **Ghim DỪNG (doc 81 Đợt 1D, mig 0362):** file mapping KHÔNG mang ghim dừng và import
+  KHÔNG BAO GIỜ đặt ghim. Cả app lẫn CLI đều GỠ ghim (kèm audit `control_audit_log`
+  `device_tag_stop_pin`/`stop_pin_clear` + `audit_logs`) khi file đổi `address`/`datatype`/
+  `scale`/`offset`, đặt `writable: false` hoặc `enabled: false`, hoặc `--prune` xoá tag đang ghim.
+  CLI in dòng `[STOP-PIN] …`; ghim lại qua UI (`deviceAdapter.tags.setStopPin`) nếu vẫn cần.
 - Import **không restart adapter**. Nếu kết quả trả `requiresAdapterRestart:
   true` (device_tags đổi) — người vận hành chủ động restart adapter/app; thay
   đổi chỉ ở `uns_mappings` có hiệu lực ngay (qua app) hoặc sau restart (qua CLI).

@@ -39,6 +39,9 @@ vi.mock("../../../../drizzle/schema", () => ({
   deviceTags: { __table: "device_tags", adapterId: { __name: "adapterId" }, tagKey: { __name: "tagKey" }, writable: { __name: "writable" } },
 }));
 vi.mock("../../../db/machineRecipe", () => ({ getActiveRecipe: vi.fn(async () => null) }));
+// doc 81 Đợt 1D Task 2 — machineControl now imports ot/stopPin (machine_stop pinned writes); its real module pulls
+// db/index, which this suite's partial schema mock cannot satisfy. This suite never dispatches a stop.
+vi.mock("../../ot/stopPin", () => ({ loadStopPins: vi.fn(async () => []) }));
 
 const dispatchSpy = vi.fn(async () => ({ ok: true, simulated: true, status: "simulated", results: [], commandLogIds: [1] }));
 vi.mock("../../ot/commandDispatcher", () => ({

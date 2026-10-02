@@ -32,6 +32,7 @@ import {
 } from "../../ot/aiControlGate";
 import { preflightSafetyChoAi } from "../../ot/aiControlGate.safety";
 import type { OtWriteTarget } from "../../ot/otActionBinding";
+import { loadStopPins } from "../../ot/stopPin";
 import {
   registerTool,
   type ActionPreview,
@@ -185,6 +186,27 @@ function planToTarget(plan: OtPlan): OtWriteTarget {
 
 // ─── Simple lifecycle commands: start / stop / pause / reset ──────────────────
 // Each writes a single control tag (default tagKey 'cmd_<verb>'; overridable).
+// doc 81 Đợt 1D Task 2 — EXCEPT `stop` on an adapter with pinned stop tags: it writes exactly the pinned
+// (tagKey, value) pairs (the `tagKey` override is ignored), so the dispatcher can treat it as a pinned stop.
+
+/**
+ * doc 81 Đợt 1D Task 2 — the pinned stop writes of `adapterId` (ALL its pins, in tagKey order), or null when the
+ * adapter has none OR the pins cannot be read ⇒ today's behaviour (the dispatcher re-reads the pins itself and a
+ * read failure there is never an exemption). Used by BOTH plan() (execute + propose-time binding) and preview().
+ */
+async function pinnedStopWrites(adapterId: number): Promise<Array<{ tagKey: string; value: unknown }> | null> {
+  const db = await getDb();
+  if (!db) return null;
+  try {
+    const pins = await loadStopPins(db, adapterId);
+    return pins.length > 0 ? pins.map((pin) => ({ tagKey: pin.tagKey, value: pin.value })) : null;
+  } catch (err) {
+    console.warn(`[machine_stop] pinned stop tags of adapter ${adapterId} could not be read — using the default stop tag:`, (err as Error)?.message || err);
+    return null;
+  }
+}
+
+const listWrites = (writes: Array<{ tagKey: string; value: unknown }>) => writes.map((x) => `${x.tagKey}=${String(x.value)}`).join(", ");
 
 interface LifecycleCfg {
   name: string;
@@ -210,12 +232,14 @@ for (const cfg of lifecycle) {
     .strict();
   type P = z.infer<typeof params>;
 
-  const plan = async (p: P): Promise<OtPlan> => ({
-    machineId: p.machineId,
-    adapterId: await adapterIdForMachine(p.machineId),
-    commandType: cfg.verb,
-    writes: [{ tagKey: p.tagKey ?? cfg.defaultTag, value: true }],
-  });
+  const plan = async (p: P): Promise<OtPlan> => {
+    const adapterId = await adapterIdForMachine(p.machineId);
+    if (cfg.verb === "stop") {
+      const pinned = await pinnedStopWrites(adapterId);
+      if (pinned) return { machineId: p.machineId, adapterId, commandType: cfg.verb, writes: pinned };
+    }
+    return { machineId: p.machineId, adapterId, commandType: cfg.verb, writes: [{ tagKey: p.tagKey ?? cfg.defaultTag, value: true }] };
+  };
 
   const summarize = (p: P, lang: ToolLang) =>
     w(lang, `Gửi lệnh ${cfg.descVi} máy #${p.machineId}.`, `Send ${cfg.verb} command to machine #${p.machineId}.`, `向机器 #${p.machineId} 发送 ${cfg.verb} 命令。`);
@@ -229,6 +253,29 @@ for (const cfg of lifecycle) {
     requiredPermission: { module: "machine_control", action: "canCreate" },
     summarize,
     preview: async (p, ctx): Promise<ActionPreview> => {
+      if (cfg.verb === "stop") {
+        // doc 81 Đợt 1D Task 2 — show the human EXACTLY what a pinned stop will write (it is what gets bound).
+        const r0 = await resolveTarget(p.machineId, null, ctx.lang);
+        const pinned = r0.adapterId != null ? await pinnedStopWrites(r0.adapterId) : null;
+        if (pinned) {
+          const list = listWrites(pinned);
+          r0.warnings.push(
+            w(
+              ctx.lang,
+              `Máy có tag DỪNG đã ghim — lệnh gửi đúng các giá trị ghim: ${list}.${p.tagKey ? ` Tag "${p.tagKey}" bị bỏ qua.` : ""}`,
+              `This machine has pinned stop tags — the command writes exactly the pinned values: ${list}.${p.tagKey ? ` Tag "${p.tagKey}" is ignored.` : ""}`,
+              `该机器已固定停止标签 — 命令只写入固定值：${list}。${p.tagKey ? `标签 "${p.tagKey}" 被忽略。` : ""}`,
+            ),
+          );
+          return {
+            entityType: "machine",
+            entityId: p.machineId,
+            changes: [{ field: cfg.verb, oldValue: null, newValue: list, displayName: cfg.verb }],
+            warnings: r0.warnings,
+            humanSummary: summarize(p, ctx.lang),
+          };
+        }
+      }
       const tagKey = p.tagKey ?? cfg.defaultTag;
       const r = await resolveTarget(p.machineId, tagKey, ctx.lang);
       return {

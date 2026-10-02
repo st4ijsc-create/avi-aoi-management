@@ -75,7 +75,8 @@ vi.mock("../../db/connection", () => ({ getDb: vi.fn(async () => makeFakeDb()) }
 vi.mock("../../../drizzle/schema", () => ({
   aiPendingActions: { __table: "ai_pending_actions", id: { __name: "id" }, status: { __name: "status" }, userId: { __name: "userId" }, tool: { __name: "tool" } },
   deviceAdapters: { __table: "device_adapters", id: { __name: "id" }, machineId: { __name: "machineId" }, isEnabled: { __name: "isEnabled" } },
-  deviceTags: { __table: "device_tags", id: { __name: "id" }, adapterId: { __name: "adapterId" }, tagKey: { __name: "tagKey" }, dataType: { __name: "dataType" }, scale: { __name: "scale" }, offset: { __name: "offset" } },
+  // doc 81 Đợt 1D Task 2 — + isEnabled/writable/stopValue: loadStopPins filters on them.
+  deviceTags: { __table: "device_tags", id: { __name: "id" }, adapterId: { __name: "adapterId" }, tagKey: { __name: "tagKey" }, dataType: { __name: "dataType" }, scale: { __name: "scale" }, offset: { __name: "offset" }, isEnabled: { __name: "isEnabled" }, writable: { __name: "writable" }, stopValue: { __name: "stopValue" } },
   commandLog: { __table: "command_log", id: { __name: "id" }, idempotencyKey: { __name: "idempotencyKey" }, status: { __name: "status" } },
   interlockRules: { __table: "interlock_rules", id: { __name: "id" } },
   interlockEvents: { __table: "interlock_events", id: { __name: "id" } },
@@ -88,9 +89,17 @@ vi.mock("../auditTrailService", () => ({
 }));
 
 const writeTagsSpy = vi.fn(async (writes: any[]) => writes.map((w) => ({ tagKey: w.tagKey, ok: true })));
-vi.mock("./otManager", () => ({
-  getActiveDriver: vi.fn((_id: number) => ({ isConnected: () => true, writeTags: (...a: any[]) => (writeTagsSpy as any)(...a) })),
-}));
+vi.mock("./otManager", async () => {
+  const { adapterTargetFingerprint } = await import("./adapterTarget");
+  return {
+    getActiveDriver: vi.fn((_id: number) => ({ isConnected: () => true, writeTags: (...a: any[]) => (writeTagsSpy as any)(...a) })),
+    // doc 81 Đợt 1D final wave 1 (R-1D-k) — the running connection was made for the adapter row as it stands (no re-point).
+    getActiveConnectionFingerprint: vi.fn((id: number) => {
+      const a = adapters.find((x) => x.id === id);
+      return a ? adapterTargetFingerprint(a as any) : undefined;
+    }),
+  };
+});
 
 // Interlock gate always passes → isolates the safety preflight behaviour.
 vi.mock("../interlock/interlockGate", () => ({
@@ -245,7 +254,10 @@ describe("R-1C-g — OT stop/e_stop bị preflight từ chối ⇒ nói thẳng 
     expect(r.status).toBe("rejected");
     expect(r.reason).toBe(code); // mã cũ, không enum mới
     expect(writeTagsSpy).not.toHaveBeenCalled();
-    expect(r.appError).toEqual({ appCode: "OPERATION_FAILED", appParams: { operation: "softwareStop", reason: "softwareStopRefusedUseHardwareEstop" } });
+    // doc 81 Đợt 1D Task 2 — + stopPinReason: this adapter has NO pinned stop tag ⇒ "no_pins".
+    expect(r.appError).toEqual({ appCode: "OPERATION_FAILED", appParams: { operation: "softwareStop", reason: "softwareStopRefusedUseHardwareEstop", stopPinReason: "no_pins" } });
+    expect(r.pinnedStop).toBe(false);
+    expect(r.message).toMatch(/no stop tag is pinned for this machine/);
     expect(r.message).toMatch(/software stop was REFUSED/i);
     expect(r.message).toMatch(/hardware E-STOP/);
     expect(r.message).not.toMatch(TEN_BIEN_MOI_TRUONG);
@@ -279,6 +291,50 @@ describe("R-1C-g — OT stop/e_stop bị preflight từ chối ⇒ nói thẳng 
     expect(reason).toMatch(/E-STOP/);
     expect(reason).not.toMatch(TEN_BIEN_MOI_TRUONG);
     expect(op).not.toMatch(TEN_BIEN_MOI_TRUONG);
+  });
+});
+
+// ── doc 81 Đợt 1D Task 2 — stop GHIM qua preflight; stop không ghim mang stopPinReason ──────────────────────────
+describe("Đợt 1D Task 2 — preflight với tag DỪNG ghim", () => {
+  const pinStop = (value: unknown) => {
+    const t = tags.find((x) => x.tagKey === "cmd_start")!;
+    t.stopValue = value; // tag bool ghim làm tag dừng (tên tag không quan trọng — dữ liệu quyết định)
+  };
+  const stopCmd = (commandType: string, writes: Array<{ tagKey: string; value: unknown }>) => {
+    const input = baseInput({ commandType, writes, idempotencyKey: `key-${commandType}-${JSON.stringify(writes)}` });
+    pending.set("act-1", boundPending("act-1", input));
+    return input;
+  };
+
+  it.each(["BLOCKED", "UNKNOWN"] as const)("stop ghi đúng ghim + safety %s ⇒ acked, preflight KHÔNG được hỏi, driver nhận giá trị ghim", async (state) => {
+    pinStop(true);
+    safetyState = state;
+    const r = await dispatch(stopCmd("stop", [{ tagKey: "cmd_start", value: 1 }]));
+    expect(r.status).toBe("acked");
+    expect(r.pinnedStop).toBe(true);
+    expect(getSafetyStatusSpy).not.toHaveBeenCalled();
+    expect(writeTagsSpy).toHaveBeenCalledTimes(1);
+    expect((writeTagsSpy.mock.calls[0] as any[])[0].map((w: any) => [w.tagKey, w.value])).toEqual([["cmd_start", true]]);
+  });
+
+  it("stop ghi giá trị KHÁC ghim ⇒ preflight chạy, từ chối, stopPinReason value_mismatch, ledger ackValue pinnedStop:false", async () => {
+    pinStop(false);
+    safetyState = "UNKNOWN";
+    const r = await dispatch(stopCmd("stop", [{ tagKey: "cmd_start", value: true }]));
+    expect(r.reason).toBe("SAFETY_UNKNOWN");
+    expect(r.appError?.appParams).toMatchObject({ stopPinReason: "value_mismatch" });
+    expect(getSafetyStatusSpy).toHaveBeenCalledTimes(1);
+    expect(writeTagsSpy).not.toHaveBeenCalled();
+    expect(resultRows(cmdLog)[0].ackValue).toEqual({ pinnedStop: false, stopPinReason: "value_mismatch" });
+  });
+
+  it("lệnh KHÔNG phải stop với đúng tag+giá trị ghim ⇒ preflight vẫn chạy, ledger KHÔNG mang ackValue mới (byte-identical)", async () => {
+    pinStop(true);
+    safetyState = "UNKNOWN";
+    const r = await dispatch(baseInput());
+    expect(r.reason).toBe("SAFETY_UNKNOWN");
+    expect(r.pinnedStop).toBeUndefined();
+    expect(resultRows(cmdLog)[0].ackValue).toBeUndefined();
   });
 });
 

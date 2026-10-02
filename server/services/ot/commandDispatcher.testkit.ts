@@ -52,6 +52,8 @@ export function makeLedgerFakeDb(opts: {
           return {
             limit: async (n = 1) => rows().slice(0, n),
             for: async (_mode: string) => rows(),
+            // doc 81 Đợt 1D Task 2 — loadStopPins (…where(…).orderBy(tagKey)); order is irrelevant to the suites.
+            orderBy: async (..._cols: unknown[]) => rows(),
             then: (res: (v: Row[]) => unknown, rej?: (e: unknown) => unknown) => Promise.resolve(rows()).then(res, rej),
           };
         },

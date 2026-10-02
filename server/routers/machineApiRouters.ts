@@ -63,6 +63,7 @@ import { taoDemMayTuMauThuan } from "../services/mayTuMauThuan";
 // ở mọi điểm ingest. `mocDoTuChuoi` (BG-97, chỗ ở CŨ của luật này) đã XOÁ — hết caller
 // sản xuất sau khi Task 5 đổi neo spec-gate sang mốc-nhận-server (xem `submitInspectionTreeV2`).
 import { coMuiGioTuongMinh, docGioMay } from "../utils/factoryTime";
+import { requireTimeOffset, TimeOffsetRequiredError } from "../utils/timeOffsetPolicy";
 // Doc 27 W2-C (C7/M4): per-machine credential auth + ingest rate limit.
 import {
   authenticateMachine,
@@ -341,37 +342,14 @@ function clockSkewWarnSeconds(): number {
 }
 
 /**
- * ENFORCEMENT flag — DEFAULT TRUE in code (2026-09-28). ON ⇒ an inspectionTime
- * without an explicit UTC offset is a BAD_REQUEST carrying appError INVALID_VALUE
- * {field:"inspectionTime", reason:"timeOffsetRequired"}. Only an explicit
- * false/0/off/no turns it OFF ⇒ accepted and TAGGED timeSource='machine_naive'.
+ * ENFORCEMENT flag — DEFAULT TRUE in code (2026-09-28). Definition + coded error MOVED to
+ * `../utils/timeOffsetPolicy` (doc 81 Đợt 1D Task 4) so the v2.0 tree contract
+ * (`machineDataContractV2`, shared by this router AND the ZIP `aoiPackage.commit`) reads the SAME
+ * flag for `completedAt`/`startedAt`. Re-exported here: existing callers/tests import it from this
+ * module. `TimeOffsetRequiredError("inspectionTime", …)` keeps the exact message/appParams the
+ * former `InspectionTimeOffsetRequiredError` produced.
  */
-export function requireTimeOffset(env: NodeJS.ProcessEnv = process.env): boolean {
-  const v = String(env.INGEST_REQUIRE_TIME_OFFSET ?? "").trim().toLowerCase();
-  return !(v === "false" || v === "0" || v === "off" || v === "no");
-}
-
-/**
- * Lỗi "inspectionTime thiếu múi giờ" MANG MÃ. Ném (không `ctx.addIssue`) từ trong
- * `refineInspectionTime`: zod không nuốt exception của refinement, `createInputMiddleware`
- * của tRPC bọc nó ĐÚNG MỘT cấp thành TRPCError BAD_REQUEST với `cause` = lỗi này ⇒
- * `readAppErrorMeta(err)` (đọc `err.cause.appCode`) thấy mã — cùng khuôn `DbUnavailableError`
- * (`_core/dbErrors.ts`). Một `appError()` (TRPCError) ném ở đây sẽ bị bọc thành HAI cấp và
- * mất mã (xem ghi chú ở `operatorBadgeRouter.ts`). Câu chữ mang `time_offset_required` vì
- * cửa REST máy chỉ trả `message`, không trả `shape.data.appCode`.
- */
-class InspectionTimeOffsetRequiredError extends Error {
-  readonly appCode = "INVALID_VALUE" as const;
-  readonly appParams = { field: "inspectionTime", reason: "timeOffsetRequired" } as const;
-  constructor(value: string) {
-    super(
-      `time_offset_required: inspectionTime must carry an explicit UTC offset ` +
-        `(e.g. 2026-07-15T08:00:00+07:00 or ...Z) — got "${value}", which the server can only ` +
-        `interpret in its OWN timezone. (INGEST_REQUIRE_TIME_OFFSET is on by default.)`,
-    );
-    this.name = "InspectionTimeOffsetRequiredError";
-  }
-}
+export { requireTimeOffset };
 
 // ════════════════════════════════════════════════════════════════════════════
 // Doc 51 P2 flags (QĐ#1 — every behavioural change carries a flag + a
@@ -1024,10 +1002,10 @@ function refineInspectionTime(
   }
   // (2) EXPLICIT UTC OFFSET — DEFAULT ON since 2026-09-28 (owner decision; explicit
   //     INGEST_REQUIRE_TIME_OFFSET=false restores accept + tag 'machine_naive').
-  //     THROWN, not addIssue: see InspectionTimeOffsetRequiredError — this is what
-  //     makes the rejection carry an appError code the client can translate.
+  //     THROWN, not addIssue: see TimeOffsetRequiredError (utils/timeOffsetPolicy) — this
+  //     is what makes the rejection carry an appError code the client can translate.
   if (requireTimeOffset() && !hasExplicitUtcOffset(data.inspectionTime)) {
-    throw new InspectionTimeOffsetRequiredError(data.inspectionTime);
+    throw new TimeOffsetRequiredError("inspectionTime", data.inspectionTime);
   }
 }
 

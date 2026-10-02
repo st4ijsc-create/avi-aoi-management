@@ -290,7 +290,14 @@ const MIEN_TRU_VAN_HANH: readonly string[] = [
  *   Không thủ tục nào bị gỡ khỏi `MIEN_TRU_VAN_HANH` — không mục nào phân loại sai. `tong` 2290 trùng ĐÚNG
  *   `phamViDocCensus.test.ts#GHIM.tong` (2290) — hai bộ suy độc lập vẫn đếm cùng một dân số.
  */
-const GHIM = { tong: 2290, beMatAi: 367, aiCoCong: 305, aiMienTru: 62, ngoaiAiCoCong: 0 } as const;
+/*
+ * ★ 2026-09-28 doc 81 Đợt 1D Task 1 (ghim tag/giá trị DỪNG theo tag OT) — **tong 2290 → 2291, ghim lại ô
+ *   `tong`** (ô này xanh từ final wave 5 ⇒ ghim đúng một đơn vị, có tên): đúng MỘT thủ tục MỚI
+ *   `deviceAdapter.tags.setStopPin` (mutation, sàn `protectedProcedure` + `requirePermission(
+ *   "machine_control","canEdit")`, `module = null`, không phải bề mặt AI). beMatAi/aiCoCong/aiMienTru/
+ *   ngoaiAiCoCong và `GHIM_MODULE_KHAC` KHÔNG đổi. `tong` 2291 trùng `phamViDocCensus.test.ts#GHIM.tong`.
+ */
+const GHIM = { tong: 2291, beMatAi: 367, aiCoCong: 305, aiMienTru: 62, ngoaiAiCoCong: 0 } as const;
 
 /**
  * ★★ Dân số cổng của **các module KHÁC** — chiều thứ hai của "không hồi quy".

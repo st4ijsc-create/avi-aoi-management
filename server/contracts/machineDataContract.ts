@@ -11,6 +11,7 @@
 import { z } from "zod";
 import { createHash } from "node:crypto";
 import { machineDataContractV2, type MachineDataContractV2 } from "./machineDataContractV2";
+import { TimeOffsetRequiredError } from "../utils/timeOffsetPolicy";
 
 // ── v1: phản ánh hợp đồng submitInspection hiện hành (tập ổn định) ──────────
 const measurementV1 = z.object({
@@ -175,7 +176,18 @@ export function validateMachinePayload(version: string, payload: unknown): Valid
   if (!schema) {
     return { ok: false, version, errors: [{ path: "", message: `Unknown contract version: ${version}` }] };
   }
-  const r = schema.safeParse(payload);
+  // doc 81 Đợt 1D final wave 3 (M2) — refinement mốc thời gian gói NÉM `TimeOffsetRequiredError` (cần ném để tRPC giữ
+  // mã, xem timeOffsetPolicy.ts) khi INGEST_REQUIRE_PACKAGE_TIME_OFFSET bật: ở công cụ tự kiểm này nó thành MỘT mục báo
+  // cáo, không phải 500. Lỗi khác vẫn ném (không nuốt).
+  let r: ReturnType<typeof schema.safeParse>;
+  try {
+    r = schema.safeParse(payload);
+  } catch (e) {
+    if (e instanceof TimeOffsetRequiredError) {
+      return { ok: false, version, errors: [{ path: e.field, message: e.message }] };
+    }
+    throw e;
+  }
   if (r.success) return { ok: true, version };
   return {
     ok: false,

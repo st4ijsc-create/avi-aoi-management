@@ -24,9 +24,13 @@ const fake = vi.hoisted(() => {
     p.where = () => p;
     p.orderBy = () => p;
     p.limit = () => p;
+    p.for = () => p; // doc 81 Đợt 1D Task 1 fix round 1 — apply khoá tag của adapter (FOR UPDATE)
     return p;
   }
   const tx = {
+    // doc 81 Đợt 1D Task 1 fix round 1 — SELECT … FOR UPDATE các tag hiện có (luật ghim DỪNG); fake: không
+    // tag nào đang ghim ⇒ đường ghim không chạy (có test DB riêng: mappingAsCode.stopPin.dot1d.db.test.ts).
+    select: (_cols?: unknown) => chain([]),
     insert: (table: unknown) => ({
       values: (values: Record<string, unknown>) => ({
         onConflictDoUpdate: async (cfg: { set: Record<string, unknown> }) => {

@@ -762,6 +762,43 @@ function CommissioningRow({ adapter, onManage }: { adapter: AdapterLite; onManag
   );
 }
 
+/**
+ * doc 81 Đợt 1D Task 3 / final wave 3 (M8) — pinned STOP tags shown to the commissioning signer. `unreadable` ⇒ the
+ * server could not read them: the panel says so instead of looking like "no pins". Exported for a DOM test.
+ */
+export function PinnedStopTagsPanel({
+  pinnedStopTags,
+  unreadable,
+}: {
+  pinnedStopTags: ReadonlyArray<{ tagKey: string; value: unknown }>;
+  unreadable: boolean;
+}) {
+  const { t } = useTranslation();
+  return (
+    <>
+      {unreadable && (
+        <div role="alert" className="rounded-md border border-warning/30 bg-warning/10 p-2 text-xs text-warning">
+          {t("systemHealth.comm.pin.unreadable", "Tag DỪNG đã ghim: không đọc được — soát lại ở màn Device Adapter trước khi ký.")}
+        </div>
+      )}
+      {pinnedStopTags.length > 0 && (
+        <div className="rounded-md border bg-muted/20 p-2 text-xs">
+          <div className="mb-1 font-medium">
+            {t("systemHealth.comm.pin.title", "Tag DỪNG đã ghim ({{count}})", { count: pinnedStopTags.length })}
+          </div>
+          <ul className="space-y-0.5">
+            {pinnedStopTags.map((p) => (
+              <li key={p.tagKey} className="font-mono">
+                {t("systemHealth.comm.pin.row", "{{tagKey}} = {{value}}", { tagKey: p.tagKey, value: String(p.value) })}
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+    </>
+  );
+}
+
 /** Records ledger for one adapter + create (sign) + revoke. */
 function CommissioningRecordsDialog({
   adapter, canCreate, canDelete, onClose,
@@ -775,6 +812,14 @@ function CommissioningRecordsDialog({
   const utils = trpc.useUtils();
   const recordsQuery = trpc.commissioning.list.useQuery({ adapterId: adapter.id });
   const records = recordsQuery.data ?? [];
+  // doc 81 Đợt 1D Task 3 (controller addition) — người ký commissioning phải THẤY các tag
+  // DỪNG đã ghim của adapter TRƯỚC khi ký/thu hồi: lệnh DỪNG ghi đúng các cặp này được
+  // MIỄN preflight an toàn (server/services/ot/commandDispatcher.ts), nên đây là đúng thứ
+  // "còn phải soát" khi commissioningRecheckRequired đã báo ở màn Device Adapter (Task 3).
+  const pinStatusQuery = trpc.commissioning.status.useQuery({ adapterId: adapter.id });
+  const pinnedStopTags = pinStatusQuery.data?.pinnedStopTags ?? [];
+  // final wave 3 (M8) — the server could not read the pins: say so (never show "no pins" when unknown).
+  const pinnedStopTagsUnreadable = pinStatusQuery.data?.pinnedStopTagsUnreadable === true;
 
   const [fatReference, setFatReference] = useState("");
   const [expiresAt, setExpiresAt] = useState("");
@@ -828,6 +873,8 @@ function CommissioningRecordsDialog({
             {t("systemHealth.comm.dialogDesc", "Ký duyệt FAT (tạo bản ghi active) hoặc thu hồi. Ghi thật chỉ được phép khi có bản ghi active còn hạn.")}
           </DialogDescription>
         </DialogHeader>
+
+        <PinnedStopTagsPanel pinnedStopTags={pinnedStopTags} unreadable={pinnedStopTagsUnreadable} />
 
         <div className="max-h-[300px] overflow-y-auto rounded-md border">
           <Table>

@@ -94,6 +94,9 @@ import { taoDemMayTuMauThuan } from "../services/mayTuMauThuan";
 // ở mọi điểm ingest. `mocDoTuChuoi` (BG-97, chỗ ở CŨ của luật này) đã XOÁ — hết caller
 // sản xuất sau khi Task 5 đổi neo spec-gate của cửa ZIP sang `inspection_packages.createdAt`.
 import { docGioMay } from "../utils/factoryTime";
+// doc 81 Đợt 1D Task 4 — lỗi có mã "thiếu múi giờ" (completedAt/startedAt của meta.json) do
+// superRefine gốc của `machineDataContractV2` ném; khối `catch` của `commit` đổi nó sang appError.
+import { TimeOffsetRequiredError } from "../utils/timeOffsetPolicy";
 import type { ResultVerdict } from "@shared/rollupVerdict";
 // Lô 4 Mục 3 (BG-36) — đường ĐỌC dead-letter WAL (phạm vi ĐỌC-only, xem docblock
 // đầu `deadLetterReader.ts`). `requirePermission` CÙNG cổng `admin_system`/`canView`
@@ -1895,6 +1898,26 @@ export const aoiPackageRouter = router({
               { operation: "processAoiPackage" },
               `Gói ${pkg.packageId} đã bị đánh dấu HỎNG VĨNH VIỄN sau ${soLanLoiVinhVien} lần lỗi không thể ` +
                 `phục hồi (lỗi gần nhất: ${err.message}) — Agent KHÔNG được thử lại gói này nữa.`,
+            );
+          }
+
+          // ★★★ doc 81 Đợt 1D Task 4 (ruling R-1D-j) — `completedAt`/`startedAt` thiếu múi giờ
+          // (cờ INGEST_REQUIRE_PACKAGE_TIME_OFFSET, MẶC ĐỊNH TẮT — chỉ khi BẬT) bị
+          // `metaJsonSchema.parse(metaRaw)` ném `TimeOffsetRequiredError` (bộ dựng trường
+          // `mocThoiGianMay` của hợp đồng v2.0) — TRƯỚC mọi lượt ghi bo/cây/ảnh/committed. MỌI
+          // lỗi parse KHÁC giữ nguyên OPERATION_FAILED như trước (nhánh dưới). Parse này nằm TRONG thân `commit` (không phải
+          // `.input()`), nên tRPC không tự bọc mã: trả ĐÚNG lỗi có mã mà cửa trực tiếp và
+          // `inspectionTime` dùng (BAD_REQUEST · INVALID_VALUE {field, reason}), thay vì
+          // OPERATION_FAILED chung ở dưới. Lỗi này KHÔNG đếm vào ngưỡng 'dead' (Error thường ⇒ tạm
+          // thời, cùng lý lẽ BG-73): tắt cờ phía server hoặc máy gửi kèm múi giờ là commit lại được.
+          if (err instanceof TimeOffsetRequiredError) {
+            throw appError(
+              "BAD_REQUEST",
+              "INVALID_VALUE",
+              err.field === "startedAt"
+                ? { field: "startedAt", reason: "timeOffsetRequired" }
+                : { field: "completedAt", reason: "timeOffsetRequired" },
+              err.message,
             );
           }
 

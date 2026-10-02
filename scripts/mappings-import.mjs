@@ -17,6 +17,10 @@
  *   - Import KHÔNG tạo adapter, KHÔNG đổi machineId/endpoint, KHÔNG restart
  *     adapter — nếu tag đổi, tự restart adapter/app theo quy trình vận hành.
  *   - Apply chạy trong MỘT transaction (sql.begin) — nửa vời thì rollback.
+ *   - doc 81 Đợt 1D Task 1 fix round 2 — GHIM DỪNG (device_tags.stop_value, mig 0362): khoá tag của adapter
+ *     (FOR UPDATE); tag đang ghim mà file đổi nghĩa (address/datatype/scale/offset), thôi writable, tắt, hoặc
+ *     bị --prune ⇒ gỡ ghim + audit control_audit_log/audit_logs trong CÙNG transaction (scripts/lib/
+ *     stopPinCli.mjs, khớp server/services/ot/stopPin.ts). Import không bao giờ ĐẶT ghim.
  *
  * Exit code: 0 = OK (kể cả dry-run có diff); 1 = lỗi (validate/version/DB).
  * LƯU Ý: validate/diff phải khớp server/services/ot/mappingAsCode.ts.
@@ -25,6 +29,7 @@ import fs from 'fs';
 import path from 'path';
 import crypto from 'crypto';
 import { fileURLToPath } from 'url';
+import { lyDoGoStopPinCli, goStopPinCliTx } from './lib/stopPinCli.mjs';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -294,7 +299,14 @@ try {
   }
 
   // ── apply: MỘT transaction ────────────────────────────────────────────────
+  const secPlatform = process.env.SEC_PLATFORM === 'true' || process.env.SEC_PLATFORM === '1';
+  const goGhim = [];
   await sql.begin(async (tx) => {
+    // doc 81 Đợt 1D fix round 2 — khoá mọi tag của adapter, đọc lại ghim TRÊN hàng đã khoá.
+    const khoa = await tx`
+      SELECT id, "adapterId", "tagKey", address, "dataType", scale, "offset", writable, "isEnabled", stop_value
+      FROM device_tags WHERE "adapterId" = ${adapter.id} FOR UPDATE`;
+    const khoaTheoKey = new Map(khoa.map((r) => [r.tagKey, r]));
     for (const t of [...tagCreates, ...tagUpdates.map((u) => u.t)]) {
       await tx`
         INSERT INTO device_tags ("adapterId", "tagKey", address, "dataType", unit, scale, "offset", writable, "isEnabled", deadband, "samplingMs", "updatedAt")
@@ -305,10 +317,17 @@ try {
           scale = EXCLUDED.scale, "offset" = EXCLUDED."offset", writable = EXCLUDED.writable,
           "isEnabled" = EXCLUDED."isEnabled", deadband = EXCLUDED.deadband, "samplingMs" = EXCLUDED."samplingMs",
           "updatedAt" = NOW()`;
+      const cu = khoaTheoKey.get(t.name);
+      const nguon = cu ? lyDoGoStopPinCli(cu, t) : null;
+      if (cu && nguon) goGhim.push(await goStopPinCliTx(tx, { row: cu, nguon, secPlatform }));
     }
     if (PRUNE) {
       for (const k of tagDeletes) {
         await tx`DELETE FROM device_tags WHERE "adapterId" = ${adapter.id} AND "tagKey" = ${k}`;
+        const cu = khoaTheoKey.get(k);
+        if (cu && cu.stop_value !== null && cu.stop_value !== undefined) {
+          goGhim.push(await goStopPinCliTx(tx, { row: cu, nguon: 'tag_deleted', xoa: true, secPlatform }));
+        }
       }
     }
 
@@ -349,6 +368,7 @@ try {
   });
 
   console.log(`\n[APPLIED] tags: +${tagCreates.length} ~${tagUpdates.length} -${PRUNE ? tagDeletes.length : 0} | uns: +${unsCreates.length} ~${unsUpdates.length} -${PRUNE ? unsDeletes.length : 0}`);
+  for (const g of goGhim) console.log(`[STOP-PIN] gỡ ghim DỪNG của tag "${g.tagKey}" (${g.nguon}) — đã ghi audit; ghim lại qua UI nếu vẫn cần.`);
   if (tagWrites > 0) {
     console.log('[NOTE] device_tags đã đổi — adapter chỉ nhận tag-set mới ở lần (re)connect kế; restart adapter/app theo quy trình vận hành.');
   }

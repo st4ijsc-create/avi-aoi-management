@@ -3979,7 +3979,10 @@
       "rollbackRecipeVersion": "roll back recipe version"
     },
     "field": {
+      "stopValue": "pinned stop value (stopValue)",
       "inspectionTime": "inspection time (inspectionTime)",
+      "completedAt": "completion time (completedAt)",
+      "startedAt": "start time (startedAt)",
       "clientId": "MQTT device",
       "changeReason": "change reason",
       "reason": "reason",
@@ -4231,6 +4234,8 @@
       "ros2JobMessageRequired": "The ROS2 command carries no message of its own — nothing was published."
     },
     "reason": {
+      "stopPinTagNotWritable": "A stop value can only be pinned on a tag that is ENABLED and WRITABLE. Make the tag writable and enabled first, then pin it again.",
+      "stopPinTypeMismatch": "The stop value does not match the tag data type: a bool tag needs true/false (or 1/0), an int tag a whole number, a float tag a number, a string tag text; json tags cannot be pinned.",
       "softwareStopRefusedUseHardwareEstop": "The software stop was REFUSED: the safety check could not confirm the safety PLC (unreadable, simulation only, or tripped), so the platform did NOT send this stop. Use the hardware E-STOP on the machine now.",
       "timeOffsetRequired": "The timestamp must carry an explicit time zone (Z or +07:00) — a timestamp without one is rejected because the server cannot tell which clock it refers to.",
       "mqttDeviceRejectedCredential": "This device was REJECTED — a rejected device cannot be issued a password. Approve the device first.",
@@ -4315,6 +4320,16 @@
       "recipeArchived": "This recipe version is archived — create a new version instead of putting an archived one into production.",
       "recipeMachineTypeMismatch": "This recipe is for a different machine type than the target machine — it cannot be deployed there.",
       "recipeRetired": "This version was deliberately archived (not just replaced by a newer one), or there is no record of it ever being replaced — it cannot be rolled back to. Create a new version instead."
+    },
+    "stopPinReason": {
+      "no_pins": "No stop tag is pinned for this machine — use the hardware E-STOP.",
+      "empty_writes": "The stop command carried no tag writes — use the hardware E-STOP.",
+      "unpinned_tag": "The stop command writes a tag that is not a pinned stop tag — use the hardware E-STOP.",
+      "value_mismatch": "The stop command writes a value different from the pinned stop value — use the hardware E-STOP.",
+      "duplicate_tag": "The stop command writes the same tag more than once — use the hardware E-STOP.",
+      "pin_load_failed": "The pinned stop tag configuration could not be read — use the hardware E-STOP.",
+      "pin_tag_changed": "The pinned stop tag changed while the command was being checked — use the hardware E-STOP.",
+      "adapter_connection_stale": "The running connection was opened for a different device than the adapter's current settings (the adapter was changed but not reconnected) — use the hardware E-STOP."
     },
     "client": {
       "generic": "System error, please try again",
@@ -15625,6 +15640,33 @@
     "tagsTitle": "Adapter tags",
     "test": "Test",
     "testConn": "Test connection",
+    "stopPin": {
+      "chip": "Stop tag: {{value}}",
+      "editTag": "Edit stop pin",
+      "writableOnly": "Only a WRITABLE tag (and not the json type) can have a pinned stop value.",
+      "title": "Software stop tag",
+      "warning": "This value will be written when a STOP command is issued, even if the safety PLC cannot be read. A wrong value = a stop command could START the machine.",
+      "enable": "Pin a stop value",
+      "value": "Value on STOP",
+      "selectValue": "Choose a value…",
+      "reason": "Reason (at least 5 characters)",
+      "save": "Save pin",
+      "toast": {
+        "saved": "Stop pin saved",
+        "recheckCommissioning": "This adapter is commissioned — recheck its commissioning after changing a pin (see the sign-off log under System Health).",
+        "autoCleared": "The STOP pin of this tag was removed."
+      },
+      "error": {
+        "intRequired": "An int tag needs a WHOLE number — the value is never rounded.",
+        "numberRequired": "A valid number is required.",
+        "stringWhitespace": "The value has leading/trailing spaces — a pin is saved EXACTLY as typed, so remove the extra spaces."
+      },
+      "confirmOff": {
+        "title": "Remove the STOP pin?",
+        "body": "This tag has a pinned STOP value; turning this off removes the pin.",
+        "confirm": "Turn off and remove pin"
+      }
+    },
     "toast": {
       "connFail": "Connection failed: {{err}}",
       "connOk": "Connection OK ({{ms}}ms)",
@@ -18068,6 +18110,11 @@
       "manage": "Ledger",
       "noExpiry": "no expiry",
       "noRecords": "No commissioning records yet.",
+      "pin": {
+        "title": "Pinned STOP tags ({{count}})",
+        "row": "{{tagKey}} = {{value}}",
+        "unreadable": "Pinned STOP tags: could not be read — check them on the Device Adapter screen before signing."
+      },
       "rec": {
         "active": "active",
         "expired": "expired",

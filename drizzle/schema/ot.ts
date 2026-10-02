@@ -5,7 +5,7 @@
 //   - deviceAdapters: one configured connection to a PLC/SCADA/device (protocol + endpoint)
 //   - deviceTags:     individual addressable points read from an adapter
 //   - otTelemetry:    time-series samples ingested from tags
-import { pgTable, serial, bigserial, integer, text, timestamp, varchar, decimal, boolean, doublePrecision, json, jsonb, index, unique, uniqueIndex } from "drizzle-orm/pg-core"; // `unique` used by deviceTags composite key; `uniqueIndex` used by the partial active-recipe index
+import { pgTable, serial, bigserial, integer, text, timestamp, varchar, decimal, boolean, doublePrecision, json, jsonb, index, unique, uniqueIndex, customType } from "drizzle-orm/pg-core"; // `unique` used by deviceTags composite key; `uniqueIndex` used by the partial active-recipe index
 import { sql } from "drizzle-orm"; // partial-index predicate (WHERE status='active')
 import { otProtocolEnum, otDataTypeEnum, otAdapterStatusEnum, machineTypeEnum, recipeStatusEnum, deploymentStatusEnum, commandStatusEnum, commandTriggerKindEnum, telemetryProtocolEnum, telemetryQualityEnum } from "./enums";
 // W3-A (doc 27 M1, 0180): machineRecipes/recipeDeployments now carry real FKs to machines.
@@ -48,6 +48,27 @@ export type DeviceAdapter = typeof deviceAdapters.$inferSelect;
 export type InsertDeviceAdapter = typeof deviceAdapters.$inferInsert;
 
 /**
+ * doc 81 Đợt 1D Task 1 — cột jsonb cho GIÁ TRỊ DỪNG ghim (vô hướng bool/number/string).
+ *
+ * ⚠ KHÔNG dùng `jsonb()` dựng sẵn của drizzle: postgres-js đã parse jsonb thành giá trị JS, rồi
+ * `PgJsonb.mapFromDriverValue` lại `JSON.parse` MỌI chuỗi ⇒ ghim chuỗi "0" / "1" / "true" đọc ra thành
+ * số / boolean (đo trên _test: ghim "0" của tag string bị `loadStopPins` loại vì đọc ra số 0). Ở đây giá
+ * trị từ driver giữ NGUYÊN; ghi vẫn là JSON.stringify như drizzle (null ⇒ SQL NULL, drizzle không gọi
+ * toDriver cho null).
+ */
+const stopValueJsonb = customType<{ data: boolean | number | string; driverData: unknown }>({
+  dataType() {
+    return "jsonb";
+  },
+  toDriver(value) {
+    return JSON.stringify(value);
+  },
+  fromDriver(value) {
+    return value as boolean | number | string;
+  },
+});
+
+/**
  * Device Tags — các điểm địa chỉ đọc được từ một adapter (1 adapter : N tag).
  */
 export const deviceTags = pgTable("device_tags", {
@@ -72,6 +93,13 @@ export const deviceTags = pgTable("device_tags", {
   samplingMs: integer("samplingMs"),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().notNull(),
+  // ── doc 81 Đợt 1D Task 1 (migration 0362 — additive, nullable) ──────────────
+  // Giá trị DỪNG ghim theo tag (doc 81 §8 QĐ1). NULL = không phải tag dừng. Chỉ đặt/gỡ qua
+  // `deviceAdapter.tags.setStopPin` (canEdit + lý do + audit); chỉ tag writable+enabled. Lệnh DỪNG
+  // OT ghi ĐÚNG các cặp (tagKey, stopValue) này mới được miễn preflight an toàn (services/ot/stopPin.ts).
+  stopValue: stopValueJsonb("stop_value"),
+  stopPinnedBy: varchar("stop_pinned_by", { length: 64 }),
+  stopPinnedAt: timestamp("stop_pinned_at", { withTimezone: true }),
 }, (table) => [
   index("idx_device_tags_adapter").on(table.adapterId),
   unique("uq_device_tags_adapter_key").on(table.adapterId, table.tagKey),

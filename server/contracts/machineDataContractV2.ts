@@ -115,6 +115,49 @@
  * KHÔNG xét `errorDesc` trong bảng "phải có .max()".
  */
 import { z } from "zod";
+import { coMuiGioTuongMinh } from "../utils/factoryTime";
+import { requirePackageTimeOffset, TimeOffsetRequiredError, type TruongThoiGianMay } from "../utils/timeOffsetPolicy";
+
+/**
+ * ★★★ doc 81 Đợt 1D Task 4 — CHỐT CHẶN DUY NHẤT cho múi giờ của `completedAt`/`startedAt` trên cây
+ * v2.0: MỘT bộ dựng trường, dùng cho ĐỦ 8 khai báo (cấp bo + cấp lá position/capture/component;
+ * surface không mang mốc thời gian). `.max(64)` giữ nguyên (Pha 1F Task 6, C-2 ⛔ — census trần thời
+ * gian đọc `ZodString.maxLength` qua lớp `.optional()`, refinement không đổi kiểu lõi).
+ *
+ * Vì sao Ở HỢP ĐỒNG chứ không ở `dichCayKetQua` (translator): hợp đồng này là thứ DUY NHẤT cả hai cửa
+ * cùng parse TRƯỚC mọi lượt ghi — cửa trực tiếp (`submitInspectionRouterInputSchema` →
+ * `machineDataContractV2.parse`, trong `.input()` ⇒ tRPC bọc đúng một cấp thành BAD_REQUEST, KHÔNG
+ * rơi vào WAL) và cửa ZIP (`metaJsonSchema` = `machineDataContractV2.extend({images})`, parse trong thân
+ * `commit`). Translator chạy SAU xác thực + tra bản dạy, trong thân thủ tục: một `Error` ném ở đó bị
+ * tRPC bọc INTERNAL_SERVER_ERROR và bị store-and-forward coi là TẠM THỜI ⇒ vào WAL phát lại mãi. WAL
+ * phát lại (`ensureInspectionWalWired`) gọi `submitInspectionTreeV2` KHÔNG parse lại ⇒ mục đã nhận
+ * trước khi bật cờ không bị chặn hồi tố.
+ *
+ * Vì sao refinement Ở TRƯỜNG chứ không `superRefine` ở object gốc: zod 4.3 cấm `.extend()` GHI ĐÈ
+ * khoá trên object có refinement ("Use `.safeExtend()`") — các census trần chuỗi/thời gian đột biến
+ * hợp đồng bằng đúng `.extend()` ghi đè đó; refinement ở trường không chạm luật ấy.
+ *
+ * Luật "có múi giờ" = `coMuiGioTuongMinh` (nhận `Z`, `±hh:mm`, `±hhmm`, dạng BG-72
+ * `… GMT+0700 (Indochina Time)`). Chuỗi RỖNG/toàn khoảng trắng = vắng (`docGioMay` trả null ⇒ giữ
+ * lối thoát `new Date()` phía server như cũ). Chuỗi vượt trần để `.max(64)` báo `too_big` (không
+ * ném đè). Cờ `INGEST_REQUIRE_PACKAGE_TIME_OFFSET` (ruling R-1D-j) MẶC ĐỊNH TẮT — chỉ `true/1/yes/on`
+ * mới kiểm; TẮT ⇒ không kiểm gì, hành vi cũ byte-identical (trần = UTC qua `docGioMay`). Mặc định
+ * TẮT vì mẫu máy THẬT (InspectProAOI.Hooks) gửi chuỗi TRẦN ở cả bốn cấp. `inspectionTime` (v1.x)
+ * KHÔNG đi qua đây — vẫn `INGEST_REQUIRE_TIME_OFFSET`, mặc định BẬT.
+ * THROW (không `ctx.addIssue`): xem docblock `TimeOffsetRequiredError`.
+ */
+const TRAN_MOC_THOI_GIAN = 64;
+function mocThoiGianMay(truong: Exclude<TruongThoiGianMay, "inspectionTime">) {
+  return z
+    .string()
+    .max(TRAN_MOC_THOI_GIAN)
+    .superRefine((v) => {
+      if (!requirePackageTimeOffset()) return;
+      if (v.trim().length === 0 || v.length > TRAN_MOC_THOI_GIAN) return;
+      if (!coMuiGioTuongMinh(v)) throw new TimeOffsetRequiredError(truong, v);
+    })
+    .optional();
+}
 
 // ── Cấp 0: định danh trạm (HookStation, HookContracts.cs:107-114) ───────────
 // .max(200) — VỆ SINH, KHÔNG khớp cột nào (xem "Vòng sửa 3" ở đầu file): cả bảy
@@ -172,8 +215,8 @@ const componentV2 = z.object({
   // không phải `varchar` — `22001` không áp dụng. Pha 1F Task 6 (C-2 ⛔): nới
   // từ .max(40) — DateTime.ToString() mặc định dài tới 50 ký tự vẫn là ngày
   // hợp lệ, xem docblock đầu file.
-  startedAt: z.string().max(64).optional(),
-  completedAt: z.string().max(64).optional(),
+  startedAt: mocThoiGianMay("startedAt"),
+  completedAt: mocThoiGianMay("completedAt"),
 });
 
 // ── Cấp 3: capture (HookCapture, HookContracts.cs:41-50) ────────────────────
@@ -192,8 +235,8 @@ const captureV2 = z.object({
   ntf: z.boolean(),
   // .max(64) — VỆ SINH, cùng lý do startedAt/completedAt ở componentV2: đích
   // là `timestamp`, không phải `varchar`. Pha 1F Task 6 (C-2 ⛔): nới từ .max(40).
-  startedAt: z.string().max(64).optional(),
-  completedAt: z.string().max(64).optional(),
+  startedAt: mocThoiGianMay("startedAt"),
+  completedAt: mocThoiGianMay("completedAt"),
   // RỖNG là hợp lệ (đèn chụp vùng không có component) — KHÔNG .min(1).
   components: z.array(componentV2),
 });
@@ -211,8 +254,8 @@ const positionV2 = z.object({
   ntf: z.boolean(),
   // .max(64) — VỆ SINH, cùng lý do ở componentV2/captureV2: đích là
   // `timestamp`, không phải `varchar`. Pha 1F Task 6 (C-2 ⛔): nới từ .max(40).
-  startedAt: z.string().max(64).optional(),
-  completedAt: z.string().max(64).optional(),
+  startedAt: mocThoiGianMay("startedAt"),
+  completedAt: mocThoiGianMay("completedAt"),
   captures: z.array(captureV2),
 });
 
@@ -274,8 +317,8 @@ export const machineDataContractV2 = z.object({
   // do/con số `startedAt`/`finishedAt` của `metaJsonSchema` (cửa ZIP, đọc
   // ĐÚNG trường này khi máy không gửi `inspectionTime` — xem docblock
   // `aoiPackageRouter.ts`).
-  startedAt: z.string().max(64).optional(),
-  completedAt: z.string().max(64).optional(),
+  startedAt: mocThoiGianMay("startedAt"),
+  completedAt: mocThoiGianMay("completedAt"),
   summary: z.object({
     surfaces: summaryGroupV2,
     positions: summaryGroupV2,
