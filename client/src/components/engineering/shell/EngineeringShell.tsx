@@ -242,8 +242,11 @@ export function EngineeringShell({
   const idPrefix = React.useId();
   const mainId = `${idPrefix}-main`;
   const [explorerCollapsed, setExplorerCollapsed] = React.useState(false);
+  /** Mỗi lần chọn mục ⇒ tăng; ở màn hẹp WorkbenchShell chuyển sang tab explorer. */
+  const [revealToken, setRevealToken] = React.useState(0);
 
   const onSelectActivity = (id: string) => {
+    setRevealToken((n) => n + 1);
     if (id === activeActivity) {
       setExplorerCollapsed((c) => !c);
       return;
@@ -263,6 +266,7 @@ export function EngineeringShell({
       leftRail={<ActivityBar items={activityItems} active={activeActivity} explorerOpen={!explorerCollapsed} onSelect={onSelectActivity} />}
       left={{ label: explorerLabel ?? t("layoutKit.shell.explorer", "Explorer"), content: explorer }}
       leftCollapsed={explorerCollapsed}
+      leftRevealToken={revealToken}
       onLeftCollapsedChange={setExplorerCollapsed}
       mainName={`${layoutId}-editor`}
       mainHeader={

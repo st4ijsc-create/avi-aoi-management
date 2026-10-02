@@ -21376,7 +21376,8 @@
       "error": "Error",
       "errorHint": "The source could not be read — no number is shown.",
       "degradedHint": "The source is only partly readable — the number may be incomplete.",
-      "source": "Source: {{source}}"
+      "source": "Source: {{source}}",
+      "moreLabel": "Show {{count}} more indicators"
     },
     "flyout": {
       "unsavedTitle": "Discard unsaved changes?",

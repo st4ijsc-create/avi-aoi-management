@@ -11,9 +11,10 @@ vi.mock("react-resizable-panels", async () => (await import("./layoutKitTestPane
 import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import "@testing-library/jest-dom/vitest";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import VI from "@/i18n/locales/vi.json";
 import { initLayoutKitTestI18n } from "./layoutKitTestI18n";
+import { installMatchMedia, presetNarrow, setNarrow } from "./layoutKitTestMedia";
 import { CockpitLayout } from "./CockpitLayout";
 import { SplitListDetail } from "./SplitListDetail";
 import { StatusChipStrip } from "./StatusChipStrip";
@@ -21,23 +22,17 @@ import { NoticeStack } from "./NoticeChip";
 import { TabbedHub } from "@/components/workspace/TabbedHub";
 import { WorkspaceShell } from "@/components/workspace/WorkspaceShell";
 
-let narrow = false;
 beforeAll(async () => {
   (globalThis as { ResizeObserver?: unknown }).ResizeObserver ??= class {
     observe() {}
     unobserve() {}
     disconnect() {}
   };
-  window.matchMedia = ((q: string) => ({
-    matches: narrow && q.includes("max-width"),
-    media: q,
-    addEventListener: () => {},
-    removeEventListener: () => {},
-  })) as unknown as typeof window.matchMedia;
+  installMatchMedia();
   await initLayoutKitTestI18n();
 });
 beforeEach(() => {
-  narrow = false;
+  presetNarrow(false);
   localStorage.clear();
   window.history.replaceState(null, "", "/fleet?filter=pending");
 });
@@ -93,6 +88,9 @@ describe("CockpitLayout — dấu đo", () => {
     expect(bars).toHaveLength(1);
     expect(bars[0]).toContainElement(screen.getByRole("tablist"));
     expect(bars[0]).toContainElement(screen.getByRole("button", { name: "Lọc" }));
+    // ≤56 px: hàng tab là MỘT dòng, có trần chiều cao (thiết bị đo: toolbar > 56 px là LỖI).
+    expect((bars[0] as HTMLElement).style.maxHeight).toBe("56px");
+    expect((bars[0] as HTMLElement).className).toMatch(/flex-nowrap/);
     const table = mainEl().querySelector("table")!;
     expect(bars[0].compareDocumentPosition(table) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
   });
@@ -115,7 +113,7 @@ describe("CockpitLayout — dấu đo", () => {
   });
 
   it("dưới 1024 px: panel phụ xếp dưới MAIN (stack)", () => {
-    narrow = true;
+    presetNarrow(true);
     renderCockpit();
     expect(document.querySelector("[data-cockpit-body]")).toHaveAttribute("data-narrow");
   });
@@ -229,7 +227,7 @@ describe("SplitListDetail", () => {
   });
 
   it("dưới 1024 px: stack — có chọn ⇒ chi tiết + nút quay lại; không chọn ⇒ danh sách; MAIN theo vùng đang hiện", () => {
-    narrow = true;
+    presetNarrow(true);
     const { onBack, unmount } = renderSplit();
     expect(screen.queryAllByRole("separator")).toHaveLength(0);
     expect(screen.queryByRole("table", { name: "ecn" })).toBeNull();
@@ -254,5 +252,41 @@ describe("WorkspaceShell — prop mới tương thích ngược", () => {
     await new Promise((r) => setTimeout(r, 250));
     expect(Object.keys(localStorage)).toEqual([]);
     expect(within(document.body).getByText("m")).toBeInTheDocument();
+  });
+});
+
+// ── Fix round 1 (review I3) — SplitListDetail qua lại 1024 px KHÔNG remount danh sách/chi tiết ──
+const splitMounts: Record<string, number> = {};
+function SProbe({ name }: { name: string }) {
+  const [n, setN] = useState(0);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  useEffect(() => {
+    splitMounts[name] = (splitMounts[name] ?? 0) + 1;
+  }, []);
+  return (
+    <button type="button" onClick={() => setN(n + 1)}>
+      {name} {n}
+    </button>
+  );
+}
+
+describe("SplitListDetail — qua lại 1024 px giữ instance", () => {
+  it("danh sách + chi tiết giữ state, mount đúng 1 lần qua rộng→hẹp→rộng; MAIN theo vùng đang hiện", async () => {
+    for (const k of Object.keys(splitMounts)) delete splitMounts[k];
+    const user = userEvent.setup();
+    render(
+      <main>
+        <SplitListDetail layoutId="ecn" userId={4} hasSelection list={<SProbe name="list" />} detail={<SProbe name="detail" />} onBack={() => {}} />
+      </main>,
+    );
+    await user.click(screen.getByRole("button", { name: "list 0" }));
+    await user.click(screen.getByRole("button", { name: "detail 0" }));
+    setNarrow(true);
+    expect(screen.getByRole("button", { name: "detail 1" })).toBeVisible();
+    expect(mainEl()).toContainElement(screen.getByRole("button", { name: "detail 1" }));
+    setNarrow(false);
+    expect(screen.getByRole("button", { name: "list 1" })).toBeVisible();
+    expect(screen.getByRole("button", { name: "detail 1" })).toBeVisible();
+    expect(splitMounts).toEqual({ list: 1, detail: 1 });
   });
 });

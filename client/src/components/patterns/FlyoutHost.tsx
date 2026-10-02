@@ -13,7 +13,15 @@
  *   - push(key, {id}): thêm lớp, PUSH lịch sử.
  *   - close(): đóng lớp trên cùng. Lớp do chính phiên này push ⇒ `history.back()` (để back sau đó
  *     không mở lại nó); lớp dựng từ URL lúc F5 ⇒ REPLACE.
- *   - F5 dựng lại đủ stack từ URL; khoá không có trong `flyouts` bị bỏ và URL được dọn.
+ *   - F5 dựng lại đủ stack từ URL. Khoá CHƯA có trong `flyouts` (định nghĩa đến muộn vì quyền/dữ
+ *     liệu) được GIỮ trong URL `unknownKeyGraceMs` (mặc định 5 s) và mở ngay khi được đăng ký; hết
+ *     ân hạn mà vẫn không có thì mới dọn khỏi URL.
+ *
+ * ── SỔ SÁCH LỊCH SỬ (fix round 1, review I5) ──────────────────────────────────────────────────
+ *   Các lớp có mục lịch sử riêng (`viaPush`) luôn là PHẦN ĐUÔI của stack. Mọi thao tác gỡ nhiều lớp
+ *   (open() trên stack đã push, closeAll) trước hết LÙI đúng số mục host đã push (`history.go(-k)`),
+ *   rồi mới replace — nên không còn mục lịch sử mồ côi nào khiến back/close hồi sinh lớp đã đóng.
+ *   Lớp dựng từ F5 (không có trigger) đóng thì trả focus về lớp dưới, hoặc h1/`<main>` của trang.
  *
  * ── DỮ LIỆU CHƯA LƯU ────────────────────────────────────────────────────────────────────────
  *   Nội dung lớp gọi `useFlyoutLayer().setDirty(true)`. Khi một lớp dirty sắp bị gỡ — bằng close(),
@@ -140,9 +148,34 @@ const SIZE_CLASS: Record<NonNullable<FlyoutDefinition["size"]>, string> = {
 export interface FlyoutHostProps {
   flyouts: Record<string, FlyoutDefinition>;
   children: ReactNode;
+  /** Giữ khoá chưa đăng ký trong URL bao lâu trước khi dọn (ms). Mặc định 5000. */
+  unknownKeyGraceMs?: number;
 }
 
-export function FlyoutHost({ flyouts, children }: FlyoutHostProps) {
+/** Số lớp ở ĐUÔI stack có mục lịch sử riêng do host push. */
+function trailingPushed(S: readonly LayerState[]): number {
+  let k = 0;
+  for (let i = S.length - 1; i >= 0 && S[i].viaPush; i--) k++;
+  return k;
+}
+
+/** Tiền tố đã đăng ký của stack trong URL (dừng ở khoá lạ đầu tiên — lớp trên nó chưa dựng được). */
+function knownPrefix(raw: FlyoutEntry[], known: (e: FlyoutEntry) => boolean): FlyoutEntry[] {
+  const i = raw.findIndex((e) => !known(e));
+  return i < 0 ? raw : raw.slice(0, i);
+}
+
+/** Lớp F5 không có phần tử mở: trả focus về lớp dưới, hoặc h1 / <main> của trang. */
+function fallbackFocus(depth: number): void {
+  if (typeof document === "undefined") return;
+  const below = depth > 0 ? document.querySelector<HTMLElement>(`[data-flyout-depth="${depth - 1}"]`) : null;
+  const target = below ?? document.querySelector<HTMLElement>("main h1") ?? document.querySelector<HTMLElement>("h1") ?? document.querySelector<HTMLElement>("main");
+  if (!target) return;
+  if (!target.hasAttribute("tabindex") && !/^(A|BUTTON|INPUT|SELECT|TEXTAREA)$/.test(target.tagName)) target.setAttribute("tabindex", "-1");
+  target.focus();
+}
+
+export function FlyoutHost({ flyouts, children, unknownKeyGraceMs = 5000 }: FlyoutHostProps) {
   const [location, navigate] = useLocation();
   const search = useSearch();
 
@@ -151,10 +184,9 @@ export function FlyoutHost({ flyouts, children }: FlyoutHostProps) {
   const known = (e: FlyoutEntry) => Object.prototype.hasOwnProperty.call(flyoutsRef.current, e.key);
 
   const uidRef = useRef(0);
+  const knownSig = Object.keys(flyouts).sort().join("|");
   const [layers, setLayers] = useState<LayerState[]>(() =>
-    parseFlyoutStack(search)
-      .filter(known)
-      .map((e) => ({ ...e, uid: ++uidRef.current, viaPush: false, returnFocus: null })),
+    knownPrefix(parseFlyoutStack(search), known).map((e) => ({ ...e, uid: ++uidRef.current, viaPush: false, returnFocus: null })),
   );
   /**
    * Radix gắn `aria-hidden` cho mọi thứ ngoài dialog VỪA mount. Khi F5 dựng nhiều lớp CÙNG LÚC,
@@ -184,6 +216,15 @@ export function FlyoutHost({ flyouts, children }: FlyoutHostProps) {
     const el = typeof document !== "undefined" ? document.activeElement : null;
     newReturnFocusRef.current = el instanceof HTMLElement && el !== document.body ? el : null;
   };
+  /** Việc cần làm SAU khi một lần lùi lịch sử do host khởi xướng đã về tới (xem `unwind`). */
+  const afterPopRef = useRef<(() => void) | null>(null);
+  const graceTimerRef = useRef<number | null>(null);
+  useEffect(
+    () => () => {
+      if (graceTimerRef.current != null) window.clearTimeout(graceTimerRef.current);
+    },
+    [],
+  );
   const [pending, setPending] = useState<Pending | null>(null);
 
   const isDirty = (l: LayerState) => dirtyRef.current.get(l.uid) === true;
@@ -196,17 +237,37 @@ export function FlyoutHost({ flyouts, children }: FlyoutHostProps) {
   const currentQs = () => new URLSearchParams(searchRef.current).toString();
 
   // ── URL → stack ────────────────────────────────────────────────────────────────────────────
+  const runAfterPop = () => {
+    const after = afterPopRef.current;
+    if (!after) return;
+    afterPopRef.current = null;
+    after();
+  };
+
   useEffect(() => {
     const raw = parseFlyoutStack(search);
-    const urlStack = raw.filter(known);
+    const urlStack = knownPrefix(raw, known);
     if (urlStack.length !== raw.length) {
-      navigate(hrefFor(urlStack), { replace: true });
-      return;
+      // Khoá chưa đăng ký: giữ trong URL một thời gian ân hạn, chờ định nghĩa đến muộn.
+      if (graceTimerRef.current == null) {
+        graceTimerRef.current = window.setTimeout(() => {
+          graceTimerRef.current = null;
+          const r = parseFlyoutStack(searchRef.current);
+          if (r.some((e) => !known(e))) {
+            allowRef.current = true;
+            navigate(hrefFor(r.filter(known)), { replace: true });
+          }
+        }, unknownKeyGraceMs);
+      }
+    } else if (graceTimerRef.current != null) {
+      window.clearTimeout(graceTimerRef.current);
+      graceTimerRef.current = null;
     }
     const S = layersRef.current;
     const common = commonPrefix(S, urlStack);
     if (common === S.length && common === urlStack.length) {
       allowRef.current = false;
+      runAfterPop();
       return;
     }
     const removed = S.slice(common);
@@ -233,26 +294,52 @@ export function FlyoutHost({ flyouts, children }: FlyoutHostProps) {
       viaPush,
       returnFocus: i === 0 ? returnFocus : null,
     }));
-    setLayers([...S.slice(0, common), ...added]);
+    const nextLayers = [...S.slice(0, common), ...added];
+    layersRef.current = nextLayers;
+    setLayers(nextLayers);
+    runAfterPop();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [search]);
+  }, [search, knownSig]);
+
+  /** Lùi `n` mục lịch sử do host push, rồi chạy `then` khi URL đã về tới (n=0 ⇒ chạy ngay). */
+  const unwind = useCallback((n: number, then: () => void) => {
+    if (n <= 0) {
+      then();
+      return;
+    }
+    allowRef.current = true;
+    afterPopRef.current = then;
+    window.history.go(-n);
+  }, []);
 
   // ── thao tác ───────────────────────────────────────────────────────────────────────────────
   const performOpen = useCallback(
     (next: FlyoutEntry[]) => {
       if (buildFlyoutSearch(searchRef.current, next) === currentQs()) return;
       const S = layersRef.current;
-      allowRef.current = true;
       captureFocus();
+      // Mở từ BÊN TRONG một lớp sắp bị thay ⇒ khi lớp mới đóng, trả focus về phần tử đã mở stack cũ.
+      const captured = newReturnFocusRef.current;
+      const focus = captured && captured.closest("[data-flyout-key]") ? (S[0]?.returnFocus ?? null) : captured;
       if (S.length === 0) {
+        allowRef.current = true;
         newViaPushRef.current = true;
+        newReturnFocusRef.current = focus;
         navigate(hrefFor(next));
-      } else {
-        newViaPushRef.current = S[0].viaPush;
-        navigate(hrefFor(next), { replace: true });
+        return;
       }
+      const k = trailingPushed(S);
+      // Cả stack là mục đã push ⇒ lùi về mục của lớp đáy rồi thay nó (lớp mới kế thừa mục đó).
+      // Có lớp F5 ở đáy ⇒ lùi hết phần đã push rồi thay mục F5 (lớp mới không có mục riêng).
+      const all = k === S.length;
+      unwind(all ? k - 1 : k, () => {
+        allowRef.current = true;
+        newViaPushRef.current = all;
+        newReturnFocusRef.current = focus;
+        navigate(hrefFor(next), { replace: true });
+      });
     },
-    [hrefFor, navigate],
+    [hrefFor, navigate, unwind],
   );
 
   const performClose = useCallback(() => {
@@ -267,12 +354,17 @@ export function FlyoutHost({ flyouts, children }: FlyoutHostProps) {
   const performCloseAll = useCallback(() => {
     const S = layersRef.current;
     if (S.length === 0) return;
-    let k = 0;
-    for (let i = S.length - 1; i >= 0 && S[i].viaPush; i--) k++;
-    allowRef.current = true;
-    if (k === S.length) window.history.go(-k);
-    else navigate(hrefFor([]), { replace: true });
-  }, [hrefFor, navigate]);
+    const k = trailingPushed(S);
+    if (k === S.length) {
+      unwind(k, () => undefined);
+      return;
+    }
+    // Trộn F5 + push: lùi hết phần đã push, rồi thay mục F5 bằng URL sạch — back sau đó về trang trước.
+    unwind(k, () => {
+      allowRef.current = true;
+      navigate(hrefFor([]), { replace: true });
+    });
+  }, [hrefFor, navigate, unwind]);
 
   const open = useCallback(
     (key: string, opts?: FlyoutOpenOptions) => {
@@ -372,6 +464,7 @@ export function FlyoutHost({ flyouts, children }: FlyoutHostProps) {
                   // phần tử đã mở lớp (nếu nó còn trong tài liệu).
                   e.preventDefault();
                   if (l.returnFocus && l.returnFocus.isConnected) l.returnFocus.focus();
+                  else fallbackFocus(i);
                 }}
                 className={cn("flex w-[92vw] flex-col gap-0 p-0", SIZE_CLASS[def.size ?? "md"])}
               >

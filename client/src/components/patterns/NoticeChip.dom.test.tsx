@@ -129,3 +129,22 @@ describe("FeatureStatusNoticeChip — 4 trạng thái của FeatureStatusGate, k
     expect(await screen.findByText("Chế độ xem trước: tích hợp đang tắt.")).toBeInTheDocument();
   });
 });
+
+// ── Fix round 1 — notice lỗi không bị gộp vào "+N" ──────────────────────────────────────────────
+describe("NoticeStack — lỗi luôn hiện", () => {
+  it("maxVisible=1, notice lỗi đứng cuối ⇒ chip hiện ra là chip lỗi", () => {
+    render(
+      <NoticeStack
+        maxVisible={1}
+        items={[
+          { id: "a", kind: "beta", content: <p>a</p> },
+          { id: "b", kind: "hint", content: <p>b</p> },
+          { id: "z", kind: "error", content: <p>lỗi</p> },
+        ]}
+      />,
+    );
+    const stack = screen.getByRole("group", { name: vi.layoutKit.notice.stackLabel });
+    const shown = [...stack.querySelectorAll(":scope > [data-notice-kind]")].map((x) => x.getAttribute("data-notice-kind"));
+    expect(shown).toEqual(["error"]);
+  });
+});

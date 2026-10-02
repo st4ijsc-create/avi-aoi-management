@@ -127,8 +127,11 @@ export function NoticeStack({ items, maxVisible = 3, className }: NoticeStackPro
   const { t } = useTranslation();
   const list = items.filter((x): x is NoticeItem => Boolean(x));
   if (list.length === 0) return null;
-  const visible = list.slice(0, Math.max(0, maxVisible));
-  const hidden = list.slice(visible.length);
+  // Fix round 1: notice LỖI không bao giờ bị gộp vào "+N" trước notice khác (header cắt phần tràn).
+  const ranked = [...list.filter((n) => n.kind === "error"), ...list.filter((n) => n.kind !== "error")];
+  const keep = new Set(ranked.slice(0, Math.max(0, maxVisible)));
+  const visible = list.filter((n) => keep.has(n));
+  const hidden = list.filter((n) => !keep.has(n));
   return (
     <div
       role="group"

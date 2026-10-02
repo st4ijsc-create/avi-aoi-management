@@ -92,6 +92,8 @@ export function CockpitLayout({
               defaultTab={defaultTab}
               className="flex min-h-0 flex-col gap-0"
               listRowAttrs={toolbarAttrs}
+              listRowStyle={{ maxHeight: 56 }}
+              listRowClassName="flex-nowrap overflow-hidden"
               listEnd={toolbarEnd}
               listClassName="flex h-9 min-h-9 flex-nowrap overflow-x-auto"
             />

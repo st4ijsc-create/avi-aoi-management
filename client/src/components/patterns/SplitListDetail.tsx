@@ -13,6 +13,7 @@
  *
  * Kéo bằng bàn phím (separator có nhãn), bề rộng nhớ THEO NGƯỜI DÙNG. Dưới 1024 px: STACK — chưa
  * chọn ⇒ danh sách; đã chọn ⇒ chi tiết + nút "Quay lại danh sách" (`onBack`); vùng đang hiện là MAIN.
+ * Qua lại mốc 1024 px KHÔNG remount danh sách/chi tiết: mỗi slot render một lần qua portal (`slotPortal.tsx`).
  */
 import * as React from "react";
 import { useTranslation } from "react-i18next";
@@ -22,6 +23,7 @@ import { WorkspaceShell } from "@/components/workspace/WorkspaceShell";
 import { cn } from "@/lib/utils";
 import { LAYOUT_MAIN, LAYOUT_TOOLBAR } from "./layoutMarkers";
 import { useNarrowViewport, userLayoutKey } from "./layoutKitHooks";
+import { SlotOutlet, slotPortal, useSlotHost } from "./slotPortal";
 
 export interface SplitListDetailProps {
   layoutId: string;
@@ -69,15 +71,24 @@ export function SplitListDetail({
   const lLabel = listLabel ?? t("layoutKit.split.list", "List");
   const dLabel = detailLabel ?? t("layoutKit.split.detail", "Details");
   const mark = (on: boolean, name: string) => (on ? { [LAYOUT_MAIN]: name } : {});
+  // Host DOM ổn định cho từng slot — qua lại 1024 px không remount (slotPortal.tsx, review I3).
+  const hToolbar = useSlotHost("listToolbar");
+  const hList = useSlotHost("list");
+  const hDetail = useSlotHost("detail");
+  const portals = (
+    <>
+      {slotPortal(listToolbar, hToolbar, "slot-toolbar")}
+      {slotPortal(list, hList, "slot-list")}
+      {slotPortal(hasSelection ? detail : emptyDetail, hDetail, "slot-detail")}
+    </>
+  );
 
   const listSection = (isMain: boolean) => (
     <section aria-label={lLabel} {...mark(isMain, `${layoutId}-list`)} className="flex h-full min-h-0 flex-col">
       {listToolbar != null && (
-        <div {...{ [LAYOUT_TOOLBAR]: "" }} style={{ maxHeight: 56 }} className="flex shrink-0 items-center gap-2 overflow-hidden p-2">
-          {listToolbar}
-        </div>
+        <SlotOutlet host={hToolbar} {...{ [LAYOUT_TOOLBAR]: "" }} style={{ maxHeight: 56 }} className="flex shrink-0 items-center gap-2 overflow-hidden p-2" />
       )}
-      <div className="min-h-0 flex-1 overflow-auto">{list}</div>
+      <SlotOutlet host={hList} className="block min-h-0 flex-1 overflow-auto" />
     </section>
   );
   const detailSection = (isMain: boolean, withBack: boolean) => (
@@ -90,30 +101,37 @@ export function SplitListDetail({
           </Button>
         </div>
       )}
-      <div className="min-h-0 flex-1">{hasSelection ? detail : emptyDetail}</div>
+      <SlotOutlet host={hDetail} className="block min-h-0 flex-1" />
     </section>
   );
 
   if (narrow) {
     return (
-      <div data-split-list-detail="" data-narrow="" className={cn("flex min-h-0 flex-col", className)}>
-        {hasSelection ? detailSection(true, true) : listSection(true)}
-      </div>
+      <>
+        <div key="narrow" data-split-list-detail="" data-narrow="" className={cn("flex min-h-0 flex-col", className)}>
+          {hasSelection ? detailSection(true, true) : listSection(true)}
+        </div>
+        {portals}
+      </>
     );
   }
 
   return (
-    <WorkspaceShell
-      className={className}
-      heightClass={heightClass}
-      railDefaultSize={listDefaultPct}
-      railMinSize={listMinPct}
-      railMaxSize={listMaxPct}
-      autoSaveId={userLayoutKey(layoutId, userId, "split")}
-      handleLabel={t("layoutKit.split.resize", "Resize the list")}
-      rail={listSection(mainRegion !== "detail")}
-      main={detailSection(mainRegion !== "list", false)}
-    />
+    <>
+      <WorkspaceShell
+        key="wide"
+        className={className}
+        heightClass={heightClass}
+        railDefaultSize={listDefaultPct}
+        railMinSize={listMinPct}
+        railMaxSize={listMaxPct}
+        autoSaveId={userLayoutKey(layoutId, userId, "split")}
+        handleLabel={t("layoutKit.split.resize", "Resize the list")}
+        rail={listSection(mainRegion !== "detail")}
+        main={detailSection(mainRegion !== "list", false)}
+      />
+      {portals}
+    </>
   );
 }
 

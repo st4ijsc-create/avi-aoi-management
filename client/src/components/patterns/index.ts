@@ -148,7 +148,7 @@ export { PageHeaderCompact } from "./PageHeaderCompact";
 export type { PageHeaderCompactProps } from "./PageHeaderCompact";
 export { NoticeChip, NoticeStack, WhenToUseHint, whenToUseNotice, FeatureStatusNoticeChip } from "./NoticeChip";
 export type { NoticeKind, NoticeChipProps, NoticeItem, NoticeStackProps, WhenToUseHintProps, FeatureStatusNoticeChipProps } from "./NoticeChip";
-export { StatusChipStrip, chipStateFromQuery, effectiveChipState } from "./StatusChipStrip";
+export { StatusChipStrip, chipStateFromQuery, effectiveChipState, splitChipsForOverflow } from "./StatusChipStrip";
 export type { ChipState, StatusChipItem, StatusChipStripProps } from "./StatusChipStrip";
 export { FlyoutHost, useFlyout, useFlyoutLayer, parseFlyoutStack, buildFlyoutSearch, FLYOUT_PARAM, FLYOUT_ID_PARAM } from "./FlyoutHost";
 export type { FlyoutApi, FlyoutDefinition, FlyoutEntry, FlyoutHostProps, FlyoutLayerApi, FlyoutOpenOptions } from "./FlyoutHost";
@@ -164,7 +164,7 @@ export { VersionHistoryPanel } from "./VersionHistoryPanel";
 export type { VersionHistoryPanelProps, VersionRow } from "./VersionHistoryPanel";
 export { RollbackConfirm } from "./RollbackConfirm";
 export type { RollbackConfirmProps, RollbackPayload } from "./RollbackConfirm";
-export { ApprovalQueue, TransitionDialog, checkSegregation } from "./ApprovalQueue";
+export { ApprovalQueue, TransitionDialog, checkSegregation, needsConfirmSheet } from "./ApprovalQueue";
 export type {
   ApprovalItem,
   ApprovalQueueProps,
@@ -183,3 +183,6 @@ export { WorkbenchShell } from "./WorkbenchShell";
 export type { WorkbenchShellProps, WorkbenchSidePanel, WorkbenchRightPanel, WorkbenchBottomPanel } from "./WorkbenchShell";
 export { useNarrowViewport, useElementSize, pxRangeToPct, userLayoutKey, NARROW_BREAKPOINT_PX } from "./layoutKitHooks";
 export type { PxRange, PctRange } from "./layoutKitHooks";
+// fix round 1 — giữ instance nội dung khi layout đổi cây (portal vào host DOM ổn định).
+export { useSlotHost, SlotOutlet, slotPortal } from "./slotPortal";
+export type { SlotOutletProps } from "./slotPortal";

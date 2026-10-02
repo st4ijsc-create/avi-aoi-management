@@ -5,13 +5,14 @@
 // dựng trên WorkbenchShell. Ca ở đây khoá phần RIÊNG của EngineeringShell: activity bar (bàn phím,
 // gập explorer), tab editor (bàn phím, dấu chưa lưu, đóng tab) và dấu đo (MAIN = editor; tab strip
 // và inspector/Copilot NGOÀI MAIN).
-import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 vi.mock("react-resizable-panels", async () => (await import("@/components/patterns/layoutKitTestPanels")).browserPanels());
 import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import "@testing-library/jest-dom/vitest";
 import VI from "@/i18n/locales/vi.json";
 import { initLayoutKitTestI18n } from "@/components/patterns/layoutKitTestI18n";
+import { installMatchMedia, presetNarrow, setNarrow } from "@/components/patterns/layoutKitTestMedia";
 import { EngineeringShell, type EngineeringShellProps } from "./EngineeringShell";
 
 beforeAll(async () => {
@@ -20,14 +21,10 @@ beforeAll(async () => {
     unobserve() {}
     disconnect() {}
   };
-  window.matchMedia = ((q: string) => ({
-    matches: false,
-    media: q,
-    addEventListener: () => {},
-    removeEventListener: () => {},
-  })) as unknown as typeof window.matchMedia;
+  installMatchMedia();
   await initLayoutKitTestI18n();
 });
+beforeEach(() => presetNarrow(false));
 afterEach(() => cleanup());
 
 function renderShell(over: Partial<EngineeringShellProps> = {}) {
@@ -168,5 +165,29 @@ describe("EngineeringShell — tab editor", () => {
     expect(onTabClose).toHaveBeenCalledWith("diff");
     expect(onTabChange).not.toHaveBeenCalled();
     expect(screen.queryByRole("button", { name: "Đóng tab Tags" })).toBeNull();
+  });
+});
+
+// ── Fix round 1 (review I4) — activity bar KHÔNG mất dưới 1024 px ────────────────────────────────
+describe("EngineeringShell — màn hẹp", () => {
+  it("activity bar vẫn hiện; chọn mục khác ⇒ onActivityChange + chuyển sang tab explorer", () => {
+    presetNarrow(true);
+    const { onActivityChange } = renderShell();
+    const bar = screen.getByRole("toolbar", { name: VI.layoutKit.shell.activityBar });
+    expect(bar).toBeVisible();
+    expect(screen.getByRole("tab", { name: VI.layoutKit.shell.editor })).toHaveAttribute("aria-selected", "true");
+    fireEvent.click(within(bar).getByRole("button", { name: "Phiên bản" }));
+    expect(onActivityChange).toHaveBeenCalledWith("versions");
+    expect(screen.getByRole("tab", { name: VI.layoutKit.shell.explorer })).toHaveAttribute("aria-selected", "true");
+    expect(screen.getByText("cây dự án")).toBeVisible();
+  });
+
+  it("đổi rộng→hẹp→rộng khi đang mở: activity bar còn, MAIN vẫn là editor", () => {
+    renderShell();
+    setNarrow(true);
+    expect(screen.getByRole("toolbar", { name: VI.layoutKit.shell.activityBar })).toBeInTheDocument();
+    setNarrow(false);
+    expect(screen.getByRole("toolbar", { name: VI.layoutKit.shell.activityBar })).toBeInTheDocument();
+    expect(mainEl()).toHaveTextContent("mã nguồn");
   });
 });

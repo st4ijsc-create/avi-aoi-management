@@ -15,33 +15,24 @@ vi.mock("react-resizable-panels", async () => (await import("./layoutKitTestPane
 import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import "@testing-library/jest-dom/vitest";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import VI from "@/i18n/locales/vi.json";
 import { initLayoutKitTestI18n } from "./layoutKitTestI18n";
 import { WorkbenchShell, type WorkbenchShellProps } from "./WorkbenchShell";
 import { pxRangeToPct, userLayoutKey } from "./layoutKitHooks";
+import { installMatchMedia, presetNarrow, setNarrow } from "./layoutKitTestMedia";
 
-let narrow = false;
 beforeAll(async () => {
   (globalThis as { ResizeObserver?: unknown }).ResizeObserver ??= class {
     observe() {}
     unobserve() {}
     disconnect() {}
   };
-  window.matchMedia = ((q: string) => ({
-    matches: narrow && q.includes("max-width"),
-    media: q,
-    onchange: null,
-    addEventListener: () => {},
-    removeEventListener: () => {},
-    addListener: () => {},
-    removeListener: () => {},
-    dispatchEvent: () => false,
-  })) as unknown as typeof window.matchMedia;
+  installMatchMedia();
   await initLayoutKitTestI18n();
 });
 beforeEach(() => {
-  narrow = false;
+  presetNarrow(false);
   localStorage.clear();
 });
 afterEach(() => cleanup());
@@ -172,7 +163,7 @@ describe("WorkbenchShell — panel dưới gập được, không mất state", 
 
 describe("WorkbenchShell — dưới 1024 px chuyển sang tab", () => {
   it("không còn separator; có tablist; MAIN vẫn đánh dấu; panel phụ mở bằng tab, MAIN không unmount", async () => {
-    narrow = true;
+    presetNarrow(true);
     const user = userEvent.setup();
     renderShell({ main: <Counter name="main" /> });
     expect(screen.queryAllByRole("separator")).toHaveLength(0);
@@ -199,3 +190,72 @@ describe("pxRangeToPct", () => {
   });
 });
 
+
+// ── Fix round 1 (review I3/I4) — qua lại mốc 1024 px KHÔNG remount nội dung; activity bar còn ở màn hẹp ──
+const mounts: Record<string, number> = {};
+function Probe({ name }: { name: string }) {
+  const [n, setN] = useState(0);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  useEffect(() => {
+    mounts[name] = (mounts[name] ?? 0) + 1;
+  }, []);
+  return (
+    <button type="button" onClick={() => setN(n + 1)}>
+      {name} {n}
+    </button>
+  );
+}
+
+describe("WorkbenchShell — qua lại 1024 px giữ nguyên instance (Review Focus 3)", () => {
+  it("main / trái / phải (Copilot) / dưới giữ state và chỉ mount MỘT lần qua rộng→hẹp→rộng→hẹp", async () => {
+    for (const k of Object.keys(mounts)) delete mounts[k];
+    const user = userEvent.setup();
+    renderShell({
+      main: <Probe name="main" />,
+      left: { label: "Explorer", content: <Probe name="left" /> },
+      right: { label: "Copilot", content: <Probe name="right" />, ai: true },
+      bottom: { label: "Vấn đề", content: <Probe name="bottom" /> },
+      leftRail: <Probe name="rail" />,
+    });
+    for (const n of ["main", "left", "right", "bottom", "rail"]) await user.click(screen.getByRole("button", { name: `${n} 0` }));
+    for (const step of [true, false, true]) {
+      setNarrow(step);
+      expect(document.querySelector("[data-workbench]")!.hasAttribute("data-narrow")).toBe(step);
+      for (const n of ["main", "left", "right", "bottom", "rail"]) {
+        expect(screen.getByRole("button", { name: `${n} 1`, hidden: true })).toBeInTheDocument();
+        expect(mounts[n]).toBe(1);
+      }
+      expect(mainEl()).toContainElement(screen.getByRole("button", { name: "main 1", hidden: true }));
+      expect(document.querySelectorAll("[data-layout-main]")).toHaveLength(1);
+    }
+  });
+
+  it("màn hẹp: Copilot là complementary có data-layout-ai, NGOÀI MAIN", () => {
+    presetNarrow(true);
+    renderShell();
+    const aside = screen.getByRole("complementary", { name: "Copilot", hidden: true });
+    expect(aside).toHaveAttribute("data-layout-ai");
+    expect(mainEl()).not.toContainElement(aside);
+  });
+});
+
+describe("WorkbenchShell — leftRail (activity bar) còn ở màn hẹp", () => {
+  it("rail hiện cạnh vùng tab ở màn hẹp; leftRevealToken đổi ⇒ chuyển sang tab trái", () => {
+    presetNarrow(true);
+    const { rerender } = render(
+      <main>
+        <WorkbenchShell layoutId="t" userId={1} main={<p>m</p>} left={{ label: "Explorer", content: <p>cây</p> }} leftRail={<nav aria-label="rail">R</nav>} leftRevealToken={0} />
+      </main>,
+    );
+    const rail = screen.getByRole("navigation", { name: "rail" });
+    expect(rail).toBeVisible();
+    expect(screen.getByRole("tab", { name: VI.layoutKit.shell.editor })).toHaveAttribute("aria-selected", "true");
+    rerender(
+      <main>
+        <WorkbenchShell layoutId="t" userId={1} main={<p>m</p>} left={{ label: "Explorer", content: <p>cây</p> }} leftRail={<nav aria-label="rail">R</nav>} leftRevealToken={1} />
+      </main>,
+    );
+    expect(screen.getByRole("tab", { name: "Explorer" })).toHaveAttribute("aria-selected", "true");
+    expect(screen.getByText("cây")).toBeVisible();
+  });
+});

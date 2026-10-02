@@ -11,10 +11,16 @@
  * ra như một con số. Mỗi chip mang NGUỒN của con số (`source`) trong title + aria-describedby.
  *
  * Dấu đo: mỗi chip mang `data-layout-kpi`, cao 32 px. Dải đặt NGOÀI MAIN (header/CockpitLayout).
+ *
+ * Fix round 1: header 1 dòng cắt phần tràn — một chip LỖI không được là thứ bị cắt. Quá
+ * `maxVisible` (mặc định 5) chip ⇒ chọn hiện theo ưu tiên error > degraded > loading > ok (giữ thứ
+ * tự gốc khi hiển thị), phần còn lại vào chip "+N" mở popover (lỗi đứng đầu). "+N" mang
+ * `data-state="error"` khi trong phần giấu vẫn còn chip lỗi.
  */
 import * as React from "react";
 import { useTranslation } from "react-i18next";
 import { AlertTriangle, Loader2 } from "lucide-react";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { cn } from "@/lib/utils";
 import type { Tone } from "./tokens";
 import { LAYOUT_KPI } from "./layoutMarkers";
@@ -144,12 +150,30 @@ export interface StatusChipStripProps {
   items: readonly StatusChipItem[];
   /** Nhãn nhóm cho trình đọc màn hình; mặc định "Chỉ số". */
   ariaLabel?: string;
+  /** Số chip hiện thẳng; phần dư vào "+N" (lỗi luôn được ưu tiên hiện). Mặc định 5. */
+  maxVisible?: number;
   className?: string;
 }
 
-export function StatusChipStrip({ items, ariaLabel, className }: StatusChipStripProps): React.JSX.Element | null {
+const STATE_PRIORITY: Record<ChipState, number> = { error: 0, degraded: 1, loading: 2, ok: 3 };
+
+/** Chia chip thành phần hiện (thứ tự gốc) và phần giấu (lỗi đầu), ưu tiên error > degraded > loading > ok. */
+export function splitChipsForOverflow(items: readonly StatusChipItem[], maxVisible: number): { visible: StatusChipItem[]; hidden: StatusChipItem[] } {
+  if (items.length <= maxVisible) return { visible: [...items], hidden: [] };
+  const ranked = items
+    .map((it, i) => ({ it, i, p: STATE_PRIORITY[effectiveChipState(it)] }))
+    .sort((a, b) => a.p - b.p || a.i - b.i);
+  const keep = new Set(ranked.slice(0, Math.max(0, maxVisible)).map((x) => x.i));
+  const visible = items.filter((_, i) => keep.has(i));
+  const hidden = ranked.filter((x) => !keep.has(x.i)).map((x) => x.it);
+  return { visible, hidden };
+}
+
+export function StatusChipStrip({ items, ariaLabel, maxVisible = 5, className }: StatusChipStripProps): React.JSX.Element | null {
   const { t } = useTranslation();
   if (items.length === 0) return null;
+  const { visible, hidden } = splitChipsForOverflow(items, maxVisible);
+  const hiddenError = hidden.some((h) => effectiveChipState(h) === "error");
   return (
     <div
       role="group"
@@ -157,9 +181,33 @@ export function StatusChipStrip({ items, ariaLabel, className }: StatusChipStrip
       data-status-chip-strip=""
       className={cn("flex min-w-0 flex-nowrap items-center gap-1.5 overflow-x-auto [scrollbar-width:none]", className)}
     >
-      {items.map((it) => (
+      {visible.map((it) => (
         <StatusChip key={it.id} item={it} />
       ))}
+      {hidden.length > 0 && (
+        <Popover>
+          <PopoverTrigger asChild>
+            <button
+              type="button"
+              data-chip-more={hidden.length}
+              data-state={hiddenError ? "error" : "ok"}
+              aria-label={t("layoutKit.chip.moreLabel", "Show {{count}} more indicators", { count: hidden.length })}
+              style={{ height: 32 }}
+              className={cn(
+                "inline-flex shrink-0 items-center rounded-md border bg-card px-2 text-xs font-medium focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+                hiddenError ? "border-destructive/50 text-destructive" : "text-muted-foreground",
+              )}
+            >
+              {t("layoutKit.notice.more", "+{{count}}", { count: hidden.length })}
+            </button>
+          </PopoverTrigger>
+          <PopoverContent align="end" className="flex w-auto max-w-[28rem] flex-wrap gap-1.5 p-2">
+            {hidden.map((it) => (
+              <StatusChip key={it.id} item={it} />
+            ))}
+          </PopoverContent>
+        </Popover>
+      )}
     </div>
   );
 }

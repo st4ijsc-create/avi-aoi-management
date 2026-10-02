@@ -8,7 +8,7 @@
  *
  * Renders ONLY the tabs (no DashboardLayout): compose it inside a page shell.
  */
-import { useState, useEffect, type ReactNode, type ComponentType } from "react";
+import { useState, useEffect, type ReactNode, type ComponentType, type CSSProperties } from "react";
 import { useSearch, useLocation } from "wouter";
 import { useTranslation } from "react-i18next";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -46,9 +46,23 @@ export interface TabbedHubProps {
   listRowAttrs?: Record<`data-${string}`, string>;
   /** Ghi đè lớp của TabsList (mặc định "flex min-h-12 flex-wrap"). */
   listClassName?: string;
+  /** Style / lớp THÊM cho hàng dải tab (chỉ áp khi hàng được bọc — có listEnd/listRowAttrs). */
+  listRowStyle?: CSSProperties;
+  listRowClassName?: string;
 }
 
-export function TabbedHub({ tabs, basePath, defaultTab, className, header, listEnd, listRowAttrs, listClassName }: TabbedHubProps) {
+export function TabbedHub({
+  tabs,
+  basePath,
+  defaultTab,
+  className,
+  header,
+  listEnd,
+  listRowAttrs,
+  listClassName,
+  listRowStyle,
+  listRowClassName,
+}: TabbedHubProps) {
   const { t } = useTranslation();
   const search = useSearch();
   const [, setLocation] = useLocation();
@@ -86,7 +100,7 @@ export function TabbedHub({ tabs, basePath, defaultTab, className, header, listE
     <Tabs value={activeTab} onValueChange={handleChange} className={className ?? "space-y-2"}>
       {header}
       {listEnd != null || listRowAttrs != null ? (
-        <div {...listRowAttrs} className="flex min-w-0 items-center gap-2">
+        <div {...listRowAttrs} style={listRowStyle} className={`flex min-w-0 items-center gap-2${listRowClassName ? ` ${listRowClassName}` : ""}`}>
           {list}
           {listEnd != null && <div className="ml-auto flex shrink-0 items-center gap-2">{listEnd}</div>}
         </div>

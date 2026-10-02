@@ -21350,7 +21350,8 @@
       "error": "Lỗi",
       "errorHint": "Không đọc được nguồn — không hiển thị số.",
       "degradedHint": "Nguồn chỉ đọc được một phần — số có thể thiếu.",
-      "source": "Nguồn: {{source}}"
+      "source": "Nguồn: {{source}}",
+      "moreLabel": "Xem thêm {{count}} chỉ số"
     },
     "flyout": {
       "unsavedTitle": "Bỏ thay đổi chưa lưu?",

@@ -5,7 +5,7 @@
 // thực chất lỗi/đang tải; nguồn đọc được một phần (degraded) phải lộ ra. Bốn trạng thái của chip:
 // ok / loading / error / degraded — mỗi chip mang NGUỒN của con số.
 import { afterEach, beforeAll, describe, expect, it } from "vitest";
-import { cleanup, render, screen, within } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import "@testing-library/jest-dom/vitest";
 import vi from "@/i18n/locales/vi.json";
 import { initLayoutKitTestI18n } from "./layoutKitTestI18n";
@@ -132,5 +132,50 @@ describe("chipStateFromQuery — suy trạng thái từ query, không đoán", (
   });
   it("có data, không degraded ⇒ ok", () => {
     expect(chipStateFromQuery({ data: { degraded: false } }, (d) => d.degraded)).toBe("ok");
+  });
+});
+
+// ── Fix round 1 (review minor) — tràn ở 1366 px KHÔNG được giấu chip lỗi ──────────────────────────
+describe("StatusChipStrip — tràn vào '+N', lỗi luôn hiện", () => {
+  const many: StatusChipItem[] = [
+    { id: "a", label: "A", value: 1, state: "ok", source: "s" },
+    { id: "b", label: "B", value: 2, state: "ok", source: "s" },
+    { id: "c", label: "C", value: 3, state: "ok", source: "s" },
+    { id: "d", label: "D", value: 4, state: "loading", source: "s" },
+    { id: "e", label: "E", value: 5, state: "ok", source: "s" },
+    { id: "f", label: "F", value: 6, state: "degraded", source: "s" },
+    { id: "g", label: "G", value: 0, state: "error", source: "s" },
+  ];
+
+  it("maxVisible=3: chip lỗi (cuối danh sách) VẪN hiện, rồi degraded; phần còn lại vào '+N' mở được", async () => {
+    render(<StatusChipStrip items={many} maxVisible={3} />);
+    const strip = screen.getByRole("group", { name: vi.layoutKit.chip.stripLabel });
+    const shown = [...strip.querySelectorAll("[data-chip-id]")].map((x) => x.getAttribute("data-chip-id"));
+    expect(shown).toContain("g");
+    expect(shown).toContain("f");
+    expect(shown).toHaveLength(3);
+    const more = within(strip).getByRole("button", { name: "Xem thêm 4 chỉ số" });
+    expect(more).toHaveTextContent("+4");
+    fireEvent.click(more);
+    const pop = await screen.findByRole("dialog");
+    expect(pop.querySelectorAll("[data-chip-id]")).toHaveLength(4);
+  });
+
+  it("thứ tự hiển thị giữ nguyên thứ tự gốc của các chip được chọn", () => {
+    render(<StatusChipStrip items={many} maxVisible={4} />);
+    const shown = [...document.querySelectorAll("[data-status-chip-strip] > [data-chip-id]")].map((x) => x.getAttribute("data-chip-id"));
+    expect(shown).toEqual(["a", "d", "f", "g"]);
+  });
+
+  it("nhiều lỗi hơn chỗ ⇒ chip '+N' mang trạng thái lỗi (không giấu lỗi trong chip trung tính)", () => {
+    const errs: StatusChipItem[] = ["p", "q", "r", "s"].map((id) => ({ id, label: id, value: 0, state: "error", source: "x" }));
+    render(<StatusChipStrip items={errs} maxVisible={2} />);
+    const more = screen.getByRole("button", { name: "Xem thêm 2 chỉ số" });
+    expect(more).toHaveAttribute("data-state", "error");
+  });
+
+  it("không vượt maxVisible ⇒ không có chip '+N'", () => {
+    render(<StatusChipStrip items={many.slice(0, 3)} maxVisible={3} />);
+    expect(screen.queryByRole("button", { name: /Xem thêm/ })).toBeNull();
   });
 });

@@ -20,7 +20,9 @@
  * (Review Focus 3: stream/worker đang chạy không bị huỷ).
  *
  * Dưới 1024 px (plan Global Constraint 10): chuyển sang TAB (Soạn thảo / trái / phải / dưới), mọi
- * tab `forceMount` + `hidden`. Giới hạn: đổi qua lại mốc 1024 px dựng lại cây (nội dung remount).
+ * tab `forceMount` + `hidden`; activity bar (`leftRail`) vẫn hiện cạnh vùng tab.
+ * Fix round 1 (review I3): qua lại mốc 1024 px KHÔNG remount nội dung — mỗi slot render một lần
+ * qua portal vào host DOM ổn định, hai layout chỉ đặt outlet (`slotPortal.tsx`).
  */
 import * as React from "react";
 import { useTranslation } from "react-i18next";
@@ -31,6 +33,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { cn } from "@/lib/utils";
 import { LAYOUT_AI, LAYOUT_MAIN } from "./layoutMarkers";
 import { pxRangeToPct, useElementSize, useNarrowViewport, userLayoutKey, type PctRange } from "./layoutKitHooks";
+import { SlotOutlet, slotPortal, useSlotHost } from "./slotPortal";
 
 export interface WorkbenchSidePanel {
   label: string;
@@ -72,6 +75,8 @@ export interface WorkbenchShellProps {
   /** Điều khiển gập panel trái từ ngoài (activity bar). */
   leftCollapsed?: boolean;
   onLeftCollapsedChange?: (collapsed: boolean) => void;
+  /** Đổi giá trị ⇒ ở màn hẹp chuyển sang tab panel trái (activity bar chọn một mục). */
+  leftRevealToken?: number;
   /** Chiều cao vỏ; mặc định trừ top bar 56 px. */
   heightClass?: string;
   className?: string;
@@ -97,6 +102,7 @@ export function WorkbenchShell({
   bottom,
   leftCollapsed,
   onLeftCollapsedChange,
+  leftRevealToken,
   heightClass = "h-[calc(100dvh-3.5rem)]",
   className,
 }: WorkbenchShellProps): React.JSX.Element {
@@ -112,198 +118,226 @@ export function WorkbenchShell({
   const [bottomCollapsed, setBottomCollapsed] = React.useState<boolean>(bottom?.defaultCollapsed ?? false);
   const [narrowTab, setNarrowTab] = React.useState("main");
 
+  // Một host DOM ổn định cho mỗi slot — nội dung không remount khi đổi layout (slotPortal.tsx).
+  const hToolbar = useSlotHost("toolbar");
+  const hRail = useSlotHost("leftRail");
+  const hHeader = useSlotHost("mainHeader");
+  const hMain = useSlotHost("main");
+  const hLeft = useSlotHost("left");
+  const hRight = useSlotHost("right");
+  const hBottom = useSlotHost("bottom");
+  const hStatus = useSlotHost("statusBar");
+
+  // Panel trái/dưới: áp lại trạng thái gập mỗi khi cây rộng được dựng (lần đầu hoặc sau màn hẹp).
   React.useEffect(() => {
+    if (narrow) return;
     const p = leftRef.current;
     if (!p || leftCollapsed === undefined) return;
     if (leftCollapsed && !p.isCollapsed()) p.collapse();
     if (!leftCollapsed && p.isCollapsed()) p.expand();
-  }, [leftCollapsed]);
+  }, [leftCollapsed, narrow]);
 
   React.useEffect(() => {
-    if (bottom?.defaultCollapsed) bottomRef.current?.collapse();
-    // chỉ lúc mount
+    if (narrow) return;
+    if (bottomCollapsed) bottomRef.current?.collapse();
+    // chỉ khi cây rộng vừa dựng; nút gập tự gọi collapse/expand
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [narrow]);
+
+  // Màn hẹp: chọn mục trên activity bar ⇒ chuyển sang tab panel trái (bỏ lần render đầu).
+  const lastReveal = React.useRef(leftRevealToken);
+  React.useEffect(() => {
+    if (leftRevealToken === lastReveal.current) return;
+    lastReveal.current = leftRevealToken;
+    if (narrow && left) setNarrowTab("left");
+  }, [leftRevealToken, narrow, left]);
 
   const mainProps = { ...mainAria, [LAYOUT_MAIN]: mainName };
   const aiProps = right?.ai ? { [LAYOUT_AI]: "" } : {};
-  const toolbarNode = toolbar != null && (
-    <div data-workbench-toolbar="" style={{ height: 40 }} className="flex shrink-0 items-center gap-2 overflow-hidden border-b px-2">
-      {toolbar}
+  const toolbarOutlet = toolbar != null && (
+    <SlotOutlet host={hToolbar} data-workbench-toolbar="" style={{ height: 40 }} className="flex shrink-0 items-center gap-2 overflow-hidden border-b px-2" />
+  );
+  const statusBarOutlet = (bottomToggle: React.ReactNode) =>
+    (statusBar != null || bottomToggle != null) && (
+      <div
+        data-workbench-statusbar=""
+        aria-label={t("layoutKit.shell.statusBar", "Status bar")}
+        style={{ height: 24 }}
+        className="flex shrink-0 items-center gap-3 overflow-hidden border-t px-2 text-[11px] text-muted-foreground"
+      >
+        {bottomToggle}
+        <SlotOutlet host={hStatus} />
+      </div>
+    );
+  const mainOutlet = (
+    <div className="flex h-full min-h-0 flex-col">
+      {mainHeader != null && <SlotOutlet host={hHeader} className="shrink-0" />}
+      <SlotOutlet host={hMain} {...mainProps} className="min-h-0 flex-1 overflow-auto" />
     </div>
   );
 
+  let layout: React.ReactNode;
   if (narrow) {
     const tabs: Array<{ value: string; label: string; node: React.ReactNode }> = [
-      {
-        value: "main",
-        label: mainLabel ?? t("layoutKit.shell.editor", "Editor"),
-        node: (
-          <div className="flex h-full min-h-0 flex-col">
-            {mainHeader != null && <div className="shrink-0">{mainHeader}</div>}
-            <div {...mainProps} className="min-h-0 flex-1 overflow-auto">
-              {main}
-            </div>
-          </div>
-        ),
-      },
+      { value: "main", label: mainLabel ?? t("layoutKit.shell.editor", "Editor"), node: mainOutlet },
     ];
-    if (left) tabs.push({ value: "left", label: left.label, node: <div className="h-full overflow-auto">{left.content}</div> });
+    if (left) tabs.push({ value: "left", label: left.label, node: <SlotOutlet host={hLeft} className="block h-full overflow-auto" /> });
     if (right)
       tabs.push({
         value: "right",
         label: right.label,
-        node: (
-          <aside aria-label={right.label} {...aiProps} className="h-full overflow-auto">
-            {right.content}
-          </aside>
-        ),
+        node: <SlotOutlet host={hRight} as="aside" aria-label={right.label} {...aiProps} className="block h-full overflow-auto" />,
       });
-    if (bottom) tabs.push({ value: "bottom", label: bottom.label, node: <section aria-label={bottom.label} className="h-full overflow-auto">{bottom.content}</section> });
-    return (
-      <div data-workbench="" data-narrow="" className={cn("flex min-h-0 flex-col overflow-hidden rounded-md border bg-background", heightClass, className)}>
-        {toolbarNode}
-        <Tabs value={narrowTab} onValueChange={setNarrowTab} className="min-h-0 flex-1 gap-0">
-          <TabsList aria-label={t("layoutKit.shell.narrowLabel", "Workspace areas")} className="h-9 w-full justify-start rounded-none border-b">
+    if (bottom)
+      tabs.push({
+        value: "bottom",
+        label: bottom.label,
+        node: <SlotOutlet host={hBottom} as="section" aria-label={bottom.label} className="block h-full overflow-auto" />,
+      });
+    layout = (
+      <div key="narrow" data-workbench="" data-narrow="" className={cn("flex min-h-0 flex-col overflow-hidden rounded-md border bg-background", heightClass, className)}>
+        {toolbarOutlet}
+        <div className="flex min-h-0 flex-1">
+          {leftRail != null && <SlotOutlet host={hRail} className="flex shrink-0" />}
+          <Tabs value={narrowTab} onValueChange={setNarrowTab} className="min-h-0 min-w-0 flex-1 gap-0">
+            <TabsList aria-label={t("layoutKit.shell.narrowLabel", "Workspace areas")} className="h-9 w-full justify-start rounded-none border-b">
+              {tabs.map((x) => (
+                <TabsTrigger key={x.value} value={x.value} className="min-h-8 flex-none text-xs">
+                  {x.label}
+                </TabsTrigger>
+              ))}
+            </TabsList>
             {tabs.map((x) => (
-              <TabsTrigger key={x.value} value={x.value} className="min-h-8 flex-none text-xs">
-                {x.label}
-              </TabsTrigger>
+              <TabsContent key={x.value} value={x.value} forceMount hidden={narrowTab !== x.value} className="min-h-0">
+                {x.node}
+              </TabsContent>
             ))}
-          </TabsList>
-          {tabs.map((x) => (
-            <TabsContent key={x.value} value={x.value} forceMount hidden={narrowTab !== x.value} className="min-h-0">
-              {x.node}
-            </TabsContent>
-          ))}
-        </Tabs>
-        {statusBar != null && (
-          <div data-workbench-statusbar="" aria-label={t("layoutKit.shell.statusBar", "Status bar")} style={{ height: 24 }} className="flex shrink-0 items-center gap-3 overflow-hidden border-t px-2 text-[11px] text-muted-foreground">
-            {statusBar}
+          </Tabs>
+        </div>
+        {statusBarOutlet(null)}
+      </div>
+    );
+  } else {
+    const l = left ? pxRangeToPct({ minPx: left.minPx ?? 240, maxPx: left.maxPx ?? 300, defaultPx: left.defaultPx ?? 260 }, width, FALLBACK_LEFT) : null;
+    const r = right ? pxRangeToPct({ minPx: right.minPx ?? 320, maxPx: right.maxPx ?? 420, defaultPx: right.defaultPx ?? 380 }, width, FALLBACK_RIGHT) : null;
+    const b = bottom ? pxRangeToPct({ minPx: bottom.minPx ?? 180, maxPx: bottom.maxPx ?? 320, defaultPx: bottom.defaultPx ?? 200 }, height, FALLBACK_BOTTOM) : null;
+    const hKey = userLayoutKey(layoutId, userId, "h");
+    const vKey = userLayoutKey(layoutId, userId, "v");
+
+    const toggleBottom = () => {
+      const p = bottomRef.current;
+      if (!p) return;
+      if (p.isCollapsed()) {
+        p.expand();
+        setBottomCollapsed(false);
+      } else {
+        p.collapse();
+        setBottomCollapsed(true);
+      }
+    };
+    const bottomToggle = bottom ? (
+      <button
+        type="button"
+        aria-expanded={!bottomCollapsed}
+        aria-controls={bottomId}
+        aria-label={t("layoutKit.shell.toggleBottom", "Toggle the bottom panel")}
+        title={t("layoutKit.shell.toggleBottom", "Toggle the bottom panel")}
+        onClick={toggleBottom}
+        className="inline-flex h-5 w-5 items-center justify-center rounded hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+      >
+        <PanelBottom className="h-3.5 w-3.5" aria-hidden="true" />
+      </button>
+    ) : null;
+
+    layout = (
+      <div key="wide" data-workbench="" className={cn("flex min-h-0 flex-col overflow-hidden rounded-md border bg-background", heightClass, className)}>
+        {toolbarOutlet}
+        <div className="flex min-h-0 flex-1">
+          {leftRail != null && <SlotOutlet host={hRail} className="flex shrink-0" />}
+          <div ref={hRef} className="min-w-0 flex-1">
+            <ResizablePanelGroup direction="horizontal" autoSaveId={hKey} className="h-full">
+              {left && l && (
+                <>
+                  <ResizablePanel
+                    id="left"
+                    order={1}
+                    ref={leftRef}
+                    collapsible
+                    collapsedSize={0}
+                    minSize={l.minSize}
+                    maxSize={l.maxSize}
+                    defaultSize={l.defaultSize}
+                    onCollapse={() => onLeftCollapsedChange?.(true)}
+                    onExpand={() => onLeftCollapsedChange?.(false)}
+                  >
+                    <SlotOutlet host={hLeft} data-workbench-left="" aria-label={left.label} role="region" className="h-full overflow-auto border-r" />
+                  </ResizablePanel>
+                  <ResizableHandle aria-label={t("layoutKit.shell.resizeLeft", "Resize the left panel")} />
+                </>
+              )}
+              <ResizablePanel id="center" order={2} minSize={30}>
+                <div ref={vRef} className="h-full">
+                  <ResizablePanelGroup direction="vertical" autoSaveId={vKey} className="h-full">
+                    <ResizablePanel id="main" order={1} minSize={30}>
+                      {mainOutlet}
+                    </ResizablePanel>
+                    {bottom && b && (
+                      <>
+                        <ResizableHandle aria-label={t("layoutKit.shell.resizeBottom", "Resize the bottom panel")} />
+                        <ResizablePanel
+                          id="bottom"
+                          order={2}
+                          ref={bottomRef}
+                          collapsible
+                          collapsedSize={0}
+                          minSize={b.minSize}
+                          maxSize={b.maxSize}
+                          defaultSize={b.defaultSize}
+                          onCollapse={() => setBottomCollapsed(true)}
+                          onExpand={() => setBottomCollapsed(false)}
+                        >
+                          <SlotOutlet
+                            host={hBottom}
+                            as="section"
+                            id={bottomId}
+                            data-workbench-bottom=""
+                            aria-label={bottom.label}
+                            className="h-full overflow-auto border-t"
+                          />
+                        </ResizablePanel>
+                      </>
+                    )}
+                  </ResizablePanelGroup>
+                </div>
+              </ResizablePanel>
+              {right && r && (
+                <>
+                  <ResizableHandle aria-label={t("layoutKit.shell.resizeRight", "Resize the right panel")} />
+                  <ResizablePanel id="right" order={3} minSize={r.minSize} maxSize={r.maxSize} defaultSize={r.defaultSize}>
+                    <SlotOutlet host={hRight} as="aside" aria-label={right.label} {...aiProps} className="h-full overflow-auto border-l" />
+                  </ResizablePanel>
+                </>
+              )}
+            </ResizablePanelGroup>
           </div>
-        )}
+        </div>
+        {statusBarOutlet(bottomToggle)}
       </div>
     );
   }
 
-  const l = left ? pxRangeToPct({ minPx: left.minPx ?? 240, maxPx: left.maxPx ?? 300, defaultPx: left.defaultPx ?? 260 }, width, FALLBACK_LEFT) : null;
-  const r = right ? pxRangeToPct({ minPx: right.minPx ?? 320, maxPx: right.maxPx ?? 420, defaultPx: right.defaultPx ?? 380 }, width, FALLBACK_RIGHT) : null;
-  const b = bottom ? pxRangeToPct({ minPx: bottom.minPx ?? 180, maxPx: bottom.maxPx ?? 320, defaultPx: bottom.defaultPx ?? 200 }, height, FALLBACK_BOTTOM) : null;
-  const hKey = userLayoutKey(layoutId, userId, "h");
-  const vKey = userLayoutKey(layoutId, userId, "v");
-
-  const toggleBottom = () => {
-    const p = bottomRef.current;
-    if (!p) return;
-    if (p.isCollapsed()) {
-      p.expand();
-      setBottomCollapsed(false);
-    } else {
-      p.collapse();
-      setBottomCollapsed(true);
-    }
-  };
-
   return (
-    <div data-workbench="" className={cn("flex min-h-0 flex-col overflow-hidden rounded-md border bg-background", heightClass, className)}>
-      {toolbarNode}
-      <div className="flex min-h-0 flex-1">
-        {leftRail}
-        <div ref={hRef} className="min-w-0 flex-1">
-          <ResizablePanelGroup direction="horizontal" autoSaveId={hKey} className="h-full">
-            {left && l && (
-              <>
-                <ResizablePanel
-                  id="left"
-                  order={1}
-                  ref={leftRef}
-                  collapsible
-                  collapsedSize={0}
-                  minSize={l.minSize}
-                  maxSize={l.maxSize}
-                  defaultSize={l.defaultSize}
-                  onCollapse={() => onLeftCollapsedChange?.(true)}
-                  onExpand={() => onLeftCollapsedChange?.(false)}
-                >
-                  <div data-workbench-left="" aria-label={left.label} role="region" className="h-full overflow-auto border-r">
-                    {left.content}
-                  </div>
-                </ResizablePanel>
-                <ResizableHandle aria-label={t("layoutKit.shell.resizeLeft", "Resize the left panel")} />
-              </>
-            )}
-            <ResizablePanel id="center" order={2} minSize={30}>
-              <div ref={vRef} className="h-full">
-                <ResizablePanelGroup direction="vertical" autoSaveId={vKey} className="h-full">
-                  <ResizablePanel id="main" order={1} minSize={30}>
-                    <div className="flex h-full min-h-0 flex-col">
-                      {mainHeader != null && <div className="shrink-0">{mainHeader}</div>}
-                      <div {...mainProps} className="min-h-0 flex-1 overflow-auto">
-                        {main}
-                      </div>
-                    </div>
-                  </ResizablePanel>
-                  {bottom && b && (
-                    <>
-                      <ResizableHandle aria-label={t("layoutKit.shell.resizeBottom", "Resize the bottom panel")} />
-                      <ResizablePanel
-                        id="bottom"
-                        order={2}
-                        ref={bottomRef}
-                        collapsible
-                        collapsedSize={0}
-                        minSize={b.minSize}
-                        maxSize={b.maxSize}
-                        defaultSize={b.defaultSize}
-                        onCollapse={() => setBottomCollapsed(true)}
-                        onExpand={() => setBottomCollapsed(false)}
-                      >
-                        <section id={bottomId} data-workbench-bottom="" aria-label={bottom.label} className="h-full overflow-auto border-t">
-                          {bottom.content}
-                        </section>
-                      </ResizablePanel>
-                    </>
-                  )}
-                </ResizablePanelGroup>
-              </div>
-            </ResizablePanel>
-            {right && r && (
-              <>
-                <ResizableHandle aria-label={t("layoutKit.shell.resizeRight", "Resize the right panel")} />
-                <ResizablePanel id="right" order={3} minSize={r.minSize} maxSize={r.maxSize} defaultSize={r.defaultSize}>
-                  <aside aria-label={right.label} {...aiProps} className="h-full overflow-auto border-l">
-                    {right.content}
-                  </aside>
-                </ResizablePanel>
-              </>
-            )}
-          </ResizablePanelGroup>
-        </div>
-      </div>
-      {(statusBar != null || bottom) && (
-        <div
-          data-workbench-statusbar=""
-          aria-label={t("layoutKit.shell.statusBar", "Status bar")}
-          style={{ height: 24 }}
-          className="flex shrink-0 items-center gap-3 overflow-hidden border-t px-2 text-[11px] text-muted-foreground"
-        >
-          {bottom && (
-            <button
-              type="button"
-              aria-expanded={!bottomCollapsed}
-              aria-controls={bottomId}
-              aria-label={t("layoutKit.shell.toggleBottom", "Toggle the bottom panel")}
-              title={t("layoutKit.shell.toggleBottom", "Toggle the bottom panel")}
-              onClick={toggleBottom}
-              className="inline-flex h-5 w-5 items-center justify-center rounded hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-            >
-              <PanelBottom className="h-3.5 w-3.5" aria-hidden="true" />
-            </button>
-          )}
-          {statusBar}
-        </div>
-      )}
-    </div>
+    <>
+      {layout}
+      {slotPortal(toolbar, hToolbar, "slot-toolbar")}
+      {slotPortal(leftRail, hRail, "slot-rail")}
+      {slotPortal(mainHeader, hHeader, "slot-header")}
+      {slotPortal(main, hMain, "slot-main")}
+      {slotPortal(left?.content, hLeft, "slot-left")}
+      {slotPortal(right?.content, hRight, "slot-right")}
+      {slotPortal(bottom?.content, hBottom, "slot-bottom")}
+      {slotPortal(statusBar, hStatus, "slot-status")}
+    </>
   );
 }
 

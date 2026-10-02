@@ -135,9 +135,13 @@ describe("FlyoutHost — URL là nguồn sự thật", () => {
     expect(document.querySelectorAll("[data-flyout-key]")).toHaveLength(2);
   });
 
-  it("khoá lạ trong URL bị bỏ qua và URL được dọn", async () => {
+  it("khoá lạ trong URL bị bỏ qua và URL được dọn (sau thời gian ân hạn — fix round 1)", async () => {
     window.history.replaceState(null, "", "/x?tab=a&flyout=khong-co&flyoutId=1");
-    renderHost();
+    render(
+      <FlyoutHost flyouts={flyouts} unknownKeyGraceMs={30}>
+        <Opener />
+      </FlyoutHost>,
+    );
     await waitFor(() => expect(params().get("flyout")).toBeNull());
     expect(params().get("tab")).toBe("a");
     expect(screen.queryByRole("dialog")).toBeNull();
@@ -274,5 +278,135 @@ describe("FlyoutHost — hỏi trước khi đóng form còn dữ liệu chưa l
     fireEvent.keyDown(d1, { key: "Escape" });
     await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
     expect(screen.queryByRole("alertdialog")).toBeNull();
+  });
+});
+
+// ── Fix round 1 (review I5 + minors) — sổ sách lịch sử nhất quán ────────────────────────────────
+function OpenOther() {
+  const f = useFlyout();
+  return (
+    <>
+      <button type="button" onClick={() => f.open("detail", { id: 99 })}>
+        mở 99
+      </button>
+      <button type="button" onClick={() => f.closeAll()}>
+        đóng hết
+      </button>
+    </>
+  );
+}
+const flyouts2: Record<string, FlyoutDefinition> = {
+  detail: flyouts.detail,
+  edit: { title: () => "Sửa ECN", render: () => <><EditForm /><OpenOther /></> },
+};
+function Page() {
+  return (
+    <>
+      <h1>Trang ECN</h1>
+      <Opener />
+    </>
+  );
+}
+function renderHost2(defs: Record<string, FlyoutDefinition> = flyouts2, graceMs?: number) {
+  return render(
+    <FlyoutHost flyouts={defs} unknownKeyGraceMs={graceMs}>
+      <Page />
+    </FlyoutHost>,
+  );
+}
+function startAt(search: string) {
+  window.history.replaceState(null, "", "/a");
+  window.history.pushState(null, "", `/engineering-changes${search}`);
+}
+
+describe("FlyoutHost — open() khi đang có stack đã push", () => {
+  it("mở A, push B, open C, đóng ⇒ KHÔNG hồi sinh A; back tiếp ⇒ về trang trước", async () => {
+    startAt("?tab=list");
+    renderHost2();
+    fireEvent.click(screen.getByRole("button", { name: "mở chi tiết" }));
+    const a = await screen.findByRole("dialog", { name: "ECN 42" });
+    fireEvent.click(within(a).getByRole("button", { name: "sửa" }));
+    const b = await screen.findByRole("dialog", { name: "Sửa ECN" });
+    fireEvent.click(within(b).getByRole("button", { name: "mở 99" }));
+    const c = await screen.findByRole("dialog", { name: "ECN 99" });
+    await waitFor(() => expect(params().getAll("flyout")).toEqual(["detail"]));
+    expect(params().getAll("flyoutId")).toEqual(["99"]);
+    fireEvent.keyDown(c, { key: "Escape" });
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+    await waitFor(() => expect(params().get("flyout")).toBeNull());
+    await new Promise((r) => setTimeout(r, 50));
+    expect(screen.queryByRole("dialog")).toBeNull();
+    act(() => window.history.back());
+    await waitFor(() => expect(window.location.pathname).toBe("/a"));
+  });
+
+  it("biến thể còn dữ liệu: hỏi ⇒ Bỏ thay đổi ⇒ C mở; đóng C ⇒ không còn sheet nào", async () => {
+    startAt("?tab=list");
+    renderHost2();
+    fireEvent.click(screen.getByRole("button", { name: "mở chi tiết" }));
+    const a = await screen.findByRole("dialog", { name: "ECN 42" });
+    fireEvent.click(within(a).getByRole("button", { name: "sửa" }));
+    const b = await screen.findByRole("dialog", { name: "Sửa ECN" });
+    fireEvent.change(within(b).getByLabelText("tên"), { target: { value: "nháp" } });
+    fireEvent.click(within(b).getByRole("button", { name: "mở 99" }));
+    const confirm = await screen.findByRole("alertdialog");
+    fireEvent.click(within(confirm).getByRole("button", { name: vi.layoutKit.flyout.discard }));
+    const c = await screen.findByRole("dialog", { name: "ECN 99" });
+    expect(screen.queryByRole("dialog", { name: "Sửa ECN" })).toBeNull();
+    fireEvent.keyDown(c, { key: "Escape" });
+    await waitFor(() => expect(params().get("flyout")).toBeNull());
+    await new Promise((r) => setTimeout(r, 50));
+    expect(screen.queryByRole("dialog")).toBeNull();
+  });
+});
+
+describe("FlyoutHost — closeAll trên stack trộn F5 + push", () => {
+  it("F5 [A] rồi push B, đóng hết ⇒ không sheet; back ⇒ về trang trước, KHÔNG mở lại stack", async () => {
+    startAt("?flyout=detail&flyoutId=7");
+    renderHost2();
+    const a = await screen.findByRole("dialog", { name: "ECN 7" });
+    fireEvent.click(within(a).getByRole("button", { name: "sửa" }));
+    const b = await screen.findByRole("dialog", { name: "Sửa ECN" });
+    fireEvent.click(within(b).getByRole("button", { name: "đóng hết" }));
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+    await waitFor(() => expect(params().get("flyout")).toBeNull());
+    expect(window.location.pathname).toBe("/engineering-changes");
+    act(() => window.history.back());
+    await waitFor(() => expect(window.location.pathname).toBe("/a"));
+    expect(screen.queryByRole("dialog")).toBeNull();
+  });
+});
+
+describe("FlyoutHost — lớp dựng từ F5 trả focus về chỗ hợp lý", () => {
+  it("F5 rồi Esc ⇒ focus về h1 của trang (không rơi về body)", async () => {
+    startAt("?flyout=detail&flyoutId=7");
+    renderHost2();
+    const a = await screen.findByRole("dialog", { name: "ECN 7" });
+    fireEvent.keyDown(a, { key: "Escape" });
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+    await waitFor(() => expect(document.activeElement).toBe(screen.getByRole("heading", { name: "Trang ECN" })));
+  });
+});
+
+describe("FlyoutHost — deep link tới khoá CHƯA đăng ký (gated theo quyền/dữ liệu)", () => {
+  it("giữ nguyên URL trong thời gian ân hạn; đăng ký muộn ⇒ sheet mở", async () => {
+    startAt("?tab=list&flyout=detail&flyoutId=7");
+    const { rerender } = renderHost2({ edit: flyouts2.edit }, 5000);
+    await new Promise((r) => setTimeout(r, 60));
+    expect(params().get("flyout")).toBe("detail");
+    expect(screen.queryByRole("dialog")).toBeNull();
+    rerender(
+      <FlyoutHost flyouts={flyouts2} unknownKeyGraceMs={5000}>
+        <Page />
+      </FlyoutHost>,
+    );
+    expect(await screen.findByRole("dialog", { name: "ECN 7" })).toBeInTheDocument();
+  });
+
+  it("hết ân hạn mà vẫn chưa đăng ký ⇒ dọn khỏi URL (giữ tham số khác)", async () => {
+    startAt("?tab=list&flyout=detail&flyoutId=7");
+    renderHost2({ edit: flyouts2.edit }, 40);
+    await waitFor(() => expect(params().get("flyout")).toBeNull());
+    expect(params().get("tab")).toBe("list");
   });
 });

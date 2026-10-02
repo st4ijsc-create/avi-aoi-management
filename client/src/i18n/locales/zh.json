@@ -21378,7 +21378,8 @@
       "error": "错误",
       "errorHint": "无法读取数据源 — 不显示数字。",
       "degradedHint": "数据源仅部分可读 — 数字可能不完整。",
-      "source": "来源：{{source}}"
+      "source": "来源：{{source}}",
+      "moreLabel": "查看另外 {{count}} 个指标"
     },
     "flyout": {
       "unsavedTitle": "放弃未保存的更改？",
