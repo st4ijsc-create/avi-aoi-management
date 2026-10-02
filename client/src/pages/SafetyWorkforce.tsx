@@ -37,8 +37,6 @@ import {
   MetricCard, PageHeader, PageContainer,
   chartColor, chartTooltipStyle, chartTooltipLabelStyle, chartGridProps, chartAxisTick,
 } from "@/components/patterns";
-import { buildBreadcrumbs } from "@/lib/breadcrumbs";
-import { useLocation } from "wouter";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -186,9 +184,6 @@ function fmtDateTime(d?: string | Date | null): string {
 
 export default function SafetyWorkforce() {
   const { t } = useTranslation();
-  // U3 (doc 26) — breadcrumb "Kỹ thuật › Section › Trang" + link về Hub.
-  const [location] = useLocation();
-  const crumbs = buildBreadcrumbs(location, t);
   const { hasPermission } = usePermissions();
   const canView = hasPermission("machine_monitoring", "canView");
   const canControl = hasPermission("machine_control", "canCreate");
@@ -390,7 +385,6 @@ export default function SafetyWorkforce() {
       <PageContainer className="flex flex-col gap-4 space-y-0">
         {/* ── PageHeader (DS F1b shared pattern) ─────────────────────────────── */}
         <PageHeader
-          breadcrumbs={crumbs}
           icon={<ShieldAlert className="h-6 w-6" />}
           title={t("safety.title", "Safety & Workforce")}
           badge={!canControl ? <ViewOnlyBadge module="machine_control" /> : undefined}

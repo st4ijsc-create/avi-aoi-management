@@ -50,7 +50,7 @@ import {
   AlertDialogTitle, AlertDialogDescription,
 } from "@/components/ui/alert-dialog";
 import { FilterBar, useUrlFilters, type FilterDef } from "@/components/FilterBar";
-import { PageHeader, StatusBadge, type BadgeVariant } from "@/components/patterns";
+import { PageContainer, PageHeader, StatusBadge, type BadgeVariant } from "@/components/patterns";
 import { GitPullRequestArrow, AlertTriangle, Wrench, Plus } from "lucide-react";
 import { toast } from "sonner";
 import { toastTrpcError, mapTrpcError } from "@/lib/trpcErrors";
@@ -297,7 +297,8 @@ export default function EngineeringChanges() {
 
   return (
     <DashboardLayout title={t("ecn.title", "Thay đổi kỹ thuật")} navItems={navItems} currentPath="/engineering-changes">
-      <div className="space-y-6 p-6">
+      {/* doc 81 Đợt 2 Task 2 — PageContainer: không đệm kép với <main> của shell (trước: p-6 + p-6). */}
+      <PageContainer>
         <PageHeader
           icon={<GitPullRequestArrow className="h-6 w-6 text-primary" />}
           title={t("ecn.title", "Thay đổi kỹ thuật")}
@@ -441,7 +442,7 @@ export default function EngineeringChanges() {
 
         {/* ── Task 3: componentCode backfill (admin only) ──────────────── */}
         {isAdmin && <ComponentCodeBackfillPanel products={products} />}
-      </div>
+      </PageContainer>
 
       {/* ── Reject reason dialog (replaces window.prompt) ──────────────── */}
       <AlertDialog open={rejectTarget != null} onOpenChange={(o) => { if (!o) setRejectTarget(null); }}>

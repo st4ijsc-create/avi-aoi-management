@@ -13,7 +13,6 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useScope } from "@/components/patterns/ScopeFilterBar";
 import { useScopeWired } from "@/contexts/AssetScopeContext";
 import { useTranslation } from "react-i18next";
-import { useLocation } from "wouter";
 import { AlarmClock, Activity, Bell, Gauge, Layers, ShieldAlert, TriangleAlert, Wifi, WifiOff } from "lucide-react";
 
 import { trpc } from "@/lib/trpc";
@@ -21,7 +20,6 @@ import { usePollingInterval } from "@/hooks/usePollingInterval";
 import { useEcosystemEvents } from "@/hooks/useEcosystemEvents";
 import DashboardLayout from "@/components/DashboardLayout";
 import { navItems } from "@/lib/navigation";
-import { buildBreadcrumbs } from "@/lib/breadcrumbs";
 import { PollFreshness } from "@/components/PollFreshness";
 import { EmptyState } from "@/components/EmptyState";
 import { PageContainer, PageHeader, SectionCard, StatChip, StatChipRow } from "@/components/patterns";
@@ -47,8 +45,6 @@ function statusTone(s: "ok" | "warning" | "critical"): "success" | "warning" | "
 
 export default function AlarmKpiDashboard() {
   const { t } = useTranslation();
-  const [location] = useLocation();
-  const crumbs = buildBreadcrumbs(location, t);
   const [windowHours, setWindowHours] = useState<number>(8);
 
   // doc 46 FE-W2 — socket drives freshness now, so the poll is lengthened to 60s and
@@ -98,7 +94,6 @@ export default function AlarmKpiDashboard() {
     <DashboardLayout title={t("alarmKpi.title", "KPI Cảnh báo (ISA-18.2)")} navItems={navItems} currentPath={CURRENT_PATH}>
       <PageContainer className="space-y-6">
         <PageHeader
-          breadcrumbs={crumbs}
           icon={<Bell className="h-6 w-6" />}
           title={t("alarmKpi.title", "KPI Cảnh báo (ISA-18.2)")}
           description={t(

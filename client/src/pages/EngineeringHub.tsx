@@ -15,7 +15,6 @@ import { useTranslation } from "react-i18next";
 import DashboardLayout from "@/components/DashboardLayout";
 import { PageHeader, PageContainer, ToolTile } from "@/components/patterns";
 import { PendingReviewStrip } from "@/components/PendingReviewStrip";
-import { buildBreadcrumbs } from "@/lib/breadcrumbs";
 import { getNavItemByHref } from "@/lib/navigation";
 import { usePermissions } from "@/_core/hooks/usePermissions";
 import { trpc } from "@/lib/trpc";
@@ -188,10 +187,6 @@ function SafetyPostureStrip() {
 export default function EngineeringHub() {
   const { t } = useTranslation();
   const { hasPermission } = usePermissions();
-  const crumbs = buildBreadcrumbs("/engineering-home", t).map((c) => ({
-    label: c.label,
-    href: c.href,
-  }));
 
   /**
    * U7 (doc 26 §2.1) — báo TRƯỚC khi bấm: đọc metadata nav (beta + requiredPermission)
@@ -220,7 +215,6 @@ export default function EngineeringHub() {
     <DashboardLayout>
       <PageContainer>
         <PageHeader
-          breadcrumbs={crumbs}
           icon={<LayoutDashboard className="text-primary" />}
           title={t("engineeringHome.title", "Engineering Hub")}
           description={t(

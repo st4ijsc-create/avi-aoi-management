@@ -31,8 +31,6 @@ import { trpc } from "@/lib/trpc";
 import { usePermissions } from "@/_core/hooks/usePermissions";
 import DashboardLayout from "@/components/DashboardLayout";
 import { ViewOnlyBadge } from "@/components/PermissionGate";
-import { buildBreadcrumbs } from "@/lib/breadcrumbs";
-import { useLocation } from "wouter";
 import {
   MetricCard,
   PageContainer,
@@ -130,9 +128,6 @@ function pct(n: number): string {
 
 export default function EquipmentStandards() {
   const { t } = useTranslation();
-  // U3 (doc 26) — breadcrumb "Kỹ thuật › Section › Trang" + link về Hub.
-  const [location] = useLocation();
-  const crumbs = buildBreadcrumbs(location, t);
   const { hasPermission } = usePermissions();
   const canView = hasPermission("machine_monitoring", "canView");
   const canControl = hasPermission("machine_control", "canCreate");
@@ -318,7 +313,6 @@ export default function EquipmentStandards() {
       <PageContainer className="flex flex-col gap-4 space-y-0">
         {/* ── PageHeader (DS F1b shared pattern) ─────────────────────────────── */}
         <PageHeader
-          breadcrumbs={crumbs}
           icon={<ShieldCheck className="h-6 w-6" />}
           title={t("eqStandards.title", "Equipment Standards & Governance")}
           badge={!canControl ? <ViewOnlyBadge module="machine_control" /> : undefined}

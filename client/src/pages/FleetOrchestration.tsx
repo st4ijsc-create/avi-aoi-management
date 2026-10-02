@@ -33,7 +33,6 @@ import DashboardLayout from "@/components/DashboardLayout";
 import { ViewOnlyBadge } from "@/components/PermissionGate";
 import { PollFreshness } from "@/components/PollFreshness";
 import { MetricCard, PageContainer, PageHeader } from "@/components/patterns";
-import { buildBreadcrumbs } from "@/lib/breadcrumbs";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -233,9 +232,7 @@ const RESOURCE_TYPES = ["jig", "gripper", "fixture", "tool_changer", "other"] as
 
 export default function FleetOrchestration() {
   const { t } = useTranslation();
-  const [location, setLocation] = useLocation();
-  // U3 (doc 26) — breadcrumb "Kỹ thuật › Section › Trang" + link về Hub.
-  const crumbs = buildBreadcrumbs(location, t);
+  const [, setLocation] = useLocation();
   const { hasPermission } = usePermissions();
   const canView = hasPermission("machine_monitoring", "canView");
   const canControl = hasPermission("machine_control", "canCreate");
@@ -577,7 +574,6 @@ export default function FleetOrchestration() {
       <PageContainer className="flex flex-col gap-4 space-y-0">
         {/* ── PageHeader (DS F1b shared pattern) ─────────────────────────────── */}
         <PageHeader
-          breadcrumbs={crumbs}
           icon={<Truck className="h-6 w-6" />}
           title={t("fleet.title", "Fleet & Task Orchestration")}
           badge={!canControl ? <ViewOnlyBadge module="machine_control" /> : undefined}

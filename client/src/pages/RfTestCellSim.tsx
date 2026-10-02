@@ -16,11 +16,10 @@
  */
 import { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { Link, useLocation } from "wouter";
+import { Link } from "wouter";
 import DashboardLayout from "@/components/DashboardLayout";
 import { PageHeader, PageContainer } from "@/components/patterns";
 import { ViewOnlyBadge } from "@/components/PermissionGate";
-import { buildBreadcrumbs } from "@/lib/breadcrumbs";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -280,9 +279,6 @@ const MAX_HISTORY = 500; // giới hạn bản ghi giữ trong phiên
 
 export function RfTestCellSimContent() {
   const { t } = useTranslation();
-  // U3 (doc 26) — breadcrumb "Kỹ thuật › Section › Trang" + link về Hub.
-  const [location] = useLocation();
-  const crumbs = buildBreadcrumbs(location, t);
   const utils = trpc.useUtils();
 
   const [sims, setSims] = useState<{ pass: Sim; fail: Sim } | null>(null);
@@ -431,7 +427,6 @@ export function RfTestCellSimContent() {
   return (
     <PageContainer fluid className="space-y-4">
         <PageHeader
-          breadcrumbs={crumbs}
           icon={<Radio className="h-6 w-6" />}
           badge={<ViewOnlyBadge module="machine_control" />}
           title={t("rfcell.title", "RF Shielded Test Cell — Realtime Simulation")}

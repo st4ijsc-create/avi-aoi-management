@@ -13,12 +13,12 @@
 import { useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import type { TFunction } from "i18next";
-import { Link, useLocation } from "wouter";
+import { Link } from "wouter";
 import { useEngineering } from "@/contexts/EngineeringContext";
 import { withParams } from "@/lib/engineeringDeepLink";
 import DashboardLayout from "@/components/DashboardLayout";
+import { useShellPageVariant } from "@/lib/shellPage";
 import { PageHeader, PageContainer } from "@/components/patterns";
-import { buildBreadcrumbs } from "@/lib/breadcrumbs";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -1056,9 +1056,8 @@ function isRunTerminal(status: string): boolean {
 
 export default function OrchestrationStudio() {
   const { t, i18n } = useTranslation();
-  // U3 (doc 26) — breadcrumb "Kỹ thuật › Section › Trang" + link về Hub.
-  const [location] = useLocation();
-  const crumbs = buildBreadcrumbs(location, t);
+  // doc 81 Đợt 2 Task 2 — màn workbench: rail trái mặc định thu gọn (nhớ theo người dùng).
+  useShellPageVariant("workbench");
   const { hasPermission } = usePermissions();
   const canControl = hasPermission("machine_control", "canCreate");
   // U1 (doc 26) — nhớ workflow ref đang mở làm fallback deep-link khi sang Cell Twin/RF.
@@ -1393,7 +1392,6 @@ export default function OrchestrationStudio() {
       <PageContainer fluid className="flex flex-col gap-4 space-y-0">
         {/* Header */}
         <PageHeader
-          breadcrumbs={crumbs}
           icon={<Workflow className="h-6 w-6" />}
           title={t("studio.title", "Orchestration Studio")}
           badge={!canControl ? <ViewOnlyBadge module="machine_control" /> : undefined}

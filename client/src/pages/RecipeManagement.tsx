@@ -22,8 +22,7 @@ import { useAuth } from "@/_core/hooks/useAuth";
 import DashboardLayout from "@/components/DashboardLayout";
 import { ViewOnlyBadge } from "@/components/PermissionGate";
 import { PageHeader, PageContainer, StatusBadge, type BadgeVariant } from "@/components/patterns";
-import { buildBreadcrumbs } from "@/lib/breadcrumbs";
-import { useLocation, useSearch } from "wouter";
+import { useSearch } from "wouter";
 import { navItems } from "@/lib/navigation";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -93,9 +92,6 @@ const RECIPE_TEMPLATES: Record<RecipeTemplateKind, Record<string, unknown>> = {
 
 export default function RecipeManagement() {
   const { t } = useTranslation();
-  // U3 (doc 26) — breadcrumb "Kỹ thuật › Section › Trang" + link về Hub.
-  const [location] = useLocation();
-  const crumbs = buildBreadcrumbs(location, t);
   const { hasPermission } = usePermissions();
   const { user } = useAuth();
   const canView = hasPermission("machine_control", "canView");
@@ -322,7 +318,6 @@ export default function RecipeManagement() {
     <DashboardLayout title={t("recipes.title")} navItems={navItems} currentPath="/recipes">
     <PageContainer>
       <PageHeader
-        breadcrumbs={crumbs}
         icon={<FlaskConical className="h-6 w-6" />}
         title={
           <span className="flex items-center gap-2">

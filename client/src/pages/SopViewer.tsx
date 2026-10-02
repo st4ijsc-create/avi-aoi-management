@@ -11,7 +11,7 @@
  */
 import { useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { useLocation, useRoute } from "wouter";
+import { useRoute } from "wouter";
 import { toast } from "sonner";
 import { toastTrpcError } from "@/lib/trpcErrors";
 import { CheckCircle2, ChevronLeft, ChevronRight, ClipboardList, Loader2, Play, ScanLine } from "lucide-react";
@@ -19,7 +19,6 @@ import { CheckCircle2, ChevronLeft, ChevronRight, ClipboardList, Loader2, Play, 
 import { trpc } from "@/lib/trpc";
 import DashboardLayout from "@/components/DashboardLayout";
 import { navItems } from "@/lib/navigation";
-import { buildBreadcrumbs } from "@/lib/breadcrumbs";
 import { EmptyState } from "@/components/EmptyState";
 import { PageContainer, PageHeader, SectionCard, StatusBadge, ProductModelSelect, EntityPicker } from "@/components/patterns";
 import { Button } from "@/components/ui/button";
@@ -32,9 +31,7 @@ const CURRENT_PATH = "/sop";
 
 export default function SopViewer() {
   const { t } = useTranslation();
-  const [location] = useLocation();
   const [, params] = useRoute("/sop/:sopId?");
-  const crumbs = buildBreadcrumbs(location, t);
 
   const routeSopId = params?.sopId && /^\d+$/.test(params.sopId) ? Number(params.sopId) : null;
 
@@ -129,7 +126,6 @@ export default function SopViewer() {
     <DashboardLayout title={t("sop.view.title", "e-SOP")} navItems={navItems} currentPath={CURRENT_PATH}>
       <PageContainer className="space-y-6">
         <PageHeader
-          breadcrumbs={crumbs}
           icon={<ClipboardList className="h-6 w-6" />}
           title={t("sop.view.title", "Quy trình thao tác (e-SOP)")}
           description={t("sop.view.subtitle", "Hướng dẫn từng bước theo sản phẩm/trạm; xác nhận checklist bắt buộc mới cho tiếp.")}

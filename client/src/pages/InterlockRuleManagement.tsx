@@ -27,8 +27,7 @@ import DashboardLayout from "@/components/DashboardLayout";
 import { ViewOnlyBadge } from "@/components/PermissionGate";
 import { PollFreshness } from "@/components/PollFreshness";
 import { ConfirmWithReason, PageContainer, PageHeader } from "@/components/patterns";
-import { buildBreadcrumbs } from "@/lib/breadcrumbs";
-import { useLocation, useSearch } from "wouter";
+import { useSearch } from "wouter";
 import { navItems } from "@/lib/navigation";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -116,9 +115,6 @@ function actionVariant(action: string): "default" | "secondary" | "destructive" 
 
 export default function InterlockRuleManagement() {
   const { t } = useTranslation();
-  // U3 (doc 26) — breadcrumb "Kỹ thuật › Section › Trang" + link về Hub.
-  const [location] = useLocation();
-  const crumbs = buildBreadcrumbs(location, t);
   const { hasPermission, isAdmin } = usePermissions();
   const canView = hasPermission("interlock", "canView");
   const canCreate = hasPermission("interlock", "canCreate");
@@ -380,7 +376,6 @@ export default function InterlockRuleManagement() {
     <DashboardLayout title={t("interlockRules.title")} navItems={navItems} currentPath="/interlock-rules">
     <PageContainer className="space-y-6">
       <PageHeader
-        breadcrumbs={crumbs}
         icon={<ShieldAlert className="h-6 w-6" />}
         title={
           <span className="flex items-center gap-2">

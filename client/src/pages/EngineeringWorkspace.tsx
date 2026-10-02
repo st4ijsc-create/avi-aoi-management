@@ -22,13 +22,13 @@ import { toastTrpcError } from "@/lib/trpcErrors";
 import { computeIsDirty } from "@/lib/engineeringBuffer";
 import { usePermissions } from "@/_core/hooks/usePermissions";
 import { useAuth } from "@/_core/hooks/useAuth";
-import { Link, useLocation, useSearch } from "wouter";
+import { Link, useSearch } from "wouter";
 import { useEngineering } from "@/contexts/EngineeringContext";
 import { parseDeepLink, withParams } from "@/lib/engineeringDeepLink";
 import DashboardLayout from "@/components/DashboardLayout";
+import { useShellPageVariant } from "@/lib/shellPage";
 import { ViewOnlyBadge } from "@/components/PermissionGate";
 import { PageHeader, PageContainer } from "@/components/patterns";
-import { buildBreadcrumbs } from "@/lib/breadcrumbs";
 import { CodeEditor } from "@/components/engineering/CodeEditor";
 import { LadderEditor } from "@/components/engineering/LadderEditor";
 import { TeachJogPanel } from "@/components/engineering/TeachJogPanel";
@@ -186,9 +186,8 @@ function rid(prefix: string): string {
 
 export default function EngineeringWorkspace() {
   const { t } = useTranslation();
-  // U3 (doc 26) — breadcrumb "Kỹ thuật › Section › Trang" + link về Hub.
-  const [location] = useLocation();
-  const crumbs = buildBreadcrumbs(location, t);
+  // doc 81 Đợt 2 Task 2 — màn workbench: rail trái mặc định thu gọn (nhớ theo người dùng).
+  useShellPageVariant("workbench");
   const { hasPermission } = usePermissions();
   const { user } = useAuth();
   const canView = hasPermission("machine_monitoring", "canView");
@@ -732,7 +731,6 @@ export default function EngineeringWorkspace() {
     <DashboardLayout>
       <PageContainer fluid className="space-y-4">
         <PageHeader
-          breadcrumbs={crumbs}
           icon={<Code2 className="h-6 w-6" />}
           title={t("engineering.title", "Xưởng lập trình thiết bị")}
           badge={!canEdit ? <ViewOnlyBadge module="machine_control" /> : undefined}

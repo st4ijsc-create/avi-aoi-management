@@ -25,16 +25,16 @@ import { useTranslation } from "react-i18next";
 import type { TFunction } from "i18next";
 import type { inferRouterOutputs } from "@trpc/server";
 import type { AppRouter } from "../../../server/routers";
-import { Link, useLocation, useSearch } from "wouter";
+import { Link, useSearch } from "wouter";
 import { useEngineering } from "@/contexts/EngineeringContext";
 import { parseDeepLink, withParams } from "@/lib/engineeringDeepLink";
 import { isFeatureDisabledError } from "@/lib/featureFlagError";
 import { trpc } from "@/lib/trpc";
 import { usePermissions } from "@/_core/hooks/usePermissions";
 import DashboardLayout from "@/components/DashboardLayout";
+import { useShellPageVariant } from "@/lib/shellPage";
 import { ViewOnlyBadge } from "@/components/PermissionGate";
 import { PageHeader, PageContainer, MetricCard, SectionCard, StatusBadge } from "@/components/patterns";
-import { buildBreadcrumbs } from "@/lib/breadcrumbs";
 import { CodeEditor } from "@/components/engineering/CodeEditor";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -881,9 +881,8 @@ type EditScope = { kind: "main" } | { kind: "fb"; fbId: string };
 
 export default function IrEditor() {
   const { t } = useTranslation();
-  // U3 (doc 26) — breadcrumb "Kỹ thuật › Section › Trang" + link về Hub.
-  const [location] = useLocation();
-  const crumbs = buildBreadcrumbs(location, t);
+  // doc 81 Đợt 2 Task 2 — màn workbench: rail trái mặc định thu gọn (nhớ theo người dùng).
+  useShellPageVariant("workbench");
   const { hasPermission } = usePermissions();
   const canView = hasPermission("machine_monitoring", "canView");
   const canControl = hasPermission("machine_control", "canCreate");
@@ -1220,7 +1219,6 @@ export default function IrEditor() {
     <DashboardLayout>
       <PageContainer fluid className="flex flex-col gap-4 space-y-0">
         <PageHeader
-          breadcrumbs={crumbs}
           icon={<Code2 className="h-6 w-6" />}
           title={t("ir.title", "Visual IR Editor")}
           badge={!canControl ? <ViewOnlyBadge module="machine_control" /> : undefined}

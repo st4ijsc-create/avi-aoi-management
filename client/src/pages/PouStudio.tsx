@@ -26,9 +26,9 @@ import type { AppRouter } from "../../../server/routers";
 import { trpc } from "@/lib/trpc";
 import { usePermissions } from "@/_core/hooks/usePermissions";
 import DashboardLayout from "@/components/DashboardLayout";
+import { useShellPageVariant } from "@/lib/shellPage";
 import { ViewOnlyBadge } from "@/components/PermissionGate";
 import { PageHeader, PageContainer, SectionCard, MetricCard, StatusBadge } from "@/components/patterns";
-import { buildBreadcrumbs } from "@/lib/breadcrumbs";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -131,9 +131,9 @@ function pretty(obj: unknown): string {
 
 export default function PouStudio() {
   const { t } = useTranslation();
-  const [location, navigate] = useLocation();
-  // U3 (doc 26) — breadcrumb "Kỹ thuật › Section › Trang" + link về Hub.
-  const crumbs = buildBreadcrumbs(location, t);
+  // doc 81 Đợt 2 Task 2 — màn workbench: rail trái mặc định thu gọn (nhớ theo người dùng).
+  useShellPageVariant("workbench");
+  const [, navigate] = useLocation();
   const { hasPermission } = usePermissions();
   const canView = hasPermission("machine_monitoring", "canView");
   const canControl = hasPermission("machine_control", "canCreate");
@@ -331,7 +331,6 @@ export default function PouStudio() {
     <DashboardLayout>
       <PageContainer fluid className="flex flex-col gap-4 space-y-0">
         <PageHeader
-          breadcrumbs={crumbs}
           icon={<FileCode2 className="h-6 w-6" />}
           title={t("pou.title", "IEC 61131 POU Studio")}
           badge={!canControl ? <ViewOnlyBadge module="machine_control" /> : undefined}
