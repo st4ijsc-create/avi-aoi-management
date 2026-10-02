@@ -1,13 +1,13 @@
 {
  "meta": {
   "tool": "scripts/ui-metrics/engineeringLayout.mjs",
-  "startedAt": "2026-10-02T09:45:54.696Z",
+  "startedAt": "2026-10-02T11:37:17.648Z",
   "argv": [
    "--spawn",
    "--shots",
    "--mutation",
    "--out",
-   ".playwright-mcp/do-bo-cuc/r6-A.json"
+   ".playwright-mcp/do-bo-cuc/r8-A.json"
   ],
   "sizes": [
    [
@@ -20,7 +20,7 @@
    ]
   ],
   "flags": "dev",
-  "gitHead": "6a7c11c6a",
+  "gitHead": "1a27c7ef9",
   "data": {
    "tables": 57,
    "before": {
@@ -202,8 +202,8 @@
     "perms": 22,
     "factory": "SIM-FAC"
    },
-   "serverBootMs": 6040,
-   "serverPid": 34412
+   "serverBootMs": 6039,
+   "serverPid": 33964
   },
   "base": "http://127.0.0.1:5176",
   "reference": {
@@ -215,8 +215,8 @@
    {
     "label": "sau khi khởi động",
     "pids": [
-     34412,
-     29980
+     33964,
+     2484
     ],
     "tcp": {
      "Listen :::3016": 1,
@@ -229,8 +229,8 @@
    {
     "label": "sau biến thể closed",
     "pids": [
-     34412,
-     29980
+     33964,
+     2484
     ],
     "tcp": {
      "Listen :::3016": 1,
@@ -244,13 +244,13 @@
    {
     "label": "sau biến thể open",
     "pids": [
-     34412,
-     29980
+     33964,
+     2484
     ],
     "tcp": {
      "Listen :::3016": 1,
-     "Bound → -": 10,
-     "Established → 127.0.0.1:5434": 10,
+     "Bound → -": 6,
+     "Established → 127.0.0.1:5434": 6,
      "Established → vào :3016 từ 127.0.0.1": 1
     },
     "udp": [],
@@ -324,13 +324,17 @@
        "mainTop": 347,
        "areaPx": 818400
       }
-     }
+     },
+     "record": "recorded-match",
+     "movedSel": "RECORD-MISMATCH",
+     "movedGeo": "RECORD-MISMATCH"
     },
     {
      "name": "T07-banner-trong-main",
      "pass": true,
      "errors": [
-      "BANNER/DẢI KPI TRONG MAIN ×1 (khối trên phần tử làm việc, <120 px, ≥60 % bề rộng MAIN): [{\"kind\":\"banner\",\"h\":80,\"loc\":null,\"label\":\"Chế độ xem trước — banner không đánh dấu\"}]"
+      "BANNER/DẢI KPI TRONG MAIN ×1 (khối trên phần tử làm việc, <120 px, ≥60 % bề rộng MAIN): [{\"kind\":\"banner\",\"h\":80,\"loc\":null,\"label\":\"Chế độ xem trước — banner không đánh dấu\"}]",
+      "HIỆU CHUẨN TRƯỢT: [data-layout-main] lệch MAIN tham chiếu FE1 (Δtop 0 px, Δleft 0 px, Δdiện tích 15.8 %; dung sai 4 px / 3 %) và chưa có bản ghi trong calibration.json — gắn attribute trên bố cục CHƯA đổi rồi chạy --calibrate"
      ],
      "inside": {
       "banners": 1,
@@ -341,7 +345,8 @@
      "name": "T08-kpi-trong-main",
      "pass": true,
      "errors": [
-      "BANNER/DẢI KPI TRONG MAIN ×1 (khối trên phần tử làm việc, <120 px, ≥60 % bề rộng MAIN): [{\"kind\":\"kpi-strip\",\"h\":48,\"loc\":null,\"label\":\"0 việc 7 việc 14 việc 21 việc\"}]"
+      "BANNER/DẢI KPI TRONG MAIN ×1 (khối trên phần tử làm việc, <120 px, ≥60 % bề rộng MAIN): [{\"kind\":\"kpi-strip\",\"h\":48,\"loc\":null,\"label\":\"0 việc 7 việc 14 việc 21 việc\"}]",
+      "HIỆU CHUẨN TRƯỢT: [data-layout-main] lệch MAIN tham chiếu FE1 (Δtop 0 px, Δleft 0 px, Δdiện tích 10.9 %; dung sai 4 px / 3 %) và chưa có bản ghi trong calibration.json — gắn attribute trên bố cục CHƯA đổi rồi chạy --calibrate"
      ]
     },
     {
@@ -432,10 +437,108 @@
      ]
     },
     {
-     "name": "T15-cuon-anh-em",
+     "name": "T15-to-tien-an",
      "pass": true,
      "before": 1.11,
-     "after": 3.24
+     "after": 1.73,
+     "docH": 950,
+     "extra": 697
+    },
+    {
+     "name": "T15b-anh-em-chi-bao",
+     "pass": true,
+     "before": 1.11,
+     "after": 1.24,
+     "siblingScrollExtra": 1900
+    },
+    {
+     "name": "T17-wrapper-workspace",
+     "pass": true,
+     "errors": [
+      "BANNER/DẢI KPI TRONG MAIN ×1 (khối trên phần tử làm việc, <120 px, ≥60 % bề rộng MAIN): [{\"kind\":\"banner\",\"h\":80,\"loc\":null,\"label\":\"Chế độ xem trước — banner trong wrapper\"}]"
+     ],
+     "workspace": "table"
+    },
+    {
+     "name": "T17b-main-la-workspace",
+     "pass": true,
+     "errors": [
+      "MAIN tự khai [data-layout-workspace] nhưng KHÔNG phải phần tử làm việc gốc (table/canvas/editor/EmptyState…) — W === MAIN bị từ chối"
+     ]
+    },
+    {
+     "name": "T18-mat-h1",
+     "pass": true,
+     "errors": [
+      "MẤT h1: trang có h1 ở baseline nhưng nay không có h1 nhìn thấy"
+     ],
+     "refHadH1": true
+    },
+    {
+     "name": "T19-banner-tren-h1",
+     "pass": true,
+     "before": [
+      2,
+      106
+     ],
+     "after": [
+      3,
+      150
+     ]
+    },
+    {
+     "name": "T20-fixed-trong-main",
+     "pass": true,
+     "before": 1152,
+     "after": 41152
+    },
+    {
+     "name": "T21-nhan-chu-thuan",
+     "pass": true,
+     "plain": [
+      "label"
+     ],
+     "colored": [
+      "banner"
+     ],
+     "headingRow": [
+      "heading"
+     ]
+    },
+    {
+     "name": "T22-ai-theo-nhan-i18n",
+     "pass": true,
+     "after": 90000,
+     "items": [
+      "i18n-label"
+     ]
+    },
+    {
+     "name": "T23-toolbar-56",
+     "pass": true,
+     "toolbars": [
+      52
+     ],
+     "errors": []
+    },
+    {
+     "name": "T24-chip-thap",
+     "pass": true,
+     "kinds": [
+      "banner"
+     ]
+    },
+    {
+     "name": "T25-emptystate-la-W",
+     "pass": true,
+     "component": {
+      "workspace": "clientsrccomponentsEmptyState.tsx:1",
+      "above": 25
+     },
+     "custom": {
+      "kind": "empty-state",
+      "above": 25
+     }
     },
     {
      "name": "T16-bam-loi",
@@ -581,16 +684,6 @@
      "guardProven": true
     },
     {
-     "guard": "scrollSiblings",
-     "cases": [
-      "T15-cuon-anh-em"
-     ],
-     "red": [
-      "T15-cuon-anh-em"
-     ],
-     "guardProven": true
-    },
-    {
      "guard": "errHash",
      "cases": [
       "T16-bam-loi"
@@ -599,11 +692,123 @@
       "T16-bam-loi"
      ],
      "guardProven": true
+    },
+    {
+     "guard": "scrollAncestors",
+     "cases": [
+      "T15-to-tien-an"
+     ],
+     "red": [
+      "T15-to-tien-an"
+     ],
+     "guardProven": true
+    },
+    {
+     "guard": "siblingReport",
+     "cases": [
+      "T15b-anh-em-chi-bao"
+     ],
+     "red": [
+      "T15b-anh-em-chi-bao"
+     ],
+     "guardProven": true
+    },
+    {
+     "guard": "wsEscape",
+     "cases": [
+      "T17-wrapper-workspace",
+      "T17b-main-la-workspace"
+     ],
+     "red": [
+      "T17-wrapper-workspace",
+      "T17b-main-la-workspace"
+     ],
+     "guardProven": true
+    },
+    {
+     "guard": "h1Gate",
+     "cases": [
+      "T18-mat-h1"
+     ],
+     "red": [
+      "T18-mat-h1"
+     ],
+     "guardProven": true
+    },
+    {
+     "guard": "aboveH1Banner",
+     "cases": [
+      "T19-banner-tren-h1"
+     ],
+     "red": [
+      "T19-banner-tren-h1"
+     ],
+     "guardProven": true
+    },
+    {
+     "guard": "fixedInMain",
+     "cases": [
+      "T20-fixed-trong-main"
+     ],
+     "red": [
+      "T20-fixed-trong-main"
+     ],
+     "guardProven": true
+    },
+    {
+     "guard": "textLabel",
+     "cases": [
+      "T21-nhan-chu-thuan"
+     ],
+     "red": [
+      "T21-nhan-chu-thuan"
+     ],
+     "guardProven": true
+    },
+    {
+     "guard": "aiText",
+     "cases": [
+      "T22-ai-theo-nhan-i18n"
+     ],
+     "red": [
+      "T22-ai-theo-nhan-i18n"
+     ],
+     "guardProven": true
+    },
+    {
+     "guard": "toolbar56",
+     "cases": [
+      "T23-toolbar-56"
+     ],
+     "red": [
+      "T23-toolbar-56"
+     ],
+     "guardProven": true
+    },
+    {
+     "guard": "chipMin",
+     "cases": [
+      "T24-chip-thap"
+     ],
+     "red": [
+      "T24-chip-thap"
+     ],
+     "guardProven": true
+    },
+    {
+     "guard": "emptyStateW",
+     "cases": [
+      "T25-emptystate-la-W"
+     ],
+     "red": [
+      "T25-emptystate-la-W"
+     ],
+     "guardProven": true
     }
    ],
    "mutationPass": true
   },
-  "finishedAt": "2026-10-02T10:01:39.440Z",
+  "finishedAt": "2026-10-02T11:58:29.392Z",
   "probeUserRemoved": {
    "deleted": 1,
    "deactivated": 0
@@ -745,11 +950,12 @@
       "role": null,
       "slot": null,
       "label": "0 ECN chờ duyệt 0 Recipe chờ duyệt 0 Recipe đang c",
+      "kind": "fallback-block",
       "top": 476
      },
      "aboveWorkspacePx": 32,
-     "banners": 1,
-     "bannerPx": 20,
+     "banners": 0,
+     "bannerPx": 0,
      "toolbars": [],
      "blocks": [
       {
@@ -757,24 +963,142 @@
        "y": 444,
        "w": 1240,
        "h": 20,
-       "kind": "kpi-strip",
+       "kind": "heading",
        "tag": "div",
        "testid": null,
        "loc": "PendingReviewStrip.tsx:99",
        "role": null,
        "slot": null,
        "label": "ĐANG CHỜ DUYỆT & CẢNH BÁO 12"
+      },
+      {
+       "x": 312,
+       "y": 476,
+       "w": 235,
+       "h": 108,
+       "kind": "other",
+       "tag": "a",
+       "testid": null,
+       "loc": "PendingReviewStrip.tsx:161",
+       "role": null,
+       "slot": null,
+       "label": "0 ECN chờ duyệt"
+      },
+      {
+       "x": 563,
+       "y": 476,
+       "w": 235,
+       "h": 108,
+       "kind": "other",
+       "tag": "a",
+       "testid": null,
+       "loc": "PendingReviewStrip.tsx:161",
+       "role": null,
+       "slot": null,
+       "label": "0 Recipe chờ duyệt"
+      },
+      {
+       "x": 814,
+       "y": 476,
+       "w": 235,
+       "h": 108,
+       "kind": "other",
+       "tag": "a",
+       "testid": null,
+       "loc": "PendingReviewStrip.tsx:161",
+       "role": null,
+       "slot": null,
+       "label": "0 Recipe đang chạy CHƯA duyệt"
+      },
+      {
+       "x": 1066,
+       "y": 476,
+       "w": 235,
+       "h": 108,
+       "kind": "other",
+       "tag": "a",
+       "testid": null,
+       "loc": "PendingReviewStrip.tsx:161",
+       "role": null,
+       "slot": null,
+       "label": "12 Interlock chờ duyệt ILKMOC-1790398865789-ilk05a"
+      },
+      {
+       "x": 1317,
+       "y": 476,
+       "w": 235,
+       "h": 108,
+       "kind": "other",
+       "tag": "a",
+       "testid": null,
+       "loc": "PendingReviewStrip.tsx:161",
+       "role": null,
+       "slot": null,
+       "label": "0 Đổi model chờ duyệt"
+      },
+      {
+       "x": 312,
+       "y": 600,
+       "w": 235,
+       "h": 87,
+       "kind": "other",
+       "tag": "a",
+       "testid": null,
+       "loc": "PendingReviewStrip.tsx:161",
+       "role": null,
+       "slot": null,
+       "label": "0 Sự kiện interlock đang mở"
+      },
+      {
+       "x": 563,
+       "y": 600,
+       "w": 235,
+       "h": 87,
+       "kind": "other",
+       "tag": "a",
+       "testid": null,
+       "loc": "PendingReviewStrip.tsx:161",
+       "role": null,
+       "slot": null,
+       "label": "0 Run chờ xác nhận"
+      },
+      {
+       "x": 814,
+       "y": 600,
+       "w": 235,
+       "h": 87,
+       "kind": "other",
+       "tag": "a",
+       "testid": null,
+       "loc": "PendingReviewStrip.tsx:161",
+       "role": null,
+       "slot": null,
+       "label": "0 Sự cố an toàn chưa soát"
+      },
+      {
+       "x": 1066,
+       "y": 600,
+       "w": 235,
+       "h": 87,
+       "kind": "other",
+       "tag": "a",
+       "testid": null,
+       "loc": "PendingReviewStrip.tsx:161",
+       "role": null,
+       "slot": null,
+       "label": "0 Kẹt đội xe"
       }
      ]
     },
     {
      "workspace": {
-      "tag": "div",
+      "tag": "a",
       "testid": null,
-      "loc": "EngineeringHub.tsx:256",
+      "loc": "ToolTile.tsx:50",
       "role": null,
       "slot": null,
       "label": "Lập trình thiết bị Lập trình thiết bị (Zmotion/PLC",
+      "kind": "fallback-block",
       "top": 743
      },
      "aboveWorkspacePx": 32,
@@ -799,12 +1123,13 @@
     },
     {
      "workspace": {
-      "tag": "div",
+      "tag": "a",
       "testid": null,
-      "loc": "EngineeringHub.tsx:256",
+      "loc": "ToolTile.tsx:50",
       "role": null,
       "slot": null,
       "label": "Studio Quy trình Soạn quy trình đa máy bằng hình ả",
+      "kind": "fallback-block",
       "top": 1013
      },
      "aboveWorkspacePx": 32,
@@ -829,12 +1154,13 @@
     },
     {
      "workspace": {
-      "tag": "div",
+      "tag": "a",
       "testid": null,
-      "loc": "EngineeringHub.tsx:256",
+      "loc": "ToolTile.tsx:50",
       "role": null,
       "slot": null,
       "label": "Điều khiển nhà máy Năng lực thiết bị/PackML, điều ",
+      "kind": "fallback-block",
       "top": 1250
      },
      "aboveWorkspacePx": 32,
@@ -859,12 +1185,13 @@
     },
     {
      "workspace": {
-      "tag": "div",
+      "tag": "a",
       "testid": null,
-      "loc": "EngineeringHub.tsx:256",
+      "loc": "ToolTile.tsx:50",
       "role": null,
       "slot": null,
       "label": "Quy tắc Interlock Cấu hình + duyệt + bật/tắt quy t",
+      "kind": "fallback-block",
       "top": 1487
      },
      "aboveWorkspacePx": 32,
@@ -889,12 +1216,13 @@
     },
     {
      "workspace": {
-      "tag": "div",
+      "tag": "a",
       "testid": null,
-      "loc": "EngineeringHub.tsx:256",
+      "loc": "ToolTile.tsx:50",
       "role": null,
       "slot": null,
       "label": "Tiêu chuẩn thiết bị Cây phân loại thiết bị theo ph",
+      "kind": "fallback-block",
       "top": 1724
      },
      "aboveWorkspacePx": 32,
@@ -919,12 +1247,13 @@
     },
     {
      "workspace": {
-      "tag": "div",
+      "tag": "a",
       "testid": null,
-      "loc": "EngineeringHub.tsx:256",
+      "loc": "ToolTile.tsx:50",
       "role": null,
       "slot": null,
       "label": "Sửa mặt bằng nhà máy Kéo–thả đặt toạ độ thật của t",
+      "kind": "fallback-block",
       "top": 1977
      },
      "aboveWorkspacePx": 32,
@@ -978,7 +1307,7 @@
    "bandBlocks": [
     {
      "pos": "aboveH1",
-     "kind": "other",
+     "kind": "breadcrumb",
      "inHeader": true,
      "y": 157,
      "h": 40,
@@ -1122,7 +1451,7 @@
    "scroll": {
     "docH": 2168,
     "extra": 0,
-    "siblingExtra": 0,
+    "siblingScrollExtra": 0,
     "scrollers": [],
     "inner": []
    },
@@ -1144,7 +1473,6 @@
    "spinnersAtMeasure": 2,
    "errors": [],
    "warnings": [
-    "BANNER/DẢI KPI TRONG MAIN ×1 (khối trên phần tử làm việc, <120 px, ≥60 % bề rộng MAIN): [{\"kind\":\"kpi-strip\",\"h\":20,\"loc\":\"PendingReviewStrip.tsx:99\",\"label\":\"ĐANG CHỜ DUYỆT & CẢNH BÁO 12\"}]",
     "CHƯA có [data-layout-main] — đo bằng selector FE1"
    ],
    "legacyRef": {
@@ -1193,8 +1521,10 @@
       "h": 175
      }
     ],
-    "areaPx": 1851320
+    "areaPx": 1851320,
+    "hadH1": true
    },
+   "attrSel": null,
    "actions": [],
    "trpc": [
     "aiInbox.count",
@@ -1322,11 +1652,12 @@
       "role": null,
       "slot": null,
       "label": "0 ECN chờ duyệt 0 Recipe chờ duyệt 0 Recipe đang c",
+      "kind": "fallback-block",
       "top": 502
      },
      "aboveWorkspacePx": 32,
-     "banners": 1,
-     "bannerPx": 20,
+     "banners": 0,
+     "bannerPx": 0,
      "toolbars": [],
      "blocks": [
       {
@@ -1334,24 +1665,142 @@
        "y": 470,
        "w": 1006,
        "h": 20,
-       "kind": "kpi-strip",
+       "kind": "heading",
        "tag": "div",
        "testid": null,
        "loc": "PendingReviewStrip.tsx:99",
        "role": null,
        "slot": null,
        "label": "ĐANG CHỜ DUYỆT & CẢNH BÁO 12"
+      },
+      {
+       "x": 312,
+       "y": 502,
+       "w": 188,
+       "h": 108,
+       "kind": "other",
+       "tag": "a",
+       "testid": null,
+       "loc": "PendingReviewStrip.tsx:161",
+       "role": null,
+       "slot": null,
+       "label": "0 ECN chờ duyệt"
+      },
+      {
+       "x": 516,
+       "y": 502,
+       "w": 188,
+       "h": 108,
+       "kind": "other",
+       "tag": "a",
+       "testid": null,
+       "loc": "PendingReviewStrip.tsx:161",
+       "role": null,
+       "slot": null,
+       "label": "0 Recipe chờ duyệt"
+      },
+      {
+       "x": 721,
+       "y": 502,
+       "w": 188,
+       "h": 108,
+       "kind": "other",
+       "tag": "a",
+       "testid": null,
+       "loc": "PendingReviewStrip.tsx:161",
+       "role": null,
+       "slot": null,
+       "label": "0 Recipe đang chạy CHƯA duyệt"
+      },
+      {
+       "x": 925,
+       "y": 502,
+       "w": 188,
+       "h": 108,
+       "kind": "other",
+       "tag": "a",
+       "testid": null,
+       "loc": "PendingReviewStrip.tsx:161",
+       "role": null,
+       "slot": null,
+       "label": "12 Interlock chờ duyệt ILKMOC-1790398865789-ilk05a"
+      },
+      {
+       "x": 1130,
+       "y": 502,
+       "w": 188,
+       "h": 108,
+       "kind": "other",
+       "tag": "a",
+       "testid": null,
+       "loc": "PendingReviewStrip.tsx:161",
+       "role": null,
+       "slot": null,
+       "label": "0 Đổi model chờ duyệt"
+      },
+      {
+       "x": 312,
+       "y": 626,
+       "w": 188,
+       "h": 87,
+       "kind": "other",
+       "tag": "a",
+       "testid": null,
+       "loc": "PendingReviewStrip.tsx:161",
+       "role": null,
+       "slot": null,
+       "label": "0 Sự kiện interlock đang mở"
+      },
+      {
+       "x": 516,
+       "y": 626,
+       "w": 188,
+       "h": 87,
+       "kind": "other",
+       "tag": "a",
+       "testid": null,
+       "loc": "PendingReviewStrip.tsx:161",
+       "role": null,
+       "slot": null,
+       "label": "0 Run chờ xác nhận"
+      },
+      {
+       "x": 721,
+       "y": 626,
+       "w": 188,
+       "h": 87,
+       "kind": "other",
+       "tag": "a",
+       "testid": null,
+       "loc": "PendingReviewStrip.tsx:161",
+       "role": null,
+       "slot": null,
+       "label": "0 Sự cố an toàn chưa soát"
+      },
+      {
+       "x": 925,
+       "y": 626,
+       "w": 188,
+       "h": 87,
+       "kind": "other",
+       "tag": "a",
+       "testid": null,
+       "loc": "PendingReviewStrip.tsx:161",
+       "role": null,
+       "slot": null,
+       "label": "0 Kẹt đội xe"
       }
      ]
     },
     {
      "workspace": {
-      "tag": "div",
+      "tag": "a",
       "testid": null,
-      "loc": "EngineeringHub.tsx:256",
+      "loc": "ToolTile.tsx:50",
       "role": null,
       "slot": null,
       "label": "Lập trình thiết bị Lập trình thiết bị (Zmotion/PLC",
+      "kind": "fallback-block",
       "top": 769
      },
      "aboveWorkspacePx": 32,
@@ -1376,12 +1825,13 @@
     },
     {
      "workspace": {
-      "tag": "div",
+      "tag": "a",
       "testid": null,
-      "loc": "EngineeringHub.tsx:256",
+      "loc": "ToolTile.tsx:50",
       "role": null,
       "slot": null,
       "label": "Studio Quy trình Soạn quy trình đa máy bằng hình ả",
+      "kind": "fallback-block",
       "top": 1055
      },
      "aboveWorkspacePx": 32,
@@ -1406,12 +1856,13 @@
     },
     {
      "workspace": {
-      "tag": "div",
+      "tag": "a",
       "testid": null,
-      "loc": "EngineeringHub.tsx:256",
+      "loc": "ToolTile.tsx:50",
       "role": null,
       "slot": null,
       "label": "Điều khiển nhà máy Năng lực thiết bị/PackML, điều ",
+      "kind": "fallback-block",
       "top": 1309
      },
      "aboveWorkspacePx": 32,
@@ -1436,12 +1887,13 @@
     },
     {
      "workspace": {
-      "tag": "div",
+      "tag": "a",
       "testid": null,
-      "loc": "EngineeringHub.tsx:256",
+      "loc": "ToolTile.tsx:50",
       "role": null,
       "slot": null,
       "label": "Quy tắc Interlock Cấu hình + duyệt + bật/tắt quy t",
+      "kind": "fallback-block",
       "top": 1546
      },
      "aboveWorkspacePx": 32,
@@ -1466,12 +1918,13 @@
     },
     {
      "workspace": {
-      "tag": "div",
+      "tag": "a",
       "testid": null,
-      "loc": "EngineeringHub.tsx:256",
+      "loc": "ToolTile.tsx:50",
       "role": null,
       "slot": null,
       "label": "Tiêu chuẩn thiết bị Cây phân loại thiết bị theo ph",
+      "kind": "fallback-block",
       "top": 1783
      },
      "aboveWorkspacePx": 32,
@@ -1496,12 +1949,13 @@
     },
     {
      "workspace": {
-      "tag": "div",
+      "tag": "a",
       "testid": null,
-      "loc": "EngineeringHub.tsx:256",
+      "loc": "ToolTile.tsx:50",
       "role": null,
       "slot": null,
       "label": "Sửa mặt bằng nhà máy Kéo–thả đặt toạ độ thật của t",
+      "kind": "fallback-block",
       "top": 2036
      },
      "aboveWorkspacePx": 32,
@@ -1555,7 +2009,7 @@
    "bandBlocks": [
     {
      "pos": "aboveH1",
-     "kind": "other",
+     "kind": "breadcrumb",
      "inHeader": true,
      "y": 157,
      "h": 40,
@@ -1699,7 +2153,7 @@
    "scroll": {
     "docH": 2244,
     "extra": 0,
-    "siblingExtra": 0,
+    "siblingScrollExtra": 0,
     "scrollers": [],
     "inner": []
    },
@@ -1721,7 +2175,6 @@
    "spinnersAtMeasure": 2,
    "errors": [],
    "warnings": [
-    "BANNER/DẢI KPI TRONG MAIN ×1 (khối trên phần tử làm việc, <120 px, ≥60 % bề rộng MAIN): [{\"kind\":\"kpi-strip\",\"h\":20,\"loc\":\"PendingReviewStrip.tsx:99\",\"label\":\"ĐANG CHỜ DUYỆT & CẢNH BÁO 12\"}]",
     "CHƯA có [data-layout-main] — đo bằng selector FE1"
    ],
    "legacyRef": {
@@ -1770,8 +2223,10 @@
       "h": 192
      }
     ],
-    "areaPx": 1553264
+    "areaPx": 1553264,
+    "hadH1": true
    },
+   "attrSel": null,
    "actions": [],
    "trpc": [
     "aiInbox.count",
@@ -1815,7 +2270,7 @@
    "mainTop": 134,
    "chromeAboveMain": 134,
    "mainPct": 53.5,
-   "workspacePct": 53.5,
+   "workspacePct": 52.7,
    "mainPctFe1": 53.5,
    "mainPctUncovered": 53.4,
    "insideMain": [
@@ -1823,13 +2278,14 @@
      "workspace": {
       "tag": "div",
       "testid": null,
-      "loc": "WorkspaceShell.tsx:50",
+      "loc": "HubLauncher.tsx:125",
       "role": null,
       "slot": null,
       "label": "Soạn thảo & IDE Xưởng lập trình thiết bị Viết & bi",
-      "top": 134
+      "kind": "fallback-block",
+      "top": 146
      },
-     "aboveWorkspacePx": 0,
+     "aboveWorkspacePx": 12,
      "banners": 0,
      "bannerPx": 0,
      "toolbars": [],
@@ -1923,7 +2379,7 @@
    "scroll": {
     "docH": 971,
     "extra": 0,
-    "siblingExtra": 0,
+    "siblingScrollExtra": 0,
     "scrollers": [],
     "inner": []
    },
@@ -1957,8 +2413,10 @@
       "h": 812
      }
     ],
-    "areaPx": 813624
+    "areaPx": 813624,
+    "hadH1": false
    },
+   "attrSel": null,
    "actions": [],
    "trpc": [
     "aiInbox.count",
@@ -2000,7 +2458,7 @@
    "mainTop": 134,
    "chromeAboveMain": 134,
    "mainPct": 49.2,
-   "workspacePct": 49.2,
+   "workspacePct": 48.3,
    "mainPctFe1": 49.2,
    "mainPctUncovered": 49,
    "insideMain": [
@@ -2008,13 +2466,14 @@
      "workspace": {
       "tag": "div",
       "testid": null,
-      "loc": "WorkspaceShell.tsx:50",
+      "loc": "HubLauncher.tsx:125",
       "role": null,
       "slot": null,
       "label": "Soạn thảo & IDE Xưởng lập trình thiết bị Viết & bi",
-      "top": 134
+      "kind": "fallback-block",
+      "top": 146
      },
-     "aboveWorkspacePx": 0,
+     "aboveWorkspacePx": 12,
      "banners": 0,
      "bannerPx": 0,
      "toolbars": [],
@@ -2108,7 +2567,7 @@
    "scroll": {
     "docH": 789,
     "extra": 0,
-    "siblingExtra": 0,
+    "siblingScrollExtra": 0,
     "scrollers": [],
     "inner": []
    },
@@ -2142,8 +2601,10 @@
       "h": 630
      }
     ],
-    "areaPx": 516600
+    "areaPx": 516600,
+    "hadH1": false
    },
+   "attrSel": null,
    "actions": [],
    "trpc": [
     "aiInbox.count",
@@ -2197,6 +2658,7 @@
       "role": null,
       "slot": null,
       "label": "1",
+      "kind": "native",
       "top": 649
      },
      "aboveWorkspacePx": 0,
@@ -2237,7 +2699,7 @@
    "bandBlocks": [
     {
      "pos": "aboveH1",
-     "kind": "other",
+     "kind": "breadcrumb",
      "inHeader": true,
      "y": 157,
      "h": 40,
@@ -2429,12 +2891,12 @@
     "items": [],
     "positionedIntersecting": []
    },
-   "pageHeightRatio": 67.46,
+   "pageHeightRatio": 2.92,
    "pageHeightRatioDoc": 2.92,
    "scroll": {
     "docH": 2773,
-    "extra": 61318,
-    "siblingExtra": 61318,
+    "extra": 0,
+    "siblingScrollExtra": 61318,
     "scrollers": [
      {
       "tag": "div",
@@ -2481,8 +2943,10 @@
       "h": 360
      }
     ],
-    "areaPx": 321120
+    "areaPx": 321120,
+    "hadH1": true
    },
+   "attrSel": null,
    "actions": [
     {
      "id": "so-tay",
@@ -2566,6 +3030,7 @@
       "role": null,
       "slot": null,
       "label": "1",
+      "kind": "native",
       "top": 665
      },
      "aboveWorkspacePx": 0,
@@ -2606,7 +3071,7 @@
    "bandBlocks": [
     {
      "pos": "aboveH1",
-     "kind": "other",
+     "kind": "breadcrumb",
      "inHeader": true,
      "y": 157,
      "h": 40,
@@ -2811,12 +3276,12 @@
      }
     ]
    },
-   "pageHeightRatio": 83.63,
+   "pageHeightRatio": 3.79,
    "pageHeightRatioDoc": 3.79,
    "scroll": {
     "docH": 2913,
-    "extra": 61318,
-    "siblingExtra": 61318,
+    "extra": 0,
+    "siblingScrollExtra": 61318,
     "scrollers": [
      {
       "tag": "div",
@@ -2863,8 +3328,10 @@
       "h": 360
      }
     ],
-    "areaPx": 238680
+    "areaPx": 238680,
+    "hadH1": true
    },
+   "attrSel": null,
    "actions": [
     {
      "id": "so-tay",
@@ -2948,6 +3415,7 @@
       "role": null,
       "slot": "table",
       "label": "ECN Tiêu đề Loại Hiệu lực Trạng thái Thao tác ECN-",
+      "kind": "native",
       "top": 372
      },
      "aboveWorkspacePx": 25,
@@ -3104,7 +3572,7 @@
    "scroll": {
     "docH": 1054,
     "extra": 0,
-    "siblingExtra": 0,
+    "siblingScrollExtra": 0,
     "scrollers": [],
     "inner": []
    },
@@ -3137,8 +3605,10 @@
       "h": 660
      }
     ],
-    "areaPx": 818400
+    "areaPx": 818400,
+    "hadH1": true
    },
+   "attrSel": null,
    "actions": [
     {
      "id": "thay-doi-moi",
@@ -3215,6 +3685,7 @@
       "role": null,
       "slot": "table",
       "label": "ECN Tiêu đề Loại Hiệu lực Trạng thái Thao tác ECN-",
+      "kind": "native",
       "top": 372
      },
      "aboveWorkspacePx": 25,
@@ -3371,7 +3842,7 @@
    "scroll": {
     "docH": 1054,
     "extra": 0,
-    "siblingExtra": 0,
+    "siblingScrollExtra": 0,
     "scrollers": [],
     "inner": []
    },
@@ -3404,8 +3875,10 @@
       "h": 660
      }
     ],
-    "areaPx": 663960
+    "areaPx": 663960,
+    "hadH1": true
    },
+   "attrSel": null,
    "actions": [
     {
      "id": "thay-doi-moi",
@@ -3494,11 +3967,12 @@
       "role": null,
       "slot": "table",
       "label": "Mã Số phiên bản Đang dùng Chưa có dữ liệu.",
+      "kind": "native",
       "top": 584
      },
      "aboveWorkspacePx": 73,
-     "banners": 1,
-     "bannerPx": 24,
+     "banners": 0,
+     "bannerPx": 0,
      "toolbars": [],
      "blocks": [
       {
@@ -3506,7 +3980,7 @@
        "y": 536,
        "w": 395,
        "h": 24,
-       "kind": "banner",
+       "kind": "label",
        "tag": "div",
        "testid": null,
        "loc": "RecipeManagement.tsx:433",
@@ -3524,11 +3998,12 @@
       "role": null,
       "slot": "table",
       "label": "Phiên bản Tên Người tạo Trạng thái Duyệt Checksum ",
+      "kind": "native",
       "top": 584
      },
      "aboveWorkspacePx": 73,
-     "banners": 1,
-     "bannerPx": 24,
+     "banners": 0,
+     "bannerPx": 0,
      "toolbars": [],
      "blocks": [
       {
@@ -3536,7 +4011,7 @@
        "y": 536,
        "w": 817,
        "h": 24,
-       "kind": "banner",
+       "kind": "label",
        "tag": "div",
        "testid": null,
        "loc": "RecipeManagement.tsx:495",
@@ -3577,7 +4052,7 @@
    "bandBlocks": [
     {
      "pos": "aboveH1",
-     "kind": "other",
+     "kind": "breadcrumb",
      "inHeader": true,
      "y": 157,
      "h": 40,
@@ -3684,7 +4159,7 @@
    "scroll": {
     "docH": 950,
     "extra": 0,
-    "siblingExtra": 0,
+    "siblingScrollExtra": 0,
     "scrollers": [],
     "inner": []
    },
@@ -3706,8 +4181,6 @@
    "spinnersAtMeasure": 2,
    "errors": [],
    "warnings": [
-    "BANNER/DẢI KPI TRONG MAIN ×1 (khối trên phần tử làm việc, <120 px, ≥60 % bề rộng MAIN): [{\"kind\":\"banner\",\"h\":24,\"loc\":\"RecipeManagement.tsx:433\",\"label\":\"Mã recipe (0)\"}]",
-    "BANNER/DẢI KPI TRONG MAIN ×1 (khối trên phần tử làm việc, <120 px, ≥60 % bề rộng MAIN): [{\"kind\":\"banner\",\"h\":24,\"loc\":\"RecipeManagement.tsx:495\",\"label\":\"Chọn một mã recipe\"}]",
     "CHƯA có [data-layout-main] — đo bằng selector FE1"
    ],
    "legacyRef": {
@@ -3726,8 +4199,10 @@
       "h": 175
      }
     ],
-    "areaPx": 212800
+    "areaPx": 212800,
+    "hadH1": true
    },
+   "attrSel": null,
    "actions": [
     {
      "id": "luu-phien-ban-moi",
@@ -3817,11 +4292,12 @@
       "role": null,
       "slot": "table",
       "label": "Mã Số phiên bản Đang dùng Chưa có dữ liệu.",
+      "kind": "native",
       "top": 584
      },
      "aboveWorkspacePx": 73,
-     "banners": 1,
-     "bannerPx": 24,
+     "banners": 0,
+     "bannerPx": 0,
      "toolbars": [],
      "blocks": [
       {
@@ -3829,7 +4305,7 @@
        "y": 536,
        "w": 317,
        "h": 24,
-       "kind": "banner",
+       "kind": "label",
        "tag": "div",
        "testid": null,
        "loc": "RecipeManagement.tsx:433",
@@ -3847,11 +4323,12 @@
       "role": null,
       "slot": "table",
       "label": "Phiên bản Tên Người tạo Trạng thái Duyệt Checksum ",
+      "kind": "native",
       "top": 584
      },
      "aboveWorkspacePx": 73,
-     "banners": 1,
-     "bannerPx": 24,
+     "banners": 0,
+     "bannerPx": 0,
      "toolbars": [],
      "blocks": [
       {
@@ -3859,7 +4336,7 @@
        "y": 536,
        "w": 661,
        "h": 24,
-       "kind": "banner",
+       "kind": "label",
        "tag": "div",
        "testid": null,
        "loc": "RecipeManagement.tsx:495",
@@ -3900,7 +4377,7 @@
    "bandBlocks": [
     {
      "pos": "aboveH1",
-     "kind": "other",
+     "kind": "breadcrumb",
      "inHeader": true,
      "y": 157,
      "h": 40,
@@ -4007,7 +4484,7 @@
    "scroll": {
     "docH": 932,
     "extra": 0,
-    "siblingExtra": 0,
+    "siblingScrollExtra": 0,
     "scrollers": [],
     "inner": []
    },
@@ -4029,8 +4506,6 @@
    "spinnersAtMeasure": 2,
    "errors": [],
    "warnings": [
-    "BANNER/DẢI KPI TRONG MAIN ×1 (khối trên phần tử làm việc, <120 px, ≥60 % bề rộng MAIN): [{\"kind\":\"banner\",\"h\":24,\"loc\":\"RecipeManagement.tsx:433\",\"label\":\"Mã recipe (0)\"}]",
-    "BANNER/DẢI KPI TRONG MAIN ×1 (khối trên phần tử làm việc, <120 px, ≥60 % bề rộng MAIN): [{\"kind\":\"banner\",\"h\":24,\"loc\":\"RecipeManagement.tsx:495\",\"label\":\"Chọn một mã recipe\"}]",
     "CHƯA có [data-layout-main] — đo bằng selector FE1"
    ],
    "legacyRef": {
@@ -4049,8 +4524,10 @@
       "h": 175
      }
     ],
-    "areaPx": 171850
+    "areaPx": 171850,
+    "hadH1": true
    },
+   "attrSel": null,
    "actions": [
     {
      "id": "luu-phien-ban-moi",
@@ -4128,11 +4605,12 @@
       "role": null,
       "slot": "table",
       "label": "Tên Phạm vi Nguồn Điều kiện Hành động Trạng thái c",
+      "kind": "native",
       "top": 472
      },
      "aboveWorkspacePx": 73,
-     "banners": 1,
-     "bannerPx": 24,
+     "banners": 0,
+     "bannerPx": 0,
      "toolbars": [],
      "blocks": [
       {
@@ -4140,7 +4618,7 @@
        "y": 424,
        "w": 1238,
        "h": 24,
-       "kind": "banner",
+       "kind": "label",
        "tag": "div",
        "testid": null,
        "loc": "InterlockRuleManagement.tsx:417",
@@ -4181,7 +4659,7 @@
    "bandBlocks": [
     {
      "pos": "aboveH1",
-     "kind": "other",
+     "kind": "breadcrumb",
      "inHeader": true,
      "y": 157,
      "h": 40,
@@ -4333,7 +4811,7 @@
    "scroll": {
     "docH": 1497,
     "extra": 0,
-    "siblingExtra": 0,
+    "siblingScrollExtra": 0,
     "scrollers": [],
     "inner": []
    },
@@ -4355,7 +4833,6 @@
    "spinnersAtMeasure": 2,
    "errors": [],
    "warnings": [
-    "BANNER/DẢI KPI TRONG MAIN ×1 (khối trên phần tử làm việc, <120 px, ≥60 % bề rộng MAIN): [{\"kind\":\"banner\",\"h\":24,\"loc\":\"InterlockRuleManagement.tsx:417\",\"label\":\"Quy tắc (16)\"}]",
     "CHƯA có [data-layout-main] — đo bằng selector FE1",
     "hành động \"them-quy-tac\" disabled cho role đo"
    ],
@@ -4369,8 +4846,10 @@
       "h": 1050
      }
     ],
-    "areaPx": 1302000
+    "areaPx": 1302000,
+    "hadH1": true
    },
+   "attrSel": null,
    "actions": [
     {
      "id": "them-quy-tac",
@@ -4432,11 +4911,12 @@
       "role": null,
       "slot": "table",
       "label": "Tên Phạm vi Nguồn Điều kiện Hành động Trạng thái c",
+      "kind": "native",
       "top": 472
      },
      "aboveWorkspacePx": 73,
-     "banners": 1,
-     "bannerPx": 24,
+     "banners": 0,
+     "bannerPx": 0,
      "toolbars": [],
      "blocks": [
       {
@@ -4444,7 +4924,7 @@
        "y": 424,
        "w": 1004,
        "h": 24,
-       "kind": "banner",
+       "kind": "label",
        "tag": "div",
        "testid": null,
        "loc": "InterlockRuleManagement.tsx:417",
@@ -4485,7 +4965,7 @@
    "bandBlocks": [
     {
      "pos": "aboveH1",
-     "kind": "other",
+     "kind": "breadcrumb",
      "inHeader": true,
      "y": 157,
      "h": 40,
@@ -4637,7 +5117,7 @@
    "scroll": {
     "docH": 1497,
     "extra": 0,
-    "siblingExtra": 0,
+    "siblingScrollExtra": 0,
     "scrollers": [],
     "inner": []
    },
@@ -4659,7 +5139,6 @@
    "spinnersAtMeasure": 2,
    "errors": [],
    "warnings": [
-    "BANNER/DẢI KPI TRONG MAIN ×1 (khối trên phần tử làm việc, <120 px, ≥60 % bề rộng MAIN): [{\"kind\":\"banner\",\"h\":24,\"loc\":\"InterlockRuleManagement.tsx:417\",\"label\":\"Quy tắc (16)\"}]",
     "CHƯA có [data-layout-main] — đo bằng selector FE1",
     "hành động \"them-quy-tac\" disabled cho role đo"
    ],
@@ -4673,8 +5152,10 @@
       "h": 1050
      }
     ],
-    "areaPx": 1056300
+    "areaPx": 1056300,
+    "hadH1": true
    },
+   "attrSel": null,
    "actions": [
     {
      "id": "them-quy-tac",
@@ -4736,15 +5217,24 @@
    "mainTop": 790,
    "chromeAboveMain": 790,
    "mainPct": 12.9,
-   "workspacePct": 12.9,
+   "workspacePct": 6,
    "mainPctFe1": 12.9,
    "mainPctUncovered": 12.8,
    "insideMain": [
     {
-     "workspace": null,
-     "aboveWorkspacePx": 148,
-     "banners": 2,
-     "bannerPx": 148,
+     "workspace": {
+      "tag": "p",
+      "testid": null,
+      "loc": "OrchestrationStudio.tsx:1592",
+      "role": null,
+      "slot": null,
+      "label": "Chưa có bước nào. Thêm bước đầu tiên bên dưới.",
+      "kind": "empty-state",
+      "top": 873
+     },
+     "aboveWorkspacePx": 83,
+     "banners": 1,
+     "bannerPx": 34,
      "toolbars": [],
      "blocks": [
       {
@@ -4759,27 +5249,23 @@
        "role": null,
        "slot": "card-header",
        "label": "Cây quy trình Cây Sơ đồ"
-      },
-      {
-       "x": 313,
-       "y": 873,
-       "w": 819,
-       "h": 114,
-       "kind": "banner",
-       "tag": "div",
-       "testid": null,
-       "loc": "OrchestrationStudio.tsx:1588",
-       "role": null,
-       "slot": "card-content",
-       "label": "Chưa có bước nào. Thêm bước đầu tiên bên dưới. Thê"
       }
      ]
     },
     {
-     "workspace": null,
-     "aboveWorkspacePx": 108,
-     "banners": 2,
-     "bannerPx": 108,
+     "workspace": {
+      "tag": "p",
+      "testid": null,
+      "loc": "OrchestrationStudio.tsx:1640",
+      "role": null,
+      "slot": null,
+      "label": "Chọn một bước trên cây để cấu hình.",
+      "kind": "empty-state",
+      "top": 879
+     },
+     "aboveWorkspacePx": 89,
+     "banners": 0,
+     "bannerPx": 0,
      "toolbars": [],
      "blocks": [
       {
@@ -4787,26 +5273,13 @@
        "y": 815,
        "w": 401,
        "h": 40,
-       "kind": "banner",
+       "kind": "label",
        "tag": "div",
        "testid": null,
        "loc": "OrchestrationStudio.tsx:1633",
        "role": null,
        "slot": "card-header",
        "label": "Cấu hình bước"
-      },
-      {
-       "x": 1150,
-       "y": 879,
-       "w": 401,
-       "h": 68,
-       "kind": "banner",
-       "tag": "div",
-       "testid": null,
-       "loc": "OrchestrationStudio.tsx:1636",
-       "role": null,
-       "slot": "card-content",
-       "label": "Chọn một bước trên cây để cấu hình."
       }
      ]
     }
@@ -4825,11 +5298,11 @@
    "gapH1ToMain": 495,
    "breadcrumbs": 2,
    "bannersBeforeMain": {
-    "count": 4,
-    "px": 431,
+    "count": 5,
+    "px": 469,
     "byKind": {
+     "notice": 3,
      "subtitle": 1,
-     "notice": 2,
      "other": 1
     },
     "method": "geometric: khối giữa đáy h1 và đỉnh MAIN (kể cả trong page header) + popover/portal đè dải đầu"
@@ -4856,7 +5329,7 @@
     },
     {
      "pos": "aboveH1",
-     "kind": "other",
+     "kind": "breadcrumb",
      "inHeader": true,
      "y": 211,
      "h": 40,
@@ -5028,7 +5501,7 @@
    "scroll": {
     "docH": 1670,
     "extra": 0,
-    "siblingExtra": 0,
+    "siblingScrollExtra": 0,
     "scrollers": [],
     "inner": []
    },
@@ -5050,8 +5523,7 @@
    "spinnersAtMeasure": 2,
    "errors": [],
    "warnings": [
-    "BANNER/DẢI KPI TRONG MAIN ×2 (khối trên phần tử làm việc, <120 px, ≥60 % bề rộng MAIN): [{\"kind\":\"banner\",\"h\":34,\"loc\":\"OrchestrationStudio.tsx:1558\",\"label\":\"Cây quy trình Cây Sơ đồ\"},{\"kind\":\"banner\",\"h\":114,\"loc\":\"OrchestrationStudio.tsx:1588\",\"label\":\"Chưa có bước nào. Thêm bước đầu tiên bên dưới. Thê\"}]",
-    "BANNER/DẢI KPI TRONG MAIN ×2 (khối trên phần tử làm việc, <120 px, ≥60 % bề rộng MAIN): [{\"kind\":\"banner\",\"h\":40,\"loc\":\"OrchestrationStudio.tsx:1633\",\"label\":\"Cấu hình bước\"},{\"kind\":\"banner\",\"h\":68,\"loc\":\"OrchestrationStudio.tsx:1636\",\"label\":\"Chọn một bước trên cây để cấu hình.\"}]",
+    "BANNER/DẢI KPI TRONG MAIN ×1 (khối trên phần tử làm việc, <120 px, ≥60 % bề rộng MAIN): [{\"kind\":\"banner\",\"h\":34,\"loc\":\"OrchestrationStudio.tsx:1558\",\"label\":\"Cây quy trình Cây Sơ đồ\"}]",
     "CHƯA có [data-layout-main] — đo bằng selector FE1"
    ],
    "legacyRef": {
@@ -5070,8 +5542,10 @@
       "h": 222
      }
     ],
-    "areaPx": 271728
+    "areaPx": 271728,
+    "hadH1": true
    },
+   "attrSel": null,
    "actions": [
     {
      "id": "phien-ban",
@@ -5177,10 +5651,19 @@
    "mainPctUncovered": 0,
    "insideMain": [
     {
-     "workspace": null,
-     "aboveWorkspacePx": 148,
-     "banners": 2,
-     "bannerPx": 148,
+     "workspace": {
+      "tag": "p",
+      "testid": null,
+      "loc": "OrchestrationStudio.tsx:1592",
+      "role": null,
+      "slot": null,
+      "label": "Chưa có bước nào. Thêm bước đầu tiên bên dưới.",
+      "kind": "empty-state",
+      "top": 893
+     },
+     "aboveWorkspacePx": 83,
+     "banners": 1,
+     "bannerPx": 34,
      "toolbars": [],
      "blocks": [
       {
@@ -5195,27 +5678,23 @@
        "role": null,
        "slot": "card-header",
        "label": "Cây quy trình Cây Sơ đồ"
-      },
-      {
-       "x": 313,
-       "y": 893,
-       "w": 663,
-       "h": 114,
-       "kind": "banner",
-       "tag": "div",
-       "testid": null,
-       "loc": "OrchestrationStudio.tsx:1588",
-       "role": null,
-       "slot": "card-content",
-       "label": "Chưa có bước nào. Thêm bước đầu tiên bên dưới. Thê"
       }
      ]
     },
     {
-     "workspace": null,
-     "aboveWorkspacePx": 108,
-     "banners": 2,
-     "bannerPx": 108,
+     "workspace": {
+      "tag": "p",
+      "testid": null,
+      "loc": "OrchestrationStudio.tsx:1640",
+      "role": null,
+      "slot": null,
+      "label": "Chọn một bước trên cây để cấu hình.",
+      "kind": "empty-state",
+      "top": 899
+     },
+     "aboveWorkspacePx": 89,
+     "banners": 0,
+     "bannerPx": 0,
      "toolbars": [],
      "blocks": [
       {
@@ -5223,26 +5702,13 @@
        "y": 835,
        "w": 323,
        "h": 40,
-       "kind": "banner",
+       "kind": "label",
        "tag": "div",
        "testid": null,
        "loc": "OrchestrationStudio.tsx:1633",
        "role": null,
        "slot": "card-header",
        "label": "Cấu hình bước"
-      },
-      {
-       "x": 994,
-       "y": 899,
-       "w": 323,
-       "h": 68,
-       "kind": "banner",
-       "tag": "div",
-       "testid": null,
-       "loc": "OrchestrationStudio.tsx:1636",
-       "role": null,
-       "slot": "card-content",
-       "label": "Chọn một bước trên cây để cấu hình."
       }
      ]
     }
@@ -5261,11 +5727,11 @@
    "gapH1ToMain": 515,
    "breadcrumbs": 2,
    "bannersBeforeMain": {
-    "count": 4,
-    "px": 451,
+    "count": 5,
+    "px": 489,
     "byKind": {
+     "notice": 3,
      "subtitle": 1,
-     "notice": 2,
      "other": 1
     },
     "method": "geometric: khối giữa đáy h1 và đỉnh MAIN (kể cả trong page header) + popover/portal đè dải đầu"
@@ -5292,7 +5758,7 @@
     },
     {
      "pos": "aboveH1",
-     "kind": "other",
+     "kind": "breadcrumb",
      "inHeader": true,
      "y": 211,
      "h": 40,
@@ -5433,7 +5899,7 @@
    "scroll": {
     "docH": 1690,
     "extra": 0,
-    "siblingExtra": 0,
+    "siblingScrollExtra": 0,
     "scrollers": [],
     "inner": []
    },
@@ -5455,8 +5921,7 @@
    "spinnersAtMeasure": 2,
    "errors": [],
    "warnings": [
-    "BANNER/DẢI KPI TRONG MAIN ×2 (khối trên phần tử làm việc, <120 px, ≥60 % bề rộng MAIN): [{\"kind\":\"banner\",\"h\":34,\"loc\":\"OrchestrationStudio.tsx:1558\",\"label\":\"Cây quy trình Cây Sơ đồ\"},{\"kind\":\"banner\",\"h\":114,\"loc\":\"OrchestrationStudio.tsx:1588\",\"label\":\"Chưa có bước nào. Thêm bước đầu tiên bên dưới. Thê\"}]",
-    "BANNER/DẢI KPI TRONG MAIN ×2 (khối trên phần tử làm việc, <120 px, ≥60 % bề rộng MAIN): [{\"kind\":\"banner\",\"h\":40,\"loc\":\"OrchestrationStudio.tsx:1633\",\"label\":\"Cấu hình bước\"},{\"kind\":\"banner\",\"h\":68,\"loc\":\"OrchestrationStudio.tsx:1636\",\"label\":\"Chọn một bước trên cây để cấu hình.\"}]",
+    "BANNER/DẢI KPI TRONG MAIN ×1 (khối trên phần tử làm việc, <120 px, ≥60 % bề rộng MAIN): [{\"kind\":\"banner\",\"h\":34,\"loc\":\"OrchestrationStudio.tsx:1558\",\"label\":\"Cây quy trình Cây Sơ đồ\"}]",
     "CHƯA có [data-layout-main] — đo bằng selector FE1"
    ],
    "legacyRef": {
@@ -5475,8 +5940,10 @@
       "h": 222
      }
     ],
-    "areaPx": 219780
+    "areaPx": 219780,
+    "hadH1": true
    },
+   "attrSel": null,
    "actions": [
     {
      "id": "phien-ban",
@@ -5577,6 +6044,7 @@
       "role": "application",
       "slot": null,
       "label": "",
+      "kind": "native",
       "top": 806
      },
      "aboveWorkspacePx": 102,
@@ -5614,10 +6082,10 @@
    "gapH1ToMain": 409,
    "breadcrumbs": 2,
    "bannersBeforeMain": {
-    "count": 4,
-    "px": 345,
+    "count": 5,
+    "px": 383,
     "byKind": {
-     "notice": 3,
+     "notice": 4,
      "other": 1
     },
     "method": "geometric: khối giữa đáy h1 và đỉnh MAIN (kể cả trong page header) + popover/portal đè dải đầu"
@@ -5644,7 +6112,7 @@
     },
     {
      "pos": "aboveH1",
-     "kind": "other",
+     "kind": "breadcrumb",
      "inHeader": true,
      "y": 211,
      "h": 40,
@@ -5791,7 +6259,7 @@
    "scroll": {
     "docH": 2617,
     "extra": 0,
-    "siblingExtra": 0,
+    "siblingScrollExtra": 0,
     "scrollers": [],
     "inner": []
    },
@@ -5826,8 +6294,10 @@
       "h": 895
      }
     ],
-    "areaPx": 453765
+    "areaPx": 453765,
+    "hadH1": true
    },
+   "attrSel": null,
    "actions": [
     {
      "id": "project-ir-flow-moi",
@@ -5906,6 +6376,7 @@
       "role": "application",
       "slot": null,
       "label": "",
+      "kind": "native",
       "top": 842
      },
      "aboveWorkspacePx": 102,
@@ -5943,10 +6414,10 @@
    "gapH1ToMain": 445,
    "breadcrumbs": 2,
    "bannersBeforeMain": {
-    "count": 4,
-    "px": 381,
+    "count": 5,
+    "px": 419,
     "byKind": {
-     "notice": 3,
+     "notice": 4,
      "other": 1
     },
     "method": "geometric: khối giữa đáy h1 và đỉnh MAIN (kể cả trong page header) + popover/portal đè dải đầu"
@@ -5973,7 +6444,7 @@
     },
     {
      "pos": "aboveH1",
-     "kind": "other",
+     "kind": "breadcrumb",
      "inHeader": true,
      "y": 211,
      "h": 40,
@@ -6120,7 +6591,7 @@
    "scroll": {
     "docH": 2673,
     "extra": 0,
-    "siblingExtra": 0,
+    "siblingScrollExtra": 0,
     "scrollers": [],
     "inner": []
    },
@@ -6155,8 +6626,10 @@
       "h": 895
      }
     ],
-    "areaPx": 366950
+    "areaPx": 366950,
+    "hadH1": true
    },
+   "attrSel": null,
    "actions": [
     {
      "id": "project-ir-flow-moi",
@@ -6235,6 +6708,7 @@
       "role": "application",
       "slot": null,
       "label": "| | Start NO | | Motor NO |/| Stop NC | | Interloc",
+      "kind": "native",
       "top": 735
      },
      "aboveWorkspacePx": 106,
@@ -6272,10 +6746,10 @@
    "gapH1ToMain": 334,
    "breadcrumbs": 2,
    "bannersBeforeMain": {
-    "count": 4,
-    "px": 270,
+    "count": 5,
+    "px": 308,
     "byKind": {
-     "notice": 3,
+     "notice": 4,
      "kpi": 1
     },
     "method": "geometric: khối giữa đáy h1 và đỉnh MAIN (kể cả trong page header) + popover/portal đè dải đầu"
@@ -6302,7 +6776,7 @@
     },
     {
      "pos": "aboveH1",
-     "kind": "other",
+     "kind": "breadcrumb",
      "inHeader": true,
      "y": 211,
      "h": 40,
@@ -6449,7 +6923,7 @@
    "scroll": {
     "docH": 1397,
     "extra": 0,
-    "siblingExtra": 0,
+    "siblingScrollExtra": 0,
     "scrollers": [],
     "inner": [
      {
@@ -6497,8 +6971,10 @@
       "h": 720
      }
     ],
-    "areaPx": 440640
+    "areaPx": 440640,
+    "hadH1": true
    },
+   "attrSel": null,
    "actions": [
     {
      "id": "luu-vao-project",
@@ -6576,6 +7052,7 @@
       "role": "application",
       "slot": null,
       "label": "| | Start NO | | Motor NO |/| Stop NC | | Interloc",
+      "kind": "native",
       "top": 779
      },
      "aboveWorkspacePx": 130,
@@ -6613,10 +7090,10 @@
    "gapH1ToMain": 354,
    "breadcrumbs": 2,
    "bannersBeforeMain": {
-    "count": 4,
-    "px": 290,
+    "count": 5,
+    "px": 328,
     "byKind": {
-     "notice": 3,
+     "notice": 4,
      "kpi": 1
     },
     "method": "geometric: khối giữa đáy h1 và đỉnh MAIN (kể cả trong page header) + popover/portal đè dải đầu"
@@ -6643,7 +7120,7 @@
     },
     {
      "pos": "aboveH1",
-     "kind": "other",
+     "kind": "breadcrumb",
      "inHeader": true,
      "y": 211,
      "h": 40,
@@ -6790,7 +7267,7 @@
    "scroll": {
     "docH": 1441,
     "extra": 0,
-    "siblingExtra": 0,
+    "siblingScrollExtra": 0,
     "scrollers": [],
     "inner": []
    },
@@ -6825,8 +7302,10 @@
       "h": 744
      }
     ],
-    "areaPx": 368280
+    "areaPx": 368280,
+    "hadH1": true
    },
+   "attrSel": null,
    "actions": [
     {
      "id": "luu-vao-project",
@@ -6904,11 +7383,12 @@
       "role": null,
       "slot": "textarea",
       "label": "",
+      "kind": "native",
       "top": 512
      },
      "aboveWorkspacePx": 197,
-     "banners": 3,
-     "bannerPx": 132,
+     "banners": 2,
+     "bannerPx": 116,
      "toolbars": [],
      "blocks": [
       {
@@ -6929,7 +7409,7 @@
        "y": 420,
        "w": 798,
        "h": 60,
-       "kind": "kpi-strip",
+       "kind": "banner",
        "tag": "div",
        "testid": null,
        "loc": "ProgrammingCopilotPanel.tsx:369",
@@ -6942,7 +7422,7 @@
        "y": 492,
        "w": 798,
        "h": 16,
-       "kind": "banner",
+       "kind": "label",
        "tag": "label",
        "testid": null,
        "loc": "ProgrammingCopilotPanel.tsx:423",
@@ -7062,7 +7542,7 @@
    "scroll": {
     "docH": 950,
     "extra": 0,
-    "siblingExtra": 0,
+    "siblingScrollExtra": 0,
     "scrollers": [],
     "inner": []
    },
@@ -7083,7 +7563,7 @@
    "spinnersAtMeasure": 2,
    "errors": [],
    "warnings": [
-    "BANNER/DẢI KPI TRONG MAIN ×3 (khối trên phần tử làm việc, <120 px, ≥60 % bề rộng MAIN): [{\"kind\":\"banner\",\"h\":56,\"loc\":\"ProgrammingCopilot.tsx:51\",\"label\":\"Sinh mã thiết bị Chọn loại chương trình, chế độ và\"},{\"kind\":\"kpi-strip\",\"h\":60,\"loc\":\"ProgrammingCopilotPanel.tsx:369\",\"label\":\"Loại chương trình iec61131-st Chế độ Sinh mã Hãng \"},{\"kind\":\"banner\",\"h\":16,\"loc\":\"ProgrammingCopilotPanel.tsx:423\",\"label\":\"Yêu cầu\"}]",
+    "BANNER/DẢI KPI TRONG MAIN ×2 (khối trên phần tử làm việc, <120 px, ≥60 % bề rộng MAIN): [{\"kind\":\"banner\",\"h\":56,\"loc\":\"ProgrammingCopilot.tsx:51\",\"label\":\"Sinh mã thiết bị Chọn loại chương trình, chế độ và\"},{\"kind\":\"banner\",\"h\":60,\"loc\":\"ProgrammingCopilotPanel.tsx:369\",\"label\":\"Loại chương trình iec61131-st Chế độ Sinh mã Hãng \"}]",
     "CHƯA có [data-layout-main] — đo bằng selector FE1"
    ],
    "legacyRef": {
@@ -7096,8 +7576,10 @@
       "h": 428
      }
     ],
-    "areaPx": 362944
+    "areaPx": 362944,
+    "hadH1": true
    },
+   "attrSel": null,
    "actions": [],
    "trpc": [
     "aiInbox.count",
@@ -7151,11 +7633,12 @@
       "role": null,
       "slot": "textarea",
       "label": "",
+      "kind": "native",
       "top": 512
      },
      "aboveWorkspacePx": 197,
-     "banners": 3,
-     "bannerPx": 132,
+     "banners": 2,
+     "bannerPx": 116,
      "toolbars": [],
      "blocks": [
       {
@@ -7176,7 +7659,7 @@
        "y": 420,
        "w": 798,
        "h": 60,
-       "kind": "kpi-strip",
+       "kind": "banner",
        "tag": "div",
        "testid": null,
        "loc": "ProgrammingCopilotPanel.tsx:369",
@@ -7189,7 +7672,7 @@
        "y": 492,
        "w": 798,
        "h": 16,
-       "kind": "banner",
+       "kind": "label",
        "tag": "label",
        "testid": null,
        "loc": "ProgrammingCopilotPanel.tsx:423",
@@ -7309,7 +7792,7 @@
    "scroll": {
     "docH": 791,
     "extra": 0,
-    "siblingExtra": 0,
+    "siblingScrollExtra": 0,
     "scrollers": [],
     "inner": []
    },
@@ -7330,7 +7813,7 @@
    "spinnersAtMeasure": 2,
    "errors": [],
    "warnings": [
-    "BANNER/DẢI KPI TRONG MAIN ×3 (khối trên phần tử làm việc, <120 px, ≥60 % bề rộng MAIN): [{\"kind\":\"banner\",\"h\":56,\"loc\":\"ProgrammingCopilot.tsx:51\",\"label\":\"Sinh mã thiết bị Chọn loại chương trình, chế độ và\"},{\"kind\":\"kpi-strip\",\"h\":60,\"loc\":\"ProgrammingCopilotPanel.tsx:369\",\"label\":\"Loại chương trình iec61131-st Chế độ Sinh mã Hãng \"},{\"kind\":\"banner\",\"h\":16,\"loc\":\"ProgrammingCopilotPanel.tsx:423\",\"label\":\"Yêu cầu\"}]",
+    "BANNER/DẢI KPI TRONG MAIN ×2 (khối trên phần tử làm việc, <120 px, ≥60 % bề rộng MAIN): [{\"kind\":\"banner\",\"h\":56,\"loc\":\"ProgrammingCopilot.tsx:51\",\"label\":\"Sinh mã thiết bị Chọn loại chương trình, chế độ và\"},{\"kind\":\"banner\",\"h\":60,\"loc\":\"ProgrammingCopilotPanel.tsx:369\",\"label\":\"Loại chương trình iec61131-st Chế độ Sinh mã Hãng \"}]",
     "CHƯA có [data-layout-main] — đo bằng selector FE1"
    ],
    "legacyRef": {
@@ -7343,8 +7826,10 @@
       "h": 428
      }
     ],
-    "areaPx": 362944
+    "areaPx": 362944,
+    "hadH1": true
    },
+   "attrSel": null,
    "actions": [],
    "trpc": [
     "aiInbox.count",
@@ -7398,6 +7883,7 @@
       "role": null,
       "slot": "table",
       "label": "Khóa tác vụ Năng lực Ưu tiên Trạng thái Thiết bị D",
+      "kind": "native",
       "top": 746
      },
      "aboveWorkspacePx": 93,
@@ -7435,11 +7921,11 @@
    "gapH1ToMain": 358,
    "breadcrumbs": 2,
    "bannersBeforeMain": {
-    "count": 5,
-    "px": 278,
+    "count": 6,
+    "px": 316,
     "byKind": {
+     "notice": 3,
      "subtitle": 1,
-     "notice": 2,
      "kpi": 1,
      "tabs": 1
     },
@@ -7467,7 +7953,7 @@
     },
     {
      "pos": "aboveH1",
-     "kind": "other",
+     "kind": "breadcrumb",
      "inHeader": true,
      "y": 211,
      "h": 40,
@@ -7659,7 +8145,7 @@
    "scroll": {
     "docH": 1142,
     "extra": 0,
-    "siblingExtra": 0,
+    "siblingScrollExtra": 0,
     "scrollers": [],
     "inner": []
    },
@@ -7694,8 +8180,10 @@
       "h": 441
      }
     ],
-    "areaPx": 546840
+    "areaPx": 546840,
+    "hadH1": true
    },
+   "attrSel": null,
    "actions": [],
    "trpc": [
     "aiInbox.count",
@@ -7760,6 +8248,7 @@
       "role": null,
       "slot": "table",
       "label": "Khóa tác vụ Năng lực Ưu tiên Trạng thái Thiết bị D",
+      "kind": "native",
       "top": 766
      },
      "aboveWorkspacePx": 93,
@@ -7797,11 +8286,11 @@
    "gapH1ToMain": 378,
    "breadcrumbs": 2,
    "bannersBeforeMain": {
-    "count": 5,
-    "px": 298,
+    "count": 6,
+    "px": 336,
     "byKind": {
+     "notice": 3,
      "subtitle": 1,
-     "notice": 2,
      "kpi": 1,
      "tabs": 1
     },
@@ -7829,7 +8318,7 @@
     },
     {
      "pos": "aboveH1",
-     "kind": "other",
+     "kind": "breadcrumb",
      "inHeader": true,
      "y": 211,
      "h": 40,
@@ -8021,7 +8510,7 @@
    "scroll": {
     "docH": 1162,
     "extra": 0,
-    "siblingExtra": 0,
+    "siblingScrollExtra": 0,
     "scrollers": [],
     "inner": []
    },
@@ -8056,8 +8545,10 @@
       "h": 441
      }
     ],
-    "areaPx": 443646
+    "areaPx": 443646,
+    "hadH1": true
    },
+   "attrSel": null,
    "actions": [],
    "trpc": [
     "aiInbox.count",
@@ -8122,6 +8613,7 @@
       "role": null,
       "slot": "table",
       "label": "ID Loại Phát hiện bởi Kết quả Robot / Trạm Phản ứn",
+      "kind": "native",
       "top": 1450
      },
      "aboveWorkspacePx": 645,
@@ -8185,11 +8677,11 @@
    "gapH1ToMain": 510,
    "breadcrumbs": 2,
    "bannersBeforeMain": {
-    "count": 6,
-    "px": 414,
+    "count": 7,
+    "px": 452,
     "byKind": {
+     "notice": 4,
      "subtitle": 1,
-     "notice": 3,
      "kpi": 1,
      "tabs": 1
     },
@@ -8217,7 +8709,7 @@
     },
     {
      "pos": "aboveH1",
-     "kind": "other",
+     "kind": "breadcrumb",
      "inHeader": true,
      "y": 211,
      "h": 40,
@@ -8429,7 +8921,7 @@
    "scroll": {
     "docH": 1708,
     "extra": 0,
-    "siblingExtra": 0,
+    "siblingScrollExtra": 0,
     "scrollers": [],
     "inner": []
    },
@@ -8464,8 +8956,10 @@
       "h": 795
      }
     ],
-    "areaPx": 985800
+    "areaPx": 985800,
+    "hadH1": true
    },
+   "attrSel": null,
    "actions": [
     {
      "id": "bao-cao-tiem-can",
@@ -8547,6 +9041,7 @@
       "role": null,
       "slot": "table",
       "label": "ID Loại Phát hiện bởi Kết quả Robot / Trạm Phản ứn",
+      "kind": "native",
       "top": 1470
      },
      "aboveWorkspacePx": 645,
@@ -8610,11 +9105,11 @@
    "gapH1ToMain": 530,
    "breadcrumbs": 2,
    "bannersBeforeMain": {
-    "count": 6,
-    "px": 434,
+    "count": 7,
+    "px": 472,
     "byKind": {
+     "notice": 4,
      "subtitle": 1,
-     "notice": 3,
      "kpi": 1,
      "tabs": 1
     },
@@ -8642,7 +9137,7 @@
     },
     {
      "pos": "aboveH1",
-     "kind": "other",
+     "kind": "breadcrumb",
      "inHeader": true,
      "y": 211,
      "h": 40,
@@ -8823,7 +9318,7 @@
    "scroll": {
     "docH": 1742,
     "extra": 0,
-    "siblingExtra": 0,
+    "siblingScrollExtra": 0,
     "scrollers": [],
     "inner": []
    },
@@ -8858,8 +9353,10 @@
       "h": 795
      }
     ],
-    "areaPx": 799770
+    "areaPx": 799770,
+    "hadH1": true
    },
+   "attrSel": null,
    "actions": [
     {
      "id": "bao-cao-tiem-can",
@@ -8929,25 +9426,40 @@
    "mainTop": 669,
    "chromeAboveMain": 669,
    "mainPct": 22.9,
-   "workspacePct": 22.9,
+   "workspacePct": 15.7,
    "mainPctFe1": 22.9,
    "mainPctUncovered": 22.8,
    "insideMain": [
     {
      "workspace": {
-      "tag": "div",
+      "tag": "p",
       "testid": null,
-      "loc": "SectionCard.tsx:45",
+      "loc": "EquipmentStandards.tsx:461",
       "role": null,
-      "slot": "card",
-      "label": "Phân cấp loại thiết bị Đăng ký loại 31/31 hàng là ",
-      "top": 669
+      "slot": null,
+      "label": "Chọn một loại thiết bị trong cây để xem thuộc tính",
+      "kind": "empty-state",
+      "top": 758
      },
-     "aboveWorkspacePx": 0,
+     "aboveWorkspacePx": 89,
      "banners": 0,
      "bannerPx": 0,
      "toolbars": [],
-     "blocks": []
+     "blocks": [
+      {
+       "x": 941,
+       "y": 694,
+       "w": 610,
+       "h": 40,
+       "kind": "other",
+       "tag": "div",
+       "testid": null,
+       "loc": "SectionCard.tsx:46",
+       "role": null,
+       "slot": "card-header",
+       "label": "Loại thiết bị đã phân giải"
+      }
+     ]
     }
    ],
    "aiInsideMain": {
@@ -8964,10 +9476,10 @@
    "gapH1ToMain": 374,
    "breadcrumbs": 2,
    "bannersBeforeMain": {
-    "count": 5,
-    "px": 294,
+    "count": 6,
+    "px": 332,
     "byKind": {
-     "notice": 3,
+     "notice": 4,
      "kpi": 1,
      "tabs": 1
     },
@@ -8995,7 +9507,7 @@
     },
     {
      "pos": "aboveH1",
-     "kind": "other",
+     "kind": "breadcrumb",
      "inHeader": true,
      "y": 211,
      "h": 40,
@@ -9187,7 +9699,7 @@
    "scroll": {
     "docH": 1797,
     "extra": 0,
-    "siblingExtra": 0,
+    "siblingScrollExtra": 0,
     "scrollers": [],
     "inner": []
    },
@@ -9221,8 +9733,10 @@
       "h": 1080
      }
     ],
-    "areaPx": 1339200
+    "areaPx": 1339200,
+    "hadH1": true
    },
+   "attrSel": null,
    "actions": [
     {
      "id": "dang-ky-loai",
@@ -9292,25 +9806,40 @@
    "mainTop": 689,
    "chromeAboveMain": 689,
    "mainPct": 7.6,
-   "workspacePct": 7.6,
+   "workspacePct": 0,
    "mainPctFe1": 7.6,
    "mainPctUncovered": 7.5,
    "insideMain": [
     {
      "workspace": {
-      "tag": "div",
+      "tag": "p",
       "testid": null,
-      "loc": "SectionCard.tsx:45",
+      "loc": "EquipmentStandards.tsx:461",
       "role": null,
-      "slot": "card",
-      "label": "Phân cấp loại thiết bị Đăng ký loại 31/31 hàng là ",
-      "top": 689
+      "slot": null,
+      "label": "Chọn một loại thiết bị trong cây để xem thuộc tính",
+      "kind": "empty-state",
+      "top": 778
      },
-     "aboveWorkspacePx": 0,
+     "aboveWorkspacePx": 89,
      "banners": 0,
      "bannerPx": 0,
      "toolbars": [],
-     "blocks": []
+     "blocks": [
+      {
+       "x": 824,
+       "y": 714,
+       "w": 493,
+       "h": 40,
+       "kind": "other",
+       "tag": "div",
+       "testid": null,
+       "loc": "SectionCard.tsx:46",
+       "role": null,
+       "slot": "card-header",
+       "label": "Loại thiết bị đã phân giải"
+      }
+     ]
     }
    ],
    "aiInsideMain": {
@@ -9327,10 +9856,10 @@
    "gapH1ToMain": 394,
    "breadcrumbs": 2,
    "bannersBeforeMain": {
-    "count": 5,
-    "px": 314,
+    "count": 6,
+    "px": 352,
     "byKind": {
-     "notice": 3,
+     "notice": 4,
      "kpi": 1,
      "tabs": 1
     },
@@ -9358,7 +9887,7 @@
     },
     {
      "pos": "aboveH1",
-     "kind": "other",
+     "kind": "breadcrumb",
      "inHeader": true,
      "y": 211,
      "h": 40,
@@ -9550,7 +10079,7 @@
    "scroll": {
     "docH": 1817,
     "extra": 0,
-    "siblingExtra": 0,
+    "siblingScrollExtra": 0,
     "scrollers": [],
     "inner": []
    },
@@ -9584,8 +10113,10 @@
       "h": 1080
      }
     ],
-    "areaPx": 1086480
+    "areaPx": 1086480,
+    "hadH1": true
    },
+   "attrSel": null,
    "actions": [
     {
      "id": "dang-ky-loai",
@@ -9667,13 +10198,41 @@
       "role": null,
       "slot": "card",
       "label": "Giao thức adapter đã kết nối ot-opcua ot-modbus ot",
+      "kind": "fallback-block",
       "top": 673
      },
      "aboveWorkspacePx": 0,
-     "banners": 0,
-     "bannerPx": 0,
+     "banners": 1,
+     "bannerPx": 40,
      "toolbars": [],
-     "blocks": []
+     "blocks": [
+      {
+       "x": 313,
+       "y": 698,
+       "w": 1238,
+       "h": 40,
+       "kind": "banner",
+       "tag": "div",
+       "testid": null,
+       "loc": "SectionCard.tsx:46",
+       "role": null,
+       "slot": "card-header",
+       "label": "Giao thức adapter đã kết nối"
+      },
+      {
+       "x": 313,
+       "y": 762,
+       "w": 1238,
+       "h": 22,
+       "kind": "label",
+       "tag": "div",
+       "testid": null,
+       "loc": "SectionCard.tsx:60",
+       "role": null,
+       "slot": "card-content",
+       "label": "ot-opcua ot-modbus ot-s7 ot-mitsubishi-mc ot-ether"
+      }
+     ]
     }
    ],
    "aiInsideMain": {
@@ -9690,10 +10249,10 @@
    "gapH1ToMain": 378,
    "breadcrumbs": 2,
    "bannersBeforeMain": {
-    "count": 5,
-    "px": 298,
+    "count": 6,
+    "px": 336,
     "byKind": {
-     "notice": 3,
+     "notice": 4,
      "kpi": 1,
      "tabs": 1
     },
@@ -9721,7 +10280,7 @@
     },
     {
      "pos": "aboveH1",
-     "kind": "other",
+     "kind": "breadcrumb",
      "inHeader": true,
      "y": 211,
      "h": 40,
@@ -9913,7 +10472,7 @@
    "scroll": {
     "docH": 1241,
     "extra": 0,
-    "siblingExtra": 0,
+    "siblingScrollExtra": 0,
     "scrollers": [],
     "inner": []
    },
@@ -9935,6 +10494,7 @@
    "spinnersAtMeasure": 2,
    "errors": [],
    "warnings": [
+    "BANNER/DẢI KPI TRONG MAIN ×1 (khối trên phần tử làm việc, <120 px, ≥60 % bề rộng MAIN): [{\"kind\":\"banner\",\"h\":40,\"loc\":\"SectionCard.tsx:46\",\"label\":\"Giao thức adapter đã kết nối\"}]",
     "CHƯA có [data-layout-main] — đo bằng selector FE1"
    ],
    "legacyRef": {
@@ -9947,8 +10507,10 @@
       "h": 520
      }
     ],
-    "areaPx": 644800
+    "areaPx": 644800,
+    "hadH1": true
    },
+   "attrSel": null,
    "actions": [],
    "trpc": [
     "aiInbox.count",
@@ -10005,13 +10567,41 @@
       "role": null,
       "slot": "card",
       "label": "Giao thức adapter đã kết nối ot-opcua ot-modbus ot",
+      "kind": "fallback-block",
       "top": 693
      },
      "aboveWorkspacePx": 0,
-     "banners": 0,
-     "bannerPx": 0,
+     "banners": 2,
+     "bannerPx": 88,
      "toolbars": [],
-     "blocks": []
+     "blocks": [
+      {
+       "x": 313,
+       "y": 718,
+       "w": 1004,
+       "h": 40,
+       "kind": "banner",
+       "tag": "div",
+       "testid": null,
+       "loc": "SectionCard.tsx:46",
+       "role": null,
+       "slot": "card-header",
+       "label": "Giao thức adapter đã kết nối"
+      },
+      {
+       "x": 313,
+       "y": 782,
+       "w": 1004,
+       "h": 48,
+       "kind": "banner",
+       "tag": "div",
+       "testid": null,
+       "loc": "SectionCard.tsx:60",
+       "role": null,
+       "slot": "card-content",
+       "label": "ot-opcua ot-modbus ot-s7 ot-mitsubishi-mc ot-ether"
+      }
+     ]
     }
    ],
    "aiInsideMain": {
@@ -10028,10 +10618,10 @@
    "gapH1ToMain": 398,
    "breadcrumbs": 2,
    "bannersBeforeMain": {
-    "count": 5,
-    "px": 318,
+    "count": 6,
+    "px": 356,
     "byKind": {
-     "notice": 3,
+     "notice": 4,
      "kpi": 1,
      "tabs": 1
     },
@@ -10059,7 +10649,7 @@
     },
     {
      "pos": "aboveH1",
-     "kind": "other",
+     "kind": "breadcrumb",
      "inHeader": true,
      "y": 211,
      "h": 40,
@@ -10251,7 +10841,7 @@
    "scroll": {
     "docH": 1303,
     "extra": 0,
-    "siblingExtra": 0,
+    "siblingScrollExtra": 0,
     "scrollers": [],
     "inner": []
    },
@@ -10273,6 +10863,7 @@
    "spinnersAtMeasure": 2,
    "errors": [],
    "warnings": [
+    "BANNER/DẢI KPI TRONG MAIN ×2 (khối trên phần tử làm việc, <120 px, ≥60 % bề rộng MAIN): [{\"kind\":\"banner\",\"h\":40,\"loc\":\"SectionCard.tsx:46\",\"label\":\"Giao thức adapter đã kết nối\"},{\"kind\":\"banner\",\"h\":48,\"loc\":\"SectionCard.tsx:60\",\"label\":\"ot-opcua ot-modbus ot-s7 ot-mitsubishi-mc ot-ether\"}]",
     "CHƯA có [data-layout-main] — đo bằng selector FE1"
    ],
    "legacyRef": {
@@ -10285,8 +10876,10 @@
       "h": 562
      }
     ],
-    "areaPx": 565372
+    "areaPx": 565372,
+    "hadH1": true
    },
+   "attrSel": null,
    "actions": [],
    "trpc": [
     "aiInbox.count",
@@ -10353,6 +10946,7 @@
       "role": null,
       "slot": null,
       "label": "1",
+      "kind": "native",
       "top": 685
      },
      "aboveWorkspacePx": 0,
@@ -10393,7 +10987,7 @@
    "bandBlocks": [
     {
      "pos": "aboveH1",
-     "kind": "other",
+     "kind": "breadcrumb",
      "inHeader": true,
      "y": 157,
      "h": 40,
@@ -10585,12 +11179,12 @@
     "items": [],
     "positionedIntersecting": []
    },
-   "pageHeightRatio": 67.63,
+   "pageHeightRatio": 3.09,
    "pageHeightRatioDoc": 3.09,
    "scroll": {
     "docH": 2933,
-    "extra": 61318,
-    "siblingExtra": 61318,
+    "extra": 0,
+    "siblingScrollExtra": 61318,
     "scrollers": [
      {
       "tag": "div",
@@ -10637,8 +11231,10 @@
       "h": 360
      }
     ],
-    "areaPx": 196560
+    "areaPx": 196560,
+    "hadH1": true
    },
+   "attrSel": null,
    "actions": [
     {
      "id": "so-tay",
@@ -10732,6 +11328,7 @@
       "role": null,
       "slot": null,
       "label": "1",
+      "kind": "native",
       "top": 741
      },
      "aboveWorkspacePx": 0,
@@ -10772,7 +11369,7 @@
    "bandBlocks": [
     {
      "pos": "aboveH1",
-     "kind": "other",
+     "kind": "breadcrumb",
      "inHeader": true,
      "y": 157,
      "h": 40,
@@ -10964,12 +11561,12 @@
     "items": [],
     "positionedIntersecting": []
    },
-   "pageHeightRatio": 83.73,
+   "pageHeightRatio": 3.89,
    "pageHeightRatioDoc": 3.89,
    "scroll": {
     "docH": 2989,
-    "extra": 61318,
-    "siblingExtra": 61318,
+    "extra": 0,
+    "siblingScrollExtra": 61318,
     "scrollers": [
      {
       "tag": "div",
@@ -11016,8 +11613,10 @@
       "h": 360
      }
     ],
-    "areaPx": 112320
+    "areaPx": 112320,
+    "hadH1": true
    },
+   "attrSel": null,
    "actions": [
     {
      "id": "so-tay",
@@ -11101,6 +11700,7 @@
       "role": "application",
       "slot": null,
       "label": "",
+      "kind": "native",
       "top": 924
      },
      "aboveWorkspacePx": 102,
@@ -11138,10 +11738,10 @@
    "gapH1ToMain": 527,
    "breadcrumbs": 2,
    "bannersBeforeMain": {
-    "count": 4,
-    "px": 463,
+    "count": 5,
+    "px": 501,
     "byKind": {
-     "notice": 3,
+     "notice": 4,
      "other": 1
     },
     "method": "geometric: khối giữa đáy h1 và đỉnh MAIN (kể cả trong page header) + popover/portal đè dải đầu"
@@ -11168,7 +11768,7 @@
     },
     {
      "pos": "aboveH1",
-     "kind": "other",
+     "kind": "breadcrumb",
      "inHeader": true,
      "y": 211,
      "h": 40,
@@ -11333,7 +11933,7 @@
    "scroll": {
     "docH": 2790,
     "extra": 0,
-    "siblingExtra": 0,
+    "siblingScrollExtra": 0,
     "scrollers": [],
     "inner": []
    },
@@ -11368,8 +11968,10 @@
       "h": 910
      }
     ],
-    "areaPx": 302120
+    "areaPx": 302120,
+    "hadH1": true
    },
+   "attrSel": null,
    "actions": [
     {
      "id": "project-ir-flow-moi",
@@ -11448,6 +12050,7 @@
       "role": "application",
       "slot": null,
       "label": "",
+      "kind": "native",
       "top": 1077
      },
      "aboveWorkspacePx": 182,
@@ -11485,10 +12088,10 @@
    "gapH1ToMain": 580,
    "breadcrumbs": 2,
    "bannersBeforeMain": {
-    "count": 4,
-    "px": 516,
+    "count": 5,
+    "px": 574,
     "byKind": {
-     "notice": 3,
+     "notice": 4,
      "other": 1
     },
     "method": "geometric: khối giữa đáy h1 và đỉnh MAIN (kể cả trong page header) + popover/portal đè dải đầu"
@@ -11515,7 +12118,7 @@
     },
     {
      "pos": "aboveH1",
-     "kind": "other",
+     "kind": "breadcrumb",
      "inHeader": true,
      "y": 231,
      "h": 40,
@@ -11662,7 +12265,7 @@
    "scroll": {
     "docH": 2971,
     "extra": 0,
-    "siblingExtra": 0,
+    "siblingScrollExtra": 0,
     "scrollers": [],
     "inner": []
    },
@@ -11696,8 +12299,10 @@
       "h": 1018
      }
     ],
-    "areaPx": 239230
+    "areaPx": 239230,
+    "hadH1": true
    },
+   "attrSel": null,
    "actions": [
     {
      "id": "project-ir-flow-moi",
@@ -11776,6 +12381,7 @@
       "role": "application",
       "slot": null,
       "label": "| | Start NO | | Motor NO |/| Stop NC | | Interloc",
+      "kind": "native",
       "top": 819
      },
      "aboveWorkspacePx": 130,
@@ -11813,10 +12419,10 @@
    "gapH1ToMain": 394,
    "breadcrumbs": 2,
    "bannersBeforeMain": {
-    "count": 4,
-    "px": 330,
+    "count": 5,
+    "px": 368,
     "byKind": {
-     "notice": 3,
+     "notice": 4,
      "kpi": 1
     },
     "method": "geometric: khối giữa đáy h1 và đỉnh MAIN (kể cả trong page header) + popover/portal đè dải đầu"
@@ -11843,7 +12449,7 @@
     },
     {
      "pos": "aboveH1",
-     "kind": "other",
+     "kind": "breadcrumb",
      "inHeader": true,
      "y": 211,
      "h": 40,
@@ -11990,7 +12596,7 @@
    "scroll": {
     "docH": 1481,
     "extra": 0,
-    "siblingExtra": 0,
+    "siblingScrollExtra": 0,
     "scrollers": [],
     "inner": [
      {
@@ -12038,8 +12644,10 @@
       "h": 744
      }
     ],
-    "areaPx": 299088
+    "areaPx": 299088,
+    "hadH1": true
    },
+   "attrSel": null,
    "actions": [
     {
      "id": "luu-vao-project",
@@ -12117,6 +12725,7 @@
       "role": "application",
       "slot": null,
       "label": "| | Start NO | | Motor NO |/| Stop NC | | Interloc",
+      "kind": "native",
       "top": 991
      },
      "aboveWorkspacePx": 174,
@@ -12154,10 +12763,10 @@
    "gapH1ToMain": 502,
    "breadcrumbs": 2,
    "bannersBeforeMain": {
-    "count": 5,
-    "px": 426,
+    "count": 6,
+    "px": 484,
     "byKind": {
-     "notice": 3,
+     "notice": 4,
      "other": 1,
      "kpi": 1
     },
@@ -12185,7 +12794,7 @@
     },
     {
      "pos": "aboveH1",
-     "kind": "other",
+     "kind": "breadcrumb",
      "inHeader": true,
      "y": 231,
      "h": 40,
@@ -12332,7 +12941,7 @@
    "scroll": {
     "docH": 1653,
     "extra": 0,
-    "siblingExtra": 0,
+    "siblingScrollExtra": 0,
     "scrollers": [],
     "inner": []
    },
@@ -12366,8 +12975,10 @@
       "h": 788
      }
     ],
-    "areaPx": 224580
+    "areaPx": 224580,
+    "hadH1": true
    },
+   "attrSel": null,
    "actions": [
     {
      "id": "luu-vao-project",

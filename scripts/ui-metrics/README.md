@@ -94,14 +94,14 @@ tự kiểm trượt, `1` khi lỗi hạ tầng.
 | `legacyRef` | MAIN theo selector FE1 (`mainTop`, `rects`, `areaPx`) — lưu trong `baseline.json` cho **cổng hiệu chuẩn** |
 | `calibration` | khi trang có attribute: `matches-reference` / `recorded` / `MISMATCH` (= LỖI), kèm Δtop/Δleft/Δdiện tích |
 | `chromeAboveMain` | = `mainTop`, px từ đỉnh trang tới đỉnh MAIN. **Chỉ số không lách được**: mọi thứ phía trên MAIN đều cộng vào |
-| `h1Top` / `h1Bottom` / `gapH1ToMain` | vị trí h1 và khoảng từ đáy h1 tới đỉnh MAIN. `h1Missing:true` + cảnh báo khi trang không có h1 (Studio); khi đó dải tính từ đỉnh `<main>` |
-| `bannersBeforeMain` | **Hình học**: mọi khối nhìn thấy nằm HẲN trên MAIN, giao ngang với MAIN, **dưới đáy h1 — kể cả khối nằm trong page header của h1** (phụ đề, ghi chú… không còn được miễn), cộng **popover/portal mở sẵn** đè dải đầu trang (`kind: overlay`). Gồm `count`, `px` (chiều cao hợp), `byKind` (`notice`/`kpi`/`tabs`/`subtitle`/`overlay`/`other`, chỉ là nhãn). Không phụ thuộc lớp CSS |
+| `h1Top` / `h1Bottom` / `gapH1ToMain` | vị trí h1 và khoảng từ đáy h1 tới đỉnh MAIN. Trang không có h1 thì dải tính từ đỉnh `<main>`. Trang **có h1 ở baseline** (`legacyRef.hadH1`) mà nay mất h1 ⇒ **LỖI**. Studio không có h1 ở baseline ⇒ chỉ cảnh báo |
+| `bannersBeforeMain` | **Hình học**: mọi khối nhìn thấy nằm HẲN trên MAIN, giao ngang với MAIN, **dưới đáy h1 — kể cả khối nằm trong page header của h1** (phụ đề, ghi chú… không còn được miễn), **cộng mọi khối phía TRÊN h1** (vd banner Beta) trừ breadcrumb (đếm riêng), cộng **popover/portal mở sẵn** đè dải đầu trang (`kind: overlay`; tính cả `position:fixed` nằm trong `<main>`). Gồm `count`, `px` (chiều cao hợp), `byKind` (`notice`/`kpi`/`tabs`/`subtitle`/`overlay`/`other`, chỉ là nhãn; `breadcrumb` không tính). Không phụ thuộc lớp CSS |
 | `blocksAboveH1`, `headerParts`, `bandBlocks[]` | khối phía trên h1 (vd banner Beta), số phần tử trong page header, danh sách đầy đủ có `pos` (`aboveH1`/`besideH1`/`belowH1`/`besideMain`/`overlay`), `kind`, `loc` |
 | `bannersFe1Class` | bộ phân loại lớp CSS của FE1. **Chỉ là nhãn phụ** để đối chiếu FE1 |
 | `breadcrumbs` | số breadcrumb nhìn thấy (shell + trang), theo selector `nav[data-slot=breadcrumb]`/aria-label như FE1 |
 | `kpi` | `legacy` (MetricCard) **và** `official` (`[data-layout-kpi]`), **luôn cả hai**; `all.stripPx` = chiều cao hợp của dải |
-| `coverMain` | **Hit-test** lưới 8 px trên phần **đã cắt** của MAIN. Điểm nào có phần tử trên cùng không thuộc MAIN là bị che, bất kể tệp nguồn. Gồm `px`, `pctOfMain`, `items[]` (phần tử fixed/absolute/sticky ngoài cùng: tag/testid/loc/zIndex). `positionedIntersecting[]` liệt kê thêm phần tử định vị cắt MAIN mà hit-test không thấy (vd `pointer-events:none`) — chỉ báo |
-| `pageHeightRatio` | (chiều cao tài liệu + phần cuộn/ẩn của mọi **tổ tiên** của MAIN có `overflow-y` auto/scroll/overlay/**hidden/clip** + phần cuộn/ẩn LỚN NHẤT của các container **anh em** trong `<main>`) / vh. Mỗi phần chỉ tính khi vượt ≥ 24 px. `pageHeightRatioDoc` = cách tính của FE1. `scroll.inner[]` = container cuộn bên trong MAIN (vd bảng tự cuộn — kiểm khi chấm Standards ≤1,5×) |
+| `coverMain` | **Hit-test** lưới 8 px trên phần **đã cắt** của MAIN. Điểm nào có phần tử trên cùng không thuộc MAIN là bị che, bất kể tệp nguồn. Phần tử `position:fixed` nằm **bên trong** MAIN vẫn bị tính là che (`insideMain: true`). Gồm `px`, `pctOfMain`, `items[]` (phần tử fixed/absolute/sticky ngoài cùng: tag/testid/loc/zIndex). `positionedIntersecting[]` liệt kê thêm phần tử định vị cắt MAIN mà hit-test không thấy (vd `pointer-events:none`) — chỉ báo |
+| `pageHeightRatio` | **Chỉ số được gác** (R-2-f): (chiều cao tài liệu + phần cuộn/ẩn của mọi **tổ tiên** của MAIN có `overflow-y` auto/scroll/overlay/**hidden/clip**) / vh; mỗi phần chỉ tính khi vượt ≥ 24 px. Phần cuộn/ẩn LỚN NHẤT của các panel **anh em** trong `<main>` (explorer/inspector tự cuộn — bình thường trong vỏ workbench) chỉ BÁO ở `scroll.siblingScrollExtra`, KHÔNG gác. `pageHeightRatioDoc` = cách tính của FE1. `scroll.inner[]` = container cuộn bên trong MAIN (vd bảng tự cuộn — kiểm khi chấm Standards ≤1,5×) |
 | `dialogsAtLoad` | dialog/sheet mở sẵn lúc nạp. **Phải là 0** — khác 0 là LỖI |
 | `actions[]` | sau từng hành động khai báo: `status` `opened` (có dialog/sheet/popover/menu; `kinds`, `closedByEsc`) / `inline` (không dialog nhưng hình học đổi: `inlineHeight`, `pushesMainPx`, `newBlocks`) / `no-effect` (**LỖI**: không dialog VÀ không đổi hình học) / `not-found` (**LỖI**) / `disabled` (cảnh báo) |
 | `errors[]` / `warnings[]` | **lỗi** làm `pass=false`. **Cảnh báo**: chưa có attribute, không có h1, hành động disabled, thủ tục tRPC lạ, và (khi còn đo bằng selector FE1) các vi phạm mà ở chế độ attribute sẽ là lỗi |
@@ -118,36 +118,65 @@ tự kiểm trượt, `1` khi lỗi hạ tầng.
 
   Vi phạm bất kỳ điều nào là **LỖI của trang**. Nhiều vùng MAIN cạnh nhau thì gắn từng vùng; phần tử lồng
   trong một MAIN khác không bị tính hai lần.
-- **Cổng hiệu chuẩn** (lần đầu gắn attribute). Trang có `data-layout-main` được so với MAIN tham chiếu theo
-  selector FE1 (`legacyRef` trong `baseline.json`, cùng màn × kích thước × biến thể). Dung sai: Δtop ≤ 4 px,
-  Δleft ≤ 4 px, Δdiện tích ≤ 3 %.
-  - Lệch mà **chưa có bản ghi** trong `do-bo-cuc/calibration.json` ⇒ **LỖI**.
-  - Quy trình bắt buộc: (1) gắn attribute trên bố cục **chưa đổi**; (2) chạy
-    `--spawn --calibrate --screens <màn>`, công cụ chỉ ghi bản ghi khi khớp tham chiếu; (3) commit
-    `calibration.json`; (4) rồi mới đổi bố cục.
+- **Cổng hiệu chuẩn.** Dung sai: Δtop ≤ 4 px, Δleft ≤ 4 px, Δdiện tích ≤ 3 %.
+  - Bản ghi trong `do-bo-cuc/calibration.json` có **khoá = màn|vw|biến thể** và lưu hình học MAIN (`mainTop`,
+    `rects`, `areaPx`) cùng **bộ chọn của phần tử mang attribute** (`attrSel` = tag + giá trị attribute + tệp
+    nguồn).
+  - **Mỗi lần chạy** đều so lại với bản ghi: lệch hình học, hoặc attribute nằm trên phần tử khác ⇒ **LỖI**.
+  - **Chưa có bản ghi**: so với MAIN tham chiếu theo selector FE1 (`legacyRef` trong `baseline.json`). Khớp ⇒
+    đạt kèm cảnh báo "chạy --calibrate"; lệch ⇒ **LỖI**.
+  - Quy trình:
+    1. Gắn attribute trên bố cục **chưa đổi**, chạy `--spawn --calibrate --screens <màn>`. Công cụ chỉ ghi
+       bản ghi MỚI khi khớp tham chiếu FE1. Commit `calibration.json`.
+    2. Đổi bố cục, chạy lại `--calibrate`. Công cụ ghi đè bản ghi và giữ `previous`, nên thay đổi hiện trong
+       diff git. Commit. Sau đó chạy đo thường để có `pass`.
   - `calibration.json` do công cụ ghi, **không sửa tay** (người duyệt kiểm bằng `git log -p`).
 - **Banner / dải KPI trong MAIN (theo hình học).** Quy tắc chính xác:
-  1. Phần tử làm việc **W** của một MAIN là phần tử có đỉnh nhỏ nhất trong MAIN thuộc:
-     `[data-layout-workspace]`, `table`, `[role=grid|treegrid|tree|listbox]`, `canvas`, `.cm-editor`,
-     `.monaco-editor`, `.react-flow`, `textarea`, `[contenteditable=true]`, `svg` ≥200×120. Phần tử nằm trong
-     bề mặt AI không được tính. Nếu không có phần tử nào như vậy, W là khối con đầu tiên cao ≥120 px.
+  1. Phần tử làm việc **W** của một MAIN là **phần tử GỐC** có đỉnh nhỏ nhất trong MAIN thuộc: `table`,
+     `[role=grid|treegrid|tree|listbox]`, `canvas`, `.cm-editor`, `.monaco-editor`, `.react-flow`, `textarea`,
+     `[contenteditable=true]`, **`EmptyState`** (`data-loc` EmptyState.tsx / `[data-layout-empty]`), hoặc `svg`
+     ≥200×120 **không** nằm trong hàng KPI.
+     - Phần tử nằm trong bề mặt AI không được tính.
+     - `[data-layout-workspace]` **không còn là W**: bên trong nó, công cụ vẫn tìm phần tử gốc đầu tiên, và
+       luật banner áp cho cả các khối nằm trên phần tử đó bên trong wrapper.
+     - MAIN tự khai `[data-layout-workspace]` mà không phải phần tử gốc (W === MAIN) ⇒ **LỖI**.
+     - Nếu không có phần tử gốc, W là khối con đầu tiên cao ≥120 px, và luật áp **tiếp** cho các khối dẫn
+       đầu bên trong khối đó.
   2. **Khối trên W**: đi xuống từ MAIN, chỉ xuyên qua các tổ tiên của W. Mỗi con nhìn thấy (không fixed) nằm
      **hẳn** trên đỉnh W là một khối trên W.
   3. Khối trên W có chiều cao **< 120 px** và bề rộng **≥ 60 % bề rộng MAIN** là **BANNER TRONG MAIN**:
      - `kind: kpi-strip` khi nó chứa MetricCard/`[data-layout-kpi]`, hoặc có ≥3 con, con nào cũng hẹp
-       (< 50 % MAIN) và thấp (≤ 140 px) — tức chip KPI không đánh dấu;
+       (< 50 %), cao **28–140 px** và **không chứa ô nhập/chọn/nút** — tức chip KPI không đánh dấu (hàng điều
+       khiển form không phải KPI);
      - ngược lại là `kind: banner`.
 
-     Banner trong MAIN là **LỖI**, trừ hai ngoại lệ:
-     - đúng **một** `[data-layout-toolbar]` cao ≤ 48 px. Hai toolbar, hoặc toolbar > 48 px, là LỖI;
-     - tiêu đề thuần `h2–h6`/`[role=heading]`/`[data-slot=card-title]` cao ≤ 40 px.
+     Banner trong MAIN là **LỖI**, trừ ba ngoại lệ (R-2-f):
+     - đúng **một** `[data-layout-toolbar]` cao ≤ **56 px**. Hai toolbar, hoặc toolbar > 56 px, là LỖI;
+     - tiêu đề thuần `h2–h6`/`[role=heading]`/`[data-slot=card-title]` cao ≤ 40 px;
+     - **khối chữ thuần ≤ 40 px**, tức thoả cả ba điều kiện:
+       - bản thân khối không có nền màu, không có viền, không có lớp notice;
+       - không chứa icon `svg`/`img`, nút, ô nhập, `role=alert`;
+       - chữ không chứa từ khoá notice (Khi nào dùng/Beta/xem trước/Chỉ xem/Lưu ý/Cảnh báo/Chế độ/TẮT…).
+
+       Badge đếm nhỏ nằm **trong** khối chữ không làm khối mất miễn trừ.
+     - **hàng tiêu đề ≤ 40 px**: chứa `h2–h6`/`[role=heading]`/`card-title` chiếm ≥50 % chữ của khối; icon
+       (nếu có) chỉ trang trí (`aria-hidden`); không nút/ô nhập/alert; bản thân khối không nền/viền. Ví dụ
+       "📥 ĐANG CHỜ DUYỆT & CẢNH BÁO 12" ở Hub. Từ khoá notice nằm trong chữ tiêu đề không tính.
+  5. **Trạng thái trống là W**: `EmptyState` (component), hoặc trạng thái trống tự viết. Trạng thái trống tự
+     viết là `p`/`div` ≥32 px cao, chữ <160 ký tự mở đầu bằng "Chưa có / Không có / Hiện không có / Trống /
+     Chọn … để|ở / No / Nothing / Select … to / 暂无 / 没有", không nút/ô nhập/bảng/alert, không nền/viền. Ví dụ
+     Orchestration: "Chưa có bước nào…", "Chọn một bước trên cây để cấu hình."
+     `insideMain[].workspace.kind` = `native` / `empty-state` / `chart` / `fallback-block`.
   4. Khối cao ≥120 px hoặc hẹp hơn 60 % không phải banner, nhưng vẫn cộng vào `aboveWorkspacePx` và đẩy
      `workspacePct` xuống.
 - **Bề mặt AI trong MAIN** được trừ khỏi vùng làm việc (`workspacePct`) và báo riêng ở `aiInsideMain`. Nhận
   diện **rộng** có chủ đích: phần tử ≥120×120 trong MAIN khớp `[role=complementary]`, `[data-ai]`,
   `[data-layout-ai]`, `data-testid` chứa `copilot`/`assistant`/`ai-panel`/`ai-chat`, `data-loc` chứa
   `Copilot`/`AILocal`/`Assistant`, hoặc `aria-label` chứa `copilot`/`assistant`/`trợ lý` (không phân biệt
-  hoa thường). Ngoại lệ: màn `programming-copilot`, nơi MAIN chính là bề mặt AI (`aiIsWorkspace`).
+  hoa thường). Ngoài ra, khối ≥120×120 có `aria-label` hoặc tiêu đề đầu (trong 60 px đầu khối) **chứa một
+  nhãn AI lấy từ i18n** cũng được tính. Nhãn là mọi chuỗi ≤40 ký tự trong `locales/{vi,en,zh}.json` có
+  copilot/trợ lý/assistant/副驾/助手, vd "Trợ lý Lập trình AI", "Programming Copilot", "编程副驾"; nguồn ghi ở
+  `via: i18n-label`. Ngoại lệ: màn `programming-copilot`, nơi MAIN chính là bề mặt AI (`aiIsWorkspace`).
 - `data-layout-kpi` gắn lên từng chip/thẻ của dải KPI mới. MetricCard cũ còn sót vẫn bị đếm.
 - Panel AI nằm NGOÀI MAIN chỉ bị tính khi đè lên MAIN (`coverMain`). Panel nằm TRONG MAIN bị trừ khỏi vùng
   làm việc.
@@ -177,7 +206,7 @@ Chạy `--spawn` hai lần liên tiếp, mỗi lần một instance mới, rồi
 
 1. Độ lệch tương đối `|a−b| / max(|a|,|b|)` < 2 %, xét trên mọi màn × kích thước × biến thể × chỉ số.
    Chữ ký hành động và trạng thái hiệu chuẩn phải trùng khớp tuyệt đối.
-2. Đối chứng dương `selfTest.pass` ở **cả hai** lần chạy. Có 17 ca trên ECN @1600, đi qua đúng đường đo thật
+2. Đối chứng dương `selfTest.pass` ở **cả hai** lần chạy. Có 28 ca trên ECN @1600, đi qua đúng đường đo thật
    (`measurePage` / `runActions` / `dataErrors`); mỗi ca chèn một cách lách vào trang vừa nạp lại sạch:
 
    | Ca | Cách lách | Phải thấy |
@@ -187,7 +216,7 @@ Chạy `--spawn` hai lần liên tiếp, mỗi lần một instance mới, rồi
    | T03 | `[data-layout-kpi]` | `official` +1, `legacy` không đổi |
    | T04 | attribute bọc h1 + một cái ngoài `<main>` | LỖI |
    | T05 | hành động không tồn tại | LỖI |
-   | T06 | attribute đúng phần tử FE1 (đối chứng) / đặt lên `tbody` (lệch) | đối chứng: `matches-reference`, 0 lỗi; lệch: LỖI hiệu chuẩn |
+   | T06 | attribute đúng phần tử FE1 / đặt lên `tbody` / bản ghi khớp / bản ghi khác bộ chọn / bản ghi khác hình học | `matches-reference` 0 lỗi / LỖI / `recorded-match` 0 lỗi / LỖI / LỖI |
    | T07 | banner `px-5 py-4` **không đánh dấu** đầu MAIN | LỖI banner trong MAIN |
    | T08 | 4 chip KPI **không đánh dấu** đầu MAIN | LỖI `kpi-strip` |
    | T09 | ghi chú chèn vào page header dưới h1 | `bannersBeforeMain` +1 |
@@ -197,15 +226,27 @@ Chạy `--spawn` hai lần liên tiếp, mỗi lần một instance mới, rồi
    | T12 | `aside[role=complementary]` 300×300 + `[data-testid=copilot-panel]` 200×200 trong MAIN | `aiInsideMain` ≥ 117 000 px², `workspacePct` giảm tương ứng |
    | T13 | portal fixed `role=status` đè dải đầu | +1 banner `overlay` |
    | T14 | `role=dialog` mở sẵn | LỖI `dialogsAtLoad` |
-   | T15 | container anh em `overflow:hidden` cao 100 px chứa 2 000 px | `pageHeightRatio` ≥ +1,95 |
+   | T15 | tổ tiên MAIN bị ép cao 200 px + `overflow:hidden` | `pageHeightRatio` không giảm (phần giấu vẫn tính) |
+   | T15b | panel anh em `overflow:hidden` 100 px chứa 2 000 px | `siblingScrollExtra` ≥ 1 900 nhưng `pageHeightRatio` tăng ≤ 0,2 (không gác) |
    | T16 | băm `ERR:` | LỖI |
+   | T17 | wrapper `[data-layout-workspace]` bọc tiêu đề + notice + bảng | VẪN LỖI banner trong MAIN |
+   | T17b | MAIN tự khai `[data-layout-workspace]` (không phải phần tử gốc) | LỖI W === MAIN |
+   | T18 | xoá h1 | LỖI mất h1 |
+   | T19 | notice chèn **trên** h1 | `bannersBeforeMain` +1 |
+   | T20 | `position:fixed` 200×200 **bên trong** MAIN | `coverMain` ≥ +36 000 px² |
+   | T21 | nhãn chữ thuần 20 px / cùng cỡ có nền màu | miễn / LỖI banner |
+   | T22 | khối 300×300 chỉ có tiêu đề "Trợ lý Lập trình AI" | `aiInsideMain` qua `i18n-label` |
+   | T23 | một `[data-layout-toolbar]` 52 px | không lỗi |
+   | T24 | hàng 4 chip cao 20 px | `banner`, không phải `kpi-strip` |
+   | T25 | `EmptyState` 200 px đứng trước bảng | W = EmptyState, `aboveWorkspacePx` < 50 |
 3. Không lỗi băm, không trôi dữ liệu trong từng lần chạy.
 4. Dữ liệu giống nhau giữa hai lần chạy.
 5. Cùng hồ sơ cờ.
 
 **Gác phải biết ĐỎ.** `--mutation` lần lượt gỡ từng gác (`GUARDS` trong script: `geoBand`, `hitTest`,
 `kpiBoth`, `attrConstraint`, `actionNotFound`, `calib`, `insideMain`, `headerBanner`, `noDialog`, `clip`,
-`aiInside`, `overlayBand`, `dialogsAtLoad`, `scrollSiblings`, `errHash`). Với mỗi gác bị gỡ, (các) ca của nó
+`aiInside`, `overlayBand`, `dialogsAtLoad`, `errHash`, `scrollAncestors`, `siblingReport`, `wsEscape`, `h1Gate`,
+`aboveH1Banner`, `fixedInMain`, `textLabel`, `aiText`, `toolbar56`, `chipMin`, `emptyStateW`). Với mỗi gác bị gỡ, (các) ca của nó
 **phải đỏ**; kết quả ghi ở `meta.selfTest.mutation[]`, và `pass` của lần chạy có `--mutation` đòi mọi gác
 đều đỏ khi gỡ.
 
