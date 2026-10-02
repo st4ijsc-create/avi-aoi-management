@@ -237,7 +237,7 @@ Chạy `--spawn` hai lần liên tiếp, mỗi lần một instance mới, rồi
    | T06 | attribute đúng phần tử FE1 / đặt lên `tbody` / bản ghi khớp / bản ghi khác bộ chọn / bản ghi khác hình học | `matches-reference` 0 lỗi / LỖI / `recorded-match` 0 lỗi / LỖI / LỖI |
    | T07 | banner `px-5 py-4` **không đánh dấu** đầu MAIN | LỖI banner trong MAIN |
    | T08 | 4 chip KPI **không đánh dấu** đầu MAIN | LỖI `kpi-strip` |
-   | T09 | ghi chú chèn vào page header dưới h1 | `bannersBeforeMain` +1 |
+   | T09 | ghi chú chèn vào page header dưới h1 (header một hàng `PageHeaderCompact` bị cho xuống hàng thứ hai để chứa ghi chú — Task 4) | `bannersBeforeMain` +1 |
    | T10 | nút chết | LỖI `no-effect` |
    | T10b | nút mở panel inline 150 px | `inline`, cao ≥150, đẩy MAIN ≥150 |
    | T11 | tổ tiên `overflow:hidden` cắt MAIN còn 100 px | `mainPct` ≤ diện tích 100 px |

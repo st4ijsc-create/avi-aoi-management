@@ -1219,7 +1219,10 @@ async function selfTest(page, base, s, only = null) {
     await fresh();
   }
   if (want("T09-banner-trong-header")) {
-    await inPage(`(H || h1.parentElement).appendChild(mk('${NOTICE}', 40, 'Lưu ý trong header'));`);
+    // Task 4: header một hàng (PageHeaderCompact: flex-nowrap, max-height 48, overflow hidden) đẩy khối chèn vào CẠNH h1
+    // và cắt mất ⇒ ca không còn tạo được "ghi chú DƯỚI h1 trong header". Mô phỏng đúng cách lách: header tự xuống hàng
+    // thứ hai chứa ghi chú (bỏ nowrap/max-height/overflow của header, ghi chú chiếm cả hàng). Header khối cũ không đổi gì.
+    await inPage(`const HH = H || h1.parentElement; HH.style.flexWrap = 'wrap'; HH.style.maxHeight = 'none'; HH.style.overflow = 'visible'; const n = mk('${NOTICE}', 40, 'Lưu ý trong header'); n.style.flexBasis = '100%'; n.style.width = '100%'; HH.appendChild(n);`);
     const b = await mp(page, s, "selftest");
     check("T09-banner-trong-header", b.bannersBeforeMain.count === b0.bannersBeforeMain.count + 1 && b.bannersBeforeMain.px >= b0.bannersBeforeMain.px + 40, { before: [b0.bannersBeforeMain.count, b0.bannersBeforeMain.px], after: [b.bannersBeforeMain.count, b.bannersBeforeMain.px] });
     await fresh();
