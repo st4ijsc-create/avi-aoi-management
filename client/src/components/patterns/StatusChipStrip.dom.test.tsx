@@ -187,3 +187,79 @@ describe("StatusChipStrip — tràn vào '+N', lỗi luôn hiện", () => {
     expect(screen.queryByRole("button", { name: /Xem thêm/ })).toBeNull();
   });
 });
+
+// ── Ruling R-2-p (Đợt 2 Task 8 fix round 1) — chip GHIM không bao giờ vào "+N"; "+N" mang trạng thái/tông
+//    TỆ NHẤT của các chip bị giấu (không bao giờ trung tính khi trong đó có cảnh báo/lỗi). ─────────────
+describe("StatusChipStrip — R-2-p: chip ghim + '+N' mang trạng thái tệ nhất", () => {
+  const strip = () => screen.getByRole("group", { name: vi.layoutKit.chip.stripLabel });
+  const shownIds = () => [...strip().querySelectorAll(":scope > [data-chip-id]")].map((x) => x.getAttribute("data-chip-id"));
+
+  it("chip ghim luôn hiện dù các chip KHÔNG ghim đang lỗi/đang tải và chỗ chỉ đủ cho số chip ghim", () => {
+    const items: StatusChipItem[] = [
+      { id: "safe1", label: "Chưa kiểm định", value: 3, state: "ok", tone: "warning", source: "s", pinned: true },
+      { id: "safe2", label: "Suýt sự cố", value: 1, state: "ok", tone: "warning", source: "s", pinned: true },
+      { id: "w1", label: "Phân công", value: 0, state: "error", source: "s" },
+      { id: "w2", label: "Phối hợp", value: 0, state: "loading", source: "s" },
+    ];
+    render(<StatusChipStrip items={items} maxVisible={2} />);
+    expect(shownIds()).toEqual(["safe1", "safe2"]);
+    const more = within(strip()).getByRole("button", { name: "Xem thêm 2 chỉ số" });
+    // Phần giấu có lỗi ⇒ "+2" là lỗi.
+    expect(more).toHaveAttribute("data-state", "error");
+    expect(more.className).toMatch(/destructive/);
+  });
+
+  it("số chip ghim vượt maxVisible ⇒ vẫn hiện HẾT chip ghim (không cắt chip ghim nào)", () => {
+    const items: StatusChipItem[] = ["a", "b", "c"].map((id) => ({ id, label: id, value: 1, state: "ok", source: "s", pinned: true }));
+    render(<StatusChipStrip items={[...items, { id: "z", label: "z", value: 1, state: "error", source: "s" }]} maxVisible={2} />);
+    expect(shownIds()).toEqual(["a", "b", "c"]);
+    expect(within(strip()).getByRole("button", { name: "Xem thêm 1 chỉ số" })).toHaveAttribute("data-state", "error");
+  });
+
+  it("chip giấu có tông CẢNH BÁO (state ok) ⇒ '+N' mang cảnh báo, không trung tính", () => {
+    const items: StatusChipItem[] = [
+      { id: "a", label: "A", value: 1, state: "ok", source: "s" },
+      { id: "b", label: "B", value: 5, state: "ok", tone: "warning", source: "s" },
+    ];
+    render(<StatusChipStrip items={items} maxVisible={1} />);
+    const more = within(strip()).getByRole("button", { name: "Xem thêm 1 chỉ số" });
+    expect(more).toHaveAttribute("data-state", "warning");
+    expect(more.className).toMatch(/warning/);
+    expect(more.className).not.toMatch(/text-muted-foreground/);
+  });
+
+  it("chip giấu DEGRADED ⇒ '+N' mang cảnh báo; chip giấu tông LỖI (state ok) ⇒ '+N' mang lỗi", () => {
+    // degraded vốn được ưu tiên hiện; một chip ghim ok chiếm chỗ duy nhất ⇒ degraded + tông lỗi vào phần giấu.
+    render(
+      <StatusChipStrip
+        items={[
+          { id: "p", label: "P", value: 1, state: "ok", source: "s", pinned: true },
+          { id: "b", label: "B", value: 5, state: "degraded", source: "s" },
+          { id: "e", label: "E", value: 2, state: "ok", tone: "error", source: "s" },
+        ]}
+        maxVisible={1}
+      />,
+    );
+    expect(shownIds()).toEqual(["p"]);
+    expect(within(strip()).getByRole("button", { name: "Xem thêm 2 chỉ số" })).toHaveAttribute("data-state", "error");
+    cleanup();
+    render(
+      <StatusChipStrip
+        items={[
+          { id: "p", label: "P", value: 1, state: "ok", source: "s", pinned: true },
+          { id: "b", label: "B", value: 5, state: "degraded", source: "s" },
+        ]}
+        maxVisible={1}
+      />,
+    );
+    expect(within(strip()).getByRole("button", { name: "Xem thêm 1 chỉ số" })).toHaveAttribute("data-state", "warning");
+  });
+
+  it("phần giấu chỉ có chip ok/trung tính ⇒ '+N' trung tính (ok); chỉ có loading ⇒ 'loading', không giả ok", () => {
+    render(<StatusChipStrip items={[{ id: "a", label: "A", value: 1, state: "ok", source: "s" }, { id: "b", label: "B", value: 2, state: "ok", tone: "success", source: "s" }]} maxVisible={1} />);
+    expect(within(strip()).getByRole("button", { name: "Xem thêm 1 chỉ số" })).toHaveAttribute("data-state", "ok");
+    cleanup();
+    render(<StatusChipStrip items={[{ id: "p", label: "P", value: 1, state: "ok", source: "s", pinned: true }, { id: "l", label: "L", value: 0, state: "loading", source: "s" }]} maxVisible={1} />);
+    expect(within(strip()).getByRole("button", { name: "Xem thêm 1 chỉ số" })).toHaveAttribute("data-state", "loading");
+  });
+});

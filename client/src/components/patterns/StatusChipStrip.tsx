@@ -38,6 +38,11 @@ export interface StatusChipItem {
   /** Chip bấm được (lọc/điều hướng). */
   onClick?: () => void;
   active?: boolean;
+  /**
+   * Ruling R-2-p (Đợt 2 Task 8 fix round 1) — chip GHIM không bao giờ vào "+N" (vd số sự kiện an toàn chưa
+   * kiểm định trên Safety). Mọi chip ghim luôn hiện, kể cả khi vượt `maxVisible`; chỗ còn lại mới chia theo ưu tiên.
+   */
+  pinned?: boolean;
 }
 
 const TONE_VALUE: Record<Tone, string> = {
@@ -158,23 +163,51 @@ export interface StatusChipStripProps {
 
 const STATE_PRIORITY: Record<ChipState, number> = { error: 0, degraded: 1, loading: 2, ok: 3 };
 
-/** Chia chip thành phần hiện (thứ tự gốc) và phần giấu (lỗi đầu), ưu tiên error > degraded > loading > ok. */
+/**
+ * Chia chip thành phần hiện (thứ tự gốc) và phần giấu (lỗi đầu). Chip GHIM luôn hiện (R-2-p); chỗ còn lại
+ * (`maxVisible` − số chip ghim) chia cho chip không ghim theo ưu tiên error > degraded > loading > ok.
+ */
 export function splitChipsForOverflow(items: readonly StatusChipItem[], maxVisible: number): { visible: StatusChipItem[]; hidden: StatusChipItem[] } {
   if (items.length <= maxVisible) return { visible: [...items], hidden: [] };
+  const pinnedIdx = items.map((it, i) => (it.pinned ? i : -1)).filter((i) => i >= 0);
   const ranked = items
     .map((it, i) => ({ it, i, p: STATE_PRIORITY[effectiveChipState(it)] }))
+    .filter((x) => !x.it.pinned)
     .sort((a, b) => a.p - b.p || a.i - b.i);
-  const keep = new Set(ranked.slice(0, Math.max(0, maxVisible)).map((x) => x.i));
+  const free = Math.max(0, maxVisible - pinnedIdx.length);
+  const keep = new Set([...pinnedIdx, ...ranked.slice(0, free).map((x) => x.i)]);
   const visible = items.filter((_, i) => keep.has(i));
   const hidden = ranked.filter((x) => !keep.has(x.i)).map((x) => x.it);
   return { visible, hidden };
 }
 
+/** Trạng thái hiển thị của chip "+N" (R-2-p): TỆ NHẤT trong các chip bị giấu, tính cả TÔNG của chip (vd số chưa
+ *  kiểm định tô cảnh báo). error > warning (degraded hoặc tông cảnh báo) > loading > ok. */
+export type OverflowState = "error" | "warning" | "loading" | "ok";
+export function overflowState(hidden: readonly StatusChipItem[]): OverflowState {
+  let worst: OverflowState = "ok";
+  const rank: Record<OverflowState, number> = { error: 0, warning: 1, loading: 2, ok: 3 };
+  for (const it of hidden) {
+    const st = effectiveChipState(it);
+    const s: OverflowState =
+      st === "error" || it.tone === "error" ? "error" : st === "degraded" || it.tone === "warning" ? "warning" : st === "loading" ? "loading" : "ok";
+    if (rank[s] < rank[worst]) worst = s;
+  }
+  return worst;
+}
+
+const OVERFLOW_CLASS: Record<OverflowState, string> = {
+  error: "border-destructive/50 text-destructive",
+  warning: "border-warning/60 bg-warning/10 text-warning",
+  loading: "text-muted-foreground",
+  ok: "text-muted-foreground",
+};
+
 export function StatusChipStrip({ items, ariaLabel, maxVisible = 5, className }: StatusChipStripProps): React.JSX.Element | null {
   const { t } = useTranslation();
   if (items.length === 0) return null;
   const { visible, hidden } = splitChipsForOverflow(items, maxVisible);
-  const hiddenError = hidden.some((h) => effectiveChipState(h) === "error");
+  const hiddenState = overflowState(hidden);
   return (
     <div
       role="group"
@@ -191,12 +224,12 @@ export function StatusChipStrip({ items, ariaLabel, maxVisible = 5, className }:
             <button
               type="button"
               data-chip-more={hidden.length}
-              data-state={hiddenError ? "error" : "ok"}
+              data-state={hiddenState}
               aria-label={t("layoutKit.chip.moreLabel", "Show {{count}} more indicators", { count: hidden.length })}
               style={{ height: 32 }}
               className={cn(
                 "inline-flex shrink-0 items-center rounded-md border bg-card px-2 text-xs font-medium focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
-                hiddenError ? "border-destructive/50 text-destructive" : "text-muted-foreground",
+                OVERFLOW_CLASS[hiddenState],
               )}
             >
               {t("layoutKit.notice.more", "+{{count}}", { count: hidden.length })}
