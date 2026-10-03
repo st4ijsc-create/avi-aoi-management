@@ -13598,6 +13598,46 @@
       "archive": "Archive",
       "rollback": "Rollback",
       "load": "Load/Deploy"
+    },
+    "hitlChip": "Push to machine via HITL",
+    "codeCount": "{{count}} codes",
+    "filterPendingChip": "Only codes needing attention",
+    "detailLabel": "Recipe details",
+    "detailTabs": "Recipe detail sections",
+    "emptyDetailHint": "Pick a recipe code in the list on the left to see its parameters, versions, approval and deployment.",
+    "searchMachine": "Search machines…",
+    "versionNotFound": "Version #{{id}} was not found in the selected code.",
+    "alreadyApproved": "This version is already approved.",
+    "targetMachines": "Target machines",
+    "addMachine": "Add machine",
+    "removeMachine": "Remove {{machine}}",
+    "machineCount": "{{count}} machines",
+    "noMachineSelected": "Pick at least one machine.",
+    "stoppedNote": "Stopped at the first failed machine — the machines after it were not deployed.",
+    "rollbackFailed": "Rollback on machine #{{machineId}} could not be done",
+    "dismiss": "Dismiss",
+    "noRunningMachines": "No machine is running this code.",
+    "runningMachinesNote": "Based on the {{count}} most recent deployments in the ledger.",
+    "tab": {
+      "params": "Parameters",
+      "versions": "Versions",
+      "approval": "Approval",
+      "deploy": "Deploy",
+      "machines": "Running on"
+    },
+    "params": {
+      "version": "Version shown",
+      "key": "Parameter",
+      "value": "Value",
+      "type": "Type",
+      "empty": "Empty payload.",
+      "rawJson": "Raw JSON",
+      "noVersions": "This code has no versions yet."
+    },
+    "result": {
+      "ok": "Deployed",
+      "failed": "Could not be done",
+      "skipped": "Not run (stopped at a failed machine)"
     }
   },
   "confirmWithReason": {

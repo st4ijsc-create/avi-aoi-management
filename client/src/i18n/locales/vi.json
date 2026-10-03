@@ -13578,6 +13578,46 @@
       "archive": "Lưu trữ",
       "rollback": "Rollback",
       "load": "Nạp/Triển khai"
+    },
+    "hitlChip": "Đẩy xuống máy qua HITL",
+    "codeCount": "{{count}} mã",
+    "filterPendingChip": "Chỉ mã cần chú ý",
+    "detailLabel": "Chi tiết recipe",
+    "detailTabs": "Mục chi tiết recipe",
+    "emptyDetailHint": "Chọn một mã recipe ở danh sách bên trái để xem tham số, phiên bản, duyệt và triển khai.",
+    "searchMachine": "Tìm máy…",
+    "versionNotFound": "Không tìm thấy phiên bản #{{id}} trong mã đang chọn.",
+    "alreadyApproved": "Phiên bản này đã được duyệt.",
+    "targetMachines": "Máy đích",
+    "addMachine": "Thêm máy",
+    "removeMachine": "Bỏ {{machine}}",
+    "machineCount": "{{count}} máy",
+    "noMachineSelected": "Chọn ít nhất một máy.",
+    "stoppedNote": "Đã dừng ở máy lỗi đầu tiên — các máy sau chưa được triển khai.",
+    "rollbackFailed": "Rollback máy #{{machineId}} không thực hiện được",
+    "dismiss": "Đóng",
+    "noRunningMachines": "Chưa có máy nào đang chạy mã này.",
+    "runningMachinesNote": "Theo {{count}} lần triển khai gần nhất trong sổ.",
+    "tab": {
+      "params": "Tham số",
+      "versions": "Phiên bản",
+      "approval": "Duyệt",
+      "deploy": "Triển khai",
+      "machines": "Máy đang chạy"
+    },
+    "params": {
+      "version": "Phiên bản đang xem",
+      "key": "Tham số",
+      "value": "Giá trị",
+      "type": "Kiểu",
+      "empty": "Payload trống.",
+      "rawJson": "JSON gốc",
+      "noVersions": "Mã này chưa có phiên bản."
+    },
+    "result": {
+      "ok": "Đã triển khai",
+      "failed": "Không thực hiện được",
+      "skipped": "Chưa chạy (đã dừng ở máy lỗi)"
     }
   },
   "confirmWithReason": {

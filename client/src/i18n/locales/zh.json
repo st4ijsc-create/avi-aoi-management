@@ -13381,6 +13381,46 @@
       "archive": "归档",
       "rollback": "回滚",
       "load": "加载/部署"
+    },
+    "hitlChip": "通过 HITL 下发到机台",
+    "codeCount": "{{count}} 个编码",
+    "filterPendingChip": "仅需关注的编码",
+    "detailLabel": "配方详情",
+    "detailTabs": "配方详情分区",
+    "emptyDetailHint": "在左侧列表中选择一个配方编码，查看参数、版本、审批和部署。",
+    "searchMachine": "搜索机台…",
+    "versionNotFound": "在所选编码中未找到版本 #{{id}}。",
+    "alreadyApproved": "该版本已审批。",
+    "targetMachines": "目标机台",
+    "addMachine": "添加机台",
+    "removeMachine": "移除 {{machine}}",
+    "machineCount": "{{count}} 台机台",
+    "noMachineSelected": "请至少选择一台机台。",
+    "stoppedNote": "已在第一台失败的机台处停止——其后的机台未部署。",
+    "rollbackFailed": "机台 #{{machineId}} 的回滚未能执行",
+    "dismiss": "关闭",
+    "noRunningMachines": "没有机台正在运行此编码。",
+    "runningMachinesNote": "基于台账中最近 {{count}} 次部署。",
+    "tab": {
+      "params": "参数",
+      "versions": "版本",
+      "approval": "审批",
+      "deploy": "部署",
+      "machines": "运行中的机台"
+    },
+    "params": {
+      "version": "当前查看的版本",
+      "key": "参数",
+      "value": "值",
+      "type": "类型",
+      "empty": "载荷为空。",
+      "rawJson": "原始 JSON",
+      "noVersions": "该编码尚无版本。"
+    },
+    "result": {
+      "ok": "已部署",
+      "failed": "未能执行",
+      "skipped": "未执行（已在失败机台处停止）"
     }
   },
   "confirmWithReason": {
