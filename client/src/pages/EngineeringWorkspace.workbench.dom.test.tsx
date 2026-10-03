@@ -423,6 +423,50 @@ describe("Deploy wizard 4 bước (WizardDialog) — deployPreview TRƯỚC OTP,
     expect(within(bottom).getByText(/promote/i)).toBeVisible();
   });
 
+  it("đội máy: nút cuối KHOÁ khi chưa chọn máy (cổng fleetReady cũ); production khoá tới khi có người ký + lý do", async () => {
+    const user = userEvent.setup();
+    seed();
+    renderPage();
+    const d = await moWizard();
+    next(d);
+    fireEvent.click(within(d).getByRole("radio", { name: /Fleet|Đội máy/ }));
+    next(d);
+    next(d);
+    expect(within(d).getByTestId("engineering-fleet-deploy-button")).toBeDisabled();
+    expect(within(d).getByTestId("ide-wizard-not-ready")).toBeInTheDocument();
+    fireEvent.click(within(d).getByTestId("engineering-fleet-deploy-button"));
+    expect(screen.queryByText(otpText)).not.toBeInTheDocument();
+    // chọn một máy ⇒ mở
+    fireEvent.click(within(d).getByRole("button", { name: /^(Back|Quay lại)$/ }));
+    fireEvent.click(within(d).getByRole("button", { name: /^(Back|Quay lại)$/ }));
+    fireEvent.click(within(d).getByText("M3 · #3").closest("label")!.querySelector('[role="checkbox"]') as HTMLElement);
+    next(d);
+    next(d);
+    expect(within(d).getByTestId("engineering-fleet-deploy-button")).not.toBeDisabled();
+    // production ⇒ khoá lại tới khi có người ký + lý do
+    fireEvent.click(within(d).getByRole("button", { name: /^(Back|Quay lại)$/ }));
+    await user.click(within(d).getAllByRole("combobox")[0]);
+    await user.click(screen.getByRole("option", { name: "production" }));
+    next(d);
+    expect(within(d).getByTestId("engineering-fleet-deploy-button")).toBeDisabled();
+    expect(mutateCalls["programming.deployToFleet"]).toBeUndefined();
+  });
+
+  it("bản xem trước ở MỘT chỗ tại một thời điểm: wizard mở ⇒ chỉ bản trong wizard (inspector nhường)", async () => {
+    seed();
+    renderPage();
+    fireEvent.click(versionBtn());
+    fireEvent.click(screen.getByText("#5"));
+    expect(document.querySelectorAll('[data-testid="deploy-preview"]')).toHaveLength(1);
+    const d = await moWizard();
+    next(d);
+    next(d);
+    next(d);
+    const all = document.querySelectorAll('[data-testid="deploy-preview"]');
+    expect(all).toHaveLength(1);
+    expect(d.contains(all[0])).toBe(true);
+  });
+
   it("chưa chọn build ⇒ nút mở wizard KHOÁ; không wizard, không OTP", () => {
     seed();
     renderPage();
