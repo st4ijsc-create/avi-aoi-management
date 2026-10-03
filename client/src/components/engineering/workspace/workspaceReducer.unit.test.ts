@@ -64,7 +64,7 @@ describe("trạng thái đầu = giá trị useState cũ", () => {
       cursor: { line: 1, col: 1 },
       ui: {
         activity: "projects", editorTab: "source", bottomTab: "problems", bottomOpenRequest: 0,
-        wizard: { open: false, mode: "single", buildId: null }, copilotMounted: false,
+        wizard: { open: false, mode: "single", buildId: null },
       },
     });
   });
@@ -276,17 +276,16 @@ describe("Task 13 — UI vỏ Workbench", () => {
     expect(workspaceReducer(a, { type: "wizard/close" }).ui.wizard).toEqual({ open: false, mode: "fleet", buildId: null });
   });
 
-  it("ui/activity, ui/editorTab, copilot/mounted, cursor/set (cùng giá trị ⇒ cùng tham chiếu)", () => {
+  // final wave M-8 — `copilot/mounted` đã bỏ (CopilotInspector dùng chung tự giữ mount lõi Copilot).
+  it("ui/activity, ui/editorTab, cursor/set (cùng giá trị ⇒ cùng tham chiếu)", () => {
     const a = run(
       initialWorkspaceState,
       { type: "ui/activity", activity: "deploy" },
       { type: "ui/editorTab", tab: "tags" },
-      { type: "copilot/mounted" },
       { type: "cursor/set", line: 3, col: 7 },
     );
     expect(a.ui.activity).toBe("deploy");
     expect(a.ui.editorTab).toBe("tags");
-    expect(a.ui.copilotMounted).toBe(true);
     expect(a.cursor).toEqual({ line: 3, col: 7 });
     expect(workspaceReducer(a, { type: "cursor/set", line: 3, col: 7 })).toBe(a);
   });
@@ -295,7 +294,7 @@ describe("Task 13 — UI vỏ Workbench", () => {
     const ui = run(armed(), { type: "ui/editorTab", tab: "diff" }, { type: "ui/bottom", tab: "deploys", open: true });
     const s = workspaceReducer(ui, { type: "project/select", projectId: 2 });
     expect(s.ui).toEqual(ui.ui);
-    const back = run(armed(), { type: "ui/bottom", tab: "builds", open: true }, { type: "wizard/open", buildId: 5 }, { type: "copilot/mounted" });
+    const back = run(armed(), { type: "ui/bottom", tab: "builds", open: true }, { type: "wizard/open", buildId: 5 });
     expect(back.buildId).toBe(5);
     expect(back.simResult).not.toBeNull();
     expect(back.diagnostics).not.toBeNull();

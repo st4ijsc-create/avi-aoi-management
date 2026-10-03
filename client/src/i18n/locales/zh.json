@@ -18663,7 +18663,9 @@
       "problemsStatus": "问题：{{count}}",
       "activityOpen": "打开",
       "explorerLabel": "POU 资源管理器",
-      "problemsTab": "问题"
+      "problemsTab": "问题",
+      "hideRight": "隐藏右侧面板",
+      "showRight": "显示右侧面板"
     }
   },
   "diff": {

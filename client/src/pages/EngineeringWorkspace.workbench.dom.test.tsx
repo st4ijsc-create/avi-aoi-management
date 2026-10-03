@@ -366,6 +366,26 @@ describe("Copilot là panel TRONG layout (R-2-b / R-2-j)", () => {
     expect(document.body.style.paddingRight).toBe("");
   });
 
+  it("final wave M-8: bấm tab 'Thuộc tính' đang chọn (không đổi gì) rồi mở bằng nút AI ⇒ focus VẪN vào panel Copilot (lỗi cờ treo của IDE)", async () => {
+    seed();
+    renderPage({ aiButton: true });
+    const props = within(inspector()).getByRole("tab", { name: /Properties|Thuộc tính/ });
+    fireEvent.click(props); // đã chọn sẵn ⇒ không đổi trạng thái
+    fireEvent.click(screen.getByRole("button", { name: /^(Mở Trợ lý Lập trình|Open Programming Copilot)$/ }));
+    const copilotTab = within(inspector()).getByRole("tab", { name: /Copilot/ });
+    expect(copilotTab).toHaveAttribute("aria-selected", "true");
+    const panel = document.getElementById(copilotTab.getAttribute("aria-controls")!)!;
+    expect(panel.contains(document.activeElement)).toBe(true);
+  });
+
+  it("final wave M-8: IDE dùng CopilotInspector chung (không còn bản chép logic mount/focus)", async () => {
+    const fs = await import("node:fs");
+    const path = await import("node:path");
+    const src = fs.readFileSync(path.resolve(__dirname, "EngineeringWorkspace.tsx"), "utf8");
+    expect(src).toContain("<CopilotInspector");
+    expect(src).not.toContain("copilotOpenedByTabRef");
+  });
+
   it("fix round 1: stream Copilot SỐNG qua mốc 1024 px (rộng→hẹp→rộng) và thao tác panel (gập/mở panel dưới); Huỷ vẫn abort", async () => {
     seed();
     renderPage();

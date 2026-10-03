@@ -443,6 +443,28 @@ describe("WorkbenchShell — kích thước ban đầu theo px khi đã biết b
     }
   });
 
+  it("final wave M-8: rightCollapsed ⇒ panel phải 0 px (nội dung VẪN mount — stream sống), MAIN lấy chỗ; bỏ gập ⇒ về 340 px; không ghi như người dùng kéo", () => {
+    const spy = stubGroupBox();
+    try {
+      const props = px({ right: { label: "Copilot", content: <Counter name="right" />, ai: true, minPx: 300, defaultPx: 340, maxPx: 480 } });
+      const r = renderShell({ ...props, rightCollapsed: true });
+      expect(size("right")).toBe(0);
+      expect(screen.getByRole("button", { name: "right 0" })).toBeInTheDocument(); // vẫn mount
+      fireEvent.click(screen.getByRole("button", { name: "right 0" }));
+      r.rerender(
+        <main>
+          <WorkbenchShell layoutId="test-ide" userId={5} toolbar={<div>thanh công cụ</div>} main={<textarea aria-label="editor" />} mainName="ide-editor"
+            statusBar={<span>Ln 1</span>} {...props} rightCollapsed={false} />
+        </main>,
+      );
+      expectPx("right", W, 340);
+      expect(screen.getByRole("button", { name: "right 1" })).toBeInTheDocument(); // state giữ nguyên (không remount)
+      expect(localStorage.getItem(userLayoutKey("test-ide", 5, "hpx")!)).toBeNull();
+    } finally {
+      spy.mockRestore();
+    }
+  });
+
   it("mặc định WorkbenchShell (không khai px): trái 260 / phải 380 / dưới 200 px", () => {
     const spy = stubGroupBox();
     try {

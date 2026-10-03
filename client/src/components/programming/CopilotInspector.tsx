@@ -1,6 +1,6 @@
 /**
  * doc 81 Đợt 2 Task 14 — Inspector phải có tab Copilot cho IR Editor / POU Studio (R-2-b: Copilot là panel TRONG
- * layout, không dock `position:fixed`). Cùng hợp đồng với inspector của IDE (Task 13):
+ * layout, không dock `position:fixed`); từ final wave M-8 cả IDE cũng dùng component này (một bản logic mount/focus):
  *
  *  - Tab của trang (vd Thuộc tính / Transpile, hay Transpile → ST / PLCopen XML) + tab "Copilot".
  *  - `open` của `ProgrammingCopilotContext` = tab Copilot đang chọn ⇒ nút AI top bar (ShellAiButton) mở/đóng nó;
@@ -26,6 +26,11 @@ export interface CopilotInspectorTab {
   content: React.ReactNode;
   /** Lớp của tabpanel (mặc định: cuộn dọc, đệm 3). */
   className?: string;
+  /**
+   * final wave M-8 — giữ nội dung tab trong DOM khi không chọn (chỉ `hidden`), như inspector cũ của IDE (Thuộc tính:
+   * duyệt phiên bản, bản xem trước deploy giữ trạng thái khi mở Copilot). Mặc định: chỉ vẽ khi được chọn.
+   */
+  keepMounted?: boolean;
 }
 
 export interface CopilotInspectorProps {
@@ -129,7 +134,7 @@ export function CopilotInspector({ idPrefix, label, tabs, activeTab, onTabChange
             hidden={!isSel}
             className={x.className ?? "min-h-0 flex-1 overflow-y-auto p-3"}
           >
-            {isSel && x.content}
+            {(isSel || x.keepMounted) && x.content}
           </div>
         );
       })}

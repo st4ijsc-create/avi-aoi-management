@@ -96,6 +96,11 @@ export interface WorkbenchShellProps {
   leftRevealToken?: number;
   /** Task 13 — đổi giá trị ⇒ ở màn hẹp chuyển sang tab panel PHẢI (vd nút AI top bar mở Copilot trong layout). */
   rightRevealToken?: number;
+  /**
+   * final wave M-8 — gập panel PHẢI từ ngoài (màn rộng): 0 px, nội dung VẪN mount (stream Copilot sống — Review Focus 3),
+   * MAIN lấy chỗ; separator khoá khi gập. Màn hẹp (tab) bỏ qua. Không truyền ⇒ như cũ.
+   */
+  rightCollapsed?: boolean;
   /** Chiều cao vỏ; mặc định trừ top bar 56 px. */
   heightClass?: string;
   /** Sàn px của MAIN (mặc định WORKBENCH_MAIN_MIN_PX = 400) — panel phụ thu/gập trước khi MAIN bị ép dưới sàn. */
@@ -231,6 +236,7 @@ export function WorkbenchShell({
   onLeftCollapsedChange,
   leftRevealToken,
   rightRevealToken,
+  rightCollapsed = false,
   heightClass = "h-[calc(100dvh_-_var(--shell-chrome-h,3.5rem))]",
   className,
   mainMinPx,
@@ -379,7 +385,7 @@ export function WorkbenchShell({
           width,
           mainFloorPx,
           left ? { minPx: left.minPx ?? 240, maxPx: left.maxPx ?? 300, targetPx: pxOf(pick("left", storedH), left.defaultPx ?? 260), collapsed: leftUserCollapsed() } : null,
-          right ? { minPx: right.minPx ?? 320, maxPx: right.maxPx ?? 420, targetPx: pxOf(pick("right", storedH), right.defaultPx ?? 380) } : null,
+          right ? { minPx: right.minPx ?? 320, maxPx: right.maxPx ?? 420, targetPx: pxOf(pick("right", storedH), right.defaultPx ?? 380), collapsed: rightCollapsed } : null,
         )
       : null;
   // Ghi lại SAU khi tính (lượt render sau dùng để phân biệt gập do người dùng / do thiếu chỗ). Cập nhật trong render
@@ -388,12 +394,12 @@ export function WorkbenchShell({
   const pctOf = (px: number) => (px / width) * 100;
   const l = lRange ? { ...lRange, defaultSize: fit ? pctOf(fit.leftPx) : targetPct(pick("left", storedH), lRange, 0) } : null;
   const r = rRange
-    ? { ...rRange, minSize: fit?.rightForcedCollapsed ? 0 : rRange.minSize, defaultSize: fit ? pctOf(fit.rightPx) : targetPct(pick("right", storedH), rRange, 0) }
+    ? { ...rRange, minSize: fit?.rightForcedCollapsed || rightCollapsed ? 0 : rRange.minSize, defaultSize: fit ? pctOf(fit.rightPx) : targetPct(pick("right", storedH), rRange, 0) }
     : null;
   const b = bRange ? { ...bRange, defaultSize: targetPct(pick("bottom", storedV), bRange, height) } : null;
   // Sàn của MAIN (cột giữa) cho CẢ thao tác kéo của người dùng — trừ phần tối thiểu của panel phụ còn mở.
   const centerMinSize = fit
-    ? Math.max(0, Math.min(pctOf(mainFloorPx), 100 - (l && !fit.leftForcedCollapsed ? l.minSize : 0) - (r && !fit.rightForcedCollapsed ? r.minSize : 0)))
+    ? Math.max(0, Math.min(pctOf(mainFloorPx), 100 - (l && !fit.leftForcedCollapsed ? l.minSize : 0) - (r && !fit.rightForcedCollapsed && !rightCollapsed ? r.minSize : 0)))
     : 30;
   const hGroupRef = React.useRef<ImperativePanelGroupHandle | null>(null);
   const vGroupRef = React.useRef<ImperativePanelGroupHandle | null>(null);
@@ -424,7 +430,7 @@ export function WorkbenchShell({
     if (height > 0 && b && !desiredBottomRef.current) apply(vGroupRef.current, [100 - b.defaultSize, b.defaultSize]);
     // l/r/b/fit suy từ width/height/leftCollapsed (+ bộ nhớ)
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [groupReady, width, height, leftCollapsed]);
+  }, [groupReady, width, height, leftCollapsed, rightCollapsed]);
   /** Bàn phím trên separator ⇒ lượt onLayout ngay sau là của người dùng (thư viện nghe keydown trên chính separator). */
   const markKeyInteraction = (e: React.KeyboardEvent) => {
     const h = (e.target as HTMLElement | null)?.closest?.("[data-panel-resize-handle-id]");
@@ -663,7 +669,7 @@ export function WorkbenchShell({
               </ResizablePanel>
               {right && r && (
                 <>
-                  <ResizableHandle id={HANDLE_RIGHT} aria-label={t("layoutKit.shell.resizeRight", "Resize the right panel")} onDragging={onDragRight} />
+                  <ResizableHandle id={HANDLE_RIGHT} aria-label={t("layoutKit.shell.resizeRight", "Resize the right panel")} onDragging={onDragRight} disabled={rightCollapsed} />
                   <ResizablePanel id="right" order={3} minSize={r.minSize} maxSize={r.maxSize} defaultSize={r.defaultSize}>
                     <SlotOutlet host={hRight} as="aside" aria-label={right.label} {...aiProps} className="h-full overflow-auto border-l" />
                   </ResizablePanel>

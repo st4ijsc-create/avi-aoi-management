@@ -9,7 +9,7 @@
 //   - Copilot là panel TRONG layout (R-2-b). Lưu vào project = sheet phải; một createArtifact mỗi lần lưu (R-2-n).
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 vi.mock("react-resizable-panels", async () => (await import("@/components/patterns/layoutKitTestPanels")).browserPanels());
-import { act, cleanup, fireEvent, render, screen, within } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import "@testing-library/jest-dom/vitest";
 import { installResizeHandleHitAreaShim } from "@/components/patterns/layoutKitTestPanels";
 import { installMatchMedia, presetNarrow } from "@/components/patterns/layoutKitTestMedia";
@@ -289,6 +289,31 @@ describe("Inspector ST / PLCopen / Copilot + Lưu vào project", () => {
     expect(mainEl().contains(aside)).toBe(false);
     act(() => setAiChatOpen(true));
     expect(getAiEntryState().chatOpen).toBe(false);
+  });
+
+  it("final wave M-8: panel phải GẬP ĐƯỢC (nút trên thanh công cụ editor): 0 px, nội dung còn mount; nút AI mở Copilot ⇒ panel tự mở lại", async () => {
+    const original = HTMLElement.prototype.getBoundingClientRect;
+    const spy = vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockImplementation(function (this: HTMLElement) {
+      if (this.hasAttribute("data-workbench-group")) return DOMRect.fromRect({ x: 0, y: 0, width: 1500, height: 800 });
+      return original.call(this);
+    });
+    try {
+      seed();
+      renderPage({ aiButton: true });
+      const rightSize = () => Number((document.querySelector('[data-panel-id="right"]') as HTMLElement).getAttribute("data-panel-size"));
+      expect(rightSize()).toBeGreaterThan(0);
+      const toggle = screen.getByRole("button", { name: /Ẩn panel phải|Hide right panel/ });
+      expect(toggle).toHaveAttribute("aria-pressed", "false");
+      fireEvent.click(toggle);
+      expect(rightSize()).toBe(0);
+      expect(screen.getByRole("button", { name: /Hiện panel phải|Show right panel/ })).toHaveAttribute("aria-pressed", "true");
+      expect(inspector()).not.toBeNull(); // vẫn mount
+      fireEvent.click(screen.getByRole("button", { name: "Mở Trợ lý Lập trình" }));
+      await waitFor(() => expect(rightSize()).toBeGreaterThan(0));
+      expect(within(inspector()).getByRole("tab", { name: /Copilot/ })).toHaveAttribute("aria-selected", "true");
+    } finally {
+      spy.mockRestore();
+    }
   });
 
   it("'Lưu vào project' mở SHEET phải; Lưu phiên bản ⇒ ĐÚNG MỘT createArtifact({projectId, branch:'main', language:'pou-json', content}); không quyền ⇒ khoá", async () => {

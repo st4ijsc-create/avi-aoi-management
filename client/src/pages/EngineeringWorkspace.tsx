@@ -55,7 +55,7 @@ import { TeachJogPanel } from "@/components/engineering/TeachJogPanel";
 import ManualHelp from "@/components/ManualHelp";
 // Doc 34 · P3 — embed the in-app Programming Copilot (LLM codegen, validated by the substrate).
 import { COPILOT_KINDS, type CopilotKind } from "@/components/programming/ProgrammingCopilotPanel";
-import { ProgrammingCopilotCore } from "@/components/programming/ProgrammingCopilotCore";
+import { CopilotInspector } from "@/components/programming/CopilotInspector";
 import { useCopilotBinding, useProgrammingCopilot, type CopilotBinding } from "@/contexts/ProgrammingCopilotContext";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -646,17 +646,7 @@ function EngineeringWorkspaceView() {
     [project == null, copilotInitialKind, code, diagnostics], // eslint-disable-line react-hooks/exhaustive-deps
   );
   useCopilotBinding(() => copilotBinding, [copilotBinding]);
-  // Copilot đã mở một lần ⇒ giữ mount lõi (stream đang chạy không bị huỷ khi chuyển sang tab Thuộc tính — Review
-  // Focus 3). Mở bằng nút AI top bar (không phải bấm tab) ⇒ đưa focus vào panel; lần nạp trang (đã nhớ "mở") thì không.
-  const copilotPanelRef = useRef<HTMLDivElement | null>(null);
-  const copilotOpenedByTabRef = useRef(false);
-  const copilotWasOpenRef = useRef(copilotOpen);
-  useEffect(() => {
-    if (copilotOpen) dispatch({ type: "copilot/mounted" });
-    if (copilotOpen && !copilotWasOpenRef.current && !copilotOpenedByTabRef.current) copilotPanelRef.current?.focus();
-    copilotOpenedByTabRef.current = false;
-    copilotWasOpenRef.current = copilotOpen;
-  }, [copilotOpen]); // eslint-disable-line react-hooks/exhaustive-deps
+  // Copilot mount một lần rồi GIỮ + đưa focus khi mở bằng nút AI: logic ở CopilotInspector dùng chung (final wave M-8).
 
   // U10 (doc 26) — phím tắt tác vụ trong editor. Ctrl/Cmd+S = Lưu phiên bản (chặn hộp
   // "lưu trang" của trình duyệt); Ctrl/Cmd+Enter = Build phiên bản đã lưu. Hook scope
@@ -1414,47 +1404,11 @@ function EngineeringWorkspaceView() {
         : sourceView;
 
   // ═════ Inspector phải: [Thuộc tính | Copilot] — Copilot là panel TRONG layout (R-2-b) ═════
-  const inspectorTabId = (k: "props" | "copilot") => `ide-insp-${k}`;
-  const inspector = (
-    <div className="flex h-full min-h-0 flex-col">
-      <div
-        role="tablist"
-        aria-label={t("engineering.ws.inspectorLabel", "Thuộc tính / Copilot")}
-        className="flex h-8 shrink-0 items-stretch border-b"
-        onKeyDown={(e) => {
-          if (e.key !== "ArrowLeft" && e.key !== "ArrowRight") return;
-          e.preventDefault();
-          const next = !copilotOpen;
-          copilotOpenedByTabRef.current = true;
-          setCopilotOpen(next);
-          document.getElementById(`${inspectorTabId(next ? "copilot" : "props")}-tab`)?.focus();
-        }}
-      >
-        {(["props", "copilot"] as const).map((k) => {
-          const selected = (k === "copilot") === copilotOpen;
-          return (
-            <button
-              key={k}
-              type="button"
-              role="tab"
-              id={`${inspectorTabId(k)}-tab`}
-              aria-selected={selected}
-              aria-controls={inspectorTabId(k)}
-              tabIndex={selected ? 0 : -1}
-              onClick={() => {
-                copilotOpenedByTabRef.current = true;
-                setCopilotOpen(k === "copilot");
-              }}
-              className={`flex items-center gap-1 border-r px-3 text-xs ${selected ? "bg-background font-medium" : "text-muted-foreground hover:bg-muted"}`}
-            >
-              {k === "copilot" && <Sparkles className="h-3.5 w-3.5 text-primary" aria-hidden="true" />}
-              {k === "copilot" ? t("engineering.ws.copilotTab", "Copilot") : t("engineering.ws.propsTab", "Thuộc tính")}
-            </button>
-          );
-        })}
-      </div>
-      {/* Thuộc tính — dự án / phiên bản (duyệt WS-01) / build (bản xem trước deploy chạy khô) */}
-      <div role="tabpanel" id={inspectorTabId("props")} aria-labelledby={`${inspectorTabId("props")}-tab`} hidden={copilotOpen} className="min-h-0 flex-1 space-y-4 overflow-y-auto p-3 text-xs">
+  // final wave M-8 — CopilotInspector dùng chung với IR/POU (cùng id `ide-insp-*`, cùng hợp đồng): lõi mount một lần rồi
+  // GIỮ (stream sống qua đổi tab — Review Focus 3), focus vào panel khi mở bằng nút AI (sửa lỗi cờ treo của bản IDE cũ).
+  // Thuộc tính giữ trong DOM khi Copilot mở (keepMounted) như trước.
+  const propsContent = (
+    <>
         {!project ? (
           <p className="text-muted-foreground">{t("engineering.ws.pickProjectFirst", "Chọn một dự án ở mục Dự án.")}</p>
         ) : (
@@ -1520,21 +1474,17 @@ function EngineeringWorkspaceView() {
             </section>
           </>
         )}
-      </div>
-      {/* Copilot — lõi dùng chung (IDE/IR/POU); mount một lần rồi GIỮ (stream không bị huỷ khi đổi tab — Review Focus 3). */}
-      <div
-        role="tabpanel"
-        id={inspectorTabId("copilot")}
-        aria-labelledby={`${inspectorTabId("copilot")}-tab`}
-        aria-label={t("progCopilot.dock.title", "Trợ lý Lập trình")}
-        hidden={!copilotOpen}
-        tabIndex={-1}
-        ref={copilotPanelRef}
-        className="min-h-0 flex-1 overflow-y-auto p-3 focus:outline-none"
-      >
-        {(copilotOpen || ui.copilotMounted) && <ProgrammingCopilotCore binding={copilotBinding} />}
-      </div>
-    </div>
+    </>
+  );
+  const inspector = (
+    <CopilotInspector
+      idPrefix="ide-insp"
+      label={t("engineering.ws.inspectorLabel", "Thuộc tính / Copilot")}
+      tabs={[{ id: "props", label: t("engineering.ws.propsTab", "Thuộc tính"), content: propsContent, keepMounted: true, className: "min-h-0 flex-1 space-y-4 overflow-y-auto p-3 text-xs" }]}
+      activeTab="props"
+      onTabChange={() => undefined}
+      binding={copilotBinding}
+    />
   );
 
   // ═════ Panel dưới: Vấn đề / Build-Mô phỏng / Lịch sử deploy / Ma trận máy×version (GẬP lần đầu — R-2-l) ═════

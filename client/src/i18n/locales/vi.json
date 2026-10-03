@@ -18322,7 +18322,9 @@
       "problemsStatus": "Vấn đề: {{count}}",
       "activityOpen": "Mở",
       "explorerLabel": "Trình duyệt POU",
-      "problemsTab": "Vấn đề"
+      "problemsTab": "Vấn đề",
+      "hideRight": "Ẩn panel phải",
+      "showRight": "Hiện panel phải"
     }
   },
   "systemHealth": {

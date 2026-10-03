@@ -18342,7 +18342,9 @@
       "problemsStatus": "Problems: {{count}}",
       "activityOpen": "Open",
       "explorerLabel": "POU explorer",
-      "problemsTab": "Problems"
+      "problemsTab": "Problems",
+      "hideRight": "Hide right panel",
+      "showRight": "Show right panel"
     }
   },
   "systemHealth": {

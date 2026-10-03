@@ -94,8 +94,6 @@ export interface WorkbenchUi {
   bottomOpenRequest: number;
   /** `buildId` = build GHIM lúc mở wizard (fix round 1): build hiện tại khác ⇒ trang khoá nút cuối. */
   wizard: { open: boolean; mode: DeployWizardMode; buildId: number | null };
-  /** Copilot trong layout đã mount một lần ⇒ giữ mount (stream không bị huỷ khi đổi tab Thuộc tính). */
-  copilotMounted: boolean;
 }
 
 export interface WorkspaceState {
@@ -171,7 +169,6 @@ export const initialWorkspaceState: WorkspaceState = {
     bottomTab: "problems",
     bottomOpenRequest: 0,
     wizard: { open: false, mode: "single", buildId: null },
-    copilotMounted: false,
   },
 };
 
@@ -231,7 +228,6 @@ export type WorkspaceAction =
   | { type: "wizard/open"; buildId: number }
   | { type: "wizard/close" }
   | { type: "wizard/mode"; mode: DeployWizardMode }
-  | { type: "copilot/mounted" }
   | { type: "cursor/set"; line: number; col: number };
 
 /** WS-05 — build/mô phỏng/chẩn đoán thuộc phiên bản cũ thì bỏ. */
@@ -364,8 +360,6 @@ export function workspaceReducer(s: WorkspaceState, a: WorkspaceAction): Workspa
       return { ...s, ui: { ...s.ui, wizard: { ...s.ui.wizard, open: false, buildId: null } } };
     case "wizard/mode":
       return { ...s, ui: { ...s.ui, wizard: { ...s.ui.wizard, mode: a.mode } } };
-    case "copilot/mounted":
-      return s.ui.copilotMounted ? s : { ...s, ui: { ...s.ui, copilotMounted: true } };
     case "cursor/set":
       return s.cursor.line === a.line && s.cursor.col === a.col ? s : { ...s, cursor: { line: a.line, col: a.col } };
     default: {

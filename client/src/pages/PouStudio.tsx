@@ -54,6 +54,7 @@ import {
 import {
   Code2, FileCode2, ShieldCheck, AlertTriangle, XCircle,
   Download, Upload, Copy, Lock, Info, RefreshCw, Save, Hammer, FolderPlus, FolderOpen, ExternalLink, Loader2, Sparkles,
+  PanelRight,
 } from "lucide-react";
 import { toast } from "sonner";
 import { PouCanvas, type PouCanvasDiag } from "@/components/programming/PouCanvas";
@@ -189,6 +190,10 @@ export default function PouStudio() {
 
   // doc 81 Đợt 2 Task 14 (R-2-b) — Copilot là tab của inspector phải; `open` của context = tab Copilot đang chọn.
   const { open: copilotOpen } = useProgrammingCopilot();
+  // final wave M-8 — panel phải (ST / PLCopen / Copilot) GẬP ĐƯỢC để canvas rộng hơn; nội dung vẫn mount (stream Copilot
+  // sống). Mở Copilot (nút AI top bar / tab) ⇒ panel tự mở lại. Lựa chọn chỉ trong phiên.
+  const [rightCollapsed, setRightCollapsed] = useState(false);
+  useEffect(() => { if (copilotOpen) setRightCollapsed(false); }, [copilotOpen]);
 
   // Pure server-side preview + lint (no persistence).
   const transpileQ = trpc.programming.pouTranspilePreview.useQuery(
@@ -518,6 +523,15 @@ export default function PouStudio() {
       ) : (
         <span className="max-w-[24rem] truncate text-[11px] text-destructive" title={parsed.error}>{t("pou.badJson", "Invalid JSON")}: {parsed.error}</span>
       )}
+      <Button
+        type="button" size="sm" variant="ghost" className="h-7 w-7 px-0"
+        aria-pressed={rightCollapsed}
+        aria-label={rightCollapsed ? t("pou.ws.showRight", "Show right panel") : t("pou.ws.hideRight", "Hide right panel")}
+        title={rightCollapsed ? t("pou.ws.showRight", "Show right panel") : t("pou.ws.hideRight", "Hide right panel")}
+        onClick={() => setRightCollapsed((c) => !c)}
+      >
+        <PanelRight className="h-4 w-4" aria-hidden="true" />
+      </Button>
       {/* POU selector (multi-POU projects) — shared by both views */}
       {parsed.ok && pous.length > 1 && (
         <Select value={String(safePouIndex)} onValueChange={(v) => setPouIndex(Number(v))}>
@@ -740,6 +754,7 @@ export default function PouStudio() {
           inspectorIsAi={copilotOpen}
           inspectorSize={{ minPx: 320, maxPx: 420, defaultPx: 320 }}
           inspectorRevealToken={copilotOpen ? 1 : 0}
+          inspectorCollapsed={rightCollapsed}
           bottomPanel={bottomPanel}
           bottomLabel={t("pou.ws.problemsTab", "Problems")}
           bottomDefaultCollapsed
