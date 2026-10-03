@@ -1426,7 +1426,9 @@ async function selfTest(page, base, s, only = null) {
       const d = document.createElement('div'); d.setAttribute('data-panel-resize-handle-id', 'uim-sep'); d.setAttribute('role', 'separator'); d.setAttribute('data-testid', 'uim-sep-' + ${JSON.stringify(mode)});
       if (${JSON.stringify(mode)} === 'a') { d.className = 'uim-sep'; d.style.cssText = 'position:relative;z-index:20;height:1px;margin-bottom:-1px;width:' + r.width + 'px'; T.parentElement.insertBefore(d, T);
         const top0 = d.getBoundingClientRect().top; d.style.top = (row(r.top) - top0) + 'px'; }
-      if (${JSON.stringify(mode)} === 'b') { d.style.cssText = 'position:absolute;z-index:20;background:rgba(0,0,255,.3);height:40px;width:' + r.width + 'px;left:' + (r.left + scrollX) + 'px;top:' + (row(r.top + 24) - 4 + scrollY) + 'px'; T.parentElement.insertBefore(d, T); }
+      if (${JSON.stringify(mode)} === 'b') { d.style.cssText = 'position:absolute;z-index:20;background:rgba(0,0,255,.3);height:40px;width:' + r.width + 'px;left:' + (r.left + scrollX) + 'px;top:' + (row(r.top + 24) - 4 + scrollY) + 'px'; T.parentElement.insertBefore(d, T);
+        // tổ tiên định vị (relative) dời gốc toạ độ của absolute ⇒ chỉnh lại theo vị trí THẬT để dải 40 px phủ đúng 5 hàng lưới
+        const rr = d.getBoundingClientRect(); d.style.left = (parseFloat(d.style.left) + r.left - rr.left) + 'px'; d.style.top = (parseFloat(d.style.top) + row(r.top + 24) - 4 - rr.top) + 'px'; }
       if (${JSON.stringify(mode)} === 'c') { d.style.cssText = 'position:fixed;z-index:20;background:#f00;height:1px;width:' + r.width + 'px;left:' + r.left + 'px;top:' + row(r.top + Math.min(r.height, innerHeight - r.top) / 2) + 'px'; T.parentElement.insertBefore(d, T); }
       return r.width;`);
   if (want("T29a-separator-anh-em-mien")) {
