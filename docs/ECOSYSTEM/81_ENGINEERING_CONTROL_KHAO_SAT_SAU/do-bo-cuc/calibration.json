@@ -197,46 +197,48 @@
    "screen": "safety-workforce",
    "vw": 1600,
    "variant": "n/a",
-   "mainTop": 618,
+   "mainTop": 120,
    "rects": [
     {
      "x": 288,
-     "y": 618,
-     "w": 1288,
-     "h": 795
+     "y": 120,
+     "w": 936,
+     "h": 802
     }
    ],
-   "areaPx": 1023960,
-   "attrSel": "div[data-layout-main=\"safety-workforce\"]@SafetyWorkforce.tsx",
-   "gitHead": "d58304052",
-   "at": "2026-10-03T04:36:59.023Z",
-   "fromReference": {
-    "dTop": 0,
-    "dLeft": 0,
-    "dAreaPct": 0
+   "areaPx": 750672,
+   "attrSel": "div[data-layout-main=\"safety-workforce\"]@CockpitLayout.tsx",
+   "gitHead": "2448e9c5d",
+   "at": "2026-10-03T05:15:35.628Z",
+   "previous": {
+    "mainTop": 618,
+    "areaPx": 1023960,
+    "attrSel": "div[data-layout-main=\"safety-workforce\"]@SafetyWorkforce.tsx",
+    "gitHead": "d58304052"
    }
   },
   "safety-workforce|1366|n/a": {
    "screen": "safety-workforce",
    "vw": 1366,
    "variant": "n/a",
-   "mainTop": 638,
+   "mainTop": 120,
    "rects": [
     {
      "x": 288,
-     "y": 638,
-     "w": 1054,
-     "h": 795
+     "y": 120,
+     "w": 742,
+     "h": 620
     }
    ],
-   "areaPx": 837930,
-   "attrSel": "div[data-layout-main=\"safety-workforce\"]@SafetyWorkforce.tsx",
-   "gitHead": "d58304052",
-   "at": "2026-10-03T04:36:59.023Z",
-   "fromReference": {
-    "dTop": 0,
-    "dLeft": 0,
-    "dAreaPct": 0
+   "areaPx": 460040,
+   "attrSel": "div[data-layout-main=\"safety-workforce\"]@CockpitLayout.tsx",
+   "gitHead": "2448e9c5d",
+   "at": "2026-10-03T05:15:35.628Z",
+   "previous": {
+    "mainTop": 638,
+    "areaPx": 837930,
+    "attrSel": "div[data-layout-main=\"safety-workforce\"]@SafetyWorkforce.tsx",
+    "gitHead": "d58304052"
    }
   }
  }
