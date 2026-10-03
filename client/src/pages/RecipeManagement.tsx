@@ -424,7 +424,7 @@ export default function RecipeManagement() {
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         {/* Codes list */}
-        <Card className="lg:col-span-1">
+        <Card className="lg:col-span-1" data-layout-main="recipes-codes">
           <CardHeader><CardTitle>{t("recipes.codes")} ({visibleCodes.length})</CardTitle></CardHeader>
           <CardContent className="space-y-3">
             {/* Doc 80 Đợt 1 Task 2 (HUB-03) — deep-link `?filter=pending` từ Hub. */}
@@ -486,7 +486,7 @@ export default function RecipeManagement() {
         </Card>
 
         {/* Versions of selected code */}
-        <Card className="lg:col-span-2">
+        <Card className="lg:col-span-2" data-layout-main="recipes-versions">
           <CardHeader>
             <CardTitle>{selectedCode ? t("recipes.versionsOf", { code: selectedCode }) : t("recipes.selectCode")}</CardTitle>
           </CardHeader>

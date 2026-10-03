@@ -96,6 +96,64 @@
     "attrSel": "div[data-layout-main=\"interlock-rules\"]@WorkbenchShell.tsx",
     "gitHead": "29fa77e5d"
    }
+  },
+  "recipes|1600|n/a": {
+   "screen": "recipes",
+   "vw": 1600,
+   "variant": "n/a",
+   "mainTop": 378,
+   "rects": [
+    {
+     "x": 288,
+     "y": 378,
+     "w": 413,
+     "h": 175
+    },
+    {
+     "x": 725,
+     "y": 378,
+     "w": 851,
+     "h": 175
+    }
+   ],
+   "areaPx": 221200,
+   "attrSel": "div[data-layout-main=\"recipes-codes\"]@RecipeManagement.tsx|div[data-layout-main=\"recipes-versions\"]@RecipeManagement.tsx",
+   "gitHead": "d860107f4",
+   "at": "2026-10-03T00:47:40.813Z",
+   "fromReference": {
+    "dTop": 0,
+    "dLeft": 0,
+    "dAreaPct": 0
+   }
+  },
+  "recipes|1366|n/a": {
+   "screen": "recipes",
+   "vw": 1366,
+   "variant": "n/a",
+   "mainTop": 378,
+   "rects": [
+    {
+     "x": 288,
+     "y": 378,
+     "w": 335,
+     "h": 175
+    },
+    {
+     "x": 647,
+     "y": 378,
+     "w": 695,
+     "h": 175
+    }
+   ],
+   "areaPx": 180250,
+   "attrSel": "div[data-layout-main=\"recipes-codes\"]@RecipeManagement.tsx|div[data-layout-main=\"recipes-versions\"]@RecipeManagement.tsx",
+   "gitHead": "d860107f4",
+   "at": "2026-10-03T00:47:40.813Z",
+   "fromReference": {
+    "dTop": 0,
+    "dLeft": 0,
+    "dAreaPct": 0
+   }
   }
  }
 }
