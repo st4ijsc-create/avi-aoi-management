@@ -1376,7 +1376,7 @@ export default function IrEditor() {
           </Button>
           {/* Save target project */}
           <Select value={saveProjectId} onValueChange={(v) => { setSaveProjectId(v); setLastProjectId(Number(v) || null); }}>
-            <SelectTrigger className="h-9 w-44 min-[1500px]:w-52" aria-label={t("ir.pickProjectPlaceholder", "Save into project…")}><SelectValue placeholder={t("ir.pickProjectPlaceholder", "Save into project…")} /></SelectTrigger>
+            <SelectTrigger className="h-9 w-24 sm:w-44 min-[1500px]:w-52" aria-label={t("ir.pickProjectPlaceholder", "Save into project…")}><SelectValue placeholder={t("ir.pickProjectPlaceholder", "Save into project…")} /></SelectTrigger>
             <SelectContent>
               {irProjects.length === 0 && <div className="px-2 py-1.5 text-xs text-muted-foreground">{t("ir.noProjects", "No ir-flow projects")}</div>}
               {irProjects.map((p) => <SelectItem key={p.id} value={String(p.id)}>{p.code} · {p.name}</SelectItem>)}
@@ -1396,7 +1396,8 @@ export default function IrEditor() {
             {saveM.isPending ? <Loader2 className="h-4 w-4 animate-spin min-[1500px]:mr-1.5" /> : <Save className="h-4 w-4 min-[1500px]:mr-1.5" />}
             <span className="hidden min-[1500px]:inline">{t("ir.save", "Save flow")}</span>
           </Button>
-          <Button size="sm" variant="ghost" onClick={() => { void flowsQ.refetch(); void utils.ir.lint.invalidate(); }} aria-label={t("common.refresh", "Refresh")} title={t("common.refresh", "Refresh")}>
+          {/* < 640 px: ẩn để Lưu luồng / Project mới không bị cắt khỏi top bar (danh sách luồng có nút làm mới riêng; lint tự chạy). */}
+          <Button size="sm" variant="ghost" className="hidden sm:inline-flex" onClick={() => { void flowsQ.refetch(); void utils.ir.lint.invalidate(); }} aria-label={t("common.refresh", "Refresh")} title={t("common.refresh", "Refresh")}>
             <RefreshCw className="h-4 w-4" />
           </Button>
         </>
