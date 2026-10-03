@@ -6775,8 +6775,6 @@
     "irEditorDesc": "Soạn chương trình chuyển động/IO thành các khối IR, kiểm tra an toàn & chuyển mã (URScript/ROS2); việc deploy vẫn là bước riêng có kiểm soát",
     "pouStudio": "Studio POU",
     "pouStudioDesc": "POU LAD/FBD/SFC có cấu trúc, xuất/nhập PLCopen XML, kiểm tra ngữ nghĩa và xem trước chuyển mã sang ST (chỉ chạy trên runtime mở)",
-    "programmingCopilot": "Trợ lý Lập trình",
-    "programmingCopilotDesc": "Scratchpad sinh code nhanh khi chưa mở project — trong editor (Xưởng lập trình/IR/POU) copilot đã nhúng sẵn dạng dock. Bám tài liệu hãng, kiểm tra qua lớp an toàn; chỉ hiển thị.",
     "factoryLiveMap": "Bản đồ nhà máy 3D",
     "factoryLiveMapDesc": "Sàn nhà máy 3D, máy tô màu theo trạng thái live (digital shadow), bấm drill-down xuống cụm",
     "fieldDevices": "Trừu tượng hoá thiết bị hiện trường",
@@ -7145,7 +7143,6 @@
       "orchestrationStudio": "Thiết kế luồng sản xuất tự động từng bước qua nhiều máy (xem trước)",
       "irEditor": "Trình soạn thảo trực quan để viết và chuyển đổi chương trình thiết bị — cho kỹ sư (xem trước)",
       "pouStudio": "Soạn thảo LAD/FBD/SFC IEC 61131 có cấu trúc, trao đổi PLCopen XML — cho kỹ sư (xem trước)",
-      "programmingCopilot": "Nhờ AI viết hoặc giải thích mã thiết bị — cho kỹ sư; bạn rà soát và mô phỏng trước khi dùng (xem trước)",
       "fleetOrchestration": "Giao việc cho robot/AGV di động và quản lý luồng di chuyển, sạc pin (xem trước)",
       "safetyWorkforce": "Tổng quan an toàn tư vấn và bảng phân ca/nhân lực (xem trước)",
       "equipmentStandards": "Chuẩn loại thiết bị toàn công ty và cách đặt tên cảnh báo chuẩn (xem trước)",
@@ -7190,8 +7187,6 @@
     "maintenanceHubDesc": "Một cửa cho bảo trì: lệnh công việc · CMMS/độ tin cậy · copilot",
     "cmms": "Bảo trì (CMMS)",
     "cmmsDesc": "Lịch bảo trì phòng ngừa · phụ tùng & độ tin cậy (MTTR/MTBF)",
-    "engineeringStudio": "Xưởng kỹ thuật",
-    "engineeringStudioDesc": "Soạn thảo · điều phối · an toàn · chuẩn hoá — một danh mục",
     "engineeringChanges": "Thay đổi kỹ thuật (ECN)",
     "engineeringChangesDesc": "Phiếu thay đổi kỹ thuật: yêu cầu → phân tích tác động → duyệt (SoD) → hiệu lực; + backfill componentCode",
     "reportingStudio": "Xưởng báo cáo",
@@ -12308,11 +12303,6 @@
     }
   },
   "progCopilot": {
-    "title": "Trợ lý Lập trình",
-    "subtitle": "AI soạn, hoàn thiện, dịch, rà soát và giải thích mã thiết bị — bám tài liệu hãng và được kiểm tra qua lớp an toàn. Bạn duyệt, mô phỏng và ký xác nhận.",
-    "whenToUse": "Soạn hoặc hiểu nhanh mã thiết bị. Để build, mô phỏng và deploy, hãy đưa mã vào Xưởng lập trình thiết bị.",
-    "cardTitle": "Sinh mã thiết bị",
-    "cardSubtitle": "Chọn loại chương trình, chế độ và (tùy chọn) hãng, mô tả yêu cầu rồi sinh mã.",
     "embedTitle": "Trợ lý Lập trình AI",
     "beta": "Beta",
     "openDock": "Mở Trợ lý",
@@ -16163,10 +16153,8 @@
     }
   },
   "engineeringHome": {
-    "needControl": "Cần quyền điều khiển",
     "viewOnly": "Chỉ xem",
     "title": "Trung tâm Kỹ thuật",
-    "subtitle": "Chọn tác vụ — soạn chương trình, điều phối đội xe, thực thi an toàn & chuẩn hóa, hoặc chạy twin.",
     "goldenThread": "Luồng vàng: soạn → mô phỏng → deploy → giám sát. Chương trình soạn ở đây chảy vào pipeline, chạy trong twin, rồi hiện trên các màn giám sát.",
     "inboxTab": "Hộp việc",
     "catalogTab": "Danh mục công cụ",
@@ -16191,7 +16179,9 @@
       "unpin": "Bỏ ghim {{name}}",
       "copilotScratch": "Copilot (nháp, chưa cần dự án)",
       "commandConsole": "Bảng lệnh (HITL)"
-    }
+    },
+    "criticalChip": "Khẩn",
+    "criticalSource": "oversight.pendingSummary — recipe chạy chưa duyệt, sự kiện interlock đang mở, sự cố an toàn chưa kiểm định, bế tắc đội xe"
   },
   "oversight": {
     "title": "Đang chờ duyệt & cảnh báo",
@@ -19623,10 +19613,6 @@
     "layout": "Sơ đồ bố trí",
     "layoutBlurb": "Bố trí mặt bằng nhà máy"
   },
-  "engineeringStudio": {
-    "title": "Xưởng kỹ thuật",
-    "categories": "Nhóm kỹ thuật"
-  },
   "maintenanceHub": {
     "title": "Bảo trì",
     "categories": "Nhóm bảo trì"
@@ -19991,31 +19977,6 @@
     "aiSettings": "Cài đặt AI",
     "aiSettingsBlurb": "Cấu hình model server + gateway",
     "robotModelHealth": "Sức khỏe mô hình robot"
-  },
-  "engHub": {
-    "authoring": "Soạn thảo & IDE",
-    "engineering": "Xưởng lập trình thiết bị",
-    "engineeringBlurb": "Viết & biên dịch chương trình thiết bị",
-    "irEditor": "Trình soạn IR",
-    "pouStudioBlurb": "Soạn POU/IEC 61131",
-    "programmingCopilotBlurb": "AI hỗ trợ lập trình PLC/robot",
-    "recipes": "Recipe máy",
-    "recipesBlurb": "Công thức chạy máy",
-    "engineeringChanges": "Thay đổi kỹ thuật (ECN)",
-    "orchestration": "Điều phối & Điều khiển",
-    "orchestrationStudioBlurb": "Soạn/mô phỏng/triển khai điều phối",
-    "fleetOrchestration": "Điều phối fleet",
-    "fleetOrchestrationBlurb": "Phân bổ tác vụ + vùng cho fleet",
-    "robotControl": "Điều khiển robot",
-    "commandConsoleBlurb": "Lệnh robot đơn qua HITL",
-    "safety": "An toàn",
-    "interlockRules": "Luật interlock",
-    "interlockRulesBlurb": "Quản lý luật khóa liên động",
-    "safetyWorkforce": "An toàn & Nhân lực",
-    "safetyWorkforceBlurb": "Bảng an toàn + mixed-workforce",
-    "standards": "Chuẩn hoá & Tích hợp",
-    "equipmentStandards": "Chuẩn thiết bị",
-    "equipmentIntegration": "Tích hợp thiết bị"
   },
   "maintHub": {
     "work": "Công việc & Độ tin cậy",

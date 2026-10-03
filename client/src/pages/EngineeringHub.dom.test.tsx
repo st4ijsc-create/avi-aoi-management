@@ -47,6 +47,7 @@ const ok = (count = 0, samples: Bucket["samples"] = []): Bucket => ({ count, sam
 const srv = vi.hoisted(() => ({
   summary: undefined as Record<string, unknown> | undefined,
   posture: undefined as Record<string, unknown> | undefined,
+  summaryError: false,
 }));
 function setSummary(o: Record<string, Bucket> = {}) {
   const base: Record<string, Bucket> = {
@@ -68,6 +69,9 @@ vi.mock("@/lib/trpc", () => ({
           const key = `${router}.${proc}`;
           return {
             useQuery: () => {
+              if (key === "oversight.pendingSummary" && srv.summaryError) {
+                return { data: undefined, isLoading: false, isPending: false, isError: true, error: new Error("x"), refetch: () => undefined };
+              }
               const data = key === "oversight.pendingSummary" ? srv.summary : key === "oversight.posture" ? srv.posture : undefined;
               return { data, isLoading: data === undefined, isPending: data === undefined, isError: false, error: null, refetch: () => undefined };
             },
@@ -93,6 +97,7 @@ beforeEach(() => {
   who.role = "supervisor";
   who.modules = ["machine_status", "machine_control", "interlock"];
   setSummary();
+  srv.summaryError = false;
   srv.posture = { ...POSTURE_OK };
   presetNarrow(false);
   localStorage.clear();
@@ -100,6 +105,15 @@ beforeEach(() => {
 });
 afterEach(() => cleanup());
 
+const CRITICAL_HREFS = [
+  "/recipes?filter=pending",
+  "/interlock-rules?filter=pending",
+  "/safety-workforce?filter=pending",
+  "/fleet-orchestration?filter=deadlock",
+];
+const pinnedHrefs = () => Array.from(mainEl().querySelectorAll("table tbody[data-pending-pinned] tr a")).map((a) => a.getAttribute("href"));
+const headerEl = () => screen.getByRole("heading", { level: 1 }).closest("[data-layout-header]") as HTMLElement;
+const criticalChip = () => headerEl().querySelector('[data-chip-id="critical"]') as HTMLElement;
 const mainEl = () => document.querySelector("[data-layout-main]") as HTMLElement;
 const aside = () => document.querySelector("aside") as HTMLElement;
 const rowHrefs = () => Array.from(mainEl().querySelectorAll("table tbody tr a")).map((a) => a.getAttribute("href"));
@@ -113,7 +127,8 @@ describe("P4 Cockpit — bố cục (doc 81 §1.2 Hub)", () => {
     expect(h1).toHaveTextContent(S("engineeringHome.title"));
     const header = h1.closest("[data-layout-header]") as HTMLElement;
     expect(within(header).getByRole("button", { name: new RegExp(S("engineeringHome.goldenThreadChip")) })).toBeInTheDocument();
-    expect(header.querySelector('[data-layout-kpi][data-chip-id="posture"], [data-layout-kpi]')).not.toBeNull();
+    expect(header.querySelector('[data-layout-kpi][data-chip-id="posture"]')).not.toBeNull();
+    expect(header.querySelector('[data-layout-kpi][data-chip-id="critical"]')).not.toBeNull();
     const main = mainEl();
     expect(main.getAttribute("data-layout-main")).toBe("engineering-home");
     expect(main.querySelectorAll("[data-layout-toolbar]")).toHaveLength(1);
@@ -139,14 +154,19 @@ describe("★ Supervisor vào Hub ⇒ mở ĐÚNG hộp việc (doc 81 §1.4, Re
     const row = ecnLink.closest("tr") as HTMLElement;
     expect(row.querySelector("[data-pending-count]")?.textContent).toBe("1");
     expect(row.textContent).toContain("SEED-ECN-0003");
-    // Chờ duyệt = 5 loại không khẩn (ECN, recipe, interlock rule, changeover, run chờ xác nhận) — không có sự cố an toàn
+    // R-2-y: 4 loại KHẨN luôn ghim trên đầu (mọi phạm vi) + Chờ duyệt = 5 loại không khẩn ở màn mở được
     expect(rowHrefs()).toEqual([
+      ...CRITICAL_HREFS,
       "/engineering-changes?filter=pending",
       "/recipes?filter=pending",
       "/interlock-rules?filter=pending",
       "/product-changeover",
       "/orchestration-studio?filter=pending",
     ]);
+    // sự cố an toàn chưa kiểm định (2, khẩn) VẪN thấy ở phạm vi Chờ duyệt, tô đỏ
+    const safety = within(mainEl()).getByRole("link", { name: S("oversight.category.safety") }).closest("tr") as HTMLElement;
+    expect(safety.querySelector("[data-pending-count]")?.textContent).toBe("2");
+    expect(safety.querySelector("[data-pending-count]")?.className).toMatch(/text-destructive/);
     // số đếm của phạm vi hiện CẠNH nút phạm vi (ngoài bảng): 1 chờ duyệt / 3 toàn module
     expect(scopeBtn("scopeApprovals").textContent).toContain("1");
     expect(scopeBtn("scopeAll").textContent).toContain("3");
@@ -174,14 +194,16 @@ describe("★ Supervisor vào Hub ⇒ mở ĐÚNG hộp việc (doc 81 §1.4, Re
     expect(within(mainEl()).getByRole("link", { name: S("oversight.category.interlock") })).toHaveAttribute("href", "/interlock-rules?filter=pending");
   });
 
-  it("Chờ duyệt chỉ gồm màn người dùng MỞ ĐƯỢC (maintenance: không có `interlock` ⇒ không dòng interlock); Toàn module vẫn đủ như cũ", () => {
+  it("Chờ duyệt chỉ gồm màn người dùng MỞ ĐƯỢC (maintenance: không `interlock` ⇒ không dòng DUYỆT rule interlock); Toàn module vẫn đủ như cũ", () => {
     who.role = "maintenance";
     who.modules = ["machine_status", "machine_control"];
     render(<EngineeringHub />);
-    expect(rowHrefs()).not.toContain("/interlock-rules?filter=pending");
+    // dòng "Interlocks to approve" (không khẩn) vắng; dòng KHẨN "Open interlock events" vẫn ghim (R-2-y)
+    expect(within(mainEl()).queryByRole("link", { name: S("oversight.category.interlock") })).toBeNull();
+    expect(within(mainEl()).getByRole("link", { name: S("oversight.category.interlockEventsOpen") })).toBeInTheDocument();
     expect(rowHrefs()).toContain("/engineering-changes?filter=pending");
     fireEvent.click(scopeBtn("scopeAll"));
-    expect(rowHrefs()).toContain("/interlock-rules?filter=pending");
+    expect(within(mainEl()).getByRole("link", { name: S("oversight.category.interlock") })).toBeInTheDocument();
   });
 
   it("HUB-01 giữ: nguồn trong phạm vi không đọc được ⇒ KHÔNG 'Không có gì chờ duyệt'", () => {
@@ -189,6 +211,69 @@ describe("★ Supervisor vào Hub ⇒ mở ĐÚNG hộp việc (doc 81 §1.4, Re
     render(<EngineeringHub />);
     expect(screen.queryByText(S("oversight.allClear"))).toBeNull();
     expect(within(mainEl()).getByRole("status")).toBeInTheDocument();
+  });
+});
+
+describe("★ R-2-y — loại KHẨN luôn thấy trên Hub, MỌI phạm vi (danh sách ghim + chip ghim)", () => {
+  it.each(["approvals", "all"] as const)("phạm vi %s: 4 dòng khẩn ghim ĐẦU bảng, có số + link sâu, đỏ khi >0", (scope) => {
+    setSummary({ recipeActiveUnapproved: ok(1), interlockEventsOpen: ok(3), safety: ok(2), deadlocks: ok(0) });
+    if (scope === "all") window.history.replaceState({}, "", "/engineering-home?scope=all");
+    render(<EngineeringHub />);
+    expect(pinnedHrefs()).toEqual(CRITICAL_HREFS);
+    const rows = Array.from(mainEl().querySelectorAll("table tbody[data-pending-pinned] tr")) as HTMLElement[];
+    expect(rows.map((r) => r.querySelector("[data-pending-count]")?.textContent)).toEqual(["1", "3", "2", "0"]);
+    for (const r of rows.slice(0, 3)) expect(r.querySelector("[data-pending-count]")?.className).toMatch(/text-destructive/);
+    expect(rows[3].querySelector("[data-pending-count]")?.className).not.toMatch(/text-destructive/);
+  });
+
+  it("chip KHẨN ghim ở header (thấy cả ở tab Danh mục và dưới 1024 px): tổng 6, tông lỗi; bấm ⇒ về Hộp việc", () => {
+    setSummary({ recipeActiveUnapproved: ok(1), interlockEventsOpen: ok(3), safety: ok(2) });
+    window.history.replaceState({}, "", "/engineering-home?tab=catalog");
+    presetNarrow(true);
+    render(<EngineeringHub />);
+    const chip = criticalChip();
+    expect(chip).toHaveAttribute("data-state", "ok");
+    expect(chip.textContent).toContain("6");
+    expect(chip.querySelector(".text-destructive")).not.toBeNull();
+    fireEvent.click(chip);
+    expect(screen.getByRole("tab", { name: S("engineeringHome.inboxTab") })).toHaveAttribute("aria-selected", "true");
+    expect(pinnedHrefs()).toEqual(CRITICAL_HREFS);
+  });
+
+  it("đang tải ⇒ chip KHẨN 'đang tải' (không in 0), bảng là skeleton (không dòng số 0)", () => {
+    srv.summary = undefined;
+    render(<EngineeringHub />);
+    expect(criticalChip()).toHaveAttribute("data-state", "loading");
+    expect(criticalChip().textContent).not.toMatch(/\b0\b/);
+    expect(mainEl().querySelectorAll("[data-pending-count]")).toHaveLength(0);
+    expect(mainEl().querySelectorAll("tr[data-pending-skeleton]").length).toBeGreaterThanOrEqual(4);
+  });
+
+  it("một nguồn khẩn không đọc được ⇒ chip 'degraded' (≥), dòng đó '—' (không 0, không OK)", () => {
+    setSummary({ safety: { count: 0, samples: [], degraded: true } });
+    render(<EngineeringHub />);
+    expect(criticalChip()).toHaveAttribute("data-state", "degraded");
+    const row = within(mainEl()).getByRole("link", { name: S("oversight.category.safety") }).closest("tr") as HTMLElement;
+    expect(row.querySelector("[data-pending-count]")?.textContent).toBe("—");
+    expect(screen.queryByText(S("oversight.allClear"))).toBeNull();
+  });
+
+  it("lỗi tải ⇒ chip KHẨN 'Lỗi' (không 0)", () => {
+    srv.summaryError = true;
+    render(<EngineeringHub />);
+    expect(criticalChip()).toHaveAttribute("data-state", "error");
+  });
+});
+
+describe("R-2-v — hộp việc lấp chiều cao còn lại, danh sách cuộn BÊN TRONG", () => {
+  it("bảng nằm trong vùng cuộn cao theo khung nhìn (h-[calc(100dvh-…)] + overflow-auto); thead dính", () => {
+    render(<EngineeringHub />);
+    const region = mainEl().querySelector("[data-hub-inbox-scroll]") as HTMLElement;
+    expect(region).not.toBeNull();
+    expect(region.className).toMatch(/h-\[calc\(100dvh-[^\]]+\)\]/);
+    expect(region.className).toMatch(/(^|\s)overflow-auto(\s|$)/);
+    expect(region.querySelector("table")).not.toBeNull();
+    expect(region.querySelector("thead")?.className).toMatch(/sticky/);
   });
 });
 
@@ -206,16 +291,16 @@ describe("Tư thế an toàn (panel phụ + chip ghim) — không thoái lui GC1
     srv.posture = { ...POSTURE_OK, otControlEnabled: true, interlockEngineEnabled: false, writesOnEngineOff: true };
     render(<EngineeringHub />);
     expect(within(aside()).getByText(S("oversight.posture.writesOnEngineOffWarning"))).toBeInTheDocument();
-    const header = screen.getByRole("heading", { level: 1 }).closest("[data-layout-header]") as HTMLElement;
-    expect(header.textContent).toContain(S("engineeringHome.postureWarn"));
+    const chip = headerEl().querySelector('[data-chip-id="posture"]') as HTMLElement;
+    expect(chip.textContent).toContain(S("engineeringHome.postureWarn"));
+    expect(chip.querySelector(".text-warning")).not.toBeNull();
   });
 
   it("dưới 1024 px chip tư thế VẪN ở header (panel phụ xuống dưới MAIN)", () => {
     presetNarrow(true);
     srv.posture = { ...POSTURE_OK, otControlEnabled: true, interlockEngineEnabled: false, writesOnEngineOff: true };
     render(<EngineeringHub />);
-    const header = screen.getByRole("heading", { level: 1 }).closest("[data-layout-header]") as HTMLElement;
-    expect(header.textContent).toContain(S("engineeringHome.postureWarn"));
+    expect((headerEl().querySelector('[data-chip-id="posture"]') as HTMLElement).textContent).toContain(S("engineeringHome.postureWarn"));
   });
 });
 
@@ -258,6 +343,17 @@ describe("Danh mục công cụ (Studio gộp vào — ?tab=catalog)", () => {
     act(() => { fireEvent.click(within(aside()).getByRole("button", { name: S("engineeringHome.tools.all") })); });
     expect(window.location.search).toContain("tab=catalog");
     expect(screen.getByRole("tab", { name: S("engineeringHome.catalogTab") })).toHaveAttribute("aria-selected", "true");
+  });
+
+  it("ô người dùng KHÔNG MỞ ĐƯỢC bị ẨN như Studio cũ (maintenance: không `interlock` ⇒ không ô Quy tắc Interlock); không còn ghi chú khoá", () => {
+    who.role = "maintenance";
+    who.modules = ["machine_status", "machine_control"];
+    window.history.replaceState({}, "", "/engineering-home?tab=catalog");
+    render(<EngineeringHub />);
+    const links = Array.from(mainEl().querySelectorAll("[data-hub-tool] a")).map((a) => a.getAttribute("href"));
+    expect(links).not.toContain("/interlock-rules");
+    expect(links).toContain("/engineering");
+    expect(within(mainEl()).queryByText(/Cần quyền điều khiển/)).toBeNull();
   });
 
   it("vai không soạn thảo (không machine_control) ⇒ danh mục KHÔNG có IR / POU (cùng luật điều hướng §1.4)", () => {

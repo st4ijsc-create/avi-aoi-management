@@ -6574,8 +6574,6 @@
     "irEditorDesc": "将运动/IO 设备程序编写为一等 IR 块，进行安全检查与转译（URScript/ROS2）；部署仍为独立的受控步骤",
     "pouStudio": "POU Studio",
     "pouStudioDesc": "结构化 LAD/FBD/SFC POU，支持 PLCopen XML 导入/导出、语义检查以及转译为 ST 预览（仅限开放运行时）",
-    "programmingCopilot": "编程副驾",
-    "programmingCopilotDesc": "未打开项目时快速生成代码的暂存区 — 在编辑器（工程/IR/POU）中副驾以停靠面板内嵌。以厂商手册为依据、经安全底座校验；仅显示。",
     "factoryLiveMap": "工厂3D实时地图",
     "factoryLiveMapDesc": "3D工厂车间，设备按实时状态着色（数字镜像），点击下钻到单元",
     "fieldDevices": "现场与设备抽象",
@@ -6936,7 +6934,6 @@
       "orchestrationStudio": "跨机器设计逐步自动化生产流程（预览）",
       "irEditor": "可视化编辑器，用于编写和转换设备程序 — 面向工程师（预览）",
       "pouStudio": "结构化 IEC 61131 梯形图/FBD/SFC 编辑与 PLCopen XML 交换 — 面向工程师（预览）",
-      "programmingCopilot": "让 AI 编写或解释设备代码 — 面向工程师；使用前请审阅并仿真（预览）",
       "fleetOrchestration": "为移动机器人/AGV 分配任务并管理其通行与充电（预览）",
       "safetyWorkforce": "咨询式安全概览及班次/人力看板（预览）",
       "equipmentStandards": "公司统一的设备类型及标准报警命名（预览）",
@@ -6992,8 +6989,6 @@
     "maintenanceHubDesc": "维护一站式：工单 · CMMS/可靠性 · 助手",
     "cmms": "维护 (CMMS)",
     "cmmsDesc": "预防性维护计划 · 备件与可靠性 (MTTR/MTBF)",
-    "engineeringStudio": "工程工作台",
-    "engineeringStudioDesc": "编写 · 编排 · 安全 · 标准化 — 统一目录",
     "engineeringChanges": "工程变更 (ECN)",
     "engineeringChangesDesc": "工程变更单：申请 → 影响分析 → 审批（职责分离）→ 生效；+ componentCode 回填",
     "reportingStudio": "报表工作台",
@@ -12111,11 +12106,6 @@
     }
   },
   "progCopilot": {
-    "title": "编程副驾",
-    "subtitle": "AI 生成、补全、翻译、审查并解释设备代码 — 以厂商手册为依据，并经安全底座校验。由你审阅、仿真并签核。",
-    "whenToUse": "快速起草或理解设备代码。若要构建、仿真和部署，请将代码带入工程工作区。",
-    "cardTitle": "生成设备代码",
-    "cardSubtitle": "选择程序类型、模式和（可选）厂商，描述需求后生成。",
     "embedTitle": "AI 编程副驾",
     "beta": "测试版",
     "openDock": "打开副驾",
@@ -16765,10 +16755,8 @@
     }
   },
   "engineeringHome": {
-    "needControl": "需要控制访问权限",
     "viewOnly": "仅查看",
     "title": "工程中心",
-    "subtitle": "选择一项任务 — 编写程序、编排机群、强制安全与标准，或运行孪生。",
     "goldenThread": "黄金链：编写 → 仿真 → 部署 → 监控。此处编写的程序流入流水线，在孪生中运行，然后在监控页面上呈现。",
     "inboxTab": "工作收件箱",
     "catalogTab": "工具目录",
@@ -16793,7 +16781,9 @@
       "unpin": "取消固定 {{name}}",
       "copilotScratch": "Copilot（草稿，无需项目）",
       "commandConsole": "命令控制台（HITL）"
-    }
+    },
+    "criticalChip": "紧急",
+    "criticalSource": "oversight.pendingSummary — 运行中未审批配方、未关闭联锁事件、未审核安全事件、车队死锁"
   },
   "oversight": {
     "title": "待审查与告警",
@@ -19651,10 +19641,6 @@
     "layout": "平面布局",
     "layoutBlurb": "工厂车间平面布局"
   },
-  "engineeringStudio": {
-    "title": "工程工作室",
-    "categories": "工程分类"
-  },
   "maintenanceHub": {
     "title": "维护",
     "categories": "维护分类"
@@ -20019,31 +20005,6 @@
     "aiSettings": "AI 设置",
     "aiSettingsBlurb": "模型服务器 + 网关配置",
     "robotModelHealth": "机器人模型健康度"
-  },
-  "engHub": {
-    "authoring": "编写与 IDE",
-    "engineering": "设备编程工作台",
-    "engineeringBlurb": "编写并编译设备程序",
-    "irEditor": "IR 编辑器",
-    "pouStudioBlurb": "编写 POU / IEC 61131",
-    "programmingCopilotBlurb": "PLC/机器人编程 AI 助手",
-    "recipes": "设备配方",
-    "recipesBlurb": "设备运行配方",
-    "engineeringChanges": "工程变更 (ECN)",
-    "orchestration": "编排与控制",
-    "orchestrationStudioBlurb": "编排的编写 / 仿真 / 部署",
-    "fleetOrchestration": "集群编排",
-    "fleetOrchestrationBlurb": "为集群分配任务与区域",
-    "robotControl": "机器人控制",
-    "commandConsoleBlurb": "经人工确认（HITL）的单机器人指令",
-    "safety": "安全",
-    "interlockRules": "联锁规则",
-    "interlockRulesBlurb": "联锁规则管理",
-    "safetyWorkforce": "安全与人员",
-    "safetyWorkforceBlurb": "安全看板 + 人机混合作业",
-    "standards": "标准化与集成",
-    "equipmentStandards": "设备标准",
-    "equipmentIntegration": "设备集成"
   },
   "maintHub": {
     "work": "工单与可靠性",

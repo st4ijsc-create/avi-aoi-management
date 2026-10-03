@@ -211,3 +211,25 @@ describe("PendingReviewStrip variant='table' (Task 15)", () => {
     expect(document.querySelector("table")).toBeNull();
   });
 });
+
+// Task 15 fix 1 (R-2-y) — `pinned`: loại ghim LUÔN hiện, ĐẦU bảng, bất kể categoryFilter.
+describe("PendingReviewStrip variant='table' — pinned (R-2-y)", () => {
+  it("pinned=critical + filter loại trừ chúng ⇒ 4 dòng khẩn vẫn ở tbody ghim, đứng TRƯỚC tập lọc", () => {
+    setQueryOverride(KEY, makeQuery({ data: summary({ safety: ok(2) }) }));
+    render(<PendingReviewStrip variant="table" pinned={(c) => c.critical} categoryFilter={(c) => !c.critical} />);
+    const pinned = Array.from(document.querySelectorAll("tbody[data-pending-pinned] tr")).map((r) => r.getAttribute("data-pending-row"));
+    expect(pinned).toEqual(["recipeActiveUnapproved", "interlockEventsOpen", "safety", "deadlocks"]);
+    const all = Array.from(document.querySelectorAll("tbody tr")).map((r) => r.getAttribute("data-pending-row"));
+    expect(all.slice(0, 4)).toEqual(pinned);
+    expect(all).toHaveLength(9);
+    // safety 2 nằm trong tập đang hiện ⇒ KHÔNG "Nothing waiting"
+    expect(screen.queryByText(/Nothing waiting/i)).toBeNull();
+  });
+
+  it("chưa có dữ liệu, không lỗi, không cờ isLoading ⇒ khung chờ (không bảng rỗng, không số 0)", () => {
+    setQueryOverride(KEY, makeQuery({ data: undefined, isLoading: false }));
+    render(<PendingReviewStrip variant="table" />);
+    expect(document.querySelectorAll("tr[data-pending-skeleton]")).toHaveLength(9);
+    expect(document.querySelectorAll("[data-pending-count]")).toHaveLength(0);
+  });
+});

@@ -57,7 +57,6 @@ import {
   Gauge,
   ScrollText,
   LayoutDashboard,
-  Lock,
   Eye,
   AlertTriangle,
   GitPullRequest,
@@ -145,6 +144,9 @@ export const HUB_CATALOG: HubGroup[] = [
 ];
 const ALL_TILES = HUB_CATALOG.flatMap((g) => g.tiles);
 
+/** R-2-v — vùng nội dung của MAIN (cả hai tab): cao theo khung nhìn, cuộn BÊN TRONG; trang không cuộn. */
+const HUB_SCROLL_REGION = "mt-2 h-[calc(100dvh-12.75rem)] min-h-[16rem] overflow-auto rounded-md border px-2";
+
 /** Perm coi là "điều khiển" — tile cần quyền này để làm việc, không chỉ để xem. */
 const CONTROL_PERMS = new Set(["machine_control", "interlock"]);
 
@@ -154,9 +156,14 @@ function useTileAccess() {
   const { hasPermission } = usePermissions();
   const { user } = useAuth();
   const role = (user as { role?: string } | null | undefined)?.role;
-  /** false ⇒ ẩn (công cụ soạn thảo với người không soạn được — cùng luật thanh bên). */
+  /**
+   * false ⇒ ẩn: (a) ô người dùng KHÔNG MỞ ĐƯỢC (quyền route — như `HubLauncher` của Studio cũ ẩn ô thiếu quyền; fix 1)
+   * (b) công cụ soạn thảo với người không soạn được (cùng luật thanh bên — doc 81 §1.4).
+   */
   const visible = (tile: HubTile) => {
     const nav = getNavItemByHref(tile.href);
+    const perm = nav?.requiredPermission ?? tile.requiredPermission;
+    if (perm && !hasPermission(perm, "canView")) return false;
     return !nav || passesNavAuthoringGate(nav, role, hasPermission as never);
   };
   const meta = (tile: HubTile) => {
@@ -164,14 +171,10 @@ function useTileAccess() {
     const perm = nav?.requiredPermission ?? tile.requiredPermission;
     let note: string | undefined;
     let noteIcon: LucideIcon | undefined;
-    if (perm) {
-      if (!hasPermission(perm, "canView")) {
-        note = t("engineeringHome.needControl", "Cần quyền điều khiển");
-        noteIcon = Lock;
-      } else if (CONTROL_PERMS.has(perm) && !hasPermission(perm, "canEdit")) {
-        note = t("engineeringHome.viewOnly", "Chỉ xem");
-        noteIcon = Eye;
-      }
+    // Ô thiếu quyền xem đã bị ẩn (`visible`) ⇒ chỉ còn báo trước mức "Chỉ xem" (U7).
+    if (perm && CONTROL_PERMS.has(perm) && !hasPermission(perm, "canEdit")) {
+      note = t("engineeringHome.viewOnly", "Chỉ xem");
+      noteIcon = Eye;
     }
     return { beta: nav?.beta === true, note, noteIcon };
   };
@@ -248,7 +251,9 @@ function CatalogTab() {
   const { visible } = useTileAccess();
   const [favs, toggle] = useFavorites();
   return (
-    <div data-hub-catalog="" className="grid grid-cols-[repeat(auto-fill,minmax(11rem,1fr))] gap-2 pt-2">
+    // R-2-v — cùng vùng cuộn cao theo khung nhìn như Hộp việc (MAIN không đổi hình khi đổi tab; danh mục cuộn BÊN TRONG).
+    <div data-hub-catalog-scroll="" className={HUB_SCROLL_REGION}>
+    <div data-hub-catalog="" className="grid grid-cols-[repeat(auto-fill,minmax(11rem,1fr))] gap-2 py-2">
       {HUB_CATALOG.map((group) => {
         const tiles = group.tiles.filter(visible);
         if (tiles.length === 0) return null;
@@ -261,6 +266,7 @@ function CatalogTab() {
           )),
         ];
       })}
+    </div>
     </div>
   );
 }
@@ -392,13 +398,17 @@ function useScopeFilters() {
   return { approvals };
 }
 
+/** R-2-y — loại KHẨN (`critical:true` = thẻ ĐỎ của Hub cũ): luôn thấy, mọi phạm vi. */
+const isCritical = (c: CategoryDef) => c.critical;
+
 function InboxTab() {
   const [scopeParam] = useUrlParam("scope");
   const scope: Scope = scopeParam === "all" ? "all" : "approvals";
   const { approvals } = useScopeFilters();
   return (
-    <div className="pt-2">
-      <PendingReviewStrip variant="table" categoryFilter={scope === "all" ? undefined : approvals} />
+    // R-2-v — hộp việc lấp chiều cao còn lại của khung nhìn; danh sách cuộn BÊN TRONG (thead dính), trang không cuộn.
+    <div data-hub-inbox-scroll="" className={HUB_SCROLL_REGION}>
+      <PendingReviewStrip variant="table" pinned={isCritical} categoryFilter={scope === "all" ? undefined : approvals} />
     </div>
   );
 }
@@ -446,6 +456,21 @@ export default function EngineeringHub() {
   const [tab, setTab] = useUrlParam("tab");
   const postureQ = usePostureQuery();
   const p = postureQ.data;
+  // R-2-y — chip KHẨN ghim (R-2-p): tổng 4 loại khẩn, thấy ở MỌI tab/phạm vi và dưới 1024 px. Đang tải/lỗi KHÔNG
+  // bao giờ đọc thành 0/OK (chipStateFromQuery); một nguồn khẩn không đọc được ⇒ "degraded" (≥).
+  const pendingQ = trpc.oversight.pendingSummary.useQuery(undefined, { staleTime: 30_000, refetchOnWindowFocus: true });
+  const criticalCats = PENDING_CATEGORIES.filter(isCritical);
+  const criticalTotal = pendingQ.data == null ? null : criticalCats.reduce((n, c) => n + pendingQ.data![c.key].count, 0);
+  const criticalChip: StatusChipItem = {
+    id: "critical",
+    label: t("engineeringHome.criticalChip", "Urgent"),
+    value: criticalTotal,
+    state: chipStateFromQuery(pendingQ, (d) => criticalCats.some((c) => d[c.key].degraded)),
+    source: t("engineeringHome.criticalSource", "oversight.pendingSummary — urgent categories"),
+    tone: criticalTotal != null && criticalTotal > 0 ? "error" : "success",
+    pinned: true,
+    onClick: () => setTab("inbox"),
+  };
 
   const postureChip: StatusChipItem = {
     id: "posture",
@@ -472,7 +497,7 @@ export default function EngineeringHub() {
               )}
             </NoticeChip>
           }
-          chips={<StatusChipStrip items={[postureChip]} />}
+          chips={<StatusChipStrip items={[criticalChip, postureChip]} />}
           tabs={TABS}
           basePath={BASE_PATH}
           defaultTab="inbox"

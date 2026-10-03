@@ -6795,8 +6795,6 @@
     "irEditorDesc": "Author motion/IO device programs as first-class IR blocks, lint & transpile (URScript/ROS2); deploy stays a separate gated step",
     "pouStudio": "POU Studio",
     "pouStudioDesc": "Structured LAD/FBD/SFC POUs with PLCopen XML import/export, semantic lint, and transpile-to-ST preview (open runtime only)",
-    "programmingCopilot": "Programming Copilot",
-    "programmingCopilotDesc": "Scratchpad for quick codegen when no project is open — inside the editors (Engineering/IR/POU) the copilot is embedded as a dock. Grounded in vendor manuals, validated by the safety substrate; display-only.",
     "factoryLiveMap": "Factory 3D Live Map",
     "factoryLiveMapDesc": "3D factory floor, machines coloured by live status (digital shadow), click to drill down to a cell",
     "fieldDevices": "Field & Device Abstraction",
@@ -7165,7 +7163,6 @@
       "orchestrationStudio": "Design step-by-step automated production flows across machines (preview)",
       "irEditor": "Visual editor to author and convert device programs — for engineers (preview)",
       "pouStudio": "Structured IEC 61131 ladder/FBD/SFC editing with PLCopen XML exchange — for engineers (preview)",
-      "programmingCopilot": "Ask AI to write or explain device code — for engineers; you review and simulate before use (preview)",
       "fleetOrchestration": "Assign jobs to mobile robots/AGVs and manage their traffic and charging (preview)",
       "safetyWorkforce": "Advisory safety overview and shift/workforce board (preview)",
       "equipmentStandards": "Company-wide equipment types and standard alarm naming (preview)",
@@ -7210,8 +7207,6 @@
     "maintenanceHubDesc": "One place for maintenance: work orders · CMMS/reliability · copilot",
     "cmms": "Maintenance (CMMS)",
     "cmmsDesc": "Preventive maintenance schedule · spare parts & reliability (MTTR/MTBF)",
-    "engineeringStudio": "Engineering studio",
-    "engineeringStudioDesc": "Authoring · orchestration · safety · standardisation — one catalog",
     "engineeringChanges": "Engineering change (ECN)",
     "engineeringChangesDesc": "Engineering change request: request → impact analysis → approval (SoD) → effectivity; + componentCode backfill",
     "reportingStudio": "Reporting studio",
@@ -12328,11 +12323,6 @@
     }
   },
   "progCopilot": {
-    "title": "Programming Copilot",
-    "subtitle": "AI drafts, completes, translates, reviews and explains device code — grounded in vendor manuals and validated by the safety substrate. You review, simulate and sign off.",
-    "whenToUse": "Draft or understand device code fast. To build, simulate and deploy, take the code into the Engineering Workspace.",
-    "cardTitle": "Generate device code",
-    "cardSubtitle": "Pick a program kind, mode and (optionally) a vendor, describe what you need, then generate.",
     "embedTitle": "AI Programming Copilot",
     "beta": "Beta",
     "openDock": "Open Copilot",
@@ -16183,10 +16173,8 @@
     }
   },
   "engineeringHome": {
-    "needControl": "Requires control access",
     "viewOnly": "View only",
     "title": "Engineering Hub",
-    "subtitle": "Pick a task — author programs, orchestrate the fleet, enforce safety & standards, or run the twin.",
     "goldenThread": "Golden thread: author → simulate → deploy → monitor. Programs authored here flow into the pipeline, run in the twin, then surface on the monitoring pages.",
     "inboxTab": "Work inbox",
     "catalogTab": "Tool catalog",
@@ -16211,7 +16199,9 @@
       "unpin": "Unpin {{name}}",
       "copilotScratch": "Copilot (scratch, no project needed)",
       "commandConsole": "Command console (HITL)"
-    }
+    },
+    "criticalChip": "Urgent",
+    "criticalSource": "oversight.pendingSummary — running recipe unapproved, open interlock events, unaudited safety events, fleet deadlocks"
   },
   "oversight": {
     "title": "Pending review & alerts",
@@ -19643,10 +19633,6 @@
     "layout": "Floor layout",
     "layoutBlurb": "Factory floor layout"
   },
-  "engineeringStudio": {
-    "title": "Engineering Studio",
-    "categories": "Engineering categories"
-  },
   "maintenanceHub": {
     "title": "Maintenance",
     "categories": "Maintenance categories"
@@ -20011,31 +19997,6 @@
     "aiSettings": "AI settings",
     "aiSettingsBlurb": "Model server + gateway configuration",
     "robotModelHealth": "Robot model health"
-  },
-  "engHub": {
-    "authoring": "Authoring & IDE",
-    "engineering": "Device programming studio",
-    "engineeringBlurb": "Write & compile device programs",
-    "irEditor": "IR editor",
-    "pouStudioBlurb": "Author POU / IEC 61131",
-    "programmingCopilotBlurb": "AI assistance for PLC/robot programming",
-    "recipes": "Machine recipes",
-    "recipesBlurb": "Machine run recipes",
-    "engineeringChanges": "Engineering change (ECN)",
-    "orchestration": "Orchestration & Control",
-    "orchestrationStudioBlurb": "Author / simulate / deploy orchestration",
-    "fleetOrchestration": "Fleet orchestration",
-    "fleetOrchestrationBlurb": "Task and zone allocation for the fleet",
-    "robotControl": "Robot control",
-    "commandConsoleBlurb": "Single robot commands via HITL",
-    "safety": "Safety",
-    "interlockRules": "Interlock rules",
-    "interlockRulesBlurb": "Manage interlock rules",
-    "safetyWorkforce": "Safety & Workforce",
-    "safetyWorkforceBlurb": "Safety board + mixed workforce",
-    "standards": "Standardisation & Integration",
-    "equipmentStandards": "Equipment standards",
-    "equipmentIntegration": "Equipment integration"
   },
   "maintHub": {
     "work": "Work & Reliability",

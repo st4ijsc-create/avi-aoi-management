@@ -87,9 +87,14 @@ export interface PendingReviewStripProps {
   variant?: "cards" | "table";
   /** Chỉ hiện các loại việc này (phạm vi của Hub). "Tất cả đã xử lý" / "Không đọc được" tính TRÊN tập đang hiện. */
   categoryFilter?: (c: CategoryDef) => boolean;
+  /**
+   * Doc 81 Đợt 2 Task 15 fix 1 (R-2-y) — các loại này LUÔN hiện, ghim ĐẦU bảng (`tbody[data-pending-pinned]`), bất kể
+   * `categoryFilter` (vd loại KHẨN `critical:true` của Hub ở mọi phạm vi).
+   */
+  pinned?: (c: CategoryDef) => boolean;
 }
 
-export function PendingReviewStrip({ variant = "cards", categoryFilter }: PendingReviewStripProps = {}) {
+export function PendingReviewStrip({ variant = "cards", categoryFilter, pinned }: PendingReviewStripProps = {}) {
   const { t } = useTranslation();
   const query = trpc.oversight.pendingSummary.useQuery(undefined, {
     // Việc chờ duyệt thay đổi chậm — làm mới nhẹ, không spam.
@@ -99,7 +104,9 @@ export function PendingReviewStrip({ variant = "cards", categoryFilter }: Pendin
 
   const data = query.data;
   if (variant === "table") {
-    return <PendingReviewTable query={query} categories={categoryFilter ? CATEGORIES.filter(categoryFilter) : CATEGORIES} />;
+    const pin = pinned ? CATEGORIES.filter(pinned) : [];
+    const rest = (categoryFilter ? CATEGORIES.filter(categoryFilter) : CATEGORIES).filter((c) => !pin.includes(c));
+    return <PendingReviewTable query={query} pinned={pin} categories={rest} />;
   }
   // HUB-01 — nguồn nào ĐANG lỗi (bảng thiếu, quyền hạ tầng, DB rớt…), bất kể tổng.
   const degradedCategories = data != null ? CATEGORIES.filter((c) => data[c.key].degraded) : [];
@@ -229,13 +236,19 @@ type PendingSummary = inferRouterOutputs<AppRouter>["oversight"]["pendingSummary
  */
 function PendingReviewTable({
   query,
-  categories,
+  categories: rest,
+  pinned = [],
 }: {
   query: { data?: PendingSummary; isLoading: boolean; isError: boolean };
   categories: readonly CategoryDef[];
+  pinned?: readonly CategoryDef[];
 }) {
   const { t } = useTranslation();
   const data = query.data;
+  // Tập đang hiện = loại ghim (luôn) + loại theo phạm vi. HUB-01 tính trên CẢ tập này.
+  const categories = [...pinned, ...rest];
+  // Chưa có dữ liệu và không lỗi (kể cả trước lượt tải đầu) ⇒ khung chờ, không bao giờ là bảng rỗng/0.
+  const waiting = data == null && !query.isError;
   const label = (c: CategoryDef) => t(`oversight.category.${c.key}`, c.fallbackLabel);
   const degraded = data != null ? categories.filter((c) => data[c.key].degraded) : [];
   const shownTotal = data != null ? categories.reduce((n, c) => n + data[c.key].count, 0) : 0;
@@ -263,60 +276,66 @@ function PendingReviewTable({
           )}
         </caption>
       )}
-      <thead>
+      <thead className="sticky top-0 z-10 bg-card">
         <tr className="border-b text-left text-xs uppercase tracking-wide text-muted-foreground">
           <th scope="col" className="py-2 pr-3 font-medium">{t("oversight.table.kind", "Work item")}</th>
           <th scope="col" className="w-20 py-2 pr-3 text-right font-medium">{t("oversight.table.count", "Count")}</th>
           <th scope="col" className="py-2 font-medium">{t("oversight.table.samples", "Waiting")}</th>
         </tr>
       </thead>
-      <tbody>
-        {query.isLoading
-          ? categories.map((c) => (
-              <tr key={c.key} data-pending-skeleton="" className="border-b">
-                <td className="py-2 pr-3"><Skeleton className="h-5 w-40" /></td>
-                <td className="py-2 pr-3"><Skeleton className="ml-auto h-5 w-8" /></td>
-                <td className="py-2"><Skeleton className="h-5 w-48" /></td>
-              </tr>
-            ))
-          : data != null &&
-            categories.map((cat) => {
-              const bucket = data[cat.key];
-              const Icon = cat.icon;
-              const active = bucket.count > 0;
-              const tone = active ? (cat.critical ? "text-destructive" : "text-warning") : "text-muted-foreground";
-              return (
-                <tr key={cat.key} data-pending-row={cat.key} className="border-b hover:bg-muted/40">
-                  <td className="py-2 pr-3">
-                    <Link
-                      href={cat.href}
-                      className="inline-flex items-center gap-2 font-medium text-foreground hover:text-primary hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40"
-                    >
-                      <Icon className="h-4 w-4 shrink-0 text-primary" strokeWidth={2.1} aria-hidden="true" />
-                      <span>{label(cat)}</span>
-                    </Link>
-                  </td>
-                  <td className="py-2 pr-3 text-right">
-                    <span data-pending-count="" className={cn("text-base font-bold tabular-nums", bucket.degraded ? "text-warning" : tone)}>
-                      {bucket.degraded ? "—" : bucket.count}
-                    </span>
-                  </td>
-                  <td className="max-w-0 py-2 text-xs text-muted-foreground">
-                    {bucket.samples.length > 0 ? (
-                      <span className="block truncate" title={bucket.samples.map((x) => x.label).join(", ")}>
-                        {bucket.samples[0].label}
-                        {bucket.samples.length > 1 ? ` +${bucket.count - 1}` : ""}
-                      </span>
-                    ) : bucket.degraded ? (
-                      t("oversight.degraded", "unavailable")
-                    ) : null}
-                  </td>
-                </tr>
-              );
-            })}
-      </tbody>
+      {waiting ? (
+        <tbody>
+          {categories.map((c) => (
+            <tr key={c.key} data-pending-skeleton="" className="border-b">
+              <td className="py-2 pr-3"><Skeleton className="h-5 w-40" /></td>
+              <td className="py-2 pr-3"><Skeleton className="ml-auto h-5 w-8" /></td>
+              <td className="py-2"><Skeleton className="h-5 w-48" /></td>
+            </tr>
+          ))}
+        </tbody>
+      ) : data != null && (
+        <>
+          {pinned.length > 0 && <tbody data-pending-pinned="" className="border-b-2">{pinned.map((cat) => renderRow(cat, data))}</tbody>}
+          <tbody>{rest.map((cat) => renderRow(cat, data))}</tbody>
+        </>
+      )}
     </table>
   );
+
+  function renderRow(cat: CategoryDef, data: PendingSummary) {
+    const bucket = data[cat.key];
+    const Icon = cat.icon;
+    const active = bucket.count > 0;
+    const tone = active ? (cat.critical ? "text-destructive" : "text-warning") : "text-muted-foreground";
+    return (
+      <tr key={cat.key} data-pending-row={cat.key} className="border-b hover:bg-muted/40">
+        <td className="py-2 pr-3">
+          <Link
+            href={cat.href}
+            className="inline-flex items-center gap-2 font-medium text-foreground hover:text-primary hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40"
+          >
+            <Icon className="h-4 w-4 shrink-0 text-primary" strokeWidth={2.1} aria-hidden="true" />
+            <span>{label(cat)}</span>
+          </Link>
+        </td>
+        <td className="py-2 pr-3 text-right">
+          <span data-pending-count="" className={cn("text-base font-bold tabular-nums", bucket.degraded ? "text-warning" : tone)}>
+            {bucket.degraded ? "—" : bucket.count}
+          </span>
+        </td>
+        <td className="max-w-0 py-2 text-xs text-muted-foreground">
+          {bucket.samples.length > 0 ? (
+            <span className="block truncate" title={bucket.samples.map((x) => x.label).join(", ")}>
+              {bucket.samples[0].label}
+              {bucket.samples.length > 1 ? ` +${bucket.count - 1}` : ""}
+            </span>
+          ) : bucket.degraded ? (
+            t("oversight.degraded", "unavailable")
+          ) : null}
+        </td>
+      </tr>
+    );
+  }
 }
 
 export default PendingReviewStrip;
