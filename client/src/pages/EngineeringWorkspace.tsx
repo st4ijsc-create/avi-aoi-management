@@ -14,7 +14,7 @@
  * D1 ships a dependency-free <CodeEditor>; a richer editor (Monaco) can drop in later
  * behind that component boundary. Real language adapters (Zmotion, ...) land in D2+.
  */
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef } from "react";
 import type { TFunction } from "i18next";
 import { useTranslation } from "react-i18next";
 import { trpc } from "@/lib/trpc";
@@ -82,46 +82,18 @@ import {
   FeatureStatusGate,
   featureStatusLabel,
 } from "@/components/common/FeatureStatusGate";
-
-/** All target classes (mirrors server programmingKindEnum / PROGRAMMING_KINDS). */
-const KINDS = [
-  "stub",
-  "zmotion-basic",
-  "gcode",
-  "mitsubishi-engineering",
-  "robot-tm",
-  "iec61131-st",
-  "iec61131-ld",
-] as const;
-type Kind = (typeof KINDS)[number];
-
-/** Default concrete language token per kind (the adapter accepts these). */
-const KIND_LANGUAGE: Record<Kind, string> = {
-  stub: "text",
-  "zmotion-basic": "basic",
-  gcode: "gcode",
-  "mitsubishi-engineering": "st",
-  "robot-tm": "tmscript",
-  "iec61131-st": "st",
-  "iec61131-ld": "ld",
-};
-
-/**
- * U9 (doc 26) — tập token ngôn ngữ HỢP LỆ mỗi kind (mirror capabilities.languages
- * của adapter server). Đổi ô gõ tay → Select để khỏi gõ sai token adapter hiểu nhầm.
- * Phần tử đầu là mặc định gợi ý cho kind (khớp KIND_LANGUAGE).
- */
-const KIND_LANGUAGES: Record<Kind, readonly string[]> = {
-  stub: ["text", "basic", "st", "gcode"],
-  "zmotion-basic": ["basic"],
-  gcode: ["gcode"],
-  "mitsubishi-engineering": ["st", "device"],
-  "robot-tm": ["tmscript"],
-  "iec61131-st": ["st"],
-  "iec61131-ld": ["ld"],
-};
-
-type Diagnostic = { severity: string; message: string; line?: number; col?: number; symbol?: string; code?: string; params?: Record<string, string | number> };
+// doc 81 Đợt 2 Task 12 — state UI của trang nằm trong WorkspaceContext + reducer thuần (chuỗi reset
+// đổi project/phiên bản/build ở MỘT chỗ, có test); trang chỉ đọc state và gửi hành động.
+import {
+  fieldSetters,
+  KIND_LANGUAGE,
+  KIND_LANGUAGES,
+  KINDS,
+  useWorkspace,
+  WorkspaceProvider,
+  type Diagnostic,
+  type Kind,
+} from "@/components/engineering/workspace";
 
 /**
  * U14 (doc 26 §3.2) — STEPPER luồng vàng: Soạn → Kiểm tra → Build → Mô phỏng →
@@ -184,8 +156,36 @@ function rid(prefix: string): string {
   return `${prefix}-${Date.now()}-${Math.floor(performance.now())}`;
 }
 
-export default function EngineeringWorkspace() {
+function EngineeringWorkspaceView() {
   const { t } = useTranslation();
+  const { state, dispatch } = useWorkspace();
+  const {
+    projectId, artifactId, buildId, diagnostics, simResult, watching,
+    code, language, editorMode, diffBaseId, diffCompareId,
+    pendingNav, deleteSymTarget, rollbackTarget, demoCreating,
+  } = state;
+  const { search: projSearch, kindFilter: projKindFilter } = state.explorer;
+  const {
+    open: symOpen, id: symId, name: symName, addr: symAddr, type: symType,
+    comment: symComment, watchable: symWatchable,
+  } = state.sym;
+  const { open: npOpen, code: npCode, name: npName, kind: npKind, deviceId: npDeviceId } = state.newProject;
+  const { open: attachOpen, deviceId: attachDeviceId } = state.attach;
+  const { stage: deployStage, signOff, approverId, reason: deployReason } = state.deploy;
+  const {
+    deviceIds: fleetDeviceIds, stage: fleetStage, signOff: fleetSignOff, canary: fleetCanary,
+    promoteVerified: fleetPromoteVerified, autoRollback: fleetAutoRollback,
+    approverId: fleetApproverId, reason: fleetReason,
+  } = state.fleet;
+  // Setter ổn định cho trường form thuần (không thuộc chuỗi reset) — tên giữ như useState cũ.
+  const {
+    setProjSearch, setProjKindFilter, setCode, setLanguage, setEditorMode, setDiffBaseId, setDiffCompareId,
+    setNpOpen, setNpCode, setNpName, setNpKind, setNpDeviceId, setAttachOpen, setAttachDeviceId,
+    setSymOpen, setSymName, setSymAddr, setSymType, setSymComment, setSymWatchable,
+    setDeployStage, setSignOff, setApproverId, setDeployReason,
+    setFleetStage, setFleetSignOff, setFleetCanary, setFleetPromoteVerified, setFleetAutoRollback,
+    setFleetApproverId, setFleetReason,
+  } = useMemo(() => fieldSetters(dispatch), [dispatch]);
   // doc 81 Đợt 2 Task 2 — màn workbench: rail trái mặc định thu gọn (nhớ theo người dùng).
   useShellPageVariant("workbench");
   const { hasPermission } = usePermissions();
@@ -227,15 +227,12 @@ export default function EngineeringWorkspace() {
     const m = machinesQ.data?.find((x) => x.id === id);
     return m ? `${m.name} · #${m.id}` : id != null ? `#${id}` : "";
   };
-  const [projectId, setProjectId] = useState<number | null>(null);
   const project = useMemo(
     () => projectsQ.data?.find((p) => p.id === projectId) ?? null,
     [projectsQ.data, projectId],
   );
 
   // U13 (doc 26 §2.2) — tìm/lọc client cho Project Explorer (tên/mã + loại thiết bị).
-  const [projSearch, setProjSearch] = useState("");
-  const [projKindFilter, setProjKindFilter] = useState<string>("all");
   const filteredProjects = useMemo(() => {
     const q = projSearch.trim().toLowerCase();
     return (projectsQ.data ?? []).filter((p) => {
@@ -260,37 +257,30 @@ export default function EngineeringWorkspace() {
     if (wanted == null) { deepLinkApplied.current = true; return; }
     if (!projectsQ.data) return; // đợi list
     deepLinkApplied.current = true;
-    if (projectsQ.data.some((p) => p.id === wanted)) setProjectId(wanted);
+    if (projectsQ.data.some((p) => p.id === wanted)) dispatch({ type: "project/assign", projectId: wanted });
   }, [deepLink.projectId, lastSelected.projectId, projectsQ.data]);
 
   const artifactsQ = trpc.programming.listArtifacts.useQuery(
     { projectId: projectId! },
     { enabled: canView && projectId != null },
   );
-  const [artifactId, setArtifactId] = useState<number | null>(null);
   const artifact = useMemo(
     () => artifactsQ.data?.find((a) => a.id === artifactId) ?? null,
     [artifactsQ.data, artifactId],
   );
 
   // ── W3-11: version diff (chọn 2 phiên bản) + rollback deployment ──
-  const [diffBaseId, setDiffBaseId] = useState<number | null>(null);
-  const [diffCompareId, setDiffCompareId] = useState<number | null>(null);
-  // doc 80 WS-04 — `attemptKey` sinh MỚI mỗi lần MỞ hộp xác nhận (ổn định trong lượt đó).
-  const [rollbackTarget, setRollbackTarget] = useState<{ id: number; stage: string; attemptKey: string } | null>(null);
+  // doc 80 WS-04 — rollbackTarget.attemptKey sinh MỚI mỗi lần MỞ hộp xác nhận (ổn định trong lượt đó).
   const diffBase = useMemo(() => artifactsQ.data?.find((a) => a.id === diffBaseId) ?? null, [artifactsQ.data, diffBaseId]);
   const diffCompare = useMemo(() => artifactsQ.data?.find((a) => a.id === diffCompareId) ?? null, [artifactsQ.data, diffCompareId]);
 
   // Editor buffer (loaded from the selected artifact; dirty until saved as a new version).
-  const [code, setCode] = useState("");
-  const [language, setLanguage] = useState("text");
   useEffect(() => {
     if (artifact) {
-      setCode(artifact.content ?? "");
-      setLanguage(artifact.language);
+      dispatch({ type: "buffer/loadArtifact", code: artifact.content ?? "", language: artifact.language });
     } else if (project) {
       // U9 — chưa chọn phiên bản: mặc định ngôn ngữ đúng theo loại dự án.
-      setLanguage(KIND_LANGUAGE[project.kind as Kind] ?? "text");
+      dispatch({ type: "buffer/defaultLanguage", language: KIND_LANGUAGE[project.kind as Kind] ?? "text" });
     }
   }, [artifact?.id, project?.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -306,13 +296,11 @@ export default function EngineeringWorkspace() {
 
   // Chọn phiên bản/dự án khác lúc dirty sẽ ghi đè buffer → xác nhận qua AlertDialog (DS).
   // Hành động điều hướng bị HOÃN vào pendingNav; chỉ chạy khi người dùng xác nhận bỏ thay đổi.
-  const [pendingNav, setPendingNav] = useState<(() => void) | null>(null);
   const guardDirty = (action: () => void) => {
-    if (isDirty) setPendingNav(() => action);
+    if (isDirty) dispatch({ type: "nav/guard", run: action });
     else action();
   };
-  // Xác nhận xóa một biến khỏi bảng tag (thay window.confirm bằng AlertDialog).
-  const [deleteSymTarget, setDeleteSymTarget] = useState<{ id: number } | null>(null);
+  // Xác nhận xóa một biến khỏi bảng tag (thay window.confirm bằng AlertDialog): state.deleteSymTarget.
 
   // Chặn Validate/Build khi còn chỉnh sửa chưa lưu (kết quả sẽ thuộc phiên bản cũ).
   const requireSaved = (): boolean => {
@@ -323,18 +311,14 @@ export default function EngineeringWorkspace() {
     return true;
   };
 
-  const [diagnostics, setDiagnostics] = useState<Diagnostic[] | null>(null);
-
   const buildsQ = trpc.programming.listBuilds.useQuery(
     { artifactId: artifactId! },
     { enabled: canView && artifactId != null },
   );
-  const [buildId, setBuildId] = useState<number | null>(null);
-  const [simResult, setSimResult] = useState<{ ok: boolean; warnings: string[]; timeline: any[] } | null>(null);
   // doc 80 WS-05 — đổi phiên bản đang chọn HOẶC lưu phiên bản mới (createArtifact đặt
   // artifactId mới) ⇒ bỏ build/mô phỏng/chẩn đoán của phiên bản cũ, để Deploy/Fleet không đẩy
-  // build của một phiên bản KHÁC phiên bản đang hiển thị.
-  useEffect(() => { setBuildId(null); setSimResult(null); setDiagnostics(null); }, [artifactId]);
+  // build của một phiên bản KHÁC phiên bản đang hiển thị. doc 81 Đợt 2 Task 12: hệ quả này nay là
+  // hành động "artifact/select" của workspaceReducer (trước là useEffect theo [artifactId]).
 
   const deploymentsQ = trpc.programming.listDeployments.useQuery(
     { projectId: projectId! },
@@ -355,7 +339,7 @@ export default function EngineeringWorkspace() {
     onSuccess: (row) => {
       toast.success(t("engineering.projectCreated", "Đã tạo project"));
       utils.programming.listProjects.invalidate();
-      setProjectId(row.id);
+      dispatch({ type: "project/assign", projectId: row.id });
     },
     onError: (e) => toastTrpcError(e),
   });
@@ -364,7 +348,7 @@ export default function EngineeringWorkspace() {
     onSuccess: () => {
       toast.success(t("engineering.deviceAttached", "Đã cập nhật thiết bị nguồn"));
       utils.programming.listProjects.invalidate();
-      setAttachOpen(false);
+      dispatch({ type: "attach/set", patch: { open: false } });
     },
     onError: (e) => toastTrpcError(e),
   });
@@ -372,13 +356,13 @@ export default function EngineeringWorkspace() {
     onSuccess: (row) => {
       toast.success(t("engineering.versionSaved", "Đã lưu phiên bản v") + row.version);
       utils.programming.listArtifacts.invalidate();
-      setArtifactId(row.id);
+      dispatch({ type: "artifact/select", artifactId: row.id });
     },
     onError: (e) => toastTrpcError(e),
   });
   const validateM = trpc.programming.validateArtifact.useMutation({
     onSuccess: (r) => {
-      setDiagnostics(r.diagnostics as Diagnostic[]);
+      dispatch({ type: "diagnostics/set", diagnostics: r.diagnostics as Diagnostic[] });
       utils.programming.listArtifacts.invalidate();
       r.ok ? toast.success(t("engineering.validOk", "Hợp lệ")) : toast.warning(t("engineering.validErr", "Có lỗi"));
     },
@@ -404,14 +388,14 @@ export default function EngineeringWorkspace() {
   const buildM = trpc.programming.buildArtifact.useMutation({
     onSuccess: (b) => {
       utils.programming.listBuilds.invalidate();
-      setBuildId(b.id);
+      dispatch({ type: "build/created", buildId: b.id });
       b.ok ? toast.success(t("engineering.buildOk", "Build OK")) : toast.error(t("engineering.buildFail", "Build lỗi"));
     },
     onError: (e) => toastTrpcError(e),
   });
   const simulateM = trpc.programming.simulateBuild.useMutation({
     onSuccess: (r) => {
-      setSimResult({ ok: r.ok, warnings: r.warnings as string[], timeline: r.timeline as any[] });
+      dispatch({ type: "sim/set", simResult: { ok: r.ok, warnings: r.warnings as string[], timeline: r.timeline as any[] } });
       utils.programming.deployPreview.invalidate();
       toast.success(t("engineering.simDone", "Đã mô phỏng"));
     },
@@ -456,11 +440,11 @@ export default function EngineeringWorkspace() {
   const rollbackM = trpc.programming.rollbackDeployment.useMutation({
     onSuccess: (d) => {
       utils.programming.listDeployments.invalidate();
-      setRollbackTarget(null);
+      dispatch({ type: "rollback/close" });
       // doc 80 WS-03/04 — chỉ báo "đã khôi phục" khi server thật sự đánh đích rolled_back.
       showDeployOutcome(d, "rollback");
     },
-    onError: (e) => { setRollbackTarget(null); toastTrpcError(e); },
+    onError: (e) => { dispatch({ type: "rollback/close" }); toastTrpcError(e); },
   });
   // doc 40 W5 §11 — triển khai đội máy (canary): tuần tự qua đúng deployBuild từng máy.
   const deployToFleetM = trpc.programming.deployToFleet.useMutation({
@@ -487,7 +471,7 @@ export default function EngineeringWorkspace() {
     onSuccess: () => {
       toast.success(t("engineering.symbolSaved", "Đã lưu biến"));
       utils.programming.listSymbols.invalidate();
-      setSymOpen(false);
+      dispatch({ type: "sym/set", patch: { open: false } });
     },
     onError: (e) => toastTrpcError(e),
   });
@@ -500,16 +484,15 @@ export default function EngineeringWorkspace() {
   });
 
   // ── Online Monitor (watch) — start/stop server watch session + subscribe live room ──
-  const [watching, setWatching] = useState(false);
-  // Đổi project → dừng watch (session gắn theo project) để không rò session cũ.
-  useEffect(() => { setWatching(false); }, [projectId]);
+  // Đổi project → dừng watch (session gắn theo project) để không rò session cũ: hệ quả của
+  // "project/select" / "project/assign" trong workspaceReducer (trước là useEffect theo [projectId]).
   const startWatchM = trpc.programming.startWatch.useMutation({
     onSuccess: (r) => {
       if (r.started) {
-        setWatching(true);
+        dispatch({ type: "watch/set", watching: true });
         toast.success(t("engineering.watchStarted", "Đã mở phiên theo dõi"));
       } else {
-        setWatching(false);
+        dispatch({ type: "watch/set", watching: false });
         const msg =
           r.reason === "no_device"
             ? t("engineering.watchNoDevice", "Dự án chưa gắn thiết bị — không có nguồn để đọc")
@@ -522,7 +505,7 @@ export default function EngineeringWorkspace() {
     onError: (e) => toastTrpcError(e),
   });
   const stopWatchM = trpc.programming.stopWatch.useMutation({
-    onSuccess: () => setWatching(false),
+    onSuccess: () => dispatch({ type: "watch/set", watching: false }),
     onError: (e) => toastTrpcError(e),
   });
   // Subscribe socket room `engineering:{deviceId}` khi đang watch (chỉ đọc giá trị live).
@@ -531,52 +514,20 @@ export default function EngineeringWorkspace() {
     watching,
   );
 
-  // ── Symbol editor dialog state (thêm/sửa một biến) ──
-  const [symOpen, setSymOpen] = useState(false);
-  const [symId, setSymId] = useState<number | null>(null);
-  const [symName, setSymName] = useState("");
-  const [symAddr, setSymAddr] = useState("");
-  const [symType, setSymType] = useState("");
-  const [symComment, setSymComment] = useState("");
-  const [symWatchable, setSymWatchable] = useState(true);
+  // ── Symbol editor dialog (thêm/sửa một biến) — state.sym ──
   const openSymDialog = (s?: {
     id: number; name: string; address: string | null; dataType: string | null;
     comment: string | null; watchable: boolean;
-  }) => {
-    setSymId(s?.id ?? null);
-    setSymName(s?.name ?? "");
-    setSymAddr(s?.address ?? "");
-    setSymType(s?.dataType ?? "");
-    setSymComment(s?.comment ?? "");
-    setSymWatchable(s?.watchable ?? true);
-    setSymOpen(true);
-  };
+  }) => dispatch({ type: "sym/open", symbol: s });
 
-  // U7 (doc 26 §2.1) — cờ đang tạo dự án DEMO một chạm (onboarding KTV mới).
-  const [demoCreating, setDemoCreating] = useState(false);
+  // U7 (doc 26 §2.1) — cờ đang tạo dự án DEMO một chạm (onboarding KTV mới): state.demoCreating.
+  // Create-project dialog: state.newProject (U2 — deviceId "" = chưa gắn thiết bị nguồn).
 
-  // ── Create-project dialog state ──
-  const [npOpen, setNpOpen] = useState(false);
-  const [npCode, setNpCode] = useState("");
-  const [npName, setNpName] = useState("");
-  const [npKind, setNpKind] = useState<Kind>("stub");
-  // U2 — thiết bị nguồn (tùy chọn) khi tạo project; "" = chưa gắn.
-  const [npDeviceId, setNpDeviceId] = useState<string>("");
+  // ── U2: Attach-device dialog (gắn/đổi thiết bị nguồn cho project đang mở) — state.attach ──
+  const openAttachDialog = () =>
+    dispatch({ type: "attach/open", deviceId: project?.deviceId != null ? String(project.deviceId) : "" });
 
-  // ── U2: Attach-device dialog (gắn/đổi thiết bị nguồn cho project đang mở) ──
-  const [attachOpen, setAttachOpen] = useState(false);
-  const [attachDeviceId, setAttachDeviceId] = useState<string>("");
-  const openAttachDialog = () => {
-    setAttachDeviceId(project?.deviceId != null ? String(project.deviceId) : "");
-    setAttachOpen(true);
-  };
-
-  // ── Deploy form state ──
-  const [deployStage, setDeployStage] = useState<"staging" | "production">("staging");
-  const [signOff, setSignOff] = useState(false);
-  // W2-9 — second-approver (SoD) cho deploy production: người ký duyệt + lý do bắt buộc.
-  const [approverId, setApproverId] = useState<string>("");
-  const [deployReason, setDeployReason] = useState("");
+  // ── Deploy form — state.deploy (W2-9: second-approver SoD cho production + lý do bắt buộc) ──
   const approversQ = trpc.programming.listApprovers.useQuery(undefined, { enabled: canView });
   // Loại chính người yêu cầu ra khỏi danh sách (không được tự ký).
   const approverOptions = useMemo(
@@ -602,26 +553,16 @@ export default function EngineeringWorkspace() {
   );
   const previewBlocked = deployPreviewQ.data?.verdict === "blocked";
 
-  // ── doc 40 W5 §11 — Triển khai đội máy (fleet rollout canary) state ──
-  const [fleetDeviceIds, setFleetDeviceIds] = useState<number[]>([]);
-  const [fleetStage, setFleetStage] = useState<"staging" | "production">("staging");
-  const [fleetSignOff, setFleetSignOff] = useState(false);
-  const [fleetCanary, setFleetCanary] = useState(1);
-  const [fleetPromoteVerified, setFleetPromoteVerified] = useState(false);
-  const [fleetAutoRollback, setFleetAutoRollback] = useState(true);
-  const [fleetApproverId, setFleetApproverId] = useState<string>("");
-  const [fleetReason, setFleetReason] = useState("");
+  // ── doc 40 W5 §11 — Triển khai đội máy (fleet rollout canary) — state.fleet ──
   const fleetIsProd = fleetStage === "production";
-  const toggleFleetDevice = (id: number) =>
-    setFleetDeviceIds((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]));
+  const toggleFleetDevice = (id: number) => dispatch({ type: "fleet/toggleDevice", deviceId: id });
   const fleetReady =
     fleetDeviceIds.length > 0 &&
     (!fleetIsProd || (fleetApproverId !== "" && fleetReason.trim().length > 0));
-  // Đổi project → xóa lựa chọn đội máy (tránh giữ id máy của project cũ).
-  useEffect(() => { setFleetDeviceIds([]); }, [projectId]);
+  // Đổi project → xóa lựa chọn đội máy (tránh giữ id máy của project cũ): hệ quả của
+  // "project/select" / "project/assign" trong workspaceReducer (trước là useEffect theo [projectId]).
 
-  // ── Editor mode: a visual editor exists for ladder (rung grid) + robot (teach/jog) ──
-  const [editorMode, setEditorMode] = useState<"code" | "visual">("code");
+  // ── Editor mode: a visual editor exists for ladder (rung grid) + robot (teach/jog) — state.editorMode ──
   const visualKind =
     project?.kind === "iec61131-ld" ? "ladder" : project?.kind === "robot-tm" ? "teach" : null;
 
@@ -648,7 +589,7 @@ export default function EngineeringWorkspace() {
         source: "validate",
       })),
       onApply: (gen: string) => {
-        setCode((prev) => (prev.trim() ? `${prev}\n\n${gen}` : gen));
+        dispatch({ type: "code/append", text: gen });
         toast.success(t("progCopilot.inserted", "Inserted generated code into the editor"));
       },
       // G2-D — byte-exact buffer REPLACE, used by the per-hunk apply surface. Deliberately
@@ -694,7 +635,7 @@ export default function EngineeringWorkspace() {
   // thiết bị); createProject/createArtifact.onSuccess tự set projectId + artifactId.
   const createDemo = async () => {
     if (!canCreate || demoCreating) return;
-    setDemoCreating(true);
+    dispatch({ type: "demo/creating", creating: true });
     try {
       const proj = await createProject.mutateAsync({
         code: `DEMO-${Date.now()}`,
@@ -713,7 +654,7 @@ export default function EngineeringWorkspace() {
     } catch {
       // Lỗi đã được onError của mutation toast — nuốt để không vỡ UI.
     } finally {
-      setDemoCreating(false);
+      dispatch({ type: "demo/creating", creating: false });
     }
   };
 
@@ -859,8 +800,7 @@ export default function EngineeringWorkspace() {
                           kind: npKind,
                           deviceId: npDeviceId ? Number(npDeviceId) : undefined,
                         });
-                        setNpOpen(false);
-                        setNpCode(""); setNpName(""); setNpDeviceId("");
+                        dispatch({ type: "newProject/submitted" });
                       }}
                     >
                       {t("common.create", "Tạo")}
@@ -919,7 +859,8 @@ export default function EngineeringWorkspace() {
                   onClick={() => {
                     if (p.id === projectId) return;
                     guardDirty(() => {
-                      setProjectId(p.id); setArtifactId(null); setBuildId(null); setSimResult(null); setDiagnostics(null);
+                      // Chuỗi reset (artifact/build/sim/diagnostics + watch + máy đội): workspaceReducer.
+                      dispatch({ type: "project/select", projectId: p.id });
                       setLastProjectId(p.id); // U1 — nhớ project để mang theo khi chuyển trang
                     });
                   }}
@@ -1013,7 +954,7 @@ export default function EngineeringWorkspace() {
                       {(artifactsQ.data ?? []).map((a) => (
                         <button
                           key={a.id}
-                          onClick={() => { if (a.id !== artifactId) guardDirty(() => setArtifactId(a.id)); }}
+                          onClick={() => { if (a.id !== artifactId) guardDirty(() => dispatch({ type: "artifact/select", artifactId: a.id })); }}
                           className={`rounded border px-2 py-1 text-xs hover:bg-muted ${artifactId === a.id ? "border-primary bg-muted" : ""}`}
                         >
                           v{a.version} · {a.branch}
@@ -1223,7 +1164,7 @@ export default function EngineeringWorkspace() {
                       {(buildsQ.data ?? []).map((b) => (
                         <button
                           key={b.id}
-                          onClick={() => { setBuildId(b.id); setSimResult(null); }}
+                          onClick={() => dispatch({ type: "build/select", buildId: b.id })}
                           className={`rounded border px-2 py-1 text-xs hover:bg-muted ${buildId === b.id ? "border-primary bg-muted" : ""}`}
                         >
                           #{b.id} <Badge variant={b.ok ? "default" : "destructive"} className="ml-1 text-[9px]">{b.status}</Badge>
@@ -1294,7 +1235,7 @@ export default function EngineeringWorkspace() {
                     <div className="flex flex-wrap items-end gap-2">
                       <div>
                         <Label className="text-xs">{t("engineering.stage", "Giai đoạn")}</Label>
-                        <Select value={deployStage} onValueChange={(v) => setDeployStage(v as any)}>
+                        <Select value={deployStage} onValueChange={(v) => setDeployStage(v as "staging" | "production")}>
                           <SelectTrigger className="h-8 w-36"><SelectValue /></SelectTrigger>
                           <SelectContent>
                             <SelectItem value="staging">staging</SelectItem>
@@ -1440,7 +1381,7 @@ export default function EngineeringWorkspace() {
                                 <Button
                                   size="sm" variant="outline"
                                   disabled={rollbackM.isPending}
-                                  onClick={() => setRollbackTarget({ id: d.id, stage: d.stage, attemptKey: newDeployAttemptKey("rollback-dep", d.id) })}
+                                  onClick={() => dispatch({ type: "rollback/open", target: { id: d.id, stage: d.stage, attemptKey: newDeployAttemptKey("rollback-dep", d.id) } })}
                                 >
                                   <RotateCcw className="mr-1 h-3.5 w-3.5" /> {t("engineering.rollback", "Khôi phục")}
                                 </Button>
@@ -1845,7 +1786,7 @@ export default function EngineeringWorkspace() {
                                     disabled={!canDelete || deleteSymbol.isPending}
                                     title={!canDelete ? t("common.gate.needPerm", "Requires {{perm}} permission", { perm: "machine_control" }) : undefined}
                                     aria-label={t("common.delete", "Xóa")}
-                                    onClick={() => setDeleteSymTarget({ id: s.id })}
+                                    onClick={() => dispatch({ type: "deleteSym/open", id: s.id })}
                                   >
                                     <Trash2 className="h-3.5 w-3.5" />
                                   </Button>
@@ -1982,7 +1923,7 @@ export default function EngineeringWorkspace() {
       </PageContainer>
 
       {/* U11 (doc 26 §3.1) — bỏ thay đổi chưa lưu khi chuyển dự án/phiên bản (thay window.confirm) */}
-      <AlertDialog open={pendingNav != null} onOpenChange={(o) => { if (!o) setPendingNav(null); }}>
+      <AlertDialog open={pendingNav != null} onOpenChange={(o) => { if (!o) dispatch({ type: "nav/clear" }); }}>
         <AlertDialogContent>
           <AlertDialogHeader>
             <AlertDialogTitle>{t("engineering.dirtyTitle", "Bỏ thay đổi chưa lưu?")}</AlertDialogTitle>
@@ -1995,7 +1936,7 @@ export default function EngineeringWorkspace() {
             <AlertDialogAction
               onClick={() => {
                 const run = pendingNav;
-                setPendingNav(null);
+                dispatch({ type: "nav/clear" });
                 run?.();
               }}
             >
@@ -2006,7 +1947,7 @@ export default function EngineeringWorkspace() {
       </AlertDialog>
 
       {/* U11 (doc 26 §3.1) — xác nhận xóa một biến khỏi bảng tag (thay window.confirm) */}
-      <AlertDialog open={deleteSymTarget != null} onOpenChange={(o) => { if (!o) setDeleteSymTarget(null); }}>
+      <AlertDialog open={deleteSymTarget != null} onOpenChange={(o) => { if (!o) dispatch({ type: "deleteSym/close" }); }}>
         <AlertDialogContent>
           <AlertDialogHeader>
             <AlertDialogTitle>{t("engineering.deleteSymbolTitle", "Xóa biến khỏi bảng tag?")}</AlertDialogTitle>
@@ -2019,7 +1960,7 @@ export default function EngineeringWorkspace() {
             <AlertDialogAction
               onClick={() => {
                 if (deleteSymTarget) deleteSymbol.mutate({ id: deleteSymTarget.id });
-                setDeleteSymTarget(null);
+                dispatch({ type: "deleteSym/close" });
               }}
             >
               {t("common.delete", "Xóa")}
@@ -2029,7 +1970,7 @@ export default function EngineeringWorkspace() {
       </AlertDialog>
 
       {/* W3-11 — xác nhận khôi phục (rollback) một deployment về phiên bản trước */}
-      <AlertDialog open={rollbackTarget != null} onOpenChange={(o) => { if (!o) setRollbackTarget(null); }}>
+      <AlertDialog open={rollbackTarget != null} onOpenChange={(o) => { if (!o) dispatch({ type: "rollback/close" }); }}>
         <AlertDialogContent>
           <AlertDialogHeader>
             <AlertDialogTitle>{t("engineering.rollbackTitle", "Khôi phục phiên bản trước?")}</AlertDialogTitle>
@@ -2061,5 +2002,17 @@ export default function EngineeringWorkspace() {
       {/* doc 54 P3.2 — step-up 2FA prompt for deploy/rollback/fleet actuation */}
       {stepUp.dialog}
     </DashboardLayout>
+  );
+}
+
+/**
+ * doc 81 Đợt 2 Task 12 — trang = WorkspaceProvider (state + reducer) bọc view. Provider không thêm
+ * phần tử DOM nào: DOM y hệt trước khi nâng state (ảnh chụp DOM của test đặc tả khớp từng byte).
+ */
+export default function EngineeringWorkspace() {
+  return (
+    <WorkspaceProvider>
+      <EngineeringWorkspaceView />
+    </WorkspaceProvider>
   );
 }
