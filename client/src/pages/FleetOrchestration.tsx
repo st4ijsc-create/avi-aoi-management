@@ -327,9 +327,12 @@ export default function FleetOrchestration() {
     [zones],
   );
   const effectiveFactoryId = mapFactoryId ?? factoryIds[0] ?? 1;
+  // final wave T10 — chỉ đọc lưới khi BIẾT nhà máy (người dùng chọn, hoặc có vùng đọc được): không còn gọi factoryId=1
+  // dự phòng mỗi lần mở trang (twin.occupancyGrid chưa có kiểm phạm vi nhà máy phía server — còn mở, ghi ở báo cáo).
+  const gridFactoryKnown = mapFactoryId != null || factoryIds.length > 0;
   const occupancyGridQ = trpc.twin.occupancyGrid.useQuery(
     { factoryId: effectiveFactoryId },
-    { enabled: canView, retry: false },
+    { enabled: canView && gridFactoryKnown, retry: false },
   );
   const robotPositionsQ = trpc.fleet.robotPositions.useQuery(undefined, {
     enabled: canView,
@@ -606,6 +609,7 @@ export default function FleetOrchestration() {
 
   // ── 9 KPI cũ → MỘT dải chip (mỗi chip ghi NGUỒN; lỗi/đang tải không bao giờ in 0) ─────────────────────────
   // R-2-p: Bế tắc (an toàn giao thông robot), Thất bại (cảnh báo), Vùng đầy tải (lưu lượng) — GHIM, không vào "+N".
+  const failedFilteredOut = statusFilter !== "" && statusFilter !== "failed";
   const chipItems: StatusChipItem[] = [
     {
       id: "fleet-deadlocks",
@@ -621,9 +625,10 @@ export default function FleetOrchestration() {
       id: "fleet-failed",
       pinned: true,
       label: t("fleet.kpi.failed", "Failed"),
-      value: kpis.failed,
+      // final wave T10 — danh sách đang lọc trạng thái KHÁC 'failed' ⇒ không đếm được ⇒ "—" (không đọc thành 0 khoẻ mạnh).
+      value: failedFilteredOut ? "—" : kpis.failed,
       state: tasksState,
-      tone: kpis.failed > 0 ? "error" : "default",
+      tone: !failedFilteredOut && kpis.failed > 0 ? "error" : "default",
       source: t("fleet.chip.src.failed", "fleet.listTasks — tasks with status 'failed' in the loaded list (latest 200, status filter applies)"),
     },
     {
@@ -1463,7 +1468,8 @@ function TasksPanel(p: SidePanelProps) {
                 </TableCell>
                 <TableCell className="align-top text-right">
                   {p.canControl ? (
-                    <div className="flex justify-end gap-0.5">
+                    // final wave T10 — Phân bổ là một cú bấm không xác nhận: không đặt sát Gán lại (gap-1.5 như hàng nút cũ trở lên).
+                    <div className="flex justify-end gap-1.5">
                       <Button
                         size="icon" variant="ghost" className="h-7 w-7"
                         disabled={terminal || tk.status === "running" || p.allocatePending}

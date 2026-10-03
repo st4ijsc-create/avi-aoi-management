@@ -502,6 +502,33 @@ describe("Fleet — `?tab=` panel phụ và bản đồ (Review Focus 4)", () =>
   });
 });
 
+describe("Fleet — final wave T10", () => {
+  it("không biết nhà máy nào (chưa có vùng đọc được) ⇒ KHÔNG gọi occupancyGrid với factoryId=1 dự phòng", async () => {
+    srv.db.zones = [];
+    srv.snap.zones = [];
+    render(<FleetOrchestration />);
+    await new Promise((r) => setTimeout(r, 20));
+    expect(srv.queryInputs.filter((x) => x.startsWith("twin.occupancyGrid:"))).toEqual([]);
+  });
+
+  it("chip GHIM 'Thất bại' khi đang lọc trạng thái KHÁC 'failed' ⇒ '—' (không đọc thành 0 khoẻ mạnh); lọc 'failed' ⇒ số thật", async () => {
+    const user = userEvent.setup();
+    render(<FleetOrchestration />);
+    expect(chip("fleet-failed")!.textContent).toMatch(/Thất bại\s*1/);
+    await user.click(screen.getByRole("combobox", { name: "Trạng thái" }));
+    await user.click(await screen.findByRole("option", { name: "Đang chờ" }));
+    await waitFor(() => expect(chip("fleet-failed")!.textContent).toMatch(/Thất bại\s*—/));
+    expect(chip("fleet-failed")!.textContent).not.toMatch(/0/);
+  });
+
+  it("nút Phân bổ (một cú bấm, không xác nhận) KHÔNG sát nút Gán lại: hàng nút cách nhau ≥ gap-1", () => {
+    render(<FleetOrchestration />);
+    const allocate = screen.getAllByRole("button", { name: "Phân bổ" })[0];
+    expect(allocate.parentElement!.className).toMatch(/(^|\s)gap-(1|1\.5|2)(\s|$)/);
+    expect(allocate.parentElement!.className).not.toMatch(/gap-0\.5/);
+  });
+});
+
 describe("Fleet — Tác vụ (G1): nhãn nguồn + hành động như cũ (R-2-n)", () => {
   it("nhãn DEMO: tóm tắt 2/4; BẤT BIẾN hàng seed có badge, hàng thật không", () => {
     render(<FleetOrchestration />);
