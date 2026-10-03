@@ -16125,7 +16125,6 @@
   },
   "eqIntegration": {
     "acq": {
-      "title": "Worker thu ảnh",
       "desc": "Grab → chỉ số chất lượng → tùy chọn submit NTF qua đúng đường ingest chuẩn. Nguồn file/mock chạy thật hôm nay; GenICam vẫn là stub cho tới khi gắn driver camera.",
       "flagOff": "Thu ảnh trực tiếp đang tắt (LIVE_ACQUISITION_ENABLED off). Vẫn xem được trạng thái; khởi động worker sẽ bị từ chối tới khi bật cờ.",
       "noPermission": "Xem worker thu ảnh cần quyền xem machine-alerts.",
@@ -16164,7 +16163,9 @@
       "maxFrames": "Số frame tối đa (0 = tới khi dừng)",
       "interval": "Chu kỳ (ms)",
       "submitFrames": "Submit mỗi frame thành một lượt kiểm NTF chuẩn (cần mã máy)",
-      "assessQuality": "Chạy chỉ số chất lượng ảnh mỗi frame"
+      "assessQuality": "Chạy chỉ số chất lượng ảnh mỗi frame",
+      "liveOffChip": "Thu ảnh trực tiếp tắt",
+      "aboutChip": "Về nguồn thu"
     },
     "whenToUse": "Khi nào dùng — xem khung tích hợp theo hãng (FOCAS/Euromap) và phả hệ phiên bản recipe. Metadata chỉ đọc, không có thiết bị trực tiếp.",
     "recipeStatus": {
@@ -16184,7 +16185,6 @@
       "cache": "Bộ đệm",
       "none": "Không có"
     },
-    "adaptersTitle": "Giao thức adapter đã kết nối",
     "alsoDeploy": "Đồng thời ghi một dòng sổ recipe_deployments",
     "archive": "Lưu trữ",
     "archiveTip": "Lưu trữ phiên bản này",
@@ -16192,13 +16192,11 @@
     "byMachine": "Máy",
     "col": {
       "action": "Thao tác",
-      "code": "Mã",
       "machine": "Máy",
       "name": "Tên",
       "notes": "Ghi chú",
       "recipe": "Mã @ phiên bản",
       "status": "Trạng thái",
-      "version": "Phiên bản",
       "when": "Thời điểm",
       "who": "Người thực hiện"
     },
@@ -16213,16 +16211,13 @@
     "flagOffToast": "Tích hợp thiết bị đang tắt (xem trước). Đặt EQ_INTEG_ENABLED=true để thao tác.",
     "flagStatusError": "Không kiểm tra được trạng thái tích hợp thiết bị — các thao tác bị khoá cho đến khi xác nhận lại.",
     "frameworkNoDevice": "Framework — chưa có thiết bị kết nối",
-    "frameworkNote": "Các thẻ bên dưới là FRAMEWORK tích hợp. Chúng mô hình hóa các trường chỉ đọc mà một connector FOCAS/Euromap thực sẽ ánh xạ vào Unified Equipment Model, nhưng dữ liệu trực tiếp cần một thiết bị/connector đã kết nối. Cho đến lúc đó, giá trị vẫn là \"—\" và nguồn snapshot là \"none\".",
+    "frameworkNote": "Đây là FRAMEWORK tích hợp. Nó mô hình hóa các trường chỉ đọc mà một connector FOCAS/Euromap thực sẽ ánh xạ vào Unified Equipment Model, nhưng dữ liệu trực tiếp cần một thiết bị/connector đã kết nối. Cho đến lúc đó, giá trị vẫn là \"—\" và nguồn snapshot là \"none\".",
     "historyEmpty": "Không có sự kiện truy xuất nguồn gốc.",
     "historyMode": "Lọc theo",
-    "historyPickTitle": "Nguồn truy xuất nguồn gốc",
-    "historyTitle": "Truy xuất nguồn gốc recipe (chỉ thêm)",
     "kpi": {
-      "adapters": "Adapter đã kết nối",
-      "configured": "Thiết bị đã kết nối",
-      "flag": "Cờ",
-      "frameworks": "Framework"
+      "adapters": "Adapter đăng ký",
+      "configured": "Framework đã kết nối",
+      "flag": "Cờ"
     },
     "loadHistory": "Lịch sử nạp",
     "loading": "Đang tải…",
@@ -16246,7 +16241,6 @@
     "payloadInvalid": "Payload không phải JSON hợp lệ.",
     "payloadObject": "Payload phải là một object JSON.",
     "pickHint": "Nhập mã recipe ở trên để liệt kê các phiên bản bất biến và thao tác truy xuất nguồn gốc của nó.",
-    "pickRecipeTitle": "Mã recipe",
     "readOnly": "chỉ đọc",
     "readSnapshot": "Đọc snapshot",
     "recipeCode": "Mã recipe",
@@ -16268,7 +16262,7 @@
       "acquisition": "Worker thu ảnh",
       "history": "Lịch sử nạp",
       "recipes": "Phiên bản recipe",
-      "status": "Trạng thái tích hợp"
+      "status": "Danh mục connector"
     },
     "title": "Tích hợp thiết bị",
     "uem": {
@@ -16281,10 +16275,33 @@
     "versionCreated": "Đã tạo phiên bản recipe (bản nháp)",
     "versionReleased": "Đã phát hành phiên bản",
     "versionRolledBack": "Đã rollback hợp đồng đã phát hành",
-    "versionsEmpty": "Không có phiên bản cho mã này.",
     "versionsTitle": "Các phiên bản của {{code}}",
-    "versionsTitlePlain": "Phiên bản recipe",
-    "viewOnly": "Chỉ xem"
+    "viewOnly": "Chỉ xem",
+    "safetyChip": "Chỉ đọc",
+    "versionNotFound": "Không tìm thấy phiên bản #{{id}} trong mã recipe đang xem.",
+    "openInRecipes": "Mở trong Recipes",
+    "openInRecipesHint": "Danh mục, duyệt và triển khai recipe nằm ở trang Recipes",
+    "recipesElsewhere": "Duyệt và triển khai recipe xuống máy nằm ở trang Recipes.",
+    "chip": {
+      "srcAdapters": "Registry adapter trên server (integrationStatus.adapters) — đăng ký, không phải kết nối",
+      "srcConnected": "Framework có connector/thiết bị thật (integrationStatus.frameworks[].configured)",
+      "srcFlag": "Cờ tính năng trên server (equipmentIntegration.status)"
+    },
+    "catalog": {
+      "count": "{{count}} connector",
+      "listLabel": "Danh mục connector",
+      "detailLabel": "Chi tiết connector",
+      "colConnector": "Connector",
+      "colType": "Loại",
+      "typeFramework": "Framework",
+      "typeAdapter": "Giao thức adapter",
+      "registered": "Đã đăng ký",
+      "delegatesTo": "Chuyển xử lý cho",
+      "adapterHonesty": "Giao thức này đã ĐĂNG KÝ trong registry adapter của server — đăng ký không có nghĩa là có thiết bị đang kết nối.",
+      "pickHint": "Chọn một connector để xem chi tiết.",
+      "loadError": "Không đọc được trạng thái tích hợp."
+    },
+    "createDesc": "Phiên bản bất biến ở dạng nháp — chỉ metadata truy xuất nguồn gốc; không đẩy gì xuống thiết bị."
   },
   "eqStandards": {
     "whenToUse": "Khi nào dùng — quản trị chuẩn loại thiết bị, phân loại cảnh báo ISA-18.2 và hội đồng duyệt. Chỉ là metadata quản trị, không phát lệnh thiết bị.",

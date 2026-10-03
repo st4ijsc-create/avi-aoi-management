@@ -14891,10 +14891,9 @@
       "acquisition": "采集工作器",
       "history": "加载历史",
       "recipes": "配方版本",
-      "status": "集成状态"
+      "status": "连接器目录"
     },
     "acq": {
-      "title": "采集工作器",
       "desc": "抓帧 → 质量指标 → 可选按同一标准接入路径提交 NTF。file/mock 源今天即可用；GenICam 在绑定相机驱动前仍为占位。",
       "flagOff": "实时采集已停用（LIVE_ACQUISITION_ENABLED 关闭）。状态仍可查看；启用该标志前无法启动工作器。",
       "noPermission": "查看采集工作器需要 machine-alerts 查看权限。",
@@ -14933,7 +14932,9 @@
       "maxFrames": "最大帧数（0 = 直到停止）",
       "interval": "间隔（毫秒）",
       "submitFrames": "将每帧作为标准 NTF 检测提交（需要机台代码）",
-      "assessQuality": "对每帧运行图像质量指标"
+      "assessQuality": "对每帧运行图像质量指标",
+      "liveOffChip": "实时采集已关闭",
+      "aboutChip": "关于采集源"
     },
     "machineCode": "机台代码",
     "whenToUse": "适用场景 — 浏览厂商集成框架（FOCAS/Euromap）与配方版本谱系。只读元数据，无实时设备。",
@@ -14954,7 +14955,6 @@
       "cache": "缓存",
       "none": "无"
     },
-    "adaptersTitle": "已接入的适配器协议",
     "alsoDeploy": "同时写入一条 recipe_deployments 台账记录",
     "archive": "归档",
     "archiveTip": "归档此版本",
@@ -14962,13 +14962,11 @@
     "byMachine": "机器",
     "col": {
       "action": "操作",
-      "code": "编码",
       "machine": "机器",
       "name": "名称",
       "notes": "备注",
       "recipe": "编码 @ 版本",
       "status": "状态",
-      "version": "版本",
       "when": "时间",
       "who": "执行人"
     },
@@ -14983,16 +14981,13 @@
     "flagOffToast": "设备集成已禁用（预览）。设置 EQ_INTEG_ENABLED=true 以执行操作。",
     "flagStatusError": "无法检查设备集成是否已启用 — 在确认前，操作将被禁用。",
     "frameworkNoDevice": "框架 — 未连接设备",
-    "frameworkNote": "下方卡片为集成框架。它们建模真实 FOCAS/Euromap 连接器会映射到统一设备模型的只读字段，但实时数据需要已连接的设备/连接器。在此之前值保持“—”，快照来源为“无”。",
+    "frameworkNote": "这是集成框架。它建模真实 FOCAS/Euromap 连接器会映射到统一设备模型的只读字段，但实时数据需要已连接的设备/连接器。在此之前值保持“—”，快照来源为“无”。",
     "historyEmpty": "无谱系事件。",
     "historyMode": "过滤方式",
-    "historyPickTitle": "谱系来源",
-    "historyTitle": "配方谱系（仅追加）",
     "kpi": {
-      "adapters": "已接入适配器",
-      "configured": "已连接设备",
-      "flag": "标志",
-      "frameworks": "框架"
+      "adapters": "已注册适配器",
+      "configured": "已连接的框架",
+      "flag": "标志"
     },
     "loadHistory": "加载历史",
     "loading": "加载中…",
@@ -15015,7 +15010,6 @@
     "payloadInvalid": "载荷不是有效的 JSON。",
     "payloadObject": "载荷必须是 JSON 对象。",
     "pickHint": "在上方输入配方编码以列出其不可变版本与谱系操作。",
-    "pickRecipeTitle": "配方编码",
     "readOnly": "只读",
     "readSnapshot": "读取快照",
     "recipeCode": "配方编码",
@@ -15044,10 +15038,33 @@
     "versionCreated": "配方版本已创建（草稿）",
     "versionReleased": "版本已发布",
     "versionRolledBack": "已发布合约已回滚",
-    "versionsEmpty": "该编码无版本。",
     "versionsTitle": "{{code}} 的版本",
-    "versionsTitlePlain": "配方版本",
-    "viewOnly": "仅查看"
+    "viewOnly": "仅查看",
+    "safetyChip": "只读",
+    "versionNotFound": "当前配方代码中找不到版本 #{{id}}。",
+    "openInRecipes": "在配方中打开",
+    "openInRecipesHint": "配方目录、审批与部署位于配方页面",
+    "recipesElsewhere": "配方审批与下发到机器位于配方页面。",
+    "chip": {
+      "srcAdapters": "服务器适配器注册表（integrationStatus.adapters）— 已注册，并非已连接",
+      "srcConnected": "具备真实连接器/设备的框架（integrationStatus.frameworks[].configured）",
+      "srcFlag": "服务器功能开关（equipmentIntegration.status）"
+    },
+    "catalog": {
+      "count": "{{count}} 个连接器",
+      "listLabel": "连接器目录",
+      "detailLabel": "连接器详情",
+      "colConnector": "连接器",
+      "colType": "类型",
+      "typeFramework": "框架",
+      "typeAdapter": "适配器协议",
+      "registered": "已注册",
+      "delegatesTo": "委托给",
+      "adapterHonesty": "该协议已在服务器适配器注册表中注册 — 注册并不代表有设备已连接。",
+      "pickHint": "选择一个连接器查看详情。",
+      "loadError": "无法读取集成状态。"
+    },
+    "createDesc": "不可变的草稿版本 — 仅谱系元数据；不会下发到设备。"
   },
   "panelDef": {
     "button": "拼板 N-up",

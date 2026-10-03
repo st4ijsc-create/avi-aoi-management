@@ -16145,7 +16145,6 @@
   },
   "eqIntegration": {
     "acq": {
-      "title": "Acquisition workers",
       "desc": "Grab → quality metrics → optional NTF submit through the same canonical ingest path. File/mock sources are real today; GenICam stays a stub until a camera driver is bound.",
       "flagOff": "Live acquisition is disabled (LIVE_ACQUISITION_ENABLED is off). Status stays readable; starting a worker will be refused until the flag is enabled.",
       "noPermission": "Viewing acquisition workers requires the machine-alerts view permission.",
@@ -16184,7 +16183,9 @@
       "maxFrames": "Max frames (0 = until stopped)",
       "interval": "Interval (ms)",
       "submitFrames": "Submit each frame as a canonical NTF inspection (requires machine code)",
-      "assessQuality": "Run image-quality metrics per frame"
+      "assessQuality": "Run image-quality metrics per frame",
+      "liveOffChip": "Live acquisition off",
+      "aboutChip": "About sources"
     },
     "whenToUse": "When to use — browse vendor integration frameworks (FOCAS/Euromap) and recipe version genealogy. Read-only metadata, no live device.",
     "recipeStatus": {
@@ -16204,7 +16205,6 @@
       "cache": "Cache",
       "none": "None"
     },
-    "adaptersTitle": "Wired adapter protocols",
     "alsoDeploy": "Also write a recipe_deployments ledger row",
     "archive": "Archive",
     "archiveTip": "Archive this version",
@@ -16212,13 +16212,11 @@
     "byMachine": "Machine",
     "col": {
       "action": "Action",
-      "code": "Code",
       "machine": "Machine",
       "name": "Name",
       "notes": "Notes",
       "recipe": "Code @ version",
       "status": "Status",
-      "version": "Version",
       "when": "When",
       "who": "Performed by"
     },
@@ -16233,16 +16231,13 @@
     "flagOffToast": "Equipment integration is disabled (preview). Set EQ_INTEG_ENABLED=true to act.",
     "flagStatusError": "Could not check whether equipment integration is enabled — actions are disabled until this is confirmed.",
     "frameworkNoDevice": "Framework — no device connected",
-    "frameworkNote": "The cards below are integration FRAMEWORKS. They model the read-only fields a real FOCAS/Euromap connector would map into the Unified Equipment Model, but live data requires a connected device/connector. Until then values stay \"—\" and the snapshot source is \"none\".",
+    "frameworkNote": "This is an integration FRAMEWORK. It models the read-only fields a real FOCAS/Euromap connector would map into the Unified Equipment Model, but live data requires a connected device/connector. Until then values stay \"—\" and the snapshot source is \"none\".",
     "historyEmpty": "No genealogy events.",
     "historyMode": "Filter by",
-    "historyPickTitle": "Genealogy source",
-    "historyTitle": "Recipe genealogy (append-only)",
     "kpi": {
-      "adapters": "Adapters wired",
-      "configured": "Connected devices",
-      "flag": "Flag",
-      "frameworks": "Frameworks"
+      "adapters": "Registered adapters",
+      "configured": "Frameworks connected",
+      "flag": "Flag"
     },
     "loadHistory": "Load history",
     "loading": "Loading…",
@@ -16266,7 +16261,6 @@
     "payloadInvalid": "Payload is not valid JSON.",
     "payloadObject": "Payload must be a JSON object.",
     "pickHint": "Enter a recipe code above to list its immutable versions and genealogy actions.",
-    "pickRecipeTitle": "Recipe code",
     "readOnly": "read-only",
     "readSnapshot": "Read snapshot",
     "recipeCode": "Recipe code",
@@ -16288,7 +16282,7 @@
       "acquisition": "Acquisition workers",
       "history": "Load history",
       "recipes": "Recipe versions",
-      "status": "Integration status"
+      "status": "Connector catalog"
     },
     "title": "Equipment Integration",
     "uem": {
@@ -16301,10 +16295,33 @@
     "versionCreated": "Recipe version created (draft)",
     "versionReleased": "Version released",
     "versionRolledBack": "Released contract rolled back",
-    "versionsEmpty": "No versions for this code.",
     "versionsTitle": "Versions of {{code}}",
-    "versionsTitlePlain": "Recipe versions",
-    "viewOnly": "View only"
+    "viewOnly": "View only",
+    "safetyChip": "Read-only",
+    "versionNotFound": "Version #{{id}} is not in the loaded recipe code.",
+    "openInRecipes": "Open in Recipes",
+    "openInRecipesHint": "Recipe catalog, approval and deployment live on the Recipes page",
+    "recipesElsewhere": "Recipe approval and deployment to machines live on the Recipes page.",
+    "chip": {
+      "srcAdapters": "Server adapter registry (integrationStatus.adapters) — registered, not connected",
+      "srcConnected": "Frameworks with a real connector/device (integrationStatus.frameworks[].configured)",
+      "srcFlag": "Server feature flag (equipmentIntegration.status)"
+    },
+    "catalog": {
+      "count": "{{count}} connectors",
+      "listLabel": "Connector catalog",
+      "detailLabel": "Connector details",
+      "colConnector": "Connector",
+      "colType": "Type",
+      "typeFramework": "Framework",
+      "typeAdapter": "Adapter protocol",
+      "registered": "Registered",
+      "delegatesTo": "Delegates to",
+      "adapterHonesty": "This protocol is REGISTERED in the server's adapter registry — registration does not mean a device is connected.",
+      "pickHint": "Pick a connector to see its details.",
+      "loadError": "Could not read the integration status."
+    },
+    "createDesc": "Immutable draft version — genealogy metadata only; nothing is pushed to a device."
   },
   "eqStandards": {
     "whenToUse": "When to use — govern device-type standards, the ISA-18.2 alarm taxonomy and the review board. Governance metadata only, no device commands.",

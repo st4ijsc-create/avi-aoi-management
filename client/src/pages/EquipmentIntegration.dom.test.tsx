@@ -4,9 +4,18 @@
 // `flagEnabled` mặc định LẠC QUAN `statusQ.data?.enabled ?? true` khi `equipmentIntegration.status`
 // CHƯA trả lời — badge "Flag" hiện "On" giả trong lúc tải và nút "New version" không khoá.
 // Dựng trang THẬT qua @testing-library/react, chỉ mock hạ tầng nặng.
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { cleanup, render, screen } from "@testing-library/react";
 import "@testing-library/jest-dom/vitest";
+import { installResizeHandleHitAreaShim } from "@/components/patterns/layoutKitTestPanels";
+
+// Doc 81 Đợt 2 Task 7 — HẠ TẦNG (không đổi khẳng định): trang nay dựng SplitListDetail (react-resizable-panels).
+// Bộ nghe pointerdown toàn cục của thư viện coi mọi cú bấm jsdom (toạ độ 0,0) là trúng separator ⇒ tab không đổi.
+// Dùng bản browser + shim hit-area như mọi test trang dựng layout dùng chung (layoutKitTestPanels.ts).
+vi.mock("react-resizable-panels", async () => (await import("@/components/patterns/layoutKitTestPanels")).browserPanels());
+beforeAll(() => {
+  installResizeHandleHitAreaShim();
+});
 
 vi.mock("@/components/DashboardLayout", () => ({
   default: ({ children }: { children: React.ReactNode }) => <div>{children}</div>,
@@ -97,8 +106,9 @@ describe("EquipmentIntegration — flag status (equipmentIntegration.status) kh�
 
     expect(screen.getByTestId("feature-status-loading")).toBeInTheDocument();
     expect(screen.queryByText(/equipment integration is disabled/i)).not.toBeInTheDocument();
-    // KPI badge — nhãn "Checking…" (fallback tiếng Anh của eqIntegration.checking), không phải "On"/"Off".
-    expect(screen.getByText("Checking…")).toBeInTheDocument();
+    // KPI badge — trạng thái "đang kiểm tra", không phải "On"/"Off". Đợt 2 Task 7: thẻ KPI thành chip StatusChipStrip;
+    // chip tự in chữ trạng thái chung ("Loading") ⇒ ĐỔI BỘ CHỌN từ chữ "Checking…" sang data-state của chip cờ.
+    expect(document.querySelector('[data-chip-id="flag"]')).toHaveAttribute("data-state", "loading");
     expect(screen.queryByText(/^On$/)).not.toBeInTheDocument();
     expect(screen.queryByText(/^Off$/)).not.toBeInTheDocument();
 
@@ -110,7 +120,8 @@ describe("EquipmentIntegration — flag status (equipmentIntegration.status) kh�
     setQueryOverride("equipmentIntegration.status", makeQuery({ isError: true }));
     render(<EquipmentIntegration />);
 
-    expect(screen.getByText("Unknown")).toBeInTheDocument();
+    // Đợt 2 Task 7 — ĐỔI BỘ CHỌN: chip cờ ở trạng thái lỗi ("chưa rõ") thay cho chữ "Unknown" của thẻ KPI cũ.
+    expect(document.querySelector('[data-chip-id="flag"]')).toHaveAttribute("data-state", "error");
     expect(screen.getByTestId("feature-status-error")).toBeInTheDocument();
     await openRecipesTab();
     expect(screen.getByRole("button", { name: /New version/i })).toBeDisabled();
