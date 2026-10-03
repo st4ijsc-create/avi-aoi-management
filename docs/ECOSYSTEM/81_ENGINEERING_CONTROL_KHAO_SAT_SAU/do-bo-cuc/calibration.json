@@ -240,6 +240,52 @@
     "attrSel": "div[data-layout-main=\"safety-workforce\"]@SafetyWorkforce.tsx",
     "gitHead": "d58304052"
    }
+  },
+  "equipment-standards|1600|n/a": {
+   "screen": "equipment-standards",
+   "vw": 1600,
+   "variant": "n/a",
+   "mainTop": 482,
+   "rects": [
+    {
+     "x": 288,
+     "y": 482,
+     "w": 1288,
+     "h": 1080
+    }
+   ],
+   "areaPx": 1391040,
+   "attrSel": "div[data-layout-main=\"equipment-standards\"]@EquipmentStandards.tsx",
+   "gitHead": "ffd355edc",
+   "at": "2026-10-03T06:25:53.214Z",
+   "fromReference": {
+    "dTop": 0,
+    "dLeft": 0,
+    "dAreaPct": 0
+   }
+  },
+  "equipment-standards|1366|n/a": {
+   "screen": "equipment-standards",
+   "vw": 1366,
+   "variant": "n/a",
+   "mainTop": 482,
+   "rects": [
+    {
+     "x": 288,
+     "y": 482,
+     "w": 1054,
+     "h": 1080
+    }
+   ],
+   "areaPx": 1138320,
+   "attrSel": "div[data-layout-main=\"equipment-standards\"]@EquipmentStandards.tsx",
+   "gitHead": "ffd355edc",
+   "at": "2026-10-03T06:25:53.214Z",
+   "fromReference": {
+    "dTop": 0,
+    "dLeft": 0,
+    "dAreaPct": 0
+   }
   }
  }
 }
