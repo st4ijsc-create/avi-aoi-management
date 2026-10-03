@@ -16177,7 +16177,8 @@
       "fleetSummary": "{{count}} machines · canary {{canary}} · {{stage}}",
       "fleetNotReady": "Not ready for a fleet rollout: select at least one machine (Target & canary); production needs an approver and a reason (Sign-off).",
       "prodNotReady": "Production needs an approver (unless it goes through the Approval Inbox) and a reason — fill them in at Sign-off.",
-      "otpNote": "Pressing the final button asks for the two-step OTP (when enabled) before anything is sent; safety gates and reasons are unchanged."
+      "otpNote": "Pressing the final button asks for the two-step OTP (when enabled) before anything is sent; safety gates and reasons are unchanged.",
+      "buildChanged": "The selected build changed (from #{{pinned}} to #{{current}}) after the wizard opened — close and reopen the wizard to preview the build that will be deployed."
     }
   },
   "engineeringHome": {

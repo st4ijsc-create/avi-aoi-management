@@ -263,6 +263,29 @@ const fleetBox = (label: string) => {
   if (!l) throw new Error(`fleet label not found: ${label}`);
   return l.querySelector('[role="checkbox"]') as HTMLElement;
 };
+/**
+ * Task 13 fix round 1 (review Minor 2) — đối chứng MẠNH cho "máy đội bị xoá khi đổi dự án": đang ở P2, chọn phiên bản +
+ * build CỦA P2 (#9), mở wizard ở chế độ Đội máy ⇒ mọi checkbox máy chưa tick, nút triển khai đội máy khoá kèm lý do, bấm
+ * không ra OTP, 0 deployToFleet; tóm tắt explorer không nhắc M3.
+ */
+function expectFleetResetQuaWizardP2() {
+  fireEvent.click(versionBtn(/^v1 · main/));
+  const hoi = screen.queryByRole("alertdialog"); // buffer cũ của P1 còn ⇒ trang hỏi bỏ thay đổi
+  if (hoi) fireEvent.click(within(hoi).getByRole("button", { name: /Discard & continue|Bỏ thay đổi/ }));
+  fireEvent.click(screen.getByText("#9"));
+  expect(fleetSelection()).toHaveAttribute("data-count", "0");
+  expect(fleetSelection()).not.toHaveTextContent("M3");
+  fleetCardOpen();
+  expect(fleetBox("M3 · #3")).toHaveAttribute("aria-checked", "false");
+  expect(fleetBox("M4 · #4")).toHaveAttribute("aria-checked", "false");
+  toWizardStep(3);
+  expect(screen.getByTestId("engineering-fleet-deploy-button")).toBeDisabled();
+  expect(screen.getByTestId("ide-wizard-not-ready")).toBeInTheDocument();
+  fireEvent.click(screen.getByTestId("engineering-fleet-deploy-button"));
+  expect(screen.queryByText(/Two-step verification to deploy|Xác thực 2 bước/)).not.toBeInTheDocument();
+  expect(mutateCalls["programming.deployToFleet"]).toBeUndefined();
+  closeWizard();
+}
 /** Task 13 — tóm tắt máy đội đã chọn (explorer › Deploy) — quan sát được cả khi CHƯA có build (wizard không mở được). */
 const fleetSelection = () => screen.getByTestId("ide-fleet-targets");
 
@@ -361,6 +384,7 @@ describe("Chuỗi reset khi đổi projectId (Review Focus #2)", () => {
     // Hành vi CŨ: buffer KHÔNG xoá khi đổi project (chỉ ngôn ngữ đổi theo loại dự án mới).
     expect(editor().value).toBe("A\nB");
     expect(editor().getAttribute("data-language")).toBe("ld");
+    expectFleetResetQuaWizardP2();
   });
 
   it("bấm lại CHÍNH project đang chọn ⇒ không reset gì", () => {
@@ -394,6 +418,7 @@ describe("Chuỗi reset khi đổi projectId (Review Focus #2)", () => {
     fireEvent.click(within(screen.getByRole("alertdialog")).getByRole("button", { name: /Discard & continue|Bỏ thay đổi/ }));
     expectChainReset();
     expect(queryInputs["programming.listArtifacts"]).toEqual({ projectId: 2 });
+    expectFleetResetQuaWizardP2();
   });
 
   it("đổi PHIÊN BẢN (WS-05) ⇒ build / simResult / diagnostics về rỗng; watching + máy đội GIỮ", () => {
@@ -616,6 +641,7 @@ function expectKhongDungDuocBuildCu() {
   expect(screen.queryByText(/Two-step verification to deploy|Xác thực 2 bước/)).not.toBeInTheDocument();
   expect(mutateCalls["programming.deployBuild"]).toBeUndefined();
   expect(mutateCalls["programming.deployToFleet"]).toBeUndefined();
+  expectFleetResetQuaWizardP2();
 }
 
 describe("Task 12b (a) — tạo dự án mới reset như bấm chọn dự án", () => {

@@ -64,7 +64,7 @@ describe("trạng thái đầu = giá trị useState cũ", () => {
       cursor: { line: 1, col: 1 },
       ui: {
         activity: "projects", editorTab: "source", bottomTab: "problems", bottomOpenRequest: 0,
-        wizard: { open: false, mode: "single" }, copilotMounted: false,
+        wizard: { open: false, mode: "single", buildId: null }, copilotMounted: false,
       },
     });
   });
@@ -270,10 +270,10 @@ describe("Task 13 — UI vỏ Workbench", () => {
     expect(workspaceReducer(b, { type: "ui/bottom", tab: "matrix", open: true }).ui.bottomOpenRequest).toBe(2);
   });
 
-  it("wizard/open mở (giữ chế độ đã chọn); wizard/mode đổi chế độ; wizard/close đóng", () => {
-    const a = run(initialWorkspaceState, { type: "wizard/mode", mode: "fleet" }, { type: "wizard/open" });
-    expect(a.ui.wizard).toEqual({ open: true, mode: "fleet" });
-    expect(workspaceReducer(a, { type: "wizard/close" }).ui.wizard).toEqual({ open: false, mode: "fleet" });
+  it("wizard/open mở + GHIM build (giữ chế độ đã chọn); wizard/mode đổi chế độ; wizard/close đóng + bỏ ghim", () => {
+    const a = run(initialWorkspaceState, { type: "wizard/mode", mode: "fleet" }, { type: "wizard/open", buildId: 5 });
+    expect(a.ui.wizard).toEqual({ open: true, mode: "fleet", buildId: 5 });
+    expect(workspaceReducer(a, { type: "wizard/close" }).ui.wizard).toEqual({ open: false, mode: "fleet", buildId: null });
   });
 
   it("ui/activity, ui/editorTab, copilot/mounted, cursor/set (cùng giá trị ⇒ cùng tham chiếu)", () => {
@@ -295,7 +295,7 @@ describe("Task 13 — UI vỏ Workbench", () => {
     const ui = run(armed(), { type: "ui/editorTab", tab: "diff" }, { type: "ui/bottom", tab: "deploys", open: true });
     const s = workspaceReducer(ui, { type: "project/select", projectId: 2 });
     expect(s.ui).toEqual(ui.ui);
-    const back = run(armed(), { type: "ui/bottom", tab: "builds", open: true }, { type: "wizard/open" }, { type: "copilot/mounted" });
+    const back = run(armed(), { type: "ui/bottom", tab: "builds", open: true }, { type: "wizard/open", buildId: 5 }, { type: "copilot/mounted" });
     expect(back.buildId).toBe(5);
     expect(back.simResult).not.toBeNull();
     expect(back.diagnostics).not.toBeNull();

@@ -92,7 +92,8 @@ export interface WorkbenchUi {
   bottomTab: BottomTabId;
   /** Ý định mở panel dưới (R-2-l): tăng ⇒ WorkbenchShell mở panel. */
   bottomOpenRequest: number;
-  wizard: { open: boolean; mode: DeployWizardMode };
+  /** `buildId` = build GHIM lúc mở wizard (fix round 1): build hiện tại khác ⇒ trang khoá nút cuối. */
+  wizard: { open: boolean; mode: DeployWizardMode; buildId: number | null };
   /** Copilot trong layout đã mount một lần ⇒ giữ mount (stream không bị huỷ khi đổi tab Thuộc tính). */
   copilotMounted: boolean;
 }
@@ -169,7 +170,7 @@ export const initialWorkspaceState: WorkspaceState = {
     editorTab: "source",
     bottomTab: "problems",
     bottomOpenRequest: 0,
-    wizard: { open: false, mode: "single" },
+    wizard: { open: false, mode: "single", buildId: null },
     copilotMounted: false,
   },
 };
@@ -226,7 +227,8 @@ export type WorkspaceAction =
   | { type: "ui/editorTab"; tab: EditorTabId }
   /** Đổi tab panel dưới; `open` ⇒ cũng là ý định MỞ panel (R-2-l). */
   | { type: "ui/bottom"; tab: BottomTabId; open?: boolean }
-  | { type: "wizard/open" }
+  /** Mở wizard và GHIM build đang chọn (build xem trước = build sẽ deploy). */
+  | { type: "wizard/open"; buildId: number }
   | { type: "wizard/close" }
   | { type: "wizard/mode"; mode: DeployWizardMode }
   | { type: "copilot/mounted" }
@@ -357,9 +359,9 @@ export function workspaceReducer(s: WorkspaceState, a: WorkspaceAction): Workspa
         ui: { ...s.ui, bottomTab: a.tab, bottomOpenRequest: a.open ? s.ui.bottomOpenRequest + 1 : s.ui.bottomOpenRequest },
       };
     case "wizard/open":
-      return { ...s, ui: { ...s.ui, wizard: { ...s.ui.wizard, open: true } } };
+      return { ...s, ui: { ...s.ui, wizard: { ...s.ui.wizard, open: true, buildId: a.buildId } } };
     case "wizard/close":
-      return { ...s, ui: { ...s.ui, wizard: { ...s.ui.wizard, open: false } } };
+      return { ...s, ui: { ...s.ui, wizard: { ...s.ui.wizard, open: false, buildId: null } } };
     case "wizard/mode":
       return { ...s, ui: { ...s.ui, wizard: { ...s.ui.wizard, mode: a.mode } } };
     case "copilot/mounted":

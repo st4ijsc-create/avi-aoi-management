@@ -16157,7 +16157,8 @@
       "fleetSummary": "{{count}} máy · canary {{canary}} · {{stage}}",
       "fleetNotReady": "Chưa đủ để triển khai đội máy: cần ít nhất một máy (bước Đích & canary); production cần người ký duyệt và lý do (bước Ký duyệt).",
       "prodNotReady": "Production cần người ký duyệt (khi không qua Hộp duyệt) và lý do — điền ở bước Ký duyệt.",
-      "otpNote": "Bấm nút cuối ⇒ hỏi mã OTP 2 bước (nếu bật) rồi mới gửi; cổng an toàn và lý do giữ như cũ."
+      "otpNote": "Bấm nút cuối ⇒ hỏi mã OTP 2 bước (nếu bật) rồi mới gửi; cổng an toàn và lý do giữ như cũ.",
+      "buildChanged": "Build đang chọn đã đổi (từ #{{pinned}} sang #{{current}}) sau khi mở wizard — đóng và mở lại wizard để xem trước đúng build sẽ deploy."
     }
   },
   "engineeringHome": {

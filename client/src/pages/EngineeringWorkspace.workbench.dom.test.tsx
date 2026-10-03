@@ -17,6 +17,7 @@ import { act, cleanup, fireEvent, render, screen, within } from "@testing-librar
 import userEvent from "@testing-library/user-event";
 import "@testing-library/jest-dom/vitest";
 import { installResizeHandleHitAreaShim } from "@/components/patterns/layoutKitTestPanels";
+import { installMatchMedia, presetNarrow, setNarrow } from "@/components/patterns/layoutKitTestMedia";
 import { getAiEntryState, resetAiEntryForTest, setAiChatOpen } from "@/lib/aiEntryStore";
 import PAGE_SRC from "./EngineeringWorkspace.tsx?raw";
 import VI from "@/i18n/locales/vi.json";
@@ -58,6 +59,15 @@ const queryInputs: Record<string, unknown> = {};
 const queryEnabled: Record<string, boolean | undefined> = {};
 const mutateCalls: Record<string, unknown[]> = {};
 const mutationResponses: Record<string, ((vars: any) => unknown) | undefined> = {};
+/** Fix round 1 — mutation HOÃN (kết quả về muộn): onSuccess của lượt render MỚI NHẤT chạy khi gọi xaHoan(key). */
+const mutationDeferred = new Set<string>();
+const mutationPending: Record<string, Array<() => void>> = {};
+const latestOnSuccess: Record<string, ((d: unknown, v: unknown) => void) | undefined> = {};
+function xaHoan(key: string) {
+  const q = mutationPending[key] ?? [];
+  mutationPending[key] = [];
+  act(() => { for (const f of q) f(); });
+}
 /** `.data` của mutation (deployToFleet ⇒ fleetResult). */
 const mutationData: Record<string, unknown> = {};
 function chainable(): unknown {
@@ -78,10 +88,14 @@ vi.mock("@/lib/trpc", () => ({
               if (opts?.enabled === false) return makeQuery();
               return queryOverrides[key] ? queryOverrides[key](input) : makeQuery();
             },
-            useMutation: (mopts?: { onSuccess?: (d: unknown, v: unknown) => void }) => ({
+            useMutation: (mopts?: { onSuccess?: (d: unknown, v: unknown) => void }) => (latestOnSuccess[key] = mopts?.onSuccess, {
               mutate: (vars: unknown) => {
                 (mutateCalls[key] ??= []).push(vars);
                 const r = mutationResponses[key];
+                if (r && mutationDeferred.has(key)) {
+                  (mutationPending[key] ??= []).push(() => latestOnSuccess[key]?.(r(vars), vars));
+                  return;
+                }
                 if (r) mopts?.onSuccess?.(r(vars), vars);
               },
               mutateAsync: (vars: unknown) => {
@@ -171,15 +185,18 @@ const nghi = () => act(() => new Promise((r) => setTimeout(r, 20)));
 let undoShim: (() => void) | null = null;
 beforeAll(() => {
   undoShim = installResizeHandleHitAreaShim();
+  installMatchMedia();
 });
 beforeEach(() => {
-  for (const o of [queryOverrides, queryInputs, queryEnabled, mutateCalls, mutationResponses, mutationData]) {
+  for (const o of [queryOverrides, queryInputs, queryEnabled, mutateCalls, mutationResponses, mutationData, mutationPending]) {
     for (const k of Object.keys(o)) delete (o as Record<string, unknown>)[k];
   }
   for (const f of Object.values(toasts)) f.mockReset();
   try { window.localStorage.clear(); } catch { /* ignore */ }
   document.body.style.paddingRight = "";
   resetAiEntryForTest();
+  mutationDeferred.clear();
+  presetNarrow(false);
   luot = [];
   vi.stubGlobal("fetch", vi.fn(fetchGia));
   Element.prototype.scrollIntoView ??= function () {};
@@ -219,10 +236,13 @@ describe("P1 Workbench — bố cục (doc 81 §1.3)", () => {
     expect(names.some((n) => /^(Source|Nguồn)/.test(n))).toBe(true);
     expect(names.some((n) => /^Δ/.test(n))).toBe(true);
     expect(names.some((n) => /^Tags$/.test(n))).toBe(true);
-    // MAIN = editor (tabpanel), không chứa h1/header/chip
+    // MAIN = thanh tab editor (toolbar DUY NHẤT — R-2-s) + editor (tabpanel); không chứa h1/header/chip
     const main = mainEl();
     expect(main).not.toBeNull();
-    expect(main).toHaveAttribute("role", "tabpanel");
+    const tb = main.querySelectorAll("[data-layout-toolbar]");
+    expect(tb).toHaveLength(1);
+    expect(tb[0]).toContainElement(tabs);
+    expect(within(main).getByRole("tabpanel")).toContainElement(within(main).getByLabelText("program-source"));
     expect(within(main).getByLabelText("program-source")).toBeInTheDocument();
     expect(main.querySelector("h1,[data-layout-header],[data-layout-kpi]")).toBeNull();
     expect(screen.getByRole("heading", { level: 1 })).toBeInTheDocument();
@@ -238,6 +258,23 @@ describe("P1 Workbench — bố cục (doc 81 §1.3)", () => {
     expect(statusBar()).toHaveTextContent(/Ln 1, Col 1/);
     expect(statusBar()).toHaveTextContent("zmotion-basic");
     expect(within(statusBar()).getByTestId("engineering-deploy-badge")).toHaveTextContent(/^(Real deploy|Triển khai thật): ON$/);
+  });
+
+  it("R-2-s: tab Δ So sánh / Tags — điều khiển riêng nằm TRONG cùng một toolbar; MAIN luôn đúng MỘT data-layout-toolbar", () => {
+    seed();
+    renderPage();
+    fireEvent.click(versionBtn());
+    const tabs = () => screen.getByRole("tablist", { name: /Editor tabs|Tab soạn thảo/ });
+    fireEvent.click(within(tabs()).getByRole("tab", { name: /^Δ/ }));
+    let tb = mainEl().querySelectorAll("[data-layout-toolbar]");
+    expect(tb).toHaveLength(1);
+    expect(tb[0]).toContainElement(screen.getByRole("combobox", { name: /Base|Bản gốc/ }));
+    expect(tb[0]).toContainElement(screen.getByRole("combobox", { name: /Compare|So với/ }));
+    fireEvent.click(within(tabs()).getByRole("tab", { name: /^Tags$/ }));
+    tb = mainEl().querySelectorAll("[data-layout-toolbar]");
+    expect(tb).toHaveLength(1);
+    expect(tb[0]).toContainElement(screen.getByRole("button", { name: /^(Add variable|Add symbol|Thêm biến)$/ }));
+    expect(within(mainEl()).getByRole("table")).toBeInTheDocument();
   });
 
   it("thanh trạng thái 'Triển khai thật: OFF' là nhãn i18n — KHÔNG tên biến môi trường ở bất kỳ đâu", () => {
@@ -304,6 +341,35 @@ describe("Copilot là panel TRONG layout (R-2-b / R-2-j)", () => {
     fireEvent.click(ai);
     expect(within(inspector()).getByRole("tab", { name: /Properties|Thuộc tính/ })).toHaveAttribute("aria-selected", "true");
     expect(document.body.style.paddingRight).toBe("");
+  });
+
+  it("fix round 1: stream Copilot SỐNG qua mốc 1024 px (rộng→hẹp→rộng) và thao tác panel (gập/mở panel dưới); Huỷ vẫn abort", async () => {
+    seed();
+    renderPage();
+    fireEvent.click(versionBtn());
+    fireEvent.click(within(inspector()).getByRole("tab", { name: /Copilot/ }));
+    fireEvent.change(await screen.findByPlaceholderText(/Describe what to generate/), { target: { value: "toggle a run bit" } });
+    await act(async () => { fireEvent.click(screen.getByRole("button", { name: /^Generate$/ })); });
+    await nghi();
+    expect(luot).toHaveLength(1);
+    luot[0].day({ type: "stage", stage: "gate", elapsedMs: 0 });
+    await nghi();
+    setNarrow(true); // < 1024 ⇒ vùng làm việc thành tab
+    await nghi();
+    expect(document.querySelector("[data-workbench][data-narrow]")).not.toBeNull();
+    expect(luot[0].signal.aborted).toBe(false);
+    expect(screen.getByTestId("copilot-cancel")).toBeInTheDocument();
+    setNarrow(false);
+    await nghi();
+    fireEvent.click(bottomToggle());
+    fireEvent.click(bottomToggle());
+    await nghi();
+    expect(luot).toHaveLength(1);
+    expect(luot[0].signal.aborted).toBe(false);
+    await act(async () => { fireEvent.click(screen.getByTestId("copilot-cancel")); });
+    await nghi();
+    expect(luot[0].signal.aborted).toBe(true);
+    expect(screen.queryByTestId("copilot-cancel")).toBeNull();
   });
 
   it("stream Copilot SỐNG khi chuyển Thuộc tính ↔ Copilot (Review Focus 3); Huỷ ⇒ abort", async () => {
@@ -465,6 +531,58 @@ describe("Deploy wizard 4 bước (WizardDialog) — deployPreview TRƯỚC OTP,
     const all = document.querySelectorAll('[data-testid="deploy-preview"]');
     expect(all).toHaveLength(1);
     expect(d.contains(all[0])).toBe(true);
+  });
+
+  it("fix round 1: wizard mở ⇒ phím tắt trang TẮT (Ctrl/Cmd+Enter không build, Ctrl/Cmd+S không lưu) — build ở bước cuối không bị đổi", async () => {
+    seed();
+    mutationResponses["programming.buildArtifact"] = () => ({ id: 6, ok: true });
+    renderPage();
+    const d = await moWizard();
+    next(d);
+    next(d);
+    next(d);
+    fireEvent.keyDown(document, { key: "Enter", ctrlKey: true });
+    fireEvent.keyDown(document, { key: "s", ctrlKey: true });
+    expect(mutateCalls["programming.buildArtifact"]).toBeUndefined();
+    expect(mutateCalls["programming.createArtifact"]).toBeUndefined();
+    expect(queryInputs["programming.deployPreview"]).toMatchObject({ buildId: 5 });
+    expect(within(d).getByTestId("engineering-deploy-button")).not.toBeDisabled();
+    // đóng wizard ⇒ phím tắt trở lại (đối chứng dương)
+    fireEvent.keyDown(d, { key: "Escape" });
+    fireEvent.keyDown(document, { key: "Enter", ctrlKey: true });
+    expect(mutateCalls["programming.buildArtifact"]).toEqual([{ artifactId: 11 }]);
+  });
+
+  it("fix round 1: build đổi SAU khi mở wizard (kết quả Build về muộn) ⇒ nút cuối KHOÁ + cảnh báo; không OTP, 0 deployBuild", async () => {
+    seed();
+    mutationResponses["programming.buildArtifact"] = () => ({ id: 6, ok: true });
+    mutationDeferred.add("programming.buildArtifact");
+    renderPage();
+    fireEvent.click(versionBtn());
+    fireEvent.click(screen.getByText("#5"));
+    fireEvent.click(btn(/^Build$/)); // build mới đang chạy (hoãn)
+    fireEvent.click(btn(/^(Deploy…)$/)); // ghim #5
+    const d = screen.getByRole("dialog");
+    next(d);
+    next(d);
+    next(d);
+    expect(within(d).getByTestId("engineering-deploy-button")).not.toBeDisabled();
+    xaHoan("programming.buildArtifact"); // build #6 về ⇒ build đang chọn đổi dưới bước cuối
+    expect(queryInputs["programming.deployPreview"]).toMatchObject({ buildId: 6 });
+    expect(within(d).getByTestId("ide-wizard-build-changed")).toBeInTheDocument();
+    expect(within(d).getByTestId("engineering-deploy-button")).toBeDisabled();
+    fireEvent.click(within(d).getByTestId("engineering-deploy-button"));
+    expect(screen.queryByText(otpText)).not.toBeInTheDocument();
+    expect(mutateCalls["programming.deployBuild"]).toBeUndefined();
+    // mở lại ⇒ ghim build mới, mở khoá
+    fireEvent.keyDown(d, { key: "Escape" });
+    fireEvent.click(btn(/^(Deploy…)$/));
+    const d2 = screen.getByRole("dialog");
+    next(d2);
+    next(d2);
+    next(d2);
+    expect(within(d2).queryByTestId("ide-wizard-build-changed")).toBeNull();
+    expect(within(d2).getByTestId("engineering-deploy-button")).not.toBeDisabled();
   });
 
   it("chưa chọn build ⇒ nút mở wizard KHOÁ; không wizard, không OTP", () => {

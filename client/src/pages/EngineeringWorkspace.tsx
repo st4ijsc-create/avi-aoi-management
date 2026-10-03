@@ -664,7 +664,9 @@ function EngineeringWorkspaceView() {
       { key: "s", ctrlKey: true, action: saveVersionShortcut },
       { key: "Enter", ctrlKey: true, action: buildVersionShortcut },
     ],
-    { enabled: canView, scope: "global" },
+    // Task 13 fix round 1 — wizard deploy đang mở ⇒ tắt phím tắt trang (Ctrl/Cmd+Enter build / Ctrl/Cmd+S lưu): không thể đổi
+    // build/phiên bản dưới bước "Xem trước & xác nhận" (build đã xem trước là build sẽ deploy).
+    { enabled: canView && !state.ui.wizard.open, scope: "global" },
   );
 
   // U7 (doc 26 §2.1) — MỘT CHẠM: tạo dự án DEMO + phiên bản mẫu (code hợp lệ) rồi tự
@@ -784,7 +786,7 @@ function EngineeringWorkspaceView() {
   // ═════ Top bar (PageHeaderCompact, 40–48 px): dự án/phiên bản · Kiểm/Build/Mô phỏng/Deploy · pipeline · review ═════
   const header = (
     <PageHeaderCompact
-      className="shrink-0 border-b px-3 py-1"
+      className="h-10 shrink-0 border-b px-3 py-0"
       icon={<Code2 />}
       title={t("engineering.title", "Xưởng lập trình thiết bị")}
       chips={
@@ -897,7 +899,7 @@ function EngineeringWorkspaceView() {
             size="sm" variant="outline"
             aria-label={t("engineering.ws.deployOpen", "Deploy…")}
             disabled={!buildId}
-            onClick={() => buildId != null && dispatch({ type: "wizard/open" })}
+            onClick={() => buildId != null && dispatch({ type: "wizard/open", buildId })}
             title={buildId == null ? t("engineering.fleetNeedBuild", "Chọn một build ở khối \"Builds & Mô phỏng\" trước để triển khai ra đội máy.") : t("engineering.ws.deployOpenHint", "Mở wizard triển khai (4 bước, có canary)")}
           >
             <Rocket className="h-4 w-4 min-[1700px]:mr-1" /> <span className="hidden min-[1700px]:inline">{t("engineering.ws.deployOpen", "Deploy…")}</span>
@@ -1253,30 +1255,33 @@ function EngineeringWorkspaceView() {
     </div>
   );
 
+  // R-2-s — điều khiển của tab Δ / Tags nằm CUỐI thanh tab editor (một `data-layout-toolbar` duy nhất trong MAIN).
+  const diffToolbarEnd = (
+    <>
+      <span className="hidden items-center gap-1 text-xs font-medium text-muted-foreground xl:flex">
+        <GitCompare className="h-3.5 w-3.5" /> {t("engineering.compareVersions", "So sánh phiên bản")}
+      </span>
+      <Select value={diffBaseId != null ? String(diffBaseId) : ""} onValueChange={(v) => setDiffBaseId(Number(v))}>
+        <SelectTrigger className="h-7 w-32 text-xs" aria-label={t("engineering.diffBase", "Bản gốc")}><SelectValue placeholder={t("engineering.diffBase", "Bản gốc")} /></SelectTrigger>
+        <SelectContent>
+          {(artifactsQ.data ?? []).map((a) => (
+            <SelectItem key={a.id} value={String(a.id)}>v{a.version} · {a.branch}</SelectItem>
+          ))}
+        </SelectContent>
+      </Select>
+      <span className="text-xs text-muted-foreground">→</span>
+      <Select value={diffCompareId != null ? String(diffCompareId) : ""} onValueChange={(v) => setDiffCompareId(Number(v))}>
+        <SelectTrigger className="h-7 w-32 text-xs" aria-label={t("engineering.diffCompare", "So với")}><SelectValue placeholder={t("engineering.diffCompare", "So với")} /></SelectTrigger>
+        <SelectContent>
+          {(artifactsQ.data ?? []).map((a) => (
+            <SelectItem key={a.id} value={String(a.id)}>v{a.version} · {a.branch}</SelectItem>
+          ))}
+        </SelectContent>
+      </Select>
+    </>
+  );
   const diffView = (
     <div className="flex h-full min-h-0 flex-col">
-      <div data-layout-toolbar="" className="flex h-10 shrink-0 items-center gap-2 border-b px-2">
-        <span className="flex items-center gap-1 text-xs font-medium text-muted-foreground">
-          <GitCompare className="h-3.5 w-3.5" /> {t("engineering.compareVersions", "So sánh phiên bản")}
-        </span>
-        <Select value={diffBaseId != null ? String(diffBaseId) : ""} onValueChange={(v) => setDiffBaseId(Number(v))}>
-          <SelectTrigger className="h-7 w-32 text-xs" aria-label={t("engineering.diffBase", "Bản gốc")}><SelectValue placeholder={t("engineering.diffBase", "Bản gốc")} /></SelectTrigger>
-          <SelectContent>
-            {(artifactsQ.data ?? []).map((a) => (
-              <SelectItem key={a.id} value={String(a.id)}>v{a.version} · {a.branch}</SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-        <span className="text-xs text-muted-foreground">→</span>
-        <Select value={diffCompareId != null ? String(diffCompareId) : ""} onValueChange={(v) => setDiffCompareId(Number(v))}>
-          <SelectTrigger className="h-7 w-32 text-xs" aria-label={t("engineering.diffCompare", "So với")}><SelectValue placeholder={t("engineering.diffCompare", "So với")} /></SelectTrigger>
-          <SelectContent>
-            {(artifactsQ.data ?? []).map((a) => (
-              <SelectItem key={a.id} value={String(a.id)}>v{a.version} · {a.branch}</SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-      </div>
       <div className="min-h-0 flex-1 overflow-auto p-2">
         {diffBase && diffCompare ? (
           <LineDiff left={diffBase.content ?? ""} right={diffCompare.content ?? ""} maxHeightClass="max-h-none" />
@@ -1287,16 +1292,18 @@ function EngineeringWorkspaceView() {
     </div>
   );
 
+  const tagsToolbarEnd = (
+    <>
+      <span className="hidden items-center gap-1 text-xs font-medium text-muted-foreground xl:flex">
+        <Variable className="h-3.5 w-3.5" /> {t("engineering.symbols", "Bảng biến / tag")}
+      </span>
+      <Button size="sm" variant="outline" className="h-7 text-xs" disabled={!canEdit} title={editReason} onClick={() => openSymDialog()}>
+        <Plus className="mr-1 h-3.5 w-3.5" /> {t("engineering.addSymbol", "Thêm biến")}
+      </Button>
+    </>
+  );
   const tagsView = project && (
     <div className="flex h-full min-h-0 flex-col">
-      <div data-layout-toolbar="" className="flex h-10 shrink-0 items-center gap-2 border-b px-2">
-        <span className="flex items-center gap-1 text-xs font-medium text-muted-foreground">
-          <Variable className="h-3.5 w-3.5" /> {t("engineering.symbols", "Bảng biến / tag")}
-        </span>
-        <Button size="sm" variant="outline" className="ml-auto h-7 text-xs" disabled={!canEdit} title={editReason} onClick={() => openSymDialog()}>
-          <Plus className="mr-1 h-3.5 w-3.5" /> {t("engineering.addSymbol", "Thêm biến")}
-        </Button>
-      </div>
       <div className="min-h-0 flex-1 overflow-auto p-2">
         <Table>
           <TableHeader>
@@ -1796,9 +1803,12 @@ function EngineeringWorkspaceView() {
     ? !canCreate || !buildId || requestDeployApprovalM.isPending || !prodDeployReady || previewBlocked
     : !canCreate || !buildId || deployM.isPending || !prodDeployReady || previewBlocked;
   const fleetDeployDisabled = !canCreate || !buildId || !fleetReady || deployToFleetM.isPending;
+  // Task 13 fix round 1 — build GHIM lúc mở wizard; build đang chọn đổi (vd kết quả Build về muộn) ⇒ nút cuối KHOÁ:
+  // build đã xem trước luôn là build sẽ được deploy. Chặt hơn thẻ cũ (fail-closed), không nới cổng nào.
+  const wizardBuildChanged = ui.wizard.open && ui.wizard.buildId !== buildId;
 
   const finishWizard = () => {
-    if (!buildId) return;
+    if (!buildId || wizardBuildChanged) return;
     if (fleetMode) {
       if (fleetDeployDisabled) return;
       // QA W5: nonce/lần-thử để LẦN NÀY khác lần trước → sau khi canary hỏng (rejected) và sửa build, bấm lại sẽ
@@ -2030,7 +2040,7 @@ function EngineeringWorkspaceView() {
     {
       id: "preview",
       title: t("engineering.ws.stepPreview", "Xem trước & xác nhận"),
-      canProceed: fleetMode ? !fleetDeployDisabled : !singleDeployDisabled,
+      canProceed: !wizardBuildChanged && (fleetMode ? !fleetDeployDisabled : !singleDeployDisabled),
       content: (
         <div className="space-y-3 text-sm">
           {readinessBlock}
@@ -2051,6 +2061,11 @@ function EngineeringWorkspaceView() {
                 isError={deployPreviewQ.isError}
               />
             )
+          )}
+          {wizardBuildChanged && (
+            <p data-testid="ide-wizard-build-changed" role="alert" className="text-xs font-medium text-destructive">
+              {t("engineering.ws.buildChanged", "Build đang chọn đã đổi (từ #{{pinned}} sang #{{current}}) sau khi mở wizard — đóng và mở lại wizard để xem trước đúng build sẽ deploy.", { pinned: ui.wizard.buildId ?? "—", current: buildId ?? "—" })}
+            </p>
           )}
           {fleetMode && !fleetReady && (
             <p data-testid="ide-wizard-not-ready" className="text-xs text-warning">
@@ -2101,6 +2116,7 @@ function EngineeringWorkspaceView() {
           activeTabId={activeEditorTab}
           onTabChange={onEditorTabChange}
           editor={editorMain}
+          editorToolbarEnd={project ? (activeEditorTab === "diff" ? diffToolbarEnd : activeEditorTab === "tags" ? tagsToolbarEnd : undefined) : undefined}
           inspector={inspector}
           inspectorLabel={t("engineering.ws.inspectorLabel", "Thuộc tính / Copilot")}
           inspectorIsAi={copilotOpen}
@@ -2117,7 +2133,7 @@ function EngineeringWorkspaceView() {
       {/* Deploy wizard (sheet phải) — preview TRƯỚC OTP; OTP = stepUp.guard của trang (R-2-q). */}
       <WizardDialog
         open={ui.wizard.open}
-        onOpenChange={(o) => dispatch({ type: o ? "wizard/open" : "wizard/close" })}
+        onOpenChange={(o) => { if (!o) dispatch({ type: "wizard/close" }); }}
         title={t("engineering.ws.wizardTitle", "Triển khai build")}
         description={t("engineering.ws.wizardDesc", "Chọn đích, ký duyệt, xem trước — mã OTP được hỏi sau bước cuối.")}
         size="lg"
