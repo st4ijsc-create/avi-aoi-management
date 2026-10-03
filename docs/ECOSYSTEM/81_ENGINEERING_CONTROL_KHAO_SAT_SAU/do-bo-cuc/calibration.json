@@ -288,6 +288,52 @@
     "attrSel": "div[data-layout-main=\"equipment-standards\"]@EquipmentStandards.tsx",
     "gitHead": "ffd355edc"
    }
+  },
+  "fleet-orchestration|1600|n/a": {
+   "screen": "fleet-orchestration",
+   "vw": 1600,
+   "variant": "n/a",
+   "mainTop": 466,
+   "rects": [
+    {
+     "x": 288,
+     "y": 466,
+     "w": 1288,
+     "h": 441
+    }
+   ],
+   "areaPx": 568008,
+   "attrSel": "div[data-layout-main=\"fleet-orchestration\"]@FleetOrchestration.tsx",
+   "gitHead": "dd7e71134",
+   "at": "2026-10-03T08:03:40.820Z",
+   "fromReference": {
+    "dTop": 0,
+    "dLeft": 0,
+    "dAreaPct": 0
+   }
+  },
+  "fleet-orchestration|1366|n/a": {
+   "screen": "fleet-orchestration",
+   "vw": 1366,
+   "variant": "n/a",
+   "mainTop": 486,
+   "rects": [
+    {
+     "x": 288,
+     "y": 486,
+     "w": 1054,
+     "h": 441
+    }
+   ],
+   "areaPx": 464814,
+   "attrSel": "div[data-layout-main=\"fleet-orchestration\"]@FleetOrchestration.tsx",
+   "gitHead": "dd7e71134",
+   "at": "2026-10-03T08:03:40.820Z",
+   "fromReference": {
+    "dTop": 0,
+    "dLeft": 0,
+    "dAreaPct": 0
+   }
   }
  }
 }
