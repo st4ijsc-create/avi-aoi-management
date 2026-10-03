@@ -178,6 +178,8 @@ interface StdPageCtx {
   vendors: string[];
   vendorFilter: string;
   setVendorFilter: (v: string) => void;
+  alarmSearch: string;
+  setAlarmSearch: (v: string) => void;
   // alarm performance
   kpiWindow: number;
   setKpiWindow: (n: number) => void;
@@ -240,6 +242,8 @@ export default function EquipmentStandards() {
   // Loại thiết bị đang xem nằm ở `?typeKey=` (F5 / deep link giữ được).
   const [selectedTypeKey, setSelectedTypeKey] = useUrlParam("typeKey");
   const [vendorFilter, setVendorFilter] = useState<string>("");
+  // final wave T9 — tìm qua MỌI trang của bảng ánh xạ (Ctrl+F của trình duyệt chỉ thấy trang đang hiện).
+  const [alarmSearch, setAlarmSearch] = useState<string>("");
   const [crStatusFilter, setCrStatusFilter] = useState<string>("");
 
   // Lookup state (sheet chuẩn hoá — giữ ở trang để kết quả còn khi mở lại sheet, như panel cũ)
@@ -434,6 +438,8 @@ export default function EquipmentStandards() {
     vendors,
     vendorFilter,
     setVendorFilter,
+    alarmSearch,
+    setAlarmSearch,
     kpiWindow,
     setKpiWindow,
     masters,
@@ -485,6 +491,7 @@ export default function EquipmentStandards() {
     flyouts["eq-type-new"] = {
       size: "md",
       title: t("eqStandards.registerTitle", "Register device type (draft)"),
+      description: t("eqStandards.registerDesc", "Adds a draft device type under a parent in the hierarchy; it becomes usable after review."),
       render: () => flagUnsettled ? unsettledBody : (
         <RegisterTypeForm
           parentOptions={tree}
@@ -496,6 +503,7 @@ export default function EquipmentStandards() {
     flyouts["eq-alarm-map"] = {
       size: "md",
       title: t("eqStandards.upsertAlarmTitle", "Map vendor alarm"),
+      description: t("eqStandards.upsertAlarmDesc", "Maps a vendor's native alarm code to an ISA-18.2 standard code and severity."),
       render: () => flagUnsettled ? unsettledBody : (
         <UpsertAlarmForm
           pending={upsertAlarmM.isPending}
@@ -506,6 +514,7 @@ export default function EquipmentStandards() {
     flyouts["eq-master"] = {
       size: "md",
       title: (id) => id ? t("eqStandards.editMasterTitle", "Edit master alarm") : t("eqStandards.addMasterTitle", "Rationalize a master alarm"),
+      description: t("eqStandards.masterDesc", "A master alarm records the rationalized priority, consequence and response for one alarm (EEMUA-191)."),
       render: (layer) => {
         if (layer.id) {
           // Sửa: nút cũ "Sửa" không bị cổng cờ (chỉ canControl) — giữ nguyên.
@@ -541,6 +550,7 @@ export default function EquipmentStandards() {
     flyouts["eq-cr-new"] = {
       size: "lg",
       title: t("eqStandards.submitCrTitle", "Submit change request"),
+      description: t("eqStandards.submitCrDesc", "Proposes a change to a device type; it goes through review and conformance before publishing."),
       render: () => (
         <SubmitCrForm
           parentOptions={tree}
@@ -788,6 +798,14 @@ function AlarmsToolbar() {
   const flyout = useFlyout();
   return (
     <>
+      <Input
+        type="search"
+        value={ctx.alarmSearch}
+        onChange={(e) => ctx.setAlarmSearch(e.target.value)}
+        placeholder={t("eqStandards.alarmSearch", "Search alarms…")}
+        aria-label={t("eqStandards.alarmSearchLabel", "Search alarms (vendor, code, action) across all pages")}
+        className="h-8 w-40"
+      />
       {/* U11 — Select DS thay <select> gõ tay; "__all__" là sentinel cho "tất cả". */}
       <Select value={ctx.vendorFilter || "__all__"} onValueChange={(v) => ctx.setVendorFilter(v === "__all__" ? "" : v)}>
         <SelectTrigger size="sm" className="w-36" aria-label={t("eqStandards.vendor", "Vendor")}><SelectValue /></SelectTrigger>
@@ -1090,11 +1108,16 @@ function AlarmsTab() {
       ),
     },
   ];
+  const q = ctx.alarmSearch.trim().toLowerCase();
+  const rows = q
+    ? ctx.alarms.filter((a) => [a.vendor, a.nativeCode, a.standardCode, a.severity, a.recommendedAction ?? ""].some((v) => String(v).toLowerCase().includes(q)))
+    : ctx.alarms;
   return (
     <>
       {ctx.narrow && <NarrowTools />}
       <DataTable<AlarmMapping>
-        data={ctx.alarms}
+        data={rows}
+        pageResetKey={`${ctx.vendorFilter}|${q}`}
         columns={columns}
         getRowId={(a) => `${a.vendor}::${a.nativeCode}`}
         pageSize={ALARM_PAGE_SIZE}
@@ -1280,7 +1303,8 @@ function AlarmPerfSide({ kpis, kpisQ }: { kpis: AlarmKpis | undefined; kpisQ: { 
     {
       // Task 3 Fix round 1 — nguồn KPI chung (alarmKpi.summary) CHƯA tính chattering: nói thẳng "chưa đo được"
       // thay vì bỏ ô im lặng hay bịa một con số. Nguồn của chip = lý do.
-      id: "alarm-kpi-chattering", label: t("eqStandards.kpi.chattering", "Chattering"), value: t("eqStandards.kpi.notMeasured", "Not measured yet"), state,
+      // final wave M-6 — chip này KHÔNG đọc alarmKpi ⇒ không mang trạng thái tải/lỗi của nguồn đó: luôn "chưa đo được".
+      id: "alarm-kpi-chattering", label: t("eqStandards.kpi.chattering", "Chattering"), value: t("eqStandards.kpi.notMeasured", "Not measured yet"), state: "ok",
       source: t("eqStandards.kpi.chatteringNotMeasuredTip", "The combined alarm KPI source (alarmKpi) does not compute chattering yet."),
     },
     {

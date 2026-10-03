@@ -51,6 +51,7 @@ const srv = vi.hoisted(() => ({
   complianceLoading: false,
   complianceError: false,
   kpiLoading: false,
+  kpiError: false,
   treeLoading: false,
   tree: [] as Row[],
   alarms: [] as Row[],
@@ -154,7 +155,7 @@ vi.mock("@/lib/trpc", () => {
         return q(COMPLIANCE, enabled);
       }
       if (path === "equipmentStandards.runConformance") return q({ pass: true, seed: [], profiles: [] }, enabled);
-      if (path === "alarmKpi.summary") return srv.kpiLoading ? q(undefined, enabled, { isLoading: true, isPending: true }) : q(SUMMARY, enabled);
+      if (path === "alarmKpi.summary") return srv.kpiError ? q(undefined, enabled, { isError: true }) : srv.kpiLoading ? q(undefined, enabled, { isLoading: true, isPending: true }) : q(SUMMARY, enabled);
       if (path === "equipmentStandards.listMasterAlarms") return q(srv.snap.masters, enabled);
       return q(undefined, enabled);
     },
@@ -291,6 +292,7 @@ beforeEach(() => {
   srv.complianceLoading = false;
   srv.complianceError = false;
   srv.kpiLoading = false;
+  srv.kpiError = false;
   srv.treeLoading = false;
   srv.tree = TREE();
   srv.alarms = ALARMS();
@@ -501,6 +503,20 @@ describe("Standards — Phân cấp: cây + chi tiết (SplitListDetail, ?typeKe
     expect(await screen.findByTestId("type-row-MyCell")).toBeInTheDocument();
   });
 
+  it("final wave T9: sheet eq-type-new / eq-cr-new / eq-alarm-map / eq-master CÓ mô tả (aria-describedby trỏ tới câu mô tả)", async () => {
+    for (const key of ["eq-type-new", "eq-cr-new", "eq-alarm-map", "eq-master"]) {
+      window.history.replaceState(null, "", `/equipment-standards?flyout=${key}`);
+      render(<EquipmentStandards />);
+      const sheet = await waitLayer(key);
+      const id = sheet.getAttribute("aria-describedby");
+      expect(id, key).toBeTruthy();
+      const desc = document.getElementById(id!);
+      expect(desc?.getAttribute("data-slot"), key).toBe("sheet-description");
+      expect((desc?.textContent ?? "").length, key).toBeGreaterThan(20);
+      cleanup();
+    }
+  });
+
   it("cờ CHƯA RÕ ⇒ 'Đăng ký loại' khoá; deep link ?flyout=eq-type-new chỉ báo trạng thái, không có form", async () => {
     srv.status = undefined;
     window.history.replaceState(null, "", "/equipment-standards?flyout=eq-type-new&flyoutId=");
@@ -538,6 +554,48 @@ describe("Standards — Phân loại cảnh báo: DataTable PHÂN TRANG + sheet 
     expect(bodyRows()).toHaveLength(15);
     expect(within(mainEl()).getByText("ABB-125")).toBeInTheDocument();
     expect(within(mainEl()).queryByText("SRVO-100")).toBeNull();
+  });
+
+  it("final wave T9: tổng đúng (1–15 of 40) và SẮP XẾP áp lên TOÀN bộ dữ liệu (không chỉ trang đang xem)", async () => {
+    window.history.replaceState(null, "", "/equipment-standards?tab=alarms");
+    render(<EquipmentStandards />);
+    expect(within(mainEl()).getByText("40")).toBeInTheDocument();
+    const user = userEvent.setup();
+    // Mã gốc: asc ⇒ "ABB-125" (ở trang 2–3 khi chưa sắp) lên đầu trang 1; desc ⇒ "SRVO-124" lên đầu
+    await user.click(within(mainEl()).getByRole("button", { name: "Mã gốc" }));
+    expect(within(bodyRows()[0]).getByText("ABB-125")).toBeInTheDocument();
+    await user.click(within(mainEl()).getByRole("button", { name: "Mã gốc" }));
+    expect(within(bodyRows()[0]).getByText("SRVO-124")).toBeInTheDocument();
+    expect(bodyRows()).toHaveLength(15);
+  });
+
+  it("final wave T9: ô TÌM trên hàng công cụ tìm qua MỌI trang (thay Ctrl+F đã mất khi phân trang): mã ở trang 2 và câu khuyến nghị", async () => {
+    window.history.replaceState(null, "", "/equipment-standards?tab=alarms");
+    render(<EquipmentStandards />);
+    const user = userEvent.setup();
+    const box = within(toolbar()).getByRole("searchbox", { name: /Tìm cảnh báo/ });
+    await user.type(box, "srvo-118");
+    await waitFor(() => expect(bodyRows()).toHaveLength(1));
+    expect(within(mainEl()).getByText("SRVO-118")).toBeInTheDocument();
+    await user.clear(box);
+    await user.type(box, "Dừng robot");
+    await waitFor(() => expect(bodyRows()).toHaveLength(1));
+    expect(within(mainEl()).getByText("SRVO-100")).toBeInTheDocument();
+    await user.clear(box);
+    await waitFor(() => expect(bodyRows()).toHaveLength(15));
+  });
+
+  it("final wave T9: đổi nhà cung cấp khi đang ở trang 2 ⇒ về trang 1 (không kẹt ở giữa danh sách mới)", async () => {
+    window.history.replaceState(null, "", "/equipment-standards?tab=alarms");
+    render(<EquipmentStandards />);
+    const user = userEvent.setup();
+    await user.click(within(mainEl()).getByRole("button", { name: "Next page" }));
+    expect(within(mainEl()).getByText("SRVO-115")).toBeInTheDocument();
+    await user.click(within(toolbar()).getByRole("combobox", { name: "Nhà cung cấp" }));
+    await user.click(await screen.findByRole("option", { name: "fanuc" }));
+    await waitFor(() => expect(srv.queryInputs).toContain('equipmentStandards.listAlarmMappings:{"vendor":"fanuc"}'));
+    await waitFor(() => expect(within(mainEl()).getByText("SRVO-100")).toBeInTheDocument());
+    expect(within(mainEl()).queryByText("SRVO-115")).toBeNull();
   });
 
   it("'Chuẩn hóa cảnh báo' = SHEET eq-alarm-normalize: tra cứu gửi đúng {vendor, nativeCode} đã trim, hiện mã chuẩn", async () => {
@@ -592,6 +650,16 @@ describe("Standards — Hiệu năng cảnh báo: chip có nguồn ở panel ph�
     expect(within(side).getByTestId("alarm-kpi-source")).toHaveTextContent("3");
     expect(within(side).getByText("M-01")).toBeInTheDocument();
     expect(srv.queryInputs.some((x) => x.startsWith("alarmKpi.summary:") && !x.includes("operatorCount"))).toBe(true);
+  });
+
+  it("final wave M-6: alarmKpi LỖI ⇒ chip chattering VẪN 'Chưa đo được' (không mang trạng thái lỗi của nguồn khác); chip có nguồn mới báo lỗi", async () => {
+    srv.kpiError = true;
+    render(<EquipmentStandards />);
+    await openTab(/Hiệu năng cảnh báo/);
+    const chat = chip("alarm-kpi-chattering")!;
+    expect(chat).toHaveTextContent("Chưa đo được");
+    expect(chat.getAttribute("data-state")).toBe("ok");
+    expect(chip("alarm-kpi-total")!.getAttribute("data-state")).toBe("error");
   });
 
   it("đổi cửa sổ (hàng công cụ) ⇒ alarmKpi.summary {windowHours: 30×24}", async () => {

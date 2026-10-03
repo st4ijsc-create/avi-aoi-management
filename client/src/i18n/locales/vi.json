@@ -16563,7 +16563,13 @@
       "srcStanding": "alarmKpi.summary — cảnh báo tồn đọng lâu hơn ngưỡng",
       "srcPeak": "alarmKpi.summary — số cảnh báo nhiều nhất trong một cửa sổ 10 phút",
       "srcOperators": "alarmKpi.summary — người vận hành đang hoạt động, đếm ở server"
-    }
+    },
+    "alarmSearch": "Tìm cảnh báo…",
+    "alarmSearchLabel": "Tìm cảnh báo (nhà cung cấp, mã, khuyến nghị) trên mọi trang",
+    "registerDesc": "Thêm một loại thiết bị NHÁP dưới một loại cha trong cây phân cấp; dùng được sau khi được duyệt.",
+    "upsertAlarmDesc": "Ánh xạ mã cảnh báo gốc của nhà cung cấp sang mã chuẩn ISA-18.2 và mức độ.",
+    "masterDesc": "Cảnh báo gốc ghi mức ưu tiên, hậu quả và cách xử lý đã hợp lý hoá cho một cảnh báo (EEMUA-191).",
+    "submitCrDesc": "Đề xuất thay đổi một loại thiết bị; phải qua xem xét và kiểm tra tuân thủ trước khi phát hành."
   },
   "field": {
     "batteryNull": "Không có telemetry pin (pin AGV đến từ VDA5050; null khi không có driver nào báo cáo).",

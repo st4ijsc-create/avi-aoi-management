@@ -16987,7 +16987,13 @@
       "srcStanding": "alarmKpi.summary — 持续时间超过阈值的报警",
       "srcPeak": "alarmKpi.summary — 单个 10 分钟窗口内的最多报警数",
       "srcOperators": "alarmKpi.summary — 服务器统计的在岗操作员"
-    }
+    },
+    "alarmSearch": "搜索报警…",
+    "alarmSearchLabel": "在所有页面中搜索报警（供应商、代码、建议操作）",
+    "registerDesc": "在层级中的某个父类型下添加草稿设备类型；审核后方可使用。",
+    "upsertAlarmDesc": "将供应商原始报警代码映射为 ISA-18.2 标准代码和严重等级。",
+    "masterDesc": "主报警记录某一报警经合理化后的优先级、后果和响应（EEMUA-191）。",
+    "submitCrDesc": "提出对设备类型的变更；发布前须经过审核和一致性检查。"
   },
   "field": {
     "batteryNull": "无电池遥测（AGV 电量来自 VDA5050；无驱动上报时为 null）。",

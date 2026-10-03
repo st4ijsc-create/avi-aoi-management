@@ -16583,7 +16583,13 @@
       "srcStanding": "alarmKpi.summary — alarms standing longer than the threshold",
       "srcPeak": "alarmKpi.summary — most alarms in one 10-minute window",
       "srcOperators": "alarmKpi.summary — active operators counted on the server"
-    }
+    },
+    "alarmSearch": "Search alarms…",
+    "alarmSearchLabel": "Search alarms (vendor, code, action) across all pages",
+    "registerDesc": "Adds a draft device type under a parent in the hierarchy; it becomes usable after review.",
+    "upsertAlarmDesc": "Maps a vendor's native alarm code to an ISA-18.2 standard code and severity.",
+    "masterDesc": "A master alarm records the rationalized priority, consequence and response for one alarm (EEMUA-191).",
+    "submitCrDesc": "Proposes a change to a device type; it goes through review and conformance before publishing."
   },
   "field": {
     "batteryNull": "No battery telemetry (AGV battery flows from VDA5050; null when no driver reports it).",
