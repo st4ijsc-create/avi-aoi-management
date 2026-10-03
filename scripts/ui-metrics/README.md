@@ -279,3 +279,21 @@ Kết quả của Task 1 nằm trong `.superpowers/sdd/2026-09-27-engineering-co
 
 ## Đường cơ sở SAU SHELL (Task 2) — dùng cho các task chuyển trang (Task 4+)
 `docs/ECOSYSTEM/81_ENGINEERING_CONTROL_KHAO_SAT_SAU/do-bo-cuc/baseline-sau-shell.json` = lần đo sau Task 2 (gitHead a74e59d80; fix round 2 chỉ đổi FreshnessStrip). `baseline.json` (trước Task 2) giữ làm mốc gốc của Đợt 2. Mỗi task chuyển trang: so TRƯỚC/SAU bằng `--compare` với `baseline-sau-shell.json` và hiệu chuẩn `data-layout-main` lần đầu theo hình học của tệp này (ruling R-2-k, 2026-10-03).
+
+## Bí danh sau Task 15 (Ruling R-2-x, 2026-10-04)
+Hai màn của Đợt 2 đã bị GỘP ở Task 15. URL cũ của chúng chỉ còn là chuyển hướng (giữ query; xem
+`client/src/lib/engineeringLegacyRedirects.tsx`). Hai `SCREENS` này nay đo ĐÍCH chuyển hướng và mang khoá `calibrateAs`:
+
+| id (giữ để bảng 14 màn liền mạch) | route đo | trước Task 15 | hiệu chuẩn so với bản ghi |
+|---|---|---|---|
+| `engineering-studio` | `/engineering-home?tab=catalog` | launcher Studio riêng (`/engineering-studio`) | `engineering-home|vw|n/a` |
+| `programming-copilot` | `/engineering?copilot=scratch` | trang form Copilot riêng (`/programming-copilot`) | `engineering|vw|open` |
+
+- **Cổng vẫn cứng.** Bí danh so hình học và phần tử mang attribute với bản ghi của màn đích. Lệch là LỖI. `--calibrate`
+  KHÔNG BAO GIỜ ghi bản ghi cho bí danh: muốn đổi thì hiệu chuẩn màn đích.
+- `programming-copilot` **bỏ `aiIsWorkspace`**. Copilot nay là panel trong layout, nằm NGOÀI MAIN. Giữ miễn trừ cũ sẽ là
+  nới thước.
+- `PAGE_TABLES` / `KNOWN_PROCS` của bí danh = hợp của danh sách cũ với danh sách của màn đích.
+- **TRƯỚC/SAU KHÔNG CÙNG LOẠI.** Số FE1 (`--fe1`) và `baseline*.json` của hai id này là trang CŨ. Số sau Task 15 là trang
+  đích (tab Danh mục của Hub / IDE chưa mở dự án + Copilot). Mọi bảng TRƯỚC/SAU (Task 16) phải ghi rõ điều này, không
+  được đọc như cải thiện hay thoái lui của cùng một màn.

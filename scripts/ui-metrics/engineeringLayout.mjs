@@ -75,7 +75,10 @@ export const SCREENS = [
   { n: 1, id: "engineering-home", route: "/engineering-home",
     legacyMain: { desc: "PendingReviewStrip + EngineeringHub section (depth 0)", fn: (r) => r.depth === 0 && /PendingReviewStrip\.tsx|EngineeringHub\.tsx/.test(r.loc || "") && r.kind === "section" },
     actions: [] },
-  { n: 2, id: "engineering-studio", route: "/engineering-studio",
+  // Ruling R-2-x (Task 15 fix 1): Studio đã gộp vào Hub ⇒ màn này đo Hub ở CHẾ ĐỘ DANH MỤC (`?tab=catalog`, đích chuyển
+  // hướng của /engineering-studio). BÍ DANH: hiệu chuẩn so với bản ghi của Hub (`calibrateAs`), không tự ghi bản ghi.
+  // TRƯỚC/SAU của id này KHÔNG cùng loại (trước: launcher Studio riêng; sau: tab Danh mục của Hub) — README.
+  { n: 2, id: "engineering-studio", route: "/engineering-home?tab=catalog", aliasOf: "/engineering-studio", calibrateAs: { id: "engineering-home", variant: "n/a" },
     legacyMain: { desc: "WorkspaceShell resizable-panel bên phải (panel nội dung)", pick: (rs) => { const c = rs.filter((r) => /WorkspaceShell\.tsx/.test(r.loc || "") && r.kind === "resizable-panel"); if (!c.length) return []; const mx = Math.max(...c.map((r) => r.x)); return c.filter((r) => r.x === mx).slice(0, 1); } },
     actions: [] },
   // IDE: editor chỉ hiện khi đã chọn dự án ⇒ mở bằng deep-link `?projectId=` (U1 doc 26, phải còn sống
@@ -103,8 +106,11 @@ export const SCREENS = [
   { n: 9, id: "pou-studio", route: "/pou-studio", copilot: true,
     legacyMain: { desc: "card 'Trình soạn POU'", fn: (r) => r.kind === "card" && /Trình soạn POU/.test(r.head) },
     actions: [{ id: "luu-vao-project", label: /Lưu vào project/ }] },
-  // Copilot: MAIN CHÍNH LÀ bề mặt AI ⇒ không trừ "AI trong MAIN" (aiIsWorkspace)
-  { n: 10, id: "programming-copilot", route: "/programming-copilot", aiIsWorkspace: true,
+  // Ruling R-2-x (Task 15 fix 1): trang Copilot riêng ⇒ CHẾ ĐỘ SCRATCH của IDE (`/engineering?copilot=scratch`, đích chuyển
+  // hướng của /programming-copilot). Copilot nay là panel TRONG layout NGOÀI MAIN ⇒ bỏ `aiIsWorkspace` (miễn trừ cũ không
+  // còn đúng — giữ nó sẽ là NỚI thước). BÍ DANH: hiệu chuẩn so với bản ghi IDE mở Copilot (`engineering|vw|open`).
+  // TRƯỚC/SAU của id này KHÔNG cùng loại (trước: trang form riêng; sau: IDE chưa mở dự án + Copilot) — README.
+  { n: 10, id: "programming-copilot", route: "/engineering?copilot=scratch", aliasOf: "/programming-copilot", calibrateAs: { id: "engineering", variant: "open" },
     legacyMain: { desc: "ProgrammingCopilot card đầu (form sinh mã)", pick: (rs) => rs.filter((r) => /ProgrammingCopilot\.tsx/.test(r.loc || "") && r.kind === "card" && r.depth === 0).slice(0, 1) },
     actions: [] },
   { n: 11, id: "fleet-orchestration", route: "/fleet-orchestration",
@@ -210,6 +216,12 @@ export const KNOWN_PROCS = {
   "equipment-standards": ["aiInbox.count","alarmKpi.summary","andon.active","auth.me","commandCenter.hierarchy","equipmentStandards.complianceMetrics","equipmentStandards.hierarchyTree","equipmentStandards.listAlarmMappings","equipmentStandards.listChangeRequests","equipmentStandards.listMasterAlarms","equipmentStandards.status","license.getAllowedModules","license.systemState","permissions.getMyPermissions"],
   "equipment-integration": ["aiInbox.count","andon.active","auth.me","commandCenter.hierarchy","equipmentIntegration.integrationStatus","equipmentIntegration.status","license.getAllowedModules","license.systemState","machine.list","permissions.getMyPermissions"],
 };
+// R-2-x (Task 15 fix 1) — hai màn BÍ DANH đọc đúng những gì màn đích đọc (Hub / IDE): bảng canh trôi và thủ tục đã biết
+// lấy theo màn đích (bảng của bí danh vốn ⊆ hợp `allTables()`; dòng cũ giữ lại trong git để đối chiếu).
+PAGE_TABLES["engineering-studio"] = [...new Set([...PAGE_TABLES["engineering-studio"], ...PAGE_TABLES["engineering-home"]])].sort();
+PAGE_TABLES["programming-copilot"] = [...new Set([...PAGE_TABLES["programming-copilot"], ...PAGE_TABLES["engineering"]])].sort();
+KNOWN_PROCS["engineering-studio"] = [...new Set([...KNOWN_PROCS["engineering-studio"], ...KNOWN_PROCS["engineering-home"]])].sort();
+KNOWN_PROCS["programming-copilot"] = [...new Set([...KNOWN_PROCS["programming-copilot"], ...KNOWN_PROCS["engineering"]])].sort();
 
 const DEFAULT_SIZES = [[1600, 950], [1366, 768]];
 
@@ -781,7 +793,8 @@ export function summarize(screen, variant, p1, p2, legacyP2, opts = {}) {
   rec.attrSel = p2.attrSel;
   // fix2 #1: CỔNG HIỆU CHUẨN khi trang có data-layout-main
   if (mode === "data-layout-main" && !OFF.has("calib")) {
-    const key = `${screen.id}|${vw}|${variant}`;
+    // R-2-x — màn BÍ DANH (route cũ đã gộp) so với bản ghi của màn đích; vẫn là cổng cứng (lệch ⇒ LỖI), không tự ghi.
+    const key = screen.calibrateAs ? `${screen.calibrateAs.id}|${vw}|${screen.calibrateAs.variant}` : `${screen.id}|${vw}|${variant}`;
     const ref = opts.ref; const cal = opts.calibrations && opts.calibrations[key];
     const area = unionArea(p2.mainRects, 1e6, 1e6, -1e6);
     const cmp = (r) => { const dTop = Math.abs(p2.mainTop - r.mainTop), dArea = r.areaPx ? Math.abs(area - r.areaPx) / r.areaPx * 100 : 100; const dLeft = Math.abs(Math.min(...p2.mainRects.map((x) => x.x)) - Math.min(...r.rects.map((x) => x.x))); return { dTop, dLeft, dAreaPct: +dArea.toFixed(2), ok: dTop <= CALIB_TOL.px && dLeft <= CALIB_TOL.px && dArea <= CALIB_TOL.areaPct }; };
@@ -1669,6 +1682,7 @@ async function main() {
       meta.calibrated = [];
       for (const x of r.results) {
         if (!x.calibration) continue;
+        if (SCREENS.find((sc) => sc.id === x.screen)?.calibrateAs) continue; // R-2-x: bí danh KHÔNG BAO GIỜ ghi bản ghi
         const key = `${x.screen}|${x.vw}|${x.variant}`;
         const entry = { screen: x.screen, vw: x.vw, variant: x.variant, mainTop: x.mainTop, rects: x.mainRects, areaPx: unionArea(x.mainRects, 1e6, 1e6, -1e6), attrSel: x.attrSel, gitHead: meta.gitHead, at: new Date().toISOString() };
         if (cal.pages[key]) { if (x.calibration.status !== "recorded-match") { cal.pages[key] = { ...entry, previous: { mainTop: cal.pages[key].mainTop, areaPx: cal.pages[key].areaPx, attrSel: cal.pages[key].attrSel, gitHead: cal.pages[key].gitHead } }; meta.calibrated.push(`${key} (ghi đè)`); } }
