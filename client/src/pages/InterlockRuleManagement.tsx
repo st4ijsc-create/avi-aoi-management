@@ -44,7 +44,7 @@ import { ViewOnlyBadge } from "@/components/PermissionGate";
 import { PollFreshness } from "@/components/PollFreshness";
 import {
   ConfirmWithReason, PageContainer, PageHeaderCompact, NoticeChip, StatusChipStrip, chipStateFromQuery,
-  FlyoutHost, useFlyout, useFlyoutLayer, WorkbenchShell,
+  FlyoutHost, useFlyout, useFlyoutLayer, useCloseOwnLayer, WorkbenchShell,
   type StatusChipItem,
 } from "@/components/patterns";
 import { useUrlParam } from "@/components/patterns/useUrlParam";
@@ -1017,7 +1017,7 @@ function EventsPanel({
 
 function RuleEditForm({ rule, onSaved }: { rule: RuleRow | null; onSaved: () => void }) {
   const { t } = useTranslation();
-  const layer = useFlyoutLayer();
+  const { layer, done } = useCloseOwnLayer();
   const fid = `ilk-${rule?.id ?? "new"}`;
   // Form khởi tạo MỘT lần từ hàng lúc mở sheet (như dialog cũ).
   const [initial] = useState<RuleForm>(() => (rule ? formFromRule(rule) : emptyRule));
@@ -1040,23 +1040,8 @@ function RuleEditForm({ rule, onSaved }: { rule: RuleRow | null; onSaved: () => 
   // Báo FlyoutHost còn dữ liệu chưa lưu (Esc/Back/đóng ⇒ hỏi trước khi bỏ).
   useEffect(() => { layer.setDirty(dirty); }, [dirty]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Review M3 — `layer.close` đóng lớp TRÊN CÙNG của host: nếu người dùng đã bỏ sheet này (Esc → Bỏ) và mở
-  // lớp khác trong lúc chờ server, onSuccess KHÔNG được đóng lớp kia. Chỉ đóng khi sheet này còn mount và
-  // vẫn là lớp trên cùng.
-  const flyoutApi = useFlyout();
-  const stackRef = useRef(flyoutApi.stack);
-  stackRef.current = flyoutApi.stack;
-  const mountedRef = useRef(true);
-  useEffect(() => {
-    mountedRef.current = true;
-    return () => { mountedRef.current = false; };
-  }, []);
-  const done = () => {
-    const top = stackRef.current[stackRef.current.length - 1];
-    if (!mountedRef.current || !top || top.key !== layer.key || top.id !== layer.id) return;
-    layer.setDirty(false);
-    layer.close();
-  };
+  // Review M3 — `layer.close` đóng lớp TRÊN CÙNG của host: chỉ đóng khi sheet này còn mount và vẫn là lớp trên
+  // cùng ⇒ hook dùng chung useCloseOwnLayer (final wave M-1: bỏ bản chép tay T5).
   const createRule = trpc.interlock.create.useMutation({
     onSuccess: () => { toast.success(t("interlockRules.toastCreated")); onSaved(); done(); },
     onError: (e) => toastTrpcError(e),

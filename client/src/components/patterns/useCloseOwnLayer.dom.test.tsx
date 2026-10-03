@@ -99,3 +99,16 @@ describe("useCloseOwnLayer", () => {
     expect(layer("a")).toBeTruthy();
   });
 });
+
+describe("useCloseOwnLayer — một bản duy nhất (final wave M-1)", () => {
+  it("không trang nào còn bản chép tay của logic 'lớp trên cùng' (stackRef…length - 1) — dùng hook chung", async () => {
+    const fs = await import("node:fs");
+    const path = await import("node:path");
+    const dir = path.resolve(__dirname, "../../pages");
+    const copies = fs
+      .readdirSync(dir)
+      .filter((f) => f.endsWith(".tsx") && !f.includes(".test."))
+      .filter((f) => /stackRef\.current\[stackRef\.current\.length - 1\]/.test(fs.readFileSync(path.join(dir, f), "utf8")));
+    expect(copies).toEqual([]);
+  });
+});

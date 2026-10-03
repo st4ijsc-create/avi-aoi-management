@@ -49,6 +49,7 @@ const srv = vi.hoisted(() => ({
   calls: { create: [] as unknown[], transition: [] as unknown[], getById: [] as unknown[] },
   invalidated: [] as string[],
   failTransition: null as null | { data: { code: string } },
+  holdCreate: null as null | Promise<void>,
 }));
 function bump() {
   srv.version++;
@@ -95,11 +96,12 @@ vi.mock("@/lib/trpc", () => {
           srv.calls.create.push(input);
           const row = { id: srv.nextId, ecnKey: `ECN-NEW-${srv.nextId}`, status: "draft", requestedBy: me.id, reviewedBy: null, changeType: input.changeType, title: input.title, effectivityDate: null, createdAt: new Date("2026-10-03T00:00:00Z") };
           srv.nextId++;
-          later(() => {
+          const go = () => later(() => {
             srv.db.unshift(row);
             hookOpts.onSuccess?.(row);
             callOpts.onSuccess?.(row);
           });
+          if (srv.holdCreate) void srv.holdCreate.then(go); else go();
           return;
         }
         if (router === "ecn" && name === "transition") {
@@ -197,6 +199,7 @@ beforeEach(() => {
   srv.calls = { create: [], transition: [], getById: [] };
   srv.invalidated = [];
   srv.failTransition = null;
+  srv.holdCreate = null;
   srv.nextId = 100;
   perm.isAdmin = false;
   perm.canCreate = true;
@@ -350,6 +353,28 @@ describe("ECN P3 — tạo ECN qua flyout (luồng đầy đủ)", () => {
     expect(within(mainList()).getByText("ECN-NEW-100")).toBeTruthy();
     expect(srv.invalidated.some((k) => k === "ecn" || k === "ecn.list")).toBe(true);
     expect(toastSpy.success).toHaveBeenCalled();
+  });
+
+  it("final wave M-1: tạo ĐANG BAY, người dùng bỏ sheet rồi mở chi tiết ECN khác ⇒ thành công muộn KHÔNG đóng nhầm lớp chi tiết", async () => {
+    let release: () => void = () => {};
+    srv.holdCreate = new Promise<void>((r) => { release = r; });
+    render(<EngineeringChanges />);
+    await userEvent.click(screen.getByRole("button", { name: "Thay đổi mới" }));
+    const layer = await waitFor(() => document.querySelector('[data-flyout-key="ecn-new"]') as HTMLElement);
+    await userEvent.type(within(layer).getByLabelText("Tiêu đề"), "ECN bay");
+    await userEvent.click(within(layer).getByRole("button", { name: "Tạo mới" }));
+    expect(srv.calls.create).toHaveLength(1);
+    await userEvent.keyboard("{Escape}");
+    await userEvent.click(await screen.findByRole("button", { name: "Bỏ thay đổi" }));
+    await waitFor(() => expect(document.querySelector('[data-flyout-key="ecn-new"]')).toBeNull());
+    await userEvent.click(within(rowOf("ECN-0002")).getByText("ECN-0002"));
+    await waitFor(() => expect(detailLayer()).toBeTruthy());
+    release();
+    await waitFor(() => expect(toastSpy.success).toHaveBeenCalled());
+    await new Promise((r) => setTimeout(r, 20));
+    expect(detailLayer()).toBeTruthy();
+    expect(params().get("flyout")).toBe("ecn");
+    expect(params().get("flyoutId")).toBe("2");
   });
 
   it("thiếu tiêu đề ⇒ báo lỗi, KHÔNG gọi create, flyout giữ mở", async () => {

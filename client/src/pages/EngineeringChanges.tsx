@@ -61,7 +61,7 @@ import { DataTable, type DataTableColumn } from "@/components/DataTable";
 import { FilterBar, useUrlFilters, type FilterDef } from "@/components/FilterBar";
 import {
   PageContainer, StatusBadge, type BadgeVariant,
-  PageHeaderCompact, NoticeChip, FlyoutHost, useFlyout, useFlyoutLayer, DetailSheet,
+  PageHeaderCompact, NoticeChip, FlyoutHost, useFlyout, useCloseOwnLayer, DetailSheet,
   TransitionDialog, checkSegregation, LAYOUT_TOOLBAR,
 } from "@/components/patterns";
 import type { FlyoutDefinition } from "@/components/patterns/FlyoutHost";
@@ -552,7 +552,8 @@ function EcnList({
 /** Flyout tạo ECN — form cũ (Dialog) chuyển sang sheet phải; dữ liệu chưa lưu ⇒ hỏi trước khi đóng. */
 function EcnCreateForm({ products, onCreated }: { products: Product[]; onCreated: () => void }) {
   const { t } = useTranslation();
-  const layer = useFlyoutLayer();
+  // final wave M-1 — đóng CHÍNH lớp của mình sau khi lưu (không đóng nhầm lớp người dùng mở trong lúc chờ server).
+  const { layer, done } = useCloseOwnLayer();
   const fid = useId();
   const [title, setTitle] = useState("");
   const [changeType, setChangeType] = useState<ChangeType>("product");
@@ -570,8 +571,7 @@ function EcnCreateForm({ products, onCreated }: { products: Product[]; onCreated
     onSuccess: () => {
       toast.success(t("ecn.created", "Đã tạo thay đổi kỹ thuật"));
       onCreated();
-      layer.setDirty(false);
-      layer.close();
+      done();
     },
     onError: (e) => toastTrpcError(e),
   });
