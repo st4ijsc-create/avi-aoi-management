@@ -683,18 +683,18 @@
      "x": 288,
      "y": 120,
      "w": 936,
-     "h": 300
+     "h": 808
     }
    ],
-   "areaPx": 280800,
+   "areaPx": 756288,
    "attrSel": "div[data-layout-main=\"engineering-home\"]@CockpitLayout.tsx",
-   "gitHead": "017d8e0d7",
-   "at": "2026-10-03T18:58:05.290Z",
+   "gitHead": "f63657604",
+   "at": "2026-10-03T19:58:36.754Z",
    "previous": {
-    "mainTop": 311,
-    "areaPx": 1922984,
-    "attrSel": "div[data-layout-main=\"engineering-home-inbox\"]@EngineeringHub.tsx|section[data-layout-main=\"engineering-home-tools\"]@EngineeringHub.tsx|section[data-layout-main=\"engineering-home-tools\"]@EngineeringHub.tsx|section[data-layout-main=\"engineering-home-tools\"]@EngineeringHub.tsx|section[data-layout-main=\"engineering-home-tools\"]@EngineeringHub.tsx|section[data-layout-main=\"engineering-home-tools\"]@EngineeringHub.tsx|section[data-layout-main=\"engineering-home-tools\"]@EngineeringHub.tsx",
-    "gitHead": "29293e462"
+    "mainTop": 120,
+    "areaPx": 280800,
+    "attrSel": "div[data-layout-main=\"engineering-home\"]@CockpitLayout.tsx",
+    "gitHead": "017d8e0d7"
    }
   },
   "engineering-home|1366|n/a": {
@@ -707,18 +707,18 @@
      "x": 288,
      "y": 120,
      "w": 702,
-     "h": 300
+     "h": 626
     }
    ],
-   "areaPx": 210600,
+   "areaPx": 439452,
    "attrSel": "div[data-layout-main=\"engineering-home\"]@CockpitLayout.tsx",
-   "gitHead": "017d8e0d7",
-   "at": "2026-10-03T18:58:05.290Z",
+   "gitHead": "f63657604",
+   "at": "2026-10-03T19:58:36.754Z",
    "previous": {
-    "mainTop": 337,
-    "areaPx": 1609458,
-    "attrSel": "div[data-layout-main=\"engineering-home-inbox\"]@EngineeringHub.tsx|section[data-layout-main=\"engineering-home-tools\"]@EngineeringHub.tsx|section[data-layout-main=\"engineering-home-tools\"]@EngineeringHub.tsx|section[data-layout-main=\"engineering-home-tools\"]@EngineeringHub.tsx|section[data-layout-main=\"engineering-home-tools\"]@EngineeringHub.tsx|section[data-layout-main=\"engineering-home-tools\"]@EngineeringHub.tsx|section[data-layout-main=\"engineering-home-tools\"]@EngineeringHub.tsx",
-    "gitHead": "29293e462"
+    "mainTop": 120,
+    "areaPx": 210600,
+    "attrSel": "div[data-layout-main=\"engineering-home\"]@CockpitLayout.tsx",
+    "gitHead": "017d8e0d7"
    }
   }
  }
