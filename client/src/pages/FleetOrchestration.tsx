@@ -687,7 +687,7 @@ export default function FleetOrchestration() {
           </TabsList>
 
           {/* ════════════════ TAB: Map (W4-18 §3) ════════════════ */}
-          <TabsContent value="map" className="flex flex-col gap-4">
+          <TabsContent value="map" data-layout-main="fleet-orchestration" className="flex flex-col gap-4">
             <FleetMap
               grid={occupancyGridQ.data}
               gridLoading={occupancyGridQ.isLoading}
@@ -702,7 +702,7 @@ export default function FleetOrchestration() {
           </TabsContent>
 
           {/* ════════════════ TAB: Tasks & Zones (G1) ════════════════ */}
-          <TabsContent value="tasks" className="flex flex-col gap-4">
+          <TabsContent value="tasks" data-layout-main="fleet-orchestration" className="flex flex-col gap-4">
         {/* ── 2. Task queue ──────────────────────────────────────────────────── */}
         <Card>
           <CardHeader className="flex flex-row items-center justify-between gap-2 pb-2">
@@ -908,7 +908,7 @@ export default function FleetOrchestration() {
           </TabsContent>
 
           {/* ════════════════ TAB: Operations (G2-a) ════════════════ */}
-          <TabsContent value="operations" className="flex flex-col gap-4">
+          <TabsContent value="operations" data-layout-main="fleet-orchestration" className="flex flex-col gap-4">
             <OperationsTab
               operations={operations}
               loading={operationsQ.isLoading}
@@ -925,7 +925,7 @@ export default function FleetOrchestration() {
           </TabsContent>
 
           {/* ════════════════ TAB: Resources (G2-c) ════════════════ */}
-          <TabsContent value="resources" className="flex flex-col gap-4">
+          <TabsContent value="resources" data-layout-main="fleet-orchestration" className="flex flex-col gap-4">
             <ResourcesTab
               resources={resources}
               loading={resourcesQ.isLoading}
@@ -940,7 +940,7 @@ export default function FleetOrchestration() {
           </TabsContent>
 
           {/* ════════════════ TAB: Charging (G2-d) ════════════════ */}
-          <TabsContent value="charging" className="flex flex-col gap-4">
+          <TabsContent value="charging" data-layout-main="fleet-orchestration" className="flex flex-col gap-4">
             <ChargingTab
               chargers={chargers}
               chargersLoading={chargersQ.isLoading}
