@@ -296,6 +296,16 @@ export interface WorkflowGraphCanvasProps {
   /** T-2 (doc 38) — LƯU vị trí node sau khi kéo-thả (ghi vào step.ui trong StudioDef). */
   onMoveNode: (id: string, pos: { x: number; y: number }) => void;
   t: TFunction;
+  /**
+   * Doc 81 Đợt 2 Task 11 — sơ đồ LẤP ĐẦY khung cha (canvas là MAIN của WorkbenchShell) thay vì cao cố định
+   * 520 px. Mặc định false (giữ bố cục cũ).
+   */
+  fill?: boolean;
+  /**
+   * Doc 81 Đợt 2 Task 11 — hiện dải palette phía trên sơ đồ. Mặc định true. Trang có bảng bước riêng (kéo-thả
+   * cùng `WF_DND_MIME`) đặt false để không lặp palette trong MAIN.
+   */
+  showPalette?: boolean;
 }
 
 /** U14 — bảng palette kéo-thả: bấm để thêm cấp cao nhất, kéo để lồng vào container. */
@@ -329,6 +339,7 @@ function GraphPalette({ onAdd, t }: { onAdd: (k: StepKind) => void; t: TFunction
 
 function CanvasInner({
   def, selectedId, onSelect, onDelete, onAddTopLevel, onAddChild, onReorderToSibling, onMoveNode, t,
+  fill = false, showPalette = true,
 }: WorkflowGraphCanvasProps) {
   const wrapperRef = useRef<HTMLDivElement>(null);
   const rf = useReactFlow();
@@ -396,9 +407,12 @@ function CanvasInner({
   }, [onReorderToSibling]);
 
   return (
-    <div className="space-y-2">
-      <GraphPalette onAdd={onAddTopLevel} t={t} />
-      <div ref={wrapperRef} className="h-[520px] w-full overflow-hidden rounded-md border border-border bg-muted/20">
+    <div className={fill ? "flex h-full min-h-0 flex-col gap-2" : "space-y-2"}>
+      {showPalette && <GraphPalette onAdd={onAddTopLevel} t={t} />}
+      <div
+        ref={wrapperRef}
+        className={`${fill ? "min-h-0 flex-1" : "h-[520px]"} w-full overflow-hidden rounded-md border border-border bg-muted/20`}
+      >
         <ReactFlow
           nodes={nodes}
           edges={edges}

@@ -5,9 +5,12 @@
 //
 // ORACLE ĐỘC LẬP: SEEDED_RUN_IDS khai tay cùng fixture (contextJson.seed=true — như 6/6 run
 // trên DB dev), không suy bằng hàm gắn nhãn đang bị kiểm.
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { cleanup, render, screen, within } from "@testing-library/react";
 import "@testing-library/jest-dom/vitest";
+// doc 81 Đợt 2 Task 11 — HẠ TẦNG: trang nay dựng WorkbenchShell (react-resizable-panels). Separator của thư viện
+// nuốt cú bấm trong jsdom (rect 0×0 tại điểm bấm) ⇒ ô nhập không nhận chữ — shim dời riêng separator ra xa.
+import { installResizeHandleHitAreaShim } from "@/components/patterns/layoutKitTestPanels";
 
 vi.mock("@/components/DashboardLayout", () => ({
   default: ({ children }: { children: React.ReactNode }) => <div>{children}</div>,
@@ -105,6 +108,9 @@ const RUNS = [
 ];
 const SEEDED_RUN_IDS = new Set([7, 8]);
 
+beforeAll(() => {
+  installResizeHandleHitAreaShim();
+});
 beforeEach(() => {
   for (const k of Object.keys(queryOverrides)) delete queryOverrides[k];
   for (const k of Object.keys(mutateSpies)) delete mutateSpies[k];

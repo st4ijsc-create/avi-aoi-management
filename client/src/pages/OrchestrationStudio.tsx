@@ -9,17 +9,34 @@
  * always safe); deploy/run require machine_control and FOE_ENABLED. The produced
  * WorkflowDefinition MIRRORS server/services/orchestration/foe/workflowModel.ts so
  * `deployWorkflow` validates server-side.
+ *
+ * Doc 81 Đợt 2 Task 11 — bố cục P2 "Canvas designer" (doc 81 §1.2/§1.3, `WorkbenchShell`, biến thể full-bleed):
+ *  - Header MỘT hàng (`PageHeaderCompact`): h1 (+ "Chỉ xem") · chip FOE tắt / sim-gate / "Khi nào dùng" (câu cũ
+ *    trong popover, cùng điều kiện hiện) · Trợ lý AI điều phối · Mô phỏng · Lưu (deploy) · Chạy (cùng cổng cũ).
+ *  - Thanh công cụ (NGOÀI MAIN): tên + mã quy trình SỬA TẠI CHỖ, số phiên bản, chuyển Cây | Sơ đồ.
+ *  - TRÁI: bảng bước (bấm = thêm cấp cao nhất, kéo = lồng vào node container trên sơ đồ) + thư viện quy trình đã
+ *    lưu (Nạp · Phiên bản · Nhân bản · Xoá). MAIN (`data-layout-main`): canvas cây/sơ đồ. PHẢI: Cấu hình bước.
+ *  - DƯỚI (gập ở lần đầu — R-2-l): Lần chạy / Chờ duyệt / Vấn đề (`?tab=`); đếm luôn thấy ở thanh trạng thái.
+ *  - Sheet (FlyoutHost): Trợ lý AI 420 px (`?flyout=orch-ai`, không chồng sheet chat — R-2-j), Lịch sử phiên bản
+ *    (`VersionHistoryPanel` + `RollbackConfirm`: lý do ≥3 + OTP tươi mỗi lượt — R-2-g), Nhân bản. Xoá giữ AlertDialog.
+ *  - R-2-n: Chạy / Deploy (OTP) / Duyệt / Từ chối / Tiếp tục / Dừng / Huỷ / Khôi phục giữ đúng đích, xác nhận, cổng
+ *    và `expectedStepId` như trước; nhãn DRY-RUN / "chưa xác nhận" và toast i18n khi run bị từ chối vì "draft" giữ nguyên.
  */
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 import type { TFunction } from "i18next";
-import { Link } from "wouter";
+import { Link, useSearch } from "wouter";
 import { useEngineering } from "@/contexts/EngineeringContext";
 import { withParams } from "@/lib/engineeringDeepLink";
 import DashboardLayout from "@/components/DashboardLayout";
 import { useShellPageVariant } from "@/lib/shellPage";
-import { PageHeader, PageContainer } from "@/components/patterns";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import {
+  PageHeaderCompact, NoticeStack, FlyoutHost, useFlyout, parseFlyoutStack, FLYOUT_PARAM, WorkbenchShell,
+  VersionHistoryPanel, RollbackConfirm,
+  type NoticeItem, type FlyoutDefinition,
+} from "@/components/patterns";
+import { useUrlParam } from "@/components/patterns/useUrlParam";
+import { useCloseOwnLayer } from "@/components/patterns/useCloseOwnLayer";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
@@ -33,11 +50,15 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Checkbox } from "@/components/ui/checkbox";
 import { trpc } from "@/lib/trpc";
 import { mapTrpcError, toastTrpcError } from "@/lib/trpcErrors";
+import { cn } from "@/lib/utils";
 import { usePermissions } from "@/_core/hooks/usePermissions";
+import { useAuth } from "@/_core/hooks/useAuth";
 import { ViewOnlyBadge } from "@/components/PermissionGate";
+import { setAiChatOpen, useAiEntry } from "@/lib/aiEntryStore";
 import { toast } from "sonner";
 import {
   Workflow,
@@ -62,23 +83,18 @@ import {
   Gauge,
   RefreshCw,
   Sparkles,
-  Info,
   Wand2,
   Copy,
   History,
-  GitCompare,
   RotateCcw,
   ListTree,
   Network,
+  Pencil,
 } from "lucide-react";
-import { LineDiff, prettyJson } from "@/components/diff/LineDiff";
 import {
   AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
   AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
-import {
-  Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle,
-} from "@/components/ui/dialog";
 import {
   type StudioStep,
   type StudioDef,
@@ -99,9 +115,8 @@ import {
   emptyDef,
   ON_PRECONDITION_FAIL,
 } from "@/components/orchestration/workflowTypes";
-import { WorkflowGraphCanvas } from "@/components/orchestration/WorkflowGraphCanvas";
+import { WorkflowGraphCanvas, WF_DND_MIME } from "@/components/orchestration/WorkflowGraphCanvas";
 import { useStepUpOtp } from "@/components/security/StepUpOtpDialog";
-import { ConfirmWithReason } from "@/components/patterns/ConfirmWithReason";
 // doc 80 Đợt 1 Task 4 (X-01 · ORC-13) — nhãn SEED/DEMO/SIM + DRY-RUN trên run.
 import { ProvenanceBadge, ProvenanceSummary, DispatchModeBadge } from "@/components/common/ProvenanceBadge";
 import { classifyStepDispatch, type RunDispatchSummary } from "@shared/provenance";
@@ -1054,10 +1069,357 @@ function isRunTerminal(status: string): boolean {
   return TERMINAL_RUN_STATUSES.has(status);
 }
 
+// ── Doc 81 Đợt 2 Task 11 — bố cục P2 "Canvas designer" ────────────────────────────────────────
+/** Tab của panel dưới (`?tab=`). */
+type BottomTab = "runs" | "approvals" | "problems";
+const BOTTOM_TABS: readonly BottomTab[] = ["runs", "approvals", "problems"];
+const isBottomTab = (v: string | null): v is BottomTab => v != null && (BOTTOM_TABS as readonly string[]).includes(v);
+/** Khoá flyout (FlyoutHost, `?flyout=`). */
+const AI_FLYOUT = "orch-ai";
+const VERSIONS_FLYOUT = "orch-versions";
+const DUPLICATE_FLYOUT = "orch-duplicate";
+
+type WorkflowRow = Record<string, unknown>;
+
+/**
+ * Tiêu đề sửa TẠI CHỖ: nút hiện giá trị; bấm ⇒ ô nhập (tự focus); Enter hoặc rời ô ⇒ lưu; Esc ⇒ huỷ.
+ * Lưu đúng chuỗi người gõ (không trim) như ô nhập cũ của card meta.
+ */
+function InlineEditText({
+  value,
+  label,
+  emptyText,
+  placeholder,
+  onCommit,
+  mono = false,
+  className,
+}: {
+  value: string;
+  label: string;
+  emptyText: string;
+  placeholder?: string;
+  onCommit: (v: string) => void;
+  mono?: boolean;
+  className?: string;
+}) {
+  const { t } = useTranslation();
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState("");
+  // Enter/Esc đã xử lý ⇒ blur khi ô nhập rời DOM không lưu lần nữa.
+  const settledRef = useRef(false);
+  const buttonRef = useRef<HTMLButtonElement | null>(null);
+  const refocusRef = useRef(false);
+  useEffect(() => {
+    if (!editing && refocusRef.current) {
+      refocusRef.current = false;
+      buttonRef.current?.focus();
+    }
+  }, [editing]);
+  const finish = (save: boolean) => {
+    settledRef.current = true;
+    refocusRef.current = true;
+    if (save) onCommit(draft);
+    setEditing(false);
+  };
+  if (editing) {
+    return (
+      <Input
+        autoFocus
+        aria-label={label}
+        value={draft}
+        placeholder={placeholder}
+        onChange={(e) => setDraft(e.target.value)}
+        onKeyDown={(e) => {
+          if (e.key === "Enter") {
+            e.preventDefault();
+            finish(true);
+          } else if (e.key === "Escape") {
+            e.preventDefault();
+            e.stopPropagation();
+            finish(false);
+          }
+        }}
+        onBlur={() => {
+          if (settledRef.current) return;
+          onCommit(draft);
+          setEditing(false);
+        }}
+        className={cn("h-7 w-56 text-sm", mono && "font-mono text-xs", className)}
+      />
+    );
+  }
+  return (
+    <button
+      ref={buttonRef}
+      type="button"
+      aria-label={label}
+      title={t("studio.clickToEdit", "Bấm để sửa")}
+      onClick={() => {
+        settledRef.current = false;
+        setDraft(value);
+        setEditing(true);
+      }}
+      className={cn(
+        "group inline-flex h-7 min-w-0 max-w-[22rem] items-center gap-1.5 rounded px-1.5 text-left hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+        mono ? "font-mono text-xs text-muted-foreground" : "text-sm font-semibold",
+        className,
+      )}
+    >
+      {value ? <span className="truncate">{value}</span> : <span className="truncate font-normal italic text-muted-foreground">{emptyText}</span>}
+      <Pencil className="h-3 w-3 shrink-0 opacity-50 group-hover:opacity-100" aria-hidden="true" />
+    </button>
+  );
+}
+
+/** Nút mở Trợ lý AI điều phối (sheet 420). Phải nằm trong FlyoutHost. */
+function AiAdvisorButton({ label }: { label: string }) {
+  const flyout = useFlyout();
+  const open = flyout.isOpen(AI_FLYOUT);
+  return (
+    <Button
+      variant="outline"
+      className="border-violet-500/40"
+      aria-haspopup="dialog"
+      aria-expanded={open}
+      aria-label={label}
+      onClick={() => flyout.open(AI_FLYOUT)}
+    >
+      <Sparkles className="h-4 w-4 text-violet-600 sm:mr-1.5" aria-hidden="true" />
+      {/* < 640 px: chỉ biểu tượng (tên vẫn ở aria-label) để header một hàng không tràn. */}
+      <span className="hidden sm:inline">{label}</span>
+    </Button>
+  );
+}
+
+/**
+ * Ruling R-2-j — trợ lý điều phối (sheet 420) và sheet chat AI của top bar KHÔNG BAO GIỜ chồng nhau: mở trợ lý
+ * ⇒ đóng chat; chat mở ra ⇒ đóng trợ lý. Chỉ phản ứng theo CHUYỂN TRẠNG THÁI (không đóng cái vừa được mở).
+ */
+function AiSurfaceGuard() {
+  const flyout = useFlyout();
+  const { chatOpen } = useAiEntry();
+  const advisorOpen = flyout.isOpen(AI_FLYOUT);
+  const prev = useRef({ chatOpen, advisorOpen });
+  useEffect(() => {
+    const p = prev.current;
+    prev.current = { chatOpen, advisorOpen };
+    if (advisorOpen && !p.advisorOpen && chatOpen) {
+      setAiChatOpen(false);
+      return;
+    }
+    if (chatOpen && !p.chatOpen && advisorOpen) flyout.close();
+  }, [chatOpen, advisorOpen, flyout]);
+  return null;
+}
+
+/** Bảng bước (palette) + thư viện quy trình đã lưu — panel TRÁI. Phải nằm trong FlyoutHost. */
+function LibraryPanel({
+  workflows,
+  filteredWorkflows,
+  wfSearch,
+  onSearch,
+  onRefresh,
+  onLoad,
+  onDelete,
+  onAddStep,
+  canControl,
+  permReason,
+  showGraphHint,
+  t,
+}: {
+  workflows: WorkflowRow[];
+  filteredWorkflows: WorkflowRow[];
+  wfSearch: string;
+  onSearch: (v: string) => void;
+  onRefresh: () => void;
+  onLoad: (w: WorkflowRow) => void;
+  onDelete: (w: { id: number; ref: string }) => void;
+  onAddStep: (k: StepKind) => void;
+  canControl: boolean;
+  permReason: string | undefined;
+  showGraphHint: boolean;
+  t: TFunction;
+}) {
+  const flyout = useFlyout();
+  return (
+    <div className="flex h-full min-h-0 flex-col">
+      <section className="shrink-0 border-b p-2">
+        <h2 className="mb-1.5 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">{t("studio.addStep", "Add step")}</h2>
+        <div role="group" aria-label={t("studio.addStep", "Add step")} className="grid grid-cols-2 gap-1">
+          {STEP_KINDS.map((k) => {
+            const Icon = ICONS[k];
+            const meta = STEP_META[k];
+            return (
+              <button
+                key={k}
+                type="button"
+                draggable
+                onDragStart={(e) => {
+                  // Cùng MIME với palette của sơ đồ ⇒ kéo thả lên node container để lồng bước.
+                  e.dataTransfer.setData(WF_DND_MIME, k);
+                  e.dataTransfer.effectAllowed = "copy";
+                }}
+                onClick={() => onAddStep(k)}
+                title={t("studio.paletteHint", "Click to add at top level, or drag onto a container to nest")}
+                className={`flex min-w-0 items-center gap-1.5 rounded border px-1.5 py-1 text-left text-xs transition-colors hover:bg-muted ${meta.border} ${meta.bg}`}
+              >
+                <Icon className={`h-3.5 w-3.5 shrink-0 ${meta.iconColor}`} aria-hidden="true" />
+                <span className="truncate">{t(meta.labelKey, meta.labelDefault)}</span>
+              </button>
+            );
+          })}
+        </div>
+        {showGraphHint && (
+          <p className="mt-1.5 text-[11px] text-muted-foreground">
+            {t("studio.graphHintEdit", "Click a chip to add a step (or drag it onto a container to nest); drag a link between two siblings to reorder; use the trash icon or Delete to remove. Click a node to configure it in the inspector.")}
+          </p>
+        )}
+      </section>
+      <section className="flex min-h-0 flex-1 flex-col p-2">
+        <div className="mb-1.5 flex items-center justify-between gap-1">
+          <h2 className="truncate text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">{t("studio.workflows", "Saved workflows")}</h2>
+          <Button
+            size="icon"
+            variant="ghost"
+            className="h-6 w-6"
+            aria-label={t("studio.refreshWorkflows", "Tải lại danh sách quy trình")}
+            title={t("studio.refreshWorkflows", "Tải lại danh sách quy trình")}
+            onClick={onRefresh}
+          >
+            <RefreshCw className="h-3.5 w-3.5" aria-hidden="true" />
+          </Button>
+        </div>
+        {/* U13 — ô tìm theo tên/mã (lọc phía client). */}
+        {workflows.length > 0 && (
+          <Input
+            value={wfSearch}
+            onChange={(e) => onSearch(e.target.value)}
+            placeholder={t("studio.searchWorkflows", "Tìm theo tên hoặc mã…")}
+            aria-label={t("studio.searchWorkflows", "Tìm theo tên hoặc mã…")}
+            className="mb-1.5 h-7 text-xs"
+          />
+        )}
+        <div className="min-h-0 flex-1 space-y-1 overflow-auto">
+          {workflows.length === 0 && (
+            <p className="py-4 text-center text-xs text-muted-foreground">{t("studio.noWorkflows", "No workflows yet.")}</p>
+          )}
+          {workflows.length > 0 && filteredWorkflows.length === 0 && (
+            <p className="py-4 text-center text-xs text-muted-foreground">{t("studio.noWorkflowMatch", "Không có quy trình khớp bộ lọc")}</p>
+          )}
+          {filteredWorkflows.map((w) => {
+            const id = Number(w.id);
+            const ref = String(w.ref);
+            const name = String(w.name ?? w.ref);
+            return (
+              <div key={String(w.id)} data-workflow-row={id} className="rounded border px-2 py-1 text-sm">
+                <div className="truncate font-medium" title={name}>{name}</div>
+                <div className="flex items-center gap-0.5">
+                  <span className="min-w-0 flex-1 truncate font-mono text-[10px] text-muted-foreground" title={ref}>
+                    {ref} · v{String(w.version ?? 1)}
+                  </span>
+                  <Button size="sm" variant="outline" className="h-6 px-2 text-xs" onClick={() => onLoad(w)}>
+                    {t("studio.load", "Load")}
+                  </Button>
+                  <Button
+                    size="icon"
+                    variant="ghost"
+                    className="h-6 w-6"
+                    aria-label={t("studio.versions", "Versions")}
+                    title={t("studio.versions", "Versions")}
+                    onClick={() => flyout.open(VERSIONS_FLYOUT, { id })}
+                  >
+                    <History className="h-3.5 w-3.5" aria-hidden="true" />
+                  </Button>
+                  <Button
+                    size="icon"
+                    variant="ghost"
+                    className="h-6 w-6"
+                    disabled={!canControl}
+                    aria-label={t("studio.duplicate", "Duplicate")}
+                    title={permReason ?? t("studio.duplicate", "Duplicate")}
+                    onClick={() => flyout.open(DUPLICATE_FLYOUT, { id })}
+                  >
+                    <Copy className="h-3.5 w-3.5" aria-hidden="true" />
+                  </Button>
+                  <Button
+                    size="icon"
+                    variant="ghost"
+                    className="h-6 w-6 text-destructive"
+                    disabled={!canControl}
+                    aria-label={t("common.delete", "Delete")}
+                    title={permReason ?? t("common.delete", "Delete")}
+                    onClick={() => onDelete({ id, ref })}
+                  >
+                    <Trash2 className="h-3.5 w-3.5" aria-hidden="true" />
+                  </Button>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      </section>
+    </div>
+  );
+}
+
+/** Sheet "Nhân bản quy trình" (thay Dialog cũ): cùng ô nhập, cùng kiểm tra (mã trống ⇒ khoá), cùng payload. */
+function DuplicateWorkflowForm({
+  wf,
+  loaded,
+  pending,
+  onDuplicate,
+}: {
+  wf: { id: number; ref: string; name: string } | null;
+  loaded: boolean;
+  pending: boolean;
+  onDuplicate: (input: { id: number; newRef: string }, done: () => void) => void;
+}) {
+  const { t } = useTranslation();
+  const { layer, done } = useCloseOwnLayer();
+  const initial = wf ? `${wf.ref}-copy` : "";
+  const [newRef, setNewRef] = useState(initial);
+  useEffect(() => {
+    layer.setDirty(newRef !== initial);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [newRef, initial]);
+  if (!wf) {
+    return (
+      <p className="py-6 text-center text-sm text-muted-foreground">
+        {loaded
+          ? t("studio.wfNotLoaded", "Không tìm thấy quy trình #{{id}} trong danh sách đã tải.", { id: layer.id ?? "" })
+          : t("common.loading", "Loading…")}
+      </p>
+    );
+  }
+  return (
+    <form
+      className="space-y-3"
+      onSubmit={(e) => {
+        e.preventDefault();
+        if (!newRef.trim() || pending) return;
+        onDuplicate({ id: wf.id, newRef: newRef.trim() }, done);
+      }}
+    >
+      <p className="text-sm">
+        {wf.name} <span className="font-mono text-xs text-muted-foreground">· {wf.ref}</span>
+      </p>
+      <div className="space-y-1.5">
+        <Label htmlFor="orch-dup-ref" className="text-xs">{t("studio.duplicateNewRef", "New workflow ref *")}</Label>
+        <Input id="orch-dup-ref" value={newRef} onChange={(e) => setNewRef(e.target.value)} className="font-mono" placeholder="line-a-startup-copy" />
+      </div>
+      <div className="flex justify-end gap-2">
+        <Button type="button" variant="outline" onClick={() => layer.close()}>{t("common.cancel", "Cancel")}</Button>
+        <Button type="submit" disabled={!newRef.trim() || pending}>{t("studio.duplicate", "Duplicate")}</Button>
+      </div>
+    </form>
+  );
+}
+
 export default function OrchestrationStudio() {
   const { t, i18n } = useTranslation();
-  // doc 81 Đợt 2 Task 2 — màn workbench: rail trái mặc định thu gọn (nhớ theo người dùng).
-  useShellPageVariant("workbench");
+  // doc 81 Đợt 2 Task 11 — màn đã chuyển sang WorkbenchShell ⇒ "full-bleed": rail trái thu gọn, <main> không đệm.
+  useShellPageVariant("full-bleed");
+  const { user } = useAuth();
   const { hasPermission } = usePermissions();
   const canControl = hasPermission("machine_control", "canCreate");
   // U1 (doc 26) — nhớ workflow ref đang mở làm fallback deep-link khi sang Cell Twin/RF.
@@ -1114,6 +1476,7 @@ export default function OrchestrationStudio() {
 
   // U13 (doc 26 §2.2/§2.3) — tìm/lọc client cho workflows + runs.
   const [wfSearch, setWfSearch] = useState("");
+  const allWorkflows = (workflowsQ.data ?? []) as WorkflowRow[];
   const filteredWorkflows = useMemo(() => {
     const q = wfSearch.trim().toLowerCase();
     const rows = (workflowsQ.data ?? []) as Array<Record<string, unknown>>;
@@ -1147,7 +1510,7 @@ export default function OrchestrationStudio() {
     () => (runStatusFilter === "all" ? allRuns : allRuns.filter((r) => String(r.status ?? "") === runStatusFilter)),
     [allRuns, runStatusFilter],
   );
-  // §2.3 — tách nhóm "Đang chờ duyệt" LÊN ĐẦU; phần còn lại giữ thứ tự gốc.
+  // §2.3 — nhóm "Đang chờ duyệt" (nay là tab riêng của panel dưới); phần còn lại giữ thứ tự gốc.
   const awaitingRuns = useMemo(() => filteredRuns.filter(isAwaitingRun), [filteredRuns]);
   const interruptedRuns = useMemo(() => filteredRuns.filter(isInterruptedRun), [filteredRuns]);
   const otherRuns = useMemo(
@@ -1204,31 +1567,36 @@ export default function OrchestrationStudio() {
     onError: (e) => toastTrpcError(e),
   });
 
-  // ── Saved-workflow delete / duplicate ──
+  // ── Saved-workflow delete (AlertDialog — xác nhận phá huỷ giữ nguyên) / duplicate (sheet) ──
   const [deleteWf, setDeleteWf] = useState<{ id: number; ref: string } | null>(null);
-  const [dupWf, setDupWf] = useState<{ id: number; ref: string; name: string } | null>(null);
-  const [dupNewRef, setDupNewRef] = useState("");
 
   const deleteWfM = trpc.orchestration.deleteWorkflow.useMutation({
     onSuccess: () => { toast.success(t("studio.wfDeleted", "Workflow deleted")); setDeleteWf(null); void workflowsQ.refetch(); },
     onError: (e) => toastTrpcError(e),
   });
+  // Sheet tự đóng qua `done` truyền theo từng lượt gọi (useCloseOwnLayer); toast + tải lại giữ ở đây như cũ.
   const duplicateWfM = trpc.orchestration.duplicateWorkflow.useMutation({
-    onSuccess: () => { toast.success(t("studio.wfDuplicated", "Workflow duplicated")); setDupWf(null); setDupNewRef(""); void workflowsQ.refetch(); },
+    onSuccess: () => { toast.success(t("studio.wfDuplicated", "Workflow duplicated")); void workflowsQ.refetch(); },
     onError: (e) => toastTrpcError(e),
   });
 
-  // ── W3-11: version history panel (diff 2 phiên bản + rollback) ──
-  const [versionsWf, setVersionsWf] = useState<{ id: number; ref: string } | null>(null);
-  const [vDiffBaseId, setVDiffBaseId] = useState<number | null>(null);
-  const [vDiffCompareId, setVDiffCompareId] = useState<number | null>(null);
+  // ── W3-11: version history (diff 2 phiên bản + rollback) — nay là sheet `?flyout=orch-versions&flyoutId=<id>` ──
+  const search = useSearch();
+  const flyoutStack = useMemo(() => parseFlyoutStack(search), [search]);
+  const versionsEntry = flyoutStack.find((e) => e.key === VERSIONS_FLYOUT);
+  const versionsWfId = versionsEntry?.id != null && /^\d+$/.test(versionsEntry.id) ? Number(versionsEntry.id) : null;
   const versionsQ = trpc.orchestration.listVersions.useQuery(
-    { workflowId: versionsWf?.id ?? 0 },
-    { enabled: versionsWf != null },
+    { workflowId: versionsWfId ?? 0 },
+    { enabled: versionsWfId != null },
   );
-  const versionRows = (versionsQ.data ?? []) as Array<{ id: number; version: number; name: string; definitionJson: unknown }>;
-  const vDiffBase = versionRows.find((v) => v.id === vDiffBaseId) ?? null;
-  const vDiffCompare = versionRows.find((v) => v.id === vDiffCompareId) ?? null;
+  const versionRows = (versionsQ.data ?? []) as Array<{
+    id: number;
+    version: number;
+    name: string;
+    definitionJson: unknown;
+    createdBy?: number | null;
+    createdAt?: string | Date | null;
+  }>;
   const rollbackWfM = trpc.orchestration.rollbackWorkflow.useMutation({
     onSuccess: (r) => {
       if (r?.ok) {
@@ -1241,6 +1609,39 @@ export default function OrchestrationStudio() {
     },
     onError: (e) => toastTrpcError(e),
   });
+
+  // ── Panel dưới: Lần chạy / Chờ duyệt / Vấn đề (ruling R-2-l) ─────────────────────────────────
+  // Tab trong `?tab=` (F5 giữ). Chưa chọn: có run chờ duyệt hoặc đến từ deep-link `?filter=pending`
+  // (PendingReviewStrip) ⇒ "Chờ duyệt" — tương đương nhóm chờ duyệt được GHIM ĐẦU danh sách cũ.
+  const [tabParam, setTabParam] = useUrlParam("tab");
+  const filterPending = useMemo(() => new URLSearchParams(search).get("filter") === "pending", [search]);
+  // Tab do MÃ chọn khi đang có sheet mở (không ghi URL: FlyoutHost giữ dấu lịch sử trên mục URL hiện tại).
+  const [autoTab, setAutoTab] = useState<BottomTab | null>(null);
+  const bottomTab: BottomTab =
+    autoTab ?? (isBottomTab(tabParam) ? tabParam : filterPending || awaitingCount > 0 ? "approvals" : "runs");
+  const [bottomOpenRequest, setBottomOpenRequest] = useState(0);
+  const chooseBottomTab = (tab: BottomTab) => {
+    setAutoTab(null);
+    setTabParam(tab);
+  };
+  const openBottom = (tab: BottomTab) => {
+    chooseBottomTab(tab);
+    setBottomOpenRequest((n) => n + 1);
+  };
+  // Kết quả mô phỏng mới (người bấm Mô phỏng, hoặc AI đề xuất kèm mô phỏng) ⇒ mở panel ở tab Vấn đề.
+  const revealProblems = () => {
+    if (new URLSearchParams(window.location.search).has(FLYOUT_PARAM)) setAutoTab("problems");
+    else chooseBottomTab("problems");
+    setBottomOpenRequest((n) => n + 1);
+  };
+  // Deep-link LÚC NẠP trang (`?filter=pending` từ PendingReviewStrip, `?tab=` sau F5) = ý định mở panel.
+  useEffect(() => {
+    if (filterPending || isBottomTab(tabParam)) setBottomOpenRequest((n) => n + 1);
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  const problemsCount = sim ? sim.errors.length + sim.warnings.length : 0;
+  const problemsTone: "error" | "warning" | null = sim
+    ? sim.errors.length > 0 || !sim.ok ? "error" : sim.warnings.length > 0 ? "warning" : null
+    : null;
 
   const selectedStep = selectedId ? findStep(def.steps, selectedId) : null;
 
@@ -1295,6 +1696,7 @@ export default function OrchestrationStudio() {
       const submittedHash = JSON.stringify(payload);
       const res = await utils.orchestration.simulate.fetch({ workflow: payload });
       setSim(res as unknown as SimResult);
+      revealProblems();
       // doc 40 ENG-F4 — sim ĐẠT → nhớ token gắn với ĐÚNG định nghĩa vừa nộp để qua sim-gate ở Deploy.
       // Sim không đạt → xoá bằng chứng cũ (Deploy sẽ khoá lại khi gate bật).
       if (res?.ok) setSimPass({ hash: submittedHash, token: (res as { simToken?: string }).simToken });
@@ -1336,6 +1738,7 @@ export default function OrchestrationStudio() {
         setSelectedId(null);
         setAiRationale(res.rationale || null);
         setSim((res.simulation as unknown as SimResult) ?? null);
+        if (res.simulation) revealProblems();
         if (res.valid) toast.success(t("studio.aiProposed", "AI proposed a workflow — review it before deploying"));
         else toast.warning(res.message ?? t("studio.aiInvalid", "AI could not produce a valid workflow"));
       } else {
@@ -1362,6 +1765,7 @@ export default function OrchestrationStudio() {
       }
       if (res.workflow) {
         setSim((res.simulation as unknown as SimResult) ?? null);
+        if (res.simulation) revealProblems();
         setOptimizePreview({
           def: cloneDef(res.workflow as unknown as StudioDef),
           diff: res.diff ?? [],
@@ -1387,485 +1791,591 @@ export default function OrchestrationStudio() {
     toast.success(t("studio.aiOptimizeApplied", "Applied the AI-optimized workflow"));
   };
 
+  const findWorkflow = (id: string | null) => allWorkflows.find((w) => String(w.id) === id) ?? null;
+  const workflowsLoaded = !workflowsQ.isLoading;
+
+  // ── Sheet (FlyoutHost: một stack sheet phải, URL `?flyout=&flyoutId=` là nguồn sự thật) ──
+  const flyouts: Record<string, FlyoutDefinition> = {
+    // E5 — Trợ lý AI điều phối: sheet 420 px (size sm). HITL: AI chỉ đề xuất; người deploy.
+    [AI_FLYOUT]: {
+      size: "sm",
+      title: t("studio.aiTitle", "AI orchestration advisor"),
+      description: t("studio.aiSheetDesc", "AI chỉ ĐỀ XUẤT và mô phỏng — bạn xem lại trên canvas rồi tự Lưu (deploy) và Chạy."),
+      render: () => (
+        <div className="space-y-3" data-ai-advisor="">
+          <div className="space-y-1.5">
+            <Label htmlFor="orch-ai-goal" className="text-xs">{t("studio.aiGoal", "Goal / problem (for the AI)")}</Label>
+            <Input
+              id="orch-ai-goal"
+              value={aiGoal}
+              onChange={(e) => setAiGoal(e.target.value)}
+              placeholder={t("studio.aiGoalPlaceholder", "e.g. AOI reports NG → robot rejects part → conveyor moves it; add an approval gate before stopping the line")}
+              disabled={!aiEnabled || aiBusy}
+            />
+          </div>
+          <div className="flex flex-wrap gap-2">
+            <Button
+              variant="outline"
+              className="border-violet-500/40"
+              onClick={() => void aiSuggest()}
+              disabled={!aiEnabled || aiBusy}
+              title={!aiEnabled ? t("studio.aiOff", "Enable AI_ORCHESTRATION_ADVISOR_ENABLED to use") : undefined}
+            >
+              <Sparkles className="mr-1.5 h-4 w-4" /> {t("studio.aiSuggest", "AI suggest workflow")}
+            </Button>
+            <Button
+              variant="outline"
+              className="border-violet-500/40"
+              onClick={() => void aiOptimize()}
+              disabled={!aiEnabled || aiBusy || def.steps.length === 0}
+              title={!aiEnabled ? t("studio.aiOff", "Enable AI_ORCHESTRATION_ADVISOR_ENABLED to use") : undefined}
+            >
+              <Wand2 className="mr-1.5 h-4 w-4" /> {t("studio.aiOptimize", "AI optimize")}
+            </Button>
+          </div>
+
+          {!aiStatusQ.isLoading && !aiEnabled && (
+            <p className="text-xs text-muted-foreground">
+              {t("studio.aiDisabledHint", "The AI advisor is OFF (AI_ORCHESTRATION_ADVISOR_ENABLED). AI only PROPOSES — a human always reviews & deploys manually.")}
+            </p>
+          )}
+
+          {aiRationale && (
+            <div className="rounded-md border border-violet-500/30 bg-card p-2 text-xs">
+              <span className="font-semibold text-violet-700">{t("studio.aiRationale", "AI rationale")}: </span>
+              {aiRationale}
+            </div>
+          )}
+
+          {/* Optimize preview — accept (replace editor) or discard. */}
+          {optimizePreview && (
+            <div className="space-y-2 rounded-md border border-violet-500/40 bg-card p-3">
+              <div className="flex items-center gap-2 text-sm font-semibold text-violet-700">
+                <Wand2 className="h-4 w-4" /> {t("studio.aiOptimizePreview", "AI-proposed optimization")}
+              </div>
+              {optimizePreview.rationale && (
+                <p className="text-xs text-muted-foreground">{optimizePreview.rationale}</p>
+              )}
+              {optimizePreview.diff.length > 0 && (
+                <ul className="ml-4 list-disc text-xs">
+                  {optimizePreview.diff.map((d, i) => <li key={i}>{d}</li>)}
+                </ul>
+              )}
+              <div className="flex gap-2">
+                <Button size="sm" className="bg-violet-600 hover:bg-violet-700" onClick={acceptOptimized}>
+                  {t("studio.aiAccept", "Apply to editor")}
+                </Button>
+                <Button size="sm" variant="outline" onClick={() => setOptimizePreview(null)}>
+                  {t("studio.aiDiscard", "Discard")}
+                </Button>
+              </div>
+            </div>
+          )}
+          <p className="text-[11px] text-muted-foreground">
+            {t("studio.aiHitlNote", "HITL: AI only proposes a workflow + simulates it on the digital twin. Saving (deploy) & running are always done manually by a human.")}
+          </p>
+        </div>
+      ),
+    },
+    // W3-11 — Version history: VersionHistoryPanel (so sánh 2 bản) + RollbackConfirm mỗi hàng.
+    [VERSIONS_FLYOUT]: {
+      size: "lg",
+      title: t("studio.versionsTitle", "Version history"),
+      description: (id) => {
+        const wf = findWorkflow(id);
+        return `${t("studio.versionsDesc", "Each deploy snapshots a version. Compare two versions or roll back (rollback re-deploys the old definition as a NEW version).")}${wf ? ` — ${String(wf.ref)}` : ""}`;
+      },
+      render: (layer) => {
+        const workflowId = layer.id != null && /^\d+$/.test(layer.id) ? Number(layer.id) : null;
+        if (workflowId == null) {
+          return <p className="py-6 text-center text-sm text-muted-foreground">{t("studio.wfNotLoaded", "Không tìm thấy quy trình #{{id}} trong danh sách đã tải.", { id: layer.id ?? "" })}</p>;
+        }
+        if (!versionsQ.isLoading && !versionsQ.isError && versionRows.length === 0) {
+          return (
+            <p className="py-6 text-center text-sm text-muted-foreground">
+              {t("studio.noVersions", "No version snapshots yet (only versions deployed after this feature are recorded).")}
+            </p>
+          );
+        }
+        return (
+          <VersionHistoryPanel
+            status={versionsQ.isLoading ? "loading" : versionsQ.isError ? "error" : "ready"}
+            versions={versionRows.map((v) => ({
+              id: v.id,
+              label: `v${v.version}`,
+              createdAt: v.createdAt ?? null,
+              author: v.createdBy != null ? `#${v.createdBy}` : undefined,
+              note: v.name,
+              content: v.definitionJson,
+            }))}
+            renderRowActions={(row) => {
+              const v = versionRows.find((x) => x.id === row.id);
+              if (!v) return null;
+              // doc 80 ORC-05 — rollback = deploy: lý do bắt buộc (≥3) + OTP tươi mỗi lượt (R-2-g: giữ đúng hợp đồng).
+              // OTP hỏi bằng `stepUp.guard` CỦA TRANG ngay tại điểm gọi (y như bản cũ: ConfirmWithReason → guard →
+              // mutate) — nên `requireOtp={false}` ở đây KHÔNG có nghĩa là bỏ OTP: nó chỉ tránh hỏi OTP HAI lần.
+              // Lưới step-up (`vramPanelStepUp.unit.test.ts` §I-3) đòi mọi điểm gọi thủ tục `deployProcedure` nằm
+              // TRONG `stepUp.guard` và gửi `totpCode` ở CÙNG file — đúng hình dạng dưới đây.
+              return (
+                <RollbackConfirm
+                  trigger={
+                    <Button
+                      size="sm" variant="outline" className="h-7"
+                      disabled={!canControl || rollbackWfM.isPending}
+                      title={permReason}
+                    >
+                      <RotateCcw className="mr-1 h-3.5 w-3.5" /> {t("studio.rollback", "Rollback")}
+                    </Button>
+                  }
+                  versionLabel={`v${v.version}`}
+                  disabled={!canControl || rollbackWfM.isPending}
+                  title={t("studio.rollbackTitle", "Roll back to this version?")}
+                  description={t("studio.rollbackConfirm", "This re-deploys version v{{version}}'s definition as a NEW version (append-only; history is preserved). Flag-gated by FOE_ENABLED.", { version: v.version })}
+                  impact={t("studio.rollbackImpact", "Requires an OTP code and a reason; the reason is recorded in the audit log.")}
+                  requireOtp={false}
+                  minReasonLength={3}
+                  confirmLabel={t("studio.rollback", "Rollback")}
+                  onRollback={({ reason }) =>
+                    stepUp.guard((totpCode) =>
+                      rollbackWfM.mutate({ workflowId, version: v.version, reason: reason ?? "", totpCode }),
+                    )
+                  }
+                />
+              );
+            }}
+          />
+        );
+      },
+    },
+  };
+  if (canControl) {
+    flyouts[DUPLICATE_FLYOUT] = {
+      size: "sm",
+      title: t("studio.duplicateTitle", "Duplicate workflow"),
+      description: t("studio.duplicateDesc", "Create a copy with a new ref. The copy carries no runs."),
+      render: (layer) => {
+        const w = findWorkflow(layer.id);
+        const wf = w ? { id: Number(w.id), ref: String(w.ref), name: String(w.name ?? w.ref) } : null;
+        return (
+          <DuplicateWorkflowForm
+            key={wf?.id ?? "none"}
+            wf={wf}
+            loaded={workflowsLoaded}
+            pending={duplicateWfM.isPending}
+            onDuplicate={(input, done) => duplicateWfM.mutate(input, { onSuccess: () => done() })}
+          />
+        );
+      },
+    };
+  }
+
+  // ── Header: một hàng — h1 · chip (Chỉ xem, FOE tắt, sim-gate, Khi nào dùng) · hành động ──
+  const notices: Array<NoticeItem | false> = [
+    // Cùng điều kiện banner cũ: đang tải ⇒ không hiện.
+    !statusQ.isLoading && !foeEnabled && {
+      id: "foeOff",
+      kind: "flagOff",
+      label: t("studio.foeOffChip", "FOE đang tắt"),
+      testId: "orch-foe-off",
+      content: <p>{t("studio.foeOff", "FOE is off (FOE_ENABLED) — you can still author & simulate, but deploy/run are disabled.")}</p>,
+    },
+    // doc 40 ENG-F4 — sim-gate: đánh dấu bước Simulate là BẮT BUỘC trước Deploy (khi cờ bật).
+    simGateRequired && foeEnabled && {
+      id: "simGate",
+      kind: "simGate",
+      label: simFresh ? t("studio.simGateChipOk", "Sim-gate: đã ĐẠT") : t("studio.simGateChipNeed", "Sim-gate: cần mô phỏng"),
+      testId: "orch-sim-gate",
+      content: (
+        <p>
+          {simFresh
+            ? t("studio.simGateOk", "Mô phỏng đã ĐẠT cho định nghĩa hiện tại — có thể Deploy.")
+            : t("studio.simGateRequiredHint", "Sim-gate BẬT: phải Simulate ĐẠT (feasible) định nghĩa hiện tại trước khi Deploy. Mọi chỉnh sửa sẽ yêu cầu mô phỏng lại.")}
+        </p>
+      ),
+    },
+    // U7 (doc 26 §2.1) — "Khi nào dùng": khoá riêng của trang + phụ đề cũ.
+    {
+      id: "whenToUse",
+      kind: "whenToUse",
+      content: (
+        <div className="space-y-1.5">
+          <p className="text-muted-foreground">{t("studio.subtitle", "Author multi-machine workflows visually, simulate them on the digital twin, then deploy & run")}</p>
+          <p data-when-to-use="studio.whenToUse">{t("studio.whenToUse", "When to use — design multi-machine workflows visually and dry-run them on the twin before deploying. For a single-device program use the Engineering Workspace.")}</p>
+        </div>
+      ),
+    },
+  ];
+
+  const canvasTitle = canvasView === "tree" ? t("studio.canvas", "Workflow tree") : t("studio.graphCanvas", "Workflow diagram");
+
+  // ── Thanh công cụ DUY NHẤT của MAIN (`data-layout-toolbar`, 40 px ≤ 56): tên/mã/phiên bản sửa tại chỗ · Cây | Sơ đồ ──
+  const toolbar = (
+    <div data-layout-toolbar="" className="flex h-10 min-w-0 shrink-0 items-center gap-2 border-b px-2">
+      <InlineEditText
+        value={def.name}
+        label={t("studio.editName", "Tên quy trình *")}
+        emptyText={t("studio.untitled", "Quy trình chưa đặt tên")}
+        placeholder={t("studio.namePlaceholder", "Line A startup")}
+        onCommit={(v) => setDef((d) => ({ ...d, name: v }))}
+      />
+      <InlineEditText
+        value={def.ref}
+        mono
+        label={t("studio.editRef", "Mã quy trình (ref) *")}
+        emptyText={t("studio.noRef", "chưa có mã (ref)")}
+        placeholder="line-a-startup"
+        onCommit={(v) => setDef((d) => ({ ...d, ref: v }))}
+      />
+      <label className="flex shrink-0 items-center gap-1 text-xs text-muted-foreground">
+        v
+        <Input
+          type="number"
+          aria-label={t("studio.versionNumber", "Số phiên bản")}
+          value={def.version ?? 1}
+          onChange={(e) => setDef((d) => ({ ...d, version: Number(e.target.value) }))}
+          className="h-7 w-16 text-xs"
+        />
+      </label>
+      <div className="flex-1" />
+      {/* Toggle view — cây là mặc định an toàn; sơ đồ là view đọc + chọn node */}
+      <div
+        className="inline-flex shrink-0 overflow-hidden rounded-md border"
+        role="tablist"
+        aria-label={t("studio.viewToggle", "View")}
+        title={t("studio.editorNote", "Author on the nested step tree, or switch to the node-graph diagram to visualize sequence / parallel / branch.")}
+      >
+        <button
+          type="button"
+          role="tab"
+          aria-selected={canvasView === "tree"}
+          onClick={() => setCanvasView("tree")}
+          className={`flex items-center gap-1 px-2.5 py-1 text-xs transition-colors ${
+            canvasView === "tree" ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:bg-muted"
+          }`}
+        >
+          <ListTree className="h-3.5 w-3.5" /> {t("studio.viewTree", "Tree")}
+        </button>
+        <button
+          type="button"
+          role="tab"
+          aria-selected={canvasView === "graph"}
+          onClick={() => setCanvasView("graph")}
+          className={`flex items-center gap-1 px-2.5 py-1 text-xs transition-colors ${
+            canvasView === "graph" ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:bg-muted"
+          }`}
+        >
+          <Network className="h-3.5 w-3.5" /> {t("studio.viewGraph", "Diagram")}
+        </button>
+      </div>
+    </div>
+  );
+
+  // ── MAIN: thanh công cụ + canvas (cây lồng nhau | sơ đồ node); canvas tự cuộn, thanh công cụ đứng yên ──
+  const canvasBody =
+    canvasView === "tree" ? (
+      <div className="space-y-1.5 p-3">
+        {def.steps.length === 0 && (
+          <p className="py-6 text-center text-sm text-muted-foreground">{t("studio.emptyCanvas", "No steps yet. Add the first step below.")}</p>
+        )}
+        {def.steps.map((s, i) => (
+          <StepBlock
+            key={s.id}
+            step={s}
+            depth={0}
+            selectedId={selectedId}
+            onSelect={setSelectedId}
+            onMove={handleMove}
+            onDelete={handleDelete}
+            onAddChild={handleAddChild}
+            siblingCount={def.steps.length}
+            index={i}
+            t={t}
+          />
+        ))}
+        <AddStepMenu onAdd={handleAddTopLevel} t={t} />
+      </div>
+    ) : (
+      <div className="h-full p-2">
+        {/* U14 — canvas luôn hiển thị (kể cả khi trống); bảng bước bên trái kéo-thả vào sơ đồ. */}
+        <WorkflowGraphCanvas
+          def={def}
+          selectedId={selectedId}
+          onSelect={setSelectedId}
+          onDelete={handleDelete}
+          onAddTopLevel={handleAddTopLevel}
+          onAddChild={handleAddChild}
+          onReorderToSibling={handleReorderToSibling}
+          onMoveNode={handleMoveNode}
+          t={t}
+          fill
+          showPalette={false}
+        />
+      </div>
+    );
+  const canvas = (
+    <div className="flex h-full min-h-0 flex-col">
+      {toolbar}
+      <div className="min-h-0 flex-1 overflow-auto">{canvasBody}</div>
+    </div>
+  );
+
+  // ── PHẢI: Inspector ──
+  const inspector = (
+    <div className="p-3">
+      <h2 className="mb-2 text-sm font-semibold">{t("studio.inspector", "Step configuration")}</h2>
+      {selectedStep ? (
+        <Inspector step={selectedStep} machines={machines} onPatch={handlePatch} t={t} />
+      ) : (
+        <p className="py-6 text-center text-sm text-muted-foreground">{t("studio.selectStep", "Select a step on the tree to configure it.")}</p>
+      )}
+    </div>
+  );
+
+  const renderRun = (r: Record<string, unknown>, interrupted = false) => (
+    <RunRow
+      key={String(r.id)}
+      run={r}
+      interrupted={interrupted}
+      canControl={canControl}
+      onResume={(approved, note, expectedStepId) => resumeM.mutate({ runId: Number(r.id), approved, note, expectedStepId })}
+      onAbort={() => abortM.mutate({ runId: Number(r.id) })}
+      t={t}
+    />
+  );
+
+  // ── DƯỚI: Lần chạy / Chờ duyệt / Vấn đề. forceMount ⇒ đổi tab không huỷ chi tiết run đang mở. ──
+  const bottomContent = (
+    <Tabs value={bottomTab} onValueChange={(v) => isBottomTab(v) && chooseBottomTab(v)} className="flex h-full min-h-0 flex-col gap-0">
+      <div className="flex h-9 shrink-0 items-center gap-2 border-b px-2">
+        <TabsList className="h-7">
+          <TabsTrigger value="runs" className="h-6 text-xs">{t("studio.runsTab", "Lần chạy")}</TabsTrigger>
+          <TabsTrigger value="approvals" className="h-6 gap-1 text-xs">
+            {t("studio.awaitingTab", "Chờ duyệt")}
+            {awaitingCount > 0 && <Badge className="h-4 min-w-4 bg-amber-500 px-1 text-[10px] text-white">{awaitingCount}</Badge>}
+          </TabsTrigger>
+          <TabsTrigger value="problems" className="h-6 gap-1 text-xs">
+            {t("studio.problemsTab", "Vấn đề")}
+            {problemsCount > 0 && (
+              <Badge className={`h-4 min-w-4 px-1 text-[10px] text-white ${problemsTone === "error" ? "bg-destructive" : "bg-amber-500"}`}>{problemsCount}</Badge>
+            )}
+          </TabsTrigger>
+        </TabsList>
+        <div className="flex-1" />
+        {/* U13 — lọc theo trạng thái (lọc phía client) — áp cho danh sách run như cũ. */}
+        {bottomTab !== "problems" && allRuns.length > 0 && (
+          <Select value={runStatusFilter} onValueChange={setRunStatusFilter}>
+            <SelectTrigger className="h-7 w-44 text-xs" aria-label={t("studio.runStatusFilter", "Lọc theo trạng thái")}><SelectValue /></SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">{t("studio.allStatuses", "Tất cả trạng thái")}</SelectItem>
+              {runStatuses.map((s) => (
+                <SelectItem key={s} value={s}>{s}</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        )}
+        {bottomTab !== "problems" && (
+          <Button
+            size="icon"
+            variant="ghost"
+            className="h-7 w-7"
+            aria-label={t("studio.refreshRuns", "Tải lại lần chạy")}
+            title={t("studio.refreshRuns", "Tải lại lần chạy")}
+            onClick={() => void runsQ.refetch()}
+          >
+            <RefreshCw className="h-3.5 w-3.5" aria-hidden="true" />
+          </Button>
+        )}
+      </div>
+      <TabsContent value="runs" forceMount hidden={bottomTab !== "runs"} className="min-h-0 flex-1 space-y-1.5 overflow-auto p-2">
+        <ProvenanceSummary rows={allRuns} />
+        {allRuns.length === 0 && (
+          <p className="py-4 text-center text-sm text-muted-foreground">{t("studio.noRuns", "No runs yet.")}</p>
+        )}
+        {allRuns.length > 0 && interruptedRuns.length === 0 && otherRuns.length === 0 && (
+          <p className="py-4 text-center text-sm text-muted-foreground">{t("studio.noRunMatch", "Không có lần chạy khớp bộ lọc")}</p>
+        )}
+        {/* doc 80 ORC-04 — nhóm "Bị gián đoạn" (held do restart): KHÔNG phải cổng chờ duyệt — ghim đầu như cũ. */}
+        {interruptedRuns.length > 0 && (
+          <div className="space-y-1.5">
+            <div className="flex items-center gap-2 pt-1 text-xs font-semibold text-orange-600 dark:text-orange-400">
+              <AlertTriangle className="h-3.5 w-3.5" />
+              {t("studio.interruptedRuns", "Interrupted")}
+              <Badge variant="outline" className="text-[10px]">{interruptedRuns.length}</Badge>
+            </div>
+            {interruptedRuns.map((r) => renderRun(r, true))}
+          </div>
+        )}
+        {otherRuns.length > 0 && (
+          <div className="space-y-1.5">
+            {interruptedRuns.length > 0 && (
+              <div className="pt-1 text-xs font-semibold text-muted-foreground">{t("studio.otherRuns", "Lần chạy khác")}</div>
+            )}
+            {otherRuns.map((r) => renderRun(r))}
+          </div>
+        )}
+      </TabsContent>
+      <TabsContent value="approvals" forceMount hidden={bottomTab !== "approvals"} className="min-h-0 flex-1 space-y-1.5 overflow-auto p-2">
+        {/* §2.3 — run đang chờ duyệt (HITL gate). */}
+        {awaitingRuns.length === 0 && (
+          <p className="py-4 text-center text-sm text-muted-foreground">
+            {awaitingCount > 0
+              ? t("studio.noRunMatch", "Không có lần chạy khớp bộ lọc")
+              : t("studio.noAwaiting", "Không có lần chạy nào đang chờ duyệt.")}
+          </p>
+        )}
+        {awaitingRuns.map((r) => renderRun(r))}
+      </TabsContent>
+      <TabsContent value="problems" forceMount hidden={bottomTab !== "problems"} className="min-h-0 flex-1 overflow-auto p-2">
+        {sim ? (
+          <div className="space-y-2">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <h3 className="flex items-center gap-2 text-sm font-semibold">
+                <Gauge className="h-4 w-4 text-primary" aria-hidden="true" /> {t("studio.twin", "Digital twin — simulation result")}
+              </h3>
+              {/* W6-26 + U1 — cross-link golden-thread: sim → xem phát lại trên twin viewer,
+                  MANG ?ref= workflow đang mở để Cell Twin tự chọn đúng workflow (không mở trống). */}
+              <span className="flex items-center gap-3 text-xs">
+                <Link href={withParams("/cell-twin", { ref: def.ref || null })} className="font-medium text-primary hover:underline">
+                  {def.ref ? t("studio.viewOnCellTwin", "Xem trên Cell Twin") : t("nav.cellTwin")}
+                </Link>
+                <Link href="/rf-test-cell" className="font-medium text-primary hover:underline">{t("nav.rfTestCell")}</Link>
+              </span>
+            </div>
+            <TwinView sim={sim} machines={machines} t={t} />
+          </div>
+        ) : (
+          <p className="py-4 text-center text-sm text-muted-foreground">
+            {t("studio.noSim", "Chưa có kết quả mô phỏng — bấm Mô phỏng để kiểm tra quy trình trên bản sao số.")}
+          </p>
+        )}
+      </TabsContent>
+    </Tabs>
+  );
+
+  // ── Thanh trạng thái: số đếm LUÔN thấy kể cả khi panel dưới gập (R-2-l); bấm = mở đúng tab. ──
+  const statusItem = (testId: string, tab: BottomTab, label: string, value: ReactNode, tone: "error" | "warning" | null) => (
+    <button
+      type="button"
+      data-testid={testId}
+      onClick={() => openBottom(tab)}
+      className={cn(
+        "inline-flex h-5 shrink-0 items-center gap-1 rounded px-1 hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+        tone === "error" && "font-semibold text-destructive",
+        tone === "warning" && "font-semibold text-amber-600 dark:text-amber-400",
+      )}
+    >
+      {label}: <span className="tabular-nums">{value}</span>
+    </button>
+  );
+  const statusBar = (
+    <div className="flex min-w-0 items-center gap-2">
+      {statusItem("orch-status-runs", "runs", t("studio.runsTab", "Lần chạy"), runsQ.isLoading ? "…" : allRuns.length, null)}
+      {statusItem("orch-status-awaiting", "approvals", t("studio.awaitingTab", "Chờ duyệt"), runsQ.isLoading ? "…" : awaitingCount, awaitingCount > 0 ? "warning" : null)}
+      {statusItem("orch-status-problems", "problems", t("studio.problemsTab", "Vấn đề"), problemsCount, problemsTone)}
+    </div>
+  );
+
   return (
     <DashboardLayout>
-      <PageContainer fluid className="flex flex-col gap-4 space-y-0">
-        {/* Header */}
-        <PageHeader
-          icon={<Workflow className="h-6 w-6" />}
-          title={t("studio.title", "Orchestration Studio")}
-          badge={!canControl ? <ViewOnlyBadge module="machine_control" /> : undefined}
-          description={t("studio.subtitle", "Author multi-machine workflows visually, simulate them on the digital twin, then deploy & run")}
-          actions={
-            <>
-              <Button variant="outline" onClick={() => void runSimulate()} disabled={simulating || def.steps.length === 0}>
-                <FlaskConical className="mr-1.5 h-4 w-4" /> {t("studio.simulate", "Simulate")}
-              </Button>
-              <Button
-                variant="outline"
-                onClick={runDeploy}
-                disabled={!canControl || !foeEnabled || deployM.isPending || (simGateRequired && !simFresh)}
-                title={
-                  controlReason ??
-                  (simGateRequired && !simFresh
-                    ? t("studio.simRequired", "Chưa mô phỏng đạt — hãy Simulate đến khi feasible trước khi Deploy")
-                    : undefined)
-                }
-              >
-                <Save className="mr-1.5 h-4 w-4" /> {t("studio.deploy", "Save (deploy)")}
-              </Button>
-              <Button onClick={runStart} disabled={!canControl || !foeEnabled || startRunM.isPending || !def.ref} title={controlReason}>
-                <Play className="mr-1.5 h-4 w-4" /> {t("studio.run", "Run")}
-              </Button>
-            </>
-          }
-        />
-
-        {/* U7 (doc 26 §2.1) — "Khi nào dùng": trang LÀ GÌ / DÙNG KHI NÀO cho KTV mới. */}
-        <div className="flex items-start gap-2 rounded-md border bg-muted/40 px-3 py-2 text-xs text-muted-foreground">
-          <Info className="mt-0.5 h-3.5 w-3.5 shrink-0 text-primary" aria-hidden="true" />
-          <span>{t("studio.whenToUse", "When to use — design multi-machine workflows visually and dry-run them on the twin before deploying. For a single-device program use the Engineering Workspace.")}</span>
-        </div>
-
-        {/* FOE disabled banner */}
-        {!statusQ.isLoading && !foeEnabled && (
-          <div className="flex items-start gap-2 rounded-md border border-amber-500/40 bg-amber-500/10 p-3 text-sm">
-            <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-amber-600" />
-            <span>{t("studio.foeOff", "FOE is off (FOE_ENABLED) — you can still author & simulate, but deploy/run are disabled.")}</span>
-          </div>
-        )}
-
-        {/* doc 40 ENG-F4 — sim-gate: đánh dấu bước Simulate là BẮT BUỘC trước Deploy (khi cờ bật). */}
-        {simGateRequired && foeEnabled && (
-          <div className={`flex items-start gap-2 rounded-md border p-2 text-xs ${simFresh ? "border-emerald-500/40 bg-emerald-500/10" : "border-sky-500/40 bg-sky-500/10"}`}>
-            <FlaskConical className={`mt-0.5 h-3.5 w-3.5 shrink-0 ${simFresh ? "text-emerald-600" : "text-sky-600"}`} aria-hidden="true" />
-            <span>
-              {simFresh
-                ? t("studio.simGateOk", "Mô phỏng đã ĐẠT cho định nghĩa hiện tại — có thể Deploy.")
-                : t("studio.simGateRequiredHint", "Sim-gate BẬT: phải Simulate ĐẠT (feasible) định nghĩa hiện tại trước khi Deploy. Mọi chỉnh sửa sẽ yêu cầu mô phỏng lại.")}
-            </span>
-          </div>
-        )}
-
-        {/* E5 — AI advisor (propose / optimize). HITL: AI only proposes; the human deploys. */}
-        <Card className="border-violet-500/30 bg-violet-500/5">
-          <CardHeader className="pb-2">
-            <CardTitle className="flex items-center gap-2 text-base">
-              <Sparkles className="h-4 w-4 text-violet-600" />
-              {t("studio.aiTitle", "AI orchestration advisor")}
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-3">
-            <div className="flex flex-col gap-2 md:flex-row md:items-end">
-              <div className="flex-1 space-y-1.5">
-                <Label className="text-xs">{t("studio.aiGoal", "Goal / problem (for the AI)")}</Label>
-                <Input
-                  value={aiGoal}
-                  onChange={(e) => setAiGoal(e.target.value)}
-                  placeholder={t("studio.aiGoalPlaceholder", "e.g. AOI reports NG → robot rejects part → conveyor moves it; add an approval gate before stopping the line")}
-                  disabled={!aiEnabled || aiBusy}
-                />
-              </div>
-              <div className="flex gap-2">
+      <FlyoutHost flyouts={flyouts}>
+        <AiSurfaceGuard />
+        <div className="flex h-[calc(100dvh-3.5rem)] min-h-[30rem] flex-col">
+          <PageHeaderCompact
+            className="shrink-0 px-3 py-1"
+            icon={<Workflow />}
+            title={t("studio.title", "Orchestration Studio")}
+            chips={
+              <>
+                {!canControl && <ViewOnlyBadge module="machine_control" />}
+                <NoticeStack items={notices} />
+              </>
+            }
+            actions={
+              <>
+                <AiAdvisorButton label={t("studio.aiTitle", "AI orchestration advisor")} />
                 <Button
                   variant="outline"
-                  className="border-violet-500/40"
-                  onClick={() => void aiSuggest()}
-                  disabled={!aiEnabled || aiBusy}
-                  title={!aiEnabled ? t("studio.aiOff", "Enable AI_ORCHESTRATION_ADVISOR_ENABLED to use") : undefined}
+                  aria-label={t("studio.simulate", "Simulate")}
+                  onClick={() => void runSimulate()}
+                  disabled={simulating || def.steps.length === 0}
                 >
-                  <Sparkles className="mr-1.5 h-4 w-4" /> {t("studio.aiSuggest", "AI suggest workflow")}
+                  <FlaskConical className="h-4 w-4 sm:mr-1.5" aria-hidden="true" />
+                  <span className="hidden sm:inline">{t("studio.simulate", "Simulate")}</span>
                 </Button>
                 <Button
                   variant="outline"
-                  className="border-violet-500/40"
-                  onClick={() => void aiOptimize()}
-                  disabled={!aiEnabled || aiBusy || def.steps.length === 0}
-                  title={!aiEnabled ? t("studio.aiOff", "Enable AI_ORCHESTRATION_ADVISOR_ENABLED to use") : undefined}
+                  aria-label={t("studio.deploy", "Save (deploy)")}
+                  onClick={runDeploy}
+                  disabled={!canControl || !foeEnabled || deployM.isPending || (simGateRequired && !simFresh)}
+                  title={
+                    controlReason ??
+                    (simGateRequired && !simFresh
+                      ? t("studio.simRequired", "Chưa mô phỏng đạt — hãy Simulate đến khi feasible trước khi Deploy")
+                      : undefined)
+                  }
                 >
-                  <Wand2 className="mr-1.5 h-4 w-4" /> {t("studio.aiOptimize", "AI optimize")}
+                  <Save className="h-4 w-4 sm:mr-1.5" aria-hidden="true" />
+                  <span className="hidden sm:inline">{t("studio.deploy", "Save (deploy)")}</span>
                 </Button>
-              </div>
-            </div>
-
-            {!aiStatusQ.isLoading && !aiEnabled && (
-              <p className="text-xs text-muted-foreground">
-                {t("studio.aiDisabledHint", "The AI advisor is OFF (AI_ORCHESTRATION_ADVISOR_ENABLED). AI only PROPOSES — a human always reviews & deploys manually.")}
-              </p>
-            )}
-
-            {aiRationale && (
-              <div className="rounded-md border border-violet-500/30 bg-card p-2 text-xs">
-                <span className="font-semibold text-violet-700">{t("studio.aiRationale", "AI rationale")}: </span>
-                {aiRationale}
-              </div>
-            )}
-
-            {/* Optimize preview — accept (replace editor) or discard. */}
-            {optimizePreview && (
-              <div className="space-y-2 rounded-md border border-violet-500/40 bg-card p-3">
-                <div className="flex items-center gap-2 text-sm font-semibold text-violet-700">
-                  <Wand2 className="h-4 w-4" /> {t("studio.aiOptimizePreview", "AI-proposed optimization")}
-                </div>
-                {optimizePreview.rationale && (
-                  <p className="text-xs text-muted-foreground">{optimizePreview.rationale}</p>
-                )}
-                {optimizePreview.diff.length > 0 && (
-                  <ul className="ml-4 list-disc text-xs">
-                    {optimizePreview.diff.map((d, i) => <li key={i}>{d}</li>)}
-                  </ul>
-                )}
-                <div className="flex gap-2">
-                  <Button size="sm" className="bg-violet-600 hover:bg-violet-700" onClick={acceptOptimized}>
-                    {t("studio.aiAccept", "Apply to editor")}
-                  </Button>
-                  <Button size="sm" variant="outline" onClick={() => setOptimizePreview(null)}>
-                    {t("studio.aiDiscard", "Discard")}
-                  </Button>
-                </div>
-              </div>
-            )}
-            <p className="text-[11px] text-muted-foreground">
-              {t("studio.aiHitlNote", "HITL: AI only proposes a workflow + simulates it on the digital twin. Saving (deploy) & running are always done manually by a human.")}
-            </p>
-          </CardContent>
-        </Card>
-
-        {/* TOP — workflow meta + params */}
-        <Card>
-          <CardContent className="grid grid-cols-1 gap-3 py-4 md:grid-cols-4">
-            <div className="space-y-1.5">
-              <Label className="text-xs">{t("studio.ref", "Workflow ref *")}</Label>
-              <Input value={def.ref} onChange={(e) => setDef((d) => ({ ...d, ref: e.target.value }))} placeholder="line-a-startup" className="font-mono" />
-            </div>
-            <div className="space-y-1.5 md:col-span-2">
-              <Label className="text-xs">{t("studio.name", "Name *")}</Label>
-              <Input value={def.name} onChange={(e) => setDef((d) => ({ ...d, name: e.target.value }))} placeholder={t("studio.namePlaceholder", "Line A startup")} />
-            </div>
-            <div className="space-y-1.5">
-              <Label className="text-xs">{t("studio.version", "Version")}</Label>
-              <Input type="number" value={def.version ?? 1} onChange={(e) => setDef((d) => ({ ...d, version: Number(e.target.value) }))} />
-            </div>
-          </CardContent>
-        </Card>
-
-        {/* MAIN GRID — tree canvas + inspector */}
-        <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
-          {/* LEFT — step tree / node-graph (toggle Cây | Sơ đồ) */}
-          {/* doc 81 Đợt 2 Task 11 (R-2-k bước 1) — MAIN HIỆN TẠI (bố cục chưa đổi) */}
-          <Card className="lg:col-span-2" data-layout-main="orchestration-studio">
-            <CardHeader className="flex flex-row items-center justify-between pb-2">
-              <CardTitle className="text-base">
-                {canvasView === "tree" ? t("studio.canvas", "Workflow tree") : t("studio.graphCanvas", "Workflow diagram")}
-              </CardTitle>
-              {/* Toggle view — cây là mặc định an toàn; sơ đồ là view đọc + chọn node */}
-              <div className="inline-flex overflow-hidden rounded-md border" role="tablist" aria-label={t("studio.viewToggle", "View")}>
-                <button
-                  type="button"
-                  role="tab"
-                  aria-selected={canvasView === "tree"}
-                  onClick={() => setCanvasView("tree")}
-                  className={`flex items-center gap-1 px-2.5 py-1 text-xs transition-colors ${
-                    canvasView === "tree" ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:bg-muted"
-                  }`}
+                <Button
+                  aria-label={t("studio.run", "Run")}
+                  onClick={runStart}
+                  disabled={!canControl || !foeEnabled || startRunM.isPending || !def.ref}
+                  title={controlReason}
                 >
-                  <ListTree className="h-3.5 w-3.5" /> {t("studio.viewTree", "Tree")}
-                </button>
-                <button
-                  type="button"
-                  role="tab"
-                  aria-selected={canvasView === "graph"}
-                  onClick={() => setCanvasView("graph")}
-                  className={`flex items-center gap-1 px-2.5 py-1 text-xs transition-colors ${
-                    canvasView === "graph" ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:bg-muted"
-                  }`}
-                >
-                  <Network className="h-3.5 w-3.5" /> {t("studio.viewGraph", "Diagram")}
-                </button>
-              </div>
-            </CardHeader>
-            <CardContent className="space-y-1.5">
-              {canvasView === "tree" ? (
-                <>
-                  {def.steps.length === 0 && (
-                    <p className="py-6 text-center text-sm text-muted-foreground">{t("studio.emptyCanvas", "No steps yet. Add the first step below.")}</p>
-                  )}
-                  {def.steps.map((s, i) => (
-                    <StepBlock
-                      key={s.id}
-                      step={s}
-                      depth={0}
-                      selectedId={selectedId}
-                      onSelect={setSelectedId}
-                      onMove={handleMove}
-                      onDelete={handleDelete}
-                      onAddChild={handleAddChild}
-                      siblingCount={def.steps.length}
-                      index={i}
-                      t={t}
-                    />
-                  ))}
-                  <AddStepMenu onAdd={handleAddTopLevel} t={t} />
-                </>
-              ) : (
-                <>
-                  {/* U14 — canvas luôn hiển thị (kể cả khi trống): palette cho phép thêm bước đầu tiên ngay trên sơ đồ. */}
-                  <WorkflowGraphCanvas
-                    def={def}
-                    selectedId={selectedId}
-                    onSelect={setSelectedId}
-                    onDelete={handleDelete}
-                    onAddTopLevel={handleAddTopLevel}
-                    onAddChild={handleAddChild}
-                    onReorderToSibling={handleReorderToSibling}
-                    onMoveNode={handleMoveNode}
-                    t={t}
-                  />
-                  <p className="text-[11px] text-muted-foreground">{t("studio.graphHintEdit", "Click a chip to add a step (or drag it onto a container to nest); drag a link between two siblings to reorder; use the trash icon or Delete to remove. Click a node to configure it in the inspector.")}</p>
-                </>
-              )}
-            </CardContent>
-          </Card>
-
-          {/* RIGHT — inspector */}
-          <Card data-layout-main="orchestration-studio">
-            <CardHeader className="pb-2">
-              <CardTitle className="text-base">{t("studio.inspector", "Step configuration")}</CardTitle>
-            </CardHeader>
-            <CardContent>
-              {selectedStep ? (
-                <Inspector step={selectedStep} machines={machines} onPatch={handlePatch} t={t} />
-              ) : (
-                <p className="py-6 text-center text-sm text-muted-foreground">{t("studio.selectStep", "Select a step on the tree to configure it.")}</p>
-              )}
-            </CardContent>
-          </Card>
-        </div>
-
-        {/* TWIN VIEW */}
-        {sim && (
-          <Card>
-            <CardHeader className="pb-2">
-              <div className="flex flex-wrap items-center justify-between gap-2">
-                <CardTitle className="flex items-center gap-2 text-base">
-                  <Gauge className="h-4 w-4 text-primary" /> {t("studio.twin", "Digital twin — simulation result")}
-                </CardTitle>
-                {/* W6-26 + U1 — cross-link golden-thread: sim → xem phát lại trên twin viewer,
-                    MANG ?ref= workflow đang mở để Cell Twin tự chọn đúng workflow (không mở trống). */}
-                <span className="flex items-center gap-3 text-xs">
-                  <Link href={withParams("/cell-twin", { ref: def.ref || null })} className="font-medium text-primary hover:underline">
-                    {def.ref ? t("studio.viewOnCellTwin", "Xem trên Cell Twin") : t("nav.cellTwin")}
-                  </Link>
-                  <Link href="/rf-test-cell" className="font-medium text-primary hover:underline">{t("nav.rfTestCell")}</Link>
-                </span>
-              </div>
-            </CardHeader>
-            <CardContent>
-              <TwinView sim={sim} machines={machines} t={t} />
-            </CardContent>
-          </Card>
-        )}
-
-        {/* WORKFLOWS + RUNS */}
-        <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
-          {/* Saved workflows */}
-          <Card>
-            <CardHeader className="flex flex-row items-center justify-between pb-2">
-              <CardTitle className="text-base">{t("studio.workflows", "Saved workflows")}</CardTitle>
-              <Button size="icon" variant="ghost" className="h-7 w-7" onClick={() => void workflowsQ.refetch()}>
-                <RefreshCw className="h-3.5 w-3.5" />
-              </Button>
-            </CardHeader>
-            <CardContent className="space-y-1.5">
-              {/* U13 — ô tìm theo tên/mã (lọc phía client). */}
-              {(workflowsQ.data ?? []).length > 0 && (
-                <Input
-                  value={wfSearch}
-                  onChange={(e) => setWfSearch(e.target.value)}
-                  placeholder={t("studio.searchWorkflows", "Tìm theo tên hoặc mã…")}
-                  className="h-8 text-sm"
+                  <Play className="h-4 w-4 sm:mr-1.5" aria-hidden="true" />
+                  <span className="hidden sm:inline">{t("studio.run", "Run")}</span>
+                </Button>
+              </>
+            }
+          />
+          <WorkbenchShell
+            layoutId="orchestration-studio"
+            userId={user?.id ?? null}
+            mainName="orchestration-studio"
+            mainLabel={t("studio.canvasArea", "Canvas")}
+            mainAria={{ "aria-label": canvasTitle }}
+            heightClass="min-h-0 flex-1"
+            className="rounded-none border-x-0 border-b-0"
+            main={canvas}
+            left={{
+              label: t("studio.libraryPanel", "Bước & thư viện"),
+              minPx: 220,
+              defaultPx: 240,
+              maxPx: 360,
+              content: (
+                <LibraryPanel
+                  workflows={allWorkflows}
+                  filteredWorkflows={filteredWorkflows}
+                  wfSearch={wfSearch}
+                  onSearch={setWfSearch}
+                  onRefresh={() => void workflowsQ.refetch()}
+                  onLoad={(w) => loadWorkflow(w as { definitionJson?: unknown })}
+                  onDelete={setDeleteWf}
+                  onAddStep={handleAddTopLevel}
+                  canControl={canControl}
+                  permReason={permReason}
+                  showGraphHint={canvasView === "graph"}
+                  t={t}
                 />
-              )}
-              {(workflowsQ.data ?? []).length === 0 && (
-                <p className="py-4 text-center text-sm text-muted-foreground">{t("studio.noWorkflows", "No workflows yet.")}</p>
-              )}
-              {(workflowsQ.data ?? []).length > 0 && filteredWorkflows.length === 0 && (
-                <p className="py-4 text-center text-sm text-muted-foreground">{t("studio.noWorkflowMatch", "Không có quy trình khớp bộ lọc")}</p>
-              )}
-              {filteredWorkflows.map((w: Record<string, unknown>) => (
-                <div key={String(w.id)} className="flex items-center justify-between rounded border px-2 py-1.5 text-sm">
-                  <div className="min-w-0">
-                    <div className="truncate font-medium">{String(w.name ?? w.ref)}</div>
-                    <div className="truncate font-mono text-[10px] text-muted-foreground">{String(w.ref)} · v{String(w.version ?? 1)}</div>
-                  </div>
-                  <div className="flex shrink-0 items-center gap-1">
-                    <Button size="sm" variant="outline" onClick={() => loadWorkflow(w as { definitionJson?: unknown })}>
-                      {t("studio.load", "Load")}
-                    </Button>
-                    <Button
-                      size="icon"
-                      variant="ghost"
-                      className="h-7 w-7"
-                      title={t("studio.versions", "Versions")}
-                      onClick={() => { setVersionsWf({ id: Number(w.id), ref: String(w.ref) }); setVDiffBaseId(null); setVDiffCompareId(null); }}
-                    >
-                      <History className="h-3.5 w-3.5" />
-                    </Button>
-                    <Button
-                      size="icon"
-                      variant="ghost"
-                      className="h-7 w-7"
-                      disabled={!canControl}
-                      title={permReason ?? t("studio.duplicate", "Duplicate")}
-                      onClick={() => { setDupWf({ id: Number(w.id), ref: String(w.ref), name: String(w.name ?? w.ref) }); setDupNewRef(`${String(w.ref)}-copy`); }}
-                    >
-                      <Copy className="h-3.5 w-3.5" />
-                    </Button>
-                    <Button
-                      size="icon"
-                      variant="ghost"
-                      className="h-7 w-7 text-destructive"
-                      disabled={!canControl}
-                      title={permReason ?? t("common.delete", "Delete")}
-                      onClick={() => setDeleteWf({ id: Number(w.id), ref: String(w.ref) })}
-                    >
-                      <Trash2 className="h-3.5 w-3.5" />
-                    </Button>
-                  </div>
-                </div>
-              ))}
-            </CardContent>
-          </Card>
-
-          {/* Recent runs */}
-          <Card>
-            <CardHeader className="flex flex-row items-center justify-between pb-2">
-              <CardTitle className="flex items-center gap-2 text-base">
-                {t("studio.runs", "Recent runs")}
-                {/* U13 §2.3 — badge đếm run đang chờ duyệt (tổng, không theo bộ lọc). */}
-                {awaitingCount > 0 && (
-                  <Badge className="bg-amber-500 text-white">{awaitingCount}</Badge>
-                )}
-              </CardTitle>
-              <Button size="icon" variant="ghost" className="h-7 w-7" onClick={() => void runsQ.refetch()}>
-                <RefreshCw className="h-3.5 w-3.5" />
-              </Button>
-            </CardHeader>
-            <CardContent className="space-y-1.5">
-              {/* U13 — lọc theo trạng thái (lọc phía client). */}
-              {allRuns.length > 0 && (
-                <Select value={runStatusFilter} onValueChange={setRunStatusFilter}>
-                  <SelectTrigger className="h-8 text-xs"><SelectValue /></SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="all">{t("studio.allStatuses", "Tất cả trạng thái")}</SelectItem>
-                    {runStatuses.map((s) => (
-                      <SelectItem key={s} value={s}>{s}</SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              )}
-              <ProvenanceSummary rows={allRuns} />
-              {allRuns.length === 0 && (
-                <p className="py-4 text-center text-sm text-muted-foreground">{t("studio.noRuns", "No runs yet.")}</p>
-              )}
-              {allRuns.length > 0 && filteredRuns.length === 0 && (
-                <p className="py-4 text-center text-sm text-muted-foreground">{t("studio.noRunMatch", "Không có lần chạy khớp bộ lọc")}</p>
-              )}
-              {/* §2.3 — nhóm "Đang chờ duyệt" ghim lên đầu. */}
-              {awaitingRuns.length > 0 && (
-                <div className="space-y-1.5">
-                  <div className="flex items-center gap-2 pt-1 text-xs font-semibold text-amber-600 dark:text-amber-400">
-                    <Hourglass className="h-3.5 w-3.5" />
-                    {t("studio.awaitingApproval", "Đang chờ duyệt")}
-                    <Badge variant="outline" className="text-[10px]">{awaitingRuns.length}</Badge>
-                  </div>
-                  {awaitingRuns.map((r: Record<string, unknown>) => (
-                    <RunRow
-                      key={String(r.id)}
-                      run={r}
-                      canControl={canControl}
-                      onResume={(approved, note, expectedStepId) => resumeM.mutate({ runId: Number(r.id), approved, note, expectedStepId })}
-                      onAbort={() => abortM.mutate({ runId: Number(r.id) })}
-                      t={t}
-                    />
-                  ))}
-                </div>
-              )}
-              {/* doc 80 ORC-04 — nhóm "Bị gián đoạn" (held do restart): KHÔNG phải cổng chờ duyệt. */}
-              {interruptedRuns.length > 0 && (
-                <div className="space-y-1.5">
-                  <div className="flex items-center gap-2 pt-1 text-xs font-semibold text-orange-600 dark:text-orange-400">
-                    <AlertTriangle className="h-3.5 w-3.5" />
-                    {t("studio.interruptedRuns", "Interrupted")}
-                    <Badge variant="outline" className="text-[10px]">{interruptedRuns.length}</Badge>
-                  </div>
-                  {interruptedRuns.map((r: Record<string, unknown>) => (
-                    <RunRow
-                      key={String(r.id)}
-                      run={r}
-                      interrupted
-                      canControl={canControl}
-                      onResume={(approved, note, expectedStepId) => resumeM.mutate({ runId: Number(r.id), approved, note, expectedStepId })}
-                      onAbort={() => abortM.mutate({ runId: Number(r.id) })}
-                      t={t}
-                    />
-                  ))}
-                </div>
-              )}
-              {/* Các run còn lại. */}
-              {otherRuns.length > 0 && (
-                <div className="space-y-1.5">
-                  {(awaitingRuns.length > 0 || interruptedRuns.length > 0) && (
-                    <div className="pt-1 text-xs font-semibold text-muted-foreground">
-                      {t("studio.otherRuns", "Lần chạy khác")}
-                    </div>
-                  )}
-                  {otherRuns.map((r: Record<string, unknown>) => (
-                    <RunRow
-                      key={String(r.id)}
-                      run={r}
-                      canControl={canControl}
-                      onResume={(approved, note, expectedStepId) => resumeM.mutate({ runId: Number(r.id), approved, note, expectedStepId })}
-                      onAbort={() => abortM.mutate({ runId: Number(r.id) })}
-                      t={t}
-                    />
-                  ))}
-                </div>
-              )}
-            </CardContent>
-          </Card>
+              ),
+            }}
+            right={{ label: t("studio.inspector", "Step configuration"), minPx: 300, defaultPx: 340, maxPx: 480, content: inspector }}
+            bottom={{
+              label: t("studio.bottomPanel", "Lần chạy · Duyệt · Vấn đề"),
+              minPx: 160,
+              defaultPx: 260,
+              maxPx: 480,
+              defaultCollapsed: true,
+              openRequest: bottomOpenRequest,
+              content: bottomContent,
+            }}
+            statusBar={statusBar}
+          />
         </div>
+      </FlyoutHost>
 
-        {/* editor note — cả cây lồng lẫn sơ đồ node đều xem chung một model */}
-        <p className="text-center text-[11px] text-muted-foreground">
-          {t("studio.editorNote", "Author on the nested step tree, or switch to the node-graph diagram to visualize sequence / parallel / branch.")}
-        </p>
-      </PageContainer>
-
-      {/* Duplicate workflow dialog */}
-      <Dialog open={dupWf != null} onOpenChange={(o) => { if (!o) { setDupWf(null); setDupNewRef(""); } }}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>{t("studio.duplicateTitle", "Duplicate workflow")}</DialogTitle>
-            <DialogDescription>{t("studio.duplicateDesc", "Create a copy with a new ref. The copy carries no runs.")}</DialogDescription>
-          </DialogHeader>
-          <div className="space-y-1.5">
-            <Label className="text-xs">{t("studio.duplicateNewRef", "New workflow ref *")}</Label>
-            <Input value={dupNewRef} onChange={(e) => setDupNewRef(e.target.value)} className="font-mono" placeholder="line-a-startup-copy" />
-          </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => { setDupWf(null); setDupNewRef(""); }}>{t("common.cancel", "Cancel")}</Button>
-            <Button
-              disabled={!dupNewRef.trim() || duplicateWfM.isPending}
-              onClick={() => dupWf && duplicateWfM.mutate({ id: dupWf.id, newRef: dupNewRef.trim() })}
-            >
-              {t("studio.duplicate", "Duplicate")}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-
-      {/* Delete workflow confirm */}
+      {/* Delete workflow confirm — xác nhận phá huỷ: giữ AlertDialog. */}
       <AlertDialog open={deleteWf != null} onOpenChange={(o) => !o && setDeleteWf(null)}>
         <AlertDialogContent>
           <AlertDialogHeader>
@@ -1882,97 +2392,6 @@ export default function OrchestrationStudio() {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
-
-      {/* W3-11 — Version history: diff 2 phiên bản + rollback */}
-      <Dialog open={versionsWf != null} onOpenChange={(o) => { if (!o) setVersionsWf(null); }}>
-        <DialogContent className="max-w-3xl">
-          <DialogHeader>
-            <DialogTitle>{t("studio.versionsTitle", "Version history")}</DialogTitle>
-            <DialogDescription>
-              {t("studio.versionsDesc", "Each deploy snapshots a version. Compare two versions or roll back (rollback re-deploys the old definition as a NEW version).")}
-              {versionsWf ? ` — ${versionsWf.ref}` : ""}
-            </DialogDescription>
-          </DialogHeader>
-
-          {versionsQ.isLoading && <p className="py-3 text-center text-sm text-muted-foreground">{t("common.loading", "Loading…")}</p>}
-          {versionsQ.isError && <p className="py-3 text-center text-sm text-destructive">{t("common.loadError", "Failed to load")}</p>}
-          {!versionsQ.isLoading && !versionsQ.isError && versionRows.length === 0 && (
-            <p className="py-3 text-center text-sm text-muted-foreground">
-              {t("studio.noVersions", "No version snapshots yet (only versions deployed after this feature are recorded).")}
-            </p>
-          )}
-
-          {versionRows.length > 0 && (
-            <div className="space-y-3">
-              {/* Danh sách phiên bản + nút rollback */}
-              <div className="max-h-[180px] space-y-1 overflow-auto rounded-md border p-1.5">
-                {versionRows.map((v) => (
-                  <div key={v.id} className="flex items-center justify-between rounded px-2 py-1 text-sm hover:bg-muted/50">
-                    <span className="font-mono text-xs">v{v.version} <span className="text-muted-foreground">· {v.name}</span></span>
-                    {/* doc 80 ORC-05 — rollback = deploy: lý do bắt buộc (≥3) + OTP tươi mỗi lượt. */}
-                    <ConfirmWithReason
-                      trigger={
-                        <Button
-                          size="sm" variant="outline" className="h-7"
-                          disabled={!canControl || rollbackWfM.isPending}
-                          title={permReason}
-                        >
-                          <RotateCcw className="mr-1 h-3.5 w-3.5" /> {t("studio.rollback", "Rollback")}
-                        </Button>
-                      }
-                      disabled={!canControl || rollbackWfM.isPending}
-                      title={t("studio.rollbackTitle", "Roll back to this version?")}
-                      description={t("studio.rollbackConfirm", "This re-deploys version v{{version}}'s definition as a NEW version (append-only; history is preserved). Flag-gated by FOE_ENABLED.", { version: v.version })}
-                      impact={t("studio.rollbackImpact", "Requires an OTP code and a reason; the reason is recorded in the audit log.")}
-                      minReasonLength={3}
-                      confirmLabel={t("studio.rollback", "Rollback")}
-                      onConfirm={(reason) => {
-                        const workflowId = versionsWf!.id;
-                        stepUp.guard((totpCode) =>
-                          rollbackWfM.mutate({ workflowId, version: v.version, reason, totpCode }),
-                        );
-                      }}
-                    />
-                  </div>
-                ))}
-              </div>
-
-              {/* So sánh 2 phiên bản (diff định nghĩa JSON) */}
-              {versionRows.length >= 2 && (
-                <div className="rounded-md border bg-muted/20 p-2">
-                  <div className="mb-2 flex flex-wrap items-center gap-2">
-                    <span className="flex items-center gap-1 text-xs font-medium text-muted-foreground">
-                      <GitCompare className="h-3.5 w-3.5" /> {t("studio.compareVersions", "Compare versions")}
-                    </span>
-                    <Select value={vDiffBaseId != null ? String(vDiffBaseId) : ""} onValueChange={(v) => setVDiffBaseId(Number(v))}>
-                      <SelectTrigger className="h-7 w-24 text-xs"><SelectValue placeholder={t("studio.diffBase", "Base")} /></SelectTrigger>
-                      <SelectContent>
-                        {versionRows.map((v) => <SelectItem key={v.id} value={String(v.id)}>v{v.version}</SelectItem>)}
-                      </SelectContent>
-                    </Select>
-                    <span className="text-xs text-muted-foreground">→</span>
-                    <Select value={vDiffCompareId != null ? String(vDiffCompareId) : ""} onValueChange={(v) => setVDiffCompareId(Number(v))}>
-                      <SelectTrigger className="h-7 w-24 text-xs"><SelectValue placeholder={t("studio.diffCompare", "Compare")} /></SelectTrigger>
-                      <SelectContent>
-                        {versionRows.map((v) => <SelectItem key={v.id} value={String(v.id)}>v{v.version}</SelectItem>)}
-                      </SelectContent>
-                    </Select>
-                  </div>
-                  {vDiffBase && vDiffCompare ? (
-                    <LineDiff left={prettyJson(vDiffBase.definitionJson)} right={prettyJson(vDiffCompare.definitionJson)} maxHeightClass="max-h-[280px]" />
-                  ) : (
-                    <p className="py-2 text-center text-xs text-muted-foreground">{t("studio.diffPick", "Pick two versions to compare.")}</p>
-                  )}
-                </div>
-              )}
-            </div>
-          )}
-
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setVersionsWf(null)}>{t("common.close", "Close")}</Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
 
       {/* doc 54 P3.2 — step-up 2FA prompt for workflow deploy */}
       {stepUp.dialog}
