@@ -536,21 +536,21 @@
    "mainTop": 105,
    "rects": [
     {
-     "x": 289,
+     "x": 89,
      "y": 105,
-     "w": 991,
+     "w": 1190,
      "h": 820
     }
    ],
-   "areaPx": 812620,
+   "areaPx": 975800,
    "attrSel": "div[data-layout-main=\"pou-editor\"]@WorkbenchShell.tsx",
-   "gitHead": "58a5e4c3c",
-   "at": "2026-10-03T16:31:33.986Z",
+   "gitHead": "68b59d0b4",
+   "at": "2026-10-03T17:38:26.974Z",
    "previous": {
-    "mainTop": 422,
-    "areaPx": 535680,
-    "attrSel": "div[data-layout-main=\"pou-editor\"]@PouStudio.tsx",
-    "gitHead": "856d16162"
+    "mainTop": 105,
+    "areaPx": 812620,
+    "attrSel": "div[data-layout-main=\"pou-editor\"]@WorkbenchShell.tsx",
+    "gitHead": "58a5e4c3c"
    }
   },
   "pou-studio|1366|closed": {
@@ -560,21 +560,21 @@
    "mainTop": 105,
    "rects": [
     {
-     "x": 289,
+     "x": 89,
      "y": 105,
-     "w": 757,
+     "w": 957,
      "h": 638
     }
    ],
-   "areaPx": 482966,
+   "areaPx": 610566,
    "attrSel": "div[data-layout-main=\"pou-editor\"]@WorkbenchShell.tsx",
-   "gitHead": "58a5e4c3c",
-   "at": "2026-10-03T16:31:33.986Z",
+   "gitHead": "68b59d0b4",
+   "at": "2026-10-03T17:38:26.974Z",
    "previous": {
-    "mainTop": 442,
-    "areaPx": 451440,
-    "attrSel": "div[data-layout-main=\"pou-editor\"]@PouStudio.tsx",
-    "gitHead": "856d16162"
+    "mainTop": 105,
+    "areaPx": 482966,
+    "attrSel": "div[data-layout-main=\"pou-editor\"]@WorkbenchShell.tsx",
+    "gitHead": "58a5e4c3c"
    }
   },
   "ir-editor|1600|open": {
@@ -632,21 +632,21 @@
    "mainTop": 105,
    "rects": [
     {
-     "x": 289,
+     "x": 89,
      "y": 105,
-     "w": 991,
+     "w": 1190,
      "h": 820
     }
    ],
-   "areaPx": 812620,
+   "areaPx": 975800,
    "attrSel": "div[data-layout-main=\"pou-editor\"]@WorkbenchShell.tsx",
-   "gitHead": "58a5e4c3c",
-   "at": "2026-10-03T16:31:33.986Z",
+   "gitHead": "68b59d0b4",
+   "at": "2026-10-03T17:38:26.974Z",
    "previous": {
-    "mainTop": 462,
-    "areaPx": 384480,
-    "attrSel": "div[data-layout-main=\"pou-editor\"]@PouStudio.tsx",
-    "gitHead": "856d16162"
+    "mainTop": 105,
+    "areaPx": 812620,
+    "attrSel": "div[data-layout-main=\"pou-editor\"]@WorkbenchShell.tsx",
+    "gitHead": "58a5e4c3c"
    }
   },
   "pou-studio|1366|open": {
@@ -656,21 +656,21 @@
    "mainTop": 105,
    "rects": [
     {
-     "x": 289,
+     "x": 89,
      "y": 105,
-     "w": 757,
+     "w": 957,
      "h": 638
     }
    ],
-   "areaPx": 482966,
+   "areaPx": 610566,
    "attrSel": "div[data-layout-main=\"pou-editor\"]@WorkbenchShell.tsx",
-   "gitHead": "58a5e4c3c",
-   "at": "2026-10-03T16:31:33.986Z",
+   "gitHead": "68b59d0b4",
+   "at": "2026-10-03T17:38:26.974Z",
    "previous": {
-    "mainTop": 502,
-    "areaPx": 310248,
-    "attrSel": "div[data-layout-main=\"pou-editor\"]@PouStudio.tsx",
-    "gitHead": "856d16162"
+    "mainTop": 105,
+    "areaPx": 482966,
+    "attrSel": "div[data-layout-main=\"pou-editor\"]@WorkbenchShell.tsx",
+    "gitHead": "58a5e4c3c"
    }
   }
  }
