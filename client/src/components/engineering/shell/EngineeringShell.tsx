@@ -21,6 +21,7 @@ import { useTranslation } from "react-i18next";
 import { X as XIcon } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { WorkbenchShell } from "@/components/patterns/WorkbenchShell";
+import type { PxRange } from "@/components/patterns/layoutKitHooks";
 import { useNarrowViewport } from "@/components/patterns/layoutKitHooks";
 
 export interface ActivityItem {
@@ -58,6 +59,16 @@ export interface EngineeringShellProps {
   bottomPanel?: React.ReactNode;
   bottomLabel?: string;
   bottomDefaultCollapsed?: boolean;
+  /** Task 13 — ý định mở panel dưới (đổi giá trị ⇒ mở; R-2-l). */
+  bottomOpenRequest?: number;
+  /** Task 13 — báo trạng thái gập của panel dưới (để trang hiện đếm NGOÀI panel). */
+  onBottomCollapsedChange?: (collapsed: boolean) => void;
+  /** Task 13 — kích thước px riêng của trang (mặc định của WorkbenchShell: 240–300/260 · 320–420/380 · 180–320/200). */
+  explorerSize?: Partial<PxRange>;
+  inspectorSize?: Partial<PxRange>;
+  bottomSize?: Partial<PxRange>;
+  /** Task 13 — đổi giá trị ⇒ ở màn hẹp chuyển sang tab Inspector (vd nút AI mở Copilot). */
+  inspectorRevealToken?: number;
   statusBar?: React.ReactNode;
   toolbar?: React.ReactNode;
   heightClass?: string;
@@ -234,6 +245,12 @@ export function EngineeringShell({
   bottomPanel,
   bottomLabel,
   bottomDefaultCollapsed,
+  bottomOpenRequest,
+  onBottomCollapsedChange,
+  explorerSize,
+  inspectorSize,
+  bottomSize,
+  inspectorRevealToken,
   statusBar,
   toolbar,
   heightClass,
@@ -268,9 +285,10 @@ export function EngineeringShell({
       toolbar={toolbar}
       statusBar={statusBar}
       leftRail={<ActivityBar items={activityItems} active={activeActivity} explorerOpen={!explorerCollapsed} onSelect={onSelectActivity} />}
-      left={{ label: explorerLabel ?? t("layoutKit.shell.explorer", "Explorer"), content: explorer }}
+      left={{ label: explorerLabel ?? t("layoutKit.shell.explorer", "Explorer"), content: explorer, ...explorerSize }}
       leftCollapsed={explorerCollapsed}
       leftRevealToken={revealToken}
+      rightRevealToken={inspectorRevealToken}
       onLeftCollapsedChange={setExplorerCollapsed}
       mainName={`${layoutId}-editor`}
       mainHeader={
@@ -286,12 +304,19 @@ export function EngineeringShell({
       main={editor}
       right={
         inspector != null
-          ? { label: inspectorLabel ?? t("layoutKit.shell.inspector", "Inspector"), content: inspector, ai: inspectorIsAi }
+          ? { label: inspectorLabel ?? t("layoutKit.shell.inspector", "Inspector"), content: inspector, ai: inspectorIsAi, ...inspectorSize }
           : undefined
       }
       bottom={
         bottomPanel != null
-          ? { label: bottomLabel ?? t("layoutKit.shell.bottomPanel", "Bottom panel"), content: bottomPanel, defaultCollapsed: bottomDefaultCollapsed }
+          ? {
+              label: bottomLabel ?? t("layoutKit.shell.bottomPanel", "Bottom panel"),
+              content: bottomPanel,
+              defaultCollapsed: bottomDefaultCollapsed,
+              openRequest: bottomOpenRequest,
+              onCollapsedChange: onBottomCollapsedChange,
+              ...bottomSize,
+            }
           : undefined
       }
     />

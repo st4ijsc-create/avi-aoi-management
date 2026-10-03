@@ -136,3 +136,53 @@ describe("ProgrammingCopilotDock — giữ dock (R-2-b), bỏ lối vào thứ h
     act(() => off());
   });
 });
+
+// ── doc 81 Đợt 2 Task 13 (R-2-b) — IDE đặt Copilot TRONG layout: binding `inLayout` ⇒ dock không vẽ gì (không aside
+// position:fixed, không tab nổi) và KHÔNG đẩy trang (body.paddingRight); IR/POU (binding thường) giữ dock như trên.
+// Lõi dùng chung `ProgrammingCopilotCore`: dock và panel trong layout vẽ CÙNG một thân (chẩn đoán + engine). ──
+import { ProgrammingCopilotCore } from "@/components/programming/ProgrammingCopilotCore";
+
+function BoundInLayout() {
+  useCopilotBinding(() => ({ surfaceLabel: "IDE", diagnostics: [{ message: "x" }], inLayout: true }), []);
+  return null;
+}
+
+describe("ProgrammingCopilotDock — binding inLayout (Task 13)", () => {
+  it("mở + màn rộng + binding inLayout ⇒ dock KHÔNG vẽ, KHÔNG paddingRight, Esc không đụng trạng thái", () => {
+    localStorage.setItem("progCopilotDock.open", "1");
+    const w = window.innerWidth;
+    Object.defineProperty(window, "innerWidth", { configurable: true, value: 1600 });
+    const off = registerAiHeaderEntry();
+    render(
+      <ProgrammingCopilotProvider>
+        <BoundInLayout />
+        <ProgrammingCopilotDock />
+      </ProgrammingCopilotProvider>,
+    );
+    expect(screen.queryByRole("complementary")).toBeNull();
+    expect(screen.queryByTestId("copilot-engine")).toBeNull();
+    expect(document.body.style.paddingRight).toBe("");
+    fireEvent.keyDown(window, { key: "Escape" });
+    expect(localStorage.getItem("progCopilotDock.open")).toBe("1");
+    Object.defineProperty(window, "innerWidth", { configurable: true, value: w });
+    act(() => off());
+  });
+
+  it("không có shell + binding inLayout ⇒ cũng KHÔNG có tab dọc nổi", () => {
+    render(
+      <ProgrammingCopilotProvider>
+        <BoundInLayout />
+        <ProgrammingCopilotDock />
+      </ProgrammingCopilotProvider>,
+    );
+    expect(screen.queryByRole("button", { name: "Mở Trợ lý Lập trình" })).toBeNull();
+  });
+
+  it("ProgrammingCopilotCore vẽ chẩn đoán + nút Giải thích/Đề xuất sửa + engine (cùng thân với dock)", async () => {
+    render(<ProgrammingCopilotCore binding={{ surfaceLabel: "IDE", diagnostics: [{ message: "L2: lỗi A", severity: "error" }], onApply: () => {} }} />);
+    expect(screen.getByText("L2: lỗi A")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /Giải thích lỗi/ })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /Đề xuất sửa/ })).toBeInTheDocument();
+    expect(await screen.findByTestId("copilot-engine")).toBeInTheDocument();
+  });
+});

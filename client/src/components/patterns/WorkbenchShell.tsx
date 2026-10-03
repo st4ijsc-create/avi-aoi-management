@@ -94,6 +94,8 @@ export interface WorkbenchShellProps {
   onLeftCollapsedChange?: (collapsed: boolean) => void;
   /** Đổi giá trị ⇒ ở màn hẹp chuyển sang tab panel trái (activity bar chọn một mục). */
   leftRevealToken?: number;
+  /** Task 13 — đổi giá trị ⇒ ở màn hẹp chuyển sang tab panel PHẢI (vd nút AI top bar mở Copilot trong layout). */
+  rightRevealToken?: number;
   /** Chiều cao vỏ; mặc định trừ top bar 56 px. */
   heightClass?: string;
   /** Sàn px của MAIN (mặc định WORKBENCH_MAIN_MIN_PX = 400) — panel phụ thu/gập trước khi MAIN bị ép dưới sàn. */
@@ -228,6 +230,7 @@ export function WorkbenchShell({
   leftCollapsed,
   onLeftCollapsedChange,
   leftRevealToken,
+  rightRevealToken,
   heightClass = "h-[calc(100dvh-3.5rem)]",
   className,
   mainMinPx,
@@ -484,6 +487,12 @@ export function WorkbenchShell({
     lastReveal.current = leftRevealToken;
     if (narrow && left) setNarrowTab("left");
   }, [leftRevealToken, narrow, left]);
+  const lastRightReveal = React.useRef(rightRevealToken);
+  React.useEffect(() => {
+    if (rightRevealToken === lastRightReveal.current) return;
+    lastRightReveal.current = rightRevealToken;
+    if (narrow && right) setNarrowTab("right");
+  }, [rightRevealToken, narrow, right]);
 
   const mainProps = { ...mainAria, [LAYOUT_MAIN]: mainName };
   const aiProps = right?.ai ? { [LAYOUT_AI]: "" } : {};

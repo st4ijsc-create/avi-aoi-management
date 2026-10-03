@@ -166,6 +166,21 @@ describe("WizardDialog", () => {
     expect(screen.queryByRole("alertdialog")).toBeNull();
   });
 
+  // doc 81 Đợt 2 Task 13 — trang (IDE) cần nút Hoàn tất mang testid/nhãn riêng của hành động cuối (Deploy build /
+  // Gửi yêu cầu / Triển khai canary) và lý do khoá (title) như nút cũ. Tuỳ chọn, mặc định = hôm nay.
+  it("finishTestId + finishTitle gắn lên nút Hoàn tất; không truyền ⇒ không có", () => {
+    const one = [{ id: "only", title: "Một", content: <p>x</p>, canProceed: false }];
+    const { rerender, onFinish, onOpenChange } = renderWizard({ steps: one, finishTestId: "nut-cuoi", finishTitle: "Cần quyền machine_control", finishLabel: "Deploy build" });
+    const b = screen.getByTestId("nut-cuoi");
+    expect(b).toHaveAccessibleName("Deploy build");
+    expect(b).toHaveAttribute("title", "Cần quyền machine_control");
+    expect(b).toBeDisabled();
+    rerender(<WizardDialog open onOpenChange={onOpenChange} title="Triển khai" steps={one} onFinish={onFinish} />);
+    const plain = screen.getByRole("button", { name: vi.layoutKit.wizard.finish });
+    expect(plain).not.toHaveAttribute("data-testid");
+    expect(plain).not.toHaveAttribute("title");
+  });
+
   it("mở lại ⇒ về bước 1", () => {
     const { rerender, onFinish, onOpenChange } = renderWizard();
     fireEvent.click(within(screen.getByRole("dialog")).getByRole("button", { name: vi.layoutKit.wizard.next }));

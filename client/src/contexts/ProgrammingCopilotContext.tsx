@@ -50,6 +50,12 @@ export interface CopilotBinding {
   onApplyText?: (text: string) => void;
   /** Short host name shown in the header (e.g. "IR Editor"). */
   surfaceLabel?: string;
+  /**
+   * doc 81 Đợt 2 Task 13 (R-2-b) — host tự đặt Copilot TRONG layout của nó (IDE: panel phải của EngineeringShell,
+   * cùng lõi `ProgrammingCopilotCore`). Khi bật, dock KHÔNG vẽ gì và KHÔNG đẩy trang (`body.paddingRight`); trạng
+   * thái `open` vẫn là của context (nút AI top bar mở/đóng panel của host). IR/POU không khai ⇒ dock như cũ.
+   */
+  inLayout?: boolean;
 }
 
 interface ProgrammingCopilotContextValue {

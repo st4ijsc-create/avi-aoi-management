@@ -9,6 +9,8 @@
  * - `canProceed=false` khoá Tiếp/Hoàn tất của bước đó. Validation nghiệp vụ vẫn ở trang.
  * - `dirty` ⇒ đóng (Esc/nút X/bấm ra ngoài) phải qua "Bỏ thay đổi chưa lưu?".
  * - Mở lại ⇒ về bước 1.
+ * - Task 13: `finishTestId` / `finishTitle` (tuỳ chọn) gắn testid và lý do khoá (title) lên nút Hoàn tất — trang
+ *   giữ được selector/nhãn của nút hành động cũ (vd "Deploy build"). Không truyền ⇒ nút y như trước.
  */
 import * as React from "react";
 import { useTranslation } from "react-i18next";
@@ -43,11 +45,15 @@ export interface WizardFrameProps {
   onIndexChange: (i: number) => void;
   onFinish: () => void | Promise<void>;
   finishLabel?: React.ReactNode;
+  /** Task 13 — testid cho nút Hoàn tất (tuỳ chọn). */
+  finishTestId?: string;
+  /** Task 13 — `title` (vd lý do khoá) cho nút Hoàn tất (tuỳ chọn). */
+  finishTitle?: string;
   pending?: boolean;
   className?: string;
 }
 
-export function WizardFrame({ steps, index, onIndexChange, onFinish, finishLabel, pending = false, className }: WizardFrameProps) {
+export function WizardFrame({ steps, index, onIndexChange, onFinish, finishLabel, finishTestId, finishTitle, pending = false, className }: WizardFrameProps) {
   const { t } = useTranslation();
   const step = steps[index];
   const last = index === steps.length - 1;
@@ -94,7 +100,7 @@ export function WizardFrame({ steps, index, onIndexChange, onFinish, finishLabel
           {t("layoutKit.wizard.back", "Back")}
         </Button>
         {last ? (
-          <Button disabled={!canProceed || pending} onClick={() => void onFinish()}>
+          <Button disabled={!canProceed || pending} onClick={() => void onFinish()} data-testid={finishTestId} title={finishTitle}>
             {pending && <Loader2 className="mr-1 h-4 w-4 animate-spin" aria-hidden="true" />}
             {finishLabel ?? t("layoutKit.wizard.finish", "Finish")}
           </Button>
@@ -116,13 +122,15 @@ export interface WizardDialogProps {
   steps: readonly WizardStep[];
   onFinish: () => void | Promise<void>;
   finishLabel?: React.ReactNode;
+  finishTestId?: string;
+  finishTitle?: string;
   pending?: boolean;
   /** Form trong wizard còn dữ liệu chưa lưu ⇒ hỏi trước khi đóng. */
   dirty?: boolean;
   size?: "md" | "lg";
 }
 
-export function WizardDialog({ open, onOpenChange, title, description, steps, onFinish, finishLabel, pending, dirty = false, size = "md" }: WizardDialogProps) {
+export function WizardDialog({ open, onOpenChange, title, description, steps, onFinish, finishLabel, finishTestId, finishTitle, pending, dirty = false, size = "md" }: WizardDialogProps) {
   const [index, setIndex] = React.useState(0);
   const [asking, setAsking] = React.useState(false);
   React.useEffect(() => {
@@ -157,6 +165,8 @@ export function WizardDialog({ open, onOpenChange, title, description, steps, on
             onIndexChange={setIndex}
             onFinish={onFinish}
             finishLabel={finishLabel}
+            finishTestId={finishTestId}
+            finishTitle={finishTitle}
             pending={pending}
           />
         </SheetContent>

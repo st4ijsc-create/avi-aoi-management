@@ -208,3 +208,69 @@ describe("EngineeringShell — màn hẹp không đụng trạng thái gập c�
     expect(screen.getByRole("button", { name: "Dự án" })).toHaveAttribute("aria-expanded", "true");
   });
 });
+
+// ── doc 81 Đợt 2 Task 13 — IDE cần kích thước px riêng cho panel, ý định mở panel dưới, và mở tab Inspector ở màn hẹp ──
+describe("EngineeringShell — tuỳ chọn cho trang IDE (Task 13)", () => {
+  it("bottomOpenRequest đổi ⇒ panel dưới (gập lúc đầu) MỞ; onBottomCollapsedChange báo trạng thái", () => {
+    const seen: boolean[] = [];
+    const onBottomCollapsedChange = (c: boolean) => seen.push(c);
+    const props = { bottomDefaultCollapsed: true, onBottomCollapsedChange };
+    const { rerender } = renderShellRerender({ ...props, bottomOpenRequest: 0 });
+    const toggle = screen.getByRole("button", { name: VI.layoutKit.shell.toggleBottom });
+    expect(toggle).toHaveAttribute("aria-expanded", "false");
+    rerender({ ...props, bottomOpenRequest: 1 });
+    expect(toggle).toHaveAttribute("aria-expanded", "true");
+    expect(seen[seen.length - 1]).toBe(false);
+  });
+
+  it("explorerSize / inspectorSize / bottomSize chuyển xuống WorkbenchShell (đích px, khung 1600×800)", () => {
+    const original = HTMLElement.prototype.getBoundingClientRect;
+    const spy = vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockImplementation(function (this: HTMLElement) {
+      if (this.hasAttribute("data-workbench-group")) return DOMRect.fromRect({ x: 0, y: 0, width: 1600, height: 800 });
+      return original.call(this);
+    });
+    try {
+      renderShell({ explorerSize: { minPx: 200, maxPx: 280, defaultPx: 220 }, inspectorSize: { minPx: 300, maxPx: 400, defaultPx: 310 }, bottomSize: { minPx: 150, maxPx: 300, defaultPx: 170 } });
+      const px = (id: string, g: number) => (Number((document.querySelector(`[data-panel-id="${id}"]`) as HTMLElement).getAttribute("data-panel-size")) * g) / 100;
+      expect(Math.abs(px("left", 1600) - 220)).toBeLessThanOrEqual(2.2);
+      expect(Math.abs(px("right", 1600) - 310)).toBeLessThanOrEqual(3.1);
+      expect(Math.abs(px("bottom", 800) - 170)).toBeLessThanOrEqual(1.7);
+    } finally {
+      spy.mockRestore();
+    }
+  });
+
+  it("màn hẹp: inspectorRevealToken đổi ⇒ chuyển sang tab Inspector", () => {
+    presetNarrow(true);
+    const { rerender } = renderShellRerender({ inspectorRevealToken: 0 });
+    expect(screen.getByRole("tab", { name: "Copilot" })).toHaveAttribute("aria-selected", "false");
+    rerender({ inspectorRevealToken: 1 });
+    expect(screen.getByRole("tab", { name: "Copilot" })).toHaveAttribute("aria-selected", "true");
+  });
+});
+
+function renderShellRerender(over: Partial<EngineeringShellProps>) {
+  const base = (o: Partial<EngineeringShellProps>) => (
+    <main>
+      <EngineeringShell
+        layoutId="ide-t13"
+        userId={3}
+        activityItems={[{ id: "projects", label: "Dự án", icon: <svg /> }]}
+        activeActivity="projects"
+        onActivityChange={() => {}}
+        explorer={<p>cây dự án</p>}
+        editorTabs={[{ id: "main", label: "Main.bas" }]}
+        activeTabId="main"
+        onTabChange={() => {}}
+        editor={<div className="cm-editor">mã nguồn</div>}
+        inspector={<p>copilot</p>}
+        inspectorLabel="Copilot"
+        bottomPanel={<p>vấn đề</p>}
+        bottomLabel="Vấn đề"
+        {...o}
+      />
+    </main>
+  );
+  const r = render(base(over));
+  return { rerender: (o: Partial<EngineeringShellProps>) => r.rerender(base(o)) };
+}
