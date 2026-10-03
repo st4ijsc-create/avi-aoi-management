@@ -70,6 +70,8 @@ export function CopilotInspector({ idPrefix, label, tabs, activeTab, onTabChange
     }
     if (!wantOpen) onTabChange(id);
   };
+  const copilotLabel = t("engineering.ws.copilotTab", "Copilot");
+  const copilotTab = { id: COPILOT, label: copilotLabel, icon: <Sparkles className="h-3.5 w-3.5 text-primary" aria-hidden="true" /> };
   const tabId = (id: string) => `${idPrefix}-${id}-tab`;
   const panelId = (id: string) => `${idPrefix}-${id}`;
 
@@ -93,7 +95,7 @@ export function CopilotInspector({ idPrefix, label, tabs, activeTab, onTabChange
           document.getElementById(tabId(ids[next]))?.focus();
         }}
       >
-        {[...tabs.map((x) => ({ id: x.id, label: x.label, icon: x.icon })), { id: COPILOT, label: t("engineering.ws.copilotTab", "Copilot"), icon: <Sparkles className="h-3.5 w-3.5 text-primary" aria-hidden="true" /> }].map((x) => {
+        {[...tabs.map((x) => ({ id: x.id, label: x.label, icon: x.icon })), copilotTab].map((x) => {
           const isSel = x.id === selected;
           return (
             <button
