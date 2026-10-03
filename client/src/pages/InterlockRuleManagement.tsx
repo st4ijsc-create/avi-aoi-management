@@ -651,7 +651,8 @@ function RulesListView() {
             <TableHead>{t("interlockRules.action")}</TableHead>
             <TableHead>{t("interlockRules.gate")}</TableHead>
             <TableHead>{t("interlockRules.cooldown")}</TableHead>
-            <TableHead className="text-right">{t("interlockRules.actions")}</TableHead>
+            {/* final wave M-10 — cột thao tác DÍNH phải: bảng rộng hơn MAIN ở 1366 vẫn luôn thấy Duyệt/Bật/Tắt (phần còn lại cuộn ngang). */}
+            <TableHead data-sticky-actions="" className="sticky right-0 z-[1] bg-background text-right shadow-[-6px_0_6px_-6px_rgba(0,0,0,0.25)]">{t("interlockRules.actions")}</TableHead>
           </TableRow>
         </TableHeader>
         <TableBody>
@@ -691,7 +692,7 @@ function RulesListView() {
                     : <Badge variant="outline">{t("interlockRules.disabled")}</Badge>}
                 </TableCell>
                 <TableCell className="text-xs">{r.cooldownSeconds}s</TableCell>
-                <TableCell className="text-right space-x-1 whitespace-nowrap" onClick={stop} onKeyDown={stop}>
+                <TableCell data-sticky-actions="" className="sticky right-0 z-[1] bg-background text-right space-x-1 whitespace-nowrap shadow-[-6px_0_6px_-6px_rgba(0,0,0,0.25)]" onClick={stop} onKeyDown={stop}>
                   {/* Doc 81 Đợt 2 Task 5 — dialog test cũ ⇒ flyout công cụ `?flyout=rule-test&flyoutId=`. */}
                   <Button size="sm" variant="outline" aria-label={t("interlockRules.testTitle")} title={t("interlockRules.testTitle")}
                     onClick={() => flyout.open("rule-test", { id: r.id })}>

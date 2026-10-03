@@ -277,6 +277,21 @@ describe("Interlock P3 — bố cục: MAIN là danh sách rule", () => {
   });
 });
 
+describe("Interlock P3 — final wave M-10: cột thao tác dính phải (không bị cắt ở 1366)", () => {
+  it("tiêu đề + mọi ô cột Thao tác của bảng rule là sticky right-0 có nền (nút Duyệt luôn thấy khi bảng cuộn ngang)", () => {
+    render(<InterlockRuleManagement />);
+    const table = mainEl().querySelector("table") as HTMLElement;
+    const head = table.querySelector("thead th:last-child") as HTMLElement;
+    const cells = Array.from(table.querySelectorAll("tbody tr td:last-child")) as HTMLElement[];
+    expect(cells.length).toBeGreaterThan(0);
+    for (const el of [head, ...cells]) {
+      expect(el.className).toMatch(/(^|\s)sticky(\s|$)/);
+      expect(el.className).toMatch(/(^|\s)right-0(\s|$)/);
+      expect(el.className).toMatch(/(^|\s)bg-background(\s|$)/);
+    }
+  });
+});
+
 describe("Interlock P3 — chip tư thế trên header (oversight.posture)", () => {
   const chip = (id: string) => document.querySelector(`[data-layout-kpi="${id}"]`) as HTMLElement;
 
