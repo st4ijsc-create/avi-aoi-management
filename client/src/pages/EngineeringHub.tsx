@@ -238,12 +238,14 @@ export default function EngineeringHub() {
         <SafetyPostureStrip />
 
         {/* U5 (doc 26 §2.3) — dải "Đang chờ duyệt & cảnh báo" gộp toàn module. */}
-        <PendingReviewStrip />
+        <div data-layout-main="engineering-home-inbox">
+          <PendingReviewStrip />
+        </div>
 
         {/* Các nhóm tác vụ */}
         <div className="space-y-8">
           {GROUPS.map((group) => (
-            <section key={group.sectionKey} className="space-y-3">
+            <section key={group.sectionKey} data-layout-main="engineering-home-tools" className="space-y-3">
               <h2 className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">
                 {t(`nav.section.${group.sectionKey}`)}
               </h2>
