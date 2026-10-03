@@ -786,7 +786,7 @@ function EngineeringWorkspaceView() {
   // ═════ Top bar (PageHeaderCompact, 40–48 px): dự án/phiên bản · Kiểm/Build/Mô phỏng/Deploy · pipeline · review ═════
   const header = (
     <PageHeaderCompact
-      className="h-10 shrink-0 border-b px-3 py-0"
+      className="h-12 shrink-0 border-b px-3 py-0"
       icon={<Code2 />}
       title={t("engineering.title", "Xưởng lập trình thiết bị")}
       chips={

@@ -277,6 +277,25 @@ describe("P1 Workbench — bố cục (doc 81 §1.3)", () => {
     expect(within(mainEl()).getByRole("table")).toBeInTheDocument();
   });
 
+  // Fix round 2 (Ruling R-2-t) — top bar 48 px, nút giữ 40 px (ui/button.tsx: size sm = h-10, quy tắc chạm 40 px). jsdom không có
+  // layout ⇒ đo theo lớp Tailwind (h-N = 4N px, py-N, border-b = 1 px, box-sizing border-box): chiều cao header ≥ nút cao nhất
+  // + đệm dọc + viền ⇒ không nút nào bị cắt (header overflow-hidden). Trình duyệt thật: peek-fr2.txt.
+  it("R-2-t: header đủ cao cho nút 40 px + viền (không cắt nút)", () => {
+    seed();
+    renderPage();
+    const hd = document.querySelector("[data-layout-header]") as HTMLElement;
+    const px = (cls: string, re: RegExp) => { const m = cls.split(/\s+/).map((c) => re.exec(c)).find(Boolean); return m ? Number(m[1]) * 4 : null; };
+    const headerH = px(hd.className, /^h-(\d+(?:\.\d+)?)$/);
+    const padY = px(hd.className, /^py-(\d+(?:\.\d+)?)$/) ?? 0;
+    const border = /(^|\s)border-b(\s|$)/.test(hd.className) ? 1 : 0;
+    expect(headerH).toBe(48);
+    const btns = Array.from(hd.querySelectorAll("button"));
+    expect(btns.length).toBeGreaterThan(5);
+    const tallest = Math.max(...btns.map((b) => px(b.className, /^(?:h|size)-(\d+(?:\.\d+)?)$/) ?? 0));
+    expect(tallest).toBe(40);
+    expect(headerH!).toBeGreaterThanOrEqual(tallest + 2 * padY + border);
+  });
+
   it("thanh trạng thái 'Triển khai thật: OFF' là nhãn i18n — KHÔNG tên biến môi trường ở bất kỳ đâu", () => {
     seed({ deployEnabled: false });
     renderPage();
