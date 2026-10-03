@@ -34,7 +34,9 @@ const FILES_KHOA_DU_LIEU = [
   "pages/AIHome.tsx",
   "pages/AIStudioHub.tsx",
   "pages/DataManagementHub.tsx",
-  "pages/EngineeringStudioHub.tsx",
+  // 2026-10-04 doc 81 Đợt 2 Task 15 — EngineeringStudioHub.tsx ĐÃ XOÁ (Studio gộp vào Hub); danh mục của nó (kèm
+  // các mục `label: "engineeringHome.tools.*"`) nay nằm trong EngineeringHub.tsx ⇒ lưới quét tệp đó thay thế.
+  "pages/EngineeringHub.tsx",
   "pages/MaintenanceWorkspaceHub.tsx",
   "pages/ProductWorkspaceHub.tsx",
   "pages/SettingsHub.tsx",

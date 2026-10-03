@@ -98,10 +98,12 @@ import { getAiEntryState, resetAiEntryForTest, setAiChatOpen } from "@/lib/aiEnt
 import { buildBreadcrumbs } from "@/lib/breadcrumbs";
 import { getNavItemByHref, navGroups } from "@/lib/navigation";
 
-/** 14 màn Engineering do thiết bị đo Task 1 chấm (SCREENS trong scripts/ui-metrics/engineeringLayout.mjs). */
+/** 14 màn Engineering do thiết bị đo Task 1 chấm (SCREENS trong scripts/ui-metrics/engineeringLayout.mjs) — trừ hai màn
+ *  đã GỘP ở Task 15 (doc 81 Đợt 2): `/engineering-studio` (⇒ Hub ?tab=catalog) và `/programming-copilot` (⇒ IDE
+ *  ?copilot=scratch) nay chỉ là chuyển hướng (lib/engineeringLegacyRedirects.tsx), không còn trang để dựng. */
 const ENGINEERING_ROUTES = [
-  "/engineering-home", "/engineering-studio", "/engineering", "/engineering-changes", "/recipes",
-  "/interlock-rules", "/orchestration-studio", "/ir-editor", "/pou-studio", "/programming-copilot",
+  "/engineering-home", "/engineering", "/engineering-changes", "/recipes",
+  "/interlock-rules", "/orchestration-studio", "/ir-editor", "/pou-studio",
   "/fleet-orchestration", "/safety-workforce", "/equipment-standards", "/equipment-integration",
 ];
 
@@ -380,13 +382,13 @@ describe("Màn workbench: rail thu gọn mặc định, người dùng mở đư
     expect(mainEl().className).toMatch(/(^|\s)md:pt-4(\s|$)/);
   });
 
-  it("đúng 4 màn workbench (FE1 khuyến nghị 3) khai biến thể; 10 màn còn lại không", () => {
+  it("đúng 4 màn workbench (FE1 khuyến nghị 3) khai biến thể; 8 màn còn lại không (Studio/Copilot đã gộp — Task 15)", () => {
     const FILES: Record<string, string> = {
       "/engineering": "EngineeringWorkspace", "/ir-editor": "IrEditor", "/pou-studio": "PouStudio",
       "/orchestration-studio": "OrchestrationStudio", "/engineering-home": "EngineeringHub",
-      "/engineering-studio": "EngineeringStudioHub", "/engineering-changes": "EngineeringChanges",
+      "/engineering-changes": "EngineeringChanges",
       "/recipes": "RecipeManagement", "/interlock-rules": "InterlockRuleManagement",
-      "/programming-copilot": "ProgrammingCopilot", "/fleet-orchestration": "FleetOrchestration",
+      "/fleet-orchestration": "FleetOrchestration",
       "/safety-workforce": "SafetyWorkforce", "/equipment-standards": "EquipmentStandards",
       "/equipment-integration": "EquipmentIntegration",
     };
