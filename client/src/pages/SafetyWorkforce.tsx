@@ -1022,8 +1022,8 @@ function EventsTab() {
   return (
     <div className="flex min-h-0 flex-col">
       {ctx.narrow && <NarrowRows />}
-      {/* Luồng sự kiện an toàn — bảng tự cuộn trong khung nhìn (trang không cao lên theo 200 dòng). */}
-      <div className="max-h-[calc(100dvh-11rem)] min-h-[16rem] overflow-auto rounded-md border" aria-label={t("safety.feedTitle", "Safety event feed")} role="region">
+      {/* Luồng sự kiện an toàn — vùng cao hết khung nhìn còn lại, bảng tự cuộn trong (trang không cao lên theo 200 dòng). */}
+      <div className="h-[calc(100dvh-11.5rem)] min-h-[16rem] overflow-auto rounded-md border" aria-label={t("safety.feedTitle", "Safety event feed")} role="region">
         <Table>
           <TableHeader className="sticky top-0 z-10 bg-card">
             <TableRow>
