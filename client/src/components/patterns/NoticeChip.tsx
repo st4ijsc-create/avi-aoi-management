@@ -216,12 +216,16 @@ export function FeatureStatusNoticeChip({ status, offMessage, errorMessage, subj
     );
   }
   if (status === "error") {
+    const msg = errorMessage ?? t("common.featureStatusError", "Could not check this feature's status — treating it as unavailable.");
+    // final wave M-9 — câu lỗi được ĐỌC NGAY khi chip lỗi xuất hiện (vùng role=alert sr-only cạnh chip), không đợi
+    // người dùng mở popover; popover vẫn hiện câu đó cho người nhìn (không role=alert ⇒ không đọc đôi).
     return (
-      <NoticeChip kind="error" label={label("error")} className={className} data-testid="feature-status-error">
-        <p role="alert">
-          {errorMessage ?? t("common.featureStatusError", "Could not check this feature's status — treating it as unavailable.")}
-        </p>
-      </NoticeChip>
+      <>
+        <NoticeChip kind="error" label={label("error")} className={className} data-testid="feature-status-error">
+          <p>{msg}</p>
+        </NoticeChip>
+        <span role="alert" className="sr-only" data-feature-status-alert="">{msg}</span>
+      </>
     );
   }
   return (

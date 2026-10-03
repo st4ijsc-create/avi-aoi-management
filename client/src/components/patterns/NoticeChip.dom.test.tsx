@@ -129,7 +129,19 @@ describe("FeatureStatusNoticeChip — 4 trạng thái của FeatureStatusGate, k
     expect(screen.queryByTestId("feature-status-off")).toBeNull();
     fireEvent.click(chip);
     const pop = await screen.findByRole("dialog");
-    expect(within(pop).getByRole("alert")).toHaveTextContent(vi.common.featureStatusError);
+    // final wave M-9 — ĐỔI SELECTOR (khẳng định giữ): câu lỗi vẫn ở popover; vùng role=alert nay nằm NGOÀI popover.
+    expect(pop).toHaveTextContent(vi.common.featureStatusError);
+  });
+
+  it("final wave M-9: error ⇒ câu lỗi được ĐỌC NGAY (role=alert ngoài popover, không cần mở chip); mở popover không thêm alert thứ hai", async () => {
+    render(<FeatureStatusNoticeChip status="error" offMessage="tắt" errorMessage="Không đọc được cờ tích hợp." />);
+    const alerts = screen.getAllByRole("alert");
+    expect(alerts).toHaveLength(1);
+    expect(alerts[0]).toHaveTextContent("Không đọc được cờ tích hợp.");
+    expect(alerts[0].closest("[data-notice-popover]")).toBeNull();
+    fireEvent.click(screen.getByTestId("feature-status-error"));
+    await screen.findByRole("dialog");
+    expect(screen.getAllByRole("alert")).toHaveLength(1);
   });
 
   it("off ⇒ chip 'Đang tắt', popover hiện đúng câu tắt của trang", async () => {
