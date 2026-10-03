@@ -1389,7 +1389,8 @@ function DeployDrawer({
   const [initialMachineId] = useState<number | null>(() => version.machineId ?? null);
   const [machineId, setMachineId] = useState<number | null>(initialMachineId);
   const [notes, setNotes] = useState("");
-  const [error, setError] = useState<{ machineId: number; message: string } | null>(null);
+  // `text` đã qua mapTrpcError (không phải chuỗi thô máy chủ) — tên trường nói đúng điều đó.
+  const [deployError, setDeployError] = useState<{ machineId: number; text: string } | null>(null);
   const isApproved = version.approvedBy != null;
   useEffect(() => { layer.setDirty(machineId !== initialMachineId || notes.trim() !== ""); }, [machineId, notes]); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -1401,11 +1402,11 @@ function DeployDrawer({
 
   const confirm = () => {
     if (!isApproved || machineId == null) return;
-    setError(null);
+    setDeployError(null);
     const id = machineId;
     deployAsync({ recipeId: version.id, machineId: id, notes: notes.trim() || null }).then(
       () => done(),
-      (e: unknown) => { if (mountedRef.current) setError({ machineId: id, message: mapTrpcError(e) }); },
+      (e: unknown) => { if (mountedRef.current) setDeployError({ machineId: id, text: mapTrpcError(e) }); },
     );
   };
 
@@ -1422,7 +1423,7 @@ function DeployDrawer({
           id={`${uid}-machine`}
           options={options}
           value={machineId}
-          onChange={(v) => { setMachineId(v == null ? null : Number(v)); setError(null); }}
+          onChange={(v) => { setMachineId(v == null ? null : Number(v)); setDeployError(null); }}
           loading={machinesLoading}
           disabled={pending}
           placeholder={machinesLoading ? t("recipes.loadingMachines") : t("recipes.selectMachine")}
@@ -1436,12 +1437,12 @@ function DeployDrawer({
         <Label htmlFor={`${uid}-notes`}>{t("recipes.notes")}</Label>
         <Input id={`${uid}-notes`} value={notes} onChange={(e) => setNotes(e.target.value)} />
       </div>
-      {error && (
+      {deployError && (
         <ErrorNotice
           title={t("recipes.deployFailed", "Triển khai lên {{machine}} không thực hiện được", {
-            machine: machineLabel(machines.find((m) => m.id === error.machineId), error.machineId),
+            machine: machineLabel(machines.find((m) => m.id === deployError.machineId), deployError.machineId),
           })}
-          message={error.message}
+          message={deployError.text}
         />
       )}
       <div className="flex justify-end gap-2 pt-2">
