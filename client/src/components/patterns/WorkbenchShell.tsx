@@ -26,11 +26,13 @@
  * Task 11b: nhóm panel chỉ MOUNT sau lần đo đầu của khung (`useElementBox` → `measured`). Trước đó
  * `defaultSize` là % dự phòng (bề rộng 0 ở lượt render đầu) và thư viện GIỮ % lúc mount ⇒ panel rộng hơn
  * giới hạn px. Bố cục người dùng đã lưu (`autoSaveId`) vẫn thắng; trạng thái gập (R-2-l) áp lại khi nhóm mount.
+ * Khung còn đổi cỡ SAU khi mount (rail trái thu gọn có transition 200 ms: 1336 → 1552 px) ⇒ panel phụ được GHIM
+ * theo px (setLayout) cho tới khi người dùng tự kéo/bấm phím trên separator của nhóm đó.
  */
 import * as React from "react";
 import { useTranslation } from "react-i18next";
 import { PanelBottom } from "lucide-react";
-import type { ImperativePanelHandle } from "react-resizable-panels";
+import type { ImperativePanelGroupHandle, ImperativePanelHandle } from "react-resizable-panels";
 import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from "@/components/ui/resizable";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { cn } from "@/lib/utils";
@@ -223,6 +225,76 @@ export function WorkbenchShell({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [bottomKey]);
 
+  // ── Task 11b — kích thước theo px ─────────────────────────────────────────────────────────────────────
+  const l = left ? pxRangeToPct({ minPx: left.minPx ?? 240, maxPx: left.maxPx ?? 300, defaultPx: left.defaultPx ?? 260 }, width, FALLBACK_LEFT) : null;
+  const r = right ? pxRangeToPct({ minPx: right.minPx ?? 320, maxPx: right.maxPx ?? 420, defaultPx: right.defaultPx ?? 380 }, width, FALLBACK_RIGHT) : null;
+  const b = bottom ? pxRangeToPct({ minPx: bottom.minPx ?? 180, maxPx: bottom.maxPx ?? 320, defaultPx: bottom.defaultPx ?? 200 }, height, FALLBACK_BOTTOM) : null;
+  const hKey = userLayoutKey(layoutId, userId, "h");
+  const vKey = userLayoutKey(layoutId, userId, "v");
+  const hGroupRef = React.useRef<ImperativePanelGroupHandle | null>(null);
+  const vGroupRef = React.useRef<ImperativePanelGroupHandle | null>(null);
+  /**
+   * Nhóm nào đã thuộc về NGƯỜI DÙNG (không ghim px nữa): có bố cục đã lưu lúc nhóm mount (`autoSaveId` — lựa
+   * chọn đã nhớ THẮNG), hoặc người dùng vừa kéo/bấm phím trên separator của nhóm đó.
+   */
+  const userOwnsRef = React.useRef({ h: false, v: false });
+  const hasStoredLayout = (key: string | null): boolean => {
+    if (!key) return false;
+    try {
+      return localStorage.getItem(`react-resizable-panels:${key}`) != null;
+    } catch {
+      return false;
+    }
+  };
+  // Nhóm vừa mount (thư viện đã nạp bố cục đã lưu nếu có; lượt LƯU của nó trễ ≥100 ms nên chưa ghi gì).
+  React.useLayoutEffect(() => {
+    if (!groupReady) return;
+    userOwnsRef.current = { h: hasStoredLayout(hKey), v: hasStoredLayout(vKey) };
+    // chỉ khi nhóm vừa mount
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [groupReady]);
+  /**
+   * GHIM px cho tới khi người dùng tự đổi: % của react-resizable-panels là tương đối, nên khi khung đổi bề rộng
+   * SAU lúc mount (rail trái thu gọn có transition 200 ms khi vào màn workbench: khung 1336 → 1552 px; hay đổi cỡ
+   * cửa sổ) panel phụ sẽ phình theo. Mỗi lần khung đổi cỡ, áp lại bố cục suy từ px — trừ nhóm người dùng đã
+   * nắm. Panel trái đang gập ⇒ giữ 0; panel dưới đang gập ⇒ không đụng nhóm dọc (R-2-l).
+   */
+  React.useEffect(() => {
+    if (!groupReady) return;
+    if (!userOwnsRef.current.h && hGroupRef.current && width > 0 && (l || r)) {
+      const leftNow = l ? (leftRef.current?.isCollapsed() ? 0 : l.defaultSize) : 0;
+      const rightNow = r ? r.defaultSize : 0;
+      const target = [...(l ? [leftNow] : []), 100 - leftNow - rightNow, ...(r ? [rightNow] : [])];
+      try {
+        hGroupRef.current.setLayout(target);
+      } catch {
+        /* nhóm chưa đăng ký panel */
+      }
+    }
+    if (!userOwnsRef.current.v && vGroupRef.current && height > 0 && b && !desiredBottomRef.current) {
+      try {
+        vGroupRef.current.setLayout([100 - b.defaultSize, b.defaultSize]);
+      } catch {
+        /* nhóm chưa đăng ký panel */
+      }
+    }
+    // l/r/b suy từ width/height
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [groupReady, width, height]);
+  /** Người dùng thao tác trên separator (bàn phím) ⇒ nhóm của separator đó thuộc về người dùng. */
+  const claimByKey = (e: React.KeyboardEvent) => {
+    const h = (e.target as HTMLElement | null)?.closest?.("[data-panel-resize-handle-id]");
+    if (!h) return;
+    if (h.getAttribute("data-panel-group-direction") === "vertical") userOwnsRef.current.v = true;
+    else userOwnsRef.current.h = true;
+  };
+  const claimH = (dragging: boolean) => {
+    if (dragging) userOwnsRef.current.h = true;
+  };
+  const claimV = (dragging: boolean) => {
+    if (dragging) userOwnsRef.current.v = true;
+  };
+
   // Ý định mở panel do trang phát (bỏ lần render đầu) — không ghi nhớ.
   const lastOpenRequest = React.useRef(bottom?.openRequest);
   React.useEffect(() => {
@@ -309,11 +381,6 @@ export function WorkbenchShell({
       </div>
     );
   } else {
-    const l = left ? pxRangeToPct({ minPx: left.minPx ?? 240, maxPx: left.maxPx ?? 300, defaultPx: left.defaultPx ?? 260 }, width, FALLBACK_LEFT) : null;
-    const r = right ? pxRangeToPct({ minPx: right.minPx ?? 320, maxPx: right.maxPx ?? 420, defaultPx: right.defaultPx ?? 380 }, width, FALLBACK_RIGHT) : null;
-    const b = bottom ? pxRangeToPct({ minPx: bottom.minPx ?? 180, maxPx: bottom.maxPx ?? 320, defaultPx: bottom.defaultPx ?? 200 }, height, FALLBACK_BOTTOM) : null;
-    const hKey = userLayoutKey(layoutId, userId, "h");
-    const vKey = userLayoutKey(layoutId, userId, "v");
 
     const toggleBottom = () => {
       if (!bottomRef.current) return;
@@ -353,9 +420,9 @@ export function WorkbenchShell({
         {toolbarOutlet}
         <div className="flex min-h-0 flex-1">
           {leftRail != null && <SlotOutlet host={hRail} className="flex shrink-0" />}
-          <div ref={groupRef} data-workbench-group="" className="min-w-0 flex-1">
+          <div ref={groupRef} data-workbench-group="" className="min-w-0 flex-1" onKeyDownCapture={claimByKey}>
             {groupReady && (
-            <ResizablePanelGroup direction="horizontal" autoSaveId={hKey} className="h-full">
+            <ResizablePanelGroup ref={hGroupRef} direction="horizontal" autoSaveId={hKey} className="h-full">
               {left && l && (
                 <>
                   <ResizablePanel
@@ -372,18 +439,18 @@ export function WorkbenchShell({
                   >
                     <SlotOutlet host={hLeft} data-workbench-left="" aria-label={left.label} role="region" className="h-full overflow-auto border-r" />
                   </ResizablePanel>
-                  <ResizableHandle aria-label={t("layoutKit.shell.resizeLeft", "Resize the left panel")} />
+                  <ResizableHandle aria-label={t("layoutKit.shell.resizeLeft", "Resize the left panel")} onDragging={claimH} />
                 </>
               )}
               <ResizablePanel id="center" order={2} minSize={30} defaultSize={100 - (l?.defaultSize ?? 0) - (r?.defaultSize ?? 0)}>
                 <div className="h-full">
-                  <ResizablePanelGroup direction="vertical" autoSaveId={vKey} className="h-full">
+                  <ResizablePanelGroup ref={vGroupRef} direction="vertical" autoSaveId={vKey} className="h-full">
                     <ResizablePanel id="main" order={1} minSize={30} defaultSize={bottom && b ? 100 - b.defaultSize : 100}>
                       {mainOutlet}
                     </ResizablePanel>
                     {bottom && b && (
                       <>
-                        <ResizableHandle aria-label={t("layoutKit.shell.resizeBottom", "Resize the bottom panel")} />
+                        <ResizableHandle aria-label={t("layoutKit.shell.resizeBottom", "Resize the bottom panel")} onDragging={claimV} />
                         <ResizablePanel
                           id="bottom"
                           order={2}
@@ -412,7 +479,7 @@ export function WorkbenchShell({
               </ResizablePanel>
               {right && r && (
                 <>
-                  <ResizableHandle aria-label={t("layoutKit.shell.resizeRight", "Resize the right panel")} />
+                  <ResizableHandle aria-label={t("layoutKit.shell.resizeRight", "Resize the right panel")} onDragging={claimH} />
                   <ResizablePanel id="right" order={3} minSize={r.minSize} maxSize={r.maxSize} defaultSize={r.defaultSize}>
                     <SlotOutlet host={hRight} as="aside" aria-label={right.label} {...aiProps} className="h-full overflow-auto border-l" />
                   </ResizablePanel>

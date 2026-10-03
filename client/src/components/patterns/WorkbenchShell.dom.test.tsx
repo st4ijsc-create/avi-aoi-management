@@ -12,7 +12,7 @@ import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vite
 // Bản BROWSER thật của react-resizable-panels (bản "node" vitest nhận không chạy layout effect) —
 // xem layoutKitTestPanels.ts.
 vi.mock("react-resizable-panels", async () => (await import("./layoutKitTestPanels")).browserPanels());
-import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import "@testing-library/jest-dom/vitest";
 import { useEffect, useState } from "react";
@@ -490,6 +490,104 @@ describe("WorkbenchShell — kích thước ban đầu theo px khi đã biết b
       expectPx("bottom", H, 260);
     } finally {
       spy.mockRestore();
+    }
+  });
+
+  /** Khung đổi cỡ SAU khi mount (rail trái thu gọn có transition: đo thật 1336 → 1552 px) — RO điều khiển được. */
+  function growingGroup(start: number) {
+    const box = { w: start };
+    const original = HTMLElement.prototype.getBoundingClientRect;
+    const spy = vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockImplementation(function (this: HTMLElement) {
+      if (this.hasAttribute("data-workbench-group")) return DOMRect.fromRect({ x: 0, y: 0, width: box.w, height: H });
+      return original.call(this);
+    });
+    const cbs = new Set<() => void>();
+    const prevRO = (globalThis as { ResizeObserver?: unknown }).ResizeObserver;
+    (globalThis as { ResizeObserver?: unknown }).ResizeObserver = class {
+      private cb: () => void;
+      constructor(cb: () => void) {
+        this.cb = () => cb();
+      }
+      observe() {
+        cbs.add(this.cb);
+      }
+      unobserve() {}
+      disconnect() {
+        cbs.delete(this.cb);
+      }
+    };
+    return {
+      resize: (w: number) => {
+        box.w = w;
+        act(() => {
+          for (const cb of [...cbs]) cb();
+        });
+      },
+      restore: () => {
+        spy.mockRestore();
+        (globalThis as { ResizeObserver?: unknown }).ResizeObserver = prevRO;
+      },
+    };
+  }
+
+  it("khung GIÃN sau khi mount (1336 → 1552 px, rail thu gọn) ⇒ panel phụ GIỮ đúng px (không phình theo %)", () => {
+    const g = growingGroup(1336);
+    try {
+      renderShell({ userId: null, ...px() });
+      expectPx("left", 1336, 240);
+      g.resize(1444);
+      g.resize(1552);
+      expectPx("left", 1552, 240);
+      expectPx("right", 1552, 340);
+    } finally {
+      g.restore();
+    }
+  });
+
+  it("người dùng đã kéo (bàn phím) ⇒ khung đổi cỡ KHÔNG ghi đè lựa chọn của họ (giữ %)", () => {
+    const g = growingGroup(1336);
+    try {
+      renderShell({ userId: null, ...px({ left: { label: "Explorer", content: <p>cây dự án</p>, minPx: 120, defaultPx: 240, maxPx: 360 } }) });
+      // ArrowLeft (bước 10 %) ⇒ 17,96 − 10 = 7,96 % ⇒ thư viện kẹp lên min 120 px (8,98 % của 1336). Khung 1552:
+      // % người dùng giữ 8,98 (≈139 px); nếu bị GHIM lại px sẽ thành 240/1552 = 15,46 %.
+      fireEvent.keyDown(screen.getByRole("separator", { name: VI.layoutKit.shell.resizeLeft }), { key: "ArrowLeft" });
+      const mine = size("left");
+      expect(mine).toBeCloseTo((120 / 1336) * 100, 1);
+      g.resize(1552);
+      expect(size("left")).toBeCloseTo(mine, 1);
+    } finally {
+      g.restore();
+    }
+  });
+
+  it("bố cục đã lưu lúc mount ⇒ khung đổi cỡ KHÔNG ghi đè (lựa chọn đã nhớ thắng)", async () => {
+    const g = growingGroup(1552);
+    try {
+      const r = renderShell(px());
+      const h = screen.getByRole("separator", { name: VI.layoutKit.shell.resizeLeft });
+      fireEvent.keyDown(h, { key: "ArrowRight" });
+      fireEvent.keyDown(h, { key: "ArrowRight" });
+      const mine = size("left");
+      await waitFor(() => expect(localStorage.getItem(`react-resizable-panels:${userLayoutKey("test-ide", 5, "h")}`)).not.toBeNull());
+      r.unmount();
+      renderShell(px());
+      expect(size("left")).toBeCloseTo(mine, 1);
+      g.resize(1336);
+      expect(size("left")).toBeCloseTo(mine, 1);
+    } finally {
+      g.restore();
+    }
+  });
+
+  it("panel dưới đang GẬP (R-2-l) ⇒ khung đổi cỡ không mở nó ra", () => {
+    const g = growingGroup(1336);
+    try {
+      renderShell(px({ bottom: { label: "Vấn đề", content: <Counter name="bottom" />, minPx: 160, defaultPx: 260, maxPx: 480, defaultCollapsed: true } }));
+      expect(size("bottom")).toBe(0);
+      g.resize(1552);
+      expect(size("bottom")).toBe(0);
+    } finally {
+      g.restore();
     }
   });
 
