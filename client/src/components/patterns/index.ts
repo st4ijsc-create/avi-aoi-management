@@ -153,6 +153,7 @@ export type { ChipState, StatusChipItem, StatusChipStripProps, OverflowState } f
 export { FlyoutHost, useFlyout, useFlyoutLayer, parseFlyoutStack, buildFlyoutSearch, FLYOUT_PARAM, FLYOUT_ID_PARAM } from "./FlyoutHost";
 export { useCloseOwnLayer } from "./useCloseOwnLayer";
 export type { CloseOwnLayer } from "./useCloseOwnLayer";
+export { useUrlParam } from "./useUrlParam";
 export type { FlyoutApi, FlyoutDefinition, FlyoutEntry, FlyoutHostProps, FlyoutLayerApi, FlyoutOpenOptions } from "./FlyoutHost";
 export { UnsavedChangesConfirm } from "./UnsavedChangesConfirm";
 export type { UnsavedChangesConfirmProps } from "./UnsavedChangesConfirm";

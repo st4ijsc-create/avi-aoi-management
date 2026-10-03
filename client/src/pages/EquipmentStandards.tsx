@@ -64,6 +64,7 @@ import {
   type StatusChipItem,
   type TransitionAction,
 } from "@/components/patterns";
+import { useUrlParam } from "@/components/patterns/useUrlParam";
 // doc 63 AUD-08 — alarm badge 4-hue riêng (critical≠high) khi HMI_ISA101_V2 bật.
 import { AlarmPriorityBadge } from "@/components/patterns/isaStateBadges";
 import { isIsa101V2 } from "@/lib/hmiFlags";
@@ -145,21 +146,6 @@ type Severity = (typeof SEVERITIES)[number];
 
 function pct(n: number): string {
   return `${Math.round(n * 100)}%`;
-}
-
-/** `?name=` của trang (replace — không thêm mục lịch sử), giữ mọi tham số khác. */
-function useUrlParam(name: string): [string | null, (value: string | null) => void] {
-  const search = useSearch();
-  const [location, setLocation] = useLocation();
-  const value = useMemo(() => new URLSearchParams(search).get(name), [search, name]);
-  const set = (v: string | null) => {
-    const p = new URLSearchParams(window.location.search);
-    if (v == null || v === "") p.delete(name);
-    else p.set(name, v);
-    const qs = p.toString();
-    setLocation(qs ? `${location}?${qs}` : location, { replace: true });
-  };
-  return [value, set];
 }
 
 // ── Dữ liệu dùng chung cho các tab (TabbedHub: Content là ComponentType không nhận props) ──────

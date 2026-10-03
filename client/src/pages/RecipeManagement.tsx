@@ -45,6 +45,7 @@ import {
   VersionHistoryPanel, JsonDiffView, RollbackConfirm, EntityPicker,
   type BadgeVariant, type FlyoutApi, type FlyoutDefinition, type VersionRow, type EntityOption,
 } from "@/components/patterns";
+import { useUrlParam } from "@/components/patterns/useUrlParam";
 import { useLocation, useSearch } from "wouter";
 import { navItems } from "@/lib/navigation";
 import { Button } from "@/components/ui/button";
@@ -151,21 +152,6 @@ type MachineData = { id: number; code?: string | null; name?: string | null };
 type DeployInput = { recipeId: number; machineId: number; notes: string | null };
 
 const machineLabel = (m: MachineData | undefined, id: number) => m?.name ?? m?.code ?? `#${id}`;
-
-/** Đọc/ghi một tham số URL của trang (replace — không thêm mục lịch sử), giữ mọi tham số khác. */
-function useUrlParam(name: string): [string | null, (value: string | null) => void] {
-  const search = useSearch();
-  const [location, setLocation] = useLocation();
-  const value = useMemo(() => new URLSearchParams(search).get(name), [search, name]);
-  const set = (v: string | null) => {
-    const p = new URLSearchParams(search);
-    if (v == null || v === "") p.delete(name);
-    else p.set(name, v);
-    const qs = p.toString();
-    setLocation(qs ? `${location}?${qs}` : location, { replace: true });
-  };
-  return [value, set];
-}
 
 /** Trải payload JSON thành lưới tham số (đường dẫn · giá trị · kiểu) — chỉ đọc. */
 function flattenPayload(value: unknown, prefix = ""): Array<{ path: string; value: string; type: string }> {

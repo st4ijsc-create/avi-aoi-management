@@ -47,6 +47,7 @@ import {
   FlyoutHost, useFlyout, useFlyoutLayer, WorkbenchShell,
   type StatusChipItem,
 } from "@/components/patterns";
+import { useUrlParam } from "@/components/patterns/useUrlParam";
 import type { FlyoutDefinition } from "@/components/patterns";
 import { TabbedHub, type TabbedHubTab } from "@/components/workspace/TabbedHub";
 import { useLocation, useSearch } from "wouter";
@@ -197,21 +198,6 @@ function actionVariant(action: string): "default" | "secondary" | "destructive" 
   if (action === "alert") return "secondary";
   if (action === "reduce_speed") return "outline";
   return "destructive"; // block_downstream / stop_line
-}
-
-/** Đọc/ghi một tham số URL của trang (replace — không thêm mục lịch sử), giữ mọi tham số khác. */
-function useUrlParam(name: string): [string | null, (value: string | null) => void] {
-  const search = useSearch();
-  const [location, setLocation] = useLocation();
-  const value = useMemo(() => new URLSearchParams(search).get(name), [search, name]);
-  const set = (v: string | null) => {
-    const p = new URLSearchParams(search);
-    if (v == null || v === "") p.delete(name);
-    else p.set(name, v);
-    const qs = p.toString();
-    setLocation(qs ? `${location}?${qs}` : location, { replace: true });
-  };
-  return [value, set];
 }
 
 // ── Dữ liệu dùng chung cho các tab của TabbedHub (Content là ComponentType không nhận props) ──

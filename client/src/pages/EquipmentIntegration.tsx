@@ -70,6 +70,7 @@ import {
   type StatusChipItem,
   type VersionRow,
 } from "@/components/patterns";
+import { useUrlParam } from "@/components/patterns/useUrlParam";
 import { type TabbedHubTab } from "@/components/workspace/TabbedHub";
 import { resolveActiveTab } from "@/components/workspace/hubState";
 import { Button } from "@/components/ui/button";
@@ -136,21 +137,6 @@ function numOrDash(n: number | null): string {
 }
 function strOrDash(s: string | null): string {
   return s == null || s === "" ? "—" : s;
-}
-
-/** Đọc/ghi một tham số URL của trang (replace — không thêm mục lịch sử), giữ mọi tham số khác. */
-function useUrlParam(name: string): [string | null, (value: string | null) => void] {
-  const search = useSearch();
-  const [location, setLocation] = useLocation();
-  const value = useMemo(() => new URLSearchParams(search).get(name), [search, name]);
-  const set = (v: string | null) => {
-    const p = new URLSearchParams(window.location.search);
-    if (v == null || v === "") p.delete(name);
-    else p.set(name, v);
-    const qs = p.toString();
-    setLocation(qs ? `${location}?${qs}` : location, { replace: true });
-  };
-  return [value, set];
 }
 
 // ── Dữ liệu dùng chung cho các tab (TabbedHub: Content là ComponentType không nhận props) ──────
