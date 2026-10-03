@@ -146,3 +146,68 @@ describe("PendingReviewStrip — HUB-02: samples rỗng (thiếu quyền) không
     expect(screen.queryByText("unavailable")).not.toBeInTheDocument();
   });
 });
+
+// ════════════════════════════════════════════════════════════════════════════════════════════════
+// Doc 81 Đợt 2 Task 15 — biến thể BẢNG (MAIN "hộp việc" của Hub, FE1 §2.1 "bảng 8 dòng"): cùng nguồn, cùng deep
+// link, cùng luật HUB-01/HUB-02; thêm bộ lọc loại việc (phạm vi "Chờ duyệt" / "Toàn module" của Hub).
+describe("PendingReviewStrip variant='table' (Task 15)", () => {
+  const rowsHrefs = () =>
+    Array.from(document.querySelectorAll("table tbody tr a")).map((a) => a.getAttribute("href"));
+
+  it("một <table>, mỗi loại việc một dòng, link sâu GIỮ NGUYÊN (?filter=pending…)", () => {
+    setQueryOverride(KEY, makeQuery({ data: summary({ ecn: ok(1, [{ id: 3, label: "SEED-ECN-0003 · Tang nguong NG" }]) }) }));
+    render(<PendingReviewStrip variant="table" />);
+    expect(document.querySelectorAll("table")).toHaveLength(1);
+    expect(rowsHrefs()).toEqual([
+      "/engineering-changes?filter=pending",
+      "/recipes?filter=pending",
+      "/recipes?filter=pending",
+      "/interlock-rules?filter=pending",
+      "/product-changeover",
+      "/interlock-rules?filter=pending",
+      "/orchestration-studio?filter=pending",
+      "/safety-workforce?filter=pending",
+      "/fleet-orchestration?filter=deadlock",
+    ]);
+    const ecnRow = screen.getByText("ECNs to approve").closest("tr") as HTMLElement;
+    expect(ecnRow.textContent).toContain("1");
+    expect(ecnRow.textContent).toContain("SEED-ECN-0003");
+  });
+
+  it("categoryFilter: chỉ các loại được chọn; 'Nothing waiting' tính TRÊN tập đang xem", () => {
+    setQueryOverride(KEY, makeQuery({ data: summary({ safety: ok(4) }) }));
+    render(<PendingReviewStrip variant="table" categoryFilter={(c) => !c.critical} />);
+    expect(rowsHrefs()).toHaveLength(5);
+    expect(screen.queryByText("Unaudited safety events")).toBeNull();
+    // safety (critical, ngoài tập) có 4 nhưng tập đang xem đều 0 và đọc được ⇒ "Nothing waiting"
+    expect(screen.getByText(/Nothing waiting for approval right now/i)).toBeInTheDocument();
+  });
+
+  it("★ HUB-01 trong bảng: một nguồn trong tập degraded ⇒ KHÔNG 'Nothing waiting', CÓ 'Could not read: …', ô số không in 0", () => {
+    setQueryOverride(KEY, makeQuery({ data: summary({ ecn: degraded() }) }));
+    render(<PendingReviewStrip variant="table" categoryFilter={(c) => !c.critical} />);
+    expect(screen.queryByText(/Nothing waiting/i)).toBeNull();
+    // (i18n chưa khởi tạo trong test này ⇒ chuỗi mặc định KHÔNG nội suy {{sources}} — như test lưới thẻ ở trên)
+    expect(screen.getByRole("status").textContent).toMatch(/Could not read:/);
+    const ecnRow = screen.getByText("ECNs to approve", { selector: "a *, a" }).closest("tr") as HTMLElement;
+    expect(ecnRow.querySelector("[data-pending-count]")?.textContent).toBe("—");
+    expect(ecnRow.textContent).toContain("unavailable");
+  });
+
+  it("đang tải ⇒ bảng với đúng số dòng skeleton của tập; lỗi ⇒ thông báo lỗi trong bảng", () => {
+    setQueryOverride(KEY, makeQuery({ isLoading: true }));
+    render(<PendingReviewStrip variant="table" categoryFilter={(c) => !c.critical} />);
+    expect(document.querySelectorAll("table tbody tr[data-pending-skeleton]")).toHaveLength(5);
+    cleanup();
+    setQueryOverride(KEY, makeQuery({ isError: true }));
+    render(<PendingReviewStrip variant="table" />);
+    expect(document.querySelector("table")).not.toBeNull();
+    expect(screen.getByText(/Could not load the pending-review summary/i)).toBeInTheDocument();
+  });
+
+  it("mặc định (không variant) vẫn là lưới thẻ cũ — không có <table>", () => {
+    setQueryOverride(KEY, makeQuery({ data: summary({ ecn: ok(1) }) }));
+    render(<PendingReviewStrip />);
+    expect(document.querySelector("table")).toBeNull();
+  });
+});

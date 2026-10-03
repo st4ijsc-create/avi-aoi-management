@@ -16158,7 +16158,8 @@
       "fleetNotReady": "Chưa đủ để triển khai đội máy: cần ít nhất một máy (bước Đích & canary); production cần người ký duyệt và lý do (bước Ký duyệt).",
       "prodNotReady": "Production cần người ký duyệt (khi không qua Hộp duyệt) và lý do — điền ở bước Ký duyệt.",
       "otpNote": "Bấm nút cuối ⇒ hỏi mã OTP 2 bước (nếu bật) rồi mới gửi; cổng an toàn và lý do giữ như cũ.",
-      "buildChanged": "Build đang chọn đã đổi (từ #{{pinned}} sang #{{current}}) sau khi mở wizard — đóng và mở lại wizard để xem trước đúng build sẽ deploy."
+      "buildChanged": "Build đang chọn đã đổi (từ #{{pinned}} sang #{{current}}) sau khi mở wizard — đóng và mở lại wizard để xem trước đúng build sẽ deploy.",
+      "scratchNote": "Chế độ nháp: chưa mở dự án nào — mã sinh ra chỉ để xem và sao chép. Mở một dự án để chèn vào editor."
     }
   },
   "engineeringHome": {
@@ -16166,7 +16167,31 @@
     "viewOnly": "Chỉ xem",
     "title": "Trung tâm Kỹ thuật",
     "subtitle": "Chọn tác vụ — soạn chương trình, điều phối đội xe, thực thi an toàn & chuẩn hóa, hoặc chạy twin.",
-    "goldenThread": "Luồng vàng: soạn → mô phỏng → deploy → giám sát. Chương trình soạn ở đây chảy vào pipeline, chạy trong twin, rồi hiện trên các màn giám sát."
+    "goldenThread": "Luồng vàng: soạn → mô phỏng → deploy → giám sát. Chương trình soạn ở đây chảy vào pipeline, chạy trong twin, rồi hiện trên các màn giám sát.",
+    "inboxTab": "Hộp việc",
+    "catalogTab": "Danh mục công cụ",
+    "scopeLabel": "Phạm vi hộp việc",
+    "scopeApprovals": "Chờ duyệt",
+    "scopeApprovalsHint": "Việc chờ duyệt / xác nhận ở các màn bạn có quyền mở",
+    "scopeAll": "Toàn module",
+    "scopeAllHint": "Mọi việc chờ và cảnh báo của module (gồm sự cố an toàn, sự kiện interlock, bế tắc đội xe)",
+    "sideLabel": "Tư thế an toàn và công cụ",
+    "goldenThreadChip": "Luồng vàng",
+    "postureChip": "Tư thế an toàn",
+    "postureOk": "Bình thường",
+    "postureWarn": "Cảnh báo",
+    "postureSource": "oversight.posture — cờ phía server, chỉ đọc",
+    "tools": {
+      "title": "Công cụ",
+      "pinned": "Đã ghim",
+      "recent": "Gần đây",
+      "none": "Chưa ghim công cụ nào — bấm ☆ trong Danh mục để ghim.",
+      "all": "Tất cả công cụ",
+      "pin": "Ghim {{name}}",
+      "unpin": "Bỏ ghim {{name}}",
+      "copilotScratch": "Copilot (nháp, chưa cần dự án)",
+      "commandConsole": "Bảng lệnh (HITL)"
+    }
   },
   "oversight": {
     "title": "Đang chờ duyệt & cảnh báo",
@@ -16197,6 +16222,11 @@
       "ruleCoverage": "Rule chặn có đích: {{count}}",
       "coverageUnavailable": "Không đọc được độ phủ rule",
       "writesOnEngineOffWarning": "Đang ghi lệnh thật xuống thiết bị trong khi engine interlock đang TẮT — vi phạm sẽ KHÔNG được tự động chặn."
+    },
+    "table": {
+      "kind": "Loại việc",
+      "count": "Số",
+      "samples": "Đang chờ"
     }
   },
   "eqIntegration": {

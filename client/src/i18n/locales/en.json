@@ -16178,7 +16178,8 @@
       "fleetNotReady": "Not ready for a fleet rollout: select at least one machine (Target & canary); production needs an approver and a reason (Sign-off).",
       "prodNotReady": "Production needs an approver (unless it goes through the Approval Inbox) and a reason — fill them in at Sign-off.",
       "otpNote": "Pressing the final button asks for the two-step OTP (when enabled) before anything is sent; safety gates and reasons are unchanged.",
-      "buildChanged": "The selected build changed (from #{{pinned}} to #{{current}}) after the wizard opened — close and reopen the wizard to preview the build that will be deployed."
+      "buildChanged": "The selected build changed (from #{{pinned}} to #{{current}}) after the wizard opened — close and reopen the wizard to preview the build that will be deployed.",
+      "scratchNote": "Scratch mode: no project is open — generated code is for review and copy only. Open a project to insert it into the editor."
     }
   },
   "engineeringHome": {
@@ -16186,7 +16187,31 @@
     "viewOnly": "View only",
     "title": "Engineering Hub",
     "subtitle": "Pick a task — author programs, orchestrate the fleet, enforce safety & standards, or run the twin.",
-    "goldenThread": "Golden thread: author → simulate → deploy → monitor. Programs authored here flow into the pipeline, run in the twin, then surface on the monitoring pages."
+    "goldenThread": "Golden thread: author → simulate → deploy → monitor. Programs authored here flow into the pipeline, run in the twin, then surface on the monitoring pages.",
+    "inboxTab": "Work inbox",
+    "catalogTab": "Tool catalog",
+    "scopeLabel": "Inbox scope",
+    "scopeApprovals": "Awaiting approval",
+    "scopeApprovalsHint": "Items awaiting approval / confirmation on screens you can open",
+    "scopeAll": "Whole module",
+    "scopeAllHint": "Every pending item and alert in the module (incl. safety events, interlock events, fleet deadlocks)",
+    "sideLabel": "Safety posture and tools",
+    "goldenThreadChip": "Golden thread",
+    "postureChip": "Safety posture",
+    "postureOk": "Normal",
+    "postureWarn": "Warning",
+    "postureSource": "oversight.posture — server-side flags, read-only",
+    "tools": {
+      "title": "Tools",
+      "pinned": "Pinned",
+      "recent": "Recent",
+      "none": "No pinned tools yet — press ☆ in the catalog to pin one.",
+      "all": "All tools",
+      "pin": "Pin {{name}}",
+      "unpin": "Unpin {{name}}",
+      "copilotScratch": "Copilot (scratch, no project needed)",
+      "commandConsole": "Command console (HITL)"
+    }
   },
   "oversight": {
     "title": "Pending review & alerts",
@@ -16217,6 +16242,11 @@
       "ruleCoverage": "Rules enabled with a target: {{count}}",
       "coverageUnavailable": "Rule coverage unavailable",
       "writesOnEngineOffWarning": "Real device writes are ON while the interlock engine is OFF — violations will not be auto-blocked."
+    },
+    "table": {
+      "kind": "Work item",
+      "count": "Count",
+      "samples": "Waiting"
     }
   },
   "eqIntegration": {
