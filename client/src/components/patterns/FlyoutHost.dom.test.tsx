@@ -794,3 +794,24 @@ describe("R-2-h — replace giữ dấu / giữ state của trang; kỳ vọng k
     expect(screen.getByLabelText("ghi chú A")).toHaveValue("dở");
   });
 });
+
+describe("final wave (T3 minor) — một FlyoutHost mỗi trang", () => {
+  it("FlyoutHost lồng trong FlyoutHost ⇒ báo lỗi khi dựng (không hỏng im lặng lịch sử/?flyout=)", () => {
+    const spy = (globalThis as { console: Console }).console;
+    const orig = spy.error;
+    spy.error = () => undefined; // React in lỗi ranh giới ra console — nuốt cho gọn đầu ra
+    try {
+      expect(() =>
+        render(
+          <FlyoutHost flyouts={{}}>
+            <FlyoutHost flyouts={{}}>
+              <p>trong</p>
+            </FlyoutHost>
+          </FlyoutHost>,
+        ),
+      ).toThrow(/must not be nested/);
+    } finally {
+      spy.error = orig;
+    }
+  });
+});

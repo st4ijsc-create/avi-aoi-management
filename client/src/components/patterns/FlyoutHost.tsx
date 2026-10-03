@@ -224,6 +224,9 @@ function fallbackFocus(depth: number): void {
 let hostSeq = 0;
 
 export function FlyoutHost({ flyouts, children, unknownKeyGraceMs = 5000 }: FlyoutHostProps) {
+  // final wave (T3 minor) — MỘT FlyoutHost mỗi trang: hai host lồng nhau cùng đọc/ghi `?flyout=` và dấu history.state của
+  // nhau (đóng nhầm, lịch sử lệch). Lồng ⇒ báo lỗi ngay lúc dựng thay vì hỏng im lặng khi người dùng bấm Back.
+  if (useContext(FlyoutContext) != null) throw new Error("<FlyoutHost> must not be nested inside another <FlyoutHost> (one host per page)");
   const [location, navigate] = useLocation();
   const search = useSearch();
   const [hostId] = useState(() => `fh${++hostSeq}-${Math.random().toString(36).slice(2, 8)}`);

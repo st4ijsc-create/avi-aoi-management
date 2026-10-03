@@ -739,6 +739,48 @@ describe("Task 12b (b) — kết quả về MUỘN không rơi vào lựa chọn
   });
 });
 
+describe("final wave (12b minor) — startWatch / kết quả đội máy về MUỘN không rơi vào dự án khác", () => {
+  it("Theo dõi đang mở ở P1, chuyển sang P2, P1 mở xong ⇒ P2 KHÔNG hiện 'Dừng theo dõi', không toast; phiên của P1 được DỪNG", () => {
+    seed();
+    renderPage();
+    fireEvent.click(versionBtn(/^v1 · main/));
+    mutationDeferred.add("programming.startWatch");
+    fireEvent.click(btn(/Watch live|Theo dõi trực tiếp/));
+    expect(mutateCalls["programming.startWatch"]?.[0]).toMatchObject({ projectId: 1 });
+    fireEvent.click(projectBtn("Ladder Two"));
+    xaHoan("programming.startWatch");
+    expect(screen.queryByRole("button", { name: /Stop watch|Dừng theo dõi/ })).toBeNull();
+    expect(toasts.success).not.toHaveBeenCalled();
+    expect(mutateCalls["programming.stopWatch"]).toEqual([{ projectId: 1 }]);
+  });
+
+  it("kết quả rollout đội máy của P1 KHÔNG hiện dưới P2; quay lại P1 ⇒ hiện lại", async () => {
+    seed();
+    const fleet = { halted: false, promoted: true, haltCode: null, haltReason: null, results: [{ deviceId: 3, phase: "canary", status: "deployed", error: null, rolledBack: false, rollbackError: null }] };
+    mutationResponses["programming.deployToFleet"] = () => fleet;
+    mutationData["programming.deployToFleet"] = fleet;
+    renderPage();
+    fireEvent.click(versionBtn(/^v1 · main/));
+    fireEvent.click(screen.getByText("#5"));
+    fleetCardOpen();
+    fireEvent.click(fleetBox("M3 · #3"));
+    toWizardStep(3);
+    fireEvent.click(fleetBtnEl());
+    const otp = document.querySelector('input[autocomplete="one-time-code"]') as HTMLInputElement;
+    await act(async () => { fireEvent.change(otp, { target: { value: "654321" } }); });
+    await nghi();
+    expect(mutateCalls["programming.deployToFleet"]).toHaveLength(1);
+    const promoted = /Promoted to the whole fleet|Đã promote toàn đội máy/;
+    expect(screen.getByText(promoted)).toBeInTheDocument();
+    fireEvent.click(projectBtn("Ladder Two"));
+    expect(screen.queryByText(promoted)).toBeNull();
+    fireEvent.click(projectBtn("Cell One"));
+    const hoi = screen.queryByRole("alertdialog"); // buffer cũ còn ⇒ trang hỏi bỏ thay đổi
+    if (hoi) fireEvent.click(within(hoi).getByRole("button", { name: /Discard & continue|Bỏ thay đổi/ }));
+    expect(screen.getByText(promoted)).toBeInTheDocument();
+  });
+});
+
 describe("Task 12b (c) — IDE LUÔN gửi expectedProjectId (dự án đang mở) ở biên deploy", () => {
   it("deployPreview + deployBuild (sau OTP) + deployToFleet mang expectedProjectId = dự án đang mở", async () => {
     seed();

@@ -480,7 +480,11 @@ export function WorkbenchShell({
     const req = bottom?.openRequest;
     if (req === lastOpenRequest.current) return;
     lastOpenRequest.current = req;
-    if (narrow) return;
+    // final wave (T5 minor) — màn hẹp (tab): ý định mở = chuyển sang tab panel dưới (trước: bị bỏ qua im lặng).
+    if (narrow) {
+      if (bottom) setNarrowTab("bottom");
+      return;
+    }
     desiredBottomRef.current = false;
     bottomCmd(false);
     setBottomCollapsed(false);

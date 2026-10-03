@@ -470,8 +470,12 @@ function EngineeringWorkspaceView() {
     onError: (e) => { dispatch({ type: "rollback/close" }); toastTrpcError(e); },
   });
   // doc 40 W5 §11 — triển khai đội máy (canary): tuần tự qua đúng deployBuild từng máy.
+  // final wave (12b minor) — kết quả rollout gắn với DỰ ÁN đã gửi (expectedProjectId): chỉ hiện dưới đúng dự án đó
+  // (toast vẫn hiện — đó là kết quả một lượt điều khiển thật, người dùng phải biết dù đã chuyển dự án).
+  const fleetForProjectRef = useRef<number | null>(null);
   const deployToFleetM = trpc.programming.deployToFleet.useMutation({
-    onSuccess: (r) => {
+    onSuccess: (r, vars) => {
+      fleetForProjectRef.current = (vars as { expectedProjectId?: number }).expectedProjectId ?? null;
       utils.programming.listDeployments.invalidate();
       utils.programming.fleetVersionMatrix.invalidate();
       if (r.halted && r.haltCode === "canary_not_real") {
@@ -488,7 +492,7 @@ function EngineeringWorkspaceView() {
     },
     onError: (e) => toastTrpcError(e),
   });
-  const fleetResult = deployToFleetM.data ?? null;
+  const fleetResult = deployToFleetM.data != null && fleetForProjectRef.current === projectId ? deployToFleetM.data : null;
 
   // ── Symbols (tag table) CRUD — feeds Online Monitor ──
   const upsertSymbol = trpc.programming.upsertSymbol.useMutation({
@@ -511,7 +515,13 @@ function EngineeringWorkspaceView() {
   // Đổi project → dừng watch (session gắn theo project) để không rò session cũ: hệ quả của
   // "project/select" trong workspaceReducer (trước là useEffect theo [projectId]).
   const startWatchM = trpc.programming.startWatch.useMutation({
-    onSuccess: (r) => {
+    onSuccess: (r, vars) => {
+      // final wave (12b minor) — về MUỘN sau khi đã chuyển dự án: không gắn "đang theo dõi" vào dự án mới, không toast;
+      // phiên vừa mở của dự án cũ được DỪNG ngay (không rò session phía server).
+      if (vars.projectId !== luaChonRef.current.projectId) {
+        if (r.started) stopWatchM.mutate({ projectId: vars.projectId });
+        return;
+      }
       if (r.started) {
         dispatch({ type: "watch/set", watching: true });
         toast.success(t("engineering.watchStarted", "Đã mở phiên theo dõi"));

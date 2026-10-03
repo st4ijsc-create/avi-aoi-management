@@ -351,6 +351,22 @@ describe("WorkbenchShell — leftRail (activity bar) còn ở màn hẹp", () =>
   });
 });
 
+describe("final wave (T5 minor) — màn hẹp: ý định mở panel dưới chuyển sang tab của nó", () => {
+  it("< 1024 px: openRequest đổi ⇒ tab panel dưới được chọn (trước: bị bỏ qua); giá trị ban đầu không chuyển", () => {
+    presetNarrow(true);
+    const ui = (req: number) => (
+      <main>
+        <WorkbenchShell layoutId="t" userId={1} main={<p>m</p>} bottom={{ label: "Sự kiện", content: <p>bảng sự kiện</p>, defaultCollapsed: true, openRequest: req }} />
+      </main>
+    );
+    const r = render(ui(0));
+    expect(screen.getByRole("tab", { name: VI.layoutKit.shell.editor })).toHaveAttribute("aria-selected", "true");
+    r.rerender(ui(1));
+    expect(screen.getByRole("tab", { name: "Sự kiện" })).toHaveAttribute("aria-selected", "true");
+    expect(screen.getByText("bảng sự kiện")).toBeVisible();
+  });
+});
+
 // ── Fix round 2 (re-review) — giới hạn px còn hiệu lực sau khi đổi mốc / khi nạp ở màn hẹp ──────────
 describe("WorkbenchShell — giới hạn px (useElementSize đo lại phần tử mới)", () => {
   function stubRect() {
