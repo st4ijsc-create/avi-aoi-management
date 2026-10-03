@@ -182,7 +182,7 @@ export { SplitListDetail } from "./SplitListDetail";
 export type { SplitListDetailProps } from "./SplitListDetail";
 export { CockpitLayout } from "./CockpitLayout";
 export type { CockpitLayoutProps } from "./CockpitLayout";
-export { WorkbenchShell } from "./WorkbenchShell";
+export { WorkbenchShell, fitWorkbenchColumns, WORKBENCH_MAIN_MIN_PX } from "./WorkbenchShell";
 export type { WorkbenchShellProps, WorkbenchSidePanel, WorkbenchRightPanel, WorkbenchBottomPanel } from "./WorkbenchShell";
 export { useNarrowViewport, useElementSize, pxRangeToPct, userLayoutKey, NARROW_BREAKPOINT_PX } from "./layoutKitHooks";
 export type { PxRange, PctRange } from "./layoutKitHooks";

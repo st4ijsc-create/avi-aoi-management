@@ -96,12 +96,82 @@ export interface WorkbenchShellProps {
   leftRevealToken?: number;
   /** Chiều cao vỏ; mặc định trừ top bar 56 px. */
   heightClass?: string;
+  /** Sàn px của MAIN (mặc định WORKBENCH_MAIN_MIN_PX = 400) — panel phụ thu/gập trước khi MAIN bị ép dưới sàn. */
+  mainMinPx?: number;
   className?: string;
 }
 
 const FALLBACK_LEFT: PctRange = { minSize: 14, maxSize: 24, defaultSize: 18 };
 const FALLBACK_RIGHT: PctRange = { minSize: 20, maxSize: 30, defaultSize: 24 };
 const FALLBACK_BOTTOM: PctRange = { minSize: 18, maxSize: 40, defaultSize: 25 };
+
+/**
+ * Task 11b fix round 1 — SÀN px của MAIN. 400 px: ở khung nhìn 1024 (cột workbench ≈ 976 px khi rail thu gọn 48 px)
+ * cả explorer 240 + inspector 320 (tối thiểu lớn nhất của các trang đã khai: IDE) vẫn vừa (976 − 560 = 416 ≥ 400).
+ * Trang có thể đổi qua prop `mainMinPx`.
+ */
+export const WORKBENCH_MAIN_MIN_PX = 400;
+/** id separator (data-panel-resize-handle-id) — biết người dùng đang kéo panel NÀO. */
+const HANDLE_LEFT = "wb-handle-left";
+const HANDLE_RIGHT = "wb-handle-right";
+const HANDLE_BOTTOM = "wb-handle-bottom";
+
+export interface WorkbenchColumnSpec {
+  minPx: number;
+  maxPx: number;
+  /** Đích: px người dùng đã kéo, hoặc defaultPx. */
+  targetPx: number;
+  /** Đang gập do người dùng (giữ 0). */
+  collapsed?: boolean;
+}
+export interface WorkbenchColumnFit {
+  leftPx: number;
+  rightPx: number;
+  /** Gập vì thiếu chỗ (tự mở lại khi khung đủ rộng). */
+  leftForcedCollapsed: boolean;
+  rightForcedCollapsed: boolean;
+}
+
+/**
+ * Chia bề rộng nhóm cho explorer / MAIN / inspector theo px, giữ MAIN ≥ `mainMinPx`:
+ *   1. mỗi panel phụ lấy đích của nó, kẹp trong [min, max];
+ *   2. thiếu chỗ ⇒ thu inspector về min, rồi explorer về min;
+ *   3. vẫn thiếu ⇒ GẬP inspector (explorer lấy lại đích, rồi thu về min nếu cần);
+ *   4. vẫn thiếu ⇒ gập explorer. MAIN không bao giờ bị ép dưới sàn để giữ panel phụ.
+ */
+export function fitWorkbenchColumns(
+  groupPx: number,
+  mainMinPx: number,
+  left: WorkbenchColumnSpec | null,
+  right: WorkbenchColumnSpec | null,
+): WorkbenchColumnFit {
+  const clamp = (v: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, v));
+  const want = (c: WorkbenchColumnSpec | null) => (c && !c.collapsed ? clamp(c.targetPx, c.minPx, Math.max(c.minPx, c.maxPx)) : 0);
+  let L = want(left);
+  let R = want(right);
+  let leftForcedCollapsed = false;
+  let rightForcedCollapsed = false;
+  const deficit = () => L + R + mainMinPx - groupPx;
+  const shrink = (side: "L" | "R") => {
+    const d = deficit();
+    if (d <= 0) return;
+    if (side === "R" && right && R > 0) R -= Math.min(d, R - right.minPx);
+    if (side === "L" && left && L > 0) L -= Math.min(d, L - left.minPx);
+  };
+  shrink("R");
+  shrink("L");
+  if (deficit() > 0 && R > 0) {
+    R = 0;
+    rightForcedCollapsed = true;
+    L = want(left);
+    shrink("L");
+  }
+  if (deficit() > 0 && L > 0) {
+    L = 0;
+    leftForcedCollapsed = true;
+  }
+  return { leftPx: L, rightPx: R, leftForcedCollapsed, rightForcedCollapsed };
+}
 
 /** Task 11b — kích thước người dùng đã kéo: px (nguồn chính) + % (dùng khi chưa đo được khung, vd jsdom). */
 interface StoredSize {
@@ -160,6 +230,7 @@ export function WorkbenchShell({
   leftRevealToken,
   heightClass = "h-[calc(100dvh-3.5rem)]",
   className,
+  mainMinPx,
 }: WorkbenchShellProps): React.JSX.Element {
   const { t } = useTranslation();
   const narrow = useNarrowViewport();
@@ -267,26 +338,66 @@ export function WorkbenchShell({
   /**
    * % của react-resizable-panels là TƯƠNG ĐỐI: khi khung đổi bề rộng sau lúc mount (rail trái thu gọn có transition
    * 200 ms khi vào màn workbench — đo thật 1336 → 1552 px; hay đổi cỡ cửa sổ) panel phụ phình theo. Nên WorkbenchShell
-   * giữ kích thước panel phụ bằng PX: đích = px người dùng đã kéo (nhớ theo người dùng, THẮNG) hoặc `defaultPx`; mỗi
-   * lần khung đổi cỡ, đích px được áp lại (setLayout). Không dùng `autoSaveId` của thư viện (nó lưu %, và % lưu ở
-   * cỡ khung này bị kẹp sai ở cỡ khung khác). Khoá `userLayoutKey(…, "hpx"|"vpx")`; không biết người dùng ⇒ không lưu.
+   * giữ kích thước panel phụ bằng PX: đích = px người dùng đã kéo (phiên này ⇒ đã nhớ theo người dùng — THẮNG) hoặc
+   * `defaultPx`; mỗi lần khung đổi cỡ, đích px được áp lại (setLayout, TRƯỚC khi vẽ). Không dùng `autoSaveId` của thư
+   * viện (nó lưu %, và % lưu ở cỡ khung này bị kẹp sai ở cỡ khung khác). Khoá `userLayoutKey(…, "hpx"|"vpx")`; không
+   * biết người dùng hoặc bộ nhớ bị chặn ⇒ không lưu, nhưng lựa chọn của phiên vẫn được giữ (ref).
+   * Fix round 1: MAIN có sàn px (`mainMinPx`, mặc định WORKBENCH_MAIN_MIN_PX) — xem `fitWorkbenchColumns`.
    */
   const lRange = left ? pxRangeToPct({ minPx: left.minPx ?? 240, maxPx: left.maxPx ?? 300, defaultPx: left.defaultPx ?? 260 }, width, FALLBACK_LEFT) : null;
   const rRange = right ? pxRangeToPct({ minPx: right.minPx ?? 320, maxPx: right.maxPx ?? 420, defaultPx: right.defaultPx ?? 380 }, width, FALLBACK_RIGHT) : null;
   const bRange = bottom ? pxRangeToPct({ minPx: bottom.minPx ?? 180, maxPx: bottom.maxPx ?? 320, defaultPx: bottom.defaultPx ?? 200 }, height, FALLBACK_BOTTOM) : null;
   const hStoreKey = userLayoutKey(layoutId, userId, "hpx");
   const vStoreKey = userLayoutKey(layoutId, userId, "vpx");
-  const storedH = readStoredSizes(hStoreKey);
-  const storedV = readStoredSizes(vStoreKey);
-  const l = lRange ? { ...lRange, defaultSize: targetPct(storedH?.left, lRange, width) } : null;
-  const r = rRange ? { ...rRange, defaultSize: targetPct(storedH?.right, rRange, width) } : null;
-  const b = bRange ? { ...bRange, defaultSize: targetPct(storedV?.bottom, bRange, height) } : null;
+  // Đọc bộ nhớ MỘT lần mỗi khi khoá đổi (không parse JSON mỗi lượt render); lượt kéo sau đó nằm trong `userSizesRef`.
+  const storedH = React.useMemo(() => readStoredSizes(hStoreKey), [hStoreKey]);
+  const storedV = React.useMemo(() => readStoredSizes(vStoreKey), [vStoreKey]);
+  /** Kích thước người dùng đã kéo TRONG PHIÊN — thắng bộ nhớ; vẫn giữ khi không lưu được (chưa biết user / bị chặn). */
+  const userSizesRef = React.useRef<StoredSizes>({});
+  const lastStoreKeyRef = React.useRef(hStoreKey);
+  if (lastStoreKeyRef.current !== hStoreKey) {
+    // Đổi sang NGƯỜI DÙNG KHÁC (khoá A → khoá B) ⇒ bỏ lựa chọn của phiên trước; null → khoá (auth vừa tải) ⇒ giữ.
+    if (lastStoreKeyRef.current != null && hStoreKey != null) userSizesRef.current = {};
+    lastStoreKeyRef.current = hStoreKey;
+  }
+  const pick = (side: keyof StoredSizes, stored: StoredSizes | null): StoredSize | undefined => {
+    const u = userSizesRef.current[side];
+    return isSize(u) ? u : stored?.[side];
+  };
+  const pxOf = (s: StoredSize | undefined, defPx: number) => (isSize(s) && s.px > 0 ? s.px : defPx);
+  const mainFloorPx = mainMinPx ?? WORKBENCH_MAIN_MIN_PX;
+  /** Panel trái gập do NGƯỜI DÙNG (prop activity bar, hoặc kéo gập) — khác gập do thiếu chỗ (`forcedRef`). */
+  const forcedRef = React.useRef({ left: false, right: false });
+  const leftUserCollapsed = (): boolean =>
+    leftCollapsed === true || (leftCollapsed === undefined && Boolean(leftRef.current?.isCollapsed()) && !forcedRef.current.left);
+  const fit =
+    width > 0
+      ? fitWorkbenchColumns(
+          width,
+          mainFloorPx,
+          left ? { minPx: left.minPx ?? 240, maxPx: left.maxPx ?? 300, targetPx: pxOf(pick("left", storedH), left.defaultPx ?? 260), collapsed: leftUserCollapsed() } : null,
+          right ? { minPx: right.minPx ?? 320, maxPx: right.maxPx ?? 420, targetPx: pxOf(pick("right", storedH), right.defaultPx ?? 380) } : null,
+        )
+      : null;
+  // Ghi lại SAU khi tính (lượt render sau dùng để phân biệt gập do người dùng / do thiếu chỗ). Cập nhật trong render
+  // vì thư viện báo onCollapse ngay ở layout effect của chính nó (trước layout effect của shell) khi nhóm mount.
+  if (fit) forcedRef.current = { left: fit.leftForcedCollapsed, right: fit.rightForcedCollapsed };
+  const pctOf = (px: number) => (px / width) * 100;
+  const l = lRange ? { ...lRange, defaultSize: fit ? pctOf(fit.leftPx) : targetPct(pick("left", storedH), lRange, 0) } : null;
+  const r = rRange
+    ? { ...rRange, minSize: fit?.rightForcedCollapsed ? 0 : rRange.minSize, defaultSize: fit ? pctOf(fit.rightPx) : targetPct(pick("right", storedH), rRange, 0) }
+    : null;
+  const b = bRange ? { ...bRange, defaultSize: targetPct(pick("bottom", storedV), bRange, height) } : null;
+  // Sàn của MAIN (cột giữa) cho CẢ thao tác kéo của người dùng — trừ phần tối thiểu của panel phụ còn mở.
+  const centerMinSize = fit
+    ? Math.max(0, Math.min(pctOf(mainFloorPx), 100 - (l && !fit.leftForcedCollapsed ? l.minSize : 0) - (r && !fit.rightForcedCollapsed ? r.minSize : 0)))
+    : 30;
   const hGroupRef = React.useRef<ImperativePanelGroupHandle | null>(null);
   const vGroupRef = React.useRef<ImperativePanelGroupHandle | null>(null);
-  /** Đang áp đích px bằng mã (setLayout) — onLayout lúc đó KHÔNG phải người dùng. */
+  /** Đang áp đích px bằng mã (setLayout) — onLayout / onCollapse lúc đó KHÔNG phải người dùng. */
   const applyingRef = React.useRef(false);
-  /** Người dùng đang kéo (onDragging) / vừa bấm phím trên separator của nhóm — chỉ lúc đó mới lưu. */
-  const interactingRef = React.useRef({ h: false, v: false });
+  /** Separator người dùng đang kéo / vừa bấm phím — CHỈ panel kề separator đó được lưu. */
+  const interactingRef = React.useRef<{ h: "left" | "right" | null; v: boolean }>({ h: null, v: false });
   const apply = (g: ImperativePanelGroupHandle | null, layoutPct: number[]) => {
     if (!g) return;
     applyingRef.current = true;
@@ -298,46 +409,60 @@ export function WorkbenchShell({
       applyingRef.current = false;
     }
   };
-  // Khung đổi cỡ (kể cả transition của rail) ⇒ áp lại đích px. Panel trái đang gập ⇒ giữ 0; panel dưới đang gập
-  // ⇒ không đụng nhóm dọc (R-2-l).
-  React.useEffect(() => {
+  // Khung đổi cỡ (kể cả transition của rail) ⇒ áp lại đích px TRƯỚC khi vẽ (useLayoutEffect — không giật khung hình).
+  // Panel trái gập do người dùng ⇒ giữ 0; panel dưới đang gập ⇒ không đụng nhóm dọc (R-2-l).
+  React.useLayoutEffect(() => {
     if (!groupReady) return;
-    if (width > 0 && (l || r)) {
-      const leftNow = l ? (leftRef.current?.isCollapsed() ? 0 : l.defaultSize) : 0;
-      const rightNow = r ? r.defaultSize : 0;
-      apply(hGroupRef.current, [...(l ? [leftNow] : []), 100 - leftNow - rightNow, ...(r ? [rightNow] : [])]);
+    if (fit && (l || r)) {
+      const lp = l ? pctOf(fit.leftPx) : 0;
+      const rp = r ? pctOf(fit.rightPx) : 0;
+      apply(hGroupRef.current, [...(l ? [lp] : []), 100 - lp - rp, ...(r ? [rp] : [])]);
     }
     if (height > 0 && b && !desiredBottomRef.current) apply(vGroupRef.current, [100 - b.defaultSize, b.defaultSize]);
-    // l/r/b suy từ width/height (+ bộ nhớ)
+    // l/r/b/fit suy từ width/height/leftCollapsed (+ bộ nhớ)
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [groupReady, width, height]);
+  }, [groupReady, width, height, leftCollapsed]);
   /** Bàn phím trên separator ⇒ lượt onLayout ngay sau là của người dùng (thư viện nghe keydown trên chính separator). */
   const markKeyInteraction = (e: React.KeyboardEvent) => {
     const h = (e.target as HTMLElement | null)?.closest?.("[data-panel-resize-handle-id]");
     if (!h) return;
-    const dir = h.getAttribute("data-panel-group-direction") === "vertical" ? "v" : "h";
-    interactingRef.current[dir] = true;
-    setTimeout(() => {
-      interactingRef.current[dir] = false;
-    }, 0);
+    const id = h.getAttribute("data-panel-resize-handle-id");
+    if (id === HANDLE_BOTTOM) {
+      interactingRef.current.v = true;
+      setTimeout(() => {
+        interactingRef.current.v = false;
+      }, 0);
+    } else if (id === HANDLE_LEFT || id === HANDLE_RIGHT) {
+      const side = id === HANDLE_LEFT ? "left" : "right";
+      interactingRef.current.h = side;
+      setTimeout(() => {
+        if (interactingRef.current.h === side) interactingRef.current.h = null;
+      }, 0);
+    }
   };
-  const onDragH = (d: boolean) => {
-    interactingRef.current.h = d;
+  const onDragLeft = (d: boolean) => {
+    interactingRef.current.h = d ? "left" : null;
+  };
+  const onDragRight = (d: boolean) => {
+    interactingRef.current.h = d ? "right" : null;
   };
   const onDragV = (d: boolean) => {
     interactingRef.current.v = d;
   };
   const sizeEntry = (pct: number, groupPx: number): StoredSize => ({ pct, px: groupPx > 0 ? Math.round((pct * groupPx) / 100) : 0 });
+  const remember = (key: string | null, side: keyof StoredSizes, entry: StoredSize) => {
+    userSizesRef.current = { ...userSizesRef.current, [side]: entry };
+    writeStoredSizes(key, { [side]: entry });
+  };
   const onHLayout = (layout: number[]) => {
-    if (applyingRef.current || !interactingRef.current.h) return;
-    const patch: StoredSizes = {};
-    if (l && layout[0] > 0) patch.left = sizeEntry(layout[0], width);
-    if (r && layout[layout.length - 1] > 0) patch.right = sizeEntry(layout[layout.length - 1], width);
-    writeStoredSizes(hStoreKey, patch);
+    const side = interactingRef.current.h;
+    if (applyingRef.current || !side) return;
+    const pct = side === "left" ? (l ? layout[0] : 0) : r ? layout[layout.length - 1] : 0;
+    if (pct > 0) remember(hStoreKey, side, sizeEntry(pct, width));
   };
   const onVLayout = (layout: number[]) => {
     if (applyingRef.current || !interactingRef.current.v) return;
-    if (b && layout[1] > 0) writeStoredSizes(vStoreKey, { bottom: sizeEntry(layout[1], height) });
+    if (b && layout[1] > 0) remember(vStoreKey, "bottom", sizeEntry(layout[1], height));
   };
 
   // Ý định mở panel do trang phát (bỏ lần render đầu) — không ghi nhớ.
@@ -465,7 +590,7 @@ export function WorkbenchShell({
         {toolbarOutlet}
         <div className="flex min-h-0 flex-1">
           {leftRail != null && <SlotOutlet host={hRail} className="flex shrink-0" />}
-          <div ref={groupRef} data-workbench-group="" className="min-w-0 flex-1" onKeyDownCapture={markKeyInteraction}>
+          <div ref={groupRef} data-workbench-group="" data-group-px={width} className="min-w-0 flex-1" onKeyDownCapture={markKeyInteraction}>
             {groupReady && (
             <ResizablePanelGroup ref={hGroupRef} direction="horizontal" onLayout={onHLayout} className="h-full">
               {left && l && (
@@ -479,15 +604,20 @@ export function WorkbenchShell({
                     minSize={l.minSize}
                     maxSize={l.maxSize}
                     defaultSize={l.defaultSize}
-                    onCollapse={() => onLeftCollapsedChange?.(true)}
-                    onExpand={() => onLeftCollapsedChange?.(false)}
+                    onCollapse={() => {
+                      // Gập vì thiếu chỗ (mã áp) KHÔNG phải người dùng gập explorer.
+                      if (!applyingRef.current && !forcedRef.current.left) onLeftCollapsedChange?.(true);
+                    }}
+                    onExpand={() => {
+                      if (!applyingRef.current) onLeftCollapsedChange?.(false);
+                    }}
                   >
                     <SlotOutlet host={hLeft} data-workbench-left="" aria-label={left.label} role="region" className="h-full overflow-auto border-r" />
                   </ResizablePanel>
-                  <ResizableHandle aria-label={t("layoutKit.shell.resizeLeft", "Resize the left panel")} onDragging={onDragH} />
+                  <ResizableHandle id={HANDLE_LEFT} aria-label={t("layoutKit.shell.resizeLeft", "Resize the left panel")} onDragging={onDragLeft} />
                 </>
               )}
-              <ResizablePanel id="center" order={2} minSize={30} defaultSize={100 - (l?.defaultSize ?? 0) - (r?.defaultSize ?? 0)}>
+              <ResizablePanel id="center" order={2} minSize={centerMinSize} defaultSize={100 - (l?.defaultSize ?? 0) - (r?.defaultSize ?? 0)}>
                 <div className="h-full">
                   <ResizablePanelGroup ref={vGroupRef} direction="vertical" onLayout={onVLayout} className="h-full">
                     <ResizablePanel id="main" order={1} minSize={30} defaultSize={bottom && b ? 100 - b.defaultSize : 100}>
@@ -495,7 +625,7 @@ export function WorkbenchShell({
                     </ResizablePanel>
                     {bottom && b && (
                       <>
-                        <ResizableHandle aria-label={t("layoutKit.shell.resizeBottom", "Resize the bottom panel")} onDragging={onDragV} />
+                        <ResizableHandle id={HANDLE_BOTTOM} aria-label={t("layoutKit.shell.resizeBottom", "Resize the bottom panel")} onDragging={onDragV} />
                         <ResizablePanel
                           id="bottom"
                           order={2}
@@ -524,7 +654,7 @@ export function WorkbenchShell({
               </ResizablePanel>
               {right && r && (
                 <>
-                  <ResizableHandle aria-label={t("layoutKit.shell.resizeRight", "Resize the right panel")} onDragging={onDragH} />
+                  <ResizableHandle id={HANDLE_RIGHT} aria-label={t("layoutKit.shell.resizeRight", "Resize the right panel")} onDragging={onDragRight} />
                   <ResizablePanel id="right" order={3} minSize={r.minSize} maxSize={r.maxSize} defaultSize={r.defaultSize}>
                     <SlotOutlet host={hRight} as="aside" aria-label={right.label} {...aiProps} className="h-full overflow-auto border-l" />
                   </ResizablePanel>

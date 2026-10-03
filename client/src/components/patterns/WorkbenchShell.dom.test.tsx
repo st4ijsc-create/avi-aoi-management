@@ -18,7 +18,7 @@ import "@testing-library/jest-dom/vitest";
 import { useEffect, useState } from "react";
 import VI from "@/i18n/locales/vi.json";
 import { initLayoutKitTestI18n } from "./layoutKitTestI18n";
-import { WorkbenchShell, type WorkbenchShellProps } from "./WorkbenchShell";
+import { WorkbenchShell, fitWorkbenchColumns, type WorkbenchShellProps } from "./WorkbenchShell";
 import { pxRangeToPct, userLayoutKey } from "./layoutKitHooks";
 import { installMatchMedia, presetNarrow, setNarrow } from "./layoutKitTestMedia";
 
@@ -525,6 +525,11 @@ describe("WorkbenchShell — kích thước ban đầu theo px khi đã biết b
           for (const cb of [...cbs]) cb();
         });
       },
+      /** Như trình duyệt: báo RO NGOÀI act (React tự lên lịch render/commit/effect theo tác vụ). */
+      fireNoAct: (w: number) => {
+        box.w = w;
+        for (const cb of [...cbs]) cb();
+      },
       restore: () => {
         spy.mockRestore();
         (globalThis as { ResizeObserver?: unknown }).ResizeObserver = prevRO;
@@ -585,7 +590,7 @@ describe("WorkbenchShell — kích thước ban đầu theo px khi đã biết b
     }
   });
 
-  it("panel người dùng KHÔNG kéo vẫn theo mặc định px; người dùng khác không thấy px của người này", () => {
+  it("panel người dùng KHÔNG kéo vẫn theo đích của nó; người dùng khác không thấy px của người này", () => {
     const g = growingGroup(1600);
     try {
       const r = renderShell(px());
@@ -600,6 +605,169 @@ describe("WorkbenchShell — kích thước ban đầu theo px khi đã biết b
     } finally {
       g.restore();
     }
+  });
+
+  // ── Fix round 1 (review 11b) ──────────────────────────────────────────────────────────────────────
+  const HPX = () => userLayoutKey("test-ide", 5, "hpx")!;
+  const storedPx = () => JSON.parse(localStorage.getItem(HPX()) ?? "{}") as Record<string, { px: number } | undefined>;
+
+  it("Minor 2: kéo MỘT separator chỉ lưu panel kề nó — panel kia (đang bị thu vì thiếu chỗ) giữ giá trị ĐÃ LƯU khác mặc định", () => {
+    // Đã lưu: phải 450 px (mặc định 340). Khung 1000: 240 + 450 + sàn MAIN 400 = 1090 ⇒ phải bị THU còn 360 px.
+    localStorage.setItem(HPX(), JSON.stringify({ right: { px: 450, pct: 28.125 } }));
+    const g = growingGroup(1000);
+    try {
+      renderShell(px());
+      expectPx("right", 1000, 360);
+      // Người dùng thu explorer (ArrowLeft −10 % ⇒ kẹp về min 220 px). Chỉ "left" được lưu; "right" vẫn 450, không 360.
+      fireEvent.keyDown(screen.getByRole("separator", { name: VI.layoutKit.shell.resizeLeft }), { key: "ArrowLeft" });
+      expectPx("left", 1000, 220);
+      expect(storedPx().left?.px).toBe(220);
+      expect(storedPx().right?.px).toBe(450);
+      // Khung rộng lại ⇒ phải trở về đúng 450 px đã chọn.
+      g.resize(1600);
+      expectPx("right", 1600, 450);
+    } finally {
+      g.restore();
+    }
+  });
+
+  it("Minor 1: không biết người dùng ⇒ không lưu, nhưng khung đổi cỡ KHÔNG trả px người dùng vừa kéo về mặc định", () => {
+    const g = growingGroup(1336);
+    try {
+      renderShell(px({ userId: null, left: { label: "Explorer", content: <p>cây dự án</p>, minPx: 120, defaultPx: 240, maxPx: 360 } }));
+      fireEvent.keyDown(screen.getByRole("separator", { name: VI.layoutKit.shell.resizeLeft }), { key: "ArrowLeft" });
+      expectPx("left", 1336, 120);
+      g.resize(1552);
+      expectPx("left", 1552, 120);
+      expect(Object.keys(localStorage).filter((k) => k.includes("layoutKit"))).toEqual([]);
+    } finally {
+      g.restore();
+    }
+  });
+
+  it("Minor 1: localStorage bị chặn (setItem ném lỗi) ⇒ px người dùng vừa kéo vẫn giữ khi khung đổi cỡ", () => {
+    const g = growingGroup(1336);
+    const block = vi.spyOn(Storage.prototype, "setItem").mockImplementation(() => {
+      throw new DOMException("blocked", "SecurityError");
+    });
+    try {
+      renderShell(px({ left: { label: "Explorer", content: <p>cây dự án</p>, minPx: 120, defaultPx: 240, maxPx: 360 } }));
+      fireEvent.keyDown(screen.getByRole("separator", { name: VI.layoutKit.shell.resizeLeft }), { key: "ArrowLeft" });
+      g.resize(1552);
+      expectPx("left", 1552, 120);
+    } finally {
+      block.mockRestore();
+      g.restore();
+    }
+  });
+
+  it("Minor 3: khung nhìn 1024 (cột ≈ 976 px) với kích thước TỐI ĐA của người dùng ⇒ thu inspector rồi explorer, MAIN ≥ 400 px", () => {
+    localStorage.setItem(HPX(), JSON.stringify({ left: { px: 360, pct: 22.5 }, right: { px: 480, pct: 30 } }));
+    const g = growingGroup(976);
+    try {
+      renderShell(px());
+      // 360 + 480 + 400 = 1240 > 976 ⇒ inspector về min 300, explorer 976 − 400 − 300 = 276.
+      expectPx("right", 976, 300);
+      expectPx("left", 976, 276);
+      expect((size("center") * 976) / 100).toBeGreaterThanOrEqual(399);
+      // Người dùng cũng không ép được MAIN dưới sàn bằng bàn phím.
+      fireEvent.keyDown(screen.getByRole("separator", { name: VI.layoutKit.shell.resizeLeft }), { key: "ArrowRight" });
+      expect((size("center") * 976) / 100).toBeGreaterThanOrEqual(399);
+      // Khung rộng lại ⇒ kích thước tối đa người dùng đã chọn quay lại.
+      g.resize(1600);
+      expectPx("left", 1600, 360);
+      expectPx("right", 1600, 480);
+    } finally {
+      g.restore();
+    }
+  });
+
+  it("Minor 3: không đủ chỗ cả khi panel phụ ở min (cột 900: 220 + 300 + 400 > 900) ⇒ GẬP inspector, explorer về đích, MAIN ≥ 400; rộng lại ⇒ inspector mở", () => {
+    const g = growingGroup(900);
+    try {
+      renderShell(px({ userId: null }));
+      expect(size("right")).toBe(0);
+      expectPx("left", 900, 240);
+      expect((size("center") * 900) / 100).toBeGreaterThanOrEqual(399);
+      g.resize(1600);
+      expectPx("right", 1600, 340);
+    } finally {
+      g.restore();
+    }
+  });
+
+  it("Minor 6: ghim px chạy TRƯỚC khi vẽ — lần commit đổi bề rộng đã mang kích thước px (không có khung hình ở % cũ)", async () => {
+    const g = growingGroup(1336);
+    const env = globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean };
+    const prevEnv = env.IS_REACT_ACT_ENVIRONMENT;
+    try {
+      renderShell(px({ userId: null }));
+      expectPx("left", 1336, 240);
+      const group = document.querySelector("[data-workbench-group]") as HTMLElement;
+      const seen: Array<{ px: string | null; left: number }> = [];
+      // MutationObserver chạy ở microtask cuối TÁC VỤ commit bề rộng mới (thuộc tính data-group-px đổi trong commit đó):
+      // nếu ghim chạy ở useEffect (tác vụ sau) thì lúc này panel trái vẫn ở % cũ (240/1336 ⇒ 267 px ở 1552).
+      const mo = new MutationObserver(() => seen.push({ px: group.getAttribute("data-group-px"), left: size("left") }));
+      mo.observe(group, { attributes: true, attributeFilter: ["data-group-px"] });
+      env.IS_REACT_ACT_ENVIRONMENT = false;
+      g.fireNoAct(1552);
+      await waitFor(() => expect(seen.some((x) => x.px === "1552")).toBe(true));
+      mo.disconnect();
+      const first = seen.find((x) => x.px === "1552")!;
+      expect(first.left).toBeCloseTo((240 / 1552) * 100, 1);
+    } finally {
+      env.IS_REACT_ACT_ENVIRONMENT = prevEnv;
+      g.restore();
+    }
+  });
+
+  it("Minor 6: bộ nhớ px đọc MỘT lần mỗi khoá — các lượt render lại (trang poll) không đọc/parse lại", () => {
+    const g = growingGroup(1600);
+    const get = vi.spyOn(Storage.prototype, "getItem");
+    try {
+      const ui = (n: number) => (
+        <main>
+          <WorkbenchShell layoutId="test-ide" userId={5} main={<p>m {n}</p>} {...px()} />
+        </main>
+      );
+      const r = render(ui(0));
+      for (let i = 1; i <= 5; i++) r.rerender(ui(i));
+      const reads = (k: string) => get.mock.calls.filter((c) => c[0] === k).length;
+      expect(reads(HPX())).toBe(1);
+      expect(reads(userLayoutKey("test-ide", 5, "vpx")!)).toBe(1);
+    } finally {
+      get.mockRestore();
+      g.restore();
+    }
+  });
+
+  it("gập explorer vì THIẾU CHỖ (cột 600) KHÔNG báo onLeftCollapsedChange — đó không phải người dùng gập", () => {
+    const g = growingGroup(600);
+    const seen: boolean[] = [];
+    try {
+      render(
+        <main>
+          <WorkbenchShell layoutId="test-ide" userId={null} main={<p>m</p>} {...px()} onLeftCollapsedChange={(c) => seen.push(c)} />
+        </main>,
+      );
+      expect(size("left")).toBe(0);
+      expect(seen).not.toContain(true);
+      g.resize(1600);
+      expectPx("left", 1600, 240);
+    } finally {
+      g.restore();
+    }
+  });
+
+  it("fitWorkbenchColumns — bảng chân lý", () => {
+    const L = { minPx: 220, maxPx: 360, targetPx: 240 };
+    const R = { minPx: 300, maxPx: 480, targetPx: 340 };
+    expect(fitWorkbenchColumns(1600, 400, L, R)).toEqual({ leftPx: 240, rightPx: 340, leftForcedCollapsed: false, rightForcedCollapsed: false });
+    expect(fitWorkbenchColumns(960, 400, L, R)).toEqual({ leftPx: 240, rightPx: 320, leftForcedCollapsed: false, rightForcedCollapsed: false });
+    expect(fitWorkbenchColumns(900, 400, L, R)).toEqual({ leftPx: 240, rightPx: 0, leftForcedCollapsed: false, rightForcedCollapsed: true });
+    expect(fitWorkbenchColumns(600, 400, L, R)).toEqual({ leftPx: 0, rightPx: 0, leftForcedCollapsed: true, rightForcedCollapsed: true });
+    expect(fitWorkbenchColumns(1600, 400, { ...L, collapsed: true }, R)).toEqual({ leftPx: 0, rightPx: 340, leftForcedCollapsed: false, rightForcedCollapsed: false });
+    expect(fitWorkbenchColumns(1600, 400, { ...L, targetPx: 999 }, null)).toEqual({ leftPx: 360, rightPx: 0, leftForcedCollapsed: false, rightForcedCollapsed: false });
   });
 
   it("panel dưới đang GẬP (R-2-l) ⇒ khung đổi cỡ không mở nó ra", () => {
