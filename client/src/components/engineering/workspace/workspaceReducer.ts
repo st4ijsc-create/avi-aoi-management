@@ -22,6 +22,10 @@
  * DOM cuối cùng y hệt (ảnh chụp DOM của test đặc tả khớp từng byte), chỉ bớt lượt render trung gian.
  *
  * Không có I/O, không đọc thời gian/ngẫu nhiên: khoá idempotency, id… do trang sinh rồi truyền vào.
+ *
+ * doc 81 Đợt 2 Task 13 — thêm phần UI của vỏ P1 Workbench (`ui`, `cursor`): mục activity bar, tab editor, tab panel
+ * dưới + ý định mở (R-2-l), wizard deploy (mở/chế độ một máy | đội máy), Copilot đã mount (giữ stream sống), vị trí
+ * con trỏ (thanh trạng thái). Các hành động này KHÔNG chạm chuỗi reset, và chuỗi reset KHÔNG chạm chúng.
  */
 import type { Kind } from "./programKinds";
 
@@ -78,6 +82,21 @@ export interface FleetForm {
   reason: string;
 }
 
+export type ActivityId = "projects" | "versions" | "tags" | "deploy";
+export type EditorTabId = "source" | "diff" | "tags";
+export type BottomTabId = "problems" | "builds" | "deploys" | "matrix";
+export type DeployWizardMode = "single" | "fleet";
+export interface WorkbenchUi {
+  activity: ActivityId;
+  editorTab: EditorTabId;
+  bottomTab: BottomTabId;
+  /** Ý định mở panel dưới (R-2-l): tăng ⇒ WorkbenchShell mở panel. */
+  bottomOpenRequest: number;
+  wizard: { open: boolean; mode: DeployWizardMode };
+  /** Copilot trong layout đã mount một lần ⇒ giữ mount (stream không bị huỷ khi đổi tab Thuộc tính). */
+  copilotMounted: boolean;
+}
+
 export interface WorkspaceState {
   // ── Lựa chọn dẫn dắt 6 card (chuỗi reset) ──
   projectId: number | null;
@@ -108,6 +127,9 @@ export interface WorkspaceState {
   attach: AttachForm;
   deploy: DeployForm;
   fleet: FleetForm;
+  // ── Task 13 — vỏ P1 Workbench ──
+  cursor: { line: number; col: number };
+  ui: WorkbenchUi;
 }
 
 export const initialWorkspaceState: WorkspaceState = {
@@ -140,6 +162,15 @@ export const initialWorkspaceState: WorkspaceState = {
     autoRollback: true,
     approverId: "",
     reason: "",
+  },
+  cursor: { line: 1, col: 1 },
+  ui: {
+    activity: "projects",
+    editorTab: "source",
+    bottomTab: "problems",
+    bottomOpenRequest: 0,
+    wizard: { open: false, mode: "single" },
+    copilotMounted: false,
   },
 };
 
@@ -189,7 +220,17 @@ export type WorkspaceAction =
   | { type: "attach/set"; patch: Partial<AttachForm> }
   | { type: "deploy/set"; patch: Partial<DeployForm> }
   | { type: "fleet/set"; patch: Partial<Omit<FleetForm, "deviceIds">> }
-  | { type: "fleet/toggleDevice"; deviceId: number };
+  | { type: "fleet/toggleDevice"; deviceId: number }
+  // ── Task 13 — vỏ P1 Workbench ──
+  | { type: "ui/activity"; activity: ActivityId }
+  | { type: "ui/editorTab"; tab: EditorTabId }
+  /** Đổi tab panel dưới; `open` ⇒ cũng là ý định MỞ panel (R-2-l). */
+  | { type: "ui/bottom"; tab: BottomTabId; open?: boolean }
+  | { type: "wizard/open" }
+  | { type: "wizard/close" }
+  | { type: "wizard/mode"; mode: DeployWizardMode }
+  | { type: "copilot/mounted" }
+  | { type: "cursor/set"; line: number; col: number };
 
 /** WS-05 — build/mô phỏng/chẩn đoán thuộc phiên bản cũ thì bỏ. */
 function withArtifact(s: WorkspaceState, artifactId: number | null): WorkspaceState {
@@ -306,6 +347,25 @@ export function workspaceReducer(s: WorkspaceState, a: WorkspaceAction): Workspa
         },
       };
     }
+    case "ui/activity":
+      return { ...s, ui: { ...s.ui, activity: a.activity } };
+    case "ui/editorTab":
+      return { ...s, ui: { ...s.ui, editorTab: a.tab } };
+    case "ui/bottom":
+      return {
+        ...s,
+        ui: { ...s.ui, bottomTab: a.tab, bottomOpenRequest: a.open ? s.ui.bottomOpenRequest + 1 : s.ui.bottomOpenRequest },
+      };
+    case "wizard/open":
+      return { ...s, ui: { ...s.ui, wizard: { ...s.ui.wizard, open: true } } };
+    case "wizard/close":
+      return { ...s, ui: { ...s.ui, wizard: { ...s.ui.wizard, open: false } } };
+    case "wizard/mode":
+      return { ...s, ui: { ...s.ui, wizard: { ...s.ui.wizard, mode: a.mode } } };
+    case "copilot/mounted":
+      return s.ui.copilotMounted ? s : { ...s, ui: { ...s.ui, copilotMounted: true } };
+    case "cursor/set":
+      return s.cursor.line === a.line && s.cursor.col === a.col ? s : { ...s, cursor: { line: a.line, col: a.col } };
     default: {
       const _never: never = a;
       return s;

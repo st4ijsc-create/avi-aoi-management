@@ -60,6 +60,12 @@ describe("trạng thái đầu = giá trị useState cũ", () => {
         deviceIds: [], stage: "staging", signOff: false, canary: 1, promoteVerified: false,
         autoRollback: true, approverId: "", reason: "",
       },
+      // doc 81 Đợt 2 Task 13 — phần UI của vỏ P1 Workbench (không có trên mã cũ ⇒ thêm, không đổi trường cũ).
+      cursor: { line: 1, col: 1 },
+      ui: {
+        activity: "projects", editorTab: "source", bottomTab: "problems", bottomOpenRequest: 0,
+        wizard: { open: false, mode: "single" }, copilotMounted: false,
+      },
     });
   });
 });
@@ -247,5 +253,51 @@ describe("hộp thoại / form", () => {
     s = workspaceReducer(s, { type: "deleteSym/open", id: 31 });
     expect(s.deleteSymTarget).toEqual({ id: 31 });
     expect(workspaceReducer(s, { type: "deleteSym/close" }).deleteSymTarget).toBeNull();
+  });
+});
+
+// ════════════════════════════════════════════════════════════════════════════════════════════════
+// doc 81 Đợt 2 Task 13 — phần UI của vỏ P1 Workbench (explorer / tab editor / panel dưới / wizard deploy / Copilot).
+// ════════════════════════════════════════════════════════════════════════════════════════════════
+describe("Task 13 — UI vỏ Workbench", () => {
+  it("ui/bottom {open:true} ⇒ đổi tab + TĂNG openRequest (ý định mở, R-2-l); không open ⇒ chỉ đổi tab", () => {
+    const a = workspaceReducer(initialWorkspaceState, { type: "ui/bottom", tab: "builds", open: true });
+    expect(a.ui.bottomTab).toBe("builds");
+    expect(a.ui.bottomOpenRequest).toBe(1);
+    const b = workspaceReducer(a, { type: "ui/bottom", tab: "matrix" });
+    expect(b.ui.bottomTab).toBe("matrix");
+    expect(b.ui.bottomOpenRequest).toBe(1);
+    expect(workspaceReducer(b, { type: "ui/bottom", tab: "matrix", open: true }).ui.bottomOpenRequest).toBe(2);
+  });
+
+  it("wizard/open mở (giữ chế độ đã chọn); wizard/mode đổi chế độ; wizard/close đóng", () => {
+    const a = run(initialWorkspaceState, { type: "wizard/mode", mode: "fleet" }, { type: "wizard/open" });
+    expect(a.ui.wizard).toEqual({ open: true, mode: "fleet" });
+    expect(workspaceReducer(a, { type: "wizard/close" }).ui.wizard).toEqual({ open: false, mode: "fleet" });
+  });
+
+  it("ui/activity, ui/editorTab, copilot/mounted, cursor/set (cùng giá trị ⇒ cùng tham chiếu)", () => {
+    const a = run(
+      initialWorkspaceState,
+      { type: "ui/activity", activity: "deploy" },
+      { type: "ui/editorTab", tab: "tags" },
+      { type: "copilot/mounted" },
+      { type: "cursor/set", line: 3, col: 7 },
+    );
+    expect(a.ui.activity).toBe("deploy");
+    expect(a.ui.editorTab).toBe("tags");
+    expect(a.ui.copilotMounted).toBe(true);
+    expect(a.cursor).toEqual({ line: 3, col: 7 });
+    expect(workspaceReducer(a, { type: "cursor/set", line: 3, col: 7 })).toBe(a);
+  });
+
+  it("chuỗi reset KHÔNG đụng phần UI (đổi project giữ tab/panel); và phần UI KHÔNG đụng chuỗi reset", () => {
+    const ui = run(armed(), { type: "ui/editorTab", tab: "diff" }, { type: "ui/bottom", tab: "deploys", open: true });
+    const s = workspaceReducer(ui, { type: "project/select", projectId: 2 });
+    expect(s.ui).toEqual(ui.ui);
+    const back = run(armed(), { type: "ui/bottom", tab: "builds", open: true }, { type: "wizard/open" }, { type: "copilot/mounted" });
+    expect(back.buildId).toBe(5);
+    expect(back.simResult).not.toBeNull();
+    expect(back.diagnostics).not.toBeNull();
   });
 });

@@ -14,9 +14,13 @@
 // Copilot: dùng ProgrammingCopilotProvider + ProgrammingCopilotDock THẬT (không mock context) —
 // trang chỉ CÔNG BỐ binding; luồng SSE + Huỷ chạy trong panel của dock, fetch = SSE giả lưới tự bơm.
 //
-// Ảnh chụp DOM (toMatchFileSnapshot) ghi ở mã cũ; sau khi tách, cùng các kịch bản phải ra ĐÚNG
-// từng byte (không -u).
+// doc 81 Đợt 2 Task 13 — bố cục P1 Workbench: khối ảnh chụp DOM byte-identical (chỉ chứng minh "Task 12 không đổi
+// giao diện") đã XOÁ cùng thư mục __snapshots__/EngineeringWorkspace.dom/. Các test HÀNH VI giữ nguyên khẳng định;
+// chỉ đổi BỘ CHỌN / thêm bước ĐIỀU HƯỚNG (mở wizard deploy, tới bước) — liệt kê ở task-13-report.md.
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+// doc 81 Đợt 2 Task 13 — trang dựng EngineeringShell/WorkbenchShell ⇒ nạp bản BROWSER thật của react-resizable-panels
+// (layoutKitTestPanels.ts — hạ tầng test, không mock hành vi).
+vi.mock("react-resizable-panels", async () => (await import("@/components/patterns/layoutKitTestPanels")).browserPanels());
 import { act, cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import "@testing-library/jest-dom/vitest";
@@ -231,14 +235,36 @@ const editor = () => screen.getByLabelText("program-source") as HTMLTextAreaElem
 const versionBtn = (re: RegExp) => screen.getByText(re, { selector: "button" });
 const projectBtn = (name: string) => screen.getByText(name, { selector: "button span" }).closest("button")!;
 const btn = (re: RegExp) => screen.getByRole("button", { name: re });
-/** Nút Build của card editor (stepper luồng vàng cũng có nút tên "Build" khi bước đã xong). */
-const buildBtn = () => within(document.getElementById("gt-editor")!).getByRole("button", { name: /^Build$/ });
-const fleetCard = () => within(document.getElementById("gt-fleet")!);
+/** Task 13 — nút Build ở top bar (thay nút của card editor). */
+const buildBtn = () => btn(/^Build$/);
+/** Task 13 — nút MỞ wizard deploy 4 bước ở top bar (thay hai nút Deploy / Triển khai canary của hai card cũ). */
+const deployOpener = () => btn(/^(Deploy…)$/);
+const wizard = () => screen.getByRole("dialog");
+/** Task 13 — chỉ ĐIỀU HƯỚNG wizard deploy tới bước n (0 Build · 1 Đích & canary · 2 Ký duyệt · 3 Xem trước & xác nhận). */
+function toWizardStep(n: number) {
+  if (!screen.queryByRole("dialog")) fireEvent.click(deployOpener());
+  const d = wizard();
+  for (let guard = 0; guard < 8; guard++) {
+    const cur = within(d).getAllByRole("listitem").findIndex((li) => li.getAttribute("aria-current") === "step");
+    if (cur === n) return;
+    fireEvent.click(within(d).getByRole("button", { name: cur < n ? /^(Next|Tiếp)$/ : /^(Back|Quay lại)$/ }));
+  }
+  throw new Error(`wizard: không tới được bước ${n}`);
+}
+const closeWizard = () => fireEvent.keyDown(wizard(), { key: "Escape" });
+/** Task 13 — máy đích đội máy nằm ở bước "Đích & canary" của wizard, chế độ "Đội máy (canary)". */
+function fleetCardOpen() {
+  toWizardStep(1);
+  fireEvent.click(within(wizard()).getByRole("radio", { name: /Fleet|Đội máy/ }));
+  return within(wizard());
+}
 const fleetBox = (label: string) => {
-  const l = Array.from(document.getElementById("gt-fleet")!.querySelectorAll("label")).find((x) => x.textContent === label);
+  const l = Array.from(wizard().querySelectorAll("label")).find((x) => x.textContent === label);
   if (!l) throw new Error(`fleet label not found: ${label}`);
   return l.querySelector('[role="checkbox"]') as HTMLElement;
 };
+/** Task 13 — tóm tắt máy đội đã chọn (explorer › Deploy) — quan sát được cả khi CHƯA có build (wizard không mở được). */
+const fleetSelection = () => screen.getByTestId("ide-fleet-targets");
 
 /** Đặt đủ bốn thứ của chuỗi reset trên P1: artifact v1, diagnostics, build #5, simResult (+ watch, fleet). */
 function armP1() {
@@ -248,14 +274,17 @@ function armP1() {
   fireEvent.click(screen.getByText("#5"));
   fireEvent.click(btn(/Simulate \(twin\)|Mô phỏng \(twin\)/));
   fireEvent.click(btn(/Watch live|Theo dõi trực tiếp/));
+  fleetCardOpen();
   fireEvent.click(fleetBox("M3 · #3"));
+  expect(fleetBox("M3 · #3")).toHaveAttribute("aria-checked", "true");
+  closeWizard();
   // tiền điều kiện: cả bốn (và watch/fleet) ĐANG hiện
   expect(screen.getByText(/DIAG-ERR-1/)).toBeInTheDocument();
   expect(screen.getByTestId("deploy-preview")).toBeInTheDocument();
   expect(queryInputs["programming.deployPreview"]).toMatchObject({ buildId: 5 });
   expect(screen.getByText(/SIM-WARN-1/)).toBeInTheDocument();
   expect(btn(/Stop watch|Dừng theo dõi/)).toBeInTheDocument();
-  expect(fleetBox("M3 · #3")).toHaveAttribute("aria-checked", "true");
+  expect(fleetSelection()).toHaveAttribute("data-count", "1");
   expect(queryEnabled["programming.listBuilds"]).toBe(true);
 }
 
@@ -267,7 +296,7 @@ function expectChainReset() {
   expect(screen.queryByText("#5")).not.toBeInTheDocument(); // artifactId (build list của v1 cũ)
   expect(queryEnabled["programming.listBuilds"]).toBe(false);
   expect(screen.queryByRole("button", { name: /Stop watch|Dừng theo dõi/ })).not.toBeInTheDocument(); // watching
-  expect(fleetBox("M3 · #3")).toHaveAttribute("aria-checked", "false"); // fleetDeviceIds
+  expect(fleetSelection()).toHaveAttribute("data-count", "0"); // fleetDeviceIds (Task 13: wizard không mở được khi chưa có build)
 }
 
 // ─── SSE giả cho Copilot ─────────────────────────────────────────────────────────────────────────
@@ -378,7 +407,7 @@ describe("Chuỗi reset khi đổi projectId (Review Focus #2)", () => {
     expect(screen.getByText("#7")).toBeInTheDocument();
     expect(editor().value).toBe("A\nC");
     expect(btn(/Stop watch|Dừng theo dõi/)).toBeInTheDocument();
-    expect(fleetBox("M3 · #3")).toHaveAttribute("aria-checked", "true");
+    expect(fleetSelection()).toHaveAttribute("data-count", "1"); // Task 13: build đã bỏ ⇒ đọc tóm tắt máy đội
   });
 
   it("LƯU phiên bản mới (createArtifact ⇒ artifactId mới) ⇒ build / simResult / diagnostics về rỗng", () => {
@@ -451,8 +480,10 @@ describe("deployPreview hiện TRƯỚC OTP", () => {
     fireEvent.click(screen.getByText("#5"));
     expect(screen.getByTestId("deploy-preview")).toHaveAttribute("data-verdict", "real");
     expect(screen.queryByText(/Two-step verification to deploy|Xác thực 2 bước/)).not.toBeInTheDocument();
+    toWizardStep(2);
     fireEvent.click(screen.getByTestId("engineering-deploy-signoff"));
     expect(queryInputs["programming.deployPreview"]).toEqual({ buildId: 5, stage: "staging", confirmedBy: ME, expectedProjectId: 1 });
+    toWizardStep(3);
     fireEvent.click(screen.getByTestId("engineering-deploy-button"));
     expect(screen.getByText(/Two-step verification to deploy|Xác thực 2 bước/)).toBeInTheDocument();
     expect(mutateCalls["programming.deployBuild"]).toBeUndefined();
@@ -471,25 +502,33 @@ describe("deployPreview hiện TRƯỚC OTP", () => {
     renderPage();
     fireEvent.click(versionBtn(/^v1 · main/));
     fireEvent.click(screen.getByText("#5"));
-    const deployCard = within(document.getElementById("gt-deploy")!);
+    toWizardStep(2);
+    const deployCard = within(wizard());
     await user.click(deployCard.getAllByRole("combobox")[0]);
     await user.click(screen.getByRole("option", { name: "production" }));
     expect(queryInputs["programming.deployPreview"]).toEqual({ buildId: 5, stage: "production", confirmedBy: undefined, expectedProjectId: 1 });
+    toWizardStep(3);
     expect(screen.getByTestId("engineering-deploy-button")).toBeDisabled();
+    toWizardStep(2);
     await user.click(deployCard.getAllByRole("combobox")[1]);
     expect(screen.queryByRole("option", { name: "Me" })).not.toBeInTheDocument(); // không tự ký
     await user.click(screen.getByRole("option", { name: "Approver Nine" }));
     expect(queryInputs["programming.deployPreview"]).toEqual({ buildId: 5, stage: "production", confirmedBy: 9, expectedProjectId: 1 });
+    toWizardStep(3);
     expect(screen.getByTestId("engineering-deploy-button")).toBeDisabled();
-    fireEvent.change(document.querySelector("#gt-deploy textarea")!, { target: { value: "ECN-42" } });
+    toWizardStep(2);
+    fireEvent.change(wizard().querySelector("textarea")!, { target: { value: "ECN-42" } });
+    toWizardStep(3);
     expect(screen.getByTestId("engineering-deploy-button")).not.toBeDisabled();
   });
 });
 
 // ════════════════════════════════════════════════════════════════════════════════════════════════
 describe("Copilot (dock thật) — binding của trang, stream + Huỷ, Apply chèn vào buffer", () => {
+  // Task 13 — card "Trợ lý Lập trình AI" (nút "Mở Trợ lý") đã bỏ; Copilot là tab của inspector TRONG layout (dock thật
+  // vẫn được render trong renderPage() và phải KHÔNG vẽ gì cho binding inLayout).
   async function moDock() {
-    fireEvent.click(btn(/^(Open Copilot|Mở Trợ lý)$/));
+    fireEvent.click(screen.getByRole("tab", { name: /Copilot/ }));
     await screen.findByPlaceholderText(/Describe what to generate/);
   }
   async function chay(req: string) {
@@ -551,144 +590,11 @@ describe("FeatureStatusGate 4 trạng thái", () => {
 });
 
 // ════════════════════════════════════════════════════════════════════════════════════════════════
-// Ảnh chụp DOM toàn trang (document.body, gồm portal của dialog) tại nhiều bước — ghi ở mã CŨ.
-// ════════════════════════════════════════════════════════════════════════════════════════════════
-describe("Ảnh chụp DOM byte-identical (trước/sau khi nâng state)", () => {
-  const snap = (name: string) => expect(document.body.innerHTML).toMatchFileSnapshot(`./__snapshots__/EngineeringWorkspace.dom/${name}.html`);
-
-  it("trống / đang tải / lỗi", async () => {
-    seed({ projects: [], deepLink: null });
-    renderPage();
-    await snap("01-no-projects");
-    cleanup();
-    seed({ deepLink: null });
-    queryOverrides["programming.status"] = () => makeQuery({ isLoading: true, isPending: true });
-    queryOverrides["programming.listProjects"] = () => makeQuery({ isLoading: true, isPending: true });
-    renderPage();
-    await snap("02-loading");
-    cleanup();
-    seed({ deepLink: null });
-    queryOverrides["programming.listProjects"] = () => makeQuery({ isError: true });
-    renderPage();
-    await snap("03-projects-error");
-    cleanup();
-    seed({ deepLink: null });
-    renderPage();
-    await snap("04-select-project");
-  });
-
-  it("dialog tạo dự án + DEMO một chạm", async () => {
-    seed({ projects: [], deepLink: null });
-    renderPage();
-    const plus = document.querySelector("button[aria-haspopup='dialog']") as HTMLElement;
-    fireEvent.click(plus);
-    fireEvent.change(screen.getByPlaceholderText("ZMC-CELL-01"), { target: { value: "NP-1" } });
-    const dlg = screen.getByRole("dialog");
-    const inputs = dlg.querySelectorAll("input");
-    fireEvent.change(inputs[1], { target: { value: "New One" } });
-    await snap("30-new-project-dialog");
-    fireEvent.click(within(dlg).getByRole("button", { name: /^(Create|Tạo)$/ }));
-    expect(mutateCalls["programming.createProject"]).toEqual([{ code: "NP-1", name: "New One", kind: "stub", deviceId: undefined }]);
-    await snap("31-after-create");
-    fireEvent.click(plus);
-    await snap("32-new-project-dialog-reopened");
-    fireEvent.keyDown(screen.getByRole("dialog"), { key: "Escape" });
-    // DEMO một chạm: createProject ⇒ createArtifact (mutateAsync, onSuccess chọn project/phiên bản)
-    await act(async () => { fireEvent.click(btn(/Create DEMO project|Tạo dự án DEMO/)); });
-    await nghi();
-    expect(mutateCalls["programming.createProject"]?.[1]).toMatchObject({ code: expect.stringMatching(/^DEMO-\d+$/), kind: "stub" });
-    expect(mutateCalls["programming.createArtifact"]).toEqual([
-      expect.objectContaining({ projectId: 2, branch: "main", language: "text" }),
-    ]);
-    expect(btn(/Create DEMO project|Tạo dự án DEMO/)).not.toBeDisabled();
-    await snap("33-after-demo");
-  });
-
-  it("luồng đầy đủ trên P1 rồi đổi sang P2", async () => {
-    const user = userEvent.setup();
-    seed({ reviewOn: true });
-    mutationData["programming.deployToFleet"] = {
-      halted: true, haltCode: "canary_not_real", promoted: false, haltReason: null,
-      results: [{ deviceId: 3, phase: "canary", status: "simulated", error: null, rolledBack: false, rollbackError: null }],
-    };
-    renderPage();
-    await snap("10-p1-deeplinked");
-    armP1();
-    await snap("11-p1-armed");
-    // tìm kiếm + diff 2 phiên bản
-    fireEvent.change(screen.getByPlaceholderText(/Search by name or code…|Tìm theo tên hoặc mã…/), { target: { value: "cell" } });
-    const editorCard = within(document.getElementById("gt-editor")!);
-    await user.click(editorCard.getAllByRole("combobox")[0]);
-    await user.click(screen.getAllByRole("option", { name: "v1 · main" })[0]);
-    await user.click(editorCard.getAllByRole("combobox")[1]);
-    await user.click(screen.getAllByRole("option", { name: "v2 · main" })[0]);
-    await snap("12-search-diff");
-    // form deploy production + form fleet
-    const deployCard = within(document.getElementById("gt-deploy")!);
-    await user.click(deployCard.getAllByRole("combobox")[0]);
-    await user.click(screen.getByRole("option", { name: "production" }));
-    await user.click(deployCard.getAllByRole("combobox")[1]);
-    await user.click(screen.getByRole("option", { name: "Approver Nine" }));
-    fireEvent.change(document.querySelector("#gt-deploy textarea")!, { target: { value: "ECN-42" } });
-    fireEvent.click(fleetBox("M4 · #4"));
-    fireEvent.change(fleetCard().getByRole("spinbutton"), { target: { value: "2" } });
-    fireEvent.click(fleetCard().getByText(/Promote only when the canary is VERIFIED|Chỉ promote/).closest("label")!.querySelector('[role="checkbox"]')!);
-    fireEvent.click(fleetCard().getByText(/Auto-rollback if the canary fails|Tự khôi phục/).closest("label")!.querySelector('[role="checkbox"]')!);
-    await user.click(fleetCard().getAllByRole("combobox")[0]);
-    await user.click(screen.getByRole("option", { name: "production" }));
-    await user.click(fleetCard().getAllByRole("combobox")[1]);
-    await user.click(screen.getByRole("option", { name: "Approver Nine" }));
-    fireEvent.change(fleetCard().getByPlaceholderText(/./), { target: { value: "fleet reason" } });
-    await snap("13-prod-forms");
-    // dialog sửa biến (điền sẵn) rồi đóng bằng Lưu
-    fireEvent.click(within(document.getElementById("gt-monitor")!).getByRole("button", { name: /^(Edit|Sửa)$/ }));
-    await snap("14-symbol-dialog");
-    fireEvent.change(screen.getByDisplayValue("X0"), { target: { value: "X0b" } });
-    fireEvent.click(within(screen.getByRole("dialog")).getByRole("button", { name: /^(Save|Lưu)$/ }));
-    expect(mutateCalls["programming.upsertSymbol"]).toEqual([{ projectId: 1, name: "X0b", address: "D100", dataType: "INT", comment: "start", watchable: true }]);
-    await snap("15-symbol-saved");
-    // dialog gắn thiết bị (điền sẵn deviceId 3)
-    fireEvent.click(btn(/^(Change device|Đổi thiết bị)$/));
-    await snap("16-attach-dialog");
-    fireEvent.click(within(screen.getByRole("dialog")).getByRole("button", { name: /^(Save|Lưu)$/ }));
-    expect(mutateCalls["programming.updateProject"]).toEqual([{ id: 1, deviceId: 3 }]);
-    // hộp rollback + hộp xoá biến
-    fireEvent.click(within(document.getElementById("gt-deploy")!).getByRole("button", { name: /Roll back|Khôi phục/ }));
-    await snap("17-rollback-dialog");
-    fireEvent.click(within(screen.getByRole("alertdialog")).getByRole("button", { name: /^(Cancel|Hủy)$/ }));
-    fireEvent.click(within(document.getElementById("gt-monitor")!).getByRole("button", { name: /^(Delete|Xóa)$/ }));
-    await snap("18-delete-symbol-dialog");
-    fireEvent.click(within(screen.getByRole("alertdialog")).getByRole("button", { name: /^(Delete|Xóa)$/ }));
-    expect(mutateCalls["programming.deleteSymbol"]).toEqual([{ id: 31 }]);
-    await snap("19-after-delete");
-    // buffer bẩn + chuyển project có hỏi
-    fireEvent.change(editor(), { target: { value: "A\nB\nDIRTY" } });
-    fireEvent.click(projectBtn("Cell One")); // cùng project ⇒ không hỏi
-    fireEvent.change(screen.getByPlaceholderText(/Search by name or code…|Tìm theo tên hoặc mã…/), { target: { value: "" } });
-    fireEvent.click(projectBtn("Ladder Two"));
-    await snap("20-dirty-guard");
-    fireEvent.click(within(screen.getByRole("alertdialog")).getByRole("button", { name: /Discard & continue|Bỏ thay đổi/ }));
-    await snap("21-p2-after-reset");
-    // P2 là ladder ⇒ có chế độ trực quan
-    // buffer cũ (A/B/DIRTY) vẫn còn (đổi project không xoá buffer) ⇒ chọn phiên bản cũng hỏi
-    fireEvent.click(versionBtn(/^v1 · main/));
-    await snap("22-p2-version-dirty-guard");
-    fireEvent.click(within(screen.getByRole("alertdialog")).getByRole("button", { name: /Discard & continue|Bỏ thay đổi/ }));
-    expect(editor().value).toBe("LD-CODE");
-    fireEvent.click(btn(/^(Ladder)$/));
-    await snap("23-p2-ladder-visual");
-    fireEvent.click(btn(/^(Code)$/));
-    await snap("24-p2-code");
-  });
-
-});
-
-// ════════════════════════════════════════════════════════════════════════════════════════════════
 // doc 81 Đợt 2 Task 12b (Ruling R-2-r) — mối nguy deploy CHÉO dự án. Đặt SAU khối ảnh chụp: id Radix
 // là bộ đếm toàn cục theo thứ tự mount, chèn test phía trước sẽ làm lệch ảnh chụp của task 12.
 // ════════════════════════════════════════════════════════════════════════════════════════════════
 const deployBtnEl = () => screen.getByTestId("engineering-deploy-button");
-const fleetBtnEl = () => fleetCard().getByRole("button", { name: /Roll out \(canary\)|Triển khai \(canary\)/ });
+const fleetBtnEl = () => screen.getByTestId("engineering-fleet-deploy-button");
 
 /** Đang hiện P2 (vừa tạo / vừa chuyển tới) ⇒ KHÔNG có đường nào dùng build của P1. */
 function expectKhongDungDuocBuildCu() {
@@ -698,15 +604,15 @@ function expectKhongDungDuocBuildCu() {
   expect(queryEnabled["programming.listBuilds"]).toBe(false);
   expect(screen.queryByTestId("deploy-preview")).not.toBeInTheDocument();
   expect(queryEnabled["programming.deployPreview"]).toBe(false);
-  expect(deployBtnEl()).toBeDisabled();
+  // Task 13 — Deploy đơn VÀ đội máy đi qua MỘT lối: wizard deploy; không có build của dự án này ⇒ nút mở wizard KHOÁ, bấm
+  // không mở (máy đích đội máy chỉ chọn được TRONG wizard ⇒ bước "tick lại một máy" của thẻ cũ không còn đường tới).
+  expect(deployOpener()).toBeDisabled();
   expect(screen.queryByText(/DIAG-ERR-1/)).not.toBeInTheDocument();
   expect(screen.queryByText(/SIM-WARN-1/)).not.toBeInTheDocument();
-  // Fleet: tick lại một máy ⇒ nút triển khai đội máy VẪN khoá vì không có build của dự án này.
-  fireEvent.click(fleetBox("M3 · #3"));
-  expect(fleetBox("M3 · #3")).toHaveAttribute("aria-checked", "true");
-  expect(fleetBtnEl()).toBeDisabled();
-  fireEvent.click(deployBtnEl());
-  fireEvent.click(fleetBtnEl());
+  fireEvent.click(deployOpener());
+  expect(screen.queryByRole("dialog")).toBeNull();
+  expect(screen.queryByTestId("engineering-deploy-button")).toBeNull();
+  expect(screen.queryByTestId("engineering-fleet-deploy-button")).toBeNull();
   expect(screen.queryByText(/Two-step verification to deploy|Xác thực 2 bước/)).not.toBeInTheDocument();
   expect(mutateCalls["programming.deployBuild"]).toBeUndefined();
   expect(mutateCalls["programming.deployToFleet"]).toBeUndefined();
@@ -717,7 +623,7 @@ describe("Task 12b (a) — tạo dự án mới reset như bấm chọn dự án
     seed();
     renderPage();
     armP1();
-    const plus = document.querySelectorAll("button[aria-haspopup='dialog']")[0] as HTMLElement;
+    const plus = btn(/^(New project|Dự án mới)$/); // Task 13: nút "+" có nhãn (header có nút popover khác cũng aria-haspopup=dialog)
     fireEvent.click(plus);
     const dlg = screen.getByRole("dialog");
     expect(dlg).toHaveTextContent(/New project|Dự án mới/);
@@ -818,13 +724,16 @@ describe("Task 12b (c) — IDE LUÔN gửi expectedProjectId (dự án đang m�
     fireEvent.click(screen.getByText("#5"));
     expect(queryInputs["programming.deployPreview"]).toMatchObject({ buildId: 5, expectedProjectId: 1 });
     // deploy đơn
+    toWizardStep(3);
     fireEvent.click(deployBtnEl());
     const otp = document.querySelector('input[autocomplete="one-time-code"]') as HTMLInputElement;
     await act(async () => { fireEvent.change(otp, { target: { value: "123456" } }); });
     await nghi();
     expect(mutateCalls["programming.deployBuild"]?.[0]).toMatchObject({ buildId: 5, expectedProjectId: 1 });
     // đội máy
+    fleetCardOpen();
     fireEvent.click(fleetBox("M3 · #3"));
+    toWizardStep(3);
     fireEvent.click(fleetBtnEl());
     const otp2 = document.querySelector('input[autocomplete="one-time-code"]') as HTMLInputElement;
     await act(async () => { fireEvent.change(otp2, { target: { value: "654321" } }); });
@@ -843,10 +752,12 @@ describe("Task 12b (c) — IDE LUÔN gửi expectedProjectId (dự án đang m�
     renderPage();
     fireEvent.click(versionBtn(/^v1 · main/));
     fireEvent.click(screen.getByText("#5"));
-    const deployCard = within(document.getElementById("gt-deploy")!);
+    toWizardStep(2);
+    const deployCard = within(wizard());
     await user.click(deployCard.getAllByRole("combobox")[0]);
     await user.click(screen.getByRole("option", { name: "production" }));
-    fireEvent.change(document.querySelector("#gt-deploy textarea")!, { target: { value: "ECN-42" } });
+    fireEvent.change(wizard().querySelector("textarea")!, { target: { value: "ECN-42" } });
+    toWizardStep(3);
     fireEvent.click(screen.getByTestId("engineering-request-deploy-button"));
     expect(mutateCalls["programming.requestDeployApproval"]?.[0]).toMatchObject({ buildId: 5, reason: "ECN-42", expectedProjectId: 1 });
   });

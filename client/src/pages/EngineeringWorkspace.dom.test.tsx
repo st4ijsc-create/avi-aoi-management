@@ -7,7 +7,10 @@
 // THẬT qua @testing-library/react; chỉ mock hạ tầng nặng (DashboardLayout/usePermissions/
 // trpc/sonner/socket/copilot context — không mock chính EngineeringWorkspace).
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+// doc 81 Đợt 2 Task 13 — trang dựng EngineeringShell/WorkbenchShell ⇒ nạp bản BROWSER thật của react-resizable-panels
+// (layoutKitTestPanels.ts — hạ tầng test, không mock hành vi).
+vi.mock("react-resizable-panels", async () => (await import("@/components/patterns/layoutKitTestPanels")).browserPanels());
+import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import "@testing-library/jest-dom/vitest";
 
 vi.mock("@/components/DashboardLayout", () => ({
@@ -203,6 +206,21 @@ function seedWorkspace(o: { reviewOn: boolean; artifact?: Record<string, unknown
 }
 
 const buildBtn = () => screen.getByRole("button", { name: /^Build$/ });
+/**
+ * doc 81 Đợt 2 Task 13 — nút Deploy / ô ký duyệt nằm trong WIZARD deploy 4 bước (WizardDialog: Build · Đích & canary ·
+ * Ký duyệt · Xem trước & xác nhận). Hàm này chỉ ĐIỀU HƯỚNG tới bước n (mở wizard bằng "Deploy…" nếu chưa mở, rồi
+ * Tiếp/Quay lại) — không đổi khẳng định nào của test.
+ */
+function toWizardStep(n: number) {
+  if (!screen.queryByRole("dialog")) fireEvent.click(screen.getByRole("button", { name: /^(Deploy…)$/ }));
+  const d = screen.getByRole("dialog");
+  for (let guard = 0; guard < 8; guard++) {
+    const cur = within(d).getAllByRole("listitem").findIndex((li) => li.getAttribute("aria-current") === "step");
+    if (cur === n) return;
+    fireEvent.click(within(d).getByRole("button", { name: cur < n ? /^(Next|Tiếp)$/ : /^(Back|Quay lại)$/ }));
+  }
+  throw new Error(`wizard: không tới được bước ${n}`);
+}
 
 describe("WS-01 — duyệt phiên bản trong IDE (cờ versionReviewEnabled)", () => {
   it("cờ TẮT ⇒ KHÔNG một phần tử review nào trong DOM, Build không bị khoá vì review", () => {
@@ -276,6 +294,7 @@ describe("F2 — bản xem trước deploy hiện TRƯỚC khi hỏi OTP", () =>
     const panel = screen.getByTestId("deploy-preview");
     expect(panel).toHaveAttribute("data-verdict", "blocked");
     expect(screen.getByTestId("deploy-preview-gate-adapterPath")).toHaveAttribute("data-ok", "0");
+    toWizardStep(3); // Task 13 — nút Deploy ở bước cuối của wizard
     const deployBtn = screen.getByTestId("engineering-deploy-button");
     expect(deployBtn).toBeDisabled();
     fireEvent.click(deployBtn);
@@ -287,7 +306,9 @@ describe("F2 — bản xem trước deploy hiện TRƯỚC khi hỏi OTP", () =>
     seedWorkspace({ reviewOn: false, preview: real, builds: [{ id: 5, ok: true, status: "ok" }] });
     fireEvent.click(screen.getByText("#5"));
     expect(screen.getByTestId("deploy-preview")).toHaveAttribute("data-verdict", "real");
+    toWizardStep(3); // Task 13 — nút Deploy ở bước cuối của wizard
     expect(screen.getByTestId("engineering-deploy-button")).not.toBeDisabled();
+    toWizardStep(2); // ô ký duyệt ở bước "Ký duyệt"
     fireEvent.click(screen.getByTestId("engineering-deploy-signoff"));
     expect(queryInputs["programming.deployPreview"]).toMatchObject({ buildId: 5, stage: "staging", confirmedBy: ME });
   });
