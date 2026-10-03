@@ -1617,6 +1617,8 @@ export default function OrchestrationStudio() {
   const filterPending = useMemo(() => new URLSearchParams(search).get("filter") === "pending", [search]);
   // Tab do MÃ chọn khi đang có sheet mở (không ghi URL: FlyoutHost giữ dấu lịch sử trên mục URL hiện tại).
   const [autoTab, setAutoTab] = useState<BottomTab | null>(null);
+  // final wave T11 — `?tab=` đổi (back/forward, link) ⇒ bỏ tab do mã chọn: URL lại là nguồn sự thật (Review Focus 4).
+  useEffect(() => { setAutoTab(null); }, [tabParam]);
   const bottomTab: BottomTab =
     autoTab ?? (isBottomTab(tabParam) ? tabParam : filterPending || awaitingCount > 0 ? "approvals" : "runs");
   const [bottomOpenRequest, setBottomOpenRequest] = useState(0);
@@ -1887,8 +1889,13 @@ export default function OrchestrationStudio() {
       },
       render: (layer) => {
         const workflowId = layer.id != null && /^\d+$/.test(layer.id) ? Number(layer.id) : null;
-        if (workflowId == null) {
+        // final wave T11 — như sheet Nhân bản: quy trình KHÔNG có trong danh sách đã tải ⇒ không mở lịch sử/khôi phục
+        // (trang cũ chỉ mở được từ hàng của danh sách).
+        if (workflowId == null || (workflowsLoaded && !findWorkflow(layer.id))) {
           return <p className="py-6 text-center text-sm text-muted-foreground">{t("studio.wfNotLoaded", "Không tìm thấy quy trình #{{id}} trong danh sách đã tải.", { id: layer.id ?? "" })}</p>;
+        }
+        if (!findWorkflow(layer.id)) {
+          return <p className="py-6 text-center text-sm text-muted-foreground">{t("common.loading", "Loading…")}</p>;
         }
         if (!versionsQ.isLoading && !versionsQ.isError && versionRows.length === 0) {
           return (

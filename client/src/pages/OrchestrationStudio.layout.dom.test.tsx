@@ -427,6 +427,39 @@ describe("Orchestration P2 — Mô phỏng ⇒ tab Vấn đề", () => {
   });
 });
 
+describe("Orchestration P2 — final wave T11", () => {
+  it("tab do MÃ chọn khi sheet mở (AI đề xuất + mô phỏng ⇒ Vấn đề) KHÔNG kẹt: sau đó đổi ?tab= (back/forward) thì panel theo URL", async () => {
+    const user = userEvent.setup();
+    srv.suggest = () =>
+      Promise.resolve({
+        available: true, valid: true, rationale: "lý do AI", workflow: { ref: "ai-wf", name: "AI WF", version: 1, steps: [{ id: "ai-step", type: "delay", ms: 10 }] },
+        simulation: { ok: false, valid: false, errors: ["lỗi mô phỏng"], warnings: [], timeline: [], totalDurationMs: 0, machineStateTrace: {} },
+      });
+    render(<OrchestrationStudio />);
+    await user.click(screen.getByRole("button", { name: S.aiTitle }));
+    const l = await waitLayer("orch-ai");
+    await user.type(within(l).getByLabelText(S.aiGoal), "khởi động");
+    await user.click(within(l).getByRole("button", { name: S.aiSuggest }));
+    const tabOf = (name: string) => within(screen.getByRole("region", { name: S.bottomPanel, hidden: true })).getByRole("tab", { name: new RegExp(name), hidden: true });
+    await waitFor(() => expect(tabOf(S.problemsTab)).toHaveAttribute("aria-selected", "true"));
+    await user.keyboard("{Escape}");
+    await waitFor(() => expect(layer("orch-ai")).toBeNull());
+    act(() => {
+      window.history.pushState(null, "", "/orchestration-studio?tab=runs");
+      window.dispatchEvent(new PopStateEvent("popstate"));
+    });
+    await waitFor(() => expect(tabOf(S.runsTab)).toHaveAttribute("aria-selected", "true"));
+  });
+
+  it("?flyout=orch-versions cho quy trình KHÔNG có trong danh sách đã tải ⇒ báo không tìm thấy, KHÔNG có nút khôi phục", async () => {
+    window.history.replaceState(null, "", "/orchestration-studio?flyout=orch-versions&flyoutId=999");
+    render(<OrchestrationStudio />);
+    const l = await waitLayer("orch-versions");
+    await waitFor(() => expect(l).toHaveTextContent("#999"));
+    expect(within(l).queryByRole("button", { name: new RegExp(S.rollback) })).toBeNull();
+  });
+});
+
 describe("Orchestration P2 — Trợ lý AI điều phối trong sheet 420 (R-2-j)", () => {
   it("mở sheet 420 (?flyout=orch-ai) với mục tiêu + gợi ý/tối ưu + ghi chú HITL; đóng sheet chat AI đang mở", async () => {
     const user = userEvent.setup();
