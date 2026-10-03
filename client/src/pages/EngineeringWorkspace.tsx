@@ -1087,6 +1087,8 @@ function EngineeringWorkspaceView() {
                         onChange={setCode}
                         language={language}
                         aria-label="program-source"
+                        // doc 81 Đợt 2 Task 13 (R-2-k) — hiệu chuẩn: đánh dấu MAIN hiện tại (khung editor) TRƯỚC khi đổi bố cục.
+                        data-layout-main="engineering-editor"
                         // doc69 · Wave 4 / C1 — the primary authoring surface gets inline (ghost-text)
                         // completion; opt-in per CodeEditor.tsx, other consumers are unchanged.
                         inlineCopilot

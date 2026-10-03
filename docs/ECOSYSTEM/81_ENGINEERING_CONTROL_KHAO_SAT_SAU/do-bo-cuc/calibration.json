@@ -384,6 +384,98 @@
     "attrSel": "div[data-layout-main=\"orchestration-studio\"]@WorkbenchShell.tsx",
     "gitHead": "115925ba7"
    }
+  },
+  "engineering|1600|closed": {
+   "screen": "engineering",
+   "vw": 1600,
+   "variant": "closed",
+   "mainTop": 495,
+   "rects": [
+    {
+     "x": 393,
+     "y": 495,
+     "w": 1158,
+     "h": 362
+    }
+   ],
+   "areaPx": 419196,
+   "attrSel": "div[data-layout-main=\"engineering-editor\"]@EngineeringWorkspace.tsx",
+   "gitHead": "e905fcd87",
+   "at": "2026-10-03T12:59:29.515Z",
+   "fromReference": {
+    "dTop": 1,
+    "dLeft": 1,
+    "dAreaPct": 0.73
+   }
+  },
+  "engineering|1366|closed": {
+   "screen": "engineering",
+   "vw": 1366,
+   "variant": "closed",
+   "mainTop": 515,
+   "rects": [
+    {
+     "x": 393,
+     "y": 515,
+     "w": 924,
+     "h": 362
+    }
+   ],
+   "areaPx": 334488,
+   "attrSel": "div[data-layout-main=\"engineering-editor\"]@EngineeringWorkspace.tsx",
+   "gitHead": "e905fcd87",
+   "at": "2026-10-03T12:59:29.515Z",
+   "fromReference": {
+    "dTop": 1,
+    "dLeft": 1,
+    "dAreaPct": 0.77
+   }
+  },
+  "engineering|1600|open": {
+   "screen": "engineering",
+   "vw": 1600,
+   "variant": "open",
+   "mainTop": 515,
+   "rects": [
+    {
+     "x": 393,
+     "y": 515,
+     "w": 738,
+     "h": 362
+    }
+   ],
+   "areaPx": 267156,
+   "attrSel": "div[data-layout-main=\"engineering-editor\"]@EngineeringWorkspace.tsx",
+   "gitHead": "e905fcd87",
+   "at": "2026-10-03T12:59:29.515Z",
+   "fromReference": {
+    "dTop": 1,
+    "dLeft": 1,
+    "dAreaPct": 0.83
+   }
+  },
+  "engineering|1366|open": {
+   "screen": "engineering",
+   "vw": 1366,
+   "variant": "open",
+   "mainTop": 551,
+   "rects": [
+    {
+     "x": 393,
+     "y": 551,
+     "w": 553,
+     "h": 362
+    }
+   ],
+   "areaPx": 200186,
+   "attrSel": "div[data-layout-main=\"engineering-editor\"]@EngineeringWorkspace.tsx",
+   "gitHead": "e905fcd87",
+   "at": "2026-10-03T12:59:29.515Z",
+   "fromReference": {
+    "dTop": 1,
+    "dLeft": 1,
+    "dAreaPct": 0.74
+   }
   }
  }
 }
