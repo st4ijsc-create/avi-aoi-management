@@ -341,58 +341,48 @@
    "screen": "orchestration-studio",
    "vw": 1600,
    "variant": "n/a",
-   "mainTop": 603,
+   "mainTop": 105,
    "rects": [
     {
-     "x": 72,
-     "y": 603,
-     "w": 997,
-     "h": 222
-    },
-    {
-     "x": 1085,
-     "y": 603,
-     "w": 491,
-     "h": 222
+     "x": 328,
+     "y": 105,
+     "w": 899,
+     "h": 820
     }
    ],
-   "areaPx": 330336,
-   "attrSel": "div[data-layout-main=\"orchestration-studio\"]@OrchestrationStudio.tsx|div[data-layout-main=\"orchestration-studio\"]@OrchestrationStudio.tsx",
-   "gitHead": "e877d897f",
-   "at": "2026-10-03T09:26:41.100Z",
-   "fromReference": {
-    "dTop": 0,
-    "dLeft": 0,
-    "dAreaPct": 0
+   "areaPx": 737180,
+   "attrSel": "div[data-layout-main=\"orchestration-studio\"]@WorkbenchShell.tsx",
+   "gitHead": "115925ba7",
+   "at": "2026-10-03T10:00:40.716Z",
+   "previous": {
+    "mainTop": 603,
+    "areaPx": 330336,
+    "attrSel": "div[data-layout-main=\"orchestration-studio\"]@OrchestrationStudio.tsx|div[data-layout-main=\"orchestration-studio\"]@OrchestrationStudio.tsx",
+    "gitHead": "e877d897f"
    }
   },
   "orchestration-studio|1366|n/a": {
    "screen": "orchestration-studio",
    "vw": 1366,
    "variant": "n/a",
-   "mainTop": 603,
+   "mainTop": 105,
    "rects": [
     {
-     "x": 72,
-     "y": 603,
-     "w": 841,
-     "h": 222
-    },
-    {
-     "x": 929,
-     "y": 603,
-     "w": 413,
-     "h": 222
+     "x": 312,
+     "y": 105,
+     "w": 695,
+     "h": 638
     }
    ],
-   "areaPx": 278388,
-   "attrSel": "div[data-layout-main=\"orchestration-studio\"]@OrchestrationStudio.tsx|div[data-layout-main=\"orchestration-studio\"]@OrchestrationStudio.tsx",
-   "gitHead": "e877d897f",
-   "at": "2026-10-03T09:26:41.100Z",
-   "fromReference": {
-    "dTop": 0,
-    "dLeft": 0,
-    "dAreaPct": 0
+   "areaPx": 443410,
+   "attrSel": "div[data-layout-main=\"orchestration-studio\"]@WorkbenchShell.tsx",
+   "gitHead": "115925ba7",
+   "at": "2026-10-03T10:00:40.717Z",
+   "previous": {
+    "mainTop": 603,
+    "areaPx": 278388,
+    "attrSel": "div[data-layout-main=\"orchestration-studio\"]@OrchestrationStudio.tsx|div[data-layout-main=\"orchestration-studio\"]@OrchestrationStudio.tsx",
+    "gitHead": "e877d897f"
    }
   }
  }
