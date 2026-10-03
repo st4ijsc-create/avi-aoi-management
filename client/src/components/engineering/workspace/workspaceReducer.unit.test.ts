@@ -112,20 +112,16 @@ describe("CHUỖI RESET khi chọn project khác (project/select)", () => {
   });
 });
 
-describe("project/assign (deep-link, tạo project) — chỉ đổi projectId + hệ quả effect [projectId] cũ", () => {
-  it("watching false + máy đội rỗng; artifact/build/sim/diagnostics GIỮ (hành vi cũ của createProject.onSuccess)", () => {
-    const s = workspaceReducer(armed(), { type: "project/assign", projectId: 2 });
-    expect(s.projectId).toBe(2);
-    expect(s.watching).toBe(false);
-    expect(s.fleet.deviceIds).toEqual([]);
-    expect(s.artifactId).toBe(11);
-    expect(s.buildId).toBe(5);
-    expect(s.simResult).not.toBeNull();
-    expect(s.diagnostics).not.toBeNull();
-  });
-  it("cùng id ⇒ không đổi", () => {
+describe("Task 12b (R-2-r) — không còn lối đổi project nào giữ state của dự án trước", () => {
+  it("hành động cũ `project/assign` (giữ artifact/build/sim/diagnostics) đã bị gỡ: reducer bỏ qua nó", () => {
     const a = armed();
-    expect(workspaceReducer(a, { type: "project/assign", projectId: 1 })).toBe(a);
+    // Không còn trong union ⇒ một nơi gọi cũ là LỖI BIÊN DỊCH; lúc chạy thì vô hiệu.
+    const s = workspaceReducer(a, { type: "project/assign", projectId: 2 } as unknown as WorkspaceAction);
+    expect(s).toBe(a);
+  });
+  it("tạo dự án / DEMO / deep-link đi qua project/select ⇒ build của dự án trước không còn", () => {
+    const s = workspaceReducer(armed(), { type: "project/select", projectId: 2 });
+    expect([s.artifactId, s.buildId, s.simResult, s.diagnostics]).toEqual([null, null, null, null]);
   });
 });
 

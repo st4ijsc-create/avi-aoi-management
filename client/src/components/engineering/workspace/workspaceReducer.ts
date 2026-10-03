@@ -6,9 +6,11 @@
  *
  *   project/select  (người dùng chọn project KHÁC)  ⇒ artifactId, buildId, simResult, diagnostics = null
  *                                                     + watching = false, fleet.deviceIds = []
- *   project/assign  (deep-link ?projectId=, createProject.onSuccess) ⇒ CHỈ hệ quả của effect
- *                    [projectId] cũ: watching = false, fleet.deviceIds = [] — artifact/build/sim/
- *                    diagnostics GIỮ NGUYÊN như mã cũ (xem báo cáo task 12, mục "điểm ngỏ").
+ *                    Dùng cho MỌI lối đổi project: bấm chọn, deep-link ?projectId=, "+ tạo dự án",
+ *                    DEMO một chạm (doc 81 Đợt 2 Task 12b, Ruling R-2-r). Hành động cũ
+ *                    `project/assign` (giữ artifact/build/sim/diagnostics — mối nguy deploy build của
+ *                    dự án TRƯỚC khi đang xem dự án MỚI) đã bị GỠ: không còn lối đổi project nào bỏ
+ *                    qua chuỗi reset.
  *   artifact/select (đổi phiên bản HOẶC lưu phiên bản mới) ⇒ buildId, simResult, diagnostics = null (WS-05)
  *   build/select    (bấm chọn build)                ⇒ simResult = null
  *   build/created   (buildArtifact.onSuccess)       ⇒ chỉ đổi buildId (simResult GIỮ — như cũ)
@@ -149,7 +151,6 @@ export type SymbolRow = {
 
 export type WorkspaceAction =
   | { type: "project/select"; projectId: number }
-  | { type: "project/assign"; projectId: number }
   | { type: "artifact/select"; artifactId: number }
   | { type: "build/select"; buildId: number }
   | { type: "build/created"; buildId: number }
@@ -182,12 +183,6 @@ export type WorkspaceAction =
   | { type: "fleet/set"; patch: Partial<Omit<FleetForm, "deviceIds">> }
   | { type: "fleet/toggleDevice"; deviceId: number };
 
-/** Hệ quả của effect [projectId] cũ: phiên watch gắn theo project; máy đội của project cũ bỏ. */
-function withProject(s: WorkspaceState, projectId: number): WorkspaceState {
-  if (projectId === s.projectId) return s;
-  return { ...s, projectId, watching: false, fleet: { ...s.fleet, deviceIds: [] } };
-}
-
 /** WS-05 — build/mô phỏng/chẩn đoán thuộc phiên bản cũ thì bỏ. */
 function withArtifact(s: WorkspaceState, artifactId: number | null): WorkspaceState {
   if (artifactId === s.artifactId) return s;
@@ -210,8 +205,6 @@ export function workspaceReducer(s: WorkspaceState, a: WorkspaceAction): Workspa
         watching: false,
         fleet: { ...s.fleet, deviceIds: [] },
       };
-    case "project/assign":
-      return withProject(s, a.projectId);
     case "artifact/select":
       return withArtifact(s, a.artifactId);
     case "build/select":

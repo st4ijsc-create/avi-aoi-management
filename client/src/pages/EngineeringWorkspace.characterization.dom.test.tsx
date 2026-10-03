@@ -73,6 +73,16 @@ const mutateCalls: Record<string, unknown[]> = {};
 const mutationResponses: Record<string, ((vars: any) => unknown) | undefined> = {};
 /** `.data` của mutation (vd deployToFleet ⇒ fleetResult). */
 const mutationData: Record<string, unknown> = {};
+/** doc 81 Đợt 2 Task 12b — mutation HOÃN: onSuccess chỉ chạy khi lưới gọi `xaHoan(key)` (đua kết quả muộn). */
+const mutationDeferred = new Set<string>();
+const mutationPending: Record<string, Array<() => void>> = {};
+/** Task 12b — mutation THẤT BẠI: mutateAsync bị reject (như react-query khi server ném). */
+const mutationFails = new Set<string>();
+function xaHoan(key: string) {
+  const q = mutationPending[key] ?? [];
+  mutationPending[key] = [];
+  act(() => { for (const f of q) f(); });
+}
 
 function chainable(): unknown {
   const fn = (..._args: unknown[]) => undefined;
@@ -101,10 +111,16 @@ vi.mock("@/lib/trpc", () => ({
                   mutate: (vars: unknown) => {
                     (mutateCalls[key] ??= []).push(vars);
                     const r = mutationResponses[key];
+                    if (mutationFails.has(key)) return;
+                    if (r && mutationDeferred.has(key)) {
+                      (mutationPending[key] ??= []).push(() => mopts?.onSuccess?.(r(vars), vars));
+                      return;
+                    }
                     if (r) mopts?.onSuccess?.(r(vars), vars);
                   },
                   mutateAsync: (vars: unknown) => {
                     (mutateCalls[key] ??= []).push(vars);
+                    if (mutationFails.has(key)) return Promise.reject(new Error(`${key} failed`));
                     const r = mutationResponses[key];
                     const d = r ? r(vars) : undefined;
                     if (r) mopts?.onSuccess?.(d, vars);
@@ -274,9 +290,11 @@ function fetchGia(_url: string, init: RequestInit): Promise<Response> {
 const nghi = () => act(() => new Promise((r) => setTimeout(r, 20)));
 
 beforeEach(() => {
-  for (const o of [queryOverrides, queryInputs, queryEnabled, mutateCalls, mutationResponses, mutationData]) {
+  for (const o of [queryOverrides, queryInputs, queryEnabled, mutateCalls, mutationResponses, mutationData, mutationPending]) {
     for (const k of Object.keys(o)) delete (o as Record<string, unknown>)[k];
   }
+  mutationDeferred.clear();
+  mutationFails.clear();
   for (const f of Object.values(toasts)) f.mockReset();
   try { window.localStorage.clear(); } catch { /* ignore */ }
   luot = [];
@@ -658,4 +676,76 @@ describe("Ảnh chụp DOM byte-identical (trước/sau khi nâng state)", () =>
     await snap("24-p2-code");
   });
 
+});
+
+// ════════════════════════════════════════════════════════════════════════════════════════════════
+// doc 81 Đợt 2 Task 12b (Ruling R-2-r) — mối nguy deploy CHÉO dự án. Đặt SAU khối ảnh chụp: id Radix
+// là bộ đếm toàn cục theo thứ tự mount, chèn test phía trước sẽ làm lệch ảnh chụp của task 12.
+// ════════════════════════════════════════════════════════════════════════════════════════════════
+const deployBtnEl = () => screen.getByTestId("engineering-deploy-button");
+const fleetBtnEl = () => fleetCard().getByRole("button", { name: /Roll out \(canary\)|Triển khai \(canary\)/ });
+
+/** Đang hiện P2 (vừa tạo / vừa chuyển tới) ⇒ KHÔNG có đường nào dùng build của P1. */
+function expectKhongDungDuocBuildCu() {
+  expect(screen.getByText(/Ladder Two · (Versions|Phiên bản)/)).toBeInTheDocument();
+  expect(screen.queryByText("#5")).not.toBeInTheDocument();
+  expect(screen.queryByText("#6")).not.toBeInTheDocument();
+  expect(queryEnabled["programming.listBuilds"]).toBe(false);
+  expect(screen.queryByTestId("deploy-preview")).not.toBeInTheDocument();
+  expect(queryEnabled["programming.deployPreview"]).toBe(false);
+  expect(deployBtnEl()).toBeDisabled();
+  expect(screen.queryByText(/DIAG-ERR-1/)).not.toBeInTheDocument();
+  expect(screen.queryByText(/SIM-WARN-1/)).not.toBeInTheDocument();
+  // Fleet: tick lại một máy ⇒ nút triển khai đội máy VẪN khoá vì không có build của dự án này.
+  fireEvent.click(fleetBox("M3 · #3"));
+  expect(fleetBox("M3 · #3")).toHaveAttribute("aria-checked", "true");
+  expect(fleetBtnEl()).toBeDisabled();
+  fireEvent.click(deployBtnEl());
+  fireEvent.click(fleetBtnEl());
+  expect(screen.queryByText(/Two-step verification to deploy|Xác thực 2 bước/)).not.toBeInTheDocument();
+  expect(mutateCalls["programming.deployBuild"]).toBeUndefined();
+  expect(mutateCalls["programming.deployToFleet"]).toBeUndefined();
+}
+
+describe("Task 12b (a) — tạo dự án mới reset như bấm chọn dự án", () => {
+  it("'+ tạo dự án' khi P1 đang có build/sim/diagnostics ⇒ P2 mở sạch; Deploy/Fleet không dùng được build cũ", () => {
+    seed();
+    renderPage();
+    armP1();
+    const plus = document.querySelectorAll("button[aria-haspopup='dialog']")[0] as HTMLElement;
+    fireEvent.click(plus);
+    const dlg = screen.getByRole("dialog");
+    expect(dlg).toHaveTextContent(/New project|Dự án mới/);
+    fireEvent.change(within(dlg).getByPlaceholderText("ZMC-CELL-01"), { target: { value: "L2" } });
+    fireEvent.change(dlg.querySelectorAll("input")[1], { target: { value: "Ladder Two" } });
+    fireEvent.click(within(dlg).getByRole("button", { name: /^(Create|Tạo)$/ }));
+    expect(mutateCalls["programming.createProject"]).toHaveLength(1);
+    expect(queryInputs["programming.listArtifacts"]).toEqual({ projectId: 2 });
+    expectKhongDungDuocBuildCu();
+  });
+
+  it("DEMO một chạm, createArtifact THẤT BẠI ⇒ dự án DEMO mở sạch (không giữ build của dự án trước)", async () => {
+    seed();
+    const r = renderPage();
+    armP1();
+    // Danh sách dự án rỗng (vd bị xoá ở nơi khác) ⇒ màn onboarding với nút DEMO; state cũ vẫn còn.
+    queryOverrides["programming.listProjects"] = () => makeQuery({ data: [] });
+    // phần tử MỚI mỗi lần (cùng tham chiếu phần tử ⇒ React bỏ qua lượt render).
+    const tree = () => (
+      <ProgrammingCopilotProvider>
+        <EngineeringWorkspace />
+        <ProgrammingCopilotDock />
+      </ProgrammingCopilotProvider>
+    );
+    r.rerender(tree());
+    mutationFails.add("programming.createArtifact");
+    await act(async () => { fireEvent.click(btn(/Create DEMO project|Tạo dự án DEMO/)); });
+    await nghi();
+    expect(mutateCalls["programming.createProject"]).toHaveLength(1);
+    expect(mutateCalls["programming.createArtifact"]).toHaveLength(1);
+    // Danh sách làm mới có dự án DEMO (id 2 = "Ladder Two" trong dữ liệu lưới).
+    queryOverrides["programming.listProjects"] = () => makeQuery({ data: [P1, P2] });
+    r.rerender(tree());
+    expectKhongDungDuocBuildCu();
+  });
 });

@@ -257,7 +257,7 @@ function EngineeringWorkspaceView() {
     if (wanted == null) { deepLinkApplied.current = true; return; }
     if (!projectsQ.data) return; // đợi list
     deepLinkApplied.current = true;
-    if (projectsQ.data.some((p) => p.id === wanted)) dispatch({ type: "project/assign", projectId: wanted });
+    if (projectsQ.data.some((p) => p.id === wanted)) dispatch({ type: "project/select", projectId: wanted });
   }, [deepLink.projectId, lastSelected.projectId, projectsQ.data]);
 
   const artifactsQ = trpc.programming.listArtifacts.useQuery(
@@ -339,7 +339,9 @@ function EngineeringWorkspaceView() {
     onSuccess: (row) => {
       toast.success(t("engineering.projectCreated", "Đã tạo project"));
       utils.programming.listProjects.invalidate();
-      dispatch({ type: "project/assign", projectId: row.id });
+      // doc 81 Đợt 2 Task 12b (R-2-r) — dự án MỚI mở SẠCH như bấm chọn (kể cả đường DEMO): không
+      // giữ phiên bản/build/mô phỏng/chẩn đoán của dự án trước ⇒ Deploy/Fleet không thể đẩy build cũ.
+      dispatch({ type: "project/select", projectId: row.id });
     },
     onError: (e) => toastTrpcError(e),
   });
@@ -485,7 +487,7 @@ function EngineeringWorkspaceView() {
 
   // ── Online Monitor (watch) — start/stop server watch session + subscribe live room ──
   // Đổi project → dừng watch (session gắn theo project) để không rò session cũ: hệ quả của
-  // "project/select" / "project/assign" trong workspaceReducer (trước là useEffect theo [projectId]).
+  // "project/select" trong workspaceReducer (trước là useEffect theo [projectId]).
   const startWatchM = trpc.programming.startWatch.useMutation({
     onSuccess: (r) => {
       if (r.started) {
@@ -560,7 +562,7 @@ function EngineeringWorkspaceView() {
     fleetDeviceIds.length > 0 &&
     (!fleetIsProd || (fleetApproverId !== "" && fleetReason.trim().length > 0));
   // Đổi project → xóa lựa chọn đội máy (tránh giữ id máy của project cũ): hệ quả của
-  // "project/select" / "project/assign" trong workspaceReducer (trước là useEffect theo [projectId]).
+  // "project/select" trong workspaceReducer (trước là useEffect theo [projectId]).
 
   // ── Editor mode: a visual editor exists for ladder (rung grid) + robot (teach/jog) — state.editorMode ──
   const visualKind =
