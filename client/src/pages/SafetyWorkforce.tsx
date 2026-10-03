@@ -467,7 +467,7 @@ export default function SafetyWorkforce() {
           </TabsList>
 
           {/* ════════════════ TAB: Safety cockpit (S1-b/d) ════════════════ */}
-          <TabsContent value="cockpit" className="flex flex-col gap-4">
+          <TabsContent value="cockpit" data-layout-main="safety-workforce" className="flex flex-col gap-4">
             {/* Near-miss PDCA trend */}
             <Card>
               <CardHeader className="pb-2">
@@ -615,7 +615,7 @@ export default function SafetyWorkforce() {
           </TabsContent>
 
           {/* ════════════════ TAB: Workforce board (S1-a) ════════════════ */}
-          <TabsContent value="workforce" className="flex flex-col gap-4">
+          <TabsContent value="workforce" data-layout-main="safety-workforce" className="flex flex-col gap-4">
             {/* Current board — humans + robots per station */}
             <Card>
               <CardHeader className="pb-2">
@@ -761,7 +761,7 @@ export default function SafetyWorkforce() {
           </TabsContent>
 
           {/* ════════════════ TAB: Collaboration (S1-a handover) ════════════════ */}
-          <TabsContent value="collaboration" className="flex flex-col gap-4">
+          <TabsContent value="collaboration" data-layout-main="safety-workforce" className="flex flex-col gap-4">
             <Card>
               <CardHeader className="flex flex-row items-center justify-between gap-2 pb-2">
                 <CardTitle className="flex items-center gap-2 text-base">
