@@ -14,12 +14,10 @@ import { AssetScopeProvider } from "./contexts/AssetScopeContext";
 import { AiCopilotProvider } from "./contexts/AiCopilotContext";
 import { EngineeringProvider } from "./contexts/EngineeringContext";
 import { ProgrammingCopilotProvider } from "./contexts/ProgrammingCopilotContext";
-// doc64 S5-OPT: 2 component global-mount này kéo ~1.9MB lib vào bundle chính
-// (Dock→Panel→CodeEditor→@codemirror ~1MB; ChatBubble→react-markdown+AIToolResultCard→recharts).
-// Lazy để chúng tải SAU first-paint — hành vi giữ nguyên, chỉ xuất hiện muộn vài trăm ms.
-const ProgrammingCopilotDock = React.lazy(() =>
-  import("./components/programming/ProgrammingCopilotDock").then((m) => ({ default: m.ProgrammingCopilotDock })),
-);
+// doc64 S5-OPT: component global-mount này kéo lib nặng vào bundle chính
+// (ChatBubble→react-markdown+AIToolResultCard→recharts). Lazy để tải SAU first-paint.
+// doc 81 Đợt 2 Task 14 (R-2-b) — dock Copilot lập trình global (aside position:fixed) đã GỠ: IDE/IR/POU đặt Copilot
+// TRONG layout của trang (inspector phải, lõi `ProgrammingCopilotCore`).
 const AILocalChatBubble = React.lazy(() =>
   import("./components/AILocalChatBubble").then((m) => ({ default: m.AILocalChatBubble })),
 );
@@ -879,11 +877,6 @@ function App() {
                   doc64 S5-OPT: lazy + fallback null — tải sau first-paint, không chặn LCP. */}
               <Suspense fallback={null}>
                 <AILocalChatBubble />
-              </Suspense>
-              {/* doc 41 — Programming Copilot DOCK: mounted ONCE, renders only when a
-                  programming surface (Engineering/IR/POU) has published a binding. */}
-              <Suspense fallback={null}>
-                <ProgrammingCopilotDock />
               </Suspense>
             </AiCopilotProvider>
             </ProgrammingCopilotProvider>

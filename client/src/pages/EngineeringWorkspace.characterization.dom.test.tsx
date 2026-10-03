@@ -11,8 +11,8 @@
 // Query tôn trọng `enabled: false` như react-query thật (không trả data) ⇒ artifactId/buildId "ôi"
 // lộ ra thành build/preview của project cũ hiện dưới project mới.
 //
-// Copilot: dùng ProgrammingCopilotProvider + ProgrammingCopilotDock THẬT (không mock context) —
-// trang chỉ CÔNG BỐ binding; luồng SSE + Huỷ chạy trong panel của dock, fetch = SSE giả lưới tự bơm.
+// Copilot: dùng ProgrammingCopilotProvider THẬT (không mock context) — luồng SSE + Huỷ chạy trong panel Copilot của
+// inspector (Task 13; dock cố định đã gỡ ở Task 14 — trước đó renderPage() vẽ kèm dock), fetch = SSE giả lưới tự bơm.
 //
 // doc 81 Đợt 2 Task 13 — bố cục P1 Workbench: khối ảnh chụp DOM byte-identical (chỉ chứng minh "Task 12 không đổi
 // giao diện") đã XOÁ cùng thư mục __snapshots__/EngineeringWorkspace.dom/. Các test HÀNH VI giữ nguyên khẳng định;
@@ -149,7 +149,6 @@ vi.mock("@/lib/trpc", () => ({
 
 import EngineeringWorkspace from "./EngineeringWorkspace";
 import { ProgrammingCopilotProvider } from "@/contexts/ProgrammingCopilotContext";
-import ProgrammingCopilotDock from "@/components/programming/ProgrammingCopilotDock";
 
 // ─── dữ liệu ─────────────────────────────────────────────────────────────────────────────────────
 const ME = 8;
@@ -226,7 +225,6 @@ function renderPage() {
   return render(
     <ProgrammingCopilotProvider>
       <EngineeringWorkspace />
-      <ProgrammingCopilotDock />
     </ProgrammingCopilotProvider>,
   );
 }
@@ -550,8 +548,8 @@ describe("deployPreview hiện TRƯỚC OTP", () => {
 
 // ════════════════════════════════════════════════════════════════════════════════════════════════
 describe("Copilot (dock thật) — binding của trang, stream + Huỷ, Apply chèn vào buffer", () => {
-  // Task 13 — card "Trợ lý Lập trình AI" (nút "Mở Trợ lý") đã bỏ; Copilot là tab của inspector TRONG layout (dock thật
-  // vẫn được render trong renderPage() và phải KHÔNG vẽ gì cho binding inLayout).
+  // Task 13 — card "Trợ lý Lập trình AI" (nút "Mở Trợ lý") đã bỏ; Copilot là tab của inspector TRONG layout (Task 14: dock
+  // cố định đã gỡ khỏi mã — renderPage() không còn vẽ kèm nó).
   async function moDock() {
     fireEvent.click(screen.getByRole("tab", { name: /Copilot/ }));
     await screen.findByPlaceholderText(/Describe what to generate/);
@@ -671,7 +669,6 @@ describe("Task 12b (a) — tạo dự án mới reset như bấm chọn dự án
     const tree = () => (
       <ProgrammingCopilotProvider>
         <EngineeringWorkspace />
-        <ProgrammingCopilotDock />
       </ProgrammingCopilotProvider>
     );
     r.rerender(tree());

@@ -20,8 +20,8 @@
  *    Build · Mô phỏng · Deploy… · Sổ tay.
  *  - TRÁI (activity bar + Explorer): Dự án / Phiên bản / Tags-IO / Deploy. MAIN (`data-layout-main`): tab editor
  *    nguồn (CodeMirror cao hết vùng) / Ladder-Teach / Δ so sánh / Tags. PHẢI: [Thuộc tính | Copilot] — Copilot là
- *    panel TRONG layout trên lõi dùng chung `ProgrammingCopilotCore` (binding `inLayout` ⇒ dock không vẽ, không
- *    body.paddingRight — R-2-b); nút AI top bar mở/đưa focus vào panel (R-2-j). DƯỚI (gập ở lần đầu, mở theo ý định —
+ *    panel TRONG layout trên lõi dùng chung `ProgrammingCopilotCore` (không dock cố định, không body.paddingRight —
+ *    R-2-b; dock đã gỡ ở Task 14); nút AI top bar mở/đưa focus vào panel (R-2-j). DƯỚI (gập ở lần đầu, mở theo ý định —
  *    R-2-l): Vấn đề / Build-Mô phỏng / Lịch sử deploy / Ma trận máy×version. Thanh trạng thái: Ln/Col · ngôn ngữ ·
  *    adapter · "Triển khai thật: ON/OFF" · số vấn đề · Copilot.
  *  - Deploy = wizard 4 bước (WizardDialog): Build · Đích & canary · Ký duyệt · Xem trước & xác nhận. deployPreview ở
@@ -599,9 +599,8 @@ function EngineeringWorkspaceView() {
 
   // doc 41 — publish this editor to the Programming Copilot: the live buffer as context, build/validate diagnostics for
   // inline "explain / fix" actions, and Apply inserts generated code back into the editor. Clears on unmount.
-  // doc 81 Đợt 2 Task 13 (R-2-b) — `inLayout`: IDE vẽ Copilot TRONG layout (inspector phải, lõi dùng chung
-  // ProgrammingCopilotCore) ⇒ dock không vẽ, không body.paddingRight. `open` của context = tab Copilot đang mở (nút AI
-  // top bar mở/đóng nó — R-2-j).
+  // doc 81 Đợt 2 Task 13 (R-2-b) — IDE vẽ Copilot TRONG layout (inspector phải, lõi dùng chung ProgrammingCopilotCore);
+  // dock cố định đã gỡ ở Task 14. `open` của context = tab Copilot đang mở (nút AI top bar mở/đóng nó — R-2-j).
   const { open: copilotOpen, setOpen: setCopilotOpen } = useProgrammingCopilot();
   const copilotBinding = useMemo<CopilotBinding>(
     () => ({
@@ -622,7 +621,6 @@ function EngineeringWorkspaceView() {
       // buffer becomes exactly the projected text. No toast here — accepting/undoing hunks is
       // a rapid toggle and a toast per click would be noise.
       onApplyText: (next: string) => setCode(next),
-      inLayout: true,
     }),
     [copilotInitialKind, code, diagnostics], // eslint-disable-line react-hooks/exhaustive-deps
   );
@@ -1502,7 +1500,7 @@ function EngineeringWorkspaceView() {
           </>
         )}
       </div>
-      {/* Copilot — lõi dùng chung với dock; mount một lần rồi GIỮ (stream không bị huỷ khi đổi tab — Review Focus 3). */}
+      {/* Copilot — lõi dùng chung (IDE/IR/POU); mount một lần rồi GIỮ (stream không bị huỷ khi đổi tab — Review Focus 3). */}
       <div
         role="tabpanel"
         id={inspectorTabId("copilot")}

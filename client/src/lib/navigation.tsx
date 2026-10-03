@@ -1119,8 +1119,8 @@ export const navGroups: NavGroup[] = [
       {
         // Doc 34 · P3 — Programming Copilot. doc 41: đây là NHÀ DUY NHẤT còn lại (entry
         // trùng ở nhóm AI đã gỡ). Vai trò trang này = "scratchpad" sinh code nhanh khi
-        // CHƯA mở project; còn khi soạn trong editor, copilot hiện diện dạng dock nhúng
-        // (ProgrammingCopilotDock) ngay trong Engineering Workspace / IR / POU.
+        // CHƯA mở project; còn khi soạn trong editor, copilot là panel phải TRONG layout
+        // (tab Copilot của inspector) ngay trong Engineering Workspace / IR / POU (doc 81 Đợt 2 Task 13/14).
         href: "/programming-copilot",
         label: "nav.programmingCopilot",
         icon: <Sparkles className="h-4 w-4" />,

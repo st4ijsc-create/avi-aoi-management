@@ -6,7 +6,7 @@
 //     Deploy) · tab editor (nguồn, Δ diff, Tags) · Inspector/Copilot phải · panel dưới (Vấn đề / Build-Mô phỏng /
 //     Lịch sử deploy / Ma trận máy×version) GẬP ở lần đầu (R-2-l) · thanh trạng thái (Ln/Col, adapter,
 //     "Triển khai thật: ON/OFF" bằng nhãn i18n — không tên biến môi trường).
-//   - Copilot là panel TRONG layout (dùng chung lõi với dock): KHÔNG position:fixed, KHÔNG body.paddingRight
+//   - Copilot là panel TRONG layout (lõi dùng chung ProgrammingCopilotCore; dock cố định đã gỡ ở Task 14): KHÔNG position:fixed, KHÔNG body.paddingRight
 //     (R-2-b); nút AI top bar mở/đưa focus vào panel, không chồng sheet chat (R-2-j); stream sống qua đổi tab.
 //   - Bỏ card "Trợ lý Lập trình AI" (lối vào AI thứ 3).
 //   - Deploy wizard 4 bước (gồm canary) trên WizardDialog; deployPreview hiện TRƯỚC OTP; OTP = stepUp.guard của
@@ -116,7 +116,6 @@ vi.mock("@/lib/trpc", () => ({
 
 import EngineeringWorkspace from "./EngineeringWorkspace";
 import { ProgrammingCopilotProvider } from "@/contexts/ProgrammingCopilotContext";
-import ProgrammingCopilotDock from "@/components/programming/ProgrammingCopilotDock";
 import { ShellAiButton } from "@/components/ShellAiButton";
 
 const ME = 8;
@@ -162,7 +161,6 @@ function renderPage(o: { aiButton?: boolean } = {}) {
     <ProgrammingCopilotProvider>
       {o.aiButton && <ShellAiButton />}
       <EngineeringWorkspace />
-      <ProgrammingCopilotDock />
     </ProgrammingCopilotProvider>,
   );
 }

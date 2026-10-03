@@ -1,12 +1,12 @@
 /**
  * Doc 81 Đợt 2 Task 2 — nút AI DUY NHẤT trên top bar (một lối vào AI mỗi ngữ cảnh).
  *
- *  · Màn lập trình đã publish binding Copilot (IDE / IR / POU — R-2-b giữ dock tới Task 13/14): nút mở/đóng
- *    DOCK Copilot. Bong bóng chat không có lối vào thứ hai ở đó.
+ *  · Màn lập trình đã publish binding Copilot (IDE / IR / POU): nút mở/đóng tab Copilot của panel phải TRONG layout
+ *    (R-2-b; dock cố định đã gỡ ở Task 14). Bong bóng chat không có lối vào thứ hai ở đó.
  *  · Màn khác: nút mở/đóng SHEET chat phải (bong bóng `AILocalChatBubble` đọc cùng store, Esc đóng).
  *    Cùng hai cổng của bong bóng: khách không mua `MOD_AI` (`isModuleBlocked`) và tuyến ẩn bong bóng
  *    (`anBongBongTrenTuyen`) ⇒ không có nút.
- * Khi mount, nút đăng ký với `aiEntryStore` ⇒ bong bóng bỏ nút nổi, dock bỏ tab dọc nổi.
+ * Khi mount, nút đăng ký với `aiEntryStore` ⇒ bong bóng bỏ nút nổi.
  */
 import { useEffect } from "react";
 import { useTranslation } from "react-i18next";
@@ -34,8 +34,8 @@ export function ShellAiButton({ className }: { className?: string }) {
     return registerAiHeaderEntry();
   }, [visible]);
 
-  // R-2-j — sheet chat và dock Copilot KHÔNG BAO GIỜ chồng nhau. Ở màn lập trình (có binding) dock là
-  // lối vào AI: chat đang mở (vd mở ở /recipes rồi điều hướng sang IDE) ⇒ đóng chat và TRAO cho dock.
+  // R-2-j — sheet chat và Copilot KHÔNG BAO GIỜ chồng nhau. Ở màn lập trình (có binding) Copilot là
+  // lối vào AI: chat đang mở (vd mở ở /recipes rồi điều hướng sang IDE) ⇒ đóng chat và TRAO cho Copilot.
   useEffect(() => {
     if (copilotMode && chatOpen) {
       setAiChatOpen(false);

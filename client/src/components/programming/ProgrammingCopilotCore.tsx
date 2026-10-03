@@ -1,12 +1,12 @@
 /**
  * doc 81 Đợt 2 Task 13 — LÕI DÙNG CHUNG của Copilot lập trình (doc 81 §1.3 "CopilotPanel (một lõi)").
  *
- * Thân mà dock (`ProgrammingCopilotDock`, còn dùng ở IR/POU tới Task 14) và panel Copilot TRONG layout của IDE
- * (`EngineeringWorkspace`, inspector phải) cùng vẽ — một nơi duy nhất cho:
+ * Thân của panel Copilot TRONG layout ở IDE (`EngineeringWorkspace`, inspector phải — Task 13) và IR/POU
+ * (`CopilotInspector` — Task 14; dock cố định cũ đã gỡ) — một nơi duy nhất cho:
  *   · chẩn đoán từ editor của host + hai hành động "Giải thích lỗi" / "Đề xuất sửa" (đẩy `seed` vào engine);
  *   · engine `ProgrammingCopilotPanel` (variant embedded, tải lười — chunk CodeMirror chỉ tải khi lõi mount);
  *   · ghi chú "chỉ sao chép" khi host là editor khối/LAD (không có `onApply`).
- * Khung bao (header, cuộn, vị trí) thuộc về host. Lõi không biết nó nằm trong dock hay trong layout.
+ * Khung bao (header, cuộn, vị trí) thuộc về host.
  */
 import { lazy, Suspense, useState } from "react";
 import { useTranslation } from "react-i18next";

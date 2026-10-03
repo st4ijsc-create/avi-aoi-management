@@ -1,10 +1,10 @@
 /**
  * Doc 81 Đợt 2 Task 2 — MỘT lối vào AI mỗi ngữ cảnh.
  *
- * Bong bóng chat (`AILocalChatBubble`) và dock Copilot (`ProgrammingCopilotDock`) gắn ở GỐC `App.tsx`,
- * NGOÀI shell; nút AI nằm TRONG top bar của shell. Store nhỏ này nối hai phía:
+ * Bong bóng chat (`AILocalChatBubble`) gắn ở GỐC `App.tsx`, NGOÀI shell; nút AI nằm TRONG top bar của shell.
+ * (Dock Copilot lập trình cố định đã gỡ ở Task 14 — Copilot nằm trong layout của IDE/IR/POU.) Store nhỏ này nối hai phía:
  *   · `headerEntries` — số nút AI top bar đang mount. >0 ⇒ bong bóng bỏ nút nổi (che MAIN) và mở thành
- *     sheet phải dưới top bar; dock bỏ tab dọc nổi. =0 (trang không có shell) ⇒ giữ lối vào cũ.
+ *     sheet phải dưới top bar. =0 (trang không có shell) ⇒ giữ lối vào cũ.
  *   · `chatOpen` — sheet chat đang mở (nút top bar và bong bóng dùng CHUNG một trạng thái).
  * `useSyncExternalStore` ⇒ không cần Provider (bong bóng nằm ngoài cây shell).
  */

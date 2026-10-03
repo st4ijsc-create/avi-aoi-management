@@ -2,13 +2,13 @@
  * doc 41 (2026-07-11) — PROGRAMMING COPILOT context.
  *
  * Turns the Programming Copilot into a persistent EXTENSION (the "Claude-in-VS-Code" model)
- * instead of a standalone destination. A single <ProgrammingCopilotDock/> is mounted ONCE at
- * app root and reads this context; each programming surface (Engineering Workspace / IR Editor
- * / POU Studio) merely PUBLISHES a binding via useCopilotBinding(...). When no surface has
- * published a binding, the dock renders nothing — so the assistant appears only where code is
- * authored, and follows the active editor automatically.
+ * instead of a standalone destination. Each programming surface (Engineering Workspace / IR Editor
+ * / POU Studio) PUBLISHES a binding via useCopilotBinding(...) and renders the Copilot INSIDE its own
+ * layout (doc 81 Đợt 2 Task 13/14, R-2-b: inspector phải, lõi dùng chung `ProgrammingCopilotCore`). The top-bar AI
+ * button (`ShellAiButton`) reads the binding to switch into Copilot mode and toggles `open` (= the Copilot tab).
+ * The former app-root fixed dock (`ProgrammingCopilotDock`) was removed in Task 14.
  *
- * Open/closed state is persisted (localStorage) so the rail feels persistent across navigation.
+ * Open/closed state is persisted (localStorage) so the panel feels persistent across navigation.
  */
 import {
   createContext,
@@ -50,12 +50,6 @@ export interface CopilotBinding {
   onApplyText?: (text: string) => void;
   /** Short host name shown in the header (e.g. "IR Editor"). */
   surfaceLabel?: string;
-  /**
-   * doc 81 Đợt 2 Task 13 (R-2-b) — host tự đặt Copilot TRONG layout của nó (IDE: panel phải của EngineeringShell,
-   * cùng lõi `ProgrammingCopilotCore`). Khi bật, dock KHÔNG vẽ gì và KHÔNG đẩy trang (`body.paddingRight`); trạng
-   * thái `open` vẫn là của context (nút AI top bar mở/đóng panel của host). IR/POU không khai ⇒ dock như cũ.
-   */
-  inLayout?: boolean;
 }
 
 interface ProgrammingCopilotContextValue {
@@ -109,7 +103,7 @@ export function useProgrammingCopilot(): ProgrammingCopilotContextValue {
 }
 
 /**
- * Publish this surface's binding to the dock; auto-clears on unmount. Pass a factory + deps
+ * Publish this surface's binding (top-bar AI button + the host's in-layout Copilot); auto-clears on unmount. Pass a factory + deps
  * (like useMemo) so the binding — including its onApply closure — is rebuilt only when the
  * relevant editor state changes, avoiding render loops.
  */
