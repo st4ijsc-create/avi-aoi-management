@@ -12,7 +12,7 @@ vi.mock("react-resizable-panels", async () => (await import("@/components/patter
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import "@testing-library/jest-dom/vitest";
 import { installResizeHandleHitAreaShim } from "@/components/patterns/layoutKitTestPanels";
-import { installMatchMedia, presetNarrow } from "@/components/patterns/layoutKitTestMedia";
+import { installMatchMedia, presetNarrow, setNarrow } from "@/components/patterns/layoutKitTestMedia";
 import { initLayoutKitTestI18n } from "@/components/patterns/layoutKitTestI18n";
 import { getAiEntryState, resetAiEntryForTest, setAiChatOpen } from "@/lib/aiEntryStore";
 import VI from "@/i18n/locales/vi.json";
@@ -394,5 +394,51 @@ describe("Fix round 1", () => {
     expect(mutateCalls["programming.createArtifact"]).toHaveLength(1);
     expect(invalidateCalls).toContainEqual(["programming.listArtifacts", { projectId: 77 }]);
     expect(queryCalls["programming.listArtifacts"]?.at(-1)).toEqual({ projectId: 77 });
+  });
+});
+
+// ─── final wave T14 — stream Copilot của POU SỐNG qua mốc 1024 px (IDE/IR đã có test này; POU còn thiếu) ───────────
+describe("final wave T14 — POU: stream Copilot qua mốc 1024 px", () => {
+  interface LuongGia { signal: AbortSignal; day: (o: unknown) => void }
+  let luot: LuongGia[] = [];
+  function fetchGia(_url: string, init: RequestInit): Promise<Response> {
+    const enc = new TextEncoder();
+    let ctl!: ReadableStreamDefaultController<Uint8Array>;
+    let dong = false;
+    const stream = new ReadableStream<Uint8Array>({ start: (c) => void (ctl = c) });
+    const signal = init.signal as AbortSignal;
+    signal.addEventListener("abort", () => { if (!dong) { dong = true; ctl.error(new DOMException("Aborted", "AbortError")); } });
+    luot.push({ signal, day: (x) => !dong && ctl.enqueue(enc.encode(`data: ${JSON.stringify(x)}
+
+`)) });
+    return Promise.resolve(new Response(stream, { status: 200, headers: { "content-type": "text/event-stream" } }));
+  }
+  const nghi = () => act(() => new Promise((r) => setTimeout(r, 20)));
+  afterEach(() => vi.unstubAllGlobals());
+
+  it("rộng→hẹp→rộng: không abort, nút Huỷ còn; Huỷ vẫn abort", async () => {
+    luot = [];
+    vi.stubGlobal("fetch", vi.fn(fetchGia));
+    seed();
+    renderPage();
+    fireEvent.click(within(inspector()).getByRole("tab", { name: /Copilot/ }));
+    fireEvent.change(await screen.findByPlaceholderText(/Mô tả cần sinh gì|Describe what to generate/), { target: { value: "start motor" } });
+    await act(async () => { fireEvent.click(screen.getByRole("button", { name: /^(Sinh mã|Generate)$/ })); });
+    await nghi();
+    expect(luot).toHaveLength(1);
+    luot[0].day({ type: "stage", stage: "gate", elapsedMs: 0 });
+    await nghi();
+    setNarrow(true);
+    await nghi();
+    expect(document.querySelector("[data-workbench][data-narrow]")).not.toBeNull();
+    expect(luot[0].signal.aborted).toBe(false);
+    expect(screen.getByTestId("copilot-cancel")).toBeInTheDocument();
+    setNarrow(false);
+    await nghi();
+    expect(luot).toHaveLength(1);
+    expect(luot[0].signal.aborted).toBe(false);
+    await act(async () => { fireEvent.click(screen.getByTestId("copilot-cancel")); });
+    await nghi();
+    expect(luot[0].signal.aborted).toBe(true);
   });
 });
