@@ -152,10 +152,12 @@ describe("build", () => {
     const s = workspaceReducer(armed(), { type: "build/select", buildId: 5 });
     expect(s.simResult).toBeNull();
   });
-  it("build/created (buildArtifact.onSuccess) ⇒ đổi build đang chọn, GIỮ simResult (hành vi cũ)", () => {
+  // Task 12b fix round 1 (review Minor 2) — trước đây GIỮ simResult ⇒ verdict của build A hiện dưới build B.
+  it("build/created (buildArtifact.onSuccess) ⇒ đổi build đang chọn VÀ xoá simResult của build trước; diagnostics giữ", () => {
     const s = workspaceReducer(armed(), { type: "build/created", artifactId: 11, buildId: 6 });
     expect(s.buildId).toBe(6);
-    expect(s.simResult).not.toBeNull();
+    expect(s.simResult).toBeNull();
+    expect(s.diagnostics).not.toBeNull();
   });
 });
 

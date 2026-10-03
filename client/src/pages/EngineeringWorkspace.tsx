@@ -159,6 +159,11 @@ function rid(prefix: string): string {
 function EngineeringWorkspaceView() {
   const { t } = useTranslation();
   const { state, dispatch } = useWorkspace();
+  // Task 12b fix round 1 (review Minor 5) — lựa chọn HIỆN TẠI cho onSuccess về muộn: kết quả mà reducer
+  // sẽ BỎ (lệch phiên bản/build) thì cũng không toast "Build OK / Có lỗi / Đã mô phỏng" — câu ấy nói về
+  // một phiên bản/build khác cái đang hiện. onError KHÔNG lọc (lỗi thật luôn hiện).
+  const luaChonRef = useRef(state);
+  luaChonRef.current = state;
   const {
     projectId, artifactId, buildId, diagnostics, simResult, watching,
     code, language, editorMode, diffBaseId, diffCompareId,
@@ -367,6 +372,7 @@ function EngineeringWorkspaceView() {
     onSuccess: (r, vars) => {
       dispatch({ type: "diagnostics/set", artifactId: vars.artifactId, diagnostics: r.diagnostics as Diagnostic[] });
       utils.programming.listArtifacts.invalidate();
+      if (vars.artifactId !== luaChonRef.current.artifactId) return; // kết quả bị bỏ ⇒ không toast
       r.ok ? toast.success(t("engineering.validOk", "Hợp lệ")) : toast.warning(t("engineering.validErr", "Có lỗi"));
     },
     onError: (e) => toastTrpcError(e),
@@ -392,7 +398,9 @@ function EngineeringWorkspaceView() {
     onSuccess: (b, vars) => {
       utils.programming.listBuilds.invalidate();
       // Task 12b — build của phiên bản đã RỜI (đổi phiên bản/project lúc đang build) ⇒ không chọn.
+      const hienTai = vars.artifactId === luaChonRef.current.artifactId;
       dispatch({ type: "build/created", artifactId: vars.artifactId, buildId: b.id });
+      if (!hienTai) return; // kết quả bị bỏ ⇒ không toast
       b.ok ? toast.success(t("engineering.buildOk", "Build OK")) : toast.error(t("engineering.buildFail", "Build lỗi"));
     },
     onError: (e) => toastTrpcError(e),
@@ -401,6 +409,7 @@ function EngineeringWorkspaceView() {
     onSuccess: (r, vars) => {
       dispatch({ type: "sim/set", buildId: vars.buildId, simResult: { ok: r.ok, warnings: r.warnings as string[], timeline: r.timeline as any[] } });
       utils.programming.deployPreview.invalidate();
+      if (vars.buildId !== luaChonRef.current.buildId) return; // kết quả bị bỏ ⇒ không toast
       toast.success(t("engineering.simDone", "Đã mô phỏng"));
     },
     onError: (e) => toastTrpcError(e),

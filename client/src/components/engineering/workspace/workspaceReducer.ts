@@ -13,7 +13,7 @@
  *                    qua chuỗi reset.
  *   artifact/select (đổi phiên bản HOẶC lưu phiên bản mới) ⇒ buildId, simResult, diagnostics = null (WS-05)
  *   build/select    (bấm chọn build)                ⇒ simResult = null
- *   build/created   (buildArtifact.onSuccess)       ⇒ chỉ đổi buildId (simResult GIỮ — như cũ)
+ *   build/created   (buildArtifact.onSuccess)       ⇒ đổi buildId + simResult = null (Task 12b fix round 1)
  *
  * Task 12b (R-2-r): build/created, diagnostics/set, sim/set, artifact/created mang id (phiên bản /
  * build / project) của LÚC YÊU CẦU; lệch lựa chọn hiện tại ⇒ reducer BỎ kết quả (về muộn).
@@ -225,7 +225,8 @@ export function workspaceReducer(s: WorkspaceState, a: WorkspaceAction): Workspa
       return { ...s, buildId: a.buildId, simResult: null };
     case "build/created":
       if (a.artifactId !== s.artifactId) return s;
-      return { ...s, buildId: a.buildId };
+      // fix round 1 (review Minor 2) — verdict mô phỏng thuộc build TRƯỚC ⇒ xoá (không hiện dưới build mới).
+      return { ...s, buildId: a.buildId, simResult: null };
     case "diagnostics/set":
       if (a.artifactId !== s.artifactId) return s;
       return { ...s, diagnostics: a.diagnostics };

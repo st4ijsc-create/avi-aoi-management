@@ -394,13 +394,15 @@ describe("Chuỗi reset khi đổi projectId (Review Focus #2)", () => {
     expect(versionBtn(/^v2 · main/).className).toMatch(/border-primary/);
   });
 
-  it("chọn build KHÁC ⇒ simResult về rỗng; Build mới (buildArtifact) đổi build đang chọn nhưng GIỮ simResult (hành vi cũ)", () => {
+  // Task 12b fix round 1 (review Minor 2) — Build mới XOÁ verdict mô phỏng của build trước (trước đây
+  // giữ ⇒ verdict của build A hiện dưới build B; đổi khẳng định có chủ đích, theo phán quyết).
+  it("chọn build KHÁC ⇒ simResult về rỗng; Build mới (buildArtifact) đổi build đang chọn và XOÁ simResult", () => {
     seed();
     renderPage();
     armP1();
     fireEvent.click(buildBtn());
     expect(queryInputs["programming.deployPreview"]).toMatchObject({ buildId: 6 });
-    expect(screen.getByText(/SIM-WARN-1/)).toBeInTheDocument();
+    expect(screen.queryByText(/SIM-WARN-1/)).not.toBeInTheDocument();
     expect(screen.getByText(/DIAG-ERR-1/)).toBeInTheDocument();
     fireEvent.click(screen.getByText("#5"));
     expect(queryInputs["programming.deployPreview"]).toMatchObject({ buildId: 5 });
@@ -847,5 +849,60 @@ describe("Task 12b (c) — IDE LUÔN gửi expectedProjectId (dự án đang m�
     fireEvent.change(document.querySelector("#gt-deploy textarea")!, { target: { value: "ECN-42" } });
     fireEvent.click(screen.getByTestId("engineering-request-deploy-button"));
     expect(mutateCalls["programming.requestDeployApproval"]?.[0]).toMatchObject({ buildId: 5, reason: "ECN-42", expectedProjectId: 1 });
+  });
+});
+
+describe("Task 12b fix round 1 — toast của kết quả BỊ BỎ (về muộn) không hiện; kết quả của lựa chọn HIỆN TẠI vẫn hiện", () => {
+  it("build về muộn sau khi đổi dự án ⇒ KHÔNG toast; build của lựa chọn hiện tại ⇒ toast", () => {
+    seed();
+    renderPage();
+    fireEvent.click(versionBtn(/^v1 · main/));
+    mutationDeferred.add("programming.buildArtifact");
+    fireEvent.click(buildBtn());
+    fireEvent.click(projectBtn("Ladder Two"));
+    for (const f of Object.values(toasts)) f.mockClear();
+    xaHoan("programming.buildArtifact");
+    expect(toasts.success).not.toHaveBeenCalled();
+    expect(toasts.error).not.toHaveBeenCalled();
+    // lựa chọn hiện tại (P2 · v1 = artifact 21) ⇒ toast vẫn hiện. Buffer của P1 còn ⇒ xác nhận bỏ.
+    fireEvent.click(versionBtn(/^v1 · main/));
+    fireEvent.click(within(screen.getByRole("alertdialog")).getByRole("button", { name: /Discard & continue|Bỏ thay đổi/ }));
+    fireEvent.click(buildBtn());
+    xaHoan("programming.buildArtifact");
+    expect(toasts.success).toHaveBeenCalledTimes(1);
+  });
+
+  it("kiểm tra về muộn sau khi đổi phiên bản ⇒ KHÔNG toast cảnh báo; kiểm tra phiên bản hiện tại ⇒ toast cảnh báo", () => {
+    seed();
+    renderPage();
+    fireEvent.click(versionBtn(/^v1 · main/));
+    mutationDeferred.add("programming.validateArtifact");
+    fireEvent.click(btn(/^(Validate|Kiểm tra)$/));
+    fireEvent.click(versionBtn(/^v2 · main/));
+    for (const f of Object.values(toasts)) f.mockClear();
+    xaHoan("programming.validateArtifact");
+    expect(toasts.warning).not.toHaveBeenCalled();
+    expect(toasts.success).not.toHaveBeenCalled();
+    fireEvent.click(btn(/^(Validate|Kiểm tra)$/));
+    xaHoan("programming.validateArtifact");
+    expect(toasts.warning).toHaveBeenCalledTimes(1);
+    expect(screen.getByText(/DIAG-ERR-1/)).toBeInTheDocument();
+  });
+
+  it("mô phỏng về muộn sau khi đổi build ⇒ KHÔNG toast; mô phỏng build hiện tại ⇒ toast", () => {
+    seed();
+    renderPage();
+    fireEvent.click(versionBtn(/^v1 · main/));
+    fireEvent.click(screen.getByText("#5"));
+    mutationDeferred.add("programming.simulateBuild");
+    fireEvent.click(btn(/Simulate \(twin\)|Mô phỏng \(twin\)/));
+    fireEvent.click(screen.getByText("#6"));
+    for (const f of Object.values(toasts)) f.mockClear();
+    xaHoan("programming.simulateBuild");
+    expect(toasts.success).not.toHaveBeenCalled();
+    fireEvent.click(btn(/Simulate \(twin\)|Mô phỏng \(twin\)/));
+    xaHoan("programming.simulateBuild");
+    expect(toasts.success).toHaveBeenCalledTimes(1);
+    expect(screen.getByText(/SIM-WARN-1/)).toBeInTheDocument();
   });
 });
