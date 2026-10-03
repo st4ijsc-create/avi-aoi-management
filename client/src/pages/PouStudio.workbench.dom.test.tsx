@@ -54,12 +54,13 @@ const queryCalls: Record<string, unknown[]> = {};
 const queryCache = new Map<string, { fn: (input: unknown) => QueryResult; r: QueryResult }>();
 const mutateCalls: Record<string, unknown[]> = {};
 const mutationResponses: Record<string, ((vars: any) => unknown) | undefined> = {};
+const invalidateCalls: Array<[string, unknown]> = [];
 vi.mock("@/lib/trpc", () => {
   const utilsProxy = (path: string[]): unknown =>
     new Proxy(() => undefined, {
       get(_t, k: string) {
         if (k === "fetch") return () => Promise.reject(new Error("no fetch"));
-        if (k === "invalidate" || k === "refetch") return () => Promise.resolve();
+        if (k === "invalidate" || k === "refetch") return (input?: unknown) => { invalidateCalls.push([path.join("."), input]); return Promise.resolve(); };
         return utilsProxy([...path, k]);
       },
     });
@@ -141,6 +142,7 @@ beforeEach(() => {
     for (const k of Object.keys(o)) delete (o as Record<string, unknown>)[k];
   }
   queryCache.clear();
+  invalidateCalls.length = 0;
   for (const f of Object.values(toasts)) f.mockReset();
   try { window.localStorage.clear(); } catch { /* ignore */ }
   document.body.style.paddingRight = "";
@@ -229,6 +231,7 @@ describe("Explorer 'Mở' (mới) — chỉ đọc", () => {
   it("chỉ dự án iec61131-pou; chưa chọn dự án ⇒ KHÔNG truy vấn phiên bản; chọn ⇒ listArtifacts({projectId}); chỉ pou-json mở được; Mở ⇒ nạp vào trình soạn, đích lưu = dự án đó, 0 mutation", () => {
     seed();
     renderPage();
+    fireEvent.click(within(screen.getByRole("toolbar", { name: "Thanh hoạt động" })).getByRole("button", { name: /^Mở$/ }));
     const ex = explorer();
     expect(within(ex).getByRole("button", { name: /PP · Press POU/ })).toBeInTheDocument();
     expect(within(ex).queryByRole("button", { name: /IR one/ })).toBeNull();
@@ -323,5 +326,48 @@ describe("Inspector ST / PLCopen / Copilot + Lưu vào project", () => {
     expect(keys.length).toBeGreaterThan(5);
     const get = (o: unknown, k: string) => k.split(".").reduce<unknown>((x, p) => (x && typeof x === "object" ? (x as Record<string, unknown>)[p] : undefined), o);
     for (const k of keys) for (const L of [VI, EN, ZH]) expect(typeof get(L, k), k).toBe("string");
+  });
+});
+
+// ════════════════════════════════════════════════════════════════════════════════════════════════
+// Task 14 fix round 1 (review I2 + Ruling R-2-u)
+describe("Fix round 1", () => {
+  const openBtn = () => within(screen.getByRole("toolbar", { name: "Thanh hoạt động" })).getByRole("button", { name: /^Mở$/ });
+  const leftSize = () => Number((document.querySelector("[data-workbench-left]")!.closest("[data-panel]") as HTMLElement).getAttribute("data-panel-size"));
+
+  it("R-2-u: Explorer 'Mở' GẬP lần đầu (canvas là việc chính); bấm 'Mở' ⇒ mở; dải 240–300 px (không còn 200)", () => {
+    seed();
+    renderPage();
+    expect(openBtn()).toHaveAttribute("aria-expanded", "false");
+    expect(leftSize()).toBe(0);
+    fireEvent.click(openBtn());
+    expect(openBtn()).toHaveAttribute("aria-expanded", "true");
+    expect(leftSize()).toBeGreaterThan(0);
+    expect(PAGE_SRC).toMatch(/explorerSize=\{\{ minPx: 240, maxPx: 300, defaultPx: 240 \}\}/);
+    expect(PAGE_SRC).not.toMatch(/minPx: 200/);
+  });
+
+  it("R-2-u: deep link ?projectId= (dự án POU) ⇒ Explorer 'Mở' tự mở ở dự án đó", () => {
+    seed();
+    window.history.pushState({}, "", "/pou-studio?projectId=5");
+    renderPage();
+    expect(openBtn()).toHaveAttribute("aria-expanded", "true");
+    expect(queryCalls["programming.listArtifacts"]?.at(-1)).toEqual({ projectId: 5 });
+  });
+
+  it("I2: lưu ⇒ invalidate listArtifacts của ĐÚNG dự án + Explorer 'Mở' chuyển sang dự án vừa lưu (kể cả dự án mới tạo)", async () => {
+    seed();
+    mutationResponses["programming.createProject"] = () => ({ id: 77, code: "NEW", name: "New" });
+    mutationResponses["programming.createArtifact"] = () => ({ id: 100, version: 1 });
+    renderPage();
+    fireEvent.click(within(header()).getByRole("button", { name: /Lưu vào project/ }));
+    const dlg = await screen.findByRole("dialog");
+    fireEvent.click(within(dlg).getByRole("button", { name: /Project mới/ }));
+    fireEvent.change(within(dlg).getByLabelText("Mã project"), { target: { value: "NEW" } });
+    fireEvent.change(within(dlg).getByLabelText("Tên project"), { target: { value: "New" } });
+    await act(async () => { fireEvent.click(within(dlg).getByRole("button", { name: /Tạo project & lưu/ })); });
+    expect(mutateCalls["programming.createArtifact"]).toHaveLength(1);
+    expect(invalidateCalls).toContainEqual(["programming.listArtifacts", { projectId: 77 }]);
+    expect(queryCalls["programming.listArtifacts"]?.at(-1)).toEqual({ projectId: 77 });
   });
 });

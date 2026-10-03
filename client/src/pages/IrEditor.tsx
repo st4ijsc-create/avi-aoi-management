@@ -948,6 +948,13 @@ export default function IrEditor() {
   // doc 81 Đợt 2 Task 14 — Explorer (bảng chọn khối / luồng đã lưu / khối hàm) + tab editor (vùng vẽ / so sánh / hợp nhất).
   const [activity, setActivity] = useState<IrActivity>("palette");
   const [editorTab, setEditorTab] = useState<IrEditorTab>("canvas");
+  // Fix round 1 (review I1): So sánh / Hợp nhất giữ MOUNT sau lần mở đầu (state cục bộ — bản chọn, `picks` xung đột, đích
+  // lưu — không mất khi sang canvas rồi quay lại; như card cũ luôn mount cạnh canvas). Tab không chọn ⇒ `hidden`.
+  const [visitedTabs, setVisitedTabs] = useState<ReadonlySet<IrEditorTab>>(() => new Set<IrEditorTab>(["canvas"]));
+  const changeEditorTab = useCallback((tab: IrEditorTab) => {
+    setEditorTab(tab);
+    setVisitedTabs((v) => (v.has(tab) ? v : new Set([...v, tab])));
+  }, []);
 
   const utils = trpc.useUtils();
 
@@ -1164,7 +1171,9 @@ export default function IrEditor() {
     // jump straight into editing the new definition's body.
     setEditScope({ kind: "fb", fbId: def.id! });
     setSelectedId(null);
-    setEditorTab("canvas");
+    changeEditorTab("canvas");
+    // Fix round 1 (review M4): định nghĩa (tên + tham số) nằm ở tab Bảng thuộc tính ⇒ đưa panel phải về tab đó.
+    setRightTab("inspector");
   }, [flow.function_blocks]); // eslint-disable-line react-hooks/exhaustive-deps
   const handleUpdateFb = useCallback((fbId: string, patch: Partial<FunctionBlockDef>) => {
     setFlow((f) => updateFunctionBlock(f, fbId, patch));
@@ -1176,8 +1185,9 @@ export default function IrEditor() {
   const handleEditBody = useCallback((fbId: string) => {
     setEditScope({ kind: "fb", fbId });
     setSelectedId(null);
-    setEditorTab("canvas");
-  }, []);
+    changeEditorTab("canvas");
+    setRightTab("inspector");
+  }, [changeEditorTab]);
   const backToMain = useCallback(() => {
     setEditScope({ kind: "main" });
     setSelectedId(null);
@@ -1269,6 +1279,7 @@ export default function IrEditor() {
     setSelectedId(id);
     setRightTab("inspector");
   };
+  const refreshAll = () => { void flowsQ.refetch(); void utils.ir.lint.invalidate(); };
   const lintStatusLabel = lintView.status === "ok"
     ? t("ir.kpi.pass", "Pass")
     : lintView.status === "errors"
@@ -1396,8 +1407,9 @@ export default function IrEditor() {
             {saveM.isPending ? <Loader2 className="h-4 w-4 animate-spin min-[1500px]:mr-1.5" /> : <Save className="h-4 w-4 min-[1500px]:mr-1.5" />}
             <span className="hidden min-[1500px]:inline">{t("ir.save", "Save flow")}</span>
           </Button>
-          {/* < 640 px: ẩn để Lưu luồng / Project mới không bị cắt khỏi top bar (danh sách luồng có nút làm mới riêng; lint tự chạy). */}
-          <Button size="sm" variant="ghost" className="hidden sm:inline-flex" onClick={() => { void flowsQ.refetch(); void utils.ir.lint.invalidate(); }} aria-label={t("common.refresh", "Refresh")} title={t("common.refresh", "Refresh")}>
+          {/* < 640 px: ẩn để Lưu luồng / Project mới không bị cắt khỏi top bar; cùng việc vẫn tới được ở nút Làm mới của Explorer
+              "Luồng IR đã lưu" (refreshAll) — fix round 1, review M7. */}
+          <Button size="sm" variant="ghost" className="hidden sm:inline-flex" onClick={refreshAll} aria-label={t("common.refresh", "Refresh")} title={t("common.refresh", "Refresh")}>
             <RefreshCw className="h-4 w-4" />
           </Button>
         </>
@@ -1454,7 +1466,8 @@ export default function IrEditor() {
     <div className="space-y-2">
       <div className="flex items-center justify-between gap-1">
         <h2 className={sectionTitle}>{t("ir.savedFlows", "Saved IR flows")}</h2>
-        <Button size="icon" variant="ghost" className="h-7 w-7" onClick={() => void flowsQ.refetch()} aria-label={t("common.refresh", "Refresh")}>
+        {/* Fix round 1 (review M7): cùng việc với nút Làm mới của top bar (luồng + chạy lại lint) — nút top bar ẩn < 640 px. */}
+        <Button size="icon" variant="ghost" className="h-7 w-7" onClick={refreshAll} aria-label={t("common.refresh", "Refresh")} title={t("common.refresh", "Refresh")}>
           <RefreshCw className="h-3.5 w-3.5" />
         </Button>
       </div>
@@ -1613,26 +1626,29 @@ export default function IrEditor() {
       ))}
     </div>
   );
-  const editorMain =
-    editorTab === "diff" ? (
-      <div className="p-3">
-        <IrDiffPanel flows={flowsQ.data ?? []} currentFlow={flow} t={t} />
-      </div>
-    ) : editorTab === "merge" ? (
-      <div className="p-3">
-        <IrMergePanel
-          flows={flowsQ.data ?? []}
-          currentFlow={flow}
-          irProjects={irProjects}
-          canControl={canControl}
-          flagEnabled={flagEnabled}
-          onSaved={() => void flowsQ.refetch()}
-          t={t}
-        />
-      </div>
-    ) : (
-      canvasView
-    );
+  const editorMain = (
+    <>
+      {editorTab === "canvas" && canvasView}
+      {visitedTabs.has("diff") && (
+        <div className="p-3" hidden={editorTab !== "diff"}>
+          <IrDiffPanel flows={flowsQ.data ?? []} currentFlow={flow} t={t} />
+        </div>
+      )}
+      {visitedTabs.has("merge") && (
+        <div className="p-3" hidden={editorTab !== "merge"}>
+          <IrMergePanel
+            flows={flowsQ.data ?? []}
+            currentFlow={flow}
+            irProjects={irProjects}
+            canControl={canControl}
+            flagEnabled={flagEnabled}
+            onSaved={() => void flowsQ.refetch()}
+            t={t}
+          />
+        </div>
+      )}
+    </>
+  );
 
   // ═════ Inspector phải: [Bảng thuộc tính | Xem trước transpile | Copilot] ═════
   const inspectorTab = (
@@ -1664,7 +1680,7 @@ export default function IrEditor() {
     <div className="flex min-w-0 flex-1 items-center gap-3">
       <NoticeChip kind="honesty" label={t("ir.ws.previewChip", "Preview — no deploy")} className="h-5 px-1.5 text-[11px]" data-testid="ir-preview-chip">
         <p className="flex items-start gap-1.5"><Lock className="mt-0.5 h-3.5 w-3.5 shrink-0" aria-hidden="true" />{t("ir.honestyNote", "Structural preview + lint + transpile only — physics simulation and a real deploy are gated separately. A real deploy always routes through the existing programming service (HITL 2-eyes) and is never triggered from this screen.")}</p>
-        <p className="mt-2 text-xs text-muted-foreground">{t("ir.deployReminder", "Save appends a validated ir-flow artifact; Request build (below, per saved flow) transpiles it. Deploy to a real device is a separate gated step (existing programming service, HITL 2-eyes) — not exposed here.")}</p>
+        <p className="mt-2 text-xs text-muted-foreground">{t("ir.deployReminder", "Save appends a validated ir-flow artifact; Request build (in the Explorer's Saved IR flows, per saved flow) transpiles it. Deploy to a real device is a separate gated step (existing programming service, HITL 2-eyes) — not exposed here.")}</p>
       </NoticeChip>
       <span data-testid="ir-kpi-blocks" className="shrink-0 tabular-nums">{t("ir.kpi.blocks", "Top-level blocks")}: {flow.blocks.length}</span>
       <span data-testid="ir-kpi-errors" className={`shrink-0 tabular-nums ${errorCount > 0 ? "font-medium text-destructive" : ""}`}>{t("ir.kpi.errors", "Lint errors")}: {errorCount}</span>
@@ -1707,11 +1723,13 @@ export default function IrEditor() {
           onActivityChange={(id) => setActivity(id as IrActivity)}
           explorer={explorer}
           explorerLabel={t("ir.ws.explorerLabel", "IR explorer")}
-          // Ghi chú đo (Task 14): explorer 200 px (dải 200–300) — xem task-14-report: ≥50 % canvas @1600 với top bar 48 px.
+          // Ruling R-2-u (Task 14 fix round 1): IR được phép explorer 200 px (dải 200–300) — bảng chọn khối CHÍNH LÀ explorer (một cột nhãn
+          // ngắn; gập nó sẽ giấu đầu vào chính: kéo khối lên canvas). 240 px + inspector 320 + top bar 48 (R-2-t) chỉ cho canvas ~49,3 %
+          // @1600 (< 50 %); 200 px ⇒ 51,4 %, canvas ngang 61,9 %. Người dùng kéo rộng được (nhớ theo người dùng). Ghi doc 81 §11.
           explorerSize={{ minPx: 200, maxPx: 300, defaultPx: 200 }}
           editorTabs={editorTabs}
           activeTabId={editorTab}
-          onTabChange={(id) => setEditorTab(id as IrEditorTab)}
+          onTabChange={(id) => changeEditorTab(id as IrEditorTab)}
           editor={editorMain}
           editorToolbarEnd={editorTab === "canvas" ? canvasToolbarEnd : undefined}
           inspector={inspector}

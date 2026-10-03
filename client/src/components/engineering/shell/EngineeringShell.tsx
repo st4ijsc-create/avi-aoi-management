@@ -51,6 +51,10 @@ export interface EngineeringShellProps {
   onActivityChange: (id: string) => void;
   explorer: React.ReactNode;
   explorerLabel?: string;
+  /** Task 14 fix round 1 (R-2-u) — explorer GẬP ở lần đầu (POU: mở dự án là việc thỉnh thoảng; canvas là việc chính). */
+  explorerDefaultCollapsed?: boolean;
+  /** Task 14 fix round 1 — ý định mở explorer do trang phát (vd deep link `?projectId`): mỗi lần giá trị ĐỔI ⇒ mở. */
+  explorerOpenRequest?: number;
   editorTabs: readonly EditorTab[];
   activeTabId: string;
   onTabChange: (id: string) => void;
@@ -241,6 +245,8 @@ export function EngineeringShell({
   onActivityChange,
   explorer,
   explorerLabel,
+  explorerDefaultCollapsed = false,
+  explorerOpenRequest,
   editorTabs,
   activeTabId,
   onTabChange,
@@ -267,9 +273,17 @@ export function EngineeringShell({
   const { t } = useTranslation();
   const idPrefix = React.useId();
   const mainId = `${idPrefix}-main`;
-  const [explorerCollapsed, setExplorerCollapsed] = React.useState(false);
+  const [explorerCollapsed, setExplorerCollapsed] = React.useState(explorerDefaultCollapsed);
   /** Mỗi lần chọn mục ⇒ tăng; ở màn hẹp WorkbenchShell chuyển sang tab explorer. */
   const [revealToken, setRevealToken] = React.useState(0);
+  // Ý định mở do trang phát (bỏ lần render đầu).
+  const lastExplorerOpenRequest = React.useRef(explorerOpenRequest);
+  React.useEffect(() => {
+    if (explorerOpenRequest === lastExplorerOpenRequest.current) return;
+    lastExplorerOpenRequest.current = explorerOpenRequest;
+    // Chỉ mở trạng thái màn rộng; màn hẹp KHÔNG tự chuyển sang tab explorer (vùng làm việc vẫn là tab đầu).
+    setExplorerCollapsed(false);
+  }, [explorerOpenRequest]);
 
   const narrow = useNarrowViewport();
   const onSelectActivity = (id: string) => {

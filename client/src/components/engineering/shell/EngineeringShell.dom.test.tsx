@@ -268,6 +268,22 @@ describe("EngineeringShell — tuỳ chọn cho trang IDE (Task 13)", () => {
     }
   });
 
+  // Task 14 fix round 1 (R-2-u) — POU: explorer "Mở" GẬP ở lần đầu, mở khi bấm mục hoặc khi trang phát ý định (deep link).
+  it("explorerDefaultCollapsed ⇒ explorer gập lúc đầu; explorerOpenRequest đổi ⇒ mở; bấm mục ⇒ mở", () => {
+    const { rerender } = renderShellRerender({ explorerDefaultCollapsed: true, explorerOpenRequest: 0 });
+    const btn = screen.getByRole("button", { name: "Dự án" });
+    const leftPanel = () => document.querySelector("[data-workbench-left]")!.closest("[data-panel]") as HTMLElement;
+    expect(btn).toHaveAttribute("aria-expanded", "false");
+    expect(Number(leftPanel().getAttribute("data-panel-size"))).toBe(0);
+    rerender({ explorerDefaultCollapsed: true, explorerOpenRequest: 1 });
+    expect(btn).toHaveAttribute("aria-expanded", "true");
+    expect(Number(leftPanel().getAttribute("data-panel-size"))).toBeGreaterThan(0);
+    fireEvent.click(btn);
+    expect(btn).toHaveAttribute("aria-expanded", "false");
+    fireEvent.click(btn);
+    expect(btn).toHaveAttribute("aria-expanded", "true");
+  });
+
   it("màn hẹp: inspectorRevealToken đổi ⇒ chuyển sang tab Inspector", () => {
     presetNarrow(true);
     const { rerender } = renderShellRerender({ inspectorRevealToken: 0 });

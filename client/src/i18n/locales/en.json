@@ -16940,7 +16940,7 @@
       "editingFb": "Editing POU body",
       "backToMain": "Main flow"
     },
-    "deployReminder": "Save appends a validated ir-flow artifact; Request build (below, per saved flow) transpiles it. Deploy to a real device is a separate gated step (existing programming service, HITL 2-eyes) — not exposed here.",
+    "deployReminder": "Save appends a validated ir-flow artifact; Request build (in the Explorer's Saved IR flows, per saved flow) transpiles it. Deploy to a real device is a separate gated step (existing programming service, HITL 2-eyes) — not exposed here.",
     "emptyCanvas": "No blocks yet. Add one from the palette on the left.",
     "errorsShort": "error(s)",
     "field": {

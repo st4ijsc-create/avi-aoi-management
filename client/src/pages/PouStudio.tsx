@@ -169,6 +169,8 @@ export default function PouStudio() {
   // doc 81 Đợt 2 Task 14 — Explorer "Mở" (mới): dự án iec61131-pou đang xem + ý định mở panel dưới (R-2-l).
   const [openPid, setOpenPid] = useState<number | null>(null);
   const [bottomOpenRequest, setBottomOpenRequest] = useState(0);
+  // Ruling R-2-u: explorer "Mở" GẬP ở lần đầu; deep link tới dự án POU ⇒ ý định mở.
+  const [explorerOpenRequest, setExplorerOpenRequest] = useState(0);
 
   // Parse the JSON editor → a project object (or a parse error). Typed as the router INPUT
   // shape (defaulted fields optional); the canvas boundary casts to the richer output type.
@@ -302,7 +304,11 @@ export default function PouStudio() {
     if (wanted == null) { deepLinkApplied.current = true; return; }
     if (!projectsQ.data) return; // đợi list
     deepLinkApplied.current = true;
-    if (pouProjects.some((p) => p.id === wanted)) { setSavePid(String(wanted)); setSavedProjectId(wanted); setOpenPid(wanted); }
+    if (pouProjects.some((p) => p.id === wanted)) {
+      setSavePid(String(wanted)); setSavedProjectId(wanted); setOpenPid(wanted);
+      // Chỉ deep link `?projectId` là ý định mở explorer; dự án nhớ lần trước (lastSelected) chỉ chọn sẵn, explorer vẫn gập.
+      if (deepLink.projectId === wanted) setExplorerOpenRequest((n) => n + 1);
+    }
   }, [deepLink.projectId, lastSelected.projectId, projectsQ.data, pouProjects]);
   const createProjectM = trpc.programming.createProject.useMutation();
   const createArtifactM = trpc.programming.createArtifact.useMutation();
@@ -347,7 +353,12 @@ export default function PouStudio() {
       setCreateNew(false);
       setNewCode(""); setNewName("");
       setSavePid(String(pid));
-      await utils.programming.listProjects.invalidate();
+      // Fix round 1 (review I2): Explorer "Mở" chuyển sang dự án vừa lưu và danh sách phiên bản của nó được làm mới.
+      setOpenPid(pid);
+      await Promise.all([
+        utils.programming.listProjects.invalidate(),
+        utils.programming.listArtifacts.invalidate({ projectId: pid }),
+      ]);
       toast.success(t("pou.savedVersion", "Saved as draft v{{v}} — build & deploy in Engineering.", { v: art.version }));
     } catch (e) {
       toast.error((e as Error).message);
@@ -712,8 +723,10 @@ export default function PouStudio() {
           onActivityChange={() => undefined}
           explorer={explorer}
           explorerLabel={t("pou.ws.explorerLabel", "POU explorer")}
-          // Ghi chú đo (Task 14): explorer 200 px (dải 200–300) — xem task-14-report: ≥50 % canvas @1600 với top bar 48 px.
-          explorerSize={{ minPx: 200, maxPx: 300, defaultPx: 200 }}
+          // Ruling R-2-u: explorer "Mở" GẬP lần đầu (canvas là việc chính), mở khi bấm "Mở" hoặc deep link; giữ dải chung 240–300 px.
+          explorerDefaultCollapsed
+          explorerOpenRequest={explorerOpenRequest}
+          explorerSize={{ minPx: 240, maxPx: 300, defaultPx: 240 }}
           editorTabs={[
             { id: "canvas", label: t("pou.viewCanvas", "Canvas") },
             { id: "json", label: t("pou.viewJson", "JSON") },

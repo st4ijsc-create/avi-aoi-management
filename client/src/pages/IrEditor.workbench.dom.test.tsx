@@ -12,7 +12,7 @@ vi.mock("react-resizable-panels", async () => (await import("@/components/patter
 import { act, cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import "@testing-library/jest-dom/vitest";
 import { installResizeHandleHitAreaShim } from "@/components/patterns/layoutKitTestPanels";
-import { installMatchMedia, presetNarrow } from "@/components/patterns/layoutKitTestMedia";
+import { installMatchMedia, presetNarrow, setNarrow } from "@/components/patterns/layoutKitTestMedia";
 import { initLayoutKitTestI18n } from "@/components/patterns/layoutKitTestI18n";
 import { getAiEntryState, resetAiEntryForTest, setAiChatOpen } from "@/lib/aiEntryStore";
 import VI from "@/i18n/locales/vi.json";
@@ -47,8 +47,25 @@ vi.mock("@/components/programming/IrGraphCanvas", () => ({
     </div>
   ),
 }));
-vi.mock("@/components/programming/IrDiffPanel", () => ({ IrDiffPanel: () => <div data-testid="ir-diff-panel" /> }));
-vi.mock("@/components/programming/IrMergePanel", () => ({ IrMergePanel: () => <div data-testid="ir-merge-panel" /> }));
+// Diff/Merge giả mang STATE CỤC BỘ (như bản thật: base/cmp, base/ours/theirs + `picks`) — để chứng minh state sống qua đổi tab.
+vi.mock("@/components/programming/IrDiffPanel", async () => {
+  const React = await import("react");
+  return {
+    IrDiffPanel: () => {
+      const [v, setV] = React.useState("");
+      return <div data-testid="ir-diff-panel"><input aria-label="diff-base" value={v} onChange={(e) => setV(e.target.value)} /></div>;
+    },
+  };
+});
+vi.mock("@/components/programming/IrMergePanel", async () => {
+  const React = await import("react");
+  return {
+    IrMergePanel: () => {
+      const [pick, setPick] = React.useState("");
+      return <div data-testid="ir-merge-panel"><input aria-label="merge-pick" value={pick} onChange={(e) => setPick(e.target.value)} /></div>;
+    },
+  };
+});
 
 // ─── trpc giả ──────────────────────────────────────────────────────────────────────────────────────
 interface QueryResult { data: unknown; isLoading: boolean; isPending: boolean; isFetching: boolean; isError: boolean; error: unknown; refetch: () => void }
@@ -60,6 +77,7 @@ const queryCalls: Record<string, number> = {};
 const queryCache = new Map<string, { fn: (input: unknown) => QueryResult; r: QueryResult }>();
 const mutateCalls: Record<string, unknown[]> = {};
 const mutationResponses: Record<string, ((vars: any) => unknown) | undefined> = {};
+const invalidateCalls: string[] = [];
 const fetchResponses: Record<string, (input: any) => unknown> = {};
 const fetchCalls: Record<string, unknown[]> = {};
 vi.mock("@/lib/trpc", () => {
@@ -74,7 +92,7 @@ vi.mock("@/lib/trpc", () => {
             return r ? Promise.resolve(r(input)) : Promise.reject(new Error("no fetch"));
           };
         }
-        if (k === "invalidate" || k === "refetch") return () => Promise.resolve();
+        if (k === "invalidate" || k === "refetch") return () => { invalidateCalls.push(path.join(".")); return Promise.resolve(); };
         return utilsProxy([...path, k]);
       },
     });
@@ -176,6 +194,7 @@ beforeEach(() => {
     for (const k of Object.keys(o)) delete (o as Record<string, unknown>)[k];
   }
   queryCache.clear();
+  invalidateCalls.length = 0;
   for (const f of Object.values(toasts)) f.mockReset();
   try { window.localStorage.clear(); } catch { /* ignore */ }
   document.body.style.paddingRight = "";
@@ -470,5 +489,86 @@ describe("Giữ hành vi: lint (mapTrpcError), cổng Lưu, phím tắt, tạo p
     expect(keys.length).toBeGreaterThan(3);
     const get = (o: unknown, k: string) => k.split(".").reduce<unknown>((x, p) => (x && typeof x === "object" ? (x as Record<string, unknown>)[p] : undefined), o);
     for (const k of keys) for (const L of [VI, EN, ZH]) expect(typeof get(L, k), k).toBe("string");
+  });
+});
+
+// ════════════════════════════════════════════════════════════════════════════════════════════════
+// Task 14 fix round 1 (review I1/M3/M4/M7 + Copilot qua mốc 1024 px)
+describe("Fix round 1", () => {
+  it("I1: state của So sánh / Hợp nhất SỐNG qua đổi tab canvas ↔ merge ↔ diff (panel đã mở giữ mount, tab không chọn bị ẩn)", () => {
+    seed();
+    renderPage();
+    const tab = (re: RegExp) => fireEvent.click(within(editorTabs()).getByRole("tab", { name: re }));
+    tab(/^So sánh phiên bản/);
+    fireEvent.change(screen.getByLabelText("diff-base"), { target: { value: "v2" } });
+    tab(/^Hợp nhất/);
+    fireEvent.change(screen.getByLabelText("merge-pick"), { target: { value: "ours:b3" } });
+    expect(screen.getByLabelText("diff-base").closest("[hidden]")).not.toBeNull();
+    tab(/^Vùng vẽ luồng/);
+    expect(screen.getByTestId("ir-graph")).toBeInTheDocument();
+    expect(screen.getByLabelText("merge-pick").closest("[hidden]")).not.toBeNull();
+    tab(/^Hợp nhất/);
+    expect(screen.getByLabelText("merge-pick")).toHaveValue("ours:b3");
+    expect(screen.getByLabelText("merge-pick").closest("[hidden]")).toBeNull();
+    tab(/^So sánh phiên bản/);
+    expect(screen.getByLabelText("diff-base")).toHaveValue("v2");
+    expect(screen.getByLabelText("diff-base").closest("[hidden]")).toBeNull();
+    expect(mainEl().querySelectorAll("[data-layout-toolbar]")).toHaveLength(1);
+  });
+
+  it("M4: tạo / sửa thân khối hàm ⇒ panel phải chuyển về Bảng thuộc tính (nơi có định nghĩa)", () => {
+    seed();
+    renderPage();
+    fireEvent.click(within(inspector()).getByRole("tab", { name: /Xem trước transpile/ }));
+    fireEvent.click(within(activityBar()).getByRole("button", { name: /^Khối hàm$/ }));
+    fireEvent.click(within(explorer()).getByRole("button", { name: /^Khối hàm mới$/ }));
+    expect(within(inspector()).getByRole("tab", { name: /Bảng thuộc tính/ })).toHaveAttribute("aria-selected", "true");
+    expect(within(inspector()).getByRole("button", { name: /Thêm tham số/ })).toBeInTheDocument();
+    fireEvent.click(within(inspector()).getByRole("tab", { name: /Xem trước transpile/ }));
+    fireEvent.click(within(explorer()).getByRole("button", { name: /^(Sửa thân|Đang sửa thân)$/ }));
+    expect(within(inspector()).getByRole("tab", { name: /Bảng thuộc tính/ })).toHaveAttribute("aria-selected", "true");
+  });
+
+  it("M3: popover 'Xem trước — không deploy' không còn nói 'bên dưới' (Yêu cầu build nằm ở Explorer)", async () => {
+    seed();
+    renderPage();
+    fireEvent.click(within(statusBar()).getByRole("button", { name: /Xem trước — không deploy/ }));
+    const p = await screen.findByText(/Lưu sẽ thêm một artifact ir-flow/);
+    expect(p.textContent).not.toMatch(/bên dưới/);
+    expect(p.textContent).toMatch(/Luồng IR đã lưu/);
+    for (const L of [VI, EN, ZH]) expect((L as unknown as { ir: { deployReminder: string } }).ir.deployReminder).not.toMatch(/bên dưới|below|下方/);
+  });
+
+  it("M7: 'Làm mới' (luồng + chạy lại lint) luôn tới được — nút ở Explorer Luồng đã lưu làm đúng việc của nút top bar (ẩn < 640 px)", () => {
+    seed();
+    renderPage();
+    expect(within(header()).getByRole("button", { name: "Làm mới" }).className).toMatch(/(^|\s)hidden(\s|$)/);
+    fireEvent.click(within(activityBar()).getByRole("button", { name: /^Luồng IR đã lưu$/ }));
+    fireEvent.click(within(explorer()).getByRole("button", { name: "Làm mới" }));
+    expect(invalidateCalls).toContain("ir.lint");
+  });
+
+  it("stream Copilot SỐNG qua mốc 1024 px (rộng→hẹp→rộng); Huỷ vẫn abort", async () => {
+    seed();
+    renderPage();
+    fireEvent.click(within(inspector()).getByRole("tab", { name: /Copilot/ }));
+    fireEvent.change(await screen.findByPlaceholderText(/Mô tả cần sinh gì/), { target: { value: "grip then release" } });
+    await act(async () => { fireEvent.click(screen.getByRole("button", { name: /^Sinh mã$/ })); });
+    await nghi();
+    expect(luot).toHaveLength(1);
+    luot[0].day({ type: "stage", stage: "gate", elapsedMs: 0 });
+    await nghi();
+    setNarrow(true);
+    await nghi();
+    expect(document.querySelector("[data-workbench][data-narrow]")).not.toBeNull();
+    expect(luot[0].signal.aborted).toBe(false);
+    expect(screen.getByTestId("copilot-cancel")).toBeInTheDocument();
+    setNarrow(false);
+    await nghi();
+    expect(luot).toHaveLength(1);
+    expect(luot[0].signal.aborted).toBe(false);
+    await act(async () => { fireEvent.click(screen.getByTestId("copilot-cancel")); });
+    await nghi();
+    expect(luot[0].signal.aborted).toBe(true);
   });
 });

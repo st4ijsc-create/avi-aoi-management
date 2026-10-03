@@ -16920,7 +16920,7 @@
       "editingFb": "Đang sửa thân POU",
       "backToMain": "Luồng chính"
     },
-    "deployReminder": "Lưu sẽ thêm một artifact ir-flow đã kiểm định; Yêu cầu build (bên dưới, theo từng luồng đã lưu) sẽ transpile nó. Triển khai lên thiết bị thật là một bước có kiểm soát riêng (dịch vụ lập trình hiện có, HITL 2 người) — không hiển thị ở đây.",
+    "deployReminder": "Lưu sẽ thêm một artifact ir-flow đã kiểm định; Yêu cầu build (ở mục Luồng IR đã lưu của Explorer, theo từng luồng đã lưu) sẽ transpile nó. Triển khai lên thiết bị thật là một bước có kiểm soát riêng (dịch vụ lập trình hiện có, HITL 2 người) — không hiển thị ở đây.",
     "emptyCanvas": "Chưa có khối nào. Thêm một khối từ bảng chọn bên trái.",
     "errorsShort": "lỗi",
     "field": {

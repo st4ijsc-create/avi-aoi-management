@@ -86,6 +86,10 @@ describe("AiChatFrame — khung bong bóng chat", () => {
 // (aside position:fixed + tab dọc nổi + body.paddingRight) thành mã chết và bị gỡ. Thay các test hành vi của dock (đã gỡ
 // cùng component) bằng canh tĩnh: không tệp, không mount ở App, không mã nào đẩy trang bằng body.paddingRight, binding
 // không còn cờ `inLayout` (chỉ dock đọc nó). Lõi dùng chung vẫn được test hành vi ngay dưới. ──
+// Fix round 1 (review M6): đường dẫn tính từ CHÍNH tệp test (không phụ thuộc thư mục chạy vitest).
+// `__dirname` do vitest (vite-node) cấp theo tệp (`import.meta.url` dựng URL qua lớp URL của jsdom ⇒ `fileURLToPath` từ chối).
+const CLIENT_SRC = join(__dirname, "..");
+const src = (rel: string) => join(CLIENT_SRC, rel);
 function sourceFiles(dir: string): string[] {
   const out: string[] = [];
   for (const name of readdirSync(dir)) {
@@ -98,14 +102,18 @@ function sourceFiles(dir: string): string[] {
 
 describe("R-2-b (Task 14) — không còn dock Copilot cố định", () => {
   it("không tệp ProgrammingCopilotDock, App không mount dock, không mã nào đặt body.paddingRight, binding không còn inLayout", () => {
-    expect(existsSync("client/src/components/programming/ProgrammingCopilotDock.tsx")).toBe(false);
-    expect(readFileSync("client/src/App.tsx", "utf8")).not.toMatch(/ProgrammingCopilotDock/);
-    const offenders = sourceFiles("client/src").filter((f) => {
+    expect(existsSync(src("App.tsx")), "CLIENT_SRC phải trỏ đúng client/src").toBe(true);
+    expect(existsSync(src("components/programming/ProgrammingCopilotCore.tsx"))).toBe(true);
+    expect(existsSync(src("components/programming/ProgrammingCopilotDock.tsx"))).toBe(false);
+    expect(readFileSync(src("App.tsx"), "utf8")).not.toMatch(/ProgrammingCopilotDock/);
+    const files = sourceFiles(CLIENT_SRC);
+    expect(files.length).toBeGreaterThan(100);
+    const offenders = files.filter((f) => {
       const src = readFileSync(f, "utf8");
       return /ProgrammingCopilotDock["'\s;,)]/.test(src.replace(/\/\/.*$|\/\*[\s\S]*?\*\//gm, "")) || /body\.style\.paddingRight\s*=/.test(src);
     });
     expect(offenders).toEqual([]);
-    expect(readFileSync("client/src/contexts/ProgrammingCopilotContext.tsx", "utf8")).not.toMatch(/inLayout\??:/);
+    expect(readFileSync(src("contexts/ProgrammingCopilotContext.tsx"), "utf8")).not.toMatch(/inLayout\??:/);
   });
 });
 
