@@ -295,13 +295,18 @@ export interface IrGraphCanvasProps {
   onReorderToSibling: (sourceId: string, targetId: string) => void;
   /** W4-19: LƯU vị trí node sau khi kéo-thả (ghi vào block.ui trong AST). */
   onMoveNode: (id: string, pos: { x: number; y: number }) => void;
+  /**
+   * doc 81 Đợt 2 Task 14 — canvas lấp đầy khung chứa (MAIN của EngineeringShell: cao hết vùng, không viền riêng) thay
+   * cho khung cố định 560 px. Mặc định false = như cũ.
+   */
+  fill?: boolean;
   t: TFunction;
 }
 
 // The inner canvas — needs to sit under a ReactFlowProvider to use useReactFlow().
 function CanvasInner({
   flow, selectedId, diagsByBlock, onSelect, onDelete,
-  onAddTopLevel, onAddChild, onReorderToSibling, onMoveNode, t,
+  onAddTopLevel, onAddChild, onReorderToSibling, onMoveNode, t, fill = false,
 }: IrGraphCanvasProps) {
   const wrapperRef = useRef<HTMLDivElement>(null);
   const rf = useReactFlow();
@@ -382,7 +387,10 @@ function CanvasInner({
   }, [onDelete]);
 
   return (
-    <div ref={wrapperRef} className="h-[560px] w-full overflow-hidden rounded-md border border-border bg-muted/20">
+    <div
+      ref={wrapperRef}
+      className={fill ? "h-full min-h-[320px] w-full overflow-hidden bg-muted/20" : "h-[560px] w-full overflow-hidden rounded-md border border-border bg-muted/20"}
+    >
       <ReactFlow
         nodes={nodes}
         edges={edges}

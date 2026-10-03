@@ -106,6 +106,16 @@ describe("EngineeringShell — dấu đo", () => {
     expect(toolbars).toHaveLength(1);
     expect(toolbars[0]).toContainElement(screen.getByRole("button", { name: "Chọn bản" }));
   });
+
+  // Task 14 — IR/POU giữ tên MAIN đã hiệu chuẩn (R-2-k: `ir-canvas`, `pou-editor`); mặc định vẫn `${layoutId}-editor`.
+  it("mainName đặt giá trị data-layout-main; không truyền ⇒ `${layoutId}-editor`", () => {
+    renderShell();
+    expect(mainEl()).toHaveAttribute("data-layout-main", "ide-editor");
+    cleanup();
+    renderShell({ mainName: "ir-canvas" });
+    expect(mainEl()).toHaveAttribute("data-layout-main", "ir-canvas");
+    expect(document.querySelectorAll("[data-layout-main]")).toHaveLength(1);
+  });
 });
 
 describe("EngineeringShell — activity bar 40 px", () => {

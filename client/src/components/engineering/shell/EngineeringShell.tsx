@@ -43,6 +43,8 @@ export interface EditorTab {
 
 export interface EngineeringShellProps {
   layoutId: string;
+  /** Task 14 — giá trị `data-layout-main` (mặc định `${layoutId}-editor`); trang giữ tên đã hiệu chuẩn (R-2-k). */
+  mainName?: string;
   userId: number | string | null | undefined;
   activityItems: readonly ActivityItem[];
   activeActivity: string;
@@ -232,6 +234,7 @@ function EditorTabStrip({
 
 export function EngineeringShell({
   layoutId,
+  mainName,
   userId,
   activityItems,
   activeActivity,
@@ -295,7 +298,7 @@ export function EngineeringShell({
       leftRevealToken={revealToken}
       rightRevealToken={inspectorRevealToken}
       onLeftCollapsedChange={setExplorerCollapsed}
-      mainName={`${layoutId}-editor`}
+      mainName={mainName ?? `${layoutId}-editor`}
       main={
         editorTabs.length > 0 ? (
           <div className="flex h-full min-h-0 flex-col">

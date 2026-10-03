@@ -850,11 +850,16 @@ export interface PouCanvasProps {
   diagsByRef: Map<string, PouCanvasDiag[]>;
   onChange: (project: PouProject) => void;
   t: TFunction;
+  /**
+   * doc 81 Đợt 2 Task 14 — canvas lấp đầy khung chứa (MAIN của EngineeringShell: cao hết vùng, không viền riêng) thay
+   * cho khung cố định 560 px. Mặc định false = như cũ.
+   */
+  fill?: boolean;
 }
 
 const PANEL_CARD = "rounded-md border border-border bg-card/95 p-2 shadow-md backdrop-blur";
 
-function CanvasInner({ project, pouIndex, diagsByRef, onChange, t }: PouCanvasProps) {
+function CanvasInner({ project, pouIndex, diagsByRef, onChange, t, fill = false }: PouCanvasProps) {
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [showVars, setShowVars] = useState(false); // Variables panel (collapsed by default)
 
@@ -1111,7 +1116,7 @@ function CanvasInner({ project, pouIndex, diagsByRef, onChange, t }: PouCanvasPr
     );
   }
 
-  const wrapStyle: CSSProperties = { height: 560 };
+  const wrapStyle: CSSProperties = fill ? { height: "100%", minHeight: 320 } : { height: 560 };
 
   if (!body || language === "ST") {
     return (
@@ -1122,7 +1127,7 @@ function CanvasInner({ project, pouIndex, diagsByRef, onChange, t }: PouCanvasPr
   }
 
   return (
-    <div style={wrapStyle} className="w-full overflow-hidden rounded-md border border-border bg-muted/20">
+    <div style={wrapStyle} className={fill ? "w-full overflow-hidden bg-muted/20" : "w-full overflow-hidden rounded-md border border-border bg-muted/20"}>
       <ReactFlow
         nodes={nodes}
         edges={edges}
