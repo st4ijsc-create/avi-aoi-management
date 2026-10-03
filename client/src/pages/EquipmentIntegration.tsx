@@ -319,7 +319,7 @@ export default function EquipmentIntegration() {
           </TabsList>
 
           {/* ════════════════ TAB: Integration status (I1-a) ════════════════ */}
-          <TabsContent value="status" className="flex flex-col gap-4">
+          <TabsContent value="status" data-layout-main="equipment-integration" className="flex flex-col gap-4">
             {/* Wired adapters */}
             <SectionCard
               icon={<Plug className="h-4 w-4" />}
@@ -358,7 +358,7 @@ export default function EquipmentIntegration() {
           </TabsContent>
 
           {/* ════════════════ TAB: Recipe versions (I1-b) ════════════════ */}
-          <TabsContent value="recipes" className="flex flex-col gap-4">
+          <TabsContent value="recipes" data-layout-main="equipment-integration" className="flex flex-col gap-4">
             <SectionCard
               icon={<FlaskConical className="h-4 w-4" />}
               title={t("eqIntegration.pickRecipeTitle", "Recipe code")}
@@ -475,7 +475,7 @@ export default function EquipmentIntegration() {
           </TabsContent>
 
           {/* ════════════════ TAB: Load history / genealogy (I1-b) ════════════════ */}
-          <TabsContent value="history" className="flex flex-col gap-4">
+          <TabsContent value="history" data-layout-main="equipment-integration" className="flex flex-col gap-4">
             <SectionCard
               icon={<History className="h-4 w-4" />}
               title={t("eqIntegration.historyPickTitle", "Genealogy source")}
@@ -585,7 +585,7 @@ export default function EquipmentIntegration() {
           </TabsContent>
 
           {/* ════════════ TAB: Acquisition workers (W8-C — doc 27 V14 UI slot) ════════════ */}
-          <TabsContent value="acquisition" className="flex flex-col gap-4">
+          <TabsContent value="acquisition" data-layout-main="equipment-integration" className="flex flex-col gap-4">
             <AcquisitionWorkersPanel />
           </TabsContent>
         </Tabs>
