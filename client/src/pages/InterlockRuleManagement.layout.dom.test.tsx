@@ -15,7 +15,7 @@
 // Chạy trên wouter THẬT với history của jsdom. "Server" giả là kho trong bộ nhớ: danh sách CHỈ đổi khi trang
 // gọi invalidate (như react-query).
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
-import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import "@testing-library/jest-dom/vitest";
 import * as React from "react";
@@ -451,11 +451,12 @@ describe("Interlock P3 — R-2-l: panel Sự kiện gập lần đầu, mở the
     render(<InterlockRuleManagement />);
     expect(isOpen()).toBe(false);
     srv.events = [...srv.events, ev(9, 41, "open", "99.9")];
-    React.act(() => bump());
+    // final wave T11b-7 — act của testing-library (bật môi trường act) thay React.act: hết cảnh báo "not configured to support act".
+    act(() => bump());
     await waitFor(() => expect(toastSpy.warning).toHaveBeenCalled());
     const opts = toastSpy.warning.mock.calls.at(-1)?.[1] as { action?: { label: string; onClick: () => void } };
     expect(opts.action?.label).toBe("Mở panel Sự kiện");
-    React.act(() => opts.action?.onClick());
+    act(() => opts.action?.onClick());
     expect(isOpen()).toBe(true);
   });
 });

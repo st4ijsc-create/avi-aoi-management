@@ -343,6 +343,23 @@ function CanvasInner({
 }: WorkflowGraphCanvasProps) {
   const wrapperRef = useRef<HTMLDivElement>(null);
   const rf = useReactFlow();
+  // final wave (T11b minor 5) — nội dung có thể mount vào host DOM đang tách (slot portal của WorkbenchShell) hoặc tab
+  // ẩn (< 1024 px) ⇒ lúc onInit khung 0×0. Khung chuyển 0×0 → có kích thước ⇒ fitView một lần (mỗi lần lại hiện ra).
+  const rfRef = useRef(rf);
+  rfRef.current = rf;
+  useEffect(() => {
+    const el = wrapperRef.current;
+    if (!el || typeof ResizeObserver === "undefined") return;
+    let visible = false;
+    const ro = new ResizeObserver((entries) => {
+      const r = entries[0]?.contentRect;
+      const hasSize = !!r && r.width > 0 && r.height > 0;
+      if (hasSize && !visible) rfRef.current.fitView({ padding: 0.2 });
+      visible = hasSize;
+    });
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
 
   const { nodes: builtNodes, edges } = useMemo(
     () => defToGraph(def, selectedId, t, onDelete),
