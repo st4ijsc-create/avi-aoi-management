@@ -82,7 +82,17 @@ describe("★★★ doc 80 Task 8 (ECN-03, ECN-05) — EngineeringChanges.tsx (q
   });
 
   it("ECN-05 — hộp TỪ CHỐI vẫn giữ ý kiến BẮT BUỘC (hành vi CŨ — không hồi quy)", () => {
-    expect(src).toContain("!rejectReason.trim()");
-    expect(src).toContain("ecn.rejectReasonRequired");
+    // doc 81 Đợt 2 final wave (T4-M1) — ĐỔI SELECTOR (khẳng định giữ nguyên): trước đây ca này soi một guard
+    // `!rejectReason.trim()` trong confirmReject đã thành mã chết (TransitionDialog khoá nút từ trước), nên ca xanh
+    // cả khi hộp từ chối bị cấu hình `reasonRequired={false}`. Nay soi đúng hợp đồng thật: hộp từ chối KHÔNG được
+    // tắt lý do, và TransitionDialog mặc định bắt lý do cho kind "reject" (sau trim).
+    const start = src.indexOf("<TransitionDialog open={rejectTarget != null}");
+    expect(start, "thiếu hộp thoại từ chối (<TransitionDialog open={rejectTarget != null}>)").toBeGreaterThan(-1);
+    const rejectSrc = src.slice(start, src.indexOf("/>", start));
+    expect(rejectSrc).toContain("onConfirm={confirmReject}");
+    expect(rejectSrc).not.toContain("reasonRequired={false}");
+    const aq = readFileSync(new URL("../components/patterns/ApprovalQueue.tsx", import.meta.url), "utf8");
+    expect(aq).toContain("const needsReason = reasonRequired ?? isReject;");
+    expect(aq).toContain("const trimmed = text.trim();");
   });
 });

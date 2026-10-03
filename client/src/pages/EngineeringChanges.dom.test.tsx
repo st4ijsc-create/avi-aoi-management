@@ -473,6 +473,28 @@ describe("ECN P3 — ký duyệt / từ chối qua TransitionDialog (hợp đồ
     expect(btn).toHaveAccessibleDescription(/Bạn là người tạo mục này/);
   });
 
+  it("final wave T4-M2: maker-checker 'Bắt đầu xem xét' — người TẠO không tự xem xét ECN đã gửi của mình (nút khoá, nói lý do)", () => {
+    srv.db.push({ ...SUBMITTED, id: 6, ecnKey: "ECN-0006", title: "Toi gui", requestedBy: 7 });
+    srv.listSnapshot = srv.db.map((r) => ({ ...r }));
+    render(<EngineeringChanges />);
+    const mine = within(rowOf("ECN-0006")).getByRole("button", { name: "Bắt đầu xem xét" });
+    expect(mine).toBeDisabled();
+    expect(mine).toHaveAccessibleDescription(/Bạn là người tạo mục này/);
+    // ECN người khác gửi ⇒ xem xét được
+    expect(within(rowOf("ECN-0002")).getByRole("button", { name: "Bắt đầu xem xét" })).toBeEnabled();
+  });
+
+  it("final wave T4-M2: maker-checker 'Phê duyệt' — người ĐÃ XEM XÉT không tự phê duyệt (nút khoá, nói lý do)", () => {
+    srv.db.push({ ...IN_REVIEW, id: 7, ecnKey: "ECN-0007", title: "Toi xem xet", requestedBy: 3, reviewedBy: 7 });
+    srv.listSnapshot = srv.db.map((r) => ({ ...r }));
+    render(<EngineeringChanges />);
+    const btn = within(rowOf("ECN-0007")).getByRole("button", { name: "Phê duyệt" });
+    expect(btn).toBeDisabled();
+    expect(btn).toHaveAccessibleDescription(/Bạn đã xem xét mục này/);
+    // người khác xem xét ⇒ phê duyệt được
+    expect(within(rowOf("ECN-0003")).getByRole("button", { name: "Phê duyệt" })).toBeEnabled();
+  });
+
   it("duyệt từ trong chi tiết (flyout) ⇒ trạng thái trong chi tiết đổi, chi tiết vẫn mở", async () => {
     render(<EngineeringChanges />);
     await userEvent.click(within(rowOf("ECN-0003")).getByText("Recipe SMT-01"));

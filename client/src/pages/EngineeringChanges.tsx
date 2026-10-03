@@ -282,14 +282,13 @@ export default function EngineeringChanges() {
     transitionM.mutate({ id: ecn.id, action: action as any, expectedStatus: ecn.status as any }, { onError: (e) => { toastTrpcError(e); } });
   };
 
+  // Lý do BẮT BUỘC do TransitionDialog giữ (kind "reject" ⇒ nút khoá tới khi có chữ sau trim; `comment` đã trim).
   const confirmReject = (comment: string | undefined): Promise<void> | void => {
-    const rejectReason = comment ?? "";
-    if (!rejectReason.trim()) { toast.error(t("ecn.rejectReasonRequired", "Bắt buộc nhập lý do từ chối")); return; }
     const target = rejectTarget;
-    if (!target) return;
+    if (!target || !comment) return;
     return new Promise<void>((resolve, reject) => {
       transitionM.mutate(
-        { id: target.id, action: "reject", comment: rejectReason.trim(), expectedStatus: target.status as any },
+        { id: target.id, action: "reject", comment, expectedStatus: target.status as any },
         { onSuccess: () => resolve(), onError: (e) => reject(e) },
       );
     });
