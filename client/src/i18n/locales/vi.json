@@ -13588,12 +13588,6 @@
     "searchMachine": "Tìm máy…",
     "versionNotFound": "Không tìm thấy phiên bản #{{id}} trong mã đang chọn.",
     "alreadyApproved": "Phiên bản này đã được duyệt.",
-    "targetMachines": "Máy đích",
-    "addMachine": "Thêm máy",
-    "removeMachine": "Bỏ {{machine}}",
-    "machineCount": "{{count}} máy",
-    "noMachineSelected": "Chọn ít nhất một máy.",
-    "stoppedNote": "Đã dừng ở máy lỗi đầu tiên — các máy sau chưa được triển khai.",
     "rollbackFailed": "Rollback máy #{{machineId}} không thực hiện được",
     "dismiss": "Đóng",
     "noRunningMachines": "Chưa có máy nào đang chạy mã này.",
@@ -13614,11 +13608,9 @@
       "rawJson": "JSON gốc",
       "noVersions": "Mã này chưa có phiên bản."
     },
-    "result": {
-      "ok": "Đã triển khai",
-      "failed": "Không thực hiện được",
-      "skipped": "Chưa chạy (đã dừng ở máy lỗi)"
-    }
+    "allCodes": "Tất cả mã",
+    "allCodesHint": "Bỏ chọn mã — xem sổ triển khai của mọi máy",
+    "deployFailed": "Triển khai lên {{machine}} không thực hiện được"
   },
   "confirmWithReason": {
     "defaultConfirmText": "XÁC NHẬN",

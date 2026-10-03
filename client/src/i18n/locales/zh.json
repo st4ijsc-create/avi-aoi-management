@@ -13391,12 +13391,6 @@
     "searchMachine": "搜索机台…",
     "versionNotFound": "在所选编码中未找到版本 #{{id}}。",
     "alreadyApproved": "该版本已审批。",
-    "targetMachines": "目标机台",
-    "addMachine": "添加机台",
-    "removeMachine": "移除 {{machine}}",
-    "machineCount": "{{count}} 台机台",
-    "noMachineSelected": "请至少选择一台机台。",
-    "stoppedNote": "已在第一台失败的机台处停止——其后的机台未部署。",
     "rollbackFailed": "机台 #{{machineId}} 的回滚未能执行",
     "dismiss": "关闭",
     "noRunningMachines": "没有机台正在运行此编码。",
@@ -13417,11 +13411,9 @@
       "rawJson": "原始 JSON",
       "noVersions": "该编码尚无版本。"
     },
-    "result": {
-      "ok": "已部署",
-      "failed": "未能执行",
-      "skipped": "未执行（已在失败机台处停止）"
-    }
+    "allCodes": "全部编码",
+    "allCodesHint": "取消选择编码——查看所有机台的部署台账",
+    "deployFailed": "部署到 {{machine}} 未能执行"
   },
   "confirmWithReason": {
     "defaultConfirmText": "确认",

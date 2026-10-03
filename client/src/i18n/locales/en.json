@@ -13608,12 +13608,6 @@
     "searchMachine": "Search machines…",
     "versionNotFound": "Version #{{id}} was not found in the selected code.",
     "alreadyApproved": "This version is already approved.",
-    "targetMachines": "Target machines",
-    "addMachine": "Add machine",
-    "removeMachine": "Remove {{machine}}",
-    "machineCount": "{{count}} machines",
-    "noMachineSelected": "Pick at least one machine.",
-    "stoppedNote": "Stopped at the first failed machine — the machines after it were not deployed.",
     "rollbackFailed": "Rollback on machine #{{machineId}} could not be done",
     "dismiss": "Dismiss",
     "noRunningMachines": "No machine is running this code.",
@@ -13634,11 +13628,9 @@
       "rawJson": "Raw JSON",
       "noVersions": "This code has no versions yet."
     },
-    "result": {
-      "ok": "Deployed",
-      "failed": "Could not be done",
-      "skipped": "Not run (stopped at a failed machine)"
-    }
+    "allCodes": "All codes",
+    "allCodesHint": "Clear the code selection — show the deployment ledger of every machine",
+    "deployFailed": "Deploying to {{machine}} could not be done"
   },
   "confirmWithReason": {
     "defaultConfirmText": "CONFIRM",

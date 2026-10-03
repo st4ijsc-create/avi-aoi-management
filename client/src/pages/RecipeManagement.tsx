@@ -23,9 +23,9 @@
  *    (`?tab=`) Tham số / Phiên bản (VersionHistoryPanel) / Duyệt / Triển khai / Máy đang chạy. Chưa chọn
  *    mã ⇒ MAIN là sổ triển khai mọi máy (card "Lịch sử triển khai" cũ).
  *  - Tạo phiên bản = sheet `?flyout=recipe-new`; duyệt = sheet `?flyout=recipe-approve&flyoutId=<id>`;
- *    triển khai = drawer `?flyout=recipe-deploy&flyoutId=<id>` chọn NHIỀU máy — cùng mutation `deploy`
- *    (cổng chặt của server) gọi TỪNG máy một, dừng ở máy lỗi đầu tiên; giữ cổng đã-duyệt + quyền +
- *    nút xác nhận như dialog cũ.
+ *    triển khai = drawer `?flyout=recipe-deploy&flyoutId=<id>` — MỘT máy, MỘT lượt `deploy` mỗi lần xác nhận
+ *    (R-2-n: đúng năng lực dialog cũ; triển khai nhiều máy là quyết định của chủ dự án); giữ cổng
+ *    đã-duyệt + quyền + nút xác nhận như dialog cũ. Nút "Tất cả mã" bỏ chọn mã ⇒ về sổ mọi máy.
  *  - Rollback = RollbackConfirm `requireReason={false}` `requireOtp={false}` (hợp đồng cũ: AlertDialog,
  *    không lý do, không OTP — R-2-g). Lưu trữ vẫn AlertDialog. Golden vẫn một nút bật/tắt.
  *  - Lỗi cổng recipe CHẶT (Đợt 1C: `recipeArchived` khi triển khai, `recipeRetired` khi rollback) hiện
@@ -64,7 +64,7 @@ import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
-import { FlaskConical, Plus, AlertTriangle, RotateCcw, Rocket, ShieldCheck, Eye, GitCompare, Star, History, RefreshCw, User, ArrowRight, X } from "lucide-react";
+import { FlaskConical, Plus, AlertTriangle, RotateCcw, Rocket, ShieldCheck, Eye, GitCompare, Star, History, RefreshCw, User, ArrowRight } from "lucide-react";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 
@@ -224,7 +224,6 @@ export default function RecipeManagement() {
   const [codeParam, setCodeParam] = useUrlParam("code");
   const selectedCode = codeParam != null && codeParam.length > 0 ? codeParam : null;
   const [tabParam, setTabParam] = useUrlParam("tab");
-  const activeTab: DetailTab = (DETAIL_TABS as readonly string[]).includes(tabParam ?? "") ? (tabParam as DetailTab) : DEFAULT_TAB;
 
   // U15 (doc 26 §2.1) — lối vào theo MÁY: KTV chọn máy → thấy recipe đang ACTIVE
   // của máy đó mà không cần biết trước mã. Song song với trục theo-mã hiện có.
@@ -239,6 +238,10 @@ export default function RecipeManagement() {
   useEffect(() => {
     if (filterPending) setShowPendingOnly(true);
   }, [filterPending]);
+  // Fix round 1 (review minor) — đến từ Hub `?filter=pending` ⇒ tab mặc định là "Duyệt" (việc cần làm);
+  // `?tab=` hợp lệ trong URL vẫn thắng.
+  const defaultTab: DetailTab = filterPending ? "approval" : DEFAULT_TAB;
+  const activeTab: DetailTab = (DETAIL_TABS as readonly string[]).includes(tabParam ?? "") ? (tabParam as DetailTab) : defaultTab;
 
   const versionsQuery = trpc.machineRecipe.recipes.listVersions.useQuery(
     { code: selectedCode ?? "" },
@@ -281,8 +284,10 @@ export default function RecipeManagement() {
     onError: (e) => toastTrpcError(e),
   });
 
-  // ── Deploy — drawer `recipe-deploy` gọi mutation này TỪNG máy (toast lỗi mỗi lượt như cũ) ──
+  // ── Deploy — drawer `recipe-deploy`: MỘT máy, MỘT lượt gọi mỗi lần xác nhận (như dialog cũ — R-2-n) ──
+  // Toast + invalidate ở hook của TRANG ⇒ vẫn chạy đúng khi drawer đã đóng trong lúc chờ server.
   const deploy = trpc.machineRecipe.recipes.deploy.useMutation({
+    onSuccess: () => { toast.success(t("recipes.toastDeployed")); invalidateAll(); },
     onError: (e) => toastTrpcError(e),
   });
 
@@ -371,7 +376,6 @@ export default function RecipeManagement() {
     () => versions.filter((v) => v.approvedBy == null && (v.status === "draft" || v.status === "active")).length,
     [versions],
   );
-  const machineById = useMemo(() => new Map(machineList.map((m) => [m.id, m] as const)), [machineList]);
   const machineOptions = useMemo<EntityOption[]>(
     () => machineList.map((m) => ({ value: m.id, label: machineLabel(m, m.id), sublabel: m.name && m.code ? m.code : undefined })),
     [machineList],
@@ -451,11 +455,10 @@ export default function RecipeManagement() {
             key={v.id}
             version={v}
             machines={machineList}
-            machineById={machineById}
             machinesLoading={machinesQuery.isLoading}
             machinesError={machinesQuery.isError}
+            pending={deploy.isPending}
             deployAsync={(input) => deploy.mutateAsync(input)}
-            onDeployed={invalidateAll}
           />
         );
       },
@@ -543,6 +546,17 @@ export default function RecipeManagement() {
         </div>
       )}
       <span className="text-xs text-muted-foreground">{t("recipes.codeCount", "{{count}} mã", { count: visibleCodes.length })}</span>
+      {/* Fix round 1 (review Important) — bỏ chọn mã ⇒ MAIN về sổ triển khai MỌI máy (trang cũ luôn hiện sổ này;
+          hàng không có mã recipe chỉ có ở đó). Màn hẹp đã có "Quay lại danh sách". */}
+      {selectedCode != null && (
+        <Button
+          size="sm" variant="ghost" className="ml-auto h-7 px-2 text-xs"
+          title={t("recipes.allCodesHint", "Bỏ chọn mã — xem sổ triển khai của mọi máy")}
+          onClick={() => setCodeParam(null)}
+        >
+          {t("recipes.allCodes", "Tất cả mã")}
+        </Button>
+      )}
     </>
   );
 
@@ -1387,78 +1401,47 @@ function ApproveForm({
   );
 }
 
-// ── Drawer: triển khai một phiên bản lên NHIỀU máy ─────────────────────────────────────────────
-// Cùng mutation `recipes.deploy` như dialog cũ (server: cổng chặt + second-approver), gọi TỪNG máy
-// một, tuần tự; máy đầu tiên bị từ chối ⇒ DỪNG (máy sau không chạy), lỗi hiện ngay cạnh máy đó.
-
-type DeployResult = { status: "ok" | "failed" | "skipped"; message?: string };
+// ── Drawer: triển khai một phiên bản lên MỘT máy (R-2-n: đúng năng lực của dialog cũ) ─────────
+// MỘT máy đích, MỘT lượt `recipes.deploy` mỗi lần bấm xác nhận; cùng cổng (canEdit ở đăng ký flyout,
+// đã-duyệt, đang chờ), cùng chữ. Lời từ chối (cổng chặt Đợt 1C: recipeArchived…) hiện trong khối
+// role=alert ngay trong drawer, kèm toast của hook trang. Đóng drawer khi đang chờ: drawer không cập nhật
+// state nữa (mountedRef); toast/invalidate do hook của trang làm; chỉ đóng lớp nếu nó vẫn là lớp trên cùng.
 
 function DeployDrawer({
-  version, machines, machineById, machinesLoading, machinesError, deployAsync, onDeployed,
+  version, machines, machinesLoading, machinesError, pending, deployAsync,
 }: {
   version: VersionData;
   machines: MachineData[];
-  machineById: Map<number, MachineData>;
   machinesLoading: boolean;
   machinesError: boolean;
+  pending: boolean;
   deployAsync: (input: DeployInput) => Promise<unknown>;
-  onDeployed: () => void;
 }) {
   const { t } = useTranslation();
   const { layer, done, mountedRef } = useCloseOwnLayer();
   const uid = useId();
   // W5-22 (c) — máy gắn sẵn của phiên bản được chọn trước (như dialog cũ).
-  const [selected, setSelected] = useState<number[]>(() => (version.machineId != null ? [version.machineId] : []));
+  const [initialMachineId] = useState<number | null>(() => version.machineId ?? null);
+  const [machineId, setMachineId] = useState<number | null>(initialMachineId);
   const [notes, setNotes] = useState("");
-  const [running, setRunning] = useState(false);
-  const [results, setResults] = useState<Record<number, DeployResult>>({});
+  const [error, setError] = useState<{ machineId: number; message: string } | null>(null);
   const isApproved = version.approvedBy != null;
-  const hasResults = Object.keys(results).length > 0;
-  useEffect(() => { layer.setDirty(!hasResults && (notes.trim() !== "" || selected.length > (version.machineId != null ? 1 : 0))); }, [notes, selected, hasResults]); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => { layer.setDirty(machineId !== initialMachineId || notes.trim() !== ""); }, [machineId, notes]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  // W5-22 (c) — chọn máy theo tên+ID thay vì gõ số thô (nhãn "#id · tên" như dialog cũ).
   const options = useMemo<EntityOption[]>(
-    () => machines.filter((m) => !selected.includes(m.id)).map((m) => ({ value: m.id, label: `#${m.id} · ${machineLabel(m, m.id)}`, sublabel: m.code ?? undefined })),
-    [machines, selected],
+    () => machines.map((m) => ({ value: m.id, label: `#${m.id} · ${machineLabel(m, m.id)}`, sublabel: m.code ?? undefined })),
+    [machines],
   );
-  // Máy đã triển khai xong ở lượt trước không chạy lại.
-  const targets = selected.filter((id) => results[id]?.status !== "ok");
 
-  const run = async () => {
-    if (!isApproved || targets.length === 0) return;
-    setRunning(true);
-    const next: Record<number, DeployResult> = { ...results };
-    for (const id of targets) delete next[id];
-    let ok = 0;
-    let failed = false;
-    for (const machineId of targets) {
-      if (failed) {
-        next[machineId] = { status: "skipped" };
-        continue;
-      }
-      try {
-        await deployAsync({ recipeId: version.id, machineId, notes: notes.trim() || null });
-        next[machineId] = { status: "ok" };
-        ok++;
-      } catch (e) {
-        next[machineId] = { status: "failed", message: mapTrpcError(e) };
-        failed = true;
-      }
-      if (mountedRef.current) setResults({ ...next });
-    }
-    if (ok > 0) onDeployed();
-    if (!mountedRef.current) return;
-    setResults({ ...next });
-    setRunning(false);
-    if (!failed) {
-      toast.success(t("recipes.toastDeployed"));
-      done();
-    }
-  };
-
-  const resultText: Record<DeployResult["status"], string> = {
-    ok: t("recipes.result.ok", "Đã triển khai"),
-    failed: t("recipes.result.failed", "Không thực hiện được"),
-    skipped: t("recipes.result.skipped", "Chưa chạy (đã dừng ở máy lỗi)"),
+  const confirm = () => {
+    if (!isApproved || machineId == null) return;
+    setError(null);
+    const id = machineId;
+    deployAsync({ recipeId: version.id, machineId: id, notes: notes.trim() || null }).then(
+      () => done(),
+      (e: unknown) => { if (mountedRef.current) setError({ machineId: id, message: mapTrpcError(e) }); },
+    );
   };
 
   return (
@@ -1468,75 +1451,38 @@ function DeployDrawer({
         <span>{t("recipes.hitlBanner")}</span>
       </div>
       {!isApproved && <p className="text-xs text-destructive">{t("recipes.deployNeedsApproval")}</p>}
-      <div className="space-y-2">
-        <Label>{t("recipes.targetMachines", "Máy đích")}</Label>
-        {selected.length === 0 ? (
-          <p className="text-xs text-muted-foreground">{t("recipes.noMachineSelected", "Chọn ít nhất một máy.")}</p>
-        ) : (
-          <ul className="space-y-1">
-            {selected.map((id) => {
-              const m = machineById.get(id);
-              const r = results[id];
-              return (
-                <li key={id} data-deploy-result={r?.status} className="rounded-md border px-2 py-1 text-xs">
-                  <div className="flex items-center gap-2">
-                    <span className="font-medium">{machineLabel(m, id)}</span>
-                    {m?.code && m.name && <span className="text-muted-foreground">{m.code}</span>}
-                    <span className="text-muted-foreground">#{id}</span>
-                    {r && (
-                      <Badge variant={r.status === "ok" ? "default" : r.status === "failed" ? "destructive" : "outline"} className="ml-auto">
-                        {resultText[r.status]}
-                      </Badge>
-                    )}
-                    {!running && r?.status !== "ok" && (
-                      <Button
-                        size="sm" variant="ghost" className={cn("h-6 w-6 p-0", !r && "ml-auto")}
-                        aria-label={t("recipes.removeMachine", "Bỏ {{machine}}", { machine: machineLabel(m, id) })}
-                        onClick={() => {
-                          setSelected((s) => s.filter((x) => x !== id));
-                          setResults((rs) => { const c = { ...rs }; delete c[id]; return c; });
-                        }}
-                      >
-                        <X className="h-3.5 w-3.5" />
-                      </Button>
-                    )}
-                  </div>
-                  {r?.status === "failed" && (
-                    <div className="mt-1">
-                      <ErrorNotice title={machineLabel(m, id)} message={r.message ?? ""} />
-                    </div>
-                  )}
-                </li>
-              );
-            })}
-          </ul>
-        )}
+      <div className="space-y-1">
+        <Label htmlFor={`${uid}-machine`}>{t("recipes.machine")}</Label>
         <EntityPicker
+          id={`${uid}-machine`}
           options={options}
-          value={null}
-          onChange={(v) => { if (v != null) setSelected((s) => (s.includes(Number(v)) ? s : [...s, Number(v)])); }}
+          value={machineId}
+          onChange={(v) => { setMachineId(v == null ? null : Number(v)); setError(null); }}
           loading={machinesLoading}
-          clearable={false}
-          disabled={running}
-          placeholder={machinesLoading ? t("recipes.loadingMachines") : t("recipes.addMachine", "Thêm máy")}
+          disabled={pending}
+          placeholder={machinesLoading ? t("recipes.loadingMachines") : t("recipes.selectMachine")}
           searchPlaceholder={t("recipes.searchMachine", "Tìm máy…")}
           emptyText={t("recipes.noMachines", "Chưa có máy nào")}
-          aria-label={t("recipes.addMachine", "Thêm máy")}
+          aria-label={t("recipes.machine")}
         />
-        {machinesError && <p className="text-xs text-destructive">{t("recipes.machinesLoadError")}</p>}
-        {Object.values(results).some((r) => r.status === "skipped") && (
-          <p className="text-xs text-muted-foreground">{t("recipes.stoppedNote", "Đã dừng ở máy lỗi đầu tiên — các máy sau chưa được triển khai.")}</p>
-        )}
+        {machinesError && <p className="text-xs text-destructive mt-1">{t("recipes.machinesLoadError")}</p>}
       </div>
       <div>
         <Label htmlFor={`${uid}-notes`}>{t("recipes.notes")}</Label>
-        <Input id={`${uid}-notes`} value={notes} onChange={(e) => setNotes(e.target.value)} disabled={running} />
+        <Input id={`${uid}-notes`} value={notes} onChange={(e) => setNotes(e.target.value)} />
       </div>
+      {error && (
+        <ErrorNotice
+          title={t("recipes.deployFailed", "Triển khai lên {{machine}} không thực hiện được", {
+            machine: machineLabel(machines.find((m) => m.id === error.machineId), error.machineId),
+          })}
+          message={error.message}
+        />
+      )}
       <div className="flex justify-end gap-2 pt-2">
-        <Button variant="outline" onClick={() => layer.close()} disabled={running}>{t("recipes.cancel")}</Button>
-        <Button disabled={running || !isApproved || targets.length === 0} onClick={() => void run()}>
+        <Button variant="outline" onClick={() => layer.close()}>{t("recipes.cancel")}</Button>
+        <Button disabled={pending || !isApproved || machineId == null} onClick={confirm}>
           {t("recipes.confirmDeploy")}
-          {targets.length > 0 && ` (${t("recipes.machineCount", "{{count}} máy", { count: targets.length })})`}
         </Button>
       </div>
     </div>
