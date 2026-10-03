@@ -70,7 +70,7 @@ const queryInputs: Record<string, unknown> = {};
 const queryEnabled: Record<string, boolean | undefined> = {};
 const mutateCalls: Record<string, unknown[]> = {};
 /** Phản hồi của mutation ⇒ mock GỌI onSuccess(resp) như react-query. */
-const mutationResponses: Record<string, (vars: any) => unknown> = {};
+const mutationResponses: Record<string, ((vars: any) => unknown) | undefined> = {};
 /** `.data` của mutation (vd deployToFleet ⇒ fleetResult). */
 const mutationData: Record<string, unknown> = {};
 
@@ -458,7 +458,7 @@ describe("deployPreview hiện TRƯỚC OTP", () => {
     await user.click(screen.getByRole("option", { name: "Approver Nine" }));
     expect(queryInputs["programming.deployPreview"]).toEqual({ buildId: 5, stage: "production", confirmedBy: 9 });
     expect(screen.getByTestId("engineering-deploy-button")).toBeDisabled();
-    fireEvent.change(deployCard.getByPlaceholderText(/./, { selector: "textarea" }), { target: { value: "ECN-42" } });
+    fireEvent.change(document.querySelector("#gt-deploy textarea")!, { target: { value: "ECN-42" } });
     expect(screen.getByTestId("engineering-deploy-button")).not.toBeDisabled();
   });
 });
@@ -606,7 +606,7 @@ describe("Ảnh chụp DOM byte-identical (trước/sau khi nâng state)", () =>
     await user.click(screen.getByRole("option", { name: "production" }));
     await user.click(deployCard.getAllByRole("combobox")[1]);
     await user.click(screen.getByRole("option", { name: "Approver Nine" }));
-    fireEvent.change(deployCard.getByPlaceholderText(/./, { selector: "textarea" }), { target: { value: "ECN-42" } });
+    fireEvent.change(document.querySelector("#gt-deploy textarea")!, { target: { value: "ECN-42" } });
     fireEvent.click(fleetBox("M4 · #4"));
     fireEvent.change(fleetCard().getByRole("spinbutton"), { target: { value: "2" } });
     fireEvent.click(fleetCard().getByText(/Promote only when the canary is VERIFIED|Chỉ promote/).closest("label")!.querySelector('[role="checkbox"]')!);
