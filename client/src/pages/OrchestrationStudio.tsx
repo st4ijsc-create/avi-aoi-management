@@ -1552,7 +1552,8 @@ export default function OrchestrationStudio() {
         {/* MAIN GRID — tree canvas + inspector */}
         <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
           {/* LEFT — step tree / node-graph (toggle Cây | Sơ đồ) */}
-          <Card className="lg:col-span-2">
+          {/* doc 81 Đợt 2 Task 11 (R-2-k bước 1) — MAIN HIỆN TẠI (bố cục chưa đổi) */}
+          <Card className="lg:col-span-2" data-layout-main="orchestration-studio">
             <CardHeader className="flex flex-row items-center justify-between pb-2">
               <CardTitle className="text-base">
                 {canvasView === "tree" ? t("studio.canvas", "Workflow tree") : t("studio.graphCanvas", "Workflow diagram")}
@@ -1627,7 +1628,7 @@ export default function OrchestrationStudio() {
           </Card>
 
           {/* RIGHT — inspector */}
-          <Card>
+          <Card data-layout-main="orchestration-studio">
             <CardHeader className="pb-2">
               <CardTitle className="text-base">{t("studio.inspector", "Step configuration")}</CardTitle>
             </CardHeader>
