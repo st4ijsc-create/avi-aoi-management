@@ -52,6 +52,8 @@ export interface TransitionAction {
   minReasonLength?: number;
   /** Ghi đè `confirmStep` của hàng đợi cho riêng hành động này (advance mặc định false). */
   confirmStep?: boolean;
+  /** Đợt 2 Task 9 — tooltip của nút khi được phép (vd câu "title" cũ của trang). Bị chặn tách vai ⇒ lý do chặn thắng. */
+  hint?: string;
 }
 
 export interface ApprovalItem {
@@ -64,6 +66,8 @@ export interface ApprovalItem {
   authorName?: React.ReactNode;
   reviewerId?: number | null;
   actions: readonly TransitionAction[];
+  /** Đợt 2 Task 9 — hiện ở ô quyết định khi mục KHÔNG có hành động nào (vd "Chỉ xem", "—" của trạng thái cuối). */
+  actionsFallback?: React.ReactNode;
 }
 
 export type SegregationResult = { allowed: true } | { allowed: false; reason: "author" | "reviewer" | "userUnknown" };
@@ -215,6 +219,8 @@ export interface ApprovalQueueProps {
   confirmStep?: boolean;
   /** Lý do từ chối bắt buộc (mặc định true). */
   rejectReasonRequired?: boolean;
+  /** Đợt 2 Task 9 — câu khi danh sách trống (mặc định "Không có gì chờ quyết định"). */
+  emptyTitle?: string;
   ariaLabel?: string;
   className?: string;
 }
@@ -233,6 +239,7 @@ export function ApprovalQueue({
   pending = false,
   confirmStep = true,
   rejectReasonRequired = true,
+  emptyTitle,
   ariaLabel,
   className,
 }: ApprovalQueueProps) {
@@ -253,7 +260,7 @@ export function ApprovalQueue({
     );
   }
   if (list.length === 0) {
-    return <EmptyState variant="no-data" compact title={t("layoutKit.approval.empty", "Nothing is waiting for a decision.")} />;
+    return <EmptyState variant="no-data" compact title={emptyTitle ?? t("layoutKit.approval.empty", "Nothing is waiting for a decision.")} />;
   }
 
   const ctxOf = (it: ApprovalItem): SegregationContext => ({ currentUserId, authorId: it.authorId, reviewerId: it.reviewerId });
@@ -280,6 +287,7 @@ export function ApprovalQueue({
               <TableCell>{it.status}</TableCell>
               <TableCell className="text-right">
                 <div className="flex flex-wrap justify-end gap-1">
+                  {it.actions.length === 0 && it.actionsFallback != null ? it.actionsFallback : null}
                   {it.actions.map((a) => {
                     const seg = checkSegregation(a, ctxOf(it));
                     const msg = sodMessageOf(seg);
@@ -291,7 +299,7 @@ export function ApprovalQueue({
                           variant={a.kind === "reject" ? "destructive" : "outline"}
                           disabled={!seg.allowed || pending}
                           aria-describedby={msg ? descId : undefined}
-                          title={msg ?? undefined}
+                          title={msg ?? a.hint}
                           onClick={() => {
                             // Maker-checker kiểm lại ở mọi đường, kể cả gọi thẳng.
                             if (!checkSegregation(a, ctxOf(it)).allowed) return;

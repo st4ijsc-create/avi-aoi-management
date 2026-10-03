@@ -280,3 +280,34 @@ describe("ApprovalQueue — confirmStep / rejectReasonRequired", () => {
     expect(screen.getByRole("dialog")).toBeInTheDocument();
   });
 });
+
+// ── Đợt 2 Task 9 — Standards CR dùng hàng đợi chung: ba tuỳ chọn THÊM (không đổi hành vi khi bỏ trống) ──
+describe("ApprovalQueue — hint / actionsFallback / emptyTitle (Task 9)", () => {
+  it("action.hint là tooltip của nút khi được phép; khi bị chặn tách vai thì lý do chặn THẮNG gợi ý", () => {
+    const hinted: TransitionAction = { ...APPROVE, hint: "Server tự tính cổng kiểm định" };
+    render(<ApprovalQueue items={[item({ actions: [hinted] })]} status="ready" currentUserId={9} confirmStep={false} onTransition={() => {}} />);
+    expect(within(rowOf("ECN-0003")).getByRole("button", { name: "Phê duyệt" })).toHaveAttribute("title", "Server tự tính cổng kiểm định");
+    cleanup();
+    render(<ApprovalQueue items={[item({ actions: [hinted] })]} status="ready" currentUserId={5} confirmStep={false} onTransition={() => {}} />);
+    expect(within(rowOf("ECN-0003")).getByRole("button", { name: "Phê duyệt" })).toHaveAttribute("title", VI.layoutKit.approval.sodAuthor);
+  });
+
+  it("mục không có hành động ⇒ hiện actionsFallback (vd 'Chỉ xem'); có hành động ⇒ không hiện", () => {
+    render(
+      <ApprovalQueue
+        items={[item({ id: 1, key: "CR-1", actions: [], actionsFallback: <span>Chỉ xem</span> }), item({ id: 2, key: "CR-2", actionsFallback: <span>KHONG-HIEN</span> })]}
+        status="ready"
+        currentUserId={9}
+        onTransition={() => {}}
+      />,
+    );
+    expect(within(rowOf("CR-1")).getByText("Chỉ xem")).toBeInTheDocument();
+    expect(screen.queryByText("KHONG-HIEN")).toBeNull();
+  });
+
+  it("emptyTitle thay câu trống mặc định", () => {
+    render(<ApprovalQueue items={[]} status="ready" currentUserId={1} emptyTitle="Không có yêu cầu thay đổi." onTransition={() => {}} />);
+    expect(screen.getByText("Không có yêu cầu thay đổi.")).toBeInTheDocument();
+    expect(screen.queryByText(VI.layoutKit.approval.empty)).toBeNull();
+  });
+});
