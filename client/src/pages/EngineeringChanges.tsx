@@ -511,10 +511,12 @@ function EcnList({
       : t("ecn.empty", "Chưa có thay đổi kỹ thuật nào.");
 
   return (
-    <Card
+    // final wave (T4-M6): <section> thay Card bị vô hiệu kiểu (Card cũ chỉ giữ để selector FE1 của thước còn thấy — nay thước
+    // nhận cả section). Bố cục giữ nguyên: cột flex, gap-2.
+    <section
       data-layout-main="ecn-list"
       aria-label={t("ecn.listLabel", "Danh sách ECN")}
-      className="gap-2 rounded-none border-0 bg-transparent py-0 shadow-none"
+      className="flex flex-col gap-2"
     >
       {/* Thanh công cụ DUY NHẤT của MAIN (≤56 px): FilterBar thu gọn + chip lọc chờ duyệt. */}
       <div {...{ [LAYOUT_TOOLBAR]: "" }} className="flex min-h-11 flex-wrap items-center gap-2">
@@ -544,7 +546,7 @@ function EcnList({
         emptyState={<p className="py-8 text-center text-sm text-muted-foreground">{emptyText}</p>}
         className="space-y-2"
       />
-    </Card>
+    </section>
   );
 }
 

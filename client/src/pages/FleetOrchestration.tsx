@@ -1158,6 +1158,9 @@ function boundsToRectLike(bounds: Record<string, unknown> | null | undefined): {
   return null;
 }
 
+/** Khung bản đồ (MAIN của Fleet): cao theo khung nhìn trừ chrome thật của shell (R-2-z4); dùng chung cho bản đồ và trạng thái tải/trống. */
+const MAP_FRAME = "h-[max(18rem,calc(100dvh_-_var(--shell-chrome-h,3.5rem)_-_11.5rem))] w-full rounded-md border border-border bg-muted/20";
+
 function FleetMap({
   grid, gridLoading, gridError, robots, robotsLoading, zones, selectedZoneId, onZoneSelect,
 }: {
@@ -1218,9 +1221,11 @@ function FleetMap({
 
   return (
     <div data-fleet-map="" className="flex flex-col gap-2">
-      {loading && <p className="py-8 text-center text-sm text-muted-foreground">{t("fleet.loading", "Loading…")}</p>}
+      {/* final wave T10 — trạng thái tải / trống giữ ĐÚNG khung cao của bản đồ (MAIN không co lại khi chưa có hình học;
+          trước đây lưới 40×40 rỗng của factoryId=1 dự phòng che mất trạng thái trống này). */}
+      {loading && <p data-fleet-map-state="loading" className={`${MAP_FRAME} flex items-center justify-center text-sm text-muted-foreground`}>{t("fleet.loading", "Loading…")}</p>}
       {!loading && !hasAnything && (
-        <p className="py-8 text-center text-sm text-muted-foreground">
+        <p data-fleet-map-state="empty" className={`${MAP_FRAME} flex items-center justify-center px-6 text-center text-sm text-muted-foreground`}>
           {t("fleet.map.empty", "No map geometry or located robots yet. Add zone bounds and robot telemetry poses to populate the map.")}
         </p>
       )}
@@ -1228,7 +1233,7 @@ function FleetMap({
         <svg
           viewBox={`0 0 ${VIEW_W} ${VIEW_H}`}
           preserveAspectRatio="xMidYMid meet"
-          className="h-[max(18rem,calc(100dvh_-_var(--shell-chrome-h,3.5rem)_-_11.5rem))] w-full rounded-md border border-border bg-muted/20 text-foreground"
+          className={`${MAP_FRAME} text-foreground`}
           role="img" aria-label={t("fleet.map.title", "Fleet map")}
         >
           {/* blocked grid cells */}

@@ -509,6 +509,10 @@ describe("Fleet — final wave T10", () => {
     render(<FleetOrchestration />);
     await new Promise((r) => setTimeout(r, 20));
     expect(srv.queryInputs.filter((x) => x.startsWith("twin.occupancyGrid:"))).toEqual([]);
+    // khung bản đồ (svg, hay trạng thái tải/trống khi chưa có hình học) giữ đúng chiều cao (MAIN không co lại)
+    const frame = document.querySelector('[data-fleet-map] > svg, [data-fleet-map-state]') as Element;
+    expect(frame).not.toBeNull();
+    expect(frame.getAttribute("class")).toMatch(/h-\[max\(18rem,calc\(100dvh_-_var\(--shell-chrome-h/);
   });
 
   it("chip GHIM 'Thất bại' khi đang lọc trạng thái KHÁC 'failed' ⇒ '—' (không đọc thành 0 khoẻ mạnh); lọc 'failed' ⇒ số thật", async () => {
