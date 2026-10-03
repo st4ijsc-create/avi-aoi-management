@@ -1,0 +1,9107 @@
+{
+ "meta": {
+  "tool": "scripts/ui-metrics/engineeringLayout.mjs",
+  "startedAt": "2026-10-03T20:49:41.030Z",
+  "argv": [
+   "--spawn",
+   "--mutation",
+   "--out",
+   ".playwright-mcp/do-bo-cuc/t16-lan-2.json"
+  ],
+  "sizes": [
+   [
+    1600,
+    950
+   ],
+   [
+    1366,
+    768
+   ]
+  ],
+  "flags": "dev",
+  "gitHead": "ef913de25",
+  "data": {
+   "tables": 57,
+   "before": {
+    "ai_insights": "45:84e12df22df3",
+    "ai_pending_actions": "362:f64a5ddea764",
+    "alarm_taxonomy": "175:49c49f1ab925",
+    "alert_settings": "0:d41d8cd98f00",
+    "andon_events": "10:2099f6232057",
+    "battery_charging_plans": "0:d41d8cd98f00",
+    "camera_calibrations": "0:d41d8cd98f00",
+    "changeover_requests": "0:d41d8cd98f00",
+    "charger_stations": "0:d41d8cd98f00",
+    "collaboration_sessions": "0:d41d8cd98f00",
+    "daily_statistics": "225:a899b7cf547d",
+    "device_type_change_requests": "0:d41d8cd98f00",
+    "device_types": "0:d41d8cd98f00",
+    "engineering_changes": "10:2f8fae5d2742",
+    "equipment_3d_models": "0:d41d8cd98f00",
+    "factories": "7194:6bc88608e75b",
+    "interlock_events": "1:46e391c32f94",
+    "interlock_rules": "16:83c777a0ce2e",
+    "machine_recipes": "0:d41d8cd98f00",
+    "machine_status_logs": "4144:db08378dd229",
+    "machines": "13045:88da78dcd7f6",
+    "master_alarms": "9:84a0d80ac606",
+    "oee_metrics": "1316:97079c7dbc55",
+    "operation_codes": "0:d41d8cd98f00",
+    "operator_assignments": "0:d41d8cd98f00",
+    "orchestration_runs": "0:d41d8cd98f00",
+    "orchestration_workflows": "7:6a7b41c28edc",
+    "permissions": "4793:1b778de091a3",
+    "predictive_alert_occurrences": "2178:7036f2bd9284",
+    "predictive_alerts": "813:7a9e87af330e",
+    "product_inspections": "69266:15a0bb4cd472",
+    "product_machine_mappings": "0:d41d8cd98f00",
+    "product_models": "5439:3919e92b6a72",
+    "production_lines": "7173:2150f3565eec",
+    "program_artifacts": "1:3eb538fb3b97",
+    "program_deployments": "3323:62ecb882f945",
+    "program_projects": "1:23ac17d6a032",
+    "program_symbols": "0:d41d8cd98f00",
+    "recipe_deployments": "0:d41d8cd98f00",
+    "resource_reservations": "0:d41d8cd98f00",
+    "robot_jobs": "3843:09ca776ab4d3",
+    "robot_telemetry": "403557:7acdc0f6b46f",
+    "robots": "303:0a79eff08e91",
+    "safety_events": "0:d41d8cd98f00",
+    "safety_plc_configs": "1:3c5d8c645e3a",
+    "safety_zones": "0:d41d8cd98f00",
+    "shared_resources": "0:d41d8cd98f00",
+    "sites": "0:d41d8cd98f00",
+    "stations": "7206:81f360ae3304",
+    "tasks": "0:d41d8cd98f00",
+    "user_corporate_assignments": "160:55db18b4cb4e",
+    "user_factory_assignments": "1147:b306dee6d8d8",
+    "users": "3335:89ca8e830c6a",
+    "vram_leases": "0:d41d8cd98f00",
+    "workshops": "7171:88b44466bfc5",
+    "zone_reservations": "0:d41d8cd98f00",
+    "zones": "0:d41d8cd98f00"
+   },
+   "after": {
+    "ai_insights": "45:84e12df22df3",
+    "ai_pending_actions": "362:f64a5ddea764",
+    "alarm_taxonomy": "175:49c49f1ab925",
+    "alert_settings": "0:d41d8cd98f00",
+    "andon_events": "10:2099f6232057",
+    "battery_charging_plans": "0:d41d8cd98f00",
+    "camera_calibrations": "0:d41d8cd98f00",
+    "changeover_requests": "0:d41d8cd98f00",
+    "charger_stations": "0:d41d8cd98f00",
+    "collaboration_sessions": "0:d41d8cd98f00",
+    "daily_statistics": "225:a899b7cf547d",
+    "device_type_change_requests": "0:d41d8cd98f00",
+    "device_types": "0:d41d8cd98f00",
+    "engineering_changes": "10:2f8fae5d2742",
+    "equipment_3d_models": "0:d41d8cd98f00",
+    "factories": "7194:6bc88608e75b",
+    "interlock_events": "1:46e391c32f94",
+    "interlock_rules": "16:83c777a0ce2e",
+    "machine_recipes": "0:d41d8cd98f00",
+    "machine_status_logs": "4144:db08378dd229",
+    "machines": "13045:88da78dcd7f6",
+    "master_alarms": "9:84a0d80ac606",
+    "oee_metrics": "1316:97079c7dbc55",
+    "operation_codes": "0:d41d8cd98f00",
+    "operator_assignments": "0:d41d8cd98f00",
+    "orchestration_runs": "0:d41d8cd98f00",
+    "orchestration_workflows": "7:6a7b41c28edc",
+    "permissions": "4793:1b778de091a3",
+    "predictive_alert_occurrences": "2178:7036f2bd9284",
+    "predictive_alerts": "813:7a9e87af330e",
+    "product_inspections": "69266:15a0bb4cd472",
+    "product_machine_mappings": "0:d41d8cd98f00",
+    "product_models": "5439:3919e92b6a72",
+    "production_lines": "7173:2150f3565eec",
+    "program_artifacts": "1:3eb538fb3b97",
+    "program_deployments": "3323:62ecb882f945",
+    "program_projects": "1:23ac17d6a032",
+    "program_symbols": "0:d41d8cd98f00",
+    "recipe_deployments": "0:d41d8cd98f00",
+    "resource_reservations": "0:d41d8cd98f00",
+    "robot_jobs": "3843:09ca776ab4d3",
+    "robot_telemetry": "403557:7acdc0f6b46f",
+    "robots": "303:0a79eff08e91",
+    "safety_events": "0:d41d8cd98f00",
+    "safety_plc_configs": "1:3c5d8c645e3a",
+    "safety_zones": "0:d41d8cd98f00",
+    "shared_resources": "0:d41d8cd98f00",
+    "sites": "0:d41d8cd98f00",
+    "stations": "7206:81f360ae3304",
+    "tasks": "0:d41d8cd98f00",
+    "user_corporate_assignments": "160:55db18b4cb4e",
+    "user_factory_assignments": "1147:b306dee6d8d8",
+    "users": "3335:89ca8e830c6a",
+    "vram_leases": "0:d41d8cd98f00",
+    "workshops": "7171:88b44466bfc5",
+    "zone_reservations": "0:d41d8cd98f00",
+    "zones": "0:d41d8cd98f00"
+   },
+   "drift": {},
+   "errors": []
+  },
+  "instance": {
+   "server": "tsx server/_core/index.ts :3016 (env tách, không nạp .env; ROLE=api)",
+   "vite": "vite dev in-process :5176 (proxy /api,/uploads → :3016; envDir của vite.config nạp VITE_* từ .env vào client)",
+   "db": "aoi_management_test",
+   "flagsOn": [
+    "FOE_ENABLED",
+    "DPC_IR_V2_ENABLED",
+    "WORKFORCE_ENABLED",
+    "SAFETY_AUDIT_ENABLED",
+    "EQ_GOVERN_ENABLED",
+    "EQ_INTEG_ENABLED",
+    "FLEET_ORCH_ENABLED",
+    "FLEET_RESOURCE_ENABLED"
+   ],
+   "alwaysOff": [
+    "DPC_DEPLOY_ENABLED",
+    "SAFETY_PLC_ADAPTER_ENABLED",
+    "ALERT_EVALUATOR_ENABLED",
+    "AI_ORCHESTRATION_ENABLED",
+    "AI_ORCHESTRATION_ADVISOR_ENABLED",
+    "MQTT_ENABLED",
+    "EXTERNAL_MQTT_ENABLED",
+    "UNS_BRIDGE_ENABLED",
+    "UNS_SPARKPLUG_ENABLED",
+    "SPARKPLUG_COMMAND_ENABLED",
+    "UNS_TOPIC_V2_ENABLED",
+    "OT_CONTROL_ENABLED",
+    "OT_STORE_FORWARD_ENABLED",
+    "OT_CONN_HA_ENABLED",
+    "ROBOT_GATEWAY_ENABLED",
+    "ROBOT_CONTROL_ENABLED",
+    "OPCUA_GATEWAY_ENABLED",
+    "ROS2_BRIDGE_ENABLED",
+    "SIM_OT_TELEMETRY_ENABLED",
+    "SIM_KINEMATIC_ENABLED",
+    "EDGE_RUNTIME_ENABLED",
+    "SECS_GEM_ENABLED",
+    "MTCONNECT_ENABLED",
+    "VDA5050_ENABLED",
+    "LLAMA_SERVER_ENABLED",
+    "ENABLE_GPU",
+    "GGUF_WARM_DEEP_MODEL_ON_BOOT",
+    "PROG_KB_ENABLED",
+    "KB_AUTOSYNC_ENABLED",
+    "HOT_FOLDER_INGEST_ENABLED",
+    "WEBHOOKS_ENABLED",
+    "OTEL_ENABLED",
+    "TWIN_LIVE_ENABLED",
+    "TWIN_STREAM_ENABLED",
+    "STREAM_TELEMETRY_TAP_ENABLED",
+    "OPENAI_GATEWAY_ENABLED"
+   ],
+   "user": {
+    "username": "uim_engineer",
+    "role": "engineer",
+    "perms": 22,
+    "factory": "SIM-FAC"
+   },
+   "serverBootMs": 6045,
+   "serverPid": 29632
+  },
+  "base": "http://127.0.0.1:5176",
+  "reference": {
+   "file": "docs/ECOSYSTEM/81_ENGINEERING_CONTROL_KHAO_SAT_SAU/do-bo-cuc/baseline.json",
+   "pages": 34,
+   "calibrations": [
+    "engineering-changes|1600|n/a",
+    "engineering-changes|1366|n/a",
+    "interlock-rules|1600|n/a",
+    "interlock-rules|1366|n/a",
+    "recipes|1600|n/a",
+    "recipes|1366|n/a",
+    "equipment-integration|1600|n/a",
+    "equipment-integration|1366|n/a",
+    "safety-workforce|1600|n/a",
+    "safety-workforce|1366|n/a",
+    "equipment-standards|1600|n/a",
+    "equipment-standards|1366|n/a",
+    "fleet-orchestration|1600|n/a",
+    "fleet-orchestration|1366|n/a",
+    "orchestration-studio|1600|n/a",
+    "orchestration-studio|1366|n/a",
+    "engineering|1600|closed",
+    "engineering|1366|closed",
+    "engineering|1600|open",
+    "engineering|1366|open",
+    "ir-editor|1600|closed",
+    "ir-editor|1366|closed",
+    "pou-studio|1600|closed",
+    "pou-studio|1366|closed",
+    "ir-editor|1600|open",
+    "ir-editor|1366|open",
+    "pou-studio|1600|open",
+    "pou-studio|1366|open",
+    "engineering-home|1600|n/a",
+    "engineering-home|1366|n/a"
+   ]
+  },
+  "connections": [
+   {
+    "label": "sau khi khởi động",
+    "pids": [
+     29632,
+     33452
+    ],
+    "tcp": {
+     "Listen :::3016": 1,
+     "Bound → -": 4,
+     "Established → 127.0.0.1:5434": 4
+    },
+    "udp": [],
+    "violations": []
+   },
+   {
+    "label": "sau biến thể closed",
+    "pids": [
+     29632,
+     33452
+    ],
+    "tcp": {
+     "Listen :::3016": 1,
+     "Bound → -": 13,
+     "Established → 127.0.0.1:5434": 13,
+     "Established → vào :3016 từ 127.0.0.1": 1
+    },
+    "udp": [],
+    "violations": []
+   },
+   {
+    "label": "sau biến thể open",
+    "pids": [
+     29632,
+     33452
+    ],
+    "tcp": {
+     "Listen :::3016": 1,
+     "Bound → -": 9,
+     "Established → 127.0.0.1:5434": 9,
+     "Established → vào :3016 từ 127.0.0.1": 1
+    },
+    "udp": [],
+    "violations": []
+   }
+  ],
+  "outboundViolations": [],
+  "selfTest": {
+   "screen": "engineering-changes",
+   "vw": 1600,
+   "off": [],
+   "pass": true,
+   "retries": 0,
+   "checks": [
+    {
+     "name": "T01-banner-long-sau",
+     "pass": true,
+     "before": [
+      0,
+      0,
+      124
+     ],
+     "after": [
+      1,
+      100,
+      236
+     ],
+     "fe1Class": [
+      0,
+      0
+     ]
+    },
+    {
+     "name": "T02-lop-phu-fixed",
+     "pass": true,
+     "before": 0,
+     "after": 40000,
+     "mainFound": true,
+     "mainRects": [
+      {
+       "x": 288,
+       "y": 124,
+       "w": 1288,
+       "h": 704
+      }
+     ],
+     "errors": []
+    },
+    {
+     "name": "T03-kpi-hai-nguon",
+     "pass": true,
+     "before": 0,
+     "after": 1
+    },
+    {
+     "name": "T04-attribute-vi-pham",
+     "pass": true,
+     "errors": [
+      "[data-layout-main] NẰM NGOÀI <main>: {\"tag\":\"div\",\"testid\":null,\"loc\":null,\"role\":null,\"slot\":null,\"label\":\"\"}",
+      "MAIN chứa h1 ×1: {\"tag\":\"h1\",\"testid\":null,\"loc\":\"PageHeaderCompact.tsx:41\",\"role\":null,\"slot\":null,\"label\":\"Thay đổi kỹ thuật\"}",
+      "MAIN chứa page-header ×1: {\"tag\":\"header\",\"testid\":null,\"loc\":\"PageHeaderCompact.tsx:31\",\"role\":null,\"slot\":null,\"label\":\"Thay đổi kỹ thuật Quy trình ECN Thay đổi mới\"}"
+     ]
+    },
+    {
+     "name": "T05-hanh-dong-ma",
+     "pass": true,
+     "got": "not-found"
+    },
+    {
+     "name": "T06-hieu-chuan",
+     "pass": true,
+     "control": {
+      "status": "matches-reference",
+      "errors": []
+     },
+     "attack": {
+      "status": "MISMATCH",
+      "dTop": 93,
+      "dLeft": 1,
+      "dAreaPct": 19.16,
+      "ref": {
+       "mainTop": 124,
+       "areaPx": 906752
+      }
+     },
+     "record": "recorded-match",
+     "movedSel": "RECORD-MISMATCH",
+     "movedGeo": "RECORD-MISMATCH"
+    },
+    {
+     "name": "T07-banner-trong-main",
+     "pass": true,
+     "errors": [
+      "BANNER/DẢI KPI TRONG MAIN ×1 (khối trên phần tử làm việc, <120 px, ≥60 % bề rộng MAIN): [{\"kind\":\"banner\",\"h\":80,\"loc\":null,\"label\":\"Chế độ xem trước — banner không đánh dấu\"}]",
+      "HIỆU CHUẨN TRƯỢT: [data-layout-main] lệch MAIN tham chiếu FE1 (Δtop 0 px, Δleft 0 px, Δdiện tích 12.5 %; dung sai 4 px / 3 %) và chưa có bản ghi trong calibration.json — gắn attribute trên bố cục CHƯA đổi rồi chạy --calibrate"
+     ],
+     "inside": {
+      "banners": 1,
+      "above": 141
+     }
+    },
+    {
+     "name": "T08-kpi-trong-main",
+     "pass": true,
+     "errors": [
+      "BANNER/DẢI KPI TRONG MAIN ×1 (khối trên phần tử làm việc, <120 px, ≥60 % bề rộng MAIN): [{\"kind\":\"kpi-strip\",\"h\":48,\"loc\":null,\"label\":\"0 việc 7 việc 14 việc 21 việc\"}]",
+      "HIỆU CHUẨN TRƯỢT: [data-layout-main] lệch MAIN tham chiếu FE1 (Δtop 0 px, Δleft 0 px, Δdiện tích 8.0 %; dung sai 4 px / 3 %) và chưa có bản ghi trong calibration.json — gắn attribute trên bố cục CHƯA đổi rồi chạy --calibrate"
+     ]
+    },
+    {
+     "name": "T09-banner-trong-header",
+     "pass": true,
+     "before": [
+      0,
+      0
+     ],
+     "after": [
+      1,
+      40
+     ]
+    },
+    {
+     "name": "T10-nut-chet",
+     "pass": true,
+     "got": {
+      "id": "uim-chet",
+      "label": "/UIM nút chết/",
+      "status": "no-effect",
+      "dialogs": 0,
+      "kinds": [],
+      "error": "hành động \"uim-chet\": bấm xong KHÔNG có dialog/sheet và KHÔNG đổi hình học"
+     }
+    },
+    {
+     "name": "T10b-panel-inline",
+     "pass": true,
+     "got": {
+      "id": "uim-inline",
+      "label": "/UIM mở panel/",
+      "status": "inline",
+      "dialogs": 0,
+      "kinds": [
+       "inline"
+      ],
+      "inlineHeight": 150,
+      "pushesMainPx": 162,
+      "newBlocks": [
+       {
+        "loc": null,
+        "h": 150,
+        "label": "panel inline"
+       }
+      ]
+     }
+    },
+    {
+     "name": "T11-cat-overflow",
+     "pass": true,
+     "before": 59.7,
+     "after": 8.5,
+     "maxPct": 8.7
+    },
+    {
+     "name": "T12-ai-trong-main",
+     "pass": true,
+     "before": {
+      "ws": 55.2,
+      "ai": 0
+     },
+     "after": {
+      "ws": 46.6,
+      "ai": 130000,
+      "items": [
+       "complementary",
+       "copilot-panel"
+      ]
+     }
+    },
+    {
+     "name": "T13-portal-dai-dau",
+     "pass": true,
+     "before": 0,
+     "after": 1,
+     "byKind": {
+      "overlay": 1
+     }
+    },
+    {
+     "name": "T14-dialog-luc-nap",
+     "pass": true,
+     "errors": [
+      "1 dialog/sheet MỞ SẴN lúc nạp: [\"dialog\"]"
+     ]
+    },
+    {
+     "name": "T15-to-tien-an",
+     "pass": true,
+     "before": 1,
+     "after": 1.59,
+     "docH": 950,
+     "extra": 556
+    },
+    {
+     "name": "T15b-anh-em-chi-bao",
+     "pass": true,
+     "before": 1,
+     "after": 1.01,
+     "siblingScrollExtra": 1900
+    },
+    {
+     "name": "T17-wrapper-workspace",
+     "pass": true,
+     "errors": [
+      "BANNER/DẢI KPI TRONG MAIN ×1 (khối trên phần tử làm việc, <120 px, ≥60 % bề rộng MAIN): [{\"kind\":\"banner\",\"h\":80,\"loc\":null,\"label\":\"Chế độ xem trước — banner trong wrapper\"}]"
+     ],
+     "workspace": "table"
+    },
+    {
+     "name": "T17b-main-la-workspace",
+     "pass": true,
+     "errors": [
+      "MAIN tự khai [data-layout-workspace] nhưng KHÔNG phải phần tử làm việc gốc (table/canvas/editor/EmptyState…) — W === MAIN bị từ chối"
+     ]
+    },
+    {
+     "name": "T18-mat-h1",
+     "pass": true,
+     "errors": [
+      "MẤT h1: trang có h1 ở baseline nhưng nay không có h1 nhìn thấy"
+     ],
+     "refHadH1": true
+    },
+    {
+     "name": "T19-banner-tren-h1",
+     "pass": true,
+     "before": [
+      0,
+      0
+     ],
+     "after": [
+      1,
+      44
+     ]
+    },
+    {
+     "name": "T20-fixed-trong-main",
+     "pass": true,
+     "before": 0,
+     "after": 40000
+    },
+    {
+     "name": "T21-nhan-chu-thuan",
+     "pass": true,
+     "plain": [
+      "label",
+      "toolbar"
+     ],
+     "colored": [
+      "banner",
+      "toolbar"
+     ],
+     "headingRow": [
+      "heading",
+      "toolbar"
+     ]
+    },
+    {
+     "name": "T22-ai-theo-nhan-i18n",
+     "pass": true,
+     "after": 90000,
+     "items": [
+      "i18n-label"
+     ]
+    },
+    {
+     "name": "T23-toolbar-56",
+     "pass": true,
+     "toolbars": [
+      52,
+      44
+     ],
+     "errors": [
+      "MAIN có 2 [data-layout-toolbar] (tối đa 1)"
+     ]
+    },
+    {
+     "name": "T24-chip-thap",
+     "pass": true,
+     "kinds": [
+      "banner",
+      "toolbar"
+     ]
+    },
+    {
+     "name": "T25-emptystate-la-W",
+     "pass": true,
+     "component": {
+      "workspace": "clientsrccomponentsEmptyState.tsx:1",
+      "above": 0
+     },
+     "custom": {
+      "kind": "empty-state",
+      "above": 0
+     }
+    },
+    {
+     "name": "T26-chip-trong-wrapper",
+     "pass": true,
+     "colored": [
+      "kpi-strip",
+      "toolbar"
+     ],
+     "plain": [
+      "kpi-strip",
+      "toolbar"
+     ]
+    },
+    {
+     "name": "T27-wrapper-notice-mau",
+     "pass": true,
+     "kinds": [
+      "banner",
+      "toolbar"
+     ],
+     "errors": [
+      "BANNER/DẢI KPI TRONG MAIN ×1 (khối trên phần tử làm việc, <120 px, ≥60 % bề rộng MAIN): [{\"kind\":\"banner\",\"h\":36,\"loc\":null,\"label\":\"Dữ liệu đang được đồng bộ từ máy chủ, bảng có thể \"}]"
+     ]
+    },
+    {
+     "name": "T28-trong-trong-notice",
+     "pass": true,
+     "inline": {
+      "ws": "native:table",
+      "kinds": [
+       "banner",
+       "toolbar"
+      ]
+     },
+     "byClass": {
+      "ws": "native:table",
+      "kinds": [
+       "banner",
+       "toolbar"
+      ]
+     },
+     "keyword": {
+      "ws": "native:table",
+      "kinds": [
+       "banner",
+       "toolbar"
+      ]
+     }
+    },
+    {
+     "name": "T29a-separator-anh-em-mien",
+     "pass": true,
+     "before": 0,
+     "after": 0,
+     "separatorHitPx": 10304
+    },
+    {
+     "name": "T29b-overlay-cung-attr-van-che",
+     "pass": true,
+     "before": 0,
+     "after": 51520,
+     "need": 46368,
+     "separatorHitPx": 0
+    },
+    {
+     "name": "T29c-separator-fixed-van-che",
+     "pass": true,
+     "before": 0,
+     "after": 10304,
+     "need": 9274,
+     "separatorHitPx": 0
+    },
+    {
+     "name": "T16-bam-loi",
+     "pass": true,
+     "errors": [
+      "băm bảng bang_hong lỗi: ERR:relation does not exist"
+     ]
+    }
+   ],
+   "mutation": [
+    {
+     "guard": "geoBand",
+     "cases": [
+      "T01-banner-long-sau"
+     ],
+     "red": [
+      "T01-banner-long-sau"
+     ],
+     "guardProven": true
+    },
+    {
+     "guard": "hitTest",
+     "cases": [
+      "T02-lop-phu-fixed"
+     ],
+     "red": [
+      "T02-lop-phu-fixed"
+     ],
+     "guardProven": true
+    },
+    {
+     "guard": "kpiBoth",
+     "cases": [
+      "T03-kpi-hai-nguon"
+     ],
+     "red": [
+      "T03-kpi-hai-nguon"
+     ],
+     "guardProven": true
+    },
+    {
+     "guard": "attrConstraint",
+     "cases": [
+      "T04-attribute-vi-pham"
+     ],
+     "red": [
+      "T04-attribute-vi-pham"
+     ],
+     "guardProven": true
+    },
+    {
+     "guard": "actionNotFound",
+     "cases": [
+      "T05-hanh-dong-ma"
+     ],
+     "red": [
+      "T05-hanh-dong-ma"
+     ],
+     "guardProven": true
+    },
+    {
+     "guard": "calib",
+     "cases": [
+      "T06-hieu-chuan"
+     ],
+     "red": [
+      "T06-hieu-chuan"
+     ],
+     "guardProven": true
+    },
+    {
+     "guard": "insideMain",
+     "cases": [
+      "T07-banner-trong-main",
+      "T08-kpi-trong-main"
+     ],
+     "red": [
+      "T07-banner-trong-main",
+      "T08-kpi-trong-main"
+     ],
+     "guardProven": true
+    },
+    {
+     "guard": "headerBanner",
+     "cases": [
+      "T09-banner-trong-header"
+     ],
+     "red": [
+      "T09-banner-trong-header"
+     ],
+     "guardProven": true
+    },
+    {
+     "guard": "noDialog",
+     "cases": [
+      "T10-nut-chet",
+      "T10b-panel-inline"
+     ],
+     "red": [
+      "T10-nut-chet",
+      "T10b-panel-inline"
+     ],
+     "guardProven": true
+    },
+    {
+     "guard": "clip",
+     "cases": [
+      "T11-cat-overflow"
+     ],
+     "red": [
+      "T11-cat-overflow"
+     ],
+     "guardProven": true
+    },
+    {
+     "guard": "aiInside",
+     "cases": [
+      "T12-ai-trong-main"
+     ],
+     "red": [
+      "T12-ai-trong-main"
+     ],
+     "guardProven": true
+    },
+    {
+     "guard": "overlayBand",
+     "cases": [
+      "T13-portal-dai-dau"
+     ],
+     "red": [
+      "T13-portal-dai-dau"
+     ],
+     "guardProven": true
+    },
+    {
+     "guard": "dialogsAtLoad",
+     "cases": [
+      "T14-dialog-luc-nap"
+     ],
+     "red": [
+      "T14-dialog-luc-nap"
+     ],
+     "guardProven": true
+    },
+    {
+     "guard": "errHash",
+     "cases": [
+      "T16-bam-loi"
+     ],
+     "red": [
+      "T16-bam-loi"
+     ],
+     "guardProven": true
+    },
+    {
+     "guard": "scrollAncestors",
+     "cases": [
+      "T15-to-tien-an"
+     ],
+     "red": [
+      "T15-to-tien-an"
+     ],
+     "guardProven": true
+    },
+    {
+     "guard": "siblingReport",
+     "cases": [
+      "T15b-anh-em-chi-bao"
+     ],
+     "red": [
+      "T15b-anh-em-chi-bao"
+     ],
+     "guardProven": true
+    },
+    {
+     "guard": "wsEscape",
+     "cases": [
+      "T17-wrapper-workspace",
+      "T17b-main-la-workspace"
+     ],
+     "red": [
+      "T17-wrapper-workspace",
+      "T17b-main-la-workspace"
+     ],
+     "guardProven": true
+    },
+    {
+     "guard": "h1Gate",
+     "cases": [
+      "T18-mat-h1"
+     ],
+     "red": [
+      "T18-mat-h1"
+     ],
+     "guardProven": true
+    },
+    {
+     "guard": "aboveH1Banner",
+     "cases": [
+      "T19-banner-tren-h1"
+     ],
+     "red": [
+      "T19-banner-tren-h1"
+     ],
+     "guardProven": true
+    },
+    {
+     "guard": "fixedInMain",
+     "cases": [
+      "T20-fixed-trong-main"
+     ],
+     "red": [
+      "T20-fixed-trong-main"
+     ],
+     "guardProven": true
+    },
+    {
+     "guard": "textLabel",
+     "cases": [
+      "T21-nhan-chu-thuan"
+     ],
+     "red": [
+      "T21-nhan-chu-thuan"
+     ],
+     "guardProven": true
+    },
+    {
+     "guard": "aiText",
+     "cases": [
+      "T22-ai-theo-nhan-i18n"
+     ],
+     "red": [
+      "T22-ai-theo-nhan-i18n"
+     ],
+     "guardProven": true
+    },
+    {
+     "guard": "toolbar56",
+     "cases": [
+      "T23-toolbar-56"
+     ],
+     "red": [
+      "T23-toolbar-56"
+     ],
+     "guardProven": true
+    },
+    {
+     "guard": "chipMin",
+     "cases": [
+      "T24-chip-thap"
+     ],
+     "red": [
+      "T24-chip-thap"
+     ],
+     "guardProven": true
+    },
+    {
+     "guard": "emptyStateW",
+     "cases": [
+      "T25-emptystate-la-W"
+     ],
+     "red": [
+      "T25-emptystate-la-W"
+     ],
+     "guardProven": true
+    },
+    {
+     "guard": "kpiFirst",
+     "cases": [
+      "T26-chip-trong-wrapper"
+     ],
+     "red": [
+      "T26-chip-trong-wrapper"
+     ],
+     "guardProven": true
+    },
+    {
+     "guard": "labelDeep",
+     "cases": [
+      "T27-wrapper-notice-mau"
+     ],
+     "red": [
+      "T27-wrapper-notice-mau"
+     ],
+     "guardProven": true
+    },
+    {
+     "guard": "emptyNotice",
+     "cases": [
+      "T28-trong-trong-notice"
+     ],
+     "red": [
+      "T28-trong-trong-notice"
+     ],
+     "guardProven": true
+    },
+    {
+     "guard": "separatorExempt",
+     "cases": [
+      "T29a-separator-anh-em-mien"
+     ],
+     "red": [
+      "T29a-separator-anh-em-mien"
+     ],
+     "guardProven": true
+    }
+   ],
+   "mutationPass": true
+  },
+  "finishedAt": "2026-10-03T21:15:27.512Z",
+  "probeUserRemoved": {
+   "deleted": 1,
+   "deactivated": 0
+  },
+  "portsAfter": {
+   "3016": "trống",
+   "5176": "trống"
+  }
+ },
+ "pagesMissingDataLayoutMain": [],
+ "errors": [],
+ "results": [
+  {
+   "screen": "engineering-home",
+   "route": "/engineering-home",
+   "vw": 1600,
+   "vh": 950,
+   "variant": "n/a",
+   "mainSource": "data-layout-main",
+   "missingDataLayoutMain": false,
+   "mainSelector": "[data-layout-main]",
+   "mainFound": true,
+   "mainRects": [
+    {
+     "x": 288,
+     "y": 120,
+     "w": 936,
+     "h": 808
+    }
+   ],
+   "mainRectsRaw": [
+    {
+     "x": 288,
+     "y": 120,
+     "w": 936,
+     "h": 808
+    }
+   ],
+   "clippedBy": [],
+   "mainTop": 120,
+   "chromeAboveMain": 120,
+   "mainPct": 49.8,
+   "workspacePct": 46.4,
+   "mainPctFe1": 49.8,
+   "mainPctUncovered": 49.8,
+   "insideMain": [
+    {
+     "workspace": {
+      "tag": "table",
+      "testid": null,
+      "loc": "PendingReviewStrip.tsx:258",
+      "role": null,
+      "slot": null,
+      "label": "Đang chờ duyệt & cảnh báo",
+      "kind": "native",
+      "top": 175
+     },
+     "aboveWorkspacePx": 55,
+     "banners": 0,
+     "bannerPx": 0,
+     "toolbars": [
+      38
+     ],
+     "blocks": [
+      {
+       "x": 288,
+       "y": 120,
+       "w": 936,
+       "h": 38,
+       "kind": "toolbar",
+       "tag": "div",
+       "testid": null,
+       "loc": "TabbedHub.tsx:103",
+       "role": null,
+       "slot": null,
+       "label": "Hộp việc Danh mục công cụ Chờ duyệt 12 Toàn module"
+      }
+     ]
+    }
+   ],
+   "aiInsideMain": {
+    "px": 0,
+    "inWorkspacePx": 0,
+    "pctOfViewport": 0,
+    "items": []
+   },
+   "h1Top": 79,
+   "h1Bottom": 105,
+   "h1Text": "Trung tâm Kỹ thuật",
+   "h1Missing": false,
+   "h1Count": 1,
+   "gapH1ToMain": 15,
+   "breadcrumbs": 1,
+   "bannersBeforeMain": {
+    "count": 0,
+    "px": 0,
+    "byKind": {},
+    "method": "geometric: khối giữa đáy h1 và đỉnh MAIN (kể cả trong page header) + popover/portal đè dải đầu"
+   },
+   "blocksAboveH1": {
+    "count": 0,
+    "unionPx": 0
+   },
+   "headerParts": 2,
+   "bandBlocks": [
+    {
+     "pos": "besideH1",
+     "kind": "other",
+     "inHeader": true,
+     "y": 76,
+     "h": 32,
+     "x": 288,
+     "w": 32,
+     "loc": "PageHeaderCompact.tsx:37",
+     "tag": "span",
+     "testid": null,
+     "label": "",
+     "fe1Notice": false
+    },
+    {
+     "pos": "besideH1",
+     "kind": "kpi",
+     "inHeader": true,
+     "y": 76,
+     "h": 32,
+     "x": 520,
+     "w": 1056,
+     "loc": "PageHeaderCompact.tsx:45",
+     "tag": "div",
+     "testid": null,
+     "label": "Luồng vàng KHẨN 0 Nguồn: oversight.pendingSummary ",
+     "fe1Notice": true
+    }
+   ],
+   "bannersFe1Class": {
+    "count": 0,
+    "px": 0,
+    "items": []
+   },
+   "kpi": {
+    "legacy": {
+     "count": 0,
+     "stripPx": 0
+    },
+    "official": {
+     "count": 2,
+     "stripPx": 32
+    },
+    "all": {
+     "count": 2,
+     "stripPx": 32
+    }
+   },
+   "coverMain": {
+    "px": 0,
+    "separatorHitPx": 0,
+    "pctOfMain": 0,
+    "pctOfViewport": 0,
+    "items": [],
+    "positionedIntersecting": []
+   },
+   "pageHeightRatio": 1,
+   "pageHeightRatioDoc": 1,
+   "scroll": {
+    "docH": 952,
+    "extra": 0,
+    "siblingScrollExtra": 0,
+    "scrollers": [],
+    "inner": []
+   },
+   "shell": {
+    "sidebarW": 264,
+    "topbarH": 56,
+    "mainTop": 56,
+    "mainW": 1336,
+    "mainPad": "16px 24px 24px",
+    "breadcrumbLocs": [
+     "DashboardLayout.tsx:275"
+    ]
+   },
+   "dialogsAtLoad": {
+    "count": 0,
+    "kinds": []
+   },
+   "spinnersAtMeasure": 2,
+   "errors": [],
+   "warnings": [],
+   "attrSel": "div[data-layout-main=\"engineering-home\"]@CockpitLayout.tsx",
+   "calibration": {
+    "status": "recorded-match",
+    "dTop": 0,
+    "dLeft": 0,
+    "dAreaPct": 0,
+    "ok": true,
+    "selOk": true,
+    "record": {
+     "mainTop": 120,
+     "areaPx": 756288,
+     "attrSel": "div[data-layout-main=\"engineering-home\"]@CockpitLayout.tsx",
+     "gitHead": "f63657604"
+    }
+   },
+   "actions": [],
+   "trpc": [
+    "aiInbox.count",
+    "andon.active",
+    "auth.me",
+    "commandCenter.hierarchy",
+    "license.getAllowedModules",
+    "license.systemState",
+    "oversight.pendingSummary",
+    "oversight.posture",
+    "permissions.getMyPermissions"
+   ]
+  },
+  {
+   "screen": "engineering-home",
+   "route": "/engineering-home",
+   "vw": 1366,
+   "vh": 768,
+   "variant": "n/a",
+   "mainSource": "data-layout-main",
+   "missingDataLayoutMain": false,
+   "mainSelector": "[data-layout-main]",
+   "mainFound": true,
+   "mainRects": [
+    {
+     "x": 288,
+     "y": 120,
+     "w": 702,
+     "h": 626
+    }
+   ],
+   "mainRectsRaw": [
+    {
+     "x": 288,
+     "y": 120,
+     "w": 702,
+     "h": 626
+    }
+   ],
+   "clippedBy": [],
+   "mainTop": 120,
+   "chromeAboveMain": 120,
+   "mainPct": 41.9,
+   "workspacePct": 38.2,
+   "mainPctFe1": 41.9,
+   "mainPctUncovered": 41.9,
+   "insideMain": [
+    {
+     "workspace": {
+      "tag": "table",
+      "testid": null,
+      "loc": "PendingReviewStrip.tsx:258",
+      "role": null,
+      "slot": null,
+      "label": "Đang chờ duyệt & cảnh báo",
+      "kind": "native",
+      "top": 175
+     },
+     "aboveWorkspacePx": 55,
+     "banners": 0,
+     "bannerPx": 0,
+     "toolbars": [
+      38
+     ],
+     "blocks": [
+      {
+       "x": 288,
+       "y": 120,
+       "w": 702,
+       "h": 38,
+       "kind": "toolbar",
+       "tag": "div",
+       "testid": null,
+       "loc": "TabbedHub.tsx:103",
+       "role": null,
+       "slot": null,
+       "label": "Hộp việc Danh mục công cụ Chờ duyệt 12 Toàn module"
+      }
+     ]
+    }
+   ],
+   "aiInsideMain": {
+    "px": 0,
+    "inWorkspacePx": 0,
+    "pctOfViewport": 0,
+    "items": []
+   },
+   "h1Top": 79,
+   "h1Bottom": 105,
+   "h1Text": "Trung tâm Kỹ thuật",
+   "h1Missing": false,
+   "h1Count": 1,
+   "gapH1ToMain": 15,
+   "breadcrumbs": 1,
+   "bannersBeforeMain": {
+    "count": 0,
+    "px": 0,
+    "byKind": {},
+    "method": "geometric: khối giữa đáy h1 và đỉnh MAIN (kể cả trong page header) + popover/portal đè dải đầu"
+   },
+   "blocksAboveH1": {
+    "count": 0,
+    "unionPx": 0
+   },
+   "headerParts": 2,
+   "bandBlocks": [
+    {
+     "pos": "besideH1",
+     "kind": "other",
+     "inHeader": true,
+     "y": 76,
+     "h": 32,
+     "x": 288,
+     "w": 32,
+     "loc": "PageHeaderCompact.tsx:37",
+     "tag": "span",
+     "testid": null,
+     "label": "",
+     "fe1Notice": false
+    },
+    {
+     "pos": "besideH1",
+     "kind": "kpi",
+     "inHeader": true,
+     "y": 76,
+     "h": 32,
+     "x": 520,
+     "w": 822,
+     "loc": "PageHeaderCompact.tsx:45",
+     "tag": "div",
+     "testid": null,
+     "label": "Luồng vàng KHẨN 0 Nguồn: oversight.pendingSummary ",
+     "fe1Notice": true
+    }
+   ],
+   "bannersFe1Class": {
+    "count": 0,
+    "px": 0,
+    "items": []
+   },
+   "kpi": {
+    "legacy": {
+     "count": 0,
+     "stripPx": 0
+    },
+    "official": {
+     "count": 2,
+     "stripPx": 32
+    },
+    "all": {
+     "count": 2,
+     "stripPx": 32
+    }
+   },
+   "coverMain": {
+    "px": 0,
+    "separatorHitPx": 0,
+    "pctOfMain": 0,
+    "pctOfViewport": 0,
+    "items": [],
+    "positionedIntersecting": []
+   },
+   "pageHeightRatio": 1,
+   "pageHeightRatioDoc": 1,
+   "scroll": {
+    "docH": 770,
+    "extra": 0,
+    "siblingScrollExtra": 0,
+    "scrollers": [],
+    "inner": []
+   },
+   "shell": {
+    "sidebarW": 264,
+    "topbarH": 56,
+    "mainTop": 56,
+    "mainW": 1102,
+    "mainPad": "16px 24px 24px",
+    "breadcrumbLocs": [
+     "DashboardLayout.tsx:275"
+    ]
+   },
+   "dialogsAtLoad": {
+    "count": 0,
+    "kinds": []
+   },
+   "spinnersAtMeasure": 2,
+   "errors": [],
+   "warnings": [],
+   "attrSel": "div[data-layout-main=\"engineering-home\"]@CockpitLayout.tsx",
+   "calibration": {
+    "status": "recorded-match",
+    "dTop": 0,
+    "dLeft": 0,
+    "dAreaPct": 0,
+    "ok": true,
+    "selOk": true,
+    "record": {
+     "mainTop": 120,
+     "areaPx": 439452,
+     "attrSel": "div[data-layout-main=\"engineering-home\"]@CockpitLayout.tsx",
+     "gitHead": "f63657604"
+    }
+   },
+   "actions": [],
+   "trpc": [
+    "aiInbox.count",
+    "andon.active",
+    "auth.me",
+    "commandCenter.hierarchy",
+    "license.getAllowedModules",
+    "license.systemState",
+    "oversight.pendingSummary",
+    "oversight.posture",
+    "permissions.getMyPermissions"
+   ]
+  },
+  {
+   "screen": "engineering-studio",
+   "route": "/engineering-home?tab=catalog",
+   "vw": 1600,
+   "vh": 950,
+   "variant": "n/a",
+   "mainSource": "data-layout-main",
+   "missingDataLayoutMain": false,
+   "mainSelector": "[data-layout-main]",
+   "mainFound": true,
+   "mainRects": [
+    {
+     "x": 288,
+     "y": 120,
+     "w": 936,
+     "h": 806
+    }
+   ],
+   "mainRectsRaw": [
+    {
+     "x": 288,
+     "y": 120,
+     "w": 936,
+     "h": 806
+    }
+   ],
+   "clippedBy": [],
+   "mainTop": 120,
+   "chromeAboveMain": 120,
+   "mainPct": 49.6,
+   "workspacePct": 46.4,
+   "mainPctFe1": 49.6,
+   "mainPctUncovered": 49.6,
+   "insideMain": [
+    {
+     "workspace": {
+      "tag": "div",
+      "testid": null,
+      "loc": "TabbedHub.tsx:111",
+      "role": "tabpanel",
+      "slot": "tabs-content",
+      "label": "SOẠN THẢO & LẬP TRÌNH Lập trình thiết bị Copilot (",
+      "kind": "fallback-block",
+      "top": 172
+     },
+     "aboveWorkspacePx": 52,
+     "banners": 0,
+     "bannerPx": 0,
+     "toolbars": [
+      36
+     ],
+     "blocks": [
+      {
+       "x": 288,
+       "y": 120,
+       "w": 936,
+       "h": 36,
+       "kind": "toolbar",
+       "tag": "div",
+       "testid": null,
+       "loc": "TabbedHub.tsx:103",
+       "role": null,
+       "slot": null,
+       "label": "Hộp việc Danh mục công cụ"
+      }
+     ]
+    }
+   ],
+   "aiInsideMain": {
+    "px": 0,
+    "inWorkspacePx": 0,
+    "pctOfViewport": 0,
+    "items": []
+   },
+   "h1Top": 79,
+   "h1Bottom": 105,
+   "h1Text": "Trung tâm Kỹ thuật",
+   "h1Missing": false,
+   "h1Count": 1,
+   "gapH1ToMain": 15,
+   "breadcrumbs": 1,
+   "bannersBeforeMain": {
+    "count": 0,
+    "px": 0,
+    "byKind": {},
+    "method": "geometric: khối giữa đáy h1 và đỉnh MAIN (kể cả trong page header) + popover/portal đè dải đầu"
+   },
+   "blocksAboveH1": {
+    "count": 0,
+    "unionPx": 0
+   },
+   "headerParts": 2,
+   "bandBlocks": [
+    {
+     "pos": "besideH1",
+     "kind": "other",
+     "inHeader": true,
+     "y": 76,
+     "h": 32,
+     "x": 288,
+     "w": 32,
+     "loc": "PageHeaderCompact.tsx:37",
+     "tag": "span",
+     "testid": null,
+     "label": "",
+     "fe1Notice": false
+    },
+    {
+     "pos": "besideH1",
+     "kind": "kpi",
+     "inHeader": true,
+     "y": 76,
+     "h": 32,
+     "x": 520,
+     "w": 1056,
+     "loc": "PageHeaderCompact.tsx:45",
+     "tag": "div",
+     "testid": null,
+     "label": "Luồng vàng KHẨN 0 Nguồn: oversight.pendingSummary ",
+     "fe1Notice": true
+    }
+   ],
+   "bannersFe1Class": {
+    "count": 0,
+    "px": 0,
+    "items": []
+   },
+   "kpi": {
+    "legacy": {
+     "count": 0,
+     "stripPx": 0
+    },
+    "official": {
+     "count": 2,
+     "stripPx": 32
+    },
+    "all": {
+     "count": 2,
+     "stripPx": 32
+    }
+   },
+   "coverMain": {
+    "px": 0,
+    "separatorHitPx": 0,
+    "pctOfMain": 0,
+    "pctOfViewport": 0,
+    "items": [],
+    "positionedIntersecting": []
+   },
+   "pageHeightRatio": 1,
+   "pageHeightRatioDoc": 1,
+   "scroll": {
+    "docH": 950,
+    "extra": 0,
+    "siblingScrollExtra": 0,
+    "scrollers": [],
+    "inner": []
+   },
+   "shell": {
+    "sidebarW": 264,
+    "topbarH": 56,
+    "mainTop": 56,
+    "mainW": 1336,
+    "mainPad": "16px 24px 24px",
+    "breadcrumbLocs": [
+     "DashboardLayout.tsx:275"
+    ]
+   },
+   "dialogsAtLoad": {
+    "count": 0,
+    "kinds": []
+   },
+   "spinnersAtMeasure": 2,
+   "errors": [],
+   "warnings": [],
+   "attrSel": "div[data-layout-main=\"engineering-home\"]@CockpitLayout.tsx",
+   "calibration": {
+    "status": "recorded-match",
+    "dTop": 0,
+    "dLeft": 0,
+    "dAreaPct": 0.25,
+    "ok": true,
+    "selOk": true,
+    "record": {
+     "mainTop": 120,
+     "areaPx": 756288,
+     "attrSel": "div[data-layout-main=\"engineering-home\"]@CockpitLayout.tsx",
+     "gitHead": "f63657604"
+    }
+   },
+   "actions": [],
+   "trpc": [
+    "aiInbox.count",
+    "andon.active",
+    "auth.me",
+    "commandCenter.hierarchy",
+    "license.getAllowedModules",
+    "license.systemState",
+    "oversight.pendingSummary",
+    "oversight.posture",
+    "permissions.getMyPermissions"
+   ]
+  },
+  {
+   "screen": "engineering-studio",
+   "route": "/engineering-home?tab=catalog",
+   "vw": 1366,
+   "vh": 768,
+   "variant": "n/a",
+   "mainSource": "data-layout-main",
+   "missingDataLayoutMain": false,
+   "mainSelector": "[data-layout-main]",
+   "mainFound": true,
+   "mainRects": [
+    {
+     "x": 288,
+     "y": 120,
+     "w": 702,
+     "h": 624
+    }
+   ],
+   "mainRectsRaw": [
+    {
+     "x": 288,
+     "y": 120,
+     "w": 702,
+     "h": 624
+    }
+   ],
+   "clippedBy": [],
+   "mainTop": 120,
+   "chromeAboveMain": 120,
+   "mainPct": 41.8,
+   "workspacePct": 38.3,
+   "mainPctFe1": 41.8,
+   "mainPctUncovered": 41.8,
+   "insideMain": [
+    {
+     "workspace": {
+      "tag": "div",
+      "testid": null,
+      "loc": "TabbedHub.tsx:111",
+      "role": "tabpanel",
+      "slot": "tabs-content",
+      "label": "SOẠN THẢO & LẬP TRÌNH Lập trình thiết bị Copilot (",
+      "kind": "fallback-block",
+      "top": 172
+     },
+     "aboveWorkspacePx": 52,
+     "banners": 0,
+     "bannerPx": 0,
+     "toolbars": [
+      36
+     ],
+     "blocks": [
+      {
+       "x": 288,
+       "y": 120,
+       "w": 702,
+       "h": 36,
+       "kind": "toolbar",
+       "tag": "div",
+       "testid": null,
+       "loc": "TabbedHub.tsx:103",
+       "role": null,
+       "slot": null,
+       "label": "Hộp việc Danh mục công cụ"
+      }
+     ]
+    }
+   ],
+   "aiInsideMain": {
+    "px": 0,
+    "inWorkspacePx": 0,
+    "pctOfViewport": 0,
+    "items": []
+   },
+   "h1Top": 79,
+   "h1Bottom": 105,
+   "h1Text": "Trung tâm Kỹ thuật",
+   "h1Missing": false,
+   "h1Count": 1,
+   "gapH1ToMain": 15,
+   "breadcrumbs": 1,
+   "bannersBeforeMain": {
+    "count": 0,
+    "px": 0,
+    "byKind": {},
+    "method": "geometric: khối giữa đáy h1 và đỉnh MAIN (kể cả trong page header) + popover/portal đè dải đầu"
+   },
+   "blocksAboveH1": {
+    "count": 0,
+    "unionPx": 0
+   },
+   "headerParts": 2,
+   "bandBlocks": [
+    {
+     "pos": "besideH1",
+     "kind": "other",
+     "inHeader": true,
+     "y": 76,
+     "h": 32,
+     "x": 288,
+     "w": 32,
+     "loc": "PageHeaderCompact.tsx:37",
+     "tag": "span",
+     "testid": null,
+     "label": "",
+     "fe1Notice": false
+    },
+    {
+     "pos": "besideH1",
+     "kind": "kpi",
+     "inHeader": true,
+     "y": 76,
+     "h": 32,
+     "x": 520,
+     "w": 822,
+     "loc": "PageHeaderCompact.tsx:45",
+     "tag": "div",
+     "testid": null,
+     "label": "Luồng vàng KHẨN 0 Nguồn: oversight.pendingSummary ",
+     "fe1Notice": true
+    }
+   ],
+   "bannersFe1Class": {
+    "count": 0,
+    "px": 0,
+    "items": []
+   },
+   "kpi": {
+    "legacy": {
+     "count": 0,
+     "stripPx": 0
+    },
+    "official": {
+     "count": 2,
+     "stripPx": 32
+    },
+    "all": {
+     "count": 2,
+     "stripPx": 32
+    }
+   },
+   "coverMain": {
+    "px": 0,
+    "separatorHitPx": 0,
+    "pctOfMain": 0,
+    "pctOfViewport": 0,
+    "items": [],
+    "positionedIntersecting": []
+   },
+   "pageHeightRatio": 1,
+   "pageHeightRatioDoc": 1,
+   "scroll": {
+    "docH": 768,
+    "extra": 0,
+    "siblingScrollExtra": 0,
+    "scrollers": [],
+    "inner": [
+     {
+      "tag": "div",
+      "testid": null,
+      "loc": "EngineeringHub.tsx:255",
+      "role": null,
+      "slot": null,
+      "label": "SOẠN THẢO & LẬP TRÌNH Lập trình thiết bị Copilot (",
+      "overflowY": "auto",
+      "scrollH": 768,
+      "clientH": 562,
+      "ratio": 1.37
+     }
+    ]
+   },
+   "shell": {
+    "sidebarW": 264,
+    "topbarH": 56,
+    "mainTop": 56,
+    "mainW": 1102,
+    "mainPad": "16px 24px 24px",
+    "breadcrumbLocs": [
+     "DashboardLayout.tsx:275"
+    ]
+   },
+   "dialogsAtLoad": {
+    "count": 0,
+    "kinds": []
+   },
+   "spinnersAtMeasure": 2,
+   "errors": [],
+   "warnings": [],
+   "attrSel": "div[data-layout-main=\"engineering-home\"]@CockpitLayout.tsx",
+   "calibration": {
+    "status": "recorded-match",
+    "dTop": 0,
+    "dLeft": 0,
+    "dAreaPct": 0.32,
+    "ok": true,
+    "selOk": true,
+    "record": {
+     "mainTop": 120,
+     "areaPx": 439452,
+     "attrSel": "div[data-layout-main=\"engineering-home\"]@CockpitLayout.tsx",
+     "gitHead": "f63657604"
+    }
+   },
+   "actions": [],
+   "trpc": [
+    "aiInbox.count",
+    "andon.active",
+    "auth.me",
+    "commandCenter.hierarchy",
+    "license.getAllowedModules",
+    "license.systemState",
+    "oversight.pendingSummary",
+    "oversight.posture",
+    "permissions.getMyPermissions"
+   ]
+  },
+  {
+   "screen": "engineering",
+   "route": "/engineering",
+   "vw": 1600,
+   "vh": 950,
+   "variant": "closed",
+   "mainSource": "data-layout-main",
+   "missingDataLayoutMain": false,
+   "mainSelector": "[data-layout-main]",
+   "mainFound": true,
+   "mainRects": [
+    {
+     "x": 329,
+     "y": 105,
+     "w": 951,
+     "h": 820
+    }
+   ],
+   "mainRectsRaw": [
+    {
+     "x": 329,
+     "y": 105,
+     "w": 951,
+     "h": 820
+    }
+   ],
+   "clippedBy": [],
+   "mainTop": 105,
+   "chromeAboveMain": 105,
+   "mainPct": 51.3,
+   "workspacePct": 49.3,
+   "mainPctFe1": 51.1,
+   "mainPctUncovered": 51.3,
+   "insideMain": [
+    {
+     "workspace": {
+      "tag": "div",
+      "testid": null,
+      "loc": null,
+      "role": null,
+      "slot": null,
+      "label": "1",
+      "kind": "native",
+      "top": 137
+     },
+     "aboveWorkspacePx": 32,
+     "banners": 0,
+     "bannerPx": 0,
+     "toolbars": [
+      32
+     ],
+     "blocks": [
+      {
+       "x": 329,
+       "y": 105,
+       "w": 951,
+       "h": 32,
+       "kind": "toolbar",
+       "tag": "div",
+       "testid": null,
+       "loc": "EngineeringShell.tsx:320",
+       "role": null,
+       "slot": null,
+       "label": "Nguồn (chưa lưu) Δ So sánh Tags"
+      }
+     ]
+    }
+   ],
+   "aiInsideMain": {
+    "px": 0,
+    "inWorkspacePx": 0,
+    "pctOfViewport": 0,
+    "items": []
+   },
+   "h1Top": 67,
+   "h1Bottom": 93,
+   "h1Text": "Xưởng lập trình thiết bị",
+   "h1Missing": false,
+   "h1Count": 1,
+   "gapH1ToMain": 12,
+   "breadcrumbs": 1,
+   "bannersBeforeMain": {
+    "count": 0,
+    "px": 0,
+    "byKind": {},
+    "method": "geometric: khối giữa đáy h1 và đỉnh MAIN (kể cả trong page header) + popover/portal đè dải đầu"
+   },
+   "blocksAboveH1": {
+    "count": 0,
+    "unionPx": 0
+   },
+   "headerParts": 3,
+   "bandBlocks": [
+    {
+     "pos": "besideMain",
+     "kind": "other",
+     "inHeader": true,
+     "y": 64,
+     "h": 32,
+     "x": 60,
+     "w": 32,
+     "loc": "PageHeaderCompact.tsx:37",
+     "tag": "span",
+     "testid": null,
+     "label": "",
+     "fe1Notice": false
+    },
+    {
+     "pos": "besideH1",
+     "kind": "notice",
+     "inHeader": true,
+     "y": 66,
+     "h": 28,
+     "x": 328,
+     "w": 952,
+     "loc": "PageHeaderCompact.tsx:45",
+     "tag": "div",
+     "testid": null,
+     "label": "Triển khai thật: Đang tắt DEMO project — quick sta",
+     "fe1Notice": true
+    },
+    {
+     "pos": "besideMain",
+     "kind": "other",
+     "inHeader": true,
+     "y": 60,
+     "h": 40,
+     "x": 1288,
+     "w": 300,
+     "loc": "PageHeaderCompact.tsx:51",
+     "tag": "div",
+     "testid": null,
+     "label": "",
+     "fe1Notice": false
+    }
+   ],
+   "bannersFe1Class": {
+    "count": 0,
+    "px": 0,
+    "items": []
+   },
+   "kpi": {
+    "legacy": {
+     "count": 0,
+     "stripPx": 0
+    },
+    "official": {
+     "count": 0,
+     "stripPx": 0
+    },
+    "all": {
+     "count": 0,
+     "stripPx": 0
+    }
+   },
+   "coverMain": {
+    "px": 0,
+    "separatorHitPx": 7616,
+    "pctOfMain": 0,
+    "pctOfViewport": 0,
+    "items": [],
+    "positionedIntersecting": []
+   },
+   "pageHeightRatio": 1,
+   "pageHeightRatioDoc": 1,
+   "scroll": {
+    "docH": 950,
+    "extra": 0,
+    "siblingScrollExtra": 0,
+    "scrollers": [],
+    "inner": []
+   },
+   "shell": {
+    "sidebarW": 48,
+    "topbarH": 56,
+    "mainTop": 56,
+    "mainW": 1552,
+    "mainPad": "0px",
+    "breadcrumbLocs": [
+     "DashboardLayout.tsx:275"
+    ]
+   },
+   "dialogsAtLoad": {
+    "count": 0,
+    "kinds": []
+   },
+   "spinnersAtMeasure": 2,
+   "errors": [],
+   "warnings": [],
+   "attrSel": "div[data-layout-main=\"engineering-editor\"]@WorkbenchShell.tsx",
+   "calibration": {
+    "status": "recorded-match",
+    "dTop": 0,
+    "dLeft": 0,
+    "dAreaPct": 0,
+    "ok": true,
+    "selOk": true,
+    "record": {
+     "mainTop": 105,
+     "areaPx": 779820,
+     "attrSel": "div[data-layout-main=\"engineering-editor\"]@WorkbenchShell.tsx",
+     "gitHead": "4cc5b42c2"
+    }
+   },
+   "actions": [
+    {
+     "id": "so-tay",
+     "label": "/sổ tay/i",
+     "status": "opened",
+     "dialogs": 1,
+     "kinds": [
+      "popover"
+     ],
+     "rects": [
+      {
+       "role": "dialog",
+       "slot": "popover-content",
+       "x": 1160,
+       "y": 98,
+       "w": 384,
+       "h": 117
+      }
+     ],
+     "closedByEsc": true
+    }
+   ],
+   "trpc": [
+    "aiInbox.count",
+    "aiProgrammingKb.search",
+    "andon.active",
+    "auth.me",
+    "commandCenter.hierarchy",
+    "license.getAllowedModules",
+    "license.systemState",
+    "machine.list",
+    "permissions.getMyPermissions",
+    "programming.fleetVersionMatrix",
+    "programming.listApprovers",
+    "programming.listArtifacts",
+    "programming.listDeployments",
+    "programming.listProjects",
+    "programming.listSymbols",
+    "programming.status"
+   ]
+  },
+  {
+   "screen": "engineering",
+   "route": "/engineering",
+   "vw": 1366,
+   "vh": 768,
+   "variant": "closed",
+   "mainSource": "data-layout-main",
+   "missingDataLayoutMain": false,
+   "mainSelector": "[data-layout-main]",
+   "mainFound": true,
+   "mainRects": [
+    {
+     "x": 329,
+     "y": 105,
+     "w": 717,
+     "h": 638
+    }
+   ],
+   "mainRectsRaw": [
+    {
+     "x": 329,
+     "y": 105,
+     "w": 717,
+     "h": 638
+    }
+   ],
+   "clippedBy": [],
+   "mainTop": 105,
+   "chromeAboveMain": 105,
+   "mainPct": 43.6,
+   "workspacePct": 41.4,
+   "mainPctFe1": 43.3,
+   "mainPctUncovered": 43.6,
+   "insideMain": [
+    {
+     "workspace": {
+      "tag": "div",
+      "testid": null,
+      "loc": null,
+      "role": null,
+      "slot": null,
+      "label": "1",
+      "kind": "native",
+      "top": 137
+     },
+     "aboveWorkspacePx": 32,
+     "banners": 0,
+     "bannerPx": 0,
+     "toolbars": [
+      32
+     ],
+     "blocks": [
+      {
+       "x": 329,
+       "y": 105,
+       "w": 717,
+       "h": 32,
+       "kind": "toolbar",
+       "tag": "div",
+       "testid": null,
+       "loc": "EngineeringShell.tsx:320",
+       "role": null,
+       "slot": null,
+       "label": "Nguồn (chưa lưu) Δ So sánh Tags"
+      }
+     ]
+    }
+   ],
+   "aiInsideMain": {
+    "px": 0,
+    "inWorkspacePx": 0,
+    "pctOfViewport": 0,
+    "items": []
+   },
+   "h1Top": 67,
+   "h1Bottom": 93,
+   "h1Text": "Xưởng lập trình thiết bị",
+   "h1Missing": false,
+   "h1Count": 1,
+   "gapH1ToMain": 12,
+   "breadcrumbs": 1,
+   "bannersBeforeMain": {
+    "count": 0,
+    "px": 0,
+    "byKind": {},
+    "method": "geometric: khối giữa đáy h1 và đỉnh MAIN (kể cả trong page header) + popover/portal đè dải đầu"
+   },
+   "blocksAboveH1": {
+    "count": 0,
+    "unionPx": 0
+   },
+   "headerParts": 3,
+   "bandBlocks": [
+    {
+     "pos": "besideMain",
+     "kind": "other",
+     "inHeader": true,
+     "y": 64,
+     "h": 32,
+     "x": 60,
+     "w": 32,
+     "loc": "PageHeaderCompact.tsx:37",
+     "tag": "span",
+     "testid": null,
+     "label": "",
+     "fe1Notice": false
+    },
+    {
+     "pos": "besideH1",
+     "kind": "notice",
+     "inHeader": true,
+     "y": 66,
+     "h": 28,
+     "x": 328,
+     "w": 718,
+     "loc": "PageHeaderCompact.tsx:45",
+     "tag": "div",
+     "testid": null,
+     "label": "Triển khai thật: Đang tắt DEMO project — quick sta",
+     "fe1Notice": true
+    },
+    {
+     "pos": "besideMain",
+     "kind": "other",
+     "inHeader": true,
+     "y": 60,
+     "h": 40,
+     "x": 1054,
+     "w": 300,
+     "loc": "PageHeaderCompact.tsx:51",
+     "tag": "div",
+     "testid": null,
+     "label": "",
+     "fe1Notice": false
+    }
+   ],
+   "bannersFe1Class": {
+    "count": 0,
+    "px": 0,
+    "items": []
+   },
+   "kpi": {
+    "legacy": {
+     "count": 0,
+     "stripPx": 0
+    },
+    "official": {
+     "count": 0,
+     "stripPx": 0
+    },
+    "all": {
+     "count": 0,
+     "stripPx": 0
+    }
+   },
+   "coverMain": {
+    "px": 0,
+    "separatorHitPx": 5120,
+    "pctOfMain": 0,
+    "pctOfViewport": 0,
+    "items": [],
+    "positionedIntersecting": []
+   },
+   "pageHeightRatio": 1,
+   "pageHeightRatioDoc": 1,
+   "scroll": {
+    "docH": 768,
+    "extra": 0,
+    "siblingScrollExtra": 0,
+    "scrollers": [],
+    "inner": []
+   },
+   "shell": {
+    "sidebarW": 48,
+    "topbarH": 56,
+    "mainTop": 56,
+    "mainW": 1318,
+    "mainPad": "0px",
+    "breadcrumbLocs": [
+     "DashboardLayout.tsx:275"
+    ]
+   },
+   "dialogsAtLoad": {
+    "count": 0,
+    "kinds": []
+   },
+   "spinnersAtMeasure": 2,
+   "errors": [],
+   "warnings": [],
+   "attrSel": "div[data-layout-main=\"engineering-editor\"]@WorkbenchShell.tsx",
+   "calibration": {
+    "status": "recorded-match",
+    "dTop": 0,
+    "dLeft": 0,
+    "dAreaPct": 0,
+    "ok": true,
+    "selOk": true,
+    "record": {
+     "mainTop": 105,
+     "areaPx": 457446,
+     "attrSel": "div[data-layout-main=\"engineering-editor\"]@WorkbenchShell.tsx",
+     "gitHead": "4cc5b42c2"
+    }
+   },
+   "actions": [
+    {
+     "id": "so-tay",
+     "label": "/sổ tay/i",
+     "status": "opened",
+     "dialogs": 1,
+     "kinds": [
+      "popover"
+     ],
+     "rects": [
+      {
+       "role": "dialog",
+       "slot": "popover-content",
+       "x": 926,
+       "y": 98,
+       "w": 384,
+       "h": 117
+      }
+     ],
+     "closedByEsc": true
+    }
+   ],
+   "trpc": [
+    "aiInbox.count",
+    "aiProgrammingKb.search",
+    "andon.active",
+    "auth.me",
+    "commandCenter.hierarchy",
+    "license.getAllowedModules",
+    "license.systemState",
+    "machine.list",
+    "permissions.getMyPermissions",
+    "programming.fleetVersionMatrix",
+    "programming.listApprovers",
+    "programming.listArtifacts",
+    "programming.listDeployments",
+    "programming.listProjects",
+    "programming.listSymbols",
+    "programming.status"
+   ]
+  },
+  {
+   "screen": "engineering-changes",
+   "route": "/engineering-changes",
+   "vw": 1600,
+   "vh": 950,
+   "variant": "n/a",
+   "mainSource": "data-layout-main",
+   "missingDataLayoutMain": false,
+   "mainSelector": "[data-layout-main]",
+   "mainFound": true,
+   "mainRects": [
+    {
+     "x": 288,
+     "y": 124,
+     "w": 1288,
+     "h": 704
+    }
+   ],
+   "mainRectsRaw": [
+    {
+     "x": 288,
+     "y": 124,
+     "w": 1288,
+     "h": 704
+    }
+   ],
+   "clippedBy": [],
+   "mainTop": 124,
+   "chromeAboveMain": 124,
+   "mainPct": 59.7,
+   "workspacePct": 55.2,
+   "mainPctFe1": 59.7,
+   "mainPctUncovered": 59.7,
+   "insideMain": [
+    {
+     "workspace": {
+      "tag": "table",
+      "testid": null,
+      "loc": "DataTable.tsx:607",
+      "role": null,
+      "slot": "table",
+      "label": "ECN Tiêu đề Loại Hiệu lực Trạng thái Thao tác ECN-",
+      "kind": "native",
+      "top": 177
+     },
+     "aboveWorkspacePx": 53,
+     "banners": 0,
+     "bannerPx": 0,
+     "toolbars": [
+      44
+     ],
+     "blocks": [
+      {
+       "x": 288,
+       "y": 124,
+       "w": 1288,
+       "h": 44,
+       "kind": "toolbar",
+       "tag": "div",
+       "testid": null,
+       "loc": "EngineeringChanges.tsx:521",
+       "role": null,
+       "slot": null,
+       "label": "TRẠNG THÁI Mọi trạng thái LOẠI Mọi loại"
+      }
+     ]
+    }
+   ],
+   "aiInsideMain": {
+    "px": 0,
+    "inWorkspacePx": 0,
+    "pctOfViewport": 0,
+    "items": []
+   },
+   "h1Top": 79,
+   "h1Bottom": 105,
+   "h1Text": "Thay đổi kỹ thuật",
+   "h1Missing": false,
+   "h1Count": 1,
+   "gapH1ToMain": 19,
+   "breadcrumbs": 1,
+   "bannersBeforeMain": {
+    "count": 0,
+    "px": 0,
+    "byKind": {},
+    "method": "geometric: khối giữa đáy h1 và đỉnh MAIN (kể cả trong page header) + popover/portal đè dải đầu"
+   },
+   "blocksAboveH1": {
+    "count": 0,
+    "unionPx": 0
+   },
+   "headerParts": 3,
+   "bandBlocks": [
+    {
+     "pos": "besideH1",
+     "kind": "other",
+     "inHeader": true,
+     "y": 76,
+     "h": 32,
+     "x": 288,
+     "w": 32,
+     "loc": "PageHeaderCompact.tsx:37",
+     "tag": "span",
+     "testid": null,
+     "label": "",
+     "fe1Notice": false
+    },
+    {
+     "pos": "besideH1",
+     "kind": "other",
+     "inHeader": true,
+     "y": 78,
+     "h": 28,
+     "x": 502,
+     "w": 938,
+     "loc": "PageHeaderCompact.tsx:45",
+     "tag": "div",
+     "testid": null,
+     "label": "Quy trình ECN",
+     "fe1Notice": false
+    },
+    {
+     "pos": "besideH1",
+     "kind": "other",
+     "inHeader": true,
+     "y": 72,
+     "h": 40,
+     "x": 1448,
+     "w": 128,
+     "loc": "PageHeaderCompact.tsx:51",
+     "tag": "div",
+     "testid": null,
+     "label": "Thay đổi mới",
+     "fe1Notice": false
+    }
+   ],
+   "bannersFe1Class": {
+    "count": 0,
+    "px": 0,
+    "items": []
+   },
+   "kpi": {
+    "legacy": {
+     "count": 0,
+     "stripPx": 0
+    },
+    "official": {
+     "count": 0,
+     "stripPx": 0
+    },
+    "all": {
+     "count": 0,
+     "stripPx": 0
+    }
+   },
+   "coverMain": {
+    "px": 0,
+    "separatorHitPx": 0,
+    "pctOfMain": 0,
+    "pctOfViewport": 0,
+    "items": [],
+    "positionedIntersecting": []
+   },
+   "pageHeightRatio": 1,
+   "pageHeightRatioDoc": 1,
+   "scroll": {
+    "docH": 950,
+    "extra": 0,
+    "siblingScrollExtra": 0,
+    "scrollers": [],
+    "inner": []
+   },
+   "shell": {
+    "sidebarW": 264,
+    "topbarH": 56,
+    "mainTop": 56,
+    "mainW": 1336,
+    "mainPad": "16px 24px 24px",
+    "breadcrumbLocs": [
+     "DashboardLayout.tsx:275"
+    ]
+   },
+   "dialogsAtLoad": {
+    "count": 0,
+    "kinds": []
+   },
+   "spinnersAtMeasure": 2,
+   "errors": [],
+   "warnings": [],
+   "legacyRef": {
+    "mainTop": 124,
+    "rects": [
+     {
+      "x": 288,
+      "y": 124,
+      "w": 1288,
+      "h": 704
+     }
+    ],
+    "areaPx": 906752,
+    "hadH1": true
+   },
+   "attrSel": "div[data-layout-main=\"ecn-list\"]@EngineeringChanges.tsx",
+   "calibration": {
+    "status": "recorded-match",
+    "dTop": 0,
+    "dLeft": 0,
+    "dAreaPct": 0,
+    "ok": true,
+    "selOk": true,
+    "record": {
+     "mainTop": 124,
+     "areaPx": 906752,
+     "attrSel": "div[data-layout-main=\"ecn-list\"]@EngineeringChanges.tsx",
+     "gitHead": "891337f1c"
+    }
+   },
+   "actions": [
+    {
+     "id": "thay-doi-moi",
+     "label": "/Thay đổi mới/",
+     "status": "opened",
+     "dialogs": 1,
+     "kinds": [
+      "sheet"
+     ],
+     "rects": [
+      {
+       "role": "dialog",
+       "slot": "sheet-content",
+       "x": 1040,
+       "y": 0,
+       "w": 560,
+       "h": 950
+      }
+     ],
+     "closedByEsc": true
+    }
+   ],
+   "trpc": [
+    "aiInbox.count",
+    "andon.active",
+    "auth.me",
+    "commandCenter.hierarchy",
+    "ecn.list",
+    "license.getAllowedModules",
+    "license.systemState",
+    "permissions.getMyPermissions",
+    "productModel.list"
+   ]
+  },
+  {
+   "screen": "engineering-changes",
+   "route": "/engineering-changes",
+   "vw": 1366,
+   "vh": 768,
+   "variant": "n/a",
+   "mainSource": "data-layout-main",
+   "missingDataLayoutMain": false,
+   "mainSelector": "[data-layout-main]",
+   "mainFound": true,
+   "mainRects": [
+    {
+     "x": 288,
+     "y": 124,
+     "w": 1054,
+     "h": 704
+    }
+   ],
+   "mainRectsRaw": [
+    {
+     "x": 288,
+     "y": 124,
+     "w": 1054,
+     "h": 704
+    }
+   ],
+   "clippedBy": [],
+   "mainTop": 124,
+   "chromeAboveMain": 124,
+   "mainPct": 64.7,
+   "workspacePct": 59.4,
+   "mainPctFe1": 64.7,
+   "mainPctUncovered": 64.7,
+   "insideMain": [
+    {
+     "workspace": {
+      "tag": "table",
+      "testid": null,
+      "loc": "DataTable.tsx:607",
+      "role": null,
+      "slot": "table",
+      "label": "ECN Tiêu đề Loại Hiệu lực Trạng thái Thao tác ECN-",
+      "kind": "native",
+      "top": 177
+     },
+     "aboveWorkspacePx": 53,
+     "banners": 0,
+     "bannerPx": 0,
+     "toolbars": [
+      44
+     ],
+     "blocks": [
+      {
+       "x": 288,
+       "y": 124,
+       "w": 1054,
+       "h": 44,
+       "kind": "toolbar",
+       "tag": "div",
+       "testid": null,
+       "loc": "EngineeringChanges.tsx:521",
+       "role": null,
+       "slot": null,
+       "label": "TRẠNG THÁI Mọi trạng thái LOẠI Mọi loại"
+      }
+     ]
+    }
+   ],
+   "aiInsideMain": {
+    "px": 0,
+    "inWorkspacePx": 0,
+    "pctOfViewport": 0,
+    "items": []
+   },
+   "h1Top": 79,
+   "h1Bottom": 105,
+   "h1Text": "Thay đổi kỹ thuật",
+   "h1Missing": false,
+   "h1Count": 1,
+   "gapH1ToMain": 19,
+   "breadcrumbs": 1,
+   "bannersBeforeMain": {
+    "count": 0,
+    "px": 0,
+    "byKind": {},
+    "method": "geometric: khối giữa đáy h1 và đỉnh MAIN (kể cả trong page header) + popover/portal đè dải đầu"
+   },
+   "blocksAboveH1": {
+    "count": 0,
+    "unionPx": 0
+   },
+   "headerParts": 3,
+   "bandBlocks": [
+    {
+     "pos": "besideH1",
+     "kind": "other",
+     "inHeader": true,
+     "y": 76,
+     "h": 32,
+     "x": 288,
+     "w": 32,
+     "loc": "PageHeaderCompact.tsx:37",
+     "tag": "span",
+     "testid": null,
+     "label": "",
+     "fe1Notice": false
+    },
+    {
+     "pos": "besideH1",
+     "kind": "other",
+     "inHeader": true,
+     "y": 78,
+     "h": 28,
+     "x": 502,
+     "w": 704,
+     "loc": "PageHeaderCompact.tsx:45",
+     "tag": "div",
+     "testid": null,
+     "label": "Quy trình ECN",
+     "fe1Notice": false
+    },
+    {
+     "pos": "besideH1",
+     "kind": "other",
+     "inHeader": true,
+     "y": 72,
+     "h": 40,
+     "x": 1214,
+     "w": 128,
+     "loc": "PageHeaderCompact.tsx:51",
+     "tag": "div",
+     "testid": null,
+     "label": "Thay đổi mới",
+     "fe1Notice": false
+    }
+   ],
+   "bannersFe1Class": {
+    "count": 0,
+    "px": 0,
+    "items": []
+   },
+   "kpi": {
+    "legacy": {
+     "count": 0,
+     "stripPx": 0
+    },
+    "official": {
+     "count": 0,
+     "stripPx": 0
+    },
+    "all": {
+     "count": 0,
+     "stripPx": 0
+    }
+   },
+   "coverMain": {
+    "px": 0,
+    "separatorHitPx": 0,
+    "pctOfMain": 0,
+    "pctOfViewport": 0,
+    "items": [],
+    "positionedIntersecting": []
+   },
+   "pageHeightRatio": 1.11,
+   "pageHeightRatioDoc": 1.11,
+   "scroll": {
+    "docH": 852,
+    "extra": 0,
+    "siblingScrollExtra": 0,
+    "scrollers": [],
+    "inner": []
+   },
+   "shell": {
+    "sidebarW": 264,
+    "topbarH": 56,
+    "mainTop": 56,
+    "mainW": 1102,
+    "mainPad": "16px 24px 24px",
+    "breadcrumbLocs": [
+     "DashboardLayout.tsx:275"
+    ]
+   },
+   "dialogsAtLoad": {
+    "count": 0,
+    "kinds": []
+   },
+   "spinnersAtMeasure": 2,
+   "errors": [],
+   "warnings": [],
+   "legacyRef": {
+    "mainTop": 124,
+    "rects": [
+     {
+      "x": 288,
+      "y": 124,
+      "w": 1054,
+      "h": 704
+     }
+    ],
+    "areaPx": 742016,
+    "hadH1": true
+   },
+   "attrSel": "div[data-layout-main=\"ecn-list\"]@EngineeringChanges.tsx",
+   "calibration": {
+    "status": "recorded-match",
+    "dTop": 0,
+    "dLeft": 0,
+    "dAreaPct": 0,
+    "ok": true,
+    "selOk": true,
+    "record": {
+     "mainTop": 124,
+     "areaPx": 742016,
+     "attrSel": "div[data-layout-main=\"ecn-list\"]@EngineeringChanges.tsx",
+     "gitHead": "891337f1c"
+    }
+   },
+   "actions": [
+    {
+     "id": "thay-doi-moi",
+     "label": "/Thay đổi mới/",
+     "status": "opened",
+     "dialogs": 1,
+     "kinds": [
+      "sheet"
+     ],
+     "rects": [
+      {
+       "role": "dialog",
+       "slot": "sheet-content",
+       "x": 806,
+       "y": 0,
+       "w": 560,
+       "h": 768
+      }
+     ],
+     "closedByEsc": true
+    }
+   ],
+   "trpc": [
+    "aiInbox.count",
+    "andon.active",
+    "auth.me",
+    "commandCenter.hierarchy",
+    "ecn.list",
+    "license.getAllowedModules",
+    "license.systemState",
+    "permissions.getMyPermissions",
+    "productModel.list"
+   ]
+  },
+  {
+   "screen": "recipes",
+   "route": "/recipes",
+   "vw": 1600,
+   "vh": 950,
+   "variant": "n/a",
+   "mainSource": "data-layout-main",
+   "missingDataLayoutMain": false,
+   "mainSelector": "[data-layout-main]",
+   "mainFound": true,
+   "mainRects": [
+    {
+     "x": 790,
+     "y": 137,
+     "w": 773,
+     "h": 776
+    }
+   ],
+   "mainRectsRaw": [
+    {
+     "x": 790,
+     "y": 137,
+     "w": 773,
+     "h": 776
+    }
+   ],
+   "clippedBy": [],
+   "mainTop": 137,
+   "chromeAboveMain": 137,
+   "mainPct": 39.5,
+   "workspacePct": 36.4,
+   "mainPctFe1": 39.5,
+   "mainPctUncovered": 39.5,
+   "insideMain": [
+    {
+     "workspace": {
+      "tag": "table",
+      "testid": null,
+      "loc": "RecipeManagement.tsx:1081",
+      "role": null,
+      "slot": "table",
+      "label": "Máy Recipe / phiên bản Người triển khai Thời điểm ",
+      "kind": "native",
+      "top": 197
+     },
+     "aboveWorkspacePx": 60,
+     "banners": 0,
+     "bannerPx": 0,
+     "toolbars": [],
+     "blocks": [
+      {
+       "x": 798,
+       "y": 145,
+       "w": 757,
+       "h": 20,
+       "kind": "heading",
+       "tag": "h2",
+       "testid": null,
+       "loc": "RecipeManagement.tsx:800",
+       "role": null,
+       "slot": null,
+       "label": "Lịch sử triển khai (0)"
+      },
+      {
+       "x": 798,
+       "y": 173,
+       "w": 757,
+       "h": 16,
+       "kind": "label",
+       "tag": "p",
+       "testid": null,
+       "loc": "RecipeManagement.tsx:801",
+       "role": null,
+       "slot": null,
+       "label": "Chọn một mã recipe ở danh sách bên trái để xem tha"
+      }
+     ]
+    }
+   ],
+   "aiInsideMain": {
+    "px": 0,
+    "inWorkspacePx": 0,
+    "pctOfViewport": 0,
+    "items": []
+   },
+   "h1Top": 79,
+   "h1Bottom": 105,
+   "h1Text": "Quản lý Recipe máy",
+   "h1Missing": false,
+   "h1Count": 1,
+   "gapH1ToMain": 32,
+   "breadcrumbs": 1,
+   "bannersBeforeMain": {
+    "count": 0,
+    "px": 0,
+    "byKind": {},
+    "method": "geometric: khối giữa đáy h1 và đỉnh MAIN (kể cả trong page header) + popover/portal đè dải đầu"
+   },
+   "blocksAboveH1": {
+    "count": 0,
+    "unionPx": 0
+   },
+   "headerParts": 3,
+   "bandBlocks": [
+    {
+     "pos": "besideMain",
+     "kind": "other",
+     "inHeader": true,
+     "y": 76,
+     "h": 32,
+     "x": 288,
+     "w": 32,
+     "loc": "PageHeaderCompact.tsx:37",
+     "tag": "span",
+     "testid": null,
+     "label": "",
+     "fe1Notice": false
+    },
+    {
+     "pos": "besideH1",
+     "kind": "other",
+     "inHeader": true,
+     "y": 78,
+     "h": 28,
+     "x": 524,
+     "w": 678,
+     "loc": "PageHeaderCompact.tsx:45",
+     "tag": "div",
+     "testid": null,
+     "label": "Đẩy xuống máy qua HITL",
+     "fe1Notice": false
+    },
+    {
+     "pos": "besideH1",
+     "kind": "other",
+     "inHeader": true,
+     "y": 72,
+     "h": 40,
+     "x": 1210,
+     "w": 366,
+     "loc": "PageHeaderCompact.tsx:51",
+     "tag": "div",
+     "testid": null,
+     "label": "Chọn máy Lưu phiên bản mới",
+     "fe1Notice": false
+    }
+   ],
+   "bannersFe1Class": {
+    "count": 0,
+    "px": 0,
+    "items": []
+   },
+   "kpi": {
+    "legacy": {
+     "count": 0,
+     "stripPx": 0
+    },
+    "official": {
+     "count": 0,
+     "stripPx": 0
+    },
+    "all": {
+     "count": 0,
+     "stripPx": 0
+    }
+   },
+   "coverMain": {
+    "px": 0,
+    "separatorHitPx": 0,
+    "pctOfMain": 0,
+    "pctOfViewport": 0,
+    "items": [],
+    "positionedIntersecting": []
+   },
+   "pageHeightRatio": 1,
+   "pageHeightRatioDoc": 1,
+   "scroll": {
+    "docH": 950,
+    "extra": 0,
+    "siblingScrollExtra": 0,
+    "scrollers": [],
+    "inner": []
+   },
+   "shell": {
+    "sidebarW": 264,
+    "topbarH": 56,
+    "mainTop": 56,
+    "mainW": 1336,
+    "mainPad": "16px 24px 24px",
+    "breadcrumbLocs": [
+     "DashboardLayout.tsx:275"
+    ]
+   },
+   "dialogsAtLoad": {
+    "count": 0,
+    "kinds": []
+   },
+   "spinnersAtMeasure": 2,
+   "errors": [],
+   "warnings": [],
+   "attrSel": "section[data-layout-main=\"recipes-detail\"]@SplitListDetail.tsx",
+   "calibration": {
+    "status": "recorded-match",
+    "dTop": 0,
+    "dLeft": 0,
+    "dAreaPct": 0,
+    "ok": true,
+    "selOk": true,
+    "record": {
+     "mainTop": 137,
+     "areaPx": 599848,
+     "attrSel": "section[data-layout-main=\"recipes-detail\"]@SplitListDetail.tsx",
+     "gitHead": "9725fe53f"
+    }
+   },
+   "actions": [
+    {
+     "id": "luu-phien-ban-moi",
+     "label": "/Lưu phiên bản mới/",
+     "status": "opened",
+     "dialogs": 1,
+     "kinds": [
+      "sheet"
+     ],
+     "rects": [
+      {
+       "role": "dialog",
+       "slot": "sheet-content",
+       "x": 880,
+       "y": 0,
+       "w": 720,
+       "h": 950
+      }
+     ],
+     "closedByEsc": true
+    }
+   ],
+   "trpc": [
+    "aiInbox.count",
+    "andon.active",
+    "auth.me",
+    "commandCenter.hierarchy",
+    "license.getAllowedModules",
+    "license.systemState",
+    "machineRecipe.deployments.list",
+    "machineRecipe.machines.list",
+    "machineRecipe.recipes.listCodes",
+    "permissions.getMyPermissions"
+   ]
+  },
+  {
+   "screen": "recipes",
+   "route": "/recipes",
+   "vw": 1366,
+   "vh": 768,
+   "variant": "n/a",
+   "mainSource": "data-layout-main",
+   "missingDataLayoutMain": false,
+   "mainSelector": "[data-layout-main]",
+   "mainFound": true,
+   "mainRects": [
+    {
+     "x": 701,
+     "y": 137,
+     "w": 628,
+     "h": 594
+    }
+   ],
+   "mainRectsRaw": [
+    {
+     "x": 701,
+     "y": 137,
+     "w": 628,
+     "h": 594
+    }
+   ],
+   "clippedBy": [],
+   "mainTop": 137,
+   "chromeAboveMain": 137,
+   "mainPct": 35.6,
+   "workspacePct": 32,
+   "mainPctFe1": 35.6,
+   "mainPctUncovered": 35.6,
+   "insideMain": [
+    {
+     "workspace": {
+      "tag": "table",
+      "testid": null,
+      "loc": "RecipeManagement.tsx:1081",
+      "role": null,
+      "slot": "table",
+      "label": "Máy Recipe / phiên bản Người triển khai Thời điểm ",
+      "kind": "native",
+      "top": 197
+     },
+     "aboveWorkspacePx": 60,
+     "banners": 0,
+     "bannerPx": 0,
+     "toolbars": [],
+     "blocks": [
+      {
+       "x": 709,
+       "y": 145,
+       "w": 612,
+       "h": 20,
+       "kind": "heading",
+       "tag": "h2",
+       "testid": null,
+       "loc": "RecipeManagement.tsx:800",
+       "role": null,
+       "slot": null,
+       "label": "Lịch sử triển khai (0)"
+      },
+      {
+       "x": 709,
+       "y": 173,
+       "w": 612,
+       "h": 16,
+       "kind": "label",
+       "tag": "p",
+       "testid": null,
+       "loc": "RecipeManagement.tsx:801",
+       "role": null,
+       "slot": null,
+       "label": "Chọn một mã recipe ở danh sách bên trái để xem tha"
+      }
+     ]
+    }
+   ],
+   "aiInsideMain": {
+    "px": 0,
+    "inWorkspacePx": 0,
+    "pctOfViewport": 0,
+    "items": []
+   },
+   "h1Top": 79,
+   "h1Bottom": 105,
+   "h1Text": "Quản lý Recipe máy",
+   "h1Missing": false,
+   "h1Count": 1,
+   "gapH1ToMain": 32,
+   "breadcrumbs": 1,
+   "bannersBeforeMain": {
+    "count": 0,
+    "px": 0,
+    "byKind": {},
+    "method": "geometric: khối giữa đáy h1 và đỉnh MAIN (kể cả trong page header) + popover/portal đè dải đầu"
+   },
+   "blocksAboveH1": {
+    "count": 0,
+    "unionPx": 0
+   },
+   "headerParts": 3,
+   "bandBlocks": [
+    {
+     "pos": "besideMain",
+     "kind": "other",
+     "inHeader": true,
+     "y": 76,
+     "h": 32,
+     "x": 288,
+     "w": 32,
+     "loc": "PageHeaderCompact.tsx:37",
+     "tag": "span",
+     "testid": null,
+     "label": "",
+     "fe1Notice": false
+    },
+    {
+     "pos": "besideH1",
+     "kind": "other",
+     "inHeader": true,
+     "y": 78,
+     "h": 28,
+     "x": 524,
+     "w": 444,
+     "loc": "PageHeaderCompact.tsx:45",
+     "tag": "div",
+     "testid": null,
+     "label": "Đẩy xuống máy qua HITL",
+     "fe1Notice": false
+    },
+    {
+     "pos": "besideH1",
+     "kind": "other",
+     "inHeader": true,
+     "y": 72,
+     "h": 40,
+     "x": 976,
+     "w": 366,
+     "loc": "PageHeaderCompact.tsx:51",
+     "tag": "div",
+     "testid": null,
+     "label": "Chọn máy Lưu phiên bản mới",
+     "fe1Notice": false
+    }
+   ],
+   "bannersFe1Class": {
+    "count": 0,
+    "px": 0,
+    "items": []
+   },
+   "kpi": {
+    "legacy": {
+     "count": 0,
+     "stripPx": 0
+    },
+    "official": {
+     "count": 0,
+     "stripPx": 0
+    },
+    "all": {
+     "count": 0,
+     "stripPx": 0
+    }
+   },
+   "coverMain": {
+    "px": 0,
+    "separatorHitPx": 0,
+    "pctOfMain": 0,
+    "pctOfViewport": 0,
+    "items": [],
+    "positionedIntersecting": []
+   },
+   "pageHeightRatio": 1,
+   "pageHeightRatioDoc": 1,
+   "scroll": {
+    "docH": 768,
+    "extra": 0,
+    "siblingScrollExtra": 0,
+    "scrollers": [],
+    "inner": []
+   },
+   "shell": {
+    "sidebarW": 264,
+    "topbarH": 56,
+    "mainTop": 56,
+    "mainW": 1102,
+    "mainPad": "16px 24px 24px",
+    "breadcrumbLocs": [
+     "DashboardLayout.tsx:275"
+    ]
+   },
+   "dialogsAtLoad": {
+    "count": 0,
+    "kinds": []
+   },
+   "spinnersAtMeasure": 2,
+   "errors": [],
+   "warnings": [],
+   "attrSel": "section[data-layout-main=\"recipes-detail\"]@SplitListDetail.tsx",
+   "calibration": {
+    "status": "recorded-match",
+    "dTop": 0,
+    "dLeft": 0,
+    "dAreaPct": 0,
+    "ok": true,
+    "selOk": true,
+    "record": {
+     "mainTop": 137,
+     "areaPx": 373032,
+     "attrSel": "section[data-layout-main=\"recipes-detail\"]@SplitListDetail.tsx",
+     "gitHead": "9725fe53f"
+    }
+   },
+   "actions": [
+    {
+     "id": "luu-phien-ban-moi",
+     "label": "/Lưu phiên bản mới/",
+     "status": "opened",
+     "dialogs": 1,
+     "kinds": [
+      "sheet"
+     ],
+     "rects": [
+      {
+       "role": "dialog",
+       "slot": "sheet-content",
+       "x": 646,
+       "y": 0,
+       "w": 720,
+       "h": 768
+      }
+     ],
+     "closedByEsc": true
+    }
+   ],
+   "trpc": [
+    "aiInbox.count",
+    "andon.active",
+    "auth.me",
+    "commandCenter.hierarchy",
+    "license.getAllowedModules",
+    "license.systemState",
+    "machineRecipe.deployments.list",
+    "machineRecipe.machines.list",
+    "machineRecipe.recipes.listCodes",
+    "permissions.getMyPermissions"
+   ]
+  },
+  {
+   "screen": "interlock-rules",
+   "route": "/interlock-rules",
+   "vw": 1600,
+   "vh": 950,
+   "variant": "n/a",
+   "mainSource": "data-layout-main",
+   "missingDataLayoutMain": false,
+   "mainSelector": "[data-layout-main]",
+   "mainFound": true,
+   "mainRects": [
+    {
+     "x": 289,
+     "y": 125,
+     "w": 1286,
+     "h": 775
+    }
+   ],
+   "mainRectsRaw": [
+    {
+     "x": 289,
+     "y": 125,
+     "w": 1286,
+     "h": 775
+    }
+   ],
+   "clippedBy": [],
+   "mainTop": 125,
+   "chromeAboveMain": 125,
+   "mainPct": 65.6,
+   "workspacePct": 59.8,
+   "mainPctFe1": 65.6,
+   "mainPctUncovered": 65.6,
+   "insideMain": [
+    {
+     "workspace": {
+      "tag": "table",
+      "testid": null,
+      "loc": "InterlockRuleManagement.tsx:644",
+      "role": null,
+      "slot": "table",
+      "label": "Quy tắc",
+      "kind": "native",
+      "top": 193
+     },
+     "aboveWorkspacePx": 68,
+     "banners": 0,
+     "bannerPx": 0,
+     "toolbars": [
+      36
+     ],
+     "blocks": [
+      {
+       "x": 297,
+       "y": 133,
+       "w": 1270,
+       "h": 36,
+       "kind": "toolbar",
+       "tag": "div",
+       "testid": null,
+       "loc": "TabbedHub.tsx:103",
+       "role": null,
+       "slot": null,
+       "label": "Danh sách Ma trận Cause×Effect Sự kiện 16 quy tắc"
+      }
+     ]
+    }
+   ],
+   "aiInsideMain": {
+    "px": 0,
+    "inWorkspacePx": 0,
+    "pctOfViewport": 0,
+    "items": []
+   },
+   "h1Top": 79,
+   "h1Bottom": 105,
+   "h1Text": "Quản lý quy tắc Interlock Chỉ xem",
+   "h1Missing": false,
+   "h1Count": 1,
+   "gapH1ToMain": 20,
+   "breadcrumbs": 1,
+   "bannersBeforeMain": {
+    "count": 0,
+    "px": 0,
+    "byKind": {},
+    "method": "geometric: khối giữa đáy h1 và đỉnh MAIN (kể cả trong page header) + popover/portal đè dải đầu"
+   },
+   "blocksAboveH1": {
+    "count": 0,
+    "unionPx": 0
+   },
+   "headerParts": 3,
+   "bandBlocks": [
+    {
+     "pos": "besideH1",
+     "kind": "other",
+     "inHeader": true,
+     "y": 76,
+     "h": 32,
+     "x": 288,
+     "w": 32,
+     "loc": "PageHeaderCompact.tsx:37",
+     "tag": "span",
+     "testid": null,
+     "label": "",
+     "fe1Notice": false
+    },
+    {
+     "pos": "besideH1",
+     "kind": "kpi",
+     "inHeader": true,
+     "y": 76,
+     "h": 32,
+     "x": 663,
+     "w": 770,
+     "loc": "PageHeaderCompact.tsx:45",
+     "tag": "div",
+     "testid": null,
+     "label": "ENGINE TẮT Nguồn: oversight.posture — cờ của chính",
+     "fe1Notice": true
+    },
+    {
+     "pos": "besideH1",
+     "kind": "other",
+     "inHeader": true,
+     "y": 72,
+     "h": 40,
+     "x": 1441,
+     "w": 135,
+     "loc": "PageHeaderCompact.tsx:51",
+     "tag": "div",
+     "testid": null,
+     "label": "Thêm quy tắc",
+     "fe1Notice": false
+    }
+   ],
+   "bannersFe1Class": {
+    "count": 0,
+    "px": 0,
+    "items": []
+   },
+   "kpi": {
+    "legacy": {
+     "count": 0,
+     "stripPx": 0
+    },
+    "official": {
+     "count": 3,
+     "stripPx": 32
+    },
+    "all": {
+     "count": 3,
+     "stripPx": 32
+    }
+   },
+   "coverMain": {
+    "px": 0,
+    "separatorHitPx": 0,
+    "pctOfMain": 0,
+    "pctOfViewport": 0,
+    "items": [],
+    "positionedIntersecting": []
+   },
+   "pageHeightRatio": 1,
+   "pageHeightRatioDoc": 1,
+   "scroll": {
+    "docH": 950,
+    "extra": 0,
+    "siblingScrollExtra": 0,
+    "scrollers": [],
+    "inner": [
+     {
+      "tag": "div",
+      "testid": null,
+      "loc": "WorkbenchShell.tsx:517",
+      "role": null,
+      "slot": null,
+      "label": "Quy tắc",
+      "overflowY": "auto",
+      "scrollH": 1052,
+      "clientH": 775,
+      "ratio": 1.36
+     }
+    ]
+   },
+   "shell": {
+    "sidebarW": 264,
+    "topbarH": 56,
+    "mainTop": 56,
+    "mainW": 1336,
+    "mainPad": "16px 24px 24px",
+    "breadcrumbLocs": [
+     "DashboardLayout.tsx:275"
+    ]
+   },
+   "dialogsAtLoad": {
+    "count": 0,
+    "kinds": []
+   },
+   "spinnersAtMeasure": 2,
+   "errors": [],
+   "warnings": [
+    "hành động \"them-quy-tac\" disabled cho role đo"
+   ],
+   "attrSel": "div[data-layout-main=\"interlock-rules\"]@WorkbenchShell.tsx",
+   "calibration": {
+    "status": "recorded-match",
+    "dTop": 0,
+    "dLeft": 0,
+    "dAreaPct": 0,
+    "ok": true,
+    "selOk": true,
+    "record": {
+     "mainTop": 125,
+     "areaPx": 996650,
+     "attrSel": "div[data-layout-main=\"interlock-rules\"]@WorkbenchShell.tsx",
+     "gitHead": "3d7a95ae8"
+    }
+   },
+   "actions": [
+    {
+     "id": "them-quy-tac",
+     "label": "/Thêm quy tắc/",
+     "status": "disabled"
+    },
+    {
+     "id": "test-dry-run",
+     "label": "/^Test \\(dry-run\\)$/",
+     "status": "opened",
+     "dialogs": 1,
+     "kinds": [
+      "sheet"
+     ],
+     "rects": [
+      {
+       "role": "dialog",
+       "slot": "sheet-content",
+       "x": 1180,
+       "y": 0,
+       "w": 420,
+       "h": 950
+      }
+     ],
+     "closedByEsc": true
+    }
+   ],
+   "trpc": [
+    "aiInbox.count",
+    "andon.active",
+    "auth.me",
+    "commandCenter.hierarchy",
+    "interlock.events",
+    "interlock.list",
+    "license.getAllowedModules",
+    "license.systemState",
+    "oversight.posture",
+    "permissions.getMyPermissions"
+   ]
+  },
+  {
+   "screen": "interlock-rules",
+   "route": "/interlock-rules",
+   "vw": 1366,
+   "vh": 768,
+   "variant": "n/a",
+   "mainSource": "data-layout-main",
+   "missingDataLayoutMain": false,
+   "mainSelector": "[data-layout-main]",
+   "mainFound": true,
+   "mainRects": [
+    {
+     "x": 289,
+     "y": 125,
+     "w": 1052,
+     "h": 593
+    }
+   ],
+   "mainRectsRaw": [
+    {
+     "x": 289,
+     "y": 125,
+     "w": 1052,
+     "h": 593
+    }
+   ],
+   "clippedBy": [],
+   "mainTop": 125,
+   "chromeAboveMain": 125,
+   "mainPct": 59.5,
+   "workspacePct": 52.6,
+   "mainPctFe1": 59.5,
+   "mainPctUncovered": 59.5,
+   "insideMain": [
+    {
+     "workspace": {
+      "tag": "table",
+      "testid": null,
+      "loc": "InterlockRuleManagement.tsx:644",
+      "role": null,
+      "slot": "table",
+      "label": "Quy tắc",
+      "kind": "native",
+      "top": 193
+     },
+     "aboveWorkspacePx": 68,
+     "banners": 0,
+     "bannerPx": 0,
+     "toolbars": [
+      36
+     ],
+     "blocks": [
+      {
+       "x": 297,
+       "y": 133,
+       "w": 1036,
+       "h": 36,
+       "kind": "toolbar",
+       "tag": "div",
+       "testid": null,
+       "loc": "TabbedHub.tsx:103",
+       "role": null,
+       "slot": null,
+       "label": "Danh sách Ma trận Cause×Effect Sự kiện 16 quy tắc"
+      }
+     ]
+    }
+   ],
+   "aiInsideMain": {
+    "px": 0,
+    "inWorkspacePx": 0,
+    "pctOfViewport": 0,
+    "items": []
+   },
+   "h1Top": 79,
+   "h1Bottom": 105,
+   "h1Text": "Quản lý quy tắc Interlock Chỉ xem",
+   "h1Missing": false,
+   "h1Count": 1,
+   "gapH1ToMain": 20,
+   "breadcrumbs": 1,
+   "bannersBeforeMain": {
+    "count": 0,
+    "px": 0,
+    "byKind": {},
+    "method": "geometric: khối giữa đáy h1 và đỉnh MAIN (kể cả trong page header) + popover/portal đè dải đầu"
+   },
+   "blocksAboveH1": {
+    "count": 0,
+    "unionPx": 0
+   },
+   "headerParts": 3,
+   "bandBlocks": [
+    {
+     "pos": "besideH1",
+     "kind": "other",
+     "inHeader": true,
+     "y": 76,
+     "h": 32,
+     "x": 288,
+     "w": 32,
+     "loc": "PageHeaderCompact.tsx:37",
+     "tag": "span",
+     "testid": null,
+     "label": "",
+     "fe1Notice": false
+    },
+    {
+     "pos": "besideH1",
+     "kind": "kpi",
+     "inHeader": true,
+     "y": 76,
+     "h": 32,
+     "x": 663,
+     "w": 536,
+     "loc": "PageHeaderCompact.tsx:45",
+     "tag": "div",
+     "testid": null,
+     "label": "ENGINE TẮT Nguồn: oversight.posture — cờ của chính",
+     "fe1Notice": true
+    },
+    {
+     "pos": "besideH1",
+     "kind": "other",
+     "inHeader": true,
+     "y": 72,
+     "h": 40,
+     "x": 1207,
+     "w": 135,
+     "loc": "PageHeaderCompact.tsx:51",
+     "tag": "div",
+     "testid": null,
+     "label": "Thêm quy tắc",
+     "fe1Notice": false
+    }
+   ],
+   "bannersFe1Class": {
+    "count": 0,
+    "px": 0,
+    "items": []
+   },
+   "kpi": {
+    "legacy": {
+     "count": 0,
+     "stripPx": 0
+    },
+    "official": {
+     "count": 3,
+     "stripPx": 32
+    },
+    "all": {
+     "count": 3,
+     "stripPx": 32
+    }
+   },
+   "coverMain": {
+    "px": 0,
+    "separatorHitPx": 8448,
+    "pctOfMain": 0,
+    "pctOfViewport": 0,
+    "items": [],
+    "positionedIntersecting": []
+   },
+   "pageHeightRatio": 1,
+   "pageHeightRatioDoc": 1,
+   "scroll": {
+    "docH": 768,
+    "extra": 0,
+    "siblingScrollExtra": 0,
+    "scrollers": [],
+    "inner": [
+     {
+      "tag": "div",
+      "testid": null,
+      "loc": "WorkbenchShell.tsx:517",
+      "role": null,
+      "slot": null,
+      "label": "Quy tắc",
+      "overflowY": "auto",
+      "scrollH": 1052,
+      "clientH": 593,
+      "ratio": 1.77
+     }
+    ]
+   },
+   "shell": {
+    "sidebarW": 264,
+    "topbarH": 56,
+    "mainTop": 56,
+    "mainW": 1102,
+    "mainPad": "16px 24px 24px",
+    "breadcrumbLocs": [
+     "DashboardLayout.tsx:275"
+    ]
+   },
+   "dialogsAtLoad": {
+    "count": 0,
+    "kinds": []
+   },
+   "spinnersAtMeasure": 2,
+   "errors": [],
+   "warnings": [
+    "hành động \"them-quy-tac\" disabled cho role đo"
+   ],
+   "attrSel": "div[data-layout-main=\"interlock-rules\"]@WorkbenchShell.tsx",
+   "calibration": {
+    "status": "recorded-match",
+    "dTop": 0,
+    "dLeft": 0,
+    "dAreaPct": 0,
+    "ok": true,
+    "selOk": true,
+    "record": {
+     "mainTop": 125,
+     "areaPx": 623836,
+     "attrSel": "div[data-layout-main=\"interlock-rules\"]@WorkbenchShell.tsx",
+     "gitHead": "3d7a95ae8"
+    }
+   },
+   "actions": [
+    {
+     "id": "them-quy-tac",
+     "label": "/Thêm quy tắc/",
+     "status": "disabled"
+    },
+    {
+     "id": "test-dry-run",
+     "label": "/^Test \\(dry-run\\)$/",
+     "status": "opened",
+     "dialogs": 1,
+     "kinds": [
+      "sheet"
+     ],
+     "rects": [
+      {
+       "role": "dialog",
+       "slot": "sheet-content",
+       "x": 946,
+       "y": 0,
+       "w": 420,
+       "h": 768
+      }
+     ],
+     "closedByEsc": true
+    }
+   ],
+   "trpc": [
+    "aiInbox.count",
+    "andon.active",
+    "auth.me",
+    "commandCenter.hierarchy",
+    "interlock.events",
+    "interlock.list",
+    "license.getAllowedModules",
+    "license.systemState",
+    "oversight.posture",
+    "permissions.getMyPermissions"
+   ]
+  },
+  {
+   "screen": "orchestration-studio",
+   "route": "/orchestration-studio",
+   "vw": 1600,
+   "vh": 950,
+   "variant": "n/a",
+   "mainSource": "data-layout-main",
+   "missingDataLayoutMain": false,
+   "mainSelector": "[data-layout-main]",
+   "mainFound": true,
+   "mainRects": [
+    {
+     "x": 289,
+     "y": 105,
+     "w": 971,
+     "h": 820
+    }
+   ],
+   "mainRectsRaw": [
+    {
+     "x": 289,
+     "y": 105,
+     "w": 971,
+     "h": 820
+    }
+   ],
+   "clippedBy": [],
+   "mainTop": 105,
+   "chromeAboveMain": 105,
+   "mainPct": 52.4,
+   "workspacePct": 49.1,
+   "mainPctFe1": 52.1,
+   "mainPctUncovered": 52.4,
+   "insideMain": [
+    {
+     "workspace": {
+      "tag": "p",
+      "testid": null,
+      "loc": "OrchestrationStudio.tsx:2078",
+      "role": null,
+      "slot": null,
+      "label": "Chưa có bước nào. Thêm bước đầu tiên bên dưới.",
+      "kind": "empty-state",
+      "top": 157
+     },
+     "aboveWorkspacePx": 52,
+     "banners": 0,
+     "bannerPx": 0,
+     "toolbars": [
+      40
+     ],
+     "blocks": [
+      {
+       "x": 289,
+       "y": 105,
+       "w": 971,
+       "h": 40,
+       "kind": "toolbar",
+       "tag": "div",
+       "testid": null,
+       "loc": "OrchestrationStudio.tsx:2013",
+       "role": null,
+       "slot": null,
+       "label": "Quy trình chưa đặt tên chưa có mã (ref) v Cây Sơ đ"
+      }
+     ]
+    }
+   ],
+   "aiInsideMain": {
+    "px": 0,
+    "inWorkspacePx": 0,
+    "pctOfViewport": 0,
+    "items": []
+   },
+   "h1Top": 67,
+   "h1Bottom": 93,
+   "h1Text": "Studio Quy trình",
+   "h1Missing": false,
+   "h1Count": 1,
+   "gapH1ToMain": 12,
+   "breadcrumbs": 1,
+   "bannersBeforeMain": {
+    "count": 0,
+    "px": 0,
+    "byKind": {},
+    "method": "geometric: khối giữa đáy h1 và đỉnh MAIN (kể cả trong page header) + popover/portal đè dải đầu"
+   },
+   "blocksAboveH1": {
+    "count": 0,
+    "unionPx": 0
+   },
+   "headerParts": 3,
+   "bandBlocks": [
+    {
+     "pos": "besideMain",
+     "kind": "other",
+     "inHeader": true,
+     "y": 64,
+     "h": 32,
+     "x": 60,
+     "w": 32,
+     "loc": "PageHeaderCompact.tsx:37",
+     "tag": "span",
+     "testid": null,
+     "label": "",
+     "fe1Notice": false
+    },
+    {
+     "pos": "besideH1",
+     "kind": "notice",
+     "inHeader": true,
+     "y": 66,
+     "h": 28,
+     "x": 264,
+     "w": 707,
+     "loc": "PageHeaderCompact.tsx:45",
+     "tag": "div",
+     "testid": null,
+     "label": "Khi nào dùng",
+     "fe1Notice": true
+    },
+    {
+     "pos": "besideH1",
+     "kind": "other",
+     "inHeader": true,
+     "y": 60,
+     "h": 40,
+     "x": 978,
+     "w": 610,
+     "loc": "PageHeaderCompact.tsx:51",
+     "tag": "div",
+     "testid": null,
+     "label": "Trợ lý AI điều phối 🔬 Mô phỏng 💾 Lưu (deploy) ▶️",
+     "fe1Notice": false
+    }
+   ],
+   "bannersFe1Class": {
+    "count": 0,
+    "px": 0,
+    "items": []
+   },
+   "kpi": {
+    "legacy": {
+     "count": 0,
+     "stripPx": 0
+    },
+    "official": {
+     "count": 0,
+     "stripPx": 0
+    },
+    "all": {
+     "count": 0,
+     "stripPx": 0
+    }
+   },
+   "coverMain": {
+    "px": 0,
+    "separatorHitPx": 7744,
+    "pctOfMain": 0,
+    "pctOfViewport": 0,
+    "items": [],
+    "positionedIntersecting": []
+   },
+   "pageHeightRatio": 1,
+   "pageHeightRatioDoc": 1,
+   "scroll": {
+    "docH": 950,
+    "extra": 0,
+    "siblingScrollExtra": 0,
+    "scrollers": [],
+    "inner": []
+   },
+   "shell": {
+    "sidebarW": 48,
+    "topbarH": 56,
+    "mainTop": 56,
+    "mainW": 1552,
+    "mainPad": "0px",
+    "breadcrumbLocs": [
+     "DashboardLayout.tsx:275"
+    ]
+   },
+   "dialogsAtLoad": {
+    "count": 0,
+    "kinds": []
+   },
+   "spinnersAtMeasure": 2,
+   "errors": [],
+   "warnings": [],
+   "attrSel": "div[data-layout-main=\"orchestration-studio\"]@WorkbenchShell.tsx",
+   "calibration": {
+    "status": "recorded-match",
+    "dTop": 0,
+    "dLeft": 0,
+    "dAreaPct": 0,
+    "ok": true,
+    "selOk": true,
+    "record": {
+     "mainTop": 105,
+     "areaPx": 796220,
+     "attrSel": "div[data-layout-main=\"orchestration-studio\"]@WorkbenchShell.tsx",
+     "gitHead": "31710e825"
+    }
+   },
+   "actions": [
+    {
+     "id": "phien-ban",
+     "label": "/^Phiên bản$/",
+     "status": "opened",
+     "dialogs": 1,
+     "kinds": [
+      "sheet"
+     ],
+     "rects": [
+      {
+       "role": "dialog",
+       "slot": "sheet-content",
+       "x": 880,
+       "y": 0,
+       "w": 720,
+       "h": 950
+      }
+     ],
+     "closedByEsc": true
+    },
+    {
+     "id": "nhan-ban",
+     "label": "/^Nhân bản$/",
+     "status": "opened",
+     "dialogs": 1,
+     "kinds": [
+      "sheet"
+     ],
+     "rects": [
+      {
+       "role": "dialog",
+       "slot": "sheet-content",
+       "x": 1180,
+       "y": 0,
+       "w": 420,
+       "h": 950
+      }
+     ],
+     "closedByEsc": true
+    }
+   ],
+   "trpc": [
+    "aiInbox.count",
+    "aiOrchestration.status",
+    "andon.active",
+    "auth.me",
+    "commandCenter.hierarchy",
+    "equipment.listEquipment",
+    "license.getAllowedModules",
+    "license.systemState",
+    "orchestration.listRuns",
+    "orchestration.listVersions",
+    "orchestration.listWorkflows",
+    "orchestration.status",
+    "permissions.getMyPermissions"
+   ]
+  },
+  {
+   "screen": "orchestration-studio",
+   "route": "/orchestration-studio",
+   "vw": 1366,
+   "vh": 768,
+   "variant": "n/a",
+   "mainSource": "data-layout-main",
+   "missingDataLayoutMain": false,
+   "mainSelector": "[data-layout-main]",
+   "mainFound": true,
+   "mainRects": [
+    {
+     "x": 289,
+     "y": 105,
+     "w": 737,
+     "h": 638
+    }
+   ],
+   "mainRectsRaw": [
+    {
+     "x": 289,
+     "y": 105,
+     "w": 737,
+     "h": 638
+    }
+   ],
+   "clippedBy": [],
+   "mainTop": 105,
+   "chromeAboveMain": 105,
+   "mainPct": 44.8,
+   "workspacePct": 41.2,
+   "mainPctFe1": 44.5,
+   "mainPctUncovered": 44.8,
+   "insideMain": [
+    {
+     "workspace": {
+      "tag": "p",
+      "testid": null,
+      "loc": "OrchestrationStudio.tsx:2078",
+      "role": null,
+      "slot": null,
+      "label": "Chưa có bước nào. Thêm bước đầu tiên bên dưới.",
+      "kind": "empty-state",
+      "top": 157
+     },
+     "aboveWorkspacePx": 52,
+     "banners": 0,
+     "bannerPx": 0,
+     "toolbars": [
+      40
+     ],
+     "blocks": [
+      {
+       "x": 289,
+       "y": 105,
+       "w": 737,
+       "h": 40,
+       "kind": "toolbar",
+       "tag": "div",
+       "testid": null,
+       "loc": "OrchestrationStudio.tsx:2013",
+       "role": null,
+       "slot": null,
+       "label": "Quy trình chưa đặt tên chưa có mã (ref) v Cây Sơ đ"
+      }
+     ]
+    }
+   ],
+   "aiInsideMain": {
+    "px": 0,
+    "inWorkspacePx": 0,
+    "pctOfViewport": 0,
+    "items": []
+   },
+   "h1Top": 67,
+   "h1Bottom": 93,
+   "h1Text": "Studio Quy trình",
+   "h1Missing": false,
+   "h1Count": 1,
+   "gapH1ToMain": 12,
+   "breadcrumbs": 1,
+   "bannersBeforeMain": {
+    "count": 0,
+    "px": 0,
+    "byKind": {},
+    "method": "geometric: khối giữa đáy h1 và đỉnh MAIN (kể cả trong page header) + popover/portal đè dải đầu"
+   },
+   "blocksAboveH1": {
+    "count": 0,
+    "unionPx": 0
+   },
+   "headerParts": 3,
+   "bandBlocks": [
+    {
+     "pos": "besideMain",
+     "kind": "other",
+     "inHeader": true,
+     "y": 64,
+     "h": 32,
+     "x": 60,
+     "w": 32,
+     "loc": "PageHeaderCompact.tsx:37",
+     "tag": "span",
+     "testid": null,
+     "label": "",
+     "fe1Notice": false
+    },
+    {
+     "pos": "besideH1",
+     "kind": "notice",
+     "inHeader": true,
+     "y": 66,
+     "h": 28,
+     "x": 264,
+     "w": 473,
+     "loc": "PageHeaderCompact.tsx:45",
+     "tag": "div",
+     "testid": null,
+     "label": "Khi nào dùng",
+     "fe1Notice": true
+    },
+    {
+     "pos": "besideH1",
+     "kind": "other",
+     "inHeader": true,
+     "y": 60,
+     "h": 40,
+     "x": 744,
+     "w": 610,
+     "loc": "PageHeaderCompact.tsx:51",
+     "tag": "div",
+     "testid": null,
+     "label": "Trợ lý AI điều phối 🔬 Mô phỏng 💾 Lưu (deploy) ▶️",
+     "fe1Notice": false
+    }
+   ],
+   "bannersFe1Class": {
+    "count": 0,
+    "px": 0,
+    "items": []
+   },
+   "kpi": {
+    "legacy": {
+     "count": 0,
+     "stripPx": 0
+    },
+    "official": {
+     "count": 0,
+     "stripPx": 0
+    },
+    "all": {
+     "count": 0,
+     "stripPx": 0
+    }
+   },
+   "coverMain": {
+    "px": 0,
+    "separatorHitPx": 0,
+    "pctOfMain": 0,
+    "pctOfViewport": 0,
+    "items": [],
+    "positionedIntersecting": []
+   },
+   "pageHeightRatio": 1,
+   "pageHeightRatioDoc": 1,
+   "scroll": {
+    "docH": 768,
+    "extra": 0,
+    "siblingScrollExtra": 0,
+    "scrollers": [],
+    "inner": []
+   },
+   "shell": {
+    "sidebarW": 48,
+    "topbarH": 56,
+    "mainTop": 56,
+    "mainW": 1318,
+    "mainPad": "0px",
+    "breadcrumbLocs": [
+     "DashboardLayout.tsx:275"
+    ]
+   },
+   "dialogsAtLoad": {
+    "count": 0,
+    "kinds": []
+   },
+   "spinnersAtMeasure": 2,
+   "errors": [],
+   "warnings": [],
+   "attrSel": "div[data-layout-main=\"orchestration-studio\"]@WorkbenchShell.tsx",
+   "calibration": {
+    "status": "recorded-match",
+    "dTop": 0,
+    "dLeft": 0,
+    "dAreaPct": 0,
+    "ok": true,
+    "selOk": true,
+    "record": {
+     "mainTop": 105,
+     "areaPx": 470206,
+     "attrSel": "div[data-layout-main=\"orchestration-studio\"]@WorkbenchShell.tsx",
+     "gitHead": "31710e825"
+    }
+   },
+   "actions": [
+    {
+     "id": "phien-ban",
+     "label": "/^Phiên bản$/",
+     "status": "opened",
+     "dialogs": 1,
+     "kinds": [
+      "sheet"
+     ],
+     "rects": [
+      {
+       "role": "dialog",
+       "slot": "sheet-content",
+       "x": 646,
+       "y": 0,
+       "w": 720,
+       "h": 768
+      }
+     ],
+     "closedByEsc": true
+    },
+    {
+     "id": "nhan-ban",
+     "label": "/^Nhân bản$/",
+     "status": "opened",
+     "dialogs": 1,
+     "kinds": [
+      "sheet"
+     ],
+     "rects": [
+      {
+       "role": "dialog",
+       "slot": "sheet-content",
+       "x": 946,
+       "y": 0,
+       "w": 420,
+       "h": 768
+      }
+     ],
+     "closedByEsc": true
+    }
+   ],
+   "trpc": [
+    "aiInbox.count",
+    "aiOrchestration.status",
+    "andon.active",
+    "auth.me",
+    "commandCenter.hierarchy",
+    "equipment.listEquipment",
+    "license.getAllowedModules",
+    "license.systemState",
+    "orchestration.listRuns",
+    "orchestration.listVersions",
+    "orchestration.listWorkflows",
+    "orchestration.status",
+    "permissions.getMyPermissions"
+   ]
+  },
+  {
+   "screen": "ir-editor",
+   "route": "/ir-editor",
+   "vw": 1600,
+   "vh": 950,
+   "variant": "closed",
+   "mainSource": "data-layout-main",
+   "missingDataLayoutMain": false,
+   "mainSelector": "[data-layout-main]",
+   "mainFound": true,
+   "mainRects": [
+    {
+     "x": 289,
+     "y": 105,
+     "w": 991,
+     "h": 821
+    }
+   ],
+   "mainRectsRaw": [
+    {
+     "x": 289,
+     "y": 105,
+     "w": 991,
+     "h": 821
+    }
+   ],
+   "clippedBy": [],
+   "mainTop": 105,
+   "chromeAboveMain": 105,
+   "mainPct": 53.5,
+   "workspacePct": 51.4,
+   "mainPctFe1": 53.3,
+   "mainPctUncovered": 53.5,
+   "insideMain": [
+    {
+     "workspace": {
+      "tag": "div",
+      "testid": "rf__wrapper",
+      "loc": "IrGraphCanvas.tsx:394",
+      "role": "application",
+      "slot": null,
+      "label": "",
+      "kind": "native",
+      "top": 137
+     },
+     "aboveWorkspacePx": 32,
+     "banners": 0,
+     "bannerPx": 0,
+     "toolbars": [
+      32
+     ],
+     "blocks": [
+      {
+       "x": 289,
+       "y": 105,
+       "w": 991,
+       "h": 32,
+       "kind": "toolbar",
+       "tag": "div",
+       "testid": null,
+       "loc": "EngineeringShell.tsx:320",
+       "role": null,
+       "slot": null,
+       "label": "Vùng vẽ luồng So sánh phiên bản Hợp nhất (3 chiều)"
+      }
+     ]
+    }
+   ],
+   "aiInsideMain": {
+    "px": 0,
+    "inWorkspacePx": 0,
+    "pctOfViewport": 0,
+    "items": []
+   },
+   "h1Top": 67,
+   "h1Bottom": 93,
+   "h1Text": "Trình soạn IR trực quan",
+   "h1Missing": false,
+   "h1Count": 1,
+   "gapH1ToMain": 12,
+   "breadcrumbs": 1,
+   "bannersBeforeMain": {
+    "count": 0,
+    "px": 0,
+    "byKind": {},
+    "method": "geometric: khối giữa đáy h1 và đỉnh MAIN (kể cả trong page header) + popover/portal đè dải đầu"
+   },
+   "blocksAboveH1": {
+    "count": 0,
+    "unionPx": 0
+   },
+   "headerParts": 3,
+   "bandBlocks": [
+    {
+     "pos": "besideMain",
+     "kind": "other",
+     "inHeader": true,
+     "y": 64,
+     "h": 32,
+     "x": 60,
+     "w": 32,
+     "loc": "PageHeaderCompact.tsx:37",
+     "tag": "span",
+     "testid": null,
+     "label": "",
+     "fe1Notice": false
+    },
+    {
+     "pos": "besideH1",
+     "kind": "notice",
+     "inHeader": true,
+     "y": 66,
+     "h": 28,
+     "x": 329,
+     "w": 776,
+     "loc": "PageHeaderCompact.tsx:45",
+     "tag": "div",
+     "testid": null,
+     "label": "flow-1 · v1 · universal-robots Lint OK Khi nào dùn",
+     "fe1Notice": true
+    },
+    {
+     "pos": "besideH1",
+     "kind": "other",
+     "inHeader": true,
+     "y": 60,
+     "h": 40,
+     "x": 1113,
+     "w": 475,
+     "loc": "PageHeaderCompact.tsx:51",
+     "tag": "div",
+     "testid": null,
+     "label": "Lưu vào dự án… Lưu luồng",
+     "fe1Notice": false
+    }
+   ],
+   "bannersFe1Class": {
+    "count": 0,
+    "px": 0,
+    "items": []
+   },
+   "kpi": {
+    "legacy": {
+     "count": 0,
+     "stripPx": 0
+    },
+    "official": {
+     "count": 0,
+     "stripPx": 0
+    },
+    "all": {
+     "count": 0,
+     "stripPx": 0
+    }
+   },
+   "coverMain": {
+    "px": 0,
+    "separatorHitPx": 0,
+    "pctOfMain": 0,
+    "pctOfViewport": 0,
+    "items": [],
+    "positionedIntersecting": []
+   },
+   "pageHeightRatio": 1,
+   "pageHeightRatioDoc": 1,
+   "scroll": {
+    "docH": 950,
+    "extra": 0,
+    "siblingScrollExtra": 0,
+    "scrollers": [],
+    "inner": []
+   },
+   "shell": {
+    "sidebarW": 48,
+    "topbarH": 56,
+    "mainTop": 56,
+    "mainW": 1552,
+    "mainPad": "0px",
+    "breadcrumbLocs": [
+     "DashboardLayout.tsx:275"
+    ]
+   },
+   "dialogsAtLoad": {
+    "count": 0,
+    "kinds": []
+   },
+   "spinnersAtMeasure": 2,
+   "errors": [],
+   "warnings": [],
+   "attrSel": "div[data-layout-main=\"ir-canvas\"]@WorkbenchShell.tsx",
+   "calibration": {
+    "status": "recorded-match",
+    "dTop": 0,
+    "dLeft": 0,
+    "dAreaPct": 0,
+    "ok": true,
+    "selOk": true,
+    "record": {
+     "mainTop": 105,
+     "areaPx": 813611,
+     "attrSel": "div[data-layout-main=\"ir-canvas\"]@WorkbenchShell.tsx",
+     "gitHead": "58a5e4c3c"
+    }
+   },
+   "actions": [
+    {
+     "id": "project-ir-flow-moi",
+     "label": "/Project ir-flow mới/",
+     "status": "opened",
+     "dialogs": 1,
+     "kinds": [
+      "sheet"
+     ],
+     "rects": [
+      {
+       "role": "dialog",
+       "slot": "sheet-content",
+       "x": 1120,
+       "y": 0,
+       "w": 480,
+       "h": 950
+      }
+     ],
+     "closedByEsc": true
+    }
+   ],
+   "trpc": [
+    "aiInbox.count",
+    "andon.active",
+    "auth.me",
+    "commandCenter.hierarchy",
+    "ir.lint",
+    "ir.listFlows",
+    "ir.status",
+    "license.getAllowedModules",
+    "license.systemState",
+    "permissions.getMyPermissions",
+    "programming.listProjects"
+   ]
+  },
+  {
+   "screen": "ir-editor",
+   "route": "/ir-editor",
+   "vw": 1366,
+   "vh": 768,
+   "variant": "closed",
+   "mainSource": "data-layout-main",
+   "missingDataLayoutMain": false,
+   "mainSelector": "[data-layout-main]",
+   "mainFound": true,
+   "mainRects": [
+    {
+     "x": 289,
+     "y": 105,
+     "w": 757,
+     "h": 639
+    }
+   ],
+   "mainRectsRaw": [
+    {
+     "x": 289,
+     "y": 105,
+     "w": 757,
+     "h": 639
+    }
+   ],
+   "clippedBy": [],
+   "mainTop": 105,
+   "chromeAboveMain": 105,
+   "mainPct": 46.1,
+   "workspacePct": 43.8,
+   "mainPctFe1": 45.8,
+   "mainPctUncovered": 46.1,
+   "insideMain": [
+    {
+     "workspace": {
+      "tag": "div",
+      "testid": "rf__wrapper",
+      "loc": "IrGraphCanvas.tsx:394",
+      "role": "application",
+      "slot": null,
+      "label": "",
+      "kind": "native",
+      "top": 137
+     },
+     "aboveWorkspacePx": 32,
+     "banners": 0,
+     "bannerPx": 0,
+     "toolbars": [
+      32
+     ],
+     "blocks": [
+      {
+       "x": 289,
+       "y": 105,
+       "w": 757,
+       "h": 32,
+       "kind": "toolbar",
+       "tag": "div",
+       "testid": null,
+       "loc": "EngineeringShell.tsx:320",
+       "role": null,
+       "slot": null,
+       "label": "Vùng vẽ luồng So sánh phiên bản Hợp nhất (3 chiều)"
+      }
+     ]
+    }
+   ],
+   "aiInsideMain": {
+    "px": 0,
+    "inWorkspacePx": 0,
+    "pctOfViewport": 0,
+    "items": []
+   },
+   "h1Top": 67,
+   "h1Bottom": 93,
+   "h1Text": "Trình soạn IR trực quan",
+   "h1Missing": false,
+   "h1Count": 1,
+   "gapH1ToMain": 12,
+   "breadcrumbs": 1,
+   "bannersBeforeMain": {
+    "count": 0,
+    "px": 0,
+    "byKind": {},
+    "method": "geometric: khối giữa đáy h1 và đỉnh MAIN (kể cả trong page header) + popover/portal đè dải đầu"
+   },
+   "blocksAboveH1": {
+    "count": 0,
+    "unionPx": 0
+   },
+   "headerParts": 3,
+   "bandBlocks": [
+    {
+     "pos": "besideMain",
+     "kind": "other",
+     "inHeader": true,
+     "y": 64,
+     "h": 32,
+     "x": 60,
+     "w": 32,
+     "loc": "PageHeaderCompact.tsx:37",
+     "tag": "span",
+     "testid": null,
+     "label": "",
+     "fe1Notice": false
+    },
+    {
+     "pos": "besideH1",
+     "kind": "notice",
+     "inHeader": true,
+     "y": 66,
+     "h": 28,
+     "x": 329,
+     "w": 619,
+     "loc": "PageHeaderCompact.tsx:45",
+     "tag": "div",
+     "testid": null,
+     "label": "flow-1 · v1 · universal-robots Lint OK Khi nào dùn",
+     "fe1Notice": true
+    },
+    {
+     "pos": "besideH1",
+     "kind": "other",
+     "inHeader": true,
+     "y": 60,
+     "h": 40,
+     "x": 956,
+     "w": 398,
+     "loc": "PageHeaderCompact.tsx:51",
+     "tag": "div",
+     "testid": null,
+     "label": "Lưu vào dự án…",
+     "fe1Notice": false
+    }
+   ],
+   "bannersFe1Class": {
+    "count": 0,
+    "px": 0,
+    "items": []
+   },
+   "kpi": {
+    "legacy": {
+     "count": 0,
+     "stripPx": 0
+    },
+    "official": {
+     "count": 0,
+     "stripPx": 0
+    },
+    "all": {
+     "count": 0,
+     "stripPx": 0
+    }
+   },
+   "coverMain": {
+    "px": 0,
+    "separatorHitPx": 5120,
+    "pctOfMain": 0,
+    "pctOfViewport": 0,
+    "items": [],
+    "positionedIntersecting": []
+   },
+   "pageHeightRatio": 1,
+   "pageHeightRatioDoc": 1,
+   "scroll": {
+    "docH": 768,
+    "extra": 0,
+    "siblingScrollExtra": 75,
+    "scrollers": [
+     {
+      "tag": "div",
+      "testid": null,
+      "loc": "IrEditor.tsx:1548",
+      "role": null,
+      "slot": null,
+      "label": "BẢNG CHỌN KHỐI Kéo một khối vào vùng vẽ — thả lên ",
+      "rel": "sibling",
+      "overflowY": "auto",
+      "scrollH": 714,
+      "clientH": 639
+     }
+    ],
+    "inner": []
+   },
+   "shell": {
+    "sidebarW": 48,
+    "topbarH": 56,
+    "mainTop": 56,
+    "mainW": 1318,
+    "mainPad": "0px",
+    "breadcrumbLocs": [
+     "DashboardLayout.tsx:275"
+    ]
+   },
+   "dialogsAtLoad": {
+    "count": 0,
+    "kinds": []
+   },
+   "spinnersAtMeasure": 2,
+   "errors": [],
+   "warnings": [],
+   "attrSel": "div[data-layout-main=\"ir-canvas\"]@WorkbenchShell.tsx",
+   "calibration": {
+    "status": "recorded-match",
+    "dTop": 0,
+    "dLeft": 0,
+    "dAreaPct": 0,
+    "ok": true,
+    "selOk": true,
+    "record": {
+     "mainTop": 105,
+     "areaPx": 483723,
+     "attrSel": "div[data-layout-main=\"ir-canvas\"]@WorkbenchShell.tsx",
+     "gitHead": "58a5e4c3c"
+    }
+   },
+   "actions": [
+    {
+     "id": "project-ir-flow-moi",
+     "label": "/Project ir-flow mới/",
+     "status": "opened",
+     "dialogs": 1,
+     "kinds": [
+      "sheet"
+     ],
+     "rects": [
+      {
+       "role": "dialog",
+       "slot": "sheet-content",
+       "x": 886,
+       "y": 0,
+       "w": 480,
+       "h": 768
+      }
+     ],
+     "closedByEsc": true
+    }
+   ],
+   "trpc": [
+    "aiInbox.count",
+    "andon.active",
+    "auth.me",
+    "commandCenter.hierarchy",
+    "ir.lint",
+    "ir.listFlows",
+    "ir.status",
+    "license.getAllowedModules",
+    "license.systemState",
+    "permissions.getMyPermissions",
+    "programming.listProjects"
+   ]
+  },
+  {
+   "screen": "pou-studio",
+   "route": "/pou-studio",
+   "vw": 1600,
+   "vh": 950,
+   "variant": "closed",
+   "mainSource": "data-layout-main",
+   "missingDataLayoutMain": false,
+   "mainSelector": "[data-layout-main]",
+   "mainFound": true,
+   "mainRects": [
+    {
+     "x": 89,
+     "y": 105,
+     "w": 1190,
+     "h": 820
+    }
+   ],
+   "mainRectsRaw": [
+    {
+     "x": 89,
+     "y": 105,
+     "w": 1190,
+     "h": 820
+    }
+   ],
+   "clippedBy": [
+    {
+     "tag": "div",
+     "testid": null,
+     "loc": "WorkbenchShell.tsx:632",
+     "role": null,
+     "slot": "resizable-panel",
+     "label": "Canvas JSON MotorControl · LD | | Start NO | | Mot",
+     "overflow": "hidden/hidden"
+    }
+   ],
+   "mainTop": 105,
+   "chromeAboveMain": 105,
+   "mainPct": 64.2,
+   "workspacePct": 61.7,
+   "mainPctFe1": 63.9,
+   "mainPctUncovered": 64.2,
+   "insideMain": [
+    {
+     "workspace": {
+      "tag": "div",
+      "testid": "rf__wrapper",
+      "loc": "PouCanvas.tsx:1131",
+      "role": "application",
+      "slot": null,
+      "label": "| | Start NO | | Motor NO |/| Stop NC | | Interloc",
+      "kind": "native",
+      "top": 137
+     },
+     "aboveWorkspacePx": 32,
+     "banners": 0,
+     "bannerPx": 0,
+     "toolbars": [
+      32
+     ],
+     "blocks": [
+      {
+       "x": 89,
+       "y": 105,
+       "w": 1190,
+       "h": 32,
+       "kind": "toolbar",
+       "tag": "div",
+       "testid": null,
+       "loc": "EngineeringShell.tsx:320",
+       "role": null,
+       "slot": null,
+       "label": "Canvas JSON MotorControl · LD"
+      }
+     ]
+    }
+   ],
+   "aiInsideMain": {
+    "px": 0,
+    "inWorkspacePx": 0,
+    "pctOfViewport": 0,
+    "items": []
+   },
+   "h1Top": 67,
+   "h1Bottom": 93,
+   "h1Text": "IEC 61131 POU Studio",
+   "h1Missing": false,
+   "h1Count": 1,
+   "gapH1ToMain": 12,
+   "breadcrumbs": 1,
+   "bannersBeforeMain": {
+    "count": 0,
+    "px": 0,
+    "byKind": {},
+    "method": "geometric: khối giữa đáy h1 và đỉnh MAIN (kể cả trong page header) + popover/portal đè dải đầu"
+   },
+   "blocksAboveH1": {
+    "count": 0,
+    "unionPx": 0
+   },
+   "headerParts": 3,
+   "bandBlocks": [
+    {
+     "pos": "besideH1",
+     "kind": "other",
+     "inHeader": true,
+     "y": 64,
+     "h": 32,
+     "x": 60,
+     "w": 32,
+     "loc": "PageHeaderCompact.tsx:37",
+     "tag": "span",
+     "testid": null,
+     "label": "",
+     "fe1Notice": false
+    },
+    {
+     "pos": "besideH1",
+     "kind": "notice",
+     "inHeader": true,
+     "y": 66,
+     "h": 28,
+     "x": 309,
+     "w": 974,
+     "loc": "PageHeaderCompact.tsx:45",
+     "tag": "div",
+     "testid": null,
+     "label": "Lint đạt Khi nào dùng",
+     "fe1Notice": true
+    },
+    {
+     "pos": "besideMain",
+     "kind": "other",
+     "inHeader": true,
+     "y": 60,
+     "h": 40,
+     "x": 1290,
+     "w": 298,
+     "loc": "PageHeaderCompact.tsx:51",
+     "tag": "div",
+     "testid": null,
+     "label": "Lưu vào project → Build/Deploy",
+     "fe1Notice": false
+    }
+   ],
+   "bannersFe1Class": {
+    "count": 0,
+    "px": 0,
+    "items": []
+   },
+   "kpi": {
+    "legacy": {
+     "count": 0,
+     "stripPx": 0
+    },
+    "official": {
+     "count": 0,
+     "stripPx": 0
+    },
+    "all": {
+     "count": 0,
+     "stripPx": 0
+    }
+   },
+   "coverMain": {
+    "px": 0,
+    "separatorHitPx": 9536,
+    "pctOfMain": 0,
+    "pctOfViewport": 0,
+    "items": [],
+    "positionedIntersecting": []
+   },
+   "pageHeightRatio": 1,
+   "pageHeightRatioDoc": 1,
+   "scroll": {
+    "docH": 950,
+    "extra": 0,
+    "siblingScrollExtra": 0,
+    "scrollers": [],
+    "inner": []
+   },
+   "shell": {
+    "sidebarW": 48,
+    "topbarH": 56,
+    "mainTop": 56,
+    "mainW": 1552,
+    "mainPad": "0px",
+    "breadcrumbLocs": [
+     "DashboardLayout.tsx:275"
+    ]
+   },
+   "dialogsAtLoad": {
+    "count": 0,
+    "kinds": []
+   },
+   "spinnersAtMeasure": 2,
+   "errors": [],
+   "warnings": [],
+   "attrSel": "div[data-layout-main=\"pou-editor\"]@WorkbenchShell.tsx",
+   "calibration": {
+    "status": "recorded-match",
+    "dTop": 0,
+    "dLeft": 0,
+    "dAreaPct": 0,
+    "ok": true,
+    "selOk": true,
+    "record": {
+     "mainTop": 105,
+     "areaPx": 975800,
+     "attrSel": "div[data-layout-main=\"pou-editor\"]@WorkbenchShell.tsx",
+     "gitHead": "68b59d0b4"
+    }
+   },
+   "actions": [
+    {
+     "id": "luu-vao-project",
+     "label": "/Lưu vào project/",
+     "status": "opened",
+     "dialogs": 1,
+     "kinds": [
+      "sheet"
+     ],
+     "rects": [
+      {
+       "role": "dialog",
+       "slot": "sheet-content",
+       "x": 1120,
+       "y": 0,
+       "w": 480,
+       "h": 950
+      }
+     ],
+     "closedByEsc": true
+    }
+   ],
+   "trpc": [
+    "aiInbox.count",
+    "andon.active",
+    "auth.me",
+    "commandCenter.hierarchy",
+    "license.getAllowedModules",
+    "license.systemState",
+    "permissions.getMyPermissions",
+    "programming.listProjects",
+    "programming.pouLint",
+    "programming.pouTranspilePreview"
+   ]
+  },
+  {
+   "screen": "pou-studio",
+   "route": "/pou-studio",
+   "vw": 1366,
+   "vh": 768,
+   "variant": "closed",
+   "mainSource": "data-layout-main",
+   "missingDataLayoutMain": false,
+   "mainSelector": "[data-layout-main]",
+   "mainFound": true,
+   "mainRects": [
+    {
+     "x": 89,
+     "y": 105,
+     "w": 957,
+     "h": 638
+    }
+   ],
+   "mainRectsRaw": [
+    {
+     "x": 89,
+     "y": 105,
+     "w": 957,
+     "h": 638
+    }
+   ],
+   "clippedBy": [],
+   "mainTop": 105,
+   "chromeAboveMain": 105,
+   "mainPct": 58.2,
+   "workspacePct": 55.3,
+   "mainPctFe1": 57.8,
+   "mainPctUncovered": 58.2,
+   "insideMain": [
+    {
+     "workspace": {
+      "tag": "div",
+      "testid": "rf__wrapper",
+      "loc": "PouCanvas.tsx:1131",
+      "role": "application",
+      "slot": null,
+      "label": "| | Start NO | | Motor NO |/| Stop NC | | Interloc",
+      "kind": "native",
+      "top": 137
+     },
+     "aboveWorkspacePx": 32,
+     "banners": 0,
+     "bannerPx": 0,
+     "toolbars": [
+      32
+     ],
+     "blocks": [
+      {
+       "x": 89,
+       "y": 105,
+       "w": 957,
+       "h": 32,
+       "kind": "toolbar",
+       "tag": "div",
+       "testid": null,
+       "loc": "EngineeringShell.tsx:320",
+       "role": null,
+       "slot": null,
+       "label": "Canvas JSON"
+      }
+     ]
+    }
+   ],
+   "aiInsideMain": {
+    "px": 0,
+    "inWorkspacePx": 0,
+    "pctOfViewport": 0,
+    "items": []
+   },
+   "h1Top": 67,
+   "h1Bottom": 93,
+   "h1Text": "IEC 61131 POU Studio",
+   "h1Missing": false,
+   "h1Count": 1,
+   "gapH1ToMain": 12,
+   "breadcrumbs": 1,
+   "bannersBeforeMain": {
+    "count": 0,
+    "px": 0,
+    "byKind": {},
+    "method": "geometric: khối giữa đáy h1 và đỉnh MAIN (kể cả trong page header) + popover/portal đè dải đầu"
+   },
+   "blocksAboveH1": {
+    "count": 0,
+    "unionPx": 0
+   },
+   "headerParts": 3,
+   "bandBlocks": [
+    {
+     "pos": "besideH1",
+     "kind": "other",
+     "inHeader": true,
+     "y": 64,
+     "h": 32,
+     "x": 60,
+     "w": 32,
+     "loc": "PageHeaderCompact.tsx:37",
+     "tag": "span",
+     "testid": null,
+     "label": "",
+     "fe1Notice": false
+    },
+    {
+     "pos": "besideH1",
+     "kind": "notice",
+     "inHeader": true,
+     "y": 66,
+     "h": 28,
+     "x": 309,
+     "w": 957,
+     "loc": "PageHeaderCompact.tsx:45",
+     "tag": "div",
+     "testid": null,
+     "label": "Lint đạt Khi nào dùng",
+     "fe1Notice": true
+    },
+    {
+     "pos": "besideMain",
+     "kind": "other",
+     "inHeader": true,
+     "y": 60,
+     "h": 40,
+     "x": 1274,
+     "w": 80,
+     "loc": "PageHeaderCompact.tsx:51",
+     "tag": "div",
+     "testid": null,
+     "label": "",
+     "fe1Notice": false
+    }
+   ],
+   "bannersFe1Class": {
+    "count": 0,
+    "px": 0,
+    "items": []
+   },
+   "kpi": {
+    "legacy": {
+     "count": 0,
+     "stripPx": 0
+    },
+    "official": {
+     "count": 0,
+     "stripPx": 0
+    },
+    "all": {
+     "count": 0,
+     "stripPx": 0
+    }
+   },
+   "coverMain": {
+    "px": 0,
+    "separatorHitPx": 5120,
+    "pctOfMain": 0,
+    "pctOfViewport": 0,
+    "items": [],
+    "positionedIntersecting": []
+   },
+   "pageHeightRatio": 1,
+   "pageHeightRatioDoc": 1,
+   "scroll": {
+    "docH": 768,
+    "extra": 0,
+    "siblingScrollExtra": 0,
+    "scrollers": [],
+    "inner": []
+   },
+   "shell": {
+    "sidebarW": 48,
+    "topbarH": 56,
+    "mainTop": 56,
+    "mainW": 1318,
+    "mainPad": "0px",
+    "breadcrumbLocs": [
+     "DashboardLayout.tsx:275"
+    ]
+   },
+   "dialogsAtLoad": {
+    "count": 0,
+    "kinds": []
+   },
+   "spinnersAtMeasure": 2,
+   "errors": [],
+   "warnings": [],
+   "attrSel": "div[data-layout-main=\"pou-editor\"]@WorkbenchShell.tsx",
+   "calibration": {
+    "status": "recorded-match",
+    "dTop": 0,
+    "dLeft": 0,
+    "dAreaPct": 0,
+    "ok": true,
+    "selOk": true,
+    "record": {
+     "mainTop": 105,
+     "areaPx": 610566,
+     "attrSel": "div[data-layout-main=\"pou-editor\"]@WorkbenchShell.tsx",
+     "gitHead": "68b59d0b4"
+    }
+   },
+   "actions": [
+    {
+     "id": "luu-vao-project",
+     "label": "/Lưu vào project/",
+     "status": "opened",
+     "dialogs": 1,
+     "kinds": [
+      "sheet"
+     ],
+     "rects": [
+      {
+       "role": "dialog",
+       "slot": "sheet-content",
+       "x": 886,
+       "y": 0,
+       "w": 480,
+       "h": 768
+      }
+     ],
+     "closedByEsc": true
+    }
+   ],
+   "trpc": [
+    "aiInbox.count",
+    "andon.active",
+    "auth.me",
+    "commandCenter.hierarchy",
+    "license.getAllowedModules",
+    "license.systemState",
+    "permissions.getMyPermissions",
+    "programming.listProjects",
+    "programming.pouLint",
+    "programming.pouTranspilePreview"
+   ]
+  },
+  {
+   "screen": "programming-copilot",
+   "route": "/engineering?copilot=scratch",
+   "vw": 1600,
+   "vh": 950,
+   "variant": "n/a",
+   "mainSource": "data-layout-main",
+   "missingDataLayoutMain": false,
+   "mainSelector": "[data-layout-main]",
+   "mainFound": true,
+   "mainRects": [
+    {
+     "x": 329,
+     "y": 105,
+     "w": 951,
+     "h": 820
+    }
+   ],
+   "mainRectsRaw": [
+    {
+     "x": 329,
+     "y": 105,
+     "w": 951,
+     "h": 820
+    }
+   ],
+   "clippedBy": [],
+   "mainTop": 105,
+   "chromeAboveMain": 105,
+   "mainPct": 51.3,
+   "workspacePct": 51.3,
+   "mainPctFe1": 51.1,
+   "mainPctUncovered": 51.3,
+   "insideMain": [
+    {
+     "workspace": {
+      "tag": "div",
+      "testid": null,
+      "loc": "EngineeringWorkspace.tsx:1240",
+      "role": null,
+      "slot": null,
+      "label": "Chọn một dự án để bắt đầu",
+      "kind": "empty-state",
+      "top": 105
+     },
+     "aboveWorkspacePx": 0,
+     "banners": 0,
+     "bannerPx": 0,
+     "toolbars": [],
+     "blocks": []
+    }
+   ],
+   "aiInsideMain": {
+    "px": 0,
+    "inWorkspacePx": 0,
+    "pctOfViewport": 0,
+    "items": []
+   },
+   "h1Top": 67,
+   "h1Bottom": 93,
+   "h1Text": "Xưởng lập trình thiết bị",
+   "h1Missing": false,
+   "h1Count": 1,
+   "gapH1ToMain": 12,
+   "breadcrumbs": 1,
+   "bannersBeforeMain": {
+    "count": 0,
+    "px": 0,
+    "byKind": {},
+    "method": "geometric: khối giữa đáy h1 và đỉnh MAIN (kể cả trong page header) + popover/portal đè dải đầu"
+   },
+   "blocksAboveH1": {
+    "count": 0,
+    "unionPx": 0
+   },
+   "headerParts": 3,
+   "bandBlocks": [
+    {
+     "pos": "besideMain",
+     "kind": "other",
+     "inHeader": true,
+     "y": 64,
+     "h": 32,
+     "x": 60,
+     "w": 32,
+     "loc": "PageHeaderCompact.tsx:37",
+     "tag": "span",
+     "testid": null,
+     "label": "",
+     "fe1Notice": false
+    },
+    {
+     "pos": "besideH1",
+     "kind": "notice",
+     "inHeader": true,
+     "y": 66,
+     "h": 28,
+     "x": 328,
+     "w": 952,
+     "loc": "PageHeaderCompact.tsx:45",
+     "tag": "div",
+     "testid": null,
+     "label": "Triển khai thật: Đang tắt Khi nào dùng",
+     "fe1Notice": true
+    },
+    {
+     "pos": "besideMain",
+     "kind": "other",
+     "inHeader": true,
+     "y": 60,
+     "h": 40,
+     "x": 1288,
+     "w": 300,
+     "loc": "PageHeaderCompact.tsx:51",
+     "tag": "div",
+     "testid": null,
+     "label": "",
+     "fe1Notice": false
+    }
+   ],
+   "bannersFe1Class": {
+    "count": 0,
+    "px": 0,
+    "items": []
+   },
+   "kpi": {
+    "legacy": {
+     "count": 0,
+     "stripPx": 0
+    },
+    "official": {
+     "count": 0,
+     "stripPx": 0
+    },
+    "all": {
+     "count": 0,
+     "stripPx": 0
+    }
+   },
+   "coverMain": {
+    "px": 0,
+    "separatorHitPx": 7616,
+    "pctOfMain": 0,
+    "pctOfViewport": 0,
+    "items": [],
+    "positionedIntersecting": []
+   },
+   "pageHeightRatio": 1,
+   "pageHeightRatioDoc": 1,
+   "scroll": {
+    "docH": 950,
+    "extra": 0,
+    "siblingScrollExtra": 0,
+    "scrollers": [],
+    "inner": []
+   },
+   "shell": {
+    "sidebarW": 48,
+    "topbarH": 56,
+    "mainTop": 56,
+    "mainW": 1552,
+    "mainPad": "0px",
+    "breadcrumbLocs": [
+     "DashboardLayout.tsx:275"
+    ]
+   },
+   "dialogsAtLoad": {
+    "count": 0,
+    "kinds": []
+   },
+   "spinnersAtMeasure": 2,
+   "errors": [],
+   "warnings": [],
+   "attrSel": "div[data-layout-main=\"engineering-editor\"]@WorkbenchShell.tsx",
+   "calibration": {
+    "status": "recorded-match",
+    "dTop": 0,
+    "dLeft": 0,
+    "dAreaPct": 0,
+    "ok": true,
+    "selOk": true,
+    "record": {
+     "mainTop": 105,
+     "areaPx": 779820,
+     "attrSel": "div[data-layout-main=\"engineering-editor\"]@WorkbenchShell.tsx",
+     "gitHead": "4cc5b42c2"
+    }
+   },
+   "actions": [],
+   "trpc": [
+    "aiInbox.count",
+    "andon.active",
+    "auth.me",
+    "commandCenter.hierarchy",
+    "license.getAllowedModules",
+    "license.systemState",
+    "machine.list",
+    "permissions.getMyPermissions",
+    "programming.listApprovers",
+    "programming.listProjects",
+    "programming.status"
+   ]
+  },
+  {
+   "screen": "programming-copilot",
+   "route": "/engineering?copilot=scratch",
+   "vw": 1366,
+   "vh": 768,
+   "variant": "n/a",
+   "mainSource": "data-layout-main",
+   "missingDataLayoutMain": false,
+   "mainSelector": "[data-layout-main]",
+   "mainFound": true,
+   "mainRects": [
+    {
+     "x": 329,
+     "y": 105,
+     "w": 717,
+     "h": 638
+    }
+   ],
+   "mainRectsRaw": [
+    {
+     "x": 329,
+     "y": 105,
+     "w": 717,
+     "h": 638
+    }
+   ],
+   "clippedBy": [],
+   "mainTop": 105,
+   "chromeAboveMain": 105,
+   "mainPct": 43.6,
+   "workspacePct": 43.6,
+   "mainPctFe1": 43.3,
+   "mainPctUncovered": 43.6,
+   "insideMain": [
+    {
+     "workspace": {
+      "tag": "div",
+      "testid": null,
+      "loc": "EngineeringWorkspace.tsx:1240",
+      "role": null,
+      "slot": null,
+      "label": "Chọn một dự án để bắt đầu",
+      "kind": "empty-state",
+      "top": 105
+     },
+     "aboveWorkspacePx": 0,
+     "banners": 0,
+     "bannerPx": 0,
+     "toolbars": [],
+     "blocks": []
+    }
+   ],
+   "aiInsideMain": {
+    "px": 0,
+    "inWorkspacePx": 0,
+    "pctOfViewport": 0,
+    "items": []
+   },
+   "h1Top": 67,
+   "h1Bottom": 93,
+   "h1Text": "Xưởng lập trình thiết bị",
+   "h1Missing": false,
+   "h1Count": 1,
+   "gapH1ToMain": 12,
+   "breadcrumbs": 1,
+   "bannersBeforeMain": {
+    "count": 0,
+    "px": 0,
+    "byKind": {},
+    "method": "geometric: khối giữa đáy h1 và đỉnh MAIN (kể cả trong page header) + popover/portal đè dải đầu"
+   },
+   "blocksAboveH1": {
+    "count": 0,
+    "unionPx": 0
+   },
+   "headerParts": 3,
+   "bandBlocks": [
+    {
+     "pos": "besideMain",
+     "kind": "other",
+     "inHeader": true,
+     "y": 64,
+     "h": 32,
+     "x": 60,
+     "w": 32,
+     "loc": "PageHeaderCompact.tsx:37",
+     "tag": "span",
+     "testid": null,
+     "label": "",
+     "fe1Notice": false
+    },
+    {
+     "pos": "besideH1",
+     "kind": "notice",
+     "inHeader": true,
+     "y": 66,
+     "h": 28,
+     "x": 328,
+     "w": 718,
+     "loc": "PageHeaderCompact.tsx:45",
+     "tag": "div",
+     "testid": null,
+     "label": "Triển khai thật: Đang tắt Khi nào dùng",
+     "fe1Notice": true
+    },
+    {
+     "pos": "besideMain",
+     "kind": "other",
+     "inHeader": true,
+     "y": 60,
+     "h": 40,
+     "x": 1054,
+     "w": 300,
+     "loc": "PageHeaderCompact.tsx:51",
+     "tag": "div",
+     "testid": null,
+     "label": "",
+     "fe1Notice": false
+    }
+   ],
+   "bannersFe1Class": {
+    "count": 0,
+    "px": 0,
+    "items": []
+   },
+   "kpi": {
+    "legacy": {
+     "count": 0,
+     "stripPx": 0
+    },
+    "official": {
+     "count": 0,
+     "stripPx": 0
+    },
+    "all": {
+     "count": 0,
+     "stripPx": 0
+    }
+   },
+   "coverMain": {
+    "px": 0,
+    "separatorHitPx": 5120,
+    "pctOfMain": 0,
+    "pctOfViewport": 0,
+    "items": [],
+    "positionedIntersecting": []
+   },
+   "pageHeightRatio": 1,
+   "pageHeightRatioDoc": 1,
+   "scroll": {
+    "docH": 768,
+    "extra": 0,
+    "siblingScrollExtra": 0,
+    "scrollers": [],
+    "inner": []
+   },
+   "shell": {
+    "sidebarW": 48,
+    "topbarH": 56,
+    "mainTop": 56,
+    "mainW": 1318,
+    "mainPad": "0px",
+    "breadcrumbLocs": [
+     "DashboardLayout.tsx:275"
+    ]
+   },
+   "dialogsAtLoad": {
+    "count": 0,
+    "kinds": []
+   },
+   "spinnersAtMeasure": 2,
+   "errors": [],
+   "warnings": [],
+   "attrSel": "div[data-layout-main=\"engineering-editor\"]@WorkbenchShell.tsx",
+   "calibration": {
+    "status": "recorded-match",
+    "dTop": 0,
+    "dLeft": 0,
+    "dAreaPct": 0,
+    "ok": true,
+    "selOk": true,
+    "record": {
+     "mainTop": 105,
+     "areaPx": 457446,
+     "attrSel": "div[data-layout-main=\"engineering-editor\"]@WorkbenchShell.tsx",
+     "gitHead": "4cc5b42c2"
+    }
+   },
+   "actions": [],
+   "trpc": [
+    "aiInbox.count",
+    "andon.active",
+    "auth.me",
+    "commandCenter.hierarchy",
+    "license.getAllowedModules",
+    "license.systemState",
+    "machine.list",
+    "permissions.getMyPermissions",
+    "programming.listApprovers",
+    "programming.listProjects",
+    "programming.status"
+   ]
+  },
+  {
+   "screen": "fleet-orchestration",
+   "route": "/fleet-orchestration",
+   "vw": 1600,
+   "vh": 950,
+   "variant": "n/a",
+   "mainSource": "data-layout-main",
+   "missingDataLayoutMain": false,
+   "mainSelector": "[data-layout-main]",
+   "mainFound": true,
+   "mainRects": [
+    {
+     "x": 288,
+     "y": 120,
+     "w": 836,
+     "h": 802
+    }
+   ],
+   "mainRectsRaw": [
+    {
+     "x": 288,
+     "y": 120,
+     "w": 836,
+     "h": 802
+    }
+   ],
+   "clippedBy": [],
+   "mainTop": 120,
+   "chromeAboveMain": 120,
+   "mainPct": 44.1,
+   "workspacePct": 41.7,
+   "mainPctFe1": 44.1,
+   "mainPctUncovered": 44.1,
+   "insideMain": [
+    {
+     "workspace": {
+      "tag": "svg",
+      "testid": null,
+      "loc": "FleetOrchestration.tsx:1223",
+      "role": "img",
+      "slot": null,
+      "label": "Bản đồ đội thiết bị",
+      "kind": "chart",
+      "top": 164
+     },
+     "aboveWorkspacePx": 44,
+     "banners": 0,
+     "bannerPx": 0,
+     "toolbars": [
+      44
+     ],
+     "blocks": [
+      {
+       "x": 288,
+       "y": 120,
+       "w": 836,
+       "h": 44,
+       "kind": "toolbar",
+       "tag": "div",
+       "testid": null,
+       "loc": "CockpitLayout.tsx:103",
+       "role": null,
+       "slot": null,
+       "label": "Bản đồ đội thiết bị Robot có vị trí: 0/3 Nhà máy #"
+      }
+     ]
+    }
+   ],
+   "aiInsideMain": {
+    "px": 0,
+    "inWorkspacePx": 0,
+    "pctOfViewport": 0,
+    "items": []
+   },
+   "h1Top": 79,
+   "h1Bottom": 105,
+   "h1Text": "Điều phối Đội xe & Tác vụ",
+   "h1Missing": false,
+   "h1Count": 1,
+   "gapH1ToMain": 15,
+   "breadcrumbs": 1,
+   "bannersBeforeMain": {
+    "count": 0,
+    "px": 0,
+    "byKind": {},
+    "method": "geometric: khối giữa đáy h1 và đỉnh MAIN (kể cả trong page header) + popover/portal đè dải đầu"
+   },
+   "blocksAboveH1": {
+    "count": 0,
+    "unionPx": 0
+   },
+   "headerParts": 3,
+   "bandBlocks": [
+    {
+     "pos": "besideH1",
+     "kind": "other",
+     "inHeader": true,
+     "y": 76,
+     "h": 32,
+     "x": 288,
+     "w": 32,
+     "loc": "PageHeaderCompact.tsx:37",
+     "tag": "span",
+     "testid": null,
+     "label": "",
+     "fe1Notice": false
+    },
+    {
+     "pos": "besideH1",
+     "kind": "kpi",
+     "inHeader": true,
+     "y": 76,
+     "h": 32,
+     "x": 575,
+     "w": 767,
+     "loc": "PageHeaderCompact.tsx:45",
+     "tag": "div",
+     "testid": null,
+     "label": "BẾ TẮC 0 Nguồn: fleet.deadlocks — các chu trình ch",
+     "fe1Notice": false
+    },
+    {
+     "pos": "besideMain",
+     "kind": "other",
+     "inHeader": true,
+     "y": 72,
+     "h": 40,
+     "x": 1350,
+     "w": 226,
+     "loc": "PageHeaderCompact.tsx:51",
+     "tag": "div",
+     "testid": null,
+     "label": "Sổ đăng ký thao tác",
+     "fe1Notice": false
+    }
+   ],
+   "bannersFe1Class": {
+    "count": 0,
+    "px": 0,
+    "items": []
+   },
+   "kpi": {
+    "legacy": {
+     "count": 0,
+     "stripPx": 0
+    },
+    "official": {
+     "count": 5,
+     "stripPx": 32
+    },
+    "all": {
+     "count": 5,
+     "stripPx": 32
+    }
+   },
+   "coverMain": {
+    "px": 0,
+    "separatorHitPx": 0,
+    "pctOfMain": 0,
+    "pctOfViewport": 0,
+    "items": [],
+    "positionedIntersecting": []
+   },
+   "pageHeightRatio": 1,
+   "pageHeightRatioDoc": 1,
+   "scroll": {
+    "docH": 950,
+    "extra": 0,
+    "siblingScrollExtra": 0,
+    "scrollers": [],
+    "inner": []
+   },
+   "shell": {
+    "sidebarW": 264,
+    "topbarH": 56,
+    "mainTop": 56,
+    "mainW": 1336,
+    "mainPad": "16px 24px 24px",
+    "breadcrumbLocs": [
+     "DashboardLayout.tsx:275"
+    ]
+   },
+   "dialogsAtLoad": {
+    "count": 0,
+    "kinds": []
+   },
+   "spinnersAtMeasure": 2,
+   "errors": [],
+   "warnings": [
+    "thủ tục tRPC chưa có trong KNOWN_PROCS (canh trôi có thể thiếu bảng — chạy --discover-tables): fleet.robotPositions, twin.occupancyGrid"
+   ],
+   "attrSel": "div[data-layout-main=\"fleet-orchestration\"]@CockpitLayout.tsx",
+   "calibration": {
+    "status": "recorded-match",
+    "dTop": 0,
+    "dLeft": 0,
+    "dAreaPct": 0,
+    "ok": true,
+    "selOk": true,
+    "record": {
+     "mainTop": 120,
+     "areaPx": 670472,
+     "attrSel": "div[data-layout-main=\"fleet-orchestration\"]@CockpitLayout.tsx",
+     "gitHead": "b2e9cdd3e"
+    }
+   },
+   "actions": [],
+   "trpc": [
+    "aiInbox.count",
+    "andon.active",
+    "auth.me",
+    "commandCenter.hierarchy",
+    "fleet.deadlocks",
+    "fleet.listChargers",
+    "fleet.listChargingPlans",
+    "fleet.listOperations",
+    "fleet.listReservations",
+    "fleet.listResourceReservations",
+    "fleet.listResources",
+    "fleet.listTasks",
+    "fleet.listZones",
+    "fleet.resourceStatus",
+    "fleet.robotPositions",
+    "fleet.status",
+    "license.getAllowedModules",
+    "license.systemState",
+    "permissions.getMyPermissions",
+    "twin.occupancyGrid"
+   ]
+  },
+  {
+   "screen": "fleet-orchestration",
+   "route": "/fleet-orchestration",
+   "vw": 1366,
+   "vh": 768,
+   "variant": "n/a",
+   "mainSource": "data-layout-main",
+   "missingDataLayoutMain": false,
+   "mainSelector": "[data-layout-main]",
+   "mainFound": true,
+   "mainRects": [
+    {
+     "x": 288,
+     "y": 120,
+     "w": 642,
+     "h": 620
+    }
+   ],
+   "mainRectsRaw": [
+    {
+     "x": 288,
+     "y": 120,
+     "w": 642,
+     "h": 620
+    }
+   ],
+   "clippedBy": [],
+   "mainTop": 120,
+   "chromeAboveMain": 120,
+   "mainPct": 37.9,
+   "workspacePct": 35.2,
+   "mainPctFe1": 37.9,
+   "mainPctUncovered": 37.9,
+   "insideMain": [
+    {
+     "workspace": {
+      "tag": "svg",
+      "testid": null,
+      "loc": "FleetOrchestration.tsx:1223",
+      "role": "img",
+      "slot": null,
+      "label": "Bản đồ đội thiết bị",
+      "kind": "chart",
+      "top": 164
+     },
+     "aboveWorkspacePx": 44,
+     "banners": 0,
+     "bannerPx": 0,
+     "toolbars": [
+      44
+     ],
+     "blocks": [
+      {
+       "x": 288,
+       "y": 120,
+       "w": 642,
+       "h": 44,
+       "kind": "toolbar",
+       "tag": "div",
+       "testid": null,
+       "loc": "CockpitLayout.tsx:103",
+       "role": null,
+       "slot": null,
+       "label": "Bản đồ đội thiết bị Robot có vị trí: 0/3 Nhà máy #"
+      }
+     ]
+    }
+   ],
+   "aiInsideMain": {
+    "px": 0,
+    "inWorkspacePx": 0,
+    "pctOfViewport": 0,
+    "items": []
+   },
+   "h1Top": 79,
+   "h1Bottom": 105,
+   "h1Text": "Điều phối Đội xe & Tác vụ",
+   "h1Missing": false,
+   "h1Count": 1,
+   "gapH1ToMain": 15,
+   "breadcrumbs": 1,
+   "bannersBeforeMain": {
+    "count": 0,
+    "px": 0,
+    "byKind": {},
+    "method": "geometric: khối giữa đáy h1 và đỉnh MAIN (kể cả trong page header) + popover/portal đè dải đầu"
+   },
+   "blocksAboveH1": {
+    "count": 0,
+    "unionPx": 0
+   },
+   "headerParts": 3,
+   "bandBlocks": [
+    {
+     "pos": "besideH1",
+     "kind": "other",
+     "inHeader": true,
+     "y": 76,
+     "h": 32,
+     "x": 288,
+     "w": 32,
+     "loc": "PageHeaderCompact.tsx:37",
+     "tag": "span",
+     "testid": null,
+     "label": "",
+     "fe1Notice": false
+    },
+    {
+     "pos": "besideH1",
+     "kind": "kpi",
+     "inHeader": true,
+     "y": 76,
+     "h": 32,
+     "x": 575,
+     "w": 679,
+     "loc": "PageHeaderCompact.tsx:45",
+     "tag": "div",
+     "testid": null,
+     "label": "BẾ TẮC 0 Nguồn: fleet.deadlocks — các chu trình ch",
+     "fe1Notice": false
+    },
+    {
+     "pos": "besideMain",
+     "kind": "other",
+     "inHeader": true,
+     "y": 72,
+     "h": 40,
+     "x": 1262,
+     "w": 80,
+     "loc": "PageHeaderCompact.tsx:51",
+     "tag": "div",
+     "testid": null,
+     "label": "",
+     "fe1Notice": false
+    }
+   ],
+   "bannersFe1Class": {
+    "count": 0,
+    "px": 0,
+    "items": []
+   },
+   "kpi": {
+    "legacy": {
+     "count": 0,
+     "stripPx": 0
+    },
+    "official": {
+     "count": 3,
+     "stripPx": 32
+    },
+    "all": {
+     "count": 3,
+     "stripPx": 32
+    }
+   },
+   "coverMain": {
+    "px": 0,
+    "separatorHitPx": 0,
+    "pctOfMain": 0,
+    "pctOfViewport": 0,
+    "items": [],
+    "positionedIntersecting": []
+   },
+   "pageHeightRatio": 1,
+   "pageHeightRatioDoc": 1,
+   "scroll": {
+    "docH": 768,
+    "extra": 0,
+    "siblingScrollExtra": 0,
+    "scrollers": [],
+    "inner": []
+   },
+   "shell": {
+    "sidebarW": 264,
+    "topbarH": 56,
+    "mainTop": 56,
+    "mainW": 1102,
+    "mainPad": "16px 24px 24px",
+    "breadcrumbLocs": [
+     "DashboardLayout.tsx:275"
+    ]
+   },
+   "dialogsAtLoad": {
+    "count": 0,
+    "kinds": []
+   },
+   "spinnersAtMeasure": 2,
+   "errors": [],
+   "warnings": [
+    "thủ tục tRPC chưa có trong KNOWN_PROCS (canh trôi có thể thiếu bảng — chạy --discover-tables): fleet.robotPositions, twin.occupancyGrid"
+   ],
+   "attrSel": "div[data-layout-main=\"fleet-orchestration\"]@CockpitLayout.tsx",
+   "calibration": {
+    "status": "recorded-match",
+    "dTop": 0,
+    "dLeft": 0,
+    "dAreaPct": 0,
+    "ok": true,
+    "selOk": true,
+    "record": {
+     "mainTop": 120,
+     "areaPx": 398040,
+     "attrSel": "div[data-layout-main=\"fleet-orchestration\"]@CockpitLayout.tsx",
+     "gitHead": "b2e9cdd3e"
+    }
+   },
+   "actions": [],
+   "trpc": [
+    "aiInbox.count",
+    "andon.active",
+    "auth.me",
+    "commandCenter.hierarchy",
+    "fleet.deadlocks",
+    "fleet.listChargers",
+    "fleet.listChargingPlans",
+    "fleet.listOperations",
+    "fleet.listReservations",
+    "fleet.listResourceReservations",
+    "fleet.listResources",
+    "fleet.listTasks",
+    "fleet.listZones",
+    "fleet.resourceStatus",
+    "fleet.robotPositions",
+    "fleet.status",
+    "license.getAllowedModules",
+    "license.systemState",
+    "permissions.getMyPermissions",
+    "twin.occupancyGrid"
+   ]
+  },
+  {
+   "screen": "safety-workforce",
+   "route": "/safety-workforce",
+   "vw": 1600,
+   "vh": 950,
+   "variant": "n/a",
+   "mainSource": "data-layout-main",
+   "missingDataLayoutMain": false,
+   "mainSelector": "[data-layout-main]",
+   "mainFound": true,
+   "mainRects": [
+    {
+     "x": 288,
+     "y": 120,
+     "w": 936,
+     "h": 802
+    }
+   ],
+   "mainRectsRaw": [
+    {
+     "x": 288,
+     "y": 120,
+     "w": 936,
+     "h": 802
+    }
+   ],
+   "clippedBy": [],
+   "mainTop": 120,
+   "chromeAboveMain": 120,
+   "mainPct": 49.4,
+   "workspacePct": 46.4,
+   "mainPctFe1": 49.4,
+   "mainPctUncovered": 49.4,
+   "insideMain": [
+    {
+     "workspace": {
+      "tag": "table",
+      "testid": null,
+      "loc": "SafetyWorkforce.tsx:1060",
+      "role": null,
+      "slot": "table",
+      "label": "ID Loại Phát hiện bởi Kết quả Robot / Trạm Phản ứn",
+      "kind": "native",
+      "top": 169
+     },
+     "aboveWorkspacePx": 49,
+     "banners": 0,
+     "bannerPx": 0,
+     "toolbars": [
+      40
+     ],
+     "blocks": [
+      {
+       "x": 288,
+       "y": 120,
+       "w": 936,
+       "h": 40,
+       "kind": "toolbar",
+       "tag": "div",
+       "testid": null,
+       "loc": "TabbedHub.tsx:103",
+       "role": null,
+       "slot": null,
+       "label": "Sự kiện Nhân lực Trực tiếp 0 Loại: Tất cả Báo cáo "
+      }
+     ]
+    }
+   ],
+   "aiInsideMain": {
+    "px": 0,
+    "inWorkspacePx": 0,
+    "pctOfViewport": 0,
+    "items": []
+   },
+   "h1Top": 79,
+   "h1Bottom": 105,
+   "h1Text": "An toàn & Nhân lực",
+   "h1Missing": false,
+   "h1Count": 1,
+   "gapH1ToMain": 15,
+   "breadcrumbs": 1,
+   "bannersBeforeMain": {
+    "count": 0,
+    "px": 0,
+    "byKind": {},
+    "method": "geometric: khối giữa đáy h1 và đỉnh MAIN (kể cả trong page header) + popover/portal đè dải đầu"
+   },
+   "blocksAboveH1": {
+    "count": 0,
+    "unionPx": 0
+   },
+   "headerParts": 3,
+   "bandBlocks": [
+    {
+     "pos": "besideH1",
+     "kind": "other",
+     "inHeader": true,
+     "y": 76,
+     "h": 32,
+     "x": 288,
+     "w": 32,
+     "loc": "PageHeaderCompact.tsx:37",
+     "tag": "span",
+     "testid": null,
+     "label": "",
+     "fe1Notice": false
+    },
+    {
+     "pos": "besideH1",
+     "kind": "kpi",
+     "inHeader": true,
+     "y": 76,
+     "h": 32,
+     "x": 518,
+     "w": 697,
+     "loc": "PageHeaderCompact.tsx:45",
+     "tag": "div",
+     "testid": null,
+     "label": "CHƯA KIỂM ĐỊNH 0 Nguồn: safety.feed — sự kiện chưa",
+     "fe1Notice": false
+    },
+    {
+     "pos": "besideH1",
+     "kind": "notice",
+     "inHeader": true,
+     "y": 72,
+     "h": 40,
+     "x": 1223,
+     "w": 353,
+     "loc": "PageHeaderCompact.tsx:51",
+     "tag": "div",
+     "testid": null,
+     "label": "Tư vấn — không phải SIS Nguồn: Tắt",
+     "fe1Notice": true
+    }
+   ],
+   "bannersFe1Class": {
+    "count": 0,
+    "px": 0,
+    "items": []
+   },
+   "kpi": {
+    "legacy": {
+     "count": 0,
+     "stripPx": 0
+    },
+    "official": {
+     "count": 4,
+     "stripPx": 32
+    },
+    "all": {
+     "count": 4,
+     "stripPx": 32
+    }
+   },
+   "coverMain": {
+    "px": 0,
+    "separatorHitPx": 0,
+    "pctOfMain": 0,
+    "pctOfViewport": 0,
+    "items": [],
+    "positionedIntersecting": []
+   },
+   "pageHeightRatio": 1,
+   "pageHeightRatioDoc": 1,
+   "scroll": {
+    "docH": 950,
+    "extra": 0,
+    "siblingScrollExtra": 0,
+    "scrollers": [],
+    "inner": []
+   },
+   "shell": {
+    "sidebarW": 264,
+    "topbarH": 56,
+    "mainTop": 56,
+    "mainW": 1336,
+    "mainPad": "16px 24px 24px",
+    "breadcrumbLocs": [
+     "DashboardLayout.tsx:275"
+    ]
+   },
+   "dialogsAtLoad": {
+    "count": 0,
+    "kinds": []
+   },
+   "spinnersAtMeasure": 2,
+   "errors": [],
+   "warnings": [],
+   "attrSel": "div[data-layout-main=\"safety-workforce\"]@CockpitLayout.tsx",
+   "calibration": {
+    "status": "recorded-match",
+    "dTop": 0,
+    "dLeft": 0,
+    "dAreaPct": 0,
+    "ok": true,
+    "selOk": true,
+    "record": {
+     "mainTop": 120,
+     "areaPx": 750672,
+     "attrSel": "div[data-layout-main=\"safety-workforce\"]@CockpitLayout.tsx",
+     "gitHead": "2448e9c5d"
+    }
+   },
+   "actions": [
+    {
+     "id": "bao-cao-tiem-can",
+     "label": "/Báo cáo tiệm cận/",
+     "status": "opened",
+     "dialogs": 1,
+     "kinds": [
+      "sheet"
+     ],
+     "rects": [
+      {
+       "role": "dialog",
+       "slot": "sheet-content",
+       "x": 1040,
+       "y": 0,
+       "w": 560,
+       "h": 950
+      }
+     ],
+     "closedByEsc": true
+    }
+   ],
+   "trpc": [
+    "aiInbox.count",
+    "andon.active",
+    "auth.me",
+    "commandCenter.hierarchy",
+    "license.getAllowedModules",
+    "license.systemState",
+    "permissions.getMyPermissions",
+    "safety.currentBoard",
+    "safety.feed",
+    "safety.listAssignments",
+    "safety.listCollaborations",
+    "safety.nearMissTrend",
+    "safety.sourceHealth",
+    "safety.status"
+   ]
+  },
+  {
+   "screen": "safety-workforce",
+   "route": "/safety-workforce",
+   "vw": 1366,
+   "vh": 768,
+   "variant": "n/a",
+   "mainSource": "data-layout-main",
+   "missingDataLayoutMain": false,
+   "mainSelector": "[data-layout-main]",
+   "mainFound": true,
+   "mainRects": [
+    {
+     "x": 288,
+     "y": 120,
+     "w": 742,
+     "h": 620
+    }
+   ],
+   "mainRectsRaw": [
+    {
+     "x": 288,
+     "y": 120,
+     "w": 742,
+     "h": 620
+    }
+   ],
+   "clippedBy": [],
+   "mainTop": 120,
+   "chromeAboveMain": 120,
+   "mainPct": 43.9,
+   "workspacePct": 40.4,
+   "mainPctFe1": 43.9,
+   "mainPctUncovered": 43.9,
+   "insideMain": [
+    {
+     "workspace": {
+      "tag": "table",
+      "testid": null,
+      "loc": "SafetyWorkforce.tsx:1060",
+      "role": null,
+      "slot": "table",
+      "label": "ID Loại Phát hiện bởi Kết quả Robot / Trạm Phản ứn",
+      "kind": "native",
+      "top": 169
+     },
+     "aboveWorkspacePx": 49,
+     "banners": 0,
+     "bannerPx": 0,
+     "toolbars": [
+      40
+     ],
+     "blocks": [
+      {
+       "x": 288,
+       "y": 120,
+       "w": 742,
+       "h": 40,
+       "kind": "toolbar",
+       "tag": "div",
+       "testid": null,
+       "loc": "TabbedHub.tsx:103",
+       "role": null,
+       "slot": null,
+       "label": "Sự kiện Nhân lực Trực tiếp 0 Loại: Tất cả Báo cáo "
+      }
+     ]
+    }
+   ],
+   "aiInsideMain": {
+    "px": 0,
+    "inWorkspacePx": 0,
+    "pctOfViewport": 0,
+    "items": []
+   },
+   "h1Top": 79,
+   "h1Bottom": 105,
+   "h1Text": "An toàn & Nhân lực",
+   "h1Missing": false,
+   "h1Count": 1,
+   "gapH1ToMain": 15,
+   "breadcrumbs": 1,
+   "bannersBeforeMain": {
+    "count": 0,
+    "px": 0,
+    "byKind": {},
+    "method": "geometric: khối giữa đáy h1 và đỉnh MAIN (kể cả trong page header) + popover/portal đè dải đầu"
+   },
+   "blocksAboveH1": {
+    "count": 0,
+    "unionPx": 0
+   },
+   "headerParts": 3,
+   "bandBlocks": [
+    {
+     "pos": "besideH1",
+     "kind": "other",
+     "inHeader": true,
+     "y": 76,
+     "h": 32,
+     "x": 288,
+     "w": 32,
+     "loc": "PageHeaderCompact.tsx:37",
+     "tag": "span",
+     "testid": null,
+     "label": "",
+     "fe1Notice": false
+    },
+    {
+     "pos": "besideH1",
+     "kind": "kpi",
+     "inHeader": true,
+     "y": 76,
+     "h": 32,
+     "x": 518,
+     "w": 463,
+     "loc": "PageHeaderCompact.tsx:45",
+     "tag": "div",
+     "testid": null,
+     "label": "CHƯA KIỂM ĐỊNH 0 Nguồn: safety.feed — sự kiện chưa",
+     "fe1Notice": true
+    },
+    {
+     "pos": "besideH1",
+     "kind": "notice",
+     "inHeader": true,
+     "y": 72,
+     "h": 40,
+     "x": 989,
+     "w": 353,
+     "loc": "PageHeaderCompact.tsx:51",
+     "tag": "div",
+     "testid": null,
+     "label": "Tư vấn — không phải SIS Nguồn: Tắt",
+     "fe1Notice": true
+    }
+   ],
+   "bannersFe1Class": {
+    "count": 0,
+    "px": 0,
+    "items": []
+   },
+   "kpi": {
+    "legacy": {
+     "count": 0,
+     "stripPx": 0
+    },
+    "official": {
+     "count": 2,
+     "stripPx": 32
+    },
+    "all": {
+     "count": 2,
+     "stripPx": 32
+    }
+   },
+   "coverMain": {
+    "px": 0,
+    "separatorHitPx": 0,
+    "pctOfMain": 0,
+    "pctOfViewport": 0,
+    "items": [],
+    "positionedIntersecting": []
+   },
+   "pageHeightRatio": 1,
+   "pageHeightRatioDoc": 1,
+   "scroll": {
+    "docH": 768,
+    "extra": 0,
+    "siblingScrollExtra": 0,
+    "scrollers": [],
+    "inner": []
+   },
+   "shell": {
+    "sidebarW": 264,
+    "topbarH": 56,
+    "mainTop": 56,
+    "mainW": 1102,
+    "mainPad": "16px 24px 24px",
+    "breadcrumbLocs": [
+     "DashboardLayout.tsx:275"
+    ]
+   },
+   "dialogsAtLoad": {
+    "count": 0,
+    "kinds": []
+   },
+   "spinnersAtMeasure": 2,
+   "errors": [],
+   "warnings": [],
+   "attrSel": "div[data-layout-main=\"safety-workforce\"]@CockpitLayout.tsx",
+   "calibration": {
+    "status": "recorded-match",
+    "dTop": 0,
+    "dLeft": 0,
+    "dAreaPct": 0,
+    "ok": true,
+    "selOk": true,
+    "record": {
+     "mainTop": 120,
+     "areaPx": 460040,
+     "attrSel": "div[data-layout-main=\"safety-workforce\"]@CockpitLayout.tsx",
+     "gitHead": "2448e9c5d"
+    }
+   },
+   "actions": [
+    {
+     "id": "bao-cao-tiem-can",
+     "label": "/Báo cáo tiệm cận/",
+     "status": "opened",
+     "dialogs": 1,
+     "kinds": [
+      "sheet"
+     ],
+     "rects": [
+      {
+       "role": "dialog",
+       "slot": "sheet-content",
+       "x": 806,
+       "y": 0,
+       "w": 560,
+       "h": 768
+      }
+     ],
+     "closedByEsc": true
+    }
+   ],
+   "trpc": [
+    "aiInbox.count",
+    "andon.active",
+    "auth.me",
+    "commandCenter.hierarchy",
+    "license.getAllowedModules",
+    "license.systemState",
+    "permissions.getMyPermissions",
+    "safety.currentBoard",
+    "safety.feed",
+    "safety.listAssignments",
+    "safety.listCollaborations",
+    "safety.nearMissTrend",
+    "safety.sourceHealth",
+    "safety.status"
+   ]
+  },
+  {
+   "screen": "equipment-standards",
+   "route": "/equipment-standards",
+   "vw": 1600,
+   "vh": 950,
+   "variant": "n/a",
+   "mainSource": "data-layout-main",
+   "missingDataLayoutMain": false,
+   "mainSelector": "[data-layout-main]",
+   "mainFound": true,
+   "mainRects": [
+    {
+     "x": 288,
+     "y": 120,
+     "w": 1288,
+     "h": 818
+    }
+   ],
+   "mainRectsRaw": [
+    {
+     "x": 288,
+     "y": 120,
+     "w": 1288,
+     "h": 818
+    }
+   ],
+   "clippedBy": [],
+   "mainTop": 120,
+   "chromeAboveMain": 120,
+   "mainPct": 69.3,
+   "workspacePct": 64.5,
+   "mainPctFe1": 69.3,
+   "mainPctUncovered": 69.3,
+   "insideMain": [
+    {
+     "workspace": {
+      "tag": "div",
+      "testid": null,
+      "loc": "EmptyState.tsx:121",
+      "role": null,
+      "slot": null,
+      "label": "Chọn một loại thiết bị trong cây để xem thuộc tính",
+      "kind": "native",
+      "top": 177
+     },
+     "aboveWorkspacePx": 57,
+     "banners": 0,
+     "bannerPx": 0,
+     "toolbars": [
+      36
+     ],
+     "blocks": [
+      {
+       "x": 288,
+       "y": 120,
+       "w": 1288,
+       "h": 36,
+       "kind": "toolbar",
+       "tag": "div",
+       "testid": null,
+       "loc": "TabbedHub.tsx:103",
+       "role": null,
+       "slot": null,
+       "label": "Phân cấp Phân loại cảnh báo Hiệu năng cảnh báo Yêu"
+      }
+     ]
+    }
+   ],
+   "aiInsideMain": {
+    "px": 0,
+    "inWorkspacePx": 0,
+    "pctOfViewport": 0,
+    "items": []
+   },
+   "h1Top": 79,
+   "h1Bottom": 105,
+   "h1Text": "Tiêu chuẩn & Quản trị Thiết bị",
+   "h1Missing": false,
+   "h1Count": 1,
+   "gapH1ToMain": 15,
+   "breadcrumbs": 1,
+   "bannersBeforeMain": {
+    "count": 0,
+    "px": 0,
+    "byKind": {},
+    "method": "geometric: khối giữa đáy h1 và đỉnh MAIN (kể cả trong page header) + popover/portal đè dải đầu"
+   },
+   "blocksAboveH1": {
+    "count": 0,
+    "unionPx": 0
+   },
+   "headerParts": 3,
+   "bandBlocks": [
+    {
+     "pos": "besideH1",
+     "kind": "other",
+     "inHeader": true,
+     "y": 76,
+     "h": 32,
+     "x": 288,
+     "w": 32,
+     "loc": "PageHeaderCompact.tsx:37",
+     "tag": "span",
+     "testid": null,
+     "label": "",
+     "fe1Notice": false
+    },
+    {
+     "pos": "besideH1",
+     "kind": "kpi",
+     "inHeader": true,
+     "y": 76,
+     "h": 32,
+     "x": 616,
+     "w": 912,
+     "loc": "PageHeaderCompact.tsx:45",
+     "tag": "div",
+     "testid": null,
+     "label": "NHÀ CUNG CẤP CẢNH BÁO 10 Nguồn: equipmentStandards",
+     "fe1Notice": true
+    },
+    {
+     "pos": "besideH1",
+     "kind": "other",
+     "inHeader": true,
+     "y": 72,
+     "h": 40,
+     "x": 1536,
+     "w": 40,
+     "loc": "PageHeaderCompact.tsx:51",
+     "tag": "div",
+     "testid": null,
+     "label": "",
+     "fe1Notice": false
+    }
+   ],
+   "bannersFe1Class": {
+    "count": 0,
+    "px": 0,
+    "items": []
+   },
+   "kpi": {
+    "legacy": {
+     "count": 0,
+     "stripPx": 0
+    },
+    "official": {
+     "count": 4,
+     "stripPx": 32
+    },
+    "all": {
+     "count": 4,
+     "stripPx": 32
+    }
+   },
+   "coverMain": {
+    "px": 0,
+    "separatorHitPx": 0,
+    "pctOfMain": 0,
+    "pctOfViewport": 0,
+    "items": [],
+    "positionedIntersecting": []
+   },
+   "pageHeightRatio": 1.01,
+   "pageHeightRatioDoc": 1.01,
+   "scroll": {
+    "docH": 962,
+    "extra": 0,
+    "siblingScrollExtra": 0,
+    "scrollers": [],
+    "inner": [
+     {
+      "tag": "div",
+      "testid": null,
+      "loc": "SplitListDetail.tsx:91",
+      "role": null,
+      "slot": null,
+      "label": "31/31 hàng là dữ liệu demo / seed / giả lập — khôn",
+      "overflowY": "auto",
+      "scrollH": 924,
+      "clientH": 740,
+      "ratio": 1.25
+     }
+    ]
+   },
+   "shell": {
+    "sidebarW": 264,
+    "topbarH": 56,
+    "mainTop": 56,
+    "mainW": 1336,
+    "mainPad": "16px 24px 24px",
+    "breadcrumbLocs": [
+     "DashboardLayout.tsx:275"
+    ]
+   },
+   "dialogsAtLoad": {
+    "count": 0,
+    "kinds": []
+   },
+   "spinnersAtMeasure": 2,
+   "errors": [],
+   "warnings": [],
+   "attrSel": "div[data-layout-main=\"equipment-standards\"]@CockpitLayout.tsx",
+   "calibration": {
+    "status": "recorded-match",
+    "dTop": 0,
+    "dLeft": 0,
+    "dAreaPct": 0,
+    "ok": true,
+    "selOk": true,
+    "record": {
+     "mainTop": 120,
+     "areaPx": 1053584,
+     "attrSel": "div[data-layout-main=\"equipment-standards\"]@CockpitLayout.tsx",
+     "gitHead": "eb1e804de"
+    }
+   },
+   "actions": [
+    {
+     "id": "dang-ky-loai",
+     "label": "/Đăng ký loại/",
+     "status": "opened",
+     "dialogs": 1,
+     "kinds": [
+      "sheet"
+     ],
+     "rects": [
+      {
+       "role": "dialog",
+       "slot": "sheet-content",
+       "x": 1040,
+       "y": 0,
+       "w": 560,
+       "h": 950
+      }
+     ],
+     "closedByEsc": true
+    }
+   ],
+   "trpc": [
+    "aiInbox.count",
+    "alarmKpi.summary",
+    "andon.active",
+    "auth.me",
+    "commandCenter.hierarchy",
+    "equipmentStandards.complianceMetrics",
+    "equipmentStandards.hierarchyTree",
+    "equipmentStandards.listAlarmMappings",
+    "equipmentStandards.listChangeRequests",
+    "equipmentStandards.listMasterAlarms",
+    "equipmentStandards.status",
+    "license.getAllowedModules",
+    "license.systemState",
+    "permissions.getMyPermissions"
+   ]
+  },
+  {
+   "screen": "equipment-standards",
+   "route": "/equipment-standards",
+   "vw": 1366,
+   "vh": 768,
+   "variant": "n/a",
+   "mainSource": "data-layout-main",
+   "missingDataLayoutMain": false,
+   "mainSelector": "[data-layout-main]",
+   "mainFound": true,
+   "mainRects": [
+    {
+     "x": 288,
+     "y": 120,
+     "w": 1054,
+     "h": 636
+    }
+   ],
+   "mainRectsRaw": [
+    {
+     "x": 288,
+     "y": 120,
+     "w": 1054,
+     "h": 636
+    }
+   ],
+   "clippedBy": [],
+   "mainTop": 120,
+   "chromeAboveMain": 120,
+   "mainPct": 63.9,
+   "workspacePct": 58.2,
+   "mainPctFe1": 63.9,
+   "mainPctUncovered": 63.9,
+   "insideMain": [
+    {
+     "workspace": {
+      "tag": "div",
+      "testid": null,
+      "loc": "EmptyState.tsx:121",
+      "role": null,
+      "slot": null,
+      "label": "Chọn một loại thiết bị trong cây để xem thuộc tính",
+      "kind": "native",
+      "top": 177
+     },
+     "aboveWorkspacePx": 57,
+     "banners": 0,
+     "bannerPx": 0,
+     "toolbars": [
+      36
+     ],
+     "blocks": [
+      {
+       "x": 288,
+       "y": 120,
+       "w": 1054,
+       "h": 36,
+       "kind": "toolbar",
+       "tag": "div",
+       "testid": null,
+       "loc": "TabbedHub.tsx:103",
+       "role": null,
+       "slot": null,
+       "label": "Phân cấp Phân loại cảnh báo Hiệu năng cảnh báo Yêu"
+      }
+     ]
+    }
+   ],
+   "aiInsideMain": {
+    "px": 0,
+    "inWorkspacePx": 0,
+    "pctOfViewport": 0,
+    "items": []
+   },
+   "h1Top": 79,
+   "h1Bottom": 105,
+   "h1Text": "Tiêu chuẩn & Quản trị Thiết bị",
+   "h1Missing": false,
+   "h1Count": 1,
+   "gapH1ToMain": 15,
+   "breadcrumbs": 1,
+   "bannersBeforeMain": {
+    "count": 0,
+    "px": 0,
+    "byKind": {},
+    "method": "geometric: khối giữa đáy h1 và đỉnh MAIN (kể cả trong page header) + popover/portal đè dải đầu"
+   },
+   "blocksAboveH1": {
+    "count": 0,
+    "unionPx": 0
+   },
+   "headerParts": 3,
+   "bandBlocks": [
+    {
+     "pos": "besideH1",
+     "kind": "other",
+     "inHeader": true,
+     "y": 76,
+     "h": 32,
+     "x": 288,
+     "w": 32,
+     "loc": "PageHeaderCompact.tsx:37",
+     "tag": "span",
+     "testid": null,
+     "label": "",
+     "fe1Notice": false
+    },
+    {
+     "pos": "besideH1",
+     "kind": "kpi",
+     "inHeader": true,
+     "y": 76,
+     "h": 32,
+     "x": 616,
+     "w": 678,
+     "loc": "PageHeaderCompact.tsx:45",
+     "tag": "div",
+     "testid": null,
+     "label": "NHÀ CUNG CẤP CẢNH BÁO 10 Nguồn: equipmentStandards",
+     "fe1Notice": true
+    },
+    {
+     "pos": "besideH1",
+     "kind": "other",
+     "inHeader": true,
+     "y": 72,
+     "h": 40,
+     "x": 1302,
+     "w": 40,
+     "loc": "PageHeaderCompact.tsx:51",
+     "tag": "div",
+     "testid": null,
+     "label": "",
+     "fe1Notice": false
+    }
+   ],
+   "bannersFe1Class": {
+    "count": 0,
+    "px": 0,
+    "items": []
+   },
+   "kpi": {
+    "legacy": {
+     "count": 0,
+     "stripPx": 0
+    },
+    "official": {
+     "count": 2,
+     "stripPx": 32
+    },
+    "all": {
+     "count": 2,
+     "stripPx": 32
+    }
+   },
+   "coverMain": {
+    "px": 0,
+    "separatorHitPx": 0,
+    "pctOfMain": 0,
+    "pctOfViewport": 0,
+    "items": [],
+    "positionedIntersecting": []
+   },
+   "pageHeightRatio": 1.02,
+   "pageHeightRatioDoc": 1.02,
+   "scroll": {
+    "docH": 780,
+    "extra": 0,
+    "siblingScrollExtra": 0,
+    "scrollers": [],
+    "inner": [
+     {
+      "tag": "div",
+      "testid": null,
+      "loc": "SplitListDetail.tsx:91",
+      "role": null,
+      "slot": null,
+      "label": "31/31 hàng là dữ liệu demo / seed / giả lập — khôn",
+      "overflowY": "auto",
+      "scrollH": 940,
+      "clientH": 558,
+      "ratio": 1.68
+     }
+    ]
+   },
+   "shell": {
+    "sidebarW": 264,
+    "topbarH": 56,
+    "mainTop": 56,
+    "mainW": 1102,
+    "mainPad": "16px 24px 24px",
+    "breadcrumbLocs": [
+     "DashboardLayout.tsx:275"
+    ]
+   },
+   "dialogsAtLoad": {
+    "count": 0,
+    "kinds": []
+   },
+   "spinnersAtMeasure": 2,
+   "errors": [],
+   "warnings": [],
+   "attrSel": "div[data-layout-main=\"equipment-standards\"]@CockpitLayout.tsx",
+   "calibration": {
+    "status": "recorded-match",
+    "dTop": 0,
+    "dLeft": 0,
+    "dAreaPct": 0,
+    "ok": true,
+    "selOk": true,
+    "record": {
+     "mainTop": 120,
+     "areaPx": 670344,
+     "attrSel": "div[data-layout-main=\"equipment-standards\"]@CockpitLayout.tsx",
+     "gitHead": "eb1e804de"
+    }
+   },
+   "actions": [
+    {
+     "id": "dang-ky-loai",
+     "label": "/Đăng ký loại/",
+     "status": "opened",
+     "dialogs": 1,
+     "kinds": [
+      "sheet"
+     ],
+     "rects": [
+      {
+       "role": "dialog",
+       "slot": "sheet-content",
+       "x": 806,
+       "y": 0,
+       "w": 560,
+       "h": 768
+      }
+     ],
+     "closedByEsc": true
+    }
+   ],
+   "trpc": [
+    "aiInbox.count",
+    "alarmKpi.summary",
+    "andon.active",
+    "auth.me",
+    "commandCenter.hierarchy",
+    "equipmentStandards.complianceMetrics",
+    "equipmentStandards.hierarchyTree",
+    "equipmentStandards.listAlarmMappings",
+    "equipmentStandards.listChangeRequests",
+    "equipmentStandards.listMasterAlarms",
+    "equipmentStandards.status",
+    "license.getAllowedModules",
+    "license.systemState",
+    "permissions.getMyPermissions"
+   ]
+  },
+  {
+   "screen": "equipment-integration",
+   "route": "/equipment-integration",
+   "vw": 1600,
+   "vh": 950,
+   "variant": "n/a",
+   "mainSource": "data-layout-main",
+   "missingDataLayoutMain": false,
+   "mainSelector": "[data-layout-main]",
+   "mainFound": true,
+   "mainRects": [
+    {
+     "x": 288,
+     "y": 120,
+     "w": 1288,
+     "h": 802
+    }
+   ],
+   "mainRectsRaw": [
+    {
+     "x": 288,
+     "y": 120,
+     "w": 1288,
+     "h": 802
+    }
+   ],
+   "clippedBy": [],
+   "mainTop": 120,
+   "chromeAboveMain": 120,
+   "mainPct": 68,
+   "workspacePct": 64.1,
+   "mainPctFe1": 68,
+   "mainPctUncovered": 68,
+   "insideMain": [
+    {
+     "workspace": {
+      "tag": "table",
+      "testid": null,
+      "loc": "EquipmentIntegration.tsx:794",
+      "role": null,
+      "slot": "table",
+      "label": "Connector Loại Trạng thái focas(fanuc) Framework F",
+      "kind": "native",
+      "top": 165
+     },
+     "aboveWorkspacePx": 45,
+     "banners": 0,
+     "bannerPx": 0,
+     "toolbars": [
+      36
+     ],
+     "blocks": [
+      {
+       "x": 288,
+       "y": 120,
+       "w": 1288,
+       "h": 36,
+       "kind": "toolbar",
+       "tag": "div",
+       "testid": null,
+       "loc": "TabbedHub.tsx:103",
+       "role": null,
+       "slot": null,
+       "label": "Danh mục connector Phiên bản recipe Lịch sử nạp Wo"
+      }
+     ]
+    }
+   ],
+   "aiInsideMain": {
+    "px": 0,
+    "inWorkspacePx": 0,
+    "pctOfViewport": 0,
+    "items": []
+   },
+   "h1Top": 79,
+   "h1Bottom": 105,
+   "h1Text": "Tích hợp thiết bị",
+   "h1Missing": false,
+   "h1Count": 1,
+   "gapH1ToMain": 15,
+   "breadcrumbs": 1,
+   "bannersBeforeMain": {
+    "count": 0,
+    "px": 0,
+    "byKind": {},
+    "method": "geometric: khối giữa đáy h1 và đỉnh MAIN (kể cả trong page header) + popover/portal đè dải đầu"
+   },
+   "blocksAboveH1": {
+    "count": 0,
+    "unionPx": 0
+   },
+   "headerParts": 3,
+   "bandBlocks": [
+    {
+     "pos": "besideH1",
+     "kind": "other",
+     "inHeader": true,
+     "y": 76,
+     "h": 32,
+     "x": 288,
+     "w": 32,
+     "loc": "PageHeaderCompact.tsx:37",
+     "tag": "span",
+     "testid": null,
+     "label": "",
+     "fe1Notice": false
+    },
+    {
+     "pos": "besideH1",
+     "kind": "kpi",
+     "inHeader": true,
+     "y": 76,
+     "h": 32,
+     "x": 490,
+     "w": 1038,
+     "loc": "PageHeaderCompact.tsx:45",
+     "tag": "div",
+     "testid": null,
+     "label": "Khi nào dùng Chỉ đọc ADAPTER ĐĂNG KÝ 13 Nguồn: Reg",
+     "fe1Notice": true
+    },
+    {
+     "pos": "besideH1",
+     "kind": "other",
+     "inHeader": true,
+     "y": 72,
+     "h": 40,
+     "x": 1536,
+     "w": 40,
+     "loc": "PageHeaderCompact.tsx:51",
+     "tag": "div",
+     "testid": null,
+     "label": "",
+     "fe1Notice": false
+    }
+   ],
+   "bannersFe1Class": {
+    "count": 0,
+    "px": 0,
+    "items": []
+   },
+   "kpi": {
+    "legacy": {
+     "count": 0,
+     "stripPx": 0
+    },
+    "official": {
+     "count": 3,
+     "stripPx": 32
+    },
+    "all": {
+     "count": 3,
+     "stripPx": 32
+    }
+   },
+   "coverMain": {
+    "px": 0,
+    "separatorHitPx": 0,
+    "pctOfMain": 0,
+    "pctOfViewport": 0,
+    "items": [],
+    "positionedIntersecting": []
+   },
+   "pageHeightRatio": 1,
+   "pageHeightRatioDoc": 1,
+   "scroll": {
+    "docH": 950,
+    "extra": 0,
+    "siblingScrollExtra": 0,
+    "scrollers": [],
+    "inner": []
+   },
+   "shell": {
+    "sidebarW": 264,
+    "topbarH": 56,
+    "mainTop": 56,
+    "mainW": 1336,
+    "mainPad": "16px 24px 24px",
+    "breadcrumbLocs": [
+     "DashboardLayout.tsx:275"
+    ]
+   },
+   "dialogsAtLoad": {
+    "count": 0,
+    "kinds": []
+   },
+   "spinnersAtMeasure": 2,
+   "errors": [],
+   "warnings": [],
+   "attrSel": "div[data-layout-main=\"equipment-integration\"]@CockpitLayout.tsx",
+   "calibration": {
+    "status": "recorded-match",
+    "dTop": 0,
+    "dLeft": 0,
+    "dAreaPct": 0,
+    "ok": true,
+    "selOk": true,
+    "record": {
+     "mainTop": 120,
+     "areaPx": 1032976,
+     "attrSel": "div[data-layout-main=\"equipment-integration\"]@CockpitLayout.tsx",
+     "gitHead": "576c1734d"
+    }
+   },
+   "actions": [],
+   "trpc": [
+    "aiInbox.count",
+    "andon.active",
+    "auth.me",
+    "commandCenter.hierarchy",
+    "equipmentIntegration.integrationStatus",
+    "equipmentIntegration.status",
+    "license.getAllowedModules",
+    "license.systemState",
+    "machine.list",
+    "permissions.getMyPermissions"
+   ]
+  },
+  {
+   "screen": "equipment-integration",
+   "route": "/equipment-integration",
+   "vw": 1366,
+   "vh": 768,
+   "variant": "n/a",
+   "mainSource": "data-layout-main",
+   "missingDataLayoutMain": false,
+   "mainSelector": "[data-layout-main]",
+   "mainFound": true,
+   "mainRects": [
+    {
+     "x": 288,
+     "y": 120,
+     "w": 1054,
+     "h": 620
+    }
+   ],
+   "mainRectsRaw": [
+    {
+     "x": 288,
+     "y": 120,
+     "w": 1054,
+     "h": 620
+    }
+   ],
+   "clippedBy": [],
+   "mainTop": 120,
+   "chromeAboveMain": 120,
+   "mainPct": 62.3,
+   "workspacePct": 57.8,
+   "mainPctFe1": 62.3,
+   "mainPctUncovered": 62.3,
+   "insideMain": [
+    {
+     "workspace": {
+      "tag": "table",
+      "testid": null,
+      "loc": "EquipmentIntegration.tsx:794",
+      "role": null,
+      "slot": "table",
+      "label": "Connector Loại Trạng thái focas(fanuc) Framework F",
+      "kind": "native",
+      "top": 165
+     },
+     "aboveWorkspacePx": 45,
+     "banners": 0,
+     "bannerPx": 0,
+     "toolbars": [
+      36
+     ],
+     "blocks": [
+      {
+       "x": 288,
+       "y": 120,
+       "w": 1054,
+       "h": 36,
+       "kind": "toolbar",
+       "tag": "div",
+       "testid": null,
+       "loc": "TabbedHub.tsx:103",
+       "role": null,
+       "slot": null,
+       "label": "Danh mục connector Phiên bản recipe Lịch sử nạp Wo"
+      }
+     ]
+    }
+   ],
+   "aiInsideMain": {
+    "px": 0,
+    "inWorkspacePx": 0,
+    "pctOfViewport": 0,
+    "items": []
+   },
+   "h1Top": 79,
+   "h1Bottom": 105,
+   "h1Text": "Tích hợp thiết bị",
+   "h1Missing": false,
+   "h1Count": 1,
+   "gapH1ToMain": 15,
+   "breadcrumbs": 1,
+   "bannersBeforeMain": {
+    "count": 0,
+    "px": 0,
+    "byKind": {},
+    "method": "geometric: khối giữa đáy h1 và đỉnh MAIN (kể cả trong page header) + popover/portal đè dải đầu"
+   },
+   "blocksAboveH1": {
+    "count": 0,
+    "unionPx": 0
+   },
+   "headerParts": 3,
+   "bandBlocks": [
+    {
+     "pos": "besideH1",
+     "kind": "other",
+     "inHeader": true,
+     "y": 76,
+     "h": 32,
+     "x": 288,
+     "w": 32,
+     "loc": "PageHeaderCompact.tsx:37",
+     "tag": "span",
+     "testid": null,
+     "label": "",
+     "fe1Notice": false
+    },
+    {
+     "pos": "besideH1",
+     "kind": "kpi",
+     "inHeader": true,
+     "y": 76,
+     "h": 32,
+     "x": 490,
+     "w": 804,
+     "loc": "PageHeaderCompact.tsx:45",
+     "tag": "div",
+     "testid": null,
+     "label": "Khi nào dùng Chỉ đọc ADAPTER ĐĂNG KÝ 13 Nguồn: Reg",
+     "fe1Notice": true
+    },
+    {
+     "pos": "besideH1",
+     "kind": "other",
+     "inHeader": true,
+     "y": 72,
+     "h": 40,
+     "x": 1302,
+     "w": 40,
+     "loc": "PageHeaderCompact.tsx:51",
+     "tag": "div",
+     "testid": null,
+     "label": "",
+     "fe1Notice": false
+    }
+   ],
+   "bannersFe1Class": {
+    "count": 0,
+    "px": 0,
+    "items": []
+   },
+   "kpi": {
+    "legacy": {
+     "count": 0,
+     "stripPx": 0
+    },
+    "official": {
+     "count": 3,
+     "stripPx": 32
+    },
+    "all": {
+     "count": 3,
+     "stripPx": 32
+    }
+   },
+   "coverMain": {
+    "px": 0,
+    "separatorHitPx": 0,
+    "pctOfMain": 0,
+    "pctOfViewport": 0,
+    "items": [],
+    "positionedIntersecting": []
+   },
+   "pageHeightRatio": 1,
+   "pageHeightRatioDoc": 1,
+   "scroll": {
+    "docH": 768,
+    "extra": 0,
+    "siblingScrollExtra": 0,
+    "scrollers": [],
+    "inner": [
+     {
+      "tag": "div",
+      "testid": null,
+      "loc": "SplitListDetail.tsx:91",
+      "role": null,
+      "slot": null,
+      "label": "Connector Loại Trạng thái focas(fanuc) Framework F",
+      "overflowY": "auto",
+      "scrollH": 625,
+      "clientH": 558,
+      "ratio": 1.12
+     }
+    ]
+   },
+   "shell": {
+    "sidebarW": 264,
+    "topbarH": 56,
+    "mainTop": 56,
+    "mainW": 1102,
+    "mainPad": "16px 24px 24px",
+    "breadcrumbLocs": [
+     "DashboardLayout.tsx:275"
+    ]
+   },
+   "dialogsAtLoad": {
+    "count": 0,
+    "kinds": []
+   },
+   "spinnersAtMeasure": 2,
+   "errors": [],
+   "warnings": [],
+   "attrSel": "div[data-layout-main=\"equipment-integration\"]@CockpitLayout.tsx",
+   "calibration": {
+    "status": "recorded-match",
+    "dTop": 0,
+    "dLeft": 0,
+    "dAreaPct": 0,
+    "ok": true,
+    "selOk": true,
+    "record": {
+     "mainTop": 120,
+     "areaPx": 653480,
+     "attrSel": "div[data-layout-main=\"equipment-integration\"]@CockpitLayout.tsx",
+     "gitHead": "576c1734d"
+    }
+   },
+   "actions": [],
+   "trpc": [
+    "aiInbox.count",
+    "andon.active",
+    "auth.me",
+    "commandCenter.hierarchy",
+    "equipmentIntegration.integrationStatus",
+    "equipmentIntegration.status",
+    "license.getAllowedModules",
+    "license.systemState",
+    "machine.list",
+    "permissions.getMyPermissions"
+   ]
+  },
+  {
+   "screen": "engineering",
+   "route": "/engineering",
+   "vw": 1600,
+   "vh": 950,
+   "variant": "open",
+   "mainSource": "data-layout-main",
+   "missingDataLayoutMain": false,
+   "mainSelector": "[data-layout-main]",
+   "mainFound": true,
+   "mainRects": [
+    {
+     "x": 329,
+     "y": 105,
+     "w": 951,
+     "h": 820
+    }
+   ],
+   "mainRectsRaw": [
+    {
+     "x": 329,
+     "y": 105,
+     "w": 951,
+     "h": 820
+    }
+   ],
+   "clippedBy": [],
+   "mainTop": 105,
+   "chromeAboveMain": 105,
+   "mainPct": 51.3,
+   "workspacePct": 49.3,
+   "mainPctFe1": 51.1,
+   "mainPctUncovered": 51.3,
+   "insideMain": [
+    {
+     "workspace": {
+      "tag": "div",
+      "testid": null,
+      "loc": null,
+      "role": null,
+      "slot": null,
+      "label": "1",
+      "kind": "native",
+      "top": 137
+     },
+     "aboveWorkspacePx": 32,
+     "banners": 0,
+     "bannerPx": 0,
+     "toolbars": [
+      32
+     ],
+     "blocks": [
+      {
+       "x": 329,
+       "y": 105,
+       "w": 951,
+       "h": 32,
+       "kind": "toolbar",
+       "tag": "div",
+       "testid": null,
+       "loc": "EngineeringShell.tsx:320",
+       "role": null,
+       "slot": null,
+       "label": "Nguồn (chưa lưu) Δ So sánh Tags"
+      }
+     ]
+    }
+   ],
+   "aiInsideMain": {
+    "px": 0,
+    "inWorkspacePx": 0,
+    "pctOfViewport": 0,
+    "items": []
+   },
+   "h1Top": 67,
+   "h1Bottom": 93,
+   "h1Text": "Xưởng lập trình thiết bị",
+   "h1Missing": false,
+   "h1Count": 1,
+   "gapH1ToMain": 12,
+   "breadcrumbs": 1,
+   "bannersBeforeMain": {
+    "count": 0,
+    "px": 0,
+    "byKind": {},
+    "method": "geometric: khối giữa đáy h1 và đỉnh MAIN (kể cả trong page header) + popover/portal đè dải đầu"
+   },
+   "blocksAboveH1": {
+    "count": 0,
+    "unionPx": 0
+   },
+   "headerParts": 3,
+   "bandBlocks": [
+    {
+     "pos": "besideMain",
+     "kind": "other",
+     "inHeader": true,
+     "y": 64,
+     "h": 32,
+     "x": 60,
+     "w": 32,
+     "loc": "PageHeaderCompact.tsx:37",
+     "tag": "span",
+     "testid": null,
+     "label": "",
+     "fe1Notice": false
+    },
+    {
+     "pos": "besideH1",
+     "kind": "notice",
+     "inHeader": true,
+     "y": 66,
+     "h": 28,
+     "x": 328,
+     "w": 952,
+     "loc": "PageHeaderCompact.tsx:45",
+     "tag": "div",
+     "testid": null,
+     "label": "Triển khai thật: Đang tắt DEMO project — quick sta",
+     "fe1Notice": true
+    },
+    {
+     "pos": "besideMain",
+     "kind": "other",
+     "inHeader": true,
+     "y": 60,
+     "h": 40,
+     "x": 1288,
+     "w": 300,
+     "loc": "PageHeaderCompact.tsx:51",
+     "tag": "div",
+     "testid": null,
+     "label": "",
+     "fe1Notice": false
+    }
+   ],
+   "bannersFe1Class": {
+    "count": 0,
+    "px": 0,
+    "items": []
+   },
+   "kpi": {
+    "legacy": {
+     "count": 0,
+     "stripPx": 0
+    },
+    "official": {
+     "count": 0,
+     "stripPx": 0
+    },
+    "all": {
+     "count": 0,
+     "stripPx": 0
+    }
+   },
+   "coverMain": {
+    "px": 0,
+    "separatorHitPx": 7616,
+    "pctOfMain": 0,
+    "pctOfViewport": 0,
+    "items": [],
+    "positionedIntersecting": []
+   },
+   "pageHeightRatio": 1,
+   "pageHeightRatioDoc": 1,
+   "scroll": {
+    "docH": 950,
+    "extra": 0,
+    "siblingScrollExtra": 0,
+    "scrollers": [],
+    "inner": []
+   },
+   "shell": {
+    "sidebarW": 48,
+    "topbarH": 56,
+    "mainTop": 56,
+    "mainW": 1552,
+    "mainPad": "0px",
+    "breadcrumbLocs": [
+     "DashboardLayout.tsx:275"
+    ]
+   },
+   "dialogsAtLoad": {
+    "count": 0,
+    "kinds": []
+   },
+   "spinnersAtMeasure": 2,
+   "errors": [],
+   "warnings": [],
+   "attrSel": "div[data-layout-main=\"engineering-editor\"]@WorkbenchShell.tsx",
+   "calibration": {
+    "status": "recorded-match",
+    "dTop": 0,
+    "dLeft": 0,
+    "dAreaPct": 0,
+    "ok": true,
+    "selOk": true,
+    "record": {
+     "mainTop": 105,
+     "areaPx": 779820,
+     "attrSel": "div[data-layout-main=\"engineering-editor\"]@WorkbenchShell.tsx",
+     "gitHead": "4cc5b42c2"
+    }
+   },
+   "actions": [
+    {
+     "id": "so-tay",
+     "label": "/sổ tay/i",
+     "status": "opened",
+     "dialogs": 1,
+     "kinds": [
+      "popover"
+     ],
+     "rects": [
+      {
+       "role": "dialog",
+       "slot": "popover-content",
+       "x": 1160,
+       "y": 98,
+       "w": 384,
+       "h": 117
+      }
+     ],
+     "closedByEsc": true
+    }
+   ],
+   "trpc": [
+    "aiInbox.count",
+    "aiProgrammingKb.search",
+    "andon.active",
+    "auth.me",
+    "commandCenter.hierarchy",
+    "license.getAllowedModules",
+    "license.systemState",
+    "machine.list",
+    "permissions.getMyPermissions",
+    "programming.fleetVersionMatrix",
+    "programming.listApprovers",
+    "programming.listArtifacts",
+    "programming.listDeployments",
+    "programming.listProjects",
+    "programming.listSymbols",
+    "programming.status"
+   ]
+  },
+  {
+   "screen": "engineering",
+   "route": "/engineering",
+   "vw": 1366,
+   "vh": 768,
+   "variant": "open",
+   "mainSource": "data-layout-main",
+   "missingDataLayoutMain": false,
+   "mainSelector": "[data-layout-main]",
+   "mainFound": true,
+   "mainRects": [
+    {
+     "x": 329,
+     "y": 105,
+     "w": 717,
+     "h": 638
+    }
+   ],
+   "mainRectsRaw": [
+    {
+     "x": 329,
+     "y": 105,
+     "w": 717,
+     "h": 638
+    }
+   ],
+   "clippedBy": [],
+   "mainTop": 105,
+   "chromeAboveMain": 105,
+   "mainPct": 43.6,
+   "workspacePct": 41.4,
+   "mainPctFe1": 43.3,
+   "mainPctUncovered": 43.6,
+   "insideMain": [
+    {
+     "workspace": {
+      "tag": "div",
+      "testid": null,
+      "loc": null,
+      "role": null,
+      "slot": null,
+      "label": "1",
+      "kind": "native",
+      "top": 137
+     },
+     "aboveWorkspacePx": 32,
+     "banners": 0,
+     "bannerPx": 0,
+     "toolbars": [
+      32
+     ],
+     "blocks": [
+      {
+       "x": 329,
+       "y": 105,
+       "w": 717,
+       "h": 32,
+       "kind": "toolbar",
+       "tag": "div",
+       "testid": null,
+       "loc": "EngineeringShell.tsx:320",
+       "role": null,
+       "slot": null,
+       "label": "Nguồn (chưa lưu) Δ So sánh Tags"
+      }
+     ]
+    }
+   ],
+   "aiInsideMain": {
+    "px": 0,
+    "inWorkspacePx": 0,
+    "pctOfViewport": 0,
+    "items": []
+   },
+   "h1Top": 67,
+   "h1Bottom": 93,
+   "h1Text": "Xưởng lập trình thiết bị",
+   "h1Missing": false,
+   "h1Count": 1,
+   "gapH1ToMain": 12,
+   "breadcrumbs": 1,
+   "bannersBeforeMain": {
+    "count": 0,
+    "px": 0,
+    "byKind": {},
+    "method": "geometric: khối giữa đáy h1 và đỉnh MAIN (kể cả trong page header) + popover/portal đè dải đầu"
+   },
+   "blocksAboveH1": {
+    "count": 0,
+    "unionPx": 0
+   },
+   "headerParts": 3,
+   "bandBlocks": [
+    {
+     "pos": "besideMain",
+     "kind": "other",
+     "inHeader": true,
+     "y": 64,
+     "h": 32,
+     "x": 60,
+     "w": 32,
+     "loc": "PageHeaderCompact.tsx:37",
+     "tag": "span",
+     "testid": null,
+     "label": "",
+     "fe1Notice": false
+    },
+    {
+     "pos": "besideH1",
+     "kind": "notice",
+     "inHeader": true,
+     "y": 66,
+     "h": 28,
+     "x": 328,
+     "w": 718,
+     "loc": "PageHeaderCompact.tsx:45",
+     "tag": "div",
+     "testid": null,
+     "label": "Triển khai thật: Đang tắt DEMO project — quick sta",
+     "fe1Notice": true
+    },
+    {
+     "pos": "besideMain",
+     "kind": "other",
+     "inHeader": true,
+     "y": 60,
+     "h": 40,
+     "x": 1054,
+     "w": 300,
+     "loc": "PageHeaderCompact.tsx:51",
+     "tag": "div",
+     "testid": null,
+     "label": "",
+     "fe1Notice": false
+    }
+   ],
+   "bannersFe1Class": {
+    "count": 0,
+    "px": 0,
+    "items": []
+   },
+   "kpi": {
+    "legacy": {
+     "count": 0,
+     "stripPx": 0
+    },
+    "official": {
+     "count": 0,
+     "stripPx": 0
+    },
+    "all": {
+     "count": 0,
+     "stripPx": 0
+    }
+   },
+   "coverMain": {
+    "px": 0,
+    "separatorHitPx": 5120,
+    "pctOfMain": 0,
+    "pctOfViewport": 0,
+    "items": [],
+    "positionedIntersecting": []
+   },
+   "pageHeightRatio": 1,
+   "pageHeightRatioDoc": 1,
+   "scroll": {
+    "docH": 768,
+    "extra": 0,
+    "siblingScrollExtra": 0,
+    "scrollers": [],
+    "inner": []
+   },
+   "shell": {
+    "sidebarW": 48,
+    "topbarH": 56,
+    "mainTop": 56,
+    "mainW": 1318,
+    "mainPad": "0px",
+    "breadcrumbLocs": [
+     "DashboardLayout.tsx:275"
+    ]
+   },
+   "dialogsAtLoad": {
+    "count": 0,
+    "kinds": []
+   },
+   "spinnersAtMeasure": 2,
+   "errors": [],
+   "warnings": [],
+   "attrSel": "div[data-layout-main=\"engineering-editor\"]@WorkbenchShell.tsx",
+   "calibration": {
+    "status": "recorded-match",
+    "dTop": 0,
+    "dLeft": 0,
+    "dAreaPct": 0,
+    "ok": true,
+    "selOk": true,
+    "record": {
+     "mainTop": 105,
+     "areaPx": 457446,
+     "attrSel": "div[data-layout-main=\"engineering-editor\"]@WorkbenchShell.tsx",
+     "gitHead": "4cc5b42c2"
+    }
+   },
+   "actions": [
+    {
+     "id": "so-tay",
+     "label": "/sổ tay/i",
+     "status": "opened",
+     "dialogs": 1,
+     "kinds": [
+      "popover"
+     ],
+     "rects": [
+      {
+       "role": "dialog",
+       "slot": "popover-content",
+       "x": 926,
+       "y": 98,
+       "w": 384,
+       "h": 117
+      }
+     ],
+     "closedByEsc": true
+    }
+   ],
+   "trpc": [
+    "aiInbox.count",
+    "aiProgrammingKb.search",
+    "andon.active",
+    "auth.me",
+    "commandCenter.hierarchy",
+    "license.getAllowedModules",
+    "license.systemState",
+    "machine.list",
+    "permissions.getMyPermissions",
+    "programming.fleetVersionMatrix",
+    "programming.listApprovers",
+    "programming.listArtifacts",
+    "programming.listDeployments",
+    "programming.listProjects",
+    "programming.listSymbols",
+    "programming.status"
+   ]
+  },
+  {
+   "screen": "ir-editor",
+   "route": "/ir-editor",
+   "vw": 1600,
+   "vh": 950,
+   "variant": "open",
+   "mainSource": "data-layout-main",
+   "missingDataLayoutMain": false,
+   "mainSelector": "[data-layout-main]",
+   "mainFound": true,
+   "mainRects": [
+    {
+     "x": 289,
+     "y": 105,
+     "w": 991,
+     "h": 821
+    }
+   ],
+   "mainRectsRaw": [
+    {
+     "x": 289,
+     "y": 105,
+     "w": 991,
+     "h": 821
+    }
+   ],
+   "clippedBy": [],
+   "mainTop": 105,
+   "chromeAboveMain": 105,
+   "mainPct": 53.5,
+   "workspacePct": 51.4,
+   "mainPctFe1": 53.3,
+   "mainPctUncovered": 53.5,
+   "insideMain": [
+    {
+     "workspace": {
+      "tag": "div",
+      "testid": "rf__wrapper",
+      "loc": "IrGraphCanvas.tsx:394",
+      "role": "application",
+      "slot": null,
+      "label": "",
+      "kind": "native",
+      "top": 137
+     },
+     "aboveWorkspacePx": 32,
+     "banners": 0,
+     "bannerPx": 0,
+     "toolbars": [
+      32
+     ],
+     "blocks": [
+      {
+       "x": 289,
+       "y": 105,
+       "w": 991,
+       "h": 32,
+       "kind": "toolbar",
+       "tag": "div",
+       "testid": null,
+       "loc": "EngineeringShell.tsx:320",
+       "role": null,
+       "slot": null,
+       "label": "Vùng vẽ luồng So sánh phiên bản Hợp nhất (3 chiều)"
+      }
+     ]
+    }
+   ],
+   "aiInsideMain": {
+    "px": 0,
+    "inWorkspacePx": 0,
+    "pctOfViewport": 0,
+    "items": []
+   },
+   "h1Top": 67,
+   "h1Bottom": 93,
+   "h1Text": "Trình soạn IR trực quan",
+   "h1Missing": false,
+   "h1Count": 1,
+   "gapH1ToMain": 12,
+   "breadcrumbs": 1,
+   "bannersBeforeMain": {
+    "count": 0,
+    "px": 0,
+    "byKind": {},
+    "method": "geometric: khối giữa đáy h1 và đỉnh MAIN (kể cả trong page header) + popover/portal đè dải đầu"
+   },
+   "blocksAboveH1": {
+    "count": 0,
+    "unionPx": 0
+   },
+   "headerParts": 3,
+   "bandBlocks": [
+    {
+     "pos": "besideMain",
+     "kind": "other",
+     "inHeader": true,
+     "y": 64,
+     "h": 32,
+     "x": 60,
+     "w": 32,
+     "loc": "PageHeaderCompact.tsx:37",
+     "tag": "span",
+     "testid": null,
+     "label": "",
+     "fe1Notice": false
+    },
+    {
+     "pos": "besideH1",
+     "kind": "notice",
+     "inHeader": true,
+     "y": 66,
+     "h": 28,
+     "x": 329,
+     "w": 776,
+     "loc": "PageHeaderCompact.tsx:45",
+     "tag": "div",
+     "testid": null,
+     "label": "flow-1 · v1 · universal-robots Lint OK Khi nào dùn",
+     "fe1Notice": true
+    },
+    {
+     "pos": "besideH1",
+     "kind": "other",
+     "inHeader": true,
+     "y": 60,
+     "h": 40,
+     "x": 1113,
+     "w": 475,
+     "loc": "PageHeaderCompact.tsx:51",
+     "tag": "div",
+     "testid": null,
+     "label": "Lưu vào dự án… Lưu luồng",
+     "fe1Notice": false
+    }
+   ],
+   "bannersFe1Class": {
+    "count": 0,
+    "px": 0,
+    "items": []
+   },
+   "kpi": {
+    "legacy": {
+     "count": 0,
+     "stripPx": 0
+    },
+    "official": {
+     "count": 0,
+     "stripPx": 0
+    },
+    "all": {
+     "count": 0,
+     "stripPx": 0
+    }
+   },
+   "coverMain": {
+    "px": 0,
+    "separatorHitPx": 0,
+    "pctOfMain": 0,
+    "pctOfViewport": 0,
+    "items": [],
+    "positionedIntersecting": []
+   },
+   "pageHeightRatio": 1,
+   "pageHeightRatioDoc": 1,
+   "scroll": {
+    "docH": 950,
+    "extra": 0,
+    "siblingScrollExtra": 0,
+    "scrollers": [],
+    "inner": []
+   },
+   "shell": {
+    "sidebarW": 48,
+    "topbarH": 56,
+    "mainTop": 56,
+    "mainW": 1552,
+    "mainPad": "0px",
+    "breadcrumbLocs": [
+     "DashboardLayout.tsx:275"
+    ]
+   },
+   "dialogsAtLoad": {
+    "count": 0,
+    "kinds": []
+   },
+   "spinnersAtMeasure": 2,
+   "errors": [],
+   "warnings": [],
+   "attrSel": "div[data-layout-main=\"ir-canvas\"]@WorkbenchShell.tsx",
+   "calibration": {
+    "status": "recorded-match",
+    "dTop": 0,
+    "dLeft": 0,
+    "dAreaPct": 0,
+    "ok": true,
+    "selOk": true,
+    "record": {
+     "mainTop": 105,
+     "areaPx": 813611,
+     "attrSel": "div[data-layout-main=\"ir-canvas\"]@WorkbenchShell.tsx",
+     "gitHead": "58a5e4c3c"
+    }
+   },
+   "actions": [
+    {
+     "id": "project-ir-flow-moi",
+     "label": "/Project ir-flow mới/",
+     "status": "opened",
+     "dialogs": 1,
+     "kinds": [
+      "sheet"
+     ],
+     "rects": [
+      {
+       "role": "dialog",
+       "slot": "sheet-content",
+       "x": 1120,
+       "y": 0,
+       "w": 480,
+       "h": 950
+      }
+     ],
+     "closedByEsc": true
+    }
+   ],
+   "trpc": [
+    "aiInbox.count",
+    "andon.active",
+    "auth.me",
+    "commandCenter.hierarchy",
+    "ir.lint",
+    "ir.listFlows",
+    "ir.status",
+    "license.getAllowedModules",
+    "license.systemState",
+    "permissions.getMyPermissions",
+    "programming.listProjects"
+   ]
+  },
+  {
+   "screen": "ir-editor",
+   "route": "/ir-editor",
+   "vw": 1366,
+   "vh": 768,
+   "variant": "open",
+   "mainSource": "data-layout-main",
+   "missingDataLayoutMain": false,
+   "mainSelector": "[data-layout-main]",
+   "mainFound": true,
+   "mainRects": [
+    {
+     "x": 289,
+     "y": 105,
+     "w": 757,
+     "h": 639
+    }
+   ],
+   "mainRectsRaw": [
+    {
+     "x": 289,
+     "y": 105,
+     "w": 757,
+     "h": 639
+    }
+   ],
+   "clippedBy": [],
+   "mainTop": 105,
+   "chromeAboveMain": 105,
+   "mainPct": 46.1,
+   "workspacePct": 43.8,
+   "mainPctFe1": 45.8,
+   "mainPctUncovered": 46.1,
+   "insideMain": [
+    {
+     "workspace": {
+      "tag": "div",
+      "testid": "rf__wrapper",
+      "loc": "IrGraphCanvas.tsx:394",
+      "role": "application",
+      "slot": null,
+      "label": "",
+      "kind": "native",
+      "top": 137
+     },
+     "aboveWorkspacePx": 32,
+     "banners": 0,
+     "bannerPx": 0,
+     "toolbars": [
+      32
+     ],
+     "blocks": [
+      {
+       "x": 289,
+       "y": 105,
+       "w": 757,
+       "h": 32,
+       "kind": "toolbar",
+       "tag": "div",
+       "testid": null,
+       "loc": "EngineeringShell.tsx:320",
+       "role": null,
+       "slot": null,
+       "label": "Vùng vẽ luồng So sánh phiên bản Hợp nhất (3 chiều)"
+      }
+     ]
+    }
+   ],
+   "aiInsideMain": {
+    "px": 0,
+    "inWorkspacePx": 0,
+    "pctOfViewport": 0,
+    "items": []
+   },
+   "h1Top": 67,
+   "h1Bottom": 93,
+   "h1Text": "Trình soạn IR trực quan",
+   "h1Missing": false,
+   "h1Count": 1,
+   "gapH1ToMain": 12,
+   "breadcrumbs": 1,
+   "bannersBeforeMain": {
+    "count": 0,
+    "px": 0,
+    "byKind": {},
+    "method": "geometric: khối giữa đáy h1 và đỉnh MAIN (kể cả trong page header) + popover/portal đè dải đầu"
+   },
+   "blocksAboveH1": {
+    "count": 0,
+    "unionPx": 0
+   },
+   "headerParts": 3,
+   "bandBlocks": [
+    {
+     "pos": "besideMain",
+     "kind": "other",
+     "inHeader": true,
+     "y": 64,
+     "h": 32,
+     "x": 60,
+     "w": 32,
+     "loc": "PageHeaderCompact.tsx:37",
+     "tag": "span",
+     "testid": null,
+     "label": "",
+     "fe1Notice": false
+    },
+    {
+     "pos": "besideH1",
+     "kind": "notice",
+     "inHeader": true,
+     "y": 66,
+     "h": 28,
+     "x": 329,
+     "w": 619,
+     "loc": "PageHeaderCompact.tsx:45",
+     "tag": "div",
+     "testid": null,
+     "label": "flow-1 · v1 · universal-robots Lint OK Khi nào dùn",
+     "fe1Notice": true
+    },
+    {
+     "pos": "besideH1",
+     "kind": "other",
+     "inHeader": true,
+     "y": 60,
+     "h": 40,
+     "x": 956,
+     "w": 398,
+     "loc": "PageHeaderCompact.tsx:51",
+     "tag": "div",
+     "testid": null,
+     "label": "Lưu vào dự án…",
+     "fe1Notice": false
+    }
+   ],
+   "bannersFe1Class": {
+    "count": 0,
+    "px": 0,
+    "items": []
+   },
+   "kpi": {
+    "legacy": {
+     "count": 0,
+     "stripPx": 0
+    },
+    "official": {
+     "count": 0,
+     "stripPx": 0
+    },
+    "all": {
+     "count": 0,
+     "stripPx": 0
+    }
+   },
+   "coverMain": {
+    "px": 0,
+    "separatorHitPx": 5120,
+    "pctOfMain": 0,
+    "pctOfViewport": 0,
+    "items": [],
+    "positionedIntersecting": []
+   },
+   "pageHeightRatio": 1,
+   "pageHeightRatioDoc": 1,
+   "scroll": {
+    "docH": 768,
+    "extra": 0,
+    "siblingScrollExtra": 75,
+    "scrollers": [
+     {
+      "tag": "div",
+      "testid": null,
+      "loc": "IrEditor.tsx:1548",
+      "role": null,
+      "slot": null,
+      "label": "BẢNG CHỌN KHỐI Kéo một khối vào vùng vẽ — thả lên ",
+      "rel": "sibling",
+      "overflowY": "auto",
+      "scrollH": 714,
+      "clientH": 639
+     }
+    ],
+    "inner": []
+   },
+   "shell": {
+    "sidebarW": 48,
+    "topbarH": 56,
+    "mainTop": 56,
+    "mainW": 1318,
+    "mainPad": "0px",
+    "breadcrumbLocs": [
+     "DashboardLayout.tsx:275"
+    ]
+   },
+   "dialogsAtLoad": {
+    "count": 0,
+    "kinds": []
+   },
+   "spinnersAtMeasure": 2,
+   "errors": [],
+   "warnings": [],
+   "attrSel": "div[data-layout-main=\"ir-canvas\"]@WorkbenchShell.tsx",
+   "calibration": {
+    "status": "recorded-match",
+    "dTop": 0,
+    "dLeft": 0,
+    "dAreaPct": 0,
+    "ok": true,
+    "selOk": true,
+    "record": {
+     "mainTop": 105,
+     "areaPx": 483723,
+     "attrSel": "div[data-layout-main=\"ir-canvas\"]@WorkbenchShell.tsx",
+     "gitHead": "58a5e4c3c"
+    }
+   },
+   "actions": [
+    {
+     "id": "project-ir-flow-moi",
+     "label": "/Project ir-flow mới/",
+     "status": "opened",
+     "dialogs": 1,
+     "kinds": [
+      "sheet"
+     ],
+     "rects": [
+      {
+       "role": "dialog",
+       "slot": "sheet-content",
+       "x": 886,
+       "y": 0,
+       "w": 480,
+       "h": 768
+      }
+     ],
+     "closedByEsc": true
+    }
+   ],
+   "trpc": [
+    "aiInbox.count",
+    "andon.active",
+    "auth.me",
+    "commandCenter.hierarchy",
+    "ir.lint",
+    "ir.listFlows",
+    "ir.status",
+    "license.getAllowedModules",
+    "license.systemState",
+    "permissions.getMyPermissions",
+    "programming.listProjects"
+   ]
+  },
+  {
+   "screen": "pou-studio",
+   "route": "/pou-studio",
+   "vw": 1600,
+   "vh": 950,
+   "variant": "open",
+   "mainSource": "data-layout-main",
+   "missingDataLayoutMain": false,
+   "mainSelector": "[data-layout-main]",
+   "mainFound": true,
+   "mainRects": [
+    {
+     "x": 89,
+     "y": 105,
+     "w": 1190,
+     "h": 820
+    }
+   ],
+   "mainRectsRaw": [
+    {
+     "x": 89,
+     "y": 105,
+     "w": 1190,
+     "h": 820
+    }
+   ],
+   "clippedBy": [
+    {
+     "tag": "div",
+     "testid": null,
+     "loc": "WorkbenchShell.tsx:632",
+     "role": null,
+     "slot": "resizable-panel",
+     "label": "Canvas JSON MotorControl · LD | | Start NO | | Mot",
+     "overflow": "hidden/hidden"
+    }
+   ],
+   "mainTop": 105,
+   "chromeAboveMain": 105,
+   "mainPct": 64.2,
+   "workspacePct": 61.7,
+   "mainPctFe1": 63.9,
+   "mainPctUncovered": 64.2,
+   "insideMain": [
+    {
+     "workspace": {
+      "tag": "div",
+      "testid": "rf__wrapper",
+      "loc": "PouCanvas.tsx:1131",
+      "role": "application",
+      "slot": null,
+      "label": "| | Start NO | | Motor NO |/| Stop NC | | Interloc",
+      "kind": "native",
+      "top": 137
+     },
+     "aboveWorkspacePx": 32,
+     "banners": 0,
+     "bannerPx": 0,
+     "toolbars": [
+      32
+     ],
+     "blocks": [
+      {
+       "x": 89,
+       "y": 105,
+       "w": 1190,
+       "h": 32,
+       "kind": "toolbar",
+       "tag": "div",
+       "testid": null,
+       "loc": "EngineeringShell.tsx:320",
+       "role": null,
+       "slot": null,
+       "label": "Canvas JSON MotorControl · LD"
+      }
+     ]
+    }
+   ],
+   "aiInsideMain": {
+    "px": 0,
+    "inWorkspacePx": 0,
+    "pctOfViewport": 0,
+    "items": []
+   },
+   "h1Top": 67,
+   "h1Bottom": 93,
+   "h1Text": "IEC 61131 POU Studio",
+   "h1Missing": false,
+   "h1Count": 1,
+   "gapH1ToMain": 12,
+   "breadcrumbs": 1,
+   "bannersBeforeMain": {
+    "count": 0,
+    "px": 0,
+    "byKind": {},
+    "method": "geometric: khối giữa đáy h1 và đỉnh MAIN (kể cả trong page header) + popover/portal đè dải đầu"
+   },
+   "blocksAboveH1": {
+    "count": 0,
+    "unionPx": 0
+   },
+   "headerParts": 3,
+   "bandBlocks": [
+    {
+     "pos": "besideH1",
+     "kind": "other",
+     "inHeader": true,
+     "y": 64,
+     "h": 32,
+     "x": 60,
+     "w": 32,
+     "loc": "PageHeaderCompact.tsx:37",
+     "tag": "span",
+     "testid": null,
+     "label": "",
+     "fe1Notice": false
+    },
+    {
+     "pos": "besideH1",
+     "kind": "notice",
+     "inHeader": true,
+     "y": 66,
+     "h": 28,
+     "x": 309,
+     "w": 974,
+     "loc": "PageHeaderCompact.tsx:45",
+     "tag": "div",
+     "testid": null,
+     "label": "Lint đạt Khi nào dùng",
+     "fe1Notice": true
+    },
+    {
+     "pos": "besideMain",
+     "kind": "other",
+     "inHeader": true,
+     "y": 60,
+     "h": 40,
+     "x": 1290,
+     "w": 298,
+     "loc": "PageHeaderCompact.tsx:51",
+     "tag": "div",
+     "testid": null,
+     "label": "Lưu vào project → Build/Deploy",
+     "fe1Notice": false
+    }
+   ],
+   "bannersFe1Class": {
+    "count": 0,
+    "px": 0,
+    "items": []
+   },
+   "kpi": {
+    "legacy": {
+     "count": 0,
+     "stripPx": 0
+    },
+    "official": {
+     "count": 0,
+     "stripPx": 0
+    },
+    "all": {
+     "count": 0,
+     "stripPx": 0
+    }
+   },
+   "coverMain": {
+    "px": 0,
+    "separatorHitPx": 9536,
+    "pctOfMain": 0,
+    "pctOfViewport": 0,
+    "items": [],
+    "positionedIntersecting": []
+   },
+   "pageHeightRatio": 1,
+   "pageHeightRatioDoc": 1,
+   "scroll": {
+    "docH": 950,
+    "extra": 0,
+    "siblingScrollExtra": 0,
+    "scrollers": [],
+    "inner": []
+   },
+   "shell": {
+    "sidebarW": 48,
+    "topbarH": 56,
+    "mainTop": 56,
+    "mainW": 1552,
+    "mainPad": "0px",
+    "breadcrumbLocs": [
+     "DashboardLayout.tsx:275"
+    ]
+   },
+   "dialogsAtLoad": {
+    "count": 0,
+    "kinds": []
+   },
+   "spinnersAtMeasure": 2,
+   "errors": [],
+   "warnings": [],
+   "attrSel": "div[data-layout-main=\"pou-editor\"]@WorkbenchShell.tsx",
+   "calibration": {
+    "status": "recorded-match",
+    "dTop": 0,
+    "dLeft": 0,
+    "dAreaPct": 0,
+    "ok": true,
+    "selOk": true,
+    "record": {
+     "mainTop": 105,
+     "areaPx": 975800,
+     "attrSel": "div[data-layout-main=\"pou-editor\"]@WorkbenchShell.tsx",
+     "gitHead": "68b59d0b4"
+    }
+   },
+   "actions": [
+    {
+     "id": "luu-vao-project",
+     "label": "/Lưu vào project/",
+     "status": "opened",
+     "dialogs": 1,
+     "kinds": [
+      "sheet"
+     ],
+     "rects": [
+      {
+       "role": "dialog",
+       "slot": "sheet-content",
+       "x": 1120,
+       "y": 0,
+       "w": 480,
+       "h": 950
+      }
+     ],
+     "closedByEsc": true
+    }
+   ],
+   "trpc": [
+    "aiInbox.count",
+    "andon.active",
+    "auth.me",
+    "commandCenter.hierarchy",
+    "license.getAllowedModules",
+    "license.systemState",
+    "permissions.getMyPermissions",
+    "programming.listProjects",
+    "programming.pouLint",
+    "programming.pouTranspilePreview"
+   ]
+  },
+  {
+   "screen": "pou-studio",
+   "route": "/pou-studio",
+   "vw": 1366,
+   "vh": 768,
+   "variant": "open",
+   "mainSource": "data-layout-main",
+   "missingDataLayoutMain": false,
+   "mainSelector": "[data-layout-main]",
+   "mainFound": true,
+   "mainRects": [
+    {
+     "x": 89,
+     "y": 105,
+     "w": 957,
+     "h": 638
+    }
+   ],
+   "mainRectsRaw": [
+    {
+     "x": 89,
+     "y": 105,
+     "w": 957,
+     "h": 638
+    }
+   ],
+   "clippedBy": [],
+   "mainTop": 105,
+   "chromeAboveMain": 105,
+   "mainPct": 58.2,
+   "workspacePct": 55.3,
+   "mainPctFe1": 57.8,
+   "mainPctUncovered": 58.2,
+   "insideMain": [
+    {
+     "workspace": {
+      "tag": "div",
+      "testid": "rf__wrapper",
+      "loc": "PouCanvas.tsx:1131",
+      "role": "application",
+      "slot": null,
+      "label": "| | Start NO | | Motor NO |/| Stop NC | | Interloc",
+      "kind": "native",
+      "top": 137
+     },
+     "aboveWorkspacePx": 32,
+     "banners": 0,
+     "bannerPx": 0,
+     "toolbars": [
+      32
+     ],
+     "blocks": [
+      {
+       "x": 89,
+       "y": 105,
+       "w": 957,
+       "h": 32,
+       "kind": "toolbar",
+       "tag": "div",
+       "testid": null,
+       "loc": "EngineeringShell.tsx:320",
+       "role": null,
+       "slot": null,
+       "label": "Canvas JSON"
+      }
+     ]
+    }
+   ],
+   "aiInsideMain": {
+    "px": 0,
+    "inWorkspacePx": 0,
+    "pctOfViewport": 0,
+    "items": []
+   },
+   "h1Top": 67,
+   "h1Bottom": 93,
+   "h1Text": "IEC 61131 POU Studio",
+   "h1Missing": false,
+   "h1Count": 1,
+   "gapH1ToMain": 12,
+   "breadcrumbs": 1,
+   "bannersBeforeMain": {
+    "count": 0,
+    "px": 0,
+    "byKind": {},
+    "method": "geometric: khối giữa đáy h1 và đỉnh MAIN (kể cả trong page header) + popover/portal đè dải đầu"
+   },
+   "blocksAboveH1": {
+    "count": 0,
+    "unionPx": 0
+   },
+   "headerParts": 3,
+   "bandBlocks": [
+    {
+     "pos": "besideH1",
+     "kind": "other",
+     "inHeader": true,
+     "y": 64,
+     "h": 32,
+     "x": 60,
+     "w": 32,
+     "loc": "PageHeaderCompact.tsx:37",
+     "tag": "span",
+     "testid": null,
+     "label": "",
+     "fe1Notice": false
+    },
+    {
+     "pos": "besideH1",
+     "kind": "notice",
+     "inHeader": true,
+     "y": 66,
+     "h": 28,
+     "x": 309,
+     "w": 957,
+     "loc": "PageHeaderCompact.tsx:45",
+     "tag": "div",
+     "testid": null,
+     "label": "Lint đạt Khi nào dùng",
+     "fe1Notice": true
+    },
+    {
+     "pos": "besideMain",
+     "kind": "other",
+     "inHeader": true,
+     "y": 60,
+     "h": 40,
+     "x": 1274,
+     "w": 80,
+     "loc": "PageHeaderCompact.tsx:51",
+     "tag": "div",
+     "testid": null,
+     "label": "",
+     "fe1Notice": false
+    }
+   ],
+   "bannersFe1Class": {
+    "count": 0,
+    "px": 0,
+    "items": []
+   },
+   "kpi": {
+    "legacy": {
+     "count": 0,
+     "stripPx": 0
+    },
+    "official": {
+     "count": 0,
+     "stripPx": 0
+    },
+    "all": {
+     "count": 0,
+     "stripPx": 0
+    }
+   },
+   "coverMain": {
+    "px": 0,
+    "separatorHitPx": 5120,
+    "pctOfMain": 0,
+    "pctOfViewport": 0,
+    "items": [],
+    "positionedIntersecting": []
+   },
+   "pageHeightRatio": 1,
+   "pageHeightRatioDoc": 1,
+   "scroll": {
+    "docH": 768,
+    "extra": 0,
+    "siblingScrollExtra": 0,
+    "scrollers": [],
+    "inner": []
+   },
+   "shell": {
+    "sidebarW": 48,
+    "topbarH": 56,
+    "mainTop": 56,
+    "mainW": 1318,
+    "mainPad": "0px",
+    "breadcrumbLocs": [
+     "DashboardLayout.tsx:275"
+    ]
+   },
+   "dialogsAtLoad": {
+    "count": 0,
+    "kinds": []
+   },
+   "spinnersAtMeasure": 2,
+   "errors": [],
+   "warnings": [],
+   "attrSel": "div[data-layout-main=\"pou-editor\"]@WorkbenchShell.tsx",
+   "calibration": {
+    "status": "recorded-match",
+    "dTop": 0,
+    "dLeft": 0,
+    "dAreaPct": 0,
+    "ok": true,
+    "selOk": true,
+    "record": {
+     "mainTop": 105,
+     "areaPx": 610566,
+     "attrSel": "div[data-layout-main=\"pou-editor\"]@WorkbenchShell.tsx",
+     "gitHead": "68b59d0b4"
+    }
+   },
+   "actions": [
+    {
+     "id": "luu-vao-project",
+     "label": "/Lưu vào project/",
+     "status": "opened",
+     "dialogs": 1,
+     "kinds": [
+      "sheet"
+     ],
+     "rects": [
+      {
+       "role": "dialog",
+       "slot": "sheet-content",
+       "x": 886,
+       "y": 0,
+       "w": 480,
+       "h": 768
+      }
+     ],
+     "closedByEsc": true
+    }
+   ],
+   "trpc": [
+    "aiInbox.count",
+    "andon.active",
+    "auth.me",
+    "commandCenter.hierarchy",
+    "license.getAllowedModules",
+    "license.systemState",
+    "permissions.getMyPermissions",
+    "programming.listProjects",
+    "programming.pouLint",
+    "programming.pouTranspilePreview"
+   ]
+  }
+ ],
+ "pass": true
+}
