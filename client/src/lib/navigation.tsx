@@ -897,8 +897,11 @@ export const navGroups: NavGroup[] = [
         label: "nav.robotControl",
         icon: <Bot className="h-4 w-4" />,
         description: "nav.robotControlDesc",
-        requiredPermission: "machine_status",
-        permissionCategory: "machine_monitoring",
+        // doc 81 Đợt 2 Task 15 fix 1 (R-2-w) — nav KHAI ĐÚNG quyền RouteGuard của route (App.tsx requirePermission=
+        // "machine_control"): trước đây khai machine_status ⇒ operator/viewer thấy mục rồi bị từ chối. Lưới:
+        // lib/navRouteGuardRoles.unit.test.ts (mọi vai × mọi mục nav). Route + server KHÔNG đổi.
+        requiredPermission: "machine_control",
+        permissionCategory: "machine_control",
         section: "control",
       },
       {
@@ -907,8 +910,11 @@ export const navGroups: NavGroup[] = [
         label: "nav.controlPlane",
         icon: <Network className="h-4 w-4" />,
         description: "nav.controlPlaneDesc",
-        requiredPermission: "machine_status",
-        permissionCategory: "machine_monitoring",
+        // doc 81 Đợt 2 Task 15 fix 1 (R-2-w) — nav KHAI ĐÚNG quyền RouteGuard của route (App.tsx requirePermission=
+        // "machine_control"): trước đây khai machine_status ⇒ operator/viewer thấy mục rồi bị từ chối. Lưới:
+        // lib/navRouteGuardRoles.unit.test.ts (mọi vai × mọi mục nav). Route + server KHÔNG đổi.
+        requiredPermission: "machine_control",
+        permissionCategory: "machine_control",
         section: "control",
         hint: "nav.hint.controlPlane",
         engineerOriented: true,

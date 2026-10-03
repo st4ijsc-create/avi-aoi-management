@@ -178,3 +178,18 @@ describe("Mở app Kỹ thuật từ App Launcher theo vai trò (landing)", () =
     expect(resolveAppLandingHref(fake, searchFor("operator"))).toBe("/khong-phai-muc-nav");
   });
 });
+
+describe("Fix 1 — supervisor ở chế độ Đơn giản (mặc định của supervisor) KHÔNG trống trong app Kỹ thuật", () => {
+  it("thanh bên rơi về danh sách đủ của app: có Hub + màn duyệt (ECN, Recipe, Interlock), không trống", () => {
+    const { sidebar, simpleFallback } = resolveSidebarGroups({
+      accessible: sidebarFor("supervisor"),
+      mode: "simple",
+      launcherOn: true,
+      appId: "engineering",
+    });
+    const items = sidebar.flatMap((g) => g.items.map((i) => i.href));
+    expect(items.length).toBeGreaterThan(0);
+    expect(simpleFallback).toBe(true);
+    for (const h of ["/engineering-home", "/engineering-changes", "/recipes", "/interlock-rules"]) expect(items, h).toContain(h);
+  });
+});
