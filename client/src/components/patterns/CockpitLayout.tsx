@@ -27,7 +27,7 @@ export interface CockpitLayoutProps {
   icon?: React.ReactNode;
   /** Hành động bên phải header. */
   actions?: React.ReactNode;
-  /** `<NoticeStack>` / `<WhenToUseHint>` / `<FeatureStatusNoticeChip>` — vào header. */
+  /** `<NoticeStack>` / `<NoticeChip kind="whenToUse">` / `<FeatureStatusNoticeChip>` — vào header. */
   notices?: React.ReactNode;
   /** `<StatusChipStrip>` — vào header (cùng hàng h1). */
   chips?: React.ReactNode;

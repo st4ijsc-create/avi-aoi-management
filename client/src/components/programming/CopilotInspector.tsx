@@ -4,7 +4,7 @@
  *
  *  - Tab của trang (vd Thuộc tính / Transpile, hay Transpile → ST / PLCopen XML) + tab "Copilot".
  *  - `open` của `ProgrammingCopilotContext` = tab Copilot đang chọn ⇒ nút AI top bar (ShellAiButton) mở/đóng nó;
- *    trạng thái nhớ ở `progCopilotDock.open` như trước (thiết bị đo dựng biến thể "mở Copilot" bằng khoá này).
+ *    trạng thái nhớ ở `progCopilot.open` (trước: `progCopilotDock.open`, vẫn đọc một lần) (thiết bị đo dựng biến thể "mở Copilot" bằng khoá này).
  *  - Lõi `ProgrammingCopilotCore` mount ở lần mở đầu rồi GIỮ (stream đang chạy không bị huỷ khi chuyển sang tab khác
  *    — Review Focus 3); tab của trang chỉ vẽ nội dung khi được chọn (như Radix Tabs cũ — vd query transpile chỉ chạy
  *    khi tab đó mở).

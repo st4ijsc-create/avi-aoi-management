@@ -1,13 +1,14 @@
 // @vitest-environment jsdom
 //
-// Doc 81 Đợt 2 Task 3 — NoticeChip / NoticeStack / WhenToUseHint / FeatureStatusNoticeChip.
+// Doc 81 Đợt 2 Task 3 — NoticeChip / NoticeStack / FeatureStatusNoticeChip (final wave M-3: WhenToUseHint đã bỏ — 0 nơi dùng).
 // Dựng component THẬT với i18next THẬT (vi.json) — chỉ polyfill hạ tầng jsdom (ResizeObserver).
 import { afterEach, beforeAll, describe, expect, it } from "vitest";
 import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import "@testing-library/jest-dom/vitest";
 import vi from "@/i18n/locales/vi.json";
 import { initLayoutKitTestI18n } from "./layoutKitTestI18n";
-import { FeatureStatusNoticeChip, NoticeChip, NoticeStack, WhenToUseHint, type NoticeItem } from "./NoticeChip";
+import { useTranslation } from "react-i18next";
+import { FeatureStatusNoticeChip, NoticeChip, NoticeStack, type NoticeItem } from "./NoticeChip";
 
 beforeAll(async () => {
   (globalThis as { ResizeObserver?: unknown }).ResizeObserver ??= class {
@@ -86,9 +87,19 @@ describe("NoticeStack — gộp nhiều notice thành MỘT dải không xuống
   });
 });
 
-describe("WhenToUseHint — giữ KHOÁ i18n riêng từng trang", () => {
+function PageWhenToUse() {
+  // đúng cách các trang dùng: <NoticeChip kind="whenToUse"> + KHOÁ riêng của trang
+  const { t } = useTranslation();
+  return (
+    <NoticeChip kind="whenToUse">
+      <p data-when-to-use="engineering.whenToUse">{t("engineering.whenToUse", "FALLBACK-KHONG-DUOC-HIEN")}</p>
+    </NoticeChip>
+  );
+}
+
+describe("NoticeChip kind=whenToUse — giữ KHOÁ i18n riêng từng trang", () => {
   it("popover hiện đúng câu của khoá trang trong vi.json (engineering.whenToUse), không phải câu dự phòng", async () => {
-    render(<WhenToUseHint i18nKey="engineering.whenToUse" fallback="FALLBACK-KHONG-DUOC-HIEN" />);
+    render(<PageWhenToUse />);
     fireEvent.click(screen.getByRole("button", { name: vi.layoutKit.notice.kind.whenToUse }));
     const pop = await screen.findByRole("dialog");
     const p = pop.querySelector("[data-when-to-use]");

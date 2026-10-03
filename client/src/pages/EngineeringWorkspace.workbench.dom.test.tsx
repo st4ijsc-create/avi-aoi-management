@@ -332,7 +332,7 @@ describe("P1 Workbench — bố cục (doc 81 §1.3)", () => {
 // ════════════════════════════════════════════════════════════════════════════════════════════════
 describe("Copilot là panel TRONG layout (R-2-b / R-2-j)", () => {
   it("Copilot mở ⇒ KHÔNG dock position:fixed, KHÔNG body.paddingRight; panel nằm trong inspector (aside data-layout-ai)", async () => {
-    window.localStorage.setItem("progCopilotDock.open", "1");
+    window.localStorage.setItem("progCopilot.open", "1");
     seed();
     renderPage();
     await screen.findByPlaceholderText(/Describe what to generate/);

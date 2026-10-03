@@ -1,5 +1,5 @@
 /**
- * Doc 81 Đợt 2 Task 3 — <NoticeChip> + <NoticeStack> + <WhenToUseHint> + <FeatureStatusNoticeChip>.
+ * Doc 81 Đợt 2 Task 3 — <NoticeChip> + <NoticeStack> + <FeatureStatusNoticeChip>.
  *
  * Thay các banner nhiều dòng trước nội dung chính (gợi ý, cờ tắt, lưu ý trung thực số liệu, cổng mô
  * phỏng, Beta, "Khi nào dùng") bằng CHIP 1 DÒNG mở popover. Chip đặt trong slot `chips` của
@@ -7,7 +7,8 @@
  * (thiết bị đo đếm mọi khối nằm dưới đáy h1 và trên MAIN là banner).
  *
  * Nội dung và ĐIỀU KIỆN hiện của từng notice giữ nguyên ở trang gọi; component chỉ đổi hình dạng.
- * `WhenToUseHint` nhận KHOÁ i18n riêng của trang (vd `engineering.whenToUse`) — không gộp khoá.
+ * "Khi nào dùng": trang dùng `<NoticeChip kind="whenToUse">` với KHOÁ i18n riêng của trang (vd `engineering.whenToUse`) —
+ * không gộp khoá (final wave M-3: bỏ atom `WhenToUseHint`/`whenToUseNotice` không còn nơi dùng).
  * `FeatureStatusNoticeChip` giữ đủ 4 trạng thái của `FeatureStatusGate` (loading/off/on/error):
  * "on" không hiện gì, "loading"/"error" KHÔNG BAO GIỜ hiện như "off" hay "on".
  *
@@ -173,33 +174,6 @@ export function NoticeStack({ items, maxVisible = 3, className }: NoticeStackPro
       )}
     </div>
   );
-}
-
-export interface WhenToUseHintProps {
-  /** Khoá i18n RIÊNG của trang, vd "engineering.whenToUse" — giữ nguyên khoá cũ. */
-  i18nKey: string;
-  /** Câu dự phòng cũ của trang (giữ nguyên văn). */
-  fallback: string;
-  className?: string;
-}
-
-/** Atom "Khi nào dùng": chip 1 dòng, popover hiện đúng câu cũ của trang. */
-export function WhenToUseHint({ i18nKey, fallback, className }: WhenToUseHintProps): React.JSX.Element {
-  const { t } = useTranslation();
-  return (
-    <NoticeChip kind="whenToUse" className={className}>
-      <p data-when-to-use={i18nKey}>{t(i18nKey, fallback)}</p>
-    </NoticeChip>
-  );
-}
-
-/** Mục NoticeStack cho "Khi nào dùng" — cùng hợp đồng khoá như WhenToUseHint. */
-export function whenToUseNotice(i18nKey: string, fallback: string, t: (k: string, d: string) => string): NoticeItem {
-  return {
-    id: `whenToUse:${i18nKey}`,
-    kind: "whenToUse",
-    content: <p data-when-to-use={i18nKey}>{t(i18nKey, fallback)}</p>,
-  };
 }
 
 export interface FeatureStatusNoticeChipProps {

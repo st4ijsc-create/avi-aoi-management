@@ -60,20 +60,23 @@ export interface CopilotBinding {
 interface ProgrammingCopilotContextValue {
   open: boolean;
   setOpen: (v: boolean) => void;
-  openDock: () => void;
-  closeDock: () => void;
   binding: CopilotBinding | null;
   setBinding: (b: CopilotBinding | null) => void;
   clearBinding: () => void;
 }
 
 const Ctx = createContext<ProgrammingCopilotContextValue | null>(null);
-const STORAGE_KEY = "progCopilotDock.open";
+// final wave M-3 — khoá đổi tên theo đúng thứ nó nhớ (tab Copilot trong layout, không còn "dock"); khoá cũ chỉ còn
+// được ĐỌC một lần để người dùng không mất lựa chọn đã lưu.
+const STORAGE_KEY = "progCopilot.open";
+const LEGACY_STORAGE_KEY = "progCopilotDock.open";
 
 export function ProgrammingCopilotProvider({ children }: { children: ReactNode }) {
   const [open, setOpenState] = useState<boolean>(() => {
     try {
-      return typeof window !== "undefined" && window.localStorage.getItem(STORAGE_KEY) === "1";
+      if (typeof window === "undefined") return false;
+      const v = window.localStorage.getItem(STORAGE_KEY) ?? window.localStorage.getItem(LEGACY_STORAGE_KEY);
+      return v === "1";
     } catch {
       return false;
     }
@@ -84,18 +87,17 @@ export function ProgrammingCopilotProvider({ children }: { children: ReactNode }
     setOpenState(v);
     try {
       window.localStorage.setItem(STORAGE_KEY, v ? "1" : "0");
+      window.localStorage.removeItem(LEGACY_STORAGE_KEY);
     } catch {
       /* ignore */
     }
   }, []);
-  const openDock = useCallback(() => setOpen(true), [setOpen]);
-  const closeDock = useCallback(() => setOpen(false), [setOpen]);
   const setBinding = useCallback((b: CopilotBinding | null) => setBindingState(b), []);
   const clearBinding = useCallback(() => setBindingState(null), []);
 
   const value = useMemo<ProgrammingCopilotContextValue>(
-    () => ({ open, setOpen, openDock, closeDock, binding, setBinding, clearBinding }),
-    [open, setOpen, openDock, closeDock, binding, setBinding, clearBinding],
+    () => ({ open, setOpen, binding, setBinding, clearBinding }),
+    [open, setOpen, binding, setBinding, clearBinding],
   );
 
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;

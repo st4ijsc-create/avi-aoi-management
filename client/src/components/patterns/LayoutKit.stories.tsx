@@ -4,7 +4,7 @@ import { Code2, FolderTree, GitBranch, Rocket, Truck } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { EngineeringShell } from "@/components/engineering/shell/EngineeringShell";
 import { PageHeaderCompact } from "./PageHeaderCompact";
-import { NoticeStack, WhenToUseHint } from "./NoticeChip";
+import { NoticeChip, NoticeStack } from "./NoticeChip";
 import { StatusChipStrip } from "./StatusChipStrip";
 import { FlyoutHost, useFlyout, useFlyoutLayer } from "./FlyoutHost";
 import { DetailSheet } from "./DetailSheet";
@@ -52,7 +52,7 @@ export const HeaderVoiChipVaNotice: Story = {
                 { id: "sim", kind: "simGate", content: <p>Commands run in simulation only.</p> },
               ]}
             />
-            <WhenToUseHint i18nKey="fleet.whenToUse" fallback="When to use — assign tasks across a robot/AGV fleet." />
+            <NoticeChip kind="whenToUse"><p>When to use — assign tasks across a robot/AGV fleet.</p></NoticeChip>
             {chips}
           </>
         }

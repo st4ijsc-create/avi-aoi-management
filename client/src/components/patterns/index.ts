@@ -146,8 +146,8 @@ export type {
 export { LAYOUT_MAIN, LAYOUT_TOOLBAR, LAYOUT_KPI, LAYOUT_AI, LAYOUT_HEADER, layoutMainProps } from "./layoutMarkers";
 export { PageHeaderCompact } from "./PageHeaderCompact";
 export type { PageHeaderCompactProps } from "./PageHeaderCompact";
-export { NoticeChip, NoticeStack, WhenToUseHint, whenToUseNotice, FeatureStatusNoticeChip } from "./NoticeChip";
-export type { NoticeKind, NoticeChipProps, NoticeItem, NoticeStackProps, WhenToUseHintProps, FeatureStatusNoticeChipProps } from "./NoticeChip";
+export { NoticeChip, NoticeStack, FeatureStatusNoticeChip } from "./NoticeChip";
+export type { NoticeKind, NoticeChipProps, NoticeItem, NoticeStackProps, FeatureStatusNoticeChipProps } from "./NoticeChip";
 export { StatusChipStrip, chipStateFromQuery, effectiveChipState, splitChipsForOverflow, overflowState } from "./StatusChipStrip";
 export type { ChipState, StatusChipItem, StatusChipStripProps, OverflowState } from "./StatusChipStrip";
 export { FlyoutHost, useFlyout, useFlyoutLayer, parseFlyoutStack, buildFlyoutSearch, FLYOUT_PARAM, FLYOUT_ID_PARAM } from "./FlyoutHost";

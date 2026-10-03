@@ -387,7 +387,7 @@ describe("Inspector / Transpile / Copilot bên phải", () => {
   });
 
   it("Copilot mở ⇒ panel TRONG inspector (aside data-layout-ai), KHÔNG dock fixed, KHÔNG body.paddingRight; ngoài MAIN", async () => {
-    window.localStorage.setItem("progCopilotDock.open", "1");
+    window.localStorage.setItem("progCopilot.open", "1");
     seed();
     renderPage();
     const aside = document.querySelector("aside[data-layout-ai]") as HTMLElement;

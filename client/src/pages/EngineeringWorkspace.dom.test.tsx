@@ -24,7 +24,7 @@ vi.mock("@/lib/socketManager", () => ({
   releaseSharedSocket: vi.fn(),
 }));
 vi.mock("@/contexts/ProgrammingCopilotContext", () => ({
-  useProgrammingCopilot: () => ({ openDock: vi.fn(), closeDock: vi.fn(), open: false, setOpen: vi.fn(), binding: null }),
+  useProgrammingCopilot: () => ({ open: false, setOpen: vi.fn(), binding: null }),
   useCopilotBinding: () => {},
 }));
 vi.mock("sonner", () => ({
