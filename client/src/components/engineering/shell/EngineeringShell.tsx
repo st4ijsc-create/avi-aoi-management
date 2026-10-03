@@ -12,8 +12,10 @@
  * - Tab editor: `role=tablist`, ←/→/Home/End chuyển tab (gọi `onTabChange`), dấu ● "chưa lưu",
  *   nút đóng có nhãn riêng. MAIN là `role=tabpanel` của tab đang chọn.
  *
- * Dấu đo: `data-layout-main` CHỈ trên vùng editor; tab strip, activity bar, explorer, inspector
- * (Copilot ⇒ `inspectorIsAi` ⇒ `data-layout-ai`) và thanh trạng thái đều ngoài MAIN. Copilot là
+ * Dấu đo: `data-layout-main` trên vùng editor. Ruling R-2-s (Task 13 fix round 1): dải tab editor nằm TRONG MAIN, là
+ * thanh công cụ DUY NHẤT `data-layout-toolbar` (32 px ≤ 56) của vùng làm việc, kèm `editorToolbarEnd` (điều khiển riêng
+ * của tab đang mở — vd chọn bản so sánh, "Thêm biến"); phần editor bên dưới là `role=tabpanel`. Activity bar, explorer,
+ * inspector (Copilot ⇒ `inspectorIsAi` ⇒ `data-layout-ai`) và thanh trạng thái đều ngoài MAIN. Copilot là
  * panel trong layout đẩy editor — không còn dock `position:fixed` đè lên (Task 13).
  */
 import * as React from "react";
@@ -21,6 +23,7 @@ import { useTranslation } from "react-i18next";
 import { X as XIcon } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { WorkbenchShell } from "@/components/patterns/WorkbenchShell";
+import { LAYOUT_TOOLBAR } from "@/components/patterns/layoutMarkers";
 import type { PxRange } from "@/components/patterns/layoutKitHooks";
 import { useNarrowViewport } from "@/components/patterns/layoutKitHooks";
 
@@ -52,6 +55,8 @@ export interface EngineeringShellProps {
   onTabClose?: (id: string) => void;
   /** Nội dung MAIN (editor / canvas của tab đang chọn). */
   editor: React.ReactNode;
+  /** R-2-s — điều khiển riêng của tab đang mở, đặt CUỐI thanh tab (cùng một `data-layout-toolbar`). */
+  editorToolbarEnd?: React.ReactNode;
   inspector?: React.ReactNode;
   inspectorLabel?: string;
   /** Inspector là Copilot/AI ⇒ data-layout-ai. */
@@ -169,8 +174,7 @@ function EditorTabStrip({
     <div
       role="tablist"
       aria-label={t("layoutKit.shell.editorTabs", "Editor tabs")}
-      style={{ height: 32 }}
-      className="flex items-stretch overflow-x-auto border-b bg-muted/20 [scrollbar-width:thin]"
+      className="flex h-full min-w-0 flex-1 items-stretch overflow-x-auto [scrollbar-width:thin]"
       onKeyDown={(e) => {
         if (!(e.target instanceof HTMLElement) || e.target.getAttribute("role") !== "tab") return;
         // Tính từ tab ĐANG CÓ FOCUS (không phải tab đang chọn) — đúng mẫu WAI-ARIA tabs.
@@ -239,6 +243,7 @@ export function EngineeringShell({
   onTabChange,
   onTabClose,
   editor,
+  editorToolbarEnd,
   inspector,
   inspectorLabel,
   inspectorIsAi = false,
@@ -291,17 +296,28 @@ export function EngineeringShell({
       rightRevealToken={inspectorRevealToken}
       onLeftCollapsedChange={setExplorerCollapsed}
       mainName={`${layoutId}-editor`}
-      mainHeader={
+      main={
         editorTabs.length > 0 ? (
-          <EditorTabStrip tabs={editorTabs} activeId={activeTabId} idPrefix={idPrefix} mainId={mainId} onChange={onTabChange} onClose={onTabClose} />
-        ) : undefined
+          <div className="flex h-full min-h-0 flex-col">
+            {/* R-2-s — thanh công cụ DUY NHẤT của vùng làm việc: tab editor + điều khiển riêng của tab. */}
+            <div {...{ [LAYOUT_TOOLBAR]: "" }} style={{ height: 32 }} className="flex shrink-0 items-stretch border-b bg-muted/20">
+              <EditorTabStrip tabs={editorTabs} activeId={activeTabId} idPrefix={idPrefix} mainId={mainId} onChange={onTabChange} onClose={onTabClose} />
+              {editorToolbarEnd != null && (
+                <div data-editor-toolbar-end="" className="flex shrink-0 items-center gap-2 px-2">
+                  {editorToolbarEnd}
+                </div>
+              )}
+            </div>
+            <div role="tabpanel" id={mainId} aria-labelledby={`${idPrefix}-${activeTabId}`} className="min-h-0 flex-1 overflow-auto">
+              {editor}
+            </div>
+          </div>
+        ) : (
+          <div id={mainId} className="h-full">
+            {editor}
+          </div>
+        )
       }
-      mainAria={
-        editorTabs.length > 0
-          ? { role: "tabpanel", id: mainId, "aria-labelledby": `${idPrefix}-${activeTabId}` }
-          : { id: mainId }
-      }
-      main={editor}
       right={
         inspector != null
           ? { label: inspectorLabel ?? t("layoutKit.shell.inspector", "Inspector"), content: inspector, ai: inspectorIsAi, ...inspectorSize }

@@ -69,11 +69,18 @@ function renderShell(over: Partial<EngineeringShellProps> = {}) {
 const mainEl = () => document.querySelector("[data-layout-main]") as HTMLElement;
 
 describe("EngineeringShell — dấu đo", () => {
-  it("MAIN = editor; tab strip, activity bar, explorer, Copilot, thanh trạng thái đều NGOÀI MAIN", () => {
+  // Ruling R-2-s (Task 13 fix round 1): dải tab editor nằm TRONG MAIN, là thanh công cụ DUY NHẤT `data-layout-toolbar`
+  // (≤56 px) của vùng làm việc — trước đây nó nằm ngoài MAIN và thiết bị đo đếm nó là 1 "banner" giữa h1 và MAIN.
+  it("MAIN = tab strip (toolbar duy nhất) + editor; activity bar, explorer, Copilot, thanh trạng thái NGOÀI MAIN", () => {
     renderShell();
     expect(mainEl()).toHaveTextContent("mã nguồn");
     expect(mainEl().closest("main")).not.toBeNull();
-    expect(mainEl()).not.toContainElement(screen.getByRole("tablist", { name: VI.layoutKit.shell.editorTabs }));
+    const tablist = screen.getByRole("tablist", { name: VI.layoutKit.shell.editorTabs });
+    expect(mainEl()).toContainElement(tablist);
+    const toolbars = mainEl().querySelectorAll("[data-layout-toolbar]");
+    expect(toolbars).toHaveLength(1);
+    expect(toolbars[0]).toContainElement(tablist);
+    expect(parseInt((toolbars[0] as HTMLElement).style.height, 10)).toBeLessThanOrEqual(56);
     expect(mainEl()).not.toContainElement(screen.getByRole("toolbar", { name: VI.layoutKit.shell.activityBar }));
     expect(mainEl()).not.toContainElement(screen.getByText("cây dự án"));
     expect(mainEl()).not.toContainElement(screen.getByText("Ln 1, Col 1"));
@@ -82,11 +89,22 @@ describe("EngineeringShell — dấu đo", () => {
     expect(mainEl()).not.toContainElement(copilot);
   });
 
-  it("MAIN là tabpanel của tab editor đang chọn", () => {
+  it("vùng editor (trong MAIN, dưới toolbar) là tabpanel của tab đang chọn; tablist không nằm trong tabpanel", () => {
     renderShell();
     const tab = screen.getByRole("tab", { name: /Main\.bas/ });
-    expect(mainEl()).toHaveAttribute("role", "tabpanel");
-    expect(mainEl()).toHaveAttribute("aria-labelledby", tab.id);
+    const panel = screen.getByRole("tabpanel");
+    expect(mainEl()).toContainElement(panel);
+    expect(panel).toHaveAttribute("aria-labelledby", tab.id);
+    expect(tab).toHaveAttribute("aria-controls", panel.id);
+    expect(panel).toHaveTextContent("mã nguồn");
+    expect(panel).not.toContainElement(screen.getByRole("tablist", { name: VI.layoutKit.shell.editorTabs }));
+  });
+
+  it("editorToolbarEnd (điều khiển riêng của tab, vd chọn bản so sánh) nằm TRONG cùng một toolbar", () => {
+    renderShell({ editorToolbarEnd: <button type="button">Chọn bản</button> });
+    const toolbars = mainEl().querySelectorAll("[data-layout-toolbar]");
+    expect(toolbars).toHaveLength(1);
+    expect(toolbars[0]).toContainElement(screen.getByRole("button", { name: "Chọn bản" }));
   });
 });
 
