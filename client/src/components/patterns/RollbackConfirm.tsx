@@ -6,7 +6,8 @@
  * - `requireReason` (mặc định true): dựng trên `ConfirmWithReason` (2 bước, lý do bắt buộc, độ dài
  *   tối thiểu BẮT BUỘC khai — Orchestration: 3). Đây là mẫu Orchestration rollback (doc 80 ORC-05).
  * - `requireReason={false}`: một AlertDialog xác nhận phá huỷ, không lý do — hợp đồng của
- *   Workspace (EngineeringWorkspace rollback deployment), Recipes, EqIntegration hôm nay.
+ *   Workspace (EngineeringWorkspace rollback deployment — dùng component này từ final wave R-2-z3), Recipes,
+ *   EqIntegration hôm nay.
  *
  * `requireOtp` (BẮT BUỘC khai) áp cho cả hai: OTP 6 số hỏi SAU bước xác nhận, MỖI lượt một mã
  * (`useStepUpOtp`; server `deployProcedure` → `requirePerCallFreshTotp`). Huỷ OTP ⇒ không gọi
@@ -59,6 +60,11 @@ interface RollbackConfirmBase {
   impact?: React.ReactNode;
   confirmLabel?: string;
   disabled?: boolean;
+  /**
+   * final wave (R-2-z3) — báo mở/đóng cho trang (chỉ nhánh `requireReason={false}`): IDE sinh khoá thử
+   * (idempotency) MỚI mỗi lần MỞ hộp (doc 80 WS-04) và dọn khi đóng. Không đổi hợp đồng xác nhận.
+   */
+  onOpenChange?: (open: boolean) => void;
 }
 
 export type RollbackConfirmProps = RollbackConfirmBase &
@@ -82,7 +88,7 @@ export type RollbackConfirmProps = RollbackConfirmBase &
   );
 
 export function RollbackConfirm(props: RollbackConfirmProps): React.JSX.Element {
-  const { trigger, versionLabel, requireOtp, onRollback, title, description, impact, confirmLabel, disabled = false } = props;
+  const { trigger, versionLabel, requireOtp, onRollback, title, description, impact, confirmLabel, disabled = false, onOpenChange } = props;
   const { t } = useTranslation();
   const stepUp = useStepUpOtp();
   const [open, setOpen] = React.useState(false);
@@ -115,7 +121,7 @@ export function RollbackConfirm(props: RollbackConfirmProps): React.JSX.Element 
   if (props.requireReason === false) {
     return (
       <>
-        <AlertDialog open={open} onOpenChange={setOpen}>
+        <AlertDialog open={open} onOpenChange={(o) => { setOpen(o); onOpenChange?.(o); }}>
           <AlertDialogTrigger asChild disabled={disabled}>
             {trigger}
           </AlertDialogTrigger>

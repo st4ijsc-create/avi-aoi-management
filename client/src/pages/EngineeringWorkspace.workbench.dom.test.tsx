@@ -731,6 +731,67 @@ describe("Deploy wizard 4 bước (WizardDialog) — deployPreview TRƯỚC OTP,
 });
 
 // ════════════════════════════════════════════════════════════════════════════════════════════════
+describe("Rollback deployment — RollbackConfirm (final wave R-2-z3: requireOtp=false + stepUp.guard của trang, R-2-q)", () => {
+  const otpText = /Two-step verification to deploy|Xác thực 2 bước/;
+  const openDeploys = () => {
+    fireEvent.click(screen.getByRole("tab", { name: /Lịch sử deploy|Deploy history/ }));
+    return document.getElementById("ide-bottom-deploys") as HTMLElement;
+  };
+
+  it("Khôi phục ⇒ AlertDialog xác nhận phá huỷ (không ô lý do), CHƯA gọi server; xác nhận ⇒ OTP; OTP ⇒ đúng MỘT rollbackDeployment với bộ tham số cũ", async () => {
+    seed();
+    queryOverrides["programming.listDeployments"] = () => makeQuery({ data: [{ id: 42, stage: "staging", status: "deployed", simulated: false }] });
+    renderPage();
+    const panel = openDeploys();
+    fireEvent.click(within(panel).getByRole("button", { name: /Khôi phục|Roll ?back/ }));
+    const dlg = await screen.findByRole("alertdialog");
+    expect(dlg).toHaveTextContent(/staging/);
+    expect(within(dlg).queryByRole("textbox")).toBeNull();
+    expect(mutateCalls["programming.rollbackDeployment"]).toBeUndefined();
+    expect(screen.queryByText(otpText)).not.toBeInTheDocument();
+    const confirm = within(dlg).getAllByRole("button").find((b) => /Khôi phục|Roll ?back/.test(b.textContent ?? ""))!;
+    fireEvent.click(confirm);
+    expect(await screen.findByText(otpText)).toBeInTheDocument();
+    expect(mutateCalls["programming.rollbackDeployment"]).toBeUndefined();
+    const otp = document.querySelector('input[autocomplete="one-time-code"]') as HTMLInputElement;
+    await act(async () => { fireEvent.change(otp, { target: { value: "654321" } }); });
+    await nghi();
+    expect(mutateCalls["programming.rollbackDeployment"]).toHaveLength(1);
+    const call = mutateCalls["programming.rollbackDeployment"]![0] as Record<string, unknown>;
+    expect(Object.keys(call).sort()).toEqual(["actionId", "deploymentId", "idempotencyKey", "totpCode"]);
+    expect(call).toMatchObject({ deploymentId: 42, totpCode: "654321" });
+    expect(String(call.idempotencyKey)).toMatch(/^rollback-dep/);
+    expect(call.actionId).toBe(call.idempotencyKey);
+  });
+
+  it("Huỷ ở hộp xác nhận ⇒ không OTP, không gọi server; mở lại ⇒ khoá thử MỚI (WS-04)", async () => {
+    seed();
+    queryOverrides["programming.listDeployments"] = () => makeQuery({ data: [{ id: 42, stage: "staging", status: "deployed", simulated: false }] });
+    renderPage();
+    const panel = openDeploys();
+    fireEvent.click(within(panel).getByRole("button", { name: /Khôi phục|Roll ?back/ }));
+    const dlg = await screen.findByRole("alertdialog");
+    fireEvent.click(within(dlg).getByRole("button", { name: /Hủy|Huỷ|Cancel/ }));
+    await nghi();
+    expect(screen.queryByRole("alertdialog")).toBeNull();
+    expect(screen.queryByText(otpText)).not.toBeInTheDocument();
+    expect(mutateCalls["programming.rollbackDeployment"]).toBeUndefined();
+  });
+
+  it("tĩnh: IDE dùng <RollbackConfirm requireReason={false} requireOtp={false}> và .mutate nằm trong stepUp.guard của trang — không còn AlertDialog rollback viết tay", async () => {
+    const fs = await import("node:fs");
+    const path = await import("node:path");
+    const src = fs.readFileSync(path.resolve(__dirname, "EngineeringWorkspace.tsx"), "utf8");
+    const i = src.indexOf("<RollbackConfirm");
+    expect(i, "IDE phải dùng RollbackConfirm (Task 3 / R-2-q)").toBeGreaterThan(-1);
+    const block = src.slice(i, src.indexOf("/>", src.indexOf("onRollback", i)) + 2);
+    expect(block).toContain("requireReason={false}");
+    expect(block).toContain("requireOtp={false}");
+    expect(block).toMatch(/stepUp\.guard\(\(totpCode\) => rollbackM\.mutate\(/);
+    expect(src).not.toContain("<AlertDialog open={rollbackTarget != null}");
+  });
+});
+
 describe("i18n — mọi khoá engineering.ws.* của trang có ở vi/en/zh (GC5)", () => {
   it("không thiếu, không rỗng", () => {
     const keys = Array.from(new Set(Array.from(PAGE_SRC.matchAll(/t\("engineering\.ws\.([A-Za-z]+)"/g), (m) => m[1])));

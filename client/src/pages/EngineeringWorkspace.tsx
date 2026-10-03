@@ -43,7 +43,7 @@ import { parseDeepLink, withParams } from "@/lib/engineeringDeepLink";
 import DashboardLayout from "@/components/DashboardLayout";
 import { useShellPageVariant } from "@/lib/shellPage";
 import { ViewOnlyBadge } from "@/components/PermissionGate";
-import { PageHeaderCompact, NoticeChip, FeatureStatusNoticeChip, WizardDialog } from "@/components/patterns";
+import { PageHeaderCompact, NoticeChip, FeatureStatusNoticeChip, WizardDialog, RollbackConfirm } from "@/components/patterns";
 import { useUrlParam } from "@/components/patterns/useUrlParam";
 import { EngineeringShell } from "@/components/engineering/shell";
 import { CodeEditor } from "@/components/engineering/CodeEditor";
@@ -1636,13 +1636,36 @@ function EngineeringWorkspaceView() {
                 <TableCell className="text-right">
                   {/* Rollback: chỉ cho deploy đã thành công (không phải rejected / đã rollback). */}
                   {canCreate && (d.status === "deployed" || d.status === "verified" || d.status === "simulated") && (
-                    <Button
-                      size="sm" variant="outline"
+                    // final wave R-2-z3 — RollbackConfirm dùng chung, ĐÚNG hợp đồng cũ: AlertDialog phá huỷ không lý do;
+                    // OTP do stepUp.guard CỦA TRANG (R-2-q: requireOtp=false, lưới step-up thấy .mutate trong guard).
+                    // doc 80 WS-04 — khoá thử sinh lúc MỞ hộp (ổn định trong lượt này, mới ở lần mở sau).
+                    <RollbackConfirm
+                      requireReason={false}
+                      requireOtp={false}
+                      versionLabel={`#${d.id}`}
                       disabled={rollbackM.isPending}
-                      onClick={() => dispatch({ type: "rollback/open", target: { id: d.id, stage: d.stage, attemptKey: newDeployAttemptKey("rollback-dep", d.id) } })}
-                    >
-                      <RotateCcw className="mr-1 h-3.5 w-3.5" /> {t("engineering.rollback", "Khôi phục")}
-                    </Button>
+                      title={t("engineering.rollbackTitle", "Khôi phục phiên bản trước?")}
+                      description={t("engineering.rollbackDesc", "Sẽ ghi một deployment MỚI về build của lần deploy thành công trước ở giai đoạn \"{{stage}}\". Chịu cùng cổng an toàn (sign-off / flag) như deploy.", { stage: d.stage })}
+                      confirmLabel={t("engineering.rollback", "Khôi phục")}
+                      onOpenChange={(o) => dispatch(o
+                        ? { type: "rollback/open", target: { id: d.id, stage: d.stage, attemptKey: newDeployAttemptKey("rollback-dep", d.id) } }
+                        : { type: "rollback/close" })}
+                      trigger={
+                        <Button size="sm" variant="outline" disabled={rollbackM.isPending}>
+                          <RotateCcw className="mr-1 h-3.5 w-3.5" /> {t("engineering.rollback", "Khôi phục")}
+                        </Button>
+                      }
+                      onRollback={() => {
+                        if (rollbackTarget == null || rollbackTarget.id !== d.id) return;
+                        const { id, attemptKey } = rollbackTarget;
+                        stepUp.guard((totpCode) => rollbackM.mutate({
+                          deploymentId: id,
+                          idempotencyKey: attemptKey,
+                          actionId: attemptKey,
+                          totpCode,
+                        }));
+                      }}
+                    />
                   )}
                 </TableCell>
               </TableRow>
@@ -2318,36 +2341,6 @@ function EngineeringWorkspaceView() {
         </AlertDialogContent>
       </AlertDialog>
 
-      {/* W3-11 — xác nhận khôi phục (rollback) một deployment về phiên bản trước */}
-      <AlertDialog open={rollbackTarget != null} onOpenChange={(o) => { if (!o) dispatch({ type: "rollback/close" }); }}>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>{t("engineering.rollbackTitle", "Khôi phục phiên bản trước?")}</AlertDialogTitle>
-            <AlertDialogDescription>
-              {t("engineering.rollbackDesc", "Sẽ ghi một deployment MỚI về build của lần deploy thành công trước ở giai đoạn \"{{stage}}\". Chịu cùng cổng an toàn (sign-off / flag) như deploy.", { stage: rollbackTarget?.stage ?? "" })}
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel>{t("common.cancel", "Hủy")}</AlertDialogCancel>
-            <AlertDialogAction
-              onClick={() => {
-                if (rollbackTarget == null) return;
-                // doc 80 WS-04 — khoá sinh lúc MỞ hộp: ổn định trong lượt này (click lại / thử
-                // lại OTP không tạo bản trùng), mới ở lần mở sau (thử lại sau khi thất bại).
-                const { id, attemptKey } = rollbackTarget;
-                stepUp.guard((totpCode) => rollbackM.mutate({
-                  deploymentId: id,
-                  idempotencyKey: attemptKey,
-                  actionId: attemptKey,
-                  totpCode,
-                }));
-              }}
-            >
-              {t("engineering.rollback", "Khôi phục")}
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
       {/* doc 54 P3.2 — step-up 2FA prompt for deploy/rollback/fleet actuation */}
       {stepUp.dialog}
     </DashboardLayout>

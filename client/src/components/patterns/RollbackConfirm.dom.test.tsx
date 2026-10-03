@@ -180,6 +180,19 @@ describe("RollbackConfirm requireReason=false — AlertDialog không lý do (Wor
     await waitFor(() => expect(screen.queryByRole("alertdialog")).toBeNull());
     expect(onRollback).not.toHaveBeenCalled();
   });
+
+  it("final wave R-2-z3: onOpenChange báo mở (trước khi xác nhận) và đóng (Huỷ) cho trang", async () => {
+    const onOpenChange = vi.fn();
+    render(
+      <RollbackConfirm versionLabel="v3" requireReason={false} requireOtp={false} onRollback={vi.fn()} onOpenChange={onOpenChange}
+        trigger={<button type="button">Khôi phục v3</button>} />,
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Khôi phục v3" }));
+    const dlg = await screen.findByRole("alertdialog");
+    expect(onOpenChange).toHaveBeenLastCalledWith(true);
+    fireEvent.click(within(dlg).getByRole("button", { name: VI.common.cancel }));
+    await waitFor(() => expect(onOpenChange).toHaveBeenLastCalledWith(false));
+  });
 });
 
 describe("RollbackConfirm — confirmText và lỗi không bị nuốt", () => {
