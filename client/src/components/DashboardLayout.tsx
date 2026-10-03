@@ -40,7 +40,8 @@ import { ShellAlertChip } from "./ShellAlertChip";
 import { AssetScopeBar, ScopeStatusChip } from "./AssetScopeBar";
 import { useAssetScope } from "@/contexts/AssetScopeContext";
 import { isIsa101V2 } from "@/lib/hmiFlags";
-import { CSSProperties, Fragment, ReactNode, createContext, useCallback, useContext, useEffect, useMemo, useState } from "react";
+import { CSSProperties, Fragment, ReactNode, createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
+import { useShellChromeHeight } from "./useShellChromeHeight";
 import { useLocation, useSearch, Link } from "wouter";
 import { DashboardLayoutSkeleton } from './DashboardLayoutSkeleton';
 import { Button } from "./ui/button";
@@ -385,6 +386,9 @@ function DashboardLayoutContent({
     "/command-center",
   ]);
   const showBreadcrumbs = breadcrumbs.length > 1 && !BREADCRUMB_HIDDEN_ROUTES.has(activePath);
+  // final wave R-2-z4 — đo chrome thật phía trên <main> (top bar + thanh license R-2-i + hàng breadcrumb điện thoại).
+  const shellInsetRef = useRef<HTMLDivElement>(null);
+  useShellChromeHeight(shellInsetRef, [licNotice.mode, compactLicense, showBreadcrumbs, isMobile]);
   // doc 81 Đợt 2 Task 2 — breadcrumb nằm trong top bar từ 768 px; điện thoại: một hàng dưới top bar.
   const crumbInHeader = showBreadcrumbs && !isMobile;
 
@@ -680,7 +684,9 @@ function DashboardLayoutContent({
           không áp) để main#main-content bên dưới là <main> DUY NHẤT của shell.
           min-w-0 [P0]: cột nội dung là flex-item của SidebarProvider — phải co được, không
           để topbar chật đẩy scrollWidth vượt viewport 1280 (đo thực tế 1423/1341). */}
-      <div data-slot="sidebar-inset" className="relative flex w-full min-w-0 flex-1 flex-col bg-background">
+      {/* final wave R-2-z4 — cột đặt `--shell-chrome-h` = chiều cao thật của top bar + thanh license + hàng breadcrumb
+          điện thoại; trang trừ biến này thay vì số ma 3.5rem (useShellChromeHeight). */}
+      <div ref={shellInsetRef} data-slot="sidebar-inset" className="relative flex w-full min-w-0 flex-1 flex-col bg-background">
         {/* F2 (doc 23 §5) — restructured context bar:
             [trigger] · Site/Scope switcher · WIDE global ⌘K search (center, widest) ·
             alerts (AI inbox + notifications) · site-health dot · theme/lang. Kiosk
@@ -787,7 +793,7 @@ function DashboardLayoutContent({
         <LicenseCriticalBar notice={licNotice} includeChipStates={compactLicense} />
         {/* Mobile (<768): top bar quá hẹp ⇒ breadcrumb (vẫn MỘT cái) là một hàng mảnh dưới top bar. */}
         {showBreadcrumbs && isMobile && (
-          <div className="flex min-w-0 items-center border-b border-border bg-card/60 px-3 py-1">
+          <div data-shell-chrome-row="" className="flex min-w-0 items-center border-b border-border bg-card/60 px-3 py-1">
             <ShellBreadcrumb crumbs={breadcrumbs} inHeader={false} />
           </div>
         )}

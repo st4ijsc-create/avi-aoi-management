@@ -458,7 +458,7 @@ export default function InterlockRuleManagement() {
               mainName="interlock-rules"
               mainLabel={t("interlockRules.rules")}
               mainAria={{ "aria-label": t("interlockRules.rules") }}
-              heightClass="h-[calc(100dvh-9.25rem)] min-h-[28rem]"
+              heightClass="h-[calc(100dvh_-_var(--shell-chrome-h,3.5rem)_-_5.75rem)] min-h-[28rem]"
               main={
                 <div className="p-2">
                   <TabbedHub

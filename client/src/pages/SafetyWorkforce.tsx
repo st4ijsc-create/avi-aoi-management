@@ -1056,7 +1056,7 @@ function EventsTab() {
     <div className="flex min-h-0 flex-col">
       {ctx.narrow && <NarrowRows />}
       {/* Luồng sự kiện an toàn — vùng cao hết khung nhìn còn lại, bảng tự cuộn trong (trang không cao lên theo 200 dòng). */}
-      <div className="h-[calc(100dvh-12.75rem)] min-h-[16rem] overflow-auto rounded-md border" aria-label={t("safety.feedTitle", "Safety event feed")} role="region">
+      <div className="h-[calc(100dvh_-_var(--shell-chrome-h,3.5rem)_-_9.25rem)] min-h-[16rem] overflow-auto rounded-md border" aria-label={t("safety.feedTitle", "Safety event feed")} role="region">
         <Table>
           <TableHeader className="sticky top-0 z-10 bg-card">
             <TableRow>
@@ -1163,7 +1163,7 @@ function WorkforceTab() {
       {ctx.narrow && <NarrowRows />}
       <ProvenanceSummary rows={assignments} />
       {/* Assignments table */}
-      <div className="max-h-[calc(100dvh-11rem)] min-h-[12rem] overflow-auto rounded-md border" role="region" aria-label={t("workforce.assignmentsTitle", "Operator assignments")}>
+      <div className="max-h-[calc(100dvh_-_var(--shell-chrome-h,3.5rem)_-_7.5rem)] min-h-[12rem] overflow-auto rounded-md border" role="region" aria-label={t("workforce.assignmentsTitle", "Operator assignments")}>
         <Table>
           <TableHeader className="sticky top-0 z-10 bg-card">
             <TableRow>
@@ -1297,7 +1297,7 @@ function SidePanel() {
   const ctx = useSafetyCtx();
   const collabDescId = useId();
   return (
-    <div className="flex max-h-[calc(100dvh-8rem)] min-h-0 flex-col gap-3 overflow-auto">
+    <div className="flex max-h-[calc(100dvh_-_var(--shell-chrome-h,3.5rem)_-_4.5rem)] min-h-0 flex-col gap-3 overflow-auto">
       {/* ── doc 80 Task 4 (SAF-02) — safety SOURCE panel (read-only, safety.sourceHealth), đủ nội dung ── */}
       <SafetySourcePanel
         panelRef={ctx.sourcePanelRef}

@@ -903,7 +903,7 @@ function HierarchyTab() {
         onBack={() => ctx.setSelectedTypeKey(null)}
         listLabel={t("eqStandards.hierarchyTitle", "Device type hierarchy")}
         detailLabel={t("eqStandards.resolvedTitlePlain", "Resolved device type")}
-        heightClass="h-[calc(100dvh-13rem)] min-h-[22rem]"
+        heightClass="h-[calc(100dvh_-_var(--shell-chrome-h,3.5rem)_-_9.5rem)] min-h-[22rem]"
         emptyDetail={
           <EmptyState
             variant="no-data"
@@ -1392,7 +1392,7 @@ function CrsTab() {
   return (
     <>
       {ctx.narrow && <NarrowTools />}
-      <div className="max-h-[calc(100dvh-13rem)] min-h-[16rem] overflow-auto rounded-md border bg-card">
+      <div className="max-h-[calc(100dvh_-_var(--shell-chrome-h,3.5rem)_-_9.5rem)] min-h-[16rem] overflow-auto rounded-md border bg-card">
         <ApprovalQueue
           items={items}
           status={ctx.crsStatus}

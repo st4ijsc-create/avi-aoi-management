@@ -849,7 +849,7 @@ function CatalogTab() {
         onBack={() => ctx.setConnector(null)}
         listLabel={t("eqIntegration.catalog.listLabel", "Connector catalog")}
         detailLabel={t("eqIntegration.catalog.detailLabel", "Connector details")}
-        heightClass="h-[calc(100dvh-13rem)] min-h-[22rem]"
+        heightClass="h-[calc(100dvh_-_var(--shell-chrome-h,3.5rem)_-_9.5rem)] min-h-[22rem]"
         emptyDetail={<EmptyState variant="no-data" compact title={t("eqIntegration.catalog.pickHint", "Pick a connector to see its details.")} />}
         detail={
           selected == null ? null : selected.type === "framework" ? (

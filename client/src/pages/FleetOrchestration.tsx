@@ -1223,7 +1223,7 @@ function FleetMap({
         <svg
           viewBox={`0 0 ${VIEW_W} ${VIEW_H}`}
           preserveAspectRatio="xMidYMid meet"
-          className="h-[max(18rem,calc(100dvh-15rem))] w-full rounded-md border border-border bg-muted/20 text-foreground"
+          className="h-[max(18rem,calc(100dvh_-_var(--shell-chrome-h,3.5rem)_-_11.5rem))] w-full rounded-md border border-border bg-muted/20 text-foreground"
           role="img" aria-label={t("fleet.map.title", "Fleet map")}
         >
           {/* blocked grid cells */}
@@ -1333,7 +1333,7 @@ interface SidePanelProps {
 function FleetSidePanel(p: SidePanelProps) {
   const { t } = useTranslation();
   return (
-    <div className="flex max-h-[calc(100dvh-8rem)] min-h-0 flex-col gap-3 overflow-auto">
+    <div className="flex max-h-[calc(100dvh_-_var(--shell-chrome-h,3.5rem)_-_4.5rem)] min-h-0 flex-col gap-3 overflow-auto">
       {/* Deadlock detail (khối đỏ cũ) — ngoài MAIN, luôn thấy khi có chu trình, không phụ thuộc tab. */}
       {p.deadlocks.length > 0 && (
         <div

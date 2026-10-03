@@ -2279,7 +2279,7 @@ export default function OrchestrationStudio() {
     <DashboardLayout>
       <FlyoutHost flyouts={flyouts}>
         <AiSurfaceGuard />
-        <div className="flex h-[calc(100dvh-3.5rem)] min-h-[30rem] flex-col">
+        <div className="flex h-[calc(100dvh_-_var(--shell-chrome-h,3.5rem))] min-h-[30rem] flex-col">
           <PageHeaderCompact
             className="shrink-0 px-3 py-1"
             icon={<Workflow />}

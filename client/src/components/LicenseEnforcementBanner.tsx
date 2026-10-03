@@ -291,6 +291,7 @@ export function LicenseCriticalBar({ notice: n, includeChipStates = false }: { n
       role="status"
       aria-live="polite"
       data-testid="shell-license-bar"
+      data-shell-chrome-row=""
       data-state={n.mode}
       className={cn(
         "flex h-8 min-w-0 shrink-0 items-center gap-2 overflow-hidden px-3 text-xs",

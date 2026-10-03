@@ -63,7 +63,7 @@ export function SplitListDetail({
   listDefaultPct = 38,
   listMinPct = 25,
   listMaxPct = 60,
-  heightClass = "h-[calc(100dvh-9rem)]",
+  heightClass = "h-[calc(100dvh_-_var(--shell-chrome-h,3.5rem)_-_5.5rem)]",
   className,
 }: SplitListDetailProps): React.JSX.Element {
   const { t } = useTranslation();

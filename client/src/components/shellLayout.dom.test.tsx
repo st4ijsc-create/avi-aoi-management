@@ -712,3 +712,58 @@ describe("Một lối vào AI trên top bar", () => {
     expect(aiBtn()).toBeNull();
   });
 });
+
+// ─────────────────────────────────────────────────────────────────────────────────────────────
+// doc 81 Đợt 2 final wave (R-2-z4 / M-5) — chiều cao trang KHÔNG còn số ma `100dvh - Nrem` giả định top bar 56 px:
+// shell đo các hàng chrome phía trên <main> (top bar + thanh license nghiêm trọng R-2-i + hàng breadcrumb điện thoại)
+// và đặt `--shell-chrome-h`; trang trừ biến này ⇒ khi thanh license 32 px hiện, trang co 32 px thay vì tràn.
+describe("R-2-z4 — chiều cao trang theo chrome THẬT của shell", () => {
+  const inset = () => document.querySelector('[data-slot="sidebar-inset"]') as HTMLElement;
+  let restore: (() => void) | null = null;
+  beforeEach(() => {
+    const d = Object.getOwnPropertyDescriptor(HTMLElement.prototype, "offsetHeight");
+    Object.defineProperty(HTMLElement.prototype, "offsetHeight", {
+      configurable: true,
+      get(this: HTMLElement) {
+        if (this.matches('header[data-app-chrome="header"]')) return 56;
+        if (this.matches('[data-testid="shell-license-bar"]')) return 32;
+        return 0;
+      },
+    });
+    restore = () => { if (d) Object.defineProperty(HTMLElement.prototype, "offsetHeight", d); };
+  });
+  afterEach(() => { restore?.(); restore = null; });
+
+  it("license bình thường ⇒ --shell-chrome-h = 56px (chỉ top bar)", () => {
+    renderShell("/recipes");
+    expect(inset().style.getPropertyValue("--shell-chrome-h")).toBe("56px");
+  });
+
+  it("license bị khoá ⇒ thanh 32 px được cộng: --shell-chrome-h = 88px (trang co lại, không tràn)", () => {
+    S.lic = { ...LIC_NORMAL, showBanner: true, isNormal: false, isLocked: true, bannerSeverity: "critical", message: "Đã khoá" };
+    renderShell("/recipes");
+    expect(document.querySelector('[data-testid="shell-license-bar"]')).not.toBeNull();
+    expect(inset().style.getPropertyValue("--shell-chrome-h")).toBe("88px");
+  });
+
+  it("tĩnh: mọi chiều cao theo khung nhìn của module trừ var(--shell-chrome-h…) — không còn calc(100dvh-Nrem) cứng", () => {
+    const files = [
+      "client/src/components/patterns/SplitListDetail.tsx", "client/src/components/patterns/WorkbenchShell.tsx",
+      "client/src/pages/EngineeringHub.tsx", "client/src/pages/EngineeringWorkspace.tsx", "client/src/pages/EquipmentIntegration.tsx",
+      "client/src/pages/EquipmentStandards.tsx", "client/src/pages/FleetOrchestration.tsx", "client/src/pages/InterlockRuleManagement.tsx",
+      "client/src/pages/IrEditor.tsx", "client/src/pages/OrchestrationStudio.tsx", "client/src/pages/PouStudio.tsx",
+      "client/src/pages/RecipeManagement.tsx", "client/src/pages/SafetyWorkforce.tsx", "client/src/pages/EngineeringChanges.tsx",
+    ];
+    const bad: string[] = [];
+    let uses = 0;
+    for (const f of files) {
+      const src = readFileSync(f, "utf8");
+      for (const m of src.matchAll(/100dvh[^\]"'`]*/g)) {
+        if (m[0].includes("var(--shell-chrome-h")) uses++;
+        else bad.push(`${f}: ${m[0]}`);
+      }
+    }
+    expect(bad).toEqual([]);
+    expect(uses).toBeGreaterThanOrEqual(18);
+  });
+});

@@ -145,7 +145,7 @@ export const HUB_CATALOG: HubGroup[] = [
 const ALL_TILES = HUB_CATALOG.flatMap((g) => g.tiles);
 
 /** R-2-v — vùng nội dung của MAIN (cả hai tab): cao theo khung nhìn, cuộn BÊN TRONG; trang không cuộn. */
-const HUB_SCROLL_REGION = "mt-2 h-[calc(100dvh-12.75rem)] min-h-[16rem] overflow-auto rounded-md border px-2";
+const HUB_SCROLL_REGION = "mt-2 h-[calc(100dvh_-_var(--shell-chrome-h,3.5rem)_-_9.25rem)] min-h-[16rem] overflow-auto rounded-md border px-2";
 
 /** Perm coi là "điều khiển" — tile cần quyền này để làm việc, không chỉ để xem. */
 const CONTROL_PERMS = new Set(["machine_control", "interlock"]);

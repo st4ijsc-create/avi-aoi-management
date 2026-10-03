@@ -231,7 +231,7 @@ export function WorkbenchShell({
   onLeftCollapsedChange,
   leftRevealToken,
   rightRevealToken,
-  heightClass = "h-[calc(100dvh-3.5rem)]",
+  heightClass = "h-[calc(100dvh_-_var(--shell-chrome-h,3.5rem))]",
   className,
   mainMinPx,
 }: WorkbenchShellProps): React.JSX.Element {

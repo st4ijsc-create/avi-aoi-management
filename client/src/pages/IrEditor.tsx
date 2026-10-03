@@ -1705,7 +1705,7 @@ export default function IrEditor() {
 
   return (
     <DashboardLayout>
-      <div className="flex h-[calc(100dvh-3.5rem)] min-h-[30rem] min-w-0 flex-col">
+      <div className="flex h-[calc(100dvh_-_var(--shell-chrome-h,3.5rem))] min-h-[30rem] min-w-0 flex-col">
         {header}
         <EngineeringShell
           layoutId="ir-editor"

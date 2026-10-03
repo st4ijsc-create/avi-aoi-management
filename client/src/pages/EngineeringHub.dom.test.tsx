@@ -270,7 +270,8 @@ describe("R-2-v — hộp việc lấp chiều cao còn lại, danh sách cuộn
     render(<EngineeringHub />);
     const region = mainEl().querySelector("[data-hub-inbox-scroll]") as HTMLElement;
     expect(region).not.toBeNull();
-    expect(region.className).toMatch(/h-\[calc\(100dvh-[^\]]+\)\]/);
+    // final wave R-2-z4 — ĐỔI SELECTOR (khẳng định giữ): chiều cao theo khung nhìn nay trừ chrome THẬT của shell.
+    expect(region.className).toMatch(/h-\[calc\(100dvh_-_var\(--shell-chrome-h[^\]]+\)\]/);
     expect(region.className).toMatch(/(^|\s)overflow-auto(\s|$)/);
     expect(region.querySelector("table")).not.toBeNull();
     expect(region.querySelector("thead")?.className).toMatch(/sticky/);

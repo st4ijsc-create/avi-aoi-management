@@ -576,7 +576,7 @@ export default function PouStudio() {
       )}
       {transpile?.code ? (
         <div className="overflow-hidden rounded-md border bg-muted/30">
-          <pre className="max-h-[calc(100dvh-16rem)] overflow-auto p-3 font-mono text-xs leading-5">
+          <pre className="max-h-[calc(100dvh_-_var(--shell-chrome-h,3.5rem)_-_12.5rem)] overflow-auto p-3 font-mono text-xs leading-5">
             {transpile.code.split("\n").map((line, i) => {
               const isMarker = line.includes("(* [IEC");
               return <div key={i} className={`whitespace-pre ${isMarker ? "text-primary/80" : ""}`}>{line || " "}</div>;
@@ -707,7 +707,7 @@ export default function PouStudio() {
   const saveFieldId = (k: string) => `pou-save-${k}`;
   return (
     <DashboardLayout>
-      <div className="flex h-[calc(100dvh-3.5rem)] min-h-[30rem] min-w-0 flex-col">
+      <div className="flex h-[calc(100dvh_-_var(--shell-chrome-h,3.5rem))] min-h-[30rem] min-w-0 flex-col">
         {header}
         <EngineeringShell
           layoutId="pou-studio"
