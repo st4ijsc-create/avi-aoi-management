@@ -16614,7 +16614,7 @@
     "allocateNoDevice": "No eligible device for this task",
     "allocateTip": "Run the allocator (assign best device)",
     "newDeadlockToast": "New deadlock detected",
-    "newDeadlockDesc": "A robot dependency cycle just formed — review the Tasks & Zones tab.",
+    "newDeadlockDesc": "A robot dependency cycle just formed — review the deadlock block in the side panel.",
     "assign": "Assign",
     "assigned": "Task reassigned",
     "cancel": "Cancel",
@@ -16680,7 +16680,8 @@
       "offline": "Offline",
       "estop": "E-stop",
       "blocked": "Blocked cell",
-      "locatedRobots": "Located robots"
+      "locatedRobots": "Located robots",
+      "zoneOpen": "Zone {{code}} — {{occupancy}}/{{max}} robots; open in the Zones tab"
     },
     "noPermission": "You do not have permission to view fleet orchestration.",
     "occupancy": "Occupancy",
@@ -16714,7 +16715,9 @@
       "resolve": "Resolve",
       "resolveTitle": "Resolve operation",
       "skills": "Skills",
-      "toolType": "Tool type"
+      "toolType": "Tool type",
+      "opNotLoaded": "Operation #{{id}} is not in the loaded list.",
+      "registryDesc": "Operation codes, the programs qualified for each, and the operation → program mapping."
     },
     "opCreated": "Operation created",
     "openRobotCockpit": "Open robot cockpit",
@@ -16763,7 +16766,8 @@
       "title": "Shared resources",
       "type": "Type",
       "unowned": "unowned",
-      "zoneId": "Home zone id (optional)"
+      "zoneId": "Home zone id (optional)",
+      "notLoaded": "Resource #{{id}} is not in the loaded list."
     },
     "reserve": "Reserve",
     "reserved": "Reservation active",
@@ -16797,10 +16801,9 @@
     "sweepDone": "Charging sweep complete",
     "tab": {
       "charging": "Charging",
-      "map": "Map",
-      "operations": "Operations",
       "resources": "Resources",
-      "tasks": "Tasks & Zones"
+      "tasks": "Tasks",
+      "zones": "Zones"
     },
     "task": {
       "assigned": "Assigned",
@@ -16821,7 +16824,31 @@
       "human_shared": "Human-shared",
       "production": "Production",
       "transit": "Transit"
-    }
+    },
+    "flag": {
+      "resource": "Resource layer"
+    },
+    "safetyChip": "Orchestration state only",
+    "side": {
+      "label": "Tasks, zones, charging and resources"
+    },
+    "chip": {
+      "stripLabel": "Fleet indicators",
+      "src": {
+        "deadlocks": "fleet.deadlocks — robot wait-for cycles detected now (advisory)",
+        "failed": "fleet.listTasks — tasks with status 'failed' in the loaded list (latest 200, status filter applies)",
+        "atCapacity": "fleet.listZones — zones whose occupancy has reached max concurrent robots",
+        "pending": "fleet.listTasks — tasks with status 'pending' in the loaded list (latest 200, status filter applies)",
+        "running": "fleet.listTasks — tasks with status 'running' in the loaded list (latest 200, status filter applies)",
+        "assigned": "fleet.listTasks — tasks with status 'assigned' in the loaded list (latest 200, status filter applies)",
+        "activeRes": "fleet.listReservations — zone reservations with status 'active' (latest 500)",
+        "resourcesInUse": "fleet.listResources — shared resources with at least one active claim",
+        "charging": "fleet.listChargingPlans — charging plans 'active' or 'planned' (latest 200)"
+      }
+    },
+    "taskNotFound": "Task #{{id}} is not in the loaded list.",
+    "taskTerminal": "Task #{{id}} is finished — it cannot be reassigned.",
+    "zoneNotFound": "Zone #{{id}} is not in the loaded list."
   },
   "ir": {
     "whenToUse": "When to use — low-level motion & I/O blocks (IR). For the full build/deploy pipeline use the Engineering Workspace; for IEC 61131 LAD/FBD/SFC use POU Studio.",

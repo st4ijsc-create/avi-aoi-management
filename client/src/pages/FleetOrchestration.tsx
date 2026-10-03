@@ -1,27 +1,32 @@
 /**
  * G1 + G2 (doc 16 §7 Khối 2 / §12 design system) — FLEET & TASK ORCHESTRATION surface.
  *
- * Read-mostly cockpit over the fleetRouter, organised into tabs:
- *   • "Tasks & Zones" (G1) — Dynamic Task Allocation Engine + Zone Traffic/Path mgr.
- *       1. KPI strip — task counts + reservations + zones at capacity + deadlocks.
- *       2. Task queue table — allocate / reassign / cancel (flag- + RBAC-gated).
- *       3. Zones panel — occupancy vs maxConcurrentRobots + reservations.
- *   • "Operations" (G2-a) — operation_codes registry, resolve → qualified programs,
- *       create-operation + map-program (FLEET_RESOURCE_ENABLED gated).
- *   • "Resources" (G2-c) — shared_resources by type + reserve/release + reservations,
- *       create-resource (FLEET_RESOURCE_ENABLED gated). Mirrors the Zones UX.
- *   • "Charging" (G2-d) — charger_stations + battery_charging_plans + sweep-now +
- *       create-charger (FLEET_RESOURCE_ENABLED gated).
+ * Doc 81 Đợt 2 Task 10 — mẫu P4 Cockpit (`CockpitLayout`):
+ *  - Header một hàng: h1 · chip cờ (G1 điều phối luôn; G2 lớp tài nguyên khi đang ở tab Sạc/Tài nguyên — như banner
+ *    cũ chỉ hiện ngoài tab Tác vụ) · `StatusChipStrip` thay 9 MetricCard (MỖI chip ghi nguồn; Bế tắc / Thất bại /
+ *    Vùng đầy tải được GHIM — R-2-p) · "Chỉ trạng thái điều phối" + "Khi nào dùng" (câu cũ trong popover) ·
+ *    "Sổ đăng ký thao tác" · làm mới.
+ *  - MAIN (`data-layout-main`) = bản đồ đội thiết bị với các vùng (lưới chiếm dụng + vùng tô theo tải + robot có
+ *    vị trí). Bấm một vùng trên bản đồ ⇒ mở tab Vùng và đánh dấu vùng đó. Hàng công cụ duy nhất: nhà máy + số robot.
+ *  - Panel phụ (aside): khối BẾ TẮC (khi có; luôn thấy, không phụ thuộc tab) + tab `?tab=` Tác vụ / Vùng / Sạc /
+ *    Tài nguyên (giá trị lạ ⇒ Tác vụ).
+ *  - Dialog → sheet sổ đăng ký (`FlyoutHost`, `?flyout=&flyoutId=`): thao tác (sổ + tạo + ánh xạ chương trình), tài
+ *    nguyên (tạo + đặt trước), trạm sạc (tạo), gán lại tác vụ, đặt trước vùng. Form / kiểm tra / payload GIỮ NGUYÊN.
+ *    Huỷ tác vụ giữ AlertDialog (xác nhận phá huỷ).
+ *  - R-2-n: KHÔNG thêm khả năng tác động. Mỗi mutation giữ đúng một mục tiêu mỗi lần bấm/xác nhận, cùng cổng, cùng
+ *    xác nhận như trang cũ (Phân bổ / Giải phóng / Xử lý bế tắc / Quét sạc: một cú bấm; Huỷ: AlertDialog; Gán lại /
+ *    Đặt trước / Tạo / Ánh xạ: một lần lưu sheet). Không có thao tác hàng loạt.
+ *  - Chặn chéo nhà máy (Đợt 0 Task 6): server từ chối thực thể ngoài phạm vi nhà máy (FORBIDDEN SCOPE_MISMATCH) ⇒
+ *    `onMutationError` toast lỗi đã dịch, sheet GIỮ MỞ, danh sách không đổi. Đọc đã lọc phạm vi ở server; bộ chọn nhà
+ *    máy của bản đồ chỉ liệt kê nhà máy của các vùng đọc được.
+ *  - Việc dời route sang "Labs" (doc 80) là task IA riêng — chưa làm ở đây.
  *
- * SAFETY (mirrors the router): this page writes orchestration STATE only — it opens
- * NO device path. G1 mutations are gated behind FLEET_ORCH_ENABLED; G2 mutations
- * behind FLEET_RESOURCE_ENABLED. When a flag is OFF the page shows an honest "preview"
- * banner and surfaces the CONFLICT error gracefully (toast.info, not red). Read RBAC:
- * machine_monitoring/canView. Actions: machine_control/canCreate (hidden when absent).
- *
- * i18n: uses the t("key", "English default") fallback pattern (no locale-file edits).
+ * SAFETY (mirrors the router): this page writes orchestration STATE only — it opens NO device path. G1 mutations
+ * are gated behind FLEET_ORCH_ENABLED; G2 mutations behind FLEET_RESOURCE_ENABLED. When a flag is OFF the page shows
+ * an honest "preview" chip and surfaces the CONFLICT error gracefully (toast.info, not red). Read RBAC:
+ * machine_monitoring/canView. Actions: machine_control/canCreate (hidden/locked when absent).
  */
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useId, useMemo, useRef, useState, type ReactNode, type RefObject } from "react";
 import { useTranslation } from "react-i18next";
 import { useLocation } from "wouter";
 import type { inferRouterOutputs } from "@trpc/server";
@@ -32,9 +37,24 @@ import { usePermissions } from "@/_core/hooks/usePermissions";
 import DashboardLayout from "@/components/DashboardLayout";
 import { ViewOnlyBadge } from "@/components/PermissionGate";
 import { PollFreshness } from "@/components/PollFreshness";
-import { MetricCard, PageContainer, PageHeader } from "@/components/patterns";
+import {
+  CockpitLayout,
+  FeatureStatusNoticeChip,
+  FlyoutHost,
+  NoticeStack,
+  PageContainer,
+  StatusChipStrip,
+  chipStateFromQuery,
+  useCloseOwnLayer,
+  useFlyout,
+  useNarrowViewport,
+  type FlyoutDefinition,
+  type NoticeItem,
+  type StatusChipItem,
+} from "@/components/patterns";
+import { useUrlParam } from "@/components/patterns/useUrlParam";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -42,9 +62,7 @@ import { Progress } from "@/components/ui/progress";
 import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from "@/components/ui/table";
-import {
-  Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle,
-} from "@/components/ui/dialog";
+import { SheetFooter } from "@/components/ui/sheet";
 import {
   AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
   AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
@@ -55,8 +73,8 @@ import {
 import { Checkbox } from "@/components/ui/checkbox";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
-  Truck, RefreshCw, ListChecks, Layers, AlertTriangle, ShieldAlert, Info,
-  Play, Send, Ban, MapPin, Bot, Clock, Activity, Lock, CheckCircle2,
+  Truck, RefreshCw, ListChecks, Layers, ShieldAlert,
+  Play, Send, Ban, MapPin, Bot, CheckCircle2,
   Wrench, Workflow, BatteryCharging, Plus, Search, Link2, Zap, Package, Map as MapIcon,
 } from "lucide-react";
 import { toast } from "sonner";
@@ -66,6 +84,7 @@ import {
   deriveFeatureStatus,
   FeatureStatusGate,
   isFeatureStatusUnsettled,
+  type FeatureStatus,
 } from "@/components/common/FeatureStatusGate";
 // doc 80 Đợt 1 Task 4 (X-01) — nhãn DEMO/SEED/SIM + dải tóm tắt trên bảng task.
 import { ProvenanceBadge, ProvenanceSummary } from "@/components/common/ProvenanceBadge";
@@ -230,9 +249,24 @@ function chargerStatusBadge(status: string, t: (k: string, f: string) => string)
 
 const RESOURCE_TYPES = ["jig", "gripper", "fixture", "tool_changer", "other"] as const;
 
+/** Tab của panel phụ (`?tab=`). Giá trị lạ / thiếu ⇒ "tasks". */
+const SIDE_TABS = ["tasks", "zones", "charging", "resources"] as const;
+type SideTab = (typeof SIDE_TABS)[number];
+/** ≥1600 px: 5 chip KPI hiện thẳng; hẹp hơn: 3 (đúng 3 chip ghim) + "+N". */
+/** < 1280 px: header không đủ chỗ cho chip cờ + ghi chú (đo 1100 px: bị cắt) ⇒ chúng xuống đầu MAIN. */
+const COMPACT_BREAKPOINT_PX = 1280;
+const KPI_WIDE_BREAKPOINT_PX = 1600;
+/** Bề rộng panel phụ: đủ cho bảng tác vụ gọn (khoá · trạng thái · thiết bị · 3 nút). */
+const SIDE_WIDTH_WIDE = 440;
+const SIDE_WIDTH = 400;
+
+/** Kết quả đặt trước (vùng / tài nguyên) bị TỪ CHỐI ⇒ sheet giữ mở như dialog cũ. */
+function isRejectedClaim(res: { ok?: boolean; status?: string } | null | undefined): boolean {
+  return !!res && (res.ok === false || res.status === "rejected");
+}
+
 export default function FleetOrchestration() {
   const { t } = useTranslation();
-  const [, setLocation] = useLocation();
   const { hasPermission } = usePermissions();
   const canView = hasPermission("machine_monitoring", "canView");
   const canControl = hasPermission("machine_control", "canCreate");
@@ -241,53 +275,46 @@ export default function FleetOrchestration() {
     ? t("common.gate.needPerm", "Requires {{perm}} permission", { perm: "machine_control" })
     : undefined;
 
-  const [statusFilter, setStatusFilter] = useState<string>("");
-  const [assignTask, setAssignTask] = useState<FleetTask | null>(null);
-  const [cancelTarget, setCancelTarget] = useState<FleetTask | null>(null);
-  const [reserveZoneTarget, setReserveZoneTarget] = useState<FleetZone | null>(null);
+  const narrow = useNarrowViewport(COMPACT_BREAKPOINT_PX);
+  const kpiWide = !useNarrowViewport(KPI_WIDE_BREAKPOINT_PX);
+  const [tabParam, setTabParam] = useUrlParam("tab");
+  const sideTab: SideTab = (SIDE_TABS as readonly string[]).includes(tabParam ?? "") ? (tabParam as SideTab) : "tasks";
+  const setSideTab = (v: string) => setTabParam(v === "tasks" ? null : v);
 
-  // ── G2 UI state ──────────────────────────────────────────────────────────────
-  const [tab, setTab] = useState("tasks");
+  const [statusFilter, setStatusFilter] = useState<string>("");
+  const [cancelTarget, setCancelTarget] = useState<FleetTask | null>(null);
+  // G2-a — mã thao tác đang phân giải (ở cấp trang như cũ: giữ qua lần đóng/mở sổ đăng ký).
   const [resolveCode, setResolveCode] = useState<string>("");
-  const [createOpOpen, setCreateOpOpen] = useState(false);
-  const [mapProgramFor, setMapProgramFor] = useState<FleetOperation | null>(null);
-  const [createResourceOpen, setCreateResourceOpen] = useState(false);
-  const [reserveResourceTarget, setReserveResourceTarget] = useState<FleetResource | null>(null);
-  const [createChargerOpen, setCreateChargerOpen] = useState(false);
   // W4-18 (3) — factory chọn cho bản đồ (null = tự suy từ zone đầu tiên có factoryId).
   const [mapFactoryId, setMapFactoryId] = useState<number | null>(null);
+  // Vùng đang chọn (bấm trên bản đồ) — đánh dấu thẻ vùng ở tab Vùng.
+  const [selectedZoneId, setSelectedZoneId] = useState<number | null>(null);
+  const deadlockRef = useRef<HTMLDivElement | null>(null);
 
   const utils = trpc.useUtils();
 
   // ── Reads ──────────────────────────────────────────────────────────────────
-  // ENG-F8 (doc 40 W4b) — GATE POLL THEO TAB để cắt over-fetch. Trước đây cả 5
-  // query G1 (status/tasks/zones/reservations/deadlocks) đều poll 5s BẤT KỂ tab
-  // nào đang mở → ~5 request/5s ngay cả khi user đang ở tab Operations/Resources/
-  // Charging (vốn KHÔNG hiển thị những dữ liệu này). Nay:
-  //   • MỌI query vẫn `enabled: canView` để KPI strip + banner deadlock (luôn
-  //     hiển thị bên trên các tab) NẠP một lần & giữ giá trị từ cache khi đổi tab
-  //     — honest, không để KPI trống. Đây là fetch một-lần, không phải poll.
-  //   • Nhưng refetchInterval 5s CHỈ bật cho query thuộc tab đang mở:
-  //       - tasks / reservations / status(cờ) → chỉ tab "tasks";
-  //       - zones → tab "tasks" HOẶC "map" (FleetMap vẽ zone);
-  //       - deadlocks → poll khi canView bất kể tab (AN TOÀN: banner + KPI + toast
-  //         "deadlock mới" luôn hiển thị nên phải giữ live). Đây là "1" luôn chạy.
-  //   • Quay lại tab → refetchOnWindowFocus/visibility làm mới NGAY (usePollingInterval).
-  // Kết quả: tasks-tab poll các query của nó; Operations/Resources/Charging chỉ còn
-  // deadlocks (1); Map còn zones + deadlocks (2, chưa kể poll riêng của Map). Dừng
-  // poll khi mất quyền xem HOẶC tab trình duyệt bị ẩn (doc 27 B12).
-  const tasksTabActive = canView && tab === "tasks";
-  const tasksPolling = usePollingInterval(tasksTabActive ? 5000 : false);
-  const zonesPolling = usePollingInterval(canView && (tab === "tasks" || tab === "map") ? 5000 : false);
-  const deadlocksPolling = usePollingInterval(canView ? 5000 : false);
-  const statusQ = trpc.fleet.status.useQuery(undefined, { enabled: canView, ...tasksPolling });
+  // ENG-F8 (doc 40 W4b) — GATE POLL THEO TAB để cắt over-fetch. MỌI query vẫn `enabled: canView` (chip KPI + khối
+  // bế tắc NẠP một lần & giữ cache khi đổi tab — honest, không để chip trống); refetchInterval 5s chỉ cho dữ liệu
+  // đang hiển thị:
+  //   • tasks → tab Tác vụ; status (cờ G1) + reservations → tab Tác vụ HOẶC Vùng (hai tab G1; Vùng vẽ đặt chỗ);
+  //   • zones + robotPositions → LUÔN (doc 81 Đợt 2 Task 10: bản đồ là MAIN, luôn hiển thị — trước đây chỉ khi mở
+  //     tab Bản đồ / Tác vụ & Vùng);
+  //   • deadlocks → luôn (AN TOÀN: chip ghim + khối + toast "deadlock mới").
+  // Quay lại tab → refetchOnWindowFocus/visibility làm mới NGAY (usePollingInterval). Dừng poll khi mất quyền xem
+  // HOẶC tab trình duyệt bị ẩn (doc 27 B12).
+  const g1TabActive = canView && (sideTab === "tasks" || sideTab === "zones");
+  const tasksPolling = usePollingInterval(canView && sideTab === "tasks" ? 5000 : false);
+  const g1Polling = usePollingInterval(g1TabActive ? 5000 : false);
+  const alwaysPolling = usePollingInterval(canView ? 5000 : false);
+  const statusQ = trpc.fleet.status.useQuery(undefined, { enabled: canView, ...g1Polling });
   const tasksQ = trpc.fleet.listTasks.useQuery(
     { status: (statusFilter || undefined) as (typeof TASK_STATUSES)[number] | undefined, limit: 200 },
     { enabled: canView, ...tasksPolling },
   );
-  const zonesQ = trpc.fleet.listZones.useQuery(undefined, { enabled: canView, ...zonesPolling });
-  const reservationsQ = trpc.fleet.listReservations.useQuery({ limit: 500 }, { enabled: canView, ...tasksPolling });
-  const deadlocksQ = trpc.fleet.deadlocks.useQuery(undefined, { enabled: canView, ...deadlocksPolling });
+  const zonesQ = trpc.fleet.listZones.useQuery(undefined, { enabled: canView, ...alwaysPolling });
+  const reservationsQ = trpc.fleet.listReservations.useQuery({ limit: 500 }, { enabled: canView, ...g1Polling });
+  const deadlocksQ = trpc.fleet.deadlocks.useQuery(undefined, { enabled: canView, ...alwaysPolling });
 
   const tasks = (tasksQ.data ?? []) as FleetTask[];
   const zones = (zonesQ.data ?? []) as FleetZone[];
@@ -300,15 +327,13 @@ export default function FleetOrchestration() {
     [zones],
   );
   const effectiveFactoryId = mapFactoryId ?? factoryIds[0] ?? 1;
-  const mapActive = canView && tab === "map";
-  const mapPolling = usePollingInterval(mapActive ? 5000 : false);
   const occupancyGridQ = trpc.twin.occupancyGrid.useQuery(
     { factoryId: effectiveFactoryId },
-    { enabled: mapActive, retry: false },
+    { enabled: canView, retry: false },
   );
   const robotPositionsQ = trpc.fleet.robotPositions.useQuery(undefined, {
-    enabled: mapActive,
-    ...mapPolling,
+    enabled: canView,
+    ...alwaysPolling,
   });
 
   // ── G2 reads (read RBAC is the same — machine_monitoring/canView) ─────────────
@@ -330,7 +355,7 @@ export default function FleetOrchestration() {
   const chargers = (chargersQ.data ?? []) as FleetCharger[];
   const chargingPlans = (chargingPlansQ.data ?? []) as FleetChargingPlan[];
 
-  // Flag state — honest preview banner. Doc 80 Task 1 (PLT-02/G-07/X-07): the query
+  // Flag state — honest 4-state. Doc 80 Task 1 (PLT-02/G-07/X-07): the query
   // pending/erroring is UNKNOWN, not "on" — no more `?? true` optimistic default.
   const flagStatus = deriveFeatureStatus(statusQ, (d: { enabled?: boolean }) => d.enabled);
   const flagUnsettled = isFeatureStatusUnsettled(flagStatus);
@@ -364,6 +389,7 @@ export default function FleetOrchestration() {
 
   // Surface the FLAG-OFF CONFLICT gracefully (info, not a scary red error).
   // Covers both G1 (FLEET_ORCH_ENABLED) and G2 (FLEET_RESOURCE_ENABLED) disabled messages.
+  // Mọi lỗi khác — kể cả FORBIDDEN SCOPE_MISMATCH (thực thể của nhà máy khác, Đợt 0 Task 6) — là toast lỗi đã dịch.
   const onMutationError = (e: { data?: { code?: string } | null; message: string }) => {
     if (isFeatureDisabledError(e)) {
       // F11: trước đây phân nhánh bằng `/resource/i.test(e.message)` — khớp chữ trong
@@ -382,6 +408,7 @@ export default function FleetOrchestration() {
     }
   };
 
+  // Toast + làm mới nằm ở mutation cấp trang (như cũ). Sheet tự đóng CHÍNH lớp của nó qua `done` truyền theo lượt gọi.
   const allocateM = trpc.fleet.allocate.useMutation({
     // W4-18 (1) — allocateTask trả {ok:false} khi không có thiết bị phù hợp mà KHÔNG throw;
     // đọc kết quả thật thay vì luôn toast xanh giả.
@@ -396,7 +423,7 @@ export default function FleetOrchestration() {
     onError: onMutationError,
   });
   const assignM = trpc.fleet.assign.useMutation({
-    onSuccess: () => { toast.success(t("fleet.assigned", "Task reassigned")); setAssignTask(null); refetchAll(); },
+    onSuccess: () => { toast.success(t("fleet.assigned", "Task reassigned")); refetchAll(); },
     onError: onMutationError,
   });
   const cancelM = trpc.fleet.cancelTask.useMutation({
@@ -404,16 +431,14 @@ export default function FleetOrchestration() {
     onError: onMutationError,
   });
   const reserveM = trpc.fleet.reserve.useMutation({
-    // W4-18 (1) — reserveZone trả {ok,status}: rejected → error, queued → warning, active → success.
+    // W4-18 (1) — reserveZone trả {ok,status}: rejected → error (sheet giữ mở), queued → warning, active → success.
     onSuccess: (res) => {
-      if (res && (res.ok === false || res.status === "rejected")) {
-        toast.error(t("fleet.reserveRejected", "Reservation rejected") + (res.message ? ` — ${res.message}` : ""));
+      if (isRejectedClaim(res)) {
+        toast.error(t("fleet.reserveRejected", "Reservation rejected") + (res?.message ? ` — ${res.message}` : ""));
       } else if (res && res.status === "queued") {
         toast.warning(t("fleet.reserveQueued", "Zone at capacity — reservation queued"));
-        setReserveZoneTarget(null);
       } else {
         toast.success(t("fleet.reserved", "Reservation active"));
-        setReserveZoneTarget(null);
       }
       refetchAll();
     },
@@ -438,28 +463,26 @@ export default function FleetOrchestration() {
 
   // ── G2 mutations ─────────────────────────────────────────────────────────────
   const createOpM = trpc.fleet.createOperation.useMutation({
-    onSuccess: () => { toast.success(t("fleet.opCreated", "Operation created")); setCreateOpOpen(false); refetchAll(); },
+    onSuccess: () => { toast.success(t("fleet.opCreated", "Operation created")); refetchAll(); },
     onError: onMutationError,
   });
   const mapProgramM = trpc.fleet.mapOperationProgram.useMutation({
-    onSuccess: () => { toast.success(t("fleet.programMapped", "Program mapped to operation")); setMapProgramFor(null); refetchAll(); },
+    onSuccess: () => { toast.success(t("fleet.programMapped", "Program mapped to operation")); refetchAll(); },
     onError: onMutationError,
   });
   const createResourceM = trpc.fleet.createResource.useMutation({
-    onSuccess: () => { toast.success(t("fleet.resourceCreated", "Resource created")); setCreateResourceOpen(false); refetchAll(); },
+    onSuccess: () => { toast.success(t("fleet.resourceCreated", "Resource created")); refetchAll(); },
     onError: onMutationError,
   });
   const reserveResourceM = trpc.fleet.reserveResource.useMutation({
-    // W4-18 (1) — claimResource trả {ok,status}: rejected → error, queued → warning, active → success.
+    // W4-18 (1) — claimResource trả {ok,status}: rejected → error (sheet giữ mở), queued → warning, active → success.
     onSuccess: (res) => {
-      if (res && (res.ok === false || res.status === "rejected")) {
-        toast.error(t("fleet.resourceRejected", "Resource claim rejected") + (res.message ? ` — ${res.message}` : ""));
+      if (isRejectedClaim(res)) {
+        toast.error(t("fleet.resourceRejected", "Resource claim rejected") + (res?.message ? ` — ${res.message}` : ""));
       } else if (res && res.status === "queued") {
         toast.warning(t("fleet.resourceQueued", "Resource in use — claim queued"));
-        setReserveResourceTarget(null);
       } else {
         toast.success(t("fleet.resourceReserved", "Resource claimed"));
-        setReserveResourceTarget(null);
       }
       refetchAll();
     },
@@ -470,7 +493,7 @@ export default function FleetOrchestration() {
     onError: onMutationError,
   });
   const createChargerM = trpc.fleet.createCharger.useMutation({
-    onSuccess: () => { toast.success(t("fleet.chargerCreated", "Charger created")); setCreateChargerOpen(false); refetchAll(); },
+    onSuccess: () => { toast.success(t("fleet.chargerCreated", "Charger created")); refetchAll(); },
     onError: onMutationError,
   });
   const sweepM = trpc.fleet.sweepCharging.useMutation({
@@ -547,7 +570,7 @@ export default function FleetOrchestration() {
       toast.error(
         t("fleet.newDeadlockToast", "New deadlock detected") +
           (fresh.length > 1 ? ` (${fresh.length})` : ""),
-        { description: t("fleet.newDeadlockDesc", "A robot dependency cycle just formed — review the Tasks & Zones tab.") },
+        { description: t("fleet.newDeadlockDesc", "A robot dependency cycle just formed — review the deadlock block in the side panel.") },
       );
     }
   }, [deadlocks, t]);
@@ -558,7 +581,7 @@ export default function FleetOrchestration() {
         <div className="p-6">
           <Card>
             <CardContent className="py-10 text-center text-muted-foreground">
-              <AlertTriangle className="mx-auto mb-2 h-6 w-6" />
+              <ShieldAlert className="mx-auto mb-2 h-6 w-6" />
               {t("fleet.noPermission", "You do not have permission to view fleet orchestration.")}
             </CardContent>
           </Card>
@@ -568,595 +591,527 @@ export default function FleetOrchestration() {
   }
 
   const anyLoading = tasksQ.isLoading || zonesQ.isLoading || reservationsQ.isLoading;
+  const tasksState = chipStateFromQuery(tasksQ);
+  const deadlockCount = kpis.deadlockCount;
+  const focusDeadlocks = () => {
+    const el = deadlockRef.current;
+    if (!el) return;
+    el.scrollIntoView?.({ block: "nearest" });
+    el.focus();
+  };
+  const selectZoneOnMap = (zoneId: number) => {
+    setSelectedZoneId(zoneId);
+    setSideTab("zones");
+  };
+
+  // ── 9 KPI cũ → MỘT dải chip (mỗi chip ghi NGUỒN; lỗi/đang tải không bao giờ in 0) ─────────────────────────
+  // R-2-p: Bế tắc (an toàn giao thông robot), Thất bại (cảnh báo), Vùng đầy tải (lưu lượng) — GHIM, không vào "+N".
+  const chipItems: StatusChipItem[] = [
+    {
+      id: "fleet-deadlocks",
+      pinned: true,
+      label: t("fleet.kpi.deadlocks", "Deadlocks"),
+      value: deadlockCount,
+      state: chipStateFromQuery(deadlocksQ),
+      tone: deadlockCount > 0 ? "error" : "default",
+      source: t("fleet.chip.src.deadlocks", "fleet.deadlocks — robot wait-for cycles detected now (advisory)"),
+      onClick: deadlockCount > 0 ? focusDeadlocks : undefined,
+    },
+    {
+      id: "fleet-failed",
+      pinned: true,
+      label: t("fleet.kpi.failed", "Failed"),
+      value: kpis.failed,
+      state: tasksState,
+      tone: kpis.failed > 0 ? "error" : "default",
+      source: t("fleet.chip.src.failed", "fleet.listTasks — tasks with status 'failed' in the loaded list (latest 200, status filter applies)"),
+    },
+    {
+      id: "fleet-at-capacity",
+      pinned: true,
+      label: t("fleet.kpi.atCapacity", "Zones at capacity"),
+      value: zonesQ.data === undefined ? undefined : `${kpis.zonesAtCapacity}/${zones.length}`,
+      state: chipStateFromQuery(zonesQ),
+      tone: kpis.zonesAtCapacity > 0 ? "warning" : "default",
+      source: t("fleet.chip.src.atCapacity", "fleet.listZones — zones whose occupancy has reached max concurrent robots"),
+    },
+    {
+      id: "fleet-pending",
+      label: t("fleet.kpi.pending", "Pending"),
+      value: kpis.pending,
+      state: tasksState,
+      tone: kpis.pending > 0 ? "warning" : "default",
+      source: t("fleet.chip.src.pending", "fleet.listTasks — tasks with status 'pending' in the loaded list (latest 200, status filter applies)"),
+    },
+    {
+      id: "fleet-running",
+      label: t("fleet.kpi.running", "Running"),
+      value: kpis.running,
+      state: tasksState,
+      tone: kpis.running > 0 ? "success" : "default",
+      source: t("fleet.chip.src.running", "fleet.listTasks — tasks with status 'running' in the loaded list (latest 200, status filter applies)"),
+    },
+    {
+      id: "fleet-assigned",
+      label: t("fleet.kpi.assigned", "Assigned"),
+      value: kpis.assigned,
+      state: tasksState,
+      source: t("fleet.chip.src.assigned", "fleet.listTasks — tasks with status 'assigned' in the loaded list (latest 200, status filter applies)"),
+    },
+    {
+      id: "fleet-active-res",
+      label: t("fleet.kpi.activeRes", "Active reservations"),
+      value: kpis.activeReservations,
+      state: chipStateFromQuery(reservationsQ),
+      source: t("fleet.chip.src.activeRes", "fleet.listReservations — zone reservations with status 'active' (latest 500)"),
+    },
+    {
+      id: "fleet-resources-in-use",
+      label: t("fleet.kpi.resourcesInUse", "Resources in use"),
+      value: resourcesQ.data === undefined ? undefined : `${kpis.resourcesInUse}/${resources.length}`,
+      state: chipStateFromQuery(resourcesQ),
+      tone: kpis.resourcesInUse > 0 ? "success" : "default",
+      source: t("fleet.chip.src.resourcesInUse", "fleet.listResources — shared resources with at least one active claim"),
+    },
+    {
+      id: "fleet-charging",
+      label: t("fleet.kpi.charging", "Charging plans"),
+      value: kpis.activeChargingPlans,
+      state: chipStateFromQuery(chargingPlansQ),
+      tone: kpis.activeChargingPlans > 0 ? "warning" : "default",
+      source: t("fleet.chip.src.charging", "fleet.listChargingPlans — charging plans 'active' or 'planned' (latest 200)"),
+    },
+  ];
+
+  // ── Chip cờ (4 trạng thái) + ghi chú ─────────────────────────────────────────────────────────────────────
+  const g1FlagChip = (
+    <FeatureStatusNoticeChip
+      status={flagStatus}
+      offMessage={t(
+        "fleet.flagOffBanner",
+        "Preview mode: fleet orchestration is disabled. Reads work; actions (allocate / reassign / cancel / reserve / release) are blocked until it is enabled.",
+      )}
+      errorMessage={t(
+        "fleet.flagStatusError",
+        "Could not check whether fleet orchestration is enabled — actions are disabled until this is confirmed.",
+      )}
+    />
+  );
+  // Banner G2 cũ chỉ hiện NGOÀI tab Tác vụ & Vùng (tức trên các bề mặt G2) ⇒ chip G2 chỉ ở tab Sạc / Tài nguyên;
+  // sổ đăng ký thao tác (G2-a) có cổng đầy đủ bên trong sheet.
+  const g2FlagChip =
+    sideTab === "charging" || sideTab === "resources" ? (
+      <FeatureStatusNoticeChip
+        status={resourceFlagStatus}
+        subject={t("fleet.flag.resource", "Resource layer")}
+        offMessage={t(
+          "fleet.resourceFlagOffBanner",
+          "Preview mode: the fleet resource layer is disabled. Reads work; actions (create / map / reserve / release / sweep) are blocked until it is enabled.",
+        )}
+        errorMessage={t(
+          "fleet.resourceFlagStatusError",
+          "Could not check whether the fleet resource layer is enabled — actions are disabled until this is confirmed.",
+        )}
+      />
+    ) : null;
+  const noticeItems: NoticeItem[] = [
+    {
+      // Safety note — mirrors RobotControl honesty (khối 🔒 cũ).
+      id: "fleet-safety",
+      kind: "honesty",
+      label: t("fleet.safetyChip", "Orchestration state only"),
+      content: (
+        <p>
+          {t(
+            "fleet.safetyNote",
+            "This page writes orchestration state only (tasks / zones / reservations). Actual robot motion always routes through the gated HITL dispatcher — never from this screen.",
+          )}
+        </p>
+      ),
+    },
+    {
+      // U7 (doc 26 §2.1) — "Khi nào dùng" (khoá riêng của trang) + phụ đề cũ.
+      id: "whenToUse:fleet.whenToUse",
+      kind: "whenToUse",
+      content: (
+        <div className="space-y-2">
+          <p data-when-to-use="fleet.whenToUse">
+            {t("fleet.whenToUse", "When to use — assign tasks across a robot/AGV fleet and manage zone traffic & reservations. Orchestration state only; real motion routes through the HITL dispatcher.")}
+          </p>
+          <p className="text-muted-foreground">
+            {t("fleet.subtitle", "Dynamic task allocation + zone traffic control — orchestration state only, no direct device commands.")}
+          </p>
+        </div>
+      ),
+    },
+  ];
+
+  // ── Flyouts (một stack sheet phải; URL `?flyout=&flyoutId=` là nguồn sự thật) ─────────────────────────────
+  // Sheet ghi chỉ đăng ký khi có quyền điều khiển (nút cũ bị khoá/ẩn khi thiếu quyền). Nút cũ khoá khi cờ CHƯA RÕ
+  // (đang kiểm tra / lỗi) ⇒ deep link cũng vậy: sheet chỉ báo trạng thái, không có form. Cờ TẮT (đã rõ) ⇒ form như
+  // nút cũ (server trả CONFLICT ⇒ toast.info êm).
+  const unsettledBody = (status: FeatureStatus, errorText: string) =>
+    status === "error" ? (
+      <p role="alert" className="py-6 text-center text-sm text-destructive">{errorText}</p>
+    ) : (
+      <p className="py-6 text-center text-sm text-muted-foreground">{t("common.gate.checkingStatus", "Checking feature status…")}</p>
+    );
+  const g1Unsettled = () =>
+    unsettledBody(flagStatus, t("fleet.flagStatusError", "Could not check whether fleet orchestration is enabled — actions are disabled until this is confirmed."));
+  const g2Unsettled = () =>
+    unsettledBody(resourceFlagStatus, t("fleet.resourceFlagStatusError", "Could not check whether the fleet resource layer is enabled — actions are disabled until this is confirmed."));
+  const byId = <T extends { id: number }>(rows: readonly T[], id: string | null): T | null =>
+    id != null && /^\d+$/.test(id) ? rows.find((r) => r.id === Number(id)) ?? null : null;
+  const notLoaded = (loading: boolean, key: string, fallback: string, id: string | null) => (
+    <p className="py-6 text-center text-sm text-muted-foreground">
+      {loading ? t("fleet.loading", "Loading…") : t(key, fallback, { id: id ?? "" })}
+    </p>
+  );
+
+  const flyouts: Record<string, FlyoutDefinition> = {
+    // G2-a — Sổ đăng ký thao tác (tab "Operations" cũ): đọc được với quyền xem; nút ghi theo cổng G2 như cũ.
+    "fleet-operations": {
+      size: "lg",
+      title: t("fleet.op.registryTitle", "Operation registry"),
+      description: t("fleet.op.registryDesc", "Operation codes, the programs qualified for each, and the operation → program mapping."),
+      render: () => (
+        <OperationsRegistry
+          operations={operations}
+          loading={operationsQ.isLoading}
+          canControl={g2CanControl}
+          controlReason={g2ControlReason}
+          resourceFlagStatus={resourceFlagStatus}
+          resolveCode={resolveCode}
+          setResolveCode={setResolveCode}
+          resolved={resolved}
+          resolveLoading={resolveQ.isFetching}
+          resolveError={resolveQ.error ? mapTrpcError(resolveQ.error) : null}
+        />
+      ),
+    },
+  };
+  if (canControl) {
+    flyouts["fleet-task-assign"] = {
+      size: "sm",
+      title: t("fleet.reassignTitle", "Reassign task"),
+      description: (id) => {
+        const tk = byId(tasks, id);
+        return tk ? `${tk.taskKey} · ${tk.requiredCapability}` : t("fleet.reassignTip", "Manually (re)assign to a device");
+      },
+      // Nút "Gán lại" cũ: chỉ khi có quyền, khoá khi tác vụ đã kết thúc (không theo cờ).
+      render: (layer) => {
+        const tk = byId(tasks, layer.id);
+        if (!tk) return notLoaded(tasksQ.isLoading, "fleet.taskNotFound", "Task #{{id}} is not in the loaded list.", layer.id);
+        if (TERMINAL.has(tk.status)) {
+          return (
+            <p className="py-6 text-center text-sm text-muted-foreground">
+              {t("fleet.taskTerminal", "Task #{{id}} is finished — it cannot be reassigned.", { id: tk.id })}
+            </p>
+          );
+        }
+        return (
+          <AssignForm
+            key={tk.id}
+            task={tk}
+            pending={assignM.isPending}
+            onSubmit={(deviceId, done) => assignM.mutate({ taskId: tk.id, deviceId }, { onSuccess: done })}
+          />
+        );
+      },
+    };
+    flyouts["fleet-zone-reserve"] = {
+      size: "sm",
+      title: t("fleet.reserveTitle", "Reserve zone"),
+      description: (id) => {
+        const z = byId(zones, id);
+        return z ? `${z.name} · ${z.code} · ${z.occupancy}/${z.maxConcurrentRobots}` : t("fleet.reserveTitle", "Reserve zone");
+      },
+      render: (layer) => {
+        if (flagUnsettled) return g1Unsettled();
+        const z = byId(zones, layer.id);
+        if (!z) return notLoaded(zonesQ.isLoading, "fleet.zoneNotFound", "Zone #{{id}} is not in the loaded list.", layer.id);
+        return (
+          <ReserveForm
+            key={z.id}
+            subject={<><span className="font-medium text-foreground">{z.name}</span>{" · "}<span className="font-mono text-xs">{z.code}</span>{" · "}{z.occupancy}/{z.maxConcurrentRobots}</>}
+            queueLabel={t("fleet.queueIfFull", "Queue if zone is at capacity (otherwise reject)")}
+            submitLabel={t("fleet.reserve", "Reserve")}
+            icon={<MapPin className="mr-1 h-4 w-4" />}
+            pending={reserveM.isPending}
+            onSubmit={(deviceId, queueIfFull, done) =>
+              reserveM.mutate({ zoneId: z.id, deviceId, queueIfFull }, { onSuccess: (res) => { if (!isRejectedClaim(res)) done(); } })}
+          />
+        );
+      },
+    };
+    flyouts["fleet-operation-new"] = {
+      size: "md",
+      title: t("fleet.op.createTitle", "New operation code"),
+      description: t("fleet.op.registryTitle", "Operation registry"),
+      render: () =>
+        resourceFlagUnsettled ? g2Unsettled() : (
+          <CreateOperationForm pending={createOpM.isPending} onSubmit={(v, done) => createOpM.mutate(v, { onSuccess: done })} />
+        ),
+    };
+    // Nút "Ánh xạ chương trình" cũ chỉ hiện khi g2CanControl ⇒ deep link lúc cờ chưa rõ chỉ báo trạng thái.
+    flyouts["fleet-operation-map"] = {
+      size: "md",
+      title: t("fleet.op.mapTitle", "Map program to operation"),
+      description: (id) => {
+        const op = byId(operations, id);
+        return op ? `${op.code} · ${op.requiredCapability}` : t("fleet.op.registryTitle", "Operation registry");
+      },
+      render: (layer) => {
+        if (resourceFlagUnsettled) return g2Unsettled();
+        const op = byId(operations, layer.id);
+        if (!op) return notLoaded(operationsQ.isLoading, "fleet.op.opNotLoaded", "Operation #{{id}} is not in the loaded list.", layer.id);
+        return (
+          <MapProgramForm
+            key={op.id}
+            operation={op}
+            pending={mapProgramM.isPending}
+            onSubmit={(programProjectId, deviceKind, done) =>
+              mapProgramM.mutate({ operationCodeId: op.id, programProjectId, deviceKind }, { onSuccess: done })}
+          />
+        );
+      },
+    };
+    flyouts["fleet-resource-new"] = {
+      size: "md",
+      title: t("fleet.res.createTitle", "New shared resource"),
+      description: t("fleet.res.title", "Shared resources"),
+      render: () =>
+        resourceFlagUnsettled ? g2Unsettled() : (
+          <CreateResourceForm pending={createResourceM.isPending} onSubmit={(v, done) => createResourceM.mutate(v, { onSuccess: done })} />
+        ),
+    };
+    flyouts["fleet-resource-reserve"] = {
+      size: "sm",
+      title: t("fleet.res.reserveTitle", "Reserve resource"),
+      description: (id) => {
+        const r = byId(resources, id);
+        return r ? `${r.name ?? r.code} · ${r.code} · ${r.type}` : t("fleet.res.title", "Shared resources");
+      },
+      render: (layer) => {
+        if (resourceFlagUnsettled) return g2Unsettled();
+        const r = byId(resources, layer.id);
+        if (!r) return notLoaded(resourcesQ.isLoading, "fleet.res.notLoaded", "Resource #{{id}} is not in the loaded list.", layer.id);
+        return (
+          <ReserveForm
+            key={r.id}
+            subject={<><span className="font-medium text-foreground">{r.name ?? r.code}</span>{" · "}<span className="font-mono text-xs">{r.code}</span>{" · "}{r.type}</>}
+            queueLabel={t("fleet.res.queueIfFull", "Queue if the resource is in use (otherwise reject)")}
+            submitLabel={t("fleet.res.reserve", "Reserve")}
+            icon={<Wrench className="mr-1 h-4 w-4" />}
+            pending={reserveResourceM.isPending}
+            onSubmit={(deviceId, queueIfFull, done) =>
+              reserveResourceM.mutate({ resourceId: r.id, deviceId, queueIfFull }, { onSuccess: (res) => { if (!isRejectedClaim(res)) done(); } })}
+          />
+        );
+      },
+    };
+    flyouts["fleet-charger-new"] = {
+      size: "md",
+      title: t("fleet.charger.createTitle", "New charger station"),
+      description: t("fleet.charger.title", "Charger stations"),
+      render: () =>
+        resourceFlagUnsettled ? g2Unsettled() : (
+          <CreateChargerForm pending={createChargerM.isPending} onSubmit={(v, done) => createChargerM.mutate(v, { onSuccess: done })} />
+        ),
+    };
+  }
+
+  // < 1280 px: header chỉ giữ h1 + dải KPI (chip GHIM vẫn hiện); chip cờ + ghi chú xuống đầu MAIN (header hẹp cắt
+  // phần tràn — cờ chưa rõ / đang tắt không được biến mất im lặng).
+  const narrowNotices = narrow ? (
+    <div data-narrow-notices="" className="flex flex-wrap items-center gap-1.5 pb-2">
+      {g1FlagChip}
+      {g2FlagChip}
+      <NoticeStack maxVisible={2} items={noticeItems} />
+    </div>
+  ) : null;
+
+  const sideCtx: SidePanelProps = {
+    sideTab,
+    setSideTab,
+    canControl,
+    permReason,
+    g1CanControl,
+    g1ControlReason,
+    g2CanControl,
+    g2ControlReason,
+    deadlocks: deadlocks?.cycles ?? [],
+    deadlockRef,
+    resolveDeadlockPending: resolveDeadlockM.isPending,
+    onResolveDeadlock: () => resolveDeadlockM.mutate(),
+    tasks,
+    tasksLoading: anyLoading,
+    tasksUpdatedAt: tasksQ.dataUpdatedAt,
+    tasksFetching: tasksQ.isFetching,
+    statusFilter,
+    setStatusFilter,
+    allocatePending: allocateM.isPending,
+    onAllocate: (tk) => allocateM.mutate({ taskId: tk.id }),
+    onCancel: (tk) => setCancelTarget(tk),
+    zones,
+    zonesLoading: anyLoading,
+    resByZone,
+    selectedZoneId,
+    releasePending: releaseM.isPending,
+    onReleaseZone: (deviceId, zoneId) => releaseM.mutate({ deviceId, zoneId }),
+    resources,
+    resourcesLoading: resourcesQ.isLoading,
+    resReservationsByResource,
+    releaseResourcePending: releaseResourceM.isPending,
+    onReleaseResource: (deviceId, resourceId) => releaseResourceM.mutate({ deviceId, resourceId }),
+    chargers,
+    chargersLoading: chargersQ.isLoading,
+    plans: chargingPlans,
+    plansLoading: chargingPlansQ.isLoading,
+    sweepPending: sweepM.isPending,
+    onSweep: () => sweepM.mutate(),
+  };
 
   return (
     <DashboardLayout>
-      <PageContainer className="flex flex-col gap-4 space-y-0">
-        {/* ── PageHeader (DS F1b shared pattern) ─────────────────────────────── */}
-        <PageHeader
-          icon={<Truck className="h-6 w-6" />}
-          title={t("fleet.title", "Fleet & Task Orchestration")}
-          badge={!canControl ? <ViewOnlyBadge module="machine_control" /> : undefined}
-          description={t("fleet.subtitle", "Dynamic task allocation + zone traffic control — orchestration state only, no direct device commands.")}
-          actions={
-            <Button
-              size="icon"
-              variant="ghost"
-              onClick={refetchAll}
-              title={t("common.refresh", "Refresh")}
-            >
-              <RefreshCw className="h-4 w-4" />
-            </Button>
-          }
-        />
-
-        {/* U7 (doc 26 §2.1) — "Khi nào dùng": trang LÀ GÌ / DÙNG KHI NÀO cho KTV mới. */}
-        <div className="flex items-start gap-2 rounded-md border bg-muted/40 px-3 py-2 text-xs text-muted-foreground">
-          <Info className="mt-0.5 h-3.5 w-3.5 shrink-0 text-primary" aria-hidden="true" />
-          <span>{t("fleet.whenToUse", "When to use — assign tasks across a robot/AGV fleet and manage zone traffic & reservations. Orchestration state only; real motion routes through the HITL dispatcher.")}</span>
-        </div>
-
-        {/* ── Flag status banner — honest 4-state (loading/off/on/error), doc 80 Task 1 ── */}
-        <FeatureStatusGate
-          status={flagStatus}
-          offMessage={t(
-            "fleet.flagOffBanner",
-            "Preview mode: fleet orchestration is disabled. Reads work; actions (allocate / reassign / cancel / reserve / release) are blocked until it is enabled.",
-          )}
-          errorMessage={t(
-            "fleet.flagStatusError",
-            "Could not check whether fleet orchestration is enabled — actions are disabled until this is confirmed.",
-          )}
-        />
-
-        {/* Safety note — mirrors RobotControl honesty */}
-        <div className="flex items-start gap-2 rounded-md border border-border bg-muted/40 p-3 text-sm text-muted-foreground">
-          <Lock className="mt-0.5 h-4 w-4 shrink-0" />
-          <span>
-            {t(
-              "fleet.safetyNote",
-              "This page writes orchestration state only (tasks / zones / reservations). Actual robot motion always routes through the gated HITL dispatcher — never from this screen.",
-            )}
-          </span>
-        </div>
-
-        {/* ── 1. KPI strip ───────────────────────────────────────────────────── */}
-        <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-9">
-          <MetricCard icon={<Clock className="h-4 w-4" />} label={t("fleet.kpi.pending", "Pending")} value={kpis.pending} tone={kpis.pending > 0 ? "warning" : "default"} />
-          <MetricCard icon={<Send className="h-4 w-4" />} label={t("fleet.kpi.assigned", "Assigned")} value={kpis.assigned} />
-          <MetricCard icon={<Activity className="h-4 w-4" />} label={t("fleet.kpi.running", "Running")} value={kpis.running} tone={kpis.running > 0 ? "good" : "default"} />
-          <MetricCard icon={<AlertTriangle className="h-4 w-4" />} label={t("fleet.kpi.failed", "Failed")} value={kpis.failed} tone={kpis.failed > 0 ? "danger" : "default"} />
-          <MetricCard icon={<MapPin className="h-4 w-4" />} label={t("fleet.kpi.activeRes", "Active reservations")} value={kpis.activeReservations} />
-          <MetricCard icon={<Layers className="h-4 w-4" />} label={t("fleet.kpi.atCapacity", "Zones at capacity")} value={`${kpis.zonesAtCapacity}/${zones.length}`} tone={kpis.zonesAtCapacity > 0 ? "warning" : "default"} />
-          <MetricCard icon={<ShieldAlert className="h-4 w-4" />} label={t("fleet.kpi.deadlocks", "Deadlocks")} value={kpis.deadlockCount} tone={kpis.deadlockCount > 0 ? "danger" : "default"} />
-          <MetricCard icon={<Wrench className="h-4 w-4" />} label={t("fleet.kpi.resourcesInUse", "Resources in use")} value={`${kpis.resourcesInUse}/${resources.length}`} tone={kpis.resourcesInUse > 0 ? "good" : "default"} />
-          <MetricCard icon={<BatteryCharging className="h-4 w-4" />} label={t("fleet.kpi.charging", "Charging plans")} value={kpis.activeChargingPlans} tone={kpis.activeChargingPlans > 0 ? "warning" : "default"} />
-        </div>
-
-        {/* Deadlock detail banner */}
-        {(deadlocks?.cycles?.length ?? 0) > 0 && (
-          <div className="flex items-start gap-2 rounded-md border border-destructive/40 bg-destructive/10 p-3 text-sm">
-            <ShieldAlert className="mt-0.5 h-4 w-4 shrink-0 text-destructive" />
-            <div>
-              <div className="font-medium text-destructive">
-                {t("fleet.deadlockTitle", "Deadlock cycle(s) detected")}
-              </div>
-              <div className="mt-1 space-y-0.5 text-muted-foreground">
-                {deadlocks!.cycles.map((cycle, i) => (
-                  <div key={i} className="font-mono text-xs">
-                    {t("fleet.deadlockDevices", "Devices")}: {cycle.join(" → ")} → {cycle[0]}
-                  </div>
-                ))}
-              </div>
-              {/* W4-18 (5) — advisory resolve: huỷ waiter ưu tiên thấp nhất để phá deadlock. */}
-              <Button
-                size="sm" variant="destructive" className="mt-2 h-7"
-                disabled={!g1CanControl || resolveDeadlockM.isPending}
-                title={g1ControlReason}
-                onClick={() => resolveDeadlockM.mutate()}
-              >
-                <ShieldAlert className="mr-1 h-3.5 w-3.5" />{t("fleet.resolveDeadlock", "Resolve deadlock")}
-              </Button>
-            </div>
-          </div>
-        )}
-
-        {/* ── G2 resource-flag status banner (only on the G2 tabs), doc 80 Task 1 ─ */}
-        {tab !== "tasks" && (
-          <FeatureStatusGate
-            status={resourceFlagStatus}
-            offMessage={t(
-              "fleet.resourceFlagOffBanner",
-              "Preview mode: the fleet resource layer is disabled. Reads work; actions (create / map / reserve / release / sweep) are blocked until it is enabled.",
-            )}
-            errorMessage={t(
-              "fleet.resourceFlagStatusError",
-              "Could not check whether the fleet resource layer is enabled — actions are disabled until this is confirmed.",
-            )}
+      <FlyoutHost flyouts={flyouts}>
+        {/* doc 81 Đợt 2 Task 2 — PageContainer: không đệm kép với <main> của shell. */}
+        <PageContainer className="space-y-0">
+          <CockpitLayout
+            icon={<Truck />}
+            title={
+              <span className="flex items-center gap-2">
+                {t("fleet.title", "Fleet & Task Orchestration")}
+                {!canControl && <ViewOnlyBadge module="machine_control" />}
+              </span>
+            }
+            chips={
+              <>
+                {!narrow && g1FlagChip}
+                {!narrow && g2FlagChip}
+                <StatusChipStrip
+                  items={chipItems}
+                  maxVisible={kpiWide ? 5 : 3}
+                  ariaLabel={t("fleet.chip.stripLabel", "Fleet indicators")}
+                  className="shrink-0"
+                />
+                {/* Ghi chú đứng SAU dải KPI: header chật thì chúng bị cắt trước, không phải số liệu. */}
+                {/* MỘT chip ghi chú + "+1" (đo 1600 px: chip thứ hai bị vùng hành động che). */}
+                {!narrow && <NoticeStack maxVisible={1} items={noticeItems} />}
+              </>
+            }
+            actions={<HeaderActions compact={!kpiWide} onRefresh={refetchAll} />}
+            toolbar={
+              <MapToolbar
+                factoryIds={factoryIds}
+                factoryId={effectiveFactoryId}
+                onFactoryChange={setMapFactoryId}
+                located={(robotPositionsQ.data ?? []).filter((r) => r.x != null && r.y != null).length}
+                total={(robotPositionsQ.data ?? []).length}
+              />
+            }
+            main={
+              <>
+                {narrowNotices}
+                <FleetMap
+                  grid={occupancyGridQ.data}
+                  gridLoading={occupancyGridQ.isLoading}
+                  gridError={occupancyGridQ.error ? mapTrpcError(occupancyGridQ.error) : null}
+                  robots={(robotPositionsQ.data ?? []) as FleetRobotPos[]}
+                  robotsLoading={robotPositionsQ.isLoading}
+                  zones={zones}
+                  selectedZoneId={selectedZoneId}
+                  onZoneSelect={selectZoneOnMap}
+                />
+              </>
+            }
+            side={<FleetSidePanel {...sideCtx} />}
+            sideWidth={kpiWide ? SIDE_WIDTH_WIDE : SIDE_WIDTH}
+            sideLabel={t("fleet.side.label", "Tasks, zones, charging and resources")}
+            mainName="fleet-orchestration"
           />
-        )}
+        </PageContainer>
 
-        {/* ── Tabbed surface (G1 tasks/zones + G2 operations/resources/charging) ─ */}
-        <Tabs value={tab} onValueChange={setTab} className="gap-4">
-          <TabsList className="flex-wrap">
-            <TabsTrigger value="tasks"><ListChecks className="mr-1 h-4 w-4" />{t("fleet.tab.tasks", "Tasks & Zones")}</TabsTrigger>
-            <TabsTrigger value="map"><MapIcon className="mr-1 h-4 w-4" />{t("fleet.tab.map", "Map")}</TabsTrigger>
-            <TabsTrigger value="operations"><Workflow className="mr-1 h-4 w-4" />{t("fleet.tab.operations", "Operations")}</TabsTrigger>
-            <TabsTrigger value="resources"><Wrench className="mr-1 h-4 w-4" />{t("fleet.tab.resources", "Resources")}</TabsTrigger>
-            <TabsTrigger value="charging"><BatteryCharging className="mr-1 h-4 w-4" />{t("fleet.tab.charging", "Charging")}</TabsTrigger>
-          </TabsList>
-
-          {/* ════════════════ TAB: Map (W4-18 §3) ════════════════ */}
-          <TabsContent value="map" data-layout-main="fleet-orchestration" className="flex flex-col gap-4">
-            <FleetMap
-              grid={occupancyGridQ.data}
-              gridLoading={occupancyGridQ.isLoading}
-              gridError={occupancyGridQ.error ? mapTrpcError(occupancyGridQ.error) : null}
-              robots={(robotPositionsQ.data ?? []) as FleetRobotPos[]}
-              robotsLoading={robotPositionsQ.isLoading}
-              zones={zones}
-              factoryIds={factoryIds}
-              factoryId={effectiveFactoryId}
-              onFactoryChange={setMapFactoryId}
-            />
-          </TabsContent>
-
-          {/* ════════════════ TAB: Tasks & Zones (G1) ════════════════ */}
-          <TabsContent value="tasks" data-layout-main="fleet-orchestration" className="flex flex-col gap-4">
-        {/* ── 2. Task queue ──────────────────────────────────────────────────── */}
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between gap-2 pb-2">
-            <CardTitle className="flex items-center gap-2 text-base">
-              <ListChecks className="h-4 w-4" />
-              {t("fleet.tasksTitle", "Task queue")}
-            </CardTitle>
-            <div className="flex items-center gap-2">
-              {/* U12 §2.3 — độ tươi của dữ liệu poll (dataUpdatedAt của react-query). */}
-              <PollFreshness updatedAt={tasksQ.dataUpdatedAt} isFetching={tasksQ.isFetching} />
-              <Label className="text-xs text-muted-foreground">{t("fleet.filterStatus", "Status")}</Label>
-              {/* U11 — Select DS; "__all__" là sentinel cho "tất cả trạng thái". */}
-              <Select value={statusFilter || "__all__"} onValueChange={(v) => setStatusFilter(v === "__all__" ? "" : v)}>
-                <SelectTrigger size="sm" className="w-36"><SelectValue /></SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="__all__">{t("fleet.all", "All")}</SelectItem>
-                  {TASK_STATUSES.map((s) => (
-                    <SelectItem key={s} value={s}>{t(`fleet.task.${s}`, s)}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-          </CardHeader>
-          <CardContent className="p-0">
-            <ProvenanceSummary rows={tasks} className="mx-3 mb-2" />
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>{t("fleet.col.taskKey", "Task key")}</TableHead>
-                  <TableHead>{t("fleet.col.capability", "Capability")}</TableHead>
-                  <TableHead>{t("fleet.col.priority", "Priority")}</TableHead>
-                  <TableHead>{t("fleet.col.status", "Status")}</TableHead>
-                  <TableHead>{t("fleet.col.device", "Device")}</TableHead>
-                  <TableHead>{t("fleet.col.duration", "Est / Act")}</TableHead>
-                  <TableHead>{t("fleet.col.retries", "Retries")}</TableHead>
-                  <TableHead className="text-right">{t("common.actions", "Actions")}</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {anyLoading && (
-                  <TableRow>
-                    <TableCell colSpan={8} className="py-8 text-center text-muted-foreground">
-                      {t("fleet.loading", "Loading…")}
-                    </TableCell>
-                  </TableRow>
-                )}
-                {!anyLoading && tasks.length === 0 && (
-                  <TableRow>
-                    <TableCell colSpan={8} className="py-8 text-center text-muted-foreground">
-                      {t("fleet.tasksEmpty", "No tasks. Tasks are decomposed from production orders or created by an admin.")}
-                    </TableCell>
-                  </TableRow>
-                )}
-                {tasks.map((tk) => {
-                  const terminal = TERMINAL.has(tk.status);
-                  return (
-                    <TableRow key={tk.id}>
-                      <TableCell className="font-mono text-xs">
-                        <span className="inline-flex items-center gap-1.5">
-                          <span>{tk.taskKey}</span>
-                          <ProvenanceBadge row={tk} />
-                        </span>
-                      </TableCell>
-                      <TableCell><Badge variant="outline">{tk.requiredCapability}</Badge></TableCell>
-                      <TableCell>
-                        <Badge variant={tk.priority <= 2 ? "destructive" : "outline"}>P{tk.priority}</Badge>
-                      </TableCell>
-                      <TableCell>{taskStatusBadge(tk.status, t)}</TableCell>
-                      <TableCell className="text-xs">
-                        {tk.assignedDeviceId != null
-                          ? <button
-                              type="button"
-                              className="inline-flex items-center gap-1 text-primary hover:underline"
-                              title={t("fleet.openRobotCockpit", "Open robot cockpit")}
-                              onClick={() => setLocation(`/robot/${tk.assignedDeviceId}`)}
-                            ><Bot className="h-3 w-3" />#{tk.assignedDeviceId}</button>
-                          : <span className="text-muted-foreground">—</span>}
-                      </TableCell>
-                      <TableCell className="text-xs whitespace-nowrap">
-                        {fmtDuration(tk.estimatedDurationMs)} / {fmtDuration(tk.actualDurationMs)}
-                      </TableCell>
-                      <TableCell className="text-xs tabular-nums">{tk.retryCount}</TableCell>
-                      <TableCell className="text-right">
-                        {canControl ? (
-                          <div className="flex justify-end gap-1">
-                            <Button
-                              size="sm" variant="ghost" className="h-7"
-                              disabled={terminal || tk.status === "running" || allocateM.isPending}
-                              title={t("fleet.allocateTip", "Run the allocator (assign best device)")}
-                              onClick={() => allocateM.mutate({ taskId: tk.id })}
-                            >
-                              <Play className="mr-1 h-3.5 w-3.5" />{t("fleet.allocate", "Allocate")}
-                            </Button>
-                            <Button
-                              size="sm" variant="ghost" className="h-7"
-                              disabled={terminal}
-                              title={t("fleet.reassignTip", "Manually (re)assign to a device")}
-                              onClick={() => setAssignTask(tk)}
-                            >
-                              <Send className="mr-1 h-3.5 w-3.5" />{t("fleet.reassign", "Reassign")}
-                            </Button>
-                            <Button
-                              size="sm" variant="ghost" className="h-7"
-                              disabled={terminal}
-                              title={t("fleet.cancelTip", "Cancel this task")}
-                              onClick={() => setCancelTarget(tk)}
-                            >
-                              <Ban className="mr-1 h-3.5 w-3.5 text-destructive" />{t("fleet.cancel", "Cancel")}
-                            </Button>
-                          </div>
-                        ) : (
-                          <span className="text-xs text-muted-foreground">{t("fleet.viewOnly", "View only")}</span>
-                        )}
-                      </TableCell>
-                    </TableRow>
-                  );
-                })}
-              </TableBody>
-            </Table>
-          </CardContent>
-        </Card>
-
-        {/* ── 3. Zones panel ─────────────────────────────────────────────────── */}
-        <Card>
-          <CardHeader className="pb-2">
-            <CardTitle className="flex items-center gap-2 text-base">
-              <Layers className="h-4 w-4" />
-              {t("fleet.zonesTitle", "Zones & occupancy")}
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            {!anyLoading && zones.length === 0 && (
-              <p className="py-6 text-center text-sm text-muted-foreground">
-                {t("fleet.zonesEmpty", "No zones defined yet.")}
-              </p>
-            )}
-            <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-              {zones.map((z) => {
-                const pct = z.maxConcurrentRobots > 0
-                  ? Math.min(100, (z.occupancy / z.maxConcurrentRobots) * 100)
-                  : 0;
-                const atCap = z.occupancy >= z.maxConcurrentRobots;
-                const zoneRes = resByZone.get(z.id) ?? [];
-                return (
-                  <Card key={z.id} className="border-border/60">
-                    <CardContent className="space-y-2 p-3">
-                      <div className="flex items-center justify-between gap-2">
-                        <div className="min-w-0">
-                          <div className="truncate font-medium">{z.name}</div>
-                          <div className="font-mono text-xs text-muted-foreground">{z.code}</div>
-                        </div>
-                        {zoneTypeBadge(z.zoneType, t)}
-                      </div>
-                      <div>
-                        <div className="mb-1 flex items-center justify-between text-xs">
-                          <span className="text-muted-foreground">{t("fleet.occupancy", "Occupancy")}</span>
-                          <span className={`tabular-nums font-medium ${atCap ? "text-amber-500" : ""}`}>
-                            {z.occupancy} / {z.maxConcurrentRobots}
-                          </span>
-                        </div>
-                        <Progress
-                          value={pct}
-                          className={atCap ? "[&>[data-slot=progress-indicator]]:bg-amber-500" : ""}
-                        />
-                      </div>
-                      {/* Reservations on this zone */}
-                      {zoneRes.length > 0 && (
-                        <div className="space-y-1 pt-1">
-                          {zoneRes.map((r) => (
-                            <div key={r.id} className="flex items-center justify-between gap-2 text-xs">
-                              <span className="inline-flex items-center gap-1">
-                                <Bot className="h-3 w-3" />#{r.deviceId}
-                                {resStatusBadge(r.status, t)}
-                              </span>
-                              {canControl && r.status !== "released" && r.status !== "rejected" && (
-                                <Button
-                                  size="sm" variant="ghost" className="h-6 px-2 text-xs"
-                                  disabled={releaseM.isPending}
-                                  onClick={() => releaseM.mutate({ deviceId: r.deviceId, zoneId: z.id })}
-                                >
-                                  {t("fleet.release", "Release")}
-                                </Button>
-                              )}
-                            </div>
-                          ))}
-                        </div>
-                      )}
-                      <Button
-                        size="sm" variant="outline" className="mt-1 h-7 w-full"
-                        disabled={!g1CanControl}
-                        title={g1ControlReason}
-                        onClick={() => setReserveZoneTarget(z)}
-                      >
-                        <MapPin className="mr-1 h-3.5 w-3.5" />{t("fleet.reserve", "Reserve")}
-                      </Button>
-                    </CardContent>
-                  </Card>
-                );
-              })}
-            </div>
-          </CardContent>
-        </Card>
-          </TabsContent>
-
-          {/* ════════════════ TAB: Operations (G2-a) ════════════════ */}
-          <TabsContent value="operations" data-layout-main="fleet-orchestration" className="flex flex-col gap-4">
-            <OperationsTab
-              operations={operations}
-              loading={operationsQ.isLoading}
-              canControl={g2CanControl}
-              controlReason={g2ControlReason}
-              resolveCode={resolveCode}
-              setResolveCode={setResolveCode}
-              resolved={resolved}
-              resolveLoading={resolveQ.isFetching}
-              resolveError={resolveQ.error ? mapTrpcError(resolveQ.error) : null}
-              onCreate={() => setCreateOpOpen(true)}
-              onMap={(op) => setMapProgramFor(op)}
-            />
-          </TabsContent>
-
-          {/* ════════════════ TAB: Resources (G2-c) ════════════════ */}
-          <TabsContent value="resources" data-layout-main="fleet-orchestration" className="flex flex-col gap-4">
-            <ResourcesTab
-              resources={resources}
-              loading={resourcesQ.isLoading}
-              canControl={g2CanControl}
-              controlReason={g2ControlReason}
-              reservationsByResource={resReservationsByResource}
-              releasePending={releaseResourceM.isPending}
-              onCreate={() => setCreateResourceOpen(true)}
-              onReserve={(r) => setReserveResourceTarget(r)}
-              onRelease={(deviceId, resourceId) => releaseResourceM.mutate({ deviceId, resourceId })}
-            />
-          </TabsContent>
-
-          {/* ════════════════ TAB: Charging (G2-d) ════════════════ */}
-          <TabsContent value="charging" data-layout-main="fleet-orchestration" className="flex flex-col gap-4">
-            <ChargingTab
-              chargers={chargers}
-              chargersLoading={chargersQ.isLoading}
-              plans={chargingPlans}
-              plansLoading={chargingPlansQ.isLoading}
-              canControl={g2CanControl}
-              controlReason={g2ControlReason}
-              sweepPending={sweepM.isPending}
-              onCreateCharger={() => setCreateChargerOpen(true)}
-              onSweep={() => sweepM.mutate()}
-            />
-          </TabsContent>
-        </Tabs>
-      </PageContainer>
-
-      {/* ── Reassign dialog ──────────────────────────────────────────────────── */}
-      {assignTask && (
-        <AssignDialog
-          task={assignTask}
-          pending={assignM.isPending}
-          onClose={() => setAssignTask(null)}
-          onSubmit={(deviceId) => assignM.mutate({ taskId: assignTask.id, deviceId })}
-        />
-      )}
-
-      {/* ── Reserve dialog ───────────────────────────────────────────────────── */}
-      {reserveZoneTarget && (
-        <ReserveDialog
-          zone={reserveZoneTarget}
-          pending={reserveM.isPending}
-          onClose={() => setReserveZoneTarget(null)}
-          onSubmit={(deviceId, queueIfFull) =>
-            reserveM.mutate({ zoneId: reserveZoneTarget.id, deviceId, queueIfFull })}
-        />
-      )}
-
-      {/* ── Cancel confirm ───────────────────────────────────────────────────── */}
-      <AlertDialog open={!!cancelTarget} onOpenChange={(o) => !o && setCancelTarget(null)}>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>{t("fleet.cancelConfirmTitle", "Cancel task?")}</AlertDialogTitle>
-            <AlertDialogDescription>
-              {t("fleet.cancelConfirmBody", "This marks the task cancelled (terminal). It cannot be undone.")}
-              {cancelTarget && <span className="mt-1 block font-mono text-xs">{cancelTarget.taskKey}</span>}
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel>{t("common.cancel", "Cancel")}</AlertDialogCancel>
-            <AlertDialogAction onClick={() => cancelTarget && cancelM.mutate({ taskId: cancelTarget.id })}>
-              {t("fleet.confirmCancelTask", "Cancel task")}
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
-
-      {/* ── G2 — Create operation dialog ─────────────────────────────────────── */}
-      {createOpOpen && (
-        <CreateOperationDialog
-          pending={createOpM.isPending}
-          onClose={() => setCreateOpOpen(false)}
-          onSubmit={(v) => createOpM.mutate(v)}
-        />
-      )}
-
-      {/* ── G2 — Map program dialog ──────────────────────────────────────────── */}
-      {mapProgramFor && (
-        <MapProgramDialog
-          operation={mapProgramFor}
-          pending={mapProgramM.isPending}
-          onClose={() => setMapProgramFor(null)}
-          onSubmit={(programProjectId, deviceKind) =>
-            mapProgramM.mutate({ operationCodeId: mapProgramFor.id, programProjectId, deviceKind })}
-        />
-      )}
-
-      {/* ── G2 — Create resource dialog ──────────────────────────────────────── */}
-      {createResourceOpen && (
-        <CreateResourceDialog
-          pending={createResourceM.isPending}
-          onClose={() => setCreateResourceOpen(false)}
-          onSubmit={(v) => createResourceM.mutate(v)}
-        />
-      )}
-
-      {/* ── G2 — Reserve resource dialog ─────────────────────────────────────── */}
-      {reserveResourceTarget && (
-        <ReserveResourceDialog
-          resource={reserveResourceTarget}
-          pending={reserveResourceM.isPending}
-          onClose={() => setReserveResourceTarget(null)}
-          onSubmit={(deviceId, queueIfFull) =>
-            reserveResourceM.mutate({ resourceId: reserveResourceTarget.id, deviceId, queueIfFull })}
-        />
-      )}
-
-      {/* ── G2 — Create charger dialog ───────────────────────────────────────── */}
-      {createChargerOpen && (
-        <CreateChargerDialog
-          pending={createChargerM.isPending}
-          onClose={() => setCreateChargerOpen(false)}
-          onSubmit={(v) => createChargerM.mutate(v)}
-        />
-      )}
+        {/* ── Cancel confirm (R-2-n: như cũ — AlertDialog, một tác vụ mỗi lần xác nhận) ── */}
+        <AlertDialog open={!!cancelTarget} onOpenChange={(o) => !o && setCancelTarget(null)}>
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle>{t("fleet.cancelConfirmTitle", "Cancel task?")}</AlertDialogTitle>
+              <AlertDialogDescription>
+                {t("fleet.cancelConfirmBody", "This marks the task cancelled (terminal). It cannot be undone.")}
+                {cancelTarget && <span className="mt-1 block font-mono text-xs">{cancelTarget.taskKey}</span>}
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel>{t("common.cancel", "Cancel")}</AlertDialogCancel>
+              <AlertDialogAction onClick={() => cancelTarget && cancelM.mutate({ taskId: cancelTarget.id })}>
+                {t("fleet.confirmCancelTask", "Cancel task")}
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
+      </FlyoutHost>
     </DashboardLayout>
   );
 }
 
-function AssignDialog({
-  task, pending, onClose, onSubmit,
-}: {
-  task: FleetTask;
-  pending: boolean;
-  onClose: () => void;
-  onSubmit: (deviceId: number) => void;
-}) {
+/** Hành động header: mở sổ đăng ký thao tác (sheet) + làm mới. <1600 px nút sổ chỉ còn icon (tên ở aria-label). */
+function HeaderActions({ compact, onRefresh }: { compact: boolean; onRefresh: () => void }) {
   const { t } = useTranslation();
-  const [deviceId, setDeviceId] = useState<string>(task.assignedDeviceId != null ? String(task.assignedDeviceId) : "");
-
-  const submit = () => {
-    const n = Number(deviceId);
-    if (!Number.isInteger(n) || n <= 0) {
-      toast.error(t("fleet.deviceIdRequired", "Enter a valid device id."));
-      return;
-    }
-    onSubmit(n);
-  };
-
+  const flyout = useFlyout();
+  const label = t("fleet.op.registryTitle", "Operation registry");
   return (
-    <Dialog open onOpenChange={(o) => !o && onClose()}>
-      <DialogContent>
-        <DialogHeader>
-          <DialogTitle className="flex items-center gap-2">
-            <Send className="h-4 w-4" />{t("fleet.reassignTitle", "Reassign task")}
-          </DialogTitle>
-        </DialogHeader>
-        <div className="grid gap-3 py-2">
-          <div className="text-sm text-muted-foreground">
-            <span className="font-mono text-xs">{task.taskKey}</span>
-            {" · "}{task.requiredCapability}
-          </div>
-          <div className="grid gap-1">
-            <Label>{t("fleet.deviceId", "Device id (robot)")}</Label>
-            <Input
-              type="number" min={1} value={deviceId}
-              placeholder={t("fleet.deviceIdPlaceholder", "e.g. 1")}
-              onChange={(e) => setDeviceId(e.target.value)}
-            />
-          </div>
-        </div>
-        <DialogFooter>
-          <Button variant="outline" onClick={onClose}>{t("common.cancel", "Cancel")}</Button>
-          <Button onClick={submit} disabled={pending}>
-            <CheckCircle2 className="mr-1 h-4 w-4" />{t("fleet.assign", "Assign")}
-          </Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
+    <>
+      <Button
+        size={compact ? "icon" : "sm"}
+        variant="outline"
+        className={compact ? "h-8 w-8" : "h-8"}
+        aria-label={compact ? label : undefined}
+        title={label}
+        onClick={() => flyout.open("fleet-operations")}
+      >
+        <Workflow className={compact ? "h-4 w-4" : "mr-1 h-4 w-4"} />
+        {!compact && label}
+      </Button>
+      <Button size="icon" variant="ghost" onClick={onRefresh} title={t("common.refresh", "Refresh")} aria-label={t("common.refresh", "Refresh")}>
+        <RefreshCw className="h-4 w-4" />
+      </Button>
+    </>
   );
 }
 
-function ReserveDialog({
-  zone, pending, onClose, onSubmit,
+/** Hàng công cụ DUY NHẤT trong MAIN (≤56 px): tên bản đồ · nhà máy · số robot có vị trí. */
+function MapToolbar({
+  factoryIds, factoryId, onFactoryChange, located, total,
 }: {
-  zone: FleetZone;
-  pending: boolean;
-  onClose: () => void;
-  onSubmit: (deviceId: number, queueIfFull: boolean) => void;
+  factoryIds: number[];
+  factoryId: number;
+  onFactoryChange: (id: number) => void;
+  located: number;
+  total: number;
 }) {
   const { t } = useTranslation();
-  const [deviceId, setDeviceId] = useState<string>("");
-  const [queueIfFull, setQueueIfFull] = useState(true);
-
-  const submit = () => {
-    const n = Number(deviceId);
-    if (!Number.isInteger(n) || n <= 0) {
-      toast.error(t("fleet.deviceIdRequired", "Enter a valid device id."));
-      return;
-    }
-    onSubmit(n, queueIfFull);
-  };
-
+  const uid = useId();
   return (
-    <Dialog open onOpenChange={(o) => !o && onClose()}>
-      <DialogContent>
-        <DialogHeader>
-          <DialogTitle className="flex items-center gap-2">
-            <MapPin className="h-4 w-4" />{t("fleet.reserveTitle", "Reserve zone")}
-          </DialogTitle>
-        </DialogHeader>
-        <div className="grid gap-3 py-2">
-          <div className="text-sm text-muted-foreground">
-            <span className="font-medium text-foreground">{zone.name}</span>
-            {" · "}<span className="font-mono text-xs">{zone.code}</span>
-            {" · "}{zone.occupancy}/{zone.maxConcurrentRobots}
-          </div>
-          <div className="grid gap-1">
-            <Label>{t("fleet.deviceId", "Device id (robot)")}</Label>
-            <Input
-              type="number" min={1} value={deviceId}
-              placeholder={t("fleet.deviceIdPlaceholder", "e.g. 1")}
-              onChange={(e) => setDeviceId(e.target.value)}
-            />
-          </div>
-          <label className="flex items-center gap-2 text-sm">
-            <Checkbox checked={queueIfFull} onCheckedChange={(v) => setQueueIfFull(Boolean(v))} />
-            {t("fleet.queueIfFull", "Queue if zone is at capacity (otherwise reject)")}
-          </label>
-        </div>
-        <DialogFooter>
-          <Button variant="outline" onClick={onClose}>{t("common.cancel", "Cancel")}</Button>
-          <Button onClick={submit} disabled={pending}>
-            <MapPin className="mr-1 h-4 w-4" />{t("fleet.reserve", "Reserve")}
-          </Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
+    <>
+      <h2 className="flex min-w-0 items-center gap-2 truncate text-sm font-semibold">
+        <MapIcon className="h-4 w-4 shrink-0" aria-hidden="true" />{t("fleet.map.title", "Fleet map")}
+      </h2>
+      <div className="ml-auto flex shrink-0 items-center gap-2">
+        <span className="text-xs text-muted-foreground tabular-nums">
+          {t("fleet.map.locatedRobots", "Located robots")}: {located}/{total}
+        </span>
+        <Label htmlFor={`${uid}-factory`} className="text-xs text-muted-foreground">{t("fleet.map.factory", "Factory")}</Label>
+        <Select value={String(factoryId)} onValueChange={(v) => onFactoryChange(Number(v))}>
+          <SelectTrigger id={`${uid}-factory`} size="sm" className="w-28"><SelectValue /></SelectTrigger>
+          <SelectContent>
+            {(factoryIds.length ? factoryIds : [factoryId]).map((f) => (
+              <SelectItem key={f} value={String(f)}>#{f}</SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+      </div>
+    </>
   );
 }
 
@@ -1199,7 +1154,7 @@ function boundsToRectLike(bounds: Record<string, unknown> | null | undefined): {
 }
 
 function FleetMap({
-  grid, gridLoading, gridError, robots, robotsLoading, zones, factoryIds, factoryId, onFactoryChange,
+  grid, gridLoading, gridError, robots, robotsLoading, zones, selectedZoneId, onZoneSelect,
 }: {
   grid: FleetOccupancyGrid | undefined;
   gridLoading: boolean;
@@ -1207,21 +1162,20 @@ function FleetMap({
   robots: FleetRobotPos[];
   robotsLoading: boolean;
   zones: FleetZone[];
-  factoryIds: number[];
-  factoryId: number;
-  onFactoryChange: (id: number) => void;
+  selectedZoneId: number | null;
+  onZoneSelect: (zoneId: number) => void;
 }) {
   const { t } = useTranslation();
   const g = grid?.grid ?? null;
 
   // Zones with a rectangular bounds blob → drawable overlays tinted by occupancy.
   const zoneRects = useMemo(() => {
-    const out: Array<{ id: number; code: string; x: number; y: number; w: number; h: number; ratio: number }> = [];
+    const out: Array<{ id: number; code: string; name: string; occupancy: number; max: number; x: number; y: number; w: number; h: number; ratio: number }> = [];
     for (const z of zones) {
       const r = boundsToRectLike(z.bounds as Record<string, unknown> | null | undefined);
       if (!r) continue;
       const ratio = z.maxConcurrentRobots > 0 ? Math.min(1, z.occupancy / z.maxConcurrentRobots) : 0;
-      out.push({ id: z.id, code: z.code, ...r, ratio });
+      out.push({ id: z.id, code: z.code, name: z.name, occupancy: z.occupancy, max: z.maxConcurrentRobots, ...r, ratio });
     }
     return out;
   }, [zones]);
@@ -1244,6 +1198,7 @@ function FleetMap({
     return { minX: minX - padX, minY: minY - padY, maxX: maxX + padX, maxY: maxY + padY };
   }, [g, zoneRects, locatedRobots]);
 
+  // Hệ toạ độ vẽ như cũ (720 đơn vị ngang); SVG nay co theo vùng MAIN (viewBox + preserveAspectRatio).
   const VIEW_W = 720;
   const worldW = bbox ? bbox.maxX - bbox.minX : 1;
   const worldH = bbox ? bbox.maxY - bbox.minY : 1;
@@ -1257,464 +1212,830 @@ function FleetMap({
   const loading = gridLoading || robotsLoading;
 
   return (
-    <Card>
-      <CardHeader className="flex flex-row items-center justify-between gap-2 pb-2">
-        <CardTitle className="flex items-center gap-2 text-base">
-          <MapIcon className="h-4 w-4" />{t("fleet.map.title", "Fleet map")}
-        </CardTitle>
-        <div className="flex items-center gap-2">
-          <Label className="text-xs text-muted-foreground">{t("fleet.map.factory", "Factory")}</Label>
-          <Select value={String(factoryId)} onValueChange={(v) => onFactoryChange(Number(v))}>
-            <SelectTrigger size="sm" className="w-28"><SelectValue /></SelectTrigger>
-            <SelectContent>
-              {(factoryIds.length ? factoryIds : [factoryId]).map((f) => (
-                <SelectItem key={f} value={String(f)}>#{f}</SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </div>
-      </CardHeader>
-      <CardContent className="space-y-2">
-        {loading && <p className="py-8 text-center text-sm text-muted-foreground">{t("fleet.loading", "Loading…")}</p>}
-        {!loading && gridError && <p className="py-3 text-center text-sm text-muted-foreground">{gridError}</p>}
-        {!loading && !hasAnything && (
-          <p className="py-8 text-center text-sm text-muted-foreground">
-            {t("fleet.map.empty", "No map geometry or located robots yet. Add zone bounds and robot telemetry poses to populate the map.")}
-          </p>
-        )}
-        {!loading && hasAnything && (
-          <div className="overflow-x-auto">
-            <svg
-              width={VIEW_W} height={VIEW_H}
-              className="rounded-md border border-border bg-muted/20 text-foreground"
-              role="img" aria-label={t("fleet.map.title", "Fleet map")}
+    <div data-fleet-map="" className="flex flex-col gap-2">
+      {loading && <p className="py-8 text-center text-sm text-muted-foreground">{t("fleet.loading", "Loading…")}</p>}
+      {!loading && !hasAnything && (
+        <p className="py-8 text-center text-sm text-muted-foreground">
+          {t("fleet.map.empty", "No map geometry or located robots yet. Add zone bounds and robot telemetry poses to populate the map.")}
+        </p>
+      )}
+      {!loading && hasAnything && (
+        <svg
+          viewBox={`0 0 ${VIEW_W} ${VIEW_H}`}
+          preserveAspectRatio="xMidYMid meet"
+          className="h-[max(18rem,calc(100dvh-15rem))] w-full rounded-md border border-border bg-muted/20 text-foreground"
+          role="img" aria-label={t("fleet.map.title", "Fleet map")}
+        >
+          {/* blocked grid cells */}
+          {g?.cells && g.cells.map((row, r) =>
+            row.map((blocked, c) => blocked ? (
+              <rect
+                key={`c-${r}-${c}`}
+                x={sx(g.originX + c * g.cellSize)}
+                y={sy(g.originY + (r + 1) * g.cellSize)}
+                width={g.cellSize * scale}
+                height={g.cellSize * scale}
+                fill="currentColor" fillOpacity={0.22}
+              />
+            ) : null),
+          )}
+          {/* zone overlays tinted by occupancy — bấm (hoặc Enter/Space) ⇒ mở vùng ở tab Vùng */}
+          {zoneRects.map((zr) => (
+            <g
+              key={`z-${zr.id}`}
+              data-zone-id={zr.id}
+              role="button"
+              tabIndex={0}
+              aria-label={t("fleet.map.zoneOpen", "Zone {{code}} — {{occupancy}}/{{max}} robots; open in the Zones tab", { code: zr.code, occupancy: zr.occupancy, max: zr.max })}
+              aria-pressed={selectedZoneId === zr.id}
+              className="cursor-pointer focus:outline-none [&:focus-visible>rect]:stroke-[3]"
+              onClick={() => onZoneSelect(zr.id)}
+              onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); onZoneSelect(zr.id); } }}
             >
-              {/* blocked grid cells */}
-              {g?.cells && g.cells.map((row, r) =>
-                row.map((blocked, c) => blocked ? (
-                  <rect
-                    key={`c-${r}-${c}`}
-                    x={sx(g.originX + c * g.cellSize)}
-                    y={sy(g.originY + (r + 1) * g.cellSize)}
-                    width={g.cellSize * scale}
-                    height={g.cellSize * scale}
-                    fill="currentColor" fillOpacity={0.22}
-                  />
-                ) : null),
-              )}
-              {/* zone overlays tinted by occupancy */}
-              {zoneRects.map((zr) => (
-                <g key={`z-${zr.id}`}>
-                  <rect
-                    x={sx(zr.x)} y={sy(zr.y + zr.h)}
-                    width={zr.w * scale} height={zr.h * scale}
-                    fill={occTint(zr.ratio)} fillOpacity={0.3}
-                    stroke={occTint(zr.ratio)} strokeOpacity={0.8}
-                  />
-                  <text x={sx(zr.x) + 3} y={sy(zr.y + zr.h) + 12} fill="currentColor" className="text-[10px]">{zr.code}</text>
-                </g>
-              ))}
-              {/* live robot markers */}
-              {locatedRobots.map((r) => (
-                <g key={`r-${r.id}`}>
-                  <circle cx={sx(r.x)} cy={sy(r.y)} r={6} fill={robotColor(r.status)} stroke="white" strokeWidth={1.5}>
-                    <title>{`#${r.id} ${r.code} · ${r.status}${r.battery != null ? ` · ${Math.round(r.battery)}%` : ""}`}</title>
-                  </circle>
-                  <text x={sx(r.x) + 8} y={sy(r.y) + 3} fill="currentColor" className="text-[10px]">{r.code}</text>
-                </g>
-              ))}
-            </svg>
-          </div>
-        )}
-        {/* legend + honest note */}
-        <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-muted-foreground">
-          <span className="inline-flex items-center gap-1"><span className="inline-block h-2.5 w-2.5 rounded-full bg-emerald-500" />{t("fleet.map.online", "Online")}</span>
-          <span className="inline-flex items-center gap-1"><span className="inline-block h-2.5 w-2.5 rounded-full bg-blue-500" />{t("fleet.map.busy", "Busy")}</span>
-          <span className="inline-flex items-center gap-1"><span className="inline-block h-2.5 w-2.5 rounded-full bg-slate-400" />{t("fleet.map.offline", "Offline")}</span>
-          <span className="inline-flex items-center gap-1"><span className="inline-block h-2.5 w-2.5 rounded-full bg-red-500" />{t("fleet.map.estop", "E-stop")}</span>
-          <span className="inline-flex items-center gap-1"><span className="inline-block h-2.5 w-2.5 bg-foreground/25" />{t("fleet.map.blocked", "Blocked cell")}</span>
-          <span>· {t("fleet.map.locatedRobots", "Located robots")}: {locatedRobots.length}/{robots.length}</span>
-        </div>
-        {grid?.note && <p className="text-xs text-muted-foreground">{grid.note}</p>}
-      </CardContent>
-    </Card>
+              <rect
+                x={sx(zr.x)} y={sy(zr.y + zr.h)}
+                width={zr.w * scale} height={zr.h * scale}
+                fill={occTint(zr.ratio)} fillOpacity={selectedZoneId === zr.id ? 0.45 : 0.3}
+                stroke={occTint(zr.ratio)} strokeOpacity={0.8} strokeWidth={selectedZoneId === zr.id ? 3 : 1}
+              />
+              <text x={sx(zr.x) + 3} y={sy(zr.y + zr.h) + 12} fill="currentColor" className="text-[10px]">{zr.code}</text>
+            </g>
+          ))}
+          {/* live robot markers */}
+          {locatedRobots.map((r) => (
+            <g key={`r-${r.id}`}>
+              <circle cx={sx(r.x)} cy={sy(r.y)} r={6} fill={robotColor(r.status)} stroke="white" strokeWidth={1.5}>
+                <title>{`#${r.id} ${r.code} · ${r.status}${r.battery != null ? ` · ${Math.round(r.battery)}%` : ""}`}</title>
+              </circle>
+              <text x={sx(r.x) + 8} y={sy(r.y) + 3} fill="currentColor" className="text-[10px]">{r.code}</text>
+            </g>
+          ))}
+        </svg>
+      )}
+      {!loading && gridError && <p className="text-center text-sm text-muted-foreground">{gridError}</p>}
+      {/* legend + honest note */}
+      <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-muted-foreground">
+        <span className="inline-flex items-center gap-1"><span className="inline-block h-2.5 w-2.5 rounded-full bg-emerald-500" />{t("fleet.map.online", "Online")}</span>
+        <span className="inline-flex items-center gap-1"><span className="inline-block h-2.5 w-2.5 rounded-full bg-blue-500" />{t("fleet.map.busy", "Busy")}</span>
+        <span className="inline-flex items-center gap-1"><span className="inline-block h-2.5 w-2.5 rounded-full bg-slate-400" />{t("fleet.map.offline", "Offline")}</span>
+        <span className="inline-flex items-center gap-1"><span className="inline-block h-2.5 w-2.5 rounded-full bg-red-500" />{t("fleet.map.estop", "E-stop")}</span>
+        <span className="inline-flex items-center gap-1"><span className="inline-block h-2.5 w-2.5 bg-foreground/25" />{t("fleet.map.blocked", "Blocked cell")}</span>
+      </div>
+      {grid?.note && <p className="text-xs text-muted-foreground">{grid.note}</p>}
+    </div>
   );
 }
 
 // ══════════════════════════════════════════════════════════════════════════════
-// G2-a — OPERATIONS tab
+// Side panel — khối bế tắc (luôn thấy khi có) + tab Tác vụ / Vùng / Sạc / Tài nguyên (`?tab=`)
 // ══════════════════════════════════════════════════════════════════════════════
-function OperationsTab({
-  operations, loading, canControl, controlReason, resolveCode, setResolveCode, resolved, resolveLoading,
-  resolveError, onCreate, onMap,
+interface SidePanelProps {
+  sideTab: SideTab;
+  setSideTab: (v: string) => void;
+  canControl: boolean;
+  permReason?: string;
+  g1CanControl: boolean;
+  g1ControlReason?: string;
+  g2CanControl: boolean;
+  g2ControlReason?: string;
+  deadlocks: number[][];
+  deadlockRef: RefObject<HTMLDivElement | null>;
+  resolveDeadlockPending: boolean;
+  onResolveDeadlock: () => void;
+  tasks: FleetTask[];
+  tasksLoading: boolean;
+  tasksUpdatedAt: number | undefined;
+  tasksFetching: boolean;
+  statusFilter: string;
+  setStatusFilter: (v: string) => void;
+  allocatePending: boolean;
+  onAllocate: (tk: FleetTask) => void;
+  onCancel: (tk: FleetTask) => void;
+  zones: FleetZone[];
+  zonesLoading: boolean;
+  resByZone: Map<number, FleetReservation[]>;
+  selectedZoneId: number | null;
+  releasePending: boolean;
+  onReleaseZone: (deviceId: number, zoneId: number) => void;
+  resources: FleetResource[];
+  resourcesLoading: boolean;
+  resReservationsByResource: Map<number, FleetResReservation[]>;
+  releaseResourcePending: boolean;
+  onReleaseResource: (deviceId: number, resourceId: number) => void;
+  chargers: FleetCharger[];
+  chargersLoading: boolean;
+  plans: FleetChargingPlan[];
+  plansLoading: boolean;
+  sweepPending: boolean;
+  onSweep: () => void;
+}
+
+function FleetSidePanel(p: SidePanelProps) {
+  const { t } = useTranslation();
+  return (
+    <div className="flex max-h-[calc(100dvh-8rem)] min-h-0 flex-col gap-3 overflow-auto">
+      {/* Deadlock detail (khối đỏ cũ) — ngoài MAIN, luôn thấy khi có chu trình, không phụ thuộc tab. */}
+      {p.deadlocks.length > 0 && (
+        <div
+          ref={p.deadlockRef}
+          tabIndex={-1}
+          role="alert"
+          data-fleet-deadlocks={p.deadlocks.length}
+          className="flex items-start gap-2 rounded-md border border-destructive/40 bg-destructive/10 p-3 text-sm focus:outline-none focus-visible:ring-2 focus-visible:ring-destructive"
+        >
+          <ShieldAlert className="mt-0.5 h-4 w-4 shrink-0 text-destructive" />
+          <div className="min-w-0">
+            <div className="font-medium text-destructive">
+              {t("fleet.deadlockTitle", "Deadlock cycle(s) detected")}
+            </div>
+            <div className="mt-1 space-y-0.5 text-muted-foreground">
+              {p.deadlocks.map((cycle, i) => (
+                <div key={i} className="font-mono text-xs">
+                  {t("fleet.deadlockDevices", "Devices")}: {cycle.join(" → ")} → {cycle[0]}
+                </div>
+              ))}
+            </div>
+            {/* W4-18 (5) — advisory resolve: huỷ waiter ưu tiên thấp nhất để phá deadlock (một cú bấm như cũ). */}
+            <Button
+              size="sm" variant="destructive" className="mt-2 h-7"
+              disabled={!p.g1CanControl || p.resolveDeadlockPending}
+              title={p.g1ControlReason}
+              onClick={p.onResolveDeadlock}
+            >
+              <ShieldAlert className="mr-1 h-3.5 w-3.5" />{t("fleet.resolveDeadlock", "Resolve deadlock")}
+            </Button>
+          </div>
+        </div>
+      )}
+      <Tabs value={p.sideTab} onValueChange={p.setSideTab} className="gap-2">
+        <TabsList className="w-full">
+          <TabsTrigger value="tasks" className="flex-1 text-xs"><ListChecks className="mr-1 h-3.5 w-3.5" />{t("fleet.tab.tasks", "Tasks")}</TabsTrigger>
+          <TabsTrigger value="zones" className="flex-1 text-xs"><Layers className="mr-1 h-3.5 w-3.5" />{t("fleet.tab.zones", "Zones")}</TabsTrigger>
+          <TabsTrigger value="charging" className="flex-1 text-xs"><BatteryCharging className="mr-1 h-3.5 w-3.5" />{t("fleet.tab.charging", "Charging")}</TabsTrigger>
+          <TabsTrigger value="resources" className="flex-1 text-xs"><Wrench className="mr-1 h-3.5 w-3.5" />{t("fleet.tab.resources", "Resources")}</TabsTrigger>
+        </TabsList>
+        <TabsContent value="tasks"><TasksPanel {...p} /></TabsContent>
+        <TabsContent value="zones"><ZonesPanel {...p} /></TabsContent>
+        <TabsContent value="charging"><ChargingPanel {...p} /></TabsContent>
+        <TabsContent value="resources"><ResourcesPanel {...p} /></TabsContent>
+      </Tabs>
+    </div>
+  );
+}
+
+/** Tác vụ (G1): hàng đợi — bảng gọn cho panel phụ (khoá + nhãn nguồn; năng lực/ưu tiên/thời lượng/thử lại ở dòng 2). */
+function TasksPanel(p: SidePanelProps) {
+  const { t } = useTranslation();
+  const [, setLocation] = useLocation();
+  const flyout = useFlyout();
+  const uid = useId();
+  return (
+    <div className="space-y-2">
+      <div className="flex items-center gap-2">
+        {/* U12 §2.3 — độ tươi của dữ liệu poll (dataUpdatedAt của react-query). */}
+        <PollFreshness updatedAt={p.tasksUpdatedAt} isFetching={p.tasksFetching} />
+        <Label htmlFor={`${uid}-status`} className="ml-auto text-xs text-muted-foreground">{t("fleet.filterStatus", "Status")}</Label>
+        {/* U11 — Select DS; "__all__" là sentinel cho "tất cả trạng thái". */}
+        <Select value={p.statusFilter || "__all__"} onValueChange={(v) => p.setStatusFilter(v === "__all__" ? "" : v)}>
+          <SelectTrigger id={`${uid}-status`} size="sm" className="w-32"><SelectValue /></SelectTrigger>
+          <SelectContent>
+            <SelectItem value="__all__">{t("fleet.all", "All")}</SelectItem>
+            {TASK_STATUSES.map((s) => (
+              <SelectItem key={s} value={s}>{t(`fleet.task.${s}`, s)}</SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+      </div>
+      <ProvenanceSummary rows={p.tasks} />
+      {/* Panel phụ hẹp (400–440 px): đệm ô gọn; cột Thao tác chỉ có tên cho trình đọc màn hình. */}
+      <Table aria-label={t("fleet.tasksTitle", "Task queue")} className="text-xs [&_td]:px-1.5 [&_th]:px-1.5">
+        <TableHeader>
+          <TableRow>
+            <TableHead>{t("fleet.col.taskKey", "Task key")}</TableHead>
+            <TableHead>{t("fleet.col.status", "Status")}</TableHead>
+            <TableHead>{t("fleet.col.device", "Device")}</TableHead>
+            <TableHead className="text-right"><span className="sr-only">{t("common.actions", "Actions")}</span></TableHead>
+          </TableRow>
+        </TableHeader>
+        <TableBody>
+          {p.tasksLoading && (
+            <TableRow>
+              <TableCell colSpan={4} className="whitespace-normal py-8 text-center text-muted-foreground">
+                {t("fleet.loading", "Loading…")}
+              </TableCell>
+            </TableRow>
+          )}
+          {!p.tasksLoading && p.tasks.length === 0 && (
+            <TableRow>
+              <TableCell colSpan={4} className="whitespace-normal py-8 text-center text-muted-foreground">
+                {t("fleet.tasksEmpty", "No tasks. Tasks are decomposed from production orders or created by an admin.")}
+              </TableCell>
+            </TableRow>
+          )}
+          {p.tasks.map((tk) => {
+            const terminal = TERMINAL.has(tk.status);
+            return (
+              <TableRow key={tk.id} data-task-id={tk.id}>
+                <TableCell className="max-w-[9rem] whitespace-normal align-top">
+                  <span className="inline-flex items-center gap-1.5 font-mono text-xs">
+                    <span className="truncate">{tk.taskKey}</span>
+                    <ProvenanceBadge row={tk} />
+                  </span>
+                  <div className="mt-0.5 flex flex-wrap items-center gap-1 text-[11px] text-muted-foreground">
+                    <Badge variant="outline" title={t("fleet.col.capability", "Capability")} className="px-1 py-0 text-[10px]">{tk.requiredCapability}</Badge>
+                    <Badge variant={tk.priority <= 2 ? "destructive" : "outline"} title={t("fleet.col.priority", "Priority")} className="px-1 py-0 text-[10px]">P{tk.priority}</Badge>
+                    <span title={t("fleet.col.duration", "Est / Act")} className="whitespace-nowrap">
+                      {fmtDuration(tk.estimatedDurationMs)} / {fmtDuration(tk.actualDurationMs)}
+                    </span>
+                    <span title={t("fleet.col.retries", "Retries")} className="tabular-nums">↻{tk.retryCount}</span>
+                  </div>
+                </TableCell>
+                <TableCell className="align-top">{taskStatusBadge(tk.status, t)}</TableCell>
+                <TableCell className="align-top text-xs">
+                  {tk.assignedDeviceId != null
+                    ? <button
+                        type="button"
+                        className="inline-flex items-center gap-1 text-primary hover:underline"
+                        title={t("fleet.openRobotCockpit", "Open robot cockpit")}
+                        onClick={() => setLocation(`/robot/${tk.assignedDeviceId}`)}
+                      ><Bot className="h-3 w-3" />#{tk.assignedDeviceId}</button>
+                    : <span className="text-muted-foreground">—</span>}
+                </TableCell>
+                <TableCell className="align-top text-right">
+                  {p.canControl ? (
+                    <div className="flex justify-end gap-0.5">
+                      <Button
+                        size="icon" variant="ghost" className="h-7 w-7"
+                        disabled={terminal || tk.status === "running" || p.allocatePending}
+                        aria-label={t("fleet.allocate", "Allocate")}
+                        title={t("fleet.allocateTip", "Run the allocator (assign best device)")}
+                        onClick={() => p.onAllocate(tk)}
+                      >
+                        <Play className="h-3.5 w-3.5" />
+                      </Button>
+                      <Button
+                        size="icon" variant="ghost" className="h-7 w-7"
+                        disabled={terminal}
+                        aria-label={t("fleet.reassign", "Reassign")}
+                        title={t("fleet.reassignTip", "Manually (re)assign to a device")}
+                        onClick={() => flyout.open("fleet-task-assign", { id: tk.id })}
+                      >
+                        <Send className="h-3.5 w-3.5" />
+                      </Button>
+                      <Button
+                        size="icon" variant="ghost" className="h-7 w-7"
+                        disabled={terminal}
+                        aria-label={t("fleet.cancel", "Cancel")}
+                        title={t("fleet.cancelTip", "Cancel this task")}
+                        onClick={() => p.onCancel(tk)}
+                      >
+                        <Ban className="h-3.5 w-3.5 text-destructive" />
+                      </Button>
+                    </div>
+                  ) : (
+                    <span className="text-xs text-muted-foreground">{t("fleet.viewOnly", "View only")}</span>
+                  )}
+                </TableCell>
+              </TableRow>
+            );
+          })}
+        </TableBody>
+      </Table>
+    </div>
+  );
+}
+
+/** Vùng (G1): mức chiếm dụng + đặt chỗ đang giữ (Giải phóng một cú bấm như cũ) + Đặt trước (sheet). */
+function ZonesPanel(p: SidePanelProps) {
+  const { t } = useTranslation();
+  const flyout = useFlyout();
+  const selectedRef = useRef<HTMLDivElement | null>(null);
+  useEffect(() => {
+    if (p.selectedZoneId != null) selectedRef.current?.scrollIntoView?.({ block: "nearest" });
+  }, [p.selectedZoneId]);
+  return (
+    <section aria-label={t("fleet.zonesTitle", "Zones & occupancy")} className="space-y-2">
+      {!p.zonesLoading && p.zones.length === 0 && (
+        <p className="py-6 text-center text-sm text-muted-foreground">
+          {t("fleet.zonesEmpty", "No zones defined yet.")}
+        </p>
+      )}
+      {p.zones.map((z) => {
+        const pct = z.maxConcurrentRobots > 0
+          ? Math.min(100, (z.occupancy / z.maxConcurrentRobots) * 100)
+          : 0;
+        const atCap = z.occupancy >= z.maxConcurrentRobots;
+        const zoneRes = p.resByZone.get(z.id) ?? [];
+        const selected = p.selectedZoneId === z.id;
+        return (
+          <Card
+            key={z.id}
+            ref={selected ? selectedRef : undefined}
+            data-zone-card={z.id}
+            aria-current={selected ? "true" : undefined}
+            className={selected ? "border-primary ring-2 ring-primary/40" : "border-border/60"}
+          >
+            <CardContent className="space-y-2 p-3">
+              <div className="flex items-center justify-between gap-2">
+                <div className="min-w-0">
+                  <div className="truncate font-medium">{z.name}</div>
+                  <div className="font-mono text-xs text-muted-foreground">{z.code}</div>
+                </div>
+                {zoneTypeBadge(z.zoneType, t)}
+              </div>
+              <div>
+                <div className="mb-1 flex items-center justify-between text-xs">
+                  <span className="text-muted-foreground">{t("fleet.occupancy", "Occupancy")}</span>
+                  <span className={`tabular-nums font-medium ${atCap ? "text-amber-500" : ""}`}>
+                    {z.occupancy} / {z.maxConcurrentRobots}
+                  </span>
+                </div>
+                <Progress
+                  value={pct}
+                  className={atCap ? "[&>[data-slot=progress-indicator]]:bg-amber-500" : ""}
+                />
+              </div>
+              {/* Reservations on this zone */}
+              {zoneRes.length > 0 && (
+                <div className="space-y-1 pt-1">
+                  {zoneRes.map((r) => (
+                    <div key={r.id} className="flex items-center justify-between gap-2 text-xs">
+                      <span className="inline-flex items-center gap-1">
+                        <Bot className="h-3 w-3" />#{r.deviceId}
+                        {resStatusBadge(r.status, t)}
+                      </span>
+                      {p.canControl && r.status !== "released" && r.status !== "rejected" && (
+                        <Button
+                          size="sm" variant="ghost" className="h-6 px-2 text-xs"
+                          disabled={p.releasePending}
+                          onClick={() => p.onReleaseZone(r.deviceId, z.id)}
+                        >
+                          {t("fleet.release", "Release")}
+                        </Button>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              )}
+              <Button
+                size="sm" variant="outline" className="mt-1 h-7 w-full"
+                disabled={!p.g1CanControl}
+                title={p.g1ControlReason}
+                onClick={() => flyout.open("fleet-zone-reserve", { id: z.id })}
+              >
+                <MapPin className="mr-1 h-3.5 w-3.5" />{t("fleet.reserve", "Reserve")}
+              </Button>
+            </CardContent>
+          </Card>
+        );
+      })}
+    </section>
+  );
+}
+
+/** Tài nguyên (G2-c): tài nguyên dùng chung + đặt trước (sheet) + giải phóng (một cú bấm như cũ). */
+function ResourcesPanel(p: SidePanelProps) {
+  const { t } = useTranslation();
+  const flyout = useFlyout();
+  // Như ResourcesTab cũ: mọi nút ghi (kể cả Giải phóng) theo cổng G2 (quyền + cờ đã rõ).
+  const canControl = p.g2CanControl;
+  return (
+    <div className="space-y-2">
+      <div className="flex items-center justify-between gap-2">
+        <h3 className="flex items-center gap-1.5 text-sm font-medium"><Wrench className="h-4 w-4" />{t("fleet.res.title", "Shared resources")}</h3>
+        <Button size="sm" variant="outline" className="h-7" disabled={!canControl} title={p.g2ControlReason} onClick={() => flyout.open("fleet-resource-new")}>
+          <Plus className="mr-1 h-4 w-4" />{t("fleet.res.create", "New resource")}
+        </Button>
+      </div>
+      {!p.resourcesLoading && p.resources.length === 0 && (
+        <p className="py-6 text-center text-sm text-muted-foreground">
+          {t("fleet.res.empty", "No shared resources (jigs / grippers / fixtures) defined yet.")}
+        </p>
+      )}
+      {p.resources.map((r) => {
+        const av = r.availability;
+        const activeCount = av?.activeCount ?? 0;
+        const queuedCount = av?.queuedCount ?? 0;
+        const resReservations = p.resReservationsByResource.get(r.id) ?? [];
+        return (
+          <Card key={r.id} data-resource-card={r.id} className="border-border/60">
+            <CardContent className="space-y-2 p-3">
+              <div className="flex items-center justify-between gap-2">
+                <div className="min-w-0">
+                  <div className="truncate font-medium">{r.name ?? r.code}</div>
+                  <div className="font-mono text-xs text-muted-foreground">{r.code}</div>
+                </div>
+                {resourceTypeBadge(r.type, t)}
+              </div>
+              <div className="flex items-center justify-between gap-2 text-xs">
+                {resourceStatusBadge(r.status, t)}
+                <span className="text-muted-foreground">
+                  {r.currentOwnerDeviceId != null
+                    ? <span className="inline-flex items-center gap-1"><Bot className="h-3 w-3" />#{r.currentOwnerDeviceId}</span>
+                    : t("fleet.res.unowned", "unowned")}
+                </span>
+              </div>
+              {(activeCount > 0 || queuedCount > 0) && (
+                <div className="text-xs text-muted-foreground">
+                  {t("fleet.res.activeLabel", "Active")}: {activeCount} · {t("fleet.res.queuedLabel", "Queued")}: {queuedCount}
+                </div>
+              )}
+              {resReservations.length > 0 && (
+                <div className="space-y-1 pt-1">
+                  {resReservations.map((rr) => (
+                    <div key={rr.id} className="flex items-center justify-between gap-2 text-xs">
+                      <span className="inline-flex items-center gap-1">
+                        <Bot className="h-3 w-3" />#{rr.deviceId}
+                        {resStatusBadge(rr.status, t)}
+                      </span>
+                      {canControl && (
+                        <Button
+                          size="sm" variant="ghost" className="h-6 px-2 text-xs"
+                          disabled={p.releaseResourcePending}
+                          onClick={() => p.onReleaseResource(rr.deviceId, r.id)}
+                        >
+                          {t("fleet.release", "Release")}
+                        </Button>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              )}
+              <Button size="sm" variant="outline" className="mt-1 h-7 w-full" disabled={!canControl} title={p.g2ControlReason} onClick={() => flyout.open("fleet-resource-reserve", { id: r.id })}>
+                <Wrench className="mr-1 h-3.5 w-3.5" />{t("fleet.res.reserve", "Reserve")}
+              </Button>
+            </CardContent>
+          </Card>
+        );
+      })}
+    </div>
+  );
+}
+
+/** Sạc (G2-d): trạm sạc (tạo = sheet) + kế hoạch sạc pin + Quét ngay (một cú bấm như cũ). */
+function ChargingPanel(p: SidePanelProps) {
+  const { t } = useTranslation();
+  const flyout = useFlyout();
+  const canControl = p.g2CanControl;
+  return (
+    <div className="space-y-3">
+      <div className="space-y-2">
+        <div className="flex items-center justify-between gap-2">
+          <h3 className="flex items-center gap-1.5 text-sm font-medium"><Zap className="h-4 w-4" />{t("fleet.charger.title", "Charger stations")}</h3>
+          <Button size="sm" variant="outline" className="h-7" disabled={!canControl} title={p.g2ControlReason} onClick={() => flyout.open("fleet-charger-new")}>
+            <Plus className="mr-1 h-4 w-4" />{t("fleet.charger.create", "New charger")}
+          </Button>
+        </div>
+        {!p.chargersLoading && p.chargers.length === 0 && (
+          <p className="py-4 text-center text-sm text-muted-foreground">{t("fleet.charger.empty", "No charger stations defined yet.")}</p>
+        )}
+        {p.chargers.map((c) => (
+          <Card key={c.id} data-charger-card={c.id} className="border-border/60">
+            <CardContent className="space-y-1 p-3">
+              <div className="flex items-center justify-between gap-2">
+                <div className="min-w-0">
+                  <div className="truncate font-medium">{c.name ?? c.code}</div>
+                  <div className="font-mono text-xs text-muted-foreground">{c.code}</div>
+                </div>
+                {chargerStatusBadge(c.status, t)}
+              </div>
+              <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                <Badge variant="outline">{c.chargerType}</Badge>
+                {c.powerWatts != null && <span className="tabular-nums">{c.powerWatts} W</span>}
+              </div>
+            </CardContent>
+          </Card>
+        ))}
+      </div>
+
+      <div className="space-y-2">
+        <div className="flex items-center justify-between gap-2">
+          <h3 className="flex items-center gap-1.5 text-sm font-medium"><BatteryCharging className="h-4 w-4" />{t("fleet.plan.title", "Battery charging plans")}</h3>
+          <Button size="sm" variant="outline" className="h-7" disabled={!canControl || p.sweepPending} title={p.g2ControlReason} onClick={p.onSweep}>
+            <RefreshCw className={`mr-1 h-4 w-4 ${p.sweepPending ? "animate-spin" : ""}`} />{t("fleet.plan.sweep", "Sweep now")}
+          </Button>
+        </div>
+        <Table className="text-xs [&_td]:px-1.5 [&_th]:px-1.5">
+          <TableHeader>
+            <TableRow>
+              <TableHead>{t("fleet.plan.col.device", "Device")}</TableHead>
+              <TableHead>{t("fleet.plan.col.energy", "Current %")}</TableHead>
+              <TableHead>{t("fleet.plan.col.start", "Planned start")}</TableHead>
+              <TableHead>{t("fleet.plan.col.status", "Status")}</TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {p.plansLoading && (
+              <TableRow><TableCell colSpan={4} className="whitespace-normal py-6 text-center text-muted-foreground">{t("fleet.loading", "Loading…")}</TableCell></TableRow>
+            )}
+            {!p.plansLoading && p.plans.length === 0 && (
+              <TableRow><TableCell colSpan={4} className="whitespace-normal py-6 text-center text-muted-foreground">{t("fleet.plan.empty", "No charging plans. Run a sweep to schedule preemptive charges.")}</TableCell></TableRow>
+            )}
+            {p.plans.map((pl) => (
+              <TableRow key={pl.id} data-plan-id={pl.id}>
+                <TableCell className="text-xs"><span className="inline-flex items-center gap-1"><Bot className="h-3 w-3" />#{pl.deviceId}</span></TableCell>
+                <TableCell className="text-xs tabular-nums">{pl.currentEnergyPct != null ? `${pl.currentEnergyPct}%` : "—"}</TableCell>
+                <TableCell
+                  className="text-xs whitespace-nowrap"
+                  title={`${t("fleet.plan.col.duration", "Est duration")}: ${fmtDuration(pl.estimatedDurationMs)}${pl.reason ? ` · ${t("fleet.plan.col.reason", "Reason")}: ${pl.reason}` : ""}`}
+                >
+                  {fmtDateTime(pl.plannedStartAt)}
+                  <div className="text-[11px] text-muted-foreground">
+                    {fmtDuration(pl.estimatedDurationMs)}{pl.reason ? ` · ${pl.reason}` : ""}
+                  </div>
+                </TableCell>
+                <TableCell>{planStatusBadge(pl.status, t)}</TableCell>
+              </TableRow>
+            ))}
+          </TableBody>
+        </Table>
+      </div>
+    </div>
+  );
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+// G2-a — SỔ ĐĂNG KÝ THAO TÁC (sheet; tab "Operations" cũ)
+// ══════════════════════════════════════════════════════════════════════════════
+function OperationsRegistry({
+  operations, loading, canControl, controlReason, resourceFlagStatus, resolveCode, setResolveCode, resolved, resolveLoading,
+  resolveError,
 }: {
   operations: FleetOperation[];
   loading: boolean;
   canControl: boolean;
   controlReason?: string;
+  resourceFlagStatus: FeatureStatus;
   resolveCode: string;
   setResolveCode: (v: string) => void;
   resolved: FleetResolved | undefined;
   resolveLoading: boolean;
   resolveError: string | null;
-  onCreate: () => void;
-  onMap: (op: FleetOperation) => void;
 }) {
   const { t } = useTranslation();
+  const flyout = useFlyout();
+  const uid = useId();
   const [resolveInput, setResolveInput] = useState(resolveCode);
 
   return (
-    <>
+    <div className="space-y-4">
+      {/* Banner cờ G2 cũ (4 trạng thái) — trong sheet, không phải trước MAIN. */}
+      <FeatureStatusGate
+        status={resourceFlagStatus}
+        offMessage={t(
+          "fleet.resourceFlagOffBanner",
+          "Preview mode: the fleet resource layer is disabled. Reads work; actions (create / map / reserve / release / sweep) are blocked until it is enabled.",
+        )}
+        errorMessage={t(
+          "fleet.resourceFlagStatusError",
+          "Could not check whether the fleet resource layer is enabled — actions are disabled until this is confirmed.",
+        )}
+      />
       {/* Resolve panel — read-only operation → qualified programs */}
-      <Card>
-        <CardHeader className="pb-2">
-          <CardTitle className="flex items-center gap-2 text-base">
-            <Search className="h-4 w-4" />
-            {t("fleet.op.resolveTitle", "Resolve operation")}
-          </CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-3">
-          <div className="flex flex-wrap items-end gap-2">
-            <div className="grid gap-1">
-              <Label className="text-xs text-muted-foreground">{t("fleet.op.code", "Operation code")}</Label>
-              <Input
-                className="w-56"
-                value={resolveInput}
-                placeholder={t("fleet.op.codePlaceholder", "e.g. OP-WELD-01")}
-                onChange={(e) => setResolveInput(e.target.value)}
-                onKeyDown={(e) => { if (e.key === "Enter") setResolveCode(resolveInput.trim()); }}
-              />
-            </div>
-            <Button variant="outline" size="sm" onClick={() => setResolveCode(resolveInput.trim())}>
-              <Search className="mr-1 h-4 w-4" />{t("fleet.op.resolve", "Resolve")}
-            </Button>
+      <section className="space-y-2">
+        <h3 className="flex items-center gap-2 text-sm font-medium">
+          <Search className="h-4 w-4" />
+          {t("fleet.op.resolveTitle", "Resolve operation")}
+        </h3>
+        <div className="flex flex-wrap items-end gap-2">
+          <div className="grid gap-1">
+            <Label htmlFor={`${uid}-code`} className="text-xs text-muted-foreground">{t("fleet.op.code", "Operation code")}</Label>
+            <Input
+              id={`${uid}-code`}
+              className="w-56"
+              value={resolveInput}
+              placeholder={t("fleet.op.codePlaceholder", "e.g. OP-WELD-01")}
+              onChange={(e) => setResolveInput(e.target.value)}
+              onKeyDown={(e) => { if (e.key === "Enter") setResolveCode(resolveInput.trim()); }}
+            />
           </div>
-          {resolveCode && resolveLoading && (
-            <p className="text-sm text-muted-foreground">{t("fleet.loading", "Loading…")}</p>
-          )}
-          {resolveCode && !resolveLoading && resolveError && (
-            <p className="text-sm text-muted-foreground">
-              {t("fleet.op.notFound", "Operation not found:")} <span className="font-mono">{resolveCode}</span>
-            </p>
-          )}
-          {resolved && !resolveLoading && (
-            <div className="space-y-2 rounded-md border border-border bg-muted/30 p-3 text-sm">
-              <div className="flex flex-wrap items-center gap-2">
-                <span className="font-mono font-medium">{resolved.code}</span>
-                <Badge variant="outline">{resolved.requiredCapability}</Badge>
-                {resolved.toolType && <Badge className="bg-violet-500 text-white">{resolved.toolType}</Badge>}
-                <span className="text-xs text-muted-foreground">
-                  {t("fleet.op.cycle", "Cycle")}: {fmtDuration(resolved.estimatedCycleMs)}
-                </span>
-                <span className="text-xs text-muted-foreground">
-                  {t("fleet.op.skills", "Skills")}: {resolved.requiredSkillIds.length}
-                </span>
-              </div>
-              <div>
-                <div className="mb-1 text-xs font-medium text-muted-foreground">
-                  {t("fleet.op.qualifiedPrograms", "Qualified programs")} ({resolved.qualifiedPrograms.length})
-                </div>
-                {resolved.qualifiedPrograms.length === 0 ? (
-                  <p className="text-xs text-muted-foreground">{t("fleet.op.noPrograms", "No qualified programs mapped yet.")}</p>
-                ) : (
-                  <div className="flex flex-wrap gap-1">
-                    {resolved.qualifiedPrograms.map((p) => (
-                      <Badge key={`${p.programProjectId}-${p.deviceKind ?? "any"}`} variant="secondary" className="font-mono text-xs">
-                        <Package className="mr-1 h-3 w-3" />
-                        {p.programCode ?? `#${p.programProjectId}`}
-                        {p.deviceKind ? ` · ${p.deviceKind}` : ""}
-                      </Badge>
-                    ))}
-                  </div>
-                )}
-              </div>
-            </div>
-          )}
-        </CardContent>
-      </Card>
-
-      {/* Operation registry table */}
-      <Card>
-        <CardHeader className="flex flex-row items-center justify-between gap-2 pb-2">
-          <CardTitle className="flex items-center gap-2 text-base">
-            <Workflow className="h-4 w-4" />
-            {t("fleet.op.registryTitle", "Operation registry")}
-          </CardTitle>
-          {(
-            <Button size="sm" variant="outline" className="h-8" disabled={!canControl} title={controlReason} onClick={onCreate}>
-              <Plus className="mr-1 h-4 w-4" />{t("fleet.op.create", "New operation")}
-            </Button>
-          )}
-        </CardHeader>
-        <CardContent className="p-0">
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>{t("fleet.op.col.code", "Code")}</TableHead>
-                <TableHead>{t("fleet.op.col.capability", "Capability")}</TableHead>
-                <TableHead>{t("fleet.op.col.skills", "Skills")}</TableHead>
-                <TableHead>{t("fleet.op.col.tool", "Tool type")}</TableHead>
-                <TableHead>{t("fleet.op.col.cycle", "Est cycle")}</TableHead>
-                <TableHead className="text-right">{t("common.actions", "Actions")}</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {loading && (
-                <TableRow><TableCell colSpan={6} className="py-8 text-center text-muted-foreground">{t("fleet.loading", "Loading…")}</TableCell></TableRow>
-              )}
-              {!loading && operations.length === 0 && (
-                <TableRow><TableCell colSpan={6} className="py-8 text-center text-muted-foreground">{t("fleet.op.empty", "No operations defined yet.")}</TableCell></TableRow>
-              )}
-              {operations.map((op) => (
-                <TableRow key={op.id}>
-                  <TableCell className="font-mono text-xs">{op.code}</TableCell>
-                  <TableCell><Badge variant="outline">{op.requiredCapability}</Badge></TableCell>
-                  <TableCell className="text-xs tabular-nums">{Array.isArray(op.requiredSkillIds) ? op.requiredSkillIds.length : 0}</TableCell>
-                  <TableCell className="text-xs">{op.toolType ?? <span className="text-muted-foreground">—</span>}</TableCell>
-                  <TableCell className="text-xs whitespace-nowrap">{fmtDuration(op.estimatedCycleMs)}</TableCell>
-                  <TableCell className="text-right">
-                    {canControl ? (
-                      <div className="flex justify-end gap-1">
-                        <Button size="sm" variant="ghost" className="h-7" onClick={() => { setResolveInput(op.code); setResolveCode(op.code); }}>
-                          <Search className="mr-1 h-3.5 w-3.5" />{t("fleet.op.resolve", "Resolve")}
-                        </Button>
-                        <Button size="sm" variant="ghost" className="h-7" onClick={() => onMap(op)}>
-                          <Link2 className="mr-1 h-3.5 w-3.5" />{t("fleet.op.map", "Map program")}
-                        </Button>
-                      </div>
-                    ) : (
-                      <Button size="sm" variant="ghost" className="h-7" onClick={() => { setResolveInput(op.code); setResolveCode(op.code); }}>
-                        <Search className="mr-1 h-3.5 w-3.5" />{t("fleet.op.resolve", "Resolve")}
-                      </Button>
-                    )}
-                  </TableCell>
-                </TableRow>
-              ))}
-            </TableBody>
-          </Table>
-        </CardContent>
-      </Card>
-    </>
-  );
-}
-
-// ══════════════════════════════════════════════════════════════════════════════
-// G2-c — RESOURCES tab
-// ══════════════════════════════════════════════════════════════════════════════
-function ResourcesTab({
-  resources, loading, canControl, controlReason, reservationsByResource, releasePending, onCreate, onReserve, onRelease,
-}: {
-  resources: FleetResource[];
-  loading: boolean;
-  canControl: boolean;
-  controlReason?: string;
-  reservationsByResource: Map<number, FleetResReservation[]>;
-  releasePending: boolean;
-  onCreate: () => void;
-  onReserve: (r: FleetResource) => void;
-  onRelease: (deviceId: number, resourceId: number) => void;
-}) {
-  const { t } = useTranslation();
-  return (
-    <Card>
-      <CardHeader className="flex flex-row items-center justify-between gap-2 pb-2">
-        <CardTitle className="flex items-center gap-2 text-base">
-          <Wrench className="h-4 w-4" />
-          {t("fleet.res.title", "Shared resources")}
-        </CardTitle>
-        <Button size="sm" variant="outline" className="h-8" disabled={!canControl} title={controlReason} onClick={onCreate}>
-          <Plus className="mr-1 h-4 w-4" />{t("fleet.res.create", "New resource")}
-        </Button>
-      </CardHeader>
-      <CardContent>
-        {!loading && resources.length === 0 && (
-          <p className="py-6 text-center text-sm text-muted-foreground">
-            {t("fleet.res.empty", "No shared resources (jigs / grippers / fixtures) defined yet.")}
+          <Button variant="outline" size="sm" onClick={() => setResolveCode(resolveInput.trim())}>
+            <Search className="mr-1 h-4 w-4" />{t("fleet.op.resolve", "Resolve")}
+          </Button>
+        </div>
+        {resolveCode && resolveLoading && (
+          <p className="text-sm text-muted-foreground">{t("fleet.loading", "Loading…")}</p>
+        )}
+        {resolveCode && !resolveLoading && resolveError && (
+          <p className="text-sm text-muted-foreground">
+            {t("fleet.op.notFound", "Operation not found:")} <span className="font-mono">{resolveCode}</span>
           </p>
         )}
-        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-          {resources.map((r) => {
-            const av = r.availability;
-            const activeCount = av?.activeCount ?? 0;
-            const queuedCount = av?.queuedCount ?? 0;
-            const resReservations = reservationsByResource.get(r.id) ?? [];
-            return (
-              <Card key={r.id} className="border-border/60">
-                <CardContent className="space-y-2 p-3">
-                  <div className="flex items-center justify-between gap-2">
-                    <div className="min-w-0">
-                      <div className="truncate font-medium">{r.name ?? r.code}</div>
-                      <div className="font-mono text-xs text-muted-foreground">{r.code}</div>
-                    </div>
-                    {resourceTypeBadge(r.type, t)}
-                  </div>
-                  <div className="flex items-center justify-between gap-2 text-xs">
-                    {resourceStatusBadge(r.status, t)}
-                    <span className="text-muted-foreground">
-                      {r.currentOwnerDeviceId != null
-                        ? <span className="inline-flex items-center gap-1"><Bot className="h-3 w-3" />#{r.currentOwnerDeviceId}</span>
-                        : t("fleet.res.unowned", "unowned")}
-                    </span>
-                  </div>
-                  {(activeCount > 0 || queuedCount > 0) && (
-                    <div className="text-xs text-muted-foreground">
-                      {t("fleet.res.activeLabel", "Active")}: {activeCount} · {t("fleet.res.queuedLabel", "Queued")}: {queuedCount}
-                    </div>
-                  )}
-                  {resReservations.length > 0 && (
-                    <div className="space-y-1 pt-1">
-                      {resReservations.map((rr) => (
-                        <div key={rr.id} className="flex items-center justify-between gap-2 text-xs">
-                          <span className="inline-flex items-center gap-1">
-                            <Bot className="h-3 w-3" />#{rr.deviceId}
-                            {resStatusBadge(rr.status, t)}
-                          </span>
-                          {canControl && (
-                            <Button
-                              size="sm" variant="ghost" className="h-6 px-2 text-xs"
-                              disabled={releasePending}
-                              onClick={() => onRelease(rr.deviceId, r.id)}
-                            >
-                              {t("fleet.release", "Release")}
-                            </Button>
-                          )}
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                  <Button size="sm" variant="outline" className="mt-1 h-7 w-full" disabled={!canControl} title={controlReason} onClick={() => onReserve(r)}>
-                    <Wrench className="mr-1 h-3.5 w-3.5" />{t("fleet.res.reserve", "Reserve")}
-                  </Button>
-                </CardContent>
-              </Card>
-            );
-          })}
+        {resolved && !resolveLoading && (
+          <div data-op-resolved={resolved.code} className="space-y-2 rounded-md border border-border bg-muted/30 p-3 text-sm">
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="font-mono font-medium">{resolved.code}</span>
+              <Badge variant="outline">{resolved.requiredCapability}</Badge>
+              {resolved.toolType && <Badge className="bg-violet-500 text-white">{resolved.toolType}</Badge>}
+              <span className="text-xs text-muted-foreground">
+                {t("fleet.op.cycle", "Cycle")}: {fmtDuration(resolved.estimatedCycleMs)}
+              </span>
+              <span className="text-xs text-muted-foreground">
+                {t("fleet.op.skills", "Skills")}: {resolved.requiredSkillIds.length}
+              </span>
+            </div>
+            <div>
+              <div className="mb-1 text-xs font-medium text-muted-foreground">
+                {t("fleet.op.qualifiedPrograms", "Qualified programs")} ({resolved.qualifiedPrograms.length})
+              </div>
+              {resolved.qualifiedPrograms.length === 0 ? (
+                <p className="text-xs text-muted-foreground">{t("fleet.op.noPrograms", "No qualified programs mapped yet.")}</p>
+              ) : (
+                <div className="flex flex-wrap gap-1">
+                  {resolved.qualifiedPrograms.map((pr) => (
+                    <Badge key={`${pr.programProjectId}-${pr.deviceKind ?? "any"}`} variant="secondary" className="font-mono text-xs">
+                      <Package className="mr-1 h-3 w-3" />
+                      {pr.programCode ?? `#${pr.programProjectId}`}
+                      {pr.deviceKind ? ` · ${pr.deviceKind}` : ""}
+                    </Badge>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+      </section>
+
+      {/* Operation registry table */}
+      <section className="space-y-2">
+        <div className="flex items-center justify-between gap-2">
+          <h3 className="flex items-center gap-2 text-sm font-medium">
+            <Workflow className="h-4 w-4" />
+            {t("fleet.op.registryTitle", "Operation registry")}
+          </h3>
+          <Button size="sm" variant="outline" className="h-8" disabled={!canControl} title={controlReason} onClick={() => flyout.push("fleet-operation-new")}>
+            <Plus className="mr-1 h-4 w-4" />{t("fleet.op.create", "New operation")}
+          </Button>
         </div>
-      </CardContent>
-    </Card>
+        <Table>
+          <TableHeader>
+            <TableRow>
+              <TableHead>{t("fleet.op.col.code", "Code")}</TableHead>
+              <TableHead>{t("fleet.op.col.capability", "Capability")}</TableHead>
+              <TableHead>{t("fleet.op.col.skills", "Skills")}</TableHead>
+              <TableHead>{t("fleet.op.col.tool", "Tool type")}</TableHead>
+              <TableHead>{t("fleet.op.col.cycle", "Est cycle")}</TableHead>
+              <TableHead className="text-right">{t("common.actions", "Actions")}</TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {loading && (
+              <TableRow><TableCell colSpan={6} className="py-8 text-center text-muted-foreground">{t("fleet.loading", "Loading…")}</TableCell></TableRow>
+            )}
+            {!loading && operations.length === 0 && (
+              <TableRow><TableCell colSpan={6} className="py-8 text-center text-muted-foreground">{t("fleet.op.empty", "No operations defined yet.")}</TableCell></TableRow>
+            )}
+            {operations.map((op) => (
+              <TableRow key={op.id} data-op-id={op.id}>
+                <TableCell className="font-mono text-xs">{op.code}</TableCell>
+                <TableCell><Badge variant="outline">{op.requiredCapability}</Badge></TableCell>
+                <TableCell className="text-xs tabular-nums">{Array.isArray(op.requiredSkillIds) ? op.requiredSkillIds.length : 0}</TableCell>
+                <TableCell className="text-xs">{op.toolType ?? <span className="text-muted-foreground">—</span>}</TableCell>
+                <TableCell className="text-xs whitespace-nowrap">{fmtDuration(op.estimatedCycleMs)}</TableCell>
+                <TableCell className="text-right">
+                  <div className="flex justify-end gap-1">
+                    <Button size="sm" variant="ghost" className="h-7" onClick={() => { setResolveInput(op.code); setResolveCode(op.code); }}>
+                      <Search className="mr-1 h-3.5 w-3.5" />{t("fleet.op.resolve", "Resolve")}
+                    </Button>
+                    {canControl && (
+                      <Button size="sm" variant="ghost" className="h-7" onClick={() => flyout.push("fleet-operation-map", { id: op.id })}>
+                        <Link2 className="mr-1 h-3.5 w-3.5" />{t("fleet.op.map", "Map program")}
+                      </Button>
+                    )}
+                  </div>
+                </TableCell>
+              </TableRow>
+            ))}
+          </TableBody>
+        </Table>
+      </section>
+    </div>
   );
 }
 
 // ══════════════════════════════════════════════════════════════════════════════
-// G2-d — CHARGING tab
+// Sheets (FlyoutHost) — form, kiểm tra và payload GIỮ NGUYÊN như các Dialog cũ.
+// Toast + làm mới ở mutation cấp trang; sheet chỉ tự đóng CHÍNH lớp của nó khi thành công (useCloseOwnLayer).
 // ══════════════════════════════════════════════════════════════════════════════
-function ChargingTab({
-  chargers, chargersLoading, plans, plansLoading, canControl, controlReason, sweepPending, onCreateCharger, onSweep,
+function AssignForm({
+  task, pending, onSubmit,
 }: {
-  chargers: FleetCharger[];
-  chargersLoading: boolean;
-  plans: FleetChargingPlan[];
-  plansLoading: boolean;
-  canControl: boolean;
-  controlReason?: string;
-  sweepPending: boolean;
-  onCreateCharger: () => void;
-  onSweep: () => void;
+  task: FleetTask;
+  pending: boolean;
+  onSubmit: (deviceId: number, done: () => void) => void;
 }) {
   const { t } = useTranslation();
-  return (
-    <>
-      {/* Charger stations */}
-      <Card>
-        <CardHeader className="flex flex-row items-center justify-between gap-2 pb-2">
-          <CardTitle className="flex items-center gap-2 text-base">
-            <Zap className="h-4 w-4" />
-            {t("fleet.charger.title", "Charger stations")}
-          </CardTitle>
-          <Button size="sm" variant="outline" className="h-8" disabled={!canControl} title={controlReason} onClick={onCreateCharger}>
-            <Plus className="mr-1 h-4 w-4" />{t("fleet.charger.create", "New charger")}
-          </Button>
-        </CardHeader>
-        <CardContent>
-          {!chargersLoading && chargers.length === 0 && (
-            <p className="py-6 text-center text-sm text-muted-foreground">{t("fleet.charger.empty", "No charger stations defined yet.")}</p>
-          )}
-          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-            {chargers.map((c) => (
-              <Card key={c.id} className="border-border/60">
-                <CardContent className="space-y-1 p-3">
-                  <div className="flex items-center justify-between gap-2">
-                    <div className="min-w-0">
-                      <div className="truncate font-medium">{c.name ?? c.code}</div>
-                      <div className="font-mono text-xs text-muted-foreground">{c.code}</div>
-                    </div>
-                    {chargerStatusBadge(c.status, t)}
-                  </div>
-                  <div className="flex items-center gap-2 text-xs text-muted-foreground">
-                    <Badge variant="outline">{c.chargerType}</Badge>
-                    {c.powerWatts != null && <span className="tabular-nums">{c.powerWatts} W</span>}
-                  </div>
-                </CardContent>
-              </Card>
-            ))}
-          </div>
-        </CardContent>
-      </Card>
+  const { layer, done } = useCloseOwnLayer();
+  const uid = useId();
+  const initial = task.assignedDeviceId != null ? String(task.assignedDeviceId) : "";
+  const [deviceId, setDeviceId] = useState<string>(initial);
+  const dirty = deviceId !== initial;
+  useEffect(() => { layer.setDirty(dirty); }, [dirty]); // eslint-disable-line react-hooks/exhaustive-deps
 
-      {/* Charging plans */}
-      <Card>
-        <CardHeader className="flex flex-row items-center justify-between gap-2 pb-2">
-          <CardTitle className="flex items-center gap-2 text-base">
-            <BatteryCharging className="h-4 w-4" />
-            {t("fleet.plan.title", "Battery charging plans")}
-          </CardTitle>
-          <Button size="sm" variant="outline" className="h-8" disabled={!canControl || sweepPending} title={controlReason} onClick={onSweep}>
-            <RefreshCw className={`mr-1 h-4 w-4 ${sweepPending ? "animate-spin" : ""}`} />{t("fleet.plan.sweep", "Sweep now")}
-          </Button>
-        </CardHeader>
-        <CardContent className="p-0">
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>{t("fleet.plan.col.device", "Device")}</TableHead>
-                <TableHead>{t("fleet.plan.col.energy", "Current %")}</TableHead>
-                <TableHead>{t("fleet.plan.col.start", "Planned start")}</TableHead>
-                <TableHead>{t("fleet.plan.col.duration", "Est duration")}</TableHead>
-                <TableHead>{t("fleet.plan.col.status", "Status")}</TableHead>
-                <TableHead>{t("fleet.plan.col.reason", "Reason")}</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {plansLoading && (
-                <TableRow><TableCell colSpan={6} className="py-8 text-center text-muted-foreground">{t("fleet.loading", "Loading…")}</TableCell></TableRow>
-              )}
-              {!plansLoading && plans.length === 0 && (
-                <TableRow><TableCell colSpan={6} className="py-8 text-center text-muted-foreground">{t("fleet.plan.empty", "No charging plans. Run a sweep to schedule preemptive charges.")}</TableCell></TableRow>
-              )}
-              {plans.map((p) => (
-                <TableRow key={p.id}>
-                  <TableCell className="text-xs"><span className="inline-flex items-center gap-1"><Bot className="h-3 w-3" />#{p.deviceId}</span></TableCell>
-                  <TableCell className="text-xs tabular-nums">{p.currentEnergyPct != null ? `${p.currentEnergyPct}%` : "—"}</TableCell>
-                  <TableCell className="text-xs whitespace-nowrap">{fmtDateTime(p.plannedStartAt)}</TableCell>
-                  <TableCell className="text-xs whitespace-nowrap">{fmtDuration(p.estimatedDurationMs)}</TableCell>
-                  <TableCell>{planStatusBadge(p.status, t)}</TableCell>
-                  <TableCell className="max-w-[16rem] truncate text-xs text-muted-foreground" title={p.reason ?? undefined}>{p.reason ?? "—"}</TableCell>
-                </TableRow>
-              ))}
-            </TableBody>
-          </Table>
-        </CardContent>
-      </Card>
-    </>
+  const submit = () => {
+    const n = Number(deviceId);
+    if (!Number.isInteger(n) || n <= 0) {
+      toast.error(t("fleet.deviceIdRequired", "Enter a valid device id."));
+      return;
+    }
+    onSubmit(n, done);
+  };
+
+  return (
+    <div className="grid gap-3">
+      <div className="text-sm text-muted-foreground">
+        <span className="font-mono text-xs">{task.taskKey}</span>
+        {" · "}{task.requiredCapability}
+      </div>
+      <div className="grid gap-1">
+        <Label htmlFor={`${uid}-device`}>{t("fleet.deviceId", "Device id (robot)")}</Label>
+        <Input
+          id={`${uid}-device`}
+          type="number" min={1} value={deviceId}
+          placeholder={t("fleet.deviceIdPlaceholder", "e.g. 1")}
+          onChange={(e) => setDeviceId(e.target.value)}
+        />
+      </div>
+      <SheetFooter>
+        <Button variant="outline" onClick={() => layer.close()}>{t("common.cancel", "Cancel")}</Button>
+        <Button onClick={submit} disabled={pending}>
+          <CheckCircle2 className="mr-1 h-4 w-4" />{t("fleet.assign", "Assign")}
+        </Button>
+      </SheetFooter>
+    </div>
   );
 }
 
-// ══════════════════════════════════════════════════════════════════════════════
-// G2 dialogs
-// ══════════════════════════════════════════════════════════════════════════════
-function CreateOperationDialog({
-  pending, onClose, onSubmit,
+/** Đặt trước vùng / tài nguyên — hai dialog cũ cùng hình (mã thiết bị + "xếp hàng nếu đầy"), payload như cũ. */
+function ReserveForm({
+  subject, queueLabel, submitLabel, icon, pending, onSubmit,
+}: {
+  subject: ReactNode;
+  queueLabel: string;
+  submitLabel: string;
+  icon: ReactNode;
+  pending: boolean;
+  onSubmit: (deviceId: number, queueIfFull: boolean, done: () => void) => void;
+}) {
+  const { t } = useTranslation();
+  const { layer, done } = useCloseOwnLayer();
+  const uid = useId();
+  const [deviceId, setDeviceId] = useState<string>("");
+  const [queueIfFull, setQueueIfFull] = useState(true);
+  const dirty = deviceId !== "" || !queueIfFull;
+  useEffect(() => { layer.setDirty(dirty); }, [dirty]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const submit = () => {
+    const n = Number(deviceId);
+    if (!Number.isInteger(n) || n <= 0) {
+      toast.error(t("fleet.deviceIdRequired", "Enter a valid device id."));
+      return;
+    }
+    onSubmit(n, queueIfFull, done);
+  };
+
+  return (
+    <div className="grid gap-3">
+      <div className="text-sm text-muted-foreground">{subject}</div>
+      <div className="grid gap-1">
+        <Label htmlFor={`${uid}-device`}>{t("fleet.deviceId", "Device id (robot)")}</Label>
+        <Input
+          id={`${uid}-device`}
+          type="number" min={1} value={deviceId}
+          placeholder={t("fleet.deviceIdPlaceholder", "e.g. 1")}
+          onChange={(e) => setDeviceId(e.target.value)}
+        />
+      </div>
+      <label className="flex items-center gap-2 text-sm">
+        <Checkbox checked={queueIfFull} onCheckedChange={(v) => setQueueIfFull(Boolean(v))} />
+        {queueLabel}
+      </label>
+      <SheetFooter>
+        <Button variant="outline" onClick={() => layer.close()}>{t("common.cancel", "Cancel")}</Button>
+        <Button onClick={submit} disabled={pending}>
+          {icon}{submitLabel}
+        </Button>
+      </SheetFooter>
+    </div>
+  );
+}
+
+function CreateOperationForm({
+  pending, onSubmit,
 }: {
   pending: boolean;
-  onClose: () => void;
-  onSubmit: (v: { code: string; description?: string; requiredCapability: string; toolType?: string; estimatedCycleMs?: number }) => void;
+  onSubmit: (v: { code: string; description?: string; requiredCapability: string; toolType?: string; estimatedCycleMs?: number }, done: () => void) => void;
 }) {
   const { t } = useTranslation();
+  const { layer, done } = useCloseOwnLayer();
+  const uid = useId();
   const [code, setCode] = useState("");
   const [requiredCapability, setRequiredCapability] = useState("");
   const [toolType, setToolType] = useState("");
   const [estCycle, setEstCycle] = useState("");
   const [description, setDescription] = useState("");
+  const dirty = code !== "" || requiredCapability !== "" || toolType !== "" || estCycle !== "" || description !== "";
+  useEffect(() => { layer.setDirty(dirty); }, [dirty]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const submit = () => {
     if (!code.trim() || !requiredCapability.trim()) {
@@ -1728,59 +2049,55 @@ function CreateOperationDialog({
       description: description.trim() || undefined,
       toolType: toolType.trim() || undefined,
       estimatedCycleMs: Number.isFinite(ms) ? ms : undefined,
-    });
+    }, done);
   };
 
   return (
-    <Dialog open onOpenChange={(o) => !o && onClose()}>
-      <DialogContent>
-        <DialogHeader>
-          <DialogTitle className="flex items-center gap-2"><Workflow className="h-4 w-4" />{t("fleet.op.createTitle", "New operation code")}</DialogTitle>
-        </DialogHeader>
-        <div className="grid gap-3 py-2">
-          <div className="grid gap-1">
-            <Label>{t("fleet.op.code", "Operation code")}</Label>
-            <Input value={code} placeholder="OP-WELD-01" onChange={(e) => setCode(e.target.value)} />
-          </div>
-          <div className="grid gap-1">
-            <Label>{t("fleet.op.capability", "Required capability")}</Label>
-            <Input value={requiredCapability} placeholder="run_job" onChange={(e) => setRequiredCapability(e.target.value)} />
-          </div>
-          <div className="grid grid-cols-2 gap-3">
-            <div className="grid gap-1">
-              <Label>{t("fleet.op.toolType", "Tool type")}</Label>
-              <Input value={toolType} placeholder="gripper" onChange={(e) => setToolType(e.target.value)} />
-            </div>
-            <div className="grid gap-1">
-              <Label>{t("fleet.op.estCycleMs", "Est cycle (ms)")}</Label>
-              <Input type="number" min={0} value={estCycle} placeholder="30000" onChange={(e) => setEstCycle(e.target.value)} />
-            </div>
-          </div>
-          <div className="grid gap-1">
-            <Label>{t("fleet.op.description", "Description")}</Label>
-            <Input value={description} onChange={(e) => setDescription(e.target.value)} />
-          </div>
+    <div className="grid gap-3">
+      <div className="grid gap-1">
+        <Label htmlFor={`${uid}-code`}>{t("fleet.op.code", "Operation code")}</Label>
+        <Input id={`${uid}-code`} value={code} placeholder="OP-WELD-01" onChange={(e) => setCode(e.target.value)} />
+      </div>
+      <div className="grid gap-1">
+        <Label htmlFor={`${uid}-cap`}>{t("fleet.op.capability", "Required capability")}</Label>
+        <Input id={`${uid}-cap`} value={requiredCapability} placeholder="run_job" onChange={(e) => setRequiredCapability(e.target.value)} />
+      </div>
+      <div className="grid grid-cols-2 gap-3">
+        <div className="grid gap-1">
+          <Label htmlFor={`${uid}-tool`}>{t("fleet.op.toolType", "Tool type")}</Label>
+          <Input id={`${uid}-tool`} value={toolType} placeholder="gripper" onChange={(e) => setToolType(e.target.value)} />
         </div>
-        <DialogFooter>
-          <Button variant="outline" onClick={onClose}>{t("common.cancel", "Cancel")}</Button>
-          <Button onClick={submit} disabled={pending}><CheckCircle2 className="mr-1 h-4 w-4" />{t("fleet.op.create", "Create")}</Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
+        <div className="grid gap-1">
+          <Label htmlFor={`${uid}-cycle`}>{t("fleet.op.estCycleMs", "Est cycle (ms)")}</Label>
+          <Input id={`${uid}-cycle`} type="number" min={0} value={estCycle} placeholder="30000" onChange={(e) => setEstCycle(e.target.value)} />
+        </div>
+      </div>
+      <div className="grid gap-1">
+        <Label htmlFor={`${uid}-desc`}>{t("fleet.op.description", "Description")}</Label>
+        <Input id={`${uid}-desc`} value={description} onChange={(e) => setDescription(e.target.value)} />
+      </div>
+      <SheetFooter>
+        <Button variant="outline" onClick={() => layer.close()}>{t("common.cancel", "Cancel")}</Button>
+        <Button onClick={submit} disabled={pending}><CheckCircle2 className="mr-1 h-4 w-4" />{t("fleet.op.create", "Create")}</Button>
+      </SheetFooter>
+    </div>
   );
 }
 
-function MapProgramDialog({
-  operation, pending, onClose, onSubmit,
+function MapProgramForm({
+  operation, pending, onSubmit,
 }: {
   operation: FleetOperation;
   pending: boolean;
-  onClose: () => void;
-  onSubmit: (programProjectId: number, deviceKind?: string) => void;
+  onSubmit: (programProjectId: number, deviceKind: string | undefined, done: () => void) => void;
 }) {
   const { t } = useTranslation();
+  const { layer, done } = useCloseOwnLayer();
+  const uid = useId();
   const [programProjectId, setProgramProjectId] = useState("");
   const [deviceKind, setDeviceKind] = useState("");
+  const dirty = programProjectId !== "" || deviceKind !== "";
+  useEffect(() => { layer.setDirty(dirty); }, [dirty]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const submit = () => {
     const n = Number(programProjectId);
@@ -1788,49 +2105,45 @@ function MapProgramDialog({
       toast.error(t("fleet.op.programIdRequired", "Enter a valid program project id."));
       return;
     }
-    onSubmit(n, deviceKind.trim() || undefined);
+    onSubmit(n, deviceKind.trim() || undefined, done);
   };
 
   return (
-    <Dialog open onOpenChange={(o) => !o && onClose()}>
-      <DialogContent>
-        <DialogHeader>
-          <DialogTitle className="flex items-center gap-2"><Link2 className="h-4 w-4" />{t("fleet.op.mapTitle", "Map program to operation")}</DialogTitle>
-        </DialogHeader>
-        <div className="grid gap-3 py-2">
-          <div className="text-sm text-muted-foreground">
-            <span className="font-mono text-xs">{operation.code}</span>{" · "}{operation.requiredCapability}
-          </div>
-          <div className="grid gap-1">
-            <Label>{t("fleet.op.programId", "Program project id")}</Label>
-            <Input type="number" min={1} value={programProjectId} placeholder="e.g. 1" onChange={(e) => setProgramProjectId(e.target.value)} />
-          </div>
-          <div className="grid gap-1">
-            <Label>{t("fleet.op.deviceKind", "Device kind (optional)")}</Label>
-            <Input value={deviceKind} placeholder="arm / scara / cobot / agv" onChange={(e) => setDeviceKind(e.target.value)} />
-          </div>
-        </div>
-        <DialogFooter>
-          <Button variant="outline" onClick={onClose}>{t("common.cancel", "Cancel")}</Button>
-          <Button onClick={submit} disabled={pending}><CheckCircle2 className="mr-1 h-4 w-4" />{t("fleet.op.map", "Map program")}</Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
+    <div className="grid gap-3">
+      <div className="text-sm text-muted-foreground">
+        <span className="font-mono text-xs">{operation.code}</span>{" · "}{operation.requiredCapability}
+      </div>
+      <div className="grid gap-1">
+        <Label htmlFor={`${uid}-program`}>{t("fleet.op.programId", "Program project id")}</Label>
+        <Input id={`${uid}-program`} type="number" min={1} value={programProjectId} placeholder="e.g. 1" onChange={(e) => setProgramProjectId(e.target.value)} />
+      </div>
+      <div className="grid gap-1">
+        <Label htmlFor={`${uid}-kind`}>{t("fleet.op.deviceKind", "Device kind (optional)")}</Label>
+        <Input id={`${uid}-kind`} value={deviceKind} placeholder="arm / scara / cobot / agv" onChange={(e) => setDeviceKind(e.target.value)} />
+      </div>
+      <SheetFooter>
+        <Button variant="outline" onClick={() => layer.close()}>{t("common.cancel", "Cancel")}</Button>
+        <Button onClick={submit} disabled={pending}><CheckCircle2 className="mr-1 h-4 w-4" />{t("fleet.op.map", "Map program")}</Button>
+      </SheetFooter>
+    </div>
   );
 }
 
-function CreateResourceDialog({
-  pending, onClose, onSubmit,
+function CreateResourceForm({
+  pending, onSubmit,
 }: {
   pending: boolean;
-  onClose: () => void;
-  onSubmit: (v: { code: string; name?: string; type: (typeof RESOURCE_TYPES)[number]; locationZoneId?: number }) => void;
+  onSubmit: (v: { code: string; name?: string; type: (typeof RESOURCE_TYPES)[number]; locationZoneId?: number }, done: () => void) => void;
 }) {
   const { t } = useTranslation();
+  const { layer, done } = useCloseOwnLayer();
+  const uid = useId();
   const [code, setCode] = useState("");
   const [name, setName] = useState("");
   const [type, setType] = useState<(typeof RESOURCE_TYPES)[number]>("other");
   const [zoneId, setZoneId] = useState("");
+  const dirty = code !== "" || name !== "" || type !== "other" || zoneId !== "";
+  useEffect(() => { layer.setDirty(dirty); }, [dirty]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const submit = () => {
     if (!code.trim()) {
@@ -1843,114 +2156,60 @@ function CreateResourceDialog({
       name: name.trim() || undefined,
       type,
       locationZoneId: Number.isInteger(z) && (z as number) > 0 ? z : undefined,
-    });
+    }, done);
   };
 
   return (
-    <Dialog open onOpenChange={(o) => !o && onClose()}>
-      <DialogContent>
-        <DialogHeader>
-          <DialogTitle className="flex items-center gap-2"><Wrench className="h-4 w-4" />{t("fleet.res.createTitle", "New shared resource")}</DialogTitle>
-        </DialogHeader>
-        <div className="grid gap-3 py-2">
-          <div className="grid grid-cols-2 gap-3">
-            <div className="grid gap-1">
-              <Label>{t("fleet.res.code", "Code")}</Label>
-              <Input value={code} placeholder="JIG-01" onChange={(e) => setCode(e.target.value)} />
-            </div>
-            <div className="grid gap-1">
-              <Label>{t("fleet.res.type", "Type")}</Label>
-              <Select value={type} onValueChange={(v) => setType(v as (typeof RESOURCE_TYPES)[number])}>
-                <SelectTrigger className="w-full"><SelectValue /></SelectTrigger>
-                <SelectContent>
-                  {RESOURCE_TYPES.map((tp) => (
-                    <SelectItem key={tp} value={tp}>{t(`fleet.resType.${tp}`, tp)}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-          </div>
-          <div className="grid gap-1">
-            <Label>{t("fleet.res.name", "Name")}</Label>
-            <Input value={name} onChange={(e) => setName(e.target.value)} />
-          </div>
-          <div className="grid gap-1">
-            <Label>{t("fleet.res.zoneId", "Home zone id (optional)")}</Label>
-            <Input type="number" min={1} value={zoneId} placeholder="e.g. 1" onChange={(e) => setZoneId(e.target.value)} />
-          </div>
+    <div className="grid gap-3">
+      <div className="grid grid-cols-2 gap-3">
+        <div className="grid gap-1">
+          <Label htmlFor={`${uid}-code`}>{t("fleet.res.code", "Code")}</Label>
+          <Input id={`${uid}-code`} value={code} placeholder="JIG-01" onChange={(e) => setCode(e.target.value)} />
         </div>
-        <DialogFooter>
-          <Button variant="outline" onClick={onClose}>{t("common.cancel", "Cancel")}</Button>
-          <Button onClick={submit} disabled={pending}><CheckCircle2 className="mr-1 h-4 w-4" />{t("fleet.res.create", "Create")}</Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
+        <div className="grid gap-1">
+          <Label htmlFor={`${uid}-type`}>{t("fleet.res.type", "Type")}</Label>
+          <Select value={type} onValueChange={(v) => setType(v as (typeof RESOURCE_TYPES)[number])}>
+            <SelectTrigger id={`${uid}-type`} className="w-full"><SelectValue /></SelectTrigger>
+            <SelectContent>
+              {RESOURCE_TYPES.map((tp) => (
+                <SelectItem key={tp} value={tp}>{t(`fleet.resType.${tp}`, tp)}</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+      </div>
+      <div className="grid gap-1">
+        <Label htmlFor={`${uid}-name`}>{t("fleet.res.name", "Name")}</Label>
+        <Input id={`${uid}-name`} value={name} onChange={(e) => setName(e.target.value)} />
+      </div>
+      <div className="grid gap-1">
+        <Label htmlFor={`${uid}-zone`}>{t("fleet.res.zoneId", "Home zone id (optional)")}</Label>
+        <Input id={`${uid}-zone`} type="number" min={1} value={zoneId} placeholder="e.g. 1" onChange={(e) => setZoneId(e.target.value)} />
+      </div>
+      <SheetFooter>
+        <Button variant="outline" onClick={() => layer.close()}>{t("common.cancel", "Cancel")}</Button>
+        <Button onClick={submit} disabled={pending}><CheckCircle2 className="mr-1 h-4 w-4" />{t("fleet.res.create", "Create")}</Button>
+      </SheetFooter>
+    </div>
   );
 }
 
-function ReserveResourceDialog({
-  resource, pending, onClose, onSubmit,
-}: {
-  resource: FleetResource;
-  pending: boolean;
-  onClose: () => void;
-  onSubmit: (deviceId: number, queueIfFull: boolean) => void;
-}) {
-  const { t } = useTranslation();
-  const [deviceId, setDeviceId] = useState("");
-  const [queueIfFull, setQueueIfFull] = useState(true);
-
-  const submit = () => {
-    const n = Number(deviceId);
-    if (!Number.isInteger(n) || n <= 0) {
-      toast.error(t("fleet.deviceIdRequired", "Enter a valid device id."));
-      return;
-    }
-    onSubmit(n, queueIfFull);
-  };
-
-  return (
-    <Dialog open onOpenChange={(o) => !o && onClose()}>
-      <DialogContent>
-        <DialogHeader>
-          <DialogTitle className="flex items-center gap-2"><Wrench className="h-4 w-4" />{t("fleet.res.reserveTitle", "Reserve resource")}</DialogTitle>
-        </DialogHeader>
-        <div className="grid gap-3 py-2">
-          <div className="text-sm text-muted-foreground">
-            <span className="font-medium text-foreground">{resource.name ?? resource.code}</span>
-            {" · "}<span className="font-mono text-xs">{resource.code}</span>{" · "}{resource.type}
-          </div>
-          <div className="grid gap-1">
-            <Label>{t("fleet.deviceId", "Device id (robot)")}</Label>
-            <Input type="number" min={1} value={deviceId} placeholder={t("fleet.deviceIdPlaceholder", "e.g. 1")} onChange={(e) => setDeviceId(e.target.value)} />
-          </div>
-          <label className="flex items-center gap-2 text-sm">
-            <Checkbox checked={queueIfFull} onCheckedChange={(v) => setQueueIfFull(Boolean(v))} />
-            {t("fleet.res.queueIfFull", "Queue if the resource is in use (otherwise reject)")}
-          </label>
-        </div>
-        <DialogFooter>
-          <Button variant="outline" onClick={onClose}>{t("common.cancel", "Cancel")}</Button>
-          <Button onClick={submit} disabled={pending}><Wrench className="mr-1 h-4 w-4" />{t("fleet.res.reserve", "Reserve")}</Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
-  );
-}
-
-function CreateChargerDialog({
-  pending, onClose, onSubmit,
+function CreateChargerForm({
+  pending, onSubmit,
 }: {
   pending: boolean;
-  onClose: () => void;
-  onSubmit: (v: { code: string; name?: string; chargerType: string; powerWatts?: number; locationZoneId?: number }) => void;
+  onSubmit: (v: { code: string; name?: string; chargerType: string; powerWatts?: number; locationZoneId?: number }, done: () => void) => void;
 }) {
   const { t } = useTranslation();
+  const { layer, done } = useCloseOwnLayer();
+  const uid = useId();
   const [code, setCode] = useState("");
   const [name, setName] = useState("");
   const [chargerType, setChargerType] = useState("contact");
   const [powerWatts, setPowerWatts] = useState("");
   const [zoneId, setZoneId] = useState("");
+  const dirty = code !== "" || name !== "" || chargerType !== "contact" || powerWatts !== "" || zoneId !== "";
+  useEffect(() => { layer.setDirty(dirty); }, [dirty]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const submit = () => {
     if (!code.trim()) {
@@ -1965,46 +2224,39 @@ function CreateChargerDialog({
       chargerType: chargerType.trim() || "contact",
       powerWatts: Number.isFinite(w) ? w : undefined,
       locationZoneId: Number.isInteger(z) && (z as number) > 0 ? z : undefined,
-    });
+    }, done);
   };
 
   return (
-    <Dialog open onOpenChange={(o) => !o && onClose()}>
-      <DialogContent>
-        <DialogHeader>
-          <DialogTitle className="flex items-center gap-2"><Zap className="h-4 w-4" />{t("fleet.charger.createTitle", "New charger station")}</DialogTitle>
-        </DialogHeader>
-        <div className="grid gap-3 py-2">
-          <div className="grid grid-cols-2 gap-3">
-            <div className="grid gap-1">
-              <Label>{t("fleet.charger.code", "Code")}</Label>
-              <Input value={code} placeholder="CHG-01" onChange={(e) => setCode(e.target.value)} />
-            </div>
-            <div className="grid gap-1">
-              <Label>{t("fleet.charger.type", "Charger type")}</Label>
-              <Input value={chargerType} placeholder="contact / inductive" onChange={(e) => setChargerType(e.target.value)} />
-            </div>
-          </div>
-          <div className="grid gap-1">
-            <Label>{t("fleet.charger.name", "Name")}</Label>
-            <Input value={name} onChange={(e) => setName(e.target.value)} />
-          </div>
-          <div className="grid grid-cols-2 gap-3">
-            <div className="grid gap-1">
-              <Label>{t("fleet.charger.power", "Power (W)")}</Label>
-              <Input type="number" min={0} value={powerWatts} placeholder="2000" onChange={(e) => setPowerWatts(e.target.value)} />
-            </div>
-            <div className="grid gap-1">
-              <Label>{t("fleet.charger.zoneId", "Zone id (optional)")}</Label>
-              <Input type="number" min={1} value={zoneId} placeholder="e.g. 1" onChange={(e) => setZoneId(e.target.value)} />
-            </div>
-          </div>
+    <div className="grid gap-3">
+      <div className="grid grid-cols-2 gap-3">
+        <div className="grid gap-1">
+          <Label htmlFor={`${uid}-code`}>{t("fleet.charger.code", "Code")}</Label>
+          <Input id={`${uid}-code`} value={code} placeholder="CHG-01" onChange={(e) => setCode(e.target.value)} />
         </div>
-        <DialogFooter>
-          <Button variant="outline" onClick={onClose}>{t("common.cancel", "Cancel")}</Button>
-          <Button onClick={submit} disabled={pending}><CheckCircle2 className="mr-1 h-4 w-4" />{t("fleet.charger.create", "Create")}</Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
+        <div className="grid gap-1">
+          <Label htmlFor={`${uid}-type`}>{t("fleet.charger.type", "Charger type")}</Label>
+          <Input id={`${uid}-type`} value={chargerType} placeholder="contact / inductive" onChange={(e) => setChargerType(e.target.value)} />
+        </div>
+      </div>
+      <div className="grid gap-1">
+        <Label htmlFor={`${uid}-name`}>{t("fleet.charger.name", "Name")}</Label>
+        <Input id={`${uid}-name`} value={name} onChange={(e) => setName(e.target.value)} />
+      </div>
+      <div className="grid grid-cols-2 gap-3">
+        <div className="grid gap-1">
+          <Label htmlFor={`${uid}-power`}>{t("fleet.charger.power", "Power (W)")}</Label>
+          <Input id={`${uid}-power`} type="number" min={0} value={powerWatts} placeholder="2000" onChange={(e) => setPowerWatts(e.target.value)} />
+        </div>
+        <div className="grid gap-1">
+          <Label htmlFor={`${uid}-zone`}>{t("fleet.charger.zoneId", "Zone id (optional)")}</Label>
+          <Input id={`${uid}-zone`} type="number" min={1} value={zoneId} placeholder="e.g. 1" onChange={(e) => setZoneId(e.target.value)} />
+        </div>
+      </div>
+      <SheetFooter>
+        <Button variant="outline" onClick={() => layer.close()}>{t("common.cancel", "Cancel")}</Button>
+        <Button onClick={submit} disabled={pending}><CheckCircle2 className="mr-1 h-4 w-4" />{t("fleet.charger.create", "Create")}</Button>
+      </SheetFooter>
+    </div>
   );
 }

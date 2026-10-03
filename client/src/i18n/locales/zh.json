@@ -17018,7 +17018,7 @@
     "allocateNoDevice": "此任务无符合条件的设备",
     "allocateTip": "运行分配器（分配最佳设备）",
     "newDeadlockToast": "检测到新死锁",
-    "newDeadlockDesc": "刚形成一个机器人依赖环 — 请查看“任务与区域”标签页。",
+    "newDeadlockDesc": "刚形成一个机器人依赖环 — 请查看侧边面板中的死锁区块。",
     "assign": "分配",
     "assigned": "任务已重新分配",
     "cancel": "取消",
@@ -17084,7 +17084,8 @@
       "offline": "离线",
       "estop": "急停",
       "blocked": "阻塞单元",
-      "locatedRobots": "已定位机器人"
+      "locatedRobots": "已定位机器人",
+      "zoneOpen": "区域 {{code}} — {{occupancy}}/{{max}} 台机器人；在“区域”标签中打开"
     },
     "noPermission": "您无权查看机群编排。",
     "occupancy": "占用",
@@ -17118,7 +17119,9 @@
       "resolve": "解析",
       "resolveTitle": "解析操作",
       "skills": "技能",
-      "toolType": "工具类型"
+      "toolType": "工具类型",
+      "opNotLoaded": "操作 #{{id}} 不在已加载列表中。",
+      "registryDesc": "操作代码、各代码的合格程序，以及操作 → 程序映射。"
     },
     "opCreated": "操作已创建",
     "openRobotCockpit": "打开机器人驾驶舱",
@@ -17167,7 +17170,8 @@
       "title": "共享资源",
       "type": "类型",
       "unowned": "无所有者",
-      "zoneId": "归属区域 ID（可选）"
+      "zoneId": "归属区域 ID（可选）",
+      "notLoaded": "资源 #{{id}} 不在已加载列表中。"
     },
     "reserve": "预留",
     "reserved": "预留已生效",
@@ -17201,10 +17205,9 @@
     "sweepDone": "充电扫描完成",
     "tab": {
       "charging": "充电",
-      "map": "地图",
-      "operations": "操作",
       "resources": "资源",
-      "tasks": "任务与区域"
+      "tasks": "任务",
+      "zones": "区域"
     },
     "task": {
       "assigned": "已分配",
@@ -17225,7 +17228,31 @@
       "human_shared": "人机共享",
       "production": "生产",
       "transit": "通行"
-    }
+    },
+    "flag": {
+      "resource": "资源层"
+    },
+    "safetyChip": "仅调度状态",
+    "side": {
+      "label": "任务、区域、充电与资源"
+    },
+    "chip": {
+      "stripLabel": "机群指标",
+      "src": {
+        "deadlocks": "fleet.deadlocks — 当前检测到的机器人等待环（建议性）",
+        "failed": "fleet.listTasks — 已加载列表中状态为“失败”的任务（最新 200 条，受状态筛选影响）",
+        "atCapacity": "fleet.listZones — 占用已达最大并发机器人数的区域",
+        "pending": "fleet.listTasks — 已加载列表中状态为“等待”的任务（最新 200 条，受状态筛选影响）",
+        "running": "fleet.listTasks — 已加载列表中状态为“运行中”的任务（最新 200 条，受状态筛选影响）",
+        "assigned": "fleet.listTasks — 已加载列表中状态为“已分配”的任务（最新 200 条，受状态筛选影响）",
+        "activeRes": "fleet.listReservations — 状态为“活动”的区域预约（最新 500 条）",
+        "resourcesInUse": "fleet.listResources — 至少有一个活动占用的共享资源",
+        "charging": "fleet.listChargingPlans — 状态为“活动”或“已计划”的充电计划（最新 200 条）"
+      }
+    },
+    "taskNotFound": "任务 #{{id}} 不在已加载列表中。",
+    "taskTerminal": "任务 #{{id}} 已结束 — 无法重新分配。",
+    "zoneNotFound": "区域 #{{id}} 不在已加载列表中。"
   },
   "ir": {
     "whenToUse": "适用场景 — 低层运动与 I/O 块（IR）。完整的构建/部署流水线请使用工程工作区；IEC 61131 LAD/FBD/SFC 请使用 POU Studio。",

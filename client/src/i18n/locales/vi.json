@@ -16594,7 +16594,7 @@
     "allocateNoDevice": "Không có thiết bị phù hợp cho tác vụ này",
     "allocateTip": "Chạy bộ phân bổ (gán thiết bị tốt nhất)",
     "newDeadlockToast": "Phát hiện deadlock mới",
-    "newDeadlockDesc": "Vừa hình thành một chu trình phụ thuộc giữa các robot — hãy xem tab Tác vụ & Vùng.",
+    "newDeadlockDesc": "Vừa hình thành một chu trình phụ thuộc giữa các robot — hãy xem khối bế tắc ở panel bên phải.",
     "assign": "Gán",
     "assigned": "Đã gán lại tác vụ",
     "cancel": "Hủy",
@@ -16660,7 +16660,8 @@
       "offline": "Ngoại tuyến",
       "estop": "Dừng khẩn",
       "blocked": "Ô bị chặn",
-      "locatedRobots": "Robot có vị trí"
+      "locatedRobots": "Robot có vị trí",
+      "zoneOpen": "Vùng {{code}} — {{occupancy}}/{{max}} robot; mở trong tab Vùng"
     },
     "noPermission": "Bạn không có quyền xem điều phối đội xe.",
     "occupancy": "Mức chiếm dụng",
@@ -16694,7 +16695,9 @@
       "resolve": "Phân giải",
       "resolveTitle": "Phân giải thao tác",
       "skills": "Kỹ năng",
-      "toolType": "Loại dụng cụ"
+      "toolType": "Loại dụng cụ",
+      "opNotLoaded": "Thao tác #{{id}} không có trong danh sách đã nạp.",
+      "registryDesc": "Mã thao tác, chương trình đủ điều kiện cho từng mã và ánh xạ thao tác → chương trình."
     },
     "opCreated": "Đã tạo thao tác",
     "openRobotCockpit": "Mở cockpit robot",
@@ -16743,7 +16746,8 @@
       "title": "Tài nguyên dùng chung",
       "type": "Loại",
       "unowned": "không sở hữu",
-      "zoneId": "Mã vùng gốc (tùy chọn)"
+      "zoneId": "Mã vùng gốc (tùy chọn)",
+      "notLoaded": "Tài nguyên #{{id}} không có trong danh sách đã nạp."
     },
     "reserve": "Đặt trước",
     "reserved": "Đặt chỗ đang giữ",
@@ -16777,10 +16781,9 @@
     "sweepDone": "Đã hoàn tất quét sạc",
     "tab": {
       "charging": "Sạc",
-      "map": "Bản đồ",
-      "operations": "Thao tác",
       "resources": "Tài nguyên",
-      "tasks": "Tác vụ & Vùng"
+      "tasks": "Tác vụ",
+      "zones": "Vùng"
     },
     "task": {
       "assigned": "Đã gán",
@@ -16801,7 +16804,31 @@
       "human_shared": "Dùng chung với người",
       "production": "Sản xuất",
       "transit": "Trung chuyển"
-    }
+    },
+    "flag": {
+      "resource": "Lớp tài nguyên"
+    },
+    "safetyChip": "Chỉ trạng thái điều phối",
+    "side": {
+      "label": "Tác vụ, vùng, sạc và tài nguyên"
+    },
+    "chip": {
+      "stripLabel": "Chỉ số đội thiết bị",
+      "src": {
+        "deadlocks": "fleet.deadlocks — các chu trình chờ nhau giữa robot phát hiện lúc này (tư vấn)",
+        "failed": "fleet.listTasks — tác vụ trạng thái 'Thất bại' trong danh sách đã nạp (200 mới nhất, theo bộ lọc trạng thái)",
+        "atCapacity": "fleet.listZones — vùng có mức chiếm dụng đã chạm số robot tối đa đồng thời",
+        "pending": "fleet.listTasks — tác vụ trạng thái 'Đang chờ' trong danh sách đã nạp (200 mới nhất, theo bộ lọc trạng thái)",
+        "running": "fleet.listTasks — tác vụ trạng thái 'Đang chạy' trong danh sách đã nạp (200 mới nhất, theo bộ lọc trạng thái)",
+        "assigned": "fleet.listTasks — tác vụ trạng thái 'Đã gán' trong danh sách đã nạp (200 mới nhất, theo bộ lọc trạng thái)",
+        "activeRes": "fleet.listReservations — đặt chỗ vùng trạng thái 'Hoạt động' (500 mới nhất)",
+        "resourcesInUse": "fleet.listResources — tài nguyên dùng chung có ít nhất một yêu cầu chiếm đang hoạt động",
+        "charging": "fleet.listChargingPlans — kế hoạch sạc 'Hoạt động' hoặc 'Đã lên lịch' (200 mới nhất)"
+      }
+    },
+    "taskNotFound": "Tác vụ #{{id}} không có trong danh sách đã nạp.",
+    "taskTerminal": "Tác vụ #{{id}} đã kết thúc — không gán lại được.",
+    "zoneNotFound": "Vùng #{{id}} không có trong danh sách đã nạp."
   },
   "ir": {
     "whenToUse": "Khi nào dùng — khối motion & I/O cấp thấp (IR). Cần pipeline build/deploy đầy đủ dùng Xưởng lập trình; cần IEC 61131 LAD/FBD/SFC dùng POU Studio.",
