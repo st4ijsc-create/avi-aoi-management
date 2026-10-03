@@ -149,46 +149,48 @@
    "screen": "equipment-integration",
    "vw": 1600,
    "variant": "n/a",
-   "mainTop": 486,
+   "mainTop": 120,
    "rects": [
     {
      "x": 288,
-     "y": 486,
+     "y": 120,
      "w": 1288,
-     "h": 520
+     "h": 802
     }
    ],
-   "areaPx": 669760,
-   "attrSel": "div[data-layout-main=\"equipment-integration\"]@EquipmentIntegration.tsx",
-   "gitHead": "ac9100684",
-   "at": "2026-10-03T03:00:51.981Z",
-   "fromReference": {
-    "dTop": 0,
-    "dLeft": 0,
-    "dAreaPct": 0
+   "areaPx": 1032976,
+   "attrSel": "div[data-layout-main=\"equipment-integration\"]@CockpitLayout.tsx",
+   "gitHead": "576c1734d",
+   "at": "2026-10-03T03:47:27.420Z",
+   "previous": {
+    "mainTop": 486,
+    "areaPx": 669760,
+    "attrSel": "div[data-layout-main=\"equipment-integration\"]@EquipmentIntegration.tsx",
+    "gitHead": "ac9100684"
    }
   },
   "equipment-integration|1366|n/a": {
    "screen": "equipment-integration",
    "vw": 1366,
    "variant": "n/a",
-   "mainTop": 506,
+   "mainTop": 120,
    "rects": [
     {
      "x": 288,
-     "y": 506,
+     "y": 120,
      "w": 1054,
-     "h": 562
+     "h": 620
     }
    ],
-   "areaPx": 592348,
-   "attrSel": "div[data-layout-main=\"equipment-integration\"]@EquipmentIntegration.tsx",
-   "gitHead": "ac9100684",
-   "at": "2026-10-03T03:00:51.981Z",
-   "fromReference": {
-    "dTop": 0,
-    "dLeft": 0,
-    "dAreaPct": 0
+   "areaPx": 653480,
+   "attrSel": "div[data-layout-main=\"equipment-integration\"]@CockpitLayout.tsx",
+   "gitHead": "576c1734d",
+   "at": "2026-10-03T03:47:27.420Z",
+   "previous": {
+    "mainTop": 506,
+    "areaPx": 592348,
+    "attrSel": "div[data-layout-main=\"equipment-integration\"]@EquipmentIntegration.tsx",
+    "gitHead": "ac9100684"
    }
   }
  }
