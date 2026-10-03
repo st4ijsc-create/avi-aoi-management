@@ -1421,8 +1421,10 @@ export default function IrEditor() {
           </SectionCard>
 
           {/* CENTER — canvas (Graph | Tree — two views over ONE AST) */}
+          {/* doc 81 Đợt 2 Task 14 (R-2-k) — hiệu chuẩn: đánh dấu MAIN hiện tại (card vùng vẽ) TRƯỚC khi đổi bố cục. */}
+          <div data-layout-main="ir-canvas" className="lg:col-span-5">
           <SectionCard
-            className="lg:col-span-5"
+            className="h-full"
             icon={editScope.kind === "fb" ? <Boxes className="h-4 w-4" /> : viewMode === "graph" ? <Network className="h-4 w-4" /> : <ListTree className="h-4 w-4" />}
             title={editScope.kind === "fb" ? `${t("ir.canvas.fb", "Function block")}: ${activeFb?.name ?? ""}` : t("ir.canvas.title", "Flow canvas")}
             description={
@@ -1502,6 +1504,7 @@ export default function IrEditor() {
               </ScrollArea>
             )}
           </SectionCard>
+          </div>
 
           {/* RIGHT — inspector / transpile preview */}
           <Card className="lg:col-span-4">

@@ -386,7 +386,10 @@ export default function PouStudio() {
 
         <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
           {/* LEFT — POU editor: graphical canvas OR JSON (two views over one model) */}
+          {/* doc 81 Đợt 2 Task 14 (R-2-k) — hiệu chuẩn: đánh dấu MAIN hiện tại (card trình soạn) TRƯỚC khi đổi bố cục. */}
+          <div data-layout-main="pou-editor">
           <SectionCard
+            className="h-full"
             icon={<FileCode2 className="h-4 w-4" />}
             title={t("pou.editor", "POU editor")}
             description={
@@ -486,6 +489,7 @@ export default function PouStudio() {
               <div className="mt-2 rounded border border-destructive/40 bg-destructive/10 p-2 text-[11px] text-destructive">{shapeError}</div>
             )}
           </SectionCard>
+          </div>
 
           {/* RIGHT — transpile preview OR PLCopen XML exchange */}
           <Card>
