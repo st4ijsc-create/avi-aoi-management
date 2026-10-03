@@ -257,6 +257,23 @@ describe("WS-01 — duyệt phiên bản trong IDE (cờ versionReviewEnabled)",
     expect(mutateCalls["programming.reviewArtifact"]).toEqual([{ artifactId: 11, decision: "rejected", reason: "Thiếu interlock" }]);
   });
 
+  it("final wave R-2-z2: 'Từ chối phiên bản' là SHEET bên phải (không phải Dialog giữa màn), giữ nguyên hợp đồng; Huỷ không gọi server", () => {
+    seedWorkspace({ reviewOn: true });
+    fireEvent.click(screen.getByTestId("version-review-reject"));
+    const reasonBox = screen.getByTestId("version-review-reject-reason");
+    expect(reasonBox.closest('[data-slot="sheet-content"]')).not.toBeNull();
+    expect(reasonBox.closest('[data-slot="dialog-content"]')).toBeNull();
+    // lý do chỉ khoảng trắng vẫn KHOÁ (trim) — đúng hợp đồng cũ
+    fireEvent.change(reasonBox, { target: { value: "   " } });
+    expect(screen.getByTestId("version-review-reject-confirm")).toBeDisabled();
+    const sheet = reasonBox.closest('[data-slot="sheet-content"]') as HTMLElement;
+    // nút Huỷ = nút không phải xác nhận ở chân sheet
+    const cancel = sheet.querySelector('[data-slot="sheet-footer"] button:not([data-testid])') as HTMLElement;
+    fireEvent.click(cancel!);
+    expect(screen.queryByTestId("version-review-reject-reason")).not.toBeInTheDocument();
+    expect(mutateCalls["programming.reviewArtifact"] ?? []).toEqual([]);
+  });
+
   it("Duyệt ⇒ reviewArtifact(approved); phiên bản ĐÃ duyệt ⇒ Build mở, không còn nút duyệt", () => {
     seedWorkspace({ reviewOn: true });
     fireEvent.click(screen.getByTestId("version-review-approve"));
