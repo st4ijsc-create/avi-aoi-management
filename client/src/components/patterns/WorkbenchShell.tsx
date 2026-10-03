@@ -23,6 +23,9 @@
  * tab `forceMount` + `hidden`; activity bar (`leftRail`) vẫn hiện cạnh vùng tab.
  * Fix round 1 (review I3): qua lại mốc 1024 px KHÔNG remount nội dung — mỗi slot render một lần
  * qua portal vào host DOM ổn định, hai layout chỉ đặt outlet (`slotPortal.tsx`).
+ * Task 11b: nhóm panel chỉ MOUNT sau lần đo đầu của khung (`useElementBox` → `measured`). Trước đó
+ * `defaultSize` là % dự phòng (bề rộng 0 ở lượt render đầu) và thư viện GIỮ % lúc mount ⇒ panel rộng hơn
+ * giới hạn px. Bố cục người dùng đã lưu (`autoSaveId`) vẫn thắng; trạng thái gập (R-2-l) áp lại khi nhóm mount.
  */
 import * as React from "react";
 import { useTranslation } from "react-i18next";
@@ -32,7 +35,7 @@ import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from "@/componen
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { cn } from "@/lib/utils";
 import { LAYOUT_AI, LAYOUT_MAIN } from "./layoutMarkers";
-import { pxRangeToPct, useElementSize, useNarrowViewport, userLayoutKey, type PctRange } from "./layoutKitHooks";
+import { pxRangeToPct, useElementBox, useNarrowViewport, userLayoutKey, type PctRange } from "./layoutKitHooks";
 import { SlotOutlet, slotPortal, useSlotHost } from "./slotPortal";
 
 export interface WorkbenchSidePanel {
@@ -120,8 +123,10 @@ export function WorkbenchShell({
 }: WorkbenchShellProps): React.JSX.Element {
   const { t } = useTranslation();
   const narrow = useNarrowViewport();
-  const [hRef, width] = useElementSize("width");
-  const [vRef, height] = useElementSize("height");
+  // Task 11b — MỘT phần tử đo cả hai chiều: khung chứa nhóm ngang (cao = cao nhóm dọc của cột giữa). Nhóm panel
+  // chỉ mount khi đã đo (`measured`) ⇒ `defaultSize` là % suy từ px ngay lần mount đầu (thư viện giữ % lúc mount).
+  const [groupRef, { width, height }, measured] = useElementBox();
+  const groupReady = !narrow && measured;
   const leftRef = React.useRef<ImperativePanelHandle | null>(null);
   const bottomRef = React.useRef<ImperativePanelHandle | null>(null);
   const bottomId = React.useId();
@@ -187,24 +192,25 @@ export function WorkbenchShell({
 
   // Panel trái/dưới: áp lại trạng thái gập mỗi khi cây rộng được dựng (lần đầu hoặc sau màn hẹp).
   React.useEffect(() => {
-    if (narrow) return;
+    if (!groupReady) return;
     const p = leftRef.current;
     if (!p || leftCollapsed === undefined) return;
     if (leftCollapsed && !p.isCollapsed()) p.collapse();
     if (!leftCollapsed && p.isCollapsed()) p.expand();
-  }, [leftCollapsed, narrow]);
+  }, [leftCollapsed, groupReady]);
 
   // Cây rộng vừa dựng ⇒ áp trạng thái hiện tại (đã tính lựa chọn đã nhớ) theo CẢ HAI chiều — không gập lại
   // một panel người dùng đã chọn mở (autoSaveId của thư viện có thể khôi phục kích thước khác).
+  // Task 11b: "vừa dựng" = nhóm panel vừa mount sau lần đo đầu (groupReady), không phải lượt render đầu của cây rộng.
   React.useEffect(() => {
-    if (narrow) return;
+    if (!groupReady) return;
     desiredBottomRef.current = bottomCollapsed;
     bottomCmd(bottomCollapsed);
     bottomSyncedRef.current = true;
     onBottomCollapsedChange?.(bottomCollapsed);
-    // chỉ khi cây rộng vừa dựng; nút gập / ý định mở tự gọi collapse/expand
+    // chỉ khi nhóm panel vừa mount; nút gập / ý định mở tự gọi collapse/expand
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [narrow]);
+  }, [groupReady]);
 
   // Người dùng chưa biết lúc mount (auth đang tải) ⇒ khi biết, áp lựa chọn đã nhớ (nếu chưa tự thao tác).
   React.useEffect(() => {
@@ -347,7 +353,8 @@ export function WorkbenchShell({
         {toolbarOutlet}
         <div className="flex min-h-0 flex-1">
           {leftRail != null && <SlotOutlet host={hRail} className="flex shrink-0" />}
-          <div ref={hRef} className="min-w-0 flex-1">
+          <div ref={groupRef} data-workbench-group="" className="min-w-0 flex-1">
+            {groupReady && (
             <ResizablePanelGroup direction="horizontal" autoSaveId={hKey} className="h-full">
               {left && l && (
                 <>
@@ -369,7 +376,7 @@ export function WorkbenchShell({
                 </>
               )}
               <ResizablePanel id="center" order={2} minSize={30} defaultSize={100 - (l?.defaultSize ?? 0) - (r?.defaultSize ?? 0)}>
-                <div ref={vRef} className="h-full">
+                <div className="h-full">
                   <ResizablePanelGroup direction="vertical" autoSaveId={vKey} className="h-full">
                     <ResizablePanel id="main" order={1} minSize={30} defaultSize={bottom && b ? 100 - b.defaultSize : 100}>
                       {mainOutlet}
@@ -412,6 +419,7 @@ export function WorkbenchShell({
                 </>
               )}
             </ResizablePanelGroup>
+            )}
           </div>
         </div>
         {statusBarOutlet(bottomToggle)}

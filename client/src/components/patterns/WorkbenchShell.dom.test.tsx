@@ -398,3 +398,127 @@ describe("WorkbenchShell — giới hạn px (useElementSize đo lại phần t�
     }
   });
 });
+
+// ── Doc 81 Đợt 2 Task 11b — kích thước ban đầu = % suy từ px (không phải % dự phòng) ─────────────────────
+// Bệnh: nhóm panel mount ở lượt render đầu khi bề rộng còn 0 ⇒ `defaultSize` = % dự phòng (18/24/25) và
+// react-resizable-panels GIỮ % lúc mount ⇒ panel rộng hơn giới hạn px (Task 5, Task 11). ORACLE khai tay:
+// khung nhóm 1600×800 px ⇒ trái 240 px = 15 %, phải 340 px = 21,25 %, dưới 260 px = 32,5 % (dự phòng: 18 / 24 / 25).
+describe("WorkbenchShell — kích thước ban đầu theo px khi đã biết bề rộng khung (Task 11b)", () => {
+  const W = 1600;
+  const H = 800;
+  function stubGroupBox() {
+    const original = HTMLElement.prototype.getBoundingClientRect;
+    const spy = vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockImplementation(function (this: HTMLElement) {
+      if (this.hasAttribute("data-workbench-group")) return DOMRect.fromRect({ x: 0, y: 0, width: W, height: H });
+      return original.call(this);
+    });
+    return spy;
+  }
+  const px = (over: Partial<WorkbenchShellProps> = {}): Partial<WorkbenchShellProps> => ({
+    left: { label: "Explorer", content: <p>cây dự án</p>, minPx: 220, defaultPx: 240, maxPx: 360 },
+    right: { label: "Copilot", content: <p>trợ lý</p>, ai: true, minPx: 300, defaultPx: 340, maxPx: 480 },
+    bottom: { label: "Vấn đề", content: <Counter name="bottom" />, minPx: 160, defaultPx: 260, maxPx: 480 },
+    ...over,
+  });
+  const size = (id: string) => Number((document.querySelector(`[data-panel-id="${id}"]`) as HTMLElement).getAttribute("data-panel-size"));
+  /** Kích thước panel (px) khớp đích px trong 1 %. */
+  const expectPx = (id: string, groupPx: number, targetPx: number) => {
+    const got = (size(id) * groupPx) / 100;
+    expect(Math.abs(got - targetPx) / targetPx, `${id}: ${got.toFixed(1)} px, đích ${targetPx} px`).toBeLessThanOrEqual(0.01);
+  };
+
+  it("lần đầu (chưa lưu gì): trái 240 / phải 340 / dưới 260 px — không phải % dự phòng", () => {
+    const spy = stubGroupBox();
+    try {
+      renderShell(px());
+      expectPx("left", W, 240);
+      expectPx("right", W, 340);
+      expectPx("bottom", H, 260);
+      expect(size("left")).not.toBeCloseTo(18, 0);
+    } finally {
+      spy.mockRestore();
+    }
+  });
+
+  it("mặc định WorkbenchShell (không khai px): trái 260 / phải 380 / dưới 200 px", () => {
+    const spy = stubGroupBox();
+    try {
+      renderShell({ userId: null });
+      expectPx("left", W, 260);
+      expectPx("right", W, 380);
+      expectPx("bottom", H, 200);
+    } finally {
+      spy.mockRestore();
+    }
+  });
+
+  it("R-2-l: gập lần đầu ⇒ 0; mở bằng nút ⇒ đúng 260 px; lần sau (đã nhớ '0') mở ngay ở 260 px", async () => {
+    const spy = stubGroupBox();
+    try {
+      const user = userEvent.setup();
+      const r = renderShell(px({ bottom: { label: "Vấn đề", content: <Counter name="bottom" />, minPx: 160, defaultPx: 260, maxPx: 480, defaultCollapsed: true } }));
+      expect(size("bottom")).toBe(0);
+      await user.click(screen.getByRole("button", { name: VI.layoutKit.shell.toggleBottom }));
+      expectPx("bottom", H, 260);
+      expect(localStorage.getItem("layoutKit:test-ide:u5:bottomCollapsed")).toBe("0");
+      r.unmount();
+      // Bố cục do thư viện tự lưu (debounce) có thể chưa ghi — xoá để kiểm riêng nhánh "đã nhớ mở".
+      await new Promise((res) => setTimeout(res, 250));
+      for (const k of Object.keys(localStorage)) if (k.startsWith("react-resizable-panels:")) localStorage.removeItem(k);
+      renderShell(px({ bottom: { label: "Vấn đề", content: <Counter name="bottom" />, minPx: 160, defaultPx: 260, maxPx: 480, defaultCollapsed: true } }));
+      expect(screen.getByRole("button", { name: VI.layoutKit.shell.toggleBottom })).toHaveAttribute("aria-expanded", "true");
+      expectPx("bottom", H, 260);
+    } finally {
+      spy.mockRestore();
+    }
+  });
+
+  it("kích thước NGƯỜI DÙNG đã lưu THẮNG đích px; panel người dùng không kéo vẫn đúng đích px", async () => {
+    const spy = stubGroupBox();
+    try {
+      const r = renderShell(px());
+      const h = screen.getByRole("separator", { name: VI.layoutKit.shell.resizeLeft });
+      fireEvent.keyDown(h, { key: "ArrowRight" });
+      fireEvent.keyDown(h, { key: "ArrowRight" });
+      const resized = size("left");
+      expect(Math.abs((resized * W) / 100 - 240)).toBeGreaterThan(20);
+      await waitFor(() => expect(Object.keys(localStorage).some((k) => k.includes(userLayoutKey("test-ide", 5, "h")!))).toBe(true));
+      r.unmount();
+      renderShell(px());
+      expect(size("left")).toBeCloseTo(resized, 1);
+      expectPx("right", W, 340);
+      expectPx("bottom", H, 260);
+    } finally {
+      spy.mockRestore();
+    }
+  });
+
+  it("leftCollapsed=true ngay lần mount (activity bar đã gập explorer) ⇒ panel trái 0 khi nhóm mount sau lần đo; bỏ gập ⇒ 240 px", () => {
+    const spy = stubGroupBox();
+    try {
+      const r = renderShell({ userId: null, ...px(), leftCollapsed: true });
+      expect(size("left")).toBe(0);
+      r.rerender(
+        <main>
+          <WorkbenchShell layoutId="test-ide" userId={null} main={<textarea aria-label="editor" />} {...px()} leftCollapsed={false} />
+        </main>,
+      );
+      expectPx("left", W, 240);
+    } finally {
+      spy.mockRestore();
+    }
+  });
+
+  it("rộng → hẹp → rộng (chưa lưu gì, không biết người dùng) ⇒ vẫn đúng đích px", () => {
+    const spy = stubGroupBox();
+    try {
+      renderShell({ userId: null, ...px() });
+      setNarrow(true);
+      setNarrow(false);
+      expectPx("left", W, 240);
+      expectPx("right", W, 340);
+    } finally {
+      spy.mockRestore();
+    }
+  });
+});

@@ -48,6 +48,35 @@ export function useElementSize(axis: "width" | "height"): [(el: HTMLElement | nu
   return [setEl, size];
 }
 
+/**
+ * Doc 81 Đợt 2 Task 11b — kích thước CẢ HAI chiều của một phần tử + cờ `measured` (đã đo ÍT NHẤT MỘT lần
+ * phần tử HIỆN TẠI, kể cả khi ra 0 — jsdom, phần tử ẩn).
+ *
+ * Vì sao cần cờ: react-resizable-panels chỉ đọc `defaultSize` khi nhóm panel MOUNT (và lưu luôn bố cục đó). Nhóm
+ * mount ở lượt render đầu — lúc chưa đo được bề rộng — nên nhận % dự phòng và GIỮ nó (panel rộng hơn giới hạn px).
+ * Layout chỉ mount nhóm khi `measured` = true ⇒ `defaultSize` đã là % suy từ px. Đổi phần tử (vd cây rộng dựng lại
+ * sau màn hẹp) ⇒ `measured` về false cho tới lần đo phần tử mới.
+ */
+export function useElementBox(): [(el: HTMLElement | null) => void, { width: number; height: number }, boolean] {
+  const [el, setEl] = useState<HTMLElement | null>(null);
+  const [box, setBox] = useState<{ width: number; height: number; of: HTMLElement | null }>({ width: 0, height: 0, of: null });
+  useEffect(() => {
+    if (!el) return;
+    const measure = () => {
+      const r = el.getBoundingClientRect();
+      const width = Math.round(r.width);
+      const height = Math.round(r.height);
+      setBox((b) => (b.of === el && b.width === width && b.height === height ? b : { width, height, of: el }));
+    };
+    measure();
+    if (typeof ResizeObserver === "undefined") return;
+    const ro = new ResizeObserver(measure);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [el]);
+  return [setEl, { width: box.width, height: box.height }, el != null && box.of === el];
+}
+
 export interface PxRange {
   minPx: number;
   maxPx: number;

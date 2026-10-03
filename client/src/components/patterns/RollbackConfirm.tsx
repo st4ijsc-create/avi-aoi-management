@@ -10,7 +10,18 @@
  *
  * `requireOtp` (BẮT BUỘC khai) áp cho cả hai: OTP 6 số hỏi SAU bước xác nhận, MỖI lượt một mã
  * (`useStepUpOtp`; server `deployProcedure` → `requirePerCallFreshTotp`). Huỷ OTP ⇒ không gọi
- * `onRollback`. `onRollback` trả promise bị reject ⇒ lỗi hiện qua `toastTrpcError` (không bị nuốt);
+ * `onRollback`.
+ *
+ * ⚠ Ruling R-2-q (Đợt 2 Task 11) — với thủ tục đứng trên `deployProcedure`, MẪU ĐƯỢC DUYỆT là
+ * `requireOtp={false}` + `stepUp.guard` CỦA TRANG ngay trong `onRollback`:
+ *   `onRollback={({ reason }) => stepUp.guard((totpCode) => m.mutate({ …, reason, totpCode }))}`.
+ * `requireOtp={false}` ở đây KHÔNG bỏ OTP: OTP vẫn hỏi tươi mỗi lượt, chỉ là do guard của trang (một lần,
+ * không hỏi đôi). Lý do: lưới step-up `vramPanelStepUp.unit.test.ts` §I-3 đòi mọi điểm gọi `.mutate(` của
+ * một `deployProcedure` nằm TRONG `stepUp.guard` và gửi `totpCode` ở CÙNG file với `useMutation` — guard
+ * nằm trong component này thì lưới không thấy và báo đỏ (đúng). `requireOtp` (guard ở đây) chỉ dành cho
+ * thủ tục KHÔNG thuộc tập lưới đó.
+ *
+ * `onRollback` trả promise bị reject ⇒ lỗi hiện qua `toastTrpcError` (không bị nuốt);
  * trang nào đã tự toast trong `onError` của mutation thì gọi `mutate` (không trả promise) để khỏi
  * báo đôi.
  */
