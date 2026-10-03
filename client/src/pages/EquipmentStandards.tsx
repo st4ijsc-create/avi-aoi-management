@@ -1,82 +1,99 @@
 /**
  * E1 (doc 16 §10 / §12) — EQUIPMENT STANDARDS & GOVERNANCE surface (Khối 5).
  *
- * Read-mostly governance cockpit over the equipmentStandardsRouter, organised into tabs:
- *   • "Hierarchy" (E1-a)  — versioned Device Type tree (Equipment→Robot→CollaborativeRobot,
- *       Inspection/TestCell/ProcessAutomation + leaf classes). Select a node → resolveType
- *       shows the fully-merged attributes / commands / PackML states / extension. A
- *       "register device type" dialog (gated).
- *   • "Alarm taxonomy" (E1-b) — ISA-18.2 alarm mappings table (vendor, nativeCode→standardCode,
- *       severity, recommended action) + a vendor/native lookup (mapAlarm) and an upsert dialog.
- *   • "Change requests" (E1-c) — Equipment Standards Board board: status / conformance / stage
- *       badges + backward-incompatible warning. Submit-CR dialog + review/publish actions (gated;
- *       publish surfaces the backward-compat / conformance gate result via toast).
- *   • "Compliance" (E1-e + E1-d) — complianceMetrics detail (KPIs + unmapped types + failing
- *       types) and a "run conformance" action (E1-d) with a pass/fail bar chart + violations.
+ * Read-mostly governance cockpit over the equipmentStandardsRouter, organised into tabs (`?tab=`, old values):
+ *   • "hierarchy" (E1-a)  — versioned Device Type tree + fully-merged detail (resolveType). Register type (gated).
+ *   • "alarms" (E1-b)     — ISA-18.2 alarm mappings table + vendor/native lookup (mapAlarm) + upsert (gated).
+ *   • "alarmPerf" (W5-21) — EEMUA-191 alarm KPIs (one source: alarmKpi.summary) + master alarm DB (rationalization).
+ *   • "crs" (E1-c)        — Equipment Standards Board change requests: review / approve / reject / publish.
+ *   • "compliance" (E1-e + E1-d) — complianceMetrics detail + a "run conformance" action.
  *
- * SAFETY / NO-OP (mirrors the router): every write here is GOVERNANCE METADATA only (versioning,
- * taxonomy, change-requests) — it opens NO device-control path. Mutations are gated behind
- * EQ_GOVERN_ENABLED. When the flag is OFF the page shows an honest "preview" banner and surfaces
- * the CONFLICT error gracefully (toast.info, not red). Read RBAC: machine_monitoring/canView.
- * Actions: machine_control/canCreate (hidden when absent).
+ * Doc 81 Đợt 2 Task 9 — mẫu P3/P4 (`CockpitLayout`):
+ *  - Header một hàng: h1 · chip cờ (4 trạng thái của FeatureStatusGate) · chip LỖI "N loại không đạt" (thay khối đỏ) ·
+ *    `StatusChipStrip` (thay 5 MetricCard; MỖI chip ghi thủ tục nguồn; số liên quan cảnh báo GHIM — R-2-p) ·
+ *    "Khi nào dùng" + "Chỉ metadata" (câu an toàn cũ) · làm mới.
+ *  - MAIN (`data-layout-main`) = hàng tab (thanh công cụ DUY NHẤT; công cụ của tab đang mở nằm cùng hàng) + nội dung:
+ *      hierarchy  → `SplitListDetail`: cây (role=tree) | chi tiết đã phân giải, chọn qua `?typeKey=` (F5 / deep link).
+ *      alarms     → `DataTable` PHÂN TRANG (FE1: 185 dòng không phân trang ⇒ trang cao 8,3×). Chuẩn hoá = SHEET.
+ *      alarmPerf  → bảng cảnh báo chuẩn (DataTable phân trang); KPI là chip có nguồn ở PANEL PHỤ (ngoài MAIN).
+ *                   Chattering vẫn "Chưa đo được" (nguồn chung chưa tính). Shelve vẫn KHOÁ (STD-02).
+ *      crs        → `ApprovalQueue` dùng chung với ECN, cấu hình theo hợp đồng HIỆN TẠI (R-2-g): KHÔNG bước xác nhận,
+ *                   KHÔNG bắt lý do từ chối — một cú bấm = một lượt gọi như cũ (R-2-n). Maker-checker: tác giả không tự
+ *                   duyệt/từ chối/xuất bản (server `selfReviewChangeRequest` / `selfPublishEquipmentStandard`).
+ *      compliance → như cũ.
+ *  - Dialog tạo/sửa → sheet (`FlyoutHost`, `?flyout=`): eq-type-new, eq-alarm-map, eq-alarm-normalize, eq-master
+ *    (`flyoutId` = id khi sửa), eq-cr-new — trường, mặc định, kiểm tra, payload như dialog cũ.
+ *  - < 1024 px: công cụ của tab xuống hàng đầu nội dung tab.
  *
- * Uses the DS F1b pattern components (PageHeader / MetricCard / StatusBadge / SectionCard /
- * Heading / Text). i18n via the t("eqStandards.*", "English default") fallback pattern.
+ * SAFETY / NO-OP (mirrors the router): every write here is GOVERNANCE METADATA only — it opens NO device-control path.
+ * Mutations are gated behind EQ_GOVERN_ENABLED. Read RBAC: machine_monitoring/canView. Actions: machine_control/canCreate.
  */
-import { useMemo, useState } from "react";
+import { createContext, useContext, useEffect, useId, useMemo, useState, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
+import { useLocation, useSearch } from "wouter";
 import type { inferRouterOutputs } from "@trpc/server";
 import type { AppRouter } from "../../../server/routers";
 import { trpc } from "@/lib/trpc";
 import { usePermissions } from "@/_core/hooks/usePermissions";
+import { useAuth } from "@/_core/hooks/useAuth";
 import DashboardLayout from "@/components/DashboardLayout";
 import { ViewOnlyBadge } from "@/components/PermissionGate";
 import {
-  MetricCard,
+  ApprovalQueue,
+  CockpitLayout,
+  EmptyState,
+  FeatureStatusNoticeChip,
+  FlyoutHost,
+  NoticeChip,
+  NoticeStack,
   PageContainer,
-  PageHeader,
-  SectionCard,
+  SplitListDetail,
   StatusBadge,
+  StatusChipStrip,
   Heading,
   Text,
+  chipStateFromQuery,
   chartTooltipStyle,
   chartGridProps,
   chartAxisTick,
+  useCloseOwnLayer,
+  useFlyout,
+  useNarrowViewport,
+  type ApprovalItem,
+  type FlyoutDefinition,
+  type StatusChipItem,
+  type TransitionAction,
 } from "@/components/patterns";
 // doc 63 AUD-08 — alarm badge 4-hue riêng (critical≠high) khi HMI_ISA101_V2 bật.
 import { AlarmPriorityBadge } from "@/components/patterns/isaStateBadges";
 import { isIsa101V2 } from "@/lib/hmiFlags";
+import { type TabbedHubTab } from "@/components/workspace/TabbedHub";
+import { resolveActiveTab } from "@/components/workspace/hubState";
+import { DataTable, type DataTableColumn } from "@/components/DataTable";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
-  Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
-} from "@/components/ui/table";
-import {
-  Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle,
-} from "@/components/ui/dialog";
-import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from "@/components/ui/select";
 import { Checkbox } from "@/components/ui/checkbox";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
   ResponsiveContainer, BarChart, Bar, CartesianGrid, XAxis, YAxis, Tooltip, Cell,
 } from "recharts";
 import {
-  ShieldCheck, RefreshCw, Info, Lock, AlertTriangle, Plus, Search, Link2,
-  Network, Bell, GitPullRequest, ClipboardCheck, ChevronRight, ChevronDown,
-  Boxes, Cpu, Tags, Wrench, CheckCircle2, XCircle, Send, Eye, Rocket, Layers, Activity,
+  ShieldCheck, RefreshCw, AlertTriangle, Plus, Search,
+  ChevronRight, ChevronDown,
+  Boxes, Tags, Wrench, CheckCircle2, XCircle, Send, Eye, Layers, Activity,
 } from "lucide-react";
 import { toast } from "sonner";
 import { mapTrpcError } from "@/lib/trpcErrors";
 import { isFeatureDisabledError } from "@/lib/featureFlagError";
 import {
   deriveFeatureStatus,
-  FeatureStatusGate,
   isFeatureStatusUnsettled,
+  type FeatureStatus,
 } from "@/components/common/FeatureStatusGate";
 // doc 80 Đợt 1 Task 4 (X-01) — nhãn SEED trên cây device type + dải tóm tắt.
 import { ProvenanceBadge, ProvenanceSummary } from "@/components/common/ProvenanceBadge";
@@ -96,6 +113,18 @@ type Compliance = RouterOutputs["equipmentStandards"]["complianceMetrics"];
 type AlarmKpis = RouterOutputs["alarmKpi"]["summary"];
 type MasterAlarmRow = RouterOutputs["equipmentStandards"]["listMasterAlarms"][number];
 
+const TAB_VALUES = ["hierarchy", "alarms", "alarmPerf", "crs", "compliance"] as const;
+type TabValue = (typeof TAB_VALUES)[number];
+const BASE_PATH = "/equipment-standards";
+/** Bảng ánh xạ / cảnh báo chuẩn: 15 dòng một trang ⇒ trang ≤ 1,5× khung nhìn ở 1366×768 (FE1 cũ 8,3×). */
+const ALARM_PAGE_SIZE = 15;
+/** Số chip KPI hiện thẳng (đo trên trình duyệt thật, header một hàng với h1 + chip "Khi nào dùng"): ≥ 1600 px ⇒ 4 (+1);
+ *  1280–1599 ⇒ 2 (+3); < 1280 px ⇒ 1 = chip GHIM (+4). Dải không co (shrink-0) — phần bị header cắt là ghi chú phía sau. */
+const HEADER_ALL_BREAKPOINT_PX = 1600;
+const HEADER_MID_BREAKPOINT_PX = 1280;
+/** Dưới 1366 px (tab có panel phụ: dưới 1600 px) nút công cụ chỉ còn icon (tên ở aria-label + title) để hàng tab không bị cắt. */
+const COMPACT_TOOLS_BREAKPOINT_PX = 1366;
+
 const CONSEQUENCES = ["none", "minor", "major", "severe"] as const;
 type Consequence = (typeof CONSEQUENCES)[number];
 
@@ -114,21 +143,99 @@ function PriorityBadge({ value, label }: { value: string; label: string }) {
 const SEVERITIES = ["critical", "high", "medium", "low", "diagnostic"] as const;
 type Severity = (typeof SEVERITIES)[number];
 
-const SEVERITY_TONE: Record<Severity, "error" | "warning" | "info" | "success" | "default"> = {
-  critical: "error",
-  high: "error",
-  medium: "warning",
-  low: "info",
-  diagnostic: "default",
-};
-
 function pct(n: number): string {
   return `${Math.round(n * 100)}%`;
 }
 
+/** `?name=` của trang (replace — không thêm mục lịch sử), giữ mọi tham số khác. */
+function useUrlParam(name: string): [string | null, (value: string | null) => void] {
+  const search = useSearch();
+  const [location, setLocation] = useLocation();
+  const value = useMemo(() => new URLSearchParams(search).get(name), [search, name]);
+  const set = (v: string | null) => {
+    const p = new URLSearchParams(window.location.search);
+    if (v == null || v === "") p.delete(name);
+    else p.set(name, v);
+    const qs = p.toString();
+    setLocation(qs ? `${location}?${qs}` : location, { replace: true });
+  };
+  return [value, set];
+}
+
+// ── Dữ liệu dùng chung cho các tab (TabbedHub: Content là ComponentType không nhận props) ──────
+interface StdPageCtx {
+  tab: TabValue;
+  /** < 1024 px: công cụ của tab nằm ĐẦU nội dung tab (hàng tab không đủ chỗ) — GC10. */
+  narrow: boolean;
+  /** 1024–1365 px: nút công cụ chỉ còn icon (tên ở aria-label/title). */
+  compactTools: boolean;
+  /** < 1024 px: chip cờ / loại không đạt / ghi chú xuống hàng công cụ đầu nội dung tab (header hẹp cắt phần tràn). */
+  narrowNotices: ReactNode;
+  canControl: boolean;
+  userId: number | null;
+  /** Nút ghi cổng cờ (Register type / Map alarm / Add master): canControl && cờ đã rõ. */
+  flagCanControl: boolean;
+  flagControlReason: string | undefined;
+  // hierarchy
+  tree: TreeNode[];
+  treeFlat: TreeNode[];
+  treeLoading: boolean;
+  selectedTypeKey: string | null;
+  setSelectedTypeKey: (k: string | null) => void;
+  resolved: ResolvedType | undefined;
+  resolveFetching: boolean;
+  resolveError: boolean;
+  // alarms
+  alarms: AlarmMapping[];
+  alarmsLoading: boolean;
+  alarmsError: boolean;
+  vendors: string[];
+  vendorFilter: string;
+  setVendorFilter: (v: string) => void;
+  // alarm performance
+  kpiWindow: number;
+  setKpiWindow: (n: number) => void;
+  masters: MasterAlarmRow[];
+  mastersLoading: boolean;
+  shelvePending: boolean;
+  deletePending: boolean;
+  unshelve: (m: MasterAlarmRow) => void;
+  deleteMaster: (m: MasterAlarmRow) => void;
+  // crs
+  crs: ChangeRequest[];
+  crsStatus: "loading" | "error" | "ready";
+  crStatusFilter: string;
+  setCrStatusFilter: (v: string) => void;
+  crPending: boolean;
+  onCrTransition: (item: ApprovalItem, action: TransitionAction) => void;
+  // compliance
+  compliance: Compliance | undefined;
+  conformanceChart: { name: string; value: number; kind: "pass" | "fail" }[];
+  runConfReq: boolean;
+  conformance: Conformance | undefined;
+  conformanceFetching: boolean;
+  runConformance: () => void;
+}
+const StdCtx = createContext<StdPageCtx | null>(null);
+function useStdCtx(): StdPageCtx {
+  const v = useContext(StdCtx);
+  if (!v) throw new Error("StdCtx missing");
+  return v;
+}
+
+// Tab KHÔNG icon: hàng tab + công cụ của tab phải vừa một dòng ở 1366 px (icon tốn ~22 px mỗi tab).
+const TABS: readonly TabbedHubTab[] = [
+  { value: "hierarchy", labelKey: "eqStandards.tab.hierarchy", fallback: "Hierarchy", Content: HierarchyTab },
+  { value: "alarms", labelKey: "eqStandards.tab.alarms", fallback: "Alarm taxonomy", Content: AlarmsTab },
+  { value: "alarmPerf", labelKey: "eqStandards.tab.alarmPerf", fallback: "Alarm performance", Content: AlarmPerfTab },
+  { value: "crs", labelKey: "eqStandards.tab.crs", fallback: "Change requests", Content: CrsTab },
+  { value: "compliance", labelKey: "eqStandards.tab.compliance", fallback: "Compliance", Content: ComplianceTab },
+];
+
 export default function EquipmentStandards() {
   const { t } = useTranslation();
   const { hasPermission } = usePermissions();
+  const { user } = useAuth();
   const canView = hasPermission("machine_monitoring", "canView");
   const canControl = hasPermission("machine_control", "canCreate");
   // U4 (doc 26 §2.4) — hiện-nhưng-khoá: lý do khi thiếu quyền điều khiển máy.
@@ -136,25 +243,27 @@ export default function EquipmentStandards() {
     ? t("common.gate.needPerm", "Requires {{perm}} permission", { perm: "machine_control" })
     : undefined;
 
-  const [tab, setTab] = useState("hierarchy");
-  const [selectedTypeKey, setSelectedTypeKey] = useState<string | null>(null);
+  const search = useSearch();
+  const tab = resolveActiveTab(search, TAB_VALUES, "hierarchy") as TabValue;
+  const narrow = useNarrowViewport();
+  const headerAll = !useNarrowViewport(HEADER_ALL_BREAKPOINT_PX);
+  const headerMid = !useNarrowViewport(HEADER_MID_BREAKPOINT_PX);
+  // Tab "Hiệu năng cảnh báo" có panel phụ (300–340 px) ⇒ MAIN hẹp hơn: < 1600 px nút công cụ cũng chỉ còn icon.
+  const below1366 = useNarrowViewport(COMPACT_TOOLS_BREAKPOINT_PX);
+  const compactTools = !narrow && (below1366 || (tab === "alarmPerf" && !headerAll));
+  // Loại thiết bị đang xem nằm ở `?typeKey=` (F5 / deep link giữ được).
+  const [selectedTypeKey, setSelectedTypeKey] = useUrlParam("typeKey");
   const [vendorFilter, setVendorFilter] = useState<string>("");
   const [crStatusFilter, setCrStatusFilter] = useState<string>("");
 
-  // Lookup state
+  // Lookup state (sheet chuẩn hoá — giữ ở trang để kết quả còn khi mở lại sheet, như panel cũ)
   const [lookupVendor, setLookupVendor] = useState("");
   const [lookupCode, setLookupCode] = useState("");
   const [lookup, setLookup] = useState<{ vendor: string; nativeCode: string } | null>(null);
 
-  // Dialog state
-  const [registerOpen, setRegisterOpen] = useState(false);
-  const [upsertAlarmOpen, setUpsertAlarmOpen] = useState(false);
-  const [submitCrOpen, setSubmitCrOpen] = useState(false);
   const [runConfReq, setRunConfReq] = useState(false);
   // W5-21 — alarm performance state
   const [kpiWindow, setKpiWindow] = useState(7);
-  const [masterAlarmOpen, setMasterAlarmOpen] = useState(false);
-  const [editMaster, setEditMaster] = useState<MasterAlarmRow | null>(null);
 
   const utils = trpc.useUtils();
 
@@ -239,16 +348,17 @@ export default function EquipmentStandards() {
   };
 
   // ── Mutations (RBAC: machine_control/canCreate + EQ_GOVERN_ENABLED) ──────────
+  // Toast + invalidate ở hook TRANG (chạy cả khi sheet đã đóng trong lúc chờ); sheet tự đóng qua callback lượt gọi.
   const registerM = trpc.equipmentStandards.registerDeviceType.useMutation({
-    onSuccess: () => { toast.success(t("eqStandards.typeRegistered", "Device type registered (draft)")); setRegisterOpen(false); refetchAll(); },
+    onSuccess: () => { toast.success(t("eqStandards.typeRegistered", "Device type registered (draft)")); refetchAll(); },
     onError: onMutationError,
   });
   const upsertAlarmM = trpc.equipmentStandards.upsertAlarmMapping.useMutation({
-    onSuccess: () => { toast.success(t("eqStandards.alarmSaved", "Alarm mapping saved")); setUpsertAlarmOpen(false); refetchAll(); },
+    onSuccess: () => { toast.success(t("eqStandards.alarmSaved", "Alarm mapping saved")); refetchAll(); },
     onError: onMutationError,
   });
   const submitCrM = trpc.equipmentStandards.submitChangeRequest.useMutation({
-    onSuccess: () => { toast.success(t("eqStandards.crSubmitted", "Change request submitted")); setSubmitCrOpen(false); refetchAll(); },
+    onSuccess: () => { toast.success(t("eqStandards.crSubmitted", "Change request submitted")); refetchAll(); },
     onError: onMutationError,
   });
   const reviewCrM = trpc.equipmentStandards.reviewChangeRequest.useMutation({
@@ -268,7 +378,7 @@ export default function EquipmentStandards() {
   });
   // W5-21 — master alarm mutations
   const upsertMasterM = trpc.equipmentStandards.upsertMasterAlarm.useMutation({
-    onSuccess: () => { toast.success(t("eqStandards.masterSaved", "Master alarm saved")); setMasterAlarmOpen(false); setEditMaster(null); refetchAll(); },
+    onSuccess: () => { toast.success(t("eqStandards.masterSaved", "Master alarm saved")); refetchAll(); },
     onError: onMutationError,
   });
   const shelveMasterM = trpc.equipmentStandards.shelveMasterAlarm.useMutation({
@@ -308,656 +418,519 @@ export default function EquipmentStandards() {
     );
   }
 
-  return (
-    <DashboardLayout>
-      <PageContainer className="flex flex-col gap-4 space-y-0">
-        {/* ── PageHeader (DS F1b shared pattern) ─────────────────────────────── */}
-        <PageHeader
-          icon={<ShieldCheck className="h-6 w-6" />}
-          title={t("eqStandards.title", "Equipment Standards & Governance")}
-          badge={!canControl ? <ViewOnlyBadge module="machine_control" /> : undefined}
-          description={t("eqStandards.subtitle", "Versioned device-type hierarchy, ISA-18.2 alarm taxonomy and the Equipment Standards Board — governance metadata only, no device commands.")}
-          actions={
-            <Button size="icon" variant="ghost" onClick={refetchAll} title={t("common.refresh", "Refresh")}>
-              <RefreshCw className="h-4 w-4" />
-            </Button>
-          }
+  // R-2-g / R-2-n — mỗi cú bấm đúng MỘT lượt gọi với đúng input cũ (không reviewNotes, publish → staging).
+  const onCrTransition = (item: ApprovalItem, action: TransitionAction) => {
+    const crId = Number(item.id);
+    if (action.key === "publish") publishCrM.mutate({ crId, stage: "staging" });
+    else if (action.key === "in_review" || action.key === "approved" || action.key === "rejected") reviewCrM.mutate({ crId, to: action.key });
+  };
+
+  const ctx: StdPageCtx = {
+    tab,
+    narrow,
+    compactTools,
+    narrowNotices: null,
+    canControl,
+    userId: user?.id ?? null,
+    flagCanControl,
+    flagControlReason,
+    tree,
+    treeFlat,
+    treeLoading: treeQ.isLoading,
+    selectedTypeKey,
+    setSelectedTypeKey,
+    resolved,
+    resolveFetching: resolveQ.isFetching,
+    resolveError: !!resolveQ.error,
+    alarms,
+    alarmsLoading: alarmsQ.isLoading,
+    alarmsError: alarmsQ.isError,
+    vendors,
+    vendorFilter,
+    setVendorFilter,
+    kpiWindow,
+    setKpiWindow,
+    masters,
+    mastersLoading: mastersQ.isLoading,
+    shelvePending: shelveMasterM.isPending,
+    deletePending: deleteMasterM.isPending,
+    unshelve: (m) => shelveMasterM.mutate({ id: m.id, shelvedUntil: null }),
+    deleteMaster: (m) => deleteMasterM.mutate({ id: m.id }),
+    crs,
+    crsStatus: crsQ.isLoading ? "loading" : crsQ.isError ? "error" : "ready",
+    crStatusFilter,
+    setCrStatusFilter,
+    crPending: reviewCrM.isPending || publishCrM.isPending,
+    onCrTransition,
+    compliance,
+    conformanceChart,
+    runConfReq,
+    conformance,
+    conformanceFetching: conformanceQ.isFetching,
+    runConformance: () => { setRunConfReq(true); void utils.equipmentStandards.runConformance.invalidate(); },
+  };
+
+  // ── Flyouts (một stack sheet phải; URL `?flyout=&flyoutId=` là nguồn sự thật) ──
+  // Nút cũ "Đăng ký loại" / "Ánh xạ cảnh báo" / "Thêm cảnh báo chuẩn" bị khoá khi cờ CHƯA RÕ — deep link / F5 cũng
+  // vậy: chưa rõ ⇒ sheet chỉ báo trạng thái, không có form. Cờ TẮT (đã rõ) ⇒ form như nút cũ (server trả CONFLICT).
+  const unsettledBody = (
+    <UnsettledFlag status={flagStatus} />
+  );
+  const flyouts: Record<string, FlyoutDefinition> = {
+    "eq-alarm-normalize": {
+      size: "md",
+      title: t("eqStandards.lookupTitle", "Normalize an alarm"),
+      description: t("eqStandards.lookupDesc", "Look up how a vendor's native alarm code maps to the ISA-18.2 standard code."),
+      render: () => (
+        <NormalizeAlarmPanel
+          vendor={lookupVendor}
+          code={lookupCode}
+          setVendor={setLookupVendor}
+          setCode={setLookupCode}
+          lookup={lookup}
+          onLookup={(v) => setLookup(v)}
+          fetching={mapAlarmQ.isFetching}
+          mapped={mapped}
         />
-
-        {/* U7 (doc 26 §2.1) — "Khi nào dùng": trang LÀ GÌ / DÙNG KHI NÀO cho KTV mới. */}
-        <div className="flex items-start gap-2 rounded-md border bg-muted/40 px-3 py-2 text-xs text-muted-foreground">
-          <Info className="mt-0.5 h-3.5 w-3.5 shrink-0 text-primary" aria-hidden="true" />
-          <span>{t("eqStandards.whenToUse", "When to use — govern device-type standards, the ISA-18.2 alarm taxonomy and the review board. Governance metadata only, no device commands.")}</span>
-        </div>
-
-        {/* ── Flag status banner — honest 4-state (loading/off/on/error), doc 80 Task 1 ── */}
-        <FeatureStatusGate
-          status={flagStatus}
-          offMessage={t(
-            "eqStandards.flagOffBanner",
-            "Preview mode: equipment governance is disabled. Reads work; actions (register type / map alarm / submit / review / publish) are blocked until it is enabled.",
-          )}
-          errorMessage={t(
-            "eqStandards.flagStatusError",
-            "Could not check whether equipment governance is enabled — actions are disabled until this is confirmed.",
-          )}
-        />
-
-        {/* Safety note — mirrors the router's NO-OP discipline */}
-        <div className="flex items-start gap-2 rounded-md border border-border bg-muted/40 p-3 text-sm text-muted-foreground">
-          <Lock className="mt-0.5 h-4 w-4 shrink-0" />
-          <span>
-            {t(
-              "eqStandards.safetyNote",
-              "This page writes governance metadata only (device-type versions, alarm taxonomy, change requests). It opens no device-control path.",
-            )}
-          </span>
-        </div>
-
-        {/* ── KPI strip (complianceMetrics) ──────────────────────────────────── */}
-        <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
-          <MetricCard
-            icon={<Cpu className="h-4 w-4" />}
-            label={t("eqStandards.kpi.mapped", "Machines mapped")}
-            value={compliance ? pct(compliance.mappedRate) : "—"}
-            delta={compliance ? `${compliance.machinesMappedToPublished}/${compliance.machineCount}` : undefined}
-            tone={compliance && compliance.mappedRate < 1 ? "warning" : "good"}
-          />
-          <MetricCard
-            icon={<ClipboardCheck className="h-4 w-4" />}
-            label={t("eqStandards.kpi.conformance", "Conformance pass")}
-            value={compliance ? pct(compliance.conformancePassRate) : "—"}
-            delta={compliance ? `${compliance.conformancePassCount}/${compliance.conformanceTypeCount}` : undefined}
-            tone={compliance && compliance.conformancePassRate < 1 ? "danger" : "good"}
-          />
-          <MetricCard
-            icon={<GitPullRequest className="h-4 w-4" />}
-            label={t("eqStandards.kpi.pendingCrs", "Pending CRs")}
-            value={compliance?.crPendingCount ?? "—"}
-            tone={compliance && compliance.crPendingCount > 0 ? "warning" : "default"}
-          />
-          <MetricCard
-            icon={<Bell className="h-4 w-4" />}
-            label={t("eqStandards.kpi.vendorCoverage", "Alarm vendors")}
-            value={compliance?.alarmVendorCoverage ?? "—"}
-          />
-          <MetricCard
-            icon={<Boxes className="h-4 w-4" />}
-            label={t("eqStandards.kpi.types", "Device types")}
-            value={treeQ.data?.typeCount ?? "—"}
-          />
-        </div>
-
-        {/* Failing-types alert */}
-        {compliance && compliance.failingTypes.length > 0 && (
-          <div className="flex items-start gap-2 rounded-md border border-destructive/40 bg-destructive/10 p-3 text-sm">
-            <XCircle className="mt-0.5 h-4 w-4 shrink-0 text-destructive" />
-            <div>
-              <div className="font-medium text-destructive">{t("eqStandards.failingTypesTitle", "Types failing conformance")}</div>
-              <div className="mt-1 flex flex-wrap gap-1">
-                {compliance.failingTypes.map((k) => (
-                  <Badge key={k} variant="outline" className="border-destructive/30 bg-destructive/15 text-destructive font-mono text-xs">{k}</Badge>
-                ))}
-              </div>
-            </div>
-          </div>
-        )}
-
-        {/* ── Tabbed surface ─────────────────────────────────────────────────── */}
-        <Tabs value={tab} onValueChange={setTab} className="gap-4">
-          <TabsList className="flex-wrap">
-            <TabsTrigger value="hierarchy"><Network className="mr-1 h-4 w-4" />{t("eqStandards.tab.hierarchy", "Hierarchy")}</TabsTrigger>
-            <TabsTrigger value="alarms"><Bell className="mr-1 h-4 w-4" />{t("eqStandards.tab.alarms", "Alarm taxonomy")}</TabsTrigger>
-            <TabsTrigger value="alarmPerf"><Activity className="mr-1 h-4 w-4" />{t("eqStandards.tab.alarmPerf", "Alarm performance")}</TabsTrigger>
-            <TabsTrigger value="crs"><GitPullRequest className="mr-1 h-4 w-4" />{t("eqStandards.tab.crs", "Change requests")}</TabsTrigger>
-            <TabsTrigger value="compliance"><ClipboardCheck className="mr-1 h-4 w-4" />{t("eqStandards.tab.compliance", "Compliance")}</TabsTrigger>
-          </TabsList>
-
-          {/* ════════════════ TAB: Hierarchy (E1-a) ════════════════ */}
-          <TabsContent value="hierarchy" data-layout-main="equipment-standards" className="flex flex-col gap-4 lg:flex-row lg:items-start">
-            <SectionCard
-              icon={<Network className="h-4 w-4" />}
-              title={t("eqStandards.hierarchyTitle", "Device type hierarchy")}
-              className="lg:w-1/2"
-              action={
-                <Button size="sm" variant="outline" className="h-8" disabled={!flagCanControl} title={flagControlReason} onClick={() => setRegisterOpen(true)}>
-                  <Plus className="mr-1 h-4 w-4" />{t("eqStandards.registerType", "Register type")}
-                </Button>
-              }
-            >
-              {treeQ.isLoading && <Text tone="muted" variant="body-sm">{t("eqStandards.loading", "Loading…")}</Text>}
-              {!treeQ.isLoading && tree.length === 0 && (
-                <Text tone="muted" variant="body-sm">{t("eqStandards.treeEmpty", "No device types.")}</Text>
-              )}
-              <ProvenanceSummary rows={treeFlat} className="mb-2" />
-              <div className="space-y-0.5">
-                {tree.map((node) => (
-                  <TreeRow
-                    key={node.typeKey}
-                    node={node}
-                    depth={0}
-                    selected={selectedTypeKey}
-                    onSelect={setSelectedTypeKey}
-                  />
-                ))}
-              </div>
-            </SectionCard>
-
-            {/* Resolved detail */}
-            <SectionCard
-              icon={<Layers className="h-4 w-4" />}
-              title={selectedTypeKey
-                ? t("eqStandards.resolvedTitle", "Resolved: {{key}}").replace("{{key}}", selectedTypeKey)
-                : t("eqStandards.resolvedTitlePlain", "Resolved device type")}
-              className="lg:w-1/2"
-            >
-              {!selectedTypeKey && (
-                <Text tone="muted" variant="body-sm">{t("eqStandards.selectHint", "Select a device type in the tree to view its fully-merged attributes, commands and PackML states.")}</Text>
-              )}
-              {selectedTypeKey && resolveQ.isFetching && <Text tone="muted" variant="body-sm">{t("eqStandards.loading", "Loading…")}</Text>}
-              {selectedTypeKey && !resolveQ.isFetching && resolveQ.error && (
-                <Text tone="muted" variant="body-sm">{t("eqStandards.notFound", "Type not found:")} <span className="font-mono">{selectedTypeKey}</span></Text>
-              )}
-              {resolved && !resolveQ.isFetching && <ResolvedDetail resolved={resolved} />}
-            </SectionCard>
-          </TabsContent>
-
-          {/* ════════════════ TAB: Alarm taxonomy (E1-b) ════════════════ */}
-          <TabsContent value="alarms" data-layout-main="equipment-standards" className="flex flex-col gap-4">
-            {/* Lookup panel */}
-            <SectionCard icon={<Search className="h-4 w-4" />} title={t("eqStandards.lookupTitle", "Normalize an alarm")}>
-              <div className="flex flex-wrap items-end gap-2">
-                <div className="grid gap-1">
-                  <Label className="text-xs text-muted-foreground">{t("eqStandards.vendor", "Vendor")}</Label>
-                  <Input className="w-44" value={lookupVendor} placeholder="fanuc" onChange={(e) => setLookupVendor(e.target.value)} />
-                </div>
-                <div className="grid gap-1">
-                  <Label className="text-xs text-muted-foreground">{t("eqStandards.nativeCode", "Native code")}</Label>
-                  <Input className="w-44" value={lookupCode} placeholder="SRVO-050" onChange={(e) => setLookupCode(e.target.value)}
-                    onKeyDown={(e) => { if (e.key === "Enter" && lookupVendor.trim() && lookupCode.trim()) setLookup({ vendor: lookupVendor.trim(), nativeCode: lookupCode.trim() }); }} />
-                </div>
-                <Button variant="outline" size="sm" disabled={!lookupVendor.trim() || !lookupCode.trim()}
-                  onClick={() => setLookup({ vendor: lookupVendor.trim(), nativeCode: lookupCode.trim() })}>
-                  <Search className="mr-1 h-4 w-4" />{t("eqStandards.lookup", "Look up")}
-                </Button>
-              </div>
-              {lookup && mapAlarmQ.isFetching && <p className="mt-3 text-sm text-muted-foreground">{t("eqStandards.loading", "Loading…")}</p>}
-              {mapped && lookup && !mapAlarmQ.isFetching && (
-                <div className="mt-3 flex flex-wrap items-center gap-2 rounded-md border border-border bg-muted/30 p-3 text-sm">
-                  <span className="font-mono">{lookup.vendor} / {lookup.nativeCode}</span>
-                  <ChevronRight className="h-4 w-4 text-muted-foreground" />
-                  <span className="font-mono font-medium">{mapped.standardCode}</span>
-                  <PriorityBadge value={mapped.severity} label={t(`eqStandards.severity.${mapped.severity}`, mapped.severity)} />
-                  {!mapped.mapped && <Badge variant="outline" className="text-muted-foreground">{t("eqStandards.unmappedDefault", "fail-safe default")}</Badge>}
-                  {mapped.recommendedAction && <span className="text-xs text-muted-foreground">— {mapped.recommendedAction}</span>}
-                </div>
-              )}
-            </SectionCard>
-
-            {/* Mapping table */}
-            <SectionCard
-              icon={<Bell className="h-4 w-4" />}
-              title={t("eqStandards.alarmTableTitle", "Alarm mappings")}
-              contentClassName="p-0"
-              action={
-                <div className="flex items-center gap-2">
-                  {/* U11 — Select DS thay <select> gõ tay; "__all__" là sentinel cho "tất cả". */}
-                  <Select value={vendorFilter || "__all__"} onValueChange={(v) => setVendorFilter(v === "__all__" ? "" : v)}>
-                    <SelectTrigger size="sm" className="w-40"><SelectValue /></SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="__all__">{t("eqStandards.allVendors", "All vendors")}</SelectItem>
-                      {vendors.map((v) => <SelectItem key={v} value={v}>{v}</SelectItem>)}
-                    </SelectContent>
-                  </Select>
-                  <Button size="sm" variant="outline" className="h-8" disabled={!flagCanControl} title={flagControlReason} onClick={() => setUpsertAlarmOpen(true)}>
-                    <Plus className="mr-1 h-4 w-4" />{t("eqStandards.mapAlarm", "Map alarm")}
-                  </Button>
-                </div>
-              }
-            >
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>{t("eqStandards.col.vendor", "Vendor")}</TableHead>
-                    <TableHead>{t("eqStandards.col.native", "Native code")}</TableHead>
-                    <TableHead>{t("eqStandards.col.standard", "Standard code")}</TableHead>
-                    <TableHead>{t("eqStandards.col.severity", "Severity")}</TableHead>
-                    <TableHead>{t("eqStandards.col.action", "Recommended action")}</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {alarmsQ.isLoading && (
-                    <TableRow><TableCell colSpan={5} className="py-8 text-center text-muted-foreground">{t("eqStandards.loading", "Loading…")}</TableCell></TableRow>
-                  )}
-                  {!alarmsQ.isLoading && alarms.length === 0 && (
-                    <TableRow><TableCell colSpan={5} className="py-8 text-center text-muted-foreground">{t("eqStandards.alarmsEmpty", "No alarm mappings.")}</TableCell></TableRow>
-                  )}
-                  {alarms.map((a) => (
-                    <TableRow key={`${a.vendor}::${a.nativeCode}`}>
-                      <TableCell className="text-xs">{a.vendor}</TableCell>
-                      <TableCell className="font-mono text-xs">{a.nativeCode}</TableCell>
-                      <TableCell className="font-mono text-xs font-medium">{a.standardCode}</TableCell>
-                      <TableCell>
-                        <PriorityBadge value={a.severity} label={t(`eqStandards.severity.${a.severity}`, a.severity)} />
-                      </TableCell>
-                      <TableCell className="max-w-[22rem] truncate text-xs text-muted-foreground" title={a.recommendedAction ?? undefined}>
-                        {a.recommendedAction ?? "—"}
-                      </TableCell>
-                    </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
-            </SectionCard>
-          </TabsContent>
-
-          {/* ════════════════ TAB: Alarm performance (W5-21, EEMUA-191) ════════════════ */}
-          <TabsContent value="alarmPerf" data-layout-main="equipment-standards" className="flex flex-col gap-4">
-            {/* KPI strip */}
-            <SectionCard
-              icon={<Activity className="h-4 w-4" />}
-              title={t("eqStandards.alarmPerfTitle", "Alarm performance (EEMUA-191)")}
-              action={
-                <Select value={String(kpiWindow)} onValueChange={(v) => setKpiWindow(Number(v))}>
-                  <SelectTrigger size="sm" className="w-32"><SelectValue /></SelectTrigger>
-                  <SelectContent>
-                    {[1, 7, 30].map((d) => (
-                      <SelectItem key={d} value={String(d)}>{t("eqStandards.lastNDays", "Last {{n}} days").replace("{{n}}", String(d))}</SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              }
-            >
-              {kpisQ.isLoading && <Text tone="muted" variant="body-sm">{t("eqStandards.loading", "Loading…")}</Text>}
-              {kpisQ.error && !kpisQ.isLoading && (
-                <Text tone="muted" variant="body-sm">{t("eqStandards.kpiError", "Could not load alarm KPIs.")}</Text>
-              )}
-              {kpis && !kpisQ.isLoading && (
-                <>
-                  <p data-testid="alarm-kpi-source" className="mb-3 text-xs text-muted-foreground">
-                    {t(
-                      "eqStandards.kpiSourceNote",
-                      "Same source as the Alarm KPI dashboard and Control Tower (Andon + AI alerts). Operators: {{n}} — counted on the server.",
-                      { n: kpis.operatorCount },
-                    )}
-                  </p>
-                  <div className="grid grid-cols-2 gap-3 sm:grid-cols-4 lg:grid-cols-7">
-                    <div data-testid="alarm-kpi-total">
-                      <MetricCard icon={<Bell className="h-4 w-4" />} label={t("eqStandards.kpi.total", "Total alarms")} value={kpis.totalAlarms} />
-                    </div>
-                    <MetricCard icon={<Activity className="h-4 w-4" />} label={t("eqStandards.kpi.perOpHour", "Alarms/op/hour")}
-                      value={kpis.rate.alarmsPerHourPerOperator.toFixed(1)}
-                      tone={kpis.rate.status === "critical" ? "danger" : kpis.rate.status === "warning" ? "warning" : "good"} />
-                    <MetricCard icon={<AlertTriangle className="h-4 w-4" />} label={t("eqStandards.kpi.flood", "Flood windows")}
-                      value={kpis.flood.floodBucketCount} tone={kpis.flood.isFlooding ? "danger" : "good"} />
-                    <MetricCard icon={<Lock className="h-4 w-4" />} label={t("eqStandards.kpi.standing", "Standing/stale")}
-                      value={kpis.standing.count} tone={kpis.standing.count > 0 ? "warning" : "good"} />
-                    <MetricCard icon={<Cpu className="h-4 w-4" />} label={t("eqStandards.kpi.peakWindow", "Peak/10min")} value={kpis.flood.maxInWindow} />
-                    {/* Task 3 Fix round 1 — nguồn KPI chung (alarmKpi.summary) CHƯA tính chattering: nói
-                        thẳng "chưa đo được" thay vì bỏ ô im lặng hay bịa một con số. */}
-                    <div data-testid="alarm-kpi-chattering"
-                      title={t("eqStandards.kpi.chatteringNotMeasuredTip", "The combined alarm KPI source (alarmKpi) does not compute chattering yet.")}>
-                      <MetricCard icon={<RefreshCw className="h-4 w-4" />} label={t("eqStandards.kpi.chattering", "Chattering")}
-                        value={t("eqStandards.kpi.notMeasured", "Not measured yet")} />
-                    </div>
-                    <MetricCard icon={<Wrench className="h-4 w-4" />} label={t("eqStandards.kpi.operators", "Operators (server)")} value={kpis.operatorCount} />
-                  </div>
-                  {/* Bad actors */}
-                  <div className="mt-4">
-                    <Heading level={6} className="mb-2">{t("eqStandards.badActors", "Top bad actors")}</Heading>
-                    {kpis.badActors.length === 0 ? (
-                      <Text tone="muted" variant="body-sm">{t("eqStandards.noAlarms", "No alarms in this window.")}</Text>
-                    ) : (
-                      <div className="space-y-1">
-                        {kpis.badActors.map((b) => (
-                          <div key={b.actorKey} className="flex items-center gap-2 text-sm">
-                            <span className="w-40 shrink-0 truncate font-mono text-xs" title={b.actorKey}>{b.actorLabel}</span>
-                            <div className="h-2 flex-1 overflow-hidden rounded bg-muted">
-                              <div className="h-full bg-primary" style={{ width: `${Math.round(b.percent)}%` }} />
-                            </div>
-                            <span className="w-16 shrink-0 text-right text-xs text-muted-foreground">{b.count} ({Math.round(b.percent)}%)</span>
-                          </div>
-                        ))}
-                      </div>
-                    )}
-                  </div>
-                </>
-              )}
-            </SectionCard>
-
-            {/* Master alarm DB (rationalization) */}
-            <SectionCard
-              icon={<ClipboardCheck className="h-4 w-4" />}
-              title={t("eqStandards.masterTitle", "Master alarm database (rationalization)")}
-              contentClassName="p-0"
-              action={
-                <Button size="sm" variant="outline" className="h-8" disabled={!flagCanControl} title={flagControlReason} onClick={() => { setEditMaster(null); setMasterAlarmOpen(true); }}>
-                  <Plus className="mr-1 h-4 w-4" />{t("eqStandards.addMaster", "Add master alarm")}
-                </Button>
-              }
-            >
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>{t("eqStandards.col.alarmKey", "Alarm key")}</TableHead>
-                    <TableHead>{t("eqStandards.col.priority", "Priority")}</TableHead>
-                    <TableHead>{t("eqStandards.col.consequence", "Consequence")}</TableHead>
-                    <TableHead>{t("eqStandards.col.ttr", "Time-to-respond")}</TableHead>
-                    <TableHead>{t("eqStandards.col.setpoint", "Setpoint / deadband")}</TableHead>
-                    <TableHead>{t("eqStandards.col.shelve", "Shelved / suppressed")}</TableHead>
-                    <TableHead className="text-right">{t("common.actions", "Actions")}</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {mastersQ.isLoading && (
-                    <TableRow><TableCell colSpan={7} className="py-8 text-center text-muted-foreground">{t("eqStandards.loading", "Loading…")}</TableCell></TableRow>
-                  )}
-                  {!mastersQ.isLoading && masters.length === 0 && (
-                    <TableRow><TableCell colSpan={7} className="py-8 text-center text-muted-foreground">{t("eqStandards.masterEmpty", "No master alarms rationalized yet.")}</TableCell></TableRow>
-                  )}
-                  {masters.map((m) => (
-                    <TableRow key={m.id}>
-                      <TableCell className="font-mono text-xs font-medium">
-                        {m.alarmKey}{m.assetType ? <span className="ml-1 text-muted-foreground">/{m.assetType}</span> : null}
-                      </TableCell>
-                      <TableCell>
-                        <PriorityBadge value={m.priority} label={t(`eqStandards.priority.${m.priority}`, m.priority)} />
-                      </TableCell>
-                      <TableCell className="text-xs">{t(`eqStandards.consequenceVal.${m.consequence}`, m.consequence)}</TableCell>
-                      <TableCell className="text-xs">{m.timeToRespond != null ? `${m.timeToRespond} ${t("eqStandards.min", "min")}` : "—"}</TableCell>
-                      <TableCell className="text-xs text-muted-foreground">{m.setpoint ?? "—"}{m.deadband ? ` / ±${m.deadband}` : ""}</TableCell>
-                      <TableCell>
-                        {m.isSuppressed ? (
-                          <Badge variant="outline" className="border-destructive/30 bg-destructive/10 text-destructive text-xs">{t("eqStandards.suppressed", "Suppressed")}</Badge>
-                        ) : m.isShelvedNow ? (
-                          // Task 3 Fix round 1 (STD-02) — shelveMasterAlarm vẫn ghi được ở server nhưng đường
-                          // báo động chính chưa đọc shelvedUntil ⇒ badge trơn "Shelved" là ấn tượng SAI.
-                          <Badge data-testid={`master-shelved-${m.id}`} variant="outline"
-                            className="border-amber-500/30 bg-amber-500/10 text-amber-600 text-xs"
-                            title={t("eqStandards.shelveNotEnforced", "Not yet effective on the alarm path")}>
-                            {t("eqStandards.shelvedNotEnforced", "Shelved (not yet effective)")}
-                          </Badge>
-                        ) : (
-                          <span className="text-xs text-muted-foreground">—</span>
-                        )}
-                      </TableCell>
-                      <TableCell className="text-right">
-                        {canControl ? (
-                          <div className="flex justify-end gap-1">
-                            <Button size="sm" variant="ghost" className="h-7" onClick={() => { setEditMaster(m); setMasterAlarmOpen(true); }}>
-                              <Eye className="mr-1 h-3.5 w-3.5" />{t("eqStandards.edit", "Edit")}
-                            </Button>
-                            {m.isShelvedNow ? (
-                              <Button size="sm" variant="ghost" className="h-7" disabled={shelveMasterM.isPending}
-                                onClick={() => shelveMasterM.mutate({ id: m.id, shelvedUntil: null })}>
-                                {t("eqStandards.unshelve", "Un-shelve")}
-                              </Button>
-                            ) : (
-                              // doc 80 Đợt 1 Task 3 (STD-02) — KHOÁ cho tới khi có enforcement: đường
-                              // báo động chính (Andon/cảnh báo AI) chưa đọc shelvedUntil, bấm "Shelve"
-                              // khiến người vận hành tưởng đã shelve trong khi báo động vẫn nổ.
-                              <Button size="sm" variant="ghost" className="h-7" disabled
-                                title={t("eqStandards.shelveNotEnforced", "Not yet effective on the alarm path")}>
-                                {t("eqStandards.shelve8h", "Shelve 8h")}
-                              </Button>
-                            )}
-                            <Button size="sm" variant="ghost" className="h-7" disabled={deleteMasterM.isPending}
-                              onClick={() => deleteMasterM.mutate({ id: m.id })}>
-                              <XCircle className="h-3.5 w-3.5 text-destructive" />
-                            </Button>
-                          </div>
-                        ) : (
-                          <span className="text-xs text-muted-foreground">{t("eqStandards.viewOnly", "View only")}</span>
-                        )}
-                      </TableCell>
-                    </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
-            </SectionCard>
-          </TabsContent>
-
-          {/* ════════════════ TAB: Change requests (E1-c) ════════════════ */}
-          <TabsContent value="crs" data-layout-main="equipment-standards" className="flex flex-col gap-4">
-            <SectionCard
-              icon={<GitPullRequest className="h-4 w-4" />}
-              title={t("eqStandards.crsTitle", "Equipment Standards Board")}
-              contentClassName="p-0"
-              action={
-                <div className="flex items-center gap-2">
-                  {/* U11 — Select DS; "__all__" là sentinel cho "tất cả trạng thái". */}
-                  <Select value={crStatusFilter || "__all__"} onValueChange={(v) => setCrStatusFilter(v === "__all__" ? "" : v)}>
-                    <SelectTrigger size="sm" className="w-36"><SelectValue /></SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="__all__">{t("eqStandards.allStatuses", "All statuses")}</SelectItem>
-                      {["pending", "in_review", "approved", "rejected", "published"].map((s) => (
-                        <SelectItem key={s} value={s}>{t(`eqStandards.crStatus.${s}`, s)}</SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                  {canControl && (
-                    <Button size="sm" variant="outline" className="h-8" onClick={() => setSubmitCrOpen(true)}>
-                      <Plus className="mr-1 h-4 w-4" />{t("eqStandards.submitCr", "Submit CR")}
-                    </Button>
-                  )}
-                </div>
-              }
-            >
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>{t("eqStandards.col.crKey", "CR key")}</TableHead>
-                    <TableHead>{t("eqStandards.col.target", "Target type")}</TableHead>
-                    <TableHead>{t("eqStandards.col.kind", "Kind")}</TableHead>
-                    <TableHead>{t("eqStandards.col.status", "Status")}</TableHead>
-                    <TableHead>{t("eqStandards.col.conformance", "Conformance")}</TableHead>
-                    <TableHead>{t("eqStandards.col.stage", "Stage")}</TableHead>
-                    <TableHead className="text-right">{t("common.actions", "Actions")}</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {crsQ.isLoading && (
-                    <TableRow><TableCell colSpan={7} className="py-8 text-center text-muted-foreground">{t("eqStandards.loading", "Loading…")}</TableCell></TableRow>
-                  )}
-                  {!crsQ.isLoading && crs.length === 0 && (
-                    <TableRow><TableCell colSpan={7} className="py-8 text-center text-muted-foreground">{t("eqStandards.crsEmpty", "No change requests.")}</TableCell></TableRow>
-                  )}
-                  {crs.map((cr) => {
-                    const breaking = String(cr.backwardIncompatible) === "true";
-                    return (
-                      <TableRow key={cr.id}>
-                        <TableCell className="font-mono text-xs">{cr.crKey}</TableCell>
-                        <TableCell className="font-mono text-xs">{cr.targetTypeKey}</TableCell>
-                        <TableCell><Badge variant="outline">{t(`eqStandards.crKind.${cr.kind}`, cr.kind)}</Badge></TableCell>
-                        <TableCell>
-                          <StatusBadge status={cr.status} label={t(`eqStandards.crStatus.${cr.status}`, cr.status)} />
-                        </TableCell>
-                        <TableCell className="flex items-center gap-1">
-                          <StatusBadge status={cr.conformanceStatus} label={t(`eqStandards.conf.${cr.conformanceStatus}`, cr.conformanceStatus)} />
-                          {breaking && (
-                            <span title={t("eqStandards.breakingTip", "Backward-incompatible — requires a major version bump")}>
-                              <AlertTriangle className="h-3.5 w-3.5 text-amber-500" />
-                            </span>
-                          )}
-                        </TableCell>
-                        <TableCell><Badge variant="outline" className="text-muted-foreground">{cr.stage}</Badge></TableCell>
-                        <TableCell className="text-right">
-                          {canControl ? (
-                            <div className="flex justify-end gap-1">
-                              {(cr.status === "pending" || cr.status === "in_review") && (
-                                <>
-                                  {cr.status === "pending" && (
-                                    <Button size="sm" variant="ghost" className="h-7" disabled={reviewCrM.isPending}
-                                      title={t("eqStandards.startReviewTip", "Move to in-review")}
-                                      onClick={() => reviewCrM.mutate({ crId: cr.id, to: "in_review" })}>
-                                      <Eye className="mr-1 h-3.5 w-3.5" />{t("eqStandards.review", "Review")}
-                                    </Button>
-                                  )}
-                                  <Button size="sm" variant="ghost" className="h-7" disabled={reviewCrM.isPending}
-                                    title={t("eqStandards.approveTip", "Approve — the server computes the conformance gate from the proposed schema")}
-                                    onClick={() => reviewCrM.mutate({ crId: cr.id, to: "approved" })}>
-                                    <CheckCircle2 className="mr-1 h-3.5 w-3.5 text-emerald-500" />{t("eqStandards.approve", "Approve")}
-                                  </Button>
-                                  <Button size="sm" variant="ghost" className="h-7" disabled={reviewCrM.isPending}
-                                    title={t("eqStandards.rejectTip", "Reject")}
-                                    onClick={() => reviewCrM.mutate({ crId: cr.id, to: "rejected" })}>
-                                    <XCircle className="mr-1 h-3.5 w-3.5 text-destructive" />{t("eqStandards.reject", "Reject")}
-                                  </Button>
-                                </>
-                              )}
-                              {cr.status === "approved" && (
-                                <Button size="sm" variant="ghost" className="h-7" disabled={publishCrM.isPending}
-                                  title={t("eqStandards.publishTip", "Publish — gated by conformance + backward-compat")}
-                                  onClick={() => publishCrM.mutate({ crId: cr.id, stage: "staging" })}>
-                                  <Rocket className="mr-1 h-3.5 w-3.5" />{t("eqStandards.publish", "Publish")}
-                                </Button>
-                              )}
-                              {(cr.status === "rejected" || cr.status === "published") && (
-                                <span className="text-xs text-muted-foreground">{t("eqStandards.terminal", "—")}</span>
-                              )}
-                            </div>
-                          ) : (
-                            <span className="text-xs text-muted-foreground">{t("eqStandards.viewOnly", "View only")}</span>
-                          )}
-                        </TableCell>
-                      </TableRow>
-                    );
-                  })}
-                </TableBody>
-              </Table>
-            </SectionCard>
-          </TabsContent>
-
-          {/* ════════════════ TAB: Compliance (E1-e + E1-d) ════════════════ */}
-          <TabsContent value="compliance" data-layout-main="equipment-standards" className="flex flex-col gap-4">
-            <SectionCard
-              icon={<ClipboardCheck className="h-4 w-4" />}
-              title={t("eqStandards.complianceTitle", "Compliance overview")}
-            >
-              <div className="grid gap-4 md:grid-cols-2">
-                {/* Conformance pass/fail chart (natural pass vs fail series) */}
-                <div>
-                  <Heading level={6} className="mb-2">{t("eqStandards.conformanceChart", "Conformance by device type")}</Heading>
-                  {conformanceChart.length > 0 ? (
-                    <div className="h-48">
-                      <ResponsiveContainer width="100%" height="100%">
-                        <BarChart data={conformanceChart}>
-                          <CartesianGrid {...chartGridProps} />
-                          <XAxis dataKey="name" tick={chartAxisTick} />
-                          <YAxis allowDecimals={false} tick={chartAxisTick} />
-                          <Tooltip contentStyle={chartTooltipStyle} cursor={{ fill: "var(--muted)" }} />
-                          <Bar dataKey="value" radius={[4, 4, 0, 0]}>
-                            {conformanceChart.map((entry) => (
-                              <Cell key={entry.kind} fill={entry.kind === "pass" ? "var(--success)" : "var(--destructive)"} />
-                            ))}
-                          </Bar>
-                        </BarChart>
-                      </ResponsiveContainer>
-                    </div>
-                  ) : (
-                    <Text tone="muted" variant="body-sm">{t("eqStandards.loading", "Loading…")}</Text>
-                  )}
-                </div>
-
-                {/* Unmapped machine types */}
-                <div>
-                  <Heading level={6} className="mb-2">{t("eqStandards.unmappedTitle", "Unmapped machine types")}</Heading>
-                  {compliance && compliance.unmappedMachineTypes.length === 0 && (
-                    <div className="flex items-center gap-2 text-sm text-emerald-600">
-                      <CheckCircle2 className="h-4 w-4" />{t("eqStandards.allMapped", "Every machine type maps to a published device type.")}
-                    </div>
-                  )}
-                  {compliance && compliance.unmappedMachineTypes.length > 0 && (
-                    <div className="flex flex-wrap gap-1">
-                      {compliance.unmappedMachineTypes.map((m) => (
-                        <Badge key={m} variant="outline" className="border-warning/30 bg-warning/15 text-warning font-mono text-xs">{m}</Badge>
-                      ))}
-                    </div>
-                  )}
-                  {!compliance && <Text tone="muted" variant="body-sm">{t("eqStandards.loading", "Loading…")}</Text>}
-                </div>
-              </div>
-              {/* doc 80 Đợt 1 Task 3 (STD-01) — nói rõ số đo trên CÁI GÌ (không còn 100 % giả từ hằng số seed). */}
-              {compliance && (
-                <div data-testid="compliance-basis" className="mt-4 space-y-1 text-xs text-muted-foreground">
-                  <p>
-                    {t(
-                      "eqStandards.complianceBasis",
-                      "Mapped = machines.device_type_key bound to a published device type: {{mapped}}/{{total}} machines ({{keyed}} have a key, {{unpublished}} point to an unpublished type). Conformance runs on the {{types}} published device types in the database.",
-                      {
-                        mapped: compliance.machinesMappedToPublished,
-                        total: compliance.machineCount,
-                        keyed: compliance.basis.machinesWithKey,
-                        unpublished: compliance.basis.machinesWithUnpublishedKey,
-                        types: compliance.basis.publishedTypeCount,
-                      },
-                    )}
-                  </p>
-                  {compliance.basis.warnings.map((w) => (
-                    <p key={w} className="text-warning">{t(`eqStandards.basisWarning.${w}`, w)}</p>
-                  ))}
-                </div>
-              )}
-            </SectionCard>
-
-            {/* Run conformance */}
-            <SectionCard
-              icon={<Wrench className="h-4 w-4" />}
-              title={t("eqStandards.runConfTitle", "Conformance test")}
-              action={
-                <Button size="sm" variant="outline" className="h-8" disabled={conformanceQ.isFetching}
-                  onClick={() => { setRunConfReq(true); void utils.equipmentStandards.runConformance.invalidate(); }}>
-                  <RefreshCw className={`mr-1 h-4 w-4 ${conformanceQ.isFetching ? "animate-spin" : ""}`} />{t("eqStandards.runConf", "Run conformance")}
-                </Button>
-              }
-            >
-              {!runConfReq && (
-                <Text tone="muted" variant="body-sm">{t("eqStandards.runConfHint", "Run the standard rule set across the seeded device types and capability profiles.")}</Text>
-              )}
-              {runConfReq && conformanceQ.isFetching && <Text tone="muted" variant="body-sm">{t("eqStandards.loading", "Loading…")}</Text>}
-              {conformance && !conformanceQ.isFetching && <ConformanceResult result={conformance} />}
-            </SectionCard>
-          </TabsContent>
-        </Tabs>
-      </PageContainer>
-
-      {/* ── Dialogs ──────────────────────────────────────────────────────────── */}
-      {registerOpen && (
-        <RegisterTypeDialog
+      ),
+    },
+  };
+  if (canControl) {
+    flyouts["eq-type-new"] = {
+      size: "md",
+      title: t("eqStandards.registerTitle", "Register device type (draft)"),
+      render: () => flagUnsettled ? unsettledBody : (
+        <RegisterTypeForm
           parentOptions={tree}
           pending={registerM.isPending}
-          onClose={() => setRegisterOpen(false)}
-          onSubmit={(v) => registerM.mutate(v)}
+          onSubmit={(v, done) => registerM.mutate(v, { onSuccess: done })}
         />
-      )}
-      {upsertAlarmOpen && (
-        <UpsertAlarmDialog
+      ),
+    };
+    flyouts["eq-alarm-map"] = {
+      size: "md",
+      title: t("eqStandards.upsertAlarmTitle", "Map vendor alarm"),
+      render: () => flagUnsettled ? unsettledBody : (
+        <UpsertAlarmForm
           pending={upsertAlarmM.isPending}
-          onClose={() => setUpsertAlarmOpen(false)}
-          onSubmit={(v) => upsertAlarmM.mutate(v)}
+          onSubmit={(v, done) => upsertAlarmM.mutate(v, { onSuccess: done })}
         />
-      )}
-      {submitCrOpen && (
-        <SubmitCrDialog
+      ),
+    };
+    flyouts["eq-master"] = {
+      size: "md",
+      title: (id) => id ? t("eqStandards.editMasterTitle", "Edit master alarm") : t("eqStandards.addMasterTitle", "Rationalize a master alarm"),
+      render: (layer) => {
+        if (layer.id) {
+          // Sửa: nút cũ "Sửa" không bị cổng cờ (chỉ canControl) — giữ nguyên.
+          const row = /^\d+$/.test(layer.id) ? masters.find((m) => m.id === Number(layer.id)) : undefined;
+          if (!row) {
+            return (
+              <p className="py-6 text-center text-sm text-muted-foreground">
+                {mastersQ.isLoading
+                  ? t("eqStandards.loading", "Loading…")
+                  : t("eqStandards.masterNotFound", "Master alarm #{{id}} was not found.", { id: layer.id })}
+              </p>
+            );
+          }
+          return (
+            <MasterAlarmForm
+              key={row.id}
+              initial={row}
+              pending={upsertMasterM.isPending}
+              onSubmit={(v, done) => upsertMasterM.mutate(v, { onSuccess: done })}
+            />
+          );
+        }
+        return flagUnsettled ? unsettledBody : (
+          <MasterAlarmForm
+            initial={null}
+            pending={upsertMasterM.isPending}
+            onSubmit={(v, done) => upsertMasterM.mutate(v, { onSuccess: done })}
+          />
+        );
+      },
+    };
+    // Nút cũ "Gửi CR" chỉ cần canControl (không cổng cờ) — giữ nguyên.
+    flyouts["eq-cr-new"] = {
+      size: "lg",
+      title: t("eqStandards.submitCrTitle", "Submit change request"),
+      render: () => (
+        <SubmitCrForm
           parentOptions={tree}
           canView={canView}
           pending={submitCrM.isPending}
-          onClose={() => setSubmitCrOpen(false)}
-          onSubmit={(v) => submitCrM.mutate(v)}
+          onSubmit={(v, done) => submitCrM.mutate(v, { onSuccess: done })}
         />
+      ),
+    };
+  }
+
+  const complianceState = chipStateFromQuery(complianceQ);
+  // R-2-p: chip liên quan cảnh báo GHIM và đứng ĐẦU dải (header hẹp cắt phần cuối, không cắt nó).
+  const chipItems: StatusChipItem[] = [
+    {
+      id: "eq-alarm-vendors",
+      // R-2-p: số liên quan cảnh báo — không bao giờ vào "+N".
+      pinned: true,
+      label: t("eqStandards.kpi.vendorCoverage", "Alarm vendors"),
+      value: compliance?.alarmVendorCoverage,
+      state: complianceState,
+      source: t("eqStandards.chip.srcAlarmVendors", "equipmentStandards.complianceMetrics — distinct vendors in the alarm taxonomy (seed + database)"),
+    },
+    {
+      id: "eq-mapped",
+      label: t("eqStandards.kpi.mapped", "Machines mapped"),
+      value: compliance ? `${pct(compliance.mappedRate)} · ${compliance.machinesMappedToPublished}/${compliance.machineCount}` : undefined,
+      state: complianceState,
+      tone: compliance && compliance.mappedRate < 1 ? "warning" : "success",
+      source: t("eqStandards.chip.srcMapped", "equipmentStandards.complianceMetrics — machines whose device_type_key points to a published device type"),
+    },
+    {
+      id: "eq-conformance",
+      label: t("eqStandards.kpi.conformance", "Conformance pass"),
+      value: compliance ? `${pct(compliance.conformancePassRate)} · ${compliance.conformancePassCount}/${compliance.conformanceTypeCount}` : undefined,
+      state: complianceState,
+      tone: compliance && compliance.conformancePassRate < 1 ? "error" : "success",
+      source: t("eqStandards.chip.srcConformance", "equipmentStandards.complianceMetrics — published device types in the database passing the standard rule set"),
+    },
+    {
+      id: "eq-pending-crs",
+      label: t("eqStandards.kpi.pendingCrs", "Pending CRs"),
+      value: compliance?.crPendingCount,
+      state: complianceState,
+      tone: compliance && compliance.crPendingCount > 0 ? "warning" : "default",
+      source: t("eqStandards.chip.srcPendingCrs", "equipmentStandards.complianceMetrics — change requests pending or in review"),
+    },
+    {
+      id: "eq-types",
+      label: t("eqStandards.kpi.types", "Device types"),
+      value: treeQ.data?.typeCount,
+      state: chipStateFromQuery(treeQ),
+      source: t("eqStandards.chip.srcTypes", "equipmentStandards.hierarchyTree — distinct device type keys (seed + database)"),
+    },
+  ];
+
+  const failingTypes = compliance?.failingTypes ?? [];
+  // Flag status — honest 4-state (loading/off/on/error), doc 80 Task 1, as a chip.
+  const flagChip = (
+    <FeatureStatusNoticeChip
+      status={flagStatus}
+      offMessage={t(
+        "eqStandards.flagOffBanner",
+        "Preview mode: equipment governance is disabled. Reads work; actions (register type / map alarm / submit / review / publish) are blocked until it is enabled.",
       )}
-      {masterAlarmOpen && (
-        <MasterAlarmDialog
-          initial={editMaster}
-          pending={upsertMasterM.isPending}
-          onClose={() => { setMasterAlarmOpen(false); setEditMaster(null); }}
-          onSubmit={(v) => upsertMasterM.mutate(v)}
-        />
+      errorMessage={t(
+        "eqStandards.flagStatusError",
+        "Could not check whether equipment governance is enabled — actions are disabled until this is confirmed.",
       )}
+    />
+  );
+  // Khối đỏ "Types failing conformance" cũ ⇒ chip LỖI đứng trước dải KPI (không bị header cắt trước số liệu).
+  const failingChip = failingTypes.length > 0 ? (
+    <NoticeChip kind="error" label={t("eqStandards.failingTypesChip", "{{count}} failing conformance", { count: failingTypes.length })}>
+      <div className="space-y-2">
+        <p className="font-medium text-destructive">{t("eqStandards.failingTypesTitle", "Types failing conformance")}</p>
+        <div className="flex flex-wrap gap-1">
+          {failingTypes.map((k) => (
+            <Badge key={k} variant="outline" className="border-destructive/30 bg-destructive/15 text-destructive font-mono text-xs">{k}</Badge>
+          ))}
+        </div>
+      </div>
+    </NoticeChip>
+  ) : null;
+  // "Khi nào dùng" + câu an toàn cũ. Ở header: MỘT chip + "+1" (đo 1600 px: chip thứ hai bị header cắt im lặng).
+  const noticeStack = (maxVisible: number) => (
+    <NoticeStack
+      maxVisible={maxVisible}
+      items={[
+        {
+          // U7 (doc 26 §2.1) — "Khi nào dùng" (khoá riêng của trang) + phụ đề cũ.
+          id: "whenToUse:eqStandards.whenToUse",
+          kind: "whenToUse",
+          content: (
+            <div className="space-y-2">
+              <p data-when-to-use="eqStandards.whenToUse">
+                {t("eqStandards.whenToUse", "When to use — govern device-type standards, the ISA-18.2 alarm taxonomy and the review board. Governance metadata only, no device commands.")}
+              </p>
+              <p className="text-muted-foreground">
+                {t("eqStandards.subtitle", "Versioned device-type hierarchy, ISA-18.2 alarm taxonomy and the Equipment Standards Board — governance metadata only, no device commands.")}
+              </p>
+            </div>
+          ),
+        },
+        {
+          // Safety note — mirrors the router's NO-OP discipline.
+          id: "honesty",
+          kind: "honesty",
+          label: t("eqStandards.safetyChip", "Metadata only"),
+          content: (
+            <p>
+              {t(
+                "eqStandards.safetyNote",
+                "This page writes governance metadata only (device-type versions, alarm taxonomy, change requests). It opens no device-control path.",
+              )}
+            </p>
+          ),
+        },
+      ]}
+    />
+  );
+  // < 1024 px: header chỉ giữ h1 + dải KPI (chip GHIM vẫn hiện); chip cờ / loại không đạt / ghi chú xuống hàng công cụ.
+  ctx.narrowNotices = narrow ? (
+    <>
+      {flagChip}
+      {failingChip}
+      {noticeStack(2)}
+    </>
+  ) : null;
+
+  return (
+    <DashboardLayout>
+      <FlyoutHost flyouts={flyouts}>
+        {/* doc 81 Đợt 2 Task 2 — PageContainer: không đệm kép với <main> của shell. */}
+        <PageContainer className="space-y-0">
+          <StdCtx.Provider value={ctx}>
+            <CockpitLayout
+              icon={<ShieldCheck />}
+              title={
+                <span className="flex items-center gap-2">
+                  {t("eqStandards.title", "Equipment Standards & Governance")}
+                  {!canControl && <ViewOnlyBadge module="machine_control" />}
+                </span>
+              }
+              chips={
+                <>
+                  {!narrow && flagChip}
+                  {!narrow && failingChip}
+                  <StatusChipStrip items={chipItems} maxVisible={headerAll ? 4 : headerMid ? 2 : 1} className="shrink-0" />
+                  {/* Ghi chú đứng SAU dải KPI: header chật thì chúng bị cắt trước, không phải số liệu. */}
+                  {!narrow && noticeStack(1)}
+                </>
+              }
+              actions={
+                <Button
+                  size="icon"
+                  variant="ghost"
+                  onClick={refetchAll}
+                  title={t("common.refresh", "Refresh")}
+                  aria-label={t("common.refresh", "Refresh")}
+                >
+                  <RefreshCw className="h-4 w-4" />
+                </Button>
+              }
+              tabs={TABS}
+              basePath={BASE_PATH}
+              defaultTab="hierarchy"
+              toolbarEnd={narrow ? undefined : <TabToolbar />}
+              side={tab === "alarmPerf" ? <AlarmPerfSide kpis={kpis} kpisQ={kpisQ} /> : undefined}
+              sideWidth={headerAll ? 340 : 300}
+              sideLabel={t("eqStandards.alarmPerfTitle", "Alarm performance (EEMUA-191)")}
+              mainName="equipment-standards"
+            />
+          </StdCtx.Provider>
+        </PageContainer>
+      </FlyoutHost>
     </DashboardLayout>
   );
 }
 
-// ── Tree row (recursive, expandable) ──────────────────────────────────────────
+/** Cờ chưa rõ (đang kiểm tra / lỗi) — sheet ghi không có form (như nút cũ bị khoá). */
+function UnsettledFlag({ status }: { status: FeatureStatus }) {
+  const { t } = useTranslation();
+  return status === "error" ? (
+    <p role="alert" className="py-6 text-center text-sm text-destructive">
+      {t("eqStandards.flagStatusError", "Could not check whether equipment governance is enabled — actions are disabled until this is confirmed.")}
+    </p>
+  ) : (
+    <p className="py-6 text-center text-sm text-muted-foreground">
+      {t("common.gate.checkingStatus", "Checking feature status…")}
+    </p>
+  );
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+// Hàng công cụ của tab đang mở (cùng hàng dải tab — thanh công cụ DUY NHẤT trong MAIN)
+// ══════════════════════════════════════════════════════════════════════════════
+function TabToolbar() {
+  const ctx = useStdCtx();
+  if (ctx.tab === "alarms") return <AlarmsToolbar />;
+  if (ctx.tab === "alarmPerf") return <AlarmPerfToolbar />;
+  if (ctx.tab === "crs") return <CrsToolbar />;
+  if (ctx.tab === "compliance") return <ComplianceToolbar />;
+  return <HierarchyToolbar />;
+}
+
+/** < 1024 px: cùng bộ công cụ, nhưng là một hàng xuống dòng được ở đầu nội dung tab (không bị hàng tab cắt). */
+function NarrowTools() {
+  const ctx = useStdCtx();
+  return (
+    <div data-narrow-tools="" className="flex flex-wrap items-center gap-2 pb-2">
+      {ctx.narrowNotices}
+      <TabToolbar />
+    </div>
+  );
+}
+
+/** Nút công cụ của tab: đủ chữ; 1024–1365 px chỉ còn icon (tên ở aria-label, tooltip = lý do khoá hoặc tên). */
+function ToolButton({ icon, label, disabled, title, onClick }: { icon: ReactNode; label: string; disabled?: boolean; title?: string; onClick: () => void }) {
+  const { compactTools } = useStdCtx();
+  return compactTools ? (
+    <Button size="sm" variant="outline" className="h-8 w-8 px-0" disabled={disabled} aria-label={label} title={title ?? label} onClick={onClick}>
+      {icon}
+    </Button>
+  ) : (
+    <Button size="sm" variant="outline" className="h-8" disabled={disabled} title={title} onClick={onClick}>
+      {icon}<span className="ml-1">{label}</span>
+    </Button>
+  );
+}
+
+function HierarchyToolbar() {
+  const { t } = useTranslation();
+  const ctx = useStdCtx();
+  const flyout = useFlyout();
+  return (
+    <ToolButton icon={<Plus className="h-4 w-4" />} label={t("eqStandards.registerType", "Register type")}
+      disabled={!ctx.flagCanControl} title={ctx.flagControlReason} onClick={() => flyout.open("eq-type-new")} />
+  );
+}
+
+function AlarmsToolbar() {
+  const { t } = useTranslation();
+  const ctx = useStdCtx();
+  const flyout = useFlyout();
+  return (
+    <>
+      {/* U11 — Select DS thay <select> gõ tay; "__all__" là sentinel cho "tất cả". */}
+      <Select value={ctx.vendorFilter || "__all__"} onValueChange={(v) => ctx.setVendorFilter(v === "__all__" ? "" : v)}>
+        <SelectTrigger size="sm" className="w-36" aria-label={t("eqStandards.vendor", "Vendor")}><SelectValue /></SelectTrigger>
+        <SelectContent>
+          <SelectItem value="__all__">{t("eqStandards.allVendors", "All vendors")}</SelectItem>
+          {ctx.vendors.map((v) => <SelectItem key={v} value={v}>{v}</SelectItem>)}
+        </SelectContent>
+      </Select>
+      <ToolButton icon={<Search className="h-4 w-4" />} label={t("eqStandards.normalize", "Normalize alarm")} onClick={() => flyout.open("eq-alarm-normalize")} />
+      <ToolButton icon={<Plus className="h-4 w-4" />} label={t("eqStandards.mapAlarm", "Map alarm")}
+        disabled={!ctx.flagCanControl} title={ctx.flagControlReason} onClick={() => flyout.open("eq-alarm-map")} />
+    </>
+  );
+}
+
+function AlarmPerfToolbar() {
+  const { t } = useTranslation();
+  const ctx = useStdCtx();
+  const flyout = useFlyout();
+  return (
+    <>
+      <Select value={String(ctx.kpiWindow)} onValueChange={(v) => ctx.setKpiWindow(Number(v))}>
+        <SelectTrigger size="sm" className="w-32" aria-label={t("eqStandards.windowLabel", "Time window")}><SelectValue /></SelectTrigger>
+        <SelectContent>
+          {[1, 7, 30].map((d) => (
+            <SelectItem key={d} value={String(d)}>{t("eqStandards.lastNDays", "Last {{n}} days").replace("{{n}}", String(d))}</SelectItem>
+          ))}
+        </SelectContent>
+      </Select>
+      <ToolButton icon={<Plus className="h-4 w-4" />} label={t("eqStandards.addMaster", "Add master alarm")}
+        disabled={!ctx.flagCanControl} title={ctx.flagControlReason} onClick={() => flyout.open("eq-master")} />
+    </>
+  );
+}
+
+function CrsToolbar() {
+  const { t } = useTranslation();
+  const ctx = useStdCtx();
+  const flyout = useFlyout();
+  return (
+    <>
+      {/* U11 — Select DS; "__all__" là sentinel cho "tất cả trạng thái". */}
+      <Select value={ctx.crStatusFilter || "__all__"} onValueChange={(v) => ctx.setCrStatusFilter(v === "__all__" ? "" : v)}>
+        <SelectTrigger size="sm" className="w-36" aria-label={t("eqStandards.col.status", "Status")}><SelectValue /></SelectTrigger>
+        <SelectContent>
+          <SelectItem value="__all__">{t("eqStandards.allStatuses", "All statuses")}</SelectItem>
+          {["pending", "in_review", "approved", "rejected", "published"].map((s) => (
+            <SelectItem key={s} value={s}>{t(`eqStandards.crStatus.${s}`, s)}</SelectItem>
+          ))}
+        </SelectContent>
+      </Select>
+      {ctx.canControl && (
+        <ToolButton icon={<Plus className="h-4 w-4" />} label={t("eqStandards.submitCr", "Submit CR")} onClick={() => flyout.open("eq-cr-new")} />
+      )}
+    </>
+  );
+}
+
+function ComplianceToolbar() {
+  const { t } = useTranslation();
+  const ctx = useStdCtx();
+  return (
+    <ToolButton icon={<RefreshCw className={`h-4 w-4 ${ctx.conformanceFetching ? "animate-spin" : ""}`} />} label={t("eqStandards.runConf", "Run conformance")}
+      disabled={ctx.conformanceFetching} onClick={ctx.runConformance} />
+  );
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+// TAB: Hierarchy (E1-a) — cây | chi tiết (SplitListDetail, `?typeKey=`)
+// ══════════════════════════════════════════════════════════════════════════════
+function HierarchyTab() {
+  const { t } = useTranslation();
+  const ctx = useStdCtx();
+  const key = ctx.selectedTypeKey;
+  const list = (
+    <div className="p-2">
+      {ctx.treeLoading && <Text tone="muted" variant="body-sm">{t("eqStandards.loading", "Loading…")}</Text>}
+      {!ctx.treeLoading && ctx.tree.length === 0 && (
+        <EmptyState variant="no-data" compact title={t("eqStandards.treeEmpty", "No device types.")} />
+      )}
+      <ProvenanceSummary rows={ctx.treeFlat} className="mb-2" />
+      {ctx.tree.length > 0 && (
+        <div role="tree" aria-label={t("eqStandards.hierarchyTitle", "Device type hierarchy")} className="space-y-0.5">
+          {ctx.tree.map((node) => (
+            <TreeRow key={node.typeKey} node={node} depth={0} selected={key} onSelect={(k) => ctx.setSelectedTypeKey(k)} />
+          ))}
+        </div>
+      )}
+    </div>
+  );
+  const detail = key ? (
+    <div className="h-full space-y-3 overflow-auto p-3 text-sm">
+      <h2 className="flex items-center gap-2 text-base font-semibold">
+        <Layers className="h-4 w-4 text-muted-foreground" aria-hidden="true" />
+        {t("eqStandards.resolvedTitle", "Resolved: {{key}}").replace("{{key}}", key)}
+      </h2>
+      {ctx.resolveFetching && <Text tone="muted" variant="body-sm">{t("eqStandards.loading", "Loading…")}</Text>}
+      {!ctx.resolveFetching && ctx.resolveError && (
+        <Text tone="muted" variant="body-sm">{t("eqStandards.notFound", "Type not found:")} <span className="font-mono">{key}</span></Text>
+      )}
+      {ctx.resolved && !ctx.resolveFetching && !ctx.resolveError && <ResolvedDetail resolved={ctx.resolved} />}
+    </div>
+  ) : null;
+  return (
+    <>
+      {ctx.narrow && <NarrowTools />}
+      <SplitListDetail
+        layoutId="eq-standards-types"
+        userId={ctx.userId}
+        list={list}
+        detail={detail}
+        hasSelection={key != null}
+        onBack={() => ctx.setSelectedTypeKey(null)}
+        listLabel={t("eqStandards.hierarchyTitle", "Device type hierarchy")}
+        detailLabel={t("eqStandards.resolvedTitlePlain", "Resolved device type")}
+        heightClass="h-[calc(100dvh-13rem)] min-h-[22rem]"
+        emptyDetail={
+          <EmptyState
+            variant="no-data"
+            compact
+            title={t("eqStandards.selectHint", "Select a device type in the tree to view its fully-merged attributes, commands and PackML states.")}
+          />
+        }
+      />
+    </>
+  );
+}
+
+// ── Tree row (recursive, expandable) — role=treeitem, Enter/Space chọn ─────────
 function TreeRow({
   node, depth, selected, onSelect,
 }: {
@@ -966,21 +939,35 @@ function TreeRow({
   selected: string | null;
   onSelect: (k: string) => void;
 }) {
+  const { t } = useTranslation();
   const [open, setOpen] = useState(depth < 2);
   const hasChildren = node.children.length > 0;
   const isSel = selected === node.typeKey;
   return (
     <>
       <div
+        role="treeitem"
+        aria-level={depth + 1}
+        aria-selected={isSel}
+        aria-expanded={hasChildren ? open : undefined}
+        tabIndex={0}
         data-testid={`type-row-${node.typeKey}`}
-        className={`flex cursor-pointer items-center gap-1 rounded px-2 py-1 text-sm hover:bg-muted/60 ${isSel ? "bg-primary/10" : ""}`}
+        className={`flex cursor-pointer items-center gap-1 rounded px-2 py-1 text-sm hover:bg-muted/60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring ${isSel ? "bg-primary/10" : ""}`}
         style={{ paddingLeft: `${depth * 1.1 + 0.5}rem` }}
         onClick={() => onSelect(node.typeKey)}
+        onKeyDown={(e) => {
+          if (e.target !== e.currentTarget) return;
+          if (e.key === "Enter" || e.key === " ") {
+            e.preventDefault();
+            onSelect(node.typeKey);
+          }
+        }}
       >
         {hasChildren ? (
           <button
             type="button"
             className="shrink-0 text-muted-foreground"
+            aria-label={open ? t("eqStandards.collapse", "Collapse") : t("eqStandards.expand", "Expand")}
             onClick={(e) => { e.stopPropagation(); setOpen((o) => !o); }}
           >
             {open ? <ChevronDown className="h-3.5 w-3.5" /> : <ChevronRight className="h-3.5 w-3.5" />}
@@ -996,9 +983,13 @@ function TreeRow({
           <StatusBadge status={node.status} className="px-1 py-0 text-[10px]" />
         </span>
       </div>
-      {hasChildren && open && node.children.map((c) => (
-        <TreeRow key={c.typeKey} node={c} depth={depth + 1} selected={selected} onSelect={onSelect} />
-      ))}
+      {hasChildren && open && (
+        <div role="group">
+          {node.children.map((c) => (
+            <TreeRow key={c.typeKey} node={c} depth={depth + 1} selected={selected} onSelect={onSelect} />
+          ))}
+        </div>
+      )}
     </>
   );
 }
@@ -1087,6 +1078,449 @@ function ResolvedDetail({ resolved }: { resolved: ResolvedType }) {
   );
 }
 
+// ══════════════════════════════════════════════════════════════════════════════
+// TAB: Alarm taxonomy (E1-b) — DataTable PHÂN TRANG (MAIN)
+// ══════════════════════════════════════════════════════════════════════════════
+function AlarmsTab() {
+  const { t } = useTranslation();
+  const ctx = useStdCtx();
+  const columns: DataTableColumn<AlarmMapping>[] = [
+    { id: "vendor", header: t("eqStandards.col.vendor", "Vendor"), cell: (a) => <span className="text-xs">{a.vendor}</span>, sortValue: (a) => a.vendor },
+    { id: "native", header: t("eqStandards.col.native", "Native code"), cell: (a) => <span className="font-mono text-xs">{a.nativeCode}</span>, sortValue: (a) => a.nativeCode },
+    { id: "standard", header: t("eqStandards.col.standard", "Standard code"), cell: (a) => <span className="font-mono text-xs font-medium">{a.standardCode}</span>, sortValue: (a) => a.standardCode },
+    {
+      id: "severity",
+      header: t("eqStandards.col.severity", "Severity"),
+      cell: (a) => <PriorityBadge value={a.severity} label={t(`eqStandards.severity.${a.severity}`, a.severity)} />,
+    },
+    {
+      id: "action",
+      header: t("eqStandards.col.action", "Recommended action"),
+      className: "max-w-[22rem]",
+      cell: (a) => (
+        <span className="block max-w-[22rem] truncate text-xs text-muted-foreground" title={a.recommendedAction ?? undefined}>
+          {a.recommendedAction ?? "—"}
+        </span>
+      ),
+    },
+  ];
+  return (
+    <>
+      {ctx.narrow && <NarrowTools />}
+      <DataTable<AlarmMapping>
+        data={ctx.alarms}
+        columns={columns}
+        getRowId={(a) => `${a.vendor}::${a.nativeCode}`}
+        pageSize={ALARM_PAGE_SIZE}
+        loading={ctx.alarmsLoading}
+        emptyState={
+          ctx.alarmsError ? (
+            <p role="alert" className="py-8 text-center text-sm text-destructive">{t("eqStandards.alarmsError", "Could not load the alarm mappings.")}</p>
+          ) : (
+            <EmptyState variant="no-data" compact title={t("eqStandards.alarmsEmpty", "No alarm mappings.")} />
+          )
+        }
+      />
+    </>
+  );
+}
+
+// ── Sheet: chuẩn hoá một cảnh báo (mapAlarm) — trạng thái tra cứu ở trang (như panel cũ) ─────
+function NormalizeAlarmPanel({
+  vendor, code, setVendor, setCode, lookup, onLookup, fetching, mapped,
+}: {
+  vendor: string;
+  code: string;
+  setVendor: (v: string) => void;
+  setCode: (v: string) => void;
+  lookup: { vendor: string; nativeCode: string } | null;
+  onLookup: (v: { vendor: string; nativeCode: string }) => void;
+  fetching: boolean;
+  mapped: MappedAlarm | undefined;
+}) {
+  const { t } = useTranslation();
+  const uid = useId();
+  const can = !!vendor.trim() && !!code.trim();
+  const run = () => { if (can) onLookup({ vendor: vendor.trim(), nativeCode: code.trim() }); };
+  return (
+    <div className="grid gap-3">
+      <div className="grid grid-cols-2 gap-3">
+        <div className="grid gap-1">
+          <Label htmlFor={`${uid}-vendor`} className="text-xs text-muted-foreground">{t("eqStandards.vendor", "Vendor")}</Label>
+          <Input id={`${uid}-vendor`} value={vendor} placeholder="fanuc" onChange={(e) => setVendor(e.target.value)} />
+        </div>
+        <div className="grid gap-1">
+          <Label htmlFor={`${uid}-code`} className="text-xs text-muted-foreground">{t("eqStandards.nativeCode", "Native code")}</Label>
+          <Input id={`${uid}-code`} value={code} placeholder="SRVO-050" onChange={(e) => setCode(e.target.value)}
+            onKeyDown={(e) => { if (e.key === "Enter") run(); }} />
+        </div>
+      </div>
+      <div>
+        <Button variant="outline" size="sm" disabled={!can} onClick={run}>
+          <Search className="mr-1 h-4 w-4" />{t("eqStandards.lookup", "Look up")}
+        </Button>
+      </div>
+      {lookup && fetching && <p className="text-sm text-muted-foreground">{t("eqStandards.loading", "Loading…")}</p>}
+      {mapped && lookup && !fetching && (
+        <div className="flex flex-wrap items-center gap-2 rounded-md border border-border bg-muted/30 p-3 text-sm">
+          <span className="font-mono">{lookup.vendor} / {lookup.nativeCode}</span>
+          <ChevronRight className="h-4 w-4 text-muted-foreground" />
+          <span className="font-mono font-medium">{mapped.standardCode}</span>
+          <PriorityBadge value={mapped.severity} label={t(`eqStandards.severity.${mapped.severity}`, mapped.severity)} />
+          {!mapped.mapped && <Badge variant="outline" className="text-muted-foreground">{t("eqStandards.unmappedDefault", "fail-safe default")}</Badge>}
+          {mapped.recommendedAction && <span className="text-xs text-muted-foreground">— {mapped.recommendedAction}</span>}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+// TAB: Alarm performance (W5-21, EEMUA-191) — MAIN = master alarm DB; KPI ở panel phụ
+// ══════════════════════════════════════════════════════════════════════════════
+function AlarmPerfTab() {
+  const { t } = useTranslation();
+  const ctx = useStdCtx();
+  const flyout = useFlyout();
+  const columns: DataTableColumn<MasterAlarmRow>[] = [
+    {
+      id: "key",
+      header: t("eqStandards.col.alarmKey", "Alarm key"),
+      cell: (m) => (
+        <span className="font-mono text-xs font-medium">
+          {m.alarmKey}{m.assetType ? <span className="ml-1 text-muted-foreground">/{m.assetType}</span> : null}
+        </span>
+      ),
+    },
+    { id: "priority", header: t("eqStandards.col.priority", "Priority"), cell: (m) => <PriorityBadge value={m.priority} label={t(`eqStandards.priority.${m.priority}`, m.priority)} /> },
+    { id: "consequence", header: t("eqStandards.col.consequence", "Consequence"), cell: (m) => <span className="text-xs">{t(`eqStandards.consequenceVal.${m.consequence}`, m.consequence)}</span> },
+    { id: "ttr", header: t("eqStandards.col.ttr", "Time-to-respond"), cell: (m) => <span className="text-xs">{m.timeToRespond != null ? `${m.timeToRespond} ${t("eqStandards.min", "min")}` : "—"}</span> },
+    { id: "setpoint", header: t("eqStandards.col.setpoint", "Setpoint / deadband"), cell: (m) => <span className="text-xs text-muted-foreground">{m.setpoint ?? "—"}{m.deadband ? ` / ±${m.deadband}` : ""}</span> },
+    {
+      id: "shelve",
+      header: t("eqStandards.col.shelve", "Shelved / suppressed"),
+      cell: (m) =>
+        m.isSuppressed ? (
+          <Badge variant="outline" className="border-destructive/30 bg-destructive/10 text-destructive text-xs">{t("eqStandards.suppressed", "Suppressed")}</Badge>
+        ) : m.isShelvedNow ? (
+          // Task 3 Fix round 1 (STD-02) — shelveMasterAlarm vẫn ghi được ở server nhưng đường
+          // báo động chính chưa đọc shelvedUntil ⇒ badge trơn "Shelved" là ấn tượng SAI.
+          <Badge data-testid={`master-shelved-${m.id}`} variant="outline"
+            className="border-amber-500/30 bg-amber-500/10 text-amber-600 text-xs"
+            title={t("eqStandards.shelveNotEnforced", "Not yet effective on the alarm path")}>
+            {t("eqStandards.shelvedNotEnforced", "Shelved (not yet effective)")}
+          </Badge>
+        ) : (
+          <span className="text-xs text-muted-foreground">—</span>
+        ),
+    },
+    {
+      id: "actions",
+      header: t("common.actions", "Actions"),
+      align: "right",
+      cell: (m) =>
+        ctx.canControl ? (
+          <div className="flex justify-end gap-1">
+            <Button size="sm" variant="ghost" className="h-7" onClick={() => flyout.open("eq-master", { id: m.id })}>
+              <Eye className="mr-1 h-3.5 w-3.5" />{t("eqStandards.edit", "Edit")}
+            </Button>
+            {m.isShelvedNow ? (
+              <Button size="sm" variant="ghost" className="h-7" disabled={ctx.shelvePending} onClick={() => ctx.unshelve(m)}>
+                {t("eqStandards.unshelve", "Un-shelve")}
+              </Button>
+            ) : (
+              // doc 80 Đợt 1 Task 3 (STD-02) — KHOÁ cho tới khi có enforcement: đường
+              // báo động chính (Andon/cảnh báo AI) chưa đọc shelvedUntil, bấm "Shelve"
+              // khiến người vận hành tưởng đã shelve trong khi báo động vẫn nổ.
+              <Button size="sm" variant="ghost" className="h-7" disabled
+                title={t("eqStandards.shelveNotEnforced", "Not yet effective on the alarm path")}>
+                {t("eqStandards.shelve8h", "Shelve 8h")}
+              </Button>
+            )}
+            <Button size="sm" variant="ghost" className="h-7" disabled={ctx.deletePending}
+              aria-label={t("eqStandards.deleteMaster", "Delete master alarm")} title={t("eqStandards.deleteMaster", "Delete master alarm")}
+              onClick={() => ctx.deleteMaster(m)}>
+              <XCircle className="h-3.5 w-3.5 text-destructive" />
+            </Button>
+          </div>
+        ) : (
+          <span className="text-xs text-muted-foreground">{t("eqStandards.viewOnly", "View only")}</span>
+        ),
+    },
+  ];
+  return (
+    <>
+      {ctx.narrow && <NarrowTools />}
+      {/* Tiêu đề thuần một dòng (h2 ≤ 40 px): tên tab "Hiệu năng cảnh báo" không nói bảng này là gì. */}
+      <h2 className="mb-2 text-sm font-semibold">{t("eqStandards.masterTitle", "Master alarm database (rationalization)")}</h2>
+      <DataTable<MasterAlarmRow>
+        data={ctx.masters}
+        columns={columns}
+        getRowId={(m) => m.id}
+        pageSize={ALARM_PAGE_SIZE}
+        loading={ctx.mastersLoading}
+        emptyState={<EmptyState variant="no-data" compact title={t("eqStandards.masterEmpty", "No master alarms rationalized yet.")} />}
+      />
+    </>
+  );
+}
+
+/** Panel phụ (ngoài MAIN): KPI EEMUA-191 thành chip CÓ NGUỒN + nhóm gây nhiễu. Chattering: "Chưa đo được". */
+function AlarmPerfSide({ kpis, kpisQ }: { kpis: AlarmKpis | undefined; kpisQ: { data: unknown; isLoading?: boolean; isPending?: boolean; isError?: boolean } }) {
+  const { t } = useTranslation();
+  const state = chipStateFromQuery(kpisQ);
+  const rateTone = kpis ? (kpis.rate.status === "critical" ? "error" : kpis.rate.status === "warning" ? "warning" : "success") : "default";
+  const items: StatusChipItem[] = [
+    {
+      id: "alarm-kpi-total", pinned: true, label: t("eqStandards.kpi.total", "Total alarms"), value: kpis?.totalAlarms, state,
+      source: t("eqStandards.chip.srcAlarmTotal", "alarmKpi.summary — Andon + AI alerts in the window (same source as /alarm-kpi and Control Tower)"),
+    },
+    {
+      id: "alarm-kpi-rate", pinned: true, label: t("eqStandards.kpi.perOpHour", "Alarms/op/hour"), value: kpis ? kpis.rate.alarmsPerHourPerOperator.toFixed(1) : undefined, state, tone: rateTone,
+      source: t("eqStandards.chip.srcAlarmRate", "alarmKpi.summary — alarms per operator per hour; operators counted on the server"),
+    },
+    {
+      id: "alarm-kpi-flood", pinned: true, label: t("eqStandards.kpi.flood", "Flood windows"), value: kpis?.flood.floodBucketCount, state, tone: kpis ? (kpis.flood.isFlooding ? "error" : "success") : "default",
+      source: t("eqStandards.chip.srcFlood", "alarmKpi.summary — 10-minute windows above the flood threshold"),
+    },
+    {
+      id: "alarm-kpi-standing", pinned: true, label: t("eqStandards.kpi.standing", "Standing/stale"), value: kpis?.standing.count, state, tone: kpis ? (kpis.standing.count > 0 ? "warning" : "success") : "default",
+      source: t("eqStandards.chip.srcStanding", "alarmKpi.summary — alarms standing longer than the threshold"),
+    },
+    {
+      id: "alarm-kpi-peak", pinned: true, label: t("eqStandards.kpi.peakWindow", "Peak/10min"), value: kpis?.flood.maxInWindow, state,
+      source: t("eqStandards.chip.srcPeak", "alarmKpi.summary — most alarms in one 10-minute window"),
+    },
+    {
+      // Task 3 Fix round 1 — nguồn KPI chung (alarmKpi.summary) CHƯA tính chattering: nói thẳng "chưa đo được"
+      // thay vì bỏ ô im lặng hay bịa một con số. Nguồn của chip = lý do.
+      id: "alarm-kpi-chattering", label: t("eqStandards.kpi.chattering", "Chattering"), value: t("eqStandards.kpi.notMeasured", "Not measured yet"), state,
+      source: t("eqStandards.kpi.chatteringNotMeasuredTip", "The combined alarm KPI source (alarmKpi) does not compute chattering yet."),
+    },
+    {
+      id: "alarm-kpi-operators", label: t("eqStandards.kpi.operators", "Operators (server)"), value: kpis?.operatorCount, state,
+      source: t("eqStandards.chip.srcOperators", "alarmKpi.summary — active operators counted on the server"),
+    },
+  ];
+  return (
+    <div data-alarm-perf-side="" className="space-y-3 text-sm">
+      <h2 className="flex items-center gap-2 text-sm font-semibold">
+        <Activity className="h-4 w-4 text-muted-foreground" aria-hidden="true" />
+        {t("eqStandards.alarmPerfTitle", "Alarm performance (EEMUA-191)")}
+      </h2>
+      {kpisQ.isError && <Text tone="muted" variant="body-sm">{t("eqStandards.kpiError", "Could not load alarm KPIs.")}</Text>}
+      <StatusChipStrip
+        items={items}
+        maxVisible={items.length}
+        ariaLabel={t("eqStandards.alarmPerfTitle", "Alarm performance (EEMUA-191)")}
+        className="flex-wrap overflow-visible"
+      />
+      {kpis && (
+        <p data-testid="alarm-kpi-source" className="text-xs text-muted-foreground">
+          {t(
+            "eqStandards.kpiSourceNote",
+            "Same source as the Alarm KPI dashboard and Control Tower (Andon + AI alerts). Operators: {{n}} — counted on the server.",
+            { n: kpis.operatorCount },
+          )}
+        </p>
+      )}
+      {kpis && (
+        <div>
+          <Heading level={6} className="mb-2">{t("eqStandards.badActors", "Top bad actors")}</Heading>
+          {kpis.badActors.length === 0 ? (
+            <Text tone="muted" variant="body-sm">{t("eqStandards.noAlarms", "No alarms in this window.")}</Text>
+          ) : (
+            <div className="space-y-1">
+              {kpis.badActors.map((b) => (
+                <div key={b.actorKey} className="flex items-center gap-2 text-sm">
+                  <span className="w-24 shrink-0 truncate font-mono text-xs" title={b.actorKey}>{b.actorLabel}</span>
+                  <div className="h-2 flex-1 overflow-hidden rounded bg-muted">
+                    <div className="h-full bg-primary" style={{ width: `${Math.round(b.percent)}%` }} />
+                  </div>
+                  <span className="w-16 shrink-0 text-right text-xs text-muted-foreground">{b.count} ({Math.round(b.percent)}%)</span>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+// TAB: Change requests (E1-c) — ApprovalQueue dùng chung (R-2-g: hợp đồng HIỆN TẠI)
+// ══════════════════════════════════════════════════════════════════════════════
+function CrsTab() {
+  const { t } = useTranslation();
+  const ctx = useStdCtx();
+  // Server: người tạo CR không được review/duyệt/từ chối (selfReviewChangeRequest) hay xuất bản
+  // (selfPublishEquipmentStandard) ⇒ MỌI hành động tách khỏi tác giả. Client chỉ báo sớm; server vẫn là cổng.
+  const review: TransitionAction = { key: "in_review", kind: "advance", segregateFrom: ["author"], label: t("eqStandards.review", "Review"), hint: t("eqStandards.startReviewTip", "Move to in-review") };
+  const approve: TransitionAction = { key: "approved", kind: "approve", segregateFrom: ["author"], label: t("eqStandards.approve", "Approve"), hint: t("eqStandards.approveTip", "Approve — the server computes the conformance gate from the proposed schema") };
+  const reject: TransitionAction = { key: "rejected", kind: "reject", segregateFrom: ["author"], label: t("eqStandards.reject", "Reject"), hint: t("eqStandards.rejectTip", "Reject") };
+  const publish: TransitionAction = { key: "publish", kind: "advance", segregateFrom: ["author"], label: t("eqStandards.publish", "Publish"), hint: t("eqStandards.publishTip", "Publish — gated by conformance + backward-compat") };
+
+  const items: ApprovalItem[] = ctx.crs.map((cr) => {
+    const breaking = String(cr.backwardIncompatible) === "true";
+    const actions: TransitionAction[] = !ctx.canControl
+      ? []
+      : cr.status === "pending"
+        ? [review, approve, reject]
+        : cr.status === "in_review"
+          ? [approve, reject]
+          : cr.status === "approved"
+            ? [publish]
+            : [];
+    return {
+      id: cr.id,
+      key: cr.crKey,
+      authorId: cr.requestedBy,
+      authorName: cr.requestedBy != null ? `#${cr.requestedBy}` : undefined,
+      title: (
+        <span className="inline-flex flex-wrap items-center gap-1">
+          <span className="font-mono text-xs">{cr.targetTypeKey}</span>
+          <Badge variant="outline">{t(`eqStandards.crKind.${cr.kind}`, cr.kind)}</Badge>
+        </span>
+      ),
+      status: (
+        <span className="inline-flex flex-wrap items-center gap-1">
+          <StatusBadge status={cr.status} label={t(`eqStandards.crStatus.${cr.status}`, cr.status)} />
+          <StatusBadge status={cr.conformanceStatus} label={t(`eqStandards.conf.${cr.conformanceStatus}`, cr.conformanceStatus)} />
+          {breaking && (
+            <span title={t("eqStandards.breakingTip", "Backward-incompatible — requires a major version bump")}>
+              <AlertTriangle className="h-3.5 w-3.5 text-amber-500" />
+            </span>
+          )}
+          <Badge variant="outline" className="text-muted-foreground">{cr.stage}</Badge>
+        </span>
+      ),
+      actions,
+      actionsFallback: !ctx.canControl
+        ? <span className="text-xs text-muted-foreground">{t("eqStandards.viewOnly", "View only")}</span>
+        : cr.status === "rejected" || cr.status === "published"
+          ? <span className="text-xs text-muted-foreground">{t("eqStandards.terminal", "—")}</span>
+          : undefined,
+    };
+  });
+  return (
+    <>
+      {ctx.narrow && <NarrowTools />}
+      <div className="max-h-[calc(100dvh-13rem)] min-h-[16rem] overflow-auto rounded-md border bg-card">
+        <ApprovalQueue
+          items={items}
+          status={ctx.crsStatus}
+          currentUserId={ctx.userId}
+          pending={ctx.crPending}
+          // R-2-g — hợp đồng HIỆN TẠI của CR: một cú bấm (không sheet xác nhận), lý do từ chối KHÔNG bắt buộc.
+          confirmStep={false}
+          rejectReasonRequired={false}
+          emptyTitle={t("eqStandards.crsEmpty", "No change requests.")}
+          ariaLabel={t("eqStandards.crsTitle", "Equipment Standards Board")}
+          onTransition={(item, action) => ctx.onCrTransition(item, action)}
+        />
+      </div>
+    </>
+  );
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+// TAB: Compliance (E1-e + E1-d)
+// ══════════════════════════════════════════════════════════════════════════════
+function ComplianceTab() {
+  const { t } = useTranslation();
+  const ctx = useStdCtx();
+  const compliance = ctx.compliance;
+  return (
+    <div className="flex flex-col gap-4">
+      {ctx.narrow && <NarrowTools />}
+      {/* Tiêu đề thuần một dòng (h2 ≤ 40 px) + khung — không dùng header SectionCard (khối có nền/viền trên phần tử
+          làm việc = banner trong MAIN theo thiết bị đo). */}
+      <section aria-labelledby="eq-compliance-overview">
+        <h2 id="eq-compliance-overview" className="mb-2 text-sm font-semibold">{t("eqStandards.complianceTitle", "Compliance overview")}</h2>
+        <div className="rounded-md border bg-card p-4">
+          <div className="grid gap-4 md:grid-cols-2">
+            {/* Conformance pass/fail chart (natural pass vs fail series) */}
+            <div>
+              <Heading level={6} className="mb-2">{t("eqStandards.conformanceChart", "Conformance by device type")}</Heading>
+              {ctx.conformanceChart.length > 0 ? (
+                <div className="h-48">
+                  <ResponsiveContainer width="100%" height="100%">
+                    <BarChart data={ctx.conformanceChart}>
+                      <CartesianGrid {...chartGridProps} />
+                      <XAxis dataKey="name" tick={chartAxisTick} />
+                      <YAxis allowDecimals={false} tick={chartAxisTick} />
+                      <Tooltip contentStyle={chartTooltipStyle} cursor={{ fill: "var(--muted)" }} />
+                      <Bar dataKey="value" radius={[4, 4, 0, 0]}>
+                        {ctx.conformanceChart.map((entry) => (
+                          <Cell key={entry.kind} fill={entry.kind === "pass" ? "var(--success)" : "var(--destructive)"} />
+                        ))}
+                      </Bar>
+                    </BarChart>
+                  </ResponsiveContainer>
+                </div>
+              ) : (
+                <Text tone="muted" variant="body-sm">{t("eqStandards.loading", "Loading…")}</Text>
+              )}
+            </div>
+
+            {/* Unmapped machine types */}
+            <div>
+              <Heading level={6} className="mb-2">{t("eqStandards.unmappedTitle", "Unmapped machine types")}</Heading>
+              {compliance && compliance.unmappedMachineTypes.length === 0 && (
+                <div className="flex items-center gap-2 text-sm text-emerald-600">
+                  <CheckCircle2 className="h-4 w-4" />{t("eqStandards.allMapped", "Every machine type maps to a published device type.")}
+                </div>
+              )}
+              {compliance && compliance.unmappedMachineTypes.length > 0 && (
+                <div className="flex flex-wrap gap-1">
+                  {compliance.unmappedMachineTypes.map((m) => (
+                    <Badge key={m} variant="outline" className="border-warning/30 bg-warning/15 text-warning font-mono text-xs">{m}</Badge>
+                  ))}
+                </div>
+              )}
+              {!compliance && <Text tone="muted" variant="body-sm">{t("eqStandards.loading", "Loading…")}</Text>}
+            </div>
+          </div>
+          {/* doc 80 Đợt 1 Task 3 (STD-01) — nói rõ số đo trên CÁI GÌ (không còn 100 % giả từ hằng số seed). */}
+          {compliance && (
+            <div data-testid="compliance-basis" className="mt-4 space-y-1 text-xs text-muted-foreground">
+              <p>
+                {t(
+                  "eqStandards.complianceBasis",
+                  "Mapped = machines.device_type_key bound to a published device type: {{mapped}}/{{total}} machines ({{keyed}} have a key, {{unpublished}} point to an unpublished type). Conformance runs on the {{types}} published device types in the database.",
+                  {
+                    mapped: compliance.machinesMappedToPublished,
+                    total: compliance.machineCount,
+                    keyed: compliance.basis.machinesWithKey,
+                    unpublished: compliance.basis.machinesWithUnpublishedKey,
+                    types: compliance.basis.publishedTypeCount,
+                  },
+                )}
+              </p>
+              {compliance.basis.warnings.map((w) => (
+                <p key={w} className="text-warning">{t(`eqStandards.basisWarning.${w}`, w)}</p>
+              ))}
+            </div>
+          )}
+        </div>
+      </section>
+
+      {/* Run conformance (nút ở hàng công cụ của tab) */}
+      <section aria-labelledby="eq-conformance-test">
+        <h2 id="eq-conformance-test" className="mb-2 text-sm font-semibold">{t("eqStandards.runConfTitle", "Conformance test")}</h2>
+        <div className="rounded-md border bg-card p-4">
+          {!ctx.runConfReq && (
+            <Text tone="muted" variant="body-sm">{t("eqStandards.runConfHint", "Run the standard rule set across the seeded device types and capability profiles.")}</Text>
+          )}
+          {ctx.runConfReq && ctx.conformanceFetching && <Text tone="muted" variant="body-sm">{t("eqStandards.loading", "Loading…")}</Text>}
+          {ctx.conformance && !ctx.conformanceFetching && <ConformanceResult result={ctx.conformance} />}
+        </div>
+      </section>
+    </div>
+  );
+}
+
 // ── Conformance result detail ─────────────────────────────────────────────────
 function ConformanceResult({ result }: { result: Conformance }) {
   const { t } = useTranslation();
@@ -1120,21 +1554,29 @@ function ConformanceResult({ result }: { result: Conformance }) {
   );
 }
 
-// ── Register device-type dialog ───────────────────────────────────────────────
-function RegisterTypeDialog({
-  parentOptions, pending, onClose, onSubmit,
+function SheetFooter({ children }: { children: ReactNode }) {
+  return <div className="flex justify-end gap-2 border-t pt-3">{children}</div>;
+}
+
+// ── Sheet: register device type ───────────────────────────────────────────────
+function RegisterTypeForm({
+  parentOptions, pending, onSubmit,
 }: {
   parentOptions: TreeNode[];
   pending: boolean;
-  onClose: () => void;
-  onSubmit: (v: { typeKey: string; parentTypeKey?: string; version: string; label?: string; description?: string }) => void;
+  onSubmit: (v: { typeKey: string; parentTypeKey?: string; version: string; label?: string; description?: string }, done: () => void) => void;
 }) {
   const { t } = useTranslation();
+  const { layer, done } = useCloseOwnLayer();
+  const uid = useId();
   const [typeKey, setTypeKey] = useState("");
   const [parentTypeKey, setParentTypeKey] = useState("");
   const [version, setVersion] = useState("1.0.0");
   const [label, setLabel] = useState("");
   const [description, setDescription] = useState("");
+
+  const dirty = typeKey !== "" || parentTypeKey !== "" || version !== "1.0.0" || label !== "" || description !== "";
+  useEffect(() => { layer.setDirty(dirty); }, [dirty]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Flatten the tree for the parent <select>.
   const flatKeys = useMemo(() => {
@@ -1152,70 +1594,67 @@ function RegisterTypeDialog({
       version: version.trim() || "1.0.0",
       label: label.trim() || undefined,
       description: description.trim() || undefined,
-    });
+    }, done);
   };
 
   return (
-    <Dialog open onOpenChange={(o) => !o && onClose()}>
-      <DialogContent>
-        <DialogHeader>
-          <DialogTitle className="flex items-center gap-2"><Boxes className="h-4 w-4" />{t("eqStandards.registerTitle", "Register device type (draft)")}</DialogTitle>
-        </DialogHeader>
-        <div className="grid gap-3 py-2">
-          <div className="grid grid-cols-2 gap-3">
-            <div className="grid gap-1">
-              <Label>{t("eqStandards.typeKey", "Type key")}</Label>
-              <Input value={typeKey} placeholder="MyRobotVariant" onChange={(e) => setTypeKey(e.target.value)} />
-            </div>
-            <div className="grid gap-1">
-              <Label>{t("eqStandards.version", "Version")}</Label>
-              <Input value={version} placeholder="1.0.0" onChange={(e) => setVersion(e.target.value)} />
-            </div>
-          </div>
-          <div className="grid gap-1">
-            <Label>{t("eqStandards.parent", "Parent type")}</Label>
-            {/* U11 — Select DS; "__none__" là sentinel cho "không cha (root)". */}
-            <Select value={parentTypeKey || "__none__"} onValueChange={(v) => setParentTypeKey(v === "__none__" ? "" : v)}>
-              <SelectTrigger className="w-full"><SelectValue /></SelectTrigger>
-              <SelectContent>
-                <SelectItem value="__none__">{t("eqStandards.noParent", "(none — root)")}</SelectItem>
-                {flatKeys.map((k) => <SelectItem key={k} value={k}>{k}</SelectItem>)}
-              </SelectContent>
-            </Select>
-          </div>
-          <div className="grid gap-1">
-            <Label>{t("eqStandards.label", "Label")}</Label>
-            <Input value={label} onChange={(e) => setLabel(e.target.value)} />
-          </div>
-          <div className="grid gap-1">
-            <Label>{t("eqStandards.description", "Description")}</Label>
-            <Input value={description} onChange={(e) => setDescription(e.target.value)} />
-          </div>
+    <div className="grid gap-3">
+      <div className="grid grid-cols-2 gap-3">
+        <div className="grid gap-1">
+          <Label htmlFor={`${uid}-key`}>{t("eqStandards.typeKey", "Type key")}</Label>
+          <Input id={`${uid}-key`} value={typeKey} placeholder="MyRobotVariant" onChange={(e) => setTypeKey(e.target.value)} />
         </div>
-        <DialogFooter>
-          <Button variant="outline" onClick={onClose}>{t("common.cancel", "Cancel")}</Button>
-          <Button onClick={submit} disabled={pending}><CheckCircle2 className="mr-1 h-4 w-4" />{t("eqStandards.register", "Register")}</Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
+        <div className="grid gap-1">
+          <Label htmlFor={`${uid}-ver`}>{t("eqStandards.version", "Version")}</Label>
+          <Input id={`${uid}-ver`} value={version} placeholder="1.0.0" onChange={(e) => setVersion(e.target.value)} />
+        </div>
+      </div>
+      <div className="grid gap-1">
+        <Label htmlFor={`${uid}-parent`}>{t("eqStandards.parent", "Parent type")}</Label>
+        {/* U11 — Select DS; "__none__" là sentinel cho "không cha (root)". */}
+        <Select value={parentTypeKey || "__none__"} onValueChange={(v) => setParentTypeKey(v === "__none__" ? "" : v)}>
+          <SelectTrigger id={`${uid}-parent`} className="w-full"><SelectValue /></SelectTrigger>
+          <SelectContent>
+            <SelectItem value="__none__">{t("eqStandards.noParent", "(none — root)")}</SelectItem>
+            {flatKeys.map((k) => <SelectItem key={k} value={k}>{k}</SelectItem>)}
+          </SelectContent>
+        </Select>
+      </div>
+      <div className="grid gap-1">
+        <Label htmlFor={`${uid}-label`}>{t("eqStandards.label", "Label")}</Label>
+        <Input id={`${uid}-label`} value={label} onChange={(e) => setLabel(e.target.value)} />
+      </div>
+      <div className="grid gap-1">
+        <Label htmlFor={`${uid}-desc`}>{t("eqStandards.description", "Description")}</Label>
+        <Input id={`${uid}-desc`} value={description} onChange={(e) => setDescription(e.target.value)} />
+      </div>
+      <SheetFooter>
+        <Button variant="outline" onClick={() => layer.close()}>{t("common.cancel", "Cancel")}</Button>
+        <Button onClick={submit} disabled={pending}><CheckCircle2 className="mr-1 h-4 w-4" />{t("eqStandards.register", "Register")}</Button>
+      </SheetFooter>
+    </div>
   );
 }
 
-// ── Upsert alarm-mapping dialog ───────────────────────────────────────────────
-function UpsertAlarmDialog({
-  pending, onClose, onSubmit,
+// ── Sheet: upsert alarm mapping ───────────────────────────────────────────────
+function UpsertAlarmForm({
+  pending, onSubmit,
 }: {
   pending: boolean;
-  onClose: () => void;
-  onSubmit: (v: { vendor: string; nativeCode: string; standardCode: string; severity: Severity; description?: string; recommendedAction?: string }) => void;
+  onSubmit: (v: { vendor: string; nativeCode: string; standardCode: string; severity: Severity; description?: string; recommendedAction?: string }, done: () => void) => void;
 }) {
   const { t } = useTranslation();
+  const { layer, done } = useCloseOwnLayer();
+  const uid = useId();
   const [vendor, setVendor] = useState("");
   const [nativeCode, setNativeCode] = useState("");
   const [standardCode, setStandardCode] = useState("");
   const [severity, setSeverity] = useState<Severity>("medium");
   const [description, setDescription] = useState("");
   const [recommendedAction, setRecommendedAction] = useState("");
+
+  const dirty = vendor !== "" || nativeCode !== "" || standardCode !== "" || severity !== "medium" || description !== "" || recommendedAction !== "";
+  useEffect(() => { layer.setDirty(dirty); }, [dirty]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const submit = () => {
     if (!vendor.trim() || !nativeCode.trim() || !standardCode.trim()) {
@@ -1224,60 +1663,53 @@ function UpsertAlarmDialog({
     onSubmit({
       vendor: vendor.trim(), nativeCode: nativeCode.trim(), standardCode: standardCode.trim(), severity,
       description: description.trim() || undefined, recommendedAction: recommendedAction.trim() || undefined,
-    });
+    }, done);
   };
 
   return (
-    <Dialog open onOpenChange={(o) => !o && onClose()}>
-      <DialogContent>
-        <DialogHeader>
-          <DialogTitle className="flex items-center gap-2"><Bell className="h-4 w-4" />{t("eqStandards.upsertAlarmTitle", "Map vendor alarm")}</DialogTitle>
-        </DialogHeader>
-        <div className="grid gap-3 py-2">
-          <div className="grid grid-cols-2 gap-3">
-            <div className="grid gap-1">
-              <Label>{t("eqStandards.vendor", "Vendor")}</Label>
-              <Input value={vendor} placeholder="fanuc" onChange={(e) => setVendor(e.target.value)} />
-            </div>
-            <div className="grid gap-1">
-              <Label>{t("eqStandards.nativeCode", "Native code")}</Label>
-              <Input value={nativeCode} placeholder="SRVO-050" onChange={(e) => setNativeCode(e.target.value)} />
-            </div>
-          </div>
-          <div className="grid grid-cols-2 gap-3">
-            <div className="grid gap-1">
-              <Label>{t("eqStandards.standardCode", "Standard code")}</Label>
-              <Input value={standardCode} placeholder="COLLISION_DETECT" onChange={(e) => setStandardCode(e.target.value)} />
-            </div>
-            <div className="grid gap-1">
-              <Label>{t("eqStandards.col.severity", "Severity")}</Label>
-              <Select value={severity} onValueChange={(v) => setSeverity(v as Severity)}>
-                <SelectTrigger className="w-full"><SelectValue /></SelectTrigger>
-                <SelectContent>
-                  {SEVERITIES.map((s) => <SelectItem key={s} value={s}>{t(`eqStandards.severity.${s}`, s)}</SelectItem>)}
-                </SelectContent>
-              </Select>
-            </div>
-          </div>
-          <div className="grid gap-1">
-            <Label>{t("eqStandards.description", "Description")}</Label>
-            <Input value={description} onChange={(e) => setDescription(e.target.value)} />
-          </div>
-          <div className="grid gap-1">
-            <Label>{t("eqStandards.recommendedAction", "Recommended action")}</Label>
-            <Input value={recommendedAction} onChange={(e) => setRecommendedAction(e.target.value)} />
-          </div>
+    <div className="grid gap-3">
+      <div className="grid grid-cols-2 gap-3">
+        <div className="grid gap-1">
+          <Label htmlFor={`${uid}-vendor`}>{t("eqStandards.vendor", "Vendor")}</Label>
+          <Input id={`${uid}-vendor`} value={vendor} placeholder="fanuc" onChange={(e) => setVendor(e.target.value)} />
         </div>
-        <DialogFooter>
-          <Button variant="outline" onClick={onClose}>{t("common.cancel", "Cancel")}</Button>
-          <Button onClick={submit} disabled={pending}><CheckCircle2 className="mr-1 h-4 w-4" />{t("eqStandards.save", "Save mapping")}</Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
+        <div className="grid gap-1">
+          <Label htmlFor={`${uid}-native`}>{t("eqStandards.nativeCode", "Native code")}</Label>
+          <Input id={`${uid}-native`} value={nativeCode} placeholder="SRVO-050" onChange={(e) => setNativeCode(e.target.value)} />
+        </div>
+      </div>
+      <div className="grid grid-cols-2 gap-3">
+        <div className="grid gap-1">
+          <Label htmlFor={`${uid}-std`}>{t("eqStandards.standardCode", "Standard code")}</Label>
+          <Input id={`${uid}-std`} value={standardCode} placeholder="COLLISION_DETECT" onChange={(e) => setStandardCode(e.target.value)} />
+        </div>
+        <div className="grid gap-1">
+          <Label htmlFor={`${uid}-sev`}>{t("eqStandards.col.severity", "Severity")}</Label>
+          <Select value={severity} onValueChange={(v) => setSeverity(v as Severity)}>
+            <SelectTrigger id={`${uid}-sev`} className="w-full"><SelectValue /></SelectTrigger>
+            <SelectContent>
+              {SEVERITIES.map((s) => <SelectItem key={s} value={s}>{t(`eqStandards.severity.${s}`, s)}</SelectItem>)}
+            </SelectContent>
+          </Select>
+        </div>
+      </div>
+      <div className="grid gap-1">
+        <Label htmlFor={`${uid}-desc`}>{t("eqStandards.description", "Description")}</Label>
+        <Input id={`${uid}-desc`} value={description} onChange={(e) => setDescription(e.target.value)} />
+      </div>
+      <div className="grid gap-1">
+        <Label htmlFor={`${uid}-action`}>{t("eqStandards.recommendedAction", "Recommended action")}</Label>
+        <Input id={`${uid}-action`} value={recommendedAction} onChange={(e) => setRecommendedAction(e.target.value)} />
+      </div>
+      <SheetFooter>
+        <Button variant="outline" onClick={() => layer.close()}>{t("common.cancel", "Cancel")}</Button>
+        <Button onClick={submit} disabled={pending}><CheckCircle2 className="mr-1 h-4 w-4" />{t("eqStandards.save", "Save mapping")}</Button>
+      </SheetFooter>
+    </div>
   );
 }
 
-// ── Master alarm dialog (W5-21) ───────────────────────────────────────────────
+// ── Sheet: master alarm (W5-21) ───────────────────────────────────────────────
 // Client-side mirror of the server EEMUA-191 matrix — PREVIEW ONLY (the server
 // re-derives priority authoritatively on upsert).
 function previewPriority(consequence: Consequence, ttr: number | null): string {
@@ -1305,26 +1737,45 @@ interface MasterAlarmValue {
   isSuppressed?: boolean;
 }
 
-function MasterAlarmDialog({
-  initial, pending, onClose, onSubmit,
+function MasterAlarmForm({
+  initial, pending, onSubmit,
 }: {
   initial: MasterAlarmRow | null;
   pending: boolean;
-  onClose: () => void;
-  onSubmit: (v: MasterAlarmValue) => void;
+  onSubmit: (v: MasterAlarmValue, done: () => void) => void;
 }) {
   const { t } = useTranslation();
-  const [alarmKey, setAlarmKey] = useState(initial?.alarmKey ?? "");
-  const [assetType, setAssetType] = useState(initial?.assetType ?? "");
-  const [vendor, setVendor] = useState(initial?.vendor ?? "");
-  const [nativeCode, setNativeCode] = useState(initial?.nativeCode ?? "");
-  const [label, setLabel] = useState(initial?.label ?? "");
-  const [consequence, setConsequence] = useState<Consequence>((initial?.consequence as Consequence) ?? "minor");
-  const [ttr, setTtr] = useState<string>(initial?.timeToRespond != null ? String(initial.timeToRespond) : "");
-  const [setpoint, setSetpoint] = useState(initial?.setpoint ?? "");
-  const [deadband, setDeadband] = useState(initial?.deadband ?? "");
-  const [rationalization, setRationalization] = useState(initial?.rationalization ?? "");
-  const [isSuppressed, setIsSuppressed] = useState<boolean>(initial?.isSuppressed ?? false);
+  const { layer, done } = useCloseOwnLayer();
+  const uid = useId();
+  const init = {
+    alarmKey: initial?.alarmKey ?? "",
+    assetType: initial?.assetType ?? "",
+    vendor: initial?.vendor ?? "",
+    nativeCode: initial?.nativeCode ?? "",
+    label: initial?.label ?? "",
+    consequence: ((initial?.consequence as Consequence) ?? "minor") as Consequence,
+    ttr: initial?.timeToRespond != null ? String(initial.timeToRespond) : "",
+    setpoint: initial?.setpoint ?? "",
+    deadband: initial?.deadband ?? "",
+    rationalization: initial?.rationalization ?? "",
+    isSuppressed: initial?.isSuppressed ?? false,
+  };
+  const [alarmKey, setAlarmKey] = useState(init.alarmKey);
+  const [assetType, setAssetType] = useState(init.assetType);
+  const [vendor, setVendor] = useState(init.vendor);
+  const [nativeCode, setNativeCode] = useState(init.nativeCode);
+  const [label, setLabel] = useState(init.label);
+  const [consequence, setConsequence] = useState<Consequence>(init.consequence);
+  const [ttr, setTtr] = useState<string>(init.ttr);
+  const [setpoint, setSetpoint] = useState(init.setpoint);
+  const [deadband, setDeadband] = useState(init.deadband);
+  const [rationalization, setRationalization] = useState(init.rationalization);
+  const [isSuppressed, setIsSuppressed] = useState<boolean>(init.isSuppressed);
+
+  const dirty = alarmKey !== init.alarmKey || assetType !== init.assetType || vendor !== init.vendor || nativeCode !== init.nativeCode
+    || label !== init.label || consequence !== init.consequence || ttr !== init.ttr || setpoint !== init.setpoint
+    || deadband !== init.deadband || rationalization !== init.rationalization || isSuppressed !== init.isSuppressed;
+  useEffect(() => { layer.setDirty(dirty); }, [dirty]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const ttrNum = ttr.trim() === "" ? null : Number(ttr);
   const preview = previewPriority(consequence, ttrNum != null && Number.isFinite(ttrNum) ? ttrNum : null);
@@ -1343,91 +1794,82 @@ function MasterAlarmDialog({
       deadband: deadband.trim() || undefined,
       rationalization: rationalization.trim() || undefined,
       isSuppressed,
-    });
+    }, done);
   };
 
   return (
-    <Dialog open onOpenChange={(o) => !o && onClose()}>
-      <DialogContent className="max-h-[85vh] overflow-y-auto sm:max-w-xl">
-        <DialogHeader>
-          <DialogTitle className="flex items-center gap-2"><ClipboardCheck className="h-4 w-4" />
-            {initial ? t("eqStandards.editMasterTitle", "Edit master alarm") : t("eqStandards.addMasterTitle", "Rationalize a master alarm")}
-          </DialogTitle>
-        </DialogHeader>
-        <div className="grid gap-3 py-2">
-          <div className="grid grid-cols-2 gap-3">
-            <div className="grid gap-1">
-              <Label>{t("eqStandards.alarmKey", "Alarm key (standard code)")}</Label>
-              <Input value={alarmKey} placeholder="COLLISION_DETECT" onChange={(e) => setAlarmKey(e.target.value)} />
-            </div>
-            <div className="grid gap-1">
-              <Label>{t("eqStandards.assetType", "Asset type (optional)")}</Label>
-              <Input value={assetType} placeholder="ROBOT" onChange={(e) => setAssetType(e.target.value)} />
-            </div>
-          </div>
-          <div className="grid grid-cols-2 gap-3">
-            <div className="grid gap-1">
-              <Label>{t("eqStandards.consequence", "Consequence")}</Label>
-              <Select value={consequence} onValueChange={(v) => setConsequence(v as Consequence)}>
-                <SelectTrigger className="w-full"><SelectValue /></SelectTrigger>
-                <SelectContent>
-                  {CONSEQUENCES.map((c) => <SelectItem key={c} value={c}>{t(`eqStandards.consequenceVal.${c}`, c)}</SelectItem>)}
-                </SelectContent>
-              </Select>
-            </div>
-            <div className="grid gap-1">
-              <Label>{t("eqStandards.ttr", "Time-to-respond (min)")}</Label>
-              <Input type="number" min={0} value={ttr} placeholder="10" onChange={(e) => setTtr(e.target.value)} />
-            </div>
-          </div>
-          {/* Derived priority preview */}
-          <div className="flex items-center gap-2 rounded-md border border-border bg-muted/30 p-2 text-sm">
-            <span className="text-xs text-muted-foreground">{t("eqStandards.derivedPriority", "Derived priority (EEMUA-191):")}</span>
-            <PriorityBadge value={preview} label={t(`eqStandards.priority.${preview}`, preview)} />
-          </div>
-          <div className="grid grid-cols-2 gap-3">
-            <div className="grid gap-1">
-              <Label>{t("eqStandards.setpoint", "Setpoint")}</Label>
-              <Input value={setpoint} placeholder="85 °C" onChange={(e) => setSetpoint(e.target.value)} />
-            </div>
-            <div className="grid gap-1">
-              <Label>{t("eqStandards.deadband", "Deadband")}</Label>
-              <Input value={deadband} placeholder="2 °C" onChange={(e) => setDeadband(e.target.value)} />
-            </div>
-          </div>
-          <div className="grid grid-cols-2 gap-3">
-            <div className="grid gap-1">
-              <Label>{t("eqStandards.vendor", "Vendor (optional)")}</Label>
-              <Input value={vendor} placeholder="fanuc" onChange={(e) => setVendor(e.target.value)} />
-            </div>
-            <div className="grid gap-1">
-              <Label>{t("eqStandards.nativeCode", "Native code (optional)")}</Label>
-              <Input value={nativeCode} placeholder="SRVO-050" onChange={(e) => setNativeCode(e.target.value)} />
-            </div>
-          </div>
-          <div className="grid gap-1">
-            <Label>{t("eqStandards.label", "Label")}</Label>
-            <Input value={label} onChange={(e) => setLabel(e.target.value)} />
-          </div>
-          <div className="grid gap-1">
-            <Label>{t("eqStandards.rationalization", "Rationalization")}</Label>
-            <Input value={rationalization} placeholder={t("eqStandards.rationalizationHint", "Why this alarm exists / operator action")} onChange={(e) => setRationalization(e.target.value)} />
-          </div>
-          <label className="flex items-center gap-2 text-sm">
-            <Checkbox checked={isSuppressed} onCheckedChange={(v) => setIsSuppressed(Boolean(v))} />
-            {t("eqStandards.suppressDesign", "Design suppression (out-of-service — never raises)")}
-          </label>
+    <div className="grid gap-3">
+      <div className="grid grid-cols-2 gap-3">
+        <div className="grid gap-1">
+          <Label htmlFor={`${uid}-key`}>{t("eqStandards.alarmKey", "Alarm key (standard code)")}</Label>
+          <Input id={`${uid}-key`} value={alarmKey} placeholder="COLLISION_DETECT" onChange={(e) => setAlarmKey(e.target.value)} />
         </div>
-        <DialogFooter>
-          <Button variant="outline" onClick={onClose}>{t("common.cancel", "Cancel")}</Button>
-          <Button onClick={submit} disabled={pending}><CheckCircle2 className="mr-1 h-4 w-4" />{t("eqStandards.save", "Save mapping")}</Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
+        <div className="grid gap-1">
+          <Label htmlFor={`${uid}-asset`}>{t("eqStandards.assetType", "Asset type (optional)")}</Label>
+          <Input id={`${uid}-asset`} value={assetType} placeholder="ROBOT" onChange={(e) => setAssetType(e.target.value)} />
+        </div>
+      </div>
+      <div className="grid grid-cols-2 gap-3">
+        <div className="grid gap-1">
+          <Label htmlFor={`${uid}-cons`}>{t("eqStandards.consequence", "Consequence")}</Label>
+          <Select value={consequence} onValueChange={(v) => setConsequence(v as Consequence)}>
+            <SelectTrigger id={`${uid}-cons`} className="w-full"><SelectValue /></SelectTrigger>
+            <SelectContent>
+              {CONSEQUENCES.map((c) => <SelectItem key={c} value={c}>{t(`eqStandards.consequenceVal.${c}`, c)}</SelectItem>)}
+            </SelectContent>
+          </Select>
+        </div>
+        <div className="grid gap-1">
+          <Label htmlFor={`${uid}-ttr`}>{t("eqStandards.ttr", "Time-to-respond (min)")}</Label>
+          <Input id={`${uid}-ttr`} type="number" min={0} value={ttr} placeholder="10" onChange={(e) => setTtr(e.target.value)} />
+        </div>
+      </div>
+      {/* Derived priority preview */}
+      <div className="flex items-center gap-2 rounded-md border border-border bg-muted/30 p-2 text-sm">
+        <span className="text-xs text-muted-foreground">{t("eqStandards.derivedPriority", "Derived priority (EEMUA-191):")}</span>
+        <PriorityBadge value={preview} label={t(`eqStandards.priority.${preview}`, preview)} />
+      </div>
+      <div className="grid grid-cols-2 gap-3">
+        <div className="grid gap-1">
+          <Label htmlFor={`${uid}-sp`}>{t("eqStandards.setpoint", "Setpoint")}</Label>
+          <Input id={`${uid}-sp`} value={setpoint} placeholder="85 °C" onChange={(e) => setSetpoint(e.target.value)} />
+        </div>
+        <div className="grid gap-1">
+          <Label htmlFor={`${uid}-db`}>{t("eqStandards.deadband", "Deadband")}</Label>
+          <Input id={`${uid}-db`} value={deadband} placeholder="2 °C" onChange={(e) => setDeadband(e.target.value)} />
+        </div>
+      </div>
+      <div className="grid grid-cols-2 gap-3">
+        <div className="grid gap-1">
+          <Label htmlFor={`${uid}-vendor`}>{t("eqStandards.vendor", "Vendor (optional)")}</Label>
+          <Input id={`${uid}-vendor`} value={vendor} placeholder="fanuc" onChange={(e) => setVendor(e.target.value)} />
+        </div>
+        <div className="grid gap-1">
+          <Label htmlFor={`${uid}-native`}>{t("eqStandards.nativeCode", "Native code (optional)")}</Label>
+          <Input id={`${uid}-native`} value={nativeCode} placeholder="SRVO-050" onChange={(e) => setNativeCode(e.target.value)} />
+        </div>
+      </div>
+      <div className="grid gap-1">
+        <Label htmlFor={`${uid}-label`}>{t("eqStandards.label", "Label")}</Label>
+        <Input id={`${uid}-label`} value={label} onChange={(e) => setLabel(e.target.value)} />
+      </div>
+      <div className="grid gap-1">
+        <Label htmlFor={`${uid}-rat`}>{t("eqStandards.rationalization", "Rationalization")}</Label>
+        <Input id={`${uid}-rat`} value={rationalization} placeholder={t("eqStandards.rationalizationHint", "Why this alarm exists / operator action")} onChange={(e) => setRationalization(e.target.value)} />
+      </div>
+      <label className="flex items-center gap-2 text-sm">
+        <Checkbox checked={isSuppressed} onCheckedChange={(v) => setIsSuppressed(Boolean(v))} />
+        {t("eqStandards.suppressDesign", "Design suppression (out-of-service — never raises)")}
+      </label>
+      <SheetFooter>
+        <Button variant="outline" onClick={() => layer.close()}>{t("common.cancel", "Cancel")}</Button>
+        <Button onClick={submit} disabled={pending}><CheckCircle2 className="mr-1 h-4 w-4" />{t("eqStandards.save", "Save mapping")}</Button>
+      </SheetFooter>
+    </div>
   );
 }
 
-// ── Submit change-request dialog ──────────────────────────────────────────────
+// ── Sheet: submit change request ──────────────────────────────────────────────
 type AttrDataType = "bool" | "int" | "float" | "string" | "json" | "enum";
 const ATTR_DATA_TYPES: AttrDataType[] = ["string", "int", "float", "bool", "json", "enum"];
 interface AttrRow { name: string; dataType: AttrDataType; unit: string; required: boolean; }
@@ -1444,22 +1886,26 @@ interface SubmitCrValue {
   };
 }
 
-function SubmitCrDialog({
-  parentOptions, canView, pending, onClose, onSubmit,
+function SubmitCrForm({
+  parentOptions, canView, pending, onSubmit,
 }: {
   parentOptions: TreeNode[];
   canView: boolean;
   pending: boolean;
-  onClose: () => void;
-  onSubmit: (v: SubmitCrValue) => void;
+  onSubmit: (v: SubmitCrValue, done: () => void) => void;
 }) {
   const { t } = useTranslation();
+  const { layer, done } = useCloseOwnLayer();
+  const uid = useId();
   const [targetTypeKey, setTargetTypeKey] = useState("");
   const [kind, setKind] = useState<"new_type" | "modify" | "deprecate">("modify");
   const [semverBump, setSemverBump] = useState<"major" | "minor" | "patch">("minor");
   const [parentTypeKey, setParentTypeKey] = useState("");
   const [attrs, setAttrs] = useState<AttrRow[]>([]);
   const [cmds, setCmds] = useState<string[]>([]);
+
+  const dirty = targetTypeKey !== "" || kind !== "modify" || semverBump !== "minor" || parentTypeKey !== "" || attrs.length > 0 || cmds.length > 0;
+  useEffect(() => { layer.setDirty(dirty); }, [dirty]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Flatten the tree for the parent <select>.
   const flatKeys = useMemo(() => {
@@ -1501,144 +1947,137 @@ function SubmitCrDialog({
     onSubmit({
       targetTypeKey: key, kind, semverBump,
       proposedSchema: { parentTypeKey: parentTypeKey.trim() || undefined, attributesSchema, supportedCommands },
-    });
+    }, done);
   };
 
   return (
-    <Dialog open onOpenChange={(o) => !o && onClose()}>
-      <DialogContent className="max-h-[85vh] overflow-y-auto sm:max-w-2xl">
-        <DialogHeader>
-          <DialogTitle className="flex items-center gap-2"><GitPullRequest className="h-4 w-4" />{t("eqStandards.submitCrTitle", "Submit change request")}</DialogTitle>
-        </DialogHeader>
-        <div className="grid gap-3 py-2">
-          <div className="grid gap-1">
-            <Label>{t("eqStandards.targetType", "Target type key")}</Label>
-            <div className="flex items-center gap-2">
-              <Input value={targetTypeKey} placeholder="Robot" onChange={(e) => setTargetTypeKey(e.target.value)} />
-              <Button type="button" variant="outline" size="sm" className="h-9 shrink-0" disabled={!hasResolved} onClick={prefill}>
-                <Layers className="mr-1 h-4 w-4" />{t("eqStandards.crPrefill", "Prefill")}
-              </Button>
-            </div>
-            {key.length > 0 && resolveQ.isFetching && (
-              <Text tone="muted" variant="caption">{t("eqStandards.loading", "Loading…")}</Text>
-            )}
-            {key.length > 0 && !resolveQ.isFetching && !hasResolved && (
-              <Text tone="muted" variant="caption">{t("eqStandards.crNoResolve", "No existing published type for this key — a new type will be created on publish.")}</Text>
-            )}
-            {hasResolved && !resolveQ.isFetching && (
-              <Text tone="muted" variant="caption">{t("eqStandards.crPrefillHint", "Click Prefill to load current attributes/commands so your change adds to them instead of replacing the type.")}</Text>
-            )}
-          </div>
-          <div className="grid grid-cols-3 gap-3">
-            <div className="grid gap-1">
-              <Label>{t("eqStandards.kind", "Kind")}</Label>
-              <Select value={kind} onValueChange={(v) => setKind(v as typeof kind)}>
-                <SelectTrigger className="w-full"><SelectValue /></SelectTrigger>
-                <SelectContent>
-                  {(["new_type", "modify", "deprecate"] as const).map((k) => (
-                    <SelectItem key={k} value={k}>{t(`eqStandards.crKind.${k}`, k)}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-            <div className="grid gap-1">
-              <Label>{t("eqStandards.semverBump", "SemVer bump")}</Label>
-              <Select value={semverBump} onValueChange={(v) => setSemverBump(v as typeof semverBump)}>
-                <SelectTrigger className="w-full"><SelectValue /></SelectTrigger>
-                <SelectContent>
-                  {(["major", "minor", "patch"] as const).map((s) => <SelectItem key={s} value={s}>{s}</SelectItem>)}
-                </SelectContent>
-              </Select>
-            </div>
-            <div className="grid gap-1">
-              <Label>{t("eqStandards.parent", "Parent type")}</Label>
-              {/* U11 — Select DS; "__none__" là sentinel cho "không cha (root)". */}
-              <Select value={parentTypeKey || "__none__"} onValueChange={(v) => setParentTypeKey(v === "__none__" ? "" : v)}>
-                <SelectTrigger className="w-full"><SelectValue /></SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="__none__">{t("eqStandards.noParent", "(none — root)")}</SelectItem>
-                  {flatKeys.map((k) => <SelectItem key={k} value={k}>{k}</SelectItem>)}
-                </SelectContent>
-              </Select>
-            </div>
-          </div>
-
-          {/* Attributes editor */}
-          <div className="grid gap-1">
-            <div className="flex items-center justify-between">
-              <Label>{t("eqStandards.attributes", "Attributes")} ({attrs.length})</Label>
-              <Button type="button" variant="ghost" size="sm" className="h-7"
-                onClick={() => setAttrs((a) => [...a, { name: "", dataType: "string", unit: "", required: false }])}>
-                <Plus className="mr-1 h-3.5 w-3.5" />{t("eqStandards.addAttr", "Add attribute")}
-              </Button>
-            </div>
-            {attrs.length === 0 ? (
-              <Text tone="muted" variant="caption">{t("eqStandards.crNoAttrs", "No attributes yet — prefill or add rows.")}</Text>
-            ) : (
-              <div className="space-y-1">
-                {attrs.map((a, i) => (
-                  <div key={i} className="flex items-center gap-1">
-                    <Input className="h-8 flex-1" placeholder={t("eqStandards.attrName", "name")} value={a.name}
-                      onChange={(e) => setAttrs((arr) => arr.map((x, j) => j === i ? { ...x, name: e.target.value } : x))} />
-                    <Select value={a.dataType}
-                      onValueChange={(v) => setAttrs((arr) => arr.map((x, j) => j === i ? { ...x, dataType: v as AttrDataType } : x))}>
-                      <SelectTrigger size="sm" className="w-24 text-xs"><SelectValue /></SelectTrigger>
-                      <SelectContent>
-                        {ATTR_DATA_TYPES.map((dt) => <SelectItem key={dt} value={dt}>{dt}</SelectItem>)}
-                      </SelectContent>
-                    </Select>
-                    <Input className="h-8 w-20" placeholder={t("eqStandards.unit", "unit")} value={a.unit}
-                      onChange={(e) => setAttrs((arr) => arr.map((x, j) => j === i ? { ...x, unit: e.target.value } : x))} />
-                    <label className="flex items-center gap-1 text-xs text-muted-foreground" title={t("eqStandards.required", "Required")}>
-                      <Checkbox checked={a.required}
-                        onCheckedChange={(v) => setAttrs((arr) => arr.map((x, j) => j === i ? { ...x, required: Boolean(v) } : x))} />
-                      {t("eqStandards.reqShort", "req")}
-                    </label>
-                    <Button type="button" variant="ghost" size="icon" className="h-8 w-8 shrink-0"
-                      onClick={() => setAttrs((arr) => arr.filter((_, j) => j !== i))}>
-                      <XCircle className="h-4 w-4 text-muted-foreground" />
-                    </Button>
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
-
-          {/* Commands editor */}
-          <div className="grid gap-1">
-            <div className="flex items-center justify-between">
-              <Label>{t("eqStandards.commands", "Commands")} ({cmds.length})</Label>
-              <Button type="button" variant="ghost" size="sm" className="h-7" onClick={() => setCmds((c) => [...c, ""])}>
-                <Plus className="mr-1 h-3.5 w-3.5" />{t("eqStandards.addCmd", "Add command")}
-              </Button>
-            </div>
-            {cmds.length === 0 ? (
-              <Text tone="muted" variant="caption">{t("eqStandards.crNoCmds", "No commands yet — prefill or add rows.")}</Text>
-            ) : (
-              <div className="space-y-1">
-                {cmds.map((c, i) => (
-                  <div key={i} className="flex items-center gap-1">
-                    <Input className="h-8 flex-1" placeholder={t("eqStandards.cmdName", "command name")} value={c}
-                      onChange={(e) => setCmds((arr) => arr.map((x, j) => j === i ? e.target.value : x))} />
-                    <Button type="button" variant="ghost" size="icon" className="h-8 w-8 shrink-0"
-                      onClick={() => setCmds((arr) => arr.filter((_, j) => j !== i))}>
-                      <XCircle className="h-4 w-4 text-muted-foreground" />
-                    </Button>
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
-
-          <p className="text-xs text-muted-foreground">
-            {t("eqStandards.crHint", "After submission the CR goes pending → in-review → approved, then publish enforces the conformance + backward-compatibility gate.")}
-          </p>
+    <div className="grid gap-3">
+      <div className="grid gap-1">
+        <Label htmlFor={`${uid}-target`}>{t("eqStandards.targetType", "Target type key")}</Label>
+        <div className="flex items-center gap-2">
+          <Input id={`${uid}-target`} value={targetTypeKey} placeholder="Robot" onChange={(e) => setTargetTypeKey(e.target.value)} />
+          <Button type="button" variant="outline" size="sm" className="h-9 shrink-0" disabled={!hasResolved} onClick={prefill}>
+            <Layers className="mr-1 h-4 w-4" />{t("eqStandards.crPrefill", "Prefill")}
+          </Button>
         </div>
-        <DialogFooter>
-          <Button variant="outline" onClick={onClose}>{t("common.cancel", "Cancel")}</Button>
-          <Button onClick={submit} disabled={pending}><Send className="mr-1 h-4 w-4" />{t("eqStandards.submit", "Submit")}</Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
+        {key.length > 0 && resolveQ.isFetching && (
+          <Text tone="muted" variant="caption">{t("eqStandards.loading", "Loading…")}</Text>
+        )}
+        {key.length > 0 && !resolveQ.isFetching && !hasResolved && (
+          <Text tone="muted" variant="caption">{t("eqStandards.crNoResolve", "No existing published type for this key — a new type will be created on publish.")}</Text>
+        )}
+        {hasResolved && !resolveQ.isFetching && (
+          <Text tone="muted" variant="caption">{t("eqStandards.crPrefillHint", "Click Prefill to load current attributes/commands so your change adds to them instead of replacing the type.")}</Text>
+        )}
+      </div>
+      <div className="grid grid-cols-3 gap-3">
+        <div className="grid gap-1">
+          <Label htmlFor={`${uid}-kind`}>{t("eqStandards.kind", "Kind")}</Label>
+          <Select value={kind} onValueChange={(v) => setKind(v as typeof kind)}>
+            <SelectTrigger id={`${uid}-kind`} className="w-full"><SelectValue /></SelectTrigger>
+            <SelectContent>
+              {(["new_type", "modify", "deprecate"] as const).map((k) => (
+                <SelectItem key={k} value={k}>{t(`eqStandards.crKind.${k}`, k)}</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+        <div className="grid gap-1">
+          <Label htmlFor={`${uid}-bump`}>{t("eqStandards.semverBump", "SemVer bump")}</Label>
+          <Select value={semverBump} onValueChange={(v) => setSemverBump(v as typeof semverBump)}>
+            <SelectTrigger id={`${uid}-bump`} className="w-full"><SelectValue /></SelectTrigger>
+            <SelectContent>
+              {(["major", "minor", "patch"] as const).map((s) => <SelectItem key={s} value={s}>{s}</SelectItem>)}
+            </SelectContent>
+          </Select>
+        </div>
+        <div className="grid gap-1">
+          <Label htmlFor={`${uid}-parent`}>{t("eqStandards.parent", "Parent type")}</Label>
+          {/* U11 — Select DS; "__none__" là sentinel cho "không cha (root)". */}
+          <Select value={parentTypeKey || "__none__"} onValueChange={(v) => setParentTypeKey(v === "__none__" ? "" : v)}>
+            <SelectTrigger id={`${uid}-parent`} className="w-full"><SelectValue /></SelectTrigger>
+            <SelectContent>
+              <SelectItem value="__none__">{t("eqStandards.noParent", "(none — root)")}</SelectItem>
+              {flatKeys.map((k) => <SelectItem key={k} value={k}>{k}</SelectItem>)}
+            </SelectContent>
+          </Select>
+        </div>
+      </div>
+
+      {/* Attributes editor */}
+      <div className="grid gap-1">
+        <div className="flex items-center justify-between">
+          <Label>{t("eqStandards.attributes", "Attributes")} ({attrs.length})</Label>
+          <Button type="button" variant="ghost" size="sm" className="h-7"
+            onClick={() => setAttrs((a) => [...a, { name: "", dataType: "string", unit: "", required: false }])}>
+            <Plus className="mr-1 h-3.5 w-3.5" />{t("eqStandards.addAttr", "Add attribute")}
+          </Button>
+        </div>
+        {attrs.length === 0 ? (
+          <Text tone="muted" variant="caption">{t("eqStandards.crNoAttrs", "No attributes yet — prefill or add rows.")}</Text>
+        ) : (
+          <div className="space-y-1">
+            {attrs.map((a, i) => (
+              <div key={i} className="flex items-center gap-1">
+                <Input className="h-8 flex-1" placeholder={t("eqStandards.attrName", "name")} value={a.name}
+                  onChange={(e) => setAttrs((arr) => arr.map((x, j) => j === i ? { ...x, name: e.target.value } : x))} />
+                <Select value={a.dataType}
+                  onValueChange={(v) => setAttrs((arr) => arr.map((x, j) => j === i ? { ...x, dataType: v as AttrDataType } : x))}>
+                  <SelectTrigger size="sm" className="w-24 text-xs"><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    {ATTR_DATA_TYPES.map((dt) => <SelectItem key={dt} value={dt}>{dt}</SelectItem>)}
+                  </SelectContent>
+                </Select>
+                <Input className="h-8 w-20" placeholder={t("eqStandards.unit", "unit")} value={a.unit}
+                  onChange={(e) => setAttrs((arr) => arr.map((x, j) => j === i ? { ...x, unit: e.target.value } : x))} />
+                <label className="flex items-center gap-1 text-xs text-muted-foreground" title={t("eqStandards.required", "Required")}>
+                  <Checkbox checked={a.required}
+                    onCheckedChange={(v) => setAttrs((arr) => arr.map((x, j) => j === i ? { ...x, required: Boolean(v) } : x))} />
+                  {t("eqStandards.reqShort", "req")}
+                </label>
+                <Button type="button" variant="ghost" size="icon" className="h-8 w-8 shrink-0"
+                  onClick={() => setAttrs((arr) => arr.filter((_, j) => j !== i))}>
+                  <XCircle className="h-4 w-4 text-muted-foreground" />
+                </Button>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+
+      {/* Commands editor */}
+      <div className="grid gap-1">
+        <div className="flex items-center justify-between">
+          <Label>{t("eqStandards.commands", "Commands")} ({cmds.length})</Label>
+          <Button type="button" variant="ghost" size="sm" className="h-7" onClick={() => setCmds((c) => [...c, ""])}>
+            <Plus className="mr-1 h-3.5 w-3.5" />{t("eqStandards.addCmd", "Add command")}
+          </Button>
+        </div>
+        {cmds.length === 0 ? (
+          <Text tone="muted" variant="caption">{t("eqStandards.crNoCmds", "No commands yet — prefill or add rows.")}</Text>
+        ) : (
+          <div className="space-y-1">
+            {cmds.map((c, i) => (
+              <div key={i} className="flex items-center gap-1">
+                <Input className="h-8 flex-1" placeholder={t("eqStandards.cmdName", "command name")} value={c}
+                  onChange={(e) => setCmds((arr) => arr.map((x, j) => j === i ? e.target.value : x))} />
+                <Button type="button" variant="ghost" size="icon" className="h-8 w-8 shrink-0"
+                  onClick={() => setCmds((arr) => arr.filter((_, j) => j !== i))}>
+                  <XCircle className="h-4 w-4 text-muted-foreground" />
+                </Button>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+
+      <p className="text-xs text-muted-foreground">
+        {t("eqStandards.crHint", "After submission the CR goes pending → in-review → approved, then publish enforces the conformance + backward-compatibility gate.")}
+      </p>
+      <SheetFooter>
+        <Button variant="outline" onClick={() => layer.close()}>{t("common.cancel", "Cancel")}</Button>
+        <Button onClick={submit} disabled={pending}><Send className="mr-1 h-4 w-4" />{t("eqStandards.submit", "Submit")}</Button>
+      </SheetFooter>
+    </div>
   );
 }
