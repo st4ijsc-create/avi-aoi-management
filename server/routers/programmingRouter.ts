@@ -81,7 +81,7 @@ import {
   type DpcUser,
 } from "../services/programming/programmingService";
 // ── doc 80 Đợt 1 Task 5 (WS-02 / F2) — chạy KHÔ mọi cổng deploy trước khi hỏi OTP ──
-import { previewDeploy } from "../services/programming/deployPreview";
+import { previewDeploy, assertDeployTargetInScopeAndProject } from "../services/programming/deployPreview";
 import { phamViCua } from "./_phamViNguoiXem";
 import {
   suggestProgram,
@@ -118,26 +118,78 @@ const KIND = z.enum(PROGRAMMING_KINDS as [ProgrammingKind, ...ProgrammingKind[]]
 const expectedProjectIdField = z.number().int().positive().optional();
 
 /**
- * Cổng dự án kỳ vọng chạy TRƯỚC step-up OTP (`meta.chanTruocStepUp` của `deployProcedure`): raw
- * input CHƯA qua zod ⇒ tự kiểm kiểu. Vắng (`undefined`) ⇒ đi tiếp. Có mà sai kiểu ⇒ INVALID_VALUE
- * ngay (không để zod từ chối SAU khi đã tiêu OTP). buildId sai kiểu ⇒ để zod từ chối như hôm nay.
+ * Lược đồ đầu vào của deployBuild / deployToFleet — object literal cấp module để (a) `.input()` mở nó
+ * bằng spread (bộ suy `deployProcedureScan` mở spread của object cấp module ⇒ vẫn thấy `totpCode`
+ * BẮT BUỘC) và (b) cổng trước OTP parse raw input bằng CHÍNH các ô ấy (fix round 1 #3: cùng đầu vào
+ * thủ tục dùng, đọc TOP-LEVEL — không `rawInput.json`).
  */
-const chanBuildKhacDuAn: NonNullable<TrpcMeta["chanTruocStepUp"]> = async ({ rawInput }) => {
-  const r0 = rawInput as Record<string, unknown> | null | undefined;
-  const r = (r0 && typeof r0 === "object" && r0.json && typeof r0.json === "object" ? r0.json : r0) as
-    | Record<string, unknown>
-    | null
-    | undefined;
-  if (!r || typeof r !== "object") return;
-  const exp = r.expectedProjectId;
-  if (exp === undefined) return;
-  if (typeof exp !== "number" || !Number.isInteger(exp) || exp <= 0) {
-    throw appError("BAD_REQUEST", "INVALID_VALUE", { field: "expectedProjectId" }, "expectedProjectId phải là số nguyên dương.");
-  }
-  const buildId = r.buildId;
-  if (typeof buildId !== "number" || !Number.isInteger(buildId) || buildId <= 0) return;
-  await assertBuildInExpectedProject(buildId, exp);
+const deployBuildShape = {
+  buildId: z.number().int().positive(),
+  stage: z.enum(["staging", "production"]).default("staging"),
+  idempotencyKey: z.string().min(1).max(128),
+  deviceId: z.number().int().positive().optional(),
+  /** HITL sign-off: the confirming (second) user. */
+  confirmedBy: z.number().int().positive().optional(),
+  actionId: z.string().min(1).max(128),
+  /** W2-9 — lý do duyệt (bắt buộc ở UI cho deploy production); lưu vào detailJson. */
+  reason: z.string().max(2000).optional(),
+  /** Doc 54 P3.2 (CTL-07) — OTP 6 số TƯƠI cho step-up 2FA (đọc bởi requireFreshTotp khi cờ bật). */
+  totpCode: z.string().max(16),
+  expectedProjectId: expectedProjectIdField,
 };
+const deployToFleetShape = {
+  buildId: z.number().int().positive(),
+  deviceIds: z.array(z.number().int().positive()).min(1).max(200),
+  stage: z.enum(["staging", "production"]).default("staging"),
+  strategy: z.object({
+    canaryCount: z.number().int().min(1).max(200).default(1),
+    promoteOnVerified: z.boolean().default(false),
+    autoRollbackOnMismatch: z.boolean().default(true),
+  }),
+  idempotencyKeyPrefix: z.string().min(1).max(96),
+  actionId: z.string().min(1).max(96),
+  confirmedBy: z.number().int().positive().optional(),
+  reason: z.string().max(2000).optional(),
+  /** Doc 54 P3.2 (CTL-07) — OTP 6 số TƯƠI cho step-up 2FA (đọc bởi requireFreshTotp khi cờ bật). */
+  totpCode: z.string().max(16),
+  expectedProjectId: expectedProjectIdField,
+};
+
+/** Chạy một middleware authZ DÙNG CHUNG (moduleGate / requirePermission) như một phép kiểm: ném CHÍNH
+ *  lỗi của nó khi từ chối, trả về khi cho qua. Không chép điều kiện — gọi đúng hàm của chuỗi thủ tục. */
+async function chayCongAuthZ(
+  mw: (o: { ctx: never; next: () => Promise<unknown> }) => Promise<unknown>,
+  ctx: unknown,
+): Promise<void> {
+  await mw({ ctx: ctx as never, next: async () => undefined });
+}
+
+/**
+ * Cổng dự án kỳ vọng chạy TRƯỚC step-up OTP (`meta.chanTruocStepUp` của `deployProcedure`).
+ * fix round 1 — thứ tự BÊN TRONG cổng (Ruling R-2-r, review 12b Important #1):
+ *   1. parse raw input TOP-LEVEL bằng CHÍNH các ô của thủ tục (không khớp ⇒ đi tiếp, zod của thủ tục
+ *      từ chối như hôm nay; vắng expectedProjectId ⇒ đi tiếp — hành vi hôm nay);
+ *   2. giấy phép MOD_ENGINEERING + quyền machine_control/canCreate — CÙNG hàm middleware của chuỗi
+ *      (`moduleGate`, `requirePermission`), ném CÙNG lỗi; TRƯỚC mọi lượt đọc DB về build;
+ *   3. phạm vi người gọi (cổng của bản xem trước): ngoài phạm vi ⇒ NOT_FOUND giống hệt không tồn tại;
+ *   4. so dự án ⇒ CONFLICT · INVALID_VALUE{expectedProjectId, buildNotInProject}.
+ * Người gọi không được phép / ngoài phạm vi nhận CÙNG một phản hồi dù build có tồn tại hay khớp không.
+ */
+function chanBuildKhacDuAn(shape: z.ZodRawShape): NonNullable<TrpcMeta["chanTruocStepUp"]> {
+  const sub = z.object(shape);
+  return async ({ ctx, rawInput }) => {
+    const p = sub.safeParse(rawInput);
+    if (!p.success) return;
+    const v = p.data as { buildId: number; expectedProjectId?: number; deviceId?: number };
+    if (v.expectedProjectId === undefined) return;
+    await chayCongAuthZ(moduleGate("MOD_ENGINEERING") as never, ctx);
+    await chayCongAuthZ(requirePermission("machine_control", "canCreate") as never, ctx);
+    await assertDeployTargetInScopeAndProject(
+      { buildId: v.buildId, deviceId: v.deviceId ?? null, expectedProjectId: v.expectedProjectId },
+      phamViCua(ctx as never),
+    );
+  };
+}
 
 function toDpcUser(user: { id: number; role: string; name?: string | null }): DpcUser {
   return { id: user.id, role: String(user.role), name: user.name ?? null };
@@ -536,23 +588,10 @@ export const programmingRouter = router({
 
   deployBuild: deployProcedure
     // doc 81 Đợt 2 Task 12b — cổng dự án kỳ vọng TRƯỚC step-up OTP (không tiêu mã, không ghi sổ).
-    .meta({ chanTruocStepUp: chanBuildKhacDuAn })
+    .meta({ chanTruocStepUp: chanBuildKhacDuAn(deployBuildShape) })
     .use(requirePermission("machine_control", "canCreate"))
     .input(
-      z.object({
-        buildId: z.number().int().positive(),
-        stage: z.enum(["staging", "production"]).default("staging"),
-        idempotencyKey: z.string().min(1).max(128),
-        deviceId: z.number().int().positive().optional(),
-        /** HITL sign-off: the confirming (second) user. */
-        confirmedBy: z.number().int().positive().optional(),
-        actionId: z.string().min(1).max(128),
-        /** W2-9 — lý do duyệt (bắt buộc ở UI cho deploy production); lưu vào detailJson. */
-        reason: z.string().max(2000).optional(),
-        /** Doc 54 P3.2 (CTL-07) — OTP 6 số TƯƠI cho step-up 2FA (đọc bởi requireFreshTotp khi cờ bật). */
-        totpCode: z.string().max(16),
-        expectedProjectId: expectedProjectIdField,
-      })
+      z.object({ ...deployBuildShape })
         // Doc 38 Đợt Q — four-eyes enforced AT THE SCHEMA for the sensitive path: a
         // PRODUCTION deploy must name a confirming approver (staging may self-sign).
         // The service layer additionally rejects the requester self-approving.
@@ -607,7 +646,14 @@ export const programmingRouter = router({
     )
     .mutation(async ({ input, ctx }) => {
       // doc 81 Đợt 2 Task 12b — lệch dự án ⇒ từ chối TRƯỚC mọi lượt ghi (không OTP ở thủ tục này).
-      await assertBuildInExpectedProject(input.buildId, input.expectedProjectId);
+      // fix round 1 (#1) — chạy SAU giấy phép + quyền của chuỗi; áp CÙNG cổng phạm vi của bản xem trước
+      // (ngoài phạm vi ⇒ NOT_FOUND giống hệt không tồn tại) để không thành phép dò.
+      if (input.expectedProjectId !== undefined) {
+        await assertDeployTargetInScopeAndProject(
+          { buildId: input.buildId, deviceId: input.deviceId ?? null, expectedProjectId: input.expectedProjectId },
+          phamViCua(ctx),
+        );
+      }
       // Doc 54 P3.4 — cùng chống swallow-reject như deployBuild (yêu cầu duyệt luôn là production).
       await assertIdempotencyKeyConsistent(input.idempotencyKey, {
         buildId: input.buildId,
@@ -784,26 +830,10 @@ export const programmingRouter = router({
   // deployBuild: production phải có confirmedBy (người ký ≠ người yêu cầu, service tái kiểm).
   deployToFleet: deployProcedure
     // doc 81 Đợt 2 Task 12b — cổng dự án kỳ vọng TRƯỚC step-up OTP (không tiêu mã, không ghi sổ).
-    .meta({ chanTruocStepUp: chanBuildKhacDuAn })
+    .meta({ chanTruocStepUp: chanBuildKhacDuAn(deployToFleetShape) })
     .use(requirePermission("machine_control", "canCreate"))
     .input(
-      z.object({
-        buildId: z.number().int().positive(),
-        deviceIds: z.array(z.number().int().positive()).min(1).max(200),
-        stage: z.enum(["staging", "production"]).default("staging"),
-        strategy: z.object({
-          canaryCount: z.number().int().min(1).max(200).default(1),
-          promoteOnVerified: z.boolean().default(false),
-          autoRollbackOnMismatch: z.boolean().default(true),
-        }),
-        idempotencyKeyPrefix: z.string().min(1).max(96),
-        actionId: z.string().min(1).max(96),
-        confirmedBy: z.number().int().positive().optional(),
-        reason: z.string().max(2000).optional(),
-        /** Doc 54 P3.2 (CTL-07) — OTP 6 số TƯƠI cho step-up 2FA (đọc bởi requireFreshTotp khi cờ bật). */
-        totpCode: z.string().max(16),
-        expectedProjectId: expectedProjectIdField,
-      })
+      z.object({ ...deployToFleetShape })
         // Four-eyes AT THE SCHEMA cho đường nhạy cảm: rollout production phải có approver.
         .refine((v) => v.stage !== "production" || v.confirmedBy != null, {
           message: "Rollout production bắt buộc có người ký duyệt (four-eyes): thiếu confirmedBy.",

@@ -26,6 +26,9 @@ import { getDb } from "../../db/connection";
 import {
   users,
   userSecrets,
+  permissions,
+  factories,
+  userFactoryAssignments,
   totpConsumed,
   programProjects,
   programArtifacts,
@@ -70,6 +73,13 @@ let uid = 0;
 let projA = 0;
 let projB = 0;
 let buildA = 0;
+// fix round 1 (#1/#3) — engineer KHÔNG có quyền machine_control; engineer CÓ quyền nhưng THU HẸP về
+// nhà máy F1; dự án C thuộc F1 (trong phạm vi của người thu hẹp); build B của dự án B.
+let idEngKhongQuyen = 0;
+let idEngThuHep = 0;
+let projC = 0;
+let buildB = 0;
+let buildC = 0;
 const projectIds: number[] = [];
 const artifactIds: number[] = [];
 const buildIds: number[] = [];
@@ -82,16 +92,30 @@ async function d() {
   return x;
 }
 
-const caller = () =>
+const caller = (id: number = uid, role = "admin") =>
   programmingRouter.createCaller({
-    user: { id: uid, role: "admin", twoFactorEnabled: true, username: `${DAU}_u`, name: "T12B" },
+    user: { id, role, twoFactorEnabled: true, username: `${DAU}_u${id}`, name: "T12B" },
     req: { ip: "127.0.0.1", headers: {} },
     res: {},
     sessionToken: `${DAU}-sess-${++demPhien}`,
   } as never);
 
-async function soOtpDaTieu(): Promise<number> {
-  return (await (await d()).select().from(totpConsumed).where(eq(totpConsumed.userId, uid))).length;
+async function soOtpDaTieu(id: number = uid): Promise<number> {
+  return (await (await d()).select().from(totpConsumed).where(eq(totpConsumed.userId, id))).length;
+}
+/** Hình dạng lỗi NGƯỜI GỌI nhìn thấy (so khớp tuyệt đối giữa các ca). */
+function hinhDangLoi(e: unknown) {
+  const m = readAppErrorMeta(e);
+  return { code: (e as { code?: string })?.code, appCode: m?.appCode, appParams: m?.appParams, message: (e as Error)?.message };
+}
+async function mkUser2FA(tag: string, role: "engineer"): Promise<number> {
+  const x = await d();
+  const [u] = await x
+    .insert(users)
+    .values({ openId: `${DAU}_${tag}`, username: `${DAU}_${tag}`, name: `T12B ${tag}`, role, loginMethod: "local", twoFactorEnabled: true })
+    .returning({ id: users.id });
+  await x.insert(userSecrets).values({ userId: u!.id, twoFactorSecret: SECRET });
+  return u!.id;
 }
 async function soHangDeploy(): Promise<number> {
   return (await (await d()).select().from(programDeployments).where(inArray(programDeployments.projectId, [projA, projB]))).length;
@@ -116,23 +140,23 @@ async function loiCua(p: Promise<unknown>): Promise<unknown> {
   }
 }
 
-const deployInput = (o: { expectedProjectId?: number; totpCode?: string }) => ({
-  buildId: buildA,
+const deployInput = (o: { expectedProjectId?: number; totpCode?: string; buildId?: number; who?: number }) => ({
+  buildId: o.buildId ?? buildA,
   stage: "staging" as const,
   idempotencyKey: `${DAU}-k${++demKhoa}`,
   actionId: `${DAU}-a${demKhoa}`,
-  confirmedBy: uid,
+  confirmedBy: o.who ?? uid,
   totpCode: o.totpCode ?? otp(),
   ...(o.expectedProjectId !== undefined ? { expectedProjectId: o.expectedProjectId } : {}),
 });
-const fleetInput = (o: { expectedProjectId?: number; totpCode?: string }) => ({
-  buildId: buildA,
+const fleetInput = (o: { expectedProjectId?: number; totpCode?: string; buildId?: number; who?: number }) => ({
+  buildId: o.buildId ?? buildA,
   deviceIds: [990_777_001],
   stage: "staging" as const,
   strategy: { canaryCount: 1, promoteOnVerified: false, autoRollbackOnMismatch: false },
   idempotencyKeyPrefix: `${DAU}-f${++demKhoa}`,
   actionId: `${DAU}-fa${demKhoa}`,
-  confirmedBy: uid,
+  confirmedBy: o.who ?? uid,
   totpCode: o.totpCode ?? otp(),
   ...(o.expectedProjectId !== undefined ? { expectedProjectId: o.expectedProjectId } : {}),
 });
@@ -162,6 +186,33 @@ describe.skipIf(!DB_URL)("Task 12b (c) — expectedProjectId ở biên deploy (r
     buildA = b.id;
     buildIds.push(b.id);
     await simulateBuild(b.id, {}, { id: uid, role: "admin" });
+
+    // fix round 1 — người dùng KHÔNG phải admin (admin bỏ qua requirePermission).
+    idEngKhongQuyen = await mkUser2FA("engnoperm", "engineer");
+    idEngThuHep = await mkUser2FA("engf1", "engineer");
+    const [f1] = await x.insert(factories).values({ code: `${DAU}-F1`, name: `${DAU} F1` }).returning();
+    await x.insert(userFactoryAssignments).values([{ userId: idEngThuHep, factoryCode: `${DAU}-F1` }]);
+    await x.insert(permissions).values([
+      { userId: idEngThuHep, category: "machine_monitoring", moduleName: "machine_status", canView: true },
+      { userId: idEngThuHep, category: "machine_control", moduleName: "machine_control", canView: true, canCreate: true },
+    ]);
+    const [pc] = await x
+      .insert(programProjects)
+      .values({ code: `${DAU}-PC`, name: `${DAU} C`, kind: "gcode" as never, factoryId: f1!.id })
+      .returning();
+    projC = pc!.id;
+    projectIds.push(projC);
+    for (const pid of [projB, projC]) {
+      const [ax] = await x
+        .insert(programArtifacts)
+        .values({ projectId: pid, kind: "gcode" as never, language: "text", content: "A\nB", version: 1, createdBy: uid })
+        .returning();
+      artifactIds.push(ax!.id);
+      const bx = await buildArtifact(ax!.id, { id: uid, role: "admin" });
+      buildIds.push(bx.id);
+      if (pid === projB) buildB = bx.id;
+      else buildC = bx.id;
+    }
   }, 60_000);
 
   beforeEach(async () => {
@@ -170,7 +221,7 @@ describe.skipIf(!DB_URL)("Task 12b (c) — expectedProjectId ở biên deploy (r
     process.env.ACTUATION_STEPUP_2FA = "true";
     process.env.AUTH_2FA_BAT_BUOC = "1";
     delete process.env.DPC_VERSION_REVIEW_ENABLED;
-    await __resetSoTotpChoTest([uid]);
+    await __resetSoTotpChoTest([uid, idEngKhongQuyen, idEngThuHep].filter((v) => v > 0));
     deployCalls = 0;
   });
 
@@ -180,7 +231,7 @@ describe.skipIf(!DB_URL)("Task 12b (c) — expectedProjectId ở biên deploy (r
       else process.env[k] = coTruoc[k];
     }
     const x = await d();
-    await __resetSoTotpChoTest([uid]);
+    await __resetSoTotpChoTest([uid, idEngKhongQuyen, idEngThuHep].filter((v) => v > 0));
     if (projectIds.length) {
       const deps = await x.select().from(programDeployments).where(inArray(programDeployments.projectId, projectIds));
       const pendingIds = deps
@@ -197,7 +248,11 @@ describe.skipIf(!DB_URL)("Task 12b (c) — expectedProjectId ở biên deploy (r
     if (artifactIds.length) await x.delete(programBuilds).where(inArray(programBuilds.artifactId, artifactIds));
     if (artifactIds.length) await x.delete(programArtifacts).where(inArray(programArtifacts.id, artifactIds));
     await x.delete(programProjects).where(like(programProjects.code, `${DAU}%`));
-    if (uid) await x.delete(userSecrets).where(eq(userSecrets.userId, uid));
+    const uids = [uid, idEngKhongQuyen, idEngThuHep].filter((v) => v > 0);
+    if (uids.length) await x.delete(permissions).where(inArray(permissions.userId, uids));
+    if (uids.length) await x.delete(userFactoryAssignments).where(inArray(userFactoryAssignments.userId, uids));
+    if (uids.length) await x.delete(userSecrets).where(inArray(userSecrets.userId, uids));
+    await x.delete(factories).where(like(factories.code, `${DAU}%`));
     await x.delete(users).where(like(users.username, `${DAU}%`));
   }, 60_000);
 
@@ -207,7 +262,12 @@ describe.skipIf(!DB_URL)("Task 12b (c) — expectedProjectId ở biên deploy (r
     const truoc = await soHangDeploy();
     const e = await loiCua(caller().deployBuild(deployInput({ expectedProjectId: projB, totpCode: ma })));
     expect(laLoiLechDuAn(e), String(e)).toBe(true);
-    expect(String((e as Error).message)).not.toContain(String(projA)); // không lộ dự án thật của build
+    // Không lộ dự án thật của build: thông điệp ĐÚNG khuôn chỉ chứa hai id người gọi tự đưa, và
+    // appParams chỉ có field/reason (so khớp tuyệt đối — không dò chuỗi con của id; review Minor 4).
+    expect((e as Error).message).toBe(
+      `Build ${buildA} không thuộc dự án ${projB} đang mở — từ chối deploy (chọn lại build của dự án này).`,
+    );
+    expect(readAppErrorMeta(e)?.appParams).toEqual({ field: "expectedProjectId", reason: "buildNotInProject" });
     expect(await soOtpDaTieu()).toBe(0);
     expect(await soHangDeploy()).toBe(truoc);
     expect(deployCalls).toBe(0);
@@ -278,5 +338,80 @@ describe.skipIf(!DB_URL)("Task 12b (c) — expectedProjectId ở biên deploy (r
     const e = await loiCua(caller().deployBuild({ ...deployInput({ expectedProjectId: projA }), buildId: 2_000_000_000 }));
     expect(readAppErrorMeta(e)?.appCode).toBe("ENTITY_NOT_FOUND");
     expect(await soOtpDaTieu()).toBe(0);
+  });
+
+  // ── fix round 1 (#1) — cổng trước OTP chạy SAU authZ (giấy phép, quyền, phạm vi) ─────────────────
+  it.each(["deployBuild", "deployToFleet"] as const)(
+    "%s — engineer KHÔNG có quyền machine_control: lỗi GIỐNG HỆT cho build khớp / lệch / không tồn tại (PERMISSION_DENIED), 0 OTP tiêu, 0 lần chạm thiết bị",
+    async (thuTuc) => {
+      const goi = (buildId: number, expectedProjectId: number) =>
+        thuTuc === "deployBuild"
+          ? caller(idEngKhongQuyen, "engineer").deployBuild(deployInput({ buildId, expectedProjectId, who: idEngKhongQuyen }))
+          : caller(idEngKhongQuyen, "engineer").deployToFleet(fleetInput({ buildId, expectedProjectId, who: idEngKhongQuyen }));
+      const khop = hinhDangLoi(await loiCua(goi(buildA, projA)));
+      const lech = hinhDangLoi(await loiCua(goi(buildA, projB)));
+      const khongCo = hinhDangLoi(await loiCua(goi(2_000_000_000, projA)));
+      expect(khop).toMatchObject({ code: "FORBIDDEN", appCode: "PERMISSION_DENIED", appParams: { action: "canCreate" } });
+      expect(lech).toEqual(khop);
+      expect(khongCo).toEqual(khop);
+      expect(await soOtpDaTieu(idEngKhongQuyen)).toBe(0);
+      expect(deployCalls).toBe(0);
+    },
+  );
+
+  it.each(["deployBuild", "deployToFleet"] as const)(
+    "%s — engineer CÓ quyền nhưng build NGOÀI phạm vi nhà máy: NOT_FOUND giống hệt build không tồn tại (khớp / lệch / không có), 0 OTP tiêu",
+    async (thuTuc) => {
+      const goi = (buildId: number, expectedProjectId: number) =>
+        thuTuc === "deployBuild"
+          ? caller(idEngThuHep, "engineer").deployBuild(deployInput({ buildId, expectedProjectId, who: idEngThuHep }))
+          : caller(idEngThuHep, "engineer").deployToFleet(fleetInput({ buildId, expectedProjectId, who: idEngThuHep }));
+      const khop = hinhDangLoi(await loiCua(goi(buildA, projA)));
+      const lech = hinhDangLoi(await loiCua(goi(buildA, projB)));
+      const khongCo = hinhDangLoi(await loiCua(goi(2_000_000_000, projA)));
+      expect(khongCo).toEqual({
+        code: "NOT_FOUND", appCode: "ENTITY_NOT_FOUND", appParams: { entity: "programBuild" }, message: "Build 2000000000 not found",
+      });
+      expect(khop).toEqual({ ...khongCo, message: `Build ${buildA} not found` });
+      expect(lech).toEqual(khop);
+      expect(await soOtpDaTieu(idEngThuHep)).toBe(0);
+      // đối chứng: build TRONG phạm vi (dự án C ở F1) mà lệch ⇒ lỗi lệch dự án (cổng không chặn mù).
+      const trong = await loiCua(goi(buildC, projB));
+      expect(laLoiLechDuAn(trong), String(trong)).toBe(true);
+      expect(await soOtpDaTieu(idEngThuHep)).toBe(0);
+    },
+  );
+
+  // ── fix round 1 (#3) — cổng đọc ĐÚNG đầu vào thủ tục dùng (top-level), không `rawInput.json` ──
+  it("yêu cầu lắt léo: top-level LỆCH (build A, dự án B) + `json` KHỚP (build B, dự án B) ⇒ cổng xét top-level: lỗi lệch TRƯỚC OTP", async () => {
+    const ma = otp();
+    const input = {
+      ...deployInput({ expectedProjectId: projB, totpCode: ma }),
+      json: { buildId: buildB, expectedProjectId: projB },
+    };
+    const e = await loiCua(caller().deployBuild(input as never));
+    expect(laLoiLechDuAn(e), String(e)).toBe(true);
+    expect(await soOtpDaTieu()).toBe(0);
+    expect(deployCalls).toBe(0);
+  });
+  it("requestDeployApproval — không quyền ⇒ PERMISSION_DENIED giống hệt; ngoài phạm vi ⇒ NOT_FOUND giống hệt (khớp / lệch / không có); 0 hàng chờ duyệt", async () => {
+    const truoc = await soHangDeploy();
+    const goi = (id: number, buildId: number, expectedProjectId: number) =>
+      caller(id, "engineer").requestDeployApproval({ buildId, idempotencyKey: `${DAU}-rq${++demKhoa}`, reason: "ECN", expectedProjectId });
+    for (const id of [idEngKhongQuyen, idEngThuHep]) {
+      const khop = hinhDangLoi(await loiCua(goi(id, buildA, projA)));
+      const lech = hinhDangLoi(await loiCua(goi(id, buildA, projB)));
+      const khongCo = hinhDangLoi(await loiCua(goi(id, 2_000_000_000, projA)));
+      if (id === idEngKhongQuyen) {
+        expect(khop).toMatchObject({ code: "FORBIDDEN", appCode: "PERMISSION_DENIED" });
+        expect(lech).toEqual(khop);
+        expect(khongCo).toEqual(khop);
+      } else {
+        expect(khongCo).toMatchObject({ code: "NOT_FOUND", appCode: "ENTITY_NOT_FOUND", appParams: { entity: "programBuild" } });
+        expect(khop).toEqual({ ...khongCo, message: `Build ${buildA} not found` });
+        expect(lech).toEqual(khop);
+      }
+    }
+    expect(await soHangDeploy()).toBe(truoc);
   });
 });

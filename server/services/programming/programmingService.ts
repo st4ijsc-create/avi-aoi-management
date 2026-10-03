@@ -457,14 +457,17 @@ export async function assertBuildInExpectedProject(buildId: number, expectedProj
     .where(eq(programArtifacts.id, b.artifactId))
     .limit(1);
   if (!art) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "programmingArtifact" }, `Artifact ${b.artifactId} not found`);
-  if (art.projectId !== expectedProjectId) {
-    throw appError(
-      "CONFLICT",
-      "INVALID_VALUE",
-      { field: "expectedProjectId", reason: "buildNotInProject" },
-      `Build ${buildId} không thuộc dự án ${expectedProjectId} đang mở — từ chối deploy (chọn lại build của dự án này).`,
-    );
-  }
+  if (art.projectId !== expectedProjectId) throw loiBuildKhacDuAn(buildId, expectedProjectId);
+}
+
+/** Lỗi lệch dự án — MỘT bộ dựng cho mọi nơi ném (cổng trước OTP, resolver, preview). */
+export function loiBuildKhacDuAn(buildId: number, expectedProjectId: number) {
+  return appError(
+    "CONFLICT",
+    "INVALID_VALUE",
+    { field: "expectedProjectId", reason: "buildNotInProject" },
+    `Build ${buildId} không thuộc dự án ${expectedProjectId} đang mở — từ chối deploy (chọn lại build của dự án này).`,
+  );
 }
 
 /**
