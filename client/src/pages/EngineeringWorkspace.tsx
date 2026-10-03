@@ -355,16 +355,17 @@ function EngineeringWorkspaceView() {
     onError: (e) => toastTrpcError(e),
   });
   const createArtifact = trpc.programming.createArtifact.useMutation({
-    onSuccess: (row) => {
+    onSuccess: (row, vars) => {
       toast.success(t("engineering.versionSaved", "Đã lưu phiên bản v") + row.version);
       utils.programming.listArtifacts.invalidate();
-      dispatch({ type: "artifact/select", artifactId: row.id });
+      // Task 12b — gắn project lúc YÊU CẦU: đã chuyển project trong lúc lưu ⇒ không chọn phiên bản ấy.
+      dispatch({ type: "artifact/created", projectId: vars.projectId, artifactId: row.id });
     },
     onError: (e) => toastTrpcError(e),
   });
   const validateM = trpc.programming.validateArtifact.useMutation({
-    onSuccess: (r) => {
-      dispatch({ type: "diagnostics/set", diagnostics: r.diagnostics as Diagnostic[] });
+    onSuccess: (r, vars) => {
+      dispatch({ type: "diagnostics/set", artifactId: vars.artifactId, diagnostics: r.diagnostics as Diagnostic[] });
       utils.programming.listArtifacts.invalidate();
       r.ok ? toast.success(t("engineering.validOk", "Hợp lệ")) : toast.warning(t("engineering.validErr", "Có lỗi"));
     },
@@ -388,16 +389,17 @@ function EngineeringWorkspaceView() {
     onError: (e) => toastTrpcError(e),
   });
   const buildM = trpc.programming.buildArtifact.useMutation({
-    onSuccess: (b) => {
+    onSuccess: (b, vars) => {
       utils.programming.listBuilds.invalidate();
-      dispatch({ type: "build/created", buildId: b.id });
+      // Task 12b — build của phiên bản đã RỜI (đổi phiên bản/project lúc đang build) ⇒ không chọn.
+      dispatch({ type: "build/created", artifactId: vars.artifactId, buildId: b.id });
       b.ok ? toast.success(t("engineering.buildOk", "Build OK")) : toast.error(t("engineering.buildFail", "Build lỗi"));
     },
     onError: (e) => toastTrpcError(e),
   });
   const simulateM = trpc.programming.simulateBuild.useMutation({
-    onSuccess: (r) => {
-      dispatch({ type: "sim/set", simResult: { ok: r.ok, warnings: r.warnings as string[], timeline: r.timeline as any[] } });
+    onSuccess: (r, vars) => {
+      dispatch({ type: "sim/set", buildId: vars.buildId, simResult: { ok: r.ok, warnings: r.warnings as string[], timeline: r.timeline as any[] } });
       utils.programming.deployPreview.invalidate();
       toast.success(t("engineering.simDone", "Đã mô phỏng"));
     },

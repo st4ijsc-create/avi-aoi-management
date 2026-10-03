@@ -97,7 +97,11 @@ describe("WS-05 — đổi / lưu phiên bản ⇒ reset buildId + mô phỏng +
 
     const src = readFileSync(resolve(__dirname, "EngineeringWorkspace.tsx"), "utf8");
     expect(src).toMatch(/guardDirty\(\(\) => dispatch\(\{ type: "artifact\/select", artifactId: a\.id \}\)\)/);
-    expect(src).toMatch(/createArtifact = [\s\S]*?dispatch\(\{ type: "artifact\/select", artifactId: row\.id \}\)/);
+    // Task 12b — lưu phiên bản đi qua "artifact/created" (gắn project lúc yêu cầu) ⇒ cùng withArtifact.
+    // Bị chặn trong khối createArtifact (không vượt sang useMutation khác) — review task 12 Minor 2.
+    expect(src).toMatch(/const createArtifact = trpc\.programming\.createArtifact\.useMutation\(\{(?:(?!useMutation)[^])*?dispatch\(\{ type: "artifact\/created", projectId: vars\.projectId, artifactId: row\.id \}\)/);
+    const luu = workspaceReducer(armed, { type: "artifact/created", projectId: 1, artifactId: 13 });
+    expect([luu.buildId, luu.simResult, luu.diagnostics]).toEqual([null, null, null]);
     expect(src).not.toMatch(/\buseState\s*[<(]/);
     expect(src).not.toMatch(/\bset(BuildId|SimResult|Diagnostics|ArtifactId)\b/);
   });

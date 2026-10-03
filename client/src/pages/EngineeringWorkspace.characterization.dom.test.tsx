@@ -749,3 +749,58 @@ describe("Task 12b (a) — tạo dự án mới reset như bấm chọn dự án
     expectKhongDungDuocBuildCu();
   });
 });
+
+describe("Task 12b (b) — kết quả về MUỘN không rơi vào lựa chọn hiện tại", () => {
+  it("Build đang chạy ở P1, chuyển sang P2, build xong ⇒ KHÔNG hiện, Deploy/Fleet khoá", () => {
+    seed();
+    renderPage();
+    fireEvent.click(versionBtn(/^v1 · main/));
+    mutationDeferred.add("programming.buildArtifact");
+    fireEvent.click(buildBtn());
+    expect(mutateCalls["programming.buildArtifact"]).toEqual([{ artifactId: 11 }]);
+    fireEvent.click(projectBtn("Ladder Two"));
+    xaHoan("programming.buildArtifact");
+    expectKhongDungDuocBuildCu();
+  });
+
+  it("Kiểm tra đang chạy ở v1, chuyển sang v2, kết quả về ⇒ chẩn đoán KHÔNG hiện dưới v2", () => {
+    seed();
+    renderPage();
+    fireEvent.click(versionBtn(/^v1 · main/));
+    mutationDeferred.add("programming.validateArtifact");
+    fireEvent.click(btn(/^(Validate|Kiểm tra)$/));
+    fireEvent.click(versionBtn(/^v2 · main/));
+    xaHoan("programming.validateArtifact");
+    expect(versionBtn(/^v2 · main/).className).toMatch(/border-primary/);
+    expect(screen.queryByText(/DIAG-ERR-1/)).not.toBeInTheDocument();
+  });
+
+  it("Mô phỏng build #5 đang chạy, chọn build #6, kết quả về ⇒ verdict KHÔNG gắn vào #6", () => {
+    seed();
+    renderPage();
+    fireEvent.click(versionBtn(/^v1 · main/));
+    fireEvent.click(screen.getByText("#5"));
+    mutationDeferred.add("programming.simulateBuild");
+    fireEvent.click(btn(/Simulate \(twin\)|Mô phỏng \(twin\)/));
+    fireEvent.click(screen.getByText("#6"));
+    xaHoan("programming.simulateBuild");
+    expect(queryInputs["programming.deployPreview"]).toMatchObject({ buildId: 6 });
+    expect(screen.queryByText(/SIM-WARN-1/)).not.toBeInTheDocument();
+  });
+
+  it("Lưu phiên bản ở P1 đang chạy, chuyển sang P2, lưu xong ⇒ P2 KHÔNG nhận phiên bản/build của P1", () => {
+    seed();
+    renderPage();
+    fireEvent.click(versionBtn(/^v1 · main/));
+    fireEvent.change(editor(), { target: { value: "A\nZ" } });
+    mutationDeferred.add("programming.createArtifact");
+    fireEvent.click(btn(/^(Save version|Lưu phiên bản)$/));
+    // buffer bẩn ⇒ đổi project phải xác nhận
+    fireEvent.click(projectBtn("Ladder Two"));
+    fireEvent.click(within(screen.getByRole("alertdialog")).getByRole("button", { name: /Discard & continue|Bỏ thay đổi/ }));
+    xaHoan("programming.createArtifact");
+    expect(queryEnabled["programming.listBuilds"]).toBe(false);
+    expect(screen.queryByText("#7")).not.toBeInTheDocument();
+    expect(versionBtn(/^v1 · main/).className).not.toMatch(/border-primary/);
+  });
+});

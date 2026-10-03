@@ -15,6 +15,9 @@
  *   build/select    (bấm chọn build)                ⇒ simResult = null
  *   build/created   (buildArtifact.onSuccess)       ⇒ chỉ đổi buildId (simResult GIỮ — như cũ)
  *
+ * Task 12b (R-2-r): build/created, diagnostics/set, sim/set, artifact/created mang id (phiên bản /
+ * build / project) của LÚC YÊU CẦU; lệch lựa chọn hiện tại ⇒ reducer BỎ kết quả (về muộn).
+ *
  * Mỗi hệ quả trước kia chạy SAU một lượt render (effect); nay nguyên tử trong cùng một dispatch —
  * DOM cuối cùng y hệt (ảnh chụp DOM của test đặc tả khớp từng byte), chỉ bớt lượt render trung gian.
  *
@@ -152,10 +155,15 @@ export type SymbolRow = {
 export type WorkspaceAction =
   | { type: "project/select"; projectId: number }
   | { type: "artifact/select"; artifactId: number }
+  /** createArtifact.onSuccess — gắn project LÚC YÊU CẦU; đã rời project ấy ⇒ bỏ (Task 12b). */
+  | { type: "artifact/created"; projectId: number; artifactId: number }
   | { type: "build/select"; buildId: number }
-  | { type: "build/created"; buildId: number }
-  | { type: "diagnostics/set"; diagnostics: Diagnostic[] }
-  | { type: "sim/set"; simResult: SimResult }
+  /** buildArtifact.onSuccess — gắn phiên bản LÚC YÊU CẦU; đã rời phiên bản ấy ⇒ bỏ (Task 12b). */
+  | { type: "build/created"; artifactId: number; buildId: number }
+  /** validateArtifact.onSuccess — gắn phiên bản LÚC YÊU CẦU; lệch ⇒ bỏ (Task 12b). */
+  | { type: "diagnostics/set"; artifactId: number; diagnostics: Diagnostic[] }
+  /** simulateBuild.onSuccess — gắn build LÚC YÊU CẦU; lệch ⇒ bỏ (Task 12b). */
+  | { type: "sim/set"; buildId: number; simResult: SimResult }
   | { type: "watch/set"; watching: boolean }
   | { type: "explorer/set"; patch: Partial<WorkspaceState["explorer"]> }
   | { type: "buffer/loadArtifact"; code: string; language: string }
@@ -207,13 +215,22 @@ export function workspaceReducer(s: WorkspaceState, a: WorkspaceAction): Workspa
       };
     case "artifact/select":
       return withArtifact(s, a.artifactId);
+    // doc 81 Đợt 2 Task 12b (R-2-r) — kết quả mutation về MUỘN: chỉ nhận khi id lúc yêu cầu còn khớp
+    // lựa chọn HIỆN TẠI. Nếu không, một build của P1 có thể thành build đang chọn khi đang xem P2
+    // (Deploy/Fleet mở), hoặc chẩn đoán/verdict mô phỏng gắn nhầm phiên bản/build.
+    case "artifact/created":
+      if (a.projectId !== s.projectId) return s;
+      return withArtifact(s, a.artifactId);
     case "build/select":
       return { ...s, buildId: a.buildId, simResult: null };
     case "build/created":
+      if (a.artifactId !== s.artifactId) return s;
       return { ...s, buildId: a.buildId };
     case "diagnostics/set":
+      if (a.artifactId !== s.artifactId) return s;
       return { ...s, diagnostics: a.diagnostics };
     case "sim/set":
+      if (a.buildId !== s.buildId) return s;
       return { ...s, simResult: a.simResult };
     case "watch/set":
       return { ...s, watching: a.watching };

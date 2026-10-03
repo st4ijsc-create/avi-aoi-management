@@ -23,9 +23,9 @@ function armed(): WorkspaceState {
     initialWorkspaceState,
     { type: "project/select", projectId: 1 },
     { type: "artifact/select", artifactId: 11 },
-    { type: "diagnostics/set", diagnostics: [{ severity: "error", message: "E1" }] },
+    { type: "diagnostics/set", artifactId: 11, diagnostics: [{ severity: "error", message: "E1" }] },
     { type: "build/select", buildId: 5 },
-    { type: "sim/set", simResult: { ok: true, warnings: ["W"], timeline: [] } },
+    { type: "sim/set", buildId: 5, simResult: { ok: true, warnings: ["W"], timeline: [] } },
     { type: "watch/set", watching: true },
     { type: "fleet/toggleDevice", deviceId: 3 },
     { type: "code/set", code: "A\nB" },
@@ -153,9 +153,38 @@ describe("build", () => {
     expect(s.simResult).toBeNull();
   });
   it("build/created (buildArtifact.onSuccess) ⇒ đổi build đang chọn, GIỮ simResult (hành vi cũ)", () => {
-    const s = workspaceReducer(armed(), { type: "build/created", buildId: 6 });
+    const s = workspaceReducer(armed(), { type: "build/created", artifactId: 11, buildId: 6 });
     expect(s.buildId).toBe(6);
     expect(s.simResult).not.toBeNull();
+  });
+});
+
+describe("Task 12b (b, R-2-r) — kết quả gắn id lúc YÊU CẦU; lệch lựa chọn hiện tại ⇒ BỎ", () => {
+  it("build/created cho phiên bản KHÁC phiên bản đang chọn ⇒ bỏ (cùng tham chiếu)", () => {
+    const a = armed();
+    expect(workspaceReducer(a, { type: "build/created", artifactId: 12, buildId: 6 })).toBe(a);
+  });
+  it("build/created về sau khi đã đổi project (artifactId null) ⇒ bỏ: không build nào để Deploy", () => {
+    const s = run(armed(), { type: "project/select", projectId: 2 }, { type: "build/created", artifactId: 11, buildId: 6 });
+    expect(s.buildId).toBeNull();
+  });
+  it("diagnostics/set cho phiên bản khác ⇒ bỏ; đúng phiên bản ⇒ đặt", () => {
+    const a = workspaceReducer(armed(), { type: "artifact/select", artifactId: 12 });
+    expect(workspaceReducer(a, { type: "diagnostics/set", artifactId: 11, diagnostics: [] })).toBe(a);
+    expect(workspaceReducer(a, { type: "diagnostics/set", artifactId: 12, diagnostics: [] }).diagnostics).toEqual([]);
+  });
+  it("sim/set cho build khác build đang chọn ⇒ bỏ; đúng build ⇒ đặt", () => {
+    const a = workspaceReducer(armed(), { type: "build/select", buildId: 6 });
+    const sim = { ok: true, warnings: [], timeline: [] };
+    expect(workspaceReducer(a, { type: "sim/set", buildId: 5, simResult: sim })).toBe(a);
+    expect(workspaceReducer(a, { type: "sim/set", buildId: 6, simResult: sim }).simResult).toEqual(sim);
+  });
+  it("artifact/created (lưu phiên bản) cho project KHÁC project đang mở ⇒ bỏ; đúng project ⇒ như artifact/select", () => {
+    const a = workspaceReducer(armed(), { type: "project/select", projectId: 2 });
+    expect(workspaceReducer(a, { type: "artifact/created", projectId: 1, artifactId: 13 })).toBe(a);
+    const b = armed();
+    const s = workspaceReducer(b, { type: "artifact/created", projectId: 1, artifactId: 13 });
+    expect([s.artifactId, s.buildId, s.simResult, s.diagnostics]).toEqual([13, null, null, null]);
   });
 });
 
