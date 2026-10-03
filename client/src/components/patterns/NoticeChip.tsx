@@ -208,6 +208,12 @@ export interface FeatureStatusNoticeChipProps {
   offMessage: React.ReactNode;
   /** Câu riêng cho trạng thái LỖI; không truyền thì dùng câu chung `common.featureStatusError`. */
   errorMessage?: React.ReactNode;
+  /**
+   * Doc 81 Đợt 2 Task 8 — tên cờ khi một trang có NHIỀU cờ (Safety: kiểm định an toàn + nhân lực): nhãn chip
+   * thành "<subject>: <trạng thái>" để người dùng biết cờ NÀO đang tắt/lỗi mà không phải mở popover.
+   * Không truyền ⇒ nhãn mặc định theo trạng thái như cũ.
+   */
+  subject?: React.ReactNode;
   className?: string;
 }
 
@@ -216,19 +222,28 @@ export interface FeatureStatusNoticeChipProps {
  *   on → không hiện gì · loading → chip "Đang kiểm tra" · off → chip "Đang tắt" + câu cũ ·
  *   error → chip lỗi + câu lỗi. Trang vẫn dùng `isFeatureStatusUnsettled` để khoá nút ghi.
  */
-export function FeatureStatusNoticeChip({ status, offMessage, errorMessage, className }: FeatureStatusNoticeChipProps): React.JSX.Element | null {
+export function FeatureStatusNoticeChip({ status, offMessage, errorMessage, subject, className }: FeatureStatusNoticeChipProps): React.JSX.Element | null {
   const { t } = useTranslation();
   if (status === "on") return null;
+  const label = (kind: NoticeKind): React.ReactNode => {
+    if (subject == null) return undefined;
+    const [labelKey, labelFallback] = KIND_LABEL_KEY[kind];
+    return (
+      <>
+        {subject}: {t(labelKey, labelFallback)}
+      </>
+    );
+  };
   if (status === "loading") {
     return (
-      <NoticeChip kind="loading" className={className} data-testid="feature-status-loading">
+      <NoticeChip kind="loading" label={label("loading")} className={className} data-testid="feature-status-loading">
         <p>{t("layoutKit.notice.flagLoading", "Checking feature status…")}</p>
       </NoticeChip>
     );
   }
   if (status === "error") {
     return (
-      <NoticeChip kind="error" className={className} data-testid="feature-status-error">
+      <NoticeChip kind="error" label={label("error")} className={className} data-testid="feature-status-error">
         <p role="alert">
           {errorMessage ?? t("common.featureStatusError", "Could not check this feature's status — treating it as unavailable.")}
         </p>
@@ -236,7 +251,7 @@ export function FeatureStatusNoticeChip({ status, offMessage, errorMessage, clas
     );
   }
   return (
-    <NoticeChip kind="flagOff" className={className} data-testid="feature-status-off">
+    <NoticeChip kind="flagOff" label={label("flagOff")} className={className} data-testid="feature-status-off">
       <p>{offMessage}</p>
     </NoticeChip>
   );

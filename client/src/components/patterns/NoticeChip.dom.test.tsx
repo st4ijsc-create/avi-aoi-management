@@ -148,3 +148,17 @@ describe("NoticeStack — lỗi luôn hiện", () => {
     expect(shown).toEqual(["error"]);
   });
 });
+
+// ── Doc 81 Đợt 2 Task 8 — trang có HAI cờ (Safety: kiểm định an toàn + nhân lực): chip nói cờ NÀO ─────────
+describe("FeatureStatusNoticeChip — `subject` gọi tên cờ trong nhãn chip (4 trạng thái giữ nguyên)", () => {
+  it("subject ⇒ nhãn '<cờ>: <trạng thái>' ở loading / off / error; on vẫn không hiện gì", () => {
+    const { rerender, container } = render(<FeatureStatusNoticeChip status="loading" subject="Nhân lực" offMessage="tắt" />);
+    expect(screen.getByTestId("feature-status-loading")).toHaveAccessibleName(`Nhân lực: ${vi.layoutKit.notice.kind.loading}`);
+    rerender(<FeatureStatusNoticeChip status="off" subject="Nhân lực" offMessage="tắt" />);
+    expect(screen.getByTestId("feature-status-off")).toHaveAccessibleName(`Nhân lực: ${vi.layoutKit.notice.kind.flagOff}`);
+    rerender(<FeatureStatusNoticeChip status="error" subject="Nhân lực" offMessage="tắt" />);
+    expect(screen.getByTestId("feature-status-error")).toHaveAccessibleName(`Nhân lực: ${vi.layoutKit.notice.kind.error}`);
+    rerender(<FeatureStatusNoticeChip status="on" subject="Nhân lực" offMessage="tắt" />);
+    expect(container.innerHTML).toBe("");
+  });
+});
