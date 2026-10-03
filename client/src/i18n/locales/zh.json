@@ -14975,8 +14975,6 @@
     "createRequired": "编码和名称为必填项。",
     "createTitle": "新建配方版本（草稿）",
     "createVersion": "新建版本",
-    "checking": "正在检查…",
-    "unknown": "未知",
     "flagOffBanner": "预览模式：设备集成已禁用。读取可用；操作（创建 / 发布 / 归档 / 回滚版本、记录加载）在启用前被阻止。",
     "flagOffToast": "设备集成已禁用（预览）。设置 EQ_INTEG_ENABLED=true 以执行操作。",
     "flagStatusError": "无法检查设备集成是否已启用 — 在确认前，操作将被禁用。",

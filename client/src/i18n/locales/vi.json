@@ -16205,8 +16205,6 @@
     "createRequired": "Mã và tên là bắt buộc.",
     "createTitle": "Phiên bản recipe mới (bản nháp)",
     "createVersion": "Phiên bản mới",
-    "checking": "Đang kiểm tra…",
-    "unknown": "Chưa rõ",
     "flagOffBanner": "Chế độ xem trước: tích hợp thiết bị đang tắt. Đọc vẫn hoạt động; các thao tác (tạo / phát hành / lưu trữ / rollback phiên bản, ghi nhận nạp) bị chặn cho đến khi bật.",
     "flagOffToast": "Tích hợp thiết bị đang tắt (xem trước). Đặt EQ_INTEG_ENABLED=true để thao tác.",
     "flagStatusError": "Không kiểm tra được trạng thái tích hợp thiết bị — các thao tác bị khoá cho đến khi xác nhận lại.",

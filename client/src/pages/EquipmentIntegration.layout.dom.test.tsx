@@ -72,7 +72,7 @@ const srv = vi.hoisted(() => ({
   queryOpts: {} as Record<string, unknown>,
   mutationError: null as null | Error,
   // Đếm instance của panel worker (hook acquisitionWorkerStatus.useQuery chỉ được gọi trong panel).
-  acq: { mounts: 0, unmounts: 0, polls: new Set<() => void>() },
+  acq: { mounts: 0, unmounts: 0, polls: new Set<() => void>(), refetches: 0 },
 }));
 function bump() {
   srv.version++;
@@ -173,7 +173,11 @@ vi.mock("@/lib/trpc", () => {
           };
         }, []);
         srv.queryOpts[path] = opts;
-        return q({ liveEnabled: srv.liveEnabled, workers: srv.snap.workers.map((w) => ({ ...w, framesGrabbed: Number(w.framesGrabbed) + tick })) }, enabled);
+        return q(
+          { liveEnabled: srv.liveEnabled, workers: srv.snap.workers.map((w) => ({ ...w, framesGrabbed: Number(w.framesGrabbed) + tick })) },
+          enabled,
+          { refetch: () => { srv.acq.refetches++; return Promise.resolve(); } },
+        );
       }
       if (path === "visionAdapter.listAcquisitionSources")
         return q({ sources: [{ kind: "file", available: true }, { kind: "mock", available: true }, { kind: "genicam", available: false }] }, enabled);
@@ -295,6 +299,7 @@ beforeEach(() => {
   srv.acq.mounts = 0;
   srv.acq.unmounts = 0;
   srv.acq.polls.clear();
+  srv.acq.refetches = 0;
   Object.assign(perm, { view: true, control: true, release: true, acqView: true, acqControl: true });
   for (const f of Object.values(toastSpy)) f.mockClear();
   localStorage.clear();
@@ -749,5 +754,60 @@ describe("Màn hẹp (<1024 px) — GC10", () => {
     await user.click(tabBtn(/^Danh mục connector/));
     expect(srv.acq.mounts).toBe(1);
     expect(srv.acq.unmounts).toBe(0);
+  });
+});
+
+describe("Fix round 1", () => {
+  const interval = () => (srv.queryOpts["visionAdapter.acquisitionWorkerStatus"] as { refetchInterval?: number | false }).refetchInterval;
+
+  it("poll worker CHỈ khi tab Worker đang mở: rời tab ⇒ refetchInterval false (panel vẫn mount); quay lại ⇒ 5000 + refetch ngay một lần", async () => {
+    render(<EquipmentIntegration />);
+    const user = await openTab(/^Worker thu ảnh/);
+    expect(interval()).toBe(5000);
+    expect(srv.acq.refetches).toBe(0);
+    await user.click(tabBtn(/^Danh mục connector/));
+    expect(interval()).toBe(false);
+    expect(srv.acq.unmounts).toBe(0);
+    expect(srv.acq.refetches).toBe(0);
+    await user.click(tabBtn(/^Worker thu ảnh/));
+    expect(interval()).toBe(5000);
+    expect(srv.acq.refetches).toBe(1);
+    expect(srv.acq.mounts).toBe(1);
+  });
+
+  it("deep link `?flyout=eq-recipe-new` khi cờ CHƯA RÕ (đang kiểm tra / lỗi) ⇒ sheet không có form tạo (như nút cũ bị khoá); cờ tắt ⇒ form như cũ (nút cũ vẫn bật)", async () => {
+    srv.status = undefined;
+    window.history.replaceState(null, "", "/equipment-integration?tab=recipes&code=RCP-1&flyout=eq-recipe-new");
+    render(<EquipmentIntegration />);
+    let sheet = await waitLayer("eq-recipe-new");
+    expect(within(sheet).getByText("Đang kiểm tra trạng thái tính năng…")).toBeTruthy();
+    expect(within(sheet).queryByRole("button", { name: /Tạo phiên bản/ })).toBeNull();
+    expect(within(sheet).queryByLabelText("Tên")).toBeNull();
+    cleanup();
+    srv.status = { enabled: true };
+    srv.statusError = true;
+    window.history.replaceState(null, "", "/equipment-integration?tab=recipes&code=RCP-1&flyout=eq-recipe-new");
+    render(<EquipmentIntegration />);
+    sheet = await waitLayer("eq-recipe-new");
+    expect(within(sheet).getByRole("alert")).toHaveTextContent("Không kiểm tra được trạng thái tích hợp thiết bị");
+    expect(within(sheet).queryByRole("button", { name: /Tạo phiên bản/ })).toBeNull();
+    cleanup();
+    srv.statusError = false;
+    srv.status = { enabled: false };
+    window.history.replaceState(null, "", "/equipment-integration?tab=recipes&code=RCP-1&flyout=eq-recipe-new");
+    render(<EquipmentIntegration />);
+    sheet = await waitLayer("eq-recipe-new");
+    expect(within(sheet).getByRole("button", { name: /Tạo phiên bản/ })).toBeTruthy();
+  });
+
+  it("ô mã recipe đi theo `?code=` khi back/forward", async () => {
+    window.history.replaceState(null, "", "/equipment-integration?tab=recipes&code=RCP-1");
+    render(<EquipmentIntegration />);
+    const input = () => within(toolbar()).getByRole("textbox", { name: "Mã recipe" });
+    expect(input()).toHaveValue("RCP-1");
+    act(() => window.history.pushState(null, "", "/equipment-integration?tab=recipes&code=RCP-9"));
+    await waitFor(() => expect(input()).toHaveValue("RCP-9"));
+    act(() => window.history.back());
+    await waitFor(() => expect(input()).toHaveValue("RCP-1"));
   });
 });

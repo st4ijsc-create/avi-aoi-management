@@ -65,7 +65,7 @@ import {
   chipStateFromQuery,
   useFlyout,
   useNarrowViewport,
-  useFlyoutLayer,
+  useCloseOwnLayer,
   type FlyoutDefinition,
   type StatusChipItem,
   type VersionRow,
@@ -94,7 +94,6 @@ import { mapTrpcError, toastTrpcError } from "@/lib/trpcErrors";
 import { isFeatureDisabledError } from "@/lib/featureFlagError";
 import {
   deriveFeatureStatus,
-  featureStatusLabel,
   featureStatusTone,
   isFeatureStatusUnsettled,
   type FeatureStatus,
@@ -241,6 +240,10 @@ export default function EquipmentIntegration() {
   // Recipe-versions: mã đang xem nằm ở `?code=` (F5 / deep link giữ được).
   const [activeCode, setActiveCode] = useUrlParam("code");
   const [recipeCode, setRecipeCode] = useState(() => activeCode ?? "");
+  // back/forward (hoặc deep link) đổi `?code=` ⇒ ô nhập theo URL (danh sách đã theo URL).
+  useEffect(() => {
+    setRecipeCode(activeCode ?? "");
+  }, [activeCode]);
 
   // Load-history tab state
   const [historyMode, setHistoryMode] = useState<HistoryMode>("machine");
@@ -419,7 +422,22 @@ export default function EquipmentIntegration() {
       size: "md",
       title: t("eqIntegration.createTitle", "New recipe version (draft)"),
       description: t("eqIntegration.createDesc", "Immutable draft version — genealogy metadata only; nothing is pushed to a device."),
-      render: () => (
+      // Nút "Phiên bản mới" cũ bị khoá khi trạng thái cờ CHƯA RÕ (đang kiểm tra / lỗi) — deep link / F5 cũng vậy:
+      // chưa rõ ⇒ sheet chỉ báo trạng thái, không có form. Cờ TẮT (đã rõ) ⇒ form như nút cũ (server trả CONFLICT).
+      render: () => flagUnsettled ? (
+        flagStatus === "error" ? (
+          <p role="alert" className="py-6 text-center text-sm text-destructive">
+            {t(
+              "eqIntegration.flagStatusError",
+              "Could not check whether equipment integration is enabled — actions are disabled until this is confirmed.",
+            )}
+          </p>
+        ) : (
+          <p className="py-6 text-center text-sm text-muted-foreground">
+            {t("common.gate.checkingStatus", "Checking feature status…")}
+          </p>
+        )
+      ) : (
         <CreateVersionForm
           defaultCode={activeCode ?? recipeCode}
           machines={machines}
@@ -498,15 +516,8 @@ export default function EquipmentIntegration() {
     {
       id: "flag",
       label: t("eqIntegration.kpi.flag", "Flag"),
-      value:
-        flagStatus === "on" || flagStatus === "off"
-          ? featureStatusLabel(flagStatus, {
-              on: t("eqIntegration.on", "On"),
-              off: t("eqIntegration.off", "Off"),
-              loading: t("eqIntegration.checking", "Checking…"),
-              error: t("eqIntegration.unknown", "Unknown"),
-            })
-          : undefined,
+      // loading/error: chip tự in chữ trạng thái chung (StatusChipStrip) — không in số/nhãn bật-tắt.
+      value: flagStatus === "on" ? t("eqIntegration.on", "On") : flagStatus === "off" ? t("eqIntegration.off", "Off") : undefined,
       state: flagChipState(flagStatus),
       tone: featureStatusTone(flagStatus) === "good" ? "success" : featureStatusTone(flagStatus) === "warning" ? "warning" : "default",
       source: t("eqIntegration.chip.srcFlag", "Server feature flag (equipmentIntegration.status)"),
@@ -1221,13 +1232,21 @@ function AcquisitionTab() {
 
 function AcquisitionWorkersPanel() {
   const { t } = useTranslation();
-  const { canViewAcq, canControlAcq, setAcqLive, refreshAcq } = useEqCtx();
+  const { tab, canViewAcq, canControlAcq, setAcqLive, refreshAcq } = useEqCtx();
+  // Panel giữ instance khi rời tab (Review Focus 3) nhưng chỉ poll khi tab đang mở (như tab Radix cũ: rời tab ⇒
+  // hết poll); quay lại ⇒ đọc ngay một lần.
+  const active = tab === "acquisition";
 
   const statusQ = trpc.visionAdapter.acquisitionWorkerStatus.useQuery(undefined, {
     enabled: canViewAcq,
-    refetchInterval: 5_000,
+    refetchInterval: active ? 5_000 : false,
     retry: false,
   });
+  const wasActive = useRef(active);
+  useEffect(() => {
+    if (active && !wasActive.current && canViewAcq) void statusQ.refetch();
+    wasActive.current = active;
+  }, [active]); // eslint-disable-line react-hooks/exhaustive-deps
   const sourcesQ = trpc.visionAdapter.listAcquisitionSources.useQuery(undefined, {
     enabled: canViewAcq,
     retry: false,
@@ -1370,26 +1389,6 @@ function AcquisitionWorkersPanel() {
       )}
     </div>
   );
-}
-
-// ── Đóng lớp flyout của CHÍNH form này (không đóng nhầm lớp khác — Task 5 review M3) ──────────
-function useCloseOwnLayer() {
-  const layer = useFlyoutLayer();
-  const flyoutApi = useFlyout();
-  const stackRef = useRef(flyoutApi.stack);
-  stackRef.current = flyoutApi.stack;
-  const mountedRef = useRef(true);
-  useEffect(() => {
-    mountedRef.current = true;
-    return () => { mountedRef.current = false; };
-  }, []);
-  const done = () => {
-    const top = stackRef.current[stackRef.current.length - 1];
-    if (!mountedRef.current || !top || top.key !== layer.key || top.id !== layer.id) return;
-    layer.setDirty(false);
-    layer.close();
-  };
-  return { layer, done };
 }
 
 function SheetFooter({ children }: { children: ReactNode }) {

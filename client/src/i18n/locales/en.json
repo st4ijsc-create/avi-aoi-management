@@ -16225,8 +16225,6 @@
     "createRequired": "Code and name are required.",
     "createTitle": "New recipe version (draft)",
     "createVersion": "New version",
-    "checking": "Checking…",
-    "unknown": "Unknown",
     "flagOffBanner": "Preview mode: equipment integration is disabled. Reads work; actions (create / release / archive / rollback version, record load) are blocked until it is enabled.",
     "flagOffToast": "Equipment integration is disabled (preview). Set EQ_INTEG_ENABLED=true to act.",
     "flagStatusError": "Could not check whether equipment integration is enabled — actions are disabled until this is confirmed.",
