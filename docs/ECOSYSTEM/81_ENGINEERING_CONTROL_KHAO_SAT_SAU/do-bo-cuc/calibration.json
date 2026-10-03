@@ -344,21 +344,21 @@
    "mainTop": 105,
    "rects": [
     {
-     "x": 328,
+     "x": 289,
      "y": 105,
-     "w": 899,
+     "w": 971,
      "h": 820
     }
    ],
-   "areaPx": 737180,
+   "areaPx": 796220,
    "attrSel": "div[data-layout-main=\"orchestration-studio\"]@WorkbenchShell.tsx",
-   "gitHead": "115925ba7",
-   "at": "2026-10-03T10:00:40.716Z",
+   "gitHead": "31710e825",
+   "at": "2026-10-03T10:58:39.776Z",
    "previous": {
-    "mainTop": 603,
-    "areaPx": 330336,
-    "attrSel": "div[data-layout-main=\"orchestration-studio\"]@OrchestrationStudio.tsx|div[data-layout-main=\"orchestration-studio\"]@OrchestrationStudio.tsx",
-    "gitHead": "e877d897f"
+    "mainTop": 105,
+    "areaPx": 737180,
+    "attrSel": "div[data-layout-main=\"orchestration-studio\"]@WorkbenchShell.tsx",
+    "gitHead": "115925ba7"
    }
   },
   "orchestration-studio|1366|n/a": {
@@ -368,21 +368,21 @@
    "mainTop": 105,
    "rects": [
     {
-     "x": 312,
+     "x": 289,
      "y": 105,
-     "w": 695,
+     "w": 737,
      "h": 638
     }
    ],
-   "areaPx": 443410,
+   "areaPx": 470206,
    "attrSel": "div[data-layout-main=\"orchestration-studio\"]@WorkbenchShell.tsx",
-   "gitHead": "115925ba7",
-   "at": "2026-10-03T10:00:40.717Z",
+   "gitHead": "31710e825",
+   "at": "2026-10-03T10:58:39.776Z",
    "previous": {
-    "mainTop": 603,
-    "areaPx": 278388,
-    "attrSel": "div[data-layout-main=\"orchestration-studio\"]@OrchestrationStudio.tsx|div[data-layout-main=\"orchestration-studio\"]@OrchestrationStudio.tsx",
-    "gitHead": "e877d897f"
+    "mainTop": 105,
+    "areaPx": 443410,
+    "attrSel": "div[data-layout-main=\"orchestration-studio\"]@WorkbenchShell.tsx",
+    "gitHead": "115925ba7"
    }
   }
  }
