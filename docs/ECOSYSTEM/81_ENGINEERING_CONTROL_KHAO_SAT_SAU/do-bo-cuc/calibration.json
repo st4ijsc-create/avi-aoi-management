@@ -192,6 +192,52 @@
     "attrSel": "div[data-layout-main=\"equipment-integration\"]@EquipmentIntegration.tsx",
     "gitHead": "ac9100684"
    }
+  },
+  "safety-workforce|1600|n/a": {
+   "screen": "safety-workforce",
+   "vw": 1600,
+   "variant": "n/a",
+   "mainTop": 618,
+   "rects": [
+    {
+     "x": 288,
+     "y": 618,
+     "w": 1288,
+     "h": 795
+    }
+   ],
+   "areaPx": 1023960,
+   "attrSel": "div[data-layout-main=\"safety-workforce\"]@SafetyWorkforce.tsx",
+   "gitHead": "d58304052",
+   "at": "2026-10-03T04:36:59.023Z",
+   "fromReference": {
+    "dTop": 0,
+    "dLeft": 0,
+    "dAreaPct": 0
+   }
+  },
+  "safety-workforce|1366|n/a": {
+   "screen": "safety-workforce",
+   "vw": 1366,
+   "variant": "n/a",
+   "mainTop": 638,
+   "rects": [
+    {
+     "x": 288,
+     "y": 638,
+     "w": 1054,
+     "h": 795
+    }
+   ],
+   "areaPx": 837930,
+   "attrSel": "div[data-layout-main=\"safety-workforce\"]@SafetyWorkforce.tsx",
+   "gitHead": "d58304052",
+   "at": "2026-10-03T04:36:59.023Z",
+   "fromReference": {
+    "dTop": 0,
+    "dLeft": 0,
+    "dAreaPct": 0
+   }
   }
  }
 }
