@@ -101,6 +101,14 @@ describe("StatusChipStrip — dấu đo và kích thước", () => {
     kpis.forEach((k) => expect((k as HTMLElement).style.height).toBe("32px"));
   });
 
+  it("Đợt 2 Task 7 — mô tả sr-only (position:absolute) nằm trong chip ĐỊNH VỊ ⇒ chip bị header/dải cắt không đẩy trang rộng ra (390 px: docW 615)", () => {
+    render(<StatusChipStrip items={base} />);
+    for (const k of document.querySelectorAll("[data-layout-kpi]")) {
+      expect((k as HTMLElement).className.split(/\s+/)).toContain("relative");
+      expect(k.querySelector(".sr-only")).toBeTruthy();
+    }
+  });
+
   it("dải là MỘT hàng có nhãn nhóm; chip bấm được là nút", () => {
     let clicked = "";
     render(

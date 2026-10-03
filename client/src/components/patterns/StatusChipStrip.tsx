@@ -118,7 +118,8 @@ function StatusChip({ item }: { item: StatusChipItem }): React.JSX.Element {
     title,
     style: { height: 32 },
     className: cn(
-      "inline-flex shrink-0 items-center gap-1.5 whitespace-nowrap rounded-md border bg-card px-2.5",
+      // Đợt 2 Task 7: `relative` giữ mô tả sr-only (absolute) TRONG chip — chip bị header/dải cắt không làm trang rộng ra.
+      "relative inline-flex shrink-0 items-center gap-1.5 whitespace-nowrap rounded-md border bg-card px-2.5",
       state === "error" && "border-destructive/40",
       state === "degraded" && "border-dashed border-warning/60",
       item.active ? "border-primary ring-1 ring-primary/40" : null,
