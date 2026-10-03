@@ -17278,12 +17278,6 @@
       "pending": "Pending"
     },
     "ingest": "Ingest (advisory)",
-    "kpi": {
-      "activeAssignments": "Active assignments",
-      "activeCollabs": "Active collaborations",
-      "nearMissesToday": "Near-misses today",
-      "openEvents": "Open safety events (unaudited)"
-    },
     "liveEmpty": "Waiting for live safety:event broadcasts… (advisory only)",
     "liveTitle": "Live advisory ticker",
     "loading": "Loading…",
@@ -17304,7 +17298,7 @@
     "stationIdOpt": "Station id (optional)",
     "subtitle": "Advisory safety monitoring, mixed-workforce assignments and human↔robot handover coordination.",
     "tab": {
-      "cockpit": "Safety cockpit",
+      "cockpit": "Events",
       "collaboration": "Collaboration",
       "workforce": "Workforce board"
     },
@@ -17352,8 +17346,50 @@
       "socket": "Socket",
       "socketServerDown": "○ server socket down",
       "socketConnected": "● connected",
-      "socketDisconnected": "○ disconnected"
-    }
+      "socketDisconnected": "○ disconnected",
+      "chip": {
+        "label": "Safety sources",
+        "hint": "Show safety source details in the side panel",
+        "loading": "Checking",
+        "error": "Could not read",
+        "real": "Real PLC",
+        "mixed": "Real PLC + SIM",
+        "sim": "SIM only",
+        "realUnmapped": "No tag mapped",
+        "adapterOff": "Off",
+        "noConfig": "Not configured",
+        "readError": "Config read error",
+        "unguarded": "{{target}}: preflight off",
+        "blocked": "{{target}}: blocked",
+        "estopNotRated": "E-stop not safety-rated",
+        "ot": "OT",
+        "robot": "Robot"
+      }
+    },
+    "advisoryChip": "Advisory — not a SIS",
+    "flag": {
+      "safetyAudit": "Safety audit",
+      "workforce": "Workforce"
+    },
+    "chip": {
+      "openEvents": "Unaudited",
+      "nearMissToday": "Near-misses today",
+      "activeAssignments": "Active assignments",
+      "activeCollabs": "Active collaborations",
+      "src": {
+        "openEvents": "safety.feed — events without an audit stamp among the latest 200 (type filter applies)",
+        "nearMiss": "safety.nearMissTrend — today's (UTC) near-miss count in the 30-day trend",
+        "assignments": "safety.listAssignments — assignments with status 'Active' in the loaded list (status filter applies)",
+        "collabs": "safety.listCollaborations — sessions not finished (phase not 'done' and no end time)"
+      }
+    },
+    "liveChip": "Live",
+    "side": {
+      "label": "Safety sources, trend and collaboration",
+      "trend": "Trend"
+    },
+    "reportProximityShort": "Report proximity",
+    "testOnly": "Test only"
   },
   "sessionSignoff": {
     "shift": "Shift",
@@ -17816,7 +17852,9 @@
     "station": "Station",
     "stationId": "Station id (optional)",
     "taskId": "Task id (optional)",
-    "unassignedStation": "Unassigned"
+    "unassignedStation": "Unassigned",
+    "assignmentNotFound": "Assignment #{{id}} is not in the loaded list.",
+    "assignmentTerminal": "Assignment #{{id}} is finished — it cannot be reassigned."
   },
   "vramBroker": {
     "baselineUnverified": "baseline NOT verified",

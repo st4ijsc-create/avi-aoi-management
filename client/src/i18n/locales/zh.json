@@ -17657,12 +17657,6 @@
       "pending": "待处理"
     },
     "ingest": "采集（参考性）",
-    "kpi": {
-      "activeAssignments": "活跃分配",
-      "activeCollabs": "活跃协作",
-      "nearMissesToday": "今日未遂事件",
-      "openEvents": "开放安全事件（未审计）"
-    },
     "liveEmpty": "正在等待实时 safety:event 广播…（仅参考性）",
     "liveTitle": "实时参考性滚动条",
     "loading": "加载中…",
@@ -17683,7 +17677,7 @@
     "stationIdOpt": "工位 ID（可选）",
     "subtitle": "参考性安全监控、混合工作队伍分配与人↔机器人交接协调。",
     "tab": {
-      "cockpit": "安全驾驶舱",
+      "cockpit": "事件",
       "collaboration": "协作",
       "workforce": "工作队伍看板"
     },
@@ -17731,8 +17725,50 @@
       "socket": "Socket",
       "socketServerDown": "○ 服务器 socket 未运行",
       "socketConnected": "● 已连接",
-      "socketDisconnected": "○ 已断开"
-    }
+      "socketDisconnected": "○ 已断开",
+      "chip": {
+        "label": "安全来源",
+        "hint": "在侧面板查看安全来源详情",
+        "loading": "检查中",
+        "error": "无法读取",
+        "real": "真实 PLC",
+        "mixed": "真实 PLC + SIM",
+        "sim": "仅 SIM",
+        "realUnmapped": "未映射标签",
+        "adapterOff": "关闭",
+        "noConfig": "未配置",
+        "readError": "配置读取错误",
+        "unguarded": "{{target}}：预检已关闭",
+        "blocked": "{{target}}：已阻止",
+        "estopNotRated": "急停未经安全认证",
+        "ot": "OT",
+        "robot": "机器人"
+      }
+    },
+    "advisoryChip": "仅供参考 — 非 SIS",
+    "flag": {
+      "safetyAudit": "安全审核",
+      "workforce": "人员"
+    },
+    "chip": {
+      "openEvents": "未审核",
+      "nearMissToday": "今日险兆",
+      "activeAssignments": "进行中的分配",
+      "activeCollabs": "进行中的协作",
+      "src": {
+        "openEvents": "safety.feed — 最近 200 条事件中尚未审核的事件（受类型筛选影响）",
+        "nearMiss": "safety.nearMissTrend — 30 天趋势中今日（UTC）的险兆数",
+        "assignments": "safety.listAssignments — 已加载列表中状态为“进行中”的分配（受状态筛选影响）",
+        "collabs": "safety.listCollaborations — 未结束的会话（阶段不是 done 且无结束时间）"
+      }
+    },
+    "liveChip": "实时",
+    "side": {
+      "label": "安全来源、趋势与协作",
+      "trend": "趋势"
+    },
+    "reportProximityShort": "报告接近",
+    "testOnly": "仅测试"
   },
   "sites": {
     "colBaseUrl": "基础 URL",
@@ -18137,7 +18173,9 @@
     "station": "工位",
     "stationId": "工位 ID（可选）",
     "taskId": "任务 ID（可选）",
-    "unassignedStation": "未分配"
+    "unassignedStation": "未分配",
+    "assignmentNotFound": "已加载列表中没有分配 #{{id}}。",
+    "assignmentTerminal": "分配 #{{id}} 已结束 — 无法重新分配。"
   },
   "vramBroker": {
     "baselineUnverified": "基线尚未核验",

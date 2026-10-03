@@ -17258,12 +17258,6 @@
       "pending": "Đang chờ"
     },
     "ingest": "Nạp (tư vấn)",
-    "kpi": {
-      "activeAssignments": "Phân công đang hoạt động",
-      "activeCollabs": "Phối hợp đang hoạt động",
-      "nearMissesToday": "Suýt sự cố hôm nay",
-      "openEvents": "Sự kiện an toàn đang mở (chưa kiểm định)"
-    },
     "liveEmpty": "Đang chờ phát sóng safety:event trực tiếp… (chỉ tư vấn)",
     "liveTitle": "Bảng tin tư vấn trực tiếp",
     "loading": "Đang tải…",
@@ -17284,9 +17278,9 @@
     "stationIdOpt": "Mã trạm (tùy chọn)",
     "subtitle": "Giám sát an toàn tư vấn, phân công nhân lực hỗn hợp và điều phối bàn giao người↔robot.",
     "tab": {
-      "cockpit": "Cockpit an toàn",
+      "cockpit": "Sự kiện",
       "collaboration": "Phối hợp",
-      "workforce": "Bảng nhân lực"
+      "workforce": "Nhân lực"
     },
     "title": "An toàn & Nhân lực",
     "trendEmpty": "Không ghi nhận suýt sự cố nào trong khoảng thời gian.",
@@ -17332,8 +17326,50 @@
       "socket": "Socket",
       "socketServerDown": "○ socket máy chủ không chạy",
       "socketConnected": "● đã kết nối",
-      "socketDisconnected": "○ mất kết nối"
-    }
+      "socketDisconnected": "○ mất kết nối",
+      "chip": {
+        "label": "Nguồn an toàn",
+        "hint": "Xem chi tiết nguồn an toàn ở panel bên cạnh",
+        "loading": "Đang kiểm tra",
+        "error": "Không đọc được",
+        "real": "PLC thật",
+        "mixed": "PLC thật + SIM",
+        "sim": "Chỉ SIM",
+        "realUnmapped": "Chưa gán tag",
+        "adapterOff": "Tắt",
+        "noConfig": "Chưa cấu hình",
+        "readError": "Lỗi đọc cấu hình",
+        "unguarded": "{{target}}: preflight tắt",
+        "blocked": "{{target}}: bị chặn",
+        "estopNotRated": "E-stop chưa safety-rated",
+        "ot": "OT",
+        "robot": "Robot"
+      }
+    },
+    "advisoryChip": "Tư vấn — không phải SIS",
+    "flag": {
+      "safetyAudit": "Kiểm định an toàn",
+      "workforce": "Nhân lực"
+    },
+    "chip": {
+      "openEvents": "Chưa kiểm định",
+      "nearMissToday": "Suýt sự cố hôm nay",
+      "activeAssignments": "Đang phân công",
+      "activeCollabs": "Đang phối hợp",
+      "src": {
+        "openEvents": "safety.feed — sự kiện chưa có dấu kiểm định trong tối đa 200 sự kiện gần nhất (theo bộ lọc loại)",
+        "nearMiss": "safety.nearMissTrend — số suýt sự cố của ngày hôm nay (UTC) trong xu hướng 30 ngày",
+        "assignments": "safety.listAssignments — phân công trạng thái 'Hoạt động' trong danh sách đang tải (theo bộ lọc trạng thái)",
+        "collabs": "safety.listCollaborations — phiên chưa kết thúc (pha khác 'done' và chưa có giờ kết thúc)"
+      }
+    },
+    "liveChip": "Trực tiếp",
+    "side": {
+      "label": "Nguồn an toàn, xu hướng và phối hợp",
+      "trend": "Xu hướng"
+    },
+    "reportProximityShort": "Báo cáo tiệm cận",
+    "testOnly": "Chỉ thử"
   },
   "sessionSignoff": {
     "shift": "Ca",
@@ -17796,7 +17832,9 @@
     "station": "Trạm",
     "stationId": "Mã trạm (tùy chọn)",
     "taskId": "Mã tác vụ (tùy chọn)",
-    "unassignedStation": "Chưa phân công"
+    "unassignedStation": "Chưa phân công",
+    "assignmentNotFound": "Không tìm thấy phân công #{{id}} trong danh sách đang tải.",
+    "assignmentTerminal": "Phân công #{{id}} đã kết thúc — không phân công lại được."
   },
   "vramBroker": {
     "baselineUnverified": "nền CHƯA xác minh",
