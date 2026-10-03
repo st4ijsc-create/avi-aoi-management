@@ -1267,7 +1267,7 @@ function EngineeringWorkspaceView() {
   // R-2-s — điều khiển của tab Δ / Tags nằm CUỐI thanh tab editor (một `data-layout-toolbar` duy nhất trong MAIN).
   const diffToolbarEnd = (
     <>
-      <span className="hidden items-center gap-1 text-xs font-medium text-muted-foreground xl:flex">
+      <span className="hidden items-center gap-1 text-xs font-medium text-muted-foreground min-[1440px]:flex">
         <GitCompare className="h-3.5 w-3.5" /> {t("engineering.compareVersions", "So sánh phiên bản")}
       </span>
       <Select value={diffBaseId != null ? String(diffBaseId) : ""} onValueChange={(v) => setDiffBaseId(Number(v))}>
@@ -1303,7 +1303,7 @@ function EngineeringWorkspaceView() {
 
   const tagsToolbarEnd = (
     <>
-      <span className="hidden items-center gap-1 text-xs font-medium text-muted-foreground xl:flex">
+      <span className="hidden items-center gap-1 text-xs font-medium text-muted-foreground min-[1440px]:flex">
         <Variable className="h-3.5 w-3.5" /> {t("engineering.symbols", "Bảng biến / tag")}
       </span>
       <Button size="sm" variant="outline" className="h-7 text-xs" disabled={!canEdit} title={editReason} onClick={() => openSymDialog()}>

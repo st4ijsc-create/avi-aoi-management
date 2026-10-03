@@ -330,6 +330,22 @@ describe("P1 Workbench — bố cục (doc 81 §1.3)", () => {
 });
 
 // ════════════════════════════════════════════════════════════════════════════════════════════════
+describe("final wave T13 — thanh công cụ Δ / Tags không tràn ở 1366", () => {
+  it("nhãn 'So sánh phiên bản' / 'Bảng biến / tag' chỉ hiện từ 1440 px (ở 1366 hai ô chọn + tab vừa một hàng)", async () => {
+    const fs = await import("node:fs");
+    const path = await import("node:path");
+    const src = fs.readFileSync(path.resolve(__dirname, "EngineeringWorkspace.tsx"), "utf8");
+    for (const key of ['t("engineering.compareVersions"', 't("engineering.symbols"']) {
+      const i = src.indexOf(key);
+      expect(i, key).toBeGreaterThan(-1);
+      const spanStart = src.lastIndexOf("<span", i);
+      const cls = src.slice(spanStart, src.indexOf(">", spanStart));
+      expect(cls, key).toMatch(/min-\[1440px\]:flex/);
+      expect(cls, key).not.toMatch(/(^|\s)xl:flex/);
+    }
+  });
+});
+
 describe("Copilot là panel TRONG layout (R-2-b / R-2-j)", () => {
   it("Copilot mở ⇒ KHÔNG dock position:fixed, KHÔNG body.paddingRight; panel nằm trong inspector (aside data-layout-ai)", async () => {
     window.localStorage.setItem("progCopilot.open", "1");
