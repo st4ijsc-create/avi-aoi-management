@@ -414,7 +414,7 @@ export default function EquipmentStandards() {
           </TabsList>
 
           {/* ════════════════ TAB: Hierarchy (E1-a) ════════════════ */}
-          <TabsContent value="hierarchy" className="flex flex-col gap-4 lg:flex-row lg:items-start">
+          <TabsContent value="hierarchy" data-layout-main="equipment-standards" className="flex flex-col gap-4 lg:flex-row lg:items-start">
             <SectionCard
               icon={<Network className="h-4 w-4" />}
               title={t("eqStandards.hierarchyTitle", "Device type hierarchy")}
@@ -463,7 +463,7 @@ export default function EquipmentStandards() {
           </TabsContent>
 
           {/* ════════════════ TAB: Alarm taxonomy (E1-b) ════════════════ */}
-          <TabsContent value="alarms" className="flex flex-col gap-4">
+          <TabsContent value="alarms" data-layout-main="equipment-standards" className="flex flex-col gap-4">
             {/* Lookup panel */}
             <SectionCard icon={<Search className="h-4 w-4" />} title={t("eqStandards.lookupTitle", "Normalize an alarm")}>
               <div className="flex flex-wrap items-end gap-2">
@@ -551,7 +551,7 @@ export default function EquipmentStandards() {
           </TabsContent>
 
           {/* ════════════════ TAB: Alarm performance (W5-21, EEMUA-191) ════════════════ */}
-          <TabsContent value="alarmPerf" className="flex flex-col gap-4">
+          <TabsContent value="alarmPerf" data-layout-main="equipment-standards" className="flex flex-col gap-4">
             {/* KPI strip */}
             <SectionCard
               icon={<Activity className="h-4 w-4" />}
@@ -717,7 +717,7 @@ export default function EquipmentStandards() {
           </TabsContent>
 
           {/* ════════════════ TAB: Change requests (E1-c) ════════════════ */}
-          <TabsContent value="crs" className="flex flex-col gap-4">
+          <TabsContent value="crs" data-layout-main="equipment-standards" className="flex flex-col gap-4">
             <SectionCard
               icon={<GitPullRequest className="h-4 w-4" />}
               title={t("eqStandards.crsTitle", "Equipment Standards Board")}
@@ -828,7 +828,7 @@ export default function EquipmentStandards() {
           </TabsContent>
 
           {/* ════════════════ TAB: Compliance (E1-e + E1-d) ════════════════ */}
-          <TabsContent value="compliance" className="flex flex-col gap-4">
+          <TabsContent value="compliance" data-layout-main="equipment-standards" className="flex flex-col gap-4">
             <SectionCard
               icon={<ClipboardCheck className="h-4 w-4" />}
               title={t("eqStandards.complianceTitle", "Compliance overview")}
