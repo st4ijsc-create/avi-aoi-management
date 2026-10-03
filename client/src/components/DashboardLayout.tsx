@@ -57,7 +57,7 @@ import {
 import { useNavMode } from "@/hooks/useNavMode";
 import { useAppLauncherMode } from "@/hooks/useAppLauncherMode";
 import { useActiveApp } from "@/hooks/useActiveApp";
-import { scopeGroupsToApp, listApps, type AppDescriptor } from "@/lib/apps";
+import { scopeGroupsToApp, listApps, resolveAppLandingHref, type AppDescriptor } from "@/lib/apps";
 import { betaNoticeItem } from "./BetaBadge";
 import { usePermissions } from "@/_core/hooks/usePermissions";
 import { useLicenseModules } from "@/hooks/useLicenseModules";
@@ -838,7 +838,8 @@ function DashboardLayoutContent({
           onOpenChange={setLauncherOpen}
           allowedModules={allowedModules}
           activeAppId={activeApp.appId}
-          onSelectApp={app => openApp(app.landingHref)}
+          // doc 81 Đợt 2 Task 15 — landing bị chặn với vai này (vd operator ⇒ Hub Kỹ thuật) ⇒ mục đầu tiên họ vào được.
+          onSelectApp={app => openApp(resolveAppLandingHref(app, searchAccessibleGroups))}
           onUpgrade={() => openApp("/modules")}
           canAccessApp={canAccessApp}
         />

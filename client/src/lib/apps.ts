@@ -42,7 +42,7 @@ import {
   getModuleByRoute,
   CORE_MODULE_CODES,
 } from "../../../shared/module-registry";
-import { getGroupByHref, type NavGroup } from "./navigation";
+import { getGroupByHref, getNavItemByHref, type NavGroup } from "./navigation";
 
 /** A launcher app: a commercial/purchasable unit rendered as one tile. */
 export interface AppDescriptor {
@@ -345,6 +345,27 @@ export function scopeGroupsToApp(groups: NavGroup[], appId: string): NavGroup[] 
   return groups
     .map((g) => ({ ...g, items: g.items.filter((it) => getAppForRoute(it.href)?.appId === appId) }))
     .filter((g) => g.items.length > 0);
+}
+
+/**
+ * Doc 81 Đợt 2 Task 15 (§1.4 vai trò) — đích khi mở một app từ App Launcher.
+ *
+ * `landingHref` là MỘT mục nav có quyền riêng (vd Hub Kỹ thuật đòi `machine_control`). Người dùng vào được app (còn
+ * ≥1 mục) nhưng KHÔNG vào được landing (vd operator: Hub bị chặn, chỉ còn màn giám sát) trước đây bị đưa thẳng tới
+ * trang "Không có quyền". Nay: landing có trong `accessible` (đã lọc vai/quyền/giấy phép) ⇒ giữ; landing là mục nav mà
+ * người này không có ⇒ mục ĐẦU TIÊN của app trong `accessible` (nhóm nav chính của app trước); landing không phải mục nav (không biết quyền) ⇒ giữ,
+ * không đoán. Không mở thêm quyền nào: chỉ chọn trong những gì người dùng đã thấy trên thanh bên.
+ */
+export function resolveAppLandingHref(app: AppDescriptor, accessible: NavGroup[]): string {
+  const landing = app.landingHref;
+  if (!getNavItemByHref(landing)) return landing;
+  const scoped = scopeGroupsToApp(accessible, app.appId);
+  const path = landing.split("?")[0];
+  if (scoped.some((g) => g.items.some((i) => i.href.split("?")[0] === path))) return landing;
+  // Ưu tiên nhóm nav CHÍNH của app (vd "engineering") — mục mượn từ nhóm khác (vd /robot-control của "devices")
+  // có thể khai quyền nav thấp hơn route thật (lệch sẵn có, xem task-15-report) nên không chọn trước.
+  const primary = scoped.filter((g) => app.navGroupIds.includes(g.id));
+  return primary[0]?.items[0]?.href ?? scoped[0]?.items[0]?.href ?? landing;
 }
 
 /** Dev/self-check: every app's backing module codes are real registry codes. */

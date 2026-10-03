@@ -160,6 +160,15 @@ export interface NavItem {
    * a dead end expecting live data.
    */
   beta?: boolean;
+  /**
+   * Doc 81 Đợt 2 Task 15 (§1.4 vai trò) — đây là công cụ SOẠN THẢO mở đọc cho `requiredPermission` thấp hơn
+   * (vd IR/POU: route `machine_status` để có chế độ chỉ-xem). ĐIỀU HƯỚNG (thanh bên, ⌘K, lối tắt Ghim/Gần đây,
+   * danh mục Hub) chỉ hiện mục này cho người có quyền này (`canView`) — đúng quyền server dùng để lưu/build.
+   *
+   * KHÔNG phải cổng route: `hasAccessToItem` / RouteGuard BỎ QUA trường này (deep link cũ vẫn mở chế độ
+   * chỉ-xem như trước) và quyền server không đổi. Admin bypass như mọi cổng nav khác.
+   */
+  authoringPermission?: string;
 }
 
 export interface NavGroup {
@@ -1019,16 +1028,9 @@ export const navGroups: NavGroup[] = [
         requiredPermission: "machine_control",
         permissionCategory: "machine_control",
       },
-      {
-        // doc 59 cụm phụ — Engineering Studio: launcher danh mục (soạn thảo/điều phối/
-        // an toàn/chuẩn-hoá). Song song /engineering-home (landing tác vụ). Per-tile RBAC.
-        href: "/engineering-studio",
-        label: "nav.engineeringStudio",
-        icon: <FlaskConical className="h-4 w-4" />,
-        description: "nav.engineeringStudioDesc",
-        requiredPermission: "machine_control",
-        permissionCategory: "machine_control",
-      },
+      // doc 81 Đợt 2 Task 15 — mục "/engineering-studio" (launcher danh mục) ĐÃ GỠ: Studio gộp vào Hub thành
+      // chế độ danh mục (`/engineering-home?tab=catalog`); URL cũ chuyển hướng giữ query (App.tsx,
+      // `lib/engineeringLegacyRedirects.tsx`).
       // — Authoring & Programming —
       {
         href: "/engineering",
@@ -1100,6 +1102,8 @@ export const navGroups: NavGroup[] = [
         hint: "nav.hint.irEditor",
         engineerOriented: true,
         beta: true,
+        // doc 81 Đợt 2 Task 15 (§1.4) — công cụ soạn thảo: chỉ hiện trong điều hướng cho người soạn được.
+        authoringPermission: "machine_control",
       },
       {
         // P4 (doc 24 Wave-3) — IEC 61131 POU Studio: structured LAD/FBD/SFC POUs with
@@ -1115,22 +1119,12 @@ export const navGroups: NavGroup[] = [
         hint: "nav.hint.pouStudio",
         engineerOriented: true,
         beta: true,
+        // doc 81 Đợt 2 Task 15 (§1.4) — công cụ soạn thảo: chỉ hiện trong điều hướng cho người soạn được.
+        authoringPermission: "machine_control",
       },
-      {
-        // Doc 34 · P3 — Programming Copilot. doc 41: đây là NHÀ DUY NHẤT còn lại (entry
-        // trùng ở nhóm AI đã gỡ). Vai trò trang này = "scratchpad" sinh code nhanh khi
-        // CHƯA mở project; còn khi soạn trong editor, copilot là panel phải TRONG layout
-        // (tab Copilot của inspector) ngay trong Engineering Workspace / IR / POU (doc 81 Đợt 2 Task 13/14).
-        href: "/programming-copilot",
-        label: "nav.programmingCopilot",
-        icon: <Sparkles className="h-4 w-4" />,
-        description: "nav.programmingCopilotDesc",
-        requiredPermission: "machine_status",
-        permissionCategory: "machine_monitoring",
-        section: "authoring",
-        hint: "nav.hint.programmingCopilot",
-        engineerOriented: true,
-      },
+      // doc 81 Đợt 2 Task 15 — mục "/programming-copilot" ĐÃ GỠ: trang Copilot riêng thành CHẾ ĐỘ SCRATCH của IDE
+      // (`/engineering?copilot=scratch` — panel Copilot trong layout, chưa cần mở dự án); URL cũ chuyển hướng giữ
+      // query. Copilot lập trình nay chỉ còn là panel trong IDE / IR / POU.
       {
         // Automation Orchestration (Khối 2) — fleet task allocation, zones/traffic,
         // skill/resource/charging. Read-mostly cockpit gated on machine_monitoring.
@@ -2635,6 +2629,22 @@ function collapseNavGroups(groups: NavGroup[]): NavGroup[] {
     .filter(group => group.items.length > 0);
 }
 
+/**
+ * Doc 81 Đợt 2 Task 15 (§1.4) — cổng ĐIỀU HƯỚNG của công cụ soạn thảo (`NavItem.authoringPermission`).
+ * Không checker (gọi kiểu cũ) ⇒ hiện; admin ⇒ hiện; còn lại ⇒ cần `canView` của quyền soạn thảo.
+ * CHỈ dùng cho điều hướng (thanh bên, ⌘K, lối tắt, danh mục Hub) — KHÔNG dùng ở `hasAccessToItem`/RouteGuard.
+ */
+export function passesNavAuthoringGate(
+  item: Pick<NavItem, 'authoringPermission'>,
+  userRole?: string,
+  hasPermission?: PermissionChecker,
+): boolean {
+  if (!item.authoringPermission) return true;
+  if (userRole === 'admin') return true;
+  if (!hasPermission) return true;
+  return hasPermission(item.authoringPermission, 'canView');
+}
+
 /** Apply role/permission filtering to an already-decided set of groups (collapsed or not). */
 function applyRbacFilter(
   base: NavGroup[],
@@ -2660,7 +2670,9 @@ function applyRbacFilter(
     .map(group => ({
       ...group,
       items: group.items.filter(item =>
-        isItemAccessible(item, userRole, hasPermission),
+        isItemAccessible(item, userRole, hasPermission) &&
+        // doc 81 Đợt 2 Task 15 — công cụ soạn thảo chỉ trong điều hướng của người soạn được (route giữ nguyên).
+        passesNavAuthoringGate(item, userRole, hasPermission),
       ),
     }))
     .filter(group => group.items.length > 0);
