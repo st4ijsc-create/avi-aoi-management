@@ -17157,6 +17157,14 @@
     "diff": {
       "title": "So sánh phiên bản",
       "subtitle": "So sánh hai phiên bản đã lưu (hoặc một phiên bản với bản nháp hiện tại) — khối thêm / bớt / sửa / dời, chú thích trên cây."
+    },
+    "ws": {
+      "flowMeta": "Thuộc tính luồng",
+      "fbName": "Tên khối hàm",
+      "inspectorLabel": "Thuộc tính / Transpile / Copilot",
+      "previewChip": "Xem trước — không deploy",
+      "activityFb": "Khối hàm",
+      "explorerLabel": "Trình duyệt IR"
     }
   },
   "rfcell": {
@@ -18327,7 +18335,23 @@
     "saveHint": "Bản nháp vẫn đi qua pipeline có kiểm soát: build → ký duyệt HITL → deploy có kiểm soát. Việc lưu ở đây không deploy gì cả.",
     "createAndSave": "Tạo project & lưu",
     "saveVersion": "Lưu phiên bản",
-    "savedVersion": "Đã lưu bản nháp v{{v}} — build & deploy ở Engineering."
+    "savedVersion": "Đã lưu bản nháp v{{v}} — build & deploy ở Engineering.",
+    "ws": {
+      "opened": "Đã mở v{{v}} vào trình soạn",
+      "openProjects": "Dự án POU",
+      "openVersions": "Phiên bản (pou-json)",
+      "noVersions": "Dự án này chưa có phiên bản pou-json nào.",
+      "open": "Mở",
+      "otherLang": "{{n}} phiên bản ngôn ngữ khác — mở ở Xưởng lập trình.",
+      "samples": "Mẫu dựng sẵn",
+      "inspectorLabel": "ST / PLCopen / Copilot",
+      "noProblems": "Không có chẩn đoán lint.",
+      "previewChip": "Xem trước — không deploy",
+      "problemsStatus": "Vấn đề: {{count}}",
+      "activityOpen": "Mở",
+      "explorerLabel": "Trình duyệt POU",
+      "problemsTab": "Vấn đề"
+    }
   },
   "systemHealth": {
     "title": "Sức khỏe hệ thống",

@@ -17177,6 +17177,14 @@
     "diff": {
       "title": "Version diff",
       "subtitle": "Compare two saved versions (or a version vs the current draft) — added / removed / modified / moved blocks, annotated on the tree."
+    },
+    "ws": {
+      "flowMeta": "Flow properties",
+      "fbName": "Function block name",
+      "inspectorLabel": "Inspector / Transpile / Copilot",
+      "previewChip": "Preview — no deploy",
+      "activityFb": "Function blocks",
+      "explorerLabel": "IR explorer"
     }
   },
   "rfcell": {
@@ -18347,7 +18355,23 @@
     "saveHint": "The saved draft still passes through the gated pipeline: build → HITL sign-off → gated deploy. Nothing is deployed by saving here.",
     "createAndSave": "Create project & save",
     "saveVersion": "Save version",
-    "savedVersion": "Saved as draft v{{v}} — build & deploy in Engineering."
+    "savedVersion": "Saved as draft v{{v}} — build & deploy in Engineering.",
+    "ws": {
+      "opened": "Opened v{{v}} in the editor",
+      "openProjects": "POU projects",
+      "openVersions": "Versions (pou-json)",
+      "noVersions": "This project has no pou-json versions yet.",
+      "open": "Open",
+      "otherLang": "{{n}} version(s) in another language — open them in the Engineering Workspace.",
+      "samples": "Samples",
+      "inspectorLabel": "ST / PLCopen / Copilot",
+      "noProblems": "No lint diagnostics.",
+      "previewChip": "Preview — no deploy",
+      "problemsStatus": "Problems: {{count}}",
+      "activityOpen": "Open",
+      "explorerLabel": "POU explorer",
+      "problemsTab": "Problems"
+    }
   },
   "systemHealth": {
     "title": "System Health",

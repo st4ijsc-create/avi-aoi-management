@@ -13,10 +13,13 @@
  * DPC_IR_V2_ENABLED + machine_control. A REAL deploy is a SEPARATE gated step (the existing
  * programmingService HITL 2-eyes) that this editor deliberately does NOT re-expose.
  *
- * Layout: toolbar (flow meta + live lint indicator + gated Save / Request build) →
- * split panes: LEFT palette (Motion/IO/Control) · CENTER flow canvas (nested tree, lint
- * borders) · RIGHT inspector OR transpile preview (target select → code pane with
- * IR↔code marker highlight via irCommentMap).
+ * Layout (doc 81 Đợt 2 Task 14 — mẫu P1/P2 trên EngineeringShell, thay lưới `grid-cols-12` cố định):
+ *   top bar 48 px (h1 · chip cờ 4 trạng thái · metadata luồng trong popover · lint · Khi nào dùng │ Hoàn tác/Làm lại ·
+ *   đích lưu · Project ir-flow mới (sheet) · Lưu luồng) → activity bar + Explorer (Bảng chọn khối — gập được · Luồng
+ *   đã lưu (Nạp / Yêu cầu build) · Khối hàm) · MAIN = một toolbar tab editor (Vùng vẽ luồng / So sánh phiên bản /
+ *   Hợp nhất 3 chiều — R-2-s) + canvas cao hết vùng · Inspector phải [Bảng thuộc tính | Xem trước transpile | Copilot]
+ *   (Copilot TRONG layout — R-2-b, không dock) · thanh trạng thái (chip "Xem trước — không deploy" + KPI + lint khoá).
+ *   Hành vi (cổng Lưu/Build, lint 3 trạng thái dịch qua mapTrpcError, phím tắt, một lời gọi mỗi lần bấm) giữ nguyên.
  *
  * i18n: t("ir.*", "English default") fallback pattern; nav keys added to en/vi/zh.
  */
@@ -31,11 +34,13 @@ import { parseDeepLink, withParams } from "@/lib/engineeringDeepLink";
 import { isFeatureDisabledError } from "@/lib/featureFlagError";
 import { trpc } from "@/lib/trpc";
 import { usePermissions } from "@/_core/hooks/usePermissions";
+import { useAuth } from "@/_core/hooks/useAuth";
 import DashboardLayout from "@/components/DashboardLayout";
 import { useShellPageVariant } from "@/lib/shellPage";
 import { ViewOnlyBadge } from "@/components/PermissionGate";
-import { PageHeader, PageContainer, MetricCard, SectionCard, StatusBadge } from "@/components/patterns";
-import { CodeEditor } from "@/components/engineering/CodeEditor";
+import { PageHeaderCompact, NoticeChip, FeatureStatusNoticeChip, StatusBadge } from "@/components/patterns";
+import { EngineeringShell } from "@/components/engineering/shell";
+import { deriveFeatureStatus } from "@/components/common/FeatureStatusGate";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -44,16 +49,15 @@ import { Label } from "@/components/ui/label";
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from "@/components/ui/select";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { ScrollArea } from "@/components/ui/scroll-area";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import {
-  Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle,
-} from "@/components/ui/dialog";
+  Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle,
+} from "@/components/ui/sheet";
 import {
-  Cpu, Info, Lock, Plus, Trash2, ChevronUp, ChevronDown, CornerDownRight,
-  Save, Hammer, Code2, CheckCircle2, AlertTriangle, XCircle, RefreshCw,
-  FolderOpen, FolderPlus, ListTree, ShieldCheck, Loader2, Network, GripVertical, GitCompare, GitMerge,
-  Boxes, ArrowLeft, Pencil, Undo2, Redo2,
+  Cpu, Lock, Plus, Trash2, ChevronUp, ChevronDown, CornerDownRight,
+  Save, Hammer, Code2, AlertTriangle, XCircle, RefreshCw,
+  FolderOpen, FolderPlus, ListTree, ShieldCheck, Loader2, Network, GripVertical,
+  Boxes, ArrowLeft, Pencil, Undo2, Redo2, Sparkles,
 } from "lucide-react";
 import { toast } from "sonner";
 import { deriveIrLintState } from "@/components/programming/irLintState";
@@ -73,7 +77,8 @@ import {
 } from "@/components/programming/irTree";
 import { IrGraphCanvas, IR_DND_MIME } from "@/components/programming/IrGraphCanvas";
 import { useKeyboardShortcuts } from "@/hooks/useKeyboardShortcuts";
-import { useCopilotBinding } from "@/contexts/ProgrammingCopilotContext";
+import { useCopilotBinding, useProgrammingCopilot, type CopilotBinding } from "@/contexts/ProgrammingCopilotContext";
+import { CopilotInspector } from "@/components/programming/CopilotInspector";
 import { useFlowHistory } from "@/components/programming/flowHistory";
 import { IrDiffPanel } from "@/components/programming/IrDiffPanel";
 import { IrMergePanel } from "@/components/programming/IrMergePanel";
@@ -754,118 +759,149 @@ function TranspilePreview({
 
 // ══════════════════════════════════════════════════════════════════════════════
 // FUNCTION BLOCKS (POUs) — define reusable, parameterized sub-flows once
+// doc 81 Đợt 2 Task 14: DANH SÁCH nằm ở Explorer (mục "Khối hàm"); ĐỊNH NGHĨA (tên + tham số) của khối hàm đang
+// sửa thân nằm ở Inspector — cùng các thao tác như thẻ cũ, chỉ đổi chỗ.
 // ══════════════════════════════════════════════════════════════════════════════
-function FunctionBlocksPanel({
+/** Đếm lỗi/cảnh báo lint trên thân một định nghĩa. */
+function fbDiagCounts(fb: FunctionBlockDef, diagsByBlock: Map<string, IrDiagnostic[]>): { errs: number; warns: number } {
+  let errs = 0; let warns = 0;
+  const scan = (blocks: IrBlock[]) => {
+    for (const b of blocks) {
+      for (const d of (b.id ? diagsByBlock.get(b.id) ?? [] : [])) {
+        if (d.severity === "error") errs += 1; else warns += 1;
+      }
+      for (const slot of childSlots(b)) scan(getChildren(b, slot));
+    }
+  };
+  scan(fb.body);
+  return { errs, warns };
+}
+
+function FunctionBlockList({
   functionBlocks, activeFbId, diagsByBlock, canEdit,
-  onNew, onUpdateFb, onDeleteFb, onEditBody, t,
+  onNew, onDeleteFb, onEditBody, onBackToMain, t,
 }: {
   functionBlocks: FunctionBlockDef[];
   activeFbId: string | null;
   diagsByBlock: Map<string, IrDiagnostic[]>;
   canEdit: boolean;
   onNew: () => void;
-  onUpdateFb: (fbId: string, patch: Partial<FunctionBlockDef>) => void;
   onDeleteFb: (fbId: string) => void;
   onEditBody: (fbId: string) => void;
+  onBackToMain: () => void;
   t: TFunction;
 }) {
   return (
-    <div className="space-y-3">
-      <div className="flex items-center justify-between gap-2">
-        <p className="text-[11px] text-muted-foreground">
-          {t("ir.fb.intro", "Define a named, parameterized sub-flow ONCE, then invoke it anywhere with a Call function block. Edit a definition's body on the canvas above.")}
-        </p>
-        <Button size="sm" variant="outline" onClick={onNew} disabled={!canEdit}>
-          <Plus className="mr-1 h-3.5 w-3.5" />{t("ir.fb.new", "New function block")}
-        </Button>
-      </div>
-
+    <div className="space-y-2">
+      <p className="text-[11px] text-muted-foreground">
+        {t("ir.fb.intro", "Define a named, parameterized sub-flow ONCE, then invoke it anywhere with a Call function block. Edit a definition's body on the canvas above.")}
+      </p>
+      <Button size="sm" variant="outline" className="h-8 w-full justify-start" onClick={onNew} disabled={!canEdit}>
+        <Plus className="mr-1 h-3.5 w-3.5" />{t("ir.fb.new", "New function block")}
+      </Button>
+      <button
+        type="button"
+        onClick={onBackToMain}
+        aria-pressed={activeFbId == null}
+        className={`flex w-full items-center gap-1.5 rounded-md border px-2 py-1.5 text-left text-xs ${activeFbId == null ? "border-primary bg-primary/5 font-medium" : "hover:bg-muted"}`}
+      >
+        <Network className="h-3.5 w-3.5 shrink-0 text-primary" aria-hidden="true" />
+        {t("ir.canvas.backToMain", "Main flow")}
+      </button>
       {functionBlocks.length === 0 ? (
-        <p className="py-4 text-center text-sm text-muted-foreground">{t("ir.fb.empty", "No function blocks yet. Create one to reuse a sub-flow across call sites.")}</p>
+        <p className="py-3 text-center text-xs text-muted-foreground">{t("ir.fb.empty", "No function blocks yet. Create one to reuse a sub-flow across call sites.")}</p>
       ) : (
-        <div className="space-y-2">
+        <ul className="space-y-1.5">
           {functionBlocks.map((fb) => {
             const active = fb.id === activeFbId;
-            // Surface any lint error/warn on this definition's body blocks.
-            let errs = 0; let warns = 0;
-            const scan = (blocks: IrBlock[]) => {
-              for (const b of blocks) {
-                for (const d of (b.id ? diagsByBlock.get(b.id) ?? [] : [])) {
-                  if (d.severity === "error") errs += 1; else warns += 1;
-                }
-                for (const slot of childSlots(b)) scan(getChildren(b, slot));
-              }
-            };
-            scan(fb.body);
+            const { errs, warns } = fbDiagCounts(fb, diagsByBlock);
             return (
-              <div key={fb.id} className={`rounded-md border p-2.5 ${active ? "border-primary ring-1 ring-primary/40" : "border-border"}`}>
-                <div className="flex flex-wrap items-center gap-2">
-                  <Boxes className="h-4 w-4 text-primary" />
-                  <Input
-                    className="h-8 w-48 font-mono text-sm"
-                    value={fb.name}
-                    disabled={!canEdit}
-                    onChange={(e) => fb.id && onUpdateFb(fb.id, { name: e.target.value })}
-                    placeholder="block_name"
-                  />
-                  <span className="font-mono text-[10px] text-muted-foreground">{fb.id}</span>
-                  <span className="text-[11px] text-muted-foreground">
-                    {fb.params.length} {t("ir.fb.paramsShort", "param(s)")} · {fb.body.length} {t("ir.fb.bodyShort", "body block(s)")}
-                  </span>
-                  {errs > 0 && <Badge variant="outline" className="border-destructive/40 text-destructive">{errs} {t("ir.errorsShort", "error(s)")}</Badge>}
-                  {errs === 0 && warns > 0 && <Badge variant="outline" className="border-warning/40 text-warning">{warns} {t("ir.warnsShort", "warning(s)")}</Badge>}
-                  <div className="ml-auto flex items-center gap-1">
-                    <Button size="sm" variant={active ? "secondary" : "outline"} className="h-7" onClick={() => fb.id && onEditBody(fb.id)}>
-                      <Pencil className="mr-1 h-3.5 w-3.5" />{active ? t("ir.fb.editing", "Editing body") : t("ir.fb.editBody", "Edit body")}
-                    </Button>
-                    <Button size="icon" variant="ghost" className="h-7 w-7 text-destructive" disabled={!canEdit} onClick={() => fb.id && onDeleteFb(fb.id)} aria-label={t("common.delete", "Delete")}>
-                      <Trash2 className="h-3.5 w-3.5" />
-                    </Button>
-                  </div>
+              <li key={fb.id} data-fb-row={fb.id} className={`rounded-md border p-2 ${active ? "border-primary ring-1 ring-primary/40" : "border-border"}`}>
+                <div className="flex items-center gap-1.5">
+                  <Boxes className="h-3.5 w-3.5 shrink-0 text-primary" aria-hidden="true" />
+                  <span className="min-w-0 flex-1 truncate font-mono text-xs" title={fb.name}>{fb.name}</span>
+                  <Button size="icon" variant="ghost" className="h-6 w-6 text-destructive" disabled={!canEdit} onClick={() => fb.id && onDeleteFb(fb.id)} aria-label={t("common.delete", "Delete")}>
+                    <Trash2 className="h-3.5 w-3.5" />
+                  </Button>
                 </div>
-
-                {/* Parameters editor */}
-                <div className="mt-2 space-y-1.5 border-t border-dashed border-border/70 pt-2">
-                  <div className="flex items-center justify-between">
-                    <span className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">{t("ir.fb.params", "Parameters")}</span>
-                    <Button size="sm" variant="ghost" className="h-6 text-[11px]" disabled={!canEdit}
-                      onClick={() => fb.id && onUpdateFb(fb.id, { params: [...fb.params, newFbParam(fb.params)] })}>
-                      <Plus className="mr-1 h-3 w-3" />{t("ir.fb.addParam", "Add parameter")}
-                    </Button>
-                  </div>
-                  {fb.params.length === 0 ? (
-                    <p className="text-[11px] text-muted-foreground">{t("ir.fb.noParams", "No parameters (a zero-arg subroutine).")}</p>
-                  ) : (
-                    fb.params.map((p, i) => (
-                      <div key={i} className="grid grid-cols-[1fr_auto_auto_auto] items-center gap-1.5">
-                        <Input
-                          className="h-7 font-mono text-[12px]"
-                          value={p.name}
-                          disabled={!canEdit}
-                          onChange={(e) => fb.id && onUpdateFb(fb.id, { params: fb.params.map((q, j) => j === i ? { ...q, name: e.target.value } : q) })}
-                        />
-                        <Select value={p.kind} onValueChange={(v) => fb.id && onUpdateFb(fb.id, { params: fb.params.map((q, j) => j === i ? { ...q, kind: v as FbParam["kind"] } : q) })}>
-                          <SelectTrigger className="h-7 w-24 text-[12px]"><SelectValue /></SelectTrigger>
-                          <SelectContent>{FB_PARAM_KINDS.map((k) => <SelectItem key={k} value={k}>{k}</SelectItem>)}</SelectContent>
-                        </Select>
-                        <Select value={p.type} onValueChange={(v) => fb.id && onUpdateFb(fb.id, { params: fb.params.map((q, j) => j === i ? { ...q, type: v as FbParam["type"] } : q) })}>
-                          <SelectTrigger className="h-7 w-24 text-[12px]"><SelectValue /></SelectTrigger>
-                          <SelectContent>{FB_PARAM_TYPES.map((k) => <SelectItem key={k} value={k}>{k}</SelectItem>)}</SelectContent>
-                        </Select>
-                        <Button size="icon" variant="ghost" className="h-7 w-7 text-destructive" disabled={!canEdit}
-                          onClick={() => fb.id && onUpdateFb(fb.id, { params: fb.params.filter((_, j) => j !== i) })} aria-label={t("common.delete", "Delete")}>
-                          <Trash2 className="h-3.5 w-3.5" />
-                        </Button>
-                      </div>
-                    ))
-                  )}
+                <div className="mt-0.5 flex flex-wrap items-center gap-1 text-[10px] text-muted-foreground">
+                  <span>{fb.params.length} {t("ir.fb.paramsShort", "param(s)")} · {fb.body.length} {t("ir.fb.bodyShort", "body block(s)")}</span>
+                  {errs > 0 && <Badge variant="outline" className="border-destructive/40 px-1 text-[10px] text-destructive">{errs} {t("ir.errorsShort", "error(s)")}</Badge>}
+                  {errs === 0 && warns > 0 && <Badge variant="outline" className="border-warning/40 px-1 text-[10px] text-warning">{warns} {t("ir.warnsShort", "warning(s)")}</Badge>}
                 </div>
-              </div>
+                <Button size="sm" variant={active ? "secondary" : "outline"} className="mt-1.5 h-7 w-full" onClick={() => fb.id && onEditBody(fb.id)}>
+                  <Pencil className="mr-1 h-3.5 w-3.5" />{active ? t("ir.fb.editing", "Editing body") : t("ir.fb.editBody", "Edit body")}
+                </Button>
+              </li>
             );
           })}
-        </div>
+        </ul>
       )}
     </div>
+  );
+}
+
+function FunctionBlockDefEditor({
+  fb, canEdit, onUpdateFb, t,
+}: {
+  fb: FunctionBlockDef;
+  canEdit: boolean;
+  onUpdateFb: (fbId: string, patch: Partial<FunctionBlockDef>) => void;
+  t: TFunction;
+}) {
+  return (
+    <section className="space-y-2" aria-label={t("ir.fb.title", "Function blocks (reusable POUs)")}>
+      <h3 className="flex items-center gap-1 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
+        <Boxes className="h-3.5 w-3.5" aria-hidden="true" />{t("ir.canvas.fb", "Function block")}
+        <span className="font-mono normal-case">{fb.id}</span>
+      </h3>
+      <Input
+        className="h-8 font-mono text-sm"
+        value={fb.name}
+        disabled={!canEdit}
+        aria-label={t("ir.ws.fbName", "Function block name")}
+        onChange={(e) => fb.id && onUpdateFb(fb.id, { name: e.target.value })}
+        placeholder="block_name"
+      />
+      <div className="space-y-1.5 border-t border-dashed border-border/70 pt-2">
+        <div className="flex items-center justify-between">
+          <span className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">{t("ir.fb.params", "Parameters")}</span>
+          <Button size="sm" variant="ghost" className="h-6 text-[11px]" disabled={!canEdit}
+            onClick={() => fb.id && onUpdateFb(fb.id, { params: [...fb.params, newFbParam(fb.params)] })}>
+            <Plus className="mr-1 h-3 w-3" />{t("ir.fb.addParam", "Add parameter")}
+          </Button>
+        </div>
+        {fb.params.length === 0 ? (
+          <p className="text-[11px] text-muted-foreground">{t("ir.fb.noParams", "No parameters (a zero-arg subroutine).")}</p>
+        ) : (
+          fb.params.map((p, i) => (
+            <div key={i} className="grid grid-cols-[1fr_auto_auto_auto] items-center gap-1">
+              <Input
+                className="h-7 min-w-0 font-mono text-[12px]"
+                value={p.name}
+                disabled={!canEdit}
+                onChange={(e) => fb.id && onUpdateFb(fb.id, { params: fb.params.map((q, j) => j === i ? { ...q, name: e.target.value } : q) })}
+              />
+              <Select value={p.kind} onValueChange={(v) => fb.id && onUpdateFb(fb.id, { params: fb.params.map((q, j) => j === i ? { ...q, kind: v as FbParam["kind"] } : q) })}>
+                <SelectTrigger className="h-7 w-20 text-[12px]"><SelectValue /></SelectTrigger>
+                <SelectContent>{FB_PARAM_KINDS.map((k) => <SelectItem key={k} value={k}>{k}</SelectItem>)}</SelectContent>
+              </Select>
+              <Select value={p.type} onValueChange={(v) => fb.id && onUpdateFb(fb.id, { params: fb.params.map((q, j) => j === i ? { ...q, type: v as FbParam["type"] } : q) })}>
+                <SelectTrigger className="h-7 w-20 text-[12px]"><SelectValue /></SelectTrigger>
+                <SelectContent>{FB_PARAM_TYPES.map((k) => <SelectItem key={k} value={k}>{k}</SelectItem>)}</SelectContent>
+              </Select>
+              <Button size="icon" variant="ghost" className="h-7 w-7 text-destructive" disabled={!canEdit}
+                onClick={() => fb.id && onUpdateFb(fb.id, { params: fb.params.filter((_, j) => j !== i) })} aria-label={t("common.delete", "Delete")}>
+                <Trash2 className="h-3.5 w-3.5" />
+              </Button>
+            </div>
+          ))
+        )}
+      </div>
+      <p className="text-[10px] text-muted-foreground">
+        {t("ir.fb.subtitle", "A named, parameterized sub-flow declared ONCE and invoked via a Call function block — the CODESYS/TIA reusable-POU idea, over the same typed IR.")}
+      </p>
+    </section>
   );
 }
 
@@ -878,14 +914,18 @@ function emptyFlow(): Flow {
 
 /** The editing scope: the main flow, or one function-block's body. */
 type EditScope = { kind: "main" } | { kind: "fb"; fbId: string };
+/** doc 81 Đợt 2 Task 14 — mục activity bar (Explorer) và tab editor của MAIN. */
+type IrActivity = "palette" | "flows" | "fb";
+type IrEditorTab = "canvas" | "diff" | "merge";
 
 export default function IrEditor() {
   const { t } = useTranslation();
-  // doc 81 Đợt 2 Task 2 — màn workbench: rail trái mặc định thu gọn (nhớ theo người dùng).
-  useShellPageVariant("workbench");
+  // doc 81 Đợt 2 Task 14 — đã chuyển sang EngineeringShell ⇒ "full-bleed": rail trái thu gọn, <main> không đệm.
+  useShellPageVariant("full-bleed");
   const { hasPermission } = usePermissions();
   const canView = hasPermission("machine_monitoring", "canView");
   const canControl = hasPermission("machine_control", "canCreate");
+  const { user } = useAuth();
 
   // W4-19: Flow được bọc bằng history (past/present/future) → undo/redo. `setFlow` giữ
   // API cũ (nhận updater) nên mọi mutate hiện có không đổi; `resetFlow` đặt baseline mới
@@ -905,8 +945,9 @@ export default function IrEditor() {
   // View toggle: the node-GRAPH canvas is the default (the "kéo thả khối" surface); the
   // nested TREE stays available. Both render the SAME AST via the SAME helpers.
   const [viewMode, setViewMode] = useState<"graph" | "tree">("graph");
-  // Compare surface: block-level "Version diff" vs the 3-way "Merge" resolution UI.
-  const [compareTab, setCompareTab] = useState<"diff" | "merge">("diff");
+  // doc 81 Đợt 2 Task 14 — Explorer (bảng chọn khối / luồng đã lưu / khối hàm) + tab editor (vùng vẽ / so sánh / hợp nhất).
+  const [activity, setActivity] = useState<IrActivity>("palette");
+  const [editorTab, setEditorTab] = useState<IrEditorTab>("canvas");
 
   const utils = trpc.useUtils();
 
@@ -916,6 +957,8 @@ export default function IrEditor() {
   const projectsQ = trpc.programming.listProjects.useQuery({ limit: 200 }, { enabled: canView });
 
   const flagEnabled = statusQ.data?.enabled ?? false;
+  // doc 81 Đợt 2 Task 14 — banner "cờ tắt" ⇒ chip 4 trạng thái (FeatureStatusGate: loading/off/on/error) trong top bar.
+  const flagStatus = deriveFeatureStatus(statusQ, (d: { enabled?: boolean }) => d.enabled);
   const targets = (statusQ.data?.targets ?? ["urscript", "ros2"]) as readonly TranspileTarget[];
   const irProjects = useMemo(
     () => (projectsQ.data ?? []).filter((p) => p.kind === "ir-flow"),
@@ -991,11 +1034,13 @@ export default function IrEditor() {
       ? t("ir.lintUnreadableError", "Lint result could not be read ({{msg}}) — Save and Build are locked until the linter answers.", { msg: lintView.errorMessage ?? "" })
       : t("ir.lintPendingLock", "Waiting for the lint result — Save and Build unlock when it arrives.");
 
-  // doc 41 — publish the IR editor to the Programming Copilot DOCK as an ADVISORY assistant.
+  // doc 41 — publish the IR editor to the Programming Copilot as an ADVISORY assistant.
   // A block/graph flow has no text buffer to inject into, so no onApply: the copilot explains
   // the transpiled output, reasons over the safety-linter diagnostics, and drafts reference
   // snippets to copy. Clears when the editor unmounts.
-  useCopilotBinding(
+  // doc 81 Đợt 2 Task 14 (R-2-b) — Copilot là tab của inspector phải (CopilotInspector, lõi dùng chung), không dock.
+  const { open: copilotOpen } = useProgrammingCopilot();
+  const copilotBinding = useMemo<CopilotBinding>(
     () => ({
       kind: "ir-flow" as const,
       surfaceLabel: t("nav.irEditor", "IR Editor"),
@@ -1005,8 +1050,9 @@ export default function IrEditor() {
         source: "lint",
       })),
     }),
-    [lint],
+    [lint], // eslint-disable-line react-hooks/exhaustive-deps
   );
+  useCopilotBinding(() => copilotBinding, [copilotBinding]);
 
   // ── Mutations (gated: DPC_IR_V2_ENABLED + machine_control) ─────────────────
   const onMutationError = (e: { data?: { code?: string } | null; message: string }) => {
@@ -1118,17 +1164,19 @@ export default function IrEditor() {
     // jump straight into editing the new definition's body.
     setEditScope({ kind: "fb", fbId: def.id! });
     setSelectedId(null);
-  }, [flow.function_blocks]);
+    setEditorTab("canvas");
+  }, [flow.function_blocks]); // eslint-disable-line react-hooks/exhaustive-deps
   const handleUpdateFb = useCallback((fbId: string, patch: Partial<FunctionBlockDef>) => {
     setFlow((f) => updateFunctionBlock(f, fbId, patch));
-  }, []);
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
   const handleDeleteFb = useCallback((fbId: string) => {
     setFlow((f) => deleteFunctionBlock(f, fbId));
     setEditScope((s) => (s.kind === "fb" && s.fbId === fbId ? { kind: "main" } : s));
-  }, []);
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
   const handleEditBody = useCallback((fbId: string) => {
     setEditScope({ kind: "fb", fbId });
     setSelectedId(null);
+    setEditorTab("canvas");
   }, []);
   const backToMain = useCallback(() => {
     setEditScope({ kind: "main" });
@@ -1180,12 +1228,14 @@ export default function IrEditor() {
   // trình duyệt); Ctrl/Cmd+Enter = Request build cho flow đã lưu MỚI NHẤT. Hook scope
   // 'global' tự BỎ QUA khi con trỏ ở input/textarea (trừ Ctrl+S vốn cần chặn toàn cục),
   // nên KHÔNG nuốt phím của trình soạn code và KHÔNG đụng Ctrl/Cmd+Z·Y (undo/redo) hiện có.
+  const saveDisabled = !canControl || !flagEnabled || saveM.isPending || flow.blocks.length === 0 || !lintView.canSaveOrBuild;
+  const buildDisabled = !canControl || !flagEnabled || buildM.isPending || !lintView.canSaveOrBuild;
   const saveFlowShortcut = () => {
-    if (!canControl || !flagEnabled || saveM.isPending || flow.blocks.length === 0 || !lintView.canSaveOrBuild) return;
+    if (saveDisabled) return;
     doSave();
   };
   const requestBuildLatestShortcut = () => {
-    if (!canControl || !flagEnabled || buildM.isPending || !lintView.canSaveOrBuild) return;
+    if (buildDisabled) return;
     // Danh sách sắp theo id giảm dần → phần tử đầu là flow lưu gần nhất.
     const latest = flowsQ.data?.[0];
     if (!latest) {
@@ -1215,475 +1265,491 @@ export default function IrEditor() {
     );
   }
 
-  return (
-    <DashboardLayout>
-      <PageContainer fluid className="flex flex-col gap-4 space-y-0">
-        <PageHeader
-          icon={<Code2 className="h-6 w-6" />}
-          title={t("ir.title", "Visual IR Editor")}
-          badge={!canControl ? <ViewOnlyBadge module="machine_control" /> : undefined}
-          description={t("ir.subtitle", "Author motion/IO device programs as first-class IR blocks, lint & transpile — a structural preview, not a physics run.")}
-          actions={
-            <Button size="icon" variant="ghost" onClick={() => { void flowsQ.refetch(); void utils.ir.lint.invalidate(); }} title={t("common.refresh", "Refresh")}>
-              <RefreshCw className="h-4 w-4" />
-            </Button>
-          }
-        />
+  const selectBlockOnCanvas = (id: string) => {
+    setSelectedId(id);
+    setRightTab("inspector");
+  };
+  const lintStatusLabel = lintView.status === "ok"
+    ? t("ir.kpi.pass", "Pass")
+    : lintView.status === "errors"
+      ? t("ir.kpi.blockedShort", "Blocked")
+      : t("ir.kpi.unreadable", "Unreadable");
+  const flowFieldId = (k: string) => `ir-flow-meta-${k}`;
 
-        {/* W6-26 — "Khi nào dùng" + cross-link golden-thread (IR = motion/IO cấp thấp). */}
-        <div className="flex flex-wrap items-center gap-x-3 gap-y-1 rounded-md border bg-muted/40 px-3 py-2 text-xs text-muted-foreground">
-          <span className="inline-flex items-start gap-1.5">
-            <Info className="mt-0.5 h-3.5 w-3.5 shrink-0 text-primary" aria-hidden="true" />
-            {t("ir.whenToUse", "When to use — low-level motion & I/O blocks (IR). For the full build/deploy pipeline use the Engineering Workspace; for IEC 61131 LAD/FBD/SFC use POU Studio.")}
-          </span>
-          {/* U1 — mang ?projectId theo project lưu đang chọn để trang đích mở đúng đối tượng. */}
-          <span className="inline-flex items-center gap-3">
-            <Link href={withParams("/engineering", { projectId: saveProjectId || null })} className="font-medium text-primary hover:underline">{t("nav.engineeringWorkspace")}</Link>
-            <Link href={withParams("/pou-studio", { projectId: saveProjectId || null })} className="font-medium text-primary hover:underline">{t("nav.pouStudio")}</Link>
-          </span>
-        </div>
-
-        {/* Flag-off preview banner (honest) */}
-        {!statusQ.isLoading && !flagEnabled && (
-          <div className="flex items-start gap-2 rounded-md border border-warning/40 bg-warning/10 p-3 text-sm">
-            <Info className="mt-0.5 h-4 w-4 shrink-0 text-warning" />
-            <span>{t("ir.flagOffBanner", "Preview mode: IR programming is disabled (DPC_IR_V2_ENABLED is off). Authoring, lint and transpile preview work; Save flow / Request build are blocked until the flag is enabled.")}</span>
-          </div>
-        )}
-
-        {/* Persistent honesty note — structural preview + gated deploy */}
-        <div className="flex items-start gap-2 rounded-md border border-border bg-muted/40 p-3 text-sm text-muted-foreground">
-          <Lock className="mt-0.5 h-4 w-4 shrink-0" />
-          <span>{t("ir.honestyNote", "Structural preview + lint + transpile only — physics simulation and a real deploy are gated separately. A real deploy always routes through the existing programming service (HITL 2-eyes) and is never triggered from this screen.")}</span>
-        </div>
-
-        {/* Flow metadata toolbar + lint indicator + gated actions */}
-        <Card>
-          <CardContent className="flex flex-col gap-3 py-4">
-            <div className="grid grid-cols-1 gap-3 md:grid-cols-4">
+  // ═════ Top bar (PageHeaderCompact 48 px — R-2-t): metadata luồng · lint · cờ · Khi nào dùng │ Hoàn tác/Làm lại · đích lưu · Lưu ═════
+  const header = (
+    <PageHeaderCompact
+      className="h-12 shrink-0 border-b px-3 py-0"
+      icon={<Code2 />}
+      title={t("ir.title", "Visual IR Editor")}
+      chips={
+        <>
+          {!canControl && <ViewOnlyBadge module="machine_control" />}
+          {/* Banner cờ tắt cũ ⇒ chip 4 trạng thái (câu cũ trong popover). */}
+          <FeatureStatusNoticeChip
+            status={flagStatus}
+            offMessage={t("ir.flagOffBanner", "Preview mode: IR programming is disabled (DPC_IR_V2_ENABLED is off). Authoring, lint and transpile preview work; Save flow / Request build are blocked until the flag is enabled.")}
+          />
+          {/* Thẻ metadata luồng cũ (4 ô) ⇒ nút gọn trong top bar mở popover cùng 4 ô (doc 81 §1.2 "toolbar metadata"). */}
+          <Popover>
+            <PopoverTrigger asChild>
+              <button
+                type="button"
+                data-testid="ir-flow-meta"
+                title={t("ir.ws.flowMeta", "Flow properties")}
+                className="inline-flex h-7 max-w-[16rem] shrink-0 items-center gap-1 rounded-md border px-2 text-xs hover:bg-muted"
+              >
+                <Cpu className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
+                <span className="truncate font-mono">{flow.flow_id || "—"}</span>
+                <span className="shrink-0 text-muted-foreground">· v{flow.version} · {flow.target_device_type}</span>
+              </button>
+            </PopoverTrigger>
+            <PopoverContent align="start" className="w-80 space-y-3">
+              <p className="text-xs font-semibold">{t("ir.ws.flowMeta", "Flow properties")}</p>
               <div className="space-y-1.5">
-                <Label className="text-xs">{t("ir.flowId", "Flow id")}</Label>
-                <Input className="font-mono" value={flow.flow_id} onChange={(e) => setFlow((f) => ({ ...f, flow_id: e.target.value }))} placeholder="pick-place-01" />
+                <Label htmlFor={flowFieldId("id")} className="text-xs">{t("ir.flowId", "Flow id")}</Label>
+                <Input id={flowFieldId("id")} className="h-8 font-mono" value={flow.flow_id} onChange={(e) => setFlow((f) => ({ ...f, flow_id: e.target.value }))} placeholder="pick-place-01" />
               </div>
               <div className="space-y-1.5">
-                <Label className="text-xs">{t("ir.targetDevice", "Target device type")}</Label>
+                <Label htmlFor={flowFieldId("device")} className="text-xs">{t("ir.targetDevice", "Target device type")}</Label>
                 <Select value={flow.target_device_type} onValueChange={(v) => setFlow((f) => ({ ...f, target_device_type: v as TargetDeviceType }))}>
-                  <SelectTrigger><SelectValue /></SelectTrigger>
+                  <SelectTrigger id={flowFieldId("device")} className="h-8"><SelectValue /></SelectTrigger>
                   <SelectContent>{TARGET_DEVICE_TYPES.map((dt) => <SelectItem key={dt} value={dt}>{dt}</SelectItem>)}</SelectContent>
                 </Select>
               </div>
-              <div className="space-y-1.5">
-                <Label className="text-xs">{t("ir.version", "Version")}</Label>
-                <Input type="number" min={1} value={flow.version} onChange={(e) => setFlow((f) => ({ ...f, version: Math.max(1, Number(e.target.value) || 1) }))} />
-              </div>
-              <div className="space-y-1.5">
-                <Label className="text-xs">{t("ir.linkedCapability", "Linked capability (optional)")}</Label>
-                <Input value={flow.linked_capability ?? ""} onChange={(e) => setFlow((f) => ({ ...f, linked_capability: e.target.value || undefined }))} placeholder="pick_place" />
-              </div>
-            </div>
-
-            <div className="flex flex-wrap items-center gap-3">
-              {/* Live lint indicator */}
-              <div className="flex items-center gap-2">
-                {lintView.reason === "loading" ? (
-                  <Badge variant="outline" className="gap-1"><Loader2 className="h-3 w-3 animate-spin" /> {t("ir.linting", "Linting…")}</Badge>
-                ) : lintView.reason === "error" ? (
-                  <StatusBadge
-                    status="warning"
-                    label={
-                      <span className="inline-flex items-center gap-1" title={lintLockReason ?? undefined}>
-                        <AlertTriangle className="h-3 w-3" />
-                        {t("ir.lintUnreadable", "Lint unreadable")}
-                      </span>
-                    }
-                  />
-                ) : (
-                  <StatusBadge
-                    status={lintOk ? "ok" : "error"}
-                    label={
-                      <span className="inline-flex items-center gap-1">
-                        <ShieldCheck className="h-3 w-3" />
-                        {lintOk ? t("ir.lintOk", "Lint OK") : t("ir.lintErrors", "{{n}} error(s)", { n: errorCount })}
-                        {warnCount > 0 ? ` · ${t("ir.lintWarns", "{{n}} warn", { n: warnCount })}` : ""}
-                      </span>
-                    }
-                  />
-                )}
-              </div>
-
-              {/* W4-19: Undo / Redo (phím tắt Ctrl/Cmd+Z · Ctrl/Cmd+Y) */}
-              <div className="inline-flex rounded-md border border-border p-0.5">
-                <Button
-                  size="sm"
-                  variant="ghost"
-                  className="h-7 gap-1 px-2 text-xs"
-                  onClick={undo}
-                  disabled={!canUndo}
-                  title={t("ir.undoTip", "Undo (Ctrl/Cmd+Z)")}
-                >
-                  <Undo2 className="h-3.5 w-3.5" />{t("ir.undo", "Undo")}
-                </Button>
-                <Button
-                  size="sm"
-                  variant="ghost"
-                  className="h-7 gap-1 px-2 text-xs"
-                  onClick={redo}
-                  disabled={!canRedo}
-                  title={t("ir.redoTip", "Redo (Ctrl/Cmd+Y)")}
-                >
-                  <Redo2 className="h-3.5 w-3.5" />{t("ir.redo", "Redo")}
-                </Button>
-              </div>
-
-              <div className="ml-auto flex flex-wrap items-center gap-2">
-                {/* Save target project */}
-                <Select value={saveProjectId} onValueChange={(v) => { setSaveProjectId(v); setLastProjectId(Number(v) || null); }}>
-                  <SelectTrigger className="h-9 w-52"><SelectValue placeholder={t("ir.pickProjectPlaceholder", "Save into project…")} /></SelectTrigger>
-                  <SelectContent>
-                    {irProjects.length === 0 && <div className="px-2 py-1.5 text-xs text-muted-foreground">{t("ir.noProjects", "No ir-flow projects")}</div>}
-                    {irProjects.map((p) => <SelectItem key={p.id} value={String(p.id)}>{p.code} · {p.name}</SelectItem>)}
-                  </SelectContent>
-                </Select>
-                {/* W3-12: tạo nhanh project ir-flow (nối dead-end "No ir-flow projects") */}
-                <Button variant="outline" onClick={() => setNewProjOpen(true)}
-                  disabled={!canControl}
-                  title={!canControl ? t("ir.needControl", "Requires machine_control permission") : t("ir.newProjectTip", "Create a new ir-flow project to save into")}>
-                  <FolderPlus className="mr-1.5 h-4 w-4" />{t("ir.newProject", "New ir-flow project")}
-                </Button>
-                <Button variant="outline" onClick={doSave}
-                  disabled={!canControl || !flagEnabled || saveM.isPending || flow.blocks.length === 0 || !lintView.canSaveOrBuild}
-                  title={!flagEnabled ? t("ir.flagOffTip", "Enable DPC_IR_V2_ENABLED to save") : lintLockReason ?? t("ir.saveShortcut", "Lưu flow (Ctrl/Cmd+S) · Build flow mới nhất (Ctrl/Cmd+Enter)")}>
-                  {saveM.isPending ? <Loader2 className="mr-1.5 h-4 w-4 animate-spin" /> : <Save className="mr-1.5 h-4 w-4" />}
-                  {t("ir.save", "Save flow")}
-                </Button>
-              </div>
-            </div>
-
-            {lintView.reason === "error" && (
-              <p role="alert" className="flex items-center gap-1.5 text-xs text-warning">
-                <AlertTriangle className="h-3.5 w-3.5 shrink-0" />{lintLockReason}
-              </p>
-            )}
-            <p className="text-[11px] text-muted-foreground">
-              {t("ir.deployReminder", "Save appends a validated ir-flow artifact; Request build (below, per saved flow) transpiles it. Deploy to a real device is a separate gated step (existing programming service, HITL 2-eyes) — not exposed here.")}
-            </p>
-          </CardContent>
-        </Card>
-
-        {/* SPLIT PANES: palette · canvas · inspector/preview */}
-        <div className="grid grid-cols-1 gap-4 lg:grid-cols-12">
-          {/* LEFT — palette */}
-          <SectionCard
-            className="lg:col-span-3"
-            icon={<Plus className="h-4 w-4" />}
-            title={t("ir.palette", "Block palette")}
-          >
-            <div className="space-y-3">
-              <p className="flex items-center gap-1 text-[10px] text-muted-foreground">
-                <GripVertical className="h-3 w-3" />
-                {viewMode === "graph"
-                  ? t("ir.paletteHintGraph", "Drag a block onto the canvas — drop on an if/loop to nest it.")
-                  : t("ir.paletteHintTree", "Click a block to append it at the top level.")}
-              </p>
-              {editScope.kind === "fb" && (
-                <p className="flex items-center gap-1 rounded-md border border-primary/40 bg-primary/5 px-2 py-1 text-[10px] text-primary">
-                  <Boxes className="h-3 w-3" />
-                  {t("ir.paletteHintFb", "Adding to function block “{{name}}”.", { name: activeFb?.name ?? "" })}
-                </p>
-              )}
-              {PALETTE_GROUPS.map((g) => (
-                <div key={g.label.def} className="space-y-1">
-                  <div className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">{t(g.label.key, g.label.def)}</div>
-                  <div className="grid grid-cols-1 gap-1">
-                    {g.types.map((type) => {
-                      const Icon = BLOCK_ICON[type];
-                      return (
-                        <Button
-                          key={type}
-                          size="sm"
-                          variant="outline"
-                          className="cursor-grab justify-start active:cursor-grabbing"
-                          draggable
-                          onDragStart={(e) => {
-                            e.dataTransfer.setData(IR_DND_MIME, type);
-                            e.dataTransfer.effectAllowed = "copy";
-                          }}
-                          onClick={() => addTopLevel(type)}
-                        >
-                          <Icon className="mr-2 h-3.5 w-3.5" />{t(BLOCK_LABEL[type].key, BLOCK_LABEL[type].def)}
-                        </Button>
-                      );
-                    })}
-                  </div>
-                </div>
-              ))}
-            </div>
-          </SectionCard>
-
-          {/* CENTER — canvas (Graph | Tree — two views over ONE AST) */}
-          {/* doc 81 Đợt 2 Task 14 (R-2-k) — hiệu chuẩn: đánh dấu MAIN hiện tại (card vùng vẽ) TRƯỚC khi đổi bố cục. */}
-          <div data-layout-main="ir-canvas" className="lg:col-span-5">
-          <SectionCard
-            className="h-full"
-            icon={editScope.kind === "fb" ? <Boxes className="h-4 w-4" /> : viewMode === "graph" ? <Network className="h-4 w-4" /> : <ListTree className="h-4 w-4" />}
-            title={editScope.kind === "fb" ? `${t("ir.canvas.fb", "Function block")}: ${activeFb?.name ?? ""}` : t("ir.canvas.title", "Flow canvas")}
-            description={
-              <span className="flex flex-wrap items-center gap-2 text-xs">
-                {editScope.kind === "fb" && (
-                  <Badge variant="outline" className="border-primary/40 text-primary">{t("ir.canvas.editingFb", "Editing POU body")}</Badge>
-                )}
-                <span>{activeBlocks.length} {editScope.kind === "fb" ? t("ir.bodyBlocks", "body block(s)") : t("ir.topLevelBlocks", "top-level block(s)")}</span>
-                {errorCount > 0 && <span className="text-destructive">· {errorCount} {t("ir.errorsShort", "error(s)")}</span>}
-                {warnCount > 0 && <span className="text-warning">· {warnCount} {t("ir.warnsShort", "warning(s)")}</span>}
-              </span>
-            }
-            action={
-              <div className="flex shrink-0 items-center gap-2">
-                {editScope.kind === "fb" && (
-                  <Button size="sm" variant="outline" className="h-7 gap-1 px-2 text-xs" onClick={backToMain}>
-                    <ArrowLeft className="h-3.5 w-3.5" />{t("ir.canvas.backToMain", "Main flow")}
-                  </Button>
-                )}
-                <div className="inline-flex rounded-md border border-border p-0.5">
-                  <Button
-                    size="sm"
-                    variant={viewMode === "graph" ? "secondary" : "ghost"}
-                    className="h-7 gap-1 px-2 text-xs"
-                    onClick={() => setViewMode("graph")}
-                    aria-pressed={viewMode === "graph"}
-                  >
-                    <Network className="h-3.5 w-3.5" />{t("ir.viewGraph", "Graph")}
-                  </Button>
-                  <Button
-                    size="sm"
-                    variant={viewMode === "tree" ? "secondary" : "ghost"}
-                    className="h-7 gap-1 px-2 text-xs"
-                    onClick={() => setViewMode("tree")}
-                    aria-pressed={viewMode === "tree"}
-                  >
-                    <ListTree className="h-3.5 w-3.5" />{t("ir.viewTree", "Tree")}
-                  </Button>
-                </div>
-              </div>
-            }
-          >
-            {viewMode === "graph" ? (
-              <IrGraphCanvas
-                flow={canvasFlow}
-                selectedId={selectedId}
-                diagsByBlock={diagsByBlock}
-                onSelect={(id) => { setSelectedId(id); setRightTab("inspector"); }}
-                onDelete={handleDelete}
-                onAddTopLevel={addTopLevel}
-                onAddChild={handleAddChild}
-                onReorderToSibling={handleReorderToSibling}
-                onMoveNode={handleMoveNode}
-                t={t}
-              />
-            ) : activeBlocks.length === 0 ? (
-              <p className="py-8 text-center text-sm text-muted-foreground">{t("ir.emptyCanvas", "No blocks yet. Add one from the palette on the left.")}</p>
-            ) : (
-              <ScrollArea className="max-h-[560px] pr-2">
+              <div className="grid grid-cols-2 gap-2">
                 <div className="space-y-1.5">
-                  {activeBlocks.map((b, i) => (
-                    <BlockCard
-                      key={b.id}
-                      block={b}
-                      selectedId={selectedId}
-                      index={i}
-                      siblingCount={activeBlocks.length}
-                      diagsByBlock={diagsByBlock}
-                      onSelect={(id) => { setSelectedId(id); setRightTab("inspector"); }}
-                      onMove={handleMove}
-                      onDelete={handleDelete}
-                      onAddChild={handleAddChild}
-                      t={t}
-                    />
-                  ))}
+                  <Label htmlFor={flowFieldId("version")} className="text-xs">{t("ir.version", "Version")}</Label>
+                  <Input id={flowFieldId("version")} className="h-8" type="number" min={1} value={flow.version} onChange={(e) => setFlow((f) => ({ ...f, version: Math.max(1, Number(e.target.value) || 1) }))} />
                 </div>
-              </ScrollArea>
-            )}
-          </SectionCard>
-          </div>
-
-          {/* RIGHT — inspector / transpile preview */}
-          <Card className="lg:col-span-4">
-            <CardContent className="pt-4">
-              <Tabs value={rightTab} onValueChange={(v) => setRightTab(v as "inspector" | "preview")} className="gap-3">
-                <TabsList className="w-full">
-                  <TabsTrigger value="inspector" className="flex-1"><Cpu className="mr-1 h-4 w-4" />{t("ir.inspector", "Inspector")}</TabsTrigger>
-                  <TabsTrigger value="preview" className="flex-1"><Code2 className="mr-1 h-4 w-4" />{t("ir.preview", "Transpile preview")}</TabsTrigger>
-                </TabsList>
-                <TabsContent value="inspector">
-                  {selectedBlock ? (
-                    <Inspector block={selectedBlock} functionBlocks={functionBlocks} onPatch={handlePatch} t={t} />
-                  ) : (
-                    <p className="py-8 text-center text-sm text-muted-foreground">{t("ir.selectBlock", "Select a block on the canvas to edit its parameters.")}</p>
-                  )}
-                </TabsContent>
-                <TabsContent value="preview">
-                  <TranspilePreview flow={lintFlowInput} canView={canView} selectedId={selectedId} targets={targets} t={t} />
-                </TabsContent>
-              </Tabs>
-            </CardContent>
-          </Card>
-        </div>
-
-        {/* Tier-1c — reusable function blocks (POUs): define once, call anywhere */}
-        <SectionCard
-          icon={<Boxes className="h-4 w-4" />}
-          title={t("ir.fb.title", "Function blocks (reusable POUs)")}
-          description={t("ir.fb.subtitle", "A named, parameterized sub-flow declared ONCE and invoked via a Call function block — the CODESYS/TIA reusable-POU idea, over the same typed IR.")}
-        >
-          <FunctionBlocksPanel
-            functionBlocks={functionBlocks}
-            activeFbId={editScope.kind === "fb" ? editScope.fbId : null}
-            diagsByBlock={diagsByBlock}
-            canEdit={canControl}
-            onNew={handleNewFb}
-            onUpdateFb={handleUpdateFb}
-            onDeleteFb={handleDeleteFb}
-            onEditBody={handleEditBody}
-            t={t}
-          />
-        </SectionCard>
-
-        {/* KPI strip + saved flows */}
-        <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-          <MetricCard icon={<ListTree className="h-4 w-4" />} label={t("ir.kpi.blocks", "Top-level blocks")} value={flow.blocks.length} />
-          <MetricCard icon={<XCircle className="h-4 w-4" />} label={t("ir.kpi.errors", "Lint errors")} value={errorCount} tone={errorCount > 0 ? "danger" : "default"} />
-          <MetricCard icon={<AlertTriangle className="h-4 w-4" />} label={t("ir.kpi.warns", "Lint warnings")} value={warnCount} tone={warnCount > 0 ? "warning" : "default"} />
-          <MetricCard icon={<CheckCircle2 className="h-4 w-4" />} label={t("ir.kpi.status", "Lint status")} value={lintView.status === "ok" ? t("ir.kpi.pass", "Pass") : lintView.status === "errors" ? t("ir.kpi.blockedShort", "Blocked") : t("ir.kpi.unreadable", "Unreadable")} tone={lintView.status === "ok" ? "good" : lintView.status === "errors" ? "danger" : "warning"} />
-        </div>
-
-        <SectionCard
-          icon={<FolderOpen className="h-4 w-4" />}
-          title={t("ir.savedFlows", "Saved IR flows")}
-          action={
-            <Button size="icon" variant="ghost" className="h-7 w-7" onClick={() => void flowsQ.refetch()}>
-              <RefreshCw className="h-3.5 w-3.5" />
-            </Button>
-          }
-        >
-          {(flowsQ.data ?? []).length === 0 ? (
-            <p className="py-4 text-center text-sm text-muted-foreground">{t("ir.noFlows", "No saved IR flows yet.")}</p>
+                <div className="space-y-1.5">
+                  <Label htmlFor={flowFieldId("cap")} className="text-xs">{t("ir.linkedCapability", "Linked capability (optional)")}</Label>
+                  <Input id={flowFieldId("cap")} className="h-8" value={flow.linked_capability ?? ""} onChange={(e) => setFlow((f) => ({ ...f, linked_capability: e.target.value || undefined }))} placeholder="pick_place" />
+                </div>
+              </div>
+            </PopoverContent>
+          </Popover>
+          {/* Live lint indicator */}
+          {lintView.reason === "loading" ? (
+            <Badge variant="outline" className="shrink-0 gap-1"><Loader2 className="h-3 w-3 animate-spin" /> {t("ir.linting", "Linting…")}</Badge>
+          ) : lintView.reason === "error" ? (
+            <StatusBadge
+              status="warning"
+              label={
+                <span className="inline-flex items-center gap-1" title={lintLockReason ?? undefined}>
+                  <AlertTriangle className="h-3 w-3" />
+                  {t("ir.lintUnreadable", "Lint unreadable")}
+                </span>
+              }
+            />
           ) : (
-            <div className="space-y-1.5">
-              {/* U13 — ô tìm + lọc theo trạng thái (lọc phía client). */}
-              <div className="flex flex-wrap items-center gap-1.5">
-                <Input
-                  value={flowSearch}
-                  onChange={(e) => setFlowSearch(e.target.value)}
-                  placeholder={t("ir.searchFlows", "Tìm theo mã luồng / thiết bị…")}
-                  className="h-8 min-w-[10rem] flex-1 text-sm"
-                />
-                <Select value={flowStatusFilter} onValueChange={setFlowStatusFilter}>
-                  <SelectTrigger className="h-8 w-36 text-xs"><SelectValue /></SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="all">{t("ir.allStatuses", "Tất cả trạng thái")}</SelectItem>
-                    {flowStatuses.map((s) => (
-                      <SelectItem key={s} value={s}>{s}</SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-              {filteredFlows.length === 0 && (
-                <p className="py-4 text-center text-sm text-muted-foreground">{t("ir.noFlowMatch", "Không có luồng khớp bộ lọc")}</p>
-              )}
-              {filteredFlows.map((r) => (
-                <div key={r.id} className="flex items-center justify-between gap-2 rounded border px-2 py-1.5 text-sm">
-                  <div className="min-w-0">
-                    <div className="truncate font-medium">
-                      {r.summary?.flowId ?? `artifact #${r.id}`}
-                      <span className="ml-1.5 font-mono text-[10px] text-muted-foreground">
-                        {r.branch} · v{r.version}
-                      </span>
-                    </div>
-                    <div className="truncate text-[11px] text-muted-foreground">
-                      {r.summary ? `${r.summary.targetDeviceType} · ${r.summary.blockCount} ${t("ir.blocksLower", "blocks")} · ${r.summary.blockTypes.join(", ")}` : t("ir.unparseable", "unparseable")}
-                    </div>
-                  </div>
-                  <div className="flex shrink-0 items-center gap-1">
-                    <StatusBadge status={String(r.status)} />
-                    <Button size="sm" variant="outline" className="h-7" onClick={() => void loadFlow(r.id)}>
-                      <FolderOpen className="mr-1 h-3.5 w-3.5" />{t("ir.load", "Load")}
-                    </Button>
-                    <Button
-                      size="sm" variant="ghost" className="h-7"
-                      disabled={!canControl || !flagEnabled || buildM.isPending || !lintView.canSaveOrBuild}
-                      title={!flagEnabled ? t("ir.flagOffTip", "Enable DPC_IR_V2_ENABLED to build") : lintLockReason ?? t("ir.buildTip", "Transpile this saved flow (deploy stays a separate gated step)")}
-                      onClick={() => buildM.mutate({ artifactId: r.id })}
-                    >
-                      <Hammer className="mr-1 h-3.5 w-3.5" />{t("ir.build", "Request build")}
-                    </Button>
-                  </div>
-                </div>
-              ))}
-            </div>
+            <StatusBadge
+              status={lintOk ? "ok" : "error"}
+              label={
+                <span className="inline-flex items-center gap-1">
+                  <ShieldCheck className="h-3 w-3" />
+                  {lintOk ? t("ir.lintOk", "Lint OK") : t("ir.lintErrors", "{{n}} error(s)", { n: errorCount })}
+                  {warnCount > 0 ? ` · ${t("ir.lintWarns", "{{n}} warn", { n: warnCount })}` : ""}
+                </span>
+              }
+            />
           )}
-        </SectionCard>
-
-        {/* P5 version diff + Tier-1c 3-way merge — two tabs over the SAME typed IR AST. */}
-        <SectionCard
-          icon={compareTab === "diff" ? <GitCompare className="h-4 w-4" /> : <GitMerge className="h-4 w-4" />}
-          title={t("ir.compare.title", "Compare & merge")}
-          description={
-            compareTab === "diff"
-              ? t("ir.diff.subtitle", "Compare two saved versions (or a version vs the current draft) — added / removed / modified / moved blocks, annotated on the tree.")
-              : t("ir.merge.subtitle", "3-way merge a base (ancestor) with ours + theirs; resolve each conflict by picking a side, then save the merged flow as a new version.")
-          }
-        >
-          <Tabs value={compareTab} onValueChange={(v) => setCompareTab(v as "diff" | "merge")} className="gap-3">
-            <TabsList>
-              <TabsTrigger value="diff"><GitCompare className="mr-1 h-4 w-4" />{t("ir.diff.title", "Version diff")}</TabsTrigger>
-              <TabsTrigger value="merge"><GitMerge className="mr-1 h-4 w-4" />{t("ir.merge.tab", "Merge (3-way)")}</TabsTrigger>
-            </TabsList>
-            <TabsContent value="diff">
-              <IrDiffPanel flows={flowsQ.data ?? []} currentFlow={flow} t={t} />
-            </TabsContent>
-            <TabsContent value="merge">
-              <IrMergePanel
-                flows={flowsQ.data ?? []}
-                currentFlow={flow}
-                irProjects={irProjects}
-                canControl={canControl}
-                flagEnabled={flagEnabled}
-                onSaved={() => void flowsQ.refetch()}
-                t={t}
-              />
-            </TabsContent>
-          </Tabs>
-        </SectionCard>
-
-        {/* W3-12: dialog tạo nhanh project kind "ir-flow" */}
-        <Dialog open={newProjOpen} onOpenChange={setNewProjOpen}>
-          <DialogContent>
-            <DialogHeader>
-              <DialogTitle>{t("ir.newProjectTitle", "Create ir-flow project")}</DialogTitle>
-              <DialogDescription>
-                {t("ir.newProjectDesc", "A programming project (kind “ir-flow”) is the container your saved flows and builds live in. After creating it, save the current flow into it, then Request build below.")}
-              </DialogDescription>
-            </DialogHeader>
-            <div className="grid grid-cols-2 gap-2">
-              <div className="space-y-1.5">
-                <Label className="text-xs">{t("ir.projectCode", "Project code")}</Label>
-                <Input className="h-9 font-mono" value={newProjCode} onChange={(e) => setNewProjCode(e.target.value)} placeholder="pick-place" />
-              </div>
-              <div className="space-y-1.5">
-                <Label className="text-xs">{t("ir.projectName", "Project name")}</Label>
-                <Input className="h-9" value={newProjName} onChange={(e) => setNewProjName(e.target.value)} placeholder={t("ir.projectNamePh", "Pick & place cell") as string} />
-              </div>
+          {/* W6-26 — "Khi nào dùng" + cross-link golden-thread (IR = motion/IO cấp thấp), trong popover. */}
+          <NoticeChip kind="whenToUse">
+            <p className="text-sm">{t("ir.whenToUse", "When to use — low-level motion & I/O blocks (IR). For the full build/deploy pipeline use the Engineering Workspace; for IEC 61131 LAD/FBD/SFC use POU Studio.")}</p>
+            {/* U1 — mang ?projectId theo project lưu đang chọn để trang đích mở đúng đối tượng. */}
+            <div className="mt-2 flex flex-wrap gap-3 text-xs">
+              <Link href={withParams("/engineering", { projectId: saveProjectId || null })} className="font-medium text-primary hover:underline">{t("nav.engineeringWorkspace")}</Link>
+              <Link href={withParams("/pou-studio", { projectId: saveProjectId || null })} className="font-medium text-primary hover:underline">{t("nav.pouStudio")}</Link>
             </div>
-            <DialogFooter>
-              <Button variant="ghost" onClick={() => setNewProjOpen(false)} disabled={createProjectM.isPending}>{t("common.cancel", "Cancel")}</Button>
-              <Button onClick={doCreateProject} disabled={createProjectM.isPending || !canControl}>
-                {createProjectM.isPending ? <Loader2 className="mr-1.5 h-4 w-4 animate-spin" /> : <FolderPlus className="mr-1.5 h-4 w-4" />}
-                {t("ir.create", "Create project")}
-              </Button>
-            </DialogFooter>
-          </DialogContent>
-        </Dialog>
-      </PageContainer>
+          </NoticeChip>
+        </>
+      }
+      actions={
+        <>
+          {/* W4-19: Undo / Redo (phím tắt Ctrl/Cmd+Z · Ctrl/Cmd+Y) */}
+          <Button size="sm" variant="ghost" onClick={undo} disabled={!canUndo} aria-label={t("ir.undo", "Undo")} title={t("ir.undoTip", "Undo (Ctrl/Cmd+Z)")}>
+            <Undo2 className="h-4 w-4" />
+          </Button>
+          <Button size="sm" variant="ghost" onClick={redo} disabled={!canRedo} aria-label={t("ir.redo", "Redo")} title={t("ir.redoTip", "Redo (Ctrl/Cmd+Y)")}>
+            <Redo2 className="h-4 w-4" />
+          </Button>
+          {/* Save target project */}
+          <Select value={saveProjectId} onValueChange={(v) => { setSaveProjectId(v); setLastProjectId(Number(v) || null); }}>
+            <SelectTrigger className="h-9 w-44 min-[1500px]:w-52" aria-label={t("ir.pickProjectPlaceholder", "Save into project…")}><SelectValue placeholder={t("ir.pickProjectPlaceholder", "Save into project…")} /></SelectTrigger>
+            <SelectContent>
+              {irProjects.length === 0 && <div className="px-2 py-1.5 text-xs text-muted-foreground">{t("ir.noProjects", "No ir-flow projects")}</div>}
+              {irProjects.map((p) => <SelectItem key={p.id} value={String(p.id)}>{p.code} · {p.name}</SelectItem>)}
+            </SelectContent>
+          </Select>
+          {/* W3-12: tạo nhanh project ir-flow (nối dead-end "No ir-flow projects") — sheet phải (không dialog giữa màn). */}
+          <Button size="sm" variant="outline" onClick={() => setNewProjOpen(true)}
+            disabled={!canControl}
+            aria-label={t("ir.newProject", "New ir-flow project")}
+            title={!canControl ? t("ir.needControl", "Requires machine_control permission") : t("ir.newProjectTip", "Create a new ir-flow project to save into")}>
+            <FolderPlus className="h-4 w-4 min-[1700px]:mr-1.5" /><span className="hidden min-[1700px]:inline">{t("ir.newProject", "New ir-flow project")}</span>
+          </Button>
+          <Button size="sm" onClick={doSave}
+            disabled={saveDisabled}
+            aria-label={t("ir.save", "Save flow")}
+            title={!flagEnabled ? t("ir.flagOffTip", "Enable DPC_IR_V2_ENABLED to save") : lintLockReason ?? t("ir.saveShortcut", "Lưu flow (Ctrl/Cmd+S) · Build flow mới nhất (Ctrl/Cmd+Enter)")}>
+            {saveM.isPending ? <Loader2 className="h-4 w-4 animate-spin min-[1500px]:mr-1.5" /> : <Save className="h-4 w-4 min-[1500px]:mr-1.5" />}
+            <span className="hidden min-[1500px]:inline">{t("ir.save", "Save flow")}</span>
+          </Button>
+          <Button size="sm" variant="ghost" onClick={() => { void flowsQ.refetch(); void utils.ir.lint.invalidate(); }} aria-label={t("common.refresh", "Refresh")} title={t("common.refresh", "Refresh")}>
+            <RefreshCw className="h-4 w-4" />
+          </Button>
+        </>
+      }
+    />
+  );
+
+  // ═════ Explorer trái: Bảng chọn khối (gập được) · Luồng đã lưu · Khối hàm ═════
+  const sectionTitle = "text-[11px] font-semibold uppercase tracking-wide text-muted-foreground";
+  const paletteView = (
+    <div className="space-y-3">
+      <h2 className={sectionTitle}>{t("ir.palette", "Block palette")}</h2>
+      <p className="flex items-center gap-1 text-[10px] text-muted-foreground">
+        <GripVertical className="h-3 w-3 shrink-0" />
+        {viewMode === "graph"
+          ? t("ir.paletteHintGraph", "Drag a block onto the canvas — drop on an if/loop to nest it.")
+          : t("ir.paletteHintTree", "Click a block to append it at the top level.")}
+      </p>
+      {editScope.kind === "fb" && (
+        <p className="flex items-center gap-1 rounded-md border border-primary/40 bg-primary/5 px-2 py-1 text-[10px] text-primary">
+          <Boxes className="h-3 w-3 shrink-0" />
+          {t("ir.paletteHintFb", "Adding to function block “{{name}}”.", { name: activeFb?.name ?? "" })}
+        </p>
+      )}
+      {PALETTE_GROUPS.map((g) => (
+        <div key={g.label.def} className="space-y-1">
+          <h3 className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">{t(g.label.key, g.label.def)}</h3>
+          <div className="grid grid-cols-1 gap-1">
+            {g.types.map((type) => {
+              const Icon = BLOCK_ICON[type];
+              return (
+                <Button
+                  key={type}
+                  size="sm"
+                  variant="outline"
+                  className="h-8 cursor-grab justify-start active:cursor-grabbing"
+                  draggable
+                  onDragStart={(e) => {
+                    e.dataTransfer.setData(IR_DND_MIME, type);
+                    e.dataTransfer.effectAllowed = "copy";
+                  }}
+                  onClick={() => addTopLevel(type)}
+                >
+                  <Icon className="mr-2 h-3.5 w-3.5" />{t(BLOCK_LABEL[type].key, BLOCK_LABEL[type].def)}
+                </Button>
+              );
+            })}
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+  const flowsView = (
+    <div className="space-y-2">
+      <div className="flex items-center justify-between gap-1">
+        <h2 className={sectionTitle}>{t("ir.savedFlows", "Saved IR flows")}</h2>
+        <Button size="icon" variant="ghost" className="h-7 w-7" onClick={() => void flowsQ.refetch()} aria-label={t("common.refresh", "Refresh")}>
+          <RefreshCw className="h-3.5 w-3.5" />
+        </Button>
+      </div>
+      {(flowsQ.data ?? []).length === 0 ? (
+        <p className="py-4 text-center text-xs text-muted-foreground">{t("ir.noFlows", "No saved IR flows yet.")}</p>
+      ) : (
+        <>
+          {/* U13 — ô tìm + lọc theo trạng thái (lọc phía client). */}
+          <Input
+            value={flowSearch}
+            onChange={(e) => setFlowSearch(e.target.value)}
+            placeholder={t("ir.searchFlows", "Tìm theo mã luồng / thiết bị…")}
+            aria-label={t("ir.searchFlows", "Tìm theo mã luồng / thiết bị…")}
+            className="h-8 text-sm"
+          />
+          <Select value={flowStatusFilter} onValueChange={setFlowStatusFilter}>
+            <SelectTrigger className="h-8 w-full text-xs"><SelectValue /></SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">{t("ir.allStatuses", "Tất cả trạng thái")}</SelectItem>
+              {flowStatuses.map((s) => (
+                <SelectItem key={s} value={s}>{s}</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          {filteredFlows.length === 0 && (
+            <p className="py-4 text-center text-xs text-muted-foreground">{t("ir.noFlowMatch", "Không có luồng khớp bộ lọc")}</p>
+          )}
+          <ul className="space-y-1.5">
+            {filteredFlows.map((r) => (
+              <li key={r.id} data-flow-row={r.id} className="space-y-1 rounded border px-2 py-1.5 text-sm">
+                <div className="flex items-start justify-between gap-1">
+                  <div className="min-w-0">
+                    <div className="truncate text-xs font-medium">{r.summary?.flowId ?? `artifact #${r.id}`}</div>
+                    <div className="truncate font-mono text-[10px] text-muted-foreground">{r.branch} · v{r.version}</div>
+                  </div>
+                  <StatusBadge status={String(r.status)} />
+                </div>
+                <div className="truncate text-[10px] text-muted-foreground" title={r.summary ? r.summary.blockTypes.join(", ") : undefined}>
+                  {r.summary ? `${r.summary.targetDeviceType} · ${r.summary.blockCount} ${t("ir.blocksLower", "blocks")} · ${r.summary.blockTypes.join(", ")}` : t("ir.unparseable", "unparseable")}
+                </div>
+                <div className="flex flex-wrap items-center gap-1">
+                  <Button size="sm" variant="outline" className="h-7 px-2" onClick={() => void loadFlow(r.id)}>
+                    <FolderOpen className="mr-1 h-3.5 w-3.5" />{t("ir.load", "Load")}
+                  </Button>
+                  <Button
+                    size="sm" variant="ghost" className="h-7 px-2"
+                    disabled={buildDisabled}
+                    title={!flagEnabled ? t("ir.flagOffTip", "Enable DPC_IR_V2_ENABLED to build") : lintLockReason ?? t("ir.buildTip", "Transpile this saved flow (deploy stays a separate gated step)")}
+                    onClick={() => buildM.mutate({ artifactId: r.id })}
+                  >
+                    <Hammer className="mr-1 h-3.5 w-3.5" />{t("ir.build", "Request build")}
+                  </Button>
+                </div>
+              </li>
+            ))}
+          </ul>
+        </>
+      )}
+    </div>
+  );
+  const fbView = (
+    <div className="space-y-2">
+      <h2 className={sectionTitle}>{t("ir.fb.title", "Function blocks (reusable POUs)")}</h2>
+      <FunctionBlockList
+        functionBlocks={functionBlocks}
+        activeFbId={editScope.kind === "fb" ? editScope.fbId : null}
+        diagsByBlock={diagsByBlock}
+        canEdit={canControl}
+        onNew={handleNewFb}
+        onDeleteFb={handleDeleteFb}
+        onEditBody={handleEditBody}
+        onBackToMain={backToMain}
+        t={t}
+      />
+    </div>
+  );
+  const explorer = (
+    <div className="h-full overflow-y-auto p-2">
+      {activity === "palette" ? paletteView : activity === "flows" ? flowsView : fbView}
+    </div>
+  );
+
+  // ═════ MAIN: tab editor (Vùng vẽ · So sánh phiên bản · Hợp nhất) — một toolbar (R-2-s), canvas cao hết vùng ═════
+  const canvasTabLabel = editScope.kind === "fb"
+    ? `${t("ir.canvas.fb", "Function block")}: ${activeFb?.name ?? ""}`
+    : t("ir.canvas.title", "Flow canvas");
+  const editorTabs = [
+    { id: "canvas", label: canvasTabLabel },
+    { id: "diff", label: t("ir.diff.title", "Version diff") },
+    { id: "merge", label: t("ir.merge.tab", "Merge (3-way)") },
+  ];
+  const canvasToolbarEnd = (
+    <>
+      {editScope.kind === "fb" && (
+        <Button size="sm" variant="outline" className="h-7 gap-1 px-2 text-xs" onClick={backToMain}>
+          <ArrowLeft className="h-3.5 w-3.5" />{t("ir.canvas.backToMain", "Main flow")}
+        </Button>
+      )}
+      <span className="hidden text-[11px] text-muted-foreground min-[1440px]:inline">
+        {activeBlocks.length} {editScope.kind === "fb" ? t("ir.bodyBlocks", "body block(s)") : t("ir.topLevelBlocks", "top-level block(s)")}
+      </span>
+      <div className="inline-flex rounded-md border border-border p-0.5">
+        <Button
+          size="sm"
+          variant={viewMode === "graph" ? "secondary" : "ghost"}
+          className="h-6 gap-1 px-2 text-xs"
+          onClick={() => setViewMode("graph")}
+          aria-pressed={viewMode === "graph"}
+        >
+          <Network className="h-3.5 w-3.5" />{t("ir.viewGraph", "Graph")}
+        </Button>
+        <Button
+          size="sm"
+          variant={viewMode === "tree" ? "secondary" : "ghost"}
+          className="h-6 gap-1 px-2 text-xs"
+          onClick={() => setViewMode("tree")}
+          aria-pressed={viewMode === "tree"}
+        >
+          <ListTree className="h-3.5 w-3.5" />{t("ir.viewTree", "Tree")}
+        </Button>
+      </div>
+    </>
+  );
+  const canvasView = viewMode === "graph" ? (
+    <IrGraphCanvas
+      fill
+      flow={canvasFlow}
+      selectedId={selectedId}
+      diagsByBlock={diagsByBlock}
+      onSelect={selectBlockOnCanvas}
+      onDelete={handleDelete}
+      onAddTopLevel={addTopLevel}
+      onAddChild={handleAddChild}
+      onReorderToSibling={handleReorderToSibling}
+      onMoveNode={handleMoveNode}
+      t={t}
+    />
+  ) : activeBlocks.length === 0 ? (
+    <p className="py-8 text-center text-sm text-muted-foreground">{t("ir.emptyCanvas", "No blocks yet. Add one from the palette on the left.")}</p>
+  ) : (
+    <div className="space-y-1.5 p-3">
+      {activeBlocks.map((b, i) => (
+        <BlockCard
+          key={b.id}
+          block={b}
+          selectedId={selectedId}
+          index={i}
+          siblingCount={activeBlocks.length}
+          diagsByBlock={diagsByBlock}
+          onSelect={selectBlockOnCanvas}
+          onMove={handleMove}
+          onDelete={handleDelete}
+          onAddChild={handleAddChild}
+          t={t}
+        />
+      ))}
+    </div>
+  );
+  const editorMain =
+    editorTab === "diff" ? (
+      <div className="p-3">
+        <IrDiffPanel flows={flowsQ.data ?? []} currentFlow={flow} t={t} />
+      </div>
+    ) : editorTab === "merge" ? (
+      <div className="p-3">
+        <IrMergePanel
+          flows={flowsQ.data ?? []}
+          currentFlow={flow}
+          irProjects={irProjects}
+          canControl={canControl}
+          flagEnabled={flagEnabled}
+          onSaved={() => void flowsQ.refetch()}
+          t={t}
+        />
+      </div>
+    ) : (
+      canvasView
+    );
+
+  // ═════ Inspector phải: [Bảng thuộc tính | Xem trước transpile | Copilot] ═════
+  const inspectorTab = (
+    <div className="space-y-4">
+      {selectedBlock ? (
+        <Inspector block={selectedBlock} functionBlocks={functionBlocks} onPatch={handlePatch} t={t} />
+      ) : (
+        <p className="py-6 text-center text-sm text-muted-foreground">{t("ir.selectBlock", "Select a block on the canvas to edit its parameters.")}</p>
+      )}
+      {activeFb && <FunctionBlockDefEditor fb={activeFb} canEdit={canControl} onUpdateFb={handleUpdateFb} t={t} />}
+    </div>
+  );
+  const inspector = (
+    <CopilotInspector
+      idPrefix="ir-insp"
+      label={t("ir.ws.inspectorLabel", "Inspector / Transpile / Copilot")}
+      tabs={[
+        { id: "inspector", label: t("ir.inspector", "Inspector"), icon: <Cpu aria-hidden="true" />, content: inspectorTab },
+        { id: "preview", label: t("ir.preview", "Transpile preview"), icon: <Code2 aria-hidden="true" />, content: <TranspilePreview flow={lintFlowInput} canView={canView} selectedId={selectedId} targets={targets} t={t} /> },
+      ]}
+      activeTab={rightTab}
+      onTabChange={(id) => setRightTab(id as "inspector" | "preview")}
+      binding={copilotBinding}
+    />
+  );
+
+  // ═════ Thanh trạng thái 24 px: chip "Xem trước — không deploy" · KPI · lint khoá · Copilot ═════
+  const statusBar = (
+    <div className="flex min-w-0 flex-1 items-center gap-3">
+      <NoticeChip kind="honesty" label={t("ir.ws.previewChip", "Preview — no deploy")} className="h-5 px-1.5 text-[11px]" data-testid="ir-preview-chip">
+        <p className="flex items-start gap-1.5"><Lock className="mt-0.5 h-3.5 w-3.5 shrink-0" aria-hidden="true" />{t("ir.honestyNote", "Structural preview + lint + transpile only — physics simulation and a real deploy are gated separately. A real deploy always routes through the existing programming service (HITL 2-eyes) and is never triggered from this screen.")}</p>
+        <p className="mt-2 text-xs text-muted-foreground">{t("ir.deployReminder", "Save appends a validated ir-flow artifact; Request build (below, per saved flow) transpiles it. Deploy to a real device is a separate gated step (existing programming service, HITL 2-eyes) — not exposed here.")}</p>
+      </NoticeChip>
+      <span data-testid="ir-kpi-blocks" className="shrink-0 tabular-nums">{t("ir.kpi.blocks", "Top-level blocks")}: {flow.blocks.length}</span>
+      <span data-testid="ir-kpi-errors" className={`shrink-0 tabular-nums ${errorCount > 0 ? "font-medium text-destructive" : ""}`}>{t("ir.kpi.errors", "Lint errors")}: {errorCount}</span>
+      <span data-testid="ir-kpi-warns" className={`shrink-0 tabular-nums ${warnCount > 0 ? "font-medium text-warning" : ""}`}>{t("ir.kpi.warns", "Lint warnings")}: {warnCount}</span>
+      <span
+        data-testid="ir-kpi-status"
+        data-state={lintView.status}
+        className={`shrink-0 ${lintView.status === "ok" ? "text-success" : lintView.status === "errors" ? "font-medium text-destructive" : "text-warning"}`}
+      >
+        {t("ir.kpi.status", "Lint status")}: {lintStatusLabel}
+      </span>
+      {lintView.reason === "error" && (
+        <span role="alert" className="flex min-w-0 items-center gap-1 truncate text-warning" title={lintLockReason ?? undefined}>
+          <AlertTriangle className="h-3 w-3 shrink-0" aria-hidden="true" /><span className="truncate">{lintLockReason}</span>
+        </span>
+      )}
+      <span className="ml-auto inline-flex shrink-0 items-center gap-1">
+        <Sparkles className="h-3 w-3" aria-hidden="true" /> {t("engineering.ws.copilotTab", "Copilot")} {copilotOpen ? "●" : "○"}
+      </span>
+    </div>
+  );
+
+  return (
+    <DashboardLayout>
+      <div className="flex h-[calc(100dvh-3.5rem)] min-h-[30rem] min-w-0 flex-col">
+        {header}
+        <EngineeringShell
+          layoutId="ir-editor"
+          // R-2-k — giữ tên MAIN đã hiệu chuẩn (b60ba0df5).
+          mainName="ir-canvas"
+          userId={user?.id ?? null}
+          heightClass="min-h-0 flex-1"
+          className="rounded-none border-x-0 border-b-0"
+          activityItems={[
+            { id: "palette", label: t("ir.palette", "Block palette"), icon: <Plus /> },
+            { id: "flows", label: t("ir.savedFlows", "Saved IR flows"), icon: <FolderOpen /> },
+            { id: "fb", label: t("ir.ws.activityFb", "Function blocks"), icon: <Boxes /> },
+          ]}
+          activeActivity={activity}
+          onActivityChange={(id) => setActivity(id as IrActivity)}
+          explorer={explorer}
+          explorerLabel={t("ir.ws.explorerLabel", "IR explorer")}
+          // Ghi chú đo (Task 14): explorer 200 px (dải 200–300) — xem task-14-report: ≥50 % canvas @1600 với top bar 48 px.
+          explorerSize={{ minPx: 200, maxPx: 300, defaultPx: 200 }}
+          editorTabs={editorTabs}
+          activeTabId={editorTab}
+          onTabChange={(id) => setEditorTab(id as IrEditorTab)}
+          editor={editorMain}
+          editorToolbarEnd={editorTab === "canvas" ? canvasToolbarEnd : undefined}
+          inspector={inspector}
+          inspectorLabel={t("ir.ws.inspectorLabel", "Inspector / Transpile / Copilot")}
+          inspectorIsAi={copilotOpen}
+          inspectorSize={{ minPx: 320, maxPx: 420, defaultPx: 320 }}
+          inspectorRevealToken={copilotOpen ? 1 : 0}
+          statusBar={statusBar}
+        />
+      </div>
+
+      {/* W3-12: tạo nhanh project kind "ir-flow" — sheet phải (doc 81: tạo/sửa qua flyout, không dialog giữa màn). */}
+      <Sheet open={newProjOpen} onOpenChange={setNewProjOpen}>
+        <SheetContent side="right" className="flex w-[92vw] flex-col gap-0 p-0 sm:max-w-[480px]">
+          <SheetHeader className="border-b px-4 py-3 pr-10">
+            <SheetTitle>{t("ir.newProjectTitle", "Create ir-flow project")}</SheetTitle>
+            <SheetDescription>
+              {t("ir.newProjectDesc", "A programming project (kind “ir-flow”) is the container your saved flows and builds live in. After creating it, save the current flow into it, then Request build below.")}
+            </SheetDescription>
+          </SheetHeader>
+          <div className="grid grid-cols-2 gap-2 p-4">
+            <div className="space-y-1.5">
+              <Label htmlFor="ir-new-proj-code" className="text-xs">{t("ir.projectCode", "Project code")}</Label>
+              <Input id="ir-new-proj-code" className="h-9 font-mono" value={newProjCode} onChange={(e) => setNewProjCode(e.target.value)} placeholder="pick-place" />
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="ir-new-proj-name" className="text-xs">{t("ir.projectName", "Project name")}</Label>
+              <Input id="ir-new-proj-name" className="h-9" value={newProjName} onChange={(e) => setNewProjName(e.target.value)} placeholder={t("ir.projectNamePh", "Pick & place cell") as string} />
+            </div>
+          </div>
+          <div className="mt-auto flex justify-end gap-2 border-t px-4 py-3">
+            <Button variant="ghost" onClick={() => setNewProjOpen(false)} disabled={createProjectM.isPending}>{t("common.cancel", "Cancel")}</Button>
+            <Button onClick={doCreateProject} disabled={createProjectM.isPending || !canControl}>
+              {createProjectM.isPending ? <Loader2 className="mr-1.5 h-4 w-4 animate-spin" /> : <FolderPlus className="mr-1.5 h-4 w-4" />}
+              {t("ir.create", "Create project")}
+            </Button>
+          </div>
+        </SheetContent>
+      </Sheet>
     </DashboardLayout>
   );
 }

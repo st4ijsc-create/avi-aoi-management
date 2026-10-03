@@ -17581,6 +17581,14 @@
     "diff": {
       "title": "版本差异",
       "subtitle": "对比两个已保存版本（或某版本与当前草稿）— 在树上标注 新增 / 移除 / 修改 / 移动 的块。"
+    },
+    "ws": {
+      "flowMeta": "流程属性",
+      "fbName": "功能块名称",
+      "inspectorLabel": "属性 / 转译 / Copilot",
+      "previewChip": "预览 — 不部署",
+      "activityFb": "功能块",
+      "explorerLabel": "IR 资源管理器"
     }
   },
   "rfcell": {
@@ -18668,7 +18676,23 @@
     "saveHint": "保存的草稿仍会经过受控流水线：构建 → 人工在环签核 → 受控部署。在此保存不会部署任何内容。",
     "createAndSave": "创建项目并保存",
     "saveVersion": "保存版本",
-    "savedVersion": "已保存为草稿 v{{v}} — 在工程中构建与部署。"
+    "savedVersion": "已保存为草稿 v{{v}} — 在工程中构建与部署。",
+    "ws": {
+      "opened": "已在编辑器中打开 v{{v}}",
+      "openProjects": "POU 项目",
+      "openVersions": "版本（pou-json）",
+      "noVersions": "该项目尚无 pou-json 版本。",
+      "open": "打开",
+      "otherLang": "{{n}} 个其他语言版本 — 请在工程工作台中打开。",
+      "samples": "示例",
+      "inspectorLabel": "ST / PLCopen / Copilot",
+      "noProblems": "无 lint 诊断。",
+      "previewChip": "预览 — 不部署",
+      "problemsStatus": "问题：{{count}}",
+      "activityOpen": "打开",
+      "explorerLabel": "POU 资源管理器",
+      "problemsTab": "问题"
+    }
   },
   "diff": {
     "identical": "两个版本完全相同",
