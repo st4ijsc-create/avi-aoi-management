@@ -51,13 +51,13 @@ vi.mock("@/_core/hooks/usePermissions", () => ({
 }));
 const toastSpy = vi.hoisted(() => ({ success: vi.fn(), error: vi.fn(), info: vi.fn(), warning: vi.fn() }));
 vi.mock("sonner", () => ({ toast: toastSpy }));
-const sock = vi.hoisted(() => ({ handlers: {} as Record<string, (e: unknown) => void>, emitted: [] as unknown[] }));
+const sock = vi.hoisted(() => ({ handlers: {} as Record<string, (e: unknown) => void>, emitted: [] as unknown[], connected: true }));
 vi.mock("@/lib/socketManager", () => ({
   getSharedSocket: () => ({
     on: (ev: string, fn: (e: unknown) => void) => { sock.handlers[ev] = fn; },
     off: (ev: string) => { delete sock.handlers[ev]; },
     emit: (...a: unknown[]) => { sock.emitted.push(a); },
-    connected: true,
+    get connected() { return sock.connected; },
   }),
   releaseSharedSocket: () => undefined,
 }));
@@ -75,7 +75,10 @@ const srv = vi.hoisted(() => ({
   trend: [] as Row[],
   board: [] as Row[],
   assignments: [] as Row[],
+  assignError: false,
   collabs: [] as Row[],
+  collabLoading: false,
+  collabError: false,
   snap: { feed: [] as Row[], trend: [] as Row[], board: [] as Row[], assignments: [] as Row[], collabs: [] as Row[] },
   version: 0,
   listeners: new Set<() => void>(),
@@ -154,6 +157,9 @@ vi.mock("@/lib/trpc", () => {
       }
       if (path === "safety.nearMissTrend") return q(srv.snap.trend, enabled);
       if (path === "safety.currentBoard") return q(srv.snap.board, enabled);
+      if (path === "safety.listAssignments" && srv.assignError) return q(undefined, enabled, { isError: true });
+      if (path === "safety.listCollaborations" && srv.collabError) return q(undefined, enabled, { isError: true });
+      if (path === "safety.listCollaborations" && srv.collabLoading) return q(undefined, enabled, { isLoading: true, isPending: true });
       if (path === "safety.listAssignments") return q(srv.snap.assignments.filter((a) => !input?.status || a.status === input.status), enabled);
       if (path === "safety.listCollaborations") return q(srv.snap.collabs, enabled);
       return q(undefined, enabled);
@@ -308,6 +314,10 @@ beforeEach(() => {
   srv.board = [{ stationId: 3, lineId: 1, humans: [{ assignmentId: 4, operatorId: 44, skillLevel: "qualified" }], robots: [{ robotId: 2, code: "R-2", status: "idle", openTaskCount: 1 }] }];
   srv.assignments = [assignment(3, "planned"), assignment(4, "active"), assignment(5, "completed")];
   srv.collabs = [collab(7, "robot_work"), collab(8, "done", { endedAt: "2026-10-02T09:00:00Z" })];
+  srv.assignError = false;
+  srv.collabLoading = false;
+  srv.collabError = false;
+  sock.connected = true;
   srv.snap = { feed: [], trend: [], board: [], assignments: [], collabs: [] };
   srv.snap.feed = srv.feed.map((x) => ({ ...x }));
   srv.snap.trend = srv.trend.map((x) => ({ ...x }));
@@ -388,7 +398,9 @@ describe("Safety P4 — bố cục: một MAIN, header một hàng, panel phụ"
     expect(screen.queryByRole("alertdialog")).toBeNull();
     // Panel phụ ngoài MAIN, chứa Xu hướng + Phối hợp + panel nguồn an toàn.
     expect(main.contains(aside())).toBe(false);
-    expect(within(aside()).getAllByRole("tab").map((x) => x.textContent?.trim())).toEqual([S("safety.side.trend"), S("safety.tab.collaboration")]);
+    expect(within(aside()).getAllByRole("tab")).toHaveLength(2);
+    expect(within(aside()).getByRole("tab", { name: S("safety.side.trend") })).toBeInTheDocument();
+    expect(within(aside()).getByRole("tab", { name: S("safety.tab.collaboration") })).toBeInTheDocument();
     expect(within(aside()).getByTestId("safety-source-panel")).toBeInTheDocument();
     // Không còn khối chân trang trùng.
     expect(screen.queryByText(S("safety.footerNote"))).toBeNull();
@@ -903,5 +915,97 @@ describe("Safety P4 — dưới 1024 px", () => {
     expect(header().querySelector("[data-chip-more]")).toHaveAttribute("data-chip-more", "2");
     expect(mainEl().querySelector("[data-narrow-tools]")).toBeTruthy();
     expect(within(mainEl().querySelector("[data-narrow-tools]") as HTMLElement).getByRole("button", { name: S("safety.reportProximity") })).toBeInTheDocument();
+  });
+});
+
+// ════════════════════════════════════════════════════════════════════════════════════════════════
+// Fix round 1 (task-8-review Important 1 + R-2-p; minor 1; minor 2)
+// ════════════════════════════════════════════════════════════════════════════════════════════════
+describe("Safety fix round 1 — R-2-p: hai số an toàn GHIM, '+N' mang trạng thái tệ nhất", () => {
+  const shownChips = () => [...header().querySelectorAll("[data-status-chip-strip] > [data-chip-id]")].map((x) => x.getAttribute("data-chip-id"));
+  it("header hẹp (<1600, như 1366): nhân lực LỖI + phối hợp ĐANG TẢI ⇒ 'Chưa kiểm định' và 'Suýt sự cố hôm nay' vẫn hiện thẳng; '+2' mang lỗi", () => {
+    presetNarrow(true);
+    srv.assignError = true;
+    srv.collabLoading = true;
+    render(<SafetyWorkforce />);
+    expect(shownChips()).toEqual(["open-events", "near-miss-today"]);
+    expect(chip("open-events")).toHaveAttribute("data-state", "ok");
+    expect(visibleText(chip("open-events"))).toContain("1");
+    const more = header().querySelector("[data-chip-more]") as HTMLElement;
+    expect(more).toHaveAttribute("data-chip-more", "2");
+    expect(more).toHaveAttribute("data-state", "error");
+  });
+
+  it("header hẹp: phối hợp ĐANG TẢI, phân công ok ⇒ số an toàn vẫn hiện; '+2' là loading (không giả ok)", () => {
+    presetNarrow(true);
+    srv.collabLoading = true;
+    srv.snap.assignments = [];
+    render(<SafetyWorkforce />);
+    expect(shownChips()).toEqual(["open-events", "near-miss-today"]);
+    expect((header().querySelector("[data-chip-more]") as HTMLElement).getAttribute("data-state")).toBe("loading");
+  });
+});
+
+describe("Safety fix round 1 — số phiên phối hợp luôn thấy trên tab phụ", () => {
+  it("1 phiên đang chạy ⇒ huy hiệu '1' trên tab Phối hợp (panel đang ẩn); tên tab giữ nguyên, số đọc qua mô tả", () => {
+    render(<SafetyWorkforce />);
+    expect(collabPanel()).not.toBeVisible();
+    const tab = sideTab(S("safety.tab.collaboration"));
+    expect(tab.querySelector("[data-collab-count]")).toHaveTextContent("1");
+    expect(tab).toHaveAccessibleDescription(S("safety.side.collabCount").replace("{{count}}", "1"));
+  });
+
+  it("đọc phiên lỗi ⇒ huy hiệu '!' + mô tả lỗi (không im lặng như 0)", () => {
+    srv.collabError = true;
+    render(<SafetyWorkforce />);
+    const tab = sideTab(S("safety.tab.collaboration"));
+    expect(tab.querySelector("[data-collab-count]")).toHaveAttribute("data-collab-count", "error");
+    expect(tab).toHaveAccessibleDescription(S("safety.side.collabCountError"));
+  });
+
+  it("không phiên nào đang chạy ⇒ không huy hiệu", () => {
+    srv.snap.collabs = [collab(8, "done", { endedAt: "2026-10-02T09:00:00Z" })];
+    render(<SafetyWorkforce />);
+    expect(sideTab(S("safety.tab.collaboration")).querySelector("[data-collab-count]")).toBeNull();
+  });
+});
+
+describe("Safety fix round 1 — mất luồng trực tiếp hiện trên chip nguồn (warning + chữ)", () => {
+  const segTexts = () => [...sourceChip().querySelectorAll("[data-source-seg]")].map((x) => [x.getAttribute("data-source-seg"), x.getAttribute("data-tone"), x.textContent?.trim()]);
+  it("socket trình duyệt mất kết nối ⇒ đoạn 'Mất kết nối trực tiếp' warning; nối lại ⇒ đoạn biến mất", () => {
+    srv.health = REAL_OK();
+    render(<SafetyWorkforce />);
+    expect(sourceChip()).toHaveAttribute("data-state", "ok");
+    act(() => { sock.connected = false; sock.handlers["disconnect"]?.(undefined); });
+    expect(segTexts()).toContainEqual(["socket", "warning", S("safety.source.chip.socketLost")]);
+    expect(sourceChip()).toHaveAttribute("data-state", "warning");
+    act(() => { sock.connected = true; sock.handlers["connect"]?.(undefined); });
+    expect(segTexts().map((x) => x[0])).not.toContain("socket");
+    expect(sourceChip()).toHaveAttribute("data-state", "ok");
+  });
+
+  it("socket máy chủ không chạy (sourceHealth) ⇒ đoạn 'Trực tiếp: máy chủ tắt' warning", () => {
+    srv.health = { ...REAL_OK(), socket: { serverUp: false } };
+    render(<SafetyWorkforce />);
+    expect(segTexts()).toContainEqual(["socket", "warning", S("safety.source.chip.socketDown")]);
+    expect(sourceChip()).toHaveAttribute("data-state", "warning");
+  });
+
+  it("chưa nối được (đang nối) ⇒ đoạn loading, chip KHÔNG ok; connect_error ⇒ warning", () => {
+    sock.connected = false;
+    srv.health = REAL_OK();
+    render(<SafetyWorkforce />);
+    expect(segTexts()).toContainEqual(["socket", "loading", S("safety.source.chip.socketConnecting")]);
+    expect(sourceChip()).toHaveAttribute("data-state", "loading");
+    act(() => sock.handlers["connect_error"]?.(new Error("x")));
+    expect(segTexts()).toContainEqual(["socket", "warning", S("safety.source.chip.socketLost")]);
+  });
+
+  it("truy vấn nguồn lỗi + mất socket ⇒ cả hai đoạn hiện", () => {
+    srv.healthError = true;
+    render(<SafetyWorkforce />);
+    act(() => { sock.connected = false; sock.handlers["disconnect"]?.(undefined); });
+    expect(segTexts().map((x) => x[0])).toEqual(["plc", "socket"]);
+    expect(sourceChip()).toHaveAttribute("data-state", "error");
   });
 });

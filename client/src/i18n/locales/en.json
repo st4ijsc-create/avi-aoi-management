@@ -17363,7 +17363,10 @@
         "blocked": "{{target}}: blocked",
         "estopNotRated": "E-stop not safety-rated",
         "ot": "OT",
-        "robot": "Robot"
+        "robot": "Robot",
+        "socketDown": "Live: server down",
+        "socketLost": "Live feed lost",
+        "socketConnecting": "Live connecting"
       }
     },
     "advisoryChip": "Advisory — not a SIS",
@@ -17386,7 +17389,9 @@
     "liveChip": "Live",
     "side": {
       "label": "Safety sources, trend and collaboration",
-      "trend": "Trend"
+      "trend": "Trend",
+      "collabCount": "{{count}} active session(s)",
+      "collabCountError": "Could not read collaboration sessions"
     },
     "reportProximityShort": "Report proximity",
     "testOnly": "Test only"

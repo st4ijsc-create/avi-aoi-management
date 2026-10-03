@@ -17343,7 +17343,10 @@
         "blocked": "{{target}}: bị chặn",
         "estopNotRated": "E-stop chưa safety-rated",
         "ot": "OT",
-        "robot": "Robot"
+        "robot": "Robot",
+        "socketDown": "Trực tiếp: máy chủ tắt",
+        "socketLost": "Mất kết nối trực tiếp",
+        "socketConnecting": "Đang nối trực tiếp"
       }
     },
     "advisoryChip": "Tư vấn — không phải SIS",
@@ -17366,7 +17369,9 @@
     "liveChip": "Trực tiếp",
     "side": {
       "label": "Nguồn an toàn, xu hướng và phối hợp",
-      "trend": "Xu hướng"
+      "trend": "Xu hướng",
+      "collabCount": "{{count}} phiên đang chạy",
+      "collabCountError": "Không đọc được phiên phối hợp"
     },
     "reportProximityShort": "Báo cáo tiệm cận",
     "testOnly": "Chỉ thử"

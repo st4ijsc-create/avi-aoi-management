@@ -17742,7 +17742,10 @@
         "blocked": "{{target}}：已阻止",
         "estopNotRated": "急停未经安全认证",
         "ot": "OT",
-        "robot": "机器人"
+        "robot": "机器人",
+        "socketDown": "实时：服务器未运行",
+        "socketLost": "实时连接已断开",
+        "socketConnecting": "实时连接中"
       }
     },
     "advisoryChip": "仅供参考 — 非 SIS",
@@ -17765,7 +17768,9 @@
     "liveChip": "实时",
     "side": {
       "label": "安全来源、趋势与协作",
-      "trend": "趋势"
+      "trend": "趋势",
+      "collabCount": "{{count}} 个进行中的会话",
+      "collabCountError": "无法读取协作会话"
     },
     "reportProximityShort": "报告接近",
     "testOnly": "仅测试"

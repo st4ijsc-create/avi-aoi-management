@@ -129,6 +129,8 @@ const FEED_LIMIT = 200;
 const TAB_VALUES = ["cockpit", "workforce"] as const;
 type TabValue = (typeof TAB_VALUES)[number];
 type SideTab = "trend" | "collab";
+/** Kết nối socket của trình duyệt này (luồng `safety:event` trực tiếp). "connecting" = chưa biết, KHÔNG phải ổn. */
+type SocketState = "connecting" | "connected" | "disconnected";
 const BASE_PATH = "/safety-workforce";
 const COMPACT_BREAKPOINT_PX = 1280;
 const KPI_ALL_BREAKPOINT_PX = 1600;
@@ -256,6 +258,9 @@ interface SafetyCtxValue {
   sourceLoading: boolean;
   sourceError: boolean;
   socketConnected: boolean;
+  socketState: SocketState;
+  activeCollabs: number;
+  collabsState: "ok" | "loading" | "error";
   sourcePanelRef: RefObject<HTMLDivElement | null>;
   refetchAll: () => void;
   onMutationError: MutationErrorHandler;
@@ -299,7 +304,9 @@ export default function SafetyWorkforce() {
   // Live events received over the socket (newest first), kept separate from the feed.
   const [liveEvents, setLiveEvents] = useState<SafetyLiveEvent[]>([]);
   // doc 80 Task 4 (SAF-02/SAF-07) — this browser's socket connection, shown in the source panel.
-  const [socketConnected, setSocketConnected] = useState(false);
+  // Fix round 1 (review minor 2): ba trạng thái — mất kết nối phải lộ ra trên chip nguồn, "đang nối" không giả là ổn.
+  const [socketState, setSocketState] = useState<SocketState>("connecting");
+  const socketConnected = socketState === "connected";
   const sourcePanelRef = useRef<HTMLDivElement | null>(null);
 
   const utils = trpc.useUtils();
@@ -354,8 +361,8 @@ export default function SafetyWorkforce() {
   useEffect(() => {
     if (!canView) return;
     const socket = getSharedSocket();
-    const join = () => { setSocketConnected(true); socket.emit("subscribe", {}); };
-    const onDisconnect = () => setSocketConnected(false);
+    const join = () => { setSocketState("connected"); socket.emit("subscribe", {}); };
+    const onDisconnect = () => setSocketState("disconnected");
     const onSafety = (event: SafetyLiveEvent) => {
       setLiveEvents((prev) => [event, ...prev].slice(0, 50));
       // Pull the canonical row into the feed/KPIs too.
@@ -364,11 +371,13 @@ export default function SafetyWorkforce() {
     };
     socket.on("connect", join);
     socket.on("disconnect", onDisconnect);
+    socket.on("connect_error", onDisconnect);
     socket.on("safety:event", onSafety);
     if (socket.connected) join();
     return () => {
       socket.off("connect", join);
       socket.off("disconnect", onDisconnect);
+      socket.off("connect_error", onDisconnect);
       socket.off("safety:event", onSafety);
       releaseSharedSocket();
     };
@@ -549,6 +558,8 @@ export default function SafetyWorkforce() {
   const chipItems: StatusChipItem[] = [
     {
       id: "open-events",
+      // R-2-p: số an toàn — không bao giờ vào "+N" (chip nhân lực lỗi/đang tải không được đẩy nó ra).
+      pinned: true,
       label: t("safety.chip.openEvents", "Unaudited"),
       value: kpis.openSafetyEvents,
       // Cửa sổ FEED_LIMIT đầy ⇒ có thể còn sự kiện chưa kiểm định ngoài cửa sổ ⇒ "≥N", không phải N.
@@ -558,6 +569,7 @@ export default function SafetyWorkforce() {
     },
     {
       id: "near-miss-today",
+      pinned: true,
       label: t("safety.chip.nearMissToday", "Near-misses today"),
       value: kpis.nearMissesToday,
       state: chipStateFromQuery(trendQ),
@@ -619,6 +631,9 @@ export default function SafetyWorkforce() {
     sourceLoading: sourceHealthQ.isLoading,
     sourceError: sourceHealthQ.isError,
     socketConnected,
+    socketState,
+    activeCollabs: kpis.activeCollaborations,
+    collabsState: chipStateFromQuery(collabsQ) === "error" ? "error" : chipStateFromQuery(collabsQ) === "ok" ? "ok" : "loading",
     sourcePanelRef,
     refetchAll,
     onMutationError,
@@ -831,13 +846,30 @@ const TONE_RANK: Record<SegTone, number> = { error: 0, warning: 1, loading: 2, o
  *  - lệnh thật bị chặn trong khi PLC thật (vd tag an toàn chất lượng xấu) ⇒ thêm đoạn warning (khi PLC không thật,
  *    đoạn PLC đã nói lý do chặn);
  *  - E-stop bật mà không safety-rated ⇒ thêm đoạn warning.
+ *  - Fix round 1: luồng trực tiếp — socket máy chủ không chạy / trình duyệt mất kết nối ⇒ thêm đoạn warning;
+ *    đang nối ⇒ đoạn loading (chưa biết, không phải ổn).
  */
 export function safetySourceChipModel(
   data: SourceHealth | undefined,
   isError: boolean,
   t: (k: string, d: string, o?: Record<string, unknown>) => string,
+  socket: SocketState = "connected",
 ): { state: SegTone; segs: Array<{ id: string; tone: SegTone; text: string }> } {
-  if (isError) return { state: "error", segs: [{ id: "plc", tone: "error", text: t("safety.source.chip.error", "Could not read") }] };
+  const socketSeg = (serverUp: boolean | undefined): { id: string; tone: SegTone; text: string } | null =>
+    serverUp === false
+      ? { id: "socket", tone: "warning", text: t("safety.source.chip.socketDown", "Live: server socket down") }
+      : socket === "disconnected"
+        ? { id: "socket", tone: "warning", text: t("safety.source.chip.socketLost", "Live feed disconnected") }
+        : socket === "connecting"
+          ? { id: "socket", tone: "loading", text: t("safety.source.chip.socketConnecting", "Live feed connecting") }
+          : null;
+  const worst = (segs: Array<{ tone: SegTone }>) => segs.reduce<SegTone>((w, x) => (TONE_RANK[x.tone] < TONE_RANK[w] ? x.tone : w), "ok");
+  if (isError) {
+    const segs: Array<{ id: string; tone: SegTone; text: string }> = [{ id: "plc", tone: "error", text: t("safety.source.chip.error", "Could not read") }];
+    const so = socketSeg(undefined);
+    if (so) segs.push(so);
+    return { state: worst(segs), segs };
+  }
   if (!data) return { state: "loading", segs: [{ id: "plc", tone: "loading", text: t("safety.source.chip.loading", "Checking") }] };
   const basis = data.safetyPlc.basis;
   const plcSeg: { id: string; tone: SegTone; text: string } = (() => {
@@ -866,15 +898,16 @@ export function safetySourceChipModel(
   if (data.estop.enabled && !data.estop.rated) {
     segs.push({ id: "estop", tone: "warning", text: t("safety.source.chip.estopNotRated", "E-stop not safety-rated") });
   }
-  const state = segs.reduce<SegTone>((w, s) => (TONE_RANK[s.tone] < TONE_RANK[w] ? s.tone : w), "ok");
-  return { state, segs };
+  const so = socketSeg(data.socket.serverUp);
+  if (so) segs.push(so);
+  return { state: worst(segs), segs };
 }
 
 /** Chip nguồn an toàn: chữ trạng thái hiện SẴN; bấm ⇒ cuộn + focus panel nguồn đầy đủ trong panel phụ. */
 function SafetySourceChip() {
   const { t } = useTranslation();
   const ctx = useSafetyCtx();
-  const model = safetySourceChipModel(ctx.sourceHealth, ctx.sourceError, t);
+  const model = safetySourceChipModel(ctx.sourceHealth, ctx.sourceError, t, ctx.socketState);
   const Icon = model.state === "ok" ? ShieldCheck : model.state === "loading" ? Loader2 : ShieldAlert;
   const reveal = () => {
     const el = ctx.sourcePanelRef.current;
@@ -1262,6 +1295,7 @@ function WorkforceTab() {
 function SidePanel() {
   const { t } = useTranslation();
   const ctx = useSafetyCtx();
+  const collabDescId = useId();
   return (
     <div className="flex max-h-[calc(100dvh-8rem)] min-h-0 flex-col gap-3 overflow-auto">
       {/* ── doc 80 Task 4 (SAF-02) — safety SOURCE panel (read-only, safety.sourceHealth), đủ nội dung ── */}
@@ -1275,8 +1309,24 @@ function SidePanel() {
       <Tabs value={ctx.sideTab} onValueChange={(v) => ctx.setSideTab(v as SideTab)} className="gap-2">
         <TabsList className="w-full">
           <TabsTrigger value="trend" className="flex-1 text-xs"><ScanLine className="mr-1 h-3.5 w-3.5" />{t("safety.side.trend", "Trend")}</TabsTrigger>
-          <TabsTrigger value="collab" className="flex-1 text-xs"><Workflow className="mr-1 h-3.5 w-3.5" />{t("safety.tab.collaboration", "Collaboration")}</TabsTrigger>
+          <TabsTrigger value="collab" className="flex-1 text-xs" aria-describedby={collabDescId}>
+            <Workflow className="mr-1 h-3.5 w-3.5" />{t("safety.tab.collaboration", "Collaboration")}
+            {/* Fix round 1 (review minor 1, R-2-l): số phiên người↔robot đang chạy luôn thấy ngoài panel đang ẩn. Huy hiệu
+                aria-hidden ⇒ tên tab giữ nguyên; số đọc qua aria-describedby. */}
+            {ctx.collabsState === "error" ? (
+              <span data-collab-count="error" aria-hidden="true" className="ml-1 rounded-full bg-destructive/15 px-1.5 text-[10px] font-semibold text-destructive">!</span>
+            ) : ctx.collabsState === "ok" && ctx.activeCollabs > 0 ? (
+              <span data-collab-count={ctx.activeCollabs} aria-hidden="true" className="ml-1 rounded-full bg-primary px-1.5 text-[10px] font-semibold tabular-nums text-primary-foreground">{ctx.activeCollabs}</span>
+            ) : null}
+          </TabsTrigger>
         </TabsList>
+        <span id={collabDescId} className="sr-only">
+          {ctx.collabsState === "error"
+            ? t("safety.side.collabCountError", "Could not read collaboration sessions")
+            : ctx.collabsState === "ok"
+              ? t("safety.side.collabCount", "{{count}} active session(s)", { count: ctx.activeCollabs })
+              : t("safety.loading", "Loading…")}
+        </span>
         <TabsContent value="trend">
           {/* Near-miss PDCA trend */}
           <div className="text-sm font-medium">{t("safety.trendTitle", "Near-miss trend (PDCA, last 30 days)")}</div>
