@@ -435,6 +435,9 @@ describe("WorkbenchShell — kích thước ban đầu theo px khi đã biết b
       expectPx("right", W, 340);
       expectPx("bottom", H, 260);
       expect(size("left")).not.toBeCloseTo(18, 0);
+      // Kích thước do MÃ áp (mặc định px) KHÔNG được ghi như thể người dùng đã chọn.
+      expect(localStorage.getItem(userLayoutKey("test-ide", 5, "hpx")!)).toBeNull();
+      expect(localStorage.getItem(userLayoutKey("test-ide", 5, "vpx")!)).toBeNull();
     } finally {
       spy.mockRestore();
     }
@@ -462,9 +465,8 @@ describe("WorkbenchShell — kích thước ban đầu theo px khi đã biết b
       expectPx("bottom", H, 260);
       expect(localStorage.getItem("layoutKit:test-ide:u5:bottomCollapsed")).toBe("0");
       r.unmount();
-      // Bố cục do thư viện tự lưu (debounce) có thể chưa ghi — xoá để kiểm riêng nhánh "đã nhớ mở".
-      await new Promise((res) => setTimeout(res, 250));
-      for (const k of Object.keys(localStorage)) if (k.startsWith("react-resizable-panels:")) localStorage.removeItem(k);
+      // Không ai kéo ⇒ không có px nào được lưu (chỉ lựa chọn gập/mở).
+      expect(Object.keys(localStorage).filter((k) => k.startsWith("react-resizable-panels:") || k.endsWith(":vpx"))).toEqual([]);
       renderShell(px({ bottom: { label: "Vấn đề", content: <Counter name="bottom" />, minPx: 160, defaultPx: 260, maxPx: 480, defaultCollapsed: true } }));
       expect(screen.getByRole("button", { name: VI.layoutKit.shell.toggleBottom })).toHaveAttribute("aria-expanded", "true");
       expectPx("bottom", H, 260);
@@ -533,47 +535,68 @@ describe("WorkbenchShell — kích thước ban đầu theo px khi đã biết b
   it("khung GIÃN sau khi mount (1336 → 1552 px, rail thu gọn) ⇒ panel phụ GIỮ đúng px (không phình theo %)", () => {
     const g = growingGroup(1336);
     try {
-      renderShell({ userId: null, ...px() });
+      renderShell(px());
       expectPx("left", 1336, 240);
       g.resize(1444);
       g.resize(1552);
       expectPx("left", 1552, 240);
       expectPx("right", 1552, 340);
+      // Lượt ghim do MÃ áp không phải lựa chọn của người dùng ⇒ không lưu.
+      expect(localStorage.getItem(userLayoutKey("test-ide", 5, "hpx")!)).toBeNull();
     } finally {
       g.restore();
     }
   });
 
-  it("người dùng đã kéo (bàn phím) ⇒ khung đổi cỡ KHÔNG ghi đè lựa chọn của họ (giữ %)", () => {
+  it("người dùng kéo (bàn phím) ⇒ kích thước của HỌ (px) được nhớ và giữ khi khung đổi cỡ — không quay về mặc định", () => {
     const g = growingGroup(1336);
     try {
-      renderShell({ userId: null, ...px({ left: { label: "Explorer", content: <p>cây dự án</p>, minPx: 120, defaultPx: 240, maxPx: 360 } }) });
-      // ArrowLeft (bước 10 %) ⇒ 17,96 − 10 = 7,96 % ⇒ thư viện kẹp lên min 120 px (8,98 % của 1336). Khung 1552:
-      // % người dùng giữ 8,98 (≈139 px); nếu bị GHIM lại px sẽ thành 240/1552 = 15,46 %.
+      renderShell(px({ left: { label: "Explorer", content: <p>cây dự án</p>, minPx: 120, defaultPx: 240, maxPx: 360 } }));
+      // ArrowLeft (bước 10 %) ⇒ 17,96 − 10 = 7,96 % ⇒ thư viện kẹp lên min 120 px (8,98 % của 1336).
       fireEvent.keyDown(screen.getByRole("separator", { name: VI.layoutKit.shell.resizeLeft }), { key: "ArrowLeft" });
-      const mine = size("left");
-      expect(mine).toBeCloseTo((120 / 1336) * 100, 1);
+      expectPx("left", 1336, 120);
+      const stored = JSON.parse(localStorage.getItem(userLayoutKey("test-ide", 5, "hpx")!) ?? "null");
+      expect(stored?.left?.px).toBe(120);
+      // Khung 1552: vẫn 120 px (7,73 %), không phải mặc định 240 px (15,46 %), cũng không phải % cũ (8,98 % = 139 px).
       g.resize(1552);
-      expect(size("left")).toBeCloseTo(mine, 1);
+      expectPx("left", 1552, 120);
     } finally {
       g.restore();
     }
   });
 
-  it("bố cục đã lưu lúc mount ⇒ khung đổi cỡ KHÔNG ghi đè (lựa chọn đã nhớ thắng)", async () => {
-    const g = growingGroup(1552);
+  it("đã nhớ px ⇒ lần sau mount ở khung KHÁC (đang giãn 1102 → 1318 như rail thu gọn ở 1366) vẫn đúng px của người dùng", () => {
+    const g = growingGroup(1600);
     try {
       const r = renderShell(px());
       const h = screen.getByRole("separator", { name: VI.layoutKit.shell.resizeLeft });
       fireEvent.keyDown(h, { key: "ArrowRight" });
       fireEvent.keyDown(h, { key: "ArrowRight" });
-      const mine = size("left");
-      await waitFor(() => expect(localStorage.getItem(`react-resizable-panels:${userLayoutKey("test-ide", 5, "h")}`)).not.toBeNull());
+      expectPx("left", 1600, 360); // 15 % + 10 % = 25 % ⇒ kẹp max 360 px
+      r.unmount();
+      g.resize(1102);
+      renderShell(px());
+      g.resize(1210);
+      g.resize(1318);
+      expectPx("left", 1318, 360);
+      expectPx("right", 1318, 340);
+    } finally {
+      g.restore();
+    }
+  });
+
+  it("panel người dùng KHÔNG kéo vẫn theo mặc định px; người dùng khác không thấy px của người này", () => {
+    const g = growingGroup(1600);
+    try {
+      const r = renderShell(px());
+      fireEvent.keyDown(screen.getByRole("separator", { name: VI.layoutKit.shell.resizeRight }), { key: "ArrowLeft" });
       r.unmount();
       renderShell(px());
-      expect(size("left")).toBeCloseTo(mine, 1);
-      g.resize(1336);
-      expect(size("left")).toBeCloseTo(mine, 1);
+      expectPx("left", 1600, 240);
+      expect(Math.abs((size("right") * 1600) / 100 - 340)).toBeGreaterThan(20);
+      cleanup();
+      renderShell({ userId: 6, ...px() });
+      expectPx("right", 1600, 340);
     } finally {
       g.restore();
     }
