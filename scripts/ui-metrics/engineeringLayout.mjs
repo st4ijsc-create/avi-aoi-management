@@ -29,8 +29,10 @@
  *                       từ khoá ⇒ mất miễn trừ); hàng chip/KPI phân loại TRƯỚC miễn trừ nhãn; trạng thái trống tự viết
  *                       KHÔNG được nằm trong hộp notice (tổ tiên tới MAIN có role alert/status, lớp notice, lớp màu
  *                       bg-/border-, hay màu đã tính chroma OKLab > 0,05) và chữ không có từ khoá notice.
- *   · selfTest        — 34 ca đối chứng DƯƠNG mỗi lần chạy, qua đúng measurePage/runActions; `--mutation` gỡ
- *                       từng gác (28 gác) và chứng minh ca của nó ĐỎ.
+ *   · selfTest        — 37 ca đối chứng DƯƠNG mỗi lần chạy, qua đúng measurePage/runActions; `--mutation` gỡ
+ *                       từng gác (32 gác) và chứng minh ca của nó ĐỎ.
+ *   · final wave      — (R-2-z1) màn tab `equipment-standards-alarms` (tabOf, hiệu chuẩn theo phần tử của trang mẹ);
+ *                       `hScroll` cuộn ngang cấp trang ≥1366 = LỖI; biến thể Copilot phải THẬT SỰ hiện/ẩn (LỖI nếu không).
  *
  * Instance: KHÔNG dùng :3000 (chạy dist cũ). `--spawn` tự dựng server TỪ MÃ NGUỒN (tsx) ở :3016
  * + Vite dev (in-process) ở :5176, DB `aoi_management_test`. Server KHÔNG nạp .env (DOTENV_CONFIG_PATH
@@ -87,7 +89,9 @@ export const SCREENS = [
     legacyMain: { desc: "khung CodeMirror (vùng không data-loc, có input, cao ≥200)", fn: (r) => !r.loc && r.inp >= 1 && r.h >= 200 },
     actions: [{ id: "so-tay", label: /sổ tay/i }] },
   { n: 4, id: "engineering-changes", route: "/engineering-changes",
-    legacyMain: { desc: "EngineeringChanges card chứa bảng", fn: (r) => /EngineeringChanges\.tsx/.test(r.loc || "") && r.kind === "card" && r.tbl >= 1 && r.depth === 0 },
+    // final wave (T4-M6): danh sách ECN là <section> (trước: Card bị vô hiệu kiểu chỉ để selector này còn thấy). Selector
+    // nhận cả hai — baseline (Card) vẫn tái lập được; hình học của MAIN cũ không đổi.
+    legacyMain: { desc: "EngineeringChanges card/section chứa bảng", fn: (r) => /EngineeringChanges\.tsx/.test(r.loc || "") && (r.kind === "card" || r.kind === "section") && r.tbl >= 1 && r.depth === 0 },
     actions: [{ id: "thay-doi-moi", label: /Thay đổi mới/ }] },
   { n: 5, id: "recipes", route: "/recipes",
     legacyMain: { desc: "RecipeManagement: card 'Mã recipe' + card cùng hàng (phiên bản)", pick: (rs) => { const a = rs.find((r) => /RecipeManagement\.tsx/.test(r.loc || "") && r.kind === "card" && /^Mã recipe/.test(r.head)); if (!a) return []; return rs.filter((r) => /RecipeManagement\.tsx/.test(r.loc || "") && r.kind === "card" && r.depth === a.depth && Math.abs(r.y - a.y) <= 4); } },
@@ -122,6 +126,13 @@ export const SCREENS = [
   { n: 13, id: "equipment-standards", route: "/equipment-standards",
     legacyMain: { desc: "EquipmentStandards tabs-content đang mở", fn: (r) => /EquipmentStandards\.tsx/.test(r.loc || "") && r.kind === "tabs-content" },
     actions: [{ id: "dang-ky-loai", label: /Đăng ký loại/ }] },
+  // final wave (R-2-z1 / I-4): mục tiêu §1.1 "trang cao nhất (Standards cảnh báo) ≤1,5×" đo trên CHÍNH tab cảnh báo
+  // (`?tab=alarms`), trước đây chỉ có ở bản sao thước trong scratchpad. Cùng trang ⇒ `tabOf`: bản ghi hiệu chuẩn RIÊNG
+  // (MAIN của tab khác hình học), bản ghi MỚI chỉ được ghi khi phần tử mang attribute TRÙNG phần tử đã hiệu chuẩn của
+  // trang mẹ (FE1 chưa từng đo tab này nên không có tham chiếu hình học); sau đó so lại mỗi lần chạy như mọi màn.
+  { n: 13.5, id: "equipment-standards-alarms", route: "/equipment-standards?tab=alarms", tabOf: "equipment-standards",
+    legacyMain: { desc: "EquipmentStandards tabs-content đang mở", fn: (r) => /EquipmentStandards\.tsx/.test(r.loc || "") && r.kind === "tabs-content" },
+    actions: [{ id: "chuan-hoa-canh-bao", label: /Chuẩn hóa cảnh báo/ }] },
   { n: 14, id: "equipment-integration", route: "/equipment-integration",
     legacyMain: { desc: "EquipmentIntegration tabs-content đang mở", fn: (r) => /EquipmentIntegration\.tsx/.test(r.loc || "") && r.kind === "tabs-content" },
     actions: [] },
@@ -211,7 +222,8 @@ export const KNOWN_PROCS = {
   "ir-editor": ["aiInbox.count","andon.active","auth.me","commandCenter.hierarchy","ir.lint","ir.listFlows","ir.status","license.getAllowedModules","license.systemState","permissions.getMyPermissions","programming.listProjects"],
   "pou-studio": ["aiInbox.count","andon.active","auth.me","commandCenter.hierarchy","license.getAllowedModules","license.systemState","permissions.getMyPermissions","programming.listProjects","programming.pouLint","programming.pouTranspilePreview"],
   "programming-copilot": ["aiInbox.count","andon.active","auth.me","commandCenter.hierarchy","license.getAllowedModules","license.systemState","permissions.getMyPermissions"],
-  "fleet-orchestration": ["aiInbox.count","andon.active","auth.me","commandCenter.hierarchy","fleet.deadlocks","fleet.listChargers","fleet.listChargingPlans","fleet.listOperations","fleet.listReservations","fleet.listResourceReservations","fleet.listResources","fleet.listTasks","fleet.listZones","fleet.resourceStatus","fleet.status","license.getAllowedModules","license.systemState","permissions.getMyPermissions"],
+  // final wave (I-4): Task 10 đưa bản đồ lên MAIN ⇒ `fleet.robotPositions` (5 s) + `twin.occupancyGrid` chạy mỗi lần mở trang.
+  "fleet-orchestration": ["aiInbox.count","andon.active","auth.me","commandCenter.hierarchy","fleet.deadlocks","fleet.listChargers","fleet.listChargingPlans","fleet.listOperations","fleet.listReservations","fleet.listResourceReservations","fleet.listResources","fleet.listTasks","fleet.listZones","fleet.resourceStatus","fleet.robotPositions","fleet.status","license.getAllowedModules","license.systemState","permissions.getMyPermissions","twin.occupancyGrid"],
   "safety-workforce": ["aiInbox.count","andon.active","auth.me","commandCenter.hierarchy","license.getAllowedModules","license.systemState","permissions.getMyPermissions","safety.currentBoard","safety.feed","safety.listAssignments","safety.listCollaborations","safety.nearMissTrend","safety.sourceHealth","safety.status"],
   "equipment-standards": ["aiInbox.count","alarmKpi.summary","andon.active","auth.me","commandCenter.hierarchy","equipmentStandards.complianceMetrics","equipmentStandards.hierarchyTree","equipmentStandards.listAlarmMappings","equipmentStandards.listChangeRequests","equipmentStandards.listMasterAlarms","equipmentStandards.status","license.getAllowedModules","license.systemState","permissions.getMyPermissions"],
   "equipment-integration": ["aiInbox.count","andon.active","auth.me","commandCenter.hierarchy","equipmentIntegration.integrationStatus","equipmentIntegration.status","license.getAllowedModules","license.systemState","machine.list","permissions.getMyPermissions"],
@@ -222,6 +234,9 @@ PAGE_TABLES["engineering-studio"] = [...new Set([...PAGE_TABLES["engineering-stu
 PAGE_TABLES["programming-copilot"] = [...new Set([...PAGE_TABLES["programming-copilot"], ...PAGE_TABLES["engineering"]])].sort();
 KNOWN_PROCS["engineering-studio"] = [...new Set([...KNOWN_PROCS["engineering-studio"], ...KNOWN_PROCS["engineering-home"]])].sort();
 KNOWN_PROCS["programming-copilot"] = [...new Set([...KNOWN_PROCS["programming-copilot"], ...KNOWN_PROCS["engineering"]])].sort();
+// final wave (I-4) — tab cảnh báo của Standards là CÙNG trang: đọc đúng những gì trang Standards đọc.
+PAGE_TABLES["equipment-standards-alarms"] = PAGE_TABLES["equipment-standards"];
+KNOWN_PROCS["equipment-standards-alarms"] = KNOWN_PROCS["equipment-standards"];
 
 const DEFAULT_SIZES = [[1600, 950], [1366, 768]];
 
@@ -682,7 +697,14 @@ function PHASE2(arg) {
   inner.sort((a, b) => b.ratio - a.ratio);
 
   const dialogs = [...document.querySelectorAll('[role=dialog],[role=alertdialog]')].filter(vis).map((e) => ({ role: e.getAttribute('role'), slot: e.getAttribute('data-slot'), ...R(e) }));
+  // final wave (R-2-z1 / I-4) — Ràng buộc 10 "không có thanh cuộn ngang ở 1366": cuộn ngang CẤP TRANG = tài liệu hoặc
+  // <main> của shell (container cuộn của trang) rộng hơn khung. Cuộn ngang BÊN TRONG một ô (bảng tự cuộn) không tính.
+  const se = document.scrollingElement;
+  const hDoc = Math.max(0, se.scrollWidth - se.clientWidth);
+  const mainSX = main ? getComputedStyle(main).overflowX : 'visible';
+  const hMain = main && /(auto|scroll|overlay)/.test(mainSX) ? Math.max(0, main.scrollWidth - main.clientWidth) : 0;
   return {
+    hScroll: { docOverflowPx: hDoc, mainOverflowPx: hMain, mainOverflowX: mainSX },
     errors, warnings, mainCount: mainEls.length, mainRects, mainRectsRaw, clippedBy, mainTop,
     attrSel: arg.mode === 'attr' ? mainEls.map((e) => `${e.tagName.toLowerCase()}[data-layout-main="${e.getAttribute('data-layout-main')}"]@${(e.getAttribute('data-loc') || '').replace(/^.*[\\/]/, '').replace(/:\d+$/, '')}`).sort().join('|') : null,
     inside, aiInside: aiInside.map(({ el, ...rest }) => rest),
@@ -734,6 +756,8 @@ export const GUARDS = {
   kpiFirst: ["T26-chip-trong-wrapper"], labelDeep: ["T27-wrapper-notice-mau"], emptyNotice: ["T28-trong-trong-notice"],
   // Task 5 fix round 1 (R-2-m)
   separatorExempt: ["T29a-separator-anh-em-mien"],
+  // final wave (R-2-z1 / I-4)
+  hScroll: ["T30-cuon-ngang-trang"], copilotAssert: ["T31-copilot-phai-hien"], tabCalib: ["T32-hieu-chuan-tab"],
 };
 /** Dung sai hiệu chuẩn (fix2 #1): MAIN theo attribute so với MAIN tham chiếu (selector FE1, lưu trong baseline). */
 export const CALIB_TOL = { px: 4, areaPct: 3 };
@@ -780,16 +804,23 @@ export function summarize(screen, variant, p1, p2, legacyP2, opts = {}) {
     pageHeightRatio: +((p2.scroll.docH + p2.scroll.extra) / vh).toFixed(2), pageHeightRatioDoc: p1.scrollRatio, scroll: p2.scroll,
     shell: { sidebarW: p1.shell.sidebarW, topbarH: p1.shell.topbarH, mainTop: p1.shell.mainTop, mainW: p1.shell.mainW, mainPad: p1.shell.mainPad, breadcrumbLocs: p1.shell.crumbs.map((c) => (c.loc || "").replace(/^.*[\\/]/, "")) },
     dialogsAtLoad: { count: p2.dialogs.length, kinds: p2.dialogs.map(dialogKind) },
+    hScroll: p2.hScroll,
     spinnersAtMeasure: p1.spinners,
     errors, warnings,
   };
   // fix2 #7: dialog/sheet mở sẵn lúc nạp = LỖI
   if (p2.dialogs.length && !OFF.has("dialogsAtLoad")) errors.push(`${p2.dialogs.length} dialog/sheet MỞ SẴN lúc nạp: ${JSON.stringify(rec.dialogsAtLoad.kinds)}`);
+  // final wave (R-2-z1): Ràng buộc 10 — cuộn ngang cấp trang ở khung ≥1366 px = LỖI (dưới 1366 chỉ báo trong `hScroll`).
+  const hPx = Math.max(p2.hScroll?.docOverflowPx ?? 0, p2.hScroll?.mainOverflowPx ?? 0);
+  if (vw >= 1366 && hPx > 1 && !OFF.has("hScroll")) errors.push(`CUỘN NGANG CẤP TRANG ${hPx} px ở ${vw} px (tài liệu ${p2.hScroll.docOverflowPx} px, <main> ${p2.hScroll.mainOverflowPx} px) — Ràng buộc 10`);
   // Tham chiếu MAIN theo selector FE1 (luôn ghi khi selector FE1 còn tìm thấy) — lưu trong baseline cho cổng hiệu chuẩn
   const lp = legacyP2 || (mode === "fe1-legacy" ? p2 : null);
   if (lp && lp.mainCount) rec.legacyRef = { mainTop: lp.mainTop, rects: lp.mainRects, areaPx: unionArea(lp.mainRects, 1e6, 1e6, -1e6), hadH1: !!p2.h1 };
   // fix3: trang CÓ h1 ở baseline mà nay mất h1 ⇒ LỖI (Studio không có h1 ở baseline ⇒ miễn)
-  if (opts.ref && opts.ref.hadH1 && !p2.h1 && !OFF.has("h1Gate")) errors.push("MẤT h1: trang có h1 ở baseline nhưng nay không có h1 nhìn thấy");
+  // final wave (T1 minor): màn KHÔNG có tham chiếu riêng (tab `tabOf`, bí danh `calibrateAs`) dùng tham chiếu h1 của màn
+  // mẹ/đích (`opts.h1Ref`) ⇒ cổng h1 không còn tắt chỉ vì thiếu legacyRef.
+  const h1Ref = opts.ref || opts.h1Ref;
+  if (h1Ref && h1Ref.hadH1 && !p2.h1 && !OFF.has("h1Gate")) errors.push("MẤT h1: trang có h1 ở baseline nhưng nay không có h1 nhìn thấy");
   rec.attrSel = p2.attrSel;
   // fix2 #1: CỔNG HIỆU CHUẨN khi trang có data-layout-main
   if (mode === "data-layout-main" && !OFF.has("calib")) {
@@ -804,6 +835,14 @@ export function summarize(screen, variant, p1, p2, legacyP2, opts = {}) {
       rec.calibration = { status: c.ok && selOk ? "recorded-match" : "RECORD-MISMATCH", ...c, selOk, record: { mainTop: cal.mainTop, areaPx: cal.areaPx, attrSel: cal.attrSel, gitHead: cal.gitHead } };
       if (!(c.ok && selOk)) errors.push(`HIỆU CHUẨN LỆCH BẢN GHI (${key}): Δtop ${c.dTop} px, Δleft ${c.dLeft} px, Δdiện tích ${c.dAreaPct} %${selOk ? "" : `, phần tử mang attribute đổi: "${cal.attrSel}" → "${p2.attrSel}"`} — đổi bản ghi phải chạy --calibrate (calibration.json được commit, thay đổi hiện trong git)`);
     }
+    else if (screen.tabOf) {
+      // final wave (R-2-z1): TAB của một trang đã hiệu chuẩn — chưa có bản ghi riêng ⇒ chỉ chấp nhận khi attribute nằm
+      // TRÊN ĐÚNG phần tử đã hiệu chuẩn của trang mẹ (không có tham chiếu hình học FE1 cho tab này). Ghi bản ghi bằng --calibrate.
+      const parent = opts.calibrations && opts.calibrations[`${screen.tabOf}|${vw}|${variant}`];
+      const same = !!parent && parent.attrSel === p2.attrSel;
+      if (same || OFF.has("tabCalib")) { rec.calibration = { status: "matches-reference", refKind: "parent-element", parentAttrSel: parent?.attrSel ?? null }; warnings.push(`hiệu chuẩn tab: attribute trên đúng phần tử của ${screen.tabOf} nhưng CHƯA có bản ghi cho ${key} — chạy --calibrate và commit calibration.json`); }
+      else { rec.calibration = { status: "MISMATCH", refKind: "parent-element", parentAttrSel: parent?.attrSel ?? null }; errors.push(`HIỆU CHUẨN TAB: ${parent ? `attribute của tab nằm trên phần tử khác trang mẹ ("${parent.attrSel}" ≠ "${p2.attrSel}")` : `trang mẹ ${screen.tabOf}@${vw}/${variant} chưa có bản ghi hiệu chuẩn`}`); }
+    }
     else if (!ref) { rec.calibration = { status: "no-reference" }; errors.push(`HIỆU CHUẨN: trang có [data-layout-main] nhưng không có tham chiếu FE1 trong baseline cho ${screen.id}@${vw}/${variant}`); }
     else {
       const dTop = Math.abs(p2.mainTop - ref.mainTop), dArea = ref.areaPx ? Math.abs(area - ref.areaPx) / ref.areaPx * 100 : 100;
@@ -815,6 +854,23 @@ export function summarize(screen, variant, p1, p2, legacyP2, opts = {}) {
     }
   }
   return rec;
+}
+/**
+ * final wave (R-2-z1 / I-4) — biến thể Copilot PHẢI có thật: trước đây biến thể "open" chỉ đặt khoá localStorage, không ai
+ * kiểm Copilot có hiện không (bản ghi open/closed của IR/POU giống từng byte). Đầu dò trong trang: bề mặt `[data-layout-ai]`
+ * nhìn thấy (≥120×120) chứa tabpanel Copilot (`[role=tabpanel][id$="-copilot"]`, không `hidden`, cao >0).
+ */
+function COPILOT_PROBE() {
+  const vis = (e) => { const r = e.getBoundingClientRect(); const s = getComputedStyle(e); return r.width >= 4 && r.height >= 4 && s.display !== 'none' && s.visibility !== 'hidden'; };
+  const surfaces = [...document.querySelectorAll('[data-layout-ai]')].filter((e) => { const r = e.getBoundingClientRect(); return vis(e) && r.width >= 120 && r.height >= 120; });
+  const panels = surfaces.flatMap((a) => [...a.querySelectorAll('[role=tabpanel][id$="-copilot"]')]).filter((p) => !p.hidden && vis(p));
+  return { rendered: panels.length > 0, surfaces: surfaces.length, panelIds: panels.map((p) => p.id) };
+}
+export function copilotCheck(rec, probe, expected) {
+  rec.copilot = { expected, ...probe };
+  if (OFF.has("copilotAssert")) return;
+  if (expected === "open" && !probe.rendered) rec.errors.push("BIẾN THỂ COPILOT MỞ nhưng KHÔNG thấy panel Copilot trong layout ([data-layout-ai] chứa tabpanel *-copilot) — số đo của biến thể này không đo Copilot");
+  if (expected === "closed" && probe.rendered) rec.errors.push("BIẾN THỂ COPILOT ĐÓNG nhưng panel Copilot đang hiện — hạt giống trạng thái không có tác dụng");
 }
 function dialogKind(d) {
   const s = d.slot || "";
@@ -1462,6 +1518,40 @@ async function selfTest(page, base, s, only = null) {
     check("T29c-separator-fixed-van-che", b.coverMain.px >= b0.coverMain.px + 0.9 * 8 * w && b.coverMain.separatorHitPx === b0.coverMain.separatorHitPx, { before: b0.coverMain.px, after: b.coverMain.px, need: Math.round(0.9 * 8 * w), separatorHitPx: b.coverMain.separatorHitPx });
     await fresh();
   }
+  // final wave (R-2-z1 / I-4) — T30: một khối 3000 px trong <main> ⇒ cuộn ngang CẤP TRANG ⇒ LỖI (Ràng buộc 10).
+  if (want("T30-cuon-ngang-trang")) {
+    await page.evaluate(() => { const d = document.createElement('div'); d.setAttribute('data-testid', 'uim-rong'); d.style.cssText = 'width:3000px;height:8px'; document.querySelector('main').appendChild(d); });
+    const b = await mp(page, s, "selftest", { ref: ref0, calibrations: {} });
+    const hit = (r) => r.errors.some((e) => /CUỘN NGANG CẤP TRANG/.test(e));
+    check("T30-cuon-ngang-trang", !hit(b0) && hit(b) && (b.hScroll.mainOverflowPx > 1000 || b.hScroll.docOverflowPx > 1000), { before: b0.hScroll, after: b.hScroll });
+    await fresh();
+  }
+  // T31: đầu dò Copilot — trang không có Copilot + biến thể "open" ⇒ LỖI; bơm bề mặt [data-layout-ai] có tabpanel *-copilot
+  // ⇒ "open" hết lỗi còn "closed" thành LỖI. Đi qua đúng COPILOT_PROBE + copilotCheck của phép đo thật.
+  if (want("T31-copilot-phai-hien")) {
+    const none = await page.evaluate(COPILOT_PROBE);
+    const rA = { errors: [] }; copilotCheck(rA, none, "open");
+    await page.evaluate(() => { const a = document.createElement('aside'); a.setAttribute('data-layout-ai', ''); a.style.cssText = 'position:fixed;right:0;top:120px;width:320px;height:420px;background:#fff;z-index:5'; const p = document.createElement('div'); p.setAttribute('role', 'tabpanel'); p.id = 'uim-copilot'; p.style.cssText = 'height:300px'; p.textContent = 'Copilot'; a.appendChild(p); document.body.appendChild(a); });
+    const yes = await page.evaluate(COPILOT_PROBE);
+    const rB = { errors: [] }; copilotCheck(rB, yes, "open");
+    const rC = { errors: [] }; copilotCheck(rC, yes, "closed");
+    check("T31-copilot-phai-hien", !none.rendered && rA.errors.length === 1 && yes.rendered && rB.errors.length === 0 && rC.errors.length === 1, { none, yes, errA: rA.errors.length, errB: rB.errors.length, errC: rC.errors.length });
+    await fresh();
+  }
+  // T32: hiệu chuẩn TAB (`tabOf`) — chưa có bản ghi riêng: attribute trên đúng phần tử của trang mẹ ⇒ đạt (cảnh báo);
+  // phần tử khác ⇒ LỖI; trang mẹ chưa có bản ghi ⇒ LỖI.
+  if (want("T32-hieu-chuan-tab")) {
+    await inPage(`T.setAttribute('data-layout-main', 'dung');`);
+    const tab = { ...s, tabOf: "uim-me" };
+    const first = await mp(page, s, "selftest", { ref: ref0, calibrations: {} });
+    const pk = "uim-me|1600|selftest";
+    const good = await mp(page, tab, "selftest", { calibrations: { [pk]: { attrSel: first.attrSel } } });
+    const moved = await mp(page, tab, "selftest", { calibrations: { [pk]: { attrSel: "div[data-layout-main=\"khac\"]@Khac.tsx" } } });
+    const orphan = await mp(page, tab, "selftest", { calibrations: {} });
+    const tabErr = (r) => r.errors.some((e) => /HIỆU CHUẨN TAB/.test(e));
+    check("T32-hieu-chuan-tab", good.calibration?.status === "matches-reference" && !tabErr(good) && tabErr(moved) && tabErr(orphan), { good: good.calibration, moved: moved.calibration?.status, orphan: orphan.calibration?.status });
+    await fresh();
+  }
   if (want("T16-bam-loi")) {
     const errs = dataErrors({ bang_that: "12:abcdef", bang_hong: "ERR:relation does not exist" });
     check("T16-bam-loi", errs.length === 1, { errors: errs });
@@ -1479,7 +1569,8 @@ async function measureAll({ base, username, password, screens, sizes, shots, sho
       const list = screens.filter((s) => variant === "closed" || s.copilot);
       if (!list.length) continue;
       const ctx = await browser.newContext({ viewport: { width: sizes[0][0], height: sizes[0][1] }, locale: "vi-VN", timezoneId: "Asia/Ho_Chi_Minh", deviceScaleFactor: 1 });
-      await ctx.addInitScript((dock) => { try { localStorage.setItem("i18nextLng", "vi"); localStorage.setItem("progCopilotDock.open", dock); localStorage.setItem("sidebar_open", "true"); } catch { /* */ } }, variant === "open" ? "1" : "0");
+      // final wave (M-3): khoá nhớ Copilot đổi tên `progCopilot.open` (khoá cũ chỉ còn được ĐỌC một lần) — đặt khoá mới, gỡ khoá cũ.
+      await ctx.addInitScript((dock) => { try { localStorage.setItem("i18nextLng", "vi"); localStorage.setItem("progCopilot.open", dock); localStorage.removeItem("progCopilotDock.open"); localStorage.setItem("sidebar_open", "true"); } catch { /* */ } }, variant === "open" ? "1" : "0");
       const login = await ctx.request.post(base + "/api/auth/login", { data: { username, password } });
       if (!login.ok()) throw new Error(`Đăng nhập thất bại ${login.status()} ${await login.text()}`);
       const page = await ctx.newPage();
@@ -1504,8 +1595,11 @@ async function measureAll({ base, username, password, screens, sizes, shots, sho
           }
           if (shots) await page.screenshot({ path: path.join(shotDir, `${String(s.n).padStart(2, "0")}-${s.id}-${variant}-${w}.png`) });
           const v = s.copilot ? variant : "n/a";
-          const opts = { ref: refs[`${s.id}|${w}|${v}`], calibrations };
+          const parentId = s.tabOf ?? s.calibrateAs?.id;
+          const opts = { ref: refs[`${s.id}|${w}|${v}`], h1Ref: parentId ? (refs[`${parentId}|${w}|${s.calibrateAs?.variant ?? v}`] ?? refs[`${parentId}|${w}|n/a`]) : undefined, calibrations };
           const rec = await measurePage(page, s, v, opts);
+          // final wave (R-2-z1): màn có biến thể Copilot ⇒ kiểm Copilot THẬT SỰ mở/đóng đúng biến thể (LỖI nếu không).
+          if (s.copilot) copilotCheck(rec, await page.evaluate(COPILOT_PROBE), v);
           rec.actions = await runActions(page, s.actions, { s, variant: v, before: rec, opts });
           for (const a of rec.actions) { if (a.error) rec.errors.push(a.error); if (a.status === "disabled") rec.warnings.push(`hành động "${a.id}" disabled cho role đo`); if (a.status === "opened" && !a.closedByEsc) rec.warnings.push(`hành động "${a.id}": Esc không đóng`); }
           rec.trpc = [...procs].sort();
@@ -1533,10 +1627,12 @@ async function measureAll({ base, username, password, screens, sizes, shots, sho
             OFF.clear();
             const red = r.checks.filter((c) => !c.pass).map((c) => c.name);
             const ok = cases.every((c) => red.includes(c));
-            selfTestResult.mutation.push({ guard: g, cases, red, guardProven: ok });
+            selfTestResult.mutation.push({ guard: g, cases, red, guardProven: ok, retries: r.retries ?? 0 });
             console.log(`[uim] gỡ gác ${g.padEnd(15)} ⇒ ${cases.map((c) => `${c}:${red.includes(c) ? "ĐỎ" : "xanh(!)"}`).join(" ")}`);
           }
           selfTestResult.mutationPass = selfTestResult.mutation.every((m) => m.guardProven);
+          // final wave (T1 minor): số lần đo lại (không thấy MAIN) của MỌI lượt gỡ gác được cộng, không chỉ lượt chính.
+          selfTestResult.mutationRetries = selfTestResult.mutation.reduce((n, m) => n + (m.retries ?? 0), 0);
         }
       }
       await ctx.close();
@@ -1641,7 +1737,8 @@ async function main() {
   const shotDir = path.join(REPO, ".playwright-mcp/do-bo-cuc/anh");
   fs.mkdirSync(path.dirname(outFile), { recursive: true });
   if (args.shots) fs.mkdirSync(shotDir, { recursive: true });
-  const meta = { tool: "scripts/ui-metrics/engineeringLayout.mjs", startedAt: new Date().toISOString(), argv: process.argv.slice(2), sizes, flags, gitHead: (() => { try { return execFileSync("git", ["rev-parse", "--short", "HEAD"], { cwd: REPO }).toString().trim(); } catch { return null; } })() };
+  const meta = { tool: "scripts/ui-metrics/engineeringLayout.mjs", startedAt: new Date().toISOString(), argv: process.argv.slice(2), sizes, flags, gitHead: (() => { try { return execFileSync("git", ["rev-parse", "--short", "HEAD"], { cwd: REPO }).toString().trim(); } catch { return null; } })(),
+    gitDirty: (() => { try { return execFileSync("git", ["status", "--porcelain", "--", "client/src", "scripts/ui-metrics"], { cwd: REPO }).toString().split("\n").filter(Boolean).map((l) => l.slice(3)); } catch { return null; } })() };
   if (!args.spawn) throw new Error("Chỉ hỗ trợ --spawn (instance tự dựng, có canh dữ liệu + kết nối). Đo instance khác không được nghiệm thu.");
 
   let serverChild = null, vite = null, probeMade = false;
@@ -1684,9 +1781,11 @@ async function main() {
         if (!x.calibration) continue;
         if (SCREENS.find((sc) => sc.id === x.screen)?.calibrateAs) continue; // R-2-x: bí danh KHÔNG BAO GIỜ ghi bản ghi
         const key = `${x.screen}|${x.vw}|${x.variant}`;
-        const entry = { screen: x.screen, vw: x.vw, variant: x.variant, mainTop: x.mainTop, rects: x.mainRects, areaPx: unionArea(x.mainRects, 1e6, 1e6, -1e6), attrSel: x.attrSel, gitHead: meta.gitHead, at: new Date().toISOString() };
+        // final wave (T4-M7): `gitHead` một mình không nói bố cục đo có nằm trong commit đó không ⇒ ghi kèm `gitDirty`
+        // (tệp chưa commit dưới client/src hoặc scripts/ui-metrics lúc hiệu chuẩn).
+        const entry = { screen: x.screen, vw: x.vw, variant: x.variant, mainTop: x.mainTop, rects: x.mainRects, areaPx: unionArea(x.mainRects, 1e6, 1e6, -1e6), attrSel: x.attrSel, gitHead: meta.gitHead, gitDirty: meta.gitDirty, at: new Date().toISOString() };
         if (cal.pages[key]) { if (x.calibration.status !== "recorded-match") { cal.pages[key] = { ...entry, previous: { mainTop: cal.pages[key].mainTop, areaPx: cal.pages[key].areaPx, attrSel: cal.pages[key].attrSel, gitHead: cal.pages[key].gitHead } }; meta.calibrated.push(`${key} (ghi đè)`); } }
-        else if (x.calibration.status === "matches-reference") { cal.pages[key] = { ...entry, fromReference: { dTop: x.calibration.dTop, dLeft: x.calibration.dLeft, dAreaPct: x.calibration.dAreaPct } }; meta.calibrated.push(key); }
+        else if (x.calibration.status === "matches-reference") { cal.pages[key] = { ...entry, fromReference: x.calibration.refKind === "parent-element" ? { parentElement: x.calibration.parentAttrSel } : { dTop: x.calibration.dTop, dLeft: x.calibration.dLeft, dAreaPct: x.calibration.dAreaPct } }; meta.calibrated.push(key); }
       }
       fs.writeFileSync(calFile, JSON.stringify(cal, null, 1));
     }

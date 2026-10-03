@@ -219,13 +219,13 @@ Chạy `--spawn` hai lần liên tiếp, mỗi lần một instance mới, rồi
 
 1. Độ lệch tương đối `|a−b| / max(|a|,|b|)` < 2 %, xét trên mọi màn × kích thước × biến thể × chỉ số.
    Chữ ký hành động và trạng thái hiệu chuẩn phải trùng khớp tuyệt đối.
-2. Đối chứng dương `selfTest.pass` ở **cả hai** lần chạy. Có 34 ca trên ECN @1600, đi qua đúng đường đo thật
+2. Đối chứng dương `selfTest.pass` ở **cả hai** lần chạy. Có 37 ca trên ECN @1600, đi qua đúng đường đo thật
    (`measurePage` / `runActions` / `dataErrors`); mỗi ca chèn một cách lách vào trang vừa nạp lại sạch. Phép đo
    trong tự kiểm đo lại (≤3 lần, chờ settle) nếu MAIN tạm vắng vì trang đang vẽ lại; số lần đo lại ghi ở
    `meta.selfTest.retries` (0 là bình thường). "Nạp lại sạch" gồm cả **gỡ `data-layout-main` có sẵn của trang**
    (Task 4: ECN là trang đầu tiên gắn attribute; attribute sẵn có làm ca T06 "attribute trên `tbody`" thành MAIN lồng,
-   bị bỏ qua ⇒ đỏ oan). Ca tự kiểm dựa vào selector FE1 của ECN (card `EngineeringChanges.tsx` chứa bảng, depth 0),
-   nên trang ECN phải giữ card đó quanh danh sách:
+   bị bỏ qua ⇒ đỏ oan). Ca tự kiểm dựa vào selector FE1 của ECN (card **hoặc section** `EngineeringChanges.tsx` chứa
+   bảng, depth 0 — final wave T4-M6: danh sách ECN là `<section>`, không còn Card vô hiệu kiểu chỉ để selector thấy):
 
    | Ca | Cách lách | Phải thấy |
    |---|---|---|
@@ -263,6 +263,9 @@ Chạy `--spawn` hai lần liên tiếp, mỗi lần một instance mới, rồi
    | T29a | separator anh em MAIN, trong luồng, 1 px, dải `::after` 8 px lấn vào MAIN, đặt đúng một hàng lưới (R-2-m) | `coverMain` KHÔNG đổi, `separatorHitPx` > 0 (gỡ gác `separatorExempt` ⇒ ĐỎ) |
    | T29b | CÙNG attribute separator trên lớp phủ `absolute` 40 px anh em MAIN (absolute TRONG MAIN vốn không tính che) | `coverMain` ≥ +0,9×40×rộng, đúng thủ phạm |
    | T29c | separator 1 px `position:fixed` ngang giữa MAIN | `coverMain` ≥ +0,9×8×rộng, `separatorHitPx` không đổi |
+   | T30 | khối 3 000 px chèn vào `<main>` | LỖI "CUỘN NGANG CẤP TRANG" (trang sạch không có) |
+   | T31 | đầu dò Copilot trên trang không Copilot (biến thể open) / bơm `aside[data-layout-ai]` có `tabpanel#…-copilot` (open, rồi closed) | LỖI / 0 lỗi / LỖI |
+   | T32 | màn tab (`tabOf`) chưa có bản ghi: attribute trùng phần tử của trang mẹ / phần tử khác / trang mẹ chưa có bản ghi | `matches-reference` 0 lỗi / LỖI / LỖI |
 3. Không lỗi băm, không trôi dữ liệu trong từng lần chạy.
 4. Dữ liệu giống nhau giữa hai lần chạy.
 5. Cùng hồ sơ cờ.
@@ -271,9 +274,9 @@ Chạy `--spawn` hai lần liên tiếp, mỗi lần một instance mới, rồi
 `kpiBoth`, `attrConstraint`, `actionNotFound`, `calib`, `insideMain`, `headerBanner`, `noDialog`, `clip`,
 `aiInside`, `overlayBand`, `dialogsAtLoad`, `errHash`, `scrollAncestors`, `siblingReport`, `wsEscape`, `h1Gate`,
 `aboveH1Banner`, `fixedInMain`, `textLabel`, `aiText`, `toolbar56`, `chipMin`, `emptyStateW`, `kpiFirst`, `labelDeep`,
-`emptyNotice`, `separatorExempt`). Với mỗi gác bị gỡ, (các) ca của nó
+`emptyNotice`, `separatorExempt`, `hScroll`, `copilotAssert`, `tabCalib` — 32 gác). Với mỗi gác bị gỡ, (các) ca của nó
 **phải đỏ**; kết quả ghi ở `meta.selfTest.mutation[]`, và `pass` của lần chạy có `--mutation` đòi mọi gác
-đều đỏ khi gỡ.
+đều đỏ khi gỡ. Số lần đo lại của mọi lượt gỡ gác được cộng ở `meta.selfTest.mutationRetries`.
 
 Kết quả của Task 1 nằm trong `.superpowers/sdd/2026-09-27-engineering-control-dot2-bo-cuc/task-1-report.md`.
 
@@ -297,3 +300,24 @@ Hai màn của Đợt 2 đã bị GỘP ở Task 15. URL cũ của chúng chỉ 
 - **TRƯỚC/SAU KHÔNG CÙNG LOẠI.** Số FE1 (`--fe1`) và `baseline*.json` của hai id này là trang CŨ. Số sau Task 15 là trang
   đích (tab Danh mục của Hub / IDE chưa mở dự án + Copilot). Mọi bảng TRƯỚC/SAU (Task 16) phải ghi rõ điều này, không
   được đọc như cải thiện hay thoái lui của cùng một màn.
+
+## Đợt 2 final wave (Ruling R-2-z1, 2026-10-04) — mọi số nghiệm thu tái lập được từ thước đã commit
+Trước đợt này hai số của doc 81 §11 chỉ có ở một bản sao thước trong scratchpad (final review I-4). Nay thước chính có:
+
+- **Màn `equipment-standards-alarms`** (`/equipment-standards?tab=alarms`, `tabOf: "equipment-standards"`): mục tiêu
+  "trang cao nhất ≤1,5×" đo trên chính tab cảnh báo. `PAGE_TABLES`/`KNOWN_PROCS` = của Standards (cùng trang).
+  Hiệu chuẩn: bản ghi RIÊNG `equipment-standards-alarms|vw|n/a` (MAIN của tab khác hình học tab mặc định). Bản ghi
+  MỚI chỉ được `--calibrate` ghi khi phần tử mang attribute TRÙNG phần tử đã hiệu chuẩn của trang mẹ (`fromReference:
+  { parentElement }`) — FE1 chưa từng đo tab này nên không có tham chiếu hình học. Sau đó so lại mỗi lần chạy như mọi
+  màn (lệch ⇒ LỖI). Cổng h1 của màn tab / bí danh dùng tham chiếu h1 của màn mẹ/đích (`h1Ref`).
+- **`hScroll`** (mỗi bản ghi): `docOverflowPx` (tài liệu) và `mainOverflowPx` (`<main>` của shell, container cuộn của
+  trang) — cuộn ngang CẤP TRANG. Ở khung ≥1366 px, >1 px là **LỖI** (Ràng buộc 10). Cuộn ngang bên trong một ô (bảng tự
+  cuộn) không tính.
+- **Biến thể Copilot phải có thật** (`copilot` mỗi bản ghi của màn có biến thể): đầu dò `COPILOT_PROBE` tìm bề mặt
+  `[data-layout-ai]` nhìn thấy ≥120×120 chứa `[role=tabpanel][id$="-copilot"]` không `hidden`. Biến thể `open` mà không
+  thấy ⇒ **LỖI**; biến thể `closed` mà thấy ⇒ **LỖI** (hạt giống trạng thái hỏng). Hạt giống là khoá mới
+  `progCopilot.open` (M-3; khoá cũ `progCopilotDock.open` bị gỡ trong context đo).
+- `KNOWN_PROCS` của Fleet có `fleet.robotPositions` + `twin.occupancyGrid` (bản đồ là MAIN từ Task 10).
+- `--calibrate` ghi kèm `gitDirty` (tệp chưa commit dưới `client/src`/`scripts/ui-metrics` lúc hiệu chuẩn) — `gitHead`
+  một mình không nói bố cục đo có nằm trong commit đó (T4-M7).
+
