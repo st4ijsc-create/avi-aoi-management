@@ -293,46 +293,48 @@
    "screen": "fleet-orchestration",
    "vw": 1600,
    "variant": "n/a",
-   "mainTop": 466,
+   "mainTop": 120,
    "rects": [
     {
      "x": 288,
-     "y": 466,
-     "w": 1288,
-     "h": 441
+     "y": 120,
+     "w": 836,
+     "h": 802
     }
    ],
-   "areaPx": 568008,
-   "attrSel": "div[data-layout-main=\"fleet-orchestration\"]@FleetOrchestration.tsx",
-   "gitHead": "dd7e71134",
-   "at": "2026-10-03T08:03:40.820Z",
-   "fromReference": {
-    "dTop": 0,
-    "dLeft": 0,
-    "dAreaPct": 0
+   "areaPx": 670472,
+   "attrSel": "div[data-layout-main=\"fleet-orchestration\"]@CockpitLayout.tsx",
+   "gitHead": "b2e9cdd3e",
+   "at": "2026-10-03T08:38:59.175Z",
+   "previous": {
+    "mainTop": 466,
+    "areaPx": 568008,
+    "attrSel": "div[data-layout-main=\"fleet-orchestration\"]@FleetOrchestration.tsx",
+    "gitHead": "dd7e71134"
    }
   },
   "fleet-orchestration|1366|n/a": {
    "screen": "fleet-orchestration",
    "vw": 1366,
    "variant": "n/a",
-   "mainTop": 486,
+   "mainTop": 120,
    "rects": [
     {
      "x": 288,
-     "y": 486,
-     "w": 1054,
-     "h": 441
+     "y": 120,
+     "w": 642,
+     "h": 620
     }
    ],
-   "areaPx": 464814,
-   "attrSel": "div[data-layout-main=\"fleet-orchestration\"]@FleetOrchestration.tsx",
-   "gitHead": "dd7e71134",
-   "at": "2026-10-03T08:03:40.820Z",
-   "fromReference": {
-    "dTop": 0,
-    "dLeft": 0,
-    "dAreaPct": 0
+   "areaPx": 398040,
+   "attrSel": "div[data-layout-main=\"fleet-orchestration\"]@CockpitLayout.tsx",
+   "gitHead": "b2e9cdd3e",
+   "at": "2026-10-03T08:38:59.175Z",
+   "previous": {
+    "mainTop": 486,
+    "areaPx": 464814,
+    "attrSel": "div[data-layout-main=\"fleet-orchestration\"]@FleetOrchestration.tsx",
+    "gitHead": "dd7e71134"
    }
   }
  }
