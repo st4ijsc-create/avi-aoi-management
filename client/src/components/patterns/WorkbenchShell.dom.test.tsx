@@ -759,6 +759,11 @@ describe("WorkbenchShell — kích thước ban đầu theo px khi đã biết b
     }
   });
 
+  it("khung CHƯA đo được (bề rộng 0) + leftCollapsed=true lúc mount ⇒ explorer vẫn gập (nhánh không có đích px)", () => {
+    renderShell({ userId: null, leftCollapsed: true });
+    expect(size("left")).toBe(0);
+  });
+
   it("fitWorkbenchColumns — bảng chân lý", () => {
     const L = { minPx: 220, maxPx: 360, targetPx: 240 };
     const R = { minPx: 300, maxPx: 480, targetPx: 340 };
