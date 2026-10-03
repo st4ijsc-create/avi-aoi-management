@@ -336,6 +336,64 @@
     "attrSel": "div[data-layout-main=\"fleet-orchestration\"]@FleetOrchestration.tsx",
     "gitHead": "dd7e71134"
    }
+  },
+  "orchestration-studio|1600|n/a": {
+   "screen": "orchestration-studio",
+   "vw": 1600,
+   "variant": "n/a",
+   "mainTop": 603,
+   "rects": [
+    {
+     "x": 72,
+     "y": 603,
+     "w": 997,
+     "h": 222
+    },
+    {
+     "x": 1085,
+     "y": 603,
+     "w": 491,
+     "h": 222
+    }
+   ],
+   "areaPx": 330336,
+   "attrSel": "div[data-layout-main=\"orchestration-studio\"]@OrchestrationStudio.tsx|div[data-layout-main=\"orchestration-studio\"]@OrchestrationStudio.tsx",
+   "gitHead": "e877d897f",
+   "at": "2026-10-03T09:26:41.100Z",
+   "fromReference": {
+    "dTop": 0,
+    "dLeft": 0,
+    "dAreaPct": 0
+   }
+  },
+  "orchestration-studio|1366|n/a": {
+   "screen": "orchestration-studio",
+   "vw": 1366,
+   "variant": "n/a",
+   "mainTop": 603,
+   "rects": [
+    {
+     "x": 72,
+     "y": 603,
+     "w": 841,
+     "h": 222
+    },
+    {
+     "x": 929,
+     "y": 603,
+     "w": 413,
+     "h": 222
+    }
+   ],
+   "areaPx": 278388,
+   "attrSel": "div[data-layout-main=\"orchestration-studio\"]@OrchestrationStudio.tsx|div[data-layout-main=\"orchestration-studio\"]@OrchestrationStudio.tsx",
+   "gitHead": "e877d897f",
+   "at": "2026-10-03T09:26:41.100Z",
+   "fromReference": {
+    "dTop": 0,
+    "dLeft": 0,
+    "dAreaPct": 0
+   }
   }
  }
 }
