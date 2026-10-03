@@ -4111,7 +4111,8 @@
       "endpoint": "endpoint",
       "reviewReason": "rejection reason",
       "gatewayId": "gateway",
-      "deviceIds": "allowed device list"
+      "deviceIds": "allowed device list",
+      "expectedProjectId": "open project (expectedProjectId)"
     },
     "feature": {
       "webIngest": "web content ingestion",
@@ -4351,7 +4352,8 @@
       "recipeNotApproved": "This recipe version has not been approved by a second person — it cannot be deployed, released or rolled back to.",
       "recipeArchived": "This recipe version is archived — create a new version instead of putting an archived one into production.",
       "recipeMachineTypeMismatch": "This recipe is for a different machine type than the target machine — it cannot be deployed there.",
-      "recipeRetired": "This version was deliberately archived (not just replaced by a newer one), or there is no record of it ever being replaced — it cannot be rolled back to. Create a new version instead."
+      "recipeRetired": "This version was deliberately archived (not just replaced by a newer one), or there is no record of it ever being replaced — it cannot be rolled back to. Create a new version instead.",
+      "buildNotInProject": "This build does not belong to the open project — pick a build of this project and try again. Nothing was deployed."
     },
     "stopPinReason": {
       "no_pins": "No stop tag is pinned for this machine — use the hardware E-STOP.",

@@ -551,8 +551,12 @@ function EngineeringWorkspaceView() {
   const pendingConfirmedBy = isProd
     ? (useApprovalFlow ? undefined : approverId ? Number(approverId) : undefined)
     : (signOff && user?.id ? user.id : undefined);
+  // doc 81 Đợt 2 Task 12b (R-2-r) — IDE LUÔN nói "build này thuộc dự án đang mở" (expectedProjectId):
+  // server từ chối có mã nếu lệch, TRƯỚC OTP/sổ/thiết bị. Cùng giá trị ở preview / deploy / yêu cầu
+  // duyệt / đội máy.
+  const expectedProjectId = projectId ?? undefined;
   const deployPreviewQ = trpc.programming.deployPreview.useQuery(
-    { buildId: buildId!, stage: deployStage, confirmedBy: pendingConfirmedBy },
+    { buildId: buildId!, stage: deployStage, confirmedBy: pendingConfirmedBy, expectedProjectId },
     { enabled: canView && buildId != null },
   );
   const previewBlocked = deployPreviewQ.data?.verdict === "blocked";
@@ -1298,6 +1302,7 @@ function EngineeringWorkspaceView() {
                               // double-submit); bấm lại sau khi bị từ chối ⇒ yêu cầu mới.
                               idempotencyKey: newDeployAttemptKey("depreq", buildId, "production"),
                               reason: deployReason.trim(),
+                              expectedProjectId,
                             })
                           }
                         >
@@ -1325,6 +1330,7 @@ function EngineeringWorkspaceView() {
                                 : (signOff && user?.id ? user.id : undefined),
                               reason: isProd ? deployReason.trim() : undefined,
                               totpCode,
+                              expectedProjectId,
                             }));
                           }}
                         >
@@ -1546,6 +1552,7 @@ function EngineeringWorkspaceView() {
                             : (fleetSignOff && user?.id ? user.id : undefined),
                           reason: fleetIsProd ? fleetReason.trim() : undefined,
                           totpCode,
+                          expectedProjectId,
                         }));
                       }}
                     >

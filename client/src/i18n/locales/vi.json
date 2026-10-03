@@ -4111,7 +4111,8 @@
       "endpoint": "địa chỉ endpoint",
       "reviewReason": "lý do từ chối",
       "gatewayId": "gateway",
-      "deviceIds": "danh sách thiết bị được phép"
+      "deviceIds": "danh sách thiết bị được phép",
+      "expectedProjectId": "dự án đang mở (expectedProjectId)"
     },
     "feature": {
       "webIngest": "nạp nội dung từ web",
@@ -4343,7 +4344,8 @@
       "recipeNotApproved": "Phiên bản công thức này chưa được người thứ hai duyệt — không thể triển khai/phát hành/quay lui về nó.",
       "recipeArchived": "Phiên bản công thức này đã lưu trữ — hãy tạo phiên bản mới thay vì đưa bản đã lưu trữ vào chạy.",
       "recipeMachineTypeMismatch": "Công thức này dành cho loại máy khác với máy đích — không thể triển khai lên máy này.",
-      "recipeRetired": "Phiên bản này đã bị CỐ Ý lưu trữ (không phải chỉ bị thay bằng bản mới), hoặc không có dấu vết từng bị thay — không thể quay lui về nó. Hãy tạo phiên bản mới."
+      "recipeRetired": "Phiên bản này đã bị CỐ Ý lưu trữ (không phải chỉ bị thay bằng bản mới), hoặc không có dấu vết từng bị thay — không thể quay lui về nó. Hãy tạo phiên bản mới.",
+      "buildNotInProject": "Build này không thuộc dự án đang mở — chọn lại một build của chính dự án này rồi thử lại. Không có gì được triển khai."
     },
     "stopPinReason": {
       "no_pins": "Máy chưa ghim tag DỪNG nào — dùng E-STOP phần cứng.",

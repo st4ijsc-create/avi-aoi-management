@@ -4103,7 +4103,8 @@
       "endpoint": "endpoint地址",
       "reviewReason": "驳回原因",
       "gatewayId": "网关",
-      "deviceIds": "允许的设备列表"
+      "deviceIds": "允许的设备列表",
+      "expectedProjectId": "当前打开的项目（expectedProjectId）"
     },
     "feature": {
       "webIngest": "网页内容导入",
@@ -4343,7 +4344,8 @@
       "recipeNotApproved": "此配方版本尚未经第二人批准——不能部署、发布或回滚到该版本。",
       "recipeArchived": "此配方版本已归档——请创建新版本，而不是将已归档版本投入生产。",
       "recipeMachineTypeMismatch": "此配方适用的机型与目标设备不同——不能部署到该设备。",
-      "recipeRetired": "此版本是被有意归档的（并非仅被新版本替换），或没有任何被替换的记录——不能回滚到该版本。请创建新版本。"
+      "recipeRetired": "此版本是被有意归档的（并非仅被新版本替换），或没有任何被替换的记录——不能回滚到该版本。请创建新版本。",
+      "buildNotInProject": "该构建不属于当前打开的项目——请重新选择本项目的构建后再试。未执行任何部署。"
     },
     "stopPinReason": {
       "no_pins": "该设备尚未固定任何停止标签——请使用硬件急停（E-STOP）。",

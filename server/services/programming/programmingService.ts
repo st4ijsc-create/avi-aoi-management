@@ -438,6 +438,36 @@ export async function loadDeployCtx(buildId: number) {
 }
 
 /**
+ * doc 81 Đợt 2 Task 12b (Ruling R-2-r, mục c) — cổng Ý ĐỊNH ở biên deploy: người gọi (IDE) nói
+ * "build này thuộc dự án tôi đang mở" bằng `expectedProjectId`. Vắng ⇒ không kiểm (người gọi API cũ
+ * giữ hành vi hôm nay). Có mặt mà build/phiên bản không tồn tại ⇒ NOT_FOUND như `loadDeployCtx`
+ * (fail-closed); có mặt mà KHÁC dự án của build ⇒ CONFLICT · INVALID_VALUE{expectedProjectId,
+ * buildNotInProject}. CHỈ ĐỌC hai hàng, không ghi gì ⇒ gọi được TRƯỚC step-up OTP (xem
+ * `programmingRouter` · meta `chanTruocStepUp`) mà không tiêu mã, không ghi sổ, không chạm thiết bị.
+ * Thông điệp không nêu dự án THẬT của build (chỉ id người gọi tự đưa).
+ */
+export async function assertBuildInExpectedProject(buildId: number, expectedProjectId: number | undefined): Promise<void> {
+  if (expectedProjectId === undefined) return;
+  const d = await db();
+  const [b] = await d.select({ artifactId: programBuilds.artifactId }).from(programBuilds).where(eq(programBuilds.id, buildId)).limit(1);
+  if (!b) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "programBuild" }, `Build ${buildId} not found`);
+  const [art] = await d
+    .select({ projectId: programArtifacts.projectId })
+    .from(programArtifacts)
+    .where(eq(programArtifacts.id, b.artifactId))
+    .limit(1);
+  if (!art) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "programmingArtifact" }, `Artifact ${b.artifactId} not found`);
+  if (art.projectId !== expectedProjectId) {
+    throw appError(
+      "CONFLICT",
+      "INVALID_VALUE",
+      { field: "expectedProjectId", reason: "buildNotInProject" },
+      `Build ${buildId} không thuộc dự án ${expectedProjectId} đang mở — từ chối deploy (chọn lại build của dự án này).`,
+    );
+  }
+}
+
+/**
  * THE DEPLOY GATE (pure of persistence). Runs EVERY safety gate in order — four-eyes-at-
  * version, build-ok, SoD (production self-approve), Simulation Gate — and only then invokes
  * the adapter's REAL device path (when DPC_DEPLOY_ENABLED is on AND a human signed off),

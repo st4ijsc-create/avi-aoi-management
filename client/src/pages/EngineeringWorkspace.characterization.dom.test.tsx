@@ -78,6 +78,9 @@ const mutationDeferred = new Set<string>();
 const mutationPending: Record<string, Array<() => void>> = {};
 /** Task 12b — mutation THẤT BẠI: mutateAsync bị reject (như react-query khi server ném). */
 const mutationFails = new Set<string>();
+/** Tuỳ chọn useMutation của lượt render MỚI NHẤT — react-query v5 `MutationObserver.setOptions` cập nhật
+ *  tuỳ chọn (kể cả onSuccess) của mutation đang chạy mỗi lượt render ⇒ kết quả về muộn chạy closure MỚI. */
+const latestMutOpts: Record<string, { onSuccess?: (d: unknown, v: unknown) => void } | undefined> = {};
 function xaHoan(key: string) {
   const q = mutationPending[key] ?? [];
   mutationPending[key] = [];
@@ -107,13 +110,13 @@ vi.mock("@/lib/trpc", () => ({
                   if (opts?.enabled === false) return makeQuery();
                   return queryOverrides[key] ? queryOverrides[key](input) : makeQuery();
                 },
-                useMutation: (mopts?: { onSuccess?: (d: unknown, v: unknown) => void }) => ({
+                useMutation: (mopts?: { onSuccess?: (d: unknown, v: unknown) => void }) => (latestMutOpts[key] = mopts, {
                   mutate: (vars: unknown) => {
                     (mutateCalls[key] ??= []).push(vars);
                     const r = mutationResponses[key];
                     if (mutationFails.has(key)) return;
                     if (r && mutationDeferred.has(key)) {
-                      (mutationPending[key] ??= []).push(() => mopts?.onSuccess?.(r(vars), vars));
+                      (mutationPending[key] ??= []).push(() => latestMutOpts[key]?.onSuccess?.(r(vars), vars));
                       return;
                     }
                     if (r) mopts?.onSuccess?.(r(vars), vars);
@@ -447,7 +450,7 @@ describe("deployPreview hiện TRƯỚC OTP", () => {
     expect(screen.getByTestId("deploy-preview")).toHaveAttribute("data-verdict", "real");
     expect(screen.queryByText(/Two-step verification to deploy|Xác thực 2 bước/)).not.toBeInTheDocument();
     fireEvent.click(screen.getByTestId("engineering-deploy-signoff"));
-    expect(queryInputs["programming.deployPreview"]).toEqual({ buildId: 5, stage: "staging", confirmedBy: ME });
+    expect(queryInputs["programming.deployPreview"]).toEqual({ buildId: 5, stage: "staging", confirmedBy: ME, expectedProjectId: 1 });
     fireEvent.click(screen.getByTestId("engineering-deploy-button"));
     expect(screen.getByText(/Two-step verification to deploy|Xác thực 2 bước/)).toBeInTheDocument();
     expect(mutateCalls["programming.deployBuild"]).toBeUndefined();
@@ -469,12 +472,12 @@ describe("deployPreview hiện TRƯỚC OTP", () => {
     const deployCard = within(document.getElementById("gt-deploy")!);
     await user.click(deployCard.getAllByRole("combobox")[0]);
     await user.click(screen.getByRole("option", { name: "production" }));
-    expect(queryInputs["programming.deployPreview"]).toEqual({ buildId: 5, stage: "production", confirmedBy: undefined });
+    expect(queryInputs["programming.deployPreview"]).toEqual({ buildId: 5, stage: "production", confirmedBy: undefined, expectedProjectId: 1 });
     expect(screen.getByTestId("engineering-deploy-button")).toBeDisabled();
     await user.click(deployCard.getAllByRole("combobox")[1]);
     expect(screen.queryByRole("option", { name: "Me" })).not.toBeInTheDocument(); // không tự ký
     await user.click(screen.getByRole("option", { name: "Approver Nine" }));
-    expect(queryInputs["programming.deployPreview"]).toEqual({ buildId: 5, stage: "production", confirmedBy: 9 });
+    expect(queryInputs["programming.deployPreview"]).toEqual({ buildId: 5, stage: "production", confirmedBy: 9, expectedProjectId: 1 });
     expect(screen.getByTestId("engineering-deploy-button")).toBeDisabled();
     fireEvent.change(document.querySelector("#gt-deploy textarea")!, { target: { value: "ECN-42" } });
     expect(screen.getByTestId("engineering-deploy-button")).not.toBeDisabled();
@@ -802,5 +805,47 @@ describe("Task 12b (b) — kết quả về MUỘN không rơi vào lựa chọn
     expect(queryEnabled["programming.listBuilds"]).toBe(false);
     expect(screen.queryByText("#7")).not.toBeInTheDocument();
     expect(versionBtn(/^v1 · main/).className).not.toMatch(/border-primary/);
+  });
+});
+
+describe("Task 12b (c) — IDE LUÔN gửi expectedProjectId (dự án đang mở) ở biên deploy", () => {
+  it("deployPreview + deployBuild (sau OTP) + deployToFleet mang expectedProjectId = dự án đang mở", async () => {
+    seed();
+    renderPage();
+    fireEvent.click(versionBtn(/^v1 · main/));
+    fireEvent.click(screen.getByText("#5"));
+    expect(queryInputs["programming.deployPreview"]).toMatchObject({ buildId: 5, expectedProjectId: 1 });
+    // deploy đơn
+    fireEvent.click(deployBtnEl());
+    const otp = document.querySelector('input[autocomplete="one-time-code"]') as HTMLInputElement;
+    await act(async () => { fireEvent.change(otp, { target: { value: "123456" } }); });
+    await nghi();
+    expect(mutateCalls["programming.deployBuild"]?.[0]).toMatchObject({ buildId: 5, expectedProjectId: 1 });
+    // đội máy
+    fireEvent.click(fleetBox("M3 · #3"));
+    fireEvent.click(fleetBtnEl());
+    const otp2 = document.querySelector('input[autocomplete="one-time-code"]') as HTMLInputElement;
+    await act(async () => { fireEvent.change(otp2, { target: { value: "654321" } }); });
+    await nghi();
+    expect(mutateCalls["programming.deployToFleet"]?.[0]).toMatchObject({ buildId: 5, deviceIds: [3], expectedProjectId: 1 });
+  });
+
+  it("production + Hộp duyệt BẬT ⇒ requestDeployApproval mang expectedProjectId", async () => {
+    const user = userEvent.setup();
+    seed();
+    const st = queryOverrides["programming.status"]!;
+    queryOverrides["programming.status"] = (i) => {
+      const q = st(i);
+      return { ...q, data: { ...(q.data as object), deployApprovalEnabled: true } };
+    };
+    renderPage();
+    fireEvent.click(versionBtn(/^v1 · main/));
+    fireEvent.click(screen.getByText("#5"));
+    const deployCard = within(document.getElementById("gt-deploy")!);
+    await user.click(deployCard.getAllByRole("combobox")[0]);
+    await user.click(screen.getByRole("option", { name: "production" }));
+    fireEvent.change(document.querySelector("#gt-deploy textarea")!, { target: { value: "ECN-42" } });
+    fireEvent.click(screen.getByTestId("engineering-request-deploy-button"));
+    expect(mutateCalls["programming.requestDeployApproval"]?.[0]).toMatchObject({ buildId: 5, reason: "ECN-42", expectedProjectId: 1 });
   });
 });
