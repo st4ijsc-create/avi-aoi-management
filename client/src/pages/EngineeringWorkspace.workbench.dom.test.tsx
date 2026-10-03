@@ -58,6 +58,8 @@ const queryInputs: Record<string, unknown> = {};
 const queryEnabled: Record<string, boolean | undefined> = {};
 const mutateCalls: Record<string, unknown[]> = {};
 const mutationResponses: Record<string, ((vars: any) => unknown) | undefined> = {};
+/** `.data` của mutation (deployToFleet ⇒ fleetResult). */
+const mutationData: Record<string, unknown> = {};
 function chainable(): unknown {
   const fn = (..._a: unknown[]) => undefined;
   return new Proxy(fn, { get: () => chainable(), apply: () => undefined });
@@ -89,7 +91,7 @@ vi.mock("@/lib/trpc", () => ({
                 if (r) mopts?.onSuccess?.(d, vars);
                 return Promise.resolve(d);
               },
-              reset: vi.fn(), data: undefined, isPending: false, isError: false,
+              reset: vi.fn(), data: mutationData[key], isPending: false, isError: false,
             }),
           };
         },
@@ -171,7 +173,7 @@ beforeAll(() => {
   undoShim = installResizeHandleHitAreaShim();
 });
 beforeEach(() => {
-  for (const o of [queryOverrides, queryInputs, queryEnabled, mutateCalls, mutationResponses]) {
+  for (const o of [queryOverrides, queryInputs, queryEnabled, mutateCalls, mutationResponses, mutationData]) {
     for (const k of Object.keys(o)) delete (o as Record<string, unknown>)[k];
   }
   for (const f of Object.values(toasts)) f.mockReset();
@@ -394,6 +396,31 @@ describe("Deploy wizard 4 bước (WizardDialog) — deployPreview TRƯỚC OTP,
       strategy: { canaryCount: 1, promoteOnVerified: false, autoRollbackOnMismatch: true },
     });
     expect(mutateCalls["programming.deployBuild"]).toBeUndefined();
+  });
+
+  it("lượt deploy/đội máy XONG (onSuccess) ⇒ wizard đóng, panel dưới MỞ ở 'Lịch sử deploy' với kết quả rollout (ý định rõ — R-2-l)", async () => {
+    seed();
+    const fleet = { halted: false, promoted: true, haltCode: null, haltReason: null, results: [{ deviceId: 3, phase: "canary", status: "deployed", error: null, rolledBack: false, rollbackError: null }] };
+    mutationResponses["programming.deployToFleet"] = () => fleet;
+    mutationData["programming.deployToFleet"] = fleet;
+    renderPage();
+    expect(bottomToggle()).toHaveAttribute("aria-expanded", "false");
+    const d = await moWizard();
+    next(d);
+    fireEvent.click(within(d).getByRole("radio", { name: /Fleet|Đội máy/ }));
+    fireEvent.click(within(d).getByText("M3 · #3").closest("label")!.querySelector('[role="checkbox"]') as HTMLElement);
+    next(d);
+    next(d);
+    fireEvent.click(within(d).getByTestId("engineering-fleet-deploy-button"));
+    const otp = document.querySelector('input[autocomplete="one-time-code"]') as HTMLInputElement;
+    await act(async () => { fireEvent.change(otp, { target: { value: "654321" } }); });
+    await nghi();
+    expect(mutateCalls["programming.deployToFleet"]).toHaveLength(1);
+    expect(screen.queryByRole("dialog", { name: /Deploy build|Triển khai build/ })).toBeNull();
+    expect(bottomToggle()).toHaveAttribute("aria-expanded", "true");
+    const bottom = document.querySelector("[data-workbench-bottom]") as HTMLElement;
+    expect(within(bottom).getByRole("tab", { name: /Deploy history|Lịch sử deploy/ })).toHaveAttribute("aria-selected", "true");
+    expect(within(bottom).getByText(/promote/i)).toBeVisible();
   });
 
   it("chưa chọn build ⇒ nút mở wizard KHOÁ; không wizard, không OTP", () => {

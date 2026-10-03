@@ -429,11 +429,18 @@ function EngineeringWorkspaceView() {
     else if (o.level === "info") toast.info(text);
     else toast.success(text);
   };
+  // doc 81 Đợt 2 Task 13 — lượt gửi từ wizard đã có kết quả ⇒ đóng wizard và MỞ panel dưới ở "Lịch sử deploy" (ý định
+  // rõ của người dùng — R-2-l) để thấy hàng vừa ghi / kết quả rollout. Chỉ là UI; invalidate + toast giữ nguyên.
+  const showDeployResultInPanel = () => {
+    dispatch({ type: "wizard/close" });
+    dispatch({ type: "ui/bottom", tab: "deploys", open: true });
+  };
   const deployM = trpc.programming.deployBuild.useMutation({
     onSuccess: (d) => {
       utils.programming.listDeployments.invalidate();
       utils.programming.deployPreview.invalidate();
       showDeployOutcome(d, "deploy");
+      showDeployResultInPanel();
     },
     onError: (e) => toastTrpcError(e),
   });
@@ -443,6 +450,7 @@ function EngineeringWorkspaceView() {
     onSuccess: (d) => {
       utils.programming.listDeployments.invalidate();
       showDeployOutcome(d, "request");
+      showDeployResultInPanel();
     },
     onError: (e) => toastTrpcError(e),
   });
@@ -471,6 +479,7 @@ function EngineeringWorkspaceView() {
       } else {
         toast.success(t("engineering.fleetCanaryOk", "Canary đã chạy xong"));
       }
+      showDeployResultInPanel();
     },
     onError: (e) => toastTrpcError(e),
   });
