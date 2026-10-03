@@ -199,11 +199,20 @@ describe("★ Supervisor vào Hub ⇒ mở ĐÚNG hộp việc (doc 81 §1.4, Re
     who.modules = ["machine_status", "machine_control"];
     render(<EngineeringHub />);
     // dòng "Interlocks to approve" (không khẩn) vắng; dòng KHẨN "Open interlock events" vẫn ghim (R-2-y)
+    // final wave R-2-z5 — ĐỔI KHẲNG ĐỊNH có chủ đích (ruling): dòng khẩn vẫn ghim + số, nhưng vai không mở được
+    // /interlock-rules ⇒ KHÔNG là link (trước: link tới trang bị từ chối), kèm ghi chú "không có quyền".
     expect(within(mainEl()).queryByRole("link", { name: S("oversight.category.interlock") })).toBeNull();
-    expect(within(mainEl()).getByRole("link", { name: S("oversight.category.interlockEventsOpen") })).toBeInTheDocument();
+    const evRow = mainEl().querySelector('tbody[data-pending-pinned] tr[data-pending-row="interlockEventsOpen"]') as HTMLElement;
+    expect(evRow).not.toBeNull();
+    expect(evRow.querySelector("a")).toBeNull();
+    expect(evRow.querySelector("[data-pending-no-access]")).toHaveTextContent(S("oversight.noAccess"));
+    expect(evRow.querySelector("[data-pending-count]")?.textContent).toBe("0");
     expect(rowHrefs()).toContain("/engineering-changes?filter=pending");
     fireEvent.click(scopeBtn("scopeAll"));
-    expect(within(mainEl()).getByRole("link", { name: S("oversight.category.interlock") })).toBeInTheDocument();
+    // Toàn module: dòng duyệt rule interlock hiện (như cũ) nhưng cũng không là link với vai này.
+    const ilkRow = mainEl().querySelector('tr[data-pending-row="interlock"]') as HTMLElement;
+    expect(ilkRow).not.toBeNull();
+    expect(ilkRow.querySelector("a")).toBeNull();
   });
 
   it("HUB-01 giữ: nguồn trong phạm vi không đọc được ⇒ KHÔNG 'Không có gì chờ duyệt'", () => {

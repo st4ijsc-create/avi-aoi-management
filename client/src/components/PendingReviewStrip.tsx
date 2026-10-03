@@ -92,9 +92,15 @@ export interface PendingReviewStripProps {
    * `categoryFilter` (vd loại KHẨN `critical:true` của Hub ở mọi phạm vi).
    */
   pinned?: (c: CategoryDef) => boolean;
+  /**
+   * doc 81 Đợt 2 final wave (R-2-z5 / M-7) — chỉ `variant="table"`: loại mà vai hiện tại KHÔNG mở được trang đích
+   * (cùng luật RouteGuard của nav) vẫn hiện số (loại khẩn phải luôn thấy) nhưng KHÔNG là link — kèm ghi chú "không có
+   * quyền mở". Không truyền ⇒ mọi dòng là link như cũ.
+   */
+  canOpen?: (c: CategoryDef) => boolean;
 }
 
-export function PendingReviewStrip({ variant = "cards", categoryFilter, pinned }: PendingReviewStripProps = {}) {
+export function PendingReviewStrip({ variant = "cards", categoryFilter, pinned, canOpen }: PendingReviewStripProps = {}) {
   const { t } = useTranslation();
   const query = trpc.oversight.pendingSummary.useQuery(undefined, {
     // Việc chờ duyệt thay đổi chậm — làm mới nhẹ, không spam.
@@ -106,7 +112,7 @@ export function PendingReviewStrip({ variant = "cards", categoryFilter, pinned }
   if (variant === "table") {
     const pin = pinned ? CATEGORIES.filter(pinned) : [];
     const rest = (categoryFilter ? CATEGORIES.filter(categoryFilter) : CATEGORIES).filter((c) => !pin.includes(c));
-    return <PendingReviewTable query={query} pinned={pin} categories={rest} />;
+    return <PendingReviewTable query={query} pinned={pin} categories={rest} canOpen={canOpen} />;
   }
   // HUB-01 — nguồn nào ĐANG lỗi (bảng thiếu, quyền hạ tầng, DB rớt…), bất kể tổng.
   const degradedCategories = data != null ? CATEGORIES.filter((c) => data[c.key].degraded) : [];
@@ -238,10 +244,12 @@ function PendingReviewTable({
   query,
   categories: rest,
   pinned = [],
+  canOpen,
 }: {
   query: { data?: PendingSummary; isLoading: boolean; isError: boolean };
   categories: readonly CategoryDef[];
   pinned?: readonly CategoryDef[];
+  canOpen?: (c: CategoryDef) => boolean;
 }) {
   const { t } = useTranslation();
   const data = query.data;
@@ -310,13 +318,22 @@ function PendingReviewTable({
     return (
       <tr key={cat.key} data-pending-row={cat.key} className="border-b hover:bg-muted/40">
         <td className="py-2 pr-3">
-          <Link
-            href={cat.href}
-            className="inline-flex items-center gap-2 font-medium text-foreground hover:text-primary hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40"
-          >
-            <Icon className="h-4 w-4 shrink-0 text-primary" strokeWidth={2.1} aria-hidden="true" />
-            <span>{label(cat)}</span>
-          </Link>
+          {canOpen && !canOpen(cat) ? (
+            // R-2-z5 — vai này không mở được trang đích: giữ tên + số (loại khẩn luôn thấy), không dẫn tới trang bị từ chối.
+            <span data-pending-no-access="" className="inline-flex flex-wrap items-center gap-x-2 gap-y-0.5 font-medium text-foreground">
+              <Icon className="h-4 w-4 shrink-0 text-muted-foreground" strokeWidth={2.1} aria-hidden="true" />
+              <span>{label(cat)}</span>
+              <span className="text-xs font-normal text-muted-foreground">{t("oversight.noAccess", "(you don't have access to this page)")}</span>
+            </span>
+          ) : (
+            <Link
+              href={cat.href}
+              className="inline-flex items-center gap-2 font-medium text-foreground hover:text-primary hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40"
+            >
+              <Icon className="h-4 w-4 shrink-0 text-primary" strokeWidth={2.1} aria-hidden="true" />
+              <span>{label(cat)}</span>
+            </Link>
+          )}
         </td>
         <td className="py-2 pr-3 text-right">
           <span data-pending-count="" className={cn("text-base font-bold tabular-nums", bucket.degraded ? "text-warning" : tone)}>

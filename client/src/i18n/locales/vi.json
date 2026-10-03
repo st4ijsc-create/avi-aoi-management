@@ -16171,7 +16171,8 @@
       "kind": "Loại việc",
       "count": "Số",
       "samples": "Đang chờ"
-    }
+    },
+    "noAccess": "(không có quyền mở trang này)"
   },
   "eqIntegration": {
     "acq": {

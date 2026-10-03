@@ -395,7 +395,7 @@ function useScopeFilters() {
     return !nav || hasAccessToItem(nav.href, role, hasPermission as never);
   };
   const approvals = (c: CategoryDef) => !c.critical && canOpen(c);
-  return { approvals };
+  return { approvals, canOpen };
 }
 
 /** R-2-y — loại KHẨN (`critical:true` = thẻ ĐỎ của Hub cũ): luôn thấy, mọi phạm vi. */
@@ -404,11 +404,12 @@ const isCritical = (c: CategoryDef) => c.critical;
 function InboxTab() {
   const [scopeParam] = useUrlParam("scope");
   const scope: Scope = scopeParam === "all" ? "all" : "approvals";
-  const { approvals } = useScopeFilters();
+  const { approvals, canOpen } = useScopeFilters();
   return (
     // R-2-v — hộp việc lấp chiều cao còn lại của khung nhìn; danh sách cuộn BÊN TRONG (thead dính), trang không cuộn.
     <div data-hub-inbox-scroll="" className={HUB_SCROLL_REGION}>
-      <PendingReviewStrip variant="table" pinned={isCritical} categoryFilter={scope === "all" ? undefined : approvals} />
+      {/* R-2-z5 — dòng (kể cả loại khẩn ghim) mà vai không mở được: giữ số, không là link. */}
+      <PendingReviewStrip variant="table" pinned={isCritical} categoryFilter={scope === "all" ? undefined : approvals} canOpen={canOpen} />
     </div>
   );
 }

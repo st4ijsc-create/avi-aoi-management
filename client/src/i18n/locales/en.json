@@ -16191,7 +16191,8 @@
       "kind": "Work item",
       "count": "Count",
       "samples": "Waiting"
-    }
+    },
+    "noAccess": "(you don't have access to this page)"
   },
   "eqIntegration": {
     "acq": {
