@@ -389,92 +389,96 @@
    "screen": "engineering",
    "vw": 1600,
    "variant": "closed",
-   "mainTop": 495,
+   "mainTop": 137,
    "rects": [
     {
-     "x": 393,
-     "y": 495,
-     "w": 1158,
-     "h": 362
+     "x": 329,
+     "y": 137,
+     "w": 951,
+     "h": 788
     }
    ],
-   "areaPx": 419196,
-   "attrSel": "div[data-layout-main=\"engineering-editor\"]@EngineeringWorkspace.tsx",
-   "gitHead": "e905fcd87",
-   "at": "2026-10-03T12:59:29.515Z",
-   "fromReference": {
-    "dTop": 1,
-    "dLeft": 1,
-    "dAreaPct": 0.73
+   "areaPx": 749388,
+   "attrSel": "div[data-layout-main=\"engineering-editor\"]@WorkbenchShell.tsx",
+   "gitHead": "74d4ce7af",
+   "at": "2026-10-03T13:34:45.577Z",
+   "previous": {
+    "mainTop": 495,
+    "areaPx": 419196,
+    "attrSel": "div[data-layout-main=\"engineering-editor\"]@EngineeringWorkspace.tsx",
+    "gitHead": "e905fcd87"
    }
   },
   "engineering|1366|closed": {
    "screen": "engineering",
    "vw": 1366,
    "variant": "closed",
-   "mainTop": 515,
+   "mainTop": 137,
    "rects": [
     {
-     "x": 393,
-     "y": 515,
-     "w": 924,
-     "h": 362
+     "x": 329,
+     "y": 137,
+     "w": 717,
+     "h": 606
     }
    ],
-   "areaPx": 334488,
-   "attrSel": "div[data-layout-main=\"engineering-editor\"]@EngineeringWorkspace.tsx",
-   "gitHead": "e905fcd87",
-   "at": "2026-10-03T12:59:29.515Z",
-   "fromReference": {
-    "dTop": 1,
-    "dLeft": 1,
-    "dAreaPct": 0.77
+   "areaPx": 434502,
+   "attrSel": "div[data-layout-main=\"engineering-editor\"]@WorkbenchShell.tsx",
+   "gitHead": "74d4ce7af",
+   "at": "2026-10-03T13:34:45.577Z",
+   "previous": {
+    "mainTop": 515,
+    "areaPx": 334488,
+    "attrSel": "div[data-layout-main=\"engineering-editor\"]@EngineeringWorkspace.tsx",
+    "gitHead": "e905fcd87"
    }
   },
   "engineering|1600|open": {
    "screen": "engineering",
    "vw": 1600,
    "variant": "open",
-   "mainTop": 515,
+   "mainTop": 137,
    "rects": [
     {
-     "x": 393,
-     "y": 515,
-     "w": 738,
-     "h": 362
+     "x": 329,
+     "y": 137,
+     "w": 951,
+     "h": 788
     }
    ],
-   "areaPx": 267156,
-   "attrSel": "div[data-layout-main=\"engineering-editor\"]@EngineeringWorkspace.tsx",
-   "gitHead": "e905fcd87",
-   "at": "2026-10-03T12:59:29.515Z",
-   "fromReference": {
-    "dTop": 1,
-    "dLeft": 1,
-    "dAreaPct": 0.83
+   "areaPx": 749388,
+   "attrSel": "div[data-layout-main=\"engineering-editor\"]@WorkbenchShell.tsx",
+   "gitHead": "74d4ce7af",
+   "at": "2026-10-03T13:34:45.577Z",
+   "previous": {
+    "mainTop": 515,
+    "areaPx": 267156,
+    "attrSel": "div[data-layout-main=\"engineering-editor\"]@EngineeringWorkspace.tsx",
+    "gitHead": "e905fcd87"
    }
   },
   "engineering|1366|open": {
    "screen": "engineering",
    "vw": 1366,
    "variant": "open",
-   "mainTop": 551,
+   "mainTop": 137,
    "rects": [
     {
-     "x": 393,
-     "y": 551,
-     "w": 553,
-     "h": 362
+     "x": 329,
+     "y": 137,
+     "w": 717,
+     "h": 606
     }
    ],
-   "areaPx": 200186,
-   "attrSel": "div[data-layout-main=\"engineering-editor\"]@EngineeringWorkspace.tsx",
-   "gitHead": "e905fcd87",
-   "at": "2026-10-03T12:59:29.515Z",
-   "fromReference": {
-    "dTop": 1,
-    "dLeft": 1,
-    "dAreaPct": 0.74
+   "areaPx": 434502,
+   "attrSel": "div[data-layout-main=\"engineering-editor\"]@WorkbenchShell.tsx",
+   "gitHead": "74d4ce7af",
+   "at": "2026-10-03T13:34:45.577Z",
+   "previous": {
+    "mainTop": 551,
+    "areaPx": 200186,
+    "attrSel": "div[data-layout-main=\"engineering-editor\"]@EngineeringWorkspace.tsx",
+    "gitHead": "e905fcd87"
    }
   }
  }
