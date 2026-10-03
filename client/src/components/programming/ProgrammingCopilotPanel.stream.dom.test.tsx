@@ -228,3 +228,16 @@ describe("ProgrammingCopilotPanel — SSE", () => {
     expect(luot[0].signal.aborted).toBe(true);
   });
 });
+
+// doc 81 Đợt 2 Task 15 — chế độ scratch của IDE: không có editor chủ ⇒ "Sync from editor" (sẽ XOÁ mã người dùng đã dán
+// vào ô ngữ cảnh) bị ẩn; IDE/IR/POU có editor chủ giữ nút như cũ.
+describe("hideSyncFromEditor (Task 15 — scratch)", () => {
+  it("scratch ⇒ ô ngữ cảnh vẫn có (dán mã để giải thích/rà soát), KHÔNG nút Sync from editor; mặc định embedded vẫn có", () => {
+    const { unmount } = render(<ProgrammingCopilotPanel variant="embedded" seed={{ nonce: 1, mode: "explain" }} hideSyncFromEditor />);
+    expect(screen.getByLabelText("copilot-context")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /Sync from editor/ })).toBeNull();
+    unmount();
+    render(<ProgrammingCopilotPanel variant="embedded" contextCode="A" seed={{ nonce: 2, mode: "explain" }} />);
+    expect(screen.getByRole("button", { name: /Sync from editor/ })).toBeInTheDocument();
+  });
+});

@@ -50,6 +50,11 @@ export interface CopilotBinding {
   onApplyText?: (text: string) => void;
   /** Short host name shown in the header (e.g. "IR Editor"). */
   surfaceLabel?: string;
+  /**
+   * doc 81 Đợt 2 Task 15 — CHẾ ĐỘ SCRATCH của IDE (trang `/programming-copilot` cũ): chưa mở dự án nào ⇒ không có
+   * buffer chủ (không `onApply`, không "Đồng bộ từ editor"); kết quả chỉ để xem/sao chép như trang cũ.
+   */
+  scratch?: boolean;
 }
 
 interface ProgrammingCopilotContextValue {

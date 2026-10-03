@@ -44,6 +44,7 @@ import DashboardLayout from "@/components/DashboardLayout";
 import { useShellPageVariant } from "@/lib/shellPage";
 import { ViewOnlyBadge } from "@/components/PermissionGate";
 import { PageHeaderCompact, NoticeChip, FeatureStatusNoticeChip, WizardDialog } from "@/components/patterns";
+import { useUrlParam } from "@/components/patterns/useUrlParam";
 import { EngineeringShell } from "@/components/engineering/shell";
 import { CodeEditor } from "@/components/engineering/CodeEditor";
 import { LadderEditor } from "@/components/engineering/LadderEditor";
@@ -251,11 +252,15 @@ function EngineeringWorkspaceView() {
   // Áp dụng MỘT LẦN, chỉ khi list đã tải & project tồn tại (tránh chọn id "mồ côi").
   const search = useSearch();
   const deepLink = useMemo(() => parseDeepLink(search), [search]);
+  // doc 81 Đợt 2 Task 15 — `?copilot=scratch` = CHẾ ĐỘ SCRATCH (trang /programming-copilot cũ, URL cũ chuyển hướng giữ
+  // query): Copilot mở trong layout, KHÔNG tự mở dự án nhớ lần trước (chỉ `?projectId=` tường minh mới mở dự án).
+  const [copilotParam, setCopilotParam] = useUrlParam("copilot");
+  const scratchMode = copilotParam === "scratch";
   const { lastSelected, setLastProjectId } = useEngineering();
   const deepLinkApplied = useRef(false);
   useEffect(() => {
     if (deepLinkApplied.current) return;
-    const wanted = deepLink.projectId ?? lastSelected.projectId;
+    const wanted = deepLink.projectId ?? (scratchMode ? null : lastSelected.projectId);
     if (wanted == null) { deepLinkApplied.current = true; return; }
     if (!projectsQ.data) return; // đợi list
     deepLinkApplied.current = true;
@@ -602,8 +607,24 @@ function EngineeringWorkspaceView() {
   // doc 81 Đợt 2 Task 13 (R-2-b) — IDE vẽ Copilot TRONG layout (inspector phải, lõi dùng chung ProgrammingCopilotCore);
   // dock cố định đã gỡ ở Task 14. `open` của context = tab Copilot đang mở (nút AI top bar mở/đóng nó — R-2-j).
   const { open: copilotOpen, setOpen: setCopilotOpen } = useProgrammingCopilot();
+  // Task 15 — vào chế độ scratch ⇒ mở tab Copilot (một lần); đã có dự án ⇒ rời chế độ scratch (tham số rời URL, giữ
+  // các tham số khác) để F5 mở lại đúng dự án như luồng thường.
+  const scratchOpenedRef = useRef(false);
+  useEffect(() => {
+    if (scratchMode && !scratchOpenedRef.current) {
+      scratchOpenedRef.current = true;
+      setCopilotOpen(true);
+    }
+  }, [scratchMode]); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => {
+    if (scratchMode && project) setCopilotParam(null);
+  }, [scratchMode, project?.id]); // eslint-disable-line react-hooks/exhaustive-deps
   const copilotBinding = useMemo<CopilotBinding>(
-    () => ({
+    () => !project
+      // Task 15 — CHƯA mở dự án (chế độ scratch): không có buffer chủ ⇒ không Chèn/Thay buffer (trang Copilot cũ cũng
+      // chỉ Sao chép); lõi hiện ghi chú nháp và ẩn "Đồng bộ từ editor".
+      ? { scratch: true, surfaceLabel: t("nav.engineeringWorkspace", "Engineering Workspace"), diagnostics: [] }
+      : ({
       kind: copilotInitialKind,
       code,
       surfaceLabel: t("nav.engineeringWorkspace", "Engineering Workspace"),
@@ -622,7 +643,7 @@ function EngineeringWorkspaceView() {
       // a rapid toggle and a toast per click would be noise.
       onApplyText: (next: string) => setCode(next),
     }),
-    [copilotInitialKind, code, diagnostics], // eslint-disable-line react-hooks/exhaustive-deps
+    [project == null, copilotInitialKind, code, diagnostics], // eslint-disable-line react-hooks/exhaustive-deps
   );
   useCopilotBinding(() => copilotBinding, [copilotBinding]);
   // Copilot đã mở một lần ⇒ giữ mount lõi (stream đang chạy không bị huỷ khi chuyển sang tab Thuộc tính — Review

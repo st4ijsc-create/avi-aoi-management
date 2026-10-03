@@ -116,6 +116,7 @@ vi.mock("@/lib/trpc", () => ({
 
 import EngineeringWorkspace from "./EngineeringWorkspace";
 import { ProgrammingCopilotProvider } from "@/contexts/ProgrammingCopilotContext";
+import { EngineeringProvider } from "@/contexts/EngineeringContext";
 import { ShellAiButton } from "@/components/ShellAiButton";
 
 const ME = 8;
@@ -166,7 +167,7 @@ function renderPage(o: { aiButton?: boolean } = {}) {
 }
 
 // ─── SSE giả cho Copilot ─────────────────────────────────────────────────────────────────────────
-interface LuongGia { body: Record<string, unknown>; signal: AbortSignal; day: (o: unknown) => void }
+interface LuongGia { body: Record<string, unknown>; signal: AbortSignal; day: (o: unknown) => void; dong: () => void }
 let luot: LuongGia[] = [];
 function fetchGia(_url: string, init: RequestInit): Promise<Response> {
   const enc = new TextEncoder();
@@ -175,7 +176,12 @@ function fetchGia(_url: string, init: RequestInit): Promise<Response> {
   const stream = new ReadableStream<Uint8Array>({ start: (c) => void (ctl = c) });
   const signal = init.signal as AbortSignal;
   signal.addEventListener("abort", () => { if (!dong) { dong = true; ctl.error(new DOMException("Aborted", "AbortError")); } });
-  luot.push({ body: JSON.parse(String(init.body)), signal, day: (x) => !dong && ctl.enqueue(enc.encode(`data: ${JSON.stringify(x)}\n\n`)) });
+  luot.push({
+    body: JSON.parse(String(init.body)), signal,
+    day: (x) => !dong && ctl.enqueue(enc.encode(`data: ${JSON.stringify(x)}\n\n`)),
+    // Task 15 — đóng luồng bình thường (kết thúc lượt có result)
+    dong: () => { if (!dong) { dong = true; ctl.close(); } },
+  });
   return Promise.resolve(new Response(stream, { status: 200, headers: { "content-type": "text/event-stream" } }));
 }
 const nghi = () => act(() => new Promise((r) => setTimeout(r, 20)));
@@ -407,6 +413,93 @@ describe("Copilot là panel TRONG layout (R-2-b / R-2-j)", () => {
     await act(async () => { fireEvent.click(screen.getByTestId("copilot-cancel")); });
     await nghi();
     expect(luot[0].signal.aborted).toBe(true);
+  });
+});
+
+// ════════════════════════════════════════════════════════════════════════════════════════════════
+// doc 81 Đợt 2 Task 15 — trang /programming-copilot cũ ⇒ CHẾ ĐỘ SCRATCH của IDE (`/engineering?copilot=scratch`, URL cũ
+// chuyển hướng giữ query). Giữ MỌI năng lực của trang cũ: chọn loại/chế độ/hãng, sinh mã, stream, Huỷ, kết quả + kiểm
+// tra của lớp an toàn, Sao chép; KHÔNG thêm năng lực (không "Chèn vào editor" khi chưa có dự án — trang cũ cũng không).
+describe("Chế độ scratch của IDE (thay trang Copilot riêng — Task 15)", () => {
+  function renderWithEng() {
+    return render(
+      <EngineeringProvider>
+        <ProgrammingCopilotProvider>
+          <EngineeringWorkspace />
+        </ProgrammingCopilotProvider>
+      </EngineeringProvider>,
+    );
+  }
+  function scratch(o: { lastProject?: number; extra?: string } = {}) {
+    seed();
+    window.history.pushState({}, "", `/engineering?copilot=scratch${o.extra ?? ""}`);
+    if (o.lastProject != null) {
+      window.localStorage.setItem("engineering-last-selected", JSON.stringify({ projectId: o.lastProject, machineId: null, workflowRef: null }));
+    }
+    return renderWithEng();
+  }
+
+  it("?copilot=scratch ⇒ panel Copilot MỞ trong layout, KHÔNG tự mở dự án nhớ lần trước, ghi chú nháp, không nút Chèn", async () => {
+    scratch({ lastProject: 1 });
+    await screen.findByPlaceholderText(/Describe what to generate/);
+    expect(within(inspector()).getByRole("tab", { name: /Copilot/ })).toHaveAttribute("aria-selected", "true");
+    // dự án nhớ lần trước (P1) KHÔNG bị mở: không truy vấn phiên bản, editor là trạng thái chưa chọn dự án
+    expect(queryEnabled["programming.listArtifacts"]).toBe(false);
+    expect(screen.queryByText(/^v1 · main/, { selector: "button" })).toBeNull();
+    expect(document.querySelector("[data-copilot-scratch]")).not.toBeNull();
+    expect(screen.queryByRole("button", { name: /Apply to editor|Chèn vào editor/ })).toBeNull();
+    // cùng lõi Copilot của IDE: nằm trong aside data-layout-ai, ngoài MAIN, không dock fixed
+    expect(document.querySelector("aside[data-layout-ai]")).not.toBeNull();
+    expect(document.body.style.paddingRight).toBe("");
+  });
+
+  it("năng lực trang cũ: Sinh mã ⇒ stream SSE (kind mặc định iec61131-st như trang cũ) ⇒ kết quả + Sao chép; KHÔNG Chèn", async () => {
+    scratch();
+    fireEvent.change(await screen.findByPlaceholderText(/Describe what to generate/), { target: { value: "moving average D100" } });
+    await act(async () => { fireEvent.click(screen.getByRole("button", { name: /^Generate$/ })); });
+    await nghi();
+    expect(luot).toHaveLength(1);
+    expect(luot[0].body).toMatchObject({ kind: "iec61131-st", mode: "generate", request: "moving average D100" });
+    expect(luot[0].body).not.toHaveProperty("contextCode");
+    luot[0].day({ type: "result", result: { ok: true, refused: false, kind: "iec61131-st", code: "X := 1;", validation: { ok: true, diagnostics: [] } } });
+    luot[0].dong();
+    await nghi();
+    expect(screen.getByLabelText("copilot-result")).toHaveValue("X := 1;");
+    expect(screen.getByRole("button", { name: /Copy/ })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /Apply to editor|Chèn vào editor/ })).toBeNull();
+  });
+
+  it("năng lực trang cũ: Huỷ giữa chừng ⇒ abort; stream sống qua đổi tab Thuộc tính ↔ Copilot", async () => {
+    scratch();
+    fireEvent.change(await screen.findByPlaceholderText(/Describe what to generate/), { target: { value: "x" } });
+    await act(async () => { fireEvent.click(screen.getByRole("button", { name: /^Generate$/ })); });
+    await nghi();
+    fireEvent.click(within(inspector()).getByRole("tab", { name: /Properties|Thuộc tính/ }));
+    fireEvent.click(within(inspector()).getByRole("tab", { name: /Copilot/ }));
+    await nghi();
+    expect(luot).toHaveLength(1);
+    expect(luot[0].signal.aborted).toBe(false);
+    await act(async () => { fireEvent.click(screen.getByTestId("copilot-cancel")); });
+    await nghi();
+    expect(luot[0].signal.aborted).toBe(true);
+  });
+
+  it("?copilot=scratch&projectId=1 (query cũ giữ nguyên) ⇒ mở dự án đó; có dự án thì Chèn trở lại và tham số scratch rời URL", async () => {
+    scratch({ extra: "&projectId=1" });
+    await screen.findByPlaceholderText(/Describe what to generate/);
+    expect(queryEnabled["programming.listArtifacts"]).toBe(true);
+    expect(document.querySelector("[data-copilot-scratch]")).toBeNull();
+    expect(window.location.search).not.toContain("copilot=scratch");
+    expect(window.location.search).toContain("projectId=1");
+  });
+
+  it("không ?copilot=scratch ⇒ hành vi cũ: dự án nhớ lần trước vẫn tự mở", async () => {
+    seed();
+    window.history.pushState({}, "", "/engineering");
+    window.localStorage.setItem("engineering-last-selected", JSON.stringify({ projectId: 1, machineId: null, workflowRef: null }));
+    renderWithEng();
+    await nghi();
+    expect(queryEnabled["programming.listArtifacts"]).toBe(true);
   });
 });
 

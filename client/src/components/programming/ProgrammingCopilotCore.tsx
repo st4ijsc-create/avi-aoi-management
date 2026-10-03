@@ -106,10 +106,19 @@ export function ProgrammingCopilotCore({ binding, className }: { binding: Copilo
           onApply={binding.onApply}
           onApplyText={binding.onApplyText}
           seed={seed}
+          hideSyncFromEditor={binding.scratch}
         />
       </Suspense>
 
-      {!binding.onApply && (
+      {binding.scratch ? (
+        <p data-copilot-scratch="" className="flex items-start gap-1.5 rounded-md border border-dashed px-2 py-1.5 text-[10px] text-muted-foreground">
+          <Info className="mt-0.5 h-3 w-3 shrink-0" />
+          {t(
+            "engineering.ws.scratchNote",
+            "Chế độ nháp: chưa mở dự án nào — mã sinh ra chỉ để xem và sao chép. Mở một dự án để chèn vào editor.",
+          )}
+        </p>
+      ) : !binding.onApply && (
         <p className="flex items-start gap-1.5 rounded-md border border-dashed px-2 py-1.5 text-[10px] text-muted-foreground">
           <Info className="mt-0.5 h-3 w-3 shrink-0" />
           {t(
