@@ -151,6 +151,8 @@ export type { NoticeKind, NoticeChipProps, NoticeItem, NoticeStackProps, WhenToU
 export { StatusChipStrip, chipStateFromQuery, effectiveChipState, splitChipsForOverflow } from "./StatusChipStrip";
 export type { ChipState, StatusChipItem, StatusChipStripProps } from "./StatusChipStrip";
 export { FlyoutHost, useFlyout, useFlyoutLayer, parseFlyoutStack, buildFlyoutSearch, FLYOUT_PARAM, FLYOUT_ID_PARAM } from "./FlyoutHost";
+export { useCloseOwnLayer } from "./useCloseOwnLayer";
+export type { CloseOwnLayer } from "./useCloseOwnLayer";
 export type { FlyoutApi, FlyoutDefinition, FlyoutEntry, FlyoutHostProps, FlyoutLayerApi, FlyoutOpenOptions } from "./FlyoutHost";
 export { UnsavedChangesConfirm } from "./UnsavedChangesConfirm";
 export type { UnsavedChangesConfirmProps } from "./UnsavedChangesConfirm";

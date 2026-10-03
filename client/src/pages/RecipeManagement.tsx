@@ -41,7 +41,7 @@ import { useAuth } from "@/_core/hooks/useAuth";
 import DashboardLayout from "@/components/DashboardLayout";
 import { ViewOnlyBadge } from "@/components/PermissionGate";
 import {
-  PageContainer, PageHeaderCompact, NoticeChip, StatusBadge, SplitListDetail, FlyoutHost, useFlyout, useFlyoutLayer,
+  PageContainer, PageHeaderCompact, NoticeChip, StatusBadge, SplitListDetail, FlyoutHost, useFlyout, useCloseOwnLayer,
   VersionHistoryPanel, JsonDiffView, RollbackConfirm, EntityPicker,
   type BadgeVariant, type FlyoutApi, type FlyoutDefinition, type VersionRow, type EntityOption,
 } from "@/components/patterns";
@@ -1162,27 +1162,6 @@ function DeploymentLedger({
       </Table>
     </div>
   );
-}
-
-// ── Đóng lớp flyout của CHÍNH form này (không đóng nhầm lớp khác — Task 5 review M3) ──────────
-
-function useCloseOwnLayer() {
-  const layer = useFlyoutLayer();
-  const flyoutApi = useFlyout();
-  const stackRef = useRef(flyoutApi.stack);
-  stackRef.current = flyoutApi.stack;
-  const mountedRef = useRef(true);
-  useEffect(() => {
-    mountedRef.current = true;
-    return () => { mountedRef.current = false; };
-  }, []);
-  const done = () => {
-    const top = stackRef.current[stackRef.current.length - 1];
-    if (!mountedRef.current || !top || top.key !== layer.key || top.id !== layer.id) return;
-    layer.setDirty(false);
-    layer.close();
-  };
-  return { layer, done, mountedRef };
 }
 
 // ── Sheet: tạo phiên bản mới ───────────────────────────────────────────────────────────────────
