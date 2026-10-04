@@ -418,3 +418,5 @@ Plan `docs/superpowers/plans/2026-09-27-engineering-control-dot2-bo-cuc.md` — 
 
 **Còn mở (đợt sau):** truy vấn lưới bản đồ Fleet chưa kiểm phạm vi nhà máy phía server (có từ trước); kênh thời gian (latency) cho caller ngoài phạm vi ở deploy (chỉ người đã có quyền); kết quả `startWatch`/`fleetResult` đến muộn; kích thước panel người dùng lưu trước đợt này bị bỏ một lần.
 - (sau đợt sửa cuối) POU: gập panel phải khi Copilot đang mở ⇒ Copilot "mở" trên panel 0 px, nút AI đóng thay vì hiện; Fleet@1600 hiệu chuẩn chỉ còn biên 2,99 %/3 %; lưới bản đồ Fleet không tải khi vùng chưa có `factoryId` (chủ dự án lưu ý dữ liệu); form tạo ECN mất dữ liệu sau câu "Bỏ thay đổi?" (dialog cũ giữ khi Huỷ); dưới 1024 px chọn dòng chuyển sang tab panel dưới; sheet IDE/IR/POU chưa đồng bộ URL (chưa có FlyoutHost).
+
+**Đã chốt (2026-10-04):** (3) Copilot cho Operator/Viewer — **chấp nhận mất lối vào** (đúng §1.4); (1) triển khai recipe nhiều máy — **KHÔNG**, giữ một máy mỗi lần xác nhận; (5) nhãn deploy — **đổi**: khi adapter của dự án còn "(sắp có)" hiện "Mô phỏng (adapter sắp có)" thay "Triển khai thật: ON" (task nhỏ sau Đợt 2). Gộp Đợt 2 vào main + push: đồng ý.
