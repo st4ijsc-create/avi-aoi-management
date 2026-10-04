@@ -487,6 +487,9 @@ const SEED_MODULES: SystemModule[] = [
     isCore: false,
     routes: [
       "/engineering-home", "/engineering", "/engineering-changes", "/recipes",
+      // doc 81 Đợt 2 Task 15 — "/programming-copilot" nay chỉ là CHUYỂN HƯỚNG tới "/engineering?copilot=scratch"
+      // (chế độ scratch của IDE). CỐ Ý giữ ở đây: URL cũ vẫn gắn MOD_ENGINEERING ⇒ cổng giấy phép fail-closed
+      // (gỡ ra ⇒ `isRouteAllowed` coi là route không thuộc module ⇒ cho phép) và bản xuất License Server không đổi.
       "/ir-editor", "/pou-studio", "/programming-copilot",
       "/orchestration-studio",
     ],

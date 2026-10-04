@@ -64,7 +64,20 @@ export const errorFormatter: TRPCErrorFormatter<
   };
 };
 
-const t = initTRPC.context<TrpcContext>().create({
+/**
+ * doc 81 Đợt 2 Task 12b (Ruling R-2-r) — meta thủ tục. Hiện chỉ một ô: `chanTruocStepUp`, một cổng
+ * CHỈ ĐỌC mà `deployProcedure` chạy TRƯỚC step-up OTP (xem `chanTruocStepUpMiddleware`).
+ */
+export interface TrpcMeta {
+  /**
+   * Cổng chạy TRƯỚC `requireFreshTotp`/`requirePerCallFreshTotp` của `deployProcedure`: ném ⇒ lượt
+   * gọi bị từ chối KHÔNG tiêu OTP, KHÔNG ghi sổ (kể cả sổ "bỏ qua step-up" chế độ nội bộ), KHÔNG
+   * chạm thiết bị. Nhận raw input (CHƯA qua zod) — phải tự kiểm kiểu, và CHỈ được đọc, không ghi.
+   */
+  chanTruocStepUp?: (args: { ctx: TrpcContext; rawInput: unknown }) => Promise<void>;
+}
+
+const t = initTRPC.context<TrpcContext>().meta<TrpcMeta>().create({
   transformer: superjson,
   errorFormatter,
 });
@@ -828,4 +841,23 @@ export const actuationProcedure = roleProcedure(...ACTUATION_ROLES).use(require2
  *   chỉ trên đường cache-miss"* — sai cả hai con số lẫn điều kiện) **lẫn** bảng I-4 cũ (+1 ở cả
  *   hai). Ai đọc để quyết *"có nên chain per-call ở một sàn thứ ba không"* phải dùng cặp số trên.
  */
-export const deployProcedure = actuationProcedure.use(requireFreshTotp).use(requirePerCallFreshTotp);
+/**
+ * doc 81 Đợt 2 Task 12b — chạy `meta.chanTruocStepUp` (nếu thủ tục khai) TRƯỚC hai nấc step-up.
+ * Thủ tục không khai ⇒ đi thẳng (mọi thủ tục deploy khác giữ nguyên hành vi). Đứng sau sàn vai +
+ * require2FA (người gọi đã được nhận diện) nhưng trước MỌI lượt verify/tiêu OTP.
+ */
+const chanTruocStepUpMiddleware = t.middleware(async (opts) => {
+  const chan = opts.meta?.chanTruocStepUp;
+  if (chan) {
+    let rawInput: unknown;
+    try {
+      rawInput = await opts.getRawInput();
+    } catch {
+      rawInput = undefined;
+    }
+    await chan({ ctx: opts.ctx, rawInput });
+  }
+  return opts.next();
+});
+
+export const deployProcedure = actuationProcedure.use(chanTruocStepUpMiddleware).use(requireFreshTotp).use(requirePerCallFreshTotp);

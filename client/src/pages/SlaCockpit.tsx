@@ -24,7 +24,6 @@ import { useMemo, useState } from "react";
 import { useScope } from "@/components/patterns/ScopeFilterBar";
 import { useScopeWired } from "@/contexts/AssetScopeContext";
 import { useTranslation } from "react-i18next";
-import { useLocation } from "wouter";
 import type { inferRouterOutputs } from "@trpc/server";
 import {
   AlarmClock,
@@ -42,7 +41,6 @@ import { trpc } from "@/lib/trpc";
 import { usePollingInterval } from "@/hooks/usePollingInterval";
 import DashboardLayout from "@/components/DashboardLayout";
 import { navItems } from "@/lib/navigation";
-import { buildBreadcrumbs } from "@/lib/breadcrumbs";
 import { PollFreshness } from "@/components/PollFreshness";
 import { EmptyState } from "@/components/EmptyState";
 import { PageContainer, PageHeader, SectionCard, MetricCard, StatChip, StatChipRow, StatusBadge } from "@/components/patterns";
@@ -140,8 +138,6 @@ interface LineAgg {
 
 export default function SlaCockpit() {
   const { t } = useTranslation();
-  const [location] = useLocation();
-  const crumbs = buildBreadcrumbs(location, t);
   const [windowHours, setWindowHours] = useState<number>(24);
 
   const polling = usePollingInterval(30_000);
@@ -244,7 +240,6 @@ export default function SlaCockpit() {
     >
       <PageContainer className="space-y-6">
         <PageHeader
-          breadcrumbs={crumbs}
           icon={<Gauge className="h-6 w-6" />}
           title={t("slaCockpit.title", "SLA Cockpit")}
           description={t(

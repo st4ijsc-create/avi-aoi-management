@@ -9,7 +9,7 @@ import { useEffect, useMemo, useState } from "react";
 import { Link, useLocation } from "wouter";
 import { useTranslation } from "react-i18next";
 import { Star, Clock } from "lucide-react";
-import { getNavItemByHref, hasAccessToItem, type NavItem } from "@/lib/navigation";
+import { getNavItemByHref, hasAccessToItem, passesNavAuthoringGate, type NavItem } from "@/lib/navigation";
 import { readFavorites, readRecent, toggleFavorite, isFavorite } from "@/lib/navRecent";
 import { usePermissions } from "@/_core/hooks/usePermissions";
 import { cn } from "@/lib/utils";
@@ -37,7 +37,9 @@ export function SidebarQuickAccess({ onNavigate }: { onNavigate: (href: string) 
   const favorites = useMemo<Resolved[]>(() => {
     return readFavorites()
       .map((href) => ({ href, item: getNavItemByHref(href) }))
-      .filter((x): x is Resolved => !!x.item && hasAccessToItem(x.href, userRole, hasPermission as never));
+      .filter((x): x is Resolved => !!x.item && hasAccessToItem(x.href, userRole, hasPermission as never))
+      // doc 81 Đợt 2 Task 15 (§1.4) — công cụ soạn thảo chỉ trong điều hướng của người soạn được.
+      .filter((x) => passesNavAuthoringGate(x.item, userRole, hasPermission as never));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [version, location, isAdmin]);
 
@@ -48,6 +50,7 @@ export function SidebarQuickAccess({ onNavigate }: { onNavigate: (href: string) 
       .map((href) => ({ href, item: getNavItemByHref(href) }))
       // doc 63 AUD-N3 — user chốt: sidebar chỉ hiện 3 mục "Gần đây" (store vẫn giữ 5 cho ⌘K).
       .filter((x): x is Resolved => !!x.item && hasAccessToItem(x.href, userRole, hasPermission as never))
+      .filter((x) => passesNavAuthoringGate(x.item, userRole, hasPermission as never))
       .slice(0, 3);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [version, location, isAdmin, favorites]);

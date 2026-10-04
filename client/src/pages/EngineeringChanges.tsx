@@ -6,14 +6,28 @@
  * reason / effectivity / impact), and advance the maker-checker lifecycle
  * (submit → review → approve / reject → implement → close). Decision buttons are
  * gated on the permission hook; the SERVER additionally enforces role + SoD
- * (requester ≠ approver), so the client gate is a UX hint only.
+ * (requester ≠ reviewer ≠ approver), so the client gate is a UX hint only.
  *
- * ENG-F9 polish (doc 40 Wave 4b):
- *  - Reject reason now uses a DS AlertDialog + Textarea (was a raw window.prompt).
- *  - Clicking a row opens a detail dialog: impact summary, actors, and a lifecycle
- *    timeline built from the row's own stamped timestamps.
- *  - A URL-synced FilterBar filters the queue by status / change type.
- *  - Lifecycle action labels are i18n'd (ecn.action.*).
+ * Doc 81 Đợt 2 Task 4 — bố cục P3 danh sách–chi tiết (doc 81 §1.2 dòng ECN, FE2 §3):
+ *  - MAIN = danh sách ECN (`DataTable` phân trang) trong card mang `data-layout-main`. Thanh công cụ
+ *    DUY NHẤT trong MAIN (`data-layout-toolbar`, ≤56 px) chứa `FilterBar` đồng bộ URL (?status=&type=)
+ *    và chip lọc `?filter=pending` (deep-link Hub, Đợt 1 Task 2) — không còn banner nào trước MAIN.
+ *  - Header một hàng (`PageHeaderCompact`): h1 + chip "Quy trình ECN" (câu mô tả cũ, trong popover) +
+ *    nút "Thay đổi mới" (và công cụ admin).
+ *  - Chi tiết: flyout `?flyout=ecn&flyoutId=<id>` (FlyoutHost — F5/back giữ đúng lớp) với `DetailSheet`
+ *    5 tab Tổng quan / Đối tượng / Duyệt / Nhiệm vụ / Lịch sử.
+ *  - Tạo ECN: flyout `?flyout=ecn-new` (dữ liệu chưa lưu ⇒ hỏi trước khi đóng).
+ *  - Ký duyệt / từ chối: `TransitionDialog` (sheet phải) cấu hình đúng hợp đồng HIỆN TẠI (Ruling R-2-g):
+ *    phê duyệt có bước xác nhận, ý kiến TUỲ CHỌN; từ chối BẮT BUỘC lý do; submit/review/implement/close
+ *    gọi thẳng như cũ. ECN chưa từng có mật khẩu/OTP ⇒ không thêm. Mọi lượt gọi mang `expectedStatus`
+ *    (ECN-03). Maker-checker client (`checkSegregation`) khai đúng luật của `ecnService`: review tách
+ *    khỏi người yêu cầu, approve tách khỏi người yêu cầu VÀ người xem xét.
+ *  - Công cụ admin "Bổ sung componentCode từ BOM": từ card dưới danh sách chuyển sang flyout
+ *    `?flyout=ecn-backfill` (cùng thủ tục, cùng dry-run → áp dụng).
+ *
+ * ENG-F9 polish (doc 40 Wave 4b): reject reason is required; detail shows impact,
+ * actors and a lifecycle timeline built from the row's own stamped timestamps;
+ * lifecycle action labels are i18n'd (ecn.action.*).
  *
  * TASK 3 — componentCode backfill surface: an ADMIN-only panel that triggers the
  * EXISTING `measurementPoint.backfillComponentCodesFromBom` procedure (doc 31
@@ -21,18 +35,19 @@
  * dry-run preview then apply — and shows the matched/updated/skipped counts.
  * The backfill is NOT reimplemented here; only surfaced.
  *
- * RBAC: view/create gated on the `masterdata` grant; decisions on `masterdata`
+ * RBAC: view/create gated on `machine_control`; decisions on `machine_control`
  * canEdit; backfill on admin. SAFETY: no machine write — pure metadata/workflow.
  */
-import { useMemo, useState } from "react";
+import { useEffect, useId, useMemo, useState, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 import { useLocation, useSearch } from "wouter";
 import { trpc } from "@/lib/trpc";
 import { usePermissions } from "@/_core/hooks/usePermissions";
+import { useAuth } from "@/_core/hooks/useAuth";
 import DashboardLayout from "@/components/DashboardLayout";
 import { navItems } from "@/lib/navigation";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent } from "@/components/ui/card";
 import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -42,15 +57,15 @@ import {
 import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from "@/components/ui/table";
-import {
-  Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle, DialogTrigger,
-} from "@/components/ui/dialog";
-import {
-  AlertDialog, AlertDialogContent, AlertDialogFooter, AlertDialogHeader,
-  AlertDialogTitle, AlertDialogDescription,
-} from "@/components/ui/alert-dialog";
+import { DataTable, type DataTableColumn } from "@/components/DataTable";
 import { FilterBar, useUrlFilters, type FilterDef } from "@/components/FilterBar";
-import { PageHeader, StatusBadge, type BadgeVariant } from "@/components/patterns";
+import {
+  PageContainer, StatusBadge, type BadgeVariant,
+  PageHeaderCompact, NoticeChip, FlyoutHost, useFlyout, useCloseOwnLayer, DetailSheet,
+  TransitionDialog, checkSegregation, LAYOUT_TOOLBAR,
+} from "@/components/patterns";
+import type { FlyoutDefinition } from "@/components/patterns/FlyoutHost";
+import type { SegregationResult, SegregationRole, TransitionAction } from "@/components/patterns/ApprovalQueue";
 import { GitPullRequestArrow, AlertTriangle, Wrench, Plus } from "lucide-react";
 import { toast } from "sonner";
 import { toastTrpcError, mapTrpcError } from "@/lib/trpcErrors";
@@ -94,6 +109,19 @@ type Ecn = {
   createdAt: string | Date | null;
 };
 
+type EcnItem = {
+  id: number;
+  entityType: string;
+  entityRef: number | null;
+  entityCode: string | null;
+  action: string;
+  description: string | null;
+  note?: string | null;
+};
+
+type Product = { id: number; code?: string | null; name?: string | null };
+type UserNameFn = (id: number | null | undefined) => string;
+
 // ECN status → solid shadcn <Badge> variant (unified onto <StatusBadge>).
 function ecnStatusVariant(s: string): BadgeVariant {
   if (s === "approved" || s === "implemented") return "secondary";
@@ -127,9 +155,74 @@ function actionsFor(status: string): Array<{ action: string; labelKey: string; f
   }
 }
 
+/**
+ * Maker-checker theo ĐÚNG luật của `ecnService.transitionEcn` (server vẫn là cổng thật):
+ * review — người yêu cầu không tự xem xét; approve — không phải người yêu cầu (ApprovalQueue luôn
+ * thêm) và không phải người đã xem xét. submit/reject/implement/close: server không tách vai.
+ */
+const ECN_SEGREGATION: Partial<Record<string, readonly SegregationRole[]>> = {
+  review: ["author"],
+  approve: ["reviewer"],
+};
+
+function transitionActionOf(action: string, label: string): TransitionAction {
+  const kind = action === "approve" ? "approve" : action === "reject" ? "reject" : "advance";
+  return { key: action, label, kind, segregateFrom: ECN_SEGREGATION[action] };
+}
+
+function ecnSegregation(ecn: Ecn, action: TransitionAction, currentUserId: number | null | undefined): SegregationResult {
+  return checkSegregation(action, { currentUserId, authorId: ecn.requestedBy, reviewerId: ecn.reviewedBy });
+}
+
+/** Nút hành động vòng đời của một ECN — dùng chung cho hàng danh sách và đầu chi tiết. */
+function EcnActionButtons({
+  ecn, currentUserId, pending, onAction,
+}: {
+  ecn: Ecn;
+  currentUserId: number | null | undefined;
+  pending: boolean;
+  onAction: (ecn: Ecn, action: string) => void;
+}) {
+  const { t } = useTranslation();
+  const baseId = useId();
+  const sodText = (r: SegregationResult): string | null => {
+    if (r.allowed) return null;
+    if (r.reason === "author") return t("layoutKit.approval.sodAuthor", "You created this item — someone else must decide (maker-checker).");
+    if (r.reason === "reviewer") return t("layoutKit.approval.sodReviewer", "You reviewed this item — the approver must be someone else.");
+    return t("layoutKit.approval.userUnknown", "The current user is not known yet — decisions are disabled.");
+  };
+  return (
+    <>
+      {actionsFor(ecn.status).map((a) => {
+        const label = t(a.labelKey, a.fallback);
+        const seg = ecnSegregation(ecn, transitionActionOf(a.action, label), currentUserId);
+        const msg = sodText(seg);
+        const descId = `${baseId}-${a.action}`;
+        return (
+          <span key={a.action} className="inline-flex">
+            <Button
+              size="sm"
+              variant={a.variant === "destructive" ? "destructive" : "outline"}
+              disabled={pending || !seg.allowed}
+              aria-describedby={msg ? descId : undefined}
+              title={msg ?? undefined}
+              onClick={() => onAction(ecn, a.action)}
+            >
+              {label}
+            </Button>
+            {msg && <span id={descId} className="sr-only">{msg}</span>}
+          </span>
+        );
+      })}
+    </>
+  );
+}
+
 export default function EngineeringChanges() {
   const { t } = useTranslation();
   const { hasPermission, isAdmin } = usePermissions();
+  const { user } = useAuth();
+  const currentUserId = user?.id ?? null;
   // doc 54 Đ2 — ECN is an engineering task: gate on machine_control (engineer has it)
   // instead of masterdata. Server (ecnRouter MOD_ENGINEERING + roleProcedure incl.
   // engineer) already allows it; SoD (requester≠approver) is enforced server-side.
@@ -140,7 +233,7 @@ export default function EngineeringChanges() {
   const utils = trpc.useUtils();
   const listQ = trpc.ecn.list.useQuery({ limit: 200 }, { enabled: canView });
   const productsQ = trpc.productModel.list.useQuery({ limit: 100 }); // productModel.list cap = max(100)
-  const products = (productsQ.data ?? []) as Array<{ id: number; code?: string | null; name?: string | null }>;
+  const products = (productsQ.data ?? []) as Product[];
 
   // Actor id → display name. user.list is admin-only, so only admins get names;
   // everyone else sees an honest "Người dùng #id" fallback (no crash, no leak of PII).
@@ -156,100 +249,60 @@ export default function EngineeringChanges() {
     };
   }, [usersQ?.data, t]);
 
-  const invalidate = () => { void utils.ecn.list.invalidate(); };
+  // Cả router `ecn` (list + getById + getItems): chi tiết mở bằng getById (F5 tới ECN ngoài 200 hàng
+  // đầu) cũng phải thấy trạng thái mới sau một quyết định.
+  const invalidate = () => { void utils.ecn.invalidate(); };
 
-  // ── Create dialog state ────────────────────────────────────────────────
-  const [open, setOpen] = useState(false);
-  const [title, setTitle] = useState("");
-  const [changeType, setChangeType] = useState<ChangeType>("product");
-  const [productModelId, setProductModelId] = useState<string>("");
-  const [targetDescription, setTargetDescription] = useState("");
-  const [reason, setReason] = useState("");
-  const [impactNotes, setImpactNotes] = useState("");
-  const [effectivityDate, setEffectivityDate] = useState("");
-
-  // ── Reject dialog state (replaces window.prompt) ───────────────────────
+  // ── Reject / approve confirmation (TransitionDialog — sheet phải) ──────
   const [rejectTarget, setRejectTarget] = useState<Ecn | null>(null);
-  const [rejectReason, setRejectReason] = useState("");
-
-  // ── Approve confirmation dialog state (doc 80 Task 8, ECN-05) ──────────
-  // Approve is a maker-checker DECISION exactly like reject — it must not fire
-  // on a bare button click. Comment is optional here (mandatory only for
-  // reject, per task-8-brief.md ECN-05).
+  // doc 80 Task 8 (ECN-05) — approve is a maker-checker DECISION exactly like reject — it must not
+  // fire on a bare button click. Comment is optional here (mandatory only for reject).
   const [approveTarget, setApproveTarget] = useState<Ecn | null>(null);
-  const [approveComment, setApproveComment] = useState("");
 
-  // ── Detail dialog state ────────────────────────────────────────────────
-  const [detail, setDetail] = useState<Ecn | null>(null);
-
-  const resetForm = () => {
-    setTitle(""); setChangeType("product"); setProductModelId("");
-    setTargetDescription(""); setReason(""); setImpactNotes(""); setEffectivityDate("");
-  };
-
-  const createM = trpc.ecn.create.useMutation({
-    onSuccess: () => { toast.success(t("ecn.created", "Đã tạo thay đổi kỹ thuật")); setOpen(false); resetForm(); invalidate(); },
-    onError: (e) => toastTrpcError(e),
-  });
+  // Lỗi: đường gọi thẳng báo qua `onError` của từng lượt; đường sheet trả promise bị reject để
+  // TransitionDialog GIỮ sheet mở + giữ chữ và tự báo lỗi đúng MỘT lần.
   const transitionM = trpc.ecn.transition.useMutation({
     onSuccess: () => { toast.success(t("ecn.updated", "Đã cập nhật thay đổi kỹ thuật")); invalidate(); },
-    onError: (e) => toastTrpcError(e),
   });
-
-  const submitCreate = () => {
-    if (!title.trim()) { toast.error(t("ecn.titleRequired", "Bắt buộc nhập tiêu đề")); return; }
-    createM.mutate({
-      title: title.trim(),
-      changeType,
-      productModelId: productModelId ? Number(productModelId) : undefined,
-      targetDescription: targetDescription.trim() || undefined,
-      reason: reason.trim() || undefined,
-      impactSummary: impactNotes.trim() ? { notes: impactNotes.trim() } : undefined,
-      effectivityDate: effectivityDate || undefined,
-    });
-  };
 
   const doTransition = (ecn: Ecn, action: string) => {
     if (action === "reject") {
-      setRejectReason("");
       setRejectTarget(ecn);
       return;
     }
     // doc 80 Task 8 (ECN-05) — approve is a maker-checker decision: open a
-    // confirmation dialog (comment optional) instead of firing on one click.
+    // confirmation sheet (comment optional) instead of firing on one click.
     if (action === "approve") {
-      setApproveComment("");
       setApproveTarget(ecn);
       return;
     }
     // doc 80 Task 8 (ECN-03) — every transition carries the status this row is
     // CURRENTLY showing on screen; the server CAS-updates `WHERE status =
     // expectedStatus` and returns CONFLICT if someone else moved it first.
-    transitionM.mutate({ id: ecn.id, action: action as any, expectedStatus: ecn.status as any });
+    transitionM.mutate({ id: ecn.id, action: action as any, expectedStatus: ecn.status as any }, { onError: (e) => { toastTrpcError(e); } });
   };
 
-  const confirmReject = () => {
-    const comment = rejectReason.trim();
-    if (!comment) { toast.error(t("ecn.rejectReasonRequired", "Bắt buộc nhập lý do từ chối")); return; }
-    if (!rejectTarget) return;
-    transitionM.mutate(
-      { id: rejectTarget.id, action: "reject", comment, expectedStatus: rejectTarget.status as any },
-      { onSuccess: () => setRejectTarget(null) },
-    );
+  // Lý do BẮT BUỘC do TransitionDialog giữ (kind "reject" ⇒ nút khoá tới khi có chữ sau trim; `comment` đã trim).
+  const confirmReject = (comment: string | undefined): Promise<void> | void => {
+    const target = rejectTarget;
+    if (!target || !comment) return;
+    return new Promise<void>((resolve, reject) => {
+      transitionM.mutate(
+        { id: target.id, action: "reject", comment, expectedStatus: target.status as any },
+        { onSuccess: () => resolve(), onError: (e) => reject(e) },
+      );
+    });
   };
 
-  const confirmApprove = () => {
-    if (!approveTarget) return;
-    const comment = approveComment.trim();
-    transitionM.mutate(
-      {
-        id: approveTarget.id,
-        action: "approve",
-        expectedStatus: approveTarget.status as any,
-        ...(comment ? { comment } : {}),
-      },
-      { onSuccess: () => setApproveTarget(null) },
-    );
+  const confirmApprove = (comment: string | undefined): Promise<void> | void => {
+    const target = approveTarget;
+    if (!target) return;
+    return new Promise<void>((resolve, reject) => {
+      transitionM.mutate(
+        { id: target.id, action: "approve", expectedStatus: target.status as any, ...(comment ? { comment } : {}) },
+        { onSuccess: () => resolve(), onError: (e) => reject(e) },
+      );
+    });
   };
 
   // ── URL-synced status / type filter ────────────────────────────────────
@@ -271,7 +324,6 @@ export default function EngineeringChanges() {
   // (trước bản vá: BỊ BỎ QUA — trang chỉ đọc `status`/`type` qua FilterBar). "Chờ
   // duyệt" = submitted | in_review (khớp `oversight.pendingSummary` nhánh `ecn`).
   // Tách khỏi FilterBar vì đây là OR của HAI trạng thái, không phải một giá trị.
-  const [location, setLocation] = useLocation();
   const search = useSearch();
   const filterPending = new URLSearchParams(search).get("filter") === "pending";
 
@@ -295,231 +347,340 @@ export default function EngineeringChanges() {
     );
   }
 
+  const listLoaded = !listQ.isLoading;
+  const actionsPending = transitionM.isPending;
+
+  // ── Flyouts (một stack sheet phải; URL `?flyout=&flyoutId=` là nguồn sự thật) ──
+  const flyouts: Record<string, FlyoutDefinition> = {
+    ecn: {
+      size: "lg",
+      description: t("ecn.detail.flyoutTitle", "Chi tiết thay đổi kỹ thuật"),
+      title: (id) => allRows.find((r) => String(r.id) === id)?.ecnKey ?? t("ecn.detail.flyoutTitle", "Chi tiết thay đổi kỹ thuật"),
+      render: (layer) => (
+        <EcnDetail
+          id={layer.id}
+          rows={allRows}
+          listLoaded={listLoaded}
+          userName={userName}
+          products={products}
+          actions={(ecn) => canDecide
+            ? <EcnActionButtons ecn={ecn} currentUserId={currentUserId} pending={actionsPending} onAction={doTransition} />
+            : null}
+        />
+      ),
+    },
+  };
+  if (canCreate) {
+    flyouts["ecn-new"] = {
+      title: t("ecn.newTitle", "Thay đổi kỹ thuật mới"),
+      description: t("ecn.subtitle", "Quy trình yêu cầu thay đổi ECN / ECO — phân tích tác động, phê duyệt maker-checker và ngày hiệu lực."),
+      render: () => <EcnCreateForm products={products} onCreated={invalidate} />,
+    };
+  }
+  if (isAdmin) {
+    flyouts["ecn-backfill"] = {
+      title: t("ecn.backfill.title", "Bổ sung componentCode từ BOM"),
+      description: t("ecn.backfill.help", "Điền componentCode còn trống của điểm đo từ BOM sản phẩm (khớp refDesignator). Không phá hủy — liên kết sẵn có không bị ghi đè. Xem trước bằng dry-run trước khi áp dụng."),
+      render: () => <ComponentCodeBackfillPanel products={products} />,
+    };
+  }
+
   return (
     <DashboardLayout title={t("ecn.title", "Thay đổi kỹ thuật")} navItems={navItems} currentPath="/engineering-changes">
-      <div className="space-y-6 p-6">
-        <PageHeader
-          icon={<GitPullRequestArrow className="h-6 w-6 text-primary" />}
-          title={t("ecn.title", "Thay đổi kỹ thuật")}
-          description={t("ecn.subtitle", "Quy trình yêu cầu thay đổi ECN / ECO — phân tích tác động, phê duyệt maker-checker và ngày hiệu lực.")}
-          actions={
-            canCreate ? (
-              <Dialog open={open} onOpenChange={setOpen}>
-                <DialogTrigger asChild>
-                  <Button size="sm"><Plus className="mr-1 h-4 w-4" />{t("ecn.new", "Thay đổi mới")}</Button>
-                </DialogTrigger>
-                <DialogContent className="max-w-lg">
-                  <DialogHeader><DialogTitle>{t("ecn.newTitle", "Thay đổi kỹ thuật mới")}</DialogTitle></DialogHeader>
-                  <div className="space-y-3">
-                    <div className="space-y-1">
-                      <Label>{t("ecn.field.title", "Tiêu đề")}</Label>
-                      <Input value={title} onChange={(e) => setTitle(e.target.value)} placeholder={t("ecn.field.titlePlaceholder", "VD: Cập nhật dung sai R12 trên model A")} />
-                    </div>
-                    <div className="grid grid-cols-2 gap-3">
-                      <div className="space-y-1">
-                        <Label>{t("ecn.field.type", "Loại thay đổi")}</Label>
-                        <Select value={changeType} onValueChange={(v) => setChangeType(v as ChangeType)}>
-                          <SelectTrigger><SelectValue /></SelectTrigger>
-                          <SelectContent>
-                            {CHANGE_TYPES.map((ct) => (
-                              <SelectItem key={ct} value={ct}>{t(`ecn.type.${ct}`, ct)}</SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
-                      </div>
-                      <div className="space-y-1">
-                        <Label>{t("ecn.field.effectivity", "Ngày hiệu lực")}</Label>
-                        <Input type="date" value={effectivityDate} onChange={(e) => setEffectivityDate(e.target.value)} />
-                      </div>
-                    </div>
-                    <div className="space-y-1">
-                      <Label>{t("ecn.field.product", "Sản phẩm đích (tùy chọn)")}</Label>
-                      <Select value={productModelId || "none"} onValueChange={(v) => setProductModelId(v === "none" ? "" : v)}>
-                        <SelectTrigger><SelectValue placeholder={t("ecn.noProduct", "Không / không riêng sản phẩm")} /></SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="none">{t("ecn.noProduct", "Không / không riêng sản phẩm")}</SelectItem>
-                          {products.map((p) => (
-                            <SelectItem key={p.id} value={String(p.id)}>{p.code || p.name || `#${p.id}`}</SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                    </div>
-                    <div className="space-y-1">
-                      <Label>{t("ecn.field.target", "Mô tả đối tượng (tùy chọn)")}</Label>
-                      <Input value={targetDescription} onChange={(e) => setTargetDescription(e.target.value)} placeholder={t("ecn.field.targetPlaceholder", "VD: BOM v3 dòng R12 / recipe SMT-01")} />
-                    </div>
-                    <div className="space-y-1">
-                      <Label>{t("ecn.field.reason", "Lý do")}</Label>
-                      <Textarea rows={2} value={reason} onChange={(e) => setReason(e.target.value)} />
-                    </div>
-                    <div className="space-y-1">
-                      <Label>{t("ecn.field.impact", "Ghi chú phân tích tác động")}</Label>
-                      <Textarea rows={2} value={impactNotes} onChange={(e) => setImpactNotes(e.target.value)} placeholder={t("ecn.field.impactPlaceholder", "Sản phẩm / chương trình / dây chuyền ảnh hưởng, rủi ro, phương án khôi phục…")} />
-                    </div>
-                  </div>
-                  <DialogFooter>
-                    <Button variant="outline" onClick={() => setOpen(false)}>{t("common.cancel", "Hủy")}</Button>
-                    <Button onClick={submitCreate} disabled={createM.isPending}>{t("common.create", "Tạo")}</Button>
-                  </DialogFooter>
-                </DialogContent>
-              </Dialog>
-            ) : undefined
-          }
-        />
+      <FlyoutHost flyouts={flyouts}>
+        {/* doc 81 Đợt 2 Task 2 — PageContainer: không đệm kép với <main> của shell. */}
+        <PageContainer className="space-y-3">
+          <EcnHeader canCreate={canCreate} isAdmin={isAdmin} />
+          <EcnList
+            rows={rows}
+            hasAny={allRows.length > 0}
+            loading={listQ.isLoading}
+            filterDefs={filterDefs}
+            filterPending={filterPending}
+            canDecide={canDecide}
+            currentUserId={currentUserId}
+            actionsPending={actionsPending}
+            onAction={doTransition}
+          />
+        </PageContainer>
 
+        {/* ── Reject: lý do BẮT BUỘC (hành vi cũ — ECN-05) ─────────────── */}
+        {rejectTarget && (
+          <TransitionDialog open={rejectTarget != null}
+            onOpenChange={(o) => { if (!o) setRejectTarget(null); }}
+            action={transitionActionOf("reject", t("ecn.action.reject", "Từ chối"))}
+            subject={rejectTarget.ecnKey}
+            description={t("ecn.rejectPrompt", "Nêu rõ lý do từ chối {{key}}. Lý do được ghi vào nhật ký quyết định.", { key: rejectTarget.ecnKey })}
+            segregation={ecnSegregation(rejectTarget, transitionActionOf("reject", ""), currentUserId)}
+            pending={actionsPending}
+            onConfirm={confirmReject}
+          />
+        )}
+
+        {/* ── Approve confirmation (doc 80 Task 8, ECN-05) — ý kiến TUỲ CHỌN ── */}
+        {approveTarget && (
+          <TransitionDialog open={approveTarget != null}
+            onOpenChange={(o) => { if (!o) setApproveTarget(null); }}
+            action={transitionActionOf("approve", t("ecn.action.approve", "Phê duyệt"))}
+            subject={approveTarget.ecnKey}
+            description={t("ecn.approvePrompt", "Xác nhận phê duyệt {{key}}. Có thể thêm ý kiến (không bắt buộc) — ý kiến được ghi vào nhật ký quyết định.", { key: approveTarget.ecnKey })}
+            segregation={ecnSegregation(approveTarget, transitionActionOf("approve", ""), currentUserId)}
+            reasonRequired={false}
+            pending={actionsPending}
+            onConfirm={confirmApprove}
+          />
+        )}
+      </FlyoutHost>
+    </DashboardLayout>
+  );
+}
+
+/** Header một hàng: h1 + chip mô tả + hành động (ngoài MAIN). */
+function EcnHeader({ canCreate, isAdmin }: { canCreate: boolean; isAdmin: boolean }) {
+  const { t } = useTranslation();
+  const flyout = useFlyout();
+  return (
+    <PageHeaderCompact
+      icon={<GitPullRequestArrow />}
+      title={t("ecn.title", "Thay đổi kỹ thuật")}
+      chips={
+        <NoticeChip kind="hint" label={t("ecn.aboutChip", "Quy trình ECN")}>
+          {t("ecn.subtitle", "Quy trình yêu cầu thay đổi ECN / ECO — phân tích tác động, phê duyệt maker-checker và ngày hiệu lực.")}
+        </NoticeChip>
+      }
+      actions={
+        <>
+          {isAdmin && (
+            <Button size="sm" variant="outline" onClick={() => flyout.open("ecn-backfill")}>
+              <Wrench className="mr-1 h-4 w-4" aria-hidden="true" />{t("ecn.backfill.title", "Bổ sung componentCode từ BOM")}
+            </Button>
+          )}
+          {canCreate && (
+            <Button size="sm" onClick={() => flyout.open("ecn-new")}>
+              <Plus className="mr-1 h-4 w-4" aria-hidden="true" />{t("ecn.new", "Thay đổi mới")}
+            </Button>
+          )}
+        </>
+      }
+    />
+  );
+}
+
+/** MAIN — danh sách ECN: một thanh công cụ (bộ lọc) + DataTable phân trang. */
+function EcnList({
+  rows, hasAny, loading, filterDefs, filterPending, canDecide, currentUserId, actionsPending, onAction,
+}: {
+  rows: Ecn[];
+  hasAny: boolean;
+  loading: boolean;
+  filterDefs: FilterDef[];
+  filterPending: boolean;
+  canDecide: boolean;
+  currentUserId: number | null;
+  actionsPending: boolean;
+  onAction: (ecn: Ecn, action: string) => void;
+}) {
+  const { t } = useTranslation();
+  const flyout = useFlyout();
+  const [location, setLocation] = useLocation();
+  // Nút trong ô thao tác không được lan click/Enter lên hàng (hàng mở chi tiết).
+  const stop = (e: { stopPropagation: () => void }) => e.stopPropagation();
+
+  const columns: DataTableColumn<Ecn>[] = [
+    { id: "key", header: t("ecn.col.key", "ECN"), cell: (r) => <span className="font-mono text-xs">{r.ecnKey}</span>, alwaysVisible: true },
+    { id: "title", header: t("ecn.col.title", "Tiêu đề"), cell: (r) => <span className="block max-w-[24rem] truncate">{r.title}</span> },
+    { id: "type", header: t("ecn.col.type", "Loại"), cell: (r) => t(`ecn.type.${r.changeType}`, r.changeType) },
+    { id: "effectivity", header: t("ecn.col.effectivity", "Hiệu lực"), cell: (r) => fmtDate(r.effectivityDate) },
+    { id: "status", header: t("ecn.col.status", "Trạng thái"), cell: (r) => <StatusBadge status={r.status} variant={ecnStatusVariant(r.status)} label={t(`ecn.status.${r.status}`, r.status)} /> },
+    {
+      id: "actions", header: t("ecn.col.actions", "Thao tác"), align: "right",
+      cell: (r) => (
+        <div className="flex flex-wrap justify-end gap-1" onClick={stop} onKeyDown={stop}>
+          {canDecide
+            ? <EcnActionButtons ecn={r} currentUserId={currentUserId} pending={actionsPending} onAction={onAction} />
+            : <span className="text-xs text-muted-foreground">—</span>}
+        </div>
+      ),
+    },
+  ];
+
+  const emptyText = loading
+    ? t("common.loading", "Đang tải…")
+    : hasAny
+      ? t("ecn.emptyFiltered", "Không có thay đổi nào khớp bộ lọc.")
+      : t("ecn.empty", "Chưa có thay đổi kỹ thuật nào.");
+
+  return (
+    // final wave (T4-M6): <section> thay Card bị vô hiệu kiểu (Card cũ chỉ giữ để selector FE1 của thước còn thấy — nay thước
+    // nhận cả section). Bố cục giữ nguyên: cột flex, gap-2.
+    <section
+      data-layout-main="ecn-list"
+      aria-label={t("ecn.listLabel", "Danh sách ECN")}
+      className="flex flex-col gap-2"
+    >
+      {/* Thanh công cụ DUY NHẤT của MAIN (≤56 px): FilterBar thu gọn + chip lọc chờ duyệt. */}
+      <div {...{ [LAYOUT_TOOLBAR]: "" }} className="flex min-h-11 flex-wrap items-center gap-2">
+        <FilterBar
+          filters={filterDefs}
+          className="flex-nowrap items-center gap-2 rounded-none border-0 bg-transparent p-0 [&>svg]:mb-0 [&_label]:sr-only"
+        />
         {/* Doc 80 Đợt 1 Task 2 (HUB-03) — deep-link `?filter=pending` từ Hub. */}
         {filterPending && (
-          <div className="flex items-center justify-between gap-2 rounded-md border border-warning/40 bg-warning/10 px-3 py-2 text-xs text-muted-foreground">
-            <span>{t("ecn.filteringPending", "Đang lọc: chỉ hiện ECN chờ duyệt (đang gửi / đang xem xét)")}</span>
+          <div
+            className="inline-flex h-8 items-center gap-1 rounded-full border border-warning/40 bg-warning/10 pl-3 pr-1 text-xs text-muted-foreground"
+            title={t("ecn.filteringPending", "Đang lọc: chỉ hiện ECN chờ duyệt (đang gửi / đang xem xét)")}
+          >
+            <span>{t("ecn.filterPendingChip", "Chỉ ECN chờ duyệt")}</span>
             <Button size="sm" variant="ghost" className="h-6 px-2 text-xs" onClick={() => setLocation(location)}>
               {t("ecn.showAll", "Xem tất cả")}
             </Button>
           </div>
         )}
-
-        {/* ── Status / type filter ─────────────────────────────────────── */}
-        <FilterBar filters={filterDefs} />
-
-        {/* ── ECN list ─────────────────────────────────────────────────── */}
-        <Card>
-          <CardContent className="p-0">
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>{t("ecn.col.key", "ECN")}</TableHead>
-                  <TableHead>{t("ecn.col.title", "Tiêu đề")}</TableHead>
-                  <TableHead>{t("ecn.col.type", "Loại")}</TableHead>
-                  <TableHead>{t("ecn.col.effectivity", "Hiệu lực")}</TableHead>
-                  <TableHead>{t("ecn.col.status", "Trạng thái")}</TableHead>
-                  <TableHead className="text-right">{t("ecn.col.actions", "Thao tác")}</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {rows.length === 0 && (
-                  <TableRow><TableCell colSpan={6} className="py-8 text-center text-muted-foreground">
-                    {listQ.isLoading
-                      ? t("common.loading", "Đang tải…")
-                      : allRows.length > 0
-                        ? t("ecn.emptyFiltered", "Không có thay đổi nào khớp bộ lọc.")
-                        : t("ecn.empty", "Chưa có thay đổi kỹ thuật nào.")}
-                  </TableCell></TableRow>
-                )}
-                {rows.map((r) => (
-                  <TableRow
-                    key={r.id}
-                    className="cursor-pointer"
-                    onClick={() => setDetail(r)}
-                    tabIndex={0}
-                    onKeyDown={(e) => { if (e.key === "Enter") setDetail(r); }}
-                  >
-                    <TableCell className="font-mono text-xs">{r.ecnKey}</TableCell>
-                    <TableCell className="max-w-[24rem] truncate">{r.title}</TableCell>
-                    <TableCell>{t(`ecn.type.${r.changeType}`, r.changeType)}</TableCell>
-                    <TableCell>{fmtDate(r.effectivityDate)}</TableCell>
-                    <TableCell><StatusBadge status={r.status} variant={ecnStatusVariant(r.status)} label={t(`ecn.status.${r.status}`, r.status)} /></TableCell>
-                    <TableCell className="text-right" onClick={(e) => e.stopPropagation()}>
-                      <div className="flex flex-wrap justify-end gap-1">
-                        {canDecide ? actionsFor(r.status).map((a) => (
-                          <Button
-                            key={a.action}
-                            size="sm"
-                            variant={a.variant === "destructive" ? "destructive" : "outline"}
-                            disabled={transitionM.isPending}
-                            onClick={() => doTransition(r, a.action)}
-                          >
-                            {t(a.labelKey, a.fallback)}
-                          </Button>
-                        )) : <span className="text-xs text-muted-foreground">—</span>}
-                      </div>
-                    </TableCell>
-                  </TableRow>
-                ))}
-              </TableBody>
-            </Table>
-          </CardContent>
-        </Card>
-
-        {/* ── Task 3: componentCode backfill (admin only) ──────────────── */}
-        {isAdmin && <ComponentCodeBackfillPanel products={products} />}
       </div>
-
-      {/* ── Reject reason dialog (replaces window.prompt) ──────────────── */}
-      <AlertDialog open={rejectTarget != null} onOpenChange={(o) => { if (!o) setRejectTarget(null); }}>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>{t("ecn.rejectTitle", "Từ chối thay đổi kỹ thuật")}</AlertDialogTitle>
-            <AlertDialogDescription>
-              {rejectTarget
-                ? t("ecn.rejectPrompt", "Nêu rõ lý do từ chối {{key}}. Lý do được ghi vào nhật ký quyết định.", { key: rejectTarget.ecnKey })
-                : ""}
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <div className="space-y-1">
-            <Label>{t("ecn.rejectReason", "Lý do từ chối:")}</Label>
-            <Textarea
-              rows={3}
-              autoFocus
-              value={rejectReason}
-              onChange={(e) => setRejectReason(e.target.value)}
-              placeholder={t("ecn.rejectPlaceholder", "VD: Thiếu phân tích tác động; cần đánh giá lại rủi ro…")}
-            />
-          </div>
-          <AlertDialogFooter>
-            <Button variant="outline" onClick={() => setRejectTarget(null)}>{t("common.cancel", "Hủy")}</Button>
-            <Button variant="destructive" disabled={transitionM.isPending || !rejectReason.trim()} onClick={confirmReject}>
-              {t("ecn.action.reject", "Từ chối")}
-            </Button>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
-
-      {/* ── Approve confirmation dialog (doc 80 Task 8, ECN-05) ─────────── */}
-      <AlertDialog open={approveTarget != null} onOpenChange={(o) => { if (!o) setApproveTarget(null); }}>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>{t("ecn.approveTitle", "Phê duyệt thay đổi kỹ thuật")}</AlertDialogTitle>
-            <AlertDialogDescription>
-              {approveTarget
-                ? t("ecn.approvePrompt", "Xác nhận phê duyệt {{key}}. Có thể thêm ý kiến (không bắt buộc) — ý kiến được ghi vào nhật ký quyết định.", { key: approveTarget.ecnKey })
-                : ""}
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <div className="space-y-1">
-            <Label>{t("ecn.approveComment", "Ý kiến (tùy chọn):")}</Label>
-            <Textarea
-              rows={3}
-              autoFocus
-              value={approveComment}
-              onChange={(e) => setApproveComment(e.target.value)}
-              placeholder={t("ecn.approvePlaceholder", "VD: Đã kiểm tra tài liệu đính kèm, đạt yêu cầu…")}
-            />
-          </div>
-          <AlertDialogFooter>
-            <Button variant="outline" onClick={() => setApproveTarget(null)}>{t("common.cancel", "Hủy")}</Button>
-            <Button disabled={transitionM.isPending} onClick={confirmApprove}>
-              {t("ecn.action.approve", "Phê duyệt")}
-            </Button>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
-
-      {/* ── Detail dialog ─────────────────────────────────────────────── */}
-      <EcnDetailDialog ecn={detail} onClose={() => setDetail(null)} userName={userName} products={products} />
-    </DashboardLayout>
+      <DataTable<Ecn>
+        data={rows}
+        columns={columns}
+        getRowId={(r) => r.id}
+        onRowClick={(r) => flyout.open("ecn", { id: r.id })}
+        pageSize={20}
+        emptyState={<p className="py-8 text-center text-sm text-muted-foreground">{emptyText}</p>}
+        className="space-y-2"
+      />
+    </section>
   );
 }
 
-/** ECN detail — impact summary, actors, and a lifecycle timeline. Read-only. */
-function EcnDetailDialog({
-  ecn, onClose, userName, products,
+/** Flyout tạo ECN — form cũ (Dialog) chuyển sang sheet phải; dữ liệu chưa lưu ⇒ hỏi trước khi đóng. */
+function EcnCreateForm({ products, onCreated }: { products: Product[]; onCreated: () => void }) {
+  const { t } = useTranslation();
+  // final wave M-1 — đóng CHÍNH lớp của mình sau khi lưu (không đóng nhầm lớp người dùng mở trong lúc chờ server).
+  const { layer, done } = useCloseOwnLayer();
+  const fid = useId();
+  const [title, setTitle] = useState("");
+  const [changeType, setChangeType] = useState<ChangeType>("product");
+  const [productModelId, setProductModelId] = useState<string>("");
+  const [targetDescription, setTargetDescription] = useState("");
+  const [reason, setReason] = useState("");
+  const [impactNotes, setImpactNotes] = useState("");
+  const [effectivityDate, setEffectivityDate] = useState("");
+
+  const dirty = title !== "" || productModelId !== "" || targetDescription !== "" || reason !== "" || impactNotes !== "" || effectivityDate !== "" || changeType !== "product";
+  // Báo FlyoutHost còn dữ liệu chưa lưu (Esc/Back/đóng ⇒ hỏi trước khi bỏ).
+  useEffect(() => { layer.setDirty(dirty); }, [dirty]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const createM = trpc.ecn.create.useMutation({
+    onSuccess: () => {
+      toast.success(t("ecn.created", "Đã tạo thay đổi kỹ thuật"));
+      onCreated();
+      done();
+    },
+    onError: (e) => toastTrpcError(e),
+  });
+
+  const submitCreate = () => {
+    if (!title.trim()) { toast.error(t("ecn.titleRequired", "Bắt buộc nhập tiêu đề")); return; }
+    createM.mutate({
+      title: title.trim(),
+      changeType,
+      productModelId: productModelId ? Number(productModelId) : undefined,
+      targetDescription: targetDescription.trim() || undefined,
+      reason: reason.trim() || undefined,
+      impactSummary: impactNotes.trim() ? { notes: impactNotes.trim() } : undefined,
+      effectivityDate: effectivityDate || undefined,
+    });
+  };
+
+  return (
+    <div className="space-y-3">
+      <div className="space-y-1">
+        <Label htmlFor={`${fid}-title`}>{t("ecn.field.title", "Tiêu đề")}</Label>
+        <Input id={`${fid}-title`} value={title} onChange={(e) => setTitle(e.target.value)} placeholder={t("ecn.field.titlePlaceholder", "VD: Cập nhật dung sai R12 trên model A")} />
+      </div>
+      <div className="grid grid-cols-2 gap-3">
+        <div className="space-y-1">
+          <Label htmlFor={`${fid}-type`}>{t("ecn.field.type", "Loại thay đổi")}</Label>
+          <Select value={changeType} onValueChange={(v) => setChangeType(v as ChangeType)}>
+            <SelectTrigger id={`${fid}-type`}><SelectValue /></SelectTrigger>
+            <SelectContent>
+              {CHANGE_TYPES.map((ct) => (
+                <SelectItem key={ct} value={ct}>{t(`ecn.type.${ct}`, ct)}</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+        <div className="space-y-1">
+          <Label htmlFor={`${fid}-eff`}>{t("ecn.field.effectivity", "Ngày hiệu lực")}</Label>
+          <Input id={`${fid}-eff`} type="date" value={effectivityDate} onChange={(e) => setEffectivityDate(e.target.value)} />
+        </div>
+      </div>
+      <div className="space-y-1">
+        <Label htmlFor={`${fid}-product`}>{t("ecn.field.product", "Sản phẩm đích (tùy chọn)")}</Label>
+        <Select value={productModelId || "none"} onValueChange={(v) => setProductModelId(v === "none" ? "" : v)}>
+          <SelectTrigger id={`${fid}-product`}><SelectValue placeholder={t("ecn.noProduct", "Không / không riêng sản phẩm")} /></SelectTrigger>
+          <SelectContent>
+            <SelectItem value="none">{t("ecn.noProduct", "Không / không riêng sản phẩm")}</SelectItem>
+            {products.map((p) => (
+              <SelectItem key={p.id} value={String(p.id)}>{p.code || p.name || `#${p.id}`}</SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+      </div>
+      <div className="space-y-1">
+        <Label htmlFor={`${fid}-target`}>{t("ecn.field.target", "Mô tả đối tượng (tùy chọn)")}</Label>
+        <Input id={`${fid}-target`} value={targetDescription} onChange={(e) => setTargetDescription(e.target.value)} placeholder={t("ecn.field.targetPlaceholder", "VD: BOM v3 dòng R12 / recipe SMT-01")} />
+      </div>
+      <div className="space-y-1">
+        <Label htmlFor={`${fid}-reason`}>{t("ecn.field.reason", "Lý do")}</Label>
+        <Textarea id={`${fid}-reason`} rows={2} value={reason} onChange={(e) => setReason(e.target.value)} />
+      </div>
+      <div className="space-y-1">
+        <Label htmlFor={`${fid}-impact`}>{t("ecn.field.impact", "Ghi chú phân tích tác động")}</Label>
+        <Textarea id={`${fid}-impact`} rows={2} value={impactNotes} onChange={(e) => setImpactNotes(e.target.value)} placeholder={t("ecn.field.impactPlaceholder", "Sản phẩm / chương trình / dây chuyền ảnh hưởng, rủi ro, phương án khôi phục…")} />
+      </div>
+      <div className="flex justify-end gap-2 border-t pt-3">
+        <Button variant="outline" onClick={() => layer.close()}>{t("common.cancel", "Hủy")}</Button>
+        <Button onClick={submitCreate} disabled={createM.isPending}>{t("common.create", "Tạo")}</Button>
+      </div>
+    </div>
+  );
+}
+
+/** Nhãn mục nhỏ trong chi tiết. */
+function SectionLabel({ children }: { children: ReactNode }) {
+  return <div className="mb-1 text-xs font-medium uppercase tracking-wide text-muted-foreground">{children}</div>;
+}
+
+/**
+ * Flyout chi tiết ECN (`?flyout=ecn&flyoutId=<id>`) — 5 tab. Đọc hàng từ danh sách; ECN không nằm
+ * trong 200 hàng đầu (deep-link/F5) thì đọc `ecn.getById`.
+ */
+function EcnDetail({
+  id, rows, listLoaded, userName, products, actions,
 }: {
-  ecn: Ecn | null;
-  onClose: () => void;
-  userName: (id: number | null | undefined) => string;
-  products: Array<{ id: number; code?: string | null; name?: string | null }>;
+  id: string | null;
+  rows: Ecn[];
+  listLoaded: boolean;
+  userName: UserNameFn;
+  products: Product[];
+  actions: (ecn: Ecn) => ReactNode;
 }) {
   const { t } = useTranslation();
-  if (!ecn) return null;
+  const numId = Number(id);
+  const validId = Number.isInteger(numId) && numId > 0;
+  const fromList = rows.find((r) => r.id === numId) ?? null;
+  const byIdQ = trpc.ecn.getById.useQuery({ id: numId }, { enabled: validId && listLoaded && !fromList });
+  const ecn = fromList ?? ((byIdQ.data as Ecn | undefined) ?? null);
+  const itemsQ = trpc.ecn.getItems.useQuery({ ecnId: numId }, { enabled: ecn != null });
+
+  if (!ecn) {
+    return (
+      <p className="py-6 text-center text-sm text-muted-foreground">
+        {!listLoaded || byIdQ.isLoading
+          ? t("common.loading", "Đang tải…")
+          : t("ecn.detail.notFound", "Không tìm thấy ECN #{{id}}.", { id: id ?? "" })}
+      </p>
+    );
+  }
 
   const productLabel = ecn.productModelId != null
     ? (products.find((p) => p.id === ecn.productModelId)?.code
@@ -529,6 +690,7 @@ function EcnDetailDialog({
 
   const impact = ecn.impactSummary ?? null;
   const impactList = (arr?: Array<number | string>) => (arr && arr.length ? arr.join(", ") : null);
+  const items = (itemsQ.data ?? []) as EcnItem[];
 
   // Timeline steps in lifecycle order — only rendered when the stamp exists.
   const steps: Array<{ key: string; label: string; at: string | Date | null; who?: number | null }> = [
@@ -540,106 +702,149 @@ function EcnDetailDialog({
     { key: "closed", label: t("ecn.timeline.closed", "Đóng"), at: ecn.closedAt, who: ecn.closedBy },
   ].filter((s) => s.at != null);
 
-  return (
-    <Dialog open onOpenChange={(o) => { if (!o) onClose(); }}>
-      <DialogContent className="max-h-[85vh] max-w-2xl overflow-y-auto">
-        <DialogHeader>
-          <DialogTitle className="flex items-center gap-2">
-            <span className="font-mono text-sm text-muted-foreground">{ecn.ecnKey}</span>
-            <StatusBadge status={ecn.status} variant={ecnStatusVariant(ecn.status)} label={t(`ecn.status.${ecn.status}`, ecn.status)} />
-          </DialogTitle>
-        </DialogHeader>
+  const decision = ecn.decisionComment ? (
+    <div>
+      <SectionLabel>{t("ecn.detail.decisionComment", "Ghi chú quyết định")}</SectionLabel>
+      <p className="whitespace-pre-wrap rounded-md border bg-muted/30 p-3">{ecn.decisionComment}</p>
+    </div>
+  ) : null;
 
-        <div className="space-y-5 text-sm">
-          <div>
-            <h3 className="font-semibold">{ecn.title}</h3>
-            <div className="mt-1 flex flex-wrap gap-x-4 gap-y-1 text-muted-foreground">
-              <span>{t("ecn.col.type", "Loại")}: <b className="text-foreground">{t(`ecn.type.${ecn.changeType}`, ecn.changeType)}</b></span>
-              <span>{t("ecn.col.effectivity", "Hiệu lực")}: <b className="text-foreground">{fmtDate(ecn.effectivityDate)}</b></span>
-              {productLabel && <span>{t("ecn.field.product", "Sản phẩm đích")}: <b className="text-foreground">{productLabel}</b></span>}
-            </div>
-          </div>
-
-          {(ecn.targetDescription || ecn.reason) && (
-            <div className="space-y-2">
-              {ecn.targetDescription && (
-                <div>
-                  <div className="text-xs font-medium uppercase tracking-wide text-muted-foreground">{t("ecn.field.target", "Mô tả đối tượng")}</div>
-                  <p className="whitespace-pre-wrap">{ecn.targetDescription}</p>
-                </div>
-              )}
-              {ecn.reason && (
-                <div>
-                  <div className="text-xs font-medium uppercase tracking-wide text-muted-foreground">{t("ecn.field.reason", "Lý do")}</div>
-                  <p className="whitespace-pre-wrap">{ecn.reason}</p>
-                </div>
-              )}
-            </div>
-          )}
-
-          {/* Impact summary */}
-          <div>
-            <div className="mb-1 text-xs font-medium uppercase tracking-wide text-muted-foreground">{t("ecn.detail.impact", "Phân tích tác động")}</div>
-            {impact && (impact.notes || impactList(impact.affectedProducts) || impactList(impact.affectedPrograms) || impactList(impact.affectedLines)) ? (
-              <div className="space-y-1 rounded-md border bg-muted/30 p-3">
-                {impactList(impact.affectedProducts) && <div>{t("ecn.detail.affectedProducts", "Sản phẩm ảnh hưởng")}: <b>{impactList(impact.affectedProducts)}</b></div>}
-                {impactList(impact.affectedPrograms) && <div>{t("ecn.detail.affectedPrograms", "Chương trình ảnh hưởng")}: <b>{impactList(impact.affectedPrograms)}</b></div>}
-                {impactList(impact.affectedLines) && <div>{t("ecn.detail.affectedLines", "Dây chuyền ảnh hưởng")}: <b>{impactList(impact.affectedLines)}</b></div>}
-                {impact.notes && <p className="whitespace-pre-wrap text-muted-foreground">{impact.notes}</p>}
-              </div>
-            ) : (
-              <p className="text-muted-foreground">{t("ecn.detail.noImpact", "Chưa ghi nhận phân tích tác động.")}</p>
-            )}
-          </div>
-
-          {/* Actors */}
-          <div>
-            <div className="mb-1 text-xs font-medium uppercase tracking-wide text-muted-foreground">{t("ecn.detail.actors", "Người liên quan")}</div>
-            <div className="grid grid-cols-2 gap-x-4 gap-y-1 sm:grid-cols-3">
-              <span>{t("ecn.detail.requestedBy", "Người yêu cầu")}: <b>{userName(ecn.requestedBy)}</b></span>
-              <span>{t("ecn.detail.reviewedBy", "Người xem xét")}: <b>{userName(ecn.reviewedBy)}</b></span>
-              <span>{t("ecn.detail.approvedBy", "Người duyệt")}: <b>{userName(ecn.approvedBy)}</b></span>
-              <span>{t("ecn.detail.implementedBy", "Người triển khai")}: <b>{userName(ecn.implementedBy)}</b></span>
-              <span>{t("ecn.detail.closedBy", "Người đóng")}: <b>{userName(ecn.closedBy)}</b></span>
-            </div>
-          </div>
-
-          {ecn.decisionComment && (
-            <div>
-              <div className="mb-1 text-xs font-medium uppercase tracking-wide text-muted-foreground">{t("ecn.detail.decisionComment", "Ghi chú quyết định")}</div>
-              <p className="whitespace-pre-wrap rounded-md border bg-muted/30 p-3">{ecn.decisionComment}</p>
-            </div>
-          )}
-
-          {/* Timeline */}
-          <div>
-            <div className="mb-2 text-xs font-medium uppercase tracking-wide text-muted-foreground">{t("ecn.detail.timeline", "Dòng thời gian")}</div>
-            {steps.length === 0 ? (
-              <p className="text-muted-foreground">{t("ecn.detail.noTimeline", "Chưa có mốc thời gian.")}</p>
-            ) : (
-              <ol className="space-y-2 border-l pl-4">
-                {steps.map((s) => (
-                  <li key={s.key} className="relative">
-                    <span className="absolute -left-[1.35rem] top-1 h-2 w-2 rounded-full bg-primary" aria-hidden="true" />
-                    <div className="flex flex-wrap items-baseline justify-between gap-x-3">
-                      <span className="font-medium">{s.label}</span>
-                      <span className="text-xs text-muted-foreground">{fmtDateTime(s.at)}</span>
-                    </div>
-                    {s.who != null && (
-                      <div className="text-xs text-muted-foreground">{userName(s.who)}</div>
-                    )}
-                  </li>
-                ))}
-              </ol>
-            )}
-          </div>
+  const overview = (
+    <div className="space-y-5 text-sm">
+      <div className="flex flex-wrap gap-x-4 gap-y-1 text-muted-foreground">
+        <span>{t("ecn.col.type", "Loại")}: <b className="text-foreground">{t(`ecn.type.${ecn.changeType}`, ecn.changeType)}</b></span>
+        <span>{t("ecn.col.effectivity", "Hiệu lực")}: <b className="text-foreground">{fmtDate(ecn.effectivityDate)}</b></span>
+        {productLabel && <span>{t("ecn.field.product", "Sản phẩm đích")}: <b className="text-foreground">{productLabel}</b></span>}
+      </div>
+      {ecn.reason && (
+        <div>
+          <SectionLabel>{t("ecn.field.reason", "Lý do")}</SectionLabel>
+          <p className="whitespace-pre-wrap">{ecn.reason}</p>
         </div>
+      )}
+      <div>
+        <SectionLabel>{t("ecn.detail.impact", "Phân tích tác động")}</SectionLabel>
+        {impact && (impact.notes || impactList(impact.affectedProducts) || impactList(impact.affectedPrograms) || impactList(impact.affectedLines)) ? (
+          <div className="space-y-1 rounded-md border bg-muted/30 p-3">
+            {impactList(impact.affectedProducts) && <div>{t("ecn.detail.affectedProducts", "Sản phẩm ảnh hưởng")}: <b>{impactList(impact.affectedProducts)}</b></div>}
+            {impactList(impact.affectedPrograms) && <div>{t("ecn.detail.affectedPrograms", "Chương trình ảnh hưởng")}: <b>{impactList(impact.affectedPrograms)}</b></div>}
+            {impactList(impact.affectedLines) && <div>{t("ecn.detail.affectedLines", "Dây chuyền ảnh hưởng")}: <b>{impactList(impact.affectedLines)}</b></div>}
+            {impact.notes && <p className="whitespace-pre-wrap text-muted-foreground">{impact.notes}</p>}
+          </div>
+        ) : (
+          <p className="text-muted-foreground">{t("ecn.detail.noImpact", "Chưa ghi nhận phân tích tác động.")}</p>
+        )}
+      </div>
+      {decision}
+    </div>
+  );
 
-        <DialogFooter>
-          <Button variant="outline" onClick={onClose}>{t("common.close", "Đóng")}</Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
+  const objects = (
+    <div className="space-y-5 text-sm">
+      <div>
+        <SectionLabel>{t("ecn.detail.target", "Đối tượng đích")}</SectionLabel>
+        {productLabel || ecn.targetDescription ? (
+          <div className="space-y-1">
+            {productLabel && <div>{t("ecn.field.product", "Sản phẩm đích")}: <b>{productLabel}</b></div>}
+            {ecn.targetDescription && <p className="whitespace-pre-wrap">{ecn.targetDescription}</p>}
+          </div>
+        ) : (
+          <p className="text-muted-foreground">{t("ecn.detail.noTarget", "Chưa ghi đối tượng đích.")}</p>
+        )}
+      </div>
+      <div>
+        <SectionLabel>{t("ecn.detail.items", "Đối tượng chi tiết")}</SectionLabel>
+        {itemsQ.isLoading ? (
+          <p className="text-muted-foreground">{t("common.loading", "Đang tải…")}</p>
+        ) : items.length === 0 ? (
+          <p className="text-muted-foreground">{t("ecn.detail.noItems", "Chưa có đối tượng chi tiết nào.")}</p>
+        ) : (
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>{t("ecn.item.entity", "Đối tượng")}</TableHead>
+                <TableHead>{t("ecn.item.action", "Thao tác")}</TableHead>
+                <TableHead>{t("ecn.item.description", "Mô tả")}</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {items.map((it) => (
+                <TableRow key={it.id}>
+                  <TableCell>
+                    <span className="text-muted-foreground">{t(`ecn.type.${it.entityType}`, it.entityType)}</span>{" "}
+                    <span className="font-mono text-xs">{it.entityCode ?? (it.entityRef != null ? `#${it.entityRef}` : "—")}</span>
+                  </TableCell>
+                  <TableCell>{t(`ecn.itemAction.${it.action}`, it.action)}</TableCell>
+                  <TableCell className="whitespace-pre-wrap">{it.description ?? "—"}</TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        )}
+      </div>
+    </div>
+  );
+
+  const approval = (
+    <div className="space-y-5 text-sm">
+      <p className="text-muted-foreground">{t("ecn.detail.approvalHelp", "Người yêu cầu không được tự xem xét hay phê duyệt; người đã xem xét không được đồng thời phê duyệt.")}</p>
+      <div>
+        <SectionLabel>{t("ecn.detail.actors", "Người liên quan")}</SectionLabel>
+        <div className="grid grid-cols-2 gap-x-4 gap-y-1 sm:grid-cols-3">
+          <span>{t("ecn.detail.requestedBy", "Người yêu cầu")}: <b>{userName(ecn.requestedBy)}</b></span>
+          <span>{t("ecn.detail.reviewedBy", "Người xem xét")}: <b>{userName(ecn.reviewedBy)}</b></span>
+          <span>{t("ecn.detail.approvedBy", "Người duyệt")}: <b>{userName(ecn.approvedBy)}</b></span>
+        </div>
+      </div>
+      {decision}
+    </div>
+  );
+
+  const tasks = (
+    <div className="space-y-5 text-sm">
+      <p className="text-muted-foreground">{t("ecn.detail.tasksHelp", "Sau khi phê duyệt: đánh dấu triển khai khi thay đổi đã được áp dụng, rồi đóng ECN.")}</p>
+      <div className="grid grid-cols-1 gap-y-1 sm:grid-cols-2">
+        <span>{t("ecn.col.effectivity", "Hiệu lực")}: <b>{fmtDate(ecn.effectivityDate)}</b></span>
+        <span>{t("ecn.timeline.implemented", "Triển khai")}: <b>{ecn.implementedAt ? `${fmtDateTime(ecn.implementedAt)} · ${userName(ecn.implementedBy)}` : t("ecn.detail.notYet", "Chưa")}</b></span>
+        <span>{t("ecn.timeline.closed", "Đóng")}: <b>{ecn.closedAt ? `${fmtDateTime(ecn.closedAt)} · ${userName(ecn.closedBy)}` : t("ecn.detail.notYet", "Chưa")}</b></span>
+      </div>
+    </div>
+  );
+
+  const history = steps.length === 0 ? (
+    <p className="text-sm text-muted-foreground">{t("ecn.detail.noTimeline", "Chưa có mốc thời gian.")}</p>
+  ) : (
+    <ol className="space-y-2 border-l pl-4 text-sm">
+      {steps.map((s) => (
+        <li key={s.key} className="relative">
+          <span className="absolute -left-[1.35rem] top-1 h-2 w-2 rounded-full bg-primary" aria-hidden="true" />
+          <div className="flex flex-wrap items-baseline justify-between gap-x-3">
+            <span className="font-medium">{s.label}</span>
+            <span className="text-xs text-muted-foreground">{fmtDateTime(s.at)}</span>
+          </div>
+          {s.who != null && (
+            <div className="text-xs text-muted-foreground">{userName(s.who)}</div>
+          )}
+        </li>
+      ))}
+    </ol>
+  );
+
+  return (
+    <DetailSheet
+      headingAs="h3"
+      title={ecn.title}
+      subtitle={`${ecn.ecnKey} · ${t(`ecn.type.${ecn.changeType}`, ecn.changeType)}`}
+      status={<StatusBadge status={ecn.status} variant={ecnStatusVariant(ecn.status)} label={t(`ecn.status.${ecn.status}`, ecn.status)} />}
+      actions={actions(ecn)}
+      tabs={[
+        { value: "overview", label: t("ecn.tab.overview", "Tổng quan"), content: overview },
+        { value: "objects", label: t("ecn.tab.objects", "Đối tượng"), content: objects },
+        { value: "approval", label: t("ecn.tab.approval", "Duyệt"), content: approval },
+        { value: "tasks", label: t("ecn.tab.tasks", "Nhiệm vụ"), content: tasks },
+        { value: "history", label: t("ecn.tab.history", "Lịch sử"), content: history },
+      ]}
+    />
   );
 }
 
@@ -647,10 +852,12 @@ function EcnDetailDialog({
  * TASK 3 surface — triggers the EXISTING backfill procedure
  * `trpc.measurementPoint.backfillComponentCodesFromBom` (adminProcedure). Not a
  * reimplementation: this only calls it (dry-run preview → apply) and shows the
- * counts it returns.
+ * counts it returns. Doc 81 Đợt 2 Task 4: nội dung nằm trong flyout `ecn-backfill`
+ * (tiêu đề ở đầu sheet), không còn là card dưới danh sách.
  */
-function ComponentCodeBackfillPanel({ products }: { products: Array<{ id: number; code?: string | null; name?: string | null }> }) {
+function ComponentCodeBackfillPanel({ products }: { products: Product[] }) {
   const { t } = useTranslation();
+  const pid = useId();
   const [productId, setProductId] = useState<string>("");
   const [result, setResult] = useState<null | { matched: number; updated: number; skippedAlreadyLinked: number; unmatched: any[]; bomDefinitionId: number | null; dryRun: boolean }>(null);
 
@@ -659,62 +866,54 @@ function ComponentCodeBackfillPanel({ products }: { products: Array<{ id: number
   const backfillM = mpApi?.backfillComponentCodesFromBom?.useMutation?.({
     onSuccess: (r: any) => {
       setResult(r);
-      toast.success(t("ecn.backfill.done", `Backfill ${r?.dryRun ? "(dry-run) " : ""}— matched ${r?.matched ?? 0}, updated ${r?.updated ?? 0}`));
+      const counts = { matched: r?.matched ?? 0, updated: r?.updated ?? 0 };
+      toast.success(r?.dryRun
+        ? t("ecn.backfill.doneDryRun", "Xem trước (dry-run) — khớp {{matched}}, sẽ cập nhật {{updated}}", counts)
+        : t("ecn.backfill.done", "Đã bổ sung — khớp {{matched}}, đã cập nhật {{updated}}", counts));
     },
     onError: (e: any) => toast.error(mapTrpcError(e)),
   });
 
   const run = (dryRun: boolean) => {
     if (!productId) { toast.error(t("ecn.backfill.pickProduct", "Hãy chọn một sản phẩm trước")); return; }
-    if (!backfillM) { toast.error("Backfill procedure unavailable"); return; }
+    if (!backfillM) { toast.error(t("ecn.backfill.unavailable", "Chức năng bổ sung hiện không khả dụng")); return; }
     setResult(null);
     backfillM.mutate({ productModelId: Number(productId), dryRun });
   };
 
   return (
-    <Card>
-      <CardHeader>
-        <CardTitle className="flex items-center gap-2 text-base">
-          <Wrench className="h-4 w-4 text-primary" />
-          {t("ecn.backfill.title", "Bổ sung componentCode từ BOM")}
-        </CardTitle>
-      </CardHeader>
-      <CardContent className="space-y-3">
-        <p className="text-sm text-muted-foreground">
-          {t("ecn.backfill.help", "Điền componentCode còn trống của điểm đo từ BOM sản phẩm (khớp refDesignator). Không phá hủy — liên kết sẵn có không bị ghi đè. Xem trước bằng dry-run trước khi áp dụng.")}
-        </p>
-        <div className="flex flex-wrap items-end gap-3">
-          <div className="min-w-[16rem] space-y-1">
-            <Label>{t("ecn.backfill.product", "Sản phẩm")}</Label>
-            <Select value={productId} onValueChange={setProductId}>
-              <SelectTrigger><SelectValue placeholder={t("ecn.backfill.selectProduct", "Chọn sản phẩm…")} /></SelectTrigger>
-              <SelectContent>
-                {products.map((p) => (
-                  <SelectItem key={p.id} value={String(p.id)}>{p.code || p.name || `#${p.id}`}</SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+    <div className="space-y-3">
+      <div className="space-y-1">
+        <Label htmlFor={pid}>{t("ecn.backfill.product", "Sản phẩm")}</Label>
+        <Select value={productId} onValueChange={setProductId}>
+          <SelectTrigger id={pid}><SelectValue placeholder={t("ecn.backfill.selectProduct", "Chọn sản phẩm…")} /></SelectTrigger>
+          <SelectContent>
+            {products.map((p) => (
+              <SelectItem key={p.id} value={String(p.id)}>{p.code || p.name || `#${p.id}`}</SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+      </div>
+      <div className="flex flex-wrap gap-2">
+        <Button variant="outline" disabled={backfillM?.isPending} onClick={() => run(true)}>
+          {t("ecn.backfill.dryRun", "Xem trước (dry-run)")}
+        </Button>
+        <Button disabled={backfillM?.isPending} onClick={() => run(false)}>
+          {t("ecn.backfill.apply", "Áp dụng bổ sung")}
+        </Button>
+      </div>
+      {result && (
+        <div className="rounded-md border bg-muted/30 p-3 text-sm">
+          <div className="flex flex-wrap gap-4">
+            <span>{t("ecn.backfill.bom", "BOM")}: <b>{result.bomDefinitionId ?? "—"}</b></span>
+            <span>{t("ecn.backfill.matched", "Khớp")}: <b>{result.matched}</b></span>
+            <span>{t("ecn.backfill.updated", "Đã cập nhật")}: <b>{result.updated}</b></span>
+            <span>{t("ecn.backfill.skipped", "Đã liên kết")}: <b>{result.skippedAlreadyLinked}</b></span>
+            <span>{t("ecn.backfill.unmatched", "Chưa khớp")}: <b>{result.unmatched?.length ?? 0}</b></span>
+            {result.dryRun && <span className="text-amber-600">{t("ecn.backfill.dryRunTag", "(dry-run — chưa ghi gì)")}</span>}
           </div>
-          <Button variant="outline" disabled={backfillM?.isPending} onClick={() => run(true)}>
-            {t("ecn.backfill.dryRun", "Xem trước (dry-run)")}
-          </Button>
-          <Button disabled={backfillM?.isPending} onClick={() => run(false)}>
-            {t("ecn.backfill.apply", "Áp dụng bổ sung")}
-          </Button>
         </div>
-        {result && (
-          <div className="rounded-md border bg-muted/30 p-3 text-sm">
-            <div className="flex flex-wrap gap-4">
-              <span>{t("ecn.backfill.bom", "BOM")}: <b>{result.bomDefinitionId ?? "—"}</b></span>
-              <span>{t("ecn.backfill.matched", "Khớp")}: <b>{result.matched}</b></span>
-              <span>{t("ecn.backfill.updated", "Đã cập nhật")}: <b>{result.updated}</b></span>
-              <span>{t("ecn.backfill.skipped", "Đã liên kết")}: <b>{result.skippedAlreadyLinked}</b></span>
-              <span>{t("ecn.backfill.unmatched", "Chưa khớp")}: <b>{result.unmatched?.length ?? 0}</b></span>
-              {result.dryRun && <span className="text-amber-600">{t("ecn.backfill.dryRunTag", "(dry-run — chưa ghi gì)")}</span>}
-            </div>
-          </div>
-        )}
-      </CardContent>
-    </Card>
+      )}
+    </div>
   );
 }

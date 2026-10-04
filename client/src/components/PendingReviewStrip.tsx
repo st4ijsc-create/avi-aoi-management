@@ -34,12 +34,14 @@ import {
   AlertTriangle,
   type LucideIcon,
 } from "lucide-react";
+import type { inferRouterOutputs } from "@trpc/server";
+import type { AppRouter } from "../../../server/routers";
 import { trpc } from "@/lib/trpc";
 import { cn } from "@/lib/utils";
 import { Skeleton } from "@/components/ui/skeleton";
 
 /** Một loại việc chờ: icon + khóa i18n nhãn + deep-link + mức độ khẩn. */
-interface CategoryDef {
+export interface CategoryDef {
   key:
     | "ecn"
     | "recipes"
@@ -61,7 +63,7 @@ interface CategoryDef {
 // Thứ tự: soạn thảo (ECN → recipe) → an toàn (interlock) → điều phối → an toàn
 // sự cố → đội xe. Doc 80 Đợt 1 Task 2 (HUB-02) — bốn nguồn MỚI: ecn,
 // recipeActiveUnapproved, interlockEventsOpen, changeover ("deployment chờ duyệt").
-const CATEGORIES: CategoryDef[] = [
+export const PENDING_CATEGORIES: readonly CategoryDef[] = [
   { key: "ecn", icon: GitPullRequestArrow, href: "/engineering-changes?filter=pending", critical: false, fallbackLabel: "ECNs to approve" },
   { key: "recipes", icon: FlaskConical, href: "/recipes?filter=pending", critical: false, fallbackLabel: "Recipes to approve" },
   // RCP-06 — recipe ĐANG CHẠY trên máy thật mà chưa qua second-approver: bất biến
@@ -74,8 +76,31 @@ const CATEGORIES: CategoryDef[] = [
   { key: "safety", icon: ShieldQuestion, href: "/safety-workforce?filter=pending", critical: true, fallbackLabel: "Unaudited safety events" },
   { key: "deadlocks", icon: Bot, href: "/fleet-orchestration?filter=deadlock", critical: true, fallbackLabel: "Fleet deadlocks" },
 ];
+const CATEGORIES = PENDING_CATEGORIES;
 
-export function PendingReviewStrip() {
+export interface PendingReviewStripProps {
+  /**
+   * Doc 81 Đợt 2 Task 15 — `"table"`: MAIN "hộp việc" của Hub (FE1 §2.1 "bảng 8 dòng") — MỘT `<table>`, mỗi loại
+   * việc một dòng, cùng nguồn/cùng link sâu/cùng luật HUB-01, HUB-02; trạng thái (đang tải / lỗi / trống / không đọc
+   * được) nằm TRONG bảng. Mặc định `"cards"` = lưới thẻ cũ (không đổi).
+   */
+  variant?: "cards" | "table";
+  /** Chỉ hiện các loại việc này (phạm vi của Hub). "Tất cả đã xử lý" / "Không đọc được" tính TRÊN tập đang hiện. */
+  categoryFilter?: (c: CategoryDef) => boolean;
+  /**
+   * Doc 81 Đợt 2 Task 15 fix 1 (R-2-y) — các loại này LUÔN hiện, ghim ĐẦU bảng (`tbody[data-pending-pinned]`), bất kể
+   * `categoryFilter` (vd loại KHẨN `critical:true` của Hub ở mọi phạm vi).
+   */
+  pinned?: (c: CategoryDef) => boolean;
+  /**
+   * doc 81 Đợt 2 final wave (R-2-z5 / M-7) — chỉ `variant="table"`: loại mà vai hiện tại KHÔNG mở được trang đích
+   * (cùng luật RouteGuard của nav) vẫn hiện số (loại khẩn phải luôn thấy) nhưng KHÔNG là link — kèm ghi chú "không có
+   * quyền mở". Không truyền ⇒ mọi dòng là link như cũ.
+   */
+  canOpen?: (c: CategoryDef) => boolean;
+}
+
+export function PendingReviewStrip({ variant = "cards", categoryFilter, pinned, canOpen }: PendingReviewStripProps = {}) {
   const { t } = useTranslation();
   const query = trpc.oversight.pendingSummary.useQuery(undefined, {
     // Việc chờ duyệt thay đổi chậm — làm mới nhẹ, không spam.
@@ -84,6 +109,11 @@ export function PendingReviewStrip() {
   });
 
   const data = query.data;
+  if (variant === "table") {
+    const pin = pinned ? CATEGORIES.filter(pinned) : [];
+    const rest = (categoryFilter ? CATEGORIES.filter(categoryFilter) : CATEGORIES).filter((c) => !pin.includes(c));
+    return <PendingReviewTable query={query} pinned={pin} categories={rest} canOpen={canOpen} />;
+  }
   // HUB-01 — nguồn nào ĐANG lỗi (bảng thiếu, quyền hạ tầng, DB rớt…), bất kể tổng.
   const degradedCategories = data != null ? CATEGORIES.filter((c) => data[c.key].degraded) : [];
   const hasDegraded = degradedCategories.length > 0;
@@ -201,4 +231,129 @@ export function PendingReviewStrip() {
   );
 }
 
+type PendingSummary = inferRouterOutputs<AppRouter>["oversight"]["pendingSummary"];
+
+/**
+ * Doc 81 Đợt 2 Task 15 — thân bảng của `variant="table"`. Cùng luật HUB-01 với lưới thẻ, nhưng tính trên `categories`
+ * (tập đang hiện): "Tất cả đã xử lý" CHỈ khi mọi nguồn TRONG TẬP đọc được VÀ tổng tập = 0; nguồn nào không đọc được
+ * thì ô số là "—" (không bao giờ in 0) và chú thích `role=status` gọi tên nó. HUB-02: mẫu rỗng không tự xưng
+ * "unavailable". Bảng là phần tử làm việc (W) của MAIN — mọi trạng thái nằm TRONG bảng (caption/dòng), không có khối
+ * nào chen trên bảng.
+ */
+function PendingReviewTable({
+  query,
+  categories: rest,
+  pinned = [],
+  canOpen,
+}: {
+  query: { data?: PendingSummary; isLoading: boolean; isError: boolean };
+  categories: readonly CategoryDef[];
+  pinned?: readonly CategoryDef[];
+  canOpen?: (c: CategoryDef) => boolean;
+}) {
+  const { t } = useTranslation();
+  const data = query.data;
+  // Tập đang hiện = loại ghim (luôn) + loại theo phạm vi. HUB-01 tính trên CẢ tập này.
+  const categories = [...pinned, ...rest];
+  // Chưa có dữ liệu và không lỗi (kể cả trước lượt tải đầu) ⇒ khung chờ, không bao giờ là bảng rỗng/0.
+  const waiting = data == null && !query.isError;
+  const label = (c: CategoryDef) => t(`oversight.category.${c.key}`, c.fallbackLabel);
+  const degraded = data != null ? categories.filter((c) => data[c.key].degraded) : [];
+  const shownTotal = data != null ? categories.reduce((n, c) => n + data[c.key].count, 0) : 0;
+  const allClear = data != null && shownTotal === 0 && degraded.length === 0;
+
+  return (
+    <table className="w-full border-collapse text-sm" aria-label={t("oversight.title", "Pending review & alerts")}>
+      {(query.isError || allClear || degraded.length > 0) && (
+        <caption className="caption-top pb-2 text-left text-sm">
+          {query.isError ? (
+            <span className="inline-flex items-start gap-2 text-muted-foreground">
+              <AlertCircle className="mt-0.5 h-4 w-4 shrink-0 text-destructive" aria-hidden="true" />
+              {t("oversight.error", "Could not load the pending-review summary. It will retry automatically.")}
+            </span>
+          ) : degraded.length > 0 ? (
+            <span role="status" className="inline-flex items-start gap-2 text-muted-foreground">
+              <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-warning" aria-hidden="true" />
+              {t("oversight.sourcesUnavailable", "Could not read: {{sources}}", { sources: degraded.map(label).join(", ") })}
+            </span>
+          ) : (
+            <span className="inline-flex items-center gap-2 text-muted-foreground">
+              <CheckCircle2 className="h-4 w-4 shrink-0 text-success" aria-hidden="true" />
+              {t("oversight.allClear", "Nothing waiting for approval right now.")}
+            </span>
+          )}
+        </caption>
+      )}
+      <thead className="sticky top-0 z-10 bg-card">
+        <tr className="border-b text-left text-xs uppercase tracking-wide text-muted-foreground">
+          <th scope="col" className="py-2 pr-3 font-medium">{t("oversight.table.kind", "Work item")}</th>
+          <th scope="col" className="w-20 py-2 pr-3 text-right font-medium">{t("oversight.table.count", "Count")}</th>
+          <th scope="col" className="py-2 font-medium">{t("oversight.table.samples", "Waiting")}</th>
+        </tr>
+      </thead>
+      {waiting ? (
+        <tbody>
+          {categories.map((c) => (
+            <tr key={c.key} data-pending-skeleton="" className="border-b">
+              <td className="py-2 pr-3"><Skeleton className="h-5 w-40" /></td>
+              <td className="py-2 pr-3"><Skeleton className="ml-auto h-5 w-8" /></td>
+              <td className="py-2"><Skeleton className="h-5 w-48" /></td>
+            </tr>
+          ))}
+        </tbody>
+      ) : data != null && (
+        <>
+          {pinned.length > 0 && <tbody data-pending-pinned="" className="border-b-2">{pinned.map((cat) => renderRow(cat, data))}</tbody>}
+          <tbody>{rest.map((cat) => renderRow(cat, data))}</tbody>
+        </>
+      )}
+    </table>
+  );
+
+  function renderRow(cat: CategoryDef, data: PendingSummary) {
+    const bucket = data[cat.key];
+    const Icon = cat.icon;
+    const active = bucket.count > 0;
+    const tone = active ? (cat.critical ? "text-destructive" : "text-warning") : "text-muted-foreground";
+    return (
+      <tr key={cat.key} data-pending-row={cat.key} className="border-b hover:bg-muted/40">
+        <td className="py-2 pr-3">
+          {canOpen && !canOpen(cat) ? (
+            // R-2-z5 — vai này không mở được trang đích: giữ tên + số (loại khẩn luôn thấy), không dẫn tới trang bị từ chối.
+            <span data-pending-no-access="" className="inline-flex flex-wrap items-center gap-x-2 gap-y-0.5 font-medium text-foreground">
+              <Icon className="h-4 w-4 shrink-0 text-muted-foreground" strokeWidth={2.1} aria-hidden="true" />
+              <span>{label(cat)}</span>
+              <span className="text-xs font-normal text-muted-foreground">{t("oversight.noAccess", "(you don't have access to this page)")}</span>
+            </span>
+          ) : (
+            <Link
+              href={cat.href}
+              className="inline-flex items-center gap-2 font-medium text-foreground hover:text-primary hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40"
+            >
+              <Icon className="h-4 w-4 shrink-0 text-primary" strokeWidth={2.1} aria-hidden="true" />
+              <span>{label(cat)}</span>
+            </Link>
+          )}
+        </td>
+        <td className="py-2 pr-3 text-right">
+          <span data-pending-count="" className={cn("text-base font-bold tabular-nums", bucket.degraded ? "text-warning" : tone)}>
+            {bucket.degraded ? "—" : bucket.count}
+          </span>
+        </td>
+        <td className="max-w-0 py-2 text-xs text-muted-foreground">
+          {bucket.samples.length > 0 ? (
+            <span className="block truncate" title={bucket.samples.map((x) => x.label).join(", ")}>
+              {bucket.samples[0].label}
+              {bucket.samples.length > 1 ? ` +${bucket.count - 1}` : ""}
+            </span>
+          ) : bucket.degraded ? (
+            t("oversight.degraded", "unavailable")
+          ) : null}
+        </td>
+      </tr>
+    );
+  }
+}
+
 export default PendingReviewStrip;
+

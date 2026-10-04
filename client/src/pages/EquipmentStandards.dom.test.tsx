@@ -4,9 +4,18 @@
 // `flagEnabled` mặc định LẠC QUAN `statusQ.data?.enabled ?? true` khi `equipmentStandards.status`
 // CHƯA trả lời — nút "Register type" không hề khoá trong lúc tải. Dựng trang THẬT qua
 // @testing-library/react, chỉ mock hạ tầng nặng (DashboardLayout/usePermissions/trpc/sonner).
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { cleanup, render, screen } from "@testing-library/react";
 import "@testing-library/jest-dom/vitest";
+import { installResizeHandleHitAreaShim } from "@/components/patterns/layoutKitTestPanels";
+
+// Doc 81 Đợt 2 Task 9 — HẠ TẦNG (không phải khẳng định): trang nay dựng SplitListDetail (react-resizable-panels) ⇒
+// nạp bản browser thật + shim vùng bấm của separator (layoutKitTestPanels — dispatch Đợt 2); tab đồng bộ `?tab=` ⇒
+// trả URL về trang gốc trước mỗi ca (nếu không, tab của ca trước còn trong URL).
+vi.mock("react-resizable-panels", async () => (await import("@/components/patterns/layoutKitTestPanels")).browserPanels());
+beforeAll(() => {
+  installResizeHandleHitAreaShim();
+});
 
 vi.mock("@/components/DashboardLayout", () => ({
   default: ({ children }: { children: React.ReactNode }) => <div>{children}</div>,
@@ -85,6 +94,7 @@ vi.mock("@/lib/trpc", () => ({
 import EquipmentStandards from "./EquipmentStandards";
 
 beforeEach(() => {
+  window.history.replaceState(null, "", "/equipment-standards");
   for (const k of Object.keys(queryOverrides)) delete queryOverrides[k];
   queryCalls.length = 0;
   for (const k of Object.keys(mutateSpies)) delete mutateSpies[k];
@@ -235,7 +245,8 @@ describe("EquipmentStandards — KPI báo động MỘT nguồn (STD-04)", () =>
     await clickTab("Alarm performance");
     expect(screen.getByTestId("alarm-kpi-source").textContent).toMatch(/3/);
     expect(screen.getByText("M-01")).toBeInTheDocument();
-    expect(screen.getByTestId("alarm-kpi-total").textContent).toMatch(/5/);
+    // Task 9 — đổi SELECTOR: thẻ KPI thành chip StatusChipStrip (`data-chip-id`), khẳng định giữ nguyên.
+    expect(document.querySelector('[data-chip-id="alarm-kpi-total"]')!.textContent).toMatch(/5/);
   });
 });
 
@@ -283,7 +294,8 @@ describe("EquipmentStandards — Fix round 1 (badge Shelved + ô Chattering)", (
     setQueryOverride("alarmKpi.summary", makeQuery({ data: SUMMARY }));
     render(<EquipmentStandards />);
     await clickTab("Alarm performance");
-    const tile = screen.getByTestId("alarm-kpi-chattering");
+    // Task 9 — đổi SELECTOR: ô KPI thành chip StatusChipStrip (`data-chip-id`), khẳng định giữ nguyên.
+    const tile = document.querySelector('[data-chip-id="alarm-kpi-chattering"]') as HTMLElement;
     expect(tile.textContent).toMatch(/Chattering/);
     expect(tile.textContent).toMatch(/Not measured yet/);
     expect(tile.getAttribute("title") ?? "").toMatch(/does not compute chattering/i);

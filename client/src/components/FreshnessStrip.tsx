@@ -49,6 +49,7 @@ export function FreshnessStrip({
   connected,
   pollingFallback = true,
   staleAfterMs = 30_000,
+  compactUntilXl = false,
   className,
 }: {
   /** Newest data timestamp for the current scope (ms). Undefined → age unknown. */
@@ -59,6 +60,11 @@ export function FreshnessStrip({
   pollingFallback?: boolean;
   /** Data older than this (ms) is treated as stale even while connected. */
   staleAfterMs?: number;
+  /**
+   * Doc 81 Đợt 2 Task 2 (fix 2) — top bar của shell dưới xl (1280 px): chỉ icon (vẫn tô màu theo trạng
+   * thái); nhãn chuyển sr-only (trình đọc màn hình vẫn đọc) và vào tooltip cùng giờ dữ liệu. Từ xl: như cũ.
+   */
+  compactUntilXl?: boolean;
   className?: string;
 }) {
   const { t } = useTranslation();
@@ -105,20 +111,25 @@ export function FreshnessStrip({
       role="status"
       aria-live="polite"
       title={
-        stamp
-          ? t("freshness.asOf", { time: stamp, defaultValue: "Dữ liệu tính đến {{time}}" })
-          : label
+        compactUntilXl
+          ? stamp
+            ? `${label} · ${t("freshness.asOf", { time: stamp, defaultValue: "Dữ liệu tính đến {{time}}" })}`
+            : label
+          : stamp
+            ? t("freshness.asOf", { time: stamp, defaultValue: "Dữ liệu tính đến {{time}}" })
+            : label
       }
       className={cn(
         "inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs font-medium leading-none",
+        compactUntilXl && "px-1.5 xl:px-2.5",
         tone,
         className,
       )}
     >
       <Icon className={cn("size-3.5 shrink-0", state === "live" && "animate-pulse")} aria-hidden="true" />
-      <span className="truncate">{label}</span>
+      <span className={compactUntilXl ? "sr-only xl:not-sr-only xl:truncate" : "truncate"}>{label}</span>
       {stamp && (
-        <span className="font-mono tabular-nums opacity-80">
+        <span data-freshness-stamp="" className={cn("font-mono tabular-nums opacity-80", compactUntilXl && "hidden xl:inline")}>
           {state === "live" ? `· ${stamp}` : `· ${t("freshness.asOfShort", { time: stamp, defaultValue: "tính đến {{time}}" })}`}
         </span>
       )}

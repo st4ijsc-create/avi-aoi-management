@@ -53,6 +53,11 @@ export interface CodeEditorProps {
   onBlur?: () => void;
   "aria-label"?: string;
   /**
+   * doc 81 Đợt 2 Task 13 — báo vị trí con trỏ (dòng/cột 1-based) mỗi khi con trỏ/nội dung đổi — thanh trạng thái
+   * "Ln/Col" của IDE. Tuỳ chọn: không truyền ⇒ editor y như trước.
+   */
+  onCursorChange?: (pos: { line: number; col: number }) => void;
+  /**
    * Doc 69 · Wave 4 / C1 — bật gợi ý inline kiểu ghost-text (debounce → programming.copilotComplete
    * → Tab để chèn, Esc để bỏ). OPT-IN, mặc định false: KHÔNG bật tự động cho mọi consumer của
    * CodeEditor — chỉ mặt soạn thảo chính của Programming Copilot mới truyền cờ này. Khi cờ server
@@ -251,9 +256,14 @@ export function CodeEditor({
   onBlur,
   "aria-label": ariaLabel,
   inlineCopilot = false,
+  onCursorChange,
   ...rest
 }: CodeEditorProps) {
   const theme = useAppTheme();
+  // Task 13 — callback qua ref: đổi hàm của caller không dựng lại mảng extensions (giữ controller inline copilot).
+  const onCursorRef = useRef(onCursorChange);
+  onCursorRef.current = onCursorChange;
+  const reportsCursor = onCursorChange != null;
 
   // doc69 C1 — the trpc mutation object's identity/state churns on every request (isPending
   // flips true/false etc.); routing calls through a ref (instead of depending on it directly)
@@ -273,6 +283,16 @@ export function CodeEditor({
     // CodeMirror), không phải div bọc — giữ tên khả truy cập như bản textarea cũ.
     if (ariaLabel) ext.push(EditorView.contentAttributes.of({ "aria-label": ariaLabel }));
     if (onBlur) ext.push(EditorView.domEventHandlers({ blur: () => { onBlur(); return false; } }));
+    if (reportsCursor) {
+      ext.push(
+        EditorView.updateListener.of((u) => {
+          if (!u.selectionSet && !u.docChanged) return;
+          const head = u.state.selection.main.head;
+          const ln = u.state.doc.lineAt(head);
+          onCursorRef.current?.({ line: ln.number, col: head - ln.from + 1 });
+        }),
+      );
+    }
     if (inlineCopilot) {
       ext.push(
         inlineCopilotExtension({
@@ -309,7 +329,7 @@ export function CodeEditor({
     return ext;
     // eslint-disable-next-line react-hooks/exhaustive-deps -- copilotCompleteRef is a stable ref
     // (see comment above); intentionally excluded so `extensions` isn't rebuilt on every request.
-  }, [language, diagnostics, onBlur, ariaLabel, inlineCopilot]);
+  }, [language, diagnostics, onBlur, ariaLabel, inlineCopilot, reportsCursor]);
 
   return (
     <div

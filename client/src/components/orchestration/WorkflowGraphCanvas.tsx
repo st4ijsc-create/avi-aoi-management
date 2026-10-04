@@ -296,6 +296,16 @@ export interface WorkflowGraphCanvasProps {
   /** T-2 (doc 38) — LƯU vị trí node sau khi kéo-thả (ghi vào step.ui trong StudioDef). */
   onMoveNode: (id: string, pos: { x: number; y: number }) => void;
   t: TFunction;
+  /**
+   * Doc 81 Đợt 2 Task 11 — sơ đồ LẤP ĐẦY khung cha (canvas là MAIN của WorkbenchShell) thay vì cao cố định
+   * 520 px. Mặc định false (giữ bố cục cũ).
+   */
+  fill?: boolean;
+  /**
+   * Doc 81 Đợt 2 Task 11 — hiện dải palette phía trên sơ đồ. Mặc định true. Trang có bảng bước riêng (kéo-thả
+   * cùng `WF_DND_MIME`) đặt false để không lặp palette trong MAIN.
+   */
+  showPalette?: boolean;
 }
 
 /** U14 — bảng palette kéo-thả: bấm để thêm cấp cao nhất, kéo để lồng vào container. */
@@ -329,9 +339,27 @@ function GraphPalette({ onAdd, t }: { onAdd: (k: StepKind) => void; t: TFunction
 
 function CanvasInner({
   def, selectedId, onSelect, onDelete, onAddTopLevel, onAddChild, onReorderToSibling, onMoveNode, t,
+  fill = false, showPalette = true,
 }: WorkflowGraphCanvasProps) {
   const wrapperRef = useRef<HTMLDivElement>(null);
   const rf = useReactFlow();
+  // final wave (T11b minor 5) — nội dung có thể mount vào host DOM đang tách (slot portal của WorkbenchShell) hoặc tab
+  // ẩn (< 1024 px) ⇒ lúc onInit khung 0×0. Khung chuyển 0×0 → có kích thước ⇒ fitView một lần (mỗi lần lại hiện ra).
+  const rfRef = useRef(rf);
+  rfRef.current = rf;
+  useEffect(() => {
+    const el = wrapperRef.current;
+    if (!el || typeof ResizeObserver === "undefined") return;
+    let visible = false;
+    const ro = new ResizeObserver((entries) => {
+      const r = entries[0]?.contentRect;
+      const hasSize = !!r && r.width > 0 && r.height > 0;
+      if (hasSize && !visible) rfRef.current.fitView({ padding: 0.2 });
+      visible = hasSize;
+    });
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
 
   const { nodes: builtNodes, edges } = useMemo(
     () => defToGraph(def, selectedId, t, onDelete),
@@ -396,9 +424,12 @@ function CanvasInner({
   }, [onReorderToSibling]);
 
   return (
-    <div className="space-y-2">
-      <GraphPalette onAdd={onAddTopLevel} t={t} />
-      <div ref={wrapperRef} className="h-[520px] w-full overflow-hidden rounded-md border border-border bg-muted/20">
+    <div className={fill ? "flex h-full min-h-0 flex-col gap-2" : "space-y-2"}>
+      {showPalette && <GraphPalette onAdd={onAddTopLevel} t={t} />}
+      <div
+        ref={wrapperRef}
+        className={`${fill ? "min-h-0 flex-1" : "h-[520px]"} w-full overflow-hidden rounded-md border border-border bg-muted/20`}
+      >
         <ReactFlow
           nodes={nodes}
           edges={edges}

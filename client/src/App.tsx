@@ -2,6 +2,7 @@ import { Toaster } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import NotFound from "@/pages/NotFound";
 import { Route, Switch, useLocation, Redirect } from "wouter";
+import { engineeringLegacyRoutes } from "@/lib/engineeringLegacyRedirects";
 import { isWorkspaceShellEnabled } from "./components/workspace/hubState";
 import { isDeviceOnboardWizardV2Enabled } from "./components/deviceOnboarding/types";
 import React, { Suspense, useEffect } from "react";
@@ -14,12 +15,10 @@ import { AssetScopeProvider } from "./contexts/AssetScopeContext";
 import { AiCopilotProvider } from "./contexts/AiCopilotContext";
 import { EngineeringProvider } from "./contexts/EngineeringContext";
 import { ProgrammingCopilotProvider } from "./contexts/ProgrammingCopilotContext";
-// doc64 S5-OPT: 2 component global-mount này kéo ~1.9MB lib vào bundle chính
-// (Dock→Panel→CodeEditor→@codemirror ~1MB; ChatBubble→react-markdown+AIToolResultCard→recharts).
-// Lazy để chúng tải SAU first-paint — hành vi giữ nguyên, chỉ xuất hiện muộn vài trăm ms.
-const ProgrammingCopilotDock = React.lazy(() =>
-  import("./components/programming/ProgrammingCopilotDock").then((m) => ({ default: m.ProgrammingCopilotDock })),
-);
+// doc64 S5-OPT: component global-mount này kéo lib nặng vào bundle chính
+// (ChatBubble→react-markdown+AIToolResultCard→recharts). Lazy để tải SAU first-paint.
+// doc 81 Đợt 2 Task 14 (R-2-b) — dock Copilot lập trình global (aside position:fixed) đã GỠ: IDE/IR/POU đặt Copilot
+// TRONG layout của trang (inspector phải, lõi `ProgrammingCopilotCore`).
 const AILocalChatBubble = React.lazy(() =>
   import("./components/AILocalChatBubble").then((m) => ({ default: m.AILocalChatBubble })),
 );
@@ -145,7 +144,6 @@ const ProductWorkspaceHub = React.lazy(() => import("./pages/ProductWorkspaceHub
 const MaintenanceWorkspaceHub = React.lazy(() => import("./pages/MaintenanceWorkspaceHub")); // doc 59 Cụm I
 const ReportingStudio = React.lazy(() => import("./pages/ReportingStudio")); // doc 59 Cụm G
 const SettingsHub = React.lazy(() => import("./pages/SettingsHub")); // doc 59 cụm phụ — Settings hub
-const EngineeringStudioHub = React.lazy(() => import("./pages/EngineeringStudioHub")); // doc 59 cụm phụ — Engineering Studio
 const OperatorBadges = React.lazy(() => import("./pages/OperatorBadges")); // W8-B (doc 29 §3): operator/badge master — badgeCode → users.id with validity windows
 const ComponentLibrary = React.lazy(() => import("./pages/ComponentLibrary")); // W8-A (doc 27 M12a / doc 29 §1): component package/footprint master + material links
 const MasterDataAudit = React.lazy(() => import("./pages/MasterDataAudit")); // doc 42 Đợt 4B (H4): master-data audit trail (read-only "ai đổi gì, khi nào")
@@ -161,7 +159,6 @@ const EngineeringHub = React.lazy(() => import("./pages/EngineeringHub")); // W6
 const EngineeringWorkspace = React.lazy(() => import("./pages/EngineeringWorkspace")); // Doc 09 D1: Unified Engineering Workspace (author/build/simulate/deploy device programs)
 const IrEditor = React.lazy(() => import("./pages/IrEditor")); // D1 (doc 16 §11.1 Khối 6): Visual IR Editor — author motion/IO blocks, lint + transpile preview (mutations gated by DPC_IR_V2_ENABLED)
 const PouStudio = React.lazy(() => import("./pages/PouStudio")); // P4 (doc 24 Wave-3): IEC 61131 POU Studio — structured LAD/FBD/SFC + PLCopen XML round-trip + transpile-to-ST (pure preview, open runtime only)
-const ProgrammingCopilot = React.lazy(() => import("./pages/ProgrammingCopilot")); // Doc 34 P3: in-app Programming Copilot — LLM codegen (generate/complete/translate/review/explain), validated by the safety substrate; advisory + display-only
 const SupervisorHome = React.lazy(() => import("./pages/SupervisorHome")); // Doc 10 U1: supervisor/manager briefing landing
 const ViewerHome = React.lazy(() => import("./pages/ViewerHome")); // Doc 10 U3: viewer/user read-only landing
 const AdminHome = React.lazy(() => import("./pages/AdminHome")); // Doc 10 U5: admin governance briefing landing
@@ -597,7 +594,10 @@ function Router() {
           trang/server. navHref tự tra ĐÚNG quyền của mục nav — không thể lệch. */}
       <Route path="/ir-editor"><RouteGuard navHref="/ir-editor"><AIPageWrapper><IrEditor /></AIPageWrapper></RouteGuard></Route>
       <Route path="/pou-studio"><RouteGuard navHref="/pou-studio"><AIPageWrapper><PouStudio /></AIPageWrapper></RouteGuard></Route>
-      <Route path="/programming-copilot"><RouteGuard requirePermission="machine_status"><AIPageWrapper><ProgrammingCopilot /></AIPageWrapper></RouteGuard></Route>
+      {/* doc 81 Đợt 2 Task 15 — URL cũ /engineering-studio (Studio ⇒ Hub ?tab=catalog) và /programming-copilot
+          (trang Copilot ⇒ chế độ scratch của IDE ?copilot=scratch) CHUYỂN HƯỚNG, GIỮ NGUYÊN query (REPLACE).
+          Bảng + test: lib/engineeringLegacyRedirects.tsx(.dom.test.tsx). */}
+      {engineeringLegacyRoutes()}
       <Route path="/factory-floor-editor"><Redirect to="/twin-studio" /></Route>
       {/* ★ §13b 3g — RF là mô phỏng THUẦN (đo được 0 lời gọi tRPC trong 792 dòng):
           nó không trả lời "nhà máy đang thế nào". Trả lại TUYẾN THẬT, ngoài Twin. */}
@@ -744,9 +744,8 @@ function Router() {
       {/* doc 69 T6 — AIStudioHub retired: merged into AI Home. Old URL keeps working. */}
       <Route path="/ai-studio"><Redirect to="/ai-home" /></Route>
       <Route path="/maintenance-hub"><RouteGuard navHref="/maintenance-hub"><MaintenanceWorkspaceHub /></RouteGuard></Route>
-      {/* doc 59 cụm phụ — Settings + Engineering-Studio hub-launcher (additive). */}
+      {/* doc 59 cụm phụ — Settings hub-launcher (additive). Engineering-Studio: gộp vào Hub (doc 81 Đợt 2 Task 15), chuyển hướng ở trên. */}
       <Route path="/settings-hub"><RouteGuard navHref="/settings-hub"><SettingsHub /></RouteGuard></Route>
-      <Route path="/engineering-studio"><RouteGuard navHref="/engineering-studio"><EngineeringStudioHub /></RouteGuard></Route>
       <Route path="/master-data"><RouteGuard navHref="/master-data"><MasterDataManagement /></RouteGuard></Route>
       <Route path="/operator-badges"><RouteGuard navHref="/operator-badges"><OperatorBadges /></RouteGuard></Route>
       <Route path="/component-library"><RouteGuard navHref="/component-library"><AIPageWrapper><ComponentLibrary /></AIPageWrapper></RouteGuard></Route>
@@ -879,11 +878,6 @@ function App() {
                   doc64 S5-OPT: lazy + fallback null — tải sau first-paint, không chặn LCP. */}
               <Suspense fallback={null}>
                 <AILocalChatBubble />
-              </Suspense>
-              {/* doc 41 — Programming Copilot DOCK: mounted ONCE, renders only when a
-                  programming surface (Engineering/IR/POU) has published a binding. */}
-              <Suspense fallback={null}>
-                <ProgrammingCopilotDock />
               </Suspense>
             </AiCopilotProvider>
             </ProgrammingCopilotProvider>

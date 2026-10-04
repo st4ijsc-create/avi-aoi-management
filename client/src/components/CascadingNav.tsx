@@ -5,6 +5,7 @@ import {
   useMemo,
   useRef,
   useState,
+  type KeyboardEvent as ReactKeyboardEvent,
 } from "react";
 import { createPortal } from "react-dom";
 import { ChevronDown, ChevronLeft, ChevronRight } from "lucide-react";
@@ -258,10 +259,16 @@ const panelClass =
  * (native tooltip = label); hovering/clicking an icon opens a floating flyout with that
  * module's pages (Level-2 categories + items). The flyout is portalled to <body> and
  * fixed-positioned, so it is never clipped by the narrow rail.
+ *
+ * Doc 81 Đợt 2 Task 2 — submenu kiểu VS Code cho BÀN PHÍM (trước đây focus mở flyout nhưng Tab đi
+ * sang icon kế tiếp ⇒ không chạm được mục nào): Enter/Space/→ trên icon mở menu và focus mục đầu;
+ * ↑/↓/Home/End đi trong menu; Esc/← đóng và trả focus về icon; Tab đóng menu. ↑/↓ trên icon chuyển
+ * icon. Chuột giữ nguyên (hover mở, rời thì đóng sau CLOSE_DELAY_MS).
  */
 function CollapsedRail({ groups, currentPath, onNavigate }: CascadingNavProps) {
   const { t } = useTranslation();
   const [openId, setOpenId] = useState<string | null>(null);
+  const [focusFirst, setFocusFirst] = useState(false);
   const iconRefs = useRef<Record<string, HTMLButtonElement | null>>({});
   const closeTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -275,11 +282,33 @@ function CollapsedRail({ groups, currentPath, onNavigate }: CascadingNavProps) {
     cancelClose();
     closeTimer.current = setTimeout(() => setOpenId(null), CLOSE_DELAY_MS);
   }, [cancelClose]);
-  const openGroupId = useCallback((id: string) => {
+  const openGroupId = useCallback((id: string, viaKeyboard = false) => {
     cancelClose();
+    setFocusFirst(viaKeyboard);
     setOpenId(id);
   }, [cancelClose]);
   useEffect(() => () => { if (closeTimer.current) clearTimeout(closeTimer.current); }, []);
+
+  /** Đóng menu và trả focus về icon đã mở nó. */
+  const closeToIcon = useCallback((id: string | null) => {
+    cancelClose();
+    setOpenId(null);
+    if (id) iconRefs.current[id]?.focus();
+  }, [cancelClose]);
+  /** Focus rời menu (bấm chỗ khác): đóng, không kéo focus về. */
+  const dismiss = useCallback(() => {
+    cancelClose();
+    setOpenId(null);
+  }, [cancelClose]);
+  /** Tab ra khỏi menu (menu portal ở cuối <body>): đóng và đặt focus đúng chỗ trong rail —
+   *  Tab ⇒ icon KẾ (icon cuối thì ở lại icon đó), Shift+Tab ⇒ icon đã mở menu. */
+  const tabOut = useCallback((id: string, back: boolean) => {
+    cancelClose();
+    setOpenId(null);
+    const idx = groups.findIndex(g => g.id === id);
+    const target = back ? groups[idx] : groups[Math.min(idx + 1, groups.length - 1)];
+    if (target) iconRefs.current[target.id]?.focus();
+  }, [cancelClose, groups]);
 
   const handleNavigate = useCallback((href: string) => {
     onNavigate(href);
@@ -287,11 +316,27 @@ function CollapsedRail({ groups, currentPath, onNavigate }: CascadingNavProps) {
     setOpenId(null);
   }, [onNavigate, cancelClose]);
 
+  const onIconKeyDown = (e: ReactKeyboardEvent<HTMLButtonElement>, idx: number, id: string) => {
+    if (e.key === "Enter" || e.key === " " || e.key === "ArrowRight") {
+      e.preventDefault();
+      openGroupId(id, true);
+    } else if (e.key === "Escape") {
+      if (openId) {
+        e.preventDefault();
+        closeToIcon(id);
+      }
+    } else if (e.key === "ArrowDown" || e.key === "ArrowUp") {
+      e.preventDefault();
+      const next = groups[(idx + (e.key === "ArrowDown" ? 1 : groups.length - 1)) % groups.length];
+      if (next) iconRefs.current[next.id]?.focus();
+    }
+  };
+
   const openGroup = groups.find(g => g.id === openId) ?? null;
 
   return (
     <div className="flex flex-col items-center gap-1 px-1" data-cascading-nav>
-      {groups.map(group => {
+      {groups.map((group, idx) => {
         const active = group.items.some(i => isNavItemActive(i.href, currentPath));
         return (
           <button
@@ -304,8 +349,7 @@ function CollapsedRail({ groups, currentPath, onNavigate }: CascadingNavProps) {
             aria-expanded={openId === group.id}
             onMouseEnter={() => openGroupId(group.id)}
             onMouseLeave={scheduleClose}
-            onFocus={() => openGroupId(group.id)}
-            onBlur={scheduleClose}
+            onKeyDown={e => onIconKeyDown(e, idx, group.id)}
             onClick={() => openGroupId(group.id)}
             className={cn(
               "flex h-10 w-10 items-center justify-center rounded-lg transition-colors",
@@ -325,6 +369,10 @@ function CollapsedRail({ groups, currentPath, onNavigate }: CascadingNavProps) {
           onNavigate={handleNavigate}
           onEnter={cancelClose}
           onLeave={scheduleClose}
+          focusFirst={focusFirst}
+          onClose={() => closeToIcon(openGroup.id)}
+          onDismiss={dismiss}
+          onTabOut={back => tabOut(openGroup.id, back)}
         />
       )}
     </div>
@@ -338,16 +386,55 @@ interface CollapsedFlyoutProps {
   onNavigate: (href: string) => void;
   onEnter: () => void;
   onLeave: () => void;
+  /** Mở bằng bàn phím ⇒ focus mục đầu ngay khi menu có vị trí. */
+  focusFirst?: boolean;
+  /** Esc/← : đóng và trả focus về icon. */
+  onClose?: () => void;
+  /** Focus rời menu (bấm chỗ khác): đóng. */
+  onDismiss?: () => void;
+  /** Tab / Shift+Tab trong menu. */
+  onTabOut?: (back: boolean) => void;
 }
 
-function CollapsedFlyout({ anchorEl, group, currentPath, onNavigate, onEnter, onLeave }: CollapsedFlyoutProps) {
+function CollapsedFlyout({ anchorEl, group, currentPath, onNavigate, onEnter, onLeave, focusFirst, onClose, onDismiss, onTabOut }: CollapsedFlyoutProps) {
   const { t } = useTranslation();
   const pos = useAnchoredPosition(anchorEl, PANEL_WIDTH);
   const l2 = useMemo(() => buildModuleL2(group), [group]);
+  const menuRef = useRef<HTMLDivElement>(null);
+  const menuItems = () => [...(menuRef.current?.querySelectorAll<HTMLElement>('[role="menuitem"]') ?? [])];
+  const hasPos = pos != null;
+
+  useEffect(() => {
+    if (hasPos && focusFirst) menuItems()[0]?.focus();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [hasPos, focusFirst, group.id]);
+
   if (!pos) return null;
+
+  const onKeyDown = (e: ReactKeyboardEvent<HTMLDivElement>) => {
+    const list = menuItems();
+    const i = list.indexOf(document.activeElement as HTMLElement);
+    if (e.key === "ArrowDown" || e.key === "ArrowUp") {
+      e.preventDefault();
+      if (!list.length) return;
+      const n = e.key === "ArrowDown" ? (i + 1) % list.length : (i - 1 + list.length) % list.length;
+      list[n].focus();
+    } else if (e.key === "Home" || e.key === "End") {
+      e.preventDefault();
+      (e.key === "Home" ? list[0] : list[list.length - 1])?.focus();
+    } else if (e.key === "Escape" || e.key === "ArrowLeft") {
+      e.preventDefault();
+      e.stopPropagation();
+      onClose?.();
+    } else if (e.key === "Tab") {
+      e.preventDefault();
+      onTabOut?.(e.shiftKey);
+    }
+  };
 
   return createPortal(
     <div
+      ref={menuRef}
       data-cascading-panel
       role="menu"
       aria-label={t(group.label)}
@@ -355,8 +442,13 @@ function CollapsedFlyout({ anchorEl, group, currentPath, onNavigate, onEnter, on
       style={{ left: pos.left, top: pos.top, width: PANEL_WIDTH }}
       onMouseEnter={onEnter}
       onMouseLeave={onLeave}
+      onKeyDown={onKeyDown}
+      onBlur={e => {
+        const to = e.relatedTarget as Node | null;
+        if (to && !menuRef.current?.contains(to) && to !== anchorEl) onDismiss?.();
+      }}
     >
-      <div className="px-2 pb-1 pt-0.5 text-xs font-semibold text-popover-foreground">{t(group.label)}</div>
+      <div aria-hidden="true" className="px-2 pb-1 pt-0.5 text-xs font-semibold text-popover-foreground">{t(group.label)}</div>
       <div className="space-y-0.5">
         {l2.map(entry =>
           entry.kind === "link" ? (
@@ -365,9 +457,10 @@ function CollapsedFlyout({ anchorEl, group, currentPath, onNavigate, onEnter, on
               item={entry.item}
               isActive={isNavItemActive(entry.item.href, currentPath)}
               onNavigate={onNavigate}
+              tabIndex={-1}
             />
           ) : (
-            <div key={entry.key} className="pt-1">
+            <div key={entry.key} className="pt-1" role="group" aria-label={t(entry.label)}>
               <div className="px-2 py-0.5 text-[11px] font-medium uppercase tracking-wide text-muted-foreground/70">
                 {t(entry.label)}
               </div>
@@ -377,6 +470,7 @@ function CollapsedFlyout({ anchorEl, group, currentPath, onNavigate, onEnter, on
                   item={item}
                   isActive={isNavItemActive(item.href, currentPath)}
                   onNavigate={onNavigate}
+                  tabIndex={-1}
                 />
               ))}
             </div>

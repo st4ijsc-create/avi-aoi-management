@@ -658,17 +658,30 @@
     "titleRequired": "标题为必填项",
     "noProduct": "无 / 非特定产品",
     "empty": "暂无工程变更。",
-    "rejectReason": "拒绝原因：",
-    "rejectReasonRequired": "拒绝原因为必填项",
-    "rejectTitle": "拒绝工程变更",
     "rejectPrompt": "请说明拒绝 {{key}} 的原因。该原因将记录到决策日志中。",
-    "rejectPlaceholder": "例如：缺少影响分析；风险需重新评估…",
-    "approveTitle": "批准工程变更",
     "approvePrompt": "确认批准 {{key}}。可添加意见（非必填）——意见将记录到决策日志中。",
-    "approveComment": "意见（非必填）：",
-    "approvePlaceholder": "例如：已检查附件文档，符合要求…",
     "emptyFiltered": "没有符合筛选条件的变更。",
     "userFallback": "用户 #{{id}}",
+    "aboutChip": "ECN 流程",
+    "filterPendingChip": "仅待审批 ECN",
+    "listLabel": "ECN 列表",
+    "tab": {
+      "overview": "概览",
+      "objects": "对象",
+      "approval": "审批",
+      "tasks": "任务",
+      "history": "历史"
+    },
+    "item": {
+      "entity": "对象",
+      "action": "操作",
+      "description": "说明"
+    },
+    "itemAction": {
+      "add": "新增",
+      "modify": "修改",
+      "remove": "移除"
+    },
     "field": {
       "title": "标题",
       "type": "变更类型",
@@ -736,11 +749,17 @@
       "requestedBy": "请求人",
       "reviewedBy": "审核人",
       "approvedBy": "批准人",
-      "implementedBy": "实施人",
-      "closedBy": "关闭人",
       "decisionComment": "决策备注",
-      "timeline": "时间线",
-      "noTimeline": "暂无时间线事件。"
+      "noTimeline": "暂无时间线事件。",
+      "flyoutTitle": "工程变更详情",
+      "notFound": "未找到 ECN #{{id}}。",
+      "target": "目标",
+      "noTarget": "尚未记录目标。",
+      "items": "明细对象",
+      "noItems": "尚无明细对象。",
+      "approvalHelp": "申请人不得审查或批准自己的变更；审查人不得同时批准。",
+      "tasksHelp": "批准后：变更实施完成时标记为已实施，然后关闭 ECN。",
+      "notYet": "尚未"
     },
     "backfill": {
       "title": "从BOM回填componentCode",
@@ -755,7 +774,10 @@
       "updated": "已更新",
       "skipped": "已链接",
       "unmatched": "未匹配",
-      "dryRunTag": "（dry-run——未写入）"
+      "dryRunTag": "（dry-run——未写入）",
+      "done": "补全完成——匹配 {{matched}}，已更新 {{updated}}",
+      "doneDryRun": "预演（dry-run）——匹配 {{matched}}，将更新 {{updated}}",
+      "unavailable": "补全功能当前不可用"
     }
   },
   "related": {
@@ -4071,7 +4093,8 @@
       "endpoint": "endpoint地址",
       "reviewReason": "驳回原因",
       "gatewayId": "网关",
-      "deviceIds": "允许的设备列表"
+      "deviceIds": "允许的设备列表",
+      "expectedProjectId": "当前打开的项目（expectedProjectId）"
     },
     "feature": {
       "webIngest": "网页内容导入",
@@ -4311,7 +4334,8 @@
       "recipeNotApproved": "此配方版本尚未经第二人批准——不能部署、发布或回滚到该版本。",
       "recipeArchived": "此配方版本已归档——请创建新版本，而不是将已归档版本投入生产。",
       "recipeMachineTypeMismatch": "此配方适用的机型与目标设备不同——不能部署到该设备。",
-      "recipeRetired": "此版本是被有意归档的（并非仅被新版本替换），或没有任何被替换的记录——不能回滚到该版本。请创建新版本。"
+      "recipeRetired": "此版本是被有意归档的（并非仅被新版本替换），或没有任何被替换的记录——不能回滚到该版本。请创建新版本。",
+      "buildNotInProject": "该构建不属于当前打开的项目——请重新选择本项目的构建后再试。未执行任何部署。"
     },
     "stopPinReason": {
       "no_pins": "该设备尚未固定任何停止标签——请使用硬件急停（E-STOP）。",
@@ -6540,8 +6564,6 @@
     "irEditorDesc": "将运动/IO 设备程序编写为一等 IR 块，进行安全检查与转译（URScript/ROS2）；部署仍为独立的受控步骤",
     "pouStudio": "POU Studio",
     "pouStudioDesc": "结构化 LAD/FBD/SFC POU，支持 PLCopen XML 导入/导出、语义检查以及转译为 ST 预览（仅限开放运行时）",
-    "programmingCopilot": "编程副驾",
-    "programmingCopilotDesc": "未打开项目时快速生成代码的暂存区 — 在编辑器（工程/IR/POU）中副驾以停靠面板内嵌。以厂商手册为依据、经安全底座校验；仅显示。",
     "factoryLiveMap": "工厂3D实时地图",
     "factoryLiveMapDesc": "3D工厂车间，设备按实时状态着色（数字镜像），点击下钻到单元",
     "fieldDevices": "现场与设备抽象",
@@ -6902,7 +6924,6 @@
       "orchestrationStudio": "跨机器设计逐步自动化生产流程（预览）",
       "irEditor": "可视化编辑器，用于编写和转换设备程序 — 面向工程师（预览）",
       "pouStudio": "结构化 IEC 61131 梯形图/FBD/SFC 编辑与 PLCopen XML 交换 — 面向工程师（预览）",
-      "programmingCopilot": "让 AI 编写或解释设备代码 — 面向工程师；使用前请审阅并仿真（预览）",
       "fleetOrchestration": "为移动机器人/AGV 分配任务并管理其通行与充电（预览）",
       "safetyWorkforce": "咨询式安全概览及班次/人力看板（预览）",
       "equipmentStandards": "公司统一的设备类型及标准报警命名（预览）",
@@ -6958,8 +6979,6 @@
     "maintenanceHubDesc": "维护一站式：工单 · CMMS/可靠性 · 助手",
     "cmms": "维护 (CMMS)",
     "cmmsDesc": "预防性维护计划 · 备件与可靠性 (MTTR/MTBF)",
-    "engineeringStudio": "工程工作台",
-    "engineeringStudioDesc": "编写 · 编排 · 安全 · 标准化 — 统一目录",
     "engineeringChanges": "工程变更 (ECN)",
     "engineeringChangesDesc": "工程变更单：申请 → 影响分析 → 审批（职责分离）→ 生效；+ componentCode 回填",
     "reportingStudio": "报表工作台",
@@ -11539,10 +11558,7 @@
     "deploy": "💾 保存（部署）",
     "run": "▶️ 运行",
     "foeOff": "FOE 未启用（FOE_ENABLED）——仍可编排与仿真，但部署/运行被禁用。",
-    "ref": "工作流编码 (ref) *",
-    "name": "名称 *",
     "namePlaceholder": "A 线启动",
-    "version": "版本",
     "canvas": "步骤树",
     "emptyCanvas": "暂无步骤。在下方添加第一个步骤。",
     "inspector": "步骤配置",
@@ -11588,7 +11604,6 @@
     "noWorkflows": "暂无工作流。",
     "load": "加载",
     "loaded": "已将工作流加载到编辑器",
-    "runs": "最近运行",
     "noRuns": "暂无运行。",
     "noSteps": "尚未记录步骤。",
     "approve": "批准",
@@ -11622,7 +11637,6 @@
     "noWorkflowMatch": "无匹配过滤条件的工作流",
     "allStatuses": "所有状态",
     "noRunMatch": "无匹配过滤条件的运行",
-    "awaitingApproval": "等待审批",
     "otherRuns": "其他运行",
     "awaitingStep": "等待步骤",
     "approverRolesLabel": "审批人角色",
@@ -11637,10 +11651,6 @@
     "rollback": "回滚",
     "rollbackDone": "已回滚 — 已从旧版本创建新版本",
     "rollbackFail": "回滚失败",
-    "compareVersions": "对比版本",
-    "diffBase": "基准",
-    "diffCompare": "对比",
-    "diffPick": "选择两个版本进行对比。",
     "rollbackTitle": "回滚到此版本？",
     "rollbackConfirm": "这会将版本 v{{version}} 的定义作为新版本重新部署（仅追加；历史得以保留）。受 FOE_ENABLED 标志控制。",
     "graphCanvas": "工作流图",
@@ -11698,7 +11708,29 @@
     "continueRunConfirm": "继续运行",
     "rollbackImpact": "需要 OTP 验证码和原因；原因将记录在审计日志中。",
     "runFail": "无法启动运行",
-    "runNotDeployed": "此工作流目前处于“{{status}}”状态 — 请先部署（Deploy），然后才能运行。"
+    "runNotDeployed": "此工作流目前处于“{{status}}”状态 — 请先部署（Deploy），然后才能运行。",
+    "libraryPanel": "步骤与库",
+    "bottomPanel": "运行 · 审批 · 问题",
+    "runsTab": "运行",
+    "awaitingTab": "待审批",
+    "problemsTab": "问题",
+    "editName": "工作流名称 *",
+    "editRef": "工作流编码 (ref) *",
+    "untitled": "未命名工作流",
+    "noRef": "尚无编码 (ref)",
+    "versionNumber": "版本号",
+    "canvasArea": "画布",
+    "noAwaiting": "没有等待审批的运行。",
+    "noSim": "暂无仿真结果——点击“仿真”在数字孪生上检查工作流。",
+    "foeOffChip": "FOE 已关闭",
+    "simGateChipOk": "仿真闸门：已通过",
+    "simGateChipNeed": "仿真闸门：需要仿真",
+    "aiSheetDesc": "AI 仅提出建议并仿真——您在画布上审阅后自行保存（部署）并运行。",
+    "clickToEdit": "点击编辑",
+    "refreshWorkflows": "重新加载已保存的工作流",
+    "refreshRuns": "重新加载运行",
+    "runStatusFilter": "按状态筛选",
+    "wfNotLoaded": "已加载的列表中没有工作流 #{{id}}。"
   },
   "aiHub": {
     "subtitle": "AI驱动的检测智能功能",
@@ -12055,20 +12087,9 @@
     }
   },
   "progCopilot": {
-    "title": "编程副驾",
-    "subtitle": "AI 生成、补全、翻译、审查并解释设备代码 — 以厂商手册为依据，并经安全底座校验。由你审阅、仿真并签核。",
-    "whenToUse": "快速起草或理解设备代码。若要构建、仿真和部署，请将代码带入工程工作区。",
-    "cardTitle": "生成设备代码",
-    "cardSubtitle": "选择程序类型、模式和（可选）厂商，描述需求后生成。",
-    "embedTitle": "AI 编程副驾",
-    "beta": "测试版",
-    "openDock": "打开副驾",
-    "dockHint": "生成 / 补全 / 翻译 / 审查代码 — 在右侧栏打开，已绑定本编辑器的缓冲区与诊断。",
     "dock": {
       "title": "编程副驾",
-      "tab": "副驾",
       "open": "打开编程副驾",
-      "advisory": "顾问",
       "diagnostics": "编辑器诊断",
       "explain": "解释错误",
       "fix": "给出修复建议",
@@ -13263,9 +13284,6 @@
     "status": "状态",
     "checksum": "校验和",
     "actions": "操作",
-    "versionsOf": "{{code}} 的版本",
-    "selectCode": "选择一个配方代码",
-    "selectCodeHint": "在左侧选择配方代码以查看版本。",
     "deploy": "部署",
     "deployDesc": "为某台设备激活此版本（仅目录 + 台账）。",
     "confirmDeploy": "确认部署",
@@ -13311,8 +13329,6 @@
     "diffVsGolden": "与黄金基准对比",
     "noGoldenBaseline": "无黄金基准可供对比。",
     "isGoldenSelf": "这是当前的黄金基准。",
-    "byMachineTitle": "按机器",
-    "byMachineLabel": "选择一台机器以查看其运行中的配方",
     "selectMachine": "选择一台机器",
     "noMachines": "暂无机器",
     "activeRecipe": "运行中的配方",
@@ -13325,12 +13341,6 @@
     "tplSpi": "SPI 模板（锡膏检测）",
     "tplGeneric": "通用模板",
     "viewPayload": "查看",
-    "compareVersions": "对比版本",
-    "diffBase": "基准",
-    "diffCompare": "对比至",
-    "diffPick": "选择两个版本以查看差异",
-    "payloadTitle": "载荷",
-    "payloadReadonly": "此版本的参数集（只读）。",
     "golden": "黄金",
     "goldenHint": "黄金/主版本 — 部署/对比时作为基准的参数集。",
     "setGolden": "标记为黄金",
@@ -13349,7 +13359,39 @@
       "archive": "归档",
       "rollback": "回滚",
       "load": "加载/部署"
-    }
+    },
+    "hitlChip": "通过 HITL 下发到机台",
+    "codeCount": "{{count}} 个编码",
+    "filterPendingChip": "仅需关注的编码",
+    "detailLabel": "配方详情",
+    "detailTabs": "配方详情分区",
+    "emptyDetailHint": "在左侧列表中选择一个配方编码，查看参数、版本、审批和部署。",
+    "searchMachine": "搜索机台…",
+    "versionNotFound": "在所选编码中未找到版本 #{{id}}。",
+    "alreadyApproved": "该版本已审批。",
+    "rollbackFailed": "机台 #{{machineId}} 的回滚未能执行",
+    "dismiss": "关闭",
+    "noRunningMachines": "没有机台正在运行此编码。",
+    "runningMachinesNote": "基于台账中最近 {{count}} 次部署。",
+    "tab": {
+      "params": "参数",
+      "versions": "版本",
+      "approval": "审批",
+      "deploy": "部署",
+      "machines": "运行中的机台"
+    },
+    "params": {
+      "version": "当前查看的版本",
+      "key": "参数",
+      "value": "值",
+      "type": "类型",
+      "empty": "载荷为空。",
+      "rawJson": "原始 JSON",
+      "noVersions": "该编码尚无版本。"
+    },
+    "allCodes": "全部编码",
+    "allCodesHint": "取消选择编码——查看所有机台的部署台账",
+    "deployFailed": "部署到 {{machine}} 未能执行"
   },
   "confirmWithReason": {
     "defaultConfirmText": "确认",
@@ -13487,8 +13529,6 @@
     "editRule": "编辑规则",
     "ruleDialogDesc": "新规则在管理员审批并启用前始终为停用 + 未审批状态。",
     "editApprovedWarning": "该规则已批准或当前已启用 — 保存后将停用该规则，需要重新审批。",
-    "tabRules": "规则",
-    "tabEvents": "事件",
     "rules": "规则",
     "name": "名称",
     "description": "描述",
@@ -13566,7 +13606,7 @@
     "filterOpen": "开放",
     "filterResolved": "已解决",
     "newEventToast": "联锁已触发",
-    "newEventDesc": "触发了新的联锁事件 — 打开事件标签页查看。",
+    "newEventDesc": "触发了新的联锁事件 — 请在下方事件面板查看。",
     "delete": "删除",
     "deleteConfirmTitle": "删除联锁规则？",
     "disableConfirmTitle": "停用规则 \"{{name}}\"？",
@@ -13576,7 +13616,35 @@
     "deleteImpact": "规则定义及其自动保护层将从系统中消失。",
     "resolveConfirmTitle": "将此事件标记为已处理？",
     "resolveConfirmDescription": "事件将变为已处理状态，不再显示在“未处理”标签页中。",
-    "resolveImpact": "理由将保存为该事件的备注，并写入审计日志。"
+    "resolveImpact": "理由将保存为该事件的备注，并写入审计日志。",
+    "view": {
+      "list": "列表",
+      "matrix": "因果矩阵"
+    },
+    "filterPendingChip": "仅未审批规则",
+    "ruleCount": "{{count}} 条规则",
+    "ruleNotFound": "未找到规则 #{{id}}。",
+    "eventsForRule": "规则：{{name}}",
+    "clearRuleFilter": "清除规则筛选",
+    "selectRuleHint": "选择一条规则以仅查看其事件",
+    "posture": {
+      "engine": "引擎",
+      "ot": "OT写入",
+      "coverage": "覆盖",
+      "ariaLabel": "联锁安全姿态",
+      "source": "oversight.posture — 服务器各闸门自身的开关",
+      "coverageSource": "oversight.posture — 已启用、已审批、可阻断且有目标的规则数",
+      "writesOnEngineOffChip": "引擎关闭时真实写入"
+    },
+    "matrix": {
+      "corner": "原因 ↓ · 结果 →",
+      "targetMachine": "设备 #{{id}}",
+      "targetAdapter": "适配器 #{{id}}",
+      "noTarget": "无目标"
+    },
+    "openEventsPanel": "打开事件面板",
+    "eventsButton": "事件",
+    "unresolvedCount": "{{count}} 未处理"
   },
   "quickIssue": {
     "button": "报告异常",
@@ -14799,10 +14867,9 @@
       "acquisition": "采集工作器",
       "history": "加载历史",
       "recipes": "配方版本",
-      "status": "集成状态"
+      "status": "连接器目录"
     },
     "acq": {
-      "title": "采集工作器",
       "desc": "抓帧 → 质量指标 → 可选按同一标准接入路径提交 NTF。file/mock 源今天即可用；GenICam 在绑定相机驱动前仍为占位。",
       "flagOff": "实时采集已停用（LIVE_ACQUISITION_ENABLED 关闭）。状态仍可查看；启用该标志前无法启动工作器。",
       "noPermission": "查看采集工作器需要 machine-alerts 查看权限。",
@@ -14841,7 +14908,9 @@
       "maxFrames": "最大帧数（0 = 直到停止）",
       "interval": "间隔（毫秒）",
       "submitFrames": "将每帧作为标准 NTF 检测提交（需要机台代码）",
-      "assessQuality": "对每帧运行图像质量指标"
+      "assessQuality": "对每帧运行图像质量指标",
+      "liveOffChip": "实时采集已关闭",
+      "aboutChip": "关于采集源"
     },
     "machineCode": "机台代码",
     "whenToUse": "适用场景 — 浏览厂商集成框架（FOCAS/Euromap）与配方版本谱系。只读元数据，无实时设备。",
@@ -14862,7 +14931,6 @@
       "cache": "缓存",
       "none": "无"
     },
-    "adaptersTitle": "已接入的适配器协议",
     "alsoDeploy": "同时写入一条 recipe_deployments 台账记录",
     "archive": "归档",
     "archiveTip": "归档此版本",
@@ -14870,13 +14938,11 @@
     "byMachine": "机器",
     "col": {
       "action": "操作",
-      "code": "编码",
       "machine": "机器",
       "name": "名称",
       "notes": "备注",
       "recipe": "编码 @ 版本",
       "status": "状态",
-      "version": "版本",
       "when": "时间",
       "who": "执行人"
     },
@@ -14885,22 +14951,17 @@
     "createRequired": "编码和名称为必填项。",
     "createTitle": "新建配方版本（草稿）",
     "createVersion": "新建版本",
-    "checking": "正在检查…",
-    "unknown": "未知",
     "flagOffBanner": "预览模式：设备集成已禁用。读取可用；操作（创建 / 发布 / 归档 / 回滚版本、记录加载）在启用前被阻止。",
     "flagOffToast": "设备集成已禁用（预览）。设置 EQ_INTEG_ENABLED=true 以执行操作。",
     "flagStatusError": "无法检查设备集成是否已启用 — 在确认前，操作将被禁用。",
     "frameworkNoDevice": "框架 — 未连接设备",
-    "frameworkNote": "下方卡片为集成框架。它们建模真实 FOCAS/Euromap 连接器会映射到统一设备模型的只读字段，但实时数据需要已连接的设备/连接器。在此之前值保持“—”，快照来源为“无”。",
+    "frameworkNote": "这是集成框架。它建模真实 FOCAS/Euromap 连接器会映射到统一设备模型的只读字段，但实时数据需要已连接的设备/连接器。在此之前值保持“—”，快照来源为“无”。",
     "historyEmpty": "无谱系事件。",
     "historyMode": "过滤方式",
-    "historyPickTitle": "谱系来源",
-    "historyTitle": "配方谱系（仅追加）",
     "kpi": {
-      "adapters": "已接入适配器",
-      "configured": "已连接设备",
-      "flag": "标志",
-      "frameworks": "框架"
+      "adapters": "已注册适配器",
+      "configured": "已连接的框架",
+      "flag": "标志"
     },
     "loadHistory": "加载历史",
     "loading": "加载中…",
@@ -14923,7 +14984,6 @@
     "payloadInvalid": "载荷不是有效的 JSON。",
     "payloadObject": "载荷必须是 JSON 对象。",
     "pickHint": "在上方输入配方编码以列出其不可变版本与谱系操作。",
-    "pickRecipeTitle": "配方编码",
     "readOnly": "只读",
     "readSnapshot": "读取快照",
     "recipeCode": "配方编码",
@@ -14952,10 +15012,33 @@
     "versionCreated": "配方版本已创建（草稿）",
     "versionReleased": "版本已发布",
     "versionRolledBack": "已发布合约已回滚",
-    "versionsEmpty": "该编码无版本。",
     "versionsTitle": "{{code}} 的版本",
-    "versionsTitlePlain": "配方版本",
-    "viewOnly": "仅查看"
+    "viewOnly": "仅查看",
+    "safetyChip": "只读",
+    "versionNotFound": "当前配方代码中找不到版本 #{{id}}。",
+    "openInRecipes": "在配方中打开",
+    "openInRecipesHint": "配方目录、审批与部署位于配方页面",
+    "recipesElsewhere": "配方审批与下发到机器位于配方页面。",
+    "chip": {
+      "srcAdapters": "服务器适配器注册表（integrationStatus.adapters）— 已注册，并非已连接",
+      "srcConnected": "具备真实连接器/设备的框架（integrationStatus.frameworks[].configured）",
+      "srcFlag": "服务器功能开关（equipmentIntegration.status）"
+    },
+    "catalog": {
+      "count": "{{count}} 个连接器",
+      "listLabel": "连接器目录",
+      "detailLabel": "连接器详情",
+      "colConnector": "连接器",
+      "colType": "类型",
+      "typeFramework": "框架",
+      "typeAdapter": "适配器协议",
+      "registered": "已注册",
+      "delegatesTo": "委托给",
+      "adapterHonesty": "该协议已在服务器适配器注册表中注册 — 注册并不代表有设备已连接。",
+      "pickHint": "选择一个连接器查看详情。",
+      "loadError": "无法读取集成状态。"
+    },
+    "createDesc": "不可变的草稿版本 — 仅谱系元数据；不会下发到设备。"
   },
   "panelDef": {
     "button": "拼板 N-up",
@@ -16263,7 +16346,6 @@
     "gtBuild": "构建",
     "gtSim": "仿真",
     "gtDeploy": "部署",
-    "gtMonitor": "监控",
     "emptyTitle": "从这里开始",
     "emptyDesc": "尚无项目。创建一个演示项目 — 它附带一个有效的示例程序 — 然后立即点击校验与仿真。完全安全：不会向任何设备发送命令。",
     "step1": "创建演示项目",
@@ -16284,22 +16366,18 @@
     "build": "构建",
     "buildOk": "构建成功",
     "deployBtn": "部署构建",
-    "deployFlag": "部署",
     "deployOn": "开",
     "deployOff": "关",
     "deployChecking": "…",
     "deployUnknown": "？",
     "deployStatusError": "无法检查部署状态 — 在确认前，暂将所有部署视为仅仿真。",
-    "modeCode": "代码",
     "modeLadder": "梯形图",
     "modeTeach": "示教/点动",
     "timeline": "时间线",
     "address": "地址",
     "buildFail": "构建失败",
-    "builds": "构建与仿真",
     "code": "代码",
     "dataType": "类型",
-    "deploy": "部署（受控）",
     "deployOffBanner": "真实部署当前处于关闭状态 — 每次部署都仅为仿真，不会写入设备。安全（急停/联锁）始终驻留在经认证的 PLC 上。",
     "deployReal": "已部署",
     "deployVerified": "已部署并已验证（回读一致）",
@@ -16313,7 +16391,6 @@
     "unsaved": "未保存",
     "kind": "设备类型",
     "language": "语言",
-    "manualHelp": "手册",
     "lines": "行",
     "name": "名称",
     "newProject": "新建项目",
@@ -16379,7 +16456,6 @@
     "simulated": "已仿真",
     "stage": "阶段",
     "steps": "步骤",
-    "subtitle": "为 PLC / 机器人 / Zmotion 进行 编写 → 校验 → 构建 → 仿真 →（签核）部署",
     "symbolName": "名称",
     "symbols": "符号 / 标签表",
     "title": "设备编程工作区",
@@ -16402,7 +16478,6 @@
     "approvalInboxHint": "此项将提交审批——由第二人在审批箱中签署",
     "requestDeployBtn": "发送部署请求",
     "sodHintInbox": "生产部署需提交审批：由您以外的人使用其自身会话签署（职责分离）。",
-    "fleetTitle": "设备群部署（金丝雀）",
     "fleetHint": "沿同一部署路径将所选版本顺序推送到多台设备（所有安全闸门依然生效）。先对前 N 台做金丝雀；若未通过则停止，并（可选）回滚已写入的设备。",
     "fleetNeedBuild": "请先在“构建与仿真”区块中选择一个版本，再部署到设备群。",
     "fleetTargets": "目标设备",
@@ -16578,14 +16653,91 @@
       "stNoAssignment": "未找到赋值 (:=)。",
       "stNestedComment": "注释内嵌套了注释 '{{open}}'——目标编译器不支持嵌套注释（它在第一个 '{{close}}' 处结束注释）。",
       "stEdgeNotInput": "{{edge}} 只能用于 VAR_INPUT 声明（当前位于 {{section}}）。"
+    },
+    "ws": {
+      "activityProjects": "项目",
+      "activityVersions": "版本",
+      "activityTags": "Tags / IO",
+      "activityDeploy": "部署",
+      "explorerLabel": "项目资源管理器",
+      "sourceTab": "源码 v{{version}}",
+      "sourceTabNew": "源码（未保存）",
+      "diffTab": "Δ 对比",
+      "tagsTab": "Tags",
+      "inspectorLabel": "属性 / Copilot",
+      "propsTab": "属性",
+      "copilotTab": "Copilot",
+      "bottomLabel": "问题 · 构建 · 部署",
+      "problemsTab": "问题",
+      "buildsTab": "构建 / 仿真",
+      "deploysTab": "部署历史",
+      "lnCol": "行 {{line}}，列 {{col}}",
+      "realDeploy": "真实部署",
+      "problemsStatus": "问题：{{count}}",
+      "noDiagYet": "尚未校验所选版本 — 请点击校验。",
+      "noBuildSel": "未选择构建 — 请在底部面板（构建 / 仿真）中选择。",
+      "noVersionSel": "未选择版本",
+      "pickProjectFirst": "请在“项目”中选择一个项目。",
+      "projectVersion": "当前项目 / 版本",
+      "openTagsTab": "打开标签表",
+      "fleetSelected": "已选机队：{{list}}",
+      "fleetNone": "尚未为机队（金丝雀）选择机器。",
+      "stepDone": "完成",
+      "stepTodo": "未完成",
+      "deployOpen": "部署…",
+      "deployOpenHint": "打开部署向导（4 步，含金丝雀）",
+      "wizardTitle": "部署构建",
+      "wizardDesc": "选择目标、签核、预览 — 最后一步之后才要求 OTP。",
+      "stepBuild": "构建",
+      "stepTarget": "目标与金丝雀",
+      "stepSignoff": "签核",
+      "stepPreview": "预览并确认",
+      "buildSummary": "构建 #{{id}} · {{status}}",
+      "buildOfVersion": "{{project}} 的版本 v{{version}}",
+      "changeBuildHint": "在底部面板（构建 / 仿真）中更换构建。",
+      "modeLabel": "部署方式",
+      "modeSingle": "单台机器（项目设备）",
+      "modeFleet": "机队（金丝雀）",
+      "singleTarget": "目标：{{device}}",
+      "noDevice": "项目尚未绑定设备 — 请在最后一步查看预览",
+      "fleetSummary": "{{count}} 台机器 · 金丝雀 {{canary}} · {{stage}}",
+      "fleetNotReady": "机队部署条件不足：至少选择一台机器（目标与金丝雀）；production 需要签核人和理由（签核）。",
+      "prodNotReady": "production 需要签核人（未走审批收件箱时）和理由 — 请在“签核”步骤填写。",
+      "otpNote": "点击最后的按钮后会先要求两步验证 OTP（若启用）再发送；安全闸门和理由要求不变。",
+      "buildChanged": "打开向导后所选构建已更改（从 #{{pinned}} 变为 #{{current}}）— 请关闭并重新打开向导，以预览将要部署的构建。",
+      "scratchNote": "草稿模式：尚未打开项目 — 生成的代码仅供查看和复制。打开项目后可插入编辑器。"
     }
   },
   "engineeringHome": {
-    "needControl": "需要控制访问权限",
     "viewOnly": "仅查看",
     "title": "工程中心",
-    "subtitle": "选择一项任务 — 编写程序、编排机群、强制安全与标准，或运行孪生。",
-    "goldenThread": "黄金链：编写 → 仿真 → 部署 → 监控。此处编写的程序流入流水线，在孪生中运行，然后在监控页面上呈现。"
+    "goldenThread": "黄金链：编写 → 仿真 → 部署 → 监控。此处编写的程序流入流水线，在孪生中运行，然后在监控页面上呈现。",
+    "inboxTab": "工作收件箱",
+    "catalogTab": "工具目录",
+    "scopeLabel": "收件箱范围",
+    "scopeApprovals": "待审批",
+    "scopeApprovalsHint": "您有权打开的页面上待审批 / 待确认的事项",
+    "scopeAll": "全模块",
+    "scopeAllHint": "本模块所有待办事项和告警（含安全事件、联锁事件、车队死锁）",
+    "sideLabel": "安全态势与工具",
+    "goldenThreadChip": "黄金链",
+    "postureChip": "安全态势",
+    "postureOk": "正常",
+    "postureWarn": "警告",
+    "postureSource": "oversight.posture — 服务器端标志，只读",
+    "tools": {
+      "title": "工具",
+      "pinned": "已固定",
+      "recent": "最近",
+      "none": "尚未固定任何工具 — 在目录中按 ☆ 固定。",
+      "all": "全部工具",
+      "pin": "固定 {{name}}",
+      "unpin": "取消固定 {{name}}",
+      "copilotScratch": "Copilot（草稿，无需项目）",
+      "commandConsole": "命令控制台（HITL）"
+    },
+    "criticalChip": "紧急",
+    "criticalSource": "oversight.pendingSummary — 运行中未审批配方、未关闭联锁事件、未审核安全事件、车队死锁"
   },
   "oversight": {
     "title": "待审查与告警",
@@ -16616,14 +16768,19 @@
       "ruleCoverage": "已启用且有目标的规则：{{count}}",
       "coverageUnavailable": "无法读取规则覆盖率",
       "writesOnEngineOffWarning": "联锁引擎已关闭，但设备真实写入已开启——违规将不会被自动阻断。"
-    }
+    },
+    "table": {
+      "kind": "工作项",
+      "count": "数量",
+      "samples": "等待中"
+    },
+    "noAccess": "（无权打开此页面）"
   },
   "eqStandards": {
     "whenToUse": "适用场景 — 治理设备类型标准、ISA-18.2 告警分类法与评审委员会。仅治理元数据，无设备命令。",
     "alarmRequired": "厂商、原生代码和标准代码为必填项。",
     "alarmSaved": "告警映射已保存",
     "alarmsEmpty": "无告警映射。",
-    "alarmTableTitle": "告警映射",
     "allMapped": "每种机器类型都映射到一个已发布的设备类型。",
     "allStatuses": "所有状态",
     "allVendors": "所有厂商",
@@ -16634,19 +16791,14 @@
     "col": {
       "action": "推荐操作",
       "alarmKey": "告警键",
-      "conformance": "合规性",
       "consequence": "后果",
-      "crKey": "变更请求键",
-      "kind": "类别",
       "native": "原生代码",
       "priority": "优先级",
       "setpoint": "设定值 / 死区",
       "severity": "严重级别",
       "shelve": "已搁置 / 已抑制",
-      "stage": "阶段",
       "standard": "标准代码",
       "status": "状态",
-      "target": "目标类型",
       "ttr": "响应时间",
       "vendor": "厂商"
     },
@@ -16813,7 +16965,36 @@
       "no_bound_machines": "尚无设备绑定设备类型（所有设备的 machines.device_type_key 均为空）。",
       "no_conformance_subjects": "没有映射设备类型的已发布设备类型，一致性测试无可检查对象。"
     },
-    "shelvedNotEnforced": "已搁置（尚未生效）"
+    "shelvedNotEnforced": "已搁置（尚未生效）",
+    "safetyChip": "仅元数据",
+    "failingTypesChip": "{{count}} 个类型未通过一致性",
+    "normalize": "规范化报警",
+    "lookupDesc": "查询厂商原生报警代码如何映射到 ISA-18.2 标准代码。",
+    "alarmsError": "无法加载报警映射。",
+    "expand": "展开",
+    "collapse": "收起",
+    "windowLabel": "时间窗口",
+    "masterNotFound": "未找到主报警 #{{id}}。",
+    "deleteMaster": "删除主报警",
+    "chip": {
+      "srcMapped": "equipmentStandards.complianceMetrics — device_type_key 指向已发布设备类型的机器",
+      "srcConformance": "equipmentStandards.complianceMetrics — 数据库中通过标准规则集的已发布设备类型",
+      "srcPendingCrs": "equipmentStandards.complianceMetrics — 待处理或审核中的变更请求",
+      "srcAlarmVendors": "equipmentStandards.complianceMetrics — 报警分类中不同厂商的数量（种子 + 数据库）",
+      "srcTypes": "equipmentStandards.hierarchyTree — 不同设备类型键的数量（种子 + 数据库）",
+      "srcAlarmTotal": "alarmKpi.summary — 时间窗口内的 Andon + AI 报警（与 /alarm-kpi 和 Control Tower 同源）",
+      "srcAlarmRate": "alarmKpi.summary — 每名操作员每小时报警数；操作员数量由服务器统计",
+      "srcFlood": "alarmKpi.summary — 超过泛滥阈值的 10 分钟窗口数",
+      "srcStanding": "alarmKpi.summary — 持续时间超过阈值的报警",
+      "srcPeak": "alarmKpi.summary — 单个 10 分钟窗口内的最多报警数",
+      "srcOperators": "alarmKpi.summary — 服务器统计的在岗操作员"
+    },
+    "alarmSearch": "搜索报警…",
+    "alarmSearchLabel": "在所有页面中搜索报警（供应商、代码、建议操作）",
+    "registerDesc": "在层级中的某个父类型下添加草稿设备类型；审核后方可使用。",
+    "upsertAlarmDesc": "将供应商原始报警代码映射为 ISA-18.2 标准代码和严重等级。",
+    "masterDesc": "主报警记录某一报警经合理化后的优先级、后果和响应（EEMUA-191）。",
+    "submitCrDesc": "提出对设备类型的变更；发布前须经过审核和一致性检查。"
   },
   "field": {
     "batteryNull": "无电池遥测（AGV 电量来自 VDA5050；无驱动上报时为 null）。",
@@ -16894,7 +17075,7 @@
     "allocateNoDevice": "此任务无符合条件的设备",
     "allocateTip": "运行分配器（分配最佳设备）",
     "newDeadlockToast": "检测到新死锁",
-    "newDeadlockDesc": "刚形成一个机器人依赖环 — 请查看“任务与区域”标签页。",
+    "newDeadlockDesc": "刚形成一个机器人依赖环 — 请查看侧边面板中的死锁区块。",
     "assign": "分配",
     "assigned": "任务已重新分配",
     "cancel": "取消",
@@ -16960,7 +17141,8 @@
       "offline": "离线",
       "estop": "急停",
       "blocked": "阻塞单元",
-      "locatedRobots": "已定位机器人"
+      "locatedRobots": "已定位机器人",
+      "zoneOpen": "区域 {{code}} — {{occupancy}}/{{max}} 台机器人；在“区域”标签中打开"
     },
     "noPermission": "您无权查看机群编排。",
     "occupancy": "占用",
@@ -16994,7 +17176,9 @@
       "resolve": "解析",
       "resolveTitle": "解析操作",
       "skills": "技能",
-      "toolType": "工具类型"
+      "toolType": "工具类型",
+      "opNotLoaded": "操作 #{{id}} 不在已加载列表中。",
+      "registryDesc": "操作代码、各代码的合格程序，以及操作 → 程序映射。"
     },
     "opCreated": "操作已创建",
     "openRobotCockpit": "打开机器人驾驶舱",
@@ -17043,7 +17227,8 @@
       "title": "共享资源",
       "type": "类型",
       "unowned": "无所有者",
-      "zoneId": "归属区域 ID（可选）"
+      "zoneId": "归属区域 ID（可选）",
+      "notLoaded": "资源 #{{id}} 不在已加载列表中。"
     },
     "reserve": "预留",
     "reserved": "预留已生效",
@@ -17077,10 +17262,9 @@
     "sweepDone": "充电扫描完成",
     "tab": {
       "charging": "充电",
-      "map": "地图",
-      "operations": "操作",
       "resources": "资源",
-      "tasks": "任务与区域"
+      "tasks": "任务",
+      "zones": "区域"
     },
     "task": {
       "assigned": "已分配",
@@ -17101,7 +17285,31 @@
       "human_shared": "人机共享",
       "production": "生产",
       "transit": "通行"
-    }
+    },
+    "flag": {
+      "resource": "资源层"
+    },
+    "safetyChip": "仅调度状态",
+    "side": {
+      "label": "任务、区域、充电与资源"
+    },
+    "chip": {
+      "stripLabel": "机群指标",
+      "src": {
+        "deadlocks": "fleet.deadlocks — 当前检测到的机器人等待环（建议性）",
+        "failed": "fleet.listTasks — 已加载列表中状态为“失败”的任务（最新 200 条，受状态筛选影响）",
+        "atCapacity": "fleet.listZones — 占用已达最大并发机器人数的区域",
+        "pending": "fleet.listTasks — 已加载列表中状态为“等待”的任务（最新 200 条，受状态筛选影响）",
+        "running": "fleet.listTasks — 已加载列表中状态为“运行中”的任务（最新 200 条，受状态筛选影响）",
+        "assigned": "fleet.listTasks — 已加载列表中状态为“已分配”的任务（最新 200 条，受状态筛选影响）",
+        "activeRes": "fleet.listReservations — 状态为“活动”的区域预约（最新 500 条）",
+        "resourcesInUse": "fleet.listResources — 至少有一个活动占用的共享资源",
+        "charging": "fleet.listChargingPlans — 状态为“活动”或“已计划”的充电计划（最新 200 条）"
+      }
+    },
+    "taskNotFound": "任务 #{{id}} 不在已加载列表中。",
+    "taskTerminal": "任务 #{{id}} 已结束 — 无法重新分配。",
+    "zoneNotFound": "区域 #{{id}} 不在已加载列表中。"
   },
   "ir": {
     "whenToUse": "适用场景 — 低层运动与 I/O 块（IR）。完整的构建/部署流水线请使用工程工作区；IEC 61131 LAD/FBD/SFC 请使用 POU Studio。",
@@ -17114,10 +17322,9 @@
     "canvas": {
       "title": "流程画布",
       "fb": "功能块",
-      "editingFb": "正在编辑 POU 主体",
       "backToMain": "主流程"
     },
-    "deployReminder": "保存会追加一个已校验的 ir-flow 制品；请求构建（下方，针对每个已保存流程）会将其转译。部署到真实设备是单独的受控步骤（既有的编程服务，人工在环双人复核）— 此处不暴露。",
+    "deployReminder": "保存会追加一个已校验的 ir-flow 制品；请求构建（在资源管理器的“已保存的 IR 流程”中，针对每个已保存流程）会将其转译。部署到真实设备是单独的受控步骤（既有的编程服务，人工在环双人复核）— 此处不暴露。",
     "emptyCanvas": "尚无块。从左侧调色板添加一个。",
     "errorsShort": "个错误",
     "field": {
@@ -17210,7 +17417,6 @@
       "false": "若为假",
       "true": "若为真"
     },
-    "subtitle": "将运动/IO 设备程序编写为一等 IR 块，进行检查与转译 — 结构预览，而非物理运行。",
     "sum": {
       "count": "计数",
       "releaseAny": "释放工具",
@@ -17229,9 +17435,6 @@
     "unparseable": "无法解析",
     "version": "版本",
     "warnsShort": "个警告",
-    "compare": {
-      "title": "对比与合并"
-    },
     "merge": {
       "actDelete": "删除该块",
       "actKeep": "保留（已修改）",
@@ -17262,7 +17465,6 @@
       "saved": "合并后的流程已保存（已校验）",
       "savedInvalid": "合并后的流程已保存，但检查器标记了问题 — 请查看诊断。",
       "stats": "{{auto}} 个自动合并 · {{added}} 个新增 · {{deleted}} 个删除",
-      "subtitle": "对一个基准（祖先）与 我方 + 对方 进行三方合并；通过选择一侧解决每个冲突，然后将合并后的流程保存为新版本。",
       "tab": "合并（三方）",
       "theirs": "对方",
       "tookOurs": "采用我方",
@@ -17352,8 +17554,15 @@
       "dropIntoSlot": "将块拖放到此处以添加到该分支"
     },
     "diff": {
-      "title": "版本差异",
-      "subtitle": "对比两个已保存版本（或某版本与当前草稿）— 在树上标注 新增 / 移除 / 修改 / 移动 的块。"
+      "title": "版本差异"
+    },
+    "ws": {
+      "flowMeta": "流程属性",
+      "fbName": "功能块名称",
+      "inspectorLabel": "属性 / 转译 / Copilot",
+      "previewChip": "预览 — 不部署",
+      "activityFb": "功能块",
+      "explorerLabel": "IR 资源管理器"
     }
   },
   "rfcell": {
@@ -17550,12 +17759,6 @@
       "pending": "待处理"
     },
     "ingest": "采集（参考性）",
-    "kpi": {
-      "activeAssignments": "活跃分配",
-      "activeCollabs": "活跃协作",
-      "nearMissesToday": "今日未遂事件",
-      "openEvents": "开放安全事件（未审计）"
-    },
     "liveEmpty": "正在等待实时 safety:event 广播…（仅参考性）",
     "liveTitle": "实时参考性滚动条",
     "loading": "加载中…",
@@ -17576,7 +17779,7 @@
     "stationIdOpt": "工位 ID（可选）",
     "subtitle": "参考性安全监控、混合工作队伍分配与人↔机器人交接协调。",
     "tab": {
-      "cockpit": "安全驾驶舱",
+      "cockpit": "事件",
       "collaboration": "协作",
       "workforce": "工作队伍看板"
     },
@@ -17624,8 +17827,55 @@
       "socket": "Socket",
       "socketServerDown": "○ 服务器 socket 未运行",
       "socketConnected": "● 已连接",
-      "socketDisconnected": "○ 已断开"
-    }
+      "socketDisconnected": "○ 已断开",
+      "chip": {
+        "label": "安全来源",
+        "hint": "在侧面板查看安全来源详情",
+        "loading": "检查中",
+        "error": "无法读取",
+        "real": "真实 PLC",
+        "mixed": "真实 PLC + SIM",
+        "sim": "仅 SIM",
+        "realUnmapped": "未映射标签",
+        "adapterOff": "关闭",
+        "noConfig": "未配置",
+        "readError": "配置读取错误",
+        "unguarded": "{{target}}：预检已关闭",
+        "blocked": "{{target}}：已阻止",
+        "estopNotRated": "急停未经安全认证",
+        "ot": "OT",
+        "robot": "机器人",
+        "socketDown": "实时：服务器未运行",
+        "socketLost": "实时连接已断开",
+        "socketConnecting": "实时连接中"
+      }
+    },
+    "advisoryChip": "仅供参考 — 非 SIS",
+    "flag": {
+      "safetyAudit": "安全审核",
+      "workforce": "人员"
+    },
+    "chip": {
+      "openEvents": "未审核",
+      "nearMissToday": "今日险兆",
+      "activeAssignments": "进行中的分配",
+      "activeCollabs": "进行中的协作",
+      "src": {
+        "openEvents": "safety.feed — 最近 200 条事件中尚未审核的事件（受类型筛选影响）",
+        "nearMiss": "safety.nearMissTrend — 30 天趋势中今日（UTC）的险兆数",
+        "assignments": "safety.listAssignments — 已加载列表中状态为“进行中”的分配（受状态筛选影响）",
+        "collabs": "safety.listCollaborations — 未结束的会话（阶段不是 done 且无结束时间）"
+      }
+    },
+    "liveChip": "实时",
+    "side": {
+      "label": "安全来源、趋势与协作",
+      "trend": "趋势",
+      "collabCount": "{{count}} 个进行中的会话",
+      "collabCountError": "无法读取协作会话"
+    },
+    "reportProximityShort": "报告接近",
+    "testOnly": "仅测试"
   },
   "sites": {
     "colBaseUrl": "基础 URL",
@@ -18030,7 +18280,9 @@
     "station": "工位",
     "stationId": "工位 ID（可选）",
     "taskId": "任务 ID（可选）",
-    "unassignedStation": "未分配"
+    "unassignedStation": "未分配",
+    "assignmentNotFound": "已加载列表中没有分配 #{{id}}。",
+    "assignmentTerminal": "分配 #{{id}} 已结束 — 无法重新分配。"
   },
   "vramBroker": {
     "baselineUnverified": "基线尚未核验",
@@ -18304,7 +18556,6 @@
     "canvasBadJson": "画布渲染前请先修复 JSON（切换到 JSON 视图）。",
     "copied": "PLCopen XML 已复制",
     "copyFail": "复制失败",
-    "editor": "POU 编辑器",
     "export": "导出模型 → XML",
     "field": {
       "actions": "动作",
@@ -18362,7 +18613,6 @@
       "var": "变量"
     },
     "stBody": "此 POU 使用文本 ST 主体 — 请在 JSON 视图中编辑。",
-    "subtitle": "编写结构化的 LAD/FBD/SFC POU、进行检查、交换 PLCopen TC6 XML，并预览转译为结构化文本 — 仅预览，非设备写入。",
     "title": "IEC 61131 POU Studio",
     "transpile": "转译 → ST",
     "transpileNote": "每个图形主体都在一个 (* [IEC LD|FBD|SFC #id] *) 溯源标记下降级，使 ST 与源可以并排阅读。",
@@ -18398,7 +18648,25 @@
     "saveHint": "保存的草稿仍会经过受控流水线：构建 → 人工在环签核 → 受控部署。在此保存不会部署任何内容。",
     "createAndSave": "创建项目并保存",
     "saveVersion": "保存版本",
-    "savedVersion": "已保存为草稿 v{{v}} — 在工程中构建与部署。"
+    "savedVersion": "已保存为草稿 v{{v}} — 在工程中构建与部署。",
+    "ws": {
+      "opened": "已在编辑器中打开 v{{v}}",
+      "openProjects": "POU 项目",
+      "openVersions": "版本（pou-json）",
+      "noVersions": "该项目尚无 pou-json 版本。",
+      "open": "打开",
+      "otherLang": "{{n}} 个其他语言版本 — 请在工程工作台中打开。",
+      "samples": "示例",
+      "inspectorLabel": "ST / PLCopen / Copilot",
+      "noProblems": "无 lint 诊断。",
+      "previewChip": "预览 — 不部署",
+      "problemsStatus": "问题：{{count}}",
+      "activityOpen": "打开",
+      "explorerLabel": "POU 资源管理器",
+      "problemsTab": "问题",
+      "hideRight": "隐藏右侧面板",
+      "showRight": "显示右侧面板"
+    }
   },
   "diff": {
     "identical": "两个版本完全相同",
@@ -19327,10 +19595,6 @@
     "layout": "平面布局",
     "layoutBlurb": "工厂车间平面布局"
   },
-  "engineeringStudio": {
-    "title": "工程工作室",
-    "categories": "工程分类"
-  },
   "maintenanceHub": {
     "title": "维护",
     "categories": "维护分类"
@@ -19695,31 +19959,6 @@
     "aiSettings": "AI 设置",
     "aiSettingsBlurb": "模型服务器 + 网关配置",
     "robotModelHealth": "机器人模型健康度"
-  },
-  "engHub": {
-    "authoring": "编写与 IDE",
-    "engineering": "设备编程工作台",
-    "engineeringBlurb": "编写并编译设备程序",
-    "irEditor": "IR 编辑器",
-    "pouStudioBlurb": "编写 POU / IEC 61131",
-    "programmingCopilotBlurb": "PLC/机器人编程 AI 助手",
-    "recipes": "设备配方",
-    "recipesBlurb": "设备运行配方",
-    "engineeringChanges": "工程变更 (ECN)",
-    "orchestration": "编排与控制",
-    "orchestrationStudioBlurb": "编排的编写 / 仿真 / 部署",
-    "fleetOrchestration": "集群编排",
-    "fleetOrchestrationBlurb": "为集群分配任务与区域",
-    "robotControl": "机器人控制",
-    "commandConsoleBlurb": "经人工确认（HITL）的单机器人指令",
-    "safety": "安全",
-    "interlockRules": "联锁规则",
-    "interlockRulesBlurb": "联锁规则管理",
-    "safetyWorkforce": "安全与人员",
-    "safetyWorkforceBlurb": "安全看板 + 人机混合作业",
-    "standards": "标准化与集成",
-    "equipmentStandards": "设备标准",
-    "equipmentIntegration": "设备集成"
   },
   "maintHub": {
     "work": "工单与可靠性",
@@ -21353,6 +21592,138 @@
       "live": "已发送",
       "unconfirmed": "未确认 — 可能已到达设备",
       "rejected": "未发送"
+    }
+  },
+  "layoutKit": {
+    "notice": {
+      "kind": {
+        "hint": "提示",
+        "flagOff": "已关闭",
+        "honesty": "数据说明",
+        "simGate": "仅模拟",
+        "beta": "测试版",
+        "whenToUse": "何时使用",
+        "loading": "检查中",
+        "error": "状态未知"
+      },
+      "more": "+{{count}}",
+      "moreLabel": "查看另外 {{count}} 条说明",
+      "stackLabel": "页面说明",
+      "flagLoading": "正在检查功能状态…"
+    },
+    "chip": {
+      "stripLabel": "指标",
+      "loading": "加载中",
+      "error": "错误",
+      "errorHint": "无法读取数据源 — 不显示数字。",
+      "degradedHint": "数据源仅部分可读 — 数字可能不完整。",
+      "source": "来源：{{source}}",
+      "moreLabel": "查看另外 {{count}} 个指标"
+    },
+    "flyout": {
+      "unsavedTitle": "放弃未保存的更改？",
+      "unsavedDesc": "此表单有未保存的数据。关闭将丢失这些更改。",
+      "keepEditing": "继续编辑",
+      "discard": "放弃更改"
+    },
+    "wizard": {
+      "back": "上一步",
+      "next": "下一步",
+      "finish": "完成",
+      "stepOf": "第 {{current}}/{{total}} 步",
+      "stepsLabel": "步骤",
+      "status": {
+        "complete": "已完成",
+        "current": "当前",
+        "upcoming": "未开始",
+        "error": "有错误"
+      }
+    },
+    "versions": {
+      "loading": "正在加载版本…",
+      "error": "无法加载版本历史。",
+      "empty": "暂无版本。",
+      "colVersion": "版本",
+      "colCreated": "时间",
+      "colAuthor": "创建人",
+      "colNote": "备注",
+      "colBase": "基准",
+      "colCompare": "对比",
+      "colActions": "操作",
+      "current": "当前",
+      "pickBase": "以 {{version}} 为基准",
+      "pickCompare": "与 {{version}} 对比",
+      "pickTwo": "选择两个版本以查看差异。",
+      "sameVersion": "两列选择了同一个版本。"
+    },
+    "diff": {
+      "label": "{{base}} 与 {{compare}} 的差异"
+    },
+    "rollback": {
+      "action": "回滚",
+      "title": "回滚到 {{version}}？",
+      "impactOtp": "此操作需要填写原因并输入新的 OTP 验证码；原因将记录到审计日志。",
+      "impactNoOtp": "需要填写原因；原因将记录到审计日志。"
+    },
+    "approval": {
+      "label": "审批队列",
+      "empty": "没有待决定的项目。",
+      "loading": "正在加载队列…",
+      "error": "无法加载审批队列。",
+      "colItem": "项目",
+      "colAuthor": "创建人",
+      "colStatus": "状态",
+      "colActions": "决定",
+      "sodAuthor": "此项目由您创建 — 需由他人决定（制单与复核分离）。",
+      "sodReviewer": "您已审核此项目 — 批准人必须是其他人。",
+      "userUnknown": "尚未确定当前用户 — 暂不能决定。",
+      "reasonLabel": "原因（必填）",
+      "commentLabel": "意见（可选）",
+      "reasonRequired": "必须填写原因。",
+      "reasonTooShort": "原因至少需要 {{min}} 个字符。",
+      "cancel": "取消"
+    },
+    "shell": {
+      "activityBar": "活动栏",
+      "explorer": "资源管理器",
+      "inspector": "检查器",
+      "bottomPanel": "底部面板",
+      "toggleBottom": "切换底部面板",
+      "editor": "编辑器",
+      "editorTabs": "编辑器标签",
+      "closeTab": "关闭标签 {{label}}",
+      "unsavedTab": "未保存",
+      "statusBar": "状态栏",
+      "narrowLabel": "工作区",
+      "resizeLeft": "调整左侧面板宽度",
+      "resizeRight": "调整右侧面板宽度",
+      "resizeBottom": "调整底部面板高度"
+    },
+    "split": {
+      "list": "列表",
+      "detail": "详情",
+      "back": "返回列表",
+      "resize": "调整列表宽度"
+    },
+    "cockpit": {
+      "side": "侧面板"
+    },
+    "detail": {
+      "tabs": "详情分区"
+    }
+  },
+  "shell": {
+    "notice": {
+      "permExpiry": "权限即将到期",
+      "licenseWarning": "许可证即将到期",
+      "licenseReadonly": "许可证：只读",
+      "licenseLocked": "许可证已锁定",
+      "licenseMissing": "无许可证",
+      "licenseDetails": "许可证详情",
+      "licenseServerDown": "许可证：服务器离线"
+    },
+    "nav": {
+      "simpleFallback": "简洁菜单在此没有条目 — 正在显示完整菜单。"
     }
   }
 }

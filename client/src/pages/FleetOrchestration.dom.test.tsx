@@ -7,7 +7,7 @@
 // FleetOrchestration THẬT (không mock chính nó) qua @testing-library/react, chỉ mock hạ tầng
 // nặng (DashboardLayout/usePermissions/trpc/sonner) để cô lập đúng logic honesty đang sửa.
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { cleanup, render, screen } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import "@testing-library/jest-dom/vitest";
 
 // ── Mock hạ tầng shell — không phải thứ bài test này canh ────────────────────────────
@@ -89,6 +89,9 @@ const ONE_ZONE = [
 ];
 
 beforeEach(() => {
+  // Doc 81 Đợt 2 Task 10 — HẠ TẦNG (không phải khẳng định): tab panel phụ nay đồng bộ `?tab=` (Review Focus 4) — URL
+  // jsdom sống qua các test, nên đưa về trang gốc để test sau không bắt đầu ở tab test trước đã mở.
+  window.history.replaceState(null, "", "/fleet-orchestration");
   for (const k of Object.keys(queryOverrides)) delete queryOverrides[k];
   // Zone đủ để render nút "Reserve" (nút ghi G1 đang canh) mà không cần đổi tab.
   setQueryOverride("fleet.listZones", makeQuery({ data: ONE_ZONE }));
@@ -99,6 +102,11 @@ afterEach(() => {
 });
 
 describe("FleetOrchestration — G1 flag status (fleet.status) không còn `?? true`", () => {
+  // Doc 81 Đợt 2 Task 10 — HẠ TẦNG: vùng (và nút "Reserve") nay ở tab "Vùng" riêng của panel phụ (trước: chung tab
+  // "Tasks & Zones" mặc định) ⇒ mở trang ở `?tab=zones`. Khẳng định giữ nguyên.
+  beforeEach(() => {
+    window.history.replaceState(null, "", "/fleet-orchestration?tab=zones");
+  });
   it("statusQ ĐANG TẢI ⇒ nút Reserve (G1) bị khoá, KHÔNG hiện banner OFF", () => {
     setQueryOverride("fleet.status", makeQuery({ isLoading: true }));
     render(<FleetOrchestration />);
@@ -125,7 +133,10 @@ describe("FleetOrchestration — G1 flag status (fleet.status) không còn `?? t
     setQueryOverride("fleet.status", makeQuery({ data: { enabled: false } }));
     render(<FleetOrchestration />);
 
-    const banner = screen.getByTestId("feature-status-off");
+    // Doc 81 Đợt 2 Task 10 — đổi SELECTOR: banner cờ thành chip header (testid giữ); câu thân thiện cũ nằm trong
+    // popover của chip ⇒ mở chip rồi lấy popover làm "banner". Khẳng định giữ nguyên.
+    fireEvent.click(screen.getByTestId("feature-status-off"));
+    const banner = document.querySelector('[data-notice-popover="flagOff"]') as HTMLElement;
     expect(banner.textContent).not.toMatch(/FLEET_ORCH_ENABLED/);
     expect(banner).toHaveTextContent(/fleet orchestration is disabled/i);
     const reserveBtn = screen.getByRole("button", { name: /Reserve$/ });
@@ -167,6 +178,12 @@ const ONE_RESOURCE = [
 async function clickTab(name: string) {
   const { default: userEvent } = await import("@testing-library/user-event");
   const user = userEvent.setup();
+  // Doc 81 Đợt 2 Task 10 — đổi SELECTOR: tab "Operations" cũ nay là sheet sổ đăng ký mở bằng nút header
+  // "Operation registry"; "Resources"/"Charging" vẫn là tab (panel phụ).
+  if (name === "Operations") {
+    await user.click(screen.getByRole("button", { name: "Operation registry" }));
+    return;
+  }
   await user.click(screen.getByRole("tab", { name }));
 }
 

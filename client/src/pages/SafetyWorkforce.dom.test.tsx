@@ -81,6 +81,9 @@ import SafetyWorkforce from "./SafetyWorkforce";
 
 beforeEach(() => {
   for (const k of Object.keys(queryOverrides)) delete queryOverrides[k];
+  // Doc 81 Đợt 2 Task 8 (hạ tầng, không phải khẳng định): tab MAIN nay đồng bộ `?tab=` (Review Focus 4) — URL
+  // jsdom sống qua các test, nên đưa về trang gốc để test sau không bắt đầu ở tab test trước đã mở.
+  window.history.replaceState(null, "", "/safety-workforce");
 });
 
 afterEach(() => {

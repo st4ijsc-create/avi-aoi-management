@@ -10,7 +10,6 @@
  */
 import { useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { useLocation } from "wouter";
 import { toast } from "sonner";
 import { ClipboardList, Copy, GripVertical, Loader2, Plus, Power, Trash2, X } from "lucide-react";
 
@@ -18,7 +17,6 @@ import { trpc } from "@/lib/trpc";
 import { toastTrpcError } from "@/lib/trpcErrors";
 import DashboardLayout from "@/components/DashboardLayout";
 import { navItems } from "@/lib/navigation";
-import { buildBreadcrumbs } from "@/lib/breadcrumbs";
 import { EmptyState } from "@/components/EmptyState";
 import { PageContainer, PageHeader, SectionCard, StatusBadge, EntityPicker, ProductModelSelect, ConfirmDeleteDialog } from "@/components/patterns";
 import { Button } from "@/components/ui/button";
@@ -67,8 +65,6 @@ const emptyForm = (): SopFormState => ({
 
 export default function SopManagement() {
   const { t } = useTranslation();
-  const [location] = useLocation();
-  const crumbs = buildBreadcrumbs(location, t);
 
   const utils = trpc.useUtils();
   const invalidate = () => void utils.sop.invalidate();
@@ -179,7 +175,6 @@ export default function SopManagement() {
     <DashboardLayout title={t("sop.mgmt.title", "Quản trị e-SOP")} navItems={navItems} currentPath={CURRENT_PATH}>
       <PageContainer className="space-y-6">
         <PageHeader
-          breadcrumbs={crumbs}
           icon={<ClipboardList className="h-6 w-6" />}
           title={t("sop.mgmt.title", "Quản trị e-SOP")}
           description={t("sop.mgmt.subtitle", "Soạn quy trình thao tác chuẩn: bước, checklist bắt buộc, phiên bản, kích hoạt.")}

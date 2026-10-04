@@ -8,6 +8,10 @@
  *   • người khác có quyền: "Duyệt" / "Từ chối" (từ chối BẮT BUỘC lý do);
  *   • phiên bản bị từ chối: hiện lý do.
  * Chỉ được render khi cờ bật (EngineeringWorkspace quyết) — cờ tắt ⇒ 0 phần tử review.
+ *
+ * doc 81 Đợt 2 final wave (R-2-z2): "Từ chối phiên bản" là SHEET bên phải như mọi luồng duyệt khác
+ * của module (không còn Dialog giữa màn). Hợp đồng giữ nguyên: lý do BẮT BUỘC (trim, rỗng ⇒ khoá),
+ * chỉ người KHÁC tác giả có quyền mới thấy nút (maker-checker; server vẫn chặn SoD), Huỷ không gọi server.
  */
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
@@ -17,8 +21,8 @@ import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import {
-  Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle,
-} from "@/components/ui/dialog";
+  Sheet, SheetContent, SheetDescription, SheetFooter, SheetHeader, SheetTitle,
+} from "@/components/ui/sheet";
 
 export type ReviewStatus = "pending_review" | "approved" | "rejected";
 
@@ -125,15 +129,15 @@ export function VersionReviewPanel({
         </>
       )}
 
-      <Dialog open={rejectOpen} onOpenChange={setRejectOpen}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>{t("engineering.review.rejectTitle", "Từ chối phiên bản")} v{artifact.version}</DialogTitle>
-            <DialogDescription>
+      <Sheet open={rejectOpen} onOpenChange={setRejectOpen}>
+        <SheetContent side="right" className="flex w-[92vw] flex-col gap-0 p-0 sm:max-w-[480px]">
+          <SheetHeader className="border-b px-4 py-3 pr-10">
+            <SheetTitle>{t("engineering.review.rejectTitle", "Từ chối phiên bản")} v{artifact.version}</SheetTitle>
+            <SheetDescription>
               {t("engineering.review.rejectDesc", "Tác giả sẽ đọc lý do này để sửa và lưu phiên bản mới.")}
-            </DialogDescription>
-          </DialogHeader>
-          <div className="space-y-1">
+            </SheetDescription>
+          </SheetHeader>
+          <div className="flex-1 space-y-1 overflow-y-auto px-4 py-3">
             <Label htmlFor="version-review-reject-reason" className="text-xs">
               {t("engineering.review.rejectReason", "Lý do từ chối (bắt buộc)")}
             </Label>
@@ -142,10 +146,10 @@ export function VersionReviewPanel({
               data-testid="version-review-reject-reason"
               value={reason}
               onChange={(e) => setReason(e.target.value)}
-              className="min-h-[72px] text-xs"
+              className="min-h-[96px] text-xs"
             />
           </div>
-          <DialogFooter>
+          <SheetFooter className="flex-row justify-end gap-2 border-t px-4 py-3">
             <Button variant="outline" onClick={() => setRejectOpen(false)}>{t("common.cancel", "Hủy")}</Button>
             <Button
               variant="destructive"
@@ -155,9 +159,9 @@ export function VersionReviewPanel({
             >
               {t("engineering.review.rejectConfirm", "Từ chối")}
             </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+          </SheetFooter>
+        </SheetContent>
+      </Sheet>
     </div>
   );
 }

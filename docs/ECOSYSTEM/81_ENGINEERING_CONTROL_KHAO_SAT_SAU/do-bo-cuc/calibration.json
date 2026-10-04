@@ -1,0 +1,802 @@
+{
+ "note": "Ghi bởi --calibrate, KHÔNG sửa tay. Khoá = màn|vw|biến thể. Bản ghi MỚI chỉ được ghi khi attribute khớp MAIN tham chiếu FE1 (bố cục chưa đổi); ghi ĐÈ bản ghi cũ (sau khi đổi bố cục) giữ `previous` để diff git cho thấy.",
+ "pages": {
+  "engineering-changes|1600|n/a": {
+   "screen": "engineering-changes",
+   "vw": 1600,
+   "variant": "n/a",
+   "mainTop": 124,
+   "rects": [
+    {
+     "x": 288,
+     "y": 124,
+     "w": 1288,
+     "h": 704
+    }
+   ],
+   "areaPx": 906752,
+   "attrSel": "section[data-layout-main=\"ecn-list\"]@EngineeringChanges.tsx",
+   "gitHead": "d1ff678b2",
+   "gitDirty": [
+    "client/src/pages/EngineeringChanges.tsx",
+    "client/src/pages/FleetOrchestration.layout.dom.test.tsx",
+    "client/src/pages/FleetOrchestration.tsx",
+    "scripts/ui-metrics/README.md",
+    "scripts/ui-metrics/engineeringLayout.mjs"
+   ],
+   "at": "2026-10-03T23:13:45.566Z",
+   "previous": {
+    "mainTop": 124,
+    "areaPx": 906752,
+    "attrSel": "div[data-layout-main=\"ecn-list\"]@EngineeringChanges.tsx",
+    "gitHead": "891337f1c"
+   }
+  },
+  "engineering-changes|1366|n/a": {
+   "screen": "engineering-changes",
+   "vw": 1366,
+   "variant": "n/a",
+   "mainTop": 124,
+   "rects": [
+    {
+     "x": 288,
+     "y": 124,
+     "w": 1054,
+     "h": 704
+    }
+   ],
+   "areaPx": 742016,
+   "attrSel": "section[data-layout-main=\"ecn-list\"]@EngineeringChanges.tsx",
+   "gitHead": "d1ff678b2",
+   "gitDirty": [
+    "client/src/pages/EngineeringChanges.tsx",
+    "client/src/pages/FleetOrchestration.layout.dom.test.tsx",
+    "client/src/pages/FleetOrchestration.tsx",
+    "scripts/ui-metrics/README.md",
+    "scripts/ui-metrics/engineeringLayout.mjs"
+   ],
+   "at": "2026-10-03T23:13:45.566Z",
+   "previous": {
+    "mainTop": 124,
+    "areaPx": 742016,
+    "attrSel": "div[data-layout-main=\"ecn-list\"]@EngineeringChanges.tsx",
+    "gitHead": "891337f1c"
+   }
+  },
+  "interlock-rules|1600|n/a": {
+   "screen": "interlock-rules",
+   "vw": 1600,
+   "variant": "n/a",
+   "mainTop": 125,
+   "rects": [
+    {
+     "x": 289,
+     "y": 125,
+     "w": 1286,
+     "h": 775
+    }
+   ],
+   "areaPx": 996650,
+   "attrSel": "div[data-layout-main=\"interlock-rules\"]@WorkbenchShell.tsx",
+   "gitHead": "3d7a95ae8",
+   "at": "2026-10-02T23:31:00.948Z",
+   "previous": {
+    "mainTop": 125,
+    "areaPx": 747166,
+    "attrSel": "div[data-layout-main=\"interlock-rules\"]@WorkbenchShell.tsx",
+    "gitHead": "29fa77e5d"
+   }
+  },
+  "interlock-rules|1366|n/a": {
+   "screen": "interlock-rules",
+   "vw": 1366,
+   "variant": "n/a",
+   "mainTop": 125,
+   "rects": [
+    {
+     "x": 289,
+     "y": 125,
+     "w": 1052,
+     "h": 593
+    }
+   ],
+   "areaPx": 623836,
+   "attrSel": "div[data-layout-main=\"interlock-rules\"]@WorkbenchShell.tsx",
+   "gitHead": "3d7a95ae8",
+   "at": "2026-10-02T23:31:00.948Z",
+   "previous": {
+    "mainTop": 125,
+    "areaPx": 455516,
+    "attrSel": "div[data-layout-main=\"interlock-rules\"]@WorkbenchShell.tsx",
+    "gitHead": "29fa77e5d"
+   }
+  },
+  "recipes|1600|n/a": {
+   "screen": "recipes",
+   "vw": 1600,
+   "variant": "n/a",
+   "mainTop": 137,
+   "rects": [
+    {
+     "x": 790,
+     "y": 137,
+     "w": 773,
+     "h": 776
+    }
+   ],
+   "areaPx": 599848,
+   "attrSel": "section[data-layout-main=\"recipes-detail\"]@SplitListDetail.tsx",
+   "gitHead": "9725fe53f",
+   "at": "2026-10-03T01:21:59.678Z",
+   "previous": {
+    "mainTop": 378,
+    "areaPx": 221200,
+    "attrSel": "div[data-layout-main=\"recipes-codes\"]@RecipeManagement.tsx|div[data-layout-main=\"recipes-versions\"]@RecipeManagement.tsx",
+    "gitHead": "d860107f4"
+   }
+  },
+  "recipes|1366|n/a": {
+   "screen": "recipes",
+   "vw": 1366,
+   "variant": "n/a",
+   "mainTop": 137,
+   "rects": [
+    {
+     "x": 701,
+     "y": 137,
+     "w": 628,
+     "h": 594
+    }
+   ],
+   "areaPx": 373032,
+   "attrSel": "section[data-layout-main=\"recipes-detail\"]@SplitListDetail.tsx",
+   "gitHead": "9725fe53f",
+   "at": "2026-10-03T01:21:59.678Z",
+   "previous": {
+    "mainTop": 378,
+    "areaPx": 180250,
+    "attrSel": "div[data-layout-main=\"recipes-codes\"]@RecipeManagement.tsx|div[data-layout-main=\"recipes-versions\"]@RecipeManagement.tsx",
+    "gitHead": "d860107f4"
+   }
+  },
+  "equipment-integration|1600|n/a": {
+   "screen": "equipment-integration",
+   "vw": 1600,
+   "variant": "n/a",
+   "mainTop": 120,
+   "rects": [
+    {
+     "x": 288,
+     "y": 120,
+     "w": 1288,
+     "h": 802
+    }
+   ],
+   "areaPx": 1032976,
+   "attrSel": "div[data-layout-main=\"equipment-integration\"]@CockpitLayout.tsx",
+   "gitHead": "576c1734d",
+   "at": "2026-10-03T03:47:27.420Z",
+   "previous": {
+    "mainTop": 486,
+    "areaPx": 669760,
+    "attrSel": "div[data-layout-main=\"equipment-integration\"]@EquipmentIntegration.tsx",
+    "gitHead": "ac9100684"
+   }
+  },
+  "equipment-integration|1366|n/a": {
+   "screen": "equipment-integration",
+   "vw": 1366,
+   "variant": "n/a",
+   "mainTop": 120,
+   "rects": [
+    {
+     "x": 288,
+     "y": 120,
+     "w": 1054,
+     "h": 620
+    }
+   ],
+   "areaPx": 653480,
+   "attrSel": "div[data-layout-main=\"equipment-integration\"]@CockpitLayout.tsx",
+   "gitHead": "576c1734d",
+   "at": "2026-10-03T03:47:27.420Z",
+   "previous": {
+    "mainTop": 506,
+    "areaPx": 592348,
+    "attrSel": "div[data-layout-main=\"equipment-integration\"]@EquipmentIntegration.tsx",
+    "gitHead": "ac9100684"
+   }
+  },
+  "safety-workforce|1600|n/a": {
+   "screen": "safety-workforce",
+   "vw": 1600,
+   "variant": "n/a",
+   "mainTop": 120,
+   "rects": [
+    {
+     "x": 288,
+     "y": 120,
+     "w": 936,
+     "h": 802
+    }
+   ],
+   "areaPx": 750672,
+   "attrSel": "div[data-layout-main=\"safety-workforce\"]@CockpitLayout.tsx",
+   "gitHead": "2448e9c5d",
+   "at": "2026-10-03T05:15:35.628Z",
+   "previous": {
+    "mainTop": 618,
+    "areaPx": 1023960,
+    "attrSel": "div[data-layout-main=\"safety-workforce\"]@SafetyWorkforce.tsx",
+    "gitHead": "d58304052"
+   }
+  },
+  "safety-workforce|1366|n/a": {
+   "screen": "safety-workforce",
+   "vw": 1366,
+   "variant": "n/a",
+   "mainTop": 120,
+   "rects": [
+    {
+     "x": 288,
+     "y": 120,
+     "w": 742,
+     "h": 620
+    }
+   ],
+   "areaPx": 460040,
+   "attrSel": "div[data-layout-main=\"safety-workforce\"]@CockpitLayout.tsx",
+   "gitHead": "2448e9c5d",
+   "at": "2026-10-03T05:15:35.628Z",
+   "previous": {
+    "mainTop": 638,
+    "areaPx": 837930,
+    "attrSel": "div[data-layout-main=\"safety-workforce\"]@SafetyWorkforce.tsx",
+    "gitHead": "d58304052"
+   }
+  },
+  "equipment-standards|1600|n/a": {
+   "screen": "equipment-standards",
+   "vw": 1600,
+   "variant": "n/a",
+   "mainTop": 120,
+   "rects": [
+    {
+     "x": 288,
+     "y": 120,
+     "w": 1288,
+     "h": 818
+    }
+   ],
+   "areaPx": 1053584,
+   "attrSel": "div[data-layout-main=\"equipment-standards\"]@CockpitLayout.tsx",
+   "gitHead": "eb1e804de",
+   "at": "2026-10-03T07:18:59.725Z",
+   "previous": {
+    "mainTop": 482,
+    "areaPx": 1391040,
+    "attrSel": "div[data-layout-main=\"equipment-standards\"]@EquipmentStandards.tsx",
+    "gitHead": "ffd355edc"
+   }
+  },
+  "equipment-standards|1366|n/a": {
+   "screen": "equipment-standards",
+   "vw": 1366,
+   "variant": "n/a",
+   "mainTop": 120,
+   "rects": [
+    {
+     "x": 288,
+     "y": 120,
+     "w": 1054,
+     "h": 636
+    }
+   ],
+   "areaPx": 670344,
+   "attrSel": "div[data-layout-main=\"equipment-standards\"]@CockpitLayout.tsx",
+   "gitHead": "eb1e804de",
+   "at": "2026-10-03T07:18:59.725Z",
+   "previous": {
+    "mainTop": 482,
+    "areaPx": 1138320,
+    "attrSel": "div[data-layout-main=\"equipment-standards\"]@EquipmentStandards.tsx",
+    "gitHead": "ffd355edc"
+   }
+  },
+  "fleet-orchestration|1600|n/a": {
+   "screen": "fleet-orchestration",
+   "vw": 1600,
+   "variant": "n/a",
+   "mainTop": 120,
+   "rects": [
+    {
+     "x": 288,
+     "y": 120,
+     "w": 836,
+     "h": 802
+    }
+   ],
+   "areaPx": 670472,
+   "attrSel": "div[data-layout-main=\"fleet-orchestration\"]@CockpitLayout.tsx",
+   "gitHead": "b2e9cdd3e",
+   "at": "2026-10-03T08:38:59.175Z",
+   "previous": {
+    "mainTop": 466,
+    "areaPx": 568008,
+    "attrSel": "div[data-layout-main=\"fleet-orchestration\"]@FleetOrchestration.tsx",
+    "gitHead": "dd7e71134"
+   }
+  },
+  "fleet-orchestration|1366|n/a": {
+   "screen": "fleet-orchestration",
+   "vw": 1366,
+   "variant": "n/a",
+   "mainTop": 120,
+   "rects": [
+    {
+     "x": 288,
+     "y": 120,
+     "w": 642,
+     "h": 596
+    }
+   ],
+   "areaPx": 382632,
+   "attrSel": "div[data-layout-main=\"fleet-orchestration\"]@CockpitLayout.tsx",
+   "gitHead": "d1ff678b2",
+   "gitDirty": [
+    "client/src/pages/EngineeringChanges.tsx",
+    "client/src/pages/FleetOrchestration.layout.dom.test.tsx",
+    "client/src/pages/FleetOrchestration.tsx",
+    "scripts/ui-metrics/README.md",
+    "scripts/ui-metrics/engineeringLayout.mjs"
+   ],
+   "at": "2026-10-03T23:13:45.566Z",
+   "previous": {
+    "mainTop": 120,
+    "areaPx": 398040,
+    "attrSel": "div[data-layout-main=\"fleet-orchestration\"]@CockpitLayout.tsx",
+    "gitHead": "b2e9cdd3e"
+   }
+  },
+  "orchestration-studio|1600|n/a": {
+   "screen": "orchestration-studio",
+   "vw": 1600,
+   "variant": "n/a",
+   "mainTop": 105,
+   "rects": [
+    {
+     "x": 289,
+     "y": 105,
+     "w": 971,
+     "h": 820
+    }
+   ],
+   "areaPx": 796220,
+   "attrSel": "div[data-layout-main=\"orchestration-studio\"]@WorkbenchShell.tsx",
+   "gitHead": "31710e825",
+   "at": "2026-10-03T10:58:39.776Z",
+   "previous": {
+    "mainTop": 105,
+    "areaPx": 737180,
+    "attrSel": "div[data-layout-main=\"orchestration-studio\"]@WorkbenchShell.tsx",
+    "gitHead": "115925ba7"
+   }
+  },
+  "orchestration-studio|1366|n/a": {
+   "screen": "orchestration-studio",
+   "vw": 1366,
+   "variant": "n/a",
+   "mainTop": 105,
+   "rects": [
+    {
+     "x": 289,
+     "y": 105,
+     "w": 737,
+     "h": 638
+    }
+   ],
+   "areaPx": 470206,
+   "attrSel": "div[data-layout-main=\"orchestration-studio\"]@WorkbenchShell.tsx",
+   "gitHead": "31710e825",
+   "at": "2026-10-03T10:58:39.776Z",
+   "previous": {
+    "mainTop": 105,
+    "areaPx": 443410,
+    "attrSel": "div[data-layout-main=\"orchestration-studio\"]@WorkbenchShell.tsx",
+    "gitHead": "115925ba7"
+   }
+  },
+  "engineering|1600|closed": {
+   "screen": "engineering",
+   "vw": 1600,
+   "variant": "closed",
+   "mainTop": 105,
+   "rects": [
+    {
+     "x": 329,
+     "y": 105,
+     "w": 951,
+     "h": 820
+    }
+   ],
+   "areaPx": 779820,
+   "attrSel": "div[data-layout-main=\"engineering-editor\"]@WorkbenchShell.tsx",
+   "gitHead": "4cc5b42c2",
+   "at": "2026-10-03T15:24:32.828Z",
+   "previous": {
+    "mainTop": 97,
+    "areaPx": 787428,
+    "attrSel": "div[data-layout-main=\"engineering-editor\"]@WorkbenchShell.tsx",
+    "gitHead": "a08eff870"
+   }
+  },
+  "engineering|1366|closed": {
+   "screen": "engineering",
+   "vw": 1366,
+   "variant": "closed",
+   "mainTop": 105,
+   "rects": [
+    {
+     "x": 329,
+     "y": 105,
+     "w": 717,
+     "h": 638
+    }
+   ],
+   "areaPx": 457446,
+   "attrSel": "div[data-layout-main=\"engineering-editor\"]@WorkbenchShell.tsx",
+   "gitHead": "4cc5b42c2",
+   "at": "2026-10-03T15:24:32.828Z",
+   "previous": {
+    "mainTop": 97,
+    "areaPx": 463182,
+    "attrSel": "div[data-layout-main=\"engineering-editor\"]@WorkbenchShell.tsx",
+    "gitHead": "a08eff870"
+   }
+  },
+  "engineering|1600|open": {
+   "screen": "engineering",
+   "vw": 1600,
+   "variant": "open",
+   "mainTop": 105,
+   "rects": [
+    {
+     "x": 329,
+     "y": 105,
+     "w": 951,
+     "h": 820
+    }
+   ],
+   "areaPx": 779820,
+   "attrSel": "div[data-layout-main=\"engineering-editor\"]@WorkbenchShell.tsx",
+   "gitHead": "4cc5b42c2",
+   "at": "2026-10-03T15:24:32.828Z",
+   "previous": {
+    "mainTop": 97,
+    "areaPx": 787428,
+    "attrSel": "div[data-layout-main=\"engineering-editor\"]@WorkbenchShell.tsx",
+    "gitHead": "a08eff870"
+   }
+  },
+  "engineering|1366|open": {
+   "screen": "engineering",
+   "vw": 1366,
+   "variant": "open",
+   "mainTop": 105,
+   "rects": [
+    {
+     "x": 329,
+     "y": 105,
+     "w": 717,
+     "h": 638
+    }
+   ],
+   "areaPx": 457446,
+   "attrSel": "div[data-layout-main=\"engineering-editor\"]@WorkbenchShell.tsx",
+   "gitHead": "4cc5b42c2",
+   "at": "2026-10-03T15:24:32.828Z",
+   "previous": {
+    "mainTop": 97,
+    "areaPx": 463182,
+    "attrSel": "div[data-layout-main=\"engineering-editor\"]@WorkbenchShell.tsx",
+    "gitHead": "a08eff870"
+   }
+  },
+  "ir-editor|1600|closed": {
+   "screen": "ir-editor",
+   "vw": 1600,
+   "variant": "closed",
+   "mainTop": 105,
+   "rects": [
+    {
+     "x": 289,
+     "y": 105,
+     "w": 991,
+     "h": 821
+    }
+   ],
+   "areaPx": 813611,
+   "attrSel": "div[data-layout-main=\"ir-canvas\"]@WorkbenchShell.tsx",
+   "gitHead": "58a5e4c3c",
+   "at": "2026-10-03T16:31:33.986Z",
+   "previous": {
+    "mainTop": 497,
+    "areaPx": 552215,
+    "attrSel": "div[data-layout-main=\"ir-canvas\"]@IrEditor.tsx",
+    "gitHead": "856d16162"
+   }
+  },
+  "ir-editor|1366|closed": {
+   "screen": "ir-editor",
+   "vw": 1366,
+   "variant": "closed",
+   "mainTop": 105,
+   "rects": [
+    {
+     "x": 289,
+     "y": 105,
+     "w": 757,
+     "h": 639
+    }
+   ],
+   "areaPx": 483723,
+   "attrSel": "div[data-layout-main=\"ir-canvas\"]@WorkbenchShell.tsx",
+   "gitHead": "58a5e4c3c",
+   "at": "2026-10-03T16:31:33.986Z",
+   "previous": {
+    "mainTop": 517,
+    "areaPx": 465400,
+    "attrSel": "div[data-layout-main=\"ir-canvas\"]@IrEditor.tsx",
+    "gitHead": "856d16162"
+   }
+  },
+  "pou-studio|1600|closed": {
+   "screen": "pou-studio",
+   "vw": 1600,
+   "variant": "closed",
+   "mainTop": 105,
+   "rects": [
+    {
+     "x": 89,
+     "y": 105,
+     "w": 1190,
+     "h": 820
+    }
+   ],
+   "areaPx": 975800,
+   "attrSel": "div[data-layout-main=\"pou-editor\"]@WorkbenchShell.tsx",
+   "gitHead": "68b59d0b4",
+   "at": "2026-10-03T17:38:26.974Z",
+   "previous": {
+    "mainTop": 105,
+    "areaPx": 812620,
+    "attrSel": "div[data-layout-main=\"pou-editor\"]@WorkbenchShell.tsx",
+    "gitHead": "58a5e4c3c"
+   }
+  },
+  "pou-studio|1366|closed": {
+   "screen": "pou-studio",
+   "vw": 1366,
+   "variant": "closed",
+   "mainTop": 105,
+   "rects": [
+    {
+     "x": 89,
+     "y": 105,
+     "w": 957,
+     "h": 638
+    }
+   ],
+   "areaPx": 610566,
+   "attrSel": "div[data-layout-main=\"pou-editor\"]@WorkbenchShell.tsx",
+   "gitHead": "68b59d0b4",
+   "at": "2026-10-03T17:38:26.974Z",
+   "previous": {
+    "mainTop": 105,
+    "areaPx": 482966,
+    "attrSel": "div[data-layout-main=\"pou-editor\"]@WorkbenchShell.tsx",
+    "gitHead": "58a5e4c3c"
+   }
+  },
+  "ir-editor|1600|open": {
+   "screen": "ir-editor",
+   "vw": 1600,
+   "variant": "open",
+   "mainTop": 105,
+   "rects": [
+    {
+     "x": 289,
+     "y": 105,
+     "w": 991,
+     "h": 821
+    }
+   ],
+   "areaPx": 813611,
+   "attrSel": "div[data-layout-main=\"ir-canvas\"]@WorkbenchShell.tsx",
+   "gitHead": "58a5e4c3c",
+   "at": "2026-10-03T16:31:33.986Z",
+   "previous": {
+    "mainTop": 533,
+    "areaPx": 395590,
+    "attrSel": "div[data-layout-main=\"ir-canvas\"]@IrEditor.tsx",
+    "gitHead": "856d16162"
+   }
+  },
+  "ir-editor|1366|open": {
+   "screen": "ir-editor",
+   "vw": 1366,
+   "variant": "open",
+   "mainTop": 105,
+   "rects": [
+    {
+     "x": 289,
+     "y": 105,
+     "w": 757,
+     "h": 639
+    }
+   ],
+   "areaPx": 483723,
+   "attrSel": "div[data-layout-main=\"ir-canvas\"]@WorkbenchShell.tsx",
+   "gitHead": "58a5e4c3c",
+   "at": "2026-10-03T16:31:33.986Z",
+   "previous": {
+    "mainTop": 589,
+    "areaPx": 313950,
+    "attrSel": "div[data-layout-main=\"ir-canvas\"]@IrEditor.tsx",
+    "gitHead": "856d16162"
+   }
+  },
+  "pou-studio|1600|open": {
+   "screen": "pou-studio",
+   "vw": 1600,
+   "variant": "open",
+   "mainTop": 105,
+   "rects": [
+    {
+     "x": 89,
+     "y": 105,
+     "w": 1190,
+     "h": 820
+    }
+   ],
+   "areaPx": 975800,
+   "attrSel": "div[data-layout-main=\"pou-editor\"]@WorkbenchShell.tsx",
+   "gitHead": "68b59d0b4",
+   "at": "2026-10-03T17:38:26.974Z",
+   "previous": {
+    "mainTop": 105,
+    "areaPx": 812620,
+    "attrSel": "div[data-layout-main=\"pou-editor\"]@WorkbenchShell.tsx",
+    "gitHead": "58a5e4c3c"
+   }
+  },
+  "pou-studio|1366|open": {
+   "screen": "pou-studio",
+   "vw": 1366,
+   "variant": "open",
+   "mainTop": 105,
+   "rects": [
+    {
+     "x": 89,
+     "y": 105,
+     "w": 957,
+     "h": 638
+    }
+   ],
+   "areaPx": 610566,
+   "attrSel": "div[data-layout-main=\"pou-editor\"]@WorkbenchShell.tsx",
+   "gitHead": "68b59d0b4",
+   "at": "2026-10-03T17:38:26.974Z",
+   "previous": {
+    "mainTop": 105,
+    "areaPx": 482966,
+    "attrSel": "div[data-layout-main=\"pou-editor\"]@WorkbenchShell.tsx",
+    "gitHead": "58a5e4c3c"
+   }
+  },
+  "engineering-home|1600|n/a": {
+   "screen": "engineering-home",
+   "vw": 1600,
+   "variant": "n/a",
+   "mainTop": 120,
+   "rects": [
+    {
+     "x": 288,
+     "y": 120,
+     "w": 936,
+     "h": 808
+    }
+   ],
+   "areaPx": 756288,
+   "attrSel": "div[data-layout-main=\"engineering-home\"]@CockpitLayout.tsx",
+   "gitHead": "f63657604",
+   "at": "2026-10-03T19:58:36.754Z",
+   "previous": {
+    "mainTop": 120,
+    "areaPx": 280800,
+    "attrSel": "div[data-layout-main=\"engineering-home\"]@CockpitLayout.tsx",
+    "gitHead": "017d8e0d7"
+   }
+  },
+  "engineering-home|1366|n/a": {
+   "screen": "engineering-home",
+   "vw": 1366,
+   "variant": "n/a",
+   "mainTop": 120,
+   "rects": [
+    {
+     "x": 288,
+     "y": 120,
+     "w": 702,
+     "h": 626
+    }
+   ],
+   "areaPx": 439452,
+   "attrSel": "div[data-layout-main=\"engineering-home\"]@CockpitLayout.tsx",
+   "gitHead": "f63657604",
+   "at": "2026-10-03T19:58:36.754Z",
+   "previous": {
+    "mainTop": 120,
+    "areaPx": 210600,
+    "attrSel": "div[data-layout-main=\"engineering-home\"]@CockpitLayout.tsx",
+    "gitHead": "017d8e0d7"
+   }
+  },
+  "equipment-standards-alarms|1600|n/a": {
+   "screen": "equipment-standards-alarms",
+   "vw": 1600,
+   "variant": "n/a",
+   "mainTop": 120,
+   "rects": [
+    {
+     "x": 288,
+     "y": 120,
+     "w": 1288,
+     "h": 717
+    }
+   ],
+   "areaPx": 923496,
+   "attrSel": "div[data-layout-main=\"equipment-standards\"]@CockpitLayout.tsx",
+   "gitHead": "d1ff678b2",
+   "gitDirty": [
+    "client/src/pages/EngineeringChanges.tsx",
+    "client/src/pages/FleetOrchestration.layout.dom.test.tsx",
+    "client/src/pages/FleetOrchestration.tsx",
+    "scripts/ui-metrics/README.md",
+    "scripts/ui-metrics/engineeringLayout.mjs"
+   ],
+   "at": "2026-10-03T23:13:45.566Z",
+   "fromReference": {
+    "parentElement": "div[data-layout-main=\"equipment-standards\"]@CockpitLayout.tsx"
+   }
+  },
+  "equipment-standards-alarms|1366|n/a": {
+   "screen": "equipment-standards-alarms",
+   "vw": 1366,
+   "variant": "n/a",
+   "mainTop": 120,
+   "rects": [
+    {
+     "x": 288,
+     "y": 120,
+     "w": 1054,
+     "h": 717
+    }
+   ],
+   "areaPx": 755718,
+   "attrSel": "div[data-layout-main=\"equipment-standards\"]@CockpitLayout.tsx",
+   "gitHead": "d1ff678b2",
+   "gitDirty": [
+    "client/src/pages/EngineeringChanges.tsx",
+    "client/src/pages/FleetOrchestration.layout.dom.test.tsx",
+    "client/src/pages/FleetOrchestration.tsx",
+    "scripts/ui-metrics/README.md",
+    "scripts/ui-metrics/engineeringLayout.mjs"
+   ],
+   "at": "2026-10-03T23:13:45.566Z",
+   "fromReference": {
+    "parentElement": "div[data-layout-main=\"equipment-standards\"]@CockpitLayout.tsx"
+   }
+  }
+ }
+}

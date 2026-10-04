@@ -39,9 +39,11 @@ export const AppLauncherButton = forwardRef<HTMLButtonElement, AppLauncherButton
       {activeApp && ActiveIcon && (
         // doc 39 menu-audit M2 (P1-2): the active-app ICON always shows (so mobile users
         // still know which app they're in); only the NAME label collapses on small screens.
+        // doc 81 Đợt 2 Task 2 — breadcrumb (mục đầu = module) nay nằm trong top bar ⇒ tên app chỉ
+        // hiện khi TOP BAR ≥100rem (container query `topbar`); dưới đó icon app + breadcrumb đã nói "đang ở app nào".
         <span className="flex min-w-0 items-center gap-1.5">
           <ActiveIcon className="h-4 w-4 shrink-0 text-primary" />
-          <span className="hidden truncate font-medium text-foreground md:inline">{t(activeApp.labelKey)}</span>
+          <span className="hidden truncate font-medium text-foreground @min-[100rem]/topbar:inline">{t(activeApp.labelKey)}</span>
         </span>
       )}
     </button>

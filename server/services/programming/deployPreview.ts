@@ -53,6 +53,7 @@ import {
   evaluateDeployGates,
   rebuildForDeploy,
   dpcDeployApprovalEnabled,
+  loiBuildKhacDuAn,
   type DeployGate,
 } from "./programmingService";
 import { TECHMAN_PROGRAM_DOWNLOAD_UNSUPPORTED } from "./robot/robotTmAdapter";
@@ -362,6 +363,28 @@ async function assertPreviewInScope(
  * CHẠY KHÔ một deploy: cùng đầu vào với `deployBuild` (hoặc `requestDeployApproval` khi
  * production + Hộp duyệt bật), trả verdict + mọi cổng. Không ghi DB, không chạm thiết bị.
  */
+/**
+ * doc 81 Đợt 2 Task 12b fix round 1 (#1) — cổng dự án kỳ vọng chạy TRƯỚC step-up OTP của
+ * deployBuild/deployToFleet, SAU giấy phép + quyền (router). Áp CÙNG cổng phạm vi của bản xem trước
+ * (`assertPreviewInScope`) TRƯỚC khi so dự án: build ngoài phạm vi ⇒ NOT_FOUND giống hệt "không tồn
+ * tại" (khớp hay lệch đều thế) ⇒ không thành phép dò. Chỉ đọc.
+ */
+export async function assertDeployTargetInScopeAndProject(
+  o: { buildId: number; deviceId?: number | null; expectedProjectId: number },
+  scope?: PhamViNguoiXem,
+): Promise<void> {
+  const { b, art, proj, projectDeviceId } = await loadDeployCtx(o.buildId);
+  await assertPreviewInScope(scope, {
+    buildId: o.buildId,
+    kind: String(b.adapterKind),
+    projectFactoryId: proj?.factoryId ?? null,
+    projectDeviceId,
+    projectExists: proj != null,
+    deviceId: o.deviceId ?? projectDeviceId ?? null,
+  });
+  if (art.projectId !== o.expectedProjectId) throw loiBuildKhacDuAn(o.buildId, o.expectedProjectId);
+}
+
 export async function previewDeploy(
   input: DeployPreviewInput,
   caller: DeployPreviewCaller,

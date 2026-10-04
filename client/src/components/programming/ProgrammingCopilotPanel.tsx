@@ -24,7 +24,7 @@
  * không đòi `MOD_AI`). Bị từ chối vì `MOD_ENGINEERING` ⇒ KHÔNG lùi: thủ tục cũ bị chặn bởi đúng module ấy.
  *
  * Reusable in two homes:
- *   • variant="full"     — standalone /programming-copilot page.
+ *   • variant="full"     — (trang /programming-copilot cũ — doc 81 Đợt 2 Task 15 đã gộp vào IDE: chế độ scratch dùng "embedded").
  *   • variant="embedded" — a compact side/collapsible panel inside EngineeringWorkspace, seeded
  *                          with the editor buffer (contextCode) and wired so Apply inserts the
  *                          generated code back into the host editor (onApply).
@@ -147,6 +147,8 @@ export interface ProgrammingCopilotPanelProps {
   onApplyText?: (text: string) => void;
   /** doc 41 — one-shot host instruction (dock inline actions). */
   seed?: CopilotSeed;
+  /** doc 81 Đợt 2 Task 15 — chế độ scratch của IDE: không có editor chủ ⇒ ẩn "Đồng bộ từ editor" (nút đó sẽ xoá mã đã dán). */
+  hideSyncFromEditor?: boolean;
   className?: string;
 }
 
@@ -161,6 +163,7 @@ export function ProgrammingCopilotPanel({
   onApply,
   onApplyText,
   seed,
+  hideSyncFromEditor,
   className,
 }: ProgrammingCopilotPanelProps) {
   const { t } = useTranslation();
@@ -437,7 +440,7 @@ export function ProgrammingCopilotPanel({
         <div className="space-y-1">
           <div className="flex items-center justify-between">
             <Label className="text-xs">{t("progCopilot.contextCode", "Existing code (context)")}</Label>
-            {embedded && (
+            {embedded && !hideSyncFromEditor && (
               <Button
                 type="button" size="sm" variant="ghost" className="h-6 px-2 text-xs"
                 onClick={() => setCtxCode(contextCode ?? "")}

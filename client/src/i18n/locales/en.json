@@ -658,17 +658,30 @@
     "titleRequired": "Title is required",
     "noProduct": "None / not product-specific",
     "empty": "No engineering changes yet.",
-    "rejectReason": "Reason for rejection:",
-    "rejectReasonRequired": "A rejection reason is required",
-    "rejectTitle": "Reject engineering change",
     "rejectPrompt": "State the reason for rejecting {{key}}. The reason is recorded in the decision log.",
-    "rejectPlaceholder": "e.g. Missing impact analysis; risk needs re-assessment…",
-    "approveTitle": "Approve engineering change",
     "approvePrompt": "Confirm approval of {{key}}. You may add a comment (optional) — it is recorded in the decision log.",
-    "approveComment": "Comment (optional):",
-    "approvePlaceholder": "e.g. Reviewed attached documents, meets requirements…",
     "emptyFiltered": "No changes match the filter.",
     "userFallback": "User #{{id}}",
+    "aboutChip": "ECN workflow",
+    "filterPendingChip": "Pending ECNs only",
+    "listLabel": "ECN list",
+    "tab": {
+      "overview": "Overview",
+      "objects": "Objects",
+      "approval": "Approval",
+      "tasks": "Tasks",
+      "history": "History"
+    },
+    "item": {
+      "entity": "Object",
+      "action": "Action",
+      "description": "Description"
+    },
+    "itemAction": {
+      "add": "Add",
+      "modify": "Modify",
+      "remove": "Remove"
+    },
     "field": {
       "title": "Title",
       "type": "Change type",
@@ -736,11 +749,17 @@
       "requestedBy": "Requested by",
       "reviewedBy": "Reviewed by",
       "approvedBy": "Approved by",
-      "implementedBy": "Implemented by",
-      "closedBy": "Closed by",
       "decisionComment": "Decision comment",
-      "timeline": "Timeline",
-      "noTimeline": "No timeline events yet."
+      "noTimeline": "No timeline events yet.",
+      "flyoutTitle": "Engineering change details",
+      "notFound": "ECN #{{id}} not found.",
+      "target": "Target",
+      "noTarget": "No target recorded.",
+      "items": "Itemised objects",
+      "noItems": "No itemised objects yet.",
+      "approvalHelp": "The requester cannot review or approve their own change; the reviewer cannot also approve it.",
+      "tasksHelp": "After approval: mark it implemented once the change is applied, then close the ECN.",
+      "notYet": "Not yet"
     },
     "backfill": {
       "title": "Backfill componentCode from BOM",
@@ -755,7 +774,10 @@
       "updated": "Updated",
       "skipped": "Already linked",
       "unmatched": "Unmatched",
-      "dryRunTag": "(dry-run — nothing written)"
+      "dryRunTag": "(dry-run — nothing written)",
+      "done": "Backfill done — matched {{matched}}, updated {{updated}}",
+      "doneDryRun": "Dry-run preview — matched {{matched}}, would update {{updated}}",
+      "unavailable": "The backfill procedure is not available"
     }
   },
   "related": {
@@ -4079,7 +4101,8 @@
       "endpoint": "endpoint",
       "reviewReason": "rejection reason",
       "gatewayId": "gateway",
-      "deviceIds": "allowed device list"
+      "deviceIds": "allowed device list",
+      "expectedProjectId": "open project (expectedProjectId)"
     },
     "feature": {
       "webIngest": "web content ingestion",
@@ -4319,7 +4342,8 @@
       "recipeNotApproved": "This recipe version has not been approved by a second person — it cannot be deployed, released or rolled back to.",
       "recipeArchived": "This recipe version is archived — create a new version instead of putting an archived one into production.",
       "recipeMachineTypeMismatch": "This recipe is for a different machine type than the target machine — it cannot be deployed there.",
-      "recipeRetired": "This version was deliberately archived (not just replaced by a newer one), or there is no record of it ever being replaced — it cannot be rolled back to. Create a new version instead."
+      "recipeRetired": "This version was deliberately archived (not just replaced by a newer one), or there is no record of it ever being replaced — it cannot be rolled back to. Create a new version instead.",
+      "buildNotInProject": "This build does not belong to the open project — pick a build of this project and try again. Nothing was deployed."
     },
     "stopPinReason": {
       "no_pins": "No stop tag is pinned for this machine — use the hardware E-STOP.",
@@ -6761,8 +6785,6 @@
     "irEditorDesc": "Author motion/IO device programs as first-class IR blocks, lint & transpile (URScript/ROS2); deploy stays a separate gated step",
     "pouStudio": "POU Studio",
     "pouStudioDesc": "Structured LAD/FBD/SFC POUs with PLCopen XML import/export, semantic lint, and transpile-to-ST preview (open runtime only)",
-    "programmingCopilot": "Programming Copilot",
-    "programmingCopilotDesc": "Scratchpad for quick codegen when no project is open — inside the editors (Engineering/IR/POU) the copilot is embedded as a dock. Grounded in vendor manuals, validated by the safety substrate; display-only.",
     "factoryLiveMap": "Factory 3D Live Map",
     "factoryLiveMapDesc": "3D factory floor, machines coloured by live status (digital shadow), click to drill down to a cell",
     "fieldDevices": "Field & Device Abstraction",
@@ -7131,7 +7153,6 @@
       "orchestrationStudio": "Design step-by-step automated production flows across machines (preview)",
       "irEditor": "Visual editor to author and convert device programs — for engineers (preview)",
       "pouStudio": "Structured IEC 61131 ladder/FBD/SFC editing with PLCopen XML exchange — for engineers (preview)",
-      "programmingCopilot": "Ask AI to write or explain device code — for engineers; you review and simulate before use (preview)",
       "fleetOrchestration": "Assign jobs to mobile robots/AGVs and manage their traffic and charging (preview)",
       "safetyWorkforce": "Advisory safety overview and shift/workforce board (preview)",
       "equipmentStandards": "Company-wide equipment types and standard alarm naming (preview)",
@@ -7176,8 +7197,6 @@
     "maintenanceHubDesc": "One place for maintenance: work orders · CMMS/reliability · copilot",
     "cmms": "Maintenance (CMMS)",
     "cmmsDesc": "Preventive maintenance schedule · spare parts & reliability (MTTR/MTBF)",
-    "engineeringStudio": "Engineering studio",
-    "engineeringStudioDesc": "Authoring · orchestration · safety · standardisation — one catalog",
     "engineeringChanges": "Engineering change (ECN)",
     "engineeringChangesDesc": "Engineering change request: request → impact analysis → approval (SoD) → effectivity; + componentCode backfill",
     "reportingStudio": "Reporting studio",
@@ -11757,10 +11776,7 @@
     "deploy": "💾 Save (deploy)",
     "run": "▶️ Run",
     "foeOff": "FOE is off (FOE_ENABLED) — you can still author & simulate, but deploy/run are disabled.",
-    "ref": "Workflow ref *",
-    "name": "Name *",
     "namePlaceholder": "Line A startup",
-    "version": "Version",
     "canvas": "Step tree",
     "emptyCanvas": "No steps yet. Add the first step below.",
     "inspector": "Step configuration",
@@ -11807,13 +11823,11 @@
     "load": "Load",
     "loaded": "Loaded workflow into the editor",
     "viewOnCellTwin": "View on Cell Twin",
-    "runs": "Recent runs",
     "noRuns": "No runs yet.",
     "searchWorkflows": "Search by name or ref…",
     "noWorkflowMatch": "No workflows match the filter",
     "allStatuses": "All statuses",
     "noRunMatch": "No runs match the filter",
-    "awaitingApproval": "Awaiting approval",
     "otherRuns": "Other runs",
     "noSteps": "No steps recorded yet.",
     "approve": "Approve",
@@ -11854,10 +11868,6 @@
     "rollback": "Rollback",
     "rollbackDone": "Rolled back — a new version was created from the old one",
     "rollbackFail": "Rollback failed",
-    "compareVersions": "Compare versions",
-    "diffBase": "Base",
-    "diffCompare": "Compare",
-    "diffPick": "Pick two versions to compare.",
     "rollbackTitle": "Roll back to this version?",
     "rollbackConfirm": "This re-deploys version v{{version}}s definition as a NEW version (append-only; history is preserved). Flag-gated by FOE_ENABLED.",
     "graphCanvas": "Workflow diagram",
@@ -11915,7 +11925,29 @@
     "continueRunConfirm": "Continue run",
     "rollbackImpact": "Requires an OTP code and a reason; the reason is recorded in the audit log.",
     "runFail": "Could not start the run",
-    "runNotDeployed": "This workflow is currently \"{{status}}\" — Deploy it first, then run it."
+    "runNotDeployed": "This workflow is currently \"{{status}}\" — Deploy it first, then run it.",
+    "libraryPanel": "Steps & library",
+    "bottomPanel": "Runs · Approvals · Problems",
+    "runsTab": "Runs",
+    "awaitingTab": "Awaiting approval",
+    "problemsTab": "Problems",
+    "editName": "Workflow name *",
+    "editRef": "Workflow ref *",
+    "untitled": "Untitled workflow",
+    "noRef": "no ref yet",
+    "versionNumber": "Version number",
+    "canvasArea": "Canvas",
+    "noAwaiting": "No runs are awaiting approval.",
+    "noSim": "No simulation result yet — press Simulate to check the workflow on the digital twin.",
+    "foeOffChip": "FOE is off",
+    "simGateChipOk": "Sim-gate: PASSED",
+    "simGateChipNeed": "Sim-gate: simulation needed",
+    "aiSheetDesc": "AI only PROPOSES and simulates — you review it on the canvas, then Save (deploy) and Run yourself.",
+    "clickToEdit": "Click to edit",
+    "refreshWorkflows": "Reload saved workflows",
+    "refreshRuns": "Reload runs",
+    "runStatusFilter": "Filter by status",
+    "wfNotLoaded": "Workflow #{{id}} is not in the loaded list."
   },
   "aiHub": {
     "subtitle": "AI-powered features for inspection intelligence",
@@ -12272,20 +12304,9 @@
     }
   },
   "progCopilot": {
-    "title": "Programming Copilot",
-    "subtitle": "AI drafts, completes, translates, reviews and explains device code — grounded in vendor manuals and validated by the safety substrate. You review, simulate and sign off.",
-    "whenToUse": "Draft or understand device code fast. To build, simulate and deploy, take the code into the Engineering Workspace.",
-    "cardTitle": "Generate device code",
-    "cardSubtitle": "Pick a program kind, mode and (optionally) a vendor, describe what you need, then generate.",
-    "embedTitle": "AI Programming Copilot",
-    "beta": "Beta",
-    "openDock": "Open Copilot",
-    "dockHint": "Generate / complete / translate / review code — opens in the right rail, already bound to this editor's buffer and diagnostics.",
     "dock": {
       "title": "Programming Copilot",
-      "tab": "Copilot",
       "open": "Open Programming Copilot",
-      "advisory": "Advisory",
       "diagnostics": "Editor diagnostics",
       "explain": "Explain errors",
       "fix": "Suggest a fix",
@@ -13499,11 +13520,6 @@
     "status": "Status",
     "checksum": "Checksum",
     "actions": "Actions",
-    "versionsOf": "Versions of {{code}}",
-    "selectCode": "Select a recipe code",
-    "selectCodeHint": "Pick a recipe code on the left to view versions.",
-    "byMachineTitle": "By machine",
-    "byMachineLabel": "Pick a machine to see its running recipe",
     "selectMachine": "Select a machine",
     "noMachines": "No machines yet",
     "activeRecipe": "Running recipe",
@@ -13542,12 +13558,6 @@
     "toastRolledBack": "Rolled back",
     "toastArchived": "Archived",
     "viewPayload": "View",
-    "compareVersions": "Compare versions",
-    "diffBase": "Base",
-    "diffCompare": "Compare to",
-    "diffPick": "Pick two versions to see the difference",
-    "payloadTitle": "Payload",
-    "payloadReadonly": "Parameter set of this version (read-only).",
     "golden": "Golden",
     "goldenHint": "Golden/master version — the baseline parameter set compared against on deploy/diff.",
     "setGolden": "Mark as Golden",
@@ -13566,7 +13576,39 @@
       "archive": "Archive",
       "rollback": "Rollback",
       "load": "Load/Deploy"
-    }
+    },
+    "hitlChip": "Push to machine via HITL",
+    "codeCount": "{{count}} codes",
+    "filterPendingChip": "Only codes needing attention",
+    "detailLabel": "Recipe details",
+    "detailTabs": "Recipe detail sections",
+    "emptyDetailHint": "Pick a recipe code in the list on the left to see its parameters, versions, approval and deployment.",
+    "searchMachine": "Search machines…",
+    "versionNotFound": "Version #{{id}} was not found in the selected code.",
+    "alreadyApproved": "This version is already approved.",
+    "rollbackFailed": "Rollback on machine #{{machineId}} could not be done",
+    "dismiss": "Dismiss",
+    "noRunningMachines": "No machine is running this code.",
+    "runningMachinesNote": "Based on the {{count}} most recent deployments in the ledger.",
+    "tab": {
+      "params": "Parameters",
+      "versions": "Versions",
+      "approval": "Approval",
+      "deploy": "Deploy",
+      "machines": "Running on"
+    },
+    "params": {
+      "version": "Version shown",
+      "key": "Parameter",
+      "value": "Value",
+      "type": "Type",
+      "empty": "Empty payload.",
+      "rawJson": "Raw JSON",
+      "noVersions": "This code has no versions yet."
+    },
+    "allCodes": "All codes",
+    "allCodesHint": "Clear the code selection — show the deployment ledger of every machine",
+    "deployFailed": "Deploying to {{machine}} could not be done"
   },
   "confirmWithReason": {
     "defaultConfirmText": "CONFIRM",
@@ -13705,8 +13747,6 @@
     "editRule": "Edit rule",
     "ruleDialogDesc": "A new rule is always DISABLED + UNAPPROVED until an admin approves and enables it.",
     "editApprovedWarning": "This rule is APPROVED or currently ENABLED — Saving will disable it and it will need approval again.",
-    "tabRules": "Rules",
-    "tabEvents": "Events",
     "rules": "Rules",
     "name": "Name",
     "description": "Description",
@@ -13783,7 +13823,7 @@
     "toastDisabled": "Rule disabled",
     "toastResolved": "Event resolved",
     "newEventToast": "Interlock triggered",
-    "newEventDesc": "A new interlock event fired — open the Events tab to review.",
+    "newEventDesc": "A new interlock event fired — review it in the Events panel below.",
     "delete": "Delete",
     "deleteConfirmTitle": "Delete interlock rule?",
     "disableConfirmTitle": "Disable rule \"{{name}}\"?",
@@ -13793,7 +13833,35 @@
     "deleteImpact": "The rule definition and its automatic protection layer disappear from the system.",
     "resolveConfirmTitle": "Mark this event as resolved?",
     "resolveConfirmDescription": "The event moves to Resolved and no longer shows under the \"Open\" tab.",
-    "resolveImpact": "The reason is saved as the event's note and written to the audit log."
+    "resolveImpact": "The reason is saved as the event's note and written to the audit log.",
+    "view": {
+      "list": "List",
+      "matrix": "Cause×Effect matrix"
+    },
+    "filterPendingChip": "Unapproved rules only",
+    "ruleCount": "{{count}} rules",
+    "ruleNotFound": "Rule #{{id}} not found.",
+    "eventsForRule": "Rule: {{name}}",
+    "clearRuleFilter": "Clear rule filter",
+    "selectRuleHint": "Select a rule to see only its events",
+    "posture": {
+      "engine": "Engine",
+      "ot": "OT writes",
+      "coverage": "Coverage",
+      "ariaLabel": "Interlock safety posture",
+      "source": "oversight.posture — the server gates' own flags",
+      "coverageSource": "oversight.posture — rules enabled, approved, blocking and targeted",
+      "writesOnEngineOffChip": "Real writes with engine OFF"
+    },
+    "matrix": {
+      "corner": "Cause ↓ · Effect →",
+      "targetMachine": "machine #{{id}}",
+      "targetAdapter": "adapter #{{id}}",
+      "noTarget": "no target"
+    },
+    "openEventsPanel": "Open Events panel",
+    "eventsButton": "Events",
+    "unresolvedCount": "{{count}} open"
   },
   "quickIssue": {
     "button": "Report issue",
@@ -15696,7 +15764,6 @@
     "gtBuild": "Build",
     "gtSim": "Simulate",
     "gtDeploy": "Deploy",
-    "gtMonitor": "Monitor",
     "emptyTitle": "Start here",
     "emptyDesc": "No projects yet. Create a DEMO project — it comes with a valid sample program — then hit Validate and Simulate right away. Completely safe: no command is sent to any device.",
     "step1": "Create the demo project",
@@ -15717,22 +15784,18 @@
     "build": "Build",
     "buildOk": "Build OK",
     "deployBtn": "Deploy build",
-    "deployFlag": "Deploy",
     "deployOn": "ON",
     "deployOff": "OFF",
     "deployChecking": "…",
     "deployUnknown": "?",
     "deployStatusError": "Could not check deploy status — treating every deploy as simulated until this is confirmed.",
-    "modeCode": "Code",
     "modeLadder": "Ladder",
     "modeTeach": "Teach/Jog",
     "timeline": "Timeline",
     "address": "Address",
     "buildFail": "Build failed",
-    "builds": "Builds & Simulation",
     "code": "Code",
     "dataType": "Type",
-    "deploy": "Deploy (controlled)",
     "deployOffBanner": "Real deploy is OFF — every deploy is simulated only and is not written to the device. Safety (E-stop/interlock) always resides on the certified PLC.",
     "deployReal": "Deployed",
     "deployVerified": "Deployed & verified (read-back matches)",
@@ -15746,7 +15809,6 @@
     "unsaved": "Unsaved",
     "kind": "Device type",
     "language": "Language",
-    "manualHelp": "Manual",
     "lines": "lines",
     "name": "Name",
     "newProject": "New project",
@@ -15812,7 +15874,6 @@
     "simulated": "Simulated",
     "stage": "Stage",
     "steps": "steps",
-    "subtitle": "Compose → validate → build → simulate → (sign-off) deploy for PLC / Robot / Zmotion",
     "symbolName": "Name",
     "symbols": "Symbol / tag table",
     "title": "Device Programming Workspace",
@@ -15835,7 +15896,6 @@
     "approvalInboxHint": "This will be submitted for APPROVAL — a second person signs in the Approvals inbox",
     "requestDeployBtn": "Send deploy request",
     "sodHintInbox": "Production deploys are submitted for APPROVAL: someone OTHER than you signs with their own session (separation of duties).",
-    "fleetTitle": "Fleet rollout (canary)",
     "fleetHint": "Push the selected build to several machines SEQUENTIALLY through the same deploy path (all safety gates stay in force). Canary the first N machines; on failure it HALTS and (optionally) rolls back the machines already written.",
     "fleetNeedBuild": "Select a build in the \"Builds & Simulation\" block first to roll it out to the fleet.",
     "fleetTargets": "Target machines",
@@ -16011,14 +16071,91 @@
       "stNoAssignment": "No assignment (:=) found.",
       "stNestedComment": "Nested comment '{{open}}' inside a comment — nested comments are not supported by the target compiler (it closes the comment at the first '{{close}}').",
       "stEdgeNotInput": "{{edge}} is only allowed on a VAR_INPUT declaration (found in {{section}})."
+    },
+    "ws": {
+      "activityProjects": "Projects",
+      "activityVersions": "Versions",
+      "activityTags": "Tags / IO",
+      "activityDeploy": "Deploy",
+      "explorerLabel": "Project explorer",
+      "sourceTab": "Source v{{version}}",
+      "sourceTabNew": "Source (not saved)",
+      "diffTab": "Δ Diff",
+      "tagsTab": "Tags",
+      "inspectorLabel": "Properties / Copilot",
+      "propsTab": "Properties",
+      "copilotTab": "Copilot",
+      "bottomLabel": "Problems · Build · Deploy",
+      "problemsTab": "Problems",
+      "buildsTab": "Build / Simulation",
+      "deploysTab": "Deploy history",
+      "lnCol": "Ln {{line}}, Col {{col}}",
+      "realDeploy": "Real deploy",
+      "problemsStatus": "Problems: {{count}}",
+      "noDiagYet": "The selected version has not been validated yet — press Validate.",
+      "noBuildSel": "No build selected — pick one in the bottom panel (Build / Simulation).",
+      "noVersionSel": "no version selected",
+      "pickProjectFirst": "Pick a project under Projects.",
+      "projectVersion": "Open project / version",
+      "openTagsTab": "Open the tag table",
+      "fleetSelected": "Fleet machines selected: {{list}}",
+      "fleetNone": "No fleet (canary) machines selected.",
+      "stepDone": "done",
+      "stepTodo": "pending",
+      "deployOpen": "Deploy…",
+      "deployOpenHint": "Open the deploy wizard (4 steps, with canary)",
+      "wizardTitle": "Deploy build",
+      "wizardDesc": "Choose the target, sign off, preview — the OTP is asked after the last step.",
+      "stepBuild": "Build",
+      "stepTarget": "Target & canary",
+      "stepSignoff": "Sign-off",
+      "stepPreview": "Preview & confirm",
+      "buildSummary": "Build #{{id}} · {{status}}",
+      "buildOfVersion": "Version v{{version}} of {{project}}",
+      "changeBuildHint": "Change the build in the bottom panel (Build / Simulation).",
+      "modeLabel": "Deploy mode",
+      "modeSingle": "Single machine (project device)",
+      "modeFleet": "Fleet (canary)",
+      "singleTarget": "Target: {{device}}",
+      "noDevice": "the project has no device attached — see the preview in the last step",
+      "fleetSummary": "{{count}} machines · canary {{canary}} · {{stage}}",
+      "fleetNotReady": "Not ready for a fleet rollout: select at least one machine (Target & canary); production needs an approver and a reason (Sign-off).",
+      "prodNotReady": "Production needs an approver (unless it goes through the Approval Inbox) and a reason — fill them in at Sign-off.",
+      "otpNote": "Pressing the final button asks for the two-step OTP (when enabled) before anything is sent; safety gates and reasons are unchanged.",
+      "buildChanged": "The selected build changed (from #{{pinned}} to #{{current}}) after the wizard opened — close and reopen the wizard to preview the build that will be deployed.",
+      "scratchNote": "Scratch mode: no project is open — generated code is for review and copy only. Open a project to insert it into the editor."
     }
   },
   "engineeringHome": {
-    "needControl": "Requires control access",
     "viewOnly": "View only",
     "title": "Engineering Hub",
-    "subtitle": "Pick a task — author programs, orchestrate the fleet, enforce safety & standards, or run the twin.",
-    "goldenThread": "Golden thread: author → simulate → deploy → monitor. Programs authored here flow into the pipeline, run in the twin, then surface on the monitoring pages."
+    "goldenThread": "Golden thread: author → simulate → deploy → monitor. Programs authored here flow into the pipeline, run in the twin, then surface on the monitoring pages.",
+    "inboxTab": "Work inbox",
+    "catalogTab": "Tool catalog",
+    "scopeLabel": "Inbox scope",
+    "scopeApprovals": "Awaiting approval",
+    "scopeApprovalsHint": "Items awaiting approval / confirmation on screens you can open",
+    "scopeAll": "Whole module",
+    "scopeAllHint": "Every pending item and alert in the module (incl. safety events, interlock events, fleet deadlocks)",
+    "sideLabel": "Safety posture and tools",
+    "goldenThreadChip": "Golden thread",
+    "postureChip": "Safety posture",
+    "postureOk": "Normal",
+    "postureWarn": "Warning",
+    "postureSource": "oversight.posture — server-side flags, read-only",
+    "tools": {
+      "title": "Tools",
+      "pinned": "Pinned",
+      "recent": "Recent",
+      "none": "No pinned tools yet — press ☆ in the catalog to pin one.",
+      "all": "All tools",
+      "pin": "Pin {{name}}",
+      "unpin": "Unpin {{name}}",
+      "copilotScratch": "Copilot (scratch, no project needed)",
+      "commandConsole": "Command console (HITL)"
+    },
+    "criticalChip": "Urgent",
+    "criticalSource": "oversight.pendingSummary — running recipe unapproved, open interlock events, unaudited safety events, fleet deadlocks"
   },
   "oversight": {
     "title": "Pending review & alerts",
@@ -16049,11 +16186,16 @@
       "ruleCoverage": "Rules enabled with a target: {{count}}",
       "coverageUnavailable": "Rule coverage unavailable",
       "writesOnEngineOffWarning": "Real device writes are ON while the interlock engine is OFF — violations will not be auto-blocked."
-    }
+    },
+    "table": {
+      "kind": "Work item",
+      "count": "Count",
+      "samples": "Waiting"
+    },
+    "noAccess": "(you don't have access to this page)"
   },
   "eqIntegration": {
     "acq": {
-      "title": "Acquisition workers",
       "desc": "Grab → quality metrics → optional NTF submit through the same canonical ingest path. File/mock sources are real today; GenICam stays a stub until a camera driver is bound.",
       "flagOff": "Live acquisition is disabled (LIVE_ACQUISITION_ENABLED is off). Status stays readable; starting a worker will be refused until the flag is enabled.",
       "noPermission": "Viewing acquisition workers requires the machine-alerts view permission.",
@@ -16092,7 +16234,9 @@
       "maxFrames": "Max frames (0 = until stopped)",
       "interval": "Interval (ms)",
       "submitFrames": "Submit each frame as a canonical NTF inspection (requires machine code)",
-      "assessQuality": "Run image-quality metrics per frame"
+      "assessQuality": "Run image-quality metrics per frame",
+      "liveOffChip": "Live acquisition off",
+      "aboutChip": "About sources"
     },
     "whenToUse": "When to use — browse vendor integration frameworks (FOCAS/Euromap) and recipe version genealogy. Read-only metadata, no live device.",
     "recipeStatus": {
@@ -16112,7 +16256,6 @@
       "cache": "Cache",
       "none": "None"
     },
-    "adaptersTitle": "Wired adapter protocols",
     "alsoDeploy": "Also write a recipe_deployments ledger row",
     "archive": "Archive",
     "archiveTip": "Archive this version",
@@ -16120,13 +16263,11 @@
     "byMachine": "Machine",
     "col": {
       "action": "Action",
-      "code": "Code",
       "machine": "Machine",
       "name": "Name",
       "notes": "Notes",
       "recipe": "Code @ version",
       "status": "Status",
-      "version": "Version",
       "when": "When",
       "who": "Performed by"
     },
@@ -16135,22 +16276,17 @@
     "createRequired": "Code and name are required.",
     "createTitle": "New recipe version (draft)",
     "createVersion": "New version",
-    "checking": "Checking…",
-    "unknown": "Unknown",
     "flagOffBanner": "Preview mode: equipment integration is disabled. Reads work; actions (create / release / archive / rollback version, record load) are blocked until it is enabled.",
     "flagOffToast": "Equipment integration is disabled (preview). Set EQ_INTEG_ENABLED=true to act.",
     "flagStatusError": "Could not check whether equipment integration is enabled — actions are disabled until this is confirmed.",
     "frameworkNoDevice": "Framework — no device connected",
-    "frameworkNote": "The cards below are integration FRAMEWORKS. They model the read-only fields a real FOCAS/Euromap connector would map into the Unified Equipment Model, but live data requires a connected device/connector. Until then values stay \"—\" and the snapshot source is \"none\".",
+    "frameworkNote": "This is an integration FRAMEWORK. It models the read-only fields a real FOCAS/Euromap connector would map into the Unified Equipment Model, but live data requires a connected device/connector. Until then values stay \"—\" and the snapshot source is \"none\".",
     "historyEmpty": "No genealogy events.",
     "historyMode": "Filter by",
-    "historyPickTitle": "Genealogy source",
-    "historyTitle": "Recipe genealogy (append-only)",
     "kpi": {
-      "adapters": "Adapters wired",
-      "configured": "Connected devices",
-      "flag": "Flag",
-      "frameworks": "Frameworks"
+      "adapters": "Registered adapters",
+      "configured": "Frameworks connected",
+      "flag": "Flag"
     },
     "loadHistory": "Load history",
     "loading": "Loading…",
@@ -16174,7 +16310,6 @@
     "payloadInvalid": "Payload is not valid JSON.",
     "payloadObject": "Payload must be a JSON object.",
     "pickHint": "Enter a recipe code above to list its immutable versions and genealogy actions.",
-    "pickRecipeTitle": "Recipe code",
     "readOnly": "read-only",
     "readSnapshot": "Read snapshot",
     "recipeCode": "Recipe code",
@@ -16196,7 +16331,7 @@
       "acquisition": "Acquisition workers",
       "history": "Load history",
       "recipes": "Recipe versions",
-      "status": "Integration status"
+      "status": "Connector catalog"
     },
     "title": "Equipment Integration",
     "uem": {
@@ -16209,17 +16344,39 @@
     "versionCreated": "Recipe version created (draft)",
     "versionReleased": "Version released",
     "versionRolledBack": "Released contract rolled back",
-    "versionsEmpty": "No versions for this code.",
     "versionsTitle": "Versions of {{code}}",
-    "versionsTitlePlain": "Recipe versions",
-    "viewOnly": "View only"
+    "viewOnly": "View only",
+    "safetyChip": "Read-only",
+    "versionNotFound": "Version #{{id}} is not in the loaded recipe code.",
+    "openInRecipes": "Open in Recipes",
+    "openInRecipesHint": "Recipe catalog, approval and deployment live on the Recipes page",
+    "recipesElsewhere": "Recipe approval and deployment to machines live on the Recipes page.",
+    "chip": {
+      "srcAdapters": "Server adapter registry (integrationStatus.adapters) — registered, not connected",
+      "srcConnected": "Frameworks with a real connector/device (integrationStatus.frameworks[].configured)",
+      "srcFlag": "Server feature flag (equipmentIntegration.status)"
+    },
+    "catalog": {
+      "count": "{{count}} connectors",
+      "listLabel": "Connector catalog",
+      "detailLabel": "Connector details",
+      "colConnector": "Connector",
+      "colType": "Type",
+      "typeFramework": "Framework",
+      "typeAdapter": "Adapter protocol",
+      "registered": "Registered",
+      "delegatesTo": "Delegates to",
+      "adapterHonesty": "This protocol is REGISTERED in the server's adapter registry — registration does not mean a device is connected.",
+      "pickHint": "Pick a connector to see its details.",
+      "loadError": "Could not read the integration status."
+    },
+    "createDesc": "Immutable draft version — genealogy metadata only; nothing is pushed to a device."
   },
   "eqStandards": {
     "whenToUse": "When to use — govern device-type standards, the ISA-18.2 alarm taxonomy and the review board. Governance metadata only, no device commands.",
     "alarmRequired": "Vendor, native code and standard code are required.",
     "alarmSaved": "Alarm mapping saved",
     "alarmsEmpty": "No alarm mappings.",
-    "alarmTableTitle": "Alarm mappings",
     "allMapped": "Every machine type maps to a published device type.",
     "allStatuses": "All statuses",
     "allVendors": "All vendors",
@@ -16230,19 +16387,14 @@
     "col": {
       "action": "Recommended action",
       "alarmKey": "Alarm key",
-      "conformance": "Conformance",
       "consequence": "Consequence",
-      "crKey": "CR key",
-      "kind": "Kind",
       "native": "Native code",
       "priority": "Priority",
       "setpoint": "Setpoint / deadband",
       "severity": "Severity",
       "shelve": "Shelved / suppressed",
-      "stage": "Stage",
       "standard": "Standard code",
       "status": "Status",
-      "target": "Target type",
       "ttr": "Time-to-respond",
       "vendor": "Vendor"
     },
@@ -16409,7 +16561,36 @@
       "no_bound_machines": "No machine is bound to a device type yet (machines.device_type_key is empty everywhere).",
       "no_conformance_subjects": "No published device type maps a machine type, so conformance had nothing to check."
     },
-    "shelvedNotEnforced": "Shelved (not yet effective)"
+    "shelvedNotEnforced": "Shelved (not yet effective)",
+    "safetyChip": "Metadata only",
+    "failingTypesChip": "{{count}} failing conformance",
+    "normalize": "Normalize alarm",
+    "lookupDesc": "Look up how a vendor's native alarm code maps to the ISA-18.2 standard code.",
+    "alarmsError": "Could not load the alarm mappings.",
+    "expand": "Expand",
+    "collapse": "Collapse",
+    "windowLabel": "Time window",
+    "masterNotFound": "Master alarm #{{id}} was not found.",
+    "deleteMaster": "Delete master alarm",
+    "chip": {
+      "srcMapped": "equipmentStandards.complianceMetrics — machines whose device_type_key points to a published device type",
+      "srcConformance": "equipmentStandards.complianceMetrics — published device types in the database passing the standard rule set",
+      "srcPendingCrs": "equipmentStandards.complianceMetrics — change requests pending or in review",
+      "srcAlarmVendors": "equipmentStandards.complianceMetrics — distinct vendors in the alarm taxonomy (seed + database)",
+      "srcTypes": "equipmentStandards.hierarchyTree — distinct device type keys (seed + database)",
+      "srcAlarmTotal": "alarmKpi.summary — Andon + AI alerts in the window (same source as /alarm-kpi and Control Tower)",
+      "srcAlarmRate": "alarmKpi.summary — alarms per operator per hour; operators counted on the server",
+      "srcFlood": "alarmKpi.summary — 10-minute windows above the flood threshold",
+      "srcStanding": "alarmKpi.summary — alarms standing longer than the threshold",
+      "srcPeak": "alarmKpi.summary — most alarms in one 10-minute window",
+      "srcOperators": "alarmKpi.summary — active operators counted on the server"
+    },
+    "alarmSearch": "Search alarms…",
+    "alarmSearchLabel": "Search alarms (vendor, code, action) across all pages",
+    "registerDesc": "Adds a draft device type under a parent in the hierarchy; it becomes usable after review.",
+    "upsertAlarmDesc": "Maps a vendor's native alarm code to an ISA-18.2 standard code and severity.",
+    "masterDesc": "A master alarm records the rationalized priority, consequence and response for one alarm (EEMUA-191).",
+    "submitCrDesc": "Proposes a change to a device type; it goes through review and conformance before publishing."
   },
   "field": {
     "batteryNull": "No battery telemetry (AGV battery flows from VDA5050; null when no driver reports it).",
@@ -16490,7 +16671,7 @@
     "allocateNoDevice": "No eligible device for this task",
     "allocateTip": "Run the allocator (assign best device)",
     "newDeadlockToast": "New deadlock detected",
-    "newDeadlockDesc": "A robot dependency cycle just formed — review the Tasks & Zones tab.",
+    "newDeadlockDesc": "A robot dependency cycle just formed — review the deadlock block in the side panel.",
     "assign": "Assign",
     "assigned": "Task reassigned",
     "cancel": "Cancel",
@@ -16556,7 +16737,8 @@
       "offline": "Offline",
       "estop": "E-stop",
       "blocked": "Blocked cell",
-      "locatedRobots": "Located robots"
+      "locatedRobots": "Located robots",
+      "zoneOpen": "Zone {{code}} — {{occupancy}}/{{max}} robots; open in the Zones tab"
     },
     "noPermission": "You do not have permission to view fleet orchestration.",
     "occupancy": "Occupancy",
@@ -16590,7 +16772,9 @@
       "resolve": "Resolve",
       "resolveTitle": "Resolve operation",
       "skills": "Skills",
-      "toolType": "Tool type"
+      "toolType": "Tool type",
+      "opNotLoaded": "Operation #{{id}} is not in the loaded list.",
+      "registryDesc": "Operation codes, the programs qualified for each, and the operation → program mapping."
     },
     "opCreated": "Operation created",
     "openRobotCockpit": "Open robot cockpit",
@@ -16639,7 +16823,8 @@
       "title": "Shared resources",
       "type": "Type",
       "unowned": "unowned",
-      "zoneId": "Home zone id (optional)"
+      "zoneId": "Home zone id (optional)",
+      "notLoaded": "Resource #{{id}} is not in the loaded list."
     },
     "reserve": "Reserve",
     "reserved": "Reservation active",
@@ -16673,10 +16858,9 @@
     "sweepDone": "Charging sweep complete",
     "tab": {
       "charging": "Charging",
-      "map": "Map",
-      "operations": "Operations",
       "resources": "Resources",
-      "tasks": "Tasks & Zones"
+      "tasks": "Tasks",
+      "zones": "Zones"
     },
     "task": {
       "assigned": "Assigned",
@@ -16697,7 +16881,31 @@
       "human_shared": "Human-shared",
       "production": "Production",
       "transit": "Transit"
-    }
+    },
+    "flag": {
+      "resource": "Resource layer"
+    },
+    "safetyChip": "Orchestration state only",
+    "side": {
+      "label": "Tasks, zones, charging and resources"
+    },
+    "chip": {
+      "stripLabel": "Fleet indicators",
+      "src": {
+        "deadlocks": "fleet.deadlocks — robot wait-for cycles detected now (advisory)",
+        "failed": "fleet.listTasks — tasks with status 'failed' in the loaded list (latest 200, status filter applies)",
+        "atCapacity": "fleet.listZones — zones whose occupancy has reached max concurrent robots",
+        "pending": "fleet.listTasks — tasks with status 'pending' in the loaded list (latest 200, status filter applies)",
+        "running": "fleet.listTasks — tasks with status 'running' in the loaded list (latest 200, status filter applies)",
+        "assigned": "fleet.listTasks — tasks with status 'assigned' in the loaded list (latest 200, status filter applies)",
+        "activeRes": "fleet.listReservations — zone reservations with status 'active' (latest 500)",
+        "resourcesInUse": "fleet.listResources — shared resources with at least one active claim",
+        "charging": "fleet.listChargingPlans — charging plans 'active' or 'planned' (latest 200)"
+      }
+    },
+    "taskNotFound": "Task #{{id}} is not in the loaded list.",
+    "taskTerminal": "Task #{{id}} is finished — it cannot be reassigned.",
+    "zoneNotFound": "Zone #{{id}} is not in the loaded list."
   },
   "ir": {
     "whenToUse": "When to use — low-level motion & I/O blocks (IR). For the full build/deploy pipeline use the Engineering Workspace; for IEC 61131 LAD/FBD/SFC use POU Studio.",
@@ -16710,10 +16918,9 @@
     "canvas": {
       "title": "Flow canvas",
       "fb": "Function block",
-      "editingFb": "Editing POU body",
       "backToMain": "Main flow"
     },
-    "deployReminder": "Save appends a validated ir-flow artifact; Request build (below, per saved flow) transpiles it. Deploy to a real device is a separate gated step (existing programming service, HITL 2-eyes) — not exposed here.",
+    "deployReminder": "Save appends a validated ir-flow artifact; Request build (in the Explorer's Saved IR flows, per saved flow) transpiles it. Deploy to a real device is a separate gated step (existing programming service, HITL 2-eyes) — not exposed here.",
     "emptyCanvas": "No blocks yet. Add one from the palette on the left.",
     "errorsShort": "error(s)",
     "field": {
@@ -16806,7 +17013,6 @@
       "false": "If false",
       "true": "If true"
     },
-    "subtitle": "Author motion/IO device programs as first-class IR blocks, lint & transpile — a structural preview, not a physics run.",
     "sum": {
       "count": "count",
       "releaseAny": "release tool",
@@ -16825,9 +17031,6 @@
     "unparseable": "unparseable",
     "version": "Version",
     "warnsShort": "warning(s)",
-    "compare": {
-      "title": "Compare & merge"
-    },
     "merge": {
       "actDelete": "delete the block",
       "actKeep": "keep (modified)",
@@ -16858,7 +17061,6 @@
       "saved": "Merged flow saved (validated)",
       "savedInvalid": "Merged flow saved, but the linter flagged issues — see diagnostics.",
       "stats": "{{auto}} auto-merged · {{added}} added · {{deleted}} deleted",
-      "subtitle": "3-way merge a base (ancestor) with ours + theirs; resolve each conflict by picking a side, then save the merged flow as a new version.",
       "tab": "Merge (3-way)",
       "theirs": "Theirs",
       "tookOurs": "took ours",
@@ -16948,8 +17150,15 @@
       "dropIntoSlot": "Drop a block here to add to this branch"
     },
     "diff": {
-      "title": "Version diff",
-      "subtitle": "Compare two saved versions (or a version vs the current draft) — added / removed / modified / moved blocks, annotated on the tree."
+      "title": "Version diff"
+    },
+    "ws": {
+      "flowMeta": "Flow properties",
+      "fbName": "Function block name",
+      "inspectorLabel": "Inspector / Transpile / Copilot",
+      "previewChip": "Preview — no deploy",
+      "activityFb": "Function blocks",
+      "explorerLabel": "IR explorer"
     }
   },
   "rfcell": {
@@ -17171,12 +17380,6 @@
       "pending": "Pending"
     },
     "ingest": "Ingest (advisory)",
-    "kpi": {
-      "activeAssignments": "Active assignments",
-      "activeCollabs": "Active collaborations",
-      "nearMissesToday": "Near-misses today",
-      "openEvents": "Open safety events (unaudited)"
-    },
     "liveEmpty": "Waiting for live safety:event broadcasts… (advisory only)",
     "liveTitle": "Live advisory ticker",
     "loading": "Loading…",
@@ -17197,7 +17400,7 @@
     "stationIdOpt": "Station id (optional)",
     "subtitle": "Advisory safety monitoring, mixed-workforce assignments and human↔robot handover coordination.",
     "tab": {
-      "cockpit": "Safety cockpit",
+      "cockpit": "Events",
       "collaboration": "Collaboration",
       "workforce": "Workforce board"
     },
@@ -17245,8 +17448,55 @@
       "socket": "Socket",
       "socketServerDown": "○ server socket down",
       "socketConnected": "● connected",
-      "socketDisconnected": "○ disconnected"
-    }
+      "socketDisconnected": "○ disconnected",
+      "chip": {
+        "label": "Safety sources",
+        "hint": "Show safety source details in the side panel",
+        "loading": "Checking",
+        "error": "Could not read",
+        "real": "Real PLC",
+        "mixed": "Real PLC + SIM",
+        "sim": "SIM only",
+        "realUnmapped": "No tag mapped",
+        "adapterOff": "Off",
+        "noConfig": "Not configured",
+        "readError": "Config read error",
+        "unguarded": "{{target}}: preflight off",
+        "blocked": "{{target}}: blocked",
+        "estopNotRated": "E-stop not safety-rated",
+        "ot": "OT",
+        "robot": "Robot",
+        "socketDown": "Live: server down",
+        "socketLost": "Live feed lost",
+        "socketConnecting": "Live connecting"
+      }
+    },
+    "advisoryChip": "Advisory — not a SIS",
+    "flag": {
+      "safetyAudit": "Safety audit",
+      "workforce": "Workforce"
+    },
+    "chip": {
+      "openEvents": "Unaudited",
+      "nearMissToday": "Near-misses today",
+      "activeAssignments": "Active assignments",
+      "activeCollabs": "Active collaborations",
+      "src": {
+        "openEvents": "safety.feed — events without an audit stamp among the latest 200 (type filter applies)",
+        "nearMiss": "safety.nearMissTrend — today's (UTC) near-miss count in the 30-day trend",
+        "assignments": "safety.listAssignments — assignments with status 'Active' in the loaded list (status filter applies)",
+        "collabs": "safety.listCollaborations — sessions not finished (phase not 'done' and no end time)"
+      }
+    },
+    "liveChip": "Live",
+    "side": {
+      "label": "Safety sources, trend and collaboration",
+      "trend": "Trend",
+      "collabCount": "{{count}} active session(s)",
+      "collabCountError": "Could not read collaboration sessions"
+    },
+    "reportProximityShort": "Report proximity",
+    "testOnly": "Test only"
   },
   "sessionSignoff": {
     "shift": "Shift",
@@ -17709,7 +17959,9 @@
     "station": "Station",
     "stationId": "Station id (optional)",
     "taskId": "Task id (optional)",
-    "unassignedStation": "Unassigned"
+    "unassignedStation": "Unassigned",
+    "assignmentNotFound": "Assignment #{{id}} is not in the loaded list.",
+    "assignmentTerminal": "Assignment #{{id}} is finished — it cannot be reassigned."
   },
   "vramBroker": {
     "baselineUnverified": "baseline NOT verified",
@@ -17983,7 +18235,6 @@
     "canvasBadJson": "Fix the JSON (switch to the JSON view) before the canvas can render.",
     "copied": "PLCopen XML copied",
     "copyFail": "Copy failed",
-    "editor": "POU editor",
     "export": "Export model → XML",
     "field": {
       "actions": "Actions",
@@ -18041,7 +18292,6 @@
       "var": "variable"
     },
     "stBody": "This POU uses a textual ST body — edit it in the JSON view.",
-    "subtitle": "Author structured LAD/FBD/SFC POUs, lint them, exchange PLCopen TC6 XML, and preview the transpile to Structured Text — a preview, not a device write.",
     "title": "IEC 61131 POU Studio",
     "transpile": "Transpile → ST",
     "transpileNote": "Each graphical body is lowered under a (* [IEC LD|FBD|SFC #id] *) provenance marker so the ST and the source read side-by-side.",
@@ -18077,7 +18327,25 @@
     "saveHint": "The saved draft still passes through the gated pipeline: build → HITL sign-off → gated deploy. Nothing is deployed by saving here.",
     "createAndSave": "Create project & save",
     "saveVersion": "Save version",
-    "savedVersion": "Saved as draft v{{v}} — build & deploy in Engineering."
+    "savedVersion": "Saved as draft v{{v}} — build & deploy in Engineering.",
+    "ws": {
+      "opened": "Opened v{{v}} in the editor",
+      "openProjects": "POU projects",
+      "openVersions": "Versions (pou-json)",
+      "noVersions": "This project has no pou-json versions yet.",
+      "open": "Open",
+      "otherLang": "{{n}} version(s) in another language — open them in the Engineering Workspace.",
+      "samples": "Samples",
+      "inspectorLabel": "ST / PLCopen / Copilot",
+      "noProblems": "No lint diagnostics.",
+      "previewChip": "Preview — no deploy",
+      "problemsStatus": "Problems: {{count}}",
+      "activityOpen": "Open",
+      "explorerLabel": "POU explorer",
+      "problemsTab": "Problems",
+      "hideRight": "Hide right panel",
+      "showRight": "Show right panel"
+    }
   },
   "systemHealth": {
     "title": "System Health",
@@ -19319,10 +19587,6 @@
     "layout": "Floor layout",
     "layoutBlurb": "Factory floor layout"
   },
-  "engineeringStudio": {
-    "title": "Engineering Studio",
-    "categories": "Engineering categories"
-  },
   "maintenanceHub": {
     "title": "Maintenance",
     "categories": "Maintenance categories"
@@ -19687,31 +19951,6 @@
     "aiSettings": "AI settings",
     "aiSettingsBlurb": "Model server + gateway configuration",
     "robotModelHealth": "Robot model health"
-  },
-  "engHub": {
-    "authoring": "Authoring & IDE",
-    "engineering": "Device programming studio",
-    "engineeringBlurb": "Write & compile device programs",
-    "irEditor": "IR editor",
-    "pouStudioBlurb": "Author POU / IEC 61131",
-    "programmingCopilotBlurb": "AI assistance for PLC/robot programming",
-    "recipes": "Machine recipes",
-    "recipesBlurb": "Machine run recipes",
-    "engineeringChanges": "Engineering change (ECN)",
-    "orchestration": "Orchestration & Control",
-    "orchestrationStudioBlurb": "Author / simulate / deploy orchestration",
-    "fleetOrchestration": "Fleet orchestration",
-    "fleetOrchestrationBlurb": "Task and zone allocation for the fleet",
-    "robotControl": "Robot control",
-    "commandConsoleBlurb": "Single robot commands via HITL",
-    "safety": "Safety",
-    "interlockRules": "Interlock rules",
-    "interlockRulesBlurb": "Manage interlock rules",
-    "safetyWorkforce": "Safety & Workforce",
-    "safetyWorkforceBlurb": "Safety board + mixed workforce",
-    "standards": "Standardisation & Integration",
-    "equipmentStandards": "Equipment standards",
-    "equipmentIntegration": "Equipment integration"
   },
   "maintHub": {
     "work": "Work & Reliability",
@@ -21351,6 +21590,138 @@
       "live": "sent",
       "unconfirmed": "unconfirmed — may have reached the device",
       "rejected": "not sent"
+    }
+  },
+  "layoutKit": {
+    "notice": {
+      "kind": {
+        "hint": "Hint",
+        "flagOff": "Turned off",
+        "honesty": "Data note",
+        "simGate": "Simulation only",
+        "beta": "Beta",
+        "whenToUse": "When to use",
+        "loading": "Checking",
+        "error": "Status unknown"
+      },
+      "more": "+{{count}}",
+      "moreLabel": "Show {{count}} more notes",
+      "stackLabel": "Page notes",
+      "flagLoading": "Checking feature status…"
+    },
+    "chip": {
+      "stripLabel": "Indicators",
+      "loading": "Loading",
+      "error": "Error",
+      "errorHint": "The source could not be read — no number is shown.",
+      "degradedHint": "The source is only partly readable — the number may be incomplete.",
+      "source": "Source: {{source}}",
+      "moreLabel": "Show {{count}} more indicators"
+    },
+    "flyout": {
+      "unsavedTitle": "Discard unsaved changes?",
+      "unsavedDesc": "This form has unsaved data. Closing it will lose those changes.",
+      "keepEditing": "Keep editing",
+      "discard": "Discard changes"
+    },
+    "wizard": {
+      "back": "Back",
+      "next": "Next",
+      "finish": "Finish",
+      "stepOf": "Step {{current}} of {{total}}",
+      "stepsLabel": "Steps",
+      "status": {
+        "complete": "done",
+        "current": "current",
+        "upcoming": "upcoming",
+        "error": "has errors"
+      }
+    },
+    "versions": {
+      "loading": "Loading versions…",
+      "error": "Could not load the version history.",
+      "empty": "No versions yet.",
+      "colVersion": "Version",
+      "colCreated": "Created",
+      "colAuthor": "Author",
+      "colNote": "Note",
+      "colBase": "Base",
+      "colCompare": "Compare",
+      "colActions": "Actions",
+      "current": "current",
+      "pickBase": "Use {{version}} as the base",
+      "pickCompare": "Compare with {{version}}",
+      "pickTwo": "Pick two versions to see the differences.",
+      "sameVersion": "The same version is selected in both columns."
+    },
+    "diff": {
+      "label": "Differences between {{base}} and {{compare}}"
+    },
+    "rollback": {
+      "action": "Roll back",
+      "title": "Roll back to {{version}}?",
+      "impactOtp": "Requires a reason and a fresh OTP code for this action; the reason is recorded in the audit log.",
+      "impactNoOtp": "Requires a reason; the reason is recorded in the audit log."
+    },
+    "approval": {
+      "label": "Approval queue",
+      "empty": "Nothing is waiting for a decision.",
+      "loading": "Loading the queue…",
+      "error": "Could not load the approval queue.",
+      "colItem": "Item",
+      "colAuthor": "Author",
+      "colStatus": "Status",
+      "colActions": "Decision",
+      "sodAuthor": "You created this item — someone else must decide (maker-checker).",
+      "sodReviewer": "You reviewed this item — the approver must be someone else.",
+      "userUnknown": "The current user is not known yet — decisions are disabled.",
+      "reasonLabel": "Reason (required)",
+      "commentLabel": "Comment (optional)",
+      "reasonRequired": "A reason is required.",
+      "reasonTooShort": "The reason needs at least {{min}} characters.",
+      "cancel": "Cancel"
+    },
+    "shell": {
+      "activityBar": "Activity bar",
+      "explorer": "Explorer",
+      "inspector": "Inspector",
+      "bottomPanel": "Bottom panel",
+      "toggleBottom": "Toggle the bottom panel",
+      "editor": "Editor",
+      "editorTabs": "Editor tabs",
+      "closeTab": "Close tab {{label}}",
+      "unsavedTab": "unsaved",
+      "statusBar": "Status bar",
+      "narrowLabel": "Workspace areas",
+      "resizeLeft": "Resize the left panel",
+      "resizeRight": "Resize the right panel",
+      "resizeBottom": "Resize the bottom panel"
+    },
+    "split": {
+      "list": "List",
+      "detail": "Details",
+      "back": "Back to the list",
+      "resize": "Resize the list"
+    },
+    "cockpit": {
+      "side": "Side panel"
+    },
+    "detail": {
+      "tabs": "Detail sections"
+    }
+  },
+  "shell": {
+    "notice": {
+      "permExpiry": "Access expiring",
+      "licenseWarning": "License expiring",
+      "licenseReadonly": "License: read-only",
+      "licenseLocked": "License locked",
+      "licenseMissing": "No license",
+      "licenseDetails": "License details",
+      "licenseServerDown": "License: server offline"
+    },
+    "nav": {
+      "simpleFallback": "The simple menu has no items here — showing the full menu."
     }
   }
 }

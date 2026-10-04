@@ -2,13 +2,13 @@
  * doc 41 (2026-07-11) — PROGRAMMING COPILOT context.
  *
  * Turns the Programming Copilot into a persistent EXTENSION (the "Claude-in-VS-Code" model)
- * instead of a standalone destination. A single <ProgrammingCopilotDock/> is mounted ONCE at
- * app root and reads this context; each programming surface (Engineering Workspace / IR Editor
- * / POU Studio) merely PUBLISHES a binding via useCopilotBinding(...). When no surface has
- * published a binding, the dock renders nothing — so the assistant appears only where code is
- * authored, and follows the active editor automatically.
+ * instead of a standalone destination. Each programming surface (Engineering Workspace / IR Editor
+ * / POU Studio) PUBLISHES a binding via useCopilotBinding(...) and renders the Copilot INSIDE its own
+ * layout (doc 81 Đợt 2 Task 13/14, R-2-b: inspector phải, lõi dùng chung `ProgrammingCopilotCore`). The top-bar AI
+ * button (`ShellAiButton`) reads the binding to switch into Copilot mode and toggles `open` (= the Copilot tab).
+ * The former app-root fixed dock (`ProgrammingCopilotDock`) was removed in Task 14.
  *
- * Open/closed state is persisted (localStorage) so the rail feels persistent across navigation.
+ * Open/closed state is persisted (localStorage) so the panel feels persistent across navigation.
  */
 import {
   createContext,
@@ -50,25 +50,33 @@ export interface CopilotBinding {
   onApplyText?: (text: string) => void;
   /** Short host name shown in the header (e.g. "IR Editor"). */
   surfaceLabel?: string;
+  /**
+   * doc 81 Đợt 2 Task 15 — CHẾ ĐỘ SCRATCH của IDE (trang `/programming-copilot` cũ): chưa mở dự án nào ⇒ không có
+   * buffer chủ (không `onApply`, không "Đồng bộ từ editor"); kết quả chỉ để xem/sao chép như trang cũ.
+   */
+  scratch?: boolean;
 }
 
 interface ProgrammingCopilotContextValue {
   open: boolean;
   setOpen: (v: boolean) => void;
-  openDock: () => void;
-  closeDock: () => void;
   binding: CopilotBinding | null;
   setBinding: (b: CopilotBinding | null) => void;
   clearBinding: () => void;
 }
 
 const Ctx = createContext<ProgrammingCopilotContextValue | null>(null);
-const STORAGE_KEY = "progCopilotDock.open";
+// final wave M-3 — khoá đổi tên theo đúng thứ nó nhớ (tab Copilot trong layout, không còn "dock"); khoá cũ chỉ còn
+// được ĐỌC một lần để người dùng không mất lựa chọn đã lưu.
+const STORAGE_KEY = "progCopilot.open";
+const LEGACY_STORAGE_KEY = "progCopilotDock.open";
 
 export function ProgrammingCopilotProvider({ children }: { children: ReactNode }) {
   const [open, setOpenState] = useState<boolean>(() => {
     try {
-      return typeof window !== "undefined" && window.localStorage.getItem(STORAGE_KEY) === "1";
+      if (typeof window === "undefined") return false;
+      const v = window.localStorage.getItem(STORAGE_KEY) ?? window.localStorage.getItem(LEGACY_STORAGE_KEY);
+      return v === "1";
     } catch {
       return false;
     }
@@ -79,18 +87,17 @@ export function ProgrammingCopilotProvider({ children }: { children: ReactNode }
     setOpenState(v);
     try {
       window.localStorage.setItem(STORAGE_KEY, v ? "1" : "0");
+      window.localStorage.removeItem(LEGACY_STORAGE_KEY);
     } catch {
       /* ignore */
     }
   }, []);
-  const openDock = useCallback(() => setOpen(true), [setOpen]);
-  const closeDock = useCallback(() => setOpen(false), [setOpen]);
   const setBinding = useCallback((b: CopilotBinding | null) => setBindingState(b), []);
   const clearBinding = useCallback(() => setBindingState(null), []);
 
   const value = useMemo<ProgrammingCopilotContextValue>(
-    () => ({ open, setOpen, openDock, closeDock, binding, setBinding, clearBinding }),
-    [open, setOpen, openDock, closeDock, binding, setBinding, clearBinding],
+    () => ({ open, setOpen, binding, setBinding, clearBinding }),
+    [open, setOpen, binding, setBinding, clearBinding],
   );
 
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;
@@ -103,7 +110,7 @@ export function useProgrammingCopilot(): ProgrammingCopilotContextValue {
 }
 
 /**
- * Publish this surface's binding to the dock; auto-clears on unmount. Pass a factory + deps
+ * Publish this surface's binding (top-bar AI button + the host's in-layout Copilot); auto-clears on unmount. Pass a factory + deps
  * (like useMemo) so the binding — including its onApply closure — is rebuilt only when the
  * relevant editor state changes, avoiding render loops.
  */

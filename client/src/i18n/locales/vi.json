@@ -658,17 +658,30 @@
     "titleRequired": "Bắt buộc nhập tiêu đề",
     "noProduct": "Không / không riêng sản phẩm",
     "empty": "Chưa có thay đổi kỹ thuật nào.",
-    "rejectReason": "Lý do từ chối:",
-    "rejectReasonRequired": "Bắt buộc nhập lý do từ chối",
-    "rejectTitle": "Từ chối thay đổi kỹ thuật",
     "rejectPrompt": "Nêu rõ lý do từ chối {{key}}. Lý do được ghi vào nhật ký quyết định.",
-    "rejectPlaceholder": "VD: Thiếu phân tích tác động; cần đánh giá lại rủi ro…",
-    "approveTitle": "Phê duyệt thay đổi kỹ thuật",
     "approvePrompt": "Xác nhận phê duyệt {{key}}. Có thể thêm ý kiến (không bắt buộc) — ý kiến được ghi vào nhật ký quyết định.",
-    "approveComment": "Ý kiến (tùy chọn):",
-    "approvePlaceholder": "VD: Đã kiểm tra tài liệu đính kèm, đạt yêu cầu…",
     "emptyFiltered": "Không có thay đổi nào khớp bộ lọc.",
     "userFallback": "Người dùng #{{id}}",
+    "aboutChip": "Quy trình ECN",
+    "filterPendingChip": "Chỉ ECN chờ duyệt",
+    "listLabel": "Danh sách ECN",
+    "tab": {
+      "overview": "Tổng quan",
+      "objects": "Đối tượng",
+      "approval": "Duyệt",
+      "tasks": "Nhiệm vụ",
+      "history": "Lịch sử"
+    },
+    "item": {
+      "entity": "Đối tượng",
+      "action": "Thao tác",
+      "description": "Mô tả"
+    },
+    "itemAction": {
+      "add": "Thêm",
+      "modify": "Sửa",
+      "remove": "Gỡ"
+    },
     "field": {
       "title": "Tiêu đề",
       "type": "Loại thay đổi",
@@ -736,11 +749,17 @@
       "requestedBy": "Người yêu cầu",
       "reviewedBy": "Người xem xét",
       "approvedBy": "Người duyệt",
-      "implementedBy": "Người triển khai",
-      "closedBy": "Người đóng",
       "decisionComment": "Ghi chú quyết định",
-      "timeline": "Dòng thời gian",
-      "noTimeline": "Chưa có mốc thời gian."
+      "noTimeline": "Chưa có mốc thời gian.",
+      "flyoutTitle": "Chi tiết thay đổi kỹ thuật",
+      "notFound": "Không tìm thấy ECN #{{id}}.",
+      "target": "Đối tượng đích",
+      "noTarget": "Chưa ghi đối tượng đích.",
+      "items": "Đối tượng chi tiết",
+      "noItems": "Chưa có đối tượng chi tiết nào.",
+      "approvalHelp": "Người yêu cầu không được tự xem xét hay phê duyệt; người đã xem xét không được đồng thời phê duyệt.",
+      "tasksHelp": "Sau khi phê duyệt: đánh dấu triển khai khi thay đổi đã được áp dụng, rồi đóng ECN.",
+      "notYet": "Chưa"
     },
     "backfill": {
       "title": "Bổ sung componentCode từ BOM",
@@ -755,7 +774,10 @@
       "updated": "Đã cập nhật",
       "skipped": "Đã liên kết",
       "unmatched": "Chưa khớp",
-      "dryRunTag": "(dry-run — chưa ghi gì)"
+      "dryRunTag": "(dry-run — chưa ghi gì)",
+      "done": "Đã bổ sung — khớp {{matched}}, đã cập nhật {{updated}}",
+      "doneDryRun": "Xem trước (dry-run) — khớp {{matched}}, sẽ cập nhật {{updated}}",
+      "unavailable": "Chức năng bổ sung hiện không khả dụng"
     }
   },
   "related": {
@@ -4079,7 +4101,8 @@
       "endpoint": "địa chỉ endpoint",
       "reviewReason": "lý do từ chối",
       "gatewayId": "gateway",
-      "deviceIds": "danh sách thiết bị được phép"
+      "deviceIds": "danh sách thiết bị được phép",
+      "expectedProjectId": "dự án đang mở (expectedProjectId)"
     },
     "feature": {
       "webIngest": "nạp nội dung từ web",
@@ -4311,7 +4334,8 @@
       "recipeNotApproved": "Phiên bản công thức này chưa được người thứ hai duyệt — không thể triển khai/phát hành/quay lui về nó.",
       "recipeArchived": "Phiên bản công thức này đã lưu trữ — hãy tạo phiên bản mới thay vì đưa bản đã lưu trữ vào chạy.",
       "recipeMachineTypeMismatch": "Công thức này dành cho loại máy khác với máy đích — không thể triển khai lên máy này.",
-      "recipeRetired": "Phiên bản này đã bị CỐ Ý lưu trữ (không phải chỉ bị thay bằng bản mới), hoặc không có dấu vết từng bị thay — không thể quay lui về nó. Hãy tạo phiên bản mới."
+      "recipeRetired": "Phiên bản này đã bị CỐ Ý lưu trữ (không phải chỉ bị thay bằng bản mới), hoặc không có dấu vết từng bị thay — không thể quay lui về nó. Hãy tạo phiên bản mới.",
+      "buildNotInProject": "Build này không thuộc dự án đang mở — chọn lại một build của chính dự án này rồi thử lại. Không có gì được triển khai."
     },
     "stopPinReason": {
       "no_pins": "Máy chưa ghim tag DỪNG nào — dùng E-STOP phần cứng.",
@@ -6741,8 +6765,6 @@
     "irEditorDesc": "Soạn chương trình chuyển động/IO thành các khối IR, kiểm tra an toàn & chuyển mã (URScript/ROS2); việc deploy vẫn là bước riêng có kiểm soát",
     "pouStudio": "Studio POU",
     "pouStudioDesc": "POU LAD/FBD/SFC có cấu trúc, xuất/nhập PLCopen XML, kiểm tra ngữ nghĩa và xem trước chuyển mã sang ST (chỉ chạy trên runtime mở)",
-    "programmingCopilot": "Trợ lý Lập trình",
-    "programmingCopilotDesc": "Scratchpad sinh code nhanh khi chưa mở project — trong editor (Xưởng lập trình/IR/POU) copilot đã nhúng sẵn dạng dock. Bám tài liệu hãng, kiểm tra qua lớp an toàn; chỉ hiển thị.",
     "factoryLiveMap": "Bản đồ nhà máy 3D",
     "factoryLiveMapDesc": "Sàn nhà máy 3D, máy tô màu theo trạng thái live (digital shadow), bấm drill-down xuống cụm",
     "fieldDevices": "Trừu tượng hoá thiết bị hiện trường",
@@ -7111,7 +7133,6 @@
       "orchestrationStudio": "Thiết kế luồng sản xuất tự động từng bước qua nhiều máy (xem trước)",
       "irEditor": "Trình soạn thảo trực quan để viết và chuyển đổi chương trình thiết bị — cho kỹ sư (xem trước)",
       "pouStudio": "Soạn thảo LAD/FBD/SFC IEC 61131 có cấu trúc, trao đổi PLCopen XML — cho kỹ sư (xem trước)",
-      "programmingCopilot": "Nhờ AI viết hoặc giải thích mã thiết bị — cho kỹ sư; bạn rà soát và mô phỏng trước khi dùng (xem trước)",
       "fleetOrchestration": "Giao việc cho robot/AGV di động và quản lý luồng di chuyển, sạc pin (xem trước)",
       "safetyWorkforce": "Tổng quan an toàn tư vấn và bảng phân ca/nhân lực (xem trước)",
       "equipmentStandards": "Chuẩn loại thiết bị toàn công ty và cách đặt tên cảnh báo chuẩn (xem trước)",
@@ -7156,8 +7177,6 @@
     "maintenanceHubDesc": "Một cửa cho bảo trì: lệnh công việc · CMMS/độ tin cậy · copilot",
     "cmms": "Bảo trì (CMMS)",
     "cmmsDesc": "Lịch bảo trì phòng ngừa · phụ tùng & độ tin cậy (MTTR/MTBF)",
-    "engineeringStudio": "Xưởng kỹ thuật",
-    "engineeringStudioDesc": "Soạn thảo · điều phối · an toàn · chuẩn hoá — một danh mục",
     "engineeringChanges": "Thay đổi kỹ thuật (ECN)",
     "engineeringChangesDesc": "Phiếu thay đổi kỹ thuật: yêu cầu → phân tích tác động → duyệt (SoD) → hiệu lực; + backfill componentCode",
     "reportingStudio": "Xưởng báo cáo",
@@ -11737,10 +11756,7 @@
     "deploy": "💾 Lưu (deploy)",
     "run": "▶️ Chạy",
     "foeOff": "FOE chưa bật (FOE_ENABLED) — vẫn soạn & mô phỏng được, nhưng deploy/chạy bị tắt.",
-    "ref": "Mã quy trình (ref) *",
-    "name": "Tên *",
     "namePlaceholder": "Khởi động dây chuyền A",
-    "version": "Phiên bản",
     "canvas": "Cây quy trình",
     "emptyCanvas": "Chưa có bước nào. Thêm bước đầu tiên bên dưới.",
     "inspector": "Cấu hình bước",
@@ -11787,13 +11803,11 @@
     "load": "Nạp",
     "loaded": "Đã nạp quy trình vào trình soạn",
     "viewOnCellTwin": "Xem trên Cell Twin",
-    "runs": "Lần chạy gần đây",
     "noRuns": "Chưa có lần chạy nào.",
     "searchWorkflows": "Tìm theo tên hoặc mã…",
     "noWorkflowMatch": "Không có quy trình khớp bộ lọc",
     "allStatuses": "Tất cả trạng thái",
     "noRunMatch": "Không có lần chạy khớp bộ lọc",
-    "awaitingApproval": "Đang chờ duyệt",
     "otherRuns": "Lần chạy khác",
     "noSteps": "Chưa có bước nào được ghi nhận.",
     "approve": "Duyệt",
@@ -11834,10 +11848,6 @@
     "rollback": "Khôi phục",
     "rollbackDone": "Đã khôi phục — tạo phiên bản mới từ bản cũ",
     "rollbackFail": "Khôi phục thất bại",
-    "compareVersions": "So sánh phiên bản",
-    "diffBase": "Bản gốc",
-    "diffCompare": "So với",
-    "diffPick": "Chọn 2 phiên bản để so sánh.",
     "rollbackTitle": "Khôi phục về phiên bản này?",
     "rollbackConfirm": "Sẽ deploy lại định nghĩa của phiên bản v{{version}} thành một phiên bản MỚI (chỉ thêm; giữ nguyên lịch sử). Bị chặn bởi cờ FOE_ENABLED.",
     "graphCanvas": "Sơ đồ quy trình",
@@ -11895,7 +11905,29 @@
     "continueRunConfirm": "Tiếp tục chạy",
     "rollbackImpact": "Cần mã OTP và lý do; lý do được ghi vào nhật ký kiểm toán.",
     "runFail": "Không bắt đầu được lượt chạy",
-    "runNotDeployed": "Đây là workflow ở dạng \"{{status}}\" — hãy Triển khai (Deploy) trước, rồi mới chạy được."
+    "runNotDeployed": "Đây là workflow ở dạng \"{{status}}\" — hãy Triển khai (Deploy) trước, rồi mới chạy được.",
+    "libraryPanel": "Bước & thư viện",
+    "bottomPanel": "Lần chạy · Duyệt · Vấn đề",
+    "runsTab": "Lần chạy",
+    "awaitingTab": "Chờ duyệt",
+    "problemsTab": "Vấn đề",
+    "editName": "Tên quy trình *",
+    "editRef": "Mã quy trình (ref) *",
+    "untitled": "Quy trình chưa đặt tên",
+    "noRef": "chưa có mã (ref)",
+    "versionNumber": "Số phiên bản",
+    "canvasArea": "Canvas",
+    "noAwaiting": "Không có lần chạy nào đang chờ duyệt.",
+    "noSim": "Chưa có kết quả mô phỏng — bấm Mô phỏng để kiểm tra quy trình trên bản sao số.",
+    "foeOffChip": "FOE đang tắt",
+    "simGateChipOk": "Sim-gate: đã ĐẠT",
+    "simGateChipNeed": "Sim-gate: cần mô phỏng",
+    "aiSheetDesc": "AI chỉ ĐỀ XUẤT và mô phỏng — bạn xem lại trên canvas rồi tự Lưu (deploy) và Chạy.",
+    "clickToEdit": "Bấm để sửa",
+    "refreshWorkflows": "Tải lại danh sách quy trình",
+    "refreshRuns": "Tải lại lần chạy",
+    "runStatusFilter": "Lọc theo trạng thái",
+    "wfNotLoaded": "Không tìm thấy quy trình #{{id}} trong danh sách đã tải."
   },
   "aiHub": {
     "subtitle": "Các tính năng AI cho trí tuệ kiểm tra",
@@ -12252,20 +12284,9 @@
     }
   },
   "progCopilot": {
-    "title": "Trợ lý Lập trình",
-    "subtitle": "AI soạn, hoàn thiện, dịch, rà soát và giải thích mã thiết bị — bám tài liệu hãng và được kiểm tra qua lớp an toàn. Bạn duyệt, mô phỏng và ký xác nhận.",
-    "whenToUse": "Soạn hoặc hiểu nhanh mã thiết bị. Để build, mô phỏng và deploy, hãy đưa mã vào Xưởng lập trình thiết bị.",
-    "cardTitle": "Sinh mã thiết bị",
-    "cardSubtitle": "Chọn loại chương trình, chế độ và (tùy chọn) hãng, mô tả yêu cầu rồi sinh mã.",
-    "embedTitle": "Trợ lý Lập trình AI",
-    "beta": "Beta",
-    "openDock": "Mở Trợ lý",
-    "dockHint": "Trợ lý sinh/hoàn thiện/dịch/rà soát mã — mở ở thanh bên phải, đã gắn sẵn buffer & lỗi của editor này.",
     "dock": {
       "title": "Trợ lý Lập trình",
-      "tab": "Copilot",
       "open": "Mở Trợ lý Lập trình",
-      "advisory": "Cố vấn",
       "diagnostics": "Chẩn đoán từ editor",
       "explain": "Giải thích lỗi",
       "fix": "Đề xuất sửa",
@@ -13479,11 +13500,6 @@
     "status": "Trạng thái",
     "checksum": "Checksum",
     "actions": "Thao tác",
-    "versionsOf": "Phiên bản của {{code}}",
-    "selectCode": "Chọn một mã recipe",
-    "selectCodeHint": "Chọn một mã recipe ở bảng bên trái để xem phiên bản.",
-    "byMachineTitle": "Xem theo máy",
-    "byMachineLabel": "Chọn máy để xem recipe đang chạy",
     "selectMachine": "Chọn máy",
     "noMachines": "Chưa có máy nào",
     "activeRecipe": "Recipe đang chạy",
@@ -13522,12 +13538,6 @@
     "toastRolledBack": "Đã rollback",
     "toastArchived": "Đã lưu trữ",
     "viewPayload": "Xem",
-    "compareVersions": "So sánh phiên bản",
-    "diffBase": "Bản gốc",
-    "diffCompare": "So với",
-    "diffPick": "Chọn 2 phiên bản để xem khác biệt",
-    "payloadTitle": "Payload",
-    "payloadReadonly": "Nội dung tham số của phiên bản (chỉ đọc).",
     "golden": "Golden",
     "goldenHint": "Phiên bản Golden/master — bộ tham số baseline để đối chiếu khi triển khai/so sánh.",
     "setGolden": "Đánh dấu Golden",
@@ -13546,7 +13556,39 @@
       "archive": "Lưu trữ",
       "rollback": "Rollback",
       "load": "Nạp/Triển khai"
-    }
+    },
+    "hitlChip": "Đẩy xuống máy qua HITL",
+    "codeCount": "{{count}} mã",
+    "filterPendingChip": "Chỉ mã cần chú ý",
+    "detailLabel": "Chi tiết recipe",
+    "detailTabs": "Mục chi tiết recipe",
+    "emptyDetailHint": "Chọn một mã recipe ở danh sách bên trái để xem tham số, phiên bản, duyệt và triển khai.",
+    "searchMachine": "Tìm máy…",
+    "versionNotFound": "Không tìm thấy phiên bản #{{id}} trong mã đang chọn.",
+    "alreadyApproved": "Phiên bản này đã được duyệt.",
+    "rollbackFailed": "Rollback máy #{{machineId}} không thực hiện được",
+    "dismiss": "Đóng",
+    "noRunningMachines": "Chưa có máy nào đang chạy mã này.",
+    "runningMachinesNote": "Theo {{count}} lần triển khai gần nhất trong sổ.",
+    "tab": {
+      "params": "Tham số",
+      "versions": "Phiên bản",
+      "approval": "Duyệt",
+      "deploy": "Triển khai",
+      "machines": "Máy đang chạy"
+    },
+    "params": {
+      "version": "Phiên bản đang xem",
+      "key": "Tham số",
+      "value": "Giá trị",
+      "type": "Kiểu",
+      "empty": "Payload trống.",
+      "rawJson": "JSON gốc",
+      "noVersions": "Mã này chưa có phiên bản."
+    },
+    "allCodes": "Tất cả mã",
+    "allCodesHint": "Bỏ chọn mã — xem sổ triển khai của mọi máy",
+    "deployFailed": "Triển khai lên {{machine}} không thực hiện được"
   },
   "confirmWithReason": {
     "defaultConfirmText": "XÁC NHẬN",
@@ -13685,8 +13727,6 @@
     "editRule": "Sửa quy tắc",
     "ruleDialogDesc": "Quy tắc mới luôn ở trạng thái TẮT + CHƯA DUYỆT cho tới khi admin duyệt và bật.",
     "editApprovedWarning": "Rule này đã DUYỆT hoặc đang BẬT — Lưu sẽ tắt rule và cần duyệt lại.",
-    "tabRules": "Quy tắc",
-    "tabEvents": "Sự kiện",
     "rules": "Quy tắc",
     "name": "Tên",
     "description": "Mô tả",
@@ -13763,7 +13803,7 @@
     "toastDisabled": "Đã tắt quy tắc",
     "toastResolved": "Đã giải quyết sự kiện",
     "newEventToast": "Interlock vừa kích hoạt",
-    "newEventDesc": "Có sự kiện interlock mới vừa phát sinh — mở tab Sự kiện để xem xét.",
+    "newEventDesc": "Có sự kiện interlock mới vừa phát sinh — xem panel Sự kiện bên dưới.",
     "delete": "Xóa",
     "deleteConfirmTitle": "Xóa quy tắc interlock?",
     "disableConfirmTitle": "Tắt rule \"{{name}}\"?",
@@ -13773,7 +13813,35 @@
     "deleteImpact": "Định nghĩa rule và lớp bảo vệ tự động tương ứng biến mất khỏi hệ thống.",
     "resolveConfirmTitle": "Đánh dấu đã xử lý sự kiện này?",
     "resolveConfirmDescription": "Sự kiện sẽ chuyển sang trạng thái Đã xử lý và không còn hiện ở tab \"Chưa xử lý\".",
-    "resolveImpact": "Lý do sẽ được lưu làm ghi chú của sự kiện và ghi vào sổ audit."
+    "resolveImpact": "Lý do sẽ được lưu làm ghi chú của sự kiện và ghi vào sổ audit.",
+    "view": {
+      "list": "Danh sách",
+      "matrix": "Ma trận Cause×Effect"
+    },
+    "filterPendingChip": "Chỉ quy tắc chưa duyệt",
+    "ruleCount": "{{count}} quy tắc",
+    "ruleNotFound": "Không tìm thấy quy tắc #{{id}}.",
+    "eventsForRule": "Quy tắc: {{name}}",
+    "clearRuleFilter": "Bỏ lọc theo quy tắc",
+    "selectRuleHint": "Chọn một quy tắc để chỉ xem sự kiện của nó",
+    "posture": {
+      "engine": "Engine",
+      "ot": "OT ghi",
+      "coverage": "Độ phủ",
+      "ariaLabel": "Tư thế an toàn interlock",
+      "source": "oversight.posture — cờ của chính các cổng trên server",
+      "coverageSource": "oversight.posture — số rule đang bật, đã duyệt, chặn được và có đích",
+      "writesOnEngineOffChip": "Ghi thật khi engine TẮT"
+    },
+    "matrix": {
+      "corner": "Nguyên nhân ↓ · Hệ quả →",
+      "targetMachine": "máy #{{id}}",
+      "targetAdapter": "adapter #{{id}}",
+      "noTarget": "không đích"
+    },
+    "openEventsPanel": "Mở panel Sự kiện",
+    "eventsButton": "Sự kiện",
+    "unresolvedCount": "{{count}} chưa xử lý"
   },
   "quickIssue": {
     "button": "Báo sự cố",
@@ -15676,7 +15744,6 @@
     "gtBuild": "Build",
     "gtSim": "Mô phỏng",
     "gtDeploy": "Deploy",
-    "gtMonitor": "Giám sát",
     "emptyTitle": "Bắt đầu tại đây",
     "emptyDesc": "Chưa có dự án nào. Tạo một dự án DEMO có sẵn chương trình mẫu để làm quen — rồi bấm Kiểm tra và Mô phỏng ngay. An toàn tuyệt đối: không phát lệnh xuống thiết bị.",
     "step1": "Tạo dự án demo",
@@ -15697,22 +15764,18 @@
     "build": "Build",
     "buildOk": "Build OK",
     "deployBtn": "Triển khai build",
-    "deployFlag": "Triển khai",
     "deployOn": "BẬT",
     "deployOff": "TẮT",
     "deployChecking": "…",
     "deployUnknown": "?",
     "deployStatusError": "Không kiểm tra được trạng thái triển khai — tạm coi mọi deploy chỉ mô phỏng cho tới khi xác nhận lại.",
-    "modeCode": "Code",
     "modeLadder": "Ladder",
     "modeTeach": "Dạy/Jog",
     "timeline": "Dòng thời gian",
     "address": "Địa chỉ",
     "buildFail": "Build lỗi",
-    "builds": "Builds & Mô phỏng",
     "code": "Mã",
     "dataType": "Kiểu",
-    "deploy": "Deploy (có kiểm soát)",
     "deployOffBanner": "Triển khai thật đang tắt — mọi deploy chỉ mô phỏng, không ghi xuống thiết bị. An toàn (E-stop/interlock) luôn nằm trên PLC chứng nhận.",
     "deployReal": "Đã deploy",
     "deployVerified": "Đã deploy & xác minh (read-back khớp)",
@@ -15726,7 +15789,6 @@
     "unsaved": "Chưa lưu",
     "kind": "Loại thiết bị",
     "language": "Ngôn ngữ",
-    "manualHelp": "Sổ tay",
     "lines": "dòng",
     "name": "Tên",
     "newProject": "Dự án mới",
@@ -15792,7 +15854,6 @@
     "simulated": "Mô phỏng",
     "stage": "Giai đoạn",
     "steps": "bước",
-    "subtitle": "Soạn → kiểm tra → build → mô phỏng → (sign-off) deploy cho PLC / Robot / Zmotion",
     "symbolName": "Tên",
     "symbols": "Bảng biến / tag",
     "title": "Xưởng lập trình thiết bị",
@@ -15815,7 +15876,6 @@
     "approvalInboxHint": "Sẽ gửi CHỜ DUYỆT — người thứ hai ký ở Hộp duyệt",
     "requestDeployBtn": "Gửi yêu cầu deploy",
     "sodHintInbox": "Deploy production được gửi CHỜ DUYỆT: một người KHÁC bạn sẽ ký bằng session của họ (phân tách nhiệm vụ).",
-    "fleetTitle": "Triển khai đội máy (canary)",
     "fleetHint": "Đẩy build đang chọn ra nhiều máy TUẦN TỰ qua đúng đường deploy (giữ nguyên mọi cổng an toàn). Canary N máy đầu; nếu không đạt sẽ DỪNG và (tùy chọn) tự khôi phục các máy đã ghi.",
     "fleetNeedBuild": "Chọn một build ở khối \"Builds & Mô phỏng\" trước để triển khai ra đội máy.",
     "fleetTargets": "Máy đích",
@@ -15991,14 +16051,91 @@
       "stNoAssignment": "Không có lệnh gán (:=) nào.",
       "stNestedComment": "Chú thích lồng '{{open}}' bên trong một chú thích — trình biên dịch đích không hỗ trợ chú thích lồng nhau (nó đóng chú thích ở '{{close}}' đầu tiên).",
       "stEdgeNotInput": "{{edge}} chỉ được dùng trong khai báo VAR_INPUT (đang ở {{section}})."
+    },
+    "ws": {
+      "activityProjects": "Dự án",
+      "activityVersions": "Phiên bản",
+      "activityTags": "Tags / IO",
+      "activityDeploy": "Deploy",
+      "explorerLabel": "Trình duyệt dự án",
+      "sourceTab": "Nguồn v{{version}}",
+      "sourceTabNew": "Nguồn (chưa lưu)",
+      "diffTab": "Δ So sánh",
+      "tagsTab": "Tags",
+      "inspectorLabel": "Thuộc tính / Copilot",
+      "propsTab": "Thuộc tính",
+      "copilotTab": "Copilot",
+      "bottomLabel": "Vấn đề · Build · Deploy",
+      "problemsTab": "Vấn đề",
+      "buildsTab": "Build / Mô phỏng",
+      "deploysTab": "Lịch sử deploy",
+      "lnCol": "Ln {{line}}, Col {{col}}",
+      "realDeploy": "Triển khai thật",
+      "problemsStatus": "Vấn đề: {{count}}",
+      "noDiagYet": "Chưa kiểm tra phiên bản đang chọn — bấm Kiểm tra.",
+      "noBuildSel": "Chưa chọn build — chọn ở panel dưới (Build / Mô phỏng).",
+      "noVersionSel": "chưa chọn phiên bản",
+      "pickProjectFirst": "Chọn một dự án ở mục Dự án.",
+      "projectVersion": "Dự án / phiên bản đang mở",
+      "openTagsTab": "Mở bảng tag",
+      "fleetSelected": "Đội máy đã chọn: {{list}}",
+      "fleetNone": "Chưa chọn máy nào cho đội (canary).",
+      "stepDone": "xong",
+      "stepTodo": "chưa",
+      "deployOpen": "Deploy…",
+      "deployOpenHint": "Mở wizard triển khai (4 bước, có canary)",
+      "wizardTitle": "Triển khai build",
+      "wizardDesc": "Chọn đích, ký duyệt, xem trước — mã OTP được hỏi sau bước cuối.",
+      "stepBuild": "Build",
+      "stepTarget": "Đích & canary",
+      "stepSignoff": "Ký duyệt",
+      "stepPreview": "Xem trước & xác nhận",
+      "buildSummary": "Build #{{id}} · {{status}}",
+      "buildOfVersion": "Phiên bản v{{version}} của {{project}}",
+      "changeBuildHint": "Đổi build ở panel dưới (Build / Mô phỏng).",
+      "modeLabel": "Kiểu triển khai",
+      "modeSingle": "Một máy (thiết bị của dự án)",
+      "modeFleet": "Đội máy (canary)",
+      "singleTarget": "Đích: {{device}}",
+      "noDevice": "dự án chưa gắn thiết bị — xem bản xem trước ở bước cuối",
+      "fleetSummary": "{{count}} máy · canary {{canary}} · {{stage}}",
+      "fleetNotReady": "Chưa đủ để triển khai đội máy: cần ít nhất một máy (bước Đích & canary); production cần người ký duyệt và lý do (bước Ký duyệt).",
+      "prodNotReady": "Production cần người ký duyệt (khi không qua Hộp duyệt) và lý do — điền ở bước Ký duyệt.",
+      "otpNote": "Bấm nút cuối ⇒ hỏi mã OTP 2 bước (nếu bật) rồi mới gửi; cổng an toàn và lý do giữ như cũ.",
+      "buildChanged": "Build đang chọn đã đổi (từ #{{pinned}} sang #{{current}}) sau khi mở wizard — đóng và mở lại wizard để xem trước đúng build sẽ deploy.",
+      "scratchNote": "Chế độ nháp: chưa mở dự án nào — mã sinh ra chỉ để xem và sao chép. Mở một dự án để chèn vào editor."
     }
   },
   "engineeringHome": {
-    "needControl": "Cần quyền điều khiển",
     "viewOnly": "Chỉ xem",
     "title": "Trung tâm Kỹ thuật",
-    "subtitle": "Chọn tác vụ — soạn chương trình, điều phối đội xe, thực thi an toàn & chuẩn hóa, hoặc chạy twin.",
-    "goldenThread": "Luồng vàng: soạn → mô phỏng → deploy → giám sát. Chương trình soạn ở đây chảy vào pipeline, chạy trong twin, rồi hiện trên các màn giám sát."
+    "goldenThread": "Luồng vàng: soạn → mô phỏng → deploy → giám sát. Chương trình soạn ở đây chảy vào pipeline, chạy trong twin, rồi hiện trên các màn giám sát.",
+    "inboxTab": "Hộp việc",
+    "catalogTab": "Danh mục công cụ",
+    "scopeLabel": "Phạm vi hộp việc",
+    "scopeApprovals": "Chờ duyệt",
+    "scopeApprovalsHint": "Việc chờ duyệt / xác nhận ở các màn bạn có quyền mở",
+    "scopeAll": "Toàn module",
+    "scopeAllHint": "Mọi việc chờ và cảnh báo của module (gồm sự cố an toàn, sự kiện interlock, bế tắc đội xe)",
+    "sideLabel": "Tư thế an toàn và công cụ",
+    "goldenThreadChip": "Luồng vàng",
+    "postureChip": "Tư thế an toàn",
+    "postureOk": "Bình thường",
+    "postureWarn": "Cảnh báo",
+    "postureSource": "oversight.posture — cờ phía server, chỉ đọc",
+    "tools": {
+      "title": "Công cụ",
+      "pinned": "Đã ghim",
+      "recent": "Gần đây",
+      "none": "Chưa ghim công cụ nào — bấm ☆ trong Danh mục để ghim.",
+      "all": "Tất cả công cụ",
+      "pin": "Ghim {{name}}",
+      "unpin": "Bỏ ghim {{name}}",
+      "copilotScratch": "Copilot (nháp, chưa cần dự án)",
+      "commandConsole": "Bảng lệnh (HITL)"
+    },
+    "criticalChip": "Khẩn",
+    "criticalSource": "oversight.pendingSummary — recipe chạy chưa duyệt, sự kiện interlock đang mở, sự cố an toàn chưa kiểm định, bế tắc đội xe"
   },
   "oversight": {
     "title": "Đang chờ duyệt & cảnh báo",
@@ -16029,11 +16166,16 @@
       "ruleCoverage": "Rule chặn có đích: {{count}}",
       "coverageUnavailable": "Không đọc được độ phủ rule",
       "writesOnEngineOffWarning": "Đang ghi lệnh thật xuống thiết bị trong khi engine interlock đang TẮT — vi phạm sẽ KHÔNG được tự động chặn."
-    }
+    },
+    "table": {
+      "kind": "Loại việc",
+      "count": "Số",
+      "samples": "Đang chờ"
+    },
+    "noAccess": "(không có quyền mở trang này)"
   },
   "eqIntegration": {
     "acq": {
-      "title": "Worker thu ảnh",
       "desc": "Grab → chỉ số chất lượng → tùy chọn submit NTF qua đúng đường ingest chuẩn. Nguồn file/mock chạy thật hôm nay; GenICam vẫn là stub cho tới khi gắn driver camera.",
       "flagOff": "Thu ảnh trực tiếp đang tắt (LIVE_ACQUISITION_ENABLED off). Vẫn xem được trạng thái; khởi động worker sẽ bị từ chối tới khi bật cờ.",
       "noPermission": "Xem worker thu ảnh cần quyền xem machine-alerts.",
@@ -16072,7 +16214,9 @@
       "maxFrames": "Số frame tối đa (0 = tới khi dừng)",
       "interval": "Chu kỳ (ms)",
       "submitFrames": "Submit mỗi frame thành một lượt kiểm NTF chuẩn (cần mã máy)",
-      "assessQuality": "Chạy chỉ số chất lượng ảnh mỗi frame"
+      "assessQuality": "Chạy chỉ số chất lượng ảnh mỗi frame",
+      "liveOffChip": "Thu ảnh trực tiếp tắt",
+      "aboutChip": "Về nguồn thu"
     },
     "whenToUse": "Khi nào dùng — xem khung tích hợp theo hãng (FOCAS/Euromap) và phả hệ phiên bản recipe. Metadata chỉ đọc, không có thiết bị trực tiếp.",
     "recipeStatus": {
@@ -16092,7 +16236,6 @@
       "cache": "Bộ đệm",
       "none": "Không có"
     },
-    "adaptersTitle": "Giao thức adapter đã kết nối",
     "alsoDeploy": "Đồng thời ghi một dòng sổ recipe_deployments",
     "archive": "Lưu trữ",
     "archiveTip": "Lưu trữ phiên bản này",
@@ -16100,13 +16243,11 @@
     "byMachine": "Máy",
     "col": {
       "action": "Thao tác",
-      "code": "Mã",
       "machine": "Máy",
       "name": "Tên",
       "notes": "Ghi chú",
       "recipe": "Mã @ phiên bản",
       "status": "Trạng thái",
-      "version": "Phiên bản",
       "when": "Thời điểm",
       "who": "Người thực hiện"
     },
@@ -16115,22 +16256,17 @@
     "createRequired": "Mã và tên là bắt buộc.",
     "createTitle": "Phiên bản recipe mới (bản nháp)",
     "createVersion": "Phiên bản mới",
-    "checking": "Đang kiểm tra…",
-    "unknown": "Chưa rõ",
     "flagOffBanner": "Chế độ xem trước: tích hợp thiết bị đang tắt. Đọc vẫn hoạt động; các thao tác (tạo / phát hành / lưu trữ / rollback phiên bản, ghi nhận nạp) bị chặn cho đến khi bật.",
     "flagOffToast": "Tích hợp thiết bị đang tắt (xem trước). Đặt EQ_INTEG_ENABLED=true để thao tác.",
     "flagStatusError": "Không kiểm tra được trạng thái tích hợp thiết bị — các thao tác bị khoá cho đến khi xác nhận lại.",
     "frameworkNoDevice": "Framework — chưa có thiết bị kết nối",
-    "frameworkNote": "Các thẻ bên dưới là FRAMEWORK tích hợp. Chúng mô hình hóa các trường chỉ đọc mà một connector FOCAS/Euromap thực sẽ ánh xạ vào Unified Equipment Model, nhưng dữ liệu trực tiếp cần một thiết bị/connector đã kết nối. Cho đến lúc đó, giá trị vẫn là \"—\" và nguồn snapshot là \"none\".",
+    "frameworkNote": "Đây là FRAMEWORK tích hợp. Nó mô hình hóa các trường chỉ đọc mà một connector FOCAS/Euromap thực sẽ ánh xạ vào Unified Equipment Model, nhưng dữ liệu trực tiếp cần một thiết bị/connector đã kết nối. Cho đến lúc đó, giá trị vẫn là \"—\" và nguồn snapshot là \"none\".",
     "historyEmpty": "Không có sự kiện truy xuất nguồn gốc.",
     "historyMode": "Lọc theo",
-    "historyPickTitle": "Nguồn truy xuất nguồn gốc",
-    "historyTitle": "Truy xuất nguồn gốc recipe (chỉ thêm)",
     "kpi": {
-      "adapters": "Adapter đã kết nối",
-      "configured": "Thiết bị đã kết nối",
-      "flag": "Cờ",
-      "frameworks": "Framework"
+      "adapters": "Adapter đăng ký",
+      "configured": "Framework đã kết nối",
+      "flag": "Cờ"
     },
     "loadHistory": "Lịch sử nạp",
     "loading": "Đang tải…",
@@ -16154,7 +16290,6 @@
     "payloadInvalid": "Payload không phải JSON hợp lệ.",
     "payloadObject": "Payload phải là một object JSON.",
     "pickHint": "Nhập mã recipe ở trên để liệt kê các phiên bản bất biến và thao tác truy xuất nguồn gốc của nó.",
-    "pickRecipeTitle": "Mã recipe",
     "readOnly": "chỉ đọc",
     "readSnapshot": "Đọc snapshot",
     "recipeCode": "Mã recipe",
@@ -16176,7 +16311,7 @@
       "acquisition": "Worker thu ảnh",
       "history": "Lịch sử nạp",
       "recipes": "Phiên bản recipe",
-      "status": "Trạng thái tích hợp"
+      "status": "Danh mục connector"
     },
     "title": "Tích hợp thiết bị",
     "uem": {
@@ -16189,17 +16324,39 @@
     "versionCreated": "Đã tạo phiên bản recipe (bản nháp)",
     "versionReleased": "Đã phát hành phiên bản",
     "versionRolledBack": "Đã rollback hợp đồng đã phát hành",
-    "versionsEmpty": "Không có phiên bản cho mã này.",
     "versionsTitle": "Các phiên bản của {{code}}",
-    "versionsTitlePlain": "Phiên bản recipe",
-    "viewOnly": "Chỉ xem"
+    "viewOnly": "Chỉ xem",
+    "safetyChip": "Chỉ đọc",
+    "versionNotFound": "Không tìm thấy phiên bản #{{id}} trong mã recipe đang xem.",
+    "openInRecipes": "Mở trong Recipes",
+    "openInRecipesHint": "Danh mục, duyệt và triển khai recipe nằm ở trang Recipes",
+    "recipesElsewhere": "Duyệt và triển khai recipe xuống máy nằm ở trang Recipes.",
+    "chip": {
+      "srcAdapters": "Registry adapter trên server (integrationStatus.adapters) — đăng ký, không phải kết nối",
+      "srcConnected": "Framework có connector/thiết bị thật (integrationStatus.frameworks[].configured)",
+      "srcFlag": "Cờ tính năng trên server (equipmentIntegration.status)"
+    },
+    "catalog": {
+      "count": "{{count}} connector",
+      "listLabel": "Danh mục connector",
+      "detailLabel": "Chi tiết connector",
+      "colConnector": "Connector",
+      "colType": "Loại",
+      "typeFramework": "Framework",
+      "typeAdapter": "Giao thức adapter",
+      "registered": "Đã đăng ký",
+      "delegatesTo": "Chuyển xử lý cho",
+      "adapterHonesty": "Giao thức này đã ĐĂNG KÝ trong registry adapter của server — đăng ký không có nghĩa là có thiết bị đang kết nối.",
+      "pickHint": "Chọn một connector để xem chi tiết.",
+      "loadError": "Không đọc được trạng thái tích hợp."
+    },
+    "createDesc": "Phiên bản bất biến ở dạng nháp — chỉ metadata truy xuất nguồn gốc; không đẩy gì xuống thiết bị."
   },
   "eqStandards": {
     "whenToUse": "Khi nào dùng — quản trị chuẩn loại thiết bị, phân loại cảnh báo ISA-18.2 và hội đồng duyệt. Chỉ là metadata quản trị, không phát lệnh thiết bị.",
     "alarmRequired": "Nhà cung cấp, mã gốc và mã chuẩn là bắt buộc.",
     "alarmSaved": "Đã lưu ánh xạ cảnh báo",
     "alarmsEmpty": "Không có ánh xạ cảnh báo.",
-    "alarmTableTitle": "Ánh xạ cảnh báo",
     "allMapped": "Mọi loại máy đều ánh xạ tới một loại thiết bị đã xuất bản.",
     "allStatuses": "Tất cả trạng thái",
     "allVendors": "Tất cả nhà cung cấp",
@@ -16210,19 +16367,14 @@
     "col": {
       "action": "Hành động khuyến nghị",
       "alarmKey": "Khóa cảnh báo",
-      "conformance": "Kiểm định",
       "consequence": "Hậu quả",
-      "crKey": "Khóa CR",
-      "kind": "Loại",
       "native": "Mã gốc",
       "priority": "Độ ưu tiên",
       "setpoint": "Ngưỡng / vùng chết",
       "severity": "Mức nghiêm trọng",
       "shelve": "Tạm ẩn / triệt tiêu",
-      "stage": "Giai đoạn",
       "standard": "Mã chuẩn",
       "status": "Trạng thái",
-      "target": "Loại đích",
       "ttr": "Thời gian phản hồi",
       "vendor": "Nhà cung cấp"
     },
@@ -16389,7 +16541,36 @@
       "no_bound_machines": "Chưa máy nào được gắn kiểu thiết bị (machines.device_type_key trống ở mọi máy).",
       "no_conformance_subjects": "Không có kiểu thiết bị published nào ánh xạ máy để chạy conformance."
     },
-    "shelvedNotEnforced": "Đã tạm ẩn (chưa có hiệu lực)"
+    "shelvedNotEnforced": "Đã tạm ẩn (chưa có hiệu lực)",
+    "safetyChip": "Chỉ metadata",
+    "failingTypesChip": "{{count}} loại không đạt",
+    "normalize": "Chuẩn hóa cảnh báo",
+    "lookupDesc": "Tra cách mã cảnh báo gốc của nhà cung cấp ánh xạ sang mã chuẩn ISA-18.2.",
+    "alarmsError": "Không tải được ánh xạ cảnh báo.",
+    "expand": "Mở rộng",
+    "collapse": "Thu gọn",
+    "windowLabel": "Cửa sổ thời gian",
+    "masterNotFound": "Không tìm thấy cảnh báo chuẩn #{{id}}.",
+    "deleteMaster": "Xóa cảnh báo chuẩn",
+    "chip": {
+      "srcMapped": "equipmentStandards.complianceMetrics — máy có device_type_key trỏ tới một loại thiết bị đã xuất bản",
+      "srcConformance": "equipmentStandards.complianceMetrics — loại thiết bị đã xuất bản trong CSDL đạt bộ quy tắc chuẩn",
+      "srcPendingCrs": "equipmentStandards.complianceMetrics — yêu cầu thay đổi đang chờ hoặc đang duyệt",
+      "srcAlarmVendors": "equipmentStandards.complianceMetrics — số nhà cung cấp khác nhau trong phân loại cảnh báo (seed + CSDL)",
+      "srcTypes": "equipmentStandards.hierarchyTree — số khóa loại thiết bị khác nhau (seed + CSDL)",
+      "srcAlarmTotal": "alarmKpi.summary — Andon + cảnh báo AI trong cửa sổ (cùng nguồn với /alarm-kpi và Control Tower)",
+      "srcAlarmRate": "alarmKpi.summary — số cảnh báo trên mỗi người vận hành mỗi giờ; số người vận hành do server đếm",
+      "srcFlood": "alarmKpi.summary — số cửa sổ 10 phút vượt ngưỡng tràn",
+      "srcStanding": "alarmKpi.summary — cảnh báo tồn đọng lâu hơn ngưỡng",
+      "srcPeak": "alarmKpi.summary — số cảnh báo nhiều nhất trong một cửa sổ 10 phút",
+      "srcOperators": "alarmKpi.summary — người vận hành đang hoạt động, đếm ở server"
+    },
+    "alarmSearch": "Tìm cảnh báo…",
+    "alarmSearchLabel": "Tìm cảnh báo (nhà cung cấp, mã, khuyến nghị) trên mọi trang",
+    "registerDesc": "Thêm một loại thiết bị NHÁP dưới một loại cha trong cây phân cấp; dùng được sau khi được duyệt.",
+    "upsertAlarmDesc": "Ánh xạ mã cảnh báo gốc của nhà cung cấp sang mã chuẩn ISA-18.2 và mức độ.",
+    "masterDesc": "Cảnh báo gốc ghi mức ưu tiên, hậu quả và cách xử lý đã hợp lý hoá cho một cảnh báo (EEMUA-191).",
+    "submitCrDesc": "Đề xuất thay đổi một loại thiết bị; phải qua xem xét và kiểm tra tuân thủ trước khi phát hành."
   },
   "field": {
     "batteryNull": "Không có telemetry pin (pin AGV đến từ VDA5050; null khi không có driver nào báo cáo).",
@@ -16470,7 +16651,7 @@
     "allocateNoDevice": "Không có thiết bị phù hợp cho tác vụ này",
     "allocateTip": "Chạy bộ phân bổ (gán thiết bị tốt nhất)",
     "newDeadlockToast": "Phát hiện deadlock mới",
-    "newDeadlockDesc": "Vừa hình thành một chu trình phụ thuộc giữa các robot — hãy xem tab Tác vụ & Vùng.",
+    "newDeadlockDesc": "Vừa hình thành một chu trình phụ thuộc giữa các robot — hãy xem khối bế tắc ở panel bên phải.",
     "assign": "Gán",
     "assigned": "Đã gán lại tác vụ",
     "cancel": "Hủy",
@@ -16536,7 +16717,8 @@
       "offline": "Ngoại tuyến",
       "estop": "Dừng khẩn",
       "blocked": "Ô bị chặn",
-      "locatedRobots": "Robot có vị trí"
+      "locatedRobots": "Robot có vị trí",
+      "zoneOpen": "Vùng {{code}} — {{occupancy}}/{{max}} robot; mở trong tab Vùng"
     },
     "noPermission": "Bạn không có quyền xem điều phối đội xe.",
     "occupancy": "Mức chiếm dụng",
@@ -16570,7 +16752,9 @@
       "resolve": "Phân giải",
       "resolveTitle": "Phân giải thao tác",
       "skills": "Kỹ năng",
-      "toolType": "Loại dụng cụ"
+      "toolType": "Loại dụng cụ",
+      "opNotLoaded": "Thao tác #{{id}} không có trong danh sách đã nạp.",
+      "registryDesc": "Mã thao tác, chương trình đủ điều kiện cho từng mã và ánh xạ thao tác → chương trình."
     },
     "opCreated": "Đã tạo thao tác",
     "openRobotCockpit": "Mở cockpit robot",
@@ -16619,7 +16803,8 @@
       "title": "Tài nguyên dùng chung",
       "type": "Loại",
       "unowned": "không sở hữu",
-      "zoneId": "Mã vùng gốc (tùy chọn)"
+      "zoneId": "Mã vùng gốc (tùy chọn)",
+      "notLoaded": "Tài nguyên #{{id}} không có trong danh sách đã nạp."
     },
     "reserve": "Đặt trước",
     "reserved": "Đặt chỗ đang giữ",
@@ -16653,10 +16838,9 @@
     "sweepDone": "Đã hoàn tất quét sạc",
     "tab": {
       "charging": "Sạc",
-      "map": "Bản đồ",
-      "operations": "Thao tác",
       "resources": "Tài nguyên",
-      "tasks": "Tác vụ & Vùng"
+      "tasks": "Tác vụ",
+      "zones": "Vùng"
     },
     "task": {
       "assigned": "Đã gán",
@@ -16677,7 +16861,31 @@
       "human_shared": "Dùng chung với người",
       "production": "Sản xuất",
       "transit": "Trung chuyển"
-    }
+    },
+    "flag": {
+      "resource": "Lớp tài nguyên"
+    },
+    "safetyChip": "Chỉ trạng thái điều phối",
+    "side": {
+      "label": "Tác vụ, vùng, sạc và tài nguyên"
+    },
+    "chip": {
+      "stripLabel": "Chỉ số đội thiết bị",
+      "src": {
+        "deadlocks": "fleet.deadlocks — các chu trình chờ nhau giữa robot phát hiện lúc này (tư vấn)",
+        "failed": "fleet.listTasks — tác vụ trạng thái 'Thất bại' trong danh sách đã nạp (200 mới nhất, theo bộ lọc trạng thái)",
+        "atCapacity": "fleet.listZones — vùng có mức chiếm dụng đã chạm số robot tối đa đồng thời",
+        "pending": "fleet.listTasks — tác vụ trạng thái 'Đang chờ' trong danh sách đã nạp (200 mới nhất, theo bộ lọc trạng thái)",
+        "running": "fleet.listTasks — tác vụ trạng thái 'Đang chạy' trong danh sách đã nạp (200 mới nhất, theo bộ lọc trạng thái)",
+        "assigned": "fleet.listTasks — tác vụ trạng thái 'Đã gán' trong danh sách đã nạp (200 mới nhất, theo bộ lọc trạng thái)",
+        "activeRes": "fleet.listReservations — đặt chỗ vùng trạng thái 'Hoạt động' (500 mới nhất)",
+        "resourcesInUse": "fleet.listResources — tài nguyên dùng chung có ít nhất một yêu cầu chiếm đang hoạt động",
+        "charging": "fleet.listChargingPlans — kế hoạch sạc 'Hoạt động' hoặc 'Đã lên lịch' (200 mới nhất)"
+      }
+    },
+    "taskNotFound": "Tác vụ #{{id}} không có trong danh sách đã nạp.",
+    "taskTerminal": "Tác vụ #{{id}} đã kết thúc — không gán lại được.",
+    "zoneNotFound": "Vùng #{{id}} không có trong danh sách đã nạp."
   },
   "ir": {
     "whenToUse": "Khi nào dùng — khối motion & I/O cấp thấp (IR). Cần pipeline build/deploy đầy đủ dùng Xưởng lập trình; cần IEC 61131 LAD/FBD/SFC dùng POU Studio.",
@@ -16690,10 +16898,9 @@
     "canvas": {
       "title": "Vùng vẽ luồng",
       "fb": "Khối hàm",
-      "editingFb": "Đang sửa thân POU",
       "backToMain": "Luồng chính"
     },
-    "deployReminder": "Lưu sẽ thêm một artifact ir-flow đã kiểm định; Yêu cầu build (bên dưới, theo từng luồng đã lưu) sẽ transpile nó. Triển khai lên thiết bị thật là một bước có kiểm soát riêng (dịch vụ lập trình hiện có, HITL 2 người) — không hiển thị ở đây.",
+    "deployReminder": "Lưu sẽ thêm một artifact ir-flow đã kiểm định; Yêu cầu build (ở mục Luồng IR đã lưu của Explorer, theo từng luồng đã lưu) sẽ transpile nó. Triển khai lên thiết bị thật là một bước có kiểm soát riêng (dịch vụ lập trình hiện có, HITL 2 người) — không hiển thị ở đây.",
     "emptyCanvas": "Chưa có khối nào. Thêm một khối từ bảng chọn bên trái.",
     "errorsShort": "lỗi",
     "field": {
@@ -16786,7 +16993,6 @@
       "false": "Nếu false",
       "true": "Nếu true"
     },
-    "subtitle": "Soạn chương trình thiết bị chuyển động/IO thành các khối IR hạng nhất, lint & transpile — xem trước cấu trúc, không phải chạy vật lý.",
     "sum": {
       "count": "số lần",
       "releaseAny": "nhả dụng cụ",
@@ -16805,9 +17011,6 @@
     "unparseable": "không phân tích được",
     "version": "Phiên bản",
     "warnsShort": "cảnh báo",
-    "compare": {
-      "title": "So sánh & hợp nhất"
-    },
     "merge": {
       "actDelete": "xóa khối",
       "actKeep": "giữ (đã sửa)",
@@ -16838,7 +17041,6 @@
       "saved": "Đã lưu luồng hợp nhất (đã kiểm định)",
       "savedInvalid": "Đã lưu luồng hợp nhất, nhưng trình lint báo lỗi — xem chẩn đoán.",
       "stats": "{{auto}} tự hợp nhất · {{added}} thêm · {{deleted}} xóa",
-      "subtitle": "Hợp nhất 3 chiều một base (tổ tiên) với ours + theirs; giải quyết từng xung đột bằng cách chọn một nhánh, rồi lưu luồng đã hợp nhất thành phiên bản mới.",
       "tab": "Hợp nhất (3 chiều)",
       "theirs": "Của họ (Theirs)",
       "tookOurs": "đã lấy ours",
@@ -16928,8 +17130,15 @@
       "dropIntoSlot": "Thả một khối vào đây để thêm vào nhánh này"
     },
     "diff": {
-      "title": "So sánh phiên bản",
-      "subtitle": "So sánh hai phiên bản đã lưu (hoặc một phiên bản với bản nháp hiện tại) — khối thêm / bớt / sửa / dời, chú thích trên cây."
+      "title": "So sánh phiên bản"
+    },
+    "ws": {
+      "flowMeta": "Thuộc tính luồng",
+      "fbName": "Tên khối hàm",
+      "inspectorLabel": "Thuộc tính / Transpile / Copilot",
+      "previewChip": "Xem trước — không deploy",
+      "activityFb": "Khối hàm",
+      "explorerLabel": "Trình duyệt IR"
     }
   },
   "rfcell": {
@@ -17151,12 +17360,6 @@
       "pending": "Đang chờ"
     },
     "ingest": "Nạp (tư vấn)",
-    "kpi": {
-      "activeAssignments": "Phân công đang hoạt động",
-      "activeCollabs": "Phối hợp đang hoạt động",
-      "nearMissesToday": "Suýt sự cố hôm nay",
-      "openEvents": "Sự kiện an toàn đang mở (chưa kiểm định)"
-    },
     "liveEmpty": "Đang chờ phát sóng safety:event trực tiếp… (chỉ tư vấn)",
     "liveTitle": "Bảng tin tư vấn trực tiếp",
     "loading": "Đang tải…",
@@ -17177,9 +17380,9 @@
     "stationIdOpt": "Mã trạm (tùy chọn)",
     "subtitle": "Giám sát an toàn tư vấn, phân công nhân lực hỗn hợp và điều phối bàn giao người↔robot.",
     "tab": {
-      "cockpit": "Cockpit an toàn",
+      "cockpit": "Sự kiện",
       "collaboration": "Phối hợp",
-      "workforce": "Bảng nhân lực"
+      "workforce": "Nhân lực"
     },
     "title": "An toàn & Nhân lực",
     "trendEmpty": "Không ghi nhận suýt sự cố nào trong khoảng thời gian.",
@@ -17225,8 +17428,55 @@
       "socket": "Socket",
       "socketServerDown": "○ socket máy chủ không chạy",
       "socketConnected": "● đã kết nối",
-      "socketDisconnected": "○ mất kết nối"
-    }
+      "socketDisconnected": "○ mất kết nối",
+      "chip": {
+        "label": "Nguồn an toàn",
+        "hint": "Xem chi tiết nguồn an toàn ở panel bên cạnh",
+        "loading": "Đang kiểm tra",
+        "error": "Không đọc được",
+        "real": "PLC thật",
+        "mixed": "PLC thật + SIM",
+        "sim": "Chỉ SIM",
+        "realUnmapped": "Chưa gán tag",
+        "adapterOff": "Tắt",
+        "noConfig": "Chưa cấu hình",
+        "readError": "Lỗi đọc cấu hình",
+        "unguarded": "{{target}}: preflight tắt",
+        "blocked": "{{target}}: bị chặn",
+        "estopNotRated": "E-stop chưa safety-rated",
+        "ot": "OT",
+        "robot": "Robot",
+        "socketDown": "Trực tiếp: máy chủ tắt",
+        "socketLost": "Mất kết nối trực tiếp",
+        "socketConnecting": "Đang nối trực tiếp"
+      }
+    },
+    "advisoryChip": "Tư vấn — không phải SIS",
+    "flag": {
+      "safetyAudit": "Kiểm định an toàn",
+      "workforce": "Nhân lực"
+    },
+    "chip": {
+      "openEvents": "Chưa kiểm định",
+      "nearMissToday": "Suýt sự cố hôm nay",
+      "activeAssignments": "Đang phân công",
+      "activeCollabs": "Đang phối hợp",
+      "src": {
+        "openEvents": "safety.feed — sự kiện chưa có dấu kiểm định trong tối đa 200 sự kiện gần nhất (theo bộ lọc loại)",
+        "nearMiss": "safety.nearMissTrend — số suýt sự cố của ngày hôm nay (UTC) trong xu hướng 30 ngày",
+        "assignments": "safety.listAssignments — phân công trạng thái 'Hoạt động' trong danh sách đang tải (theo bộ lọc trạng thái)",
+        "collabs": "safety.listCollaborations — phiên chưa kết thúc (pha khác 'done' và chưa có giờ kết thúc)"
+      }
+    },
+    "liveChip": "Trực tiếp",
+    "side": {
+      "label": "Nguồn an toàn, xu hướng và phối hợp",
+      "trend": "Xu hướng",
+      "collabCount": "{{count}} phiên đang chạy",
+      "collabCountError": "Không đọc được phiên phối hợp"
+    },
+    "reportProximityShort": "Báo cáo tiệm cận",
+    "testOnly": "Chỉ thử"
   },
   "sessionSignoff": {
     "shift": "Ca",
@@ -17689,7 +17939,9 @@
     "station": "Trạm",
     "stationId": "Mã trạm (tùy chọn)",
     "taskId": "Mã tác vụ (tùy chọn)",
-    "unassignedStation": "Chưa phân công"
+    "unassignedStation": "Chưa phân công",
+    "assignmentNotFound": "Không tìm thấy phân công #{{id}} trong danh sách đang tải.",
+    "assignmentTerminal": "Phân công #{{id}} đã kết thúc — không phân công lại được."
   },
   "vramBroker": {
     "baselineUnverified": "nền CHƯA xác minh",
@@ -17963,7 +18215,6 @@
     "canvasBadJson": "Sửa JSON (chuyển sang chế độ JSON) trước khi canvas có thể hiển thị.",
     "copied": "Đã sao chép PLCopen XML",
     "copyFail": "Sao chép thất bại",
-    "editor": "Trình soạn POU",
     "export": "Xuất mô hình → XML",
     "field": {
       "actions": "Hành động",
@@ -18021,7 +18272,6 @@
       "var": "biến"
     },
     "stBody": "POU này dùng thân ST dạng văn bản — hãy sửa trong chế độ JSON.",
-    "subtitle": "Soạn các POU LAD/FBD/SFC có cấu trúc, lint chúng, trao đổi PLCopen TC6 XML, và xem trước việc chuyển mã sang Structured Text — chỉ là xem trước, không phải ghi thiết bị.",
     "title": "IEC 61131 POU Studio",
     "transpile": "Chuyển mã → ST",
     "transpileNote": "Mỗi thân đồ họa được hạ xuống dưới một dấu xuất xứ (* [IEC LD|FBD|SFC #id] *) để ST và nguồn đọc song song.",
@@ -18057,7 +18307,25 @@
     "saveHint": "Bản nháp vẫn đi qua pipeline có kiểm soát: build → ký duyệt HITL → deploy có kiểm soát. Việc lưu ở đây không deploy gì cả.",
     "createAndSave": "Tạo project & lưu",
     "saveVersion": "Lưu phiên bản",
-    "savedVersion": "Đã lưu bản nháp v{{v}} — build & deploy ở Engineering."
+    "savedVersion": "Đã lưu bản nháp v{{v}} — build & deploy ở Engineering.",
+    "ws": {
+      "opened": "Đã mở v{{v}} vào trình soạn",
+      "openProjects": "Dự án POU",
+      "openVersions": "Phiên bản (pou-json)",
+      "noVersions": "Dự án này chưa có phiên bản pou-json nào.",
+      "open": "Mở",
+      "otherLang": "{{n}} phiên bản ngôn ngữ khác — mở ở Xưởng lập trình.",
+      "samples": "Mẫu dựng sẵn",
+      "inspectorLabel": "ST / PLCopen / Copilot",
+      "noProblems": "Không có chẩn đoán lint.",
+      "previewChip": "Xem trước — không deploy",
+      "problemsStatus": "Vấn đề: {{count}}",
+      "activityOpen": "Mở",
+      "explorerLabel": "Trình duyệt POU",
+      "problemsTab": "Vấn đề",
+      "hideRight": "Ẩn panel phải",
+      "showRight": "Hiện panel phải"
+    }
   },
   "systemHealth": {
     "title": "Sức khỏe hệ thống",
@@ -19299,10 +19567,6 @@
     "layout": "Sơ đồ bố trí",
     "layoutBlurb": "Bố trí mặt bằng nhà máy"
   },
-  "engineeringStudio": {
-    "title": "Xưởng kỹ thuật",
-    "categories": "Nhóm kỹ thuật"
-  },
   "maintenanceHub": {
     "title": "Bảo trì",
     "categories": "Nhóm bảo trì"
@@ -19667,31 +19931,6 @@
     "aiSettings": "Cài đặt AI",
     "aiSettingsBlurb": "Cấu hình model server + gateway",
     "robotModelHealth": "Sức khỏe mô hình robot"
-  },
-  "engHub": {
-    "authoring": "Soạn thảo & IDE",
-    "engineering": "Xưởng lập trình thiết bị",
-    "engineeringBlurb": "Viết & biên dịch chương trình thiết bị",
-    "irEditor": "Trình soạn IR",
-    "pouStudioBlurb": "Soạn POU/IEC 61131",
-    "programmingCopilotBlurb": "AI hỗ trợ lập trình PLC/robot",
-    "recipes": "Recipe máy",
-    "recipesBlurb": "Công thức chạy máy",
-    "engineeringChanges": "Thay đổi kỹ thuật (ECN)",
-    "orchestration": "Điều phối & Điều khiển",
-    "orchestrationStudioBlurb": "Soạn/mô phỏng/triển khai điều phối",
-    "fleetOrchestration": "Điều phối fleet",
-    "fleetOrchestrationBlurb": "Phân bổ tác vụ + vùng cho fleet",
-    "robotControl": "Điều khiển robot",
-    "commandConsoleBlurb": "Lệnh robot đơn qua HITL",
-    "safety": "An toàn",
-    "interlockRules": "Luật interlock",
-    "interlockRulesBlurb": "Quản lý luật khóa liên động",
-    "safetyWorkforce": "An toàn & Nhân lực",
-    "safetyWorkforceBlurb": "Bảng an toàn + mixed-workforce",
-    "standards": "Chuẩn hoá & Tích hợp",
-    "equipmentStandards": "Chuẩn thiết bị",
-    "equipmentIntegration": "Tích hợp thiết bị"
   },
   "maintHub": {
     "work": "Công việc & Độ tin cậy",
@@ -21325,6 +21564,138 @@
       "live": "đã gửi",
       "unconfirmed": "chưa xác nhận — có thể đã tới thiết bị",
       "rejected": "không gửi"
+    }
+  },
+  "layoutKit": {
+    "notice": {
+      "kind": {
+        "hint": "Gợi ý",
+        "flagOff": "Đang tắt",
+        "honesty": "Lưu ý số liệu",
+        "simGate": "Chỉ mô phỏng",
+        "beta": "Beta",
+        "whenToUse": "Khi nào dùng",
+        "loading": "Đang kiểm tra",
+        "error": "Không kiểm được"
+      },
+      "more": "+{{count}}",
+      "moreLabel": "Xem thêm {{count}} ghi chú",
+      "stackLabel": "Ghi chú của trang",
+      "flagLoading": "Đang kiểm tra trạng thái tính năng…"
+    },
+    "chip": {
+      "stripLabel": "Chỉ số",
+      "loading": "Đang tải",
+      "error": "Lỗi",
+      "errorHint": "Không đọc được nguồn — không hiển thị số.",
+      "degradedHint": "Nguồn chỉ đọc được một phần — số có thể thiếu.",
+      "source": "Nguồn: {{source}}",
+      "moreLabel": "Xem thêm {{count}} chỉ số"
+    },
+    "flyout": {
+      "unsavedTitle": "Bỏ thay đổi chưa lưu?",
+      "unsavedDesc": "Biểu mẫu này còn dữ liệu chưa lưu. Đóng lại sẽ mất các thay đổi đó.",
+      "keepEditing": "Tiếp tục sửa",
+      "discard": "Bỏ thay đổi"
+    },
+    "wizard": {
+      "back": "Quay lại",
+      "next": "Tiếp",
+      "finish": "Hoàn tất",
+      "stepOf": "Bước {{current}}/{{total}}",
+      "stepsLabel": "Các bước",
+      "status": {
+        "complete": "đã xong",
+        "current": "đang làm",
+        "upcoming": "chưa tới",
+        "error": "có lỗi"
+      }
+    },
+    "versions": {
+      "loading": "Đang tải phiên bản…",
+      "error": "Không tải được lịch sử phiên bản.",
+      "empty": "Chưa có phiên bản nào.",
+      "colVersion": "Phiên bản",
+      "colCreated": "Thời điểm",
+      "colAuthor": "Người tạo",
+      "colNote": "Ghi chú",
+      "colBase": "Gốc",
+      "colCompare": "So với",
+      "colActions": "Thao tác",
+      "current": "đang dùng",
+      "pickBase": "Chọn {{version}} làm bản gốc",
+      "pickCompare": "So sánh với {{version}}",
+      "pickTwo": "Chọn 2 phiên bản để xem khác biệt.",
+      "sameVersion": "Đang chọn cùng một phiên bản ở cả hai cột."
+    },
+    "diff": {
+      "label": "Khác biệt giữa {{base}} và {{compare}}"
+    },
+    "rollback": {
+      "action": "Khôi phục",
+      "title": "Khôi phục về {{version}}?",
+      "impactOtp": "Cần lý do và một mã OTP mới cho lượt này; lý do được ghi vào nhật ký kiểm toán.",
+      "impactNoOtp": "Cần lý do; lý do được ghi vào nhật ký kiểm toán."
+    },
+    "approval": {
+      "label": "Hàng đợi duyệt",
+      "empty": "Không có mục nào chờ quyết định.",
+      "loading": "Đang tải hàng đợi…",
+      "error": "Không tải được hàng đợi duyệt.",
+      "colItem": "Mục",
+      "colAuthor": "Người tạo",
+      "colStatus": "Trạng thái",
+      "colActions": "Quyết định",
+      "sodAuthor": "Bạn là người tạo mục này — cần một người khác quyết định (maker-checker).",
+      "sodReviewer": "Bạn đã xem xét mục này — người phê duyệt phải là người khác.",
+      "userUnknown": "Chưa xác định được người dùng hiện tại — chưa thể quyết định.",
+      "reasonLabel": "Lý do (bắt buộc)",
+      "commentLabel": "Ý kiến (không bắt buộc)",
+      "reasonRequired": "Bắt buộc nhập lý do.",
+      "reasonTooShort": "Lý do cần tối thiểu {{min}} ký tự.",
+      "cancel": "Huỷ"
+    },
+    "shell": {
+      "activityBar": "Thanh hoạt động",
+      "explorer": "Trình duyệt dự án",
+      "inspector": "Thuộc tính",
+      "bottomPanel": "Panel dưới",
+      "toggleBottom": "Ẩn/hiện panel dưới",
+      "editor": "Soạn thảo",
+      "editorTabs": "Tab soạn thảo",
+      "closeTab": "Đóng tab {{label}}",
+      "unsavedTab": "chưa lưu",
+      "statusBar": "Thanh trạng thái",
+      "narrowLabel": "Vùng làm việc",
+      "resizeLeft": "Đổi độ rộng panel trái",
+      "resizeRight": "Đổi độ rộng panel phải",
+      "resizeBottom": "Đổi chiều cao panel dưới"
+    },
+    "split": {
+      "list": "Danh sách",
+      "detail": "Chi tiết",
+      "back": "Quay lại danh sách",
+      "resize": "Đổi độ rộng danh sách"
+    },
+    "cockpit": {
+      "side": "Panel phụ"
+    },
+    "detail": {
+      "tabs": "Các mục chi tiết"
+    }
+  },
+  "shell": {
+    "notice": {
+      "permExpiry": "Quyền sắp hết hạn",
+      "licenseWarning": "License sắp hết hạn",
+      "licenseReadonly": "License: chỉ đọc",
+      "licenseLocked": "License bị khoá",
+      "licenseMissing": "Chưa có license",
+      "licenseDetails": "Chi tiết license",
+      "licenseServerDown": "License: mất kết nối"
+    },
+    "nav": {
+      "simpleFallback": "Menu đơn giản không có mục ở đây — đang hiện menu đầy đủ."
     }
   }
 }

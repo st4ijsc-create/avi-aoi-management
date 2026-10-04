@@ -1,31 +1,38 @@
 /**
  * S1 (doc 16 §8 + §12 design system) — SAFETY & WORKFORCE surface.
  *
- * Read-mostly cockpit over the safetyRouter, organised into tabs:
- *   • "Safety cockpit" (S1-b/d) — live safety_events feed (feed + `safety:event`
- *       socket), near-miss PDCA trend (Recharts), audit-event + report-proximity
- *       advisory actions.
- *   • "Workforce board" (S1-a) — currentBoard (humans + robots per station) +
- *       assignments table with assign / reassign / confirm / close.
- *   • "Collaboration" (S1-a) — human↔robot handover sessions with a phase indicator
- *       + handshake state and start / signal / advance / abort actions.
+ * Read-mostly cockpit over the safetyRouter.
  *
  * ⚠ CRITICAL HONESTY / SAFETY: NOTHING on this page is safety-rated. The safety feed
  *   is an ADVISORY monitoring/logging record — no SIL 2/3 stop, no sub-second
  *   guarantee. Physical safety relies on certified hardware, deferred to a hardware
- *   phase. A persistent banner states this. Mutations open NO device-control path.
+ *   phase. A persistent chip states this. Mutations open NO device-control path.
+ *
+ * Doc 81 Đợt 2 Task 8 — mẫu P4 Cockpit (`CockpitLayout`):
+ *  - Header một hàng: h1 · chip cờ (4 trạng thái, gọi tên cờ) · "Khi nào dùng" · `StatusChipStrip` (thay 4
+ *    MetricCard) · bên phải (không bao giờ bị cắt): chip "Tư vấn — không phải SIS" (thay khối 88 px, popover giữ
+ *    nguyên câu cũ + câu chân trang trùng đã bỏ) và chip NGUỒN AN TOÀN có chữ trạng thái — mọi trạng thái
+ *    không-OK hiện sẵn, có màu, không nằm trong "+N" · làm mới.
+ *  - MAIN (`data-layout-main`) = hàng tab `?tab=` (cockpit | workforce) + nội dung. Tab "Sự kiện an toàn" = luồng
+ *    sự kiện (bảng, cuộn trong) + bảng tin trực tiếp (chip "Trực tiếp" trong hàng công cụ). Bảng nhân lực ở lại
+ *    tab thứ hai (doc 80/81 muốn dời sang Sản xuất › Ca — trang đó chưa có).
+ *  - Panel phụ (aside): panel NGUỒN AN TOÀN đầy đủ (luôn thấy) + tab Xu hướng / Phối hợp. Panel Phối hợp mount
+ *    MỘT lần và KHÔNG unmount (Review Focus 3): đổi tab phụ, đổi tab MAIN, qua lại 1024 px.
+ *  - Dialog tạo/sửa → sheet (`FlyoutHost`, `?flyout=`): báo cáo tiệm cận, phân công, phân công lại, bắt đầu phối
+ *    hợp — form/kiểm tra/payload như cũ. Kiểm định / đóng phân công / huỷ phối hợp giữ AlertDialog (R-2-n).
+ *  - < 1024 px: chip an toàn + chip cờ + công cụ tab xuống hàng đầu nội dung tab (header hẹp cắt phần tràn).
  *
  * Flags (read from safety.status):
  *   • SAFETY_AUDIT_ENABLED → recordEvent / auditEvent / ingestProximity
  *   • WORKFORCE_ENABLED    → assignments + collaboration mutations
- * When a flag is OFF the page shows a calm preview banner and surfaces the CONFLICT
+ * When a flag is OFF the page shows a calm preview chip and surfaces the CONFLICT
  * error gracefully (toast.info, not red) — mirrors FleetOrchestration.
  *
  * RBAC: read → machine_monitoring/canView; mutations → machine_control/canCreate.
- * i18n: uses the t("key", "English default") fallback pattern (no locale-file edits).
  */
-import { useEffect, useMemo, useRef, useState } from "react";
+import { createContext, useContext, useEffect, useId, useMemo, useRef, useState, type RefObject } from "react";
 import { useTranslation } from "react-i18next";
+import { useSearch } from "wouter";
 import type { inferRouterOutputs } from "@trpc/server";
 import type { AppRouter } from "../../../server/routers";
 import { trpc } from "@/lib/trpc";
@@ -34,26 +41,36 @@ import { getSharedSocket, releaseSharedSocket } from "@/lib/socketManager";
 import DashboardLayout from "@/components/DashboardLayout";
 import { ViewOnlyBadge } from "@/components/PermissionGate";
 import {
-  MetricCard, PageHeader, PageContainer,
+  CockpitLayout,
+  FeatureStatusNoticeChip,
+  FlyoutHost,
+  NoticeChip,
+  PageContainer,
+  StatusChipStrip,
+  chipStateFromQuery,
+  useCloseOwnLayer,
+  useFlyout,
+  useNarrowViewport,
   chartColor, chartTooltipStyle, chartTooltipLabelStyle, chartGridProps, chartAxisTick,
+  type FlyoutDefinition,
+  type StatusChipItem,
 } from "@/components/patterns";
-import { buildBreadcrumbs } from "@/lib/breadcrumbs";
-import { useLocation } from "wouter";
+import { type TabbedHubTab } from "@/components/workspace/TabbedHub";
+import { resolveActiveTab } from "@/components/workspace/hubState";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Progress } from "@/components/ui/progress";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { SheetFooter } from "@/components/ui/sheet";
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from "@/components/ui/select";
 import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from "@/components/ui/table";
-import {
-  Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle,
-} from "@/components/ui/dialog";
 import {
   AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
   AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
@@ -63,18 +80,19 @@ import {
   ResponsiveContainer, AreaChart, Area, CartesianGrid, XAxis, YAxis, Tooltip,
 } from "recharts";
 import {
-  ShieldAlert, RefreshCw, Info, AlertTriangle, Activity, Users, Workflow,
-  Bot, User, Clock, CheckCircle2, Lock, Radio, Send, UserPlus, RefreshCcw,
-  Ban, ScanLine, ClipboardCheck, HandMetal, Handshake, ChevronRight,
+  ShieldAlert, ShieldCheck, RefreshCw, Info, AlertTriangle, Activity, Users, Workflow,
+  Bot, User, CheckCircle2, Radio, Send, UserPlus, RefreshCcw,
+  Ban, ScanLine, ClipboardCheck, HandMetal, Handshake, ChevronRight, Loader2,
 } from "lucide-react";
 import { toast } from "sonner";
 import { mapTrpcError } from "@/lib/trpcErrors";
 import { isFeatureDisabledError } from "@/lib/featureFlagError";
 import {
   deriveFeatureStatus,
-  FeatureStatusGate,
   isFeatureStatusUnsettled,
+  type FeatureStatus,
 } from "@/components/common/FeatureStatusGate";
+import { cn } from "@/lib/utils";
 // doc 80 Đợt 1 Task 4 (X-01 · SAF-02) — nhãn nguồn dữ liệu + panel sức khoẻ nguồn an toàn.
 import { ProvenanceBadge, ProvenanceSummary } from "@/components/common/ProvenanceBadge";
 
@@ -100,9 +118,22 @@ type SafetyLiveEvent = {
   createdAt: Date | string;
 };
 
+type ProximityInput = { deviceId?: number; stationId?: number; distance: number; confidence: number; source: "vision" | "manual" | "test" };
+type StartCollabInput = { operationCode?: string; humanOperatorId?: number; robotDeviceId?: number; taskId?: number };
+
 const EVENT_TYPES = ["estop", "collision", "intrusion", "force_limit", "speed_violation", "near_miss"] as const;
 const COLLAB_PHASES = ["human_prep", "robot_work", "human_verify", "done"] as const;
 const ASSIGN_STATUSES = ["planned", "active", "completed", "cancelled"] as const;
+const FEED_LIMIT = 200;
+
+const TAB_VALUES = ["cockpit", "workforce"] as const;
+type TabValue = (typeof TAB_VALUES)[number];
+type SideTab = "trend" | "collab";
+/** Kết nối socket của trình duyệt này (luồng `safety:event` trực tiếp). "connecting" = chưa biết, KHÔNG phải ổn. */
+type SocketState = "connecting" | "connected" | "disconnected";
+const BASE_PATH = "/safety-workforce";
+const COMPACT_BREAKPOINT_PX = 1280;
+const KPI_ALL_BREAKPOINT_PX = 1600;
 
 // ── Colour-by-status badges (mirror the FleetOrchestration discipline) ─────────
 function eventTypeBadge(eventType: string, t: (k: string, f: string) => string) {
@@ -184,11 +215,71 @@ function fmtDateTime(d?: string | Date | null): string {
   return dt.toLocaleString();
 }
 
+const isTerminalAssignment = (a: Assignment) => a.status === "completed" || a.status === "cancelled";
+
+type MutationErrorHandler = (e: { data?: { code?: string } | null; message: string }) => void;
+
+// ── Ngữ cảnh trang: nội dung tab (component cấp module, ổn định) đọc từ đây ───────────────────
+interface SafetyCtxValue {
+  tab: TabValue;
+  narrow: boolean;
+  canControl: boolean;
+  safetyCanControl: boolean;
+  safetyControlReason: string | undefined;
+  workforceCanControl: boolean;
+  workforceControlReason: string | undefined;
+  safetyAuditStatus: FeatureStatus;
+  workforceStatus: FeatureStatus;
+  // events
+  feed: SafetyEvent[];
+  feedLoading: boolean;
+  eventTypeFilter: string;
+  setEventTypeFilter: (v: string) => void;
+  liveEvents: SafetyLiveEvent[];
+  auditPending: boolean;
+  setAuditTarget: (e: SafetyEvent) => void;
+  // workforce
+  board: BoardStation[];
+  boardLoading: boolean;
+  assignments: Assignment[];
+  assignmentsLoading: boolean;
+  assignStatusFilter: string;
+  setAssignStatusFilter: (v: string) => void;
+  confirmPending: boolean;
+  confirmAssignment: (a: Assignment) => void;
+  setCloseTarget: (a: Assignment) => void;
+  // side
+  sideTab: SideTab;
+  setSideTab: (v: SideTab) => void;
+  trend: TrendBucket[];
+  collabs: Collaboration[];
+  collabsLoading: boolean;
+  sourceHealth: SourceHealth | undefined;
+  sourceLoading: boolean;
+  sourceError: boolean;
+  socketConnected: boolean;
+  socketState: SocketState;
+  activeCollabs: number;
+  collabsState: "ok" | "loading" | "error";
+  sourcePanelRef: RefObject<HTMLDivElement | null>;
+  refetchAll: () => void;
+  onMutationError: MutationErrorHandler;
+}
+
+const SafetyCtx = createContext<SafetyCtxValue | null>(null);
+function useSafetyCtx(): SafetyCtxValue {
+  const v = useContext(SafetyCtx);
+  if (!v) throw new Error("SafetyCtx missing");
+  return v;
+}
+
+const TABS: TabbedHubTab[] = [
+  { value: "cockpit", labelKey: "safety.tab.cockpit", fallback: "Safety events", icon: <Activity className="h-4 w-4" />, Content: EventsTab },
+  { value: "workforce", labelKey: "safety.tab.workforce", fallback: "Workforce board", icon: <Users className="h-4 w-4" />, Content: WorkforceTab },
+];
+
 export default function SafetyWorkforce() {
   const { t } = useTranslation();
-  // U3 (doc 26) — breadcrumb "Kỹ thuật › Section › Trang" + link về Hub.
-  const [location] = useLocation();
-  const crumbs = buildBreadcrumbs(location, t);
   const { hasPermission } = usePermissions();
   const canView = hasPermission("machine_monitoring", "canView");
   const canControl = hasPermission("machine_control", "canCreate");
@@ -197,31 +288,33 @@ export default function SafetyWorkforce() {
     ? t("common.gate.needPerm", "Requires {{perm}} permission", { perm: "machine_control" })
     : undefined;
 
-  const [tab, setTab] = useState("cockpit");
+  const search = useSearch();
+  const tab = resolveActiveTab(search, TAB_VALUES, "cockpit") as TabValue;
+  // < 1280 px (MAIN hẹp vì sidebar + panel phụ): chip an toàn, chip cờ và công cụ tab xuống hàng đầu nội dung tab
+  // (header / hàng tab một dòng sẽ cắt chúng). CockpitLayout tự xếp panel phụ xuống dưới ở < 1024 px.
+  const narrow = useNarrowViewport(COMPACT_BREAKPOINT_PX);
+  // Đủ chỗ cho cả 4 chip KPI từ 1600 px; hẹp hơn ⇒ 2 chip an toàn hiện thẳng, phần còn lại vào "+N" của
+  // StatusChipStrip (chip LỖI luôn được ưu tiên hiện) — không để header cắt mất chip một cách im lặng.
+  const kpiAll = !useNarrowViewport(KPI_ALL_BREAKPOINT_PX);
+  const [sideTab, setSideTab] = useState<SideTab>("trend");
   const [eventTypeFilter, setEventTypeFilter] = useState<string>("");
   const [assignStatusFilter, setAssignStatusFilter] = useState<string>("");
   const [auditTarget, setAuditTarget] = useState<SafetyEvent | null>(null);
-  const [proximityOpen, setProximityOpen] = useState(false);
+  const [closeTarget, setCloseTarget] = useState<Assignment | null>(null);
   // Live events received over the socket (newest first), kept separate from the feed.
   const [liveEvents, setLiveEvents] = useState<SafetyLiveEvent[]>([]);
   // doc 80 Task 4 (SAF-02/SAF-07) — this browser's socket connection, shown in the source panel.
-  const [socketConnected, setSocketConnected] = useState(false);
-
-  // Assignment dialog state
-  const [assignOpen, setAssignOpen] = useState(false);
-  const [reassignTarget, setReassignTarget] = useState<Assignment | null>(null);
-  const [closeTarget, setCloseTarget] = useState<Assignment | null>(null);
-
-  // Collaboration dialog state
-  const [startCollabOpen, setStartCollabOpen] = useState(false);
-  const [abortTarget, setAbortTarget] = useState<Collaboration | null>(null);
+  // Fix round 1 (review minor 2): ba trạng thái — mất kết nối phải lộ ra trên chip nguồn, "đang nối" không giả là ổn.
+  const [socketState, setSocketState] = useState<SocketState>("connecting");
+  const socketConnected = socketState === "connected";
+  const sourcePanelRef = useRef<HTMLDivElement | null>(null);
 
   const utils = trpc.useUtils();
 
   // ── Reads ──────────────────────────────────────────────────────────────────
   const statusQ = trpc.safety.status.useQuery(undefined, { enabled: canView });
   const feedQ = trpc.safety.feed.useQuery(
-    { eventType: (eventTypeFilter || undefined) as (typeof EVENT_TYPES)[number] | undefined, limit: 200 },
+    { eventType: (eventTypeFilter || undefined) as (typeof EVENT_TYPES)[number] | undefined, limit: FEED_LIMIT },
     { enabled: canView },
   );
   const trendQ = trpc.safety.nearMissTrend.useQuery({ sinceDays: 30 }, { enabled: canView });
@@ -240,7 +333,7 @@ export default function SafetyWorkforce() {
   const assignments = (assignmentsQ.data ?? []) as Assignment[];
   const collabs = (collabsQ.data ?? []) as Collaboration[];
 
-  // Flag state — honest preview banners. Doc 80 Task 1 (PLT-02/G-07/X-07): pending/erroring
+  // Flag state — honest preview chips. Doc 80 Task 1 (PLT-02/G-07/X-07): pending/erroring
   // status query is UNKNOWN, not "on" — no more `?? true` optimistic default. The router
   // exposes two independent flags here (safetyAudit / workforce) off the SAME statusQ.
   const safetyAuditStatus = deriveFeatureStatus(statusQ, (d: { safetyAudit?: boolean }) => d.safetyAudit);
@@ -268,8 +361,8 @@ export default function SafetyWorkforce() {
   useEffect(() => {
     if (!canView) return;
     const socket = getSharedSocket();
-    const join = () => { setSocketConnected(true); socket.emit("subscribe", {}); };
-    const onDisconnect = () => setSocketConnected(false);
+    const join = () => { setSocketState("connected"); socket.emit("subscribe", {}); };
+    const onDisconnect = () => setSocketState("disconnected");
     const onSafety = (event: SafetyLiveEvent) => {
       setLiveEvents((prev) => [event, ...prev].slice(0, 50));
       // Pull the canonical row into the feed/KPIs too.
@@ -278,18 +371,20 @@ export default function SafetyWorkforce() {
     };
     socket.on("connect", join);
     socket.on("disconnect", onDisconnect);
+    socket.on("connect_error", onDisconnect);
     socket.on("safety:event", onSafety);
     if (socket.connected) join();
     return () => {
       socket.off("connect", join);
       socket.off("disconnect", onDisconnect);
+      socket.off("connect_error", onDisconnect);
       socket.off("safety:event", onSafety);
       releaseSharedSocket();
     };
   }, [canView, utils]);
 
   // ── Mutation error handler — flag-off CONFLICT → calm info (not red) ─────────
-  const onMutationError = (e: { data?: { code?: string } | null; message: string }) => {
+  const onMutationError: MutationErrorHandler = (e) => {
     if (isFeatureDisabledError(e)) {
       if (/workforce/i.test(e.message)) {
         toast.info(t("workforce.flagOffToast", "Workforce is disabled (preview). Set WORKFORCE_ENABLED=true to act."));
@@ -306,7 +401,9 @@ export default function SafetyWorkforce() {
     }
   };
 
-  // ── Mutations ────────────────────────────────────────────────────────────────
+  // ── Mutations (toast + làm mới ở cấp TRANG: vẫn chạy nếu sheet đã đóng giữa chừng) ─────────
+  // Ghi chú R-2-n: mỗi mutation một mục tiêu mỗi lần bấm/xác nhận, payload như trang cũ.
+  // signalHandshake / advancePhase / abortCollaboration nằm trong panel Phối hợp (không bao giờ unmount).
   const auditM = trpc.safety.auditEvent.useMutation({
     onSuccess: () => { toast.success(t("safety.audited", "Event audited")); setAuditTarget(null); refetchAll(); },
     onError: onMutationError,
@@ -314,23 +411,22 @@ export default function SafetyWorkforce() {
   const ingestM = trpc.safety.ingestProximity.useMutation({
     onSuccess: (r) => {
       if (r && "triggered" in r && r.triggered) {
-        // SAF-01 — this dialog always sends source:"test" (see ProximityDialog.submit
+        // SAF-01 — this form always sends source:"test" (see ProximityForm.submit
         // below), and the server never raises an Andon for a test-sourced trigger.
         toast.success(t("safety.proximityTriggered", "Near-miss recorded (source 'test') — TEST ONLY, no Andon raised, no device command issued"));
       } else {
         toast.info(t("safety.proximityNoop", "Above margin / low confidence — no near-miss recorded (advisory)"));
       }
-      setProximityOpen(false);
       refetchAll();
     },
     onError: onMutationError,
   });
   const assignM = trpc.safety.assignOperator.useMutation({
-    onSuccess: () => { toast.success(t("workforce.assigned", "Operator assigned")); setAssignOpen(false); refetchAll(); },
+    onSuccess: () => { toast.success(t("workforce.assigned", "Operator assigned")); refetchAll(); },
     onError: onMutationError,
   });
   const reassignM = trpc.safety.reassignOperator.useMutation({
-    onSuccess: () => { toast.success(t("workforce.reassigned", "Assignment updated")); setReassignTarget(null); refetchAll(); },
+    onSuccess: () => { toast.success(t("workforce.reassigned", "Assignment updated")); refetchAll(); },
     onError: onMutationError,
   });
   const confirmM = trpc.safety.confirmAssignment.useMutation({
@@ -342,19 +438,7 @@ export default function SafetyWorkforce() {
     onError: onMutationError,
   });
   const startCollabM = trpc.safety.startCollaboration.useMutation({
-    onSuccess: () => { toast.success(t("workforce.collabStarted", "Collaboration started")); setStartCollabOpen(false); refetchAll(); },
-    onError: onMutationError,
-  });
-  const signalM = trpc.safety.signalHandshake.useMutation({
-    onSuccess: () => { toast.success(t("workforce.handshakeSignalled", "Handshake signalled")); refetchAll(); },
-    onError: onMutationError,
-  });
-  const advanceM = trpc.safety.advancePhase.useMutation({
-    onSuccess: () => { toast.success(t("workforce.phaseAdvanced", "Phase advanced")); refetchAll(); },
-    onError: onMutationError,
-  });
-  const abortM = trpc.safety.abortCollaboration.useMutation({
-    onSuccess: () => { toast.success(t("workforce.collabAborted", "Collaboration aborted")); setAbortTarget(null); refetchAll(); },
+    onSuccess: () => { toast.success(t("workforce.collabStarted", "Collaboration started")); refetchAll(); },
     onError: onMutationError,
   });
 
@@ -383,571 +467,1017 @@ export default function SafetyWorkforce() {
     );
   }
 
-  const feedLoading = feedQ.isLoading;
+  // ── Flyouts (một stack sheet phải; URL `?flyout=&flyoutId=` là nguồn sự thật) ──
+  // Chỉ đăng ký khi có quyền điều khiển (nút cũ không có/khóa khi thiếu quyền). Nút cũ khóa khi cờ CHƯA RÕ
+  // (đang kiểm tra / lỗi) ⇒ deep link cũng vậy: sheet chỉ báo trạng thái, không có form. Cờ TẮT (đã rõ) ⇒ form như
+  // nút cũ (server trả CONFLICT ⇒ toast.info êm).
+  const unsettledBody = (status: FeatureStatus, errorText: string) =>
+    status === "error" ? (
+      <p role="alert" className="py-6 text-center text-sm text-destructive">{errorText}</p>
+    ) : (
+      <p className="py-6 text-center text-sm text-muted-foreground">{t("common.gate.checkingStatus", "Checking feature status…")}</p>
+    );
+  const findAssignment = (id: string | null) =>
+    id != null && /^\d+$/.test(id) ? assignments.find((a) => a.id === Number(id)) ?? null : null;
+  const flyouts: Record<string, FlyoutDefinition> = {};
+  if (canControl) {
+    flyouts["safety-proximity"] = {
+      size: "md",
+      title: t("safety.proximityTitle", "Report proximity (TEST ONLY — no alert raised)"),
+      render: () =>
+        safetyAuditUnsettled ? (
+          unsettledBody(
+            safetyAuditStatus,
+            t("safety.auditFlagStatusError", "Could not check whether safety audit is enabled — recording, auditing and proximity ingest are disabled until this is confirmed."),
+          )
+        ) : (
+          <ProximityForm pending={ingestM.isPending} onSubmit={(v, done) => ingestM.mutate(v, { onSuccess: done })} />
+        ),
+    };
+    flyouts["workforce-assign"] = {
+      size: "md",
+      title: t("workforce.assignTitle", "Assign operator"),
+      render: () =>
+        workforceUnsettled ? (
+          unsettledBody(
+            workforceStatus,
+            t("workforce.flagStatusError", "Could not check whether workforce is enabled — assignment and collaboration actions are disabled until this is confirmed."),
+          )
+        ) : (
+          <AssignmentForm mode="assign" pending={assignM.isPending} onSubmit={(v, done) => assignM.mutate(v, { onSuccess: done })} />
+        ),
+    };
+    // Nút "Phân công lại" cũ: chỉ khi có quyền, khoá khi phân công đã kết thúc (không theo cờ).
+    flyouts["workforce-reassign"] = {
+      size: "md",
+      title: t("workforce.reassignTitle", "Reassign operator"),
+      render: (layer) => {
+        const a = findAssignment(layer.id);
+        if (!a) {
+          return (
+            <p className="py-6 text-center text-sm text-muted-foreground">
+              {assignmentsQ.isLoading
+                ? t("safety.loading", "Loading…")
+                : t("workforce.assignmentNotFound", "Assignment #{{id}} is not in the loaded list.", { id: layer.id ?? "" })}
+            </p>
+          );
+        }
+        if (isTerminalAssignment(a)) {
+          return (
+            <p className="py-6 text-center text-sm text-muted-foreground">
+              {t("workforce.assignmentTerminal", "Assignment #{{id}} is finished — it cannot be reassigned.", { id: a.id })}
+            </p>
+          );
+        }
+        return (
+          <AssignmentForm
+            key={a.id}
+            mode="reassign"
+            existing={a}
+            pending={reassignM.isPending}
+            onSubmit={(v, done) => reassignM.mutate({ assignmentId: a.id, ...v }, { onSuccess: done })}
+          />
+        );
+      },
+    };
+    flyouts["collab-start"] = {
+      size: "md",
+      title: t("workforce.startCollabTitle", "Start human↔robot collaboration"),
+      render: () =>
+        workforceUnsettled ? (
+          unsettledBody(
+            workforceStatus,
+            t("workforce.flagStatusError", "Could not check whether workforce is enabled — assignment and collaboration actions are disabled until this is confirmed."),
+          )
+        ) : (
+          <StartCollabForm pending={startCollabM.isPending} onSubmit={(v, done) => startCollabM.mutate(v, { onSuccess: done })} />
+        ),
+    };
+  }
+
+  const chipItems: StatusChipItem[] = [
+    {
+      id: "open-events",
+      // R-2-p: số an toàn — không bao giờ vào "+N" (chip nhân lực lỗi/đang tải không được đẩy nó ra).
+      pinned: true,
+      label: t("safety.chip.openEvents", "Unaudited"),
+      value: kpis.openSafetyEvents,
+      // Cửa sổ FEED_LIMIT đầy ⇒ có thể còn sự kiện chưa kiểm định ngoài cửa sổ ⇒ "≥N", không phải N.
+      state: chipStateFromQuery(feedQ, (d) => (d as unknown[]).length >= FEED_LIMIT),
+      tone: kpis.openSafetyEvents > 0 ? "warning" : "default",
+      source: t("safety.chip.src.openEvents", "safety.feed — events without an audit stamp among the latest 200 (type filter applies)"),
+    },
+    {
+      id: "near-miss-today",
+      pinned: true,
+      label: t("safety.chip.nearMissToday", "Near-misses today"),
+      value: kpis.nearMissesToday,
+      state: chipStateFromQuery(trendQ),
+      tone: kpis.nearMissesToday > 0 ? "warning" : "success",
+      source: t("safety.chip.src.nearMiss", "safety.nearMissTrend — today's (UTC) near-miss count in the 30-day trend"),
+    },
+    {
+      id: "active-assignments",
+      label: t("safety.chip.activeAssignments", "Active assignments"),
+      value: kpis.activeAssignments,
+      state: chipStateFromQuery(assignmentsQ),
+      tone: kpis.activeAssignments > 0 ? "success" : "default",
+      source: t("safety.chip.src.assignments", "safety.listAssignments — assignments with status 'Active' in the loaded list (status filter applies)"),
+    },
+    {
+      id: "active-collabs",
+      label: t("safety.chip.activeCollabs", "Active collaborations"),
+      value: kpis.activeCollaborations,
+      state: chipStateFromQuery(collabsQ),
+      tone: kpis.activeCollaborations > 0 ? "success" : "default",
+      source: t("safety.chip.src.collabs", "safety.listCollaborations — sessions not finished (phase not 'done' and no end time)"),
+      onClick: () => setSideTab("collab"),
+      active: sideTab === "collab",
+    },
+  ];
+
+  const ctx: SafetyCtxValue = {
+    tab,
+    narrow,
+    canControl,
+    safetyCanControl,
+    safetyControlReason,
+    workforceCanControl,
+    workforceControlReason,
+    safetyAuditStatus,
+    workforceStatus,
+    feed,
+    feedLoading: feedQ.isLoading,
+    eventTypeFilter,
+    setEventTypeFilter,
+    liveEvents,
+    auditPending: auditM.isPending,
+    setAuditTarget,
+    board,
+    boardLoading: boardQ.isLoading,
+    assignments,
+    assignmentsLoading: assignmentsQ.isLoading,
+    assignStatusFilter,
+    setAssignStatusFilter,
+    confirmPending: confirmM.isPending,
+    confirmAssignment: (a) => confirmM.mutate({ assignmentId: a.id }),
+    setCloseTarget,
+    sideTab,
+    setSideTab,
+    trend,
+    collabs,
+    collabsLoading: collabsQ.isLoading,
+    sourceHealth: sourceHealthQ.data as SourceHealth | undefined,
+    sourceLoading: sourceHealthQ.isLoading,
+    sourceError: sourceHealthQ.isError,
+    socketConnected,
+    socketState,
+    activeCollabs: kpis.activeCollaborations,
+    collabsState: chipStateFromQuery(collabsQ) === "error" ? "error" : chipStateFromQuery(collabsQ) === "ok" ? "ok" : "loading",
+    sourcePanelRef,
+    refetchAll,
+    onMutationError,
+  };
 
   return (
     <DashboardLayout>
-      <PageContainer className="flex flex-col gap-4 space-y-0">
-        {/* ── PageHeader (DS F1b shared pattern) ─────────────────────────────── */}
-        <PageHeader
-          breadcrumbs={crumbs}
-          icon={<ShieldAlert className="h-6 w-6" />}
-          title={t("safety.title", "Safety & Workforce")}
-          badge={!canControl ? <ViewOnlyBadge module="machine_control" /> : undefined}
-          description={t("safety.subtitle", "Advisory safety monitoring, mixed-workforce assignments and human↔robot handover coordination.")}
-          actions={
-            <Button size="icon" variant="ghost" onClick={refetchAll} title={t("common.refresh", "Refresh")}>
-              <RefreshCw className="h-4 w-4" />
-            </Button>
-          }
-        />
-
-        {/* U7 (doc 26 §2.1) — "Khi nào dùng": trang LÀ GÌ / DÙNG KHI NÀO cho KTV mới. */}
-        <div className="flex items-start gap-2 rounded-md border bg-muted/40 px-3 py-2 text-xs text-muted-foreground">
-          <Info className="mt-0.5 h-3.5 w-3.5 shrink-0 text-primary" aria-hidden="true" />
-          <span>{t("safety.whenToUse", "When to use — monitor safety-relevant events and coordinate mixed human↔robot workforce assignments. Advisory only — not a safety-rated controller.")}</span>
-        </div>
-
-        {/* ── PERSISTENT advisory banner (always visible — critical honesty) ──── */}
-        <div className="flex items-start gap-2 rounded-md border border-amber-500/50 bg-amber-500/10 p-3 text-sm">
-          <ShieldAlert className="mt-0.5 h-5 w-5 shrink-0 text-amber-600" />
-          <div>
-            <div className="font-semibold text-amber-700 dark:text-amber-400">
-              {t("safety.advisoryTitle", "Advisory monitoring only — not a safety-rated system")}
-            </div>
-            <div className="mt-0.5 text-muted-foreground">
-              {t(
-                "safety.advisoryBanner",
-                "This surface logs and coordinates safety-relevant observations. It is NOT a SIL 2/3 safety controller and provides NO sub-second stop guarantee. Physical safety relies on certified hardware (Safety PLC / interlocks), deferred to a hardware phase. No action here issues a direct device command.",
-              )}
-            </div>
-          </div>
-        </div>
-
-        {/* ── Flag status banners — honest 4-state (loading/off/on/error), doc 80 Task 1 ── */}
-        <FeatureStatusGate
-          status={safetyAuditStatus}
-          offMessage={t(
-            "safety.auditFlagOffBanner",
-            "Preview mode: safety audit is disabled. Reads work; recording, auditing and proximity ingest are blocked until it is enabled.",
-          )}
-          errorMessage={t(
-            "safety.auditFlagStatusError",
-            "Could not check whether safety audit is enabled — recording, auditing and proximity ingest are disabled until this is confirmed.",
-          )}
-        />
-        <FeatureStatusGate
-          status={workforceStatus}
-          offMessage={t(
-            "workforce.flagOffBanner",
-            "Preview mode: workforce is disabled. Reads work; assignment and collaboration actions are blocked until it is enabled.",
-          )}
-          errorMessage={t(
-            "workforce.flagStatusError",
-            "Could not check whether workforce is enabled — assignment and collaboration actions are disabled until this is confirmed.",
-          )}
-        />
-
-        {/* ── doc 80 Task 4 (SAF-02) — safety SOURCE panel (read-only, safety.sourceHealth) ── */}
-        <SafetySourcePanel
-          data={sourceHealthQ.data as SourceHealth | undefined}
-          isLoading={sourceHealthQ.isLoading}
-          isError={sourceHealthQ.isError}
-          socketConnected={socketConnected}
-        />
-
-        {/* ── KPI strip ──────────────────────────────────────────────────────── */}
-        <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-          <MetricCard icon={<AlertTriangle className="h-4 w-4" />} label={t("safety.kpi.openEvents", "Open safety events (unaudited)")} value={kpis.openSafetyEvents} tone={kpis.openSafetyEvents > 0 ? "warning" : "default"} />
-          <MetricCard icon={<ScanLine className="h-4 w-4" />} label={t("safety.kpi.nearMissesToday", "Near-misses today")} value={kpis.nearMissesToday} tone={kpis.nearMissesToday > 0 ? "warning" : "good"} />
-          <MetricCard icon={<Users className="h-4 w-4" />} label={t("safety.kpi.activeAssignments", "Active assignments")} value={kpis.activeAssignments} tone={kpis.activeAssignments > 0 ? "good" : "default"} />
-          <MetricCard icon={<Handshake className="h-4 w-4" />} label={t("safety.kpi.activeCollabs", "Active collaborations")} value={kpis.activeCollaborations} tone={kpis.activeCollaborations > 0 ? "good" : "default"} />
-        </div>
-
-        {/* ── Tabbed surface ─────────────────────────────────────────────────── */}
-        <Tabs value={tab} onValueChange={setTab} className="gap-4">
-          <TabsList className="flex-wrap">
-            <TabsTrigger value="cockpit"><Activity className="mr-1 h-4 w-4" />{t("safety.tab.cockpit", "Safety cockpit")}</TabsTrigger>
-            <TabsTrigger value="workforce"><Users className="mr-1 h-4 w-4" />{t("safety.tab.workforce", "Workforce board")}</TabsTrigger>
-            <TabsTrigger value="collaboration"><Workflow className="mr-1 h-4 w-4" />{t("safety.tab.collaboration", "Collaboration")}</TabsTrigger>
-          </TabsList>
-
-          {/* ════════════════ TAB: Safety cockpit (S1-b/d) ════════════════ */}
-          <TabsContent value="cockpit" className="flex flex-col gap-4">
-            {/* Near-miss PDCA trend */}
-            <Card>
-              <CardHeader className="pb-2">
-                <CardTitle className="flex items-center gap-2 text-base">
-                  <ScanLine className="h-4 w-4" />
-                  {t("safety.trendTitle", "Near-miss trend (PDCA, last 30 days)")}
-                </CardTitle>
-              </CardHeader>
-              <CardContent className="h-64">
-                {trend.length > 0 ? (
-                  <ResponsiveContainer width="100%" height="100%">
-                    <AreaChart data={trend}>
-                      <CartesianGrid {...chartGridProps} className="opacity-30" />
-                      <XAxis dataKey="day" tick={chartAxisTick} />
-                      <YAxis width={36} allowDecimals={false} tick={chartAxisTick} />
-                      <Tooltip contentStyle={chartTooltipStyle} labelStyle={chartTooltipLabelStyle} />
-                      <Area type="monotone" dataKey="count" name={t("safety.nearMissCount", "Near-misses")} stroke={chartColor(0)} fill={chartColor(0)} fillOpacity={0.2} />
-                    </AreaChart>
-                  </ResponsiveContainer>
-                ) : (
-                  <div className="flex h-full items-center justify-center text-sm text-muted-foreground">
-                    {t("safety.trendEmpty", "No near-misses recorded in the window.")}
-                  </div>
-                )}
-              </CardContent>
-            </Card>
-
-            {/* Live ticker + report-proximity action */}
-            <Card>
-              <CardHeader className="flex flex-row items-center justify-between gap-2 pb-2">
-                <CardTitle className="flex items-center gap-2 text-base">
-                  <Radio className="h-4 w-4" />
-                  {t("safety.liveTitle", "Live advisory ticker")}
-                  {liveEvents.length > 0 && (
-                    <Badge variant="secondary" className="ml-1 text-xs">{liveEvents.length}</Badge>
-                  )}
-                </CardTitle>
-                <Button size="sm" variant="outline" className="h-8" disabled={!safetyCanControl} title={safetyControlReason} onClick={() => setProximityOpen(true)}>
-                  <ScanLine className="mr-1 h-4 w-4" />{t("safety.reportProximity", "Report proximity (TEST ONLY — no alert raised)")}
-                </Button>
-              </CardHeader>
-              <CardContent>
-                {liveEvents.length === 0 ? (
-                  <p className="py-2 text-xs text-muted-foreground">
-                    {t("safety.liveEmpty", "Waiting for live safety:event broadcasts… (advisory only)")}
-                  </p>
-                ) : (
-                  <div className="flex flex-wrap gap-2">
-                    {liveEvents.slice(0, 12).map((e, i) => (
-                      <div key={`${e.id}-${i}`} className="inline-flex items-center gap-1.5 rounded-md border border-border bg-muted/40 px-2 py-1 text-xs">
-                        {eventTypeBadge(e.eventType, t)}
-                        <span className="text-muted-foreground">#{e.id}</span>
-                        <span className="text-muted-foreground">{fmtDateTime(e.createdAt)}</span>
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </CardContent>
-            </Card>
-
-            {/* Safety events feed */}
-            <Card>
-              <CardHeader className="flex flex-row items-center justify-between gap-2 pb-2">
-                <CardTitle className="flex items-center gap-2 text-base">
-                  <AlertTriangle className="h-4 w-4" />
-                  {t("safety.feedTitle", "Safety event feed")}
-                </CardTitle>
-                <div className="flex items-center gap-2">
-                  <Label className="text-xs text-muted-foreground">{t("safety.filterType", "Type")}</Label>
-                  <Select
-                    value={eventTypeFilter || "all"}
-                    onValueChange={(v) => setEventTypeFilter(v === "all" ? "" : v)}
+      <FlyoutHost flyouts={flyouts}>
+        {/* doc 81 Đợt 2 Task 2 — PageContainer: không đệm kép với <main> của shell. */}
+        <PageContainer className="space-y-0">
+          <SafetyCtx.Provider value={ctx}>
+            <CockpitLayout
+              icon={<ShieldAlert />}
+              title={
+                <span className="flex items-center gap-2">
+                  {t("safety.title", "Safety & Workforce")}
+                  {!canControl && <ViewOnlyBadge module="machine_control" />}
+                </span>
+              }
+              notices={narrow ? undefined : <FlagChips />}
+              chips={
+                <>
+                  <StatusChipStrip items={chipItems} maxVisible={kpiAll ? 4 : 2} />
+                  {/* "Khi nào dùng" đứng SAU dải KPI: header chật thì nó bị cắt trước, không phải số liệu. */}
+                  {!narrow && <WhenToUseChip />}
+                </>
+              }
+              actions={
+                <>
+                  {/* An toàn trước hết: vùng hành động không co (shrink-0) ⇒ hai chip này KHÔNG BAO GIỜ bị cắt ở ≥1024 px. */}
+                  {!narrow && <SafetyChips />}
+                  <Button
+                    size="icon"
+                    variant="ghost"
+                    onClick={refetchAll}
+                    title={t("common.refresh", "Refresh")}
+                    aria-label={t("common.refresh", "Refresh")}
                   >
-                    <SelectTrigger className="h-8 w-40"><SelectValue /></SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="all">{t("safety.all", "All")}</SelectItem>
-                      {EVENT_TYPES.map((s) => (
-                        <SelectItem key={s} value={s}>{t(`safety.evt.${s}`, s)}</SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-              </CardHeader>
-              <CardContent className="p-0">
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead>{t("safety.col.id", "ID")}</TableHead>
-                      <TableHead>{t("safety.col.type", "Type")}</TableHead>
-                      <TableHead>{t("safety.col.detectedBy", "Detected by")}</TableHead>
-                      <TableHead>{t("safety.col.outcome", "Outcome")}</TableHead>
-                      <TableHead>{t("safety.col.robotStation", "Robot / Station")}</TableHead>
-                      <TableHead>{t("safety.col.response", "Response")}</TableHead>
-                      <TableHead>{t("safety.col.when", "When")}</TableHead>
-                      <TableHead>{t("safety.col.audit", "Audit")}</TableHead>
-                      <TableHead className="text-right">{t("common.actions", "Actions")}</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {feedLoading && (
-                      <TableRow><TableCell colSpan={9} className="py-8 text-center text-muted-foreground">{t("safety.loading", "Loading…")}</TableCell></TableRow>
-                    )}
-                    {!feedLoading && feed.length === 0 && (
-                      <TableRow><TableCell colSpan={9} className="py-8 text-center text-muted-foreground">{t("safety.feedEmpty", "No safety events recorded. This feed is advisory monitoring only.")}</TableCell></TableRow>
-                    )}
-                    {feed.map((e) => (
-                      <TableRow key={e.id} className={e.isNearMiss ? "bg-violet-500/5" : undefined}>
-                        <TableCell className="font-mono text-xs">#{e.id}</TableCell>
-                        <TableCell>
-                          <div className="flex items-center gap-1">
-                            {eventTypeBadge(e.eventType, t)}
-                            {e.isNearMiss && <Badge variant="outline" className="text-[10px]">{t("safety.nearMissTag", "near-miss")}</Badge>}
-                          </div>
-                        </TableCell>
-                        <TableCell>{detectedByBadge(e.detectedBy, t)}</TableCell>
-                        <TableCell>{outcomeBadge(e.outcome, t)}</TableCell>
-                        <TableCell className="text-xs">
-                          <span className="inline-flex items-center gap-2">
-                            {e.robotId != null ? <span className="inline-flex items-center gap-1"><Bot className="h-3 w-3" />#{e.robotId}</span> : <span className="text-muted-foreground">—</span>}
-                            {e.stationId != null && <span className="text-muted-foreground">@{e.stationId}</span>}
-                          </span>
-                        </TableCell>
-                        <TableCell className="text-xs tabular-nums">{e.responseTimeMs != null ? `${e.responseTimeMs}ms` : "—"}</TableCell>
-                        <TableCell className="text-xs whitespace-nowrap">{fmtDateTime(e.createdAt)}</TableCell>
-                        <TableCell className="text-xs">
-                          {e.auditedAt != null
-                            ? <span className="inline-flex items-center gap-1 text-emerald-600"><CheckCircle2 className="h-3.5 w-3.5" />{t("safety.audited", "Audited")}</span>
-                            : <span className="text-muted-foreground">{t("safety.unaudited", "Pending")}</span>}
-                        </TableCell>
-                        <TableCell className="text-right">
-                          {canControl && e.auditedAt == null ? (
-                            <Button size="sm" variant="ghost" className="h-7" disabled={auditM.isPending} onClick={() => setAuditTarget(e)}>
-                              <ClipboardCheck className="mr-1 h-3.5 w-3.5" />{t("safety.audit", "Audit")}
-                            </Button>
-                          ) : (
-                            <span className="text-xs text-muted-foreground">—</span>
-                          )}
-                        </TableCell>
-                      </TableRow>
-                    ))}
-                  </TableBody>
-                </Table>
-              </CardContent>
-            </Card>
-          </TabsContent>
-
-          {/* ════════════════ TAB: Workforce board (S1-a) ════════════════ */}
-          <TabsContent value="workforce" className="flex flex-col gap-4">
-            {/* Current board — humans + robots per station */}
-            <Card>
-              <CardHeader className="pb-2">
-                <CardTitle className="flex items-center gap-2 text-base">
-                  <Users className="h-4 w-4" />
-                  {t("workforce.boardTitle", "Current board — who & which robot is at each station now")}
-                </CardTitle>
-              </CardHeader>
-              <CardContent>
-                {boardQ.isLoading && <p className="py-6 text-center text-sm text-muted-foreground">{t("safety.loading", "Loading…")}</p>}
-                {!boardQ.isLoading && board.length === 0 && (
-                  <p className="py-6 text-center text-sm text-muted-foreground">
-                    {t("workforce.boardEmpty", "No active assignments or enabled robots to show on the board.")}
-                  </p>
-                )}
-                <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-                  {board.map((st, idx) => (
-                    <Card key={`${st.stationId ?? "_"}-${st.lineId ?? "_"}-${idx}`} className="border-border/60">
-                      <CardContent className="space-y-2 p-3">
-                        <div className="flex items-center justify-between gap-2">
-                          <div className="font-medium">
-                            {st.stationId != null ? t("workforce.station", "Station") + ` ${st.stationId}` : t("workforce.unassignedStation", "Unassigned")}
-                          </div>
-                          {st.lineId != null && <Badge variant="outline" className="text-xs">{t("workforce.line", "Line")} {st.lineId}</Badge>}
-                        </div>
-                        {/* Humans */}
-                        <div className="space-y-1">
-                          {st.humans.length === 0 && <div className="text-xs text-muted-foreground">{t("workforce.noHumans", "No humans")}</div>}
-                          {st.humans.map((h) => (
-                            <div key={`h-${h.assignmentId}`} className="flex items-center justify-between gap-2 text-xs">
-                              <span className="inline-flex items-center gap-1"><User className="h-3 w-3 text-blue-500" />{t("workforce.operator", "Operator")} #{h.operatorId}</span>
-                              {skillBadge(h.skillLevel, t)}
-                            </div>
-                          ))}
-                        </div>
-                        {/* Robots */}
-                        <div className="space-y-1 border-t border-border/60 pt-1">
-                          {st.robots.length === 0 && <div className="text-xs text-muted-foreground">{t("workforce.noRobots", "No robots")}</div>}
-                          {st.robots.map((r) => (
-                            <div key={`r-${r.robotId}`} className="flex items-center justify-between gap-2 text-xs">
-                              <span className="inline-flex items-center gap-1"><Bot className="h-3 w-3 text-violet-500" />{r.code}</span>
-                              <span className="inline-flex items-center gap-1 text-muted-foreground">
-                                <span>{r.status}</span>
-                                <Badge variant="secondary" className="text-[10px]">{r.openTaskCount} {t("workforce.openTasks", "tasks")}</Badge>
-                              </span>
-                            </div>
-                          ))}
-                        </div>
-                      </CardContent>
-                    </Card>
-                  ))}
-                </div>
-              </CardContent>
-            </Card>
-
-            {/* Assignments table */}
-            <Card>
-              <CardHeader className="flex flex-row items-center justify-between gap-2 pb-2">
-                <CardTitle className="flex items-center gap-2 text-base">
-                  <ClipboardCheck className="h-4 w-4" />
-                  {t("workforce.assignmentsTitle", "Operator assignments")}
-                </CardTitle>
-                <div className="flex items-center gap-2">
-                  <Select
-                    value={assignStatusFilter || "all"}
-                    onValueChange={(v) => setAssignStatusFilter(v === "all" ? "" : v)}
-                  >
-                    <SelectTrigger className="h-8 w-32"><SelectValue /></SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="all">{t("safety.all", "All")}</SelectItem>
-                      {ASSIGN_STATUSES.map((s) => (
-                        <SelectItem key={s} value={s}>{t(`safety.assign.${s}`, s)}</SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                  <Button size="sm" variant="outline" className="h-8" disabled={!workforceCanControl} title={workforceControlReason} onClick={() => setAssignOpen(true)}>
-                    <UserPlus className="mr-1 h-4 w-4" />{t("workforce.assign", "Assign")}
+                    <RefreshCw className="h-4 w-4" />
                   </Button>
-                </div>
-              </CardHeader>
-              <CardContent className="p-0">
-                <ProvenanceSummary rows={assignments} className="mx-3 mb-2" />
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead>{t("workforce.col.operator", "Operator")}</TableHead>
-                      <TableHead>{t("workforce.col.lineStation", "Line / Station")}</TableHead>
-                      <TableHead>{t("workforce.col.skill", "Skill")}</TableHead>
-                      <TableHead>{t("workforce.col.status", "Status")}</TableHead>
-                      <TableHead>{t("workforce.col.window", "Window")}</TableHead>
-                      <TableHead className="text-right">{t("common.actions", "Actions")}</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {assignmentsQ.isLoading && (
-                      <TableRow><TableCell colSpan={6} className="py-8 text-center text-muted-foreground">{t("safety.loading", "Loading…")}</TableCell></TableRow>
-                    )}
-                    {!assignmentsQ.isLoading && assignments.length === 0 && (
-                      <TableRow><TableCell colSpan={6} className="py-8 text-center text-muted-foreground">{t("workforce.assignmentsEmpty", "No operator assignments yet.")}</TableCell></TableRow>
-                    )}
-                    {assignments.map((a) => {
-                      const terminal = a.status === "completed" || a.status === "cancelled";
-                      return (
-                        <TableRow key={a.id}>
-                          <TableCell className="text-xs">
-                            <span className="inline-flex items-center gap-1.5">
-                              <span className="inline-flex items-center gap-1"><User className="h-3 w-3" />#{a.operatorId}</span>
-                              <ProvenanceBadge row={a} />
-                            </span>
-                          </TableCell>
-                          <TableCell className="text-xs">
-                            {a.lineId != null ? `L${a.lineId}` : "—"}{" / "}{a.stationId != null ? `S${a.stationId}` : "—"}
-                          </TableCell>
-                          <TableCell>{skillBadge(a.skillLevel, t) ?? <span className="text-xs text-muted-foreground">—</span>}</TableCell>
-                          <TableCell>{assignStatusBadge(a.status, t)}</TableCell>
-                          <TableCell className="text-xs whitespace-nowrap">{fmtDateTime(a.assignedStart)} → {fmtDateTime(a.assignedEnd)}</TableCell>
-                          <TableCell className="text-right">
-                            {canControl ? (
-                              <div className="flex justify-end gap-1">
-                                {a.status === "planned" && (
-                                  <Button size="sm" variant="ghost" className="h-7" disabled={confirmM.isPending} onClick={() => confirmM.mutate({ assignmentId: a.id })}>
-                                    <CheckCircle2 className="mr-1 h-3.5 w-3.5" />{t("workforce.confirm", "Confirm")}
-                                  </Button>
-                                )}
-                                <Button size="sm" variant="ghost" className="h-7" disabled={terminal} onClick={() => setReassignTarget(a)}>
-                                  <RefreshCcw className="mr-1 h-3.5 w-3.5" />{t("workforce.reassign", "Reassign")}
-                                </Button>
-                                <Button size="sm" variant="ghost" className="h-7" disabled={terminal} onClick={() => setCloseTarget(a)}>
-                                  <Ban className="mr-1 h-3.5 w-3.5 text-muted-foreground" />{t("workforce.close", "Close")}
-                                </Button>
-                              </div>
-                            ) : (
-                              <span className="text-xs text-muted-foreground">{t("safety.viewOnly", "View only")}</span>
-                            )}
-                          </TableCell>
-                        </TableRow>
-                      );
-                    })}
-                  </TableBody>
-                </Table>
-              </CardContent>
-            </Card>
-          </TabsContent>
+                </>
+              }
+              tabs={TABS}
+              basePath={BASE_PATH}
+              defaultTab="cockpit"
+              toolbarEnd={narrow ? undefined : <TabToolbar />}
+              side={<SidePanel />}
+              sideWidth={kpiAll ? 340 : 300}
+              sideLabel={t("safety.side.label", "Safety sources, trend and collaboration")}
+              mainName="safety-workforce"
+            />
+          </SafetyCtx.Provider>
+        </PageContainer>
 
-          {/* ════════════════ TAB: Collaboration (S1-a handover) ════════════════ */}
-          <TabsContent value="collaboration" className="flex flex-col gap-4">
-            <Card>
-              <CardHeader className="flex flex-row items-center justify-between gap-2 pb-2">
-                <CardTitle className="flex items-center gap-2 text-base">
-                  <Handshake className="h-4 w-4" />
-                  {t("workforce.collabTitle", "Human↔robot handover sessions")}
-                </CardTitle>
-                <Button size="sm" variant="outline" className="h-8" disabled={!workforceCanControl} title={workforceControlReason} onClick={() => setStartCollabOpen(true)}>
-                  <HandMetal className="mr-1 h-4 w-4" />{t("workforce.startCollab", "Start collaboration")}
-                </Button>
-              </CardHeader>
-              <CardContent>
-                {collabsQ.isLoading && <p className="py-6 text-center text-sm text-muted-foreground">{t("safety.loading", "Loading…")}</p>}
-                {!collabsQ.isLoading && collabs.length === 0 && (
-                  <p className="py-6 text-center text-sm text-muted-foreground">
-                    {t("workforce.collabEmpty", "No collaboration sessions. Handover coordination is advisory only — no device command is issued.")}
-                  </p>
-                )}
-                <div className="grid gap-3 lg:grid-cols-2">
-                  {collabs.map((c) => {
-                    const terminal = c.phase === "done" || c.endedAt != null;
-                    return (
-                      <Card key={c.id} className="border-border/60">
-                        <CardContent className="space-y-3 p-3">
-                          <div className="flex items-center justify-between gap-2">
-                            <div className="min-w-0">
-                              <div className="font-medium">
-                                {t("workforce.session", "Session")} #{c.id}
-                                {c.operationCode && <span className="ml-1 font-mono text-xs text-muted-foreground">{c.operationCode}</span>}
-                              </div>
-                              <div className="text-xs text-muted-foreground">
-                                {c.humanOperatorId != null && <span className="mr-2 inline-flex items-center gap-1"><User className="h-3 w-3" />#{c.humanOperatorId}</span>}
-                                {c.robotDeviceId != null && <span className="inline-flex items-center gap-1"><Bot className="h-3 w-3" />#{c.robotDeviceId}</span>}
-                              </div>
-                            </div>
-                            {handshakeBadge(c.handshakeState, t)}
-                          </div>
+        {/* ── Audit confirm (R-2-n: như cũ — AlertDialog, một sự kiện mỗi lần xác nhận) ── */}
+        <AlertDialog open={!!auditTarget} onOpenChange={(o) => !o && setAuditTarget(null)}>
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle>{t("safety.auditConfirmTitle", "Audit this safety event?")}</AlertDialogTitle>
+              <AlertDialogDescription>
+                {t("safety.auditConfirmBody", "Stamps a human PDCA review on the record (who reviewed it, when). Advisory — it does not change any device.")}
+                {auditTarget && <span className="mt-1 block font-mono text-xs">#{auditTarget.id} · {auditTarget.eventType}</span>}
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel>{t("common.cancel", "Cancel")}</AlertDialogCancel>
+              <AlertDialogAction onClick={() => auditTarget && auditM.mutate({ eventId: auditTarget.id })}>
+                {t("safety.confirmAudit", "Audit event")}
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
 
-                          {/* Phase indicator: human_prep → robot_work → human_verify → done */}
-                          <div className="flex items-center gap-1">
-                            {COLLAB_PHASES.map((p, i) => {
-                              const reached = COLLAB_PHASES.indexOf(c.phase as (typeof COLLAB_PHASES)[number]) >= i;
-                              const current = c.phase === p;
-                              return (
-                                <div key={p} className="flex items-center gap-1">
-                                  <span
-                                    className={`rounded px-1.5 py-0.5 text-[10px] font-medium ${
-                                      current ? "bg-primary text-primary-foreground"
-                                      : reached ? "bg-emerald-500/15 text-emerald-600"
-                                      : "bg-muted text-muted-foreground"
-                                    }`}
-                                  >
-                                    {t(`workforce.phase.${p}`, p)}
-                                  </span>
-                                  {i < COLLAB_PHASES.length - 1 && <ChevronRight className="h-3 w-3 text-muted-foreground" />}
-                                </div>
-                              );
-                            })}
-                          </div>
-                          <Progress
-                            value={((COLLAB_PHASES.indexOf(c.phase as (typeof COLLAB_PHASES)[number]) + 1) / COLLAB_PHASES.length) * 100}
-                          />
+        {/* ── Close assignment confirm (R-2-n: như cũ) ── */}
+        <AlertDialog open={!!closeTarget} onOpenChange={(o) => !o && setCloseTarget(null)}>
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle>{t("workforce.closeConfirmTitle", "Close this assignment?")}</AlertDialogTitle>
+              <AlertDialogDescription>
+                {t("workforce.closeConfirmBody", "Marks the assignment completed (terminal).")}
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel>{t("common.cancel", "Cancel")}</AlertDialogCancel>
+              <AlertDialogAction onClick={() => closeTarget && closeM.mutate({ assignmentId: closeTarget.id })}>
+                {t("workforce.confirmClose", "Close assignment")}
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
+      </FlyoutHost>
+    </DashboardLayout>
+  );
+}
 
-                          {canControl && !terminal && (
-                            <div className="flex flex-wrap gap-1">
-                              <Button size="sm" variant="ghost" className="h-7" disabled={signalM.isPending} onClick={() => signalM.mutate({ sessionId: c.id, state: "ack" })}>
-                                <Send className="mr-1 h-3.5 w-3.5" />{t("workforce.signalAck", "Ack")}
-                              </Button>
-                              <Button size="sm" variant="ghost" className="h-7" disabled={signalM.isPending} onClick={() => signalM.mutate({ sessionId: c.id, state: "clear" })}>
-                                <CheckCircle2 className="mr-1 h-3.5 w-3.5" />{t("workforce.signalClear", "Clear")}
-                              </Button>
-                              <Button size="sm" variant="ghost" className="h-7" disabled={advanceM.isPending} onClick={() => advanceM.mutate({ sessionId: c.id })}>
-                                <ChevronRight className="mr-1 h-3.5 w-3.5" />{t("workforce.advance", "Advance phase")}
-                              </Button>
-                              <Button size="sm" variant="ghost" className="h-7" onClick={() => setAbortTarget(c)}>
-                                <Ban className="mr-1 h-3.5 w-3.5 text-destructive" />{t("workforce.abort", "Abort")}
-                              </Button>
-                            </div>
-                          )}
-                          {terminal && (
-                            <div className="text-xs text-muted-foreground">
-                              {t("workforce.collabClosed", "Closed")} · {fmtDateTime(c.endedAt ?? c.updatedAt)}
-                            </div>
-                          )}
-                        </CardContent>
-                      </Card>
-                    );
-                  })}
-                </div>
-              </CardContent>
-            </Card>
-          </TabsContent>
-        </Tabs>
+// ══════════════════════════════════════════════════════════════════════════════
+// Header chips
+// ══════════════════════════════════════════════════════════════════════════════
 
-        {/* Footer safety note — reinforces the advisory nature */}
-        <div className="flex items-start gap-2 rounded-md border border-border bg-muted/40 p-3 text-xs text-muted-foreground">
-          <Lock className="mt-0.5 h-4 w-4 shrink-0" />
-          <span>
+/** Chip cờ (4 trạng thái, gọi tên cờ) — vào header (≥1280) hoặc hàng đầu nội dung (<1280). */
+function FlagChips() {
+  const { t } = useTranslation();
+  const ctx = useSafetyCtx();
+  return (
+    <>
+      {/* Flag status — honest 4-state (loading/off/on/error), doc 80 Task 1, as chips. */}
+      <FeatureStatusNoticeChip
+        status={ctx.safetyAuditStatus}
+        subject={t("safety.flag.safetyAudit", "Safety audit")}
+        offMessage={t(
+          "safety.auditFlagOffBanner",
+          "Preview mode: safety audit is disabled. Reads work; recording, auditing and proximity ingest are blocked until it is enabled.",
+        )}
+        errorMessage={t(
+          "safety.auditFlagStatusError",
+          "Could not check whether safety audit is enabled — recording, auditing and proximity ingest are disabled until this is confirmed.",
+        )}
+      />
+      <FeatureStatusNoticeChip
+        status={ctx.workforceStatus}
+        subject={t("safety.flag.workforce", "Workforce")}
+        offMessage={t(
+          "workforce.flagOffBanner",
+          "Preview mode: workforce is disabled. Reads work; assignment and collaboration actions are blocked until it is enabled.",
+        )}
+        errorMessage={t(
+          "workforce.flagStatusError",
+          "Could not check whether workforce is enabled — assignment and collaboration actions are disabled until this is confirmed.",
+        )}
+      />
+    </>
+  );
+}
+
+/** U7 (doc 26 §2.1) — "Khi nào dùng" (khoá riêng của trang) + phụ đề cũ. */
+function WhenToUseChip() {
+  const { t } = useTranslation();
+  return (
+      <NoticeChip kind="whenToUse">
+        <div className="space-y-2">
+          <p data-when-to-use="safety.whenToUse">
+            {t("safety.whenToUse", "When to use — monitor safety-relevant events and coordinate mixed human↔robot workforce assignments. Advisory only — not a safety-rated controller.")}
+          </p>
+          <p className="text-muted-foreground">
+            {t("safety.subtitle", "Advisory safety monitoring, mixed-workforce assignments and human↔robot handover coordination.")}
+          </p>
+        </div>
+      </NoticeChip>
+  );
+}
+
+/** Chip "Tư vấn — không phải SIS" + chip nguồn an toàn — luôn thấy, không bao giờ vào "+N". */
+function SafetyChips() {
+  const { t } = useTranslation();
+  return (
+    <>
+      {/* PERSISTENT advisory notice (thay khối 88 px) — popover giữ NGUYÊN tiêu đề + câu cũ + câu chân trang. */}
+      <NoticeChip
+        kind="honesty"
+        label={
+          <span className="inline-flex items-center gap-1">
+            {t("safety.advisoryChip", "Advisory — not a SIS")}
+            <Info className="h-3 w-3" aria-hidden="true" />
+          </span>
+        }
+      >
+        <div className="space-y-2">
+          <p className="font-semibold text-amber-700 dark:text-amber-400">
+            {t("safety.advisoryTitle", "Advisory monitoring only — not a safety-rated system")}
+          </p>
+          <p className="text-muted-foreground">
+            {t(
+              "safety.advisoryBanner",
+              "This surface logs and coordinates safety-relevant observations. It is NOT a SIL 2/3 safety controller and provides NO sub-second stop guarantee. Physical safety relies on certified hardware (Safety PLC / interlocks), deferred to a hardware phase. No action here issues a direct device command.",
+            )}
+          </p>
+          <p className="text-xs text-muted-foreground">
             {t(
               "safety.footerNote",
               "All writes on this page are monitoring / logging / coordination state only. Near-miss ingest raises a yellow Andon and PROPOSES (never executes) a speed reduction through the existing gated dispatcher.",
             )}
-          </span>
+          </p>
         </div>
-      </PageContainer>
+      </NoticeChip>
+      <SafetySourceChip />
+    </>
+  );
+}
 
-      {/* ── Audit confirm ────────────────────────────────────────────────────── */}
-      <AlertDialog open={!!auditTarget} onOpenChange={(o) => !o && setAuditTarget(null)}>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>{t("safety.auditConfirmTitle", "Audit this safety event?")}</AlertDialogTitle>
-            <AlertDialogDescription>
-              {t("safety.auditConfirmBody", "Stamps a human PDCA review on the record (who reviewed it, when). Advisory — it does not change any device.")}
-              {auditTarget && <span className="mt-1 block font-mono text-xs">#{auditTarget.id} · {auditTarget.eventType}</span>}
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel>{t("common.cancel", "Cancel")}</AlertDialogCancel>
-            <AlertDialogAction onClick={() => auditTarget && auditM.mutate({ eventId: auditTarget.id })}>
-              {t("safety.confirmAudit", "Audit event")}
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
+type SegTone = "ok" | "warning" | "error" | "loading";
+const SEG_TONE: Record<SegTone, string> = {
+  ok: "bg-emerald-500/15 text-emerald-700 dark:text-emerald-300",
+  warning: "bg-amber-500/20 text-amber-800 dark:text-amber-300",
+  error: "bg-destructive/15 text-destructive",
+  loading: "bg-muted text-muted-foreground",
+};
+const CHIP_TONE: Record<SegTone, string> = {
+  ok: "border-emerald-500/40",
+  warning: "border-amber-500/60",
+  error: "border-destructive/60",
+  loading: "border-border",
+};
+const TONE_RANK: Record<SegTone, number> = { error: 0, warning: 1, loading: 2, ok: 3 };
 
-      {/* ── Report proximity (advisory test) dialog ──────────────────────────── */}
-      {proximityOpen && (
-        <ProximityDialog
-          pending={ingestM.isPending}
-          onClose={() => setProximityOpen(false)}
-          onSubmit={(v) => ingestM.mutate(v)}
-        />
+/**
+ * Doc 81 Đợt 2 Task 8 — mô hình chip nguồn an toàn. Không bao giờ "đẹp hơn thực tế":
+ *  - truy vấn lỗi ⇒ error; chưa có dữ liệu ⇒ loading (không đoán ok);
+ *  - chỉ PLC THẬT (real / mixed) là ok; SIM / chưa gán tag / tắt / không cấu hình ⇒ warning; lỗi đọc cấu hình ⇒ error;
+ *  - preflight bị tắt (lệnh thật không được kiểm) ⇒ thêm đoạn error;
+ *  - lệnh thật bị chặn trong khi PLC thật (vd tag an toàn chất lượng xấu) ⇒ thêm đoạn warning (khi PLC không thật,
+ *    đoạn PLC đã nói lý do chặn);
+ *  - E-stop bật mà không safety-rated ⇒ thêm đoạn warning.
+ *  - Fix round 1: luồng trực tiếp — socket máy chủ không chạy / trình duyệt mất kết nối ⇒ thêm đoạn warning;
+ *    đang nối ⇒ đoạn loading (chưa biết, không phải ổn).
+ */
+export function safetySourceChipModel(
+  data: SourceHealth | undefined,
+  isError: boolean,
+  t: (k: string, d: string, o?: Record<string, unknown>) => string,
+  socket: SocketState = "connected",
+): { state: SegTone; segs: Array<{ id: string; tone: SegTone; text: string }> } {
+  const socketSeg = (serverUp: boolean | undefined): { id: string; tone: SegTone; text: string } | null =>
+    serverUp === false
+      ? { id: "socket", tone: "warning", text: t("safety.source.chip.socketDown", "Live: server socket down") }
+      : socket === "disconnected"
+        ? { id: "socket", tone: "warning", text: t("safety.source.chip.socketLost", "Live feed disconnected") }
+        : socket === "connecting"
+          ? { id: "socket", tone: "loading", text: t("safety.source.chip.socketConnecting", "Live feed connecting") }
+          : null;
+  const worst = (segs: Array<{ tone: SegTone }>) => segs.reduce<SegTone>((w, x) => (TONE_RANK[x.tone] < TONE_RANK[w] ? x.tone : w), "ok");
+  if (isError) {
+    const segs: Array<{ id: string; tone: SegTone; text: string }> = [{ id: "plc", tone: "error", text: t("safety.source.chip.error", "Could not read") }];
+    const so = socketSeg(undefined);
+    if (so) segs.push(so);
+    return { state: worst(segs), segs };
+  }
+  if (!data) return { state: "loading", segs: [{ id: "plc", tone: "loading", text: t("safety.source.chip.loading", "Checking") }] };
+  const basis = data.safetyPlc.basis;
+  const plcSeg: { id: string; tone: SegTone; text: string } = (() => {
+    switch (basis) {
+      case "real": return { id: "plc", tone: "ok", text: t("safety.source.chip.real", "Real PLC") };
+      case "mixed": return { id: "plc", tone: "ok", text: t("safety.source.chip.mixed", "Real PLC + SIM") };
+      case "sim": return { id: "plc", tone: "warning", text: t("safety.source.chip.sim", "SIM only") };
+      case "real_unmapped": return { id: "plc", tone: "warning", text: t("safety.source.chip.realUnmapped", "No tag mapped") };
+      case "adapter_off": return { id: "plc", tone: "warning", text: t("safety.source.chip.adapterOff", "Off — no source") };
+      case "no_config": return { id: "plc", tone: "warning", text: t("safety.source.chip.noConfig", "No config") };
+      case "read_error": return { id: "plc", tone: "error", text: t("safety.source.chip.readError", "Config read error") };
+      default: return { id: "plc", tone: "warning", text: String(basis) };
+    }
+  })();
+  const segs = [plcSeg];
+  const plcReal = basis === "real" || basis === "mixed";
+  for (const k of ["ot", "robot"] as const) {
+    const p = data.preflight[k];
+    const target = k === "ot" ? t("safety.source.chip.ot", "OT") : t("safety.source.chip.robot", "Robot");
+    if (p.realWrites === "unguarded") {
+      segs.push({ id: k, tone: "error", text: t("safety.source.chip.unguarded", "{{target}}: preflight off", { target }) });
+    } else if (p.realWrites === "blocked" && plcReal) {
+      segs.push({ id: k, tone: "warning", text: t("safety.source.chip.blocked", "{{target}}: blocked", { target }) });
+    }
+  }
+  if (data.estop.enabled && !data.estop.rated) {
+    segs.push({ id: "estop", tone: "warning", text: t("safety.source.chip.estopNotRated", "E-stop not safety-rated") });
+  }
+  const so = socketSeg(data.socket.serverUp);
+  if (so) segs.push(so);
+  return { state: worst(segs), segs };
+}
+
+/** Chip nguồn an toàn: chữ trạng thái hiện SẴN; bấm ⇒ cuộn + focus panel nguồn đầy đủ trong panel phụ. */
+function SafetySourceChip() {
+  const { t } = useTranslation();
+  const ctx = useSafetyCtx();
+  const model = safetySourceChipModel(ctx.sourceHealth, ctx.sourceError, t, ctx.socketState);
+  const Icon = model.state === "ok" ? ShieldCheck : model.state === "loading" ? Loader2 : ShieldAlert;
+  const reveal = () => {
+    const el = ctx.sourcePanelRef.current;
+    if (!el) return;
+    el.scrollIntoView({ block: "nearest", behavior: "smooth" });
+    el.focus({ preventScroll: true });
+  };
+  return (
+    <button
+      type="button"
+      data-testid="safety-source-chip"
+      data-state={model.state}
+      onClick={reveal}
+      aria-label={`${t("safety.source.chip.label", "Safety sources")}: ${model.segs.map((s) => s.text).join(" · ")}`}
+      title={t("safety.source.chip.hint", "Show safety source details in the side panel")}
+      className={cn(
+        "inline-flex h-7 shrink-0 items-center gap-1 whitespace-nowrap rounded-full border bg-card px-1.5 text-xs font-medium",
+        "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1",
+        CHIP_TONE[model.state],
       )}
+    >
+      <Icon className={cn("h-3.5 w-3.5 shrink-0", model.state === "loading" && "animate-spin", model.state === "error" ? "text-destructive" : model.state === "warning" ? "text-amber-600" : model.state === "ok" ? "text-emerald-600" : "text-muted-foreground")} aria-hidden="true" />
+      <span className="text-muted-foreground" aria-hidden="true">{t("safety.source.title", "Sources")}:</span>
+      <span className="inline-flex items-center gap-1" aria-live="polite">
+        {model.segs.map((s) => (
+          <span key={s.id} data-source-seg={s.id} data-tone={s.tone} className={cn("rounded-full px-1.5 py-0.5", SEG_TONE[s.tone])}>
+            {s.text}
+          </span>
+        ))}
+      </span>
+    </button>
+  );
+}
 
-      {/* ── Assign / reassign dialogs ────────────────────────────────────────── */}
-      {assignOpen && (
-        <AssignmentDialog
-          mode="assign"
-          pending={assignM.isPending}
-          onClose={() => setAssignOpen(false)}
-          onSubmit={(v) => assignM.mutate(v)}
-        />
+// ══════════════════════════════════════════════════════════════════════════════
+// MAIN — tab row tools + tab contents
+// ══════════════════════════════════════════════════════════════════════════════
+
+function TabToolbar() {
+  const ctx = useSafetyCtx();
+  return ctx.tab === "workforce" ? <WorkforceToolbar /> : <EventsToolbar />;
+}
+
+/** <1280 px: chip an toàn + cờ + công cụ tab thành hàng xuống dòng ở đầu nội dung (header hẹp cắt phần tràn). */
+function NarrowRows() {
+  return (
+    <>
+      <div data-narrow-safety="" className="flex flex-wrap items-center gap-1 pb-2">
+        <SafetyChips />
+        <FlagChips />
+        <WhenToUseChip />
+      </div>
+      <div data-narrow-tools="" className="flex flex-wrap items-center gap-2 pb-2">
+        <TabToolbar />
+      </div>
+    </>
+  );
+}
+
+function EventsToolbar() {
+  const { t } = useTranslation();
+  const ctx = useSafetyCtx();
+  const flyout = useFlyout();
+  return (
+    <>
+      <LiveTickerChip />
+      <Select value={ctx.eventTypeFilter || "all"} onValueChange={(v) => ctx.setEventTypeFilter(v === "all" ? "" : v)}>
+        <SelectTrigger className="h-8 w-40" aria-label={t("safety.filterType", "Type")}>
+          <span className="text-xs text-muted-foreground" aria-hidden="true">{t("safety.filterType", "Type")}:</span>
+          <SelectValue />
+        </SelectTrigger>
+        <SelectContent>
+          <SelectItem value="all">{t("safety.all", "All")}</SelectItem>
+          {EVENT_TYPES.map((s) => (
+            <SelectItem key={s} value={s}>{t(`safety.evt.${s}`, s)}</SelectItem>
+          ))}
+        </SelectContent>
+      </Select>
+      <Button
+        size="sm"
+        variant="outline"
+        className="h-8"
+        disabled={!ctx.safetyCanControl}
+        // Tên truy cập = câu cũ đầy đủ ("… CHỈ THỬ — không phát cảnh báo"); chữ nhìn thấy rút gọn + nhãn CHỈ THỬ.
+        aria-label={t("safety.reportProximity", "Report proximity (TEST ONLY — no alert raised)")}
+        title={ctx.safetyControlReason ?? t("safety.reportProximity", "Report proximity (TEST ONLY — no alert raised)")}
+        onClick={() => flyout.open("safety-proximity")}
+      >
+        <ScanLine className="mr-1 h-4 w-4" />{t("safety.reportProximityShort", "Report proximity")}
+        <span className="ml-1 rounded bg-amber-500/20 px-1 text-[10px] font-semibold uppercase text-amber-800 dark:text-amber-300">
+          {t("safety.testOnly", "Test only")}
+        </span>
+      </Button>
+    </>
+  );
+}
+
+/** Bảng tin tư vấn trực tiếp (`safety:event`) — chip trong hàng công cụ, popover giữ nội dung cũ. */
+function LiveTickerChip() {
+  const { t } = useTranslation();
+  const { liveEvents } = useSafetyCtx();
+  return (
+    <Popover>
+      <PopoverTrigger asChild>
+        <button
+          type="button"
+          data-live-count={liveEvents.length}
+          aria-label={`${t("safety.liveTitle", "Live advisory ticker")} (${liveEvents.length})`}
+          className="inline-flex h-8 shrink-0 items-center gap-1 rounded-md border bg-card px-2 text-xs font-medium focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+        >
+          <Radio className={cn("h-3.5 w-3.5", liveEvents.length > 0 ? "text-primary" : "text-muted-foreground")} aria-hidden="true" />
+          {t("safety.liveChip", "Live")}
+          <Badge variant="secondary" className="ml-0.5 h-5 px-1.5 text-xs tabular-nums">{liveEvents.length}</Badge>
+        </button>
+      </PopoverTrigger>
+      <PopoverContent align="start" className="w-96 text-sm">
+        <div className="mb-2 flex items-center gap-2 font-medium">
+          <Radio className="h-4 w-4" aria-hidden="true" />
+          {t("safety.liveTitle", "Live advisory ticker")}
+        </div>
+        {liveEvents.length === 0 ? (
+          <p className="py-2 text-xs text-muted-foreground">
+            {t("safety.liveEmpty", "Waiting for live safety:event broadcasts… (advisory only)")}
+          </p>
+        ) : (
+          <div className="flex flex-wrap gap-2">
+            {liveEvents.slice(0, 12).map((e, i) => (
+              <div key={`${e.id}-${i}`} className="inline-flex items-center gap-1.5 rounded-md border border-border bg-muted/40 px-2 py-1 text-xs">
+                {eventTypeBadge(e.eventType, t)}
+                <span className="text-muted-foreground">#{e.id}</span>
+                <span className="text-muted-foreground">{fmtDateTime(e.createdAt)}</span>
+              </div>
+            ))}
+          </div>
+        )}
+      </PopoverContent>
+    </Popover>
+  );
+}
+
+function EventsTab() {
+  const { t } = useTranslation();
+  const ctx = useSafetyCtx();
+  const { feed, feedLoading } = ctx;
+  return (
+    <div className="flex min-h-0 flex-col">
+      {ctx.narrow && <NarrowRows />}
+      {/* Luồng sự kiện an toàn — vùng cao hết khung nhìn còn lại, bảng tự cuộn trong (trang không cao lên theo 200 dòng). */}
+      <div className="h-[calc(100dvh_-_var(--shell-chrome-h,3.5rem)_-_9.25rem)] min-h-[16rem] overflow-auto rounded-md border" aria-label={t("safety.feedTitle", "Safety event feed")} role="region">
+        <Table>
+          <TableHeader className="sticky top-0 z-10 bg-card">
+            <TableRow>
+              <TableHead>{t("safety.col.id", "ID")}</TableHead>
+              <TableHead>{t("safety.col.type", "Type")}</TableHead>
+              <TableHead>{t("safety.col.detectedBy", "Detected by")}</TableHead>
+              <TableHead>{t("safety.col.outcome", "Outcome")}</TableHead>
+              <TableHead>{t("safety.col.robotStation", "Robot / Station")}</TableHead>
+              <TableHead>{t("safety.col.response", "Response")}</TableHead>
+              <TableHead>{t("safety.col.when", "When")}</TableHead>
+              <TableHead>{t("safety.col.audit", "Audit")}</TableHead>
+              <TableHead className="text-right">{t("common.actions", "Actions")}</TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {feedLoading && (
+              <TableRow><TableCell colSpan={9} className="py-8 text-center text-muted-foreground">{t("safety.loading", "Loading…")}</TableCell></TableRow>
+            )}
+            {!feedLoading && feed.length === 0 && (
+              <TableRow><TableCell colSpan={9} className="py-8 text-center text-muted-foreground">{t("safety.feedEmpty", "No safety events recorded. This feed is advisory monitoring only.")}</TableCell></TableRow>
+            )}
+            {feed.map((e) => (
+              <TableRow key={e.id} className={e.isNearMiss ? "bg-violet-500/5" : undefined}>
+                <TableCell className="font-mono text-xs">#{e.id}</TableCell>
+                <TableCell>
+                  <div className="flex items-center gap-1">
+                    {eventTypeBadge(e.eventType, t)}
+                    {e.isNearMiss && <Badge variant="outline" className="text-[10px]">{t("safety.nearMissTag", "near-miss")}</Badge>}
+                  </div>
+                </TableCell>
+                <TableCell>{detectedByBadge(e.detectedBy, t)}</TableCell>
+                <TableCell>{outcomeBadge(e.outcome, t)}</TableCell>
+                <TableCell className="text-xs">
+                  <span className="inline-flex items-center gap-2">
+                    {e.robotId != null ? <span className="inline-flex items-center gap-1"><Bot className="h-3 w-3" />#{e.robotId}</span> : <span className="text-muted-foreground">—</span>}
+                    {e.stationId != null && <span className="text-muted-foreground">@{e.stationId}</span>}
+                  </span>
+                </TableCell>
+                <TableCell className="text-xs tabular-nums">{e.responseTimeMs != null ? `${e.responseTimeMs}ms` : "—"}</TableCell>
+                <TableCell className="text-xs whitespace-nowrap">{fmtDateTime(e.createdAt)}</TableCell>
+                <TableCell className="text-xs">
+                  {e.auditedAt != null
+                    ? <span className="inline-flex items-center gap-1 text-emerald-600"><CheckCircle2 className="h-3.5 w-3.5" />{t("safety.audited", "Audited")}</span>
+                    : <span className="text-muted-foreground">{t("safety.unaudited", "Pending")}</span>}
+                </TableCell>
+                <TableCell className="text-right">
+                  {ctx.canControl && e.auditedAt == null ? (
+                    <Button size="sm" variant="ghost" className="h-7" disabled={ctx.auditPending} onClick={() => ctx.setAuditTarget(e)}>
+                      <ClipboardCheck className="mr-1 h-3.5 w-3.5" />{t("safety.audit", "Audit")}
+                    </Button>
+                  ) : (
+                    <span className="text-xs text-muted-foreground">—</span>
+                  )}
+                </TableCell>
+              </TableRow>
+            ))}
+          </TableBody>
+        </Table>
+      </div>
+    </div>
+  );
+}
+
+function WorkforceToolbar() {
+  const { t } = useTranslation();
+  const ctx = useSafetyCtx();
+  const flyout = useFlyout();
+  return (
+    <>
+      <Select value={ctx.assignStatusFilter || "all"} onValueChange={(v) => ctx.setAssignStatusFilter(v === "all" ? "" : v)}>
+        <SelectTrigger className="h-8 w-32" aria-label={t("workforce.col.status", "Status")}><SelectValue /></SelectTrigger>
+        <SelectContent>
+          <SelectItem value="all">{t("safety.all", "All")}</SelectItem>
+          {ASSIGN_STATUSES.map((s) => (
+            <SelectItem key={s} value={s}>{t(`safety.assign.${s}`, s)}</SelectItem>
+          ))}
+        </SelectContent>
+      </Select>
+      <Button
+        size="sm"
+        variant="outline"
+        className="h-8"
+        disabled={!ctx.workforceCanControl}
+        title={ctx.workforceControlReason}
+        onClick={() => flyout.open("workforce-assign")}
+      >
+        <UserPlus className="mr-1 h-4 w-4" />{t("workforce.assign", "Assign")}
+      </Button>
+    </>
+  );
+}
+
+/**
+ * Bảng nhân lực (S1-a). Doc 80 §9 / doc 81 §1.2 muốn dời sang Sản xuất › Ca — trang đó CHƯA CÓ (nhóm Sản xuất
+ * không có màn ca), nên bảng ở lại đây, mở thẳng bằng `?tab=workforce`.
+ */
+function WorkforceTab() {
+  const { t } = useTranslation();
+  const ctx = useSafetyCtx();
+  const flyout = useFlyout();
+  const { board, assignments } = ctx;
+  return (
+    <div className="flex min-h-0 flex-col gap-3">
+      {ctx.narrow && <NarrowRows />}
+      <ProvenanceSummary rows={assignments} />
+      {/* Assignments table */}
+      <div className="max-h-[calc(100dvh_-_var(--shell-chrome-h,3.5rem)_-_7.5rem)] min-h-[12rem] overflow-auto rounded-md border" role="region" aria-label={t("workforce.assignmentsTitle", "Operator assignments")}>
+        <Table>
+          <TableHeader className="sticky top-0 z-10 bg-card">
+            <TableRow>
+              <TableHead>{t("workforce.col.operator", "Operator")}</TableHead>
+              <TableHead>{t("workforce.col.lineStation", "Line / Station")}</TableHead>
+              <TableHead>{t("workforce.col.skill", "Skill")}</TableHead>
+              <TableHead>{t("workforce.col.status", "Status")}</TableHead>
+              <TableHead>{t("workforce.col.window", "Window")}</TableHead>
+              <TableHead className="text-right">{t("common.actions", "Actions")}</TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {ctx.assignmentsLoading && (
+              <TableRow><TableCell colSpan={6} className="py-8 text-center text-muted-foreground">{t("safety.loading", "Loading…")}</TableCell></TableRow>
+            )}
+            {!ctx.assignmentsLoading && assignments.length === 0 && (
+              <TableRow><TableCell colSpan={6} className="py-8 text-center text-muted-foreground">{t("workforce.assignmentsEmpty", "No operator assignments yet.")}</TableCell></TableRow>
+            )}
+            {assignments.map((a) => {
+              const terminal = isTerminalAssignment(a);
+              return (
+                <TableRow key={a.id}>
+                  <TableCell className="text-xs">
+                    <span className="inline-flex items-center gap-1.5">
+                      <span className="inline-flex items-center gap-1"><User className="h-3 w-3" />#{a.operatorId}</span>
+                      <ProvenanceBadge row={a} />
+                    </span>
+                  </TableCell>
+                  <TableCell className="text-xs">
+                    {a.lineId != null ? `L${a.lineId}` : "—"}{" / "}{a.stationId != null ? `S${a.stationId}` : "—"}
+                  </TableCell>
+                  <TableCell>{skillBadge(a.skillLevel, t) ?? <span className="text-xs text-muted-foreground">—</span>}</TableCell>
+                  <TableCell>{assignStatusBadge(a.status, t)}</TableCell>
+                  <TableCell className="text-xs whitespace-nowrap">{fmtDateTime(a.assignedStart)} → {fmtDateTime(a.assignedEnd)}</TableCell>
+                  <TableCell className="text-right">
+                    {ctx.canControl ? (
+                      <div className="flex justify-end gap-1">
+                        {a.status === "planned" && (
+                          <Button size="sm" variant="ghost" className="h-7" disabled={ctx.confirmPending} onClick={() => ctx.confirmAssignment(a)}>
+                            <CheckCircle2 className="mr-1 h-3.5 w-3.5" />{t("workforce.confirm", "Confirm")}
+                          </Button>
+                        )}
+                        <Button size="sm" variant="ghost" className="h-7" disabled={terminal} onClick={() => flyout.open("workforce-reassign", { id: a.id })}>
+                          <RefreshCcw className="mr-1 h-3.5 w-3.5" />{t("workforce.reassign", "Reassign")}
+                        </Button>
+                        <Button size="sm" variant="ghost" className="h-7" disabled={terminal} onClick={() => ctx.setCloseTarget(a)}>
+                          <Ban className="mr-1 h-3.5 w-3.5 text-muted-foreground" />{t("workforce.close", "Close")}
+                        </Button>
+                      </div>
+                    ) : (
+                      <span className="text-xs text-muted-foreground">{t("safety.viewOnly", "View only")}</span>
+                    )}
+                  </TableCell>
+                </TableRow>
+              );
+            })}
+          </TableBody>
+        </Table>
+      </div>
+
+      {/* Current board — humans + robots per station */}
+      <Card>
+        <CardHeader className="pb-2">
+          <CardTitle className="flex items-center gap-2 text-base">
+            <Users className="h-4 w-4" />
+            {t("workforce.boardTitle", "Current board — who & which robot is at each station now")}
+          </CardTitle>
+        </CardHeader>
+        <CardContent>
+          {ctx.boardLoading && <p className="py-6 text-center text-sm text-muted-foreground">{t("safety.loading", "Loading…")}</p>}
+          {!ctx.boardLoading && board.length === 0 && (
+            <p className="py-6 text-center text-sm text-muted-foreground">
+              {t("workforce.boardEmpty", "No active assignments or enabled robots to show on the board.")}
+            </p>
+          )}
+          {/* Bảng hiện trường có thể rất dài (mọi robot đang bật) — cuộn trong, trang không cao theo. */}
+          <div className="grid max-h-[60dvh] gap-3 overflow-auto sm:grid-cols-2 lg:grid-cols-3">
+            {board.map((st, idx) => (
+              <Card key={`${st.stationId ?? "_"}-${st.lineId ?? "_"}-${idx}`} className="border-border/60">
+                <CardContent className="space-y-2 p-3">
+                  <div className="flex items-center justify-between gap-2">
+                    <div className="font-medium">
+                      {st.stationId != null ? t("workforce.station", "Station") + ` ${st.stationId}` : t("workforce.unassignedStation", "Unassigned")}
+                    </div>
+                    {st.lineId != null && <Badge variant="outline" className="text-xs">{t("workforce.line", "Line")} {st.lineId}</Badge>}
+                  </div>
+                  {/* Humans */}
+                  <div className="space-y-1">
+                    {st.humans.length === 0 && <div className="text-xs text-muted-foreground">{t("workforce.noHumans", "No humans")}</div>}
+                    {st.humans.map((h) => (
+                      <div key={`h-${h.assignmentId}`} className="flex items-center justify-between gap-2 text-xs">
+                        <span className="inline-flex items-center gap-1"><User className="h-3 w-3 text-blue-500" />{t("workforce.operator", "Operator")} #{h.operatorId}</span>
+                        {skillBadge(h.skillLevel, t)}
+                      </div>
+                    ))}
+                  </div>
+                  {/* Robots */}
+                  <div className="space-y-1 border-t border-border/60 pt-1">
+                    {st.robots.length === 0 && <div className="text-xs text-muted-foreground">{t("workforce.noRobots", "No robots")}</div>}
+                    {st.robots.map((r) => (
+                      <div key={`r-${r.robotId}`} className="flex items-center justify-between gap-2 text-xs">
+                        <span className="inline-flex items-center gap-1"><Bot className="h-3 w-3 text-violet-500" />{r.code}</span>
+                        <span className="inline-flex items-center gap-1 text-muted-foreground">
+                          <span>{r.status}</span>
+                          <Badge variant="secondary" className="text-[10px]">{r.openTaskCount} {t("workforce.openTasks", "tasks")}</Badge>
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                </CardContent>
+              </Card>
+            ))}
+          </div>
+        </CardContent>
+      </Card>
+    </div>
+  );
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+// Side panel — safety source panel (always visible) + Trend / Collaboration tabs
+// ══════════════════════════════════════════════════════════════════════════════
+
+/**
+ * Panel phụ. Cây con ở CÙNG vị trí ở cả hai phía mốc 1024 px (CockpitLayout chỉ đổi lớp của `<aside>`), và tab
+ * Phối hợp `forceMount` + `hidden` ⇒ panel Phối hợp mount MỘT lần lúc nạp và không bao giờ unmount (Review
+ * Focus 3: thao tác chuyển pha / bắt tay đang chạy không bị huỷ khi người dùng xem chỗ khác).
+ */
+function SidePanel() {
+  const { t } = useTranslation();
+  const ctx = useSafetyCtx();
+  const collabDescId = useId();
+  return (
+    <div className="flex max-h-[calc(100dvh_-_var(--shell-chrome-h,3.5rem)_-_4.5rem)] min-h-0 flex-col gap-3 overflow-auto">
+      {/* ── doc 80 Task 4 (SAF-02) — safety SOURCE panel (read-only, safety.sourceHealth), đủ nội dung ── */}
+      <SafetySourcePanel
+        panelRef={ctx.sourcePanelRef}
+        data={ctx.sourceHealth}
+        isLoading={ctx.sourceLoading}
+        isError={ctx.sourceError}
+        socketConnected={ctx.socketConnected}
+      />
+      <Tabs value={ctx.sideTab} onValueChange={(v) => ctx.setSideTab(v as SideTab)} className="gap-2">
+        <TabsList className="w-full">
+          <TabsTrigger value="trend" className="flex-1 text-xs"><ScanLine className="mr-1 h-3.5 w-3.5" />{t("safety.side.trend", "Trend")}</TabsTrigger>
+          <TabsTrigger value="collab" className="flex-1 text-xs" aria-describedby={collabDescId}>
+            <Workflow className="mr-1 h-3.5 w-3.5" />{t("safety.tab.collaboration", "Collaboration")}
+            {/* Fix round 1 (review minor 1, R-2-l): số phiên người↔robot đang chạy luôn thấy ngoài panel đang ẩn. Huy hiệu
+                aria-hidden ⇒ tên tab giữ nguyên; số đọc qua aria-describedby. */}
+            {ctx.collabsState === "error" ? (
+              <span data-collab-count="error" aria-hidden="true" className="ml-1 rounded-full bg-destructive/15 px-1.5 text-[10px] font-semibold text-destructive">!</span>
+            ) : ctx.collabsState === "ok" && ctx.activeCollabs > 0 ? (
+              <span data-collab-count={ctx.activeCollabs} aria-hidden="true" className="ml-1 rounded-full bg-primary px-1.5 text-[10px] font-semibold tabular-nums text-primary-foreground">{ctx.activeCollabs}</span>
+            ) : null}
+          </TabsTrigger>
+        </TabsList>
+        <span id={collabDescId} className="sr-only">
+          {ctx.collabsState === "error"
+            ? t("safety.side.collabCountError", "Could not read collaboration sessions")
+            : ctx.collabsState === "ok"
+              ? t("safety.side.collabCount", "{{count}} active session(s)", { count: ctx.activeCollabs })
+              : t("safety.loading", "Loading…")}
+        </span>
+        <TabsContent value="trend">
+          {/* Near-miss PDCA trend */}
+          <div className="text-sm font-medium">{t("safety.trendTitle", "Near-miss trend (PDCA, last 30 days)")}</div>
+          <div className="mt-2 h-48">
+            {ctx.trend.length > 0 ? (
+              <ResponsiveContainer width="100%" height="100%">
+                <AreaChart data={ctx.trend}>
+                  <CartesianGrid {...chartGridProps} className="opacity-30" />
+                  <XAxis dataKey="day" tick={chartAxisTick} />
+                  <YAxis width={28} allowDecimals={false} tick={chartAxisTick} />
+                  <Tooltip contentStyle={chartTooltipStyle} labelStyle={chartTooltipLabelStyle} />
+                  <Area type="monotone" dataKey="count" name={t("safety.nearMissCount", "Near-misses")} stroke={chartColor(0)} fill={chartColor(0)} fillOpacity={0.2} />
+                </AreaChart>
+              </ResponsiveContainer>
+            ) : (
+              <div className="flex h-full items-center justify-center text-sm text-muted-foreground">
+                {t("safety.trendEmpty", "No near-misses recorded in the window.")}
+              </div>
+            )}
+          </div>
+        </TabsContent>
+        <TabsContent value="collab" forceMount hidden={ctx.sideTab !== "collab"}>
+          <CollaborationPanel />
+        </TabsContent>
+      </Tabs>
+    </div>
+  );
+}
+
+/**
+ * Phiên bàn giao người↔robot (S1-a) với chỉ báo pha human_prep → robot_work → human_verify → done.
+ * Sở hữu các mutation điều phối (bắt tay / chuyển pha / huỷ) — instance sống suốt trang (xem SidePanel).
+ */
+function CollaborationPanel() {
+  const { t } = useTranslation();
+  const ctx = useSafetyCtx();
+  const flyout = useFlyout();
+  const [abortTarget, setAbortTarget] = useState<Collaboration | null>(null);
+  // Cùng hàm xử lý lỗi của trang (flag-off ⇒ toast.info êm; khác ⇒ mapTrpcError) — truyền qua ngữ cảnh.
+  const { onMutationError } = ctx;
+  const signalM = trpc.safety.signalHandshake.useMutation({
+    onSuccess: () => { toast.success(t("workforce.handshakeSignalled", "Handshake signalled")); ctx.refetchAll(); },
+    onError: onMutationError,
+  });
+  const advanceM = trpc.safety.advancePhase.useMutation({
+    onSuccess: () => { toast.success(t("workforce.phaseAdvanced", "Phase advanced")); ctx.refetchAll(); },
+    onError: onMutationError,
+  });
+  const abortM = trpc.safety.abortCollaboration.useMutation({
+    onSuccess: () => { toast.success(t("workforce.collabAborted", "Collaboration aborted")); setAbortTarget(null); ctx.refetchAll(); },
+    onError: onMutationError,
+  });
+  const { collabs } = ctx;
+  return (
+    <div data-collab-panel="" className="space-y-2">
+      <div className="flex items-center justify-between gap-2">
+        <div className="flex min-w-0 items-center gap-1.5 text-sm font-medium">
+          <Handshake className="h-4 w-4 shrink-0" />
+          <span className="truncate">{t("workforce.collabTitle", "Human↔robot handover sessions")}</span>
+        </div>
+        <Button
+          size="sm"
+          variant="outline"
+          className="h-7 shrink-0 text-xs"
+          disabled={!ctx.workforceCanControl}
+          title={ctx.workforceControlReason}
+          onClick={() => flyout.open("collab-start")}
+        >
+          <HandMetal className="mr-1 h-3.5 w-3.5" />{t("workforce.startCollab", "Start collaboration")}
+        </Button>
+      </div>
+      {ctx.collabsLoading && <p className="py-6 text-center text-sm text-muted-foreground">{t("safety.loading", "Loading…")}</p>}
+      {!ctx.collabsLoading && collabs.length === 0 && (
+        <p className="py-6 text-center text-sm text-muted-foreground">
+          {t("workforce.collabEmpty", "No collaboration sessions. Handover coordination is advisory only — no device command is issued.")}
+        </p>
       )}
-      {reassignTarget && (
-        <AssignmentDialog
-          mode="reassign"
-          existing={reassignTarget}
-          pending={reassignM.isPending}
-          onClose={() => setReassignTarget(null)}
-          onSubmit={(v) => reassignM.mutate({ assignmentId: reassignTarget.id, ...v })}
-        />
-      )}
+      <div className="grid gap-2">
+        {collabs.map((c) => {
+          const terminal = c.phase === "done" || c.endedAt != null;
+          return (
+            <Card key={c.id} data-collab-session={c.id} className="border-border/60">
+              <CardContent className="space-y-3 p-3">
+                <div className="flex items-center justify-between gap-2">
+                  <div className="min-w-0">
+                    <div className="font-medium">
+                      {t("workforce.session", "Session")} #{c.id}
+                      {c.operationCode && <span className="ml-1 font-mono text-xs text-muted-foreground">{c.operationCode}</span>}
+                    </div>
+                    <div className="text-xs text-muted-foreground">
+                      {c.humanOperatorId != null && <span className="mr-2 inline-flex items-center gap-1"><User className="h-3 w-3" />#{c.humanOperatorId}</span>}
+                      {c.robotDeviceId != null && <span className="inline-flex items-center gap-1"><Bot className="h-3 w-3" />#{c.robotDeviceId}</span>}
+                    </div>
+                  </div>
+                  {handshakeBadge(c.handshakeState, t)}
+                </div>
 
-      {/* ── Close assignment confirm ─────────────────────────────────────────── */}
-      <AlertDialog open={!!closeTarget} onOpenChange={(o) => !o && setCloseTarget(null)}>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>{t("workforce.closeConfirmTitle", "Close this assignment?")}</AlertDialogTitle>
-            <AlertDialogDescription>
-              {t("workforce.closeConfirmBody", "Marks the assignment completed (terminal).")}
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel>{t("common.cancel", "Cancel")}</AlertDialogCancel>
-            <AlertDialogAction onClick={() => closeTarget && closeM.mutate({ assignmentId: closeTarget.id })}>
-              {t("workforce.confirmClose", "Close assignment")}
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
+                {/* Phase indicator: human_prep → robot_work → human_verify → done */}
+                <div className="flex flex-wrap items-center gap-1">
+                  {COLLAB_PHASES.map((p, i) => {
+                    const reached = COLLAB_PHASES.indexOf(c.phase as (typeof COLLAB_PHASES)[number]) >= i;
+                    const current = c.phase === p;
+                    return (
+                      <div key={p} className="flex items-center gap-1">
+                        <span
+                          data-phase-current={current ? "" : undefined}
+                          className={`rounded px-1.5 py-0.5 text-[10px] font-medium ${
+                            current ? "bg-primary text-primary-foreground"
+                            : reached ? "bg-emerald-500/15 text-emerald-600"
+                            : "bg-muted text-muted-foreground"
+                          }`}
+                        >
+                          {t(`workforce.phase.${p}`, p)}
+                        </span>
+                        {i < COLLAB_PHASES.length - 1 && <ChevronRight className="h-3 w-3 text-muted-foreground" />}
+                      </div>
+                    );
+                  })}
+                </div>
+                <Progress
+                  value={((COLLAB_PHASES.indexOf(c.phase as (typeof COLLAB_PHASES)[number]) + 1) / COLLAB_PHASES.length) * 100}
+                />
 
-      {/* ── Start collaboration dialog ───────────────────────────────────────── */}
-      {startCollabOpen && (
-        <StartCollabDialog
-          pending={startCollabM.isPending}
-          onClose={() => setStartCollabOpen(false)}
-          onSubmit={(v) => startCollabM.mutate(v)}
-        />
-      )}
+                {ctx.canControl && !terminal && (
+                  <div className="flex flex-wrap gap-1">
+                    <Button size="sm" variant="ghost" className="h-7" disabled={signalM.isPending} onClick={() => signalM.mutate({ sessionId: c.id, state: "ack" })}>
+                      <Send className="mr-1 h-3.5 w-3.5" />{t("workforce.signalAck", "Ack")}
+                    </Button>
+                    <Button size="sm" variant="ghost" className="h-7" disabled={signalM.isPending} onClick={() => signalM.mutate({ sessionId: c.id, state: "clear" })}>
+                      <CheckCircle2 className="mr-1 h-3.5 w-3.5" />{t("workforce.signalClear", "Clear")}
+                    </Button>
+                    <Button size="sm" variant="ghost" className="h-7" disabled={advanceM.isPending} onClick={() => advanceM.mutate({ sessionId: c.id })}>
+                      <ChevronRight className="mr-1 h-3.5 w-3.5" />{t("workforce.advance", "Advance phase")}
+                    </Button>
+                    <Button size="sm" variant="ghost" className="h-7" onClick={() => setAbortTarget(c)}>
+                      <Ban className="mr-1 h-3.5 w-3.5 text-destructive" />{t("workforce.abort", "Abort")}
+                    </Button>
+                  </div>
+                )}
+                {terminal && (
+                  <div className="text-xs text-muted-foreground">
+                    {t("workforce.collabClosed", "Closed")} · {fmtDateTime(c.endedAt ?? c.updatedAt)}
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+          );
+        })}
+      </div>
 
-      {/* ── Abort collaboration confirm ──────────────────────────────────────── */}
+      {/* ── Abort collaboration confirm (R-2-n: như cũ) ── */}
       <AlertDialog open={!!abortTarget} onOpenChange={(o) => !o && setAbortTarget(null)}>
         <AlertDialogContent>
           <AlertDialogHeader>
@@ -964,7 +1494,7 @@ export default function SafetyWorkforce() {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
-    </DashboardLayout>
+    </div>
   );
 }
 
@@ -980,8 +1510,10 @@ const RISKY_BASIS = new Set(["sim", "real_unmapped", "read_error"]);
 const RISKY_VERDICT = new Set(["unguarded"]);
 
 function SafetySourcePanel({
-  data, isLoading, isError, socketConnected,
+  panelRef, data, isLoading, isError, socketConnected,
 }: {
+  /** Doc 81 Đợt 2 Task 8 — chip nguồn ở header cuộn + focus tới đây. */
+  panelRef?: RefObject<HTMLDivElement | null>;
   data: SourceHealth | undefined;
   isLoading: boolean;
   isError: boolean;
@@ -994,6 +1526,8 @@ function SafetySourcePanel({
   if (isError || !data) {
     return (
       <div
+        ref={panelRef}
+        tabIndex={-1}
         data-testid="safety-source-panel"
         data-loading={isLoading ? "true" : undefined}
         className={`flex items-center gap-2 rounded-md border px-3 py-2 text-xs text-muted-foreground ${isError ? "border-destructive/40 bg-destructive/5" : ""}`}
@@ -1052,6 +1586,8 @@ function SafetySourcePanel({
 
   return (
     <div
+      ref={panelRef}
+      tabIndex={-1}
       data-testid="safety-source-panel"
       className={`space-y-1 rounded-md border px-3 py-2 text-xs ${plcRisky ? "border-amber-500/50 bg-amber-500/10" : "bg-muted/30"}`}
     >
@@ -1116,20 +1652,25 @@ function SafetySourcePanel({
 }
 
 // ══════════════════════════════════════════════════════════════════════════════
-// Dialogs
+// Sheets (FlyoutHost) — form, kiểm tra và payload GIỮ NGUYÊN như các Dialog cũ.
+// Toast + làm mới nằm ở mutation cấp trang; sheet chỉ tự đóng CHÍNH lớp của nó khi thành công (useCloseOwnLayer).
 // ══════════════════════════════════════════════════════════════════════════════
-function ProximityDialog({
-  pending, onClose, onSubmit,
+function ProximityForm({
+  pending, onSubmit,
 }: {
   pending: boolean;
-  onClose: () => void;
-  onSubmit: (v: { deviceId?: number; stationId?: number; distance: number; confidence: number; source: "vision" | "manual" | "test" }) => void;
+  onSubmit: (v: ProximityInput, done: () => void) => void;
 }) {
   const { t } = useTranslation();
+  const { layer, done } = useCloseOwnLayer();
+  const uid = useId();
   const [deviceId, setDeviceId] = useState("");
   const [stationId, setStationId] = useState("");
   const [distance, setDistance] = useState("150");
   const [confidence, setConfidence] = useState("0.9");
+
+  const dirty = deviceId !== "" || stationId !== "" || distance !== "150" || confidence !== "0.9";
+  useEffect(() => { layer.setDirty(dirty); }, [dirty]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const submit = () => {
     const dist = Number(distance);
@@ -1144,52 +1685,48 @@ function ProximityDialog({
     }
     const dev = deviceId ? Number(deviceId) : undefined;
     const st = stationId ? Number(stationId) : undefined;
-    onSubmit({
-      deviceId: Number.isInteger(dev) && (dev as number) > 0 ? dev : undefined,
-      stationId: Number.isInteger(st) && (st as number) > 0 ? st : undefined,
-      distance: dist,
-      confidence: conf,
-      source: "test",
-    });
+    onSubmit(
+      {
+        deviceId: Number.isInteger(dev) && (dev as number) > 0 ? dev : undefined,
+        stationId: Number.isInteger(st) && (st as number) > 0 ? st : undefined,
+        distance: dist,
+        confidence: conf,
+        source: "test",
+      },
+      done,
+    );
   };
 
   return (
-    <Dialog open onOpenChange={(o) => !o && onClose()}>
-      <DialogContent>
-        <DialogHeader>
-          <DialogTitle className="flex items-center gap-2"><ScanLine className="h-4 w-4" />{t("safety.proximityTitle", "Report proximity (TEST ONLY — no alert raised)")}</DialogTitle>
-        </DialogHeader>
-        <div className="grid gap-3 py-2">
-          <div className="rounded-md border border-amber-500/40 bg-amber-500/10 p-2 text-xs text-muted-foreground">
-            {t("safety.proximityHint", "TEST ONLY — does not raise an Andon alert. Below the configured margin (and at/above min confidence) → records a near_miss tagged source 'test' for the ingest pipeline. It NEVER raises an Andon and NEVER issues a device command.")}
-          </div>
-          <div className="grid grid-cols-2 gap-3">
-            <div className="grid gap-1">
-              <Label>{t("safety.distance", "Distance (mm)")}</Label>
-              <Input type="number" min={0} value={distance} placeholder="150" onChange={(e) => setDistance(e.target.value)} />
-            </div>
-            <div className="grid gap-1">
-              <Label>{t("safety.confidence", "Confidence (0–1)")}</Label>
-              <Input type="number" min={0} max={1} step={0.05} value={confidence} placeholder="0.9" onChange={(e) => setConfidence(e.target.value)} />
-            </div>
-          </div>
-          <div className="grid grid-cols-2 gap-3">
-            <div className="grid gap-1">
-              <Label>{t("safety.deviceIdOpt", "Robot/device id (optional)")}</Label>
-              <Input type="number" min={1} value={deviceId} placeholder="e.g. 1" onChange={(e) => setDeviceId(e.target.value)} />
-            </div>
-            <div className="grid gap-1">
-              <Label>{t("safety.stationIdOpt", "Station id (optional)")}</Label>
-              <Input type="number" min={1} value={stationId} placeholder="e.g. 1" onChange={(e) => setStationId(e.target.value)} />
-            </div>
-          </div>
+    <div className="grid gap-3">
+      <div className="rounded-md border border-amber-500/40 bg-amber-500/10 p-2 text-xs text-muted-foreground">
+        {t("safety.proximityHint", "TEST ONLY — does not raise an Andon alert. Below the configured margin (and at/above min confidence) → records a near_miss tagged source 'test' for the ingest pipeline. It NEVER raises an Andon and NEVER issues a device command.")}
+      </div>
+      <div className="grid grid-cols-2 gap-3">
+        <div className="grid gap-1">
+          <Label htmlFor={`${uid}-distance`}>{t("safety.distance", "Distance (mm)")}</Label>
+          <Input id={`${uid}-distance`} type="number" min={0} value={distance} placeholder="150" onChange={(e) => setDistance(e.target.value)} />
         </div>
-        <DialogFooter>
-          <Button variant="outline" onClick={onClose}>{t("common.cancel", "Cancel")}</Button>
-          <Button onClick={submit} disabled={pending}><ScanLine className="mr-1 h-4 w-4" />{t("safety.ingest", "Ingest (advisory)")}</Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
+        <div className="grid gap-1">
+          <Label htmlFor={`${uid}-confidence`}>{t("safety.confidence", "Confidence (0–1)")}</Label>
+          <Input id={`${uid}-confidence`} type="number" min={0} max={1} step={0.05} value={confidence} placeholder="0.9" onChange={(e) => setConfidence(e.target.value)} />
+        </div>
+      </div>
+      <div className="grid grid-cols-2 gap-3">
+        <div className="grid gap-1">
+          <Label htmlFor={`${uid}-device`}>{t("safety.deviceIdOpt", "Robot/device id (optional)")}</Label>
+          <Input id={`${uid}-device`} type="number" min={1} value={deviceId} placeholder="e.g. 1" onChange={(e) => setDeviceId(e.target.value)} />
+        </div>
+        <div className="grid gap-1">
+          <Label htmlFor={`${uid}-station`}>{t("safety.stationIdOpt", "Station id (optional)")}</Label>
+          <Input id={`${uid}-station`} type="number" min={1} value={stationId} placeholder="e.g. 1" onChange={(e) => setStationId(e.target.value)} />
+        </div>
+      </div>
+      <SheetFooter>
+        <Button variant="outline" onClick={() => layer.close()}>{t("common.cancel", "Cancel")}</Button>
+        <Button onClick={submit} disabled={pending}><ScanLine className="mr-1 h-4 w-4" />{t("safety.ingest", "Ingest (advisory)")}</Button>
+      </SheetFooter>
+    </div>
   );
 }
 
@@ -1200,20 +1737,34 @@ type AssignmentFormValue = {
   skillLevel?: string;
 };
 
-function AssignmentDialog({
-  mode, existing, pending, onClose, onSubmit,
+function AssignmentForm({
+  mode, existing, pending, onSubmit,
 }: {
   mode: "assign" | "reassign";
   existing?: Assignment;
   pending: boolean;
-  onClose: () => void;
-  onSubmit: (v: AssignmentFormValue) => void;
+  onSubmit: (v: AssignmentFormValue, done: () => void) => void;
 }) {
   const { t } = useTranslation();
-  const [operatorId, setOperatorId] = useState(existing?.operatorId != null ? String(existing.operatorId) : "");
-  const [lineId, setLineId] = useState(existing?.lineId != null ? String(existing.lineId) : "");
-  const [stationId, setStationId] = useState(existing?.stationId != null ? String(existing.stationId) : "");
-  const [skillLevel, setSkillLevel] = useState(existing?.skillLevel ?? "");
+  const { layer, done } = useCloseOwnLayer();
+  const uid = useId();
+  const initial = useMemo(
+    () => ({
+      operatorId: existing?.operatorId != null ? String(existing.operatorId) : "",
+      lineId: existing?.lineId != null ? String(existing.lineId) : "",
+      stationId: existing?.stationId != null ? String(existing.stationId) : "",
+      skillLevel: existing?.skillLevel ?? "",
+    }),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [],
+  );
+  const [operatorId, setOperatorId] = useState(initial.operatorId);
+  const [lineId, setLineId] = useState(initial.lineId);
+  const [stationId, setStationId] = useState(initial.stationId);
+  const [skillLevel, setSkillLevel] = useState(initial.skillLevel);
+
+  const dirty = operatorId !== initial.operatorId || lineId !== initial.lineId || stationId !== initial.stationId || skillLevel !== initial.skillLevel;
+  useEffect(() => { layer.setDirty(dirty); }, [dirty]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const submit = () => {
     const op = Number(operatorId);
@@ -1223,125 +1774,118 @@ function AssignmentDialog({
     }
     const ln = lineId ? Number(lineId) : undefined;
     const st = stationId ? Number(stationId) : undefined;
-    onSubmit({
-      operatorId: op,
-      lineId: Number.isInteger(ln) && (ln as number) > 0 ? ln : undefined,
-      stationId: Number.isInteger(st) && (st as number) > 0 ? st : undefined,
-      skillLevel: skillLevel.trim() || undefined,
-    });
+    onSubmit(
+      {
+        operatorId: op,
+        lineId: Number.isInteger(ln) && (ln as number) > 0 ? ln : undefined,
+        stationId: Number.isInteger(st) && (st as number) > 0 ? st : undefined,
+        skillLevel: skillLevel.trim() || undefined,
+      },
+      done,
+    );
   };
 
   return (
-    <Dialog open onOpenChange={(o) => !o && onClose()}>
-      <DialogContent>
-        <DialogHeader>
-          <DialogTitle className="flex items-center gap-2">
-            <UserPlus className="h-4 w-4" />
-            {mode === "assign" ? t("workforce.assignTitle", "Assign operator") : t("workforce.reassignTitle", "Reassign operator")}
-          </DialogTitle>
-        </DialogHeader>
-        <div className="grid gap-3 py-2">
-          <div className="grid gap-1">
-            <Label>{t("workforce.operatorId", "Operator (user) id")}</Label>
-            <Input type="number" min={1} value={operatorId} placeholder="e.g. 1" onChange={(e) => setOperatorId(e.target.value)} />
-          </div>
-          <div className="grid grid-cols-2 gap-3">
-            <div className="grid gap-1">
-              <Label>{t("workforce.lineId", "Line id (optional)")}</Label>
-              <Input type="number" min={1} value={lineId} placeholder="e.g. 1" onChange={(e) => setLineId(e.target.value)} />
-            </div>
-            <div className="grid gap-1">
-              <Label>{t("workforce.stationId", "Station id (optional)")}</Label>
-              <Input type="number" min={1} value={stationId} placeholder="e.g. 1" onChange={(e) => setStationId(e.target.value)} />
-            </div>
-          </div>
-          <div className="grid gap-1">
-            <Label>{t("workforce.skillLevel", "Skill level (optional)")}</Label>
-            <Select
-              value={skillLevel || "none"}
-              onValueChange={(v) => setSkillLevel(v === "none" ? "" : v)}
-            >
-              <SelectTrigger className="h-9"><SelectValue /></SelectTrigger>
-              <SelectContent>
-                <SelectItem value="none">{t("workforce.skillNone", "— none —")}</SelectItem>
-                {["trainee", "qualified", "expert", "trainer"].map((s) => (
-                  <SelectItem key={s} value={s}>{t(`safety.skill.${s}`, s)}</SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
+    <div className="grid gap-3">
+      <div className="grid gap-1">
+        <Label htmlFor={`${uid}-operator`}>{t("workforce.operatorId", "Operator (user) id")}</Label>
+        <Input id={`${uid}-operator`} type="number" min={1} value={operatorId} placeholder="e.g. 1" onChange={(e) => setOperatorId(e.target.value)} />
+      </div>
+      <div className="grid grid-cols-2 gap-3">
+        <div className="grid gap-1">
+          <Label htmlFor={`${uid}-line`}>{t("workforce.lineId", "Line id (optional)")}</Label>
+          <Input id={`${uid}-line`} type="number" min={1} value={lineId} placeholder="e.g. 1" onChange={(e) => setLineId(e.target.value)} />
         </div>
-        <DialogFooter>
-          <Button variant="outline" onClick={onClose}>{t("common.cancel", "Cancel")}</Button>
-          <Button onClick={submit} disabled={pending}>
-            <CheckCircle2 className="mr-1 h-4 w-4" />
-            {mode === "assign" ? t("workforce.assign", "Assign") : t("workforce.reassign", "Reassign")}
-          </Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
+        <div className="grid gap-1">
+          <Label htmlFor={`${uid}-station`}>{t("workforce.stationId", "Station id (optional)")}</Label>
+          <Input id={`${uid}-station`} type="number" min={1} value={stationId} placeholder="e.g. 1" onChange={(e) => setStationId(e.target.value)} />
+        </div>
+      </div>
+      <div className="grid gap-1">
+        <Label htmlFor={`${uid}-skill`}>{t("workforce.skillLevel", "Skill level (optional)")}</Label>
+        <Select
+          value={skillLevel || "none"}
+          onValueChange={(v) => setSkillLevel(v === "none" ? "" : v)}
+        >
+          <SelectTrigger id={`${uid}-skill`} className="h-9"><SelectValue /></SelectTrigger>
+          <SelectContent>
+            <SelectItem value="none">{t("workforce.skillNone", "— none —")}</SelectItem>
+            {["trainee", "qualified", "expert", "trainer"].map((s) => (
+              <SelectItem key={s} value={s}>{t(`safety.skill.${s}`, s)}</SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+      </div>
+      <SheetFooter>
+        <Button variant="outline" onClick={() => layer.close()}>{t("common.cancel", "Cancel")}</Button>
+        <Button onClick={submit} disabled={pending}>
+          <CheckCircle2 className="mr-1 h-4 w-4" />
+          {mode === "assign" ? t("workforce.assign", "Assign") : t("workforce.reassign", "Reassign")}
+        </Button>
+      </SheetFooter>
+    </div>
   );
 }
 
-function StartCollabDialog({
-  pending, onClose, onSubmit,
+function StartCollabForm({
+  pending, onSubmit,
 }: {
   pending: boolean;
-  onClose: () => void;
-  onSubmit: (v: { operationCode?: string; humanOperatorId?: number; robotDeviceId?: number; taskId?: number }) => void;
+  onSubmit: (v: StartCollabInput, done: () => void) => void;
 }) {
   const { t } = useTranslation();
+  const { layer, done } = useCloseOwnLayer();
+  const uid = useId();
   const [operationCode, setOperationCode] = useState("");
   const [humanOperatorId, setHumanOperatorId] = useState("");
   const [robotDeviceId, setRobotDeviceId] = useState("");
   const [taskId, setTaskId] = useState("");
 
+  const dirty = operationCode !== "" || humanOperatorId !== "" || robotDeviceId !== "" || taskId !== "";
+  useEffect(() => { layer.setDirty(dirty); }, [dirty]); // eslint-disable-line react-hooks/exhaustive-deps
+
   const submit = () => {
     const human = humanOperatorId ? Number(humanOperatorId) : undefined;
     const robot = robotDeviceId ? Number(robotDeviceId) : undefined;
     const task = taskId ? Number(taskId) : undefined;
-    onSubmit({
-      operationCode: operationCode.trim() || undefined,
-      humanOperatorId: Number.isInteger(human) && (human as number) > 0 ? human : undefined,
-      robotDeviceId: Number.isInteger(robot) && (robot as number) > 0 ? robot : undefined,
-      taskId: Number.isInteger(task) && (task as number) > 0 ? task : undefined,
-    });
+    onSubmit(
+      {
+        operationCode: operationCode.trim() || undefined,
+        humanOperatorId: Number.isInteger(human) && (human as number) > 0 ? human : undefined,
+        robotDeviceId: Number.isInteger(robot) && (robot as number) > 0 ? robot : undefined,
+        taskId: Number.isInteger(task) && (task as number) > 0 ? task : undefined,
+      },
+      done,
+    );
   };
 
   return (
-    <Dialog open onOpenChange={(o) => !o && onClose()}>
-      <DialogContent>
-        <DialogHeader>
-          <DialogTitle className="flex items-center gap-2"><HandMetal className="h-4 w-4" />{t("workforce.startCollabTitle", "Start human↔robot collaboration")}</DialogTitle>
-        </DialogHeader>
-        <div className="grid gap-3 py-2">
-          <div className="rounded-md border border-border bg-muted/40 p-2 text-xs text-muted-foreground">
-            {t("workforce.startCollabHint", "Starts an advisory handover handshake (human_prep → robot_work → human_verify → done). Coordination metadata only — NOT a safety interlock and issues no device command.")}
-          </div>
-          <div className="grid gap-1">
-            <Label>{t("workforce.operationCode", "Operation code (optional)")}</Label>
-            <Input value={operationCode} placeholder="OP-WELD-01" onChange={(e) => setOperationCode(e.target.value)} />
-          </div>
-          <div className="grid grid-cols-2 gap-3">
-            <div className="grid gap-1">
-              <Label>{t("workforce.humanId", "Human operator id")}</Label>
-              <Input type="number" min={1} value={humanOperatorId} placeholder="e.g. 1" onChange={(e) => setHumanOperatorId(e.target.value)} />
-            </div>
-            <div className="grid gap-1">
-              <Label>{t("workforce.robotId", "Robot device id")}</Label>
-              <Input type="number" min={1} value={robotDeviceId} placeholder="e.g. 1" onChange={(e) => setRobotDeviceId(e.target.value)} />
-            </div>
-          </div>
-          <div className="grid gap-1">
-            <Label>{t("workforce.taskId", "Task id (optional)")}</Label>
-            <Input type="number" min={1} value={taskId} placeholder="e.g. 1" onChange={(e) => setTaskId(e.target.value)} />
-          </div>
+    <div className="grid gap-3">
+      <div className="rounded-md border border-border bg-muted/40 p-2 text-xs text-muted-foreground">
+        {t("workforce.startCollabHint", "Starts an advisory handover handshake (human_prep → robot_work → human_verify → done). Coordination metadata only — NOT a safety interlock and issues no device command.")}
+      </div>
+      <div className="grid gap-1">
+        <Label htmlFor={`${uid}-op`}>{t("workforce.operationCode", "Operation code (optional)")}</Label>
+        <Input id={`${uid}-op`} value={operationCode} placeholder="OP-WELD-01" onChange={(e) => setOperationCode(e.target.value)} />
+      </div>
+      <div className="grid grid-cols-2 gap-3">
+        <div className="grid gap-1">
+          <Label htmlFor={`${uid}-human`}>{t("workforce.humanId", "Human operator id")}</Label>
+          <Input id={`${uid}-human`} type="number" min={1} value={humanOperatorId} placeholder="e.g. 1" onChange={(e) => setHumanOperatorId(e.target.value)} />
         </div>
-        <DialogFooter>
-          <Button variant="outline" onClick={onClose}>{t("common.cancel", "Cancel")}</Button>
-          <Button onClick={submit} disabled={pending}><Handshake className="mr-1 h-4 w-4" />{t("workforce.startCollab", "Start collaboration")}</Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
+        <div className="grid gap-1">
+          <Label htmlFor={`${uid}-robot`}>{t("workforce.robotId", "Robot device id")}</Label>
+          <Input id={`${uid}-robot`} type="number" min={1} value={robotDeviceId} placeholder="e.g. 1" onChange={(e) => setRobotDeviceId(e.target.value)} />
+        </div>
+      </div>
+      <div className="grid gap-1">
+        <Label htmlFor={`${uid}-task`}>{t("workforce.taskId", "Task id (optional)")}</Label>
+        <Input id={`${uid}-task`} type="number" min={1} value={taskId} placeholder="e.g. 1" onChange={(e) => setTaskId(e.target.value)} />
+      </div>
+      <SheetFooter>
+        <Button variant="outline" onClick={() => layer.close()}>{t("common.cancel", "Cancel")}</Button>
+        <Button onClick={submit} disabled={pending}><Handshake className="mr-1 h-4 w-4" />{t("workforce.startCollab", "Start collaboration")}</Button>
+      </SheetFooter>
+    </div>
   );
 }

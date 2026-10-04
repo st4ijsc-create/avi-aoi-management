@@ -16,9 +16,14 @@
  * genuinely want a narrow reading column (long forms, single-column text) opt IN with
  * `narrow`. `fluid`/`wide` are kept as no-ops for back-compat (already full-width).
  * `className` is appended last so callers can still override anything.
+ *
+ * Doc 81 Đợt 2 Task 2 — KHÔNG đệm kép: bên trong `<main>` của shell (DashboardLayout), main là chỗ
+ * đệm duy nhất, nên PageContainer bỏ padding riêng (trước đây 24 + 24 px trước tiêu đề). Ngoài shell
+ * (storybook, test, trang tự dựng) giữ padding cũ.
  */
 import * as React from "react";
 import { cn } from "@/lib/utils";
+import { useInShellMain } from "@/lib/shellPage";
 
 export interface PageContainerProps extends React.HTMLAttributes<HTMLDivElement> {
   /** @deprecated full-width is now the default — kept for back-compat (no-op). */
@@ -40,10 +45,13 @@ export function PageContainer({
   // Full-width by default; `narrow` opts into the centered column. `fluid`/`wide`
   // stay full-width (they always did), so they can never force a narrow column.
   const centered = narrow && !fluid && !wide;
+  const inShellMain = useInShellMain();
   return (
     <div
+      data-page-container=""
       className={cn(
-        "w-full space-y-6 px-4 py-4 md:px-6 md:py-6",
+        "w-full space-y-6",
+        inShellMain ? "" : "px-4 py-4 md:px-6 md:py-6",
         centered ? "mx-auto max-w-7xl" : "",
         className,
       )}

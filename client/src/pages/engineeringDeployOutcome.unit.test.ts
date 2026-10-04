@@ -11,6 +11,11 @@ import { describe, it, expect } from "vitest";
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { deployOutcome, newDeployAttemptKey } from "./engineeringDeployOutcome";
+import {
+  initialWorkspaceState,
+  workspaceReducer,
+  type WorkspaceState,
+} from "@/components/engineering/workspace/workspaceReducer";
 
 describe("WS-04 — khoá idempotency mới cho MỖI lượt mở/xác nhận", () => {
   it("hai lượt liên tiếp cùng (build, stage) ⇒ hai khoá KHÁC nhau, cùng tiền tố đọc được", () => {
@@ -72,14 +77,33 @@ describe("WS-04 — toast theo status THẬT của hàng trả về", () => {
 });
 
 describe("WS-05 — đổi / lưu phiên bản ⇒ reset buildId + mô phỏng + chẩn đoán", () => {
-  it("EngineeringWorkspace có effect theo artifactId reset cả ba trạng thái", () => {
+  // doc 81 Đợt 2 Task 12 — ghim lại: hệ quả này rời `useEffect(..., [artifactId])` của trang sang
+  // hành động "artifact/select" của workspaceReducer (WorkspaceContext). Đo HÀNH VI ở reducer, và
+  // đo ở trang rằng cả hai lối đổi phiên bản (bấm chọn + createArtifact.onSuccess) đi qua đúng hành
+  // động đó, còn buildId/simResult/diagnostics không còn state cục bộ nào để vòng qua chuỗi reset.
+  it("đổi/lưu phiên bản (artifact/select) reset cả ba trạng thái; trang chỉ đổi phiên bản qua hành động ấy", () => {
+    const armed: WorkspaceState = {
+      ...initialWorkspaceState,
+      projectId: 1,
+      artifactId: 11,
+      buildId: 5,
+      simResult: { ok: true, warnings: [], timeline: [] },
+      diagnostics: [{ severity: "error", message: "E" }],
+    };
+    const s = workspaceReducer(armed, { type: "artifact/select", artifactId: 12 });
+    expect(s.buildId).toBeNull();
+    expect(s.simResult).toBeNull();
+    expect(s.diagnostics).toBeNull();
+
     const src = readFileSync(resolve(__dirname, "EngineeringWorkspace.tsx"), "utf8");
-    const effect = src.match(/useEffect\(\(\) => \{([^}]*)\}, \[artifactId\]\)/);
-    expect(effect, "thiếu useEffect(..., [artifactId])").not.toBeNull();
-    const body = effect![1]!;
-    expect(body).toMatch(/setBuildId\(null\)/);
-    expect(body).toMatch(/setSimResult\(null\)/);
-    expect(body).toMatch(/setDiagnostics\(null\)/);
+    expect(src).toMatch(/guardDirty\(\(\) => dispatch\(\{ type: "artifact\/select", artifactId: a\.id \}\)\)/);
+    // Task 12b — lưu phiên bản đi qua "artifact/created" (gắn project lúc yêu cầu) ⇒ cùng withArtifact.
+    // Bị chặn trong khối createArtifact (không vượt sang useMutation khác) — review task 12 Minor 2.
+    expect(src).toMatch(/const createArtifact = trpc\.programming\.createArtifact\.useMutation\(\{(?:(?!useMutation)[^])*?dispatch\(\{ type: "artifact\/created", projectId: vars\.projectId, artifactId: row\.id \}\)/);
+    const luu = workspaceReducer(armed, { type: "artifact/created", projectId: 1, artifactId: 13 });
+    expect([luu.buildId, luu.simResult, luu.diagnostics]).toEqual([null, null, null]);
+    expect(src).not.toMatch(/\buseState\s*[<(]/);
+    expect(src).not.toMatch(/\bset(BuildId|SimResult|Diagnostics|ArtifactId)\b/);
   });
 });
 

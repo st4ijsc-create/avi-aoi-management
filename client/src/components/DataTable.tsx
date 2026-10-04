@@ -150,6 +150,11 @@ export interface DataTableProps<T> {
   searchable?: boolean;
   /** Placeholder for the search input. Default "Search…". */
   searchPlaceholder?: string;
+  /**
+   * doc 81 Đợt 2 final wave — đổi giá trị này (vd bộ lọc/tìm kiếm của trang lọc `data` từ ngoài) ⇒ về trang 1,
+   * như khi ô tìm nội bộ đổi. Không truyền ⇒ hành vi cũ.
+   */
+  pageResetKey?: unknown;
 
   // state
   /** Show the loading skeleton instead of rows. */
@@ -329,6 +334,7 @@ export function DataTable<T>({
   paginated = true,
   searchable = false,
   searchPlaceholder = "Search…",
+  pageResetKey,
   loading = false,
   emptyState,
   initialSort,
@@ -389,7 +395,7 @@ export function DataTable<T>({
   // Reset to page 1 whenever the effective filter or the dataset shape changes.
   React.useEffect(() => {
     setPage(1);
-  }, [search, pageSize, paginated]);
+  }, [search, pageSize, paginated, pageResetKey]);
 
   // 1. Filter
   const filtered = React.useMemo(() => {

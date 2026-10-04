@@ -41,7 +41,8 @@ const aiFeatures = [
   { key: "reports", icon: FileText, href: "/ai-reports", category: "analysis" },
   { key: "managementInsight", icon: Lightbulb, href: "/management-insight", category: "analysis" },
   { key: "technicianCopilot", icon: Wrench, href: "/technician-copilot", category: "analysis" },
-  { key: "programmingCopilot", icon: Bot, href: "/programming-copilot", category: "analysis" },
+  // doc 81 Đợt 2 Task 15 — trang Copilot riêng đã thành chế độ scratch của IDE.
+  { key: "programmingCopilot", icon: Bot, href: "/engineering?copilot=scratch", category: "analysis" },
   // Inspection AI
   { key: "chat", icon: MessageSquare, href: "/ai-chat", category: "inspection" },
   { key: "qualityGate", icon: ShieldCheck, href: "/ai-quality-gate", category: "inspection" },

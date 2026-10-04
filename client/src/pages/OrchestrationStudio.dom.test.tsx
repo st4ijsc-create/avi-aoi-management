@@ -5,9 +5,15 @@
 //
 // ORACLE ĐỘC LẬP: SEEDED_RUN_IDS khai tay cùng fixture (contextJson.seed=true — như 6/6 run
 // trên DB dev), không suy bằng hàm gắn nhãn đang bị kiểm.
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { cleanup, render, screen, within } from "@testing-library/react";
 import "@testing-library/jest-dom/vitest";
+// doc 81 Đợt 2 Task 11 — HẠ TẦNG: trang nay dựng WorkbenchShell (react-resizable-panels). Separator của thư viện
+// nuốt cú bấm trong jsdom (rect 0×0 tại điểm bấm) ⇒ ô nhập không nhận chữ — shim dời riêng separator ra xa.
+import { installResizeHandleHitAreaShim } from "@/components/patterns/layoutKitTestPanels";
+// final wave T11 — bản BROWSER của react-resizable-panels như mọi test trang dựng WorkbenchShell (dispatch-common):
+// thiếu dòng này thư viện in 10× "Panel size not found" ra stderr.
+vi.mock("react-resizable-panels", async () => (await import("@/components/patterns/layoutKitTestPanels")).browserPanels());
 
 vi.mock("@/components/DashboardLayout", () => ({
   default: ({ children }: { children: React.ReactNode }) => <div>{children}</div>,
@@ -21,6 +27,8 @@ vi.mock("sonner", () => ({
 // Canvas sơ đồ (xyflow) không cần cho danh sách run.
 vi.mock("@/components/orchestration/WorkflowGraphCanvas", () => ({
   WorkflowGraphCanvas: () => null,
+  // final wave T11 — hằng số trang đọc khi kéo-thả bước (dragstart); thiếu thì test kéo-thả sau này ném lỗi.
+  WF_DND_MIME: "application/x-wf-step-kind",
 }));
 
 interface QueryResult {
@@ -105,6 +113,9 @@ const RUNS = [
 ];
 const SEEDED_RUN_IDS = new Set([7, 8]);
 
+beforeAll(() => {
+  installResizeHandleHitAreaShim();
+});
 beforeEach(() => {
   for (const k of Object.keys(queryOverrides)) delete queryOverrides[k];
   for (const k of Object.keys(mutateSpies)) delete mutateSpies[k];
