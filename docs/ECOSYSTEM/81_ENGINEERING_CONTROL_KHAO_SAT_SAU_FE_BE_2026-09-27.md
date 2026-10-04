@@ -317,23 +317,23 @@ Plan `docs/superpowers/plans/2026-10-02-engineering-control-dot1e.md` — chủ 
 
 ## 11. Kết quả Đợt 2 — Bố cục (2026-10-04)
 
-Plan `docs/superpowers/plans/2026-09-27-engineering-control-dot2-bo-cuc.md` — dựng lại bố cục 14 màn theo năm mẫu (§1.3). **106 commit** `02e3991ae..ef913de25` (~180 tệp), Task 1–15 kèm các vòng sửa; không migration. Hành vi nghiệp vụ/an toàn giữ nguyên, trừ một lỗi an toàn có từ trước lộ ra khi tách state IDE (Task 12b): "+ tạo dự án" không xoá build của dự án cũ ⇒ build cũ deploy được dưới dự án mới. Nay "+ tạo" reset như bấm chọn dự án, kết quả build/mô phỏng về trễ bị bỏ, và server từ chối deploy khi `expectedProjectId` ≠ dự án của build (kiểm trước OTP, sau giấy phép + quyền + phạm vi).
+Plan `docs/superpowers/plans/2026-09-27-engineering-control-dot2-bo-cuc.md` — dựng lại bố cục 14 màn theo năm mẫu (§1.3). **106 commit** `02e3991ae..ef913de25` (~180 tệp), Task 1–15 kèm các vòng sửa, cộng **đợt sửa cuối** sau review toàn nhánh (22 commit `338628af0..8ef727d19`: I-1/I-3/I-4, M-1..M-10, các mục FINAL-WAVE; báo cáo `.superpowers/sdd/2026-09-27-engineering-control-dot2-bo-cuc/final-fix-report.md`); không migration. Hành vi nghiệp vụ/an toàn giữ nguyên, trừ một lỗi an toàn có từ trước lộ ra khi tách state IDE (Task 12b): "+ tạo dự án" không xoá build của dự án cũ ⇒ build cũ deploy được dưới dự án mới. Nay "+ tạo" reset như bấm chọn dự án, kết quả build/mô phỏng về trễ bị bỏ, và server từ chối deploy khi `expectedProjectId` ≠ dự án của build (kiểm trước OTP, sau giấy phép + quyền + phạm vi).
 
-**Kết quả đo nghiệm thu (Task 16, HEAD `ef913de25`):** **9/10 mục tiêu §1.1 đạt trọn** trên thiết bị đo; mục "Dialog → flyout" **chưa trọn** (còn 1 Dialog duyệt giữa màn — Từ chối phiên bản trong IDE). Thêm một chỗ ngoài trạng thái thước đo: POU khi **mở** Explorer "Mở" còn 49,3 % < 50 % (số Task 14; mặc định gập: 61,7 %). Không ngưỡng nào bị hạ.
+**Kết quả đo nghiệm thu (đo lại ở đợt sửa cuối, HEAD `044780702`, `after.json`):** **10/10 mục tiêu §1.1 đạt** trên thiết bị đo **đã commit** (mọi số dưới đây tái lập được bằng `scripts/ui-metrics/engineeringLayout.mjs`, không còn số từ bản sao thước). "Dialog → flyout" nay trọn: "Từ chối phiên bản" trong IDE là sheet. Còn một chỗ ngoài trạng thái thước đo: POU khi **mở** Explorer "Mở" 49,3 % < 50 % (số Task 14, chưa đo lại; mặc định gập: 61,7 %) — panel phải của POU nay gập được, nhưng tổ hợp "mở Explorer + gập panel phải" không phải trạng thái thước đo. Không ngưỡng nào bị hạ.
 
 | Mục tiêu (§1.1) | Gốc Đợt 2 (`baseline.json`) | SAU (`after.json`) | Đạt? |
 |---|---|---|---|
 | IDE ≥45 % @1600 / ≥40 % @1366, kể cả mở Copilot | 17,7 / 6,5 % (mở Copilot 9,5 / 0,8 %) | **49,3 / 41,4 %** (mở Copilot như nhau) | ✅ |
-| IR, POU ≥50 % @1600 | IR 4,8 %, POU 8,7 % | IR **51,4 %**, POU **61,7 %** (mở Copilot như nhau) | ✅ ở trạng thái mặc định — POU mở Explorer "Mở": 49,3 % ❌ (giải thích dưới) |
+| IR, POU ≥50 % @1600 | IR 4,8 %, POU 8,7 % | IR **51,4 %**, POU **61,7 %** (mở Copilot như nhau — thước nay KIỂM Copilot thật sự hiện ở biến thể mở và ẩn ở biến thể đóng) | ✅ ở trạng thái mặc định — POU mở Explorer "Mở": 49,3 % ❌ (giải thích dưới) |
 | Orchestration ≥45 % @1600 | 6,0 % | **49,1 %** | ✅ |
 | Khoảng dọc trước tiêu đề ≤100 px | 157–279 px | **67 px** (5 màn workbench) / **79 px** (các màn còn lại) | ✅ 14/14 |
 | Màn có 2 breadcrumb | 11/14 | **0/14** | ✅ |
 | Banner trước nội dung chính | 2–7 khối/màn (tới 574 px) | **0** ở mọi màn × kích thước × biến thể | ✅ |
 | Dải KPI chip 32 px thay thẻ 130–146 px | 30 MetricCard trên 6 màn, dải 130–146 px | **0** MetricCard; chip `data-layout-kpi`, dải **32 px** | ✅ |
-| Dialog tạo/sửa/duyệt → flyout | 32 Dialog + 12 AlertDialog trong tệp trang | 9/9 hành động khai báo mở **sheet** (trước: 8 dialog + 1 popover); `Dialog` trong tệp trang **0**; còn **1** `Dialog` trong `VersionReviewPanel` (IDE) và 11 AlertDialog | ⚠ chưa trọn (dưới) |
+| Dialog tạo/sửa/duyệt → flyout | 32 Dialog + 12 AlertDialog trong tệp trang | 10/10 hành động khai báo mở **sheet** (+1 popover Sổ tay); `Dialog` giữa màn trong module **0** (`VersionReviewPanel` "Từ chối phiên bản" → sheet); AlertDialog chỉ còn cho xác nhận phá huỷ / bỏ thay đổi (rollback IDE nay qua `RollbackConfirm` dùng chung) + 1 "Kiểm định sự kiện" (dưới) | ✅ |
 | Copilot/AI che nội dung = 0 | dock che tới 640 px² (thước); FE1: 378 px = 53 % @1366 | `coverMain` **0**, `aiInsideMain` **0** ở 8/8 bản ghi có Copilot | ✅ |
-| Trang cao nhất (Standards tab cảnh báo) ≤1,5× | 8,10× / 10,02× (Task 9) | **1,00× / 1,12×** (lượt đo phụ `?tab=alarms`) | ✅ |
-| (Ràng buộc 10) không cuộn ngang ở 1366 | — | trang cuộn ngang **0/34** bản ghi; cuộn ngang **bên trong** ô: 3 bảng + dải tab Copilot (dưới) | ✅ |
+| Trang cao nhất (Standards tab cảnh báo) ≤1,5× | 8,10× / 10,02× (Task 9) | **1,00× / 1,12×** (màn `equipment-standards-alarms` của thước, `?tab=alarms`) | ✅ |
+| (Ràng buộc 10) không cuộn ngang ở 1366 | — | cuộn ngang cấp trang (`hScroll`: tài liệu + `<main>`) **0 px ở 36/36** bản ghi — gác cứng của thước (≥1366: >1 px là LỖI); cuộn ngang **bên trong** ô: bảng Recipes/Integration + dải tab Copilot (dưới); cột thao tác Interlock nay dính phải | ✅ |
 
 **Bảng TRƯỚC → SAU theo màn** (1600 / 1366; "vùng làm việc" = `workspacePct`, chỉ số nghiệm thu editor/canvas; gốc = `baseline.json`; mốc sau shell `baseline-sau-shell.json` và bảng đủ 34 bản ghi × 15 chỉ số ở báo cáo Task 16):
 
@@ -352,36 +352,40 @@ Plan `docs/superpowers/plans/2026-09-27-engineering-control-dot2-bo-cuc.md` — 
 | POU | 8,7/0 → **61,7**/55,3 | 629/649 → 105 | 259 → 67 | 5 → 0 | 2 → 1 | 4 thẻ 130 px → 0 | 0 → 0 | 1,47/1,88 → 1,00 | Lưu vào project: dialog → sheet |
 | POU + Copilot | 3,5/0 → **61,7**/55,3 | 689/817 → 105 | 259/279 → 67 | 5/6 → 0 | 2 → 1 | 4 → 0 | 0 → 0 | 1,56/2,15 → 1,00 | như trên |
 | Copilot ⚠ **bí danh** (nay IDE `?copilot=scratch`) | 12,9/18,7 → 51,3/43,6 | 315 → 105 | 157 → 67 | 2 → 0 | 1 → 1 | — | 0 → 0 | 1,00/1,03 → 1,00 | — |
-| Fleet | 16,6/0,2 → 41,7/35,2 | 653/673 → 120 | 259 → 79 | 6 → 0 | 2 → 1 | 9 thẻ 130 px → 5/3 chip | 1152 → 0 | 1,20/1,51 → 1,00 | — |
+| Fleet | 16,6/0,2 → 40,4/33,8 ¹ | 653/673 → 120 | 259 → 79 | 6 → 0 | 2 → 1 | 9 thẻ 130 px → 5/3 chip | 1152 → 0 | 1,20/1,51 → 1,00 | — |
 | Safety | 0/0 → 46,4/40,4 | 805/825 → 120 | 259 → 79 | 7 → 0 | 2 → 1 | 4 thẻ 130 px → 4/2 chip | 1152/0 → 0 | 1,80/2,27 → 1,00 | Báo cáo tiệm cận: dialog → sheet |
 | Standards | 15,7/0 → 64,5/58,2 | 669/689 → 120 | 259 → 79 | 6 → 0 | 2 → 1 | 5 thẻ 146 px → 4/2 chip | 1152 → 0 | 1,89/2,37 → 1,01/1,02 | Đăng ký loại: dialog → sheet |
+| Standards — tab cảnh báo (màn mới của thước) | — (FE1/gốc không đo tab này; Task 9: cao 8,10/10,02×) | **56,3/59,8** | 120 | 79 | 0 | 1 | 4/2 chip | 0 | **1,00/1,12** | Chuẩn hóa cảnh báo: sheet |
 | Integration | 22,6/7,2 → 64,1/57,8 | 673/693 → 120 | 259 → 79 | 6 → 0 | 2 → 1 | 4 thẻ 130 px → 3 chip | 1152 → 0 | 1,31/1,70 → 1,00 | — |
+
+¹ Fleet thấp hơn số Task 16 (41,7/35,2) vì dòng chẩn đoán tiếng Anh thô của lưới 40×40 rỗng (đọc `factoryId=1` dự phòng) đã biến mất: lưới nay chỉ đọc khi biết nhà máy; MAIN co đúng phần dòng đó (hiệu chuẩn lại 1366: −3,87 % diện tích). Fleet không có ngưỡng % riêng.
 
 ⚠ **Hai bí danh KHÔNG cùng loại (ruling R-2-x).** Studio và Copilot đã gộp ở Task 15; URL cũ chỉ còn chuyển hướng. Số TRƯỚC là trang cũ (launcher Studio; form Copilot), số SAU là trang đích (tab Danh mục của Hub; IDE chưa mở dự án + Copilot). Không đọc hai dòng này như cải thiện hay thoái lui của cùng một màn — vd vùng làm việc "Studio" 52,7 → 46,4 % là hai trang khác nhau.
 
 **Giải thích chỗ chưa đạt (không hạ ngưỡng):**
-1. **Dialog duyệt còn sót — `components/engineering/VersionReviewPanel.tsx:128`.** "Từ chối phiên bản" (lý do bắt buộc) trong IDE vẫn là `Dialog` giữa màn. FE2 chỉ đếm `Dialog` trong tệp trang (32 → 0); hộp này nằm trong component nên lọt cả phép đếm FE2 lẫn danh sách hành động của thước (thước chỉ bấm nút MỞ đã khai, không bấm nút trong panel duyệt). Vì vậy mục tiêu "duyệt → flyout" **chưa trọn**. 11 AlertDialog còn lại: 10 là xác nhận phá huỷ/không hoàn tác hoặc bỏ thay đổi chưa lưu (bỏ sửa, xoá biến, rollback, lưu trữ recipe, xoá workflow, chạy tiếp run có thể ra lệnh thật, huỷ tác vụ, đóng phân công, huỷ phối hợp) — đúng ngoại lệ của mục tiêu; **1** là "Kiểm định sự kiện an toàn?" (Safety): chỉ ghi dấu người duyệt, không phá huỷ, nên theo đúng chữ thì không thuộc ngoại lệ. Wizard deploy 4 bước của IDE là `WizardDialog` theo thiết kế §1.2–1.3 (bước ký duyệt dùng ConfirmWithReason + OTP).
-2. **POU khi mở Explorer "Mở": 49,3 % @1600** (Task 14, ruling R-2-u; không đo lại ở Task 16). Mặc định Explorer gập ⇒ 61,7 %, và thước đo trạng thái mặc định. Mở Explorer (240–300 px theo §1.3) lấy đúng phần đó của canvas. Muốn đạt 50 % ở trạng thái mở thì phải thu hẹp Explorer dưới 240 px hoặc cho panel phải gập được (mục FINAL-WAVE "POU right panel collapsible").
+1. **Dialog duyệt — đã sửa ở đợt sửa cuối.** "Từ chối phiên bản" (`components/engineering/VersionReviewPanel.tsx`) nay là sheet bên phải, hợp đồng giữ nguyên (lý do bắt buộc sau trim, chỉ người KHÁC tác giả có quyền, Huỷ không gọi server). AlertDialog còn lại: 10 là xác nhận phá huỷ/không hoàn tác hoặc bỏ thay đổi chưa lưu (bỏ sửa, xoá biến, rollback, lưu trữ recipe, xoá workflow, chạy tiếp run có thể ra lệnh thật, huỷ tác vụ, đóng phân công, huỷ phối hợp) — đúng ngoại lệ của mục tiêu; **1** là "Kiểm định sự kiện an toàn?" (Safety): chỉ ghi dấu người duyệt, không phá huỷ, nên theo đúng chữ thì không thuộc ngoại lệ. Wizard deploy 4 bước của IDE là `WizardDialog` theo thiết kế §1.2–1.3 (bước ký duyệt dùng ConfirmWithReason + OTP).
+2. **POU khi mở Explorer "Mở": 49,3 % @1600** (Task 14, ruling R-2-u; không đo lại). Mặc định Explorer gập ⇒ 61,7 %, và thước đo trạng thái mặc định. Mở Explorer (240–300 px theo §1.3) lấy đúng phần đó của canvas. Đợt sửa cuối cho panel phải của POU **gập được** (nút trên thanh editor; mở Copilot thì panel tự mở lại) — người dùng có thể lấy lại chỗ cho canvas khi mở Explorer; tổ hợp này không được thước đo nên không ghi số.
 3. Màn danh sách không có ngưỡng % riêng. Recipes thấp nhất (36,4/32,0 %) vì MAIN là danh sách + chi tiết rỗng khi `_test` không có recipe — ghi để theo dõi, không phải trượt ngưỡng.
 
 **Quan sát từ ảnh chụp (ngoài thước, để chủ dự án xem):**
 - Canvas IR/POU: nút điều khiển + minimap của React Flow và bảng "THÊM · LD" của POU hiện khối trắng, chữ trống trên nền tối.
-- Fleet hiện câu chẩn đoán tiếng Anh thô "empty 40x40 grid @ 0.5m — no zone bounds geometry found; A* degrades to straight-line routing".
+- ~~Fleet hiện câu chẩn đoán tiếng Anh thô "empty 40x40 grid …"~~ — đợt sửa cuối: lưới chỉ đọc khi biết nhà máy; không có hình học ⇒ trạng thái trống (đã dịch) giữ đúng khung bản đồ.
 - Breadcrumb top bar bị cắt ở 1366 khi sidebar mở ("Kỹ thuật & Điều khiển (").
 - Tab "Copilot" ở panel phải IR/POU bị cắt (dải tab cuộn ngang trong 319 px).
-- Cuộn ngang bên trong bảng: Recipes (lịch sử triển khai, 1366), Interlock (1366, 200 px), Integration.
+- Cuộn ngang bên trong bảng: Recipes (lịch sử triển khai, 1366), Integration; Interlock (1366) — cột thao tác nay **dính phải** nên Duyệt/Bật/Tắt luôn thấy (kiểm sống: ô thao tác nằm trong MAIN, `position: sticky`).
 
-**Phương pháp và MSA.** Thước `scripts/ui-metrics/engineeringLayout.mjs` (Task 1; README cùng thư mục) chạy Playwright trên instance tự dựng từ mã nguồn: server tsx :3016 `ROLE=api` không nạp `.env`, Vite dev :5176, DB `aoi_management_test`, hồ sơ cờ `dev`, mọi tích hợp ra ngoài tắt, user đo tạm `uim_engineer` (role engineer). 14 màn × 1600×950 / 1366×768 + 3 biến thể mở Copilot = 34 bản ghi. MAIN = `[data-layout-main]` ở 14/14 màn, hiệu chuẩn `recorded-match` 34/34.
-- Lần 1 (`--shots`, kèm đối chứng dương) và lần 2 (`--mutation`) đều `pass=true`: 0 lỗi, tự kiểm **34/34** ca, gỡ từng gác **29/29 gác đỏ**, 0 kết nối ngoài danh sách, 0 trôi dữ liệu trên 57 bảng, cổng 3016/5176 "trống" sau khi tắt, user đo đã xoá. `after.json` = lần 2.
-- `--compare` lần 1 ↔ lần 2: **714 phép so, 0 lệch** (lệch lớn nhất 0 %), mọi cổng MSA đạt.
-- So với `baseline.json` / `baseline-sau-shell.json`: 485 / 420 trên 714 phép so đổi giá trị (đó là thay đổi bố cục). Dữ liệu `_test` khác mốc sau shell ở đúng một bảng (`program_deployments`; `_test` dùng chung với vitest) — không đổi hình học.
-- Lượt đo phụ (bản sao thước ở scratchpad, chỉ đổi route Standards sang `?tab=alarms` và thêm phép đo cuộn ngang; không commit): Standards tab cảnh báo 1,00× / 1,12×; trang không cuộn ngang ở 34/34 bản ghi. Hai loại lỗi của lượt này là dự kiến: hiệu chuẩn so với bản ghi của tab mặc định, và nút "Đăng ký loại" thuộc tab khác.
-- Cảnh báo của thước: Fleet gọi `fleet.robotPositions`, `twin.occupancyGrid` chưa có trong `KNOWN_PROCS` ⇒ canh trôi dữ liệu có thể thiếu bảng của bản đồ (cần `--discover-tables`). "Thêm quy tắc" Interlock khoá với engineer (đúng quyền).
-- Ảnh 34 bản ghi: `.playwright-mcp/do-bo-cuc/task16/anh/` (không commit).
+**Phương pháp và MSA.** Thước `scripts/ui-metrics/engineeringLayout.mjs` (Task 1; README cùng thư mục) chạy Playwright trên instance tự dựng từ mã nguồn: server tsx :3016 `ROLE=api` không nạp `.env`, Vite dev :5176, DB `aoi_management_test`, hồ sơ cờ `dev`, mọi tích hợp ra ngoài tắt, user đo tạm `uim_engineer` (role engineer). 14 màn + tab cảnh báo Standards × 1600×950 / 1366×768 + 3 biến thể mở Copilot = **36 bản ghi**. MAIN = `[data-layout-main]` ở mọi màn, hiệu chuẩn `recorded-match` 36/36.
+- Đợt sửa cuối (ruling R-2-z1) đưa vào thước đã commit: màn `equipment-standards-alarms` (`tabOf`: bản ghi hiệu chuẩn riêng, bản ghi mới chỉ khi attribute trùng phần tử của trang mẹ), phép đo `hScroll` (cuộn ngang cấp trang, gác cứng ≥1366), kiểm biến thể Copilot THẬT SỰ hiện/ẩn (`COPILOT_PROBE`, LỖI nếu không), `KNOWN_PROCS` Fleet có `fleet.robotPositions` + `twin.occupancyGrid`; tự kiểm 34 → **37** ca (T30–T32), gác 29 → **32**. `--calibrate` có chủ đích: ECN (phần tử mang attribute div → section, hình học lệch 0), Fleet 1366 (−3,87 %, ¹), tab cảnh báo mới.
+- Lần 1 (`--shots`, kèm đối chứng dương) và lần 2 (`--mutation`) đều `pass=true`: 0 lỗi, tự kiểm **37/37** ca, gỡ từng gác **32/32 gác đỏ** (đo lại 0 lần), 0 kết nối ngoài danh sách, 0 trôi dữ liệu trên 57 bảng, cổng 3016/5176 "trống" sau khi tắt, user đo đã xoá, `gitDirty` rỗng (đo đúng HEAD `044780702`). `after.json` = lần 2.
+- `--compare` lần 1 ↔ lần 2: **756 phép so, 0 lệch**, mọi cổng MSA đạt. So với `after.json` của Task 16: 714 phép so chung, **4** đổi — đều là Fleet (`mainPct`/`workspacePct` × 2 kích thước, ¹); mọi màn khác trùng từng số (đổi shell R-2-z4 sang `--shell-chrome-h` không đổi hình học).
+- Kiểm sống thêm (instance tự dựng, sau đó tắt): bơm một hàng chrome 32 px (như thanh license nghiêm trọng R-2-i) ⇒ `--shell-chrome-h` 56 → 88 px, Interlock/Recipes/IDE/Fleet/Hub không tràn (tài liệu và `<main>` 0 px); tab cảnh báo Standards vốn cao 1,12× ở 1366 thì phần cuộn tăng đúng 32 px.
+- "Thêm quy tắc" Interlock khoá với engineer (đúng quyền).
+- Ảnh 36 bản ghi: `.playwright-mcp/do-bo-cuc/anh/` (lần 1 của đợt sửa cuối; không commit).
 
-**Test.** Chạy toàn bộ test DOM/unit của module cùng census: các trang Engineering/IDE/IR/POU/Orchestration/ECN/Recipes/Interlock/Fleet/Safety/Standards/Integration, `components/{engineering,programming,patterns,workspace}`, shell/nav và `lib/` liên quan. Kết quả **123 tệp, 2 099/2 110 xanh**. 11 đỏ nằm trong 5 tệp census:
-- `appErrorParamsCoverage` (twinCanh), `appErrorCoverage` (cuaIngestScan/aoiPackageRouter), `clientErrorCoverage` (AOIPackages), `viStringCoverage` (twin3d hình-3 34 + chạm trần 4) — của bên khác;
-- `rawErrorMessageCensus` 5 = 4 của bên khác (twin3d ×3, AOIPackages) **+ 1 của module: `RecipeManagement.tsx:1444` `message={error.message}`** (hồi quy Task 6 `2bff1cac9`, đã ghi FINAL-WAVE, chưa sửa).
+**Test.** Task 16: **123 tệp, 2 099/2 110 xanh** (11 đỏ trong 5 tệp census, trong đó 1 của module). Đợt sửa cuối:
+- quét các tệp test chạm trong cả Đợt 2 (`git diff --name-only 130f000ce..HEAD`, 53 tệp, 3 lô): **932/932 xanh**;
+- bộ module + census (63 tệp: trang Engineering/IDE/IR/POU/Orchestration/ECN/Recipes/Interlock/Fleet/Safety/Standards/Integration, `components/{engineering,programming,patterns,orchestration}`, shell, contexts, `lib/` nav + census): **1 035/1 043**; 8 đỏ đều của bên khác — `rawErrorMessageCensus` **về 4** (twin3d ×3, AOIPackages; `RecipeManagement` đã sửa: trường lỗi đã dịch đổi tên `{ machineId, text }`), `clientErrorCoverage` (AOIPackages), `viStringCoverage` (twin3d hình-3);
+- `tsc --noEmit` 0 lỗi; khoá i18n mồ côi do Đợt 2 để lại: 53 → **0** (vi/en/zh).
 
 `congGiayPhepAiCensus`, `programmingCopilotStream.sseCensus`, `layoutKitI18n`, `errorMessageI18nCoverage`, `navKeyResolution`, `engineeringNavRouteGuardParity` xanh. Không build, không chạm `dist/`, không kết nối DB dev.
 
