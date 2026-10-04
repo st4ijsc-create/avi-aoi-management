@@ -1,12 +1,12 @@
 {
  "meta": {
   "tool": "scripts/ui-metrics/engineeringLayout.mjs",
-  "startedAt": "2026-10-03T20:49:41.030Z",
+  "startedAt": "2026-10-03T23:33:09.231Z",
   "argv": [
    "--spawn",
    "--mutation",
    "--out",
-   ".playwright-mcp/do-bo-cuc/t16-lan-2.json"
+   ".playwright-mcp/do-bo-cuc/final-wave/lan-2.json"
   ],
   "sizes": [
    [
@@ -19,7 +19,8 @@
    ]
   ],
   "flags": "dev",
-  "gitHead": "ef913de25",
+  "gitHead": "044780702",
+  "gitDirty": [],
   "data": {
    "tables": 57,
    "before": {
@@ -201,8 +202,8 @@
     "perms": 22,
     "factory": "SIM-FAC"
    },
-   "serverBootMs": 6045,
-   "serverPid": 29632
+   "serverBootMs": 6041,
+   "serverPid": 12780
   },
   "base": "http://127.0.0.1:5176",
   "reference": {
@@ -238,15 +239,17 @@
     "pou-studio|1600|open",
     "pou-studio|1366|open",
     "engineering-home|1600|n/a",
-    "engineering-home|1366|n/a"
+    "engineering-home|1366|n/a",
+    "equipment-standards-alarms|1600|n/a",
+    "equipment-standards-alarms|1366|n/a"
    ]
   },
   "connections": [
    {
     "label": "sau khi khởi động",
     "pids": [
-     29632,
-     33452
+     12780,
+     2024
     ],
     "tcp": {
      "Listen :::3016": 1,
@@ -259,13 +262,13 @@
    {
     "label": "sau biến thể closed",
     "pids": [
-     29632,
-     33452
+     12780,
+     2024
     ],
     "tcp": {
      "Listen :::3016": 1,
-     "Bound → -": 13,
-     "Established → 127.0.0.1:5434": 13,
+     "Bound → -": 12,
+     "Established → 127.0.0.1:5434": 12,
      "Established → vào :3016 từ 127.0.0.1": 1
     },
     "udp": [],
@@ -274,13 +277,13 @@
    {
     "label": "sau biến thể open",
     "pids": [
-     29632,
-     33452
+     12780,
+     2024
     ],
     "tcp": {
      "Listen :::3016": 1,
-     "Bound → -": 9,
-     "Established → 127.0.0.1:5434": 9,
+     "Bound → -": 10,
+     "Established → 127.0.0.1:5434": 10,
      "Established → vào :3016 từ 127.0.0.1": 1
     },
     "udp": [],
@@ -658,6 +661,50 @@
      "separatorHitPx": 0
     },
     {
+     "name": "T30-cuon-ngang-trang",
+     "pass": true,
+     "before": {
+      "docOverflowPx": 0,
+      "mainOverflowPx": 0,
+      "mainOverflowX": "auto"
+     },
+     "after": {
+      "docOverflowPx": 0,
+      "mainOverflowPx": 1712,
+      "mainOverflowX": "auto"
+     }
+    },
+    {
+     "name": "T31-copilot-phai-hien",
+     "pass": true,
+     "none": {
+      "rendered": false,
+      "surfaces": 0,
+      "panelIds": []
+     },
+     "yes": {
+      "rendered": true,
+      "surfaces": 1,
+      "panelIds": [
+       "uim-copilot"
+      ]
+     },
+     "errA": 1,
+     "errB": 0,
+     "errC": 1
+    },
+    {
+     "name": "T32-hieu-chuan-tab",
+     "pass": true,
+     "good": {
+      "status": "matches-reference",
+      "refKind": "parent-element",
+      "parentAttrSel": "section[data-layout-main=\"dung\"]@EngineeringChanges.tsx"
+     },
+     "moved": "MISMATCH",
+     "orphan": "MISMATCH"
+    },
+    {
      "name": "T16-bam-loi",
      "pass": true,
      "errors": [
@@ -674,7 +721,8 @@
      "red": [
       "T01-banner-long-sau"
      ],
-     "guardProven": true
+     "guardProven": true,
+     "retries": 0
     },
     {
      "guard": "hitTest",
@@ -684,7 +732,8 @@
      "red": [
       "T02-lop-phu-fixed"
      ],
-     "guardProven": true
+     "guardProven": true,
+     "retries": 0
     },
     {
      "guard": "kpiBoth",
@@ -694,7 +743,8 @@
      "red": [
       "T03-kpi-hai-nguon"
      ],
-     "guardProven": true
+     "guardProven": true,
+     "retries": 0
     },
     {
      "guard": "attrConstraint",
@@ -704,7 +754,8 @@
      "red": [
       "T04-attribute-vi-pham"
      ],
-     "guardProven": true
+     "guardProven": true,
+     "retries": 0
     },
     {
      "guard": "actionNotFound",
@@ -714,7 +765,8 @@
      "red": [
       "T05-hanh-dong-ma"
      ],
-     "guardProven": true
+     "guardProven": true,
+     "retries": 0
     },
     {
      "guard": "calib",
@@ -724,7 +776,8 @@
      "red": [
       "T06-hieu-chuan"
      ],
-     "guardProven": true
+     "guardProven": true,
+     "retries": 0
     },
     {
      "guard": "insideMain",
@@ -736,7 +789,8 @@
       "T07-banner-trong-main",
       "T08-kpi-trong-main"
      ],
-     "guardProven": true
+     "guardProven": true,
+     "retries": 0
     },
     {
      "guard": "headerBanner",
@@ -746,7 +800,8 @@
      "red": [
       "T09-banner-trong-header"
      ],
-     "guardProven": true
+     "guardProven": true,
+     "retries": 0
     },
     {
      "guard": "noDialog",
@@ -758,7 +813,8 @@
       "T10-nut-chet",
       "T10b-panel-inline"
      ],
-     "guardProven": true
+     "guardProven": true,
+     "retries": 0
     },
     {
      "guard": "clip",
@@ -768,7 +824,8 @@
      "red": [
       "T11-cat-overflow"
      ],
-     "guardProven": true
+     "guardProven": true,
+     "retries": 0
     },
     {
      "guard": "aiInside",
@@ -778,7 +835,8 @@
      "red": [
       "T12-ai-trong-main"
      ],
-     "guardProven": true
+     "guardProven": true,
+     "retries": 0
     },
     {
      "guard": "overlayBand",
@@ -788,7 +846,8 @@
      "red": [
       "T13-portal-dai-dau"
      ],
-     "guardProven": true
+     "guardProven": true,
+     "retries": 0
     },
     {
      "guard": "dialogsAtLoad",
@@ -798,7 +857,8 @@
      "red": [
       "T14-dialog-luc-nap"
      ],
-     "guardProven": true
+     "guardProven": true,
+     "retries": 0
     },
     {
      "guard": "errHash",
@@ -808,7 +868,8 @@
      "red": [
       "T16-bam-loi"
      ],
-     "guardProven": true
+     "guardProven": true,
+     "retries": 0
     },
     {
      "guard": "scrollAncestors",
@@ -818,7 +879,8 @@
      "red": [
       "T15-to-tien-an"
      ],
-     "guardProven": true
+     "guardProven": true,
+     "retries": 0
     },
     {
      "guard": "siblingReport",
@@ -828,7 +890,8 @@
      "red": [
       "T15b-anh-em-chi-bao"
      ],
-     "guardProven": true
+     "guardProven": true,
+     "retries": 0
     },
     {
      "guard": "wsEscape",
@@ -840,7 +903,8 @@
       "T17-wrapper-workspace",
       "T17b-main-la-workspace"
      ],
-     "guardProven": true
+     "guardProven": true,
+     "retries": 0
     },
     {
      "guard": "h1Gate",
@@ -850,7 +914,8 @@
      "red": [
       "T18-mat-h1"
      ],
-     "guardProven": true
+     "guardProven": true,
+     "retries": 0
     },
     {
      "guard": "aboveH1Banner",
@@ -860,7 +925,8 @@
      "red": [
       "T19-banner-tren-h1"
      ],
-     "guardProven": true
+     "guardProven": true,
+     "retries": 0
     },
     {
      "guard": "fixedInMain",
@@ -870,7 +936,8 @@
      "red": [
       "T20-fixed-trong-main"
      ],
-     "guardProven": true
+     "guardProven": true,
+     "retries": 0
     },
     {
      "guard": "textLabel",
@@ -880,7 +947,8 @@
      "red": [
       "T21-nhan-chu-thuan"
      ],
-     "guardProven": true
+     "guardProven": true,
+     "retries": 0
     },
     {
      "guard": "aiText",
@@ -890,7 +958,8 @@
      "red": [
       "T22-ai-theo-nhan-i18n"
      ],
-     "guardProven": true
+     "guardProven": true,
+     "retries": 0
     },
     {
      "guard": "toolbar56",
@@ -900,7 +969,8 @@
      "red": [
       "T23-toolbar-56"
      ],
-     "guardProven": true
+     "guardProven": true,
+     "retries": 0
     },
     {
      "guard": "chipMin",
@@ -910,7 +980,8 @@
      "red": [
       "T24-chip-thap"
      ],
-     "guardProven": true
+     "guardProven": true,
+     "retries": 0
     },
     {
      "guard": "emptyStateW",
@@ -920,7 +991,8 @@
      "red": [
       "T25-emptystate-la-W"
      ],
-     "guardProven": true
+     "guardProven": true,
+     "retries": 0
     },
     {
      "guard": "kpiFirst",
@@ -930,7 +1002,8 @@
      "red": [
       "T26-chip-trong-wrapper"
      ],
-     "guardProven": true
+     "guardProven": true,
+     "retries": 0
     },
     {
      "guard": "labelDeep",
@@ -940,7 +1013,8 @@
      "red": [
       "T27-wrapper-notice-mau"
      ],
-     "guardProven": true
+     "guardProven": true,
+     "retries": 0
     },
     {
      "guard": "emptyNotice",
@@ -950,7 +1024,8 @@
      "red": [
       "T28-trong-trong-notice"
      ],
-     "guardProven": true
+     "guardProven": true,
+     "retries": 0
     },
     {
      "guard": "separatorExempt",
@@ -960,12 +1035,47 @@
      "red": [
       "T29a-separator-anh-em-mien"
      ],
-     "guardProven": true
+     "guardProven": true,
+     "retries": 0
+    },
+    {
+     "guard": "hScroll",
+     "cases": [
+      "T30-cuon-ngang-trang"
+     ],
+     "red": [
+      "T30-cuon-ngang-trang"
+     ],
+     "guardProven": true,
+     "retries": 0
+    },
+    {
+     "guard": "copilotAssert",
+     "cases": [
+      "T31-copilot-phai-hien"
+     ],
+     "red": [
+      "T31-copilot-phai-hien"
+     ],
+     "guardProven": true,
+     "retries": 0
+    },
+    {
+     "guard": "tabCalib",
+     "cases": [
+      "T32-hieu-chuan-tab"
+     ],
+     "red": [
+      "T32-hieu-chuan-tab"
+     ],
+     "guardProven": true,
+     "retries": 0
     }
    ],
-   "mutationPass": true
+   "mutationPass": true,
+   "mutationRetries": 0
   },
-  "finishedAt": "2026-10-03T21:15:27.512Z",
+  "finishedAt": "2026-10-04T00:01:02.439Z",
   "probeUserRemoved": {
    "deleted": 1,
    "deactivated": 0
@@ -1016,7 +1126,7 @@
      "workspace": {
       "tag": "table",
       "testid": null,
-      "loc": "PendingReviewStrip.tsx:258",
+      "loc": "PendingReviewStrip.tsx:266",
       "role": null,
       "slot": null,
       "label": "Đang chờ duyệt & cảnh báo",
@@ -1143,12 +1253,17 @@
     "mainW": 1336,
     "mainPad": "16px 24px 24px",
     "breadcrumbLocs": [
-     "DashboardLayout.tsx:275"
+     "DashboardLayout.tsx:276"
     ]
    },
    "dialogsAtLoad": {
     "count": 0,
     "kinds": []
+   },
+   "hScroll": {
+    "docOverflowPx": 0,
+    "mainOverflowPx": 0,
+    "mainOverflowX": "auto"
    },
    "spinnersAtMeasure": 2,
    "errors": [],
@@ -1219,7 +1334,7 @@
      "workspace": {
       "tag": "table",
       "testid": null,
-      "loc": "PendingReviewStrip.tsx:258",
+      "loc": "PendingReviewStrip.tsx:266",
       "role": null,
       "slot": null,
       "label": "Đang chờ duyệt & cảnh báo",
@@ -1346,12 +1461,17 @@
     "mainW": 1102,
     "mainPad": "16px 24px 24px",
     "breadcrumbLocs": [
-     "DashboardLayout.tsx:275"
+     "DashboardLayout.tsx:276"
     ]
    },
    "dialogsAtLoad": {
     "count": 0,
     "kinds": []
+   },
+   "hScroll": {
+    "docOverflowPx": 0,
+    "mainOverflowPx": 0,
+    "mainOverflowX": "auto"
    },
    "spinnersAtMeasure": 2,
    "errors": [],
@@ -1549,12 +1669,17 @@
     "mainW": 1336,
     "mainPad": "16px 24px 24px",
     "breadcrumbLocs": [
-     "DashboardLayout.tsx:275"
+     "DashboardLayout.tsx:276"
     ]
    },
    "dialogsAtLoad": {
     "count": 0,
     "kinds": []
+   },
+   "hScroll": {
+    "docOverflowPx": 0,
+    "mainOverflowPx": 0,
+    "mainOverflowX": "auto"
    },
    "spinnersAtMeasure": 2,
    "errors": [],
@@ -1765,12 +1890,17 @@
     "mainW": 1102,
     "mainPad": "16px 24px 24px",
     "breadcrumbLocs": [
-     "DashboardLayout.tsx:275"
+     "DashboardLayout.tsx:276"
     ]
    },
    "dialogsAtLoad": {
     "count": 0,
     "kinds": []
+   },
+   "hScroll": {
+    "docOverflowPx": 0,
+    "mainOverflowPx": 0,
+    "mainOverflowX": "auto"
    },
    "spinnersAtMeasure": 2,
    "errors": [],
@@ -1863,7 +1993,7 @@
        "kind": "toolbar",
        "tag": "div",
        "testid": null,
-       "loc": "EngineeringShell.tsx:320",
+       "loc": "EngineeringShell.tsx:324",
        "role": null,
        "slot": null,
        "label": "Nguồn (chưa lưu) Δ So sánh Tags"
@@ -1982,12 +2112,17 @@
     "mainW": 1552,
     "mainPad": "0px",
     "breadcrumbLocs": [
-     "DashboardLayout.tsx:275"
+     "DashboardLayout.tsx:276"
     ]
    },
    "dialogsAtLoad": {
     "count": 0,
     "kinds": []
+   },
+   "hScroll": {
+    "docOverflowPx": 0,
+    "mainOverflowPx": 0,
+    "mainOverflowX": "auto"
    },
    "spinnersAtMeasure": 2,
    "errors": [],
@@ -2006,6 +2141,12 @@
      "attrSel": "div[data-layout-main=\"engineering-editor\"]@WorkbenchShell.tsx",
      "gitHead": "4cc5b42c2"
     }
+   },
+   "copilot": {
+    "expected": "closed",
+    "rendered": false,
+    "surfaces": 0,
+    "panelIds": []
    },
    "actions": [
     {
@@ -2108,7 +2249,7 @@
        "kind": "toolbar",
        "tag": "div",
        "testid": null,
-       "loc": "EngineeringShell.tsx:320",
+       "loc": "EngineeringShell.tsx:324",
        "role": null,
        "slot": null,
        "label": "Nguồn (chưa lưu) Δ So sánh Tags"
@@ -2227,12 +2368,17 @@
     "mainW": 1318,
     "mainPad": "0px",
     "breadcrumbLocs": [
-     "DashboardLayout.tsx:275"
+     "DashboardLayout.tsx:276"
     ]
    },
    "dialogsAtLoad": {
     "count": 0,
     "kinds": []
+   },
+   "hScroll": {
+    "docOverflowPx": 0,
+    "mainOverflowPx": 0,
+    "mainOverflowX": "auto"
    },
    "spinnersAtMeasure": 2,
    "errors": [],
@@ -2251,6 +2397,12 @@
      "attrSel": "div[data-layout-main=\"engineering-editor\"]@WorkbenchShell.tsx",
      "gitHead": "4cc5b42c2"
     }
+   },
+   "copilot": {
+    "expected": "closed",
+    "rendered": false,
+    "surfaces": 0,
+    "panelIds": []
    },
    "actions": [
     {
@@ -2331,7 +2483,7 @@
      "workspace": {
       "tag": "table",
       "testid": null,
-      "loc": "DataTable.tsx:607",
+      "loc": "DataTable.tsx:613",
       "role": null,
       "slot": "table",
       "label": "ECN Tiêu đề Loại Hiệu lực Trạng thái Thao tác ECN-",
@@ -2353,7 +2505,7 @@
        "kind": "toolbar",
        "tag": "div",
        "testid": null,
-       "loc": "EngineeringChanges.tsx:521",
+       "loc": "EngineeringChanges.tsx:522",
        "role": null,
        "slot": null,
        "label": "TRẠNG THÁI Mọi trạng thái LOẠI Mọi loại"
@@ -2472,12 +2624,17 @@
     "mainW": 1336,
     "mainPad": "16px 24px 24px",
     "breadcrumbLocs": [
-     "DashboardLayout.tsx:275"
+     "DashboardLayout.tsx:276"
     ]
    },
    "dialogsAtLoad": {
     "count": 0,
     "kinds": []
+   },
+   "hScroll": {
+    "docOverflowPx": 0,
+    "mainOverflowPx": 0,
+    "mainOverflowX": "auto"
    },
    "spinnersAtMeasure": 2,
    "errors": [],
@@ -2495,7 +2652,7 @@
     "areaPx": 906752,
     "hadH1": true
    },
-   "attrSel": "div[data-layout-main=\"ecn-list\"]@EngineeringChanges.tsx",
+   "attrSel": "section[data-layout-main=\"ecn-list\"]@EngineeringChanges.tsx",
    "calibration": {
     "status": "recorded-match",
     "dTop": 0,
@@ -2506,8 +2663,8 @@
     "record": {
      "mainTop": 124,
      "areaPx": 906752,
-     "attrSel": "div[data-layout-main=\"ecn-list\"]@EngineeringChanges.tsx",
-     "gitHead": "891337f1c"
+     "attrSel": "section[data-layout-main=\"ecn-list\"]@EngineeringChanges.tsx",
+     "gitHead": "d1ff678b2"
     }
    },
    "actions": [
@@ -2582,7 +2739,7 @@
      "workspace": {
       "tag": "table",
       "testid": null,
-      "loc": "DataTable.tsx:607",
+      "loc": "DataTable.tsx:613",
       "role": null,
       "slot": "table",
       "label": "ECN Tiêu đề Loại Hiệu lực Trạng thái Thao tác ECN-",
@@ -2604,7 +2761,7 @@
        "kind": "toolbar",
        "tag": "div",
        "testid": null,
-       "loc": "EngineeringChanges.tsx:521",
+       "loc": "EngineeringChanges.tsx:522",
        "role": null,
        "slot": null,
        "label": "TRẠNG THÁI Mọi trạng thái LOẠI Mọi loại"
@@ -2723,12 +2880,17 @@
     "mainW": 1102,
     "mainPad": "16px 24px 24px",
     "breadcrumbLocs": [
-     "DashboardLayout.tsx:275"
+     "DashboardLayout.tsx:276"
     ]
    },
    "dialogsAtLoad": {
     "count": 0,
     "kinds": []
+   },
+   "hScroll": {
+    "docOverflowPx": 0,
+    "mainOverflowPx": 0,
+    "mainOverflowX": "auto"
    },
    "spinnersAtMeasure": 2,
    "errors": [],
@@ -2746,7 +2908,7 @@
     "areaPx": 742016,
     "hadH1": true
    },
-   "attrSel": "div[data-layout-main=\"ecn-list\"]@EngineeringChanges.tsx",
+   "attrSel": "section[data-layout-main=\"ecn-list\"]@EngineeringChanges.tsx",
    "calibration": {
     "status": "recorded-match",
     "dTop": 0,
@@ -2757,8 +2919,8 @@
     "record": {
      "mainTop": 124,
      "areaPx": 742016,
-     "attrSel": "div[data-layout-main=\"ecn-list\"]@EngineeringChanges.tsx",
-     "gitHead": "891337f1c"
+     "attrSel": "section[data-layout-main=\"ecn-list\"]@EngineeringChanges.tsx",
+     "gitHead": "d1ff678b2"
     }
    },
    "actions": [
@@ -2985,12 +3147,17 @@
     "mainW": 1336,
     "mainPad": "16px 24px 24px",
     "breadcrumbLocs": [
-     "DashboardLayout.tsx:275"
+     "DashboardLayout.tsx:276"
     ]
    },
    "dialogsAtLoad": {
     "count": 0,
     "kinds": []
+   },
+   "hScroll": {
+    "docOverflowPx": 0,
+    "mainOverflowPx": 0,
+    "mainOverflowX": "auto"
    },
    "spinnersAtMeasure": 2,
    "errors": [],
@@ -3235,12 +3402,17 @@
     "mainW": 1102,
     "mainPad": "16px 24px 24px",
     "breadcrumbLocs": [
-     "DashboardLayout.tsx:275"
+     "DashboardLayout.tsx:276"
     ]
    },
    "dialogsAtLoad": {
     "count": 0,
     "kinds": []
+   },
+   "hScroll": {
+    "docOverflowPx": 0,
+    "mainOverflowPx": 0,
+    "mainOverflowX": "auto"
    },
    "spinnersAtMeasure": 2,
    "errors": [],
@@ -3469,7 +3641,7 @@
      {
       "tag": "div",
       "testid": null,
-      "loc": "WorkbenchShell.tsx:517",
+      "loc": "WorkbenchShell.tsx:527",
       "role": null,
       "slot": null,
       "label": "Quy tắc",
@@ -3487,12 +3659,17 @@
     "mainW": 1336,
     "mainPad": "16px 24px 24px",
     "breadcrumbLocs": [
-     "DashboardLayout.tsx:275"
+     "DashboardLayout.tsx:276"
     ]
    },
    "dialogsAtLoad": {
     "count": 0,
     "kinds": []
+   },
+   "hScroll": {
+    "docOverflowPx": 0,
+    "mainOverflowPx": 0,
+    "mainOverflowX": "auto"
    },
    "spinnersAtMeasure": 2,
    "errors": [],
@@ -3711,7 +3888,7 @@
    },
    "coverMain": {
     "px": 0,
-    "separatorHitPx": 8448,
+    "separatorHitPx": 6016,
     "pctOfMain": 0,
     "pctOfViewport": 0,
     "items": [],
@@ -3728,7 +3905,7 @@
      {
       "tag": "div",
       "testid": null,
-      "loc": "WorkbenchShell.tsx:517",
+      "loc": "WorkbenchShell.tsx:527",
       "role": null,
       "slot": null,
       "label": "Quy tắc",
@@ -3746,12 +3923,17 @@
     "mainW": 1102,
     "mainPad": "16px 24px 24px",
     "breadcrumbLocs": [
-     "DashboardLayout.tsx:275"
+     "DashboardLayout.tsx:276"
     ]
    },
    "dialogsAtLoad": {
     "count": 0,
     "kinds": []
+   },
+   "hScroll": {
+    "docOverflowPx": 0,
+    "mainOverflowPx": 0,
+    "mainOverflowX": "auto"
    },
    "spinnersAtMeasure": 2,
    "errors": [],
@@ -3851,7 +4033,7 @@
      "workspace": {
       "tag": "p",
       "testid": null,
-      "loc": "OrchestrationStudio.tsx:2078",
+      "loc": "OrchestrationStudio.tsx:2085",
       "role": null,
       "slot": null,
       "label": "Chưa có bước nào. Thêm bước đầu tiên bên dưới.",
@@ -3873,7 +4055,7 @@
        "kind": "toolbar",
        "tag": "div",
        "testid": null,
-       "loc": "OrchestrationStudio.tsx:2013",
+       "loc": "OrchestrationStudio.tsx:2020",
        "role": null,
        "slot": null,
        "label": "Quy trình chưa đặt tên chưa có mã (ref) v Cây Sơ đ"
@@ -3992,12 +4174,17 @@
     "mainW": 1552,
     "mainPad": "0px",
     "breadcrumbLocs": [
-     "DashboardLayout.tsx:275"
+     "DashboardLayout.tsx:276"
     ]
    },
    "dialogsAtLoad": {
     "count": 0,
     "kinds": []
+   },
+   "hScroll": {
+    "docOverflowPx": 0,
+    "mainOverflowPx": 0,
+    "mainOverflowX": "auto"
    },
    "spinnersAtMeasure": 2,
    "errors": [],
@@ -4113,7 +4300,7 @@
      "workspace": {
       "tag": "p",
       "testid": null,
-      "loc": "OrchestrationStudio.tsx:2078",
+      "loc": "OrchestrationStudio.tsx:2085",
       "role": null,
       "slot": null,
       "label": "Chưa có bước nào. Thêm bước đầu tiên bên dưới.",
@@ -4135,7 +4322,7 @@
        "kind": "toolbar",
        "tag": "div",
        "testid": null,
-       "loc": "OrchestrationStudio.tsx:2013",
+       "loc": "OrchestrationStudio.tsx:2020",
        "role": null,
        "slot": null,
        "label": "Quy trình chưa đặt tên chưa có mã (ref) v Cây Sơ đ"
@@ -4254,12 +4441,17 @@
     "mainW": 1318,
     "mainPad": "0px",
     "breadcrumbLocs": [
-     "DashboardLayout.tsx:275"
+     "DashboardLayout.tsx:276"
     ]
    },
    "dialogsAtLoad": {
     "count": 0,
     "kinds": []
+   },
+   "hScroll": {
+    "docOverflowPx": 0,
+    "mainOverflowPx": 0,
+    "mainOverflowX": "auto"
    },
    "spinnersAtMeasure": 2,
    "errors": [],
@@ -4397,7 +4589,7 @@
        "kind": "toolbar",
        "tag": "div",
        "testid": null,
-       "loc": "EngineeringShell.tsx:320",
+       "loc": "EngineeringShell.tsx:324",
        "role": null,
        "slot": null,
        "label": "Vùng vẽ luồng So sánh phiên bản Hợp nhất (3 chiều)"
@@ -4516,12 +4708,17 @@
     "mainW": 1552,
     "mainPad": "0px",
     "breadcrumbLocs": [
-     "DashboardLayout.tsx:275"
+     "DashboardLayout.tsx:276"
     ]
    },
    "dialogsAtLoad": {
     "count": 0,
     "kinds": []
+   },
+   "hScroll": {
+    "docOverflowPx": 0,
+    "mainOverflowPx": 0,
+    "mainOverflowX": "auto"
    },
    "spinnersAtMeasure": 2,
    "errors": [],
@@ -4540,6 +4737,12 @@
      "attrSel": "div[data-layout-main=\"ir-canvas\"]@WorkbenchShell.tsx",
      "gitHead": "58a5e4c3c"
     }
+   },
+   "copilot": {
+    "expected": "closed",
+    "rendered": false,
+    "surfaces": 0,
+    "panelIds": []
    },
    "actions": [
     {
@@ -4637,7 +4840,7 @@
        "kind": "toolbar",
        "tag": "div",
        "testid": null,
-       "loc": "EngineeringShell.tsx:320",
+       "loc": "EngineeringShell.tsx:324",
        "role": null,
        "slot": null,
        "label": "Vùng vẽ luồng So sánh phiên bản Hợp nhất (3 chiều)"
@@ -4769,12 +4972,17 @@
     "mainW": 1318,
     "mainPad": "0px",
     "breadcrumbLocs": [
-     "DashboardLayout.tsx:275"
+     "DashboardLayout.tsx:276"
     ]
    },
    "dialogsAtLoad": {
     "count": 0,
     "kinds": []
+   },
+   "hScroll": {
+    "docOverflowPx": 0,
+    "mainOverflowPx": 0,
+    "mainOverflowX": "auto"
    },
    "spinnersAtMeasure": 2,
    "errors": [],
@@ -4793,6 +5001,12 @@
      "attrSel": "div[data-layout-main=\"ir-canvas\"]@WorkbenchShell.tsx",
      "gitHead": "58a5e4c3c"
     }
+   },
+   "copilot": {
+    "expected": "closed",
+    "rendered": false,
+    "surfaces": 0,
+    "panelIds": []
    },
    "actions": [
     {
@@ -4860,7 +5074,7 @@
     {
      "tag": "div",
      "testid": null,
-     "loc": "WorkbenchShell.tsx:632",
+     "loc": "WorkbenchShell.tsx:642",
      "role": null,
      "slot": "resizable-panel",
      "label": "Canvas JSON MotorControl · LD | | Start NO | | Mot",
@@ -4900,7 +5114,7 @@
        "kind": "toolbar",
        "tag": "div",
        "testid": null,
-       "loc": "EngineeringShell.tsx:320",
+       "loc": "EngineeringShell.tsx:324",
        "role": null,
        "slot": null,
        "label": "Canvas JSON MotorControl · LD"
@@ -5019,12 +5233,17 @@
     "mainW": 1552,
     "mainPad": "0px",
     "breadcrumbLocs": [
-     "DashboardLayout.tsx:275"
+     "DashboardLayout.tsx:276"
     ]
    },
    "dialogsAtLoad": {
     "count": 0,
     "kinds": []
+   },
+   "hScroll": {
+    "docOverflowPx": 0,
+    "mainOverflowPx": 0,
+    "mainOverflowX": "auto"
    },
    "spinnersAtMeasure": 2,
    "errors": [],
@@ -5043,6 +5262,12 @@
      "attrSel": "div[data-layout-main=\"pou-editor\"]@WorkbenchShell.tsx",
      "gitHead": "68b59d0b4"
     }
+   },
+   "copilot": {
+    "expected": "closed",
+    "rendered": false,
+    "surfaces": 0,
+    "panelIds": []
    },
    "actions": [
     {
@@ -5139,7 +5364,7 @@
        "kind": "toolbar",
        "tag": "div",
        "testid": null,
-       "loc": "EngineeringShell.tsx:320",
+       "loc": "EngineeringShell.tsx:324",
        "role": null,
        "slot": null,
        "label": "Canvas JSON"
@@ -5258,12 +5483,17 @@
     "mainW": 1318,
     "mainPad": "0px",
     "breadcrumbLocs": [
-     "DashboardLayout.tsx:275"
+     "DashboardLayout.tsx:276"
     ]
    },
    "dialogsAtLoad": {
     "count": 0,
     "kinds": []
+   },
+   "hScroll": {
+    "docOverflowPx": 0,
+    "mainOverflowPx": 0,
+    "mainOverflowX": "auto"
    },
    "spinnersAtMeasure": 2,
    "errors": [],
@@ -5282,6 +5512,12 @@
      "attrSel": "div[data-layout-main=\"pou-editor\"]@WorkbenchShell.tsx",
      "gitHead": "68b59d0b4"
     }
+   },
+   "copilot": {
+    "expected": "closed",
+    "rendered": false,
+    "surfaces": 0,
+    "panelIds": []
    },
    "actions": [
     {
@@ -5481,12 +5717,17 @@
     "mainW": 1552,
     "mainPad": "0px",
     "breadcrumbLocs": [
-     "DashboardLayout.tsx:275"
+     "DashboardLayout.tsx:276"
     ]
    },
    "dialogsAtLoad": {
     "count": 0,
     "kinds": []
+   },
+   "hScroll": {
+    "docOverflowPx": 0,
+    "mainOverflowPx": 0,
+    "mainOverflowX": "auto"
    },
    "spinnersAtMeasure": 2,
    "errors": [],
@@ -5684,12 +5925,17 @@
     "mainW": 1318,
     "mainPad": "0px",
     "breadcrumbLocs": [
-     "DashboardLayout.tsx:275"
+     "DashboardLayout.tsx:276"
     ]
    },
    "dialogsAtLoad": {
     "count": 0,
     "kinds": []
+   },
+   "hScroll": {
+    "docOverflowPx": 0,
+    "mainOverflowPx": 0,
+    "mainOverflowX": "auto"
    },
    "spinnersAtMeasure": 2,
    "errors": [],
@@ -5739,7 +5985,7 @@
      "x": 288,
      "y": 120,
      "w": 836,
-     "h": 802
+     "h": 778
     }
    ],
    "mainRectsRaw": [
@@ -5747,26 +5993,26 @@
      "x": 288,
      "y": 120,
      "w": 836,
-     "h": 802
+     "h": 778
     }
    ],
    "clippedBy": [],
    "mainTop": 120,
    "chromeAboveMain": 120,
-   "mainPct": 44.1,
-   "workspacePct": 41.7,
-   "mainPctFe1": 44.1,
-   "mainPctUncovered": 44.1,
+   "mainPct": 42.8,
+   "workspacePct": 40.4,
+   "mainPctFe1": 42.8,
+   "mainPctUncovered": 42.8,
    "insideMain": [
     {
      "workspace": {
-      "tag": "svg",
+      "tag": "p",
       "testid": null,
-      "loc": "FleetOrchestration.tsx:1223",
-      "role": "img",
+      "loc": "FleetOrchestration.tsx:1228",
+      "role": null,
       "slot": null,
-      "label": "Bản đồ đội thiết bị",
-      "kind": "chart",
+      "label": "Chưa có hình học bản đồ hoặc robot có vị trí. Thêm",
+      "kind": "fallback-block",
       "top": 164
      },
      "aboveWorkspacePx": 44,
@@ -5903,24 +6149,27 @@
     "mainW": 1336,
     "mainPad": "16px 24px 24px",
     "breadcrumbLocs": [
-     "DashboardLayout.tsx:275"
+     "DashboardLayout.tsx:276"
     ]
    },
    "dialogsAtLoad": {
     "count": 0,
     "kinds": []
    },
+   "hScroll": {
+    "docOverflowPx": 0,
+    "mainOverflowPx": 0,
+    "mainOverflowX": "auto"
+   },
    "spinnersAtMeasure": 2,
    "errors": [],
-   "warnings": [
-    "thủ tục tRPC chưa có trong KNOWN_PROCS (canh trôi có thể thiếu bảng — chạy --discover-tables): fleet.robotPositions, twin.occupancyGrid"
-   ],
+   "warnings": [],
    "attrSel": "div[data-layout-main=\"fleet-orchestration\"]@CockpitLayout.tsx",
    "calibration": {
     "status": "recorded-match",
     "dTop": 0,
     "dLeft": 0,
-    "dAreaPct": 0,
+    "dAreaPct": 2.99,
     "ok": true,
     "selOk": true,
     "record": {
@@ -5950,8 +6199,7 @@
     "fleet.status",
     "license.getAllowedModules",
     "license.systemState",
-    "permissions.getMyPermissions",
-    "twin.occupancyGrid"
+    "permissions.getMyPermissions"
    ]
   },
   {
@@ -5969,7 +6217,7 @@
      "x": 288,
      "y": 120,
      "w": 642,
-     "h": 620
+     "h": 596
     }
    ],
    "mainRectsRaw": [
@@ -5977,26 +6225,26 @@
      "x": 288,
      "y": 120,
      "w": 642,
-     "h": 620
+     "h": 596
     }
    ],
    "clippedBy": [],
    "mainTop": 120,
    "chromeAboveMain": 120,
-   "mainPct": 37.9,
-   "workspacePct": 35.2,
-   "mainPctFe1": 37.9,
-   "mainPctUncovered": 37.9,
+   "mainPct": 36.5,
+   "workspacePct": 33.8,
+   "mainPctFe1": 36.5,
+   "mainPctUncovered": 36.5,
    "insideMain": [
     {
      "workspace": {
-      "tag": "svg",
+      "tag": "p",
       "testid": null,
-      "loc": "FleetOrchestration.tsx:1223",
-      "role": "img",
+      "loc": "FleetOrchestration.tsx:1228",
+      "role": null,
       "slot": null,
-      "label": "Bản đồ đội thiết bị",
-      "kind": "chart",
+      "label": "Chưa có hình học bản đồ hoặc robot có vị trí. Thêm",
+      "kind": "fallback-block",
       "top": 164
      },
      "aboveWorkspacePx": 44,
@@ -6133,18 +6381,21 @@
     "mainW": 1102,
     "mainPad": "16px 24px 24px",
     "breadcrumbLocs": [
-     "DashboardLayout.tsx:275"
+     "DashboardLayout.tsx:276"
     ]
    },
    "dialogsAtLoad": {
     "count": 0,
     "kinds": []
    },
+   "hScroll": {
+    "docOverflowPx": 0,
+    "mainOverflowPx": 0,
+    "mainOverflowX": "auto"
+   },
    "spinnersAtMeasure": 2,
    "errors": [],
-   "warnings": [
-    "thủ tục tRPC chưa có trong KNOWN_PROCS (canh trôi có thể thiếu bảng — chạy --discover-tables): fleet.robotPositions, twin.occupancyGrid"
-   ],
+   "warnings": [],
    "attrSel": "div[data-layout-main=\"fleet-orchestration\"]@CockpitLayout.tsx",
    "calibration": {
     "status": "recorded-match",
@@ -6155,9 +6406,9 @@
     "selOk": true,
     "record": {
      "mainTop": 120,
-     "areaPx": 398040,
+     "areaPx": 382632,
      "attrSel": "div[data-layout-main=\"fleet-orchestration\"]@CockpitLayout.tsx",
-     "gitHead": "b2e9cdd3e"
+     "gitHead": "d1ff678b2"
     }
    },
    "actions": [],
@@ -6180,8 +6431,7 @@
     "fleet.status",
     "license.getAllowedModules",
     "license.systemState",
-    "permissions.getMyPermissions",
-    "twin.occupancyGrid"
+    "permissions.getMyPermissions"
    ]
   },
   {
@@ -6363,12 +6613,17 @@
     "mainW": 1336,
     "mainPad": "16px 24px 24px",
     "breadcrumbLocs": [
-     "DashboardLayout.tsx:275"
+     "DashboardLayout.tsx:276"
     ]
    },
    "dialogsAtLoad": {
     "count": 0,
     "kinds": []
+   },
+   "hScroll": {
+    "docOverflowPx": 0,
+    "mainOverflowPx": 0,
+    "mainOverflowX": "auto"
    },
    "spinnersAtMeasure": 2,
    "errors": [],
@@ -6606,12 +6861,17 @@
     "mainW": 1102,
     "mainPad": "16px 24px 24px",
     "breadcrumbLocs": [
-     "DashboardLayout.tsx:275"
+     "DashboardLayout.tsx:276"
     ]
    },
    "dialogsAtLoad": {
     "count": 0,
     "kinds": []
+   },
+   "hScroll": {
+    "docOverflowPx": 0,
+    "mainOverflowPx": 0,
+    "mainOverflowX": "auto"
    },
    "spinnersAtMeasure": 2,
    "errors": [],
@@ -6862,12 +7122,17 @@
     "mainW": 1336,
     "mainPad": "16px 24px 24px",
     "breadcrumbLocs": [
-     "DashboardLayout.tsx:275"
+     "DashboardLayout.tsx:276"
     ]
    },
    "dialogsAtLoad": {
     "count": 0,
     "kinds": []
+   },
+   "hScroll": {
+    "docOverflowPx": 0,
+    "mainOverflowPx": 0,
+    "mainOverflowX": "auto"
    },
    "spinnersAtMeasure": 2,
    "errors": [],
@@ -7118,12 +7383,17 @@
     "mainW": 1102,
     "mainPad": "16px 24px 24px",
     "breadcrumbLocs": [
-     "DashboardLayout.tsx:275"
+     "DashboardLayout.tsx:276"
     ]
    },
    "dialogsAtLoad": {
     "count": 0,
     "kinds": []
+   },
+   "hScroll": {
+    "docOverflowPx": 0,
+    "mainOverflowPx": 0,
+    "mainOverflowX": "auto"
    },
    "spinnersAtMeasure": 2,
    "errors": [],
@@ -7147,6 +7417,502 @@
     {
      "id": "dang-ky-loai",
      "label": "/Đăng ký loại/",
+     "status": "opened",
+     "dialogs": 1,
+     "kinds": [
+      "sheet"
+     ],
+     "rects": [
+      {
+       "role": "dialog",
+       "slot": "sheet-content",
+       "x": 806,
+       "y": 0,
+       "w": 560,
+       "h": 768
+      }
+     ],
+     "closedByEsc": true
+    }
+   ],
+   "trpc": [
+    "aiInbox.count",
+    "alarmKpi.summary",
+    "andon.active",
+    "auth.me",
+    "commandCenter.hierarchy",
+    "equipmentStandards.complianceMetrics",
+    "equipmentStandards.hierarchyTree",
+    "equipmentStandards.listAlarmMappings",
+    "equipmentStandards.listChangeRequests",
+    "equipmentStandards.listMasterAlarms",
+    "equipmentStandards.status",
+    "license.getAllowedModules",
+    "license.systemState",
+    "permissions.getMyPermissions"
+   ]
+  },
+  {
+   "screen": "equipment-standards-alarms",
+   "route": "/equipment-standards?tab=alarms",
+   "vw": 1600,
+   "vh": 950,
+   "variant": "n/a",
+   "mainSource": "data-layout-main",
+   "missingDataLayoutMain": false,
+   "mainSelector": "[data-layout-main]",
+   "mainFound": true,
+   "mainRects": [
+    {
+     "x": 288,
+     "y": 120,
+     "w": 1288,
+     "h": 717
+    }
+   ],
+   "mainRectsRaw": [
+    {
+     "x": 288,
+     "y": 120,
+     "w": 1288,
+     "h": 717
+    }
+   ],
+   "clippedBy": [],
+   "mainTop": 120,
+   "chromeAboveMain": 120,
+   "mainPct": 60.8,
+   "workspacePct": 56.3,
+   "mainPctFe1": 60.8,
+   "mainPctUncovered": 60.8,
+   "insideMain": [
+    {
+     "workspace": {
+      "tag": "table",
+      "testid": null,
+      "loc": "DataTable.tsx:613",
+      "role": null,
+      "slot": "table",
+      "label": "Nhà cung cấp Mã gốc Mã chuẩn Mức nghiêm trọng Hành",
+      "kind": "native",
+      "top": 173
+     },
+     "aboveWorkspacePx": 53,
+     "banners": 0,
+     "bannerPx": 0,
+     "toolbars": [
+      36
+     ],
+     "blocks": [
+      {
+       "x": 288,
+       "y": 120,
+       "w": 1288,
+       "h": 36,
+       "kind": "toolbar",
+       "tag": "div",
+       "testid": null,
+       "loc": "TabbedHub.tsx:103",
+       "role": null,
+       "slot": null,
+       "label": "Phân cấp Phân loại cảnh báo Hiệu năng cảnh báo Yêu"
+      }
+     ]
+    }
+   ],
+   "aiInsideMain": {
+    "px": 0,
+    "inWorkspacePx": 0,
+    "pctOfViewport": 0,
+    "items": []
+   },
+   "h1Top": 79,
+   "h1Bottom": 105,
+   "h1Text": "Tiêu chuẩn & Quản trị Thiết bị",
+   "h1Missing": false,
+   "h1Count": 1,
+   "gapH1ToMain": 15,
+   "breadcrumbs": 1,
+   "bannersBeforeMain": {
+    "count": 0,
+    "px": 0,
+    "byKind": {},
+    "method": "geometric: khối giữa đáy h1 và đỉnh MAIN (kể cả trong page header) + popover/portal đè dải đầu"
+   },
+   "blocksAboveH1": {
+    "count": 0,
+    "unionPx": 0
+   },
+   "headerParts": 3,
+   "bandBlocks": [
+    {
+     "pos": "besideH1",
+     "kind": "other",
+     "inHeader": true,
+     "y": 76,
+     "h": 32,
+     "x": 288,
+     "w": 32,
+     "loc": "PageHeaderCompact.tsx:37",
+     "tag": "span",
+     "testid": null,
+     "label": "",
+     "fe1Notice": false
+    },
+    {
+     "pos": "besideH1",
+     "kind": "kpi",
+     "inHeader": true,
+     "y": 76,
+     "h": 32,
+     "x": 616,
+     "w": 912,
+     "loc": "PageHeaderCompact.tsx:45",
+     "tag": "div",
+     "testid": null,
+     "label": "NHÀ CUNG CẤP CẢNH BÁO 10 Nguồn: equipmentStandards",
+     "fe1Notice": true
+    },
+    {
+     "pos": "besideH1",
+     "kind": "other",
+     "inHeader": true,
+     "y": 72,
+     "h": 40,
+     "x": 1536,
+     "w": 40,
+     "loc": "PageHeaderCompact.tsx:51",
+     "tag": "div",
+     "testid": null,
+     "label": "",
+     "fe1Notice": false
+    }
+   ],
+   "bannersFe1Class": {
+    "count": 0,
+    "px": 0,
+    "items": []
+   },
+   "kpi": {
+    "legacy": {
+     "count": 0,
+     "stripPx": 0
+    },
+    "official": {
+     "count": 4,
+     "stripPx": 32
+    },
+    "all": {
+     "count": 4,
+     "stripPx": 32
+    }
+   },
+   "coverMain": {
+    "px": 0,
+    "separatorHitPx": 0,
+    "pctOfMain": 0,
+    "pctOfViewport": 0,
+    "items": [],
+    "positionedIntersecting": []
+   },
+   "pageHeightRatio": 1,
+   "pageHeightRatioDoc": 1,
+   "scroll": {
+    "docH": 950,
+    "extra": 0,
+    "siblingScrollExtra": 0,
+    "scrollers": [],
+    "inner": []
+   },
+   "shell": {
+    "sidebarW": 264,
+    "topbarH": 56,
+    "mainTop": 56,
+    "mainW": 1336,
+    "mainPad": "16px 24px 24px",
+    "breadcrumbLocs": [
+     "DashboardLayout.tsx:276"
+    ]
+   },
+   "dialogsAtLoad": {
+    "count": 0,
+    "kinds": []
+   },
+   "hScroll": {
+    "docOverflowPx": 0,
+    "mainOverflowPx": 0,
+    "mainOverflowX": "auto"
+   },
+   "spinnersAtMeasure": 2,
+   "errors": [],
+   "warnings": [],
+   "attrSel": "div[data-layout-main=\"equipment-standards\"]@CockpitLayout.tsx",
+   "calibration": {
+    "status": "recorded-match",
+    "dTop": 0,
+    "dLeft": 0,
+    "dAreaPct": 0,
+    "ok": true,
+    "selOk": true,
+    "record": {
+     "mainTop": 120,
+     "areaPx": 923496,
+     "attrSel": "div[data-layout-main=\"equipment-standards\"]@CockpitLayout.tsx",
+     "gitHead": "d1ff678b2"
+    }
+   },
+   "actions": [
+    {
+     "id": "chuan-hoa-canh-bao",
+     "label": "/Chuẩn hóa cảnh báo/",
+     "status": "opened",
+     "dialogs": 1,
+     "kinds": [
+      "sheet"
+     ],
+     "rects": [
+      {
+       "role": "dialog",
+       "slot": "sheet-content",
+       "x": 1040,
+       "y": 0,
+       "w": 560,
+       "h": 950
+      }
+     ],
+     "closedByEsc": true
+    }
+   ],
+   "trpc": [
+    "aiInbox.count",
+    "alarmKpi.summary",
+    "andon.active",
+    "auth.me",
+    "commandCenter.hierarchy",
+    "equipmentStandards.complianceMetrics",
+    "equipmentStandards.hierarchyTree",
+    "equipmentStandards.listAlarmMappings",
+    "equipmentStandards.listChangeRequests",
+    "equipmentStandards.listMasterAlarms",
+    "equipmentStandards.status",
+    "license.getAllowedModules",
+    "license.systemState",
+    "permissions.getMyPermissions"
+   ]
+  },
+  {
+   "screen": "equipment-standards-alarms",
+   "route": "/equipment-standards?tab=alarms",
+   "vw": 1366,
+   "vh": 768,
+   "variant": "n/a",
+   "mainSource": "data-layout-main",
+   "missingDataLayoutMain": false,
+   "mainSelector": "[data-layout-main]",
+   "mainFound": true,
+   "mainRects": [
+    {
+     "x": 288,
+     "y": 120,
+     "w": 1054,
+     "h": 717
+    }
+   ],
+   "mainRectsRaw": [
+    {
+     "x": 288,
+     "y": 120,
+     "w": 1054,
+     "h": 717
+    }
+   ],
+   "clippedBy": [],
+   "mainTop": 120,
+   "chromeAboveMain": 120,
+   "mainPct": 65.1,
+   "workspacePct": 59.8,
+   "mainPctFe1": 65.1,
+   "mainPctUncovered": 65.1,
+   "insideMain": [
+    {
+     "workspace": {
+      "tag": "table",
+      "testid": null,
+      "loc": "DataTable.tsx:613",
+      "role": null,
+      "slot": "table",
+      "label": "Nhà cung cấp Mã gốc Mã chuẩn Mức nghiêm trọng Hành",
+      "kind": "native",
+      "top": 173
+     },
+     "aboveWorkspacePx": 53,
+     "banners": 0,
+     "bannerPx": 0,
+     "toolbars": [
+      36
+     ],
+     "blocks": [
+      {
+       "x": 288,
+       "y": 120,
+       "w": 1054,
+       "h": 36,
+       "kind": "toolbar",
+       "tag": "div",
+       "testid": null,
+       "loc": "TabbedHub.tsx:103",
+       "role": null,
+       "slot": null,
+       "label": "Phân cấp Phân loại cảnh báo Hiệu năng cảnh báo Yêu"
+      }
+     ]
+    }
+   ],
+   "aiInsideMain": {
+    "px": 0,
+    "inWorkspacePx": 0,
+    "pctOfViewport": 0,
+    "items": []
+   },
+   "h1Top": 79,
+   "h1Bottom": 105,
+   "h1Text": "Tiêu chuẩn & Quản trị Thiết bị",
+   "h1Missing": false,
+   "h1Count": 1,
+   "gapH1ToMain": 15,
+   "breadcrumbs": 1,
+   "bannersBeforeMain": {
+    "count": 0,
+    "px": 0,
+    "byKind": {},
+    "method": "geometric: khối giữa đáy h1 và đỉnh MAIN (kể cả trong page header) + popover/portal đè dải đầu"
+   },
+   "blocksAboveH1": {
+    "count": 0,
+    "unionPx": 0
+   },
+   "headerParts": 3,
+   "bandBlocks": [
+    {
+     "pos": "besideH1",
+     "kind": "other",
+     "inHeader": true,
+     "y": 76,
+     "h": 32,
+     "x": 288,
+     "w": 32,
+     "loc": "PageHeaderCompact.tsx:37",
+     "tag": "span",
+     "testid": null,
+     "label": "",
+     "fe1Notice": false
+    },
+    {
+     "pos": "besideH1",
+     "kind": "kpi",
+     "inHeader": true,
+     "y": 76,
+     "h": 32,
+     "x": 616,
+     "w": 678,
+     "loc": "PageHeaderCompact.tsx:45",
+     "tag": "div",
+     "testid": null,
+     "label": "NHÀ CUNG CẤP CẢNH BÁO 10 Nguồn: equipmentStandards",
+     "fe1Notice": true
+    },
+    {
+     "pos": "besideH1",
+     "kind": "other",
+     "inHeader": true,
+     "y": 72,
+     "h": 40,
+     "x": 1302,
+     "w": 40,
+     "loc": "PageHeaderCompact.tsx:51",
+     "tag": "div",
+     "testid": null,
+     "label": "",
+     "fe1Notice": false
+    }
+   ],
+   "bannersFe1Class": {
+    "count": 0,
+    "px": 0,
+    "items": []
+   },
+   "kpi": {
+    "legacy": {
+     "count": 0,
+     "stripPx": 0
+    },
+    "official": {
+     "count": 2,
+     "stripPx": 32
+    },
+    "all": {
+     "count": 2,
+     "stripPx": 32
+    }
+   },
+   "coverMain": {
+    "px": 0,
+    "separatorHitPx": 0,
+    "pctOfMain": 0,
+    "pctOfViewport": 0,
+    "items": [],
+    "positionedIntersecting": []
+   },
+   "pageHeightRatio": 1.12,
+   "pageHeightRatioDoc": 1.12,
+   "scroll": {
+    "docH": 861,
+    "extra": 0,
+    "siblingScrollExtra": 0,
+    "scrollers": [],
+    "inner": []
+   },
+   "shell": {
+    "sidebarW": 264,
+    "topbarH": 56,
+    "mainTop": 56,
+    "mainW": 1102,
+    "mainPad": "16px 24px 24px",
+    "breadcrumbLocs": [
+     "DashboardLayout.tsx:276"
+    ]
+   },
+   "dialogsAtLoad": {
+    "count": 0,
+    "kinds": []
+   },
+   "hScroll": {
+    "docOverflowPx": 0,
+    "mainOverflowPx": 0,
+    "mainOverflowX": "auto"
+   },
+   "spinnersAtMeasure": 2,
+   "errors": [],
+   "warnings": [],
+   "attrSel": "div[data-layout-main=\"equipment-standards\"]@CockpitLayout.tsx",
+   "calibration": {
+    "status": "recorded-match",
+    "dTop": 0,
+    "dLeft": 0,
+    "dAreaPct": 0,
+    "ok": true,
+    "selOk": true,
+    "record": {
+     "mainTop": 120,
+     "areaPx": 755718,
+     "attrSel": "div[data-layout-main=\"equipment-standards\"]@CockpitLayout.tsx",
+     "gitHead": "d1ff678b2"
+    }
+   },
+   "actions": [
+    {
+     "id": "chuan-hoa-canh-bao",
+     "label": "/Chuẩn hóa cảnh báo/",
      "status": "opened",
      "dialogs": 1,
      "kinds": [
@@ -7361,12 +8127,17 @@
     "mainW": 1336,
     "mainPad": "16px 24px 24px",
     "breadcrumbLocs": [
-     "DashboardLayout.tsx:275"
+     "DashboardLayout.tsx:276"
     ]
    },
    "dialogsAtLoad": {
     "count": 0,
     "kinds": []
+   },
+   "hScroll": {
+    "docOverflowPx": 0,
+    "mainOverflowPx": 0,
+    "mainOverflowX": "auto"
    },
    "spinnersAtMeasure": 2,
    "errors": [],
@@ -7592,12 +8363,17 @@
     "mainW": 1102,
     "mainPad": "16px 24px 24px",
     "breadcrumbLocs": [
-     "DashboardLayout.tsx:275"
+     "DashboardLayout.tsx:276"
     ]
    },
    "dialogsAtLoad": {
     "count": 0,
     "kinds": []
+   },
+   "hScroll": {
+    "docOverflowPx": 0,
+    "mainOverflowPx": 0,
+    "mainOverflowX": "auto"
    },
    "spinnersAtMeasure": 2,
    "errors": [],
@@ -7691,7 +8467,7 @@
        "kind": "toolbar",
        "tag": "div",
        "testid": null,
-       "loc": "EngineeringShell.tsx:320",
+       "loc": "EngineeringShell.tsx:324",
        "role": null,
        "slot": null,
        "label": "Nguồn (chưa lưu) Δ So sánh Tags"
@@ -7810,12 +8586,17 @@
     "mainW": 1552,
     "mainPad": "0px",
     "breadcrumbLocs": [
-     "DashboardLayout.tsx:275"
+     "DashboardLayout.tsx:276"
     ]
    },
    "dialogsAtLoad": {
     "count": 0,
     "kinds": []
+   },
+   "hScroll": {
+    "docOverflowPx": 0,
+    "mainOverflowPx": 0,
+    "mainOverflowX": "auto"
    },
    "spinnersAtMeasure": 2,
    "errors": [],
@@ -7834,6 +8615,14 @@
      "attrSel": "div[data-layout-main=\"engineering-editor\"]@WorkbenchShell.tsx",
      "gitHead": "4cc5b42c2"
     }
+   },
+   "copilot": {
+    "expected": "open",
+    "rendered": true,
+    "surfaces": 1,
+    "panelIds": [
+     "ide-insp-copilot"
+    ]
    },
    "actions": [
     {
@@ -7936,7 +8725,7 @@
        "kind": "toolbar",
        "tag": "div",
        "testid": null,
-       "loc": "EngineeringShell.tsx:320",
+       "loc": "EngineeringShell.tsx:324",
        "role": null,
        "slot": null,
        "label": "Nguồn (chưa lưu) Δ So sánh Tags"
@@ -8055,12 +8844,17 @@
     "mainW": 1318,
     "mainPad": "0px",
     "breadcrumbLocs": [
-     "DashboardLayout.tsx:275"
+     "DashboardLayout.tsx:276"
     ]
    },
    "dialogsAtLoad": {
     "count": 0,
     "kinds": []
+   },
+   "hScroll": {
+    "docOverflowPx": 0,
+    "mainOverflowPx": 0,
+    "mainOverflowX": "auto"
    },
    "spinnersAtMeasure": 2,
    "errors": [],
@@ -8079,6 +8873,14 @@
      "attrSel": "div[data-layout-main=\"engineering-editor\"]@WorkbenchShell.tsx",
      "gitHead": "4cc5b42c2"
     }
+   },
+   "copilot": {
+    "expected": "open",
+    "rendered": true,
+    "surfaces": 1,
+    "panelIds": [
+     "ide-insp-copilot"
+    ]
    },
    "actions": [
     {
@@ -8181,7 +8983,7 @@
        "kind": "toolbar",
        "tag": "div",
        "testid": null,
-       "loc": "EngineeringShell.tsx:320",
+       "loc": "EngineeringShell.tsx:324",
        "role": null,
        "slot": null,
        "label": "Vùng vẽ luồng So sánh phiên bản Hợp nhất (3 chiều)"
@@ -8300,12 +9102,17 @@
     "mainW": 1552,
     "mainPad": "0px",
     "breadcrumbLocs": [
-     "DashboardLayout.tsx:275"
+     "DashboardLayout.tsx:276"
     ]
    },
    "dialogsAtLoad": {
     "count": 0,
     "kinds": []
+   },
+   "hScroll": {
+    "docOverflowPx": 0,
+    "mainOverflowPx": 0,
+    "mainOverflowX": "auto"
    },
    "spinnersAtMeasure": 2,
    "errors": [],
@@ -8324,6 +9131,14 @@
      "attrSel": "div[data-layout-main=\"ir-canvas\"]@WorkbenchShell.tsx",
      "gitHead": "58a5e4c3c"
     }
+   },
+   "copilot": {
+    "expected": "open",
+    "rendered": true,
+    "surfaces": 1,
+    "panelIds": [
+     "ir-insp-copilot"
+    ]
    },
    "actions": [
     {
@@ -8421,7 +9236,7 @@
        "kind": "toolbar",
        "tag": "div",
        "testid": null,
-       "loc": "EngineeringShell.tsx:320",
+       "loc": "EngineeringShell.tsx:324",
        "role": null,
        "slot": null,
        "label": "Vùng vẽ luồng So sánh phiên bản Hợp nhất (3 chiều)"
@@ -8553,12 +9368,17 @@
     "mainW": 1318,
     "mainPad": "0px",
     "breadcrumbLocs": [
-     "DashboardLayout.tsx:275"
+     "DashboardLayout.tsx:276"
     ]
    },
    "dialogsAtLoad": {
     "count": 0,
     "kinds": []
+   },
+   "hScroll": {
+    "docOverflowPx": 0,
+    "mainOverflowPx": 0,
+    "mainOverflowX": "auto"
    },
    "spinnersAtMeasure": 2,
    "errors": [],
@@ -8577,6 +9397,14 @@
      "attrSel": "div[data-layout-main=\"ir-canvas\"]@WorkbenchShell.tsx",
      "gitHead": "58a5e4c3c"
     }
+   },
+   "copilot": {
+    "expected": "open",
+    "rendered": true,
+    "surfaces": 1,
+    "panelIds": [
+     "ir-insp-copilot"
+    ]
    },
    "actions": [
     {
@@ -8644,7 +9472,7 @@
     {
      "tag": "div",
      "testid": null,
-     "loc": "WorkbenchShell.tsx:632",
+     "loc": "WorkbenchShell.tsx:642",
      "role": null,
      "slot": "resizable-panel",
      "label": "Canvas JSON MotorControl · LD | | Start NO | | Mot",
@@ -8684,7 +9512,7 @@
        "kind": "toolbar",
        "tag": "div",
        "testid": null,
-       "loc": "EngineeringShell.tsx:320",
+       "loc": "EngineeringShell.tsx:324",
        "role": null,
        "slot": null,
        "label": "Canvas JSON MotorControl · LD"
@@ -8803,12 +9631,17 @@
     "mainW": 1552,
     "mainPad": "0px",
     "breadcrumbLocs": [
-     "DashboardLayout.tsx:275"
+     "DashboardLayout.tsx:276"
     ]
    },
    "dialogsAtLoad": {
     "count": 0,
     "kinds": []
+   },
+   "hScroll": {
+    "docOverflowPx": 0,
+    "mainOverflowPx": 0,
+    "mainOverflowX": "auto"
    },
    "spinnersAtMeasure": 2,
    "errors": [],
@@ -8827,6 +9660,14 @@
      "attrSel": "div[data-layout-main=\"pou-editor\"]@WorkbenchShell.tsx",
      "gitHead": "68b59d0b4"
     }
+   },
+   "copilot": {
+    "expected": "open",
+    "rendered": true,
+    "surfaces": 1,
+    "panelIds": [
+     "pou-insp-copilot"
+    ]
    },
    "actions": [
     {
@@ -8923,7 +9764,7 @@
        "kind": "toolbar",
        "tag": "div",
        "testid": null,
-       "loc": "EngineeringShell.tsx:320",
+       "loc": "EngineeringShell.tsx:324",
        "role": null,
        "slot": null,
        "label": "Canvas JSON"
@@ -9042,12 +9883,17 @@
     "mainW": 1318,
     "mainPad": "0px",
     "breadcrumbLocs": [
-     "DashboardLayout.tsx:275"
+     "DashboardLayout.tsx:276"
     ]
    },
    "dialogsAtLoad": {
     "count": 0,
     "kinds": []
+   },
+   "hScroll": {
+    "docOverflowPx": 0,
+    "mainOverflowPx": 0,
+    "mainOverflowX": "auto"
    },
    "spinnersAtMeasure": 2,
    "errors": [],
@@ -9066,6 +9912,14 @@
      "attrSel": "div[data-layout-main=\"pou-editor\"]@WorkbenchShell.tsx",
      "gitHead": "68b59d0b4"
     }
+   },
+   "copilot": {
+    "expected": "open",
+    "rendered": true,
+    "surfaces": 1,
+    "panelIds": [
+     "pou-insp-copilot"
+    ]
    },
    "actions": [
     {
