@@ -391,4 +391,30 @@ Plan `docs/superpowers/plans/2026-09-27-engineering-control-dot2-bo-cuc.md` — 
 
 ### Cần chủ dự án quyết
 
-(controller điền)
+**Thay đổi hành vi có chủ ý trong Đợt 2 (đều đã review; ghi để chủ dự án biết):**
+- **Giấy phép nghiêm trọng (R-2-i):** read-only / locked / không có license / server license mất liên lạc ⇒ thanh đỏ ≤32 px dưới top bar hoặc chip đỏ luôn hiện, CTA admin hiện sẵn — ngoại lệ có chủ ý cho chỉ tiêu "0 banner". Cảnh báo sắp hết hạn, hết hạn quyền, Beta vẫn là chip.
+- **Một lối vào AI (R-2-b/j):** dock Copilot cố định đã **xoá**; IDE/IR/POU có Copilot nằm trong layout, màn khác mở sheet chat từ nút AI trên top bar; chat và Copilot không bao giờ chồng nhau.
+- **Panel dưới gập mặc định (R-2-l)** trên Interlock, Orchestration, IDE…; số lượng (sự kiện chưa xử lý, chờ duyệt) luôn hiện ngoài panel; lựa chọn mở/gập của từng người được nhớ.
+- **Chip trạng thái ghim (R-2-p):** số liệu an toàn/cảnh báo không bao giờ bị gộp vào "+N"; "+N" mang màu nghiêm trọng nhất của chip bị ẩn.
+- **Hub:** 4 nhóm nghiêm trọng (recipe chạy chưa duyệt, sự kiện interlock mở, sự kiện an toàn chưa kiểm định, fleet bế tắc) luôn hiện ở mọi phạm vi hộp việc (R-2-y).
+- **Điều hướng theo vai trò (R-2-w):** Operator/Viewer chỉ thấy 4 màn giám sát; menu không bao giờ hiện màn mà route chặn. Quyền phía server KHÔNG đổi.
+- **Recipes:** triển khai vẫn **một máy mỗi lần xác nhận** như cũ (R-2-n) — kế hoạch có dòng "triển khai nhiều máy" nhưng không thêm khả năng tác động mới.
+- **ECN / Standards / Recipes:** nút duyệt bị xám cho chính tác giả (trước: bấm được rồi server từ chối) — cùng luật, báo sớm hơn.
+- **IDE (12b — sửa lỗi an toàn có sẵn):** tạo dự án mới / DEMO / deep link xoá sạch build/sim/diagnostics cũ; kết quả build đến muộn bị bỏ; server từ chối deploy khi `expectedProjectId` khác dự án của build (trước OTP, chỉ sau khi đã qua licence + quyền + phạm vi).
+- **Kích thước:** top bar IDE 48 px (sơ đồ ghi 40; R-2-t — giữ nút 40 px để dễ chạm); explorer/inspector IDE 240/320 px (sơ đồ 260/380); IR explorer 200 px (R-2-u); panel cạnh giữ bề rộng px cố định, vùng chính tối thiểu 400 px.
+- **Fleet:** bản đồ/vị trí/vùng làm mới mỗi 5 s khi trang mở (trước: chỉ ở tab Bản đồ); dừng khi tab trình duyệt ẩn.
+- **Copilot:** trang riêng → chế độ "scratch" trong IDE; Operator/Viewer (không có `machine_control`) mất lối vào Copilot phía client — đúng doc 81 §1.4, cần chủ dự án xác nhận.
+
+**Cần quyết:**
+1. **Triển khai recipe nhiều máy** một lần xác nhận — có làm không, và chính sách khi một máy từ chối giữa chừng (dừng / tiếp tục / hoàn tác)?
+2. **Màn đích cho nội dung chưa dời:** phiên bản recipe/lịch sử nạp → Recipes, worker thu ảnh → Vision (doc 81 §1.2), bảng nhân lực → Sản xuất › Ca — đều cần route/IA mới; hiện để tại chỗ kèm liên kết (worker thu ảnh và nhân lực chưa có liên kết vì chưa có màn đích).
+3. **Copilot cho Operator/Viewer** — chấp nhận mất lối vào (theo §1.4) hay giữ một lối vào chỉ đọc?
+4. **Hộp việc "của tôi" thật** (theo người được giao) — cần trường assignee phía server.
+5. **Nhãn "Triển khai thật: ON"** khi adapter còn "(sắp có)" (thực tế chỉ mô phỏng) — giữ hay đổi chữ?
+6. **Fleet sang "Labs"** (doc 80) — task IA riêng, chưa làm.
+7. **POU khi mở "Mở":** canvas 49,3 % @1600 (mặc định gập 61,7 %) — chấp nhận?
+
+**Cần người kiểm tay trên trình duyệt thật (chưa đo được tự động):** hộp OTP đè lên wizard deploy (staging, tới bước OTP rồi huỷ); lịch sử flyout (F5/back) trên vài trang; Copilot stream khi đổi cỡ cửa sổ qua 1024 px; màn hình điện thoại.
+
+**Còn mở (đợt sau):** truy vấn lưới bản đồ Fleet chưa kiểm phạm vi nhà máy phía server (có từ trước); kênh thời gian (latency) cho caller ngoài phạm vi ở deploy (chỉ người đã có quyền); kết quả `startWatch`/`fleetResult` đến muộn; kích thước panel người dùng lưu trước đợt này bị bỏ một lần.
+- (sau đợt sửa cuối) POU: gập panel phải khi Copilot đang mở ⇒ Copilot "mở" trên panel 0 px, nút AI đóng thay vì hiện; Fleet@1600 hiệu chuẩn chỉ còn biên 2,99 %/3 %; lưới bản đồ Fleet không tải khi vùng chưa có `factoryId` (chủ dự án lưu ý dữ liệu); form tạo ECN mất dữ liệu sau câu "Bỏ thay đổi?" (dialog cũ giữ khi Huỷ); dưới 1024 px chọn dòng chuyển sang tab panel dưới; sheet IDE/IR/POU chưa đồng bộ URL (chưa có FlyoutHost).

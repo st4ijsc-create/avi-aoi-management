@@ -341,3 +341,7 @@ OT soft-stop qua được preflight an toàn **chỉ khi** ghi đúng tag/giá t
 ## 16. Đợt 1E (2026-10-02) — xem doc 81 §10
 
 DỪNG OT đã ghim chen hàng đợi adapter (không còn BUSY) và huỷ các lệnh đang chờ trước nó (mã `OT_COMMAND_SUPERSEDED_BY_STOP`); trợ lý AI KHÔNG được dùng DỪNG ghim khi an toàn không OK (rào L-7 giữ).
+
+## 17. Đợt 2 "Bố cục" (2026-09-28 → 10-04) — xem doc 81 §11
+
+14 màn Kỹ thuật & Điều khiển dựng lại theo 5 mẫu bố cục (shell một breadcrumb, chip thay banner/thẻ KPI, flyout thay dialog giữa màn, Copilot nằm trong layout, panel dưới gập mặc định), đo bằng thước Playwright có kiểm hệ đo (MSA, self-test, đột biến gác): **10/10 mục tiêu đạt** (IDE 49,3/41,4 % kể cả mở Copilot; IR 51,4 %; POU 61,7 %; Orchestration 49,1 %; tiêu đề ≤79 px; 0 breadcrumb kép; 0 banner; Copilot che 0 px). Kèm sửa lỗi an toàn có sẵn (12b: deploy nhầm dự án) và giữ nguyên mọi hành vi an toàn/nghiệp vụ. Thay đổi hành vi có chủ ý + 7 quyết định chờ chủ dự án: doc 81 §11.
