@@ -598,7 +598,10 @@ describe("FeatureStatusGate 4 trạng thái", () => {
     ["loading", makeQuery({ isLoading: true, isPending: true }), "feature-status-loading", "…"],
     ["off", makeQuery({ data: { deployEnabled: false } }), "feature-status-off", "OFF"],
     ["error", makeQuery({ isError: true }), "feature-status-error", "?"],
-    ["on", makeQuery({ data: { deployEnabled: true } }), null, "ON"],
+    // doc 81 §11 mục 5 (2026-10-04) — badge "ON" nay còn phụ thuộc adapter của dự án đang mở
+    // (P1 · "zmotion-basic") THẬT SỰ đã cài; nêu rõ `adapters` ở đây để ca này vẫn đo đúng ý
+    // định ban đầu (4 trạng thái của CỜ), không lẫn với ca "adapter sắp có" (file dom.test.tsx).
+    ["on", makeQuery({ data: { deployEnabled: true, adapters: [{ kind: "zmotion-basic", implemented: true }] } }), null, "ON"],
   ] as const;
   it.each(cases)("%s", (_n, q, testId, badge) => {
     seed();

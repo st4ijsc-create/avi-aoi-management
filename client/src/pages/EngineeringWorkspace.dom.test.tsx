@@ -184,6 +184,66 @@ describe("EngineeringWorkspace (/engineering) — trạng thái đang tải khô
 });
 
 // ════════════════════════════════════════════════════════════════════════════
+// doc 81 §11 "Đã chốt" mục 5 (2026-10-04, chủ dự án) — nhãn "Triển khai thật" chỉ được hiện
+// "ON" (xanh) khi adapter của dự án đang mở THẬT SỰ đã cài. Cùng NGUỒN đang quyết định hậu tố
+// kind "(sắp có)" (`isImplemented` ở EngineeringWorkspace.tsx — `adapters.find(kind)?.implemented
+// ?? false`): khi adapter đó "sắp có" (implemented:false, hoặc vắng khỏi mảng `adapters`), triển
+// khai thật chỉ MÔ PHỎNG (gate/hành vi deploy giữ nguyên — server vẫn tự quyết simulate/real; đây
+// chỉ là NHÃN không nói dối KTV rằng máy sẽ ghi thật).
+// ════════════════════════════════════════════════════════════════════════════
+const ADAPTER_BADGE_PROJECT = { id: 1, name: "Cell 1", code: "C1", kind: "stub", deviceId: null, defaultBranch: "main" };
+function seedAdapterBadge(status: Partial<QueryResult>) {
+  window.history.pushState({}, "", "/engineering?projectId=1");
+  setQueryOverride("programming.listProjects", makeQuery({ data: [ADAPTER_BADGE_PROJECT] }));
+  setQueryOverride("programming.status", makeQuery(status));
+  render(<EngineeringWorkspace />);
+}
+
+describe("Badge 'Triển khai thật' — Mô phỏng khi adapter sắp có (doc 81 §11 mục 5)", () => {
+  it("cờ ĐANG TẢI ⇒ giữ nguyên '…' (không phải nhãn mô phỏng mới)", () => {
+    seedAdapterBadge({ isLoading: true, isPending: true });
+    const badge = screen.getByTestId("engineering-deploy-badge");
+    expect(badge).toHaveTextContent("…");
+    expect(badge).not.toHaveTextContent(/[Mm]ô phỏng|[Ss]imulated|模拟/);
+  });
+
+  it("cờ LỖI ⇒ giữ nguyên '?' (không phải nhãn mô phỏng mới)", () => {
+    seedAdapterBadge({ isError: true });
+    const badge = screen.getByTestId("engineering-deploy-badge");
+    expect(badge).toHaveTextContent("?");
+    expect(badge).not.toHaveTextContent(/[Mm]ô phỏng|[Ss]imulated|模拟/);
+  });
+
+  it("cờ TẮT + adapter sắp có ⇒ vẫn 'OFF' như cũ (không đổi vì OFF)", () => {
+    seedAdapterBadge({ data: { deployEnabled: false, adapters: [{ kind: "stub", implemented: false }] } });
+    expect(screen.getByTestId("engineering-deploy-badge")).toHaveTextContent(/OFF$/);
+  });
+
+  it("cờ BẬT + adapter THẬT (implemented:true) ⇒ không đổi, vẫn 'ON' màu xanh (text-success)", () => {
+    seedAdapterBadge({ data: { deployEnabled: true, adapters: [{ kind: "stub", implemented: true }] } });
+    const badge = screen.getByTestId("engineering-deploy-badge");
+    expect(badge).toHaveTextContent(/: ON$/);
+    expect(badge.className).toContain("text-success");
+  });
+
+  it("cờ BẬT + adapter CÒN SẮP CÓ (implemented:false — cùng nguồn khiến kind hiện '(sắp có)') ⇒ nhãn đổi thành Mô phỏng, KHÔNG 'ON' xanh", () => {
+    seedAdapterBadge({ data: { deployEnabled: true, adapters: [{ kind: "stub", implemented: false }] } });
+    const badge = screen.getByTestId("engineering-deploy-badge");
+    expect(badge).not.toHaveTextContent(/: ON$/);
+    expect(badge).toHaveTextContent(/[Mm]ô phỏng|[Ss]imulated|模拟/);
+    expect(badge).toHaveTextContent(/sắp có|coming soon|即将推出/);
+    expect(badge.className).not.toContain("text-success");
+  });
+
+  it("cờ BẬT + adapter VẮNG khỏi mảng (không entry nào khớp kind) ⇒ coi như sắp có — cùng nhãn Mô phỏng (cùng nguồn isImplemented ?? false)", () => {
+    seedAdapterBadge({ data: { deployEnabled: true, adapters: [] } });
+    const badge = screen.getByTestId("engineering-deploy-badge");
+    expect(badge).not.toHaveTextContent(/: ON$/);
+    expect(badge).toHaveTextContent(/[Mm]ô phỏng|[Ss]imulated|模拟/);
+  });
+});
+
+// ════════════════════════════════════════════════════════════════════════════
 // doc 80 Đợt 1 Task 5 — WS-01 (duyệt phiên bản trong IDE) + bản xem trước deploy TRƯỚC OTP.
 // ════════════════════════════════════════════════════════════════════════════
 const ME = 8;

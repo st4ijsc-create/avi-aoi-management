@@ -16091,6 +16091,7 @@
       "deploysTab": "Deploy history",
       "lnCol": "Ln {{line}}, Col {{col}}",
       "realDeploy": "Real deploy",
+      "deploySimulatedAdapterPending": "Simulated (adapter coming soon)",
       "problemsStatus": "Problems: {{count}}",
       "noDiagYet": "The selected version has not been validated yet — press Validate.",
       "noBuildSel": "No build selected — pick one in the bottom panel (Build / Simulation).",

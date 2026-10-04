@@ -16673,6 +16673,7 @@
       "deploysTab": "部署历史",
       "lnCol": "行 {{line}}，列 {{col}}",
       "realDeploy": "真实部署",
+      "deploySimulatedAdapterPending": "模拟（适配器即将推出）",
       "problemsStatus": "问题：{{count}}",
       "noDiagYet": "尚未校验所选版本 — 请点击校验。",
       "noBuildSel": "未选择构建 — 请在底部面板（构建 / 仿真）中选择。",
