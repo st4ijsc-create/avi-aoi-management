@@ -16071,6 +16071,7 @@
       "deploysTab": "Lịch sử deploy",
       "lnCol": "Ln {{line}}, Col {{col}}",
       "realDeploy": "Triển khai thật",
+      "deploySimulatedAdapterPending": "Mô phỏng (adapter sắp có)",
       "problemsStatus": "Vấn đề: {{count}}",
       "noDiagYet": "Chưa kiểm tra phiên bản đang chọn — bấm Kiểm tra.",
       "noBuildSel": "Chưa chọn build — chọn ở panel dưới (Build / Mô phỏng).",

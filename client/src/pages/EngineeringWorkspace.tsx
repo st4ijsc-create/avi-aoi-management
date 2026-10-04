@@ -736,6 +736,13 @@ function EngineeringWorkspaceView() {
     error: t("engineering.deployUnknown", "?"),
   });
   const realDeployLabel = t("engineering.ws.realDeploy", "Triển khai thật");
+  // doc 81 §11 "Đã chốt" mục 5 (2026-10-04, chủ dự án) — nhãn "ON" chỉ đúng khi adapter của dự
+  // án đang mở THẬT SỰ đã cài. CÙNG nguồn với hậu tố kind "(sắp có)" (`isImplemented` ở trên —
+  // không bày quy tắc mới): cờ BẬT nhưng adapter còn "sắp có" ⇒ deploy chỉ MÔ PHỎNG, badge phải
+  // nói rõ, không được hiện "ON" xanh (dễ hiểu lầm KTV rằng máy sẽ ghi thật). Không đổi cổng/
+  // hành vi deploy — chỉ đổi NHÃN.
+  const deployAdapterPending = deployStatus === "on" && project != null && !isImplemented(project.kind);
+  const deploySimulatedLabel = t("engineering.ws.deploySimulatedAdapterPending", "Mô phỏng (adapter sắp có)");
   const problemsCount = diagnostics?.length ?? 0;
   const openBottom = (tab: BottomTabId) => dispatch({ type: "ui/bottom", tab, open: true });
   const selectActivity = (id: string) => {
@@ -1744,10 +1751,18 @@ function EngineeringWorkspaceView() {
       )}
       <span
         data-testid="engineering-deploy-badge"
-        data-state={deployStatus}
-        className={`shrink-0 rounded px-1 font-medium ${deployStatus === "on" ? "text-success" : deployStatus === "error" ? "text-destructive" : "text-warning"}`}
+        data-state={deployAdapterPending ? "simulated" : deployStatus}
+        className={`shrink-0 rounded px-1 font-medium ${
+          deployAdapterPending
+            ? "text-warning"
+            : deployStatus === "on"
+              ? "text-success"
+              : deployStatus === "error"
+                ? "text-destructive"
+                : "text-warning"
+        }`}
       >
-        {realDeployLabel}: {deployStatusText}
+        {realDeployLabel}: {deployAdapterPending ? deploySimulatedLabel : deployStatusText}
       </span>
       <button
         type="button"
