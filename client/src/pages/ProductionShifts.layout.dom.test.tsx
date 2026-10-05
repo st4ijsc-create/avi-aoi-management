@@ -593,3 +593,44 @@ describe("Sản xuất › Ca — dưới 1024 px và i18n", () => {
     for (const v of [...Object.values(vi), ...Object.values(en), ...Object.values(zh)]) expect(v).not.toMatch(/[A-Z][A-Z0-9]+_[A-Z0-9_]+/);
   });
 });
+
+// ── Final wave (doc 81 Đợt 3, Task 3 FINAL-WAVE) ─────────────────────────────────────────────────────────────────────
+// (a) lọc ca chỉ chạy trên 200 phân công MỚI NHẤT đã tải ⇒ lọc ra rỗng khi cửa sổ đầy phải NÓI RÕ phân công cũ hơn không
+//     hiện ở đây (không để người dùng tưởng "ca này không có ai"); cửa sổ chưa đầy ⇒ "ca này chưa có phân công".
+// (b) lỗi cờ tắt phân biệt theo MÃ cờ (`params.feature`) như trang Safety cũ phân biệt an toàn / nhân lực.
+describe("Sản xuất › Ca — final wave: gợi ý bảng rỗng theo cửa sổ 200 + câu cờ tắt theo mã cờ", () => {
+  it("?shift=1 mà 200 phân công mới nhất đều thuộc ca khác ⇒ câu 'trong 200 phân công mới nhất… cũ hơn không hiện'", () => {
+    srv.snap.assignments = Array.from({ length: 200 }, (_, i) => assignment(100 + i, "planned", { shiftConfigId: 2 }));
+    window.history.replaceState(null, "", "/production/shifts?shift=1");
+    render(<ProductionShifts />);
+    expect(visibleOps()).toEqual([]);
+    const hint = mainEl().querySelector("[data-empty-hint]") as HTMLElement;
+    expect(hint).toHaveTextContent(S("shifts.emptyForShiftWindow").replace("{{limit}}", "200"));
+  });
+
+  it("cửa sổ CHƯA đầy ⇒ 'Ca này chưa có phân công nào.'; không lọc ca ⇒ câu rỗng cũ", () => {
+    srv.snap.assignments = [assignment(3, "planned", { shiftConfigId: 2 })];
+    window.history.replaceState(null, "", "/production/shifts?shift=1");
+    const { unmount } = render(<ProductionShifts />);
+    expect(mainEl().querySelector("[data-empty-hint]")).toHaveTextContent(S("shifts.emptyForShift"));
+    unmount();
+    srv.snap.assignments = [];
+    window.history.replaceState(null, "", "/production/shifts");
+    render(<ProductionShifts />);
+    expect(mainEl().querySelector("[data-empty-hint]")).toHaveTextContent(S("workforce.assignmentsEmpty"));
+  });
+
+  it.each([
+    ["workforce", "shifts.flagOffToast"],
+    ["safetyAudit", "safety.flagOffToast"],
+    ["safetyZones", "common.flagOffToastGeneric"],
+  ])("FEATURE_DISABLED với feature=%s ⇒ toast.info %s (không tên biến môi trường)", async (feature, key) => {
+    const user = userEvent.setup();
+    srv.mutationError = Object.assign(new Error("disabled"), { data: { code: "CONFLICT", appCode: "FEATURE_DISABLED", appParams: { feature } } });
+    render(<ProductionShifts />);
+    await user.click(within(rowOf(43)).getByRole("button", { name: S("workforce.confirm") }));
+    await waitFor(() => expect(toastSpy.info).toHaveBeenCalledWith(S(key)));
+    expect(S(key)).not.toMatch(/[A-Z][A-Z0-9]+_[A-Z0-9_]+/);
+    expect(toastSpy.error).not.toHaveBeenCalled();
+  });
+});

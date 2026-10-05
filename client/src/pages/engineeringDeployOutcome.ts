@@ -33,7 +33,9 @@ export interface DeployOutcome {
 }
 
 /** Mã lý do deploy (server ghi ở `detailJson.reasonCode`) có câu dịch riêng `engineering.deployReason.<code>`. */
-export const DEPLOY_REASON_CODES = ["techman_program_download_unsupported"] as const;
+// doc 81 Đợt 3 final wave — + lý do của hàng SIMULATED (cổng deploy tắt / chưa sign-off): server ghi mã thay vì nêu tên biến
+// môi trường trong ghi chú (programmingService.ts computeDeploy).
+export const DEPLOY_REASON_CODES = ["techman_program_download_unsupported", "deploy_gate_off", "no_hitl_signoff"] as const;
 
 /** Khoá i18n cho lý do deploy có mã, hoặc undefined nếu hàng không mang mã đã biết. */
 export function deployReasonKey(row: { detailJson?: unknown }): string | undefined {

@@ -91,7 +91,8 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 import { mapTrpcError } from "@/lib/trpcErrors";
-import { isFeatureDisabledError } from "@/lib/featureFlagError";
+import { featureKeyOf, isFeatureDisabledError } from "@/lib/featureFlagError";
+import { fmtDateTime } from "@/lib/fmtDateTime";
 import {
   deriveFeatureStatus,
   isFeatureStatusUnsettled,
@@ -182,13 +183,6 @@ function handshakeBadge(state: string, t: (k: string, f: string) => string) {
     default:
       return <Badge className="bg-amber-500 text-white">{t("safety.handshake.pending", "Pending")}</Badge>;
   }
-}
-
-function fmtDateTime(d?: string | Date | null): string {
-  if (!d) return "—";
-  const dt = typeof d === "string" ? new Date(d) : d;
-  if (Number.isNaN(dt.getTime())) return "—";
-  return dt.toLocaleString();
 }
 
 type MutationErrorHandler = (e: { data?: { code?: string } | null; message: string }) => void;
@@ -361,13 +355,18 @@ function SafetyWorkforcePage({ canOpenShifts }: { canOpenShifts: boolean }) {
   // ── Mutation error handler — flag-off CONFLICT → calm info (not red) ─────────
   const onMutationError: MutationErrorHandler = (e) => {
     if (isFeatureDisabledError(e)) {
-      if (/workforce/i.test(e.message)) {
-        toast.info(t("workforce.flagOffToast", "Workforce is disabled (preview). Set WORKFORCE_ENABLED=true to act."));
-        void utils.safety.status.invalidate();
-      } else {
-        toast.info(t("safety.flagOffToast", "Safety audit is disabled (preview). Set SAFETY_AUDIT_ENABLED=true to act."));
-        void utils.safety.status.invalidate();
-      }
+      // Final wave (M-2 / Task 3) — phân nhánh theo MÃ (`params.feature`; đường lui: chữ message cho tuyến chưa di trú), câu
+      // KHÔNG nêu tên biến môi trường. Cờ khác (vùng an toàn / thị giác / adapter PLC) ⇒ câu chung — trước đây rơi nhầm vào
+      // câu "kiểm định an toàn".
+      const feature = featureKeyOf(e) ?? (/workforce/i.test(e.message) ? "workforce" : "safetyAudit");
+      toast.info(
+        feature === "workforce"
+          ? t("workforce.flagOffToast", "Workforce is turned off on the server (preview) — actions are refused until an administrator turns it on.")
+          : feature === "safetyAudit"
+            ? t("safety.flagOffToast", "Safety audit is turned off on the server (preview) — actions are refused until an administrator turns it on.")
+            : t("common.flagOffToastGeneric", "This feature is turned off on the server (preview) — the action is refused until an administrator turns it on."),
+      );
+      void utils.safety.status.invalidate();
     } else if (e.data?.code === "CONFLICT") {
       // Non-flag CONFLICT (e.g. double-booking) — still calm, but informative.
       toast.info(mapTrpcError(e));

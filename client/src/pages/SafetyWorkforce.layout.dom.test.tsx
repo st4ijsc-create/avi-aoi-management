@@ -995,3 +995,30 @@ describe("Safety fix round 1 — mất luồng trực tiếp hiện trên chip n
     expect(sourceChip()).toHaveAttribute("data-state", "error");
   });
 });
+
+// ── Final wave (doc 81 Đợt 3, M-2 / Task 3) — câu cờ tắt theo MÃ cờ (`params.feature`), không tên biến môi trường ──────
+describe("Safety — final wave: lỗi cờ tắt phân nhánh theo mã cờ, câu không nêu tên biến môi trường", () => {
+  it.each([
+    ["workforce", "workforce.flagOffToast"],
+    ["safetyAudit", "safety.flagOffToast"],
+    ["safetyZones", "common.flagOffToastGeneric"],
+  ])("feature=%s ⇒ toast.info %s", async (feature, key) => {
+    const user = userEvent.setup();
+    srv.mutationError = Object.assign(new Error("disabled"), { data: { code: "CONFLICT", appCode: "FEATURE_DISABLED", appParams: { feature } } });
+    render(<SafetyWorkforce />);
+    await openCollab(user);
+    await user.click(within(collabPanel()!).getByRole("button", { name: S("workforce.signalAck") }));
+    await waitFor(() => expect(toastSpy.info).toHaveBeenCalledWith(S(key)));
+    for (const k of ["workforce.flagOffToast", "safety.flagOffToast", "common.flagOffToastGeneric"]) expect(S(k)).not.toMatch(/[A-Z][A-Z0-9]+_[A-Z0-9_]+/);
+    expect(toastSpy.error).not.toHaveBeenCalled();
+  });
+
+  it("tuyến chưa có mã cờ: đường lui theo chữ message (\"workforce\" ⇒ câu nhân lực; khác ⇒ câu kiểm định an toàn) như cũ", async () => {
+    const user = userEvent.setup();
+    srv.mutationError = Object.assign(new Error("Safety audit disabled"), { data: { code: "CONFLICT" } });
+    render(<SafetyWorkforce />);
+    await openCollab(user);
+    await user.click(within(collabPanel()!).getByRole("button", { name: S("workforce.signalAck") }));
+    await waitFor(() => expect(toastSpy.info).toHaveBeenCalledWith(S("safety.flagOffToast")));
+  });
+});

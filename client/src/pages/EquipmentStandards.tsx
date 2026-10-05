@@ -330,7 +330,7 @@ export default function EquipmentStandards() {
   // Surface the FLAG-OFF CONFLICT gracefully (info, not a scary red error).
   const onMutationError = (e: { data?: { code?: string } | null; message: string }) => {
     if (isFeatureDisabledError(e)) {
-      toast.info(t("eqStandards.flagOffToast", "Equipment governance is disabled (preview). Set EQ_GOVERN_ENABLED=true to act."));
+      toast.info(t("eqStandards.flagOffToast", "Equipment governance is turned off on the server (preview) — actions are refused until an administrator turns it on."));
       void utils.equipmentStandards.status.invalidate();
     } else {
       toast.error(mapTrpcError(e));

@@ -2658,7 +2658,8 @@
     "contrast": "对比度",
     "on": "开",
     "off": "关",
-    "hide": "隐藏"
+    "hide": "隐藏",
+    "flagOffToastGeneric": "此功能在服务器上已关闭（预览）— 在管理员开启之前，操作会被拒绝。"
   },
   "corporate": {
     "yieldRatePercent": "良率百分比",
@@ -16545,7 +16546,9 @@
     "fleetMatrix": "设备 × 版本矩阵",
     "fleetMatrixEmpty": "尚无设备上报版本",
     "deployReason": {
-      "techman_program_download_unsupported": "Techman（robot-tm）暂不支持下载程序——尚未实现 TMflow 程序下载指令，因此没有向机器人发送任何内容。"
+      "techman_program_download_unsupported": "Techman（robot-tm）暂不支持下载程序——尚未实现 TMflow 程序下载指令，因此没有向机器人发送任何内容。",
+      "deploy_gate_off": "此服务器已关闭设备部署（默认）— 仅记录为模拟，未触及设备。",
+      "no_hitl_signoff": "无人工签核（HITL）— 仅记录为模拟，未触及设备。"
     },
     "review": {
       "title": "版本审核",
@@ -16885,7 +16888,7 @@
     "fail": "失败",
     "failingTypesTitle": "未通过合规的类型",
     "flagOffBanner": "预览模式：设备治理已禁用。读取可用；操作（注册类型 / 映射告警 / 提交 / 审查 / 发布）在启用前被阻止。",
-    "flagOffToast": "设备治理已禁用（预览）。设置 EQ_GOVERN_ENABLED=true 以执行操作。",
+    "flagOffToast": "服务器上的设备治理已关闭（预览）— 在管理员开启之前，操作会被拒绝。",
     "flagStatusError": "无法检查设备治理是否已启用 — 在确认前，操作将被禁用。",
     "hierarchyTitle": "设备类型层次结构",
     "inheritance": "继承链",
@@ -17070,8 +17073,8 @@
     "discoveryViewOnly": "发现需要 machine_control / create 权限。您仅有查看权限。",
     "endpoint": "端点",
     "endpointRequired": "请输入要探测的端点。",
-    "flagOffBanner": "预览模式：现场抽象 v2 已禁用（FIELD_V2_ENABLED 处于关闭状态）。读取可用；热插拔操作（发现 / 注册设备）在启用该标志前被阻止。",
-    "flagOffToast": "现场抽象已禁用（预览）。设置 FIELD_V2_ENABLED=true 以执行操作。",
+    "flagOffBanner": "预览模式：服务器上的现场抽象 v2 已关闭。读取可用；热插拔操作（发现 / 注册设备）在管理员开启之前被阻止。",
+    "flagOffToast": "服务器上的现场抽象已关闭（预览）— 在管理员开启之前，操作会被拒绝。",
     "healthDesc": "每个受跟踪设备一行。存活性由心跳时长派生（基于 TTL）。",
     "healthEmpty": "尚无受跟踪设备。设备在发送心跳或被发现后会出现在此处。",
     "healthTitle": "设备存活性看板",
@@ -17171,7 +17174,7 @@
     "deviceIdRequired": "请输入有效的设备 ID。",
     "filterStatus": "状态",
     "flagOffBanner": "预览模式：机群编排已禁用。读取可用；操作（分配 / 重新分配 / 取消 / 预留 / 释放）在启用前被阻止。",
-    "flagOffToast": "机群编排已禁用（预览）。设置 FLEET_ORCH_ENABLED=true 以执行操作。",
+    "flagOffToast": "服务器上的机群编排已关闭（预览）— 在管理员开启之前，操作会被拒绝。",
     "flagStatusError": "无法检查机群编排是否已启用 — 在确认前，操作将被禁用。",
     "kpi": {
       "activeRes": "活跃预留",
@@ -17296,7 +17299,7 @@
     },
     "resourceCreated": "资源已创建",
     "resourceFlagOffBanner": "预览模式：机群资源层已禁用。读取可用；操作（创建 / 映射 / 预留 / 释放 / 扫描）在启用前被阻止。",
-    "resourceFlagOffToast": "机群资源层已禁用（预览）。设置 FLEET_RESOURCE_ENABLED=true 以执行操作。",
+    "resourceFlagOffToast": "服务器上的机群资源层已关闭（预览）— 在管理员开启之前，操作会被拒绝。",
     "resourceFlagStatusError": "无法检查机群资源层是否已启用 — 在确认前，操作将被禁用。",
     "resourceReleased": "资源已释放",
     "resourceReserved": "资源已占用",
@@ -17422,9 +17425,9 @@
       "pidOut": "输出通道",
       "pidHint": "增益必须为有限且非负；输出被硬限幅到 [最小值, 最大值]。URScript 生成一个有界 PID 骨架（无原生 PID）。"
     },
-    "flagOffBanner": "预览模式：IR 编程已禁用（DPC_IR_V2_ENABLED 处于关闭状态）。编写、检查与转译预览可用；保存流程 / 请求构建 在启用该标志前被阻止。",
-    "flagOffTip": "启用 DPC_IR_V2_ENABLED 以构建",
-    "flagOffToast": "IR 编程已禁用（预览）。设置 DPC_IR_V2_ENABLED=true 以保存/构建。",
+    "flagOffBanner": "预览模式：服务器上的 IR 编程已关闭。编写、检查与转译预览可用；保存流程 / 请求构建 在管理员开启之前被阻止。",
+    "flagOffTip": "服务器上的 IR 编程已关闭 — 需由管理员开启后才能保存/构建",
+    "flagOffToast": "服务器上的 IR 编程已关闭（预览）— 在管理员开启之前，保存/构建会被拒绝。",
     "flowId": "流程 ID",
     "honestyNote": "仅结构预览 + 检查 + 转译 — 物理仿真与真实部署单独受控。真实部署始终通过既有的编程服务（人工在环双人复核）路由，绝不从此屏幕触发。",
     "inspector": "检查器",
@@ -17502,8 +17505,8 @@
       "conflictsHeading": "冲突 — 请选择一侧",
       "currentDraft": "当前编辑器草稿",
       "emptyMerged": "合并后的流程没有块。",
-      "flagOffTip": "启用 DPC_IR_V2_ENABLED 以保存合并后的流程",
-      "flagOffToast": "IR 编程已禁用（预览）。设置 DPC_IR_V2_ENABLED=true 以保存。",
+      "flagOffTip": "服务器上的 IR 编程已关闭 — 需由管理员开启后才能保存合并后的流程",
+      "flagOffToast": "服务器上的 IR 编程已关闭（预览）— 在管理员开启之前，保存会被拒绝。",
       "flowField": "流程字段",
       "gateNote": "合并预览是纯读取。“保存合并”通过既有的受控保存（DPC_IR_V2_ENABLED + machine_control）追加一个已校验的 ir-flow 版本 — 绝不绕过该闸口，且真实部署仍是单独步骤。",
       "noPermTip": "您需要 machine_control 权限才能保存。",
@@ -17692,8 +17695,8 @@
     "all": "全部",
     "anomaliesEmpty": "无异常记录。此台账为参考性 — 只有在存在力遥测后才会出现夹持力行。",
     "anomaliesTitle": "机器人行为异常（参考性）",
-    "anomalyFlagOffBanner": "预览模式：机器人异常检测已禁用（AI_ROBOT_ANOMALY_ENABLED 处于关闭状态）。读取可用；手动扫描在启用该标志前被阻止。",
-    "anomalyFlagOffToast": "机器人异常检测已禁用（预览）。设置 AI_ROBOT_ANOMALY_ENABLED=true 以扫描。",
+    "anomalyFlagOffBanner": "预览模式：服务器上的机器人异常检测已关闭。读取可用；手动扫描在管理员开启之前被阻止。",
+    "anomalyFlagOffToast": "服务器上的机器人异常检测已关闭（预览）— 在管理员开启之前，扫描会被拒绝。",
     "col": {
       "confidence": "置信度",
       "evidence": "证据",
@@ -17741,8 +17744,8 @@
     "robotIdPlaceholder": "例如 1",
     "robotRequired": "请选择要扫描的机器人。",
     "rollbackEmpty": "无回滚记录。自动评估在存在实时模型性能信号前保持惰性。",
-    "rollbackFlagOffBanner": "预览模式：模型自动回滚已禁用（AI_MODEL_AUTOROLLBACK_ENABLED 处于关闭状态）。读取 + 手动回滚可用；自动评估在启用该标志前被阻止。",
-    "rollbackFlagOffToast": "模型自动回滚已禁用（预览）。设置 AI_MODEL_AUTOROLLBACK_ENABLED=true 以评估。",
+    "rollbackFlagOffBanner": "预览模式：服务器上的模型自动回滚已关闭。读取 + 手动回滚可用；自动评估在管理员开启之前被阻止。",
+    "rollbackFlagOffToast": "服务器上的模型自动回滚已关闭（预览）— 在管理员开启之前，评估会被拒绝。",
     "rollbackTitle": "模型回滚历史（审计）",
     "rolledBack": "已记录手动回滚",
     "scan": "扫描机器人",
@@ -17804,7 +17807,7 @@
     "feedEmpty": "无安全事件记录。此数据源仅为参考性监控。",
     "feedTitle": "安全事件源",
     "filterType": "类型",
-    "flagOffToast": "安全审计已禁用（预览）。设置 SAFETY_AUDIT_ENABLED=true 以执行操作。",
+    "flagOffToast": "服务器上的安全审计已关闭（预览）— 在管理员开启之前，操作会被拒绝。",
     "footerNote": "此页面上的所有写入仅为监控 / 记录 / 协调状态。未遂事件采集会触发一个黄色安灯，并通过既有的受控分派器提议（绝不执行）减速。",
     "handshake": {
       "ack": "已确认",
@@ -18303,7 +18306,7 @@
     "confirmClose": "关闭分配",
     "confirmed": "分配已确认",
     "flagOffBanner": "预览模式：工作队伍已禁用。读取可用；分配与协作操作在启用前被阻止。",
-    "flagOffToast": "工作队伍已禁用（预览）。设置 WORKFORCE_ENABLED=true 以执行操作。",
+    "flagOffToast": "服务器上的人力功能已关闭（预览）— 在管理员开启之前，操作会被拒绝。",
     "flagStatusError": "无法检查工作队伍是否已启用 — 在确认前，分配与协作操作将被禁用。",
     "handshakeSignalled": "已发出握手信号",
     "humanId": "人工操作员 ID",
@@ -21814,7 +21817,9 @@
       "closedBy": "关闭人",
       "notes": "备注"
     },
-    "movedLink": "人力 → 生产 › 班次"
+    "movedLink": "人力 → 生产 › 班次",
+    "emptyForShift": "该班次暂无分配。",
+    "emptyForShiftWindow": "在已加载的最新 {{limit}} 条分配中没有该班次的分配 — 该班次更早的分配不会在此显示。"
   },
   "engineeringAssign": {
     "label": "分配给",

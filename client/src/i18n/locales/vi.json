@@ -2658,7 +2658,8 @@
     "contrast": "Độ tương phản",
     "on": "Bật",
     "off": "Tắt",
-    "hide": "ẩn"
+    "hide": "ẩn",
+    "flagOffToastGeneric": "Tính năng này đang tắt trên máy chủ (xem trước) — thao tác bị từ chối cho đến khi quản trị viên bật."
   },
   "corporate": {
     "performanceByCorporation": "Hiệu suất theo tập đoàn",
@@ -15931,7 +15932,9 @@
     "fleetMatrix": "Ma trận máy × version",
     "fleetMatrixEmpty": "Chưa có máy nào ghi nhận phiên bản",
     "deployReason": {
-      "techman_program_download_unsupported": "Robot Techman (robot-tm) chưa hỗ trợ tải chương trình — không có lệnh tải chương trình TMflow nào được cài đặt, nên KHÔNG có gì được gửi xuống robot."
+      "techman_program_download_unsupported": "Robot Techman (robot-tm) chưa hỗ trợ tải chương trình — không có lệnh tải chương trình TMflow nào được cài đặt, nên KHÔNG có gì được gửi xuống robot.",
+      "deploy_gate_off": "Triển khai xuống thiết bị đang tắt trên máy chủ này (mặc định) — chỉ ghi nhận mô phỏng, không chạm thiết bị.",
+      "no_hitl_signoff": "Chưa có người ký xác nhận (HITL) — chỉ ghi nhận mô phỏng, không chạm thiết bị."
     },
     "review": {
       "title": "Duyệt phiên bản",
@@ -16461,7 +16464,7 @@
     "fail": "Không đạt",
     "failingTypesTitle": "Các loại không đạt kiểm định",
     "flagOffBanner": "Chế độ xem trước: quản trị thiết bị đang tắt. Đọc vẫn hoạt động; các thao tác (đăng ký loại / ánh xạ cảnh báo / gửi / duyệt / xuất bản) bị chặn cho đến khi bật.",
-    "flagOffToast": "Quản trị thiết bị đang tắt (xem trước). Đặt EQ_GOVERN_ENABLED=true để thao tác.",
+    "flagOffToast": "Quản trị thiết bị đang tắt trên máy chủ (xem trước) — thao tác bị từ chối cho đến khi quản trị viên bật.",
     "flagStatusError": "Không kiểm tra được trạng thái quản trị thiết bị — các thao tác bị khoá cho đến khi xác nhận lại.",
     "hierarchyTitle": "Phân cấp loại thiết bị",
     "inheritance": "Chuỗi kế thừa",
@@ -16646,8 +16649,8 @@
     "discoveryViewOnly": "Phát hiện cần quyền machine_control / create. Bạn chỉ có quyền xem.",
     "endpoint": "Endpoint",
     "endpointRequired": "Nhập một endpoint để probe.",
-    "flagOffBanner": "Chế độ xem trước: field abstraction v2 đang tắt (FIELD_V2_ENABLED tắt). Đọc vẫn hoạt động; các thao tác hot-plug (phát hiện / đăng ký thiết bị) bị chặn cho đến khi bật cờ.",
-    "flagOffToast": "Field abstraction đang tắt (xem trước). Đặt FIELD_V2_ENABLED=true để thao tác.",
+    "flagOffBanner": "Chế độ xem trước: field abstraction v2 đang tắt trên máy chủ. Đọc vẫn hoạt động; các thao tác hot-plug (phát hiện / đăng ký thiết bị) bị chặn cho đến khi quản trị viên bật.",
+    "flagOffToast": "Field abstraction đang tắt trên máy chủ (xem trước) — thao tác bị từ chối cho đến khi quản trị viên bật.",
     "healthDesc": "Mỗi thiết bị theo dõi một dòng. Trạng thái sống được suy ra từ tuổi nhịp tim (dựa trên TTL).",
     "healthEmpty": "Chưa có thiết bị theo dõi nào. Thiết bị xuất hiện ở đây khi có nhịp tim hoặc được phát hiện.",
     "healthTitle": "Bảng trạng thái sống thiết bị",
@@ -16747,7 +16750,7 @@
     "deviceIdRequired": "Nhập mã thiết bị hợp lệ.",
     "filterStatus": "Trạng thái",
     "flagOffBanner": "Chế độ xem trước: điều phối đội xe đang tắt. Đọc vẫn hoạt động; các thao tác (phân bổ / gán lại / hủy / đặt trước / giải phóng) bị chặn cho đến khi bật.",
-    "flagOffToast": "Điều phối đội xe đang tắt (xem trước). Đặt FLEET_ORCH_ENABLED=true để thao tác.",
+    "flagOffToast": "Điều phối đội xe đang tắt trên máy chủ (xem trước) — thao tác bị từ chối cho đến khi quản trị viên bật.",
     "flagStatusError": "Không kiểm tra được trạng thái điều phối đội xe — các thao tác bị khoá cho đến khi xác nhận lại.",
     "kpi": {
       "activeRes": "Đặt trước đang hoạt động",
@@ -16872,7 +16875,7 @@
     },
     "resourceCreated": "Đã tạo tài nguyên",
     "resourceFlagOffBanner": "Chế độ xem trước: lớp tài nguyên đội xe đang tắt. Đọc vẫn hoạt động; các thao tác (tạo / ánh xạ / đặt trước / giải phóng / quét) bị chặn cho đến khi bật.",
-    "resourceFlagOffToast": "Lớp tài nguyên đội xe đang tắt (xem trước). Đặt FLEET_RESOURCE_ENABLED=true để thao tác.",
+    "resourceFlagOffToast": "Lớp tài nguyên đội xe đang tắt trên máy chủ (xem trước) — thao tác bị từ chối cho đến khi quản trị viên bật.",
     "resourceFlagStatusError": "Không kiểm tra được trạng thái lớp tài nguyên đội xe — các thao tác bị khoá cho đến khi xác nhận lại.",
     "resourceReleased": "Đã giải phóng tài nguyên",
     "resourceReserved": "Đã chiếm tài nguyên",
@@ -16998,9 +17001,9 @@
       "pidOut": "Kênh ra",
       "pidHint": "Hệ số phải hữu hạn & không âm; đầu ra bị kẹp cứng trong [min, max]. URScript sinh khung PID có giới hạn (không PID gốc)."
     },
-    "flagOffBanner": "Chế độ xem trước: lập trình IR đang tắt (DPC_IR_V2_ENABLED tắt). Soạn, lint và xem trước transpile vẫn hoạt động; Lưu luồng / Yêu cầu build bị chặn cho đến khi bật cờ.",
-    "flagOffTip": "Bật DPC_IR_V2_ENABLED để build",
-    "flagOffToast": "Lập trình IR đang tắt (xem trước). Đặt DPC_IR_V2_ENABLED=true để lưu/build.",
+    "flagOffBanner": "Chế độ xem trước: lập trình IR đang tắt trên máy chủ. Soạn, lint và xem trước transpile vẫn hoạt động; Lưu luồng / Yêu cầu build bị chặn cho đến khi quản trị viên bật.",
+    "flagOffTip": "Lập trình IR đang tắt trên máy chủ — cần quản trị viên bật để lưu/build",
+    "flagOffToast": "Lập trình IR đang tắt trên máy chủ (xem trước) — lưu/build bị từ chối cho đến khi quản trị viên bật.",
     "flowId": "Mã luồng",
     "honestyNote": "Chỉ xem trước cấu trúc + lint + transpile — mô phỏng vật lý và triển khai thật được kiểm soát riêng. Triển khai thật luôn đi qua dịch vụ lập trình hiện có (HITL 2 người) và không bao giờ được kích hoạt từ màn hình này.",
     "inspector": "Bảng thuộc tính",
@@ -17078,8 +17081,8 @@
       "conflictsHeading": "Xung đột — chọn một nhánh",
       "currentDraft": "Bản nháp hiện tại trong trình soạn",
       "emptyMerged": "Luồng đã hợp nhất không có khối nào.",
-      "flagOffTip": "Bật DPC_IR_V2_ENABLED để lưu luồng đã hợp nhất",
-      "flagOffToast": "Lập trình IR đang tắt (xem trước). Đặt DPC_IR_V2_ENABLED=true để lưu.",
+      "flagOffTip": "Lập trình IR đang tắt trên máy chủ — cần quản trị viên bật để lưu luồng đã hợp nhất",
+      "flagOffToast": "Lập trình IR đang tắt trên máy chủ (xem trước) — lưu bị từ chối cho đến khi quản trị viên bật.",
       "flowField": "Trường luồng",
       "gateNote": "Xem trước hợp nhất chỉ là thao tác đọc. “Lưu bản hợp nhất” thêm một phiên bản ir-flow đã kiểm định qua đường lưu có kiểm soát hiện có (DPC_IR_V2_ENABLED + machine_control) — không bao giờ bỏ qua cổng đó, và việc triển khai thật vẫn là một bước riêng.",
       "noPermTip": "Bạn cần quyền machine_control để lưu.",
@@ -17268,8 +17271,8 @@
     "all": "Tất cả",
     "anomaliesEmpty": "Chưa ghi nhận bất thường nào. Sổ này mang tính tư vấn — các dòng lực kẹp chỉ xuất hiện khi có telemetry lực.",
     "anomaliesTitle": "Bất thường hành vi robot (tư vấn)",
-    "anomalyFlagOffBanner": "Chế độ xem trước: phát hiện bất thường robot đang tắt (AI_ROBOT_ANOMALY_ENABLED tắt). Đọc vẫn hoạt động; quét thủ công bị chặn cho đến khi bật cờ.",
-    "anomalyFlagOffToast": "Phát hiện bất thường robot đang tắt (xem trước). Đặt AI_ROBOT_ANOMALY_ENABLED=true để quét.",
+    "anomalyFlagOffBanner": "Chế độ xem trước: phát hiện bất thường robot đang tắt trên máy chủ. Đọc vẫn hoạt động; quét thủ công bị chặn cho đến khi quản trị viên bật.",
+    "anomalyFlagOffToast": "Phát hiện bất thường robot đang tắt trên máy chủ (xem trước) — quét bị từ chối cho đến khi quản trị viên bật.",
     "col": {
       "confidence": "Độ tin cậy",
       "evidence": "Bằng chứng",
@@ -17317,8 +17320,8 @@
     "robotIdPlaceholder": "vd. 1",
     "robotRequired": "Chọn một robot để quét.",
     "rollbackEmpty": "Chưa ghi nhận rollback nào. Đánh giá tự động bất động cho đến khi có tín hiệu hiệu năng model trực tiếp.",
-    "rollbackFlagOffBanner": "Chế độ xem trước: tự-rollback model đang tắt (AI_MODEL_AUTOROLLBACK_ENABLED tắt). Đọc + rollback thủ công hoạt động; đánh giá tự động bị chặn cho đến khi bật cờ.",
-    "rollbackFlagOffToast": "Tự-rollback model đang tắt (xem trước). Đặt AI_MODEL_AUTOROLLBACK_ENABLED=true để đánh giá.",
+    "rollbackFlagOffBanner": "Chế độ xem trước: tự-rollback model đang tắt trên máy chủ. Đọc + rollback thủ công hoạt động; đánh giá tự động bị chặn cho đến khi quản trị viên bật.",
+    "rollbackFlagOffToast": "Tự-rollback model đang tắt trên máy chủ (xem trước) — đánh giá bị từ chối cho đến khi quản trị viên bật.",
     "rollbackTitle": "Lịch sử rollback model (audit)",
     "rolledBack": "Đã ghi nhận rollback thủ công",
     "scan": "Quét robot",
@@ -17405,7 +17408,7 @@
     "feedEmpty": "Chưa ghi nhận sự kiện an toàn nào. Luồng này chỉ giám sát tư vấn.",
     "feedTitle": "Luồng sự kiện an toàn",
     "filterType": "Loại",
-    "flagOffToast": "Kiểm định an toàn đang tắt (xem trước). Đặt SAFETY_AUDIT_ENABLED=true để thao tác.",
+    "flagOffToast": "Kiểm định an toàn đang tắt trên máy chủ (xem trước) — thao tác bị từ chối cho đến khi quản trị viên bật.",
     "footerNote": "Mọi ghi trên trang này chỉ là trạng thái giám sát / ghi nhật ký / điều phối. Nạp dữ liệu suýt sự cố nâng một Andon vàng và ĐỀ XUẤT (không bao giờ thực thi) giảm tốc độ qua dispatcher có kiểm soát hiện có.",
     "handshake": {
       "ack": "Đã xác nhận",
@@ -17962,7 +17965,7 @@
     "confirmClose": "Đóng phân công",
     "confirmed": "Đã xác nhận phân công",
     "flagOffBanner": "Chế độ xem trước: nhân lực đang tắt. Đọc vẫn hoạt động; các thao tác phân công và phối hợp bị chặn cho đến khi bật.",
-    "flagOffToast": "Nhân lực đang tắt (xem trước). Đặt WORKFORCE_ENABLED=true để thao tác.",
+    "flagOffToast": "Nhân lực đang tắt trên máy chủ (xem trước) — thao tác bị từ chối cho đến khi quản trị viên bật.",
     "flagStatusError": "Không kiểm tra được trạng thái nhân lực — các thao tác phân công và phối hợp bị khoá cho đến khi xác nhận lại.",
     "handshakeSignalled": "Đã báo hiệu bắt tay",
     "humanId": "Mã người vận hành",
@@ -21786,7 +21789,9 @@
       "closedBy": "Đóng bởi",
       "notes": "Ghi chú"
     },
-    "movedLink": "Nhân lực → Sản xuất › Ca"
+    "movedLink": "Nhân lực → Sản xuất › Ca",
+    "emptyForShift": "Ca này chưa có phân công nào.",
+    "emptyForShiftWindow": "Không có phân công nào của ca này trong {{limit}} phân công mới nhất đã tải — phân công cũ hơn của ca này không hiện ở đây."
   },
   "engineeringAssign": {
     "label": "Giao cho",

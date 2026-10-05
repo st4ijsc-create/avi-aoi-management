@@ -2666,7 +2666,8 @@
     "contrast": "Contrast",
     "on": "On",
     "off": "Off",
-    "hide": "hide"
+    "hide": "hide",
+    "flagOffToastGeneric": "This feature is turned off on the server (preview) — the action is refused until an administrator turns it on."
   },
   "corporate": {
     "yieldRatePercent": "Yield rate percent",
@@ -15951,7 +15952,9 @@
     "fleetMatrix": "Machine × version matrix",
     "fleetMatrixEmpty": "No machine has reported a version yet",
     "deployReason": {
-      "techman_program_download_unsupported": "Techman (robot-tm) program download is not supported — no TMflow program-download command is implemented, so NOTHING was sent to the robot."
+      "techman_program_download_unsupported": "Techman (robot-tm) program download is not supported — no TMflow program-download command is implemented, so NOTHING was sent to the robot.",
+      "deploy_gate_off": "Device deploy is turned off on this server (default) — recorded as simulated; the device was not touched.",
+      "no_hitl_signoff": "No human sign-off (HITL) — recorded as simulated; the device was not touched."
     },
     "review": {
       "title": "Version review",
@@ -16481,7 +16484,7 @@
     "fail": "Fail",
     "failingTypesTitle": "Types failing conformance",
     "flagOffBanner": "Preview mode: equipment governance is disabled. Reads work; actions (register type / map alarm / submit / review / publish) are blocked until it is enabled.",
-    "flagOffToast": "Equipment governance is disabled (preview). Set EQ_GOVERN_ENABLED=true to act.",
+    "flagOffToast": "Equipment governance is turned off on the server (preview) — actions are refused until an administrator turns it on.",
     "flagStatusError": "Could not check whether equipment governance is enabled — actions are disabled until this is confirmed.",
     "hierarchyTitle": "Device type hierarchy",
     "inheritance": "Inheritance chain",
@@ -16666,8 +16669,8 @@
     "discoveryViewOnly": "Discovery requires machine_control / create. You have view-only access.",
     "endpoint": "Endpoint",
     "endpointRequired": "Enter an endpoint to probe.",
-    "flagOffBanner": "Preview mode: field abstraction v2 is disabled (FIELD_V2_ENABLED is off). Reads work; hot-plug actions (discover / register a device) are blocked until the flag is enabled.",
-    "flagOffToast": "Field abstraction is disabled (preview). Set FIELD_V2_ENABLED=true to act.",
+    "flagOffBanner": "Preview mode: field abstraction v2 is turned off on the server. Reads work; hot-plug actions (discover / register a device) are blocked until an administrator turns it on.",
+    "flagOffToast": "Field abstraction is turned off on the server (preview) — actions are refused until an administrator turns it on.",
     "healthDesc": "One row per tracked device. Liveness is derived from heartbeat age (TTL-based).",
     "healthEmpty": "No tracked devices yet. Devices appear here once they heartbeat or are discovered.",
     "healthTitle": "Device liveness board",
@@ -16767,7 +16770,7 @@
     "deviceIdRequired": "Enter a valid device id.",
     "filterStatus": "Status",
     "flagOffBanner": "Preview mode: fleet orchestration is disabled. Reads work; actions (allocate / reassign / cancel / reserve / release) are blocked until it is enabled.",
-    "flagOffToast": "Fleet orchestration is disabled (preview). Set FLEET_ORCH_ENABLED=true to act.",
+    "flagOffToast": "Fleet orchestration is turned off on the server (preview) — actions are refused until an administrator turns it on.",
     "flagStatusError": "Could not check whether fleet orchestration is enabled — actions are disabled until this is confirmed.",
     "kpi": {
       "activeRes": "Active reservations",
@@ -16892,7 +16895,7 @@
     },
     "resourceCreated": "Resource created",
     "resourceFlagOffBanner": "Preview mode: the fleet resource layer is disabled. Reads work; actions (create / map / reserve / release / sweep) are blocked until it is enabled.",
-    "resourceFlagOffToast": "Fleet resource layer is disabled (preview). Set FLEET_RESOURCE_ENABLED=true to act.",
+    "resourceFlagOffToast": "The fleet resource layer is turned off on the server (preview) — actions are refused until an administrator turns it on.",
     "resourceFlagStatusError": "Could not check whether the fleet resource layer is enabled — actions are disabled until this is confirmed.",
     "resourceReleased": "Resource released",
     "resourceReserved": "Resource claimed",
@@ -17018,9 +17021,9 @@
       "pidOut": "Output channel",
       "pidHint": "Gains must be finite & non-negative; output is hard-clamped to [min, max]. URScript emits a bounded PID skeleton (no native PID)."
     },
-    "flagOffBanner": "Preview mode: IR programming is disabled (DPC_IR_V2_ENABLED is off). Authoring, lint and transpile preview work; Save flow / Request build are blocked until the flag is enabled.",
-    "flagOffTip": "Enable DPC_IR_V2_ENABLED to build",
-    "flagOffToast": "IR programming is disabled (preview). Set DPC_IR_V2_ENABLED=true to save/build.",
+    "flagOffBanner": "Preview mode: IR programming is turned off on the server. Authoring, lint and transpile preview work; Save flow / Request build are blocked until an administrator turns it on.",
+    "flagOffTip": "IR programming is turned off on the server — an administrator must turn it on to save or build",
+    "flagOffToast": "IR programming is turned off on the server (preview) — save/build is refused until an administrator turns it on.",
     "flowId": "Flow id",
     "honestyNote": "Structural preview + lint + transpile only — physics simulation and a real deploy are gated separately. A real deploy always routes through the existing programming service (HITL 2-eyes) and is never triggered from this screen.",
     "inspector": "Inspector",
@@ -17098,8 +17101,8 @@
       "conflictsHeading": "Conflicts — pick a side",
       "currentDraft": "Current editor draft",
       "emptyMerged": "The merged flow has no blocks.",
-      "flagOffTip": "Enable DPC_IR_V2_ENABLED to save the merged flow",
-      "flagOffToast": "IR programming is disabled (preview). Set DPC_IR_V2_ENABLED=true to save.",
+      "flagOffTip": "IR programming is turned off on the server — an administrator must turn it on to save the merged flow",
+      "flagOffToast": "IR programming is turned off on the server (preview) — saving is refused until an administrator turns it on.",
       "flowField": "Flow field",
       "gateNote": "Merge preview is a pure read. “Save merged” appends a validated ir-flow version through the existing gated save (DPC_IR_V2_ENABLED + machine_control) — it never bypasses that gate, and a real deploy stays a separate step.",
       "noPermTip": "You need machine_control permission to save.",
@@ -17288,8 +17291,8 @@
     "all": "All",
     "anomaliesEmpty": "No anomalies recorded. This ledger is advisory — grip-force rows only appear once force telemetry exists.",
     "anomaliesTitle": "Robot-behaviour anomalies (advisory)",
-    "anomalyFlagOffBanner": "Preview mode: robot anomaly detection is disabled (AI_ROBOT_ANOMALY_ENABLED is off). Reads work; manual scans are blocked until the flag is enabled.",
-    "anomalyFlagOffToast": "Robot anomaly detection is disabled (preview). Set AI_ROBOT_ANOMALY_ENABLED=true to scan.",
+    "anomalyFlagOffBanner": "Preview mode: robot anomaly detection is turned off on the server. Reads work; manual scans are blocked until an administrator turns it on.",
+    "anomalyFlagOffToast": "Robot anomaly detection is turned off on the server (preview) — scans are refused until an administrator turns it on.",
     "col": {
       "confidence": "Confidence",
       "evidence": "Evidence",
@@ -17337,8 +17340,8 @@
     "robotIdPlaceholder": "e.g. 1",
     "robotRequired": "Pick a robot to scan.",
     "rollbackEmpty": "No rollbacks recorded. Automatic evaluation stays inert until a live model performance signal exists.",
-    "rollbackFlagOffBanner": "Preview mode: model auto-rollback is disabled (AI_MODEL_AUTOROLLBACK_ENABLED is off). Reads + manual rollback work; automatic evaluation is blocked until the flag is enabled.",
-    "rollbackFlagOffToast": "Model auto-rollback is disabled (preview). Set AI_MODEL_AUTOROLLBACK_ENABLED=true to evaluate.",
+    "rollbackFlagOffBanner": "Preview mode: model auto-rollback is turned off on the server. Reads + manual rollback work; automatic evaluation is blocked until an administrator turns it on.",
+    "rollbackFlagOffToast": "Model auto-rollback is turned off on the server (preview) — evaluation is refused until an administrator turns it on.",
     "rollbackTitle": "Model rollback history (audit)",
     "rolledBack": "Manual rollback recorded",
     "scan": "Scan robot",
@@ -17425,7 +17428,7 @@
     "feedEmpty": "No safety events recorded. This feed is advisory monitoring only.",
     "feedTitle": "Safety event feed",
     "filterType": "Type",
-    "flagOffToast": "Safety audit is disabled (preview). Set SAFETY_AUDIT_ENABLED=true to act.",
+    "flagOffToast": "Safety audit is turned off on the server (preview) — actions are refused until an administrator turns it on.",
     "footerNote": "All writes on this page are monitoring / logging / coordination state only. Near-miss ingest raises a yellow Andon and PROPOSES (never executes) a speed reduction through the existing gated dispatcher.",
     "handshake": {
       "ack": "Acknowledged",
@@ -17982,7 +17985,7 @@
     "confirmClose": "Close assignment",
     "confirmed": "Assignment confirmed",
     "flagOffBanner": "Preview mode: workforce is disabled. Reads work; assignment and collaboration actions are blocked until it is enabled.",
-    "flagOffToast": "Workforce is disabled (preview). Set WORKFORCE_ENABLED=true to act.",
+    "flagOffToast": "Workforce is turned off on the server (preview) — actions are refused until an administrator turns it on.",
     "flagStatusError": "Could not check whether workforce is enabled — assignment and collaboration actions are disabled until this is confirmed.",
     "handshakeSignalled": "Handshake signalled",
     "humanId": "Human operator id",
@@ -21812,7 +21815,9 @@
       "closedBy": "Closed by",
       "notes": "Notes"
     },
-    "movedLink": "Workforce → Production › Shifts"
+    "movedLink": "Workforce → Production › Shifts",
+    "emptyForShift": "No assignments for this shift.",
+    "emptyForShiftWindow": "No assignments for this shift among the latest {{limit}} loaded — older assignments of this shift are not shown here."
   },
   "engineeringAssign": {
     "label": "Assign to",

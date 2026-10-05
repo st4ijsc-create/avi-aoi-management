@@ -63,7 +63,8 @@ import {
 import { AlertTriangle, Ban, Bot, CalendarClock, CheckCircle2, RefreshCcw, RefreshCw, User, UserPlus, Users } from "lucide-react";
 import { toast } from "sonner";
 import { mapTrpcError } from "@/lib/trpcErrors";
-import { isFeatureDisabledError } from "@/lib/featureFlagError";
+import { featureKeyOf, isFeatureDisabledError } from "@/lib/featureFlagError";
+import { fmtDateTime } from "@/lib/fmtDateTime";
 import { deriveFeatureStatus, isFeatureStatusUnsettled, type FeatureStatus } from "@/components/common/FeatureStatusGate";
 import { ProvenanceBadge, ProvenanceSummary } from "@/components/common/ProvenanceBadge";
 
@@ -109,13 +110,6 @@ function assignStatusBadge(status: string, t: TFn) {
     default:
       return <Badge variant="outline" className="text-muted-foreground">{t("safety.assign.cancelled", "Cancelled")}</Badge>;
   }
-}
-
-function fmtDateTime(d?: string | Date | null): string {
-  if (!d) return "—";
-  const dt = typeof d === "string" ? new Date(d) : d;
-  if (Number.isNaN(dt.getTime())) return "—";
-  return dt.toLocaleString();
 }
 
 const pad2 = (n: number) => String(n).padStart(2, "0");
@@ -188,9 +182,19 @@ export default function ProductionShifts() {
   };
 
   // Cờ TẮT ⇒ server từ chối (CONFLICT/FEATURE_DISABLED) ⇒ toast.info êm + làm mới cờ (như cũ). Câu KHÔNG gọi tên biến môi trường.
+  // Final wave (Task 3 FINAL-WAVE) — phân biệt cờ theo MÃ (`params.feature`) như trang Safety cũ phân biệt an toàn / nhân lực:
+  // nhân lực (hoặc tuyến chưa có mã — mọi thủ tục của trang này chỉ gác cờ nhân lực) ⇒ câu ca; kiểm định an toàn ⇒ câu an
+  // toàn; cờ khác ⇒ câu chung. Không câu nào nêu tên biến môi trường.
   const onMutationError: MutationErrorHandler = (e) => {
     if (isFeatureDisabledError(e)) {
-      toast.info(t("shifts.flagOffToast", "Workforce is turned off on the server (preview) — assignment actions are refused until an administrator turns it on."));
+      const feature = featureKeyOf(e);
+      toast.info(
+        feature === undefined || feature === "workforce"
+          ? t("shifts.flagOffToast", "Workforce is turned off on the server (preview) — assignment actions are refused until an administrator turns it on.")
+          : feature === "safetyAudit"
+            ? t("safety.flagOffToast", "Safety audit is turned off on the server (preview) — actions are refused until an administrator turns it on.")
+            : t("common.flagOffToastGeneric", "This feature is turned off on the server (preview) — the action is refused until an administrator turns it on."),
+      );
       void utils.safety.status.invalidate();
     } else if (e.data?.code === "CONFLICT") {
       toast.info(mapTrpcError(e));
@@ -377,6 +381,15 @@ export default function ProductionShifts() {
             main={
               <AssignmentsTable
                 rows={rows}
+                emptyHint={
+                  // Final wave (Task 3 FINAL-WAVE) — bộ lọc ca chỉ lọc trên 200 phân công MỚI NHẤT đã tải: lọc ra rỗng khi cửa sổ
+                  // đã đầy ⇒ nói rõ phân công cũ hơn của ca này không hiện ở đây (không để bảng rỗng như "ca không có ai").
+                  shiftParam != null && shiftParam !== ""
+                    ? assignments.length >= ASSIGN_LIMIT
+                      ? t("shifts.emptyForShiftWindow", { limit: ASSIGN_LIMIT, defaultValue: "No assignments for this shift among the latest {{limit}} loaded — older assignments of this shift are not shown here." })
+                      : t("shifts.emptyForShift", "No assignments for this shift.")
+                    : undefined
+                }
                 loading={assignmentsQ.isLoading}
                 error={assignmentsQ.isError}
                 shiftById={shiftById}
@@ -475,9 +488,11 @@ function ShiftsToolbar({
 }
 
 function AssignmentsTable({
-  rows, loading, error, shiftById, canControl, confirmPending, onConfirm, onClose,
+  rows, emptyHint, loading, error, shiftById, canControl, confirmPending, onConfirm, onClose,
 }: {
   rows: Assignment[];
+  /** Câu khi bảng rỗng vì bộ lọc ca (undefined ⇒ câu rỗng cũ). */
+  emptyHint?: string;
   loading: boolean;
   error: boolean;
   shiftById: Map<number, ShiftConfig>;
@@ -515,7 +530,7 @@ function AssignmentsTable({
               <TableRow><TableCell colSpan={7} role="alert" className="py-8 text-center text-destructive">{t("shifts.listError", "Could not read the assignments.")}</TableCell></TableRow>
             )}
             {!loading && !error && rows.length === 0 && (
-              <TableRow><TableCell colSpan={7} className="py-8 text-center text-muted-foreground">{t("workforce.assignmentsEmpty", "No operator assignments yet.")}</TableCell></TableRow>
+              <TableRow><TableCell colSpan={7} data-empty-hint="" className="py-8 text-center text-muted-foreground">{emptyHint ?? t("workforce.assignmentsEmpty", "No operator assignments yet.")}</TableCell></TableRow>
             )}
             {rows.map((a) => {
               const terminal = isTerminalAssignment(a);

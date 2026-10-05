@@ -1067,7 +1067,7 @@ export default function IrEditor() {
   // ── Mutations (gated: DPC_IR_V2_ENABLED + machine_control) ─────────────────
   const onMutationError = (e: { data?: { code?: string } | null; message: string }) => {
     if (isFeatureDisabledError(e)) {
-      toast.info(t("ir.flagOffToast", "IR programming is disabled (preview). Set DPC_IR_V2_ENABLED=true to save/build."));
+      toast.info(t("ir.flagOffToast", "IR programming is turned off on the server (preview) — save/build is refused until an administrator turns it on."));
       void utils.ir.status.invalidate();
     } else {
       toastTrpcError(e);
@@ -1302,7 +1302,7 @@ export default function IrEditor() {
           {/* Banner cờ tắt cũ ⇒ chip 4 trạng thái (câu cũ trong popover). */}
           <FeatureStatusNoticeChip
             status={flagStatus}
-            offMessage={t("ir.flagOffBanner", "Preview mode: IR programming is disabled (DPC_IR_V2_ENABLED is off). Authoring, lint and transpile preview work; Save flow / Request build are blocked until the flag is enabled.")}
+            offMessage={t("ir.flagOffBanner", "Preview mode: IR programming is turned off on the server. Authoring, lint and transpile preview work; Save flow / Request build are blocked until an administrator turns it on.")}
           />
           {/* Thẻ metadata luồng cũ (4 ô) ⇒ nút gọn trong top bar mở popover cùng 4 ô (doc 81 §1.2 "toolbar metadata"). */}
           <Popover>
@@ -1406,7 +1406,7 @@ export default function IrEditor() {
           <Button size="sm" onClick={doSave}
             disabled={saveDisabled}
             aria-label={t("ir.save", "Save flow")}
-            title={!flagEnabled ? t("ir.flagOffTip", "Enable DPC_IR_V2_ENABLED to save") : lintLockReason ?? t("ir.saveShortcut", "Lưu flow (Ctrl/Cmd+S) · Build flow mới nhất (Ctrl/Cmd+Enter)")}>
+            title={!flagEnabled ? t("ir.flagOffTip", "IR programming is turned off on the server — an administrator must turn it on to save or build") : lintLockReason ?? t("ir.saveShortcut", "Lưu flow (Ctrl/Cmd+S) · Build flow mới nhất (Ctrl/Cmd+Enter)")}>
             {saveM.isPending ? <Loader2 className="h-4 w-4 animate-spin min-[1500px]:mr-1.5" /> : <Save className="h-4 w-4 min-[1500px]:mr-1.5" />}
             <span className="hidden min-[1500px]:inline">{t("ir.save", "Save flow")}</span>
           </Button>
@@ -1518,7 +1518,7 @@ export default function IrEditor() {
                   <Button
                     size="sm" variant="ghost" className="h-7 px-2"
                     disabled={buildDisabled}
-                    title={!flagEnabled ? t("ir.flagOffTip", "Enable DPC_IR_V2_ENABLED to build") : lintLockReason ?? t("ir.buildTip", "Transpile this saved flow (deploy stays a separate gated step)")}
+                    title={!flagEnabled ? t("ir.flagOffTip", "IR programming is turned off on the server — an administrator must turn it on to save or build") : lintLockReason ?? t("ir.buildTip", "Transpile this saved flow (deploy stays a separate gated step)")}
                     onClick={() => buildM.mutate({ artifactId: r.id })}
                   >
                     <Hammer className="mr-1 h-3.5 w-3.5" />{t("ir.build", "Request build")}
