@@ -7000,7 +7000,10 @@
     "twinStudioDesc": "创建建筑、楼层与设备布局；导入图纸；发布版本",
     "visionAcquisition": "图像采集",
     "visionAcquisitionDesc": "采集工作器：启动、监视、停止",
-    "visionAcquisitionAlias": "采集工作器 → 视觉 › 图像采集"
+    "visionAcquisitionAlias": "采集工作器 → 视觉 › 图像采集",
+    "productionShifts": "班次",
+    "productionShiftsDesc": "按班次的操作员分配与现场看板",
+    "productionShiftsAlias": "人力 → 生产 › 班次"
   },
   "aboutPage": {
     "layoutTitle": "系统介绍",
@@ -17792,8 +17795,7 @@
     "subtitle": "参考性安全监控、混合工作队伍分配与人↔机器人交接协调。",
     "tab": {
       "cockpit": "事件",
-      "collaboration": "协作",
-      "workforce": "工作队伍看板"
+      "collaboration": "协作"
     },
     "title": "安全与工作队伍",
     "trendEmpty": "此窗口内无未遂事件记录。",
@@ -17875,7 +17877,7 @@
       "src": {
         "openEvents": "safety.feed — 最近 200 条事件中尚未审核的事件（受类型筛选影响）",
         "nearMiss": "safety.nearMissTrend — 30 天趋势中今日（UTC）的险兆数",
-        "assignments": "safety.listAssignments — 已加载列表中状态为“进行中”的分配（受状态筛选影响）",
+        "assignments": "safety.listAssignments — 最近 200 条分配中状态为“进行中”的数量（详情见 生产 › 班次）",
         "collabs": "safety.listCollaborations — 未结束的会话（阶段不是 done 且无结束时间）"
       }
     },
@@ -21737,5 +21739,43 @@
     "nav": {
       "simpleFallback": "简洁菜单在此没有条目 — 正在显示完整菜单。"
     }
+  },
+  "shifts": {
+    "title": "班次",
+    "whenToUse": "何时使用 — 规划并确认每个班次中哪位操作员在哪条产线/工位，并查看此刻每个工位上的人员。人机协作仍在“安全与人力”页面。",
+    "noPermission": "您无权查看按班次的分配。",
+    "flagOff": "预览模式：服务器上的人力功能已关闭。读取正常；在管理员开启之前，分配操作会被拒绝。",
+    "flagStatusError": "无法确认人力功能是否已启用 — 在确认之前，分配操作已禁用。",
+    "flagOffToast": "服务器上的人力功能已关闭（预览）— 在管理员开启之前，分配操作会被拒绝。",
+    "filter": {
+      "shift": "班次",
+      "allShifts": "全部班次",
+      "noShift": "未关联班次"
+    },
+    "col": {
+      "shift": "班次"
+    },
+    "inactive": "已停用",
+    "shiftUnknown": "班次 #{{id}}",
+    "shiftsError": "无法读取班次列表",
+    "listError": "无法读取分配列表。",
+    "boardError": "无法读取现场看板。",
+    "chip": {
+      "planned": "待确认",
+      "srcActive": "safety.listAssignments — 最近 200 条分配中状态为“进行中”的数量（按班次与状态筛选）",
+      "srcPlanned": "safety.listAssignments — 最近 200 条分配中状态为“计划”（未确认）的数量（按班次与状态筛选）"
+    },
+    "side": {
+      "label": "现场看板 — 此刻每个工位上的人员与机器人"
+    },
+    "detailTitle": "分配详情",
+    "openDetail": "分配 #{{id}} 的详情",
+    "detail": {
+      "id": "分配",
+      "confirmed": "已确认",
+      "closedBy": "关闭人",
+      "notes": "备注"
+    },
+    "movedLink": "人力 → 生产 › 班次"
   }
 }

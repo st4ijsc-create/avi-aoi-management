@@ -791,6 +791,8 @@ describe("R-2-z4 — chiều cao trang theo chrome THẬT của shell", () => {
       "client/src/pages/EquipmentStandards.tsx", "client/src/pages/FleetOrchestration.tsx", "client/src/pages/InterlockRuleManagement.tsx",
       "client/src/pages/IrEditor.tsx", "client/src/pages/OrchestrationStudio.tsx", "client/src/pages/PouStudio.tsx",
       "client/src/pages/RecipeManagement.tsx", "client/src/pages/SafetyWorkforce.tsx", "client/src/pages/EngineeringChanges.tsx",
+      // Đợt 3 Task 3 — bảng nhân lực (2 chiều cao theo khung nhìn) DỜI từ SafetyWorkforce.tsx sang trang này: thước đi theo mã.
+      "client/src/pages/ProductionShifts.tsx",
     ];
     const bad: string[] = [];
     let uses = 0;

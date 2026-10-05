@@ -223,6 +223,8 @@ const EquipmentIntegration = React.lazy(() => import("./pages/EquipmentIntegrati
 // doc 81 Đợt 3 Task 2 — Vision › Thu ảnh: worker thu ảnh (trước là tab `?tab=acquisition` của Integration). Cổng QĐ-3c:
 // navHref = mục điều hướng (machine_alerts/canView), KHÔNG requireModule="MOD_AI" (giấy phép MOD_OT_CONTROL như Integration).
 const VisionAcquisition = React.lazy(() => import("./pages/VisionAcquisition"));
+// doc 81 Đợt 3 Task 3 — Sản xuất › Ca: bảng phân công nhân lực theo ca (dời khỏi tab ?tab=workforce của /safety-workforce).
+const ProductionShifts = React.lazy(() => import("./pages/ProductionShifts"));
 const QualityCockpit = React.lazy(() => import("./pages/QualityCockpit")); // P3-W2 (doc 12 §8): flagship Quality Cockpit (SPC/Pareto/Heatmap/Gates/Annotation tabs)
 const InboxPage = React.lazy(() => import("./pages/InboxPage")); // P3-W2: full-screen Action Inbox route (read-open)
 const ApprovalsInbox = React.lazy(() => import("./pages/ApprovalsInbox")); // doc 39 W6: unified HITL pending-approvals inbox (threshold + AI action; self-gates actions)
@@ -590,6 +592,10 @@ function Router() {
       <Route path="/vision/acquisition"><RouteGuard navHref="/vision/acquisition"><AIPageWrapper><VisionAcquisition /></AIPageWrapper></RouteGuard></Route>
       {/* R-3-d — bí danh trong nhóm Kỹ thuật (chỉ hiện khi KHÔNG có MOD_AI): cổng = mục nav của nó (machine_alerts, = cổng trang đích), rồi chuyển tới trang thật. */}
       <Route path="/engineering/vision-acquisition"><RouteGuard navHref="/engineering/vision-acquisition"><Redirect to="/vision/acquisition" /></RouteGuard></Route>
+      {/* doc 81 Đợt 3 Task 3 — Sản xuất › Ca: cổng = mục nav (machine_status = route /safety-workforce cũ); giấy phép MOD_OT_CONTROL (module-registry). */}
+      <Route path="/production/shifts"><RouteGuard navHref="/production/shifts"><AIPageWrapper><ProductionShifts /></AIPageWrapper></RouteGuard></Route>
+      {/* Bí danh trong nhóm Kỹ thuật (chỉ hiện khi KHÔNG có MOD_PRODUCTION): cổng = mục nav của nó (= cổng trang đích), rồi chuyển tới trang thật. */}
+      <Route path="/engineering/production-shifts"><RouteGuard navHref="/engineering/production-shifts"><Redirect to="/production/shifts" /></RouteGuard></Route>
       <Route path="/engineering-home"><RouteGuard navHref="/engineering-home"><EngineeringHub /></RouteGuard></Route>
       <Route path="/engineering"><RouteGuard navHref="/engineering"><EngineeringWorkspace /></RouteGuard></Route>
       <Route path="/recipes"><RouteGuard navHref="/recipes"><RecipeManagement /></RouteGuard></Route>

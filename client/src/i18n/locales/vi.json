@@ -7197,7 +7197,10 @@
     "twinStudioDesc": "Dựng toà nhà, mặt sàn và bố cục máy; nhập bản vẽ kỹ thuật; xuất bản phiên bản",
     "visionAcquisition": "Thu ảnh",
     "visionAcquisitionDesc": "Worker thu ảnh: khởi động, theo dõi, dừng",
-    "visionAcquisitionAlias": "Worker thu ảnh → Vision › Thu ảnh"
+    "visionAcquisitionAlias": "Worker thu ảnh → Vision › Thu ảnh",
+    "productionShifts": "Ca làm việc",
+    "productionShiftsDesc": "Phân công người vận hành theo ca và bảng hiện trường",
+    "productionShiftsAlias": "Nhân lực → Sản xuất › Ca"
   },
   "aboutPage": {
     "layoutTitle": "Giới thiệu hệ thống",
@@ -17393,8 +17396,7 @@
     "subtitle": "Giám sát an toàn tư vấn, phân công nhân lực hỗn hợp và điều phối bàn giao người↔robot.",
     "tab": {
       "cockpit": "Sự kiện",
-      "collaboration": "Phối hợp",
-      "workforce": "Nhân lực"
+      "collaboration": "Phối hợp"
     },
     "title": "An toàn & Nhân lực",
     "trendEmpty": "Không ghi nhận suýt sự cố nào trong khoảng thời gian.",
@@ -17476,7 +17478,7 @@
       "src": {
         "openEvents": "safety.feed — sự kiện chưa có dấu kiểm định trong tối đa 200 sự kiện gần nhất (theo bộ lọc loại)",
         "nearMiss": "safety.nearMissTrend — số suýt sự cố của ngày hôm nay (UTC) trong xu hướng 30 ngày",
-        "assignments": "safety.listAssignments — phân công trạng thái 'Hoạt động' trong danh sách đang tải (theo bộ lọc trạng thái)",
+        "assignments": "safety.listAssignments — phân công trạng thái 'Hoạt động' trong 200 phân công mới nhất (chi tiết ở Sản xuất › Ca)",
         "collabs": "safety.listCollaborations — phiên chưa kết thúc (pha khác 'done' và chưa có giờ kết thúc)"
       }
     },
@@ -21709,5 +21711,43 @@
     "nav": {
       "simpleFallback": "Menu đơn giản không có mục ở đây — đang hiện menu đầy đủ."
     }
+  },
+  "shifts": {
+    "title": "Ca làm việc",
+    "whenToUse": "Khi nào dùng — lập và xác nhận ai đứng chuyền/trạm nào trong từng ca, và xem ai đang ở mỗi trạm lúc này. Phối hợp người↔robot vẫn ở An toàn & Nhân lực.",
+    "noPermission": "Bạn không có quyền xem phân công theo ca.",
+    "flagOff": "Chế độ xem trước: nhân lực đang tắt trên máy chủ. Đọc vẫn hoạt động; thao tác phân công bị từ chối cho đến khi quản trị viên bật.",
+    "flagStatusError": "Không kiểm tra được trạng thái nhân lực — thao tác phân công bị khoá cho đến khi xác nhận lại.",
+    "flagOffToast": "Nhân lực đang tắt trên máy chủ (xem trước) — thao tác phân công bị từ chối cho đến khi quản trị viên bật.",
+    "filter": {
+      "shift": "Ca",
+      "allShifts": "Tất cả ca",
+      "noShift": "Chưa gắn ca"
+    },
+    "col": {
+      "shift": "Ca"
+    },
+    "inactive": "đã tắt",
+    "shiftUnknown": "Ca #{{id}}",
+    "shiftsError": "Không đọc được danh sách ca",
+    "listError": "Không đọc được danh sách phân công.",
+    "boardError": "Không đọc được bảng hiện trường.",
+    "chip": {
+      "planned": "Chờ xác nhận",
+      "srcActive": "safety.listAssignments — trạng thái 'Hoạt động' trong 200 phân công mới nhất (theo bộ lọc ca và trạng thái)",
+      "srcPlanned": "safety.listAssignments — trạng thái 'Kế hoạch' (chưa xác nhận) trong 200 phân công mới nhất (theo bộ lọc ca và trạng thái)"
+    },
+    "side": {
+      "label": "Bảng hiện trường — ai và robot nào đang ở mỗi trạm lúc này"
+    },
+    "detailTitle": "Chi tiết phân công",
+    "openDetail": "Chi tiết phân công #{{id}}",
+    "detail": {
+      "id": "Phân công",
+      "confirmed": "Đã xác nhận",
+      "closedBy": "Đóng bởi",
+      "notes": "Ghi chú"
+    },
+    "movedLink": "Nhân lực → Sản xuất › Ca"
   }
 }

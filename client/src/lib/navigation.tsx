@@ -183,6 +183,14 @@ export interface NavItem {
    * OT mà không có MOD_AI (ô AI của launcher là upsell, mục Vision không với tới bằng thanh bên). Có MOD_AI ⇒ ẩn (không trùng).
    */
   onlyWhenModuleMissing?: string;
+  /**
+   * Doc 81 Đợt 3 Task 3 — mục KHÔNG bị ẩn theo `permissionCategory` của NHÓM (`applyRbacFilter`): cổng là quyền của CHÍNH
+   * mục (`requiredPermission`, như RouteGuard `navHref`). Dùng khi một mục dời vào nhóm mà vai cũ của nó không có quyền
+   * loại nào của nhóm (vd Sản xuất › Ca: engineer/maintenance/viewer có `machine_status` như ở Safety nhưng không có quyền
+   * loại `production` ⇒ nếu theo luật nhóm thì mất cả mục). Mọi mục không khai giữ ĐÚNG luật cũ; census:
+   * navLicenseFieldsCensus (mục khai phải có `requiredPermission`).
+   */
+  ignoreGroupCategory?: boolean;
 }
 
 export interface NavGroup {
@@ -568,6 +576,26 @@ export const navGroups: NavGroup[] = [
         requiredPermission: "production_orders",
         permissionCategory: "production",
         section: "ordersSchedule",
+      },
+      {
+        // Doc 81 Đợt 3 Task 3 — Sản xuất › Ca: bảng phân công nhân lực theo ca (trước là tab `?tab=workforce` của
+        // /safety-workforce). GIỮ ĐÚNG cổng/hiển thị cũ: quyền `machine_status` (= route /safety-workforce; RouteGuard
+        // navHref); giấy phép MOD_OT_CONTROL như /safety-workforce (`licenseModule`; route ở module-registry) — nhóm
+        // Sản xuất (MOD_PRODUCTION) không ẩn nó; `ignoreGroupCategory`: vai có machine_status mà không có quyền loại
+        // production (engineer/maintenance/viewer) vẫn thấy như thấy Safety; `tier: advanced` ⇒ ẩn ở chế độ Đơn giản như
+        // mục Safety cũ (nhóm Kỹ thuật advanced). Thiếu MOD_PRODUCTION khi bật launcher ⇒ bí danh ở nhóm Kỹ thuật.
+        href: "/production/shifts",
+        label: "nav.productionShifts",
+        icon: <CalendarClock className="h-4 w-4" />,
+        description: "nav.productionShiftsDesc",
+        requiredPermission: "machine_status",
+        permissionCategory: "machine_monitoring",
+        section: "ordersSchedule",
+        licenseModule: "MOD_OT_CONTROL",
+        ignoreGroupCategory: true,
+        tier: "advanced",
+        engineerOriented: true,
+        beta: true,
       },
       {
         href: "/history-export-scheduling",
@@ -1214,6 +1242,22 @@ export const navGroups: NavGroup[] = [
         permissionCategory: "machine_monitoring",
         section: "standardsIntegration",
         onlyWhenModuleMissing: "MOD_AI",
+        engineerOriented: true,
+        beta: true,
+      },
+      {
+        // Doc 81 Đợt 3 Task 3 — BÍ DANH của Sản xuất › Ca cho khách có OT mà KHÔNG có MOD_PRODUCTION (khuôn R-3-d): khi bật
+        // launcher, trang thật nằm ở app Sản xuất (ô upsell với SKU đó) nên thanh bên không với tới. Route bí danh =
+        // RouteGuard navHref của chính nó + <Redirect> tới /production/shifts; cổng = cổng của trang đích (machine_status);
+        // giấy phép MOD_OT_CONTROL. Có MOD_PRODUCTION ⇒ ẩn (mục Sản xuất hiện, không trùng).
+        href: "/engineering/production-shifts",
+        label: "nav.productionShiftsAlias",
+        icon: <CalendarClock className="h-4 w-4" />,
+        description: "nav.productionShiftsDesc",
+        requiredPermission: "machine_status",
+        permissionCategory: "machine_monitoring",
+        section: "safety",
+        onlyWhenModuleMissing: "MOD_PRODUCTION",
         engineerOriented: true,
         beta: true,
       },
@@ -2714,20 +2758,22 @@ function applyRbacFilter(
       if (group.requiredRole === 'admin' && userRole !== 'admin') {
         return false;
       }
-      // Quick category-level check if available
-      if (hasAnyCategoryPermission && group.permissionCategory) {
-        return hasAnyCategoryPermission(group.permissionCategory);
-      }
       return true;
     })
-    .map(group => ({
-      ...group,
-      items: group.items.filter(item =>
-        isItemAccessible(item, userRole, hasPermission) &&
-        // doc 81 Đợt 2 Task 15 — công cụ soạn thảo chỉ trong điều hướng của người soạn được (route giữ nguyên).
-        passesNavAuthoringGate(item, userRole, hasPermission),
-      ),
-    }))
+    .map(group => {
+      // Quick category-level check if available. Doc 81 Đợt 3 Task 3: nhóm trượt cổng loại ⇒ CHỈ giữ mục khai
+      // `ignoreGroupCategory` (cổng là quyền của chính mục); không mục nào như vậy ⇒ nhóm rỗng ⇒ bị bỏ như trước.
+      const groupCategoryOk = !(hasAnyCategoryPermission && group.permissionCategory) || hasAnyCategoryPermission(group.permissionCategory);
+      return {
+        ...group,
+        items: group.items.filter(item =>
+          (groupCategoryOk || item.ignoreGroupCategory === true) &&
+          isItemAccessible(item, userRole, hasPermission) &&
+          // doc 81 Đợt 2 Task 15 — công cụ soạn thảo chỉ trong điều hướng của người soạn được (route giữ nguyên).
+          passesNavAuthoringGate(item, userRole, hasPermission),
+        ),
+      };
+    })
     .filter(group => group.items.length > 0);
 }
 

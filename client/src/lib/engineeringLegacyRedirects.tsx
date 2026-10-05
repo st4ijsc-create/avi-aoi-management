@@ -65,9 +65,15 @@ export function engineeringLegacyRoutes() {
 //
 // Đợt 3 Task 2: `/equipment-integration?tab=acquisition` ⇒ `/vision/acquisition` (Vision › Thu ảnh — trang KHÔNG tab):
 // không có `tabTo` ⇒ mọi `tab` bị GỠ, phần còn lại của query chép nguyên văn (vd `?flyout=acq-start`).
+//
+// Đợt 3 Task 3: `/safety-workforce?tab=workforce` ⇒ `/production/shifts` (Sản xuất › Ca — trang KHÔNG tab). Sheet phân công
+// của tab cũ (`?flyout=workforce-assign|workforce-reassign`) mở được cả khi URL không có `tab` (FlyoutHost đăng ký ở cấp
+// trang) ⇒ `flyouts`: các sheet đã dời theo cũng kích hoạt chuyển hướng. Sheet ở lại (vd `collab-start`) thì không.
 
 /** Đợt 3 Task 2 — đường dẫn của Vision › Thu ảnh (đích chuyển hướng của `?tab=acquisition`). */
 export const VISION_ACQUISITION_PATH = "/vision/acquisition";
+/** Đợt 3 Task 3 — đường dẫn của Sản xuất › Ca (đích chuyển hướng của `/safety-workforce?tab=workforce`). */
+export const PRODUCTION_SHIFTS_PATH = "/production/shifts";
 
 export interface LegacyTabRedirect {
   from: string;
@@ -75,12 +81,15 @@ export interface LegacyTabRedirect {
   to: string;
   /** Giá trị `tab` ở đích; bỏ trống ⇒ đích không có tab, `tab` bị gỡ khỏi query. */
   tabTo?: string;
+  /** Đợt 3 Task 3 — `?flyout=` của trang cũ đã DỜI cùng tab: khớp cả khi URL không mang `tab` này. */
+  flyouts?: readonly string[];
 }
 
 export const ENGINEERING_LEGACY_TAB_REDIRECTS: readonly LegacyTabRedirect[] = [
   { from: "/equipment-integration", tab: "recipes", to: "/recipes", tabTo: "versions" },
   { from: "/equipment-integration", tab: "history", to: "/recipes", tabTo: "history" },
   { from: "/equipment-integration", tab: "acquisition", to: VISION_ACQUISITION_PATH },
+  { from: "/safety-workforce", tab: "workforce", to: PRODUCTION_SHIFTS_PATH, flyouts: ["workforce-assign", "workforce-reassign"] },
 ];
 
 /** Khoá của một cặp `k=v` trong query thô (giải mã như URLSearchParams: `+` ⇒ dấu cách). */
@@ -111,10 +120,19 @@ export function legacyTabRedirectTarget(to: string, search: string, tabTo: strin
   return out.length ? `${to}?${out.join("&")}` : to;
 }
 
-/** Chuyển hướng theo tab áp cho `from` với query `search` (giá trị `tab` theo URLSearchParams — lần đầu), hoặc null. */
+/**
+ * Chuyển hướng theo tab áp cho `from` với query `search` (giá trị `tab`/`flyout` theo URLSearchParams — lần đầu), hoặc null.
+ * Khớp khi `tab` trùng, HOẶC (Đợt 3 Task 3) khi `flyout` là một sheet đã dời cùng tab (`flyouts`).
+ */
 export function findLegacyTabRedirect(from: string, search: string): LegacyTabRedirect | null {
-  const tab = new URLSearchParams(search.startsWith("?") ? search.slice(1) : search).get("tab");
-  return ENGINEERING_LEGACY_TAB_REDIRECTS.find((r) => r.from === from && r.tab === tab) ?? null;
+  const p = new URLSearchParams(search.startsWith("?") ? search.slice(1) : search);
+  const tab = p.get("tab");
+  const flyout = p.get("flyout");
+  return (
+    ENGINEERING_LEGACY_TAB_REDIRECTS.find(
+      (r) => r.from === from && (r.tab === tab || (flyout != null && (r.flyouts?.includes(flyout) ?? false))),
+    ) ?? null
+  );
 }
 
 /**

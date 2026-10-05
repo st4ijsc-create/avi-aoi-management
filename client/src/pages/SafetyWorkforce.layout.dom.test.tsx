@@ -5,8 +5,10 @@
 //   - Header một hàng: h1 + chip "Tư vấn — không phải SIS" (thay khối 88 px; popover giữ NGUYÊN câu cũ + câu chân
 //     trang trùng đã bỏ) + chip NGUỒN AN TOÀN có chữ trạng thái (mọi trạng thái không-OK hiện SẴN, có màu, không
 //     nằm trong "+N") + chip cờ 4 trạng thái (gọi tên cờ) + "Khi nào dùng" + dải `StatusChipStrip` (thay 4 MetricCard).
-//   - MAIN (`data-layout-main`, CockpitLayout) = hàng tab `?tab=` (cockpit | workforce) + nội dung. Tab đầu = luồng
-//     sự kiện + bảng tin trực tiếp (chip trong hàng công cụ). Bảng nhân lực ở lại (chưa có trang Sản xuất › Ca).
+//   - MAIN (`data-layout-main`, CockpitLayout) = hàng tab `?tab=` + nội dung. Tab "Sự kiện" = luồng sự kiện + bảng tin
+//     trực tiếp (chip trong hàng công cụ). Đợt 3 Task 3: bảng nhân lực DỜI sang Sản xuất › Ca (`/production/shifts`) —
+//     `?tab=workforce` chuyển hướng (giữ query) cho người mở được trang đó; các test phân công dời sang
+//     ProductionShifts.layout.dom.test.tsx (cùng oracle payload). Phối hợp người↔robot Ở LẠI đây.
 //   - Panel phụ (aside): panel NGUỒN AN TOÀN đầy đủ (luôn thấy) + tab Xu hướng / Phối hợp. Tab Phối hợp KHÔNG BAO
 //     GIỜ unmount (Review Focus 3): đổi tab phụ, đổi tab MAIN, qua lại 1024 px.
 //   - Dialog tạo/sửa → sheet (FlyoutHost `?flyout=`): báo cáo tiệm cận, phân công, phân công lại, bắt đầu phối hợp.
@@ -38,13 +40,15 @@ vi.mock("@/components/DashboardLayout", () => ({
   default: ({ children }: { children: React.ReactNode }) => <main>{children}</main>,
 }));
 vi.mock("@/components/PermissionGate", () => ({ ViewOnlyBadge: () => <span>Chỉ xem</span> }));
-const perm = vi.hoisted(() => ({ view: true, control: true }));
+const perm = vi.hoisted(() => ({ view: true, control: true, status: true }));
 vi.mock("@/_core/hooks/usePermissions", () => ({
   usePermissions: () => ({
     isAdmin: false,
     hasPermission: (m: string, a: string) => {
       if (m === "machine_monitoring" && a === "canView") return perm.view;
       if (m === "machine_control" && a === "canCreate") return perm.control;
+      // Đợt 3 Task 3 — quyền của mục điều hướng /production/shifts (đích chuyển hướng của ?tab=workforce).
+      if (m === "machine_status" && a === "canView") return perm.status;
       return false;
     },
   }),
@@ -335,7 +339,7 @@ beforeEach(() => {
   srv.collab.unmounts = 0;
   sock.handlers = {};
   sock.emitted = [];
-  Object.assign(perm, { view: true, control: true });
+  Object.assign(perm, { view: true, control: true, status: true });
   for (const f of Object.values(toastSpy)) f.mockClear();
   localStorage.clear();
   presetNarrow(false);
@@ -372,10 +376,6 @@ const visibleText = (el: HTMLElement) => {
   return c.textContent ?? "";
 };
 
-async function openWorkforce(user: ReturnType<typeof userEvent.setup>) {
-  await user.click(mainTab(S("safety.tab.workforce")));
-  await waitFor(() => expect(params().get("tab")).toBe("workforce"));
-}
 async function openCollab(user: ReturnType<typeof userEvent.setup>) {
   await user.click(sideTab(S("safety.tab.collaboration")));
   await waitFor(() => expect(collabPanel()).toBeVisible());
@@ -391,7 +391,8 @@ describe("Safety P4 — bố cục: một MAIN, header một hàng, panel phụ"
     expect(main.querySelector("h1, [data-layout-header], [data-layout-kpi], [data-notice-kind], [role=alert]")).toBeNull();
     expect(main.querySelectorAll("[data-layout-toolbar]").length).toBe(1);
     expect(within(header()).getByRole("heading", { level: 1 })).toHaveTextContent(S("safety.title"));
-    expect(within(toolbar()).getAllByRole("tab").map((x) => x.textContent?.trim())).toEqual([S("safety.tab.cockpit"), S("safety.tab.workforce")]);
+    // Đợt 3 Task 3 (ĐỔI KHẲNG ĐỊNH — tab đã dời): chỉ còn tab "Sự kiện"; bảng nhân lực ở Sản xuất › Ca.
+    expect(within(toolbar()).getAllByRole("tab").map((x) => x.textContent?.trim())).toEqual([S("safety.tab.cockpit")]);
     // Luồng sự kiện là phần tử làm việc của MAIN.
     expect(within(main).getByRole("table")).toBeInTheDocument();
     expect(screen.queryByRole("dialog")).toBeNull();
@@ -584,21 +585,56 @@ describe("Safety P4 — chip NGUỒN AN TOÀN: trạng thái không-OK luôn th�
 });
 
 describe("Safety P4 — ?tab= và bảng tin trực tiếp", () => {
-  it("bấm tab ghi ?tab=workforce (replace); F5 với ?tab=workforce mở thẳng; giá trị lạ ⇒ cockpit", async () => {
-    const user = userEvent.setup();
+  it("Đợt 3 Task 3: ?tab=workforce ⇒ CHUYỂN (REPLACE) sang /production/shifts giữ query cho người mở được trang đó; thiếu quyền ⇒ ở lại tab Sự kiện; giá trị lạ ⇒ Sự kiện", async () => {
+    window.history.replaceState(null, "", "/safety-workforce?tab=workforce&x=a%20b&flyout=workforce-reassign&flyoutId=3");
     const len0 = window.history.length;
     const { unmount } = render(<SafetyWorkforce />);
-    await openWorkforce(user);
+    await waitFor(() => expect(window.location.pathname).toBe("/production/shifts"));
+    expect(window.location.search).toBe("?x=a%20b&flyout=workforce-reassign&flyoutId=3");
     expect(window.history.length).toBe(len0);
-    expect(within(mainEl()).getByRole("region", { name: S("workforce.assignmentsTitle") })).toBeInTheDocument();
     unmount();
+    perm.status = false;
     window.history.replaceState(null, "", "/safety-workforce?tab=workforce");
     const r = render(<SafetyWorkforce />);
-    expect(mainTab(S("safety.tab.workforce"))).toHaveAttribute("aria-selected", "true");
+    await act(async () => { await new Promise((res) => setTimeout(res, 20)); });
+    expect(window.location.pathname).toBe("/safety-workforce");
+    expect(mainTab(S("safety.tab.cockpit"))).toHaveAttribute("aria-selected", "true");
+    expect(within(mainEl()).queryByRole("region", { name: S("workforce.assignmentsTitle") })).toBeNull();
     r.unmount();
+    perm.status = true;
     window.history.replaceState(null, "", "/safety-workforce?tab=khong-co");
     render(<SafetyWorkforce />);
     expect(mainTab(S("safety.tab.cockpit"))).toHaveAttribute("aria-selected", "true");
+  });
+
+  it("Đợt 3 Task 3: lối tới bảng nhân lực ở hàng công cụ (link → /production/shifts) CHỈ cho người mở được trang đó; Safety không còn đọc bảng hiện trường", async () => {
+    const user = userEvent.setup();
+    const { unmount } = render(<SafetyWorkforce />);
+    const link = within(toolbar()).getByRole("link", { name: S("shifts.movedLink") });
+    expect(link).toHaveAttribute("href", "/production/shifts");
+    expect(srv.queryInputs.some((x) => x.startsWith("safety.currentBoard"))).toBe(false);
+    expect(srv.queryInputs).toContain('safety.listAssignments:{"limit":200}');
+    await user.click(link);
+    await waitFor(() => expect(window.location.pathname).toBe("/production/shifts"));
+    unmount();
+    perm.status = false;
+    window.history.replaceState(null, "", "/safety-workforce");
+    render(<SafetyWorkforce />);
+    expect(within(toolbar()).queryByRole("link", { name: S("shifts.movedLink") })).toBeNull();
+  });
+
+  it("Đợt 3 Task 3: sheet phân công KHÔNG còn ở Safety — deep link không có ?tab cũng chuyển sang Sản xuất › Ca; thiếu quyền ⇒ không sheet nào mở", async () => {
+    window.history.replaceState(null, "", "/safety-workforce?flyout=workforce-assign");
+    const { unmount } = render(<SafetyWorkforce />);
+    await waitFor(() => expect(window.location.pathname).toBe("/production/shifts"));
+    expect(window.location.search).toBe("?flyout=workforce-assign");
+    unmount();
+    perm.status = false;
+    window.history.replaceState(null, "", "/safety-workforce?flyout=workforce-assign");
+    render(<SafetyWorkforce />);
+    await act(async () => { await new Promise((res) => setTimeout(res, 30)); });
+    expect(window.location.pathname).toBe("/safety-workforce");
+    expect(layer("workforce-assign")).toBeNull();
   });
 
   it("chip 'Trực tiếp' trong hàng công cụ: 0 lúc đầu + câu chờ; sự kiện socket ⇒ đếm 1 + liệt kê + làm mới luồng", async () => {
@@ -674,54 +710,7 @@ describe("Safety P4 — sheet thay dialog (form, kiểm tra, payload giữ nguy�
     expect(within(sheet).getByRole("button", { name: S("safety.ingest") })).toBeInTheDocument();
   });
 
-  it("Phân công: sheet; operator sai ⇒ toast; đúng ⇒ đúng payload, đóng, danh sách cập nhật sau invalidate", async () => {
-    const user = userEvent.setup();
-    render(<SafetyWorkforce />);
-    await openWorkforce(user);
-    await user.click(within(toolbar()).getByRole("button", { name: S("workforce.assign") }));
-    const sheet = await waitLayer("workforce-assign");
-    await user.click(within(sheet).getByRole("button", { name: S("workforce.assign") }));
-    expect(toastSpy.error).toHaveBeenCalledWith(S("workforce.operatorIdRequired"));
-    await user.type(within(sheet).getByLabelText(S("workforce.operatorId")), "77");
-    await user.type(within(sheet).getByLabelText(S("workforce.lineId")), "2");
-    await user.click(within(sheet).getByRole("button", { name: S("workforce.assign") }));
-    await waitFor(() => expect(calls("assignOperator")).toEqual([{ operatorId: 77, lineId: 2, stationId: undefined, skillLevel: undefined }]));
-    await waitFor(() => expect(layer("workforce-assign")).toBeNull());
-    expect(params().get("flyout")).toBeNull();
-    expect(params().get("tab")).toBe("workforce");
-    expect(toastSpy.success).toHaveBeenCalledWith(S("workforce.assigned"));
-    await waitFor(() => expect(within(mainEl()).getByText("#77")).toBeInTheDocument());
-  });
-
-  it("Phân công lại: sheet ?flyoutId= điền sẵn; payload {assignmentId, ...}; deep link id lạ ⇒ báo không tìm thấy; đã kết thúc ⇒ không form", async () => {
-    const user = userEvent.setup();
-    const { unmount } = render(<SafetyWorkforce />);
-    await openWorkforce(user);
-    const row = within(mainEl()).getByText("#43").closest("tr") as HTMLElement;
-    await user.click(within(row).getByRole("button", { name: S("workforce.reassign") }));
-    const sheet = await waitLayer("workforce-reassign");
-    expect(params().get("flyoutId")).toBe("3");
-    const op = within(sheet).getByLabelText(S("workforce.operatorId")) as HTMLInputElement;
-    expect(op.value).toBe("43");
-    await user.clear(op);
-    await user.type(op, "50");
-    await user.click(within(sheet).getByRole("button", { name: S("workforce.reassign") }));
-    await waitFor(() => expect(calls("reassignOperator")).toEqual([{ assignmentId: 3, operatorId: 50, lineId: 1, stationId: 2, skillLevel: "qualified" }]));
-    await waitFor(() => expect(layer("workforce-reassign")).toBeNull());
-    unmount();
-    window.history.replaceState(null, "", "/safety-workforce?tab=workforce&flyout=workforce-reassign&flyoutId=999");
-    const r2 = render(<SafetyWorkforce />);
-    const s2 = await waitLayer("workforce-reassign");
-    expect(s2.textContent).toContain(S("workforce.assignmentNotFound").replace("{{id}}", "999"));
-    expect(within(s2).queryByRole("button", { name: S("workforce.reassign") })).toBeNull();
-    r2.unmount();
-    window.history.replaceState(null, "", "/safety-workforce?tab=workforce&flyout=workforce-reassign&flyoutId=5");
-    render(<SafetyWorkforce />);
-    const s3 = await waitLayer("workforce-reassign");
-    expect(s3.textContent).toContain(S("workforce.assignmentTerminal").replace("{{id}}", "5"));
-    expect(within(s3).queryByRole("button", { name: S("workforce.reassign") })).toBeNull();
-  });
-
+  // Đợt 3 Task 3 — "Phân công" / "Phân công lại" DỜI sang Sản xuất › Ca: ProductionShifts.layout.dom.test.tsx (cùng oracle).
   it("Bắt đầu phối hợp (panel phụ): sheet; payload giữ nguyên; cờ nhân lực chưa rõ ⇒ không form", async () => {
     const user = userEvent.setup();
     const { unmount } = render(<SafetyWorkforce />);
@@ -770,6 +759,20 @@ describe("Safety P4 — sheet thay dialog (form, kiểm tra, payload giữ nguy�
 });
 
 describe("Safety P4 — R-2-n: xác nhận / một mục tiêu mỗi lần như trang cũ", () => {
+  it("Đợt 3 Task 3: thao tác của Safety vẫn làm mới ĐÚNG tập cũ (kể cả bảng hiện trường / phân công mà Sản xuất › Ca đọc)", async () => {
+    const user = userEvent.setup();
+    render(<SafetyWorkforce />);
+    const row = within(mainEl()).getByText("#41").closest("tr") as HTMLElement;
+    await user.click(within(row).getByRole("button", { name: S("safety.audit") }));
+    const dlg = await screen.findByRole("alertdialog");
+    await user.click(within(dlg).getByRole("button", { name: S("safety.confirmAudit") }));
+    await waitFor(() => expect(calls("auditEvent")).toEqual([{ eventId: 41 }]));
+    expect(new Set(srv.invalidated)).toEqual(new Set([
+      "safety.status", "safety.feed", "safety.nearMissTrend", "safety.currentBoard",
+      "safety.listAssignments", "safety.listCollaborations", "safety.sourceHealth",
+    ]));
+  });
+
   it("Kiểm định: AlertDialog câu cũ; Huỷ ⇒ 0 lời gọi; xác nhận ⇒ đúng [{eventId}] + invalidate", async () => {
     const user = userEvent.setup();
     render(<SafetyWorkforce />);
@@ -789,26 +792,7 @@ describe("Safety P4 — R-2-n: xác nhận / một mục tiêu mỗi lần như 
     await waitFor(() => expect(within(within(mainEl()).getByText("#41").closest("tr") as HTMLElement).queryByRole("button", { name: S("safety.audit") })).toBeNull());
   });
 
-  it("Xác nhận phân công: một cú bấm ⇒ [{assignmentId}], không dialog; Đóng: AlertDialog ⇒ [{assignmentId}]", async () => {
-    const user = userEvent.setup();
-    render(<SafetyWorkforce />);
-    await openWorkforce(user);
-    const planned = within(mainEl()).getByText("#43").closest("tr") as HTMLElement;
-    await user.click(within(planned).getByRole("button", { name: S("workforce.confirm") }));
-    await waitFor(() => expect(calls("confirmAssignment")).toEqual([{ assignmentId: 3 }]));
-    expect(screen.queryByRole("alertdialog")).toBeNull();
-    const active = within(mainEl()).getByText("#44").closest("tr") as HTMLElement;
-    await user.click(within(active).getByRole("button", { name: S("workforce.close") }));
-    const dlg = await screen.findByRole("alertdialog");
-    expect(within(dlg).getByText(S("workforce.closeConfirmTitle"))).toBeInTheDocument();
-    await user.click(within(dlg).getByRole("button", { name: S("workforce.confirmClose") }));
-    await waitFor(() => expect(calls("closeAssignment")).toEqual([{ assignmentId: 4 }]));
-    // Hàng đã kết thúc: Phân công lại / Đóng bị khoá như cũ.
-    const done = within(mainEl()).getByText("#45").closest("tr") as HTMLElement;
-    expect(within(done).getByRole("button", { name: S("workforce.reassign") })).toBeDisabled();
-    expect(within(done).getByRole("button", { name: S("workforce.close") })).toBeDisabled();
-  });
-
+  // Đợt 3 Task 3 — "Xác nhận" / "Đóng" phân công DỜI sang Sản xuất › Ca (ProductionShifts.layout.dom.test.tsx, cùng oracle).
   it("Phối hợp: Ack / Clear / Chuyển pha một cú bấm mỗi phiên; Huỷ qua AlertDialog; phiên kết thúc không có nút", async () => {
     const user = userEvent.setup();
     render(<SafetyWorkforce />);
@@ -858,12 +842,14 @@ describe("Safety P4 — Review Focus 3: panel Phối hợp (state-machine pha) K
     srv.hold.add("safety.advancePhase");
     await user.click(within(session()).getByRole("button", { name: S("workforce.advance") }));
     expect(within(session()).getByRole("button", { name: S("workforce.advance") })).toBeDisabled();
-    // Đổi tab phụ ×2, đổi tab MAIN ×2, qua lại 1024 px ×2.
+    // Đổi tab phụ ×2, mở/đóng sheet ở MAIN (Đợt 3 Task 3: MAIN chỉ còn MỘT tab — thay bước "đổi tab MAIN"), qua lại 1024 px ×2.
     await user.click(sideTab(S("safety.side.trend")));
     expect(panel).not.toBeVisible();
     await openCollab(user);
-    await openWorkforce(user);
-    await user.click(mainTab(S("safety.tab.cockpit")));
+    await user.click(within(toolbar()).getByRole("button", { name: S("safety.reportProximity") }));
+    await waitLayer("safety-proximity");
+    await user.keyboard("{Escape}");
+    await waitFor(() => expect(layer("safety-proximity")).toBeNull());
     setNarrow(true);
     setNarrow(false);
     setNarrow(true);

@@ -412,6 +412,10 @@ const SEED_MODULES: SystemModule[] = [
       "/vision/acquisition",
       // R-3-d — bí danh trong nhóm Kỹ thuật (chuyển hướng tới /vision/acquisition), cùng giấy phép.
       "/engineering/vision-acquisition",
+      // doc 81 Đợt 3 Task 3 — Sản xuất › Ca (bảng nhân lực dời khỏi /safety-workforce) giữ ĐÚNG giấy phép của trang cũ;
+      // KHÔNG vào MOD_PRODUCTION dù mục điều hướng nằm ở nhóm Sản xuất (app Sản xuất — client/src/lib/apps.ts). Kèm bí danh
+      // trong nhóm Kỹ thuật (chuyển hướng tới /production/shifts) cho SKU không có MOD_PRODUCTION.
+      "/production/shifts", "/engineering/production-shifts",
       "/factory-floor-editor", "/control-plane", "/robot-control",
       "/rf-test-cell", "/cell-twin",
     ],

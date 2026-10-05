@@ -9,12 +9,28 @@
  *   1. mọi mã là mã module có thật trong shared/module-registry;
  *   2. `licenseModule` TRÙNG module sở hữu route của mục (`getModuleByRoute(href)`) — mục không thể khai giấy phép khác route;
  *   3. `onlyWhenModuleMissing` không phải module lõi (lõi luôn được phép ⇒ mục chết) và khác module của chính route.
+ *
+ * Đợt 3 Task 3 — thêm ô `ignoreGroupCategory` (mục không bị ẩn theo `permissionCategory` của NHÓM; cổng = quyền của chính
+ * mục). Mục khai mà KHÔNG có `requiredPermission`/`requiredPermissionAny` sẽ hiện cho MỌI vai trong nhóm mà vai đó không có
+ * quyền loại nào ⇒ luật 4: mục khai ô này phải có quyền riêng, và nằm trong nhóm có `permissionCategory` (không thì ô vô nghĩa).
  */
 import { describe, expect, it } from "vitest";
 import { getModuleByCode, getModuleByRoute } from "@shared/module-registry";
 import { navGroups, type NavItem } from "./navigation";
 
 type Item = Pick<NavItem, "href" | "licenseModule" | "onlyWhenModuleMissing">;
+type CatItem = Pick<NavItem, "href" | "ignoreGroupCategory" | "requiredPermission" | "requiredPermissionAny"> & { groupCategory?: string };
+
+/** Vi phạm luật 4 (Đợt 3 Task 3) của một mục khai `ignoreGroupCategory`. */
+function viPhamNhom(it: CatItem): string[] {
+  if (it.ignoreGroupCategory !== true) return [];
+  const out: string[] = [];
+  if (!it.requiredPermission && !(it.requiredPermissionAny && it.requiredPermissionAny.length > 0)) {
+    out.push(`${it.href}: ignoreGroupCategory mà không có requiredPermission ⇒ hiện cho mọi vai thiếu quyền loại của nhóm`);
+  }
+  if (!it.groupCategory) out.push(`${it.href}: ignoreGroupCategory trong nhóm không có permissionCategory (ô vô nghĩa)`);
+  return out;
+}
 
 /** Vi phạm của một mục (rỗng = hợp lệ). Là THIẾT BỊ ĐO — cầu chì bên dưới chứng minh nó còn bắt được lỗi. */
 function viPham(it: Item): string[] {
@@ -34,6 +50,7 @@ function viPham(it: Item): string[] {
 }
 
 const ALL: Item[] = navGroups.flatMap((g) => g.items);
+const ALL_CAT: CatItem[] = navGroups.flatMap((g) => g.items.map((i) => ({ ...i, groupCategory: g.permissionCategory })));
 
 describe("census — ô giấy phép riêng của mục điều hướng", () => {
   it("thiết bị đo thấy dữ liệu: có ≥1 mục `licenseModule` và ≥1 mục `onlyWhenModuleMissing`", () => {
@@ -55,5 +72,22 @@ describe("census — ô giấy phép riêng của mục điều hướng", () =>
     expect(viPham({ href: "/x", onlyWhenModuleMissing: core })).toHaveLength(1);
     expect(viPham({ href: "/vision/acquisition", licenseModule: "MOD_OT_CONTROL" })).toEqual([]);
     expect(viPham({ href: "/engineering/vision-acquisition", onlyWhenModuleMissing: "MOD_AI" })).toEqual([]);
+  });
+});
+
+describe("census — ô `ignoreGroupCategory` (Đợt 3 Task 3)", () => {
+  it("thiết bị đo thấy dữ liệu: có ≥1 mục khai `ignoreGroupCategory`", () => {
+    expect(ALL_CAT.filter((i) => i.ignoreGroupCategory === true).length).toBeGreaterThanOrEqual(1);
+  });
+
+  it("mọi mục khai `ignoreGroupCategory` có quyền riêng và nằm trong nhóm có permissionCategory", () => {
+    expect(ALL_CAT.flatMap(viPhamNhom)).toEqual([]);
+  });
+
+  it("cầu chì: vị từ bắt được mục không quyền riêng, mục trong nhóm không loại; tha mục hợp lệ và mục không khai", () => {
+    expect(viPhamNhom({ href: "/x", ignoreGroupCategory: true, groupCategory: "production" })).toHaveLength(1);
+    expect(viPhamNhom({ href: "/x", ignoreGroupCategory: true, requiredPermission: "machine_status" })).toHaveLength(1);
+    expect(viPhamNhom({ href: "/production/shifts", ignoreGroupCategory: true, requiredPermission: "machine_status", groupCategory: "production" })).toEqual([]);
+    expect(viPhamNhom({ href: "/x", groupCategory: "production" })).toEqual([]);
   });
 });

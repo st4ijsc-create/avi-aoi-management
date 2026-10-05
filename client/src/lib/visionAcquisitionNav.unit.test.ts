@@ -116,9 +116,15 @@ describe("Vision › Thu ảnh — điều hướng theo vai (QĐ-3c)", () => {
       .filter((g) => g.id !== "ai")
       .map((g) => ({ ...g, items: g.items.filter((i) => i.href !== "/equipment-standards") }))
       .filter((g) => g.items.length > 0)
-      .flatMap((g) => g.items.map((i) => i.href))
-      .filter((h) => h !== NEW);
-    const after = filterNavGroupsByLicense(groups, (id) => id !== "ai", () => false, (h) => h !== "/equipment-standards").flatMap((g) => g.items.map((i) => i.href));
+      .flatMap((g) => g.items)
+      // Đợt 3 Task 3: luật này nói về mục KHÔNG khai licenseModule ⇒ loại MỌI mục có licenseModule (không chỉ NEW — nay còn
+      // /production/shifts) khỏi phép so; mục có licenseModule được đo ở các test riêng của chúng.
+      .filter((i) => i.licenseModule === undefined)
+      .map((i) => i.href);
+    const after = filterNavGroupsByLicense(groups, (id) => id !== "ai", () => false, (h) => h !== "/equipment-standards")
+      .flatMap((g) => g.items)
+      .filter((i) => i.licenseModule === undefined)
+      .map((i) => i.href);
     expect(after).toEqual(before);
   });
 

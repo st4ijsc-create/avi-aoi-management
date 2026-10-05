@@ -7217,7 +7217,10 @@
     "twinStudioDesc": "Build buildings, floors and machine layout; import drawings; publish versions",
     "visionAcquisition": "Image acquisition",
     "visionAcquisitionDesc": "Acquisition workers: start, watch, stop",
-    "visionAcquisitionAlias": "Acquisition workers → Vision › Image acquisition"
+    "visionAcquisitionAlias": "Acquisition workers → Vision › Image acquisition",
+    "productionShifts": "Shifts",
+    "productionShiftsDesc": "Operator assignments per shift and the current station board",
+    "productionShiftsAlias": "Workforce → Production › Shifts"
   },
   "aboutPage": {
     "layoutTitle": "About System",
@@ -17413,8 +17416,7 @@
     "subtitle": "Advisory safety monitoring, mixed-workforce assignments and human↔robot handover coordination.",
     "tab": {
       "cockpit": "Events",
-      "collaboration": "Collaboration",
-      "workforce": "Workforce board"
+      "collaboration": "Collaboration"
     },
     "title": "Safety & Workforce",
     "trendEmpty": "No near-misses recorded in the window.",
@@ -17496,7 +17498,7 @@
       "src": {
         "openEvents": "safety.feed — events without an audit stamp among the latest 200 (type filter applies)",
         "nearMiss": "safety.nearMissTrend — today's (UTC) near-miss count in the 30-day trend",
-        "assignments": "safety.listAssignments — assignments with status 'Active' in the loaded list (status filter applies)",
+        "assignments": "safety.listAssignments — assignments with status 'Active' among the latest 200 (details in Production › Shifts)",
         "collabs": "safety.listCollaborations — sessions not finished (phase not 'done' and no end time)"
       }
     },
@@ -21735,5 +21737,43 @@
     "nav": {
       "simpleFallback": "The simple menu has no items here — showing the full menu."
     }
+  },
+  "shifts": {
+    "title": "Shifts",
+    "whenToUse": "When to use — plan and confirm which operator works which line/station in each shift, and see who is at each station now. Human↔robot collaboration stays on Safety & Workforce.",
+    "noPermission": "You do not have permission to view shift assignments.",
+    "flagOff": "Preview mode: workforce is turned off on the server. Reads work; assignment actions are refused until an administrator turns it on.",
+    "flagStatusError": "Could not check whether workforce is enabled — assignment actions are disabled until this is confirmed.",
+    "flagOffToast": "Workforce is turned off on the server (preview) — assignment actions are refused until an administrator turns it on.",
+    "filter": {
+      "shift": "Shift",
+      "allShifts": "All shifts",
+      "noShift": "No shift"
+    },
+    "col": {
+      "shift": "Shift"
+    },
+    "inactive": "inactive",
+    "shiftUnknown": "Shift #{{id}}",
+    "shiftsError": "Could not read the shift list",
+    "listError": "Could not read the assignments.",
+    "boardError": "Could not read the current board.",
+    "chip": {
+      "planned": "Awaiting confirmation",
+      "srcActive": "safety.listAssignments — status 'Active' among the latest 200 assignments (shift and status filters apply)",
+      "srcPlanned": "safety.listAssignments — status 'Planned' (not yet confirmed) among the latest 200 assignments (shift and status filters apply)"
+    },
+    "side": {
+      "label": "Current board — who and which robot is at each station now"
+    },
+    "detailTitle": "Assignment details",
+    "openDetail": "Details of assignment #{{id}}",
+    "detail": {
+      "id": "Assignment",
+      "confirmed": "Confirmed",
+      "closedBy": "Closed by",
+      "notes": "Notes"
+    },
+    "movedLink": "Workforce → Production › Shifts"
   }
 }

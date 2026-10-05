@@ -69,6 +69,10 @@ function searchFor(role: string) {
 
 const AUTHORING = ["/engineering", "/engineering-changes", "/recipes", "/ir-editor", "/pou-studio", "/orchestration-studio"];
 const MONITORING = ["/fleet-orchestration", "/safety-workforce", "/equipment-standards", "/equipment-integration"];
+// Đợt 3 Task 3 — bí danh "Nhân lực → Sản xuất › Ca" (màn giám sát/phân công, cổng machine_status như Safety; KHÔNG phải công
+// cụ soạn thảo). Lọc theo vai/quyền (không lọc giấy phép) luôn có nó; trong ứng dụng nó chỉ hiện khi THIẾU MOD_PRODUCTION
+// (`onlyWhenModuleMissing`, đo ở productionShiftsNav.unit.test.ts).
+const SHIFTS_ALIAS = "/engineering/production-shifts";
 
 describe("seed vai trò đọc được (thiết bị đo của lưới này)", () => {
   it("operator / viewer chỉ có machine_status; supervisor / engineer / maintenance có machine_control", () => {
@@ -84,7 +88,7 @@ describe("seed vai trò đọc được (thiết bị đo của lưới này)", 
 describe("★ Operator chỉ thấy màn giám sát chỉ đọc — KHÔNG mục soạn thảo (doc 81 §1.4)", () => {
   it.each(["operator", "viewer"])("%s — thanh bên: đúng 4 màn giám sát, 0 công cụ soạn thảo/AI", (role) => {
     const items = hrefsOf(sidebarFor(role));
-    expect(items.sort()).toEqual([...MONITORING].sort());
+    expect(items.sort()).toEqual([...MONITORING, SHIFTS_ALIAS].sort());
     for (const h of AUTHORING) expect(items, h).not.toContain(h);
   });
 
