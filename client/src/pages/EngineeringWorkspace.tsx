@@ -88,7 +88,7 @@ import {
 import { toast } from "sonner";
 import { useEngineeringStream } from "@/hooks/useEngineeringStream";
 import { useKeyboardShortcuts } from "@/hooks/useKeyboardShortcuts";
-import { useActuationReadiness } from "@/hooks/useActuationReadiness";
+import { useActuationReadiness, reconcileBlockersWithDeployPreview } from "@/hooks/useActuationReadiness";
 import { useStepUpOtp } from "@/components/security/StepUpOtpDialog";
 import { deployOutcome, newDeployAttemptKey } from "./engineeringDeployOutcome";
 // doc 80 Đợt 1 Task 5 — duyệt phiên bản trong IDE (WS-01) + bản xem trước deploy trước OTP (F2).
@@ -786,13 +786,19 @@ function EngineeringWorkspaceView() {
     : [];
 
   // ── Pre-flight actuation readiness (2FA/quyền) — dùng chung cho deploy đơn và đội máy (wizard) ──
-  const readinessBlock = readiness.blockers.length > 0 && (
+  // doc 81 Đợt 3 Task 0 (O2) — cảnh báo 2FA đọc CÙNG nguồn với bản xem trước (cổng `twoFactor` của deployPreview, biết chế
+  // độ 2FA nội bộ); trước đây bước 4 báo "phải bật 2FA" ngay trên bản xem trước nói cổng 2FA đạt. Chỉ đổi thông điệp.
+  const readinessBlockers = reconcileBlockersWithDeployPreview(
+    readiness.blockers,
+    (deployPreviewQ.data as DeployPreviewView | undefined)?.gates,
+  );
+  const readinessBlock = readinessBlockers.length > 0 && (
     <div className="flex items-start gap-2 rounded-md border border-warning/40 bg-warning/10 p-3 text-sm text-warning">
       <ShieldAlert className="mt-0.5 h-4 w-4 shrink-0" />
       <div className="space-y-1">
         <div className="font-medium">{t("engineering.readinessTitle", "Chưa đủ điều kiện để deploy (actuation)")}</div>
         <ul className="list-disc space-y-0.5 pl-4">
-          {readiness.blockers.map((bl) => (
+          {readinessBlockers.map((bl) => (
             <li key={bl.code}>{t(`actuationReadiness.${bl.code}`, bl.defaultMessage)}</li>
           ))}
         </ul>

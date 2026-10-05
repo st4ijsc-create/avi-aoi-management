@@ -72,3 +72,38 @@ export function useActuationReadiness(): ActuationReadiness {
     isLoading: meQ.isLoading,
   };
 }
+
+/** Một cổng của `programming.deployPreview` (chỉ các ô cần đọc). */
+export interface DeployPreviewGateLike {
+  name: string;
+  ok: boolean;
+  reason?: string;
+}
+
+const TWO_FA_BLOCKER: ActuationBlocker = {
+  code: "2fa",
+  severity: "error",
+  defaultMessage:
+    "Tài khoản đặc quyền phải bật xác thực 2 bước (2FA) để deploy/duyệt. Vào Cài đặt > Bảo mật để thiết lập.",
+};
+
+/**
+ * doc 81 Đợt 3 Task 0 (O2, browser check 2026-10-05) — cảnh báo 2FA đọc CÙNG nguồn với bản xem trước deploy.
+ *
+ * Hook trên không biết chính sách 2FA của triển khai (`AUTH_2FA_BAT_BUOC=0` — chế độ nội bộ, quyết định chủ dự án
+ * 2026-09-26: 2FA không là điều kiện tiên quyết), nên báo "phải bật 2FA" ngay trên bản xem trước nói cổng 2FA ĐẠT.
+ * `deployPreview.callerGates` mirror đúng `deployProcedure` (require2FA → step-up) ⇒ cổng `twoFactor` của nó là sự thật:
+ *   · cổng ĐẠT ⇒ bỏ cảnh báo 2FA; cổng CHẶN ⇒ có cảnh báo 2FA;
+ *   · không có cổng `twoFactor` (chưa có bản xem trước, hoặc lối Hộp duyệt — người duyệt ký) ⇒ giữ cảnh báo tư vấn của hook.
+ * Chỉ đổi THÔNG ĐIỆP (tư vấn) — server vẫn là bức tường; không cổng nào được nới.
+ */
+export function reconcileBlockersWithDeployPreview(
+  blockers: readonly ActuationBlocker[],
+  gates: readonly DeployPreviewGateLike[] | null | undefined,
+): ActuationBlocker[] {
+  const tf = gates?.find((g) => g.name === "twoFactor");
+  if (!tf) return [...blockers];
+  const others = blockers.filter((b) => b.code !== "2fa");
+  if (tf.ok) return others;
+  return [...others, blockers.find((b) => b.code === "2fa") ?? TWO_FA_BLOCKER];
+}

@@ -47,8 +47,13 @@ export function useStepUpOtp() {
   const [open, setOpen] = useState(false);
   const [code, setCode] = useState("");
   const runnerRef = useRef<((code: string) => void) | null>(null);
+  // doc 81 Đợt 3 Task 0 (O1) — phần tử đã mở hộp OTP (vd nút "Triển khai build" của wizard). Hộp mở bằng mã, không có
+  // DialogTrigger ⇒ Radix trả focus về triggerRef = null ⇒ focus rơi về <body> trong khi wizard (modal) vẫn mở.
+  const returnFocusRef = useRef<HTMLElement | null>(null);
 
   const guard = useCallback((run: (code: string) => void) => {
+    const active = typeof document !== "undefined" ? document.activeElement : null;
+    returnFocusRef.current = active instanceof HTMLElement && active !== document.body ? active : null;
     runnerRef.current = run;
     setCode("");
     setOpen(true);
@@ -64,7 +69,17 @@ export function useStepUpOtp() {
 
   const dialog = (
     <Dialog open={open} onOpenChange={(o) => { if (!o) finish(false); }}>
-      <DialogContent className="sm:max-w-sm">
+      <DialogContent
+        className="sm:max-w-sm"
+        onCloseAutoFocus={(e) => {
+          const el = returnFocusRef.current;
+          returnFocusRef.current = null;
+          if (el && el.isConnected) {
+            e.preventDefault();
+            el.focus();
+          }
+        }}
+      >
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <ShieldCheck className="h-5 w-5 text-amber-500" />

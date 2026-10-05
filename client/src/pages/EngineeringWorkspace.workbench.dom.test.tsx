@@ -580,6 +580,67 @@ describe("Deploy wizard 4 bước (WizardDialog) — deployPreview TRƯỚC OTP,
     expect(mutateCalls["programming.deployToFleet"]).toBeUndefined();
   });
 
+  // doc 81 Đợt 3 Task 0 (O1) — Huỷ trên hộp OTP ⇒ focus về nút xác nhận của wizard (trước: <body>), wizard vẫn mở.
+  it("O1: Huỷ OTP ⇒ focus về nút Deploy của wizard, wizard còn mở, 0 deployBuild", async () => {
+    seed();
+    renderPage();
+    const d = await moWizard();
+    next(d);
+    next(d);
+    fireEvent.click(within(d).getByTestId("engineering-deploy-signoff"));
+    next(d);
+    const deployBtn = within(d).getByTestId("engineering-deploy-button");
+    deployBtn.focus();
+    fireEvent.click(deployBtn);
+    expect(screen.getByText(otpText)).toBeInTheDocument();
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: /^(Cancel|Huỷ|Hủy)$/ }));
+      await new Promise((r) => setTimeout(r, 10));
+    });
+    expect(screen.queryByText(otpText)).not.toBeInTheDocument();
+    expect(document.activeElement).toBe(deployBtn);
+    expect(within(d).getByTestId("engineering-deploy-button")).toBeInTheDocument();
+    expect(mutateCalls["programming.deployBuild"]).toBeUndefined();
+  });
+
+  // doc 81 Đợt 3 Task 0 (O2) — bước 4: cảnh báo 2FA đọc CÙNG nguồn với bản xem trước (cổng twoFactor của deployPreview).
+  const readinessText = /Not yet eligible to deploy|Chưa đủ điều kiện để deploy/;
+  const previewWith = (twoFactor: { ok: boolean; reason: string; effect?: string }) => (i: unknown) => {
+    const x = i as { buildId: number; stage: string };
+    return makeQuery({
+      data: {
+        verdict: twoFactor.ok ? "real" : "blocked",
+        gates: [{ name: "role", ok: true, reason: "roleAllowed" }, { name: "twoFactor", ...twoFactor }],
+        target: { adapterKind: "zmotion-basic", stage: x.stage, deviceId: 3, path: "direct", artifactVersion: 1 },
+      },
+    });
+  };
+  it("O2: chưa bật 2FA nhưng bản xem trước nói cổng 2FA ĐẠT (chế độ nội bộ) ⇒ KHÔNG cảnh báo 'phải bật 2FA'", async () => {
+    seed();
+    queryOverrides["auth.me"] = () => makeQuery({ data: { id: ME, role: "supervisor", name: "Sup", twoFactorEnabled: false } });
+    queryOverrides["programming.deployPreview"] = previewWith({ ok: true, reason: "stepUpBypassedInternalMode" });
+    renderPage();
+    const d = await moWizard();
+    next(d);
+    next(d);
+    fireEvent.click(within(d).getByTestId("engineering-deploy-signoff"));
+    next(d);
+    expect(within(d).getByTestId("deploy-preview")).toBeInTheDocument();
+    expect(within(d).queryByText(readinessText)).toBeNull();
+  });
+  it("O2: bản xem trước nói cổng 2FA CHẶN ⇒ cảnh báo 2FA vẫn hiện", async () => {
+    seed();
+    queryOverrides["auth.me"] = () => makeQuery({ data: { id: ME, role: "supervisor", name: "Sup", twoFactorEnabled: false } });
+    queryOverrides["programming.deployPreview"] = previewWith({ ok: false, reason: "twoFactorNotSetUp", effect: "block" });
+    renderPage();
+    const d = await moWizard();
+    next(d);
+    next(d);
+    fireEvent.click(within(d).getByTestId("engineering-deploy-signoff"));
+    next(d);
+    expect(within(d).getByText(readinessText)).toBeInTheDocument();
+  });
+
   it("canary đội máy: 2 máy + canary 1 ⇒ MỘT deployToFleet sau OTP với đúng deviceIds / strategy / expectedProjectId như thẻ cũ", async () => {
     seed();
     renderPage();
