@@ -1070,6 +1070,11 @@ const ALWAYS_OFF = {
   SIM_OT_TELEMETRY_ENABLED: "false", SIM_KINEMATIC_ENABLED: "false", EDGE_RUNTIME_ENABLED: "false", SECS_GEM_ENABLED: "false", MTCONNECT_ENABLED: "false", VDA5050_ENABLED: "false",
   LLAMA_SERVER_ENABLED: "false", ENABLE_GPU: "false", GGUF_WARM_DEEP_MODEL_ON_BOOT: "false", PROG_KB_ENABLED: "false", KB_AUTOSYNC_ENABLED: "false", HOT_FOLDER_INGEST_ENABLED: "false",
   WEBHOOKS_ENABLED: "false", OTEL_ENABLED: "false", TWIN_LIVE_ENABLED: "false", TWIN_STREAM_ENABLED: "false", STREAM_TELEMETRY_TAP_ENABLED: "false", OPENAI_GATEWAY_ENABLED: "false",
+  // doc 81 Đợt 3 final wave (Task 2) — `warmUpOllamaModels()` (registerAiLocalKnowledgeRoutes, lúc khởi động) LUÔN bắn một
+  // POST làm ấm Ollama tới OLLAMA_BASE_URL (mặc định 127.0.0.1:11434), không cờ nào tắt được; Task 2 đo được MỘT kết nối
+  // Established tới :11434 ngay sau khởi động (f1-sau-1.json ⇒ pass=false). Hồ sơ đo trỏ nó vào cổng ĐÓNG (như
+  // UNS_BROKER_URL) ⇒ không tiến trình Ollama nào được chạm; bộ canh kết nối KHÔNG đổi (vẫn bắt mọi kết nối ngoài danh sách).
+  OLLAMA_BASE_URL: "http://127.0.0.1:9",
 };
 /** Env của tiến trình server đo: KHÔNG kế thừa env cha (ngoài biến hệ thống), KHÔNG nạp .env. */
 function serverEnv(port, logDir, flags) {

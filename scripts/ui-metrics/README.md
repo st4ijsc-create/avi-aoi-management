@@ -69,6 +69,9 @@ tự kiểm trượt, `1` khi lỗi hạ tầng.
    - **Luôn TẮT** actuation / ra ngoài: `DPC_DEPLOY`, `SAFETY_PLC_ADAPTER`, OT (control, store-forward, HA),
      MQTT/UNS/Sparkplug, robot, OPC UA, ROS2, SIM telemetry, edge, SECS/GEM, MTConnect, VDA5050,
      LLM (llama/GPU/KB, `AI_ORCHESTRATION*`), webhook, OTEL, twin stream, OpenAI gateway.
+   - `OLLAMA_BASE_URL=http://127.0.0.1:9` (cổng đóng, như `UNS_BROKER_URL`): lượt làm ấm Ollama lúc khởi động
+     (`warmUpOllamaModels`, không có cờ tắt) không chạm Ollama thật ở :11434 (doc 81 Đợt 3 final wave — Task 2 đo được
+     một kết nối :11434 ngay sau khởi động). Danh sách kết nối được phép KHÔNG đổi.
 5. **Vite dev chạy trong tiến trình script** ở 5176, dùng `vite.config.ts` của repo.
    - Proxy `/api` (kể cả websocket) và `/uploads` sang :3016.
    - `cacheDir` đặt trong `%TEMP%/aoi-ui-metrics-vite-cache` ⇒ không ghi `node_modules/`.
