@@ -97,6 +97,18 @@ export interface WorkbenchShellProps {
   /** Task 13 — đổi giá trị ⇒ ở màn hẹp chuyển sang tab panel PHẢI (vd nút AI top bar mở Copilot trong layout). */
   rightRevealToken?: number;
   /**
+   * doc 81 Đợt 3 Task 0 (D1) — panel phải đang được yêu cầu HIỆN (vd Copilot đang mở). Màn hẹp: vào màn hẹp, nạp ở màn
+   * hẹp, hoặc giá trị đổi false → true ⇒ chọn tab phải (trước: tab giữ "Soạn thảo", Copilot bị giấu trong khi nút AI
+   * vẫn báo mở). Màn rộng bỏ qua.
+   */
+  rightActive?: boolean;
+  /**
+   * doc 81 Đợt 3 Task 0 (D1) — màn hẹp: tab phải bị RỜI (người dùng bấm tab khác, hoặc mã chuyển tab) trong khi
+   * `rightActive` ⇒ gọi một lần, để trang đóng Copilot — trạng thái nút AI khớp với thứ đang nhìn thấy (như màn rộng: chọn
+   * tab khác trong inspector = đóng Copilot). Nội dung panel KHÔNG unmount (stream sống — Review Focus 3).
+   */
+  onRightActiveHidden?: () => void;
+  /**
    * final wave M-8 — gập panel PHẢI từ ngoài (màn rộng): 0 px, nội dung VẪN mount (stream Copilot sống — Review Focus 3),
    * MAIN lấy chỗ; separator khoá khi gập. Màn hẹp (tab) bỏ qua. Không truyền ⇒ như cũ.
    */
@@ -236,6 +248,8 @@ export function WorkbenchShell({
   onLeftCollapsedChange,
   leftRevealToken,
   rightRevealToken,
+  rightActive = false,
+  onRightActiveHidden,
   rightCollapsed = false,
   heightClass = "h-[calc(100dvh_-_var(--shell-chrome-h,3.5rem))]",
   className,
@@ -504,6 +518,28 @@ export function WorkbenchShell({
     if (narrow && right) setNarrowTab("right");
   }, [rightRevealToken, narrow, right]);
 
+  // doc 81 Đợt 3 Task 0 (D1) — vào màn hẹp / nạp ở màn hẹp / rightActive vừa bật ⇒ tab phải.
+  const prevNarrowRef = React.useRef<boolean | null>(null);
+  const prevRightActiveRef = React.useRef(rightActive);
+  React.useEffect(() => {
+    const enteredNarrow = narrow && prevNarrowRef.current !== true;
+    const activated = rightActive && !prevRightActiveRef.current;
+    prevNarrowRef.current = narrow;
+    prevRightActiveRef.current = rightActive;
+    if (narrow && right && rightActive && (enteredNarrow || activated)) setNarrowTab("right");
+  }, [narrow, rightActive, right]);
+  // …và RỜI tab phải ở màn hẹp khi rightActive (bấm tab khác hoặc mã chuyển tab) ⇒ báo trang (đóng Copilot).
+  const prevNarrowTabRef = React.useRef(narrowTab);
+  const rightActiveRef = React.useRef(rightActive);
+  rightActiveRef.current = rightActive;
+  const onRightActiveHiddenRef = React.useRef(onRightActiveHidden);
+  onRightActiveHiddenRef.current = onRightActiveHidden;
+  React.useEffect(() => {
+    const prev = prevNarrowTabRef.current;
+    prevNarrowTabRef.current = narrowTab;
+    if (narrow && prev === "right" && narrowTab !== "right" && rightActiveRef.current) onRightActiveHiddenRef.current?.();
+  }, [narrowTab, narrow]);
+
   const mainProps = { ...mainAria, [LAYOUT_MAIN]: mainName };
   const aiProps = right?.ai ? { [LAYOUT_AI]: "" } : {};
   const toolbarOutlet = toolbar != null && (
@@ -552,9 +588,10 @@ export function WorkbenchShell({
         <div className="flex min-h-0 flex-1">
           {leftRail != null && <SlotOutlet host={hRail} className="flex shrink-0" />}
           <Tabs value={narrowTab} onValueChange={setNarrowTab} className="min-h-0 min-w-0 flex-1 gap-0">
-            <TabsList aria-label={t("layoutKit.shell.narrowLabel", "Workspace areas")} className="h-9 w-full justify-start rounded-none border-b">
+            {/* doc 81 Đợt 3 Task 0 (D3) — XUỐNG DÒNG thay vì tràn: ở 375/414 px tab thứ 4 nằm ngoài khung và bị cắt. */}
+            <TabsList aria-label={t("layoutKit.shell.narrowLabel", "Workspace areas")} className="h-auto min-h-9 w-full flex-wrap justify-start rounded-none border-b">
               {tabs.map((x) => (
-                <TabsTrigger key={x.value} value={x.value} className="min-h-8 flex-none text-xs">
+                <TabsTrigger key={x.value} value={x.value} className="h-8 min-h-8 flex-none text-xs">
                   {x.label}
                 </TabsTrigger>
               ))}

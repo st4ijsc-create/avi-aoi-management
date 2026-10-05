@@ -1046,7 +1046,10 @@ export default function IrEditor() {
   // the transpiled output, reasons over the safety-linter diagnostics, and drafts reference
   // snippets to copy. Clears when the editor unmounts.
   // doc 81 Đợt 2 Task 14 (R-2-b) — Copilot là tab của inspector phải (CopilotInspector, lõi dùng chung), không dock.
-  const { open: copilotOpen } = useProgrammingCopilot();
+  const { open: copilotOpen, setOpen: setCopilotOpen } = useProgrammingCopilot();
+  // doc 81 Đợt 3 Task 0 (D1) — màn hẹp: rời tab Inspector/Copilot ⇒ đóng Copilot (như chọn tab khác trong inspector ở
+  // màn rộng) để nút AI top bar khớp với thứ nhìn thấy; lõi Copilot vẫn mount (stream sống — Review Focus 3).
+  const closeCopilotHidden = useCallback(() => setCopilotOpen(false), [setCopilotOpen]);
   const copilotBinding = useMemo<CopilotBinding>(
     () => ({
       kind: "ir-flow" as const,
@@ -1737,6 +1740,8 @@ export default function IrEditor() {
           inspectorIsAi={copilotOpen}
           inspectorSize={{ minPx: 320, maxPx: 420, defaultPx: 320 }}
           inspectorRevealToken={copilotOpen ? 1 : 0}
+          inspectorActive={copilotOpen}
+          onInspectorActiveHidden={closeCopilotHidden}
           statusBar={statusBar}
         />
       </div>

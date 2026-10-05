@@ -189,7 +189,10 @@ export default function PouStudio() {
   const selPouName = pous[safePouIndex]?.name;
 
   // doc 81 Đợt 2 Task 14 (R-2-b) — Copilot là tab của inspector phải; `open` của context = tab Copilot đang chọn.
-  const { open: copilotOpen } = useProgrammingCopilot();
+  const { open: copilotOpen, setOpen: setCopilotOpen } = useProgrammingCopilot();
+  // doc 81 Đợt 3 Task 0 (D1) — màn hẹp: rời tab Inspector/Copilot ⇒ đóng Copilot (như chọn tab khác trong inspector ở
+  // màn rộng) để nút AI top bar khớp với thứ nhìn thấy; lõi Copilot vẫn mount (stream sống — Review Focus 3).
+  const closeCopilotHidden = useCallback(() => setCopilotOpen(false), [setCopilotOpen]);
   // final wave M-8 — panel phải (ST / PLCopen / Copilot) GẬP ĐƯỢC để canvas rộng hơn; nội dung vẫn mount (stream Copilot
   // sống). Mở Copilot (nút AI top bar / tab) ⇒ panel tự mở lại. Lựa chọn chỉ trong phiên.
   const [rightCollapsed, setRightCollapsed] = useState(false);
@@ -754,6 +757,8 @@ export default function PouStudio() {
           inspectorIsAi={copilotOpen}
           inspectorSize={{ minPx: 320, maxPx: 420, defaultPx: 320 }}
           inspectorRevealToken={copilotOpen ? 1 : 0}
+          inspectorActive={copilotOpen}
+          onInspectorActiveHidden={closeCopilotHidden}
           inspectorCollapsed={rightCollapsed}
           bottomPanel={bottomPanel}
           bottomLabel={t("pou.ws.problemsTab", "Problems")}

@@ -29,7 +29,7 @@
  *    như hai thẻ cũ (R-2-n, R-2-r). Bỏ card "Trợ lý Lập trình AI" (lối vào AI thứ 3). Tạo dự án / sửa biến / gắn thiết
  *    bị: sheet phải (thay dialog giữa màn). Rollback / xoá biến / bỏ thay đổi: giữ AlertDialog (xác nhận phá huỷ).
  */
-import { useEffect, useMemo, useRef } from "react";
+import { useCallback, useEffect, useMemo, useRef } from "react";
 import type { TFunction } from "i18next";
 import { useTranslation } from "react-i18next";
 import { trpc } from "@/lib/trpc";
@@ -617,6 +617,9 @@ function EngineeringWorkspaceView() {
   // doc 81 Đợt 2 Task 13 (R-2-b) — IDE vẽ Copilot TRONG layout (inspector phải, lõi dùng chung ProgrammingCopilotCore);
   // dock cố định đã gỡ ở Task 14. `open` của context = tab Copilot đang mở (nút AI top bar mở/đóng nó — R-2-j).
   const { open: copilotOpen, setOpen: setCopilotOpen } = useProgrammingCopilot();
+  // doc 81 Đợt 3 Task 0 (D1) — màn hẹp: rời tab Inspector/Copilot ⇒ đóng Copilot (như chọn tab khác trong inspector ở
+  // màn rộng) để nút AI top bar khớp với thứ nhìn thấy; lõi Copilot vẫn mount (stream sống — Review Focus 3).
+  const closeCopilotHidden = useCallback(() => setCopilotOpen(false), [setCopilotOpen]);
   // Task 15 — vào chế độ scratch ⇒ mở tab Copilot (một lần); đã có dự án ⇒ rời chế độ scratch (tham số rời URL, giữ
   // các tham số khác) để F5 mở lại đúng dự án như luồng thường.
   const scratchOpenedRef = useRef(false);
@@ -2139,6 +2142,8 @@ function EngineeringWorkspaceView() {
           inspectorIsAi={copilotOpen}
           inspectorSize={{ minPx: 320, maxPx: 420, defaultPx: 320 }}
           inspectorRevealToken={copilotOpen ? 1 : 0}
+          inspectorActive={copilotOpen}
+          onInspectorActiveHidden={closeCopilotHidden}
           bottomPanel={bottomPanel}
           bottomLabel={t("engineering.ws.bottomLabel", "Vấn đề · Build · Deploy")}
           bottomDefaultCollapsed

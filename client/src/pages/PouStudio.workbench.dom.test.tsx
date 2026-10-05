@@ -442,3 +442,35 @@ describe("final wave T14 — POU: stream Copilot qua mốc 1024 px", () => {
     expect(luot[0].signal.aborted).toBe(true);
   });
 });
+
+// doc 81 Đợt 3 Task 0 (D1, browser check 2026-10-05) — Copilot mở rồi thu hẹp < 1024: Copilot bị giấu (tab "Soạn thảo")
+// trong khi nút AI vẫn báo mở ⇒ bấm lần 1 đóng thứ vô hình. Nay: vào màn hẹp ⇒ tab Inspector/Copilot HIỆN; rời tab đó
+// ⇒ Copilot đóng (nút AI báo đóng, khớp thứ nhìn thấy); MỘT lần bấm nút AI ⇒ hiện lại.
+describe("D1 — Copilot qua mốc 1024 px: nút AI khớp với thứ nhìn thấy", () => {
+  const nghi = () => act(() => new Promise((r) => setTimeout(r, 20)));
+  it("mở Copilot ở màn rộng → thu hẹp ⇒ Copilot HIỆN; rời tab ⇒ nút AI báo đóng; bấm MỘT lần ⇒ hiện lại", async () => {
+    seed();
+    renderPage({ aiButton: true });
+    
+    const ai = screen.getByRole("button", { name: /^(Mở Trợ lý Lập trình|Open Programming Copilot)$/ });
+    fireEvent.click(ai);
+    expect(ai).toHaveAttribute("aria-expanded", "true");
+    const copilotTab = within(inspector()).getByRole("tab", { name: /Copilot/ });
+    const panel = document.getElementById(copilotTab.getAttribute("aria-controls")!)!;
+    setNarrow(true);
+    await nghi();
+    expect(document.querySelector("[data-workbench][data-narrow]")).not.toBeNull();
+    expect(panel).toBeVisible();
+    expect(ai).toHaveAttribute("aria-expanded", "true");
+    fireEvent.mouseDown(screen.getByRole("tab", { name: /^(Soạn thảo|Editor)$/ }));
+    await nghi();
+    expect(panel).not.toBeVisible();
+    expect(ai).toHaveAttribute("aria-expanded", "false");
+    fireEvent.click(ai);
+    await nghi();
+    expect(ai).toHaveAttribute("aria-expanded", "true");
+    expect(panel).toBeVisible();
+    setNarrow(false);
+    await nghi();
+  });
+});
