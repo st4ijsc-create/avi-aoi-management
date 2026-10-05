@@ -714,7 +714,8 @@ export default function RecipeManagement() {
           {/* Thanh công cụ DUY NHẤT trong MAIN: tên mã + tab (một hàng ≤56 px). */}
           <div data-layout-toolbar="" style={{ maxHeight: 56 }} className="flex shrink-0 items-center gap-3 overflow-hidden px-2 pt-2">
             <h2 className="max-w-[14rem] shrink-0 truncate text-base font-semibold" title={selectedCode}>{selectedCode}</h2>
-            {versions[0]?.name && <span className="hidden min-w-0 max-w-[12rem] truncate text-xs text-muted-foreground xl:inline">{versions[0].name}</span>}
+            {/* Đợt 3 Task 1 — tab thứ 6 cần chỗ ở 1366: tên phiên bản chỉ hiện từ 2xl (1536 px). */}
+            {versions[0]?.name && <span className="hidden min-w-0 max-w-[12rem] truncate text-xs text-muted-foreground 2xl:inline">{versions[0].name}</span>}
             <TabsList aria-label={t("recipes.detailTabs", "Mục chi tiết recipe")} className="h-9 justify-start overflow-x-auto">
               <TabsTrigger value="params" className="min-h-8 flex-none text-xs">{t("recipes.tab.params", "Tham số")}</TabsTrigger>
               <TabsTrigger value="versions" className="min-h-8 flex-none text-xs">{t("recipes.tab.versions", "Phiên bản")}</TabsTrigger>
@@ -773,7 +774,7 @@ export default function RecipeManagement() {
                 const v = versionById.get(Number(row.id));
                 if (!v) return null;
                 return (
-                  <span className="inline-flex flex-wrap items-center justify-end gap-1">
+                  <span className="inline-flex items-center gap-1">
                     {/* W3-11 — xem payload (lưới tham số, chỉ đọc) */}
                     <Button size="sm" variant="outline" onClick={() => { setParamsVersionId(v.id); setTabParam("params"); }}>
                       <Eye className="h-4 w-4 mr-1" /> {t("recipes.viewPayload", "Xem")}
@@ -800,15 +801,17 @@ export default function RecipeManagement() {
                       </Button>
                     )}
                     {/* Đợt 3 Task 1 — thao tác phiên bản của Integration (không trùng thao tác nào của Recipes): cùng thủ tục,
-                        payload, cổng hiện (canCreate) và cổng bật (canEdit cho phát hành/rollback) như màn cũ. */}
+                        payload, cổng hiện (canCreate) và cổng bật (canEdit cho phát hành/rollback) như màn cũ. Nút biểu tượng
+                        (tên = aria-label, gợi ý = title) để hàng không tràn khỏi MAIN hẹp (đo trên trình duyệt 1600/1366). */}
                     {canCreate && v.status === "draft" && (
                       <Button
-                        size="sm" variant="ghost" className="h-7"
+                        size="icon" variant="ghost" className="h-8 w-8"
                         disabled={releaseVersion.isPending || !canEdit}
+                        aria-label={t("eqIntegration.release", "Release")}
                         title={canEdit ? t("eqIntegration.releaseTip", "Release this version (archives the current released one)") : needsEditForInteg}
                         onClick={() => releaseVersion.mutate({ recipeId: v.id })}
                       >
-                        <Rocket className="mr-1 h-3.5 w-3.5 text-emerald-500" />{t("eqIntegration.release", "Release")}
+                        <Rocket className="h-4 w-4 text-emerald-500" />
                       </Button>
                     )}
                     {canCreate && v.status === "archived" && (
@@ -828,21 +831,23 @@ export default function RecipeManagement() {
                         disabled={rollbackVersion.isPending || !canEdit}
                         onRollback={() => rollbackVersion.mutate({ toRecipeId: v.id })}
                         trigger={
-                          <Button size="sm" variant="ghost" className="h-7" disabled={rollbackVersion.isPending || !canEdit}
+                          <Button size="icon" variant="ghost" className="h-8 w-8" disabled={rollbackVersion.isPending || !canEdit}
+                            aria-label={t("eqIntegration.rollback", "Rollback")}
                             title={canEdit ? t("eqIntegration.rollbackTip", "Roll the released contract back to this version") : needsEditForInteg}>
-                            <Undo2 className="mr-1 h-3.5 w-3.5" />{t("eqIntegration.rollback", "Rollback")}
+                            <Undo2 className="h-4 w-4" />
                           </Button>
                         }
                       />
                     )}
                     {canCreate && (
                       <Button
-                        size="sm" variant="ghost" className="h-7"
+                        size="icon" variant="ghost" className="h-8 w-8"
                         disabled={recordLoad.isPending}
+                        aria-label={t("eqIntegration.recordLoad", "Record load")}
                         title={t("eqIntegration.loadTip", "Record that this version was loaded onto a machine (genealogy)")}
                         onClick={() => flyout.open("eq-recipe-load", { id: v.id })}
                       >
-                        <Download className="mr-1 h-3.5 w-3.5" />{t("eqIntegration.recordLoad", "Record load")}
+                        <Download className="h-4 w-4" />
                       </Button>
                     )}
                   </span>
