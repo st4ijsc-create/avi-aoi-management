@@ -102,6 +102,9 @@ export function CopilotInspector({ idPrefix, label, tabs, activeTab, onTabChange
       >
         {[...tabs.map((x) => ({ id: x.id, label: x.label, icon: x.icon })), copilotTab].map((x) => {
           const isSel = x.id === selected;
+          // doc 81 Đợt 3 Task 0 (D6) — tab Copilot KHÔNG co (trước: bị tab của trang đẩy ra ngoài panel 320 px, hiện
+          // "Copilo" ở 1366/1600 vì dải tab cuộn ngang không có thanh cuộn); tab của trang co được và cắt chữ có "…" + title.
+          const isCopilot = x.id === COPILOT;
           return (
             <button
               key={x.id}
@@ -112,13 +115,15 @@ export function CopilotInspector({ idPrefix, label, tabs, activeTab, onTabChange
               aria-controls={panelId(x.id)}
               tabIndex={isSel ? 0 : -1}
               onClick={() => select(x.id)}
+              title={isCopilot ? undefined : x.label}
               className={cn(
-                "flex shrink-0 items-center gap-1 border-r px-3 text-xs focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring [&_svg]:h-3.5 [&_svg]:w-3.5",
+                "flex items-center gap-1 border-r text-xs focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring [&_svg]:h-3.5 [&_svg]:w-3.5 [&_svg]:shrink-0",
+                isCopilot ? "shrink-0 px-3" : "min-w-0 px-2.5",
                 isSel ? "bg-background font-medium" : "text-muted-foreground hover:bg-muted",
               )}
             >
               {x.icon}
-              {x.label}
+              {isCopilot ? x.label : <span className="truncate">{x.label}</span>}
             </button>
           );
         })}

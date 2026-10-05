@@ -196,6 +196,27 @@ describe("Breadcrumb — đúng MỘT, nằm trong top bar", () => {
     },
   );
 
+  // doc 81 Đợt 3 Task 0 (D5, browser check 2026-10-05) — 1366 + thanh bên mở: TRANG HIỆN TẠI bị cắt ("Điều phối robot"
+  // 77/98 px, "Trung tâm Kỹ thuật" 98/123 px) vì nó cũng co (shrink 0.3) cùng mục cha. Hợp đồng: trang hiện tại KHÔNG co
+  // (chỉ cắt khi dài hơn cả vùng breadcrumb — max-w-full); mục cha co trước (min-w-0, cắt có title). jsdom không dựng
+  // layout ⇒ khoá trên lớp; px thật đo bằng trình duyệt (báo cáo task 0).
+  it("D5: trong top bar, trang hiện tại không co (shrink-0, max-w-full); mục cha co trước (min-w-0, shrink) và ẩn khi vùng breadcrumb < 12rem", () => {
+    renderShell("/fleet-orchestration");
+    const nav = crumbNavs()[0] as HTMLElement;
+    expect((nav.closest("[data-shell-crumb]")?.getAttribute("class") ?? "").split(/\s+/)).toContain("@container/crumb");
+    const items = within(nav).getAllByRole("listitem").filter((li) => li.getAttribute("data-slot") === "breadcrumb-item");
+    expect(items.length).toBeGreaterThanOrEqual(2);
+    const cls = (li: Element) => (li.getAttribute("class") ?? "").split(/\s+/);
+    const last = items[items.length - 1];
+    expect(cls(last)).toEqual(expect.arrayContaining(["shrink-0", "max-w-full"]));
+    expect(cls(last).some((c) => /^shrink-\[/.test(c) || c === "hidden")).toBe(false);
+    const parents = items.slice(0, -1).filter((li) => li.querySelector("a"));
+    expect(parents.length).toBeGreaterThanOrEqual(1);
+    for (const li of parents) {
+      expect(cls(li)).toEqual(expect.arrayContaining(["min-w-0", "shrink", "hidden", "@min-[12rem]/crumb:inline-flex"]));
+    }
+  });
+
   it("route ẩn breadcrumb (trang chủ vai trò) vẫn KHÔNG có breadcrumb", () => {
     renderShell("/supervisor-home");
     expect(crumbNavs()).toHaveLength(0);

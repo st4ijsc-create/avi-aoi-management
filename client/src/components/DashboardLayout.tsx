@@ -280,13 +280,18 @@ function ShellBreadcrumb({ crumbs, inHeader }: { crumbs: Crumb[]; inHeader: bool
           // Trong top bar hẹp (< 100rem bề rộng TOP BAR, container query `topbar`): mục giữa (section, chữ thuần — không phải link) ẩn để nhường chỗ
           // cho mục cha có link (module) và trang hiện tại; trang hiện tại co ít nhất.
           const middleText = inHeader && !isLast && i > 0 && crumb.href == null;
+          // doc 81 Đợt 3 Task 0 (D5) — mục cha có link: khi vùng breadcrumb < 12rem (container `crumb`) thì ẩn hẳn, nhường
+          // chỗ cho trang hiện tại (không để một mẩu "K…" và không đẩy trang hiện tại tràn khỏi vùng).
+          const parentLink = inHeader && !isLast && !middleText;
           return (
             <Fragment key={`${crumb.label}-${i}`}>
               <BreadcrumbItem
                 className={cn(
-                  inHeader && "min-w-0",
-                  inHeader && (isLast ? "shrink-[0.3]" : "max-w-[9rem] shrink"),
+                  // doc 81 Đợt 3 Task 0 (D5) — trang hiện tại KHÔNG co (trước shrink-[0.3]: 1366 + thanh bên mở cắt
+                  // "Điều phối robot" 77/98 px); chỉ cắt khi dài hơn cả vùng breadcrumb (max-w-full). Mục cha co trước.
+                  inHeader && (isLast ? "shrink-0 max-w-full" : "min-w-0 max-w-[9rem] shrink"),
                   middleText && "hidden @min-[100rem]/topbar:inline-flex",
+                  parentLink && "hidden @min-[12rem]/crumb:inline-flex",
                 )}
               >
                 {isLast || crumb.href == null ? (
@@ -297,7 +302,11 @@ function ShellBreadcrumb({ crumbs, inHeader }: { crumbs: Crumb[]; inHeader: bool
                   </BreadcrumbLink>
                 )}
               </BreadcrumbItem>
-              {!isLast && <BreadcrumbSeparator className={cn(middleText && "hidden @min-[100rem]/topbar:list-item")} />}
+              {!isLast && (
+                <BreadcrumbSeparator
+                  className={cn(middleText && "hidden @min-[100rem]/topbar:list-item", parentLink && "hidden @min-[12rem]/crumb:list-item")}
+                />
+              )}
             </Fragment>
           );
         })}
@@ -722,7 +731,7 @@ function DashboardLayoutContent({
           <div
             data-shell-context=""
             data-shell-crumb={crumbInHeader ? "" : undefined}
-            className={cn("flex min-w-0 flex-1 items-center", crumbInHeader && !licCritical && "xl:min-w-40")}
+            className={cn("@container/crumb flex min-w-0 flex-1 items-center", crumbInHeader && !licCritical && "xl:min-w-40")}
           >
             {/* M2: breadcrumb giữ ≥160 px từ lg (chip thường gộp "+N" trước); chỉ khi có chip license
                 nghiêm trọng (R-2-i, không bao giờ cắt) thì breadcrumb nhường trước. */}
