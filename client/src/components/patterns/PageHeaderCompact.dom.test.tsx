@@ -61,6 +61,23 @@ describe("PageHeaderCompact", () => {
     expect(chips.className).toMatch(/min-w-0/);
   });
 
+  // doc 81 Đợt 3 Task 0 (D2/D3, browser check 2026-10-05) — ở 375/414 px hành động chính ("Lưu phiên bản mới" của
+  // Recipes; "Làm mới", chọn dự án, "Khi nào dùng" của IDE) nằm quá mép phải và bị overflow:hidden của header cắt — không
+  // với tới được. Dưới `sm` (640 px) header XUỐNG DÒNG: chip và hành động mỗi thứ một hàng riêng, tự xuống dòng; ≥ 640 px
+  // giữ nguyên hợp đồng một hàng ≤ 48 px (các khẳng định ở trên). jsdom không có CSS ⇒ khoá trên lớp; px thật đo bằng trình duyệt.
+  it("dưới sm (điện thoại): header xuống dòng, bỏ trần 48 px; chip và hành động chiếm hàng riêng và tự xuống dòng", () => {
+    render(<PageHeaderCompact title="T" chips={<span data-testid="c">x</span>} actions={<button type="button">Lưu phiên bản mới</button>} />);
+    const header = screen.getByRole("heading", { level: 1 }).closest("[data-layout-header]") as HTMLElement;
+    const h = header.className.split(/\s+/);
+    expect(h).toEqual(expect.arrayContaining(["max-sm:flex-wrap", "max-sm:h-auto", "max-sm:max-h-none!"]));
+    for (const el of [
+      screen.getByTestId("c").closest("[data-header-chips]") as HTMLElement,
+      screen.getByRole("button", { name: "Lưu phiên bản mới" }).closest("[data-header-actions]") as HTMLElement,
+    ]) {
+      expect(el.className.split(/\s+/)).toEqual(expect.arrayContaining(["max-sm:basis-full", "max-sm:flex-wrap"]));
+    }
+  });
+
   it("không có chips/actions thì không để lại vùng rỗng", () => {
     const { container } = render(<PageHeaderCompact title="T" />);
     expect(container.querySelector("[data-header-chips]")).toBeNull();
