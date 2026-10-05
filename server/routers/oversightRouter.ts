@@ -67,8 +67,8 @@ import { dpcDeployEnabled as isDpcDeployEnabled } from "../services/programming/
 import { isInterlockEngineEnabled } from "../services/interlock/interlockEngine";
 // doc 81 Đợt 3 Task 4 — "Của tôi": vị từ CHỜ DUYỆT dùng chung (một nguồn cho cả "Chờ duyệt" lẫn "Của tôi") +
 // đếm theo phân công active (bảng `engineering_assignments`, mig 0363).
-import { PENDING_WHERE, fetchMineCategory } from "../services/engineeringAssignment/assignmentService";
-import { ASSIGNABLE, ASSIGNABLE_ENTITY_TYPES, type AssignablePendingKey } from "@shared/engineeringAssignment";
+import { PENDING_WHERE, fetchMineSummary } from "../services/engineeringAssignment/assignmentService";
+import { ASSIGNABLE, ASSIGNABLE_ENTITY_TYPES, type AssignablePendingKey, type AssignableEntityType } from "@shared/engineeringAssignment";
 
 type Db = NonNullable<Awaited<ReturnType<typeof getDb>>>;
 
@@ -468,10 +468,14 @@ export const oversightRouter = router({
         interlock: showInterlockNames,
         orchestration: true,
       };
-      const mineList = await Promise.all(
-        ASSIGNABLE_ENTITY_TYPES.map((t) => fetchMineCategory(d, t, ctx.user.id, showNamesFor[ASSIGNABLE[t].pendingKey])),
+      // Final wave (M-5) — MỘT truy vấn cho cả năm loại (trước: 5 lượt đếm + tới 5 lượt mẫu mỗi lần gọi); lỗi ⇒ rơi về
+      // đường cũ từng loại (fail-safe từng nhánh giữ nguyên). Kết quả bằng đường cũ — engineeringAssignment.db.test §7.
+      const mineByType = await fetchMineSummary(
+        d,
+        ctx.user.id,
+        Object.fromEntries(ASSIGNABLE_ENTITY_TYPES.map((t) => [t, showNamesFor[ASSIGNABLE[t].pendingKey]])) as Record<AssignableEntityType, boolean>,
       );
-      const mine = Object.fromEntries(ASSIGNABLE_ENTITY_TYPES.map((t, i) => [ASSIGNABLE[t].pendingKey, mineList[i]])) as MineSummary;
+      const mine = Object.fromEntries(ASSIGNABLE_ENTITY_TYPES.map((t) => [ASSIGNABLE[t].pendingKey, mineByType[t]])) as MineSummary;
 
       const total =
         recipes.count +

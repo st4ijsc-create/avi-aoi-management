@@ -237,6 +237,112 @@ export async function fetchMineCategory(d: Db, type: AssignableEntityType, userI
   }
 }
 
+/**
+ * doc 81 Đợt 3 final wave (M-5) — hộp "Của tôi" của CẢ NĂM loại trong MỘT truy vấn (trước: 5 lượt đếm + tới 5 lượt mẫu
+ * cho MỖI `pendingSummary`, mà dải chờ duyệt được poll ở nhiều trang). Kết quả BẰNG `fetchMineCategory` từng loại
+ * (test bằng nhau trên `_test`: engineeringAssignment.db.test.ts §7):
+ *   • xuất phát từ `engineering_assignments` của người xem (`active`, chỉ mục `idx_engineering_assignments_assignee_active`),
+ *     nối với bảng của từng loại bằng ĐÚNG `PENDING_WHERE` + khoá đợt (`EPISODE_SQL`) như `liveJoin`;
+ *   • interlock rule: khoá đợt = số dòng `approve` trong `control_audit_log` — đếm TRƯỚC một lần theo nhóm (chỉ các rule
+ *     đang được giao cho người xem) rồi LEFT JOIN, thay cho `count(*)` TƯƠNG QUAN chạy lại trên mỗi hàng nối;
+ *   • đếm = `count(*) OVER (PARTITION BY loại)`, mẫu = 5 hàng mới giao nhất mỗi loại (`row_number()`), nhãn/hint dựng ở JS
+ *     y hệt `fetchMineCategory`.
+ * Lỗi (vd DB chưa áp đủ 0363 ⇒ thiếu `pending_epoch`) ⇒ RƠI VỀ đường cũ từng loại — giữ nguyên luật fail-safe TỪNG NHÁNH
+ * (loại nào hỏng thì loại đó `degraded`, các loại khác vẫn đúng).
+ */
+export async function fetchMineSummary(
+  d: Db,
+  userId: number,
+  showNames: Readonly<Record<AssignableEntityType, boolean>>,
+): Promise<Record<AssignableEntityType, MineCategory>> {
+  try {
+    const a = sql.raw("a");
+    const pieces: SQL[] = [
+      sql`SELECT 'ecn'::text AS t, ${engineeringChanges.id} AS id, ${a}.assigned_at AS at,
+          json_build_object('ecnKey', ${engineeringChanges.ecnKey}, 'title', ${engineeringChanges.title}, 'status', ${engineeringChanges.status}) AS p
+        FROM ${a} JOIN ${engineeringChanges} ON ${a}.entity_type = 'ecn' AND ${a}.entity_id = ${engineeringChanges.id}
+        WHERE ${PENDING_WHERE.ecn} AND ${a}.pending_episode = ${EPISODE_SQL.ecn}`,
+      sql`SELECT 'recipe'::text, ${machineRecipes.id}, ${a}.assigned_at,
+          json_build_object('code', ${machineRecipes.code}, 'name', ${machineRecipes.name}, 'version', ${machineRecipes.version})
+        FROM ${a} JOIN ${machineRecipes} ON ${a}.entity_type = 'recipe' AND ${a}.entity_id = ${machineRecipes.id}
+        WHERE ${PENDING_WHERE.recipe} AND ${a}.pending_episode = ${EPISODE_SQL.recipe}`,
+      sql`SELECT 'interlock_rule'::text, ${interlockRules.id}, ${a}.assigned_at,
+          json_build_object('name', ${interlockRules.name}, 'action', ${interlockRules.action})
+        FROM ${a} JOIN ${interlockRules} ON ${a}.entity_type = 'interlock_rule' AND ${a}.entity_id = ${interlockRules.id}
+        LEFT JOIN ilk_ap ON ilk_ap.entity_id = (${interlockRules.id})::text
+        WHERE ${PENDING_WHERE.interlock_rule} AND ${a}.pending_episode = (coalesce(ilk_ap.c, 0))::text`,
+      sql`SELECT 'changeover'::text, ${changeoverRequests.id}, ${a}.assigned_at,
+          json_build_object('machineName', ${machines.name}, 'machineCode', ${machines.code}, 'recipeCode', ${machineRecipes.code}, 'recipeVersion', ${machineRecipes.version})
+        FROM ${a} JOIN ${changeoverRequests} ON ${a}.entity_type = 'changeover' AND ${a}.entity_id = ${changeoverRequests.id}
+        LEFT JOIN ${machines} ON ${changeoverRequests.machineId} = ${machines.id}
+        LEFT JOIN ${machineRecipes} ON ${changeoverRequests.recipeId} = ${machineRecipes.id}
+        WHERE ${PENDING_WHERE.changeover} AND ${a}.pending_episode = ${EPISODE_SQL.changeover}`,
+      sql`SELECT 'orchestration_run'::text, ${orchestrationRuns.id}, ${a}.assigned_at,
+          json_build_object('workflowRef', ${orchestrationRuns.workflowRef}, 'status', ${orchestrationRuns.status}, 'currentStepId', ${orchestrationRuns.currentStepId})
+        FROM ${a} JOIN ${orchestrationRuns} ON ${a}.entity_type = 'orchestration_run' AND ${a}.entity_id = ${orchestrationRuns.id}
+        WHERE ${PENDING_WHERE.orchestration_run} AND ${a}.pending_episode = ${EPISODE_SQL.orchestration_run}`,
+    ];
+    const res = (await d.execute(sql`
+      WITH a AS (
+        SELECT entity_type, entity_id, pending_episode, assigned_at FROM ${engineeringAssignments}
+        WHERE ${engineeringAssignments.active} = true AND ${engineeringAssignments.assigneeUserId} = ${userId}
+      ),
+      ilk_ap AS (
+        SELECT ${controlAuditLog.entityId} AS entity_id, count(*) AS c FROM ${controlAuditLog}
+        WHERE ${controlAuditLog.entityType} = 'interlock_rule' AND ${controlAuditLog.action} = 'approve'
+          AND ${controlAuditLog.entityId} IN (SELECT entity_id::text FROM a WHERE entity_type = 'interlock_rule')
+        GROUP BY ${controlAuditLog.entityId}
+      ),
+      live AS (${sql.join(pieces, sql` UNION ALL `)})
+      SELECT t, id, p, n FROM (
+        SELECT t, id, p, (count(*) OVER (PARTITION BY t))::int AS n,
+               row_number() OVER (PARTITION BY t ORDER BY at DESC) AS rn
+        FROM live
+      ) x WHERE rn <= 5
+      ORDER BY t, rn
+    `)) as unknown as Array<{ t: AssignableEntityType; id: number | string; p: Record<string, unknown> | string; n: number | string }>;
+    const out = Object.fromEntries(
+      (["ecn", "recipe", "interlock_rule", "changeover", "orchestration_run"] as const).map((t) => [t, { count: 0, samples: [] as MineSample[], degraded: false }]),
+    ) as Record<AssignableEntityType, MineCategory>;
+    for (const r of [...res]) {
+      const cat = out[r.t];
+      if (!cat) continue;
+      cat.count = Number(r.n);
+      if (!showNames[r.t]) continue;
+      const p = (typeof r.p === "string" ? JSON.parse(r.p) : r.p) as Record<string, unknown>;
+      const id = Number(r.id);
+      cat.samples.push(mineSampleOf(r.t, id, p));
+    }
+    return out;
+  } catch (err) {
+    // eslint-disable-next-line no-console
+    console.error("[oversight] mine (một truy vấn) lỗi — rơi về đường từng loại:", err instanceof Error ? err.message : err);
+    const types = ["ecn", "recipe", "interlock_rule", "changeover", "orchestration_run"] as const;
+    const list = await Promise.all(types.map((t) => fetchMineCategory(d, t, userId, showNames[t])));
+    return Object.fromEntries(types.map((t, i) => [t, list[i]])) as Record<AssignableEntityType, MineCategory>;
+  }
+}
+
+/** Nhãn/hint của một mẫu — CÙNG công thức với `fetchMineCategory` (test bằng nhau). */
+function mineSampleOf(t: AssignableEntityType, id: number, p: Record<string, unknown>): MineSample {
+  switch (t) {
+    case "ecn":
+      return { id, label: `${p.ecnKey} · ${p.title}`, hint: p.status as string };
+    case "recipe":
+      return { id, label: `${p.code} · ${p.name}`, hint: `v${p.version}` };
+    case "interlock_rule":
+      return { id, label: p.name as string, hint: p.action as string };
+    case "changeover":
+      return {
+        id,
+        label: (p.machineName as string | null) ?? (p.machineCode as string | null) ?? `#${id}`,
+        hint: p.recipeCode != null ? `${p.recipeCode} v${p.recipeVersion}` : undefined,
+      };
+    case "orchestration_run":
+      return { id, label: (p.workflowRef as string | null) ?? `run #${id}`, hint: p.currentStepId ? `${p.status} · ${p.currentStepId}` : (p.status as string) };
+  }
+}
+
 /** Một phân công SỐNG cho cột "Người được giao" — chỉ tên hiển thị (không username/email/vai). */
 export interface LiveAssignmentRow {
   entityId: number;

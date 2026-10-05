@@ -666,4 +666,84 @@ describe.skipIf(!DB_URL)("engineering.assign/unassign + pendingSummary.mine (CSD
       });
     }
   });
+
+  // ══════════════════════════════════════════════════════════════════════════
+  // doc 81 Đợt 3 final wave (M-5) — "Của tôi" MỘT truy vấn (`fetchMineSummary`) cho kết quả BẰNG đường cũ từng loại
+  // (`fetchMineCategory` ×5) trên dữ liệu thật: >5 mục một loại (đếm vs mẫu 5 mới nhất, đúng thứ tự), mục hết chờ duyệt,
+  // phân công của người khác, đợt cũ (interlock duyệt rồi sửa ⇒ dòng `approve` ở control_audit_log; run sang gate khác),
+  // changeover (nối máy/recipe), cả hai chế độ tên (có / không quyền xem).
+  describe("§10 final wave (M-5) — pendingSummary.mine một truy vấn == năm truy vấn cũ", () => {
+    it("★★ fetchMineSummary == fetchMineCategory ×5 (đếm, mẫu, thứ tự, degraded) — có tên và không tên; đúng ≤1 lượt truy vấn khi không lỗi", async () => {
+      const { interlockRouter } = await import("./interlockRouter");
+      const { fetchMineSummary, fetchMineCategory } = await import("../services/engineeringAssignment/assignmentService");
+      const { getDb } = await import("../db/connection");
+      const d = (await getDb())!;
+      const sup = await as("supAssigner");
+      const who = uid.engViewer2;
+      const give = (entityType: any, entityId: number, assigneeUserId = who) =>
+        sup.assign({ entityType, entityId, assigneeUserId, expectedAssigneeUserId: null });
+      // 7 ECN chờ duyệt (> trần mẫu 5) + 1 ECN rời chờ duyệt + 1 ECN giao cho người KHÁC
+      for (let i = 0; i < 7; i++) await give("ecn", await mkEcn(i % 2 ? "in_review" : "submitted", uid.engAuthor));
+      const ecnDone = await mkEcn("submitted", uid.engAuthor);
+      await give("ecn", ecnDone);
+      await sql`UPDATE engineering_changes SET status = 'approved' WHERE id = ${ecnDone}`;
+      await give("ecn", await mkEcn("submitted", uid.engAuthor), uid.engViewer);
+      // recipe nháp ×2, changeover ×1
+      await give("recipe", await mkRecipe(uid.engAuthor));
+      await give("recipe", await mkRecipe(uid.engAuthor));
+      await give("changeover", await mkChangeover(uid.engAuthor));
+      // interlock: một rule còn sống; một rule ĐỢT CŨ (giao ⇒ duyệt thật ⇒ sửa về chờ duyệt — khoá đợt "0" ≠ "1")
+      await give("interlock_rule", await mkRule(uid.engAuthor));
+      const stale = await mkRule(uid.engAuthor);
+      await give("interlock_rule", stale);
+      const v = ((await interlockRouter.createCaller(ctxOf("adminA")).get({ id: stale })) as any).versionToken;
+      await interlockRouter.createCaller(ctxOf("adminA")).approve({ id: stale, expectedVersion: v });
+      await interlockRouter.createCaller(ctxOf("engAuthor")).update({ id: stale, description: "m5 sua sau duyet" });
+      // run: một còn sống; một sang gate khác (đợt mới)
+      await give("orchestration_run", await mkRun("held"));
+      const runStale = await mkRun("held");
+      await give("orchestration_run", runStale);
+      await sql`UPDATE orchestration_runs SET "currentStepId" = 'gate2', status = 'awaiting_confirm' WHERE id = ${runStale}`;
+
+      const TYPES = ["ecn", "recipe", "interlock_rule", "changeover", "orchestration_run"] as const;
+      for (const names of [true, false]) {
+        const flags = Object.fromEntries(TYPES.map((t) => [t, names])) as Record<(typeof TYPES)[number], boolean>;
+        const cu = Object.fromEntries(await Promise.all(TYPES.map(async (t) => [t, await fetchMineCategory(d, t, who, names)] as const)));
+        const spy = vi.spyOn(d, "execute");
+        let moi;
+        try {
+          moi = await fetchMineSummary(d, who, flags);
+          expect(spy, "một truy vấn duy nhất (không rơi về đường từng loại)").toHaveBeenCalledTimes(1);
+        } finally {
+          spy.mockRestore();
+        }
+        expect(moi, `showNames=${names}`).toEqual(cu);
+        // dữ liệu thật đủ để phép so có nghĩa (cầu chì)
+        expect(cu.ecn.count, "ECN").toBeGreaterThanOrEqual(7);
+        if (names) expect(cu.ecn.samples, "trần mẫu 5").toHaveLength(5);
+        for (const t of TYPES) expect(cu[t].count, t).toBeGreaterThanOrEqual(1);
+        expect(cu.interlock_rule.samples.map((x: { id: number }) => x.id)).not.toContain(stale);
+        expect(cu.orchestration_run.samples.map((x: { id: number }) => x.id)).not.toContain(runStale);
+      }
+    });
+
+    it("truy vấn gộp lỗi ⇒ rơi về đường từng loại (fail-safe từng nhánh giữ nguyên)", async () => {
+      const { fetchMineSummary, fetchMineCategory } = await import("../services/engineeringAssignment/assignmentService");
+      const { getDb } = await import("../db/connection");
+      const d = (await getDb())!;
+      const TYPES = ["ecn", "recipe", "interlock_rule", "changeover", "orchestration_run"] as const;
+      const flags = Object.fromEntries(TYPES.map((t) => [t, true])) as Record<(typeof TYPES)[number], boolean>;
+      const spy = vi.spyOn(d, "execute").mockRejectedValueOnce(new Error("gia lap loi"));
+      const err = vi.spyOn(console, "error").mockImplementation(() => {});
+      try {
+        const moi = await fetchMineSummary(d, uid.engViewer2, flags);
+        const cu = Object.fromEntries(await Promise.all(TYPES.map(async (t) => [t, await fetchMineCategory(d, t, uid.engViewer2, true)] as const)));
+        expect(moi).toEqual(cu);
+        expect(Object.values(moi).every((c) => c.degraded === false)).toBe(true);
+      } finally {
+        spy.mockRestore();
+        err.mockRestore();
+      }
+    });
+  });
 });
