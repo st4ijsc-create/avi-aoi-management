@@ -804,18 +804,19 @@
      "x": 288,
      "y": 120,
      "w": 1288,
-     "h": 196
+     "h": 192
     }
    ],
-   "areaPx": 252448,
-   "attrSel": "div[data-layout-main=\"equipment-integration\"]@CockpitLayout.tsx",
-   "gitHead": "85c225399",
-   "gitDirty": [
-    "scripts/ui-metrics/engineeringLayout.mjs"
-   ],
-   "at": "2026-10-05T07:24:51.543Z",
-   "fromReference": {
-    "parentElement": "div[data-layout-main=\"equipment-integration\"]@CockpitLayout.tsx"
+   "areaPx": 247296,
+   "attrSel": "div[data-layout-main=\"vision-acquisition\"]@CockpitLayout.tsx",
+   "gitHead": "e8665be02",
+   "gitDirty": [],
+   "at": "2026-10-05T07:44:52.424Z",
+   "previous": {
+    "mainTop": 120,
+    "areaPx": 252448,
+    "attrSel": "div[data-layout-main=\"equipment-integration\"]@CockpitLayout.tsx",
+    "gitHead": "85c225399"
    }
   },
   "vision-acquisition|1366|n/a": {
@@ -828,18 +829,19 @@
      "x": 288,
      "y": 120,
      "w": 1054,
-     "h": 196
+     "h": 192
     }
    ],
-   "areaPx": 206584,
-   "attrSel": "div[data-layout-main=\"equipment-integration\"]@CockpitLayout.tsx",
-   "gitHead": "85c225399",
-   "gitDirty": [
-    "scripts/ui-metrics/engineeringLayout.mjs"
-   ],
-   "at": "2026-10-05T07:24:51.543Z",
-   "fromReference": {
-    "parentElement": "div[data-layout-main=\"equipment-integration\"]@CockpitLayout.tsx"
+   "areaPx": 202368,
+   "attrSel": "div[data-layout-main=\"vision-acquisition\"]@CockpitLayout.tsx",
+   "gitHead": "e8665be02",
+   "gitDirty": [],
+   "at": "2026-10-05T07:44:52.424Z",
+   "previous": {
+    "mainTop": 120,
+    "areaPx": 206584,
+    "attrSel": "div[data-layout-main=\"equipment-integration\"]@CockpitLayout.tsx",
+    "gitHead": "85c225399"
    }
   }
  }
