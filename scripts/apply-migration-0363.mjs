@@ -5,7 +5,7 @@
  * dụng `avi_app` (khuôn `apply-migration-0362.mjs`).
  *
  * Phép đo sau DDL (vai avi_app, Đ-28 current_database):
- *   (a) tám cột tồn tại, ĐÚNG kiểu và NULL/NOT NULL; chú thích bảng có mặt — IN RA danh sách cột;
+ *   (a) chín cột tồn tại (fix 1: + `pending_episode`), ĐÚNG kiểu và NULL/NOT NULL; chú thích bảng có mặt — IN RA danh sách cột;
  *       hai chỉ mục: `(assignee_user_id, active)` và UNIQUE `(entity_type, entity_id) WHERE active`;
  *   (b) quyền avi_app: SELECT/INSERT có; UPDATE CHỈ cột `active`; KHÔNG DELETE/TRUNCATE (đọc catalog) —
  *       rồi ĐO HÀNH VI trong một giao dịch LUÔN HOÀN TÁC: chèn một phân công dò, chèn phân công active
@@ -15,7 +15,7 @@
  *
  *   node scripts/apply-migration-0363.mjs --dev-only    # DB dev (chủ dự án/Kỹ thuật tự chạy)
  *   node scripts/apply-migration-0363.mjs --test-only   # DB _test
- *   node scripts/apply-migration-0363.mjs               # cả hai
+ *   node scripts/apply-migration-0363.mjs --both        # cả hai — KHÔNG cờ ⇒ từ chối (R-3-g)
  */
 import fs from "fs";
 import path from "path";
@@ -73,6 +73,8 @@ const COT = [
   { ten: "assigned_at", kieu: "timestamp without time zone", dai: null, nullable: "NO" },
   { ten: "note", kieu: "text", dai: null, nullable: "YES" },
   { ten: "active", kieu: "boolean", dai: null, nullable: "NO" },
+  // Fix round 1 (R-3-f) — khoá đợt chờ duyệt lúc giao.
+  { ten: "pending_episode", kieu: "character varying", dai: 160, nullable: "NO" },
 ];
 
 /** Chỉ mục kỳ vọng: tên → mẩu bắt buộc trong `pg_indexes.indexdef`. */
@@ -170,8 +172,9 @@ async function applyTo(rawUrl, label) {
              has_table_privilege(${BANG}, 'UPDATE') AS upd_bang,
              has_column_privilege(${BANG}, 'active', 'UPDATE') AS upd_active,
              has_column_privilege(${BANG}, 'assignee_user_id', 'UPDATE') AS upd_assignee,
+             has_column_privilege(${BANG}, 'pending_episode', 'UPDATE') AS upd_episode,
              has_sequence_privilege(${BANG + "_id_seq"}, 'USAGE') AS seq`;
-    const kyVong = { sel: true, ins: true, del: false, trn: false, upd_bang: false, upd_active: true, upd_assignee: false, seq: true };
+    const kyVong = { sel: true, ins: true, del: false, trn: false, upd_bang: false, upd_active: true, upd_assignee: false, upd_episode: false, seq: true };
     for (const [k, v] of Object.entries(kyVong)) {
       if (q[k] !== v) throw new Error(`(b) quyen avi_app ${k}=${q[k]} (phai la ${v})`);
     }
@@ -233,6 +236,13 @@ async function applyTo(rawUrl, label) {
 }
 
 const args = process.argv.slice(2);
+// R-3-g (doc 81 Đợt 3 Task 4 fix 1, 2026-10-05) — PHẢI chỉ rõ ĐÚNG MỘT đích. Không cờ ⇒ TỪ CHỐI, không mở kết nối nào
+// (trước đây không cờ = áp CẢ dev lẫn _test; DB dev từng treo 2026-09-28 và dev là việc của chủ dự án).
+const CO_DICH = ["--dev-only", "--test-only", "--both"].filter((f) => args.includes(f));
+if (CO_DICH.length !== 1) {
+  console.error(`[0363] phai chi ro DUNG MOT dich: --dev-only | --test-only | --both (nhan: ${CO_DICH.join(" ") || "khong co"}). Khong chay gi.`);
+  process.exit(2);
+}
 const devUrl = process.env.DATABASE_URL;
 if (!devUrl) {
   console.error(`${TAG} DATABASE_URL not set`);

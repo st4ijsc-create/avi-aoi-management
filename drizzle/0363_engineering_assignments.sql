@@ -21,7 +21,7 @@
 --   không sửa được người được giao / người giao / thời điểm của một hàng đã ghi — đổi người = hàng MỚI.
 --
 -- ⚠ DDL chạy bằng owner `aoi` (`avi_app` → 42501): `node scripts/apply-migration-0363.mjs --test-only`
---   (dev: `--dev-only`, do chủ dự án quyết).
+--   (dev: `--dev-only`, do chủ dự án quyết; không cờ ⇒ script TỪ CHỐI chạy — R-3-g).
 -- ⚠ Repo CẤM `drizzle-kit push/generate` — bảng khai TAY vào `drizzle/schema/engineeringAssignment.ts` cùng lượt.
 -- ROLLBACK: DROP TABLE IF EXISTS "engineering_assignments";
 --
@@ -33,8 +33,13 @@ CREATE TABLE IF NOT EXISTS "engineering_assignments" (
   "assigned_by" integer NOT NULL,
   "assigned_at" timestamp NOT NULL DEFAULT now(),
   "note" text,
-  "active" boolean NOT NULL DEFAULT true
+  "active" boolean NOT NULL DEFAULT true,
+  "pending_episode" varchar(160) NOT NULL DEFAULT ''
 );
+-- Fix round 1 (R-3-f, 2026-10-05) — khoá ĐỢT CHỜ DUYỆT lúc giao: phân công chỉ "sống" khi mục còn chờ duyệt VÀ khoá đợt
+-- hiện tại của mục BẰNG khoá này (lọc lười ở tầng ứng dụng, xem assignmentService.ts#EPISODE_SQL). Mục rời chờ duyệt rồi
+-- quay lại ⇒ đợt mới ⇒ người được giao cũ KHÔNG thấy lại. ADD COLUMN IF NOT EXISTS: _test đã áp bản đầu của 0363.
+ALTER TABLE "engineering_assignments" ADD COLUMN IF NOT EXISTS "pending_episode" varchar(160) NOT NULL DEFAULT '';
 -- Hộp "của tôi": tìm mọi phân công đang hiệu lực của MỘT người.
 CREATE INDEX IF NOT EXISTS "idx_engineering_assignments_assignee_active"
   ON "engineering_assignments" ("assignee_user_id", "active");

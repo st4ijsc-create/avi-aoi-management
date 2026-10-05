@@ -10,6 +10,7 @@
 //     (UNIQUE … WHERE active); bỏ giao / giao lại = `active=false` trên hàng cũ, hàng mới cho người mới;
 //   • `avi_app` chỉ UPDATE được cột `active` (quyền mức cột) — không sửa người/thời điểm, không DELETE;
 //   • ĐƯỢC GIAO ≠ ĐƯỢC DUYỆT — không cổng duyệt / maker-checker nào đọc bảng này.
+//   • (fix 1, R-3-f) phân công chỉ SỐNG trong ĐỢT chờ duyệt lúc giao (`pending_episode`); mục rời chờ duyệt ⇒ hết.
 // Tên cột snake_case đúng như QĐ-3a của chủ dự án.
 // ════════════════════════════════════════════════════════════════════════════
 import { pgTable, serial, integer, varchar, text, timestamp, boolean, index, uniqueIndex } from "drizzle-orm/pg-core";
@@ -24,6 +25,11 @@ export const engineeringAssignments = pgTable("engineering_assignments", {
   assignedAt: timestamp("assigned_at").defaultNow().notNull(),
   note: text("note"),
   active: boolean("active").default(true).notNull(),
+  /**
+   * doc 81 Đợt 3 Task 4 fix 1 (R-3-f) — khoá ĐỢT CHỜ DUYỆT của mục lúc giao (`EPISODE_SQL` ở
+   * `services/engineeringAssignment/assignmentService.ts`). Phân công chỉ "sống" khi khoá này BẰNG khoá hiện tại.
+   */
+  pendingEpisode: varchar("pending_episode", { length: 160 }).default("").notNull(),
 }, (table) => [
   index("idx_engineering_assignments_assignee_active").on(table.assigneeUserId, table.active),
   uniqueIndex("uq_engineering_assignments_one_active").on(table.entityType, table.entityId).where(sql`${table.active}`),

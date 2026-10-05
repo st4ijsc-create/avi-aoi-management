@@ -7,7 +7,7 @@
  *       rồi xoá hàng dò bằng owner;
  *   (c) `__applied_migrations` có đúng 1 hàng.
  *
- *   node scripts/apply-migration-0360.mjs [--dev-only|--test-only]
+ *   node scripts/apply-migration-0360.mjs --dev-only|--test-only|--both   # BẮT BUỘC đúng một cờ (R-3-g)
  */
 import fs from "fs";
 import path from "path";
@@ -100,6 +100,13 @@ async function applyTo(rawUrl, label) {
 }
 
 const args = process.argv.slice(2);
+// R-3-g (doc 81 Đợt 3 Task 4 fix 1, 2026-10-05) — PHẢI chỉ rõ ĐÚNG MỘT đích. Không cờ ⇒ TỪ CHỐI, không mở kết nối nào
+// (trước đây không cờ = áp CẢ dev lẫn _test; DB dev từng treo 2026-09-28 và dev là việc của chủ dự án).
+const CO_DICH = ["--dev-only", "--test-only", "--both"].filter((f) => args.includes(f));
+if (CO_DICH.length !== 1) {
+  console.error(`[0360] phai chi ro DUNG MOT dich: --dev-only | --test-only | --both (nhan: ${CO_DICH.join(" ") || "khong co"}). Khong chay gi.`);
+  process.exit(2);
+}
 const devUrl = process.env.DATABASE_URL;
 if (!devUrl) {
   console.error(`${TAG} DATABASE_URL not set`);

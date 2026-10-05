@@ -63,7 +63,7 @@ export class KbEvalDangChayError extends Error {
 
 export class KbEvalBangVangError extends Error {
   constructor() {
-    super('kb_eval_runs chưa migrate (chạy "node scripts/apply-migration-0359.mjs" bằng owner "aoi").');
+    super('kb_eval_runs chưa migrate (chạy "node scripts/apply-migration-0359.mjs --dev-only" bằng owner "aoi").');
     this.name = "KbEvalBangVangError";
   }
 }
