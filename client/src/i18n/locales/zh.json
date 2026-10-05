@@ -13405,8 +13405,11 @@
       "flagOff": "设备集成已关闭：发布、回滚版本和记录加载在启用前被阻止。加载历史仍可查看。",
       "flagOffToast": "设备集成已禁用（预览）— 启用前此操作被阻止。",
       "failed": "{{action}} {{version}} 未能完成",
-      "loadFailed": "记录加载到 {{machine}} 未能完成"
-    }
+      "loadFailed": "记录加载到 {{machine}} 未能完成",
+      "flagError": "无法检查设备集成是否已启用。集成操作仍可提交，但若该功能已关闭，服务器将拒绝。"
+    },
+    "machineOptional": "机台（可选）",
+    "noMachineOption": "（不绑定机台）"
   },
   "confirmWithReason": {
     "defaultConfirmText": "确认",

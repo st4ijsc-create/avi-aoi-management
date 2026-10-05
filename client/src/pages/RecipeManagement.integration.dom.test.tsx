@@ -521,3 +521,35 @@ describe("Cờ tích hợp (EQ_INTEG) — chip 4 trạng thái ở header khi kh
     expect(srv.queryInputs.some((x) => x.startsWith("equipmentIntegration.status"))).toBe(false);
   });
 });
+
+// ── Fix round 1 ─────────────────────────────────────────────────────────────────────────────────
+describe("Fix round 1 — máy tuỳ chọn khi tạo phiên bản; câu lỗi cờ không nói sai về khoá", () => {
+  it("(c) sheet tạo phiên bản có ô 'Máy (tùy chọn)' (EntityPicker): chọn M3 ⇒ create gửi machineId 3; không chọn ⇒ KHÔNG có khoá machineId (payload như cũ)", async () => {
+    const user = go("/recipes?code=RCP-1&flyout=recipe-new");
+    let sheet = await waitLayer("recipe-new");
+    await user.type(within(sheet).getByLabelText("Tên"), "Co may");
+    await user.click(within(sheet).getByRole("combobox", { name: "Máy (tùy chọn)" }));
+    await user.click(await screen.findByRole("option", { name: /M3/ }));
+    await user.click(within(sheet).getByRole("button", { name: "Lưu phiên bản mới" }));
+    await waitFor(() => expect(srv.calls["machineRecipe.recipes.create"]).toHaveLength(1));
+    expect(srv.calls["machineRecipe.recipes.create"][0]).toMatchObject({ code: "RCP-1", name: "Co may", machineId: 3 });
+    cleanup();
+    srv.calls = {};
+    const user2 = go("/recipes?code=RCP-1&flyout=recipe-new");
+    sheet = await waitLayer("recipe-new");
+    await user2.type(within(sheet).getByLabelText("Tên"), "Khong may");
+    await user2.click(within(sheet).getByRole("button", { name: "Lưu phiên bản mới" }));
+    await waitFor(() => expect(srv.calls["machineRecipe.recipes.create"]).toHaveLength(1));
+    expect(Object.keys(srv.calls["machineRecipe.recipes.create"][0] as object)).not.toContain("machineId");
+  });
+
+  it("(minor) cờ tích hợp KHÔNG kiểm tra được ⇒ câu lỗi nói đúng: thao tác vẫn gửi được, server từ chối nếu tắt — không nói 'bị khoá'; nút vẫn bật (không thêm khoá)", () => {
+    srv.statusError = true;
+    go("/recipes?code=RCP-1");
+    const alert = header().querySelector("[data-feature-status-alert]") as HTMLElement;
+    expect(alert).toHaveTextContent(/máy chủ sẽ từ chối nếu tính năng đang tắt/);
+    expect(alert.textContent).not.toMatch(/khoá|khóa/i);
+    expect(within(versionRow(103)).getByRole("button", { name: /Phát hành/ })).not.toBeDisabled();
+    expect(within(versionRow(102)).getByRole("button", { name: /Ghi nhận nạp/ })).not.toBeDisabled();
+  });
+});

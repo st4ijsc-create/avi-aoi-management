@@ -494,7 +494,15 @@ export default function RecipeManagement() {
       size: "lg",
       title: t("recipes.newVersion"),
       description: t("recipes.newVersionDesc"),
-      render: () => <CreateVersionForm initialCode={selectedCode ?? ""} canCreate={canCreate} onSaved={invalidateAll} />,
+      render: () => (
+        <CreateVersionForm
+          initialCode={selectedCode ?? ""}
+          canCreate={canCreate}
+          onSaved={invalidateAll}
+          machineOptions={machineOptions}
+          machinesLoading={machinesQuery.isLoading}
+        />
+      ),
     };
   }
   if (canEdit) {
@@ -1049,7 +1057,8 @@ export default function RecipeManagement() {
                         status={eqFlagStatus}
                         subject={t("eqIntegration.title", "Equipment Integration")}
                         offMessage={t("recipes.integ.flagOff", "Tích hợp thiết bị đang tắt: phát hành, rollback phiên bản và ghi nhận nạp bị chặn cho đến khi bật. Xem lịch sử nạp vẫn được.")}
-                        errorMessage={t("eqIntegration.flagStatusError", "Could not check whether equipment integration is enabled — actions are disabled until this is confirmed.")}
+                        // Fix round 1 — câu ĐÚNG: thao tác tích hợp KHÔNG bị khoá khi cờ chưa rõ (như màn cũ); server tự chặn khi tắt.
+                        errorMessage={t("recipes.integ.flagError", "Không kiểm tra được trạng thái tích hợp thiết bị. Thao tác tích hợp vẫn gửi được, nhưng máy chủ sẽ từ chối nếu tính năng đang tắt.")}
                       />
                     )}
                   </>
@@ -1375,7 +1384,16 @@ function DeploymentLedger({
 
 // ── Sheet: tạo phiên bản mới ───────────────────────────────────────────────────────────────────
 
-function CreateVersionForm({ initialCode, canCreate, onSaved }: { initialCode: string; canCreate: boolean; onSaved: () => void }) {
+function CreateVersionForm({
+  initialCode, canCreate, onSaved, machineOptions, machinesLoading,
+}: {
+  initialCode: string;
+  canCreate: boolean;
+  onSaved: () => void;
+  /** Fix round 1 (review c) — máy tuỳ chọn (metadata, như "Máy (tùy chọn)" của sheet tạo phiên bản cũ ở Integration). */
+  machineOptions: EntityOption[];
+  machinesLoading: boolean;
+}) {
   const { t } = useTranslation();
   const { layer, done } = useCloseOwnLayer();
   const uid = useId();
@@ -1385,8 +1403,9 @@ function CreateVersionForm({ initialCode, canCreate, onSaved }: { initialCode: s
   const [jsonError, setJsonError] = useState<string | null>(null);
   // U9 — loại mẫu payload đang chọn cho nút "Chèn mẫu".
   const [templateKind, setTemplateKind] = useState<RecipeTemplateKind>("aoi");
+  const [machineId, setMachineId] = useState<number | null>(null);
 
-  const dirty = form.code !== initial.code || form.name !== initial.name || form.payloadText !== initial.payloadText || form.notes !== initial.notes;
+  const dirty = form.code !== initial.code || form.name !== initial.name || form.payloadText !== initial.payloadText || form.notes !== initial.notes || machineId != null;
   useEffect(() => { layer.setDirty(dirty); }, [dirty]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const createRecipe = trpc.machineRecipe.recipes.create.useMutation({
@@ -1425,6 +1444,8 @@ function CreateVersionForm({ initialCode, canCreate, onSaved }: { initialCode: s
       name: form.name.trim(),
       payload: parsed,
       notes: form.notes.trim() || null,
+      // Chỉ gửi khi người dùng chọn máy — không chọn ⇒ payload y như trước.
+      ...(machineId != null ? { machineId } : {}),
     });
   };
 
@@ -1470,6 +1491,20 @@ function CreateVersionForm({ initialCode, canCreate, onSaved }: { initialCode: s
         />
         <p className="mt-1 text-xs text-muted-foreground">{t("recipes.templateHint", "Không bắt buộc — chèn khung JSON mẫu để đỡ gõ tay, vẫn sửa được.")}</p>
         {jsonError && <p className="text-xs text-destructive mt-1">{t("recipes.jsonError")}: {jsonError}</p>}
+      </div>
+      <div>
+        <Label htmlFor={`${uid}-machine`}>{t("recipes.machineOptional", "Máy (tùy chọn)")}</Label>
+        <EntityPicker
+          id={`${uid}-machine`}
+          options={machineOptions}
+          value={machineId}
+          onChange={(v) => setMachineId(v == null ? null : Number(v))}
+          loading={machinesLoading}
+          placeholder={t("recipes.noMachineOption", "(không gắn máy)")}
+          searchPlaceholder={t("recipes.searchMachine", "Tìm máy…")}
+          emptyText={t("recipes.noMachines", "Chưa có máy nào")}
+          aria-label={t("recipes.machineOptional", "Máy (tùy chọn)")}
+        />
       </div>
       <div>
         <Label htmlFor={`${uid}-notes`}>{t("recipes.notes")}</Label>

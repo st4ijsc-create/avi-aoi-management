@@ -13602,8 +13602,11 @@
       "flagOff": "Tích hợp thiết bị đang tắt: phát hành, rollback phiên bản và ghi nhận nạp bị chặn cho đến khi bật. Xem lịch sử nạp vẫn được.",
       "flagOffToast": "Tích hợp thiết bị đang tắt (xem trước) — thao tác này bị chặn cho đến khi được bật.",
       "failed": "{{action}} {{version}} không thực hiện được",
-      "loadFailed": "Ghi nhận nạp lên {{machine}} không thực hiện được"
-    }
+      "loadFailed": "Ghi nhận nạp lên {{machine}} không thực hiện được",
+      "flagError": "Không kiểm tra được trạng thái tích hợp thiết bị. Thao tác tích hợp vẫn gửi được, nhưng máy chủ sẽ từ chối nếu tính năng đang tắt."
+    },
+    "machineOptional": "Máy (tùy chọn)",
+    "noMachineOption": "(không gắn máy)"
   },
   "confirmWithReason": {
     "defaultConfirmText": "XÁC NHẬN",

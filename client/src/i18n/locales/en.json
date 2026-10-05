@@ -13622,8 +13622,11 @@
       "flagOff": "Equipment integration is off: releasing or rolling back a version and recording a load are blocked until it is enabled. Load history stays readable.",
       "flagOffToast": "Equipment integration is disabled (preview) — this action is blocked until it is enabled.",
       "failed": "{{action}} {{version}} could not be completed",
-      "loadFailed": "Recording the load onto {{machine}} could not be completed"
-    }
+      "loadFailed": "Recording the load onto {{machine}} could not be completed",
+      "flagError": "Could not check whether equipment integration is enabled. Integration actions can still be sent, but the server will refuse them if the feature is off."
+    },
+    "machineOptional": "Machine (optional)",
+    "noMachineOption": "(no machine)"
   },
   "confirmWithReason": {
     "defaultConfirmText": "CONFIRM",
