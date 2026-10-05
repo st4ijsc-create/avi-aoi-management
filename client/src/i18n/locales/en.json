@@ -13596,7 +13596,8 @@
       "versions": "Versions",
       "approval": "Approval",
       "deploy": "Deploy",
-      "machines": "Running on"
+      "machines": "Running on",
+      "history": "Load history"
     },
     "params": {
       "version": "Version shown",
@@ -13609,7 +13610,20 @@
     },
     "allCodes": "All codes",
     "allCodesHint": "Clear the code selection — show the deployment ledger of every machine",
-    "deployFailed": "Deploying to {{machine}} could not be done"
+    "deployFailed": "Deploying to {{machine}} could not be done",
+    "overviewTabs": "All-machine logs",
+    "loads": {
+      "pickCode": "Pick a recipe code in the list on the left to see its load history across machines.",
+      "pickMachine": "Pick a machine in the \"Select a machine\" box at the top of the page to see its load history.",
+      "noPermission": "Viewing load history requires the machine monitoring view permission (machine_monitoring).",
+      "loadError": "Could not read the load history."
+    },
+    "integ": {
+      "flagOff": "Equipment integration is off: releasing or rolling back a version and recording a load are blocked until it is enabled. Load history stays readable.",
+      "flagOffToast": "Equipment integration is disabled (preview) — this action is blocked until it is enabled.",
+      "failed": "{{action}} {{version}} could not be completed",
+      "loadFailed": "Recording the load onto {{machine}} could not be completed"
+    }
   },
   "confirmWithReason": {
     "defaultConfirmText": "CONFIRM",

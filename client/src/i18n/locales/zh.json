@@ -13379,7 +13379,8 @@
       "versions": "版本",
       "approval": "审批",
       "deploy": "部署",
-      "machines": "运行中的机台"
+      "machines": "运行中的机台",
+      "history": "加载历史"
     },
     "params": {
       "version": "当前查看的版本",
@@ -13392,7 +13393,20 @@
     },
     "allCodes": "全部编码",
     "allCodesHint": "取消选择编码——查看所有机台的部署台账",
-    "deployFailed": "部署到 {{machine}} 未能执行"
+    "deployFailed": "部署到 {{machine}} 未能执行",
+    "overviewTabs": "全部机台记录",
+    "loads": {
+      "pickCode": "在左侧列表中选择一个配方代码，查看其在各机台上的加载历史。",
+      "pickMachine": "在页面顶部的“选择一台机器”框中选择机台，查看其加载历史。",
+      "noPermission": "查看加载历史需要机台监控查看权限（machine_monitoring）。",
+      "loadError": "无法读取加载历史。"
+    },
+    "integ": {
+      "flagOff": "设备集成已关闭：发布、回滚版本和记录加载在启用前被阻止。加载历史仍可查看。",
+      "flagOffToast": "设备集成已禁用（预览）— 启用前此操作被阻止。",
+      "failed": "{{action}} {{version}} 未能完成",
+      "loadFailed": "记录加载到 {{machine}} 未能完成"
+    }
   },
   "confirmWithReason": {
     "defaultConfirmText": "确认",

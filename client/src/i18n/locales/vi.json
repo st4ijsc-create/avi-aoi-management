@@ -13576,7 +13576,8 @@
       "versions": "Phiên bản",
       "approval": "Duyệt",
       "deploy": "Triển khai",
-      "machines": "Máy đang chạy"
+      "machines": "Máy đang chạy",
+      "history": "Lịch sử nạp"
     },
     "params": {
       "version": "Phiên bản đang xem",
@@ -13589,7 +13590,20 @@
     },
     "allCodes": "Tất cả mã",
     "allCodesHint": "Bỏ chọn mã — xem sổ triển khai của mọi máy",
-    "deployFailed": "Triển khai lên {{machine}} không thực hiện được"
+    "deployFailed": "Triển khai lên {{machine}} không thực hiện được",
+    "overviewTabs": "Sổ của mọi máy",
+    "loads": {
+      "pickCode": "Chọn một mã recipe ở danh sách bên trái để xem lịch sử nạp của mã đó trên mọi máy.",
+      "pickMachine": "Chọn một máy ở ô \"Chọn máy\" trên đầu trang để xem lịch sử nạp của máy đó.",
+      "noPermission": "Xem lịch sử nạp cần quyền xem giám sát máy (machine_monitoring).",
+      "loadError": "Không đọc được lịch sử nạp."
+    },
+    "integ": {
+      "flagOff": "Tích hợp thiết bị đang tắt: phát hành, rollback phiên bản và ghi nhận nạp bị chặn cho đến khi bật. Xem lịch sử nạp vẫn được.",
+      "flagOffToast": "Tích hợp thiết bị đang tắt (xem trước) — thao tác này bị chặn cho đến khi được bật.",
+      "failed": "{{action}} {{version}} không thực hiện được",
+      "loadFailed": "Ghi nhận nạp lên {{machine}} không thực hiện được"
+    }
   },
   "confirmWithReason": {
     "defaultConfirmText": "XÁC NHẬN",

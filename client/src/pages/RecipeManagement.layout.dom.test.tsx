@@ -341,21 +341,23 @@ describe("Recipes P3 — bố cục", () => {
   it("chưa chọn mã: MAIN hiện sổ triển khai mọi máy (bảng) + gợi ý chọn mã; card 'Xem theo máy' không còn", () => {
     render(<RecipeManagement />);
     const m = mainEl();
-    expect(within(m).getByRole("heading", { name: /Lịch sử triển khai/ })).toHaveTextContent("(3)");
+    // Đợt 3 Task 1 — ĐỔI BỘ CHỌN: tiêu đề sổ nay là tab đầu của hàng tab "Lịch sử triển khai / Lịch sử nạp".
+    expect(within(m).getByRole("tab", { name: /Lịch sử triển khai/ })).toHaveTextContent("(3)");
     expect(within(m).getByText(/Chọn một mã recipe ở danh sách bên trái/)).toBeTruthy();
     const rows = within(m).getAllByRole("row").slice(1);
     expect(rows).toHaveLength(3);
     expect(screen.queryByText("Xem theo máy")).toBeNull();
   });
 
-  it("chọn mã (bấm hàng) ⇒ `?code=`, aria-current, MAIN có đúng MỘT thanh công cụ chứa 5 tab; mặc định tab Phiên bản", async () => {
+  it("chọn mã (bấm hàng) ⇒ `?code=`, aria-current, MAIN có đúng MỘT thanh công cụ chứa 6 tab; mặc định tab Phiên bản", async () => {
     await openCode("RCP-A");
     expect(params().get("code")).toBe("RCP-A");
     expect(codeRow("RCP-A")).toHaveAttribute("aria-current", "true");
     const toolbars = mainEl().querySelectorAll("[data-layout-toolbar]");
     expect(toolbars).toHaveLength(1);
     const names = within(toolbars[0] as HTMLElement).getAllByRole("tab").map((x) => x.textContent?.replace(/\d+$/, "").trim());
-    expect(names).toEqual(["Tham số", "Phiên bản", "Duyệt", "Triển khai", "Máy đang chạy"]);
+    // Đợt 3 Task 1 — thêm tab thứ 6 "Lịch sử nạp" (yêu cầu của task, dời từ Integration).
+    expect(names).toEqual(["Tham số", "Phiên bản", "Duyệt", "Triển khai", "Máy đang chạy", "Lịch sử nạp"]);
     expect(tab(/^Phiên bản/)).toHaveAttribute("aria-selected", "true");
     expect(mainEl().querySelector("[data-version-history]")).toBeTruthy();
   });
@@ -419,7 +421,8 @@ describe("Recipes P3 — bố cục", () => {
     await user.click(within(toolbar).getByRole("button", { name: "Tất cả mã" }));
     expect(params().get("code")).toBeNull();
     expect(codeRow("RCP-A")).not.toHaveAttribute("aria-current");
-    expect(within(mainEl()).getByRole("heading", { name: /Lịch sử triển khai/ })).toHaveTextContent("(4)");
+    // Đợt 3 Task 1 — ĐỔI BỘ CHỌN: heading ⇒ tab (như trên).
+    expect(within(mainEl()).getByRole("tab", { name: /Lịch sử triển khai/ })).toHaveTextContent("(4)");
     expect(within(mainEl()).getByText("khong ma")).toBeTruthy();
     expect(within(toolbar).queryByRole("button", { name: "Tất cả mã" })).toBeNull();
   });
