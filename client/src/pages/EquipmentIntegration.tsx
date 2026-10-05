@@ -56,15 +56,18 @@ import {
   StatusBadge,
   StatusChipStrip,
   Text,
+  VersionHistoryPanel,
   chipStateFromQuery,
   useFlyout,
   useNarrowViewport,
   useCloseOwnLayer,
   type FlyoutDefinition,
   type StatusChipItem,
+  type VersionRow,
 } from "@/components/patterns";
 import { useUrlParam } from "@/components/patterns/useUrlParam";
 import { LegacyTabRedirectGate } from "@/lib/engineeringLegacyRedirects";
+import { LoadHistoryPanel, type HistoryMode, type LoadLogRow } from "./RecipeLoadHistory";
 import { type TabbedHubTab } from "@/components/workspace/TabbedHub";
 import { resolveActiveTab } from "@/components/workspace/hubState";
 import { Button } from "@/components/ui/button";
@@ -81,7 +84,7 @@ import {
 import { Checkbox } from "@/components/ui/checkbox";
 import {
   Plug, RefreshCw, Lock, AlertTriangle, Network,
-  CircleSlash, Camera, Play, Square, Loader2,
+  CircleSlash, Camera, Play, Square, Loader2, History,
 } from "lucide-react";
 import { toast } from "sonner";
 import { toastTrpcError } from "@/lib/trpcErrors";
@@ -110,7 +113,9 @@ type StartWorkerInput = {
 };
 
 const TAB_VALUES = ["status", "acquisition"] as const;
-type TabValue = (typeof TAB_VALUES)[number];
+/** Fix round 1 (R-3-b) — tab CHỈ-ĐỌC "Phiên bản & lịch sử nạp" cho người KHÔNG mở được /recipes (machine_control/canView). */
+const TAB_VALUES_READONLY = ["status", "history", "acquisition"] as const;
+type TabValue = (typeof TAB_VALUES_READONLY)[number];
 const BASE_PATH = "/equipment-integration";
 
 function pctOrDash(n: number | null): string {
@@ -129,6 +134,11 @@ interface EqPageCtx {
   /** <1024 px: công cụ của tab nằm ĐẦU nội dung tab (hàng tab không đủ chỗ) — GC10. */
   narrow: boolean;
   canView: boolean;
+  /** Mở được /recipes (machine_control/canView) ⇒ phiên bản/lịch sử nạp ở Recipes; không ⇒ tab chỉ-đọc ở đây (R-3-b). */
+  canOpenRecipes: boolean;
+  /** Ô mã recipe của tab chỉ-đọc (theo `?code=`). */
+  roCode: string;
+  setRoCode: (v: string) => void;
   canViewAcq: boolean;
   canControlAcq: boolean;
   userId: number | null;
@@ -149,19 +159,24 @@ function useEqCtx(): EqPageCtx {
   return v;
 }
 
-const TABS: readonly TabbedHubTab[] = [
-  { value: "status", labelKey: "eqIntegration.tab.status", fallback: "Connector catalog", icon: <Network className="h-4 w-4" />, Content: CatalogTab },
-  // W8-C (doc 27 V14 — W7-E's noted UI slot): acquisition worker status/start/stop. keepMounted: Review Focus 3.
-  { value: "acquisition", labelKey: "eqIntegration.tab.acquisition", fallback: "Acquisition workers", icon: <Camera className="h-4 w-4" />, Content: AcquisitionTab, keepMounted: true },
-];
+const TAB_STATUS: TabbedHubTab = { value: "status", labelKey: "eqIntegration.tab.status", fallback: "Connector catalog", icon: <Network className="h-4 w-4" />, Content: CatalogTab };
+// W8-C (doc 27 V14 — W7-E's noted UI slot): acquisition worker status/start/stop. keepMounted: Review Focus 3.
+const TAB_ACQ: TabbedHubTab = { value: "acquisition", labelKey: "eqIntegration.tab.acquisition", fallback: "Acquisition workers", icon: <Camera className="h-4 w-4" />, Content: AcquisitionTab, keepMounted: true };
+const TAB_READONLY: TabbedHubTab = { value: "history", labelKey: "eqIntegration.tab.readonlyHistory", fallback: "Versions & load history (view only)", icon: <History className="h-4 w-4" />, Content: ReadOnlyHistoryTab };
+const TABS: readonly TabbedHubTab[] = [TAB_STATUS, TAB_ACQ];
+const TABS_READONLY: readonly TabbedHubTab[] = [TAB_STATUS, TAB_READONLY, TAB_ACQ];
 
 /**
  * Đợt 3 Task 1 — `?tab=recipes|history` (đã dời sang Recipes) ⇒ REPLACE sang `/recipes?tab=versions|history`, giữ query
  * (lib/engineeringLegacyRedirects.tsx); tab còn lại dựng trang như cũ.
  */
+// Fix round 1 (Ruling R-3-b) — CHỈ chuyển người dùng mở được /recipes (machine_control/canView, cùng `canView` của
+// RecipeManagement). Người không có (vai seed operator/viewer) ở lại và thấy tab CHỈ-ĐỌC (phiên bản không thao tác + lịch
+// sử nạp) — cùng thủ tục đọc cũ (machine_monitoring/canView); quyền phía server không đổi.
 export default function EquipmentIntegration() {
+  const { hasPermission } = usePermissions();
   return (
-    <LegacyTabRedirectGate from={BASE_PATH}>
+    <LegacyTabRedirectGate from={BASE_PATH} when={hasPermission("machine_control", "canView")}>
       <EquipmentIntegrationPage />
     </LegacyTabRedirectGate>
   );
@@ -177,9 +192,20 @@ function EquipmentIntegrationPage() {
   // W8-C — RBAC mirrors the visionAdapter router: machine_alerts/canView to read, canCreate to start/stop.
   const canViewAcq = hasPermission("machine_alerts", "canView");
   const canControlAcq = hasPermission("machine_alerts", "canCreate");
+  const canOpenRecipes = hasPermission("machine_control", "canView");
 
   const search = useSearch();
-  const tab = resolveActiveTab(search, TAB_VALUES, "status") as TabValue;
+  const tab = resolveActiveTab(search, canOpenRecipes ? TAB_VALUES : TAB_VALUES_READONLY, "status") as TabValue;
+  // R-3-b — người xem chỉ-đọc đến bằng `?tab=recipes` (giá trị cũ) ⇒ tab chỉ-đọc (thay giá trị, giữ tham số khác).
+  const [tabParam, setTabParam] = useUrlParam("tab");
+  useEffect(() => {
+    if (!canOpenRecipes && tabParam === "recipes") setTabParam("history");
+  }, [canOpenRecipes, tabParam]); // eslint-disable-line react-hooks/exhaustive-deps
+  const [codeParam] = useUrlParam("code");
+  const [roCode, setRoCode] = useState(() => codeParam ?? "");
+  useEffect(() => {
+    setRoCode(codeParam ?? "");
+  }, [codeParam]);
   const narrow = useNarrowViewport();
   const [connector, setConnector] = useUrlParam("connector");
   // Acquisition: panel báo cờ thu ảnh trực tiếp lên hàng công cụ.
@@ -234,6 +260,9 @@ function EquipmentIntegrationPage() {
     tab,
     narrow,
     canView,
+    canOpenRecipes,
+    roCode,
+    setRoCode,
     canViewAcq,
     canControlAcq,
     userId: user?.id ?? null,
@@ -368,7 +397,7 @@ function EquipmentIntegrationPage() {
                   <RefreshCw className="h-4 w-4" />
                 </Button>
               }
-              tabs={TABS}
+              tabs={canOpenRecipes ? TABS : TABS_READONLY}
               basePath={BASE_PATH}
               defaultTab="status"
               toolbarEnd={narrow ? undefined : <TabToolbar />}
@@ -391,6 +420,7 @@ function flagChipState(s: FeatureStatus): StatusChipItem["state"] {
 function TabToolbar() {
   const ctx = useEqCtx();
   if (ctx.tab === "acquisition") return <AcquisitionToolbar />;
+  if (ctx.tab === "history" && !ctx.canOpenRecipes) return <ReadOnlyHistoryToolbar />;
   return <CatalogToolbar />;
 }
 
@@ -412,6 +442,130 @@ function CatalogToolbar() {
     <span className="text-xs text-muted-foreground">
       {t("eqIntegration.catalog.count", "{{count}} connectors", { count: n })}
     </span>
+  );
+}
+
+// ════════ Fix round 1 (R-3-b) — tab CHỈ-ĐỌC "Phiên bản & lịch sử nạp" (người không mở được /recipes) ════════
+// Cùng thủ tục đọc cũ của Integration (machine_monitoring/canView): listRecipeVersions / listCodeHistory /
+// listLoadHistory / machine.list. KHÔNG một nút thao tác nào (không tạo/phát hành/lưu trữ/rollback/ghi nhận nạp).
+type RoMachine = { id: number; code?: string | null; name?: string | null };
+
+function ReadOnlyHistoryToolbar() {
+  const { t } = useTranslation();
+  const ctx = useEqCtx();
+  const [, setCode] = useUrlParam("code");
+  const [machineParam, setMachineParam] = useUrlParam("machineId");
+  const machinesQ = trpc.machine.list.useQuery(undefined, { enabled: ctx.canView });
+  const machines = (machinesQ.data ?? []) as RoMachine[];
+  const run = () => {
+    const c = ctx.roCode.trim();
+    if (c) setCode(c);
+  };
+  return (
+    <>
+      <Input
+        className="h-8 w-28"
+        value={ctx.roCode}
+        placeholder="RCP-001"
+        aria-label={t("eqIntegration.recipeCode", "Recipe code")}
+        onChange={(e) => ctx.setRoCode(e.target.value)}
+        onKeyDown={(e) => { if (e.key === "Enter") run(); }}
+      />
+      <Button variant="outline" size="sm" className="h-8" disabled={!ctx.roCode.trim()} onClick={run}>
+        {t("eqIntegration.loadVersions", "Load versions")}
+      </Button>
+      {/* U11 — Select DS; "__none__" là sentinel cho "chưa chọn máy". */}
+      <Select value={machineParam && /^\d+$/.test(machineParam) ? machineParam : "__none__"} onValueChange={(v) => setMachineParam(v === "__none__" ? null : v)}>
+        <SelectTrigger className="h-8 w-56" aria-label={t("eqIntegration.machine", "Machine")}><SelectValue /></SelectTrigger>
+        <SelectContent>
+          <SelectItem value="__none__">{t("eqIntegration.selectMachine", "Select a machine…")}</SelectItem>
+          {machines.map((m) => (
+            <SelectItem key={m.id} value={String(m.id)}>{m.name ?? m.code} ({m.code})</SelectItem>
+          ))}
+        </SelectContent>
+      </Select>
+      <Badge variant="outline" className="text-muted-foreground">{t("eqIntegration.viewOnly", "View only")}</Badge>
+    </>
+  );
+}
+
+type RoVersion = { id: number; code: string; name: string; version: number; payload: unknown; designStatus: string; createdBy?: number | null; createdAt?: string | Date | null };
+
+function ReadOnlyHistoryTab() {
+  const { t } = useTranslation();
+  const ctx = useEqCtx();
+  const [codeParam] = useUrlParam("code");
+  const [machineParam] = useUrlParam("machineId");
+  const code = codeParam != null && codeParam !== "" ? codeParam : null;
+  const machineId = machineParam != null && /^\d+$/.test(machineParam) ? Number(machineParam) : null;
+  const [modePick, setModePick] = useState<HistoryMode | null>(null);
+  const mode: HistoryMode = modePick ?? (code != null ? "code" : "machine");
+
+  const machinesQ = trpc.machine.list.useQuery(undefined, { enabled: ctx.canView });
+  const versionsQ = trpc.equipmentIntegration.listRecipeVersions.useQuery({ code: code ?? "" }, { enabled: ctx.canView && code != null, retry: false });
+  const loadHistoryQ = trpc.equipmentIntegration.listLoadHistory.useQuery(
+    { machineId: machineId ?? 0, limit: 200 },
+    { enabled: ctx.canView && mode === "machine" && machineId != null, retry: false },
+  );
+  const codeHistoryQ = trpc.equipmentIntegration.listCodeHistory.useQuery(
+    { code: code ?? "", limit: 200 },
+    { enabled: ctx.canView && mode === "code" && code != null, retry: false },
+  );
+  const historyQ = mode === "machine" ? loadHistoryQ : codeHistoryQ;
+  const machines = (machinesQ.data ?? []) as RoMachine[];
+  const machineLabel = (id: number) => {
+    const m = machines.find((x) => x.id === id);
+    return m ? (m.name ?? m.code ?? `#${id}`) : `#${id}`;
+  };
+  const versions = ((versionsQ.data as { versions?: RoVersion[] } | undefined)?.versions ?? []) as RoVersion[];
+  const rows: VersionRow[] = versions.map((v) => ({
+    id: v.id,
+    label: `v${v.version}`,
+    createdAt: v.createdAt ?? null,
+    author: v.createdBy != null ? `#${v.createdBy}` : undefined,
+    current: v.designStatus === "released",
+    note: (
+      <span className="inline-flex items-center gap-2">
+        <StatusBadge status={v.designStatus} label={t(`eqIntegration.recipeStatus.${v.designStatus}`, v.designStatus)} />
+        <span>{v.name}</span>
+      </span>
+    ),
+    content: v.payload,
+  }));
+  const released = versions.find((v) => v.designStatus === "released");
+
+  return (
+    <div data-readonly-history="" className="space-y-4">
+      {ctx.narrow && <NarrowTools />}
+      {code == null ? (
+        <p className="text-sm text-muted-foreground">
+          {t("eqIntegration.readonly.pickCode", "Enter a recipe code above to see its versions and load history (view only).")}
+        </p>
+      ) : (
+        // KHÔNG renderRowActions ⇒ không cột thao tác, không nút nào trên hàng phiên bản.
+        <VersionHistoryPanel
+          title={t("eqIntegration.versionsTitle", "Versions of {{code}}").replace("{{code}}", code)}
+          versions={rows}
+          status={versionsQ.isError ? "error" : versionsQ.isLoading ? "loading" : "ready"}
+          defaultBaseId={released?.id ?? null}
+          diffMaxHeightClass="max-h-[40vh]"
+        />
+      )}
+      <LoadHistoryPanel
+        mode={mode}
+        onModeChange={setModePick}
+        code={code}
+        machineId={machineId}
+        machineLabel={machineLabel}
+        canRead={ctx.canView}
+        rows={(historyQ.data ?? []) as LoadLogRow[]}
+        loading={historyQ.isFetching}
+        error={historyQ.isError}
+        onRetry={() => void historyQ.refetch()}
+        pickCodeText={t("eqIntegration.readonly.pickCode", "Enter a recipe code above to see its versions and load history (view only).")}
+        pickMachineText={t("eqIntegration.readonly.pickMachine", "Select a machine above to see its load history.")}
+      />
+    </div>
   );
 }
 

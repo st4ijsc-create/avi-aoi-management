@@ -109,13 +109,17 @@ export function findLegacyTabRedirect(from: string, search: string): LegacyTabRe
   return ENGINEERING_LEGACY_TAB_REDIRECTS.find((r) => r.from === from && r.tab === tab) ?? null;
 }
 
-/** Bọc nội dung trang `from`: `?tab=` đã dời ⇒ REPLACE sang đích (giữ query); còn lại ⇒ dựng trang như thường. */
-export function LegacyTabRedirectGate({ from, children }: { from: string; children: ReactNode }) {
+/**
+ * Bọc nội dung trang `from`: `?tab=` đã dời ⇒ REPLACE sang đích (giữ query); còn lại ⇒ dựng trang như thường.
+ * `when` (Fix round 1, Ruling R-3-b): chỉ chuyển cho người dùng MỞ ĐƯỢC trang đích (vd /recipes cần machine_control/canView);
+ * `false` ⇒ ở lại trang cũ (trang tự dựng chế độ chỉ-đọc). Mặc định `true`.
+ */
+export function LegacyTabRedirectGate({ from, when = true, children }: { from: string; when?: boolean; children: ReactNode }) {
   const router = useRouter();
   const [path] = useLocation();
   const search = router.searchHook(router);
   // Chỉ khi ĐANG ở `from` (sau khi chuyển, cổng còn mount một nhịp ở đích thì không chuyển lại).
-  const hit = path === from ? findLegacyTabRedirect(from, search) : null;
+  const hit = when && path === from ? findLegacyTabRedirect(from, search) : null;
   if (hit) return <Redirect to={legacyTabRedirectTarget(hit.to, search, hit.tabTo)} replace />;
   return <>{children}</>;
 }

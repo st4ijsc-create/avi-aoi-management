@@ -16301,7 +16301,8 @@
     "subtitle": "Các framework tích hợp đa nhà cung cấp (FOCAS / Euromap, chỉ đọc) — chỉ metadata, không có lệnh thiết bị.",
     "tab": {
       "acquisition": "Worker thu ảnh",
-      "status": "Danh mục connector"
+      "status": "Danh mục connector",
+      "readonlyHistory": "Phiên bản & lịch sử nạp (chỉ xem)"
     },
     "title": "Tích hợp thiết bị",
     "uem": {
@@ -16331,6 +16332,19 @@
       "adapterHonesty": "Giao thức này đã ĐĂNG KÝ trong registry adapter của server — đăng ký không có nghĩa là có thiết bị đang kết nối.",
       "pickHint": "Chọn một connector để xem chi tiết.",
       "loadError": "Không đọc được trạng thái tích hợp."
+    },
+    "recipeStatus": {
+      "draft": "Nháp",
+      "released": "Đã phát hành",
+      "archived": "Đã lưu trữ"
+    },
+    "recipeCode": "Mã recipe",
+    "versionsTitle": "Các phiên bản của {{code}}",
+    "loadVersions": "Nạp phiên bản",
+    "viewOnly": "Chỉ xem",
+    "readonly": {
+      "pickCode": "Nhập mã recipe ở trên để xem các phiên bản và lịch sử nạp của mã đó (chỉ xem).",
+      "pickMachine": "Chọn một máy ở trên để xem lịch sử nạp của máy đó."
     }
   },
   "eqStandards": {

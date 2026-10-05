@@ -102,11 +102,11 @@ function GateProbe() {
   const search = router.searchHook(router);
   return <output data-testid="where">{search ? `${path}?${search}` : path}</output>;
 }
-function goGate(start: string) {
+function goGate(start: string, when?: boolean) {
   const loc = memoryLocation({ path: start, record: true });
   const r = render(
     <Router hook={loc.hook} searchHook={loc.searchHook}>
-      <LegacyTabRedirectGate from="/equipment-integration">
+      <LegacyTabRedirectGate from="/equipment-integration" when={when}>
         <span data-testid="page">trang cũ</span>
       </LegacyTabRedirectGate>
       <GateProbe />
@@ -140,6 +140,15 @@ describe("chuyển hướng theo TAB (Đợt 3 Task 1): Integration → Recipes"
     expect(r.page()).toBeTruthy();
   });
 
+  it("Fix round 1 (R-3-b): `when={false}` (người dùng KHÔNG mở được đích) ⇒ KHÔNG chuyển, dựng trang cũ; mặc định/`true` ⇒ chuyển", () => {
+    let r = goGate("/equipment-integration?tab=history&machineId=3", false);
+    expect(r.where()).toBe("/equipment-integration?tab=history&machineId=3");
+    expect(r.page()).toBeTruthy();
+    cleanup();
+    r = goGate("/equipment-integration?tab=history&machineId=3", true);
+    expect(r.where()).toBe("/recipes?tab=history&machineId=3");
+  });
+
   it("chỉ áp cho đúng đường dẫn `from` (cổng nằm ở trang khác thì không chuyển)", () => {
     const r = goGate("/somewhere-else?tab=recipes&code=X");
     expect(r.where()).toBe("/somewhere-else?tab=recipes&code=X");
@@ -153,8 +162,8 @@ describe("chuyển hướng theo TAB (Đợt 3 Task 1): Integration → Recipes"
     expect(legacyTabRedirectTarget("/r", "a=1", "h")).toBe("/r?tab=h&a=1");
   });
 
-  it("EquipmentIntegration.tsx bọc trang bằng LegacyTabRedirectGate từ đúng đường dẫn của nó", () => {
-    expect(EQ_SRC).toMatch(/<LegacyTabRedirectGate from=\{BASE_PATH\}>/);
+  it("EquipmentIntegration.tsx bọc trang bằng LegacyTabRedirectGate từ đúng đường dẫn của nó, chỉ chuyển người mở được /recipes (R-3-b)", () => {
+    expect(EQ_SRC).toMatch(/<LegacyTabRedirectGate from=\{BASE_PATH\} when=\{hasPermission\("machine_control", "canView"\)\}>/);
     expect(EQ_SRC).toMatch(/const BASE_PATH = "\/equipment-integration";/);
   });
 });

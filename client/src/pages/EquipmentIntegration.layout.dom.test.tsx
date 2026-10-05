@@ -29,12 +29,14 @@ vi.mock("@/components/DashboardLayout", () => ({
   default: ({ children }: { children: React.ReactNode }) => <main>{children}</main>,
 }));
 vi.mock("@/components/PermissionGate", () => ({ ViewOnlyBadge: () => <span>Chỉ xem</span> }));
-const perm = vi.hoisted(() => ({ view: true, control: true, release: true, acqView: true, acqControl: true }));
+const perm = vi.hoisted(() => ({ view: true, controlView: true, control: true, release: true, acqView: true, acqControl: true }));
 vi.mock("@/_core/hooks/usePermissions", () => ({
   usePermissions: () => ({
     isAdmin: false,
     hasPermission: (m: string, a: string) => {
       if (m === "machine_monitoring" && a === "canView") return perm.view;
+      // Fix round 1 (R-3-b) — HẠ TẦNG: quyền mở /recipes (machine_control/canView); mặc định có (như engineer).
+      if (m === "machine_control" && a === "canView") return perm.controlView;
       if (m === "machine_control" && a === "canCreate") return perm.control;
       if (m === "machine_control" && a === "canEdit") return perm.release;
       if (m === "machine_alerts" && a === "canView") return perm.acqView;
@@ -299,7 +301,7 @@ beforeEach(() => {
   srv.acq.unmounts = 0;
   srv.acq.polls.clear();
   srv.acq.refetches = 0;
-  Object.assign(perm, { view: true, control: true, release: true, acqView: true, acqControl: true });
+  Object.assign(perm, { view: true, controlView: true, control: true, release: true, acqView: true, acqControl: true });
   for (const f of Object.values(toastSpy)) f.mockClear();
   localStorage.clear();
   presetNarrow(false);
@@ -330,12 +332,6 @@ const acqPanel = () => document.querySelector("[data-acq-panel]") as HTMLElement
 async function openTab(name: RegExp) {
   const user = userEvent.setup();
   await user.click(tabBtn(name));
-  return user;
-}
-async function loadCode(code = "RCP-1") {
-  const user = await openTab(/^Phiên bản recipe/);
-  const input = within(toolbar()).getByRole("textbox", { name: "Mã recipe" });
-  await user.type(input, `${code}{Enter}`);
   return user;
 }
 const versionRow = (id: number) => mainEl().querySelector(`tr[data-version-id="${id}"]`) as HTMLElement;
@@ -514,6 +510,70 @@ describe("Đợt 3 Task 1 — phiên bản recipe / lịch sử nạp đã dời
     expect(layer("eq-recipe-new")).toBeNull();
     expect(srv.queryInputs.filter((x) => /listRecipeVersions|listLoadHistory|listCodeHistory|^machine\.list/.test(x))).toEqual([]);
     expect(screen.queryByRole("link", { name: /Mở trong Recipes/ })).toBeNull();
+  });
+});
+
+// ── Fix round 1 (Ruling R-3-b) — người KHÔNG mở được /recipes (vai seed operator/viewer: machine_status, không
+// machine_control) GIỮ quyền xem chỉ-đọc ngay trên Integration: một tab "Phiên bản & lịch sử nạp (chỉ xem)" =
+// danh sách phiên bản KHÔNG thao tác + LoadHistoryPanel; KHÔNG chuyển hướng sang /recipes. Server không đổi.
+describe("R-3-b — vai không có machine_control (operator/viewer): xem chỉ-đọc, không chuyển hướng", () => {
+  const asOperator = () => Object.assign(perm, { view: true, controlView: false, control: false, release: false, acqView: false, acqControl: false });
+  const roTab = () => tabBtn(/^Phiên bản & lịch sử nạp/);
+
+  it("tab chỉ-đọc có cho operator, KHÔNG có cho engineer (engineer dùng Recipes)", () => {
+    asOperator();
+    render(<EquipmentIntegration />);
+    expect(within(toolbar()).getAllByRole("tab").map((x) => x.textContent?.trim())).toEqual(["Danh mục connector", "Phiên bản & lịch sử nạp (chỉ xem)", "Worker thu ảnh"]);
+    cleanup();
+    Object.assign(perm, { controlView: true });
+    render(<EquipmentIntegration />);
+    expect(within(toolbar()).queryByRole("tab", { name: /Phiên bản & lịch sử nạp/ })).toBeNull();
+  });
+
+  it.each([
+    "/equipment-integration?tab=recipes&code=RCP-1",
+    "/equipment-integration?tab=history&code=RCP-1",
+  ])("%s (operator) ⇒ KHÔNG chuyển hướng; tab chỉ-đọc: phiên bản v3/v2/v1 kèm trạng thái, KHÔNG nút thao tác nào; lịch sử theo mã", (url) => {
+    asOperator();
+    window.history.replaceState(null, "", url);
+    render(<EquipmentIntegration />);
+    expect(window.location.pathname).toBe("/equipment-integration");
+    expect(roTab()).toHaveAttribute("aria-selected", "true");
+    expect(srv.queryInputs).toContain(`equipmentIntegration.listRecipeVersions:${JSON.stringify({ code: "RCP-1" })}`);
+    expect(within(versionRow(103)).getByText("Nháp")).toBeTruthy();
+    expect(within(versionRow(102)).getByText("Đã phát hành")).toBeTruthy();
+    expect(within(versionRow(101)).getByText("Đã lưu trữ")).toBeTruthy();
+    for (const id of [101, 102, 103]) {
+      expect(within(versionRow(id)).queryAllByRole("button")).toHaveLength(0);
+    }
+    expect(screen.queryByRole("button", { name: /Phát hành|Rollback|Ghi nhận nạp|Lưu trữ|Phiên bản mới|Lưu phiên bản mới/ })).toBeNull();
+    expect(srv.queryInputs).toContain(`equipmentIntegration.listCodeHistory:${JSON.stringify({ code: "RCP-1", limit: 200 })}`);
+    const hist = mainEl().querySelector("[data-load-history]") as HTMLElement;
+    expect(within(hist).getByText("nap ca sang")).toBeTruthy();
+    expect(within(hist).getByText("M3")).toBeTruthy();
+  });
+
+  it("operator: nhập mã (Enter) ⇒ `?code=`; chọn máy ⇒ lịch sử theo máy (listLoadHistory {machineId, limit 200}); không gọi thủ tục ghi nào", async () => {
+    asOperator();
+    window.history.replaceState(null, "", "/equipment-integration?tab=history");
+    const user = userEvent.setup();
+    render(<EquipmentIntegration />);
+    await user.type(within(toolbar()).getByRole("textbox", { name: "Mã recipe" }), "RCP-1{Enter}");
+    expect(params().get("code")).toBe("RCP-1");
+    expect(versionRow(102)).toBeTruthy();
+    await user.click(within(toolbar()).getByRole("combobox", { name: "Máy" }));
+    await user.click(await screen.findByRole("option", { name: /M4 \(MC-4\)/ }));
+    const hist = mainEl().querySelector("[data-load-history]") as HTMLElement;
+    await user.click(within(hist).getByRole("combobox", { name: "Lọc theo" }));
+    await user.click(await screen.findByRole("option", { name: "Máy" }));
+    expect(srv.queryInputs).toContain(`equipmentIntegration.listLoadHistory:${JSON.stringify({ machineId: 4, limit: 200 })}`);
+    expect(Object.keys(srv.calls)).toEqual([]);
+  });
+
+  it("engineer (mở được /recipes) ⇒ `?tab=history&machineId=3` vẫn chuyển hướng `/recipes?tab=history&machineId=3`", () => {
+    window.history.replaceState(null, "", "/equipment-integration?tab=history&machineId=3");
+    render(<EquipmentIntegration />);
+    expect(window.location.pathname + window.location.search).toBe("/recipes?tab=history&machineId=3");
   });
 });
 

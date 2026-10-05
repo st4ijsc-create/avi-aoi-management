@@ -48,7 +48,7 @@ const ACTION_TONE: Record<string, "success" | "warning" | "info" | "default" | "
 };
 
 export function LoadHistoryPanel({
-  mode, onModeChange, code, machineId, machineLabel, canRead, rows, loading, error, onRetry,
+  mode, onModeChange, code, machineId, machineLabel, canRead, rows, loading, error, onRetry, pickCodeText, pickMachineText,
 }: {
   mode: HistoryMode;
   onModeChange: (m: HistoryMode) => void;
@@ -63,6 +63,9 @@ export function LoadHistoryPanel({
   loading: boolean;
   error: boolean;
   onRetry: () => void;
+  /** Câu gợi ý khi chưa có mã / máy — mặc định theo Recipes (danh sách trái / bộ chọn header); Integration chỉ-đọc truyền câu riêng. */
+  pickCodeText?: string;
+  pickMachineText?: string;
 }) {
   const { t } = useTranslation();
   const columns: DataTableColumn<LoadLogRow>[] = [
@@ -112,13 +115,13 @@ export function LoadHistoryPanel({
   } else if (mode === "code" && code == null) {
     body = (
       <p className="py-6 text-center text-sm text-muted-foreground">
-        {t("recipes.loads.pickCode", "Chọn một mã recipe ở danh sách bên trái để xem lịch sử nạp của mã đó trên mọi máy.")}
+        {pickCodeText ?? t("recipes.loads.pickCode", "Chọn một mã recipe ở danh sách bên trái để xem lịch sử nạp của mã đó trên mọi máy.")}
       </p>
     );
   } else if (mode === "machine" && machineId == null) {
     body = (
       <p className="py-6 text-center text-sm text-muted-foreground">
-        {t("recipes.loads.pickMachine", "Chọn một máy ở ô \"Chọn máy\" trên đầu trang để xem lịch sử nạp của máy đó.")}
+        {pickMachineText ?? t("recipes.loads.pickMachine", "Chọn một máy ở ô \"Chọn máy\" trên đầu trang để xem lịch sử nạp của máy đó.")}
       </p>
     );
   } else if (error) {

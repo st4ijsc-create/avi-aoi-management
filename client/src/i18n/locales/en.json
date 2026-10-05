@@ -16321,7 +16321,8 @@
     "subtitle": "Multi-vendor integration frameworks (FOCAS / Euromap, read-only) — metadata only, no device commands.",
     "tab": {
       "acquisition": "Acquisition workers",
-      "status": "Connector catalog"
+      "status": "Connector catalog",
+      "readonlyHistory": "Versions & load history (view only)"
     },
     "title": "Equipment Integration",
     "uem": {
@@ -16351,6 +16352,19 @@
       "adapterHonesty": "This protocol is REGISTERED in the server's adapter registry — registration does not mean a device is connected.",
       "pickHint": "Pick a connector to see its details.",
       "loadError": "Could not read the integration status."
+    },
+    "recipeStatus": {
+      "draft": "Draft",
+      "released": "Released",
+      "archived": "Archived"
+    },
+    "recipeCode": "Recipe code",
+    "versionsTitle": "Versions of {{code}}",
+    "loadVersions": "Load versions",
+    "viewOnly": "View only",
+    "readonly": {
+      "pickCode": "Enter a recipe code above to see its versions and load history (view only).",
+      "pickMachine": "Select a machine above to see its load history."
     }
   },
   "eqStandards": {

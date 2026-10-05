@@ -14880,7 +14880,8 @@
   "eqIntegration": {
     "tab": {
       "acquisition": "采集工作器",
-      "status": "连接器目录"
+      "status": "连接器目录",
+      "readonlyHistory": "版本与加载历史（仅查看）"
     },
     "acq": {
       "desc": "抓帧 → 质量指标 → 可选按同一标准接入路径提交 NTF。file/mock 源今天即可用；GenICam 在绑定相机驱动前仍为占位。",
@@ -15018,6 +15019,19 @@
       "adapterHonesty": "该协议已在服务器适配器注册表中注册 — 注册并不代表有设备已连接。",
       "pickHint": "选择一个连接器查看详情。",
       "loadError": "无法读取集成状态。"
+    },
+    "recipeStatus": {
+      "draft": "草稿",
+      "released": "已发布",
+      "archived": "已归档"
+    },
+    "recipeCode": "配方编码",
+    "versionsTitle": "{{code}} 的版本",
+    "loadVersions": "加载版本",
+    "viewOnly": "仅查看",
+    "readonly": {
+      "pickCode": "在上方输入配方代码，查看其版本与加载历史（仅查看）。",
+      "pickMachine": "在上方选择一台机器，查看其加载历史。"
     }
   },
   "panelDef": {
