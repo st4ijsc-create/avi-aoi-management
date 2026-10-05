@@ -136,11 +136,14 @@ export const SCREENS = [
   { n: 14, id: "equipment-integration", route: "/equipment-integration",
     legacyMain: { desc: "EquipmentIntegration tabs-content đang mở", fn: (r) => /EquipmentIntegration\.tsx/.test(r.loc || "") && r.kind === "tabs-content" },
     actions: [] },
-  // Đợt 3 Task 2 (doc 81 §11 "Đã chốt" 2026-10-05) — worker thu ảnh dời sang trang riêng Vision › Thu ảnh. Bước 1 (R-2-k):
-  // đo TRƯỚC khi dời, trên CHÍNH tab `?tab=acquisition` của Integration (`tabOf`: bản ghi riêng, chỉ ghi được khi attribute
-  // trùng phần tử đã hiệu chuẩn của Integration). Bước 2 đổi `route` sang trang mới — README "Màn dời ra trang riêng".
-  { n: 14.5, id: "vision-acquisition", route: "/equipment-integration?tab=acquisition", tabOf: "equipment-integration",
-    legacyMain: { desc: "EquipmentIntegration tabs-content đang mở", fn: (r) => /EquipmentIntegration\.tsx/.test(r.loc || "") && r.kind === "tabs-content" },
+  // Đợt 3 Task 2 (doc 81 §11 "Đã chốt" 2026-10-05) — worker thu ảnh dời sang trang riêng Vision › Thu ảnh.
+  // Bước 1 (R-2-k, commit 5107ac3ca): đo TRƯỚC trên CHÍNH tab `?tab=acquisition` của Integration (khi đó `tabOf`; bản ghi
+  // `vision-acquisition|vw|n/a` ghi bằng --calibrate vì attribute trùng phần tử đã hiệu chuẩn của Integration).
+  // Bước 2: `route` = trang mới; `aliasOf` = URL cũ (nay chuyển hướng tới đây). `movedFrom` CHỈ cấp tham chiếu h1 (trang mẹ
+  // cũ); KHÔNG có nhánh hiệu chuẩn riêng — bản ghi đã có từ bước 1 nên mỗi lần chạy so lại với nó, lệch ⇒ LỖI, đổi bản ghi
+  // phải chạy --calibrate (giữ `previous`). README "Màn dời ra trang riêng".
+  { n: 14.5, id: "vision-acquisition", route: "/vision/acquisition", aliasOf: "/equipment-integration?tab=acquisition", movedFrom: "equipment-integration",
+    legacyMain: { desc: "VisionAcquisition: FE1 chưa từng đo — không có selector cũ (thiếu attribute ⇒ không thấy MAIN)", fn: () => false },
     actions: [{ id: "khoi-dong-worker", label: /Khởi động worker/ }] },
 ];
 
@@ -243,8 +246,9 @@ KNOWN_PROCS["programming-copilot"] = [...new Set([...KNOWN_PROCS["programming-co
 // final wave (I-4) — tab cảnh báo của Standards là CÙNG trang: đọc đúng những gì trang Standards đọc.
 PAGE_TABLES["equipment-standards-alarms"] = PAGE_TABLES["equipment-standards"];
 KNOWN_PROCS["equipment-standards-alarms"] = KNOWN_PROCS["equipment-standards"];
-// Đợt 3 Task 2 — tab thu ảnh của Integration: đọc những gì Integration đọc + hai thủ tục visionAdapter (trạng thái worker
-// và loại nguồn — bộ nhớ của server, không bảng DB nào).
+// Đợt 3 Task 2 — Vision › Thu ảnh (trước: tab thu ảnh của Integration): bảng của vỏ (⊆ danh sách của Integration — giữ
+// nguyên để canh trôi không hẹp đi) + hai thủ tục visionAdapter (trạng thái worker và loại nguồn — bộ nhớ của server, không
+// bảng DB nào). Thủ tục equipmentIntegration.* của bước 1 giữ trong danh sách (chỉ là "đã biết", không bắt buộc gọi).
 PAGE_TABLES["vision-acquisition"] = PAGE_TABLES["equipment-integration"];
 KNOWN_PROCS["vision-acquisition"] = [...KNOWN_PROCS["equipment-integration"], "visionAdapter.acquisitionWorkerStatus", "visionAdapter.listAcquisitionSources"].sort();
 
@@ -1605,7 +1609,7 @@ async function measureAll({ base, username, password, screens, sizes, shots, sho
           }
           if (shots) await page.screenshot({ path: path.join(shotDir, `${String(s.n).padStart(2, "0")}-${s.id}-${variant}-${w}.png`) });
           const v = s.copilot ? variant : "n/a";
-          const parentId = s.tabOf ?? s.calibrateAs?.id;
+          const parentId = s.tabOf ?? s.calibrateAs?.id ?? s.movedFrom;
           const opts = { ref: refs[`${s.id}|${w}|${v}`], h1Ref: parentId ? (refs[`${parentId}|${w}|${s.calibrateAs?.variant ?? v}`] ?? refs[`${parentId}|${w}|n/a`]) : undefined, calibrations };
           const rec = await measurePage(page, s, v, opts);
           // final wave (R-2-z1): màn có biến thể Copilot ⇒ kiểm Copilot THẬT SỰ mở/đóng đúng biến thể (LỖI nếu không).

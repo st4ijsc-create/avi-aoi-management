@@ -321,3 +321,20 @@ Trước đợt này hai số của doc 81 §11 chỉ có ở một bản sao th
 - `--calibrate` ghi kèm `gitDirty` (tệp chưa commit dưới `client/src`/`scripts/ui-metrics` lúc hiệu chuẩn) — `gitHead`
   một mình không nói bố cục đo có nằm trong commit đó (T4-M7).
 
+
+## Màn dời ra trang riêng (Đợt 3 Task 2, 2026-10-05) — `vision-acquisition`
+Worker thu ảnh rời tab `?tab=acquisition` của Equipment Integration sang trang riêng Vision › Thu ảnh (`/vision/acquisition`).
+URL cũ chuyển hướng tới trang mới (giữ query, bỏ `tab`). Màn đo theo khuôn R-2-k, hai bước, cùng **một** id:
+
+| bước | `route` đo | khoá khai báo | bản ghi hiệu chuẩn `vision-acquisition|vw|n/a` |
+|---|---|---|---|
+| 1 — TRƯỚC (commit 5107ac3ca) | `/equipment-integration?tab=acquisition` | `tabOf: "equipment-integration"` | ghi bằng `--calibrate` vì attribute TRÙNG phần tử đã hiệu chuẩn của Integration |
+| 2 — SAU | `/vision/acquisition` (`aliasOf` = URL cũ) | `movedFrom: "equipment-integration"` | so lại mỗi lần chạy; trang mới ⇒ lệch ⇒ LỖI cho tới khi `--calibrate` ghi đè (giữ `previous`, diff git cho thấy) |
+
+- `movedFrom` **chỉ** cấp tham chiếu h1 (`h1Ref` = của trang mẹ cũ, như `tabOf`/`calibrateAs`). Nó **không** có nhánh hiệu chuẩn
+  riêng: không có bản ghi thì rơi vào nhánh thường (không tham chiếu FE1 ⇒ LỖI). Không gác nào bị nới.
+- `PAGE_TABLES` = của Integration (vỏ; ⊆ hợp `allTables()`), `KNOWN_PROCS` = của Integration + `visionAdapter.acquisitionWorkerStatus`,
+  `visionAdapter.listAcquisitionSources` (bộ nhớ server, không bảng).
+- Hành động khai báo: `khoi-dong-worker` (nút MỞ sheet `acq-start`; không bao giờ bấm nút gửi trong sheet).
+- **TRƯỚC/SAU KHÔNG CÙNG LOẠI** về hình học: trước là MAIN của Integration (hàng tab + bảng), sau là MAIN của trang mới (hàng công
+  cụ + bảng). Đọc như "cùng nội dung ở chỗ mới", không như cải thiện/thoái lui của cùng một MAIN.
