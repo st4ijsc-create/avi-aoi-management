@@ -74,6 +74,8 @@ import {
   CommandValueParseError,
   type CommandValueType,
 } from "@/lib/interlockCommandValue";
+// doc 81 Đợt 3 Task 4 — "Giao cho" (sheet rule) + cột "Người được giao" (danh sách). Được giao ≠ được duyệt (duyệt vẫn admin + SoD).
+import { AssigneeCell, AssignmentControl, useAssignments, useCanAssign, type AssignmentRow } from "@/components/engineering/AssignmentControl";
 
 const SCOPES = ["line", "station", "machine"] as const;
 const SOURCE_TYPES = ["spc_violation", "ng_rate", "process_result", "telemetry_tag", "cpk"] as const;
@@ -220,6 +222,8 @@ interface InterlockPageCtx {
   deletePending: boolean;
   disable: (r: RuleRow, reason: string) => Promise<unknown>;
   remove: (r: RuleRow, reason: string) => Promise<unknown>;
+  /** doc 81 Đợt 3 Task 4 — phân công đang hiệu lực (id rule → hàng). */
+  assignments: Map<number, AssignmentRow>;
 }
 const InterlockCtx = createContext<InterlockPageCtx | null>(null);
 function usePageCtx(): InterlockPageCtx {
@@ -244,6 +248,8 @@ export default function InterlockRuleManagement() {
 
   const utils = trpc.useUtils();
   const rulesQuery = trpc.interlock.list.useQuery(undefined, { enabled: canView });
+  const { byId: assignments } = useAssignments("interlock_rule", canView);
+  const canAssign = useCanAssign("interlock_rule");
   // Realtime: refetch danh sách sự kiện định kỳ; dừng khi không có quyền xem
   // hoặc khi tab bị ẩn (doc 27 B12 — usePollingInterval).
   const eventsPolling = usePollingInterval(canView ? 5000 : false);
@@ -411,7 +417,15 @@ export default function InterlockRuleManagement() {
           );
         }
         // key = id: form khởi tạo MỘT lần từ hàng lúc mở (như dialog cũ); danh sách tải lại không ghi đè.
-        return <RuleEditForm key={r.id} rule={r} onSaved={invalidateRules} />;
+        // doc 81 Đợt 3 Task 4 — rule CHƯA DUYỆT: "Giao cho" ở đầu sheet (cổng = interlock/canEdit, như chính sheet này).
+        return (
+          <div className="space-y-3">
+            {r.approvedBy == null && (
+              <AssignmentControl entityType="interlock_rule" entityId={r.id} assignment={assignments.get(r.id)} canAssign={canAssign} className="rounded-md border p-2" />
+            )}
+            <RuleEditForm key={r.id} rule={r} onSaved={invalidateRules} />
+          </div>
+        );
       },
     };
   }
@@ -438,6 +452,7 @@ export default function InterlockRuleManagement() {
     deletePending: deleteRule.isPending,
     disable: (r, reason) => disableRule.mutateAsync({ id: r.id, reason }),
     remove: (r, reason) => deleteRule.mutateAsync({ id: r.id, reason }),
+    assignments,
   };
 
   const tabs: TabbedHubTab[] = [
@@ -651,13 +666,14 @@ function RulesListView() {
             <TableHead>{t("interlockRules.action")}</TableHead>
             <TableHead>{t("interlockRules.gate")}</TableHead>
             <TableHead>{t("interlockRules.cooldown")}</TableHead>
+            <TableHead>{t("engineeringAssign.column", "Assignee")}</TableHead>
             {/* final wave M-10 — cột thao tác DÍNH phải: bảng rộng hơn MAIN ở 1366 vẫn luôn thấy Duyệt/Bật/Tắt (phần còn lại cuộn ngang). */}
             <TableHead data-sticky-actions="" className="sticky right-0 z-[1] bg-background text-right shadow-[-6px_0_6px_-6px_rgba(0,0,0,0.25)]">{t("interlockRules.actions")}</TableHead>
           </TableRow>
         </TableHeader>
         <TableBody>
           {c.visibleRules.length === 0 && (
-            <TableRow><TableCell colSpan={8} className="text-center text-muted-foreground">{t("interlockRules.empty")}</TableCell></TableRow>
+            <TableRow><TableCell colSpan={9} className="text-center text-muted-foreground">{t("interlockRules.empty")}</TableCell></TableRow>
           )}
           {c.visibleRules.map((r) => {
             const approved = r.approvedBy != null;
@@ -692,6 +708,7 @@ function RulesListView() {
                     : <Badge variant="outline">{t("interlockRules.disabled")}</Badge>}
                 </TableCell>
                 <TableCell className="text-xs">{r.cooldownSeconds}s</TableCell>
+                <TableCell><AssigneeCell row={c.assignments.get(r.id)} className="max-w-[9rem]" /></TableCell>
                 <TableCell data-sticky-actions="" className="sticky right-0 z-[1] bg-background text-right space-x-1 whitespace-nowrap shadow-[-6px_0_6px_-6px_rgba(0,0,0,0.25)]" onClick={stop} onKeyDown={stop}>
                   {/* Doc 81 Đợt 2 Task 5 — dialog test cũ ⇒ flyout công cụ `?flyout=rule-test&flyoutId=`. */}
                   <Button size="sm" variant="outline" aria-label={t("interlockRules.testTitle")} title={t("interlockRules.testTitle")}

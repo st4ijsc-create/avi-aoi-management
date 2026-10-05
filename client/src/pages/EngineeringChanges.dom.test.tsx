@@ -17,6 +17,7 @@ import userEvent from "@testing-library/user-event";
 import "@testing-library/jest-dom/vitest";
 import * as React from "react";
 import { initLayoutKitTestI18n } from "@/components/patterns/layoutKitTestI18n";
+import viLocale from "@/i18n/locales/vi.json";
 
 vi.mock("@/components/DashboardLayout", () => ({
   default: ({ children }: { children: React.ReactNode }) => <main>{children}</main>,
@@ -50,6 +51,9 @@ const srv = vi.hoisted(() => ({
   invalidated: [] as string[],
   failTransition: null as null | { data: { code: string } },
   holdCreate: null as null | Promise<void>,
+  // doc 81 Đợt 3 Task 4 — phân công đang hiệu lực + roster "Giao cho".
+  assignments: [] as Array<Record<string, unknown>>,
+  assignCalls: [] as unknown[],
 }));
 function bump() {
   srv.version++;
@@ -86,12 +90,18 @@ vi.mock("@/lib/trpc", () => {
         return q(srv.db.find((r) => r.id === input?.id) ?? undefined, enabled);
       }
       if (router === "productModel" && name === "list") return q([{ id: 5, code: "MODEL-A", name: "Model A" }], enabled);
+      if (router === "engineering" && name === "assignments") return q(srv.assignments, enabled);
+      if (router === "engineering" && name === "assignableUsers") return q([{ id: 21, name: "Ky su Duyet" }, { id: 22, name: "Ky su Thu Hai" }], enabled);
       return q(undefined, enabled);
     },
     useMutation: (hookOpts: { onSuccess?: (r: unknown) => void; onError?: (e: unknown) => void } = {}) => ({
       isPending: false,
       mutateAsync: vi.fn(),
       mutate: (input: Record<string, unknown>, callOpts: { onSuccess?: (r: unknown) => void; onError?: (e: unknown) => void } = {}) => {
+        if (router === "engineering") {
+          srv.assignCalls.push({ name, ...input });
+          return;
+        }
         if (router === "ecn" && name === "create") {
           srv.calls.create.push(input);
           const row = { id: srv.nextId, ecnKey: `ECN-NEW-${srv.nextId}`, status: "draft", requestedBy: me.id, reviewedBy: null, changeType: input.changeType, title: input.title, effectivityDate: null, createdAt: new Date("2026-10-03T00:00:00Z") };
@@ -190,6 +200,9 @@ beforeAll(async () => {
     unobserve() {}
     disconnect() {}
   };
+  // doc 81 Đợt 3 Task 4 — EntityPicker (cmdk) cần hai API trình duyệt mà jsdom không có.
+  Element.prototype.scrollIntoView ??= function () {};
+  (Element.prototype as unknown as { hasPointerCapture: () => boolean }).hasPointerCapture ??= () => false;
   await initLayoutKitTestI18n();
 });
 beforeEach(() => {
@@ -198,6 +211,8 @@ beforeEach(() => {
   srv.listSnapshot = srv.db.map((r) => ({ ...r }));
   srv.calls = { create: [], transition: [], getById: [] };
   srv.invalidated = [];
+  srv.assignments = [{ entityId: 2, assigneeUserId: 21, assigneeName: "Ky su Duyet" }];
+  srv.assignCalls = [];
   srv.failTransition = null;
   srv.holdCreate = null;
   srv.nextId = 100;
@@ -512,6 +527,49 @@ describe("ECN P3 — ký duyệt / từ chối qua TransitionDialog (hợp đồ
     perm.canDecide = false;
     render(<EngineeringChanges />);
     expect(within(rowOf("ECN-0003")).queryByRole("button", { name: "Phê duyệt" })).toBeNull();
+  });
+});
+
+describe("doc 81 Đợt 3 Task 4 — 'Giao cho' + cột 'Người được giao'", () => {
+  const vi_ = (k: string): string => k.split(".").reduce<any>((o, p) => o?.[p], viLocale);
+  it("danh sách có cột 'Người được giao' đọc engineering.assignments (ECN-0002 ⇒ tên; ECN khác ⇒ —)", () => {
+    window.history.replaceState({}, "", "/engineering-changes");
+    render(<EngineeringChanges />);
+    const main = document.querySelector("[data-layout-main]") as HTMLElement;
+    expect(within(main).getByRole("columnheader", { name: vi_("engineeringAssign.column") })).toBeInTheDocument();
+    const row2 = within(main).getByText("ECN-0002").closest("tr") as HTMLElement;
+    expect(row2.querySelector("[data-assignee-cell]")).toHaveTextContent("Ky su Duyet");
+    const row1 = within(main).getByText("ECN-0001").closest("tr") as HTMLElement;
+    expect(row1.querySelector("[data-assignee-cell]")).toHaveTextContent("—");
+  });
+
+  it("sheet chi tiết ECN CHỜ DUYỆT + quyền quyết định ⇒ bộ chọn 'Giao cho'; chọn người khác ⇒ assign mang expected = người đang giao", () => {
+    window.history.replaceState({}, "", "/engineering-changes?flyout=ecn&flyoutId=2");
+    render(<EngineeringChanges />);
+    const ctl = document.querySelector('[data-assign-control="ecn"]') as HTMLElement;
+    expect(ctl).not.toBeNull();
+    const box = within(ctl).getByRole("combobox", { name: vi_("engineeringAssign.label") });
+    expect(box).toHaveTextContent("Ky su Duyet");
+    fireEvent.click(box);
+    fireEvent.click(screen.getByRole("option", { name: /Ky su Thu Hai/ }));
+    expect(srv.assignCalls).toEqual([{ name: "assign", entityType: "ecn", entityId: 2, assigneeUserId: 22, expectedAssigneeUserId: 21 }]);
+    // Được giao ≠ được duyệt: không lượt chuyển trạng thái ECN nào được gọi.
+    expect(srv.calls.transition).toEqual([]);
+  });
+
+  it("ECN KHÔNG chờ duyệt (đã đóng) ⇒ chỉ đọc, không combobox; không có quyền quyết định ⇒ chỉ đọc", () => {
+    window.history.replaceState({}, "", "/engineering-changes?flyout=ecn&flyoutId=5");
+    render(<EngineeringChanges />);
+    const ctl = document.querySelector('[data-assign-control="ecn"]') as HTMLElement;
+    expect(ctl).not.toBeNull();
+    expect(within(ctl).queryByRole("combobox")).toBeNull();
+    cleanup();
+    perm.canDecide = false;
+    window.history.replaceState({}, "", "/engineering-changes?flyout=ecn&flyoutId=2");
+    render(<EngineeringChanges />);
+    const ctl2 = document.querySelector('[data-assign-control="ecn"]') as HTMLElement;
+    expect(within(ctl2).queryByRole("combobox")).toBeNull();
+    expect(ctl2).toHaveTextContent("Ky su Duyet");
   });
 });
 

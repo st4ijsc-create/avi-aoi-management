@@ -98,9 +98,15 @@ export interface PendingReviewStripProps {
    * quyền mở". Không truyền ⇒ mọi dòng là link như cũ.
    */
   canOpen?: (c: CategoryDef) => boolean;
+  /**
+   * doc 81 Đợt 3 Task 4 — chỉ `variant="table"`: `"mine"` ⇒ các dòng KHÔNG ghim đọc số + mẫu từ `pendingSummary.mine`
+   * (mục giao cho người xem; server đã áp luật tên HUB-02 — dòng KHÔNG BAO GIỜ mượn mẫu của nhóm toàn module). Dòng
+   * ghim (loại khẩn, R-2-y) vẫn đọc số TOÀN module. Mặc định `"summary"` = như cũ.
+   */
+  source?: "summary" | "mine";
 }
 
-export function PendingReviewStrip({ variant = "cards", categoryFilter, pinned, canOpen }: PendingReviewStripProps = {}) {
+export function PendingReviewStrip({ variant = "cards", categoryFilter, pinned, canOpen, source = "summary" }: PendingReviewStripProps = {}) {
   const { t } = useTranslation();
   const query = trpc.oversight.pendingSummary.useQuery(undefined, {
     // Việc chờ duyệt thay đổi chậm — làm mới nhẹ, không spam.
@@ -112,7 +118,7 @@ export function PendingReviewStrip({ variant = "cards", categoryFilter, pinned, 
   if (variant === "table") {
     const pin = pinned ? CATEGORIES.filter(pinned) : [];
     const rest = (categoryFilter ? CATEGORIES.filter(categoryFilter) : CATEGORIES).filter((c) => !pin.includes(c));
-    return <PendingReviewTable query={query} pinned={pin} categories={rest} canOpen={canOpen} />;
+    return <PendingReviewTable query={query} pinned={pin} categories={rest} canOpen={canOpen} source={source} />;
   }
   // HUB-01 — nguồn nào ĐANG lỗi (bảng thiếu, quyền hạ tầng, DB rớt…), bất kể tổng.
   const degradedCategories = data != null ? CATEGORIES.filter((c) => data[c.key].degraded) : [];
@@ -232,6 +238,8 @@ export function PendingReviewStrip({ variant = "cards", categoryFilter, pinned, 
 }
 
 type PendingSummary = inferRouterOutputs<AppRouter>["oversight"]["pendingSummary"];
+type Bucket = PendingSummary["ecn"];
+const NO_BUCKET: Bucket = { count: 0, samples: [], degraded: false };
 
 /**
  * Doc 81 Đợt 2 Task 15 — thân bảng của `variant="table"`. Cùng luật HUB-01 với lưới thẻ, nhưng tính trên `categories`
@@ -245,21 +253,26 @@ function PendingReviewTable({
   categories: rest,
   pinned = [],
   canOpen,
+  source = "summary",
 }: {
   query: { data?: PendingSummary; isLoading: boolean; isError: boolean };
   categories: readonly CategoryDef[];
   pinned?: readonly CategoryDef[];
   canOpen?: (c: CategoryDef) => boolean;
+  source?: "summary" | "mine";
 }) {
   const { t } = useTranslation();
   const data = query.data;
+  // doc 81 Đợt 3 Task 4 — nguồn của từng dòng: ghim ⇒ toàn module (R-2-y); còn lại theo `source`.
+  const bucketOf = (c: CategoryDef, d: PendingSummary): Bucket =>
+    source === "mine" && !pinned.includes(c) ? ((d.mine as Partial<Record<CategoryDef["key"], Bucket>>)?.[c.key] ?? NO_BUCKET) : d[c.key];
   // Tập đang hiện = loại ghim (luôn) + loại theo phạm vi. HUB-01 tính trên CẢ tập này.
   const categories = [...pinned, ...rest];
   // Chưa có dữ liệu và không lỗi (kể cả trước lượt tải đầu) ⇒ khung chờ, không bao giờ là bảng rỗng/0.
   const waiting = data == null && !query.isError;
   const label = (c: CategoryDef) => t(`oversight.category.${c.key}`, c.fallbackLabel);
-  const degraded = data != null ? categories.filter((c) => data[c.key].degraded) : [];
-  const shownTotal = data != null ? categories.reduce((n, c) => n + data[c.key].count, 0) : 0;
+  const degraded = data != null ? categories.filter((c) => bucketOf(c, data).degraded) : [];
+  const shownTotal = data != null ? categories.reduce((n, c) => n + bucketOf(c, data).count, 0) : 0;
   const allClear = data != null && shownTotal === 0 && degraded.length === 0;
 
   return (
@@ -279,7 +292,9 @@ function PendingReviewTable({
           ) : (
             <span className="inline-flex items-center gap-2 text-muted-foreground">
               <CheckCircle2 className="h-4 w-4 shrink-0 text-success" aria-hidden="true" />
-              {t("oversight.allClear", "Nothing waiting for approval right now.")}
+              {source === "mine"
+                ? t("oversight.mineAllClear", "Nothing is assigned to you right now.")
+                : t("oversight.allClear", "Nothing waiting for approval right now.")}
             </span>
           )}
         </caption>
@@ -311,7 +326,7 @@ function PendingReviewTable({
   );
 
   function renderRow(cat: CategoryDef, data: PendingSummary) {
-    const bucket = data[cat.key];
+    const bucket = bucketOf(cat, data);
     const Icon = cat.icon;
     const active = bucket.count > 0;
     const tone = active ? (cat.critical ? "text-destructive" : "text-warning") : "text-muted-foreground";

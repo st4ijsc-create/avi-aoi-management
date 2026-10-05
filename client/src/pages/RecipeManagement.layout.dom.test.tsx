@@ -61,6 +61,9 @@ const srv = vi.hoisted(() => ({
   rollbackError: null as null | Error,
   holdDeploy: null as null | Promise<void>,
   queryInputs: [] as string[],
+  // doc 81 Đợt 3 Task 4 — phân công đang hiệu lực + lượt gọi engineering.assign/unassign.
+  assignments: [] as Array<Record<string, unknown>>,
+  assignCalls: [] as unknown[],
 }));
 function bump() {
   srv.version++;
@@ -105,6 +108,10 @@ vi.mock("@/lib/trpc", () => {
   const later = () => Promise.resolve();
   const runOp = (path: string, input: Row): Promise<unknown> =>
     later().then(() => {
+      if (path === "engineering.assign" || path === "engineering.unassign") {
+        srv.assignCalls.push({ path, ...input });
+        return { assigneeUserId: input.assigneeUserId, assigneeName: "Ky su B" };
+      }
       if (path === "machineRecipe.recipes.create") {
         srv.calls.create.push(input);
         const same = srv.versions.filter((v) => v.code === input.code);
@@ -167,6 +174,8 @@ vi.mock("@/lib/trpc", () => {
       if (path === "machineRecipe.recipes.listVersions")
         return q(srv.snap.versions.filter((v) => v.code === input?.code).sort((a, b) => Number(b.version) - Number(a.version)), enabled);
       if (path === "machineRecipe.recipes.genealogy") return q([], enabled);
+      if (path === "engineering.assignments") return q(srv.assignments, enabled);
+      if (path === "engineering.assignableUsers") return q([{ id: 31, name: "Ky su A" }, { id: 32, name: "Ky su B" }], enabled);
       if (path === "machineRecipe.machines.list") return q(srv.machines, enabled);
       if (path === "machineRecipe.deployments.list") {
         const rows = input?.machineId != null ? srv.snap.deployments.filter((d) => d.machineId === input.machineId) : srv.snap.deployments;
@@ -264,6 +273,7 @@ beforeAll(async () => {
     disconnect() {}
   };
   Element.prototype.scrollIntoView ??= function () {};
+  (Element.prototype as unknown as { hasPointerCapture: () => boolean }).hasPointerCapture ??= () => false;
   await initLayoutKitTestI18n();
 });
 beforeEach(() => {
@@ -277,6 +287,8 @@ beforeEach(() => {
   srv.nextId = 100;
   srv.rollbackError = null;
   srv.holdDeploy = null;
+  srv.assignments = [{ entityId: 13, assigneeUserId: 31, assigneeName: "Ky su A" }, { entityId: 12, assigneeUserId: 31, assigneeName: "Ky su A" }];
+  srv.assignCalls = [];
   perm.canView = true;
   perm.canCreate = true;
   perm.canEdit = true;
@@ -592,6 +604,42 @@ describe("Recipes P3 — sheet duyệt (W2-9 phân tách nhiệm vụ)", () => {
     render(<RecipeManagement />);
     await new Promise((r) => setTimeout(r, 30));
     expect(layer("recipe-approve")).toBeNull();
+  });
+});
+
+describe("doc 81 Đợt 3 Task 4 — tab Duyệt: 'Giao cho' + cột 'Người được giao'", () => {
+  it("bản NHÁP chưa duyệt ⇒ bộ chọn 'Giao cho' (v3 đang giao Ky su A); bản đã duyệt ⇒ chỉ tên, không bộ chọn", () => {
+    window.history.replaceState(null, "", "/recipes?code=RCP-A&tab=approval");
+    render(<RecipeManagement />);
+    expect(within(mainEl()).getByRole("columnheader", { name: "Người được giao" })).toBeInTheDocument();
+    const v3 = mainEl().querySelector('tr[data-recipe-id="13"]') as HTMLElement;
+    expect(within(v3).getByRole("combobox", { name: "Giao cho" })).toHaveTextContent("Ky su A");
+    const v4 = mainEl().querySelector('tr[data-recipe-id="14"]') as HTMLElement;
+    expect(within(v4).getByRole("combobox", { name: "Giao cho" })).toHaveTextContent("Chưa giao");
+    const v2 = mainEl().querySelector('tr[data-recipe-id="12"]') as HTMLElement;
+    expect(within(v2).queryByRole("combobox", { name: "Giao cho" })).toBeNull();
+    expect(v2.querySelector("[data-assignee-cell]")).toHaveTextContent("Ky su A");
+  });
+
+  it("giao v4 cho Ky su B ⇒ MỘT lượt engineering.assign (expected=null); nút Duyệt của v4 VẪN khoá (tự duyệt) — được giao ≠ được duyệt", async () => {
+    window.history.replaceState(null, "", "/recipes?code=RCP-A&tab=approval");
+    render(<RecipeManagement />);
+    const v4 = mainEl().querySelector('tr[data-recipe-id="14"]') as HTMLElement;
+    fireEvent.click(within(v4).getByRole("combobox", { name: "Giao cho" }));
+    fireEvent.click(screen.getByRole("option", { name: /Ky su B/ }));
+    await waitFor(() => expect(srv.assignCalls).toHaveLength(1));
+    expect(srv.assignCalls[0]).toEqual({ path: "engineering.assign", entityType: "recipe", entityId: 14, assigneeUserId: 32, expectedAssigneeUserId: null });
+    expect(within(v4).getByRole("button", { name: "Duyệt" })).toBeDisabled();
+    expect(srv.calls.approve).toEqual([]);
+  });
+
+  it("không có quyền sửa ⇒ không bộ chọn (chỉ tên), như nút Duyệt", () => {
+    perm.canEdit = false;
+    window.history.replaceState(null, "", "/recipes?code=RCP-A&tab=approval");
+    render(<RecipeManagement />);
+    const v3 = mainEl().querySelector('tr[data-recipe-id="13"]') as HTMLElement;
+    expect(within(v3).queryByRole("combobox", { name: "Giao cho" })).toBeNull();
+    expect(v3).toHaveTextContent("Ky su A");
   });
 });
 

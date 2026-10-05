@@ -3998,7 +3998,9 @@
       "reviewArtifact": "duyệt phiên bản chương trình",
       "approveInterlockRule": "duyệt quy tắc khoá liên động",
       "releaseRecipeVersion": "phát hành phiên bản công thức",
-      "rollbackRecipeVersion": "quay lui phiên bản công thức"
+      "rollbackRecipeVersion": "quay lui phiên bản công thức",
+      "assignEngineeringItem": "giao việc chờ duyệt",
+      "unassignEngineeringItem": "bỏ giao việc chờ duyệt"
     },
     "field": {
       "stopValue": "giá trị dừng ghim (stopValue)",
@@ -4102,7 +4104,8 @@
       "reviewReason": "lý do từ chối",
       "gatewayId": "gateway",
       "deviceIds": "danh sách thiết bị được phép",
-      "expectedProjectId": "dự án đang mở (expectedProjectId)"
+      "expectedProjectId": "dự án đang mở (expectedProjectId)",
+      "assigneeUserId": "người được giao"
     },
     "feature": {
       "webIngest": "nạp nội dung từ web",
@@ -4335,7 +4338,13 @@
       "recipeArchived": "Phiên bản công thức này đã lưu trữ — hãy tạo phiên bản mới thay vì đưa bản đã lưu trữ vào chạy.",
       "recipeMachineTypeMismatch": "Công thức này dành cho loại máy khác với máy đích — không thể triển khai lên máy này.",
       "recipeRetired": "Phiên bản này đã bị CỐ Ý lưu trữ (không phải chỉ bị thay bằng bản mới), hoặc không có dấu vết từng bị thay — không thể quay lui về nó. Hãy tạo phiên bản mới.",
-      "buildNotInProject": "Build này không thuộc dự án đang mở — chọn lại một build của chính dự án này rồi thử lại. Không có gì được triển khai."
+      "buildNotInProject": "Build này không thuộc dự án đang mở — chọn lại một build của chính dự án này rồi thử lại. Không có gì được triển khai.",
+      "assignTargetNotPending": "Chỉ giao được mục đang chờ duyệt — mục này không còn chờ duyệt.",
+      "assignmentChanged": "Người được giao vừa bị người khác đổi. Tải lại để xem người được giao hiện tại.",
+      "alreadyAssignedToUser": "Mục này đã được giao cho người này.",
+      "assigneeInactive": "Tài khoản người được giao đã bị vô hiệu hoá.",
+      "assigneeCannotView": "Người được giao không có quyền xem trang của mục này.",
+      "assignmentStoreMissing": "Chưa bật được giao việc: cơ sở dữ liệu chưa được cập nhật (cần quản trị viên)."
     },
     "stopPinReason": {
       "no_pins": "Máy chưa ghim tag DỪNG nào — dùng E-STOP phần cứng.",
@@ -16138,7 +16147,7 @@
     "inboxTab": "Hộp việc",
     "catalogTab": "Danh mục công cụ",
     "scopeLabel": "Phạm vi hộp việc",
-    "scopeApprovals": "Chờ duyệt",
+    "scopeApprovals": "Chờ duyệt (tôi có quyền)",
     "scopeApprovalsHint": "Việc chờ duyệt / xác nhận ở các màn bạn có quyền mở",
     "scopeAll": "Toàn module",
     "scopeAllHint": "Mọi việc chờ và cảnh báo của module (gồm sự cố an toàn, sự kiện interlock, bế tắc đội xe)",
@@ -16160,7 +16169,9 @@
       "commandConsole": "Bảng lệnh (HITL)"
     },
     "criticalChip": "Khẩn",
-    "criticalSource": "oversight.pendingSummary — recipe chạy chưa duyệt, sự kiện interlock đang mở, sự cố an toàn chưa kiểm định, bế tắc đội xe"
+    "criticalSource": "oversight.pendingSummary — recipe chạy chưa duyệt, sự kiện interlock đang mở, sự cố an toàn chưa kiểm định, bế tắc đội xe",
+    "scopeMine": "Của tôi",
+    "scopeMineHint": "Việc chờ duyệt đang được giao cho bạn (được giao không cấp quyền duyệt)"
   },
   "oversight": {
     "title": "Đang chờ duyệt & cảnh báo",
@@ -16197,7 +16208,8 @@
       "count": "Số",
       "samples": "Đang chờ"
     },
-    "noAccess": "(không có quyền mở trang này)"
+    "noAccess": "(không có quyền mở trang này)",
+    "mineAllClear": "Không có việc nào đang giao cho bạn."
   },
   "eqIntegration": {
     "whenToUse": "Khi nào dùng — xem khung tích hợp theo hãng (FOCAS/Euromap) và các giao thức adapter đã đăng ký. Metadata chỉ đọc, không có thiết bị trực tiếp. Phiên bản recipe và lịch sử nạp nay ở trang Recipes.",
@@ -21749,5 +21761,17 @@
       "notes": "Ghi chú"
     },
     "movedLink": "Nhân lực → Sản xuất › Ca"
+  },
+  "engineeringAssign": {
+    "label": "Giao cho",
+    "column": "Người được giao",
+    "none": "Chưa giao",
+    "placeholder": "Chưa giao — chọn người…",
+    "search": "Tìm người…",
+    "empty": "Không có ai xem được trang này",
+    "assigned": "Đã giao cho {{name}}",
+    "unassigned": "Đã bỏ giao",
+    "userFallback": "Người dùng #{{id}}",
+    "noApprovalRight": "Được giao không cấp quyền duyệt."
   }
 }

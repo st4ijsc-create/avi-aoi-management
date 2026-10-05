@@ -49,12 +49,14 @@ const srv = vi.hoisted(() => ({
   posture: undefined as Record<string, unknown> | undefined,
   summaryError: false,
 }));
-function setSummary(o: Record<string, Bucket> = {}) {
+function setSummary(o: Record<string, Bucket> = {}, mine: Record<string, Bucket> = {}) {
   const base: Record<string, Bucket> = {
     ecn: ok(), recipes: ok(), recipeActiveUnapproved: ok(), interlock: ok(), changeover: ok(),
     interlockEventsOpen: ok(), orchestration: ok(), safety: ok(), deadlocks: ok(), ...o,
   };
-  srv.summary = { ...base, total: Object.values(base).reduce((n, b) => n + b.count, 0), generatedAt: "x" };
+  // doc 81 Đợt 3 Task 4 — `mine` (phạm vi "Của tôi"): năm nhóm giao được.
+  const m: Record<string, Bucket> = { ecn: ok(), recipes: ok(), interlock: ok(), changeover: ok(), orchestration: ok(), ...mine };
+  srv.summary = { ...base, mine: m, total: Object.values(base).reduce((n, b) => n + b.count, 0), generatedAt: "x" };
 }
 function chainable(): unknown {
   const fn = (..._a: unknown[]) => undefined;
@@ -117,8 +119,9 @@ const criticalChip = () => headerEl().querySelector('[data-chip-id="critical"]')
 const mainEl = () => document.querySelector("[data-layout-main]") as HTMLElement;
 const aside = () => document.querySelector("aside") as HTMLElement;
 const rowHrefs = () => Array.from(mainEl().querySelectorAll("table tbody tr a")).map((a) => a.getAttribute("href"));
-const scopeBtn = (k: "scopeApprovals" | "scopeAll") =>
-  within(mainEl()).getByRole("button", { name: new RegExp(`^${S(`engineeringHome.${k}`)}`) });
+const reEsc = (x: string) => x.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+const scopeBtn = (k: "scopeMine" | "scopeApprovals" | "scopeAll") =>
+  within(mainEl()).getByRole("button", { name: new RegExp(`^${reEsc(S(`engineeringHome.${k}`))}`) });
 
 describe("P4 Cockpit — bố cục (doc 81 §1.2 Hub)", () => {
   it("header 1 hàng (h1 + chip luồng vàng + chip tư thế); MAIN = toolbar tab + BẢNG hộp việc; aside ngoài MAIN; không khối chữ luồng vàng", () => {
@@ -271,6 +274,92 @@ describe("★ R-2-y — loại KHẨN luôn thấy trên Hub, MỌI phạm vi (d
     srv.summaryError = true;
     render(<EngineeringHub />);
     expect(criticalChip()).toHaveAttribute("data-state", "error");
+  });
+});
+
+describe("doc 81 Đợt 3 Task 4 — phạm vi 'Của tôi' (giao cho tôi) · 'Chờ duyệt (tôi có quyền)' · 'Toàn module'", () => {
+  const MINE_HREFS = [
+    "/engineering-changes?filter=pending",
+    "/recipes?filter=pending",
+    "/interlock-rules?filter=pending",
+    "/product-changeover",
+    "/orchestration-studio?filter=pending",
+  ];
+  const scopeGroupLabels = () =>
+    Array.from(mainEl().querySelectorAll('[role="group"] button')).map((b) => (b.textContent ?? "").replace(/\d+\+?$/, "").trim());
+
+  it("BA nút phạm vi theo thứ tự Của tôi · Chờ duyệt (tôi có quyền) · Toàn module; mặc định vẫn là Chờ duyệt (không đổi URL cũ)", () => {
+    render(<EngineeringHub />);
+    expect(S("engineeringHome.scopeApprovals")).toBe("Chờ duyệt (tôi có quyền)");
+    expect(scopeGroupLabels()).toEqual([S("engineeringHome.scopeMine"), S("engineeringHome.scopeApprovals"), S("engineeringHome.scopeAll")]);
+    expect(scopeBtn("scopeApprovals")).toHaveAttribute("aria-pressed", "true");
+    expect(scopeBtn("scopeMine")).toHaveAttribute("aria-pressed", "false");
+  });
+
+  it("★ 'Của tôi' ⇒ ?scope=mine (sống qua F5); 5 nhóm giao được đọc SỐ + TÊN từ `mine` (không từ tổng); số cạnh nút = tổng mine", () => {
+    setSummary(
+      { ecn: ok(7, [{ id: 1, label: "ECN-KHAC · cua nguoi khac" }]), recipes: ok(4) },
+      { ecn: ok(2, [{ id: 9, label: "ECN-CUA-TOI · giao cho toi" }]), orchestration: ok(1) },
+    );
+    render(<EngineeringHub />);
+    fireEvent.click(scopeBtn("scopeMine"));
+    expect(window.location.search).toContain("scope=mine");
+    expect(scopeBtn("scopeMine")).toHaveAttribute("aria-pressed", "true");
+    expect(scopeBtn("scopeMine").textContent).toContain("3");
+    expect(rowHrefs()).toEqual([...CRITICAL_HREFS, ...MINE_HREFS]);
+    const ecnRow = mainEl().querySelector('tbody:not([data-pending-pinned]) tr[data-pending-row="ecn"]') as HTMLElement;
+    expect(ecnRow.querySelector("[data-pending-count]")?.textContent).toBe("2");
+    expect(ecnRow.textContent).toContain("ECN-CUA-TOI");
+    expect(ecnRow.textContent).not.toContain("ECN-KHAC");
+    const rcpRow = mainEl().querySelector('tbody:not([data-pending-pinned]) tr[data-pending-row="recipes"]') as HTMLElement;
+    expect(rcpRow.querySelector("[data-pending-count]")?.textContent).toBe("0");
+    cleanup();
+    render(<EngineeringHub />); // F5
+    expect(scopeBtn("scopeMine")).toHaveAttribute("aria-pressed", "true");
+    expect(rowHrefs()).toEqual([...CRITICAL_HREFS, ...MINE_HREFS]);
+  });
+
+  it("★★ R-2-y — 'Của tôi' VẪN ghim 4 loại KHẨN với số TOÀN module (không bao giờ chỉ sau công tắc phạm vi)", () => {
+    setSummary({ recipeActiveUnapproved: ok(1), interlockEventsOpen: ok(3), safety: ok(2) });
+    window.history.replaceState({}, "", "/engineering-home?scope=mine");
+    render(<EngineeringHub />);
+    expect(pinnedHrefs()).toEqual(CRITICAL_HREFS);
+    const rows = Array.from(mainEl().querySelectorAll("table tbody[data-pending-pinned] tr")) as HTMLElement[];
+    expect(rows.map((r) => r.querySelector("[data-pending-count]")?.textContent)).toEqual(["1", "3", "2", "0"]);
+    expect(criticalChip().textContent).toContain("6");
+  });
+
+  it("★★ không lộ tên: `mine` không có mẫu (người xem thiếu quyền xem) ⇒ dòng KHÔNG mượn tên của nhóm toàn module", () => {
+    setSummary({ ecn: ok(5, [{ id: 1, label: "SECRET-ECN · khong duoc lo" }]) }, { ecn: ok(1, []) });
+    window.history.replaceState({}, "", "/engineering-home?scope=mine");
+    render(<EngineeringHub />);
+    const ecnRow = mainEl().querySelector('tbody:not([data-pending-pinned]) tr[data-pending-row="ecn"]') as HTMLElement;
+    expect(ecnRow.querySelector("[data-pending-count]")?.textContent).toBe("1");
+    expect(mainEl().textContent).not.toContain("SECRET-ECN");
+  });
+
+  it("'Của tôi' trống ⇒ câu riêng 'không có việc giao cho bạn'; nguồn phân công không đọc được ⇒ '—' + role=status (HUB-01)", () => {
+    window.history.replaceState({}, "", "/engineering-home?scope=mine");
+    render(<EngineeringHub />);
+    expect(within(mainEl()).getByText(S("oversight.mineAllClear"))).toBeInTheDocument();
+    cleanup();
+    setSummary({}, { interlock: { count: 0, samples: [], degraded: true } });
+    render(<EngineeringHub />);
+    expect(screen.queryByText(S("oversight.mineAllClear"))).toBeNull();
+    expect(within(mainEl()).getByRole("status")).toBeInTheDocument();
+    const row = mainEl().querySelector('tbody:not([data-pending-pinned]) tr[data-pending-row="interlock"]') as HTMLElement;
+    expect(row.querySelector("[data-pending-count]")?.textContent).toBe("—");
+  });
+
+  it("'Của tôi' giữ luật mở trang (R-2-z5): vai không mở được /interlock-rules ⇒ dòng rule giữ số, không là link", () => {
+    who.role = "maintenance";
+    who.modules = ["machine_status", "machine_control"];
+    setSummary({}, { interlock: ok(1) });
+    window.history.replaceState({}, "", "/engineering-home?scope=mine");
+    render(<EngineeringHub />);
+    const row = mainEl().querySelector('tbody:not([data-pending-pinned]) tr[data-pending-row="interlock"]') as HTMLElement;
+    expect(row.querySelector("a")).toBeNull();
+    expect(row.querySelector("[data-pending-count]")?.textContent).toBe("1");
   });
 });
 

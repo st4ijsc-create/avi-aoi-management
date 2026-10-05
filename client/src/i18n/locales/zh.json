@@ -3990,7 +3990,9 @@
       "reviewArtifact": "审核程序版本",
       "approveInterlockRule": "批准联锁规则",
       "releaseRecipeVersion": "发布配方版本",
-      "rollbackRecipeVersion": "回滚配方版本"
+      "rollbackRecipeVersion": "回滚配方版本",
+      "assignEngineeringItem": "分配待审批事项",
+      "unassignEngineeringItem": "取消分配待审批事项"
     },
     "field": {
       "stopValue": "固定停止值（stopValue）",
@@ -4094,7 +4096,8 @@
       "reviewReason": "驳回原因",
       "gatewayId": "网关",
       "deviceIds": "允许的设备列表",
-      "expectedProjectId": "当前打开的项目（expectedProjectId）"
+      "expectedProjectId": "当前打开的项目（expectedProjectId）",
+      "assigneeUserId": "被分配人"
     },
     "feature": {
       "webIngest": "网页内容导入",
@@ -4335,7 +4338,13 @@
       "recipeArchived": "此配方版本已归档——请创建新版本，而不是将已归档版本投入生产。",
       "recipeMachineTypeMismatch": "此配方适用的机型与目标设备不同——不能部署到该设备。",
       "recipeRetired": "此版本是被有意归档的（并非仅被新版本替换），或没有任何被替换的记录——不能回滚到该版本。请创建新版本。",
-      "buildNotInProject": "该构建不属于当前打开的项目——请重新选择本项目的构建后再试。未执行任何部署。"
+      "buildNotInProject": "该构建不属于当前打开的项目——请重新选择本项目的构建后再试。未执行任何部署。",
+      "assignTargetNotPending": "只能分配待审批的事项 — 此事项已不在待审批状态。",
+      "assignmentChanged": "负责人刚被他人更改。请刷新以查看当前负责人。",
+      "alreadyAssignedToUser": "此事项已分配给该人员。",
+      "assigneeInactive": "被分配人的账户已停用。",
+      "assigneeCannotView": "被分配人无权查看此事项的页面。",
+      "assignmentStoreMissing": "分配功能尚不可用：数据库尚未更新（请联系管理员）。"
     },
     "stopPinReason": {
       "no_pins": "该设备尚未固定任何停止标签——请使用硬件急停（E-STOP）。",
@@ -16730,7 +16739,7 @@
     "inboxTab": "工作收件箱",
     "catalogTab": "工具目录",
     "scopeLabel": "收件箱范围",
-    "scopeApprovals": "待审批",
+    "scopeApprovals": "待审批（我有权限）",
     "scopeApprovalsHint": "您有权打开的页面上待审批 / 待确认的事项",
     "scopeAll": "全模块",
     "scopeAllHint": "本模块所有待办事项和告警（含安全事件、联锁事件、车队死锁）",
@@ -16752,7 +16761,9 @@
       "commandConsole": "命令控制台（HITL）"
     },
     "criticalChip": "紧急",
-    "criticalSource": "oversight.pendingSummary — 运行中未审批配方、未关闭联锁事件、未审核安全事件、车队死锁"
+    "criticalSource": "oversight.pendingSummary — 运行中未审批配方、未关闭联锁事件、未审核安全事件、车队死锁",
+    "scopeMine": "我的",
+    "scopeMineHint": "分配给您的待审批事项（被分配不授予审批权限）"
   },
   "oversight": {
     "title": "待审查与告警",
@@ -16789,7 +16800,8 @@
       "count": "数量",
       "samples": "等待中"
     },
-    "noAccess": "（无权打开此页面）"
+    "noAccess": "（无权打开此页面）",
+    "mineAllClear": "目前没有分配给您的事项。"
   },
   "eqStandards": {
     "whenToUse": "适用场景 — 治理设备类型标准、ISA-18.2 告警分类法与评审委员会。仅治理元数据，无设备命令。",
@@ -21777,5 +21789,17 @@
       "notes": "备注"
     },
     "movedLink": "人力 → 生产 › 班次"
+  },
+  "engineeringAssign": {
+    "label": "分配给",
+    "column": "负责人",
+    "none": "未分配",
+    "placeholder": "未分配 — 选择人员…",
+    "search": "搜索人员…",
+    "empty": "没有可查看此页面的人员",
+    "assigned": "已分配给 {{name}}",
+    "unassigned": "已取消分配",
+    "userFallback": "用户 #{{id}}",
+    "noApprovalRight": "被分配不授予审批权限。"
   }
 }

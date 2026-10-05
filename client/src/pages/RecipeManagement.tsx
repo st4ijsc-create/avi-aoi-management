@@ -85,6 +85,8 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { FlaskConical, Plus, AlertTriangle, RotateCcw, Rocket, ShieldCheck, Eye, GitCompare, Star, History, RefreshCw, User, ArrowRight, Undo2, Download } from "lucide-react";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
+// doc 81 Đợt 3 Task 4 — "Giao cho" + cột "Người được giao" (tab Duyệt).
+import { AssigneeCell, AssignmentControl, useAssignments, useCanAssign } from "@/components/engineering/AssignmentControl";
 
 type RecipeStatus = "draft" | "active" | "archived";
 
@@ -227,12 +229,16 @@ export default function RecipeManagement() {
   const needsEditForInteg = t("eqIntegration.needsEditPermission", "Needs edit permission (machine_control/canEdit) to release/rollback.");
 
   const utils = trpc.useUtils();
+  // doc 81 Đợt 3 Task 4 — "Giao cho" ở tab Duyệt (recipe nháp chưa duyệt). Giao = cổng sửa (machine_control/canEdit),
+  // như nút Duyệt; được giao ≠ được duyệt (nút Duyệt giữ nguyên cổng + chặn tự duyệt).
+  const canAssign = useCanAssign("recipe");
 
   const codesQuery = trpc.machineRecipe.recipes.listCodes.useQuery(undefined, { enabled: canView });
   // Doc 81 Đợt 2 Task 6 — mã đang chọn nằm trong URL (`?code=`, F5 giữ; flyout duyệt/triển khai dựa vào nó).
   const [codeParam, setCodeParam] = useUrlParam("code");
   const selectedCode = codeParam != null && codeParam.length > 0 ? codeParam : null;
   const [tabParam, setTabParam] = useUrlParam("tab");
+  const { byId: recipeAssignments } = useAssignments("recipe", canView && selectedCode != null);
 
   // U15 (doc 26 §2.1) — lối vào theo MÁY: KTV chọn máy → thấy recipe đang ACTIVE
   // của máy đó mà không cần biết trước mã. Song song với trục theo-mã hiện có.
@@ -904,8 +910,20 @@ export default function RecipeManagement() {
               loading={versionsQuery.isLoading}
               error={versionsQuery.isError}
               onRetry={() => void versionsQuery.refetch()}
-              extraHead={<TableHead>{t("recipes.approvalNote")}</TableHead>}
-              extraCell={(v) => <TableCell className="max-w-[16rem] truncate text-xs" title={v.approvalNote ?? ""}>{v.approvalNote ?? "—"}</TableCell>}
+              extraColumns={2}
+              extraHead={<>
+                <TableHead>{t("recipes.approvalNote")}</TableHead>
+                <TableHead>{t("engineeringAssign.column", "Assignee")}</TableHead>
+              </>}
+              extraCell={(v) => <>
+                <TableCell className="max-w-[16rem] truncate text-xs" title={v.approvalNote ?? ""}>{v.approvalNote ?? "—"}</TableCell>
+                <TableCell className="text-xs">
+                  {/* doc 81 Đợt 3 Task 4 — chỉ bản NHÁP chưa duyệt là "chờ duyệt" (server kiểm lại); bản khác chỉ hiện tên. */}
+                  {v.status === "draft" && v.approvedBy == null
+                    ? <AssignmentControl compact entityType="recipe" entityId={v.id} assignment={recipeAssignments.get(v.id)} canAssign={canAssign} />
+                    : <AssigneeCell row={recipeAssignments.get(v.id)} />}
+                </TableCell>
+              </>}
               action={(v) => {
                 const isApproved = v.approvedBy != null;
                 const isOwnRecipe = v.createdBy != null && v.createdBy === user?.id;
@@ -1192,7 +1210,7 @@ function VersionsLoadError({ onRetry }: { onRetry: () => void }) {
 }
 
 function VersionTable({
-  versions, loading, error, onRetry, action, extraHead, extraCell,
+  versions, loading, error, onRetry, action, extraHead, extraCell, extraColumns,
 }: {
   versions: VersionData[];
   loading: boolean;
@@ -1201,9 +1219,11 @@ function VersionTable({
   action: (v: VersionData) => ReactNode;
   extraHead?: ReactNode;
   extraCell?: (v: VersionData) => ReactNode;
+  /** Số cột mà `extraHead` thêm (mặc định 1 khi có) — để colSpan của dòng tải/lỗi/trống phủ đủ bảng. */
+  extraColumns?: number;
 }) {
   const { t } = useTranslation();
-  const cols = 6 + (extraHead ? 1 : 0);
+  const cols = 6 + (extraColumns ?? (extraHead ? 1 : 0));
   return (
     <Table>
       <TableHeader>

@@ -54,6 +54,8 @@ const srv = vi.hoisted(() => ({
   calls: { create: [] as unknown[], update: [] as unknown[], approve: [] as unknown[], enable: [] as unknown[], testEvaluate: [] as unknown[] },
   invalidated: [] as string[],
   holdUpdate: null as null | Promise<void>,
+  // doc 81 Đợt 3 Task 4
+  assignments: [] as Array<Record<string, unknown>>,
 }));
 function bump() {
   srv.version++;
@@ -89,6 +91,8 @@ vi.mock("@/lib/trpc", () => {
       const enabled = opts?.enabled !== false;
       if (router === "interlock" && name === "list") return q(srv.listSnapshot, enabled);
       if (router === "interlock" && name === "events") return q(srv.events, enabled);
+      if (router === "engineering" && name === "assignments") return q(srv.assignments, enabled);
+      if (router === "engineering" && name === "assignableUsers") return q([{ id: 51, name: "Ky su Rule" }], enabled);
       if (router === "oversight" && name === "posture") {
         if (srv.posture.isError) return q(undefined, enabled, { isError: true, error: { message: "x" } });
         return q(srv.posture.data, enabled, { isLoading: enabled && srv.posture.data === undefined });
@@ -205,6 +209,7 @@ beforeEach(() => {
   srv.invalidated = [];
   srv.nextId = 100;
   srv.holdUpdate = null;
+  srv.assignments = [{ entityId: 41, assigneeUserId: 51, assigneeName: "Ky su Rule" }];
   toastSpy.warning.mockClear();
   perm.isAdmin = false;
   perm.canCreate = true;
@@ -696,5 +701,27 @@ describe("Interlock P3 — i18n: mọi khoá trang dùng có chuỗi ở vi/en/z
       }
     }
     expect(missing).toEqual([]);
+  });
+});
+
+describe("doc 81 Đợt 3 Task 4 — 'Giao cho' (sheet rule) + cột 'Người được giao'", () => {
+  it("danh sách có cột 'Người được giao' (rule-41 ⇒ tên; rule-43 ⇒ —); dòng trống trải đủ 9 cột", () => {
+    render(<InterlockRuleManagement />);
+    expect(screen.getByRole("columnheader", { name: "Người được giao" })).toBeInTheDocument();
+    expect(rowOf("rule-41").querySelector("[data-assignee-cell]")).toHaveTextContent("Ky su Rule");
+    expect(rowOf("rule-43").querySelector("[data-assignee-cell]")).toHaveTextContent("—");
+  });
+
+  it("sheet rule CHƯA DUYỆT ⇒ bộ chọn 'Giao cho' ở đầu sheet; rule ĐÃ DUYỆT ⇒ không có", async () => {
+    window.history.replaceState(null, "", "/interlock-rules?flyout=rule&flyoutId=41");
+    render(<InterlockRuleManagement />);
+    const l = await waitLayer("rule");
+    const ctl = l.querySelector('[data-assign-control="interlock_rule"]') as HTMLElement;
+    expect(within(ctl).getByRole("combobox", { name: "Giao cho" })).toHaveTextContent("Ky su Rule");
+    cleanup();
+    window.history.replaceState(null, "", "/interlock-rules?flyout=rule&flyoutId=42");
+    render(<InterlockRuleManagement />);
+    const l2 = await waitLayer("rule");
+    expect(l2.querySelector("[data-assign-control]")).toBeNull();
   });
 });

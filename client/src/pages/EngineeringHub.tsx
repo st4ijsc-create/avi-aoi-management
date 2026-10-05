@@ -7,10 +7,11 @@
  *   luôn ở header kể cả dưới 1024 px, khi panel phụ xuống dưới MAIN.
  * - MAIN = hàng tab `?tab=` [Hộp việc | Danh mục công cụ] + nội dung.
  *   · Hộp việc = BẢNG của `PendingReviewStrip` (Đợt 1 Task 2): cùng nguồn `oversight.pendingSummary`, cùng link sâu
- *     `?filter=pending`, cùng luật HUB-01/HUB-02. Phạm vi `?scope=` (cùng hàng tab): "Chờ duyệt" (MẶC ĐỊNH — loại việc
- *     KHÔNG khẩn của `PENDING_CATEGORIES` (`critical:false` = chờ duyệt bình thường), chỉ ở màn người dùng mở được theo
- *     bản đồ quyền nav) | "Toàn module" (đủ 9 loại như dải cũ). Spec ghi "của tôi": `pendingSummary` KHÔNG mang người
- *     được giao ⇒ không thể lọc "giao cho tôi" mà không đổi server; nhãn nói đúng thứ nó lọc (task-15-report).
+ *     `?filter=pending`, cùng luật HUB-01/HUB-02. Phạm vi `?scope=` (cùng hàng tab), doc 81 Đợt 3 Task 4 — BA phạm vi:
+ *     "Của tôi" (`?scope=mine` — các nhóm GIAO ĐƯỢC của `shared/engineeringAssignment.ts`, số + tên từ
+ *     `pendingSummary.mine`: mục còn chờ duyệt mà phân công active trỏ tới tôi; được giao ≠ được duyệt) |
+ *     "Chờ duyệt (tôi có quyền)" (MẶC ĐỊNH, không đổi — loại việc KHÔNG khẩn của `PENDING_CATEGORIES`, chỉ ở màn người
+ *     dùng mở được theo bản đồ quyền nav) | "Toàn module" (đủ 9 loại như dải cũ). R-2-y: 4 loại khẩn ghim ở MỌI phạm vi.
  *   · Danh mục (Studio cũ gộp vào — `/engineering-studio` chuyển hướng tới `?tab=catalog`): ô 64 px theo nhóm, ghim
  *     được (kho ghim chung `nav-favorites` của thanh bên/⌘K), gồm cả mục chỉ Studio có (ECN, Bảng lệnh, Copilot nháp).
  * - Panel phụ (`aside`): tư thế an toàn đầy đủ (cờ, độ phủ rule, cảnh báo ILK-06 — nội dung Đợt 1 Task 2 giữ nguyên)
@@ -37,6 +38,7 @@ import { PendingReviewStrip, PENDING_CATEGORIES, type CategoryDef } from "@/comp
 import { getNavItemByHref, hasAccessToItem, passesNavAuthoringGate } from "@/lib/navigation";
 import { readFavorites, readRecent, toggleFavorite } from "@/lib/navRecent";
 import { usePermissions } from "@/_core/hooks/usePermissions";
+import { ASSIGNABLE_PENDING_KEYS } from "@shared/engineeringAssignment";
 import { useAuth } from "@/_core/hooks/useAuth";
 import { trpc } from "@/lib/trpc";
 import { cn } from "@/lib/utils";
@@ -383,7 +385,11 @@ function ToolsSection({ onShowAll }: { onShowAll: () => void }) {
   );
 }
 
-type Scope = "approvals" | "all";
+type Scope = "mine" | "approvals" | "all";
+/** `?scope=` ⇒ phạm vi; vắng/lạ ⇒ "approvals" (mặc định cũ — link/URL cũ không đổi nghĩa). */
+const scopeOf = (p: string | null): Scope => (p === "all" || p === "mine" ? p : "approvals");
+/** doc 81 Đợt 3 Task 4 — nhóm của phạm vi "Của tôi" = loại GIAO ĐƯỢC (danh sách duy nhất ở `shared/`). */
+const isMineCategory = (c: CategoryDef) => (ASSIGNABLE_PENDING_KEYS as readonly string[]).includes(c.key);
 
 /** Lọc phạm vi "Chờ duyệt": loại việc không khẩn, ở màn người dùng mở được (bản đồ quyền nav — như RouteGuard). */
 function useScopeFilters() {
@@ -403,13 +409,14 @@ const isCritical = (c: CategoryDef) => c.critical;
 
 function InboxTab() {
   const [scopeParam] = useUrlParam("scope");
-  const scope: Scope = scopeParam === "all" ? "all" : "approvals";
+  const scope = scopeOf(scopeParam);
   const { approvals, canOpen } = useScopeFilters();
+  const filter = scope === "all" ? undefined : scope === "mine" ? isMineCategory : approvals;
   return (
     // R-2-v — hộp việc lấp chiều cao còn lại của khung nhìn; danh sách cuộn BÊN TRONG (thead dính), trang không cuộn.
     <div data-hub-inbox-scroll="" className={HUB_SCROLL_REGION}>
       {/* R-2-z5 — dòng (kể cả loại khẩn ghim) mà vai không mở được: giữ số, không là link. */}
-      <PendingReviewStrip variant="table" pinned={isCritical} categoryFilter={scope === "all" ? undefined : approvals} canOpen={canOpen} />
+      <PendingReviewStrip variant="table" pinned={isCritical} categoryFilter={filter} canOpen={canOpen} source={scope === "mine" ? "mine" : "summary"} />
     </div>
   );
 }
@@ -418,17 +425,20 @@ function InboxTab() {
 function ScopeToggle() {
   const { t } = useTranslation();
   const [scopeParam, setScope] = useUrlParam("scope");
-  const scope: Scope = scopeParam === "all" ? "all" : "approvals";
+  const scope = scopeOf(scopeParam);
   const { approvals } = useScopeFilters();
   const q = trpc.oversight.pendingSummary.useQuery(undefined, { staleTime: 30_000, refetchOnWindowFocus: true });
   const count = (filter?: (c: CategoryDef) => boolean) =>
     q.data == null ? null : PENDING_CATEGORIES.filter(filter ?? (() => true)).reduce((n, c) => n + q.data![c.key].count, 0);
+  // "Của tôi": tổng các nhóm giao được của `mine` (không cộng loại khẩn — đó là số toàn module, đã ở chip KHẨN).
+  const mineCount =
+    q.data == null ? null : ASSIGNABLE_PENDING_KEYS.reduce((n, k) => n + (q.data!.mine?.[k]?.count ?? 0), 0);
   const item = (value: Scope, labelKey: string, fallback: string, hintKey: string, hintFallback: string, n: number | null) => (
     <button
       type="button"
       aria-pressed={scope === value}
       title={t(hintKey, hintFallback)}
-      onClick={() => setScope(value === "approvals" ? null : "all")}
+      onClick={() => setScope(value === "approvals" ? null : value)}
       className={cn(
         "inline-flex h-8 items-center gap-1.5 whitespace-nowrap rounded-md px-2.5 text-xs font-medium",
         "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40",
@@ -441,7 +451,8 @@ function ScopeToggle() {
   );
   return (
     <div role="group" aria-label={t("engineeringHome.scopeLabel", "Inbox scope")} className="ml-auto flex shrink-0 items-center gap-1 rounded-lg border p-0.5">
-      {item("approvals", "engineeringHome.scopeApprovals", "Awaiting approval", "engineeringHome.scopeApprovalsHint", "", count(approvals))}
+      {item("mine", "engineeringHome.scopeMine", "Mine", "engineeringHome.scopeMineHint", "", mineCount)}
+      {item("approvals", "engineeringHome.scopeApprovals", "Awaiting approval (I can act)", "engineeringHome.scopeApprovalsHint", "", count(approvals))}
       {item("all", "engineeringHome.scopeAll", "Whole module", "engineeringHome.scopeAllHint", "", count())}
     </div>
   );

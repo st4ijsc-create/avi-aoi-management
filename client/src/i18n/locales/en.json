@@ -3998,7 +3998,9 @@
       "reviewArtifact": "review a program version",
       "approveInterlockRule": "approve interlock rule",
       "releaseRecipeVersion": "release recipe version",
-      "rollbackRecipeVersion": "roll back recipe version"
+      "rollbackRecipeVersion": "roll back recipe version",
+      "assignEngineeringItem": "assign the pending item",
+      "unassignEngineeringItem": "unassign the pending item"
     },
     "field": {
       "stopValue": "pinned stop value (stopValue)",
@@ -4102,7 +4104,8 @@
       "reviewReason": "rejection reason",
       "gatewayId": "gateway",
       "deviceIds": "allowed device list",
-      "expectedProjectId": "open project (expectedProjectId)"
+      "expectedProjectId": "open project (expectedProjectId)",
+      "assigneeUserId": "assignee"
     },
     "feature": {
       "webIngest": "web content ingestion",
@@ -4343,7 +4346,13 @@
       "recipeArchived": "This recipe version is archived — create a new version instead of putting an archived one into production.",
       "recipeMachineTypeMismatch": "This recipe is for a different machine type than the target machine — it cannot be deployed there.",
       "recipeRetired": "This version was deliberately archived (not just replaced by a newer one), or there is no record of it ever being replaced — it cannot be rolled back to. Create a new version instead.",
-      "buildNotInProject": "This build does not belong to the open project — pick a build of this project and try again. Nothing was deployed."
+      "buildNotInProject": "This build does not belong to the open project — pick a build of this project and try again. Nothing was deployed.",
+      "assignTargetNotPending": "Only items awaiting approval can be assigned — this item is no longer awaiting approval.",
+      "assignmentChanged": "Someone else just changed the assignee. Reload to see the current assignee.",
+      "alreadyAssignedToUser": "This item is already assigned to this person.",
+      "assigneeInactive": "The assignee's account is disabled.",
+      "assigneeCannotView": "The assignee cannot view this item's page.",
+      "assignmentStoreMissing": "Assignment is not available yet: the database has not been updated (ask an administrator)."
     },
     "stopPinReason": {
       "no_pins": "No stop tag is pinned for this machine — use the hardware E-STOP.",
@@ -16158,7 +16167,7 @@
     "inboxTab": "Work inbox",
     "catalogTab": "Tool catalog",
     "scopeLabel": "Inbox scope",
-    "scopeApprovals": "Awaiting approval",
+    "scopeApprovals": "Awaiting approval (I can act)",
     "scopeApprovalsHint": "Items awaiting approval / confirmation on screens you can open",
     "scopeAll": "Whole module",
     "scopeAllHint": "Every pending item and alert in the module (incl. safety events, interlock events, fleet deadlocks)",
@@ -16180,7 +16189,9 @@
       "commandConsole": "Command console (HITL)"
     },
     "criticalChip": "Urgent",
-    "criticalSource": "oversight.pendingSummary — running recipe unapproved, open interlock events, unaudited safety events, fleet deadlocks"
+    "criticalSource": "oversight.pendingSummary — running recipe unapproved, open interlock events, unaudited safety events, fleet deadlocks",
+    "scopeMine": "Mine",
+    "scopeMineHint": "Items awaiting approval that are assigned to you (being assigned does not grant approval rights)"
   },
   "oversight": {
     "title": "Pending review & alerts",
@@ -16217,7 +16228,8 @@
       "count": "Count",
       "samples": "Waiting"
     },
-    "noAccess": "(you don't have access to this page)"
+    "noAccess": "(you don't have access to this page)",
+    "mineAllClear": "Nothing is assigned to you right now."
   },
   "eqIntegration": {
     "whenToUse": "When to use — browse vendor integration frameworks (FOCAS/Euromap) and the registered adapter protocols. Read-only metadata, no live device. Recipe versions and load history now live on the Recipes page.",
@@ -21775,5 +21787,17 @@
       "notes": "Notes"
     },
     "movedLink": "Workforce → Production › Shifts"
+  },
+  "engineeringAssign": {
+    "label": "Assign to",
+    "column": "Assignee",
+    "none": "Unassigned",
+    "placeholder": "Unassigned — pick a person…",
+    "search": "Search people…",
+    "empty": "No one who can view this page",
+    "assigned": "Assigned to {{name}}",
+    "unassigned": "Unassigned",
+    "userFallback": "User #{{id}}",
+    "noApprovalRight": "Being assigned does not grant approval rights."
   }
 }
