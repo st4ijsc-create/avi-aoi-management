@@ -145,11 +145,13 @@ export const SCREENS = [
   { n: 14.5, id: "vision-acquisition", route: "/vision/acquisition", aliasOf: "/equipment-integration?tab=acquisition", movedFrom: "equipment-integration",
     legacyMain: { desc: "VisionAcquisition: FE1 chưa từng đo — không có selector cũ (thiếu attribute ⇒ không thấy MAIN)", fn: () => false },
     actions: [{ id: "khoi-dong-worker", label: /Khởi động worker/ }] },
-  // Đợt 3 Task 3 (doc 81 §11 "Đã chốt" 2026-10-05) — bảng nhân lực dời sang Sản xuất › Ca. Bước 1 (R-2-k): đo TRƯỚC khi
-  // dời, trên CHÍNH tab `?tab=workforce` của Safety (`tabOf`: bản ghi riêng, chỉ ghi được khi attribute trùng phần tử đã
-  // hiệu chuẩn của Safety). Bước 2 đổi `route` sang trang mới — README "Màn dời ra trang riêng".
-  { n: 12.5, id: "production-shifts", route: "/safety-workforce?tab=workforce", tabOf: "safety-workforce",
-    legacyMain: { desc: "SafetyWorkforce tabs-content đang mở", fn: (r) => /SafetyWorkforce\.tsx/.test(r.loc || "") && r.kind === "tabs-content" },
+  // Đợt 3 Task 3 (doc 81 §11 "Đã chốt" 2026-10-05) — bảng nhân lực dời sang Sản xuất › Ca (`/production/shifts`).
+  // Bước 1 (R-2-k, commit 62100994f): đo TRƯỚC trên CHÍNH tab `?tab=workforce` của Safety (khi đó `tabOf`; bản ghi
+  // `production-shifts|vw|n/a` ghi bằng --calibrate vì attribute trùng phần tử đã hiệu chuẩn của Safety).
+  // Bước 2: `route` = trang mới; `aliasOf` = URL cũ (nay chuyển hướng tới đây); `movedFrom` CHỈ cấp tham chiếu h1 — khuôn
+  // `vision-acquisition`, README "Màn dời ra trang riêng".
+  { n: 12.5, id: "production-shifts", route: "/production/shifts", aliasOf: "/safety-workforce?tab=workforce", movedFrom: "safety-workforce",
+    legacyMain: { desc: "ProductionShifts: FE1 chưa từng đo — không có selector cũ (thiếu attribute ⇒ không thấy MAIN)", fn: () => false },
     actions: [{ id: "phan-cong", label: /^Phân công$/ }] },
 ];
 
@@ -239,7 +241,8 @@ export const KNOWN_PROCS = {
   "programming-copilot": ["aiInbox.count","andon.active","auth.me","commandCenter.hierarchy","license.getAllowedModules","license.systemState","permissions.getMyPermissions"],
   // final wave (I-4): Task 10 đưa bản đồ lên MAIN ⇒ `fleet.robotPositions` (5 s) + `twin.occupancyGrid` chạy mỗi lần mở trang.
   "fleet-orchestration": ["aiInbox.count","andon.active","auth.me","commandCenter.hierarchy","fleet.deadlocks","fleet.listChargers","fleet.listChargingPlans","fleet.listOperations","fleet.listReservations","fleet.listResourceReservations","fleet.listResources","fleet.listTasks","fleet.listZones","fleet.resourceStatus","fleet.robotPositions","fleet.status","license.getAllowedModules","license.systemState","permissions.getMyPermissions","twin.occupancyGrid"],
-  "safety-workforce": ["aiInbox.count","andon.active","auth.me","commandCenter.hierarchy","license.getAllowedModules","license.systemState","permissions.getMyPermissions","safety.currentBoard","safety.feed","safety.listAssignments","safety.listCollaborations","safety.nearMissTrend","safety.sourceHealth","safety.status"],
+  // Đợt 3 Task 3: bỏ `safety.currentBoard` — bảng hiện trường dời sang Sản xuất › Ca, Safety không còn gọi (THU HẸP danh sách).
+  "safety-workforce": ["aiInbox.count","andon.active","auth.me","commandCenter.hierarchy","license.getAllowedModules","license.systemState","permissions.getMyPermissions","safety.feed","safety.listAssignments","safety.listCollaborations","safety.nearMissTrend","safety.sourceHealth","safety.status"],
   "equipment-standards": ["aiInbox.count","alarmKpi.summary","andon.active","auth.me","commandCenter.hierarchy","equipmentStandards.complianceMetrics","equipmentStandards.hierarchyTree","equipmentStandards.listAlarmMappings","equipmentStandards.listChangeRequests","equipmentStandards.listMasterAlarms","equipmentStandards.status","license.getAllowedModules","license.systemState","permissions.getMyPermissions"],
   "equipment-integration": ["aiInbox.count","andon.active","auth.me","commandCenter.hierarchy","equipmentIntegration.integrationStatus","equipmentIntegration.status","license.getAllowedModules","license.systemState","machine.list","permissions.getMyPermissions"],
 };
@@ -262,9 +265,16 @@ KNOWN_PROCS["vision-acquisition"] = [
   "visionAdapter.acquisitionWorkerStatus", "visionAdapter.listAcquisitionSources",
 ].sort();
 
-// Đợt 3 Task 3 — tab nhân lực của Safety (bước 1): CÙNG trang Safety ⇒ đọc đúng những gì Safety đọc.
-PAGE_TABLES["production-shifts"] = PAGE_TABLES["safety-workforce"];
-KNOWN_PROCS["production-shifts"] = KNOWN_PROCS["safety-workforce"];
+// Đợt 3 Task 3 — Sản xuất › Ca (bước 2, trang riêng). Bảng: danh sách của Safety (đã phủ tab này ở bước 1; gồm
+// operator_assignments, robots, tasks của bảng hiện trường) + `shift_configs` (thủ tục mới `shiftConfig.list`) — HỢP để không
+// sót bảng (lần --discover-tables `dot3-task3/bang.json` không bắt được delta của hai bảng nhỏ này; thừa chỉ làm canh trôi nhạy
+// hơn). Thủ tục đã biết: CHỈ đúng 11 thủ tục trang gọi (7 của vỏ + safety.status/listAssignments/currentBoard +
+// shiftConfig.list) — không thừa kế danh sách Safety (feed/trend/collab/sourceHealth: trang này không gọi).
+PAGE_TABLES["production-shifts"] = [...new Set([...PAGE_TABLES["safety-workforce"], "shift_configs"])].sort();
+KNOWN_PROCS["production-shifts"] = [
+  "aiInbox.count", "andon.active", "auth.me", "commandCenter.hierarchy", "license.getAllowedModules", "license.systemState",
+  "permissions.getMyPermissions", "safety.currentBoard", "safety.listAssignments", "safety.status", "shiftConfig.list",
+];
 
 const DEFAULT_SIZES = [[1600, 950], [1366, 768]];
 

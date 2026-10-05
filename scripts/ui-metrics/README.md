@@ -339,3 +339,19 @@ URL cũ chuyển hướng tới trang mới (giữ query, bỏ `tab`). Màn đo 
 - Hành động khai báo: `khoi-dong-worker` (nút MỞ sheet `acq-start`; không bao giờ bấm nút gửi trong sheet).
 - **TRƯỚC/SAU KHÔNG CÙNG LOẠI** về hình học: trước là MAIN của Integration (hàng tab + bảng), sau là MAIN của trang mới (hàng công
   cụ + bảng). Đọc như "cùng nội dung ở chỗ mới", không như cải thiện/thoái lui của cùng một MAIN.
+
+### `production-shifts` (Đợt 3 Task 3, 2026-10-05) — cùng khuôn
+Bảng nhân lực rời tab `?tab=workforce` của Safety & Workforce sang trang riêng Sản xuất › Ca (`/production/shifts`).
+
+| bước | `route` đo | khoá khai báo | bản ghi hiệu chuẩn `production-shifts|vw|n/a` |
+|---|---|---|---|
+| 1 — TRƯỚC (commit 62100994f) | `/safety-workforce?tab=workforce` | `tabOf: "safety-workforce"` | ghi bằng `--calibrate` vì attribute TRÙNG phần tử đã hiệu chuẩn của Safety |
+| 2 — SAU | `/production/shifts` (`aliasOf` = URL cũ) | `movedFrom: "safety-workforce"` | so lại mỗi lần chạy; trang mới ⇒ lệch ⇒ LỖI cho tới khi `--calibrate` ghi đè (giữ `previous`) |
+
+- `PAGE_TABLES` = của Safety (đã phủ tab này ở bước 1) ∪ `shift_configs` (thủ tục mới `shiftConfig.list`). `KNOWN_PROCS` = CHỈ 11
+  thủ tục trang gọi (vỏ + `safety.status`/`listAssignments`/`currentBoard` + `shiftConfig.list`). `safety-workforce` bỏ
+  `safety.currentBoard` khỏi `KNOWN_PROCS` (Safety không còn gọi — thu hẹp, không nới).
+- Hành động khai báo: `phan-cong` (nút MỞ sheet `workforce-assign`; không bao giờ bấm nút gửi trong sheet).
+- **TRƯỚC/SAU KHÔNG CÙNG LOẠI**: trước là MAIN của Safety (hàng tab + bảng phân công + bảng hiện trường, panel phụ của Safety);
+  sau là MAIN của trang mới (hàng công cụ + bảng phân công; bảng hiện trường ở panel phụ của chính trang).
+
