@@ -12344,6 +12344,7 @@
     },
     "error": {
       "title": "Trợ lý chưa trả lời được",
+      "DISABLED": "Trợ lý lập trình AI đang tắt trên hệ thống này. Liên hệ quản trị viên nếu cần bật.",
       "MODEL_OFFLINE": "Trợ lý lập trình chưa sẵn sàng (model offline). Liên hệ quản trị viên.",
       "TOKEN_BUDGET": "Trợ lý chưa trả lời được (hết ngân sách xử lý). Thử lại hoặc rút ngắn yêu cầu.",
       "CONTEXT_TOO_LARGE": "Yêu cầu hoặc chương trình quá dài để trợ lý xử lý. Rút ngắn rồi thử lại.",

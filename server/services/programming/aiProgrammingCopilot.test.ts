@@ -78,6 +78,7 @@ import {
   explainProgram,
   copilotEnabled,
   generateProgram,
+  cauLoiCopilot,
 } from "./aiProgrammingCopilot";
 import { isGgufAvailable, chatCompletion, generateJSON } from "../aiGgufEngine";
 import { searchProgrammingKb } from "../aiProgrammingKnowledgeService";
@@ -160,6 +161,34 @@ describe("generateProgram (doc 34 · P2) — LLM codegen on the safety substrate
     expect(r.refused).toBe(false);
     expect(r.code).toBeUndefined();
     expect(r.note).toMatch(/off/i);
+    expect(chatCompletion).not.toHaveBeenCalled();
+  });
+
+  // doc 81 Đợt 3 Task 0 (O3, browser check 2026-10-05) — panel hiện NGUYÊN "AI_PROGRAMMING_COPILOT_ENABLED
+  // is off.": tiếng Anh + tên biến môi trường. Cờ tắt phải đi đường lỗi CÓ MÃ (khoá i18n
+  // progCopilot.error.DISABLED) với câu theo ngôn ngữ yêu cầu, không nêu tên biến.
+  it("flag off ⇒ errorCode DISABLED + câu theo ngôn ngữ yêu cầu, KHÔNG tên biến môi trường (generate/suggest/explain)", async () => {
+    process.env.AI_PROGRAMMING_COPILOT_ENABLED = "false";
+    const TEN_BIEN = /[A-Z][A-Z0-9]+_[A-Z0-9_]+/;
+    const ca: Array<[string, "vi" | "en" | "zh"]> = [
+      ["moving average filter", "en"],
+      ["bộ lọc trung bình trượt", "vi"],
+      ["移动平均滤波器", "zh"],
+    ];
+    for (const [request, lang] of ca) {
+      const r = await generateProgram({ kind: "iec61131-st", request });
+      expect(r.ok).toBe(false);
+      expect(r.refused).toBe(false);
+      expect(r.errorCode).toBe("DISABLED");
+      expect(r.note).toBe(cauLoiCopilot("DISABLED", lang));
+      expect(JSON.stringify(r)).not.toMatch(TEN_BIEN);
+    }
+    const s = await suggestProgram({ kind: "zmotion-basic", intent: "move to home" });
+    expect(s.available).toBe(false);
+    expect(JSON.stringify(s)).not.toMatch(TEN_BIEN);
+    const e = explainProgram("iec61131-st", "x := 1;");
+    expect(e.available).toBe(false);
+    expect(JSON.stringify(e)).not.toMatch(TEN_BIEN);
     expect(chatCompletion).not.toHaveBeenCalled();
   });
 

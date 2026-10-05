@@ -12364,6 +12364,7 @@
     },
     "error": {
       "title": "The assistant could not answer",
+      "DISABLED": "The AI programming assistant is turned off on this system. Ask your administrator to turn it on.",
       "MODEL_OFFLINE": "The programming assistant is not available (model offline). Contact your administrator.",
       "TOKEN_BUDGET": "The assistant could not finish (processing budget exhausted). Try again or shorten the request.",
       "CONTEXT_TOO_LARGE": "The request or program is too long for the assistant. Shorten it and try again.",

@@ -127,7 +127,8 @@ function skeleton(kind: ProgrammingKind, intent: string): string {
  * version in the workspace, then validates/builds/deploys through the gated router.
  */
 export async function suggestProgram(input: SuggestInput): Promise<SuggestResult> {
-  if (!copilotEnabled()) return { available: false, refused: false, reason: "AI_PROGRAMMING_COPILOT_ENABLED is off." };
+  // doc 81 Đợt 3 Task 0 — câu cho người dùng KHÔNG nêu tên biến môi trường (census copilotKhongTenBienMoiTruong).
+  if (!copilotEnabled()) return { available: false, refused: false, reason: cauLoiCopilot("DISABLED", detectRequestLang(input?.intent)) };
 
   const gate = checkCopilotSafety({ mode: "generate", request: input.intent });
   if (gate.refused) {
@@ -165,7 +166,7 @@ export interface ExplainResult {
 
 /** Deterministic structural explanation of a program (no model required). */
 export function explainProgram(kind: ProgrammingKind, source: string): ExplainResult {
-  if (!copilotEnabled()) return { available: false, summary: "AI_PROGRAMMING_COPILOT_ENABLED is off.", metrics: {} };
+  if (!copilotEnabled()) return { available: false, summary: cauLoiCopilot("DISABLED", "vi"), metrics: {} };
   const lines = source.split(/\r?\n/).filter((l) => l.trim() && !/^\s*('|;|\/\/|\(\*)/.test(l));
   const moves = (source.match(/\b(MOVE|MOVEABS|MOVEL|MOVECIRC|G0|G1)\b/gi) ?? []).length;
   const assigns = (source.match(/:?=/g) ?? []).length;
@@ -792,6 +793,7 @@ function cauKhongCoMa(kc: Exclude<KetCucModelMa, { loai: "co-chu" }>, viec: stri
 // ════════════════════════════════════════════════════════════════════════════════════════════
 
 export type CopilotErrorCode =
+  | "DISABLED"
   | "MODEL_OFFLINE"
   | "TOKEN_BUDGET"
   | "CONTEXT_TOO_LARGE"
@@ -800,6 +802,12 @@ export type CopilotErrorCode =
   | "INTERNAL";
 
 const CAU_LOI: Record<CopilotErrorCode, Record<GateLang, string>> = {
+  // doc 81 Đợt 3 Task 0 — cờ bật copilot đang tắt trên hệ thống (không nêu tên biến môi trường).
+  DISABLED: {
+    vi: "Trợ lý lập trình AI đang tắt trên hệ thống này. Liên hệ quản trị viên nếu cần bật.",
+    en: "The AI programming assistant is turned off on this system. Ask your administrator to turn it on.",
+    zh: "此系统上的 AI 编程助手已关闭。如需启用，请联系管理员。",
+  },
   MODEL_OFFLINE: {
     vi: "Trợ lý lập trình chưa sẵn sàng (model offline). Liên hệ quản trị viên.",
     en: "The programming assistant is not available (model offline). Contact your administrator.",
@@ -1212,8 +1220,10 @@ export async function generateProgram(
   const request = String(input?.request ?? "").trim();
 
   // 1) Flag gate → well-formed disabled result (no model load, no crash).
+  //    doc 81 Đợt 3 Task 0 (O3) — lỗi CÓ MÃ `DISABLED` (khoá i18n progCopilot.error.DISABLED), câu theo
+  //    ngôn ngữ yêu cầu; trước đây là "AI_PROGRAMMING_COPILOT_ENABLED is off." hiện nguyên trên panel.
   if (!copilotEnabled()) {
-    return { ok: false, refused: false, kind, note: "AI_PROGRAMMING_COPILOT_ENABLED is off." };
+    return { ok: false, refused: false, kind, errorCode: "DISABLED", note: cauLoiCopilot("DISABLED", detectRequestLang(request)) };
   }
 
   // 2) SAFETY GATE (Doc 80 · Task 10 · D4) — chạy TRƯỚC mọi thứ tốn kém (warm model, RAG, model)

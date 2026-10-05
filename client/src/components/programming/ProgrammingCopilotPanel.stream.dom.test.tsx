@@ -211,6 +211,18 @@ describe("ProgrammingCopilotPanel — SSE", () => {
     expect(h.toastError.mock.calls[0][0]).toMatch(/Engineering module/);
   });
 
+  it("doc 81 Đợt 3 Task 0 — cờ tắt (error DISABLED) ⇒ khung lỗi có mã (role=alert), không ghi chú xám, không tên biến môi trường", async () => {
+    render(<ProgrammingCopilotPanel />);
+    await batDauLuot();
+    luot[0].day({ type: "error", code: "DISABLED", userMessage: "The AI programming assistant is turned off on this system. Ask your administrator to turn it on." });
+    luot[0].dong();
+    await nghi();
+    const loi = screen.getByRole("alert");
+    expect(loi).toHaveTextContent("The assistant could not answer");
+    expect(loi).toHaveTextContent(/turned off on this system/);
+    expect(document.body.textContent ?? "").not.toMatch(/[A-Z][A-Z0-9]+_[A-Z0-9_]+/);
+  });
+
   it("403 PERMISSION_DENIED ⇒ KHÔNG lùi, báo lỗi", async () => {
     phanHoiHttp = new Response(JSON.stringify({ success: false, code: "PERMISSION_DENIED" }), { status: 403 });
     render(<ProgrammingCopilotPanel />);
